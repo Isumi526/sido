@@ -1,0 +1,17 @@
+{
+  "name": "construction-field-report",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:liff": "npm run dev --workspace=apps/liff",
+    "build:liff": "npm run build --workspace=apps/liff",
+    "dev:admin": "npm run dev --workspace=apps/admin",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}
