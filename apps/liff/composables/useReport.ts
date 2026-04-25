@@ -2,7 +2,7 @@
 //  apps/liff / composables/useReport.ts
 //  日報フォームの状態管理と送信処理
 // ============================================================
-import type { DailyReport, SiteReport, WorkerEntry, SubcontractorEntry } from '@app/types'
+import type { DailyReport, SiteReport, WorkerEntry, SubcontractorEntry } from '~/types'
 
 export const createWorker = (): WorkerEntry => ({
   workerId:   '',

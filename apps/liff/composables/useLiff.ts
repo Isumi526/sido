@@ -2,12 +2,10 @@
 //  apps/liff / composables/useLiff.ts
 //  LINE LIFF SDK の初期化と認証を管理する
 // ============================================================
-import type { Profile } from '@line/liff'
-
 interface LiffState {
   initialized: boolean
   loggedIn: boolean
-  profile: Profile | null
+  profile: { userId: string; displayName: string; pictureUrl?: string; statusMessage?: string } | null
   error: string | null
 }
 
@@ -39,7 +37,7 @@ export const useLiff = () => {
       state.value.loggedIn = true
       state.value.initialized = true
 
-      console.log('[LIFF] 初期化完了:', state.value.profile.displayName)
+      console.log('[LIFF] 初期化完了:', state.value.profile?.displayName)
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       // LIFF IDが未設定（開発環境での直アクセス）は警告のみ

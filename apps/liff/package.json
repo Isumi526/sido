@@ -10,9 +10,7 @@
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {
-    "@line/liff": "^2.24.0",
-    "@app/types": "*",
-    "@construction-field-report/utils": "*"
+    "@line/liff": "^2.24.0"
   },
   "devDependencies": {
     "@nuxt/devtools": "^1.0.0",

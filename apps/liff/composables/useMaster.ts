@@ -2,7 +2,7 @@
 //  apps/liff / composables/useMaster.ts
 //  スプシ（GAS経由）からマスタデータを取得する
 // ============================================================
-import type { MasterData } from '@app/types'
+import type { MasterData } from '~/types'
 
 const FALLBACK: MasterData = {
   sites: ['ギフト桜ステージ', 'BLH名古屋', 'サボテン', 'TANAKA', 'LOGIFLAGTECK東扇じま', 'ルルレモン'],
