@@ -6,7 +6,7 @@
         <div class="brand">
           <span class="brand-name">App</span>
           <span class="brand-divider">|</span>
-          <span class="brand-sub">施工台帳</span>
+          <span class="brand-sub">日報</span>
         </div>
         <div v-if="liff.profile.value" class="user-badge">
           {{ liff.profile.value.displayName }}
