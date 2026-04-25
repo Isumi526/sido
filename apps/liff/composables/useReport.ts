@@ -81,7 +81,7 @@ export const useReport = () => {
     }
 
     try {
-      if (!config.public.gasUrl) {
+      if (!config.public.gasUrl || config.public.appEnv === 'development') {
         // 開発モード: コンソールに出力するだけ
         console.log('[Report] 送信ペイロード:', JSON.stringify(payload, null, 2))
         await new Promise(r => setTimeout(r, 800))

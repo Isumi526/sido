@@ -22,9 +22,9 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     public: {
-      liffId:    process.env.NUXT_PUBLIC_LIFF_ID    || '',
-      gasUrl:    process.env.NUXT_PUBLIC_GAS_URL     || '',
-      appEnv:    process.env.NUXT_PUBLIC_APP_ENV     || 'development',
+      liffId: '',
+      gasUrl: '',
+      appEnv: 'development',
     },
   },
 
