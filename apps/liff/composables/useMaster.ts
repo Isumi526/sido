@@ -54,9 +54,9 @@ export const useMaster = () => {
     master: readonly(master),
     loading: readonly(loading),
     fetch,
-    siteNames:           computed(() => master.value.sites),
-    workerNames:         computed(() => master.value.workers.map(w => w.name)),
-    subcontractorNames:  computed(() => master.value.subcontractors),
+    siteNames:           computed(() => master.value.sites.slice().sort((a, b) => a.localeCompare(b, 'ja'))),
+    workerNames:         computed(() => master.value.workers.map(w => w.name).slice().sort((a, b) => a.localeCompare(b, 'ja'))),
+    subcontractorNames:  computed(() => master.value.subcontractors.slice().sort((a, b) => a.localeCompare(b, 'ja'))),
     vehicleNames:        computed(() => master.value.vehicles),
   }
 }

@@ -19,6 +19,7 @@ export interface SubcontractorEntry {
 export interface Expenses {
   vehicle?: string
   distanceKm?: number
+  dieselKm?: number
   parkingYen?: number
   highwayYen?: number
   trainYen?: number
@@ -26,6 +27,7 @@ export interface Expenses {
   garbageSiteYen?: number
   hotelYen?: number
   otherYen?: number
+  entertainmentYen?: number
 }
 
 export interface SiteReport {

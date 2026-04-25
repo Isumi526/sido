@@ -64,13 +64,15 @@
 
           <!-- 作業員 -->
           <Field label="作業員">
-            <div v-for="(w, wi) in site.workers" :key="wi" class="row-grid">
+            <div v-for="(w, wi) in site.workers" :key="wi" class="row-worker">
               <select v-model="w.workerName" class="select" required>
-                <option value="">名前</option>
+                <option value="">名前を選択</option>
                 <option v-for="name in master.workerNames.value" :key="name" :value="name">{{ name }}</option>
               </select>
-              <input v-model.number="w.days" type="number" step="0.5" min="0" max="2" class="input" placeholder="工数" />
-              <input v-model.number="w.overtime" type="number" step="0.5" min="0" max="8" class="input" placeholder="残業h" />
+              <select v-model.number="w.days" class="select select--days" required>
+                <option value="">工数</option>
+                <option v-for="v in DAY_OPTIONS" :key="v" :value="v">{{ v }}</option>
+              </select>
               <button v-if="site.workers.length > 1" type="button" class="btn-icon-sm" @click="report.removeWorker(si, wi)">✕</button>
             </div>
             <button type="button" class="btn-ghost-sm" @click="report.addWorker(si)">＋ 作業員を追加</button>
@@ -78,35 +80,42 @@
 
           <!-- 経費 -->
           <Field label="経費">
-            <div class="expense-grid">
-              <div class="expense-item">
-                <span class="expense-label">🚗 走行距離</span>
-                <div class="expense-row">
-                  <select v-model="site.expenses.vehicle" class="select">
-                    <option value="">車両</option>
-                    <option v-for="v in master.vehicleNames.value" :key="v" :value="v">{{ v }}</option>
-                  </select>
+            <div class="expense-list">
+              <!-- ガソリン走行距離 -->
+              <div class="expense-row-full">
+                <span class="expense-label">🚗 ガソリン走行距離</span>
+                <div class="expense-inputs">
+                  <input v-model="site.expenses.vehicle" type="text" class="input" placeholder="車両名" />
                   <input v-model.number="site.expenses.distanceKm" type="number" min="0" class="input" placeholder="往復km" />
                 </div>
               </div>
-              <ExpenseField v-model="site.expenses.parkingYen"       icon="🅿️" label="駐車場代" />
-              <ExpenseField v-model="site.expenses.highwayYen"       icon="🛣️" label="高速代" />
-              <ExpenseField v-model="site.expenses.trainYen"         icon="🚃" label="電車代" />
-              <ExpenseField v-model="site.expenses.garbageFactoryYen" icon="🗑️" label="ゴミ（工場）" />
-              <ExpenseField v-model="site.expenses.garbageSiteYen"   icon="🗑️" label="ゴミ（現場）" />
-              <ExpenseField v-model="site.expenses.hotelYen"         icon="🏨" label="ホテル代" />
-              <ExpenseField v-model="site.expenses.otherYen"         icon="📦" label="その他" />
+              <!-- 軽油走行距離 -->
+              <div class="expense-row-full">
+                <span class="expense-label">🚛 軽油走行距離</span>
+                <input v-model.number="site.expenses.dieselKm" type="number" min="0" class="input" placeholder="往復km" />
+              </div>
+              <!-- 2列グリッド経費 -->
+              <div class="expense-grid">
+                <ExpenseField v-model="site.expenses.parkingYen"        label="🅿️ 駐車場" />
+                <ExpenseField v-model="site.expenses.highwayYen"        label="🛣️ 高速代" />
+                <ExpenseField v-model="site.expenses.trainYen"          label="🚃 電車代" />
+                <ExpenseField v-model="site.expenses.garbageFactoryYen" label="🗑️ ゴミ（工場）" />
+                <ExpenseField v-model="site.expenses.garbageSiteYen"    label="🗑️ ゴミ（現場）" />
+                <ExpenseField v-model="site.expenses.hotelYen"          label="🏨 ホテル・マンスリー" />
+                <ExpenseField v-model="site.expenses.otherYen"          label="📦 その他（資材等）" />
+                <ExpenseField v-model="site.expenses.entertainmentYen"  label="🥂 接待費" />
+              </div>
             </div>
           </Field>
 
           <!-- 下請け業者 -->
           <Field label="下請け業者">
-            <div v-for="(sub, si2) in site.subcontractors" :key="si2" class="row-grid row-grid--sub">
+            <div v-for="(sub, si2) in site.subcontractors" :key="si2" class="row-worker">
               <select v-model="sub.subcontractorName" class="select">
                 <option value="">業者選択</option>
                 <option v-for="name in master.subcontractorNames.value" :key="name" :value="name">{{ name }}</option>
               </select>
-              <input v-model.number="sub.count" type="number" min="1" max="20" class="input" placeholder="人数" />
+              <input v-model.number="sub.count" type="number" min="1" max="20" class="input select--days" placeholder="人数" />
               <button v-if="site.subcontractors.length > 1" type="button" class="btn-icon-sm" @click="report.removeSub(si, si2)">✕</button>
             </div>
             <button type="button" class="btn-ghost-sm" @click="report.addSub(si)">＋ 業者を追加</button>
@@ -153,6 +162,8 @@ const report = useReport()
 
 const initializing = ref(true)
 
+const DAY_OPTIONS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.25, 1.5]
+
 onMounted(async () => {
   await liff.init()
   await master.fetch()
@@ -169,15 +180,15 @@ async function handleSubmit() {
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg:       #0A0A0A;
-  --surface:  #141414;
-  --surface2: #1E1E1E;
-  --border:   #2A2A2A;
-  --accent:   #E8820C;
-  --accent-l: #F5A623;
-  --text:     #F0EDE8;
-  --text2:    #7A7A7A;
-  --danger:   #DC4A4A;
+  --bg:       #EFEFEF;
+  --surface:  #FFFFFF;
+  --surface2: #F7F7F7;
+  --border:   #E0E0E0;
+  --accent:   #06C755;
+  --accent-l: #08D860;
+  --text:     #111111;
+  --text2:    #888888;
+  --danger:   #E53935;
   --radius:   12px;
   --font:     'Noto Sans JP', -apple-system, sans-serif;
 }
@@ -195,6 +206,7 @@ html, body {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   position: sticky; top: 0; z-index: 100;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
 }
 .header-inner {
   max-width: 640px; margin: 0 auto;
@@ -217,7 +229,7 @@ html, body {
 }
 
 /* ── メイン ── */
-.main { max-width: 640px; margin: 0 auto; padding: 20px 16px 100px; }
+.main { max-width: 640px; margin: 0 auto; padding: 16px 16px 100px; }
 
 /* ── 状態画面 ── */
 .state-screen {
@@ -238,7 +250,7 @@ html, body {
   background: var(--accent);
   border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-size: 40px; color: var(--bg); font-weight: bold;
+  font-size: 40px; color: #fff; font-weight: bold;
 }
 .state-title { font-size: 22px; font-weight: 700; }
 .state-text  { font-size: 14px; color: var(--text2); }
@@ -256,34 +268,35 @@ html, body {
 }
 .input:focus, .select:focus, .textarea:focus {
   outline: none; border-color: var(--accent);
+  background: #fff;
 }
 .select {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%237A7A7A' fill='none' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' fill='none' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 14px center;
   padding-right: 38px;
 }
+.select--days { width: 90px; flex-shrink: 0; }
 .textarea { resize: vertical; }
 
-/* ── 作業員行グリッド ── */
-.row-grid {
-  display: grid;
-  grid-template-columns: 1fr 72px 72px 32px;
-  gap: 8px; margin-bottom: 8px; align-items: center;
+/* ── 作業員・下請け行 ── */
+.row-worker {
+  display: flex; gap: 8px; margin-bottom: 8px; align-items: center;
 }
-.row-grid--sub {
-  grid-template-columns: 1fr 80px 32px;
-}
+.row-worker .select:first-child { flex: 1; }
 
-/* ── 経費グリッド ── */
+/* ── 経費リスト ── */
+.expense-list { display: flex; flex-direction: column; gap: 12px; }
+
+.expense-row-full { display: flex; flex-direction: column; gap: 6px; }
+.expense-label { font-size: 12px; color: var(--text2); font-weight: 500; }
+.expense-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
 .expense-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.expense-item { display: flex; flex-direction: column; gap: 6px; }
-.expense-label { font-size: 12px; color: var(--text2); }
-.expense-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 
 /* ── ボタン類 ── */
 .btn-primary {
-  background: var(--accent); color: #000;
+  background: var(--accent); color: #fff;
   border: none; border-radius: 8px;
   padding: 13px 28px; font-size: 15px; font-weight: 700;
   font-family: var(--font); cursor: pointer;
@@ -296,14 +309,14 @@ html, body {
   border: 1px solid var(--border); border-radius: 6px;
   padding: 7px 14px; font-size: 12px; cursor: pointer;
   font-family: var(--font); transition: border-color 0.15s;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 .btn-ghost-sm:hover { border-color: var(--accent); }
 
 .btn-icon-sm {
   background: transparent; color: var(--text2);
   border: 1px solid var(--border); border-radius: 6px;
-  width: 32px; height: 32px; cursor: pointer;
+  width: 32px; height: 40px; cursor: pointer;
   font-size: 12px; flex-shrink: 0;
 }
 
@@ -326,8 +339,8 @@ html, body {
 /* ── 送信ボタン ── */
 .btn-submit {
   width: 100%;
-  background: linear-gradient(135deg, var(--accent) 0%, #C4660A 100%);
-  color: #000; border: none; border-radius: var(--radius);
+  background: var(--accent);
+  color: #fff; border: none; border-radius: var(--radius);
   padding: 18px; font-size: 16px; font-weight: 900; letter-spacing: 2px;
   font-family: var(--font); cursor: pointer;
   transition: opacity 0.15s, transform 0.1s;
@@ -341,8 +354,8 @@ html, body {
 }
 .dot-spin {
   width: 16px; height: 16px;
-  border: 2px solid rgba(0,0,0,0.3);
-  border-top-color: #000;
+  border: 2px solid rgba(255,255,255,0.4);
+  border-top-color: #fff;
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
   flex-shrink: 0;
@@ -350,7 +363,7 @@ html, body {
 
 /* ── エラー ── */
 .error-banner {
-  background: color-mix(in srgb, var(--danger) 15%, transparent);
+  background: #fff0f0;
   border: 1px solid var(--danger);
   color: var(--danger);
   border-radius: 8px;
@@ -361,6 +374,6 @@ html, body {
 /* ── レスポンシブ ── */
 @media (max-width: 380px) {
   .expense-grid { grid-template-columns: 1fr; }
-  .row-grid { grid-template-columns: 1fr 60px 60px 32px; }
+  .expense-inputs { grid-template-columns: 1fr; }
 }
 </style>

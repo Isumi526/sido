@@ -8,7 +8,7 @@ export const createWorker = (): WorkerEntry => ({
   workerId:   '',
   workerName: '',
   days:       1.0,
-  overtime:   0,
+  overtime:   0,  // UIには表示しないが型互換のため保持
 })
 
 export const createSub = (): SubcontractorEntry => ({
