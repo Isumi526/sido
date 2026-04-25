@@ -1,0 +1,5 @@
+{
+  "scriptId": "YOUR_GAS_SCRIPT_ID",
+  "deploymentId": "YOUR_GAS_DEPLOYMENT_ID",
+  "rootDir": "."
+}

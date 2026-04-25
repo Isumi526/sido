@@ -1,0 +1,4 @@
+# claspがGASにpushしないファイル
+node_modules/**
+.env
+*.md

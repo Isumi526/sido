@@ -9,7 +9,10 @@
     "dev:liff": "npm run dev --workspace=apps/liff",
     "build:liff": "npm run build --workspace=apps/liff",
     "dev:admin": "npm run dev --workspace=apps/admin",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "gas:pull": "cd apps/gas && clasp pull",
+    "gas:push": "cd apps/gas && clasp push",
+    "gas:deploy": "cd apps/gas && clasp push && clasp deploy --deploymentId YOUR_GAS_DEPLOYMENT_ID"
   },
   "devDependencies": {
     "typescript": "^5.4.0"
