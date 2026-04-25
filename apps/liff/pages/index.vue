@@ -101,29 +101,80 @@
           <!-- 経費 -->
           <Field label="経費">
             <div class="expense-list">
-              <!-- ガソリン走行距離 -->
-              <div class="expense-row-full">
-                <span class="expense-label">🚗 ガソリン走行距離</span>
-                <div class="expense-inputs">
-                  <input v-model="site.expenses.vehicle" type="text" class="input" placeholder="車両名" />
-                  <input v-model.number="site.expenses.distanceKm" type="number" min="0" class="input" placeholder="往復km" />
+
+              <!-- 車両ごとの経費 -->
+              <div
+                v-for="(veh, vi) in site.expenses.vehicles"
+                :key="vi"
+                class="vehicle-block"
+              >
+                <div class="vehicle-block-header">
+                  <span class="vehicle-block-label">🚗 車両{{ site.expenses.vehicles.length > 1 ? ` ${vi + 1}` : '' }}</span>
+                  <button
+                    v-if="site.expenses.vehicles.length > 1"
+                    type="button"
+                    class="btn-danger-sm"
+                    @click="report.removeVehicle(si, vi)"
+                  >✕ 削除</button>
+                </div>
+                <input v-model="veh.vehicleName" type="text" class="input" placeholder="車両名（例: ハイエース）" />
+                <div class="expense-grid mt8">
+                  <ExpenseField v-model="veh.distanceKm" label="⛽ ガソリン（往復km）" />
+                  <ExpenseField v-model="veh.dieselKm"   label="🚛 軽油（往復km）" />
+                  <ExpenseField v-model="veh.parkingYen" label="🅿️ 駐車場" />
+                  <ExpenseField v-model="veh.highwayYen" label="🛣️ 高速代" />
                 </div>
               </div>
-              <!-- 軽油走行距離 -->
-              <div class="expense-row-full">
-                <span class="expense-label">🚛 軽油走行距離</span>
-                <input v-model.number="site.expenses.dieselKm" type="number" min="0" class="input" placeholder="往復km" />
+
+              <button type="button" class="btn-ghost-sm" @click="report.addVehicle(si)">＋ 車両を追加</button>
+
+              <!-- 宿泊 -->
+              <div class="misc-section">
+                <span class="misc-label">🏨 ホテル</span>
+                <div class="hotel-row">
+                  <input v-model="site.expenses.hotelName" type="text" class="input" placeholder="施設名（例: アパホテル）" />
+                  <ExpenseField v-model="site.expenses.hotelYen" label="金額" />
+                </div>
               </div>
-              <!-- 2列グリッド経費 -->
+              <div class="misc-section">
+                <ExpenseField v-model="site.expenses.leopalaceYen" label="🏠 レオパレス等" />
+              </div>
+
+              <!-- ゴミ -->
               <div class="expense-grid">
-                <ExpenseField v-model="site.expenses.parkingYen"        label="🅿️ 駐車場" />
-                <ExpenseField v-model="site.expenses.highwayYen"        label="🛣️ 高速代" />
-                <ExpenseField v-model="site.expenses.trainYen"          label="🚃 電車代" />
                 <ExpenseField v-model="site.expenses.garbageFactoryYen" label="🗑️ ゴミ（工場）" />
                 <ExpenseField v-model="site.expenses.garbageSiteYen"    label="🗑️ ゴミ（現場）" />
-                <ExpenseField v-model="site.expenses.hotelYen"          label="🏨 ホテル・マンスリー" />
-                <ExpenseField v-model="site.expenses.otherYen"          label="📦 その他（資材等）" />
-                <ExpenseField v-model="site.expenses.entertainmentYen"  label="🥂 接待費" />
+              </div>
+
+              <!-- 電車（複数） -->
+              <div class="misc-section">
+                <span class="misc-label">🚃 電車</span>
+                <div v-for="(tr, ti) in site.expenses.trains" :key="ti" class="lineitems-row">
+                  <input v-model="tr.label" type="text" class="input" placeholder="例: 名古屋〜大阪" />
+                  <ExpenseField v-model="tr.yen" label="金額" />
+                  <button v-if="site.expenses.trains.length > 1" type="button" class="btn-icon-sm" @click="report.removeTrain(si, ti)">✕</button>
+                </div>
+                <button type="button" class="btn-ghost-sm" @click="report.addTrain(si)">＋ 追加</button>
+              </div>
+
+              <!-- その他（複数） -->
+              <div class="misc-section">
+                <span class="misc-label">📦 その他（資材等）</span>
+                <div v-for="(ot, oi) in site.expenses.others" :key="oi" class="lineitems-row">
+                  <input v-model="ot.label" type="text" class="input" placeholder="内容" />
+                  <ExpenseField v-model="ot.yen" label="金額" />
+                  <button v-if="site.expenses.others.length > 1" type="button" class="btn-icon-sm" @click="report.removeOther(si, oi)">✕</button>
+                </div>
+                <button type="button" class="btn-ghost-sm" @click="report.addOther(si)">＋ 追加</button>
+              </div>
+
+              <!-- 接待費 -->
+              <div class="misc-section">
+                <span class="misc-label">🥂 接待費</span>
+                <div class="lineitems-row">
+                  <input v-model="site.expenses.entertainmentLabel" type="text" class="input" placeholder="内容" />
+                  <ExpenseField v-model="site.expenses.entertainmentYen" label="金額" />
+                </div>
               </div>
             </div>
           </Field>
@@ -320,12 +371,27 @@ html, body {
 
 /* ── 経費リスト ── */
 .expense-list { display: flex; flex-direction: column; gap: 12px; }
-
-.expense-row-full { display: flex; flex-direction: column; gap: 6px; }
-.expense-label { font-size: 12px; color: var(--text2); font-weight: 500; }
-.expense-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-
 .expense-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.mt8 { margin-top: 8px; }
+
+/* ── 車両ブロック ── */
+.vehicle-block {
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px; display: flex; flex-direction: column; gap: 8px;
+  background: var(--surface2);
+}
+.vehicle-block-header {
+  display: flex; align-items: center; justify-content: space-between;
+}
+.vehicle-block-label { font-size: 12px; font-weight: 700; color: var(--text2); }
+
+/* ── その他共通経費 ── */
+.misc-section { display: flex; flex-direction: column; gap: 6px; }
+.misc-label { font-size: 12px; font-weight: 700; color: var(--text2); }
+.hotel-row { display: flex; flex-direction: column; gap: 6px; }
+.lineitems-row { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 6px; }
+.lineitems-row .input { flex: 1; }
+.lineitems-row .expense-item { width: 110px; flex-shrink: 0; }
 
 /* ── ボタン類 ── */
 .btn-primary {

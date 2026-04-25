@@ -278,31 +278,54 @@ function buildExpenses(site) {
   var expenses = [];
   var exp = site.expenses || {};
 
-  if (exp.distanceKm) {
-    expenses.push({
-      type:        'gasoline',
-      label:       (exp.vehicle ? exp.vehicle + ' ' : '') + '往復' + exp.distanceKm + 'km',
-      km:          Number(exp.distanceKm),
-      amount:      Math.round(Number(exp.distanceKm) * 14.58),
-      vehicleName: exp.vehicle || '',
-    });
+  // 車両ごとの経費（新形式: vehicles 配列）
+  var vehicles = exp.vehicles || [];
+  // 旧形式フォールバック（vehicle / distanceKm / dieselKm / parkingYen / highwayYen が直接ある場合）
+  if (vehicles.length === 0 && (exp.distanceKm || exp.vehicle)) {
+    vehicles = [{ vehicleName: exp.vehicle, distanceKm: exp.distanceKm, dieselKm: exp.dieselKm, parkingYen: exp.parkingYen, highwayYen: exp.highwayYen }];
   }
-  if (exp.dieselKm) {
-    expenses.push({
-      type:        'diesel',
-      label:       '軽油 往復' + exp.dieselKm + 'km',
-      km:          Number(exp.dieselKm),
-      amount:      Math.round(Number(exp.dieselKm) * 14.58),
-    });
-  }
-  if (exp.parkingYen)        expenses.push({ type: 'parking',         label: '駐車場',       amount: Number(exp.parkingYen) });
-  if (exp.highwayYen)        expenses.push({ type: 'highway',         label: '高速代',       amount: Number(exp.highwayYen) });
-  if (exp.trainYen)          expenses.push({ type: 'train',           label: '電車',         amount: Number(exp.trainYen) });
+  vehicles.forEach(function(veh) {
+    if (!veh) return;
+    var vName = veh.vehicleName || '';
+    if (veh.distanceKm) {
+      expenses.push({
+        type:        'gasoline',
+        label:       (vName ? vName + ' ' : '') + '往復' + veh.distanceKm + 'km',
+        km:          Number(veh.distanceKm),
+        amount:      Math.round(Number(veh.distanceKm) * 14.58),
+        vehicleName: vName,
+      });
+    }
+    if (veh.dieselKm) {
+      expenses.push({
+        type:        'diesel',
+        label:       (vName ? vName + ' ' : '') + '軽油 往復' + veh.dieselKm + 'km',
+        km:          Number(veh.dieselKm),
+        amount:      Math.round(Number(veh.dieselKm) * 14.58),
+        vehicleName: vName,
+      });
+    }
+    if (veh.parkingYen) expenses.push({ type: 'parking', label: (vName ? vName + ' ' : '') + '駐車場', amount: Number(veh.parkingYen), vehicleName: vName });
+    if (veh.highwayYen) expenses.push({ type: 'highway', label: (vName ? vName + ' ' : '') + '高速代', amount: Number(veh.highwayYen), vehicleName: vName });
+  });
+
+  // ホテル
+  if (exp.hotelYen) expenses.push({ type: 'hotel', label: exp.hotelName || 'ホテル', amount: Number(exp.hotelYen) });
+  // レオパレス等
+  if (exp.leopalaceYen) expenses.push({ type: 'leopalace', label: 'レオパレス等', amount: Number(exp.leopalaceYen) });
+  // ゴミ
   if (exp.garbageFactoryYen) expenses.push({ type: 'garbage_factory', label: 'ゴミ（工場）', amount: Number(exp.garbageFactoryYen) });
   if (exp.garbageSiteYen)    expenses.push({ type: 'garbage_site',    label: 'ゴミ（現場）', amount: Number(exp.garbageSiteYen) });
-  if (exp.hotelYen)          expenses.push({ type: 'hotel',           label: 'ホテル',       amount: Number(exp.hotelYen) });
-  if (exp.otherYen)          expenses.push({ type: 'other',           label: 'その他',       amount: Number(exp.otherYen) });
-  if (exp.entertainmentYen)  expenses.push({ type: 'entertainment',   label: '接待費',       amount: Number(exp.entertainmentYen) });
+  // 電車（複数）
+  (exp.trains || []).forEach(function(tr) {
+    if (tr && tr.yen) expenses.push({ type: 'train', label: tr.label || '電車', amount: Number(tr.yen) });
+  });
+  // その他（複数）
+  (exp.others || []).forEach(function(ot) {
+    if (ot && ot.yen) expenses.push({ type: 'other', label: ot.label || 'その他', amount: Number(ot.yen) });
+  });
+  // 接待費
+  if (exp.entertainmentYen) expenses.push({ type: 'entertainment', label: exp.entertainmentLabel || '接待費', amount: Number(exp.entertainmentYen) });
 
   // 下請け業者
   (site.subcontractors || []).forEach(function(sub) {
@@ -1664,21 +1687,28 @@ function writeExpensesToBlock(sheet, blockCol, expenses, settings, ROW_D) {
   // ROW_DEFAULT を必ずベースにして、ROW_D で上書きする（nullが混入しないよう保護）
   const R = Object.assign({}, ROW_DEFAULT, ROW_D || {});
 
-  const AMT_COL = 1;  // 駐車場・高速代の金額列オフセット（ラベルの次列）
+  const AMT_COL = 1;  // 左側経費の金額列オフセット
   const AMT_R   = 13; // 右側経費の金額列オフセット
+  const NAME_R  = 8;  // 右側経費の名称列オフセット
+
+  // 複数行書き込み用カウンター
+  var trainIdx = 0;
+  var otherIdx = 0;
 
   expenses.forEach(function(exp) {
     try {
       switch (exp.type) {
         case 'gasoline':
-          // 行27（車両名）に車両名を書く（ある場合のみ）
           if (exp.vehicleName && R.VEHICLE1_NAME) {
             sheet.getRange(R.VEHICLE1_NAME, blockCol + 1).setValue(exp.vehicleName);
           }
-          // 行28（1号車ガソリン入力欄）のoffset1にkm値を書く
-          // 行47（ガソリン距離計）は数式（=C28+C33+C38+C43）で自動集計されるので書き込み不要
           if (R.GASOLINE1) {
             sheet.getRange(R.GASOLINE1, blockCol + 1).setValue(exp.km);
+          }
+          break;
+        case 'diesel':
+          if (R.DIESEL1) {
+            sheet.getRange(R.DIESEL1, blockCol + 1).setValue(exp.km);
           }
           break;
         case 'highway':
@@ -1687,11 +1717,14 @@ function writeExpensesToBlock(sheet, blockCol, expenses, settings, ROW_D) {
         case 'parking':
           if (R.PARKING1) sheet.getRange(R.PARKING1, blockCol + AMT_COL).setValue(exp.amount);
           break;
-        case 'train':
-          if (R.ROW_TRAIN) sheet.getRange(R.ROW_TRAIN, blockCol + AMT_R).setValue(exp.amount);
-          break;
         case 'hotel':
-          if (R.ROW_HOTEL) sheet.getRange(R.ROW_HOTEL, blockCol + AMT_R).setValue(exp.amount);
+          if (R.ROW_HOTEL) {
+            sheet.getRange(R.ROW_HOTEL, blockCol + RIGHT_COL.HOTEL + 1).setValue(exp.label || '');
+            sheet.getRange(R.ROW_HOTEL, blockCol + AMT_R).setValue(exp.amount);
+          }
+          break;
+        case 'leopalace':
+          if (R.GASOLINE1) sheet.getRange(R.GASOLINE1, blockCol + RIGHT_COL.LEOPALACE + 1).setValue(exp.amount);
           break;
         case 'garbage_factory':
           if (R.ROW_GARBAGE_FACTORY) sheet.getRange(R.ROW_GARBAGE_FACTORY, blockCol + AMT_R).setValue(exp.amount);
@@ -1699,12 +1732,30 @@ function writeExpensesToBlock(sheet, blockCol, expenses, settings, ROW_D) {
         case 'garbage_site':
           if (R.ROW_GARBAGE_SITE) sheet.getRange(R.ROW_GARBAGE_SITE, blockCol + AMT_R).setValue(exp.amount);
           break;
-        case 'subcontractor':
-          // 下請け業者の人数を該当業者の人数欄に書き込む
-          writeSubcontractorCount(sheet, blockCol, exp.label, exp.amount);
+        case 'train':
+          if (R.ROW_TRAIN) {
+            var trainRow = R.ROW_TRAIN + trainIdx;
+            sheet.getRange(trainRow, blockCol + NAME_R).setValue(exp.label || '');
+            sheet.getRange(trainRow, blockCol + AMT_R).setValue(exp.amount);
+            trainIdx++;
+          }
           break;
-        default:
-          if (R.ROW_OTHER) sheet.getRange(R.ROW_OTHER, blockCol + AMT_R).setValue(exp.amount);
+        case 'other':
+          if (R.ROW_OTHER) {
+            var otherRow = R.ROW_OTHER + otherIdx;
+            sheet.getRange(otherRow, blockCol + NAME_R).setValue(exp.label || '');
+            sheet.getRange(otherRow, blockCol + AMT_R).setValue(exp.amount);
+            otherIdx++;
+          }
+          break;
+        case 'entertainment':
+          if (R.ROW_ENTERTAINMENT) {
+            sheet.getRange(R.ROW_ENTERTAINMENT, blockCol + NAME_R).setValue(exp.label || '');
+            sheet.getRange(R.ROW_ENTERTAINMENT, blockCol + AMT_R).setValue(exp.amount);
+          }
+          break;
+        case 'subcontractor':
+          writeSubcontractorCount(sheet, blockCol, exp.label, exp.amount);
           break;
       }
     } catch (e) {

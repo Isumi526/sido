@@ -19,17 +19,29 @@ export interface SubcontractorEntry {
   count: number
 }
 
-export interface Expenses {
-  vehicle?: string
+export interface VehicleExpense {
+  vehicleName?: string
   distanceKm?: number
   dieselKm?: number
   parkingYen?: number
   highwayYen?: number
-  trainYen?: number
+}
+
+export interface LineItem {
+  label?: string
+  yen?: number
+}
+
+export interface Expenses {
+  vehicles: VehicleExpense[]
+  hotelName?: string
+  hotelYen?: number
+  leopalaceYen?: number
   garbageFactoryYen?: number
   garbageSiteYen?: number
-  hotelYen?: number
-  otherYen?: number
+  trains: LineItem[]
+  others: LineItem[]
+  entertainmentLabel?: string
   entertainmentYen?: number
 }
 

@@ -2,14 +2,14 @@
 //  apps/liff / composables/useReport.ts
 //  日報フォームの状態管理と送信処理
 // ============================================================
-import type { DailyReport, SiteReport, WorkerEntry, SubcontractorEntry, WorkerRole } from '~/types'
+import type { DailyReport, SiteReport, WorkerEntry, SubcontractorEntry, WorkerRole, VehicleExpense, LineItem } from '~/types'
 
 export const createWorker = (role: WorkerRole = 'site'): WorkerEntry => ({
   workerId:   '',
   workerName: '',
   workerRole: role,
   days:       1.0,
-  overtime:   0,  // UIには表示しないが型互換のため保持
+  overtime:   0,
 })
 
 export const createSub = (): SubcontractorEntry => ({
@@ -18,10 +18,20 @@ export const createSub = (): SubcontractorEntry => ({
   count:             1,
 })
 
+export const createVehicle = (): VehicleExpense => ({
+  vehicleName: '',
+  distanceKm:  undefined,
+  dieselKm:    undefined,
+  parkingYen:  undefined,
+  highwayYen:  undefined,
+})
+
+export const createLineItem = (): LineItem => ({ label: '', yen: undefined })
+
 export const createSite = (): SiteReport => ({
   siteName:       '',
   workers:        [createWorker()],
-  expenses:       {},
+  expenses:       { vehicles: [createVehicle()], trains: [createLineItem()], others: [createLineItem()] },
   subcontractors: [createSub()],
 })
 
@@ -49,6 +59,13 @@ export const useReport = () => {
 
   function addSub(si: number)             { form.value.sites[si].subcontractors.push(createSub()) }
   function removeSub(si: number, si2: number) { form.value.sites[si].subcontractors.splice(si2, 1) }
+
+  function addVehicle(si: number)                    { form.value.sites[si].expenses.vehicles.push(createVehicle()) }
+  function removeVehicle(si: number, vi: number)     { form.value.sites[si].expenses.vehicles.splice(vi, 1) }
+  function addTrain(si: number)                      { form.value.sites[si].expenses.trains.push(createLineItem()) }
+  function removeTrain(si: number, ti: number)       { form.value.sites[si].expenses.trains.splice(ti, 1) }
+  function addOther(si: number)                      { form.value.sites[si].expenses.others.push(createLineItem()) }
+  function removeOther(si: number, oi: number)       { form.value.sites[si].expenses.others.splice(oi, 1) }
 
   function reset() {
     submitted.value = false
@@ -111,6 +128,9 @@ export const useReport = () => {
     addSite, removeSite,
     addWorker, removeWorker,
     addSub, removeSub,
+    addVehicle, removeVehicle,
+    addTrain, removeTrain,
+    addOther, removeOther,
     submit, reset,
   }
 }
