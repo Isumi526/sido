@@ -87,8 +87,9 @@ export const useReport = () => {
         await new Promise(r => setTimeout(r, 800))
       } else {
         await $fetch(config.public.gasUrl, {
-          method: 'POST',
-          body:   JSON.stringify({ action: 'submitReport', ...payload }),
+          method:  'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body:    JSON.stringify({ action: 'submitReport', ...payload }),
         })
       }
       submitted.value = true
