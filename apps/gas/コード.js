@@ -344,55 +344,86 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
   try {
     var d        = new Date(date + 'T00:00:00');
     var weekdays = ['日','月','火','水','木','金','土'];
-    var dateLabel = (d.getMonth()+1) + '/' + d.getDate() + '（' + weekdays[d.getDay()] + '）';
+    var dateLabel = (d.getMonth()+1) + '/' + d.getDate() + '(' + weekdays[d.getDay()] + ')';
 
     var lines = [
-      '📋 ' + dateLabel + ' 日報',
-      '👤 ' + sender,
+      dateLabel + '  ' + sender,
       '─────────────────',
     ];
 
     sites.forEach(function(site) {
       if (!site.siteName) return;
       lines.push('');
-      lines.push('📍 ' + site.siteName);
+      lines.push('■ ' + site.siteName);
 
-      // 作業員
+      // 作業員（工場/現場別）
       var workers = (site.workers || []).filter(function(w) { return w.workerName; });
-      if (workers.length > 0) {
-        var wStr = workers.map(function(w) {
-          var s = w.workerName + ' ' + w.days + '日';
-          if (w.overtime > 0) s += ' 残業' + w.overtime + 'h';
-          return s;
-        }).join(' / ');
-        lines.push('  👷 ' + wStr);
+      var factoryW = workers.filter(function(w) { return w.workerRole === 'factory'; });
+      var siteW    = workers.filter(function(w) { return w.workerRole !== 'factory'; });
+      if (factoryW.length > 0) {
+        lines.push('工場  ' + factoryW.map(function(w) { return w.workerName + ' ' + w.days + '日'; }).join(' / '));
+      }
+      if (siteW.length > 0) {
+        lines.push('現場  ' + siteW.map(function(w) { return w.workerName + ' ' + w.days + '日'; }).join(' / '));
       }
 
-      // 経費
+      // 車両ごとの経費
       var exp = site.expenses || {};
-      var expItems = [];
-      if (exp.distanceKm) expItems.push((exp.vehicle || '') + '往復' + exp.distanceKm + 'km');
-      if (exp.parkingYen)        expItems.push('駐車場¥' + Number(exp.parkingYen).toLocaleString());
-      if (exp.highwayYen)        expItems.push('高速¥' + Number(exp.highwayYen).toLocaleString());
-      if (exp.trainYen)          expItems.push('電車¥' + Number(exp.trainYen).toLocaleString());
-      if (exp.garbageFactoryYen) expItems.push('ゴミ工場¥' + Number(exp.garbageFactoryYen).toLocaleString());
-      if (exp.garbageSiteYen)    expItems.push('ゴミ現場¥' + Number(exp.garbageSiteYen).toLocaleString());
-      if (exp.hotelYen)          expItems.push('ホテル¥' + Number(exp.hotelYen).toLocaleString());
-      if (exp.otherYen)          expItems.push('その他¥' + Number(exp.otherYen).toLocaleString());
-      if (expItems.length > 0) lines.push('  💴 ' + expItems.join(' / '));
+      var vehicles = exp.vehicles || [];
+      vehicles.forEach(function(veh) {
+        if (!veh) return;
+        var hasData = veh.vehicleName || veh.distanceKm || veh.dieselKm || veh.parkingYen || veh.highwayYen;
+        if (!hasData) return;
+        var parts = [];
+        if (veh.distanceKm) parts.push('ガソリン ' + veh.distanceKm + 'km');
+        if (veh.dieselKm)   parts.push('軽油 ' + veh.dieselKm + 'km');
+        if (veh.parkingYen) parts.push('駐車場 ¥' + Number(veh.parkingYen).toLocaleString());
+        if (veh.highwayYen) parts.push('高速 ¥' + Number(veh.highwayYen).toLocaleString());
+        lines.push((veh.vehicleName || '車両') + '  ' + parts.join(' / '));
+      });
 
-      // 下請け業者
+      // 宿泊
+      if (exp.hotelYen) {
+        lines.push('ホテル' + (exp.hotelName ? '(' + exp.hotelName + ')' : '') + '  ¥' + Number(exp.hotelYen).toLocaleString());
+      }
+      if (exp.leopalaceYen) {
+        lines.push('レオパレス等' + (exp.leopalaceName ? '(' + exp.leopalaceName + ')' : '') + '  ¥' + Number(exp.leopalaceYen).toLocaleString());
+      }
+
+      // ゴミ
+      if (exp.garbageFactoryYen) lines.push('ゴミ(工場)  ¥' + Number(exp.garbageFactoryYen).toLocaleString());
+      if (exp.garbageSiteYen)    lines.push('ゴミ(現場)  ¥' + Number(exp.garbageSiteYen).toLocaleString());
+
+      // 電車（複数）
+      (exp.trains || []).forEach(function(tr) {
+        if (tr && tr.yen) lines.push('電車' + (tr.label ? ' ' + tr.label : '') + '  ¥' + Number(tr.yen).toLocaleString());
+      });
+
+      // その他（複数）
+      (exp.others || []).forEach(function(ot) {
+        if (ot && ot.yen) lines.push('その他' + (ot.label ? ' ' + ot.label : '') + '  ¥' + Number(ot.yen).toLocaleString());
+      });
+
+      // 接待費
+      if (exp.entertainmentYen) {
+        lines.push('接待費' + (exp.entertainmentLabel ? ' ' + exp.entertainmentLabel : '') + '  ¥' + Number(exp.entertainmentYen).toLocaleString());
+      }
+
+      // 外注
       var subs = (site.subcontractors || []).filter(function(s) { return s.subcontractorName; });
       if (subs.length > 0) {
-        var sStr = subs.map(function(s) { return s.subcontractorName + ' ' + s.count + '人'; }).join(' / ');
-        lines.push('  🏢 ' + sStr);
+        lines.push('外注  ' + subs.map(function(s) { return s.subcontractorName + ' ' + s.count + '人'; }).join(' / '));
       }
     });
 
-    if (note) lines.push('\n📝 ' + note);
+    if (note) {
+      lines.push('');
+      lines.push('備考  ' + note);
+    }
 
     if (failedSites.length > 0) {
-      lines.push('\n⚠️ 未登録: ' + failedSites.join('、'));
+      lines.push('');
+      lines.push('※ 未登録現場: ' + failedSites.join('、'));
     }
 
     var msg = [{ type: 'text', text: lines.join('\n') }];
