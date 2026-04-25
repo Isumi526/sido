@@ -3,9 +3,12 @@
 //  packages/types からインライン化（Vercel workspace解決問題の回避）
 // ============================================================
 
+export type WorkerRole = 'factory' | 'site'
+
 export interface WorkerEntry {
   workerId: string
   workerName: string
+  workerRole: WorkerRole
   days: number
   overtime: number
 }
@@ -47,7 +50,7 @@ export interface DailyReport {
 
 export interface MasterData {
   sites: string[]
-  workers: { name: string; unitPrice: number }[]
+  workers: { name: string; unitPrice: number; role: WorkerRole }[]
   subcontractors: string[]
   vehicles: string[]
 }

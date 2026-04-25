@@ -65,10 +65,30 @@
           <!-- 作業員 -->
           <Field label="作業員">
             <div v-for="(w, wi) in site.workers" :key="wi" class="row-worker">
-              <select v-model="w.workerName" class="select" required>
-                <option value="">名前を選択</option>
-                <option v-for="name in master.workerNames.value" :key="name" :value="name">{{ name }}</option>
-              </select>
+              <div class="worker-col">
+                <div class="role-toggle">
+                  <button
+                    type="button"
+                    class="role-btn"
+                    :class="{ active: w.workerRole === 'factory' }"
+                    @click="w.workerRole = 'factory'; w.workerName = ''"
+                  >工場/事務所</button>
+                  <button
+                    type="button"
+                    class="role-btn"
+                    :class="{ active: w.workerRole === 'site' }"
+                    @click="w.workerRole = 'site'; w.workerName = ''"
+                  >現場</button>
+                </div>
+                <select v-model="w.workerName" class="select" required>
+                  <option value="">名前を選択</option>
+                  <option
+                    v-for="name in (w.workerRole === 'factory' ? master.factoryWorkerNames.value : master.siteWorkerNames.value)"
+                    :key="name"
+                    :value="name"
+                  >{{ name }}</option>
+                </select>
+              </div>
               <select v-model.number="w.days" class="select select--days" required>
                 <option value="">工数</option>
                 <option v-for="v in DAY_OPTIONS" :key="v" :value="v">{{ v }}</option>
@@ -281,9 +301,22 @@ html, body {
 
 /* ── 作業員・下請け行 ── */
 .row-worker {
-  display: flex; gap: 8px; margin-bottom: 8px; align-items: center;
+  display: flex; gap: 8px; margin-bottom: 8px; align-items: flex-end;
 }
-.row-worker .select:first-child { flex: 1; }
+.worker-col { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+
+/* ── ロールトグル ── */
+.role-toggle {
+  display: flex; gap: 0;
+  border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+}
+.role-btn {
+  flex: 1; padding: 5px 0; font-size: 11px; font-family: var(--font);
+  background: var(--surface2); color: var(--text2); border: none; cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.role-btn:first-child { border-right: 1px solid var(--border); }
+.role-btn.active { background: var(--accent); color: #fff; font-weight: 700; }
 
 /* ── 経費リスト ── */
 .expense-list { display: flex; flex-direction: column; gap: 12px; }
