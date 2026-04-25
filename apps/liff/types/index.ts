@@ -36,6 +36,7 @@ export interface Expenses {
   vehicles: VehicleExpense[]
   hotelName?: string
   hotelYen?: number
+  leopalaceName?: string
   leopalaceYen?: number
   garbageFactoryYen?: number
   garbageSiteYen?: number

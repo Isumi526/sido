@@ -312,7 +312,7 @@ function buildExpenses(site) {
   // ホテル
   if (exp.hotelYen) expenses.push({ type: 'hotel', label: exp.hotelName || 'ホテル', amount: Number(exp.hotelYen) });
   // レオパレス等
-  if (exp.leopalaceYen) expenses.push({ type: 'leopalace', label: 'レオパレス等', amount: Number(exp.leopalaceYen) });
+  if (exp.leopalaceYen) expenses.push({ type: 'leopalace', label: exp.leopalaceName || 'レオパレス等', amount: Number(exp.leopalaceYen) });
   // ゴミ
   if (exp.garbageFactoryYen) expenses.push({ type: 'garbage_factory', label: 'ゴミ（工場）', amount: Number(exp.garbageFactoryYen) });
   if (exp.garbageSiteYen)    expenses.push({ type: 'garbage_site',    label: 'ゴミ（現場）', amount: Number(exp.garbageSiteYen) });
@@ -1724,7 +1724,10 @@ function writeExpensesToBlock(sheet, blockCol, expenses, settings, ROW_D) {
           }
           break;
         case 'leopalace':
-          if (R.GASOLINE1) sheet.getRange(R.GASOLINE1, blockCol + RIGHT_COL.LEOPALACE + 1).setValue(exp.amount);
+          if (R.GASOLINE1) {
+            sheet.getRange(R.GASOLINE1, blockCol + RIGHT_COL.LEOPALACE + 1).setValue(exp.label || '');
+            sheet.getRange(R.GASOLINE1, blockCol + AMT_R).setValue(exp.amount);
+          }
           break;
         case 'garbage_factory':
           if (R.ROW_GARBAGE_FACTORY) sheet.getRange(R.ROW_GARBAGE_FACTORY, blockCol + AMT_R).setValue(exp.amount);

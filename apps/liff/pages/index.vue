@@ -137,7 +137,11 @@
                 </div>
               </div>
               <div class="misc-section">
-                <ExpenseField v-model="site.expenses.leopalaceYen" label="🏠 レオパレス等" />
+                <span class="misc-label">🏠 レオパレス等</span>
+                <div class="hotel-row">
+                  <input v-model="site.expenses.leopalaceName" type="text" class="input" placeholder="施設名" />
+                  <ExpenseField v-model="site.expenses.leopalaceYen" label="金額" />
+                </div>
               </div>
 
               <!-- ゴミ -->
