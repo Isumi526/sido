@@ -80,8 +80,8 @@ export const useMaster = () => {
     fetch,
     siteNames:              computed(() => master.value.sites.slice().sort((a, b) => a.localeCompare(b, 'ja'))),
     workerNames:            computed(() => master.value.workers.map(w => w.name).slice().sort((a, b) => a.localeCompare(b, 'ja'))),
-    factoryWorkerNames:     computed(() => master.value.workers.filter(w => w.role === 'factory').map(w => w.name).slice().sort((a, b) => a.localeCompare(b, 'ja'))),
-    siteWorkerNames:        computed(() => master.value.workers.filter(w => w.role === 'site').map(w => w.name).slice().sort((a, b) => a.localeCompare(b, 'ja'))),
+    factoryWorkerNames:     computed(() => { const ws = master.value.workers; const hasRole = ws.some(w => w.role); return ws.filter(w => !hasRole || w.role === 'factory').map(w => w.name).slice().sort((a, b) => a.localeCompare(b, 'ja')) }),
+    siteWorkerNames:        computed(() => { const ws = master.value.workers; const hasRole = ws.some(w => w.role); return ws.filter(w => !hasRole || w.role === 'site').map(w => w.name).slice().sort((a, b) => a.localeCompare(b, 'ja')) }),
     subcontractorNames:     computed(() => master.value.subcontractors.slice().sort((a, b) => a.localeCompare(b, 'ja'))),
     vehicleNames:           computed(() => master.value.vehicles),
   }

@@ -430,8 +430,9 @@ function doGet(e) {
             if (col0.startsWith('【')) { inWorkerSection = false; inSubSection = false; return; }
 
             // 作業員行: 名前が存在 かつ 単価が正の整数
+            // 先頭14名が工場・事務所、それ以降が現場（initSettingsSheet の並び順に準拠）
             if (inWorkerSection && col0 && col0 !== '作業員名' && typeof col1 === 'number' && col1 > 0) {
-              workers.push({ name: col0, unitPrice: col1 });
+              workers.push({ name: col0, unitPrice: col1, role: workers.length < 14 ? 'factory' : 'site' });
             }
 
             // 下請け業者行: 名前が存在 かつ「業者名」ヘッダ以外
