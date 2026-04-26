@@ -9,8 +9,9 @@ export interface WorkerEntry {
   workerId: string
   workerName: string
   workerRole: WorkerRole
-  days: number
-  overtime: number
+  hours: number                // 稼働時間 (1-8h)
+  overtimeHours: number        // 残業時間 (1.25x)
+  holidayOvertimeHours: number // 休日残業時間 (1.5x)
 }
 
 export interface SubcontractorEntry {

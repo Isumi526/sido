@@ -26,7 +26,7 @@
         <div class="success-mark">✓</div>
         <h2 class="state-title">送信完了！</h2>
         <p class="state-text">LINEグループに通知しました</p>
-        <button class="btn-primary" @click="report.reset()">もう1件入力する</button>
+        <button class="btn-primary" @click="handleReset">もう1件入力する</button>
       </div>
 
       <!-- フォーム -->
@@ -50,7 +50,7 @@
               v-if="report.form.value.sites.length > 1"
               type="button"
               class="btn-danger-sm"
-              @click="report.removeSite(si)"
+              @click="removeSite(si)"
             >✕ 削除</button>
           </template>
 
@@ -62,10 +62,13 @@
             </select>
           </Field>
 
-          <!-- 作業員 -->
-          <Field label="作業員">
-            <div v-for="(w, wi) in site.workers" :key="wi" class="row-worker">
-              <div class="worker-col">
+          <!-- ── 稼働 ── -->
+          <div class="sub-section">
+            <div class="sub-section-title">稼働</div>
+
+            <!-- 作業員 -->
+            <Field label="作業員">
+              <div v-for="(w, wi) in site.workers" :key="wi" class="worker-block">
                 <div class="role-toggle">
                   <button
                     type="button"
@@ -80,125 +83,186 @@
                     @click="w.workerRole = 'site'; w.workerName = ''"
                   >現場</button>
                 </div>
-                <select v-model="w.workerName" class="select" required>
-                  <option value="">名前を選択</option>
-                  <option
-                    v-for="name in (w.workerRole === 'factory' ? master.factoryWorkerNames.value : master.siteWorkerNames.value)"
-                    :key="name"
-                    :value="name"
-                  >{{ name }}</option>
+                <div class="worker-name-row">
+                  <select v-model="w.workerName" class="select" required>
+                    <option value="">名前を選択</option>
+                    <option
+                      v-for="name in (w.workerRole === 'factory' ? master.factoryWorkerNames.value : master.siteWorkerNames.value)"
+                      :key="name"
+                      :value="name"
+                    >{{ name }}</option>
+                  </select>
+                  <button v-if="site.workers.length > 1" type="button" class="btn-icon-sm" @click="report.removeWorker(si, wi)">✕</button>
+                </div>
+                <div class="worker-hours-row">
+                  <div class="hours-field">
+                    <label class="hours-label">稼働(h)</label>
+                    <select v-model.number="w.hours" class="select select--h" required>
+                      <option v-for="h in HOUR_OPTIONS" :key="h" :value="h">{{ h }}</option>
+                    </select>
+                  </div>
+                  <div class="hours-field">
+                    <label class="hours-label">残業(h)</label>
+                    <input v-model.number="w.overtimeHours" type="number" min="0" max="24" step="0.5" class="input select--h" placeholder="0" />
+                  </div>
+                  <div class="hours-field">
+                    <label class="hours-label">休日残業(h)</label>
+                    <input v-model.number="w.holidayOvertimeHours" type="number" min="0" max="24" step="0.5" class="input select--h" placeholder="0" />
+                  </div>
+                </div>
+              </div>
+              <button type="button" class="btn-ghost-sm" @click="report.addWorker(si)">＋ 作業員を追加</button>
+            </Field>
+
+            <!-- 下請け業者 -->
+            <Field label="下請け業者">
+              <div v-for="(sub, si2) in site.subcontractors" :key="si2" class="row-worker">
+                <select v-model="sub.subcontractorName" class="select">
+                  <option value="">業者選択</option>
+                  <option v-for="name in master.subcontractorNames.value" :key="name" :value="name">{{ name }}</option>
                 </select>
+                <input v-model.number="sub.count" type="number" min="1" max="20" class="input select--h" placeholder="人数" />
+                <button v-if="site.subcontractors.length > 1" type="button" class="btn-icon-sm" @click="report.removeSub(si, si2)">✕</button>
               </div>
-              <select v-model.number="w.days" class="select select--days" required>
-                <option value="">工数</option>
-                <option v-for="v in DAY_OPTIONS" :key="v" :value="v">{{ v }}</option>
+              <button type="button" class="btn-ghost-sm" @click="report.addSub(si)">＋ 業者を追加</button>
+            </Field>
+          </div>
+
+          <!-- ── 交通経費 ── -->
+          <div class="sub-section">
+            <div class="sub-section-title">交通経費</div>
+
+            <!-- 車両 -->
+            <Field label="車両">
+              <select :value="siteUsage[si].vehicle" class="select select--usage" @change="(e) => setUsage(si, 'vehicle', (e.target as HTMLSelectElement).value)">
+                <option value="なし">なし</option>
+                <option value="あり">あり</option>
               </select>
-              <button v-if="site.workers.length > 1" type="button" class="btn-icon-sm" @click="report.removeWorker(si, wi)">✕</button>
-            </div>
-            <button type="button" class="btn-ghost-sm" @click="report.addWorker(si)">＋ 作業員を追加</button>
-          </Field>
-
-          <!-- 経費 -->
-          <Field label="経費">
-            <div class="expense-list">
-
-              <!-- 車両ごとの経費 -->
-              <div
-                v-for="(veh, vi) in site.expenses.vehicles"
-                :key="vi"
-                class="vehicle-block"
-              >
-                <div class="vehicle-block-header">
-                  <span class="vehicle-block-label">🚗 車両{{ site.expenses.vehicles.length > 1 ? ` ${vi + 1}` : '' }}</span>
-                  <button
-                    v-if="site.expenses.vehicles.length > 1"
-                    type="button"
-                    class="btn-danger-sm"
-                    @click="report.removeVehicle(si, vi)"
-                  >✕ 削除</button>
+              <template v-if="siteUsage[si].vehicle === 'あり'">
+                <div
+                  v-for="(veh, vi) in site.expenses.vehicles"
+                  :key="vi"
+                  class="vehicle-block"
+                >
+                  <div class="vehicle-block-header">
+                    <span class="vehicle-block-label">車両{{ site.expenses.vehicles.length > 1 ? ` ${vi + 1}` : '' }}</span>
+                    <button
+                      v-if="site.expenses.vehicles.length > 1"
+                      type="button"
+                      class="btn-danger-sm"
+                      @click="report.removeVehicle(si, vi)"
+                    >✕ 削除</button>
+                  </div>
+                  <input v-model="veh.vehicleName" type="text" class="input" placeholder="車両名（例: ハイエース）" />
+                  <div class="expense-grid mt8">
+                    <ExpenseField v-model="veh.distanceKm" label="ガソリン（往復km）" />
+                    <ExpenseField v-model="veh.dieselKm"   label="軽油（往復km）" />
+                    <ExpenseField v-model="veh.parkingYen" label="駐車場（円）" />
+                    <ExpenseField v-model="veh.highwayYen" label="高速代（円）" />
+                  </div>
                 </div>
-                <input v-model="veh.vehicleName" type="text" class="input" placeholder="車両名（例: ハイエース）" />
-                <div class="expense-grid mt8">
-                  <ExpenseField v-model="veh.distanceKm" label="⛽ ガソリン（往復km）" />
-                  <ExpenseField v-model="veh.dieselKm"   label="🚛 軽油（往復km）" />
-                  <ExpenseField v-model="veh.parkingYen" label="🅿️ 駐車場" />
-                  <ExpenseField v-model="veh.highwayYen" label="🛣️ 高速代" />
-                </div>
-              </div>
+                <button type="button" class="btn-ghost-sm" @click="report.addVehicle(si)">＋ 車両を追加</button>
+              </template>
+            </Field>
 
-              <button type="button" class="btn-ghost-sm" @click="report.addVehicle(si)">＋ 車両を追加</button>
-
-              <!-- 宿泊 -->
-              <div class="misc-section">
-                <span class="misc-label">🏨 ホテル</span>
-                <div class="hotel-row">
-                  <input v-model="site.expenses.hotelName" type="text" class="input" placeholder="施設名（例: アパホテル）" />
-                  <ExpenseField v-model="site.expenses.hotelYen" label="金額" />
-                </div>
-              </div>
-              <div class="misc-section">
-                <span class="misc-label">🏠 レオパレス等</span>
-                <div class="hotel-row">
-                  <input v-model="site.expenses.leopalaceName" type="text" class="input" placeholder="施設名" />
-                  <ExpenseField v-model="site.expenses.leopalaceYen" label="金額" />
-                </div>
-              </div>
-
-              <!-- ゴミ -->
-              <div class="expense-grid">
-                <ExpenseField v-model="site.expenses.garbageFactoryYen" label="🗑️ ゴミ（工場）" />
-                <ExpenseField v-model="site.expenses.garbageSiteYen"    label="🗑️ ゴミ（現場）" />
-              </div>
-
-              <!-- 電車（複数） -->
-              <div class="misc-section">
-                <span class="misc-label">🚃 電車</span>
+            <!-- 電車 -->
+            <Field label="電車">
+              <select :value="siteUsage[si].train" class="select select--usage" @change="(e) => setUsage(si, 'train', (e.target as HTMLSelectElement).value)">
+                <option value="なし">なし</option>
+                <option value="あり">あり</option>
+              </select>
+              <template v-if="siteUsage[si].train === 'あり'">
                 <div v-for="(tr, ti) in site.expenses.trains" :key="ti" class="lineitems-row">
                   <input v-model="tr.label" type="text" class="input" placeholder="例: 名古屋〜大阪" />
                   <ExpenseField v-model="tr.yen" label="金額" />
                   <button v-if="site.expenses.trains.length > 1" type="button" class="btn-icon-sm" @click="report.removeTrain(si, ti)">✕</button>
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addTrain(si)">＋ 追加</button>
-              </div>
+              </template>
+            </Field>
+          </div>
 
-              <!-- その他（複数） -->
-              <div class="misc-section">
-                <span class="misc-label">📦 その他（資材等）</span>
-                <div v-for="(ot, oi) in site.expenses.others" :key="oi" class="lineitems-row">
+          <!-- ── 現場経費 ── -->
+          <div class="sub-section">
+            <div class="sub-section-title">現場経費</div>
+
+            <!-- ホテル -->
+            <Field label="ホテル">
+              <select :value="siteUsage[si].hotel" class="select select--usage" @change="(e) => setUsage(si, 'hotel', (e.target as HTMLSelectElement).value)">
+                <option value="なし">なし</option>
+                <option value="あり">あり</option>
+              </select>
+              <template v-if="siteUsage[si].hotel === 'あり'">
+                <div class="hotel-row mt6">
+                  <input v-model="site.expenses.hotelName" type="text" class="input" placeholder="施設名（例: アパホテル）" />
+                  <ExpenseField v-model="site.expenses.hotelYen" label="金額" />
+                </div>
+              </template>
+            </Field>
+
+            <!-- レオパレス等 -->
+            <Field label="レオパレス等">
+              <select :value="siteUsage[si].leopalace" class="select select--usage" @change="(e) => setUsage(si, 'leopalace', (e.target as HTMLSelectElement).value)">
+                <option value="なし">なし</option>
+                <option value="あり">あり</option>
+              </select>
+              <template v-if="siteUsage[si].leopalace === 'あり'">
+                <div class="hotel-row mt6">
+                  <input v-model="site.expenses.leopalaceName" type="text" class="input" placeholder="施設名" />
+                  <ExpenseField v-model="site.expenses.leopalaceYen" label="金額" />
+                </div>
+              </template>
+            </Field>
+
+            <!-- ゴミ -->
+            <Field label="ゴミ">
+              <select :value="siteUsage[si].garbage" class="select select--usage" @change="(e) => setUsage(si, 'garbage', (e.target as HTMLSelectElement).value)">
+                <option value="なし">なし</option>
+                <option value="あり">あり</option>
+              </select>
+              <template v-if="siteUsage[si].garbage === 'あり'">
+                <div class="expense-grid mt6">
+                  <ExpenseField v-model="site.expenses.garbageFactoryYen" label="木材のみ（円）" />
+                  <ExpenseField v-model="site.expenses.garbageSiteYen"    label="混載（円）" />
+                </div>
+              </template>
+            </Field>
+
+            <!-- その他（資材等） -->
+            <Field label="その他（資材等）">
+              <select :value="siteUsage[si].other" class="select select--usage" @change="(e) => setUsage(si, 'other', (e.target as HTMLSelectElement).value)">
+                <option value="なし">なし</option>
+                <option value="あり">あり</option>
+              </select>
+              <template v-if="siteUsage[si].other === 'あり'">
+                <div v-for="(ot, oi) in site.expenses.others" :key="oi" class="lineitems-row mt6">
                   <input v-model="ot.label" type="text" class="input" placeholder="内容" />
                   <ExpenseField v-model="ot.yen" label="金額" />
                   <button v-if="site.expenses.others.length > 1" type="button" class="btn-icon-sm" @click="report.removeOther(si, oi)">✕</button>
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addOther(si)">＋ 追加</button>
-              </div>
+              </template>
+            </Field>
 
-              <!-- 接待費 -->
-              <div class="misc-section">
-                <span class="misc-label">🥂 接待費</span>
-                <div class="lineitems-row">
+            <!-- その他雑経費 -->
+            <Field label="その他雑経費">
+              <select :value="siteUsage[si].entertainment" class="select select--usage" @change="(e) => setUsage(si, 'entertainment', (e.target as HTMLSelectElement).value)">
+                <option value="なし">なし</option>
+                <option value="あり">あり</option>
+              </select>
+              <template v-if="siteUsage[si].entertainment === 'あり'">
+                <div class="lineitems-row mt6">
                   <input v-model="site.expenses.entertainmentLabel" type="text" class="input" placeholder="内容" />
                   <ExpenseField v-model="site.expenses.entertainmentYen" label="金額" />
                 </div>
-              </div>
-            </div>
-          </Field>
+              </template>
+            </Field>
+          </div>
 
-          <!-- 下請け業者 -->
-          <Field label="下請け業者">
-            <div v-for="(sub, si2) in site.subcontractors" :key="si2" class="row-worker">
-              <select v-model="sub.subcontractorName" class="select">
-                <option value="">業者選択</option>
-                <option v-for="name in master.subcontractorNames.value" :key="name" :value="name">{{ name }}</option>
-              </select>
-              <input v-model.number="sub.count" type="number" min="1" max="20" class="input select--days" placeholder="人数" />
-              <button v-if="site.subcontractors.length > 1" type="button" class="btn-icon-sm" @click="report.removeSub(si, si2)">✕</button>
-            </div>
-            <button type="button" class="btn-ghost-sm" @click="report.addSub(si)">＋ 業者を追加</button>
-          </Field>
         </FormSection>
 
         <!-- 現場追加 -->
-        <button type="button" class="btn-add-site" @click="report.addSite()">
+        <button type="button" class="btn-add-site" @click="addSite()">
           ＋ 現場を追加する
         </button>
 
@@ -237,7 +301,69 @@ const report = useReport()
 
 const initializing = ref(true)
 
-const DAY_OPTIONS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.25, 1.5]
+const HOUR_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8]
+
+// ── 各経費セクションの あり/なし 状態（サイトごと） ──
+type UsageState = {
+  vehicle:       string
+  train:         string
+  hotel:         string
+  leopalace:     string
+  garbage:       string
+  other:         string
+  entertainment: string
+}
+
+const createUsage = (): UsageState => ({
+  vehicle:       'なし',
+  train:         'なし',
+  hotel:         'なし',
+  leopalace:     'なし',
+  garbage:       'なし',
+  other:         'なし',
+  entertainment: 'なし',
+})
+
+const siteUsage = ref<UsageState[]>([createUsage()])
+
+// 「なし」に戻した時に対応する経費データをクリアする
+function setUsage(si: number, key: keyof UsageState, value: string) {
+  siteUsage.value[si][key] = value
+  if (value !== 'なし') return
+  const exp = report.form.value.sites[si].expenses
+  switch (key) {
+    case 'vehicle':
+      exp.vehicles = [createVehicle()]
+      break
+    case 'train':
+      exp.trains = [createLineItem()]
+      break
+    case 'hotel':
+      exp.hotelName = undefined; exp.hotelYen = undefined
+      break
+    case 'leopalace':
+      exp.leopalaceName = undefined; exp.leopalaceYen = undefined
+      break
+    case 'garbage':
+      exp.garbageFactoryYen = undefined; exp.garbageSiteYen = undefined
+      break
+    case 'other':
+      exp.others = [createLineItem()]
+      break
+    case 'entertainment':
+      exp.entertainmentLabel = undefined; exp.entertainmentYen = undefined
+      break
+  }
+}
+
+function addSite() {
+  report.addSite()
+  siteUsage.value.push(createUsage())
+}
+function removeSite(i: number) {
+  report.removeSite(i)
+  siteUsage.value.splice(i, 1)
+}
 
 onMounted(async () => {
   await liff.init()
@@ -247,6 +373,11 @@ onMounted(async () => {
 
 async function handleSubmit() {
   await report.submit()
+}
+
+function handleReset() {
+  report.reset()
+  siteUsage.value = [createUsage()]
 }
 </script>
 
@@ -351,14 +482,46 @@ html, body {
   background-position: right 14px center;
   padding-right: 38px;
 }
-.select--days { width: 90px; flex-shrink: 0; }
+.select--h     { width: 100%; }
+.select--usage { width: 90px; flex-shrink: 0; }
 .textarea { resize: vertical; }
 
-/* ── 作業員・下請け行 ── */
+/* ── サブセクション ── */
+.sub-section {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.sub-section-title {
+  font-size: 11px; font-weight: 800;
+  letter-spacing: 2px; text-transform: uppercase;
+  color: var(--text2); margin-bottom: 10px;
+}
+
+/* ── 下請け行 ── */
 .row-worker {
   display: flex; gap: 8px; margin-bottom: 8px; align-items: flex-end;
 }
-.worker-col { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+
+/* ── 作業員ブロック ── */
+.worker-block { margin-bottom: 12px; }
+.worker-name-row {
+  display: flex; gap: 6px; align-items: center; margin-top: 4px;
+}
+.worker-name-row .select { flex: 1; }
+.worker-hours-row {
+  display: flex; gap: 6px; margin-top: 6px; justify-content: flex-start;
+}
+
+/* ── 時間フィールド ── */
+.hours-field {
+  display: flex; flex-direction: column; gap: 3px;
+  width: 80px; flex-shrink: 0;
+}
+.hours-label {
+  font-size: 10px; color: var(--text2); font-weight: 600;
+  white-space: nowrap;
+}
 
 /* ── ロールトグル ── */
 .role-toggle {
@@ -376,13 +539,14 @@ html, body {
 /* ── 経費リスト ── */
 .expense-list { display: flex; flex-direction: column; gap: 12px; }
 .expense-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.mt8 { margin-top: 8px; }
+.mt6  { margin-top: 6px; }
+.mt8  { margin-top: 8px; }
 
 /* ── 車両ブロック ── */
 .vehicle-block {
   border: 1px solid var(--border); border-radius: 8px;
   padding: 12px; display: flex; flex-direction: column; gap: 8px;
-  background: var(--surface2);
+  background: var(--surface2); margin-top: 8px;
 }
 .vehicle-block-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -390,8 +554,6 @@ html, body {
 .vehicle-block-label { font-size: 12px; font-weight: 700; color: var(--text2); }
 
 /* ── その他共通経費 ── */
-.misc-section { display: flex; flex-direction: column; gap: 6px; }
-.misc-label { font-size: 12px; font-weight: 700; color: var(--text2); }
 .hotel-row { display: flex; flex-direction: column; gap: 6px; }
 .lineitems-row { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 6px; }
 .lineitems-row .input { flex: 1; }
@@ -477,6 +639,6 @@ html, body {
 /* ── レスポンシブ ── */
 @media (max-width: 380px) {
   .expense-grid { grid-template-columns: 1fr; }
-  .expense-inputs { grid-template-columns: 1fr; }
+  .worker-hours-row { flex-wrap: wrap; }
 }
 </style>

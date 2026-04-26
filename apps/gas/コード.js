@@ -238,9 +238,9 @@ function handleLiffReport(body) {
             return {
               name:        w.workerName,
               workerRole:  w.workerRole || 'site',
-              days:        Number(w.days)    || 1.0,
-              overtime125: 0,
-              overtime150: Number(w.overtime) > 0 ? Number(w.overtime) / 8 : 0,
+              days:        Number(w.hours)                || 0,
+              overtime125: Number(w.overtimeHours)        || 0,
+              overtime150: Number(w.holidayOvertimeHours) || 0,
             };
           }),
           expenses: buildExpenses(site),
@@ -314,8 +314,8 @@ function buildExpenses(site) {
   // レオパレス等
   if (exp.leopalaceYen) expenses.push({ type: 'leopalace', label: exp.leopalaceName || 'レオパレス等', amount: Number(exp.leopalaceYen) });
   // ゴミ
-  if (exp.garbageFactoryYen) expenses.push({ type: 'garbage_factory', label: 'ゴミ（工場）', amount: Number(exp.garbageFactoryYen) });
-  if (exp.garbageSiteYen)    expenses.push({ type: 'garbage_site',    label: 'ゴミ（現場）', amount: Number(exp.garbageSiteYen) });
+  if (exp.garbageFactoryYen) expenses.push({ type: 'garbage_factory', label: '木材のみ', amount: Number(exp.garbageFactoryYen) });
+  if (exp.garbageSiteYen)    expenses.push({ type: 'garbage_site',    label: '混載',    amount: Number(exp.garbageSiteYen) });
   // 電車（複数）
   (exp.trains || []).forEach(function(tr) {
     if (tr && tr.yen) expenses.push({ type: 'train', label: tr.label || '電車', amount: Number(tr.yen) });
@@ -325,7 +325,7 @@ function buildExpenses(site) {
     if (ot && ot.yen) expenses.push({ type: 'other', label: ot.label || 'その他', amount: Number(ot.yen) });
   });
   // 接待費
-  if (exp.entertainmentYen) expenses.push({ type: 'entertainment', label: exp.entertainmentLabel || '接待費', amount: Number(exp.entertainmentYen) });
+  if (exp.entertainmentYen) expenses.push({ type: 'entertainment', label: exp.entertainmentLabel || 'その他雑経費', amount: Number(exp.entertainmentYen) });
 
   // 下請け業者
   (site.subcontractors || []).forEach(function(sub) {
@@ -361,10 +361,20 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
       var factoryW = workers.filter(function(w) { return w.workerRole === 'factory'; });
       var siteW    = workers.filter(function(w) { return w.workerRole !== 'factory'; });
       if (factoryW.length > 0) {
-        lines.push('工場  ' + factoryW.map(function(w) { return w.workerName + ' ' + w.days + '日'; }).join(' / '));
+        lines.push('工場  ' + factoryW.map(function(w) {
+          var s = w.workerName + ' ' + (w.hours || w.days || 0) + 'h';
+          if (w.overtimeHours) s += '+残' + w.overtimeHours + 'h';
+          if (w.holidayOvertimeHours) s += '+休' + w.holidayOvertimeHours + 'h';
+          return s;
+        }).join(' / '));
       }
       if (siteW.length > 0) {
-        lines.push('現場  ' + siteW.map(function(w) { return w.workerName + ' ' + w.days + '日'; }).join(' / '));
+        lines.push('現場  ' + siteW.map(function(w) {
+          var s = w.workerName + ' ' + (w.hours || w.days || 0) + 'h';
+          if (w.overtimeHours) s += '+残' + w.overtimeHours + 'h';
+          if (w.holidayOvertimeHours) s += '+休' + w.holidayOvertimeHours + 'h';
+          return s;
+        }).join(' / '));
       }
 
       // 車両ごとの経費
@@ -391,8 +401,8 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
       }
 
       // ゴミ
-      if (exp.garbageFactoryYen) lines.push('ゴミ(工場)  ¥' + Number(exp.garbageFactoryYen).toLocaleString());
-      if (exp.garbageSiteYen)    lines.push('ゴミ(現場)  ¥' + Number(exp.garbageSiteYen).toLocaleString());
+      if (exp.garbageFactoryYen) lines.push('ゴミ 木材のみ  ¥' + Number(exp.garbageFactoryYen).toLocaleString());
+      if (exp.garbageSiteYen)    lines.push('ゴミ 混載  ¥' + Number(exp.garbageSiteYen).toLocaleString());
 
       // 電車（複数）
       (exp.trains || []).forEach(function(tr) {
@@ -404,9 +414,9 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
         if (ot && ot.yen) lines.push('その他' + (ot.label ? ' ' + ot.label : '') + '  ¥' + Number(ot.yen).toLocaleString());
       });
 
-      // 接待費
+      // その他雑経費
       if (exp.entertainmentYen) {
-        lines.push('接待費' + (exp.entertainmentLabel ? ' ' + exp.entertainmentLabel : '') + '  ¥' + Number(exp.entertainmentYen).toLocaleString());
+        lines.push('その他雑経費' + (exp.entertainmentLabel ? ' ' + exp.entertainmentLabel : '') + '  ¥' + Number(exp.entertainmentYen).toLocaleString());
       }
 
       // 外注

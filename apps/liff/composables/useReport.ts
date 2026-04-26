@@ -5,11 +5,12 @@
 import type { DailyReport, SiteReport, WorkerEntry, SubcontractorEntry, WorkerRole, VehicleExpense, LineItem } from '~/types'
 
 export const createWorker = (role: WorkerRole = 'site'): WorkerEntry => ({
-  workerId:   '',
-  workerName: '',
-  workerRole: role,
-  days:       1.0,
-  overtime:   0,
+  workerId:             '',
+  workerName:           '',
+  workerRole:           role,
+  hours:                8,
+  overtimeHours:        0,
+  holidayOvertimeHours: 0,
 })
 
 export const createSub = (): SubcontractorEntry => ({
