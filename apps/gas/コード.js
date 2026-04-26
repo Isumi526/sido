@@ -272,6 +272,11 @@ function handleLiffReport(body) {
       }
     });
 
+    // 提出者を記録（日報リマインド用）
+    if (body.senderId && successSites.length > 0) {
+      saveSubmitter(body.senderId, sender, date);
+    }
+
     // LINE通知（グループに送信）
     sendLiffReportNotification(sender, date, body.sites, successSites, failedSites, note);
 
@@ -2937,4 +2942,202 @@ function testAll() {
   Logger.log('\n========================================');
   Logger.log('  テスト完了！ログを確認してください');
   Logger.log('========================================');
+}
+
+
+// ============================================================
+//  日報リマインド通知
+//  毎朝8時にグループメンバーの中で前日の日報未提出者に通知する
+// ============================================================
+
+var SUBMITTER_KEY_PREFIX = 'submitters_';
+
+// リマインドから除外するアカウントの表示名（初回起動時にuserIdへ変換・保存される）
+var REMINDER_EXCLUDE_NAMES = [
+  'REMOVED_NAME',
+  '施工台帳AI',
+  'REMOVED_HANDLE',
+];
+var REMINDER_EXCLUDE_IDS_KEY = 'reminder_exclude_ids';
+
+/**
+ * 日報提出者のLINE userIdを日付ごとに記録する
+ * handleLiffReport から呼ばれる
+ * @param {string} userId   - LINE userId (body.senderId)
+ * @param {string} name     - 表示名 (body.sender)
+ * @param {string} date     - 日報の日付 YYYY-MM-DD
+ */
+function saveSubmitter(userId, name, date) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var key = SUBMITTER_KEY_PREFIX + date;
+    var raw = props.getProperty(key);
+    var list = raw ? JSON.parse(raw) : [];
+
+    // 同じuserIdが既に登録済みならスキップ
+    var exists = list.some(function(s) { return s.userId === userId; });
+    if (!exists) {
+      list.push({ userId: userId, name: name });
+      props.setProperty(key, JSON.stringify(list));
+    }
+  } catch (e) {
+    Logger.log('saveSubmitter error: ' + e);
+  }
+}
+
+/**
+ * 指定日の提出済みuserIdセットを返す
+ * @param {string} date - YYYY-MM-DD
+ * @returns {string[]} userIdの配列
+ */
+function getSubmitterIds(date) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var raw = props.getProperty(SUBMITTER_KEY_PREFIX + date);
+    var list = raw ? JSON.parse(raw) : [];
+    return list.map(function(s) { return s.userId; });
+  } catch (e) {
+    Logger.log('getSubmitterIds error: ' + e);
+    return [];
+  }
+}
+
+/**
+ * LINEグループのメンバー一覧を取得する
+ * @param {string} groupId
+ * @returns {{ userId: string, displayName: string }[]}
+ */
+function getGroupMembers(groupId) {
+  var members = [];
+  var nextToken = null;
+
+  do {
+    var url = 'https://api.line.me/v2/bot/group/' + groupId + '/members/all';
+    if (nextToken) url += '?start=' + encodeURIComponent(nextToken);
+
+    var res = UrlFetchApp.fetch(url, {
+      headers: { 'Authorization': 'Bearer ' + CONFIG.LINE_CHANNEL_ACCESS_TOKEN },
+      muteHttpExceptions: true,
+    });
+
+    if (res.getResponseCode() !== 200) {
+      Logger.log('getGroupMembers error: ' + res.getContentText());
+      break;
+    }
+
+    var data = JSON.parse(res.getContentText());
+    (data.members || []).forEach(function(m) {
+      members.push({ userId: m.userId, displayName: m.displayName });
+    });
+    nextToken = data.next || null;
+  } while (nextToken);
+
+  return members;
+}
+
+/**
+ * 除外アカウントのuserIdを返す。
+ * PropertiesServiceにキャッシュがあればそれを使用し、
+ * なければ members の displayName と REMINDER_EXCLUDE_NAMES を照合して保存する。
+ * @param {{ userId: string, displayName: string }[]} members
+ * @returns {string[]}
+ */
+function resolveExcludeIds(members) {
+  var props = PropertiesService.getScriptProperties();
+  var cached = props.getProperty(REMINDER_EXCLUDE_IDS_KEY);
+  if (cached) return JSON.parse(cached);
+
+  // 初回: 表示名で照合してuserIdを特定
+  var ids = members
+    .filter(function(m) { return REMINDER_EXCLUDE_NAMES.indexOf(m.displayName) !== -1; })
+    .map(function(m) { return m.userId; });
+
+  props.setProperty(REMINDER_EXCLUDE_IDS_KEY, JSON.stringify(ids));
+  Logger.log('resolveExcludeIds: 除外ID保存完了 ' + JSON.stringify(
+    members.filter(function(m) { return ids.indexOf(m.userId) !== -1; })
+           .map(function(m) { return m.displayName + '(' + m.userId + ')'; })
+  ));
+  return ids;
+}
+
+/**
+ * 毎朝8時に実行: 前日の日報未提出者をグループに通知する
+ * トリガー: setupDailyReminderTrigger() を1回実行して登録
+ */
+function sendDailyReminder() {
+  try {
+    // 日曜日は送信しない（0 = 日曜）
+    var today = new Date();
+    if (today.getDay() === 0) {
+      Logger.log('sendDailyReminder: 日曜日のためスキップ');
+      return;
+    }
+
+    var groupId = CONFIG.NOTIFY_GROUP_IDS[0];
+    if (!groupId) {
+      Logger.log('sendDailyReminder: NOTIFY_GROUP_IDS が未設定');
+      return;
+    }
+
+    // 昨日の日付
+    var yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    var yDate  = Utilities.formatDate(yesterday, 'Asia/Tokyo', 'yyyy-MM-dd');
+    var yLabel = Utilities.formatDate(yesterday, 'Asia/Tokyo', 'M月d日');
+
+    // グループメンバーと提出済みIDを取得
+    var members      = getGroupMembers(groupId);
+    var submittedIds = getSubmitterIds(yDate);
+
+    if (members.length === 0) {
+      Logger.log('sendDailyReminder: グループメンバーを取得できませんでした');
+      return;
+    }
+
+    // 除外IDを解決（初回は名前→ID変換して保存、以降はキャッシュ使用）
+    var excludeIds = resolveExcludeIds(members);
+
+    // 未提出かつ除外対象でないメンバーを抽出
+    var unsubmitted = members.filter(function(m) {
+      return submittedIds.indexOf(m.userId) === -1 &&
+             excludeIds.indexOf(m.userId)   === -1;
+    });
+
+    if (unsubmitted.length === 0) {
+      // 全員提出済みの場合は何もしない（通知不要）
+      Logger.log('sendDailyReminder: ' + yLabel + ' 全員提出済み');
+      return;
+    }
+
+    var names = unsubmitted.map(function(m) { return '・' + m.displayName; }).join('\n');
+    var msg =
+      '⚠️ 日報リマインド\n\n' +
+      yLabel + ' の日報がまだ届いていません：\n\n' +
+      names + '\n\n' +
+      '提出がまだの方はLIFFフォームから送信をお願いします🙏';
+
+    pushLineMessage(groupId, msg);
+    Logger.log('sendDailyReminder 送信完了: ' + unsubmitted.length + '名 (' + yLabel + ')');
+
+  } catch (e) {
+    Logger.log('sendDailyReminder error: ' + e);
+  }
+}
+
+/**
+ * 毎朝8時に sendDailyReminder を実行するトリガーを設定する
+ * GASエディタで setupDailyReminderTrigger() を1回実行するだけでOK
+ */
+function setupDailyReminderTrigger() {
+  // 既存の同名トリガーを削除
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === 'sendDailyReminder') ScriptApp.deleteTrigger(t);
+  });
+  // 毎日8時に実行
+  ScriptApp.newTrigger('sendDailyReminder')
+    .timeBased()
+    .everyDays(1)
+    .atHour(8)
+    .create();
+  Logger.log('✅ 日報リマインドトリガー設定完了（毎日8時）');
 }
