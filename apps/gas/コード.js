@@ -3066,6 +3066,13 @@ function resolveExcludeIds(members) {
  */
 function sendDailyReminder() {
   try {
+    // 停止フラグチェック
+    var props = PropertiesService.getScriptProperties();
+    if (props.getProperty('reminder_paused') === 'true') {
+      Logger.log('sendDailyReminder: 停止中のためスキップ');
+      return;
+    }
+
     // 日曜日は送信しない（0 = 日曜）
     var today = new Date();
     if (today.getDay() === 0) {
@@ -3122,6 +3129,18 @@ function sendDailyReminder() {
   } catch (e) {
     Logger.log('sendDailyReminder error: ' + e);
   }
+}
+
+/** リマインドを一時停止する */
+function pauseDailyReminder() {
+  PropertiesService.getScriptProperties().setProperty('reminder_paused', 'true');
+  Logger.log('⏸ 日報リマインド: 停止しました');
+}
+
+/** リマインドを再開する */
+function resumeDailyReminder() {
+  PropertiesService.getScriptProperties().setProperty('reminder_paused', 'false');
+  Logger.log('▶️ 日報リマインド: 再開しました');
 }
 
 /**
