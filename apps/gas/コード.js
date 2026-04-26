@@ -235,12 +235,28 @@ function handleLiffReport(body) {
           siteName: site.siteName,
           reporter: '',  // LIFFからの送信は担当者行に書かない（送信者はLINE通知で確認）
           entries:  (site.workers || []).map(function(w) {
+            var sundayH   = Number(w.hoursSunday        || 0);
+            var sundayOT  = Number(w.hoursSundayOT      || 0);
+            var sundayNi  = Number(w.hoursSundayNight   || 0);
+            var sundayOTN = Number(w.hoursSundayOTNight || 0);
+            var isSundayW = sundayH + sundayOT + sundayNi + sundayOTN > 0;
+            // スプシ列マッピング（日曜割増は近似値 / NOTEに詳細を記録）
+            var noteStr = '';
+            if (isSundayW) {
+              var parts = [];
+              if (sundayH   > 0) parts.push('法定休日' + sundayH + 'h(×1.35)');
+              if (sundayOT  > 0) parts.push('法定休日+残業' + sundayOT + 'h(×1.60)');
+              if (sundayNi  > 0) parts.push('法定休日+深夜' + sundayNi + 'h(×1.60)');
+              if (sundayOTN > 0) parts.push('法定休日+残業+深夜' + sundayOTN + 'h(×1.85)');
+              noteStr = parts.join(' ');
+            }
             return {
               name:        w.workerName,
               workerRole:  w.workerRole || 'site',
-              days:        Number(w.hours)                || 0,
-              overtime125: Number(w.overtimeHours)        || 0,
-              overtime150: Number(w.holidayOvertimeHours) || 0,
+              days:        Number(w.hoursNormal || 0) + sundayH + sundayOT + sundayNi + sundayOTN,
+              overtime125: Number(w.hoursOT    || 0) + Number(w.hoursNight || 0),
+              overtime150: Number(w.hoursOTNight || 0),
+              note:        noteStr,
             };
           }),
           expenses: buildExpenses(site),
@@ -356,31 +372,31 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
       lines.push('');
       lines.push('■ ' + site.siteName);
 
-      // 作業員（工場/現場別）
+      // 作業員（フォームの順番通り）
       var workers = (site.workers || []).filter(function(w) { return w.workerName; });
-      var factoryW = workers.filter(function(w) { return w.workerRole === 'factory'; });
-      var siteW    = workers.filter(function(w) { return w.workerRole !== 'factory'; });
-      if (factoryW.length > 0) {
-        lines.push('工場  ' + factoryW.map(function(w) {
-          var s = w.workerName + ' ' + (w.hours || w.days || 0) + 'h';
-          if (w.overtimeHours) s += '+残' + w.overtimeHours + 'h';
-          if (w.holidayOvertimeHours) s += '+休' + w.holidayOvertimeHours + 'h';
-          return s;
-        }).join(' / '));
-      }
-      if (siteW.length > 0) {
-        lines.push('現場  ' + siteW.map(function(w) {
-          var s = w.workerName + ' ' + (w.hours || w.days || 0) + 'h';
-          if (w.overtimeHours) s += '+残' + w.overtimeHours + 'h';
-          if (w.holidayOvertimeHours) s += '+休' + w.holidayOvertimeHours + 'h';
-          return s;
-        }).join(' / '));
+      workers.forEach(function(w) {
+        var parts = [];
+        if (w.hoursNormal        > 0) parts.push(w.hoursNormal + 'h');
+        if (w.hoursOT            > 0) parts.push('残業' + w.hoursOT + 'h(×1.25)');
+        if (w.hoursNight         > 0) parts.push('深夜' + w.hoursNight + 'h(×1.25)');
+        if (w.hoursOTNight       > 0) parts.push('残業+深夜' + w.hoursOTNight + 'h(×1.5)');
+        if (w.hoursSunday        > 0) parts.push('法定休日' + w.hoursSunday + 'h(×1.35)');
+        if (w.hoursSundayOT      > 0) parts.push('法定休日+残業' + w.hoursSundayOT + 'h(×1.6)');
+        if (w.hoursSundayNight   > 0) parts.push('法定休日+深夜' + w.hoursSundayNight + 'h(×1.6)');
+        if (w.hoursSundayOTNight > 0) parts.push('法定休日+残業+深夜' + w.hoursSundayOTNight + 'h(×1.85)');
+        lines.push(w.workerName + '  ' + (parts.join(' / ') || '-'));
+      });
+
+      // 下請け業者
+      var subs = (site.subcontractors || []).filter(function(s) { return s.subcontractorName; });
+      if (subs.length > 0) {
+        lines.push('外注  ' + subs.map(function(s) { return s.subcontractorName + ' ' + s.count + '人'; }).join(' / '));
       }
 
-      // 車両ごとの経費
       var exp = site.expenses || {};
-      var vehicles = exp.vehicles || [];
-      vehicles.forEach(function(veh) {
+
+      // 車両
+      (exp.vehicles || []).forEach(function(veh) {
         if (!veh) return;
         var hasData = veh.vehicleName || veh.distanceKm || veh.dieselKm || veh.parkingYen || veh.highwayYen;
         if (!hasData) return;
@@ -392,10 +408,17 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
         lines.push((veh.vehicleName || '車両') + '  ' + parts.join(' / '));
       });
 
-      // 宿泊
+      // 電車
+      (exp.trains || []).forEach(function(tr) {
+        if (tr && tr.yen) lines.push('電車' + (tr.label ? ' ' + tr.label : '') + '  ¥' + Number(tr.yen).toLocaleString());
+      });
+
+      // ホテル
       if (exp.hotelYen) {
         lines.push('ホテル' + (exp.hotelName ? '(' + exp.hotelName + ')' : '') + '  ¥' + Number(exp.hotelYen).toLocaleString());
       }
+
+      // レオパレス
       if (exp.leopalaceYen) {
         lines.push('レオパレス等' + (exp.leopalaceName ? '(' + exp.leopalaceName + ')' : '') + '  ¥' + Number(exp.leopalaceYen).toLocaleString());
       }
@@ -404,12 +427,7 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
       if (exp.garbageFactoryYen) lines.push('ゴミ 木材のみ  ¥' + Number(exp.garbageFactoryYen).toLocaleString());
       if (exp.garbageSiteYen)    lines.push('ゴミ 混載  ¥' + Number(exp.garbageSiteYen).toLocaleString());
 
-      // 電車（複数）
-      (exp.trains || []).forEach(function(tr) {
-        if (tr && tr.yen) lines.push('電車' + (tr.label ? ' ' + tr.label : '') + '  ¥' + Number(tr.yen).toLocaleString());
-      });
-
-      // その他（複数）
+      // その他
       (exp.others || []).forEach(function(ot) {
         if (ot && ot.yen) lines.push('その他' + (ot.label ? ' ' + ot.label : '') + '  ¥' + Number(ot.yen).toLocaleString());
       });
@@ -417,12 +435,6 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
       // その他雑経費
       if (exp.entertainmentYen) {
         lines.push('その他雑経費' + (exp.entertainmentLabel ? ' ' + exp.entertainmentLabel : '') + '  ¥' + Number(exp.entertainmentYen).toLocaleString());
-      }
-
-      // 外注
-      var subs = (site.subcontractors || []).filter(function(s) { return s.subcontractorName; });
-      if (subs.length > 0) {
-        lines.push('外注  ' + subs.map(function(s) { return s.subcontractorName + ' ' + s.count + '人'; }).join(' / '));
       }
     });
 

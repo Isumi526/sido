@@ -3,14 +3,23 @@
 //  日報フォームの状態管理と送信処理
 // ============================================================
 import type { DailyReport, SiteReport, WorkerEntry, SubcontractorEntry, WorkerRole, VehicleExpense, LineItem } from '~/types'
+import { computeWorkerHours } from '~/utils/workerHours'
 
 export const createWorker = (role: WorkerRole = 'site'): WorkerEntry => ({
-  workerId:             '',
-  workerName:           '',
-  workerRole:           role,
-  hours:                8,
-  overtimeHours:        0,
-  holidayOvertimeHours: 0,
+  workerId:     '',
+  workerName:   '',
+  workerRole:   role,
+  startTime:    '08:00',
+  endTime:      '17:00',
+  breakMinutes: 60,
+  hoursNormal:        8,
+  hoursOT:            0,
+  hoursNight:         0,
+  hoursOTNight:       0,
+  hoursSunday:        0,
+  hoursSundayOT:      0,
+  hoursSundayNight:   0,
+  hoursSundayOTNight: 0,
 })
 
 export const createSub = (): SubcontractorEntry => ({
@@ -89,19 +98,26 @@ export const useReport = () => {
     form.value.sender   = profile.value?.displayName || 'unknown'
     form.value.senderId = profile.value?.userId       || 'unknown'
 
-    // 空の作業員・下請けを除去
+    // 送信日が日曜か判定
+    const isSunday = new Date(form.value.date + 'T00:00:00').getDay() === 0
+
+    // 空の作業員・下請けを除去 & 料率別時間を計算してセット
     const payload: DailyReport = {
       ...form.value,
       sites: form.value.sites.map(site => ({
         ...site,
-        workers:        site.workers.filter(w => w.workerName),
+        workers: site.workers
+          .filter(w => w.workerName)
+          .map(w => {
+            const r = computeWorkerHours(w.startTime, w.endTime, w.breakMinutes, isSunday)
+            return { ...w, ...r }
+          }),
         subcontractors: site.subcontractors.filter(s => s.subcontractorName),
       })),
     }
 
     try {
       if (!config.public.gasUrl || config.public.appEnv === 'development') {
-        // 開発モード: コンソールに出力するだけ
         console.log('[Report] 送信ペイロード:', JSON.stringify(payload, null, 2))
         await new Promise(r => setTimeout(r, 800))
       } else {

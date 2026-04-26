@@ -43,5 +43,5 @@ defineProps<{
   border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
   padding: 2px 7px; border-radius: 4px;
 }
-.section-body { padding: 14px 18px 18px; display: flex; flex-direction: column; gap: 14px; }
+.section-body { padding: 16px 18px 20px; display: flex; flex-direction: column; gap: 16px; }
 </style>

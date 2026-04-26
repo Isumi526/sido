@@ -6,12 +6,21 @@
 export type WorkerRole = 'factory' | 'site'
 
 export interface WorkerEntry {
-  workerId: string
-  workerName: string
-  workerRole: WorkerRole
-  hours: number                // 稼働時間 (1-8h)
-  overtimeHours: number        // 残業時間 (1.25x)
-  holidayOvertimeHours: number // 休日残業時間 (1.5x)
+  workerId:     string
+  workerName:   string
+  workerRole:   WorkerRole
+  startTime:    string   // "08:00"
+  endTime:      string   // "17:00"
+  breakMinutes: number   // 休憩時間（分）
+  // 料率別稼働時間（送信前に自動計算）
+  hoursNormal:        number  // 1.00  通常
+  hoursOT:            number  // 1.25  残業
+  hoursNight:         number  // 1.25  深夜
+  hoursOTNight:       number  // 1.50  残業+深夜
+  hoursSunday:        number  // 1.35  法定休日
+  hoursSundayOT:      number  // 1.60  法定休日+残業
+  hoursSundayNight:   number  // 1.60  法定休日+深夜
+  hoursSundayOTNight: number  // 1.85  法定休日+残業+深夜
 }
 
 export interface SubcontractorEntry {

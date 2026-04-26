@@ -94,21 +94,48 @@
                   </select>
                   <button v-if="site.workers.length > 1" type="button" class="btn-icon-sm" @click="report.removeWorker(si, wi)">✕</button>
                 </div>
-                <div class="worker-hours-row">
-                  <div class="hours-field">
-                    <label class="hours-label">稼働(h)</label>
-                    <select v-model.number="w.hours" class="select select--h" required>
-                      <option v-for="h in HOUR_OPTIONS" :key="h" :value="h">{{ h }}</option>
-                    </select>
+                <!-- 時刻・休憩 -->
+                <div class="worker-time-rows">
+                  <!-- 開始〜終了 -->
+                  <div class="worker-time-row">
+                    <div class="time-field">
+                      <label class="hours-label">開始</label>
+                      <select v-model="w.startTime" class="select">
+                        <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
+                      </select>
+                    </div>
+                    <span class="time-sep">〜</span>
+                    <div class="time-field">
+                      <label class="hours-label">終了</label>
+                      <select v-model="w.endTime" class="select">
+                        <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
+                      </select>
+                    </div>
                   </div>
-                  <div class="hours-field">
-                    <label class="hours-label">残業(h)</label>
-                    <input v-model.number="w.overtimeHours" type="number" min="0" max="24" step="0.5" class="input select--h" placeholder="0" />
+                  <!-- 休憩 -->
+                  <div class="worker-break-row">
+                    <div class="time-field">
+                      <label class="hours-label">休憩</label>
+                      <select v-model.number="w.breakMinutes" class="select">
+                        <option v-for="b in BREAK_OPTIONS" :key="b" :value="b">{{ b === 0 ? 'なし' : b + '分' }}</option>
+                      </select>
+                    </div>
                   </div>
-                  <div class="hours-field">
-                    <label class="hours-label">休日残業(h)</label>
-                    <input v-model.number="w.holidayOvertimeHours" type="number" min="0" max="24" step="0.5" class="input select--h" placeholder="0" />
-                  </div>
+                </div>
+                <!-- 料率プレビュー -->
+                <div class="rate-preview">
+                  <template v-if="getRateLines(computeWorkerHours(w.startTime, w.endTime, w.breakMinutes, isSunday)).length">
+                    <div
+                      v-for="line in getRateLines(computeWorkerHours(w.startTime, w.endTime, w.breakMinutes, isSunday))"
+                      :key="line.label"
+                      class="rate-line"
+                    >
+                      <span class="rate-label" :style="{ color: line.color }">{{ line.label }}</span>
+                      <span class="rate-hours">{{ line.hours }}h</span>
+                      <span class="rate-rate" :style="{ color: line.color }">{{ line.rate }}</span>
+                    </div>
+                  </template>
+                  <span v-else class="rate-empty">—</span>
                 </div>
               </div>
               <button type="button" class="btn-ghost-sm" @click="report.addWorker(si)">＋ 作業員を追加</button>
@@ -295,13 +322,18 @@
 </template>
 
 <script setup lang="ts">
+import { computeWorkerHours, getRateLines, TIME_OPTIONS, BREAK_OPTIONS } from '~/utils/workerHours'
+
 const liff   = useLiff()
 const master = useMaster()
 const report = useReport()
 
 const initializing = ref(true)
 
-const HOUR_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8]
+// 送信日が日曜かどうか（料率計算に使用）
+const isSunday = computed(() =>
+  new Date(report.form.value.date + 'T00:00:00').getDay() === 0
+)
 
 // ── 各経費セクションの あり/なし 状態（サイトごと） ──
 type UsageState = {
@@ -368,6 +400,14 @@ function removeSite(i: number) {
 onMounted(async () => {
   await liff.init()
   await master.fetch()
+  // startTime/endTime が未設定のワーカーにデフォルト値を補完
+  report.form.value.sites.forEach(site => {
+    site.workers.forEach(w => {
+      if (!w.startTime)    w.startTime    = '08:00'
+      if (!w.endTime)      w.endTime      = '17:00'
+      if (w.breakMinutes == null) w.breakMinutes = 60
+    })
+  })
   initializing.value = false
 })
 
@@ -462,7 +502,7 @@ html, body {
 .state-text  { font-size: 14px; color: var(--text2); }
 
 /* ── フォーム ── */
-.form { display: flex; flex-direction: column; gap: 10px; }
+.form { display: flex; flex-direction: column; gap: 14px; }
 
 /* ── 入力要素 ── */
 .input, .select, .textarea {
@@ -488,14 +528,15 @@ html, body {
 
 /* ── サブセクション ── */
 .sub-section {
-  margin-top: 16px;
-  padding-top: 14px;
+  margin-top: 6px;
+  padding-top: 16px;
   border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 16px;
 }
 .sub-section-title {
   font-size: 11px; font-weight: 800;
   letter-spacing: 2px; text-transform: uppercase;
-  color: var(--text2); margin-bottom: 10px;
+  color: var(--text2); margin-bottom: -6px;
 }
 
 /* ── 下請け行 ── */
@@ -504,20 +545,43 @@ html, body {
 }
 
 /* ── 作業員ブロック ── */
-.worker-block { margin-bottom: 12px; }
+.worker-block { margin-bottom: 14px; }
 .worker-name-row {
   display: flex; gap: 6px; align-items: center; margin-top: 4px;
 }
 .worker-name-row .select { flex: 1; }
-.worker-hours-row {
-  display: flex; gap: 6px; margin-top: 6px; justify-content: flex-start;
+
+/* ── 時刻・休憩行 ── */
+.worker-time-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.worker-time-row  { display: flex; gap: 6px; align-items: flex-end; }
+.worker-time-row .time-field { flex: 1; }
+.worker-break-row .time-field { width: 140px; }
+.time-field {
+  display: flex; flex-direction: column; gap: 3px;
+}
+.time-sep {
+  font-size: 16px; color: var(--text2); padding-bottom: 11px; flex-shrink: 0;
 }
 
-/* ── 時間フィールド ── */
-.hours-field {
-  display: flex; flex-direction: column; gap: 3px;
-  width: 80px; flex-shrink: 0;
+/* ── 料率プレビュー ── */
+.rate-preview {
+  margin-top: 6px;
+  background: #f8f9fa;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 4px 10px;
+  align-items: center;
 }
+.rate-line   { display: contents; }
+.rate-label  { white-space: nowrap; font-size: 11px; font-weight: 700; }
+.rate-hours  { text-align: right; font-size: 14px; font-weight: 800; color: var(--text); }
+.rate-rate   { font-size: 11px; font-weight: 600; }
+.rate-empty  { font-size: 12px; color: var(--text2); grid-column: 1 / -1; }
+
+/* ── 共通: 小ラベル ── */
 .hours-label {
   font-size: 10px; color: var(--text2); font-weight: 600;
   white-space: nowrap;
