@@ -10,7 +10,7 @@ export interface WorkerEntry {
   workerName:   string
   workerRole:   WorkerRole
   startTime:    string   // "08:00"
-  endTime:      string   // "17:00"
+  endTime:      string   // "17:30"
   breakMinutes: number   // 休憩時間（分）
   // 料率別稼働時間（送信前に自動計算）
   hoursNormal:        number  // 1.00  通常

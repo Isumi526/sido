@@ -60,7 +60,7 @@ function getBreakWindows(
   endTime: string,
 ): BreakWindow[] {
   const startMin = parseMin(startTime || '08:00')
-  let   endMin   = parseMin(endTime   || '17:00')
+  let   endMin   = parseMin(endTime   || '17:30')
   if (endMin <= startMin) endMin += 1440
 
   const isNight = startMin >= 18 * 60  // 18:00以降スタート = 夜勤
@@ -118,15 +118,16 @@ export function computeWorkerHours(
   }
 
   let startMin = parseMin(startTime || '08:00')
-  let endMin   = parseMin(endTime   || '17:00')
+  let endMin   = parseMin(endTime   || '17:30')
   if (endMin <= startMin) endMin += 1440
 
   const totalMin = endMin - startMin
   if (totalMin <= 0 || breakMinutes >= totalMin) return zero
 
   // ブレーク配置: シフト開始4h後（最大 totalMin - breakMin で詰める）
+  // 15分刻みでスナップ（15分休憩にも対応）
   const breakOffset   = Math.min(240, totalMin - breakMinutes)
-  const breakStartMin = startMin + Math.round(breakOffset / 30) * 30
+  const breakStartMin = startMin + Math.round(breakOffset / 15) * 15
   const breakEndMin   = breakStartMin + breakMinutes
 
   const OT = 480  // 8h = 480min
@@ -135,24 +136,24 @@ export function computeWorkerHours(
   let hoursNormal = 0, hoursOT = 0, hoursNight = 0, hoursOTNight = 0
   let hoursSunday = 0, hoursSundayOT = 0, hoursSundayNight = 0, hoursSundayOTNight = 0
 
-  for (let t = startMin; t < endMin; t += 30) {
+  for (let t = startMin; t < endMin; t += 15) {
     if (t >= breakStartMin && t < breakEndMin) continue  // 休憩スキップ
 
     const dn = isDeepNight(t)
     const ot = workedMin >= OT
 
     if (isSunday) {
-      if      (dn && ot) hoursSundayOTNight += 0.5  // 1.85
-      else if (ot)       hoursSundayOT      += 0.5  // 1.60
-      else if (dn)       hoursSundayNight   += 0.5  // 1.60
-      else               hoursSunday        += 0.5  // 1.35
+      if      (dn && ot) hoursSundayOTNight += 0.25  // 1.85
+      else if (ot)       hoursSundayOT      += 0.25  // 1.60
+      else if (dn)       hoursSundayNight   += 0.25  // 1.60
+      else               hoursSunday        += 0.25  // 1.35
     } else {
-      if      (dn && ot) hoursOTNight += 0.5  // 1.50
-      else if (ot)       hoursOT      += 0.5  // 1.25
-      else if (dn)       hoursNight   += 0.5  // 1.25
-      else               hoursNormal  += 0.5  // 1.00
+      if      (dn && ot) hoursOTNight += 0.25  // 1.50
+      else if (ot)       hoursOT      += 0.25  // 1.25
+      else if (dn)       hoursNight   += 0.25  // 1.25
+      else               hoursNormal  += 0.25  // 1.00
     }
-    workedMin += 30
+    workedMin += 15
   }
 
   return { hoursNormal, hoursOT, hoursNight, hoursOTNight,

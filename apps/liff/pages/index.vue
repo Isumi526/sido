@@ -404,7 +404,7 @@ onMounted(async () => {
   report.form.value.sites.forEach(site => {
     site.workers.forEach(w => {
       if (!w.startTime)    w.startTime    = '08:00'
-      if (!w.endTime)      w.endTime      = '17:00'
+      if (!w.endTime)      w.endTime      = '17:30'
       w.breakMinutes = calcBreakMinutes(w.workerRole, w.startTime, w.endTime)
     })
   })
