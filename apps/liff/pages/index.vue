@@ -112,21 +112,21 @@
                       </select>
                     </div>
                   </div>
-                  <!-- 休憩 -->
+                  <!-- 休憩（自動計算） -->
                   <div class="worker-break-row">
                     <div class="time-field">
                       <label class="hours-label">休憩</label>
-                      <select v-model.number="w.breakMinutes" class="select">
-                        <option v-for="b in BREAK_OPTIONS" :key="b" :value="b">{{ b === 0 ? 'なし' : b + '分' }}</option>
-                      </select>
+                      <span class="break-auto">
+                        {{ calcBreakMinutes(w.workerRole, w.startTime, w.endTime) === 0 ? 'なし' : calcBreakMinutes(w.workerRole, w.startTime, w.endTime) + '分（自動）' }}
+                      </span>
                     </div>
                   </div>
                 </div>
                 <!-- 料率プレビュー -->
                 <div class="rate-preview">
-                  <template v-if="getRateLines(computeWorkerHours(w.startTime, w.endTime, w.breakMinutes, isSunday)).length">
+                  <template v-if="getRateLines(computeWorkerHours(w.startTime, w.endTime, calcBreakMinutes(w.workerRole, w.startTime, w.endTime), isSunday)).length">
                     <div
-                      v-for="line in getRateLines(computeWorkerHours(w.startTime, w.endTime, w.breakMinutes, isSunday))"
+                      v-for="line in getRateLines(computeWorkerHours(w.startTime, w.endTime, calcBreakMinutes(w.workerRole, w.startTime, w.endTime), isSunday))"
                       :key="line.label"
                       class="rate-line"
                     >
@@ -322,7 +322,7 @@
 </template>
 
 <script setup lang="ts">
-import { computeWorkerHours, getRateLines, TIME_OPTIONS, BREAK_OPTIONS } from '~/utils/workerHours'
+import { computeWorkerHours, getRateLines, calcBreakMinutes, TIME_OPTIONS } from '~/utils/workerHours'
 
 const liff   = useLiff()
 const master = useMaster()
@@ -405,7 +405,7 @@ onMounted(async () => {
     site.workers.forEach(w => {
       if (!w.startTime)    w.startTime    = '08:00'
       if (!w.endTime)      w.endTime      = '17:00'
-      if (w.breakMinutes == null) w.breakMinutes = 60
+      w.breakMinutes = calcBreakMinutes(w.workerRole, w.startTime, w.endTime)
     })
   })
   initializing.value = false

@@ -1,0 +1,15 @@
+services:
+  liff:
+    build:
+      context: .
+      dockerfile: apps/liff/Dockerfile
+    ports:
+      - "3000:3000"
+    env_file:
+      - apps/liff/.env.local
+    volumes:
+      # ホットリロードのためにソースをマウント（node_modules は除外）
+      - ./apps/liff:/app/apps/liff
+      - ./packages:/app/packages
+      - /app/apps/liff/node_modules
+      - /app/node_modules

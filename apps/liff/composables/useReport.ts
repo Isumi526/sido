@@ -3,7 +3,7 @@
 //  日報フォームの状態管理と送信処理
 // ============================================================
 import type { DailyReport, SiteReport, WorkerEntry, SubcontractorEntry, WorkerRole, VehicleExpense, LineItem } from '~/types'
-import { computeWorkerHours } from '~/utils/workerHours'
+import { computeWorkerHours, calcBreakMinutes } from '~/utils/workerHours'
 
 export const createWorker = (role: WorkerRole = 'site'): WorkerEntry => ({
   workerId:     '',
@@ -11,7 +11,7 @@ export const createWorker = (role: WorkerRole = 'site'): WorkerEntry => ({
   workerRole:   role,
   startTime:    '08:00',
   endTime:      '17:00',
-  breakMinutes: 60,
+  breakMinutes: calcBreakMinutes(role, '08:00', '17:00'),
   hoursNormal:        8,
   hoursOT:            0,
   hoursNight:         0,
@@ -109,7 +109,7 @@ export const useReport = () => {
         workers: site.workers
           .filter(w => w.workerName)
           .map(w => {
-            const r = computeWorkerHours(w.startTime, w.endTime, w.breakMinutes, isSunday)
+            const r = computeWorkerHours(w.startTime, w.endTime, calcBreakMinutes(w.workerRole, w.startTime, w.endTime), isSunday)
             return { ...w, ...r }
           }),
         subcontractors: site.subcontractors.filter(s => s.subcontractorName),

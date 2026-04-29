@@ -47,6 +47,65 @@ function isDeepNight(minuteOfDay: number): boolean {
   return m >= 1320 || m < 300
 }
 
+/** 休憩ウィンドウ（分単位、日跨ぎ補正済み） */
+interface BreakWindow { start: number; end: number }
+
+/**
+ * 勤務時間帯に含まれる休憩ウィンドウを返す
+ * 判定: startMin < breakTime < endMin（厳密不等号）
+ */
+function getBreakWindows(
+  workerRole: 'factory' | 'site',
+  startTime: string,
+  endTime: string,
+): BreakWindow[] {
+  const startMin = parseMin(startTime || '08:00')
+  let   endMin   = parseMin(endTime   || '17:00')
+  if (endMin <= startMin) endMin += 1440
+
+  const isNight = startMin >= 18 * 60  // 18:00以降スタート = 夜勤
+
+  const windows: BreakWindow[] = []
+
+  const addBreak = (breakHour: number, durationMin: number) => {
+    let bt = breakHour * 60
+    // 日跨ぎ: breakTime がシフト開始以前なら翌日扱い
+    if (bt <= startMin) bt += 1440
+    if (startMin < bt && bt < endMin)
+      windows.push({ start: bt, end: bt + durationMin })
+  }
+
+  if (!isNight) {
+    // 昼勤: 10時・昼・15時
+    const small = workerRole === 'factory' ? 15 : 30
+    addBreak(10, small)  // 10時休憩
+    addBreak(12, 60)     // 昼休憩
+    addBreak(15, small)  // 15時休憩
+  } else {
+    // 夜勤: 22時・AM1時・AM3時（各30分）
+    addBreak(22, 30)
+    addBreak(1,  30)
+    addBreak(3,  30)
+  }
+
+  return windows
+}
+
+/**
+ * 勤務時間帯に応じた休憩時間（分）を自動計算する
+ * @param workerRole - 'factory'（工場）or 'site'（現場）
+ * @param startTime  - 開始時刻 "HH:MM"
+ * @param endTime    - 終了時刻 "HH:MM"
+ */
+export function calcBreakMinutes(
+  workerRole: 'factory' | 'site',
+  startTime: string,
+  endTime: string,
+): number {
+  return getBreakWindows(workerRole, startTime, endTime)
+    .reduce((sum, w) => sum + (w.end - w.start), 0)
+}
+
 export function computeWorkerHours(
   startTime:    string,
   endTime:      string,

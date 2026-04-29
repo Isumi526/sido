@@ -1,0 +1,8 @@
+node_modules
+apps/liff/node_modules
+apps/liff/.nuxt
+apps/liff/.output
+apps/liff/dist
+apps/gas
+.git
+*.log
