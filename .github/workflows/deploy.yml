@@ -5,15 +5,15 @@ on:
     branches:
       - main
       - develop
+    paths:
+      - 'apps/gas/**'
+      - 'apps/liff/**'
 
 jobs:
   # ── GAS デプロイ ──────────────────────────────────────────────
   deploy-gas:
     name: Deploy GAS (${{ github.ref_name }})
     runs-on: ubuntu-latest
-    if: |
-      contains(github.event.commits[0].modified, 'apps/gas') ||
-      contains(github.event.commits[0].added, 'apps/gas')
     steps:
       - uses: actions/checkout@v4
 
@@ -46,7 +46,6 @@ jobs:
     name: Deploy Vercel (production)
     runs-on: ubuntu-latest
     if: github.ref_name == 'main'
-    needs: []
     steps:
       - uses: actions/checkout@v4
 
