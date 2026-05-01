@@ -428,17 +428,10 @@ function handleReset() {
 function fillTestData() {
   report.reset()
   siteUsage.value = [createUsage()]
-
-  const site = report.form.value.sites[0]
+  addSite() // sites[1] を追加 & siteUsage にも push
 
   report.form.value.note = 'テスト送信'
 
-  // 現場名
-  site.siteName = master.siteNames.value[0] || 'BLH名古屋'
-
-  // 作業員（時刻ベース: 日付が日曜なら自動で休日料率に切り替わる）
-  // 平日: 今井=1.00, 伊藤=1.00+1.25, アリフ=1.00+1.25+1.50
-  // 日曜: 今井=1.35, 伊藤=1.35+1.60, アリフ=1.35+1.60+1.75
   const mw = (name: string, role: 'factory' | 'site', startTime: string, endTime: string, breakMinutes: number) => ({
     workerId: '', workerName: name, workerRole: role,
     startTime, endTime, breakMinutes,
@@ -446,51 +439,44 @@ function fillTestData() {
     hoursSunday: 0, hoursSundayOT: 0, hoursSundayNight: 0, hoursSundayOTNight: 0,
   } as WorkerEntry)
 
-  site.workers = [
-    mw('今井',  'factory', '08:00', '17:30', 90),   // 8h standard
-    mw('伊藤',  'factory', '08:00', '20:00', 90),   // 8h + 2.5h OT
-    mw('アリフ', 'site',   '08:00', '23:30', 120),  // 8h + 4h OT + 1.5h OT+深夜
+  // ── 現場1 ──
+  const site0 = report.form.value.sites[0]
+  site0.siteName = master.siteNames.value[0] || 'BLH名古屋'
+  site0.workers = [
+    mw('今井',  'factory', '08:00', '17:30', 90),
+    mw('伊藤',  'factory', '08:00', '20:00', 90),
+    mw('アリフ', 'site',   '08:00', '23:30', 120),
   ]
-
-  // 下請け業者
-  site.subcontractors = [
+  site0.subcontractors = [
     { subcontractorId: '', subcontractorName: master.subcontractorNames.value[0] || 'VendorA', count: 2 },
   ]
-
-  // 経費: 車両
   siteUsage.value[0].vehicle = 'あり'
-  site.expenses.vehicles = [
+  site0.expenses.vehicles = [
     { vehicleName: 'ハイエース', distanceKm: 80, dieselKm: undefined, parkingYen: 500, highwayYen: 1200 },
+  ]
+  siteUsage.value[0].train = 'あり'
+  site0.expenses.trains = [{ label: '名古屋→大阪', yen: 3000 }]
+  siteUsage.value[0].hotel = 'あり'
+  site0.expenses.hotelName = 'アパホテル名古屋'
+  site0.expenses.hotelYen  = 8000
+
+  // ── 現場2 ──
+  const site1 = report.form.value.sites[1]
+  site1.siteName = master.siteNames.value[1] || 'ギフト桜ステージ'
+  site1.workers = [
+    mw('今井',  'factory', '08:00', '17:30', 90),
+    mw('山田',  'site',    '08:00', '17:30', 90),
+  ]
+  site1.subcontractors = [
+    { subcontractorId: '', subcontractorName: master.subcontractorNames.value[1] || 'VendorA', count: 1 },
+  ]
+  siteUsage.value[1].vehicle = 'あり'
+  site1.expenses.vehicles = [
     { vehicleName: 'キャラバン', distanceKm: undefined, dieselKm: 60, parkingYen: undefined, highwayYen: undefined },
   ]
-
-  // 経費: 電車
-  siteUsage.value[0].train = 'あり'
-  site.expenses.trains = [{ label: '名古屋→大阪', yen: 3000 }]
-
-  // 経費: ホテル
-  siteUsage.value[0].hotel = 'あり'
-  site.expenses.hotelName = 'アパホテル名古屋'
-  site.expenses.hotelYen  = 8000
-
-  // 経費: レオパレス
-  siteUsage.value[0].leopalace = 'あり'
-  site.expenses.leopalaceName = 'レオパレス栄'
-  site.expenses.leopalaceYen  = 50000
-
-  // 経費: ゴミ
-  siteUsage.value[0].garbage = 'あり'
-  site.expenses.garbageFactoryYen = 3000
-  site.expenses.garbageSiteYen    = 5000
-
-  // 経費: その他（資材等）
-  siteUsage.value[0].other = 'あり'
-  site.expenses.others = [{ label: '養生テープ', yen: 1500 }]
-
-  // 経費: その他雑経費
-  siteUsage.value[0].entertainment = 'あり'
-  site.expenses.entertainmentLabel = '懇親会'
-  site.expenses.entertainmentYen   = 10000
+  siteUsage.value[1].garbage = 'あり'
+  site1.expenses.garbageFactoryYen = 3000
+  site1.expenses.garbageSiteYen    = 5000
 }
 </script>
 
