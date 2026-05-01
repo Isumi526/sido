@@ -54,8 +54,8 @@ export const useMaster = () => {
   const loading = useState<boolean>('master-loading', () => false)
 
   async function fetch() {
-    if (!config.public.gasUrl || config.public.appEnv === 'development') {
-      console.warn('[Master] 開発モードのためフォールバックデータを使用')
+    if (!config.public.gasUrl) {
+      console.warn('[Master] GAS URL未設定のためフォールバックデータを使用')
       return
     }
 
