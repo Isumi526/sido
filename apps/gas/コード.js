@@ -266,11 +266,28 @@ function handleLiffReport(body) {
           siteName: site.siteName,
           reporter: '',  // LIFFからの送信は担当者行に書かない（送信者はLINE通知で確認）
           entries:  (site.workers || []).map(function(w) {
+            // 新フォーマット（hoursNormal等）と旧フォーマット（days/overtime）の両対応
+            var hoursNormal      = Number(w.hoursNormal)        || Number(w.days) || 1.0;
+            var hoursOT          = Number(w.hoursOT)            || 0;
+            var hoursNight       = Number(w.hoursNight)         || 0;
+            var hoursOTNight     = Number(w.hoursOTNight)       || 0;
+            var hoursSunday      = Number(w.hoursSunday)        || 0;
+            var hoursSundayOT    = Number(w.hoursSundayOT)      || 0;
+            var hoursSundayNight = Number(w.hoursSundayNight)   || 0;
+            var hoursSundayOTN   = Number(w.hoursSundayOTNight) || 0;
+            // 旧overtime → overtime150にマッピング
+            if (!hoursOT && !hoursNight && Number(w.overtime) > 0) {
+              hoursOT = Number(w.overtime) / 8;
+            }
             return {
-              name:        w.workerName,
-              days:        Number(w.days)    || 1.0,
-              overtime125: 0,
-              overtime150: Number(w.overtime) > 0 ? Number(w.overtime) / 8 : 0,
+              name:            w.workerName,
+              workerRole:      w.workerRole || 'site',
+              hoursNormal:     hoursNormal,
+              hours125:        hoursOT + hoursNight,        // 1.25: 残業 + 深夜
+              hours135:        hoursSunday,                  // 1.35: 法定休日
+              hours150:        hoursOTNight,                 // 1.50: 残業+深夜
+              hours160:        hoursSundayOT + hoursSundayNight, // 1.60: 法定休日+残業/深夜
+              hours175:        hoursSundayOTN,               // 1.75: 法定休日+残業+深夜
             };
           }),
           expenses: buildExpenses(site),
@@ -302,29 +319,76 @@ function handleLiffReport(body) {
 
 /**
  * LIFFフォームの経費データをexpenses配列に変換
+ * 新構造: { vehicles:[], trains:[], others:[], hotelYen, leopalaceYen, garbageFactoryYen, ... }
+ * 旧構造: { distanceKm, parkingYen, highwayYen, ... } にも後方互換で対応
  */
 function buildExpenses(site) {
   var expenses = [];
   var exp = site.expenses || {};
 
-  if (exp.distanceKm) {
-    expenses.push({
-      type:        'gasoline',
-      label:       (exp.vehicle ? exp.vehicle + ' ' : '') + '往復' + exp.distanceKm + 'km',
-      km:          Number(exp.distanceKm),
-      amount:      Math.round(Number(exp.distanceKm) * 14.58),
-      vehicleName: exp.vehicle || '',
+  // ── 車両経費（新: vehicles配列 / 旧: distanceKm等フラット）──
+  if (Array.isArray(exp.vehicles) && exp.vehicles.length > 0) {
+    exp.vehicles.forEach(function(v) {
+      if (!v || (!v.distanceKm && !v.dieselKm && !v.parkingYen && !v.highwayYen)) return;
+      if (v.distanceKm) {
+        expenses.push({
+          type:        'gasoline',
+          label:       (v.vehicleName ? v.vehicleName + ' ' : '') + '往復' + v.distanceKm + 'km',
+          km:          Number(v.distanceKm),
+          amount:      Math.round(Number(v.distanceKm) * 14.58),
+          vehicleName: v.vehicleName || '',
+        });
+      }
+      if (v.dieselKm) {
+        expenses.push({
+          type:        'diesel',
+          label:       (v.vehicleName ? v.vehicleName + ' ' : '') + '軽油往復' + v.dieselKm + 'km',
+          km:          Number(v.dieselKm),
+          vehicleName: v.vehicleName || '',
+        });
+      }
+      if (v.parkingYen) expenses.push({ type: 'parking', label: '駐車場', amount: Number(v.parkingYen) });
+      if (v.highwayYen) expenses.push({ type: 'highway', label: '高速代', amount: Number(v.highwayYen) });
     });
+  } else {
+    // 旧フラット構造（後方互換）
+    if (exp.distanceKm) {
+      expenses.push({
+        type:        'gasoline',
+        label:       (exp.vehicle ? exp.vehicle + ' ' : '') + '往復' + exp.distanceKm + 'km',
+        km:          Number(exp.distanceKm),
+        amount:      Math.round(Number(exp.distanceKm) * 14.58),
+        vehicleName: exp.vehicle || '',
+      });
+    }
+    if (exp.parkingYen) expenses.push({ type: 'parking', label: '駐車場', amount: Number(exp.parkingYen) });
+    if (exp.highwayYen) expenses.push({ type: 'highway', label: '高速代', amount: Number(exp.highwayYen) });
+    if (exp.trainYen)   expenses.push({ type: 'train',   label: '電車',   amount: Number(exp.trainYen) });
+    if (exp.otherYen)   expenses.push({ type: 'other',   label: 'その他', amount: Number(exp.otherYen) });
   }
-  if (exp.parkingYen)       expenses.push({ type: 'parking',         label: '駐車場',       amount: Number(exp.parkingYen) });
-  if (exp.highwayYen)       expenses.push({ type: 'highway',         label: '高速代',       amount: Number(exp.highwayYen) });
-  if (exp.trainYen)         expenses.push({ type: 'train',           label: '電車',         amount: Number(exp.trainYen) });
-  if (exp.garbageFactoryYen) expenses.push({ type: 'garbage_factory', label: 'ゴミ（工場）', amount: Number(exp.garbageFactoryYen) });
-  if (exp.garbageSiteYen)   expenses.push({ type: 'garbage_site',    label: 'ゴミ（現場）', amount: Number(exp.garbageSiteYen) });
-  if (exp.hotelYen)         expenses.push({ type: 'hotel',           label: 'ホテル',       amount: Number(exp.hotelYen) });
-  if (exp.otherYen)         expenses.push({ type: 'other',           label: 'その他',       amount: Number(exp.otherYen) });
 
-  // 下請け業者
+  // ── ホテル / レオパレス ──
+  if (exp.hotelYen)      expenses.push({ type: 'hotel',    label: exp.hotelName || 'ホテル',        amount: Number(exp.hotelYen) });
+  if (exp.leopalaceYen)  expenses.push({ type: 'leopalace',label: exp.leopalaceName || 'レオパレス等', amount: Number(exp.leopalaceYen) });
+
+  // ── ゴミ ──
+  if (exp.garbageFactoryYen) expenses.push({ type: 'garbage_factory', label: 'ゴミ（工場）', amount: Number(exp.garbageFactoryYen) });
+  if (exp.garbageSiteYen)    expenses.push({ type: 'garbage_site',    label: 'ゴミ（現場）', amount: Number(exp.garbageSiteYen) });
+
+  // ── 電車（新: trains配列）──
+  (exp.trains || []).forEach(function(t) {
+    if (t && t.yen) expenses.push({ type: 'train', label: t.label || '電車', amount: Number(t.yen) });
+  });
+
+  // ── その他（新: others配列）──
+  (exp.others || []).forEach(function(o) {
+    if (o && o.yen) expenses.push({ type: 'other', label: o.label || 'その他', amount: Number(o.yen) });
+  });
+
+  // ── 接待費 ──
+  if (exp.entertainmentYen) expenses.push({ type: 'entertainment', label: exp.entertainmentLabel || '接待費', amount: Number(exp.entertainmentYen) });
+
+  // ── 下請け業者 ──
   (site.subcontractors || []).forEach(function(sub) {
     if (sub.subcontractorName) {
       expenses.push({ type: 'subcontractor', label: sub.subcontractorName, amount: Number(sub.count) || 1 });
@@ -626,47 +690,67 @@ function doGet(e) {
     if (action === 'getMaster') {
       var now = new Date();
       var ss  = getMonthlySpreadsheet(now.getFullYear(), now.getMonth() + 1);
-      var excludeSheets = ['外注','提出確認','金額集計','事務、工場、その他','設定','月次サマリ','業者台帳'];
+      // 現場名（設定シートのA列から読む）
+      var sites = [];
+      try {
+        var settingForSites = ss.getSheetByName('設定');
+        if (settingForSites) {
+          var siteVals = settingForSites.getRange(1, 1, settingForSites.getLastRow(), 1).getValues();
+          siteVals.forEach(function(row) {
+            var n = String(row[0] || '').trim();
+            if (n && !n.startsWith('【') && !n.match(/^\s*\(\d+\)\s*$/)) sites.push(n);
+          });
+        }
+        // 設定シートに現場名がない場合はシートタブから取得（フォールバック）
+        if (sites.length === 0) {
+          var excludeSheets = ['外注','提出確認','金額集計','事務、工場、その他','設定','月次サマリ','業者台帳'];
+          sites = ss.getSheets()
+            .map(function(s) { return s.getName().trim(); })
+            .filter(function(n) { return n && !excludeSheets.includes(n) && !n.match(/^\s*\(\d+\)\s*$/); });
+        }
+      } catch (siteErr) {
+        Logger.log('getMaster sites error: ' + siteErr);
+      }
 
-      // 現場名
-      var sites = ss.getSheets()
-        .map(function(s) { return s.getName().trim(); })
-        .filter(function(n) { return n && !excludeSheets.includes(n) && !n.match(/^\s*\(\d+\)\s*$/); });
-
-      // 作業員（設定シートから直接読む）
+      // 作業員・下請け業者（「事務、工場、その他」テンプレートシートから直接読む）
       var workers = [];
       var subcontractors = [];
       try {
-        var settingSheet = ss.getSheetByName('設定');
-        if (settingSheet) {
-          var allValues = settingSheet.getDataRange().getValues();
+        var tmpl = ss.getSheetByName('事務、工場、その他');
+        if (tmpl) {
+          var blockCol = getDayBlockCol(1); // 1日目ブロック開始列
+          var rowStart = ROW_DEFAULT.WORKER_START; // 6
+          var rowEnd   = ROW_DEFAULT.WORKER_END;   // 25
 
-          // 作業員リスト: 名前(A列)が文字列 かつ 単価(B列)が数値 かつ 30000以下の行のみ
-          // ヘッダ・設定項目ラベルを除外するため数値チェックを厳密に
-          var inWorkerSection = false;
-          var inSubSection    = false;
-          allValues.forEach(function(row) {
-            var col0 = String(row[0] || '').trim();
-            var col1 = row[1];
-
-            // セクションヘッダの検出
-            if (col0 === '【作業員単価】') { inWorkerSection = true;  inSubSection = false; return; }
-            if (col0 === '【下請け業者リスト】') { inSubSection = true; inWorkerSection = false; return; }
-            if (col0.startsWith('【')) { inWorkerSection = false; inSubSection = false; return; }
-
-            // 作業員行: 名前が存在 かつ 単価が正の整数
-            if (inWorkerSection && col0 && col0 !== '作業員名' && typeof col1 === 'number' && col1 > 0) {
-              workers.push({ name: col0, unitPrice: col1 });
+          // 作業員エリアを一括取得（factory側 + site側）
+          var workerRange = tmpl.getRange(rowStart, blockCol, rowEnd - rowStart + 1, DAY_BLOCK_COLS - 1).getValues();
+          workerRange.forEach(function(row) {
+            var fName  = String(row[COL.FACTORY_NAME]  || '').trim();
+            var fPrice = row[COL.FACTORY_PRICE];
+            if (fName && typeof fPrice === 'number' && fPrice > 0) {
+              workers.push({ name: fName, unitPrice: fPrice, role: 'factory' });
             }
-
-            // 下請け業者行: 名前が存在 かつ「業者名」ヘッダ以外
-            if (inSubSection && col0 && col0 !== '業者名') {
-              subcontractors.push(col0);
+            var sName  = String(row[COL.SITE_NAME]  || '').trim();
+            var sPrice = row[COL.SITE_PRICE];
+            if (sName && typeof sPrice === 'number' && sPrice > 0) {
+              workers.push({ name: sName, unitPrice: sPrice, role: 'site' });
             }
+          });
+
+          // 下請け業者（行47〜56、name offsets: 13, 15, 17）
+          // ヘッダ行ラベル（「下請け御者」等）を除外
+          var subRange = tmpl.getRange(47, blockCol, 10, 18).getValues();
+          subRange.forEach(function(row) {
+            [13, 15, 17].forEach(function(offset) {
+              var name = String(row[offset] || '').trim();
+              if (name && !name.includes('下請け御者') && !name.includes('業者名')) {
+                subcontractors.push(name);
+              }
+            });
           });
         }
       } catch (settingErr) {
-        Logger.log('getMaster setting error: ' + settingErr);
+        Logger.log('getMaster worker error: ' + settingErr);
       }
 
       var vehicles = ['ハイエース', 'キャラバン', 'プロボックス', 'その他'];
@@ -737,26 +821,43 @@ function writeDayBlock(sheet, parsed) {
   entries.forEach(entry => {
     const matched = findWorkerRowInBlock(sheet, blockCol, entry.name, ROW_D);
     if (matched) {
-      sheet.getRange(matched.row, matched.daysCol).setValue(entry.days || '');
-      if (entry.overtime125) sheet.getRange(matched.row, matched.daysCol + 1).setValue(entry.overtime125);
-      if (entry.overtime150) sheet.getRange(matched.row, matched.daysCol + 3).setValue(entry.overtime150); // 1.5h は +3（+2は1.35h）
+      if (entry.hoursNormal) sheet.getRange(matched.row, matched.daysCol).setValue(entry.hoursNormal);
+      if (entry.hours125)    sheet.getRange(matched.row, matched.daysCol + 1).setValue(entry.hours125);
+      if (entry.hours135)    sheet.getRange(matched.row, matched.daysCol + 2).setValue(entry.hours135);
+      if (entry.hours150)    sheet.getRange(matched.row, matched.daysCol + 3).setValue(entry.hours150);
+      if (entry.hours160)    sheet.getRange(matched.row, matched.daysCol + 4).setValue(entry.hours160);
+      if (entry.hours175)    sheet.getRange(matched.row, matched.daysCol + 5).setValue(entry.hours175);
     } else {
       const emptyRow = findEmptyWorkerRow(sheet, blockCol, ROW_D);
       if (emptyRow) {
         const price = workerPrices[entry.name] || settings.defaultWorkerPrice;
-        sheet.getRange(emptyRow, blockCol + COL.SITE_NAME).setValue(entry.name);
-        sheet.getRange(emptyRow, blockCol + COL.SITE_PRICE).setValue(price);
-        sheet.getRange(emptyRow, blockCol + COL.SITE_HOURS).setValue(entry.days || '');
-        if (entry.overtime125) sheet.getRange(emptyRow, blockCol + COL.SITE_1_25).setValue(entry.overtime125);
-        if (entry.overtime150) sheet.getRange(emptyRow, blockCol + COL.SITE_1_5).setValue(entry.overtime150);
-        const pCell    = sheet.getRange(emptyRow, blockCol + COL.SITE_PRICE).getA1Notation();
-        const dCell    = sheet.getRange(emptyRow, blockCol + COL.SITE_HOURS).getA1Notation();
-        const o1Cell   = sheet.getRange(emptyRow, blockCol + COL.SITE_1_25).getA1Notation();
-        const o135Cell = sheet.getRange(emptyRow, blockCol + COL.SITE_1_35).getA1Notation();
-        const o15Cell  = sheet.getRange(emptyRow, blockCol + COL.SITE_1_5).getA1Notation();
-        const o16Cell  = sheet.getRange(emptyRow, blockCol + COL.SITE_1_6).getA1Notation();
-        const o175Cell = sheet.getRange(emptyRow, blockCol + COL.SITE_1_75).getA1Notation();
-        sheet.getRange(emptyRow, blockCol + COL.SITE_TOTAL).setFormula(
+        // roleに応じてfactory列/site列に書き込む
+        const isFactory = entry.workerRole === 'factory';
+        const nameCol  = isFactory ? blockCol + COL.FACTORY_NAME  : blockCol + COL.SITE_NAME;
+        const priceCol = isFactory ? blockCol + COL.FACTORY_PRICE : blockCol + COL.SITE_PRICE;
+        const hrsCol   = isFactory ? blockCol + COL.FACTORY_HOURS : blockCol + COL.SITE_HOURS;
+        const h125Col  = isFactory ? blockCol + COL.FACTORY_1_25  : blockCol + COL.SITE_1_25;
+        const h135Col  = isFactory ? blockCol + COL.FACTORY_1_35  : blockCol + COL.SITE_1_35;
+        const h150Col  = isFactory ? blockCol + COL.FACTORY_1_5   : blockCol + COL.SITE_1_5;
+        const h160Col  = isFactory ? blockCol + COL.FACTORY_1_6   : blockCol + COL.SITE_1_6;
+        const h175Col  = isFactory ? blockCol + COL.FACTORY_1_75  : blockCol + COL.SITE_1_75;
+        sheet.getRange(emptyRow, nameCol).setValue(entry.name);
+        sheet.getRange(emptyRow, priceCol).setValue(price);
+        if (entry.hoursNormal) sheet.getRange(emptyRow, hrsCol).setValue(entry.hoursNormal);
+        if (entry.hours125)    sheet.getRange(emptyRow, h125Col).setValue(entry.hours125);
+        if (entry.hours135)    sheet.getRange(emptyRow, h135Col).setValue(entry.hours135);
+        if (entry.hours150)    sheet.getRange(emptyRow, h150Col).setValue(entry.hours150);
+        if (entry.hours160)    sheet.getRange(emptyRow, h160Col).setValue(entry.hours160);
+        if (entry.hours175)    sheet.getRange(emptyRow, h175Col).setValue(entry.hours175);
+        const pCell    = sheet.getRange(emptyRow, priceCol).getA1Notation();
+        const dCell    = sheet.getRange(emptyRow, hrsCol).getA1Notation();
+        const o1Cell   = sheet.getRange(emptyRow, h125Col).getA1Notation();
+        const o135Cell = sheet.getRange(emptyRow, h135Col).getA1Notation();
+        const o15Cell  = sheet.getRange(emptyRow, h150Col).getA1Notation();
+        const o16Cell  = sheet.getRange(emptyRow, h160Col).getA1Notation();
+        const o175Cell = sheet.getRange(emptyRow, h175Col).getA1Notation();
+        const totCol   = isFactory ? blockCol + COL.FACTORY_TOTAL : blockCol + COL.SITE_TOTAL;
+        sheet.getRange(emptyRow, totCol).setFormula(
           `=${pCell}*(${dCell}*1.0+IF(${o1Cell}="",0,${o1Cell}*1.25)+IF(${o135Cell}="",0,${o135Cell}*1.35)+IF(${o15Cell}="",0,${o15Cell}*1.5)+IF(${o16Cell}="",0,${o16Cell}*1.6)+IF(${o175Cell}="",0,${o175Cell}*1.75))/8`
         );
       }
@@ -875,6 +976,13 @@ function writeExpensesToBlock(sheet, blockCol, expenses, ROW_D) {
           break;
         case 'garbage_site':
           if (R.ROW_GARBAGE_SITE) sheet.getRange(R.ROW_GARBAGE_SITE, blockCol + RIGHT_COL.GARBAGE_AMT).setValue(exp.amount);
+          break;
+        case 'leopalace':
+          // レオパレス等はホテル行の隣（APAHOTEL_INPUT）に書く
+          if (R.ROW_HOTEL) sheet.getRange(R.ROW_HOTEL, blockCol + RIGHT_COL.APAHOTEL_INPUT).setValue(exp.amount);
+          break;
+        case 'entertainment':
+          if (R.ROW_ENTERTAINMENT) sheet.getRange(R.ROW_ENTERTAINMENT, blockCol + RIGHT_COL.ENTERTAINMENT_A).setValue(exp.amount);
           break;
         case 'subcontractor':
           // 下請け業者の人数を該当業者の人数欄に書き込む
@@ -1130,6 +1238,38 @@ function getMonthlySpreadsheet(year, month) {
       `title = "${name}" and "${CONFIG.DRIVE_ROOT_FOLDER_ID}" in parents and trashed = false`
     );
     if (allFiles.hasNext()) return SpreadsheetApp.open(allFiles.next());
+  }
+
+  // 当月が見つからない場合は前月にフォールバック
+  const prevDate = new Date(year, month - 2, 1); // month-2 = 前月（0始まり）
+  const prevYear  = prevDate.getFullYear();
+  const prevMonth = prevDate.getMonth() + 1;
+
+  if (year !== prevYear || month !== prevMonth) {
+    const prevPatterns = [
+      `${prevYear}.${prevMonth}`,
+      `${prevYear}.${String(prevMonth).padStart(2, '0')}`,
+      `${prevYear}年${String(prevMonth).padStart(2, '0')}月_案件台帳`,
+      `${prevYear}年${prevMonth}月_案件台帳`,
+    ];
+
+    for (const name of prevPatterns) {
+      const files = folder.getFilesByName(name);
+      if (files.hasNext()) {
+        Logger.log(`当月(${year}.${month})未検出 → 前月(${prevYear}.${prevMonth})にフォールバック`);
+        return SpreadsheetApp.open(files.next());
+      }
+    }
+
+    for (const name of prevPatterns) {
+      const allFiles = DriveApp.searchFiles(
+        `title = "${name}" and "${CONFIG.DRIVE_ROOT_FOLDER_ID}" in parents and trashed = false`
+      );
+      if (allFiles.hasNext()) {
+        Logger.log(`当月(${year}.${month})未検出 → 前月(${prevYear}.${prevMonth})にフォールバック`);
+        return SpreadsheetApp.open(allFiles.next());
+      }
+    }
   }
 
   throw new Error(
