@@ -432,6 +432,11 @@ function fillTestData() {
 
   report.form.value.note = 'テスト送信'
 
+  // マスタから取得（なければフォールバック）
+  const fw = master.factoryWorkerNames.value  // 工場/事務所作業員
+  const sw = master.siteWorkerNames.value      // 現場作業員
+  const sub = master.subcontractorNames.value
+
   const mw = (name: string, role: 'factory' | 'site', startTime: string, endTime: string, breakMinutes: number) => ({
     workerId: '', workerName: name, workerRole: role,
     startTime, endTime, breakMinutes,
@@ -443,12 +448,12 @@ function fillTestData() {
   const site0 = report.form.value.sites[0]
   site0.siteName = master.siteNames.value[0] || 'BLH名古屋'
   site0.workers = [
-    mw('今井',  'factory', '08:00', '17:30', 90),
-    mw('伊藤',  'factory', '08:00', '20:00', 90),
-    mw('アリフ', 'site',   '08:00', '23:30', 120),
+    mw(fw[0] || '今井',  'factory', '08:00', '17:30', 90),
+    mw(fw[1] || '伊藤',  'factory', '08:00', '20:00', 90),
+    mw(sw[0] || 'アリフ', 'site',   '08:00', '23:30', 120),
   ]
   site0.subcontractors = [
-    { subcontractorId: '', subcontractorName: master.subcontractorNames.value[0] || 'VendorA', count: 2 },
+    { subcontractorId: '', subcontractorName: sub[0] || 'VendorA', count: 2 },
   ]
   siteUsage.value[0].vehicle = 'あり'
   site0.expenses.vehicles = [
@@ -459,24 +464,42 @@ function fillTestData() {
   siteUsage.value[0].hotel = 'あり'
   site0.expenses.hotelName = 'アパホテル名古屋'
   site0.expenses.hotelYen  = 8000
+  siteUsage.value[0].leopalace = 'あり'
+  site0.expenses.leopalaceName = 'レオパレス栄'
+  site0.expenses.leopalaceYen  = 50000
+  siteUsage.value[0].garbage = 'あり'
+  site0.expenses.garbageFactoryYen = 3000
+  site0.expenses.garbageSiteYen    = 5000
+  siteUsage.value[0].other = 'あり'
+  site0.expenses.others = [{ label: '養生テープ', yen: 1500 }]
+  siteUsage.value[0].entertainment = 'あり'
+  site0.expenses.entertainmentLabel = '懇親会'
+  site0.expenses.entertainmentYen   = 10000
 
   // ── 現場2 ──
   const site1 = report.form.value.sites[1]
   site1.siteName = master.siteNames.value[1] || 'ギフト桜ステージ'
   site1.workers = [
-    mw('今井',  'factory', '08:00', '17:30', 90),
-    mw('山田',  'site',    '08:00', '17:30', 90),
+    mw(fw[2] || fw[0] || '野村', 'factory', '08:00', '17:30', 90),
+    mw(sw[1] || sw[0] || 'ハイ', 'site',    '08:00', '17:30', 90),
   ]
   site1.subcontractors = [
-    { subcontractorId: '', subcontractorName: master.subcontractorNames.value[1] || 'VendorA', count: 1 },
+    { subcontractorId: '', subcontractorName: sub[1] || sub[0] || 'VendorA', count: 1 },
   ]
   siteUsage.value[1].vehicle = 'あり'
   site1.expenses.vehicles = [
     { vehicleName: 'キャラバン', distanceKm: undefined, dieselKm: 60, parkingYen: undefined, highwayYen: undefined },
   ]
+  siteUsage.value[1].train = 'あり'
+  site1.expenses.trains = [{ label: '大阪→名古屋', yen: 2500 }]
   siteUsage.value[1].garbage = 'あり'
-  site1.expenses.garbageFactoryYen = 3000
-  site1.expenses.garbageSiteYen    = 5000
+  site1.expenses.garbageFactoryYen = 2000
+  site1.expenses.garbageSiteYen    = 4000
+  siteUsage.value[1].other = 'あり'
+  site1.expenses.others = [{ label: 'ビニールシート', yen: 800 }]
+  siteUsage.value[1].entertainment = 'あり'
+  site1.expenses.entertainmentLabel = '昼食代'
+  site1.expenses.entertainmentYen   = 5000
 }
 </script>
 
