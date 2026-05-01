@@ -41,6 +41,18 @@ jobs:
         working-directory: apps/gas
         run: clasp push --force
 
+      - name: Deploy new version
+        working-directory: apps/gas
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            DEPLOYMENT_ID="${{ secrets.GAS_DEPLOYMENT_ID_PROD }}"
+          else
+            DEPLOYMENT_ID="${{ secrets.GAS_DEPLOYMENT_ID_DEV }}"
+          fi
+          if [ -n "$DEPLOYMENT_ID" ]; then
+            clasp deploy --deploymentId "$DEPLOYMENT_ID" --description "Auto deploy from ${{ github.sha }}"
+          fi
+
   # ── Vercel デプロイ（main のみ）─────────────────────────────────
   deploy-vercel:
     name: Deploy Vercel (production)
