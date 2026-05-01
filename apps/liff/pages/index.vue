@@ -10,6 +10,7 @@
         </div>
         <div v-if="liff.profile.value" class="user-badge">
           {{ liff.profile.value.displayName }}
+          <div class="user-id-debug">{{ liff.profile.value.userId }}</div>
         </div>
       </div>
     </header>
@@ -309,6 +310,7 @@
         </div>
 
         <!-- 送信ボタン -->
+        <button v-if="isDev" type="button" class="btn-dev" @click="fillTestData">🔧 テストデータ入力</button>
         <button type="submit" class="btn-submit" :disabled="report.submitting.value">
           <span v-if="report.submitting.value" class="submitting">
             <span class="dot-spin" />送信中...
@@ -323,10 +325,14 @@
 
 <script setup lang="ts">
 import { computeWorkerHours, getRateLines, calcBreakMinutes, TIME_OPTIONS } from '~/utils/workerHours'
+import type { WorkerEntry } from '~/types'
 
+const config = useRuntimeConfig()
 const liff   = useLiff()
 const master = useMaster()
 const report = useReport()
+
+const isDev = computed(() => config.public.appEnv === 'development' || liff.isTester.value)
 
 const initializing = ref(true)
 
@@ -419,6 +425,74 @@ function handleReset() {
   report.reset()
   siteUsage.value = [createUsage()]
 }
+
+function fillTestData() {
+  report.reset()
+  siteUsage.value = [createUsage()]
+
+  const site = report.form.value.sites[0]
+
+  report.form.value.note = 'テスト送信'
+
+  // 現場名
+  site.siteName = master.siteNames.value[0] || 'BLH名古屋'
+
+  // 作業員（時刻ベース: 日付が日曜なら自動で休日料率に切り替わる）
+  // 平日: 今井=1.00, 伊藤=1.00+1.25, アリフ=1.00+1.25+1.50
+  // 日曜: 今井=1.35, 伊藤=1.35+1.60, アリフ=1.35+1.60+1.75
+  const mw = (name: string, role: 'factory' | 'site', startTime: string, endTime: string, breakMinutes: number) => ({
+    workerId: '', workerName: name, workerRole: role,
+    startTime, endTime, breakMinutes,
+    hoursNormal: 0, hoursOT: 0, hoursNight: 0, hoursOTNight: 0,
+    hoursSunday: 0, hoursSundayOT: 0, hoursSundayNight: 0, hoursSundayOTNight: 0,
+  } as WorkerEntry)
+
+  site.workers = [
+    mw('今井',  'factory', '08:00', '17:30', 90),   // 8h standard
+    mw('伊藤',  'factory', '08:00', '20:00', 90),   // 8h + 2.5h OT
+    mw('アリフ', 'site',   '08:00', '23:30', 120),  // 8h + 4h OT + 1.5h OT+深夜
+  ]
+
+  // 下請け業者
+  site.subcontractors = [
+    { subcontractorId: '', subcontractorName: master.subcontractorNames.value[0] || 'VendorA', count: 2 },
+  ]
+
+  // 経費: 車両
+  siteUsage.value[0].vehicle = 'あり'
+  site.expenses.vehicles = [
+    { vehicleName: 'ハイエース', distanceKm: 80, dieselKm: undefined, parkingYen: 500, highwayYen: 1200 },
+    { vehicleName: 'キャラバン', distanceKm: undefined, dieselKm: 60, parkingYen: undefined, highwayYen: undefined },
+  ]
+
+  // 経費: 電車
+  siteUsage.value[0].train = 'あり'
+  site.expenses.trains = [{ label: '名古屋→大阪', yen: 3000 }]
+
+  // 経費: ホテル
+  siteUsage.value[0].hotel = 'あり'
+  site.expenses.hotelName = 'アパホテル名古屋'
+  site.expenses.hotelYen  = 8000
+
+  // 経費: レオパレス
+  siteUsage.value[0].leopalace = 'あり'
+  site.expenses.leopalaceName = 'レオパレス栄'
+  site.expenses.leopalaceYen  = 50000
+
+  // 経費: ゴミ
+  siteUsage.value[0].garbage = 'あり'
+  site.expenses.garbageFactoryYen = 3000
+  site.expenses.garbageSiteYen    = 5000
+
+  // 経費: その他（資材等）
+  siteUsage.value[0].other = 'あり'
+  site.expenses.others = [{ label: '養生テープ', yen: 1500 }]
+
+  // 経費: その他雑経費
+  siteUsage.value[0].entertainment = 'あり'
+  site.expenses.entertainmentLabel = '懇親会'
+  site.expenses.entertainmentYen   = 10000
+}
 </script>
 
 <style>
@@ -472,6 +546,9 @@ html, body {
   background: var(--surface2);
   border: 1px solid var(--border);
   padding: 3px 10px; border-radius: 20px;
+}
+.user-id-debug {
+  font-size: 9px; color: #aaa; word-break: break-all; margin-top: 2px;
 }
 
 /* ── メイン ── */
@@ -664,6 +741,14 @@ html, body {
   transition: border-color 0.15s, color 0.15s;
 }
 .btn-add-site:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── devツールボタン ── */
+.btn-dev {
+  width: 100%; padding: 10px; margin-bottom: 8px;
+  background: #2d2d2d; color: #aaa; border: 1px dashed #555;
+  border-radius: var(--radius); font-size: 13px; cursor: pointer;
+}
+.btn-dev:hover { color: #fff; border-color: #888; }
 
 /* ── 送信ボタン ── */
 .btn-submit {

@@ -47,7 +47,7 @@ export const createSite = (): SiteReport => ({
 
 export const useReport = () => {
   const config  = useRuntimeConfig()
-  const { profile } = useLiff()
+  const { profile, isTester } = useLiff()
 
   const submitting = ref(false)
   const submitted  = ref(false)
@@ -109,7 +109,9 @@ export const useReport = () => {
         workers: site.workers
           .filter(w => w.workerName)
           .map(w => {
-            const r = computeWorkerHours(w.startTime, w.endTime, calcBreakMinutes(w.workerRole, w.startTime, w.endTime), isSunday)
+            const r = (w as any)._manualHours
+              ? {}
+              : computeWorkerHours(w.startTime, w.endTime, calcBreakMinutes(w.workerRole, w.startTime, w.endTime), isSunday)
             return { ...w, ...r }
           }),
         subcontractors: site.subcontractors.filter(s => s.subcontractorName),
@@ -117,15 +119,21 @@ export const useReport = () => {
     }
 
     try {
-      if (!config.public.gasUrl || config.public.appEnv === 'development') {
-        console.log('[Report] 送信ペイロード:', JSON.stringify(payload, null, 2))
+      if (!config.public.gasUrl) {
+        console.log('[Report] GAS URL未設定 - 送信ペイロード:', JSON.stringify(payload, null, 2))
         await new Promise(r => setTimeout(r, 800))
       } else {
         await fetch(config.public.gasUrl, {
           method:  'POST',
           mode:    'no-cors',
           headers: { 'Content-Type': 'text/plain' },
-          body:    JSON.stringify({ action: 'submitReport', ...payload }),
+          body:    JSON.stringify({
+          action: 'submitReport',
+          ...payload,
+          ...((config.public.appEnv === 'development' || isTester.value) && config.public.devNotifyGroupId
+            ? { _devNotifyGroupId: config.public.devNotifyGroupId }
+            : {}),
+        }),
         })
       }
       submitted.value = true

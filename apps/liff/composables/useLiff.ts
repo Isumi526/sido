@@ -5,6 +5,7 @@
 interface LiffState {
   initialized: boolean
   loggedIn: boolean
+  isTester: boolean
   profile: { userId: string; displayName: string; pictureUrl?: string; statusMessage?: string } | null
   error: string | null
 }
@@ -14,9 +15,18 @@ export const useLiff = () => {
   const state = useState<LiffState>('liff', () => ({
     initialized: false,
     loggedIn: false,
+    isTester: false,
     profile: null,
     error: null,
   }))
+
+  function checkTester(userId: string) {
+    const ids = config.public.testerLineIds
+      .split(',')
+      .map((id: string) => id.trim())
+      .filter(Boolean)
+    state.value.isTester = ids.includes(userId)
+  }
 
   async function init() {
     if (state.value.initialized) return
@@ -32,6 +42,7 @@ export const useLiff = () => {
         pictureUrl: '',
         statusMessage: '',
       }
+      state.value.isTester = true
       state.value.loggedIn = true
       state.value.initialized = true
       return
@@ -47,10 +58,11 @@ export const useLiff = () => {
       }
 
       state.value.profile = await liff.getProfile()
+      checkTester(state.value.profile.userId)
       state.value.loggedIn = true
       state.value.initialized = true
 
-      console.log('[LIFF] 初期化完了:', state.value.profile?.displayName)
+      console.log('[LIFF] 初期化完了:', state.value.profile?.displayName, state.value.isTester ? '(テスター)' : '')
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       state.value.error = msg
@@ -63,5 +75,6 @@ export const useLiff = () => {
     init,
     profile: computed(() => state.value.profile),
     isLoggedIn: computed(() => state.value.loggedIn),
+    isTester: computed(() => state.value.isTester),
   }
 }

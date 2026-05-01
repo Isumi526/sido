@@ -1,5 +1,5 @@
 {
-  "scriptId": "1PMmONPuowqiuPWGVwNdpyf6ejFT5JU4IROGcAzV61H8prNHujie-lc91",
-  "deploymentId": "AKfycby3nk5LGcjjMFVTa9HUUVXzarXQeG6_ThcNawEukz099i5T61JOfiYzrBfRAyz_HjSU",
+  "scriptId": "YOUR_GAS_SCRIPT_ID",
+  "deploymentId": "YOUR_GAS_DEPLOYMENT_ID",
   "rootDir": "."
 }

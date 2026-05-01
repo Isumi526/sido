@@ -25,6 +25,8 @@ export default defineNuxtConfig({
       liffId: '',
       gasUrl: '',
       appEnv: 'development',
+      devNotifyGroupId: '',
+      testerLineIds: '',   // カンマ区切りのLINE User ID（例: Uabc123,Udef456）
     },
   },
 

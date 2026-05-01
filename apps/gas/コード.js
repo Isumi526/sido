@@ -267,7 +267,7 @@ function handleLiffReport(body) {
           reporter: '',  // LIFFからの送信は担当者行に書かない（送信者はLINE通知で確認）
           entries:  (site.workers || []).map(function(w) {
             // 新フォーマット（hoursNormal等）と旧フォーマット（days/overtime）の両対応
-            var hoursNormal      = Number(w.hoursNormal)        || Number(w.days) || 1.0;
+            var hoursNormal      = w.hoursNormal != null ? Number(w.hoursNormal) : (Number(w.days) || 0);
             var hoursOT          = Number(w.hoursOT)            || 0;
             var hoursNight       = Number(w.hoursNight)         || 0;
             var hoursOTNight     = Number(w.hoursOTNight)       || 0;
@@ -298,12 +298,13 @@ function handleLiffReport(body) {
 
       } catch (siteErr) {
         Logger.log('handleLiffReport site error [' + site.siteName + ']: ' + siteErr);
-        failedSites.push(site.siteName);
+        failedSites.push(site.siteName + '\n  └ ' + String(siteErr).split('\n')[0]);
       }
     });
 
     // LINE通知（グループに送信）
-    sendLiffReportNotification(sender, date, body.sites, successSites, failedSites, note);
+    var devGroupId = body._devNotifyGroupId || null;
+    sendLiffReportNotification(sender, date, body.sites, successSites, failedSites, note, devGroupId);
 
     return jsonResponse({
       success: true,
@@ -401,7 +402,7 @@ function buildExpenses(site) {
 /**
  * LIFFフォーム送信後のLINE通知
  */
-function sendLiffReportNotification(sender, date, sites, successSites, failedSites, note) {
+function sendLiffReportNotification(sender, date, sites, successSites, failedSites, note, devGroupId) {
   try {
     var d        = new Date(date + 'T00:00:00');
     var weekdays = ['日','月','火','水','木','金','土'];
@@ -418,35 +419,66 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
       lines.push('');
       lines.push('📍 ' + site.siteName);
 
-      // 作業員
+      // 作業員（1人1行、・始まり）
       var workers = (site.workers || []).filter(function(w) { return w.workerName; });
       if (workers.length > 0) {
-        var wStr = workers.map(function(w) {
-          var s = w.workerName + ' ' + w.days + '日';
-          if (w.overtime > 0) s += ' 残業' + w.overtime + 'h';
-          return s;
-        }).join(' / ');
-        lines.push('  👷 ' + wStr);
+        lines.push('');
+        workers.forEach(function(w) {
+          var parts = [];
+          if (w.hoursNormal)        parts.push(w.hoursNormal + 'h');
+          if (w.hoursSunday)        parts.push('休日' + w.hoursSunday + 'h');
+          if (w.hoursOT)            parts.push('残業' + w.hoursOT + 'h');
+          if (w.hoursNight)         parts.push('深夜' + w.hoursNight + 'h');
+          if (w.hoursOTNight)       parts.push('深夜残業' + w.hoursOTNight + 'h');
+          if (w.hoursSundayOT)      parts.push('休日残業' + w.hoursSundayOT + 'h');
+          if (w.hoursSundayNight)   parts.push('休日深夜' + w.hoursSundayNight + 'h');
+          if (w.hoursSundayOTNight) parts.push('休日深夜残業' + w.hoursSundayOTNight + 'h');
+          if (parts.length === 0 && w.days != null) parts.push(w.days + '日');
+          lines.push('・' + w.workerName + (parts.length ? ' ' + parts.join(' + ') : ''));
+        });
       }
 
-      // 経費
+      // 経費（種別ごと1行、・始まり）
       var exp = site.expenses || {};
-      var expItems = [];
-      if (exp.distanceKm) expItems.push((exp.vehicle || '') + '往復' + exp.distanceKm + 'km');
-      if (exp.parkingYen)        expItems.push('駐車場¥' + Number(exp.parkingYen).toLocaleString());
-      if (exp.highwayYen)        expItems.push('高速¥' + Number(exp.highwayYen).toLocaleString());
-      if (exp.trainYen)          expItems.push('電車¥' + Number(exp.trainYen).toLocaleString());
-      if (exp.garbageFactoryYen) expItems.push('ゴミ工場¥' + Number(exp.garbageFactoryYen).toLocaleString());
-      if (exp.garbageSiteYen)    expItems.push('ゴミ現場¥' + Number(exp.garbageSiteYen).toLocaleString());
-      if (exp.hotelYen)          expItems.push('ホテル¥' + Number(exp.hotelYen).toLocaleString());
-      if (exp.otherYen)          expItems.push('その他¥' + Number(exp.otherYen).toLocaleString());
-      if (expItems.length > 0) lines.push('  💴 ' + expItems.join(' / '));
+      var expLines = [];
+      (exp.vehicles || []).forEach(function(v) {
+        if (!v) return;
+        var vParts = [];
+        if (v.vehicleName) vParts.push(v.vehicleName);
+        if (v.distanceKm)  vParts.push('往復' + v.distanceKm + 'km');
+        if (v.dieselKm)    vParts.push('軽油' + v.dieselKm + 'km');
+        if (v.parkingYen)  vParts.push('駐車¥' + Number(v.parkingYen).toLocaleString());
+        if (v.highwayYen)  vParts.push('高速¥' + Number(v.highwayYen).toLocaleString());
+        if (vParts.length > 0) expLines.push(vParts.join(' '));
+      });
+      if (!exp.vehicles && exp.distanceKm) {
+        var vOld = [(exp.vehicle || ''), '往復' + exp.distanceKm + 'km'];
+        if (exp.parkingYen) vOld.push('駐車¥' + Number(exp.parkingYen).toLocaleString());
+        if (exp.highwayYen) vOld.push('高速¥' + Number(exp.highwayYen).toLocaleString());
+        expLines.push(vOld.filter(Boolean).join(' '));
+      }
+      (exp.trains || []).forEach(function(t) { if (t && t.yen) expLines.push((t.label || '電車') + ' ¥' + Number(t.yen).toLocaleString()); });
+      (exp.others || []).forEach(function(o) { if (o && o.yen) expLines.push((o.label || 'その他') + ' ¥' + Number(o.yen).toLocaleString()); });
+      if (exp.hotelYen)     expLines.push((exp.hotelName || 'ホテル') + ' ¥' + Number(exp.hotelYen).toLocaleString());
+      if (exp.leopalaceYen) expLines.push((exp.leopalaceName || 'レオパレス') + ' ¥' + Number(exp.leopalaceYen).toLocaleString());
+      if (exp.garbageFactoryYen || exp.garbageSiteYen) {
+        var g = [];
+        if (exp.garbageFactoryYen) g.push('木材のみ¥' + Number(exp.garbageFactoryYen).toLocaleString());
+        if (exp.garbageSiteYen)    g.push('混載¥' + Number(exp.garbageSiteYen).toLocaleString());
+        expLines.push('ゴミ ' + g.join(' '));
+      }
+      if (exp.entertainmentYen) expLines.push((exp.entertainmentLabel || '雑経費') + ' ¥' + Number(exp.entertainmentYen).toLocaleString());
+      if (exp.otherYen)         expLines.push('その他 ¥' + Number(exp.otherYen).toLocaleString());
+      if (expLines.length > 0) {
+        lines.push('');
+        expLines.forEach(function(l) { lines.push('・' + l); });
+      }
 
       // 下請け業者
       var subs = (site.subcontractors || []).filter(function(s) { return s.subcontractorName; });
       if (subs.length > 0) {
-        var sStr = subs.map(function(s) { return s.subcontractorName + ' ' + s.count + '人'; }).join(' / ');
-        lines.push('  🏢 ' + sStr);
+        lines.push('');
+        subs.forEach(function(s) { lines.push('・' + s.subcontractorName + ' ' + s.count + '人'); });
       }
     });
 
@@ -457,8 +489,9 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
     }
 
     var msg = [{ type: 'text', text: lines.join('\n') }];
-    if (CONFIG.LINE_PUSH_USER_ID) pushLineMessages(CONFIG.LINE_PUSH_USER_ID, msg);
-    (CONFIG.NOTIFY_GROUP_IDS || []).forEach(function(id) { pushLineMessages(id, msg); });
+    var groupIds = devGroupId ? [devGroupId] : (CONFIG.NOTIFY_GROUP_IDS || []);
+    if (!devGroupId && CONFIG.LINE_PUSH_USER_ID) pushLineMessages(CONFIG.LINE_PUSH_USER_ID, msg);
+    groupIds.forEach(function(id) { pushLineMessages(id, msg); });
 
   } catch (err) {
     Logger.log('sendLiffReportNotification error: ' + err);
