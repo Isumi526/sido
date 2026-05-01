@@ -10,7 +10,6 @@
         </div>
         <div v-if="liff.profile.value" class="user-badge">
           {{ liff.profile.value.displayName }}
-          <div class="user-id-debug">{{ liff.profile.value.userId }}</div>
         </div>
       </div>
     </header>
@@ -547,9 +546,7 @@ html, body {
   border: 1px solid var(--border);
   padding: 3px 10px; border-radius: 20px;
 }
-.user-id-debug {
-  font-size: 9px; color: #aaa; word-break: break-all; margin-top: 2px;
-}
+
 
 /* ── メイン ── */
 .main { max-width: 640px; margin: 0 auto; padding: 16px 16px 100px; }
