@@ -48,8 +48,8 @@ export interface Expenses {
   hotelYen?: number
   leopalaceName?: string
   leopalaceYen?: number
-  garbageFactoryYen?: number
-  garbageSiteYen?: number
+  garbageFactoryM3?: number
+  garbageSiteM3?: number
   garbagePhotos?: string[]  // Base64エンコード済み写真データ（1枚あたり最大2MB推奨）
   trains: LineItem[]
   others: LineItem[]

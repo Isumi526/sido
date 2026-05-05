@@ -274,10 +274,10 @@
               </select>
               <template v-if="siteUsage[si].garbage === 'あり'">
                 <div class="expense-grid mt6">
-                  <ExpenseField v-model="site.expenses.garbageFactoryYen" label="木材のみ（円）" />
-                  <ExpenseField v-model="site.expenses.garbageSiteYen"    label="混載（円）" />
+                  <ExpenseField v-model="site.expenses.garbageFactoryM3" label="木材のみ（m³）" />
+                  <ExpenseField v-model="site.expenses.garbageSiteM3"    label="混載（m³）" />
                 </div>
-                <div v-if="site.expenses.garbageFactoryYen || site.expenses.garbageSiteYen" class="mt8">
+                <div v-if="site.expenses.garbageFactoryM3 || site.expenses.garbageSiteM3" class="mt8">
                   <label class="hours-label">ゴミ写真（任意）</label>
                   <input
                     type="file"
@@ -429,7 +429,7 @@ function setUsage(si: number, key: keyof UsageState, value: string) {
       exp.leopalaceName = undefined; exp.leopalaceYen = undefined
       break
     case 'garbage':
-      exp.garbageFactoryYen = undefined; exp.garbageSiteYen = undefined; exp.garbagePhotos = undefined
+      exp.garbageFactoryM3 = undefined; exp.garbageSiteM3 = undefined; exp.garbagePhotos = undefined
       break
     case 'other':
       exp.others = [createLineItem()]
@@ -532,8 +532,8 @@ function fillTestData() {
     site0.expenses.leopalaceName = 'レオパレス栄'
     site0.expenses.leopalaceYen  = 50000
     siteUsage.value[0].garbage = 'あり'
-    site0.expenses.garbageFactoryYen = 3000
-    site0.expenses.garbageSiteYen    = 5000
+    site0.expenses.garbageFactoryM3 = 3
+    site0.expenses.garbageSiteM3    = 5
     site0.expenses.garbagePhotos = [dummyPhoto, dummyPhoto]
     siteUsage.value[0].other = 'あり'
     site0.expenses.others = [{ label: '養生テープ', yen: 1500 }]
@@ -560,8 +560,8 @@ function fillTestData() {
   siteUsage.value[newIdx].train = 'あり'
   siteN.expenses.trains = [{ label: '大阪→名古屋', yen: 2500 }]
   siteUsage.value[newIdx].garbage = 'あり'
-  siteN.expenses.garbageFactoryYen = 2000
-  siteN.expenses.garbageSiteYen    = 4000
+  siteN.expenses.garbageFactoryM3 = 2
+  siteN.expenses.garbageSiteM3    = 4
   siteN.expenses.garbagePhotos = [dummyPhoto]
   siteUsage.value[newIdx].other = 'あり'
   siteN.expenses.others = [{ label: 'ビニールシート', yen: 800 }]

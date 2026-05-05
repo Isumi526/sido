@@ -329,7 +329,7 @@ function handleLiffReport(body) {
         writeDayBlock(sheet, parsed);
 
         // ゴミ写真をDriveに保存してスプシにリンクを記録
-        if (site.expenses && site.expenses.garbagePhotos && site.expenses.garbagePhotos.length > 0) {
+        if (site.expenses && (site.expenses.garbageFactoryM3 || site.expenses.garbageSiteM3) && site.expenses.garbagePhotos && site.expenses.garbagePhotos.length > 0) {
           var folderUrl = saveGarbagePhotos(site.expenses.garbagePhotos, date, sender, site.siteName);
           if (folderUrl) {
             writeGarbageFolderLink(sheet, folderUrl, day);
@@ -421,8 +421,8 @@ function buildExpenses(site) {
   if (exp.leopalaceYen)  expenses.push({ type: 'leopalace',label: exp.leopalaceName || 'レオパレス等', amount: Number(exp.leopalaceYen) });
 
   // ── ゴミ ──
-  if (exp.garbageFactoryYen) expenses.push({ type: 'garbage_factory', label: 'ゴミ（工場）', amount: Number(exp.garbageFactoryYen) });
-  if (exp.garbageSiteYen)    expenses.push({ type: 'garbage_site',    label: 'ゴミ（現場）', amount: Number(exp.garbageSiteYen) });
+  if (exp.garbageFactoryM3) expenses.push({ type: 'garbage_factory', label: 'ゴミ（木材のみ）', amount: Number(exp.garbageFactoryM3) });
+  if (exp.garbageSiteM3)    expenses.push({ type: 'garbage_site',    label: 'ゴミ（混載）',     amount: Number(exp.garbageSiteM3) });
 
   // ── 電車（新: trains配列）──
   (exp.trains || []).forEach(function(t) {
@@ -509,10 +509,10 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
       (exp.others || []).forEach(function(o) { if (o && o.yen) expLines.push((o.label || 'その他') + ' ¥' + Number(o.yen).toLocaleString()); });
       if (exp.hotelYen)     expLines.push((exp.hotelName || 'ホテル') + ' ¥' + Number(exp.hotelYen).toLocaleString());
       if (exp.leopalaceYen) expLines.push((exp.leopalaceName || 'レオパレス') + ' ¥' + Number(exp.leopalaceYen).toLocaleString());
-      if (exp.garbageFactoryYen || exp.garbageSiteYen) {
+      if (exp.garbageFactoryM3 || exp.garbageSiteM3) {
         var g = [];
-        if (exp.garbageFactoryYen) g.push('木材のみ¥' + Number(exp.garbageFactoryYen).toLocaleString());
-        if (exp.garbageSiteYen)    g.push('混載¥' + Number(exp.garbageSiteYen).toLocaleString());
+        if (exp.garbageFactoryM3) g.push('木材のみ ' + Number(exp.garbageFactoryM3) + 'm³');
+        if (exp.garbageSiteM3)    g.push('混載 '     + Number(exp.garbageSiteM3)    + 'm³');
         expLines.push('ゴミ ' + g.join(' '));
         var photoUrl = garbageFolderUrls && garbageFolderUrls[site.siteName];
         if (photoUrl) expLines.push('📸 写真 ' + photoUrl);
