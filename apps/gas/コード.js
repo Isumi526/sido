@@ -803,6 +803,15 @@ function doGet(e) {
     var action = e && e.parameter && e.parameter.action;
 
     if (action === 'getMaster') {
+      // CacheServiceにマスタデータ全体をキャッシュ（1時間）
+      var masterCacheKey = 'master_data_v1';
+      try {
+        var cachedMaster = CacheService.getScriptCache().get(masterCacheKey);
+        if (cachedMaster) {
+          return ContentService.createTextOutput(cachedMaster).setMimeType(ContentService.MimeType.JSON);
+        }
+      } catch(e) { /* キャッシュ取得失敗は無視 */ }
+
       var now = new Date();
       var ss  = getMonthlySpreadsheet(now.getFullYear(), now.getMonth() + 1);
       // 現場名（設定シートのA列から読む）
@@ -876,6 +885,8 @@ function doGet(e) {
         subcontractors: subcontractors,
         vehicles:       vehicles,
       });
+      // キャッシュに保存（1時間）
+      try { CacheService.getScriptCache().put(masterCacheKey, result, 3600); } catch(e) {}
       return ContentService.createTextOutput(result)
         .setMimeType(ContentService.MimeType.JSON);
     }
@@ -1803,6 +1814,9 @@ function sortSiteSheets(ss) {
 function createSiteSheetByRename(ss, siteName) {
   // 既に同名シートがあれば何もしない
   if (ss.getSheetByName(siteName)) return ss.getSheetByName(siteName);
+
+  // マスタキャッシュを破棄（新現場が次回getMasterに反映されるよう）
+  try { CacheService.getScriptCache().remove('master_data_v1'); } catch(e) {}
 
   // (2)〜(71)の中から最小の空き番号を探す
   var sheets = ss.getSheets();

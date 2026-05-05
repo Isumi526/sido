@@ -450,8 +450,8 @@ function removeSite(i: number) {
 }
 
 onMounted(async () => {
-  await liff.init()
-  await master.fetch()
+  // LIFF初期化とマスタ取得を並列実行
+  await Promise.all([liff.init(), master.fetch()])
   // startTime/endTime が未設定のワーカーにデフォルト値を補完
   report.form.value.sites.forEach(site => {
     site.workers.forEach(w => {
