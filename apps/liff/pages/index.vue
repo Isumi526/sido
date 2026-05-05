@@ -38,8 +38,6 @@
             v-model="report.form.value.date"
             type="date"
             class="input"
-            :min="yesterday"
-            :max="today"
             required
           />
         </FormSection>
