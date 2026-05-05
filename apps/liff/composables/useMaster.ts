@@ -48,29 +48,64 @@ const FALLBACK: MasterData = {
   vehicles: ['ハイエース', 'キャラバン', 'プロボックス', 'その他'],
 }
 
+const CACHE_KEY = 'sido_master_cache'
+const CACHE_TTL = 30 * 60 * 1000 // 30分
+
+function loadCache(): MasterData | null {
+  if (import.meta.server) return null
+  try {
+    const raw = localStorage.getItem(CACHE_KEY)
+    if (!raw) return null
+    const { data, ts } = JSON.parse(raw)
+    if (Date.now() - ts > CACHE_TTL) return null
+    return data
+  } catch { return null }
+}
+
+function saveCache(data: MasterData) {
+  if (import.meta.server) return
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ data, ts: Date.now() }))
+  } catch { /* quota超過等は無視 */ }
+}
+
 export const useMaster = () => {
   const config = useRuntimeConfig()
-  const master = useState<MasterData>('master', () => FALLBACK)
+  const cached = loadCache()
+  const master = useState<MasterData>('master', () => cached ?? FALLBACK)
   const loading = useState<boolean>('master-loading', () => false)
 
-  async function fetch() {
+  async function fetch(force = false) {
     if (!config.public.gasUrl) {
       console.warn('[Master] GAS URL未設定のためフォールバックデータを使用')
       return
     }
 
+    // キャッシュが有効で強制更新でなければスキップ
+    if (!force && loadCache()) {
+      // バックグラウンドで静かに更新（UIはブロックしない）
+      _fetchFromGas().catch(() => {})
+      return
+    }
+
     loading.value = true
+    await _fetchFromGas()
+    loading.value = false
+  }
+
+  async function _fetchFromGas() {
     try {
       const res = await $fetch<MasterData>(
         config.public.gasUrl + '?action=getMaster',
         { method: 'GET' }
       )
-      if (res.sites?.length) master.value = res
-      console.log('[Master] 取得完了:', res.sites?.length, '現場')
+      if (res.sites?.length || res.workers?.length) {
+        master.value = res
+        saveCache(res)
+        console.log('[Master] 取得完了:', res.sites?.length, '現場')
+      }
     } catch (e) {
-      console.warn('[Master] 取得失敗、フォールバックデータを使用:', e)
-    } finally {
-      loading.value = false
+      console.warn('[Master] 取得失敗:', e)
     }
   }
 

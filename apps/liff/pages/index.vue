@@ -472,7 +472,7 @@ async function handleReset() {
   report.reset()
   siteUsage.value = [createUsage()]
   isWorkingStr.value = 'working'
-  await master.fetch()
+  await master.fetch(true) // 新規現場が追加されている可能性があるので強制更新
 }
 
 async function handleGarbagePhoto(si: number, event: Event) {

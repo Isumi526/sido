@@ -1358,6 +1358,13 @@ function initDayBlock(sheet, startCol, dateStr) {
  * ファイルが見つからない場合はエラーをスローする（手動アップロード前提）。
  */
 function getMonthlySpreadsheet(year, month) {
+  // CacheServiceでスプシIDをキャッシュ（1時間）
+  var cacheKey = 'ss_id_' + year + '_' + month;
+  try {
+    var cachedId = CacheService.getScriptCache().get(cacheKey);
+    if (cachedId) return SpreadsheetApp.openById(cachedId);
+  } catch (e) { /* キャッシュミスは無視 */ }
+
   // 対応するファイル名パターン（複数形式）
   const patterns = [
     `${year}.${month}`,                                       // 2026.4
@@ -1371,7 +1378,11 @@ function getMonthlySpreadsheet(year, month) {
   // ルートフォルダ内を検索
   for (const name of patterns) {
     const files = folder.getFilesByName(name);
-    if (files.hasNext()) return SpreadsheetApp.open(files.next());
+    if (files.hasNext()) {
+      const ss = SpreadsheetApp.open(files.next());
+      try { CacheService.getScriptCache().put(cacheKey, ss.getId(), 3600); } catch(e) {}
+      return ss;
+    }
   }
 
   // 同フォルダ配下に限定して検索（dev/prod スプシの混在防止）
@@ -1379,7 +1390,11 @@ function getMonthlySpreadsheet(year, month) {
     const allFiles = DriveApp.searchFiles(
       `title = "${name}" and "${CONFIG.DRIVE_ROOT_FOLDER_ID}" in parents and trashed = false`
     );
-    if (allFiles.hasNext()) return SpreadsheetApp.open(allFiles.next());
+    if (allFiles.hasNext()) {
+      const ss = SpreadsheetApp.open(allFiles.next());
+      try { CacheService.getScriptCache().put(cacheKey, ss.getId(), 3600); } catch(e) {}
+      return ss;
+    }
   }
 
   // 当月が見つからない場合は前月にフォールバック
