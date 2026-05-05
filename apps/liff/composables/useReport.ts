@@ -54,11 +54,12 @@ export const useReport = () => {
   const error      = ref<string | null>(null)
 
   const form = ref<DailyReport>({
-    date:     new Date().toISOString().split('T')[0],
-    sender:   '',
-    senderId: '',
-    sites:    [createSite()],
-    note:     '',
+    date:      new Date().toISOString().split('T')[0],
+    sender:    '',
+    senderId:  '',
+    isWorking: true,
+    sites:     [createSite()],
+    note:      '',
   })
 
   function addSite()            { form.value.sites.push(createSite()) }
@@ -81,11 +82,12 @@ export const useReport = () => {
     submitted.value = false
     error.value     = null
     form.value = {
-      date:     new Date().toISOString().split('T')[0],
-      sender:   '',
-      senderId: '',
-      sites:    [createSite()],
-      note:     '',
+      date:      new Date().toISOString().split('T')[0],
+      sender:    '',
+      senderId:  '',
+      isWorking: true,
+      sites:     [createSite()],
+      note:      '',
     }
   }
 
@@ -104,18 +106,23 @@ export const useReport = () => {
     // 空の作業員・下請けを除去 & 料率別時間を計算してセット
     const payload: DailyReport = {
       ...form.value,
-      sites: form.value.sites.map(site => ({
-        ...site,
-        workers: site.workers
-          .filter(w => w.workerName)
-          .map(w => {
-            const r = (w as any)._manualHours
-              ? {}
-              : computeWorkerHours(w.startTime, w.endTime, calcBreakMinutes(w.workerRole, w.startTime, w.endTime), isSunday)
-            return { ...w, ...r }
-          }),
-        subcontractors: site.subcontractors.filter(s => s.subcontractorName),
-      })),
+      sites: form.value.sites.map(site => {
+        const isNew = site.siteName === '__other__'
+        return {
+          ...site,
+          siteName:  isNew ? (site.customSiteName || '') : site.siteName,
+          isNewSite: isNew,
+          workers: site.workers
+            .filter(w => w.workerName)
+            .map(w => {
+              const r = (w as any)._manualHours
+                ? {}
+                : computeWorkerHours(w.startTime, w.endTime, calcBreakMinutes(w.workerRole, w.startTime, w.endTime), isSunday)
+              return { ...w, ...r }
+            }),
+          subcontractors: site.subcontractors.filter(s => s.subcontractorName),
+        }
+      }),
     }
 
     try {

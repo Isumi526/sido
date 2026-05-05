@@ -94,6 +94,7 @@ const ROW_DEFAULT = {
   GASOLINE1:       28,  // ガソリン km入力欄
   PARKING1:        29,  // 駐車場 円入力欄
   HIGHWAY1:        30,  // 高速代 円入力欄
+  DIESEL1:         31,  // 軽油 km入力欄
   // 右側経費（ホテル・ゴミ・電車等）の行
   ROW_HOTEL:       27,  // ホテル（右側）
   ROW_GARBAGE_FACTORY: 29, // ゴミ工場（右側）
@@ -237,8 +238,31 @@ function handleLiffReport(body) {
     var sites    = body.sites    || [];
     var note     = body.note     || '';
 
-    if (!date || sites.length === 0) {
-      return jsonResponse({ success: false, error: '日付または現場データがありません' });
+    if (!date) {
+      return jsonResponse({ success: false, error: '日付が指定されていません' });
+    }
+
+    // 日付順チェック: 一時停止中
+    // if (body.senderId) {
+    //   var missingDate = checkMissingDate(body.senderId, date);
+    //   if (missingDate) {
+    //     return jsonResponse({
+    //       success: false,
+    //       error: missingDate + ' の日報がまだ送信されていません。先にその日の日報を送信してください。'
+    //     });
+    //   }
+    // }
+
+    // 稼働なしの場合は提出記録のみ残して終了
+    if (body.isWorking === false) {
+      if (body.senderId) saveSubmitter(body.senderId, sender, date);
+      var devGroupId0 = body._devNotifyGroupId || null;
+      sendLiffReportNotification(sender, date, [], [], [], note || '稼働なし', devGroupId0);
+      return jsonResponse({ success: true, successSites: [], failedSites: [] });
+    }
+
+    if (sites.length === 0) {
+      return jsonResponse({ success: false, error: '現場データがありません' });
     }
 
     // 日付からyear/month/dayを取得
@@ -251,11 +275,20 @@ function handleLiffReport(body) {
 
     var successSites = [];
     var failedSites  = [];
+    var garbageFolderUrls = {}; // { siteName: folderUrl }
 
     sites.forEach(function(site) {
       if (!site.siteName) return;
 
       try {
+        // 新規現場の場合は空き連番シートをリネーム
+        if (site.isNewSite && site.siteName) {
+          var newSheet = createSiteSheetByRename(ss, site.siteName);
+          if (!newSheet) {
+            Logger.log('新規現場シート作成失敗: ' + site.siteName);
+          }
+        }
+
         var sheet = getCaseSheet(ss, site.siteName);
 
         // parseDailyReport互換の形式に変換
@@ -294,6 +327,16 @@ function handleLiffReport(body) {
         };
 
         writeDayBlock(sheet, parsed);
+
+        // ゴミ写真をDriveに保存してスプシにリンクを記録
+        if (site.expenses && site.expenses.garbagePhotos && site.expenses.garbagePhotos.length > 0) {
+          var folderUrl = saveGarbagePhotos(site.expenses.garbagePhotos, date, sender, site.siteName);
+          if (folderUrl) {
+            writeGarbageFolderLink(sheet, folderUrl, day);
+            garbageFolderUrls[site.siteName] = folderUrl;
+          }
+        }
+
         successSites.push(site.siteName);
 
       } catch (siteErr) {
@@ -302,9 +345,14 @@ function handleLiffReport(body) {
       }
     });
 
+    // 提出記録を保存
+    if (body.senderId && successSites.length > 0) {
+      saveSubmitter(body.senderId, sender, date);
+    }
+
     // LINE通知（グループに送信）
     var devGroupId = body._devNotifyGroupId || null;
-    sendLiffReportNotification(sender, date, body.sites, successSites, failedSites, note, devGroupId);
+    sendLiffReportNotification(sender, date, body.sites, successSites, failedSites, note, devGroupId, garbageFolderUrls);
 
     return jsonResponse({
       success: true,
@@ -402,7 +450,7 @@ function buildExpenses(site) {
 /**
  * LIFFフォーム送信後のLINE通知
  */
-function sendLiffReportNotification(sender, date, sites, successSites, failedSites, note, devGroupId) {
+function sendLiffReportNotification(sender, date, sites, successSites, failedSites, note, devGroupId, garbageFolderUrls) {
   try {
     var d        = new Date(date + 'T00:00:00');
     var weekdays = ['日','月','火','水','木','金','土'];
@@ -466,6 +514,8 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
         if (exp.garbageFactoryYen) g.push('木材のみ¥' + Number(exp.garbageFactoryYen).toLocaleString());
         if (exp.garbageSiteYen)    g.push('混載¥' + Number(exp.garbageSiteYen).toLocaleString());
         expLines.push('ゴミ ' + g.join(' '));
+        var photoUrl = garbageFolderUrls && garbageFolderUrls[site.siteName];
+        if (photoUrl) expLines.push('📸 写真 ' + photoUrl);
       }
       if (exp.entertainmentYen) expLines.push((exp.entertainmentLabel || '雑経費') + ' ¥' + Number(exp.entertainmentYen).toLocaleString());
       if (exp.otherYen)         expLines.push('その他 ¥' + Number(exp.otherYen).toLocaleString());
@@ -617,6 +667,9 @@ function duplicateKojiSheet() {
 
   // 金額集計シートの参照を更新
   updateKingakuSheet(ss);
+
+  // 五十音順に並べ替え
+  sortSiteSheets(ss);
 
   ui.alert('✅ 「' + siteName + '」シートを追加しました！\n\nLIFFから日報を送ると自動転記されます。');
   Logger.log('シート複製完了: ' + siteName);
@@ -1012,6 +1065,7 @@ function writeExpensesToBlock(sheet, blockCol, expenses, ROW_D) {
       switch (exp.type) {
         case 'gasoline':
           // 行27（車両名）に車両名を書く（ある場合のみ）
+          Logger.log('gasoline write: vehicleName=' + exp.vehicleName + ' km=' + exp.km + ' row=' + R.VEHICLE1_NAME + '/' + R.GASOLINE1 + ' col=' + (blockCol + 1));
           if (exp.vehicleName && R.VEHICLE1_NAME) {
             sheet.getRange(R.VEHICLE1_NAME, blockCol + 1).setValue(exp.vehicleName);
           }
@@ -1019,6 +1073,16 @@ function writeExpensesToBlock(sheet, blockCol, expenses, ROW_D) {
           // 行47（ガソリン距離計）は数式（=C28+C33+C38+C43）で自動集計されるので書き込み不要
           if (R.GASOLINE1) {
             sheet.getRange(R.GASOLINE1, blockCol + 1).setValue(exp.km);
+          }
+          break;
+        case 'diesel':
+          // 軽油: 車両名を行27(VEHICLE1_NAME)、軽油kmを行31(DIESEL1)に書き込む
+          Logger.log('diesel write: vehicleName=' + exp.vehicleName + ' km=' + exp.km + ' row=' + R.VEHICLE1_NAME + '/' + R.DIESEL1 + ' col=' + (blockCol + 1));
+          if (exp.vehicleName && R.VEHICLE1_NAME) {
+            sheet.getRange(R.VEHICLE1_NAME, blockCol + 1).setValue(exp.vehicleName);
+          }
+          if (R.DIESEL1) {
+            sheet.getRange(R.DIESEL1, blockCol + 1).setValue(exp.km);
           }
           break;
         case 'highway':
@@ -1035,8 +1099,9 @@ function writeExpensesToBlock(sheet, blockCol, expenses, ROW_D) {
           break;
         case 'hotel':
           if (R.ROW_HOTEL) {
-            if (exp.label) sheet.getRange(R.ROW_HOTEL, blockCol + RIGHT_COL.HOTEL_LABEL).setValue(exp.label);
-            sheet.getRange(R.ROW_HOTEL, blockCol + RIGHT_COL.HOTEL_INPUT).setValue(exp.amount);
+            // ホテル名=S列(offset17)、金額=T列(offset18) — スプシ実測値に基づく
+            if (exp.label) sheet.getRange(R.ROW_HOTEL, blockCol + RIGHT_COL.TRAIN_NAME).setValue(exp.label);
+            sheet.getRange(R.ROW_HOTEL, blockCol + RIGHT_COL.TRAIN_AMT).setValue(exp.amount);
           }
           break;
         case 'garbage_factory':
@@ -1047,8 +1112,9 @@ function writeExpensesToBlock(sheet, blockCol, expenses, ROW_D) {
           break;
         case 'leopalace':
           if (R.ROW_HOTEL) {
-            if (exp.label) sheet.getRange(R.ROW_HOTEL, blockCol + RIGHT_COL.APAHOTEL_INPUT - 1).setValue(exp.label);
-            sheet.getRange(R.ROW_HOTEL, blockCol + RIGHT_COL.APAHOTEL_INPUT).setValue(exp.amount);
+            var leopRow = R.ROW_HOTEL + 1;  // レオパレス等行はホテル行の1つ下
+            if (exp.label) sheet.getRange(leopRow, blockCol + RIGHT_COL.TRAIN_NAME).setValue(exp.label);
+            sheet.getRange(leopRow, blockCol + RIGHT_COL.TRAIN_AMT).setValue(exp.amount);
           }
           break;
         case 'entertainment':
@@ -1673,3 +1739,290 @@ function findCandidateSheets(allSheets, inputName) {
     .map(x => x.sheet.getName());
 }
 
+
+// ============================================================
+//  新機能: 現場シート五十音順ソート・新規現場作成・ゴミ写真・日付順チェック
+// ============================================================
+
+/**
+ * 現場シートを五十音順に並び替える
+ * システムシート（SYSTEM_SHEETS）は位置固定、連番シートは末尾固定
+ * 現場シートは「事務、工場、その他」の直後から五十音順で配置
+ */
+function sortSiteSheets(ss) {
+  var baseSheet = ss.getSheetByName('事務、工場、その他');
+  if (!baseSheet) return;
+
+  var allSheets = ss.getSheets();
+  var baseIndex = -1;
+  for (var i = 0; i < allSheets.length; i++) {
+    if (allSheets[i].getName() === '事務、工場、その他') {
+      baseIndex = i;
+      break;
+    }
+  }
+  if (baseIndex < 0) return;
+
+  // 現場シートのみ抽出（システムシートでも連番でもないもの）
+  var siteSheets = allSheets.filter(function(s) {
+    var name = s.getName();
+    return SYSTEM_SHEETS.indexOf(name) === -1 && !name.match(/^\(\d+\)$/);
+  });
+
+  // 五十音順にソート
+  siteSheets.sort(function(a, b) {
+    return a.getName().localeCompare(b.getName(), 'ja');
+  });
+
+  // 逆順にして事務シートの直後に1枚ずつ挿入 → 最終的に五十音順になる
+  siteSheets.reverse().forEach(function(sheet) {
+    sheet.activate();
+    ss.moveActiveSheet(baseIndex + 2); // 1始まり
+  });
+}
+
+/**
+ * 空き連番シート（(2)〜(71)）を新規現場名にリネームする
+ * リネーム後、五十音順に並べ替える
+ */
+function createSiteSheetByRename(ss, siteName) {
+  // 既に同名シートがあれば何もしない
+  if (ss.getSheetByName(siteName)) return ss.getSheetByName(siteName);
+
+  // (2)〜(71)の中から最小の空き番号を探す
+  var sheets = ss.getSheets();
+  var numbered = sheets
+    .filter(function(s) { return s.getName().match(/^\(\d+\)$/); })
+    .sort(function(a, b) {
+      return parseInt(a.getName().replace(/[()]/g, '')) - parseInt(b.getName().replace(/[()]/g, ''));
+    });
+
+  if (numbered.length === 0) return null;
+
+  var target = numbered[0];
+  target.setName(siteName);
+
+  // 五十音順で正しい位置に移動
+  sortSiteSheets(ss);
+
+  return target;
+}
+
+/**
+ * ゴミ写真をDriveに保存してフォルダURLを返す
+ * フォルダパス: DRIVE_ROOT / YYYY-MM / YYYY-MM-DD_送信者名_現場名 /
+ */
+function saveGarbagePhotos(base64Photos, date, senderName, siteName) {
+  try {
+    var root = DriveApp.getFolderById(CONFIG.DRIVE_ROOT_FOLDER_ID);
+    var yearMonth = date.slice(0, 7); // YYYY-MM
+
+    // YYYY-MM フォルダ
+    var monthIter = root.getFoldersByName(yearMonth);
+    var monthFolder = monthIter.hasNext() ? monthIter.next() : root.createFolder(yearMonth);
+
+    // 現場名 フォルダ
+    var siteIter = monthFolder.getFoldersByName(siteName);
+    var siteFolder = siteIter.hasNext() ? siteIter.next() : monthFolder.createFolder(siteName);
+
+    // YYYY-MM-DD_送信者名 フォルダ
+    var subName = date + '_' + senderName;
+    var subIter = siteFolder.getFoldersByName(subName);
+    var subFolder = subIter.hasNext() ? subIter.next() : siteFolder.createFolder(subName);
+
+    // 写真を保存
+    base64Photos.forEach(function(base64, idx) {
+      var blob = Utilities.newBlob(
+        Utilities.base64Decode(base64),
+        'image/jpeg',
+        'ゴミ_' + (idx + 1) + '.jpg'
+      );
+      subFolder.createFile(blob);
+    });
+
+    return subFolder.getUrl();
+  } catch (e) {
+    Logger.log('saveGarbagePhotos error: ' + e);
+    return null;
+  }
+}
+
+/**
+ * 現場シートの行63にゴミ写真フォルダのDriveリンクを書き込む
+ */
+function writeGarbageFolderLink(sheet, folderUrl, day) {
+  try {
+    var blockCol = getDayBlockCol(day);
+    sheet.getRange(63, blockCol).setValue('📸 ゴミ写真');
+    sheet.getRange(63, blockCol + 1).setValue(folderUrl);
+  } catch (e) {
+    Logger.log('writeGarbageFolderLink error: ' + e);
+  }
+}
+
+// リマインド除外アカウント（名前で管理）
+var REMINDER_EXCLUDE_NAMES = ['REMOVED_HANDLE', 'REMOVED_NAME'];
+
+/**
+ * 提出済み記録を保存 & 既知ユーザーに登録
+ * キー: submitters_YYYY-MM-DD → JSON配列 ["userId1", ...]
+ * キー: known_users → JSON配列 [{id, name}, ...]
+ */
+function saveSubmitter(senderId, senderName, date) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+
+    // 提出日記録
+    var key = 'submitters_' + date;
+    var existing = props.getProperty(key);
+    var ids = existing ? JSON.parse(existing) : [];
+    if (ids.indexOf(senderId) === -1) {
+      ids.push(senderId);
+      props.setProperty(key, JSON.stringify(ids));
+    }
+
+    // 既知ユーザー登録（名前も保存しておく）
+    var knownRaw = props.getProperty('known_users');
+    var knownUsers = knownRaw ? JSON.parse(knownRaw) : [];
+    var exists = knownUsers.some(function(u) { return u.id === senderId; });
+    if (!exists) {
+      knownUsers.push({ id: senderId, name: senderName });
+      props.setProperty('known_users', JSON.stringify(knownUsers));
+      Logger.log('既知ユーザー登録: ' + senderName);
+    }
+  } catch (e) {
+    Logger.log('saveSubmitter error: ' + e);
+  }
+}
+
+/**
+ * 前日分の未提出者にLINEリマインドを送る
+ * 毎朝8時のトリガーで実行する
+ */
+function sendDailyReminder() {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var knownRaw = props.getProperty('known_users');
+    if (!knownRaw) {
+      Logger.log('既知ユーザーなし、リマインドスキップ');
+      return;
+    }
+    var knownUsers = JSON.parse(knownRaw);
+
+    // 前日（日曜はスキップ → 月曜は金曜分をチェック）
+    var target = new Date();
+    target.setDate(target.getDate() - 1);
+    while (target.getDay() === 0) { // 日曜スキップ
+      target.setDate(target.getDate() - 1);
+    }
+    var targetDate = Utilities.formatDate(target, 'Asia/Tokyo', 'yyyy-MM-dd');
+    var weekdays = ['日','月','火','水','木','金','土'];
+    var dateLabel = (target.getMonth() + 1) + '/' + target.getDate() + '（' + weekdays[target.getDay()] + '）';
+
+    var submittedIds = getSubmitterIds(targetDate);
+
+    var unsubmitted = knownUsers.filter(function(u) {
+      // 除外アカウントはスキップ
+      if (REMINDER_EXCLUDE_NAMES.indexOf(u.name) !== -1) return false;
+      // 提出済みはスキップ
+      return submittedIds.indexOf(u.id) === -1;
+    });
+
+    if (unsubmitted.length === 0) {
+      Logger.log('全員提出済み（' + targetDate + '）');
+      return;
+    }
+
+    Logger.log('未提出者: ' + unsubmitted.map(function(u) { return u.name; }).join(', '));
+
+    var msg = [{
+      type: 'text',
+      text: '⏰ 日報リマインド\n\n' + dateLabel + ' の日報がまだ届いていません。\n提出をお願いします！\n\nhttps://liff.line.me/' + getLiffId()
+    }];
+
+    unsubmitted.forEach(function(u) {
+      pushLineMessages(u.id, msg);
+    });
+
+  } catch (e) {
+    Logger.log('sendDailyReminder error: ' + e);
+  }
+}
+
+/**
+ * LIFFのIDをScriptPropertiesから取得（なければ空文字）
+ */
+function getLiffId() {
+  var p = PropertiesService.getScriptProperties().getProperties();
+  return p.LIFF_ID || '';
+}
+
+/**
+ * 毎朝8時のリマインドトリガーを設定する（初回1回だけ実行）
+ */
+function setupDailyReminderTrigger() {
+  // 既存トリガーを削除してから再登録
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === 'sendDailyReminder') {
+      ScriptApp.deleteTrigger(t);
+    }
+  });
+  ScriptApp.newTrigger('sendDailyReminder')
+    .timeBased()
+    .everyDays(1)
+    .atHour(8)
+    .create();
+  Logger.log('リマインドトリガー設定完了（毎朝8時）');
+}
+
+/**
+ * 指定日の提出済みsenderIdリストを返す
+ */
+function getSubmitterIds(date) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var key = 'submitters_' + date;
+    var val = props.getProperty(key);
+    return val ? JSON.parse(val) : [];
+  } catch (e) {
+    Logger.log('getSubmitterIds error: ' + e);
+    return [];
+  }
+}
+
+/**
+ * 指定送信者の、指定日より前で未送信の最も古い日付を返す
+ * 直近7日間のみチェック（日曜日はスキップ）
+ * 過去に1件も提出記録がない場合（新規ユーザー・長期不在）はスキップ
+ * @returns {string|null} 未送信日付(YYYY-MM-DD) または null（問題なし）
+ */
+function checkMissingDate(senderId, date) {
+  // 直前の平日を1つ特定
+  var checkDate = new Date(date + 'T00:00:00');
+  var prevDateStr = null;
+  for (var i = 1; i <= 7; i++) {
+    checkDate.setDate(checkDate.getDate() - 1);
+    if (checkDate.getDay() === 0) continue; // 日曜スキップ
+    prevDateStr = Utilities.formatDate(checkDate, 'Asia/Tokyo', 'yyyy-MM-dd');
+    break;
+  }
+  if (!prevDateStr) return null;
+
+  // 直前の平日が提出済みならOK
+  if (getSubmitterIds(prevDateStr).indexOf(senderId) !== -1) return null;
+
+  // 直前が未提出 → さらに遡って「過去に提出済みの日があるか」確認
+  // なければ新規ユーザーとみなしてスキップ
+  var innerDate = new Date(checkDate);
+  for (var j = 1; j <= 6; j++) {
+    innerDate.setDate(innerDate.getDate() - 1);
+    if (innerDate.getDay() === 0) continue;
+    var innerDateStr = Utilities.formatDate(innerDate, 'Asia/Tokyo', 'yyyy-MM-dd');
+    if (getSubmitterIds(innerDateStr).indexOf(senderId) !== -1) {
+      return prevDateStr; // 過去に提出済みがある → 間が抜けているのでブロック
+    }
+  }
+
+  // 過去7日間に提出記録なし → 新規ユーザーとみなしてスキップ
+  return null;
+}

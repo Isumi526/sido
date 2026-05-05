@@ -50,6 +50,7 @@ export interface Expenses {
   leopalaceYen?: number
   garbageFactoryYen?: number
   garbageSiteYen?: number
+  garbagePhotos?: string[]  // Base64エンコード済み写真データ（1枚あたり最大2MB推奨）
   trains: LineItem[]
   others: LineItem[]
   entertainmentLabel?: string
@@ -58,6 +59,7 @@ export interface Expenses {
 
 export interface SiteReport {
   siteName: string
+  customSiteName?: string  // 「その他（新規現場）」選択時の自由記入現場名
   workers: WorkerEntry[]
   expenses: Expenses
   subcontractors: SubcontractorEntry[]
@@ -67,6 +69,7 @@ export interface DailyReport {
   date: string
   sender: string
   senderId: string
+  isWorking: boolean  // true=稼働あり, false=稼働なし（休み等）
   sites: SiteReport[]
   note?: string
 }

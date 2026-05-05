@@ -34,14 +34,32 @@
 
         <!-- 日付 -->
         <FormSection num="01" title="日付">
-          <input v-model="report.form.value.date" type="date" class="input" required />
+          <input
+            v-model="report.form.value.date"
+            type="date"
+            class="input"
+            :min="yesterday"
+            :max="today"
+            required
+          />
         </FormSection>
+
+        <!-- 稼働有無 -->
+        <FormSection num="02" title="稼働有無">
+          <select v-model="isWorkingStr" class="select" required>
+            <option value="working">稼働あり</option>
+            <option value="off">稼働なし（休み・移動日等）</option>
+          </select>
+        </FormSection>
+
+        <!-- 現場ブロック（稼働ありの場合のみ表示） -->
+        <template v-if="isWorkingStr === 'working'">
 
         <!-- 現場ブロック -->
         <FormSection
           v-for="(site, si) in report.form.value.sites"
           :key="si"
-          :num="String(si + 2).padStart(2, '0')"
+          :num="String(si + 3).padStart(2, '0')"
           :title="`現場${ report.form.value.sites.length > 1 ? ' ' + (si + 1) : '' }`"
           accent
         >
@@ -59,7 +77,16 @@
             <select v-model="site.siteName" class="select" required>
               <option value="">選択してください</option>
               <option v-for="name in master.siteNames.value" :key="name" :value="name">{{ name }}</option>
+              <option value="__other__">＋ 新しい現場を登録する</option>
             </select>
+            <input
+              v-if="site.siteName === '__other__'"
+              v-model="site.customSiteName"
+              type="text"
+              class="input mt6"
+              placeholder="現場名を入力（例: 渋谷プロジェクト）"
+              required
+            />
           </Field>
 
           <!-- ── 稼働 ── -->
@@ -252,6 +279,19 @@
                   <ExpenseField v-model="site.expenses.garbageFactoryYen" label="木材のみ（円）" />
                   <ExpenseField v-model="site.expenses.garbageSiteYen"    label="混載（円）" />
                 </div>
+                <div v-if="site.expenses.garbageFactoryYen || site.expenses.garbageSiteYen" class="mt8">
+                  <label class="hours-label">ゴミ写真（任意）</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    class="input mt6"
+                    @change="(e) => handleGarbagePhoto(si, e)"
+                  />
+                  <div v-if="site.expenses.garbagePhotos?.length" class="photo-preview">
+                    <span class="hours-label">{{ site.expenses.garbagePhotos.length }}枚選択済み</span>
+                  </div>
+                </div>
               </template>
             </Field>
 
@@ -292,6 +332,8 @@
         <button type="button" class="btn-add-site" @click="addSite()">
           ＋ 現場を追加する
         </button>
+
+        </template><!-- /isWorkingStr === 'working' -->
 
         <!-- 備考 -->
         <FormSection num="✎" title="備考">
@@ -334,6 +376,13 @@ const report = useReport()
 const isDev = computed(() => config.public.appEnv === 'development' || liff.isTester.value)
 
 const initializing = ref(true)
+
+// 日付選択の範囲（今日・昨日のみ）
+const today     = new Date().toISOString().split('T')[0]
+const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
+
+// 稼働有無
+const isWorkingStr = ref<'working' | 'off'>('working')
 
 // 送信日が日曜かどうか（料率計算に使用）
 const isSunday = computed(() =>
@@ -382,7 +431,7 @@ function setUsage(si: number, key: keyof UsageState, value: string) {
       exp.leopalaceName = undefined; exp.leopalaceYen = undefined
       break
     case 'garbage':
-      exp.garbageFactoryYen = undefined; exp.garbageSiteYen = undefined
+      exp.garbageFactoryYen = undefined; exp.garbageSiteYen = undefined; exp.garbagePhotos = undefined
       break
     case 'other':
       exp.others = [createLineItem()]
@@ -417,24 +466,41 @@ onMounted(async () => {
 })
 
 async function handleSubmit() {
+  report.form.value.isWorking = isWorkingStr.value === 'working'
   await report.submit()
 }
 
-function handleReset() {
+async function handleReset() {
   report.reset()
   siteUsage.value = [createUsage()]
+  isWorkingStr.value = 'working'
+  await master.fetch()
+}
+
+async function handleGarbagePhoto(si: number, event: Event) {
+  const input = event.target as HTMLInputElement
+  if (!input.files?.length) return
+  const photos: string[] = []
+  for (const file of Array.from(input.files)) {
+    const base64 = await new Promise<string>((resolve) => {
+      const reader = new FileReader()
+      reader.onload = (e) => resolve((e.target?.result as string).split(',')[1])
+      reader.readAsDataURL(file)
+    })
+    photos.push(base64)
+  }
+  report.form.value.sites[si].expenses.garbagePhotos = photos
 }
 
 function fillTestData() {
   report.reset()
   siteUsage.value = [createUsage()]
-  addSite() // sites[1] を追加 & siteUsage にも push
 
   report.form.value.note = 'テスト送信'
 
-  // マスタから取得（なければフォールバック）
-  const fw = master.factoryWorkerNames.value  // 工場/事務所作業員
-  const sw = master.siteWorkerNames.value      // 現場作業員
+  // マスタから取得
+  const fw  = master.factoryWorkerNames.value
+  const sw  = master.siteWorkerNames.value
   const sub = master.subcontractorNames.value
 
   const mw = (name: string, role: 'factory' | 'site', startTime: string, endTime: string, breakMinutes: number) => ({
@@ -444,62 +510,66 @@ function fillTestData() {
     hoursSunday: 0, hoursSundayOT: 0, hoursSundayNight: 0, hoursSundayOTNight: 0,
   } as WorkerEntry)
 
-  // ── 現場1 ──
-  const site0 = report.form.value.sites[0]
-  site0.siteName = master.siteNames.value[0] || 'BLH名古屋'
-  site0.workers = [
-    mw(fw[0] || '今井',  'factory', '08:00', '17:30', 90),
-    mw(fw[1] || '伊藤',  'factory', '08:00', '20:00', 90),
-    mw(sw[0] || 'アリフ', 'site',   '08:00', '23:30', 120),
-  ]
-  site0.subcontractors = [
-    { subcontractorId: '', subcontractorName: sub[0] || 'VendorA', count: 2 },
-  ]
-  siteUsage.value[0].vehicle = 'あり'
-  site0.expenses.vehicles = [
-    { vehicleName: 'ハイエース', distanceKm: 80, dieselKm: undefined, parkingYen: 500, highwayYen: 1200 },
-  ]
-  siteUsage.value[0].train = 'あり'
-  site0.expenses.trains = [{ label: '名古屋→大阪', yen: 3000 }]
-  siteUsage.value[0].hotel = 'あり'
-  site0.expenses.hotelName = 'アパホテル名古屋'
-  site0.expenses.hotelYen  = 8000
-  siteUsage.value[0].leopalace = 'あり'
-  site0.expenses.leopalaceName = 'レオパレス栄'
-  site0.expenses.leopalaceYen  = 50000
-  siteUsage.value[0].garbage = 'あり'
-  site0.expenses.garbageFactoryYen = 3000
-  site0.expenses.garbageSiteYen    = 5000
-  siteUsage.value[0].other = 'あり'
-  site0.expenses.others = [{ label: '養生テープ', yen: 1500 }]
-  siteUsage.value[0].entertainment = 'あり'
-  site0.expenses.entertainmentLabel = '懇親会'
-  site0.expenses.entertainmentYen   = 10000
+  const dummyPhoto = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+  const hasExisting = master.siteNames.value.length > 0
 
-  // ── 現場2 ──
-  const site1 = report.form.value.sites[1]
-  site1.siteName = master.siteNames.value[1] || 'ギフト桜ステージ'
-  site1.workers = [
-    mw(fw[2] || fw[0] || '野村', 'factory', '08:00', '17:30', 90),
-    mw(sw[1] || sw[0] || 'ハイ', 'site',    '08:00', '17:30', 90),
+  if (hasExisting) {
+    // ── 現場1（既存現場） ──
+    const site0 = report.form.value.sites[0]
+    site0.siteName = master.siteNames.value[0]
+    site0.workers = [
+      mw(fw[0] || '', 'factory', '08:00', '17:30', 90),
+      mw(fw[1] || '', 'factory', '08:00', '20:00', 90),
+      mw(sw[0] || '', 'site',   '08:00', '23:30', 120),
+    ]
+    site0.subcontractors = [{ subcontractorId: '', subcontractorName: sub[0] || '', count: 2 }]
+    siteUsage.value[0].vehicle = 'あり'
+    site0.expenses.vehicles = [{ vehicleName: 'ハイエース', distanceKm: 80, dieselKm: undefined, parkingYen: 500, highwayYen: 1200 }]
+    siteUsage.value[0].train = 'あり'
+    site0.expenses.trains = [{ label: '名古屋→大阪', yen: 3000 }]
+    siteUsage.value[0].hotel = 'あり'
+    site0.expenses.hotelName = 'アパホテル名古屋'
+    site0.expenses.hotelYen  = 8000
+    siteUsage.value[0].leopalace = 'あり'
+    site0.expenses.leopalaceName = 'レオパレス栄'
+    site0.expenses.leopalaceYen  = 50000
+    siteUsage.value[0].garbage = 'あり'
+    site0.expenses.garbageFactoryYen = 3000
+    site0.expenses.garbageSiteYen    = 5000
+    site0.expenses.garbagePhotos = [dummyPhoto, dummyPhoto]
+    siteUsage.value[0].other = 'あり'
+    site0.expenses.others = [{ label: '養生テープ', yen: 1500 }]
+    siteUsage.value[0].entertainment = 'あり'
+    site0.expenses.entertainmentLabel = '懇親会'
+    site0.expenses.entertainmentYen   = 10000
+
+    // ── 現場2（新規現場「その他」） ── を追加
+    addSite()
+  }
+
+  // ── 新規現場「その他」（既存あり→2つ目 / 既存なし→1つ目） ──
+  const newIdx = hasExisting ? 1 : 0
+  const siteN = report.form.value.sites[newIdx]
+  siteN.siteName = '__other__'
+  siteN.customSiteName = 'テスト新規現場'
+  siteN.workers = [
+    mw(fw[2] || fw[0] || '', 'factory', '08:00', '17:30', 90),
+    mw(sw[1] || sw[0] || '', 'site',    '08:00', '17:30', 90),
   ]
-  site1.subcontractors = [
-    { subcontractorId: '', subcontractorName: sub[1] || sub[0] || 'VendorA', count: 1 },
-  ]
-  siteUsage.value[1].vehicle = 'あり'
-  site1.expenses.vehicles = [
-    { vehicleName: 'キャラバン', distanceKm: undefined, dieselKm: 60, parkingYen: undefined, highwayYen: undefined },
-  ]
-  siteUsage.value[1].train = 'あり'
-  site1.expenses.trains = [{ label: '大阪→名古屋', yen: 2500 }]
-  siteUsage.value[1].garbage = 'あり'
-  site1.expenses.garbageFactoryYen = 2000
-  site1.expenses.garbageSiteYen    = 4000
-  siteUsage.value[1].other = 'あり'
-  site1.expenses.others = [{ label: 'ビニールシート', yen: 800 }]
-  siteUsage.value[1].entertainment = 'あり'
-  site1.expenses.entertainmentLabel = '昼食代'
-  site1.expenses.entertainmentYen   = 5000
+  siteN.subcontractors = [{ subcontractorId: '', subcontractorName: sub[1] || sub[0] || '', count: 1 }]
+  siteUsage.value[newIdx].vehicle = 'あり'
+  siteN.expenses.vehicles = [{ vehicleName: 'キャラバン', distanceKm: undefined, dieselKm: 60, parkingYen: undefined, highwayYen: undefined }]
+  siteUsage.value[newIdx].train = 'あり'
+  siteN.expenses.trains = [{ label: '大阪→名古屋', yen: 2500 }]
+  siteUsage.value[newIdx].garbage = 'あり'
+  siteN.expenses.garbageFactoryYen = 2000
+  siteN.expenses.garbageSiteYen    = 4000
+  siteN.expenses.garbagePhotos = [dummyPhoto]
+  siteUsage.value[newIdx].other = 'あり'
+  siteN.expenses.others = [{ label: 'ビニールシート', yen: 800 }]
+  siteUsage.value[newIdx].entertainment = 'あり'
+  siteN.expenses.entertainmentLabel = '昼食代'
+  siteN.expenses.entertainmentYen   = 5000
 }
 </script>
 

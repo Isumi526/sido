@@ -5,7 +5,7 @@
 import type { MasterData } from '~/types'
 
 const FALLBACK: MasterData = {
-  sites: ['ギフト桜ステージ', 'BLH名古屋', 'サボテン', 'TANAKA', 'LOGIFLAGTECK東扇じま', 'ルルレモン'],
+  sites: [],
   workers: [
     // 工場・事務所
     { name: '今井',   unitPrice: 30000, role: 'factory' },
