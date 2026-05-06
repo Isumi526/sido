@@ -398,7 +398,7 @@ function buildExpenses(site) {
   if (Array.isArray(exp.vehicles) && exp.vehicles.length > 0) {
     exp.vehicles.forEach(function(v) {
       if (!v || (!v.distanceKm && !v.dieselKm && !v.parkingYen && !v.highwayYen)) return;
-      var vName = (v.vehicleName || '') + (v.etcCard ? ' ' + v.etcCard : '');
+      var vName = (v.vehicleName || '') + (v.etcCard ? '/ ETC' + v.etcCard : '');
       if (v.distanceKm) {
         expenses.push({
           type:        'gasoline',
@@ -544,14 +544,16 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
       }
       if (exp.entertainmentYen) expLines.push((exp.entertainmentLabel || '雑経費') + ' ¥' + Number(exp.entertainmentYen).toLocaleString());
       if (exp.otherYen)         expLines.push('その他 ¥' + Number(exp.otherYen).toLocaleString());
-      // 経費ファイルURL
+      // 経費ファイルURL（同一フォルダに保存されるため重複排除して1行表示）
       var siteExpFileUrls = (expenseFileUrls && expenseFileUrls[site.siteName]) || {};
-      if (siteExpFileUrls.vehicleFiles)       expLines.push('📎 車両領収書 ' + siteExpFileUrls.vehicleFiles);
-      if (siteExpFileUrls.trainFiles)         expLines.push('📎 電車領収書 ' + siteExpFileUrls.trainFiles);
-      if (siteExpFileUrls.hotelFiles)         expLines.push('📎 ホテル領収書 ' + siteExpFileUrls.hotelFiles);
-      if (siteExpFileUrls.leopalaceFiles)     expLines.push('📎 レオパレス領収書 ' + siteExpFileUrls.leopalaceFiles);
-      if (siteExpFileUrls.otherFiles)         expLines.push('📎 その他経費ファイル ' + siteExpFileUrls.otherFiles);
-      if (siteExpFileUrls.entertainmentFiles) expLines.push('📎 雑経費領収書 ' + siteExpFileUrls.entertainmentFiles);
+      var uniqueExpUrls = Object.values(siteExpFileUrls).filter(function(url, i, arr) {
+        return url && arr.indexOf(url) === i;
+      });
+      if (uniqueExpUrls.length === 1) {
+        expLines.push('📎 領収書フォルダ ' + uniqueExpUrls[0]);
+      } else {
+        uniqueExpUrls.forEach(function(url) { expLines.push('📎 ' + url); });
+      }
       if (expLines.length > 0) {
         lines.push('');
         expLines.forEach(function(l) { lines.push('・' + l); });
