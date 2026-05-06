@@ -45,6 +45,12 @@ export const createSite = (): SiteReport => ({
   subcontractors: [createSub()],
 })
 
+// 経費オブジェクトからファイルデータだけ除去（本体送信用）
+function stripFiles(expenses: Record<string, unknown>): Record<string, unknown> {
+  const { vehicleFiles, trainFiles, hotelFiles, leopalaceFiles, otherFiles, entertainmentFiles, garbagePhotos, ...rest } = expenses as any
+  return rest
+}
+
 // undefined / null / 空文字 のキーを再帰的に除去してペイロードを軽量化
 function stripEmpty(obj: unknown): unknown {
   if (Array.isArray(obj)) return obj.map(stripEmpty)
@@ -142,20 +148,49 @@ export const useReport = () => {
       if (!config.public.gasUrl) {
         console.log('[Report] GAS URL未設定 - 送信ペイロード:', JSON.stringify(payload, null, 2))
       } else {
-        const body = JSON.stringify(stripEmpty({
-          action: 'submitReport',
+        const devExtra = (config.public.appEnv === 'development' || isTester.value) && config.public.devNotifyGroupId
+          ? { _devNotifyGroupId: config.public.devNotifyGroupId }
+          : {}
+
+        // ── ① 本体送信（ファイルなし・await）──
+        // ファイルデータを除いた軽量ペイロードを await → スプレッドシート書き込み＋LINE通知が終わったらローディング終了
+        const mainPayload = {
           ...payload,
-          ...((config.public.appEnv === 'development' || isTester.value) && config.public.devNotifyGroupId
-            ? { _devNotifyGroupId: config.public.devNotifyGroupId }
-            : {}),
-        }))
-        // no-cors はレスポンスを読めないので fire-and-forget（待たない）
-        fetch(config.public.gasUrl, {
+          sites: payload.sites.map(site => ({
+            ...site,
+            expenses: stripFiles(site.expenses),
+          })),
+        }
+        await fetch(config.public.gasUrl, {
           method:  'POST',
           mode:    'no-cors',
           headers: { 'Content-Type': 'text/plain' },
-          body,
-        }).catch(e => console.error('[Report] 送信エラー:', e))
+          body:    JSON.stringify(stripEmpty({ action: 'submitReport', ...mainPayload, ...devExtra })),
+        })
+
+        // ── ② ファイルアップロード（fire-and-forget）──
+        const hasFiles = payload.sites.some(s => {
+          const e = s.expenses
+          return e.vehicleFiles?.length || e.trainFiles?.length || e.hotelFiles?.length ||
+                 e.leopalaceFiles?.length || e.otherFiles?.length || e.entertainmentFiles?.length ||
+                 e.garbagePhotos?.length
+        })
+        if (hasFiles) {
+          fetch(config.public.gasUrl, {
+            method:  'POST',
+            mode:    'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body:    JSON.stringify(stripEmpty({ action: 'uploadFiles', ...devExtra,
+              date:     payload.date,
+              sender:   payload.sender,
+              senderId: payload.senderId,
+              sites:    payload.sites.map(s => ({
+                siteName: s.siteName,
+                expenses: s.expenses,
+              })),
+            })),
+          }).catch(e => console.error('[Report] ファイルアップロードエラー:', e))
+        }
       }
       submitted.value = true
     } catch (e: unknown) {

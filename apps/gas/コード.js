@@ -275,8 +275,6 @@ function handleLiffReport(body) {
 
     var successSites = [];
     var failedSites  = [];
-    var garbageFolderUrls = {}; // { siteName: folderUrl }
-    var expenseFileUrls   = {}; // { siteName: { vehicleFiles: url, ... } }
 
     sites.forEach(function(site) {
       if (!site.siteName) return;
@@ -329,33 +327,6 @@ function handleLiffReport(body) {
 
         writeDayBlock(sheet, parsed);
 
-        // ゴミ写真をDriveに保存してスプシにリンクを記録
-        if (site.expenses && (site.expenses.garbageFactoryM3 || site.expenses.garbageSiteM3) && site.expenses.garbagePhotos && site.expenses.garbagePhotos.length > 0) {
-          var folderUrl = saveGarbagePhotos(site.expenses.garbagePhotos, date, sender, site.siteName);
-          if (folderUrl) {
-            writeGarbageFolderLink(sheet, folderUrl, day);
-            garbageFolderUrls[site.siteName] = folderUrl;
-          }
-        }
-
-        // その他経費ファイルをDriveに保存
-        var siteFileUrls = {};
-        [
-          { key: 'vehicleFiles',       label: '車両' },
-          { key: 'trainFiles',         label: '電車' },
-          { key: 'hotelFiles',         label: 'ホテル' },
-          { key: 'leopalaceFiles',     label: 'レオパレス' },
-          { key: 'otherFiles',         label: 'その他経費' },
-          { key: 'entertainmentFiles', label: '雑経費' },
-        ].forEach(function(cat) {
-          var files = site.expenses && site.expenses[cat.key];
-          if (files && files.length > 0) {
-            var url = saveExpenseFiles(files, date, sender, site.siteName, cat.label);
-            if (url) siteFileUrls[cat.key] = url;
-          }
-        });
-        if (Object.keys(siteFileUrls).length > 0) expenseFileUrls[site.siteName] = siteFileUrls;
-
         successSites.push(site.siteName);
 
       } catch (siteErr) {
@@ -371,7 +342,7 @@ function handleLiffReport(body) {
 
     // LINE通知（グループに送信）
     var devGroupId = body._devNotifyGroupId || null;
-    sendLiffReportNotification(sender, date, body.sites, successSites, failedSites, note, devGroupId, garbageFolderUrls, expenseFileUrls);
+    sendLiffReportNotification(sender, date, body.sites, successSites, failedSites, note, devGroupId);
 
     return jsonResponse({
       success: true,
@@ -486,7 +457,7 @@ function buildExpenses(site) {
 /**
  * LIFFフォーム送信後のLINE通知
  */
-function sendLiffReportNotification(sender, date, sites, successSites, failedSites, note, devGroupId, garbageFolderUrls, expenseFileUrls) {
+function sendLiffReportNotification(sender, date, sites, successSites, failedSites, note, devGroupId) {
   try {
     var d        = new Date(date + 'T00:00:00');
     var weekdays = ['日','月','火','水','木','金','土'];
@@ -555,25 +526,9 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
         if (exp.garbageFactoryM3) g.push('木材のみ ' + Number(exp.garbageFactoryM3) + 'm³');
         if (exp.garbageSiteM3)    g.push('混載 '     + Number(exp.garbageSiteM3)    + 'm³');
         expLines.push('ゴミ ' + g.join(' '));
-        var photoUrl = garbageFolderUrls && garbageFolderUrls[site.siteName];
-        if (photoUrl) expLines.push('📸 写真フォルダ ' + photoUrl);
       }
       if (exp.entertainmentYen) expLines.push((exp.entertainmentLabel || '雑経費') + ' ¥' + Number(exp.entertainmentYen).toLocaleString());
       if (exp.otherYen)         expLines.push('その他 ¥' + Number(exp.otherYen).toLocaleString());
-      // 経費ファイルURL（カテゴリ別・ファイル個別に表示）
-      var siteExpFileUrls = (expenseFileUrls && expenseFileUrls[site.siteName]) || {};
-      var expFileLabelMap = {
-        vehicleFiles: '車両領収書', trainFiles: '電車領収書', hotelFiles: 'ホテル領収書',
-        leopalaceFiles: 'レオパレス領収書', otherFiles: 'その他経費', entertainmentFiles: '雑経費領収書',
-      };
-      Object.keys(expFileLabelMap).forEach(function(key) {
-        var urls = siteExpFileUrls[key];
-        if (!urls || !urls.length) return;
-        var label = expFileLabelMap[key];
-        urls.forEach(function(url, i) {
-          expLines.push('📎 ' + label + (urls.length > 1 ? '(' + (i + 1) + ')' : '') + ' ' + url);
-        });
-      });
       if (expLines.length > 0) {
         lines.push('');
         expLines.forEach(function(l) { lines.push('・' + l); });
@@ -964,11 +919,59 @@ function doPost(e) {
     if (body.action === 'submitReport') {
       return handleLiffReport(body);
     }
+    if (body.action === 'uploadFiles') {
+      return handleFileUploads(body);
+    }
   } catch (err) {
     Logger.log('doPost error: ' + err);
   }
   return ContentService.createTextOutput(JSON.stringify({ status: 'ok' }))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * ファイルアップロード専用ハンドラ（fire-and-forgetで呼ばれる）
+ * スプレッドシート書き込みやLINE通知は行わず、Driveへの保存のみ実施
+ */
+function handleFileUploads(body) {
+  try {
+    var sender = body.sender || '不明';
+    var date   = body.date;
+    var sites  = body.sites || [];
+    sites.forEach(function(site) {
+      if (!site.siteName || !site.expenses) return;
+      try {
+        var exp = site.expenses;
+        // ゴミ写真
+        if ((exp.garbageFactoryM3 || exp.garbageSiteM3) && exp.garbagePhotos && exp.garbagePhotos.length > 0) {
+          var ss    = getSpreadsheetBySiteName(site.siteName);
+          var sheet = ss ? getCaseSheet(ss, site.siteName) : null;
+          var day   = date ? parseInt(date.split('-')[2]) : null;
+          var folderUrl = saveGarbagePhotos(exp.garbagePhotos, date, sender, site.siteName);
+          if (folderUrl && sheet && day) writeGarbageFolderLink(sheet, folderUrl, day);
+        }
+        // 各経費ファイル
+        [
+          { key: 'vehicleFiles',       label: '車両' },
+          { key: 'trainFiles',         label: '電車' },
+          { key: 'hotelFiles',         label: 'ホテル' },
+          { key: 'leopalaceFiles',     label: 'レオパレス' },
+          { key: 'otherFiles',         label: 'その他経費' },
+          { key: 'entertainmentFiles', label: '雑経費' },
+        ].forEach(function(cat) {
+          var files = exp[cat.key];
+          if (files && files.length > 0) {
+            saveExpenseFiles(files, date, sender, site.siteName, cat.label);
+          }
+        });
+      } catch (siteErr) {
+        Logger.log('handleFileUploads site error [' + site.siteName + ']: ' + siteErr);
+      }
+    });
+  } catch (err) {
+    Logger.log('handleFileUploads error: ' + err);
+  }
+  return jsonResponse({ success: true });
 }
 
 
@@ -1975,7 +1978,7 @@ function saveExpenseFiles(dataUrls, date, senderName, siteName, category) {
       var blob = Utilities.newBlob(
         Utilities.base64Decode(base64Data),
         mimeType,
-        category + '_' + senderName + '_' + (idx + 1) + ext
+        date + '_' + siteName + '_' + category + '_' + senderName + '_' + (idx + 1) + ext
       );
       var file = subFolder.createFile(blob);
       fileUrls.push(file.getUrl());
