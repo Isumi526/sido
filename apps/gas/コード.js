@@ -381,6 +381,22 @@ function handleLiffReport(body) {
 
   } catch (err) {
     Logger.log('handleLiffReport error: ' + err);
+    // 致命的エラーをLINEに通知
+    try {
+      var errMsg = [
+        '🚨 日報処理エラー',
+        '送信者: ' + (body.sender || '不明'),
+        '日付: ' + (body.date || '不明'),
+        'エラー: ' + String(err).split('\n')[0],
+        '※ スプレッドシートへの転記が失敗している可能性があります',
+      ].join('\n');
+      var errMsgObj = [{ type: 'text', text: errMsg }];
+      var groupIds = (body._devNotifyGroupId ? [body._devNotifyGroupId] : (CONFIG.NOTIFY_GROUP_IDS || []));
+      if (!body._devNotifyGroupId && CONFIG.LINE_PUSH_USER_ID) pushLineMessages(CONFIG.LINE_PUSH_USER_ID, errMsgObj);
+      groupIds.forEach(function(id) { pushLineMessages(id, errMsgObj); });
+    } catch (notifyErr) {
+      Logger.log('エラー通知の送信失敗: ' + notifyErr);
+    }
     return jsonResponse({ success: false, error: err.toString() });
   }
 }
@@ -544,16 +560,20 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
       }
       if (exp.entertainmentYen) expLines.push((exp.entertainmentLabel || '雑経費') + ' ¥' + Number(exp.entertainmentYen).toLocaleString());
       if (exp.otherYen)         expLines.push('その他 ¥' + Number(exp.otherYen).toLocaleString());
-      // 経費ファイルURL（同一フォルダに保存されるため重複排除して1行表示）
+      // 経費ファイルURL（カテゴリ別・ファイル個別に表示）
       var siteExpFileUrls = (expenseFileUrls && expenseFileUrls[site.siteName]) || {};
-      var uniqueExpUrls = Object.values(siteExpFileUrls).filter(function(url, i, arr) {
-        return url && arr.indexOf(url) === i;
+      var expFileLabelMap = {
+        vehicleFiles: '車両領収書', trainFiles: '電車領収書', hotelFiles: 'ホテル領収書',
+        leopalaceFiles: 'レオパレス領収書', otherFiles: 'その他経費', entertainmentFiles: '雑経費領収書',
+      };
+      Object.keys(expFileLabelMap).forEach(function(key) {
+        var urls = siteExpFileUrls[key];
+        if (!urls || !urls.length) return;
+        var label = expFileLabelMap[key];
+        urls.forEach(function(url, i) {
+          expLines.push('📎 ' + label + (urls.length > 1 ? '(' + (i + 1) + ')' : '') + ' ' + url);
+        });
       });
-      if (uniqueExpUrls.length === 1) {
-        expLines.push('📎 領収書フォルダ ' + uniqueExpUrls[0]);
-      } else {
-        uniqueExpUrls.forEach(function(url) { expLines.push('📎 ' + url); });
-      }
       if (expLines.length > 0) {
         lines.push('');
         expLines.forEach(function(l) { lines.push('・' + l); });
@@ -1940,6 +1960,7 @@ function saveExpenseFiles(dataUrls, date, senderName, siteName, category) {
     var subIter = siteFolder.getFoldersByName(subName);
     var subFolder = subIter.hasNext() ? subIter.next() : siteFolder.createFolder(subName);
 
+    var fileUrls = [];
     dataUrls.forEach(function(dataUrl, idx) {
       var mimeType = 'image/jpeg';
       var base64Data = dataUrl;
@@ -1956,10 +1977,11 @@ function saveExpenseFiles(dataUrls, date, senderName, siteName, category) {
         mimeType,
         category + '_' + senderName + '_' + (idx + 1) + ext
       );
-      subFolder.createFile(blob);
+      var file = subFolder.createFile(blob);
+      fileUrls.push(file.getUrl());
     });
 
-    return subFolder.getUrl();
+    return fileUrls; // ファイル個別URLの配列
   } catch (e) {
     Logger.log('saveExpenseFiles error: ' + e);
     return null;
