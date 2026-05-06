@@ -45,6 +45,19 @@ export const createSite = (): SiteReport => ({
   subcontractors: [createSub()],
 })
 
+// undefined / null / 空文字 のキーを再帰的に除去してペイロードを軽量化
+function stripEmpty(obj: unknown): unknown {
+  if (Array.isArray(obj)) return obj.map(stripEmpty)
+  if (obj !== null && typeof obj === 'object') {
+    return Object.fromEntries(
+      Object.entries(obj as Record<string, unknown>)
+        .filter(([, v]) => v !== undefined && v !== null && v !== '')
+        .map(([k, v]) => [k, stripEmpty(v)])
+    )
+  }
+  return obj
+}
+
 export const useReport = () => {
   const config  = useRuntimeConfig()
   const { profile, isTester } = useLiff()
@@ -128,20 +141,21 @@ export const useReport = () => {
     try {
       if (!config.public.gasUrl) {
         console.log('[Report] GAS URL未設定 - 送信ペイロード:', JSON.stringify(payload, null, 2))
-        await new Promise(r => setTimeout(r, 800))
       } else {
-        await fetch(config.public.gasUrl, {
-          method:  'POST',
-          mode:    'no-cors',
-          headers: { 'Content-Type': 'text/plain' },
-          body:    JSON.stringify({
+        const body = JSON.stringify(stripEmpty({
           action: 'submitReport',
           ...payload,
           ...((config.public.appEnv === 'development' || isTester.value) && config.public.devNotifyGroupId
             ? { _devNotifyGroupId: config.public.devNotifyGroupId }
             : {}),
-        }),
-        })
+        }))
+        // no-cors はレスポンスを読めないので fire-and-forget（待たない）
+        fetch(config.public.gasUrl, {
+          method:  'POST',
+          mode:    'no-cors',
+          headers: { 'Content-Type': 'text/plain' },
+          body,
+        }).catch(e => console.error('[Report] 送信エラー:', e))
       }
       submitted.value = true
     } catch (e: unknown) {
