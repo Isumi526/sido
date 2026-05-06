@@ -186,7 +186,7 @@
 
             <!-- 車両 -->
             <Field label="車両">
-              <p class="vehicle-note">鍵を持ち出した人が選択・記入してください</p>
+              <p class="vehicle-note">鍵を持ち出した人が「あり」を選択し詳細記入してください</p>
               <select :value="siteUsage[si].vehicle" class="select select--usage" @change="(e) => setUsage(si, 'vehicle', (e.target as HTMLSelectElement).value)">
                 <option value="なし">なし</option>
                 <option value="あり">あり</option>
