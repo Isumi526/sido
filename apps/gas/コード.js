@@ -398,21 +398,22 @@ function buildExpenses(site) {
   if (Array.isArray(exp.vehicles) && exp.vehicles.length > 0) {
     exp.vehicles.forEach(function(v) {
       if (!v || (!v.distanceKm && !v.dieselKm && !v.parkingYen && !v.highwayYen)) return;
+      var vName = (v.vehicleName || '') + (v.etcCard ? ' ' + v.etcCard : '');
       if (v.distanceKm) {
         expenses.push({
           type:        'gasoline',
-          label:       (v.vehicleName ? v.vehicleName + ' ' : '') + '往復' + v.distanceKm + 'km',
+          label:       (vName ? vName + ' ' : '') + '往復' + v.distanceKm + 'km',
           km:          Number(v.distanceKm),
           amount:      Math.round(Number(v.distanceKm) * 14.58),
-          vehicleName: v.vehicleName || '',
+          vehicleName: vName,
         });
       }
       if (v.dieselKm) {
         expenses.push({
           type:        'diesel',
-          label:       (v.vehicleName ? v.vehicleName + ' ' : '') + '軽油往復' + v.dieselKm + 'km',
+          label:       (vName ? vName + ' ' : '') + '軽油往復' + v.dieselKm + 'km',
           km:          Number(v.dieselKm),
-          vehicleName: v.vehicleName || '',
+          vehicleName: vName,
         });
       }
       if (v.parkingYen) expenses.push({ type: 'parking', label: '駐車場', amount: Number(v.parkingYen) });
