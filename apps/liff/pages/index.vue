@@ -186,13 +186,13 @@
 
             <!-- 車両 -->
             <Field label="車両">
+              <p class="vehicle-note">鍵を持ち出した人が選択・記入してください</p>
               <select :value="siteUsage[si].vehicle" class="select select--usage" @change="(e) => setUsage(si, 'vehicle', (e.target as HTMLSelectElement).value)">
                 <option value="なし">なし</option>
                 <option value="あり">あり</option>
                 <option value="乗合い">乗合い</option>
               </select>
               <template v-if="siteUsage[si].vehicle === 'あり'">
-                <p class="vehicle-note">鍵を持ち出した人が詳細を記入してください</p>
                 <div
                   v-for="(veh, vi) in site.expenses.vehicles"
                   :key="vi"
