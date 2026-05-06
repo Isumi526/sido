@@ -189,6 +189,7 @@
               <select :value="siteUsage[si].vehicle" class="select select--usage" @change="(e) => setUsage(si, 'vehicle', (e.target as HTMLSelectElement).value)">
                 <option value="なし">なし</option>
                 <option value="あり">あり</option>
+                <option value="乗合い">乗合い</option>
               </select>
               <template v-if="siteUsage[si].vehicle === 'あり'">
                 <div
@@ -212,8 +213,29 @@
                     <ExpenseField v-model="veh.parkingYen" label="駐車場（円）" />
                     <ExpenseField v-model="veh.highwayYen" label="高速代（円）" />
                   </div>
+                  <!-- ETCカード -->
+                  <div class="mt8">
+                    <label class="hours-label">ETCカード利用</label>
+                    <select v-model="veh.etcUsed" class="select select--usage mt4">
+                      <option :value="false">なし</option>
+                      <option :value="true">あり</option>
+                    </select>
+                    <select v-if="veh.etcUsed" v-model="veh.etcCard" class="select mt4">
+                      <option value="">カードを選択</option>
+                      <option v-for="n in 7" :key="n" :value="`カード${['①','②','③','④','⑤','⑥','⑦'][n-1]}`">
+                        カード{{ ['①','②','③','④','⑤','⑥','⑦'][n-1] }}
+                      </option>
+                    </select>
+                  </div>
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addVehicle(si)">＋ 車両を追加</button>
+                <div class="mt8">
+                  <label class="hours-label">領収書・写真（JPEG/PDF）</label>
+                  <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'vehicleFiles', e)" />
+                  <div v-if="site.expenses.vehicleFiles?.length" class="photo-preview">
+                    <span class="hours-label">{{ site.expenses.vehicleFiles.length }}件選択済み</span>
+                  </div>
+                </div>
               </template>
             </Field>
 
@@ -230,6 +252,13 @@
                   <button v-if="site.expenses.trains.length > 1" type="button" class="btn-icon-sm" @click="report.removeTrain(si, ti)">✕</button>
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addTrain(si)">＋ 追加</button>
+                <div class="mt8">
+                  <label class="hours-label">領収書（JPEG/PDF）</label>
+                  <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'trainFiles', e)" />
+                  <div v-if="site.expenses.trainFiles?.length" class="photo-preview">
+                    <span class="hours-label">{{ site.expenses.trainFiles.length }}件選択済み</span>
+                  </div>
+                </div>
               </template>
             </Field>
           </div>
@@ -249,6 +278,13 @@
                   <input v-model="site.expenses.hotelName" type="text" class="input" placeholder="施設名（例: アパホテル）" />
                   <ExpenseField v-model="site.expenses.hotelYen" label="金額" />
                 </div>
+                <div class="mt8">
+                  <label class="hours-label">領収書（JPEG/PDF）</label>
+                  <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'hotelFiles', e)" />
+                  <div v-if="site.expenses.hotelFiles?.length" class="photo-preview">
+                    <span class="hours-label">{{ site.expenses.hotelFiles.length }}件選択済み</span>
+                  </div>
+                </div>
               </template>
             </Field>
 
@@ -262,6 +298,13 @@
                 <div class="hotel-row mt6">
                   <input v-model="site.expenses.leopalaceName" type="text" class="input" placeholder="施設名" />
                   <ExpenseField v-model="site.expenses.leopalaceYen" label="金額" />
+                </div>
+                <div class="mt8">
+                  <label class="hours-label">領収書（JPEG/PDF）</label>
+                  <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'leopalaceFiles', e)" />
+                  <div v-if="site.expenses.leopalaceFiles?.length" class="photo-preview">
+                    <span class="hours-label">{{ site.expenses.leopalaceFiles.length }}件選択済み</span>
+                  </div>
                 </div>
               </template>
             </Field>
@@ -306,6 +349,13 @@
                   <button v-if="site.expenses.others.length > 1" type="button" class="btn-icon-sm" @click="report.removeOther(si, oi)">✕</button>
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addOther(si)">＋ 追加</button>
+                <div class="mt8">
+                  <label class="hours-label">領収書・写真（JPEG/PDF）</label>
+                  <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'otherFiles', e)" />
+                  <div v-if="site.expenses.otherFiles?.length" class="photo-preview">
+                    <span class="hours-label">{{ site.expenses.otherFiles.length }}件選択済み</span>
+                  </div>
+                </div>
               </template>
             </Field>
 
@@ -319,6 +369,13 @@
                 <div class="lineitems-row mt6">
                   <input v-model="site.expenses.entertainmentLabel" type="text" class="input" placeholder="内容" />
                   <ExpenseField v-model="site.expenses.entertainmentYen" label="金額" />
+                </div>
+                <div class="mt8">
+                  <label class="hours-label">領収書（JPEG/PDF）</label>
+                  <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'entertainmentFiles', e)" />
+                  <div v-if="site.expenses.entertainmentFiles?.length" class="photo-preview">
+                    <span class="hours-label">{{ site.expenses.entertainmentFiles.length }}件選択済み</span>
+                  </div>
                 </div>
               </template>
             </Field>
@@ -413,29 +470,44 @@ const siteUsage = ref<UsageState[]>([createUsage()])
 // 「なし」に戻した時に対応する経費データをクリアする
 function setUsage(si: number, key: keyof UsageState, value: string) {
   siteUsage.value[si][key] = value
-  if (value !== 'なし') return
   const exp = report.form.value.sites[si].expenses
+  if (key === 'vehicle') {
+    if (value === '乗合い') {
+      exp.carpool = true
+      exp.vehicles = []
+      exp.vehicleFiles = undefined
+    } else if (value === 'あり') {
+      exp.carpool = false
+      if (!exp.vehicles.length) exp.vehicles = [createVehicle()]
+    } else {
+      exp.carpool = false
+      exp.vehicles = [createVehicle()]
+      exp.vehicleFiles = undefined
+    }
+    return
+  }
+  if (value !== 'なし') return
   switch (key) {
     case 'vehicle':
-      exp.vehicles = [createVehicle()]
+      exp.vehicles = [createVehicle()]; exp.vehicleFiles = undefined
       break
     case 'train':
-      exp.trains = [createLineItem()]
+      exp.trains = [createLineItem()]; exp.trainFiles = undefined
       break
     case 'hotel':
-      exp.hotelName = undefined; exp.hotelYen = undefined
+      exp.hotelName = undefined; exp.hotelYen = undefined; exp.hotelFiles = undefined
       break
     case 'leopalace':
-      exp.leopalaceName = undefined; exp.leopalaceYen = undefined
+      exp.leopalaceName = undefined; exp.leopalaceYen = undefined; exp.leopalaceFiles = undefined
       break
     case 'garbage':
       exp.garbageFactoryM3 = undefined; exp.garbageSiteM3 = undefined; exp.garbagePhotos = undefined
       break
     case 'other':
-      exp.others = [createLineItem()]
+      exp.others = [createLineItem()]; exp.otherFiles = undefined
       break
     case 'entertainment':
-      exp.entertainmentLabel = undefined; exp.entertainmentYen = undefined
+      exp.entertainmentLabel = undefined; exp.entertainmentYen = undefined; exp.entertainmentFiles = undefined
       break
   }
 }
@@ -475,6 +547,25 @@ async function handleReset() {
   await master.fetch(true) // 新規現場が追加されている可能性があるので強制更新
 }
 
+async function handleExpenseFile(
+  si: number,
+  field: 'vehicleFiles' | 'trainFiles' | 'hotelFiles' | 'leopalaceFiles' | 'otherFiles' | 'entertainmentFiles',
+  event: Event
+) {
+  const input = event.target as HTMLInputElement
+  if (!input.files?.length) return
+  const files: string[] = []
+  for (const file of Array.from(input.files)) {
+    const dataUrl = await new Promise<string>((resolve) => {
+      const reader = new FileReader()
+      reader.onload = (e) => resolve(e.target?.result as string)
+      reader.readAsDataURL(file)
+    })
+    files.push(dataUrl)
+  }
+  report.form.value.sites[si].expenses[field] = files
+}
+
 async function handleGarbagePhoto(si: number, event: Event) {
   const input = event.target as HTMLInputElement
   if (!input.files?.length) return
@@ -508,7 +599,8 @@ function fillTestData() {
     hoursSunday: 0, hoursSundayOT: 0, hoursSundayNight: 0, hoursSundayOTNight: 0,
   } as WorkerEntry)
 
-  const dummyPhoto = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+  const dummyPhoto   = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+  const dummyDataUrl = 'data:image/png;base64,' + dummyPhoto
   const hasExisting = master.siteNames.value.length > 0
 
   if (hasExisting) {
@@ -523,23 +615,29 @@ function fillTestData() {
     site0.subcontractors = [{ subcontractorId: '', subcontractorName: sub[0] || '', count: 2 }]
     siteUsage.value[0].vehicle = 'あり'
     site0.expenses.vehicles = [{ vehicleName: 'ハイエース', distanceKm: 80, dieselKm: undefined, parkingYen: 500, highwayYen: 1200 }]
+    site0.expenses.vehicleFiles = [dummyDataUrl]
     siteUsage.value[0].train = 'あり'
     site0.expenses.trains = [{ label: '名古屋→大阪', yen: 3000 }]
+    site0.expenses.trainFiles = [dummyDataUrl]
     siteUsage.value[0].hotel = 'あり'
     site0.expenses.hotelName = 'アパホテル名古屋'
     site0.expenses.hotelYen  = 8000
+    site0.expenses.hotelFiles = [dummyDataUrl, dummyDataUrl]
     siteUsage.value[0].leopalace = 'あり'
     site0.expenses.leopalaceName = 'レオパレス栄'
     site0.expenses.leopalaceYen  = 50000
+    site0.expenses.leopalaceFiles = [dummyDataUrl]
     siteUsage.value[0].garbage = 'あり'
     site0.expenses.garbageFactoryM3 = 3
     site0.expenses.garbageSiteM3    = 5
     site0.expenses.garbagePhotos = [dummyPhoto, dummyPhoto]
     siteUsage.value[0].other = 'あり'
     site0.expenses.others = [{ label: '養生テープ', yen: 1500 }]
+    site0.expenses.otherFiles = [dummyDataUrl]
     siteUsage.value[0].entertainment = 'あり'
     site0.expenses.entertainmentLabel = '懇親会'
     site0.expenses.entertainmentYen   = 10000
+    site0.expenses.entertainmentFiles = [dummyDataUrl]
 
     // ── 現場2（新規現場「その他」） ── を追加
     addSite()
@@ -557,17 +655,21 @@ function fillTestData() {
   siteN.subcontractors = [{ subcontractorId: '', subcontractorName: sub[1] || sub[0] || '', count: 1 }]
   siteUsage.value[newIdx].vehicle = 'あり'
   siteN.expenses.vehicles = [{ vehicleName: 'キャラバン', distanceKm: undefined, dieselKm: 60, parkingYen: undefined, highwayYen: undefined }]
+  siteN.expenses.vehicleFiles = [dummyDataUrl]
   siteUsage.value[newIdx].train = 'あり'
   siteN.expenses.trains = [{ label: '大阪→名古屋', yen: 2500 }]
+  siteN.expenses.trainFiles = [dummyDataUrl]
   siteUsage.value[newIdx].garbage = 'あり'
   siteN.expenses.garbageFactoryM3 = 2
   siteN.expenses.garbageSiteM3    = 4
   siteN.expenses.garbagePhotos = [dummyPhoto]
   siteUsage.value[newIdx].other = 'あり'
   siteN.expenses.others = [{ label: 'ビニールシート', yen: 800 }]
+  siteN.expenses.otherFiles = [dummyDataUrl]
   siteUsage.value[newIdx].entertainment = 'あり'
   siteN.expenses.entertainmentLabel = '昼食代'
   siteN.expenses.entertainmentYen   = 5000
+  siteN.expenses.entertainmentFiles = [dummyDataUrl]
 }
 </script>
 

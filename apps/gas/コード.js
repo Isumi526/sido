@@ -276,6 +276,7 @@ function handleLiffReport(body) {
     var successSites = [];
     var failedSites  = [];
     var garbageFolderUrls = {}; // { siteName: folderUrl }
+    var expenseFileUrls   = {}; // { siteName: { vehicleFiles: url, ... } }
 
     sites.forEach(function(site) {
       if (!site.siteName) return;
@@ -337,6 +338,24 @@ function handleLiffReport(body) {
           }
         }
 
+        // その他経費ファイルをDriveに保存
+        var siteFileUrls = {};
+        [
+          { key: 'vehicleFiles',       label: '車両' },
+          { key: 'trainFiles',         label: '電車' },
+          { key: 'hotelFiles',         label: 'ホテル' },
+          { key: 'leopalaceFiles',     label: 'レオパレス' },
+          { key: 'otherFiles',         label: 'その他経費' },
+          { key: 'entertainmentFiles', label: '雑経費' },
+        ].forEach(function(cat) {
+          var files = site.expenses && site.expenses[cat.key];
+          if (files && files.length > 0) {
+            var url = saveExpenseFiles(files, date, sender, site.siteName, cat.label);
+            if (url) siteFileUrls[cat.key] = url;
+          }
+        });
+        if (Object.keys(siteFileUrls).length > 0) expenseFileUrls[site.siteName] = siteFileUrls;
+
         successSites.push(site.siteName);
 
       } catch (siteErr) {
@@ -352,7 +371,7 @@ function handleLiffReport(body) {
 
     // LINE通知（グループに送信）
     var devGroupId = body._devNotifyGroupId || null;
-    sendLiffReportNotification(sender, date, body.sites, successSites, failedSites, note, devGroupId, garbageFolderUrls);
+    sendLiffReportNotification(sender, date, body.sites, successSites, failedSites, note, devGroupId, garbageFolderUrls, expenseFileUrls);
 
     return jsonResponse({
       success: true,
@@ -450,7 +469,7 @@ function buildExpenses(site) {
 /**
  * LIFFフォーム送信後のLINE通知
  */
-function sendLiffReportNotification(sender, date, sites, successSites, failedSites, note, devGroupId, garbageFolderUrls) {
+function sendLiffReportNotification(sender, date, sites, successSites, failedSites, note, devGroupId, garbageFolderUrls, expenseFileUrls) {
   try {
     var d        = new Date(date + 'T00:00:00');
     var weekdays = ['日','月','火','水','木','金','土'];
@@ -489,16 +508,21 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
       // 経費（種別ごと1行、・始まり）
       var exp = site.expenses || {};
       var expLines = [];
-      (exp.vehicles || []).forEach(function(v) {
-        if (!v) return;
-        var vParts = [];
-        if (v.vehicleName) vParts.push(v.vehicleName);
-        if (v.distanceKm)  vParts.push('往復' + v.distanceKm + 'km');
-        if (v.dieselKm)    vParts.push('軽油' + v.dieselKm + 'km');
-        if (v.parkingYen)  vParts.push('駐車¥' + Number(v.parkingYen).toLocaleString());
-        if (v.highwayYen)  vParts.push('高速¥' + Number(v.highwayYen).toLocaleString());
-        if (vParts.length > 0) expLines.push(vParts.join(' '));
-      });
+      if (exp.carpool) {
+        expLines.push('乗合い');
+      } else {
+        (exp.vehicles || []).forEach(function(v) {
+          if (!v) return;
+          var vParts = [];
+          if (v.vehicleName) vParts.push(v.vehicleName);
+          if (v.distanceKm)  vParts.push('往復' + v.distanceKm + 'km');
+          if (v.dieselKm)    vParts.push('軽油' + v.dieselKm + 'km');
+          if (v.parkingYen)  vParts.push('駐車¥' + Number(v.parkingYen).toLocaleString());
+          if (v.highwayYen)  vParts.push('高速¥' + Number(v.highwayYen).toLocaleString());
+          if (v.etcUsed)     vParts.push('ETC' + (v.etcCard || ''));
+          if (vParts.length > 0) expLines.push(vParts.join(' '));
+        });
+      }
       if (!exp.vehicles && exp.distanceKm) {
         var vOld = [(exp.vehicle || ''), '往復' + exp.distanceKm + 'km'];
         if (exp.parkingYen) vOld.push('駐車¥' + Number(exp.parkingYen).toLocaleString());
@@ -515,10 +539,18 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
         if (exp.garbageSiteM3)    g.push('混載 '     + Number(exp.garbageSiteM3)    + 'm³');
         expLines.push('ゴミ ' + g.join(' '));
         var photoUrl = garbageFolderUrls && garbageFolderUrls[site.siteName];
-        if (photoUrl) expLines.push('📸 写真 ' + photoUrl);
+        if (photoUrl) expLines.push('📸 写真フォルダ ' + photoUrl);
       }
       if (exp.entertainmentYen) expLines.push((exp.entertainmentLabel || '雑経費') + ' ¥' + Number(exp.entertainmentYen).toLocaleString());
       if (exp.otherYen)         expLines.push('その他 ¥' + Number(exp.otherYen).toLocaleString());
+      // 経費ファイルURL
+      var siteExpFileUrls = (expenseFileUrls && expenseFileUrls[site.siteName]) || {};
+      if (siteExpFileUrls.vehicleFiles)       expLines.push('📎 車両領収書 ' + siteExpFileUrls.vehicleFiles);
+      if (siteExpFileUrls.trainFiles)         expLines.push('📎 電車領収書 ' + siteExpFileUrls.trainFiles);
+      if (siteExpFileUrls.hotelFiles)         expLines.push('📎 ホテル領収書 ' + siteExpFileUrls.hotelFiles);
+      if (siteExpFileUrls.leopalaceFiles)     expLines.push('📎 レオパレス領収書 ' + siteExpFileUrls.leopalaceFiles);
+      if (siteExpFileUrls.otherFiles)         expLines.push('📎 その他経費ファイル ' + siteExpFileUrls.otherFiles);
+      if (siteExpFileUrls.entertainmentFiles) expLines.push('📎 雑経費領収書 ' + siteExpFileUrls.entertainmentFiles);
       if (expLines.length > 0) {
         lines.push('');
         expLines.forEach(function(l) { lines.push('・' + l); });
@@ -954,7 +986,7 @@ function writeDayBlock(sheet, parsed) {
       if (entry.hours160)    sheet.getRange(matched.row, matched.daysCol + 4).setValue(entry.hours160);
       if (entry.hours175)    sheet.getRange(matched.row, matched.daysCol + 5).setValue(entry.hours175);
     } else {
-      const emptyRow = findEmptyWorkerRow(sheet, blockCol, ROW_D);
+      const emptyRow = findEmptyWorkerRow(sheet, blockCol, ROW_D, entry.workerRole);
       if (emptyRow) {
         const price = workerPrices[entry.name] || settings.defaultWorkerPrice;
         // roleに応じてfactory列/site列に書き込む
@@ -986,6 +1018,9 @@ function writeDayBlock(sheet, parsed) {
         sheet.getRange(emptyRow, totCol).setFormula(
           `=${pCell}*(${dCell}*1.0+IF(${o1Cell}="",0,${o1Cell}*1.25)+IF(${o135Cell}="",0,${o135Cell}*1.35)+IF(${o15Cell}="",0,${o15Cell}*1.5)+IF(${o16Cell}="",0,${o16Cell}*1.6)+IF(${o175Cell}="",0,${o175Cell}*1.75))/8`
         );
+        Logger.log('作業員を新規追加: ' + entry.name + ' (role=' + entry.workerRole + ', row=' + emptyRow + ', 単価=' + price + ')');
+      } else {
+        Logger.log('⚠️ 作業員追加失敗（空き行なし）: ' + entry.name + ' (role=' + entry.workerRole + ')');
       }
     }
   });
@@ -1047,17 +1082,13 @@ function findWorkerRowInBlock(sheet, blockCol, workerName, ROW_D) {
   return null;
 }
 
-function findEmptyWorkerRow(sheet, blockCol, ROW_D) {
+function findEmptyWorkerRow(sheet, blockCol, ROW_D, workerRole) {
   const R = ROW_D || ROW_DEFAULT;
-  // まずWORKER_START〜WORKER_ENDの範囲で探す
+  const isFactory = workerRole === 'factory';
+  const checkCol  = isFactory ? blockCol + COL.FACTORY_NAME : blockCol + COL.SITE_NAME;
+  // WORKER_START〜WORKER_ENDの範囲のみ（経費行への侵入を防ぐ）
   for (let row = R.WORKER_START; row <= R.WORKER_END; row++) {
-    if (!sheet.getRange(row, blockCol + COL.SITE_NAME).getValue()) return row;
-  }
-  // 範囲内に空きがない場合は最大30行まで延長して探す
-  for (let row = R.WORKER_END + 1; row <= 30; row++) {
-    const siteVal    = sheet.getRange(row, blockCol + COL.SITE_NAME).getValue();
-    const factoryVal = sheet.getRange(row, blockCol + COL.FACTORY_NAME).getValue();
-    if (!siteVal && !factoryVal) return row;
+    if (!sheet.getRange(row, checkCol).getValue()) return row;
   }
   return null;
 }
@@ -1116,10 +1147,20 @@ function writeExpensesToBlock(sheet, blockCol, expenses, ROW_D) {
           }
           break;
         case 'garbage_factory':
-          if (R.ROW_GARBAGE_FACTORY) sheet.getRange(R.ROW_GARBAGE_FACTORY, blockCol + RIGHT_COL.GARBAGE_AMT).setValue(exp.amount);
+          // 木材のみ: blockCol+3（単価セル）を読んで m³×単価 をDZ29等（右側経費行）に書き込む
+          if (R.GARBAGE_FACTORY && R.ROW_GARBAGE_FACTORY) {
+            var factoryUnitPrice = sheet.getRange(R.GARBAGE_FACTORY, blockCol + 3).getValue();
+            sheet.getRange(R.ROW_GARBAGE_FACTORY, blockCol + RIGHT_COL.GARBAGE_AMT)
+              .setValue(exp.amount * factoryUnitPrice);
+          }
           break;
         case 'garbage_site':
-          if (R.ROW_GARBAGE_SITE) sheet.getRange(R.ROW_GARBAGE_SITE, blockCol + RIGHT_COL.GARBAGE_AMT).setValue(exp.amount);
+          // 混載: blockCol+3（単価セル）を読んで m³×単価 をDZ30等（右側経費行）に書き込む
+          if (R.GARBAGE_SITE && R.ROW_GARBAGE_SITE) {
+            var siteUnitPrice = sheet.getRange(R.GARBAGE_SITE, blockCol + 3).getValue();
+            sheet.getRange(R.ROW_GARBAGE_SITE, blockCol + RIGHT_COL.GARBAGE_AMT)
+              .setValue(exp.amount * siteUnitPrice);
+          }
           break;
         case 'leopalace':
           if (R.ROW_HOTEL) {
@@ -1864,7 +1905,7 @@ function saveGarbagePhotos(base64Photos, date, senderName, siteName) {
       var blob = Utilities.newBlob(
         Utilities.base64Decode(base64),
         'image/jpeg',
-        'ゴミ_' + (idx + 1) + '.jpg'
+        'ゴミ_' + senderName + '_' + (idx + 1) + '.jpg'
       );
       subFolder.createFile(blob);
     });
@@ -1877,12 +1918,58 @@ function saveGarbagePhotos(base64Photos, date, senderName, siteName) {
 }
 
 /**
+ * 経費ファイル（JPEG/PDF）をDriveに保存してフォルダURLを返す
+ * dataUrls: data:mime;base64,xxx 形式の配列
+ * フォルダパス: DRIVE_ROOT / YYYY-MM / 現場名 / YYYY-MM-DD_送信者名 / category_N.ext
+ */
+function saveExpenseFiles(dataUrls, date, senderName, siteName, category) {
+  try {
+    var root = DriveApp.getFolderById(CONFIG.DRIVE_ROOT_FOLDER_ID);
+    var yearMonth = date.slice(0, 7);
+
+    var monthIter = root.getFoldersByName(yearMonth);
+    var monthFolder = monthIter.hasNext() ? monthIter.next() : root.createFolder(yearMonth);
+
+    var siteIter = monthFolder.getFoldersByName(siteName);
+    var siteFolder = siteIter.hasNext() ? siteIter.next() : monthFolder.createFolder(siteName);
+
+    var subName = date + '_' + senderName;
+    var subIter = siteFolder.getFoldersByName(subName);
+    var subFolder = subIter.hasNext() ? subIter.next() : siteFolder.createFolder(subName);
+
+    dataUrls.forEach(function(dataUrl, idx) {
+      var mimeType = 'image/jpeg';
+      var base64Data = dataUrl;
+      if (typeof dataUrl === 'string' && dataUrl.indexOf('data:') === 0) {
+        var commaIdx = dataUrl.indexOf(',');
+        var header = dataUrl.slice(0, commaIdx);
+        base64Data = dataUrl.slice(commaIdx + 1);
+        var mimeMatch = header.match(/data:([^;]+);/);
+        if (mimeMatch) mimeType = mimeMatch[1];
+      }
+      var ext = mimeType === 'application/pdf' ? '.pdf' : '.jpg';
+      var blob = Utilities.newBlob(
+        Utilities.base64Decode(base64Data),
+        mimeType,
+        category + '_' + senderName + '_' + (idx + 1) + ext
+      );
+      subFolder.createFile(blob);
+    });
+
+    return subFolder.getUrl();
+  } catch (e) {
+    Logger.log('saveExpenseFiles error: ' + e);
+    return null;
+  }
+}
+
+/**
  * 現場シートの行63にゴミ写真フォルダのDriveリンクを書き込む
  */
 function writeGarbageFolderLink(sheet, folderUrl, day) {
   try {
     var blockCol = getDayBlockCol(day);
-    sheet.getRange(63, blockCol).setValue('📸 ゴミ写真');
+    sheet.getRange(63, blockCol).setValue('📸 写真フォルダ');
     sheet.getRange(63, blockCol + 1).setValue(folderUrl);
   } catch (e) {
     Logger.log('writeGarbageFolderLink error: ' + e);

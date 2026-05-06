@@ -35,6 +35,8 @@ export interface VehicleExpense {
   dieselKm?: number
   parkingYen?: number
   highwayYen?: number
+  etcUsed?: boolean
+  etcCard?: string
 }
 
 export interface LineItem {
@@ -43,18 +45,25 @@ export interface LineItem {
 }
 
 export interface Expenses {
+  carpool?: boolean              // 乗合いフラグ
   vehicles: VehicleExpense[]
+  vehicleFiles?: string[]       // 車両領収書等
   hotelName?: string
   hotelYen?: number
+  hotelFiles?: string[]         // ホテル領収書
   leopalaceName?: string
   leopalaceYen?: number
+  leopalaceFiles?: string[]     // レオパレス領収書
   garbageFactoryM3?: number
   garbageSiteM3?: number
-  garbagePhotos?: string[]  // Base64エンコード済み写真データ（1枚あたり最大2MB推奨）
+  garbagePhotos?: string[]
   trains: LineItem[]
+  trainFiles?: string[]         // 電車領収書
   others: LineItem[]
+  otherFiles?: string[]         // その他領収書
   entertainmentLabel?: string
   entertainmentYen?: number
+  entertainmentFiles?: string[] // 雑経費領収書
 }
 
 export interface SiteReport {
