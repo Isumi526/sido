@@ -275,6 +275,8 @@ function handleLiffReport(body) {
 
     var successSites = [];
     var failedSites  = [];
+    var garbageFolderUrls = {}; // { siteName: folderUrl }
+    var expenseFileUrls   = {}; // { siteName: { vehicleFiles: [url,...], ... } }
 
     sites.forEach(function(site) {
       if (!site.siteName) return;
@@ -327,6 +329,33 @@ function handleLiffReport(body) {
 
         writeDayBlock(sheet, parsed);
 
+        // ゴミ写真をDriveに保存
+        if (site.expenses && (site.expenses.garbageFactoryM3 || site.expenses.garbageSiteM3) && site.expenses.garbagePhotos && site.expenses.garbagePhotos.length > 0) {
+          var folderUrl = saveGarbagePhotos(site.expenses.garbagePhotos, date, sender, site.siteName);
+          if (folderUrl) {
+            writeGarbageFolderLink(sheet, folderUrl, day);
+            garbageFolderUrls[site.siteName] = folderUrl;
+          }
+        }
+
+        // 各経費ファイルをDriveに保存してURL収集
+        var siteFileUrls = {};
+        [
+          { key: 'vehicleFiles',       label: '車両' },
+          { key: 'trainFiles',         label: '電車' },
+          { key: 'hotelFiles',         label: 'ホテル' },
+          { key: 'leopalaceFiles',     label: 'レオパレス' },
+          { key: 'otherFiles',         label: 'その他経費' },
+          { key: 'entertainmentFiles', label: '雑経費' },
+        ].forEach(function(cat) {
+          var files = site.expenses && site.expenses[cat.key];
+          if (files && files.length > 0) {
+            var urls = saveExpenseFiles(files, date, sender, site.siteName, cat.label);
+            if (urls && urls.length) siteFileUrls[cat.key] = urls;
+          }
+        });
+        if (Object.keys(siteFileUrls).length > 0) expenseFileUrls[site.siteName] = siteFileUrls;
+
         successSites.push(site.siteName);
 
       } catch (siteErr) {
@@ -342,7 +371,7 @@ function handleLiffReport(body) {
 
     // LINE通知（グループに送信）
     var devGroupId = body._devNotifyGroupId || null;
-    sendLiffReportNotification(sender, date, body.sites, successSites, failedSites, note, devGroupId);
+    sendLiffReportNotification(sender, date, body.sites, successSites, failedSites, note, devGroupId, garbageFolderUrls, expenseFileUrls);
 
     return jsonResponse({
       success: true,
@@ -931,43 +960,75 @@ function doPost(e) {
 
 /**
  * ファイルアップロード専用ハンドラ（fire-and-forgetで呼ばれる）
- * スプレッドシート書き込みやLINE通知は行わず、Driveへの保存のみ実施
+ * Driveへの保存 + スプシへのリンク記録 + LINEフォローアップ通知
  */
 function handleFileUploads(body) {
   try {
-    var sender = body.sender || '不明';
-    var date   = body.date;
-    var sites  = body.sites || [];
+    var sender  = body.sender || '不明';
+    var date    = body.date;
+    var sites   = body.sites || [];
+    var devGroupId = body._devNotifyGroupId || null;
+
+    var notifyLines = []; // LINEフォローアップ通知用
+
     sites.forEach(function(site) {
       if (!site.siteName || !site.expenses) return;
       try {
-        var exp = site.expenses;
+        var exp        = site.expenses;
+        var siteLines  = [];
+
         // ゴミ写真
         if ((exp.garbageFactoryM3 || exp.garbageSiteM3) && exp.garbagePhotos && exp.garbagePhotos.length > 0) {
-          var ss    = getSpreadsheetBySiteName(site.siteName);
+          var d   = new Date(date + 'T00:00:00');
+          var ss  = getMonthlySpreadsheet(d.getFullYear(), d.getMonth() + 1);
           var sheet = ss ? getCaseSheet(ss, site.siteName) : null;
           var day   = date ? parseInt(date.split('-')[2]) : null;
           var folderUrl = saveGarbagePhotos(exp.garbagePhotos, date, sender, site.siteName);
-          if (folderUrl && sheet && day) writeGarbageFolderLink(sheet, folderUrl, day);
+          if (folderUrl) {
+            if (sheet && day) writeGarbageFolderLink(sheet, folderUrl, day);
+            siteLines.push('📸 写真フォルダ ' + folderUrl);
+          }
         }
+
         // 各経費ファイル
-        [
-          { key: 'vehicleFiles',       label: '車両' },
-          { key: 'trainFiles',         label: '電車' },
-          { key: 'hotelFiles',         label: 'ホテル' },
-          { key: 'leopalaceFiles',     label: 'レオパレス' },
-          { key: 'otherFiles',         label: 'その他経費' },
-          { key: 'entertainmentFiles', label: '雑経費' },
-        ].forEach(function(cat) {
-          var files = exp[cat.key];
-          if (files && files.length > 0) {
-            saveExpenseFiles(files, date, sender, site.siteName, cat.label);
+        var expFileLabelMap = {
+          vehicleFiles: '車両領収書', trainFiles: '電車領収書', hotelFiles: 'ホテル領収書',
+          leopalaceFiles: 'レオパレス領収書', otherFiles: 'その他経費', entertainmentFiles: '雑経費領収書',
+        };
+        Object.keys(expFileLabelMap).forEach(function(key) {
+          var files = exp[key];
+          if (!files || !files.length) return;
+          var urls = saveExpenseFiles(files, date, sender, site.siteName, expFileLabelMap[key]);
+          if (urls && urls.length) {
+            urls.forEach(function(url, i) {
+              siteLines.push('📎 ' + expFileLabelMap[key] + (urls.length > 1 ? '(' + (i + 1) + ')' : '') + ' ' + url);
+            });
           }
         });
+
+        if (siteLines.length > 0) {
+          notifyLines.push('📍 ' + site.siteName);
+          siteLines.forEach(function(l) { notifyLines.push('・' + l); });
+          notifyLines.push('');
+        }
+
       } catch (siteErr) {
         Logger.log('handleFileUploads site error [' + site.siteName + ']: ' + siteErr);
       }
     });
+
+    // ファイルURLをLINEにフォローアップ通知
+    if (notifyLines.length > 0) {
+      var d2       = new Date((date || '') + 'T00:00:00');
+      var weekdays = ['日','月','火','水','木','金','土'];
+      var dateLabel = (d2.getMonth()+1) + '/' + d2.getDate() + '（' + weekdays[d2.getDay()] + '）';
+      var msg = ['📎 ' + dateLabel + ' 添付ファイル', '👤 ' + sender, '─────────────────', ''].concat(notifyLines).join('\n');
+      var msgObj = [{ type: 'text', text: msg }];
+      var groupIds = devGroupId ? [devGroupId] : (CONFIG.NOTIFY_GROUP_IDS || []);
+      if (!devGroupId && CONFIG.LINE_PUSH_USER_ID) pushLineMessages(CONFIG.LINE_PUSH_USER_ID, msgObj);
+      groupIds.forEach(function(id) { pushLineMessages(id, msgObj); });
+    }
+
   } catch (err) {
     Logger.log('handleFileUploads error: ' + err);
   }
