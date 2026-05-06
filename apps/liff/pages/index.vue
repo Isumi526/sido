@@ -192,6 +192,7 @@
                 <option value="乗合い">乗合い</option>
               </select>
               <template v-if="siteUsage[si].vehicle === 'あり'">
+                <p class="vehicle-note">鍵を持ち出した人が詳細を記入してください</p>
                 <div
                   v-for="(veh, vi) in site.expenses.vehicles"
                   :key="vi"
@@ -860,6 +861,10 @@ html, body {
   border: 1px solid var(--border); border-radius: 8px;
   padding: 12px; display: flex; flex-direction: column; gap: 8px;
   background: var(--surface2); margin-top: 8px;
+}
+.vehicle-note {
+  font-size: 11px; color: var(--text2);
+  margin-top: 4px;
 }
 .vehicle-block-header {
   display: flex; align-items: center; justify-content: space-between;
