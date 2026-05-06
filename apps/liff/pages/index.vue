@@ -611,7 +611,8 @@ function fillTestData() {
     ]
     site0.subcontractors = [{ subcontractorId: '', subcontractorName: sub[0] || '', count: 2 }]
     siteUsage.value[0].vehicle = 'あり'
-    site0.expenses.vehicles = [{ vehicleName: 'ハイエース', distanceKm: 80, dieselKm: undefined, parkingYen: 500, highwayYen: 1200 }]
+    site0.expenses.carpool = false
+    site0.expenses.vehicles = [{ vehicleName: 'ハイエース', distanceKm: 80, dieselKm: undefined, parkingYen: 500, highwayYen: 1200, etcUsed: true, etcCard: 'カード①' }]
     site0.expenses.vehicleFiles = [dummyDataUrl]
     siteUsage.value[0].train = 'あり'
     site0.expenses.trains = [{ label: '名古屋→大阪', yen: 3000 }]
@@ -650,9 +651,10 @@ function fillTestData() {
     mw(sw[1] || sw[0] || '', 'site',    '08:00', '17:30', 90),
   ]
   siteN.subcontractors = [{ subcontractorId: '', subcontractorName: sub[1] || sub[0] || '', count: 1 }]
-  siteUsage.value[newIdx].vehicle = 'あり'
-  siteN.expenses.vehicles = [{ vehicleName: 'キャラバン', distanceKm: undefined, dieselKm: 60, parkingYen: undefined, highwayYen: undefined }]
-  siteN.expenses.vehicleFiles = [dummyDataUrl]
+  siteUsage.value[newIdx].vehicle = '乗合い'
+  siteN.expenses.carpool = true
+  siteN.expenses.vehicles = []
+  siteN.expenses.vehicleFiles = undefined
   siteUsage.value[newIdx].train = 'あり'
   siteN.expenses.trains = [{ label: '大阪→名古屋', yen: 2500 }]
   siteN.expenses.trainFiles = [dummyDataUrl]
