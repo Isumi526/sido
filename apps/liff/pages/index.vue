@@ -215,13 +215,9 @@
                   </div>
                   <!-- ETCカード -->
                   <div class="mt8">
-                    <label class="hours-label">ETCカード利用</label>
-                    <select v-model="veh.etcUsed" class="select select--usage mt4">
-                      <option :value="false">なし</option>
-                      <option :value="true">あり</option>
-                    </select>
-                    <select v-if="veh.etcUsed" v-model="veh.etcCard" class="select mt4">
-                      <option value="">カードを選択</option>
+                    <label class="hours-label">ETCカード</label>
+                    <select v-model="veh.etcCard" class="select mt4" @change="veh.etcUsed = !!veh.etcCard">
+                      <option value="">なし</option>
                       <option v-for="n in 7" :key="n" :value="`カード${['①','②','③','④','⑤','⑥','⑦'][n-1]}`">
                         カード{{ ['①','②','③','④','⑤','⑥','⑦'][n-1] }}
                       </option>
