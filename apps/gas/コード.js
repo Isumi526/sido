@@ -392,7 +392,6 @@ function handleLiffReport(body) {
       ].join('\n');
       var errMsgObj = [{ type: 'text', text: errMsg }];
       var groupIds = (body._devNotifyGroupId ? [body._devNotifyGroupId] : (CONFIG.NOTIFY_GROUP_IDS || []));
-      if (!body._devNotifyGroupId && CONFIG.LINE_PUSH_USER_ID) pushLineMessages(CONFIG.LINE_PUSH_USER_ID, errMsgObj);
       groupIds.forEach(function(id) { pushLineMessages(id, errMsgObj); });
     } catch (notifyErr) {
       Logger.log('エラー通知の送信失敗: ' + notifyErr);
@@ -579,7 +578,6 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
 
     var msg = [{ type: 'text', text: lines.join('\n') }];
     var groupIds = devGroupId ? [devGroupId] : (CONFIG.NOTIFY_GROUP_IDS || []);
-    if (!devGroupId && CONFIG.LINE_PUSH_USER_ID) pushLineMessages(CONFIG.LINE_PUSH_USER_ID, msg);
     groupIds.forEach(function(id) { pushLineMessages(id, msg); });
 
   } catch (err) {
@@ -1025,7 +1023,6 @@ function handleFileUploads(body) {
       var msg = ['📎 ' + dateLabel + ' 添付ファイル', '👤 ' + sender, '─────────────────', ''].concat(notifyLines).join('\n');
       var msgObj = [{ type: 'text', text: msg }];
       var groupIds = devGroupId ? [devGroupId] : (CONFIG.NOTIFY_GROUP_IDS || []);
-      if (!devGroupId && CONFIG.LINE_PUSH_USER_ID) pushLineMessages(CONFIG.LINE_PUSH_USER_ID, msgObj);
       groupIds.forEach(function(id) { pushLineMessages(id, msgObj); });
     }
 
