@@ -38,14 +38,15 @@
 
           <div class="field">
             <label class="label" for="realName">本名 <span class="required">必須</span></label>
-            <input
+            <select
               id="realName"
               v-model="realName"
-              type="text"
-              class="input"
-              placeholder="例: Worker18 瑞希"
+              class="select"
               required
-            />
+            >
+              <option value="">選択してください</option>
+              <option v-for="name in master.workerNames.value" :key="name" :value="name">{{ name }}</option>
+            </select>
           </div>
 
           <div v-if="errorMsg" class="error-banner">{{ errorMsg }}</div>
@@ -62,6 +63,7 @@
 
 <script setup lang="ts">
 const liff    = useLiff()
+const master  = useMaster()
 const expense = useExpense()
 const router  = useRouter()
 
@@ -72,12 +74,11 @@ const errorMsg     = ref('')
 const done         = ref(false)
 
 onMounted(async () => {
-  await liff.init()
+  await Promise.all([liff.init(), master.fetch()])
   const userId = liff.profile.value?.userId
   if (userId) {
     const existing = await expense.getUser(userId)
     if (existing) {
-      // 既登録ならそのまま entry へ
       realName.value = existing.real_name
     }
   }
@@ -134,8 +135,12 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--font)
 .label { font-size: 12px; font-weight: 700; color: var(--text2); }
 .required { color: var(--danger); margin-left: 4px; }
 .display-name { background: #f5f5f5; border-radius: 8px; padding: 10px 14px; font-size: 15px; color: var(--text2); }
-.input { background: #f5f5f5; color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 11px 14px; font-size: 15px; font-family: var(--font); width: 100%; -webkit-appearance: none; }
-.input:focus { outline: none; border-color: var(--accent); background: #fff; }
+.input, .select { background: #f5f5f5; color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 11px 14px; font-size: 15px; font-family: var(--font); width: 100%; -webkit-appearance: none; appearance: none; }
+.input:focus, .select:focus { outline: none; border-color: var(--accent); background: #fff; }
+.select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' fill='none' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 14px center; padding-right: 38px;
+}
 .btn-primary { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 13px 28px; font-size: 15px; font-weight: 700; font-family: var(--font); cursor: pointer; }
 .btn-submit { width: 100%; background: var(--accent); color: #fff; border: none; border-radius: var(--radius); padding: 16px; font-size: 16px; font-weight: 900; letter-spacing: 2px; font-family: var(--font); cursor: pointer; }
 .btn-submit:disabled { opacity: .45; cursor: not-allowed; }
