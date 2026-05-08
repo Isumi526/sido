@@ -26,7 +26,9 @@ export default defineNuxtConfig({
       gasUrl: '',
       appEnv: 'development',
       devNotifyGroupId: '',
-      testerLineIds: '',   // カンマ区切りのLINE User ID（例: Uabc123,Udef456）
+      testerLineIds: '',        // カンマ区切りのLINE User ID（例: Uabc123,Udef456）
+      supabaseUrl: '',          // NUXT_PUBLIC_SUPABASE_URL
+      supabaseAnonKey: '',      // NUXT_PUBLIC_SUPABASE_ANON_KEY
     },
   },
 

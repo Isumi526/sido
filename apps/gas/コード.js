@@ -2228,3 +2228,46 @@ function checkMissingDate(senderId, date) {
   // 過去7日間に提出記録なし → 新規ユーザーとみなしてスキップ
   return null;
 }
+
+// ============================================================
+//  経費申請 リマインダー
+//
+//  【トリガー設定方法】
+//  GASエディタ > 時計アイコン（トリガー） > トリガーを追加
+//    関数: sendExpenseReminder
+//    イベントのソース: 時間主導型
+//    時間ベースのトリガーのタイプ: 月ベースのタイマー
+//    日: 15日  ※末日用に同じ関数でもう1つ作成（「月末」を選択）
+//
+//  スクリプトプロパティに設定:
+//    EXPENSE_LIFF_URL: https://liff.line.me/[LIFF_ID]/expense/entry
+// ============================================================
+function sendExpenseReminder() {
+  var today   = new Date();
+  var day     = today.getDate();
+  var lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+
+  // 15日でも末日でもなければ何もしない（月末トリガーの安全弁）
+  if (day !== 15 && day !== lastDay) {
+    Logger.log('経費リマインダー: 本日(' + day + '日)はスキップ');
+    return;
+  }
+
+  var period  = day === 15
+    ? '前半（1〜15日）'
+    : '後半（16日〜' + lastDay + '日）';
+
+  var liffUrl = PropertiesService.getScriptProperties().getProperty('EXPENSE_LIFF_URL')
+             || 'https://liff.line.me/（EXPENSE_LIFF_URLを設定してください）';
+
+  var message = '【経費申請 締め切りのお知らせ】\n\n'
+              + '本日は' + period + '分の締め日です。\n'
+              + '経費がある方は申請書をダウンロードして経理に提出してください。\n\n'
+              + liffUrl;
+
+  CONFIG.NOTIFY_GROUP_IDS.forEach(function(groupId) {
+    pushLineMessage(groupId, { type: 'text', text: message });
+  });
+
+  Logger.log('経費リマインダー送信完了: ' + period);
+}

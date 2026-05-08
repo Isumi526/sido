@@ -3,5 +3,8 @@
   "outputDirectory": ".output/public",
   "devCommand": "nuxt dev",
   "installCommand": "npm install",
-  "framework": "nuxtjs"
+  "framework": "nuxtjs",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/" }
+  ]
 }

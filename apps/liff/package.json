@@ -10,7 +10,8 @@
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {
-    "@line/liff": "^2.24.0"
+    "@line/liff": "^2.24.0",
+    "@supabase/supabase-js": "^2.45.0"
   },
   "devDependencies": {
     "@nuxt/devtools": "^1.0.0",

@@ -95,3 +95,56 @@ export interface ApiResponse<T = void> {
   data?: T
   error?: string
 }
+
+// ============================================================
+//  経費申請 関連型
+// ============================================================
+
+export interface ExpenseUser {
+  id:           string
+  line_user_id: string
+  real_name:    string
+  created_at:   string
+  updated_at:   string
+}
+
+export const EXPENSE_CATEGORIES = [
+  'ガソリン代',
+  '軽油代',
+  '材料費',
+  '駐車代',
+  'タクシー代',
+  '電車代',
+  'バス代',
+  '駐輪代',
+  '名刺',
+  '宿泊費',
+  'その他',
+] as const
+
+export type ExpenseCategory = typeof EXPENSE_CATEGORIES[number]
+
+export interface ExpenseItem {
+  id:                  string
+  user_id:             string
+  date:                string   // YYYY-MM-DD
+  payee:               string   // 支払先
+  registration_number: string | null  // 登録番号
+  category:            ExpenseCategory
+  liters:              number | null  // ℓ（ガソリン代・軽油代のみ）
+  site_name:           string | null  // 現場名
+  amount:              number
+  period_key:          string   // 'YYYY-MM-first' | 'YYYY-MM-second'
+  created_at:          string
+}
+
+export interface ExpenseItemInput {
+  date:                string
+  payee:               string
+  registration_number: string
+  category:            ExpenseCategory
+  liters:              number | null
+  site_name:           string
+  amount:              number
+  period_key:          string
+}
