@@ -11,6 +11,7 @@
         <nav class="header-tabs">
           <button :class="['tab-btn', { active: tab === 'users' }]" @click="tab = 'users'">社員一覧</button>
           <button :class="['tab-btn', { active: tab === 'reports' }]" @click="tab = 'reports'">日報ログ</button>
+          <button :class="['tab-btn', { active: tab === 'settings' }]" @click="tab = 'settings'">設定</button>
         </nav>
       </div>
     </header>
@@ -103,6 +104,36 @@
             </table>
           </div>
         </section>
+
+        <!-- ━━ 設定 ━━ -->
+        <section v-else-if="tab === 'settings'">
+          <div class="section-head">
+            <h2 class="section-title">設定</h2>
+          </div>
+          <div class="settings-card">
+            <h3 class="settings-group-title">燃料単価</h3>
+            <div class="settings-list">
+              <div v-for="s in settings" :key="s.key" class="settings-row">
+                <label class="settings-label">{{ s.label }}</label>
+                <div class="settings-input-row">
+                  <input
+                    v-model.number="s.editValue"
+                    type="number"
+                    min="1"
+                    class="settings-input"
+                  />
+                  <span class="settings-unit">円 / km</span>
+                </div>
+              </div>
+            </div>
+            <div class="settings-actions">
+              <span v-if="settingsSaved" class="settings-saved">✓ 保存しました</span>
+              <button class="btn-save" :disabled="settingsSaving" @click="saveSettings">
+                {{ settingsSaving ? '保存中...' : '保存する' }}
+              </button>
+            </div>
+          </div>
+        </section>
       </template>
     </main>
   </div>
@@ -121,11 +152,16 @@ type ReportRow = {
   users:      Pick<User, 'real_name' | 'worker_role'> | null
 }
 
-const tab           = ref<'users' | 'reports'>('users')
+type SettingRow = { key: string; value: string; label: string; editValue: number }
+
+const tab           = ref<'users' | 'reports' | 'settings'>('users')
 const loading       = ref(true)
 const users         = ref<User[]>([])
 const reports       = ref<ReportRow[]>([])
 const reportFilter  = ref('')
+const settings      = ref<SettingRow[]>([])
+const settingsSaving = ref(false)
+const settingsSaved  = ref(false)
 
 const filteredReports = computed(() => {
   if (!reportFilter.value.trim()) return reports.value
@@ -135,19 +171,39 @@ const filteredReports = computed(() => {
 
 onMounted(async () => {
   const supabase = useSupabase()
-  const [usersRes, reportsRes] = await Promise.all([
+  const [usersRes, reportsRes, settingsRes] = await Promise.all([
     supabase.from('users').select('*').order('created_at', { ascending: true }),
     supabase
       .from('daily_reports')
       .select('id, date, is_working, sites, note, created_at, users(real_name, worker_role)')
       .order('date', { ascending: false })
       .limit(200),
+    supabase.from('settings').select('*').order('key'),
   ])
 
   if (usersRes.data)   users.value   = usersRes.data
   if (reportsRes.data) reports.value = reportsRes.data as ReportRow[]
+  if (settingsRes.data) {
+    settings.value = settingsRes.data.map((s: any) => ({ ...s, editValue: Number(s.value) }))
+  }
   loading.value = false
 })
+
+async function saveSettings() {
+  settingsSaving.value = true
+  settingsSaved.value  = false
+  const supabase = useSupabase()
+  for (const s of settings.value) {
+    await supabase
+      .from('settings')
+      .update({ value: String(s.editValue), updated_at: new Date().toISOString() })
+      .eq('key', s.key)
+    s.value = String(s.editValue)
+  }
+  settingsSaving.value = false
+  settingsSaved.value  = true
+  setTimeout(() => { settingsSaved.value = false }, 3000)
+}
 
 function fmtDate(s: string) {
   return s.substring(0, 10)
@@ -316,4 +372,44 @@ body { background: var(--bg); color: var(--text); font-family: var(--font); font
 }
 .status-tag.working { background: #f0fdf4; color: #16a34a; }
 .status-tag.off     { background: #f9fafb; color: #9ca3af; }
+
+/* ── 設定 ── */
+.settings-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 24px;
+  max-width: 480px;
+}
+.settings-group-title { font-size: 13px; font-weight: 700; color: var(--text2); margin-bottom: 16px; }
+.settings-list { display: flex; flex-direction: column; gap: 14px; }
+.settings-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.settings-label { font-size: 14px; font-weight: 600; }
+.settings-input-row { display: flex; align-items: center; gap: 8px; }
+.settings-input {
+  width: 90px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 15px;
+  font-family: var(--font);
+  text-align: right;
+  outline: none;
+}
+.settings-input:focus { border-color: var(--accent); }
+.settings-unit { font-size: 13px; color: var(--text2); white-space: nowrap; }
+.settings-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
+.settings-saved { font-size: 13px; color: #16a34a; font-weight: 600; }
+.btn-save {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 24px;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--font);
+  cursor: pointer;
+}
+.btn-save:disabled { opacity: .5; cursor: not-allowed; }
 </style>

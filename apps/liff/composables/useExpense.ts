@@ -227,6 +227,12 @@ export const useExpense = () => {
 
     if (error) { console.error('[useExpense] getExpenseRowsFromReports:', error); return [] }
 
+    // 燃料単価をsettingsテーブルから取得（なければデフォルト値）
+    const { data: settingsData } = await supabase.from('settings').select('key, value')
+    const settingsMap  = Object.fromEntries((settingsData ?? []).map((s: any) => [s.key, Number(s.value)]))
+    const gasolineRate = settingsMap['gasoline_rate_per_km'] ?? 23
+    const dieselRate   = settingsMap['diesel_rate_per_km']   ?? 20
+
     const rows: ExpenseRow[] = []
     for (const rep of (data ?? [])) {
       for (const site of (rep.sites as any[])) {
@@ -234,8 +240,8 @@ export const useExpense = () => {
         const exp      = site.expenses || {}
 
         for (const veh of (exp.vehicles || [])) {
-          if (veh.distanceKm) rows.push({ date: rep.date, category: 'ガソリン代', siteName, amount: 0,              liters: veh.distanceKm, note: veh.vehicleName })
-          if (veh.dieselKm)   rows.push({ date: rep.date, category: '軽油代',    siteName, amount: 0,              liters: veh.dieselKm,   note: veh.vehicleName })
+          if (veh.distanceKm) rows.push({ date: rep.date, category: 'ガソリン代', siteName, amount: Math.round(veh.distanceKm * gasolineRate), liters: veh.distanceKm, note: veh.vehicleName })
+          if (veh.dieselKm)   rows.push({ date: rep.date, category: '軽油代',    siteName, amount: Math.round(veh.dieselKm   * dieselRate),   liters: veh.dieselKm,   note: veh.vehicleName })
           if (veh.parkingYen) rows.push({ date: rep.date, category: '駐車代',    siteName, amount: veh.parkingYen })
           if (veh.highwayYen) rows.push({ date: rep.date, category: '高速代',    siteName, amount: veh.highwayYen, note: veh.etcCard || '' })
         }
