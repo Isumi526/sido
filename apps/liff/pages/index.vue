@@ -390,7 +390,7 @@
 
 <script setup lang="ts">
 import { computeWorkerHours, getRateLines, calcBreakMinutes, TIME_OPTIONS } from '~/utils/workerHours'
-import type { WorkerEntry, User } from '~/types'
+import type { User } from '~/types'
 
 const config  = useRuntimeConfig()
 const liff    = useLiff()
@@ -598,20 +598,12 @@ async function handleGarbagePhoto(si: number, event: Event) {
 function fillTestData() {
   report.reset()
   siteUsage.value = [createUsage()]
+  initWorkers()  // ログインユーザーをworkerにセット
 
   report.form.value.note = 'テスト送信'
 
   // マスタから取得
-  const fw  = master.factoryWorkerNames.value
-  const sw  = master.siteWorkerNames.value
   const sub = master.subcontractorNames.value
-
-  const mw = (name: string, role: 'factory' | 'site', startTime: string, endTime: string, breakMinutes: number) => ({
-    workerId: '', workerName: name, workerRole: role,
-    startTime, endTime, breakMinutes,
-    hoursNormal: 0, hoursOT: 0, hoursNight: 0, hoursOTNight: 0,
-    hoursSunday: 0, hoursSundayOT: 0, hoursSundayNight: 0, hoursSundayOTNight: 0,
-  } as WorkerEntry)
 
   const dummyPhoto   = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
   const dummyDataUrl = 'data:image/png;base64,' + dummyPhoto
@@ -621,11 +613,8 @@ function fillTestData() {
     // ── 現場1（既存現場） ──
     const site0 = report.form.value.sites[0]
     site0.siteName = master.siteNames.value[0]
-    site0.workers = [
-      mw(fw[0] || '', 'factory', '08:00', '17:30', 90),
-      mw(fw[1] || '', 'factory', '08:00', '20:00', 90),
-      mw(sw[0] || '', 'site',   '08:00', '23:30', 120),
-    ]
+    // workers はログインユーザー固定 → 時刻だけ上書き
+    if (site0.workers[0]) { site0.workers[0].startTime = '08:00'; site0.workers[0].endTime = '23:30' }
     site0.subcontractors = [{ subcontractorId: '', subcontractorName: sub[0] || '', count: 2 }]
     siteUsage.value[0].vehicle = 'あり'
     site0.expenses.carpool = false
@@ -663,10 +652,7 @@ function fillTestData() {
   const siteN = report.form.value.sites[newIdx]
   siteN.siteName = '__other__'
   siteN.customSiteName = 'テスト新規現場'
-  siteN.workers = [
-    mw(fw[2] || fw[0] || '', 'factory', '08:00', '17:30', 90),
-    mw(sw[1] || sw[0] || '', 'site',    '08:00', '17:30', 90),
-  ]
+  // workers はログインユーザー固定 → 時刻はデフォルトのまま
   siteN.subcontractors = [{ subcontractorId: '', subcontractorName: sub[1] || sub[0] || '', count: 1 }]
   siteUsage.value[newIdx].vehicle = '乗合い'
   siteN.expenses.carpool = true
