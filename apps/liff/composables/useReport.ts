@@ -46,7 +46,7 @@ export const createSite = (): SiteReport => ({
 })
 
 // 経費オブジェクトからファイルデータだけ除去（本体送信用）
-function stripFiles(expenses: Record<string, unknown>): Record<string, unknown> {
+function stripFiles(expenses: Record<string, unknown> | object): Record<string, unknown> {
   const { vehicleFiles, trainFiles, hotelFiles, leopalaceFiles, otherFiles, entertainmentFiles, garbagePhotos, ...rest } = expenses as any
   return rest
 }

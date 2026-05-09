@@ -2,7 +2,7 @@
 //  apps/liff / composables/useExpense.ts
 //  経費申請データの CRUD 操作
 // ============================================================
-import type { User, ExpenseItem, ExpenseItemInput } from '~/types'
+import type { User, ExpenseItem, ExpenseItemInput, ExpenseRow } from '~/types'
 
 // ---------- 期間キーユーティリティ ----------
 
