@@ -81,8 +81,26 @@
 
         <!-- アクション -->
         <div v-if="rows.length > 0" class="actions no-print">
-          <button class="btn-print" @click="handlePrint">PDFとして保存（印刷）</button>
-          <button class="btn-open-safari" @click="handleOpenExternal">Safari / 外部ブラウザで開く</button>
+
+          <!-- スマホ: 手順ナビ + ブラウザで開くボタンのみ -->
+          <template v-if="isMobile">
+            <div class="guide-box">
+              <p class="guide-title">PDF保存の手順</p>
+              <ol class="guide-steps">
+                <li>下の「ブラウザで開く」をタップ</li>
+                <li>Safari / Chrome で申請書が開く</li>
+                <li>共有ボタン（<span class="icon-share">⎙</span>）→「PDFとして保存」または「印刷」を選択</li>
+              </ol>
+            </div>
+            <button class="btn-open-safari primary" @click="handleOpenExternal">ブラウザで開く →</button>
+          </template>
+
+          <!-- PC: 直接PDF保存 -->
+          <template v-else>
+            <button class="btn-print" @click="handlePrint">PDFとして保存（印刷）</button>
+            <button class="btn-open-safari" @click="handleOpenExternal">別ウィンドウで開く</button>
+          </template>
+
         </div>
       </template>
     </main>
@@ -151,6 +169,11 @@ function shortLabel(key: string) {
   const [, month, half] = key.split('-')
   return `${parseInt(month)}月${half === 'first' ? '前半' : '後半'}`
 }
+
+const isMobile = computed(() => {
+  if (import.meta.server) return false
+  return window.innerWidth < 768 || /iPhone|Android|Mobile/i.test(navigator.userAgent)
+})
 </script>
 
 <style scoped>
@@ -191,6 +214,12 @@ html,body { background:var(--bg);color:var(--text);font-family:var(--font);min-h
 .actions { display:flex;flex-direction:column;gap:10px; }
 .btn-print { width:100%;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);padding:16px;font-size:16px;font-weight:900;letter-spacing:1px;font-family:var(--font);cursor:pointer; }
 .btn-open-safari { width:100%;background:#fff;color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:14px;font-size:14px;font-weight:700;font-family:var(--font);cursor:pointer; }
+.btn-open-safari.primary { background:var(--accent);color:#fff;border-color:var(--accent);font-size:16px;padding:16px; }
+.guide-box { background:#f8f8f8;border-radius:var(--radius);padding:16px 18px;border-left:3px solid var(--accent); }
+.guide-title { font-size:13px;font-weight:700;margin-bottom:10px;color:var(--text); }
+.guide-steps { padding-left:18px;display:flex;flex-direction:column;gap:8px; }
+.guide-steps li { font-size:13px;color:#444;line-height:1.5; }
+.icon-share { font-size:15px; }
 @media print {
   .no-print { display:none !important; }
   .main { padding:0 !important; }
