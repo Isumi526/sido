@@ -54,6 +54,11 @@
             </div>
           </div>
 
+          <!-- テスター用：キャッシュクリア -->
+          <button v-if="liff.isTester.value" type="button" class="btn-dev" @click="clearCache">
+            🔧 キャッシュクリア（テスト用）
+          </button>
+
           <div v-if="errorMsg" class="error-banner">{{ errorMsg }}</div>
 
           <button type="submit" class="btn-submit" :disabled="submitting || !realName.trim()">
@@ -83,6 +88,8 @@ onMounted(async () => {
   await Promise.all([liff.init(), master.fetch()])
   const userId = liff.profile.value?.userId
   if (userId) {
+    // 登録ページに直接来た場合はキャッシュをバイパスして最新状態を確認
+    expense.clearUserCache(userId)
     const existing = await expense.getUser(userId)
     if (existing) {
       realName.value   = existing.real_name
@@ -110,6 +117,14 @@ async function handleSubmit() {
 
 function goToHome() {
   router.push('/')
+}
+
+function clearCache() {
+  const userId = liff.profile.value?.userId
+  if (userId) expense.clearUserCache(userId)
+  realName.value   = ''
+  workerRole.value = 'site'
+  done.value       = false
 }
 </script>
 
@@ -155,5 +170,7 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--font)
 .role-btn.active { background: var(--accent); color: #fff; font-weight: 700; }
 .btn-submit { width: 100%; background: var(--accent); color: #fff; border: none; border-radius: var(--radius); padding: 16px; font-size: 16px; font-weight: 900; letter-spacing: 2px; font-family: var(--font); cursor: pointer; }
 .btn-submit:disabled { opacity: .45; cursor: not-allowed; }
+.btn-dev { width: 100%; padding: 10px; background: #2d2d2d; color: #aaa; border: 1px dashed #555; border-radius: 8px; font-size: 12px; cursor: pointer; font-family: var(--font); }
+.btn-dev:hover { color: #fff; }
 .error-banner { background: #fff0f0; border: 1px solid var(--danger); color: var(--danger); border-radius: 8px; padding: 12px 16px; font-size: 13px; }
 </style>

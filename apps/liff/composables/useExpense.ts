@@ -246,5 +246,5 @@ export const useExpense = () => {
     return rows
   }
 
-  return { getUser, registerUser, addItem, getItems, deleteItem, saveReport, getExpenseRowsFromReports }
+  return { getUser, registerUser, addItem, getItems, deleteItem, saveReport, getExpenseRowsFromReports, clearUserCache }
 }
