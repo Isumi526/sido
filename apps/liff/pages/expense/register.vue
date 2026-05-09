@@ -45,6 +45,7 @@
               required
             >
               <option value="">選択してください</option>
+              <option v-if="liff.isTester.value" value="テストユーザー">🔧 テストユーザー</option>
               <option v-for="name in master.workerNames.value" :key="name" :value="name">{{ name }}</option>
             </select>
           </div>
