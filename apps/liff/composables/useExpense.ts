@@ -174,7 +174,10 @@ export const useExpense = () => {
     lineUserId: string,
     report: { date: string; isWorking: boolean; sites: unknown[]; note?: string }
   ): Promise<void> {
+    console.log('[saveReport] 開始 lineUserId=', lineUserId)
+
     const user = await getUser(lineUserId)
+    console.log('[saveReport] getUser結果=', user ? `id:${user.id} name:${user.real_name}` : 'null')
     if (!user) throw new Error('ユーザーが登録されていません')
 
     const supabase = useSupabase()
@@ -192,7 +195,11 @@ export const useExpense = () => {
         { onConflict: 'user_id,date' }
       )
 
-    if (error) throw error
+    if (error) {
+      console.error('[saveReport] upsertエラー code=', error.code, 'message=', error.message)
+      throw error
+    }
+    console.log('[saveReport] 保存成功 date=', report.date)
   }
 
   /**
