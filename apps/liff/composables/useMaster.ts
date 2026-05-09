@@ -43,6 +43,7 @@ const FALLBACK: MasterData = {
     { name: '香田',   unitPrice: 20000, role: 'site' },
     { name: 'Worker33',   unitPrice: 20000, role: 'site' },
     { name: 'Worker34',   unitPrice: 20000, role: 'site' },
+    { name: 'テストユーザー', unitPrice: 0, role: 'site' },
   ],
   subcontractors: ['VendorA', 'VendorB', 'VendorC', 'VendorD', 'VendorE', 'VendorF', 'VendorG', 'VendorH'],
   vehicles: ['ハイエース', 'キャラバン', 'プロボックス', 'その他'],
