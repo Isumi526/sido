@@ -87,6 +87,10 @@ function clearUserCache(lineUserId: string) {
 // ---------- composable ----------
 
 export const useExpense = () => {
+  // コンポーザブル初期化時（同期フェーズ）に一度だけ取得してクロージャで共有
+  const supabase = useSupabase()
+  const { getAccountId } = useAccount()
+
   /**
    * LINE userId でユーザーを取得（未登録なら null）
    * localStorage キャッシュあり → Supabase は初回・期限切れ時のみ問い合わせ
@@ -94,8 +98,6 @@ export const useExpense = () => {
   async function getUser(lineUserId: string): Promise<User | null> {
     const cached = loadUserCache(lineUserId)
 
-    const supabase = useSupabase()
-    const { getAccountId } = useAccount()
     const accountId = await getAccountId()
 
     // キャッシュがある場合：即座に返しつつ、updated_at が変わっていたら破棄して再取得
@@ -136,11 +138,9 @@ export const useExpense = () => {
     workerName: string,
     workerRole: 'factory' | 'site',
   ): Promise<User> {
-    const supabase = useSupabase()
 
     let workerId = workerIdOrNull
 
-    const { getAccountId } = useAccount()
     const accountId = await getAccountId()
 
     // 新規作業員の場合は workers テーブルに作成
@@ -185,7 +185,6 @@ export const useExpense = () => {
     const user = await getUser(lineUserId)
     if (!user) throw new Error('ユーザーが登録されていません')
 
-    const supabase = useSupabase()
     const { data, error } = await supabase
       .from('expense_items')
       .insert({ ...item, user_id: user.id })
@@ -201,7 +200,6 @@ export const useExpense = () => {
     const user = await getUser(lineUserId)
     if (!user) return []
 
-    const supabase = useSupabase()
     const { data, error } = await supabase
       .from('expense_items')
       .select('*')
@@ -216,7 +214,6 @@ export const useExpense = () => {
 
   /** 経費明細を削除 */
   async function deleteItem(id: string): Promise<void> {
-    const supabase = useSupabase()
     const { error } = await supabase
       .from('expense_items')
       .delete()
@@ -239,9 +236,6 @@ export const useExpense = () => {
     console.log('[saveReport] getUser結果=', user ? `id:${user.id} name:${user.real_name}` : 'null')
     if (!user) throw new Error('ユーザーが登録されていません')
 
-    const supabase = useSupabase()
-
-    const { getAccountId } = useAccount()
     const accountId = await getAccountId()
 
     const { error } = await supabase
@@ -279,7 +273,6 @@ export const useExpense = () => {
     const lastDay  = new Date(parseInt(year), parseInt(month), 0).getDate()
     const dateTo   = half === 'first' ? `${year}-${month}-15` : `${year}-${month}-${String(lastDay).padStart(2, '0')}`
 
-    const supabase = useSupabase()
     const { data, error } = await supabase
       .from('daily_reports')
       .select('date, sites')
