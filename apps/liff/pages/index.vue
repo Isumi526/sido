@@ -523,7 +523,7 @@ onMounted(async () => {
   if (userId) {
     currentUser.value = await expense.getUser(userId)
     if (!currentUser.value) {
-      await navigateTo('/expense/register')
+      await navigateTo('/register')
       return
     }
     initWorkers()

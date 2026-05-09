@@ -112,7 +112,7 @@ onMounted(async () => {
   if (!userId) { initializing.value = false; return }
 
   currentUser.value = await expense.getUser(userId)
-  if (!currentUser.value) { router.push('/expense/register'); return }
+  if (!currentUser.value) { router.push('/register'); return }
 
   await loadRows()
   initializing.value = false
