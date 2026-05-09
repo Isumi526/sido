@@ -542,14 +542,24 @@ async function handleSubmit() {
   report.form.value.isWorking = isWorkingStr.value === 'working'
   await report.submit()
 
-  // GAS送信成功後にSupabaseにも保存（失敗してもUIはブロックしない）
+  // GAS送信成功後にSupabaseにも保存
   if (!report.error.value && liff.profile.value?.userId) {
-    expense.saveReport(liff.profile.value.userId, {
+    const uid = liff.profile.value.userId
+    expense.saveReport(uid, {
       date:      report.form.value.date,
       isWorking: report.form.value.isWorking,
       sites:     report.form.value.sites,
       note:      report.form.value.note,
-    }).catch(e => console.error('[Report] Supabase保存エラー:', e))
+    }).catch(async (e: unknown) => {
+      console.error('[Report] Supabase保存エラー:', e)
+      // ユーザー不在 or FK違反 → キャッシュが古い可能性。クリアして再登録へ
+      const msg = String((e as any)?.message ?? e ?? '')
+      if (msg.includes('ユーザーが登録されていません') || msg.includes('foreign key')) {
+        expense.clearUserCache(uid)
+        currentUser.value = null
+        await navigateTo('/register')
+      }
+    })
   }
 }
 
