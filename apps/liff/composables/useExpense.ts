@@ -64,12 +64,17 @@ export const useExpense = () => {
     return data
   }
 
-  /** ユーザー登録（既存なら本名を更新して返す） */
-  async function registerUser(lineUserId: string, realName: string): Promise<ExpenseUser> {
+  /** ユーザー登録（既存なら本名・ロールを更新して返す） */
+  async function registerUser(lineUserId: string, realName: string, workerRole: 'factory' | 'site'): Promise<ExpenseUser> {
     const { data, error } = await supabase
       .from('expense_users')
       .upsert(
-        { line_user_id: lineUserId, real_name: realName, updated_at: new Date().toISOString() },
+        {
+          line_user_id: lineUserId,
+          real_name:    realName,
+          worker_role:  workerRole,
+          updated_at:   new Date().toISOString(),
+        },
         { onConflict: 'line_user_id' }
       )
       .select()
@@ -121,5 +126,33 @@ export const useExpense = () => {
     if (error) throw error
   }
 
-  return { getUser, registerUser, addItem, getItems, deleteItem }
+  /**
+   * 日報データをSupabaseに保存（管理画面・履歴用）
+   * 同じ user_id + date がある場合は上書き（upsert）
+   */
+  async function saveReport(
+    lineUserId: string,
+    report: { date: string; isWorking: boolean; sites: unknown[]; note?: string }
+  ): Promise<void> {
+    const user = await getUser(lineUserId)
+    if (!user) throw new Error('ユーザーが登録されていません')
+
+    const { error } = await supabase
+      .from('daily_reports')
+      .upsert(
+        {
+          user_id:    user.id,
+          date:       report.date,
+          is_working: report.isWorking,
+          sites:      report.sites,
+          note:       report.note ?? null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,date' }
+      )
+
+    if (error) throw error
+  }
+
+  return { getUser, registerUser, addItem, getItems, deleteItem, saveReport }
 }

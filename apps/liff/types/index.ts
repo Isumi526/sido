@@ -104,6 +104,7 @@ export interface ExpenseUser {
   id:           string
   line_user_id: string
   real_name:    string
+  worker_role:  'factory' | 'site'
   created_at:   string
   updated_at:   string
 }

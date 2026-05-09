@@ -49,6 +49,18 @@
             </select>
           </div>
 
+          <div class="field">
+            <label class="label">所属 <span class="required">必須</span></label>
+            <div class="role-toggle">
+              <button type="button" class="role-btn" :class="{ active: workerRole === 'factory' }" @click="workerRole = 'factory'">
+                工場 / 事務所
+              </button>
+              <button type="button" class="role-btn" :class="{ active: workerRole === 'site' }" @click="workerRole = 'site'">
+                現場
+              </button>
+            </div>
+          </div>
+
           <div v-if="errorMsg" class="error-banner">{{ errorMsg }}</div>
 
           <button type="submit" class="btn-submit" :disabled="submitting || !realName.trim()">
@@ -69,6 +81,7 @@ const router  = useRouter()
 
 const initializing = ref(true)
 const realName     = ref('')
+const workerRole   = ref<'factory' | 'site'>('site')
 const submitting   = ref(false)
 const errorMsg     = ref('')
 const done         = ref(false)
@@ -79,7 +92,8 @@ onMounted(async () => {
   if (userId) {
     const existing = await expense.getUser(userId)
     if (existing) {
-      realName.value = existing.real_name
+      realName.value   = existing.real_name
+      workerRole.value = existing.worker_role
     }
   }
   initializing.value = false
@@ -91,7 +105,7 @@ async function handleSubmit() {
   submitting.value = true
   errorMsg.value   = ''
   try {
-    await expense.registerUser(userId, realName.value.trim())
+    await expense.registerUser(userId, realName.value.trim(), workerRole.value)
     done.value = true
   } catch (e) {
     errorMsg.value = '登録に失敗しました。もう一度お試しください。'
@@ -142,6 +156,10 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--font)
   background-repeat: no-repeat; background-position: right 14px center; padding-right: 38px;
 }
 .btn-primary { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 13px 28px; font-size: 15px; font-weight: 700; font-family: var(--font); cursor: pointer; }
+.role-toggle { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.role-btn { flex: 1; padding: 11px 0; font-size: 14px; font-family: var(--font); background: #f5f5f5; color: var(--text2); border: none; cursor: pointer; transition: background .15s, color .15s; }
+.role-btn:first-child { border-right: 1px solid var(--border); }
+.role-btn.active { background: var(--accent); color: #fff; font-weight: 700; }
 .btn-submit { width: 100%; background: var(--accent); color: #fff; border: none; border-radius: var(--radius); padding: 16px; font-size: 16px; font-weight: 900; letter-spacing: 2px; font-family: var(--font); cursor: pointer; }
 .btn-submit:disabled { opacity: .45; cursor: not-allowed; }
 .error-banner { background: #fff0f0; border: 1px solid var(--danger); color: var(--danger); border-radius: 8px; padding: 12px 16px; font-size: 13px; }
