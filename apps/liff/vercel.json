@@ -2,7 +2,7 @@
   "buildCommand": "nuxt generate",
   "outputDirectory": ".output/public",
   "devCommand": "nuxt dev",
-  "installCommand": "npm install --prefix ../..",
+  "installCommand": "npm install --no-package-lock",
   "framework": "nuxtjs",
   "rewrites": [
     { "source": "/(.*)", "destination": "/" }
