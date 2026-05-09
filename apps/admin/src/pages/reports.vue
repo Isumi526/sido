@@ -14,18 +14,21 @@
     <div v-else-if="reports.length === 0" class="empty">日報が見つかりません</div>
 
     <div v-else class="report-list">
-      <div v-for="r in reports" :key="r.id" class="report-card" @click="selected = r">
-        <div class="report-header">
+      <div v-for="r in reports" :key="r.id" class="report-card">
+        <div class="report-header" @click="selected = r">
           <span class="report-date">{{ r.date }}</span>
           <span class="report-worker">{{ r.worker_name ?? '—' }}</span>
           <span class="badge" :class="r.is_working ? 'working' : 'off'">{{ r.is_working ? '稼働' : '休み' }}</span>
           <span class="detail-hint">詳細 →</span>
         </div>
-        <div v-if="r.is_working && r.sites?.length" class="sites">
+        <div v-if="r.is_working && r.sites?.length" class="sites" @click="selected = r">
           <div v-for="(site, i) in r.sites" :key="i" class="site-row">
             <span class="site-name">{{ resolveSiteName(site) }}</span>
             <span class="worker-count">作業員 {{ site.workers?.length ?? 0 }}名</span>
           </div>
+        </div>
+        <div class="card-actions">
+          <button class="btn-delete-sm" @click.stop="confirmDelete(r)">削除</button>
         </div>
       </div>
     </div>
@@ -42,6 +45,7 @@
             <span class="badge" :class="selected.is_working ? 'working' : 'off'">
               {{ selected.is_working ? '稼働' : '休み' }}
             </span>
+            <button class="btn-delete" @click="confirmDelete(selected)">削除</button>
             <button class="btn-close" @click="selected = null">✕</button>
           </div>
         </div>
@@ -132,8 +136,23 @@ const now      = new Date()
 const dateFrom = ref(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`)
 const dateTo   = ref(now.toISOString().split('T')[0])
 const loading  = ref(false)
+const deleting = ref(false)
 const reports  = ref<any[]>([])
 const selected = ref<any | null>(null)
+
+function confirmDelete(r: any) {
+  if (!confirm(`${r.date} ${r.worker_name ?? ''} の日報を削除しますか？`)) return
+  deleteReport(r)
+}
+
+async function deleteReport(r: any) {
+  deleting.value = true
+  const { error } = await supabase.from('daily_reports').delete().eq('id', r.id)
+  deleting.value = false
+  if (error) { alert('削除に失敗しました: ' + error.message); return }
+  reports.value = reports.value.filter(rep => rep.id !== r.id)
+  if (selected.value?.id === r.id) selected.value = null
+}
 
 function resolveSiteName(site: any): string {
   const n = site.siteName ?? ''
@@ -181,8 +200,14 @@ onMounted(load)
 .btn-search { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 9px 20px; font-size: 14px; font-weight: 700; cursor: pointer; }
 .empty { color: #888; padding: 40px; text-align: center; }
 .report-list { display: flex; flex-direction: column; gap: 12px; }
-.report-card { background: #fff; border-radius: 12px; padding: 16px 20px; box-shadow: 0 1px 4px rgba(0,0,0,.06); cursor: pointer; transition: box-shadow .15s; }
+.report-card { background: #fff; border-radius: 12px; padding: 16px 20px; box-shadow: 0 1px 4px rgba(0,0,0,.06); transition: box-shadow .15s; }
 .report-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.1); }
+.report-header { cursor: pointer; }
+.card-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+.btn-delete-sm { background: none; border: 1px solid #fca5a5; color: #dc2626; border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
+.btn-delete-sm:hover { background: #fef2f2; }
+.btn-delete { background: #dc2626; color: #fff; border: none; border-radius: 8px; padding: 6px 14px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.btn-delete:hover { background: #b91c1c; }
 .report-header { display: flex; align-items: center; gap: 12px; }
 .report-date { font-weight: 700; font-size: 15px; min-width: 100px; }
 .report-worker { font-size: 14px; color: #555; flex: 1; }
