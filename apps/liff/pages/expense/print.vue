@@ -36,15 +36,15 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="item in items" :key="item.id">
-            <td class="center">{{ fmtDate(item.date) }}</td>
-            <td>{{ item.payee }}</td>
-            <td class="small">{{ item.registration_number || '' }}</td>
-            <td class="center">{{ item.category }}</td>
-            <td class="center">{{ item.liters ?? '' }}</td>
-            <td class="small">{{ item.site_name || '' }}</td>
+          <tr v-for="(row, i) in rows" :key="i">
+            <td class="center">{{ fmtDate(row.date) }}</td>
+            <td class="small">{{ row.note || '' }}</td>
             <td></td>
-            <td class="right">¥{{ item.amount.toLocaleString() }}</td>
+            <td class="center">{{ row.category }}</td>
+            <td class="center">{{ row.liters ?? '' }}</td>
+            <td class="small">{{ row.siteName }}</td>
+            <td></td>
+            <td class="right">{{ row.amount ? '¥' + row.amount.toLocaleString() : '' }}</td>
           </tr>
         </tbody>
         <tfoot>
@@ -62,14 +62,14 @@
     </div>
 
     <!-- 印刷ボタン（印刷時非表示） -->
-    <div v-if="!loading && !error && items.length > 0" class="print-btn-area no-print">
+    <div v-if="!loading && !error && rows.length > 0" class="print-btn-area no-print">
       <button class="btn-print" @click="window.print()">印刷 / PDFとして保存</button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import type { ExpenseItem, ExpenseUser } from '~/types'
+import type { ExpenseRow, ExpenseUser } from '~/types'
 
 const route  = useRoute()
 const userId = route.query.userId as string
@@ -78,8 +78,8 @@ const period = route.query.period as string
 const loading = ref(true)
 const error   = ref('')
 const user    = ref<ExpenseUser | null>(null)
-const items   = ref<ExpenseItem[]>([])
-const total   = computed(() => items.value.reduce((s, i) => s + i.amount, 0))
+const rows    = ref<ExpenseRow[]>([])
+const total   = computed(() => rows.value.reduce((s, r) => s + r.amount, 0))
 
 const expense = useExpense()
 
@@ -91,7 +91,7 @@ onMounted(async () => {
   }
   try {
     user.value  = await expense.getUser(userId)
-    items.value = await expense.getItems(userId, period)
+    rows.value  = await expense.getExpenseRowsFromReports(userId, period)
     if (!user.value) error.value = 'ユーザーが見つかりません。'
   } catch (e) {
     error.value = 'データの取得に失敗しました。'
