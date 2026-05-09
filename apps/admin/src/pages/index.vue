@@ -2,14 +2,6 @@
   <div>
     <h1 class="page-title">ダッシュボード</h1>
 
-    <!-- サマリーカード -->
-    <div class="cards">
-      <div class="stat-card" v-for="s in stats" :key="s.label">
-        <div class="stat-value">{{ s.value }}</div>
-        <div class="stat-label">{{ s.label }}</div>
-      </div>
-    </div>
-
     <!-- 月次経費集計 -->
     <div class="section-head">
       <h2 class="section-title">月次経費集計</h2>
@@ -71,13 +63,6 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-
-// ── サマリーカード ────────────────────────────────────────────
-const stats = ref([
-  { label: '作業員', value: '—' },
-  { label: '現場', value: '—' },
-  { label: '登録ユーザー', value: '—' },
-])
 
 // ── 月選択 ───────────────────────────────────────────────────
 const monthOptions = computed(() => {
@@ -167,16 +152,6 @@ const categoryRows     = computed(() => {
 
 // ── 初期化 ───────────────────────────────────────────────────
 onMounted(async () => {
-  const accountId = await getAccountId()
-  const [workers, sites, users] = await Promise.all([
-    supabase.from('workers').select('id', { count: 'exact', head: true }).eq('active', true).eq('account_id', accountId),
-    supabase.from('sites').select('id', { count: 'exact', head: true }).eq('active', true).eq('account_id', accountId),
-    supabase.from('users').select('id', { count: 'exact', head: true }).eq('account_id', accountId),
-  ])
-  stats.value[0].value = String(workers.count ?? '—')
-  stats.value[1].value = String(sites.count ?? '—')
-  stats.value[2].value = String(users.count ?? '—')
-
   await loadExpenses()
 })
 

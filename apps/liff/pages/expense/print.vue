@@ -71,6 +71,11 @@
 <script setup lang="ts">
 import type { ExpenseRow, User } from '~/types'
 
+// スマホでも固定幅でレンダリングし、PCと同じレイアウトでPDF保存できるようにする
+useHead({
+  meta: [{ name: 'viewport', content: 'width=820' }],
+})
+
 const route  = useRoute()
 const userId = route.query.userId as string
 const period = route.query.period as string
@@ -147,8 +152,10 @@ body { font-family: 'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic', sans-serif; ba
 .btn-print { background: #06C755; color: #fff; border: none; border-radius: 10px; padding: 14px 40px; font-size: 16px; font-weight: 700; cursor: pointer; }
 
 @media print {
+  @page { size: A4 portrait; margin: 12mm 10mm; }
   .no-print { display: none !important; }
-  .page { padding: 0 !important; }
-  body { font-size: 11px !important; }
+  .page { padding: 0 !important; max-width: none !important; }
+  body { font-size: 11px !important; background: #fff !important; }
+  .expense-table { width: 100% !important; }
 }
 </style>
