@@ -2,51 +2,51 @@
   <div>
     <h1 class="page-title">ダッシュボード</h1>
 
-    <!-- 月次経費集計 -->
+    <!-- 月次集計 -->
     <div class="section-head">
-      <h2 class="section-title">月次経費集計</h2>
+      <h2 class="section-title">月次集計</h2>
       <select v-model="selectedMonth" class="month-select">
         <option v-for="m in monthOptions" :key="m.value" :value="m.value">{{ m.label }}</option>
       </select>
     </div>
 
-    <div v-if="expenseLoading" class="loading-text">集計中...</div>
+    <div v-if="loading" class="loading-text">集計中...</div>
     <template v-else>
-      <!-- 経費サマリーカード -->
+      <!-- 合計カード -->
       <div class="cards mt16">
         <div class="stat-card accent">
-          <div class="stat-value">¥{{ totalExpense.toLocaleString() }}</div>
-          <div class="stat-label">経費合計</div>
+          <div class="stat-value">¥{{ grandTotal.toLocaleString() }}</div>
+          <div class="stat-label">月次合計</div>
         </div>
       </div>
 
-      <!-- カテゴリ別内訳 -->
-      <div class="table-wrap mt20" v-if="categoryRows.length > 0">
+      <!-- 内訳テーブル -->
+      <div class="table-wrap mt20" v-if="summaryRows.length > 0">
         <table class="data-table">
           <thead>
             <tr>
               <th>カテゴリ</th>
               <th class="right">金額</th>
-              <th class="right">件数</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in categoryRows" :key="row.category">
-              <td>{{ row.category }}</td>
+            <tr v-for="row in summaryRows" :key="row.label">
+              <td>
+                <span class="category-dot" :class="row.type" />
+                {{ row.label }}
+              </td>
               <td class="right bold">¥{{ row.amount.toLocaleString() }}</td>
-              <td class="right">{{ row.count }}</td>
             </tr>
           </tbody>
           <tfoot>
             <tr class="total-row">
               <td>合　計</td>
-              <td class="right">¥{{ totalExpense.toLocaleString() }}</td>
-              <td class="right">{{ expenseRows.length }}</td>
+              <td class="right">¥{{ grandTotal.toLocaleString() }}</td>
             </tr>
           </tfoot>
         </table>
       </div>
-      <div v-else class="empty-text">この月の経費データがありません</div>
+      <div v-else class="empty-text">この月のデータがありません</div>
     </template>
   </div>
 </template>
@@ -69,85 +69,130 @@ const monthOptions = computed(() => {
 })
 const selectedMonth = ref(monthOptions.value[0].value)
 
-// ── 経費集計 ─────────────────────────────────────────────────
-const expenseLoading = ref(false)
-const gasolineRate   = ref(23)
-const dieselRate     = ref(20)
+// ── 集計 ─────────────────────────────────────────────────────
+const loading = ref(false)
 
-type ExpRow = { category: string; amount: number; userId: string }
-const expenseRows       = ref<ExpRow[]>([])
-const workingReportCount = ref(0)
+// 単価マスタ
+let G_YEN = 23, D_YEN = 20, GF_YEN = 8000, GS_YEN = 14000
 
-async function loadExpenses() {
-  expenseLoading.value = true
+// 集計結果
+const laborTotal   = ref(0)   // 社員
+const shoshaTotal  = ref(0)   // 商社
+const gyoshaTotal  = ref(0)   // 業者
+const expenseMap   = ref<Map<string, number>>(new Map())  // 経費カテゴリ別
+
+function calcLaborCost(w: any, unitPrice: number) {
+  if (!unitPrice) return 0
+  const ph = unitPrice / 8
+  return Math.round(
+    (w.hoursNormal        || 0) * ph * 1.00 +
+    (w.hoursOT            || 0) * ph * 1.25 +
+    (w.hoursNight         || 0) * ph * 1.25 +
+    (w.hoursOTNight       || 0) * ph * 1.50 +
+    (w.hoursSunday        || 0) * ph * 1.35 +
+    (w.hoursSundayOT      || 0) * ph * 1.60 +
+    (w.hoursSundayNight   || 0) * ph * 1.60 +
+    (w.hoursSundayOTNight || 0) * ph * 1.85
+  )
+}
+
+function addExp(map: Map<string, number>, key: string, val: number) {
+  if (!val) return
+  map.set(key, (map.get(key) ?? 0) + val)
+}
+
+async function load() {
+  loading.value = true
   const ym = selectedMonth.value
-
   const accountId = await getAccountId()
 
-  // 燃料単価
-  const { data: settingsData } = await supabase.from('settings').select('key, value').eq('account_id', accountId)
-  if (settingsData) {
-    const map = Object.fromEntries(settingsData.map((s: any) => [s.key, Number(s.value)]))
-    gasolineRate.value = map['gasoline_rate_per_km'] ?? 23
-    dieselRate.value   = map['diesel_rate_per_km']   ?? 20
+  // マスタ・設定を並列取得
+  const [{ data: wm }, { data: sm }, { data: cfg }] = await Promise.all([
+    supabase.from('workers').select('id, name, unit_price').eq('account_id', accountId),
+    supabase.from('subcontractors').select('name, category, unit_price').eq('account_id', accountId),
+    supabase.from('settings').select('key, value').eq('account_id', accountId),
+  ])
+  for (const row of (cfg ?? [])) {
+    if (row.key === 'gasoline_rate_per_km')        G_YEN  = Number(row.value)
+    if (row.key === 'diesel_rate_per_km')           D_YEN  = Number(row.value)
+    if (row.key === 'garbage_factory_rate_per_m3')  GF_YEN = Number(row.value)
+    if (row.key === 'garbage_site_rate_per_m3')     GS_YEN = Number(row.value)
   }
+  const priceById   = Object.fromEntries((wm ?? []).map((w: any) => [w.id,   w.unit_price]))
+  const priceByName = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.unit_price]))
+  const subMaster   = Object.fromEntries((sm ?? []).map((s: any) => [s.name, { category: s.category, unitPrice: s.unit_price ?? 0 }]))
 
-  // 対象月の稼働日報を取得
+  // 対象月の日報取得
   const { data: reports } = await supabase
     .from('daily_reports')
-    .select('user_id, sites')
+    .select('sites')
     .eq('account_id', accountId)
     .eq('is_working', true)
     .gte('date', `${ym}-01`)
     .lte('date', `${ym}-31`)
 
-  workingReportCount.value = reports?.length ?? 0
+  let labor = 0, shosha = 0, gyosha = 0
+  const expMap = new Map<string, number>()
 
-  const rows: ExpRow[] = []
   for (const rep of (reports ?? [])) {
-    const userId = rep.user_id ?? ''
     for (const site of (rep.sites as any[])) {
+      // 社員費
+      for (const w of (site.workers ?? []).filter((w: any) => w.workerName)) {
+        const up = priceById[w.workerId] ?? priceByName[w.workerName] ?? 0
+        labor += calcLaborCost(w, up)
+      }
+
+      // 商社・業者費
+      for (const s of (site.subcontractors ?? []).filter((s: any) => s.subcontractorName)) {
+        const m = subMaster[s.subcontractorName] ?? { category: null, unitPrice: 0 }
+        const cost = (s.count || 0) * (m.unitPrice || 0)
+        if (m.category === '商社') shosha += cost
+        else gyosha += cost
+      }
+
+      // 経費
       const exp = site.expenses || {}
       for (const veh of (exp.vehicles || [])) {
-        if (veh.distanceKm) rows.push({ category: 'ガソリン代', amount: Math.round(veh.distanceKm * gasolineRate.value), userId })
-        if (veh.dieselKm)   rows.push({ category: '軽油代',    amount: Math.round(veh.dieselKm   * dieselRate.value),   userId })
-        if (veh.parkingYen) rows.push({ category: '駐車代',    amount: veh.parkingYen, userId })
-        if (veh.highwayYen) rows.push({ category: '高速代',    amount: veh.highwayYen, userId })
+        addExp(expMap, 'ガソリン代', Math.round((veh.distanceKm || 0) * G_YEN))
+        addExp(expMap, '軽油代',    Math.round((veh.dieselKm   || 0) * D_YEN))
+        addExp(expMap, '駐車代',    veh.parkingYen || 0)
+        addExp(expMap, '高速代',    veh.highwayYen || 0)
       }
-      for (const tr of (exp.trains || [])) {
-        if (tr.yen) rows.push({ category: '電車代', amount: tr.yen, userId })
-      }
-      if (exp.hotelYen)         rows.push({ category: '宿泊費（ホテル）',    amount: exp.hotelYen,      userId })
-      if (exp.leopalaceYen)     rows.push({ category: '宿泊費（レオパレス）', amount: exp.leopalaceYen,  userId })
-      for (const ot of (exp.others || [])) {
-        if (ot.yen) rows.push({ category: 'その他（資材等）', amount: ot.yen, userId })
-      }
-      if (exp.entertainmentYen) rows.push({ category: 'その他雑経費', amount: exp.entertainmentYen, userId })
+      for (const tr of (exp.trains || [])) addExp(expMap, '電車代', tr.yen || 0)
+      addExp(expMap, '宿泊費',       (exp.hotelYen || 0) + (exp.leopalaceYen || 0))
+      addExp(expMap, 'その他（資材等）', (exp.others || []).reduce((s: number, o: any) => s + (o.yen || 0), 0))
+      addExp(expMap, 'その他雑経費',  exp.entertainmentYen || 0)
+      addExp(expMap, 'ゴミ処分',
+        Math.round((exp.garbageFactoryM3 || 0) * GF_YEN + (exp.garbageSiteM3 || 0) * GS_YEN))
     }
   }
-  expenseRows.value = rows
-  expenseLoading.value = false
+
+  laborTotal.value  = labor
+  shoshaTotal.value = shosha
+  gyoshaTotal.value = gyosha
+  expenseMap.value  = expMap
+  loading.value = false
 }
 
-const totalExpense     = computed(() => expenseRows.value.reduce((s, r) => s + r.amount, 0))
-const expenseWorkerCount = computed(() => new Set(expenseRows.value.map(r => r.userId)).size)
-const categoryRows     = computed(() => {
-  const map = new Map<string, { amount: number; count: number }>()
-  for (const r of expenseRows.value) {
-    const cur = map.get(r.category) ?? { amount: 0, count: 0 }
-    map.set(r.category, { amount: cur.amount + r.amount, count: cur.count + 1 })
+const grandTotal = computed(() => {
+  const expTotal = [...expenseMap.value.values()].reduce((s, v) => s + v, 0)
+  return laborTotal.value + shoshaTotal.value + gyoshaTotal.value + expTotal
+})
+
+type SummaryRow = { label: string; amount: number; type: 'labor' | 'shosha' | 'gyosha' | 'expense' }
+const summaryRows = computed((): SummaryRow[] => {
+  const rows: SummaryRow[] = []
+  if (laborTotal.value)  rows.push({ label: '社員',   amount: laborTotal.value,  type: 'labor'  })
+  if (shoshaTotal.value) rows.push({ label: '商社',   amount: shoshaTotal.value, type: 'shosha' })
+  if (gyoshaTotal.value) rows.push({ label: '業者',   amount: gyoshaTotal.value, type: 'gyosha' })
+  for (const [label, amount] of expenseMap.value) {
+    if (amount > 0) rows.push({ label, amount, type: 'expense' })
   }
-  return [...map.entries()]
-    .map(([category, v]) => ({ category, ...v }))
-    .sort((a, b) => b.amount - a.amount)
+  return rows
 })
 
-// ── 初期化 ───────────────────────────────────────────────────
-onMounted(async () => {
-  await loadExpenses()
-})
-
-watch(selectedMonth, loadExpenses)
+onMounted(load)
+watch(selectedMonth, load)
 </script>
 
 <style scoped>
@@ -155,59 +200,35 @@ watch(selectedMonth, loadExpenses)
 
 .cards { display: flex; gap: 16px; flex-wrap: wrap; }
 .stat-card {
-  background: #fff;
-  border-radius: 12px;
-  padding: 24px 32px;
-  min-width: 150px;
-  box-shadow: 0 1px 4px rgba(0,0,0,.06);
-  border: 1px solid #eee;
+  background: #fff; border-radius: 12px; padding: 24px 32px;
+  min-width: 150px; box-shadow: 0 1px 4px rgba(0,0,0,.06); border: 1px solid #eee;
 }
 .stat-card.accent { border-color: #06C755; background: #f0fdf4; }
 .stat-value { font-size: 36px; font-weight: 900; color: #06C755; }
 .stat-label { font-size: 13px; color: #888; margin-top: 4px; }
 
-.section-head {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-top: 36px;
-  margin-bottom: 16px;
-}
+.section-head { display: flex; align-items: center; gap: 16px; margin-top: 36px; margin-bottom: 16px; }
 .section-title { font-size: 18px; font-weight: 700; }
-.month-select {
-  padding: 7px 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  font-size: 13px;
-  background: #fff;
-  cursor: pointer;
-  outline: none;
-}
+.month-select { padding: 7px 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 13px; background: #fff; cursor: pointer; outline: none; }
 
 .mt16 { margin-top: 16px; }
 .mt20 { margin-top: 20px; }
 
-.table-wrap { border-radius: 10px; border: 1px solid #e5e7eb; overflow: hidden; }
+.table-wrap { border-radius: 10px; border: 1px solid #e5e7eb; overflow: hidden; max-width: 480px; }
 .data-table { width: 100%; border-collapse: collapse; background: #fff; }
-.data-table th {
-  padding: 11px 16px;
-  text-align: left;
-  font-size: 12px;
-  font-weight: 700;
-  color: #6b7280;
-  background: #f9fafb;
-  border-bottom: 1px solid #e5e7eb;
-}
-.data-table td {
-  padding: 12px 16px;
-  border-bottom: 1px solid #f3f4f6;
-  font-size: 13px;
-}
+.data-table th { padding: 11px 16px; text-align: left; font-size: 12px; font-weight: 700; color: #6b7280; background: #f9fafb; border-bottom: 1px solid #e5e7eb; }
+.data-table td { padding: 12px 16px; border-bottom: 1px solid #f3f4f6; font-size: 13px; }
 .data-table tr:last-child td { border-bottom: none; }
 .data-table tbody tr:hover td { background: #fafafa; }
 .total-row td { font-weight: 700; border-top: 2px solid #e5e7eb; background: #f9fafb; }
 .right { text-align: right; }
 .bold  { font-weight: 700; }
+
+.category-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
+.category-dot.labor   { background: #2563eb; }
+.category-dot.shosha  { background: #9333ea; }
+.category-dot.gyosha  { background: #ea580c; }
+.category-dot.expense { background: #06C755; }
 
 .loading-text { color: #888; padding: 32px 0; }
 .empty-text   { color: #9ca3af; padding: 32px 0; font-size: 14px; }
