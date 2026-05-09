@@ -2,7 +2,7 @@
 //  apps/liff / composables/useExpense.ts
 //  経費申請データの CRUD 操作
 // ============================================================
-import type { ExpenseUser, ExpenseItem, ExpenseItemInput } from '~/types'
+import type { User, ExpenseItem, ExpenseItemInput } from '~/types'
 
 // ---------- 期間キーユーティリティ ----------
 
@@ -53,18 +53,18 @@ export function recentPeriodKeys(): string[] {
 const USER_CACHE_PREFIX = 'sido_eu_'
 const USER_CACHE_TTL    = 60 * 60 * 1000 // 1時間
 
-function loadUserCache(lineUserId: string): ExpenseUser | null {
+function loadUserCache(lineUserId: string): User | null {
   if (import.meta.server) return null
   try {
     const raw = localStorage.getItem(USER_CACHE_PREFIX + lineUserId)
     if (!raw) return null
-    const { data, ts } = JSON.parse(raw) as { data: ExpenseUser; ts: number }
+    const { data, ts } = JSON.parse(raw) as { data: User; ts: number }
     if (Date.now() - ts > USER_CACHE_TTL) { localStorage.removeItem(USER_CACHE_PREFIX + lineUserId); return null }
     return data
   } catch { return null }
 }
 
-function saveUserCache(user: ExpenseUser) {
+function saveUserCache(user: User) {
   if (import.meta.server) return
   try {
     localStorage.setItem(USER_CACHE_PREFIX + user.line_user_id, JSON.stringify({ data: user, ts: Date.now() }))
@@ -83,13 +83,13 @@ export const useExpense = () => {
    * LINE userId でユーザーを取得（未登録なら null）
    * localStorage キャッシュあり → Supabase は初回・期限切れ時のみ問い合わせ
    */
-  async function getUser(lineUserId: string): Promise<ExpenseUser | null> {
+  async function getUser(lineUserId: string): Promise<User | null> {
     const cached = loadUserCache(lineUserId)
     if (cached) return cached
 
     const supabase = useSupabase()
     const { data, error } = await supabase
-      .from('expense_users')
+      .from('users')
       .select('*')
       .eq('line_user_id', lineUserId)
       .maybeSingle()
@@ -100,10 +100,10 @@ export const useExpense = () => {
   }
 
   /** ユーザー登録（既存なら本名・ロールを更新して返す） */
-  async function registerUser(lineUserId: string, realName: string, workerRole: 'factory' | 'site'): Promise<ExpenseUser> {
+  async function registerUser(lineUserId: string, realName: string, workerRole: 'factory' | 'site'): Promise<User> {
     const supabase = useSupabase()
     const { data, error } = await supabase
-      .from('expense_users')
+      .from('users')
       .upsert(
         {
           line_user_id: lineUserId,

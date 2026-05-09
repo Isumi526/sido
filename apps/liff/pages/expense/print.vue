@@ -69,7 +69,7 @@
 </template>
 
 <script setup lang="ts">
-import type { ExpenseRow, ExpenseUser } from '~/types'
+import type { ExpenseRow, User } from '~/types'
 
 const route  = useRoute()
 const userId = route.query.userId as string
@@ -77,7 +77,7 @@ const period = route.query.period as string
 
 const loading = ref(true)
 const error   = ref('')
-const user    = ref<ExpenseUser | null>(null)
+const user    = ref<User | null>(null)
 const rows    = ref<ExpenseRow[]>([])
 const total   = computed(() => rows.value.reduce((s, r) => s + r.amount, 0))
 

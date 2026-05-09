@@ -1,15 +1,6 @@
 <template>
   <div class="app">
-    <header class="header no-print">
-      <div class="header-inner">
-        <div class="brand">
-          <span class="brand-name">App</span>
-          <span class="brand-divider">|</span>
-          <span class="brand-sub">経費申請書</span>
-        </div>
-        <div v-if="currentUser" class="user-badge">{{ currentUser.real_name }}</div>
-      </div>
-    </header>
+    <AppNav subtitle="経費申請書" :user-name="currentUser?.real_name" :user-role="currentUser?.worker_role" />
 
     <main class="main">
       <div v-if="initializing" class="state-screen no-print">
@@ -99,7 +90,7 @@
 </template>
 
 <script setup lang="ts">
-import type { ExpenseUser, ExpenseRow } from '~/types'
+import type { User, ExpenseRow } from '~/types'
 import { getCurrentPeriodKey, recentPeriodKeys } from '~/composables/useExpense'
 
 const liff    = useLiff()
@@ -108,7 +99,7 @@ const router  = useRouter()
 
 const initializing   = ref(true)
 const loading        = ref(false)
-const currentUser    = ref<ExpenseUser | null>(null)
+const currentUser    = ref<User | null>(null)
 const selectedPeriod = ref(getCurrentPeriodKey())
 const rows           = ref<ExpenseRow[]>([])
 

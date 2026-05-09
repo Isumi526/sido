@@ -100,7 +100,7 @@ export interface ApiResponse<T = void> {
 //  経費申請 関連型
 // ============================================================
 
-export interface ExpenseUser {
+export interface User {
   id:           string
   line_user_id: string
   real_name:    string
@@ -108,6 +108,9 @@ export interface ExpenseUser {
   created_at:   string
   updated_at:   string
 }
+
+/** @deprecated use User */
+export type ExpenseUser = User
 
 export const EXPENSE_CATEGORIES = [
   'ガソリン代',

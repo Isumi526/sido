@@ -1,14 +1,6 @@
 <template>
   <div class="app">
-    <header class="header">
-      <div class="header-inner">
-        <div class="brand">
-          <span class="brand-name">App</span>
-          <span class="brand-divider">|</span>
-          <span class="brand-sub">経費申請</span>
-        </div>
-      </div>
-    </header>
+    <AppNav subtitle="ユーザー登録" />
 
     <main class="main">
       <div v-if="initializing" class="state-screen">
@@ -20,7 +12,7 @@
         <div class="success-mark">✓</div>
         <h2 class="state-title">登録完了！</h2>
         <p class="state-text">{{ realName }} さんで登録しました</p>
-        <button class="btn-primary" @click="goToEntry">経費を入力する</button>
+        <button class="btn-primary" @click="goToHome">日報フォームへ →</button>
       </div>
 
       <form v-else class="form" @submit.prevent="handleSubmit">
@@ -116,8 +108,8 @@ async function handleSubmit() {
   }
 }
 
-function goToEntry() {
-  router.push('/expense/entry')
+function goToHome() {
+  router.push('/')
 }
 </script>
 

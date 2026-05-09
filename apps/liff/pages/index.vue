@@ -1,18 +1,6 @@
 <template>
   <div class="app">
-    <!-- ヘッダー -->
-    <header class="header">
-      <div class="header-inner">
-        <div class="brand">
-          <span class="brand-name">App</span>
-          <span class="brand-divider">|</span>
-          <span class="brand-sub">日報</span>
-        </div>
-        <div v-if="liff.profile.value" class="user-badge">
-          {{ liff.profile.value.displayName }}
-        </div>
-      </div>
-    </header>
+    <AppNav subtitle="日報" :user-name="currentUser?.real_name" :user-role="currentUser?.worker_role" />
 
     <main class="main">
       <!-- ローディング -->
@@ -416,7 +404,7 @@
 
 <script setup lang="ts">
 import { computeWorkerHours, getRateLines, calcBreakMinutes, TIME_OPTIONS } from '~/utils/workerHours'
-import type { WorkerEntry, ExpenseUser } from '~/types'
+import type { WorkerEntry, User } from '~/types'
 
 const config  = useRuntimeConfig()
 const liff    = useLiff()
@@ -424,7 +412,7 @@ const master  = useMaster()
 const report  = useReport()
 const expense = useExpense()
 
-const currentUser = ref<ExpenseUser | null>(null)
+const currentUser = ref<User | null>(null)
 
 const isDev = computed(() => config.public.appEnv === 'development' || liff.isTester.value)
 
