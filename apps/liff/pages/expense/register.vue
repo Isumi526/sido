@@ -158,7 +158,7 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--font)
 }
 .btn-primary { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 13px 28px; font-size: 15px; font-weight: 700; font-family: var(--font); cursor: pointer; }
 .role-toggle { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-.role-btn { flex: 1; padding: 11px 0; font-size: 14px; font-family: var(--font); background: #f5f5f5; color: var(--text2); border: none; cursor: pointer; transition: background .15s, color .15s; }
+.role-btn { flex: 1; padding: 11px 0; font-size: 14px; font-family: var(--font); background: #f5f5f5; color: #888; border: none; cursor: pointer; transition: background .15s, color .15s; }
 .role-btn:first-child { border-right: 1px solid var(--border); }
 .role-btn.active { background: var(--accent); color: #fff; font-weight: 700; }
 .btn-submit { width: 100%; background: var(--accent); color: #fff; border: none; border-radius: var(--radius); padding: 16px; font-size: 16px; font-weight: 900; letter-spacing: 2px; font-family: var(--font); cursor: pointer; }

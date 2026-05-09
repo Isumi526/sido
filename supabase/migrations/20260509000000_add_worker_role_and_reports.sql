@@ -31,3 +31,6 @@ create table if not exists daily_reports (
 
 create index if not exists daily_reports_user_id_idx on daily_reports(user_id);
 create index if not exists daily_reports_date_idx    on daily_reports(date);
+
+alter table sites         disable row level security;
+alter table daily_reports disable row level security;

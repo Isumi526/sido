@@ -31,3 +31,6 @@ create index if not exists expense_items_user_period_idx
 
 create index if not exists expense_items_period_idx
   on expense_items(period_key);
+
+alter table expense_users disable row level security;
+alter table expense_items disable row level security;
