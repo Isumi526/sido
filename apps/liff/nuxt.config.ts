@@ -40,7 +40,10 @@ export default defineNuxtConfig({
   vite: {
     resolve: {
       alias: {
-        '#app-manifest': '/path/to/project/node_modules/mocked-exports/lib/empty.mjs',
+        // ローカル開発環境のみ: #app-manifest の pre-transform エラーを抑制
+        ...(process.env.NODE_ENV !== 'production' ? {
+          '#app-manifest': 'mocked-exports/lib/empty.mjs',
+        } : {}),
       },
     },
     optimizeDeps: {
