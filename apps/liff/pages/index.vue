@@ -79,47 +79,31 @@
           <div class="sub-section">
             <div class="sub-section-title">稼働</div>
 
-            <!-- 作業員 -->
+            <!-- 作業員（ログインユーザー固定） -->
             <Field label="作業員">
-              <div v-for="(w, wi) in site.workers" :key="wi" class="worker-block">
-                <div class="role-toggle">
-                  <button
-                    type="button"
-                    class="role-btn"
-                    :class="{ active: w.workerRole === 'factory' }"
-                    @click="w.workerRole = 'factory'; w.workerName = ''"
-                  >工場/事務所</button>
-                  <button
-                    type="button"
-                    class="role-btn"
-                    :class="{ active: w.workerRole === 'site' }"
-                    @click="w.workerRole = 'site'; w.workerName = ''"
-                  >現場</button>
+              <!-- ユーザーバッジ -->
+              <div class="worker-self">
+                <div class="worker-self-avatar">{{ currentUser?.real_name?.charAt(0) ?? '?' }}</div>
+                <div class="worker-self-info">
+                  <div class="worker-self-name">{{ currentUser?.real_name }}</div>
+                  <span class="worker-self-role">{{ currentUser?.worker_role === 'factory' ? '工場 / 事務所' : '現場' }}</span>
                 </div>
-                <div class="worker-name-row">
-                  <select v-model="w.workerName" class="select" required>
-                    <option value="">名前を選択</option>
-                    <option
-                      v-for="name in (w.workerRole === 'factory' ? master.factoryWorkerNames.value : master.siteWorkerNames.value)"
-                      :key="name"
-                      :value="name"
-                    >{{ name }}</option>
-                  </select>
-                  <button v-if="site.workers.length > 1" type="button" class="btn-icon-sm" @click="report.removeWorker(si, wi)">✕</button>
-                </div>
-                <!-- 時刻・休憩 -->
+              </div>
+
+              <!-- 時刻・休憩 -->
+              <template v-if="site.workers[0]">
                 <div class="worker-time-rows">
                   <div class="worker-time-row">
                     <div class="time-field">
                       <label class="hours-label">開始</label>
-                      <select v-model="w.startTime" class="select">
+                      <select v-model="site.workers[0].startTime" class="select">
                         <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
                       </select>
                     </div>
                     <span class="time-sep">〜</span>
                     <div class="time-field">
                       <label class="hours-label">終了</label>
-                      <select v-model="w.endTime" class="select">
+                      <select v-model="site.workers[0].endTime" class="select">
                         <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
                       </select>
                     </div>
@@ -128,16 +112,19 @@
                     <div class="time-field">
                       <label class="hours-label">休憩</label>
                       <span class="break-auto">
-                        {{ calcBreakMinutes(w.workerRole, w.startTime, w.endTime) === 0 ? 'なし' : calcBreakMinutes(w.workerRole, w.startTime, w.endTime) + '分（自動）' }}
+                        {{ calcBreakMinutes(site.workers[0].workerRole, site.workers[0].startTime, site.workers[0].endTime) === 0
+                          ? 'なし'
+                          : calcBreakMinutes(site.workers[0].workerRole, site.workers[0].startTime, site.workers[0].endTime) + '分（自動）' }}
                       </span>
                     </div>
                   </div>
                 </div>
+
                 <!-- 料率プレビュー -->
                 <div class="rate-preview">
-                  <template v-if="getRateLines(computeWorkerHours(w.startTime, w.endTime, calcBreakMinutes(w.workerRole, w.startTime, w.endTime), isSunday)).length">
+                  <template v-if="getRateLines(computeWorkerHours(site.workers[0].startTime, site.workers[0].endTime, calcBreakMinutes(site.workers[0].workerRole, site.workers[0].startTime, site.workers[0].endTime), isSunday)).length">
                     <div
-                      v-for="line in getRateLines(computeWorkerHours(w.startTime, w.endTime, calcBreakMinutes(w.workerRole, w.startTime, w.endTime), isSunday))"
+                      v-for="line in getRateLines(computeWorkerHours(site.workers[0].startTime, site.workers[0].endTime, calcBreakMinutes(site.workers[0].workerRole, site.workers[0].startTime, site.workers[0].endTime), isSunday))"
                       :key="line.label"
                       class="rate-line"
                     >
@@ -148,8 +135,7 @@
                   </template>
                   <span v-else class="rate-empty">—</span>
                 </div>
-              </div>
-              <button type="button" class="btn-ghost-sm" @click="report.addWorker(si)">＋ 作業員を追加</button>
+              </template>
             </Field>
 
             <!-- 下請け業者 -->
@@ -498,9 +484,30 @@ function setUsage(si: number, key: keyof UsageState, value: string) {
   }
 }
 
+/** 全サイトのworkers[0]をログインユーザーで上書き */
+function initWorkers() {
+  if (!currentUser.value) return
+  report.form.value.sites.forEach(site => {
+    site.workers = [{
+      ...createWorker(currentUser.value!.worker_role),
+      workerName: currentUser.value!.real_name,
+      workerRole: currentUser.value!.worker_role,
+    }]
+  })
+}
+
 function addSite() {
   report.addSite()
   siteUsage.value.push(createUsage())
+  // 追加したサイトにもログインユーザーをセット
+  if (currentUser.value) {
+    const newSite = report.form.value.sites[report.form.value.sites.length - 1]
+    newSite.workers = [{
+      ...createWorker(currentUser.value.worker_role),
+      workerName: currentUser.value.real_name,
+      workerRole: currentUser.value.worker_role,
+    }]
+  }
 }
 function removeSite(i: number) {
   report.removeSite(i)
@@ -519,17 +526,10 @@ onMounted(async () => {
       await navigateTo('/expense/register')
       return
     }
+    initWorkers()
   }
 
   await masterPromise
-  // startTime/endTime デフォルト補完
-  report.form.value.sites.forEach(site => {
-    site.workers.forEach(w => {
-      if (!w.startTime) w.startTime = '08:00'
-      if (!w.endTime)   w.endTime   = '17:30'
-      w.breakMinutes = calcBreakMinutes(w.workerRole, w.startTime, w.endTime)
-    })
-  })
   initializing.value = false
 })
 
@@ -557,6 +557,7 @@ async function handleReset() {
   report.reset()
   siteUsage.value = [createUsage()]
   isWorkingStr.value = 'working'
+  initWorkers()
   await master.fetch(true)
 }
 
@@ -812,12 +813,22 @@ html, body {
   display: flex; gap: 8px; margin-bottom: 8px; align-items: flex-end;
 }
 
-/* ── 作業員ブロック ── */
-.worker-block { margin-bottom: 14px; }
-.worker-name-row {
-  display: flex; gap: 6px; align-items: center; margin-top: 4px;
+/* ── 作業員（自分固定）バッジ ── */
+.worker-self {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 14px; margin-bottom: 10px;
 }
-.worker-name-row .select { flex: 1; }
+.worker-self-avatar {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--accent); color: #fff;
+  font-size: 15px; font-weight: 900;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.worker-self-info { display: flex; flex-direction: column; gap: 2px; }
+.worker-self-name { font-size: 14px; font-weight: 700; color: var(--text); }
+.worker-self-role { font-size: 11px; color: var(--text2); }
 
 /* ── 時刻・休憩行 ── */
 .worker-time-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
