@@ -91,37 +91,47 @@
           <div class="sub-section">
             <div class="sub-section-title">稼働</div>
 
-            <!-- 作業員（送信者本人のみ） -->
+            <!-- 作業員 -->
             <Field label="作業員">
-              <div class="worker-block">
-                <!-- 所属トグル -->
+              <div v-for="(w, wi) in site.workers" :key="wi" class="worker-block">
                 <div class="role-toggle">
                   <button
-                    type="button" class="role-btn"
-                    :class="{ active: site.workers[0].workerRole === 'factory' }"
-                    @click="site.workers[0].workerRole = 'factory'"
+                    type="button"
+                    class="role-btn"
+                    :class="{ active: w.workerRole === 'factory' }"
+                    @click="w.workerRole = 'factory'; w.workerName = ''"
                   >工場/事務所</button>
                   <button
-                    type="button" class="role-btn"
-                    :class="{ active: site.workers[0].workerRole === 'site' }"
-                    @click="site.workers[0].workerRole = 'site'"
+                    type="button"
+                    class="role-btn"
+                    :class="{ active: w.workerRole === 'site' }"
+                    @click="w.workerRole = 'site'; w.workerName = ''"
                   >現場</button>
                 </div>
-                <!-- 氏名（登録名・変更不可） -->
-                <div class="worker-self-name">{{ currentUser?.real_name }}</div>
+                <div class="worker-name-row">
+                  <select v-model="w.workerName" class="select" required>
+                    <option value="">名前を選択</option>
+                    <option
+                      v-for="name in (w.workerRole === 'factory' ? master.factoryWorkerNames.value : master.siteWorkerNames.value)"
+                      :key="name"
+                      :value="name"
+                    >{{ name }}</option>
+                  </select>
+                  <button v-if="site.workers.length > 1" type="button" class="btn-icon-sm" @click="report.removeWorker(si, wi)">✕</button>
+                </div>
                 <!-- 時刻・休憩 -->
                 <div class="worker-time-rows">
                   <div class="worker-time-row">
                     <div class="time-field">
                       <label class="hours-label">開始</label>
-                      <select v-model="site.workers[0].startTime" class="select">
+                      <select v-model="w.startTime" class="select">
                         <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
                       </select>
                     </div>
                     <span class="time-sep">〜</span>
                     <div class="time-field">
                       <label class="hours-label">終了</label>
-                      <select v-model="site.workers[0].endTime" class="select">
+                      <select v-model="w.endTime" class="select">
                         <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
                       </select>
                     </div>
@@ -130,18 +140,16 @@
                     <div class="time-field">
                       <label class="hours-label">休憩</label>
                       <span class="break-auto">
-                        {{ calcBreakMinutes(site.workers[0].workerRole, site.workers[0].startTime, site.workers[0].endTime) === 0
-                          ? 'なし'
-                          : calcBreakMinutes(site.workers[0].workerRole, site.workers[0].startTime, site.workers[0].endTime) + '分（自動）' }}
+                        {{ calcBreakMinutes(w.workerRole, w.startTime, w.endTime) === 0 ? 'なし' : calcBreakMinutes(w.workerRole, w.startTime, w.endTime) + '分（自動）' }}
                       </span>
                     </div>
                   </div>
                 </div>
                 <!-- 料率プレビュー -->
                 <div class="rate-preview">
-                  <template v-if="getRateLines(computeWorkerHours(site.workers[0].startTime, site.workers[0].endTime, calcBreakMinutes(site.workers[0].workerRole, site.workers[0].startTime, site.workers[0].endTime), isSunday)).length">
+                  <template v-if="getRateLines(computeWorkerHours(w.startTime, w.endTime, calcBreakMinutes(w.workerRole, w.startTime, w.endTime), isSunday)).length">
                     <div
-                      v-for="line in getRateLines(computeWorkerHours(site.workers[0].startTime, site.workers[0].endTime, calcBreakMinutes(site.workers[0].workerRole, site.workers[0].startTime, site.workers[0].endTime), isSunday))"
+                      v-for="line in getRateLines(computeWorkerHours(w.startTime, w.endTime, calcBreakMinutes(w.workerRole, w.startTime, w.endTime), isSunday))"
                       :key="line.label"
                       class="rate-line"
                     >
@@ -153,6 +161,7 @@
                   <span v-else class="rate-empty">—</span>
                 </div>
               </div>
+              <button type="button" class="btn-ghost-sm" @click="report.addWorker(si)">＋ 作業員を追加</button>
             </Field>
 
             <!-- 下請け業者 -->
@@ -504,19 +513,6 @@ function setUsage(si: number, key: keyof UsageState, value: string) {
 function addSite() {
   report.addSite()
   siteUsage.value.push(createUsage())
-  // 追加されたサイトのワーカーも自分にセット
-  const si = report.form.value.sites.length - 1
-  if (currentUser.value) {
-    report.form.value.sites[si].workers = [{
-      workerId:   '',
-      workerName: currentUser.value.real_name,
-      workerRole: currentUser.value.worker_role,
-      startTime:  '08:00', endTime: '17:30',
-      breakMinutes: calcBreakMinutes(currentUser.value.worker_role, '08:00', '17:30'),
-      hoursNormal: 0, hoursOT: 0, hoursNight: 0, hoursOTNight: 0,
-      hoursSunday: 0, hoursSundayOT: 0, hoursSundayNight: 0, hoursSundayOTNight: 0,
-    }]
-  }
 }
 function removeSite(i: number) {
   report.removeSite(i)
@@ -524,12 +520,10 @@ function removeSite(i: number) {
 }
 
 onMounted(async () => {
-  // LIFF init と master fetch を並列開始
-  // master はフォーム表示に必要だが、ユーザーチェックには不要なので待たない
   const masterPromise = master.fetch()
   await liff.init()
 
-  // ユーザーチェック（キャッシュあれば即座・なければSupabase）
+  // ユーザー登録チェック（キャッシュあれば即座。未登録でもフォームは使えるが経費PDFに名前が出ない）
   const userId = liff.profile.value?.userId
   if (userId) {
     currentUser.value = await expense.getUser(userId)
@@ -539,31 +533,17 @@ onMounted(async () => {
     }
   }
 
-  // ユーザー確認後にマスタ完了を待つ（並列で進んでいるので大半は終わっている）
   await masterPromise
-  initWorkersAsSelf()
+  // startTime/endTime デフォルト補完
+  report.form.value.sites.forEach(site => {
+    site.workers.forEach(w => {
+      if (!w.startTime) w.startTime = '08:00'
+      if (!w.endTime)   w.endTime   = '17:30'
+      w.breakMinutes = calcBreakMinutes(w.workerRole, w.startTime, w.endTime)
+    })
+  })
   initializing.value = false
 })
-
-/** 全サイトのworkers[0]を登録済みユーザー（自分）でセット */
-function initWorkersAsSelf() {
-  if (!currentUser.value) return
-  report.form.value.sites.forEach(site => {
-    site.workers = [{
-      workerId:   '',
-      workerName: currentUser.value!.real_name,
-      workerRole: currentUser.value!.worker_role,
-      startTime:  site.workers[0]?.startTime    ?? '08:00',
-      endTime:    site.workers[0]?.endTime      ?? '17:30',
-      breakMinutes: 0,
-      hoursNormal: 0, hoursOT: 0, hoursNight: 0, hoursOTNight: 0,
-      hoursSunday: 0, hoursSundayOT: 0, hoursSundayNight: 0, hoursSundayOTNight: 0,
-    }]
-    site.workers[0].breakMinutes = calcBreakMinutes(
-      site.workers[0].workerRole, site.workers[0].startTime, site.workers[0].endTime
-    )
-  })
-}
 
 async function handleSubmit() {
   // 送信者を登録名で上書き（LINE表示名ではなく本名）
@@ -589,7 +569,6 @@ async function handleReset() {
   report.reset()
   siteUsage.value = [createUsage()]
   isWorkingStr.value = 'working'
-  initWorkersAsSelf()
   await master.fetch(true)
 }
 
@@ -847,12 +826,10 @@ html, body {
 
 /* ── 作業員ブロック ── */
 .worker-block { margin-bottom: 14px; }
-.worker-self-name {
-  background: var(--surface2); border: 1px solid var(--border);
-  border-radius: 8px; padding: 10px 14px;
-  font-size: 15px; font-weight: 700; color: var(--text);
-  margin-top: 8px;
+.worker-name-row {
+  display: flex; gap: 6px; align-items: center; margin-top: 4px;
 }
+.worker-name-row .select { flex: 1; }
 
 /* ── 時刻・休憩行 ── */
 .worker-time-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }

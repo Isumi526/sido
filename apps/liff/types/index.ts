@@ -139,6 +139,16 @@ export interface ExpenseItem {
   created_at:          string
 }
 
+/** 月次PDF用の経費行（daily_reportsから集計） */
+export interface ExpenseRow {
+  date:     string
+  category: string
+  siteName: string
+  amount:   number
+  liters?:  number
+  note?:    string  // 備考（車両名・電車区間など）
+}
+
 export interface ExpenseItemInput {
   date:                string
   payee:               string

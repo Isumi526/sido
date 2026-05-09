@@ -79,8 +79,6 @@ function clearUserCache(lineUserId: string) {
 // ---------- composable ----------
 
 export const useExpense = () => {
-  const supabase = useSupabase()
-
   /**
    * LINE userId でユーザーを取得（未登録なら null）
    * localStorage キャッシュあり → Supabase は初回・期限切れ時のみ問い合わせ
@@ -89,6 +87,7 @@ export const useExpense = () => {
     const cached = loadUserCache(lineUserId)
     if (cached) return cached
 
+    const supabase = useSupabase()
     const { data, error } = await supabase
       .from('expense_users')
       .select('*')
@@ -102,6 +101,7 @@ export const useExpense = () => {
 
   /** ユーザー登録（既存なら本名・ロールを更新して返す） */
   async function registerUser(lineUserId: string, realName: string, workerRole: 'factory' | 'site'): Promise<ExpenseUser> {
+    const supabase = useSupabase()
     const { data, error } = await supabase
       .from('expense_users')
       .upsert(
@@ -126,6 +126,7 @@ export const useExpense = () => {
     const user = await getUser(lineUserId)
     if (!user) throw new Error('ユーザーが登録されていません')
 
+    const supabase = useSupabase()
     const { data, error } = await supabase
       .from('expense_items')
       .insert({ ...item, user_id: user.id })
@@ -141,6 +142,7 @@ export const useExpense = () => {
     const user = await getUser(lineUserId)
     if (!user) return []
 
+    const supabase = useSupabase()
     const { data, error } = await supabase
       .from('expense_items')
       .select('*')
@@ -155,6 +157,7 @@ export const useExpense = () => {
 
   /** 経費明細を削除 */
   async function deleteItem(id: string): Promise<void> {
+    const supabase = useSupabase()
     const { error } = await supabase
       .from('expense_items')
       .delete()
@@ -174,6 +177,7 @@ export const useExpense = () => {
     const user = await getUser(lineUserId)
     if (!user) throw new Error('ユーザーが登録されていません')
 
+    const supabase = useSupabase()
     const { error } = await supabase
       .from('daily_reports')
       .upsert(
@@ -191,5 +195,56 @@ export const useExpense = () => {
     if (error) throw error
   }
 
-  return { getUser, registerUser, addItem, getItems, deleteItem, saveReport }
+  /**
+   * 期間内の日報データから経費行を集計（月次PDF用）
+   * daily_reports.sites (JSONB) を展開してカテゴリ別に平坦化する
+   */
+  async function getExpenseRowsFromReports(lineUserId: string, periodKey: string): Promise<ExpenseRow[]> {
+    const user = await getUser(lineUserId)
+    if (!user) return []
+
+    const [year, month, half] = periodKey.split('-')
+    const dateFrom = half === 'first' ? `${year}-${month}-01` : `${year}-${month}-16`
+    const lastDay  = new Date(parseInt(year), parseInt(month), 0).getDate()
+    const dateTo   = half === 'first' ? `${year}-${month}-15` : `${year}-${month}-${String(lastDay).padStart(2, '0')}`
+
+    const supabase = useSupabase()
+    const { data, error } = await supabase
+      .from('daily_reports')
+      .select('date, sites')
+      .eq('user_id', user.id)
+      .eq('is_working', true)
+      .gte('date', dateFrom)
+      .lte('date', dateTo)
+      .order('date', { ascending: true })
+
+    if (error) { console.error('[useExpense] getExpenseRowsFromReports:', error); return [] }
+
+    const rows: ExpenseRow[] = []
+    for (const rep of (data ?? [])) {
+      for (const site of (rep.sites as any[])) {
+        const siteName = site.siteName === '__other__' ? (site.customSiteName || '') : (site.siteName || '')
+        const exp      = site.expenses || {}
+
+        for (const veh of (exp.vehicles || [])) {
+          if (veh.distanceKm) rows.push({ date: rep.date, category: 'ガソリン代', siteName, amount: 0,              liters: veh.distanceKm, note: veh.vehicleName })
+          if (veh.dieselKm)   rows.push({ date: rep.date, category: '軽油代',    siteName, amount: 0,              liters: veh.dieselKm,   note: veh.vehicleName })
+          if (veh.parkingYen) rows.push({ date: rep.date, category: '駐車代',    siteName, amount: veh.parkingYen })
+          if (veh.highwayYen) rows.push({ date: rep.date, category: '高速代',    siteName, amount: veh.highwayYen, note: veh.etcCard || '' })
+        }
+        for (const tr of (exp.trains || [])) {
+          if (tr.yen) rows.push({ date: rep.date, category: '電車代', siteName, amount: tr.yen, note: tr.label })
+        }
+        if (exp.hotelYen)         rows.push({ date: rep.date, category: '宿泊費',     siteName, amount: exp.hotelYen,         note: exp.hotelName })
+        if (exp.leopalaceYen)     rows.push({ date: rep.date, category: '宿泊費',     siteName, amount: exp.leopalaceYen,     note: exp.leopalaceName })
+        for (const ot of (exp.others || [])) {
+          if (ot.yen) rows.push({ date: rep.date, category: 'その他', siteName, amount: ot.yen, note: ot.label })
+        }
+        if (exp.entertainmentYen) rows.push({ date: rep.date, category: 'その他雑経費', siteName, amount: exp.entertainmentYen, note: exp.entertainmentLabel })
+      }
+    }
+    return rows
+  }
+
+  return { getUser, registerUser, addItem, getItems, deleteItem, saveReport, getExpenseRowsFromReports }
 }
