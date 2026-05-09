@@ -247,6 +247,7 @@
                   <input v-model="site.expenses.hotelName" type="text" class="input" placeholder="施設名（例: アパホテル）" />
                   <ExpenseField v-model="site.expenses.hotelYen" label="金額" />
                 </div>
+                <input v-model="site.expenses.hotelRegistration" type="text" class="input mt6" placeholder="登録番号（ない場合はナシと記入）" />
                 <div class="mt8">
                   <label class="hours-label">領収書（JPEG/PDF）</label>
                   <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'hotelFiles', e)" />
@@ -268,6 +269,7 @@
                   <input v-model="site.expenses.leopalaceName" type="text" class="input" placeholder="施設名" />
                   <ExpenseField v-model="site.expenses.leopalaceYen" label="金額" />
                 </div>
+                <input v-model="site.expenses.leopalaceRegistration" type="text" class="input mt6" placeholder="登録番号（ない場合はナシと記入）" />
                 <div class="mt8">
                   <label class="hours-label">領収書（JPEG/PDF）</label>
                   <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'leopalaceFiles', e)" />
@@ -316,6 +318,7 @@
                   <input v-model="ot.label" type="text" class="input" placeholder="内容" />
                   <ExpenseField v-model="ot.yen" label="金額" />
                   <button v-if="site.expenses.others.length > 1" type="button" class="btn-icon-sm" @click="report.removeOther(si, oi)">✕</button>
+                  <input v-model="ot.registrationNumber" type="text" class="input mt6" placeholder="登録番号（ない場合はナシと記入）" />
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addOther(si)">＋ 追加</button>
                 <div class="mt8">
@@ -339,6 +342,7 @@
                   <input v-model="site.expenses.entertainmentLabel" type="text" class="input" placeholder="内容" />
                   <ExpenseField v-model="site.expenses.entertainmentYen" label="金額" />
                 </div>
+                <input v-model="site.expenses.entertainmentRegistration" type="text" class="input mt6" placeholder="登録番号（ない場合はナシと記入）" />
                 <div class="mt8">
                   <label class="hours-label">領収書（JPEG/PDF）</label>
                   <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'entertainmentFiles', e)" />
@@ -467,10 +471,10 @@ function setUsage(si: number, key: keyof UsageState, value: string) {
       exp.trains = [createLineItem()]; exp.trainFiles = undefined
       break
     case 'hotel':
-      exp.hotelName = undefined; exp.hotelYen = undefined; exp.hotelFiles = undefined
+      exp.hotelName = undefined; exp.hotelYen = undefined; exp.hotelRegistration = undefined; exp.hotelFiles = undefined
       break
     case 'leopalace':
-      exp.leopalaceName = undefined; exp.leopalaceYen = undefined; exp.leopalaceFiles = undefined
+      exp.leopalaceName = undefined; exp.leopalaceYen = undefined; exp.leopalaceRegistration = undefined; exp.leopalaceFiles = undefined
       break
     case 'garbage':
       exp.garbageFactoryM3 = undefined; exp.garbageSiteM3 = undefined; exp.garbagePhotos = undefined
@@ -479,7 +483,7 @@ function setUsage(si: number, key: keyof UsageState, value: string) {
       exp.others = [createLineItem()]; exp.otherFiles = undefined
       break
     case 'entertainment':
-      exp.entertainmentLabel = undefined; exp.entertainmentYen = undefined; exp.entertainmentFiles = undefined
+      exp.entertainmentLabel = undefined; exp.entertainmentYen = undefined; exp.entertainmentRegistration = undefined; exp.entertainmentFiles = undefined
       break
   }
 }
@@ -636,21 +640,24 @@ function fillTestData() {
     siteUsage.value[0].hotel = 'あり'
     site0.expenses.hotelName = 'アパホテル名古屋'
     site0.expenses.hotelYen  = 8000
+    site0.expenses.hotelRegistration = 'T1234567890123'
     site0.expenses.hotelFiles = [dummyDataUrl, dummyDataUrl]
     siteUsage.value[0].leopalace = 'あり'
     site0.expenses.leopalaceName = 'レオパレス栄'
     site0.expenses.leopalaceYen  = 50000
+    site0.expenses.leopalaceRegistration = 'T9876543210987'
     site0.expenses.leopalaceFiles = [dummyDataUrl]
     siteUsage.value[0].garbage = 'あり'
     site0.expenses.garbageFactoryM3 = 3
     site0.expenses.garbageSiteM3    = 5
     site0.expenses.garbagePhotos = [dummyPhoto, dummyPhoto]
     siteUsage.value[0].other = 'あり'
-    site0.expenses.others = [{ label: '養生テープ', yen: 1500 }]
+    site0.expenses.others = [{ label: '養生テープ', yen: 1500, registrationNumber: 'ナシ' }]
     site0.expenses.otherFiles = [dummyDataUrl]
     siteUsage.value[0].entertainment = 'あり'
     site0.expenses.entertainmentLabel = '懇親会'
     site0.expenses.entertainmentYen   = 10000
+    site0.expenses.entertainmentRegistration = 'T1111222233334'
     site0.expenses.entertainmentFiles = [dummyDataUrl]
 
     // ── 現場2（新規現場「その他」） ── を追加
@@ -676,11 +683,12 @@ function fillTestData() {
   siteN.expenses.garbageSiteM3    = 4
   siteN.expenses.garbagePhotos = [dummyPhoto]
   siteUsage.value[newIdx].other = 'あり'
-  siteN.expenses.others = [{ label: 'ビニールシート', yen: 800 }]
+  siteN.expenses.others = [{ label: 'ビニールシート', yen: 800, registrationNumber: 'ナシ' }]
   siteN.expenses.otherFiles = [dummyDataUrl]
   siteUsage.value[newIdx].entertainment = 'あり'
   siteN.expenses.entertainmentLabel = '昼食代'
   siteN.expenses.entertainmentYen   = 5000
+  siteN.expenses.entertainmentRegistration = 'ナシ'
   siteN.expenses.entertainmentFiles = [dummyDataUrl]
 }
 </script>

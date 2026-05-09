@@ -2271,3 +2271,54 @@ function sendExpenseReminder() {
 
   Logger.log('経費リマインダー送信完了: ' + period);
 }
+
+// ============================================================
+//  トリガーセットアップ
+//  GASエディタから1回だけ手動実行する
+//  ・毎月15日 9:00 に sendExpenseReminder を実行
+//  ・毎月末日 9:00 に sendExpenseReminder を実行（月末トリガー）
+// ============================================================
+function setupTriggers() {
+  // 既存の sendExpenseReminder トリガーを削除（二重登録防止）
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === 'sendExpenseReminder') {
+      ScriptApp.deleteTrigger(t);
+    }
+  });
+
+  // 毎月15日 9:00
+  ScriptApp.newTrigger('sendExpenseReminder')
+    .timeBased()
+    .onMonthDay(15)
+    .atHour(9)
+    .create();
+
+  // 毎月末日 9:00
+  ScriptApp.newTrigger('sendExpenseReminder')
+    .timeBased()
+    .onMonthDay(28)  // GASの月末トリガーは28日指定が最も確実（28〜末日の安全弁は関数内で実施）
+    .atHour(9)
+    .create();
+
+  // 月末日カバー用（29〜31日の月への対応）
+  ScriptApp.newTrigger('sendExpenseReminder')
+    .timeBased()
+    .onMonthDay(29)
+    .atHour(9)
+    .create();
+
+  ScriptApp.newTrigger('sendExpenseReminder')
+    .timeBased()
+    .onMonthDay(30)
+    .atHour(9)
+    .create();
+
+  ScriptApp.newTrigger('sendExpenseReminder')
+    .timeBased()
+    .onMonthDay(31)
+    .atHour(9)
+    .create();
+
+  Logger.log('トリガー設定完了: sendExpenseReminder × 5件（15日 + 28〜31日）');
+  Logger.log('※ 28〜31日は sendExpenseReminder 内の安全弁で末日のみ実行されます');
+}

@@ -9,6 +9,7 @@
           <span class="brand-sub">管理画面</span>
         </div>
         <nav class="header-tabs">
+          <button :class="['tab-btn', { active: tab === 'dashboard' }]" @click="tab = 'dashboard'">ダッシュボード</button>
           <button :class="['tab-btn', { active: tab === 'users' }]" @click="tab = 'users'">社員一覧</button>
           <button :class="['tab-btn', { active: tab === 'reports' }]" @click="tab = 'reports'">日報ログ</button>
           <button :class="['tab-btn', { active: tab === 'settings' }]" @click="tab = 'settings'">設定</button>
@@ -24,6 +25,62 @@
       </div>
 
       <template v-else>
+        <!-- ━━ ダッシュボード ━━ -->
+        <section v-if="tab === 'dashboard'">
+          <div class="section-head">
+            <h2 class="section-title">月次経費集計</h2>
+            <div class="filter-row">
+              <select v-model="dashMonth" class="filter-input">
+                <option v-for="m in monthOptions" :key="m.value" :value="m.value">{{ m.label }}</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- サマリーカード -->
+          <div class="dash-cards">
+            <div class="dash-card accent">
+              <div class="dash-card-label">経費合計</div>
+              <div class="dash-card-value">¥{{ dashTotal.toLocaleString() }}</div>
+            </div>
+            <div class="dash-card">
+              <div class="dash-card-label">日報件数（稼働日）</div>
+              <div class="dash-card-value">{{ dashReportCount }}<span class="dash-card-unit">件</span></div>
+            </div>
+            <div class="dash-card">
+              <div class="dash-card-label">経費発生者</div>
+              <div class="dash-card-value">{{ dashWorkerCount }}<span class="dash-card-unit">名</span></div>
+            </div>
+          </div>
+
+          <!-- カテゴリ別内訳 -->
+          <div class="table-wrap mt20" v-if="dashRows.length > 0">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>カテゴリ</th>
+                  <th class="td-right">金額</th>
+                  <th class="td-right">件数</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in dashCategoryRows" :key="row.category">
+                  <td class="td-name">{{ row.category }}</td>
+                  <td class="td-right td-amount">¥{{ row.amount.toLocaleString() }}</td>
+                  <td class="td-right td-center">{{ row.count }}</td>
+                </tr>
+              </tbody>
+              <tfoot>
+                <tr class="tfoot-total">
+                  <td>合　計</td>
+                  <td class="td-right">¥{{ dashTotal.toLocaleString() }}</td>
+                  <td class="td-right">{{ dashRows.length }}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <div v-else class="td-empty">この月の経費データがありません</div>
+        </section>
+
         <!-- ━━ 社員一覧 ━━ -->
         <section v-if="tab === 'users'">
           <div class="section-head">
@@ -144,6 +201,7 @@ import type { User } from '~/types'
 
 type ReportRow = {
   id:         string
+  user_id:    string
   date:       string
   is_working: boolean
   sites:      unknown[]
@@ -154,7 +212,7 @@ type ReportRow = {
 
 type SettingRow = { key: string; value: string; label: string; editValue: number }
 
-const tab           = ref<'users' | 'reports' | 'settings'>('users')
+const tab           = ref<'dashboard' | 'users' | 'reports' | 'settings'>('dashboard')
 const loading       = ref(true)
 const users         = ref<User[]>([])
 const reports       = ref<ReportRow[]>([])
@@ -169,15 +227,90 @@ const filteredReports = computed(() => {
   return reports.value.filter(r => r.users?.real_name?.includes(q))
 })
 
+// ── ダッシュボード ──────────────────────────────────────────
+// 過去6ヶ月の選択肢
+const monthOptions = computed(() => {
+  const opts: { value: string; label: string }[] = []
+  const today = new Date()
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(today.getFullYear(), today.getMonth() - i, 1)
+    const ym = d.toISOString().substring(0, 7)
+    opts.push({ value: ym, label: `${d.getFullYear()}年${d.getMonth() + 1}月` })
+  }
+  return opts
+})
+const dashMonth = ref(new Date().toISOString().substring(0, 7))
+
+// 燃料単価（settings から取得）
+const gasolineRate = computed(() => {
+  const s = settings.value.find(s => s.key === 'gasoline_rate_per_km')
+  return s ? Number(s.value) : 23
+})
+const dieselRate = computed(() => {
+  const s = settings.value.find(s => s.key === 'diesel_rate_per_km')
+  return s ? Number(s.value) : 20
+})
+
+type ExpRow = { category: string; amount: number; userId: string }
+
+const dashRows = computed((): ExpRow[] => {
+  const rows: ExpRow[] = []
+  const ym = dashMonth.value
+
+  for (const rep of reports.value) {
+    if (!rep.is_working) continue
+    if (!rep.date.startsWith(ym)) continue
+
+    const userId = (rep as any).user_id ?? ''
+    for (const site of (rep.sites as any[])) {
+      const exp = site.expenses || {}
+      for (const veh of (exp.vehicles || [])) {
+        if (veh.distanceKm) rows.push({ category: 'ガソリン代', amount: Math.round(veh.distanceKm * gasolineRate.value), userId })
+        if (veh.dieselKm)   rows.push({ category: '軽油代',    amount: Math.round(veh.dieselKm   * dieselRate.value),   userId })
+        if (veh.parkingYen) rows.push({ category: '駐車代',    amount: veh.parkingYen, userId })
+        if (veh.highwayYen) rows.push({ category: '高速代',    amount: veh.highwayYen, userId })
+      }
+      for (const tr of (exp.trains || [])) {
+        if (tr.yen) rows.push({ category: '電車代', amount: tr.yen, userId })
+      }
+      if (exp.hotelYen)         rows.push({ category: '宿泊費（ホテル）',   amount: exp.hotelYen,         userId })
+      if (exp.leopalaceYen)     rows.push({ category: '宿泊費（レオパレス）', amount: exp.leopalaceYen,    userId })
+      for (const ot of (exp.others || [])) {
+        if (ot.yen) rows.push({ category: 'その他（資材等）', amount: ot.yen, userId })
+      }
+      if (exp.entertainmentYen) rows.push({ category: 'その他雑経費', amount: exp.entertainmentYen, userId })
+    }
+  }
+  return rows
+})
+
+const dashTotal        = computed(() => dashRows.value.reduce((s, r) => s + r.amount, 0))
+const dashReportCount  = computed(() => {
+  const ym = dashMonth.value
+  return reports.value.filter(r => r.is_working && r.date.startsWith(ym)).length
+})
+const dashWorkerCount  = computed(() => new Set(dashRows.value.map(r => r.userId)).size)
+
+const dashCategoryRows = computed(() => {
+  const map = new Map<string, { amount: number; count: number }>()
+  for (const r of dashRows.value) {
+    const cur = map.get(r.category) ?? { amount: 0, count: 0 }
+    map.set(r.category, { amount: cur.amount + r.amount, count: cur.count + 1 })
+  }
+  return [...map.entries()]
+    .map(([category, v]) => ({ category, ...v }))
+    .sort((a, b) => b.amount - a.amount)
+})
+
 onMounted(async () => {
   const supabase = useSupabase()
   const [usersRes, reportsRes, settingsRes] = await Promise.all([
     supabase.from('users').select('*').order('created_at', { ascending: true }),
     supabase
       .from('daily_reports')
-      .select('id, date, is_working, sites, note, created_at, users(real_name, worker_role)')
+      .select('id, date, is_working, sites, note, created_at, user_id, users(real_name, worker_role)')
       .order('date', { ascending: false })
-      .limit(200),
+      .limit(500),
     supabase.from('settings').select('*').order('key'),
   ])
 
@@ -372,6 +505,29 @@ body { background: var(--bg); color: var(--text); font-family: var(--font); font
 }
 .status-tag.working { background: #f0fdf4; color: #16a34a; }
 .status-tag.off     { background: #f9fafb; color: #9ca3af; }
+
+/* ── ダッシュボード ── */
+.dash-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.dash-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 24px;
+}
+.dash-card.accent { border-color: var(--accent); background: #f0fdf4; }
+.dash-card-label { font-size: 12px; color: var(--text2); margin-bottom: 8px; }
+.dash-card-value { font-size: 28px; font-weight: 900; color: var(--text); }
+.dash-card.accent .dash-card-value { color: #16a34a; }
+.dash-card-unit { font-size: 14px; font-weight: 400; margin-left: 4px; }
+.mt20 { margin-top: 20px; }
+.td-right  { text-align: right !important; }
+.td-amount { font-weight: 700; }
+.tfoot-total td { font-weight: 700; border-top: 2px solid var(--border); padding: 12px 16px; background: #f9fafb; }
 
 /* ── 設定 ── */
 .settings-card {

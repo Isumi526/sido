@@ -50,16 +50,24 @@ export function recentPeriodKeys(): string[] {
 // ---------- ユーザーキャッシュ（localStorage） ----------
 // LIFF init 後に毎回 Supabase を叩くのを避けるため1時間キャッシュする
 
-const USER_CACHE_PREFIX = 'sido_eu_'
-const USER_CACHE_TTL    = 60 * 60 * 1000 // 1時間
+const USER_CACHE_TTL = 60 * 60 * 1000 // 1時間
+
+function getCacheKey(lineUserId: string): string {
+  // account slug をキーに含めてアカウント間のキャッシュ混在を防ぐ
+  const slug = typeof useRuntimeConfig !== 'undefined'
+    ? ((useRuntimeConfig().public as any).accountSlug as string) || 'sample-construction'
+    : 'sample-construction'
+  return `sido_eu_${slug}_${lineUserId}`
+}
 
 function loadUserCache(lineUserId: string): User | null {
   if (import.meta.server) return null
   try {
-    const raw = localStorage.getItem(USER_CACHE_PREFIX + lineUserId)
+    const key = getCacheKey(lineUserId)
+    const raw = localStorage.getItem(key)
     if (!raw) return null
     const { data, ts } = JSON.parse(raw) as { data: User; ts: number }
-    if (Date.now() - ts > USER_CACHE_TTL) { localStorage.removeItem(USER_CACHE_PREFIX + lineUserId); return null }
+    if (Date.now() - ts > USER_CACHE_TTL) { localStorage.removeItem(key); return null }
     return data
   } catch { return null }
 }
@@ -67,13 +75,13 @@ function loadUserCache(lineUserId: string): User | null {
 function saveUserCache(user: User) {
   if (import.meta.server) return
   try {
-    localStorage.setItem(USER_CACHE_PREFIX + user.line_user_id, JSON.stringify({ data: user, ts: Date.now() }))
+    localStorage.setItem(getCacheKey(user.line_user_id), JSON.stringify({ data: user, ts: Date.now() }))
   } catch { /* quota超過は無視 */ }
 }
 
 function clearUserCache(lineUserId: string) {
   if (import.meta.server) return
-  try { localStorage.removeItem(USER_CACHE_PREFIX + lineUserId) } catch {}
+  try { localStorage.removeItem(getCacheKey(lineUserId)) } catch {}
 }
 
 // ---------- composable ----------
@@ -85,13 +93,31 @@ export const useExpense = () => {
    */
   async function getUser(lineUserId: string): Promise<User | null> {
     const cached = loadUserCache(lineUserId)
-    if (cached) return cached
 
     const supabase = useSupabase()
+    const { getAccountId } = useAccount()
+    const accountId = await getAccountId()
+
+    // キャッシュがある場合：即座に返しつつ、updated_at が変わっていたら破棄して再取得
+    if (cached) {
+      supabase
+        .from('users')
+        .select('updated_at')
+        .eq('line_user_id', lineUserId)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data && data.updated_at !== cached.updated_at) {
+            clearUserCache(lineUserId)
+          }
+        })
+      return cached
+    }
+
     const { data, error } = await supabase
       .from('users')
       .select('*')
       .eq('line_user_id', lineUserId)
+      .eq('account_id', accountId)
       .maybeSingle()
 
     if (error) { console.error('[useExpense] getUser:', error); return null }
@@ -99,16 +125,49 @@ export const useExpense = () => {
     return data
   }
 
-  /** ユーザー登録（既存なら本名・ロールを更新して返す） */
-  async function registerUser(lineUserId: string, realName: string, workerRole: 'factory' | 'site'): Promise<User> {
+  /**
+   * ユーザー登録
+   * - workerId が渡された場合 → 既存作業員に紐づけ
+   * - null の場合 → workerName/workerRole で workers に新規作成してから紐づけ
+   */
+  async function registerUser(
+    lineUserId: string,
+    workerIdOrNull: string | null,
+    workerName: string,
+    workerRole: 'factory' | 'site',
+  ): Promise<User> {
     const supabase = useSupabase()
+
+    let workerId = workerIdOrNull
+
+    const { getAccountId } = useAccount()
+    const accountId = await getAccountId()
+
+    // 新規作業員の場合は workers テーブルに作成
+    if (!workerId) {
+      const { data: newWorker, error: workerError } = await supabase
+        .from('workers')
+        .upsert(
+          { name: workerName, role: workerRole, unit_price: 0, active: true, account_id: accountId },
+          { onConflict: 'name,account_id' }
+        )
+        .select('id')
+        .single()
+      if (workerError) throw workerError
+      workerId = newWorker.id
+      // マスタキャッシュをクリアして次回取得時に新作業員が反映されるようにする
+      if (import.meta.client) localStorage.removeItem('sido_master_cache')
+    }
+
     const { data, error } = await supabase
       .from('users')
       .upsert(
         {
           line_user_id: lineUserId,
-          real_name:    realName,
-          worker_role:  workerRole,
+          worker_id:    workerId,
+          real_name:    workerName,   // 後方互換のため残す
+          worker_role:  workerRole,   // 後方互換のため残す
+          account_id:   accountId,
           updated_at:   new Date().toISOString(),
         },
         { onConflict: 'line_user_id' }
@@ -117,7 +176,7 @@ export const useExpense = () => {
       .single()
 
     if (error) throw error
-    saveUserCache(data)  // 登録・更新時にキャッシュ更新
+    saveUserCache(data)
     return data
   }
 
@@ -181,6 +240,10 @@ export const useExpense = () => {
     if (!user) throw new Error('ユーザーが登録されていません')
 
     const supabase = useSupabase()
+
+    const { getAccountId } = useAccount()
+    const accountId = await getAccountId()
+
     const { error } = await supabase
       .from('daily_reports')
       .upsert(
@@ -190,6 +253,7 @@ export const useExpense = () => {
           is_working: report.isWorking,
           sites:      report.sites,
           note:       report.note ?? null,
+          account_id: accountId,
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'user_id,date' }
@@ -228,7 +292,9 @@ export const useExpense = () => {
     if (error) { console.error('[useExpense] getExpenseRowsFromReports:', error); return [] }
 
     // 燃料単価をsettingsテーブルから取得（なければデフォルト値）
-    const { data: settingsData } = await supabase.from('settings').select('key, value')
+    const { getAccountId: getAid } = useAccount()
+    const aid = await getAid()
+    const { data: settingsData } = await supabase.from('settings').select('key, value').eq('account_id', aid)
     const settingsMap  = Object.fromEntries((settingsData ?? []).map((s: any) => [s.key, Number(s.value)]))
     const gasolineRate = settingsMap['gasoline_rate_per_km'] ?? 23
     const dieselRate   = settingsMap['diesel_rate_per_km']   ?? 20
@@ -248,12 +314,12 @@ export const useExpense = () => {
         for (const tr of (exp.trains || [])) {
           if (tr.yen) rows.push({ date: rep.date, category: '電車代', siteName, amount: tr.yen, note: tr.label })
         }
-        if (exp.hotelYen)         rows.push({ date: rep.date, category: '宿泊費',     siteName, amount: exp.hotelYen,         note: exp.hotelName })
-        if (exp.leopalaceYen)     rows.push({ date: rep.date, category: '宿泊費',     siteName, amount: exp.leopalaceYen,     note: exp.leopalaceName })
+        if (exp.hotelYen)         rows.push({ date: rep.date, category: '宿泊費',       siteName, amount: exp.hotelYen,         note: exp.hotelName,         registrationNumber: exp.hotelRegistration })
+        if (exp.leopalaceYen)     rows.push({ date: rep.date, category: '宿泊費',       siteName, amount: exp.leopalaceYen,     note: exp.leopalaceName,     registrationNumber: exp.leopalaceRegistration })
         for (const ot of (exp.others || [])) {
-          if (ot.yen) rows.push({ date: rep.date, category: 'その他', siteName, amount: ot.yen, note: ot.label })
+          if (ot.yen) rows.push({ date: rep.date, category: 'その他', siteName, amount: ot.yen, note: ot.label, registrationNumber: ot.registrationNumber })
         }
-        if (exp.entertainmentYen) rows.push({ date: rep.date, category: 'その他雑経費', siteName, amount: exp.entertainmentYen, note: exp.entertainmentLabel })
+        if (exp.entertainmentYen) rows.push({ date: rep.date, category: 'その他雑経費', siteName, amount: exp.entertainmentYen, note: exp.entertainmentLabel, registrationNumber: exp.entertainmentRegistration })
       }
     }
     return rows

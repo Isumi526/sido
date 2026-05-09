@@ -11,16 +11,19 @@
       <div v-else-if="done" class="state-screen">
         <div class="success-mark">✓</div>
         <h2 class="state-title">登録完了！</h2>
-        <p class="state-text">{{ realName }} さんで登録しました</p>
-        <button class="btn-primary" @click="goToHome">日報フォームへ →</button>
+        <p class="state-text">{{ displayName }} さんで登録しました</p>
+        <div class="done-actions">
+          <button class="btn-primary" @click="goToHome">日報を入力する →</button>
+          <button class="btn-secondary" @click="done = false">登録内容を変更する</button>
+        </div>
       </div>
 
       <form v-else class="form" @submit.prevent="handleSubmit">
         <div class="card">
           <h2 class="card-title">ユーザー登録</h2>
           <p class="card-desc">
-            LINEの表示名と本名が異なる場合があるため、<br>
-            申請書に使用する<strong>本名</strong>を登録してください。
+            申請書に使用する<strong>本名</strong>を登録してください。<br>
+            一覧にない場合は新規登録できます。
           </p>
 
           <div class="field">
@@ -28,21 +31,46 @@
             <div class="display-name">{{ liff.profile.value?.displayName ?? '—' }}</div>
           </div>
 
-          <div class="field">
-            <label class="label" for="realName">本名 <span class="required">必須</span></label>
+          <!-- 既存作業員から選択 -->
+          <div v-if="!isNewWorker" class="field">
+            <label class="label" for="workerId">本名 <span class="required">必須</span></label>
             <select
-              id="realName"
-              v-model="realName"
+              id="workerId"
+              v-model="selectedWorkerId"
               class="select"
-              required
+              @change="onWorkerSelect"
             >
               <option value="">選択してください</option>
-              <option v-if="liff.isTester.value" value="テストユーザー">🔧 テストユーザー</option>
-              <option v-for="name in master.workerNames.value" :key="name" :value="name">{{ name }}</option>
+              <option v-if="liff.isTester.value" value="__tester__">🔧 テストユーザー</option>
+              <option
+                v-for="w in sortedWorkers"
+                :key="w.id"
+                :value="w.id"
+              >{{ w.name }}</option>
             </select>
+            <button type="button" class="btn-link" @click="switchToNew">
+              一覧にない場合はこちら →
+            </button>
           </div>
 
-          <div class="field">
+          <!-- 新規作業員入力 -->
+          <div v-else class="field">
+            <label class="label" for="newName">本名（新規）<span class="required">必須</span></label>
+            <input
+              id="newName"
+              v-model="newWorkerName"
+              type="text"
+              class="input"
+              placeholder="例：山田 太郎"
+              required
+            >
+            <button type="button" class="btn-link" @click="switchToExisting">
+              ← 一覧から選ぶ
+            </button>
+          </div>
+
+          <!-- 所属（新規のときのみ選択。既存はworkerから自動取得） -->
+          <div v-if="isNewWorker" class="field">
             <label class="label">所属 <span class="required">必須</span></label>
             <div class="role-toggle">
               <button type="button" class="role-btn" :class="{ active: workerRole === 'factory' }" @click="workerRole = 'factory'">
@@ -54,6 +82,14 @@
             </div>
           </div>
 
+          <!-- 選択した既存作業員の所属表示 -->
+          <div v-else-if="selectedWorker" class="field">
+            <label class="label">所属</label>
+            <div class="display-name">
+              {{ selectedWorker.role === 'factory' ? '工場 / 事務所' : '現場' }}
+            </div>
+          </div>
+
           <!-- テスター用：キャッシュクリア -->
           <button v-if="liff.isTester.value" type="button" class="btn-dev" @click="clearCache">
             🔧 キャッシュクリア（テスト用）
@@ -61,7 +97,7 @@
 
           <div v-if="errorMsg" class="error-banner">{{ errorMsg }}</div>
 
-          <button type="submit" class="btn-submit" :disabled="submitting || !realName.trim()">
+          <button type="submit" class="btn-submit" :disabled="submitting || !canSubmit">
             <span v-if="submitting">登録中...</span>
             <span v-else>登録する →</span>
           </button>
@@ -77,35 +113,96 @@ const master  = useMaster()
 const expense = useExpense()
 const router  = useRouter()
 
-const initializing = ref(true)
-const realName     = ref('')
-const workerRole   = ref<'factory' | 'site'>('site')
-const submitting   = ref(false)
-const errorMsg     = ref('')
-const done         = ref(false)
+const initializing    = ref(true)
+const submitting      = ref(false)
+const errorMsg        = ref('')
+const done            = ref(false)
+
+// 既存選択
+const selectedWorkerId = ref('')
+const isNewWorker      = ref(false)
+
+// 新規入力
+const newWorkerName = ref('')
+const workerRole    = ref<'factory' | 'site'>('site')
+
+// テスターの場合、"テストユーザー" は __tester__ オプションで出すので一覧から除外
+const sortedWorkers = computed(() =>
+  master.master.value.workers
+    .filter(w => !liff.isTester.value || w.name !== 'テストユーザー')
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name, 'ja'))
+)
+
+const selectedWorker = computed(() =>
+  sortedWorkers.value.find(w => w.id === selectedWorkerId.value) ?? null
+)
+
+const displayName = computed(() => {
+  if (selectedWorkerId.value === '__tester__') return 'テストユーザー'
+  if (isNewWorker.value) return newWorkerName.value
+  return selectedWorker.value?.name ?? ''
+})
+
+const canSubmit = computed(() => {
+  if (isNewWorker.value) return newWorkerName.value.trim().length > 0
+  return selectedWorkerId.value !== ''
+})
 
 onMounted(async () => {
   await Promise.all([liff.init(), master.fetch()])
   const userId = liff.profile.value?.userId
   if (userId) {
-    // 登録ページに直接来た場合はキャッシュをバイパスして最新状態を確認
     expense.clearUserCache(userId)
     const existing = await expense.getUser(userId)
     if (existing) {
-      realName.value   = existing.real_name
-      workerRole.value = existing.worker_role
+      // 既存登録がある場合は worker_id で選択状態を復元
+      if (existing.worker_id) {
+        selectedWorkerId.value = existing.worker_id
+      } else if (existing.real_name) {
+        // 旧形式（real_name のみ）→ 名前で検索
+        const found = sortedWorkers.value.find(w => w.name === existing.real_name)
+        if (found?.id) selectedWorkerId.value = found.id
+      }
     }
   }
   initializing.value = false
 })
 
+function onWorkerSelect() {
+  // テスターオプション選択時
+  if (selectedWorkerId.value === '__tester__') return
+}
+
+function switchToNew() {
+  isNewWorker.value    = true
+  selectedWorkerId.value = ''
+}
+
+function switchToExisting() {
+  isNewWorker.value  = false
+  newWorkerName.value = ''
+}
+
 async function handleSubmit() {
   const userId = liff.profile.value?.userId
   if (!userId) { errorMsg.value = 'LINEユーザー情報が取得できません'; return }
+
   submitting.value = true
   errorMsg.value   = ''
   try {
-    await expense.registerUser(userId, realName.value.trim(), workerRole.value)
+    if (selectedWorkerId.value === '__tester__') {
+      // テストユーザー（workerマスタのテストユーザーを使用）
+      const tester = sortedWorkers.value.find(w => w.name === 'テストユーザー')
+      await expense.registerUser(userId, tester?.id ?? null, 'テストユーザー', 'site')
+    } else if (isNewWorker.value) {
+      // 新規作業員
+      await expense.registerUser(userId, null, newWorkerName.value.trim(), workerRole.value)
+    } else {
+      // 既存作業員から選択
+      const worker = selectedWorker.value!
+      await expense.registerUser(userId, worker.id!, worker.name, worker.role)
+    }
     done.value = true
   } catch (e) {
     errorMsg.value = '登録に失敗しました。もう一度お試しください。'
@@ -122,9 +219,10 @@ function goToHome() {
 function clearCache() {
   const userId = liff.profile.value?.userId
   if (userId) expense.clearUserCache(userId)
-  realName.value   = ''
-  workerRole.value = 'site'
-  done.value       = false
+  selectedWorkerId.value = ''
+  newWorkerName.value    = ''
+  isNewWorker.value      = false
+  done.value             = false
 }
 </script>
 
@@ -136,12 +234,6 @@ function clearCache() {
   --font: 'Noto Sans JP', -apple-system, sans-serif; --radius: 12px;
 }
 html, body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; }
-.header { background: #fff; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
-.header-inner { max-width: 640px; margin: 0 auto; padding: 0 16px; height: 52px; display: flex; align-items: center; }
-.brand { display: flex; align-items: baseline; gap: 8px; }
-.brand-name { font-size: 16px; font-weight: 900; letter-spacing: 5px; color: var(--accent); }
-.brand-divider { color: var(--border); }
-.brand-sub { font-size: 12px; color: var(--text2); letter-spacing: 2px; }
 .main { max-width: 640px; margin: 0 auto; padding: 24px 16px 100px; }
 .state-screen { display: flex; flex-direction: column; align-items: center; padding: 80px 20px; gap: 16px; text-align: center; }
 .spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
@@ -163,7 +255,10 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--font)
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' fill='none' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat; background-position: right 14px center; padding-right: 38px;
 }
-.btn-primary { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 13px 28px; font-size: 15px; font-weight: 700; font-family: var(--font); cursor: pointer; }
+.btn-link { background: none; border: none; color: var(--accent); font-size: 12px; font-family: var(--font); cursor: pointer; text-align: left; padding: 0; text-decoration: underline; }
+.done-actions { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 280px; }
+.btn-primary { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 13px 28px; font-size: 15px; font-weight: 700; font-family: var(--font); cursor: pointer; width: 100%; }
+.btn-secondary { background: #fff; color: var(--text2); border: 1px solid var(--border); border-radius: 8px; padding: 11px 28px; font-size: 14px; font-family: var(--font); cursor: pointer; width: 100%; }
 .role-toggle { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .role-btn { flex: 1; padding: 11px 0; font-size: 14px; font-family: var(--font); background: #f5f5f5; color: #888; border: none; cursor: pointer; transition: background .15s, color .15s; }
 .role-btn:first-child { border-right: 1px solid var(--border); }

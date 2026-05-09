@@ -2,11 +2,11 @@
   "name": "construction-field-report",
   "private": true,
   "workspaces": [
-    "apps/*",
+    "apps/liff",
     "packages/*"
   ],
   "scripts": {
-    "dev:liff": "npm run dev --workspace=apps/liff",
+    "dev:liff": "cd apps/liff && npx nuxt dev",
     "build:liff": "npm run build --workspace=apps/liff",
     "dev:admin": "npm run dev --workspace=apps/admin",
     "typecheck": "npm run typecheck --workspaces --if-present",

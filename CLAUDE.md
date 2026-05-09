@@ -56,6 +56,40 @@ node notion-sync.js "やったこと" --project ailab --memo "詳細"
 - Sample Construction Co.: REMOVED_NOTION_PROJECT_ID
 - 全力AIラボ: REMOVED_NOTION_AILAB_ID
 
+## ローカル開発フロー
+
+```bash
+# ローカルで起動
+cd apps/liff && npm run dev
+# → http://localhost:3000 で確認（LIFF認証スキップ・テスターユーザーで動作）
+```
+
+### ブランチ運用（本番に影響させない）
+```bash
+# 開発は dev ブランチで行う
+git checkout dev
+
+# 本番に出す準備ができたら main にマージ
+git checkout main
+git merge dev
+git push origin main
+```
+
+- `main` に push → Vercel 本番に自動デプロイ
+- `dev` に push → Vercel Preview URL のみ（本番に影響なし）
+
+### 今日の作業を巻き戻したい場合
+```bash
+# 1. 今の状態を dev に保存
+git checkout -b dev
+git push origin dev
+
+# 2. main を戻したいコミットに巻き戻し
+git checkout main
+git reset --hard <戻したいコミットハッシュ>
+git push origin main --force
+```
+
 ## Phase別ロードマップ
 - Phase 1 ✅ LINE日報→GAS自動転記・Gemini正規化・各種機能
 - Phase 1.5 🔄 LINE LIFFフォーム（Nuxt3）・LIFF→GAS連携

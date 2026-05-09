@@ -40,20 +40,23 @@ export interface VehicleExpense {
 }
 
 export interface LineItem {
-  label?: string
-  yen?: number
+  label?:              string
+  yen?:                number
+  registrationNumber?: string  // 登録番号（その他資材等）
 }
 
 export interface Expenses {
   carpool?: boolean              // 乗合いフラグ
   vehicles: VehicleExpense[]
   vehicleFiles?: string[]       // 車両領収書等
-  hotelName?: string
-  hotelYen?: number
-  hotelFiles?: string[]         // ホテル領収書
-  leopalaceName?: string
-  leopalaceYen?: number
-  leopalaceFiles?: string[]     // レオパレス領収書
+  hotelName?:             string
+  hotelYen?:              number
+  hotelRegistration?:     string   // ホテル登録番号
+  hotelFiles?: string[]            // ホテル領収書
+  leopalaceName?:             string
+  leopalaceYen?:              number
+  leopalaceRegistration?:     string   // レオパレス登録番号
+  leopalaceFiles?: string[]            // レオパレス領収書
   garbageFactoryM3?: number
   garbageSiteM3?: number
   garbagePhotos?: string[]
@@ -61,9 +64,10 @@ export interface Expenses {
   trainFiles?: string[]         // 電車領収書
   others: LineItem[]
   otherFiles?: string[]         // その他領収書
-  entertainmentLabel?: string
-  entertainmentYen?: number
-  entertainmentFiles?: string[] // 雑経費領収書
+  entertainmentLabel?:        string
+  entertainmentYen?:          number
+  entertainmentRegistration?: string   // 雑経費登録番号
+  entertainmentFiles?: string[]        // 雑経費領収書
 }
 
 export interface SiteReport {
@@ -85,7 +89,7 @@ export interface DailyReport {
 
 export interface MasterData {
   sites: string[]
-  workers: { name: string; unitPrice: number; role: WorkerRole }[]
+  workers: { id?: string; name: string; unitPrice: number; role: WorkerRole }[]
   subcontractors: string[]
   vehicles: string[]
 }
@@ -105,6 +109,7 @@ export interface User {
   line_user_id: string
   real_name:    string
   worker_role:  'factory' | 'site'
+  worker_id?:   string | null
   created_at:   string
   updated_at:   string
 }
@@ -144,12 +149,13 @@ export interface ExpenseItem {
 
 /** 月次PDF用の経費行（daily_reportsから集計） */
 export interface ExpenseRow {
-  date:     string
-  category: string
-  siteName: string
-  amount:   number
-  liters?:  number
-  note?:    string  // 備考（車両名・電車区間など）
+  date:                string
+  category:            string
+  siteName:            string
+  amount:              number
+  liters?:             number
+  note?:               string  // 備考（車両名・電車区間など）
+  registrationNumber?: string  // 登録番号
 }
 
 export interface ExpenseItemInput {

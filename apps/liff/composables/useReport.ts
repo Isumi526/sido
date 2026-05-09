@@ -67,6 +67,7 @@ function stripEmpty(obj: unknown): unknown {
 export const useReport = () => {
   const config  = useRuntimeConfig()
   const { profile, isTester } = useLiff()
+  const master  = useMaster()
 
   const submitting = ref(false)
   const submitted  = ref(false)
@@ -115,9 +116,9 @@ export const useReport = () => {
     submitting.value = true
     error.value      = null
 
-    // プロフィール情報をセット
-    form.value.sender   = profile.value?.displayName || 'unknown'
-    form.value.senderId = profile.value?.userId       || 'unknown'
+    // プロフィール情報をセット（sender は呼び元で本名を設定済みの場合は上書きしない）
+    if (!form.value.sender) form.value.sender = profile.value?.displayName || 'unknown'
+    form.value.senderId = profile.value?.userId || 'unknown'
 
     // 送信日が日曜か判定
     const isSunday = new Date(form.value.date + 'T00:00:00').getDay() === 0
@@ -193,6 +194,11 @@ export const useReport = () => {
         }
       }
       submitted.value = true
+
+      // ── ③ 新規現場を Supabase に保存（fire-and-forget）──
+      for (const site of payload.sites) {
+        if (site.siteName) master.saveSite(site.siteName)
+      }
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : '送信に失敗しました'
       console.error('[Report] 送信エラー:', e)

@@ -29,10 +29,22 @@ export default defineNuxtConfig({
       testerLineIds: '',        // カンマ区切りのLINE User ID（例: Uabc123,Udef456）
       supabaseUrl: process.env.NUXT_PUBLIC_SUPABASE_URL || '',
       supabaseAnonKey: process.env.NUXT_PUBLIC_SUPABASE_ANON_KEY || '',
+      accountSlug: process.env.NUXT_PUBLIC_ACCOUNT_SLUG || 'sample-construction',
     },
   },
 
   typescript: {
     strict: true,
+  },
+
+  vite: {
+    resolve: {
+      alias: {
+        '#app-manifest': '/path/to/project/node_modules/mocked-exports/lib/empty.mjs',
+      },
+    },
+    optimizeDeps: {
+      include: ['@line/liff', '@supabase/supabase-js'],
+    },
   },
 })
