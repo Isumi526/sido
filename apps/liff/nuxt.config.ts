@@ -40,10 +40,8 @@ export default defineNuxtConfig({
   vite: {
     resolve: {
       alias: {
-        // ローカル開発環境のみ: #app-manifest の pre-transform エラーを抑制
-        ...(process.env.NODE_ENV !== 'production' ? {
-          '#app-manifest': 'mocked-exports/lib/empty.mjs',
-        } : {}),
+        // #app-manifest の pre-transform エラーを抑制（dev/prod 共通スタブ）
+        '#app-manifest': new URL('./app-manifest-stub.mjs', import.meta.url).pathname,
       },
     },
     optimizeDeps: {
