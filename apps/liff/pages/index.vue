@@ -524,9 +524,12 @@ function removeSite(i: number) {
 }
 
 onMounted(async () => {
-  await Promise.all([liff.init(), master.fetch()])
+  // LIFF init と master fetch を並列開始
+  // master はフォーム表示に必要だが、ユーザーチェックには不要なので待たない
+  const masterPromise = master.fetch()
+  await liff.init()
 
-  // ユーザー登録確認 → 未登録なら登録ページへ
+  // ユーザーチェック（キャッシュあれば即座・なければSupabase）
   const userId = liff.profile.value?.userId
   if (userId) {
     currentUser.value = await expense.getUser(userId)
@@ -536,7 +539,8 @@ onMounted(async () => {
     }
   }
 
-  // 全サイトのワーカーを自分にセット
+  // ユーザー確認後にマスタ完了を待つ（並列で進んでいるので大半は終わっている）
+  await masterPromise
   initWorkersAsSelf()
   initializing.value = false
 })

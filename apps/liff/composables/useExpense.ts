@@ -47,13 +47,48 @@ export function recentPeriodKeys(): string[] {
   return [...new Set(keys)]
 }
 
+// ---------- ユーザーキャッシュ（localStorage） ----------
+// LIFF init 後に毎回 Supabase を叩くのを避けるため1時間キャッシュする
+
+const USER_CACHE_PREFIX = 'sido_eu_'
+const USER_CACHE_TTL    = 60 * 60 * 1000 // 1時間
+
+function loadUserCache(lineUserId: string): ExpenseUser | null {
+  if (import.meta.server) return null
+  try {
+    const raw = localStorage.getItem(USER_CACHE_PREFIX + lineUserId)
+    if (!raw) return null
+    const { data, ts } = JSON.parse(raw) as { data: ExpenseUser; ts: number }
+    if (Date.now() - ts > USER_CACHE_TTL) { localStorage.removeItem(USER_CACHE_PREFIX + lineUserId); return null }
+    return data
+  } catch { return null }
+}
+
+function saveUserCache(user: ExpenseUser) {
+  if (import.meta.server) return
+  try {
+    localStorage.setItem(USER_CACHE_PREFIX + user.line_user_id, JSON.stringify({ data: user, ts: Date.now() }))
+  } catch { /* quota超過は無視 */ }
+}
+
+function clearUserCache(lineUserId: string) {
+  if (import.meta.server) return
+  try { localStorage.removeItem(USER_CACHE_PREFIX + lineUserId) } catch {}
+}
+
 // ---------- composable ----------
 
 export const useExpense = () => {
   const supabase = useSupabase()
 
-  /** LINE userId でユーザーを取得（未登録なら null） */
+  /**
+   * LINE userId でユーザーを取得（未登録なら null）
+   * localStorage キャッシュあり → Supabase は初回・期限切れ時のみ問い合わせ
+   */
   async function getUser(lineUserId: string): Promise<ExpenseUser | null> {
+    const cached = loadUserCache(lineUserId)
+    if (cached) return cached
+
     const { data, error } = await supabase
       .from('expense_users')
       .select('*')
@@ -61,6 +96,7 @@ export const useExpense = () => {
       .maybeSingle()
 
     if (error) { console.error('[useExpense] getUser:', error); return null }
+    if (data)  saveUserCache(data)
     return data
   }
 
@@ -81,6 +117,7 @@ export const useExpense = () => {
       .single()
 
     if (error) throw error
+    saveUserCache(data)  // 登録・更新時にキャッシュ更新
     return data
   }
 
