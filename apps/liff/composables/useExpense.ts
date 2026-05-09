@@ -100,18 +100,20 @@ export const useExpense = () => {
 
     const accountId = await getAccountId()
 
-    // キャッシュがある場合：即座に返しつつ、updated_at が変わっていたら破棄して再取得
+    // キャッシュがある場合：Supabaseで存在確認してから返す（削除済み・account_id不一致を検出）
     if (cached) {
-      supabase
+      const { data: check } = await supabase
         .from('users')
-        .select('updated_at')
+        .select('id, updated_at')
         .eq('line_user_id', lineUserId)
+        .eq('account_id', accountId)
         .maybeSingle()
-        .then(({ data }) => {
-          if (data && data.updated_at !== cached.updated_at) {
-            clearUserCache(lineUserId)
-          }
-        })
+      if (!check) {
+        // DBに存在しない（削除済みorアカウント不一致）→ キャッシュ破棄して未登録扱い
+        clearUserCache(lineUserId)
+        return null
+      }
+      if (check.updated_at !== cached.updated_at) clearUserCache(lineUserId)
       return cached
     }
 
