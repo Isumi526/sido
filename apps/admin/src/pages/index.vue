@@ -18,14 +18,6 @@
           <div class="stat-value">¥{{ totalExpense.toLocaleString() }}</div>
           <div class="stat-label">経費合計</div>
         </div>
-        <div class="stat-card">
-          <div class="stat-value">{{ workingReportCount }}</div>
-          <div class="stat-label">稼働日報数</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">{{ expenseWorkerCount }}</div>
-          <div class="stat-label">経費発生者数</div>
-        </div>
       </div>
 
       <!-- カテゴリ別内訳 -->
