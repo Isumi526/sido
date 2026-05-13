@@ -11,3 +11,10 @@ dist/
 apps/liff/.env*.local
 supabase/.temp/
 package-lock 2.json
+replacements.txt
+docs/contracts/
+docs/proposals/
+*_提案資料.md
+*_提案資料.pdf
+*_契約書.md
+notion-sync.js
