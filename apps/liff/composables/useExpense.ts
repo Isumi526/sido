@@ -328,41 +328,52 @@ export const useExpense = () => {
   async function getNextUnsubmittedDate(lineUserId: string): Promise<string | null> {
     const accountId = await getAccountId()
 
-    // service_start_date を settings から取得
-    const { data: setting } = await supabase
+    // service_start_date を settings から取得（複数行対応で limit(1) を使用）
+    const { data: settingRows } = await supabase
       .from('settings')
       .select('value')
       .eq('account_id', accountId)
       .eq('key', 'service_start_date')
-      .maybeSingle()
+      .limit(1)
 
-    const startDate = setting?.value
-    if (!startDate) return null
+    const startDate = settingRows?.[0]?.value
+    console.log('[getNextUnsubmittedDate] accountId=', accountId, 'startDate=', startDate)
+    if (!startDate) return 'NOT_CONFIGURED'  // startDate未設定は通常動作に戻す
 
     const user = await getUser(lineUserId)
+    console.log('[getNextUnsubmittedDate] user=', user?.id)
     if (!user) return null
 
-    const today = new Date().toISOString().split('T')[0]
+    // 今日の日付をローカルタイムゾーンで取得（toISOString はUTCになるため使わない）
+    const now   = new Date()
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 
     // 開始日〜今日の送信済み日付を一括取得
-    const { data: reports } = await supabase
+    const { data: reports, error: reportsError } = await supabase
       .from('daily_reports')
       .select('date')
       .eq('user_id', user.id)
       .gte('date', startDate)
       .lte('date', today)
 
-    const submittedDates = new Set((reports ?? []).map((r: any) => r.date))
+    console.log('[getNextUnsubmittedDate] today=', today, 'submittedCount=', reports?.length, 'error=', reportsError?.message)
 
-    // 開始日から順に走査して最初の未送信日を返す
-    const cursor = new Date(startDate + 'T00:00:00')
-    const end    = new Date(today    + 'T00:00:00')
-    while (cursor <= end) {
-      const dateStr = cursor.toISOString().split('T')[0]
-      if (!submittedDates.has(dateStr)) return dateStr
-      cursor.setDate(cursor.getDate() + 1)
+    const submittedDates = new Set((reports ?? []).map((r: any) => r.date as string))
+
+    // 開始日から順に走査（純粋な文字列加算でタイムゾーン問題を回避）
+    let cursor = startDate
+    while (cursor <= today) {
+      if (!submittedDates.has(cursor)) {
+        console.log('[getNextUnsubmittedDate] next=', cursor)
+        return cursor
+      }
+      // 日付を1日進める
+      const d = new Date(cursor + 'T12:00:00') // 正午指定でタイムゾーンのズレを防ぐ
+      d.setDate(d.getDate() + 1)
+      cursor = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     }
-    return null
+    console.log('[getNextUnsubmittedDate] all submitted')
+    return null  // null = 全送信済み
   }
 
   /** 日報一覧を取得（新しい順） */

@@ -9,13 +9,19 @@
         <p class="state-text">読み込み中...</p>
       </div>
 
+      <!-- 全日送信済み -->
+      <div v-else-if="allSubmitted" class="state-screen">
+        <div class="success-mark">✓</div>
+        <h2 class="state-title">送信済みです</h2>
+        <p class="state-text">今日までの日報はすべて送信済みです</p>
+      </div>
+
       <!-- 送信完了 / 更新完了 -->
       <div v-else-if="report.submitted.value || editSubmitted" class="state-screen">
         <div class="success-mark">✓</div>
         <h2 class="state-title">{{ editSubmitted ? '更新しました！' : '送信完了！' }}</h2>
         <p class="state-text">{{ editSubmitted ? '日報を更新しました' : 'LINEグループに通知しました' }}</p>
-        <button v-if="editSubmitted" class="btn-primary" @click="navigateTo('/history')">履歴に戻る</button>
-        <button v-else class="btn-primary" @click="handleReset">もう1件入力する</button>
+        <button class="btn-primary" @click="navigateTo('/history')">{{ editSubmitted ? '履歴に戻る' : '日報履歴を見る' }}</button>
       </div>
 
       <!-- フォーム -->
@@ -28,14 +34,7 @@
 
         <!-- 日付 -->
         <FormSection num="01" title="日付">
-          <input
-            v-model="report.form.value.date"
-            type="date"
-            class="input"
-            :readonly="isEditMode"
-            :style="isEditMode ? { background: '#f0f0f0', cursor: 'default' } : {}"
-            required
-          />
+          <div class="date-fixed">{{ report.form.value.date }}</div>
         </FormSection>
 
         <!-- 稼働有無 -->
@@ -386,8 +385,17 @@
           ⚠️ {{ report.error.value || editError }}
         </div>
 
+        <!-- LINEプレビュー -->
+        <div v-if="!isEditMode" class="line-preview">
+          <div class="line-preview-label">📲 LINE プレビュー</div>
+          <pre class="line-preview-body">{{ linePreview }}</pre>
+        </div>
+
         <!-- 送信ボタン -->
         <button v-if="isDev && !isEditMode" type="button" class="btn-dev" @click="fillTestData">🔧 テストデータ入力</button>
+        <button v-if="isDev" type="button" class="btn-dev" :class="{ 'btn-dev--error': forceErrorOnSubmit }" @click="fillErrorTestData">
+          {{ forceErrorOnSubmit ? '🚨 次の送信でエラー発火（キャンセルするには再クリック）' : '🚨 エラーテストデータ入力' }}
+        </button>
         <button type="submit" class="btn-submit" :disabled="isEditMode ? editSubmitting : report.submitting.value">
           <span v-if="isEditMode ? editSubmitting : report.submitting.value" class="submitting">
             <span class="dot-spin" />{{ isEditMode ? '更新中...' : '送信中...' }}
@@ -419,15 +427,15 @@ const isDev = computed(() => config.public.appEnv === 'development' || liff.isTe
 const initializing = ref(true)
 
 // 編集モード
+const forceErrorOnSubmit = ref(false)
 const isEditMode      = ref(false)
 const originalReport  = ref<any>(null)  // 編集前のSupabaseデータ（差分計算用）
 const editSubmitting  = ref(false)
 const editSubmitted   = ref(false)
 const editError       = ref<string | null>(null)
 
-// 日付選択の範囲（今日・昨日のみ）
-const today     = new Date().toISOString().split('T')[0]
-const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
+// 全送信済み状態
+const allSubmitted = ref(false)
 
 // 稼働有無
 const isWorkingStr = ref<'working' | 'off'>('working')
@@ -610,10 +618,146 @@ onMounted(async () => {
   if (editDate) {
     isEditMode.value = true
     await loadEditData(editDate)
+  } else if (userId) {
+    // 新規モード: 最初の未送信日を自動セット
+    const nextDate = await expense.getNextUnsubmittedDate(userId)
+    if (nextDate === null) {
+      // null = サービス開始日が設定済み かつ 全送信済み
+      allSubmitted.value = true
+    } else if (nextDate !== 'NOT_CONFIGURED') {
+      // 未送信日が見つかった場合はその日付をセット
+      report.form.value.date = nextDate
+    }
+    // 'NOT_CONFIGURED' の場合はデフォルト（今日）のまま
   }
 
   initializing.value = false
 })
+
+// ── LINE通知プレビュー ──────────────────────────────────────
+const linePreview = computed(() => {
+  const form      = report.form.value
+  const isWorking = isWorkingStr.value === 'working'
+  const d         = new Date(form.date + 'T00:00:00')
+  const weekdays  = ['日', '月', '火', '水', '木', '金', '土']
+  const dateLabel = `${d.getMonth() + 1}/${d.getDate()}（${weekdays[d.getDay()]}）`
+  const sunday    = d.getDay() === 0
+
+  const lines: string[] = [
+    `📋 ${dateLabel} 日報`,
+    `👤 ${currentUser.value?.real_name || '（未登録）'}`,
+    '─────────────────',
+  ]
+
+  if (!isWorking) {
+    if (form.note) lines.push(`\n📝 ${form.note}`)
+    else           lines.push('\n稼働なし')
+    return lines.join('\n')
+  }
+
+  for (const site of form.sites) {
+    if (!site.siteName) continue
+    const displayName = site.siteName === '__other__'
+      ? (site.customSiteName || '新規現場')
+      : site.siteName
+    lines.push('', `📍 ${displayName}`)
+
+    // 稼働時間（名前なし・時間のみ）
+    const workers = (site.workers || []).filter((w: any) => w.workerName)
+    if (workers.length > 0) {
+      lines.push('')
+      for (const w of workers) {
+        const brk = calcBreakMinutes(w.workerRole || 'site', w.startTime || '08:00', w.endTime || '17:30')
+        const h   = computeWorkerHours(w.startTime || '08:00', w.endTime || '17:30', brk, sunday)
+        const parts: string[] = []
+        if (h.hoursNormal)        parts.push(`${h.hoursNormal}h`)
+        if (h.hoursSunday)        parts.push(`休日${h.hoursSunday}h`)
+        if (h.hoursOT)            parts.push(`残業${h.hoursOT}h`)
+        if (h.hoursNight)         parts.push(`深夜${h.hoursNight}h`)
+        if (h.hoursOTNight)       parts.push(`深夜残業${h.hoursOTNight}h`)
+        if (h.hoursSundayOT)      parts.push(`休日残業${h.hoursSundayOT}h`)
+        if (h.hoursSundayNight)   parts.push(`休日深夜${h.hoursSundayNight}h`)
+        if (h.hoursSundayOTNight) parts.push(`休日深夜残業${h.hoursSundayOTNight}h`)
+        if (parts.length) lines.push('・' + parts.join(' + '))
+      }
+    }
+
+    // 経費
+    const exp = site.expenses || {}
+    const expLines: string[] = []
+    if (exp.carpool) {
+      expLines.push('乗合い')
+    } else {
+      for (const v of (exp.vehicles || [])) {
+        if (!v) continue
+        const p: string[] = []
+        if (v.vehicleName) p.push(v.vehicleName)
+        if (v.distanceKm)  p.push(`往復${v.distanceKm}km`)
+        if (v.dieselKm)    p.push(`軽油${v.dieselKm}km`)
+        if (v.parkingYen)  p.push(`駐車¥${Number(v.parkingYen).toLocaleString()}`)
+        if (v.highwayYen)  p.push(`高速¥${Number(v.highwayYen).toLocaleString()}`)
+        if (v.etcUsed)     p.push(`ETC${v.etcCard || ''}`)
+        if (p.length) expLines.push(p.join(' '))
+      }
+    }
+    for (const t of (exp.trains || []))
+      if (t?.yen) expLines.push(`${t.label || '電車'} ¥${Number(t.yen).toLocaleString()}`)
+    for (const o of (exp.others || []))
+      if (o?.yen) expLines.push(`${o.label || 'その他'} ¥${Number(o.yen).toLocaleString()}`)
+    if (exp.hotelYen)
+      expLines.push(`${exp.hotelName || 'ホテル'} ¥${Number(exp.hotelYen).toLocaleString()}`)
+    if (exp.leopalaceYen)
+      expLines.push(`${exp.leopalaceName || 'レオパレス'} ¥${Number(exp.leopalaceYen).toLocaleString()}`)
+    if (exp.garbageFactoryM3 || exp.garbageSiteM3) {
+      const g: string[] = []
+      if (exp.garbageFactoryM3) g.push(`木材のみ ${exp.garbageFactoryM3}m³`)
+      if (exp.garbageSiteM3)    g.push(`混載 ${exp.garbageSiteM3}m³`)
+      expLines.push(`ゴミ ${g.join(' ')}`)
+    }
+    if (exp.entertainmentYen)
+      expLines.push(`${exp.entertainmentLabel || '雑経費'} ¥${Number(exp.entertainmentYen).toLocaleString()}`)
+    if (expLines.length) { lines.push(''); expLines.forEach(l => lines.push(`・${l}`)) }
+
+    // 下請け業者
+    const subs = (site.subcontractors || []).filter((s: any) => s.subcontractorName)
+    if (subs.length) { lines.push(''); subs.forEach((s: any) => lines.push(`・${s.subcontractorName} ${s.count}人`)) }
+  }
+
+  if (form.note) lines.push(`\n📝 ${form.note}`)
+  return lines.join('\n')
+})
+
+/** [dev] エラーテストデータ入力 + 次の送信でエラーを強制発火 */
+function fillErrorTestData() {
+  if (forceErrorOnSubmit.value) {
+    // 2回押したらキャンセル
+    forceErrorOnSubmit.value = false
+    return
+  }
+  fillTestData()
+  forceErrorOnSubmit.value = true
+}
+
+/** LINEグループにエラーを通知する（fire-and-forget） */
+function notifyErrorToLine(actionName: string, errorMsg: string) {
+  if (!config.public.gasUrl) return
+  const devExtra = (config.public.appEnv === 'development' || liff.isTester.value) && config.public.devNotifyGroupId
+    ? { _devNotifyGroupId: config.public.devNotifyGroupId }
+    : {}
+  fetch(config.public.gasUrl, {
+    method:  'POST',
+    mode:    'no-cors',
+    headers: { 'Content-Type': 'text/plain' },
+    body:    JSON.stringify({
+      action:     'notifyError',
+      sender:     currentUser.value?.real_name || '不明',
+      date:       report.form.value.date,
+      actionName,
+      error:      errorMsg,
+      ...devExtra,
+    }),
+  }).catch(() => {})
+}
 
 async function handleSubmit() {
   report.form.value.isWorking = isWorkingStr.value === 'working'
@@ -625,14 +769,19 @@ async function handleSubmit() {
     editError.value = null
     try {
       const uid = liff.profile.value?.userId
-      if (uid) {
-        await expense.saveReport(uid, {
-          date:      report.form.value.date,
-          isWorking: report.form.value.isWorking,
-          sites:     report.form.value.sites,
-          note:      report.form.value.note,
-        })
+      if (!uid) throw new Error('ログイン情報が取得できませんでした。再読み込みしてください。')
+
+      if (forceErrorOnSubmit.value) {
+        forceErrorOnSubmit.value = false
+        throw new Error('[テスト] Supabase保存エラー: connection timeout')
       }
+
+      await expense.saveReport(uid, {
+        date:      report.form.value.date,
+        isWorking: report.form.value.isWorking,
+        sites:     report.form.value.sites,
+        note:      report.form.value.note,
+      })
 
       // 差分を計算してLINEグループに通知
       if (originalReport.value && config.public.gasUrl) {
@@ -665,7 +814,9 @@ async function handleSubmit() {
 
       editSubmitted.value = true
     } catch (e) {
-      editError.value = e instanceof Error ? e.message : '更新に失敗しました'
+      const msg = e instanceof Error ? e.message : '更新に失敗しました'
+      editError.value = msg
+      notifyErrorToLine('日報編集', msg)
     } finally {
       editSubmitting.value = false
     }
@@ -673,11 +824,18 @@ async function handleSubmit() {
   }
 
   // ── 新規送信 ──
-  // 送信者を登録名で上書き（LINE表示名ではなく本名）
   if (currentUser.value) {
     report.form.value.sender   = currentUser.value.real_name
     report.form.value.senderId = liff.profile.value?.userId ?? ''
   }
+
+  if (forceErrorOnSubmit.value) {
+    forceErrorOnSubmit.value = false
+    editError.value = '[テスト] GAS送信エラー: network request failed'
+    notifyErrorToLine('日報新規送信（テスト）', 'network request failed')
+    return
+  }
+
   await report.submit()
 
   // GAS送信成功後にSupabaseにも保存
@@ -689,9 +847,9 @@ async function handleSubmit() {
       sites:     report.form.value.sites,
       note:      report.form.value.note,
     }).catch(async (e: unknown) => {
+      const msg = String((e as any)?.message ?? e ?? 'Supabase保存エラー')
       console.error('[Report] Supabase保存エラー:', e)
-      // ユーザー不在 or FK違反 → キャッシュが古い可能性。クリアして再登録へ
-      const msg = String((e as any)?.message ?? e ?? '')
+      notifyErrorToLine('日報新規送信（DB保存）', msg)
       if (msg.includes('ユーザーが登録されていません') || msg.includes('foreign key')) {
         expense.clearUserCache(uid)
         currentUser.value = null
@@ -744,7 +902,9 @@ async function handleGarbagePhoto(si: number, event: Event) {
 }
 
 function fillTestData() {
+  const savedDate = report.form.value.date
   report.reset()
+  report.form.value.date = savedDate
   siteUsage.value = [createUsage()]
   initWorkers()  // ログインユーザーをworkerにセット
 
@@ -1093,6 +1253,7 @@ html, body {
   border-radius: var(--radius); font-size: 13px; cursor: pointer;
 }
 .btn-dev:hover { color: #fff; border-color: #888; }
+.btn-dev--error { border-color: #e53935; color: #e53935; }
 
 /* ── 送信ボタン ── */
 .btn-submit {
@@ -1129,6 +1290,18 @@ html, body {
   font-size: 13px;
 }
 
+/* ── 日付固定表示 ── */
+.date-fixed {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 11px 14px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 1px;
+}
+
 /* ── 編集モードバナー ── */
 .edit-banner {
   background: #fff8e1;
@@ -1138,6 +1311,24 @@ html, body {
   padding: 10px 14px;
   font-size: 12px;
   font-weight: 600;
+}
+
+/* ── LINEプレビュー ── */
+.line-preview {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.line-preview-label {
+  font-size: 11px; font-weight: 800; letter-spacing: 1px;
+  color: #06C755; padding: 8px 14px;
+  background: #dcfce7; border-bottom: 1px solid #bbf7d0;
+}
+.line-preview-body {
+  font-size: 13px; line-height: 1.7; color: var(--text);
+  padding: 12px 14px; white-space: pre-wrap; word-break: break-all;
+  font-family: var(--font); margin: 0;
 }
 
 /* ── レスポンシブ ── */
