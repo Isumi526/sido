@@ -21,7 +21,10 @@
         <div class="success-mark">✓</div>
         <h2 class="state-title">{{ editSubmitted ? '更新しました！' : '送信完了！' }}</h2>
         <p class="state-text">{{ editSubmitted ? '日報を更新しました' : 'LINEグループに通知しました' }}</p>
-        <button class="btn-primary" @click="navigateTo('/history')">{{ editSubmitted ? '履歴に戻る' : '日報履歴を見る' }}</button>
+        <button v-if="!editSubmitted && nextUnsubmittedDate" class="btn-primary" @click="goToNextReport">
+          {{ nextDateLabel }}の日報を入力する →
+        </button>
+        <button class="btn-history" @click="navigateTo('/history')">{{ editSubmitted ? '履歴に戻る' : '日報履歴を見る' }}</button>
       </div>
 
       <!-- フォーム -->
@@ -437,6 +440,16 @@ const editError       = ref<string | null>(null)
 // 全送信済み状態
 const allSubmitted = ref(false)
 
+// 送信後の次の未送信日
+const nextUnsubmittedDate = ref<string | null>(null)
+
+const nextDateLabel = computed(() => {
+  if (!nextUnsubmittedDate.value) return ''
+  const d = new Date(nextUnsubmittedDate.value + 'T00:00:00')
+  const weekdays = ['日', '月', '火', '水', '木', '金', '土']
+  return `${d.getMonth() + 1}/${d.getDate()}（${weekdays[d.getDay()]}）`
+})
+
 // 稼働有無
 const isWorkingStr = ref<'working' | 'off'>('working')
 
@@ -841,12 +854,14 @@ async function handleSubmit() {
   // GAS送信成功後にSupabaseにも保存
   if (!report.error.value && liff.profile.value?.userId) {
     const uid = liff.profile.value.userId
-    expense.saveReport(uid, {
-      date:      report.form.value.date,
-      isWorking: report.form.value.isWorking,
-      sites:     report.form.value.sites,
-      note:      report.form.value.note,
-    }).catch(async (e: unknown) => {
+    try {
+      await expense.saveReport(uid, {
+        date:      report.form.value.date,
+        isWorking: report.form.value.isWorking,
+        sites:     report.form.value.sites,
+        note:      report.form.value.note,
+      })
+    } catch (e: unknown) {
       const msg = String((e as any)?.message ?? e ?? 'Supabase保存エラー')
       console.error('[Report] Supabase保存エラー:', e)
       notifyErrorToLine('日報新規送信（DB保存）', msg)
@@ -854,9 +869,26 @@ async function handleSubmit() {
         expense.clearUserCache(uid)
         currentUser.value = null
         await navigateTo('/register')
+        return
       }
-    })
+    }
+    // 次の未送信日を取得してサクセス画面に表示
+    const next = await expense.getNextUnsubmittedDate(uid).catch(() => null)
+    if (next && next !== 'NOT_CONFIGURED') {
+      nextUnsubmittedDate.value = next
+    }
   }
+}
+
+function goToNextReport() {
+  const date = nextUnsubmittedDate.value
+  if (!date) return
+  nextUnsubmittedDate.value = null
+  report.reset()
+  report.form.value.date = date
+  siteUsage.value = [createUsage()]
+  isWorkingStr.value = 'working'
+  initWorkers()
 }
 
 async function handleReset() {
@@ -1213,6 +1245,14 @@ html, body {
   transition: opacity 0.15s;
 }
 .btn-primary:hover { opacity: 0.85; }
+
+.btn-history {
+  background: transparent; color: var(--text2);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 11px 24px; font-size: 14px; font-family: var(--font);
+  cursor: pointer; transition: border-color 0.15s, color 0.15s;
+}
+.btn-history:hover { border-color: var(--text2); color: var(--text); }
 
 .btn-ghost-sm {
   background: transparent; color: var(--accent);
