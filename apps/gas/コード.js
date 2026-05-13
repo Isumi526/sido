@@ -8,21 +8,31 @@
 //  ※ スプレッドシートへの書き込み・読み取りは廃止（Supabase管理に移行）
 // ============================================================
 
-// ── 本番デフォルト値（Script Propertiesで上書き可能）──
+// ── 設定は全て Script Properties から読み込む ──
+// GASエディタ > プロジェクトの設定 > スクリプトプロパティ に以下を設定:
+//   LINE_TOKEN            : LINE チャンネルアクセストークン（要再発行）
+//   GEMINI_API_KEY        : Google Gemini API キー（要再発行）
+//   DRIVE_ROOT_FOLDER_ID  : 経費ファイル保存先 Google Drive フォルダ ID
+//   FORM_ID               : Google フォーム ID
+//   LINE_PUSH_USER_ID     : LINE push 通知先ユーザー ID
+//   NOTIFY_GROUP_IDS      : LINE 通知グループ ID の JSON 配列 例: ["Cxxxx"]
+//   SUPABASE_URL          : Supabase プロジェクト URL
+//   SUPABASE_ANON_KEY     : Supabase anon key
+//   ACCOUNT_SLUG          : アカウント識別スラグ
 const CONFIG = (function() {
   const p = PropertiesService.getScriptProperties().getProperties();
   return {
-    LINE_CHANNEL_ACCESS_TOKEN: p.LINE_TOKEN            || 'REMOVED_LINE_TOKEN',
-    GEMINI_API_KEY:            p.GEMINI_API_KEY        || 'REMOVED_GEMINI_KEY',
-    DRIVE_ROOT_FOLDER_ID:      p.DRIVE_ROOT_FOLDER_ID  || 'REMOVED_DRIVE_ID',
-    FORM_ID:                   p.FORM_ID               || 'REMOVED_FORM_ID',
-    LINE_PUSH_USER_ID:         p.LINE_PUSH_USER_ID     || 'REMOVED_LINE_USER_ID',
+    LINE_CHANNEL_ACCESS_TOKEN: p.LINE_TOKEN,
+    GEMINI_API_KEY:            p.GEMINI_API_KEY,
+    DRIVE_ROOT_FOLDER_ID:      p.DRIVE_ROOT_FOLDER_ID,
+    FORM_ID:                   p.FORM_ID,
+    LINE_PUSH_USER_ID:         p.LINE_PUSH_USER_ID,
     NOTIFY_GROUP_IDS: p.NOTIFY_GROUP_IDS
       ? JSON.parse(p.NOTIFY_GROUP_IDS)
-      : ['REMOVED_LINE_GROUP_ID'],
-    SUPABASE_URL:       p.SUPABASE_URL       || 'https://SAMPLE_SUPABASE_REF.supabase.co',
-    SUPABASE_ANON_KEY:  p.SUPABASE_ANON_KEY  || 'REMOVED_SUPABASE_ANON_KEY',
-    ACCOUNT_SLUG:       p.ACCOUNT_SLUG       || 'seed',
+      : [],
+    SUPABASE_URL:       p.SUPABASE_URL,
+    SUPABASE_ANON_KEY:  p.SUPABASE_ANON_KEY,
+    ACCOUNT_SLUG:       p.ACCOUNT_SLUG || 'sample-construction',
   };
 })();
 

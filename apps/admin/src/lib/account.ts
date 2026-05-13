@@ -1,7 +1,7 @@
 // ============================================================
-//  apps/admin / src/lib/account.ts
+//  lib/account.ts
 //  アカウント（テナント）識別
-//  VITE_ACCOUNT_SLUG で切り替え: local=test / Vercel=seed
+//  VITE_ACCOUNT_SLUG で切り替え: local=test / Vercel=production
 // ============================================================
 import { supabase } from './supabase'
 

@@ -4,7 +4,7 @@
     <header class="admin-header">
       <div class="admin-header-inner">
         <div class="brand">
-          <span class="brand-name">App</span>
+          <span class="brand-name">APP</span>
           <span class="brand-div">|</span>
           <span class="brand-sub">管理画面</span>
         </div>

@@ -1,5 +1,5 @@
 // ============================================================
-//  apps/liff / composables/useLiff.ts
+//  composables/useLiff.ts
 //  LINE LIFF SDK の初期化と認証を管理する
 // ============================================================
 interface LiffState {
