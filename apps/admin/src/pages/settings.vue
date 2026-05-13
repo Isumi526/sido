@@ -13,7 +13,7 @@
             <td class="label-cell">{{ s.label }}</td>
             <td>
               <span v-if="editing !== s.key">{{ s.value }}</span>
-              <input v-else v-model="editValue" class="input-inline" type="number" @keyup.enter="save(s)" @keyup.escape="editing = null" />
+              <input v-else v-model="editValue" class="input-inline" :type="s.inputType ?? 'number'" @keyup.enter="save(s)" @keyup.escape="editing = null" />
             </td>
             <td class="actions">
               <template v-if="editing !== s.key">
@@ -37,7 +37,12 @@ import { ref, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 
-type Setting = { key: string; value: string; label: string }
+type Setting = { key: string; value: string; label: string; inputType?: string }
+
+// inputType を持たないものは 'number' 扱い（既存の燃料単価など）
+const DEFAULTS: Setting[] = [
+  { key: 'service_start_date', label: 'サービス開始日', value: '', inputType: 'date' },
+]
 
 const settings  = ref<Setting[]>([])
 const loading   = ref(false)
@@ -50,7 +55,15 @@ async function load() {
   loading.value = true
   const accountId = await getAccountId()
   const { data } = await supabase.from('settings').select('key, value, label').eq('account_id', accountId).order('key')
-  settings.value = (data ?? []) as Setting[]
+  const fromDb = (data ?? []) as Setting[]
+
+  // DEFAULTS にあるがDBにないものを末尾に追加（value=''で表示）
+  const dbKeys = new Set(fromDb.map(s => s.key))
+  const merged = [
+    ...fromDb.map(s => ({ ...s, inputType: DEFAULTS.find(d => d.key === s.key)?.inputType })),
+    ...DEFAULTS.filter(d => !dbKeys.has(d.key)),
+  ]
+  settings.value = merged
   loading.value = false
 }
 onMounted(load)
@@ -65,7 +78,11 @@ async function save(s: Setting) {
   saving.value = true; saveError.value = ''
   try {
     const accountId = await getAccountId()
-    await supabase.from('settings').update({ value: String(editValue.value), updated_at: new Date().toISOString() }).eq('key', s.key).eq('account_id', accountId)
+    const { error } = await supabase.from('settings').upsert(
+      { key: s.key, value: String(editValue.value), label: s.label, account_id: accountId, updated_at: new Date().toISOString() },
+      { onConflict: 'key,account_id' }
+    )
+    if (error) throw error
     s.value  = String(editValue.value)
     editing.value = null
   } catch (e: any) {
