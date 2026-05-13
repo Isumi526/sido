@@ -1,5 +1,5 @@
 // ============================================================
-//  apps/liff / composables/useAccount.ts
+//  composables/useAccount.ts
 //  アカウント（テナント）識別
 //  NUXT_PUBLIC_ACCOUNT_SLUG で切り替え
 //  local=test / Vercel=seed

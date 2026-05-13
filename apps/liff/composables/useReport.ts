@@ -1,5 +1,5 @@
 // ============================================================
-//  apps/liff / composables/useReport.ts
+//  composables/useReport.ts
 //  日報フォームの状態管理と送信処理
 // ============================================================
 import type { DailyReport, SiteReport, WorkerEntry, SubcontractorEntry, WorkerRole, VehicleExpense, LineItem } from '~/types'

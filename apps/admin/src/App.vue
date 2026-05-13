@@ -1,7 +1,7 @@
 <template>
   <div class="admin-shell">
     <nav class="sidebar">
-      <div class="logo">App<span class="logo-sub">管理</span></div>
+      <div class="logo">APP<span class="logo-sub">管理</span></div>
       <ul class="nav-list">
         <li><RouterLink to="/" class="nav-link">ダッシュボード</RouterLink></li>
         <li><RouterLink to="/site-reports" class="nav-link">現場別集計</RouterLink></li>

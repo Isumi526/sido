@@ -26,7 +26,7 @@
               <span class="doc-note">★必ず登録番号記入</span>
               <span class="doc-note">※領収書添付</span>
             </div>
-            <div class="doc-title">Sample Construction Co.様</div>
+            <div class="doc-title">御請求先</div>
             <div class="doc-name">氏名：{{ currentUser?.real_name }}</div>
           </div>
 

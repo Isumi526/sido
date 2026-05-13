@@ -1,5 +1,5 @@
 // ============================================================
-//  apps/liff / composables/useExpense.ts
+//  composables/useExpense.ts
 //  経費申請データの CRUD 操作
 // ============================================================
 import type { User, ExpenseItem, ExpenseItemInput, ExpenseRow } from '~/types'
@@ -57,7 +57,7 @@ function getCacheKey(lineUserId: string): string {
   const slug = typeof useRuntimeConfig !== 'undefined'
     ? ((useRuntimeConfig().public as any).accountSlug as string) || 'sample-construction'
     : 'sample-construction'
-  return `sido_eu_${slug}_${lineUserId}`
+  return `app_eu_${slug}_${lineUserId}`
 }
 
 function loadUserCache(lineUserId: string): User | null {
@@ -158,7 +158,7 @@ export const useExpense = () => {
       if (workerError) throw workerError
       workerId = newWorker.id
       // マスタキャッシュをクリアして次回取得時に新作業員が反映されるようにする
-      if (import.meta.client) localStorage.removeItem('sido_master_cache')
+      if (import.meta.client) localStorage.removeItem('app_master_cache')
     }
 
     const { data, error } = await supabase
