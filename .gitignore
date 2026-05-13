@@ -19,3 +19,6 @@ docs/proposals/
 *_契約書.md
 notion-sync.js
 memory/
+
+# GAS scriptId (sensitive)
+apps/gas/.clasp.json
