@@ -13,6 +13,7 @@
             <th>所属</th>
             <th>日当単価</th>
             <th>状態</th>
+            <th>ユーザー</th>
             <th></th>
           </tr>
         </thead>
@@ -22,6 +23,7 @@
             <td><span class="badge" :class="w.role">{{ w.role === 'factory' ? '工場/事務所' : '現場' }}</span></td>
             <td class="price">¥{{ w.unit_price.toLocaleString() }}</td>
             <td><span class="status" :class="w.active ? 'active' : 'off'">{{ w.active ? '有効' : '無効' }}</span></td>
+            <td><span class="user-link" :class="linkedWorkerIds.has(w.id) ? 'linked' : 'unlinked'">{{ linkedWorkerIds.has(w.id) ? '紐付け済み' : '未紐付け' }}</span></td>
             <td class="actions">
               <button class="btn-edit" @click="openEdit(w)">編集</button>
               <button class="btn-toggle" @click="toggleActive(w)">{{ w.active ? '無効化' : '有効化' }}</button>
@@ -66,19 +68,20 @@ import { getAccountId } from '../lib/account'
 
 type Worker = { id: string; name: string; role: 'factory' | 'site'; unit_price: number; active: boolean }
 
-const workers   = ref<Worker[]>([])
-const modal     = ref<Partial<Worker> | null>(null)
-const saving    = ref(false)
-const saveError = ref('')
+const workers        = ref<Worker[]>([])
+const linkedWorkerIds = ref<Set<string>>(new Set())
+const modal          = ref<Partial<Worker> | null>(null)
+const saving         = ref(false)
+const saveError      = ref('')
 
 async function load() {
   const accountId = await getAccountId()
-  const { data } = await supabase
-    .from('workers')
-    .select('id, name, role, unit_price, active')
-    .eq('account_id', accountId)
-    .order('role').order('sort_order')
-  workers.value = (data ?? []) as Worker[]
+  const [{ data: workersData }, { data: usersData }] = await Promise.all([
+    supabase.from('workers').select('id, name, role, unit_price, active').eq('account_id', accountId).order('role').order('sort_order'),
+    supabase.from('users').select('worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
+  ])
+  workers.value = (workersData ?? []) as Worker[]
+  linkedWorkerIds.value = new Set((usersData ?? []).map((u: any) => u.worker_id as string))
 }
 
 onMounted(load)
@@ -162,4 +165,7 @@ async function toggleActive(w: Worker) {
 .btn-save:disabled { opacity: .5; }
 .btn-cancel { flex: 1; background: #f5f5f5; color: #888; border: none; border-radius: 8px; padding: 12px; cursor: pointer; }
 .error { color: #E53935; font-size: 13px; }
+.user-link { font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 700; }
+.user-link.linked { background: #e8f4ff; color: #1a6fc4; }
+.user-link.unlinked { background: #f5f5f5; color: #bbb; }
 </style>
