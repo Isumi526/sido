@@ -32,7 +32,7 @@
 
         <!-- 編集モードバナー -->
         <div v-if="isEditMode" class="edit-banner">
-          ✏️ 過去の日報を編集中（Supabase のみ更新・GAS 再送なし）
+          ✏️ 過去の日報を編集中
         </div>
 
         <!-- 日付 -->
