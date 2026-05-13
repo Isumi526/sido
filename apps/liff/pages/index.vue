@@ -14,6 +14,7 @@
         <div class="success-mark">✓</div>
         <h2 class="state-title">送信済みです</h2>
         <p class="state-text">今日までの日報はすべて送信済みです</p>
+        <button class="btn-history" @click="navigateTo('/history')">日報履歴を見る</button>
       </div>
 
       <!-- 送信完了 / 更新完了 -->
