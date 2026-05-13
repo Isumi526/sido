@@ -625,7 +625,7 @@ function pushLineMessage(to, message) {
 //  提出管理・リマインダー
 // ============================================================
 
-var REMINDER_EXCLUDE_NAMES = ['REMOVED_HANDLE', 'REMOVED_NAME'];
+var REMINDER_EXCLUDE_NAMES = [];
 
 /**
  * 提出済み記録を保存 & 既知ユーザーに登録
