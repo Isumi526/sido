@@ -1,80 +1,106 @@
-***REMOVED***
+# Construction Field Report System
 
-Sample Construction Co.の施工台帳自動化システム
+A SaaS-style construction site management system for automating daily field reports.
 
-## プロジェクト構成
+## Features
+
+- **Daily Report Input**: Mobile-first LINE LIFF form for field workers
+- **Auto Sync**: Google Apps Script backend handles spreadsheet transfer + LINE notifications
+- **Admin Dashboard**: Site / worker / expense management
+- **Expense Tracking**: Vehicle, travel, hotel, garbage, and misc expenses with receipt upload
+- **Multi-tenant Ready**: Account-based data isolation via Supabase
+
+## Project Structure
 
 ```
-construction-field-report/
+/
 ├── apps/
-│   ├── liff/          # LINE LIFF 日報入力フォーム（Nuxt3）
-│   └── admin/         # 管理画面（今後開発予定）
+│   ├── liff/          # LINE LIFF daily report form (Nuxt3 / Vercel)
+│   └── admin/         # Admin dashboard (Vite + Vue3 / Vercel)
 ├── packages/
-│   ├── types/         # 共通型定義（TypeScript）
-│   └── utils/         # 共通ユーティリティ関数
+│   ├── types/         # Shared TypeScript types
+│   └── utils/         # Shared utility functions
 ├── supabase/
-│   └── migrations/    # DBマイグレーション（今後追加予定）
-└── docs/              # 設計ドキュメント
+│   └── migrations/    # DB migrations
+└── apps/gas/          # Google Apps Script backend
 ```
 
-## 技術スタック
+## Tech Stack
 
-| 役割 | 技術 |
-|------|------|
-| フロントエンド | Nuxt3 + Vue3 + TypeScript |
-| ホスティング | Vercel |
-| 認証 | LINE LIFF |
-| バックエンド（現在）| Google Apps Script |
-| バックエンド（予定）| Supabase |
-| 通知 | LINE Messaging API |
+| Role | Technology |
+|------|------------|
+| Frontend | Nuxt3 + Vue3 + TypeScript |
+| Hosting | Vercel |
+| Auth | LINE LIFF |
+| Backend | Google Apps Script |
+| Database | Supabase (PostgreSQL) |
+| Notifications | LINE Messaging API |
 
-## ロードマップ
+## Setup
 
-### Phase 1（現在）✅
-- LIFF日報入力フォーム
-- GAS経由でスプシ転記 + LINE通知
-
-### Phase 2（次）
-- Supabaseへのデータ保存
-- マスタデータのDB管理化（現場・作業員・業者）
-- 月次集計・レポート自動生成
-
-### Phase 3（将来）
-- 管理画面（`apps/admin`）
-- 複数テナント対応（他社展開）
-- 請求書管理との統合
-
-## セットアップ
-
-### LIFF アプリ
+### LIFF App
 
 ```bash
 cd apps/liff
 cp .env.example .env.local
-# .env.local を編集して各種IDを設定
+# Edit .env.local with your credentials
 
 npm install
 npm run dev
 ```
 
-### 必要な環境変数
-
-| 変数名 | 説明 |
-|--------|------|
-| `NUXT_PUBLIC_LIFF_ID` | LINE DevelopersのLIFF ID |
-| `NUXT_PUBLIC_GAS_URL` | GAS WebhookのデプロイURL |
-| `NUXT_PUBLIC_APP_ENV` | `development` or `production` |
-
-## デプロイ
+### Admin Dashboard
 
 ```bash
-# Vercelにデプロイ（apps/liff をルートとして設定）
-cd apps/liff
-npx vercel --prod
+cd apps/admin
+cp .env.example .env.local
+# Edit .env.local with your credentials
+
+npm install
+npm run dev
 ```
 
-Vercel Dashboard で以下の環境変数を設定：
-- `NUXT_PUBLIC_LIFF_ID`
-- `NUXT_PUBLIC_GAS_URL`
-- `NUXT_PUBLIC_APP_ENV=production`
-***REMOVED***
+### Required Environment Variables (LIFF)
+
+| Variable | Description |
+|----------|-------------|
+| `NUXT_PUBLIC_LIFF_ID` | LINE Developers LIFF ID |
+| `NUXT_PUBLIC_GAS_URL` | GAS Web App deploy URL |
+| `NUXT_PUBLIC_APP_ENV` | `development` or `production` |
+| `NUXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
+| `NUXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
+| `NUXT_PUBLIC_ACCOUNT_SLUG` | Account identifier slug |
+
+### GAS (Google Apps Script)
+
+Set the following in Script Properties (not in code):
+
+| Property | Description |
+|----------|-------------|
+| `LINE_TOKEN` | LINE Channel Access Token |
+| `GEMINI_API_KEY` | Google Gemini API Key |
+| `NOTIFY_GROUP_IDS` | JSON array of LINE Group IDs |
+| `SUPABASE_URL` | Supabase project URL |
+| `SUPABASE_ANON_KEY` | Supabase anon key |
+| `ACCOUNT_SLUG` | Account identifier slug |
+
+## Deploy
+
+```bash
+# Deploy LIFF to Vercel
+cd apps/liff && npx vercel --prod
+
+# Deploy Admin to Vercel
+cd apps/admin && npx vercel --prod
+
+# Push GAS
+cd apps/gas && clasp push
+# Then create a new version in the GAS editor
+```
+
+## Roadmap
+
+- [x] Phase 1 — LINE LIFF form + GAS spreadsheet transfer + LINE notifications
+- [x] Phase 1.5 — Supabase integration + admin dashboard
+- [ ] Phase 2 — Monthly aggregation reports, expense PDF generation
+- [ ] Phase 3 — Multi-tenant expansion
