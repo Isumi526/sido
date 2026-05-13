@@ -2,7 +2,7 @@
   <header class="app-nav no-print">
     <div class="app-nav-inner">
       <div class="app-brand">
-        <span class="app-brand-name">App</span>
+        <span class="app-brand-name">APP</span>
         <span class="app-brand-div">|</span>
         <span class="app-brand-sub">{{ subtitle }}</span>
       </div>

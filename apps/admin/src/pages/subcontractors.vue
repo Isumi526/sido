@@ -26,7 +26,7 @@
         <h2>{{ modal.id ? '業者を編集' : '業者を追加' }}</h2>
         <div class="field">
           <label>業者名</label>
-          <input v-model="modal.name" class="input" placeholder="例：VendorA" />
+          <input v-model="modal.name" class="input" placeholder="例：○○工務店" />
         </div>
         <div class="field">
           <label>区分</label>

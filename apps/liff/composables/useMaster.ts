@@ -1,56 +1,18 @@
 // ============================================================
 //  apps/liff / composables/useMaster.ts
 //  マスタデータ取得
-//  優先順: Supabase → GAS → フォールバック（ハードコード）
+//  優先順: Supabase → GAS → フォールバック（空）
 // ============================================================
 import type { MasterData } from '~/types'
 
 const FALLBACK: MasterData = {
-  sites: [],
-  workers: [
-    // 工場・事務所
-    { name: '今井',   unitPrice: 30000, role: 'factory' },
-    { name: '伊藤',   unitPrice: 23000, role: 'factory' },
-    { name: '野村',   unitPrice: 23000, role: 'factory' },
-    { name: '毛利',   unitPrice: 20000, role: 'factory' },
-    { name: '鵜飼',   unitPrice: 20000, role: 'factory' },
-    { name: '相馬',   unitPrice: 20000, role: 'factory' },
-    { name: 'Worker07', unitPrice: 20000, role: 'factory' },
-    { name: '前田',   unitPrice: 20000, role: 'factory' },
-    { name: 'ジェイ', unitPrice: 20000, role: 'factory' },
-    { name: 'ヌル',   unitPrice: 20000, role: 'factory' },
-    { name: 'デデ',   unitPrice: 20000, role: 'factory' },
-    { name: 'アチェ', unitPrice: 20000, role: 'factory' },
-    { name: '平床',   unitPrice: 20000, role: 'factory' },
-    { name: '作長',   unitPrice: 20000, role: 'factory' },
-    // 現場
-    { name: '大塚',       unitPrice: 30000, role: 'site' },
-    { name: '小島',       unitPrice: 30000, role: 'site' },
-    { name: '山本',       unitPrice: 20000, role: 'site' },
-    { name: 'Worker18',       unitPrice: 20000, role: 'site' },
-    { name: 'Worker19', unitPrice: 20000, role: 'site' },
-    { name: 'アリフ',     unitPrice: 20000, role: 'site' },
-    { name: 'Worker21',   unitPrice: 20000, role: 'site' },
-    { name: 'ハイ',       unitPrice: 20000, role: 'site' },
-    { name: 'ガイ',       unitPrice: 20000, role: 'site' },
-    { name: '辻',         unitPrice: 20000, role: 'site' },
-    { name: '佐藤',       unitPrice: 20000, role: 'site' },
-    { name: 'さや',       unitPrice: 20000, role: 'site' },
-    { name: '片岡',       unitPrice: 20000, role: 'site' },
-    { name: 'Worker28',       unitPrice: 20000, role: 'site' },
-    { name: '浅野',       unitPrice: 23000, role: 'site' },
-    { name: '横井',       unitPrice: 20000, role: 'site' },
-    { name: '白石',       unitPrice: 23000, role: 'site' },
-    { name: '香田',       unitPrice: 20000, role: 'site' },
-    { name: 'Worker33',       unitPrice: 20000, role: 'site' },
-    { name: 'Worker34',       unitPrice: 20000, role: 'site' },
-    { name: 'テストユーザー', unitPrice: 0, role: 'site' },
-  ],
-  subcontractors: ['VendorA', 'VendorB', 'VendorC', 'VendorD', 'VendorE', 'VendorF', 'VendorG', 'VendorH'],
-  vehicles: ['ハイエース', 'キャラバン', 'プロボックス', 'その他'],
+  sites:          [],
+  workers:        [{ name: 'テストユーザー', unitPrice: 0, role: 'site' }],
+  subcontractors: [],
+  vehicles:       ['ハイエース', 'キャラバン', 'プロボックス', 'その他'],
 }
 
-const CACHE_KEY = 'sido_master_cache'
+const CACHE_KEY = 'app_master_cache'
 const CACHE_TTL = 30 * 60 * 1000 // 30分
 
 function loadCache(): MasterData | null {

@@ -12,7 +12,7 @@
 
     <!-- レポート本体 -->
     <div v-else id="report">
-      <h1 class="company">Sample Construction Co.様</h1>
+      <h1 class="company">御請求先</h1>
 
       <div class="report-header">
         <div class="notes-left">

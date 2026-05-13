@@ -1,5 +1,5 @@
 // ============================================================
-//  apps/liff / composables/useSupabase.ts
+//  composables/useSupabase.ts
 //  Supabase クライアントのシングルトン
 // ============================================================
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'

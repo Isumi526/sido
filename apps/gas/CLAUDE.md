@@ -1,7 +1,7 @@
 # apps/gas — GAS (Google Apps Script) コード
 
 ## 概要
-Sample Construction Co.の施工台帳システムのバックエンド。
+施工台帳システムのバックエンド。
 LINE Messaging API の webhook 受信・GASスプレッドシート転記・LIFF日報フォームの処理を担う。
 
 ## デプロイ方法
@@ -78,16 +78,16 @@ apps/gas/
 {
   "action": "submitReport",
   "date": "2025-04-25",
-  "sender": "田中太郎",
+  "sender": "Worker01",
   "senderId": "Uxxxxxxxx",
   "sites": [
     {
-      "siteName": "BLH名古屋",
+      "siteName": "SampleSite",
       "workers": [
-        { "workerName": "アリフ", "workerRole": "site", "days": 1.0, "overtime": 0 }
+        { "workerName": "Worker20", "workerRole": "site", "days": 1.0, "overtime": 0 }
       ],
       "expenses": {
-        "vehicle": "ハイエース",
+        "vehicle": "Vehicle01",
         "distanceKm": 120,
         "dieselKm": 0,
         "parkingYen": 500,
@@ -105,12 +105,12 @@ apps/gas/
 ### getMaster レスポンス
 ```json
 {
-  "sites": ["BLH名古屋", "ギフト桜ステージ", ...],
+  "sites": ["SampleSite01", "SampleSite02", "..."],
   "workers": [
-    { "name": "今井", "unitPrice": 30000, "role": "factory" },
-    { "name": "アリフ", "unitPrice": 20000, "role": "site" }
+    { "name": "Worker01", "unitPrice": 30000, "role": "factory" },
+    { "name": "Worker20", "unitPrice": 20000, "role": "site" }
   ],
-  "subcontractors": ["VendorA", ...],
-  "vehicles": ["ハイエース", ...]
+  "subcontractors": ["VendorA", "..."],
+  "vehicles": ["Vehicle01", "..."]
 }
 ```
