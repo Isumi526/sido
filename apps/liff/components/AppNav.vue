@@ -38,6 +38,10 @@
             <span class="drawer-item-icon">📋</span>
             <span>日報登録</span>
           </NuxtLink>
+          <NuxtLink class="drawer-item" to="/history" @click="open = false">
+            <span class="drawer-item-icon">📝</span>
+            <span>日報履歴</span>
+          </NuxtLink>
           <NuxtLink class="drawer-item" to="/expense/download" @click="open = false">
             <span class="drawer-item-icon">📄</span>
             <span>経費PDF</span>

@@ -9,16 +9,22 @@
         <p class="state-text">読み込み中...</p>
       </div>
 
-      <!-- 送信完了 -->
-      <div v-else-if="report.submitted.value" class="state-screen">
+      <!-- 送信完了 / 更新完了 -->
+      <div v-else-if="report.submitted.value || editSubmitted" class="state-screen">
         <div class="success-mark">✓</div>
-        <h2 class="state-title">送信完了！</h2>
-        <p class="state-text">LINEグループに通知しました</p>
-        <button class="btn-primary" @click="handleReset">もう1件入力する</button>
+        <h2 class="state-title">{{ editSubmitted ? '更新しました！' : '送信完了！' }}</h2>
+        <p class="state-text">{{ editSubmitted ? '日報を更新しました' : 'LINEグループに通知しました' }}</p>
+        <button v-if="editSubmitted" class="btn-primary" @click="navigateTo('/history')">履歴に戻る</button>
+        <button v-else class="btn-primary" @click="handleReset">もう1件入力する</button>
       </div>
 
       <!-- フォーム -->
       <form v-else @submit.prevent="handleSubmit" class="form">
+
+        <!-- 編集モードバナー -->
+        <div v-if="isEditMode" class="edit-banner">
+          ✏️ 過去の日報を編集中（Supabase のみ更新・GAS 再送なし）
+        </div>
 
         <!-- 日付 -->
         <FormSection num="01" title="日付">
@@ -26,6 +32,8 @@
             v-model="report.form.value.date"
             type="date"
             class="input"
+            :readonly="isEditMode"
+            :style="isEditMode ? { background: '#f0f0f0', cursor: 'default' } : {}"
             required
           />
         </FormSection>
@@ -374,17 +382,17 @@
         </FormSection>
 
         <!-- エラー表示 -->
-        <div v-if="report.error.value" class="error-banner">
-          ⚠️ {{ report.error.value }}
+        <div v-if="report.error.value || editError" class="error-banner">
+          ⚠️ {{ report.error.value || editError }}
         </div>
 
         <!-- 送信ボタン -->
-        <button v-if="isDev" type="button" class="btn-dev" @click="fillTestData">🔧 テストデータ入力</button>
-        <button type="submit" class="btn-submit" :disabled="report.submitting.value">
-          <span v-if="report.submitting.value" class="submitting">
-            <span class="dot-spin" />送信中...
+        <button v-if="isDev && !isEditMode" type="button" class="btn-dev" @click="fillTestData">🔧 テストデータ入力</button>
+        <button type="submit" class="btn-submit" :disabled="isEditMode ? editSubmitting : report.submitting.value">
+          <span v-if="isEditMode ? editSubmitting : report.submitting.value" class="submitting">
+            <span class="dot-spin" />{{ isEditMode ? '更新中...' : '送信中...' }}
           </span>
-          <span v-else>日報を送信する →</span>
+          <span v-else>{{ isEditMode ? '日報を更新する →' : '日報を送信する →' }}</span>
         </button>
 
       </form>
@@ -394,9 +402,11 @@
 
 <script setup lang="ts">
 import { computeWorkerHours, getRateLines, calcBreakMinutes, TIME_OPTIONS } from '~/utils/workerHours'
+import { computeDiff } from '~/utils/diffReport'
 import type { User } from '~/types'
 
 const config  = useRuntimeConfig()
+const route   = useRoute()
 const liff    = useLiff()
 const master  = useMaster()
 const report  = useReport()
@@ -407,6 +417,13 @@ const currentUser = ref<User | null>(null)
 const isDev = computed(() => config.public.appEnv === 'development' || liff.isTester.value)
 
 const initializing = ref(true)
+
+// 編集モード
+const isEditMode      = ref(false)
+const originalReport  = ref<any>(null)  // 編集前のSupabaseデータ（差分計算用）
+const editSubmitting  = ref(false)
+const editSubmitted   = ref(false)
+const editError       = ref<string | null>(null)
 
 // 日付選択の範囲（今日・昨日のみ）
 const today     = new Date().toISOString().split('T')[0]
@@ -443,6 +460,62 @@ const createUsage = (): UsageState => ({
 
 const siteUsage = ref<UsageState[]>([createUsage()])
 
+// 保存済み経費データから あり/なし 状態を復元する
+function reconstructExpenseUsage(exp: any): UsageState {
+  const usage = createUsage()
+  if (!exp) return usage
+  if (exp.carpool) {
+    usage.vehicle = '乗合い'
+  } else if ((exp.vehicles ?? []).some((v: any) => v.vehicleName || v.distanceKm || v.dieselKm || v.parkingYen || v.highwayYen)) {
+    usage.vehicle = 'あり'
+  }
+  if ((exp.trains ?? []).some((t: any) => t.yen)) usage.train = 'あり'
+  if (exp.hotelYen)                                usage.hotel = 'あり'
+  if (exp.leopalaceYen)                            usage.leopalace = 'あり'
+  if (exp.garbageFactoryM3 || exp.garbageSiteM3)  usage.garbage = 'あり'
+  if ((exp.others ?? []).some((o: any) => o.yen || o.label)) usage.other = 'あり'
+  if (exp.entertainmentYen)                        usage.entertainment = 'あり'
+  return usage
+}
+
+// Supabaseから日報を読み込んでフォームに反映する
+async function loadEditData(date: string) {
+  const uid = liff.profile.value?.userId
+  if (!uid) return
+  const saved = await expense.getReport(uid, date)
+  if (!saved) return
+
+  originalReport.value = saved  // 差分計算のために保存
+
+  report.form.value.date = saved.date
+  isWorkingStr.value = saved.is_working ? 'working' : 'off'
+  report.form.value.note = saved.note ?? ''
+
+  if (saved.sites && saved.sites.length > 0) {
+    report.form.value.sites = saved.sites.map((site: any) => ({
+      siteName:       site.siteName ?? '',
+      customSiteName: site.customSiteName,
+      workers: (site.workers ?? []).length > 0
+        ? site.workers
+        : [{
+            ...createWorker(currentUser.value?.worker_role ?? 'site'),
+            workerName: currentUser.value?.real_name ?? '',
+            workerRole: currentUser.value?.worker_role ?? 'site',
+          }],
+      expenses: {
+        vehicles: [createVehicle()],
+        trains:   [createLineItem()],
+        others:   [createLineItem()],
+        ...(site.expenses ?? {}),
+      },
+      subcontractors: (site.subcontractors ?? []).length > 0 ? site.subcontractors : [createSub()],
+    }))
+    siteUsage.value = report.form.value.sites.map((site: any) =>
+      reconstructExpenseUsage(site.expenses)
+    )
+  }
+}
+
 // 「なし」に戻した時に対応する経費データをクリアする
 function setUsage(si: number, key: keyof UsageState, value: string) {
   siteUsage.value[si][key] = value
@@ -464,9 +537,6 @@ function setUsage(si: number, key: keyof UsageState, value: string) {
   }
   if (value !== 'なし') return
   switch (key) {
-    case 'vehicle':
-      exp.vehicles = [createVehicle()]; exp.vehicleFiles = undefined
-      break
     case 'train':
       exp.trains = [createLineItem()]; exp.trainFiles = undefined
       break
@@ -534,16 +604,80 @@ onMounted(async () => {
   }
 
   await masterPromise
+
+  // 編集モード: ?edit=YYYY-MM-DD
+  const editDate = route.query.edit as string | undefined
+  if (editDate) {
+    isEditMode.value = true
+    await loadEditData(editDate)
+  }
+
   initializing.value = false
 })
 
 async function handleSubmit() {
+  report.form.value.isWorking = isWorkingStr.value === 'working'
+
+  // ── 編集モード: Supabase のみ更新（GAS には再送しない）──
+  if (isEditMode.value) {
+    if (editSubmitting.value) return
+    editSubmitting.value = true
+    editError.value = null
+    try {
+      const uid = liff.profile.value?.userId
+      if (uid) {
+        await expense.saveReport(uid, {
+          date:      report.form.value.date,
+          isWorking: report.form.value.isWorking,
+          sites:     report.form.value.sites,
+          note:      report.form.value.note,
+        })
+      }
+
+      // 差分を計算してLINEグループに通知
+      if (originalReport.value && config.public.gasUrl) {
+        const diffs = computeDiff(originalReport.value, {
+          isWorking: report.form.value.isWorking,
+          sites:     report.form.value.sites,
+          note:      report.form.value.note,
+        })
+        if (diffs.length > 0) {
+          const now = new Date()
+          const editedAt = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+          const devExtra = (config.public.appEnv === 'development' || liff.isTester.value) && config.public.devNotifyGroupId
+            ? { _devNotifyGroupId: config.public.devNotifyGroupId }
+            : {}
+          fetch(config.public.gasUrl, {
+            method:  'POST',
+            mode:    'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body:    JSON.stringify({
+              action:   'notifyEdit',
+              sender:   currentUser.value?.real_name || '',
+              date:     report.form.value.date,
+              editedAt,
+              diffs,
+              ...devExtra,
+            }),
+          }).catch(e => console.error('[Edit] LINE通知エラー:', e))
+        }
+      }
+
+      editSubmitted.value = true
+    } catch (e) {
+      editError.value = e instanceof Error ? e.message : '更新に失敗しました'
+    } finally {
+      editSubmitting.value = false
+    }
+    return
+  }
+
+  // ── 新規送信 ──
   // 送信者を登録名で上書き（LINE表示名ではなく本名）
   if (currentUser.value) {
     report.form.value.sender   = currentUser.value.real_name
     report.form.value.senderId = liff.profile.value?.userId ?? ''
   }
-  report.form.value.isWorking = isWorkingStr.value === 'working'
   await report.submit()
 
   // GAS送信成功後にSupabaseにも保存
@@ -993,6 +1127,17 @@ html, body {
   border-radius: 8px;
   padding: 12px 16px;
   font-size: 13px;
+}
+
+/* ── 編集モードバナー ── */
+.edit-banner {
+  background: #fff8e1;
+  border: 1px solid #f0c030;
+  color: #7a6000;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 /* ── レスポンシブ ── */

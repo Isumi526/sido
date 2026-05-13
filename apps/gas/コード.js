@@ -949,8 +949,52 @@ function doPost(e) {
     if (body.action === 'uploadFiles') {
       return handleFileUploads(body);
     }
+    if (body.action === 'notifyEdit') {
+      return handleEditNotification(body);
+    }
   } catch (err) {
     Logger.log('doPost error: ' + err);
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: 'ok' }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * 日報編集通知ハンドラ
+ * LIFF側で計算した差分テキストをLINEグループに送信する
+ * @param {Object} body - { sender, date, editedAt, diffs: string[], _devNotifyGroupId? }
+ */
+function handleEditNotification(body) {
+  try {
+    var sender     = body.sender    || '不明';
+    var date       = body.date      || '';
+    var editedAt   = body.editedAt  || '';
+    var diffs      = body.diffs     || [];
+    var devGroupId = body._devNotifyGroupId || null;
+
+    if (diffs.length === 0) {
+      return ContentService.createTextOutput(JSON.stringify({ status: 'no_changes' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    var weekdays  = ['日', '月', '火', '水', '木', '金', '土'];
+    var d         = new Date(date + 'T00:00:00');
+    var dateLabel = (d.getMonth() + 1) + '月' + d.getDate() + '日（' + weekdays[d.getDay()] + '）';
+
+    var lines = [
+      '✏️ 日報を修正しました',
+      '📅 ' + dateLabel,
+      '👤 ' + sender,
+      '🕐 ' + editedAt + ' 更新',
+      '─────────────────',
+    ].concat(diffs);
+
+    var msg      = [{ type: 'text', text: lines.join('\n') }];
+    var groupIds = devGroupId ? [devGroupId] : (CONFIG.NOTIFY_GROUP_IDS || []);
+    groupIds.forEach(function(id) { pushLineMessages(id, msg); });
+
+  } catch (err) {
+    Logger.log('handleEditNotification error: ' + err);
   }
   return ContentService.createTextOutput(JSON.stringify({ status: 'ok' }))
     .setMimeType(ContentService.MimeType.JSON);

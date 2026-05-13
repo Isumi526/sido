@@ -320,5 +320,33 @@ export const useExpense = () => {
     return rows
   }
 
-  return { getUser, registerUser, addItem, getItems, deleteItem, saveReport, getExpenseRowsFromReports, clearUserCache }
+  /** 日報一覧を取得（新しい順） */
+  async function getReports(lineUserId: string, limit = 60): Promise<any[]> {
+    const user = await getUser(lineUserId)
+    if (!user) return []
+    const { data, error } = await supabase
+      .from('daily_reports')
+      .select('date, is_working, sites, note, updated_at')
+      .eq('user_id', user.id)
+      .order('date', { ascending: false })
+      .limit(limit)
+    if (error) { console.error('[useExpense] getReports:', error); return [] }
+    return data ?? []
+  }
+
+  /** 特定日の日報を1件取得 */
+  async function getReport(lineUserId: string, date: string): Promise<any | null> {
+    const user = await getUser(lineUserId)
+    if (!user) return null
+    const { data, error } = await supabase
+      .from('daily_reports')
+      .select('date, is_working, sites, note')
+      .eq('user_id', user.id)
+      .eq('date', date)
+      .maybeSingle()
+    if (error) { console.error('[useExpense] getReport:', error); return null }
+    return data
+  }
+
+  return { getUser, registerUser, addItem, getItems, deleteItem, saveReport, getExpenseRowsFromReports, getReports, getReport, clearUserCache }
 }
