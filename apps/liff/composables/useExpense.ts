@@ -320,6 +320,51 @@ export const useExpense = () => {
     return rows
   }
 
+  /**
+   * サービス開始日から今日までで、最初の未送信日を返す。
+   * 全日送信済みなら null を返す。
+   * service_start_date が未設定なら null を返す。
+   */
+  async function getNextUnsubmittedDate(lineUserId: string): Promise<string | null> {
+    const accountId = await getAccountId()
+
+    // service_start_date を settings から取得
+    const { data: setting } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('account_id', accountId)
+      .eq('key', 'service_start_date')
+      .maybeSingle()
+
+    const startDate = setting?.value
+    if (!startDate) return null
+
+    const user = await getUser(lineUserId)
+    if (!user) return null
+
+    const today = new Date().toISOString().split('T')[0]
+
+    // 開始日〜今日の送信済み日付を一括取得
+    const { data: reports } = await supabase
+      .from('daily_reports')
+      .select('date')
+      .eq('user_id', user.id)
+      .gte('date', startDate)
+      .lte('date', today)
+
+    const submittedDates = new Set((reports ?? []).map((r: any) => r.date))
+
+    // 開始日から順に走査して最初の未送信日を返す
+    const cursor = new Date(startDate + 'T00:00:00')
+    const end    = new Date(today    + 'T00:00:00')
+    while (cursor <= end) {
+      const dateStr = cursor.toISOString().split('T')[0]
+      if (!submittedDates.has(dateStr)) return dateStr
+      cursor.setDate(cursor.getDate() + 1)
+    }
+    return null
+  }
+
   /** 日報一覧を取得（新しい順） */
   async function getReports(lineUserId: string, limit = 60): Promise<any[]> {
     const user = await getUser(lineUserId)
@@ -348,5 +393,5 @@ export const useExpense = () => {
     return data
   }
 
-  return { getUser, registerUser, addItem, getItems, deleteItem, saveReport, getExpenseRowsFromReports, getReports, getReport, clearUserCache }
+  return { getUser, registerUser, addItem, getItems, deleteItem, saveReport, getExpenseRowsFromReports, getReports, getReport, getNextUnsubmittedDate, clearUserCache }
 }
