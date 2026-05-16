@@ -33,6 +33,7 @@ const CONFIG = (function() {
     SUPABASE_URL:       p.SUPABASE_URL,
     SUPABASE_ANON_KEY:  p.SUPABASE_ANON_KEY,
     ACCOUNT_SLUG:       p.ACCOUNT_SLUG || 'sample-construction',
+    LIFF_URL:           p.LIFF_URL || '',  // 例: https://your-liff-app.vercel.app
   };
 })();
 
@@ -147,10 +148,7 @@ function doPost(e) {
     if (body.action === 'submitReport') {
       return handleLiffReport(body);
     }
-    if (body.action === 'uploadFiles') {
-      return handleFileUploads(body);
-    }
-    if (body.action === 'notifyEdit') {
+if (body.action === 'notifyEdit') {
       return handleEditNotification(body);
     }
     if (body.action === 'notifyError') {
@@ -232,39 +230,10 @@ function handleLiffReport(body) {
     }
 
     var successSites = sites.map(function(s) { return s.siteName; }).filter(Boolean);
-    var garbageFolderUrls = {};
-    var expenseFileUrls   = {};
 
-    // Drive保存（ゴミ写真・経費ファイル）
-    sites.forEach(function(site) {
-      if (!site.siteName || !site.expenses) return;
-      var exp = site.expenses;
-
-      if ((exp.garbageFactoryM3 || exp.garbageSiteM3) && exp.garbagePhotos && exp.garbagePhotos.length > 0) {
-        var folderUrl = saveGarbagePhotos(exp.garbagePhotos, date, sender, site.siteName);
-        if (folderUrl) garbageFolderUrls[site.siteName] = folderUrl;
-      }
-
-      var siteFileUrls = {};
-      [
-        { key: 'vehicleFiles',       label: '車両' },
-        { key: 'trainFiles',         label: '電車' },
-        { key: 'hotelFiles',         label: 'ホテル' },
-        { key: 'leopalaceFiles',     label: 'レオパレス' },
-        { key: 'otherFiles',         label: 'その他経費' },
-        { key: 'entertainmentFiles', label: '雑経費' },
-      ].forEach(function(cat) {
-        var files = exp[cat.key];
-        if (files && files.length > 0) {
-          var urls = saveExpenseFiles(files, date, sender, site.siteName, cat.label);
-          if (urls && urls.length) siteFileUrls[cat.key] = urls;
-        }
-      });
-      if (Object.keys(siteFileUrls).length > 0) expenseFileUrls[site.siteName] = siteFileUrls;
-    });
-
+    // ファイルは Supabase Storage にアップロード済み → payload の *Urls をそのまま使用
     if (body.senderId) saveSubmitter(body.senderId, sender, date);
-    sendLiffReportNotification(sender, date, body.sites, successSites, [], note, body._devNotifyGroupId || null, garbageFolderUrls, expenseFileUrls);
+    sendLiffReportNotification(sender, date, body.sites, successSites, [], note, body._devNotifyGroupId || null);
 
     return jsonResponse({ success: true, successSites: successSites, failedSites: [] });
 
@@ -289,7 +258,7 @@ function handleLiffReport(body) {
 /**
  * LIFFフォーム送信後のLINE通知
  */
-function sendLiffReportNotification(sender, date, sites, successSites, failedSites, note, devGroupId, garbageFolderUrls, expenseFileUrls) {
+function sendLiffReportNotification(sender, date, sites, successSites, failedSites, note, devGroupId) {
   try {
     var d        = new Date(date + 'T00:00:00');
     var weekdays = ['日','月','火','水','木','金','土'];
@@ -309,7 +278,6 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
       // 作業員
       var workers = (site.workers || []).filter(function(w) { return w.workerName; });
       if (workers.length > 0) {
-        lines.push('');
         workers.forEach(function(w) {
           var parts = [];
           if (w.hoursNormal)        parts.push(w.hoursNormal + 'h');
@@ -362,14 +330,29 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
       if (exp.entertainmentYen) expLines.push((exp.entertainmentLabel || '雑経費') + ' ¥' + Number(exp.entertainmentYen).toLocaleString());
       if (exp.otherYen)         expLines.push('その他 ¥' + Number(exp.otherYen).toLocaleString());
       if (expLines.length > 0) {
-        lines.push('');
         expLines.forEach(function(l) { lines.push('・' + l); });
+      }
+
+      // 添付ファイル → 現場フォルダのビューアURLを1つ追加
+      var urlKeys = ['vehicleUrls','trainUrls','hotelUrls','leopalaceUrls','otherUrls','entertainmentUrls','garbagePhotoUrls'];
+      var firstFileUrl = null;
+      urlKeys.forEach(function(key) {
+        if (!firstFileUrl && exp[key] && exp[key].length) firstFileUrl = exp[key][0];
+      });
+      Logger.log('[FileURL] firstFileUrl=' + firstFileUrl + ' LIFF_URL=' + CONFIG.LIFF_URL);
+      if (firstFileUrl && CONFIG.LIFF_URL) {
+        var marker = '/expense-receipts/';
+        var idx = firstFileUrl.indexOf(marker);
+        if (idx !== -1) {
+          var withFile = firstFileUrl.slice(idx + marker.length);
+          var folderPath = withFile.substring(0, withFile.lastIndexOf('/'));
+          lines.push('📁 領収書: ' + CONFIG.LIFF_URL + '/files?path=' + encodeURIComponent(folderPath));
+        }
       }
 
       // 下請け業者
       var subs = (site.subcontractors || []).filter(function(s) { return s.subcontractorName; });
       if (subs.length > 0) {
-        lines.push('');
         subs.forEach(function(s) { lines.push('・' + s.subcontractorName + ' ' + s.count + '人'); });
       }
     });
@@ -427,10 +410,7 @@ function handleErrorNotification(body) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-/**
- * ファイルアップロード専用ハンドラ
- * Driveへの保存 + LINEフォローアップ通知
- */
+/** @deprecated Drive保存廃止 - Supabase Storageに移行済み
 function handleFileUploads(body) {
   try {
     var sender     = body.sender || '不明';
@@ -500,6 +480,7 @@ function handleFileUploads(body) {
   }
   return jsonResponse({ success: true });
 }
+*/
 
 /**
  * JSONレスポンスを返すユーティリティ
@@ -512,12 +493,9 @@ function jsonResponse(obj) {
 
 
 // ============================================================
-//  Google Drive 保存（ゴミ写真・経費ファイル）
+//  Google Drive 保存（廃止 - Supabase Storageに移行済み）
 // ============================================================
-
-/**
- * ゴミ写真をDriveに保存してフォルダURLを返す
- */
+/*
 function saveGarbagePhotos(base64Photos, date, senderName, siteName) {
   try {
     var root = DriveApp.getFolderById(CONFIG.DRIVE_ROOT_FOLDER_ID);
@@ -549,9 +527,7 @@ function saveGarbagePhotos(base64Photos, date, senderName, siteName) {
   }
 }
 
-/**
- * 経費ファイル（JPEG/PDF）をDriveに保存してURLリストを返す
- */
+// 経費ファイル（JPEG/PDF）をDriveに保存してURLリストを返す
 function saveExpenseFiles(dataUrls, date, senderName, siteName, category) {
   try {
     var root = DriveApp.getFolderById(CONFIG.DRIVE_ROOT_FOLDER_ID);
@@ -594,7 +570,7 @@ function saveExpenseFiles(dataUrls, date, senderName, siteName, category) {
     return null;
   }
 }
-
+*/
 
 // ============================================================
 //  LINE 送受信

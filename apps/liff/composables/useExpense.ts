@@ -300,21 +300,35 @@ export const useExpense = () => {
         const siteName = site.siteName === '__other__' ? (site.customSiteName || '') : (site.siteName || '')
         const exp      = site.expenses || {}
 
+        // ファイルURLを最初の行だけに添付するためのヘルパー
+        let vehicleUrlsAttached = false
+        const takeVehicleUrls = (): string[] | undefined => {
+          if (!vehicleUrlsAttached && exp.vehicleUrls?.length) { vehicleUrlsAttached = true; return exp.vehicleUrls }
+        }
+        let trainUrlsAttached = false
+        const takeTrainUrls = (): string[] | undefined => {
+          if (!trainUrlsAttached && exp.trainUrls?.length) { trainUrlsAttached = true; return exp.trainUrls }
+        }
+        let otherUrlsAttached = false
+        const takeOtherUrls = (): string[] | undefined => {
+          if (!otherUrlsAttached && exp.otherUrls?.length) { otherUrlsAttached = true; return exp.otherUrls }
+        }
+
         for (const veh of (exp.vehicles || [])) {
-          if (veh.distanceKm) rows.push({ date: rep.date, category: 'ガソリン代', siteName, amount: Math.round(veh.distanceKm * gasolineRate), liters: veh.distanceKm, note: veh.vehicleName })
-          if (veh.dieselKm)   rows.push({ date: rep.date, category: '軽油代',    siteName, amount: Math.round(veh.dieselKm   * dieselRate),   liters: veh.dieselKm,   note: veh.vehicleName })
-          if (veh.parkingYen) rows.push({ date: rep.date, category: '駐車代',    siteName, amount: veh.parkingYen })
-          if (veh.highwayYen) rows.push({ date: rep.date, category: '高速代',    siteName, amount: veh.highwayYen, note: veh.etcCard || '' })
+          if (veh.distanceKm) rows.push({ date: rep.date, category: 'ガソリン代', siteName, amount: Math.round(veh.distanceKm * gasolineRate), liters: veh.distanceKm, note: veh.vehicleName, fileUrls: takeVehicleUrls() })
+          if (veh.dieselKm)   rows.push({ date: rep.date, category: '軽油代',    siteName, amount: Math.round(veh.dieselKm   * dieselRate),   liters: veh.dieselKm,   note: veh.vehicleName, fileUrls: takeVehicleUrls() })
+          if (veh.parkingYen) rows.push({ date: rep.date, category: '駐車代',    siteName, amount: veh.parkingYen, fileUrls: takeVehicleUrls() })
+          if (veh.highwayYen) rows.push({ date: rep.date, category: '高速代',    siteName, amount: veh.highwayYen, note: veh.etcCard || '', fileUrls: takeVehicleUrls() })
         }
         for (const tr of (exp.trains || [])) {
-          if (tr.yen) rows.push({ date: rep.date, category: '電車代', siteName, amount: tr.yen, note: tr.label })
+          if (tr.yen) rows.push({ date: rep.date, category: '電車代', siteName, amount: tr.yen, note: tr.label, fileUrls: takeTrainUrls() })
         }
-        if (exp.hotelYen)         rows.push({ date: rep.date, category: '宿泊費',       siteName, amount: exp.hotelYen,         note: exp.hotelName,         registrationNumber: exp.hotelRegistration })
-        if (exp.leopalaceYen)     rows.push({ date: rep.date, category: '宿泊費',       siteName, amount: exp.leopalaceYen,     note: exp.leopalaceName,     registrationNumber: exp.leopalaceRegistration })
+        if (exp.hotelYen)     rows.push({ date: rep.date, category: '宿泊費', siteName, amount: exp.hotelYen,     note: exp.hotelName,     registrationNumber: exp.hotelRegistration,     fileUrls: exp.hotelUrls?.length     ? exp.hotelUrls     : undefined })
+        if (exp.leopalaceYen) rows.push({ date: rep.date, category: '宿泊費', siteName, amount: exp.leopalaceYen, note: exp.leopalaceName, registrationNumber: exp.leopalaceRegistration, fileUrls: exp.leopalaceUrls?.length ? exp.leopalaceUrls : undefined })
         for (const ot of (exp.others || [])) {
-          if (ot.yen) rows.push({ date: rep.date, category: 'その他', siteName, amount: ot.yen, note: ot.label, registrationNumber: ot.registrationNumber })
+          if (ot.yen) rows.push({ date: rep.date, category: 'その他', siteName, amount: ot.yen, note: ot.label, registrationNumber: ot.registrationNumber, fileUrls: takeOtherUrls() })
         }
-        if (exp.entertainmentYen) rows.push({ date: rep.date, category: 'その他雑経費', siteName, amount: exp.entertainmentYen, note: exp.entertainmentLabel, registrationNumber: exp.entertainmentRegistration })
+        if (exp.entertainmentYen) rows.push({ date: rep.date, category: 'その他雑経費', siteName, amount: exp.entertainmentYen, note: exp.entertainmentLabel, registrationNumber: exp.entertainmentRegistration, fileUrls: exp.entertainmentUrls?.length ? exp.entertainmentUrls : undefined })
       }
     }
     return rows

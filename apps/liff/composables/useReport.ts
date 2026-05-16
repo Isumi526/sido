@@ -3,7 +3,10 @@
 //  日報フォームの状態管理と送信処理
 // ============================================================
 import type { DailyReport, SiteReport, WorkerEntry, SubcontractorEntry, WorkerRole, VehicleExpense, LineItem } from '~/types'
-import { computeWorkerHours, calcBreakMinutes } from '~/utils/workerHours'
+import type { RateBreakdown } from '~/utils/workerHours'
+import { computeWorkerHours, calcBreakMinutes, parseMin } from '~/utils/workerHours'
+import { uploadExpenseFiles } from '~/utils/uploadExpenseFiles'
+import { getPeriodKey } from '~/composables/useExpense'
 
 export const createWorker = (role: WorkerRole = 'site'): WorkerEntry => ({
   workerId:     '',
@@ -23,9 +26,10 @@ export const createWorker = (role: WorkerRole = 'site'): WorkerEntry => ({
 })
 
 export const createSub = (): SubcontractorEntry => ({
-  subcontractorId:   '',
-  subcontractorName: '',
-  count:             1,
+  subcontractorId:          '',
+  subcontractorName:        '',
+  customSubcontractorName:  '',
+  count:                    1,
 })
 
 export const createVehicle = (): VehicleExpense => ({
@@ -42,10 +46,10 @@ export const createSite = (): SiteReport => ({
   siteName:       '',
   workers:        [createWorker()],
   expenses:       { vehicles: [createVehicle()], trains: [createLineItem()], others: [createLineItem()] },
-  subcontractors: [createSub()],
+  subcontractors: [],
 })
 
-// 経費オブジェクトからファイルデータだけ除去（本体送信用）
+// 経費オブジェクトから File[] フィールドを除去（GAS送信用 - *Urls は残す）
 function stripFiles(expenses: Record<string, unknown> | object): Record<string, unknown> {
   const { vehicleFiles, trainFiles, hotelFiles, leopalaceFiles, otherFiles, entertainmentFiles, garbagePhotos, ...rest } = expenses as any
   return rest
@@ -64,10 +68,22 @@ function stripEmpty(obj: unknown): unknown {
   return obj
 }
 
+// ファイルカテゴリ定義（*Files → *Urls のマッピング）
+const FILE_CATEGORIES = [
+  { filesKey: 'vehicleFiles',       urlsKey: 'vehicleUrls',       category: 'vehicle'       },
+  { filesKey: 'trainFiles',         urlsKey: 'trainUrls',         category: 'train'         },
+  { filesKey: 'hotelFiles',         urlsKey: 'hotelUrls',         category: 'hotel'         },
+  { filesKey: 'leopalaceFiles',     urlsKey: 'leopalaceUrls',     category: 'leopalace'     },
+  { filesKey: 'otherFiles',         urlsKey: 'otherUrls',         category: 'other'         },
+  { filesKey: 'entertainmentFiles', urlsKey: 'entertainmentUrls', category: 'entertainment' },
+  { filesKey: 'garbagePhotos',      urlsKey: 'garbagePhotoUrls',  category: 'garbage'       },
+] as const
+
 export const useReport = () => {
-  const config  = useRuntimeConfig()
+  const config   = useRuntimeConfig()
   const { profile, isTester } = useLiff()
-  const master  = useMaster()
+  const master   = useMaster()
+  const supabase = useSupabase()
 
   const submitting = ref(false)
   const submitted  = ref(false)
@@ -123,6 +139,64 @@ export const useReport = () => {
     // 送信日が日曜か判定
     const isSunday = new Date(form.value.date + 'T00:00:00').getDay() === 0
 
+    // ── ① ファイルを Supabase Storage にアップロードして *Urls にセット ──
+    const senderName  = form.value.sender
+    const accountSlug = (config.public.accountSlug as string) || 'default'
+    const periodKey   = getPeriodKey(form.value.date)          // 'YYYY-MM-first'
+    const periodHalf  = periodKey.split('-').pop() as string   // 'first' | 'second'
+
+    const uploadErrors: string[] = []
+
+    for (const site of form.value.sites) {
+      const siteName = site.siteName === '__other__'
+        ? (site.customSiteName || 'other')
+        : site.siteName
+      if (!siteName) continue
+
+      for (const { filesKey, urlsKey, category } of FILE_CATEGORIES) {
+        const files = (site.expenses as any)[filesKey] as File[] | undefined
+        if (!files?.length) continue
+        try {
+          const urls = await uploadExpenseFiles(
+            supabase, files, form.value.date, senderName, siteName, category, accountSlug, periodHalf
+          )
+          ;(site.expenses as any)[urlsKey] = urls
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e)
+          console.error(`[FileUpload] ${filesKey}:`, msg)
+          uploadErrors.push(`${category}: ${msg}`)
+        }
+      }
+    }
+
+    if (uploadErrors.length > 0) {
+      error.value = `ファイルのアップロードに失敗しました。送信を中止します。\n${uploadErrors.join('\n')}`
+      submitting.value = false
+      return
+    }
+
+    // 現場跨ぎ残業対応: 作業者ごとに startTime 順で累積稼働分を引き継いで計算
+    const workerAccum: Record<string, number> = {}
+    const computedBreakdowns = new WeakMap<object, RateBreakdown>()
+
+    const allEntries: { w: WorkerEntry }[] = []
+    form.value.sites.forEach(site => {
+      site.workers.forEach(w => {
+        if (w.workerName && !(w as any)._manualHours) allEntries.push({ w })
+      })
+    })
+    allEntries.sort((a, b) => parseMin(a.w.startTime || '08:00') - parseMin(b.w.startTime || '08:00'))
+
+    for (const { w } of allEntries) {
+      const key    = w.workerId || w.workerName
+      const accum  = workerAccum[key] ?? 0
+      const { workedMin, ...breakdown } = computeWorkerHours(
+        w.startTime, w.endTime, calcBreakMinutes(w.workerRole, w.startTime, w.endTime), isSunday, accum
+      )
+      workerAccum[key] = workedMin
+      computedBreakdowns.set(w, breakdown)
+    }
+
     // 空の作業員・下請けを除去 & 料率別時間を計算してセット
     const payload: DailyReport = {
       ...form.value,
@@ -137,10 +211,16 @@ export const useReport = () => {
             .map(w => {
               const r = (w as any)._manualHours
                 ? {}
-                : computeWorkerHours(w.startTime, w.endTime, calcBreakMinutes(w.workerRole, w.startTime, w.endTime), isSunday)
+                : (computedBreakdowns.get(w) ?? {})
               return { ...w, ...r }
             }),
-          subcontractors: site.subcontractors.filter(s => s.subcontractorName),
+          subcontractors: site.subcontractors
+            .filter(s => s.subcontractorName)
+            .map(s => s.subcontractorName === '__other__'
+              ? { ...s, subcontractorName: s.customSubcontractorName || '' }
+              : s
+            )
+            .filter(s => s.subcontractorName),
         }
       }),
     }
@@ -153,8 +233,7 @@ export const useReport = () => {
           ? { _devNotifyGroupId: config.public.devNotifyGroupId }
           : {}
 
-        // ── ① 本体送信（ファイルなし・await）──
-        // ファイルデータを除いた軽量ペイロードを await → スプレッドシート書き込み＋LINE通知が終わったらローディング終了
+        // ── ② GASに送信（File[] を除去・*Urls はそのまま含む）──
         const mainPayload = {
           ...payload,
           sites: payload.sites.map(site => ({
@@ -163,41 +242,21 @@ export const useReport = () => {
           })),
         }
         await fetch(config.public.gasUrl, {
-          method:  'POST',
-          mode:    'no-cors',
-          headers: { 'Content-Type': 'text/plain' },
-          body:    JSON.stringify(stripEmpty({ action: 'submitReport', ...mainPayload, ...devExtra })),
+          method:    'POST',
+          mode:      'no-cors',
+          keepalive: true,
+          headers:   { 'Content-Type': 'text/plain' },
+          body:      JSON.stringify(stripEmpty({ action: 'submitReport', ...mainPayload, ...devExtra })),
         })
-
-        // ── ② ファイルアップロード（fire-and-forget）──
-        const hasFiles = payload.sites.some(s => {
-          const e = s.expenses
-          return e.vehicleFiles?.length || e.trainFiles?.length || e.hotelFiles?.length ||
-                 e.leopalaceFiles?.length || e.otherFiles?.length || e.entertainmentFiles?.length ||
-                 e.garbagePhotos?.length
-        })
-        if (hasFiles) {
-          fetch(config.public.gasUrl, {
-            method:  'POST',
-            mode:    'no-cors',
-            headers: { 'Content-Type': 'text/plain' },
-            body:    JSON.stringify(stripEmpty({ action: 'uploadFiles', ...devExtra,
-              date:     payload.date,
-              sender:   payload.sender,
-              senderId: payload.senderId,
-              sites:    payload.sites.map(s => ({
-                siteName: s.siteName,
-                expenses: s.expenses,
-              })),
-            })),
-          }).catch(e => console.error('[Report] ファイルアップロードエラー:', e))
-        }
       }
       submitted.value = true
 
-      // ── ③ 新規現場を Supabase に保存（fire-and-forget）──
+      // ── ③ 新規現場・新規下請けを Supabase に保存（fire-and-forget）──
       for (const site of payload.sites) {
         if (site.siteName) master.saveSite(site.siteName)
+        for (const sub of site.subcontractors) {
+          if (sub.subcontractorName && sub.subcontractorName !== '__other__') master.saveSub(sub.subcontractorName)
+        }
       }
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : '送信に失敗しました'

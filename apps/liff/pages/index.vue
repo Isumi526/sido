@@ -88,19 +88,9 @@
 
           <!-- ── 稼働 ── -->
           <div class="sub-section">
-            <div class="sub-section-title">稼働</div>
 
             <!-- 作業員（ログインユーザー固定） -->
-            <Field label="作業員">
-              <!-- ユーザーバッジ -->
-              <div class="worker-self">
-                <div class="worker-self-avatar">{{ currentUser?.real_name?.charAt(0) ?? '?' }}</div>
-                <div class="worker-self-info">
-                  <div class="worker-self-name">{{ currentUser?.real_name }}</div>
-                  <span class="worker-self-role">{{ currentUser?.worker_role === 'factory' ? '工場 / 事務所' : '現場' }}</span>
-                </div>
-              </div>
-
+            <Field>
               <!-- 時刻・休憩 -->
               <template v-if="site.workers[0]">
                 <div class="worker-time-rows">
@@ -108,7 +98,7 @@
                     <div class="time-field">
                       <label class="hours-label">開始</label>
                       <select v-model="site.workers[0].startTime" class="select">
-                        <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
+                        <option v-for="t in startTimeOptionsForSite(si)" :key="t" :value="t">{{ t }}</option>
                       </select>
                     </div>
                     <span class="time-sep">〜</span>
@@ -131,11 +121,11 @@
                   </div>
                 </div>
 
-                <!-- 料率プレビュー -->
+                <!-- 料率プレビュー（現場跨ぎ累積対応） -->
                 <div class="rate-preview">
-                  <template v-if="getRateLines(computeWorkerHours(site.workers[0].startTime, site.workers[0].endTime, calcBreakMinutes(site.workers[0].workerRole, site.workers[0].startTime, site.workers[0].endTime), isSunday)).length">
+                  <template v-if="sitePreviewBreakdowns[si] && getRateLines(sitePreviewBreakdowns[si]).length">
                     <div
-                      v-for="line in getRateLines(computeWorkerHours(site.workers[0].startTime, site.workers[0].endTime, calcBreakMinutes(site.workers[0].workerRole, site.workers[0].startTime, site.workers[0].endTime), isSunday))"
+                      v-for="line in getRateLines(sitePreviewBreakdowns[si])"
                       :key="line.label"
                       class="rate-line"
                     >
@@ -151,20 +141,38 @@
 
             <!-- 下請け業者 -->
             <Field label="下請け業者">
-              <div v-for="(sub, si2) in site.subcontractors" :key="si2" class="row-worker">
-                <select v-model="sub.subcontractorName" class="select">
-                  <option value="">業者選択</option>
-                  <option v-for="name in master.subcontractorNames.value" :key="name" :value="name">{{ name }}</option>
-                </select>
-                <input v-model.number="sub.count" type="number" min="1" max="20" class="input select--h" placeholder="人数" />
-                <button v-if="site.subcontractors.length > 1" type="button" class="btn-icon-sm" @click="report.removeSub(si, si2)">✕</button>
+              <div v-for="(sub, si2) in site.subcontractors" :key="si2">
+                <div class="row-worker">
+                  <select v-model="sub.subcontractorName" class="select" :class="{ 'select--error': sub.subcontractorName === '' }">
+                    <option value="" disabled>業者を選択 *</option>
+                    <option v-for="name in master.subcontractorNames.value" :key="name" :value="name">{{ name }}</option>
+                    <option value="__other__">その他（新規追加）</option>
+                  </select>
+                  <input v-model.number="sub.count" type="number" min="1" max="20" class="input select--h" placeholder="人数" />
+                  <button type="button" class="btn-icon-sm" @click="report.removeSub(si, si2)">✕</button>
+                </div>
+                <input
+                  v-if="sub.subcontractorName === '__other__'"
+                  v-model="sub.customSubcontractorName"
+                  class="input"
+                  placeholder="業者名を入力 *"
+                  style="margin-top: -4px; margin-bottom: 8px;"
+                />
               </div>
               <button type="button" class="btn-ghost-sm" @click="report.addSub(si)">＋ 業者を追加</button>
             </Field>
           </div>
 
+          <!-- 経費有無 -->
+          <Field label="経費">
+            <select :value="siteUsage[si].expense" class="select select--usage" @change="(e) => setUsage(si, 'expense', (e.target as HTMLSelectElement).value)">
+              <option value="なし">なし</option>
+              <option value="あり">あり</option>
+            </select>
+          </Field>
+
           <!-- ── 交通経費 ── -->
-          <div class="sub-section">
+          <div v-if="siteUsage[si].expense === 'あり'" class="sub-section">
             <div class="sub-section-title">交通経費</div>
 
             <!-- 車両 -->
@@ -244,7 +252,7 @@
           </div>
 
           <!-- ── 現場経費 ── -->
-          <div class="sub-section">
+          <div v-if="siteUsage[si].expense === 'あり'" class="sub-section">
             <div class="sub-section-title">現場経費</div>
 
             <!-- ホテル -->
@@ -369,7 +377,10 @@
 
         <!-- 現場追加 -->
         <button type="button" class="btn-add-site" @click="addSite()">
-          ＋ 現場を追加する
+          <span class="btn-add-site__icon">＋</span>
+          <span class="btn-add-site__text">
+            {{ report.form.value.sites.length + 1 }}個目の現場を追加する
+          </span>
         </button>
 
         </template><!-- /isWorkingStr === 'working' -->
@@ -413,7 +424,8 @@
 </template>
 
 <script setup lang="ts">
-import { computeWorkerHours, getRateLines, calcBreakMinutes, TIME_OPTIONS } from '~/utils/workerHours'
+import { computeWorkerHours, getRateLines, calcBreakMinutes, parseMin, TIME_OPTIONS } from '~/utils/workerHours'
+import type { RateBreakdown } from '~/utils/workerHours'
 import { computeDiff } from '~/utils/diffReport'
 import type { User } from '~/types'
 
@@ -459,8 +471,35 @@ const isSunday = computed(() =>
   new Date(report.form.value.date + 'T00:00:00').getDay() === 0
 )
 
+// 現場跨ぎ残業対応: 各現場の workers[0] のプレビュー用 breakdown（startTime 順で累積）
+const sitePreviewBreakdowns = computed((): Record<number, RateBreakdown> => {
+  const sites  = report.form.value.sites
+  const sun    = isSunday.value
+  const accum: Record<string, number> = {}
+  const result: Record<number, RateBreakdown> = {}
+
+  const entries = sites
+    .map((site, si) => ({ si, w: site.workers[0] }))
+    .filter(e => !!e.w)
+
+  entries.sort((a, b) =>
+    parseMin(a.w?.startTime || '08:00') - parseMin(b.w?.startTime || '08:00')
+  )
+
+  for (const { si, w } of entries) {
+    const key = w.workerId || w.workerName || `site-${si}`
+    const brk = calcBreakMinutes(w.workerRole, w.startTime, w.endTime)
+    const { workedMin, ...breakdown } = computeWorkerHours(w.startTime, w.endTime, brk, sun, accum[key] ?? 0)
+    accum[key] = workedMin
+    result[si] = breakdown
+  }
+
+  return result
+})
+
 // ── 各経費セクションの あり/なし 状態（サイトごと） ──
 type UsageState = {
+  expense:       string
   vehicle:       string
   train:         string
   hotel:         string
@@ -471,6 +510,7 @@ type UsageState = {
 }
 
 const createUsage = (): UsageState => ({
+  expense:       'なし',
   vehicle:       'なし',
   train:         'なし',
   hotel:         'なし',
@@ -497,6 +537,11 @@ function reconstructExpenseUsage(exp: any): UsageState {
   if (exp.garbageFactoryM3 || exp.garbageSiteM3)  usage.garbage = 'あり'
   if ((exp.others ?? []).some((o: any) => o.yen || o.label)) usage.other = 'あり'
   if (exp.entertainmentYen)                        usage.entertainment = 'あり'
+  // いずれかの経費があれば expense = あり
+  if (usage.vehicle !== 'なし' || usage.train !== 'なし' || usage.hotel !== 'なし' ||
+      usage.leopalace !== 'なし' || usage.garbage !== 'なし' ||
+      usage.other !== 'なし' || usage.entertainment !== 'なし')
+    usage.expense = 'あり'
   return usage
 }
 
@@ -530,7 +575,7 @@ async function loadEditData(date: string) {
         others:   [createLineItem()],
         ...(site.expenses ?? {}),
       },
-      subcontractors: (site.subcontractors ?? []).length > 0 ? site.subcontractors : [createSub()],
+      subcontractors: site.subcontractors ?? [],
     }))
     siteUsage.value = report.form.value.sites.map((site: any) =>
       reconstructExpenseUsage(site.expenses)
@@ -593,17 +638,42 @@ function initWorkers() {
 }
 
 function addSite() {
+  // 追加前に前現場の終了時刻を取得（日跨ぎでなければ次現場の開始時刻に使う）
+  const sites = report.form.value.sites
+  const prevWorker   = sites.length > 0 ? sites[sites.length - 1].workers[0] : null
+  const prevEndTime  = prevWorker?.endTime
+  const prevStartMin = parseMin(prevWorker?.startTime || '08:00')
+  const prevEndMin   = parseMin(prevEndTime           || '17:30')
+  const autoStart    = (prevEndTime && prevEndMin > prevStartMin) ? prevEndTime : undefined
+  // 終了時刻 = 開始時刻 + 4h（23:30 を上限）
+  const autoEndMin   = autoStart ? Math.min(prevEndMin + 240, 23 * 60 + 30) : undefined
+  const autoEnd      = autoEndMin != null
+    ? `${String(Math.floor(autoEndMin / 60)).padStart(2, '0')}:${autoEndMin % 60 === 0 ? '00' : '30'}`
+    : undefined
+
   report.addSite()
   siteUsage.value.push(createUsage())
-  // 追加したサイトにもログインユーザーをセット
   if (currentUser.value) {
     const newSite = report.form.value.sites[report.form.value.sites.length - 1]
     newSite.workers = [{
       ...createWorker(currentUser.value.worker_role),
       workerName: currentUser.value.real_name,
       workerRole: currentUser.value.worker_role,
+      // 2つ目以降: 開始=前現場の終了、終了=開始+4h
+      ...(autoStart ? { startTime: autoStart, endTime: autoEnd } : {}),
     }]
   }
+}
+
+/** 開始時刻のオプション: si>0 の場合は前現場の終了時刻より前を除外（日跨ぎ除く） */
+function startTimeOptionsForSite(si: number): string[] {
+  if (si === 0) return TIME_OPTIONS
+  const prev = report.form.value.sites[si - 1]?.workers[0]
+  if (!prev) return TIME_OPTIONS
+  const prevEndMin   = parseMin(prev.endTime   || '17:30')
+  const prevStartMin = parseMin(prev.startTime  || '08:00')
+  if (prevEndMin <= prevStartMin) return TIME_OPTIONS  // 日跨ぎは制限なし
+  return TIME_OPTIONS.filter(t => parseMin(t) >= prevEndMin)
 }
 function removeSite(i: number) {
   report.removeSite(i)
@@ -679,7 +749,6 @@ const linePreview = computed(() => {
     // 稼働時間（名前なし・時間のみ）
     const workers = (site.workers || []).filter((w: any) => w.workerName)
     if (workers.length > 0) {
-      lines.push('')
       for (const w of workers) {
         const brk = calcBreakMinutes(w.workerRole || 'site', w.startTime || '08:00', w.endTime || '17:30')
         const h   = computeWorkerHours(w.startTime || '08:00', w.endTime || '17:30', brk, sunday)
@@ -730,11 +799,16 @@ const linePreview = computed(() => {
     }
     if (exp.entertainmentYen)
       expLines.push(`${exp.entertainmentLabel || '雑経費'} ¥${Number(exp.entertainmentYen).toLocaleString()}`)
-    if (expLines.length) { lines.push(''); expLines.forEach(l => lines.push(`・${l}`)) }
+    if (expLines.length) { expLines.forEach(l => lines.push(`・${l}`)) }
 
     // 下請け業者
     const subs = (site.subcontractors || []).filter((s: any) => s.subcontractorName)
-    if (subs.length) { lines.push(''); subs.forEach((s: any) => lines.push(`・${s.subcontractorName} ${s.count}人`)) }
+    if (subs.length) {
+      subs.forEach((s: any) => {
+        const name = s.subcontractorName === '__other__' ? (s.customSubcontractorName || '新規業者') : s.subcontractorName
+        lines.push(`・${name} ${s.count}人`)
+      })
+    }
   }
 
   if (form.note) lines.push(`\n📝 ${form.note}`)
@@ -850,11 +924,9 @@ async function handleSubmit() {
     return
   }
 
-  await report.submit()
-
-  // GAS送信成功後にSupabaseにも保存
-  if (!report.error.value && liff.profile.value?.userId) {
-    const uid = liff.profile.value.userId
+  // ① Supabaseに先に保存（画面を閉じてもデータが消えないよう順序を優先）
+  const uid = liff.profile.value?.userId
+  if (uid) {
     try {
       await expense.saveReport(uid, {
         date:      report.form.value.date,
@@ -872,8 +944,26 @@ async function handleSubmit() {
         await navigateTo('/register')
         return
       }
+      // DB保存失敗でもGAS送信は続行（LINE通知は止めない）
     }
-    // 次の未送信日を取得してサクセス画面に表示
+  }
+
+  // ② GASに送信（LINE通知・keepalive: true でページ閉じても通信継続）
+  // ※ ファイルアップロードも内部で行われ、*Urls が sites にセットされる
+  await report.submit()
+
+  // ③ ファイルアップロード後に *Urls を含めて Supabase を再保存（URLを反映するため）
+  if (!report.error.value && uid) {
+    expense.saveReport(uid, {
+      date:      report.form.value.date,
+      isWorking: report.form.value.isWorking,
+      sites:     report.form.value.sites,
+      note:      report.form.value.note,
+    }).catch(e => console.error('[Report] URL再保存エラー:', e))
+  }
+
+  // ④ 次の未送信日を取得してサクセス画面に表示
+  if (!report.error.value && uid) {
     const next = await expense.getNextUnsubmittedDate(uid).catch(() => null)
     if (next && next !== 'NOT_CONFIGURED') {
       nextUnsubmittedDate.value = next
@@ -900,38 +990,20 @@ async function handleReset() {
   await master.fetch(true)
 }
 
-async function handleExpenseFile(
+function handleExpenseFile(
   si: number,
   field: 'vehicleFiles' | 'trainFiles' | 'hotelFiles' | 'leopalaceFiles' | 'otherFiles' | 'entertainmentFiles',
   event: Event
 ) {
   const input = event.target as HTMLInputElement
   if (!input.files?.length) return
-  const files: string[] = []
-  for (const file of Array.from(input.files)) {
-    const dataUrl = await new Promise<string>((resolve) => {
-      const reader = new FileReader()
-      reader.onload = (e) => resolve(e.target?.result as string)
-      reader.readAsDataURL(file)
-    })
-    files.push(dataUrl)
-  }
-  report.form.value.sites[si].expenses[field] = files
+  report.form.value.sites[si].expenses[field] = Array.from(input.files)
 }
 
-async function handleGarbagePhoto(si: number, event: Event) {
+function handleGarbagePhoto(si: number, event: Event) {
   const input = event.target as HTMLInputElement
   if (!input.files?.length) return
-  const photos: string[] = []
-  for (const file of Array.from(input.files)) {
-    const base64 = await new Promise<string>((resolve) => {
-      const reader = new FileReader()
-      reader.onload = (e) => resolve((e.target?.result as string).split(',')[1])
-      reader.readAsDataURL(file)
-    })
-    photos.push(base64)
-  }
-  report.form.value.sites[si].expenses.garbagePhotos = photos
+  report.form.value.sites[si].expenses.garbagePhotos = Array.from(input.files)
 }
 
 function fillTestData() {
@@ -946,8 +1018,6 @@ function fillTestData() {
   // マスタから取得
   const sub = master.subcontractorNames.value
 
-  const dummyPhoto   = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
-  const dummyDataUrl = 'data:image/png;base64,' + dummyPhoto
   const hasExisting = master.siteNames.value.length > 0
 
   if (hasExisting) {
@@ -955,37 +1025,34 @@ function fillTestData() {
     const site0 = report.form.value.sites[0]
     site0.siteName = master.siteNames.value[0]
     // workers はログインユーザー固定 → 時刻だけ上書き
-    if (site0.workers[0]) { site0.workers[0].startTime = '08:00'; site0.workers[0].endTime = '23:30' }
-    site0.subcontractors = [{ subcontractorId: '', subcontractorName: sub[0] || '', count: 2 }]
+    if (site0.workers[0]) { site0.workers[0].startTime = '08:00'; site0.workers[0].endTime = '17:30' }
+    site0.subcontractors = [
+      { subcontractorId: '', subcontractorName: sub[0] || '__other__', customSubcontractorName: sub[0] ? '' : 'テスト業者A', count: 2 },
+      { subcontractorId: '', subcontractorName: '__other__', customSubcontractorName: '新規テスト業者', count: 1 },
+    ]
+    siteUsage.value[0].expense = 'あり'
     siteUsage.value[0].vehicle = 'あり'
     site0.expenses.carpool = false
     site0.expenses.vehicles = [{ vehicleName: 'ハイエース', distanceKm: 80, dieselKm: undefined, parkingYen: 500, highwayYen: 1200, etcUsed: true, etcCard: 'カード①' }]
-    site0.expenses.vehicleFiles = [dummyDataUrl]
     siteUsage.value[0].train = 'あり'
     site0.expenses.trains = [{ label: '名古屋→大阪', yen: 3000 }]
-    site0.expenses.trainFiles = [dummyDataUrl]
     siteUsage.value[0].hotel = 'あり'
     site0.expenses.hotelName = 'アパホテル名古屋'
     site0.expenses.hotelYen  = 8000
     site0.expenses.hotelRegistration = 'T1234567890123'
-    site0.expenses.hotelFiles = [dummyDataUrl, dummyDataUrl]
     siteUsage.value[0].leopalace = 'あり'
     site0.expenses.leopalaceName = 'レオパレス栄'
     site0.expenses.leopalaceYen  = 50000
     site0.expenses.leopalaceRegistration = 'T9876543210987'
-    site0.expenses.leopalaceFiles = [dummyDataUrl]
     siteUsage.value[0].garbage = 'あり'
     site0.expenses.garbageFactoryM3 = 3
     site0.expenses.garbageSiteM3    = 5
-    site0.expenses.garbagePhotos = [dummyPhoto, dummyPhoto]
     siteUsage.value[0].other = 'あり'
     site0.expenses.others = [{ label: '養生テープ', yen: 1500, registrationNumber: 'ナシ' }]
-    site0.expenses.otherFiles = [dummyDataUrl]
     siteUsage.value[0].entertainment = 'あり'
     site0.expenses.entertainmentLabel = '懇親会'
     site0.expenses.entertainmentYen   = 10000
     site0.expenses.entertainmentRegistration = 'T1111222233334'
-    site0.expenses.entertainmentFiles = [dummyDataUrl]
 
     // ── 現場2（新規現場「その他」） ── を追加
     addSite()
@@ -996,27 +1063,26 @@ function fillTestData() {
   const siteN = report.form.value.sites[newIdx]
   siteN.siteName = '__other__'
   siteN.customSiteName = 'テスト新規現場'
-  // workers はログインユーザー固定 → 時刻はデフォルトのまま
-  siteN.subcontractors = [{ subcontractorId: '', subcontractorName: sub[1] || sub[0] || '', count: 1 }]
+  // workers はログインユーザー固定 → addSite() で17:30〜21:30 が自動セット済み
+  siteN.subcontractors = [
+    { subcontractorId: '', subcontractorName: sub[1] || sub[0] || '__other__', customSubcontractorName: (sub[1] || sub[0]) ? '' : 'テスト業者B', count: 1 },
+  ]
+  siteUsage.value[newIdx].expense = 'あり'
   siteUsage.value[newIdx].vehicle = '乗合い'
   siteN.expenses.carpool = true
   siteN.expenses.vehicles = []
-  siteN.expenses.vehicleFiles = undefined
   siteUsage.value[newIdx].train = 'あり'
   siteN.expenses.trains = [{ label: '大阪→名古屋', yen: 2500 }]
-  siteN.expenses.trainFiles = [dummyDataUrl]
   siteUsage.value[newIdx].garbage = 'あり'
   siteN.expenses.garbageFactoryM3 = 2
   siteN.expenses.garbageSiteM3    = 4
-  siteN.expenses.garbagePhotos = [dummyPhoto]
+  siteN.expenses.garbagePhotoUrls = [`https://nrzzesbtvswoiouhldvi.supabase.co/storage/v1/object/public/expense-receipts/${folderN}/garbage_1.jpg`]
   siteUsage.value[newIdx].other = 'あり'
   siteN.expenses.others = [{ label: 'ビニールシート', yen: 800, registrationNumber: 'ナシ' }]
-  siteN.expenses.otherFiles = [dummyDataUrl]
   siteUsage.value[newIdx].entertainment = 'あり'
   siteN.expenses.entertainmentLabel = '昼食代'
   siteN.expenses.entertainmentYen   = 5000
   siteN.expenses.entertainmentRegistration = 'ナシ'
-  siteN.expenses.entertainmentFiles = [dummyDataUrl]
 }
 </script>
 
@@ -1124,6 +1190,7 @@ html, body {
 }
 .select--h     { width: 100%; }
 .select--usage { width: 90px; flex-shrink: 0; }
+.select--error { border-color: #f87171 !important; }
 .textarea { resize: vertical; }
 
 /* ── サブセクション ── */
@@ -1279,13 +1346,17 @@ html, body {
 }
 
 .btn-add-site {
-  width: 100%; background: transparent;
-  border: 2px dashed var(--border); border-radius: var(--radius);
-  color: var(--text2); font-size: 14px; font-family: var(--font);
-  padding: 16px; cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
+  width: 100%;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  background: #f0fdf4;
+  border: 2px dashed #86efac; border-radius: var(--radius);
+  color: #16a34a; font-size: 15px; font-weight: 700; font-family: var(--font);
+  padding: 18px 16px; cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
 }
-.btn-add-site:hover { border-color: var(--accent); color: var(--accent); }
+.btn-add-site:hover { background: #dcfce7; border-color: var(--accent); }
+.btn-add-site__icon { font-size: 20px; line-height: 1; }
+.btn-add-site__text { letter-spacing: 0.5px; }
 
 /* ── devツールボタン ── */
 .btn-dev {

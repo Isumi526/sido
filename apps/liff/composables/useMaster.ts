@@ -105,7 +105,6 @@ export const useMaster = () => {
       await supabase
         .from('sites')
         .upsert({ name: name.trim(), account_id: accountId }, { onConflict: 'name,account_id' })
-      // ローカルのマスタにも即時追加（重複チェック）
       if (!master.value.sites.includes(name.trim())) {
         master.value = { ...master.value, sites: [...master.value.sites, name.trim()].sort((a, b) => a.localeCompare(b, 'ja')) }
         saveCache(master.value)
@@ -115,11 +114,31 @@ export const useMaster = () => {
     }
   }
 
+  /** 下請け業者名を Supabase に保存 */
+  async function saveSub(name: string) {
+    if (!name.trim()) return
+    try {
+      const supabase  = useSupabase()
+      const { getAccountId } = useAccount()
+      const accountId = await getAccountId()
+      await supabase
+        .from('subcontractors')
+        .upsert({ name: name.trim(), account_id: accountId }, { onConflict: 'name,account_id' })
+      if (!master.value.subcontractors.includes(name.trim())) {
+        master.value = { ...master.value, subcontractors: [...master.value.subcontractors, name.trim()].sort((a, b) => a.localeCompare(b, 'ja')) }
+        saveCache(master.value)
+      }
+    } catch (e) {
+      console.warn('[Master] saveSub 失敗:', e)
+    }
+  }
+
   return {
     master:          readonly(master),
     loading:         readonly(loading),
     fetch,
     saveSite,
+    saveSub,
     siteNames:           computed(() => master.value.sites.slice().sort((a, b) => a.localeCompare(b, 'ja'))),
     workerNames:         computed(() => master.value.workers.map(w => w.name).slice().sort((a, b) => a.localeCompare(b, 'ja'))),
     factoryWorkerNames:  computed(() => { const ws = master.value.workers; const hasRole = ws.some(w => w.role); return ws.filter(w => !hasRole || w.role === 'factory').map(w => w.name).slice().sort((a, b) => a.localeCompare(b, 'ja')) }),

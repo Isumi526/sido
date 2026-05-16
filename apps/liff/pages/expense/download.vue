@@ -45,6 +45,7 @@
                     <th class="col-site">現 場 名</th>
                     <th class="col-sep">/</th>
                     <th class="col-amt">金　額</th>
+                    <th class="col-receipt no-print">領収書</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -57,12 +58,25 @@
                     <td class="small">{{ row.siteName }}</td>
                     <td></td>
                     <td class="right">{{ row.amount ? '¥' + row.amount.toLocaleString() : '' }}</td>
+                    <td class="receipt-cell no-print">
+                      <template v-if="row.fileUrls?.length">
+                        <a
+                          v-for="(url, ui) in row.fileUrls"
+                          :key="ui"
+                          :href="url"
+                          target="_blank"
+                          rel="noopener"
+                          class="receipt-link"
+                        >📎{{ row.fileUrls.length > 1 ? ui + 1 : '' }}</a>
+                      </template>
+                    </td>
                   </tr>
                 </tbody>
                 <tfoot>
                   <tr class="total-row">
                     <td colspan="7" class="right">合　計</td>
                     <td class="right">¥{{ total.toLocaleString() }}</td>
+                    <td class="no-print"></td>
                   </tr>
                 </tfoot>
               </table>
@@ -205,8 +219,10 @@ html,body { background:var(--bg);color:var(--text);font-family:var(--font);min-h
 .expense-table { width:100%;border-collapse:collapse;font-size:12px; }
 .expense-table th,.expense-table td { border:1px solid #333;padding:5px 6px; }
 .expense-table thead th { background:#f0f0f0;font-weight:700;text-align:center;font-size:11px; }
-.col-date{width:62px}.col-payee{min-width:100px}.col-reg{width:110px}.col-cat{width:72px}.col-lit{width:28px}.col-site{width:90px}.col-sep{width:18px}.col-amt{width:82px}
+.col-date{width:62px}.col-payee{min-width:100px}.col-reg{width:110px}.col-cat{width:72px}.col-lit{width:28px}.col-site{width:90px}.col-sep{width:18px}.col-amt{width:82px}.col-receipt{width:60px}
 .center{text-align:center}.right{text-align:right}.small{font-size:10px}
+.receipt-cell{text-align:center;white-space:nowrap}
+.receipt-link{display:inline-block;font-size:11px;color:var(--accent);text-decoration:none;margin:1px 2px}
 .total-row td { font-weight:700;border-top:2px solid #333; }
 .doc-notes { margin-top:10px;display:flex;flex-direction:column;gap:2px; }
 .doc-notes p { font-size:10px;color:var(--text2); }
