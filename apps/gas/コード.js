@@ -19,6 +19,7 @@
 //   SUPABASE_URL          : Supabase プロジェクト URL
 //   SUPABASE_ANON_KEY     : Supabase anon key
 //   ACCOUNT_SLUG          : アカウント識別スラグ
+//   LIFF_URL              : LIFF アプリの URL 例: https://your-liff-app.vercel.app
 const CONFIG = (function() {
   const p = PropertiesService.getScriptProperties().getProperties();
   return {
@@ -333,21 +334,14 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
         expLines.forEach(function(l) { lines.push('・' + l); });
       }
 
-      // 添付ファイル → 現場フォルダのビューアURLを1つ追加
-      var urlKeys = ['vehicleUrls','trainUrls','hotelUrls','leopalaceUrls','otherUrls','entertainmentUrls','garbagePhotoUrls'];
-      var firstFileUrl = null;
-      urlKeys.forEach(function(key) {
-        if (!firstFileUrl && exp[key] && exp[key].length) firstFileUrl = exp[key][0];
-      });
-      Logger.log('[FileURL] firstFileUrl=' + firstFileUrl + ' LIFF_URL=' + CONFIG.LIFF_URL);
-      if (firstFileUrl && CONFIG.LIFF_URL) {
-        var marker = '/expense-receipts/';
-        var idx = firstFileUrl.indexOf(marker);
-        if (idx !== -1) {
-          var withFile = firstFileUrl.slice(idx + marker.length);
-          var folderPath = withFile.substring(0, withFile.lastIndexOf('/'));
-          lines.push('📁 領収書: ' + CONFIG.LIFF_URL + '/files?path=' + encodeURIComponent(folderPath));
-        }
+      // 添付ファイルフォルダのビューアURLを追加（ファイルの有無に関わらず表示）
+      if (CONFIG.LIFF_URL) {
+        var sanitize = function(s) { return String(s || '').replace(/[^A-Za-z0-9\-]/g, '_').slice(0, 40); };
+        var day      = parseInt(date.split('-')[2], 10);
+        var period   = day <= 15 ? 'first' : 'second';
+        var ym       = date.slice(0, 7);
+        var folderPath = [CONFIG.ACCOUNT_SLUG, ym, period, date + '_' + sanitize(sender) + '_' + sanitize(site.siteName)].join('/');
+        lines.push('📁 領収書: ' + CONFIG.LIFF_URL + '/files?path=' + encodeURIComponent(folderPath));
       }
 
       // 下請け業者
