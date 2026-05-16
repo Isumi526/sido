@@ -74,7 +74,7 @@
                       <td>{{ w.startTime }}</td>
                       <td>{{ w.endTime }}</td>
                       <template v-if="w.startTime && w.endTime">
-                        <td>{{ calcBreakMinutes(w.workerRole || 'site', w.startTime, w.endTime) / 60 }}h</td>
+                        <td>{{ calcBreakMinutes(w.workerRole || 'site', w.startTime, w.endTime) / 60 }}</td>
                         <td>{{ calcHours(w, selected.date).normal }}</td>
                         <td>{{ calcHours(w, selected.date).ot }}</td>
                         <td>{{ calcHours(w, selected.date).night }}</td>
