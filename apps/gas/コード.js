@@ -33,6 +33,7 @@ const CONFIG = (function() {
     SUPABASE_URL:       p.SUPABASE_URL,
     SUPABASE_ANON_KEY:  p.SUPABASE_ANON_KEY,
     ACCOUNT_SLUG:       p.ACCOUNT_SLUG || 'sample-construction',
+    LIFF_URL:           p.LIFF_URL || '',  // 例: https://your-liff-app.vercel.app
   };
 })();
 
@@ -332,23 +333,22 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
         expLines.forEach(function(l) { lines.push('・' + l); });
       }
 
-      // 添付ファイル URL（Supabase Storage）
-      var urlCategories = [
-        { key: 'vehicleUrls',       label: '車両領収書' },
-        { key: 'trainUrls',         label: '電車領収書' },
-        { key: 'hotelUrls',         label: 'ホテル領収書' },
-        { key: 'leopalaceUrls',     label: 'レオパレス領収書' },
-        { key: 'otherUrls',         label: 'その他領収書' },
-        { key: 'entertainmentUrls', label: '雑経費領収書' },
-        { key: 'garbagePhotoUrls',  label: 'ゴミ写真' },
-      ];
-      urlCategories.forEach(function(cat) {
-        var urls = exp[cat.key];
-        if (!urls || !urls.length) return;
-        urls.forEach(function(url, i) {
-          lines.push('📎 ' + cat.label + (urls.length > 1 ? '(' + (i + 1) + ')' : '') + ': ' + url);
-        });
+      // 添付ファイル → 現場フォルダのビューアURLを1つ追加
+      var urlKeys = ['vehicleUrls','trainUrls','hotelUrls','leopalaceUrls','otherUrls','entertainmentUrls','garbagePhotoUrls'];
+      var firstFileUrl = null;
+      urlKeys.forEach(function(key) {
+        if (!firstFileUrl && exp[key] && exp[key].length) firstFileUrl = exp[key][0];
       });
+      Logger.log('[FileURL] firstFileUrl=' + firstFileUrl + ' LIFF_URL=' + CONFIG.LIFF_URL);
+      if (firstFileUrl && CONFIG.LIFF_URL) {
+        var marker = '/expense-receipts/';
+        var idx = firstFileUrl.indexOf(marker);
+        if (idx !== -1) {
+          var withFile = firstFileUrl.slice(idx + marker.length);
+          var folderPath = withFile.substring(0, withFile.lastIndexOf('/'));
+          lines.push('📁 領収書: ' + CONFIG.LIFF_URL + '/files?path=' + encodeURIComponent(folderPath));
+        }
+      }
 
       // 下請け業者
       var subs = (site.subcontractors || []).filter(function(s) { return s.subcontractorName; });
@@ -527,9 +527,7 @@ function saveGarbagePhotos(base64Photos, date, senderName, siteName) {
   }
 }
 
-/**
- * 経費ファイル（JPEG/PDF）をDriveに保存してURLリストを返す
- */
+// 経費ファイル（JPEG/PDF）をDriveに保存してURLリストを返す
 function saveExpenseFiles(dataUrls, date, senderName, siteName, category) {
   try {
     var root = DriveApp.getFolderById(CONFIG.DRIVE_ROOT_FOLDER_ID);
