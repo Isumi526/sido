@@ -5,6 +5,7 @@
 import type { DailyReport, SiteReport, WorkerEntry, SubcontractorEntry, WorkerRole, VehicleExpense, LineItem } from '~/types'
 import type { RateBreakdown } from '~/utils/workerHours'
 import { computeWorkerHours, calcBreakMinutes, parseMin } from '~/utils/workerHours'
+import { uploadExpenseFiles } from '~/utils/uploadExpenseFiles'
 
 export const createWorker = (role: WorkerRole = 'site'): WorkerEntry => ({
   workerId:     '',
@@ -46,7 +47,7 @@ export const createSite = (): SiteReport => ({
   subcontractors: [createSub()],
 })
 
-// 経費オブジェクトからファイルデータだけ除去（本体送信用）
+// 経費オブジェクトから File[] フィールドを除去（GAS送信用 - *Urls は残す）
 function stripFiles(expenses: Record<string, unknown> | object): Record<string, unknown> {
   const { vehicleFiles, trainFiles, hotelFiles, leopalaceFiles, otherFiles, entertainmentFiles, garbagePhotos, ...rest } = expenses as any
   return rest
@@ -65,10 +66,22 @@ function stripEmpty(obj: unknown): unknown {
   return obj
 }
 
+// ファイルカテゴリ定義（*Files → *Urls のマッピング）
+const FILE_CATEGORIES = [
+  { filesKey: 'vehicleFiles',       urlsKey: 'vehicleUrls',       category: 'vehicle'       },
+  { filesKey: 'trainFiles',         urlsKey: 'trainUrls',         category: 'train'         },
+  { filesKey: 'hotelFiles',         urlsKey: 'hotelUrls',         category: 'hotel'         },
+  { filesKey: 'leopalaceFiles',     urlsKey: 'leopalaceUrls',     category: 'leopalace'     },
+  { filesKey: 'otherFiles',         urlsKey: 'otherUrls',         category: 'other'         },
+  { filesKey: 'entertainmentFiles', urlsKey: 'entertainmentUrls', category: 'entertainment' },
+  { filesKey: 'garbagePhotos',      urlsKey: 'garbagePhotoUrls',  category: 'garbage'       },
+] as const
+
 export const useReport = () => {
-  const config  = useRuntimeConfig()
+  const config   = useRuntimeConfig()
   const { profile, isTester } = useLiff()
-  const master  = useMaster()
+  const master   = useMaster()
+  const supabase = useSupabase()
 
   const submitting = ref(false)
   const submitted  = ref(false)
@@ -124,6 +137,30 @@ export const useReport = () => {
     // 送信日が日曜か判定
     const isSunday = new Date(form.value.date + 'T00:00:00').getDay() === 0
 
+    // ── ① ファイルを Supabase Storage にアップロードして *Urls にセット ──
+    const senderName  = form.value.sender
+    const accountSlug = (config.public.accountSlug as string) || 'default'
+
+    for (const site of form.value.sites) {
+      const siteName = site.siteName === '__other__'
+        ? (site.customSiteName || 'other')
+        : site.siteName
+      if (!siteName) continue
+
+      for (const { filesKey, urlsKey, category } of FILE_CATEGORIES) {
+        const files = (site.expenses as any)[filesKey] as File[] | undefined
+        if (!files?.length) continue
+        try {
+          const urls = await uploadExpenseFiles(
+            supabase, files, form.value.date, senderName, siteName, category, accountSlug
+          )
+          ;(site.expenses as any)[urlsKey] = urls
+        } catch (e) {
+          console.error(`[FileUpload] ${filesKey}:`, e)
+        }
+      }
+    }
+
     // 現場跨ぎ残業対応: 作業者ごとに startTime 順で累積稼働分を引き継いで計算
     const workerAccum: Record<string, number> = {}
     const computedBreakdowns = new WeakMap<object, RateBreakdown>()
@@ -142,7 +179,7 @@ export const useReport = () => {
       const { workedMin, ...breakdown } = computeWorkerHours(
         w.startTime, w.endTime, calcBreakMinutes(w.workerRole, w.startTime, w.endTime), isSunday, accum
       )
-      workerAccum[key] = workedMin  // 累積済み合計（startWorkedMin + 今回分）
+      workerAccum[key] = workedMin
       computedBreakdowns.set(w, breakdown)
     }
 
@@ -176,8 +213,7 @@ export const useReport = () => {
           ? { _devNotifyGroupId: config.public.devNotifyGroupId }
           : {}
 
-        // ── ① 本体送信（ファイルなし・await）──
-        // ファイルデータを除いた軽量ペイロードを await → スプレッドシート書き込み＋LINE通知が終わったらローディング終了
+        // ── ② GASに送信（File[] を除去・*Urls はそのまま含む）──
         const mainPayload = {
           ...payload,
           sites: payload.sites.map(site => ({
@@ -192,30 +228,6 @@ export const useReport = () => {
           headers:   { 'Content-Type': 'text/plain' },
           body:      JSON.stringify(stripEmpty({ action: 'submitReport', ...mainPayload, ...devExtra })),
         })
-
-        // ── ② ファイルアップロード（fire-and-forget）──
-        const hasFiles = payload.sites.some(s => {
-          const e = s.expenses
-          return e.vehicleFiles?.length || e.trainFiles?.length || e.hotelFiles?.length ||
-                 e.leopalaceFiles?.length || e.otherFiles?.length || e.entertainmentFiles?.length ||
-                 e.garbagePhotos?.length
-        })
-        if (hasFiles) {
-          fetch(config.public.gasUrl, {
-            method:  'POST',
-            mode:    'no-cors',
-            headers: { 'Content-Type': 'text/plain' },
-            body:    JSON.stringify(stripEmpty({ action: 'uploadFiles', ...devExtra,
-              date:     payload.date,
-              sender:   payload.sender,
-              senderId: payload.senderId,
-              sites:    payload.sites.map(s => ({
-                siteName: s.siteName,
-                expenses: s.expenses,
-              })),
-            })),
-          }).catch(e => console.error('[Report] ファイルアップロードエラー:', e))
-        }
       }
       submitted.value = true
 

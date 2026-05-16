@@ -1,0 +1,55 @@
+// ============================================================
+//  utils/uploadExpenseFiles.ts
+//  経費ファイル・ゴミ写真を Supabase Storage にアップロード
+//
+//  パス規則:
+//    expense-receipts/{accountSlug}/{YYYY-MM}/
+//      {date}_{sender}_{siteName}/{category}_{index}.{ext}
+// ============================================================
+import type { SupabaseClient } from '@supabase/supabase-js'
+
+const BUCKET = 'expense-receipts'
+
+/** ファイルパスに使えない文字を置換（スラッシュは除外） */
+function sanitize(s: string): string {
+  return s.replace(/[\\/:\*?"<>|\s]/g, '_').slice(0, 40)
+}
+
+export async function uploadExpenseFiles(
+  supabase:    SupabaseClient,
+  files:       File[],
+  date:        string,   // YYYY-MM-DD
+  senderName:  string,
+  siteName:    string,
+  category:    string,
+  accountSlug: string,
+): Promise<string[]> {
+  const yearMonth = date.slice(0, 7)
+  const folder    = [
+    accountSlug,
+    yearMonth,
+    `${date}_${sanitize(senderName)}_${sanitize(siteName)}`,
+  ].join('/')
+
+  const urls: string[] = []
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i]
+    const ext  = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+    const path = `${folder}/${category}_${i + 1}.${ext}`
+
+    const { error } = await supabase.storage
+      .from(BUCKET)
+      .upload(path, file, { upsert: true })
+
+    if (error) {
+      console.error(`[FileUpload] ${path}:`, error.message)
+      continue
+    }
+
+    const { data } = supabase.storage.from(BUCKET).getPublicUrl(path)
+    urls.push(data.publicUrl)
+  }
+
+  return urls
+}

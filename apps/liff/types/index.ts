@@ -48,26 +48,33 @@ export interface LineItem {
 export interface Expenses {
   carpool?: boolean              // 乗合いフラグ
   vehicles: VehicleExpense[]
-  vehicleFiles?: string[]       // 車両領収書等
+  vehicleFiles?: File[]         // 車両領収書（アップロード前 File[]）
+  vehicleUrls?: string[]        // 車両領収書（Supabase Storage URL）
   hotelName?:             string
   hotelYen?:              number
   hotelRegistration?:     string   // ホテル登録番号
-  hotelFiles?: string[]            // ホテル領収書
+  hotelFiles?: File[]              // ホテル領収書
+  hotelUrls?: string[]             // ホテル領収書 URL
   leopalaceName?:             string
   leopalaceYen?:              number
   leopalaceRegistration?:     string   // レオパレス登録番号
-  leopalaceFiles?: string[]            // レオパレス領収書
+  leopalaceFiles?: File[]              // レオパレス領収書
+  leopalaceUrls?: string[]             // レオパレス領収書 URL
   garbageFactoryM3?: number
   garbageSiteM3?: number
-  garbagePhotos?: string[]
+  garbagePhotos?: File[]          // ゴミ写真
+  garbagePhotoUrls?: string[]     // ゴミ写真 URL
   trains: LineItem[]
-  trainFiles?: string[]         // 電車領収書
+  trainFiles?: File[]           // 電車領収書
+  trainUrls?: string[]          // 電車領収書 URL
   others: LineItem[]
-  otherFiles?: string[]         // その他領収書
+  otherFiles?: File[]           // その他領収書
+  otherUrls?: string[]          // その他領収書 URL
   entertainmentLabel?:        string
   entertainmentYen?:          number
   entertainmentRegistration?: string   // 雑経費登録番号
-  entertainmentFiles?: string[]        // 雑経費領収書
+  entertainmentFiles?: File[]          // 雑経費領収書
+  entertainmentUrls?: string[]         // 雑経費領収書 URL
 }
 
 export interface SiteReport {

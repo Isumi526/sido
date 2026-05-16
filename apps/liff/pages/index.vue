@@ -961,38 +961,20 @@ async function handleReset() {
   await master.fetch(true)
 }
 
-async function handleExpenseFile(
+function handleExpenseFile(
   si: number,
   field: 'vehicleFiles' | 'trainFiles' | 'hotelFiles' | 'leopalaceFiles' | 'otherFiles' | 'entertainmentFiles',
   event: Event
 ) {
   const input = event.target as HTMLInputElement
   if (!input.files?.length) return
-  const files: string[] = []
-  for (const file of Array.from(input.files)) {
-    const dataUrl = await new Promise<string>((resolve) => {
-      const reader = new FileReader()
-      reader.onload = (e) => resolve(e.target?.result as string)
-      reader.readAsDataURL(file)
-    })
-    files.push(dataUrl)
-  }
-  report.form.value.sites[si].expenses[field] = files
+  report.form.value.sites[si].expenses[field] = Array.from(input.files)
 }
 
-async function handleGarbagePhoto(si: number, event: Event) {
+function handleGarbagePhoto(si: number, event: Event) {
   const input = event.target as HTMLInputElement
   if (!input.files?.length) return
-  const photos: string[] = []
-  for (const file of Array.from(input.files)) {
-    const base64 = await new Promise<string>((resolve) => {
-      const reader = new FileReader()
-      reader.onload = (e) => resolve((e.target?.result as string).split(',')[1])
-      reader.readAsDataURL(file)
-    })
-    photos.push(base64)
-  }
-  report.form.value.sites[si].expenses.garbagePhotos = photos
+  report.form.value.sites[si].expenses.garbagePhotos = Array.from(input.files)
 }
 
 function fillTestData() {
