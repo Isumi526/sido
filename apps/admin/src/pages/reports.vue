@@ -69,9 +69,14 @@
                     <td>{{ w.workerRole === 'factory' ? '工場' : '現場' }}</td>
                     <td>{{ w.startTime }}</td>
                     <td>{{ w.endTime }}</td>
-                    <td>{{ w.hoursNormal ?? '—' }}</td>
-                    <td>{{ w.hoursOT ?? '—' }}</td>
-                    <td>{{ w.hoursNight ?? '—' }}</td>
+                    <template v-if="w.startTime && w.endTime">
+                      <td>{{ calcHours(w, selected.date).normal }}</td>
+                      <td>{{ calcHours(w, selected.date).ot }}</td>
+                      <td>{{ calcHours(w, selected.date).night }}</td>
+                    </template>
+                    <template v-else>
+                      <td>—</td><td>—</td><td>—</td>
+                    </template>
                   </tr>
                 </tbody>
               </table>
@@ -130,6 +135,7 @@
 import { ref, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { computeWorkerHours, calcBreakMinutes } from '../lib/workerHours'
 
 const search   = ref('')
 const now      = new Date()
@@ -152,6 +158,18 @@ async function deleteReport(r: any) {
   if (error) { alert('削除に失敗しました: ' + error.message); return }
   reports.value = reports.value.filter(rep => rep.id !== r.id)
   if (selected.value?.id === r.id) selected.value = null
+}
+
+function calcHours(w: any, date: string) {
+  const isSunday = new Date(date + 'T00:00:00').getDay() === 0
+  const role = w.workerRole || 'site'
+  const brk  = calcBreakMinutes(role, w.startTime, w.endTime)
+  const h    = computeWorkerHours(w.startTime, w.endTime, brk, isSunday)
+  return {
+    normal: h.hoursNormal + h.hoursSunday,
+    ot:     h.hoursOT + h.hoursOTNight + h.hoursSundayOT + h.hoursSundayOTNight,
+    night:  h.hoursNight + h.hoursOTNight + h.hoursSundayNight + h.hoursSundayOTNight,
+  }
 }
 
 function resolveSiteName(site: any): string {
