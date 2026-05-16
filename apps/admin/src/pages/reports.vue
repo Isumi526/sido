@@ -63,6 +63,7 @@
 
             <!-- 作業員 -->
             <div v-if="site.workers?.length" class="section">
+              <div class="section-label">稼働</div>
               <table class="inner-table">
                 <thead>
                   <tr><th>開始</th><th>終了</th><th>通常</th><th>残業</th><th>深夜</th></tr>
