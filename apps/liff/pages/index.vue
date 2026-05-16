@@ -931,9 +931,20 @@ async function handleSubmit() {
   }
 
   // ② GASに送信（LINE通知・keepalive: true でページ閉じても通信継続）
+  // ※ ファイルアップロードも内部で行われ、*Urls が sites にセットされる
   await report.submit()
 
-  // ③ 次の未送信日を取得してサクセス画面に表示
+  // ③ ファイルアップロード後に *Urls を含めて Supabase を再保存（URLを反映するため）
+  if (!report.error.value && uid) {
+    expense.saveReport(uid, {
+      date:      report.form.value.date,
+      isWorking: report.form.value.isWorking,
+      sites:     report.form.value.sites,
+      note:      report.form.value.note,
+    }).catch(e => console.error('[Report] URL再保存エラー:', e))
+  }
+
+  // ④ 次の未送信日を取得してサクセス画面に表示
   if (!report.error.value && uid) {
     const next = await expense.getNextUnsubmittedDate(uid).catch(() => null)
     if (next && next !== 'NOT_CONFIGURED') {
@@ -1002,13 +1013,15 @@ function fillTestData() {
     siteUsage.value[0].vehicle = 'あり'
     site0.expenses.carpool = false
     site0.expenses.vehicles = [{ vehicleName: 'ハイエース', distanceKm: 80, dieselKm: undefined, parkingYen: 500, highwayYen: 1200, etcUsed: true, etcCard: 'カード①' }]
-    // site0.expenses.vehicleFiles — テストデータでは File[] を設定不可
+    site0.expenses.vehicleUrls = ['https://placehold.co/400x300?text=vehicle_receipt_1', 'https://placehold.co/400x300?text=vehicle_receipt_2']
     siteUsage.value[0].train = 'あり'
     site0.expenses.trains = [{ label: '名古屋→大阪', yen: 3000 }]
+    site0.expenses.trainUrls = ['https://placehold.co/400x300?text=train_receipt_1']
     siteUsage.value[0].hotel = 'あり'
     site0.expenses.hotelName = 'アパホテル名古屋'
     site0.expenses.hotelYen  = 8000
     site0.expenses.hotelRegistration = 'T1234567890123'
+    site0.expenses.hotelUrls = ['https://placehold.co/400x300?text=hotel_receipt_1']
     siteUsage.value[0].leopalace = 'あり'
     site0.expenses.leopalaceName = 'レオパレス栄'
     site0.expenses.leopalaceYen  = 50000
@@ -1016,12 +1029,15 @@ function fillTestData() {
     siteUsage.value[0].garbage = 'あり'
     site0.expenses.garbageFactoryM3 = 3
     site0.expenses.garbageSiteM3    = 5
+    site0.expenses.garbagePhotoUrls = ['https://placehold.co/400x300?text=garbage_photo_1', 'https://placehold.co/400x300?text=garbage_photo_2']
     siteUsage.value[0].other = 'あり'
     site0.expenses.others = [{ label: '養生テープ', yen: 1500, registrationNumber: 'ナシ' }]
+    site0.expenses.otherUrls = ['https://placehold.co/400x300?text=other_receipt_1']
     siteUsage.value[0].entertainment = 'あり'
     site0.expenses.entertainmentLabel = '懇親会'
     site0.expenses.entertainmentYen   = 10000
     site0.expenses.entertainmentRegistration = 'T1111222233334'
+    site0.expenses.entertainmentUrls = ['https://placehold.co/400x300?text=entertainment_receipt_1']
 
     // ── 現場2（新規現場「その他」） ── を追加
     addSite()
@@ -1038,12 +1054,13 @@ function fillTestData() {
   siteUsage.value[newIdx].vehicle = '乗合い'
   siteN.expenses.carpool = true
   siteN.expenses.vehicles = []
-  siteN.expenses.vehicleFiles = undefined
   siteUsage.value[newIdx].train = 'あり'
   siteN.expenses.trains = [{ label: '大阪→名古屋', yen: 2500 }]
+  siteN.expenses.trainUrls = ['https://placehold.co/400x300?text=train_receipt_2']
   siteUsage.value[newIdx].garbage = 'あり'
   siteN.expenses.garbageFactoryM3 = 2
   siteN.expenses.garbageSiteM3    = 4
+  siteN.expenses.garbagePhotoUrls = ['https://placehold.co/400x300?text=garbage_photo_3']
   siteUsage.value[newIdx].other = 'あり'
   siteN.expenses.others = [{ label: 'ビニールシート', yen: 800, registrationNumber: 'ナシ' }]
   siteUsage.value[newIdx].entertainment = 'あり'

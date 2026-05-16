@@ -163,6 +163,7 @@ export interface ExpenseRow {
   liters?:             number
   note?:               string  // 備考（車両名・電車区間など）
   registrationNumber?: string  // 登録番号
+  fileUrls?:           string[]  // 領収書・写真 URL（Supabase Storage）
 }
 
 export interface ExpenseItemInput {

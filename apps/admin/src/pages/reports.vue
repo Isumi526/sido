@@ -129,20 +129,51 @@
                 <span v-if="veh.parkingYen" class="muted">駐車 ¥{{ veh.parkingYen.toLocaleString() }}</span>
                 <span v-if="veh.highwayYen" class="muted">高速 ¥{{ veh.highwayYen.toLocaleString() }}</span>
               </div>
+              <div v-if="site.expenses?.vehicleUrls?.length" class="receipt-urls">
+                <a v-for="(url, ui) in site.expenses.vehicleUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 車両領収書{{ site.expenses.vehicleUrls.length > 1 ? ui + 1 : '' }}</a>
+              </div>
               <div v-for="(tr, ti) in site.expenses?.trains?.filter((t: any) => t.yen)" :key="'t'+ti" class="expense-row">
                 <span class="exp-cat">電車</span>
                 <span>{{ tr.label }}</span>
                 <span class="muted">¥{{ tr.yen?.toLocaleString() }}</span>
+              </div>
+              <div v-if="site.expenses?.trainUrls?.length" class="receipt-urls">
+                <a v-for="(url, ui) in site.expenses.trainUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 電車領収書{{ site.expenses.trainUrls.length > 1 ? ui + 1 : '' }}</a>
               </div>
               <div v-if="site.expenses?.hotelYen" class="expense-row">
                 <span class="exp-cat">宿泊</span>
                 <span>{{ site.expenses.hotelName }}</span>
                 <span class="muted">¥{{ site.expenses.hotelYen.toLocaleString() }}</span>
               </div>
+              <div v-if="site.expenses?.hotelUrls?.length" class="receipt-urls">
+                <a v-for="(url, ui) in site.expenses.hotelUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 宿泊領収書{{ site.expenses.hotelUrls.length > 1 ? ui + 1 : '' }}</a>
+              </div>
+              <div v-if="site.expenses?.leopalaceYen" class="expense-row">
+                <span class="exp-cat">宿泊</span>
+                <span>{{ site.expenses.leopalaceName }}</span>
+                <span class="muted">¥{{ site.expenses.leopalaceYen.toLocaleString() }}</span>
+              </div>
+              <div v-if="site.expenses?.leopalaceUrls?.length" class="receipt-urls">
+                <a v-for="(url, ui) in site.expenses.leopalaceUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 レオパレス領収書{{ site.expenses.leopalaceUrls.length > 1 ? ui + 1 : '' }}</a>
+              </div>
               <div v-for="(ot, oi) in site.expenses?.others?.filter((o: any) => o.yen)" :key="'o'+oi" class="expense-row">
                 <span class="exp-cat">その他</span>
                 <span>{{ ot.label }}</span>
                 <span class="muted">¥{{ ot.yen?.toLocaleString() }}</span>
+              </div>
+              <div v-if="site.expenses?.otherUrls?.length" class="receipt-urls">
+                <a v-for="(url, ui) in site.expenses.otherUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 その他領収書{{ site.expenses.otherUrls.length > 1 ? ui + 1 : '' }}</a>
+              </div>
+              <div v-if="site.expenses?.entertainmentYen" class="expense-row">
+                <span class="exp-cat">雑経費</span>
+                <span>{{ site.expenses.entertainmentLabel }}</span>
+                <span class="muted">¥{{ site.expenses.entertainmentYen.toLocaleString() }}</span>
+              </div>
+              <div v-if="site.expenses?.entertainmentUrls?.length" class="receipt-urls">
+                <a v-for="(url, ui) in site.expenses.entertainmentUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 雑経費領収書{{ site.expenses.entertainmentUrls.length > 1 ? ui + 1 : '' }}</a>
+              </div>
+              <div v-if="site.expenses?.garbagePhotoUrls?.length" class="receipt-urls">
+                <a v-for="(url, ui) in site.expenses.garbagePhotoUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 ゴミ写真{{ site.expenses.garbagePhotoUrls.length > 1 ? ui + 1 : '' }}</a>
               </div>
             </div>
           </div>
@@ -181,8 +212,33 @@ function confirmDelete(r: any) {
   deleteReport(r)
 }
 
+const URL_KEYS = ['vehicleUrls', 'trainUrls', 'hotelUrls', 'leopalaceUrls', 'otherUrls', 'entertainmentUrls', 'garbagePhotoUrls'] as const
+
+function extractStoragePaths(r: any): string[] {
+  const paths: string[] = []
+  const MARKER = '/expense-receipts/'
+  for (const site of (r.sites ?? [])) {
+    const exp = site.expenses ?? {}
+    for (const key of URL_KEYS) {
+      for (const url of (exp[key] ?? [])) {
+        const idx = url.indexOf(MARKER)
+        if (idx !== -1) paths.push(decodeURIComponent(url.slice(idx + MARKER.length)))
+      }
+    }
+  }
+  return paths
+}
+
 async function deleteReport(r: any) {
   deleting.value = true
+
+  // Storage ファイルを先に削除
+  const paths = extractStoragePaths(r)
+  if (paths.length > 0) {
+    const { error: storageError } = await supabase.storage.from('expense-receipts').remove(paths)
+    if (storageError) console.error('[Storage削除]', storageError.message)
+  }
+
   const { error } = await supabase.from('daily_reports').delete().eq('id', r.id)
   deleting.value = false
   if (error) { alert('削除に失敗しました: ' + error.message); return }
@@ -227,11 +283,14 @@ function resolveSiteName(site: any): string {
 
 function hasExpenses(exp: any): boolean {
   if (!exp) return false
-  return (
+  return !!(
     exp.vehicles?.some((v: any) => v.vehicleName) ||
     exp.trains?.some((t: any) => t.yen) ||
     exp.hotelYen ||
-    exp.others?.some((o: any) => o.yen)
+    exp.leopalaceYen ||
+    exp.others?.some((o: any) => o.yen) ||
+    exp.entertainmentYen ||
+    exp.garbagePhotoUrls?.length
   )
 }
 
@@ -328,4 +387,7 @@ onMounted(load)
 .muted { color: #888; font-size: 12px; }
 .note-section { background: #fafafa; }
 .note-text { font-size: 14px; color: #333; white-space: pre-wrap; }
+.receipt-urls { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0 8px; }
+.receipt-link { font-size: 11px; color: #06C755; text-decoration: none; background: #e8fff0; padding: 2px 8px; border-radius: 4px; }
+.receipt-link:hover { text-decoration: underline; }
 </style>

@@ -6,6 +6,7 @@ import type { DailyReport, SiteReport, WorkerEntry, SubcontractorEntry, WorkerRo
 import type { RateBreakdown } from '~/utils/workerHours'
 import { computeWorkerHours, calcBreakMinutes, parseMin } from '~/utils/workerHours'
 import { uploadExpenseFiles } from '~/utils/uploadExpenseFiles'
+import { getPeriodKey } from '~/composables/useExpense'
 
 export const createWorker = (role: WorkerRole = 'site'): WorkerEntry => ({
   workerId:     '',
@@ -140,6 +141,10 @@ export const useReport = () => {
     // ── ① ファイルを Supabase Storage にアップロードして *Urls にセット ──
     const senderName  = form.value.sender
     const accountSlug = (config.public.accountSlug as string) || 'default'
+    const periodKey   = getPeriodKey(form.value.date)          // 'YYYY-MM-first'
+    const periodHalf  = periodKey.split('-').pop() as string   // 'first' | 'second'
+
+    const uploadErrors: string[] = []
 
     for (const site of form.value.sites) {
       const siteName = site.siteName === '__other__'
@@ -152,13 +157,21 @@ export const useReport = () => {
         if (!files?.length) continue
         try {
           const urls = await uploadExpenseFiles(
-            supabase, files, form.value.date, senderName, siteName, category, accountSlug
+            supabase, files, form.value.date, senderName, siteName, category, accountSlug, periodHalf
           )
           ;(site.expenses as any)[urlsKey] = urls
         } catch (e) {
-          console.error(`[FileUpload] ${filesKey}:`, e)
+          const msg = e instanceof Error ? e.message : String(e)
+          console.error(`[FileUpload] ${filesKey}:`, msg)
+          uploadErrors.push(`${category}: ${msg}`)
         }
       }
+    }
+
+    if (uploadErrors.length > 0) {
+      error.value = `ファイルのアップロードに失敗しました。送信を中止します。\n${uploadErrors.join('\n')}`
+      submitting.value = false
+      return
     }
 
     // 現場跨ぎ残業対応: 作業者ごとに startTime 順で累積稼働分を引き継いで計算
