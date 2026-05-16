@@ -39,6 +39,9 @@
         <!-- 日付 -->
         <FormSection num="01" title="日付">
           <div class="date-fixed">{{ report.form.value.date }}</div>
+          <div v-if="report.form.value.date < new Date().toISOString().split('T')[0]" class="past-date-notice">
+            📅 過去の未送信日報です
+          </div>
         </FormSection>
 
         <!-- 稼働有無 -->
@@ -1076,7 +1079,6 @@ function fillTestData() {
   siteUsage.value[newIdx].garbage = 'あり'
   siteN.expenses.garbageFactoryM3 = 2
   siteN.expenses.garbageSiteM3    = 4
-  siteN.expenses.garbagePhotoUrls = [`https://nrzzesbtvswoiouhldvi.supabase.co/storage/v1/object/public/expense-receipts/${folderN}/garbage_1.jpg`]
   siteUsage.value[newIdx].other = 'あり'
   siteN.expenses.others = [{ label: 'ビニールシート', yen: 800, registrationNumber: 'ナシ' }]
   siteUsage.value[newIdx].entertainment = 'あり'
@@ -1400,6 +1402,18 @@ html, body {
   border-radius: 8px;
   padding: 12px 16px;
   font-size: 13px;
+}
+
+/* ── 過去日通知 ── */
+.past-date-notice {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #FFF7ED;
+  border: 1px solid #FED7AA;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #C2410C;
+  font-weight: 600;
 }
 
 /* ── 日付固定表示 ── */
