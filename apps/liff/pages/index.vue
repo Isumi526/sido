@@ -92,15 +92,6 @@
 
             <!-- 作業員（ログインユーザー固定） -->
             <Field label="作業員">
-              <!-- ユーザーバッジ -->
-              <div class="worker-self">
-                <div class="worker-self-avatar">{{ currentUser?.real_name?.charAt(0) ?? '?' }}</div>
-                <div class="worker-self-info">
-                  <div class="worker-self-name">{{ currentUser?.real_name }}</div>
-                  <span class="worker-self-role">{{ currentUser?.worker_role === 'factory' ? '工場 / 事務所' : '現場' }}</span>
-                </div>
-              </div>
-
               <!-- 時刻・休憩 -->
               <template v-if="site.workers[0]">
                 <div class="worker-time-rows">
