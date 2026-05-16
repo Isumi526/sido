@@ -627,6 +627,11 @@ function addSite() {
   const prevStartMin = parseMin(prevWorker?.startTime || '08:00')
   const prevEndMin   = parseMin(prevEndTime           || '17:30')
   const autoStart    = (prevEndTime && prevEndMin > prevStartMin) ? prevEndTime : undefined
+  // 終了時刻 = 開始時刻 + 4h（23:30 を上限）
+  const autoEndMin   = autoStart ? Math.min(prevEndMin + 240, 23 * 60 + 30) : undefined
+  const autoEnd      = autoEndMin != null
+    ? `${String(Math.floor(autoEndMin / 60)).padStart(2, '0')}:${autoEndMin % 60 === 0 ? '00' : '30'}`
+    : undefined
 
   report.addSite()
   siteUsage.value.push(createUsage())
@@ -636,8 +641,8 @@ function addSite() {
       ...createWorker(currentUser.value.worker_role),
       workerName: currentUser.value.real_name,
       workerRole: currentUser.value.worker_role,
-      // 2つ目以降: 前現場の終了時刻を開始時刻に自動セット（終了も同値にして選び直しを促す）
-      ...(autoStart ? { startTime: autoStart, endTime: autoStart } : {}),
+      // 2つ目以降: 開始=前現場の終了、終了=開始+4h
+      ...(autoStart ? { startTime: autoStart, endTime: autoEnd } : {}),
     }]
   }
 }
