@@ -103,6 +103,19 @@
               <div v-for="(s, si2) in site.subcontractors.filter((s: any) => s.subcontractorName)" :key="si2" class="sub-row">
                 <span>{{ s.subcontractorName }}</span>
                 <span class="muted">{{ s.count }}名</span>
+                <template v-if="subMaster[s.subcontractorName]?.unit_price">
+                  <span class="sub-unit-price">¥{{ subMaster[s.subcontractorName].unit_price!.toLocaleString() }}/日</span>
+                  <span class="sub-cost">¥{{ (subMaster[s.subcontractorName].unit_price! * s.count).toLocaleString() }}</span>
+                </template>
+              </div>
+              <!-- 合計 -->
+              <div class="labor-cost">
+                下請け費合計
+                <span class="labor-cost-amount">
+                  ¥{{ site.subcontractors.filter((s: any) => s.subcontractorName)
+                    .reduce((sum: number, s: any) => sum + (subMaster[s.subcontractorName]?.unit_price ?? 0) * (s.count ?? 0), 0)
+                    .toLocaleString() }}
+                </span>
               </div>
             </div>
 
@@ -151,6 +164,9 @@ import { ref, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { computeWorkerHours, calcBreakMinutes } from '../lib/workerHours'
+
+// 下請けマスタ（name → {unit_price, category}）
+const subMaster = ref<Record<string, { unit_price: number | null; category: string | null }>>({})
 
 const search   = ref('')
 const now      = new Date()
@@ -223,6 +239,16 @@ function hasExpenses(exp: any): boolean {
 async function load() {
   loading.value = true
   const accountId = await getAccountId()
+
+  // 下請けマスタ取得
+  const { data: subs } = await supabase
+    .from('subcontractors')
+    .select('name, unit_price, category')
+    .eq('account_id', accountId)
+  subMaster.value = Object.fromEntries(
+    (subs ?? []).map((s: any) => [s.name, { unit_price: s.unit_price, category: s.category }])
+  )
+
   const { data } = await supabase
     .from('daily_reports')
     .select('id, date, is_working, sites, note, user_id, users(real_name, worker_id, workers(name, unit_price))')
@@ -294,7 +320,9 @@ onMounted(load)
 .inner-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .inner-table th { background: #f9f9f9; padding: 6px 10px; text-align: left; font-size: 11px; color: #888; font-weight: 700; }
 .inner-table td { padding: 8px 10px; border-top: 1px solid #f5f5f5; }
-.sub-row { display: flex; gap: 12px; font-size: 13px; padding: 4px 0; }
+.sub-row { display: flex; gap: 12px; font-size: 13px; padding: 4px 0; align-items: center; }
+.sub-unit-price { color: #aaa; font-size: 11px; margin-left: auto; }
+.sub-cost { font-weight: 700; font-size: 13px; min-width: 80px; text-align: right; }
 .expense-row { display: flex; gap: 10px; align-items: center; font-size: 13px; padding: 4px 0; border-top: 1px solid #f5f5f5; }
 .expense-row:first-child { border-top: none; }
 .exp-cat { font-size: 10px; background: #f0f0f0; color: #666; padding: 2px 6px; border-radius: 4px; font-weight: 700; flex-shrink: 0; }
