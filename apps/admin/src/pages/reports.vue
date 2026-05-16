@@ -69,7 +69,7 @@
               <div class="section-label">稼働</div>
               <table class="inner-table">
                 <thead>
-                  <tr><th>開始</th><th>終了</th><th>休憩</th><th>通常</th><th>残業</th><th>深夜</th></tr>
+                  <tr><th>開始</th><th>終了</th><th>休憩</th><th>通常</th><th>残業<span class="rate-note">(×1.25)</span></th><th>深夜<span class="rate-note">(×1.25)</span></th></tr>
                 </thead>
                 <tbody>
                   <template v-for="(w, wi) in site.workers" :key="wi">
@@ -290,6 +290,7 @@ onMounted(load)
 .unit-price-inline { margin-left: 10px; font-size: 11px; color: #888; font-weight: 400; }
 .labor-cost { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: #888; font-weight: 600; }
 .labor-cost-amount { font-size: 15px; font-weight: 700; color: #111; }
+.rate-note { font-size: 10px; font-weight: 400; color: #aaa; margin-left: 2px; }
 .inner-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .inner-table th { background: #f9f9f9; padding: 6px 10px; text-align: left; font-size: 11px; color: #888; font-weight: 700; }
 .inner-table td { padding: 8px 10px; border-top: 1px solid #f5f5f5; }
