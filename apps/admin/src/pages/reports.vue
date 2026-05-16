@@ -103,10 +103,9 @@
               <div v-for="(s, si2) in site.subcontractors.filter((s: any) => s.subcontractorName)" :key="si2" class="sub-row">
                 <span>{{ s.subcontractorName }}</span>
                 <span class="muted">{{ s.count }}名</span>
-                <template v-if="subMaster[s.subcontractorName]?.unit_price">
-                  <span class="sub-unit-price">¥{{ subMaster[s.subcontractorName].unit_price!.toLocaleString() }}/日</span>
-                  <span class="sub-cost">¥{{ (subMaster[s.subcontractorName].unit_price! * s.count).toLocaleString() }}</span>
-                </template>
+                <span v-if="subMaster[s.subcontractorName]?.unit_price" class="sub-cost">
+                  ¥{{ (subMaster[s.subcontractorName].unit_price! * s.count).toLocaleString() }}
+                </span>
               </div>
               <!-- 合計 -->
               <div class="labor-cost">
