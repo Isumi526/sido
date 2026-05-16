@@ -131,11 +131,11 @@
                   </div>
                 </div>
 
-                <!-- 料率プレビュー -->
+                <!-- 料率プレビュー（現場跨ぎ累積対応） -->
                 <div class="rate-preview">
-                  <template v-if="getRateLines(computeWorkerHours(site.workers[0].startTime, site.workers[0].endTime, calcBreakMinutes(site.workers[0].workerRole, site.workers[0].startTime, site.workers[0].endTime), isSunday)).length">
+                  <template v-if="sitePreviewBreakdowns[si] && getRateLines(sitePreviewBreakdowns[si]).length">
                     <div
-                      v-for="line in getRateLines(computeWorkerHours(site.workers[0].startTime, site.workers[0].endTime, calcBreakMinutes(site.workers[0].workerRole, site.workers[0].startTime, site.workers[0].endTime), isSunday))"
+                      v-for="line in getRateLines(sitePreviewBreakdowns[si])"
                       :key="line.label"
                       class="rate-line"
                     >
@@ -413,7 +413,8 @@
 </template>
 
 <script setup lang="ts">
-import { computeWorkerHours, getRateLines, calcBreakMinutes, TIME_OPTIONS } from '~/utils/workerHours'
+import { computeWorkerHours, getRateLines, calcBreakMinutes, parseMin, TIME_OPTIONS } from '~/utils/workerHours'
+import type { RateBreakdown } from '~/utils/workerHours'
 import { computeDiff } from '~/utils/diffReport'
 import type { User } from '~/types'
 
@@ -458,6 +459,32 @@ const isWorkingStr = ref<'working' | 'off'>('working')
 const isSunday = computed(() =>
   new Date(report.form.value.date + 'T00:00:00').getDay() === 0
 )
+
+// 現場跨ぎ残業対応: 各現場の workers[0] のプレビュー用 breakdown（startTime 順で累積）
+const sitePreviewBreakdowns = computed((): Record<number, RateBreakdown> => {
+  const sites  = report.form.value.sites
+  const sun    = isSunday.value
+  const accum: Record<string, number> = {}
+  const result: Record<number, RateBreakdown> = {}
+
+  const entries = sites
+    .map((site, si) => ({ si, w: site.workers[0] }))
+    .filter(e => !!e.w)
+
+  entries.sort((a, b) =>
+    parseMin(a.w?.startTime || '08:00') - parseMin(b.w?.startTime || '08:00')
+  )
+
+  for (const { si, w } of entries) {
+    const key = w.workerId || w.workerName || `site-${si}`
+    const brk = calcBreakMinutes(w.workerRole, w.startTime, w.endTime)
+    const { workedMin, ...breakdown } = computeWorkerHours(w.startTime, w.endTime, brk, sun, accum[key] ?? 0)
+    accum[key] = workedMin
+    result[si] = breakdown
+  }
+
+  return result
+})
 
 // ── 各経費セクションの あり/なし 状態（サイトごと） ──
 type UsageState = {
