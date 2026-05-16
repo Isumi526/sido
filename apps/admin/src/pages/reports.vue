@@ -58,15 +58,17 @@
 
             <!-- 作業員 -->
             <div v-if="site.workers?.length" class="section">
-              <div class="section-label">作業員</div>
               <table class="inner-table">
                 <thead>
-                  <tr><th>名前</th><th>区分</th><th>開始</th><th>終了</th><th>通常</th><th>残業</th><th>深夜</th></tr>
+                  <tr><th>開始</th><th>終了</th><th>通常</th><th>残業</th><th>深夜</th></tr>
                 </thead>
                 <tbody>
                   <tr v-for="(w, wi) in site.workers" :key="wi">
-                    <td>{{ w.workerName }}</td>
-                    <td>{{ w.workerRole === 'factory' ? '工場' : '現場' }}</td>
+                    <td colspan="5" class="worker-name-row">
+                      {{ w.workerName }}<span class="worker-role-inline">{{ w.workerRole === 'factory' ? '工場' : '現場' }}</span>
+                    </td>
+                  </tr>
+                  <tr v-for="(w, wi) in site.workers" :key="'h' + wi">
                     <td>{{ w.startTime }}</td>
                     <td>{{ w.endTime }}</td>
                     <template v-if="w.startTime && w.endTime">
@@ -252,6 +254,8 @@ onMounted(load)
 .section { padding: 12px 16px; border-top: 1px solid #f0f0f0; }
 .section:first-child { border-top: none; }
 .section-label { font-size: 11px; font-weight: 700; color: #06C755; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+.worker-name-row { font-weight: 700; font-size: 13px; padding-bottom: 2px !important; border-bottom: none !important; }
+.worker-role-inline { margin-left: 6px; font-size: 11px; color: #888; font-weight: 400; }
 .inner-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .inner-table th { background: #f9f9f9; padding: 6px 10px; text-align: left; font-size: 11px; color: #888; font-weight: 700; }
 .inner-table td { padding: 8px 10px; border-top: 1px solid #f5f5f5; }
