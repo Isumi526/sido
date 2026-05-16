@@ -108,7 +108,7 @@
                     <div class="time-field">
                       <label class="hours-label">開始</label>
                       <select v-model="site.workers[0].startTime" class="select">
-                        <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
+                        <option v-for="t in startTimeOptionsForSite(si)" :key="t" :value="t">{{ t }}</option>
                       </select>
                     </div>
                     <span class="time-sep">〜</span>
@@ -620,17 +620,37 @@ function initWorkers() {
 }
 
 function addSite() {
+  // 追加前に前現場の終了時刻を取得（日跨ぎでなければ次現場の開始時刻に使う）
+  const sites = report.form.value.sites
+  const prevWorker   = sites.length > 0 ? sites[sites.length - 1].workers[0] : null
+  const prevEndTime  = prevWorker?.endTime
+  const prevStartMin = parseMin(prevWorker?.startTime || '08:00')
+  const prevEndMin   = parseMin(prevEndTime           || '17:30')
+  const autoStart    = (prevEndTime && prevEndMin > prevStartMin) ? prevEndTime : undefined
+
   report.addSite()
   siteUsage.value.push(createUsage())
-  // 追加したサイトにもログインユーザーをセット
   if (currentUser.value) {
     const newSite = report.form.value.sites[report.form.value.sites.length - 1]
     newSite.workers = [{
       ...createWorker(currentUser.value.worker_role),
       workerName: currentUser.value.real_name,
       workerRole: currentUser.value.worker_role,
+      // 2つ目以降: 前現場の終了時刻を開始時刻に自動セット（終了も同値にして選び直しを促す）
+      ...(autoStart ? { startTime: autoStart, endTime: autoStart } : {}),
     }]
   }
+}
+
+/** 開始時刻のオプション: si>0 の場合は前現場の終了時刻より前を除外（日跨ぎ除く） */
+function startTimeOptionsForSite(si: number): string[] {
+  if (si === 0) return TIME_OPTIONS
+  const prev = report.form.value.sites[si - 1]?.workers[0]
+  if (!prev) return TIME_OPTIONS
+  const prevEndMin   = parseMin(prev.endTime   || '17:30')
+  const prevStartMin = parseMin(prev.startTime  || '08:00')
+  if (prevEndMin <= prevStartMin) return TIME_OPTIONS  // 日跨ぎは制限なし
+  return TIME_OPTIONS.filter(t => parseMin(t) >= prevEndMin)
 }
 function removeSite(i: number) {
   report.removeSite(i)
