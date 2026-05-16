@@ -90,7 +90,7 @@
           <div class="sub-section">
 
             <!-- 作業員（ログインユーザー固定） -->
-            <Field label="作業員">
+            <Field>
               <!-- 時刻・休憩 -->
               <template v-if="site.workers[0]">
                 <div class="worker-time-rows">
