@@ -88,7 +88,6 @@
 
           <!-- ── 稼働 ── -->
           <div class="sub-section">
-            <div class="sub-section-title">稼働</div>
 
             <!-- 作業員（ログインユーザー固定） -->
             <Field label="作業員">
