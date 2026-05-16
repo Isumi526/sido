@@ -109,15 +109,20 @@
                       </select>
                     </div>
                   </div>
+                  <div class="worker-break-row">
+                    <div class="time-field">
+                      <label class="hours-label">休憩</label>
+                      <span class="break-auto">
+                        {{ calcBreakMinutes(site.workers[0].workerRole, site.workers[0].startTime, site.workers[0].endTime) === 0
+                          ? 'なし'
+                          : calcBreakMinutes(site.workers[0].workerRole, site.workers[0].startTime, site.workers[0].endTime) + '分（自動）' }}
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
                 <!-- 料率プレビュー（現場跨ぎ累積対応） -->
                 <div class="rate-preview">
-                  <div class="rate-line rate-line--break">
-                    <span class="rate-label" style="color:#6B7280">休憩</span>
-                    <span class="rate-hours" style="color:#6B7280">{{ calcBreakMinutes(site.workers[0].workerRole, site.workers[0].startTime, site.workers[0].endTime) === 0 ? 'なし' : (calcBreakMinutes(site.workers[0].workerRole, site.workers[0].startTime, site.workers[0].endTime) / 60) + 'h' }}</span>
-                    <span class="rate-rate"></span>
-                  </div>
                   <template v-if="sitePreviewBreakdowns[si] && getRateLines(sitePreviewBreakdowns[si]).length">
                     <div
                       v-for="line in getRateLines(sitePreviewBreakdowns[si])"
