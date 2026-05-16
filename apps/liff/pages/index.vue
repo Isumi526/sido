@@ -906,11 +906,9 @@ async function handleSubmit() {
     return
   }
 
-  await report.submit()
-
-  // GAS送信成功後にSupabaseにも保存
-  if (!report.error.value && liff.profile.value?.userId) {
-    const uid = liff.profile.value.userId
+  // ① Supabaseに先に保存（画面を閉じてもデータが消えないよう順序を優先）
+  const uid = liff.profile.value?.userId
+  if (uid) {
     try {
       await expense.saveReport(uid, {
         date:      report.form.value.date,
@@ -928,8 +926,15 @@ async function handleSubmit() {
         await navigateTo('/register')
         return
       }
+      // DB保存失敗でもGAS送信は続行（LINE通知は止めない）
     }
-    // 次の未送信日を取得してサクセス画面に表示
+  }
+
+  // ② GASに送信（LINE通知・keepalive: true でページ閉じても通信継続）
+  await report.submit()
+
+  // ③ 次の未送信日を取得してサクセス画面に表示
+  if (!report.error.value && uid) {
     const next = await expense.getNextUnsubmittedDate(uid).catch(() => null)
     if (next && next !== 'NOT_CONFIGURED') {
       nextUnsubmittedDate.value = next

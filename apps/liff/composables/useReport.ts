@@ -186,10 +186,11 @@ export const useReport = () => {
           })),
         }
         await fetch(config.public.gasUrl, {
-          method:  'POST',
-          mode:    'no-cors',
-          headers: { 'Content-Type': 'text/plain' },
-          body:    JSON.stringify(stripEmpty({ action: 'submitReport', ...mainPayload, ...devExtra })),
+          method:    'POST',
+          mode:      'no-cors',
+          keepalive: true,
+          headers:   { 'Content-Type': 'text/plain' },
+          body:      JSON.stringify(stripEmpty({ action: 'submitReport', ...mainPayload, ...devExtra })),
         })
 
         // ── ② ファイルアップロード（fire-and-forget）──
