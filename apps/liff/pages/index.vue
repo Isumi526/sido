@@ -1012,8 +1012,9 @@ function fillTestData() {
     const site0 = report.form.value.sites[0]
     site0.siteName = master.siteNames.value[0]
     // workers はログインユーザー固定 → 時刻だけ上書き
-    if (site0.workers[0]) { site0.workers[0].startTime = '08:00'; site0.workers[0].endTime = '23:30' }
+    if (site0.workers[0]) { site0.workers[0].startTime = '08:00'; site0.workers[0].endTime = '17:30' }
     site0.subcontractors = [{ subcontractorId: '', subcontractorName: sub[0] || '', count: 2 }]
+    siteUsage.value[0].expense = 'あり'
     siteUsage.value[0].vehicle = 'あり'
     site0.expenses.carpool = false
     site0.expenses.vehicles = [{ vehicleName: 'ハイエース', distanceKm: 80, dieselKm: undefined, parkingYen: 500, highwayYen: 1200, etcUsed: true, etcCard: 'カード①' }]
@@ -1053,8 +1054,9 @@ function fillTestData() {
   const siteN = report.form.value.sites[newIdx]
   siteN.siteName = '__other__'
   siteN.customSiteName = 'テスト新規現場'
-  // workers はログインユーザー固定 → 時刻はデフォルトのまま
+  // workers はログインユーザー固定 → addSite() で17:30〜21:30 が自動セット済み
   siteN.subcontractors = [{ subcontractorId: '', subcontractorName: sub[1] || sub[0] || '', count: 1 }]
+  siteUsage.value[newIdx].expense = 'あり'
   siteUsage.value[newIdx].vehicle = '乗合い'
   siteN.expenses.carpool = true
   siteN.expenses.vehicles = []
