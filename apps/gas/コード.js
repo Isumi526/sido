@@ -187,7 +187,7 @@ function handleEditNotification(body) {
       '📅 ' + dateLabel,
       '👤 ' + sender,
       '🕐 ' + editedAt + ' 更新',
-      '─────────────────',
+      '──────────',
     ].concat(diffs);
 
     var msg      = [{ type: 'text', text: lines.join('\n') }];
@@ -267,7 +267,7 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
     var lines = [
       '📋 ' + dateLabel + ' 日報',
       '👤 ' + sender,
-      '─────────────────',
+      '──────────',
     ];
 
     sites.forEach(function(site) {
@@ -395,7 +395,7 @@ function handleErrorNotification(body) {
       '🚨 日報エラー通知',
       '👤 ' + sender + datePart,
       '操作: ' + actionName,
-      '─────────────────',
+      '──────────',
       errorMsg,
     ].join('\n');
 
@@ -469,7 +469,7 @@ function handleFileUploads(body) {
       var d2       = new Date((date || '') + 'T00:00:00');
       var weekdays = ['日','月','火','水','木','金','土'];
       var dateLabel = (d2.getMonth()+1) + '/' + d2.getDate() + '（' + weekdays[d2.getDay()] + '）';
-      var msg = ['📎 ' + dateLabel + ' 添付ファイル', '👤 ' + sender, '─────────────────', ''].concat(notifyLines).join('\n');
+      var msg = ['📎 ' + dateLabel + ' 添付ファイル', '👤 ' + sender, '──────────', ''].concat(notifyLines).join('\n');
       var msgObj = [{ type: 'text', text: msg }];
       var groupIds = devGroupId ? [devGroupId] : (CONFIG.NOTIFY_GROUP_IDS || []);
       groupIds.forEach(function(id) { pushLineMessages(id, msgObj); });
