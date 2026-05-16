@@ -101,10 +101,10 @@
             <div v-if="site.subcontractors?.filter((s: any) => s.subcontractorName).length" class="section">
               <div class="section-label">下請け業者</div>
               <div v-for="(s, si2) in site.subcontractors.filter((s: any) => s.subcontractorName)" :key="si2" class="sub-row">
-                <span>{{ s.subcontractorName }}</span>
+                <span>{{ s.subcontractorName === '__other__' ? (s.customSubcontractorName || '新規業者') : s.subcontractorName }}</span>
                 <span class="muted">{{ s.count }}名</span>
-                <span v-if="subMaster[s.subcontractorName]?.unit_price" class="sub-cost">
-                  ¥{{ (subMaster[s.subcontractorName].unit_price! * s.count).toLocaleString() }}
+                <span v-if="subMaster[s.subcontractorName === '__other__' ? (s.customSubcontractorName || '') : s.subcontractorName]?.unit_price" class="sub-cost">
+                  ¥{{ (subMaster[s.subcontractorName === '__other__' ? (s.customSubcontractorName || '') : s.subcontractorName].unit_price! * s.count).toLocaleString() }}
                 </span>
               </div>
               <!-- 合計 -->
@@ -112,7 +112,10 @@
                 下請け費合計
                 <span class="labor-cost-amount">
                   ¥{{ site.subcontractors.filter((s: any) => s.subcontractorName)
-                    .reduce((sum: number, s: any) => sum + (subMaster[s.subcontractorName]?.unit_price ?? 0) * (s.count ?? 0), 0)
+                    .reduce((sum: number, s: any) => {
+                      const key = s.subcontractorName === '__other__' ? (s.customSubcontractorName || '') : s.subcontractorName
+                      return sum + (subMaster[key]?.unit_price ?? 0) * (s.count ?? 0)
+                    }, 0)
                     .toLocaleString() }}
                 </span>
               </div>
