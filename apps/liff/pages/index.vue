@@ -989,8 +989,6 @@ function fillTestData() {
   // マスタから取得
   const sub = master.subcontractorNames.value
 
-  const dummyPhoto   = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
-  const dummyDataUrl = 'data:image/png;base64,' + dummyPhoto
   const hasExisting = master.siteNames.value.length > 0
 
   if (hasExisting) {
@@ -1004,32 +1002,26 @@ function fillTestData() {
     siteUsage.value[0].vehicle = 'あり'
     site0.expenses.carpool = false
     site0.expenses.vehicles = [{ vehicleName: 'ハイエース', distanceKm: 80, dieselKm: undefined, parkingYen: 500, highwayYen: 1200, etcUsed: true, etcCard: 'カード①' }]
-    site0.expenses.vehicleFiles = [dummyDataUrl]
+    // site0.expenses.vehicleFiles — テストデータでは File[] を設定不可
     siteUsage.value[0].train = 'あり'
     site0.expenses.trains = [{ label: '名古屋→大阪', yen: 3000 }]
-    site0.expenses.trainFiles = [dummyDataUrl]
     siteUsage.value[0].hotel = 'あり'
     site0.expenses.hotelName = 'アパホテル名古屋'
     site0.expenses.hotelYen  = 8000
     site0.expenses.hotelRegistration = 'T1234567890123'
-    site0.expenses.hotelFiles = [dummyDataUrl, dummyDataUrl]
     siteUsage.value[0].leopalace = 'あり'
     site0.expenses.leopalaceName = 'レオパレス栄'
     site0.expenses.leopalaceYen  = 50000
     site0.expenses.leopalaceRegistration = 'T9876543210987'
-    site0.expenses.leopalaceFiles = [dummyDataUrl]
     siteUsage.value[0].garbage = 'あり'
     site0.expenses.garbageFactoryM3 = 3
     site0.expenses.garbageSiteM3    = 5
-    site0.expenses.garbagePhotos = [dummyPhoto, dummyPhoto]
     siteUsage.value[0].other = 'あり'
     site0.expenses.others = [{ label: '養生テープ', yen: 1500, registrationNumber: 'ナシ' }]
-    site0.expenses.otherFiles = [dummyDataUrl]
     siteUsage.value[0].entertainment = 'あり'
     site0.expenses.entertainmentLabel = '懇親会'
     site0.expenses.entertainmentYen   = 10000
     site0.expenses.entertainmentRegistration = 'T1111222233334'
-    site0.expenses.entertainmentFiles = [dummyDataUrl]
 
     // ── 現場2（新規現場「その他」） ── を追加
     addSite()
@@ -1049,19 +1041,15 @@ function fillTestData() {
   siteN.expenses.vehicleFiles = undefined
   siteUsage.value[newIdx].train = 'あり'
   siteN.expenses.trains = [{ label: '大阪→名古屋', yen: 2500 }]
-  siteN.expenses.trainFiles = [dummyDataUrl]
   siteUsage.value[newIdx].garbage = 'あり'
   siteN.expenses.garbageFactoryM3 = 2
   siteN.expenses.garbageSiteM3    = 4
-  siteN.expenses.garbagePhotos = [dummyPhoto]
   siteUsage.value[newIdx].other = 'あり'
   siteN.expenses.others = [{ label: 'ビニールシート', yen: 800, registrationNumber: 'ナシ' }]
-  siteN.expenses.otherFiles = [dummyDataUrl]
   siteUsage.value[newIdx].entertainment = 'あり'
   siteN.expenses.entertainmentLabel = '昼食代'
   siteN.expenses.entertainmentYen   = 5000
   siteN.expenses.entertainmentRegistration = 'ナシ'
-  siteN.expenses.entertainmentFiles = [dummyDataUrl]
 }
 </script>
 

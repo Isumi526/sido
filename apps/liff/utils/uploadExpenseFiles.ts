@@ -35,6 +35,7 @@ export async function uploadExpenseFiles(
 
   for (let i = 0; i < files.length; i++) {
     const file = files[i]
+    if (!(file instanceof File)) continue  // テストデータ等で文字列が混入した場合はスキップ
     const ext  = file.name.split('.').pop()?.toLowerCase() || 'jpg'
     const path = `${folder}/${category}_${i + 1}.${ext}`
 
