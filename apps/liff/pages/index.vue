@@ -141,13 +141,23 @@
 
             <!-- 下請け業者 -->
             <Field label="下請け業者">
-              <div v-for="(sub, si2) in site.subcontractors" :key="si2" class="row-worker">
-                <select v-model="sub.subcontractorName" class="select">
-                  <option value="">業者選択</option>
-                  <option v-for="name in master.subcontractorNames.value" :key="name" :value="name">{{ name }}</option>
-                </select>
-                <input v-model.number="sub.count" type="number" min="1" max="20" class="input select--h" placeholder="人数" />
-                <button v-if="site.subcontractors.length > 1" type="button" class="btn-icon-sm" @click="report.removeSub(si, si2)">✕</button>
+              <div v-for="(sub, si2) in site.subcontractors" :key="si2">
+                <div class="row-worker">
+                  <select v-model="sub.subcontractorName" class="select" :class="{ 'select--error': sub.subcontractorName === '' }">
+                    <option value="" disabled>業者を選択 *</option>
+                    <option v-for="name in master.subcontractorNames.value" :key="name" :value="name">{{ name }}</option>
+                    <option value="__other__">その他（新規追加）</option>
+                  </select>
+                  <input v-model.number="sub.count" type="number" min="1" max="20" class="input select--h" placeholder="人数" />
+                  <button type="button" class="btn-icon-sm" @click="report.removeSub(si, si2)">✕</button>
+                </div>
+                <input
+                  v-if="sub.subcontractorName === '__other__'"
+                  v-model="sub.customSubcontractorName"
+                  class="input"
+                  placeholder="業者名を入力 *"
+                  style="margin-top: -4px; margin-bottom: 8px;"
+                />
               </div>
               <button type="button" class="btn-ghost-sm" @click="report.addSub(si)">＋ 業者を追加</button>
             </Field>
@@ -367,7 +377,10 @@
 
         <!-- 現場追加 -->
         <button type="button" class="btn-add-site" @click="addSite()">
-          ＋ 現場を追加する
+          <span class="btn-add-site__icon">＋</span>
+          <span class="btn-add-site__text">
+            {{ report.form.value.sites.length + 1 }}個目の現場を追加する
+          </span>
         </button>
 
         </template><!-- /isWorkingStr === 'working' -->
@@ -562,7 +575,7 @@ async function loadEditData(date: string) {
         others:   [createLineItem()],
         ...(site.expenses ?? {}),
       },
-      subcontractors: (site.subcontractors ?? []).length > 0 ? site.subcontractors : [createSub()],
+      subcontractors: site.subcontractors ?? [],
     }))
     siteUsage.value = report.form.value.sites.map((site: any) =>
       reconstructExpenseUsage(site.expenses)
@@ -790,7 +803,12 @@ const linePreview = computed(() => {
 
     // 下請け業者
     const subs = (site.subcontractors || []).filter((s: any) => s.subcontractorName)
-    if (subs.length) { subs.forEach((s: any) => lines.push(`・${s.subcontractorName} ${s.count}人`)) }
+    if (subs.length) {
+      subs.forEach((s: any) => {
+        const name = s.subcontractorName === '__other__' ? (s.customSubcontractorName || '新規業者') : s.subcontractorName
+        lines.push(`・${name} ${s.count}人`)
+      })
+    }
   }
 
   if (form.note) lines.push(`\n📝 ${form.note}`)
@@ -1008,7 +1026,10 @@ function fillTestData() {
     site0.siteName = master.siteNames.value[0]
     // workers はログインユーザー固定 → 時刻だけ上書き
     if (site0.workers[0]) { site0.workers[0].startTime = '08:00'; site0.workers[0].endTime = '17:30' }
-    site0.subcontractors = [{ subcontractorId: '', subcontractorName: sub[0] || '', count: 2 }]
+    site0.subcontractors = [
+      { subcontractorId: '', subcontractorName: sub[0] || '__other__', customSubcontractorName: sub[0] ? '' : 'テスト業者A', count: 2 },
+      { subcontractorId: '', subcontractorName: '__other__', customSubcontractorName: '新規テスト業者', count: 1 },
+    ]
     siteUsage.value[0].expense = 'あり'
     siteUsage.value[0].vehicle = 'あり'
     site0.expenses.carpool = false
@@ -1050,7 +1071,9 @@ function fillTestData() {
   siteN.siteName = '__other__'
   siteN.customSiteName = 'テスト新規現場'
   // workers はログインユーザー固定 → addSite() で17:30〜21:30 が自動セット済み
-  siteN.subcontractors = [{ subcontractorId: '', subcontractorName: sub[1] || sub[0] || '', count: 1 }]
+  siteN.subcontractors = [
+    { subcontractorId: '', subcontractorName: sub[1] || sub[0] || '__other__', customSubcontractorName: (sub[1] || sub[0]) ? '' : 'テスト業者B', count: 1 },
+  ]
   siteUsage.value[newIdx].expense = 'あり'
   siteUsage.value[newIdx].vehicle = '乗合い'
   siteN.expenses.carpool = true
@@ -1176,6 +1199,7 @@ html, body {
 }
 .select--h     { width: 100%; }
 .select--usage { width: 90px; flex-shrink: 0; }
+.select--error { border-color: #f87171 !important; }
 .textarea { resize: vertical; }
 
 /* ── サブセクション ── */
@@ -1331,13 +1355,17 @@ html, body {
 }
 
 .btn-add-site {
-  width: 100%; background: transparent;
-  border: 2px dashed var(--border); border-radius: var(--radius);
-  color: var(--text2); font-size: 14px; font-family: var(--font);
-  padding: 16px; cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
+  width: 100%;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  background: #f0fdf4;
+  border: 2px dashed #86efac; border-radius: var(--radius);
+  color: #16a34a; font-size: 15px; font-weight: 700; font-family: var(--font);
+  padding: 18px 16px; cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
 }
-.btn-add-site:hover { border-color: var(--accent); color: var(--accent); }
+.btn-add-site:hover { background: #dcfce7; border-color: var(--accent); }
+.btn-add-site__icon { font-size: 20px; line-height: 1; }
+.btn-add-site__text { letter-spacing: 0.5px; }
 
 /* ── devツールボタン ── */
 .btn-dev {

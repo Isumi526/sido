@@ -26,6 +26,7 @@ export interface WorkerEntry {
 export interface SubcontractorEntry {
   subcontractorId: string
   subcontractorName: string
+  customSubcontractorName?: string  // 「その他（新規）」選択時の自由記入名
   count: number
 }
 

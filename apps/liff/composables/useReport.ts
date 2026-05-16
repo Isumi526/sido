@@ -26,9 +26,10 @@ export const createWorker = (role: WorkerRole = 'site'): WorkerEntry => ({
 })
 
 export const createSub = (): SubcontractorEntry => ({
-  subcontractorId:   '',
-  subcontractorName: '',
-  count:             1,
+  subcontractorId:          '',
+  subcontractorName:        '',
+  customSubcontractorName:  '',
+  count:                    1,
 })
 
 export const createVehicle = (): VehicleExpense => ({
@@ -45,7 +46,7 @@ export const createSite = (): SiteReport => ({
   siteName:       '',
   workers:        [createWorker()],
   expenses:       { vehicles: [createVehicle()], trains: [createLineItem()], others: [createLineItem()] },
-  subcontractors: [createSub()],
+  subcontractors: [],
 })
 
 // 経費オブジェクトから File[] フィールドを除去（GAS送信用 - *Urls は残す）
@@ -213,7 +214,13 @@ export const useReport = () => {
                 : (computedBreakdowns.get(w) ?? {})
               return { ...w, ...r }
             }),
-          subcontractors: site.subcontractors.filter(s => s.subcontractorName),
+          subcontractors: site.subcontractors
+            .filter(s => s.subcontractorName)
+            .map(s => s.subcontractorName === '__other__'
+              ? { ...s, subcontractorName: s.customSubcontractorName || '' }
+              : s
+            )
+            .filter(s => s.subcontractorName),
         }
       }),
     }
@@ -244,9 +251,12 @@ export const useReport = () => {
       }
       submitted.value = true
 
-      // ── ③ 新規現場を Supabase に保存（fire-and-forget）──
+      // ── ③ 新規現場・新規下請けを Supabase に保存（fire-and-forget）──
       for (const site of payload.sites) {
         if (site.siteName) master.saveSite(site.siteName)
+        for (const sub of site.subcontractors) {
+          if (sub.subcontractorName && sub.subcontractorName !== '__other__') master.saveSub(sub.subcontractorName)
+        }
       }
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : '送信に失敗しました'
