@@ -1034,16 +1034,12 @@ function fillTestData() {
     siteUsage.value[0].vehicle = 'あり'
     site0.expenses.carpool = false
     site0.expenses.vehicles = [{ vehicleName: 'ハイエース', distanceKm: 80, dieselKm: undefined, parkingYen: 500, highwayYen: 1200, etcUsed: true, etcCard: 'カード①' }]
-    const slug = 'test'; const ym = '2026-05'; const half = 'first'; const folder = `${slug}/${ym}/${half}/2026-05-08___________1`
-    site0.expenses.vehicleUrls = [`https://nrzzesbtvswoiouhldvi.supabase.co/storage/v1/object/public/expense-receipts/${folder}/vehicle_1.jpg`]
     siteUsage.value[0].train = 'あり'
     site0.expenses.trains = [{ label: '名古屋→大阪', yen: 3000 }]
-    site0.expenses.trainUrls         = [`https://nrzzesbtvswoiouhldvi.supabase.co/storage/v1/object/public/expense-receipts/${folder}/train_1.jpg`]
     siteUsage.value[0].hotel = 'あり'
     site0.expenses.hotelName = 'アパホテル名古屋'
     site0.expenses.hotelYen  = 8000
     site0.expenses.hotelRegistration = 'T1234567890123'
-    site0.expenses.hotelUrls         = [`https://nrzzesbtvswoiouhldvi.supabase.co/storage/v1/object/public/expense-receipts/${folder}/hotel_1.jpg`]
     siteUsage.value[0].leopalace = 'あり'
     site0.expenses.leopalaceName = 'レオパレス栄'
     site0.expenses.leopalaceYen  = 50000
@@ -1051,15 +1047,12 @@ function fillTestData() {
     siteUsage.value[0].garbage = 'あり'
     site0.expenses.garbageFactoryM3 = 3
     site0.expenses.garbageSiteM3    = 5
-    site0.expenses.garbagePhotoUrls  = [`https://nrzzesbtvswoiouhldvi.supabase.co/storage/v1/object/public/expense-receipts/${folder}/garbage_1.jpg`]
     siteUsage.value[0].other = 'あり'
     site0.expenses.others = [{ label: '養生テープ', yen: 1500, registrationNumber: 'ナシ' }]
-    site0.expenses.otherUrls         = [`https://nrzzesbtvswoiouhldvi.supabase.co/storage/v1/object/public/expense-receipts/${folder}/other_1.jpg`]
     siteUsage.value[0].entertainment = 'あり'
     site0.expenses.entertainmentLabel = '懇親会'
     site0.expenses.entertainmentYen   = 10000
     site0.expenses.entertainmentRegistration = 'T1111222233334'
-    site0.expenses.entertainmentUrls  = [`https://nrzzesbtvswoiouhldvi.supabase.co/storage/v1/object/public/expense-receipts/${folder}/entertainment_1.jpg`]
 
     // ── 現場2（新規現場「その他」） ── を追加
     addSite()
@@ -1080,8 +1073,6 @@ function fillTestData() {
   siteN.expenses.vehicles = []
   siteUsage.value[newIdx].train = 'あり'
   siteN.expenses.trains = [{ label: '大阪→名古屋', yen: 2500 }]
-  const folderN = `test/2026-05/first/2026-05-08__________`
-  siteN.expenses.trainUrls    = [`https://nrzzesbtvswoiouhldvi.supabase.co/storage/v1/object/public/expense-receipts/${folderN}/train_1.jpg`]
   siteUsage.value[newIdx].garbage = 'あり'
   siteN.expenses.garbageFactoryM3 = 2
   siteN.expenses.garbageSiteM3    = 4
