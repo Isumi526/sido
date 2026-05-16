@@ -163,8 +163,16 @@
             </Field>
           </div>
 
+          <!-- 経費有無 -->
+          <Field label="経費">
+            <select :value="siteUsage[si].expense" class="select select--usage" @change="(e) => setUsage(si, 'expense', (e.target as HTMLSelectElement).value)">
+              <option value="なし">なし</option>
+              <option value="あり">あり</option>
+            </select>
+          </Field>
+
           <!-- ── 交通経費 ── -->
-          <div class="sub-section">
+          <div v-if="siteUsage[si].expense === 'あり'" class="sub-section">
             <div class="sub-section-title">交通経費</div>
 
             <!-- 車両 -->
@@ -244,7 +252,7 @@
           </div>
 
           <!-- ── 現場経費 ── -->
-          <div class="sub-section">
+          <div v-if="siteUsage[si].expense === 'あり'" class="sub-section">
             <div class="sub-section-title">現場経費</div>
 
             <!-- ホテル -->
@@ -488,6 +496,7 @@ const sitePreviewBreakdowns = computed((): Record<number, RateBreakdown> => {
 
 // ── 各経費セクションの あり/なし 状態（サイトごと） ──
 type UsageState = {
+  expense:       string
   vehicle:       string
   train:         string
   hotel:         string
@@ -498,6 +507,7 @@ type UsageState = {
 }
 
 const createUsage = (): UsageState => ({
+  expense:       'なし',
   vehicle:       'なし',
   train:         'なし',
   hotel:         'なし',
@@ -524,6 +534,11 @@ function reconstructExpenseUsage(exp: any): UsageState {
   if (exp.garbageFactoryM3 || exp.garbageSiteM3)  usage.garbage = 'あり'
   if ((exp.others ?? []).some((o: any) => o.yen || o.label)) usage.other = 'あり'
   if (exp.entertainmentYen)                        usage.entertainment = 'あり'
+  // いずれかの経費があれば expense = あり
+  if (usage.vehicle !== 'なし' || usage.train !== 'なし' || usage.hotel !== 'なし' ||
+      usage.leopalace !== 'なし' || usage.garbage !== 'なし' ||
+      usage.other !== 'なし' || usage.entertainment !== 'なし')
+    usage.expense = 'あり'
   return usage
 }
 
