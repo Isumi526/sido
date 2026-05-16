@@ -309,7 +309,6 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
       // 作業員
       var workers = (site.workers || []).filter(function(w) { return w.workerName; });
       if (workers.length > 0) {
-        lines.push('');
         workers.forEach(function(w) {
           var parts = [];
           if (w.hoursNormal)        parts.push(w.hoursNormal + 'h');
@@ -362,14 +361,12 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
       if (exp.entertainmentYen) expLines.push((exp.entertainmentLabel || '雑経費') + ' ¥' + Number(exp.entertainmentYen).toLocaleString());
       if (exp.otherYen)         expLines.push('その他 ¥' + Number(exp.otherYen).toLocaleString());
       if (expLines.length > 0) {
-        lines.push('');
         expLines.forEach(function(l) { lines.push('・' + l); });
       }
 
       // 下請け業者
       var subs = (site.subcontractors || []).filter(function(s) { return s.subcontractorName; });
       if (subs.length > 0) {
-        lines.push('');
         subs.forEach(function(s) { lines.push('・' + s.subcontractorName + ' ' + s.count + '人'); });
       }
     });

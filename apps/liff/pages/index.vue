@@ -736,7 +736,6 @@ const linePreview = computed(() => {
     // 稼働時間（名前なし・時間のみ）
     const workers = (site.workers || []).filter((w: any) => w.workerName)
     if (workers.length > 0) {
-      lines.push('')
       for (const w of workers) {
         const brk = calcBreakMinutes(w.workerRole || 'site', w.startTime || '08:00', w.endTime || '17:30')
         const h   = computeWorkerHours(w.startTime || '08:00', w.endTime || '17:30', brk, sunday)
@@ -787,11 +786,11 @@ const linePreview = computed(() => {
     }
     if (exp.entertainmentYen)
       expLines.push(`${exp.entertainmentLabel || '雑経費'} ¥${Number(exp.entertainmentYen).toLocaleString()}`)
-    if (expLines.length) { lines.push(''); expLines.forEach(l => lines.push(`・${l}`)) }
+    if (expLines.length) { expLines.forEach(l => lines.push(`・${l}`)) }
 
     // 下請け業者
     const subs = (site.subcontractors || []).filter((s: any) => s.subcontractorName)
-    if (subs.length) { lines.push(''); subs.forEach((s: any) => lines.push(`・${s.subcontractorName} ${s.count}人`)) }
+    if (subs.length) { subs.forEach((s: any) => lines.push(`・${s.subcontractorName} ${s.count}人`)) }
   }
 
   if (form.note) lines.push(`\n📝 ${form.note}`)
