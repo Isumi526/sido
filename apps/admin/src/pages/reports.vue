@@ -44,6 +44,9 @@
               <span v-if="selected.sites?.[0]?.workers?.[0]?.workerRole" class="worker-role-inline">
                 / {{ selected.sites[0].workers[0].workerRole === 'factory' ? '工場' : '現場' }}
               </span>
+              <span v-if="selected.users?.workers?.unit_price" class="unit-price-inline">
+                ¥{{ selected.users.workers.unit_price.toLocaleString() }}/日
+              </span>
             </div>
           </div>
           <div class="modal-head-right">
@@ -86,6 +89,12 @@
                   </template>
                 </tbody>
               </table>
+              <div v-if="selected.users?.workers?.unit_price" class="labor-cost">
+                人件費
+                <span class="labor-cost-amount">
+                  ¥{{ site.workers.reduce((sum: number, w: any) => sum + (w.startTime && w.endTime ? calcLaborCost(w, selected.date, selected.users.workers.unit_price) : 0), 0).toLocaleString() }}
+                </span>
+              </div>
             </div>
 
             <!-- 下請け業者 -->
@@ -178,6 +187,24 @@ function calcHours(w: any, date: string) {
   }
 }
 
+function calcLaborCost(w: any, date: string, unitPrice: number): number {
+  const isSunday = new Date(date + 'T00:00:00').getDay() === 0
+  const role = w.workerRole || 'site'
+  const brk  = calcBreakMinutes(role, w.startTime, w.endTime)
+  const h    = computeWorkerHours(w.startTime, w.endTime, brk, isSunday)
+  const rate = unitPrice / 8
+  return Math.round(rate * (
+    h.hoursNormal        * 1.00 +
+    h.hoursOT            * 1.25 +
+    h.hoursNight         * 1.25 +
+    h.hoursOTNight       * 1.50 +
+    h.hoursSunday        * 1.35 +
+    h.hoursSundayOT      * 1.60 +
+    h.hoursSundayNight   * 1.60 +
+    h.hoursSundayOTNight * 1.85
+  ))
+}
+
 function resolveSiteName(site: any): string {
   const n = site.siteName ?? ''
   return n === '__other__' ? (site.customSiteName?.trim() || '新規現場') : (n || '(現場名なし)')
@@ -198,7 +225,7 @@ async function load() {
   const accountId = await getAccountId()
   const { data } = await supabase
     .from('daily_reports')
-    .select('id, date, is_working, sites, note, user_id, users(real_name, worker_id, workers(name))')
+    .select('id, date, is_working, sites, note, user_id, users(real_name, worker_id, workers(name, unit_price))')
     .eq('account_id', accountId)
     .gte('date', dateFrom.value)
     .lte('date', dateTo.value)
@@ -260,6 +287,9 @@ onMounted(load)
 .section-label { font-size: 11px; font-weight: 700; color: #06C755; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
 .worker-name-row { font-weight: 700; font-size: 13px; padding-bottom: 2px !important; border-bottom: none !important; }
 .worker-role-inline { margin-left: 6px; font-size: 11px; color: #888; font-weight: 400; }
+.unit-price-inline { margin-left: 10px; font-size: 11px; color: #888; font-weight: 400; }
+.labor-cost { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: #888; font-weight: 600; }
+.labor-cost-amount { font-size: 15px; font-weight: 700; color: #111; }
 .inner-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .inner-table th { background: #f9f9f9; padding: 6px 10px; text-align: left; font-size: 11px; color: #888; font-weight: 700; }
 .inner-table td { padding: 8px 10px; border-top: 1px solid #f5f5f5; }
