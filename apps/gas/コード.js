@@ -334,8 +334,10 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
         expLines.forEach(function(l) { lines.push('・' + l); });
       }
 
-      // 添付ファイルフォルダのビューアURLを追加（ファイルの有無に関わらず表示）
-      if (CONFIG.LIFF_URL) {
+      // 添付ファイルがある現場のみフォルダビューアURLを追加
+      var urlKeys = ['vehicleUrls','trainUrls','hotelUrls','leopalaceUrls','otherUrls','entertainmentUrls','garbagePhotoUrls'];
+      var hasFiles = urlKeys.some(function(key) { return exp[key] && exp[key].length > 0; });
+      if (hasFiles && CONFIG.LIFF_URL) {
         var sanitize = function(s) { return String(s || '').replace(/[^A-Za-z0-9\-]/g, '_').slice(0, 40); };
         var day      = parseInt(date.split('-')[2], 10);
         var period   = day <= 15 ? 'first' : 'second';
