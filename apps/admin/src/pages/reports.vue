@@ -66,7 +66,7 @@
               <div class="section-label">稼働</div>
               <table class="inner-table">
                 <thead>
-                  <tr><th>開始</th><th>終了</th><th>通常</th><th>残業</th><th>深夜</th></tr>
+                  <tr><th>開始</th><th>終了</th><th>休憩</th><th>通常</th><th>残業</th><th>深夜</th></tr>
                 </thead>
                 <tbody>
                   <template v-for="(w, wi) in site.workers" :key="wi">
@@ -74,12 +74,13 @@
                       <td>{{ w.startTime }}</td>
                       <td>{{ w.endTime }}</td>
                       <template v-if="w.startTime && w.endTime">
+                        <td>{{ calcBreakMinutes(w.workerRole || 'site', w.startTime, w.endTime) }}分</td>
                         <td>{{ calcHours(w, selected.date).normal }}</td>
                         <td>{{ calcHours(w, selected.date).ot }}</td>
                         <td>{{ calcHours(w, selected.date).night }}</td>
                       </template>
                       <template v-else>
-                        <td>—</td><td>—</td><td>—</td>
+                        <td>—</td><td>—</td><td>—</td><td>—</td>
                       </template>
                     </tr>
                   </template>
