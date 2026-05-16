@@ -36,7 +36,7 @@ export interface RateLine {
   color: string
 }
 
-function parseMin(hhmm: string): number {
+export function parseMin(hhmm: string): number {
   const [h, m] = hhmm.split(':').map(Number)
   return h * 60 + m
 }
@@ -107,11 +107,12 @@ export function calcBreakMinutes(
 }
 
 export function computeWorkerHours(
-  startTime:    string,
-  endTime:      string,
-  breakMinutes: number,
-  isSunday:     boolean,
-): RateBreakdown {
+  startTime:      string,
+  endTime:        string,
+  breakMinutes:   number,
+  isSunday:       boolean,
+  startWorkedMin: number = 0,  // 前現場までの累積稼働分（現場跨ぎ残業対応）
+): RateBreakdown & { workedMin: number } {
   const zero: RateBreakdown = {
     hoursNormal: 0, hoursOT: 0, hoursNight: 0, hoursOTNight: 0,
     hoursSunday: 0, hoursSundayOT: 0, hoursSundayNight: 0, hoursSundayOTNight: 0,
@@ -122,7 +123,7 @@ export function computeWorkerHours(
   if (endMin <= startMin) endMin += 1440
 
   const totalMin = endMin - startMin
-  if (totalMin <= 0 || breakMinutes >= totalMin) return zero
+  if (totalMin <= 0 || breakMinutes >= totalMin) return { ...zero, workedMin: startWorkedMin }
 
   // ブレーク配置: シフト開始4h後（最大 totalMin - breakMin で詰める）
   // 15分刻みでスナップ（15分休憩にも対応）
@@ -131,7 +132,7 @@ export function computeWorkerHours(
   const breakEndMin   = breakStartMin + breakMinutes
 
   const OT = 480  // 8h = 480min
-  let workedMin = 0
+  let workedMin = startWorkedMin  // 前現場までの累積を引き継ぐ
 
   let hoursNormal = 0, hoursOT = 0, hoursNight = 0, hoursOTNight = 0
   let hoursSunday = 0, hoursSundayOT = 0, hoursSundayNight = 0, hoursSundayOTNight = 0
@@ -157,7 +158,7 @@ export function computeWorkerHours(
   }
 
   return { hoursNormal, hoursOT, hoursNight, hoursOTNight,
-           hoursSunday, hoursSundayOT, hoursSundayNight, hoursSundayOTNight }
+           hoursSunday, hoursSundayOT, hoursSundayNight, hoursSundayOTNight, workedMin }
 }
 
 /** プレビュー用: 各料率の行データを返す（0hの行は省略） */

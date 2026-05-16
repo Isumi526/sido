@@ -3,7 +3,8 @@
 //  日報フォームの状態管理と送信処理
 // ============================================================
 import type { DailyReport, SiteReport, WorkerEntry, SubcontractorEntry, WorkerRole, VehicleExpense, LineItem } from '~/types'
-import { computeWorkerHours, calcBreakMinutes } from '~/utils/workerHours'
+import type { RateBreakdown } from '~/utils/workerHours'
+import { computeWorkerHours, calcBreakMinutes, parseMin } from '~/utils/workerHours'
 
 export const createWorker = (role: WorkerRole = 'site'): WorkerEntry => ({
   workerId:     '',
@@ -123,6 +124,28 @@ export const useReport = () => {
     // 送信日が日曜か判定
     const isSunday = new Date(form.value.date + 'T00:00:00').getDay() === 0
 
+    // 現場跨ぎ残業対応: 作業者ごとに startTime 順で累積稼働分を引き継いで計算
+    const workerAccum: Record<string, number> = {}
+    const computedBreakdowns = new WeakMap<object, RateBreakdown>()
+
+    const allEntries: { w: WorkerEntry }[] = []
+    form.value.sites.forEach(site => {
+      site.workers.forEach(w => {
+        if (w.workerName && !(w as any)._manualHours) allEntries.push({ w })
+      })
+    })
+    allEntries.sort((a, b) => parseMin(a.w.startTime || '08:00') - parseMin(b.w.startTime || '08:00'))
+
+    for (const { w } of allEntries) {
+      const key    = w.workerId || w.workerName
+      const accum  = workerAccum[key] ?? 0
+      const { workedMin, ...breakdown } = computeWorkerHours(
+        w.startTime, w.endTime, calcBreakMinutes(w.workerRole, w.startTime, w.endTime), isSunday, accum
+      )
+      workerAccum[key] = workedMin  // 累積済み合計（startWorkedMin + 今回分）
+      computedBreakdowns.set(w, breakdown)
+    }
+
     // 空の作業員・下請けを除去 & 料率別時間を計算してセット
     const payload: DailyReport = {
       ...form.value,
@@ -137,7 +160,7 @@ export const useReport = () => {
             .map(w => {
               const r = (w as any)._manualHours
                 ? {}
-                : computeWorkerHours(w.startTime, w.endTime, calcBreakMinutes(w.workerRole, w.startTime, w.endTime), isSunday)
+                : (computedBreakdowns.get(w) ?? {})
               return { ...w, ...r }
             }),
           subcontractors: site.subcontractors.filter(s => s.subcontractorName),
