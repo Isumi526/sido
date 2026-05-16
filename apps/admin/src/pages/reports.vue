@@ -306,7 +306,7 @@ onMounted(load)
 .modal-head-right { display: flex; align-items: center; gap: 12px; }
 .btn-close { background: #f0f0f0; border: none; border-radius: 8px; padding: 6px 12px; font-size: 14px; cursor: pointer; }
 .off-note { color: #888; font-size: 14px; text-align: center; padding: 24px 0; }
-.site-block { border: 1px solid #eee; border-radius: 12px; overflow: hidden; }
+.site-block { border: 1px solid #eee; border-radius: 12px; overflow: hidden; margin-bottom: 16px; }
 .site-block-title { background: #f9f9f9; padding: 10px 16px; font-weight: 700; font-size: 14px; border-bottom: 1px solid #eee; }
 .section { padding: 12px 16px; border-top: 1px solid #f0f0f0; }
 .section:first-child { border-top: none; }
