@@ -39,7 +39,12 @@
         <div class="modal-head">
           <div>
             <div class="modal-date">{{ selected.date }}</div>
-            <div class="modal-worker">{{ selected.worker_name }}</div>
+            <div class="modal-worker">
+              {{ selected.worker_name }}
+              <span v-if="selected.sites?.[0]?.workers?.[0]?.workerRole" class="worker-role-inline">
+                / {{ selected.sites[0].workers[0].workerRole === 'factory' ? '工場' : '現場' }}
+              </span>
+            </div>
           </div>
           <div class="modal-head-right">
             <span class="badge" :class="selected.is_working ? 'working' : 'off'">
@@ -63,23 +68,20 @@
                   <tr><th>開始</th><th>終了</th><th>通常</th><th>残業</th><th>深夜</th></tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(w, wi) in site.workers" :key="wi">
-                    <td colspan="5" class="worker-name-row">
-                      {{ w.workerName }}<span class="worker-role-inline">{{ w.workerRole === 'factory' ? '工場' : '現場' }}</span>
-                    </td>
-                  </tr>
-                  <tr v-for="(w, wi) in site.workers" :key="'h' + wi">
-                    <td>{{ w.startTime }}</td>
-                    <td>{{ w.endTime }}</td>
-                    <template v-if="w.startTime && w.endTime">
-                      <td>{{ calcHours(w, selected.date).normal }}</td>
-                      <td>{{ calcHours(w, selected.date).ot }}</td>
-                      <td>{{ calcHours(w, selected.date).night }}</td>
-                    </template>
-                    <template v-else>
-                      <td>—</td><td>—</td><td>—</td>
-                    </template>
-                  </tr>
+                  <template v-for="(w, wi) in site.workers" :key="wi">
+                    <tr>
+                      <td>{{ w.startTime }}</td>
+                      <td>{{ w.endTime }}</td>
+                      <template v-if="w.startTime && w.endTime">
+                        <td>{{ calcHours(w, selected.date).normal }}</td>
+                        <td>{{ calcHours(w, selected.date).ot }}</td>
+                        <td>{{ calcHours(w, selected.date).night }}</td>
+                      </template>
+                      <template v-else>
+                        <td>—</td><td>—</td><td>—</td>
+                      </template>
+                    </tr>
+                  </template>
                 </tbody>
               </table>
             </div>
