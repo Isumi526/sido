@@ -231,7 +231,7 @@ export const useReport = () => {
         console.log('[Report] Edge Function URL未設定 - 送信ペイロード:', JSON.stringify(payload, null, 2))
       } else {
         // dev環境またはテスターはtest-プレフィックスの関数を呼び出す
-        const fnPrefix = (config.public.appEnv === 'development' || isTester.value) ? 'test-' : ''
+        const fnPrefix = config.public.appEnv === 'development' ? 'test-' : ''
 
         // ── ② Edge Function に送信（File[] を除去・*Urls はそのまま含む）──
         const mainPayload = {

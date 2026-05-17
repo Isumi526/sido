@@ -833,7 +833,7 @@ function fillErrorTestData() {
 function notifyErrorToLine(actionName: string, errorMsg: string) {
   const efUrl = config.public.edgeFunctionUrl
   if (!efUrl) return
-  const fnPrefix = (config.public.appEnv === 'development' || liff.isTester.value) ? 'test-' : ''
+  const fnPrefix = config.public.appEnv === 'development' ? 'test-' : ''
   fetch(`${efUrl}/${fnPrefix}notify-error`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -881,7 +881,7 @@ async function handleSubmit() {
         if (diffs.length > 0) {
           const now = new Date()
           const editedAt = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-          const fnPrefix = (config.public.appEnv === 'development' || liff.isTester.value) ? 'test-' : ''
+          const fnPrefix = config.public.appEnv === 'development' ? 'test-' : ''
           fetch(`${efUrl}/${fnPrefix}notify-edit`, {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
