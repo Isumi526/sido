@@ -24,7 +24,7 @@ export default defineNuxtConfig({
     public: {
       liffId: '',
       gasUrl: '',
-      appEnv: 'development',
+      appEnv: process.env.NUXT_PUBLIC_APP_ENV || '',
       devNotifyGroupId: '',
       testerLineIds: '',        // カンマ区切りのLINE User ID（例: Uabc123,Udef456）
       supabaseUrl: process.env.NUXT_PUBLIC_SUPABASE_URL || '',
