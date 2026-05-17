@@ -30,6 +30,7 @@ export default defineNuxtConfig({
       supabaseUrl: process.env.NUXT_PUBLIC_SUPABASE_URL || '',
       supabaseAnonKey: process.env.NUXT_PUBLIC_SUPABASE_ANON_KEY || '',
       accountSlug: process.env.NUXT_PUBLIC_ACCOUNT_SLUG || 'sample-construction',
+      edgeFunctionUrl: process.env.NUXT_PUBLIC_EDGE_FUNCTION_URL || '',
     },
   },
 

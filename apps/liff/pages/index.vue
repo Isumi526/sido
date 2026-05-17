@@ -831,21 +831,17 @@ function fillErrorTestData() {
 
 /** LINEグループにエラーを通知する（fire-and-forget） */
 function notifyErrorToLine(actionName: string, errorMsg: string) {
-  if (!config.public.gasUrl) return
-  const devExtra = (config.public.appEnv === 'development' || liff.isTester.value) && config.public.devNotifyGroupId
-    ? { _devNotifyGroupId: config.public.devNotifyGroupId }
-    : {}
-  fetch(config.public.gasUrl, {
+  const efUrl = config.public.edgeFunctionUrl
+  if (!efUrl) return
+  const fnPrefix = (config.public.appEnv === 'development' || liff.isTester.value) ? 'test-' : ''
+  fetch(`${efUrl}/${fnPrefix}notify-error`, {
     method:  'POST',
-    mode:    'no-cors',
-    headers: { 'Content-Type': 'text/plain' },
+    headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({
-      action:     'notifyError',
       sender:     currentUser.value?.real_name || '不明',
       date:       report.form.value.date,
       actionName,
       error:      errorMsg,
-      ...devExtra,
     }),
   }).catch(() => {})
 }
@@ -875,7 +871,8 @@ async function handleSubmit() {
       })
 
       // 差分を計算してLINEグループに通知
-      if (originalReport.value && config.public.gasUrl) {
+      const efUrl = config.public.edgeFunctionUrl
+      if (originalReport.value && efUrl) {
         const diffs = computeDiff(originalReport.value, {
           isWorking: report.form.value.isWorking,
           sites:     report.form.value.sites,
@@ -884,20 +881,15 @@ async function handleSubmit() {
         if (diffs.length > 0) {
           const now = new Date()
           const editedAt = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-          const devExtra = (config.public.appEnv === 'development' || liff.isTester.value) && config.public.devNotifyGroupId
-            ? { _devNotifyGroupId: config.public.devNotifyGroupId }
-            : {}
-          fetch(config.public.gasUrl, {
+          const fnPrefix = (config.public.appEnv === 'development' || liff.isTester.value) ? 'test-' : ''
+          fetch(`${efUrl}/${fnPrefix}notify-edit`, {
             method:  'POST',
-            mode:    'no-cors',
-            headers: { 'Content-Type': 'text/plain' },
+            headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify({
-              action:   'notifyEdit',
               sender:   currentUser.value?.real_name || '',
               date:     report.form.value.date,
               editedAt,
               diffs,
-              ...devExtra,
             }),
           }).catch(e => console.error('[Edit] LINE通知エラー:', e))
         }
