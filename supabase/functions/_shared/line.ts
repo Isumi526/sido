@@ -18,9 +18,11 @@ export async function pushLineMessages(
     },
     body: JSON.stringify({ to, messages }),
   })
+  const resBody = await res.text()
   if (!res.ok) {
-    const body = await res.text()
-    console.error(`[LINE] push failed to=${to} status=${res.status} body=${body}`)
+    console.error(`[LINE] push failed to=${to} status=${res.status} body=${resBody}`)
+  } else {
+    console.log(`[LINE] push ok to=${to} status=${res.status}`)
   }
 }
 

@@ -33,6 +33,8 @@ Deno.serve(async (req) => {
       ? [_devNotifyGroupId]
       : (isTest ? DEV_GROUP_IDS : PROD_GROUP_IDS)
 
+    console.log(`[submit-report] isTest=${isTest} targets=${JSON.stringify(targets)} sender=${sender}`)
+
     // 稼働なし
     if (isWorking === false) {
       const text = `📋 ${fmtDate(date)} 日報\n👤 ${sender}\n──────────\n稼働なし${note ? '\n\n📝 ' + note : ''}`
