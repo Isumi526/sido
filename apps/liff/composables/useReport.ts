@@ -226,14 +226,14 @@ export const useReport = () => {
     }
 
     try {
-      if (!config.public.gasUrl) {
-        console.log('[Report] GAS URL未設定 - 送信ペイロード:', JSON.stringify(payload, null, 2))
+      const efUrl = config.public.edgeFunctionUrl
+      if (!efUrl) {
+        console.log('[Report] Edge Function URL未設定 - 送信ペイロード:', JSON.stringify(payload, null, 2))
       } else {
-        const devExtra = (config.public.appEnv === 'development' || isTester.value) && config.public.devNotifyGroupId
-          ? { _devNotifyGroupId: config.public.devNotifyGroupId }
-          : {}
+        // dev環境またはテスターはtest-プレフィックスの関数を呼び出す
+        const fnPrefix = (config.public.appEnv === 'development' || isTester.value) ? 'test-' : ''
 
-        // ── ② GASに送信（File[] を除去・*Urls はそのまま含む）──
+        // ── ② Edge Function に送信（File[] を除去・*Urls はそのまま含む）──
         const mainPayload = {
           ...payload,
           sites: payload.sites.map(site => ({
@@ -241,12 +241,11 @@ export const useReport = () => {
             expenses: stripFiles(site.expenses),
           })),
         }
-        await fetch(config.public.gasUrl, {
+        await fetch(`${efUrl}/${fnPrefix}submit-report`, {
           method:    'POST',
-          mode:      'no-cors',
           keepalive: true,
-          headers:   { 'Content-Type': 'text/plain' },
-          body:      JSON.stringify(stripEmpty({ action: 'submitReport', ...mainPayload, ...devExtra })),
+          headers:   { 'Content-Type': 'application/json' },
+          body:      JSON.stringify(stripEmpty(mainPayload)),
         })
       }
       submitted.value = true

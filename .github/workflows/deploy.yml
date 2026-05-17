@@ -1,57 +1,58 @@
 name: Deploy
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   push:
     branches:
       - main
+      - dev
       - develop
     paths:
       - 'apps/gas/**'
       - 'apps/liff/**'
+      - 'supabase/functions/**'
+      - '.github/workflows/deploy.yml'
 
 jobs:
-  # ── GAS デプロイ ──────────────────────────────────────────────
-  deploy-gas:
-    name: Deploy GAS (${{ github.ref_name }})
+  # ── Edge Functions デプロイ ───────────────────────────────────────
+  deploy-edge-functions:
+    name: Deploy Edge Functions (${{ github.ref_name }})
     runs-on: ubuntu-latest
+    if: github.ref_name == 'main' || github.ref_name == 'dev'
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: supabase/setup-cli@v1
         with:
-          node-version: '20'
+          version: latest
 
-      - name: Install clasp
-        run: npm install -g @google/clasp
-
-      - name: Setup clasp credentials
-        run: echo '${{ secrets.CLASPRC_JSON }}' > ~/.clasprc.json
-
-      - name: Set GAS script ID
-        working-directory: apps/gas
+      - name: Deploy Edge Functions (dev → test prefix)
+        if: github.ref_name == 'dev'
         run: |
-          if [ "${{ github.ref_name }}" = "main" ]; then
-            SCRIPT_ID="${{ secrets.GAS_SCRIPT_ID_PROD }}"
-          else
-            SCRIPT_ID="${{ secrets.GAS_SCRIPT_ID_DEV }}"
-          fi
-          echo "{\"scriptId\":\"$SCRIPT_ID\",\"rootDir\":\".\"}" > .clasp.json
+          FUNCTIONS="submit-report notify-edit notify-error get-master"
+          for fn in $FUNCTIONS; do
+            cp -r supabase/functions/$fn supabase/functions/test-$fn
+            supabase functions deploy test-$fn \
+              --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} \
+              --no-verify-jwt
+            rm -rf supabase/functions/test-$fn
+          done
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
-      - name: Push to GAS
-        working-directory: apps/gas
-        run: clasp push --force
-
-      - name: Deploy new version
-        working-directory: apps/gas
+      - name: Deploy Edge Functions (main → production)
+        if: github.ref_name == 'main'
         run: |
-          if [ "${{ github.ref_name }}" = "main" ]; then
-            DEPLOYMENT_ID="${{ secrets.GAS_DEPLOYMENT_ID_PROD }}"
-          else
-            DEPLOYMENT_ID="${{ secrets.GAS_DEPLOYMENT_ID_DEV }}"
-          fi
-          if [ -n "$DEPLOYMENT_ID" ]; then
-            clasp deploy --deploymentId "$DEPLOYMENT_ID" --description "Auto deploy from ${{ github.sha }}"
-          fi
+          FUNCTIONS="submit-report notify-edit notify-error get-master"
+          for fn in $FUNCTIONS; do
+            supabase functions deploy $fn \
+              --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} \
+              --no-verify-jwt
+          done
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
   # ── Vercel デプロイ（main のみ）─────────────────────────────────
   deploy-vercel:
