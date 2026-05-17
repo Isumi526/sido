@@ -5,11 +5,11 @@
 import { pushLineText } from '../_shared/line.ts'
 import { buildReportMessage } from '../_shared/notify.ts'
 
-const LINE_TOKEN   = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? ''
-const GROUP_IDS    = JSON.parse(Deno.env.get('NOTIFY_GROUP_IDS') ?? '[]') as string[]
-const ACCOUNT_SLUG = Deno.env.get('ACCOUNT_SLUG') ?? ''
-const LIFF_URL     = Deno.env.get('LIFF_URL') ?? ''
-const DEV_GROUP_ID = Deno.env.get('DEV_NOTIFY_GROUP_ID') ?? ''
+const LINE_TOKEN    = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? ''
+const PROD_GROUP_IDS = JSON.parse(Deno.env.get('NOTIFY_GROUP_IDS') ?? '[]') as string[]
+const DEV_GROUP_IDS  = JSON.parse(Deno.env.get('DEV_NOTIFY_GROUP_IDS') ?? '[]') as string[]
+const ACCOUNT_SLUG  = Deno.env.get('ACCOUNT_SLUG') ?? ''
+const LIFF_URL      = Deno.env.get('LIFF_URL') ?? ''
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -19,15 +19,19 @@ Deno.serve(async (req) => {
     return json({ error: 'Method not allowed' }, 405)
   }
 
+  // URL から関数名を取得し、test- で始まる場合は dev グループを使用
+  const fnName = new URL(req.url).pathname.split('/').pop() ?? ''
+  const isTest = fnName.startsWith('test-')
+
   try {
     const body = await req.json()
-    const { sender = '不明', date, sites = [], note, senderId, isWorking, _devNotifyGroupId } = body
+    const { sender = '不明', date, sites = [], note, isWorking, _devNotifyGroupId } = body
 
     if (!date) return json({ error: '日付が指定されていません' }, 400)
 
     const targets: string[] = _devNotifyGroupId
       ? [_devNotifyGroupId]
-      : (DEV_GROUP_ID ? [DEV_GROUP_ID] : GROUP_IDS)
+      : (isTest ? DEV_GROUP_IDS : PROD_GROUP_IDS)
 
     // 稼働なし
     if (isWorking === false) {

@@ -5,13 +5,16 @@
 import { pushLineText } from '../_shared/line.ts'
 import { buildErrorMessage } from '../_shared/notify.ts'
 
-const LINE_TOKEN   = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? ''
-const GROUP_IDS    = JSON.parse(Deno.env.get('NOTIFY_GROUP_IDS') ?? '[]') as string[]
-const DEV_GROUP_ID = Deno.env.get('DEV_NOTIFY_GROUP_ID') ?? ''
+const LINE_TOKEN     = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? ''
+const PROD_GROUP_IDS = JSON.parse(Deno.env.get('NOTIFY_GROUP_IDS') ?? '[]') as string[]
+const DEV_GROUP_IDS  = JSON.parse(Deno.env.get('DEV_NOTIFY_GROUP_IDS') ?? '[]') as string[]
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders() })
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+
+  const fnName = new URL(req.url).pathname.split('/').pop() ?? ''
+  const isTest = fnName.startsWith('test-')
 
   try {
     const body = await req.json()
@@ -19,7 +22,7 @@ Deno.serve(async (req) => {
 
     const targets: string[] = _devNotifyGroupId
       ? [_devNotifyGroupId]
-      : (DEV_GROUP_ID ? [DEV_GROUP_ID] : GROUP_IDS)
+      : (isTest ? DEV_GROUP_IDS : PROD_GROUP_IDS)
 
     const text = buildErrorMessage({ sender, date, actionName, error })
     await Promise.all(targets.map(id => pushLineText(id, text, LINE_TOKEN)))
