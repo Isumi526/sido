@@ -9,6 +9,13 @@
         <p class="state-text">読み込み中...</p>
       </div>
 
+      <!-- 未登録ユーザー -->
+      <div v-else-if="isUnauthorized" class="state-screen">
+        <div class="error-icon">🔒</div>
+        <h2 class="state-title">ご利用いただけません</h2>
+        <p class="state-text">このフォームは登録済みのメンバーのみご利用いただけます。<br>担当者にお問い合わせください。</p>
+      </div>
+
       <!-- 全日送信済み -->
       <div v-else-if="allSubmitted" class="state-screen">
         <div class="success-mark">✓</div>
@@ -443,7 +450,8 @@ const currentUser = ref<User | null>(null)
 
 const isDev = computed(() => config.public.appEnv === 'development' || liff.isTester.value)
 
-const initializing = ref(true)
+const initializing    = ref(true)
+const isUnauthorized  = ref(false)
 
 // 編集モード
 const forceErrorOnSubmit = ref(false)
@@ -692,7 +700,8 @@ onMounted(async () => {
   if (userId) {
     currentUser.value = await expense.getUser(userId)
     if (!currentUser.value) {
-      await navigateTo('/register')
+      isUnauthorized.value = true
+      initializing.value   = false
       return
     }
     initWorkers()
@@ -1151,6 +1160,7 @@ html, body {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.error-icon { font-size: 48px; }
 .success-mark {
   width: 80px; height: 80px;
   background: var(--accent);

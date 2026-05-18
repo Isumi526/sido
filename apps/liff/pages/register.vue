@@ -8,6 +8,12 @@
         <p class="state-text">読み込み中...</p>
       </div>
 
+      <div v-else-if="!liff.isTester.value" class="state-screen">
+        <div style="font-size:48px">🔒</div>
+        <h2 class="state-title">ご利用いただけません</h2>
+        <p class="state-text">このページは管理者のみアクセスできます。</p>
+      </div>
+
       <div v-else-if="done" class="state-screen">
         <div class="success-mark">✓</div>
         <h2 class="state-title">登録完了！</h2>
