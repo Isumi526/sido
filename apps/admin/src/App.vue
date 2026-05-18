@@ -9,6 +9,7 @@
         <li><RouterLink to="/workers" class="nav-link">作業員</RouterLink></li>
         <li><RouterLink to="/sites" class="nav-link">現場</RouterLink></li>
         <li><RouterLink to="/subcontractors" class="nav-link">下請け業者</RouterLink></li>
+        <li><RouterLink to="/users" class="nav-link">ユーザー管理</RouterLink></li>
         <li><RouterLink to="/settings" class="nav-link">設定</RouterLink></li>
       </ul>
       <button class="btn-logout" @click="handleLogout">ログアウト</button>

@@ -9,11 +9,11 @@
         <p class="state-text">読み込み中...</p>
       </div>
 
-      <!-- 未登録ユーザー -->
-      <div v-else-if="isUnauthorized" class="state-screen">
-        <div class="error-icon">🔒</div>
-        <h2 class="state-title">ご利用いただけません</h2>
-        <p class="state-text">このフォームは登録済みのメンバーのみご利用いただけます。<br>担当者にお問い合わせください。</p>
+      <!-- 承認待ち -->
+      <div v-else-if="isPendingApproval" class="state-screen">
+        <div class="error-icon">⏳</div>
+        <h2 class="state-title">承認待ちです</h2>
+        <p class="state-text">申請を受け付けました。<br>担当者が承認するまでしばらくお待ちください。</p>
       </div>
 
       <!-- 全日送信済み -->
@@ -450,8 +450,8 @@ const currentUser = ref<User | null>(null)
 
 const isDev = computed(() => config.public.appEnv === 'development' || liff.isTester.value)
 
-const initializing    = ref(true)
-const isUnauthorized  = ref(false)
+const initializing       = ref(true)
+const isPendingApproval  = ref(false)
 
 // 編集モード
 const forceErrorOnSubmit = ref(false)
@@ -700,8 +700,12 @@ onMounted(async () => {
   if (userId) {
     currentUser.value = await expense.getUser(userId)
     if (!currentUser.value) {
-      isUnauthorized.value = true
-      initializing.value   = false
+      await navigateTo('/register')
+      return
+    }
+    if (!currentUser.value.is_approved) {
+      isPendingApproval.value = true
+      initializing.value      = false
       return
     }
     initWorkers()

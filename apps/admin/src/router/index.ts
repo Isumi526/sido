@@ -8,6 +8,7 @@ import Reports        from '../pages/reports.vue'
 import SiteReports    from '../pages/site-reports.vue'
 import Settings       from '../pages/settings.vue'
 import Login          from '../pages/login.vue'
+import Users          from '../pages/users.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -20,6 +21,7 @@ export const router = createRouter({
     { path: '/reports',      component: Reports },
     { path: '/site-reports', component: SiteReports },
     { path: '/settings',     component: Settings },
+    { path: '/users',        component: Users },
   ],
 })
 
