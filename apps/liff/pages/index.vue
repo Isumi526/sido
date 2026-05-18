@@ -9,13 +9,6 @@
         <p class="state-text">読み込み中...</p>
       </div>
 
-      <!-- 承認待ち -->
-      <div v-else-if="isPendingApproval" class="state-screen">
-        <div class="error-icon">⏳</div>
-        <h2 class="state-title">承認待ちです</h2>
-        <p class="state-text">申請を受け付けました。<br>担当者が承認するまでしばらくお待ちください。</p>
-      </div>
-
       <!-- 全日送信済み -->
       <div v-else-if="allSubmitted" class="state-screen">
         <div class="success-mark">✓</div>
@@ -450,8 +443,7 @@ const currentUser = ref<User | null>(null)
 
 const isDev = computed(() => config.public.appEnv === 'development' || liff.isTester.value)
 
-const initializing       = ref(true)
-const isPendingApproval  = ref(false)
+const initializing = ref(true)
 
 // 編集モード
 const forceErrorOnSubmit = ref(false)
@@ -701,11 +693,6 @@ onMounted(async () => {
     currentUser.value = await expense.getUser(userId)
     if (!currentUser.value) {
       await navigateTo('/register')
-      return
-    }
-    if (!currentUser.value.is_approved) {
-      isPendingApproval.value = true
-      initializing.value      = false
       return
     }
     initWorkers()
