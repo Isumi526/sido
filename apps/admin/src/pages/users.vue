@@ -95,7 +95,7 @@ async function load() {
 
 async function approve(id: string) {
   processing.value = id
-  await supabase.from('users').update({ is_approved: true }).eq('id', id)
+  await supabase.from('users').update({ is_approved: true, updated_at: new Date().toISOString() }).eq('id', id)
   await load()
   processing.value = null
 }
