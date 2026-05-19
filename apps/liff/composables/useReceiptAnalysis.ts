@@ -22,10 +22,14 @@ export const useReceiptAnalysis = () => {
       const efUrl  = config.public.edgeFunctionUrl
       if (!efUrl) throw new Error('Edge Function URL未設定')
 
+      const anonKey = config.public.supabaseAnonKey as string
       const res = await fetch(`${efUrl}/analyze-receipt`, {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ imageBase64: base64 }),
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${anonKey}`,
+        },
+        body: JSON.stringify({ imageBase64: base64 }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       return await res.json() as ReceiptResult

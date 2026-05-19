@@ -265,12 +265,7 @@
                 <option value="あり">あり</option>
               </select>
               <template v-if="siteUsage[si].hotel === 'あり'">
-                <div class="hotel-row mt6">
-                  <input v-model="site.expenses.hotelName" type="text" class="input" placeholder="施設名（例: アパホテル）" />
-                  <ExpenseField v-model="site.expenses.hotelYen" label="金額" />
-                </div>
-                <input v-model="site.expenses.hotelRegistration" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" />
-                <div class="mt8">
+                <div class="mt6">
                   <label class="hours-label">領収書（JPEG/PDF）</label>
                   <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'hotelFiles', e)" />
                   <div v-if="site.expenses.hotelFiles?.length" class="photo-preview">
@@ -280,6 +275,11 @@
                     </button>
                   </div>
                 </div>
+                <div class="hotel-row mt6">
+                  <input v-model="site.expenses.hotelName" type="text" class="input" placeholder="施設名（例: アパホテル）" />
+                  <ExpenseField v-model="site.expenses.hotelYen" label="金額" />
+                </div>
+                <input v-model="site.expenses.hotelRegistration" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" />
               </template>
             </Field>
 
@@ -290,12 +290,7 @@
                 <option value="あり">あり</option>
               </select>
               <template v-if="siteUsage[si].leopalace === 'あり'">
-                <div class="hotel-row mt6">
-                  <input v-model="site.expenses.leopalaceName" type="text" class="input" placeholder="施設名" />
-                  <ExpenseField v-model="site.expenses.leopalaceYen" label="金額" />
-                </div>
-                <input v-model="site.expenses.leopalaceRegistration" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" />
-                <div class="mt8">
+                <div class="mt6">
                   <label class="hours-label">領収書（JPEG/PDF）</label>
                   <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'leopalaceFiles', e)" />
                   <div v-if="site.expenses.leopalaceFiles?.length" class="photo-preview">
@@ -305,6 +300,11 @@
                     </button>
                   </div>
                 </div>
+                <div class="hotel-row mt6">
+                  <input v-model="site.expenses.leopalaceName" type="text" class="input" placeholder="施設名" />
+                  <ExpenseField v-model="site.expenses.leopalaceYen" label="金額" />
+                </div>
+                <input v-model="site.expenses.leopalaceRegistration" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" />
               </template>
             </Field>
 
@@ -342,14 +342,7 @@
                 <option value="あり">あり</option>
               </select>
               <template v-if="siteUsage[si].other === 'あり'">
-                <div v-for="(ot, oi) in site.expenses.others" :key="oi" class="lineitems-row mt6">
-                  <input v-model="ot.label" type="text" class="input" placeholder="内容" />
-                  <ExpenseField v-model="ot.yen" label="金額" />
-                  <button v-if="site.expenses.others.length > 1" type="button" class="btn-icon-sm" @click="report.removeOther(si, oi)">✕</button>
-                  <input v-model="ot.registrationNumber" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" />
-                </div>
-                <button type="button" class="btn-ghost-sm" @click="report.addOther(si)">＋ 追加</button>
-                <div class="mt8">
+                <div class="mt6">
                   <label class="hours-label">領収書・写真（JPEG/PDF）</label>
                   <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'otherFiles', e)" />
                   <div v-if="site.expenses.otherFiles?.length" class="photo-preview">
@@ -359,6 +352,13 @@
                     </button>
                   </div>
                 </div>
+                <div v-for="(ot, oi) in site.expenses.others" :key="oi" class="lineitems-row mt6">
+                  <input v-model="ot.label" type="text" class="input" placeholder="内容" />
+                  <ExpenseField v-model="ot.yen" label="金額" />
+                  <button v-if="site.expenses.others.length > 1" type="button" class="btn-icon-sm" @click="report.removeOther(si, oi)">✕</button>
+                  <input v-model="ot.registrationNumber" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" />
+                </div>
+                <button type="button" class="btn-ghost-sm" @click="report.addOther(si)">＋ 追加</button>
               </template>
             </Field>
 
@@ -369,12 +369,7 @@
                 <option value="あり">あり</option>
               </select>
               <template v-if="siteUsage[si].entertainment === 'あり'">
-                <div class="lineitems-row mt6">
-                  <input v-model="site.expenses.entertainmentLabel" type="text" class="input" placeholder="内容" />
-                  <ExpenseField v-model="site.expenses.entertainmentYen" label="金額" />
-                </div>
-                <input v-model="site.expenses.entertainmentRegistration" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" />
-                <div class="mt8">
+                <div class="mt6">
                   <label class="hours-label">領収書（JPEG/PDF）</label>
                   <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'entertainmentFiles', e)" />
                   <div v-if="site.expenses.entertainmentFiles?.length" class="photo-preview">
@@ -384,6 +379,11 @@
                     </button>
                   </div>
                 </div>
+                <div class="lineitems-row mt6">
+                  <input v-model="site.expenses.entertainmentLabel" type="text" class="input" placeholder="内容" />
+                  <ExpenseField v-model="site.expenses.entertainmentYen" label="金額" />
+                </div>
+                <input v-model="site.expenses.entertainmentRegistration" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" />
               </template>
             </Field>
           </div>
@@ -1022,24 +1022,25 @@ async function analyzeReceipt(
   if (!result) return
 
   const exp = report.form.value.sites[si].expenses
+  const inv = result.invoiceNumber || 'なし'
   if (field === 'hotelFiles') {
     if (result.label) exp.hotelName          = result.label
     if (result.yen)   exp.hotelYen           = result.yen
-    if (result.invoiceNumber) exp.hotelRegistration = result.invoiceNumber
+    exp.hotelRegistration = inv
   } else if (field === 'leopalaceFiles') {
     if (result.label) exp.leopalaceName         = result.label
     if (result.yen)   exp.leopalaceYen          = result.yen
-    if (result.invoiceNumber) exp.leopalaceRegistration = result.invoiceNumber
+    exp.leopalaceRegistration = inv
   } else if (field === 'entertainmentFiles') {
     if (result.label) exp.entertainmentLabel        = result.label
     if (result.yen)   exp.entertainmentYen          = result.yen
-    if (result.invoiceNumber) exp.entertainmentRegistration = result.invoiceNumber
+    exp.entertainmentRegistration = inv
   } else if (field === 'otherFiles' && otherIndex !== undefined) {
     const item = exp.others[otherIndex]
     if (item) {
       if (result.label) item.label              = result.label
       if (result.yen)   item.yen                = result.yen
-      if (result.invoiceNumber) (item as any).registrationNumber = result.invoiceNumber
+      ;(item as any).registrationNumber = inv
     }
   }
 }

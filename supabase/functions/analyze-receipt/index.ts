@@ -10,7 +10,7 @@
 // ============================================================
 
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') ?? ''
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${GEMINI_API_KEY}`
 
 function corsHeaders() {
   return {
@@ -58,23 +58,30 @@ Deno.serve(async (req) => {
       }],
       generationConfig: {
         temperature: 0,
-        maxOutputTokens: 256,
+        maxOutputTokens: 2048,
       },
     }
 
-    const res = await fetch(GEMINI_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
+    // 503 時は最大3回リトライ
+    let res: Response | null = null
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      res = await fetch(GEMINI_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (res.ok || res.status !== 503) break
+      console.warn(`[Gemini] 503 attempt ${attempt}/3, retrying...`)
+      await new Promise(r => setTimeout(r, attempt * 1000))
+    }
 
-    if (!res.ok) {
-      const err = await res.text()
+    if (!res!.ok) {
+      const err = await res!.text()
       console.error('[Gemini] error:', err)
       return json({ error: 'Gemini API error' }, 502)
     }
 
-    const data = await res.json() as any
+    const data = await res!.json() as any
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
 
     // JSON部分を抽出（```json ... ``` が含まれる場合にも対応）
