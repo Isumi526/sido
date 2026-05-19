@@ -1,5 +1,11 @@
 <template>
   <div>
+    <!-- 印刷用ヘッダー（画面では非表示） -->
+    <div class="print-header">
+      <div class="print-title">出面・勤怠管理</div>
+      <div class="print-meta">{{ activeWorker }}　{{ yearMonthLabel }}</div>
+    </div>
+
     <!-- ヘッダー -->
     <div class="page-header">
       <h1 class="page-title">出面・勤怠管理</h1>
@@ -350,16 +356,20 @@ function printPdf() {
 .site-name { max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .total-row td { font-weight: 700; }
 
+/* 印刷用ヘッダー（画面では非表示） */
+.print-header { display: none; }
+
 /* PDF印刷 */
 @media print {
-  .page-header .btn-pdf,
-  .page-header .btn-nav,
+  .print-header { display: block; margin-bottom: 16px; }
+  .print-title { font-size: 18px; font-weight: 900; }
+  .print-meta { font-size: 14px; color: #444; margin-top: 4px; }
+
+  .page-header,
   .tabs-wrap { display: none !important; }
 
-  .page-title::after { content: '　{{ activeWorker }}　{{ yearMonthLabel }}'; }
-
   .summary-card { box-shadow: none; border: 1px solid #ddd; }
-  .table-wrap { box-shadow: none; }
+  .table-wrap { box-shadow: none; overflow: visible; }
 
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }

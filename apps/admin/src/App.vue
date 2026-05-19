@@ -62,4 +62,9 @@ async function handleLogout() {
 }
 .btn-logout:hover { border-color: #f87171; color: #f87171; }
 .content { margin-left: 200px; flex: 1; padding: 32px; min-height: 100vh; }
+
+@media print {
+  .sidebar { display: none !important; }
+  .content { margin-left: 0 !important; padding: 0 !important; }
+}
 </style>
