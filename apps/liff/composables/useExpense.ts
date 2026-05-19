@@ -113,8 +113,9 @@ export const useExpense = () => {
         clearUserCache(lineUserId)
         return null
       }
-      if (check.updated_at !== cached.updated_at) clearUserCache(lineUserId)
-      return cached
+      if (check.updated_at === cached.updated_at) return cached
+      // updated_at が変わっていたらキャッシュ破棄して DB から再取得
+      clearUserCache(lineUserId)
     }
 
     const { data, error } = await supabase
