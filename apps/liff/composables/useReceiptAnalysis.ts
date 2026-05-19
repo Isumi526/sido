@@ -1,0 +1,50 @@
+// ============================================================
+//  composables/useReceiptAnalysis.ts
+//  領収書 AI 解析（Gemini via Edge Function）
+// ============================================================
+
+export interface ReceiptResult {
+  label:         string | null
+  yen:           number | null
+  invoiceNumber: string | null
+}
+
+export const useReceiptAnalysis = () => {
+  const config  = useRuntimeConfig()
+  const loading = ref<string | null>(null)  // 解析中のキー（ホテル・その他等）
+  const error   = ref<string | null>(null)
+
+  async function analyze(file: File, key: string): Promise<ReceiptResult | null> {
+    loading.value = key
+    error.value   = null
+    try {
+      const base64 = await toBase64(file)
+      const efUrl  = config.public.edgeFunctionUrl
+      if (!efUrl) throw new Error('Edge Function URL未設定')
+
+      const res = await fetch(`${efUrl}/analyze-receipt`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ imageBase64: base64 }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return await res.json() as ReceiptResult
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : '解析に失敗しました'
+      return null
+    } finally {
+      loading.value = null
+    }
+  }
+
+  return { analyze, loading: readonly(loading), error: readonly(error) }
+}
+
+function toBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload  = () => resolve(reader.result as string)
+    reader.onerror = () => reject(new Error('ファイル読み込みエラー'))
+    reader.readAsDataURL(file)
+  })
+}

@@ -275,6 +275,9 @@
                   <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'hotelFiles', e)" />
                   <div v-if="site.expenses.hotelFiles?.length" class="photo-preview">
                     <span class="hours-label">{{ site.expenses.hotelFiles.length }}件選択済み</span>
+                    <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-hotelFiles`" @click="analyzeReceipt(si, 'hotelFiles')">
+                      {{ receipt.loading.value === `${si}-hotelFiles` ? '解析中...' : '✨ AI解析' }}
+                    </button>
                   </div>
                 </div>
               </template>
@@ -297,6 +300,9 @@
                   <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'leopalaceFiles', e)" />
                   <div v-if="site.expenses.leopalaceFiles?.length" class="photo-preview">
                     <span class="hours-label">{{ site.expenses.leopalaceFiles.length }}件選択済み</span>
+                    <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-leopalaceFiles`" @click="analyzeReceipt(si, 'leopalaceFiles')">
+                      {{ receipt.loading.value === `${si}-leopalaceFiles` ? '解析中...' : '✨ AI解析' }}
+                    </button>
                   </div>
                 </div>
               </template>
@@ -348,6 +354,9 @@
                   <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'otherFiles', e)" />
                   <div v-if="site.expenses.otherFiles?.length" class="photo-preview">
                     <span class="hours-label">{{ site.expenses.otherFiles.length }}件選択済み</span>
+                    <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-otherFiles`" @click="analyzeReceipt(si, 'otherFiles', 0)">
+                      {{ receipt.loading.value === `${si}-otherFiles` ? '解析中...' : '✨ AI解析' }}
+                    </button>
                   </div>
                 </div>
               </template>
@@ -370,6 +379,9 @@
                   <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'entertainmentFiles', e)" />
                   <div v-if="site.expenses.entertainmentFiles?.length" class="photo-preview">
                     <span class="hours-label">{{ site.expenses.entertainmentFiles.length }}件選択済み</span>
+                    <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-entertainmentFiles`" @click="analyzeReceipt(si, 'entertainmentFiles')">
+                      {{ receipt.loading.value === `${si}-entertainmentFiles` ? '解析中...' : '✨ AI解析' }}
+                    </button>
                   </div>
                 </div>
               </template>
@@ -437,7 +449,8 @@ const route   = useRoute()
 const liff    = useLiff()
 const master  = useMaster()
 const report  = useReport()
-const expense = useExpense()
+const expense  = useExpense()
+const receipt  = useReceiptAnalysis()
 
 const currentUser = ref<User | null>(null)
 
@@ -995,6 +1008,42 @@ function handleExpenseFile(
   report.form.value.sites[si].expenses[field] = Array.from(input.files)
 }
 
+/** 領収書 AI 解析 → フォームに自動入力 */
+async function analyzeReceipt(
+  si: number,
+  field: 'hotelFiles' | 'leopalaceFiles' | 'otherFiles' | 'entertainmentFiles',
+  otherIndex?: number,
+) {
+  const files = report.form.value.sites[si].expenses[field] as File[] | undefined
+  if (!files?.length) return
+  const file   = files[0]
+  const key    = `${si}-${field}`
+  const result = await receipt.analyze(file, key)
+  if (!result) return
+
+  const exp = report.form.value.sites[si].expenses
+  if (field === 'hotelFiles') {
+    if (result.label) exp.hotelName          = result.label
+    if (result.yen)   exp.hotelYen           = result.yen
+    if (result.invoiceNumber) exp.hotelRegistration = result.invoiceNumber
+  } else if (field === 'leopalaceFiles') {
+    if (result.label) exp.leopalaceName         = result.label
+    if (result.yen)   exp.leopalaceYen          = result.yen
+    if (result.invoiceNumber) exp.leopalaceRegistration = result.invoiceNumber
+  } else if (field === 'entertainmentFiles') {
+    if (result.label) exp.entertainmentLabel        = result.label
+    if (result.yen)   exp.entertainmentYen          = result.yen
+    if (result.invoiceNumber) exp.entertainmentRegistration = result.invoiceNumber
+  } else if (field === 'otherFiles' && otherIndex !== undefined) {
+    const item = exp.others[otherIndex]
+    if (item) {
+      if (result.label) item.label              = result.label
+      if (result.yen)   item.yen                = result.yen
+      if (result.invoiceNumber) (item as any).registrationNumber = result.invoiceNumber
+    }
+  }
+}
+
 function handleGarbagePhoto(si: number, event: Event) {
   const input = event.target as HTMLInputElement
   if (!input.files?.length) return
@@ -1316,6 +1365,21 @@ html, body {
   cursor: pointer; transition: border-color 0.15s, color 0.15s;
 }
 .btn-history:hover { border-color: var(--text2); color: var(--text); }
+
+.btn-ai {
+  margin-top: 6px;
+  padding: 6px 12px;
+  background: linear-gradient(135deg, #7C3AED, #4F46E5);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: block;
+  width: 100%;
+}
+.btn-ai:disabled { opacity: .5; cursor: not-allowed; }
 
 .btn-ghost-sm {
   background: transparent; color: var(--accent);
