@@ -177,41 +177,44 @@ export const useReport = () => {
 
     // 現場跨ぎ残業対応: 作業者ごとに startTime 順で累積稼働分を引き継いで計算
     const workerAccum: Record<string, number> = {}
-    const computedBreakdowns = new WeakMap<object, RateBreakdown>()
 
-    const allEntries: { w: WorkerEntry }[] = []
-    form.value.sites.forEach(site => {
-      site.workers.forEach(w => {
-        if (w.workerName && !(w as any)._manualHours) allEntries.push({ w })
+    // WeakMap は Vue3 reactive proxy で不安定なため、siteIdx-workerIdx 文字列キーの Map を使う
+    type WorkerRef = { siteIdx: number; workerIdx: number; w: WorkerEntry }
+    const workerList: WorkerRef[] = []
+    form.value.sites.forEach((site, si) => {
+      site.workers.forEach((w, wi) => {
+        if (w.workerName && !(w as any)._manualHours) workerList.push({ siteIdx: si, workerIdx: wi, w })
       })
     })
-    allEntries.sort((a, b) => parseMin(a.w.startTime || '08:00') - parseMin(b.w.startTime || '08:00'))
+    workerList.sort((a, b) => parseMin(a.w.startTime || '08:00') - parseMin(b.w.startTime || '08:00'))
 
-    for (const { w } of allEntries) {
+    const breakdownMap = new Map<string, RateBreakdown>()
+    for (const { siteIdx, workerIdx, w } of workerList) {
       const key    = w.workerId || w.workerName
       const accum  = workerAccum[key] ?? 0
       const { workedMin, ...breakdown } = computeWorkerHours(
         w.startTime, w.endTime, calcBreakMinutes(w.workerRole, w.startTime, w.endTime), isSunday, accum
       )
       workerAccum[key] = workedMin
-      computedBreakdowns.set(w, breakdown)
+      breakdownMap.set(`${siteIdx}-${workerIdx}`, breakdown)
     }
 
     // 空の作業員・下請けを除去 & 料率別時間を計算してセット
     const payload: DailyReport = {
       ...form.value,
-      sites: form.value.sites.map(site => {
+      sites: form.value.sites.map((site, si) => {
         const isNew = site.siteName === '__other__'
         return {
           ...site,
           siteName:  isNew ? (site.customSiteName || '') : site.siteName,
           isNewSite: isNew,
           workers: site.workers
-            .filter(w => w.workerName)
-            .map(w => {
+            .map((w, wi) => ({ w, wi }))
+            .filter(({ w }) => w.workerName)
+            .map(({ w, wi }) => {
               const r = (w as any)._manualHours
                 ? {}
-                : (computedBreakdowns.get(w) ?? {})
+                : (breakdownMap.get(`${si}-${wi}`) ?? {})
               return { ...w, ...r }
             }),
           subcontractors: site.subcontractors
@@ -220,7 +223,8 @@ export const useReport = () => {
               ? { ...s, subcontractorName: s.customSubcontractorName || '' }
               : s
             )
-            .filter(s => s.subcontractorName),
+            .filter(s => s.subcontractorName)
+            .map(s => ({ ...s, count: Math.max(1, parseInt(String(s.count), 10) || 1) })),
         }
       }),
     }

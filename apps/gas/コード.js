@@ -349,7 +349,7 @@ function sendLiffReportNotification(sender, date, sites, successSites, failedSit
       // 下請け業者
       var subs = (site.subcontractors || []).filter(function(s) { return s.subcontractorName; });
       if (subs.length > 0) {
-        subs.forEach(function(s) { lines.push('・' + s.subcontractorName + ' ' + s.count + '人'); });
+        subs.forEach(function(s) { lines.push('・' + s.subcontractorName + ' ' + (s.count || 1) + '人'); });
       }
     });
 

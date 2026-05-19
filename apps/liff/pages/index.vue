@@ -809,7 +809,7 @@ const linePreview = computed(() => {
     if (subs.length) {
       subs.forEach((s: any) => {
         const name = s.subcontractorName === '__other__' ? (s.customSubcontractorName || '新規業者') : s.subcontractorName
-        lines.push(`・${name} ${s.count}人`)
+        lines.push(`・${name} ${s.count || 1}人`)
       })
     }
   }
