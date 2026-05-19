@@ -157,7 +157,7 @@
                 </template>
                 <template v-else>
                   <td class="site-name">{{ row.siteName }}</td>
-                  <td class="num time-cell">{{ row.startTime }}〜{{ row.endTime }}</td>
+                  <td class="num time-cell">{{ row.startTime }}〜{{ row.endTime }}<span v-if="row.breakMinutes" class="break-note">（休憩{{ row.breakMinutes }}分）</span></td>
                   <td class="num">{{ fmtH(row.hoursNormal) || '—' }}</td>
                   <td class="num">{{ fmtH(row.hoursOT) || '—' }}</td>
                   <td class="num">{{ fmtH(row.hoursNight) || '—' }}</td>
@@ -206,7 +206,7 @@ function shiftMonth(delta: number) {
 // ---------- データ ----------
 type WorkerRow = {
   date: string; siteName: string; isSunday: boolean; isOff?: boolean
-  startTime?: string; endTime?: string
+  startTime?: string; endTime?: string; breakMinutes?: number
   hoursNormal: number; hoursOT: number; hoursNight: number; hoursOTNight: number
   hoursSunday: number; hoursSundayOT: number; hoursSundayNight: number; hoursSundayOTNight: number
 }
@@ -358,7 +358,7 @@ async function load() {
 
         a.rows.push({
           date, siteName: e.siteName, isSunday: e.isSunday,
-          startTime: e.startTime, endTime: e.endTime,
+          startTime: e.startTime, endTime: e.endTime, breakMinutes: brk,
           hoursNormal: bd.hoursNormal, hoursOT: bd.hoursOT,
           hoursNight: bd.hoursNight, hoursOTNight: bd.hoursOTNight,
           hoursSunday: bd.hoursSunday, hoursSundayOT: bd.hoursSundayOT,
@@ -479,6 +479,7 @@ function printPdf() {
 .row-off { background: #fafafa; }
 .off-cell { color: #aaa; font-size: 12px; font-weight: 600; padding-left: 12px !important; }
 .time-cell { color: #555; font-size: 12px; white-space: nowrap; }
+.break-note { color: #aaa; font-size: 11px; margin-left: 4px; }
 
 /* 印刷用ヘッダー（画面では非表示） */
 .print-header { display: none; }
