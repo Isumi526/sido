@@ -77,7 +77,7 @@ const saveError      = ref('')
 async function load() {
   const accountId = await getAccountId()
   const [{ data: workersData }, { data: usersData }] = await Promise.all([
-    supabase.from('workers').select('id, name, role, unit_price, active').eq('account_id', accountId).order('role').order('sort_order'),
+    supabase.from('workers').select('id, name, role, unit_price, active').eq('account_id', accountId).order('name'),
     supabase.from('users').select('worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
   ])
   workers.value = (workersData ?? []) as Worker[]
