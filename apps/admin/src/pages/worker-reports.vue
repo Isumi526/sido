@@ -157,7 +157,7 @@
                 </template>
                 <template v-else>
                   <td class="site-name">{{ row.siteName }}</td>
-                  <td class="num time-cell">{{ row.startTime }}〜{{ row.endTime }}<span v-if="row.breakMinutes" class="break-note">（休憩{{ row.breakMinutes }}分）</span></td>
+                  <td class="num time-cell">{{ row.startTime }}〜{{ row.endTime }}<span v-if="row.breakMinutes !== undefined" class="break-note">（休憩{{ row.breakMinutes }}分）</span></td>
                   <td class="num">{{ fmtH(row.hoursNormal) || '—' }}</td>
                   <td class="num">{{ fmtH(row.hoursOT) || '—' }}</td>
                   <td class="num">{{ fmtH(row.hoursNight) || '—' }}</td>
