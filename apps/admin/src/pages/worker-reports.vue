@@ -89,7 +89,11 @@
                 <th class="num">通常h</th>
                 <th class="num">残業h</th>
                 <th class="num">深夜h</th>
+                <th class="num">深残h</th>
                 <th class="num">休日h</th>
+                <th class="num">休残h</th>
+                <th class="num">休深h</th>
+                <th class="num">休深残h</th>
               </tr>
             </thead>
             <tbody>
@@ -99,7 +103,11 @@
                 <td class="num">{{ fmtH(site.normal) || '—' }}</td>
                 <td class="num">{{ fmtH(site.ot) || '—' }}</td>
                 <td class="num">{{ fmtH(site.night) || '—' }}</td>
+                <td class="num">{{ fmtH(site.otNight) || '—' }}</td>
                 <td class="num">{{ fmtH(site.sunday) || '—' }}</td>
+                <td class="num">{{ fmtH(site.sundayOt) || '—' }}</td>
+                <td class="num">{{ fmtH(site.sundayNight) || '—' }}</td>
+                <td class="num">{{ fmtH(site.sundayOtNight) || '—' }}</td>
               </tr>
             </tbody>
             <tfoot>
@@ -109,7 +117,11 @@
                 <td class="num">{{ fmtH(workerMap[activeWorker].totals.normal) || '—' }}</td>
                 <td class="num">{{ fmtH(workerMap[activeWorker].totals.ot) || '—' }}</td>
                 <td class="num">{{ fmtH(workerMap[activeWorker].totals.night) || '—' }}</td>
+                <td class="num">{{ fmtH(workerMap[activeWorker].totals.otNight) || '—' }}</td>
                 <td class="num">{{ fmtH(workerMap[activeWorker].totals.sunday) || '—' }}</td>
+                <td class="num">{{ fmtH(workerMap[activeWorker].totals.sundayOt) || '—' }}</td>
+                <td class="num">{{ fmtH(workerMap[activeWorker].totals.sundayNight) || '—' }}</td>
+                <td class="num">{{ fmtH(workerMap[activeWorker].totals.sundayOtNight) || '—' }}</td>
               </tr>
             </tfoot>
           </table>
@@ -205,7 +217,7 @@ type WorkerData = {
     normal: number; ot: number; night: number; otNight: number
     sunday: number; sundayOt: number; sundayNight: number; sundayOtNight: number
   }
-  siteBreakdown: { siteName: string; days: number; normal: number; ot: number; night: number; sunday: number }[]
+  siteBreakdown: { siteName: string; days: number; normal: number; ot: number; night: number; otNight: number; sunday: number; sundayOt: number; sundayNight: number; sundayOtNight: number }[]
   rows: WorkerRow[]
 }
 
@@ -339,12 +351,16 @@ async function load() {
           hoursSundayNight: bd.hoursSundayNight, hoursSundayOTNight: bd.hoursSundayOTNight,
         })
 
-        if (!a.siteAcc[e.siteName]) a.siteAcc[e.siteName] = { dates: new Set(), normal: 0, ot: 0, night: 0, sunday: 0 }
+        if (!a.siteAcc[e.siteName]) a.siteAcc[e.siteName] = { dates: new Set(), normal: 0, ot: 0, night: 0, otNight: 0, sunday: 0, sundayOt: 0, sundayNight: 0, sundayOtNight: 0 }
         a.siteAcc[e.siteName].dates.add(date)
-        a.siteAcc[e.siteName].normal += bd.hoursNormal
-        a.siteAcc[e.siteName].ot     += bd.hoursOT
-        a.siteAcc[e.siteName].night  += bd.hoursNight
-        a.siteAcc[e.siteName].sunday += bd.hoursSunday
+        a.siteAcc[e.siteName].normal       += bd.hoursNormal
+        a.siteAcc[e.siteName].ot           += bd.hoursOT
+        a.siteAcc[e.siteName].night        += bd.hoursNight
+        a.siteAcc[e.siteName].otNight      += bd.hoursOTNight
+        a.siteAcc[e.siteName].sunday       += bd.hoursSunday
+        a.siteAcc[e.siteName].sundayOt     += bd.hoursSundayOT
+        a.siteAcc[e.siteName].sundayNight  += bd.hoursSundayNight
+        a.siteAcc[e.siteName].sundayOtNight+= bd.hoursSundayOTNight
       }
     }
   }
@@ -376,7 +392,7 @@ async function load() {
       totals:        a.totals,
       rows:          a.rows.sort((x, y) => x.date.localeCompare(y.date)),
       siteBreakdown: Object.entries(a.siteAcc)
-        .map(([siteName, s]) => ({ siteName, days: s.dates.size, normal: s.normal, ot: s.ot, night: s.night, sunday: s.sunday }))
+        .map(([siteName, s]) => ({ siteName, days: s.dates.size, normal: s.normal, ot: s.ot, night: s.night, otNight: s.otNight, sunday: s.sunday, sundayOt: s.sundayOt, sundayNight: s.sundayNight, sundayOtNight: s.sundayOtNight }))
         .sort((a, b) => a.siteName.localeCompare(b.siteName, 'ja')),
     }
   }
