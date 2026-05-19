@@ -221,12 +221,18 @@ type WorkerData = {
   rows: WorkerRow[]
 }
 
-const loading     = ref(false)
-const workerMap   = ref<Record<string, WorkerData>>({})
+const loading      = ref(false)
+const workerMap    = ref<Record<string, WorkerData>>({})
 const activeWorker = ref('')
-const workerNames  = computed(() =>
-  Object.keys(workerMap.value).sort((a, b) => a.localeCompare(b, 'ja'))
-)
+const workerOrder  = ref<string[]>([])  // DBの名前昇順
+
+const workerNames = computed(() => {
+  const inData = Object.keys(workerMap.value)
+  // DBで取得した順（五十音順）を優先し、マスタにない名前は末尾に追加
+  const ordered = workerOrder.value.filter(n => inData.includes(n))
+  const rest    = inData.filter(n => !ordered.includes(n)).sort((a, b) => a.localeCompare(b, 'ja'))
+  return [...ordered, ...rest]
+})
 
 async function load() {
   loading.value = true
@@ -234,6 +240,14 @@ async function load() {
   activeWorker.value = ''
 
   const accountId = await getAccountId()
+
+  // 作業員名を五十音順で取得（タブ順序用）
+  const { data: workersData } = await supabase
+    .from('workers')
+    .select('name')
+    .eq('account_id', accountId)
+    .order('name')
+  workerOrder.value = (workersData ?? []).map((w: any) => w.name)
 
   // ユーザーID → real_name マップ（休み日の名前解決用）
   const { data: usersData } = await supabase
