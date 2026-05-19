@@ -9,6 +9,7 @@ import SiteReports    from '../pages/site-reports.vue'
 import Settings       from '../pages/settings.vue'
 import Login          from '../pages/login.vue'
 import Users          from '../pages/users.vue'
+import WorkerReports  from '../pages/worker-reports.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -20,7 +21,8 @@ export const router = createRouter({
     { path: '/subcontractors', component: Subcontractors },
     { path: '/reports',      component: Reports },
     { path: '/site-reports', component: SiteReports },
-    { path: '/settings',     component: Settings },
+    { path: '/worker-reports', component: WorkerReports },
+    { path: '/settings',       component: Settings },
     { path: '/users',        component: Users },
   ],
 })

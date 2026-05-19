@@ -5,6 +5,7 @@
       <ul class="nav-list">
         <li><RouterLink to="/" class="nav-link">ダッシュボード</RouterLink></li>
         <li><RouterLink to="/site-reports" class="nav-link">現場別集計</RouterLink></li>
+        <li><RouterLink to="/worker-reports" class="nav-link">出面・勤怠</RouterLink></li>
         <li><RouterLink to="/reports" class="nav-link">日報一覧</RouterLink></li>
         <li><RouterLink to="/workers" class="nav-link">作業員</RouterLink></li>
         <li><RouterLink to="/sites" class="nav-link">現場</RouterLink></li>
