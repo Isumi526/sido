@@ -10,8 +10,9 @@
 
       <div v-else-if="done" class="state-screen">
         <div class="success-mark">✓</div>
-        <h2 class="state-title">申請完了！</h2>
-        <p class="state-text">{{ displayName }} さんで申請しました。<br>担当者が承認するまでしばらくお待ちください。</p>
+        <h2 class="state-title">登録完了！</h2>
+        <p class="state-text">{{ displayName }} さんで登録しました。</p>
+        <button class="btn-primary" @click="router.push('/')">ホームへ →</button>
       </div>
 
       <form v-else class="form" @submit.prevent="handleSubmit">

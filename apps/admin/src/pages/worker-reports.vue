@@ -40,6 +40,10 @@
             <div class="summary-label">稼働日数</div>
             <div class="summary-value">{{ workerMap[activeWorker].totalDays }}<span class="unit">日</span></div>
           </div>
+          <div class="summary-card" v-if="workerMap[activeWorker].offDays > 0">
+            <div class="summary-label">休み</div>
+            <div class="summary-value off">{{ workerMap[activeWorker].offDays }}<span class="unit">日</span></div>
+          </div>
           <div class="summary-card">
             <div class="summary-label">通常</div>
             <div class="summary-value">{{ fmtH(workerMap[activeWorker].totals.normal) }}<span class="unit">h</span></div>
@@ -119,6 +123,7 @@
               <tr>
                 <th>日付</th>
                 <th>現場</th>
+                <th class="num">時刻</th>
                 <th class="num">通常h</th>
                 <th class="num">残業h</th>
                 <th class="num">深夜h</th>
@@ -130,20 +135,26 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in workerMap[activeWorker].rows" :key="row.date + row.siteName">
+              <tr v-for="row in workerMap[activeWorker].rows" :key="row.date + row.siteName" :class="{ 'row-off': row.isOff }">
                 <td class="date-cell">
                   {{ fmtDate(row.date) }}
                   <span v-if="row.isSunday" class="sun">日</span>
                 </td>
-                <td class="site-name">{{ row.siteName }}</td>
-                <td class="num">{{ fmtH(row.hoursNormal) || '—' }}</td>
-                <td class="num">{{ fmtH(row.hoursOT) || '—' }}</td>
-                <td class="num">{{ fmtH(row.hoursNight) || '—' }}</td>
-                <td class="num">{{ fmtH(row.hoursOTNight) || '—' }}</td>
-                <td class="num">{{ fmtH(row.hoursSunday) || '—' }}</td>
-                <td class="num">{{ fmtH(row.hoursSundayOT) || '—' }}</td>
-                <td class="num">{{ fmtH(row.hoursSundayNight) || '—' }}</td>
-                <td class="num">{{ fmtH(row.hoursSundayOTNight) || '—' }}</td>
+                <template v-if="row.isOff">
+                  <td class="off-cell" colspan="9">休み</td>
+                </template>
+                <template v-else>
+                  <td class="site-name">{{ row.siteName }}</td>
+                  <td class="num time-cell">{{ row.startTime }}〜{{ row.endTime }}</td>
+                  <td class="num">{{ fmtH(row.hoursNormal) || '—' }}</td>
+                  <td class="num">{{ fmtH(row.hoursOT) || '—' }}</td>
+                  <td class="num">{{ fmtH(row.hoursNight) || '—' }}</td>
+                  <td class="num">{{ fmtH(row.hoursOTNight) || '—' }}</td>
+                  <td class="num">{{ fmtH(row.hoursSunday) || '—' }}</td>
+                  <td class="num">{{ fmtH(row.hoursSundayOT) || '—' }}</td>
+                  <td class="num">{{ fmtH(row.hoursSundayNight) || '—' }}</td>
+                  <td class="num">{{ fmtH(row.hoursSundayOTNight) || '—' }}</td>
+                </template>
               </tr>
             </tbody>
           </table>
@@ -157,6 +168,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { computeWorkerHours, calcBreakMinutes, parseMin } from '../lib/workerHours'
 
 // ---------- 月ナビ ----------
 const baseDate = ref(new Date())
@@ -180,18 +192,21 @@ function shiftMonth(delta: number) {
 }
 
 // ---------- データ ----------
+type WorkerRow = {
+  date: string; siteName: string; isSunday: boolean; isOff?: boolean
+  startTime?: string; endTime?: string
+  hoursNormal: number; hoursOT: number; hoursNight: number; hoursOTNight: number
+  hoursSunday: number; hoursSundayOT: number; hoursSundayNight: number; hoursSundayOTNight: number
+}
 type WorkerData = {
   totalDays:     number
+  offDays:       number
   totals: {
     normal: number; ot: number; night: number; otNight: number
     sunday: number; sundayOt: number; sundayNight: number; sundayOtNight: number
   }
   siteBreakdown: { siteName: string; days: number; normal: number; ot: number; night: number; sunday: number }[]
-  rows: {
-    date: string; siteName: string; isSunday: boolean
-    hoursNormal: number; hoursOT: number; hoursNight: number; hoursOTNight: number
-    hoursSunday: number; hoursSundayOT: number; hoursSundayNight: number; hoursSundayOTNight: number
-  }[]
+  rows: WorkerRow[]
 }
 
 const loading     = ref(false)
@@ -207,75 +222,149 @@ async function load() {
   activeWorker.value = ''
 
   const accountId = await getAccountId()
+
+  // ユーザーID → real_name マップ（休み日の名前解決用）
+  const { data: usersData } = await supabase
+    .from('users')
+    .select('id, real_name')
+    .eq('account_id', accountId)
+  const userNameMap: Record<string, string> = {}
+  for (const u of usersData ?? []) userNameMap[(u as any).id] = (u as any).real_name
+
   const { data } = await supabase
     .from('daily_reports')
-    .select('date, is_working, sites')
+    .select('date, is_working, sites, user_id')
     .eq('account_id', accountId)
-    .eq('is_working', true)
     .gte('date', dateFrom.value)
     .lte('date', dateTo.value)
     .order('date', { ascending: true })
     .limit(500)
 
-  // 作業員 × 日 × 現場 で集計
-  const acc: Record<string, {
-    dates: Set<string>
-    rows: WorkerData['rows']
-    siteAcc: Record<string, { dates: Set<string>; normal: number; ot: number; night: number; sunday: number }>
-    totals: WorkerData['totals']
-  }> = {}
+  // Step1: 作業員ごとに (date, siteName, startTime, endTime, workerRole) を収集
+  type RawEntry = {
+    date: string; siteName: string; isSunday: boolean
+    startTime: string; endTime: string; workerRole: 'factory' | 'site'
+  }
+  const rawByWorker: Record<string, RawEntry[]> = {}
+
+  // 休み日: user_id → workerName で収集
+  type OffEntry = { date: string; isSunday: boolean }
+  const offByWorker: Record<string, OffEntry[]> = {}
 
   for (const report of data ?? []) {
-    const isSunday = new Date((report as any).date + 'T00:00:00').getDay() === 0
+    const r = report as any
+    const isSunday = new Date(r.date + 'T00:00:00').getDay() === 0
 
-    for (const site of ((report as any).sites ?? [])) {
+    if (!r.is_working) {
+      const workerName = userNameMap[r.user_id]
+      if (workerName) {
+        if (!offByWorker[workerName]) offByWorker[workerName] = []
+        offByWorker[workerName].push({ date: r.date, isSunday })
+      }
+      continue
+    }
+
+    for (const site of (r.sites ?? [])) {
       const rawName  = site.siteName ?? ''
       const siteName = rawName === '__other__'
         ? (site.customSiteName?.trim() || '新規現場')
         : (rawName.trim() || '(不明)')
-
       for (const w of (site.workers ?? []).filter((w: any) => w.workerName)) {
         const name = w.workerName as string
-        if (!acc[name]) {
-          acc[name] = {
-            dates: new Set(),
-            rows: [],
-            siteAcc: {},
-            totals: { normal:0, ot:0, night:0, otNight:0, sunday:0, sundayOt:0, sundayNight:0, sundayOtNight:0 },
-          }
-        }
-        const a = acc[name]
-        const date = (report as any).date as string
-
-        a.dates.add(date)
-
-        const hn  = Number(w.hoursNormal        || 0)
-        const hot = Number(w.hoursOT             || 0)
-        const hni = Number(w.hoursNight          || 0)
-        const hon = Number(w.hoursOTNight        || 0)
-        const hsu = Number(w.hoursSunday         || 0)
-        const hso = Number(w.hoursSundayOT       || 0)
-        const hsn = Number(w.hoursSundayNight    || 0)
-        const hso2= Number(w.hoursSundayOTNight  || 0)
-
-        a.totals.normal       += hn
-        a.totals.ot           += hot
-        a.totals.night        += hni
-        a.totals.otNight      += hon
-        a.totals.sunday       += hsu
-        a.totals.sundayOt     += hso
-        a.totals.sundayNight  += hsn
-        a.totals.sundayOtNight+= hso2
-
-        a.rows.push({ date, siteName, isSunday, hoursNormal: hn, hoursOT: hot, hoursNight: hni, hoursOTNight: hon, hoursSunday: hsu, hoursSundayOT: hso, hoursSundayNight: hsn, hoursSundayOTNight: hso2 })
-
-        if (!a.siteAcc[siteName]) a.siteAcc[siteName] = { dates: new Set(), normal: 0, ot: 0, night: 0, sunday: 0 }
-        a.siteAcc[siteName].dates.add(date)
-        a.siteAcc[siteName].normal += hn
-        a.siteAcc[siteName].ot     += hot
-        a.siteAcc[siteName].night  += hni
-        a.siteAcc[siteName].sunday += hsu
+        if (!rawByWorker[name]) rawByWorker[name] = []
+        rawByWorker[name].push({
+          date:       r.date,
+          siteName,
+          isSunday,
+          startTime:  w.startTime  || '08:00',
+          endTime:    w.endTime    || '17:30',
+          workerRole: w.workerRole || 'site',
+        })
       }
+    }
+  }
+
+  // Step2: 日付・startTime 順にソートし、現場跨ぎ残業累積込みで時間計算
+  const acc: Record<string, {
+    dates: Set<string>
+    offDates: Set<string>
+    rows: WorkerRow[]
+    siteAcc: Record<string, { dates: Set<string>; normal: number; ot: number; night: number; sunday: number }>
+    totals: WorkerData['totals']
+  }> = {}
+
+  for (const [name, entries] of Object.entries(rawByWorker)) {
+    // 日付でグループ化して現場跨ぎ累積を計算
+    const byDate: Record<string, RawEntry[]> = {}
+    for (const e of entries) {
+      if (!byDate[e.date]) byDate[e.date] = []
+      byDate[e.date].push(e)
+    }
+
+    acc[name] = {
+      dates: new Set(),
+      offDates: new Set(),
+      rows: [],
+      siteAcc: {},
+      totals: { normal:0, ot:0, night:0, otNight:0, sunday:0, sundayOt:0, sundayNight:0, sundayOtNight:0 },
+    }
+    const a = acc[name]
+
+    for (const [date, dayEntries] of Object.entries(byDate)) {
+      // startTime 順にソート（現場跨ぎ残業）
+      dayEntries.sort((x, y) => parseMin(x.startTime) - parseMin(y.startTime))
+      a.dates.add(date)
+
+      let workedMinAccum = 0
+      for (const e of dayEntries) {
+        const brk = calcBreakMinutes(e.workerRole, e.startTime, e.endTime)
+        const { workedMin, ...bd } = computeWorkerHours(e.startTime, e.endTime, brk, e.isSunday, workedMinAccum)
+        workedMinAccum += workedMin
+
+        a.totals.normal        += bd.hoursNormal
+        a.totals.ot            += bd.hoursOT
+        a.totals.night         += bd.hoursNight
+        a.totals.otNight       += bd.hoursOTNight
+        a.totals.sunday        += bd.hoursSunday
+        a.totals.sundayOt      += bd.hoursSundayOT
+        a.totals.sundayNight   += bd.hoursSundayNight
+        a.totals.sundayOtNight += bd.hoursSundayOTNight
+
+        a.rows.push({
+          date, siteName: e.siteName, isSunday: e.isSunday,
+          startTime: e.startTime, endTime: e.endTime,
+          hoursNormal: bd.hoursNormal, hoursOT: bd.hoursOT,
+          hoursNight: bd.hoursNight, hoursOTNight: bd.hoursOTNight,
+          hoursSunday: bd.hoursSunday, hoursSundayOT: bd.hoursSundayOT,
+          hoursSundayNight: bd.hoursSundayNight, hoursSundayOTNight: bd.hoursSundayOTNight,
+        })
+
+        if (!a.siteAcc[e.siteName]) a.siteAcc[e.siteName] = { dates: new Set(), normal: 0, ot: 0, night: 0, sunday: 0 }
+        a.siteAcc[e.siteName].dates.add(date)
+        a.siteAcc[e.siteName].normal += bd.hoursNormal
+        a.siteAcc[e.siteName].ot     += bd.hoursOT
+        a.siteAcc[e.siteName].night  += bd.hoursNight
+        a.siteAcc[e.siteName].sunday += bd.hoursSunday
+      }
+    }
+  }
+
+  // Step3: 休み日を acc に追加（稼働エントリがない作業員も含む）
+  const zeroHours: Omit<WorkerRow, 'date' | 'siteName' | 'isSunday' | 'isOff'> = {
+    hoursNormal: 0, hoursOT: 0, hoursNight: 0, hoursOTNight: 0,
+    hoursSunday: 0, hoursSundayOT: 0, hoursSundayNight: 0, hoursSundayOTNight: 0,
+  }
+  for (const [name, offEntries] of Object.entries(offByWorker)) {
+    if (!acc[name]) {
+      acc[name] = {
+        dates: new Set(), offDates: new Set(), rows: [], siteAcc: {},
+        totals: { normal:0, ot:0, night:0, otNight:0, sunday:0, sundayOt:0, sundayNight:0, sundayOtNight:0 },
+      }
+    }
+    for (const e of offEntries) {
+      if (acc[name].dates.has(e.date)) continue  // 稼働日と重複する場合は稼働優先
+      acc[name].offDates.add(e.date)
+      acc[name].rows.push({ date: e.date, siteName: '', isSunday: e.isSunday, isOff: true, ...zeroHours })
     }
   }
 
@@ -283,6 +372,7 @@ async function load() {
   for (const [name, a] of Object.entries(acc)) {
     result[name] = {
       totalDays:     a.dates.size,
+      offDays:       a.offDates.size,
       totals:        a.totals,
       rows:          a.rows.sort((x, y) => x.date.localeCompare(y.date)),
       siteBreakdown: Object.entries(a.siteAcc)
@@ -341,6 +431,7 @@ function printPdf() {
 .summary-label { font-size: 11px; color: #888; font-weight: 700; margin-bottom: 6px; }
 .summary-value { font-size: 26px; font-weight: 900; color: #111; }
 .summary-value.accent { color: #06C755; }
+.summary-value.off { color: #888; }
 .unit { font-size: 13px; font-weight: 400; color: #888; margin-left: 2px; }
 
 /* テーブル共通 */
@@ -355,6 +446,9 @@ function printPdf() {
 .sun { color: #E53935; font-size: 10px; font-weight: 700; margin-left: 4px; }
 .site-name { max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .total-row td { font-weight: 700; }
+.row-off { background: #fafafa; }
+.off-cell { color: #aaa; font-size: 12px; font-weight: 600; padding-left: 12px !important; }
+.time-cell { color: #555; font-size: 12px; white-space: nowrap; }
 
 /* 印刷用ヘッダー（画面では非表示） */
 .print-header { display: none; }

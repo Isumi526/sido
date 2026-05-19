@@ -36,7 +36,7 @@ export interface RateLine {
   color: string
 }
 
-function parseMin(hhmm: string): number {
+export function parseMin(hhmm: string): number {
   const [h, m] = hhmm.split(':').map(Number)
   return h * 60 + m
 }
@@ -107,14 +107,16 @@ export function calcBreakMinutes(
 }
 
 export function computeWorkerHours(
-  startTime:    string,
-  endTime:      string,
-  breakMinutes: number,
-  isSunday:     boolean,
-): RateBreakdown {
-  const zero: RateBreakdown = {
+  startTime:      string,
+  endTime:        string,
+  breakMinutes:   number,
+  isSunday:       boolean,
+  prevWorkedMin = 0,
+): RateBreakdown & { workedMin: number } {
+  const zero = {
     hoursNormal: 0, hoursOT: 0, hoursNight: 0, hoursOTNight: 0,
     hoursSunday: 0, hoursSundayOT: 0, hoursSundayNight: 0, hoursSundayOTNight: 0,
+    workedMin: 0,
   }
 
   let startMin = parseMin(startTime || '08:00')
@@ -131,10 +133,11 @@ export function computeWorkerHours(
   const breakEndMin   = breakStartMin + breakMinutes
 
   const OT = 480  // 8h = 480min
-  let workedMin = 0
+  let workedMin = prevWorkedMin  // 前現場からの累積を引き継ぐ
 
   let hoursNormal = 0, hoursOT = 0, hoursNight = 0, hoursOTNight = 0
   let hoursSunday = 0, hoursSundayOT = 0, hoursSundayNight = 0, hoursSundayOTNight = 0
+  let ownWorkedMin = 0
 
   for (let t = startMin; t < endMin; t += 15) {
     if (t >= breakStartMin && t < breakEndMin) continue  // 休憩スキップ
@@ -153,11 +156,13 @@ export function computeWorkerHours(
       else if (dn)       hoursNight   += 0.25  // 1.25
       else               hoursNormal  += 0.25  // 1.00
     }
-    workedMin += 15
+    workedMin    += 15
+    ownWorkedMin += 15
   }
 
   return { hoursNormal, hoursOT, hoursNight, hoursOTNight,
-           hoursSunday, hoursSundayOT, hoursSundayNight, hoursSundayOTNight }
+           hoursSunday, hoursSundayOT, hoursSundayNight, hoursSundayOTNight,
+           workedMin: ownWorkedMin }
 }
 
 /** プレビュー用: 各料率の行データを返す（0hの行は省略） */
