@@ -3,16 +3,21 @@
     <nav class="sidebar">
       <div class="logo">{{ brandName }}<span class="logo-sub">管理</span></div>
       <ul class="nav-list">
-        <li><RouterLink to="/" class="nav-link">ダッシュボード</RouterLink></li>
-        <li><RouterLink to="/calendar" class="nav-link">予定管理</RouterLink></li>
-        <li><RouterLink to="/site-reports" class="nav-link">現場別集計</RouterLink></li>
-        <li><RouterLink to="/worker-reports" class="nav-link">出面・勤怠</RouterLink></li>
-        <li><RouterLink to="/reports" class="nav-link">日報一覧</RouterLink></li>
-        <li><RouterLink to="/workers" class="nav-link">作業員</RouterLink></li>
-        <li><RouterLink to="/sites" class="nav-link">現場</RouterLink></li>
-        <li><RouterLink to="/subcontractors" class="nav-link">下請け業者</RouterLink></li>
-        <li><RouterLink to="/users" class="nav-link">ユーザー管理</RouterLink></li>
-        <li><RouterLink to="/settings" class="nav-link">設定</RouterLink></li>
+        <li class="nav-section">レポート</li>
+        <li><RouterLink to="/" class="nav-link"><span class="material-symbols-rounded nav-icon">dashboard</span>ダッシュボード</RouterLink></li>
+        <li><RouterLink to="/reports" class="nav-link"><span class="material-symbols-rounded nav-icon">list_alt</span>日報一覧</RouterLink></li>
+        <li><RouterLink to="/worker-reports" class="nav-link"><span class="material-symbols-rounded nav-icon">badge</span>出面・勤怠</RouterLink></li>
+        <li><RouterLink to="/site-reports" class="nav-link"><span class="material-symbols-rounded nav-icon">bar_chart</span>現場別集計</RouterLink></li>
+        <li><RouterLink to="/calendar" class="nav-link"><span class="material-symbols-rounded nav-icon">calendar_month</span>予定管理</RouterLink></li>
+
+        <li class="nav-section">マスタ</li>
+        <li><RouterLink to="/workers" class="nav-link"><span class="material-symbols-rounded nav-icon">engineering</span>作業員</RouterLink></li>
+        <li><RouterLink to="/sites" class="nav-link"><span class="material-symbols-rounded nav-icon">location_on</span>現場</RouterLink></li>
+        <li><RouterLink to="/subcontractors" class="nav-link"><span class="material-symbols-rounded nav-icon">handshake</span>下請け業者</RouterLink></li>
+
+        <li class="nav-section">管理</li>
+        <li><RouterLink to="/users" class="nav-link"><span class="material-symbols-rounded nav-icon">manage_accounts</span>ユーザー</RouterLink></li>
+        <li><RouterLink to="/settings" class="nav-link"><span class="material-symbols-rounded nav-icon">settings</span>設定</RouterLink></li>
       </ul>
       <button class="btn-logout" @click="handleLogout">ログアウト</button>
     </nav>
@@ -49,10 +54,27 @@ async function handleLogout() {
 }
 .logo { padding: 0 20px; font-size: 18px; font-weight: 900; letter-spacing: 4px; color: #06C755; }
 .logo-sub { font-size: 11px; letter-spacing: 2px; color: #888; margin-left: 8px; font-weight: 400; }
-.nav-list { list-style: none; display: flex; flex-direction: column; flex: 1; }
-.nav-link { display: block; padding: 12px 20px; font-size: 14px; color: #aaa; transition: background .15s, color .15s; }
-.nav-link:hover, .nav-link.router-link-exact-active { background: #2a2a2a; color: #fff; }
-.nav-link.router-link-exact-active { border-left: 3px solid #06C755; }
+.nav-list { list-style: none; display: flex; flex-direction: column; flex: 1; padding: 0; margin: 0; overflow-y: auto; }
+.nav-section {
+  padding: 16px 20px 4px;
+  font-size: 10px; font-weight: 700; letter-spacing: 1.5px;
+  color: #555; text-transform: uppercase;
+}
+.nav-link {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 20px; font-size: 13px; color: #aaa;
+  transition: background .15s, color .15s;
+}
+.nav-link:hover { background: #2a2a2a; color: #ddd; }
+.nav-link.router-link-exact-active { background: #2a2a2a; color: #fff; border-left: 3px solid #06C755; padding-left: 17px; }
+.nav-icon {
+  font-size: 18px; flex-shrink: 0;
+  font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 20;
+}
+.router-link-exact-active .nav-icon {
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+  color: #06C755;
+}
 .btn-logout {
   margin: 0 16px 8px;
   background: transparent;
