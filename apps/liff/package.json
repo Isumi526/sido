@@ -11,6 +11,10 @@
   },
   "dependencies": {
     "@line/liff": "^2.24.0",
+    "@schedule-x/calendar": "^4.6.0",
+    "@schedule-x/drag-and-drop": "^3.7.3",
+    "@schedule-x/theme-default": "^4.6.0",
+    "@schedule-x/vue": "^4.1.0",
     "@supabase/supabase-js": "^2.45.0"
   },
   "devDependencies": {

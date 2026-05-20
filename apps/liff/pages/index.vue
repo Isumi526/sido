@@ -15,6 +15,7 @@
         <h2 class="state-title">送信済みです</h2>
         <p class="state-text">今日までの日報はすべて送信済みです</p>
         <button class="btn-history" @click="navigateTo('/history')">日報履歴を見る</button>
+        <button class="btn-calendar" @click="navigateTo('/calendar')">📅 予定を見る</button>
       </div>
 
       <!-- 送信完了 / 更新完了 -->
@@ -698,7 +699,7 @@ function removeSite(i: number) {
 
 onMounted(async () => {
   const masterPromise = master.fetch()
-  await liff.init()
+  if (!liff.initialized.value) await liff.init()
 
   // ユーザー登録チェック（キャッシュあれば即座。未登録でもフォームは使えるが経費PDFに名前が出ない）
   const userId = liff.profile.value?.userId
@@ -1366,6 +1367,14 @@ html, body {
   cursor: pointer; transition: border-color 0.15s, color 0.15s;
 }
 .btn-history:hover { border-color: var(--text2); color: var(--text); }
+.btn-calendar {
+  background: transparent; color: var(--text2);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 11px 24px; font-size: 14px; font-family: var(--font);
+  cursor: pointer; transition: border-color 0.15s, color 0.15s;
+  margin-top: 10px;
+}
+.btn-calendar:hover { border-color: var(--text2); color: var(--text); }
 
 .btn-ai {
   margin-top: 6px;

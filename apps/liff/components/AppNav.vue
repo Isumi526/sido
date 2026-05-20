@@ -2,7 +2,7 @@
   <header class="app-nav no-print">
     <div class="app-nav-inner">
       <div class="app-brand">
-        <span class="app-brand-name">APP</span>
+        <span class="app-brand-name">{{ brandName }}</span>
         <span class="app-brand-div">|</span>
         <span class="app-brand-sub">{{ subtitle }}</span>
       </div>
@@ -42,6 +42,10 @@
             <span class="drawer-item-icon">📝</span>
             <span>日報履歴</span>
           </NuxtLink>
+          <NuxtLink class="drawer-item" to="/calendar" @click="open = false">
+            <span class="drawer-item-icon">📅</span>
+            <span>予定管理</span>
+          </NuxtLink>
           <NuxtLink class="drawer-item" to="/expense/download" @click="open = false">
             <span class="drawer-item-icon">📄</span>
             <span>経費PDF</span>
@@ -58,6 +62,9 @@ const props = defineProps<{
   userName?: string
   userRole?: 'factory' | 'site'
 }>()
+
+const { slug } = useAccount()
+const brandName = slug.toUpperCase()
 
 const open = ref(false)
 

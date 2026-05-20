@@ -10,12 +10,14 @@ import Settings       from '../pages/settings.vue'
 import Login          from '../pages/login.vue'
 import Users          from '../pages/users.vue'
 import WorkerReports  from '../pages/worker-reports.vue'
+import Calendar       from '../pages/calendar.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/login',        component: Login,          meta: { public: true } },
     { path: '/',             component: Dashboard },
+    { path: '/calendar',     component: Calendar },
     { path: '/workers',      component: Workers },
     { path: '/sites',        component: Sites },
     { path: '/subcontractors', component: Subcontractors },

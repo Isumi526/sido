@@ -1,9 +1,10 @@
 <template>
   <div v-if="currentUser" class="admin-shell">
     <nav class="sidebar">
-      <div class="logo">APP<span class="logo-sub">管理</span></div>
+      <div class="logo">{{ brandName }}<span class="logo-sub">管理</span></div>
       <ul class="nav-list">
         <li><RouterLink to="/" class="nav-link">ダッシュボード</RouterLink></li>
+        <li><RouterLink to="/calendar" class="nav-link">予定管理</RouterLink></li>
         <li><RouterLink to="/site-reports" class="nav-link">現場別集計</RouterLink></li>
         <li><RouterLink to="/worker-reports" class="nav-link">出面・勤怠</RouterLink></li>
         <li><RouterLink to="/reports" class="nav-link">日報一覧</RouterLink></li>
@@ -27,6 +28,9 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
 import { currentUser, signOut } from './lib/auth'
+import { ACCOUNT_SLUG } from './lib/account'
+
+const brandName = ACCOUNT_SLUG.toUpperCase()
 
 const router = useRouter()
 

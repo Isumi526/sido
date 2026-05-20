@@ -73,8 +73,9 @@ export const useLiff = () => {
   return {
     state: readonly(state),
     init,
-    profile: computed(() => state.value.profile),
-    isLoggedIn: computed(() => state.value.loggedIn),
-    isTester: computed(() => state.value.isTester),
+    initialized: computed(() => state.value.initialized),
+    profile:     computed(() => state.value.profile),
+    isLoggedIn:  computed(() => state.value.loggedIn),
+    isTester:    computed(() => state.value.isTester),
   }
 }
