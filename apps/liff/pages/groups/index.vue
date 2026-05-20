@@ -1,6 +1,6 @@
 <template>
   <div class="groups-page">
-    <AppNav subtitle="グループ管理" :user-name="profile?.displayName" />
+    <AppNav subtitle="グループ管理" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
 
     <div class="page-header">
       <h1 class="page-title">グループ管理</h1>
@@ -140,8 +140,10 @@ const groupsStore = useScheduleGroups()
 const schedules   = useSchedules()
 const master      = useMaster()
 const { profile } = useLiff()
+const proxy       = useProxyMode()
 
-const myWorkerId = computed(() => schedules.myWorkerId.value)
+// 代理モード時は代理先のworker_idを使用
+const myWorkerId = computed(() => proxy.proxyTarget.value?.id ?? schedules.myWorkerId.value)
 
 // ──────────────────── 展開状態 ────────────────────
 const expanded = ref<Set<string>>(new Set())
@@ -278,6 +280,12 @@ async function handleLeave(group: ScheduleGroup) {
 onMounted(async () => {
   await master.fetch()
   await schedules.resolveMyWorkerId()
+  if (myWorkerId.value) {
+    await groupsStore.fetchMyGroups(myWorkerId.value)
+  }
+})
+
+watch(() => proxy.proxyTarget.value, async () => {
   if (myWorkerId.value) {
     await groupsStore.fetchMyGroups(myWorkerId.value)
   }

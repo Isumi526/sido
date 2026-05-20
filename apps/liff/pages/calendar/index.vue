@@ -1,6 +1,6 @@
 <template>
   <div class="calendar-page">
-    <AppNav subtitle="予定管理" :user-name="profile?.displayName" />
+    <AppNav subtitle="予定管理" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
 
     <div class="cal-subheader">
       <h1 class="cal-title">予定</h1>
@@ -79,7 +79,7 @@
             >
               <span class="wv-timed-title">{{ ev.title }}</span>
               <span class="wv-timed-time">{{ ev.start_time?.slice(0,5) }}–{{ ev.end_time?.slice(0,5) }}</span>
-              <span class="wv-timed-worker" v-if="ev.worker_id !== schedules.myWorkerId.value">{{ ev.worker?.name }}</span>
+              <span class="wv-timed-worker" v-if="ev.worker_id !== schedules.myWorkerId.value && ev.worker_id !== proxy.proxyTarget.value?.id">{{ ev.worker?.name }}</span>
             </div>
             <div v-if="day.date === todayStr" class="wv-now-line" :style="{ top: nowLineTop }"></div>
           </div>
@@ -112,7 +112,7 @@
             >
               <span class="wv-timed-title">{{ ev.title }}</span>
               <span class="wv-timed-time">{{ ev.start_time?.slice(0,5) }}–{{ ev.end_time?.slice(0,5) }}</span>
-              <span class="wv-timed-worker" v-if="ev.worker_id !== schedules.myWorkerId.value">{{ ev.worker?.name }}</span>
+              <span class="wv-timed-worker" v-if="ev.worker_id !== schedules.myWorkerId.value && ev.worker_id !== proxy.proxyTarget.value?.id">{{ ev.worker?.name }}</span>
             </div>
             <div v-if="todayViewStr === todayStr" class="wv-now-line" :style="{ top: nowLineTop }"></div>
           </div>
@@ -247,12 +247,12 @@
           <template v-if="detailModal.end_date !== detailModal.start_date">〜 {{ detailModal.end_date }}</template>
           <template v-if="!detailModal.all_day"> {{ detailModal.start_time?.slice(0,5) }} 〜 {{ detailModal.end_time?.slice(0,5) }}</template>
         </p>
-        <p v-if="detailModal.worker?.name && detailModal.worker_id !== schedules.myWorkerId.value" class="detail-worker">👤 {{ detailModal.worker.name }}</p>
+        <p v-if="detailModal.worker?.name && detailModal.worker_id !== schedules.myWorkerId.value && detailModal.worker_id !== proxy.proxyTarget.value?.id" class="detail-worker">👤 {{ detailModal.worker.name }}</p>
         <p class="detail-pub">{{ detailModal.is_public ? '🔓 グループに公開中' : '🔒 非公開' }}</p>
         <p v-if="detailModal.description" class="detail-desc">{{ detailModal.description }}</p>
         <div class="modal-actions">
           <button class="btn-cancel" @click="detailModal = null">閉じる</button>
-          <template v-if="detailModal.worker_id === schedules.myWorkerId.value">
+          <template v-if="detailModal.worker_id === schedules.myWorkerId.value || detailModal.worker_id === proxy.proxyTarget.value?.id">
             <button class="btn-delete" @click="confirmDelete(detailModal.id)">削除</button>
             <button class="btn-edit" @click="openEdit(detailModal)">編集</button>
           </template>
@@ -271,6 +271,12 @@ const schedules    = useSchedules()
 const groupsStore  = useScheduleGroups()
 const master       = useMaster()
 const { profile }  = useLiff()
+const proxy        = useProxyMode()
+
+// 代理モード時のworker_id（予定取得に使用）
+const effectiveWorkerId = computed(() =>
+  proxy.proxyTarget.value?.id ?? schedules.myWorkerId.value
+)
 
 const myGroups = computed(() => groupsStore.groups.value)
 const defaultShareGroupIds = computed(() =>
@@ -419,10 +425,14 @@ async function loadSchedules() {
   } else {
     from = to = todayViewStr.value
   }
-  await schedules.fetchSchedules(from, to, selectedGroupIds.value)
+  await schedules.fetchSchedules(from, to, selectedGroupIds.value, effectiveWorkerId.value)
 }
 
 watch([currentView, currentDate], loadSchedules)
+watch(() => proxy.proxyTarget.value, async () => {
+  await refreshGroups()
+  await loadSchedules()
+})
 
 // ──────────────────── タイムグリッド ────────────────────
 function timedEventStyle(ev: Schedule, date?: string): Record<string, string> {
@@ -558,7 +568,7 @@ async function saveSchedule() {
   try {
     const form = formModal.value as ScheduleForm
     if (formModal.value.id) await schedules.updateSchedule(formModal.value.id, form)
-    else await schedules.createSchedule(form)
+    else await schedules.createSchedule(form, effectiveWorkerId.value ?? undefined)
     formModal.value = null
     await loadSchedules()
   } catch (e) {
@@ -581,6 +591,11 @@ function eventColor(ev: Schedule): string {
   return ev.color ?? CATEGORY_COLORS[ev.category] ?? '#06C755'
 }
 
+async function refreshGroups() {
+  const wid = effectiveWorkerId.value
+  if (wid) await groupsStore.fetchMyGroups(wid)
+}
+
 // ──────────────────── 初期化 ────────────────────
 onMounted(async () => {
   const d = new Date(); d.setDate(d.getDate() - d.getDay())
@@ -589,9 +604,7 @@ onMounted(async () => {
   await master.fetch()
   await schedules.resolveMyWorkerId()
 
-  if (schedules.myWorkerId.value) {
-    await groupsStore.fetchMyGroups(schedules.myWorkerId.value)
-  }
+  await refreshGroups()
   await loadSchedules()
   await nextTick()
 

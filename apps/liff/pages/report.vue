@@ -603,7 +603,19 @@ function reconstructExpenseUsage(exp: any): UsageState {
 async function loadEditData(date: string) {
   const uid = liff.profile.value?.userId
   if (!uid) return
-  const saved = await expense.getReport(uid, date)
+
+  let saved: any = null
+  const proxyT = proxy.proxyTarget.value
+  if (proxyT) {
+    // 代理モード: 代理先のDBユーザーIDで取得
+    const { data: proxyUserData } = await useSupabase()
+      .from('users').select('id').eq('worker_id', proxyT.id).maybeSingle()
+    if (proxyUserData) {
+      saved = await expense.getReportByUserId(proxyUserData.id, date)
+    }
+  } else {
+    saved = await expense.getReport(uid, date)
+  }
   if (!saved) return
 
   originalReport.value = saved  // 差分計算のために保存
@@ -757,8 +769,24 @@ onMounted(async () => {
     isEditMode.value = true
     await loadEditData(editDate)
   } else if (userId) {
-    // 新規モード: 最初の未送信日を自動セット
-    const nextDate = await expense.getNextUnsubmittedDate(userId)
+    // 新規モード: 最初の未送信日を自動セット（代理モード時は代理先を確認）
+    let nextDate: string | null
+    const proxyT = proxy.proxyTarget.value
+    if (proxyT) {
+      // 代理モード: 代理先ユーザーのDBレコードを探してそちらの未送信日を確認
+      const { data: proxyUserData } = await useSupabase()
+        .from('users').select('id').eq('worker_id', proxyT.id).maybeSingle()
+      if (proxyUserData) {
+        nextDate = await expense.getNextUnsubmittedDateById(proxyUserData.id)
+      } else {
+        // まだ日報がない → サービス開始日設定確認のため自分のアカウントで設定を見る
+        nextDate = await expense.getNextUnsubmittedDate(userId)
+        // 全送信済みではないはずなのでデフォルト（今日）のままにする
+        if (nextDate === null) nextDate = 'NOT_CONFIGURED'
+      }
+    } else {
+      nextDate = await expense.getNextUnsubmittedDate(userId)
+    }
     if (nextDate === null) {
       // null = サービス開始日が設定済み かつ 全送信済み
       allSubmitted.value = true
@@ -914,12 +942,24 @@ async function handleSubmit() {
         throw new Error('[テスト] Supabase保存エラー: connection timeout')
       }
 
-      await expense.saveReport(uid, {
-        date:      report.form.value.date,
-        isWorking: report.form.value.isWorking,
-        sites:     report.form.value.sites,
-        note:      report.form.value.note,
-      })
+      // 代理モード時は代理先のユーザーIDで保存
+      const editProxyT = proxy.proxyTarget.value
+      if (editProxyT) {
+        const editTargetId = await expense.findOrCreateProxyUser(editProxyT.id, editProxyT.name, editProxyT.worker_role)
+        await expense.saveReportById(editTargetId, {
+          date:      report.form.value.date,
+          isWorking: report.form.value.isWorking,
+          sites:     report.form.value.sites,
+          note:      report.form.value.note,
+        })
+      } else {
+        await expense.saveReport(uid, {
+          date:      report.form.value.date,
+          isWorking: report.form.value.isWorking,
+          sites:     report.form.value.sites,
+          note:      report.form.value.note,
+        })
+      }
 
       // 差分を計算してLINEグループに通知
       const efUrl = config.public.edgeFunctionUrl
@@ -1030,6 +1070,44 @@ async function handleSubmit() {
     }
   }
 }
+
+// 代理モード切り替え時にフォームをリセット・日付を再セット
+watch(() => proxy.proxyTarget.value, async (newTarget, oldTarget) => {
+  // onMounted の初回セット時は無視
+  if (!selfUser.value) return
+  const userId = liff.profile.value?.userId
+  if (!userId) return
+
+  // フォームをリセット
+  report.reset()
+  siteUsage.value = [createUsage()]
+  isWorkingStr.value = 'working'
+  allSubmitted.value = false
+  initializing.value = true
+
+  let nextDate: string | null
+  if (newTarget) {
+    const { data: proxyUserData } = await useSupabase()
+      .from('users').select('id').eq('worker_id', newTarget.id).maybeSingle()
+    if (proxyUserData) {
+      nextDate = await expense.getNextUnsubmittedDateById(proxyUserData.id)
+    } else {
+      nextDate = await expense.getNextUnsubmittedDate(userId)
+      if (nextDate === null) nextDate = 'NOT_CONFIGURED'
+    }
+  } else {
+    nextDate = await expense.getNextUnsubmittedDate(userId)
+  }
+
+  if (nextDate === null) {
+    allSubmitted.value = true
+  } else if (nextDate !== 'NOT_CONFIGURED') {
+    report.form.value.date = nextDate
+  }
+
+  initWorkers()
+  initializing.value = false
+})
 
 function goToNextReport() {
   const date = nextUnsubmittedDate.value

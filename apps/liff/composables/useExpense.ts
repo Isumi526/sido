@@ -316,7 +316,10 @@ export const useExpense = () => {
   async function getExpenseRowsFromReports(lineUserId: string, periodKey: string): Promise<ExpenseRow[]> {
     const user = await getUser(lineUserId)
     if (!user) return []
+    return getExpenseRowsFromReportsById(user.id, periodKey)
+  }
 
+  async function getExpenseRowsFromReportsById(userId: string, periodKey: string): Promise<ExpenseRow[]> {
     const [year, month, half] = periodKey.split('-')
     const dateFrom = half === 'first' ? `${year}-${month}-01` : `${year}-${month}-16`
     const lastDay  = new Date(parseInt(year), parseInt(month), 0).getDate()
@@ -325,7 +328,7 @@ export const useExpense = () => {
     const { data, error } = await supabase
       .from('daily_reports')
       .select('date, sites')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .eq('is_working', true)
       .gte('date', dateFrom)
       .lte('date', dateTo)
@@ -437,17 +440,61 @@ export const useExpense = () => {
     return null  // null = 全送信済み
   }
 
+  /**
+   * DBユーザーIDで直接未送信日を検索（代理入力用）
+   * getNextUnsubmittedDate の userID版
+   */
+  async function getNextUnsubmittedDateById(userId: string): Promise<string | null> {
+    const accountId = await getAccountId()
+
+    const { data: settingRows } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('account_id', accountId)
+      .eq('key', 'service_start_date')
+      .limit(1)
+
+    const startDate = settingRows?.[0]?.value
+    if (!startDate) return 'NOT_CONFIGURED'
+
+    const now   = new Date()
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+
+    const { data: reports } = await supabase
+      .from('daily_reports')
+      .select('date')
+      .eq('user_id', userId)
+      .gte('date', startDate)
+      .lte('date', today)
+
+    const submittedDates = new Set((reports ?? []).map((r: any) => r.date as string))
+
+    let cursor = startDate
+    while (cursor <= today) {
+      if (!submittedDates.has(cursor)) return cursor
+      const d = new Date(cursor + 'T12:00:00')
+      d.setDate(d.getDate() + 1)
+      cursor = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
+    return null  // null = 全送信済み
+  }
+
   /** 日報一覧を取得（新しい順） */
   async function getReports(lineUserId: string, limit = 60): Promise<any[]> {
     const user = await getUser(lineUserId)
     if (!user) return []
+    return getReportsById(user.id, limit)
+  }
+
+  /** 日報一覧をDBユーザーIDで取得（代理入力用） */
+  async function getReportsById(userId: string, limit = 60): Promise<any[]> {
     const { data, error } = await supabase
       .from('daily_reports')
       .select('date, is_working, sites, note, updated_at')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .order('date', { ascending: false })
       .limit(limit)
-    if (error) { console.error('[useExpense] getReports:', error); return [] }
+    if (error) { console.error('[useExpense] getReportsById:', error); return [] }
     return data ?? []
   }
 
@@ -465,5 +512,17 @@ export const useExpense = () => {
     return data
   }
 
-  return { getUser, registerUser, addItem, getItems, deleteItem, saveReport, saveReportById, findOrCreateProxyUser, getExpenseRowsFromReports, getReports, getReport, getNextUnsubmittedDate, clearUserCache }
+  /** 特定日の日報をDBユーザーIDで取得（代理入力用） */
+  async function getReportByUserId(userId: string, date: string): Promise<any | null> {
+    const { data, error } = await supabase
+      .from('daily_reports')
+      .select('date, is_working, sites, note')
+      .eq('user_id', userId)
+      .eq('date', date)
+      .maybeSingle()
+    if (error) { console.error('[useExpense] getReportByUserId:', error); return null }
+    return data
+  }
+
+  return { getUser, registerUser, addItem, getItems, deleteItem, saveReport, saveReportById, findOrCreateProxyUser, getExpenseRowsFromReports, getExpenseRowsFromReportsById, getReports, getReportsById, getReport, getReportByUserId, getNextUnsubmittedDate, getNextUnsubmittedDateById, clearUserCache }
 }
