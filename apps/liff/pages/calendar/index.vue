@@ -201,18 +201,37 @@
           </div>
           <template v-if="formModal.is_public && myGroups.length">
             <div class="form-divider"></div>
-            <div class="form-row group-section-label">
-              <span class="form-row-label" style="color:#888; font-size:13px;">共有先グループ</span>
-            </div>
-            <template v-for="g in myGroups" :key="g.id">
-              <div class="form-divider"></div>
-              <div class="form-row group-check-row" @click="toggleFormGroup(g.id)">
-                <span class="group-check-name">{{ g.name }}</span>
-                <span class="group-check-box" :class="{ checked: formModal.group_ids.includes(g.id) }">
-                  <span v-if="formModal.group_ids.includes(g.id)" class="group-check-icon">✓</span>
-                </span>
+            <div class="form-row" style="align-items: flex-start; padding: 10px 16px;">
+              <span class="form-row-label" style="padding-top: 2px;">共有先グループ</span>
+              <div class="msd-wrap">
+                <!-- 閉じた状態: 選択チップ or プレースホルダー -->
+                <div class="msd-trigger" @click="groupDropOpen = !groupDropOpen">
+                  <div class="msd-chips">
+                    <template v-if="formModal.group_ids.length">
+                      <span v-for="id in formModal.group_ids" :key="id" class="msd-chip">
+                        {{ myGroups.find(g => g.id === id)?.name }}
+                      </span>
+                    </template>
+                    <span v-else class="msd-placeholder">グループを選択...</span>
+                  </div>
+                  <span class="msd-arrow" :class="{ open: groupDropOpen }">⌄</span>
+                </div>
+                <!-- ドロップダウンリスト -->
+                <div v-if="groupDropOpen" class="msd-dropdown">
+                  <label
+                    v-for="g in myGroups" :key="g.id"
+                    class="msd-option"
+                    :class="{ selected: formModal.group_ids.includes(g.id) }"
+                    @click.prevent="toggleFormGroup(g.id)"
+                  >
+                    <span class="msd-option-box" :class="{ checked: formModal.group_ids.includes(g.id) }">
+                      <span v-if="formModal.group_ids.includes(g.id)">✓</span>
+                    </span>
+                    <span class="msd-option-name">{{ g.name }}</span>
+                  </label>
+                </div>
               </div>
-            </template>
+            </div>
           </template>
         </div>
 
@@ -300,7 +319,8 @@ function toggleGroupFilter(groupId: string) {
 const formModal   = ref<(Partial<ScheduleForm> & { id?: string }) | null>(null)
 const detailModal = ref<Schedule | null>(null)
 const saving      = ref(false)
-const formError   = ref('')
+const formError     = ref('')
+const groupDropOpen = ref(false)
 
 // フォーム内グループトグル
 function toggleFormGroup(groupId: string) {
@@ -435,7 +455,7 @@ function openAddByTime(e: MouseEvent, date: string) {
     start_time: startTime, end_time: `${String(endH).padStart(2,'0')}:${String(m).padStart(2,'0')}`,
     is_public: false, group_ids: [], recurrence_rule: '',
   }
-  formError.value = ''
+  formError.value = ''; groupDropOpen.value = false
 }
 
 const nowLineTop = computed(() => {
@@ -514,7 +534,7 @@ function openAddOnDate(date: string) {
     start_date: date, end_date: date, start_time: '09:00', end_time: '17:00',
     is_public: false, group_ids: [], recurrence_rule: '',
   }
-  formError.value = ''
+  formError.value = ''; groupDropOpen.value = false
 }
 
 async function openEdit(ev: Schedule) {
@@ -528,7 +548,7 @@ async function openEdit(ev: Schedule) {
     is_public: ev.is_public, group_ids: groupIds,
     recurrence_rule: (ev as any).recurrence_rule ?? '',
   }
-  formError.value = ''
+  formError.value = ''; groupDropOpen.value = false
 }
 
 function openDetail(ev: Schedule) { detailModal.value = ev }
@@ -768,19 +788,42 @@ onMounted(async () => {
 }
 .notes-input::placeholder { color: #c7c7cc; }
 
-/* 共有グループ チェックリスト */
-.group-section-label { padding-top: 8px; padding-bottom: 4px; min-height: unset; }
-.group-check-row { cursor: pointer; }
-.group-check-row:active { background: #f5f5f5; }
-.group-check-name { font-size: 15px; color: #111; flex: 1; }
-.group-check-box {
+/* マルチセレクトドロップダウン */
+.msd-wrap { flex: 1; margin-left: 12px; position: relative; }
+.msd-trigger {
+  display: flex; align-items: center; gap: 6px;
+  background: #f0f0f0; border-radius: 8px; padding: 8px 10px;
+  cursor: pointer; min-height: 38px;
+}
+.msd-chips { flex: 1; display: flex; flex-wrap: wrap; gap: 4px; }
+.msd-chip {
+  background: #06C755; color: #fff;
+  border-radius: 20px; padding: 2px 10px; font-size: 13px; font-weight: 600;
+}
+.msd-placeholder { font-size: 14px; color: #aaa; }
+.msd-arrow { font-size: 16px; color: #888; line-height: 1; transition: transform .2s; flex-shrink: 0; }
+.msd-arrow.open { transform: rotate(180deg); }
+.msd-dropdown {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+  background: #fff; border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.15);
+  overflow: hidden; z-index: 200;
+}
+.msd-option {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0;
+}
+.msd-option:last-child { border-bottom: none; }
+.msd-option:active { background: #f5f5f5; }
+.msd-option-box {
   width: 22px; height: 22px; border-radius: 6px;
   border: 2px solid #D0D0D0; background: #fff;
   display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0; transition: border-color .15s, background .15s;
+  flex-shrink: 0; font-size: 13px; font-weight: 700; color: #fff;
+  transition: border-color .15s, background .15s;
 }
-.group-check-box.checked { border-color: #06C755; background: #06C755; }
-.group-check-icon { font-size: 13px; font-weight: 700; color: #fff; line-height: 1; }
+.msd-option-box.checked { border-color: #06C755; background: #06C755; }
+.msd-option-name { font-size: 15px; color: #111; }
 
 .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
 .btn-save   { flex: 1; background: #06C755; color: #fff; border: none; border-radius: 12px; padding: 14px; font-size: 16px; font-weight: 700; cursor: pointer; }
