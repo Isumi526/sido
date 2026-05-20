@@ -123,9 +123,9 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.home-page { display: flex; flex-direction: column; min-height: 100dvh; background: #f2f2f7; }
+.home-page { display: flex; flex-direction: column; min-height: 100dvh; background: #f2f2f7; overflow-x: hidden; }
 
-.home-body { flex: 1; padding: 16px; display: flex; flex-direction: column; gap: 14px; max-width: 480px; margin: 0 auto; width: 100%; }
+.home-body { flex: 1; padding: 16px; display: flex; flex-direction: column; gap: 14px; max-width: 480px; margin: 0 auto; width: 100%; box-sizing: border-box; }
 
 /* ユーザーカード */
 .user-card {

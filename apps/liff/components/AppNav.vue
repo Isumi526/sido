@@ -34,6 +34,10 @@
 
         <!-- ナビゲーション -->
         <nav class="drawer-nav">
+          <NuxtLink class="drawer-item" to="/" @click="open = false">
+            <span class="drawer-item-icon material-symbols-rounded">home</span>
+            <span>ホーム</span>
+          </NuxtLink>
           <NuxtLink class="drawer-item" to="/report" @click="open = false">
             <span class="drawer-item-icon material-symbols-rounded">edit_note</span>
             <span>日報登録</span>
