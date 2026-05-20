@@ -152,16 +152,14 @@ onMounted(async () => {
   }
 
   // 未送信日報カウント（過去30日）
-  const { data: worker } = await supabase
-    .from('users').select('worker_id').eq('line_user_id', lineUserId).eq('account_id', accountData.id).single()
-  if (worker?.worker_id) {
+  if (currentUser.value?.id) {
     const from = new Date(); from.setDate(from.getDate() - 30)
     const fromStr = from.toISOString().split('T')[0]
     const today   = new Date().toISOString().split('T')[0]
     const { data: reports } = await supabase
-      .from('reports')
+      .from('daily_reports')
       .select('date')
-      .eq('worker_id', worker.worker_id)
+      .eq('user_id', currentUser.value.id)
       .gte('date', fromStr)
       .lte('date', today)
     const submittedDates = new Set((reports ?? []).map((r: any) => r.date))
