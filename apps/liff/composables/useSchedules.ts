@@ -24,17 +24,18 @@ export interface Schedule {
 }
 
 export interface ScheduleForm {
-  title:       string
-  description: string
-  category:    ScheduleCategory
-  site_id:     string
-  all_day:     boolean
-  start_date:  string
-  end_date:    string
-  start_time:  string
-  end_time:    string
-  is_public:   boolean    // 公開フラグ
-  group_ids:   string[]   // 共有先グループID
+  title:            string
+  description:      string
+  category:         ScheduleCategory
+  site_id:          string
+  all_day:          boolean
+  start_date:       string
+  end_date:         string
+  start_time:       string
+  end_time:         string
+  is_public:        boolean    // 公開フラグ
+  group_ids:        string[]   // 共有先グループID
+  recurrence_rule:  string     // '' | 'daily' | 'weekly' | 'monthly' | 'yearly'
 }
 
 export const CATEGORY_LABELS: Record<ScheduleCategory, string> = {
@@ -180,8 +181,9 @@ export const useSchedules = () => {
     if (form.description !== undefined) updates.description = form.description || null
     if (form.category    !== undefined) updates.category    = form.category
     if (form.site_id     !== undefined) updates.site_id     = form.site_id || null
-    if (form.is_public   !== undefined) updates.is_public   = form.is_public
-    if (form.all_day     !== undefined) updates.all_day     = form.all_day
+    if (form.is_public        !== undefined) updates.is_public       = form.is_public
+    if (form.recurrence_rule  !== undefined) updates.recurrence_rule = form.recurrence_rule || null
+    if (form.all_day          !== undefined) updates.all_day         = form.all_day
     if (form.start_date  !== undefined) updates.start_date  = form.start_date
     if (form.end_date    !== undefined) updates.end_date    = form.end_date
     if (!form.all_day) {
@@ -251,17 +253,18 @@ export const useSchedules = () => {
 // ──────────────────────────────────────────────────────
 function buildPayload(form: ScheduleForm, workerId: string) {
   return {
-    worker_id:   workerId,
-    title:       form.title,
-    description: form.description || null,
-    category:    form.category,
-    site_id:     form.site_id || null,
-    is_public:   form.is_public,
-    all_day:     form.all_day,
-    start_date:  form.start_date,
-    end_date:    form.end_date,
-    start_time:  form.all_day ? null : (form.start_time || null),
-    end_time:    form.all_day ? null : (form.end_time   || null),
+    worker_id:        workerId,
+    title:            form.title,
+    description:      form.description || null,
+    category:         form.category,
+    site_id:          form.site_id || null,
+    is_public:        form.is_public,
+    all_day:          form.all_day,
+    start_date:       form.start_date,
+    end_date:         form.end_date,
+    start_time:       form.all_day ? null : (form.start_time || null),
+    end_time:         form.all_day ? null : (form.end_time   || null),
+    recurrence_rule:  form.recurrence_rule || null,
   }
 }
 

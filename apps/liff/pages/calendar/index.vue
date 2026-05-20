@@ -124,71 +124,89 @@
     <div v-if="formModal" class="modal-overlay" @click.self="formModal = null">
       <div class="modal">
         <h2>{{ formModal.id ? '予定を編集' : '予定を追加' }}</h2>
-        <div class="field">
-          <label>タイトル *</label>
-          <input v-model="formModal.title" class="input" placeholder="例：現場作業" />
+
+        <!-- タイトル -->
+        <input v-model="formModal.title" class="title-input" placeholder="タイトル" />
+
+        <!-- カテゴリ -->
+        <div class="cat-grid">
+          <button
+            v-for="(label, key) in CATEGORY_LABELS" :key="key"
+            class="cat-btn" :class="{ active: formModal.category === key }"
+            :style="formModal.category === key ? { background: CATEGORY_COLORS[key as ScheduleCategory], color: '#fff', borderColor: CATEGORY_COLORS[key as ScheduleCategory] } : {}"
+            @click="formModal.category = key as ScheduleCategory"
+          >{{ label }}</button>
         </div>
-        <div class="field">
-          <label>カテゴリ</label>
-          <div class="cat-grid">
-            <button
-              v-for="(label, key) in CATEGORY_LABELS" :key="key"
-              class="cat-btn" :class="{ active: formModal.category === key }"
-              :style="formModal.category === key ? { background: CATEGORY_COLORS[key as ScheduleCategory], color: '#fff', borderColor: CATEGORY_COLORS[key as ScheduleCategory] } : {}"
-              @click="formModal.category = key as ScheduleCategory"
-            >{{ label }}</button>
+
+        <!-- 終日 + 開始/終了 -->
+        <div class="form-card">
+          <div class="form-row">
+            <span class="form-row-label">終日</span>
+            <label class="ios-toggle">
+              <input type="checkbox" v-model="formModal.all_day" />
+              <span class="ios-toggle-track"></span>
+            </label>
           </div>
-        </div>
-        <div class="field">
-          <label>開始日</label>
-          <input v-model="formModal.start_date" type="date" class="input" />
-        </div>
-        <div class="field">
-          <label>終了日</label>
-          <input v-model="formModal.end_date" type="date" class="input" />
-        </div>
-        <div class="field">
-          <label class="toggle-label">
-            <input v-model="formModal.all_day" type="checkbox" />
-            終日
-          </label>
-        </div>
-        <template v-if="!formModal.all_day">
-          <div class="field time-row">
-            <div>
-              <label>開始時刻</label>
-              <input v-model="formModal.start_time" type="time" class="input" />
-            </div>
-            <div>
-              <label>終了時刻</label>
-              <input v-model="formModal.end_time" type="time" class="input" />
+          <div class="form-divider"></div>
+          <div class="form-row">
+            <span class="form-row-label">開始</span>
+            <div class="form-row-values">
+              <input type="date" v-model="formModal.start_date" class="dt-input" />
+              <input v-if="!formModal.all_day" type="time" v-model="formModal.start_time" class="dt-input time" />
             </div>
           </div>
-        </template>
-        <div class="field">
-          <label>メモ</label>
-          <textarea v-model="formModal.description" class="input textarea" placeholder="備考など" rows="2" />
+          <div class="form-divider"></div>
+          <div class="form-row">
+            <span class="form-row-label">終了</span>
+            <div class="form-row-values">
+              <input type="date" v-model="formModal.end_date" class="dt-input" />
+              <input v-if="!formModal.all_day" type="time" v-model="formModal.end_time" class="dt-input time" />
+            </div>
+          </div>
+        </div>
+
+        <!-- 繰り返し -->
+        <div class="form-card">
+          <div class="form-row">
+            <span class="form-row-label">繰り返し</span>
+            <select v-model="formModal.recurrence_rule" class="recurrence-select">
+              <option value="">なし</option>
+              <option value="daily">毎日</option>
+              <option value="weekly">毎週</option>
+              <option value="monthly">毎月</option>
+              <option value="yearly">毎年</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- メモ -->
+        <div class="form-card">
+          <div class="form-row notes-row">
+            <textarea v-model="formModal.description" class="notes-input" placeholder="メモを追加" rows="2" />
+          </div>
         </div>
 
         <!-- 公開設定 -->
-        <div class="field pub-field">
-          <label class="toggle-label">
-            <input v-model="formModal.is_public" type="checkbox" />
-            <span>グループに公開する</span>
-          </label>
-        </div>
-        <div v-if="formModal.is_public && myGroups.length" class="field">
-          <label>共有するグループ</label>
-          <div class="group-check-list">
-            <label v-for="g in myGroups" :key="g.id" class="group-check-item">
-              <input
-                type="checkbox"
-                :checked="formModal.group_ids.includes(g.id)"
-                @change="toggleFormGroup(g.id)"
-              />
-              <span>{{ g.name }}</span>
+        <div class="form-card">
+          <div class="form-row">
+            <span class="form-row-label">グループに公開</span>
+            <label class="ios-toggle">
+              <input type="checkbox" v-model="formModal.is_public" />
+              <span class="ios-toggle-track"></span>
             </label>
           </div>
+          <template v-if="formModal.is_public && myGroups.length">
+            <div class="form-divider"></div>
+            <div class="form-row group-check-row">
+              <span class="form-row-label">共有グループ</span>
+              <div class="group-check-chips">
+                <label v-for="g in myGroups" :key="g.id" class="group-chip-check" :class="{ active: formModal.group_ids.includes(g.id) }">
+                  <input type="checkbox" :checked="formModal.group_ids.includes(g.id)" @change="toggleFormGroup(g.id)" style="display:none" />
+                  {{ g.name }}
+                </label>
+              </div>
+            </div>
+          </template>
         </div>
 
         <p v-if="formError" class="error-msg">{{ formError }}</p>
@@ -409,7 +427,7 @@ function openAddByTime(e: MouseEvent, date: string) {
     title: '', description: '', category: 'work', site_id: '', all_day: false,
     start_date: date, end_date: date,
     start_time: startTime, end_time: `${String(endH).padStart(2,'0')}:${String(m).padStart(2,'0')}`,
-    is_public: true, group_ids: [...selectedGroupIds.value],
+    is_public: true, group_ids: [...selectedGroupIds.value], recurrence_rule: '',
   }
   formError.value = ''
 }
@@ -488,7 +506,7 @@ function openAddOnDate(date: string) {
   formModal.value = {
     title: '', description: '', category: 'work', site_id: '', all_day: false,
     start_date: date, end_date: date, start_time: '09:00', end_time: '17:00',
-    is_public: true, group_ids: [...selectedGroupIds.value],
+    is_public: true, group_ids: [...selectedGroupIds.value], recurrence_rule: '',
   }
   formError.value = ''
 }
@@ -502,6 +520,7 @@ async function openEdit(ev: Schedule) {
     start_date: ev.start_date, end_date: ev.end_date,
     start_time: ev.start_time ?? '09:00', end_time: ev.end_time ?? '17:00',
     is_public: ev.is_public, group_ids: groupIds,
+    recurrence_rule: (ev as any).recurrence_rule ?? '',
   }
   formError.value = ''
 }
@@ -656,28 +675,99 @@ onMounted(async () => {
 
 /* ═══ モーダル ═══ */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: flex-end; justify-content: center; z-index: 1000; }
-.modal { background: #fff; border-radius: 20px 20px 0 0; padding: 24px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; box-shadow: 0 -4px 20px rgba(0,0,0,.1); }
-.modal h2 { font-size: 18px; margin: 0 0 20px; color: #111; }
-.field { margin-bottom: 16px; }
-.field label { display: block; font-size: 13px; color: #555; margin-bottom: 6px; font-weight: 500; }
-.input { width: 100%; background: #f8f9fa; border: 1px solid #E0E0E0; border-radius: 8px; color: #111; padding: 10px 12px; font-size: 15px; box-sizing: border-box; }
-.textarea { resize: vertical; font-family: inherit; }
-.time-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.toggle-label { display: flex; align-items: center; gap: 8px; font-size: 15px; color: #111; cursor: pointer; }
-.cat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.cat-btn { padding: 8px; background: #f8f9fa; border: 1px solid #E0E0E0; border-radius: 8px; color: #555; font-size: 13px; cursor: pointer; transition: .15s; }
+.modal { background: #f2f2f7; border-radius: 20px 20px 0 0; padding: 20px 16px 32px; width: 100%; max-width: 480px; max-height: 92vh; overflow-y: auto; box-shadow: 0 -4px 20px rgba(0,0,0,.1); }
+.modal h2 { font-size: 17px; font-weight: 600; margin: 0 0 14px; color: #111; text-align: center; }
+
+/* タイトル入力 */
+.title-input {
+  width: 100%; background: #fff; border: none; border-radius: 12px;
+  color: #111; padding: 14px 14px; font-size: 17px; font-weight: 500;
+  box-sizing: border-box; margin-bottom: 10px;
+  outline: none;
+}
+.title-input::placeholder { color: #c7c7cc; }
+
+/* カテゴリ */
+.cat-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 10px; }
+.cat-btn { padding: 6px 2px; background: #fff; border: 1px solid #E0E0E0; border-radius: 8px; color: #555; font-size: 11px; cursor: pointer; transition: .15s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cat-btn.active { font-weight: 700; }
 
-/* 公開設定 */
-.pub-field { background: #f8f9fa; border-radius: 8px; padding: 12px; }
-.group-check-list { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
-.group-check-item { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #111; cursor: pointer; padding: 6px 0; }
+/* Apple Calendar スタイルのカード */
+.form-card {
+  background: #fff; border-radius: 12px; margin-bottom: 10px; overflow: hidden;
+}
+.form-row {
+  display: flex; align-items: center;
+  padding: 12px 14px; min-height: 44px;
+}
+.form-divider { height: 1px; background: #f0f0f0; margin-left: 14px; }
+.form-row-label { font-size: 15px; color: #111; flex-shrink: 0; }
+.form-row-values {
+  display: flex; align-items: center; gap: 4px;
+  margin-left: auto;
+}
 
-.modal-actions { display: flex; gap: 10px; margin-top: 20px; }
-.btn-save   { flex: 1; background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 12px; font-size: 15px; font-weight: 700; cursor: pointer; }
-.btn-cancel { flex: 1; background: #f1f5f9; color: #555; border: none; border-radius: 8px; padding: 12px; font-size: 15px; cursor: pointer; }
-.btn-edit   { flex: 1; background: #3b82f6; color: #fff; border: none; border-radius: 8px; padding: 12px; font-size: 15px; cursor: pointer; }
-.btn-delete { flex: 1; background: #ef4444; color: #fff; border: none; border-radius: 8px; padding: 12px; font-size: 15px; cursor: pointer; }
+/* 日時入力（iOS ネイティブピッカー） */
+.dt-input {
+  border: none; background: none; outline: none;
+  color: #06C755; font-size: 15px;
+  text-align: right; cursor: pointer; padding: 0;
+  font-family: inherit;
+}
+.dt-input.time { color: #06C755; }
+
+/* iOS トグルスイッチ */
+.ios-toggle { position: relative; display: inline-block; width: 51px; height: 31px; flex-shrink: 0; margin-left: auto; }
+.ios-toggle input { opacity: 0; width: 0; height: 0; }
+.ios-toggle-track {
+  position: absolute; cursor: pointer; inset: 0;
+  background: #E0E0E0; border-radius: 31px;
+  transition: background .25s;
+}
+.ios-toggle-track::before {
+  content: ''; position: absolute;
+  height: 27px; width: 27px; left: 2px; bottom: 2px;
+  background: #fff; border-radius: 50%;
+  transition: transform .25s;
+  box-shadow: 0 2px 4px rgba(0,0,0,.25);
+}
+.ios-toggle input:checked + .ios-toggle-track { background: #06C755; }
+.ios-toggle input:checked + .ios-toggle-track::before { transform: translateX(20px); }
+
+/* 繰り返しセレクト */
+.recurrence-select {
+  border: none; background: none; outline: none;
+  color: #06C755; font-size: 15px;
+  text-align: right; cursor: pointer; padding: 0;
+  margin-left: auto;
+  font-family: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* メモ */
+.notes-row { padding: 8px 14px; }
+.notes-input {
+  width: 100%; border: none; outline: none; background: none;
+  font-size: 15px; color: #111; font-family: inherit;
+  resize: none; line-height: 1.5;
+}
+.notes-input::placeholder { color: #c7c7cc; }
+
+/* 共有グループチップ */
+.group-check-row { flex-wrap: wrap; gap: 6px; align-items: flex-start; }
+.group-check-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.group-chip-check {
+  padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600;
+  border: 1px solid #E0E0E0; color: #555; cursor: pointer; transition: .15s;
+}
+.group-chip-check.active { background: #06C755; border-color: #06C755; color: #fff; }
+
+.modal-actions { display: flex; gap: 10px; margin-top: 16px; }
+.btn-save   { flex: 1; background: #06C755; color: #fff; border: none; border-radius: 12px; padding: 14px; font-size: 16px; font-weight: 700; cursor: pointer; }
+.btn-cancel { flex: 1; background: #fff; color: #555; border: none; border-radius: 12px; padding: 14px; font-size: 16px; cursor: pointer; }
+.btn-edit   { flex: 1; background: #3b82f6; color: #fff; border: none; border-radius: 12px; padding: 14px; font-size: 15px; cursor: pointer; }
+.btn-delete { flex: 1; background: #ef4444; color: #fff; border: none; border-radius: 12px; padding: 14px; font-size: 15px; cursor: pointer; }
 .error-msg { color: #ef4444; font-size: 13px; margin: 8px 0 0; }
 .detail-cat-bar { border-radius: 8px; padding: 6px 12px; font-size: 13px; color: #fff; font-weight: 600; margin-bottom: 12px; display: inline-block; }
 .detail-title  { font-size: 20px; font-weight: 700; margin: 0 0 8px; color: #111; }
