@@ -148,21 +148,31 @@
             </label>
           </div>
           <div class="form-divider"></div>
+          <!-- 開始日 -->
           <div class="form-row">
             <span class="form-row-label">開始</span>
-            <div class="form-row-values">
-              <input type="date" v-model="formModal.start_date" class="dt-input" />
-              <input v-if="!formModal.all_day" type="time" v-model="formModal.start_time" class="dt-input time" />
-            </div>
+            <input type="date" v-model="formModal.start_date" class="dt-input dt-date" />
           </div>
+          <!-- 開始時刻 -->
+          <template v-if="!formModal.all_day">
+            <div class="form-divider"></div>
+            <div class="form-row dt-sub-row">
+              <input type="time" v-model="formModal.start_time" class="dt-input dt-time" />
+            </div>
+          </template>
           <div class="form-divider"></div>
+          <!-- 終了日 -->
           <div class="form-row">
             <span class="form-row-label">終了</span>
-            <div class="form-row-values">
-              <input type="date" v-model="formModal.end_date" class="dt-input" />
-              <input v-if="!formModal.all_day" type="time" v-model="formModal.end_time" class="dt-input time" />
-            </div>
+            <input type="date" v-model="formModal.end_date" class="dt-input dt-date" />
           </div>
+          <!-- 終了時刻 -->
+          <template v-if="!formModal.all_day">
+            <div class="form-divider"></div>
+            <div class="form-row dt-sub-row">
+              <input type="time" v-model="formModal.end_time" class="dt-input dt-time" />
+            </div>
+          </template>
         </div>
 
         <!-- 繰り返し -->
@@ -198,11 +208,15 @@
           <template v-if="formModal.is_public && myGroups.length">
             <div class="form-divider"></div>
             <div class="form-row group-check-row">
-              <span class="form-row-label">共有グループ</span>
+              <span class="form-row-label">共有先</span>
               <div class="group-check-chips">
-                <label v-for="g in myGroups" :key="g.id" class="group-chip-check" :class="{ active: formModal.group_ids.includes(g.id) }">
+                <label
+                  v-for="g in myGroups" :key="g.id"
+                  class="group-chip-check"
+                  :class="{ active: formModal.group_ids.includes(g.id) }"
+                >
                   <input type="checkbox" :checked="formModal.group_ids.includes(g.id)" @change="toggleFormGroup(g.id)" style="display:none" />
-                  {{ g.name }}
+                  <span v-if="formModal.group_ids.includes(g.id)" class="chip-check">✓ </span>{{ g.name }}
                 </label>
               </div>
             </div>
@@ -711,10 +725,17 @@ onMounted(async () => {
 .dt-input {
   border: none; background: none; outline: none;
   color: #06C755; font-size: 15px;
-  text-align: right; cursor: pointer; padding: 0;
-  font-family: inherit;
+  cursor: pointer; padding: 0;
+  font-family: inherit; margin-left: auto;
+  -webkit-appearance: none; appearance: none;
+  min-height: 44px; /* タップ領域を確保 */
 }
-.dt-input.time { color: #06C755; }
+.dt-date { min-width: 120px; text-align: right; }
+.dt-time { width: 100%; text-align: right; }
+/* ネイティブのカレンダー/時計アイコンを非表示 */
+.dt-input::-webkit-calendar-picker-indicator { opacity: 0; width: 0; }
+/* 時刻行（開始・終了ラベルなし、インデント） */
+.dt-sub-row { padding-left: 28px; background: #fafafa; }
 
 /* iOS トグルスイッチ */
 .ios-toggle { position: relative; display: inline-block; width: 51px; height: 31px; flex-shrink: 0; margin-left: auto; }
@@ -758,10 +779,14 @@ onMounted(async () => {
 .group-check-row { flex-wrap: wrap; gap: 6px; align-items: flex-start; }
 .group-check-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
 .group-chip-check {
-  padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600;
-  border: 1px solid #E0E0E0; color: #555; cursor: pointer; transition: .15s;
+  padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 500;
+  background: #f2f2f7; color: #999; /* 未選択：グレー背景・グレー文字 */
+  border: none; cursor: pointer; transition: .15s;
 }
-.group-chip-check.active { background: #06C755; border-color: #06C755; color: #fff; }
+.group-chip-check.active {
+  background: #e6f9ef; color: #06C755; font-weight: 600; /* 選択済：薄緑背景・緑文字 */
+}
+.chip-check { font-size: 11px; }
 
 .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
 .btn-save   { flex: 1; background: #06C755; color: #fff; border: none; border-radius: 12px; padding: 14px; font-size: 16px; font-weight: 700; cursor: pointer; }
