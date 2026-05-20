@@ -14,7 +14,7 @@
             <th>日当単価</th>
             <th>状態</th>
             <th>ユーザー</th>
-            <th>代理操作</th>
+            <th>代理人</th>
             <th></th>
           </tr>
         </thead>
@@ -26,13 +26,10 @@
             <td><span class="status" :class="w.active ? 'active' : 'off'">{{ w.active ? '有効' : '無効' }}</span></td>
             <td><span class="user-link" :class="linkedWorkerIds.has(w.id) ? 'linked' : 'unlinked'">{{ linkedWorkerIds.has(w.id) ? '紐付け済み' : '未紐付け' }}</span></td>
             <td>
-              <button
-                class="btn-proxy"
-                :class="{ on: w.can_proxy }"
-                @click="toggleCanProxy(w)"
-              >
-                {{ w.can_proxy ? '有効' : '無効' }}
-              </button>
+              <span v-if="w.proxy_operator_id" class="proxy-badge">
+                {{ workerName(w.proxy_operator_id) }}
+              </span>
+              <span v-else class="proxy-none">—</span>
             </td>
             <td class="actions">
               <button class="btn-edit" @click="openEdit(w)">編集</button>
@@ -61,9 +58,18 @@
           <label>日当単価（円）</label>
           <input v-model.number="modal.unit_price" type="number" class="input" placeholder="20000" />
         </div>
+        <div class="field">
+          <label>代理人（LINEを持たない場合、代わりに入力する作業員）</label>
+          <select v-model="modal.proxy_operator_id" class="input">
+            <option :value="null">なし</option>
+            <option v-for="w in workers.filter(w => w.id !== modal?.id)" :key="w.id" :value="w.id">
+              {{ w.name }}
+            </option>
+          </select>
+        </div>
         <div class="modal-actions">
-          <button class="btn-save" :disabled="saving" @click="save">{{ saving ? '保存中...' : '保存' }}</button>
           <button class="btn-cancel" @click="modal = null">キャンセル</button>
+          <button class="btn-save" :disabled="saving" @click="save">{{ saving ? '保存中...' : '保存' }}</button>
         </div>
         <p v-if="saveError" class="error">{{ saveError }}</p>
       </div>
@@ -76,7 +82,14 @@ import { ref, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 
-type Worker = { id: string; name: string; role: 'factory' | 'site'; unit_price: number; active: boolean; can_proxy: boolean }
+type Worker = {
+  id: string
+  name: string
+  role: 'factory' | 'site'
+  unit_price: number
+  active: boolean
+  proxy_operator_id: string | null
+}
 
 const workers         = ref<Worker[]>([])
 const linkedWorkerIds = ref<Set<string>>(new Set())
@@ -84,25 +97,25 @@ const modal           = ref<Partial<Worker> | null>(null)
 const saving          = ref(false)
 const saveError       = ref('')
 
+function workerName(id: string | null) {
+  if (!id) return ''
+  return workers.value.find(w => w.id === id)?.name ?? '不明'
+}
+
 async function load() {
   const accountId = await getAccountId()
   const [{ data: workersData }, { data: usersData }] = await Promise.all([
-    supabase.from('workers').select('id, name, role, unit_price, active, can_proxy').eq('account_id', accountId).order('name'),
+    supabase.from('workers').select('id, name, role, unit_price, active, proxy_operator_id').eq('account_id', accountId).order('name'),
     supabase.from('users').select('worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
   ])
   workers.value = (workersData ?? []) as Worker[]
   linkedWorkerIds.value = new Set((usersData ?? []).map((u: any) => u.worker_id as string))
 }
 
-async function toggleCanProxy(w: Worker) {
-  await supabase.from('workers').update({ can_proxy: !w.can_proxy }).eq('id', w.id)
-  await load()
-}
-
 onMounted(load)
 
 function openAdd() {
-  modal.value = { name: '', role: 'site', unit_price: 20000 }
+  modal.value = { name: '', role: 'site', unit_price: 20000, proxy_operator_id: null }
   saveError.value = ''
 }
 
@@ -118,17 +131,19 @@ async function save() {
   try {
     if (modal.value.id) {
       await supabase.from('workers').update({
-        name:       modal.value.name.trim(),
-        role:       modal.value.role,
-        unit_price: modal.value.unit_price ?? 0,
+        name:              modal.value.name.trim(),
+        role:              modal.value.role,
+        unit_price:        modal.value.unit_price ?? 0,
+        proxy_operator_id: modal.value.proxy_operator_id ?? null,
       }).eq('id', modal.value.id)
     } else {
       const accountId = await getAccountId()
       await supabase.from('workers').insert({
-        name:       modal.value.name!.trim(),
-        role:       modal.value.role ?? 'site',
-        unit_price: modal.value.unit_price ?? 0,
-        account_id: accountId,
+        name:              modal.value.name!.trim(),
+        role:              modal.value.role ?? 'site',
+        unit_price:        modal.value.unit_price ?? 0,
+        account_id:        accountId,
+        proxy_operator_id: modal.value.proxy_operator_id ?? null,
       })
     }
     modal.value = null
@@ -166,12 +181,14 @@ async function toggleActive(w: Worker) {
 .actions { display: flex; gap: 8px; }
 .btn-edit { background: #f0f0f0; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
 .btn-toggle { background: none; border: 1px solid #ddd; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; color: #888; }
+.proxy-badge { font-size: 11px; padding: 3px 8px; border-radius: 4px; background: #fee2e2; color: #dc2626; font-weight: 700; }
+.proxy-none { font-size: 12px; color: #ccc; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .modal { background: #fff; border-radius: 12px; padding: 32px; width: 400px; display: flex; flex-direction: column; gap: 20px; }
 .modal h2 { font-size: 18px; font-weight: 700; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label { font-size: 12px; font-weight: 700; color: #888; }
-.input { background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px 14px; font-size: 14px; width: 100%; }
+.input { background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px 14px; font-size: 14px; width: 100%; box-sizing: border-box; }
 .toggle { display: flex; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; }
 .toggle button { flex: 1; padding: 10px; background: #f5f5f5; color: #888; border: none; cursor: pointer; font-size: 13px; }
 .toggle button.active { background: #06C755; color: #fff; font-weight: 700; }
@@ -183,7 +200,4 @@ async function toggleActive(w: Worker) {
 .user-link { font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 700; }
 .user-link.linked { background: #e8f4ff; color: #1a6fc4; }
 .user-link.unlinked { background: #f5f5f5; color: #bbb; }
-.btn-proxy { font-size: 11px; padding: 3px 10px; border-radius: 4px; border: none; cursor: pointer; font-weight: 700; background: #f0f0f0; color: #aaa; }
-.btn-proxy.on { background: #fee2e2; color: #dc2626; }
-.proxy-na { font-size: 12px; color: #ccc; }
 </style>

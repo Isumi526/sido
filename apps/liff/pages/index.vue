@@ -70,7 +70,7 @@
           <div v-if="proxyLoading" class="proxy-loading">読み込み中...</div>
           <template v-else>
             <div
-              v-for="w in proxy.allWorkers.value"
+              v-for="w in proxy.proxyTargets.value"
               :key="w.id"
               class="proxy-user-row"
               :class="{ selected: proxy.proxyTarget.value?.id === w.id }"
@@ -105,11 +105,7 @@ const proxyLoading     = ref(false)
 
 async function openProxyModal() {
   proxyModalOpen.value = true
-  if (proxy.allWorkers.value.length === 0) {
-    proxyLoading.value = true
-    await proxy.fetchAllWorkers(currentUser.value?.worker_id)
-    proxyLoading.value = false
-  }
+  proxyLoading.value = false
 }
 
 function selectProxy(worker: import('~/composables/useProxyMode').ProxyWorker) {
@@ -152,7 +148,7 @@ onMounted(async () => {
     .single()
   if (user) {
     currentUser.value = user as User
-    await proxy.checkCanProxy(user.worker_id)
+    await proxy.fetchProxyTargets(user.worker_id)
   }
 
   // 未送信日報カウント（過去30日）
