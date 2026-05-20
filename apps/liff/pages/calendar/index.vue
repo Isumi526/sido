@@ -201,37 +201,31 @@
           </div>
           <template v-if="formModal.is_public && myGroups.length">
             <div class="form-divider"></div>
-            <div class="form-row" style="align-items: flex-start; padding: 10px 16px;">
-              <span class="form-row-label" style="padding-top: 2px;">共有先グループ</span>
-              <div class="msd-wrap">
-                <!-- 閉じた状態: 選択チップ or プレースホルダー -->
-                <div class="msd-trigger" @click="groupDropOpen = !groupDropOpen">
-                  <div class="msd-chips">
-                    <template v-if="formModal.group_ids.length">
-                      <span v-for="id in formModal.group_ids" :key="id" class="msd-chip">
-                        {{ myGroups.find(g => g.id === id)?.name }}
-                      </span>
-                    </template>
-                    <span v-else class="msd-placeholder">グループを選択...</span>
-                  </div>
-                  <span class="msd-arrow" :class="{ open: groupDropOpen }">⌄</span>
-                </div>
-                <!-- ドロップダウンリスト -->
-                <div v-if="groupDropOpen" class="msd-dropdown">
-                  <label
-                    v-for="g in myGroups" :key="g.id"
-                    class="msd-option"
-                    :class="{ selected: formModal.group_ids.includes(g.id) }"
-                    @click.prevent="toggleFormGroup(g.id)"
-                  >
-                    <span class="msd-option-box" :class="{ checked: formModal.group_ids.includes(g.id) }">
-                      <span v-if="formModal.group_ids.includes(g.id)">✓</span>
-                    </span>
-                    <span class="msd-option-name">{{ g.name }}</span>
-                  </label>
-                </div>
+            <!-- トリガー行 -->
+            <div class="form-row msd-trigger-row" @click="groupDropOpen = !groupDropOpen">
+              <span class="form-row-label">共有先グループ</span>
+              <div class="msd-chips-inline">
+                <template v-if="formModal.group_ids.length">
+                  <span v-for="id in formModal.group_ids" :key="id" class="msd-chip">
+                    {{ myGroups.find(g => g.id === id)?.name }}
+                  </span>
+                </template>
+                <span v-else class="msd-placeholder">選択...</span>
               </div>
+              <span class="msd-arrow" :class="{ open: groupDropOpen }">⌄</span>
             </div>
+            <!-- インライン展開リスト -->
+            <template v-if="groupDropOpen">
+              <template v-for="g in myGroups" :key="'opt-' + g.id">
+                <div class="form-divider"></div>
+                <div class="msd-option-row" @click="toggleFormGroup(g.id)">
+                  <span class="msd-option-name">{{ g.name }}</span>
+                  <span class="msd-option-box" :class="{ checked: formModal.group_ids.includes(g.id) }">
+                    <span v-if="formModal.group_ids.includes(g.id)">✓</span>
+                  </span>
+                </div>
+              </template>
+            </template>
           </template>
         </div>
 
@@ -722,10 +716,6 @@ onMounted(async () => {
 .form-card {
   background: #fff; border-radius: 12px; margin-bottom: 10px; overflow: hidden;
 }
-.form-card--overflow { overflow: visible; }
-.form-card--overflow > *:first-child { border-radius: 12px 12px 0 0; overflow: hidden; }
-.form-card--overflow > *:last-child  { border-radius: 0 0 12px 12px; overflow: hidden; }
-.form-card--overflow > *:only-child  { border-radius: 12px; }
 .form-row {
   display: flex; align-items: center;
   padding: 12px 14px; min-height: 44px;
@@ -792,33 +782,22 @@ onMounted(async () => {
 }
 .notes-input::placeholder { color: #c7c7cc; }
 
-/* マルチセレクトドロップダウン */
-.msd-wrap { flex: 1; margin-left: 12px; position: relative; }
-.msd-trigger {
-  display: flex; align-items: center; gap: 6px;
-  background: #f0f0f0; border-radius: 8px; padding: 8px 10px;
-  cursor: pointer; min-height: 38px;
-}
-.msd-chips { flex: 1; display: flex; flex-wrap: wrap; gap: 4px; }
+/* マルチセレクト（インライン展開） */
+.msd-trigger-row { cursor: pointer; }
+.msd-trigger-row:active { background: #f5f5f5; }
+.msd-chips-inline { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; margin-right: 6px; }
 .msd-chip {
   background: #06C755; color: #fff;
   border-radius: 20px; padding: 2px 10px; font-size: 13px; font-weight: 600;
 }
-.msd-placeholder { font-size: 14px; color: #aaa; }
+.msd-placeholder { font-size: 14px; color: #aaa; margin-left: auto; margin-right: 6px; }
 .msd-arrow { font-size: 16px; color: #888; line-height: 1; transition: transform .2s; flex-shrink: 0; }
 .msd-arrow.open { transform: rotate(180deg); }
-.msd-dropdown {
-  position: absolute; top: calc(100% + 4px); left: 0; right: 0;
-  background: #fff; border-radius: 10px;
-  box-shadow: 0 4px 16px rgba(0,0,0,.15);
-  overflow: hidden; z-index: 200;
-}
-.msd-option {
+.msd-option-row {
   display: flex; align-items: center; gap: 12px;
-  padding: 14px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0;
+  padding: 14px 16px; cursor: pointer; background: #fafafa;
 }
-.msd-option:last-child { border-bottom: none; }
-.msd-option:active { background: #f5f5f5; }
+.msd-option-row:active { background: #f0f0f0; }
 .msd-option-box {
   width: 22px; height: 22px; border-radius: 6px;
   border: 2px solid #D0D0D0; background: #fff;
@@ -827,7 +806,7 @@ onMounted(async () => {
   transition: border-color .15s, background .15s;
 }
 .msd-option-box.checked { border-color: #06C755; background: #06C755; }
-.msd-option-name { font-size: 15px; color: #111; }
+.msd-option-name { font-size: 15px; color: #111; flex: 1; }
 
 .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
 .btn-save   { flex: 1; background: #06C755; color: #fff; border: none; border-radius: 12px; padding: 14px; font-size: 16px; font-weight: 700; cursor: pointer; }
