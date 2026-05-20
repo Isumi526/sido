@@ -15,6 +15,9 @@
           <span class="month-label">{{ yearMonthLabel }}</span>
           <button class="btn-nav" @click="shiftMonth(1)">›</button>
         </div>
+        <button class="btn-toggle-cost" :class="{ active: showLaborCost }" @click="showLaborCost = !showLaborCost">
+          {{ showLaborCost ? '💴 人件費 表示中' : '💴 人件費 表示' }}
+        </button>
         <button v-if="activeWorker" class="btn-pdf" @click="printPdf">PDF出力</button>
       </div>
     </div>
@@ -76,7 +79,46 @@
             <div class="summary-label">休日深夜残業</div>
             <div class="summary-value">{{ fmtH(workerMap[activeWorker].totals.sundayOtNight) }}<span class="unit">h</span></div>
           </div>
+          <!-- 人件費カード -->
+          <div v-if="showLaborCost" class="summary-card cost-card">
+            <div class="summary-label">人件費合計</div>
+            <div class="summary-value cost-value">{{ fmtYen(totalLaborCost) }}</div>
+            <div class="cost-rate-hint" v-if="activeUnitPrice">日当 {{ fmtYen(activeUnitPrice) }} / 時給 {{ fmtYen(Math.round(activeUnitPrice / 8)) }}</div>
+          </div>
         </div>
+
+        <!-- 人件費内訳 -->
+        <template v-if="showLaborCost && laborCostBreakdown.length">
+          <div class="section-title">人件費内訳</div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>区分</th>
+                  <th class="num">時間数</th>
+                  <th class="num">割増率</th>
+                  <th class="num">単価/h</th>
+                  <th class="num">小計</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="line in laborCostBreakdown" :key="line.label">
+                  <td>{{ line.label }}</td>
+                  <td class="num">{{ fmtH(line.hours) }}h</td>
+                  <td class="num">×{{ line.rate.toFixed(2) }}</td>
+                  <td class="num">{{ fmtYen(line.unitPerH) }}</td>
+                  <td class="num cost-cell">{{ fmtYen(line.cost) }}</td>
+                </tr>
+              </tbody>
+              <tfoot>
+                <tr class="total-row">
+                  <td colspan="4">合計</td>
+                  <td class="num cost-cell">{{ fmtYen(totalLaborCost) }}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </template>
 
         <!-- 現場別内訳 -->
         <div class="section-title">現場別内訳</div>
@@ -221,10 +263,12 @@ type WorkerData = {
   rows: WorkerRow[]
 }
 
-const loading      = ref(false)
-const workerMap    = ref<Record<string, WorkerData>>({})
-const activeWorker = ref('')
-const workerOrder  = ref<string[]>([])  // DBの名前昇順
+const loading        = ref(false)
+const workerMap      = ref<Record<string, WorkerData>>({})
+const activeWorker   = ref('')
+const workerOrder    = ref<string[]>([])  // DBの名前昇順
+const unitPriceMap   = ref<Record<string, number>>({})  // name → 日当単価
+const showLaborCost  = ref(false)
 
 const workerNames = computed(() => {
   const inData = Object.keys(workerMap.value)
@@ -241,13 +285,16 @@ async function load() {
 
   const accountId = await getAccountId()
 
-  // 作業員名を五十音順で取得（タブ順序用）
+  // 作業員名・単価を五十音順で取得
   const { data: workersData } = await supabase
     .from('workers')
-    .select('name')
+    .select('name, unit_price')
     .eq('account_id', accountId)
     .order('name')
   workerOrder.value = (workersData ?? []).map((w: any) => w.name)
+  unitPriceMap.value = Object.fromEntries(
+    (workersData ?? []).map((w: any) => [w.name, Number(w.unit_price ?? 0)])
+  )
 
   // ユーザーID → real_name マップ（休み日の名前解決用）
   const { data: usersData } = await supabase
@@ -420,10 +467,44 @@ async function load() {
 onMounted(load)
 watch(dateFrom, load)
 
+// ---------- 人件費計算 ----------
+const activeUnitPrice = computed(() =>
+  activeWorker.value ? (unitPriceMap.value[activeWorker.value] ?? 0) : 0
+)
+
+const laborCostBreakdown = computed(() => {
+  if (!activeWorker.value || !workerMap.value[activeWorker.value]) return []
+  const t = workerMap.value[activeWorker.value].totals
+  const dayRate  = activeUnitPrice.value
+  const hourRate = dayRate / 8
+  const lines = [
+    { label: '通常',       hours: t.normal,        rate: 1.00 },
+    { label: '残業',       hours: t.ot,             rate: 1.25 },
+    { label: '深夜',       hours: t.night,          rate: 1.25 },
+    { label: '深夜残業',   hours: t.otNight,        rate: 1.50 },
+    { label: '休日',       hours: t.sunday,         rate: 1.35 },
+    { label: '休日残業',   hours: t.sundayOt,       rate: 1.60 },
+    { label: '休日深夜',   hours: t.sundayNight,    rate: 1.60 },
+    { label: '休日深夜残業', hours: t.sundayOtNight, rate: 1.85 },
+  ].filter(l => l.hours > 0).map(l => ({
+    ...l,
+    unitPerH: Math.round(hourRate * l.rate),
+    cost: Math.round(hourRate * l.rate * l.hours),
+  }))
+  return lines
+})
+
+const totalLaborCost = computed(() =>
+  laborCostBreakdown.value.reduce((s, l) => s + l.cost, 0)
+)
+
 // ---------- ユーティリティ ----------
 function fmtH(v: number) {
   if (!v || v === 0) return ''
   return v % 1 === 0 ? String(v) : v.toFixed(2).replace(/\.?0+$/, '')
+}
+function fmtYen(v: number) {
+  return v ? '¥' + v.toLocaleString() : '—'
 }
 function fmtDate(d: string) {
   const WEEKDAYS = ['日','月','火','水','木','金','土']
@@ -446,6 +527,9 @@ function printPdf() {
 .btn-nav { background: #f0f0f0; border: none; border-radius: 8px; padding: 6px 14px; font-size: 18px; cursor: pointer; }
 .btn-pdf { background: #1a1a1a; color: #fff; border: none; border-radius: 8px; padding: 8px 18px; font-size: 13px; font-weight: 700; cursor: pointer; }
 .btn-pdf:hover { background: #333; }
+.btn-toggle-cost { background: #f0f0f0; color: #555; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; transition: .15s; }
+.btn-toggle-cost:hover { background: #e0e0e0; }
+.btn-toggle-cost.active { background: #fff3cd; color: #92600a; border: 1px solid #f0c040; }
 .empty { color: #888; padding: 60px; text-align: center; }
 
 /* タブ */
@@ -463,6 +547,11 @@ function printPdf() {
 .summary-value.accent { color: #06C755; }
 .summary-value.off { color: #888; }
 .unit { font-size: 13px; font-weight: 400; color: #888; margin-left: 2px; }
+/* 人件費カード */
+.cost-card { background: #fffbeb; border: 1px solid #f0c040; }
+.cost-value { font-size: 22px; color: #92600a; }
+.cost-rate-hint { font-size: 10px; color: #a07830; margin-top: 4px; }
+.cost-cell { color: #92600a; font-weight: 700; }
 
 /* テーブル共通 */
 .section-title { font-size: 13px; font-weight: 700; color: #888; margin-bottom: 10px; margin-top: 24px; }
@@ -491,7 +580,8 @@ function printPdf() {
   .print-meta { font-size: 14px; color: #444; margin-top: 4px; }
 
   .page-header,
-  .tabs-wrap { display: none !important; }
+  .tabs-wrap,
+  .btn-toggle-cost { display: none !important; }
 
   .summary-card { box-shadow: none; border: 1px solid #ddd; }
   .table-wrap { box-shadow: none; overflow: visible; }
