@@ -54,19 +54,33 @@
     </div>
 
     <!-- グループ作成モーダル -->
-    <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
+    <div v-if="showCreateModal" class="modal-overlay" @click.self="closeCreateModal">
       <div class="modal">
         <h2>グループを作成</h2>
         <div class="field">
           <label>グループ名 *</label>
-          <input v-model="newGroupName" class="input" placeholder="例：現場チームA" autofocus />
+          <input v-model="newGroupName" class="input" placeholder="例：現場チームA" />
+        </div>
+        <div class="field">
+          <label>招待するメンバー</label>
+          <div class="worker-pick-list">
+            <label v-for="w in allOtherWorkers" :key="w.id" class="worker-pick-item">
+              <input
+                type="checkbox"
+                :checked="newGroupInvitees.includes(w.id)"
+                @change="toggleInvitee(w.id)"
+              />
+              <span>{{ w.name }}</span>
+            </label>
+            <p v-if="!allOtherWorkers.length" class="empty-sub">他の作業員がいません</p>
+          </div>
         </div>
         <p v-if="createError" class="error-msg">{{ createError }}</p>
         <div class="modal-actions">
           <button class="btn-save" :disabled="creating" @click="handleCreate">
             {{ creating ? '作成中...' : '作成' }}
           </button>
-          <button class="btn-cancel" @click="showCreateModal = false">キャンセル</button>
+          <button class="btn-cancel" @click="closeCreateModal">キャンセル</button>
         </div>
       </div>
     </div>
@@ -127,19 +141,40 @@ function memberName(m: ScheduleGroup['members'][number]): string {
 }
 
 // ──────────────────── グループ作成 ────────────────────
-const showCreateModal = ref(false)
-const newGroupName    = ref('')
-const creating        = ref(false)
-const createError     = ref('')
+const showCreateModal  = ref(false)
+const newGroupName     = ref('')
+const newGroupInvitees = ref<string[]>([])
+const creating         = ref(false)
+const createError      = ref('')
+
+const allOtherWorkers = computed(() =>
+  (master.master.value.workers as any[]).filter((w: any) => w.active !== false && w.id !== myWorkerId.value)
+)
+
+function toggleInvitee(id: string) {
+  const idx = newGroupInvitees.value.indexOf(id)
+  if (idx === -1) newGroupInvitees.value.push(id)
+  else newGroupInvitees.value.splice(idx, 1)
+}
+
+function closeCreateModal() {
+  showCreateModal.value = false
+  newGroupName.value = ''
+  newGroupInvitees.value = []
+  createError.value = ''
+}
 
 async function handleCreate() {
   if (!newGroupName.value.trim()) { createError.value = 'グループ名を入力してください'; return }
   if (!myWorkerId.value) { createError.value = '作業員情報が取得できません'; return }
   creating.value = true; createError.value = ''
   try {
-    await groupsStore.createGroup(newGroupName.value.trim(), myWorkerId.value)
-    newGroupName.value = ''
-    showCreateModal.value = false
+    const group = await groupsStore.createGroup(newGroupName.value.trim(), myWorkerId.value)
+    // 招待したメンバーを追加
+    for (const wid of newGroupInvitees.value) {
+      await groupsStore.addMember(group.id, wid, myWorkerId.value)
+    }
+    closeCreateModal()
   } catch (e) {
     createError.value = e instanceof Error ? e.message : '作成に失敗しました'
   } finally { creating.value = false }
