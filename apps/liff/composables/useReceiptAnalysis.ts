@@ -25,15 +25,35 @@ export const useReceiptAnalysis = () => {
       if (!efUrl) throw new Error('Edge Function URL未設定')
 
       const anonKey = config.public.supabaseAnonKey as string
-      const res = await fetch(`${efUrl}/analyze-receipt`, {
-        method:  'POST',
-        headers: {
-          'Content-Type':  'application/json',
-          'Authorization': `Bearer ${anonKey}`,
-        },
-        body: JSON.stringify({ imageBase64: base64 }),
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+      // cold start 対策: 失敗したら2秒待って1回リトライ
+      let res: Response | null = null
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          res = await fetch(`${efUrl}/analyze-receipt`, {
+            method:  'POST',
+            headers: {
+              'Content-Type':  'application/json',
+              'Authorization': `Bearer ${anonKey}`,
+            },
+            body: JSON.stringify({ imageBase64: base64 }),
+          })
+          if (res.ok) break
+          if (attempt < 2) await new Promise(r => setTimeout(r, 2000))
+        } catch {
+          if (attempt < 2) await new Promise(r => setTimeout(r, 2000))
+          else throw new Error('ネットワークエラーが発生しました')
+        }
+      }
+
+      if (!res || !res.ok) {
+        const status = res?.status ?? 0
+        if (status === 401 || status === 403) throw new Error('認証エラーが発生しました')
+        if (status === 503 || status === 504) throw new Error('サーバーが混雑しています。しばらく待ってから再試行してください')
+        if (status >= 500) throw new Error('サーバーエラーが発生しました')
+        throw new Error(`通信エラーが発生しました（${status}）`)
+      }
+
       return await res.json() as ReceiptResult
     } catch (e) {
       error.value = e instanceof Error ? e.message : '解析に失敗しました'
