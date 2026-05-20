@@ -19,7 +19,9 @@ export const useReceiptAnalysis = () => {
     error.value   = null
     try {
       const base64 = await toBase64(file)
-      const efUrl  = config.public.edgeFunctionUrl
+      // EDGE_FUNCTION_URL 未設定時は SUPABASE_URL から自動導出
+      const efUrl = config.public.edgeFunctionUrl
+        || `${config.public.supabaseUrl}/functions/v1`
       if (!efUrl) throw new Error('Edge Function URL未設定')
 
       const anonKey = config.public.supabaseAnonKey as string
