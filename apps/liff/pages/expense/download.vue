@@ -95,26 +95,16 @@
 
         <!-- アクション -->
         <div v-if="rows.length > 0" class="actions no-print">
-
-          <!-- スマホ: 手順ナビ + ブラウザで開くボタンのみ -->
-          <template v-if="isMobile">
-            <div class="guide-box">
-              <p class="guide-title">PDF保存の手順</p>
-              <ol class="guide-steps">
-                <li>下の「ブラウザで開く」をタップ</li>
-                <li>Safari / Chrome で申請書が開く</li>
-                <li>共有ボタン（<span class="icon-share">⎙</span>）→「PDFとして保存」または「印刷」を選択</li>
-              </ol>
-            </div>
-            <button class="btn-open-safari primary" @click="handleOpenExternal">ブラウザで開く →</button>
-          </template>
-
-          <!-- PC: 直接PDF保存 -->
-          <template v-else>
-            <button class="btn-print" @click="handlePrint">PDFとして保存（印刷）</button>
-            <button class="btn-open-safari" @click="handleOpenExternal">別ウィンドウで開く</button>
-          </template>
-
+          <div class="guide-box">
+            <p class="guide-title">PDF保存の手順</p>
+            <ol class="guide-steps">
+              <li>下の「ブラウザで開く」をタップ</li>
+              <li>Safari / Chrome で申請書が開く</li>
+              <li>共有ボタン（<span class="icon-share">⎙</span>）→「PDFとして保存」または「印刷」を選択</li>
+            </ol>
+          </div>
+          <button class="btn-open-safari primary" @click="handleOpenExternal">ブラウザで開く →</button>
+          <button class="btn-print pc-only" @click="handlePrint">PDFとして保存（印刷）</button>
         </div>
       </template>
     </main>
@@ -271,6 +261,8 @@ html,body { background:var(--bg);color:var(--text);font-family:var(--font);min-h
 .guide-steps { padding-left:18px;display:flex;flex-direction:column;gap:8px; }
 .guide-steps li { font-size:13px;color:#444;line-height:1.5; }
 .icon-share { font-size:15px; }
+.pc-only { display: none; }
+@media (min-width: 768px) { .pc-only { display: block; } }
 @media print {
   .no-print { display:none !important; }
   .main { padding:0 !important; }
