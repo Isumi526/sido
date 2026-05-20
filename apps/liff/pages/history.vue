@@ -40,7 +40,7 @@
 
             <div class="report-card-footer">
               <span class="updated-at">更新: {{ formatUpdatedAt(rep.updated_at) }}</span>
-              <NuxtLink :to="`/?edit=${rep.date}`" class="btn-edit">編集する →</NuxtLink>
+              <NuxtLink :to="`/report?edit=${rep.date}`" class="btn-edit">編集する →</NuxtLink>
             </div>
           </div>
         </template>
