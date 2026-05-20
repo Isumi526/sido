@@ -118,7 +118,6 @@ export interface User {
   real_name:    string
   worker_role:  'factory' | 'site'
   worker_id?:   string | null
-  can_proxy:    boolean
   created_at:   string
   updated_at:   string
 }

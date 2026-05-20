@@ -2,17 +2,17 @@
 //  composables/useProxyMode.ts
 //  代理入力モード管理
 //
-//  代理操作者（can_proxy = true）が他作業員に成り代わって
+//  代理操作者（workers.can_proxy = true）が他作業員に成り代わって
 //  日報・経費などをその作業員として送信できる機能。
 //  代理先はLINE未登録の作業員も含む全作業員から選択可。
 //  セッション中のみ有効（タブを閉じると解除）。
 // ============================================================
 
 export interface ProxyWorker {
-  id:           string   // workers.id
-  name:         string   // workers.name
+  id:           string        // workers.id
+  name:         string        // workers.name
   worker_role:  'factory' | 'site'
-  line_user_id: string | null  // users.line_user_id（LINE未登録ならnull）
+  line_user_id: string | null // users.line_user_id（LINE未登録ならnull）
 }
 
 const SESSION_KEY = 'sido_proxy_target'
@@ -30,10 +30,22 @@ export const useProxyMode = () => {
     } catch { return null }
   })
 
-  const allWorkers = useState<ProxyWorker[]>('proxy_all_workers', () => [])
+  const allWorkers  = useState<ProxyWorker[]>('proxy_all_workers', () => [])
+  const canProxy    = useState<boolean>('proxy_can_proxy', () => false)
 
   // 代理中かどうか
   const isProxyMode = computed(() => proxyTarget.value !== null)
+
+  // ログインユーザーが代理操作者かどうかを workers テーブルで確認
+  async function checkCanProxy(workerId: string | null | undefined) {
+    if (!workerId) { canProxy.value = false; return }
+    const { data } = await supabase
+      .from('workers')
+      .select('can_proxy')
+      .eq('id', workerId)
+      .single()
+    canProxy.value = data?.can_proxy ?? false
+  }
 
   // 全作業員を取得（代理先選択用）
   // workers テーブル全員 + LINE登録済みなら line_user_id も付与
@@ -61,7 +73,7 @@ export const useProxyMode = () => {
     )
 
     allWorkers.value = ((workersData ?? []) as any[])
-      .filter(w => w.id !== selfWorkerId)  // 自分自身は除外
+      .filter(w => w.id !== selfWorkerId) // 自分自身は除外
       .map(w => ({
         id:           w.id,
         name:         w.name,
@@ -83,9 +95,11 @@ export const useProxyMode = () => {
   }
 
   return {
-    proxyTarget:   readonly(proxyTarget),
-    allWorkers:    readonly(allWorkers),
+    proxyTarget:      readonly(proxyTarget),
+    allWorkers:       readonly(allWorkers),
+    canProxy:         readonly(canProxy),
     isProxyMode,
+    checkCanProxy,
     fetchAllWorkers,
     setProxy,
     clearProxy,

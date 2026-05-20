@@ -47,7 +47,7 @@
           <span class="menu-label">経費PDF</span>
         </NuxtLink>
         <!-- 代理操作者のみ表示 -->
-        <button v-if="currentUser?.can_proxy" class="menu-card proxy-btn" @click="openProxyModal">
+        <button v-if="proxy.canProxy.value" class="menu-card proxy-btn" @click="openProxyModal">
           <span class="material-symbols-rounded menu-icon" style="color:#dc2626">swap_horiz</span>
           <span class="menu-label">代理入力</span>
         </button>
@@ -150,7 +150,10 @@ onMounted(async () => {
     .eq('line_user_id', lineUserId)
     .eq('account_id', accountData.id)
     .single()
-  if (user) currentUser.value = user as User
+  if (user) {
+    currentUser.value = user as User
+    await proxy.checkCanProxy(user.worker_id)
+  }
 
   // 未送信日報カウント（過去30日）
   const { data: worker } = await supabase

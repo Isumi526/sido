@@ -27,14 +27,12 @@
             <td><span class="user-link" :class="linkedWorkerIds.has(w.id) ? 'linked' : 'unlinked'">{{ linkedWorkerIds.has(w.id) ? '紐付け済み' : '未紐付け' }}</span></td>
             <td>
               <button
-                v-if="userByWorkerId.has(w.id)"
                 class="btn-proxy"
-                :class="{ on: userByWorkerId.get(w.id)?.can_proxy }"
+                :class="{ on: w.can_proxy }"
                 @click="toggleCanProxy(w)"
               >
-                {{ userByWorkerId.get(w.id)?.can_proxy ? '有効' : '無効' }}
+                {{ w.can_proxy ? '有効' : '無効' }}
               </button>
-              <span v-else class="proxy-na">—</span>
             </td>
             <td class="actions">
               <button class="btn-edit" @click="openEdit(w)">編集</button>
@@ -78,12 +76,10 @@ import { ref, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 
-type Worker = { id: string; name: string; role: 'factory' | 'site'; unit_price: number; active: boolean }
-type UserRecord = { id: string; worker_id: string | null; can_proxy: boolean }
+type Worker = { id: string; name: string; role: 'factory' | 'site'; unit_price: number; active: boolean; can_proxy: boolean }
 
 const workers         = ref<Worker[]>([])
 const linkedWorkerIds = ref<Set<string>>(new Set())
-const userByWorkerId  = ref<Map<string, UserRecord>>(new Map())
 const modal           = ref<Partial<Worker> | null>(null)
 const saving          = ref(false)
 const saveError       = ref('')
@@ -91,19 +87,15 @@ const saveError       = ref('')
 async function load() {
   const accountId = await getAccountId()
   const [{ data: workersData }, { data: usersData }] = await Promise.all([
-    supabase.from('workers').select('id, name, role, unit_price, active').eq('account_id', accountId).order('name'),
-    supabase.from('users').select('id, worker_id, can_proxy').eq('account_id', accountId).not('worker_id', 'is', null),
+    supabase.from('workers').select('id, name, role, unit_price, active, can_proxy').eq('account_id', accountId).order('name'),
+    supabase.from('users').select('worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
   ])
   workers.value = (workersData ?? []) as Worker[]
-  const users = (usersData ?? []) as UserRecord[]
-  linkedWorkerIds.value = new Set(users.map(u => u.worker_id as string))
-  userByWorkerId.value  = new Map(users.filter(u => u.worker_id).map(u => [u.worker_id!, u]))
+  linkedWorkerIds.value = new Set((usersData ?? []).map((u: any) => u.worker_id as string))
 }
 
 async function toggleCanProxy(w: Worker) {
-  const user = userByWorkerId.value.get(w.id)
-  if (!user) return
-  await supabase.from('users').update({ can_proxy: !user.can_proxy }).eq('id', user.id)
+  await supabase.from('workers').update({ can_proxy: !w.can_proxy }).eq('id', w.id)
   await load()
 }
 
