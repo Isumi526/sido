@@ -273,6 +273,9 @@ const master       = useMaster()
 const { profile }  = useLiff()
 
 const myGroups = computed(() => groupsStore.groups.value)
+const defaultShareGroupIds = computed(() =>
+  myGroups.value.filter(g => g.default_share).map(g => g.id)
+)
 
 // ──────────────────── 定数 ────────────────────
 const HOUR_HEIGHT  = 56
@@ -447,7 +450,7 @@ function openAddByTime(e: MouseEvent, date: string) {
     title: '', description: '', category: 'work', site_id: '', all_day: false,
     start_date: date, end_date: date,
     start_time: startTime, end_time: `${String(endH).padStart(2,'0')}:${String(m).padStart(2,'0')}`,
-    is_public: false, group_ids: [], recurrence_rule: '',
+    is_public: defaultShareGroupIds.value.length > 0, group_ids: [...defaultShareGroupIds.value], recurrence_rule: '',
   }
   formError.value = ''; groupDropOpen.value = false
 }
@@ -526,7 +529,7 @@ function openAddOnDate(date: string) {
   formModal.value = {
     title: '', description: '', category: 'work', site_id: '', all_day: false,
     start_date: date, end_date: date, start_time: '09:00', end_time: '17:00',
-    is_public: false, group_ids: [], recurrence_rule: '',
+    is_public: defaultShareGroupIds.value.length > 0, group_ids: [...defaultShareGroupIds.value], recurrence_rule: '',
   }
   formError.value = ''; groupDropOpen.value = false
 }

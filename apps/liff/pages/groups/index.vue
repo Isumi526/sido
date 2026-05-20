@@ -43,6 +43,22 @@
           <!-- メンバー追加 -->
           <button class="btn-add-member" @click="openAddMember(group)">＋ メンバーを追加</button>
 
+          <!-- デフォルト共有設定 -->
+          <div class="group-setting-row">
+            <div class="group-setting-info">
+              <span class="group-setting-label">予定作成時にデフォルト共有</span>
+              <span class="group-setting-sub">ONにすると新規予定でこのグループが自動選択されます</span>
+            </div>
+            <label class="ios-toggle">
+              <input
+                type="checkbox"
+                :checked="group.default_share"
+                @change="handleToggleDefaultShare(group)"
+              />
+              <span class="ios-toggle-track"></span>
+            </label>
+          </div>
+
           <!-- グループ操作 -->
           <div class="group-actions">
             <button class="btn-leave" @click="handleLeave(group)">
@@ -229,6 +245,16 @@ async function handleRemoveMember(group: ScheduleGroup, workerId: string) {
   }
 }
 
+// ──────────────────── デフォルト共有トグル ────────────────────
+async function handleToggleDefaultShare(group: ScheduleGroup) {
+  if (!myWorkerId.value) return
+  try {
+    await groupsStore.updateGroup(group.id, { default_share: !group.default_share }, myWorkerId.value)
+  } catch (e) {
+    alert(e instanceof Error ? e.message : '更新に失敗しました')
+  }
+}
+
 // ──────────────────── 脱退 / 削除 ────────────────────
 async function handleLeave(group: ScheduleGroup) {
   if (!myWorkerId.value) return
@@ -317,6 +343,32 @@ onMounted(async () => {
   color: #06C755; font-size: 14px; font-weight: 600; cursor: pointer;
   margin-bottom: 10px;
 }
+
+.group-setting-row {
+  display: flex; align-items: center; gap: 12px;
+  background: #f8f9fa; border-radius: 10px;
+  padding: 12px 14px; margin-bottom: 10px;
+}
+.group-setting-info { flex: 1; }
+.group-setting-label { display: block; font-size: 14px; font-weight: 600; color: #111; }
+.group-setting-sub { display: block; font-size: 12px; color: #888; margin-top: 2px; }
+
+/* iOS トグル */
+.ios-toggle { position: relative; display: inline-block; width: 51px; height: 31px; flex-shrink: 0; }
+.ios-toggle input { opacity: 0; width: 0; height: 0; }
+.ios-toggle-track {
+  position: absolute; cursor: pointer; inset: 0;
+  background: #E0E0E0; border-radius: 31px; transition: background .25s;
+}
+.ios-toggle-track::before {
+  content: ''; position: absolute;
+  width: 27px; height: 27px; left: 2px; bottom: 2px;
+  background: #fff; border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0,0,0,.2);
+  transition: transform .25s;
+}
+.ios-toggle input:checked + .ios-toggle-track { background: #06C755; }
+.ios-toggle input:checked + .ios-toggle-track::before { transform: translateX(20px); }
 
 .group-actions { display: flex; justify-content: flex-end; }
 .btn-leave {

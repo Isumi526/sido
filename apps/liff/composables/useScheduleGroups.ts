@@ -4,11 +4,12 @@
 // ============================================================
 
 export interface ScheduleGroup {
-  id:         string
-  name:       string
-  created_by: string | null
-  created_at: string
-  members:    { worker_id: string; worker?: { id: string; name: string } | null }[]
+  id:            string
+  name:          string
+  created_by:    string | null
+  created_at:    string
+  default_share: boolean
+  members:       { worker_id: string; worker?: { id: string; name: string } | null }[]
 }
 
 export const useScheduleGroups = () => {
@@ -77,6 +78,16 @@ export const useScheduleGroups = () => {
     await fetchMyGroups(myWorkerId)
   }
 
+  // グループを更新（default_share など）
+  async function updateGroup(groupId: string, patch: Partial<Pick<ScheduleGroup, 'name' | 'default_share'>>, myWorkerId: string) {
+    const { error } = await supabase
+      .from('schedule_groups')
+      .update(patch)
+      .eq('id', groupId)
+    if (error) throw error
+    await fetchMyGroups(myWorkerId)
+  }
+
   // グループを削除
   async function deleteGroup(groupId: string, myWorkerId: string) {
     await supabase.from('schedule_groups').delete().eq('id', groupId)
@@ -88,6 +99,7 @@ export const useScheduleGroups = () => {
     loading:      readonly(loading),
     fetchMyGroups,
     createGroup,
+    updateGroup,
     addMember,
     removeMember,
     deleteGroup,
