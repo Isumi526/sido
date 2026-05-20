@@ -148,31 +148,25 @@
             </label>
           </div>
           <div class="form-divider"></div>
-          <!-- 開始日 -->
+          <!-- 開始（日付と時刻を1行） -->
           <div class="form-row">
             <span class="form-row-label">開始</span>
-            <input type="date" v-model="formModal.start_date" class="dt-input dt-date" />
-          </div>
-          <!-- 開始時刻 -->
-          <template v-if="!formModal.all_day">
-            <div class="form-divider"></div>
-            <div class="form-row dt-sub-row">
-              <input type="time" v-model="formModal.start_time" class="dt-input dt-time" />
+            <div class="dt-inline">
+              <input type="date" v-model="formModal.start_date" class="dt-input dt-date" />
+              <span v-if="!formModal.all_day" class="dt-sep"></span>
+              <input v-if="!formModal.all_day" type="time" v-model="formModal.start_time" class="dt-input dt-time" />
             </div>
-          </template>
+          </div>
           <div class="form-divider"></div>
-          <!-- 終了日 -->
+          <!-- 終了（日付と時刻を1行） -->
           <div class="form-row">
             <span class="form-row-label">終了</span>
-            <input type="date" v-model="formModal.end_date" class="dt-input dt-date" />
-          </div>
-          <!-- 終了時刻 -->
-          <template v-if="!formModal.all_day">
-            <div class="form-divider"></div>
-            <div class="form-row dt-sub-row">
-              <input type="time" v-model="formModal.end_time" class="dt-input dt-time" />
+            <div class="dt-inline">
+              <input type="date" v-model="formModal.end_date" class="dt-input dt-date" />
+              <span v-if="!formModal.all_day" class="dt-sep"></span>
+              <input v-if="!formModal.all_day" type="time" v-model="formModal.end_time" class="dt-input dt-time" />
             </div>
-          </template>
+          </div>
         </div>
 
         <!-- 繰り返し -->
@@ -224,8 +218,8 @@
 
         <p v-if="formError" class="error-msg">{{ formError }}</p>
         <div class="modal-actions">
-          <button class="btn-save" :disabled="saving" @click="saveSchedule">{{ saving ? '保存中...' : '保存' }}</button>
           <button class="btn-cancel" @click="formModal = null">キャンセル</button>
+          <button class="btn-save" :disabled="saving" @click="saveSchedule">{{ saving ? '保存中...' : '保存' }}</button>
         </div>
       </div>
     </div>
@@ -244,12 +238,11 @@
         <p class="detail-pub">{{ detailModal.is_public ? '🔓 グループに公開中' : '🔒 非公開' }}</p>
         <p v-if="detailModal.description" class="detail-desc">{{ detailModal.description }}</p>
         <div class="modal-actions">
-          <!-- 自分の予定のみ編集・削除可能 -->
-          <template v-if="detailModal.worker_id === schedules.myWorkerId.value">
-            <button class="btn-edit" @click="openEdit(detailModal)">編集</button>
-            <button class="btn-delete" @click="confirmDelete(detailModal.id)">削除</button>
-          </template>
           <button class="btn-cancel" @click="detailModal = null">閉じる</button>
+          <template v-if="detailModal.worker_id === schedules.myWorkerId.value">
+            <button class="btn-delete" @click="confirmDelete(detailModal.id)">削除</button>
+            <button class="btn-edit" @click="openEdit(detailModal)">編集</button>
+          </template>
         </div>
       </div>
     </div>
@@ -733,8 +726,9 @@ onMounted(async () => {
 .dt-time { width: 100%; text-align: right; }
 /* ネイティブのカレンダー/時計アイコンを非表示 */
 .dt-input::-webkit-calendar-picker-indicator { opacity: 0; width: 0; }
-/* 時刻行（開始・終了ラベルなし、インデント） */
-.dt-sub-row { padding-left: 28px; background: #fafafa; }
+/* 日付+時刻を横並び */
+.dt-inline { display: flex; align-items: center; gap: 0; margin-left: auto; }
+.dt-sep { width: 1px; height: 18px; background: #D0D0D0; margin: 0 6px; flex-shrink: 0; }
 
 /* iOS トグルスイッチ */
 .ios-toggle { position: relative; display: inline-block; width: 51px; height: 31px; flex-shrink: 0; margin-left: auto; }

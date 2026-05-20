@@ -77,10 +77,10 @@
         </div>
         <p v-if="createError" class="error-msg">{{ createError }}</p>
         <div class="modal-actions">
+          <button class="btn-cancel" @click="closeCreateModal">キャンセル</button>
           <button class="btn-save" :disabled="creating" @click="handleCreate">
             {{ creating ? '作成中...' : '作成' }}
           </button>
-          <button class="btn-cancel" @click="closeCreateModal">キャンセル</button>
         </div>
       </div>
     </div>
@@ -107,10 +107,10 @@
         </div>
         <p v-if="addError" class="error-msg">{{ addError }}</p>
         <div class="modal-actions">
+          <button class="btn-cancel" @click="addMemberTarget = null">キャンセル</button>
           <button class="btn-save" :disabled="adding || !pickedWorkerIds.length" @click="handleAddMembers">
             {{ adding ? '追加中...' : '追加' }}
           </button>
-          <button class="btn-cancel" @click="addMemberTarget = null">キャンセル</button>
         </div>
       </div>
     </div>
