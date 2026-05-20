@@ -207,19 +207,18 @@
           </div>
           <template v-if="formModal.is_public && myGroups.length">
             <div class="form-divider"></div>
-            <div class="form-row group-check-row">
-              <span class="form-row-label">共有先</span>
-              <div class="group-check-chips">
-                <label
-                  v-for="g in myGroups" :key="g.id"
-                  class="group-chip-check"
-                  :class="{ active: formModal.group_ids.includes(g.id) }"
-                >
-                  <input type="checkbox" :checked="formModal.group_ids.includes(g.id)" @change="toggleFormGroup(g.id)" style="display:none" />
-                  <span v-if="formModal.group_ids.includes(g.id)" class="chip-check">✓ </span>{{ g.name }}
-                </label>
-              </div>
+            <div class="form-row group-section-label">
+              <span class="form-row-label" style="color:#888; font-size:13px;">共有先グループ</span>
             </div>
+            <template v-for="g in myGroups" :key="g.id">
+              <div class="form-divider"></div>
+              <div class="form-row group-check-row" @click="toggleFormGroup(g.id)">
+                <span class="group-check-name">{{ g.name }}</span>
+                <span class="group-check-mark" :class="{ active: formModal.group_ids.includes(g.id) }">
+                  {{ formModal.group_ids.includes(g.id) ? '✓' : '' }}
+                </span>
+              </div>
+            </template>
           </template>
         </div>
 
@@ -775,18 +774,18 @@ onMounted(async () => {
 }
 .notes-input::placeholder { color: #c7c7cc; }
 
-/* 共有グループチップ */
-.group-check-row { flex-wrap: wrap; gap: 6px; align-items: flex-start; }
-.group-check-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
-.group-chip-check {
-  padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 500;
-  background: #f2f2f7; color: #999; /* 未選択：グレー背景・グレー文字 */
-  border: none; cursor: pointer; transition: .15s;
+/* 共有グループ チェックリスト */
+.group-section-label { padding-top: 8px; padding-bottom: 4px; min-height: unset; }
+.group-check-row { cursor: pointer; }
+.group-check-row:active { background: #f5f5f5; }
+.group-check-name { font-size: 15px; color: #111; flex: 1; }
+.group-check-mark {
+  width: 24px; height: 24px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 700; color: #ccc;
+  flex-shrink: 0;
 }
-.group-chip-check.active {
-  background: #e6f9ef; color: #06C755; font-weight: 600; /* 選択済：薄緑背景・緑文字 */
-}
-.chip-check { font-size: 11px; }
+.group-check-mark.active { color: #06C755; }
 
 .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
 .btn-save   { flex: 1; background: #06C755; color: #fff; border: none; border-radius: 12px; padding: 14px; font-size: 16px; font-weight: 700; cursor: pointer; }
