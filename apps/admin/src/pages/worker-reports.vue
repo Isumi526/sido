@@ -16,7 +16,8 @@
           <button class="btn-nav" @click="shiftMonth(1)">›</button>
         </div>
         <button class="btn-toggle-cost" :class="{ active: showLaborCost }" @click="showLaborCost = !showLaborCost">
-          {{ showLaborCost ? '💴 人件費 表示中' : '💴 人件費 表示' }}
+          <span class="material-symbols-rounded" style="font-size:16px; vertical-align: middle;">payments</span>
+          {{ showLaborCost ? '人件費 表示中' : '人件費 表示' }}
         </button>
         <button v-if="activeWorker" class="btn-pdf" @click="printPdf">PDF出力</button>
       </div>
