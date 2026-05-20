@@ -500,6 +500,7 @@ async function loadSchedules() {
       .from('schedules')
       .select('*, worker:workers(id, name)')
       .in('worker_id', workerIds)
+      .eq('is_public', true)
       .lte('start_date', to)
       .gte('end_date', from)
       .order('start_date')

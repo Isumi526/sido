@@ -46,6 +46,10 @@
             <span class="drawer-item-icon">📅</span>
             <span>予定管理</span>
           </NuxtLink>
+          <NuxtLink class="drawer-item" to="/groups" @click="open = false">
+            <span class="drawer-item-icon">👥</span>
+            <span>グループ管理</span>
+          </NuxtLink>
           <NuxtLink class="drawer-item" to="/expense/download" @click="open = false">
             <span class="drawer-item-icon">📄</span>
             <span>経費PDF</span>

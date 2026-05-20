@@ -1,6 +1,6 @@
 // ============================================================
 //  composables/useSchedules.ts
-//  予定管理（CRUD）
+//  予定管理（CRUD）+ グループ共有対応
 // ============================================================
 
 export type ScheduleCategory = 'work' | 'off' | 'training' | 'meeting' | 'other'
@@ -14,6 +14,7 @@ export interface Schedule {
   category:    ScheduleCategory
   site_id:     string | null
   color:       string | null
+  is_public:   boolean
   all_day:     boolean
   start_date:  string   // 'YYYY-MM-DD'
   end_date:    string   // 'YYYY-MM-DD'
@@ -32,6 +33,8 @@ export interface ScheduleForm {
   end_date:    string
   start_time:  string
   end_time:    string
+  is_public:   boolean    // 公開フラグ
+  group_ids:   string[]   // 共有先グループID
 }
 
 export const CATEGORY_LABELS: Record<ScheduleCategory, string> = {
@@ -50,42 +53,18 @@ export const CATEGORY_COLORS: Record<ScheduleCategory, string> = {
   other:    '#a855f7',
 }
 
-// LocalStorage キー（表示する作業員IDのリスト）
-const VISIBLE_WORKERS_KEY = 'calendar_visible_workers'
-
-function loadVisibleWorkers(): string[] {
-  if (import.meta.server) return []
-  try {
-    const raw = localStorage.getItem(VISIBLE_WORKERS_KEY)
-    return raw ? JSON.parse(raw) : []
-  } catch { return [] }
-}
-
-function saveVisibleWorkers(ids: string[]) {
-  if (import.meta.server) return
-  try { localStorage.setItem(VISIBLE_WORKERS_KEY, JSON.stringify(ids)) } catch {}
-}
-
 export const useSchedules = () => {
-  const supabase   = useSupabase()
+  const supabase    = useSupabase()
   const { profile } = useLiff()
-  const master     = useMaster()
-  const config     = useRuntimeConfig()
+  const config      = useRuntimeConfig()
 
-  const schedules      = ref<Schedule[]>([])
-  const loading        = ref(false)
-  const error          = ref<string | null>(null)
-  const visibleWorkerIds = ref<string[]>(loadVisibleWorkers())
-
-  // ログインユーザーの worker_id を取得
-  const myWorkerId = computed(() => {
-    const lineUserId = profile.value?.userId
-    if (!lineUserId) return null
-    // Supabase から users テーブル経由で worker_id を引く
-    return _myWorkerIdCache.value
-  })
+  const schedules = ref<Schedule[]>([])
+  const loading   = ref(false)
+  const error     = ref<string | null>(null)
 
   const _myWorkerIdCache = ref<string | null>(null)
+
+  const myWorkerId = computed(() => _myWorkerIdCache.value)
 
   async function resolveMyWorkerId(): Promise<string | null> {
     if (_myWorkerIdCache.value) return _myWorkerIdCache.value
@@ -93,7 +72,6 @@ export const useSchedules = () => {
     if (!lineUserId) return null
     try {
       const accountId = config.public.accountSlug
-      // account_id で絞り込み
       const { data: accountData } = await supabase
         .from('accounts')
         .select('id')
@@ -112,31 +90,58 @@ export const useSchedules = () => {
     } catch { return null }
   }
 
-  // 表示対象の worker_id リスト（自分 + 追加設定した人）
-  const targetWorkerIds = computed<string[]>(() => {
-    if (!_myWorkerIdCache.value) return []
-    const ids = new Set([_myWorkerIdCache.value, ...visibleWorkerIds.value])
-    return [...ids]
-  })
-
-  // 指定期間の予定を取得
-  async function fetchSchedules(from: string, to: string) {
+  // ──────────────────────────────────────────────────────
+  // 予定取得
+  //   - 常に自分の予定を取得
+  //   - sharedGroupIds が指定されていれば、そのグループに共有されている
+  //     公開予定も取得してマージ
+  // ──────────────────────────────────────────────────────
+  async function fetchSchedules(from: string, to: string, sharedGroupIds: string[] = []) {
     loading.value = true
     error.value   = null
     try {
       await resolveMyWorkerId()
-      if (!targetWorkerIds.value.length) return
+      const wid = _myWorkerIdCache.value
+      if (!wid) return
 
-      const { data, error: err } = await supabase
+      // 1. 自分の予定（is_public 問わず全件）
+      const { data: ownData, error: ownErr } = await supabase
         .from('schedules')
         .select('*, worker:workers(id, name)')
-        .in('worker_id', targetWorkerIds.value)
+        .eq('worker_id', wid)
         .lte('start_date', to)
         .gte('end_date', from)
         .order('start_date')
+      if (ownErr) throw ownErr
 
-      if (err) throw err
-      schedules.value = (data ?? []) as Schedule[]
+      const result: Schedule[] = (ownData ?? []) as Schedule[]
+      const ownIds = new Set(result.map(s => s.id))
+
+      // 2. 選択グループに共有されている他人の公開予定
+      if (sharedGroupIds.length) {
+        const { data: shareRows } = await supabase
+          .from('schedule_group_shares')
+          .select('schedule_id')
+          .in('group_id', sharedGroupIds)
+
+        const scheduleIds = [...new Set((shareRows ?? []).map((r: any) => r.schedule_id))]
+
+        if (scheduleIds.length) {
+          const { data: sharedData } = await supabase
+            .from('schedules')
+            .select('*, worker:workers(id, name)')
+            .in('id', scheduleIds)
+            .eq('is_public', true)
+            .lte('start_date', to)
+            .gte('end_date', from)
+          for (const s of (sharedData ?? [])) {
+            if (!ownIds.has((s as Schedule).id)) result.push(s as Schedule)
+          }
+        }
+      }
+
+      result.sort((a, b) => a.start_date.localeCompare(b.start_date))
+      schedules.value = result
     } catch (e) {
       error.value = e instanceof Error ? e.message : '取得に失敗しました'
     } finally {
@@ -144,27 +149,38 @@ export const useSchedules = () => {
     }
   }
 
+  // ──────────────────────────────────────────────────────
+  // 予定作成
+  // ──────────────────────────────────────────────────────
   async function createSchedule(form: ScheduleForm, workerId?: string) {
     const wid = workerId ?? (await resolveMyWorkerId())
     if (!wid) throw new Error('作業員情報が取得できません')
 
-    const payload = buildPayload(form, wid)
     const { data, error: err } = await supabase
       .from('schedules')
-      .insert(payload)
+      .insert(buildPayload(form, wid))
       .select('*, worker:workers(id, name)')
       .single()
     if (err) throw err
-    schedules.value.push(data as Schedule)
-    return data as Schedule
+
+    const schedule = data as Schedule
+    schedules.value.push(schedule)
+
+    // グループ共有レコードを保存
+    await syncGroupShares(supabase, schedule.id, form.is_public ? form.group_ids : [])
+    return schedule
   }
 
+  // ──────────────────────────────────────────────────────
+  // 予定更新
+  // ──────────────────────────────────────────────────────
   async function updateSchedule(id: string, form: Partial<ScheduleForm>) {
     const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
     if (form.title       !== undefined) updates.title       = form.title
     if (form.description !== undefined) updates.description = form.description || null
     if (form.category    !== undefined) updates.category    = form.category
     if (form.site_id     !== undefined) updates.site_id     = form.site_id || null
+    if (form.is_public   !== undefined) updates.is_public   = form.is_public
     if (form.all_day     !== undefined) updates.all_day     = form.all_day
     if (form.start_date  !== undefined) updates.start_date  = form.start_date
     if (form.end_date    !== undefined) updates.end_date    = form.end_date
@@ -183,39 +199,56 @@ export const useSchedules = () => {
       .select('*, worker:workers(id, name)')
       .single()
     if (err) throw err
+
     const idx = schedules.value.findIndex(s => s.id === id)
     if (idx !== -1) schedules.value[idx] = data as Schedule
+
+    // グループ共有を同期
+    if (form.group_ids !== undefined || form.is_public !== undefined) {
+      const isPublic = form.is_public ?? schedules.value[idx]?.is_public ?? true
+      await syncGroupShares(supabase, id, isPublic ? (form.group_ids ?? []) : [])
+    }
+
     return data as Schedule
   }
 
+  // ──────────────────────────────────────────────────────
+  // 予定削除
+  // ──────────────────────────────────────────────────────
   async function deleteSchedule(id: string) {
     const { error: err } = await supabase.from('schedules').delete().eq('id', id)
     if (err) throw err
     schedules.value = schedules.value.filter(s => s.id !== id)
   }
 
-  // 追加表示する作業員を設定
-  function setVisibleWorkers(ids: string[]) {
-    visibleWorkerIds.value = ids
-    saveVisibleWorkers(ids)
+  // ──────────────────────────────────────────────────────
+  // 予定のグループ共有先を取得
+  // ──────────────────────────────────────────────────────
+  async function fetchScheduleGroupIds(scheduleId: string): Promise<string[]> {
+    const { data } = await supabase
+      .from('schedule_group_shares')
+      .select('group_id')
+      .eq('schedule_id', scheduleId)
+    return (data ?? []).map((r: any) => r.group_id)
   }
 
   return {
-    schedules: readonly(schedules),
-    loading:   readonly(loading),
-    error:     readonly(error),
-    myWorkerId: _myWorkerIdCache,
-    visibleWorkerIds,
-    targetWorkerIds,
+    schedules:        readonly(schedules),
+    loading:          readonly(loading),
+    error:            readonly(error),
+    myWorkerId,
     resolveMyWorkerId,
     fetchSchedules,
     createSchedule,
     updateSchedule,
     deleteSchedule,
-    setVisibleWorkers,
+    fetchScheduleGroupIds,
   }
 }
 
+// ──────────────────────────────────────────────────────
+// ヘルパー
+// ──────────────────────────────────────────────────────
 function buildPayload(form: ScheduleForm, workerId: string) {
   return {
     worker_id:   workerId,
@@ -223,10 +256,25 @@ function buildPayload(form: ScheduleForm, workerId: string) {
     description: form.description || null,
     category:    form.category,
     site_id:     form.site_id || null,
+    is_public:   form.is_public,
     all_day:     form.all_day,
     start_date:  form.start_date,
     end_date:    form.end_date,
     start_time:  form.all_day ? null : (form.start_time || null),
     end_time:    form.all_day ? null : (form.end_time   || null),
+  }
+}
+
+async function syncGroupShares(
+  supabase: ReturnType<typeof useSupabase>,
+  scheduleId: string,
+  groupIds: string[],
+) {
+  // 既存を全削除してから再挿入
+  await supabase.from('schedule_group_shares').delete().eq('schedule_id', scheduleId)
+  if (groupIds.length) {
+    await supabase.from('schedule_group_shares').insert(
+      groupIds.map(gid => ({ schedule_id: scheduleId, group_id: gid }))
+    )
   }
 }
