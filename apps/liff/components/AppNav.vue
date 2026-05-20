@@ -35,23 +35,23 @@
         <!-- ナビゲーション -->
         <nav class="drawer-nav">
           <NuxtLink class="drawer-item" to="/" @click="open = false">
-            <span class="drawer-item-icon">📋</span>
+            <span class="drawer-item-icon material-symbols-rounded">edit_note</span>
             <span>日報登録</span>
           </NuxtLink>
           <NuxtLink class="drawer-item" to="/history" @click="open = false">
-            <span class="drawer-item-icon">📝</span>
+            <span class="drawer-item-icon material-symbols-rounded">history</span>
             <span>日報履歴</span>
           </NuxtLink>
           <NuxtLink class="drawer-item" to="/calendar" @click="open = false">
-            <span class="drawer-item-icon">📅</span>
+            <span class="drawer-item-icon material-symbols-rounded">calendar_month</span>
             <span>予定管理</span>
           </NuxtLink>
           <NuxtLink class="drawer-item" to="/groups" @click="open = false">
-            <span class="drawer-item-icon">👥</span>
+            <span class="drawer-item-icon material-symbols-rounded">group</span>
             <span>グループ管理</span>
           </NuxtLink>
           <NuxtLink class="drawer-item" to="/expense/download" @click="open = false">
-            <span class="drawer-item-icon">📄</span>
+            <span class="drawer-item-icon material-symbols-rounded">picture_as_pdf</span>
             <span>経費PDF</span>
           </NuxtLink>
         </nav>
@@ -219,7 +219,17 @@ const roleLabel = computed(() => {
 }
 .drawer-item:hover,
 .drawer-item.router-link-active { background: #f0fdf4; color: #06C755; }
-.drawer-item-icon { font-size: 18px; }
+.drawer-item-icon {
+  font-size: 22px;
+  width: 24px; text-align: center;
+  color: #666;
+  font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+  flex-shrink: 0;
+}
+.drawer-item.router-link-active .drawer-item-icon {
+  color: #06C755;
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
 
 @media print {
   .no-print { display: none !important; }
