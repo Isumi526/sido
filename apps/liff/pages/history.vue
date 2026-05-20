@@ -13,7 +13,7 @@
       <div v-else-if="reports.length === 0" class="empty-state">
         <div class="empty-icon">📋</div>
         <p class="empty-text">まだ日報がありません</p>
-        <NuxtLink to="/" class="btn-primary">日報を入力する</NuxtLink>
+        <NuxtLink to="/report" class="btn-primary">日報を入力する</NuxtLink>
       </div>
 
       <!-- 一覧 -->
