@@ -46,19 +46,76 @@
           <span class="material-symbols-rounded menu-icon" style="color:#ef4444">picture_as_pdf</span>
           <span class="menu-label">経費PDF</span>
         </NuxtLink>
+        <!-- 代理操作者のみ表示 -->
+        <button v-if="currentUser?.can_proxy" class="menu-card proxy-btn" @click="openProxyModal">
+          <span class="material-symbols-rounded menu-icon" style="color:#dc2626">swap_horiz</span>
+          <span class="menu-label">代理入力</span>
+        </button>
       </div>
 
+    </div>
+
+    <!-- 代理入力 ユーザー選択モーダル -->
+    <div v-if="proxyModalOpen" class="proxy-overlay" @click.self="proxyModalOpen = false">
+      <div class="proxy-modal">
+        <div class="proxy-modal-head">
+          <span class="proxy-modal-title">代理入力するユーザーを選択</span>
+          <button class="proxy-modal-close" @click="proxyModalOpen = false">✕</button>
+        </div>
+        <div class="proxy-modal-body">
+          <div v-if="proxy.isProxyMode.value" class="proxy-current">
+            <span>代理中：<strong>{{ proxy.proxyTarget.value?.real_name }}</strong></span>
+            <button class="proxy-clear-btn" @click="proxy.clearProxy(); proxyModalOpen = false">解除する</button>
+          </div>
+          <div v-if="proxyLoading" class="proxy-loading">読み込み中...</div>
+          <template v-else>
+            <div
+              v-for="u in proxy.allUsers.value.filter(u => u.id !== currentUser?.id)"
+              :key="u.id"
+              class="proxy-user-row"
+              :class="{ selected: proxy.proxyTarget.value?.id === u.id }"
+              @click="selectProxy(u)"
+            >
+              <div class="proxy-user-avatar">{{ u.real_name.charAt(0) }}</div>
+              <div class="proxy-user-info">
+                <div class="proxy-user-name">{{ u.real_name }}</div>
+                <div class="proxy-user-role">{{ u.worker_role === 'factory' ? '工場 / 事務所' : '現場' }}</div>
+              </div>
+              <span v-if="proxy.proxyTarget.value?.id === u.id" class="material-symbols-rounded proxy-check">check_circle</span>
+            </div>
+          </template>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import type { User } from '~/types'
+
 const { profile } = useLiff()
 const supabase    = useSupabase()
 const config      = useRuntimeConfig()
+const proxy       = useProxyMode()
 
-const currentUser = ref<{ real_name: string; worker_role: 'factory' | 'site' } | null>(null)
+const currentUser      = ref<User | null>(null)
 const unsubmittedCount = ref(0)
+const proxyModalOpen   = ref(false)
+const proxyLoading     = ref(false)
+
+async function openProxyModal() {
+  proxyModalOpen.value = true
+  if (proxy.allUsers.value.length === 0) {
+    proxyLoading.value = true
+    await proxy.fetchAllUsers()
+    proxyLoading.value = false
+  }
+}
+
+function selectProxy(user: User) {
+  proxy.setProxy(user)
+  proxyModalOpen.value = false
+}
 
 const avatarChar = computed(() =>
   currentUser.value?.real_name?.charAt(0) ?? profile.value?.displayName?.charAt(0) ?? '?'
@@ -89,11 +146,11 @@ onMounted(async () => {
 
   const { data: user } = await supabase
     .from('users')
-    .select('real_name, worker_role')
+    .select('*')
     .eq('line_user_id', lineUserId)
     .eq('account_id', accountData.id)
     .single()
-  if (user) currentUser.value = user as any
+  if (user) currentUser.value = user as User
 
   // 未送信日報カウント（過去30日）
   const { data: worker } = await supabase
@@ -178,4 +235,54 @@ onMounted(async () => {
   font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 32;
 }
 .menu-label { font-size: 12px; font-weight: 600; color: #333; text-align: center; }
+.proxy-btn { background: #fff3f3; border: none; cursor: pointer; }
+.proxy-btn:active { background: #ffe4e4; }
+
+/* 代理入力モーダル */
+.proxy-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 300;
+  display: flex; align-items: flex-end;
+}
+.proxy-modal {
+  background: #fff; width: 100%; border-radius: 20px 20px 0 0;
+  max-height: 70dvh; display: flex; flex-direction: column;
+}
+.proxy-modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 20px 12px; border-bottom: 1px solid #f0f0f0;
+}
+.proxy-modal-title { font-size: 15px; font-weight: 700; }
+.proxy-modal-close {
+  background: #f5f5f5; border: none; border-radius: 50%;
+  width: 28px; height: 28px; font-size: 13px; cursor: pointer; color: #555;
+}
+.proxy-modal-body { overflow-y: auto; padding: 8px 0 20px; }
+.proxy-current {
+  display: flex; align-items: center; justify-content: space-between;
+  margin: 8px 16px 4px; padding: 10px 14px;
+  background: #fff3f3; border-radius: 10px; font-size: 13px; color: #dc2626;
+}
+.proxy-clear-btn {
+  background: #dc2626; color: #fff; border: none; border-radius: 6px;
+  padding: 4px 12px; font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.proxy-loading { padding: 24px; text-align: center; color: #888; font-size: 14px; }
+.proxy-user-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 20px; cursor: pointer; transition: background .12s;
+}
+.proxy-user-row:active, .proxy-user-row.selected { background: #f0fdf4; }
+.proxy-user-avatar {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: #e5e7eb; color: #555; font-size: 16px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.proxy-user-row.selected .proxy-user-avatar { background: #06C755; color: #fff; }
+.proxy-user-info { flex: 1; }
+.proxy-user-name { font-size: 15px; font-weight: 600; color: #111; }
+.proxy-user-role { font-size: 12px; color: #888; margin-top: 2px; }
+.proxy-check {
+  color: #06C755; font-size: 22px;
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 22;
+}
 </style>

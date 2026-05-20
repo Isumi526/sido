@@ -1,5 +1,11 @@
 <template>
   <header class="app-nav no-print">
+    <!-- 代理入力バナー -->
+    <div v-if="proxy.isProxyMode.value" class="proxy-banner">
+      <span class="material-symbols-rounded proxy-banner-icon">swap_horiz</span>
+      <span class="proxy-banner-text">代理入力中：<strong>{{ proxy.proxyTarget.value?.real_name }}</strong></span>
+      <button class="proxy-banner-exit" @click="proxy.clearProxy()">解除</button>
+    </div>
     <div class="app-nav-inner">
       <div class="app-brand">
         <span class="app-brand-name">{{ brandName }}</span>
@@ -73,6 +79,7 @@ const props = defineProps<{
 
 const { slug } = useAccount()
 const brandName = slug.toUpperCase()
+const proxy = useProxyMode()
 
 const open = ref(false)
 
@@ -234,6 +241,27 @@ const roleLabel = computed(() => {
   color: #06C755;
   font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
+
+/* 代理入力バナー */
+.proxy-banner {
+  background: #dc2626;
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 16px;
+  font-size: 13px; color: #fff;
+}
+.proxy-banner-icon {
+  font-size: 18px;
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+  flex-shrink: 0;
+}
+.proxy-banner-text { flex: 1; }
+.proxy-banner-exit {
+  background: rgba(255,255,255,.2);
+  border: none; border-radius: 6px;
+  color: #fff; font-size: 12px; font-weight: 700;
+  padding: 3px 10px; cursor: pointer; flex-shrink: 0;
+}
+.proxy-banner-exit:active { background: rgba(255,255,255,.35); }
 
 @media print {
   .no-print { display: none !important; }

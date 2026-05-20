@@ -464,8 +464,11 @@ const master  = useMaster()
 const report  = useReport()
 const expense  = useExpense()
 const receipt  = useReceiptAnalysis()
+const proxy   = useProxyMode()
 
-const currentUser = ref<User | null>(null)
+const selfUser    = ref<User | null>(null)
+// 代理中は代理先ユーザー、それ以外は自分
+const currentUser = computed(() => proxy.effectiveUser(selfUser.value))
 
 const isDev = computed(() => config.public.appEnv === 'development' || liff.isTester.value)
 
@@ -725,8 +728,8 @@ onMounted(async () => {
   // ユーザー登録チェック（キャッシュあれば即座。未登録でもフォームは使えるが経費PDFに名前が出ない）
   const userId = liff.profile.value?.userId
   if (userId) {
-    currentUser.value = await expense.getUser(userId)
-    if (!currentUser.value) {
+    selfUser.value = await expense.getUser(userId)
+    if (!selfUser.value) {
       await navigateTo('/register')
       return
     }
@@ -944,7 +947,8 @@ async function handleSubmit() {
   // ── 新規送信 ──
   if (currentUser.value) {
     report.form.value.sender   = currentUser.value.real_name
-    report.form.value.senderId = liff.profile.value?.userId ?? ''
+    // 代理入力中は代理先の line_user_id を使用（自分のLINE IDではなく対象者として記録）
+    report.form.value.senderId = currentUser.value.line_user_id
   }
 
   if (forceErrorOnSubmit.value) {
@@ -970,7 +974,7 @@ async function handleSubmit() {
       notifyErrorToLine('日報新規送信（DB保存）', msg)
       if (msg.includes('ユーザーが登録されていません') || msg.includes('foreign key')) {
         expense.clearUserCache(uid)
-        currentUser.value = null
+        selfUser.value = null
         await navigateTo('/register')
         return
       }
