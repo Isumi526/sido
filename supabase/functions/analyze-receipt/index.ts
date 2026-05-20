@@ -10,7 +10,7 @@
 // ============================================================
 
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') ?? ''
-const GEMINI_MODEL = 'gemini-2.0-flash'
+const GEMINI_MODEL = 'gemini-2.5-flash'
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`
 
 function corsHeaders() {
