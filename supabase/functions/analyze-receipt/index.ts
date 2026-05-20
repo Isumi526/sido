@@ -10,7 +10,8 @@
 // ============================================================
 
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') ?? ''
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${GEMINI_API_KEY}`
+const GEMINI_MODEL = 'gemini-1.5-flash'
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`
 
 function corsHeaders() {
   return {
@@ -32,6 +33,7 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
 
   try {
+    console.log('[analyze-receipt] start, key set:', !!GEMINI_API_KEY)
     const { imageBase64 } = await req.json() as { imageBase64: string }
     if (!imageBase64) return json({ error: 'imageBase64 is required' }, 400)
 
@@ -77,12 +79,13 @@ Deno.serve(async (req) => {
 
     if (!res!.ok) {
       const err = await res!.text()
-      console.error('[Gemini] error:', err)
-      return json({ error: 'Gemini API error' }, 502)
+      console.error('[Gemini] error status:', res!.status, 'body:', err)
+      return json({ error: 'Gemini API error', detail: err }, 502)
     }
 
     const data = await res!.json() as any
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+    console.log('[Gemini] raw text:', text.slice(0, 200))
 
     // JSON部分を抽出（```json ... ``` が含まれる場合にも対応）
     const jsonMatch = text.match(/\{[\s\S]*\}/)
