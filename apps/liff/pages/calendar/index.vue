@@ -208,8 +208,8 @@
               <div class="form-divider"></div>
               <div class="form-row group-check-row" @click="toggleFormGroup(g.id)">
                 <span class="group-check-name">{{ g.name }}</span>
-                <span class="group-check-mark" :class="{ active: formModal.group_ids.includes(g.id) }">
-                  {{ formModal.group_ids.includes(g.id) ? '✓' : '' }}
+                <span class="group-check-box" :class="{ checked: formModal.group_ids.includes(g.id) }">
+                  <span v-if="formModal.group_ids.includes(g.id)" class="group-check-icon">✓</span>
                 </span>
               </div>
             </template>
@@ -433,7 +433,7 @@ function openAddByTime(e: MouseEvent, date: string) {
     title: '', description: '', category: 'work', site_id: '', all_day: false,
     start_date: date, end_date: date,
     start_time: startTime, end_time: `${String(endH).padStart(2,'0')}:${String(m).padStart(2,'0')}`,
-    is_public: true, group_ids: [...selectedGroupIds.value], recurrence_rule: '',
+    is_public: false, group_ids: [], recurrence_rule: '',
   }
   formError.value = ''
 }
@@ -512,7 +512,7 @@ function openAddOnDate(date: string) {
   formModal.value = {
     title: '', description: '', category: 'work', site_id: '', all_day: false,
     start_date: date, end_date: date, start_time: '09:00', end_time: '17:00',
-    is_public: true, group_ids: [...selectedGroupIds.value], recurrence_rule: '',
+    is_public: false, group_ids: [], recurrence_rule: '',
   }
   formError.value = ''
 }
@@ -773,13 +773,14 @@ onMounted(async () => {
 .group-check-row { cursor: pointer; }
 .group-check-row:active { background: #f5f5f5; }
 .group-check-name { font-size: 15px; color: #111; flex: 1; }
-.group-check-mark {
-  width: 24px; height: 24px;
+.group-check-box {
+  width: 22px; height: 22px; border-radius: 6px;
+  border: 2px solid #D0D0D0; background: #fff;
   display: flex; align-items: center; justify-content: center;
-  font-size: 16px; font-weight: 700; color: #ccc;
-  flex-shrink: 0;
+  flex-shrink: 0; transition: border-color .15s, background .15s;
 }
-.group-check-mark.active { color: #06C755; }
+.group-check-box.checked { border-color: #06C755; background: #06C755; }
+.group-check-icon { font-size: 13px; font-weight: 700; color: #fff; line-height: 1; }
 
 .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
 .btn-save   { flex: 1; background: #06C755; color: #fff; border: none; border-radius: 12px; padding: 14px; font-size: 16px; font-weight: 700; cursor: pointer; }
