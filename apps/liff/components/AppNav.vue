@@ -3,7 +3,7 @@
     <!-- 代理入力バナー -->
     <div v-if="proxy.isProxyMode.value" class="proxy-banner">
       <span class="material-symbols-rounded proxy-banner-icon">swap_horiz</span>
-      <span class="proxy-banner-text">代理入力中：<strong>{{ proxy.proxyTarget.value?.real_name }}</strong></span>
+      <span class="proxy-banner-text">代理入力中：<strong>{{ proxy.proxyTarget.value?.name }}</strong></span>
       <button class="proxy-banner-exit" @click="proxy.clearProxy()">解除</button>
     </div>
     <div class="app-nav-inner">

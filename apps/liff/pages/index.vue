@@ -64,24 +64,24 @@
         </div>
         <div class="proxy-modal-body">
           <div v-if="proxy.isProxyMode.value" class="proxy-current">
-            <span>代理中：<strong>{{ proxy.proxyTarget.value?.real_name }}</strong></span>
+            <span>代理中：<strong>{{ proxy.proxyTarget.value?.name }}</strong></span>
             <button class="proxy-clear-btn" @click="proxy.clearProxy(); proxyModalOpen = false">解除する</button>
           </div>
           <div v-if="proxyLoading" class="proxy-loading">読み込み中...</div>
           <template v-else>
             <div
-              v-for="u in proxy.allUsers.value.filter(u => u.id !== currentUser?.id)"
-              :key="u.id"
+              v-for="w in proxy.allWorkers.value"
+              :key="w.id"
               class="proxy-user-row"
-              :class="{ selected: proxy.proxyTarget.value?.id === u.id }"
-              @click="selectProxy(u)"
+              :class="{ selected: proxy.proxyTarget.value?.id === w.id }"
+              @click="selectProxy(w)"
             >
-              <div class="proxy-user-avatar">{{ u.real_name.charAt(0) }}</div>
+              <div class="proxy-user-avatar">{{ w.name.charAt(0) }}</div>
               <div class="proxy-user-info">
-                <div class="proxy-user-name">{{ u.real_name }}</div>
-                <div class="proxy-user-role">{{ u.worker_role === 'factory' ? '工場 / 事務所' : '現場' }}</div>
+                <div class="proxy-user-name">{{ w.name }}</div>
+                <div class="proxy-user-role">{{ w.worker_role === 'factory' ? '工場 / 事務所' : '現場' }}</div>
               </div>
-              <span v-if="proxy.proxyTarget.value?.id === u.id" class="material-symbols-rounded proxy-check">check_circle</span>
+              <span v-if="proxy.proxyTarget.value?.id === w.id" class="material-symbols-rounded proxy-check">check_circle</span>
             </div>
           </template>
         </div>
@@ -105,15 +105,15 @@ const proxyLoading     = ref(false)
 
 async function openProxyModal() {
   proxyModalOpen.value = true
-  if (proxy.allUsers.value.length === 0) {
+  if (proxy.allWorkers.value.length === 0) {
     proxyLoading.value = true
-    await proxy.fetchAllUsers()
+    await proxy.fetchAllWorkers(currentUser.value?.worker_id)
     proxyLoading.value = false
   }
 }
 
-function selectProxy(user: User) {
-  proxy.setProxy(user)
+function selectProxy(worker: import('~/composables/useProxyMode').ProxyWorker) {
+  proxy.setProxy(worker)
   proxyModalOpen.value = false
 }
 

@@ -466,9 +466,22 @@ const expense  = useExpense()
 const receipt  = useReceiptAnalysis()
 const proxy   = useProxyMode()
 
-const selfUser    = ref<User | null>(null)
-// 代理中は代理先ユーザー、それ以外は自分
-const currentUser = computed(() => proxy.effectiveUser(selfUser.value))
+const selfUser = ref<User | null>(null)
+
+// 代理中は代理先作業員の情報をUser形式で返す、それ以外は自分
+const currentUser = computed(() => {
+  const t = proxy.proxyTarget.value
+  if (t) {
+    return {
+      ...selfUser.value,
+      real_name:    t.name,
+      worker_role:  t.worker_role,
+      line_user_id: t.line_user_id ?? selfUser.value?.line_user_id ?? '',
+      worker_id:    t.id,
+    } as User
+  }
+  return selfUser.value
+})
 
 const isDev = computed(() => config.public.appEnv === 'development' || liff.isTester.value)
 
