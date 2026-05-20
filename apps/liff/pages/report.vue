@@ -973,9 +973,23 @@ async function handleSubmit() {
 
   // ① Supabaseに先に保存（画面を閉じてもデータが消えないよう順序を優先）
   const uid = liff.profile.value?.userId
-  if (uid) {
+
+  // 代理モード時はA-sanのuser_idを取得（なければ自動作成）
+  let targetUserId: string | null = null
+  const proxyT = proxy.proxyTarget.value
+  if (proxyT) {
     try {
-      await expense.saveReport(uid, {
+      targetUserId = await expense.findOrCreateProxyUser(proxyT.id, proxyT.name, proxyT.worker_role)
+    } catch (e) {
+      console.error('[Report] 代理ユーザー取得失敗:', e)
+    }
+  } else if (uid) {
+    targetUserId = selfUser.value?.id ?? null
+  }
+
+  if (targetUserId) {
+    try {
+      await expense.saveReportById(targetUserId, {
         date:      report.form.value.date,
         isWorking: report.form.value.isWorking,
         sites:     report.form.value.sites,
@@ -985,23 +999,22 @@ async function handleSubmit() {
       const msg = String((e as any)?.message ?? e ?? 'Supabase保存エラー')
       console.error('[Report] Supabase保存エラー:', e)
       notifyErrorToLine('日報新規送信（DB保存）', msg)
-      if (msg.includes('ユーザーが登録されていません') || msg.includes('foreign key')) {
-        expense.clearUserCache(uid)
+      if (!proxyT && (msg.includes('ユーザーが登録されていません') || msg.includes('foreign key'))) {
+        if (uid) expense.clearUserCache(uid)
         selfUser.value = null
         await navigateTo('/register')
         return
       }
-      // DB保存失敗でもGAS送信は続行（LINE通知は止めない）
+      // DB保存失敗でもGAS送信は続行
     }
   }
 
   // ② GASに送信（LINE通知・keepalive: true でページ閉じても通信継続）
-  // ※ ファイルアップロードも内部で行われ、*Urls が sites にセットされる
   await report.submit()
 
   // ③ ファイルアップロード後に *Urls を含めて Supabase を再保存（URLを反映するため）
-  if (!report.error.value && uid) {
-    expense.saveReport(uid, {
+  if (!report.error.value && targetUserId) {
+    expense.saveReportById(targetUserId, {
       date:      report.form.value.date,
       isWorking: report.form.value.isWorking,
       sites:     report.form.value.sites,
@@ -1009,8 +1022,8 @@ async function handleSubmit() {
     }).catch(e => console.error('[Report] URL再保存エラー:', e))
   }
 
-  // ④ 次の未送信日を取得してサクセス画面に表示
-  if (!report.error.value && uid) {
+  // ④ 次の未送信日を取得してサクセス画面に表示（自分自身の分のみ）
+  if (!report.error.value && uid && !proxyT) {
     const next = await expense.getNextUnsubmittedDate(uid).catch(() => null)
     if (next && next !== 'NOT_CONFIGURED') {
       nextUnsubmittedDate.value = next

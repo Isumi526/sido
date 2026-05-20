@@ -226,6 +226,72 @@ export const useExpense = () => {
   }
 
   /**
+   * 代理入力対象（LINE未登録）の usersレコードを取得または作成して user_id を返す
+   */
+  async function findOrCreateProxyUser(
+    workerId: string,
+    workerName: string,
+    workerRole: 'factory' | 'site'
+  ): Promise<string> {
+    const accountId = await getAccountId()
+    if (!accountId) throw new Error('accountId取得失敗')
+
+    // worker_id で既存ユーザーを検索
+    const { data: existing } = await supabase
+      .from('users')
+      .select('id')
+      .eq('account_id', accountId)
+      .eq('worker_id', workerId)
+      .maybeSingle()
+
+    if (existing) return existing.id
+
+    // 存在しなければ作成（line_user_id は null）
+    const { data: created, error } = await supabase
+      .from('users')
+      .insert({
+        account_id:  accountId,
+        worker_id:   workerId,
+        real_name:   workerName,
+        worker_role: workerRole,
+        line_user_id: null,
+      })
+      .select('id')
+      .single()
+
+    if (error) throw new Error('代理ユーザー作成失敗: ' + error.message)
+    return created.id
+  }
+
+  /**
+   * 日報データをSupabaseに保存（user_id直接指定版）
+   */
+  async function saveReportById(
+    userId: string,
+    report: { date: string; isWorking: boolean; sites: unknown[]; note?: string }
+  ): Promise<void> {
+    const accountId = await getAccountId()
+    const { error } = await supabase
+      .from('daily_reports')
+      .upsert(
+        {
+          user_id:    userId,
+          date:       report.date,
+          is_working: report.isWorking,
+          sites:      report.sites,
+          note:       report.note ?? null,
+          account_id: accountId,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,date' }
+      )
+    if (error) {
+      console.error('[saveReportById] upsertエラー:', error.message)
+      throw error
+    }
+  }
+
+  /**
    * 日報データをSupabaseに保存（管理画面・履歴用）
    * 同じ user_id + date がある場合は上書き（upsert）
    */
@@ -239,27 +305,7 @@ export const useExpense = () => {
     console.log('[saveReport] getUser結果=', user ? `id:${user.id} name:${user.real_name}` : 'null')
     if (!user) throw new Error('ユーザーが登録されていません')
 
-    const accountId = await getAccountId()
-
-    const { error } = await supabase
-      .from('daily_reports')
-      .upsert(
-        {
-          user_id:    user.id,
-          date:       report.date,
-          is_working: report.isWorking,
-          sites:      report.sites,
-          note:       report.note ?? null,
-          account_id: accountId,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,date' }
-      )
-
-    if (error) {
-      console.error('[saveReport] upsertエラー code=', error.code, 'message=', error.message)
-      throw error
-    }
+    await saveReportById(user.id, report)
     console.log('[saveReport] 保存成功 date=', report.date)
   }
 
@@ -419,5 +465,5 @@ export const useExpense = () => {
     return data
   }
 
-  return { getUser, registerUser, addItem, getItems, deleteItem, saveReport, getExpenseRowsFromReports, getReports, getReport, getNextUnsubmittedDate, clearUserCache }
+  return { getUser, registerUser, addItem, getItems, deleteItem, saveReport, saveReportById, findOrCreateProxyUser, getExpenseRowsFromReports, getReports, getReport, getNextUnsubmittedDate, clearUserCache }
 }

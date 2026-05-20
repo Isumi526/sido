@@ -108,9 +108,10 @@ async function openProxyModal() {
   proxyLoading.value = false
 }
 
-function selectProxy(worker: import('~/composables/useProxyMode').ProxyWorker) {
+async function selectProxy(worker: import('~/composables/useProxyMode').ProxyWorker) {
   proxy.setProxy(worker)
   proxyModalOpen.value = false
+  await refreshUnsubmittedCount()
 }
 
 const avatarChar = computed(() =>
@@ -151,29 +152,53 @@ onMounted(async () => {
     await proxy.fetchProxyTargets(user.worker_id)
   }
 
-  // 未送信日報カウント（過去30日）
-  if (currentUser.value?.id) {
-    const from = new Date(); from.setDate(from.getDate() - 30)
-    const fromStr = from.toISOString().split('T')[0]
-    const today   = new Date().toISOString().split('T')[0]
-    const { data: reports } = await supabase
-      .from('daily_reports')
-      .select('date')
-      .eq('user_id', currentUser.value.id)
-      .gte('date', fromStr)
-      .lte('date', today)
-    const submittedDates = new Set((reports ?? []).map((r: any) => r.date))
-    let count = 0
-    const cur = new Date(fromStr)
-    const end = new Date(today)
-    while (cur <= end) {
-      const ds = cur.toISOString().split('T')[0]
-      if (!submittedDates.has(ds)) count++
-      cur.setDate(cur.getDate() + 1)
-    }
-    unsubmittedCount.value = count
-  }
+  // 未送信日報カウント（代理モード時はproxy対象、それ以外は自分）
+  await refreshUnsubmittedCount()
 })
+
+async function refreshUnsubmittedCount() {
+  // 代理モード時: proxy targetのuser_idを取得（なければ作成）
+  let targetUserId: string | null = null
+  const proxyT = proxy.proxyTarget.value
+  if (proxyT) {
+    const { data } = await supabase
+      .from('users')
+      .select('id')
+      .eq('worker_id', proxyT.id)
+      .maybeSingle()
+    if (data) {
+      targetUserId = data.id
+    } else {
+      // まだ日報がない場合は未送信カウント0（作成はreport送信時に行う）
+      unsubmittedCount.value = 0
+      return
+    }
+  } else {
+    targetUserId = currentUser.value?.id ?? null
+  }
+
+  if (!targetUserId) return
+
+  const from = new Date(); from.setDate(from.getDate() - 30)
+  const fromStr = from.toISOString().split('T')[0]
+  const today   = new Date().toISOString().split('T')[0]
+  const { data: reports } = await supabase
+    .from('daily_reports')
+    .select('date')
+    .eq('user_id', targetUserId)
+    .gte('date', fromStr)
+    .lte('date', today)
+  const submittedDates = new Set((reports ?? []).map((r: any) => r.date))
+  let count = 0
+  const cur = new Date(fromStr)
+  const end = new Date(today)
+  while (cur <= end) {
+    const ds = cur.toISOString().split('T')[0]
+    if (!submittedDates.has(ds)) count++
+    cur.setDate(cur.getDate() + 1)
+  }
+  unsubmittedCount.value = count
+}
 </script>
 
 <style scoped>
