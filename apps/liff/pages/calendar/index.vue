@@ -191,7 +191,7 @@
         </div>
 
         <!-- 公開設定 -->
-        <div class="form-card">
+        <div class="form-card form-card--overflow">
           <div class="form-row">
             <span class="form-row-label">グループに公開</span>
             <label class="ios-toggle">
@@ -722,6 +722,10 @@ onMounted(async () => {
 .form-card {
   background: #fff; border-radius: 12px; margin-bottom: 10px; overflow: hidden;
 }
+.form-card--overflow { overflow: visible; }
+.form-card--overflow > *:first-child { border-radius: 12px 12px 0 0; overflow: hidden; }
+.form-card--overflow > *:last-child  { border-radius: 0 0 12px 12px; overflow: hidden; }
+.form-card--overflow > *:only-child  { border-radius: 12px; }
 .form-row {
   display: flex; align-items: center;
   padding: 12px 14px; min-height: 44px;
