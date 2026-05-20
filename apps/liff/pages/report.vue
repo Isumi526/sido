@@ -1022,7 +1022,11 @@ async function analyzeReceipt(
   const file   = files[0]
   const key    = `${si}-${field}`
   const result = await receipt.analyze(file, key)
-  if (!result) return
+  if (!result) {
+    alert('AI解析エラー: ' + (receipt.error.value ?? '不明なエラー'))
+    return
+  }
+  alert('AI解析成功: ' + JSON.stringify(result))
 
   const exp = report.form.value.sites[si].expenses
   const inv = result.invoiceNumber || 'なし'
