@@ -90,7 +90,8 @@
             />
           </Field>
 
-          <!-- ── 稼働 ── -->
+          <!-- ── 稼働（現場選択後に表示） ── -->
+          <template v-if="site.siteName && site.siteName !== '__other__' || site.siteName === '__other__' && site.customSiteName">
           <div class="sub-section">
 
             <!-- 作業員（ログインユーザー固定） -->
@@ -388,6 +389,7 @@
               </template>
             </Field>
           </div>
+          </template><!-- /現場選択後に表示 -->
 
         </FormSection>
 
