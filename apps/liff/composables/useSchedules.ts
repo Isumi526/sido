@@ -97,12 +97,12 @@ export const useSchedules = () => {
   //   - sharedGroupIds が指定されていれば、そのグループに共有されている
   //     公開予定も取得してマージ
   // ──────────────────────────────────────────────────────
-  async function fetchSchedules(from: string, to: string, sharedGroupIds: string[] = []) {
+  async function fetchSchedules(from: string, to: string, sharedGroupIds: string[] = [], workerIdOverride?: string | null) {
     loading.value = true
     error.value   = null
     try {
       await resolveMyWorkerId()
-      const wid = _myWorkerIdCache.value
+      const wid = workerIdOverride ?? _myWorkerIdCache.value
       if (!wid) return
 
       // 1. 自分の予定（is_public 問わず全件）

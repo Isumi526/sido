@@ -464,8 +464,24 @@ const master  = useMaster()
 const report  = useReport()
 const expense  = useExpense()
 const receipt  = useReceiptAnalysis()
+const proxy   = useProxyMode()
 
-const currentUser = ref<User | null>(null)
+const selfUser = ref<User | null>(null)
+
+// 代理中は代理先作業員の情報をUser形式で返す、それ以外は自分
+const currentUser = computed(() => {
+  const t = proxy.proxyTarget.value
+  if (t) {
+    return {
+      ...selfUser.value,
+      real_name:    t.name,
+      worker_role:  t.worker_role,
+      line_user_id: t.line_user_id ?? selfUser.value?.line_user_id ?? '',
+      worker_id:    t.id,
+    } as User
+  }
+  return selfUser.value
+})
 
 const isDev = computed(() => config.public.appEnv === 'development' || liff.isTester.value)
 
@@ -587,7 +603,19 @@ function reconstructExpenseUsage(exp: any): UsageState {
 async function loadEditData(date: string) {
   const uid = liff.profile.value?.userId
   if (!uid) return
-  const saved = await expense.getReport(uid, date)
+
+  let saved: any = null
+  const proxyT = proxy.proxyTarget.value
+  if (proxyT) {
+    // 代理モード: 代理先のDBユーザーIDで取得
+    const { data: proxyUserData } = await useSupabase()
+      .from('users').select('id').eq('worker_id', proxyT.id).maybeSingle()
+    if (proxyUserData) {
+      saved = await expense.getReportByUserId(proxyUserData.id, date)
+    }
+  } else {
+    saved = await expense.getReport(uid, date)
+  }
   if (!saved) return
 
   originalReport.value = saved  // 差分計算のために保存
@@ -725,8 +753,8 @@ onMounted(async () => {
   // ユーザー登録チェック（キャッシュあれば即座。未登録でもフォームは使えるが経費PDFに名前が出ない）
   const userId = liff.profile.value?.userId
   if (userId) {
-    currentUser.value = await expense.getUser(userId)
-    if (!currentUser.value) {
+    selfUser.value = await expense.getUser(userId)
+    if (!selfUser.value) {
       await navigateTo('/register')
       return
     }
@@ -741,8 +769,24 @@ onMounted(async () => {
     isEditMode.value = true
     await loadEditData(editDate)
   } else if (userId) {
-    // 新規モード: 最初の未送信日を自動セット
-    const nextDate = await expense.getNextUnsubmittedDate(userId)
+    // 新規モード: 最初の未送信日を自動セット（代理モード時は代理先を確認）
+    let nextDate: string | null
+    const proxyT = proxy.proxyTarget.value
+    if (proxyT) {
+      // 代理モード: 代理先ユーザーのDBレコードを探してそちらの未送信日を確認
+      const { data: proxyUserData } = await useSupabase()
+        .from('users').select('id').eq('worker_id', proxyT.id).maybeSingle()
+      if (proxyUserData) {
+        nextDate = await expense.getNextUnsubmittedDateById(proxyUserData.id)
+      } else {
+        // まだ日報がない → サービス開始日設定確認のため自分のアカウントで設定を見る
+        nextDate = await expense.getNextUnsubmittedDate(userId)
+        // 全送信済みではないはずなのでデフォルト（今日）のままにする
+        if (nextDate === null) nextDate = 'NOT_CONFIGURED'
+      }
+    } else {
+      nextDate = await expense.getNextUnsubmittedDate(userId)
+    }
     if (nextDate === null) {
       // null = サービス開始日が設定済み かつ 全送信済み
       allSubmitted.value = true
@@ -898,12 +942,24 @@ async function handleSubmit() {
         throw new Error('[テスト] Supabase保存エラー: connection timeout')
       }
 
-      await expense.saveReport(uid, {
-        date:      report.form.value.date,
-        isWorking: report.form.value.isWorking,
-        sites:     report.form.value.sites,
-        note:      report.form.value.note,
-      })
+      // 代理モード時は代理先のユーザーIDで保存
+      const editProxyT = proxy.proxyTarget.value
+      if (editProxyT) {
+        const editTargetId = await expense.findOrCreateProxyUser(editProxyT.id, editProxyT.name, editProxyT.worker_role)
+        await expense.saveReportById(editTargetId, {
+          date:      report.form.value.date,
+          isWorking: report.form.value.isWorking,
+          sites:     report.form.value.sites,
+          note:      report.form.value.note,
+        })
+      } else {
+        await expense.saveReport(uid, {
+          date:      report.form.value.date,
+          isWorking: report.form.value.isWorking,
+          sites:     report.form.value.sites,
+          note:      report.form.value.note,
+        })
+      }
 
       // 差分を計算してLINEグループに通知
       const efUrl = config.public.edgeFunctionUrl
@@ -944,7 +1000,8 @@ async function handleSubmit() {
   // ── 新規送信 ──
   if (currentUser.value) {
     report.form.value.sender   = currentUser.value.real_name
-    report.form.value.senderId = liff.profile.value?.userId ?? ''
+    // 代理入力中は代理先の line_user_id を使用（自分のLINE IDではなく対象者として記録）
+    report.form.value.senderId = currentUser.value.line_user_id
   }
 
   if (forceErrorOnSubmit.value) {
@@ -956,9 +1013,23 @@ async function handleSubmit() {
 
   // ① Supabaseに先に保存（画面を閉じてもデータが消えないよう順序を優先）
   const uid = liff.profile.value?.userId
-  if (uid) {
+
+  // 代理モード時はA-sanのuser_idを取得（なければ自動作成）
+  let targetUserId: string | null = null
+  const proxyT = proxy.proxyTarget.value
+  if (proxyT) {
     try {
-      await expense.saveReport(uid, {
+      targetUserId = await expense.findOrCreateProxyUser(proxyT.id, proxyT.name, proxyT.worker_role)
+    } catch (e) {
+      console.error('[Report] 代理ユーザー取得失敗:', e)
+    }
+  } else if (uid) {
+    targetUserId = selfUser.value?.id ?? null
+  }
+
+  if (targetUserId) {
+    try {
+      await expense.saveReportById(targetUserId, {
         date:      report.form.value.date,
         isWorking: report.form.value.isWorking,
         sites:     report.form.value.sites,
@@ -968,23 +1039,22 @@ async function handleSubmit() {
       const msg = String((e as any)?.message ?? e ?? 'Supabase保存エラー')
       console.error('[Report] Supabase保存エラー:', e)
       notifyErrorToLine('日報新規送信（DB保存）', msg)
-      if (msg.includes('ユーザーが登録されていません') || msg.includes('foreign key')) {
-        expense.clearUserCache(uid)
-        currentUser.value = null
+      if (!proxyT && (msg.includes('ユーザーが登録されていません') || msg.includes('foreign key'))) {
+        if (uid) expense.clearUserCache(uid)
+        selfUser.value = null
         await navigateTo('/register')
         return
       }
-      // DB保存失敗でもGAS送信は続行（LINE通知は止めない）
+      // DB保存失敗でもGAS送信は続行
     }
   }
 
   // ② GASに送信（LINE通知・keepalive: true でページ閉じても通信継続）
-  // ※ ファイルアップロードも内部で行われ、*Urls が sites にセットされる
   await report.submit()
 
   // ③ ファイルアップロード後に *Urls を含めて Supabase を再保存（URLを反映するため）
-  if (!report.error.value && uid) {
-    expense.saveReport(uid, {
+  if (!report.error.value && targetUserId) {
+    expense.saveReportById(targetUserId, {
       date:      report.form.value.date,
       isWorking: report.form.value.isWorking,
       sites:     report.form.value.sites,
@@ -992,14 +1062,52 @@ async function handleSubmit() {
     }).catch(e => console.error('[Report] URL再保存エラー:', e))
   }
 
-  // ④ 次の未送信日を取得してサクセス画面に表示
-  if (!report.error.value && uid) {
+  // ④ 次の未送信日を取得してサクセス画面に表示（自分自身の分のみ）
+  if (!report.error.value && uid && !proxyT) {
     const next = await expense.getNextUnsubmittedDate(uid).catch(() => null)
     if (next && next !== 'NOT_CONFIGURED') {
       nextUnsubmittedDate.value = next
     }
   }
 }
+
+// 代理モード切り替え時にフォームをリセット・日付を再セット
+watch(() => proxy.proxyTarget.value, async (newTarget, oldTarget) => {
+  // onMounted の初回セット時は無視
+  if (!selfUser.value) return
+  const userId = liff.profile.value?.userId
+  if (!userId) return
+
+  // フォームをリセット
+  report.reset()
+  siteUsage.value = [createUsage()]
+  isWorkingStr.value = 'working'
+  allSubmitted.value = false
+  initializing.value = true
+
+  let nextDate: string | null
+  if (newTarget) {
+    const { data: proxyUserData } = await useSupabase()
+      .from('users').select('id').eq('worker_id', newTarget.id).maybeSingle()
+    if (proxyUserData) {
+      nextDate = await expense.getNextUnsubmittedDateById(proxyUserData.id)
+    } else {
+      nextDate = await expense.getNextUnsubmittedDate(userId)
+      if (nextDate === null) nextDate = 'NOT_CONFIGURED'
+    }
+  } else {
+    nextDate = await expense.getNextUnsubmittedDate(userId)
+  }
+
+  if (nextDate === null) {
+    allSubmitted.value = true
+  } else if (nextDate !== 'NOT_CONFIGURED') {
+    report.form.value.date = nextDate
+  }
+
+  initWorkers()
+  initializing.value = false
+})
 
 function goToNextReport() {
   const date = nextUnsubmittedDate.value

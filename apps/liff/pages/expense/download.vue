@@ -127,32 +127,66 @@ import { getCurrentPeriodKey, recentPeriodKeys } from '~/composables/useExpense'
 
 const liff    = useLiff()
 const expense = useExpense()
+const proxy   = useProxyMode()
 const router  = useRouter()
 
 const initializing   = ref(true)
 const loading        = ref(false)
-const currentUser    = ref<User | null>(null)
+const selfUser       = ref<User | null>(null)
 const selectedPeriod = ref(getCurrentPeriodKey())
 const rows           = ref<ExpenseRow[]>([])
 
+// 代理中は代理先の情報を表示
+const currentUser = computed(() => {
+  const t = proxy.proxyTarget.value
+  if (t) return { ...selfUser.value, real_name: t.name, worker_role: t.worker_role } as User
+  return selfUser.value
+})
+
 const periodKeys = computed(() => recentPeriodKeys().slice(0, 4))
 const total      = computed(() => rows.value.reduce((s, r) => s + r.amount, 0))
+
+// 代理先のDBユーザーIDをキャッシュ
+const proxyUserId = ref<string | null>(null)
 
 onMounted(async () => {
   await liff.init()
   const userId = liff.profile.value?.userId
   if (!userId) { initializing.value = false; return }
 
-  currentUser.value = await expense.getUser(userId)
-  if (!currentUser.value) { router.push('/register'); return }
+  selfUser.value = await expense.getUser(userId)
+  if (!selfUser.value) { router.push('/register'); return }
 
+  await resolveProxyUserId()
   await loadRows()
   initializing.value = false
 })
 
+async function resolveProxyUserId() {
+  const t = proxy.proxyTarget.value
+  if (!t) { proxyUserId.value = null; return }
+  const { data } = await useSupabase().from('users').select('id').eq('worker_id', t.id).maybeSingle()
+  proxyUserId.value = data?.id ?? null
+}
+
+watch(() => proxy.proxyTarget.value, async () => {
+  if (!selfUser.value) return
+  loading.value = true
+  await resolveProxyUserId()
+  await loadRows()
+  loading.value = false
+})
+
 async function loadRows() {
   loading.value = true
-  rows.value = await expense.getExpenseRowsFromReports(liff.profile.value!.userId, selectedPeriod.value)
+  const t = proxy.proxyTarget.value
+  if (t) {
+    rows.value = proxyUserId.value
+      ? await expense.getExpenseRowsFromReportsById(proxyUserId.value, selectedPeriod.value)
+      : []
+  } else {
+    rows.value = await expense.getExpenseRowsFromReports(liff.profile.value!.userId, selectedPeriod.value)
+  }
   loading.value = false
 }
 
@@ -164,8 +198,9 @@ async function selectPeriod(key: string) {
 function handlePrint() { window.print() }
 
 async function handleOpenExternal() {
-  const userId = liff.profile.value?.userId
-  const url    = `${window.location.origin}/expense/print?userId=${userId}&period=${selectedPeriod.value}`
+  const t   = proxy.proxyTarget.value
+  const uid = t ? (proxyUserId.value ?? liff.profile.value?.userId) : liff.profile.value?.userId
+  const url = `${window.location.origin}/expense/print?userId=${uid}&period=${selectedPeriod.value}`
   try {
     const liffSdk = (await import('@line/liff')).default
     liffSdk.openWindow({ url, external: true })

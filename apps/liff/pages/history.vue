@@ -54,19 +54,58 @@ import type { User } from '~/types'
 
 const liff    = useLiff()
 const expense = useExpense()
+const proxy   = useProxyMode()
 
 const loading     = ref(true)
 const reports     = ref<any[]>([])
-const currentUser = ref<User | null>(null)
+const selfUser    = ref<User | null>(null)
+
+// 代理中は代理先の情報を表示
+const currentUser = computed(() => {
+  const t = proxy.proxyTarget.value
+  if (t) {
+    return {
+      ...selfUser.value,
+      real_name:   t.name,
+      worker_role: t.worker_role,
+    } as User
+  }
+  return selfUser.value
+})
+
+async function loadReports() {
+  const uid = liff.profile.value?.userId
+  if (!uid) return
+
+  const proxyT = proxy.proxyTarget.value
+  if (proxyT) {
+    const { data: proxyUserData } = await useSupabase()
+      .from('users').select('id').eq('worker_id', proxyT.id).maybeSingle()
+    if (proxyUserData) {
+      reports.value = await expense.getReportsById(proxyUserData.id)
+    } else {
+      reports.value = []
+    }
+  } else {
+    reports.value = await expense.getReports(uid)
+  }
+}
 
 onMounted(async () => {
   await liff.init()
   const uid = liff.profile.value?.userId
   if (uid) {
-    currentUser.value = await expense.getUser(uid)
-    if (!currentUser.value) { await navigateTo('/register'); return }
-    reports.value = await expense.getReports(uid)
+    selfUser.value = await expense.getUser(uid)
+    if (!selfUser.value) { await navigateTo('/register'); return }
+    await loadReports()
   }
+  loading.value = false
+})
+
+watch(() => proxy.proxyTarget.value, async () => {
+  if (!selfUser.value) return
+  loading.value = true
+  await loadReports()
   loading.value = false
 })
 

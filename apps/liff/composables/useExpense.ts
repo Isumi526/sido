@@ -226,6 +226,72 @@ export const useExpense = () => {
   }
 
   /**
+   * 代理入力対象（LINE未登録）の usersレコードを取得または作成して user_id を返す
+   */
+  async function findOrCreateProxyUser(
+    workerId: string,
+    workerName: string,
+    workerRole: 'factory' | 'site'
+  ): Promise<string> {
+    const accountId = await getAccountId()
+    if (!accountId) throw new Error('accountId取得失敗')
+
+    // worker_id で既存ユーザーを検索
+    const { data: existing } = await supabase
+      .from('users')
+      .select('id')
+      .eq('account_id', accountId)
+      .eq('worker_id', workerId)
+      .maybeSingle()
+
+    if (existing) return existing.id
+
+    // 存在しなければ作成（line_user_id は null）
+    const { data: created, error } = await supabase
+      .from('users')
+      .insert({
+        account_id:  accountId,
+        worker_id:   workerId,
+        real_name:   workerName,
+        worker_role: workerRole,
+        line_user_id: null,
+      })
+      .select('id')
+      .single()
+
+    if (error) throw new Error('代理ユーザー作成失敗: ' + error.message)
+    return created.id
+  }
+
+  /**
+   * 日報データをSupabaseに保存（user_id直接指定版）
+   */
+  async function saveReportById(
+    userId: string,
+    report: { date: string; isWorking: boolean; sites: unknown[]; note?: string }
+  ): Promise<void> {
+    const accountId = await getAccountId()
+    const { error } = await supabase
+      .from('daily_reports')
+      .upsert(
+        {
+          user_id:    userId,
+          date:       report.date,
+          is_working: report.isWorking,
+          sites:      report.sites,
+          note:       report.note ?? null,
+          account_id: accountId,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,date' }
+      )
+    if (error) {
+      console.error('[saveReportById] upsertエラー:', error.message)
+      throw error
+    }
+  }
+
+  /**
    * 日報データをSupabaseに保存（管理画面・履歴用）
    * 同じ user_id + date がある場合は上書き（upsert）
    */
@@ -239,27 +305,7 @@ export const useExpense = () => {
     console.log('[saveReport] getUser結果=', user ? `id:${user.id} name:${user.real_name}` : 'null')
     if (!user) throw new Error('ユーザーが登録されていません')
 
-    const accountId = await getAccountId()
-
-    const { error } = await supabase
-      .from('daily_reports')
-      .upsert(
-        {
-          user_id:    user.id,
-          date:       report.date,
-          is_working: report.isWorking,
-          sites:      report.sites,
-          note:       report.note ?? null,
-          account_id: accountId,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,date' }
-      )
-
-    if (error) {
-      console.error('[saveReport] upsertエラー code=', error.code, 'message=', error.message)
-      throw error
-    }
+    await saveReportById(user.id, report)
     console.log('[saveReport] 保存成功 date=', report.date)
   }
 
@@ -270,7 +316,10 @@ export const useExpense = () => {
   async function getExpenseRowsFromReports(lineUserId: string, periodKey: string): Promise<ExpenseRow[]> {
     const user = await getUser(lineUserId)
     if (!user) return []
+    return getExpenseRowsFromReportsById(user.id, periodKey)
+  }
 
+  async function getExpenseRowsFromReportsById(userId: string, periodKey: string): Promise<ExpenseRow[]> {
     const [year, month, half] = periodKey.split('-')
     const dateFrom = half === 'first' ? `${year}-${month}-01` : `${year}-${month}-16`
     const lastDay  = new Date(parseInt(year), parseInt(month), 0).getDate()
@@ -279,7 +328,7 @@ export const useExpense = () => {
     const { data, error } = await supabase
       .from('daily_reports')
       .select('date, sites')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .eq('is_working', true)
       .gte('date', dateFrom)
       .lte('date', dateTo)
@@ -391,17 +440,61 @@ export const useExpense = () => {
     return null  // null = 全送信済み
   }
 
+  /**
+   * DBユーザーIDで直接未送信日を検索（代理入力用）
+   * getNextUnsubmittedDate の userID版
+   */
+  async function getNextUnsubmittedDateById(userId: string): Promise<string | null> {
+    const accountId = await getAccountId()
+
+    const { data: settingRows } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('account_id', accountId)
+      .eq('key', 'service_start_date')
+      .limit(1)
+
+    const startDate = settingRows?.[0]?.value
+    if (!startDate) return 'NOT_CONFIGURED'
+
+    const now   = new Date()
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+
+    const { data: reports } = await supabase
+      .from('daily_reports')
+      .select('date')
+      .eq('user_id', userId)
+      .gte('date', startDate)
+      .lte('date', today)
+
+    const submittedDates = new Set((reports ?? []).map((r: any) => r.date as string))
+
+    let cursor = startDate
+    while (cursor <= today) {
+      if (!submittedDates.has(cursor)) return cursor
+      const d = new Date(cursor + 'T12:00:00')
+      d.setDate(d.getDate() + 1)
+      cursor = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
+    return null  // null = 全送信済み
+  }
+
   /** 日報一覧を取得（新しい順） */
   async function getReports(lineUserId: string, limit = 60): Promise<any[]> {
     const user = await getUser(lineUserId)
     if (!user) return []
+    return getReportsById(user.id, limit)
+  }
+
+  /** 日報一覧をDBユーザーIDで取得（代理入力用） */
+  async function getReportsById(userId: string, limit = 60): Promise<any[]> {
     const { data, error } = await supabase
       .from('daily_reports')
       .select('date, is_working, sites, note, updated_at')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .order('date', { ascending: false })
       .limit(limit)
-    if (error) { console.error('[useExpense] getReports:', error); return [] }
+    if (error) { console.error('[useExpense] getReportsById:', error); return [] }
     return data ?? []
   }
 
@@ -419,5 +512,17 @@ export const useExpense = () => {
     return data
   }
 
-  return { getUser, registerUser, addItem, getItems, deleteItem, saveReport, getExpenseRowsFromReports, getReports, getReport, getNextUnsubmittedDate, clearUserCache }
+  /** 特定日の日報をDBユーザーIDで取得（代理入力用） */
+  async function getReportByUserId(userId: string, date: string): Promise<any | null> {
+    const { data, error } = await supabase
+      .from('daily_reports')
+      .select('date, is_working, sites, note')
+      .eq('user_id', userId)
+      .eq('date', date)
+      .maybeSingle()
+    if (error) { console.error('[useExpense] getReportByUserId:', error); return null }
+    return data
+  }
+
+  return { getUser, registerUser, addItem, getItems, deleteItem, saveReport, saveReportById, findOrCreateProxyUser, getExpenseRowsFromReports, getExpenseRowsFromReportsById, getReports, getReportsById, getReport, getReportByUserId, getNextUnsubmittedDate, getNextUnsubmittedDateById, clearUserCache }
 }
