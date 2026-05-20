@@ -10,7 +10,7 @@
 // ============================================================
 
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') ?? ''
-const GEMINI_MODEL = 'gemini-1.5-flash'
+const GEMINI_MODEL = 'gemini-2.0-flash'
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`
 
 function corsHeaders() {
@@ -33,7 +33,7 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
 
   try {
-    console.log('[analyze-receipt] start, key set:', !!GEMINI_API_KEY)
+    console.log('[analyze-receipt] start')
     const { imageBase64 } = await req.json() as { imageBase64: string }
     if (!imageBase64) return json({ error: 'imageBase64 is required' }, 400)
 
