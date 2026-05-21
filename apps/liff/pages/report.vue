@@ -389,6 +389,16 @@
               </template>
             </Field>
           </div>
+
+          <!-- 現場備考 -->
+          <Field label="現場備考">
+            <textarea
+              v-model="site.siteNote"
+              class="textarea"
+              placeholder="この現場の特記事項があれば入力してください"
+              rows="2"
+            />
+          </Field>
           </template><!-- /現場選択後に表示 -->
 
         </FormSection>
@@ -628,6 +638,7 @@ async function loadEditData(date: string) {
     report.form.value.sites = saved.sites.map((site: any) => ({
       siteName:       site.siteName ?? '',
       customSiteName: site.customSiteName,
+      siteNote:       site.siteNote ?? '',
       workers: (site.workers ?? []).length > 0
         ? site.workers
         : [{
@@ -891,6 +902,9 @@ const linePreview = computed(() => {
         lines.push(`・${name} ${s.count || 1}人`)
       })
     }
+
+    // 現場備考
+    if (site.siteNote) lines.push(`  📝 ${site.siteNote}`)
   }
 
   if (form.note) lines.push(`\n📝 ${form.note}`)

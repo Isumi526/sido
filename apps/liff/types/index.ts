@@ -84,6 +84,7 @@ export interface SiteReport {
   workers: WorkerEntry[]
   expenses: Expenses
   subcontractors: SubcontractorEntry[]
+  siteNote?: string        // 現場ごとの備考
 }
 
 export interface DailyReport {
