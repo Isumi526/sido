@@ -179,6 +179,12 @@
                 <a v-for="(url, ui) in site.expenses.garbagePhotoUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 ゴミ写真{{ site.expenses.garbagePhotoUrls.length > 1 ? ui + 1 : '' }}</a>
               </div>
             </div>
+
+            <!-- 現場備考 -->
+            <div v-if="site.siteNote" class="section note-section">
+              <div class="section-label">現場備考</div>
+              <div class="note-text">{{ site.siteNote }}</div>
+            </div>
           </div>
 
           <!-- 備考 -->

@@ -47,6 +47,7 @@ export const createSite = (): SiteReport => ({
   workers:        [createWorker()],
   expenses:       { vehicles: [createVehicle()], trains: [createLineItem()], others: [createLineItem()] },
   subcontractors: [],
+  siteNote:       '',
 })
 
 // 経費オブジェクトから File[] フィールドを除去（GAS送信用 - *Urls は残す）

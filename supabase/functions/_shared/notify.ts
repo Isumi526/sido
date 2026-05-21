@@ -96,6 +96,9 @@ export function buildReportMessage(body: {
     // 下請け業者
     const subs = (site.subcontractors || []).filter((s: any) => s.subcontractorName)
     for (const s of subs) lines.push(`・${s.subcontractorName} ${s.count}人`)
+
+    // 現場備考
+    if (site.siteNote) lines.push(`📝 ${site.siteNote}`)
   }
 
   if (note) lines.push(`\n📝 ${note}`)
