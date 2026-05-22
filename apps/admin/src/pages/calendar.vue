@@ -1,182 +1,74 @@
 <template>
-  <div class="calendar-page">
+  <div class="cal-page">
+    <!-- ヘッダー -->
     <div class="page-header">
       <h1 class="page-title">予定管理</h1>
-      <button class="btn-add" @click="openAdd">＋ 予定を追加</button>
-    </div>
-
-    <!-- フィルター -->
-    <div class="filter-bar">
-      <div class="filter-workers">
-        <span class="filter-label">作業員：</span>
-        <button
-          class="filter-chip"
-          :class="{ active: selectedWorkerIds.length === 0 }"
-          @click="selectedWorkerIds = []"
-        >全員</button>
-        <button
-          v-for="w in workers"
-          :key="w.id"
-          class="filter-chip"
-          :class="{ active: selectedWorkerIds.includes(w.id) }"
-          :style="selectedWorkerIds.includes(w.id) ? { background: workerColor(w.id), borderColor: workerColor(w.id) } : {}"
-          @click="toggleWorker(w.id)"
-        >{{ w.name }}</button>
-      </div>
-      <div class="filter-cats">
-        <span class="filter-label">カテゴリ：</span>
-        <button
-          v-for="(label, key) in CATEGORY_LABELS"
-          :key="key"
-          class="filter-chip"
-          :class="{ active: selectedCategories.includes(key) }"
-          :style="selectedCategories.includes(key) ? { background: CATEGORY_COLORS[key], borderColor: CATEGORY_COLORS[key] } : {}"
-          @click="toggleCategory(key)"
-        >{{ label }}</button>
+      <div class="header-actions">
+        <label class="deleted-toggle">
+          <input type="checkbox" v-model="showDeleted" />
+          削除済みを表示
+        </label>
+        <button class="btn-add" @click="openAddBlank">＋ 予定を追加</button>
       </div>
     </div>
 
-    <!-- ビュー切替 + ナビ -->
-    <div class="cal-toolbar">
-      <div class="view-tabs">
-        <button v-for="v in VIEWS" :key="v.key" class="view-tab" :class="{ active: currentView === v.key }" @click="currentView = v.key">{{ v.label }}</button>
-      </div>
-      <div class="cal-nav">
-        <button class="nav-btn" @click="navigate(-1)">‹</button>
-        <span class="nav-label">{{ navLabel }}</span>
-        <button class="nav-btn" @click="navigate(1)">›</button>
-        <button class="today-btn" @click="goToday">今日</button>
-      </div>
+    <!-- 月ナビ -->
+    <div class="month-nav">
+      <button class="nav-btn" @click="navigate(-1)">‹</button>
+      <span class="nav-label">{{ navLabel }}</span>
+      <button class="nav-btn" @click="navigate(1)">›</button>
+      <button class="today-btn" @click="goToday">今日</button>
     </div>
 
     <div v-if="loading" class="loading">読み込み中...</div>
 
-    <!-- 月ビュー -->
-    <div v-else-if="currentView === 'month'" class="month-view">
-      <div class="weekday-headers">
-        <span v-for="d in WEEKDAYS" :key="d" class="weekday-label" :class="{ sun: d === '日', sat: d === '土' }">{{ d }}</span>
-      </div>
-      <div class="month-grid">
-        <div
-          v-for="cell in monthCells"
-          :key="cell.date"
-          class="day-cell"
-          :class="{
-            'other-month': !cell.currentMonth,
-            'today': cell.date === todayStr,
-            'sunday': cell.dayOfWeek === 0,
-            'saturday': cell.dayOfWeek === 6,
-          }"
-          @click="openAddOnDate(cell.date)"
-        >
-          <span class="day-num">{{ cell.day }}</span>
-          <div class="cell-events">
-            <div
-              v-for="ev in cell.events.slice(0, 3)"
-              :key="ev.id"
-              class="cell-event"
-              :style="{ background: getEventColor(ev) }"
-              @click.stop="openDetail(ev)"
-            >
-              <span class="cell-event-worker">{{ ev.worker?.name }}</span>
-              {{ ev.title }}
-            </div>
-            <div v-if="cell.events.length > 3" class="cell-more">+{{ cell.events.length - 3 }}</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 週ビュー（Apple Calendar風タイムグリッド） -->
-    <div v-else-if="currentView === 'week'" class="week-view">
-      <!-- 日付ストリップ -->
-      <div class="wv-strip">
-        <div class="wv-strip-spacer"></div>
-        <div
-          v-for="day in weekDays" :key="day.date"
-          class="wv-strip-day"
-          :class="{ today: day.date === todayStr, sunday: day.dow === 0, saturday: day.dow === 6 }"
-        >
-          <span class="wv-dow">{{ WEEKDAYS[day.dow] }}</span>
-          <span class="wv-daynum">{{ day.dayNum }}</span>
-        </div>
-      </div>
-
-      <!-- 終日イベント行（スパニング） -->
-      <div class="wv-allday-row" v-if="weekAlldayEventSlots.length">
-        <div class="wv-label-allday" :style="{ gridRow: `1 / span ${maxAlldayRow}` }">終日</div>
-        <div
-          v-for="item in weekAlldayEventSlots"
-          :key="item.ev.id"
-          class="wv-allday-span"
-          :style="{
-            gridColumn: `${item.gridColStart} / span ${item.gridColSpan}`,
-            gridRow: item.gridRow,
-            background: getEventColor(item.ev),
-          }"
-          @click.stop="openDetail(item.ev)"
-        >{{ item.ev.worker?.name }} {{ item.ev.title }}</div>
-      </div>
-
-      <!-- タイムグリッド -->
-      <div ref="timeGridEl" class="wv-grid-scroll">
-        <div class="wv-grid">
-          <div class="wv-time-col">
-            <div v-for="h in HOURS" :key="h" class="wv-time-slot">
-              <span v-if="h > 0" class="wv-time-label">{{ String(h).padStart(2,'0') }}:00</span>
-            </div>
-          </div>
-          <div
-            v-for="day in weekDays" :key="day.date"
-            class="wv-day-col"
-            :class="{ today: day.date === todayStr }"
-            @click="openAddOnDate(day.date)"
+    <!-- マトリクスグリッド -->
+    <div v-else class="grid-wrap">
+      <table class="matrix-table">
+        <thead>
+          <tr>
+            <th class="sticky-col date-col-header"></th>
+            <th v-for="w in workers" :key="w.id" class="worker-header">{{ w.name }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="date in monthDates"
+            :key="date"
+            :class="{
+              'today-row': date === todayStr,
+              'weekend-row': isWeekend(date),
+            }"
           >
-            <div v-for="h in HOURS" :key="h" class="wv-hour-line"></div>
-            <div
-              v-for="ev in day.timedEvents"
-              :key="ev.id"
-              class="wv-timed-event"
-              :style="{ ...timedEventStyle(ev, day.date), background: getEventColor(ev) }"
-              @click.stop="openDetail(ev)"
+            <td class="sticky-col date-cell" :class="dateCellClass(date)">
+              {{ formatDateLabel(date) }}
+            </td>
+            <td
+              v-for="w in workers"
+              :key="w.id"
+              class="sched-cell"
+              @click="openAddForCell(date, w.id)"
             >
-              <span class="wv-timed-worker">{{ ev.worker?.name }}</span>
-              <span class="wv-timed-title">{{ ev.title }}</span>
-              <span class="wv-timed-time">{{ ev.start_time?.slice(0,5) }}–{{ ev.end_time?.slice(0,5) }}</span>
-            </div>
-            <div v-if="day.date === todayStr" class="wv-now-line" :style="{ top: nowLineTop }"></div>
-          </div>
-        </div>
-      </div>
+              <div
+                v-for="s in cellSchedules(date, w.id)"
+                :key="s.id"
+                class="sched-chip"
+                :class="{
+                  'night-shift': s.is_night_shift,
+                  'deleted-chip': !!s.deleted_at,
+                }"
+                @click.stop="openDetail(s)"
+              >
+                <span class="chip-title">{{ s.title }}</span>
+                <span v-if="s.start_time" class="chip-time">{{ s.start_time.slice(0, 5) }}</span>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
 
-    <!-- リストビュー -->
-    <div v-else-if="currentView === 'list'" class="list-view">
-      <div v-if="filteredSchedules.length === 0" class="list-empty">この期間に予定はありません</div>
-      <div v-for="group in listGroups" :key="group.date" class="list-group">
-        <div class="list-date-header">{{ group.label }}</div>
-        <div
-          v-for="ev in group.events"
-          :key="ev.id"
-          class="list-event"
-          :style="{ borderLeftColor: getEventColor(ev) }"
-          @click="openDetail(ev)"
-        >
-          <div class="list-event-header">
-            <span class="list-event-title">{{ ev.title }}</span>
-            <span class="list-event-cat" :style="{ color: CATEGORY_COLORS[ev.category] }">{{ CATEGORY_LABELS[ev.category] }}</span>
-          </div>
-          <div class="list-event-meta">
-            <span class="list-event-worker">👤 {{ ev.worker?.name }}</span>
-            <span v-if="!ev.all_day" class="list-event-time">{{ ev.start_time?.slice(0,5) }}〜{{ ev.end_time?.slice(0,5) }}</span>
-            <span v-else class="list-event-time">終日</span>
-          </div>
-          <p v-if="ev.description" class="list-event-desc">{{ ev.description }}</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- 予定追加・編集モーダル -->
+    <!-- 追加・編集モーダル -->
     <div v-if="formModal" class="modal-overlay" @click.self="formModal = null">
       <div class="modal">
         <h2>{{ formModal.id ? '予定を編集' : '予定を追加' }}</h2>
@@ -190,20 +82,7 @@
         </div>
         <div class="field">
           <label>タイトル *</label>
-          <input v-model="formModal.title" class="input" placeholder="例：現場作業" />
-        </div>
-        <div class="field">
-          <label>カテゴリ</label>
-          <div class="cat-row">
-            <button
-              v-for="(label, key) in CATEGORY_LABELS"
-              :key="key"
-              class="cat-btn"
-              :class="{ active: formModal.category === key }"
-              :style="formModal.category === key ? { background: CATEGORY_COLORS[key as ScheduleCategory], color: '#fff', borderColor: CATEGORY_COLORS[key as ScheduleCategory] } : {}"
-              @click="formModal.category = key as ScheduleCategory"
-            >{{ label }}</button>
-          </div>
+          <input v-model="formModal.title" class="input" placeholder="例：アルペン現場" />
         </div>
         <div class="field-row">
           <div class="field">
@@ -215,24 +94,22 @@
             <input v-model="formModal.end_date" type="date" class="input" />
           </div>
         </div>
+        <div class="field-row">
+          <div class="field">
+            <label>開始時刻</label>
+            <input v-model="formModal.start_time" type="time" class="input" />
+          </div>
+          <div class="field">
+            <label>終了時刻</label>
+            <input v-model="formModal.end_time" type="time" class="input" />
+          </div>
+        </div>
         <div class="field">
-          <label class="toggle-label">
-            <input v-model="formModal.all_day" type="checkbox" />
-            終日
+          <label class="checkbox-label">
+            <input type="checkbox" v-model="formModal.is_night_shift" />
+            夜勤
           </label>
         </div>
-        <template v-if="!formModal.all_day">
-          <div class="field-row">
-            <div class="field">
-              <label>開始時刻</label>
-              <input v-model="formModal.start_time" type="time" class="input" />
-            </div>
-            <div class="field">
-              <label>終了時刻</label>
-              <input v-model="formModal.end_time" type="time" class="input" />
-            </div>
-          </div>
-        </template>
         <div class="field">
           <label>メモ</label>
           <textarea v-model="formModal.description" class="input textarea" rows="3" />
@@ -240,7 +117,9 @@
 
         <p v-if="formError" class="error-msg">{{ formError }}</p>
         <div class="modal-actions">
-          <button class="btn-save" :disabled="saving" @click="saveSchedule">{{ saving ? '保存中...' : '保存' }}</button>
+          <button class="btn-save" :disabled="saving" @click="saveSchedule">
+            {{ saving ? '保存中...' : '保存' }}
+          </button>
           <button class="btn-cancel" @click="formModal = null">キャンセル</button>
         </div>
       </div>
@@ -249,20 +128,53 @@
     <!-- 詳細モーダル -->
     <div v-if="detailModal" class="modal-overlay" @click.self="detailModal = null">
       <div class="modal">
-        <div class="detail-header">
-          <span class="detail-cat-badge" :style="{ background: getEventColor(detailModal) }">{{ CATEGORY_LABELS[detailModal.category] }}</span>
+        <div class="detail-badges">
+          <span v-if="detailModal.schedule.is_night_shift" class="badge-night">夜勤</span>
+          <span v-if="detailModal.schedule.deleted_at" class="badge-deleted">削除済み</span>
         </div>
-        <h2 class="detail-title">{{ detailModal.title }}</h2>
-        <p class="detail-meta">👤 {{ detailModal.worker?.name }}</p>
+        <h2 class="detail-title">{{ detailModal.schedule.title }}</h2>
+        <p class="detail-meta">👤 {{ detailModal.schedule.worker?.name }}</p>
         <p class="detail-meta">
-          📅 {{ detailModal.start_date }}
-          <template v-if="detailModal.end_date !== detailModal.start_date"> 〜 {{ detailModal.end_date }}</template>
-          <template v-if="!detailModal.all_day"> {{ detailModal.start_time?.slice(0,5) }}〜{{ detailModal.end_time?.slice(0,5) }}</template>
+          📅 {{ detailModal.schedule.start_date }}
+          <template v-if="detailModal.schedule.end_date !== detailModal.schedule.start_date">
+            〜 {{ detailModal.schedule.end_date }}
+          </template>
         </p>
-        <p v-if="detailModal.description" class="detail-desc">{{ detailModal.description }}</p>
+        <p v-if="detailModal.schedule.start_time" class="detail-meta">
+          🕐 {{ detailModal.schedule.start_time.slice(0, 5) }}〜{{ detailModal.schedule.end_time?.slice(0, 5) }}
+        </p>
+        <p v-if="detailModal.schedule.description" class="detail-desc">
+          {{ detailModal.schedule.description }}
+        </p>
+        <p class="detail-meta meta-small">
+          作成: {{ detailModal.schedule.created_by_name ?? '不明' }}
+        </p>
+        <p v-if="detailModal.schedule.deleted_at" class="detail-meta meta-small deleted-info">
+          削除: {{ detailModal.schedule.deleted_by_name }} ({{ fmtDateTime(detailModal.schedule.deleted_at) }})
+        </p>
+
+        <!-- 編集履歴 -->
+        <details v-if="detailModal.edits.length" class="edit-history">
+          <summary>編集履歴（{{ detailModal.edits.length }}件）</summary>
+          <div v-for="e in detailModal.edits" :key="e.id" class="edit-entry">
+            <span class="edit-who">{{ e.edited_by_name }}</span>
+            <span class="edit-when">{{ fmtDateTime(e.edited_at) }}</span>
+            <div v-if="Object.keys(e.changes).length" class="edit-changes">
+              <span v-for="(v, k) in e.changes" :key="k" class="edit-change-item">
+                {{ k }}: {{ (v as any).old }} → {{ (v as any).new }}
+              </span>
+            </div>
+          </div>
+        </details>
+
         <div class="modal-actions">
-          <button class="btn-edit" @click="openEdit(detailModal)">編集</button>
-          <button class="btn-delete" @click="confirmDelete(detailModal.id)">削除</button>
+          <template v-if="!detailModal.schedule.deleted_at">
+            <button class="btn-edit" @click="openEditFromDetail">編集</button>
+            <button class="btn-delete" @click="softDelete(detailModal.schedule)">削除</button>
+          </template>
+          <template v-else>
+            <button class="btn-restore" @click="restore(detailModal.schedule)">復元</button>
+          </template>
           <button class="btn-cancel" @click="detailModal = null">閉じる</button>
         </div>
       </div>
@@ -271,236 +183,158 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 
-const HOUR_HEIGHT = 56
-const HOURS = Array.from({ length: 24 }, (_, i) => i)
-const timeGridEl = ref<HTMLElement | null>(null)
-
-type ScheduleCategory = 'work' | 'off' | 'training' | 'meeting' | 'other'
-
+// ──── 型定義 ────────────────────────────────────────────────
 interface Schedule {
-  id:          string
-  worker_id:   string
-  title:       string
-  description: string | null
-  category:    ScheduleCategory
-  all_day:     boolean
-  start_date:  string
-  end_date:    string
-  start_time:  string | null
-  end_time:    string | null
-  worker?:     { id: string; name: string }
+  id:              string
+  worker_id:       string
+  title:           string
+  description:     string | null
+  category:        string
+  all_day:         boolean
+  start_date:      string
+  end_date:        string
+  start_time:      string | null
+  end_time:        string | null
+  is_night_shift:  boolean
+  created_by_name: string | null
+  deleted_at:      string | null
+  deleted_by_name: string | null
+  worker?:         { id: string; name: string }
 }
 
-const VIEWS = [
-  { key: 'month', label: '月' },
-  { key: 'week',  label: '週' },
-  { key: 'list',  label: 'リスト' },
-] as const
+interface ScheduleEdit {
+  id:             string
+  schedule_id:    string
+  edited_by_name: string
+  edited_at:      string
+  changes:        Record<string, { old: unknown; new: unknown }>
+}
 
+interface FormData {
+  id?:            string
+  worker_id:      string
+  title:          string
+  description:    string
+  start_date:     string
+  end_date:       string
+  start_time:     string
+  end_time:       string
+  is_night_shift: boolean
+  _original?:     Partial<Schedule>
+}
+
+// ──── 定数 ─────────────────────────────────────────────────
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
 
-const CATEGORY_LABELS: Record<ScheduleCategory, string> = {
-  work: '現場作業', off: '休み', training: '研修', meeting: '会議', other: 'その他',
-}
-const CATEGORY_COLORS: Record<ScheduleCategory, string> = {
-  work: '#06C755', off: '#94a3b8', training: '#f59e0b', meeting: '#3b82f6', other: '#a855f7',
-}
+// ──── 状態 ─────────────────────────────────────────────────
+const allSchedules  = ref<Schedule[]>([])
+const workers       = ref<{ id: string; name: string }[]>([])
+const loading       = ref(false)
+const currentDate   = ref(new Date())
+const showDeleted   = ref(false)
+const formModal     = ref<FormData | null>(null)
+const detailModal   = ref<{ schedule: Schedule; edits: ScheduleEdit[] } | null>(null)
+const saving        = ref(false)
+const formError     = ref('')
+const todayStr      = toDateStr(new Date())
+let   accountId     = ''
+let   currentUserName = ''
 
-// 作業員ごとのカラーパレット（フィルタチップ用）
-const WORKER_PALETTE = ['#06C755','#3b82f6','#f59e0b','#a855f7','#f87171','#06b6d4','#84cc16','#fb923c']
+// ──── 表示スケジュール ───────────────────────────────────
+const visibleSchedules = computed(() =>
+  allSchedules.value.filter(s => showDeleted.value || !s.deleted_at)
+)
 
-// ──── 状態 ────────────────────────────────────────────
-const allSchedules       = ref<Schedule[]>([])
-const workers            = ref<{ id: string; name: string; active: boolean }[]>([])
-const loading            = ref(false)
-const currentView        = ref<'month' | 'week' | 'list'>('month')
-const currentDate        = ref(new Date())
-const todayStr           = new Date().toISOString().split('T')[0]
-const selectedWorkerIds  = ref<string[]>([])
-const selectedCategories = ref<ScheduleCategory[]>([])
-const formModal          = ref<any>(null)
-const detailModal        = ref<Schedule | null>(null)
-const saving             = ref(false)
-const formError          = ref('')
-let   accountId          = ''
-
-// ──── フィルタ済み ─────────────────────────────────────
-const filteredSchedules = computed(() => {
-  return allSchedules.value.filter(s => {
-    if (selectedWorkerIds.value.length && !selectedWorkerIds.value.includes(s.worker_id)) return false
-    if (selectedCategories.value.length && !selectedCategories.value.includes(s.category)) return false
-    return true
-  })
-})
-
-// ──── ナビ ────────────────────────────────────────────
+// ──── ナビゲーション ────────────────────────────────────
 const navLabel = computed(() => {
   const d = currentDate.value
-  if (currentView.value === 'month') return `${d.getFullYear()}年${d.getMonth() + 1}月`
-  if (currentView.value === 'week') {
-    const days = weekDays.value
-    return days.length ? `${days[0].date} 〜 ${days[6].date}` : ''
-  }
   return `${d.getFullYear()}年${d.getMonth() + 1}月`
 })
 
 function navigate(dir: 1 | -1) {
   const d = new Date(currentDate.value)
-  if (currentView.value === 'month' || currentView.value === 'list') d.setMonth(d.getMonth() + dir)
-  else d.setDate(d.getDate() + dir * 7)
+  d.setDate(1)
+  d.setMonth(d.getMonth() + dir)
   currentDate.value = d
 }
 
 function goToday() { currentDate.value = new Date() }
 
-// ──── 月ビュー ────────────────────────────────────────
-const monthCells = computed(() => {
+// ──── 月の日付一覧 ───────────────────────────────────────
+const monthDates = computed(() => {
   const d = currentDate.value
-  const year = d.getFullYear(); const mon = d.getMonth()
-  const first = new Date(year, mon, 1); const last = new Date(year, mon + 1, 0)
-  const cells = []
-  for (let i = first.getDay(); i > 0; i--) cells.push(makeCell(new Date(year, mon, 1 - i), false))
-  for (let day = 1; day <= last.getDate(); day++) cells.push(makeCell(new Date(year, mon, day), true))
-  while (cells.length % 7 !== 0) cells.push(makeCell(new Date(year, mon + 1, cells.length - last.getDate() - first.getDay() + 1), false))
-  return cells
+  const year = d.getFullYear()
+  const mon  = d.getMonth()
+  const last = new Date(year, mon + 1, 0).getDate()
+  const dates: string[] = []
+  for (let day = 1; day <= last; day++) {
+    dates.push(`${year}-${String(mon + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`)
+  }
+  return dates
 })
 
-function makeCell(dt: Date, currentMonth: boolean) {
-  const date = toDateStr(dt)
+// ──── セル別スケジュール ────────────────────────────────
+function cellSchedules(date: string, workerId: string): Schedule[] {
+  return visibleSchedules.value.filter(
+    s => s.worker_id === workerId && s.start_date <= date && s.end_date >= date
+  )
+}
+
+// ──── 日付ユーティリティ ────────────────────────────────
+function toDateStr(dt: Date): string {
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+}
+
+function formatDateLabel(date: string): string {
+  const dt = new Date(date + 'T00:00:00')
+  return `${dt.getDate()}（${WEEKDAYS[dt.getDay()]}）`
+}
+
+function isWeekend(date: string): boolean {
+  const dow = new Date(date + 'T00:00:00').getDay()
+  return dow === 0 || dow === 6
+}
+
+function dateCellClass(date: string): Record<string, boolean> {
+  const dow = new Date(date + 'T00:00:00').getDay()
   return {
-    date, day: dt.getDate(), dayOfWeek: dt.getDay(), currentMonth,
-    events: filteredSchedules.value.filter(s => s.start_date <= date && s.end_date >= date),
+    'date-sunday':   dow === 0,
+    'date-saturday': dow === 6,
+    'date-today':    date === todayStr,
   }
 }
 
-// ──── 週ビュー ────────────────────────────────────────
-const weekDays = computed(() => {
-  const d = new Date(currentDate.value); d.setDate(d.getDate() - d.getDay())
-  return Array.from({ length: 7 }, (_, i) => {
-    const dt = new Date(d); dt.setDate(dt.getDate() + i)
-    const date = toDateStr(dt)
-    const evs = filteredSchedules.value.filter(s => s.start_date <= date && s.end_date >= date)
-    return {
-      date, dayNum: dt.getDate(), dow: dt.getDay(),
-      events: evs,
-      allDayEvents: evs.filter(e => e.all_day),
-      timedEvents:  evs.filter(e => !e.all_day && e.start_time),
-    }
-  })
-})
-
-const weekAlldayEventSlots = computed(() => {
-  if (!weekDays.value.length) return []
-  const seen = new Set<string>()
-  const raw: Array<{ ev: Schedule; colStart: number; colEnd: number }> = []
-  for (const day of weekDays.value) {
-    for (const ev of day.allDayEvents) {
-      if (seen.has(ev.id)) continue
-      seen.add(ev.id)
-      let si = 0
-      for (let i = 0; i < weekDays.value.length; i++) {
-        if (weekDays.value[i].date >= ev.start_date) { si = i; break }
-      }
-      let ei = 6
-      for (let i = weekDays.value.length - 1; i >= 0; i--) {
-        if (weekDays.value[i].date <= ev.end_date) { ei = i; break }
-      }
-      raw.push({ ev, colStart: si, colEnd: ei })
-    }
-  }
-  raw.sort((a, b) => a.colStart - b.colStart || (b.colEnd - b.colStart) - (a.colEnd - a.colStart))
-  const rowRanges: Array<Array<[number, number]>> = []
-  return raw.map(item => {
-    let assignedRow = -1
-    for (let r = 0; r < rowRanges.length; r++) {
-      const conflict = rowRanges[r].some(([s, e]) => item.colStart <= e && item.colEnd >= s)
-      if (!conflict) { assignedRow = r; rowRanges[r].push([item.colStart, item.colEnd]); break }
-    }
-    if (assignedRow === -1) { assignedRow = rowRanges.length; rowRanges.push([[item.colStart, item.colEnd]]) }
-    return { ev: item.ev, gridColStart: item.colStart + 2, gridColSpan: item.colEnd - item.colStart + 1, gridRow: assignedRow + 1 }
-  })
-})
-
-const maxAlldayRow = computed(() =>
-  weekAlldayEventSlots.value.reduce((max, item) => Math.max(max, item.gridRow), 1)
-)
-
-function timedEventStyle(ev: Schedule, date: string): Record<string, string> {
-  const [sh, sm] = (ev.start_time || '00:00').split(':').map(Number)
-  const [eh, em] = (ev.end_time   || '01:00').split(':').map(Number)
-  const startMin = sh * 60 + sm
-  const endMin   = eh * 60 + em
-  const isMultiDay = ev.start_date !== ev.end_date
-  let topMin: number, heightMin: number, borderRadius = '4px'
-  if (!isMultiDay) {
-    topMin = startMin; heightMin = Math.max(endMin - startMin, 30)
-  } else if (date === ev.start_date) {
-    topMin = startMin; heightMin = 24 * 60 - startMin; borderRadius = '4px 4px 0 0'
-  } else if (date === ev.end_date) {
-    topMin = 0; heightMin = Math.max(endMin, 15); borderRadius = '0 0 4px 4px'
-  } else {
-    topMin = 0; heightMin = 24 * 60; borderRadius = '0'
-  }
-  return { top: `${topMin * HOUR_HEIGHT / 60}px`, height: `${heightMin * HOUR_HEIGHT / 60}px`, borderRadius }
+function fmtDateTime(iso: string): string {
+  const dt = new Date(iso)
+  return `${dt.getMonth() + 1}/${dt.getDate()} ${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`
 }
 
-const nowLineTop = computed(() => {
-  const now = new Date()
-  return `${(now.getHours() * 60 + now.getMinutes()) * HOUR_HEIGHT / 60}px`
-})
-
-function scrollToNow() {
-  if (!timeGridEl.value) return
-  const now = new Date()
-  timeGridEl.value.scrollTop = Math.max(0, (now.getHours() * 60 + now.getMinutes()) * HOUR_HEIGHT / 60 - 120)
+// ──── データ取得 ─────────────────────────────────────────
+async function loadWorkers() {
+  const { data } = await supabase
+    .from('workers')
+    .select('id, name')
+    .eq('account_id', accountId)
+    .eq('active', true)
+    .order('name')
+  workers.value = data ?? []
 }
 
-watch(currentView, async (v) => {
-  if (v === 'week') { await nextTick(); scrollToNow() }
-})
-
-// ──── リストビュー ────────────────────────────────────
-const listGroups = computed(() => {
-  const d = currentDate.value
-  const from = toDateStr(new Date(d.getFullYear(), d.getMonth(), 1))
-  const to   = toDateStr(new Date(d.getFullYear(), d.getMonth() + 1, 0))
-  const evs  = filteredSchedules.value.filter(s => s.start_date <= to && s.end_date >= from)
-  const grouped: Record<string, Schedule[]> = {}
-  evs.forEach(ev => {
-    const key = ev.start_date
-    if (!grouped[key]) grouped[key] = []
-    grouped[key].push(ev)
-  })
-  return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b)).map(([date, events]) => ({
-    date,
-    label: (() => {
-      const dt = new Date(date + 'T00:00:00')
-      return `${dt.getMonth()+1}/${dt.getDate()}（${WEEKDAYS[dt.getDay()]}）`
-    })(),
-    events,
-  }))
-})
-
-// ──── データ取得 ──────────────────────────────────────
 async function loadSchedules() {
   loading.value = true
   try {
-    const d = currentDate.value
-    const from = toDateStr(new Date(d.getFullYear(), d.getMonth() - 1, 1))
-    const to   = toDateStr(new Date(d.getFullYear(), d.getMonth() + 2, 0))
-
-    const workerIds = workers.value.map(w => w.id)
-    if (workerIds.length === 0) { allSchedules.value = []; return }
+    const d    = currentDate.value
+    const from = toDateStr(new Date(d.getFullYear(), d.getMonth(), 1))
+    const to   = toDateStr(new Date(d.getFullYear(), d.getMonth() + 1, 0))
 
     const { data, error } = await supabase
       .from('schedules')
       .select('*, worker:workers(id, name)')
-      .in('worker_id', workerIds)
-      .eq('is_public', true)
+      .eq('account_id', accountId)
       .lte('start_date', to)
       .gte('end_date', from)
       .order('start_date')
@@ -512,85 +346,135 @@ async function loadSchedules() {
   }
 }
 
-async function loadWorkers() {
-  const { data } = await supabase.from('workers').select('id, name, active').eq('account_id', accountId).order('name')
-  workers.value = (data ?? []).filter((w: any) => w.active !== false)
-}
-
 watch(currentDate, loadSchedules)
 
-// ──── フィルタ操作 ────────────────────────────────────
-function toggleWorker(id: string) {
-  const idx = selectedWorkerIds.value.indexOf(id)
-  if (idx === -1) selectedWorkerIds.value.push(id)
-  else selectedWorkerIds.value.splice(idx, 1)
-}
-
-function toggleCategory(key: string) {
-  const cat = key as ScheduleCategory
-  const idx = selectedCategories.value.indexOf(cat)
-  if (idx === -1) selectedCategories.value.push(cat)
-  else selectedCategories.value.splice(idx, 1)
-}
-
-// ──── CRUD ────────────────────────────────────────────
-function openAdd() {
+// ──── モーダル操作 ────────────────────────────────────────
+function openAddBlank() {
+  const d = currentDate.value
+  const date = d.getMonth() === new Date().getMonth() && d.getFullYear() === new Date().getFullYear()
+    ? todayStr
+    : toDateStr(new Date(d.getFullYear(), d.getMonth(), 1))
   formModal.value = {
-    worker_id: '', title: '', description: '', category: 'work', all_day: true,
-    start_date: todayStr, end_date: todayStr, start_time: '09:00', end_time: '17:00',
+    worker_id: '', title: '', description: '',
+    start_date: date, end_date: date,
+    start_time: '', end_time: '',
+    is_night_shift: false,
   }
   formError.value = ''
 }
 
-function openAddOnDate(date: string) {
+function openAddForCell(date: string, workerId: string) {
   formModal.value = {
-    worker_id: selectedWorkerIds.value[0] ?? '', title: '', description: '', category: 'work',
-    all_day: true, start_date: date, end_date: date, start_time: '09:00', end_time: '17:00',
+    worker_id: workerId, title: '', description: '',
+    start_date: date, end_date: date,
+    start_time: '', end_time: '',
+    is_night_shift: false,
   }
   formError.value = ''
 }
 
-function openEdit(ev: Schedule) {
+async function openDetail(schedule: Schedule) {
+  const { data } = await supabase
+    .from('schedule_edits')
+    .select('*')
+    .eq('schedule_id', schedule.id)
+    .order('edited_at', { ascending: false })
+  detailModal.value = { schedule, edits: (data ?? []) as ScheduleEdit[] }
+}
+
+function openEditFromDetail() {
+  if (!detailModal.value) return
+  const s = detailModal.value.schedule
+  formModal.value = {
+    id: s.id,
+    worker_id:      s.worker_id,
+    title:          s.title,
+    description:    s.description ?? '',
+    start_date:     s.start_date,
+    end_date:       s.end_date,
+    start_time:     s.start_time ?? '',
+    end_time:       s.end_time   ?? '',
+    is_night_shift: s.is_night_shift,
+    _original: {
+      worker_id:      s.worker_id,
+      title:          s.title,
+      description:    s.description,
+      start_date:     s.start_date,
+      end_date:       s.end_date,
+      start_time:     s.start_time,
+      end_time:       s.end_time,
+      is_night_shift: s.is_night_shift,
+    },
+  }
   detailModal.value = null
-  formModal.value = {
-    id: ev.id, worker_id: ev.worker_id, title: ev.title, description: ev.description ?? '',
-    category: ev.category, all_day: ev.all_day,
-    start_date: ev.start_date, end_date: ev.end_date,
-    start_time: ev.start_time ?? '09:00', end_time: ev.end_time ?? '17:00',
-  }
-  formError.value = ''
+  formError.value   = ''
 }
 
-function openDetail(ev: Schedule) { detailModal.value = ev }
-
+// ──── 保存 ───────────────────────────────────────────────
 async function saveSchedule() {
-  if (!formModal.value?.worker_id) { formError.value = '作業員を選択してください'; return }
-  if (!formModal.value?.title?.trim()) { formError.value = 'タイトルを入力してください'; return }
-  if (!formModal.value.start_date || !formModal.value.end_date) { formError.value = '日付を入力してください'; return }
-  if (formModal.value.start_date > formModal.value.end_date) { formError.value = '終了日は開始日以降にしてください'; return }
+  if (!formModal.value) return
+  if (!formModal.value.worker_id)        { formError.value = '作業員を選択してください'; return }
+  if (!formModal.value.title.trim())     { formError.value = 'タイトルを入力してください'; return }
+  if (!formModal.value.start_date)       { formError.value = '開始日を入力してください'; return }
+  if (!formModal.value.end_date)         { formError.value = '終了日を入力してください'; return }
+  if (formModal.value.start_date > formModal.value.end_date) {
+    formError.value = '終了日は開始日以降にしてください'; return
+  }
 
   saving.value = true; formError.value = ''
   try {
+    const now = new Date().toISOString()
+    const hasTime = !!(formModal.value.start_time && formModal.value.end_time)
     const payload = {
-      account_id:   accountId,
-      worker_id:    formModal.value.worker_id,
-      title:        formModal.value.title,
-      description:  formModal.value.description || null,
-      category:     formModal.value.category,
-      all_day:      formModal.value.all_day,
-      start_date:   formModal.value.start_date,
-      end_date:     formModal.value.end_date,
-      start_time:   formModal.value.all_day ? null : (formModal.value.start_time || null),
-      end_time:     formModal.value.all_day ? null : (formModal.value.end_time   || null),
-      updated_at:   new Date().toISOString(),
+      account_id:     accountId,
+      worker_id:      formModal.value.worker_id,
+      title:          formModal.value.title.trim(),
+      description:    formModal.value.description || null,
+      category:       'work',
+      all_day:        !hasTime,
+      start_date:     formModal.value.start_date,
+      end_date:       formModal.value.end_date,
+      start_time:     hasTime ? formModal.value.start_time : null,
+      end_time:       hasTime ? formModal.value.end_time   : null,
+      is_night_shift: formModal.value.is_night_shift,
+      is_public:      true,
+      updated_at:     now,
     }
+
     if (formModal.value.id) {
+      // 編集: 変更差分を記録
+      const orig = formModal.value._original ?? {}
+      const changes: Record<string, { old: unknown; new: unknown }> = {}
+      const diffKeys: (keyof typeof payload)[] = [
+        'worker_id', 'title', 'description', 'start_date', 'end_date',
+        'start_time', 'end_time', 'is_night_shift',
+      ]
+      for (const k of diffKeys) {
+        const oldVal = (orig as any)[k] ?? null
+        const newVal = (payload as any)[k] ?? null
+        if (oldVal !== newVal) changes[k] = { old: oldVal, new: newVal }
+      }
+
       const { error } = await supabase.from('schedules').update(payload).eq('id', formModal.value.id)
       if (error) throw error
+
+      if (Object.keys(changes).length) {
+        await supabase.from('schedule_edits').insert({
+          schedule_id:    formModal.value.id,
+          edited_by_name: currentUserName,
+          edited_at:      now,
+          changes,
+        })
+      }
     } else {
-      const { error } = await supabase.from('schedules').insert(payload)
+      // 新規作成
+      const { error } = await supabase.from('schedules').insert({
+        ...payload,
+        created_by_name: currentUserName,
+      })
       if (error) throw error
     }
+
     formModal.value = null
     await loadSchedules()
   } catch (e) {
@@ -600,150 +484,243 @@ async function saveSchedule() {
   }
 }
 
-async function confirmDelete(id: string) {
-  if (!confirm('この予定を削除しますか？')) return
+// ──── ソフトデリート / 復元 ──────────────────────────────
+async function softDelete(schedule: Schedule) {
+  if (!confirm(`「${schedule.title}」を削除しますか？`)) return
   detailModal.value = null
-  const { error } = await supabase.from('schedules').delete().eq('id', id)
+  const { error } = await supabase.from('schedules').update({
+    deleted_at:      new Date().toISOString(),
+    deleted_by_name: currentUserName,
+  }).eq('id', schedule.id)
   if (error) { alert(error.message); return }
   await loadSchedules()
 }
 
-// ──── ユーティリティ ──────────────────────────────────
-function toDateStr(dt: Date) {
-  return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`
+async function restore(schedule: Schedule) {
+  detailModal.value = null
+  const { error } = await supabase.from('schedules').update({
+    deleted_at:      null,
+    deleted_by_name: null,
+  }).eq('id', schedule.id)
+  if (error) { alert(error.message); return }
+  await loadSchedules()
 }
 
-function workerColor(workerId: string): string {
-  const idx = workers.value.findIndex(w => w.id === workerId)
-  return WORKER_PALETTE[idx % WORKER_PALETTE.length] ?? '#888'
-}
-
-function getEventColor(ev: Schedule): string {
-  // 全員表示時はカテゴリ色、作業員フィルタ時は作業員色
-  if (selectedWorkerIds.value.length > 1) return workerColor(ev.worker_id)
-  return CATEGORY_COLORS[ev.category] ?? '#888'
-}
-
-// ──── 初期化 ──────────────────────────────────────────
+// ──── 初期化 ─────────────────────────────────────────────
 onMounted(async () => {
   accountId = await getAccountId()
+  const { data: { session } } = await supabase.auth.getSession()
+  currentUserName = session?.user?.email ?? '管理者'
   await loadWorkers()
   await loadSchedules()
 })
 </script>
 
 <style scoped>
-.calendar-page { }
-.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.cal-page { }
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
 .page-title { font-size: 22px; font-weight: 700; margin: 0; }
+.header-actions { display: flex; align-items: center; gap: 12px; }
+.deleted-toggle { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #666; cursor: pointer; user-select: none; }
 .btn-add { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 14px; font-weight: 600; cursor: pointer; }
 
-/* フィルター */
-.filter-bar { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; background: #f8f9fa; border-radius: 10px; padding: 12px 16px; }
-.filter-workers, .filter-cats { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.filter-label { font-size: 12px; color: #888; white-space: nowrap; }
-.filter-chip { padding: 4px 10px; border: 1px solid #ddd; border-radius: 20px; font-size: 12px; background: #fff; cursor: pointer; transition: .15s; color: #555; }
-.filter-chip.active { color: #fff; background: #555; border-color: #555; }
-.filter-chip:hover { border-color: #aaa; }
-
-/* ツールバー */
-.cal-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-.view-tabs { display: flex; gap: 4px; }
-.view-tab { padding: 6px 14px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; cursor: pointer; color: #666; }
-.view-tab.active { background: #06C755; border-color: #06C755; color: #fff; font-weight: 600; }
-.cal-nav { display: flex; align-items: center; gap: 8px; }
+/* 月ナビ */
+.month-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .nav-btn { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 4px 12px; font-size: 18px; cursor: pointer; color: #333; }
-.nav-label { font-size: 16px; font-weight: 600; min-width: 160px; text-align: center; }
+.nav-label { font-size: 17px; font-weight: 700; min-width: 120px; }
 .today-btn { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; color: #06C755; font-weight: 600; }
 
 .loading { text-align: center; padding: 60px; color: #888; }
 
-/* 月ビュー */
-.weekday-headers { display: grid; grid-template-columns: repeat(7, 1fr); border: 1px solid #e2e8f0; border-bottom: 2px solid #e2e8f0; }
-.weekday-label { text-align: center; padding: 8px 0; font-size: 12px; font-weight: 600; color: #888; }
-.weekday-label.sun { color: #ef4444; }
-.weekday-label.sat { color: #3b82f6; }
-.month-grid { display: grid; grid-template-columns: repeat(7, 1fr); border-left: 1px solid #e2e8f0; border-top: 1px solid #e2e8f0; }
-.day-cell { border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; padding: 6px; min-height: 100px; cursor: pointer; }
-.day-cell:hover { background: #f8fffe; }
-.day-cell.other-month { background: #f9fafb; opacity: .6; }
-.day-cell.today .day-num { background: #06C755; color: #fff; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-weight: 700; }
-.day-cell.sunday .day-num { color: #ef4444; }
-.day-cell.saturday .day-num { color: #3b82f6; }
-.day-num { font-size: 13px; margin-bottom: 4px; }
-.cell-events { display: flex; flex-direction: column; gap: 2px; }
-.cell-event { font-size: 11px; color: #fff; border-radius: 3px; padding: 2px 4px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; }
-.cell-event:hover { opacity: .85; }
-.cell-event-worker { font-weight: 700; margin-right: 3px; }
-.cell-more { font-size: 11px; color: #888; padding-left: 4px; }
+/* グリッド */
+.grid-wrap {
+  overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  max-height: calc(100vh - 200px);
+}
 
-/* 週ビュー（Apple Calendar風タイムグリッド） */
-.week-view { display: flex; flex-direction: column; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; max-height: calc(100vh - 220px); }
+.matrix-table {
+  border-collapse: collapse;
+  min-width: 100%;
+}
 
-.wv-strip { display: grid; grid-template-columns: 52px repeat(7, 1fr); border-bottom: 1px solid #e2e8f0; background: #fafafa; flex-shrink: 0; }
-.wv-strip-spacer { }
-.wv-strip-day { text-align: center; padding: 8px 2px; }
-.wv-strip-day.today .wv-daynum { color: #06C755; font-weight: 700; }
-.wv-strip-day.sunday .wv-dow, .wv-strip-day.sunday .wv-daynum { color: #ef4444; }
-.wv-strip-day.saturday .wv-dow, .wv-strip-day.saturday .wv-daynum { color: #3b82f6; }
-.wv-dow { display: block; font-size: 11px; color: #888; }
-.wv-daynum { display: block; font-size: 18px; font-weight: 700; color: #333; }
+/* 固定列・行 */
+.sticky-col {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: #fff;
+}
 
-.wv-allday-row { display: grid; grid-template-columns: 52px repeat(7, 1fr); row-gap: 2px; padding: 3px 0; border-bottom: 1px solid #e2e8f0; flex-shrink: 0; background: #fafafa; }
-.wv-label-allday { display: flex; align-items: center; justify-content: flex-end; padding: 0 6px 0 0; font-size: 11px; color: #aaa; }
-.wv-allday-span { height: 20px; line-height: 20px; font-size: 11px; color: #fff; border-radius: 4px; padding: 0 6px; margin: 0 2px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; }
-.wv-allday-span:hover { opacity: .85; }
+thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #f8f9fa;
+  border-bottom: 2px solid #e2e8f0;
+}
+thead th.sticky-col { z-index: 4; }
 
-.wv-grid-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; }
-.wv-grid { display: grid; grid-template-columns: 52px repeat(7, 1fr); position: relative; }
-.wv-time-col { position: sticky; left: 0; background: #fff; z-index: 2; border-right: 1px solid #e2e8f0; }
-.wv-time-slot { height: 56px; display: flex; align-items: flex-start; justify-content: flex-end; padding: 0 6px 0 0; border-top: 1px solid #f0f0f0; }
-.wv-time-label { font-size: 11px; color: #aaa; white-space: nowrap; display: inline-block; transform: translateY(-50%); }
-.wv-day-col { position: relative; border-left: 1px solid #eee; cursor: pointer; }
-.wv-day-col.today { background: #f0fdf4; }
-.wv-hour-line { height: 56px; border-top: 1px solid #f0f0f0; }
-.wv-timed-event { position: absolute; left: 2px; right: 2px; border-radius: 4px; padding: 2px 5px; overflow: hidden; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.1); z-index: 1; }
-.wv-timed-event:hover { opacity: .9; }
-.wv-timed-worker { display: block; font-size: 10px; color: rgba(255,255,255,.85); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.wv-timed-title { display: block; font-size: 11px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.wv-timed-time  { display: block; font-size: 10px; color: rgba(255,255,255,.8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.wv-now-line { position: absolute; left: 0; right: 0; height: 2px; background: #ef4444; z-index: 3; pointer-events: none; }
-.wv-now-line::before { content: ''; position: absolute; left: -4px; top: -4px; width: 10px; height: 10px; background: #ef4444; border-radius: 50%; }
+.date-col-header {
+  min-width: 72px;
+  width: 72px;
+}
 
-/* リストビュー */
-.list-view { display: flex; flex-direction: column; gap: 16px; }
-.list-empty { text-align: center; padding: 60px; color: #888; }
-.list-group { }
-.list-date-header { font-weight: 700; font-size: 14px; color: #444; padding: 8px 0; border-bottom: 2px solid #e2e8f0; margin-bottom: 8px; }
-.list-event { border-left: 4px solid; background: #fff; border-radius: 8px; padding: 12px 16px; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 6px; }
-.list-event:hover { box-shadow: 0 2px 8px rgba(0,0,0,.1); }
-.list-event-header { display: flex; justify-content: space-between; margin-bottom: 4px; }
-.list-event-title { font-weight: 600; font-size: 15px; }
-.list-event-cat { font-size: 12px; font-weight: 600; }
-.list-event-meta { display: flex; gap: 12px; font-size: 13px; color: #888; }
-.list-event-desc { font-size: 13px; color: #888; margin: 6px 0 0; }
+.worker-header {
+  font-size: 12px;
+  font-weight: 700;
+  color: #444;
+  padding: 10px 8px;
+  text-align: center;
+  min-width: 110px;
+  border-left: 1px solid #e2e8f0;
+  white-space: nowrap;
+}
+
+/* 日付セル */
+.date-cell {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 8px;
+  white-space: nowrap;
+  border-right: 1px solid #e2e8f0;
+  border-bottom: 1px solid #f0f0f0;
+  color: #555;
+  min-width: 72px;
+  width: 72px;
+}
+.date-cell.date-sunday  { color: #ef4444; }
+.date-cell.date-saturday { color: #3b82f6; }
+.date-cell.date-today { background: #f0fdf4; font-weight: 700; color: #06C755; }
+
+/* 行 */
+.today-row > td { background-color: #fafffe; }
+.today-row > td.sticky-col { background-color: #f0fdf4; }
+.weekend-row > td { background-color: #fafafa; }
+.weekend-row > td.sticky-col { background-color: #f4f4f4; }
+
+/* スケジュールセル */
+.sched-cell {
+  padding: 3px 4px;
+  vertical-align: top;
+  border-left: 1px solid #e2e8f0;
+  border-bottom: 1px solid #f0f0f0;
+  min-width: 110px;
+  cursor: pointer;
+  min-height: 32px;
+}
+.sched-cell:hover { background: #f0fdf4; }
+
+/* スケジュールチップ */
+.sched-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #e8f5ff;
+  border-left: 3px solid #3b82f6;
+  border-radius: 4px;
+  padding: 2px 6px;
+  margin-bottom: 2px;
+  font-size: 11px;
+  cursor: pointer;
+  line-height: 1.4;
+  overflow: hidden;
+}
+.sched-chip:hover { opacity: .85; }
+
+.sched-chip.night-shift {
+  background: #2d2d3d;
+  border-left-color: #6366f1;
+  color: #e2e8f0;
+}
+
+.sched-chip.deleted-chip {
+  opacity: .45;
+  text-decoration: line-through;
+  background: #f0f0f0;
+  border-left-color: #bbb;
+  color: #888;
+}
+
+.chip-title {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.chip-time {
+  font-size: 10px;
+  color: #60a5fa;
+  flex-shrink: 0;
+}
+.sched-chip.night-shift .chip-time { color: #a5b4fc; }
 
 /* モーダル */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-.modal { background: #fff; border-radius: 16px; padding: 28px; width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
-.modal h2 { font-size: 20px; margin: 0 0 20px; }
-.field { margin-bottom: 14px; }
-.field label { display: block; font-size: 13px; color: #555; margin-bottom: 5px; font-weight: 500; }
-.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.input { width: 100%; border: 1px solid #d1d5db; border-radius: 8px; padding: 9px 12px; font-size: 14px; box-sizing: border-box; color: #111; background: #fff; }
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal {
+  background: #fff;
+  border-radius: 16px;
+  padding: 28px;
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .2);
+}
+.modal h2 { font-size: 18px; margin: 0 0 18px; }
+
+.field { margin-bottom: 13px; }
+.field label { display: block; font-size: 13px; color: #555; margin-bottom: 4px; font-weight: 500; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.input {
+  width: 100%; border: 1px solid #d1d5db; border-radius: 8px;
+  padding: 8px 10px; font-size: 14px; box-sizing: border-box; color: #111;
+}
 .textarea { resize: vertical; font-family: inherit; }
-.toggle-label { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
-.cat-row { display: flex; flex-wrap: wrap; gap: 6px; }
-.cat-btn { padding: 6px 12px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; cursor: pointer; color: #555; transition: .15s; }
-.modal-actions { display: flex; gap: 10px; margin-top: 20px; }
-.btn-save   { flex: 1; background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 10px; font-size: 14px; font-weight: 600; cursor: pointer; }
-.btn-cancel { flex: 1; background: #f1f5f9; color: #333; border: none; border-radius: 8px; padding: 10px; font-size: 14px; cursor: pointer; }
-.btn-edit   { flex: 1; background: #3b82f6; color: #fff; border: none; border-radius: 8px; padding: 10px; font-size: 14px; cursor: pointer; }
-.btn-delete { flex: 1; background: #ef4444; color: #fff; border: none; border-radius: 8px; padding: 10px; font-size: 14px; cursor: pointer; }
-.error-msg { color: #ef4444; font-size: 13px; margin: 8px 0 0; }
-.detail-header { margin-bottom: 10px; }
-.detail-cat-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; color: #fff; font-size: 13px; font-weight: 600; }
-.detail-title { font-size: 22px; font-weight: 700; margin: 0 0 12px; }
-.detail-meta { font-size: 14px; color: #666; margin: 0 0 4px; }
-.detail-desc { font-size: 14px; color: #888; margin: 12px 0 0; white-space: pre-wrap; }
+.checkbox-label { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+
+.error-msg { color: #ef4444; font-size: 13px; margin: 6px 0 0; }
+
+.modal-actions { display: flex; gap: 8px; margin-top: 18px; }
+.btn-save    { flex: 1; background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 10px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.btn-cancel  { flex: 1; background: #f1f5f9; color: #333; border: none; border-radius: 8px; padding: 10px; font-size: 14px; cursor: pointer; }
+.btn-edit    { flex: 1; background: #3b82f6; color: #fff; border: none; border-radius: 8px; padding: 10px; font-size: 14px; cursor: pointer; }
+.btn-delete  { flex: 1; background: #ef4444; color: #fff; border: none; border-radius: 8px; padding: 10px; font-size: 14px; cursor: pointer; }
+.btn-restore { flex: 1; background: #f59e0b; color: #fff; border: none; border-radius: 8px; padding: 10px; font-size: 14px; cursor: pointer; }
+.btn-save:disabled { opacity: .6; cursor: not-allowed; }
+
+/* 詳細モーダル */
+.detail-badges { display: flex; gap: 6px; margin-bottom: 8px; }
+.badge-night   { background: #2d2d3d; color: #a5b4fc; border-radius: 4px; padding: 2px 8px; font-size: 12px; font-weight: 700; }
+.badge-deleted { background: #fee2e2; color: #ef4444; border-radius: 4px; padding: 2px 8px; font-size: 12px; font-weight: 700; }
+
+.detail-title { font-size: 20px; font-weight: 700; margin: 0 0 10px; }
+.detail-meta  { font-size: 13px; color: #555; margin: 0 0 4px; }
+.meta-small   { font-size: 12px; color: #888; }
+.deleted-info { color: #ef4444; }
+.detail-desc  { font-size: 13px; color: #888; margin: 8px 0; white-space: pre-wrap; }
+
+/* 編集履歴 */
+.edit-history { margin-top: 12px; border-top: 1px solid #f0f0f0; padding-top: 10px; }
+.edit-history summary { font-size: 13px; color: #666; cursor: pointer; font-weight: 600; }
+.edit-entry { padding: 6px 0; border-bottom: 1px solid #f5f5f5; font-size: 12px; }
+.edit-who   { font-weight: 600; color: #333; margin-right: 8px; }
+.edit-when  { color: #888; }
+.edit-changes { margin-top: 3px; display: flex; flex-wrap: wrap; gap: 4px; }
+.edit-change-item { background: #f0f4ff; border-radius: 4px; padding: 1px 6px; font-size: 11px; color: #3b4e8c; }
 </style>
