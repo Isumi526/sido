@@ -91,7 +91,7 @@ async function runReminder(dryRun: boolean) {
     if (!res.ok) throw new Error(data.error ?? res.statusText)
 
     // results配列からメッセージを構築（LINEと同じフォーマット）
-    const results: { slug: string; result: string; unsubmitted: { name: string; dates: string[]; mentionTarget?: string }[] }[] = data.results ?? []
+    const results: { slug: string; result: string; unsubmitted: { name: string; dates: string[] }[] }[] = data.results ?? []
     const allUnsubmitted = results.flatMap(r => r.unsubmitted)
     const yesterday: string = data.yesterday ?? ''
 
@@ -106,10 +106,7 @@ async function runReminder(dryRun: boolean) {
       for (const r of results) {
         if (!r.unsubmitted.length) continue
         for (const u of r.unsubmitted) {
-          const displayName = u.mentionTarget
-            ? `${u.name} @${u.mentionTarget}`
-            : u.name
-          lines.push(`⚠️ ${displayName}`)
+          lines.push(`⚠️ ${u.name}`)
           const MAX = 5
           u.dates.slice(0, MAX).forEach(d => lines.push(`  ${fmtDate(d)}`))
           if (u.dates.length > MAX) lines.push(`  他${u.dates.length - MAX}日`)

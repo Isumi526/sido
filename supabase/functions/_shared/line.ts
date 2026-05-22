@@ -23,7 +23,6 @@ export async function pushLineMessages(
     console.error(`[LINE] push failed to=${to} status=${res.status} body=${resBody}`)
     return false
   }
-  console.log(`[LINE] push ok to=${to} status=${res.status} body=${resBody}`)
   return true
 }
 
