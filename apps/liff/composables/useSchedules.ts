@@ -65,6 +65,16 @@ export const useSchedules = () => {
   const error     = ref<string | null>(null)
 
   const _myWorkerIdCache = ref<string | null>(null)
+  let   _accountIdCache: string | null = null
+
+  async function resolveAccountId(): Promise<string | null> {
+    if (_accountIdCache) return _accountIdCache
+    const cfg = useRuntimeConfig()
+    const { data } = await supabase
+      .from('accounts').select('id').eq('slug', cfg.public.accountSlug).single()
+    _accountIdCache = data?.id ?? null
+    return _accountIdCache
+  }
 
   const myWorkerId = computed(() => _myWorkerIdCache.value)
 
@@ -107,15 +117,12 @@ export const useSchedules = () => {
       if (!wid) return
 
       // アカウント全体の公開予定を取得（削除済みを除く）
-      const config      = useRuntimeConfig()
-      const accountSlug = config.public.accountSlug
-      const { data: accountData } = await supabase
-        .from('accounts').select('id').eq('slug', accountSlug).single()
+      const accountId = await resolveAccountId()
 
       const { data, error: err } = await supabase
         .from('schedules')
         .select('*, worker:workers(id, name)')
-        .eq('account_id', accountData?.id)
+        .eq('account_id', accountId)
         .is('deleted_at', null)
         .lte('start_date', to)
         .gte('end_date', from)
@@ -134,12 +141,13 @@ export const useSchedules = () => {
   // 予定作成
   // ──────────────────────────────────────────────────────
   async function createSchedule(form: ScheduleForm, workerId?: string, creatorName?: string) {
-    const wid = workerId ?? (await resolveMyWorkerId())
+    const wid       = workerId ?? (await resolveMyWorkerId())
     if (!wid) throw new Error('作業員情報が取得できません')
+    const accountId = await resolveAccountId()
 
     const { data, error: err } = await supabase
       .from('schedules')
-      .insert({ ...buildPayload(form, wid), created_by_name: creatorName ?? null, is_public: true })
+      .insert({ ...buildPayload(form, wid), account_id: accountId, created_by_name: creatorName ?? null, is_public: true })
       .select('*, worker:workers(id, name)')
       .single()
     if (err) throw err
