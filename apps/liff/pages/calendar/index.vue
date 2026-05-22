@@ -71,6 +71,9 @@
     <div v-if="formModal" class="modal-overlay" @click.self="formModal = null">
       <div class="modal">
         <h2>{{ formModal.id ? '予定を編集' : '予定を追加' }}</h2>
+        <div class="form-worker-label">
+          👤 {{ workers.find(w => w.id === (formModal as any)._worker_id)?.name ?? '不明' }}
+        </div>
 
         <input v-model="formModal.title" class="title-input" placeholder="タイトル" />
 
@@ -457,6 +460,11 @@ thead th.sticky-col { z-index: 4; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: flex-end; justify-content: center; z-index: 1000; }
 .modal { background: #f2f2f7; border-radius: 20px 20px 0 0; padding: 20px 16px 40px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; box-shadow: 0 -4px 20px rgba(0,0,0,.1); }
 .modal h2 { font-size: 17px; font-weight: 600; margin: 0 0 14px; color: #111; text-align: center; }
+
+.form-worker-label {
+  text-align: center; font-size: 14px; font-weight: 600;
+  color: #06C755; margin-bottom: 12px;
+}
 
 .title-input {
   width: 100%; background: #fff; border: none; border-radius: 12px;
