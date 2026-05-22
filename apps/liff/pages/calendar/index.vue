@@ -143,10 +143,8 @@
         <p v-if="detailModal.created_by_name" class="detail-created">作成: {{ detailModal.created_by_name }}</p>
         <div class="modal-actions">
           <button class="btn-cancel" @click="detailModal = null">閉じる</button>
-          <template v-if="isMyWorker(detailModal.worker_id)">
-            <button class="btn-delete" @click="confirmDelete(detailModal.id)">削除</button>
-            <button class="btn-edit" @click="openEdit(detailModal)">編集</button>
-          </template>
+          <button class="btn-delete" @click="confirmDelete(detailModal.id)">削除</button>
+          <button class="btn-edit" @click="openEdit(detailModal)">編集</button>
         </div>
       </div>
     </div>
@@ -299,8 +297,8 @@ watch(() => proxy.proxyTarget.value, loadSchedules)
 
 // ──────────────────── CRUD ────────────────────
 function onCellTap(date: string, workerId: string) {
-  if (!isMyWorker(workerId)) return
   formModal.value = {
+    _worker_id: workerId,
     title: '', description: '', category: 'work', site_id: '',
     all_day: true, start_date: date, end_date: date,
     start_time: '09:00', end_time: '17:00',
@@ -312,7 +310,8 @@ function onCellTap(date: string, workerId: string) {
 function openEdit(ev: Schedule) {
   detailModal.value = null
   formModal.value = {
-    id: ev.id, title: ev.title, description: ev.description ?? '',
+    id: ev.id, _worker_id: ev.worker_id,
+    title: ev.title, description: ev.description ?? '',
     category: ev.category, site_id: ev.site_id ?? '', all_day: ev.all_day,
     start_date: ev.start_date, end_date: ev.end_date,
     start_time: ev.start_time ?? '09:00', end_time: ev.end_time ?? '17:00',
@@ -330,11 +329,12 @@ async function saveSchedule() {
   saving.value = true; formError.value = ''
   try {
     const form = formModal.value as ScheduleForm
+    const targetWorkerId = (formModal.value as any)._worker_id ?? effectiveWorkerId.value
     const workerName = proxy.proxyTarget.value?.name ?? profile.value?.displayName ?? undefined
     if (formModal.value.id) {
       await schedules.updateSchedule(formModal.value.id, form)
     } else {
-      await schedules.createSchedule(form, effectiveWorkerId.value ?? undefined, workerName)
+      await schedules.createSchedule(form, targetWorkerId ?? undefined, workerName)
     }
     formModal.value = null
     await loadSchedules()
