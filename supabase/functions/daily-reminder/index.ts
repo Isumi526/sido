@@ -93,10 +93,10 @@ async function processAccount(
     .select('id, real_name, worker_id, workers(name)')
     .eq('account_id', accountId)
 
-  // 全作業員取得
+  // 全作業員取得（proxy_operator_id も含む）
   const { data: allWorkers } = await supabase
     .from('workers')
-    .select('id, name')
+    .select('id, name, proxy_operator_id')
     .eq('account_id', accountId)
 
   // 送信済み日報を一括取得
@@ -119,9 +119,14 @@ async function processAccount(
 
   // LINE未紐付けの作業員を追加（全日付が未送信扱い）
   const linkedWorkerIds = new Set((users ?? []).map((u: any) => u.worker_id).filter(Boolean))
+  const workerNameMap = new Map<string, string>((allWorkers ?? []).map((w: any) => [w.id, w.name]))
   for (const worker of (allWorkers ?? [])) {
     if (!linkedWorkerIds.has(worker.id)) {
-      unsubmitted.push({ name: `${worker.name}（LINE未紐付け）`, dates: allDates })
+      const operatorName = worker.proxy_operator_id ? workerNameMap.get(worker.proxy_operator_id) : null
+      const label = operatorName
+        ? `${worker.name}（代理: ${operatorName}）`
+        : `${worker.name}（LINE未紐付け）`
+      unsubmitted.push({ name: label, dates: allDates })
     }
   }
 
