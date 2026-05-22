@@ -52,20 +52,22 @@
               :class="{ 'my-col-cell': isMyWorker(w.id), 'pinned-col-cell': isPinned(w.id) }"
               @click="onCellTap(date, w.id)"
             >
-              <div
-                v-for="s in cellSchedules(date, w.id)"
-                :key="s.id"
-                class="sched-chip"
-                :class="{
-                  'night-shift': s.is_night_shift,
-                  'deleted-chip': !!s.deleted_at,
-                }"
-                @click.stop="openDetail(s)"
-              >
-                <span class="chip-title">{{ s.title }}</span>
-                <span v-if="s.start_time" class="chip-time">{{ s.start_time.slice(0, 5) }}–{{ s.end_time?.slice(0, 5) }}</span>
+              <div class="cell-inner">
+                <div
+                  v-for="s in cellSchedules(date, w.id)"
+                  :key="s.id"
+                  class="sched-chip"
+                  :class="{
+                    'night-shift': s.is_night_shift,
+                    'deleted-chip': !!s.deleted_at,
+                  }"
+                  @click.stop="openDetail(s)"
+                >
+                  <span class="chip-title">{{ s.title }}</span>
+                  <span v-if="s.start_time" class="chip-time">{{ s.start_time.slice(0, 5) }}–{{ s.end_time?.slice(0, 5) }}</span>
+                </div>
+                <button class="cell-add-btn" @click.stop="onCellTap(date, w.id)">＋</button>
               </div>
-              <button class="cell-add-btn" @click.stop="onCellTap(date, w.id)">＋</button>
             </td>
           </tr>
         </tbody>
@@ -507,13 +509,19 @@ thead th.sticky-col { z-index: 4; }
 
 /* スケジュールセル */
 .sched-cell {
-  padding: 2px 3px; vertical-align: top;
+  padding: 0; vertical-align: top;
   border-left: 1px solid #E0E0E0;
   border-bottom: 1px solid #f0f0f0;
   min-width: 80px; max-width: 90px;
   height: 72px;
   position: relative;
+  overflow: hidden;
+}
+.cell-inner {
+  position: absolute; inset: 0;
   display: flex; flex-direction: column;
+  padding: 2px 3px;
+  overflow: hidden;
 }
 .sched-cell.my-col-cell { background: rgba(6, 199, 85, .03); }
 
