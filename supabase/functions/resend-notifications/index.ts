@@ -104,6 +104,7 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json()
     const {
+      report_id,            // 単一日報ID指定（admin手動送信用）
       start_date,
       end_date = new Date().toISOString().split('T')[0],
       account_slug,
@@ -113,7 +114,7 @@ Deno.serve(async (req) => {
       limit = 0,            // 0=無制限、1以上=最大N件送信
     } = body
 
-    if (!start_date) return json({ error: 'start_date is required' }, 400)
+    if (!report_id && !start_date) return json({ error: 'start_date or report_id is required' }, 400)
     if (!account_slug) return json({ error: 'account_slug is required' }, 400)
 
     // account_id を解決
@@ -133,25 +134,40 @@ Deno.serve(async (req) => {
       return json({ error: 'no LINE group targets configured' }, 500)
     }
 
-    // 対象期間の日報を取得
-    const col      = filter_by === 'created_at' ? 'created_at' : 'date'
-    const startVal = filter_by === 'created_at' ? `${start_date}T00:00:00+00:00` : start_date
-    const endVal   = filter_by === 'created_at' ? `${end_date}T23:59:59+00:00`   : end_date
-    const { data: reports, error: qErr } = await supabase
-      .from('daily_reports')
-      .select('id, date, is_working, leave_type, sites, note, user_id, created_at')
-      .eq('account_id', account.id)
-      .gte(col, startVal)
-      .lte(col, endVal)
-      .order('created_at', { ascending: true })
-
-    if (qErr) return json({ error: qErr.message }, 500)
-    if (!reports || reports.length === 0) {
-      return json({ message: '対象期間に日報がありません', dry_run, start_date, end_date })
+    // 対象日報を取得
+    let reports: any[]
+    if (report_id) {
+      // 単一日報指定
+      const { data, error: qErr } = await supabase
+        .from('daily_reports')
+        .select('id, date, is_working, leave_type, sites, note, user_id, created_at')
+        .eq('id', report_id)
+        .eq('account_id', account.id)
+        .maybeSingle()
+      if (qErr) return json({ error: qErr.message }, 500)
+      if (!data) return json({ error: 'report not found' }, 404)
+      reports = [data]
+    } else {
+      // 期間指定
+      const col      = filter_by === 'created_at' ? 'created_at' : 'date'
+      const startVal = filter_by === 'created_at' ? `${start_date}T00:00:00+00:00` : start_date
+      const endVal   = filter_by === 'created_at' ? `${end_date}T23:59:59+00:00`   : end_date
+      const { data, error: qErr } = await supabase
+        .from('daily_reports')
+        .select('id, date, is_working, leave_type, sites, note, user_id, created_at')
+        .eq('account_id', account.id)
+        .gte(col, startVal)
+        .lte(col, endVal)
+        .order('created_at', { ascending: true })
+      if (qErr) return json({ error: qErr.message }, 500)
+      if (!data || data.length === 0) {
+        return json({ message: '対象期間に日報がありません', dry_run, start_date, end_date })
+      }
+      reports = data
     }
 
     // users テーブルから名前を一括取得
-    const userIds = [...new Set(reports.map(r => r.user_id).filter(Boolean))]
+    const userIds = [...new Set(reports.map((r: any) => r.user_id).filter(Boolean))]
     const { data: users } = await supabase
       .from('users')
       .select('id, real_name')
@@ -196,6 +212,11 @@ Deno.serve(async (req) => {
 
       if (!dry_run) {
         await Promise.allSettled(targets.map(id => pushLineText(id, text, LINE_TOKEN)))
+        // LINE通知済みフラグを更新
+        await supabase
+          .from('daily_reports')
+          .update({ line_notified_at: new Date().toISOString() })
+          .eq('id', r.id)
         console.log(`[resend] sent date=${date} sender=${sender} type=${type}`)
       } else {
         console.log(`[resend] DRY RUN date=${date} sender=${sender} type=${type}`)

@@ -2,8 +2,14 @@
 //  submit-report
 //  日報受信 → LINE通知
 // ============================================================
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { pushLineText } from '../_shared/line.ts'
 import { buildReportMessage } from '../_shared/notify.ts'
+
+const supabase = createClient(
+  Deno.env.get('SUPABASE_URL')              ?? '',
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+)
 
 // NOTIFY_GROUP_IDS は JSON配列 or カンマ区切り文字列どちらでも受け付ける
 function parseGroupIds(raw: string | undefined): string[] {
@@ -35,7 +41,7 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json()
-    const { sender = '不明', date, sites = [], note, isWorking, leaveType, _devNotifyGroupId, accountSlug } = body
+    const { sender = '不明', date, sites = [], note, isWorking, leaveType, _devNotifyGroupId, accountSlug, senderId } = body
 
     if (!date) return json({ error: '日付が指定されていません' }, 400)
 
@@ -54,6 +60,9 @@ Deno.serve(async (req) => {
     if (leaveType === 'paid_leave') {
       const text = `📋 ${fmtDate(date)} 日報\n👤 ${sender}\n──────────\n🌴 有給休暇${note ? '\n\n📝 ' + note : ''}`
       await Promise.all(targets.map(id => pushLineText(id, text, LINE_TOKEN)))
+      markNotified(senderId, date, accountSlug).catch(e =>
+        console.error('[submit-report] line_notified_at update failed:', e)
+      )
       return json({ success: true })
     }
 
@@ -61,6 +70,9 @@ Deno.serve(async (req) => {
     if (isWorking === false) {
       const text = `📋 ${fmtDate(date)} 日報\n👤 ${sender}\n──────────\n稼働なし${note ? '\n\n📝 ' + note : ''}`
       await Promise.all(targets.map(id => pushLineText(id, text, LINE_TOKEN)))
+      markNotified(senderId, date, accountSlug).catch(e =>
+        console.error('[submit-report] line_notified_at update failed:', e)
+      )
       return json({ success: true })
     }
 
@@ -68,12 +80,31 @@ Deno.serve(async (req) => {
     const results = await Promise.allSettled(targets.map(id => pushLineText(id, text, LINE_TOKEN)))
     console.log('[submit-report] LINE push results:', JSON.stringify(results))
 
+    markNotified(senderId, date, accountSlug).catch(e =>
+      console.error('[submit-report] line_notified_at update failed:', e)
+    )
+
     return json({ success: true })
   } catch (e) {
     console.error('[submit-report] error:', e)
     return json({ error: String(e) }, 500)
   }
 })
+
+async function markNotified(lineUserId: string | undefined, date: string, accountSlug: string | undefined) {
+  if (!lineUserId || !date || !accountSlug) return
+  const [{ data: account }, { data: user }] = await Promise.all([
+    supabase.from('accounts').select('id').eq('slug', accountSlug).maybeSingle(),
+    supabase.from('users').select('id').eq('line_user_id', lineUserId).maybeSingle(),
+  ])
+  if (!account || !user) return
+  await supabase
+    .from('daily_reports')
+    .update({ line_notified_at: new Date().toISOString() })
+    .eq('user_id', user.id)
+    .eq('date', date)
+    .eq('account_id', account.id)
+}
 
 function fmtDate(date: string): string {
   const WEEKDAYS = ['日','月','火','水','木','金','土']

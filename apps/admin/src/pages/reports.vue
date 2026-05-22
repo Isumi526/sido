@@ -26,6 +26,7 @@
           <span class="report-date">{{ r.date }}</span>
           <span class="report-worker">{{ r.worker_name ?? '—' }}</span>
           <span class="badge" :class="r.leave_type === 'paid_leave' ? 'paid-leave' : r.is_working ? 'working' : 'off'">{{ r.leave_type === 'paid_leave' ? '有給' : r.is_working ? '稼働' : '休み' }}</span>
+          <span class="badge" :class="r.line_notified_at ? 'notified' : 'not-notified'">{{ r.line_notified_at ? 'LINE済' : '未通知' }}</span>
           <span class="detail-hint">詳細 →</span>
         </div>
         <div v-if="r.is_working && r.sites?.length" class="sites" @click="selected = r">
@@ -35,6 +36,12 @@
           </div>
         </div>
         <div class="card-actions">
+          <button
+            v-if="!r.line_notified_at"
+            class="btn-notify-sm"
+            :disabled="notifying === r.id"
+            @click.stop="sendNotification(r)"
+          >{{ notifying === r.id ? '送信中...' : 'LINE通知' }}</button>
           <button class="btn-delete-sm" @click.stop="confirmDelete(r)">削除</button>
         </div>
       </div>
@@ -209,8 +216,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
-import { getAccountId } from '../lib/account'
+import { getAccountId, ACCOUNT_SLUG } from '../lib/account'
 import { computeWorkerHours, calcBreakMinutes } from '../lib/workerHours'
+
+const EDGE_URL  = import.meta.env.VITE_SUPABASE_EDGE_URL as string
+const ANON_KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 
 // 下請けマスタ（name → {unit_price, category}）
 const subMaster = ref<Record<string, { unit_price: number | null; category: string | null }>>({})
@@ -242,6 +252,7 @@ function nextMonth() {
 }
 const loading  = ref(false)
 const deleting = ref(false)
+const notifying = ref<string | null>(null)
 const reports  = ref<any[]>([])
 const selected = ref<any | null>(null)
 
@@ -265,6 +276,31 @@ function extractStoragePaths(r: any): string[] {
     }
   }
   return paths
+}
+
+async function sendNotification(r: any) {
+  if (!confirm(`${r.date} ${r.worker_name ?? ''} の日報をLINE通知しますか？`)) return
+  notifying.value = r.id
+  try {
+    const res = await fetch(`${EDGE_URL}/resend-notifications`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${ANON_KEY}`,
+      },
+      body: JSON.stringify({ report_id: r.id, account_slug: ACCOUNT_SLUG, dry_run: false }),
+    })
+    const data = await res.json()
+    if (data.count > 0) {
+      r.line_notified_at = new Date().toISOString()
+    } else {
+      alert('送信に失敗しました: ' + JSON.stringify(data))
+    }
+  } catch (e) {
+    alert('エラー: ' + String(e))
+  } finally {
+    notifying.value = null
+  }
 }
 
 async function deleteReport(r: any) {
@@ -347,7 +383,7 @@ async function load() {
 
   const { data } = await supabase
     .from('daily_reports')
-    .select('id, date, is_working, leave_type, sites, note, user_id, users(real_name, worker_id, workers(name, unit_price))')
+    .select('id, date, is_working, leave_type, line_notified_at, sites, note, user_id, users(real_name, worker_id, workers(name, unit_price))')
     .eq('account_id', accountId)
     .gte('date', dateFrom.value)
     .lte('date', dateTo.value)
@@ -387,6 +423,9 @@ onMounted(load)
 .report-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.1); }
 .report-header { cursor: pointer; }
 .card-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+.btn-notify-sm { background: none; border: 1px solid #6db8e8; color: #1a7abf; border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
+.btn-notify-sm:hover:not(:disabled) { background: #e8f4fd; }
+.btn-notify-sm:disabled { opacity: .5; cursor: not-allowed; }
 .btn-delete-sm { background: none; border: 1px solid #fca5a5; color: #dc2626; border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
 .btn-delete-sm:hover { background: #fef2f2; }
 .btn-delete { background: #dc2626; color: #fff; border: none; border-radius: 8px; padding: 6px 14px; font-size: 13px; font-weight: 700; cursor: pointer; }
@@ -396,9 +435,11 @@ onMounted(load)
 .report-worker { font-size: 14px; color: #555; flex: 1; }
 .detail-hint { font-size: 12px; color: #aaa; }
 .badge { font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 700; }
-.badge.working    { background: #e8fff0; color: #0a8a3a; }
-.badge.off        { background: #f5f5f5; color: #aaa; }
-.badge.paid-leave { background: #fff3e0; color: #e67e22; }
+.badge.working      { background: #e8fff0; color: #0a8a3a; }
+.badge.off          { background: #f5f5f5; color: #aaa; }
+.badge.paid-leave   { background: #fff3e0; color: #e67e22; }
+.badge.notified     { background: #e8f4fd; color: #1a7abf; }
+.badge.not-notified { background: #fff0f0; color: #cc3333; }
 .sites { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; padding-left: 8px; border-left: 2px solid #06C755; }
 .site-row { display: flex; gap: 16px; font-size: 13px; }
 .site-name { font-weight: 600; }
