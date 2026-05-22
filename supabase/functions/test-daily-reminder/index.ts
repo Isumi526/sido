@@ -109,23 +109,33 @@ async function processAccount(
 
   const submittedSet = new Set((reports ?? []).map((r: any) => `${r.user_id}__${r.date}`))
 
+  // worker情報のマップ（id → { name, proxy_operator_id }）
+  const workerMap = new Map<string, { name: string; proxy_operator_id: string | null }>(
+    (allWorkers ?? []).map((w: any) => [w.id, { name: w.name, proxy_operator_id: w.proxy_operator_id ?? null }])
+  )
+
+  function buildLabel(workerName: string, workerId: string | null | undefined, suffix?: string): string {
+    const proxyId = workerId ? workerMap.get(workerId)?.proxy_operator_id : null
+    const proxyName = proxyId ? workerMap.get(proxyId)?.name : null
+    if (proxyName) return `${workerName}（代理: ${proxyName}）`
+    if (suffix)    return `${workerName}（${suffix}）`
+    return workerName
+  }
+
   // 未送信を抽出（LINE紐付け済みユーザー）
   const unsubmitted: { name: string; dates: string[] }[] = []
   for (const user of (users ?? [])) {
-    const name = (user.workers as any)?.name ?? user.real_name ?? '不明'
+    const workerName = (user.workers as any)?.name ?? user.real_name ?? '不明'
+    const name = buildLabel(workerName, (user as any).worker_id)
     const missing = allDates.filter(d => !submittedSet.has(`${user.id}__${d}`))
     if (missing.length > 0) unsubmitted.push({ name, dates: missing })
   }
 
   // LINE未紐付けの作業員を追加（全日付が未送信扱い）
   const linkedWorkerIds = new Set((users ?? []).map((u: any) => u.worker_id).filter(Boolean))
-  const workerNameMap = new Map<string, string>((allWorkers ?? []).map((w: any) => [w.id, w.name]))
   for (const worker of (allWorkers ?? [])) {
     if (!linkedWorkerIds.has(worker.id)) {
-      const operatorName = worker.proxy_operator_id ? workerNameMap.get(worker.proxy_operator_id) : null
-      const label = operatorName
-        ? `${worker.name}（代理: ${operatorName}）`
-        : `${worker.name}（LINE未紐付け）`
+      const label = buildLabel(worker.name, worker.id, 'LINE未紐付け')
       unsubmitted.push({ name: label, dates: allDates })
     }
   }
