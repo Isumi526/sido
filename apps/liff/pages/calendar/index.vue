@@ -79,33 +79,36 @@
           👤 {{ workers.find(w => w.id === (formModal as any)._worker_id)?.name ?? '不明' }}
         </div>
 
-        <input v-model="formModal.title" class="title-input" placeholder="タイトル" />
+        <!-- 現場選択 -->
+        <div class="form-card">
+          <div class="form-row">
+            <span class="form-row-label">現場 *</span>
+            <select v-model="formModal.title" class="site-select">
+              <option value="">選択してください</option>
+              <option v-for="s in master.siteNames.value" :key="s" :value="s">{{ s }}</option>
+            </select>
+          </div>
+        </div>
 
         <div class="form-card">
           <div class="form-row">
-            <span class="form-row-label">終日</span>
-            <label class="ios-toggle">
-              <input type="checkbox" v-model="formModal.all_day" />
-              <span class="ios-toggle-track"></span>
-            </label>
+            <span class="form-row-label">開始日</span>
+            <input type="date" v-model="formModal.start_date" class="dt-input dt-date" />
           </div>
           <div class="form-divider"></div>
           <div class="form-row">
-            <span class="form-row-label">開始</span>
-            <div class="dt-inline">
-              <input type="date" v-model="formModal.start_date" class="dt-input dt-date" />
-              <span v-if="!formModal.all_day" class="dt-sep"></span>
-              <input v-if="!formModal.all_day" type="time" v-model="formModal.start_time" class="dt-input dt-time" />
-            </div>
+            <span class="form-row-label">終了日</span>
+            <input type="date" v-model="formModal.end_date" class="dt-input dt-date" />
           </div>
           <div class="form-divider"></div>
           <div class="form-row">
-            <span class="form-row-label">終了</span>
-            <div class="dt-inline">
-              <input type="date" v-model="formModal.end_date" class="dt-input dt-date" />
-              <span v-if="!formModal.all_day" class="dt-sep"></span>
-              <input v-if="!formModal.all_day" type="time" v-model="formModal.end_time" class="dt-input dt-time" />
-            </div>
+            <span class="form-row-label">開始時刻</span>
+            <input type="time" v-model="formModal.start_time" class="dt-input dt-time" />
+          </div>
+          <div class="form-divider"></div>
+          <div class="form-row">
+            <span class="form-row-label">終了時刻</span>
+            <input type="time" v-model="formModal.end_time" class="dt-input dt-time" />
           </div>
         </div>
 
@@ -335,7 +338,7 @@ function onCellTap(date: string, workerId: string) {
     _worker_id: workerId,
     title: '', description: '', category: 'work', site_id: '',
     all_day: true, start_date: date, end_date: date,
-    start_time: '09:00', end_time: '17:00',
+    start_time: '', end_time: '',
     is_night_shift: false,
   }
   formError.value = ''
@@ -371,6 +374,9 @@ async function saveSchedule() {
   if (formModal.value.start_date > formModal.value.end_date) { formError.value = '終了日は開始日以降にしてください'; return }
   saving.value = true; formError.value = ''
   try {
+    // 時刻が両方入力されていれば時刻あり、なければ終日
+    const hasTime = !!(formModal.value.start_time && formModal.value.end_time)
+    formModal.value.all_day = !hasTime
     const form = formModal.value as ScheduleForm
     const targetWorkerId = (formModal.value as any)._worker_id ?? effectiveWorkerId.value
     const workerName = proxy.proxyTarget.value?.name ?? profile.value?.displayName ?? undefined
@@ -517,12 +523,12 @@ thead th.sticky-col { z-index: 4; }
   color: #06C755; margin-bottom: 12px;
 }
 
-.title-input {
-  width: 100%; background: #fff; border: none; border-radius: 12px;
-  color: #111; padding: 14px; font-size: 17px; font-weight: 500;
-  box-sizing: border-box; margin-bottom: 10px; outline: none;
+.site-select {
+  border: none; background: none; outline: none;
+  color: #06C755; font-size: 15px; cursor: pointer;
+  font-family: inherit; margin-left: auto; max-width: 60%;
+  text-align: right;
 }
-.title-input::placeholder { color: #c7c7cc; }
 
 .form-card { background: #fff; border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
 .form-row { display: flex; align-items: center; padding: 12px 14px; min-height: 44px; }

@@ -123,7 +123,6 @@ export const useSchedules = () => {
         .from('schedules')
         .select('*, worker:workers(id, name)')
         .eq('account_id', accountId)
-        .is('deleted_at', null)
         .lte('start_date', to)
         .gte('end_date', from)
         .order('start_date')
