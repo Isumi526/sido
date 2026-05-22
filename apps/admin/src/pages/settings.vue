@@ -77,8 +77,7 @@ async function runReminder(dryRun: boolean) {
   try {
     const fnName = IS_DEV ? 'test-daily-reminder' : 'daily-reminder'
     // ローカルは自アカウント(ACCOUNT_SLUG)のみ対象
-    const body: any = { dry_run: dryRun }
-    if (IS_DEV) body.account_slug = ACCOUNT_SLUG
+    const body: any = { dry_run: dryRun, account_slug: ACCOUNT_SLUG }
     const { data: { session } } = await supabase.auth.getSession()
     const res = await fetch(`${EDGE_URL}/${fnName}`, {
       method: 'POST',
