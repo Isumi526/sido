@@ -1,22 +1,21 @@
 // ============================================================
 //  daily-reminder
 //  未送信日報リマインド → LINE通知（マルチテナント対応）
-//  毎朝8時に pg_cron から呼び出し / 管理画面から手動実行も可能
+//  pg_cron から毎時呼び出し → settings の reminder_time と一致する時刻のみ実行
+//  管理画面から手動実行も可能（manual: true で時刻チェックをスキップ）
 //
 //  各アカウントの settings テーブルから以下を参照:
 //    service_start_date : チェック開始日
 //    notify_group_id    : 送信先 LINE グループID
-//
-//  アカウント（slug）で環境を分離:
-//    slug=test → テスト用グループに送信
-//    slug=sido → 本番グループに送信
+//    reminder_enabled   : 自動実行 on/off（'true'/'false'、デフォルト 'true'）
+//    reminder_time      : 実行時間 JST（'HH:00' 形式、デフォルト '08:00'）
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { pushLineMessages } from '../_shared/line.ts'
 
-const LINE_TOKEN      = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? ''
-const SUPABASE_URL    = Deno.env.get('SUPABASE_URL') ?? ''
-const SUPABASE_KEY    = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+const LINE_TOKEN        = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? ''
+const SUPABASE_URL      = Deno.env.get('SUPABASE_URL') ?? ''
+const SUPABASE_KEY      = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const PROD_ACCOUNT_SLUG = Deno.env.get('ACCOUNT_SLUG') ?? ''
 const PROD_GROUP_IDS    = JSON.parse(Deno.env.get('NOTIFY_GROUP_IDS')     ?? '[]') as string[]
 const DEV_GROUP_IDS     = JSON.parse(Deno.env.get('DEV_NOTIFY_GROUP_IDS') ?? '[]') as string[]
@@ -60,17 +59,29 @@ async function processAccount(
   slug: string,
   yesterday: string,
   dryRun: boolean,
+  manual: boolean,
 ): Promise<{ slug: string; result: string; unsubmitted: UnsubmittedEntry[] }> {
 
   const { data: settings } = await supabase
     .from('settings')
     .select('key, value')
     .eq('account_id', accountId)
-    .in('key', ['service_start_date', 'notify_group_id'])
+    .in('key', ['service_start_date', 'notify_group_id', 'reminder_enabled', 'reminder_time'])
 
   const s = Object.fromEntries((settings ?? []).map(r => [r.key, r.value]))
-  const startDate = s['service_start_date']
-  const groupId   = s['notify_group_id']
+  const startDate       = s['service_start_date']
+  const groupId         = s['notify_group_id']
+  const reminderEnabled = s['reminder_enabled'] ?? 'true'
+  const reminderTime    = s['reminder_time']    ?? '08:00'
+
+  // 自動実行時のみ: 有効チェック・時刻チェック
+  if (!manual) {
+    if (reminderEnabled === 'false') return { slug, result: 'リマインド無効', unsubmitted: [] }
+
+    const targetHour = parseInt(reminderTime.split(':')[0], 10)
+    const jstHour    = (new Date().getUTCHours() + 9) % 24
+    if (jstHour !== targetHour) return { slug, result: `スキップ（実行時間外: JST ${jstHour}時）`, unsubmitted: [] }
+  }
 
   if (!startDate) return { slug, result: 'service_start_date 未設定', unsubmitted: [] }
 
@@ -178,14 +189,16 @@ Deno.serve(async (req) => {
       const { data: settings } = await supabase
         .from('settings').select('key, value')
         .eq('account_id', acc.id)
-        .in('key', ['service_start_date', 'notify_group_id'])
+        .in('key', ['service_start_date', 'notify_group_id', 'reminder_enabled', 'reminder_time'])
       const s = Object.fromEntries((settings ?? []).map(r => [r.key, r.value]))
       const fallback = acc.slug === PROD_ACCOUNT_SLUG ? PROD_GROUP_IDS : DEV_GROUP_IDS
       return {
         slug: acc.slug,
         service_start_date: s['service_start_date'] ?? null,
-        notify_group_id: s['notify_group_id'] ?? null,
-        fallback_group_ids: fallback,
+        notify_group_id:    s['notify_group_id']    ?? null,
+        reminder_enabled:   s['reminder_enabled']   ?? 'true',
+        reminder_time:      s['reminder_time']       ?? '08:00',
+        fallback_group_ids:  fallback,
         effective_group_ids: s['notify_group_id'] ? [s['notify_group_id']] : fallback,
       }
     }))
@@ -195,17 +208,20 @@ Deno.serve(async (req) => {
   let dryRun     = false
   let targetDate: string | null = null
   let targetSlug: string | null = null
+  let manual     = false
   try {
     const body = await req.json()
     dryRun     = body.dry_run      ?? false
     targetDate = body.target_date  ?? null
     targetSlug = body.account_slug ?? null
+    manual     = body.manual       ?? false
   } catch { /* 空bodyは無視 */ }
 
+  // 昨日の日付（JST基準・target_date で上書き可能）
   const yesterday = targetDate ?? (() => {
-    const now = new Date()
-    now.setDate(now.getDate() - 1)
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const jst = new Date(Date.now() + 9 * 60 * 60 * 1000)
+    jst.setDate(jst.getDate() - 1)
+    return `${jst.getFullYear()}-${String(jst.getMonth() + 1).padStart(2, '0')}-${String(jst.getDate()).padStart(2, '0')}`
   })()
 
   try {
@@ -216,7 +232,7 @@ Deno.serve(async (req) => {
     if (!accounts?.length) return json({ error: 'アカウントが見つかりません' }, 404)
 
     const results = await Promise.all(
-      accounts.map(acc => processAccount(acc.id, acc.slug, yesterday, dryRun))
+      accounts.map(acc => processAccount(acc.id, acc.slug, yesterday, dryRun, manual))
     )
 
     return json({ success: true, dryRun, yesterday, results })

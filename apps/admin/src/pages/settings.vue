@@ -30,15 +30,44 @@
     </div>
     <p v-if="saveError" class="error">{{ saveError }}</p>
 
-  <!-- 未送信リマインド手動実行 -->
+  <!-- 未送信リマインド -->
   <div class="reminder-box">
-    <div class="reminder-header">
-      <div>
-        <div class="reminder-title">未送信日報リマインド</div>
-        <div class="reminder-desc">サービス開始日〜昨日の未送信者にLINE通知を送ります（毎朝8時自動実行）</div>
+    <div class="reminder-title">未送信日報リマインド</div>
+
+    <!-- 自動実行設定 -->
+    <div class="reminder-config">
+      <div class="config-row">
+        <span class="config-label">自動実行</span>
+        <button
+          class="toggle"
+          :class="{ on: reminderEnabled }"
+          :disabled="reminderConfigSaving"
+          @click="setReminderEnabled(!reminderEnabled)"
+        >
+          <span class="toggle-knob" />
+          <span class="toggle-text">{{ reminderEnabled ? 'ON' : 'OFF' }}</span>
+        </button>
       </div>
+      <div class="config-row">
+        <span class="config-label">実行時間（JST）</span>
+        <select
+          v-model="reminderTime"
+          class="select-time"
+          :disabled="reminderConfigSaving || !reminderEnabled"
+          @change="setReminderTime(reminderTime)"
+        >
+          <option v-for="h in 24" :key="h - 1" :value="`${String(h - 1).padStart(2, '0')}:00`">
+            {{ String(h - 1).padStart(2, '0') }}:00
+          </option>
+        </select>
+      </div>
+    </div>
+
+    <!-- 手動実行 -->
+    <div class="reminder-header">
+      <div class="reminder-desc">サービス開始日〜昨日の未送信者にLINE通知（手動実行）</div>
       <div class="reminder-btns">
-        <button class="btn-dry" :disabled="reminding" @click="runReminder(true)">
+        <button class="btn-dry" :disabled="!!reminding" @click="runReminder(true)">
           {{ reminding === 'dry' ? '確認中...' : 'ドライラン（確認のみ）' }}
         </button>
         <button class="btn-remind" :disabled="!!reminding" @click="runReminder(false)">
@@ -61,7 +90,42 @@ import { getAccountId, ACCOUNT_SLUG } from '../lib/account'
 const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
 const IS_DEV   = import.meta.env.DEV
 
-const reminding     = ref<false | 'dry' | 'send'>(false)
+// ── リマインダー設定 ──────────────────────────────────────
+const reminderEnabled     = ref(true)
+const reminderTime        = ref('08:00')
+const reminderConfigSaving = ref(false)
+
+async function loadReminderConfig() {
+  const accountId = await getAccountId()
+  const { data } = await supabase.from('settings').select('key, value')
+    .eq('account_id', accountId)
+    .in('key', ['reminder_enabled', 'reminder_time'])
+  const m = Object.fromEntries((data ?? []).map(s => [s.key, s.value]))
+  reminderEnabled.value = (m['reminder_enabled'] ?? 'true') === 'true'
+  reminderTime.value    = m['reminder_time'] ?? '08:00'
+}
+
+async function upsertSetting(key: string, value: string, label: string) {
+  reminderConfigSaving.value = true
+  const accountId = await getAccountId()
+  await supabase.from('settings').upsert(
+    { key, value, label, account_id: accountId, updated_at: new Date().toISOString() },
+    { onConflict: 'key,account_id' }
+  )
+  reminderConfigSaving.value = false
+}
+
+function setReminderEnabled(val: boolean) {
+  reminderEnabled.value = val
+  upsertSetting('reminder_enabled', String(val), 'リマインド自動実行')
+}
+
+function setReminderTime(val: string) {
+  upsertSetting('reminder_time', val, 'リマインド実行時間')
+}
+
+// ── 手動実行 ──────────────────────────────────────────────
+const reminding      = ref<false | 'dry' | 'send'>(false)
 const reminderResult = ref<{ type: 'success' | 'error' | 'info'; message: string } | null>(null)
 
 function fmtDate(d: string): string {
@@ -76,8 +140,7 @@ async function runReminder(dryRun: boolean) {
   reminderResult.value = null
   try {
     const fnName = IS_DEV ? 'test-daily-reminder' : 'daily-reminder'
-    // ローカルは自アカウント(ACCOUNT_SLUG)のみ対象
-    const body: any = { dry_run: dryRun, account_slug: ACCOUNT_SLUG }
+    const body: any = { dry_run: dryRun, account_slug: ACCOUNT_SLUG, manual: true }
     const { data: { session } } = await supabase.auth.getSession()
     const res = await fetch(`${EDGE_URL}/${fnName}`, {
       method: 'POST',
@@ -90,7 +153,6 @@ async function runReminder(dryRun: boolean) {
     const data = await res.json()
     if (!res.ok) throw new Error(data.error ?? res.statusText)
 
-    // results配列からメッセージを構築（LINEと同じフォーマット）
     const results: { slug: string; result: string; unsubmitted: { name: string; dates: string[] }[] }[] = data.results ?? []
     const allUnsubmitted = results.flatMap(r => r.unsubmitted)
     const yesterday: string = data.yesterday ?? ''
@@ -124,9 +186,9 @@ async function runReminder(dryRun: boolean) {
   }
 }
 
+// ── 汎用設定テーブル ──────────────────────────────────────
 type Setting = { key: string; value: string; label: string; inputType?: string }
 
-// inputType を持たないものは 'number' 扱い（既存の燃料単価など）
 const DEFAULTS: Setting[] = [
   { key: 'service_start_date', label: 'サービス開始日',    value: '', inputType: 'date' },
   { key: 'notify_group_id',    label: 'LINE通知グループID', value: '', inputType: 'text' },
@@ -142,10 +204,12 @@ const saveError = ref('')
 async function load() {
   loading.value = true
   const accountId = await getAccountId()
-  const { data } = await supabase.from('settings').select('key, value, label').eq('account_id', accountId).order('key')
+  const { data } = await supabase.from('settings').select('key, value, label')
+    .eq('account_id', accountId)
+    .not('key', 'in', '(reminder_enabled,reminder_time)')
+    .order('key')
   const fromDb = (data ?? []) as Setting[]
 
-  // DEFAULTS にあるがDBにないものを末尾に追加（value=''で表示）
   const dbKeys = new Set(fromDb.map(s => s.key))
   const merged = [
     ...fromDb.map(s => ({ ...s, inputType: DEFAULTS.find(d => d.key === s.key)?.inputType })),
@@ -154,7 +218,11 @@ async function load() {
   settings.value = merged
   loading.value = false
 }
-onMounted(load)
+
+onMounted(() => {
+  load()
+  loadReminderConfig()
+})
 
 function startEdit(s: Setting) {
   editing.value   = s.key
@@ -197,8 +265,26 @@ async function save(s: Setting) {
 .error { color: #E53935; font-size: 13px; margin-top: 12px; }
 
 .reminder-box { margin-top: 32px; background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
-.reminder-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-.reminder-title { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+.reminder-title { font-size: 15px; font-weight: 700; margin-bottom: 16px; }
+
+/* 自動実行設定 */
+.reminder-config { display: flex; flex-direction: column; gap: 12px; padding: 16px; background: #f9f9f9; border-radius: 8px; margin-bottom: 20px; }
+.config-row { display: flex; align-items: center; gap: 12px; }
+.config-label { font-size: 13px; color: #555; width: 120px; flex-shrink: 0; }
+
+.toggle { display: flex; align-items: center; gap: 8px; background: #ddd; border: none; border-radius: 20px; padding: 4px 12px 4px 4px; cursor: pointer; transition: background .2s; width: 80px; }
+.toggle.on { background: #06C755; }
+.toggle:disabled { opacity: .5; cursor: not-allowed; }
+.toggle-knob { width: 22px; height: 22px; background: #fff; border-radius: 50%; flex-shrink: 0; transition: transform .2s; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+.toggle.on .toggle-knob { transform: translateX(2px); }
+.toggle-text { font-size: 12px; font-weight: 700; color: #fff; }
+.toggle:not(.on) .toggle-text { color: #888; }
+
+.select-time { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 6px 10px; font-size: 14px; cursor: pointer; }
+.select-time:disabled { opacity: .5; cursor: not-allowed; }
+
+/* 手動実行 */
+.reminder-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .reminder-desc { font-size: 12px; color: #888; }
 .reminder-btns { display: flex; gap: 10px; flex-shrink: 0; }
 .btn-dry    { background: #f5f5f5; color: #555; border: 1px solid #ddd; border-radius: 8px; padding: 8px 16px; font-size: 13px; cursor: pointer; }
