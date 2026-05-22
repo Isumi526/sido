@@ -513,6 +513,7 @@ thead th.sticky-col { z-index: 4; }
   min-width: 80px; max-width: 90px;
   height: 72px;
   position: relative;
+  display: flex; flex-direction: column;
 }
 .sched-cell.my-col-cell { background: rgba(6, 199, 85, .03); }
 
@@ -537,10 +538,10 @@ thead th.sticky-col { z-index: 4; }
 
 /* セル内 + ボタン */
 .cell-add-btn {
-  display: block; width: 100%; margin-top: 2px;
+  display: block; width: 100%;
   background: none; border: 1px dashed #ccc; border-radius: 3px;
-  color: #bbb; font-size: 12px; line-height: 1.4;
-  cursor: pointer; padding: 0;
+  color: #bbb; font-size: 12px; cursor: pointer; padding: 0;
+  flex: 1; min-height: 24px;
 }
 .cell-add-btn:active { background: #f0fdf4; border-color: #06C755; color: #06C755; }
 
