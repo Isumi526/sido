@@ -12,7 +12,7 @@
 //    slug=sido → 本番グループに送信
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { pushLineText } from '../_shared/line.ts'
+import { pushLineMessages } from '../_shared/line.ts'
 
 const LINE_TOKEN      = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? ''
 const SUPABASE_URL    = Deno.env.get('SUPABASE_URL') ?? ''
@@ -51,12 +51,19 @@ function json(body: unknown, status = 200): Response {
   })
 }
 
+type UnsubmittedEntry = {
+  name: string          // 表示名（例: "山田（代理: 亥角貴治）"）
+  dates: string[]
+  mentionUserId?: string  // メンション対象の LINE user ID
+  mentionTarget?: string  // name の中でメンションに置き換える部分（例: "亥角貴治"）
+}
+
 async function processAccount(
   accountId: string,
   slug: string,
   yesterday: string,
   dryRun: boolean,
-): Promise<{ slug: string; result: string; unsubmitted: { name: string; dates: string[] }[] }> {
+): Promise<{ slug: string; result: string; unsubmitted: UnsubmittedEntry[] }> {
 
   // settings を一括取得
   const { data: settings } = await supabase
@@ -71,7 +78,6 @@ async function processAccount(
 
   if (!startDate) return { slug, result: 'service_start_date 未設定', unsubmitted: [] }
 
-  // notify_group_id が未設定の場合は env var をフォールバック
   const resolvedGroupIds: string[] = groupId
     ? [groupId]
     : (slug === PROD_ACCOUNT_SLUG ? PROD_GROUP_IDS : DEV_GROUP_IDS)
@@ -87,10 +93,10 @@ async function processAccount(
     cursor = addDay(cursor)
   }
 
-  // ユーザー取得（LINE紐付け済み）
+  // ユーザー取得（LINE紐付け済み・line_user_id も取得）
   const { data: users } = await supabase
     .from('users')
-    .select('id, real_name, worker_id, workers(name)')
+    .select('id, real_name, worker_id, line_user_id, workers(name)')
     .eq('account_id', accountId)
 
   // 全作業員取得（有効のみ・proxy_operator_id も含む）
@@ -110,62 +116,120 @@ async function processAccount(
 
   const submittedSet = new Set((reports ?? []).map((r: any) => `${r.user_id}__${r.date}`))
 
-  // worker情報のマップ（id → { name, proxy_operator_id }）
+  // worker情報マップ（id → { name, proxy_operator_id }）
   const workerMap = new Map<string, { name: string; proxy_operator_id: string | null }>(
     (allWorkers ?? []).map((w: any) => [w.id, { name: w.name, proxy_operator_id: w.proxy_operator_id ?? null }])
   )
 
-  function buildLabel(workerName: string, workerId: string | null | undefined, suffix?: string): string {
-    const proxyId = workerId ? workerMap.get(workerId)?.proxy_operator_id : null
-    const proxyName = proxyId ? workerMap.get(proxyId)?.name : null
-    if (proxyName) return `${workerName}（代理: ${proxyName}）`
-    if (suffix)    return `${workerName}（${suffix}）`
-    return workerName
+  // workerId → line_user_id マップ（代理人のLINE IDを引くため）
+  const workerIdToLineUserId = new Map<string, string>(
+    (users ?? [])
+      .filter((u: any) => u.worker_id && u.line_user_id)
+      .map((u: any) => [u.worker_id, u.line_user_id])
+  )
+
+  // エントリ生成ヘルパー
+  function buildEntry(
+    workerName: string,
+    workerId: string | null | undefined,
+    selfLineUserId: string | null | undefined,
+    suffix?: string,
+  ): UnsubmittedEntry {
+    const proxyId       = workerId ? workerMap.get(workerId)?.proxy_operator_id : null
+    const proxyName     = proxyId  ? workerMap.get(proxyId)?.name : null
+    const proxyLineUser = proxyId  ? workerIdToLineUserId.get(proxyId) : null
+
+    if (proxyName) {
+      return {
+        name: `${workerName}（代理: ${proxyName}）`,
+        dates: [],
+        mentionUserId:  proxyLineUser  ?? undefined,
+        mentionTarget:  proxyLineUser  ? proxyName : undefined,
+      }
+    }
+    if (selfLineUserId) {
+      return { name: workerName, dates: [], mentionUserId: selfLineUserId, mentionTarget: workerName }
+    }
+    return { name: suffix ? `${workerName}（${suffix}）` : workerName, dates: [] }
   }
 
-  // 有効作業員IDのセット（users の絞り込みに使用）
+  // 有効作業員IDセット
   const activeWorkerIds = new Set((allWorkers ?? []).map((w: any) => w.id))
 
   // 未送信を抽出（LINE紐付け済みユーザー・有効作業員のみ）
-  const unsubmitted: { name: string; dates: string[] }[] = []
+  const unsubmitted: UnsubmittedEntry[] = []
   for (const user of (users ?? [])) {
-    // worker_id が設定されていて無効な場合はスキップ
     const workerId = (user as any).worker_id
     if (workerId && !activeWorkerIds.has(workerId)) continue
 
     const workerName = (user.workers as any)?.name ?? user.real_name ?? '不明'
-    const name = buildLabel(workerName, workerId)
+    const entry = buildEntry(workerName, workerId, (user as any).line_user_id)
     const missing = allDates.filter(d => !submittedSet.has(`${user.id}__${d}`))
-    if (missing.length > 0) unsubmitted.push({ name, dates: missing })
+    if (missing.length > 0) unsubmitted.push({ ...entry, dates: missing })
   }
 
-  // LINE未紐付けの作業員を追加（全日付が未送信扱い）
+  // LINE未紐付けの作業員を追加
   const linkedWorkerIds = new Set((users ?? []).map((u: any) => u.worker_id).filter(Boolean))
   for (const worker of (allWorkers ?? [])) {
     if (!linkedWorkerIds.has(worker.id)) {
-      const label = buildLabel(worker.name, worker.id, 'LINE未紐付け')
-      unsubmitted.push({ name: label, dates: allDates })
+      const entry = buildEntry(worker.name, worker.id, null, 'LINE未紐付け')
+      unsubmitted.push({ ...entry, dates: allDates })
     }
   }
 
   if (unsubmitted.length === 0) return { slug, result: '全員送信済み', unsubmitted: [] }
 
-  // LINEメッセージ生成
-  const lines = [
+  // LINEメッセージ生成（mentionees付き）
+  const headerLines = [
     '📋 日報未送信リマインド（敬称略）',
     `📅 ${fmtDate(yesterday)} 時点`,
     '──────────',
   ]
-  for (const { name, dates } of unsubmitted) {
-    lines.push(`⚠️ ${name}`)
-    const MAX = 5
-    dates.slice(0, MAX).forEach(d => lines.push(`  ${fmtDate(d)}`))
-    if (dates.length > MAX) lines.push(`  他${dates.length - MAX}日`)
+  type MsgLine = { text: string; mention?: { userId: string; atName: string } }
+  const msgLines: MsgLine[] = headerLines.map(t => ({ text: t }))
+
+  const MAX = 5
+  for (const entry of unsubmitted) {
+    const prefix = '⚠️ '
+    if (entry.mentionUserId && entry.mentionTarget) {
+      const atName = '@' + entry.mentionTarget
+      const lineText = prefix + entry.name.replace(entry.mentionTarget, atName)
+      msgLines.push({ text: lineText, mention: { userId: entry.mentionUserId, atName } })
+    } else {
+      msgLines.push({ text: prefix + entry.name })
+    }
+    entry.dates.slice(0, MAX).forEach(d => msgLines.push({ text: `  ${fmtDate(d)}` }))
+    if (entry.dates.length > MAX) msgLines.push({ text: `  他${entry.dates.length - MAX}日` })
   }
-  const text = lines.join('\n')
+
+  // 文字位置を Unicode コードポイント単位で計算
+  let fullText = ''
+  let codePointPos = 0
+  const mentionees: { index: number; length: number; userId: string; type: string }[] = []
+
+  for (let i = 0; i < msgLines.length; i++) {
+    if (i > 0) { fullText += '\n'; codePointPos += 1 }
+    const line = msgLines[i]
+    const linePoints = [...line.text]
+    if (line.mention) {
+      const atIdx = linePoints.indexOf('@')
+      if (atIdx >= 0) {
+        mentionees.push({
+          index:  codePointPos + atIdx,
+          length: [...line.mention.atName].length,
+          userId: line.mention.userId,
+          type:   'user',
+        })
+      }
+    }
+    fullText += line.text
+    codePointPos += linePoints.length
+  }
 
   if (!dryRun) {
-    await Promise.all(resolvedGroupIds.map(id => pushLineText(id, text, LINE_TOKEN)))
+    const msg: any = { type: 'text', text: fullText }
+    if (mentionees.length > 0) msg.mentionees = mentionees
+    await Promise.all(resolvedGroupIds.map(id => pushLineMessages(id, [msg], LINE_TOKEN)))
   }
 
   return { slug, result: dryRun ? 'dry-run' : '送信完了', unsubmitted }
