@@ -65,6 +65,7 @@
                 <span class="chip-title">{{ s.title }}</span>
                 <span v-if="s.start_time" class="chip-time">{{ s.start_time.slice(0, 5) }}–{{ s.end_time?.slice(0, 5) }}</span>
               </div>
+              <button class="cell-add-btn" @click.stop="onCellTap(date, w.id)">＋</button>
             </td>
           </tr>
         </tbody>
@@ -92,23 +93,21 @@
 
         <div class="form-card">
           <div class="form-row">
-            <span class="form-row-label">開始日</span>
-            <input type="date" v-model="formModal.start_date" class="dt-input dt-date" />
+            <span class="form-row-label">開始</span>
+            <div class="dt-inline">
+              <input type="date" v-model="formModal.start_date" class="dt-input dt-date" />
+              <span class="dt-sep"></span>
+              <input type="time" v-model="formModal.start_time" class="dt-input dt-time" />
+            </div>
           </div>
           <div class="form-divider"></div>
           <div class="form-row">
-            <span class="form-row-label">終了日</span>
-            <input type="date" v-model="formModal.end_date" class="dt-input dt-date" />
-          </div>
-          <div class="form-divider"></div>
-          <div class="form-row">
-            <span class="form-row-label">開始時刻</span>
-            <input type="time" v-model="formModal.start_time" class="dt-input dt-time" />
-          </div>
-          <div class="form-divider"></div>
-          <div class="form-row">
-            <span class="form-row-label">終了時刻</span>
-            <input type="time" v-model="formModal.end_time" class="dt-input dt-time" />
+            <span class="form-row-label">終了</span>
+            <div class="dt-inline">
+              <input type="date" v-model="formModal.end_date" class="dt-input dt-date" />
+              <span class="dt-sep"></span>
+              <input type="time" v-model="formModal.end_time" class="dt-input dt-time" />
+            </div>
           </div>
         </div>
 
@@ -351,8 +350,14 @@ function openEdit(ev: Schedule) {
     title: ev.title, description: ev.description ?? '',
     category: ev.category, site_id: ev.site_id ?? '', all_day: ev.all_day,
     start_date: ev.start_date, end_date: ev.end_date,
-    start_time: ev.start_time ?? '09:00', end_time: ev.end_time ?? '17:00',
+    start_time: ev.start_time ?? '', end_time: ev.end_time ?? '',
     is_night_shift: ev.is_night_shift,
+    _original: {
+      title: ev.title, description: ev.description ?? null,
+      start_date: ev.start_date, end_date: ev.end_date,
+      start_time: ev.start_time ?? null, end_time: ev.end_time ?? null,
+      is_night_shift: ev.is_night_shift,
+    },
   }
   formError.value = ''
 }
@@ -381,7 +386,23 @@ async function saveSchedule() {
     const targetWorkerId = (formModal.value as any)._worker_id ?? effectiveWorkerId.value
     const workerName = proxy.proxyTarget.value?.name ?? profile.value?.displayName ?? undefined
     if (formModal.value.id) {
+      const orig = (formModal.value as any)._original ?? {}
       await schedules.updateSchedule(formModal.value.id, form)
+      // 編集履歴を記録
+      const changes: Record<string, { old: unknown; new: unknown }> = {}
+      const diffKeys = ['title', 'start_date', 'end_date', 'start_time', 'end_time', 'is_night_shift', 'description']
+      for (const k of diffKeys) {
+        const ov = orig[k] ?? null; const nv = (form as any)[k] ?? null
+        if (ov !== nv) changes[k] = { old: ov, new: nv }
+      }
+      if (Object.keys(changes).length) {
+        await supabase.from('schedule_edits').insert({
+          schedule_id: formModal.value.id,
+          edited_by_name: workerName ?? '不明',
+          edited_at: new Date().toISOString(),
+          changes,
+        })
+      }
     } else {
       await schedules.createSchedule(form, targetWorkerId ?? undefined, workerName)
     }
@@ -489,18 +510,18 @@ thead th.sticky-col { z-index: 4; }
   border-left: 1px solid #E0E0E0;
   border-bottom: 1px solid #f0f0f0;
   min-width: 80px; max-width: 90px;
-  min-height: 28px;
+  min-height: 48px;
+  position: relative;
 }
 .sched-cell.my-col-cell { background: rgba(6, 199, 85, .03); }
-.sched-cell:active { background: #f0fdf4; }
 
 /* スケジュールチップ */
 .sched-chip {
-  display: flex; align-items: center; gap: 2px;
+  display: flex; flex-direction: column; gap: 1px;
   background: #e8f5ff; border-left: 3px solid #3b82f6;
-  border-radius: 3px; padding: 2px 4px;
+  border-radius: 3px; padding: 3px 4px;
   margin-bottom: 2px; font-size: 10px; cursor: pointer;
-  line-height: 1.3; overflow: hidden;
+  line-height: 1.4;
 }
 .sched-chip.night-shift {
   background: #2d2d3d; border-left-color: #6366f1; color: #e2e8f0;
@@ -509,9 +530,18 @@ thead th.sticky-col { z-index: 4; }
   opacity: .4; text-decoration: line-through;
   background: #f0f0f0; border-left-color: #bbb; color: #888;
 }
-.chip-title { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.chip-time { font-size: 9px; color: #60a5fa; flex-shrink: 0; }
+.chip-title { word-break: break-all; white-space: normal; }
+.chip-time { font-size: 9px; color: #60a5fa; }
 .sched-chip.night-shift .chip-time { color: #a5b4fc; }
+
+/* セル内 + ボタン */
+.cell-add-btn {
+  display: block; width: 100%; margin-top: 2px;
+  background: none; border: 1px dashed #ccc; border-radius: 3px;
+  color: #bbb; font-size: 12px; line-height: 1.4;
+  cursor: pointer; padding: 0;
+}
+.cell-add-btn:active { background: #f0fdf4; border-color: #06C755; color: #06C755; }
 
 /* モーダル */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: flex-end; justify-content: center; z-index: 1000; }
