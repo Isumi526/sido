@@ -141,7 +141,7 @@ async function processAccount(
 
     if (proxyName) {
       return {
-        name: workerName,
+        name: `${workerName}（代理: ${proxyName}）`,
         dates: [],
         mentionUserId: proxyLineUser ?? undefined,
         mentionTarget: proxyName,
