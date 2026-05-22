@@ -93,11 +93,12 @@ async function processAccount(
     .select('id, real_name, worker_id, workers(name)')
     .eq('account_id', accountId)
 
-  // 全作業員取得（proxy_operator_id も含む）
+  // 全作業員取得（有効のみ・proxy_operator_id も含む）
   const { data: allWorkers } = await supabase
     .from('workers')
     .select('id, name, proxy_operator_id')
     .eq('account_id', accountId)
+    .eq('active', true)
 
   // 送信済み日報を一括取得
   const { data: reports } = await supabase
@@ -122,11 +123,18 @@ async function processAccount(
     return workerName
   }
 
-  // 未送信を抽出（LINE紐付け済みユーザー）
+  // 有効作業員IDのセット（users の絞り込みに使用）
+  const activeWorkerIds = new Set((allWorkers ?? []).map((w: any) => w.id))
+
+  // 未送信を抽出（LINE紐付け済みユーザー・有効作業員のみ）
   const unsubmitted: { name: string; dates: string[] }[] = []
   for (const user of (users ?? [])) {
+    // worker_id が設定されていて無効な場合はスキップ
+    const workerId = (user as any).worker_id
+    if (workerId && !activeWorkerIds.has(workerId)) continue
+
     const workerName = (user.workers as any)?.name ?? user.real_name ?? '不明'
-    const name = buildLabel(workerName, (user as any).worker_id)
+    const name = buildLabel(workerName, workerId)
     const missing = allDates.filter(d => !submittedSet.has(`${user.id}__${d}`))
     if (missing.length > 0) unsubmitted.push({ name, dates: missing })
   }
