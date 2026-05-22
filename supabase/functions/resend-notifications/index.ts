@@ -211,12 +211,14 @@ Deno.serve(async (req) => {
       sent.push({ date, sender, type })
 
       if (!dry_run) {
-        await Promise.allSettled(targets.map(id => pushLineText(id, text, LINE_TOKEN)))
-        // LINE通知済みフラグを更新
-        await supabase
-          .from('daily_reports')
-          .update({ line_notified_at: new Date().toISOString() })
-          .eq('id', r.id)
+        const pushResults = await Promise.allSettled(targets.map(id => pushLineText(id, text, LINE_TOKEN)))
+        // 少なくとも1件成功した場合のみ通知済みフラグを更新
+        if (pushResults.some(r => r.status === 'fulfilled' && r.value === true)) {
+          await supabase
+            .from('daily_reports')
+            .update({ line_notified_at: new Date().toISOString() })
+            .eq('id', r.id)
+        }
         console.log(`[resend] sent date=${date} sender=${sender} type=${type}`)
       } else {
         console.log(`[resend] DRY RUN date=${date} sender=${sender} type=${type}`)
