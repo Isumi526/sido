@@ -141,10 +141,10 @@ async function processAccount(
 
     if (proxyName) {
       return {
-        name: `${workerName}（代理: ${proxyName}）`,
+        name: workerName,
         dates: [],
-        mentionUserId:  proxyLineUser  ?? undefined,
-        mentionTarget:  proxyLineUser  ? proxyName : undefined,
+        mentionUserId: proxyLineUser ?? undefined,
+        mentionTarget: proxyName,
       }
     }
     if (selfLineUserId) {
@@ -193,7 +193,7 @@ async function processAccount(
     const prefix = '⚠️ '
     if (entry.mentionUserId && entry.mentionTarget) {
       const atName = '@' + entry.mentionTarget
-      const lineText = prefix + entry.name.replace(entry.mentionTarget, atName)
+      const lineText = `${prefix}${entry.name} ${atName}`
       msgLines.push({ text: lineText, mention: { userId: entry.mentionUserId, atName } })
     } else {
       msgLines.push({ text: prefix + entry.name })

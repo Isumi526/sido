@@ -107,7 +107,7 @@ async function runReminder(dryRun: boolean) {
         if (!r.unsubmitted.length) continue
         for (const u of r.unsubmitted) {
           const displayName = u.mentionTarget
-            ? u.name.replace(u.mentionTarget, `@${u.mentionTarget}`)
+            ? `${u.name} @${u.mentionTarget}`
             : u.name
           lines.push(`⚠️ ${displayName}`)
           const MAX = 5
