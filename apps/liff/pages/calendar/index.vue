@@ -511,7 +511,7 @@ thead th.sticky-col { z-index: 4; }
   border-left: 1px solid #E0E0E0;
   border-bottom: 1px solid #f0f0f0;
   min-width: 80px; max-width: 90px;
-  height: 120px;
+  height: 72px;
   position: relative;
 }
 .sched-cell.my-col-cell { background: rgba(6, 199, 85, .03); }
