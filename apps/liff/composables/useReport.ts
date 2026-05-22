@@ -250,7 +250,10 @@ export const useReport = () => {
         await fetch(`${efUrl}/${fnPrefix}submit-report`, {
           method:    'POST',
           keepalive: true,
-          headers:   { 'Content-Type': 'application/json' },
+          headers:   {
+            'Content-Type':  'application/json',
+            'Authorization': `Bearer ${config.public.supabaseAnonKey}`,
+          },
           body:      JSON.stringify(stripEmpty(mainPayload)),
         })
       }
