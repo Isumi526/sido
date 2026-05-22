@@ -59,20 +59,24 @@ Deno.serve(async (req) => {
     // 有給
     if (leaveType === 'paid_leave') {
       const text = `📋 ${fmtDate(date)} 日報\n👤 ${sender}\n──────────\n🌴 有給休暇${note ? '\n\n📝 ' + note : ''}`
-      await Promise.all(targets.map(id => pushLineText(id, text, LINE_TOKEN)))
-      markNotified(senderId, date, accountSlug).catch(e =>
-        console.error('[submit-report] line_notified_at update failed:', e)
-      )
+      const results = await Promise.allSettled(targets.map(id => pushLineText(id, text, LINE_TOKEN)))
+      if (results.some(r => r.status === 'fulfilled' && r.value === true)) {
+        markNotified(senderId, date, accountSlug).catch(e =>
+          console.error('[submit-report] line_notified_at update failed:', e)
+        )
+      }
       return json({ success: true })
     }
 
     // 稼働なし
     if (isWorking === false) {
       const text = `📋 ${fmtDate(date)} 日報\n👤 ${sender}\n──────────\n稼働なし${note ? '\n\n📝 ' + note : ''}`
-      await Promise.all(targets.map(id => pushLineText(id, text, LINE_TOKEN)))
-      markNotified(senderId, date, accountSlug).catch(e =>
-        console.error('[submit-report] line_notified_at update failed:', e)
-      )
+      const results = await Promise.allSettled(targets.map(id => pushLineText(id, text, LINE_TOKEN)))
+      if (results.some(r => r.status === 'fulfilled' && r.value === true)) {
+        markNotified(senderId, date, accountSlug).catch(e =>
+          console.error('[submit-report] line_notified_at update failed:', e)
+        )
+      }
       return json({ success: true })
     }
 
@@ -80,9 +84,11 @@ Deno.serve(async (req) => {
     const results = await Promise.allSettled(targets.map(id => pushLineText(id, text, LINE_TOKEN)))
     console.log('[submit-report] LINE push results:', JSON.stringify(results))
 
-    markNotified(senderId, date, accountSlug).catch(e =>
-      console.error('[submit-report] line_notified_at update failed:', e)
-    )
+    if (results.some(r => r.status === 'fulfilled' && r.value === true)) {
+      markNotified(senderId, date, accountSlug).catch(e =>
+        console.error('[submit-report] line_notified_at update failed:', e)
+      )
+    }
 
     return json({ success: true })
   } catch (e) {
