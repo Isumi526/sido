@@ -208,19 +208,22 @@ Deno.serve(async (req) => {
       }
 
       const type = r.leave_type === 'paid_leave' ? '有給' : r.is_working ? '通常' : '稼働なし'
-      sent.push({ date, sender, type })
 
       if (!dry_run) {
         const pushResults = await Promise.allSettled(targets.map(id => pushLineText(id, text, LINE_TOKEN)))
-        // 少なくとも1件成功した場合のみ通知済みフラグを更新
-        if (pushResults.some(r => r.status === 'fulfilled' && r.value === true)) {
+        const success = pushResults.some(r => r.status === 'fulfilled' && r.value === true)
+        if (success) {
+          sent.push({ date, sender, type })
           await supabase
             .from('daily_reports')
             .update({ line_notified_at: new Date().toISOString() })
             .eq('id', r.id)
+          console.log(`[resend] sent date=${date} sender=${sender} type=${type}`)
+        } else {
+          console.error(`[resend] push failed date=${date} sender=${sender}`)
         }
-        console.log(`[resend] sent date=${date} sender=${sender} type=${type}`)
       } else {
+        sent.push({ date, sender, type })
         console.log(`[resend] DRY RUN date=${date} sender=${sender} type=${type}`)
         console.log(`[resend] message preview:\n${text}\n---`)
       }
