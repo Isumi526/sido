@@ -79,9 +79,13 @@ async function runReminder(dryRun: boolean) {
     // ローカルは自アカウント(ACCOUNT_SLUG)のみ対象
     const body: any = { dry_run: dryRun }
     if (IS_DEV) body.account_slug = ACCOUNT_SLUG
+    const { data: { session } } = await supabase.auth.getSession()
     const res = await fetch(`${EDGE_URL}/${fnName}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
+      },
       body: JSON.stringify(body),
     })
     const data = await res.json()
