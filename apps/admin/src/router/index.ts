@@ -11,6 +11,7 @@ import Login          from '../pages/login.vue'
 import Users          from '../pages/users.vue'
 import WorkerReports  from '../pages/worker-reports.vue'
 import Calendar       from '../pages/calendar.vue'
+import PaidLeave      from '../pages/paid-leave.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -24,6 +25,7 @@ export const router = createRouter({
     { path: '/reports',      component: Reports },
     { path: '/site-reports', component: SiteReports },
     { path: '/worker-reports', component: WorkerReports },
+    { path: '/paid-leave',    component: PaidLeave },
     { path: '/settings',       component: Settings },
     { path: '/users',        component: Users },
   ],

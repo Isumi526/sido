@@ -4,12 +4,12 @@
 // ============================================================
 import { pushLineText } from '../_shared/line.ts'
 import { buildReportMessage } from '../_shared/notify.ts'
+import { resolveGroupIds } from '../_shared/resolveGroupId.ts'
 
-const LINE_TOKEN    = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? ''
-const PROD_GROUP_IDS = JSON.parse(Deno.env.get('NOTIFY_GROUP_IDS') ?? '[]') as string[]
+const LINE_TOKEN     = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? ''
+const PROD_GROUP_IDS = JSON.parse(Deno.env.get('NOTIFY_GROUP_IDS')     ?? '[]') as string[]
 const DEV_GROUP_IDS  = JSON.parse(Deno.env.get('DEV_NOTIFY_GROUP_IDS') ?? '[]') as string[]
-const ACCOUNT_SLUG  = Deno.env.get('ACCOUNT_SLUG') ?? ''
-const LIFF_URL      = Deno.env.get('LIFF_URL') ?? ''
+const LIFF_URL       = Deno.env.get('LIFF_URL') ?? ''
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -25,29 +25,31 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json()
-    const { sender = '不明', date, sites = [], note, isWorking, leaveType, _devNotifyGroupId } = body
+    const { sender = '不明', date, sites = [], note, isWorking, leaveType, _devNotifyGroupId, accountSlug } = body
 
     if (!date) return json({ error: '日付が指定されていません' }, 400)
 
+    // accountSlug はLIFF側から送られるが、未対応の場合は環境変数のACCOUNT_SLUGを使用
+    const resolvedSlug = accountSlug || Deno.env.get('ACCOUNT_SLUG') || null
     const targets: string[] = _devNotifyGroupId
       ? [_devNotifyGroupId]
-      : (isTest ? DEV_GROUP_IDS : PROD_GROUP_IDS)
+      : await resolveGroupIds(resolvedSlug, isTest ? DEV_GROUP_IDS : PROD_GROUP_IDS)
 
     // 有給
     if (leaveType === 'paid_leave') {
-      const text = `📋 ${fmtDate(date)} 日報\n👤 ${sender}\n──────────\n🌴 有給休暇${note ? '\n\n📝 ' + note : ''}`
+      const text = `📋 ${fmtDate(date)} 日報（敬称略）\n👤 ${sender}\n──────────\n🌴 有給休暇${note ? '\n\n📝 ' + note : ''}`
       await Promise.all(targets.map(id => pushLineText(id, text, LINE_TOKEN)))
       return json({ success: true })
     }
 
     // 稼働なし
     if (isWorking === false) {
-      const text = `📋 ${fmtDate(date)} 日報\n👤 ${sender}\n──────────\n稼働なし${note ? '\n\n📝 ' + note : ''}`
+      const text = `📋 ${fmtDate(date)} 日報（敬称略）\n👤 ${sender}\n──────────\n稼働なし${note ? '\n\n📝 ' + note : ''}`
       await Promise.all(targets.map(id => pushLineText(id, text, LINE_TOKEN)))
       return json({ success: true })
     }
 
-    const text = buildReportMessage({ sender, date, sites, note }, LIFF_URL, ACCOUNT_SLUG)
+    const text = buildReportMessage({ sender, date, sites, note }, LIFF_URL, accountSlug ?? '')
     await Promise.all(targets.map(id => pushLineText(id, text, LINE_TOKEN)))
 
     return json({ success: true })

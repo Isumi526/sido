@@ -3,11 +3,18 @@
     <h1 class="page-title">日報一覧</h1>
 
     <div class="filters">
-      <input v-model="search" class="input" placeholder="作業員名で検索..." />
-      <input v-model="dateFrom" type="date" class="input" />
-      <span>〜</span>
-      <input v-model="dateTo" type="date" class="input" />
-      <button class="btn-search" @click="load">検索</button>
+      <!-- 作業員プルダウン -->
+      <select v-model="selectedWorker" class="input select-worker" @change="load">
+        <option value="">全作業員</option>
+        <option v-for="w in workerOptions" :key="w" :value="w">{{ w }}</option>
+      </select>
+
+      <!-- 月ナビ -->
+      <div class="month-nav">
+        <button class="month-btn" @click="prevMonth">‹</button>
+        <span class="month-label">{{ navYear }}年{{ navMonth }}月</span>
+        <button class="month-btn" @click="nextMonth">›</button>
+      </div>
     </div>
 
     <div v-if="loading" class="empty">読み込み中...</div>
@@ -18,7 +25,7 @@
         <div class="report-header" @click="selected = r">
           <span class="report-date">{{ r.date }}</span>
           <span class="report-worker">{{ r.worker_name ?? '—' }}</span>
-          <span class="badge" :class="r.is_working ? 'working' : 'off'">{{ r.is_working ? '稼働' : '休み' }}</span>
+          <span class="badge" :class="r.leave_type === 'paid_leave' ? 'paid-leave' : r.is_working ? 'working' : 'off'">{{ r.leave_type === 'paid_leave' ? '有給' : r.is_working ? '稼働' : '休み' }}</span>
           <span class="detail-hint">詳細 →</span>
         </div>
         <div v-if="r.is_working && r.sites?.length" class="sites" @click="selected = r">
@@ -50,15 +57,16 @@
             </div>
           </div>
           <div class="modal-head-right">
-            <span class="badge" :class="selected.is_working ? 'working' : 'off'">
-              {{ selected.is_working ? '稼働' : '休み' }}
+            <span class="badge" :class="selected.leave_type === 'paid_leave' ? 'paid-leave' : selected.is_working ? 'working' : 'off'">
+              {{ selected.leave_type === 'paid_leave' ? '有給' : selected.is_working ? '稼働' : '休み' }}
             </span>
             <button class="btn-delete" @click="confirmDelete(selected)">削除</button>
             <button class="btn-close" @click="selected = null">✕</button>
           </div>
         </div>
 
-        <div v-if="!selected.is_working" class="off-note">この日は休みです</div>
+        <div v-if="selected.leave_type === 'paid_leave'" class="off-note">有給休暇（8h）</div>
+        <div v-else-if="!selected.is_working" class="off-note">この日は休みです</div>
 
         <div v-else>
           <div v-for="(site, si) in selected.sites" :key="si" class="site-block">
@@ -199,7 +207,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { computeWorkerHours, calcBreakMinutes } from '../lib/workerHours'
@@ -207,10 +215,31 @@ import { computeWorkerHours, calcBreakMinutes } from '../lib/workerHours'
 // 下請けマスタ（name → {unit_price, category}）
 const subMaster = ref<Record<string, { unit_price: number | null; category: string | null }>>({})
 
-const search   = ref('')
+// 作業員フィルター
+const selectedWorker = ref('')
+const workerOptions  = ref<string[]>([])
+
+// 月ナビ
 const now      = new Date()
-const dateFrom = ref(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`)
-const dateTo   = ref(now.toISOString().split('T')[0])
+const navYear  = ref(now.getFullYear())
+const navMonth = ref(now.getMonth() + 1)
+
+const dateFrom = computed(() => `${navYear.value}-${String(navMonth.value).padStart(2, '0')}-01`)
+const dateTo   = computed(() => {
+  const last = new Date(navYear.value, navMonth.value, 0)
+  return `${navYear.value}-${String(navMonth.value).padStart(2, '0')}-${String(last.getDate()).padStart(2, '0')}`
+})
+
+function prevMonth() {
+  if (navMonth.value === 1) { navYear.value--; navMonth.value = 12 }
+  else navMonth.value--
+  load()
+}
+function nextMonth() {
+  if (navMonth.value === 12) { navYear.value++; navMonth.value = 1 }
+  else navMonth.value++
+  load()
+}
 const loading  = ref(false)
 const deleting = ref(false)
 const reports  = ref<any[]>([])
@@ -318,19 +347,25 @@ async function load() {
 
   const { data } = await supabase
     .from('daily_reports')
-    .select('id, date, is_working, sites, note, user_id, users(real_name, worker_id, workers(name, unit_price))')
+    .select('id, date, is_working, leave_type, sites, note, user_id, users(real_name, worker_id, workers(name, unit_price))')
     .eq('account_id', accountId)
     .gte('date', dateFrom.value)
     .lte('date', dateTo.value)
     .order('date', { ascending: false })
     .limit(200)
 
-  reports.value = (data ?? []).map((r: any) => ({
+  const mapped = (data ?? []).map((r: any) => ({
     ...r,
     worker_name: r.users?.workers?.name ?? r.users?.real_name ?? '—',
-  })).filter(r =>
-    !search.value || r.worker_name.includes(search.value)
-  )
+  }))
+
+  // 作業員プルダウン選択肢を更新（五十音順）
+  const names = [...new Set(mapped.map((r: any) => r.worker_name).filter((n: string) => n && n !== '—'))]
+  workerOptions.value = names.sort((a: string, b: string) => a.localeCompare(b, 'ja'))
+
+  reports.value = selectedWorker.value
+    ? mapped.filter((r: any) => r.worker_name === selectedWorker.value)
+    : mapped
   loading.value = false
 }
 
@@ -339,9 +374,13 @@ onMounted(load)
 
 <style scoped>
 .page-title { font-size: 22px; font-weight: 700; margin-bottom: 24px; }
-.filters { display: flex; gap: 12px; align-items: center; margin-bottom: 24px; flex-wrap: wrap; }
+.filters { display: flex; gap: 16px; align-items: center; margin-bottom: 24px; flex-wrap: wrap; }
 .input { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 9px 14px; font-size: 14px; }
-.btn-search { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 9px 20px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.select-worker { min-width: 160px; cursor: pointer; }
+.month-nav { display: flex; align-items: center; gap: 12px; background: #f5f5f5; border-radius: 10px; padding: 6px 12px; }
+.month-btn { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; width: 32px; height: 32px; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #333; transition: background .15s; }
+.month-btn:hover { background: #e8f9ef; border-color: #06C755; }
+.month-label { font-size: 16px; font-weight: 700; min-width: 100px; text-align: center; }
 .empty { color: #888; padding: 40px; text-align: center; }
 .report-list { display: flex; flex-direction: column; gap: 12px; }
 .report-card { background: #fff; border-radius: 12px; padding: 16px 20px; box-shadow: 0 1px 4px rgba(0,0,0,.06); transition: box-shadow .15s; }
@@ -357,8 +396,9 @@ onMounted(load)
 .report-worker { font-size: 14px; color: #555; flex: 1; }
 .detail-hint { font-size: 12px; color: #aaa; }
 .badge { font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 700; }
-.badge.working { background: #e8fff0; color: #0a8a3a; }
-.badge.off { background: #f5f5f5; color: #aaa; }
+.badge.working    { background: #e8fff0; color: #0a8a3a; }
+.badge.off        { background: #f5f5f5; color: #aaa; }
+.badge.paid-leave { background: #fff3e0; color: #e67e22; }
 .sites { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; padding-left: 8px; border-left: 2px solid #06C755; }
 .site-row { display: flex; gap: 16px; font-size: 13px; }
 .site-name { font-weight: 600; }

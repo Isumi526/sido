@@ -12,6 +12,8 @@
             <th>名前</th>
             <th>所属</th>
             <th>日当単価</th>
+            <th>雇用形態</th>
+            <th>入社日</th>
             <th>状態</th>
             <th>ユーザー</th>
             <th>代理人</th>
@@ -23,6 +25,8 @@
             <td class="name">{{ w.name }}</td>
             <td><span class="badge" :class="w.role">{{ w.role === 'factory' ? '工場/事務所' : '現場' }}</span></td>
             <td class="price">¥{{ w.unit_price.toLocaleString() }}</td>
+            <td><span class="emp-badge" :class="w.employment_type ?? 'fulltime'">{{ (w.employment_type ?? 'fulltime') === 'fulltime' ? '正社員' : `パート(週${w.weekly_scheduled_days ?? '?'}日)` }}</span></td>
+            <td class="hire-date">{{ w.hire_date ?? '—' }}</td>
             <td><span class="status" :class="w.active ? 'active' : 'off'">{{ w.active ? '有効' : '無効' }}</span></td>
             <td><span class="user-link" :class="linkedWorkerIds.has(w.id) ? 'linked' : 'unlinked'">{{ linkedWorkerIds.has(w.id) ? '紐付け済み' : '未紐付け' }}</span></td>
             <td>
@@ -59,6 +63,27 @@
           <input v-model.number="modal.unit_price" type="number" class="input" placeholder="20000" />
         </div>
         <div class="field">
+          <label>雇用形態</label>
+          <div class="toggle">
+            <button :class="{ active: (modal.employment_type ?? 'fulltime') === 'fulltime' }" @click="modal.employment_type = 'fulltime'">正社員</button>
+            <button :class="{ active: modal.employment_type === 'parttime' }" @click="modal.employment_type = 'parttime'">パート・アルバイト</button>
+          </div>
+        </div>
+        <div v-if="modal.employment_type === 'parttime'" class="field">
+          <label>週所定労働日数</label>
+          <select v-model.number="modal.weekly_scheduled_days" class="input">
+            <option :value="null">選択してください</option>
+            <option :value="4">週4日</option>
+            <option :value="3">週3日</option>
+            <option :value="2">週2日</option>
+            <option :value="1">週1日</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>入社日</label>
+          <input v-model="modal.hire_date" type="date" class="input" />
+        </div>
+        <div class="field">
           <label>代理人（LINEを持たない場合、代わりに入力する作業員）</label>
           <select v-model="modal.proxy_operator_id" class="input">
             <option :value="null">なし</option>
@@ -89,6 +114,9 @@ type Worker = {
   unit_price: number
   active: boolean
   proxy_operator_id: string | null
+  hire_date: string | null
+  employment_type: 'fulltime' | 'parttime' | null
+  weekly_scheduled_days: number | null
 }
 
 const workers         = ref<Worker[]>([])
@@ -105,7 +133,7 @@ function workerName(id: string | null) {
 async function load() {
   const accountId = await getAccountId()
   const [{ data: workersData }, { data: usersData }] = await Promise.all([
-    supabase.from('workers').select('id, name, role, unit_price, active, proxy_operator_id').eq('account_id', accountId).order('name'),
+    supabase.from('workers').select('id, name, role, unit_price, active, proxy_operator_id, hire_date, employment_type, weekly_scheduled_days').eq('account_id', accountId).order('name'),
     supabase.from('users').select('worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
   ])
   workers.value = (workersData ?? []) as Worker[]
@@ -115,7 +143,7 @@ async function load() {
 onMounted(load)
 
 function openAdd() {
-  modal.value = { name: '', role: 'site', unit_price: 20000, proxy_operator_id: null }
+  modal.value = { name: '', role: 'site', unit_price: 20000, proxy_operator_id: null, hire_date: null, employment_type: 'fulltime', weekly_scheduled_days: null }
   saveError.value = ''
 }
 
@@ -131,19 +159,25 @@ async function save() {
   try {
     if (modal.value.id) {
       await supabase.from('workers').update({
-        name:              modal.value.name.trim(),
-        role:              modal.value.role,
-        unit_price:        modal.value.unit_price ?? 0,
-        proxy_operator_id: modal.value.proxy_operator_id ?? null,
+        name:                  modal.value.name.trim(),
+        role:                  modal.value.role,
+        unit_price:            modal.value.unit_price ?? 0,
+        proxy_operator_id:     modal.value.proxy_operator_id ?? null,
+        hire_date:             modal.value.hire_date || null,
+        employment_type:       modal.value.employment_type ?? 'fulltime',
+        weekly_scheduled_days: modal.value.employment_type === 'parttime' ? (modal.value.weekly_scheduled_days ?? null) : null,
       }).eq('id', modal.value.id)
     } else {
       const accountId = await getAccountId()
       await supabase.from('workers').insert({
-        name:              modal.value.name!.trim(),
-        role:              modal.value.role ?? 'site',
-        unit_price:        modal.value.unit_price ?? 0,
-        account_id:        accountId,
-        proxy_operator_id: modal.value.proxy_operator_id ?? null,
+        name:                  modal.value.name!.trim(),
+        role:                  modal.value.role ?? 'site',
+        unit_price:            modal.value.unit_price ?? 0,
+        account_id:            accountId,
+        proxy_operator_id:     modal.value.proxy_operator_id ?? null,
+        hire_date:             modal.value.hire_date || null,
+        employment_type:       modal.value.employment_type ?? 'fulltime',
+        weekly_scheduled_days: modal.value.employment_type === 'parttime' ? (modal.value.weekly_scheduled_days ?? null) : null,
       })
     }
     modal.value = null
@@ -200,4 +234,8 @@ async function toggleActive(w: Worker) {
 .user-link { font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 700; }
 .user-link.linked { background: #e8f4ff; color: #1a6fc4; }
 .user-link.unlinked { background: #f5f5f5; color: #bbb; }
+.emp-badge { font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 700; }
+.emp-badge.fulltime { background: #f0f4ff; color: #4f46e5; }
+.emp-badge.parttime { background: #fff7ed; color: #c2710c; }
+.hire-date { font-size: 12px; color: #666; font-variant-numeric: tabular-nums; }
 </style>

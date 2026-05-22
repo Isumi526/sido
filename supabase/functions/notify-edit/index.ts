@@ -4,9 +4,10 @@
 // ============================================================
 import { pushLineText } from '../_shared/line.ts'
 import { buildEditMessage } from '../_shared/notify.ts'
+import { resolveGroupIds } from '../_shared/resolveGroupId.ts'
 
 const LINE_TOKEN     = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? ''
-const PROD_GROUP_IDS = JSON.parse(Deno.env.get('NOTIFY_GROUP_IDS') ?? '[]') as string[]
+const PROD_GROUP_IDS = JSON.parse(Deno.env.get('NOTIFY_GROUP_IDS')     ?? '[]') as string[]
 const DEV_GROUP_IDS  = JSON.parse(Deno.env.get('DEV_NOTIFY_GROUP_IDS') ?? '[]') as string[]
 
 Deno.serve(async (req) => {
@@ -18,13 +19,14 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json()
-    const { sender = '不明', date = '', editedAt = '', diffs = [], _devNotifyGroupId } = body
+    const { sender = '不明', date = '', editedAt = '', diffs = [], _devNotifyGroupId, accountSlug } = body
 
     if (diffs.length === 0) return json({ status: 'no_changes' })
 
+    const resolvedSlug = accountSlug || Deno.env.get('ACCOUNT_SLUG') || null
     const targets: string[] = _devNotifyGroupId
       ? [_devNotifyGroupId]
-      : (isTest ? DEV_GROUP_IDS : PROD_GROUP_IDS)
+      : await resolveGroupIds(resolvedSlug, isTest ? DEV_GROUP_IDS : PROD_GROUP_IDS)
 
     const text = buildEditMessage({ sender, date, editedAt, diffs })
     await Promise.all(targets.map(id => pushLineText(id, text, LINE_TOKEN)))
