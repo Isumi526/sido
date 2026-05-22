@@ -202,28 +202,27 @@ async function processAccount(
     if (entry.dates.length > MAX) msgLines.push({ text: `  他${entry.dates.length - MAX}日` })
   }
 
-  // 文字位置を Unicode コードポイント単位で計算
+  // 文字位置を UTF-16 コードユニット単位で計算（LINE API の仕様）
   let fullText = ''
-  let codePointPos = 0
+  let utf16Pos = 0
   const mentionees: { index: number; length: number; userId: string; type: string }[] = []
 
   for (let i = 0; i < msgLines.length; i++) {
-    if (i > 0) { fullText += '\n'; codePointPos += 1 }
+    if (i > 0) { fullText += '\n'; utf16Pos += 1 }
     const line = msgLines[i]
-    const linePoints = [...line.text]
     if (line.mention) {
-      const atIdx = linePoints.indexOf('@')
+      const atIdx = line.text.indexOf('@')
       if (atIdx >= 0) {
         mentionees.push({
-          index:  codePointPos + atIdx,
-          length: [...line.mention.atName].length,
+          index:  utf16Pos + atIdx,
+          length: line.mention.atName.length,
           userId: line.mention.userId,
           type:   'user',
         })
       }
     }
     fullText += line.text
-    codePointPos += linePoints.length
+    utf16Pos += line.text.length
   }
 
   if (!dryRun) {
