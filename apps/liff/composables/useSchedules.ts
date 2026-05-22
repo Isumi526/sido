@@ -23,6 +23,7 @@ export interface Schedule {
   is_night_shift:  boolean
   created_by_name: string | null
   deleted_at:      string | null
+  deleted_by_name: string | null
   worker?:         { id: string; name: string }
 }
 

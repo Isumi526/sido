@@ -150,6 +150,7 @@
         </p>
         <p v-if="detailModal.schedule.description" class="detail-desc">{{ detailModal.schedule.description }}</p>
         <p v-if="detailModal.schedule.created_by_name" class="detail-created">作成: {{ detailModal.schedule.created_by_name }}</p>
+        <p v-if="detailModal.schedule.deleted_at" class="detail-deleted">🗑 削除: {{ detailModal.schedule.deleted_by_name }} ({{ fmtDateTime(detailModal.schedule.deleted_at) }})</p>
 
         <!-- 編集履歴 -->
         <details v-if="detailModal.edits.length" class="edit-history">
@@ -600,6 +601,7 @@ thead th.sticky-col { z-index: 4; }
 .detail-meta    { font-size: 13px; color: #555; margin: 0 0 4px; }
 .detail-desc    { color: #888; font-size: 14px; margin: 8px 0 0; white-space: pre-wrap; }
 .detail-created { color: #aaa; font-size: 12px; margin: 6px 0 0; }
+.detail-deleted { color: #ef4444; font-size: 12px; margin: 4px 0 0; }
 .edit-history { margin-top: 12px; border-top: 1px solid #e0e0e0; padding-top: 10px; }
 .edit-history summary { font-size: 13px; color: #666; cursor: pointer; font-weight: 600; }
 .edit-entry { padding: 5px 0; border-bottom: 1px solid #f5f5f5; font-size: 12px; display: flex; gap: 8px; }
