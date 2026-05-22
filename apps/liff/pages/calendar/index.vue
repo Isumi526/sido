@@ -8,6 +8,10 @@
       <span class="nav-label">{{ navLabel }}</span>
       <button class="nav-btn" @click="navigate(1)">›</button>
       <button class="today-btn" @click="goToday">今日</button>
+      <label class="deleted-toggle">
+        <input type="checkbox" v-model="showDeleted" />
+        削除済み
+      </label>
     </div>
 
     <div v-if="loading" class="loading">読み込み中...</div>
@@ -59,7 +63,7 @@
                 @click.stop="openDetail(s)"
               >
                 <span class="chip-title">{{ s.title }}</span>
-                <span v-if="s.start_time" class="chip-time">{{ s.start_time.slice(0, 5) }}</span>
+                <span v-if="s.start_time" class="chip-time">{{ s.start_time.slice(0, 5) }}–{{ s.end_time?.slice(0, 5) }}</span>
               </div>
             </td>
           </tr>
@@ -130,24 +134,39 @@
     </div>
 
     <!-- 詳細モーダル -->
-    <div v-if="detailModal" class="modal-overlay" @click.self="detailModal = null">
+    <div v-if="detailModal" class="modal-overlay" @click.self="closeDetail">
       <div class="modal">
-        <div v-if="detailModal.is_night_shift" class="detail-night-badge">🌙 夜勤</div>
-        <h2 class="detail-title">{{ detailModal.title }}</h2>
-        <p class="detail-meta">👤 {{ detailModal.worker?.name }}</p>
+        <div v-if="detailModal.schedule.is_night_shift" class="detail-night-badge">🌙 夜勤</div>
+        <h2 class="detail-title">{{ detailModal.schedule.title }}</h2>
+        <p class="detail-meta">👤 {{ detailModal.schedule.worker?.name }}</p>
         <p class="detail-meta">
-          📅 {{ detailModal.start_date }}
-          <template v-if="detailModal.end_date !== detailModal.start_date">〜 {{ detailModal.end_date }}</template>
+          📅 {{ detailModal.schedule.start_date }}
+          <template v-if="detailModal.schedule.end_date !== detailModal.schedule.start_date">〜 {{ detailModal.schedule.end_date }}</template>
         </p>
-        <p v-if="detailModal.start_time" class="detail-meta">
-          🕐 {{ detailModal.start_time.slice(0, 5) }}〜{{ detailModal.end_time?.slice(0, 5) }}
+        <p v-if="detailModal.schedule.start_time" class="detail-meta">
+          🕐 {{ detailModal.schedule.start_time.slice(0, 5) }}〜{{ detailModal.schedule.end_time?.slice(0, 5) }}
         </p>
-        <p v-if="detailModal.description" class="detail-desc">{{ detailModal.description }}</p>
-        <p v-if="detailModal.created_by_name" class="detail-created">作成: {{ detailModal.created_by_name }}</p>
+        <p v-if="detailModal.schedule.description" class="detail-desc">{{ detailModal.schedule.description }}</p>
+        <p v-if="detailModal.schedule.created_by_name" class="detail-created">作成: {{ detailModal.schedule.created_by_name }}</p>
+
+        <!-- 編集履歴 -->
+        <details v-if="detailModal.edits.length" class="edit-history">
+          <summary>編集履歴（{{ detailModal.edits.length }}件）</summary>
+          <div v-for="e in detailModal.edits" :key="e.id" class="edit-entry">
+            <span class="edit-who">{{ e.edited_by_name }}</span>
+            <span class="edit-when">{{ fmtDateTime(e.edited_at) }}</span>
+          </div>
+        </details>
+
         <div class="modal-actions">
-          <button class="btn-cancel" @click="detailModal = null">閉じる</button>
-          <button class="btn-delete" @click="confirmDelete(detailModal.id)">削除</button>
-          <button class="btn-edit" @click="openEdit(detailModal)">編集</button>
+          <button class="btn-cancel" @click="closeDetail">閉じる</button>
+          <template v-if="!detailModal.schedule.deleted_at">
+            <button class="btn-delete" @click="confirmDelete(detailModal.schedule.id)">削除</button>
+            <button class="btn-edit" @click="openEdit(detailModal.schedule)">編集</button>
+          </template>
+          <template v-else>
+            <button class="btn-restore" @click="restore(detailModal.schedule)">復元</button>
+          </template>
         </div>
       </div>
     </div>
@@ -207,11 +226,17 @@ const sortedWorkers = computed(() => {
   const rest     = workers.value.filter(w => w.id !== myId && !isPinned(w.id))
   return [...mine, ...pinned, ...rest]
 })
+interface ScheduleEdit {
+  id: string; schedule_id: string; edited_by_name: string; edited_at: string
+  changes: Record<string, { old: unknown; new: unknown }>
+}
+
 const loading     = ref(false)
 const currentDate = ref(new Date())
 const todayStr    = new Date().toISOString().split('T')[0]
+const showDeleted = ref(false)
 const formModal   = ref<(Partial<ScheduleForm> & { id?: string }) | null>(null)
-const detailModal = ref<Schedule | null>(null)
+const detailModal = ref<{ schedule: Schedule; edits: ScheduleEdit[] } | null>(null)
 const saving      = ref(false)
 const formError   = ref('')
 
@@ -246,7 +271,8 @@ const monthDates = computed(() => {
 // ──────────────────── セル別スケジュール ────────────────────
 function cellSchedules(date: string, workerId: string): Schedule[] {
   return schedules.schedules.value.filter(
-    s => s.worker_id === workerId && s.start_date <= date && s.end_date >= date && !s.deleted_at
+    s => s.worker_id === workerId && s.start_date <= date && s.end_date >= date
+      && (showDeleted.value || !s.deleted_at)
   )
 }
 
@@ -258,6 +284,11 @@ function toDateStr(dt: Date): string {
 function formatDateLabel(date: string): string {
   const dt = new Date(date + 'T00:00:00')
   return `${dt.getDate()}（${WEEKDAYS[dt.getDay()]}）`
+}
+
+function fmtDateTime(iso: string): string {
+  const dt = new Date(iso)
+  return `${dt.getMonth() + 1}/${dt.getDate()} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`
 }
 
 function isWeekend(date: string): boolean {
@@ -323,7 +354,16 @@ function openEdit(ev: Schedule) {
   formError.value = ''
 }
 
-function openDetail(ev: Schedule) { detailModal.value = ev }
+async function openDetail(ev: Schedule) {
+  const { data } = await supabase
+    .from('schedule_edits')
+    .select('*')
+    .eq('schedule_id', ev.id)
+    .order('edited_at', { ascending: false })
+  detailModal.value = { schedule: ev, edits: (data ?? []) as ScheduleEdit[] }
+}
+
+function closeDetail() { detailModal.value = null }
 
 async function saveSchedule() {
   if (!formModal.value?.title?.trim()) { formError.value = 'タイトルを入力してください'; return }
@@ -350,8 +390,18 @@ async function confirmDelete(id: string) {
   if (!confirm('この予定を削除しますか？')) return
   detailModal.value = null
   const workerName = proxy.proxyTarget.value?.name ?? profile.value?.displayName ?? undefined
-  try { await schedules.deleteSchedule(id, workerName) }
+  try {
+    await schedules.deleteSchedule(id, workerName)
+    await loadSchedules()
+  }
   catch (e) { alert(e instanceof Error ? e.message : '削除に失敗しました') }
+}
+
+async function restore(ev: Schedule) {
+  detailModal.value = null
+  const { error } = await supabase.from('schedules').update({ deleted_at: null, deleted_by_name: null }).eq('id', ev.id)
+  if (error) { alert(error.message); return }
+  await loadSchedules()
 }
 
 // ──────────────────── 初期化 ────────────────────
@@ -379,6 +429,7 @@ onMounted(async () => {
 .nav-btn { background: #f5f5f5; border: 1px solid #E0E0E0; color: #333; border-radius: 6px; padding: 4px 12px; font-size: 18px; cursor: pointer; }
 .nav-label { flex: 1; text-align: center; font-size: 16px; font-weight: 700; color: #111; }
 .today-btn { background: #f5f5f5; border: 1px solid #E0E0E0; color: #06C755; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; font-weight: 600; }
+.deleted-toggle { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #888; cursor: pointer; user-select: none; flex-shrink: 0; }
 
 .loading { flex: 1; display: flex; align-items: center; justify-content: center; color: #888; font-size: 14px; }
 
@@ -513,4 +564,10 @@ thead th.sticky-col { z-index: 4; }
 .detail-meta    { font-size: 13px; color: #555; margin: 0 0 4px; }
 .detail-desc    { color: #888; font-size: 14px; margin: 8px 0 0; white-space: pre-wrap; }
 .detail-created { color: #aaa; font-size: 12px; margin: 6px 0 0; }
+.edit-history { margin-top: 12px; border-top: 1px solid #e0e0e0; padding-top: 10px; }
+.edit-history summary { font-size: 13px; color: #666; cursor: pointer; font-weight: 600; }
+.edit-entry { padding: 5px 0; border-bottom: 1px solid #f5f5f5; font-size: 12px; display: flex; gap: 8px; }
+.edit-who { font-weight: 600; color: #333; }
+.edit-when { color: #aaa; }
+.btn-restore { flex: 1; background: #f59e0b; color: #fff; border: none; border-radius: 12px; padding: 14px; font-size: 15px; cursor: pointer; }
 </style>
