@@ -19,11 +19,14 @@
           <tr>
             <th class="sticky-col date-col-header"></th>
             <th
-              v-for="w in workers"
+              v-for="w in sortedWorkers"
               :key="w.id"
               class="worker-header"
-              :class="{ 'my-col': isMyWorker(w.id) }"
-            >{{ w.name }}</th>
+              :class="{ 'my-col': isMyWorker(w.id), 'pinned-col': isPinned(w.id) }"
+              @click="togglePin(w.id)"
+            >
+              <span class="pin-icon" v-if="isPinned(w.id)">📌</span>{{ w.name }}
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -39,10 +42,10 @@
               {{ formatDateLabel(date) }}
             </td>
             <td
-              v-for="w in workers"
+              v-for="w in sortedWorkers"
               :key="w.id"
               class="sched-cell"
-              :class="{ 'my-col-cell': isMyWorker(w.id) }"
+              :class="{ 'my-col-cell': isMyWorker(w.id), 'pinned-col-cell': isPinned(w.id) }"
               @click="onCellTap(date, w.id)"
             >
               <div
@@ -171,9 +174,38 @@ function isMyWorker(workerId: string): boolean {
 
 // ──────────────────── 定数 ────────────────────
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
+const PIN_KEY  = 'calendar_pinned_workers'
 
 // ──────────────────── 状態 ────────────────────
 const workers     = ref<{ id: string; name: string }[]>([])
+
+// ピン留め
+const pinnedWorkerIds = ref<string[]>(
+  (() => { try { return JSON.parse(localStorage.getItem(PIN_KEY) ?? '[]') } catch { return [] } })()
+)
+
+function isPinned(id: string): boolean {
+  return pinnedWorkerIds.value.includes(id)
+}
+
+function togglePin(id: string) {
+  if (isMyWorker(id)) return  // 自分はピン操作対象外
+  const idx = pinnedWorkerIds.value.indexOf(id)
+  if (idx === -1) pinnedWorkerIds.value.push(id)
+  else pinnedWorkerIds.value.splice(idx, 1)
+  localStorage.setItem(PIN_KEY, JSON.stringify(pinnedWorkerIds.value))
+}
+
+// 表示順: 自分 → ピン済み（ピン順）→ その他（name順）
+const sortedWorkers = computed(() => {
+  const myId     = effectiveWorkerId.value
+  const mine     = workers.value.filter(w => w.id === myId)
+  const pinned   = pinnedWorkerIds.value
+    .map(id => workers.value.find(w => w.id === id))
+    .filter((w): w is { id: string; name: string } => !!w && w.id !== myId)
+  const rest     = workers.value.filter(w => w.id !== myId && !isPinned(w.id))
+  return [...mine, ...pinned, ...rest]
+})
 const loading     = ref(false)
 const currentDate = ref(new Date())
 const todayStr    = new Date().toISOString().split('T')[0]
@@ -366,7 +398,12 @@ thead th.sticky-col { z-index: 4; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   max-width: 90px;
 }
-.worker-header.my-col { background: #f0fdf4; color: #06C755; }
+.worker-header.my-col    { background: #f0fdf4; color: #06C755; }
+.worker-header.pinned-col { background: #fef9ec; color: #b45309; }
+.worker-header { cursor: pointer; user-select: none; }
+.worker-header:active { opacity: .7; }
+.pin-icon { font-size: 9px; margin-right: 2px; }
+.pinned-col-cell { background: rgba(245, 158, 11, .03); }
 
 /* 日付セル */
 .date-cell {
