@@ -49,6 +49,7 @@
         <FormSection num="02" title="稼働有無">
           <select v-model="isWorkingStr" class="select" required>
             <option value="working">稼働あり</option>
+            <option value="paid_leave">有給</option>
             <option value="off">稼働なし（休み・移動日等）</option>
           </select>
         </FormSection>
@@ -528,7 +529,7 @@ const nextDateLabel = computed(() => {
 })
 
 // 稼働有無
-const isWorkingStr = ref<'working' | 'off'>('working')
+const isWorkingStr = ref<'working' | 'paid_leave' | 'off'>('working')
 
 // 送信日が日曜かどうか（料率計算に使用）
 const isSunday = computed(() =>
@@ -631,7 +632,7 @@ async function loadEditData(date: string) {
   originalReport.value = saved  // 差分計算のために保存
 
   report.form.value.date = saved.date
-  isWorkingStr.value = saved.is_working ? 'working' : 'off'
+  isWorkingStr.value = saved.leave_type === 'paid_leave' ? 'paid_leave' : saved.is_working ? 'working' : 'off'
   report.form.value.note = saved.note ?? ''
 
   if (saved.sites && saved.sites.length > 0) {
@@ -826,6 +827,12 @@ const linePreview = computed(() => {
     '─────────────────',
   ]
 
+  if (isWorkingStr.value === 'paid_leave') {
+    lines.push('\n🌴 有給休暇（8h）')
+    if (form.note) lines.push(`📝 ${form.note}`)
+    return lines.join('\n')
+  }
+
   if (!isWorking) {
     if (form.note) lines.push(`\n📝 ${form.note}`)
     else           lines.push('\n稼働なし')
@@ -940,7 +947,8 @@ function notifyErrorToLine(actionName: string, errorMsg: string) {
 }
 
 async function handleSubmit() {
-  report.form.value.isWorking = isWorkingStr.value === 'working'
+  report.form.value.isWorking  = isWorkingStr.value === 'working' || isWorkingStr.value === 'paid_leave'
+  report.form.value.leaveType  = isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null
 
   // ── 編集モード: Supabase のみ更新（GAS には再送しない）──
   if (isEditMode.value) {
@@ -962,16 +970,18 @@ async function handleSubmit() {
         const editTargetId = await expense.findOrCreateProxyUser(editProxyT.id, editProxyT.name, editProxyT.worker_role)
         await expense.saveReportById(editTargetId, {
           date:      report.form.value.date,
-          isWorking: report.form.value.isWorking,
-          sites:     report.form.value.sites,
-          note:      report.form.value.note,
+          isWorking:  report.form.value.isWorking,
+          leaveType:  isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null,
+          sites:      report.form.value.sites,
+          note:       report.form.value.note,
         })
       } else {
         await expense.saveReport(uid, {
           date:      report.form.value.date,
-          isWorking: report.form.value.isWorking,
-          sites:     report.form.value.sites,
-          note:      report.form.value.note,
+          isWorking:  report.form.value.isWorking,
+          leaveType:  isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null,
+          sites:      report.form.value.sites,
+          note:       report.form.value.note,
         })
       }
 
@@ -979,9 +989,10 @@ async function handleSubmit() {
       const efUrl = config.public.edgeFunctionUrl
       if (originalReport.value && efUrl) {
         const diffs = computeDiff(originalReport.value, {
-          isWorking: report.form.value.isWorking,
-          sites:     report.form.value.sites,
-          note:      report.form.value.note,
+          isWorking:  report.form.value.isWorking,
+          leaveType:  isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null,
+          sites:      report.form.value.sites,
+          note:       report.form.value.note,
         })
         if (diffs.length > 0) {
           const now = new Date()
@@ -991,10 +1002,11 @@ async function handleSubmit() {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify({
-              sender:   currentUser.value?.real_name || '',
-              date:     report.form.value.date,
+              sender:      currentUser.value?.real_name || '',
+              date:        report.form.value.date,
               editedAt,
               diffs,
+              accountSlug: config.public.accountSlug,
             }),
           }).catch(e => console.error('[Edit] LINE通知エラー:', e))
         }

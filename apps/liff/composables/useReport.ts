@@ -241,6 +241,7 @@ export const useReport = () => {
         // ── ② Edge Function に送信（File[] を除去・*Urls はそのまま含む）──
         const mainPayload = {
           ...payload,
+          accountSlug: config.public.accountSlug as string,
           sites: payload.sites.map(site => ({
             ...site,
             expenses: stripFiles(site.expenses),

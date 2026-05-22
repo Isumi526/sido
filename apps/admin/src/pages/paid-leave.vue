@@ -1,0 +1,672 @@
+<template>
+  <div>
+    <!-- ── 画面ヘッダー（印刷非表示） ── -->
+    <div class="page-header no-print">
+      <h1 class="page-title">有給管理</h1>
+      <div class="header-actions">
+        <select v-model.number="printYear" class="year-select">
+          <option v-for="y in yearOptions" :key="y" :value="y">{{ y }}年度</option>
+        </select>
+        <button class="btn-print" @click="doPrint">管理簿を印刷</button>
+      </div>
+    </div>
+
+    <div v-if="loading" class="loading no-print">読み込み中...</div>
+    <div v-else>
+
+      <!-- ── 画面: サマリーテーブル（印刷非表示） ── -->
+      <div class="table-wrap no-print">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>名前</th>
+              <th>雇用形態</th>
+              <th>入社日</th>
+              <th>付与済（有効）</th>
+              <th>基準期間 使用</th>
+              <th>残日数</th>
+              <th>義務5日</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="w in workerStats" :key="w.id" :class="{ inactive: !w.active }">
+              <td class="name">{{ w.name }}</td>
+              <td>
+                <span class="emp-badge" :class="w.employment_type ?? 'fulltime'">
+                  {{ (w.employment_type ?? 'fulltime') === 'fulltime' ? '正社員' : 'パート' }}
+                </span>
+              </td>
+              <td class="mono">{{ w.hire_date ?? '—' }}</td>
+              <td class="mono">{{ w.totalGranted > 0 ? w.totalGranted + ' 日' : '—' }}</td>
+              <td class="mono">{{ w.duty.usedInPeriod }} 日</td>
+              <td>
+                <span class="remaining" :class="remainingClass(w.remaining)">
+                  {{ w.remaining >= 0 ? w.remaining + ' 日' : '計算不可' }}
+                </span>
+              </td>
+              <td>
+                <template v-if="w.duty.isSubject">
+                  <span class="duty-badge" :class="w.duty.isMet ? 'ok' : 'ng'">
+                    {{ w.duty.isMet ? '達成' : `あと ${w.duty.remaining} 日` }}
+                  </span>
+                  <div class="duty-deadline">期限: {{ w.duty.deadline }}</div>
+                </template>
+                <span v-else class="duty-na">対象外</span>
+              </td>
+              <td class="actions">
+                <button class="btn-detail" @click="openDetail(w)">詳細・付与</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ── 詳細ドロワー（印刷非表示） ── -->
+      <div v-if="detail" class="drawer-overlay no-print" @click.self="detail = null">
+        <div class="drawer">
+          <div class="drawer-head">
+            <div>
+              <div class="drawer-name">{{ detail.name }}</div>
+              <div class="drawer-sub">
+                {{ (detail.employment_type ?? 'fulltime') === 'fulltime' ? '正社員' : `パート(週${detail.weekly_scheduled_days ?? '?'}日)` }}
+                {{ detail.hire_date ? ' / 入社: ' + detail.hire_date : '' }}
+              </div>
+            </div>
+            <button class="btn-close" @click="detail = null">✕</button>
+          </div>
+
+          <div class="balance-summary">
+            <div class="balance-card">
+              <div class="balance-label">付与合計（有効期限内）</div>
+              <div class="balance-val">{{ detail.totalGranted }} 日</div>
+            </div>
+            <div class="balance-card">
+              <div class="balance-label">使用済み（全期間）</div>
+              <div class="balance-val">{{ detail.totalUsed }} 日</div>
+            </div>
+            <div class="balance-card highlight">
+              <div class="balance-label">残日数</div>
+              <div class="balance-val">{{ detail.remaining >= 0 ? detail.remaining + ' 日' : '—' }}</div>
+            </div>
+          </div>
+
+          <div v-if="detail.hire_date" class="ref-grant">
+            <div class="ref-label">参考: 法令上の付与日数</div>
+            <div class="ref-val">
+              {{ suggestedGrant(detail) }} 日
+              <span class="ref-note">（勤続 {{ tenureMonths(detail.hire_date) }} ヶ月）</span>
+            </div>
+          </div>
+
+          <!-- 移行登録ガイド（付与履歴がない作業員のみ表示） -->
+          <div v-if="detailGrants.length === 0" class="migration-guide">
+            <div class="migration-guide-icon">💡</div>
+            <div class="migration-guide-body">
+              <div class="migration-guide-title">導入時の残日数を登録してください</div>
+              <div class="migration-guide-text">
+                付与履歴がありません。以下の手順で今日時点の残日数をシステムに引き継げます。
+              </div>
+              <ol class="migration-guide-steps">
+                <li>今日時点の残有休日数を確認する</li>
+                <li>付与日に <strong>今日の日付</strong>、付与日数に <strong>残日数</strong> を入力</li>
+                <li>有効期限は残日数の本来の期限に合わせるか、不明なら <strong>2年後</strong> でOK</li>
+                <li>備考を <strong>「移行初期残高（導入時点）」</strong> にして登録</li>
+              </ol>
+              <div class="migration-guide-note">
+                ※ 次回付与から通常通り法令日数で登録すればOKです
+              </div>
+            </div>
+          </div>
+
+          <div class="section-title">有給を付与する</div>
+          <div class="grant-form">
+            <div class="form-row">
+              <div class="form-field">
+                <label>付与日</label>
+                <input v-model="newGrant.granted_at" type="date" class="input" />
+              </div>
+              <div class="form-field">
+                <label>有効期限</label>
+                <input v-model="newGrant.expires_at" type="date" class="input" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-field">
+                <label>付与日数</label>
+                <input v-model.number="newGrant.days" type="number" step="0.5" min="0.5" class="input" placeholder="10" />
+              </div>
+              <div class="form-field">
+                <label>備考</label>
+                <input v-model="newGrant.note" class="input" placeholder="例: 2024年度付与" />
+              </div>
+            </div>
+            <button class="btn-grant" :disabled="grantSaving" @click="addGrant">
+              {{ grantSaving ? '保存中...' : '付与を追加' }}
+            </button>
+            <p v-if="grantError" class="error">{{ grantError }}</p>
+          </div>
+
+          <div class="section-title">付与履歴</div>
+          <div v-if="detailGrants.length === 0" class="empty">付与記録がありません</div>
+          <table v-else class="sub-table">
+            <thead>
+              <tr><th>付与日</th><th>日数</th><th>有効期限</th><th>状態</th><th>備考</th><th></th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="g in detailGrants" :key="g.id" :class="{ expired: isExpired(g.expires_at) }">
+                <td class="mono">{{ g.granted_at }}</td>
+                <td class="mono">{{ g.days }} 日</td>
+                <td class="mono">{{ g.expires_at }}</td>
+                <td><span class="exp-badge" :class="isExpired(g.expires_at) ? 'expired' : 'valid'">{{ isExpired(g.expires_at) ? '期限切れ' : '有効' }}</span></td>
+                <td class="note-cell">{{ g.note ?? '—' }}</td>
+                <td><button class="btn-del" @click="deleteGrant(g.id)">削除</button></td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="section-title">使用履歴</div>
+          <div v-if="detailUsage.length === 0" class="empty">使用記録がありません</div>
+          <table v-else class="sub-table">
+            <thead><tr><th>日付</th><th>備考</th></tr></thead>
+            <tbody>
+              <tr v-for="u in detailUsage" :key="u.date">
+                <td class="mono">{{ u.date }}</td>
+                <td class="note-cell">{{ u.note ?? '—' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── 印刷専用: 年次有給休暇管理簿 ── -->
+      <div class="print-only ledger">
+        <div class="ledger-header">
+          <div class="ledger-title">年次有給休暇管理簿</div>
+          <div class="ledger-meta">
+            <span>対象年度: {{ printYear }}年</span>
+            <span>作成日: {{ today }}</span>
+          </div>
+        </div>
+
+        <table class="ledger-table">
+          <thead>
+            <tr>
+              <th class="col-name">氏名</th>
+              <th class="col-hire">入社日</th>
+              <th class="col-type">雇用形態</th>
+              <th class="col-grant-date">基準日</th>
+              <th class="col-grant-days">付与日数</th>
+              <th class="col-dates">取得日</th>
+              <th class="col-used">取得<br>日数</th>
+              <th class="col-remaining">残日数</th>
+              <th class="col-duty">5日義務</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in printRows" :key="row.workerId">
+              <td class="col-name fw">{{ row.name }}</td>
+              <td class="col-hire sm">{{ row.hireDate ?? '—' }}</td>
+              <td class="col-type sm">{{ row.employmentType === 'fulltime' ? '正社員' : `パート\n(週${row.weeklyDays ?? '?'}日)` }}</td>
+              <td class="col-grant-date sm">{{ row.latestGrantDate ?? '—' }}</td>
+              <td class="col-grant-days center">{{ row.totalGranted > 0 ? row.totalGranted : '—' }}</td>
+              <td class="col-dates dates-cell">{{ row.usedDates.join('　') || '—' }}</td>
+              <td class="col-used center">{{ row.usedCount }}</td>
+              <td class="col-remaining center fw">{{ row.remaining >= 0 ? row.remaining : '—' }}</td>
+              <td class="col-duty center">
+                <template v-if="row.duty.isSubject">
+                  {{ row.duty.isMet ? '○達成' : `残${row.duty.remaining}日` }}
+                  <div style="font-size:9px;color:#666;">〜{{ row.duty.deadline }}</div>
+                </template>
+                <template v-else>対象外</template>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="ledger-footer">
+          ※ 付与日数は有効期限内（{{ printYear }}年内に有効）の合計。取得日は{{ printYear }}年中の有給取得日を記載。
+        </div>
+      </div>
+
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, onMounted } from 'vue'
+import { supabase } from '../lib/supabase'
+import { getAccountId } from '../lib/account'
+
+// ── 法令付与日数テーブル ──────────────────────────────────────
+const FULLTIME_TABLE: { minMonths: number; days: number }[] = [
+  { minMonths: 78, days: 20 },
+  { minMonths: 66, days: 18 },
+  { minMonths: 54, days: 16 },
+  { minMonths: 42, days: 14 },
+  { minMonths: 30, days: 12 },
+  { minMonths: 18, days: 11 },
+  { minMonths:  6, days: 10 },
+]
+const PARTTIME_TABLE: Record<number, number[]> = {
+  4: [7, 8, 9, 10, 12, 13, 15],
+  3: [5, 6, 6,  8,  9, 10, 11],
+  2: [3, 4, 4,  5,  6,  6,  7],
+  1: [1, 2, 2,  2,  3,  3,  3],
+}
+const TENURE_STEPS = [6, 18, 30, 42, 54, 66, 78]
+
+function tenureMonths(hireDate: string): number {
+  const hire = new Date(hireDate)
+  const now  = new Date()
+  return (now.getFullYear() - hire.getFullYear()) * 12 + (now.getMonth() - hire.getMonth())
+}
+
+function suggestedGrant(w: WorkerStat): number {
+  if (!w.hire_date) return 0
+  const months = tenureMonths(w.hire_date)
+  if (months < 6) return 0
+  if ((w.employment_type ?? 'fulltime') === 'fulltime') {
+    return FULLTIME_TABLE.find(r => months >= r.minMonths)?.days ?? 0
+  }
+  const days = w.weekly_scheduled_days ?? 5
+  if (days >= 5) return FULLTIME_TABLE.find(r => months >= r.minMonths)?.days ?? 0
+  const table = PARTTIME_TABLE[days]
+  if (!table) return 0
+  const idx = TENURE_STEPS.filter(m => months >= m).length - 1
+  return idx < 0 ? 0 : (table[idx] ?? 0)
+}
+
+// ── 型定義 ────────────────────────────────────────────────────
+type WorkerStat = {
+  id: string
+  name: string
+  active: boolean
+  hire_date: string | null
+  employment_type: 'fulltime' | 'parttime' | null
+  weekly_scheduled_days: number | null
+  totalGranted: number
+  totalUsed: number
+  remaining: number
+  duty: {
+    isSubject: boolean   // 10日以上付与で義務対象
+    isMet: boolean
+    usedInPeriod: number
+    remaining: number    // あと何日取ればよいか
+    grantedAt: string | null  // 基準日
+    deadline: string | null   // 義務期限（基準日+1年-1日）
+  }
+}
+
+type Grant = {
+  id: string
+  worker_id: string
+  granted_at: string
+  expires_at: string
+  days: number
+  note: string | null
+}
+
+type UsageEntry = { date: string; note: string | null }
+
+// ── State ────────────────────────────────────────────────────
+const loading      = ref(true)
+const workerStats  = ref<WorkerStat[]>([])
+const detail       = ref<WorkerStat | null>(null)
+const detailGrants = ref<Grant[]>([])
+const detailUsage  = ref<UsageEntry[]>([])
+const grantSaving  = ref(false)
+const grantError   = ref('')
+
+// 全作業員の使用履歴・付与履歴（印刷用）
+const allUsageByWorker:  Record<string, UsageEntry[]> = {}
+const allGrantsByWorker: Record<string, Grant[]>      = {}
+
+const today     = new Date().toISOString().split('T')[0]
+const thisYear  = new Date().getFullYear()
+const printYear = ref(thisYear)
+
+const yearOptions = computed(() => {
+  const years = []
+  for (let y = thisYear; y >= thisYear - 4; y--) years.push(y)
+  return years
+})
+
+const newGrant = ref({ granted_at: today, expires_at: `${thisYear + 2}-${today.slice(5)}`, days: 10, note: '' })
+
+// ── ヘルパー ─────────────────────────────────────────────────
+function isExpired(expiresAt: string): boolean { return expiresAt < today }
+
+function remainingClass(days: number): string {
+  if (days < 0)  return 'neg'
+  if (days <= 5) return 'low'
+  return 'ok'
+}
+
+
+// ── 印刷用データ ──────────────────────────────────────────────
+const printRows = computed(() => {
+  const yr = String(printYear.value)
+  return workerStats.value.map(w => {
+    const grants  = allGrantsByWorker[w.id] ?? []
+    // 選択年に有効な付与（付与日が選択年以前 かつ 有効期限が選択年以後）
+    const validGrants = grants.filter(g => g.granted_at.slice(0, 4) <= yr && g.expires_at.slice(0, 4) >= yr)
+    const totalGranted = validGrants.reduce((s, g) => s + Number(g.days), 0)
+    const latestGrant  = validGrants.sort((a, b) => b.granted_at.localeCompare(a.granted_at))[0]
+
+    const usage = (allUsageByWorker[w.id] ?? []).filter(u => u.date.startsWith(yr))
+    const usedDates = usage.map(u => u.date.slice(5).replace('-', '/')).sort()  // MM/DD
+
+    return {
+      workerId:        w.id,
+      name:            w.name,
+      hireDate:        w.hire_date,
+      employmentType:  w.employment_type ?? 'fulltime',
+      weeklyDays:      w.weekly_scheduled_days,
+      latestGrantDate: latestGrant?.granted_at ?? null,
+      totalGranted,
+      usedDates,
+      usedCount:       usage.length,
+      remaining:       totalGranted - (allUsageByWorker[w.id] ?? []).length,
+      duty:            w.duty,
+    }
+  })
+})
+
+// ── データ取得 ────────────────────────────────────────────────
+async function load() {
+  loading.value = true
+  const accountId = await getAccountId()
+
+  const [{ data: workersData }, { data: grantsData }, { data: usersData }, { data: leaveData }] = await Promise.all([
+    supabase.from('workers').select('id, name, active, hire_date, employment_type, weekly_scheduled_days').eq('account_id', accountId).order('name'),
+    supabase.from('paid_leave_grants').select('id, worker_id, granted_at, expires_at, days, note').eq('account_id', accountId),
+    supabase.from('users').select('id, worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
+    supabase.from('daily_reports').select('user_id, date, note').eq('account_id', accountId).eq('leave_type', 'paid_leave').order('date', { ascending: false }),
+  ])
+
+  const userToWorker: Record<string, string> = {}
+  for (const u of usersData ?? []) userToWorker[(u as any).id] = (u as any).worker_id
+
+  // 全使用履歴を worker_id でインデックス
+  Object.keys(allUsageByWorker).forEach(k => delete allUsageByWorker[k])
+  for (const r of leaveData ?? []) {
+    const workerId = userToWorker[(r as any).user_id]
+    if (!workerId) continue
+    if (!allUsageByWorker[workerId]) allUsageByWorker[workerId] = []
+    allUsageByWorker[workerId].push({ date: (r as any).date, note: (r as any).note })
+  }
+
+  // 全付与履歴を worker_id でインデックス
+  Object.keys(allGrantsByWorker).forEach(k => delete allGrantsByWorker[k])
+  for (const g of grantsData ?? []) {
+    const wid = (g as any).worker_id
+    if (!allGrantsByWorker[wid]) allGrantsByWorker[wid] = []
+    allGrantsByWorker[wid].push(g as Grant)
+  }
+
+  workerStats.value = (workersData ?? []).map((w: any) => {
+    const wGrants     = allGrantsByWorker[w.id] ?? []
+    const validGrants = wGrants.filter(g => !isExpired(g.expires_at))
+    const totalGranted = validGrants.reduce((s, g) => s + Number(g.days), 0)
+    const totalUsed    = (allUsageByWorker[w.id] ?? []).length
+
+    // ── 年5日義務: 最新の基準日から1年間で判定 ──
+    const latestGrant = validGrants.sort((a, b) => b.granted_at.localeCompare(a.granted_at))[0]
+    let duty: WorkerStat['duty']
+    if (!latestGrant) {
+      duty = { isSubject: false, isMet: false, usedInPeriod: 0, remaining: 5, grantedAt: null, deadline: null }
+    } else {
+      // 基準日から1年後の前日が義務期限
+      const deadlineDate = new Date(latestGrant.granted_at)
+      deadlineDate.setFullYear(deadlineDate.getFullYear() + 1)
+      deadlineDate.setDate(deadlineDate.getDate() - 1)
+      const deadline = deadlineDate.toISOString().split('T')[0]
+
+      // 基準日〜期限内の付与合計が10日以上なら義務対象
+      const grantsInPeriod = wGrants.filter(g => g.granted_at >= latestGrant.granted_at && g.granted_at <= deadline)
+      const grantedInPeriod = grantsInPeriod.reduce((s, g) => s + Number(g.days), 0)
+      const isSubject = grantedInPeriod >= 10
+
+      // 基準日〜期限内の使用日数
+      const usage = allUsageByWorker[w.id] ?? []
+      const usedInPeriod = usage.filter(u => u.date >= latestGrant.granted_at && u.date <= deadline).length
+
+      duty = {
+        isSubject,
+        isMet:        usedInPeriod >= 5,
+        usedInPeriod,
+        remaining:    Math.max(0, 5 - usedInPeriod),
+        grantedAt:    latestGrant.granted_at,
+        deadline,
+      }
+    }
+
+    return {
+      id:                    w.id,
+      name:                  w.name,
+      active:                w.active,
+      hire_date:             w.hire_date,
+      employment_type:       w.employment_type,
+      weekly_scheduled_days: w.weekly_scheduled_days,
+      totalGranted,
+      totalUsed,
+      remaining: totalGranted - totalUsed,
+      duty,
+    }
+  })
+
+  loading.value = false
+}
+
+async function openDetail(w: WorkerStat) {
+  detail.value   = w
+  grantError.value = ''
+  newGrant.value = {
+    granted_at: today,
+    expires_at: `${thisYear + 2}-${today.slice(5)}`,
+    days:       suggestedGrant(w),
+    note:       `${thisYear}年度付与`,
+  }
+  await loadDetailData(w.id)
+}
+
+async function loadDetailData(workerId: string) {
+  const accountId = await getAccountId()
+  const [{ data: grants }, { data: usersData }] = await Promise.all([
+    supabase.from('paid_leave_grants').select('id, worker_id, granted_at, expires_at, days, note').eq('worker_id', workerId).order('granted_at', { ascending: false }),
+    supabase.from('users').select('id').eq('worker_id', workerId).eq('account_id', accountId),
+  ])
+  detailGrants.value = (grants ?? []) as Grant[]
+
+  // 付与履歴がない場合は移行登録用のデフォルト値をセット
+  if (detailGrants.value.length === 0) {
+    newGrant.value = {
+      granted_at: today,
+      expires_at: `${thisYear + 2}-${today.slice(5)}`,
+      days:       0,
+      note:       '移行初期残高（導入時点）',
+    }
+  }
+
+  const userIds = (usersData ?? []).map((u: any) => u.id)
+  if (userIds.length > 0) {
+    const { data: usage } = await supabase.from('daily_reports').select('date, note').in('user_id', userIds).eq('leave_type', 'paid_leave').order('date', { ascending: false })
+    detailUsage.value = (usage ?? []).map((r: any) => ({ date: r.date, note: r.note }))
+  } else {
+    detailUsage.value = []
+  }
+}
+
+async function addGrant() {
+  if (!detail.value) return
+  if (!newGrant.value.granted_at || !newGrant.value.expires_at || !newGrant.value.days) {
+    grantError.value = '付与日・有効期限・日数を入力してください'; return
+  }
+  grantSaving.value = true
+  grantError.value  = ''
+  try {
+    const accountId = await getAccountId()
+    await supabase.from('paid_leave_grants').insert({
+      worker_id:  detail.value.id,
+      account_id: accountId,
+      granted_at: newGrant.value.granted_at,
+      expires_at: newGrant.value.expires_at,
+      days:       newGrant.value.days,
+      note:       newGrant.value.note || null,
+    })
+    await loadDetailData(detail.value.id)
+    await load()
+    detail.value = workerStats.value.find(w => w.id === detail.value!.id) ?? detail.value
+  } catch (e: any) {
+    grantError.value = e.message ?? '保存に失敗しました'
+  } finally {
+    grantSaving.value = false
+  }
+}
+
+async function deleteGrant(grantId: string) {
+  if (!confirm('この付与記録を削除しますか？')) return
+  await supabase.from('paid_leave_grants').delete().eq('id', grantId)
+  if (detail.value) {
+    await loadDetailData(detail.value.id)
+    await load()
+    detail.value = workerStats.value.find(w => w.id === detail.value!.id) ?? detail.value
+  }
+}
+
+function doPrint() {
+  window.print()
+}
+
+onMounted(load)
+</script>
+
+<style scoped>
+/* ── 共通 ── */
+.page-header  { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+.page-title   { font-size: 22px; font-weight: 700; }
+.header-actions { display: flex; gap: 12px; align-items: center; }
+.year-select  { background: #f5f5f5; border: 1px solid #ddd; border-radius: 8px; padding: 8px 12px; font-size: 14px; cursor: pointer; }
+.btn-print    { background: #1a1a1a; color: #fff; border: none; border-radius: 8px; padding: 10px 18px; font-size: 14px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+.btn-print:hover { background: #333; }
+.loading      { color: #888; padding: 40px; text-align: center; }
+
+/* ── 画面テーブル ── */
+.table-wrap { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.table      { width: 100%; border-collapse: collapse; }
+.table th   { background: #f9f9f9; padding: 12px 16px; text-align: left; font-size: 12px; color: #888; font-weight: 700; }
+.table td   { padding: 14px 16px; border-top: 1px solid #f0f0f0; font-size: 14px; }
+.table tr.inactive td { opacity: .4; }
+.name   { font-weight: 600; }
+.mono   { font-variant-numeric: tabular-nums; font-size: 13px; }
+.actions { display: flex; gap: 8px; }
+
+.emp-badge          { font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 700; }
+.emp-badge.fulltime { background: #f0f4ff; color: #4f46e5; }
+.emp-badge.parttime { background: #fff7ed; color: #c2710c; }
+.remaining     { font-size: 13px; font-weight: 700; }
+.remaining.ok  { color: #0a8a3a; }
+.remaining.low { color: #e67e22; }
+.remaining.neg { color: #e53935; }
+.duty-badge    { font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 700; }
+.duty-badge.ok { background: #e8fff0; color: #0a8a3a; }
+.duty-badge.ng { background: #fff3e0; color: #e67e22; }
+.duty-na       { font-size: 11px; color: #ccc; }
+.duty-deadline { font-size: 10px; color: #999; margin-top: 2px; }
+.btn-detail    { background: #f0f0f0; border: none; border-radius: 6px; padding: 6px 14px; font-size: 12px; cursor: pointer; }
+
+/* ── ドロワー ── */
+.drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 100; display: flex; justify-content: flex-end; }
+.drawer { width: 520px; max-width: 95vw; background: #fff; height: 100vh; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; padding: 28px; }
+.drawer-head { display: flex; justify-content: space-between; align-items: flex-start; }
+.drawer-name { font-size: 20px; font-weight: 700; }
+.drawer-sub  { font-size: 12px; color: #888; margin-top: 4px; }
+.btn-close   { background: none; border: none; font-size: 18px; cursor: pointer; color: #888; }
+.balance-summary { display: flex; gap: 12px; }
+.balance-card    { flex: 1; background: #f9f9f9; border-radius: 10px; padding: 14px; text-align: center; }
+.balance-card.highlight { background: #e8fff0; }
+.balance-label   { font-size: 11px; color: #888; margin-bottom: 6px; }
+.balance-val     { font-size: 22px; font-weight: 700; color: #1a1a1a; }
+.balance-card.highlight .balance-val { color: #0a8a3a; }
+.ref-grant  { background: #f0f4ff; border-radius: 8px; padding: 12px 16px; display: flex; align-items: center; gap: 16px; }
+.ref-label  { font-size: 11px; color: #4f46e5; font-weight: 700; white-space: nowrap; }
+.ref-val    { font-size: 18px; font-weight: 700; color: #1a1a1a; }
+.ref-note   { font-size: 12px; color: #888; font-weight: 400; }
+.section-title { font-size: 13px; font-weight: 700; color: #444; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+.grant-form    { display: flex; flex-direction: column; gap: 12px; }
+.form-row      { display: flex; gap: 12px; }
+.form-field    { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.form-field label { font-size: 11px; font-weight: 700; color: #888; }
+.input         { background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px 12px; font-size: 14px; width: 100%; box-sizing: border-box; }
+.btn-grant     { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 12px; font-weight: 700; cursor: pointer; font-size: 14px; }
+.btn-grant:disabled { opacity: .5; }
+.error         { color: #e53935; font-size: 13px; margin: 0; }
+.sub-table    { width: 100%; border-collapse: collapse; font-size: 13px; }
+.sub-table th { background: #f9f9f9; padding: 8px 12px; text-align: left; font-size: 11px; color: #888; font-weight: 700; }
+.sub-table td { padding: 10px 12px; border-top: 1px solid #f0f0f0; }
+.sub-table tr.expired td { opacity: .5; }
+.note-cell    { color: #888; max-width: 160px; }
+.exp-badge         { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 700; }
+.exp-badge.valid   { background: #e8fff0; color: #0a8a3a; }
+.exp-badge.expired { background: #f5f5f5; color: #aaa; }
+.btn-del { background: none; border: 1px solid #fca5a5; color: #e53935; border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer; }
+.empty   { color: #aaa; font-size: 13px; padding: 12px 0; }
+
+/* 移行登録ガイド */
+.migration-guide {
+  display: flex; gap: 14px;
+  background: #fffbeb; border: 1px solid #fcd34d; border-radius: 10px;
+  padding: 16px;
+}
+.migration-guide-icon { font-size: 22px; flex-shrink: 0; line-height: 1; }
+.migration-guide-body { display: flex; flex-direction: column; gap: 8px; }
+.migration-guide-title { font-size: 14px; font-weight: 700; color: #92400e; }
+.migration-guide-text  { font-size: 13px; color: #78350f; }
+.migration-guide-steps {
+  margin: 0; padding-left: 20px;
+  font-size: 12px; color: #78350f; display: flex; flex-direction: column; gap: 4px;
+}
+.migration-guide-steps li { line-height: 1.6; }
+.migration-guide-note { font-size: 11px; color: #a16207; }
+
+/* ── 印刷専用: 管理簿 ── */
+.print-only { display: none; }
+
+.ledger-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 16px; }
+.ledger-title  { font-size: 20px; font-weight: 900; letter-spacing: 2px; }
+.ledger-meta   { font-size: 12px; color: #555; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+
+.ledger-table           { width: 100%; border-collapse: collapse; font-size: 11px; }
+.ledger-table th        { background: #eee; border: 1px solid #999; padding: 5px 6px; text-align: center; font-weight: 700; white-space: nowrap; }
+.ledger-table td        { border: 1px solid #bbb; padding: 5px 6px; vertical-align: top; }
+.ledger-table .fw       { font-weight: 700; }
+.ledger-table .sm       { font-size: 10px; }
+.ledger-table .center   { text-align: center; }
+.ledger-table .dates-cell { font-size: 10px; line-height: 1.8; word-break: break-all; }
+
+.col-name       { width: 80px; }
+.col-hire       { width: 70px; }
+.col-type       { width: 55px; }
+.col-grant-date { width: 70px; }
+.col-grant-days { width: 45px; }
+.col-dates      { min-width: 200px; }
+.col-used       { width: 40px; }
+.col-remaining  { width: 45px; }
+.col-duty       { width: 50px; }
+
+.ledger-footer { margin-top: 12px; font-size: 10px; color: #555; }
+
+/* ── 印刷メディア ── */
+@media print {
+  .no-print   { display: none !important; }
+  .print-only { display: block !important; }
+
+  .ledger {
+    font-family: 'Hiragino Kaku Gothic Pro', 'Meiryo', sans-serif;
+  }
+
+  /* 改ページ制御 */
+  .ledger-table tr { page-break-inside: avoid; }
+}
+</style>

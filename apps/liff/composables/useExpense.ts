@@ -268,7 +268,7 @@ export const useExpense = () => {
    */
   async function saveReportById(
     userId: string,
-    report: { date: string; isWorking: boolean; sites: unknown[]; note?: string }
+    report: { date: string; isWorking: boolean; sites: unknown[]; note?: string; leaveType?: string | null }
   ): Promise<void> {
     const accountId = await getAccountId()
     const { error } = await supabase
@@ -280,6 +280,7 @@ export const useExpense = () => {
           is_working: report.isWorking,
           sites:      report.sites,
           note:       report.note ?? null,
+          leave_type: report.leaveType ?? null,
           account_id: accountId,
           updated_at: new Date().toISOString(),
         },
@@ -297,7 +298,7 @@ export const useExpense = () => {
    */
   async function saveReport(
     lineUserId: string,
-    report: { date: string; isWorking: boolean; sites: unknown[]; note?: string }
+    report: { date: string; isWorking: boolean; sites: unknown[]; note?: string; leaveType?: string | null }
   ): Promise<void> {
     console.log('[saveReport] 開始 lineUserId=', lineUserId)
 
@@ -490,7 +491,7 @@ export const useExpense = () => {
   async function getReportsById(userId: string, limit = 60): Promise<any[]> {
     const { data, error } = await supabase
       .from('daily_reports')
-      .select('date, is_working, sites, note, updated_at')
+      .select('date, is_working, leave_type, sites, note, updated_at')
       .eq('user_id', userId)
       .order('date', { ascending: false })
       .limit(limit)
@@ -504,7 +505,7 @@ export const useExpense = () => {
     if (!user) return null
     const { data, error } = await supabase
       .from('daily_reports')
-      .select('date, is_working, sites, note')
+      .select('date, is_working, leave_type, sites, note')
       .eq('user_id', user.id)
       .eq('date', date)
       .maybeSingle()
@@ -516,7 +517,7 @@ export const useExpense = () => {
   async function getReportByUserId(userId: string, date: string): Promise<any | null> {
     const { data, error } = await supabase
       .from('daily_reports')
-      .select('date, is_working, sites, note')
+      .select('date, is_working, leave_type, sites, note')
       .eq('user_id', userId)
       .eq('date', date)
       .maybeSingle()

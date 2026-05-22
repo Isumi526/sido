@@ -27,8 +27,8 @@
           >
             <div class="report-card-top">
               <div class="report-date">{{ formatDate(rep.date) }}</div>
-              <span :class="['status-badge', rep.is_working ? 'badge-working' : 'badge-off']">
-                {{ rep.is_working ? '稼働' : '休み' }}
+              <span :class="['status-badge', rep.leave_type === 'paid_leave' ? 'badge-paid-leave' : rep.is_working ? 'badge-working' : 'badge-off']">
+                {{ rep.leave_type === 'paid_leave' ? '有給' : rep.is_working ? '稼働' : '休み' }}
               </span>
             </div>
 
@@ -199,8 +199,9 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--font)
 .status-badge {
   font-size: 11px; font-weight: 700; border-radius: 20px; padding: 3px 10px;
 }
-.badge-working { background: #e8f9ef; color: #06C755; }
-.badge-off     { background: #f5f5f5; color: var(--text2); }
+.badge-working    { background: #e8f9ef; color: #06C755; }
+.badge-off        { background: #f5f5f5; color: var(--text2); }
+.badge-paid-leave { background: #fff3e0; color: #e67e22; }
 
 .site-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .site-chip {

@@ -92,6 +92,7 @@ export interface DailyReport {
   sender: string
   senderId: string
   isWorking: boolean  // true=稼働あり, false=稼働なし（休み等）
+  leaveType?: string | null  // 'paid_leave' = 有給
   sites: SiteReport[]
   note?: string
 }

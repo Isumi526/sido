@@ -307,7 +307,7 @@ async function load() {
 
   const { data } = await supabase
     .from('daily_reports')
-    .select('date, is_working, sites, user_id')
+    .select('date, is_working, leave_type, sites, user_id')
     .eq('account_id', accountId)
     .gte('date', dateFrom.value)
     .lte('date', dateTo.value)
@@ -334,6 +334,23 @@ async function load() {
       if (workerName) {
         if (!offByWorker[workerName]) offByWorker[workerName] = []
         offByWorker[workerName].push({ date: r.date, isSunday })
+      }
+      continue
+    }
+
+    // 有給: 提出者を 8h（08:00-17:00）稼働として計上
+    if (r.leave_type === 'paid_leave') {
+      const workerName = userNameMap[r.user_id]
+      if (workerName) {
+        if (!rawByWorker[workerName]) rawByWorker[workerName] = []
+        rawByWorker[workerName].push({
+          date:       r.date,
+          siteName:   '有給',
+          isSunday,
+          startTime:  '08:00',
+          endTime:    '17:00',
+          workerRole: 'site',
+        })
       }
       continue
     }

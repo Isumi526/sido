@@ -20,7 +20,7 @@ export function buildReportMessage(body: {
   const dateLabel = `${d.getMonth() + 1}/${d.getDate()}（${WEEKDAYS[d.getDay()]}）`
 
   const lines: string[] = [
-    `📋 ${dateLabel} 日報`,
+    `📋 ${dateLabel} 日報（敬称略）`,
     `👤 ${sender}`,
     '──────────',
   ]
