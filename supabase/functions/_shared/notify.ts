@@ -20,7 +20,7 @@ export function buildReportMessage(body: {
   const dateLabel = `${d.getMonth() + 1}/${d.getDate()}（${WEEKDAYS[d.getDay()]}）`
 
   const lines: string[] = [
-    `📋 ${dateLabel} 日報（敬称略）`,
+    `📋 ${dateLabel} 日報`,
     `👤 ${sender}`,
     '──────────',
   ]
@@ -43,7 +43,10 @@ export function buildReportMessage(body: {
       if (w.hoursSundayNight)   parts.push(`休日深夜${w.hoursSundayNight}h`)
       if (w.hoursSundayOTNight) parts.push(`休日深夜残業${w.hoursSundayOTNight}h`)
       if (parts.length === 0 && w.days != null) parts.push(`${w.days}日`)
-      if (parts.length) lines.push(`・${w.workerName} ${parts.join(' + ')}`)
+      if (parts.length) {
+        const label = w.workerName === sender ? '' : `${w.workerName} `
+        lines.push(`・${label}${parts.join(' + ')}`)
+      }
     }
 
     // 経費

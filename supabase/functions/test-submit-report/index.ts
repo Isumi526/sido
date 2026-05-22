@@ -37,14 +37,14 @@ Deno.serve(async (req) => {
 
     // 有給
     if (leaveType === 'paid_leave') {
-      const text = `📋 ${fmtDate(date)} 日報（敬称略）\n👤 ${sender}\n──────────\n🌴 有給休暇${note ? '\n\n📝 ' + note : ''}`
+      const text = `📋 ${fmtDate(date)} 日報\n👤 ${sender}\n──────────\n🌴 有給休暇${note ? '\n\n📝 ' + note : ''}`
       await Promise.all(targets.map(id => pushLineText(id, text, LINE_TOKEN)))
       return json({ success: true })
     }
 
     // 稼働なし
     if (isWorking === false) {
-      const text = `📋 ${fmtDate(date)} 日報（敬称略）\n👤 ${sender}\n──────────\n稼働なし${note ? '\n\n📝 ' + note : ''}`
+      const text = `📋 ${fmtDate(date)} 日報\n👤 ${sender}\n──────────\n稼働なし${note ? '\n\n📝 ' + note : ''}`
       await Promise.all(targets.map(id => pushLineText(id, text, LINE_TOKEN)))
       return json({ success: true })
     }
