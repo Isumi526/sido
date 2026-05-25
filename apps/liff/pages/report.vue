@@ -88,6 +88,7 @@
               class="input mt6"
               placeholder="現場名を入力（例: 渋谷プロジェクト）"
               required
+              @keydown.enter.prevent
             />
           </Field>
 
@@ -154,7 +155,7 @@
                     <option v-for="name in master.subcontractorNames.value" :key="name" :value="name">{{ name }}</option>
                     <option value="__other__">その他（新規追加）</option>
                   </select>
-                  <input v-model.number="sub.count" type="number" min="1" max="20" class="input select--h" placeholder="人数" />
+                  <input v-model.number="sub.count" type="number" min="1" max="20" class="input select--h" placeholder="人数" @keydown.enter.prevent />
                   <button type="button" class="btn-icon-sm" @click="report.removeSub(si, si2)">✕</button>
                 </div>
                 <input
@@ -204,7 +205,7 @@
                       @click="report.removeVehicle(si, vi)"
                     >✕ 削除</button>
                   </div>
-                  <input v-model="veh.vehicleName" type="text" class="input" placeholder="車両名（例: ハイエース）" />
+                  <input v-model="veh.vehicleName" type="text" class="input" placeholder="車両名（例: ハイエース）" @keydown.enter.prevent />
                   <div class="expense-grid mt8">
                     <ExpenseField v-model="veh.distanceKm" label="ガソリン（往復km）" />
                     <ExpenseField v-model="veh.dieselKm"   label="軽油（往復km）" />
@@ -241,7 +242,7 @@
               </select>
               <template v-if="siteUsage[si].train === 'あり'">
                 <div v-for="(tr, ti) in site.expenses.trains" :key="ti" class="lineitems-row">
-                  <input v-model="tr.label" type="text" class="input" placeholder="例: 名古屋〜大阪" />
+                  <input v-model="tr.label" type="text" class="input" placeholder="例: 名古屋〜大阪" @keydown.enter.prevent />
                   <ExpenseField v-model="tr.yen" label="金額" />
                   <button v-if="site.expenses.trains.length > 1" type="button" class="btn-icon-sm" @click="report.removeTrain(si, ti)">✕</button>
                 </div>
@@ -279,10 +280,10 @@
                   </div>
                 </div>
                 <div class="hotel-row mt6">
-                  <input v-model="site.expenses.hotelName" type="text" class="input" placeholder="施設名（例: アパホテル）" />
+                  <input v-model="site.expenses.hotelName" type="text" class="input" placeholder="施設名（例: アパホテル）" @keydown.enter.prevent />
                   <ExpenseField v-model="site.expenses.hotelYen" label="金額" />
                 </div>
-                <input v-model="site.expenses.hotelRegistration" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" />
+                <input v-model="site.expenses.hotelRegistration" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" @keydown.enter.prevent />
               </template>
             </Field>
 
@@ -304,10 +305,10 @@
                   </div>
                 </div>
                 <div class="hotel-row mt6">
-                  <input v-model="site.expenses.leopalaceName" type="text" class="input" placeholder="施設名" />
+                  <input v-model="site.expenses.leopalaceName" type="text" class="input" placeholder="施設名" @keydown.enter.prevent />
                   <ExpenseField v-model="site.expenses.leopalaceYen" label="金額" />
                 </div>
-                <input v-model="site.expenses.leopalaceRegistration" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" />
+                <input v-model="site.expenses.leopalaceRegistration" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" @keydown.enter.prevent />
               </template>
             </Field>
 
@@ -356,10 +357,10 @@
                   </div>
                 </div>
                 <div v-for="(ot, oi) in site.expenses.others" :key="oi" class="lineitems-row mt6">
-                  <input v-model="ot.label" type="text" class="input" placeholder="内容" />
+                  <input v-model="ot.label" type="text" class="input" placeholder="内容" @keydown.enter.prevent />
                   <ExpenseField v-model="ot.yen" label="金額" />
                   <button v-if="site.expenses.others.length > 1" type="button" class="btn-icon-sm" @click="report.removeOther(si, oi)">✕</button>
-                  <input v-model="ot.registrationNumber" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" />
+                  <input v-model="ot.registrationNumber" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" @keydown.enter.prevent />
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addOther(si)">＋ 追加</button>
               </template>
@@ -383,10 +384,10 @@
                   </div>
                 </div>
                 <div class="lineitems-row mt6">
-                  <input v-model="site.expenses.entertainmentLabel" type="text" class="input" placeholder="内容" />
+                  <input v-model="site.expenses.entertainmentLabel" type="text" class="input" placeholder="内容" @keydown.enter.prevent />
                   <ExpenseField v-model="site.expenses.entertainmentYen" label="金額" />
                 </div>
-                <input v-model="site.expenses.entertainmentRegistration" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" />
+                <input v-model="site.expenses.entertainmentRegistration" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" @keydown.enter.prevent />
               </template>
             </Field>
           </div>

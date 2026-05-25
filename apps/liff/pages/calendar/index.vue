@@ -2,16 +2,9 @@
   <div class="cal-page">
     <AppNav subtitle="予定管理" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
 
-    <!-- 月ナビ -->
+    <!-- 月ナビ（ヘッダー：年月のみ） -->
     <div class="month-nav">
-      <button class="nav-btn" @click="navigate(-1)">‹</button>
       <span class="nav-label">{{ navLabel }}</span>
-      <button class="nav-btn" @click="navigate(1)">›</button>
-      <button class="today-btn" @click="goToday">今日</button>
-      <label class="deleted-toggle">
-        <input type="checkbox" v-model="showDeleted" />
-        削除済み
-      </label>
     </div>
 
     <div v-if="loading" class="loading">読み込み中...</div>
@@ -73,6 +66,17 @@
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <!-- 下部操作バー -->
+    <div class="bottom-bar">
+      <button class="nav-btn" @click="navigate(-1)">‹</button>
+      <button class="today-btn" @click="goToday">今日</button>
+      <label class="deleted-toggle">
+        <input type="checkbox" v-model="showDeleted" />
+        削除済み
+      </label>
+      <button class="nav-btn" @click="navigate(1)">›</button>
     </div>
 
     <!-- 追加・編集モーダル -->
@@ -464,15 +468,24 @@ onMounted(async () => {
 <style scoped>
 .cal-page { display: flex; flex-direction: column; height: 100dvh; background: #fff; color: #111; overflow: hidden; }
 
-/* 月ナビ */
+/* 月ナビ（ヘッダー：年月のみ） */
 .month-nav {
-  display: flex; align-items: center; gap: 6px;
+  display: flex; align-items: center; justify-content: center;
   padding: 10px 12px; border-bottom: 1px solid #E0E0E0; flex-shrink: 0;
 }
-.nav-btn { background: #f5f5f5; border: 1px solid #E0E0E0; color: #333; border-radius: 6px; padding: 4px 12px; font-size: 18px; cursor: pointer; }
-.nav-label { flex: 1; text-align: center; font-size: 16px; font-weight: 700; color: #111; }
-.today-btn { background: #f5f5f5; border: 1px solid #E0E0E0; color: #06C755; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; font-weight: 600; }
-.deleted-toggle { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #888; cursor: pointer; user-select: none; flex-shrink: 0; }
+.nav-label { font-size: 16px; font-weight: 700; color: #111; }
+
+/* 下部操作バー */
+.bottom-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 10px 16px;
+  border-top: 1px solid #E0E0E0; flex-shrink: 0;
+  background: #fff;
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+}
+.nav-btn { background: #f5f5f5; border: 1px solid #E0E0E0; color: #333; border-radius: 8px; padding: 10px 20px; font-size: 20px; cursor: pointer; }
+.today-btn { background: #f5f5f5; border: 1px solid #E0E0E0; color: #06C755; border-radius: 8px; padding: 10px 16px; font-size: 14px; cursor: pointer; font-weight: 600; }
+.deleted-toggle { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #888; cursor: pointer; user-select: none; }
 
 .loading { flex: 1; display: flex; align-items: center; justify-content: center; color: #888; font-size: 14px; }
 
