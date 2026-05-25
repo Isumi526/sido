@@ -106,32 +106,45 @@ async function processAccount(
 
   const { data: allWorkers } = await supabase
     .from('workers')
-    .select('id, name, proxy_operator_id')
+    .select('id, name')
     .eq('account_id', accountId)
     .eq('active', true)
 
-  const { data: reports } = await supabase
-    .from('daily_reports')
-    .select('user_id, date')
-    .eq('account_id', accountId)
-    .gte('date', startDate)
-    .lte('date', yesterday)
+  const [{ data: reports }, { data: proxyRels }] = await Promise.all([
+    supabase
+      .from('daily_reports')
+      .select('user_id, date')
+      .eq('account_id', accountId)
+      .gte('date', startDate)
+      .lte('date', yesterday),
+    supabase
+      .from('worker_proxies')
+      .select('worker_id, proxy_operator_id')
+      .eq('account_id', accountId),
+  ])
 
   const submittedSet = new Set((reports ?? []).map((r: any) => `${r.user_id}__${r.date}`))
 
-  const workerMap = new Map<string, { name: string; proxy_operator_id: string | null }>(
-    (allWorkers ?? []).map((w: any) => [w.id, { name: w.name, proxy_operator_id: w.proxy_operator_id ?? null }])
+  const workerNameMap = new Map<string, string>(
+    (allWorkers ?? []).map((w: any) => [w.id, w.name])
   )
+  // worker_id → 代理人名リスト
+  const proxyNamesMap = new Map<string, string[]>()
+  for (const rel of (proxyRels ?? []) as any[]) {
+    const name = workerNameMap.get(rel.proxy_operator_id)
+    if (!name) continue
+    const arr = proxyNamesMap.get(rel.worker_id) ?? []
+    arr.push(name)
+    proxyNamesMap.set(rel.worker_id, arr)
+  }
 
   function buildEntry(
     workerName: string,
     workerId: string | null | undefined,
     suffix?: string,
   ): UnsubmittedEntry {
-    const proxyId   = workerId ? workerMap.get(workerId)?.proxy_operator_id : null
-    const proxyName = proxyId  ? workerMap.get(proxyId)?.name : null
-
-    if (proxyName) return { name: `${workerName}（代理: ${proxyName}）`, dates: [] }
+    const proxyNames = workerId ? (proxyNamesMap.get(workerId) ?? []) : []
+    if (proxyNames.length > 0) return { name: `${workerName}（代理: ${proxyNames.join('・')}）`, dates: [] }
     return { name: suffix ? `${workerName}（${suffix}）` : workerName, dates: [] }
   }
 
