@@ -10,7 +10,7 @@
     <div v-if="loading" class="loading">読み込み中...</div>
 
     <!-- マトリクスグリッド -->
-    <div v-else ref="gridWrapRef" class="grid-wrap">
+    <div v-else ref="gridWrapRef" class="grid-wrap" @scroll.passive="onGridScroll">
       <table class="matrix-table">
         <thead>
           <tr>
@@ -27,13 +27,16 @@
           </tr>
         </thead>
         <tbody>
+          <tr class="sentinel-top"><td :colspan="sortedWorkers.length + 1" style="height:0;padding:0;border:none;"></td></tr>
           <tr
-            v-for="date in monthDates"
+            v-for="date in calendarDates"
             :key="date"
-            :ref="el => { if (date === todayStr) todayRowRef = el as HTMLElement | null }"
+            :data-date="date"
+            :ref="el => { if (date === todayStr) _todayRow.el = el as HTMLElement | null }"
             :class="{
               'today-row': date === todayStr,
               'weekend-row': isWeekend(date),
+              'month-first-row': date.endsWith('-01'),
             }"
           >
             <td class="sticky-col date-cell" :class="dateCellClass(date)">
@@ -64,6 +67,7 @@
               </div>
             </td>
           </tr>
+          <tr class="sentinel-bottom"><td :colspan="sortedWorkers.length + 1" style="height:0;padding:0;border:none;"></td></tr>
         </tbody>
       </table>
     </div>
@@ -242,52 +246,153 @@ interface ScheduleEdit {
 }
 
 const loading     = ref(false)
-const currentDate = ref(new Date())
 const todayStr    = new Date().toISOString().split('T')[0]
 const gridWrapRef = ref<HTMLElement | null>(null)
-let todayRowRef: HTMLElement | null = null
-
-function scrollToToday() {
-  nextTick(() => {
-    if (!gridWrapRef.value || !todayRowRef) return
-    const wrap = gridWrapRef.value
-    const row  = todayRowRef
-    wrap.scrollTop = Math.max(0, row.offsetTop - wrap.offsetTop - 8)
-  })
-}
+// テンプレート内の v-for ref は非リアクティブ変数で管理
+const _todayRow = { el: null as HTMLElement | null }
 const showDeleted = ref(false)
 const formModal   = ref<(Partial<ScheduleForm> & { id?: string }) | null>(null)
 const detailModal = ref<{ schedule: Schedule; edits: ScheduleEdit[] } | null>(null)
 const saving      = ref(false)
 const formError   = ref('')
 
-// ──────────────────── ナビ ────────────────────
+// ──────────────────── 無限スクロール ────────────────────
+const ROW_HEIGHT    = 72
+const calendarDates = ref<string[]>([])
+let   loadedFrom    = ''
+let   loadedTo      = ''
+const navMonth      = ref(new Date())
+let   isExtending   = false
+let   ioTop:    IntersectionObserver | null = null
+let   ioBottom: IntersectionObserver | null = null
+
 const navLabel = computed(() => {
-  const d = currentDate.value
+  const d = navMonth.value
   return `${d.getFullYear()}年${d.getMonth() + 1}月`
 })
 
-function navigate(dir: 1 | -1) {
-  const d = new Date(currentDate.value)
-  d.setDate(1)
-  d.setMonth(d.getMonth() + dir)
-  currentDate.value = d
+function genMonthDates(year: number, month: number): string[] {
+  const last  = new Date(year, month + 1, 0).getDate()
+  const dates: string[] = []
+  for (let d = 1; d <= last; d++)
+    dates.push(`${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`)
+  return dates
 }
 
-function goToday() { currentDate.value = new Date(); scrollToToday() }
+function shiftMonth(base: Date, n: number): Date {
+  const d = new Date(base); d.setDate(1); d.setMonth(d.getMonth() + n); return d
+}
 
-// ──────────────────── 月の日付一覧 ────────────────────
-const monthDates = computed(() => {
-  const d = currentDate.value
-  const year = d.getFullYear()
-  const mon  = d.getMonth()
-  const last = new Date(year, mon + 1, 0).getDate()
-  const dates: string[] = []
-  for (let day = 1; day <= last; day++) {
-    dates.push(`${year}-${String(mon + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`)
+function initCalendar() {
+  const now  = new Date()
+  const prev = shiftMonth(now, -1)
+  const next = shiftMonth(now, +1)
+  const dates = [
+    ...genMonthDates(prev.getFullYear(), prev.getMonth()),
+    ...genMonthDates(now.getFullYear(),  now.getMonth()),
+    ...genMonthDates(next.getFullYear(), next.getMonth()),
+  ]
+  calendarDates.value = dates
+  loadedFrom = dates[0]
+  loadedTo   = dates[dates.length - 1]
+  navMonth.value = now
+}
+
+async function extendTop() {
+  if (isExtending) return; isExtending = true
+  try {
+    const base   = new Date(loadedFrom + 'T00:00:00')
+    const target = shiftMonth(base, -1)
+    const newDates = genMonthDates(target.getFullYear(), target.getMonth())
+    const wrap     = gridWrapRef.value
+    const prevTop  = wrap?.scrollTop ?? 0
+    calendarDates.value = [...newDates, ...calendarDates.value]
+    loadedFrom = newDates[0]
+    await nextTick()
+    if (wrap) wrap.scrollTop = prevTop + newDates.length * ROW_HEIGHT
+    await loadSchedules()
+  } finally { isExtending = false }
+}
+
+async function extendBottom() {
+  if (isExtending) return; isExtending = true
+  try {
+    const base     = new Date(loadedTo + 'T00:00:00')
+    const target   = shiftMonth(base, +1)
+    const newDates = genMonthDates(target.getFullYear(), target.getMonth())
+    calendarDates.value = [...calendarDates.value, ...newDates]
+    loadedTo = newDates[newDates.length - 1]
+    await loadSchedules()
+  } finally { isExtending = false }
+}
+
+function setupIO() {
+  const wrap = gridWrapRef.value; if (!wrap) return
+  const opts = { root: wrap, rootMargin: '300px 0px', threshold: 0 }
+
+  ioTop?.disconnect()
+  ioBottom?.disconnect()
+
+  const topSentinel    = wrap.querySelector<HTMLElement>('.sentinel-top')
+  const bottomSentinel = wrap.querySelector<HTMLElement>('.sentinel-bottom')
+
+  if (topSentinel) {
+    ioTop = new IntersectionObserver(([e]) => { if (e.isIntersecting) extendTop() }, opts)
+    ioTop.observe(topSentinel)
   }
-  return dates
-})
+  if (bottomSentinel) {
+    ioBottom = new IntersectionObserver(([e]) => { if (e.isIntersecting) extendBottom() }, opts)
+    ioBottom.observe(bottomSentinel)
+  }
+}
+
+function onGridScroll() {
+  const wrap = gridWrapRef.value; if (!wrap) return
+  const rows = wrap.querySelectorAll<HTMLElement>('tr[data-date]')
+  const top  = wrap.getBoundingClientRect().top
+  for (const row of rows) {
+    if (row.getBoundingClientRect().bottom > top + 1) {
+      const d = row.dataset.date
+      if (d) navMonth.value = new Date(d + 'T00:00:00')
+      break
+    }
+  }
+}
+
+function scrollToRow(dateStr: string) {
+  const wrap = gridWrapRef.value; if (!wrap) return
+  const row  = wrap.querySelector<HTMLElement>(`tr[data-date="${dateStr}"]`)
+  if (row) wrap.scrollTop = Math.max(0, row.offsetTop - wrap.offsetTop - 8)
+}
+
+function scrollToToday() {
+  nextTick(() => { if (_todayRow.el) scrollToRow(todayStr) })
+}
+
+function navigate(dir: 1 | -1) {
+  const target    = shiftMonth(navMonth.value, dir)
+  const targetStr = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-01`
+  const prefix    = targetStr.slice(0, 7)
+  const found     = calendarDates.value.find(d => d.startsWith(prefix))
+  if (found) {
+    nextTick(() => scrollToRow(found))
+  } else {
+    // 未ロード月はロードしてからスクロール
+    if (dir === -1) extendTop().then(() => nextTick(() => scrollToRow(calendarDates.value.find(d => d.startsWith(prefix)) ?? '')))
+    else            extendBottom().then(() => nextTick(() => scrollToRow(calendarDates.value.find(d => d.startsWith(prefix)) ?? '')))
+  }
+}
+
+function goToday() {
+  const todayPrefix = todayStr.slice(0, 7)
+  if (!calendarDates.value.find(d => d.startsWith(todayPrefix))) {
+    initCalendar()
+    loadSchedules().then(() => nextTick(() => scrollToToday()))
+    return
+  }
+  navMonth.value = new Date()
+  scrollToToday()
+}
 
 // ──────────────────── セル別スケジュール ────────────────────
 function cellSchedules(date: string, workerId: string): Schedule[] {
@@ -341,13 +446,9 @@ async function loadWorkers() {
 }
 
 async function loadSchedules() {
-  const d    = currentDate.value
-  const from = toDateStr(new Date(d.getFullYear(), d.getMonth(), 1))
-  const to   = toDateStr(new Date(d.getFullYear(), d.getMonth() + 1, 0))
-  await schedules.fetchSchedules(from, to, [], effectiveWorkerId.value)
+  await schedules.fetchSchedules(loadedFrom, loadedTo, [], effectiveWorkerId.value)
 }
 
-watch(currentDate, loadSchedules)
 watch(() => proxy.proxyTarget.value, loadSchedules)
 
 // ──────────────────── CRUD ────────────────────
@@ -453,6 +554,7 @@ async function restore(ev: Schedule) {
 // ──────────────────── 初期化 ────────────────────
 onMounted(async () => {
   loading.value = true
+  initCalendar()
   try {
     await master.fetch()
     await schedules.resolveMyWorkerId()
@@ -460,6 +562,8 @@ onMounted(async () => {
     await loadSchedules()
   } finally {
     loading.value = false
+    await nextTick()
+    setupIO()
     scrollToToday()
   }
 })
@@ -470,7 +574,7 @@ onMounted(async () => {
 
 /* 月ナビ（ヘッダー：年月のみ） */
 .month-nav {
-  display: flex; align-items: center; justify-content: center;
+  display: flex; align-items: center;
   padding: 10px 12px; border-bottom: 1px solid #E0E0E0; flex-shrink: 0;
 }
 .nav-label { font-size: 16px; font-weight: 700; color: #111; }
@@ -532,6 +636,7 @@ thead th.sticky-col { z-index: 4; }
 .today-row > td.sticky-col { background-color: #f0fdf4; }
 .weekend-row > td { background-color: #fafafa; }
 .weekend-row > td.sticky-col { background-color: #f4f4f4; }
+.month-first-row > td { border-top: 2px solid #bbb; }
 
 /* スケジュールセル */
 .sched-cell {
