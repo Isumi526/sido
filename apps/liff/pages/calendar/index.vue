@@ -348,15 +348,12 @@ function setupIO() {
 
 function onGridScroll() {
   const wrap = gridWrapRef.value; if (!wrap) return
-  const rows = wrap.querySelectorAll<HTMLElement>('tr[data-date]')
-  const top  = wrap.getBoundingClientRect().top
-  for (const row of rows) {
-    if (row.getBoundingClientRect().bottom > top + 1) {
-      const d = row.dataset.date
-      if (d) navMonth.value = new Date(d + 'T00:00:00')
-      break
-    }
-  }
+  const idx  = Math.min(
+    Math.floor(wrap.scrollTop / ROW_HEIGHT),
+    calendarDates.value.length - 1,
+  )
+  const date = calendarDates.value[idx]
+  if (date) navMonth.value = new Date(date + 'T00:00:00')
 }
 
 function scrollToRow(dateStr: string) {
