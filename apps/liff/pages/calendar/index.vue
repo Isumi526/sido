@@ -17,7 +17,7 @@
     <div v-if="loading" class="loading">読み込み中...</div>
 
     <!-- マトリクスグリッド -->
-    <div v-else class="grid-wrap">
+    <div v-else ref="gridWrapRef" class="grid-wrap">
       <table class="matrix-table">
         <thead>
           <tr>
@@ -37,6 +37,7 @@
           <tr
             v-for="date in monthDates"
             :key="date"
+            :ref="el => { if (date === todayStr) todayRowRef = el as HTMLElement | null }"
             :class="{
               'today-row': date === todayStr,
               'weekend-row': isWeekend(date),
@@ -179,7 +180,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useSchedules, type Schedule, type ScheduleForm } from '~/composables/useSchedules'
 
 const schedules   = useSchedules()
@@ -239,6 +240,17 @@ interface ScheduleEdit {
 const loading     = ref(false)
 const currentDate = ref(new Date())
 const todayStr    = new Date().toISOString().split('T')[0]
+const gridWrapRef = ref<HTMLElement | null>(null)
+let todayRowRef: HTMLElement | null = null
+
+function scrollToToday() {
+  nextTick(() => {
+    if (!gridWrapRef.value || !todayRowRef) return
+    const wrap = gridWrapRef.value
+    const row  = todayRowRef
+    wrap.scrollTop = Math.max(0, row.offsetTop - wrap.offsetTop - 8)
+  })
+}
 const showDeleted = ref(false)
 const formModal   = ref<(Partial<ScheduleForm> & { id?: string }) | null>(null)
 const detailModal = ref<{ schedule: Schedule; edits: ScheduleEdit[] } | null>(null)
@@ -258,7 +270,7 @@ function navigate(dir: 1 | -1) {
   currentDate.value = d
 }
 
-function goToday() { currentDate.value = new Date() }
+function goToday() { currentDate.value = new Date(); scrollToToday() }
 
 // ──────────────────── 月の日付一覧 ────────────────────
 const monthDates = computed(() => {
@@ -444,6 +456,7 @@ onMounted(async () => {
     await loadSchedules()
   } finally {
     loading.value = false
+    scrollToToday()
   }
 })
 </script>
