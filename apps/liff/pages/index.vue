@@ -179,9 +179,15 @@ async function refreshUnsubmittedCount() {
 
   if (!targetUserId) return
 
-  const from = new Date(); from.setDate(from.getDate() - 30)
-  const fromStr = from.toISOString().split('T')[0]
-  const today   = new Date().toISOString().split('T')[0]
+  // JST（UTC+9）で日付を計算
+  const toJST = (d: Date) => {
+    const jst = new Date(d.getTime() + 9 * 60 * 60 * 1000)
+    return jst.toISOString().split('T')[0]
+  }
+  const todayDate = new Date()
+  const fromDate  = new Date(); fromDate.setDate(fromDate.getDate() - 30)
+  const fromStr   = toJST(fromDate)
+  const today     = toJST(todayDate)
   const { data: reports } = await supabase
     .from('daily_reports')
     .select('date')
