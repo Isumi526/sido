@@ -789,14 +789,10 @@ onMounted(async () => {
       // 代理モード: 代理先ユーザーのDBレコードを探してそちらの未送信日を確認
       const { data: proxyUserData } = await useSupabase()
         .from('users').select('id').eq('worker_id', proxyT.id).maybeSingle()
-      if (proxyUserData) {
-        nextDate = await expense.getNextUnsubmittedDateById(proxyUserData.id)
-      } else {
-        // まだ日報がない → サービス開始日設定確認のため自分のアカウントで設定を見る
-        nextDate = await expense.getNextUnsubmittedDate(userId)
-        // 全送信済みではないはずなのでデフォルト（今日）のままにする
-        if (nextDate === null) nextDate = 'NOT_CONFIGURED'
-      }
+      // ユーザーレコードがない場合はnil UUIDで呼ぶ → 日報0件扱いでservice_start_dateが返る
+      nextDate = await expense.getNextUnsubmittedDateById(
+        proxyUserData?.id ?? '00000000-0000-0000-0000-000000000000'
+      )
     } else {
       nextDate = await expense.getNextUnsubmittedDate(userId)
     }
@@ -1116,12 +1112,9 @@ watch(() => proxy.proxyTarget.value, async (newTarget, oldTarget) => {
   if (newTarget) {
     const { data: proxyUserData } = await useSupabase()
       .from('users').select('id').eq('worker_id', newTarget.id).maybeSingle()
-    if (proxyUserData) {
-      nextDate = await expense.getNextUnsubmittedDateById(proxyUserData.id)
-    } else {
-      nextDate = await expense.getNextUnsubmittedDate(userId)
-      if (nextDate === null) nextDate = 'NOT_CONFIGURED'
-    }
+    nextDate = await expense.getNextUnsubmittedDateById(
+      proxyUserData?.id ?? '00000000-0000-0000-0000-000000000000'
+    )
   } else {
     nextDate = await expense.getNextUnsubmittedDate(userId)
   }
