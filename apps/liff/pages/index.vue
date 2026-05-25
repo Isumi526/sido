@@ -100,6 +100,7 @@ const proxy       = useProxyMode()
 
 const currentUser      = ref<User | null>(null)
 const unsubmittedCount = ref(0)
+const accountId        = ref<string | null>(null)
 const proxyModalOpen   = ref(false)
 const proxyLoading     = ref(false)
 
@@ -140,6 +141,7 @@ onMounted(async () => {
   const { data: accountData } = await supabase
     .from('accounts').select('id').eq('slug', config.public.accountSlug).single()
   if (!accountData) return
+  accountId.value = accountData.id
 
   const { data: user } = await supabase
     .from('users')
@@ -179,29 +181,40 @@ async function refreshUnsubmittedCount() {
 
   if (!targetUserId) return
 
-  // JST（UTC+9）で日付を計算
-  const toJST = (d: Date) => {
-    const jst = new Date(d.getTime() + 9 * 60 * 60 * 1000)
-    return jst.toISOString().split('T')[0]
+  // JST で今日の日付を取得
+  const now   = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+
+  // service_start_date を取得（未設定なら 30日前にフォールバック）
+  let fromStr = (() => {
+    const d = new Date(now); d.setDate(d.getDate() - 30)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })()
+  if (accountId.value) {
+    const { data: settingRows } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('account_id', accountId.value)
+      .eq('key', 'service_start_date')
+      .limit(1)
+    if (settingRows?.[0]?.value) fromStr = settingRows[0].value
   }
-  const todayDate = new Date()
-  const fromDate  = new Date(); fromDate.setDate(fromDate.getDate() - 30)
-  const fromStr   = toJST(fromDate)
-  const today     = toJST(todayDate)
+
   const { data: reports } = await supabase
     .from('daily_reports')
     .select('date')
     .eq('user_id', targetUserId)
     .gte('date', fromStr)
     .lte('date', today)
-  const submittedDates = new Set((reports ?? []).map((r: any) => r.date))
+  const submittedDates = new Set((reports ?? []).map((r: any) => r.date as string))
+
   let count = 0
-  const cur = new Date(fromStr)
-  const end = new Date(today)
-  while (cur <= end) {
-    const ds = cur.toISOString().split('T')[0]
-    if (!submittedDates.has(ds)) count++
-    cur.setDate(cur.getDate() + 1)
+  let cursor = fromStr
+  while (cursor <= today) {
+    if (!submittedDates.has(cursor)) count++
+    const d = new Date(cursor + 'T12:00:00')
+    d.setDate(d.getDate() + 1)
+    cursor = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   }
   unsubmittedCount.value = count
 }
