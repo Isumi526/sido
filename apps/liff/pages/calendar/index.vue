@@ -1,232 +1,141 @@
 <template>
-  <div class="calendar-page">
+  <div class="cal-page">
     <AppNav subtitle="予定管理" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
 
-    <div class="cal-subheader">
-      <h1 class="cal-title">予定</h1>
-      <!-- グループ選択チップ -->
-      <div class="group-chips">
-        <button
-          v-for="g in myGroups" :key="g.id"
-          class="group-chip"
-          :class="{ active: selectedGroupIds.includes(g.id) }"
-          @click="toggleGroupFilter(g.id)"
-        >{{ g.name }}</button>
-        <span v-if="!myGroups.length" class="no-groups" @click="navigateTo('/groups')">グループ未参加</span>
-      </div>
-    </div>
-
-    <div class="view-tabs">
-      <button v-for="v in VIEWS" :key="v.key" class="view-tab" :class="{ active: currentView === v.key }" @click="currentView = v.key">{{ v.label }}</button>
-    </div>
-
-    <div class="cal-nav">
-      <button class="nav-btn" @click="navigate(-1)">‹</button>
+    <!-- 月ナビ（ヘッダー：年月のみ） -->
+    <div class="month-nav">
       <span class="nav-label">{{ navLabel }}</span>
-      <button class="nav-btn" @click="navigate(1)">›</button>
-      <button class="today-btn" @click="goToday">今日</button>
     </div>
 
-    <!-- 月ビュー：曜日ヘッダー固定 + 週単位縦スクロール -->
-    <template v-if="currentView === 'month'">
-      <div class="weekday-headers">
-        <span v-for="d in WEEKDAYS" :key="d" class="weekday-label" :class="{ sun: d === '日', sat: d === '土' }">{{ d }}</span>
-      </div>
-      <div class="month-week-scroller" ref="monthScrollEl" @scroll.passive="onMonthScroll">
-        <div v-for="week in monthWeeks" :key="week.key" class="week-row">
-          <div
-            v-for="cell in week.cells" :key="cell.date"
-            class="day-cell"
-            :class="{ 'other-month': !cell.currentMonth, 'today': cell.date === todayStr, 'sunday': cell.dayOfWeek === 0, 'saturday': cell.dayOfWeek === 6 }"
-            @click="openAddOnDate(cell.date)"
+    <div v-if="loading" class="loading">読み込み中...</div>
+
+    <!-- マトリクスグリッド -->
+    <div v-else ref="gridWrapRef" class="grid-wrap" @scroll.passive="onGridScroll">
+      <table class="matrix-table">
+        <thead>
+          <tr>
+            <th class="sticky-col date-col-header"></th>
+            <th
+              v-for="w in sortedWorkers"
+              :key="w.id"
+              class="worker-header"
+              :class="{ 'my-col': isMyWorker(w.id), 'pinned-col': isPinned(w.id) }"
+              @click="togglePin(w.id)"
+            >
+              <span class="pin-icon" v-if="isPinned(w.id)">📌</span>{{ w.name }}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="sentinel-top"><td :colspan="sortedWorkers.length + 1" style="height:0;padding:0;border:none;"></td></tr>
+          <tr
+            v-for="date in calendarDates"
+            :key="date"
+            :data-date="date"
+            :ref="el => { if (date === todayStr) _todayRow.el = el as HTMLElement | null }"
+            :class="{
+              'today-row': date === todayStr,
+              'weekend-row': isWeekend(date),
+              'month-first-row': date.endsWith('-01'),
+            }"
           >
-            <span class="day-num">{{ cell.day }}</span>
-            <div class="cell-events">
-              <div v-for="ev in cell.events.slice(0, 2)" :key="ev.id" class="cell-event" :style="{ background: eventColor(ev) }" @click.stop="openDetail(ev)">{{ ev.title }}</div>
-              <div v-if="cell.events.length > 2" class="cell-more">+{{ cell.events.length - 2 }}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </template>
-
-    <!-- 週ビュー：時間列固定 + 1日単位横スクロール -->
-    <div v-else-if="currentView === 'week'" class="wv-outer">
-      <div class="wv-days-scroll" ref="weekScrollEl" @scroll.passive="onWeekScroll">
-        <div class="wv-time-col-sticky">
-          <div class="wv-tc-corner"></div>
-          <div v-for="h in HOURS" :key="h" class="wv-time-slot">
-            <span v-if="h > 0" class="wv-time-label">{{ String(h).padStart(2,'0') }}:00</span>
-          </div>
-        </div>
-        <div
-          v-for="day in weekScrollDays" :key="day.date"
-          class="wv-day-col-h"
-          :class="{ today: day.date === todayStr }"
-        >
-          <div class="wv-day-header" :class="{ sunday: day.dow === 0, saturday: day.dow === 6 }" @click.stop="openAddOnDate(day.date)">
-            <span class="wv-dow">{{ WEEKDAYS[day.dow] }}</span>
-            <span class="wv-daynum" :class="{ 'is-today': day.date === todayStr }">{{ day.dayNum }}</span>
-          </div>
-          <div v-for="ev in day.allDayEvents" :key="ev.id" class="wv-allday-chip" :style="{ background: eventColor(ev) }" @click.stop="openDetail(ev)">{{ ev.title }}</div>
-          <div class="wv-time-grid-rel" @click="openAddByTime($event, day.date)">
-            <div v-for="h in HOURS" :key="h" class="wv-hour-line"></div>
-            <div
-              v-for="ev in day.timedEvents" :key="ev.id"
-              class="wv-timed-event"
-              :style="{ ...timedEventStyle(ev, day.date), background: eventColor(ev) }"
-              @click.stop="openDetail(ev)"
+            <td class="sticky-col date-cell" :class="dateCellClass(date)">
+              {{ formatDateLabel(date) }}
+            </td>
+            <td
+              v-for="w in sortedWorkers"
+              :key="w.id"
+              class="sched-cell"
+              :class="{ 'my-col-cell': isMyWorker(w.id), 'pinned-col-cell': isPinned(w.id) }"
+              @click="onCellTap(date, w.id)"
             >
-              <span class="wv-timed-title">{{ ev.title }}</span>
-              <span class="wv-timed-time">{{ ev.start_time?.slice(0,5) }}–{{ ev.end_time?.slice(0,5) }}</span>
-              <span class="wv-timed-worker" v-if="ev.worker_id !== schedules.myWorkerId.value && ev.worker_id !== proxy.proxyTarget.value?.id">{{ ev.worker?.name }}</span>
-            </div>
-            <div v-if="day.date === todayStr" class="wv-now-line" :style="{ top: nowLineTop }"></div>
-          </div>
-        </div>
-      </div>
+              <div class="cell-inner">
+                <div
+                  v-for="s in cellSchedules(date, w.id)"
+                  :key="s.id"
+                  class="sched-chip"
+                  :class="{
+                    'night-shift': s.is_night_shift,
+                    'deleted-chip': !!s.deleted_at,
+                  }"
+                  @click.stop="openDetail(s)"
+                >
+                  <span class="chip-title">{{ s.title }}</span>
+                  <span v-if="s.start_time" class="chip-time">{{ s.start_time.slice(0, 5) }}–{{ s.end_time?.slice(0, 5) }}</span>
+                </div>
+                <button class="cell-add-btn" @click.stop="onCellTap(date, w.id)">＋</button>
+              </div>
+            </td>
+          </tr>
+          <tr class="sentinel-bottom"><td :colspan="sortedWorkers.length + 1" style="height:0;padding:0;border:none;"></td></tr>
+        </tbody>
+      </table>
     </div>
 
-    <!-- 日ビュー -->
-    <div v-else-if="currentView === 'day'" class="day-view">
-      <div class="wv-allday-row" v-if="dayAllDayEvents.length">
-        <div class="wv-time-label wv-time-label--allday">終日</div>
-        <div class="dv-allday-cell">
-          <div v-for="ev in dayAllDayEvents" :key="ev.id" class="wv-allday-event" :style="{ background: eventColor(ev) }" @click="openDetail(ev)">{{ ev.title }}</div>
-        </div>
-      </div>
-      <div ref="dayGridEl" class="wv-grid-scroll">
-        <div class="wv-grid dv-grid">
-          <div class="wv-time-col">
-            <div v-for="h in HOURS" :key="h" class="wv-time-slot">
-              <span v-if="h > 0" class="wv-time-label">{{ String(h).padStart(2,'0') }}:00</span>
-            </div>
-          </div>
-          <div class="wv-day-col dv-col" :class="{ today: todayViewStr === todayStr }" @click="openAddByTime($event, todayViewStr)">
-            <div v-for="h in HOURS" :key="h" class="wv-hour-line"></div>
-            <div
-              v-for="ev in dayTimedEvents" :key="ev.id"
-              class="wv-timed-event"
-              :style="{ ...timedEventStyle(ev, todayViewStr), background: eventColor(ev) }"
-              @click.stop="openDetail(ev)"
-            >
-              <span class="wv-timed-title">{{ ev.title }}</span>
-              <span class="wv-timed-time">{{ ev.start_time?.slice(0,5) }}–{{ ev.end_time?.slice(0,5) }}</span>
-              <span class="wv-timed-worker" v-if="ev.worker_id !== schedules.myWorkerId.value && ev.worker_id !== proxy.proxyTarget.value?.id">{{ ev.worker?.name }}</span>
-            </div>
-            <div v-if="todayViewStr === todayStr" class="wv-now-line" :style="{ top: nowLineTop }"></div>
-          </div>
-        </div>
-      </div>
+    <!-- 下部操作バー -->
+    <div class="bottom-bar">
+      <button class="nav-btn" @click="navigate(-1)">‹</button>
+      <button class="today-btn" @click="goToday">今日</button>
+      <label class="deleted-toggle">
+        <input type="checkbox" v-model="showDeleted" />
+        削除済み
+      </label>
+      <button class="nav-btn" @click="navigate(1)">›</button>
     </div>
 
-    <!-- 予定追加・編集モーダル -->
+    <!-- 追加・編集モーダル -->
     <div v-if="formModal" class="modal-overlay" @click.self="formModal = null">
       <div class="modal">
         <h2>{{ formModal.id ? '予定を編集' : '予定を追加' }}</h2>
-
-        <!-- タイトル -->
-        <input v-model="formModal.title" class="title-input" placeholder="タイトル" />
-
-        <!-- カテゴリ -->
-        <div class="cat-grid">
-          <button
-            v-for="(label, key) in CATEGORY_LABELS" :key="key"
-            class="cat-btn" :class="{ active: formModal.category === key }"
-            :style="formModal.category === key ? { background: CATEGORY_COLORS[key as ScheduleCategory], color: '#fff', borderColor: CATEGORY_COLORS[key as ScheduleCategory] } : {}"
-            @click="formModal.category = key as ScheduleCategory"
-          >{{ label }}</button>
+        <div class="form-worker-label">
+          👤 {{ workers.find(w => w.id === (formModal as any)._worker_id)?.name ?? '不明' }}
         </div>
 
-        <!-- 終日 + 開始/終了 -->
+        <!-- 現場選択 -->
         <div class="form-card">
           <div class="form-row">
-            <span class="form-row-label">終日</span>
-            <label class="ios-toggle">
-              <input type="checkbox" v-model="formModal.all_day" />
-              <span class="ios-toggle-track"></span>
-            </label>
-          </div>
-          <div class="form-divider"></div>
-          <!-- 開始（日付と時刻を1行） -->
-          <div class="form-row">
-            <span class="form-row-label">開始</span>
-            <div class="dt-inline">
-              <input type="date" v-model="formModal.start_date" class="dt-input dt-date" />
-              <span v-if="!formModal.all_day" class="dt-sep"></span>
-              <input v-if="!formModal.all_day" type="time" v-model="formModal.start_time" class="dt-input dt-time" />
-            </div>
-          </div>
-          <div class="form-divider"></div>
-          <!-- 終了（日付と時刻を1行） -->
-          <div class="form-row">
-            <span class="form-row-label">終了</span>
-            <div class="dt-inline">
-              <input type="date" v-model="formModal.end_date" class="dt-input dt-date" />
-              <span v-if="!formModal.all_day" class="dt-sep"></span>
-              <input v-if="!formModal.all_day" type="time" v-model="formModal.end_time" class="dt-input dt-time" />
-            </div>
-          </div>
-        </div>
-
-        <!-- 繰り返し -->
-        <div class="form-card">
-          <div class="form-row">
-            <span class="form-row-label">繰り返し</span>
-            <select v-model="formModal.recurrence_rule" class="recurrence-select">
-              <option value="">なし</option>
-              <option value="daily">毎日</option>
-              <option value="weekly">毎週</option>
-              <option value="monthly">毎月</option>
-              <option value="yearly">毎年</option>
+            <span class="form-row-label">現場 *</span>
+            <select v-model="formModal.title" class="site-select">
+              <option value="">選択してください</option>
+              <option v-for="s in master.siteNames.value" :key="s" :value="s">{{ s }}</option>
             </select>
           </div>
         </div>
 
-        <!-- メモ -->
+        <div class="form-card">
+          <div class="form-row">
+            <span class="form-row-label">開始</span>
+            <div class="dt-inline">
+              <input type="date" v-model="formModal.start_date" class="dt-input dt-date" />
+              <span class="dt-sep"></span>
+              <input type="time" v-model="formModal.start_time" class="dt-input dt-time" />
+            </div>
+          </div>
+          <div class="form-divider"></div>
+          <div class="form-row">
+            <span class="form-row-label">終了</span>
+            <div class="dt-inline">
+              <input type="date" v-model="formModal.end_date" class="dt-input dt-date" />
+              <span class="dt-sep"></span>
+              <input type="time" v-model="formModal.end_time" class="dt-input dt-time" />
+            </div>
+          </div>
+        </div>
+
+        <div class="form-card">
+          <div class="form-row">
+            <span class="form-row-label">夜勤</span>
+            <label class="ios-toggle">
+              <input type="checkbox" v-model="formModal.is_night_shift" />
+              <span class="ios-toggle-track"></span>
+            </label>
+          </div>
+        </div>
+
         <div class="form-card">
           <div class="form-row notes-row">
             <textarea v-model="formModal.description" class="notes-input" placeholder="メモを追加" rows="2" />
           </div>
-        </div>
-
-        <!-- 公開設定 -->
-        <div class="form-card form-card--overflow">
-          <div class="form-row">
-            <span class="form-row-label">グループに公開</span>
-            <label class="ios-toggle">
-              <input type="checkbox" v-model="formModal.is_public" />
-              <span class="ios-toggle-track"></span>
-            </label>
-          </div>
-          <template v-if="formModal.is_public && myGroups.length">
-            <div class="form-divider"></div>
-            <!-- トリガー行 -->
-            <div class="form-row msd-trigger-row" @click="groupDropOpen = !groupDropOpen">
-              <span class="form-row-label">共有先グループ</span>
-              <div class="msd-chips-inline">
-                <template v-if="formModal.group_ids.length">
-                  <span v-for="id in formModal.group_ids" :key="id" class="msd-chip">
-                    {{ myGroups.find(g => g.id === id)?.name }}
-                  </span>
-                </template>
-                <span v-else class="msd-placeholder">選択...</span>
-              </div>
-              <span class="msd-arrow" :class="{ open: groupDropOpen }">⌄</span>
-            </div>
-            <!-- インライン展開リスト -->
-            <template v-if="groupDropOpen">
-              <template v-for="g in myGroups" :key="'opt-' + g.id">
-                <div class="form-divider"></div>
-                <div class="msd-option-row" @click="toggleFormGroup(g.id)">
-                  <span class="msd-option-name">{{ g.name }}</span>
-                  <span class="msd-option-box" :class="{ checked: formModal.group_ids.includes(g.id) }">
-                    <span v-if="formModal.group_ids.includes(g.id)">✓</span>
-                  </span>
-                </div>
-              </template>
-            </template>
-          </template>
         </div>
 
         <p v-if="formError" class="error-msg">{{ formError }}</p>
@@ -238,23 +147,39 @@
     </div>
 
     <!-- 詳細モーダル -->
-    <div v-if="detailModal" class="modal-overlay" @click.self="detailModal = null">
+    <div v-if="detailModal" class="modal-overlay" @click.self="closeDetail">
       <div class="modal">
-        <div class="detail-cat-bar" :style="{ background: eventColor(detailModal) }">{{ CATEGORY_LABELS[detailModal.category] }}</div>
-        <h2 class="detail-title">{{ detailModal.title }}</h2>
-        <p class="detail-date">
-          {{ detailModal.start_date }}
-          <template v-if="detailModal.end_date !== detailModal.start_date">〜 {{ detailModal.end_date }}</template>
-          <template v-if="!detailModal.all_day"> {{ detailModal.start_time?.slice(0,5) }} 〜 {{ detailModal.end_time?.slice(0,5) }}</template>
+        <div v-if="detailModal.schedule.is_night_shift" class="detail-night-badge">🌙 夜勤</div>
+        <h2 class="detail-title">{{ detailModal.schedule.title }}</h2>
+        <p class="detail-meta">👤 {{ detailModal.schedule.worker?.name }}</p>
+        <p class="detail-meta">
+          📅 {{ detailModal.schedule.start_date }}
+          <template v-if="detailModal.schedule.end_date !== detailModal.schedule.start_date">〜 {{ detailModal.schedule.end_date }}</template>
         </p>
-        <p v-if="detailModal.worker?.name && detailModal.worker_id !== schedules.myWorkerId.value && detailModal.worker_id !== proxy.proxyTarget.value?.id" class="detail-worker">👤 {{ detailModal.worker.name }}</p>
-        <p class="detail-pub">{{ detailModal.is_public ? '🔓 グループに公開中' : '🔒 非公開' }}</p>
-        <p v-if="detailModal.description" class="detail-desc">{{ detailModal.description }}</p>
+        <p v-if="detailModal.schedule.start_time" class="detail-meta">
+          🕐 {{ detailModal.schedule.start_time.slice(0, 5) }}〜{{ detailModal.schedule.end_time?.slice(0, 5) }}
+        </p>
+        <p v-if="detailModal.schedule.description" class="detail-desc">{{ detailModal.schedule.description }}</p>
+        <p v-if="detailModal.schedule.created_by_name" class="detail-created">作成: {{ detailModal.schedule.created_by_name }}</p>
+        <p v-if="detailModal.schedule.deleted_at" class="detail-deleted">🗑 削除: {{ detailModal.schedule.deleted_by_name }} ({{ fmtDateTime(detailModal.schedule.deleted_at) }})</p>
+
+        <!-- 編集履歴 -->
+        <details v-if="detailModal.edits.length" class="edit-history">
+          <summary>編集履歴（{{ detailModal.edits.length }}件）</summary>
+          <div v-for="e in detailModal.edits" :key="e.id" class="edit-entry">
+            <span class="edit-who">{{ e.edited_by_name }}</span>
+            <span class="edit-when">{{ fmtDateTime(e.edited_at) }}</span>
+          </div>
+        </details>
+
         <div class="modal-actions">
-          <button class="btn-cancel" @click="detailModal = null">閉じる</button>
-          <template v-if="detailModal.worker_id === schedules.myWorkerId.value || detailModal.worker_id === proxy.proxyTarget.value?.id">
-            <button class="btn-delete" @click="confirmDelete(detailModal.id)">削除</button>
-            <button class="btn-edit" @click="openEdit(detailModal)">編集</button>
+          <button class="btn-cancel" @click="closeDetail">閉じる</button>
+          <template v-if="!detailModal.schedule.deleted_at">
+            <button class="btn-delete" @click="confirmDelete(detailModal.schedule.id)">削除</button>
+            <button class="btn-edit" @click="openEdit(detailModal.schedule)">編集</button>
+          </template>
+          <template v-else>
+            <button class="btn-restore" @click="restore(detailModal.schedule)">復元</button>
           </template>
         </div>
       </div>
@@ -264,301 +189,309 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
-import { useSchedules, CATEGORY_LABELS, CATEGORY_COLORS, type Schedule, type ScheduleCategory, type ScheduleForm } from '~/composables/useSchedules'
-import { useScheduleGroups } from '~/composables/useScheduleGroups'
+import { useSchedules, type Schedule, type ScheduleForm } from '~/composables/useSchedules'
 
-const schedules    = useSchedules()
-const groupsStore  = useScheduleGroups()
-const master       = useMaster()
-const { profile }  = useLiff()
-const proxy        = useProxyMode()
+const schedules   = useSchedules()
+const master      = useMaster()
+const { profile } = useLiff()
+const proxy       = useProxyMode()
+const supabase    = useSupabase()
+const config      = useRuntimeConfig()
 
-// 代理モード時のworker_id（予定取得に使用）
 const effectiveWorkerId = computed(() =>
   proxy.proxyTarget.value?.id ?? schedules.myWorkerId.value
 )
 
-const myGroups = computed(() => groupsStore.groups.value)
-const defaultShareGroupIds = computed(() =>
-  myGroups.value.filter(g => g.default_share).map(g => g.id)
-)
+function isMyWorker(workerId: string): boolean {
+  return workerId === effectiveWorkerId.value
+}
 
 // ──────────────────── 定数 ────────────────────
-const HOUR_HEIGHT  = 56
-const HOURS        = Array.from({ length: 24 }, (_, i) => i)
-const VIEWS        = [{ key: 'month', label: '月' }, { key: 'week', label: '週' }, { key: 'day', label: '日' }] as const
-const WEEKDAYS     = ['日', '月', '火', '水', '木', '金', '土']
-const MONTH_WEEKS  = 15
-const MONTH_CENTER = 7
-const WEEK_DAYS    = 21
-const WEEK_CENTER  = 7
-
-// ──────────────────── refs ────────────────────
-const dayGridEl     = ref<HTMLElement | null>(null)
-const monthScrollEl = ref<HTMLElement | null>(null)
-const weekScrollEl  = ref<HTMLElement | null>(null)
+const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
+const PIN_KEY  = 'calendar_pinned_workers'
 
 // ──────────────────── 状態 ────────────────────
-const currentView = ref<'month' | 'week' | 'day'>('month')
-const currentDate = ref(new Date())
+const workers     = ref<{ id: string; name: string }[]>([])
+
+// ピン留め
+const pinnedWorkerIds = ref<string[]>(
+  (() => { try { return JSON.parse(localStorage.getItem(PIN_KEY) ?? '[]') } catch { return [] } })()
+)
+
+function isPinned(id: string): boolean {
+  return pinnedWorkerIds.value.includes(id)
+}
+
+function togglePin(id: string) {
+  if (isMyWorker(id)) return  // 自分はピン操作対象外
+  const idx = pinnedWorkerIds.value.indexOf(id)
+  if (idx === -1) pinnedWorkerIds.value.push(id)
+  else pinnedWorkerIds.value.splice(idx, 1)
+  localStorage.setItem(PIN_KEY, JSON.stringify(pinnedWorkerIds.value))
+}
+
+// 表示順: 自分 → ピン済み（ピン順）→ その他（name順）
+const sortedWorkers = computed(() => {
+  const myId     = effectiveWorkerId.value
+  const mine     = workers.value.filter(w => w.id === myId)
+  const pinned   = pinnedWorkerIds.value
+    .map(id => workers.value.find(w => w.id === id))
+    .filter((w): w is { id: string; name: string } => !!w && w.id !== myId)
+  const rest     = workers.value.filter(w => w.id !== myId && !isPinned(w.id))
+  return [...mine, ...pinned, ...rest]
+})
+interface ScheduleEdit {
+  id: string; schedule_id: string; edited_by_name: string; edited_at: string
+  changes: Record<string, { old: unknown; new: unknown }>
+}
+
+const loading     = ref(false)
 const todayStr    = new Date().toISOString().split('T')[0]
-
-// 表示グループフィルター（LocalStorage永続化）
-const SELECTED_GROUPS_KEY = 'calendar_selected_groups'
-function loadSelectedGroups(): string[] {
-  if (import.meta.server) return []
-  try { return JSON.parse(localStorage.getItem(SELECTED_GROUPS_KEY) ?? '[]') } catch { return [] }
-}
-const selectedGroupIds = ref<string[]>(loadSelectedGroups())
-
-function toggleGroupFilter(groupId: string) {
-  const idx = selectedGroupIds.value.indexOf(groupId)
-  if (idx === -1) selectedGroupIds.value.push(groupId)
-  else selectedGroupIds.value.splice(idx, 1)
-  localStorage.setItem(SELECTED_GROUPS_KEY, JSON.stringify(selectedGroupIds.value))
-  loadSchedules()
-}
-
+const gridWrapRef = ref<HTMLElement | null>(null)
+// テンプレート内の v-for ref は非リアクティブ変数で管理
+const _todayRow = { el: null as HTMLElement | null }
+const showDeleted = ref(false)
 const formModal   = ref<(Partial<ScheduleForm> & { id?: string }) | null>(null)
-const detailModal = ref<Schedule | null>(null)
+const detailModal = ref<{ schedule: Schedule; edits: ScheduleEdit[] } | null>(null)
 const saving      = ref(false)
-const formError     = ref('')
-const groupDropOpen = ref(false)
+const formError   = ref('')
 
-// フォーム内グループトグル
-function toggleFormGroup(groupId: string) {
-  if (!formModal.value) return
-  const ids = formModal.value.group_ids ?? []
-  const idx = ids.indexOf(groupId)
-  if (idx === -1) ids.push(groupId)
-  else ids.splice(idx, 1)
-  formModal.value.group_ids = [...ids]
-}
-
-// ──────────────────── ナビ ────────────────────
-const todayViewStr = computed(() => toDateStr(currentDate.value))
+// ──────────────────── 無限スクロール ────────────────────
+const ROW_HEIGHT    = 72
+const calendarDates = ref<string[]>([])
+let   loadedFrom    = ''
+let   loadedTo      = ''
+const navMonth      = ref(new Date())
+let   isExtending   = false
+let   ioTop:    IntersectionObserver | null = null
+let   ioBottom: IntersectionObserver | null = null
 
 const navLabel = computed(() => {
-  const d = currentDate.value
-  if (currentView.value === 'month') return `${d.getFullYear()}年${d.getMonth() + 1}月`
-  if (currentView.value === 'week') {
-    const end = new Date(d); end.setDate(d.getDate() + 6)
-    return `${toDateStr(d)} 〜 ${toDateStr(end)}`
-  }
-  return toDateStr(d)
+  const d = navMonth.value
+  return `${d.getFullYear()}年${d.getMonth() + 1}月`
 })
 
+function genMonthDates(year: number, month: number): string[] {
+  const last  = new Date(year, month + 1, 0).getDate()
+  const dates: string[] = []
+  for (let d = 1; d <= last; d++)
+    dates.push(`${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`)
+  return dates
+}
+
+function shiftMonth(base: Date, n: number): Date {
+  const d = new Date(base); d.setDate(1); d.setMonth(d.getMonth() + n); return d
+}
+
+function initCalendar() {
+  const now  = new Date()
+  const prev = shiftMonth(now, -1)
+  const next = shiftMonth(now, +1)
+  const dates = [
+    ...genMonthDates(prev.getFullYear(), prev.getMonth()),
+    ...genMonthDates(now.getFullYear(),  now.getMonth()),
+    ...genMonthDates(next.getFullYear(), next.getMonth()),
+  ]
+  calendarDates.value = dates
+  loadedFrom = dates[0]
+  loadedTo   = dates[dates.length - 1]
+  navMonth.value = now
+}
+
+async function extendTop() {
+  if (isExtending) return; isExtending = true
+  try {
+    const base   = new Date(loadedFrom + 'T00:00:00')
+    const target = shiftMonth(base, -1)
+    const newDates = genMonthDates(target.getFullYear(), target.getMonth())
+    const wrap     = gridWrapRef.value
+    const prevTop  = wrap?.scrollTop ?? 0
+    calendarDates.value = [...newDates, ...calendarDates.value]
+    loadedFrom = newDates[0]
+    await nextTick()
+    if (wrap) wrap.scrollTop = prevTop + newDates.length * ROW_HEIGHT
+    await loadSchedules()
+  } finally { isExtending = false }
+}
+
+async function extendBottom() {
+  if (isExtending) return; isExtending = true
+  try {
+    const base     = new Date(loadedTo + 'T00:00:00')
+    const target   = shiftMonth(base, +1)
+    const newDates = genMonthDates(target.getFullYear(), target.getMonth())
+    calendarDates.value = [...calendarDates.value, ...newDates]
+    loadedTo = newDates[newDates.length - 1]
+    await loadSchedules()
+  } finally { isExtending = false }
+}
+
+function setupIO() {
+  const wrap = gridWrapRef.value; if (!wrap) return
+  const opts = { root: wrap, rootMargin: '300px 0px', threshold: 0 }
+
+  ioTop?.disconnect()
+  ioBottom?.disconnect()
+
+  const topSentinel    = wrap.querySelector<HTMLElement>('.sentinel-top')
+  const bottomSentinel = wrap.querySelector<HTMLElement>('.sentinel-bottom')
+
+  if (topSentinel) {
+    ioTop = new IntersectionObserver(([e]) => { if (e.isIntersecting) extendTop() }, opts)
+    ioTop.observe(topSentinel)
+  }
+  if (bottomSentinel) {
+    ioBottom = new IntersectionObserver(([e]) => { if (e.isIntersecting) extendBottom() }, opts)
+    ioBottom.observe(bottomSentinel)
+  }
+}
+
+function onGridScroll() {
+  const wrap = gridWrapRef.value; if (!wrap) return
+  const rows = wrap.querySelectorAll<HTMLElement>('tr[data-date]')
+  const top  = wrap.getBoundingClientRect().top
+  for (const row of rows) {
+    if (row.getBoundingClientRect().bottom > top + 1) {
+      const d = row.dataset.date
+      if (d) navMonth.value = new Date(d + 'T00:00:00')
+      break
+    }
+  }
+}
+
+function scrollToRow(dateStr: string) {
+  const wrap = gridWrapRef.value; if (!wrap) return
+  const row  = wrap.querySelector<HTMLElement>(`tr[data-date="${dateStr}"]`)
+  if (row) wrap.scrollTop = Math.max(0, row.offsetTop - wrap.offsetTop - 8)
+}
+
+function scrollToToday() {
+  nextTick(() => { if (_todayRow.el) scrollToRow(todayStr) })
+}
+
 function navigate(dir: 1 | -1) {
-  const d = new Date(currentDate.value)
-  if (currentView.value === 'month') { d.setDate(1); d.setMonth(d.getMonth() + dir) }
-  else if (currentView.value === 'week') d.setDate(d.getDate() + dir * 7)
-  else d.setDate(d.getDate() + dir)
-  currentDate.value = d
+  const target    = shiftMonth(navMonth.value, dir)
+  const targetStr = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-01`
+  const prefix    = targetStr.slice(0, 7)
+  const found     = calendarDates.value.find(d => d.startsWith(prefix))
+  if (found) {
+    nextTick(() => scrollToRow(found))
+  } else {
+    // 未ロード月はロードしてからスクロール
+    if (dir === -1) extendTop().then(() => nextTick(() => scrollToRow(calendarDates.value.find(d => d.startsWith(prefix)) ?? '')))
+    else            extendBottom().then(() => nextTick(() => scrollToRow(calendarDates.value.find(d => d.startsWith(prefix)) ?? '')))
+  }
 }
 
 function goToday() {
-  const today = new Date()
-  if (currentView.value === 'week') today.setDate(today.getDate() - today.getDay())
-  currentDate.value = today
+  const todayPrefix = todayStr.slice(0, 7)
+  if (!calendarDates.value.find(d => d.startsWith(todayPrefix))) {
+    initCalendar()
+    loadSchedules().then(() => nextTick(() => scrollToToday()))
+    return
+  }
+  navMonth.value = new Date()
+  scrollToToday()
 }
 
-// ──────────────────── データ（月ビュー） ────────────────────
-function makeCell(dt: Date, currentMonth: boolean) {
-  const date = toDateStr(dt)
+// ──────────────────── セル別スケジュール ────────────────────
+function cellSchedules(date: string, workerId: string): Schedule[] {
+  return schedules.schedules.value.filter(
+    s => s.worker_id === workerId && s.start_date <= date && s.end_date >= date
+      && (showDeleted.value || !s.deleted_at)
+  )
+}
+
+// ──────────────────── 日付ユーティリティ ────────────────────
+function toDateStr(dt: Date): string {
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+}
+
+function formatDateLabel(date: string): string {
+  const dt = new Date(date + 'T00:00:00')
+  return `${dt.getDate()}（${WEEKDAYS[dt.getDay()]}）`
+}
+
+function fmtDateTime(iso: string): string {
+  const dt = new Date(iso)
+  return `${dt.getMonth() + 1}/${dt.getDate()} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`
+}
+
+function isWeekend(date: string): boolean {
+  const dow = new Date(date + 'T00:00:00').getDay()
+  return dow === 0 || dow === 6
+}
+
+function dateCellClass(date: string): Record<string, boolean> {
+  const dow = new Date(date + 'T00:00:00').getDay()
   return {
-    date, day: dt.getDate(), dayOfWeek: dt.getDay(), currentMonth,
-    events: schedules.schedules.value.filter(s => s.start_date <= date && s.end_date >= date),
+    'date-sunday':   dow === 0,
+    'date-saturday': dow === 6,
+    'date-today':    date === todayStr,
   }
 }
-
-const monthWeeks = computed(() => {
-  const d = currentDate.value
-  const baseSunday = new Date(d); baseSunday.setDate(d.getDate() - d.getDay())
-  const refMonth = d.getMonth()
-  return Array.from({ length: MONTH_WEEKS }, (_, i) => {
-    const weekStart = new Date(baseSunday)
-    weekStart.setDate(baseSunday.getDate() + (i - MONTH_CENTER) * 7)
-    const cells = Array.from({ length: 7 }, (_, j) => {
-      const dt2 = new Date(weekStart); dt2.setDate(weekStart.getDate() + j)
-      return makeCell(dt2, dt2.getMonth() === refMonth)
-    })
-    return { key: toDateStr(weekStart), cells }
-  })
-})
-
-// ──────────────────── データ（週ビュー） ────────────────────
-const weekScrollDays = computed(() => {
-  const d = currentDate.value
-  return Array.from({ length: WEEK_DAYS }, (_, i) => {
-    const dt = new Date(d); dt.setDate(d.getDate() + (i - WEEK_CENTER))
-    const date = toDateStr(dt)
-    const evs = schedules.schedules.value.filter(s => s.start_date <= date && s.end_date >= date)
-    return {
-      date, dayNum: dt.getDate(), dow: dt.getDay(),
-      allDayEvents: evs.filter(e => e.all_day),
-      timedEvents:  evs.filter(e => !e.all_day && e.start_time),
-    }
-  })
-})
-
-// ──────────────────── データ（日ビュー） ────────────────────
-const dayEvents       = computed(() => {
-  const date = todayViewStr.value
-  return schedules.schedules.value.filter(s => s.start_date <= date && s.end_date >= date)
-})
-const dayAllDayEvents = computed(() => dayEvents.value.filter(e => e.all_day))
-const dayTimedEvents  = computed(() => dayEvents.value.filter(e => !e.all_day && e.start_time))
 
 // ──────────────────── データ取得 ────────────────────
+async function loadWorkers() {
+  const slug = config.public.accountSlug as string
+  const { data: accData } = await supabase.from('accounts').select('id').eq('slug', slug).single()
+  if (!accData) return
+  const { data } = await supabase
+    .from('workers')
+    .select('id, name')
+    .eq('account_id', accData.id)
+    .eq('active', true)
+    .order('name')
+  workers.value = data ?? []
+}
+
 async function loadSchedules() {
-  const d = currentDate.value
-  let from: string, to: string
-  if (currentView.value === 'month') {
-    const baseSunday = new Date(d); baseSunday.setDate(d.getDate() - d.getDay())
-    const s = new Date(baseSunday); s.setDate(baseSunday.getDate() - MONTH_CENTER * 7)
-    const e = new Date(baseSunday); e.setDate(baseSunday.getDate() + (MONTH_WEEKS - MONTH_CENTER) * 7 + 6)
-    from = toDateStr(s); to = toDateStr(e)
-  } else if (currentView.value === 'week') {
-    const s = new Date(d); s.setDate(d.getDate() - WEEK_CENTER)
-    const e = new Date(d); e.setDate(d.getDate() + (WEEK_DAYS - WEEK_CENTER - 1))
-    from = toDateStr(s); to = toDateStr(e)
-  } else {
-    from = to = todayViewStr.value
-  }
-  await schedules.fetchSchedules(from, to, selectedGroupIds.value, effectiveWorkerId.value)
+  await schedules.fetchSchedules(loadedFrom, loadedTo, [], effectiveWorkerId.value)
 }
 
-watch([currentView, currentDate], loadSchedules)
-watch(() => proxy.proxyTarget.value, async () => {
-  await refreshGroups()
-  await loadSchedules()
-})
-
-// ──────────────────── タイムグリッド ────────────────────
-function timedEventStyle(ev: Schedule, date?: string): Record<string, string> {
-  const [sh, sm] = (ev.start_time || '00:00').split(':').map(Number)
-  const [eh, em] = (ev.end_time   || '01:00').split(':').map(Number)
-  const startMin = sh * 60 + sm
-  const endMin   = eh * 60 + em
-  const isMulti  = ev.start_date !== ev.end_date
-  let topMin: number, heightMin: number, borderRadius = '4px'
-  if (!isMulti || !date) { topMin = startMin; heightMin = Math.max(endMin - startMin, 30) }
-  else if (date === ev.start_date) { topMin = startMin; heightMin = 24 * 60 - startMin; borderRadius = '4px 4px 0 0' }
-  else if (date === ev.end_date)   { topMin = 0; heightMin = Math.max(endMin, 15); borderRadius = '0 0 4px 4px' }
-  else { topMin = 0; heightMin = 24 * 60; borderRadius = '0' }
-  return { top: `${topMin * HOUR_HEIGHT / 60}px`, height: `${heightMin * HOUR_HEIGHT / 60}px`, borderRadius }
-}
-
-function openAddByTime(e: MouseEvent, date: string) {
-  const el = e.currentTarget as HTMLElement
-  const totalMin = Math.floor((e.clientY - el.getBoundingClientRect().top) / HOUR_HEIGHT * 60 / 30) * 30
-  const h = Math.min(Math.floor(totalMin / 60), 23)
-  const m = totalMin % 60
-  const startTime = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`
-  const endH = h + 1 < 24 ? h + 1 : h
-  formModal.value = {
-    title: '', description: '', category: 'work', site_id: '', all_day: false,
-    start_date: date, end_date: date,
-    start_time: startTime, end_time: `${String(endH).padStart(2,'0')}:${String(m).padStart(2,'0')}`,
-    is_public: defaultShareGroupIds.value.length > 0, group_ids: [...defaultShareGroupIds.value], recurrence_rule: '',
-  }
-  formError.value = ''; groupDropOpen.value = false
-}
-
-const nowLineTop = computed(() => {
-  const now = new Date()
-  return `${(now.getHours() * 60 + now.getMinutes()) * HOUR_HEIGHT / 60}px`
-})
-
-function scrollToNow(el: HTMLElement | null) {
-  if (!el) return
-  const now = new Date()
-  el.scrollTop = Math.max(0, (now.getHours() * 60 + now.getMinutes()) * HOUR_HEIGHT / 60 - 80)
-}
-
-// ──────────────────── 仮想スクロール ────────────────────
-let _mScrolling = false, _mTimer: ReturnType<typeof setTimeout> | null = null
-let _wScrolling = false, _wTimer: ReturnType<typeof setTimeout> | null = null
-
-function onMonthScroll() {
-  if (_mScrolling) return
-  if (_mTimer) clearTimeout(_mTimer)
-  _mTimer = setTimeout(() => {
-    const el = monthScrollEl.value; if (!el) return
-    const rowH = el.clientHeight / 5; if (!rowH) return
-    const idx = Math.round(el.scrollTop / rowH)
-    if (idx === MONTH_CENTER) return
-    _mScrolling = true
-    const d = new Date(currentDate.value); d.setDate(d.getDate() + (idx - MONTH_CENTER) * 7)
-    currentDate.value = d
-    nextTick(() => { el.scrollTop = MONTH_CENTER * rowH; loadSchedules(); setTimeout(() => { _mScrolling = false }, 100) })
-  }, 150)
-}
-
-function onWeekScroll() {
-  if (_wScrolling) return
-  if (_wTimer) clearTimeout(_wTimer)
-  _wTimer = setTimeout(() => {
-    const el = weekScrollEl.value; if (!el) return
-    const dayW = (el.clientWidth - 44) / 7; if (!dayW) return
-    const idx = Math.round(el.scrollLeft / dayW)
-    if (idx === WEEK_CENTER) return
-    _wScrolling = true
-    const d = new Date(currentDate.value); d.setDate(d.getDate() + (idx - WEEK_CENTER))
-    currentDate.value = d
-    nextTick(() => { el.scrollLeft = WEEK_CENTER * dayW; loadSchedules(); setTimeout(() => { _wScrolling = false }, 100) })
-  }, 150)
-}
-
-watch(currentDate, () => {
-  nextTick(() => {
-    if (currentView.value === 'month' && monthScrollEl.value && !_mScrolling) {
-      const el = monthScrollEl.value; el.scrollTop = MONTH_CENTER * (el.clientHeight / 5)
-    }
-    if (currentView.value === 'week' && weekScrollEl.value && !_wScrolling) {
-      const el = weekScrollEl.value; el.scrollLeft = WEEK_CENTER * ((el.clientWidth - 44) / 7)
-    }
-  })
-})
-
-watch(currentView, async (v) => {
-  await nextTick()
-  if (v === 'month' && monthScrollEl.value) {
-    const el = monthScrollEl.value; el.scrollTop = MONTH_CENTER * (el.clientHeight / 5)
-  }
-  if (v === 'week' && weekScrollEl.value) {
-    const el = weekScrollEl.value
-    el.scrollLeft = WEEK_CENTER * ((el.clientWidth - 44) / 7)
-    scrollToNow(el)
-  }
-  if (v === 'day') scrollToNow(dayGridEl.value)
-})
+watch(() => proxy.proxyTarget.value, loadSchedules)
 
 // ──────────────────── CRUD ────────────────────
-function openAddOnDate(date: string) {
+function onCellTap(date: string, workerId: string) {
   formModal.value = {
-    title: '', description: '', category: 'work', site_id: '', all_day: false,
-    start_date: date, end_date: date, start_time: '09:00', end_time: '17:00',
-    is_public: defaultShareGroupIds.value.length > 0, group_ids: [...defaultShareGroupIds.value], recurrence_rule: '',
+    _worker_id: workerId,
+    title: '', description: '', category: 'work', site_id: '',
+    all_day: true, start_date: date, end_date: date,
+    start_time: '', end_time: '',
+    is_night_shift: false,
   }
-  formError.value = ''; groupDropOpen.value = false
+  formError.value = ''
 }
 
-async function openEdit(ev: Schedule) {
+function openEdit(ev: Schedule) {
   detailModal.value = null
-  const groupIds = await schedules.fetchScheduleGroupIds(ev.id)
   formModal.value = {
-    id: ev.id, title: ev.title, description: ev.description ?? '',
+    id: ev.id, _worker_id: ev.worker_id,
+    title: ev.title, description: ev.description ?? '',
     category: ev.category, site_id: ev.site_id ?? '', all_day: ev.all_day,
     start_date: ev.start_date, end_date: ev.end_date,
-    start_time: ev.start_time ?? '09:00', end_time: ev.end_time ?? '17:00',
-    is_public: ev.is_public, group_ids: groupIds,
-    recurrence_rule: (ev as any).recurrence_rule ?? '',
+    start_time: ev.start_time ?? '', end_time: ev.end_time ?? '',
+    is_night_shift: ev.is_night_shift,
+    _original: {
+      title: ev.title, description: ev.description ?? null,
+      start_date: ev.start_date, end_date: ev.end_date,
+      start_time: ev.start_time ?? null, end_time: ev.end_time ?? null,
+      is_night_shift: ev.is_night_shift,
+    },
   }
-  formError.value = ''; groupDropOpen.value = false
+  formError.value = ''
 }
 
-function openDetail(ev: Schedule) { detailModal.value = ev }
+async function openDetail(ev: Schedule) {
+  const { data } = await supabase
+    .from('schedule_edits')
+    .select('*')
+    .eq('schedule_id', ev.id)
+    .order('edited_at', { ascending: false })
+  detailModal.value = { schedule: ev, edits: (data ?? []) as ScheduleEdit[] }
+}
+
+function closeDetail() { detailModal.value = null }
 
 async function saveSchedule() {
   if (!formModal.value?.title?.trim()) { formError.value = 'タイトルを入力してください'; return }
@@ -566,9 +499,33 @@ async function saveSchedule() {
   if (formModal.value.start_date > formModal.value.end_date) { formError.value = '終了日は開始日以降にしてください'; return }
   saving.value = true; formError.value = ''
   try {
+    // 時刻が両方入力されていれば時刻あり、なければ終日
+    const hasTime = !!(formModal.value.start_time && formModal.value.end_time)
+    formModal.value.all_day = !hasTime
     const form = formModal.value as ScheduleForm
-    if (formModal.value.id) await schedules.updateSchedule(formModal.value.id, form)
-    else await schedules.createSchedule(form, effectiveWorkerId.value ?? undefined)
+    const targetWorkerId = (formModal.value as any)._worker_id ?? effectiveWorkerId.value
+    const workerName = proxy.proxyTarget.value?.name ?? profile.value?.displayName ?? undefined
+    if (formModal.value.id) {
+      const orig = (formModal.value as any)._original ?? {}
+      await schedules.updateSchedule(formModal.value.id, form)
+      // 編集履歴を記録
+      const changes: Record<string, { old: unknown; new: unknown }> = {}
+      const diffKeys = ['title', 'start_date', 'end_date', 'start_time', 'end_time', 'is_night_shift', 'description']
+      for (const k of diffKeys) {
+        const ov = orig[k] ?? null; const nv = (form as any)[k] ?? null
+        if (ov !== nv) changes[k] = { old: ov, new: nv }
+      }
+      if (Object.keys(changes).length) {
+        await supabase.from('schedule_edits').insert({
+          schedule_id: formModal.value.id,
+          edited_by_name: workerName ?? '不明',
+          edited_at: new Date().toISOString(),
+          changes,
+        })
+      }
+    } else {
+      await schedules.createSchedule(form, targetWorkerId ?? undefined, workerName)
+    }
     formModal.value = null
     await loadSchedules()
   } catch (e) {
@@ -579,250 +536,198 @@ async function saveSchedule() {
 async function confirmDelete(id: string) {
   if (!confirm('この予定を削除しますか？')) return
   detailModal.value = null
-  try { await schedules.deleteSchedule(id) }
+  const workerName = proxy.proxyTarget.value?.name ?? profile.value?.displayName ?? undefined
+  try {
+    await schedules.deleteSchedule(id, workerName)
+    await loadSchedules()
+  }
   catch (e) { alert(e instanceof Error ? e.message : '削除に失敗しました') }
 }
 
-// ──────────────────── ユーティリティ ────────────────────
-function toDateStr(dt: Date): string {
-  return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`
-}
-function eventColor(ev: Schedule): string {
-  return ev.color ?? CATEGORY_COLORS[ev.category] ?? '#06C755'
-}
-
-async function refreshGroups() {
-  const wid = effectiveWorkerId.value
-  if (wid) await groupsStore.fetchMyGroups(wid)
+async function restore(ev: Schedule) {
+  detailModal.value = null
+  const { error } = await supabase.from('schedules').update({ deleted_at: null, deleted_by_name: null }).eq('id', ev.id)
+  if (error) { alert(error.message); return }
+  await loadSchedules()
 }
 
 // ──────────────────── 初期化 ────────────────────
 onMounted(async () => {
-  const d = new Date(); d.setDate(d.getDate() - d.getDay())
-  currentDate.value = d
-
-  await master.fetch()
-  await schedules.resolveMyWorkerId()
-
-  await refreshGroups()
-  await loadSchedules()
-  await nextTick()
-
-  if (monthScrollEl.value) {
-    const el = monthScrollEl.value; el.scrollTop = MONTH_CENTER * (el.clientHeight / 5)
-  }
-  if (weekScrollEl.value) {
-    const el = weekScrollEl.value
-    el.scrollLeft = WEEK_CENTER * ((el.clientWidth - 44) / 7)
-    scrollToNow(el)
+  loading.value = true
+  initCalendar()
+  try {
+    await master.fetch()
+    await schedules.resolveMyWorkerId()
+    await loadWorkers()
+    await loadSchedules()
+  } finally {
+    loading.value = false
+    await nextTick()
+    setupIO()
+    scrollToToday()
   }
 })
 </script>
 
 <style scoped>
-.calendar-page { display: flex; flex-direction: column; height: 100dvh; background: #fff; color: #111; overflow: hidden; }
+.cal-page { display: flex; flex-direction: column; height: 100dvh; background: #fff; color: #111; overflow: hidden; }
 
-/* サブヘッダー + グループチップ */
-.cal-subheader {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 12px; border-bottom: 1px solid #E0E0E0; flex-shrink: 0;
-  overflow-x: auto; -webkit-overflow-scrolling: touch;
+/* 月ナビ（ヘッダー：年月のみ） */
+.month-nav {
+  display: flex; align-items: center;
+  padding: 10px 12px; border-bottom: 1px solid #E0E0E0; flex-shrink: 0;
 }
-.cal-subheader::-webkit-scrollbar { display: none; }
-.cal-title { font-size: 16px; font-weight: 700; margin: 0; flex-shrink: 0; }
-.group-chips { display: flex; gap: 6px; align-items: center; }
-.group-chip {
-  flex-shrink: 0; padding: 4px 12px; border-radius: 20px;
-  border: 1px solid #E0E0E0; background: #fff; color: #555;
-  font-size: 12px; font-weight: 600; cursor: pointer; transition: .15s;
+.nav-label { font-size: 16px; font-weight: 700; color: #111; }
+
+/* 下部操作バー */
+.bottom-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 10px 16px;
+  border-top: 1px solid #E0E0E0; flex-shrink: 0;
+  background: #fff;
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
 }
-.group-chip.active { background: #06C755; border-color: #06C755; color: #fff; }
-.no-groups { font-size: 12px; color: #aaa; cursor: pointer; text-decoration: underline; flex-shrink: 0; }
+.nav-btn { background: #f5f5f5; border: 1px solid #E0E0E0; color: #333; border-radius: 8px; padding: 10px 20px; font-size: 20px; cursor: pointer; }
+.today-btn { background: #f5f5f5; border: 1px solid #E0E0E0; color: #06C755; border-radius: 8px; padding: 10px 16px; font-size: 14px; cursor: pointer; font-weight: 600; }
+.deleted-toggle { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #888; cursor: pointer; user-select: none; }
 
-/* ビュー切替 */
-.view-tabs { display: flex; border-bottom: 1px solid #E0E0E0; flex-shrink: 0; }
-.view-tab { flex: 1; padding: 10px; background: none; border: none; color: #888; font-size: 14px; cursor: pointer; border-bottom: 2px solid transparent; transition: .15s; }
-.view-tab.active { color: #06C755; border-bottom-color: #06C755; font-weight: 600; }
+.loading { flex: 1; display: flex; align-items: center; justify-content: center; color: #888; font-size: 14px; }
 
-/* ナビ */
-.cal-nav { display: flex; align-items: center; gap: 6px; padding: 8px 12px; flex-shrink: 0; }
-.nav-btn { background: #f5f5f5; border: 1px solid #E0E0E0; color: #333; border-radius: 6px; padding: 4px 12px; font-size: 18px; cursor: pointer; }
-.nav-label { flex: 1; text-align: center; font-size: 15px; font-weight: 600; color: #111; }
-.today-btn { background: #f5f5f5; border: 1px solid #E0E0E0; color: #06C755; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; font-weight: 600; }
+/* グリッド */
+.grid-wrap { flex: 1; overflow: auto; -webkit-overflow-scrolling: touch; }
 
-/* ═══ 月ビュー ═══ */
-.weekday-headers { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 2px solid #E0E0E0; flex-shrink: 0; }
-.weekday-label { text-align: center; padding: 6px 0; font-size: 11px; color: #888; font-weight: 600; }
-.weekday-label.sun { color: #ef4444; }
-.weekday-label.sat { color: #3b82f6; }
-.month-week-scroller { flex: 1; overflow-y: scroll; overflow-x: hidden; scroll-snap-type: y mandatory; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; }
-.week-row { flex: 0 0 20%; scroll-snap-align: start; display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid #E0E0E0; }
-.day-cell { border-right: 1px solid #E0E0E0; padding: 3px 2px; cursor: pointer; overflow: hidden; display: flex; flex-direction: column; }
-.day-cell:active { background: #f0fdf4; }
-.day-cell.other-month { background: #fafafa; opacity: .5; }
-.day-cell.today .day-num { background: #06C755; color: #fff; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-weight: 700; }
-.day-cell.sunday .day-num { color: #ef4444; }
-.day-cell.saturday .day-num { color: #3b82f6; }
-.day-num { font-size: 11px; margin-bottom: 2px; color: #333; }
-.cell-events { display: flex; flex-direction: column; gap: 1px; flex: 1; overflow: hidden; }
-.cell-event { font-size: 9px; color: #fff; border-radius: 2px; padding: 1px 2px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; line-height: 1.4; }
-.cell-more { font-size: 9px; color: #888; padding-left: 2px; }
+.matrix-table { border-collapse: collapse; min-width: 100%; }
 
-/* ═══ 週ビュー ═══ */
-.wv-outer { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-.wv-days-scroll { flex: 1; display: flex; flex-direction: row; overflow-x: scroll; overflow-y: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; scroll-padding-left: 44px; }
-.wv-time-col-sticky { position: sticky; left: 0; width: 44px; flex-shrink: 0; background: #fff; z-index: 5; border-right: 1px solid #E0E0E0; display: flex; flex-direction: column; }
-.wv-tc-corner { flex-shrink: 0; height: 52px; position: sticky; top: 0; z-index: 6; background: #fff; border-bottom: 1px solid #E0E0E0; }
-.wv-time-slot { height: 56px; display: flex; align-items: flex-start; justify-content: flex-end; padding: 0 4px 0 0; border-top: 1px solid #f0f0f0; }
-.wv-time-label { font-size: 10px; color: #aaa; white-space: nowrap; display: inline-block; transform: translateY(-50%); }
-.wv-day-col-h { flex: 0 0 calc((100% - 44px) / 7); scroll-snap-align: start; display: flex; flex-direction: column; border-left: 1px solid #eee; }
-.wv-day-col-h.today { background: #f0fdf4; }
-.wv-day-header { position: sticky; top: 0; z-index: 4; background: #fff; border-bottom: 1px solid #E0E0E0; height: 52px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; }
-.wv-day-col-h.today .wv-day-header { background: #f0fdf4; }
-.wv-dow { display: block; font-size: 10px; color: #888; line-height: 1.2; }
-.wv-daynum { display: block; font-size: 17px; font-weight: 600; color: #333; line-height: 1.2; }
-.wv-daynum.is-today { background: #06C755; color: #fff; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 14px; margin: 0 auto; }
-.wv-day-header.sunday .wv-dow, .wv-day-header.sunday .wv-daynum { color: #ef4444; }
-.wv-day-header.saturday .wv-dow, .wv-day-header.saturday .wv-daynum { color: #3b82f6; }
-.wv-day-header.sunday .wv-daynum.is-today, .wv-day-header.saturday .wv-daynum.is-today { color: #fff; }
-.wv-allday-chip { flex-shrink: 0; font-size: 10px; color: #fff; border-radius: 3px; padding: 2px 4px; margin: 2px 2px 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; line-height: 1.4; }
-.wv-time-grid-rel { position: relative; flex-shrink: 0; min-height: calc(24 * 56px); }
-.wv-hour-line { height: 56px; border-top: 1px solid #f0f0f0; }
-.wv-timed-event { position: absolute; left: 1px; right: 1px; border-radius: 4px; padding: 2px 4px; overflow: hidden; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.1); z-index: 1; }
-.wv-timed-title  { display: block; font-size: 11px; font-weight: 600; color: #fff; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.wv-timed-time   { display: block; font-size: 10px; color: rgba(255,255,255,.85); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.wv-timed-worker { display: block; font-size: 10px; color: rgba(255,255,255,.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.wv-now-line { position: absolute; left: 0; right: 0; height: 2px; background: #ef4444; z-index: 3; pointer-events: none; }
-.wv-now-line::before { content: ''; position: absolute; left: -4px; top: -4px; width: 10px; height: 10px; background: #ef4444; border-radius: 50%; }
+/* 固定列・行 */
+.sticky-col { position: sticky; left: 0; z-index: 2; background: #fff; }
+thead th { position: sticky; top: 0; z-index: 3; background: #f8f9fa; border-bottom: 2px solid #E0E0E0; }
+thead th.sticky-col { z-index: 4; }
 
-/* ═══ 日ビュー ═══ */
-.day-view { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
-.wv-allday-row { display: grid; grid-template-columns: 44px 1fr; padding: 3px 0; border-bottom: 1px solid #E0E0E0; flex-shrink: 0; background: #fafafa; }
-.wv-time-label--allday { display: flex; align-items: center; justify-content: flex-end; padding: 0 6px 0 0; font-size: 10px; color: #aaa; }
-.wv-allday-event { font-size: 10px; color: #fff; border-radius: 3px; padding: 2px 4px; margin-bottom: 1px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; }
-.dv-allday-cell { padding: 2px 4px; }
-.wv-grid-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; }
-.wv-grid { display: grid; grid-template-columns: 44px 1fr; position: relative; }
-.wv-time-col { background: #fff; z-index: 2; border-right: 1px solid #E0E0E0; }
-.wv-day-col { position: relative; }
-.wv-day-col.today { background: #f0fdf4; }
-.dv-grid { grid-template-columns: 44px 1fr; }
-.dv-col { min-height: calc(24 * 56px); }
+.date-col-header { min-width: 60px; width: 60px; }
 
-/* ═══ モーダル ═══ */
+.worker-header {
+  font-size: 11px; font-weight: 700; color: #444;
+  padding: 8px 4px; text-align: center;
+  min-width: 80px; border-left: 1px solid #E0E0E0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 90px;
+}
+.worker-header.my-col    { background: #f0fdf4; color: #06C755; }
+.worker-header.pinned-col { background: #fef9ec; color: #b45309; }
+.worker-header { cursor: pointer; user-select: none; }
+.worker-header:active { opacity: .7; }
+.pin-icon { font-size: 9px; margin-right: 2px; }
+.pinned-col-cell { background: rgba(245, 158, 11, .03); }
+
+/* 日付セル */
+.date-cell {
+  font-size: 11px; font-weight: 600;
+  padding: 4px 6px; white-space: nowrap;
+  border-right: 1px solid #E0E0E0;
+  border-bottom: 1px solid #f0f0f0;
+  color: #555; min-width: 60px; width: 60px;
+}
+.date-cell.date-sunday  { color: #ef4444; }
+.date-cell.date-saturday { color: #3b82f6; }
+.date-cell.date-today { background: #f0fdf4; color: #06C755; font-weight: 700; }
+
+/* 行 */
+.today-row > td { background-color: #fafffe; }
+.today-row > td.sticky-col { background-color: #f0fdf4; }
+.weekend-row > td { background-color: #fafafa; }
+.weekend-row > td.sticky-col { background-color: #f4f4f4; }
+.month-first-row > td { border-top: 2px solid #bbb; }
+
+/* スケジュールセル */
+.sched-cell {
+  padding: 0; vertical-align: top;
+  border-left: 1px solid #E0E0E0;
+  border-bottom: 1px solid #f0f0f0;
+  min-width: 80px; max-width: 90px;
+  height: 72px;
+  position: relative;
+  overflow: hidden;
+}
+.cell-inner {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  padding: 2px 3px;
+  overflow: hidden;
+}
+.sched-cell.my-col-cell { background: rgba(6, 199, 85, .03); }
+
+/* スケジュールチップ */
+.sched-chip {
+  display: flex; flex-direction: column; gap: 1px;
+  background: #e8f5ff; border-left: 3px solid #3b82f6;
+  border-radius: 3px; padding: 3px 4px;
+  margin-bottom: 2px; font-size: 10px; cursor: pointer;
+  line-height: 1.4;
+}
+.sched-chip.night-shift {
+  background: #2d2d3d; border-left-color: #6366f1; color: #e2e8f0;
+}
+.sched-chip.deleted-chip {
+  opacity: .4; text-decoration: line-through;
+  background: #f0f0f0; border-left-color: #bbb; color: #888;
+}
+.chip-title { word-break: break-all; white-space: normal; }
+.chip-time { font-size: 9px; color: #60a5fa; }
+.sched-chip.night-shift .chip-time { color: #a5b4fc; }
+
+/* セル内 + ボタン */
+.cell-add-btn {
+  display: block; width: 100%;
+  background: none; border: 1px dashed #ccc; border-radius: 3px;
+  color: #bbb; font-size: 12px; cursor: pointer; padding: 0;
+  flex: 1; min-height: 24px;
+}
+.cell-add-btn:active { background: #f0fdf4; border-color: #06C755; color: #06C755; }
+
+/* モーダル */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: flex-end; justify-content: center; z-index: 1000; }
-.modal { background: #f2f2f7; border-radius: 20px 20px 0 0; padding: 20px 16px 32px; width: 100%; max-width: 480px; max-height: 92vh; overflow-y: auto; box-shadow: 0 -4px 20px rgba(0,0,0,.1); }
+.modal { background: #f2f2f7; border-radius: 20px 20px 0 0; padding: 20px 16px 40px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; box-shadow: 0 -4px 20px rgba(0,0,0,.1); }
 .modal h2 { font-size: 17px; font-weight: 600; margin: 0 0 14px; color: #111; text-align: center; }
 
-/* タイトル入力 */
-.title-input {
-  width: 100%; background: #fff; border: none; border-radius: 12px;
-  color: #111; padding: 14px 14px; font-size: 17px; font-weight: 500;
-  box-sizing: border-box; margin-bottom: 10px;
-  outline: none;
+.form-worker-label {
+  text-align: center; font-size: 14px; font-weight: 600;
+  color: #06C755; margin-bottom: 12px;
 }
-.title-input::placeholder { color: #c7c7cc; }
 
-/* カテゴリ */
-.cat-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 10px; }
-.cat-btn { padding: 6px 2px; background: #fff; border: 1px solid #E0E0E0; border-radius: 8px; color: #555; font-size: 11px; cursor: pointer; transition: .15s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cat-btn.active { font-weight: 700; }
+.site-select {
+  border: none; background: none; outline: none;
+  color: #06C755; font-size: 15px; cursor: pointer;
+  font-family: inherit; margin-left: auto; max-width: 60%;
+  text-align: right;
+}
 
-/* Apple Calendar スタイルのカード */
-.form-card {
-  background: #fff; border-radius: 12px; margin-bottom: 10px; overflow: hidden;
-}
-.form-row {
-  display: flex; align-items: center;
-  padding: 12px 14px; min-height: 44px;
-}
+.form-card { background: #fff; border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
+.form-row { display: flex; align-items: center; padding: 12px 14px; min-height: 44px; }
 .form-divider { height: 1px; background: #f0f0f0; margin-left: 14px; }
 .form-row-label { font-size: 15px; color: #111; flex-shrink: 0; }
-.form-row-values {
-  display: flex; align-items: center; gap: 4px;
-  margin-left: auto;
-}
 
-/* 日時入力（iOS ネイティブピッカー） */
 .dt-input {
   border: none; background: none; outline: none;
-  color: #06C755; font-size: 15px;
-  cursor: pointer; padding: 0;
+  color: #06C755; font-size: 15px; cursor: pointer; padding: 0;
   font-family: inherit; margin-left: auto;
-  -webkit-appearance: none; appearance: none;
-  min-height: 44px; /* タップ領域を確保 */
+  -webkit-appearance: none; appearance: none; min-height: 44px;
 }
-.dt-date { min-width: 120px; text-align: right; }
-.dt-time { width: 100%; text-align: right; }
-/* ネイティブのカレンダー/時計アイコンを非表示 */
+.dt-date { min-width: 110px; text-align: right; }
+.dt-time { width: 80px; text-align: right; }
 .dt-input::-webkit-calendar-picker-indicator { opacity: 0; width: 0; }
-/* 日付+時刻を横並び */
 .dt-inline { display: flex; align-items: center; gap: 0; margin-left: auto; }
 .dt-sep { width: 1px; height: 18px; background: #D0D0D0; margin: 0 6px; flex-shrink: 0; }
 
-/* iOS トグルスイッチ */
 .ios-toggle { position: relative; display: inline-block; width: 51px; height: 31px; flex-shrink: 0; margin-left: auto; }
 .ios-toggle input { opacity: 0; width: 0; height: 0; }
-.ios-toggle-track {
-  position: absolute; cursor: pointer; inset: 0;
-  background: #E0E0E0; border-radius: 31px;
-  transition: background .25s;
-}
-.ios-toggle-track::before {
-  content: ''; position: absolute;
-  height: 27px; width: 27px; left: 2px; bottom: 2px;
-  background: #fff; border-radius: 50%;
-  transition: transform .25s;
-  box-shadow: 0 2px 4px rgba(0,0,0,.25);
-}
+.ios-toggle-track { position: absolute; cursor: pointer; inset: 0; background: #E0E0E0; border-radius: 31px; transition: background .25s; }
+.ios-toggle-track::before { content: ''; position: absolute; height: 27px; width: 27px; left: 2px; bottom: 2px; background: #fff; border-radius: 50%; transition: transform .25s; box-shadow: 0 2px 4px rgba(0,0,0,.25); }
 .ios-toggle input:checked + .ios-toggle-track { background: #06C755; }
 .ios-toggle input:checked + .ios-toggle-track::before { transform: translateX(20px); }
 
-/* 繰り返しセレクト */
-.recurrence-select {
-  border: none; background: none; outline: none;
-  color: #06C755; font-size: 15px;
-  text-align: right; cursor: pointer; padding: 0;
-  margin-left: auto;
-  font-family: inherit;
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-/* メモ */
 .notes-row { padding: 8px 14px; }
-.notes-input {
-  width: 100%; border: none; outline: none; background: none;
-  font-size: 15px; color: #111; font-family: inherit;
-  resize: none; line-height: 1.5;
-}
+.notes-input { width: 100%; border: none; outline: none; background: none; font-size: 15px; color: #111; font-family: inherit; resize: none; line-height: 1.5; }
 .notes-input::placeholder { color: #c7c7cc; }
-
-/* マルチセレクト（インライン展開） */
-.msd-trigger-row { cursor: pointer; }
-.msd-trigger-row:active { background: #f5f5f5; }
-.msd-chips-inline { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; margin-right: 6px; }
-.msd-chip {
-  background: #06C755; color: #fff;
-  border-radius: 20px; padding: 2px 10px; font-size: 13px; font-weight: 600;
-}
-.msd-placeholder { font-size: 14px; color: #aaa; margin-left: auto; margin-right: 6px; }
-.msd-arrow { font-size: 16px; color: #888; line-height: 1; transition: transform .2s; flex-shrink: 0; }
-.msd-arrow.open { transform: rotate(180deg); }
-.msd-option-row {
-  display: flex; align-items: center; gap: 12px;
-  padding: 14px 16px; cursor: pointer; background: #fafafa;
-}
-.msd-option-row:active { background: #f0f0f0; }
-.msd-option-box {
-  width: 22px; height: 22px; border-radius: 6px;
-  border: 2px solid #D0D0D0; background: #fff;
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0; font-size: 13px; font-weight: 700; color: #fff;
-  transition: border-color .15s, background .15s;
-}
-.msd-option-box.checked { border-color: #06C755; background: #06C755; }
-.msd-option-name { font-size: 15px; color: #111; flex: 1; }
 
 .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
 .btn-save   { flex: 1; background: #06C755; color: #fff; border: none; border-radius: 12px; padding: 14px; font-size: 16px; font-weight: 700; cursor: pointer; }
@@ -830,10 +735,17 @@ onMounted(async () => {
 .btn-edit   { flex: 1; background: #3b82f6; color: #fff; border: none; border-radius: 12px; padding: 14px; font-size: 15px; cursor: pointer; }
 .btn-delete { flex: 1; background: #ef4444; color: #fff; border: none; border-radius: 12px; padding: 14px; font-size: 15px; cursor: pointer; }
 .error-msg { color: #ef4444; font-size: 13px; margin: 8px 0 0; }
-.detail-cat-bar { border-radius: 8px; padding: 6px 12px; font-size: 13px; color: #fff; font-weight: 600; margin-bottom: 12px; display: inline-block; }
-.detail-title  { font-size: 20px; font-weight: 700; margin: 0 0 8px; color: #111; }
-.detail-date   { color: #666; font-size: 14px; margin: 0 0 6px; }
-.detail-worker { color: #666; font-size: 14px; margin: 0 0 6px; }
-.detail-pub    { font-size: 13px; color: #888; margin: 0 0 6px; }
-.detail-desc   { color: #888; font-size: 14px; margin: 8px 0 0; white-space: pre-wrap; }
+
+.detail-night-badge { background: #2d2d3d; color: #a5b4fc; border-radius: 8px; padding: 4px 12px; font-size: 13px; font-weight: 700; margin-bottom: 10px; display: inline-block; }
+.detail-title   { font-size: 20px; font-weight: 700; margin: 0 0 8px; color: #111; }
+.detail-meta    { font-size: 13px; color: #555; margin: 0 0 4px; }
+.detail-desc    { color: #888; font-size: 14px; margin: 8px 0 0; white-space: pre-wrap; }
+.detail-created { color: #aaa; font-size: 12px; margin: 6px 0 0; }
+.detail-deleted { color: #ef4444; font-size: 12px; margin: 4px 0 0; }
+.edit-history { margin-top: 12px; border-top: 1px solid #e0e0e0; padding-top: 10px; }
+.edit-history summary { font-size: 13px; color: #666; cursor: pointer; font-weight: 600; }
+.edit-entry { padding: 5px 0; border-bottom: 1px solid #f5f5f5; font-size: 12px; display: flex; gap: 8px; }
+.edit-who { font-weight: 600; color: #333; }
+.edit-when { color: #aaa; }
+.btn-restore { flex: 1; background: #f59e0b; color: #fff; border: none; border-radius: 12px; padding: 14px; font-size: 15px; cursor: pointer; }
 </style>

@@ -6,36 +6,38 @@
 export type ScheduleCategory = 'work' | 'off' | 'training' | 'meeting' | 'other'
 
 export interface Schedule {
-  id:          string
-  account_id:  string | null
-  worker_id:   string
-  title:       string
-  description: string | null
-  category:    ScheduleCategory
-  site_id:     string | null
-  color:       string | null
-  is_public:   boolean
-  all_day:     boolean
-  start_date:  string   // 'YYYY-MM-DD'
-  end_date:    string   // 'YYYY-MM-DD'
-  start_time:  string | null  // 'HH:MM'
-  end_time:    string | null  // 'HH:MM'
-  worker?:     { id: string; name: string }
+  id:              string
+  account_id:      string | null
+  worker_id:       string
+  title:           string
+  description:     string | null
+  category:        ScheduleCategory
+  site_id:         string | null
+  color:           string | null
+  is_public:       boolean
+  all_day:         boolean
+  start_date:      string   // 'YYYY-MM-DD'
+  end_date:        string   // 'YYYY-MM-DD'
+  start_time:      string | null  // 'HH:MM'
+  end_time:        string | null  // 'HH:MM'
+  is_night_shift:  boolean
+  created_by_name: string | null
+  deleted_at:      string | null
+  deleted_by_name: string | null
+  worker?:         { id: string; name: string }
 }
 
 export interface ScheduleForm {
-  title:            string
-  description:      string
-  category:         ScheduleCategory
-  site_id:          string
-  all_day:          boolean
-  start_date:       string
-  end_date:         string
-  start_time:       string
-  end_time:         string
-  is_public:        boolean    // 公開フラグ
-  group_ids:        string[]   // 共有先グループID
-  recurrence_rule:  string     // '' | 'daily' | 'weekly' | 'monthly' | 'yearly'
+  title:           string
+  description:     string
+  category:        ScheduleCategory
+  site_id:         string
+  all_day:         boolean
+  start_date:      string
+  end_date:        string
+  start_time:      string
+  end_time:        string
+  is_night_shift:  boolean
 }
 
 export const CATEGORY_LABELS: Record<ScheduleCategory, string> = {
@@ -64,6 +66,16 @@ export const useSchedules = () => {
   const error     = ref<string | null>(null)
 
   const _myWorkerIdCache = ref<string | null>(null)
+  let   _accountIdCache: string | null = null
+
+  async function resolveAccountId(): Promise<string | null> {
+    if (_accountIdCache) return _accountIdCache
+    const cfg = useRuntimeConfig()
+    const { data } = await supabase
+      .from('accounts').select('id').eq('slug', cfg.public.accountSlug).single()
+    _accountIdCache = data?.id ?? null
+    return _accountIdCache
+  }
 
   const myWorkerId = computed(() => _myWorkerIdCache.value)
 
@@ -97,7 +109,7 @@ export const useSchedules = () => {
   //   - sharedGroupIds が指定されていれば、そのグループに共有されている
   //     公開予定も取得してマージ
   // ──────────────────────────────────────────────────────
-  async function fetchSchedules(from: string, to: string, sharedGroupIds: string[] = [], workerIdOverride?: string | null) {
+  async function fetchSchedules(from: string, to: string, _unused?: string[], workerIdOverride?: string | null) {
     loading.value = true
     error.value   = null
     try {
@@ -105,44 +117,19 @@ export const useSchedules = () => {
       const wid = workerIdOverride ?? _myWorkerIdCache.value
       if (!wid) return
 
-      // 1. 自分の予定（is_public 問わず全件）
-      const { data: ownData, error: ownErr } = await supabase
+      // アカウント全体の公開予定を取得（削除済みを除く）
+      const accountId = await resolveAccountId()
+
+      const { data, error: err } = await supabase
         .from('schedules')
         .select('*, worker:workers(id, name)')
-        .eq('worker_id', wid)
+        .eq('account_id', accountId)
         .lte('start_date', to)
         .gte('end_date', from)
         .order('start_date')
-      if (ownErr) throw ownErr
+      if (err) throw err
 
-      const result: Schedule[] = (ownData ?? []) as Schedule[]
-      const ownIds = new Set(result.map(s => s.id))
-
-      // 2. 選択グループに共有されている他人の公開予定
-      if (sharedGroupIds.length) {
-        const { data: shareRows } = await supabase
-          .from('schedule_group_shares')
-          .select('schedule_id')
-          .in('group_id', sharedGroupIds)
-
-        const scheduleIds = [...new Set((shareRows ?? []).map((r: any) => r.schedule_id))]
-
-        if (scheduleIds.length) {
-          const { data: sharedData } = await supabase
-            .from('schedules')
-            .select('*, worker:workers(id, name)')
-            .in('id', scheduleIds)
-            .eq('is_public', true)
-            .lte('start_date', to)
-            .gte('end_date', from)
-          for (const s of (sharedData ?? [])) {
-            if (!ownIds.has((s as Schedule).id)) result.push(s as Schedule)
-          }
-        }
-      }
-
-      result.sort((a, b) => a.start_date.localeCompare(b.start_date))
-      schedules.value = result
+      schedules.value = (data ?? []) as Schedule[]
     } catch (e) {
       error.value = e instanceof Error ? e.message : '取得に失敗しました'
     } finally {
@@ -153,22 +140,20 @@ export const useSchedules = () => {
   // ──────────────────────────────────────────────────────
   // 予定作成
   // ──────────────────────────────────────────────────────
-  async function createSchedule(form: ScheduleForm, workerId?: string) {
-    const wid = workerId ?? (await resolveMyWorkerId())
+  async function createSchedule(form: ScheduleForm, workerId?: string, creatorName?: string) {
+    const wid       = workerId ?? (await resolveMyWorkerId())
     if (!wid) throw new Error('作業員情報が取得できません')
+    const accountId = await resolveAccountId()
 
     const { data, error: err } = await supabase
       .from('schedules')
-      .insert(buildPayload(form, wid))
+      .insert({ ...buildPayload(form, wid), account_id: accountId, created_by_name: creatorName ?? null, is_public: true })
       .select('*, worker:workers(id, name)')
       .single()
     if (err) throw err
 
     const schedule = data as Schedule
     schedules.value.push(schedule)
-
-    // グループ共有レコードを保存
-    await syncGroupShares(supabase, schedule.id, form.is_public ? form.group_ids : [])
     return schedule
   }
 
@@ -177,15 +162,14 @@ export const useSchedules = () => {
   // ──────────────────────────────────────────────────────
   async function updateSchedule(id: string, form: Partial<ScheduleForm>) {
     const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
-    if (form.title       !== undefined) updates.title       = form.title
-    if (form.description !== undefined) updates.description = form.description || null
-    if (form.category    !== undefined) updates.category    = form.category
-    if (form.site_id     !== undefined) updates.site_id     = form.site_id || null
-    if (form.is_public        !== undefined) updates.is_public       = form.is_public
-    if (form.recurrence_rule  !== undefined) updates.recurrence_rule = form.recurrence_rule || null
-    if (form.all_day          !== undefined) updates.all_day         = form.all_day
-    if (form.start_date  !== undefined) updates.start_date  = form.start_date
-    if (form.end_date    !== undefined) updates.end_date    = form.end_date
+    if (form.title           !== undefined) updates.title          = form.title
+    if (form.description     !== undefined) updates.description    = form.description || null
+    if (form.category        !== undefined) updates.category       = form.category
+    if (form.site_id         !== undefined) updates.site_id        = form.site_id || null
+    if (form.all_day         !== undefined) updates.all_day        = form.all_day
+    if (form.is_night_shift  !== undefined) updates.is_night_shift = form.is_night_shift
+    if (form.start_date      !== undefined) updates.start_date     = form.start_date
+    if (form.end_date        !== undefined) updates.end_date       = form.end_date
     if (!form.all_day) {
       updates.start_time = form.start_time || null
       updates.end_time   = form.end_time   || null
@@ -204,21 +188,17 @@ export const useSchedules = () => {
 
     const idx = schedules.value.findIndex(s => s.id === id)
     if (idx !== -1) schedules.value[idx] = data as Schedule
-
-    // グループ共有を同期
-    if (form.group_ids !== undefined || form.is_public !== undefined) {
-      const isPublic = form.is_public ?? schedules.value[idx]?.is_public ?? true
-      await syncGroupShares(supabase, id, isPublic ? (form.group_ids ?? []) : [])
-    }
-
     return data as Schedule
   }
 
   // ──────────────────────────────────────────────────────
   // 予定削除
   // ──────────────────────────────────────────────────────
-  async function deleteSchedule(id: string) {
-    const { error: err } = await supabase.from('schedules').delete().eq('id', id)
+  async function deleteSchedule(id: string, deletedByName?: string) {
+    const { error: err } = await supabase.from('schedules').update({
+      deleted_at:      new Date().toISOString(),
+      deleted_by_name: deletedByName ?? null,
+    }).eq('id', id)
     if (err) throw err
     schedules.value = schedules.value.filter(s => s.id !== id)
   }
@@ -226,14 +206,6 @@ export const useSchedules = () => {
   // ──────────────────────────────────────────────────────
   // 予定のグループ共有先を取得
   // ──────────────────────────────────────────────────────
-  async function fetchScheduleGroupIds(scheduleId: string): Promise<string[]> {
-    const { data } = await supabase
-      .from('schedule_group_shares')
-      .select('group_id')
-      .eq('schedule_id', scheduleId)
-    return (data ?? []).map((r: any) => r.group_id)
-  }
-
   return {
     schedules:        readonly(schedules),
     loading:          readonly(loading),
@@ -244,7 +216,6 @@ export const useSchedules = () => {
     createSchedule,
     updateSchedule,
     deleteSchedule,
-    fetchScheduleGroupIds,
   }
 }
 
@@ -253,31 +224,16 @@ export const useSchedules = () => {
 // ──────────────────────────────────────────────────────
 function buildPayload(form: ScheduleForm, workerId: string) {
   return {
-    worker_id:        workerId,
-    title:            form.title,
-    description:      form.description || null,
-    category:         form.category,
-    site_id:          form.site_id || null,
-    is_public:        form.is_public,
-    all_day:          form.all_day,
-    start_date:       form.start_date,
-    end_date:         form.end_date,
-    start_time:       form.all_day ? null : (form.start_time || null),
-    end_time:         form.all_day ? null : (form.end_time   || null),
-    recurrence_rule:  form.recurrence_rule || null,
-  }
-}
-
-async function syncGroupShares(
-  supabase: ReturnType<typeof useSupabase>,
-  scheduleId: string,
-  groupIds: string[],
-) {
-  // 既存を全削除してから再挿入
-  await supabase.from('schedule_group_shares').delete().eq('schedule_id', scheduleId)
-  if (groupIds.length) {
-    await supabase.from('schedule_group_shares').insert(
-      groupIds.map(gid => ({ schedule_id: scheduleId, group_id: gid }))
-    )
+    worker_id:       workerId,
+    title:           form.title,
+    description:     form.description || null,
+    category:        form.category,
+    site_id:         form.site_id || null,
+    all_day:         form.all_day,
+    start_date:      form.start_date,
+    end_date:        form.end_date,
+    start_time:      form.all_day ? null : (form.start_time || null),
+    end_time:        form.all_day ? null : (form.end_time   || null),
+    is_night_shift:  form.is_night_shift,
   }
 }
