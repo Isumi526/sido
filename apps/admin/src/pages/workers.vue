@@ -30,9 +30,11 @@
             <td><span class="status" :class="w.active ? 'active' : 'off'">{{ w.active ? '有効' : '無効' }}</span></td>
             <td><span class="user-link" :class="linkedWorkerIds.has(w.id) ? 'linked' : 'unlinked'">{{ linkedWorkerIds.has(w.id) ? '紐付け済み' : '未紐付け' }}</span></td>
             <td>
-              <span v-if="w.proxy_operator_id" class="proxy-badge">
-                {{ workerName(w.proxy_operator_id) }}
-              </span>
+              <template v-if="proxyMap.get(w.id)?.length">
+                <span v-for="pid in proxyMap.get(w.id)" :key="pid" class="proxy-badge">
+                  {{ workerName(pid) }}
+                </span>
+              </template>
               <span v-else class="proxy-none">—</span>
             </td>
             <td class="actions">
@@ -85,12 +87,22 @@
         </div>
         <div class="field">
           <label>代理人（LINEを持たない場合、代わりに入力する作業員）</label>
-          <select v-model="modal.proxy_operator_id" class="input">
-            <option :value="null">なし</option>
-            <option v-for="w in workers.filter(w => w.id !== modal?.id)" :key="w.id" :value="w.id">
+          <div class="proxy-check-list">
+            <label
+              v-for="w in workers.filter(w => w.id !== modal?.id)"
+              :key="w.id"
+              class="proxy-check-item"
+            >
+              <input
+                type="checkbox"
+                :value="w.id"
+                :checked="modalProxyIds.includes(w.id)"
+                @change="toggleProxyId(w.id)"
+              />
               {{ w.name }}
-            </option>
-          </select>
+            </label>
+            <span v-if="workers.filter(w => w.id !== modal?.id).length === 0" class="proxy-none">他に作業員がいません</span>
+          </div>
         </div>
         <div class="modal-actions">
           <button class="btn-cancel" @click="modal = null">キャンセル</button>
@@ -113,7 +125,6 @@ type Worker = {
   role: 'factory' | 'site'
   unit_price: number
   active: boolean
-  proxy_operator_id: string | null
   hire_date: string | null
   employment_type: 'fulltime' | 'parttime' | null
   weekly_scheduled_days: number | null
@@ -121,7 +132,11 @@ type Worker = {
 
 const workers         = ref<Worker[]>([])
 const linkedWorkerIds = ref<Set<string>>(new Set())
+// worker_id → 代理人の worker_id 配列
+const proxyMap        = ref<Map<string, string[]>>(new Map())
 const modal           = ref<Partial<Worker> | null>(null)
+// モーダルで選択中の代理人 ID リスト
+const modalProxyIds   = ref<string[]>([])
 const saving          = ref(false)
 const saveError       = ref('')
 
@@ -130,25 +145,42 @@ function workerName(id: string | null) {
   return workers.value.find(w => w.id === id)?.name ?? '不明'
 }
 
+function toggleProxyId(id: string) {
+  const idx = modalProxyIds.value.indexOf(id)
+  if (idx >= 0) modalProxyIds.value.splice(idx, 1)
+  else modalProxyIds.value.push(id)
+}
+
 async function load() {
   const accountId = await getAccountId()
-  const [{ data: workersData }, { data: usersData }] = await Promise.all([
-    supabase.from('workers').select('id, name, role, unit_price, active, proxy_operator_id, hire_date, employment_type, weekly_scheduled_days').eq('account_id', accountId).order('name'),
+  const [{ data: workersData }, { data: usersData }, { data: proxyData }] = await Promise.all([
+    supabase.from('workers').select('id, name, role, unit_price, active, hire_date, employment_type, weekly_scheduled_days').eq('account_id', accountId).order('name'),
     supabase.from('users').select('worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
+    supabase.from('worker_proxies').select('worker_id, proxy_operator_id').eq('account_id', accountId),
   ])
   workers.value = (workersData ?? []) as Worker[]
   linkedWorkerIds.value = new Set((usersData ?? []).map((u: any) => u.worker_id as string))
+
+  const map = new Map<string, string[]>()
+  for (const row of (proxyData ?? []) as any[]) {
+    const arr = map.get(row.worker_id) ?? []
+    arr.push(row.proxy_operator_id)
+    map.set(row.worker_id, arr)
+  }
+  proxyMap.value = map
 }
 
 onMounted(load)
 
 function openAdd() {
-  modal.value = { name: '', role: 'site', unit_price: 20000, proxy_operator_id: null, hire_date: null, employment_type: 'fulltime', weekly_scheduled_days: null }
+  modal.value = { name: '', role: 'site', unit_price: 20000, hire_date: null, employment_type: 'fulltime', weekly_scheduled_days: null }
+  modalProxyIds.value = []
   saveError.value = ''
 }
 
 function openEdit(w: Worker) {
   modal.value = { ...w }
+  modalProxyIds.value = [...(proxyMap.value.get(w.id) ?? [])]
   saveError.value = ''
 }
 
@@ -157,29 +189,37 @@ async function save() {
   saving.value = true
   saveError.value = ''
   try {
-    if (modal.value.id) {
-      await supabase.from('workers').update({
-        name:                  modal.value.name.trim(),
-        role:                  modal.value.role,
-        unit_price:            modal.value.unit_price ?? 0,
-        proxy_operator_id:     modal.value.proxy_operator_id ?? null,
-        hire_date:             modal.value.hire_date || null,
-        employment_type:       modal.value.employment_type ?? 'fulltime',
-        weekly_scheduled_days: modal.value.employment_type === 'parttime' ? (modal.value.weekly_scheduled_days ?? null) : null,
-      }).eq('id', modal.value.id)
-    } else {
-      const accountId = await getAccountId()
-      await supabase.from('workers').insert({
-        name:                  modal.value.name!.trim(),
-        role:                  modal.value.role ?? 'site',
-        unit_price:            modal.value.unit_price ?? 0,
-        account_id:            accountId,
-        proxy_operator_id:     modal.value.proxy_operator_id ?? null,
-        hire_date:             modal.value.hire_date || null,
-        employment_type:       modal.value.employment_type ?? 'fulltime',
-        weekly_scheduled_days: modal.value.employment_type === 'parttime' ? (modal.value.weekly_scheduled_days ?? null) : null,
-      })
+    const accountId = await getAccountId()
+    let workerId = modal.value.id
+
+    const workerPayload = {
+      name:                  modal.value.name!.trim(),
+      role:                  modal.value.role ?? 'site',
+      unit_price:            modal.value.unit_price ?? 0,
+      hire_date:             modal.value.hire_date || null,
+      employment_type:       modal.value.employment_type ?? 'fulltime',
+      weekly_scheduled_days: modal.value.employment_type === 'parttime' ? (modal.value.weekly_scheduled_days ?? null) : null,
     }
+
+    if (workerId) {
+      await supabase.from('workers').update(workerPayload).eq('id', workerId)
+    } else {
+      const { data } = await supabase.from('workers').insert({ ...workerPayload, account_id: accountId }).select('id').single()
+      workerId = data!.id
+    }
+
+    // 代理人関係を全削除して再挿入
+    await supabase.from('worker_proxies').delete().eq('worker_id', workerId).eq('account_id', accountId)
+    if (modalProxyIds.value.length > 0) {
+      await supabase.from('worker_proxies').insert(
+        modalProxyIds.value.map(pid => ({
+          worker_id:         workerId,
+          proxy_operator_id: pid,
+          account_id:        accountId,
+        }))
+      )
+    }
+
     modal.value = null
     await load()
   } catch (e: any) {
@@ -215,10 +255,10 @@ async function toggleActive(w: Worker) {
 .actions { display: flex; gap: 8px; }
 .btn-edit { background: #f0f0f0; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
 .btn-toggle { background: none; border: 1px solid #ddd; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; color: #888; }
-.proxy-badge { font-size: 11px; padding: 3px 8px; border-radius: 4px; background: #fee2e2; color: #dc2626; font-weight: 700; }
+.proxy-badge { display: inline-block; font-size: 11px; padding: 3px 8px; border-radius: 4px; background: #fee2e2; color: #dc2626; font-weight: 700; margin-right: 4px; }
 .proxy-none { font-size: 12px; color: #ccc; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 12px; padding: 32px; width: 400px; display: flex; flex-direction: column; gap: 20px; }
+.modal { background: #fff; border-radius: 12px; padding: 32px; width: 400px; max-height: 90vh; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
 .modal h2 { font-size: 18px; font-weight: 700; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label { font-size: 12px; font-weight: 700; color: #888; }
@@ -226,6 +266,9 @@ async function toggleActive(w: Worker) {
 .toggle { display: flex; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; }
 .toggle button { flex: 1; padding: 10px; background: #f5f5f5; color: #888; border: none; cursor: pointer; font-size: 13px; }
 .toggle button.active { background: #06C755; color: #fff; font-weight: 700; }
+.proxy-check-list { display: flex; flex-direction: column; gap: 8px; background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px 14px; max-height: 160px; overflow-y: auto; }
+.proxy-check-item { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+.proxy-check-item input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
 .modal-actions { display: flex; gap: 12px; }
 .btn-save { flex: 1; background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 12px; font-weight: 700; cursor: pointer; }
 .btn-save:disabled { opacity: .5; }

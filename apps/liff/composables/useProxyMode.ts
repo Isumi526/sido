@@ -2,8 +2,8 @@
 //  composables/useProxyMode.ts
 //  代理入力モード管理
 //
-//  管理画面でAさんの代理人をBさんと設定（workers.proxy_operator_id）
-//  BさんのLIFFにAさんが選択肢として表示され、Aさんとして操作できる
+//  管理画面でAさんの代理人にBさんとCさんを設定（worker_proxies テーブル）
+//  BさんとCさんのLIFFにAさんが選択肢として表示され、Aさんとして操作できる
 //  セッション中のみ有効（タブを閉じると解除）
 // ============================================================
 
@@ -35,26 +35,35 @@ export const useProxyMode = () => {
   const isProxyMode  = computed(() => proxyTarget.value !== null)
   const canProxy     = computed(() => proxyTargets.value.length > 0)
 
-  // 自分のworker_idを元に、proxy_operator_id = 自分 の作業員を取得
+  // 自分のworker_idを元に、worker_proxies.proxy_operator_id = 自分 の作業員を取得
   async function fetchProxyTargets(myWorkerId: string | null | undefined) {
     if (!myWorkerId) { proxyTargets.value = []; return }
     const accountId = await getAccountId()
     if (!accountId) return
 
-    const [{ data: workersData }, { data: usersData }] = await Promise.all([
+    // worker_proxies から自分が代理人になっている worker_id を取得
+    const [{ data: proxyRels }, { data: usersData }] = await Promise.all([
       supabase
-        .from('workers')
-        .select('id, name, role')
+        .from('worker_proxies')
+        .select('worker_id')
         .eq('proxy_operator_id', myWorkerId)
-        .eq('account_id', accountId)
-        .eq('active', true)
-        .order('name'),
+        .eq('account_id', accountId),
       supabase
         .from('users')
         .select('worker_id, line_user_id')
         .eq('account_id', accountId)
         .not('worker_id', 'is', null),
     ])
+
+    const workerIds = (proxyRels ?? []).map((r: any) => r.worker_id as string)
+    if (workerIds.length === 0) { proxyTargets.value = []; return }
+
+    const { data: workersData } = await supabase
+      .from('workers')
+      .select('id, name, role')
+      .in('id', workerIds)
+      .eq('active', true)
+      .order('name')
 
     const lineUserMap = new Map<string, string>(
       (usersData ?? []).map((u: any) => [u.worker_id, u.line_user_id])
