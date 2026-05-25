@@ -40,6 +40,7 @@
             }"
           >
             <td class="sticky-col date-cell" :class="dateCellClass(date)">
+              <span v-if="date.endsWith('-01')" class="month-badge">{{ Number(date.slice(5, 7)) }}月</span>
               {{ formatDateLabel(date) }}
             </td>
             <td
@@ -627,6 +628,7 @@ thead th.sticky-col { z-index: 4; }
 .date-cell.date-sunday  { color: #ef4444; }
 .date-cell.date-saturday { color: #3b82f6; }
 .date-cell.date-today { background: #f0fdf4; color: #06C755; font-weight: 700; }
+.month-badge { display: block; font-size: 9px; font-weight: 700; color: #06C755; line-height: 1; margin-bottom: 1px; }
 
 /* 行 */
 .today-row > td { background-color: #fafffe; }
