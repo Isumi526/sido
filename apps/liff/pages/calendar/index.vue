@@ -524,11 +524,12 @@ function closeDetail() { detailModal.value = null }
 
 async function saveSchedule() {
   if (!formModal.value) return
-  // __other__ の場合は customTitle を title に確定
+  // __other__ の場合は customTitle を title に確定し、マスタに保存
   if (formModal.value.title === '__other__') {
     const custom = ((formModal.value as any)._customTitle ?? '').trim()
     if (!custom) { formError.value = '現場名を入力してください'; return }
     formModal.value.title = custom
+    await master.saveSite(custom)
   }
   if (!formModal.value.title?.trim()) { formError.value = '現場を選択してください'; return }
   if (!formModal.value.start_date || !formModal.value.end_date) { formError.value = '日付を入力してください'; return }
