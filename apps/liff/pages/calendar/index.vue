@@ -233,13 +233,10 @@ function togglePin(id: string) {
 
 // 表示順: 自分 → ピン済み（ピン順）→ その他（name順）
 const sortedWorkers = computed(() => {
-  const myId     = effectiveWorkerId.value
-  const mine     = workers.value.filter(w => w.id === myId)
-  const pinned   = pinnedWorkerIds.value
-    .map(id => workers.value.find(w => w.id === id))
-    .filter((w): w is { id: string; name: string } => !!w && w.id !== myId)
-  const rest     = workers.value.filter(w => w.id !== myId && !isPinned(w.id))
-  return [...mine, ...pinned, ...rest]
+  const myId = effectiveWorkerId.value
+  const mine = workers.value.filter(w => w.id === myId)
+  const rest = workers.value.filter(w => w.id !== myId)
+  return [...mine, ...rest]  // DB側で name 順取得済みのため rest は50音順
 })
 interface ScheduleEdit {
   id: string; schedule_id: string; edited_by_name: string; edited_at: string
