@@ -99,7 +99,18 @@
             <select v-model="formModal.title" class="site-select">
               <option value="">選択してください</option>
               <option v-for="s in master.siteNames.value" :key="s" :value="s">{{ s }}</option>
+              <option value="__other__">＋ 新しい現場を登録する</option>
             </select>
+          </div>
+          <div v-if="formModal.title === '__other__'" class="form-row" style="margin-top:8px">
+            <span class="form-row-label">現場名 *</span>
+            <input
+              v-model="(formModal as any)._customTitle"
+              type="text"
+              class="site-select"
+              placeholder="現場名を入力"
+              @keydown.enter.prevent
+            />
           </div>
         </div>
 
@@ -220,7 +231,7 @@ function isMyWorker(workerId: string): boolean {
 // ──────────────────── 定数 ────────────────────
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
 const CHANGE_LABELS: Record<string, string> = {
-  title:          'タイトル',
+  title:          '現場',
   description:    '備考',
   start_date:     '開始日',
   end_date:       '終了日',
@@ -512,7 +523,14 @@ async function openDetail(ev: Schedule) {
 function closeDetail() { detailModal.value = null }
 
 async function saveSchedule() {
-  if (!formModal.value?.title?.trim()) { formError.value = 'タイトルを入力してください'; return }
+  if (!formModal.value) return
+  // __other__ の場合は customTitle を title に確定
+  if (formModal.value.title === '__other__') {
+    const custom = ((formModal.value as any)._customTitle ?? '').trim()
+    if (!custom) { formError.value = '現場名を入力してください'; return }
+    formModal.value.title = custom
+  }
+  if (!formModal.value.title?.trim()) { formError.value = '現場を選択してください'; return }
   if (!formModal.value.start_date || !formModal.value.end_date) { formError.value = '日付を入力してください'; return }
   if (formModal.value.start_date > formModal.value.end_date) { formError.value = '終了日は開始日以降にしてください'; return }
   saving.value = true; formError.value = ''
