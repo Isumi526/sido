@@ -165,11 +165,21 @@
         <p v-if="detailModal.schedule.deleted_at" class="detail-deleted">🗑 削除: {{ detailModal.schedule.deleted_by_name }} ({{ fmtDateTime(detailModal.schedule.deleted_at) }})</p>
 
         <!-- 編集履歴 -->
-        <details v-if="detailModal.edits.length" class="edit-history">
+        <details class="edit-history">
           <summary>編集履歴（{{ detailModal.edits.length }}件）</summary>
+          <p v-if="!detailModal.edits.length" class="edit-empty">編集履歴はありません</p>
           <div v-for="e in detailModal.edits" :key="e.id" class="edit-entry">
-            <span class="edit-who">{{ e.edited_by_name }}</span>
-            <span class="edit-when">{{ fmtDateTime(e.edited_at) }}</span>
+            <div class="edit-header">
+              <span class="edit-who">{{ e.edited_by_name }}</span>
+              <span class="edit-when">{{ fmtDateTime(e.edited_at) }}</span>
+            </div>
+            <ul v-if="Object.keys(e.changes).length" class="edit-changes">
+              <li v-for="(diff, field) in e.changes" :key="field">
+                <span class="edit-field">{{ CHANGE_LABELS[field] ?? field }}</span>:
+                <span class="edit-old">{{ diff.old ?? '—' }}</span> →
+                <span class="edit-new">{{ diff.new ?? '—' }}</span>
+              </li>
+            </ul>
           </div>
         </details>
 
@@ -209,6 +219,15 @@ function isMyWorker(workerId: string): boolean {
 
 // ──────────────────── 定数 ────────────────────
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
+const CHANGE_LABELS: Record<string, string> = {
+  title:          'タイトル',
+  description:    '備考',
+  start_date:     '開始日',
+  end_date:       '終了日',
+  start_time:     '開始時刻',
+  end_time:       '終了時刻',
+  is_night_shift: '夜勤',
+}
 const PIN_KEY  = 'calendar_pinned_workers'
 
 // ──────────────────── 状態 ────────────────────
@@ -233,10 +252,14 @@ function togglePin(id: string) {
 
 // 表示順: 自分 → ピン済み（ピン順）→ その他（name順）
 const sortedWorkers = computed(() => {
-  const myId = effectiveWorkerId.value
-  const mine = workers.value.filter(w => w.id === myId)
-  const rest = workers.value.filter(w => w.id !== myId)
-  return [...mine, ...rest]  // DB側で name 順取得済みのため rest は50音順
+  const myId   = effectiveWorkerId.value
+  const mine   = workers.value.filter(w => w.id === myId)
+  const pinned = pinnedWorkerIds.value
+    .map(id => workers.value.find(w => w.id === id))
+    .filter((w): w is { id: string; name: string } => !!w && w.id !== myId)
+  const rest   = workers.value.filter(w => w.id !== myId && !isPinned(w.id))
+  // 自分 → ピン留め → 残り50音順（DB側でname順取得済み）
+  return [...mine, ...pinned, ...rest]
 })
 interface ScheduleEdit {
   id: string; schedule_id: string; edited_by_name: string; edited_at: string
@@ -740,8 +763,14 @@ thead th.sticky-col { z-index: 4; }
 .detail-deleted { color: #ef4444; font-size: 12px; margin: 4px 0 0; }
 .edit-history { margin-top: 12px; border-top: 1px solid #e0e0e0; padding-top: 10px; }
 .edit-history summary { font-size: 13px; color: #666; cursor: pointer; font-weight: 600; }
-.edit-entry { padding: 5px 0; border-bottom: 1px solid #f5f5f5; font-size: 12px; display: flex; gap: 8px; }
+.edit-empty { font-size: 12px; color: #bbb; margin: 6px 0 0; }
+.edit-entry { padding: 6px 0; border-bottom: 1px solid #f5f5f5; }
+.edit-header { display: flex; gap: 8px; align-items: baseline; font-size: 12px; }
 .edit-who { font-weight: 600; color: #333; }
 .edit-when { color: #aaa; }
+.edit-changes { margin: 4px 0 0 8px; padding: 0; list-style: none; font-size: 11px; color: #555; display: flex; flex-direction: column; gap: 2px; }
+.edit-field { font-weight: 600; color: #444; }
+.edit-old { color: #ef4444; text-decoration: line-through; }
+.edit-new { color: #16a34a; }
 .btn-restore { flex: 1; background: #f59e0b; color: #fff; border: none; border-radius: 12px; padding: 14px; font-size: 15px; cursor: pointer; }
 </style>
