@@ -529,8 +529,9 @@ async function saveSchedule() {
       // 編集履歴を記録
       const changes: Record<string, { old: unknown; new: unknown }> = {}
       const diffKeys = ['title', 'start_date', 'end_date', 'start_time', 'end_time', 'is_night_shift', 'description']
+      const norm = (v: unknown) => (v === '' || v === null || v === undefined) ? null : v
       for (const k of diffKeys) {
-        const ov = orig[k] ?? null; const nv = (form as any)[k] ?? null
+        const ov = norm(orig[k]); const nv = norm((form as any)[k])
         if (ov !== nv) changes[k] = { old: ov, new: nv }
       }
       if (Object.keys(changes).length) {
