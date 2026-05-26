@@ -663,15 +663,12 @@ thead th.sticky-col { z-index: 4; }
   border-left: 1px solid #E0E0E0;
   border-bottom: 1px solid #f0f0f0;
   min-width: 80px; max-width: 90px;
-  height: 72px;
-  position: relative;
-  overflow: hidden;
+  min-height: 72px;
 }
 .cell-inner {
-  position: absolute; inset: 0;
   display: flex; flex-direction: column;
   padding: 2px 3px;
-  overflow: hidden;
+  min-height: 72px;
 }
 .sched-cell.my-col-cell { background: rgba(6, 199, 85, .03); }
 
@@ -699,7 +696,7 @@ thead th.sticky-col { z-index: 4; }
   display: block; width: 100%;
   background: none; border: 1px dashed #ccc; border-radius: 3px;
   color: #bbb; font-size: 12px; cursor: pointer; padding: 0;
-  flex: 1; min-height: 24px;
+  min-height: 44px;
 }
 .cell-add-btn:active { background: #f0fdf4; border-color: #06C755; color: #06C755; }
 
