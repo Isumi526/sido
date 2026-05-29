@@ -11,6 +11,9 @@
         <li><RouterLink to="/site-reports" class="nav-link"><span class="material-symbols-rounded nav-icon">bar_chart</span>現場別集計</RouterLink></li>
         <li><RouterLink to="/calendar" class="nav-link"><span class="material-symbols-rounded nav-icon">calendar_month</span>予定管理</RouterLink></li>
 
+        <li class="nav-section">出退勤</li>
+        <li><RouterLink to="/attendance" class="nav-link"><span class="material-symbols-rounded nav-icon">login</span>出退勤ログ</RouterLink></li>
+
         <li class="nav-section">マスタ</li>
         <li><RouterLink to="/workers" class="nav-link"><span class="material-symbols-rounded nav-icon">engineering</span>作業員</RouterLink></li>
         <li><RouterLink to="/sites" class="nav-link"><span class="material-symbols-rounded nav-icon">location_on</span>現場</RouterLink></li>

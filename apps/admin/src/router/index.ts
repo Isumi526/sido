@@ -12,6 +12,9 @@ import Users          from '../pages/users.vue'
 import WorkerReports  from '../pages/worker-reports.vue'
 import Calendar       from '../pages/calendar.vue'
 import PaidLeave      from '../pages/paid-leave.vue'
+import SiteRules      from '../pages/site-rules.vue'
+import SiteQr         from '../pages/site-qr.vue'
+import Attendance     from '../pages/attendance.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -21,6 +24,9 @@ export const router = createRouter({
     { path: '/calendar',     component: Calendar },
     { path: '/workers',      component: Workers },
     { path: '/sites',        component: Sites },
+    { path: '/site-rules',   component: SiteRules },
+    { path: '/site-qr',      component: SiteQr },
+    { path: '/attendance',   component: Attendance },
     { path: '/subcontractors', component: Subcontractors },
     { path: '/reports',      component: Reports },
     { path: '/site-reports', component: SiteReports },
