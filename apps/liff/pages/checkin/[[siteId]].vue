@@ -147,6 +147,7 @@
             <template v-else>
               位置情報なしで登録できます（任意）
               <button class="loc-retry" @click="fetchLocation">再取得</button>
+              <span v-if="locDebug" class="loc-debug">{{ locDebug }}</span>
               <details class="loc-help">
                 <summary>位置情報をオンにしたい場合</summary>
                 <ol class="loc-steps">
@@ -218,24 +219,36 @@ type LocState = 'pending' | 'granted' | 'retryable' | 'blocked'
 const locationState = ref<LocState>('pending')
 const locationLat   = ref<number | null>(null)
 const locationLng   = ref<number | null>(null)
+const locDebug      = ref('')   // 診断用: 生のエラーコード/メッセージ
 
 async function fetchLocation() {
   locationState.value = 'pending'
+  locDebug.value = ''
 
-  // ※ Permissions API (navigator.permissions.query) は使わない。
-  //   iOS/LINE内ブラウザでは前回の拒否を引きずって denied を返し、
-  //   許可し直しても blocked 扱いになってしまうため。
+  // geolocation API 自体が無い（＝WebViewが非対応）ケースを切り分け
+  if (!('geolocation' in navigator)) {
+    locDebug.value = 'geolocation API が存在しません'
+    locationState.value = 'retryable'
+    return
+  }
+
+  // ※ Permissions API は使わない（iOS/LINE内ブラウザで前回の拒否を引きずるため）。
   //   常に実際の取得を試み、その結果だけで判定する。
   try {
     const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 8000, enableHighAccuracy: true })
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true, timeout: 10000, maximumAge: 0,
+      })
     })
     locationLat.value   = pos.coords.latitude
     locationLng.value   = pos.coords.longitude
     locationState.value = 'granted'
   } catch (e: any) {
     // code 1=PERMISSION_DENIED(拒否), 2=POSITION_UNAVAILABLE, 3=TIMEOUT
-    locationState.value = (e && e.code === 1) ? 'blocked' : 'retryable'
+    const code = e?.code
+    const msg  = e?.message ?? String(e)
+    locDebug.value = `code=${code ?? '?'} / ${msg} / secure=${typeof window !== 'undefined' ? window.isSecureContext : '?'}`
+    locationState.value = (code === 1) ? 'blocked' : 'retryable'
   }
 }
 
@@ -701,6 +714,10 @@ async function submit() {
 .loc-text { flex: 1; line-height: 1.5; }
 .loc-note { font-weight: 400; opacity: .8; }
 
+.loc-debug {
+  display: block; margin-top: 6px; font-weight: 400;
+  font-size: 10px; opacity: .7; word-break: break-all;
+}
 .loc-help { margin-top: 8px; font-weight: 400; }
 .loc-help summary {
   cursor: pointer; font-size: 11px; font-weight: 600;
