@@ -178,6 +178,7 @@ const proxy    = useProxyMode()
 
 const phase          = ref<Phase>('loading')
 const errorMsg       = ref('')
+const siteId         = ref('')
 const siteName       = ref('')
 const rules          = ref<SiteRule[]>([])
 const checkedIds     = ref(new Set<string>())
@@ -238,6 +239,33 @@ function fmtTime(iso: string) {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
+// site_id を堅牢に解決する。
+// LIFFは liff.init() 内で liff.state を history.replaceState で復元するため、
+// Vue Router の route.query が追随せず空になることがある。
+// → route.query / 生のlocation.search / liff.state の順に探す。
+function resolveSiteId(): string | undefined {
+  const fromRoute = route.query.site_id as string | undefined
+  if (fromRoute) return fromRoute
+  if (typeof window === 'undefined') return undefined
+
+  const sp = new URLSearchParams(window.location.search)
+  const direct = sp.get('site_id')
+  if (direct) return direct
+
+  // liff.state=%2Fcheckin%3Fsite_id%3Dxxx のように包まれているケース
+  const liffState = sp.get('liff.state')
+  if (liffState) {
+    const decoded = decodeURIComponent(liffState)
+    const qIndex  = decoded.indexOf('?')
+    if (qIndex >= 0) {
+      const inner = new URLSearchParams(decoded.slice(qIndex + 1))
+      const sid   = inner.get('site_id')
+      if (sid) return sid
+    }
+  }
+  return undefined
+}
+
 // 今日（JST）の開始・終了タイムスタンプ
 function todayRange() {
   const now   = new Date()
@@ -262,16 +290,17 @@ onMounted(async () => {
     return
   }
 
-  const siteId = route.query.site_id as string | undefined
-  if (!siteId) {
+  const resolved = resolveSiteId()
+  if (!resolved) {
     errorMsg.value = 'URLが正しくありません（site_id が見つかりません）'
     phase.value = 'error'
     return
   }
+  siteId.value = resolved
 
   // 現場名取得
   const { data: siteData } = await supabase
-    .from('sites').select('name').eq('id', siteId).single()
+    .from('sites').select('name').eq('id', siteId.value).single()
   if (!siteData) {
     errorMsg.value = '現場情報が見つかりません'
     phase.value = 'error'
@@ -323,14 +352,13 @@ function backToSelect() {
 // ── 対象作業員に対して出退勤判定・ルール取得 ──────────────────
 async function loadForTarget(workerId: string) {
   phase.value = 'loading'
-  const siteId = route.query.site_id as string
 
   // 自動判定: 今日×この現場×この作業員のログを確認
   const { from, to } = todayRange()
   const { data: todayLogs } = await supabase
     .from('attendance_logs')
     .select('type, checked_at')
-    .eq('site_id', siteId)
+    .eq('site_id', siteId.value)
     .eq('worker_id', workerId)
     .gte('checked_at', from)
     .lte('checked_at', to)
@@ -358,7 +386,7 @@ async function loadForTarget(workerId: string) {
   const { data: ruleData } = await supabase
     .from('site_rules')
     .select('id, content, timing')
-    .eq('site_id', siteId)
+    .eq('site_id', siteId.value)
     .in('timing', timings)
     .order('sort_order')
 
@@ -382,8 +410,6 @@ async function submit() {
   if (!allChecked.value || submitting.value) return
   submitting.value = true
 
-  const siteId = route.query.site_id as string
-
   const target          = selectedTarget.value
   const workerIdToLog   = target?.id ?? myWorkerId.value
   // 本人なら null、代理なら操作者（自分）を記録
@@ -398,7 +424,7 @@ async function submit() {
   const { error } = await supabase
     .from('attendance_logs')
     .insert({
-      site_id:           siteId,
+      site_id:           siteId.value,
       worker_id:         workerIdToLog,
       type:              attendanceType.value,
       agreed_rule_texts: rules.value.map(r => r.content),
