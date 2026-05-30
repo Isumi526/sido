@@ -96,22 +96,20 @@
           <template v-if="site.siteName && site.siteName !== '__other__' || site.siteName === '__other__' && site.customSiteName">
           <div class="sub-section">
 
-            <!-- 自分の稼働 あり/なし -->
-            <Field label="自分の稼働">
-              <select
-                :value="siteUsage[si].selfWorking"
-                class="select select--usage"
-                @change="(e) => setSelfWorking(si, (e.target as HTMLSelectElement).value)"
-              >
-                <option value="あり">あり</option>
-                <option value="なし">なし（下請けのみ稼働）</option>
-              </select>
-            </Field>
+            <!-- 作業員（ログインユーザー固定） -->
+            <Field>
+              <!-- 下請けのみ（自分は稼働なし）チェック -->
+              <label class="self-off-check">
+                <input
+                  type="checkbox"
+                  :checked="siteUsage[si].selfWorking === 'なし'"
+                  @change="(e) => setSelfWorking(si, (e.target as HTMLInputElement).checked ? 'なし' : 'あり')"
+                />
+                <span>下請けのみ（自分は稼働なし）</span>
+              </label>
 
-            <!-- 作業員（ログインユーザー固定・自分の稼働ありのみ） -->
-            <Field v-if="siteUsage[si].selfWorking === 'あり'">
-              <!-- 時刻・休憩 -->
-              <template v-if="site.workers[0]">
+              <!-- 時刻・休憩（自分の稼働ありのみ） -->
+              <template v-if="siteUsage[si].selfWorking === 'あり' && site.workers[0]">
                 <div class="worker-time-rows">
                   <div class="worker-time-row">
                     <div class="time-field">
@@ -1466,6 +1464,11 @@ html, body {
 .worker-self-role { font-size: 11px; color: var(--text2); }
 
 /* ── 時刻・休憩行 ── */
+.self-off-check {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 14px; color: var(--text1); cursor: pointer; user-select: none;
+}
+.self-off-check input { width: 18px; height: 18px; flex-shrink: 0; cursor: pointer; }
 .worker-time-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 .worker-time-row  { display: flex; gap: 6px; align-items: flex-end; }
 .worker-time-row .time-field { flex: 1; }
