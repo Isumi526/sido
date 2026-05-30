@@ -137,10 +137,16 @@
         <!-- 位置情報ステータス -->
         <div class="location-status" :class="locationState">
           <span class="material-symbols-rounded loc-icon">
-            {{ locationState === 'granted' ? 'location_on' : locationState === 'pending' ? 'location_searching' : 'location_off' }}
+            {{ locationState === 'granted' ? 'location_on'
+               : locationState === 'pending' ? 'location_searching'
+               : locationState === 'idle' ? 'my_location' : 'location_off' }}
           </span>
           <span class="loc-text">
-            <template v-if="locationState === 'pending'">位置情報を取得中...</template>
+            <template v-if="locationState === 'idle'">
+              位置情報を記録します
+              <button class="loc-get" @click="fetchLocation">現在地を取得</button>
+            </template>
+            <template v-else-if="locationState === 'pending'">位置情報を取得中...</template>
             <template v-else-if="locationState === 'granted'">
               位置情報取得済み（{{ locationLat!.toFixed(5) }}, {{ locationLng!.toFixed(5) }}）
             </template>
@@ -215,8 +221,9 @@ const attendanceType = ref<'checkin' | 'checkout'>('checkin')
 //  granted   : 取得済み
 //  retryable : タイムアウト/取得不可など → 「再取得」で再度ダイアログが出せる
 //  blocked   : ハッキリ拒否（ブロック）済み → JSからは再表示不可。設定からの許可が必要
-type LocState = 'pending' | 'granted' | 'retryable' | 'blocked'
-const locationState = ref<LocState>('pending')
+// idle      : 未取得（ユーザーのタップ待ち。iOS LINEは自動要求だとダイアログ無しで拒否されるため）
+type LocState = 'idle' | 'pending' | 'granted' | 'retryable' | 'blocked'
+const locationState = ref<LocState>('idle')
 const locationLat   = ref<number | null>(null)
 const locationLng   = ref<number | null>(null)
 const locDebug      = ref('')   // 診断用: 生のエラーコード/メッセージ
@@ -449,8 +456,11 @@ async function loadForTarget(workerId: string) {
 
   phase.value = 'checklist'
 
-  // チェックリスト表示と並行して位置情報を取得
-  fetchLocation()
+  // 位置情報は自動取得しない。
+  // iOS LINE内ブラウザは「タップ等のユーザー操作なし」の自動要求を
+  // ダイアログ無しで即拒否(code=1)しドメイン単位で記憶してしまうため、
+  // 必ずユーザーのタップ（下のボタン）から要求する。
+  locationState.value = 'idle'
 }
 
 // ── 送信 ────────────────────────────────────────────────────
@@ -702,6 +712,7 @@ async function submit() {
   display: flex; align-items: flex-start; gap: 8px;
   padding: 10px 12px; border-radius: 10px; font-size: 12px; font-weight: 600;
 }
+.location-status.idle      { background: #eff6ff; color: #1d4ed8; }
 .location-status.pending   { background: #f5f5f5; color: #888; }
 .location-status.granted   { background: #f0fdf4; color: #166534; }
 .location-status.retryable,
@@ -734,6 +745,11 @@ async function submit() {
   display: inline-block; margin-left: 8px;
   background: none; border: 1px solid #fca5a5; color: #ef4444;
   border-radius: 4px; padding: 2px 8px; font-size: 11px; cursor: pointer;
+}
+.loc-get {
+  display: inline-block; margin-left: 8px;
+  background: #2563eb; border: none; color: #fff;
+  border-radius: 6px; padding: 4px 12px; font-size: 12px; font-weight: 700; cursor: pointer;
 }
 
 .submit-hint {
