@@ -144,15 +144,17 @@
             <template v-else-if="locationState === 'granted'">
               位置情報取得済み（{{ locationLat!.toFixed(5) }}, {{ locationLng!.toFixed(5) }}）
             </template>
-            <template v-else-if="locationState === 'retryable'">
-              位置情報を取得できませんでした
-              <button class="loc-retry" @click="fetchLocation">再取得</button>
-            </template>
             <template v-else>
-              位置情報がブロックされています。<br>
-              この画面を一度 <b>✕で閉じて開き直す</b> と、もう一度許可できます。<br>
-              <span class="loc-note">（位置情報なしでも登録は可能です）</span>
-              <button class="loc-retry" @click="fetchLocation">再確認</button>
+              位置情報なしで登録できます（任意）
+              <button class="loc-retry" @click="fetchLocation">再取得</button>
+              <details class="loc-help">
+                <summary>位置情報をオンにしたい場合</summary>
+                <ol class="loc-steps">
+                  <li>iOS：設定 → LINE → 位置情報 を「使用中のみ」以上にする</li>
+                  <li>それでもダイアログが出ない場合は、画面右上の <b>⋯ メニュー → 「Safariで開く」</b>（Safariなら位置情報を許可し直せます）</li>
+                  <li>※ 位置情報がなくても出退勤の登録は完了します</li>
+                </ol>
+              </details>
             </template>
           </span>
         </div>
@@ -689,8 +691,8 @@ async function submit() {
 }
 .location-status.pending   { background: #f5f5f5; color: #888; }
 .location-status.granted   { background: #f0fdf4; color: #166534; }
-.location-status.retryable { background: #fffbeb; color: #92400e; }
-.location-status.blocked   { background: #fef2f2; color: #991b1b; }
+.location-status.retryable,
+.location-status.blocked   { background: #fffbeb; color: #92400e; }
 
 .loc-icon {
   font-size: 18px; flex-shrink: 0;
@@ -698,6 +700,18 @@ async function submit() {
 }
 .loc-text { flex: 1; line-height: 1.5; }
 .loc-note { font-weight: 400; opacity: .8; }
+
+.loc-help { margin-top: 8px; font-weight: 400; }
+.loc-help summary {
+  cursor: pointer; font-size: 11px; font-weight: 600;
+  text-decoration: underline; opacity: .85; list-style: none;
+}
+.loc-help summary::-webkit-details-marker { display: none; }
+.loc-steps {
+  margin: 8px 0 0; padding-left: 18px;
+  display: flex; flex-direction: column; gap: 6px;
+  font-size: 11px; line-height: 1.5; color: #92400e;
+}
 
 .loc-retry {
   display: inline-block; margin-left: 8px;
