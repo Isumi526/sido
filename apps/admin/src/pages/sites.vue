@@ -17,8 +17,7 @@
             <td class="actions">
               <button class="btn-edit" @click="openEdit(s)">編集</button>
               <button class="btn-toggle" @click="toggleActive(s)">{{ s.active ? '無効化' : '有効化' }}</button>
-              <button class="btn-rules" @click="router.push(`/site-rules?site_id=${s.id}`)">ルール設定</button>
-              <button class="btn-qr" @click="router.push(`/site-qr?site_id=${s.id}`)">QR発行</button>
+              <button class="btn-rules" @click="router.push(`/site-rules?site_id=${s.id}`)">ルール・QR設定</button>
             </td>
           </tr>
         </tbody>
@@ -104,7 +103,6 @@ async function toggleActive(s: Site) {
 .status.off { background: #f5f5f5; color: #aaa; }
 .actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .btn-rules { background: #e0f2fe; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; color: #0369a1; font-weight: 600; }
-.btn-qr    { background: #f0fdf4; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; color: #166534; font-weight: 600; }
 .btn-edit { background: #f0f0f0; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
 .btn-toggle { background: none; border: 1px solid #ddd; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; color: #888; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; }

@@ -41,6 +41,16 @@
       </table>
     </div>
 
+    <!-- QRコード発行（確認ルールを1件以上登録した後のみ） -->
+    <div v-if="!loading" class="qr-section">
+      <h2 class="section-title">QRコード発行</h2>
+      <SiteQrPanel v-if="rules.length > 0" :site-id="siteId" :site-name="siteName" />
+      <div v-else class="qr-locked">
+        確認ルールを1件以上登録すると、QRコードを発行できます。<br>
+        （ルール未設定のQRは出退勤登録ができないため）
+      </div>
+    </div>
+
     <!-- 追加モーダル -->
     <div v-if="modal" class="modal-overlay" @click.self="modal = false">
       <div class="modal">
@@ -90,6 +100,7 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import SiteQrPanel from '../components/SiteQrPanel.vue'
 
 type Timing = 'checkin' | 'checkout' | 'both'
 type Rule = { id: string; content: string; timing: string; sort_order: number }
@@ -254,6 +265,17 @@ async function moveDown(rule: Rule) {
 .btn-add { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 700; cursor: pointer; flex-shrink: 0; }
 
 .empty { color: #888; padding: 40px 0; }
+
+.qr-section { margin-top: 36px; }
+.section-title {
+  font-size: 16px; font-weight: 700; margin-bottom: 16px;
+  padding-bottom: 8px; border-bottom: 2px solid #f0f0f0;
+}
+.qr-locked {
+  background: #f9fafb; border: 1px dashed #d1d5db; border-radius: 12px;
+  padding: 24px 28px; max-width: 440px;
+  font-size: 13px; color: #6b7280; line-height: 1.7;
+}
 
 .table-wrap { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
 .table { width: 100%; border-collapse: collapse; }

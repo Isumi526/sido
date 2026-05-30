@@ -1,12 +1,5 @@
 <template>
-  <div>
-    <div class="page-header">
-      <div class="header-left">
-        <button class="btn-back" @click="router.push('/sites')">← 現場一覧</button>
-        <h1 class="page-title">{{ siteName }} &nbsp;—&nbsp; QRコード発行</h1>
-      </div>
-    </div>
-
+  <div class="qr-panel">
     <div class="qr-card">
       <p class="qr-label">出退勤用 QRコード</p>
       <canvas ref="canvas" class="qr-canvas" />
@@ -34,16 +27,11 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
 import QRCode from 'qrcode'
 import { jsPDF } from 'jspdf'
-import { supabase } from '../lib/supabase'
 
-const route  = useRoute()
-const router = useRouter()
+const props = defineProps<{ siteId: string; siteName: string }>()
 
-const siteId   = route.query.site_id as string
-const siteName   = ref('')
 const canvas     = ref<HTMLCanvasElement | null>(null)
 const generating = ref(false)
 
@@ -52,13 +40,10 @@ const LIFF_ID = import.meta.env.VITE_LIFF_ID as string | undefined
 // site_id はクエリではなくパスに埋め込む。
 // liff.line.me はクエリの値を落とすことがあるが、パスは確実に転送するため。
 const qrUrl = LIFF_ID
-  ? `https://liff.line.me/${LIFF_ID}/checkin/${siteId}`
+  ? `https://liff.line.me/${LIFF_ID}/checkin/${props.siteId}`
   : `(VITE_LIFF_ID が未設定です)`
 
 onMounted(async () => {
-  const { data } = await supabase.from('sites').select('name').eq('id', siteId).single()
-  siteName.value = data?.name ?? ''
-
   if (!canvas.value || !LIFF_ID) return
   await QRCode.toCanvas(canvas.value, qrUrl, {
     width: 280,
@@ -70,7 +55,7 @@ onMounted(async () => {
 function download() {
   if (!canvas.value) return
   const link = document.createElement('a')
-  link.download = `qr_${siteName.value || siteId}.png`
+  link.download = `qr_${props.siteName || props.siteId}.png`
   link.href     = canvas.value.toDataURL('image/png')
   link.click()
 }
@@ -111,11 +96,11 @@ async function downloadPdf() {
     let titleSize = 76
     ctx.fillStyle = '#111111'
     ctx.font = `bold ${titleSize}px sans-serif`
-    while (ctx.measureText(siteName.value).width > W - 220 && titleSize > 28) {
+    while (ctx.measureText(props.siteName).width > W - 220 && titleSize > 28) {
       titleSize -= 2
       ctx.font = `bold ${titleSize}px sans-serif`
     }
-    ctx.fillText(siteName.value || '現場', W / 2, 220)
+    ctx.fillText(props.siteName || '現場', W / 2, 220)
 
     // サブタイトル
     ctx.fillStyle = '#555555'
@@ -159,7 +144,7 @@ async function downloadPdf() {
     // A4 PDFに貼り込み
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
     pdf.addImage(c.toDataURL('image/png'), 'PNG', 0, 0, 210, 297)
-    pdf.save(`qr_${siteName.value || siteId}.pdf`)
+    pdf.save(`qr_${props.siteName || props.siteId}.pdf`)
   } finally {
     generating.value = false
   }
@@ -167,11 +152,7 @@ async function downloadPdf() {
 </script>
 
 <style scoped>
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
-.header-left { display: flex; flex-direction: column; gap: 6px; }
-.btn-back { background: none; border: none; color: #06C755; font-size: 13px; cursor: pointer; padding: 0; text-align: left; }
-.btn-back:hover { text-decoration: underline; }
-.page-title { font-size: 20px; font-weight: 700; }
+.qr-panel { display: flex; flex-direction: column; }
 
 .qr-card {
   background: #fff;
