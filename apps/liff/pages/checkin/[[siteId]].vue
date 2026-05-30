@@ -143,8 +143,9 @@
           </span>
           <span class="loc-text">
             <template v-if="locationState === 'idle'">
-              位置情報を記録します
+              出退勤の記録に位置情報を使います。下のボタンを押して <b>「許可」</b> を選んでください。
               <button class="loc-get" @click="fetchLocation">現在地を取得</button>
+              <span class="loc-note">※確認は最初の1回だけ。「許可しない」を選ぶと後から戻せないことがあります</span>
             </template>
             <template v-else-if="locationState === 'pending'">位置情報を取得中...</template>
             <template v-else-if="locationState === 'granted'">
