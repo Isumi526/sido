@@ -269,10 +269,15 @@ function parseFromSearch(search: string): string | undefined {
 }
 
 function resolveSiteId(): string | undefined {
+  // ① パスパラメータ /checkin/<site_id>（liff.line.meはパスを確実に転送する）
+  const fromParam = route.params.siteId
+  const paramVal  = Array.isArray(fromParam) ? fromParam[0] : fromParam
+  if (paramVal) return paramVal
+
+  // ② 後方互換: クエリ ?site_id=xxx（liff.line.meが値を落とすことがあるためフォールバック）
   const fromRoute = route.query.site_id as string | undefined
   if (fromRoute) return fromRoute
   if (typeof window === 'undefined') return undefined
-  // 現在のURL → liff.init前に確保した最初のURL の順で探す
   return parseFromSearch(window.location.search) ?? parseFromSearch(bootSearch)
 }
 

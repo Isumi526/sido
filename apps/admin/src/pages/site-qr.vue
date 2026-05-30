@@ -49,8 +49,10 @@ const generating = ref(false)
 
 const LIFF_ID = import.meta.env.VITE_LIFF_ID as string | undefined
 
+// site_id はクエリではなくパスに埋め込む。
+// liff.line.me はクエリの値を落とすことがあるが、パスは確実に転送するため。
 const qrUrl = LIFF_ID
-  ? `https://liff.line.me/${LIFF_ID}/checkin?site_id=${siteId}`
+  ? `https://liff.line.me/${LIFF_ID}/checkin/${siteId}`
   : `(VITE_LIFF_ID が未設定です)`
 
 onMounted(async () => {
