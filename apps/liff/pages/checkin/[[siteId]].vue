@@ -220,19 +220,10 @@ const locationLng   = ref<number | null>(null)
 async function fetchLocation() {
   locationState.value = 'pending'
 
-  // ブロック済みかを先に判定（再取得してもダイアログは出ないため案内に切り替える）
-  // ※ Permissions API は iOS Safari / LINE内ブラウザでは未対応のことがあるので失敗は無視
-  try {
-    const perm = (navigator as any).permissions
-    if (perm?.query) {
-      const status = await perm.query({ name: 'geolocation' })
-      if (status.state === 'denied') {
-        locationState.value = 'blocked'
-        return
-      }
-    }
-  } catch { /* Permissions API 非対応はスルーして実取得を試みる */ }
-
+  // ※ Permissions API (navigator.permissions.query) は使わない。
+  //   iOS/LINE内ブラウザでは前回の拒否を引きずって denied を返し、
+  //   許可し直しても blocked 扱いになってしまうため。
+  //   常に実際の取得を試み、その結果だけで判定する。
   try {
     const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 8000, enableHighAccuracy: true })
