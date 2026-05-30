@@ -12,6 +12,7 @@
       <span class="material-symbols-rounded error-icon">error</span>
       <p class="error-title">エラーが発生しました</p>
       <p class="error-msg">{{ errorMsg }}</p>
+      <p v-if="debugUrl" class="error-debug">{{ debugUrl }}</p>
     </div>
 
     <!-- 本日分完了済み -->
@@ -176,8 +177,13 @@ const { profile, init: initLiff } = useLiff()
 const supabase = useSupabase()
 const proxy    = useProxyMode()
 
+// LIFFが liff.init() でURLを書き換える前に、最初のURLを同期的に確保しておく
+const bootSearch = typeof window !== 'undefined' ? window.location.search : ''
+const bootHref   = typeof window !== 'undefined' ? window.location.href   : ''
+
 const phase          = ref<Phase>('loading')
 const errorMsg       = ref('')
+const debugUrl       = ref('')
 const siteId         = ref('')
 const siteName       = ref('')
 const rules          = ref<SiteRule[]>([])
@@ -243,12 +249,10 @@ function fmtTime(iso: string) {
 // LIFFは liff.init() 内で liff.state を history.replaceState で復元するため、
 // Vue Router の route.query が追随せず空になることがある。
 // → route.query / 生のlocation.search / liff.state の順に探す。
-function resolveSiteId(): string | undefined {
-  const fromRoute = route.query.site_id as string | undefined
-  if (fromRoute) return fromRoute
-  if (typeof window === 'undefined') return undefined
+function parseFromSearch(search: string): string | undefined {
+  if (!search) return undefined
+  const sp = new URLSearchParams(search)
 
-  const sp = new URLSearchParams(window.location.search)
   const direct = sp.get('site_id')
   if (direct) return direct
 
@@ -257,13 +261,19 @@ function resolveSiteId(): string | undefined {
   if (liffState) {
     const decoded = decodeURIComponent(liffState)
     const qIndex  = decoded.indexOf('?')
-    if (qIndex >= 0) {
-      const inner = new URLSearchParams(decoded.slice(qIndex + 1))
-      const sid   = inner.get('site_id')
-      if (sid) return sid
-    }
+    const qs      = qIndex >= 0 ? decoded.slice(qIndex + 1) : decoded
+    const sid     = new URLSearchParams(qs).get('site_id')
+    if (sid) return sid
   }
   return undefined
+}
+
+function resolveSiteId(): string | undefined {
+  const fromRoute = route.query.site_id as string | undefined
+  if (fromRoute) return fromRoute
+  if (typeof window === 'undefined') return undefined
+  // 現在のURL → liff.init前に確保した最初のURL の順で探す
+  return parseFromSearch(window.location.search) ?? parseFromSearch(bootSearch)
 }
 
 // 今日（JST）の開始・終了タイムスタンプ
@@ -293,6 +303,7 @@ onMounted(async () => {
   const resolved = resolveSiteId()
   if (!resolved) {
     errorMsg.value = 'URLが正しくありません（site_id が見つかりません）'
+    debugUrl.value = bootHref || (typeof window !== 'undefined' ? window.location.href : '')
     phase.value = 'error'
     return
   }
@@ -482,6 +493,10 @@ async function submit() {
 }
 .error-title { font-size: 17px; font-weight: 700; color: #111; }
 .error-msg   { font-size: 13px; color: #666; max-width: 280px; line-height: 1.6; }
+.error-debug {
+  font-size: 10px; color: #999; max-width: 300px; word-break: break-all;
+  background: #f5f5f5; border-radius: 6px; padding: 8px 10px; line-height: 1.5;
+}
 
 /* 完了済み */
 .already-icon {
