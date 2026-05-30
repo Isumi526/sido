@@ -37,27 +37,37 @@ cd apps/liff && npm run dev
 cd apps/admin && npm run dev
 ```
 
-### ブランチ運用（本番に影響させない）
-```bash
-# 開発は dev ブランチで行う
-git checkout dev
+### ブランチ運用（A+運用：main一本デプロイ + dev はPC間同期用）
 
-# 本番に出す準備ができたら main にマージ
-git checkout main
-git merge dev
-git push origin main
+- **テストはローカル**（`npm run dev`）で行う。Preview URL は使わない。
+- **`main` に push したときだけ** Vercel 本番デプロイが走る。
+- **`dev` は「PC跨ぎの作業途中を同期する場所」**。Vercel のデプロイは無効化済み
+  （各アプリの `vercel.json` に `git.deploymentEnabled.dev = false`）なので、
+  dev に何回 push してもビルドは走らない＝本番に一切影響しない。
+
+```bash
+# ── 普段の開発（1台で完結する場合）──
+# ローカルで編集・確認 → 完成したら main に直接 push
+git add -A && git commit -m "..."
+git push origin main          # ← ここで本番デプロイ1本だけ走る
+
+# ── PCを跨いで作業途中を持ち越す場合 ──
+# PC-A: 作業途中を dev に退避（デプロイ走らない）
+git checkout dev && git merge main   # or 直接 dev で作業
+git push origin dev
+# PC-B: 続きを取得
+git checkout dev && git pull origin dev
+# 完成したら main にマージして本番へ
+git checkout main && git merge dev
+git push origin main          # ← ここで初めて本番デプロイ
 ```
 
-- `main` に push → Vercel 本番に自動デプロイ
-- `dev` に push → Vercel Preview URL のみ（本番に影響なし）
+※ Vercel は Hobby プランで同時ビルド1本。短時間に何度も push するとキューが詰まる
+　ことがあるので「まとめて1回 push」が安全。
 
-### 今日の作業を巻き戻したい場合
+### 作業を巻き戻したい場合
 ```bash
-# 1. 今の状態を dev に保存
-git checkout -b dev
-git push origin dev
-
-# 2. main を戻したいコミットに巻き戻し
+# main を戻したいコミットに巻き戻し（事前に git log でハッシュ確認）
 git checkout main
 git reset --hard <戻したいコミットハッシュ>
 git push origin main --force

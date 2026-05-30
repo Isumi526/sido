@@ -1,4 +1,5 @@
 {
+  "git": { "deploymentEnabled": { "dev": false } },
   "buildCommand": "nuxt generate",
   "outputDirectory": ".output/public",
   "devCommand": "nuxt dev",
