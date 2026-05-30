@@ -144,9 +144,14 @@
             <template v-else-if="locationState === 'granted'">
               位置情報取得済み（{{ locationLat!.toFixed(5) }}, {{ locationLng!.toFixed(5) }}）
             </template>
-            <template v-else>
+            <template v-else-if="locationState === 'retryable'">
               位置情報を取得できませんでした
               <button class="loc-retry" @click="fetchLocation">再取得</button>
+            </template>
+            <template v-else>
+              位置情報がブロックされています。<br>
+              端末の設定で LINE（またはブラウザ）の位置情報を許可してから、この画面を開き直してください。
+              <button class="loc-retry" @click="fetchLocation">再確認</button>
             </template>
           </span>
         </div>
@@ -202,21 +207,41 @@ const selectedId = ref<string | null>(null)
 const attendanceType = ref<'checkin' | 'checkout'>('checkin')
 
 // 位置情報
-const locationState = ref<'pending' | 'granted' | 'denied'>('pending')
+//  pending   : 取得中
+//  granted   : 取得済み
+//  retryable : タイムアウト/取得不可など → 「再取得」で再度ダイアログが出せる
+//  blocked   : ハッキリ拒否（ブロック）済み → JSからは再表示不可。設定からの許可が必要
+type LocState = 'pending' | 'granted' | 'retryable' | 'blocked'
+const locationState = ref<LocState>('pending')
 const locationLat   = ref<number | null>(null)
 const locationLng   = ref<number | null>(null)
 
 async function fetchLocation() {
   locationState.value = 'pending'
+
+  // ブロック済みかを先に判定（再取得してもダイアログは出ないため案内に切り替える）
+  // ※ Permissions API は iOS Safari / LINE内ブラウザでは未対応のことがあるので失敗は無視
+  try {
+    const perm = (navigator as any).permissions
+    if (perm?.query) {
+      const status = await perm.query({ name: 'geolocation' })
+      if (status.state === 'denied') {
+        locationState.value = 'blocked'
+        return
+      }
+    }
+  } catch { /* Permissions API 非対応はスルーして実取得を試みる */ }
+
   try {
     const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 8000 })
+      navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 8000, enableHighAccuracy: true })
     })
     locationLat.value   = pos.coords.latitude
     locationLng.value   = pos.coords.longitude
     locationState.value = 'granted'
-  } catch {
-    locationState.value = 'denied'
+  } catch (e: any) {
+    // code 1=PERMISSION_DENIED(拒否), 2=POSITION_UNAVAILABLE, 3=TIMEOUT
+    locationState.value = (e && e.code === 1) ? 'blocked' : 'retryable'
   }
 }
 
@@ -667,12 +692,13 @@ async function submit() {
 
 /* 位置情報ステータス */
 .location-status {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: flex-start; gap: 8px;
   padding: 10px 12px; border-radius: 10px; font-size: 12px; font-weight: 600;
 }
-.location-status.pending  { background: #f5f5f5; color: #888; }
-.location-status.granted  { background: #f0fdf4; color: #166534; }
-.location-status.denied   { background: #fef2f2; color: #991b1b; }
+.location-status.pending   { background: #f5f5f5; color: #888; }
+.location-status.granted   { background: #f0fdf4; color: #166534; }
+.location-status.retryable { background: #fffbeb; color: #92400e; }
+.location-status.blocked   { background: #fef2f2; color: #991b1b; }
 
 .loc-icon {
   font-size: 18px; flex-shrink: 0;
