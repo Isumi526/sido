@@ -8,7 +8,7 @@
     </div>
 
     <div class="qr-card">
-      <p class="qr-label">出勤用 QRコード</p>
+      <p class="qr-label">出退勤用 QRコード</p>
       <canvas ref="canvas" class="qr-canvas" />
       <p class="qr-url">{{ qrUrl }}</p>
       <div class="btn-row">

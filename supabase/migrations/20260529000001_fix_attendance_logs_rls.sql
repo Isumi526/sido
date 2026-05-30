@@ -9,6 +9,7 @@
 drop policy if exists "admin_read_all_logs"   on attendance_logs;
 drop policy if exists "workers_read_own_logs" on attendance_logs;
 
+drop policy if exists "allow_select_logs" on attendance_logs;
 create policy "allow_select_logs"
 on attendance_logs for select
 using (true);

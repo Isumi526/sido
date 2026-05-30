@@ -47,10 +47,19 @@
         <h2>ルールを追加</h2>
         <div v-if="ruleHistory.length" class="field">
           <label>過去のルールから選択</label>
-          <select class="select" @change="applyHistory">
-            <option value="">— 新規入力 —</option>
-            <option v-for="(h, i) in ruleHistory" :key="i" :value="i">{{ h.content }}</option>
-          </select>
+          <div class="history-list">
+            <div v-for="(h, i) in ruleHistory" :key="i" class="history-row">
+              <button type="button" class="history-apply" @click="applyHistory(h)">
+                {{ h.content }}
+              </button>
+              <button
+                type="button"
+                class="history-del"
+                title="この候補を非表示にする"
+                @click="hideHistory(h)"
+              >✕</button>
+            </div>
+          </div>
         </div>
         <div class="field">
           <label>ルール内容</label>
@@ -130,31 +139,43 @@ async function fetchRuleHistory() {
   const accountId = await getAccountId()
   if (!accountId) return
 
-  const { data } = await supabase
-    .from('site_rules')
-    .select('content, timing, sites!inner(account_id)')
-    .eq('sites.account_id', accountId)
-    .order('created_at', { ascending: false })
+  const [{ data }, { data: hiddenData }] = await Promise.all([
+    supabase
+      .from('site_rules')
+      .select('content, timing, sites!inner(account_id)')
+      .eq('sites.account_id', accountId)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('hidden_rule_suggestions')
+      .select('content')
+      .eq('account_id', accountId),
+  ])
 
+  const hidden = new Set((hiddenData ?? []).map((r: any) => (r.content ?? '').trim()))
   const seen = new Set<string>()
   const list: RuleHistory[] = []
   for (const r of (data ?? []) as any[]) {
     const c = (r.content ?? '').trim()
-    if (!c || seen.has(c)) continue   // 空・重複contentは排除
+    if (!c || seen.has(c) || hidden.has(c)) continue   // 空・重複・非表示は除外
     seen.add(c)
     list.push({ content: c, timing: r.timing as Timing })
   }
   ruleHistory.value = list
 }
 
-function applyHistory(e: Event) {
-  const v = (e.target as HTMLSelectElement).value
-  if (v === '') return
-  const h = ruleHistory.value[Number(v)]
-  if (h) {
-    newContent.value = h.content
-    newTiming.value  = h.timing
-  }
+function applyHistory(h: RuleHistory) {
+  newContent.value = h.content
+  newTiming.value  = h.timing
+}
+
+// 候補を非表示リストに追加（実ルールは削除しない）
+async function hideHistory(h: RuleHistory) {
+  const accountId = await getAccountId()
+  if (!accountId) return
+  await supabase
+    .from('hidden_rule_suggestions')
+    .upsert({ account_id: accountId, content: h.content }, { onConflict: 'account_id,content' })
+  ruleHistory.value = ruleHistory.value.filter(x => x.content !== h.content)
 }
 
 function openAdd() {
@@ -261,6 +282,25 @@ async function moveDown(rule: Rule) {
 .field label { font-size: 12px; font-weight: 700; color: #888; }
 .textarea { background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px 14px; font-size: 14px; width: 100%; resize: vertical; font-family: inherit; }
 .select { background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px 14px; font-size: 14px; width: 100%; cursor: pointer; }
+.history-list {
+  display: flex; flex-direction: column; gap: 6px;
+  max-height: 180px; overflow-y: auto;
+  border: 1px solid #e0e0e0; border-radius: 8px; padding: 6px; background: #fafafa;
+}
+.history-row { display: flex; align-items: center; gap: 6px; }
+.history-apply {
+  flex: 1; text-align: left; background: #fff; border: 1px solid #e5e7eb;
+  border-radius: 6px; padding: 8px 12px; font-size: 13px; color: #222;
+  cursor: pointer; line-height: 1.4;
+}
+.history-apply:hover { background: #f0fdf4; border-color: #06C755; }
+.history-del {
+  flex-shrink: 0; width: 30px; height: 30px; border-radius: 6px;
+  background: none; border: 1px solid #fca5a5; color: #ef4444;
+  font-size: 13px; cursor: pointer; line-height: 1;
+}
+.history-del:hover { background: #fef2f2; }
+
 .modal-actions { display: flex; gap: 12px; }
 .btn-save { flex: 1; background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 12px; font-weight: 700; cursor: pointer; }
 .btn-save:disabled { opacity: .5; cursor: default; }

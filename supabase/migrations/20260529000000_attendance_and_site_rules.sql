@@ -45,23 +45,28 @@ create table if not exists attendance_logs (
 alter table attendance_logs enable row level security;
 
 -- 管理者は全ログ参照可
+drop policy if exists "admin_read_all_logs" on attendance_logs;
 create policy "admin_read_all_logs"
 on attendance_logs for select
 using (is_admin(auth.uid()));
 
 -- 作業員は自分のログのみ参照可（将来のJWT認証導入時に有効）
+drop policy if exists "workers_read_own_logs" on attendance_logs;
 create policy "workers_read_own_logs"
 on attendance_logs for select
 using (worker_id = auth.uid());
 
 -- INSERTは全員可（LIFFのanonキー・代理操作どちらも）
+drop policy if exists "anyone_insert_logs" on attendance_logs;
 create policy "anyone_insert_logs"
 on attendance_logs for insert
 with check (true);
 
 -- UPDATE・DELETEは誰も不可（法的証拠要件）
+drop policy if exists "no_update_logs" on attendance_logs;
 create policy "no_update_logs"
 on attendance_logs for update using (false);
 
+drop policy if exists "no_delete_logs" on attendance_logs;
 create policy "no_delete_logs"
 on attendance_logs for delete using (false);
