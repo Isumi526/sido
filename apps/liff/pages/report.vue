@@ -96,8 +96,20 @@
           <template v-if="site.siteName && site.siteName !== '__other__' || site.siteName === '__other__' && site.customSiteName">
           <div class="sub-section">
 
-            <!-- 作業員（ログインユーザー固定） -->
-            <Field>
+            <!-- 自分の稼働 あり/なし -->
+            <Field label="自分の稼働">
+              <select
+                :value="siteUsage[si].selfWorking"
+                class="select select--usage"
+                @change="(e) => setSelfWorking(si, (e.target as HTMLSelectElement).value)"
+              >
+                <option value="あり">あり</option>
+                <option value="なし">なし（下請けのみ稼働）</option>
+              </select>
+            </Field>
+
+            <!-- 作業員（ログインユーザー固定・自分の稼働ありのみ） -->
+            <Field v-if="siteUsage[si].selfWorking === 'あり'">
               <!-- 時刻・休憩 -->
               <template v-if="site.workers[0]">
                 <div class="worker-time-rows">
@@ -565,6 +577,7 @@ const sitePreviewBreakdowns = computed((): Record<number, RateBreakdown> => {
 
 // ── 各経費セクションの あり/なし 状態（サイトごと） ──
 type UsageState = {
+  selfWorking:   string
   expense:       string
   vehicle:       string
   train:         string
@@ -576,6 +589,7 @@ type UsageState = {
 }
 
 const createUsage = (): UsageState => ({
+  selfWorking:   'あり',
   expense:       'なし',
   vehicle:       'なし',
   train:         'なし',
@@ -641,7 +655,9 @@ async function loadEditData(date: string) {
       siteName:       site.siteName ?? '',
       customSiteName: site.customSiteName,
       siteNote:       site.siteNote ?? '',
-      workers: (site.workers ?? []).length > 0
+      // workers が空配列 = 本人稼働なし（下請けのみ）の意図的な状態なので温存する。
+      // workers 自体が欠落している旧データのみ本人をデフォルト復元する。
+      workers: Array.isArray(site.workers)
         ? site.workers
         : [{
             ...createWorker(currentUser.value?.worker_role ?? 'site'),
@@ -656,9 +672,12 @@ async function loadEditData(date: string) {
       },
       subcontractors: site.subcontractors ?? [],
     }))
-    siteUsage.value = report.form.value.sites.map((site: any) =>
-      reconstructExpenseUsage(site.expenses)
-    )
+    siteUsage.value = report.form.value.sites.map((site: any) => {
+      const usage = reconstructExpenseUsage(site.expenses)
+      // 本人の作業員レコードが無ければ「自分の稼働なし」として復元
+      usage.selfWorking = (site.workers ?? []).some((w: any) => w.workerName) ? 'あり' : 'なし'
+      return usage
+    })
   }
 }
 
@@ -701,6 +720,25 @@ function setUsage(si: number, key: keyof UsageState, value: string) {
     case 'entertainment':
       exp.entertainmentLabel = undefined; exp.entertainmentYen = undefined; exp.entertainmentRegistration = undefined; exp.entertainmentFiles = undefined
       break
+  }
+}
+
+/**
+ * 現場ごとの「自分の稼働 あり/なし」切り替え。
+ * なし = 本人は稼働せず下請けのみ → workers を空にして送信データ・給与集計から本人を除外。
+ * あり = 本人の作業員レコードをデフォルト時刻で復元。
+ */
+function setSelfWorking(si: number, value: string) {
+  siteUsage.value[si].selfWorking = value
+  const site = report.form.value.sites[si]
+  if (value === 'なし') {
+    site.workers = []
+  } else {
+    site.workers = [{
+      ...createWorker(currentUser.value?.worker_role ?? 'site'),
+      workerName: currentUser.value?.real_name ?? '',
+      workerRole: currentUser.value?.worker_role ?? 'site',
+    }]
   }
 }
 
