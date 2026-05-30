@@ -154,7 +154,6 @@
             <template v-else>
               位置情報なしで登録できます（任意）
               <button class="loc-retry" @click="fetchLocation">再取得</button>
-              <span v-if="locDebug" class="loc-debug">{{ locDebug }}</span>
               <details class="loc-help">
                 <summary>位置情報をオンにしたい場合</summary>
                 <ol class="loc-steps">
@@ -227,15 +226,12 @@ type LocState = 'idle' | 'pending' | 'granted' | 'retryable' | 'blocked'
 const locationState = ref<LocState>('idle')
 const locationLat   = ref<number | null>(null)
 const locationLng   = ref<number | null>(null)
-const locDebug      = ref('')   // 診断用: 生のエラーコード/メッセージ
 
 async function fetchLocation() {
   locationState.value = 'pending'
-  locDebug.value = ''
 
   // geolocation API 自体が無い（＝WebViewが非対応）ケースを切り分け
   if (!('geolocation' in navigator)) {
-    locDebug.value = 'geolocation API が存在しません'
     locationState.value = 'retryable'
     return
   }
@@ -253,10 +249,8 @@ async function fetchLocation() {
     locationState.value = 'granted'
   } catch (e: any) {
     // code 1=PERMISSION_DENIED(拒否), 2=POSITION_UNAVAILABLE, 3=TIMEOUT
-    const code = e?.code
-    const msg  = e?.message ?? String(e)
-    locDebug.value = `code=${code ?? '?'} / ${msg} / secure=${typeof window !== 'undefined' ? window.isSecureContext : '?'}`
-    locationState.value = (code === 1) ? 'blocked' : 'retryable'
+    if (import.meta.dev) console.warn('[geolocation]', e?.code, e?.message)
+    locationState.value = (e?.code === 1) ? 'blocked' : 'retryable'
   }
 }
 
@@ -726,10 +720,6 @@ async function submit() {
 .loc-text { flex: 1; line-height: 1.5; }
 .loc-note { font-weight: 400; opacity: .8; }
 
-.loc-debug {
-  display: block; margin-top: 6px; font-weight: 400;
-  font-size: 10px; opacity: .7; word-break: break-all;
-}
 .loc-help { margin-top: 8px; font-weight: 400; }
 .loc-help summary {
   cursor: pointer; font-size: 11px; font-weight: 600;
