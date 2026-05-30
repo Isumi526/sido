@@ -166,11 +166,16 @@
           </span>
         </div>
 
-        <p class="submit-hint">{{ checkedIds.size }} / {{ rules.length }} 件確認済み</p>
+        <p class="submit-hint">
+          {{ checkedIds.size }} / {{ rules.length }} 件確認済み
+          <template v-if="allChecked && !locationResolved">
+            <br><span class="submit-warn">「現在地を取得」を押してから記録できます</span>
+          </template>
+        </p>
         <button
           class="btn-submit"
           :class="attendanceType"
-          :disabled="!allChecked || submitting"
+          :disabled="!canSubmit"
           @click="submit"
         >
           {{ submitting ? '登録中...' : (attendanceType === 'checkin' ? '出勤を記録する' : '退勤を記録する') }}
@@ -265,6 +270,15 @@ const otherTargets     = computed(() => targets.value.filter(t => t.id !== selec
 // ── 全件チェック済みか ───────────────────────────────────────
 const allChecked = computed(() =>
   rules.value.length > 0 && checkedIds.value.size === rules.value.length
+)
+
+// 位置情報の「取得を試みたか」（努力義務）。
+// idle（未タップ）・pending（取得中）以外＝結果が出た状態なら送信可（拒否/失敗でも可）。
+const locationResolved = computed(() =>
+  locationState.value !== 'idle' && locationState.value !== 'pending'
+)
+const canSubmit = computed(() =>
+  allChecked.value && locationResolved.value && !submitting.value
 )
 
 function toggle(id: string) {
@@ -460,7 +474,7 @@ async function loadForTarget(workerId: string) {
 
 // ── 送信 ────────────────────────────────────────────────────
 async function submit() {
-  if (!allChecked.value || submitting.value) return
+  if (!canSubmit.value) return
   submitting.value = true
 
   const target          = selectedTarget.value
@@ -744,8 +758,9 @@ async function submit() {
 }
 
 .submit-hint {
-  font-size: 12px; color: #888; text-align: center; margin: 0;
+  font-size: 12px; color: #888; text-align: center; margin: 0; line-height: 1.6;
 }
+.submit-warn { color: #d97706; font-weight: 600; }
 .btn-submit {
   width: 100%; border: none; border-radius: 12px; padding: 16px;
   font-size: 16px; font-weight: 700; cursor: pointer; color: #fff;
