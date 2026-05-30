@@ -150,7 +150,8 @@
             </template>
             <template v-else>
               位置情報がブロックされています。<br>
-              端末の設定で LINE（またはブラウザ）の位置情報を許可してから、この画面を開き直してください。
+              この画面を一度 <b>✕で閉じて開き直す</b> と、もう一度許可できます。<br>
+              <span class="loc-note">（位置情報なしでも登録は可能です）</span>
               <button class="loc-retry" @click="fetchLocation">再確認</button>
             </template>
           </span>
@@ -704,7 +705,8 @@ async function submit() {
   font-size: 18px; flex-shrink: 0;
   font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 20;
 }
-.loc-text { flex: 1; line-height: 1.4; }
+.loc-text { flex: 1; line-height: 1.5; }
+.loc-note { font-weight: 400; opacity: .8; }
 
 .loc-retry {
   display: inline-block; margin-left: 8px;
