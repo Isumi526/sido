@@ -4,7 +4,7 @@
 // ============================================================
 import { pushLineText } from '../_shared/line.ts'
 import { buildReportMessage } from '../_shared/notify.ts'
-import { resolveGroupIds } from '../_shared/resolveGroupId.ts'
+import { resolveGroupIds, isReportNotifyEnabled } from '../_shared/resolveGroupId.ts'
 
 const LINE_TOKEN     = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? ''
 const PROD_GROUP_IDS = JSON.parse(Deno.env.get('NOTIFY_GROUP_IDS')     ?? '[]') as string[]
@@ -31,6 +31,13 @@ Deno.serve(async (req) => {
 
     // accountSlug はLIFF側から送られるが、未対応の場合は環境変数のACCOUNT_SLUGを使用
     const resolvedSlug = accountSlug || Deno.env.get('ACCOUNT_SLUG') || null
+
+    // アカウント単位で日報通知が OFF の場合は送信せず終了
+    if (!(await isReportNotifyEnabled(resolvedSlug))) {
+      console.log(`[submit-report] 日報通知OFF (account=${resolvedSlug}) → 送信スキップ`)
+      return json({ success: true, skipped: 'notify_disabled' })
+    }
+
     const targets: string[] = _devNotifyGroupId
       ? [_devNotifyGroupId]
       : await resolveGroupIds(resolvedSlug, isTest ? DEV_GROUP_IDS : PROD_GROUP_IDS)

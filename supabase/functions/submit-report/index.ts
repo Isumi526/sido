@@ -5,6 +5,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { pushLineText } from '../_shared/line.ts'
 import { buildReportMessage } from '../_shared/notify.ts'
+import { isReportNotifyEnabled } from '../_shared/resolveGroupId.ts'
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')              ?? '',
@@ -44,6 +45,12 @@ Deno.serve(async (req) => {
     const { sender = '不明', date, sites = [], note, isWorking, leaveType, _devNotifyGroupId, accountSlug, senderId } = body
 
     if (!date) return json({ error: '日付が指定されていません' }, 400)
+
+    // アカウント単位で日報通知が OFF の場合は送信せず終了
+    if (!(await isReportNotifyEnabled(accountSlug))) {
+      console.log(`[submit-report] 日報通知OFF (account=${accountSlug}) → 送信スキップ`)
+      return json({ success: true, skipped: 'notify_disabled' })
+    }
 
     const targets: string[] = _devNotifyGroupId
       ? [_devNotifyGroupId]

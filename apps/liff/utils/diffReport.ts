@@ -6,6 +6,7 @@
 /** Supabase daily_reports 形式の旧データ */
 interface OldReport {
   is_working: boolean
+  leave_type?: string | null
   sites: any[]
   note?: string | null
 }
@@ -13,19 +14,26 @@ interface OldReport {
 /** LIFF フォーム形式の新データ */
 interface NewReport {
   isWorking: boolean
+  leaveType?: string | null
   sites: any[]
   note?: string
+}
+
+/** 稼働状態を3区分（稼働あり / 有給 / 休み）のラベルにする */
+function workStatusLabel(isWorking: boolean, leaveType?: string | null): string {
+  if (leaveType === 'paid_leave') return '有給'
+  return isWorking ? '稼働あり' : '休み'
 }
 
 /** 旧データと新データを比較して差分テキスト行を返す */
 export function computeDiff(oldData: OldReport, newData: NewReport): string[] {
   const lines: string[] = []
 
-  // ── 稼働有無 ──
-  if (oldData.is_working !== newData.isWorking) {
-    lines.push(
-      `▸ 稼働: ${oldData.is_working ? '稼働あり' : '休み'} → ${newData.isWorking ? '稼働あり' : '休み'}`
-    )
+  // ── 稼働状態（稼働あり / 有給 / 休み）──
+  const oldStatus = workStatusLabel(oldData.is_working, oldData.leave_type)
+  const newStatus = workStatusLabel(newData.isWorking, newData.leaveType)
+  if (oldStatus !== newStatus) {
+    lines.push(`▸ 稼働: ${oldStatus} → ${newStatus}`)
   }
 
   // ── 現場ごと ──

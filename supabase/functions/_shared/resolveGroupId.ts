@@ -26,3 +26,23 @@ export async function resolveGroupIds(
 
   return setting?.value ? [setting.value] : fallback
 }
+
+// ============================================================
+//  日報の送信・編集時 LINE 通知の ON/OFF を settings から引く
+//  key: notify_report_enabled（'true'/'false'）。未設定はON（既存挙動を維持）
+// ============================================================
+export async function isReportNotifyEnabled(
+  accountSlug: string | null | undefined,
+): Promise<boolean> {
+  if (!accountSlug) return true
+
+  const { data: account } = await supabase
+    .from('accounts').select('id').eq('slug', accountSlug).maybeSingle()
+  if (!account) return true
+
+  const { data: setting } = await supabase
+    .from('settings').select('value')
+    .eq('account_id', account.id).eq('key', 'notify_report_enabled').maybeSingle()
+
+  return setting?.value !== 'false'
+}

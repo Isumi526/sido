@@ -1,6 +1,8 @@
 // ============================================================
 //  notify-edit
 //  日報編集通知 → LINE通知
+//  ※ dev/test 用コピー（LIFF dev は test-notify-edit を呼ぶ）。
+//    本番 notify-edit と同一ロジック。
 // ============================================================
 import { pushLineText } from '../_shared/line.ts'
 import { buildEditMessage } from '../_shared/notify.ts'

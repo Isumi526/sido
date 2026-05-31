@@ -30,6 +30,28 @@
     </div>
     <p v-if="saveError" class="error">{{ saveError }}</p>
 
+  <!-- 日報通知 ON/OFF -->
+  <div class="reminder-box">
+    <div class="reminder-title">日報通知（LINE）</div>
+    <div class="reminder-config">
+      <div class="config-row">
+        <span class="config-label">送信・編集の通知</span>
+        <button
+          class="toggle"
+          :class="{ on: reportNotifyEnabled }"
+          :disabled="reportNotifySaving"
+          @click="setReportNotifyEnabled(!reportNotifyEnabled)"
+        >
+          <span class="toggle-knob" />
+          <span class="toggle-text">{{ reportNotifyEnabled ? 'ON' : 'OFF' }}</span>
+        </button>
+      </div>
+      <div class="reminder-desc">
+        ONの時、日報の新規送信・編集をLINEグループに通知します。OFFにすると通知しません（日報の保存・集計には影響しません）。
+      </div>
+    </div>
+  </div>
+
   <!-- 未送信リマインド -->
   <div class="reminder-box">
     <div class="reminder-title">未送信日報リマインド</div>
@@ -90,6 +112,17 @@ import { getAccountId, ACCOUNT_SLUG } from '../lib/account'
 const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
 const IS_DEV   = import.meta.env.DEV
 
+// ── 日報通知（送信・編集）ON/OFF ──────────────────────────
+const reportNotifyEnabled = ref(true)
+const reportNotifySaving  = ref(false)
+
+function setReportNotifyEnabled(val: boolean) {
+  reportNotifyEnabled.value = val
+  reportNotifySaving.value = true
+  upsertSetting('notify_report_enabled', String(val), '日報通知（送信・編集）')
+    .finally(() => { reportNotifySaving.value = false })
+}
+
 // ── リマインダー設定 ──────────────────────────────────────
 const reminderEnabled     = ref(true)
 const reminderTime        = ref('08:00')
@@ -99,10 +132,11 @@ async function loadReminderConfig() {
   const accountId = await getAccountId()
   const { data } = await supabase.from('settings').select('key, value')
     .eq('account_id', accountId)
-    .in('key', ['reminder_enabled', 'reminder_time'])
+    .in('key', ['reminder_enabled', 'reminder_time', 'notify_report_enabled'])
   const m = Object.fromEntries((data ?? []).map(s => [s.key, s.value]))
-  reminderEnabled.value = (m['reminder_enabled'] ?? 'true') === 'true'
-  reminderTime.value    = m['reminder_time'] ?? '08:00'
+  reminderEnabled.value     = (m['reminder_enabled'] ?? 'true') === 'true'
+  reminderTime.value        = m['reminder_time'] ?? '08:00'
+  reportNotifyEnabled.value = (m['notify_report_enabled'] ?? 'true') === 'true'
 }
 
 async function upsertSetting(key: string, value: string, label: string) {
@@ -206,7 +240,7 @@ async function load() {
   const accountId = await getAccountId()
   const { data } = await supabase.from('settings').select('key, value, label')
     .eq('account_id', accountId)
-    .not('key', 'in', '(reminder_enabled,reminder_time)')
+    .not('key', 'in', '(reminder_enabled,reminder_time,notify_report_enabled)')
     .order('key')
   const fromDb = (data ?? []) as Setting[]
 
