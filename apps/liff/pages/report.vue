@@ -1091,6 +1091,7 @@ async function handleSubmit() {
       await expense.saveReportById(targetUserId, {
         date:      report.form.value.date,
         isWorking: report.form.value.isWorking,
+        leaveType: report.form.value.leaveType,
         sites:     report.form.value.sites,
         note:      report.form.value.note,
       })
@@ -1116,6 +1117,7 @@ async function handleSubmit() {
     expense.saveReportById(targetUserId, {
       date:      report.form.value.date,
       isWorking: report.form.value.isWorking,
+      leaveType: report.form.value.leaveType,
       sites:     report.form.value.sites,
       note:      report.form.value.note,
     }).catch(e => console.error('[Report] URL再保存エラー:', e))
