@@ -1,7 +1,23 @@
 <template>
   <div v-if="currentUser" class="admin-shell">
-    <nav class="sidebar">
-      <div class="logo">{{ brandName }}<span class="logo-sub">管理</span></div>
+    <!-- モバイル用トップバー（≤768pxで表示）-->
+    <header class="topbar">
+      <button class="hamburger" aria-label="メニュー" @click="drawerOpen = true">
+        <span class="material-symbols-rounded">menu</span>
+      </button>
+      <div class="topbar-brand">{{ brandName }}<span class="topbar-sub">管理</span></div>
+    </header>
+
+    <!-- ドロワー開時のオーバーレイ -->
+    <div v-if="drawerOpen" class="drawer-overlay" @click="drawerOpen = false" />
+
+    <nav class="sidebar" :class="{ open: drawerOpen }">
+      <div class="sidebar-head">
+        <div class="logo">{{ brandName }}<span class="logo-sub">管理</span></div>
+        <button class="drawer-close" aria-label="閉じる" @click="drawerOpen = false">
+          <span class="material-symbols-rounded">close</span>
+        </button>
+      </div>
       <ul class="nav-list">
         <li class="nav-section">レポート</li>
         <li><RouterLink to="/" class="nav-link"><span class="material-symbols-rounded nav-icon">dashboard</span>ダッシュボード</RouterLink></li>
@@ -35,13 +51,19 @@
 </template>
 
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
+import { ref, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { currentUser, signOut } from './lib/auth'
 import { ACCOUNT_SLUG } from './lib/account'
 
 const brandName = ACCOUNT_SLUG.toUpperCase()
 
 const router = useRouter()
+const route  = useRoute()
+
+// 画面遷移したらドロワーを閉じる
+const drawerOpen = ref(false)
+watch(() => route.path, () => { drawerOpen.value = false })
 
 async function handleLogout() {
   await signOut()
@@ -51,13 +73,19 @@ async function handleLogout() {
 
 <style scoped>
 .admin-shell { display: flex; min-height: 100vh; }
+
+/* ── モバイル用トップバー（既定は非表示）── */
+.topbar { display: none; }
+
 .sidebar {
   width: 200px; min-height: 100vh; background: #1a1a1a; color: #fff;
   display: flex; flex-direction: column; gap: 32px; padding: 24px 0; flex-shrink: 0;
-  position: fixed; top: 0; left: 0; bottom: 0;
+  position: fixed; top: 0; left: 0; bottom: 0; z-index: 50;
 }
-.logo { padding: 0 20px; font-size: 18px; font-weight: 900; letter-spacing: 4px; color: #06C755; }
+.sidebar-head { display: flex; align-items: center; justify-content: space-between; padding: 0 20px; }
+.logo { font-size: 18px; font-weight: 900; letter-spacing: 4px; color: #06C755; }
 .logo-sub { font-size: 11px; letter-spacing: 2px; color: #888; margin-left: 8px; font-weight: 400; }
+.drawer-close { display: none; background: none; border: none; color: #888; cursor: pointer; padding: 4px; }
 .nav-list { list-style: none; display: flex; flex-direction: column; flex: 1; padding: 0; margin: 0; overflow-y: auto; }
 .nav-section {
   padding: 16px 20px 4px;
@@ -93,8 +121,50 @@ async function handleLogout() {
 .btn-logout:hover { border-color: #f87171; color: #f87171; }
 .content { margin-left: 200px; flex: 1; padding: 32px; min-height: 100vh; }
 
+.drawer-overlay { display: none; }
+
+/* ── スマホ（≤768px）── */
+@media (max-width: 768px) {
+  .topbar {
+    display: flex; align-items: center; gap: 12px;
+    position: sticky; top: 0; z-index: 40;
+    height: 52px; padding: 0 12px;
+    background: #1a1a1a; color: #fff;
+  }
+  .hamburger {
+    display: flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px;
+    background: none; border: none; color: #fff; cursor: pointer;
+  }
+  .hamburger .material-symbols-rounded { font-size: 26px; }
+  .topbar-brand { font-size: 16px; font-weight: 900; letter-spacing: 3px; color: #06C755; }
+  .topbar-sub { font-size: 10px; letter-spacing: 1px; color: #888; margin-left: 6px; font-weight: 400; }
+
+  .admin-shell { display: block; }
+
+  /* サイドバーをオフキャンバスのドロワーに */
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform .25s ease;
+    width: 264px; gap: 20px; padding-top: 16px;
+    box-shadow: 2px 0 16px rgba(0,0,0,.4);
+  }
+  .sidebar.open { transform: translateX(0); }
+  .drawer-close { display: block; }
+
+  .drawer-overlay {
+    display: block; position: fixed; inset: 0;
+    background: rgba(0,0,0,.5); z-index: 45;
+  }
+
+  .nav-link { padding: 13px 20px; font-size: 15px; }   /* タップしやすく */
+  .nav-section { padding-top: 14px; }
+
+  .content { margin-left: 0; padding: 16px 14px; }
+}
+
 @media print {
-  .sidebar { display: none !important; }
+  .topbar, .sidebar, .drawer-overlay { display: none !important; }
   .content { margin-left: 0 !important; padding: 0 !important; }
 }
 </style>

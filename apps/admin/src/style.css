@@ -1,3 +1,19 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-text-size-adjust: 100%; }
 body { font-family: 'Noto Sans JP', -apple-system, sans-serif; background: #f5f5f5; color: #111; }
 a { text-decoration: none; color: inherit; }
+
+/* ── スマホ共通最適化（≤768px）──
+   各ページの .table-wrap は scoped で overflow:hidden が多く、
+   横長テーブルが見切れる。モバイルでは横スクロールに切り替える。 */
+@media (max-width: 768px) {
+  .table-wrap {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* データ系テーブルは縮めず自然幅＋横スクロールで可読性を確保 */
+  .table-wrap > table { min-width: max-content; }
+
+  .page-title  { font-size: 18px !important; }
+  .page-header { flex-wrap: wrap; gap: 8px; }
+}
