@@ -431,10 +431,13 @@ function goToday() {
 
 // ──────────────────── セル別スケジュール ────────────────────
 function cellSchedules(date: string, workerId: string): Schedule[] {
-  return schedules.schedules.value.filter(
-    s => s.worker_id === workerId && s.start_date <= date && s.end_date >= date
-      && (showDeleted.value || !s.deleted_at)
-  )
+  return schedules.schedules.value
+    .filter(
+      s => s.worker_id === workerId && s.start_date <= date && s.end_date >= date
+        && (showDeleted.value || !s.deleted_at)
+    )
+    // 開始時刻の昇順。時刻未設定の予定は末尾にまとめる
+    .sort((a, b) => (a.start_time || '99:99').localeCompare(b.start_time || '99:99'))
 }
 
 // ──────────────────── 日付ユーティリティ ────────────────────
