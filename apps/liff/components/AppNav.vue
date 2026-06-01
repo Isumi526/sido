@@ -64,6 +64,10 @@
             <span class="drawer-item-icon material-symbols-rounded">picture_as_pdf</span>
             <span>経費PDF</span>
           </NuxtLink>
+          <button type="button" class="drawer-item" @click="openInBrowser">
+            <span class="drawer-item-icon material-symbols-rounded">open_in_new</span>
+            <span>ブラウザで開く</span>
+          </button>
         </nav>
 
         <!-- 代理入力セクション -->
@@ -109,8 +113,29 @@ const props = defineProps<{
 const { slug } = useAccount()
 const brandName = slug.toUpperCase()
 const proxy = useProxyMode()
+const config = useRuntimeConfig()
 
 const open = ref(false)
+
+// 現在の画面を外部ブラウザで開く（LINEの⋮メニューに依存せず常に開けるようにする）
+async function openInBrowser() {
+  open.value = false
+  // 開発モードは LIFF 未接続なのでそのまま新規タブ
+  if (config.public.appEnv === 'development') {
+    window.open(window.location.href, '_blank')
+    return
+  }
+  try {
+    const liff = (await import('@line/liff')).default
+    // 同じ画面の共有用URL。クエリ付き等で失敗したら現在URLにフォールバック
+    let url = window.location.href
+    try { url = liff.permanentLink.createUrl() } catch { /* keep window.location.href */ }
+    liff.openWindow({ url, external: true })
+  } catch (e) {
+    console.error('[AppNav] openInBrowser failed:', e)
+    window.open(window.location.href, '_blank')
+  }
+}
 
 const roleLabel = computed(() => {
   if (!props.userRole) return ''
@@ -265,6 +290,15 @@ function selectProxy(w: import('~/composables/useProxyMode').ProxyWorker) {
   font-size: 15px;
   font-weight: 600;
   transition: background .15s;
+}
+button.drawer-item {
+  width: 100%;
+  appearance: none;
+  background: none;
+  border: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 .drawer-item:hover,
 .drawer-item.router-link-active { background: #f0fdf4; color: #06C755; }

@@ -25,18 +25,55 @@
             :key="rep.date"
             class="report-card"
           >
-            <div class="report-card-top">
+            <div class="report-card-top tappable" @click="toggle(rep)">
               <div class="report-date">{{ formatDate(rep.date) }}</div>
-              <span :class="['status-badge', rep.leave_type === 'paid_leave' ? 'badge-paid-leave' : rep.is_working ? 'badge-working' : 'badge-off']">
-                {{ rep.leave_type === 'paid_leave' ? '有給' : rep.is_working ? '稼働' : '休み' }}
-              </span>
+              <div class="top-right">
+                <span :class="['status-badge', rep.leave_type === 'paid_leave' ? 'badge-paid-leave' : rep.is_working ? 'badge-working' : 'badge-off']">
+                  {{ rep.leave_type === 'paid_leave' ? '有給' : rep.is_working ? '稼働' : '休み' }}
+                </span>
+                <span class="chevron" :class="{ open: expanded[rep.date] }">▾</span>
+              </div>
             </div>
 
             <div v-if="rep.is_working && siteNames(rep.sites).length" class="site-chips">
               <span v-for="name in siteNames(rep.sites)" :key="name" class="site-chip">{{ name }}</span>
             </div>
 
-            <p v-if="rep.note" class="report-note">{{ rep.note }}</p>
+            <p v-if="rep.note" class="report-note" :class="{ full: expanded[rep.date] }">{{ rep.note }}</p>
+
+            <!-- 詳細（タップで展開・LINE通知と同粒度）-->
+            <div v-if="expanded[rep.date]" class="detail">
+              <div v-if="rep.leave_type === 'paid_leave'" class="detail-leave">🌴 有給休暇（8h）</div>
+              <div v-else-if="!rep.is_working" class="detail-leave">稼働なし</div>
+              <template v-else>
+                <div v-for="(s, i) in detailMap[rep.date]" :key="i" class="detail-site">
+                  <div class="detail-site-name">📍 {{ s.name }}</div>
+
+                  <ul v-if="s.workers.length" class="detail-list">
+                    <li v-for="(w, wi) in s.workers" :key="wi">
+                      <span class="dl-main">{{ w.name }}</span>
+                      <span class="dl-sub">
+                        <template v-if="w.hours">{{ w.hours }}</template>
+                        <template v-if="w.hours && w.time"> ・ </template>
+                        <template v-if="w.time">{{ w.time }}</template>
+                        <template v-if="!w.hours && !w.time">—</template>
+                      </span>
+                    </li>
+                  </ul>
+
+                  <ul v-if="s.expenses.length" class="detail-list expense">
+                    <li v-for="(e, ei) in s.expenses" :key="ei">💴 {{ e }}</li>
+                  </ul>
+
+                  <ul v-if="s.subs.length" class="detail-list sub">
+                    <li v-for="(sub, sbi) in s.subs" :key="sbi">🤝 {{ sub }}</li>
+                  </ul>
+
+                  <p v-if="s.note" class="detail-note">📝 {{ s.note }}</p>
+                </div>
+                <div v-if="!detailMap[rep.date] || !detailMap[rep.date].length" class="detail-empty">現場の記録はありません</div>
+              </template>
+            </div>
 
             <div class="report-card-footer">
               <span class="updated-at">更新: {{ formatUpdatedAt(rep.updated_at) }}</span>
@@ -51,6 +88,7 @@
 
 <script setup lang="ts">
 import type { User } from '~/types'
+import { computeWorkerHours, calcBreakMinutes, parseMin } from '~/utils/workerHours'
 
 const liff    = useLiff()
 const expense = useExpense()
@@ -59,6 +97,17 @@ const proxy   = useProxyMode()
 const loading     = ref(true)
 const reports     = ref<any[]>([])
 const selfUser    = ref<User | null>(null)
+
+// 詳細の開閉と、展開時に組み立てた明細のキャッシュ
+const expanded  = ref<Record<string, boolean>>({})
+const detailMap = ref<Record<string, SiteDetail[]>>({})
+
+function toggle(rep: any) {
+  const d = rep.date
+  if (expanded.value[d]) { expanded.value[d] = false; return }
+  if (!detailMap.value[d]) detailMap.value[d] = buildDetail(rep)
+  expanded.value[d] = true
+}
 
 // 代理中は代理先の情報を表示
 const currentUser = computed(() => {
@@ -139,6 +188,108 @@ function siteNames(sites: any[]): string[] {
     s.siteName === '__other__' ? (s.customSiteName || '新規現場') : (s.siteName || '')
   ).filter(Boolean)
 }
+
+// ── 詳細表示（LINE通知と同粒度）────────────────────────────
+interface WorkerLine { name: string; time: string; hours: string }
+interface SiteDetail { name: string; workers: WorkerLine[]; expenses: string[]; subs: string[]; note: string }
+
+function yen(n: number): string { return Number(n).toLocaleString() }
+
+function siteDisplayName(site: any): string {
+  return site.siteName === '__other__' ? (site.customSiteName || '新規現場') : (site.siteName || '')
+}
+
+/** startTime/endTime から料率別工数を再計算（送信時と同じロジック・現場跨ぎ累積対応）*/
+function computeHoursForReport(rep: any): Record<string, any> {
+  const isSunday = new Date(rep.date + 'T00:00:00').getDay() === 0
+  const list: { si: number; wi: number; w: any }[] = []
+  ;(rep.sites || []).forEach((site: any, si: number) =>
+    (site.workers || []).forEach((w: any, wi: number) => { if (w.workerName) list.push({ si, wi, w }) }))
+  list.sort((a, b) => parseMin(a.w.startTime || '08:00') - parseMin(b.w.startTime || '08:00'))
+
+  const accum: Record<string, number> = {}
+  const map: Record<string, any> = {}
+  for (const { si, wi, w } of list) {
+    const key = w.workerId || w.workerName
+    const { workedMin, ...bd } = computeWorkerHours(
+      w.startTime, w.endTime, calcBreakMinutes(w.workerRole, w.startTime, w.endTime), isSunday, accum[key] ?? 0)
+    accum[key] = workedMin
+    map[`${si}-${wi}`] = bd
+  }
+  return map
+}
+
+/** 工数オブジェクト → 「8h + 残業2h」形式（buildReportMessage と同じ表記）*/
+function hoursParts(h: any): string {
+  if (!h) return ''
+  const p: string[] = []
+  if (h.hoursNormal)        p.push(`${h.hoursNormal}h`)
+  if (h.hoursSunday)        p.push(`休日${h.hoursSunday}h`)
+  if (h.hoursOT)            p.push(`残業${h.hoursOT}h`)
+  if (h.hoursNight)         p.push(`深夜${h.hoursNight}h`)
+  if (h.hoursOTNight)       p.push(`深夜残業${h.hoursOTNight}h`)
+  if (h.hoursSundayOT)      p.push(`休日残業${h.hoursSundayOT}h`)
+  if (h.hoursSundayNight)   p.push(`休日深夜${h.hoursSundayNight}h`)
+  if (h.hoursSundayOTNight) p.push(`休日深夜残業${h.hoursSundayOTNight}h`)
+  return p.join(' + ')
+}
+
+/** 経費を LINE通知と同じ表記の行配列に整形 */
+function expenseLines(exp: any): string[] {
+  const out: string[] = []
+  if (!exp) return out
+  if (exp.carpool) {
+    out.push('乗合い')
+  } else {
+    for (const v of (exp.vehicles || [])) {
+      if (!v) continue
+      const p: string[] = []
+      if (v.vehicleName) p.push(v.vehicleName)
+      if (v.distanceKm)  p.push(`往復${v.distanceKm}km`)
+      if (v.dieselKm)    p.push(`軽油${v.dieselKm}km`)
+      if (v.parkingYen)  p.push(`駐車¥${yen(v.parkingYen)}`)
+      if (v.highwayYen)  p.push(`高速¥${yen(v.highwayYen)}`)
+      if (v.etcUsed)     p.push(`ETC${v.etcCard || ''}`)
+      if (p.length) out.push(p.join(' '))
+    }
+  }
+  for (const t of (exp.trains || [])) if (t?.yen) out.push(`${t.label || '電車'} ¥${yen(t.yen)}`)
+  for (const o of (exp.others || [])) if (o?.yen) out.push(`${o.label || 'その他'} ¥${yen(o.yen)}`)
+  if (exp.hotelYen)         out.push(`${exp.hotelName || 'ホテル'} ¥${yen(exp.hotelYen)}`)
+  if (exp.leopalaceYen)     out.push(`${exp.leopalaceName || 'レオパレス'} ¥${yen(exp.leopalaceYen)}`)
+  if (exp.entertainmentYen) out.push(`${exp.entertainmentLabel || '雑経費'} ¥${yen(exp.entertainmentYen)}`)
+  if (exp.garbageFactoryM3 || exp.garbageSiteM3) {
+    const g: string[] = []
+    if (exp.garbageFactoryM3) g.push(`木材のみ ${exp.garbageFactoryM3}m³`)
+    if (exp.garbageSiteM3)    g.push(`混載 ${exp.garbageSiteM3}m³`)
+    out.push(`ゴミ ${g.join(' ')}`)
+  }
+  return out
+}
+
+/** 1日報 → 現場ごとの明細（展開時にキャッシュ）*/
+function buildDetail(rep: any): SiteDetail[] {
+  const hoursMap = computeHoursForReport(rep)
+  return (rep.sites || []).map((site: any, si: number): SiteDetail => ({
+    name: siteDisplayName(site),
+    workers: (site.workers || [])
+      .map((w: any, wi: number) => ({ w, wi }))
+      .filter(({ w }: any) => w.workerName)
+      .map(({ w, wi }: any): WorkerLine => ({
+        name: w.workerName,
+        time: (w.startTime && w.endTime) ? `${w.startTime}〜${w.endTime}` : '',
+        hours: hoursParts(hoursMap[`${si}-${wi}`]) || hoursParts(w),
+      })),
+    expenses: expenseLines(site.expenses),
+    subs: (site.subcontractors || [])
+      .filter((s: any) => s.subcontractorName)
+      .map((s: any) => {
+        const nm = s.subcontractorName === '__other__' ? (s.customSubcontractorName || '新規業者') : s.subcontractorName
+        return `${nm} ${s.count || 1}人`
+      }),
+    note: site.siteNote || '',
+  })).filter((s: SiteDetail) => s.name)
+}
 </script>
 
 <style>
@@ -194,7 +345,11 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--font)
 .report-card-top {
   display: flex; align-items: center; justify-content: space-between;
 }
+.report-card-top.tappable { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .report-date { font-size: 16px; font-weight: 700; color: var(--text); }
+.top-right { display: flex; align-items: center; gap: 8px; }
+.chevron { font-size: 14px; color: #bbb; transition: transform .2s; line-height: 1; }
+.chevron.open { transform: rotate(180deg); }
 
 .status-badge {
   font-size: 11px; font-weight: 700; border-radius: 20px; padding: 3px 10px;
@@ -213,6 +368,31 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--font)
   font-size: 13px; color: var(--text2);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.report-note.full { white-space: normal; overflow: visible; }
+
+/* ── 詳細（展開）── */
+.detail {
+  border-top: 1px dashed var(--border);
+  padding-top: 12px; margin-top: 2px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.detail-leave { font-size: 14px; font-weight: 700; color: var(--text); }
+.detail-site { display: flex; flex-direction: column; gap: 6px; }
+.detail-site-name { font-size: 14px; font-weight: 700; color: var(--text); }
+.detail-list { list-style: none; display: flex; flex-direction: column; gap: 4px; padding: 0; margin: 0; }
+.detail-list li {
+  font-size: 13px; color: #444; line-height: 1.5;
+  display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline;
+}
+.detail-list .dl-main { font-weight: 600; color: var(--text); }
+.detail-list .dl-sub  { color: var(--text2); font-size: 12px; }
+.detail-list.expense li { color: #555; }
+.detail-list.sub li { color: #555; }
+.detail-note {
+  font-size: 12px; color: var(--text2);
+  background: #f7f7f7; border-radius: 6px; padding: 6px 8px; white-space: pre-wrap;
+}
+.detail-empty { font-size: 13px; color: var(--text2); }
 
 .report-card-footer {
   display: flex; align-items: center; justify-content: space-between;
