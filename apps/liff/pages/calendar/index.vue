@@ -120,7 +120,10 @@
             <div class="dt-inline">
               <input type="date" v-model="formModal.start_date" class="dt-input dt-date" />
               <span class="dt-sep"></span>
-              <input type="time" v-model="formModal.start_time" class="dt-input dt-time" />
+              <span class="dt-time-wrap">
+                <input type="time" v-model="formModal.start_time" class="dt-input dt-time" />
+                <span v-if="!formModal.start_time" class="dt-placeholder">--:--</span>
+              </span>
             </div>
           </div>
           <div class="form-divider"></div>
@@ -129,7 +132,10 @@
             <div class="dt-inline">
               <input type="date" v-model="formModal.end_date" class="dt-input dt-date" />
               <span class="dt-sep"></span>
-              <input type="time" v-model="formModal.end_time" class="dt-input dt-time" />
+              <span class="dt-time-wrap">
+                <input type="time" v-model="formModal.end_time" class="dt-input dt-time" />
+                <span v-if="!formModal.end_time" class="dt-placeholder">--:--</span>
+              </span>
             </div>
           </div>
         </div>
@@ -750,6 +756,13 @@ thead th.sticky-col { z-index: 4; }
 }
 .dt-date { min-width: 110px; text-align: right; }
 .dt-time { width: 80px; text-align: right; }
+.dt-time-wrap { position: relative; display: inline-flex; align-items: center; }
+/* iOS実機では -webkit-appearance:none の空 type=time がプレースホルダを描画せず
+   完全な空白になるため、値が無いときだけ --:-- を重ねてタップ可能だと示す */
+.dt-placeholder {
+  position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+  color: #06C755; font-size: 15px; pointer-events: none; white-space: nowrap;
+}
 .dt-input::-webkit-calendar-picker-indicator { opacity: 0; width: 0; }
 .dt-inline { display: flex; align-items: center; gap: 0; margin-left: auto; }
 .dt-sep { width: 1px; height: 18px; background: #D0D0D0; margin: 0 6px; flex-shrink: 0; }
