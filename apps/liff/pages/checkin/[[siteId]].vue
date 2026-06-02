@@ -55,6 +55,9 @@
       <span class="material-symbols-rounded done-icon">check_circle</span>
       <p class="done-title">{{ attendanceType === 'checkin' ? '出勤' : '退勤' }}登録が完了しました</p>
       <p class="done-sub">{{ siteName }} &nbsp;/&nbsp; {{ checkedAtLabel }}</p>
+      <p class="done-message">
+        {{ attendanceType === 'checkin' ? '今日も一日ご安全にお願いします。' : '今日も一日お疲れ様でした。' }}
+      </p>
 
       <div v-if="otherTargets.length" class="next-targets">
         <p class="next-label">続けて他の人を登録</p>
@@ -584,6 +587,7 @@ async function submit() {
 }
 .done-title { font-size: 20px; font-weight: 700; color: #111; }
 .done-sub   { font-size: 13px; color: #888; }
+.done-message { font-size: 15px; font-weight: 600; color: #06C755; margin-top: 8px; }
 
 /* ── チェックリスト ── */
 .checklist-wrap {
