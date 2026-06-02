@@ -86,6 +86,18 @@
           <input v-model="modal.hire_date" type="date" class="input" />
         </div>
         <div class="field">
+          <label>生年月日</label>
+          <input v-model="modal.birth_date" type="date" class="input" />
+        </div>
+        <div class="field">
+          <label>住所</label>
+          <input v-model="modal.address" class="input" placeholder="例：東京都新宿区..." />
+        </div>
+        <div class="field">
+          <label>緊急連絡先</label>
+          <input v-model="modal.emergency_contact" class="input" placeholder="例：090-1234-5678（配偶者）" />
+        </div>
+        <div class="field">
           <label>代理人（LINEを持たない場合、代わりに入力する作業員）</label>
           <div class="proxy-check-list">
             <label
@@ -126,6 +138,9 @@ type Worker = {
   unit_price: number
   active: boolean
   hire_date: string | null
+  birth_date: string | null
+  address: string | null
+  emergency_contact: string | null
   employment_type: 'fulltime' | 'parttime' | null
   weekly_scheduled_days: number | null
 }
@@ -154,7 +169,7 @@ function toggleProxyId(id: string) {
 async function load() {
   const accountId = await getAccountId()
   const [{ data: workersData }, { data: usersData }, { data: proxyData }] = await Promise.all([
-    supabase.from('workers').select('id, name, role, unit_price, active, hire_date, employment_type, weekly_scheduled_days').eq('account_id', accountId).order('name'),
+    supabase.from('workers').select('id, name, role, unit_price, active, hire_date, birth_date, address, emergency_contact, employment_type, weekly_scheduled_days').eq('account_id', accountId).order('name'),
     supabase.from('users').select('worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
     supabase.from('worker_proxies').select('worker_id, proxy_operator_id').eq('account_id', accountId),
   ])
@@ -173,7 +188,7 @@ async function load() {
 onMounted(load)
 
 function openAdd() {
-  modal.value = { name: '', role: 'site', unit_price: 20000, hire_date: null, employment_type: 'fulltime', weekly_scheduled_days: null }
+  modal.value = { name: '', role: 'site', unit_price: 20000, hire_date: null, birth_date: null, address: null, emergency_contact: null, employment_type: 'fulltime', weekly_scheduled_days: null }
   modalProxyIds.value = []
   saveError.value = ''
 }
@@ -197,6 +212,9 @@ async function save() {
       role:                  modal.value.role ?? 'site',
       unit_price:            modal.value.unit_price ?? 0,
       hire_date:             modal.value.hire_date || null,
+      birth_date:            modal.value.birth_date || null,
+      address:               modal.value.address?.trim() || null,
+      emergency_contact:     modal.value.emergency_contact?.trim() || null,
       employment_type:       modal.value.employment_type ?? 'fulltime',
       weekly_scheduled_days: modal.value.employment_type === 'parttime' ? (modal.value.weekly_scheduled_days ?? null) : null,
     }
