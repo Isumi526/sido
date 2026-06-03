@@ -5,11 +5,14 @@
 
 const LINE_API = 'https://api.line.me/v2/bot/message/push'
 
-export async function pushLineMessages(
+export type LinePushResult = { ok: boolean; status: number; body: string }
+
+// 詳細版: status/body を返す（呼び出し側でエラー内容を握り潰さず扱える）
+export async function pushLineMessagesResult(
   to: string,
   messages: { type: string; text: string }[],
   token: string,
-): Promise<boolean> {
+): Promise<LinePushResult> {
   const res = await fetch(LINE_API, {
     method: 'POST',
     headers: {
@@ -18,12 +21,21 @@ export async function pushLineMessages(
     },
     body: JSON.stringify({ to, messages }),
   })
-  const resBody = await res.text()
+  const body = await res.text()
   if (!res.ok) {
-    console.error(`[LINE] push failed to=${to} status=${res.status} body=${resBody}`)
-    return false
+    console.error(`[LINE] push failed to=${to} status=${res.status} body=${body}`)
+    return { ok: false, status: res.status, body }
   }
-  return true
+  return { ok: true, status: res.status, body }
+}
+
+// boolean 互換版（既存呼び出し元が `=== true` で判定しているため維持）
+export async function pushLineMessages(
+  to: string,
+  messages: { type: string; text: string }[],
+  token: string,
+): Promise<boolean> {
+  return (await pushLineMessagesResult(to, messages, token)).ok
 }
 
 export async function pushLineText(
