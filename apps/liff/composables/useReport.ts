@@ -38,12 +38,17 @@ export const createVehicle = (): VehicleExpense => ({
   dieselKm:    undefined,
   parkingYen:  undefined,
   highwayYen:  undefined,
+  gasTategae:     false,
+  dieselTategae:  false,
+  parkingTategae: false,
+  highwayTategae: false,
 })
 
-export const createLineItem = (): LineItem => ({ label: '', yen: undefined })
+export const createLineItem = (): LineItem => ({ label: '', yen: undefined, tategae: false })
 
 export const createSite = (): SiteReport => ({
   siteName:       '',
+  contractorName: '',
   workers:        [createWorker()],
   expenses:       { vehicles: [createVehicle()], trains: [createLineItem()], others: [createLineItem()] },
   subcontractors: [],
@@ -205,10 +210,12 @@ export const useReport = () => {
       ...form.value,
       sites: form.value.sites.map((site, si) => {
         const isNew = site.siteName === '__other__'
+        const isNewContractor = site.contractorName === '__other__'
         return {
           ...site,
           siteName:  isNew ? (site.customSiteName || '') : site.siteName,
           isNewSite: isNew,
+          contractorName: isNewContractor ? (site.customContractorName || '') : (site.contractorName || ''),
           workers: site.workers
             .map((w, wi) => ({ w, wi }))
             .filter(({ w }) => w.workerName)
@@ -262,6 +269,7 @@ export const useReport = () => {
       // ── ③ 新規現場・新規下請けを Supabase に保存（fire-and-forget）──
       for (const site of payload.sites) {
         if (site.siteName) master.saveSite(site.siteName)
+        if (site.contractorName) master.saveContractor(site.contractorName)
         for (const sub of site.subcontractors) {
           if (sub.subcontractorName && sub.subcontractorName !== '__other__') master.saveSub(sub.subcontractorName)
         }

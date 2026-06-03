@@ -25,29 +25,23 @@
             :key="rep.date"
             class="report-card"
           >
-            <div class="report-card-top tappable" @click="toggle(rep)">
+            <div class="report-card-top">
               <div class="report-date">{{ formatDate(rep.date) }}</div>
-              <div class="top-right">
-                <span :class="['status-badge', rep.leave_type === 'paid_leave' ? 'badge-paid-leave' : rep.is_working ? 'badge-working' : 'badge-off']">
-                  {{ rep.leave_type === 'paid_leave' ? '有給' : rep.is_working ? '稼働' : '休み' }}
-                </span>
-                <span class="chevron" :class="{ open: expanded[rep.date] }">▾</span>
-              </div>
+              <span :class="['status-badge', rep.leave_type === 'paid_leave' ? 'badge-paid-leave' : rep.is_working ? 'badge-working' : 'badge-off']">
+                {{ rep.leave_type === 'paid_leave' ? '有給' : rep.is_working ? '稼働' : '休み' }}
+              </span>
             </div>
 
-            <div v-if="rep.is_working && siteNames(rep.sites).length" class="site-chips">
-              <span v-for="name in siteNames(rep.sites)" :key="name" class="site-chip">{{ name }}</span>
-            </div>
+            <p v-if="rep.note" class="report-note full">{{ rep.note }}</p>
 
-            <p v-if="rep.note" class="report-note" :class="{ full: expanded[rep.date] }">{{ rep.note }}</p>
-
-            <!-- 詳細（タップで展開・LINE通知と同粒度）-->
-            <div v-if="expanded[rep.date]" class="detail">
+            <!-- 詳細（常時表示・LINE通知と同粒度）-->
+            <div class="detail">
               <div v-if="rep.leave_type === 'paid_leave'" class="detail-leave">🌴 有給休暇（8h）</div>
               <div v-else-if="!rep.is_working" class="detail-leave">稼働なし</div>
               <template v-else>
                 <div v-for="(s, i) in detailMap[rep.date]" :key="i" class="detail-site">
                   <div class="detail-site-name">📍 {{ s.name }}</div>
+                  <div v-if="s.contractor" class="detail-contractor">🏢 {{ s.contractor }}</div>
 
                   <ul v-if="s.workers.length" class="detail-list">
                     <li v-for="(w, wi) in s.workers" :key="wi">
@@ -98,15 +92,13 @@ const loading     = ref(true)
 const reports     = ref<any[]>([])
 const selfUser    = ref<User | null>(null)
 
-// 詳細の開閉と、展開時に組み立てた明細のキャッシュ
-const expanded  = ref<Record<string, boolean>>({})
+// 各日報の明細（常時表示用・読み込み時に一括で組み立て）
 const detailMap = ref<Record<string, SiteDetail[]>>({})
 
-function toggle(rep: any) {
-  const d = rep.date
-  if (expanded.value[d]) { expanded.value[d] = false; return }
-  if (!detailMap.value[d]) detailMap.value[d] = buildDetail(rep)
-  expanded.value[d] = true
+function rebuildDetails() {
+  const map: Record<string, SiteDetail[]> = {}
+  for (const rep of reports.value) map[rep.date] = buildDetail(rep)
+  detailMap.value = map
 }
 
 // 代理中は代理先の情報を表示
@@ -138,6 +130,7 @@ async function loadReports() {
   } else {
     reports.value = await expense.getReports(uid)
   }
+  rebuildDetails()
 }
 
 onMounted(async () => {
@@ -182,16 +175,10 @@ function formatUpdatedAt(ts: string): string {
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-function siteNames(sites: any[]): string[] {
-  if (!sites) return []
-  return sites.map(s =>
-    s.siteName === '__other__' ? (s.customSiteName || '新規現場') : (s.siteName || '')
-  ).filter(Boolean)
-}
 
 // ── 詳細表示（LINE通知と同粒度）────────────────────────────
 interface WorkerLine { name: string; time: string; hours: string }
-interface SiteDetail { name: string; workers: WorkerLine[]; expenses: string[]; subs: string[]; note: string }
+interface SiteDetail { name: string; contractor: string; workers: WorkerLine[]; expenses: string[]; subs: string[]; note: string }
 
 function yen(n: number): string { return Number(n).toLocaleString() }
 
@@ -272,6 +259,7 @@ function buildDetail(rep: any): SiteDetail[] {
   const hoursMap = computeHoursForReport(rep)
   return (rep.sites || []).map((site: any, si: number): SiteDetail => ({
     name: siteDisplayName(site),
+    contractor: site.contractorName === '__other__' ? (site.customContractorName || '') : (site.contractorName || ''),
     workers: (site.workers || [])
       .map((w: any, wi: number) => ({ w, wi }))
       .filter(({ w }: any) => w.workerName)
@@ -345,11 +333,7 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--font)
 .report-card-top {
   display: flex; align-items: center; justify-content: space-between;
 }
-.report-card-top.tappable { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .report-date { font-size: 16px; font-weight: 700; color: var(--text); }
-.top-right { display: flex; align-items: center; gap: 8px; }
-.chevron { font-size: 14px; color: #bbb; transition: transform .2s; line-height: 1; }
-.chevron.open { transform: rotate(180deg); }
 
 .status-badge {
   font-size: 11px; font-weight: 700; border-radius: 20px; padding: 3px 10px;
@@ -379,6 +363,7 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--font)
 .detail-leave { font-size: 14px; font-weight: 700; color: var(--text); }
 .detail-site { display: flex; flex-direction: column; gap: 6px; }
 .detail-site-name { font-size: 14px; font-weight: 700; color: var(--text); }
+.detail-contractor { font-size: 13px; font-weight: 600; color: #6b4eff; }
 .detail-list { list-style: none; display: flex; flex-direction: column; gap: 4px; padding: 0; margin: 0; }
 .detail-list li {
   font-size: 13px; color: #444; line-height: 1.5;

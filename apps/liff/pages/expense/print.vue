@@ -12,7 +12,7 @@
 
     <!-- レポート本体 -->
     <div v-else id="report">
-      <h1 class="company">御請求先</h1>
+      <h1 class="company">御請求先<span v-if="mode === 'tategae'" class="company-sub">（個人建て替え分）</span></h1>
 
       <div class="report-header">
         <div class="notes-left">
@@ -36,7 +36,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(row, i) in rows" :key="i">
+          <tr v-for="(row, i) in displayRows" :key="i">
             <td class="center">{{ fmtDate(row.date) }}</td>
             <td class="small">{{ row.note || '' }}</td>
             <td class="small">{{ row.registrationNumber || '' }}</td>
@@ -62,7 +62,7 @@
     </div>
 
     <!-- 印刷ボタン（印刷時非表示） -->
-    <div v-if="!loading && !error && rows.length > 0" class="print-btn-area no-print">
+    <div v-if="!loading && !error && displayRows.length > 0" class="print-btn-area no-print">
       <button class="btn-print" @click="window.print()">印刷 / PDFとして保存</button>
     </div>
   </div>
@@ -79,12 +79,16 @@ useHead({
 const route  = useRoute()
 const userId = route.query.userId as string
 const period = route.query.period as string
+const mode   = (route.query.mode as string) === 'tategae' ? 'tategae' : 'all'
 
 const loading = ref(true)
 const error   = ref('')
 const user    = ref<User | null>(null)
 const rows    = ref<ExpenseRow[]>([])
-const total   = computed(() => rows.value.reduce((s, r) => s + r.amount, 0))
+const displayRows = computed(() =>
+  mode === 'tategae' ? rows.value.filter(r => r.tategae) : rows.value
+)
+const total   = computed(() => displayRows.value.reduce((s, r) => s + r.amount, 0))
 
 const expense = useExpense()
 
@@ -125,6 +129,7 @@ body { font-family: 'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic', sans-serif; ba
 
 #report { padding: 16px; }
 .company { font-size: 20px; font-weight: 900; text-align: center; letter-spacing: 3px; margin-bottom: 12px; }
+.company-sub { font-size: 14px; font-weight: 700; letter-spacing: 1px; }
 .report-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; }
 .notes-left { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: #555; }
 .name-right { font-size: 13px; font-weight: 700; }

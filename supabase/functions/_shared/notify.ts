@@ -30,6 +30,12 @@ export function buildReportMessage(body: {
     lines.push('')
     lines.push(`📍 ${site.siteName}`)
 
+    // 元請け業者
+    const contractor = site.contractorName === '__other__'
+      ? (site.customContractorName || '')
+      : (site.contractorName || '')
+    if (contractor) lines.push(`🏢 ${contractor}`)
+
     // 作業員
     const workers = (site.workers || []).filter((w: any) => w.workerName)
     for (const w of workers) {

@@ -64,16 +64,18 @@ function doGet(e) {
       }
 
       // Supabase から並列取得
-      var sitesRaw    = supabaseGet('sites',         'select=name&active=eq.true&account_id=eq.' + accountId + '&order=sort_order.asc');
-      var workersRaw  = supabaseGet('workers',       'select=name,role,unit_price&active=eq.true&account_id=eq.' + accountId + '&order=sort_order.asc');
-      var subsRaw     = supabaseGet('subcontractors','select=name&active=eq.true&account_id=eq.' + accountId + '&order=sort_order.asc');
-      var vehiclesRaw = supabaseGet('vehicles',      'select=name&active=eq.true&account_id=eq.' + accountId + '&order=sort_order.asc');
+      var sitesRaw       = supabaseGet('sites',         'select=name&active=eq.true&account_id=eq.' + accountId + '&order=sort_order.asc');
+      var contractorsRaw = supabaseGet('contractors',   'select=name&active=eq.true&account_id=eq.' + accountId + '&order=sort_order.asc');
+      var workersRaw     = supabaseGet('workers',       'select=name,role,unit_price&active=eq.true&account_id=eq.' + accountId + '&order=sort_order.asc');
+      var subsRaw        = supabaseGet('subcontractors','select=name&active=eq.true&account_id=eq.' + accountId + '&order=sort_order.asc');
+      var vehiclesRaw    = supabaseGet('vehicles',      'select=name&active=eq.true&account_id=eq.' + accountId + '&order=sort_order.asc');
 
       var result = JSON.stringify({
-        sites:          Array.isArray(sitesRaw)    ? sitesRaw.map(function(r) { return r.name; })                                          : [],
-        workers:        Array.isArray(workersRaw)  ? workersRaw.map(function(r) { return { name: r.name, role: r.role, unitPrice: r.unit_price }; }) : [],
-        subcontractors: Array.isArray(subsRaw)     ? subsRaw.map(function(r) { return r.name; })                                           : [],
-        vehicles:       Array.isArray(vehiclesRaw) ? vehiclesRaw.map(function(r) { return r.name; })                                       : [],
+        sites:          Array.isArray(sitesRaw)       ? sitesRaw.map(function(r) { return r.name; })                                          : [],
+        contractors:    Array.isArray(contractorsRaw) ? contractorsRaw.map(function(r) { return r.name; })                                    : [],
+        workers:        Array.isArray(workersRaw)     ? workersRaw.map(function(r) { return { name: r.name, role: r.role, unitPrice: r.unit_price }; }) : [],
+        subcontractors: Array.isArray(subsRaw)        ? subsRaw.map(function(r) { return r.name; })                                           : [],
+        vehicles:       Array.isArray(vehiclesRaw)    ? vehiclesRaw.map(function(r) { return r.name; })                                       : [],
       });
 
       try { CacheService.getScriptCache().put(masterCacheKey, result, 3600); } catch(e) {}

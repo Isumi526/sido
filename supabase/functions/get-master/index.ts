@@ -24,8 +24,9 @@ Deno.serve(async (req) => {
     if (!accounts) return json({ error: `account not found: ${ACCOUNT_SLUG}` }, 404)
     const accountId = accounts.id
 
-    const [sites, workers, subcontractors, vehicles] = await Promise.all([
+    const [sites, contractors, workers, subcontractors, vehicles] = await Promise.all([
       supabase.from('sites').select('name').eq('active', true).eq('account_id', accountId).order('sort_order'),
+      supabase.from('contractors').select('name').eq('active', true).eq('account_id', accountId).order('sort_order'),
       supabase.from('workers').select('name,role,unit_price').eq('active', true).eq('account_id', accountId).order('sort_order'),
       supabase.from('subcontractors').select('name').eq('active', true).eq('account_id', accountId).order('sort_order'),
       supabase.from('vehicles').select('name').eq('active', true).eq('account_id', accountId).order('sort_order'),
@@ -33,6 +34,7 @@ Deno.serve(async (req) => {
 
     return json({
       sites:          (sites.data ?? []).map(r => r.name),
+      contractors:    (contractors.data ?? []).map(r => r.name),
       workers:        (workers.data ?? []).map(r => ({ name: r.name, role: r.role, unitPrice: r.unit_price })),
       subcontractors: (subcontractors.data ?? []).map(r => r.name),
       vehicles:       (vehicles.data ?? []).map(r => r.name),

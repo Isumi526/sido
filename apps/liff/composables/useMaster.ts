@@ -7,6 +7,7 @@ import type { MasterData } from '~/types'
 
 const FALLBACK: MasterData = {
   sites:          [],
+  contractors:    [],
   workers:        [{ name: 'テストユーザー', unitPrice: 0, role: 'site' }],
   subcontractors: [],
   vehicles:       ['ハイエース', 'キャラバン', 'プロボックス', 'その他'],
@@ -61,8 +62,9 @@ export const useMaster = () => {
     const accountId = await getAccountId()
     if (!accountId) throw new Error('account not found')
 
-    const [sitesRes, workersRes, subsRes, vehiclesRes] = await Promise.all([
+    const [sitesRes, contractorsRes, workersRes, subsRes, vehiclesRes] = await Promise.all([
       supabase.from('sites').select('name').eq('active', true).eq('account_id', accountId).order('sort_order'),
+      supabase.from('contractors').select('name').eq('active', true).eq('account_id', accountId).order('sort_order'),
       supabase.from('workers').select('id, name, role, unit_price').eq('active', true).eq('account_id', accountId).order('sort_order'),
       supabase.from('subcontractors').select('name').eq('active', true).eq('account_id', accountId).order('sort_order'),
       supabase.from('vehicles').select('name').eq('active', true).eq('account_id', accountId).order('sort_order'),
@@ -71,10 +73,11 @@ export const useMaster = () => {
     if (workersRes.error) throw workersRes.error
 
     const data: MasterData = {
-      sites:          (sitesRes.data    ?? []).map(r => r.name),
-      workers:        (workersRes.data  ?? []).map(r => ({ id: r.id, name: r.name, role: r.role as 'factory' | 'site', unitPrice: r.unit_price })),
-      subcontractors: (subsRes.data     ?? []).map(r => r.name),
-      vehicles:       (vehiclesRes.data ?? []).map(r => r.name),
+      sites:          (sitesRes.data       ?? []).map(r => r.name),
+      contractors:    (contractorsRes.data ?? []).map(r => r.name),
+      workers:        (workersRes.data     ?? []).map(r => ({ id: r.id, name: r.name, role: r.role as 'factory' | 'site', unitPrice: r.unit_price })),
+      subcontractors: (subsRes.data        ?? []).map(r => r.name),
+      vehicles:       (vehiclesRes.data    ?? []).map(r => r.name),
     }
 
     master.value = data
@@ -114,6 +117,25 @@ export const useMaster = () => {
     }
   }
 
+  /** 元請け業者名を Supabase に保存（新規 or 既存は upsert で吸収） */
+  async function saveContractor(name: string) {
+    if (!name.trim()) return
+    try {
+      const supabase  = useSupabase()
+      const { getAccountId } = useAccount()
+      const accountId = await getAccountId()
+      await supabase
+        .from('contractors')
+        .upsert({ name: name.trim(), account_id: accountId }, { onConflict: 'name,account_id' })
+      if (!master.value.contractors.includes(name.trim())) {
+        master.value = { ...master.value, contractors: [...master.value.contractors, name.trim()].sort((a, b) => a.localeCompare(b, 'ja')) }
+        saveCache(master.value)
+      }
+    } catch (e) {
+      console.warn('[Master] saveContractor 失敗:', e)
+    }
+  }
+
   /** 下請け業者名を Supabase に保存 */
   async function saveSub(name: string) {
     if (!name.trim()) return
@@ -138,8 +160,10 @@ export const useMaster = () => {
     loading:         readonly(loading),
     fetch,
     saveSite,
+    saveContractor,
     saveSub,
     siteNames:           computed(() => master.value.sites.slice().sort((a, b) => a.localeCompare(b, 'ja'))),
+    contractorNames:     computed(() => (master.value.contractors ?? []).slice().sort((a, b) => a.localeCompare(b, 'ja'))),
     workerNames:         computed(() => master.value.workers.map(w => w.name).slice().sort((a, b) => a.localeCompare(b, 'ja'))),
     factoryWorkerNames:  computed(() => { const ws = master.value.workers; const hasRole = ws.some(w => w.role); return ws.filter(w => !hasRole || w.role === 'factory').map(w => w.name).slice().sort((a, b) => a.localeCompare(b, 'ja')) }),
     siteWorkerNames:     computed(() => { const ws = master.value.workers; const hasRole = ws.some(w => w.role); return ws.filter(w => !hasRole || w.role === 'site').map(w => w.name).slice().sort((a, b) => a.localeCompare(b, 'ja')) }),
