@@ -6,6 +6,16 @@
 --  - test アカウント作成 + 初期データ投入
 -- ============================================================
 
+-- ── 0. マスタ列を確実に用意（保険）──────────────────────────
+-- early作成された sites は is_active のみで active/sort_order/account_id を欠く。
+-- 既に列がある本番では no-op（クリーン適用＝ローカルでのみ欠けた列を補う）。
+ALTER TABLE workers        ADD COLUMN IF NOT EXISTS account_id uuid REFERENCES accounts(id);
+ALTER TABLE sites          ADD COLUMN IF NOT EXISTS account_id uuid REFERENCES accounts(id);
+ALTER TABLE subcontractors ADD COLUMN IF NOT EXISTS account_id uuid REFERENCES accounts(id);
+ALTER TABLE vehicles       ADD COLUMN IF NOT EXISTS account_id uuid REFERENCES accounts(id);
+ALTER TABLE sites          ADD COLUMN IF NOT EXISTS active     boolean NOT NULL DEFAULT true;
+ALTER TABLE sites          ADD COLUMN IF NOT EXISTS sort_order int     NOT NULL DEFAULT 0;
+
 -- ── 1. マスタテーブルの unique 制約を per-account に変更 ──────
 
 ALTER TABLE workers        DROP CONSTRAINT IF EXISTS workers_name_key;
