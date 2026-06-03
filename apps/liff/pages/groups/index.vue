@@ -134,8 +134,11 @@
 </template>
 
 <script setup lang="ts">
+import type { DeepReadonly } from 'vue'
 import { useScheduleGroups, type ScheduleGroup } from '~/composables/useScheduleGroups'
 
+// groupsStore.groups は readonly 公開（consumerは読むだけ）。
+// そのため group を受けるハンドラは DeepReadonly<ScheduleGroup> で受ける（mutateしない）。
 const groupsStore = useScheduleGroups()
 const schedules   = useSchedules()
 const master      = useMaster()
@@ -199,7 +202,7 @@ async function handleCreate() {
 }
 
 // ──────────────────── メンバー追加 ────────────────────
-const addMemberTarget  = ref<ScheduleGroup | null>(null)
+const addMemberTarget  = ref<DeepReadonly<ScheduleGroup> | null>(null)
 const pickedWorkerIds  = ref<string[]>([])
 const adding           = ref(false)
 const addError         = ref('')
@@ -211,7 +214,7 @@ const availableWorkers = computed(() => {
     .filter((w: any) => w.active !== false && !existingIds.has(w.id))
 })
 
-function openAddMember(group: ScheduleGroup) {
+function openAddMember(group: DeepReadonly<ScheduleGroup>) {
   addMemberTarget.value = group
   pickedWorkerIds.value = []
   addError.value = ''
@@ -237,7 +240,7 @@ async function handleAddMembers() {
 }
 
 // ──────────────────── メンバー削除 ────────────────────
-async function handleRemoveMember(group: ScheduleGroup, workerId: string) {
+async function handleRemoveMember(group: DeepReadonly<ScheduleGroup>, workerId: string) {
   if (!myWorkerId.value) return
   if (!confirm('このメンバーをグループから削除しますか？')) return
   try {
@@ -248,7 +251,7 @@ async function handleRemoveMember(group: ScheduleGroup, workerId: string) {
 }
 
 // ──────────────────── デフォルト共有トグル ────────────────────
-async function handleToggleDefaultShare(group: ScheduleGroup) {
+async function handleToggleDefaultShare(group: DeepReadonly<ScheduleGroup>) {
   if (!myWorkerId.value) return
   try {
     await groupsStore.updateGroup(group.id, { default_share: !group.default_share }, myWorkerId.value)
@@ -258,7 +261,7 @@ async function handleToggleDefaultShare(group: ScheduleGroup) {
 }
 
 // ──────────────────── 脱退 / 削除 ────────────────────
-async function handleLeave(group: ScheduleGroup) {
+async function handleLeave(group: DeepReadonly<ScheduleGroup>) {
   if (!myWorkerId.value) return
   const isCreator = group.created_by === myWorkerId.value
   const msg = isCreator

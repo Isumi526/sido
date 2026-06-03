@@ -315,7 +315,8 @@ onMounted(async () => {
   ])
 
   if (usersRes.data)   users.value   = usersRes.data
-  if (reportsRes.data) reports.value = reportsRes.data as ReportRow[]
+  // users(...) は to-one 埋め込みで実行時は単一オブジェクトだが型推論は配列になるため unknown 経由
+  if (reportsRes.data) reports.value = reportsRes.data as unknown as ReportRow[]
   if (settingsRes.data) {
     settings.value = settingsRes.data.map((s: any) => ({ ...s, editValue: Number(s.value) }))
   }
