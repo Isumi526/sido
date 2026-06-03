@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "nuxt dev",
+    "_comment_dev": "Nuxtは既定で.envしか読まない。ローカルスタック検証用に--dotenv .env.localで.env.localを読ませる（local devのみ）。Vercel(preview/prod)はVercel環境変数を使うため無関係。",
+    "dev": "nuxt dev --dotenv .env.local",
     "build": "nuxt build",
     "generate": "nuxt generate",
     "preview": "nuxt preview",

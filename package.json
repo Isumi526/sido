@@ -6,18 +6,24 @@
     "packages/*"
   ],
   "scripts": {
-    "dev:liff": "cd apps/liff && npx nuxt dev",
+    "dev:liff": "cd apps/liff && npx nuxt dev --dotenv .env.local",
     "build:liff": "npm run build --workspace=apps/liff",
-    "dev:admin": "npm run dev --workspace=apps/admin",
+    "dev:admin": "cd apps/admin && npm run dev",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "notify:check": "node scripts/check-notify.mjs",
     "notify:off": "node scripts/check-notify.mjs test --set off",
     "notify:on": "node scripts/check-notify.mjs test --set on",
+    "test:e2e": "playwright test",
+    "test:e2e:admin": "playwright test --project=admin",
+    "test:e2e:liff": "playwright test --project=liff",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:report": "playwright show-report tests/e2e/.report",
     "gas:pull": "cd apps/gas && clasp pull",
     "gas:push": "cd apps/gas && clasp push",
     "gas:deploy": "cd apps/gas && clasp push && clasp deploy"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "typescript": "^5.4.0"
   }
 }
