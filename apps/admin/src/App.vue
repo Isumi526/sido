@@ -52,12 +52,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { currentUser, signOut } from './lib/auth'
-import { ACCOUNT_SLUG } from './lib/account'
+import { ACCOUNT_SLUG, getAccountName } from './lib/account'
 
 const brandName = ACCOUNT_SLUG.toUpperCase()
+
+// サイト名（ブラウザタブ）を会社名ベースで設定。
+// fetch が解決してからセットする（未取得での空振りを避ける）。
+onMounted(async () => {
+  const name = await getAccountName()
+  if (name) document.title = `${name}｜管理システム`
+})
 
 const router = useRouter()
 const route  = useRoute()
