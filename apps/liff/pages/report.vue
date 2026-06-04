@@ -1578,9 +1578,17 @@ html, body {
 
 /* ── その他共通経費 ── */
 .hotel-row { display: flex; flex-direction: column; gap: 6px; }
-.lineitems-row { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 6px; }
-.lineitems-row .input { flex: 1; }
-.lineitems-row .expense-item { width: 110px; flex-shrink: 0; }
+.lineitems-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; margin-bottom: 6px; }
+/* ExpenseField の入れ子(.expense-item)を解いて、行直下のフレックス要素として並べる */
+.lineitems-row .expense-item { display: contents; }
+.lineitems-row .expense-label { display: none; }      /* 行内では「金額」ラベルは省略 */
+.lineitems-row > .input { flex: 1 1 auto; min-width: 0; } /* 内容入力（直下の子のみ） */
+.lineitems-row .expense-input { flex: 0 0 120px; }    /* 金額入力は固定幅で内容の右に */
+.lineitems-row .btn-icon-sm { flex: 0 0 auto; }       /* ✕ ボタン */
+/* 立替チェックは全幅で次行・左詰め（タップしやすいよう余白はコンポーネント側で確保） */
+.lineitems-row .tategae-check { flex-basis: 100%; order: 1; }
+/* 登録番号は全幅で最後の行へ */
+.lineitems-row .input.mt6 { flex-basis: 100%; order: 2; margin-top: 0; }
 
 /* ── ボタン類 ── */
 .btn-primary {

@@ -6,7 +6,7 @@
       type="number"
       min="0"
       inputmode="numeric"
-      class="input"
+      class="input expense-input"
       placeholder="0"
       @input="$emit('update:modelValue', Number(($event.target as HTMLInputElement).value) || undefined)"
     />
@@ -35,8 +35,9 @@ defineEmits<{
 </script>
 
 <style scoped>
-.expense-item { display: flex; flex-direction: column; gap: 6px; }
+.expense-item { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .expense-label { font-size: 12px; color: var(--text2); font-weight: 500; }
-.tategae-check { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text2); cursor: pointer; user-select: none; }
-.tategae-check input { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+/* タップしやすい余白付き・左詰め。チェックボックス自体も大きめに */
+.tategae-check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text2); cursor: pointer; user-select: none; padding: 6px 4px; min-height: 36px; }
+.tategae-check input { width: 20px; height: 20px; accent-color: var(--accent); cursor: pointer; }
 </style>
