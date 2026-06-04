@@ -3,6 +3,7 @@ import { currentUser } from '../lib/auth'
 import Dashboard      from '../pages/index.vue'
 import Workers        from '../pages/workers.vue'
 import Sites          from '../pages/sites.vue'
+import Contractors    from '../pages/contractors.vue'
 import Subcontractors from '../pages/subcontractors.vue'
 import Reports        from '../pages/reports.vue'
 import SiteReports    from '../pages/site-reports.vue'
@@ -23,6 +24,7 @@ export const router = createRouter({
     { path: '/calendar',     component: Calendar },
     { path: '/workers',      component: Workers },
     { path: '/sites',        component: Sites },
+    { path: '/contractors',  component: Contractors },
     { path: '/site-rules',   component: SiteRules },
     { path: '/attendance',   component: Attendance },
     { path: '/subcontractors', component: Subcontractors },

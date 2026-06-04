@@ -19,6 +19,12 @@
           >{{ shortLabel(key) }}</button>
         </div>
 
+        <!-- 表示切替（全経費 / 個人建て替え分のみ）-->
+        <div class="mode-bar no-print">
+          <button class="mode-btn" :class="{ active: viewMode === 'all' }" @click="viewMode = 'all'">全経費</button>
+          <button class="mode-btn" :class="{ active: viewMode === 'tategae' }" @click="viewMode = 'tategae'">個人建て替え分のみ</button>
+        </div>
+
         <!-- ====== 印刷エリア ====== -->
         <div class="print-area">
           <div class="doc-header">
@@ -26,13 +32,13 @@
               <span class="doc-note">★必ず登録番号記入</span>
               <span class="doc-note">※領収書添付</span>
             </div>
-            <div class="doc-title">御請求先</div>
+            <div class="doc-title">御請求先<span v-if="viewMode === 'tategae'" class="doc-title-sub">（個人建て替え分）</span></div>
             <div class="doc-name">氏名：{{ currentUser?.real_name }}</div>
           </div>
 
           <div v-if="loading" class="center-text no-print">読み込み中...</div>
 
-          <template v-else-if="rows.length > 0">
+          <template v-else-if="displayRows.length > 0">
             <div class="table-wrap">
               <table class="expense-table">
                 <thead>
@@ -49,7 +55,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(row, i) in rows" :key="i">
+                  <tr v-for="(row, i) in displayRows" :key="i">
                     <td class="center">{{ fmtDate(row.date) }}</td>
                     <td class="small">{{ row.note || '' }}</td>
                     <td class="small">{{ row.registrationNumber || '' }}</td>
@@ -88,13 +94,18 @@
           </template>
 
           <div v-else class="empty-notice">
-            この期間の経費データがありません。<br>
-            先に日報を送信してください。
+            <template v-if="viewMode === 'tategae' && rows.length > 0">
+              この期間に個人建て替え分の経費はありません。
+            </template>
+            <template v-else>
+              この期間の経費データがありません。<br>
+              先に日報を送信してください。
+            </template>
           </div>
         </div>
 
         <!-- アクション -->
-        <div v-if="rows.length > 0" class="actions no-print">
+        <div v-if="displayRows.length > 0" class="actions no-print">
           <div class="guide-box">
             <p class="guide-title">PDF保存の手順</p>
             <ol class="guide-steps">
@@ -125,6 +136,12 @@ const loading        = ref(false)
 const selfUser       = ref<User | null>(null)
 const selectedPeriod = ref(getCurrentPeriodKey())
 const rows           = ref<ExpenseRow[]>([])
+const viewMode       = ref<'all' | 'tategae'>('all')
+
+// 表示中の行（全経費 / 個人建て替え分のみ）
+const displayRows = computed(() =>
+  viewMode.value === 'tategae' ? rows.value.filter(r => r.tategae) : rows.value
+)
 
 // 代理中は代理先の情報を表示
 const currentUser = computed(() => {
@@ -134,7 +151,7 @@ const currentUser = computed(() => {
 })
 
 const periodKeys = computed(() => recentPeriodKeys().slice(0, 4))
-const total      = computed(() => rows.value.reduce((s, r) => s + r.amount, 0))
+const total      = computed(() => displayRows.value.reduce((s, r) => s + r.amount, 0))
 
 // 代理先のDBユーザーIDをキャッシュ
 const proxyUserId = ref<string | null>(null)
@@ -190,7 +207,7 @@ function handlePrint() { window.print() }
 async function handleOpenExternal() {
   const t   = proxy.proxyTarget.value
   const uid = t ? (proxyUserId.value ?? liff.profile.value?.userId) : liff.profile.value?.userId
-  const url = `${window.location.origin}/expense/print?userId=${uid}&period=${selectedPeriod.value}`
+  const url = `${window.location.origin}/expense/print?userId=${uid}&period=${selectedPeriod.value}&mode=${viewMode.value}`
   try {
     const liffSdk = (await import('@line/liff')).default
     liffSdk.openWindow({ url, external: true })
@@ -234,6 +251,10 @@ html,body { background:var(--bg);color:var(--text);font-family:var(--font);min-h
 .period-bar { display:flex;gap:8px;overflow-x:auto;padding-bottom:4px; }
 .period-btn { flex-shrink:0;padding:7px 14px;border-radius:20px;border:1px solid var(--border);background:#fff;font-size:12px;font-family:var(--font);color:var(--text2);cursor:pointer; }
 .period-btn.active { background:var(--accent);color:#fff;border-color:var(--accent);font-weight:700; }
+.mode-bar { display:flex;gap:8px; }
+.mode-btn { flex:1;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;font-size:13px;font-family:var(--font);color:var(--text2);font-weight:700;cursor:pointer; }
+.mode-btn.active { background:var(--accent);color:#fff;border-color:var(--accent); }
+.doc-title-sub { font-size:12px;font-weight:700;margin-left:4px; }
 .print-area { background:#fff;border-radius:var(--radius);padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.06); }
 .doc-header { display:grid;grid-template-columns:1fr auto 1fr;align-items:center;margin-bottom:12px;gap:8px; }
 .doc-meta-left { display:flex;flex-direction:column;gap:2px; }

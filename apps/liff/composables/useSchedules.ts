@@ -28,6 +28,16 @@ export interface Schedule {
 }
 
 export interface ScheduleForm {
+  _worker_id?:     string   // 対象作業員（代理入力時のフォーム内部用。schedules列ではない）
+  _original?: {             // 編集前の値（更新時の差分計算用。schedules列ではない）
+    title:          string
+    description:    string | null
+    start_date:     string
+    end_date:       string
+    start_time:     string | null
+    end_time:       string | null
+    is_night_shift: boolean
+  }
   title:           string
   description:     string
   category:        ScheduleCategory

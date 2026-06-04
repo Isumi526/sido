@@ -11,7 +11,7 @@
 //    reminder_time      : 実行時間 JST（'HH:00' 形式、デフォルト '08:00'）
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { pushLineMessages } from '../_shared/line.ts'
+import { pushLineMessagesResult } from '../_shared/line.ts'
 
 const LINE_TOKEN        = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? ''
 const SUPABASE_URL      = Deno.env.get('SUPABASE_URL') ?? ''
@@ -186,11 +186,20 @@ async function processAccount(
 
   const fullText = lines.join('\n')
 
-  if (!dryRun) {
-    await Promise.all(resolvedGroupIds.map(id => pushLineMessages(id, [{ type: 'text', text: fullText }], LINE_TOKEN)))
+  if (dryRun) return { slug, result: 'dry-run', unsubmitted }
+
+  // 実送信。LINE push の失敗を握り潰さず結果に反映する
+  const pushes = await Promise.all(
+    resolvedGroupIds.map(id => pushLineMessagesResult(id, [{ type: 'text', text: fullText }], LINE_TOKEN)),
+  )
+  const failed = pushes.filter(p => !p.ok)
+  if (failed.length > 0) {
+    const detail = failed.map(f => `status=${f.status} ${f.body}`).join(' | ')
+    console.error(`[daily-reminder] LINE push failed slug=${slug}: ${detail}`)
+    return { slug, result: `送信失敗（LINE: ${detail}）`, unsubmitted }
   }
 
-  return { slug, result: dryRun ? 'dry-run' : '送信完了', unsubmitted }
+  return { slug, result: '送信完了', unsubmitted }
 }
 
 Deno.serve(async (req) => {

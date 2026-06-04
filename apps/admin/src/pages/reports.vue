@@ -32,6 +32,10 @@
         <div v-if="r.is_working && r.sites?.length" class="sites" @click="selected = r">
           <div v-for="(site, i) in r.sites" :key="i" class="site-row">
             <span class="site-name">{{ resolveSiteName(site) }}</span>
+            <span v-if="resolveContractorName(site)" class="contractor-chip">🏢 {{ resolveContractorName(site) }}</span>
+            <span v-if="site.workers?.[0]?.startTime && site.workers?.[0]?.endTime" class="work-time">
+              🕒 {{ site.workers[0].startTime }}〜{{ site.workers[0].endTime }}
+            </span>
             <span class="worker-count">作業員 {{ site.workers?.length ?? 0 }}名</span>
           </div>
         </div>
@@ -77,7 +81,10 @@
 
         <div v-else>
           <div v-for="(site, si) in selected.sites" :key="si" class="site-block">
-            <div class="site-block-title">{{ resolveSiteName(site) }}</div>
+            <div class="site-block-title">
+              {{ resolveSiteName(site) }}
+              <span v-if="resolveContractorName(site)" class="contractor-tag">🏢 {{ resolveContractorName(site) }}</span>
+            </div>
 
             <!-- 作業員 -->
             <div v-if="site.workers?.length" class="section">
@@ -355,6 +362,11 @@ function resolveSiteName(site: any): string {
   return n === '__other__' ? (site.customSiteName?.trim() || '新規現場') : (n || '(現場名なし)')
 }
 
+function resolveContractorName(site: any): string {
+  const n = site.contractorName ?? ''
+  return n === '__other__' ? (site.customContractorName?.trim() || '新規元請け') : n
+}
+
 function hasExpenses(exp: any): boolean {
   if (!exp) return false
   return !!(
@@ -443,6 +455,9 @@ onMounted(load)
 .sites { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; padding-left: 8px; border-left: 2px solid #06C755; }
 .site-row { display: flex; gap: 16px; font-size: 13px; }
 .site-name { font-weight: 600; }
+.contractor-chip { font-size: 11px; color: #6b4eff; background: #eee9ff; border-radius: 4px; padding: 2px 8px; }
+.contractor-tag { font-size: 12px; font-weight: 600; color: #6b4eff; margin-left: 8px; }
+.work-time { color: #1a7abf; font-weight: 600; font-variant-numeric: tabular-nums; }
 .worker-count { color: #888; }
 
 /* モーダル */

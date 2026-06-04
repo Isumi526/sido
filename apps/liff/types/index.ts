@@ -38,12 +38,18 @@ export interface VehicleExpense {
   highwayYen?: number
   etcUsed?: boolean
   etcCard?: string
+  // 個人建て替え（本人が立替払いした分）フラグ。金額項目ごとに保持
+  gasTategae?: boolean      // ガソリン代
+  dieselTategae?: boolean   // 軽油代
+  parkingTategae?: boolean  // 駐車代
+  highwayTategae?: boolean  // 高速代
 }
 
 export interface LineItem {
   label?:              string
   yen?:                number
   registrationNumber?: string  // 登録番号（その他資材等）
+  tategae?:            boolean  // 個人建て替えフラグ
 }
 
 export interface Expenses {
@@ -53,11 +59,13 @@ export interface Expenses {
   vehicleUrls?: string[]        // 車両領収書（Supabase Storage URL）
   hotelName?:             string
   hotelYen?:              number
+  hotelTategae?:          boolean  // 個人建て替えフラグ
   hotelRegistration?:     string   // ホテル登録番号
   hotelFiles?: File[]              // ホテル領収書
   hotelUrls?: string[]             // ホテル領収書 URL
   leopalaceName?:             string
   leopalaceYen?:              number
+  leopalaceTategae?:          boolean  // 個人建て替えフラグ
   leopalaceRegistration?:     string   // レオパレス登録番号
   leopalaceFiles?: File[]              // レオパレス領収書
   leopalaceUrls?: string[]             // レオパレス領収書 URL
@@ -73,6 +81,7 @@ export interface Expenses {
   otherUrls?: string[]          // その他領収書 URL
   entertainmentLabel?:        string
   entertainmentYen?:          number
+  entertainmentTategae?:      boolean  // 個人建て替えフラグ
   entertainmentRegistration?: string   // 雑経費登録番号
   entertainmentFiles?: File[]          // 雑経費領収書
   entertainmentUrls?: string[]         // 雑経費領収書 URL
@@ -81,6 +90,8 @@ export interface Expenses {
 export interface SiteReport {
   siteName: string
   customSiteName?: string  // 「その他（新規現場）」選択時の自由記入現場名
+  contractorName?: string        // 元請け業者名（任意）
+  customContractorName?: string  // 「＋新しい元請け業者」選択時の自由記入名
   workers: WorkerEntry[]
   expenses: Expenses
   subcontractors: SubcontractorEntry[]
@@ -99,6 +110,7 @@ export interface DailyReport {
 
 export interface MasterData {
   sites: string[]
+  contractors: string[]
   workers: { id?: string; name: string; unitPrice: number; role: WorkerRole }[]
   subcontractors: string[]
   vehicles: string[]
@@ -167,6 +179,7 @@ export interface ExpenseRow {
   note?:               string  // 備考（車両名・電車区間など）
   registrationNumber?: string  // 登録番号
   fileUrls?:           string[]  // 領収書・写真 URL（Supabase Storage）
+  tategae?:            boolean   // 個人建て替え分
 }
 
 export interface ExpenseItemInput {

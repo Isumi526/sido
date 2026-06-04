@@ -57,6 +57,13 @@ export function computeDiff(oldData: OldReport, newData: NewReport): string[] {
       const nName = siteName(n)
       if (oName !== nName) siteLines.push(`  ▸ 現場名: ${oName} → ${nName}`)
 
+      // 元請け業者
+      const oContractor = contractorName(o)
+      const nContractor = contractorName(n)
+      if (oContractor !== nContractor) {
+        siteLines.push(`  ▸ 元請け: ${oContractor || 'なし'} → ${nContractor || 'なし'}`)
+      }
+
       // 時刻
       const ow = o.workers?.[0]
       const nw = n.workers?.[0]
@@ -98,6 +105,11 @@ export function computeDiff(oldData: OldReport, newData: NewReport): string[] {
 function siteName(site: any): string {
   if (!site) return ''
   return site.siteName === '__other__' ? (site.customSiteName || '新規現場') : (site.siteName || '')
+}
+
+function contractorName(site: any): string {
+  if (!site) return ''
+  return site.contractorName === '__other__' ? (site.customContractorName || '新規元請け') : (site.contractorName || '')
 }
 
 function subSummary(subs: any[]): string {

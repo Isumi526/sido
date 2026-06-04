@@ -122,14 +122,17 @@ async function load() {
   const priceByName = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.unit_price]))
   const subMaster   = Object.fromEntries((sm ?? []).map((s: any) => [s.name, { category: s.category, unitPrice: s.unit_price ?? 0 }]))
 
-  // 対象月の日報取得
+  // 対象月の日報取得。月末は翌月1日の手前(.lt)で表す
+  //（'${ym}-31' は6月/2月等で不正日付になり PostgREST が400を返すため）
+  const [yy, mm] = ym.split('-').map(Number)
+  const nextMonthFirst = mm === 12 ? `${yy + 1}-01-01` : `${yy}-${String(mm + 1).padStart(2, '0')}-01`
   const { data: reports } = await supabase
     .from('daily_reports')
     .select('sites')
     .eq('account_id', accountId)
     .eq('is_working', true)
     .gte('date', `${ym}-01`)
-    .lte('date', `${ym}-31`)
+    .lt('date', nextMonthFirst)
 
   let labor = 0, shosha = 0, gyosha = 0
   const expMap = new Map<string, number>()

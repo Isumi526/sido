@@ -74,6 +74,23 @@
             >✕ 削除</button>
           </template>
 
+          <!-- 元請け業者（任意） -->
+          <Field label="元請け業者">
+            <select v-model="site.contractorName" class="select">
+              <option value="">選択してください（任意）</option>
+              <option v-for="name in master.contractorNames.value" :key="name" :value="name">{{ name }}</option>
+              <option value="__other__">＋ 新しい元請け業者を登録する</option>
+            </select>
+            <input
+              v-if="site.contractorName === '__other__'"
+              v-model="site.customContractorName"
+              type="text"
+              class="input mt6"
+              placeholder="元請け業者名を入力（例: 〇〇建設）"
+              @keydown.enter.prevent
+            />
+          </Field>
+
           <!-- 現場名 -->
           <Field label="現場名">
             <select v-model="site.siteName" class="select" required>
@@ -217,10 +234,10 @@
                   </div>
                   <input v-model="veh.vehicleName" type="text" class="input" placeholder="車両名（例: ハイエース）" @keydown.enter.prevent />
                   <div class="expense-grid mt8">
-                    <ExpenseField v-model="veh.distanceKm" label="ガソリン（往復km）" />
-                    <ExpenseField v-model="veh.dieselKm"   label="軽油（往復km）" />
-                    <ExpenseField v-model="veh.parkingYen" label="駐車場（円）" />
-                    <ExpenseField v-model="veh.highwayYen" label="高速代（円）" />
+                    <ExpenseField v-model="veh.distanceKm" v-model:tategae="veh.gasTategae"     with-tategae label="ガソリン（往復km）" />
+                    <ExpenseField v-model="veh.dieselKm"   v-model:tategae="veh.dieselTategae"  with-tategae label="軽油（往復km）" />
+                    <ExpenseField v-model="veh.parkingYen" v-model:tategae="veh.parkingTategae" with-tategae label="駐車場（円）" />
+                    <ExpenseField v-model="veh.highwayYen" v-model:tategae="veh.highwayTategae" with-tategae label="高速代（円）" />
                   </div>
                   <!-- ETCカード -->
                   <div class="mt8">
@@ -253,7 +270,7 @@
               <template v-if="siteUsage[si].train === 'あり'">
                 <div v-for="(tr, ti) in site.expenses.trains" :key="ti" class="lineitems-row">
                   <input v-model="tr.label" type="text" class="input" placeholder="例: 名古屋〜大阪" @keydown.enter.prevent />
-                  <ExpenseField v-model="tr.yen" label="金額" />
+                  <ExpenseField v-model="tr.yen" v-model:tategae="tr.tategae" with-tategae label="金額" />
                   <button v-if="site.expenses.trains.length > 1" type="button" class="btn-icon-sm" @click="report.removeTrain(si, ti)">✕</button>
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addTrain(si)">＋ 追加</button>
@@ -291,7 +308,7 @@
                 </div>
                 <div class="hotel-row mt6">
                   <input v-model="site.expenses.hotelName" type="text" class="input" placeholder="施設名（例: アパホテル）" @keydown.enter.prevent />
-                  <ExpenseField v-model="site.expenses.hotelYen" label="金額" />
+                  <ExpenseField v-model="site.expenses.hotelYen" v-model:tategae="site.expenses.hotelTategae" with-tategae label="金額" />
                 </div>
                 <input v-model="site.expenses.hotelRegistration" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" @keydown.enter.prevent />
               </template>
@@ -316,7 +333,7 @@
                 </div>
                 <div class="hotel-row mt6">
                   <input v-model="site.expenses.leopalaceName" type="text" class="input" placeholder="施設名" @keydown.enter.prevent />
-                  <ExpenseField v-model="site.expenses.leopalaceYen" label="金額" />
+                  <ExpenseField v-model="site.expenses.leopalaceYen" v-model:tategae="site.expenses.leopalaceTategae" with-tategae label="金額" />
                 </div>
                 <input v-model="site.expenses.leopalaceRegistration" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" @keydown.enter.prevent />
               </template>
@@ -368,7 +385,7 @@
                 </div>
                 <div v-for="(ot, oi) in site.expenses.others" :key="oi" class="lineitems-row mt6">
                   <input v-model="ot.label" type="text" class="input" placeholder="内容" @keydown.enter.prevent />
-                  <ExpenseField v-model="ot.yen" label="金額" />
+                  <ExpenseField v-model="ot.yen" v-model:tategae="ot.tategae" with-tategae label="金額" />
                   <button v-if="site.expenses.others.length > 1" type="button" class="btn-icon-sm" @click="report.removeOther(si, oi)">✕</button>
                   <input v-model="ot.registrationNumber" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" @keydown.enter.prevent />
                 </div>
@@ -395,7 +412,7 @@
                 </div>
                 <div class="lineitems-row mt6">
                   <input v-model="site.expenses.entertainmentLabel" type="text" class="input" placeholder="内容" @keydown.enter.prevent />
-                  <ExpenseField v-model="site.expenses.entertainmentYen" label="金額" />
+                  <ExpenseField v-model="site.expenses.entertainmentYen" v-model:tategae="site.expenses.entertainmentTategae" with-tategae label="金額" />
                 </div>
                 <input v-model="site.expenses.entertainmentRegistration" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" @keydown.enter.prevent />
               </template>
@@ -440,9 +457,9 @@
           ⚠️ {{ report.error.value || editError }}
         </div>
 
-        <!-- LINEプレビュー -->
-        <div v-if="!isEditMode" class="line-preview">
-          <div class="line-preview-label">📲 LINE プレビュー</div>
+        <!-- LINEプレビュー（新規・編集とも全体をプレビュー）-->
+        <div class="line-preview">
+          <div class="line-preview-label">{{ isEditMode ? '📲 編集後プレビュー' : '📲 LINE プレビュー' }}</div>
           <pre class="line-preview-body">{{ linePreview }}</pre>
         </div>
 
@@ -652,6 +669,8 @@ async function loadEditData(date: string) {
     report.form.value.sites = saved.sites.map((site: any) => ({
       siteName:       site.siteName ?? '',
       customSiteName: site.customSiteName,
+      contractorName: site.contractorName ?? '',
+      customContractorName: site.customContractorName,
       siteNote:       site.siteNote ?? '',
       // workers が空配列 = 本人稼働なし（下請けのみ）の意図的な状態なので温存する。
       // workers 自体が欠落している旧データのみ本人をデフォルト復元する。
@@ -878,6 +897,10 @@ const linePreview = computed(() => {
       ? (site.customSiteName || '新規現場')
       : site.siteName
     lines.push('', `📍 ${displayName}`)
+    const contractorName = site.contractorName === '__other__'
+      ? (site.customContractorName || '')
+      : (site.contractorName || '')
+    if (contractorName) lines.push(`🏢 ${contractorName}`)
 
     // 稼働時間（名前なし・時間のみ）
     const workers = (site.workers || []).filter((w: any) => w.workerName)
@@ -1261,7 +1284,12 @@ function fillTestData() {
     // ── 現場1（既存現場） ──
     const site0 = report.form.value.sites[0]
     site0.siteName = master.siteNames.value[0]
-    // workers はログインユーザー固定 → 時刻だけ上書き
+    // 元請け業者: マスタにあれば既存を選択、なければ「その他」で新規入力をテスト
+    const con = master.contractorNames.value
+    site0.contractorName       = con[0] || '__other__'
+    site0.customContractorName = con[0] ? '' : 'テスト元請け建設'
+    // 自分の稼働あり → 時刻を上書き
+    siteUsage.value[0].selfWorking = 'あり'
     if (site0.workers[0]) { site0.workers[0].startTime = '08:00'; site0.workers[0].endTime = '17:30' }
     site0.subcontractors = [
       { subcontractorId: '', subcontractorName: sub[0] || '__other__', customSubcontractorName: sub[0] ? '' : 'テスト業者A', count: 2 },
@@ -1270,25 +1298,29 @@ function fillTestData() {
     siteUsage.value[0].expense = 'あり'
     siteUsage.value[0].vehicle = 'あり'
     site0.expenses.carpool = false
-    site0.expenses.vehicles = [{ vehicleName: 'ハイエース', distanceKm: 80, dieselKm: undefined, parkingYen: 500, highwayYen: 1200, etcUsed: true, etcCard: 'カード①' }]
+    // 個人建て替え（tategae）は true/false を混在させ、PDFの「全経費／個人建て替え分のみ」両方を検証可能に
+    site0.expenses.vehicles = [{ vehicleName: 'ハイエース', distanceKm: 80, dieselKm: undefined, parkingYen: 500, highwayYen: 1200, etcUsed: true, etcCard: 'カード①', gasTategae: false, parkingTategae: true, highwayTategae: true }]
     siteUsage.value[0].train = 'あり'
-    site0.expenses.trains = [{ label: '名古屋→大阪', yen: 3000 }]
+    site0.expenses.trains = [{ label: '名古屋→大阪', yen: 3000, tategae: true }]
     siteUsage.value[0].hotel = 'あり'
     site0.expenses.hotelName = 'アパホテル名古屋'
     site0.expenses.hotelYen  = 8000
+    site0.expenses.hotelTategae = false
     site0.expenses.hotelRegistration = 'T1234567890123'
     siteUsage.value[0].leopalace = 'あり'
     site0.expenses.leopalaceName = 'レオパレス栄'
     site0.expenses.leopalaceYen  = 50000
+    site0.expenses.leopalaceTategae = false
     site0.expenses.leopalaceRegistration = 'T9876543210987'
     siteUsage.value[0].garbage = 'あり'
     site0.expenses.garbageFactoryM3 = 3
     site0.expenses.garbageSiteM3    = 5
     siteUsage.value[0].other = 'あり'
-    site0.expenses.others = [{ label: '養生テープ', yen: 1500, registrationNumber: 'なし' }]
+    site0.expenses.others = [{ label: '養生テープ', yen: 1500, registrationNumber: 'なし', tategae: true }]
     siteUsage.value[0].entertainment = 'あり'
     site0.expenses.entertainmentLabel = '懇親会'
     site0.expenses.entertainmentYen   = 10000
+    site0.expenses.entertainmentTategae = false
     site0.expenses.entertainmentRegistration = 'T1111222233334'
 
     // ── 現場2（新規現場「その他」） ── を追加
@@ -1300,7 +1332,10 @@ function fillTestData() {
   const siteN = report.form.value.sites[newIdx]
   siteN.siteName = '__other__'
   siteN.customSiteName = 'テスト新規現場'
-  // workers はログインユーザー固定 → addSite() で17:30〜21:30 が自動セット済み
+  // 元請け業者: 「その他」で新規入力をテスト
+  siteN.contractorName       = '__other__'
+  siteN.customContractorName = '新規テスト元請け'
+  // workers はログインユーザー固定 → addSite() で17:30〜21:30 が自動セット済み（現場跨ぎ残業の検証）
   siteN.subcontractors = [
     { subcontractorId: '', subcontractorName: sub[1] || sub[0] || '__other__', customSubcontractorName: (sub[1] || sub[0]) ? '' : 'テスト業者B', count: 1 },
   ]
@@ -1309,15 +1344,16 @@ function fillTestData() {
   siteN.expenses.carpool = true
   siteN.expenses.vehicles = []
   siteUsage.value[newIdx].train = 'あり'
-  siteN.expenses.trains = [{ label: '大阪→名古屋', yen: 2500 }]
+  siteN.expenses.trains = [{ label: '大阪→名古屋', yen: 2500, tategae: true }]
   siteUsage.value[newIdx].garbage = 'あり'
   siteN.expenses.garbageFactoryM3 = 2
   siteN.expenses.garbageSiteM3    = 4
   siteUsage.value[newIdx].other = 'あり'
-  siteN.expenses.others = [{ label: 'ビニールシート', yen: 800, registrationNumber: 'なし' }]
+  siteN.expenses.others = [{ label: 'ビニールシート', yen: 800, registrationNumber: 'なし', tategae: false }]
   siteUsage.value[newIdx].entertainment = 'あり'
   siteN.expenses.entertainmentLabel = '昼食代'
   siteN.expenses.entertainmentYen   = 5000
+  siteN.expenses.entertainmentTategae = true
   siteN.expenses.entertainmentRegistration = 'なし'
 }
 </script>
@@ -1542,9 +1578,17 @@ html, body {
 
 /* ── その他共通経費 ── */
 .hotel-row { display: flex; flex-direction: column; gap: 6px; }
-.lineitems-row { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 6px; }
-.lineitems-row .input { flex: 1; }
-.lineitems-row .expense-item { width: 110px; flex-shrink: 0; }
+.lineitems-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; margin-bottom: 6px; }
+/* ExpenseField の入れ子(.expense-item)を解いて、行直下のフレックス要素として並べる */
+.lineitems-row .expense-item { display: contents; }
+.lineitems-row .expense-label { display: none; }      /* 行内では「金額」ラベルは省略 */
+.lineitems-row > .input { flex: 1 1 auto; min-width: 0; } /* 内容入力（直下の子のみ） */
+.lineitems-row .expense-input { flex: 0 0 120px; }    /* 金額入力は固定幅で内容の右に */
+.lineitems-row .btn-icon-sm { flex: 0 0 auto; }       /* ✕ ボタン */
+/* 立替チェックは全幅で次行・左詰め（タップしやすいよう余白はコンポーネント側で確保） */
+.lineitems-row .tategae-check { flex-basis: 100%; order: 1; }
+/* 登録番号は全幅で最後の行へ */
+.lineitems-row .input.mt6 { flex-basis: 100%; order: 2; margin-top: 0; }
 
 /* ── ボタン類 ── */
 .btn-primary {
