@@ -382,3 +382,20 @@ s3_region = "env(S3_REGION)"
 s3_access_key = "env(S3_ACCESS_KEY)"
 # Configures AWS_SECRET_ACCESS_KEY for S3 bucket
 s3_secret_key = "env(S3_SECRET_KEY)"
+
+# ============================================================
+#  Edge Functions: 本番関数は LIFF/フロントが認証ヘッダー無しで叩くため
+#  verify_jwt=false を宣言（config 駆動デプロイで取りこぼし防止）
+# ============================================================
+[functions.get-master]
+verify_jwt = false
+[functions.submit-report]
+verify_jwt = false
+[functions.notify-edit]
+verify_jwt = false
+[functions.notify-error]
+verify_jwt = false
+[functions.resend-notifications]
+verify_jwt = false
+[functions.daily-reminder]
+verify_jwt = false
