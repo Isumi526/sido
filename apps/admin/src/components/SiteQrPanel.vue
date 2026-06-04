@@ -1,9 +1,11 @@
 <template>
   <div class="qr-panel">
     <div class="qr-card">
-      <p class="qr-label">出退勤用 QRコード</p>
+      <p class="qr-label">出退勤用 QRコード<span v-if="isDev" class="dev-badge">開発モード</span></p>
       <canvas ref="canvas" class="qr-canvas" />
-      <p class="qr-url">{{ qrUrl }}</p>
+      <a v-if="isDev" class="qr-url qr-url-link" :href="qrUrl" target="_blank" rel="noopener">{{ qrUrl }}</a>
+      <p v-else class="qr-url">{{ qrUrl || '(VITE_LIFF_ID が未設定です)' }}</p>
+      <p v-if="isDev" class="dev-hint">※ 開発モードのQR/リンクはローカルの liff(:3000) を開きます。スマホでスキャンするとPCのlocalhostに届かないため、同じPCで上のURLをクリックして検証してください。</p>
       <div class="btn-row">
         <button class="btn-download" :disabled="generating" @click="downloadPdf">
           {{ generating ? '作成中...' : '印刷用PDF（A4）' }}
@@ -36,15 +38,20 @@ const canvas     = ref<HTMLCanvasElement | null>(null)
 const generating = ref(false)
 
 const LIFF_ID = import.meta.env.VITE_LIFF_ID as string | undefined
+// vite dev（npm run dev:admin）では true。本番ビルドでは false。
+const isDev = import.meta.env.DEV
 
-// site_id はクエリではなくパスに埋め込む。
-// liff.line.me はクエリの値を落とすことがあるが、パスは確実に転送するため。
-const qrUrl = LIFF_ID
-  ? `https://liff.line.me/${LIFF_ID}/checkin/${props.siteId}`
-  : `(VITE_LIFF_ID が未設定です)`
+// dev: ローカルの liff(:3000) を直接開く。ローカルSupabaseの現場IDのまま検証できる。
+//      （本番LIFFは liff.line.me 経由で本番エンドポイント＝本番DBに飛ぶため、
+//        ローカルで作った現場IDは「現場情報が見つかりません」になる）
+// 本番: liff.line.me 経由。site_id はクエリではなくパスに埋め込む
+//      （liff.line.me はクエリ値を落とすことがあるが、パスは確実に転送するため）。
+const qrUrl = isDev
+  ? `http://localhost:3000/checkin/${props.siteId}`
+  : (LIFF_ID ? `https://liff.line.me/${LIFF_ID}/checkin/${props.siteId}` : '')
 
 onMounted(async () => {
-  if (!canvas.value || !LIFF_ID) return
+  if (!canvas.value || !qrUrl) return
   await QRCode.toCanvas(canvas.value, qrUrl, {
     width: 280,
     margin: 2,
@@ -72,7 +79,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 // 日本語フォント埋め込みを避けるため、ポスター全体をcanvasに描画してから
 // A4 PDFに1枚画像として貼り込む（テキストはブラウザのフォントで描画）
 async function downloadPdf() {
-  if (!LIFF_ID || generating.value) return
+  if (!qrUrl || generating.value) return
   generating.value = true
   try {
     // A4縦 ≒ 150dpi（210×297mm）
@@ -166,6 +173,16 @@ async function downloadPdf() {
   box-shadow: 0 1px 4px rgba(0,0,0,.06);
 }
 .qr-label { font-size: 13px; font-weight: 700; color: #888; }
+.dev-badge {
+  display: inline-block; margin-left: 8px; vertical-align: middle;
+  background: #fef3c7; color: #92400e; border: 1px solid #fcd34d;
+  border-radius: 6px; padding: 1px 8px; font-size: 11px; font-weight: 700;
+}
+.qr-url-link { color: #2563eb; text-decoration: underline; cursor: pointer; }
+.dev-hint {
+  font-size: 11px; color: #92400e; background: #fffbeb; border: 1px solid #fde68a;
+  border-radius: 8px; padding: 8px 10px; line-height: 1.5; max-width: 320px; text-align: center;
+}
 .qr-canvas { border-radius: 8px; }
 .qr-url {
   font-size: 11px;
