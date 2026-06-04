@@ -10,7 +10,16 @@
 <script setup lang="ts">
 const liff = useLiff()
 
+// サイト名（ブラウザタブ／共有タイトル）を会社名ベースで動的に設定。
+// accounts.name 取得前は nuxt.config の '管理システム' をフォールバック表示。
+const { getAccountId, accountName } = useAccount()
+useHead({
+  title: () => accountName.value ? `${accountName.value}｜管理システム` : '管理システム',
+})
+
 onMounted(async () => {
+  // 会社名は LIFF init に依存しない（Supabase anon クエリのみ）
+  getAccountId()
   if (!liff.initialized.value) {
     await liff.init()
   }

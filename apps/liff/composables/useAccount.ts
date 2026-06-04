@@ -6,21 +6,23 @@
 // ============================================================
 
 export const useAccount = () => {
-  const config    = useRuntimeConfig()
-  const slug      = (config.public as any).accountSlug as string || 'sample-construction'
-  const accountId = useState<string | null>('account_id', () => null)
+  const config      = useRuntimeConfig()
+  const slug        = (config.public as any).accountSlug as string || 'sample-construction'
+  const accountId   = useState<string | null>('account_id', () => null)
+  const accountName = useState<string | null>('account_name', () => null)
 
   async function getAccountId(): Promise<string | null> {
     if (accountId.value) return accountId.value
     const supabase = useSupabase()
     const { data } = await supabase
       .from('accounts')
-      .select('id')
+      .select('id, name')
       .eq('slug', slug)
       .single()
-    accountId.value = data?.id ?? null
+    accountId.value   = data?.id ?? null
+    accountName.value = data?.name ?? null
     return accountId.value
   }
 
-  return { getAccountId, slug }
+  return { getAccountId, slug, accountName }
 }
