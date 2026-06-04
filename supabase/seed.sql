@@ -28,7 +28,7 @@ on conflict (name, account_id) do nothing;
 insert into sites (name, sort_order, account_id)
 select v.name, v.ord, a.id
 from accounts a
-cross join (values ('テスト現場A', 1), ('テスト現場B', 2), ('テスト現場C', 3)) as v(name, ord)
+cross join (values ('テスト現場A', 1), ('テスト現場B', 2), ('テスト現場C', 3), ('テスト現場D', 4)) as v(name, ord)
 where a.slug = 'test'
 on conflict (name, account_id) do nothing;
 

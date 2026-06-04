@@ -20,6 +20,10 @@ export const FEAT_A_SITE = 'テスト現場B'
 export const FEAT_A_CONTRACTOR = '元請A'
 export const FEAT_C_DATE = `${YM}-05`        // day<=15 → first
 export const FEAT_C_PERIOD = `${YM}-first`
+// ATT: 出退勤カード表示テスト用（固定日・専用現場で他の日報と衝突させない）
+export const FEAT_ATT_DATE = `${YM}-10`
+export const FEAT_ATT_SITE = 'テスト現場D'    // 打刻あり（この日報のみが使う専用現場）
+export const FEAT_ATT_NO_SITE = 'テスト現場B' // 打刻なし（— 表示の検証用・同一カード内）
 
 async function ensureAdminUser() {
   const res = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
@@ -66,6 +70,48 @@ async function seedFeatureReports() {
       subcontractors: [],
     }],
   })
+  // ATT: 出退勤表示テスト用日報（テスト現場D=打刻あり / テスト現場B=打刻なし）
+  await upsert('daily_reports', 'user_id,date', {
+    user_id: userId, date: FEAT_ATT_DATE, is_working: true, account_id: accountId,
+    note: 'E2E:出退勤表示テスト',
+    sites: [
+      {
+        siteName: FEAT_ATT_SITE,
+        workers: [{ workerName: SEED_WORKER, workerRole: 'site', startTime: '08:00', endTime: '17:30', breakMinutes: 60 }],
+        expenses: { vehicles: [], trains: [], others: [] }, subcontractors: [],
+      },
+      {
+        siteName: FEAT_ATT_NO_SITE,
+        workers: [{ workerName: SEED_WORKER, workerRole: 'site', startTime: '09:00', endTime: '18:00', breakMinutes: 60 }],
+        expenses: { vehicles: [], trains: [], others: [] }, subcontractors: [],
+      },
+    ],
+  })
+
+  // 出退勤打刻（Worker 01 × テスト現場D × FEAT_ATT_DATE）。checkin 2件で「最早を出勤」も検証。
+  // RLS で DELETE 不可のため、既存があればスキップして冪等にする。
+  const workerRows = await rest(`workers?account_id=eq.${accountId}&name=eq.${encodeURIComponent(SEED_WORKER)}&select=id`)
+  const siteRows   = await rest(`sites?account_id=eq.${accountId}&name=eq.${encodeURIComponent(FEAT_ATT_SITE)}&select=id`)
+  const workerId = workerRows?.[0]?.id
+  const siteId   = siteRows?.[0]?.id
+  if (workerId && siteId) {
+    const dayLo = new Date(`${FEAT_ATT_DATE}T00:00:00+09:00`).toISOString()
+    const dayHi = new Date(`${FEAT_ATT_DATE}T23:59:59+09:00`).toISOString()
+    const existing = await rest(`attendance_logs?worker_id=eq.${workerId}&site_id=eq.${siteId}&checked_at=gte.${dayLo}&checked_at=lte.${dayHi}&select=id`)
+    if (!existing?.length) {
+      const mk = (type: string, hm: string) => ({
+        site_id: siteId, worker_id: workerId, type,
+        checked_at: new Date(`${FEAT_ATT_DATE}T${hm}:00+09:00`).toISOString(),
+        agreed_rule_texts: [],
+      })
+      await rest('attendance_logs', {
+        method: 'POST', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify([mk('checkin', '08:02'), mk('checkin', '08:10'), mk('checkout', '17:35')]),
+      })
+    }
+  } else {
+    console.warn('[e2e] ATT seed: worker/site 未検出（テスト現場D マスタ未投入?）')
+  }
   console.log(`[e2e] feature reports シード OK (user=${userId})`)
 }
 

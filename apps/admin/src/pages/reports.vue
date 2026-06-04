@@ -36,6 +36,9 @@
             <span v-if="site.workers?.[0]?.startTime && site.workers?.[0]?.endTime" class="work-time">
               🕒 {{ site.workers[0].startTime }}〜{{ site.workers[0].endTime }}
             </span>
+            <span class="attendance">
+              🟢 出勤 {{ attendanceFor(r, site)?.checkin ?? '—' }} / 退勤 {{ attendanceFor(r, site)?.checkout ?? '—' }}
+            </span>
             <span class="worker-count">作業員 {{ site.workers?.length ?? 0 }}名</span>
           </div>
         </div>
@@ -84,6 +87,9 @@
             <div class="site-block-title">
               {{ resolveSiteName(site) }}
               <span v-if="resolveContractorName(site)" class="contractor-tag">🏢 {{ resolveContractorName(site) }}</span>
+              <span class="attendance-tag">
+                🟢 出勤 {{ attendanceFor(selected, site)?.checkin ?? '—' }} / 退勤 {{ attendanceFor(selected, site)?.checkout ?? '—' }}
+              </span>
             </div>
 
             <!-- 作業員 -->
@@ -263,6 +269,9 @@ const notifying = ref<string | null>(null)
 const reports  = ref<any[]>([])
 const selected = ref<any | null>(null)
 
+// 出退勤マップ: `${worker_id}|${date}|${現場名}` → { checkin, checkout }（HH:MM, JST）
+const attendanceMap = ref<Record<string, { checkin?: string; checkout?: string }>>({})
+
 function confirmDelete(r: any) {
   if (!confirm(`${r.date} ${r.worker_name ?? ''} の日報を削除しますか？`)) return
   deleteReport(r)
@@ -362,6 +371,21 @@ function resolveSiteName(site: any): string {
   return n === '__other__' ? (site.customSiteName?.trim() || '新規現場') : (n || '(現場名なし)')
 }
 
+// ── 出退勤（実打刻）表示ヘルパー ──────────────────────────
+const TZ = 'Asia/Tokyo'
+function jstDate(iso: string): string {
+  // YYYY-MM-DD（JST）。daily_reports.date と突き合わせる。
+  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(iso))
+}
+function jstTime(iso: string): string {
+  return new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }).format(new Date(iso))
+}
+function attendanceFor(r: any, site: any): { checkin?: string; checkout?: string } | null {
+  const wid = r.users?.worker_id
+  if (!wid) return null
+  return attendanceMap.value[`${wid}|${r.date}|${resolveSiteName(site)}`] ?? null
+}
+
 function resolveContractorName(site: any): string {
   const n = site.contractorName ?? ''
   return n === '__other__' ? (site.customContractorName?.trim() || '新規元請け') : n
@@ -406,6 +430,34 @@ async function load() {
     ...r,
     worker_name: r.users?.workers?.name ?? r.users?.real_name ?? '—',
   }))
+
+  // 出退勤（実打刻）を取得して現場ごとにマップ化
+  // attendance_logs には account_id が無いため worker_id 集合で隔離する。
+  const workerIds = [...new Set(mapped.map((r: any) => r.users?.worker_id).filter(Boolean))]
+  const map: Record<string, { checkin?: string; checkout?: string }> = {}
+  if (workerIds.length > 0) {
+    // JST の月初〜月末を UTC(Z) に変換して渡す（フィルタ値に '+' を含めると
+    // URL 上でスペース解釈され timestamp パースエラーになるため toISOString を使う）
+    const loUtc = new Date(`${dateFrom.value}T00:00:00+09:00`).toISOString()
+    const hiUtc = new Date(`${dateTo.value}T23:59:59+09:00`).toISOString()
+    const { data: logs } = await supabase
+      .from('attendance_logs')
+      .select('worker_id, type, checked_at, sites(name)')
+      .in('worker_id', workerIds)
+      .gte('checked_at', loUtc)
+      .lte('checked_at', hiUtc)
+      .order('checked_at', { ascending: true })
+    for (const log of (logs ?? []) as any[]) {
+      const siteName = log.sites?.name
+      if (!siteName) continue
+      const key = `${log.worker_id}|${jstDate(log.checked_at)}|${siteName}`
+      const entry = map[key] ?? (map[key] = {})
+      // order asc のため checkin は最早を保持（上書きしない）、checkout は最遅を保持（上書き）
+      if (log.type === 'checkin') { if (!entry.checkin) entry.checkin = jstTime(log.checked_at) }
+      else if (log.type === 'checkout') { entry.checkout = jstTime(log.checked_at) }
+    }
+  }
+  attendanceMap.value = map
 
   // 作業員プルダウン選択肢を更新（五十音順）
   const names = [...new Set(mapped.map((r: any) => r.worker_name).filter((n: string) => n && n !== '—'))]
@@ -457,7 +509,9 @@ onMounted(load)
 .site-name { font-weight: 600; }
 .contractor-chip { font-size: 11px; color: #6b4eff; background: #eee9ff; border-radius: 4px; padding: 2px 8px; }
 .contractor-tag { font-size: 12px; font-weight: 600; color: #6b4eff; margin-left: 8px; }
+.attendance-tag { font-size: 12px; font-weight: 600; color: #0a8a3a; margin-left: 8px; font-variant-numeric: tabular-nums; }
 .work-time { color: #1a7abf; font-weight: 600; font-variant-numeric: tabular-nums; }
+.attendance { color: #0a8a3a; font-weight: 600; font-variant-numeric: tabular-nums; }
 .worker-count { color: #888; }
 
 /* モーダル */
