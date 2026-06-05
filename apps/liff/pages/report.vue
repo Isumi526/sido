@@ -40,7 +40,7 @@
         <!-- 日付 -->
         <FormSection num="01" title="日付">
           <div class="date-fixed">{{ report.form.value.date }}</div>
-          <div v-if="report.form.value.date < new Date().toISOString().split('T')[0]" class="past-date-notice">
+          <div v-if="!isEditMode && report.form.value.date < new Date().toISOString().split('T')[0]" class="past-date-notice">
             過去の未送信日報です。<br>休み等だった場合は、「稼働なし」を選択して送信してください。
           </div>
         </FormSection>
