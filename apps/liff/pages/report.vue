@@ -815,7 +815,9 @@ function removeSite(i: number) {
 }
 
 onMounted(async () => {
-  const masterPromise = master.fetch()
+  // フォームを開くたびに Supabase から最新マスタを取得し、直近に登録した
+  //  下請け業者などがプルダウンに確実に反映されるようにする（編集パスと統一）。
+  const masterPromise = master.fetch(true)
   if (!liff.initialized.value) await liff.init()
 
   // ユーザー登録チェック（キャッシュあれば即座。未登録でもフォームは使えるが経費PDFに名前が出ない）

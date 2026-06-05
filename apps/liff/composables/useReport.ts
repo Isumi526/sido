@@ -264,16 +264,22 @@ export const useReport = () => {
           body:      JSON.stringify(stripEmpty(mainPayload)),
         })
       }
-      submitted.value = true
-
-      // ── ③ 新規現場・新規下請けを Supabase に保存（fire-and-forget）──
+      // ── ③ 新規現場・新規下請けを Supabase に保存（送信完了表示の前に確実化）──
+      //  fire-and-forget だと「送信完了」直後にLIFFを閉じた際に upsert が中断され、
+      //  登録した下請が次回プルダウンに出ない事象が起きていた。await して確実に永続化する。
+      const masterSaves: Promise<void>[] = []
       for (const site of payload.sites) {
-        if (site.siteName) master.saveSite(site.siteName)
-        if (site.contractorName) master.saveContractor(site.contractorName)
+        if (site.siteName) masterSaves.push(master.saveSite(site.siteName))
+        if (site.contractorName) masterSaves.push(master.saveContractor(site.contractorName))
         for (const sub of site.subcontractors) {
-          if (sub.subcontractorName && sub.subcontractorName !== '__other__') master.saveSub(sub.subcontractorName)
+          if (sub.subcontractorName && sub.subcontractorName !== '__other__') masterSaves.push(master.saveSub(sub.subcontractorName))
         }
       }
+      const masterResults = await Promise.allSettled(masterSaves)
+      const masterFailed = masterResults.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+      if (masterFailed.length) console.error('[Report] マスタ保存に失敗:', masterFailed.map(r => r.reason))
+
+      submitted.value = true
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : '送信に失敗しました'
       console.error('[Report] 送信エラー:', e)
