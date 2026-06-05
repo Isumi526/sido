@@ -496,6 +496,12 @@ import type { RateBreakdown } from '~/utils/workerHours'
 import { computeDiff } from '~/utils/diffReport'
 import type { User } from '~/types'
 
+// クエリ（?edit=YYYY-MM-DD）が変わったらページを再マウントさせ、編集/新規の
+//  初期化（onMounted）を必ず再実行する。これが無いと、編集画面を開いた後に
+//  アプリ内メニュー「日報登録」(/report) を押しても再マウントされず、編集状態
+//  （isEditMode・日付）が残ってしまう。
+definePageMeta({ key: route => route.fullPath })
+
 const config  = useRuntimeConfig()
 const route   = useRoute()
 const liff    = useLiff()

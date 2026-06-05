@@ -102,3 +102,35 @@ test('新規登録した下請業者が再訪時にプルダウンへ残る', as
     subSelect2sel.first().locator('option', { hasText: SUB_NAME })
   ).toHaveCount(1, { timeout: 10000 })
 })
+
+// ── バグ: 編集画面(?edit=)を開いた後、アプリ内メニュー「日報登録」を押しても
+//    ページが再マウントされず編集状態が残る（クエリ変化を監視していなかった）。──
+test('編集画面を開いた後にメニュー「日報登録」で編集状態が残らない', async ({ page }) => {
+  try { await page.goto('/history', { waitUntil: 'networkidle', timeout: 8000 }) }
+  catch { test.skip(true, 'liff dev(3000) 未起動'); return }
+
+  // 過去日付の送信済み日報の編集リンクをクライアントサイド遷移で開く
+  const links = page.locator('a.btn-edit')
+  await links.first().waitFor({ timeout: 10000 }).catch(() => {})
+  const n = await links.count()
+  if (!n) { test.skip(true, '履歴に編集可能な日報が無い'); return }
+  const today = new Date().toISOString().split('T')[0]
+  let target: ReturnType<typeof links.nth> | null = null
+  for (let i = 0; i < n; i++) {
+    const href = await links.nth(i).getAttribute('href')
+    const m = href?.match(/edit=(\d{4}-\d{2}-\d{2})/)
+    if (m && m[1] < today) { target = links.nth(i); break }
+  }
+  if (!target) { test.skip(true, '過去日付の送信済み日報が無い'); return }
+  await target.click()
+
+  await expect(page.getByText('過去の日報を編集中')).toBeVisible({ timeout: 10000 })
+
+  // アプリ内メニュー（ハンバーガー）→「日報登録」をクライアントサイド遷移で押す
+  await page.locator('.app-hamburger').click()
+  await page.getByRole('link', { name: '日報登録' }).click()
+
+  // URL は /report（クエリなし）になり、編集状態（編集中バナー）が残らないこと
+  await expect(page).toHaveURL(/\/report$/)
+  await expect(page.getByText('過去の日報を編集中')).toHaveCount(0, { timeout: 10000 })
+})
