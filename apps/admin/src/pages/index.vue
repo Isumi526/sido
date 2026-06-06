@@ -3,10 +3,16 @@
     <h1 class="page-title">ダッシュボード</h1>
 
     <!-- 開発の更新履歴 -->
-    <div v-if="updates.length" class="updates-box">
+    <div v-if="unconfirmed.length || confirmed.length" class="updates-box">
       <div class="updates-head">お知らせ・更新履歴</div>
+      <div class="updates-tabs">
+        <button class="upd-tab" :class="{ active: tab === 'unconfirmed' }" @click="tab = 'unconfirmed'">
+          未確認<span v-if="unconfirmed.length" class="upd-badge">{{ unconfirmed.length }}</span>
+        </button>
+        <button class="upd-tab" :class="{ active: tab === 'confirmed' }" @click="tab = 'confirmed'">確認済み</button>
+      </div>
       <ul class="updates-list">
-        <li v-for="u in updates" :key="u.id" class="update-item">
+        <li v-for="u in (tab === 'unconfirmed' ? unconfirmed : confirmed)" :key="u.id" class="update-item">
           <span class="update-date">{{ fmtUpdDate(u.created_at) }}</span>
           <span class="update-title">{{ u.title }}</span>
           <component
@@ -15,7 +21,17 @@
             v-bind="u.link.startsWith('/') ? { to: u.link } : { href: u.link, target: '_blank', rel: 'noopener' }"
             class="update-link"
           >開く →</component>
-          <button class="update-ok" :disabled="archivingId === u.id" @click="archiveUpdate(u.id)">OK</button>
+          <button
+            v-if="tab === 'unconfirmed'"
+            class="update-ok" :disabled="busyId === u.id" @click="setArchived(u.id, true)"
+          >確認</button>
+          <button
+            v-else
+            class="update-undo" :disabled="busyId === u.id" @click="setArchived(u.id, false)"
+          >未確認に戻す</button>
+        </li>
+        <li v-if="(tab === 'unconfirmed' ? unconfirmed : confirmed).length === 0" class="update-empty">
+          {{ tab === 'unconfirmed' ? '未確認のお知らせはありません' : '確認済みはありません' }}
         </li>
       </ul>
     </div>
@@ -75,10 +91,12 @@ import { RouterLink } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 
-// ── 開発の更新履歴（全社共通・archived=false を新しい順）──────────
+// ── 開発の更新履歴（全社共通・未確認/確認済みタブ）──────────
 interface DevUpdate { id: string; title: string; link: string | null; created_at: string }
-const updates    = ref<DevUpdate[]>([])
-const archivingId = ref<string | null>(null)
+const tab         = ref<'unconfirmed' | 'confirmed'>('unconfirmed')
+const unconfirmed = ref<DevUpdate[]>([])   // archived=false
+const confirmed   = ref<DevUpdate[]>([])   // archived=true
+const busyId      = ref<string | null>(null)
 
 function fmtUpdDate(s: string): string {
   const d = new Date(s)
@@ -86,24 +104,25 @@ function fmtUpdDate(s: string): string {
 }
 
 async function loadUpdates() {
-  const { data } = await supabase
-    .from('dev_updates')
-    .select('id, title, link, created_at')
-    .eq('archived', false)
-    .order('created_at', { ascending: false })
-  updates.value = (data ?? []) as DevUpdate[]
+  const sel = 'id, title, link, created_at'
+  const [{ data: un }, { data: cf }] = await Promise.all([
+    supabase.from('dev_updates').select(sel).eq('archived', false).order('created_at', { ascending: false }),
+    supabase.from('dev_updates').select(sel).eq('archived', true).order('created_at', { ascending: false }).limit(100),
+  ])
+  unconfirmed.value = (un ?? []) as DevUpdate[]
+  confirmed.value   = (cf ?? []) as DevUpdate[]
 }
 
-async function archiveUpdate(id: string) {
-  archivingId.value = id
+async function setArchived(id: string, archived: boolean) {
+  busyId.value = id
   try {
-    const { error } = await supabase.from('dev_updates').update({ archived: true }).eq('id', id)
+    const { error } = await supabase.from('dev_updates').update({ archived }).eq('id', id)
     if (error) throw error
-    updates.value = updates.value.filter(u => u.id !== id)
+    await loadUpdates()
   } catch (e) {
-    console.error('[updates] archive失敗:', e)
+    console.error('[updates] 更新失敗:', e)
   } finally {
-    archivingId.value = null
+    busyId.value = null
   }
 }
 
@@ -254,8 +273,16 @@ watch(selectedMonth, load)
 
 /* 開発の更新履歴 */
 .updates-box { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 24px; overflow: hidden; }
-.updates-head { font-size: 13px; font-weight: 700; color: #555; padding: 12px 16px; border-bottom: 1px solid #f0f0f0; background: #fafafa; }
+.updates-head { font-size: 13px; font-weight: 700; color: #555; padding: 12px 16px; background: #fafafa; }
+.updates-tabs { display: flex; gap: 4px; padding: 0 12px; border-bottom: 1px solid #f0f0f0; background: #fafafa; }
+.upd-tab { background: none; border: none; border-bottom: 2px solid transparent; padding: 8px 12px; font-size: 13px; font-weight: 600; color: #999; cursor: pointer; }
+.upd-tab.active { color: #06C755; border-bottom-color: #06C755; }
+.upd-badge { display: inline-block; margin-left: 6px; background: #ef4444; color: #fff; border-radius: 999px; padding: 0 6px; font-size: 11px; }
 .updates-list { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; }
+.update-empty { padding: 20px 16px; text-align: center; color: #aaa; font-size: 13px; }
+.update-undo { flex-shrink: 0; background: none; border: 1px solid #ddd; border-radius: 6px; padding: 5px 12px; font-size: 12px; color: #888; cursor: pointer; }
+.update-undo:hover:not(:disabled) { background: #f5f5f5; }
+.update-undo:disabled { opacity: .6; cursor: default; }
 .update-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid #f4f4f4; font-size: 14px; }
 .update-item:first-child { border-top: none; }
 .update-date { color: #999; font-size: 12px; font-variant-numeric: tabular-nums; flex-shrink: 0; width: 40px; }
