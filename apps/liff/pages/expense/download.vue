@@ -47,6 +47,7 @@
 
         <!-- ====== 印刷エリア ====== -->
         <div ref="printAreaEl" class="print-area">
+          <div v-if="accountName" class="doc-addressee">{{ accountName }} 御中</div>
           <div class="doc-header">
             <div class="doc-meta-left">
               <span class="doc-note">★必ず登録番号記入</span>
@@ -153,6 +154,7 @@ const proxy   = useProxyMode()
 const router  = useRouter()
 const config  = useRuntimeConfig()
 const supabase = useSupabase()
+const { accountName, getAccountId } = useAccount()
 
 const initializing   = ref(true)
 const loading        = ref(false)
@@ -216,6 +218,7 @@ onMounted(async () => {
   selfUser.value = await expense.getUser(userId)
   if (!selfUser.value) { router.push('/register'); return }
 
+  await getAccountId()   // accountName（宛名）を populate
   await resolveProxyUserId()
   await loadRows()
   initializing.value = false
@@ -386,6 +389,7 @@ html,body { background:var(--bg);color:var(--text);font-family:var(--font);min-h
 .mode-bar { display:flex;gap:8px; }
 .mode-btn { flex:1;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;font-size:13px;font-family:var(--font);color:var(--text2);font-weight:700;cursor:pointer; }
 .mode-btn.active { background:var(--accent);color:#fff;border-color:var(--accent); }
+.doc-addressee { font-size:16px;font-weight:700;margin-bottom:10px;letter-spacing:1px; }
 .doc-title-sub { font-size:12px;font-weight:700;margin-left:4px; }
 .print-area { background:#fff;border-radius:var(--radius);padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.06); }
 .doc-header { display:grid;grid-template-columns:1fr auto 1fr;align-items:center;margin-bottom:12px;gap:8px; }

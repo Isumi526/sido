@@ -13,6 +13,7 @@
     <!-- レポート本体 -->
     <div v-else id="report">
       <h1 class="company">御請求先<span v-if="mode === 'tategae'" class="company-sub">（個人建て替え分）</span></h1>
+      <div v-if="accountName" class="addressee">{{ accountName }} 御中</div>
 
       <div class="report-header">
         <div class="notes-left">
@@ -91,6 +92,7 @@ const displayRows = computed(() =>
 const total   = computed(() => displayRows.value.reduce((s, r) => s + r.amount, 0))
 
 const expense = useExpense()
+const { accountName, getAccountId } = useAccount()
 
 onMounted(async () => {
   if (!userId || !period) {
@@ -99,6 +101,7 @@ onMounted(async () => {
     return
   }
   try {
+    await getAccountId()   // accountName（宛名）を populate
     user.value  = await expense.getUser(userId)
     rows.value  = await expense.getExpenseRowsFromReports(userId, period)
     if (!user.value) error.value = 'ユーザーが見つかりません。'
@@ -128,7 +131,8 @@ body { font-family: 'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic', sans-serif; ba
 @keyframes spin { to { transform: rotate(360deg); } }
 
 #report { padding: 16px; }
-.company { font-size: 20px; font-weight: 900; text-align: center; letter-spacing: 3px; margin-bottom: 12px; }
+.company { font-size: 20px; font-weight: 900; text-align: center; letter-spacing: 3px; margin-bottom: 8px; }
+.addressee { font-size: 16px; font-weight: 700; letter-spacing: 1px; margin-bottom: 10px; }
 .company-sub { font-size: 14px; font-weight: 700; letter-spacing: 1px; }
 .report-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; }
 .notes-left { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: #555; }
