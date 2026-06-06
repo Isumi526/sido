@@ -24,6 +24,16 @@
         <span class="material-symbols-rounded alert-arrow">chevron_right</span>
       </div>
 
+      <!-- 経費申請 締切案内 -->
+      <NuxtLink v-if="deadlineBanner" class="deadline-card" to="/expense/download">
+        <span class="material-symbols-rounded deadline-icon">schedule</span>
+        <div class="deadline-body">
+          <div class="deadline-title">{{ periodShort(deadlineBanner.periodKey) }}の経費申請の締切が近づいています</div>
+          <div class="deadline-sub">締切：{{ deadlineBanner.label }} まで</div>
+        </div>
+        <span class="material-symbols-rounded alert-arrow">chevron_right</span>
+      </NuxtLink>
+
       <!-- メニューグリッド -->
       <div class="menu-grid">
         <NuxtLink class="menu-card" to="/report">
@@ -92,17 +102,43 @@
 
 <script setup lang="ts">
 import type { User } from '~/types'
+import { recentPeriodKeys, deadlineForPeriod, deadlineLabel, effectiveStatus } from '~/composables/useExpense'
 
 const { profile } = useLiff()
 const supabase    = useSupabase()
 const config      = useRuntimeConfig()
 const proxy       = useProxyMode()
+const expense     = useExpense()
 
 const currentUser      = ref<User | null>(null)
 const unsubmittedCount = ref(0)
 const accountId        = ref<string | null>(null)
 const proxyModalOpen   = ref(false)
 const proxyLoading     = ref(false)
+const deadlineBanner   = ref<{ periodKey: string; label: string } | null>(null)
+
+/** period_key → '◯月前半/後半' */
+function periodShort(key: string): string {
+  const [, month, half] = key.split('-')
+  return `${parseInt(month)}月${half === 'first' ? '前半' : '後半'}`
+}
+
+/** 締切未到来かつ未申請/差し戻しの期のうち、締切が最も近いものをバナー表示 */
+async function refreshDeadlineBanner() {
+  const uid = currentUser.value?.id
+  if (!uid) { deadlineBanner.value = null; return }
+  const keys = recentPeriodKeys().slice(0, 3)
+  const settlements = await expense.getSettlements(uid, keys)
+  const byKey: Record<string, any> = Object.fromEntries(settlements.map((s: any) => [s.period_key, s]))
+  const now = new Date()
+  const pending = keys
+    .filter(k => now.getTime() <= deadlineForPeriod(k).getTime())
+    .filter(k => { const st = effectiveStatus(byKey[k], k, now); return st === '未申請' || st === '差し戻し' })
+    .sort((a, b) => deadlineForPeriod(a).getTime() - deadlineForPeriod(b).getTime())
+  deadlineBanner.value = pending.length
+    ? { periodKey: pending[0], label: deadlineLabel(pending[0]) }
+    : null
+}
 
 async function openProxyModal() {
   proxyModalOpen.value = true
@@ -152,6 +188,7 @@ onMounted(async () => {
   if (user) {
     currentUser.value = user as User
     await proxy.fetchProxyTargets(user.worker_id)
+    await refreshDeadlineBanner()
   }
 
   // 未送信日報カウント（代理モード時はproxy対象、それ以外は自分）
@@ -256,6 +293,18 @@ async function refreshUnsubmittedCount() {
 .alert-title { font-size: 14px; font-weight: 700; color: #111; }
 .alert-sub   { font-size: 12px; color: #888; margin-top: 2px; }
 .alert-arrow { color: #ccc; font-size: 22px; flex-shrink: 0; }
+.deadline-card {
+  background: #fff; border-radius: 12px;
+  padding: 14px 16px; display: flex; align-items: center; gap: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  border-left: 4px solid #ef4444; cursor: pointer; text-decoration: none;
+}
+.deadline-card:active { background: #fef2f2; }
+.deadline-icon { color: #ef4444; font-size: 26px; flex-shrink: 0;
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+.deadline-body { flex: 1; }
+.deadline-title { font-size: 14px; font-weight: 700; color: #111; }
+.deadline-sub   { font-size: 12px; color: #ef4444; margin-top: 2px; font-weight: 600; }
 
 /* メニューグリッド */
 .menu-grid {
