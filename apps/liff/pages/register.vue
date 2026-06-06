@@ -223,14 +223,18 @@ function clearCache() {
 }
 </script>
 
-<style scoped>
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+<style>
+/* CSS変数は scoped だと :root が当たらないため非scopedで定義する */
 :root {
   --bg: #EFEFEF; --surface: #fff; --border: #E0E0E0;
   --accent: #06C755; --text: #111; --text2: #888; --danger: #E53935;
   --font: 'Noto Sans JP', -apple-system, sans-serif; --radius: 12px;
 }
 html, body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; }
+</style>
+
+<style scoped>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 .main { max-width: 640px; margin: 0 auto; padding: 24px 16px 100px; }
 .state-screen { display: flex; flex-direction: column; align-items: center; padding: 80px 20px; gap: 16px; text-align: center; }
 .spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }

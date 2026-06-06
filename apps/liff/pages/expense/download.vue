@@ -345,10 +345,15 @@ const isMobile = computed(() => {
 })
 </script>
 
-<style scoped>
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+<style>
+/* CSS変数は scoped だと :root が当たらない（var が全て未定義になりボタンが不可視に
+   なる不具合）。非scopedの style に置いて html に確実に適用する。 */
 :root { --bg:#EFEFEF;--surface:#fff;--border:#E0E0E0;--accent:#06C755;--text:#111;--text2:#888;--font:'Noto Sans JP',-apple-system,sans-serif;--radius:12px; }
 html,body { background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh; }
+</style>
+
+<style scoped>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 .header { background:#fff;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;box-shadow:0 1px 4px rgba(0,0,0,.06); }
 .header-inner { max-width:840px;margin:0 auto;padding:0 16px;height:52px;display:flex;align-items:center;justify-content:space-between; }
 .brand { display:flex;align-items:baseline;gap:8px; }
