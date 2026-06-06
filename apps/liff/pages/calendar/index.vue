@@ -94,7 +94,7 @@
         <h2>{{ formModal.id ? '予定を編集' : '予定を追加' }}</h2>
 
         <!-- 対象者（複数選択＋グループ一括選択） -->
-        <div class="form-card">
+        <div class="form-card worker-card">
           <div class="worker-pick-head">
             <span class="form-row-label">対象者 *（{{ selectedWorkerIds.size }}人）</span>
             <select v-if="myGroups.length" class="group-pick" @change="onGroupBulkSelect($event)">
@@ -827,6 +827,7 @@ thead th.sticky-col { z-index: 4; }
 }
 
 /* 対象者（複数選択） */
+.worker-card { padding: 14px; }
 .worker-pick-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
 .group-pick { border: 1px solid #d0d0d0; border-radius: 8px; padding: 5px 8px; font-size: 12px; font-family: inherit; background: #fff; color: #111; max-width: 52%; }
 .worker-chips {
