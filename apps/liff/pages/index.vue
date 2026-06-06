@@ -102,7 +102,7 @@
 
 <script setup lang="ts">
 import type { User } from '~/types'
-import { recentPeriodKeys, deadlineForPeriod, deadlineLabel, effectiveStatus } from '~/composables/useExpense'
+import { recentPeriodKeys, deadlineForPeriod, deadlineLabel, effectiveStatus, isInDeadlineAlertWindow } from '~/composables/useExpense'
 
 const { profile } = useLiff()
 const supabase    = useSupabase()
@@ -132,7 +132,8 @@ async function refreshDeadlineBanner() {
   const byKey: Record<string, any> = Object.fromEntries(settlements.map((s: any) => [s.period_key, s]))
   const now = new Date()
   const pending = keys
-    .filter(k => now.getTime() <= deadlineForPeriod(k).getTime())
+    // 申請受付〜締切のアラート期間内のみ（first=15日〜18日10:00 / second=翌月1日〜3日10:00）
+    .filter(k => isInDeadlineAlertWindow(k, now))
     .filter(k => { const st = effectiveStatus(byKey[k], k, now); return st === '未申請' || st === '差し戻し' })
     .sort((a, b) => deadlineForPeriod(a).getTime() - deadlineForPeriod(b).getTime())
   deadlineBanner.value = pending.length

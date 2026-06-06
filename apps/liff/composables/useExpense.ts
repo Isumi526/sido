@@ -46,6 +46,25 @@ export function deadlineForPeriod(periodKey: string): Date {
   return new Date(`${ny}-${String(nm).padStart(2, '0')}-03T10:00:00+09:00`)
 }
 
+/**
+ * 締切アラートの表示期間内か（ホームバナー用）。
+ * first（前半）: 15日 〜 18日10:00 / second（後半）: 翌月1日 〜 翌月3日10:00（JST）
+ */
+export function isInDeadlineAlertWindow(periodKey: string, now: Date = new Date()): boolean {
+  const [y, m, half] = periodKey.split('-')
+  const year = Number(y), month = Number(m)
+  let start: Date
+  if (half === 'first') {
+    start = new Date(`${y}-${String(month).padStart(2, '0')}-15T00:00:00+09:00`)
+  } else {
+    const nm = month === 12 ? 1 : month + 1
+    const ny = month === 12 ? year + 1 : year
+    start = new Date(`${ny}-${String(nm).padStart(2, '0')}-01T00:00:00+09:00`)
+  }
+  const t = now.getTime()
+  return t >= start.getTime() && t <= deadlineForPeriod(periodKey).getTime()
+}
+
 /** 締切を表示用に整形（例: '6月3日(火) 10:00'） */
 export function deadlineLabel(periodKey: string): string {
   const d = deadlineForPeriod(periodKey)
