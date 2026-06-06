@@ -92,8 +92,26 @@
     <div v-if="formModal" class="modal-overlay" @click.self="formModal = null">
       <div class="modal">
         <h2>{{ formModal.id ? '予定を編集' : '予定を追加' }}</h2>
-        <div class="form-worker-label">
-          👤 {{ workers.find(w => w.id === (formModal as any)._worker_id)?.name ?? '不明' }}
+
+        <!-- 対象者（複数選択＋グループ一括選択） -->
+        <div class="form-card">
+          <div class="worker-pick-head">
+            <span class="form-row-label">対象者 *（{{ selectedWorkerIds.size }}人）</span>
+            <select v-if="myGroups.length" class="group-pick" @change="onGroupBulkSelect($event)">
+              <option value="">グループから一括選択…</option>
+              <option v-for="g in myGroups" :key="g.id" :value="g.id">{{ g.name }}</option>
+            </select>
+          </div>
+          <div class="worker-chips">
+            <button
+              v-for="w in workers"
+              :key="w.id"
+              type="button"
+              class="worker-chip"
+              :class="{ on: selectedWorkerIds.has(w.id) }"
+              @click="toggleWorkerSel(w.id)"
+            >{{ w.name }}</button>
+          </div>
         </div>
 
         <!-- 現場選択 -->
@@ -316,6 +334,23 @@ const gridWrapRef = ref<HTMLElement | null>(null)
 const _todayRow = { el: null as HTMLElement | null }
 const showDeleted = ref(false)
 const formModal   = ref<(Partial<ScheduleForm> & { id?: string }) | null>(null)
+// 予定追加/編集モーダルの対象作業員（複数選択）
+const selectedWorkerIds = ref<Set<string>>(new Set())
+function toggleWorkerSel(id: string) {
+  const s = new Set(selectedWorkerIds.value)
+  if (s.has(id)) s.delete(id); else s.add(id)
+  selectedWorkerIds.value = s
+}
+function onGroupBulkSelect(e: Event) {
+  const gid = (e.target as HTMLSelectElement).value
+  ;(e.target as HTMLSelectElement).value = ''   // プレースホルダに戻す
+  if (!gid) return
+  const g = myGroups.value.find(x => x.id === gid)
+  if (!g) return
+  const s = new Set(selectedWorkerIds.value)
+  for (const m of g.members) s.add(m.worker_id)
+  selectedWorkerIds.value = s
+}
 const detailModal = ref<{ schedule: Schedule; edits: ScheduleEdit[] } | null>(null)
 const saving      = ref(false)
 const formError   = ref('')
@@ -524,6 +559,7 @@ function onCellTap(date: string, workerId: string) {
     start_time: '', end_time: '',
     is_night_shift: false,
   }
+  selectedWorkerIds.value = new Set([workerId])   // タップした作業員を初期選択
   formError.value = ''
 }
 
@@ -543,6 +579,7 @@ function openEdit(ev: Schedule) {
       is_night_shift: ev.is_night_shift,
     },
   }
+  selectedWorkerIds.value = new Set([ev.worker_id])   // 編集対象の作業員（担当変更可）
   formError.value = ''
 }
 
@@ -569,15 +606,18 @@ async function saveSchedule() {
   if (!formModal.value.title?.trim()) { formError.value = '現場を選択してください'; return }
   if (!formModal.value.start_date || !formModal.value.end_date) { formError.value = '日付を入力してください'; return }
   if (formModal.value.start_date > formModal.value.end_date) { formError.value = '終了日は開始日以降にしてください'; return }
+  const targetIds = [...selectedWorkerIds.value]
+  if (targetIds.length === 0) { formError.value = '対象者を選択してください'; return }
   saving.value = true; formError.value = ''
   try {
     // 時刻が両方入力されていれば時刻あり、なければ終日
     const hasTime = !!(formModal.value.start_time && formModal.value.end_time)
     formModal.value.all_day = !hasTime
     const form = formModal.value as ScheduleForm
-    const targetWorkerId = (formModal.value as any)._worker_id ?? effectiveWorkerId.value
     const workerName = proxy.proxyTarget.value?.name ?? profile.value?.displayName ?? undefined
     if (formModal.value.id) {
+      // 編集: 既存予定を先頭の対象者に更新（担当変更を含む）、追加分は新規作成
+      ;(form as any).worker_id = targetIds[0]
       const orig = (formModal.value as any)._original ?? {}
       await schedules.updateSchedule(formModal.value.id, form)
       // 編集履歴を記録
@@ -596,8 +636,15 @@ async function saveSchedule() {
           changes,
         })
       }
+      // 追加で選択された作業員には同内容で新規作成
+      for (const wid of targetIds.slice(1)) {
+        await schedules.createSchedule(form, wid, workerName)
+      }
     } else {
-      await schedules.createSchedule(form, targetWorkerId ?? undefined, workerName)
+      // 新規: 選択した各作業員に同内容で作成
+      for (const wid of targetIds) {
+        await schedules.createSchedule(form, wid, workerName)
+      }
     }
     formModal.value = null
     await loadSchedules()
@@ -778,6 +825,16 @@ thead th.sticky-col { z-index: 4; }
   text-align: center; font-size: 14px; font-weight: 600;
   color: #06C755; margin-bottom: 12px;
 }
+
+/* 対象者（複数選択） */
+.worker-pick-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.group-pick { border: 1px solid #ccc; border-radius: 8px; padding: 6px 8px; font-size: 12px; font-family: inherit; background: #fff; color: #111; max-width: 55%; }
+.worker-chips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 140px; overflow-y: auto; }
+.worker-chip {
+  border: 1px solid #ccc; border-radius: 999px; padding: 6px 12px;
+  font-size: 13px; font-family: inherit; background: #fff; color: #555; cursor: pointer;
+}
+.worker-chip.on { background: #06C755; border-color: #06C755; color: #fff; font-weight: 700; }
 
 .site-select {
   border: none; background: none; outline: none;

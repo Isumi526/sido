@@ -172,6 +172,7 @@ export const useSchedules = () => {
   // ──────────────────────────────────────────────────────
   async function updateSchedule(id: string, form: Partial<ScheduleForm>) {
     const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
+    if ((form as any).worker_id !== undefined) updates.worker_id   = (form as any).worker_id  // 担当変更
     if (form.title           !== undefined) updates.title          = form.title
     if (form.description     !== undefined) updates.description    = form.description || null
     if (form.category        !== undefined) updates.category       = form.category
