@@ -85,8 +85,9 @@
 ## 3. C — admin で差し戻し（中）
 
 ### 画面
-ストーリーA の `apps/admin/src/pages/expenses.vue` を拡張。月次の作業員行を
-**期(first/second)単位の精算行**までドリルできるようにし、各精算に実効ステータスを表示。
+ストーリーA の `apps/admin/src/pages/expenses.vue` を拡張。
+**一覧を「作業員 × 期(前半/後半)」の1行単位**に変更（前半・後半は別精算として別行）。
+各行に実効ステータスを表示し、行クリックでその期の明細＋差し戻しを操作する。
 
 - `expense_settlements` を当月の対象 period（first/second）で取得し、daily_reports 集計と突合。
 - `status='申請中'` の精算に **「差し戻し」ボタン**。押下で理由入力モーダル（**理由必須**）。

@@ -24,7 +24,7 @@ test.describe('経費差し戻し(C)', () => {
     // 要対応（申請中）フィルタ
     await page.getByRole('button', { name: /要対応/ }).click()
 
-    const row = page.locator('tr.data-row', { hasText: SEED_WORKER })
+    const row = page.locator('tr.data-row', { hasText: SEED_WORKER }).first()
     await expect(row).toBeVisible()
     await row.click()
 
@@ -41,7 +41,7 @@ test.describe('経費差し戻し(C)', () => {
   test('差し戻し理由が未入力だと差し戻せない', async ({ page }) => {
     await page.goto('/expenses', { waitUntil: 'networkidle' })
     await page.getByRole('button', { name: /要対応/ }).click()
-    await page.locator('tr.data-row', { hasText: SEED_WORKER }).click()
+    await page.locator('tr.data-row', { hasText: SEED_WORKER }).first().click()
     await page.locator('.btn-reject').first().click()
     await page.locator('.btn-reject-confirm').click()
     await expect(page.locator('.reject-error')).toBeVisible()

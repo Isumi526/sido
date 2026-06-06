@@ -10,7 +10,7 @@
     </div>
 
     <p class="note">
-      作業員ごとに、当月（前半・後半を合算）の経費を集計しています。
+      作業員 × 期（前半・後半）ごとに経費を集計しています。前半・後半は別の精算として扱います。
     </p>
 
     <!-- フィルタ -->
@@ -22,13 +22,16 @@
     </div>
 
     <div v-if="loading" class="empty">読み込み中...</div>
-    <div v-else-if="rows.length === 0" class="empty">この月の経費がありません</div>
+    <div v-else-if="visibleRows.length === 0" class="empty">
+      {{ filter === 'todo' ? '申請中の精算はありません' : 'この月の経費がありません' }}
+    </div>
 
     <div v-else class="table-wrap">
       <table class="table">
         <thead>
           <tr>
             <th>作業員</th>
+            <th>期</th>
             <th class="num">件数</th>
             <th class="num">合計金額</th>
             <th class="num">うち立替</th>
@@ -37,23 +40,19 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="row in visibleRows" :key="row.userId" class="data-row" @click="selected = row">
+          <tr v-for="row in visibleRows" :key="row.key" class="data-row" @click="selected = row">
             <td class="worker-cell">{{ row.workerName }}</td>
+            <td><span class="period-chip">{{ row.shortLabel }}</span></td>
             <td class="num">{{ row.count }}</td>
             <td class="num">{{ yen(row.total) }}</td>
             <td class="num">{{ row.tategaeTotal ? yen(row.tategaeTotal) : '—' }}</td>
-            <td>
-              <span v-for="p in row.periods" :key="p.periodKey"
-                class="badge" :class="`st-${p.statusClass}`">
-                {{ p.shortLabel }}:{{ p.statusLabel }}
-              </span>
-            </td>
+            <td><span class="badge" :class="`st-${row.statusClass}`">{{ row.statusLabel }}</span></td>
             <td class="chevron">›</td>
           </tr>
         </tbody>
         <tfoot>
           <tr class="total-row">
-            <td>合計</td>
+            <td colspan="2">合計</td>
             <td class="num">{{ grandCount }}</td>
             <td class="num">{{ yen(grandTotal) }}</td>
             <td class="num">{{ grandTategae ? yen(grandTategae) : '—' }}</td>
@@ -63,23 +62,20 @@
       </table>
     </div>
 
-    <!-- 明細モーダル -->
+    <!-- 明細モーダル（1期分） -->
     <div v-if="selected" class="modal-overlay" @click.self="selected = null">
       <div class="modal">
         <div class="modal-head">
-          <h2>{{ selected.workerName }} — {{ yearMonth }} の経費明細</h2>
+          <h2>{{ selected.workerName }} — {{ yearMonth }} {{ selected.shortLabel }} の経費明細</h2>
           <button class="modal-close" @click="selected = null">×</button>
         </div>
         <div class="modal-body">
-          <!-- 申請状況（期別） -->
-          <div class="settle-section">
-            <div v-for="p in selected.periods" :key="p.periodKey" class="settle-row">
-              <span class="settle-period">{{ p.shortLabel }}</span>
-              <span class="badge" :class="`st-${p.statusClass}`">{{ p.statusLabel }}</span>
-              <span class="settle-amt">{{ yen(p.total) }}（{{ p.count }}件）</span>
-              <span v-if="p.settlement?.reject_reason && p.status === '差し戻し'" class="settle-reason">理由: {{ p.settlement.reject_reason }}</span>
-              <button v-if="p.status === '申請中'" class="btn-reject" @click="openReject(p)">差し戻し</button>
-            </div>
+          <!-- 申請状況 -->
+          <div class="settle-row">
+            <span class="badge" :class="`st-${selected.statusClass}`">{{ selected.statusLabel }}</span>
+            <span class="settle-amt">{{ yen(selected.total) }}（{{ selected.count }}件）</span>
+            <span v-if="selected.settlement?.reject_reason && selected.status === '差し戻し'" class="settle-reason">理由: {{ selected.settlement.reject_reason }}</span>
+            <button v-if="selected.status === '申請中'" class="btn-reject" @click="openReject(selected)">差し戻し</button>
           </div>
 
           <table class="table detail-table">
@@ -112,7 +108,7 @@
     <div v-if="rejectTarget" class="modal-overlay" @click.self="rejectTarget = null">
       <div class="modal reject-modal">
         <div class="modal-head">
-          <h2>差し戻し — {{ rejectTarget.row.workerName }}（{{ rejectTarget.period.shortLabel }}）</h2>
+          <h2>差し戻し — {{ rejectTarget.workerName }}（{{ rejectTarget.shortLabel }}）</h2>
           <button class="modal-close" @click="rejectTarget = null">×</button>
         </div>
         <div class="modal-body">
@@ -137,37 +133,34 @@ import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { flattenReportExpenses, ratesFromSettings, effectiveStatus, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
 
-interface PeriodInfo {
+// 1行 = 作業員 × 期(period)
+interface PeriodRow {
+  key: string                 // userId|periodKey
+  userId: string
+  workerName: string
   periodKey: string
   shortLabel: string          // 前半 / 後半
   count: number
   total: number
+  tategaeTotal: number
+  details: ExpenseRow[]
   settlement: any | null
   status: SettlementStatus
   statusLabel: string
   statusClass: string
 }
-interface WorkerExpense {
-  userId: string
-  workerName: string
-  count: number
-  total: number
-  tategaeTotal: number
-  details: ExpenseRow[]
-  periods: PeriodInfo[]
-}
 
 const baseDate  = ref(new Date())
 const yearMonth = computed(() => `${baseDate.value.getFullYear()}年${baseDate.value.getMonth() + 1}月`)
 const loading   = ref(false)
-const rows      = ref<WorkerExpense[]>([])
-const selected  = ref<WorkerExpense | null>(null)
+const rows      = ref<PeriodRow[]>([])
+const selected  = ref<PeriodRow | null>(null)
 const filter    = ref<'all' | 'todo'>('all')
 
 const visibleRows = computed(() => filter.value === 'todo'
-  ? rows.value.filter(r => r.periods.some(p => p.status === '申請中'))
+  ? rows.value.filter(r => r.status === '申請中')
   : rows.value)
-const todoCount = computed(() => rows.value.filter(r => r.periods.some(p => p.status === '申請中')).length)
+const todoCount = computed(() => rows.value.filter(r => r.status === '申請中').length)
 
 const grandCount   = computed(() => visibleRows.value.reduce((s, r) => s + r.count, 0))
 const grandTotal   = computed(() => visibleRows.value.reduce((s, r) => s + r.total, 0))
@@ -216,65 +209,70 @@ async function load() {
   ])
 
   const rates = ratesFromSettings(cfg)
-  // settlement を (user_id, period_key) で索引
   const settleMap: Record<string, any> = {}
   for (const s of (settles ?? []) as any[]) settleMap[`${s.user_id}|${s.period_key}`] = s
 
-  interface Agg extends WorkerExpense { _periodAmt: Record<string, { count: number; total: number }> }
-  const byUser: Record<string, Agg> = {}
+  // (userId|periodKey) ごとに集計
+  const byKey: Record<string, PeriodRow> = {}
+  const ensure = (userId: string, workerName: string, periodKey: string): PeriodRow => {
+    const key = `${userId}|${periodKey}`
+    return byKey[key] ??= {
+      key, userId, workerName, periodKey,
+      shortLabel: periodKey.endsWith('first') ? '前半' : '後半',
+      count: 0, total: 0, tategaeTotal: 0, details: [],
+      settlement: null, status: '未申請', statusLabel: '未申請', statusClass: 'todo',
+    }
+  }
+
   for (const rep of (reports ?? []) as any[]) {
     const userId = rep.user_id
     if (!userId) continue
     const workerName = rep.users?.workers?.name ?? rep.users?.real_name ?? '—'
-    if (!byUser[userId]) {
-      byUser[userId] = { userId, workerName, count: 0, total: 0, tategaeTotal: 0, details: [], periods: [], _periodAmt: {} }
-    }
-    const agg = byUser[userId]
     for (const row of flattenReportExpenses(rep.date, rep.sites ?? [], rates)) {
-      agg.count += 1
-      agg.total += row.amount
-      if (row.tategae) agg.tategaeTotal += row.amount
-      agg.details.push(row)
-      const pk = `${ym}-${halfOf(row.date)}`
-      const pa = agg._periodAmt[pk] ??= { count: 0, total: 0 }
-      pa.count += 1; pa.total += row.amount
+      const pr = ensure(userId, workerName, `${ym}-${halfOf(row.date)}`)
+      pr.count += 1
+      pr.total += row.amount
+      if (row.tategae) pr.tategaeTotal += row.amount
+      pr.details.push(row)
     }
   }
 
-  const now = new Date()
-  const list: WorkerExpense[] = []
-  for (const agg of Object.values(byUser)) {
-    if (agg.count === 0) continue
-    // 経費 or settlement が存在する期のみ
-    const keys = new Set<string>(Object.keys(agg._periodAmt))
-    for (const pk of periodKeys) if (settleMap[`${agg.userId}|${pk}`]) keys.add(pk)
-    agg.periods = [...keys].sort().map((pk): PeriodInfo => {
-      const settlement = settleMap[`${agg.userId}|${pk}`] ?? null
-      const status = effectiveStatus(settlement, pk, now)
-      const pa = agg._periodAmt[pk] ?? { count: 0, total: 0 }
-      return {
-        periodKey: pk,
-        shortLabel: pk.endsWith('first') ? '前半' : '後半',
-        count: pa.count, total: pa.total,
-        settlement, status, statusLabel: status, statusClass: STATUS_CLASS[status],
-      }
-    })
-    list.push(agg)
+  // 経費が無くても settlement がある期は行を作る（差し戻し等の追跡）
+  for (const s of (settles ?? []) as any[]) {
+    ensure(s.user_id, '—', s.period_key)
   }
 
-  rows.value = list.sort((a, b) => a.workerName.localeCompare(b.workerName, 'ja'))
+  // settlement と実効ステータスを付与（作業員名は settlement だけの行用に補完）
+  const now = new Date()
+  const nameById: Record<string, string> = {}
+  for (const r of Object.values(byKey)) nameById[r.userId] = r.workerName
+  if (Object.values(byKey).some(r => r.workerName === '—')) {
+    const ids = [...new Set(Object.values(byKey).map(r => r.userId))]
+    const { data: us } = await supabase.from('users').select('id, real_name, workers(name)').in('id', ids)
+    for (const u of (us ?? []) as any[]) nameById[u.id] = u.workers?.name ?? u.real_name ?? '—'
+  }
+  for (const r of Object.values(byKey)) {
+    r.workerName = nameById[r.userId] ?? r.workerName
+    r.settlement = settleMap[`${r.userId}|${r.periodKey}`] ?? null
+    r.status = effectiveStatus(r.settlement, r.periodKey, now)
+    r.statusLabel = r.status
+    r.statusClass = STATUS_CLASS[r.status]
+  }
+
+  rows.value = Object.values(byKey)
+    .filter(r => r.count > 0 || r.settlement)
+    .sort((a, b) => a.workerName.localeCompare(b.workerName, 'ja') || a.periodKey.localeCompare(b.periodKey))
   loading.value = false
 }
 
 // ---------- 差し戻し ----------
-const rejectTarget = ref<{ row: WorkerExpense; period: PeriodInfo } | null>(null)
+const rejectTarget = ref<PeriodRow | null>(null)
 const rejectReason = ref('')
 const rejecting    = ref(false)
 const rejectError  = ref('')
 
-function openReject(period: PeriodInfo) {
-  if (!selected.value) return
-  rejectTarget.value = { row: selected.value, period }
+function openReject(row: PeriodRow) {
+  rejectTarget.value = row
   rejectReason.value = ''
   rejectError.value = ''
 }
@@ -292,8 +290,8 @@ async function doReject() {
       .from('expense_settlements')
       .update({ status: '差し戻し', reject_reason: rejectReason.value.trim(), rejected_at: now, updated_at: now })
       .eq('account_id', accountId)
-      .eq('user_id', t.row.userId)
-      .eq('period_key', t.period.periodKey)
+      .eq('user_id', t.userId)
+      .eq('period_key', t.periodKey)
     if (error) throw error
     rejectTarget.value = null
     selected.value = null
@@ -316,7 +314,6 @@ watch(dateFrom, load)
 .month-label { font-size: 16px; font-weight: 700; min-width: 100px; text-align: center; }
 .btn-nav { background: #f0f0f0; border: none; border-radius: 8px; padding: 6px 14px; font-size: 18px; cursor: pointer; }
 .note { font-size: 13px; color: #555; margin: 0 0 16px; }
-.note-muted { color: #999; }
 .empty { color: #888; padding: 60px; text-align: center; }
 
 .table-wrap { overflow-x: auto; background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
@@ -325,12 +322,13 @@ watch(dateFrom, load)
 .table thead th { background: #fafafa; font-weight: 700; font-size: 12px; color: #666; }
 .table .num { text-align: right; }
 .worker-cell { font-weight: 600; }
+.period-chip { display: inline-block; padding: 2px 10px; border-radius: 6px; background: #eef1f5; color: #445; font-size: 12px; font-weight: 600; }
 .data-row { cursor: pointer; }
 .data-row:hover { background: #f7f7f7; }
 .chevron { color: #bbb; text-align: right; }
 .total-row td { font-weight: 700; background: #fafafa; border-top: 2px solid #ddd; }
 
-.badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; margin-right: 6px; }
+.badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
 .st-todo     { background: #fff7e6; color: #b26a00; }
 .st-applied  { background: #e6f7ed; color: #1a8a4d; }
 .st-rejected { background: #fdeaea; color: #c0392b; }
@@ -345,16 +343,21 @@ watch(dateFrom, load)
 .muted { color: #999; }
 .date-cell { white-space: nowrap; }
 
-/* 申請状況セクション（モーダル内） */
-.settle-section { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
-.settle-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 10px; background: #fafafa; border-radius: 8px; }
-.settle-period { font-weight: 700; font-size: 13px; min-width: 36px; }
+/* 申請状況（モーダル内） */
+.settle-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 10px; background: #fafafa; border-radius: 8px; margin-bottom: 16px; }
 .settle-amt { font-size: 13px; color: #555; }
 .settle-reason { font-size: 12px; color: #c0392b; flex-basis: 100%; }
 .btn-reject { margin-left: auto; background: #fff; border: 1px solid #f5c0bb; color: #c0392b; border-radius: 8px; padding: 6px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-reject:hover { background: #fdeaea; }
 
 /* 差し戻しモーダル */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 16px; }
+.modal { background: #fff; border-radius: 12px; max-width: 760px; width: 100%; max-height: 85vh; display: flex; flex-direction: column; }
+.modal-head { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #eee; }
+.modal-head h2 { font-size: 16px; font-weight: 700; }
+.modal-close { background: none; border: none; font-size: 24px; line-height: 1; cursor: pointer; color: #888; }
+.modal-body { overflow-y: auto; padding: 8px 20px 20px; }
+.detail-table { font-size: 13px; }
 .reject-modal { max-width: 480px; }
 .reject-label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
 .reject-textarea { width: 100%; border: 1px solid #ddd; border-radius: 8px; padding: 10px; font-size: 14px; font-family: inherit; resize: vertical; box-sizing: border-box; }
@@ -363,12 +366,4 @@ watch(dateFrom, load)
 .btn-cancel { background: #f0f0f0; border: none; border-radius: 8px; padding: 8px 18px; font-size: 14px; cursor: pointer; }
 .btn-reject-confirm { background: #c0392b; color: #fff; border: none; border-radius: 8px; padding: 8px 18px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-reject-confirm:disabled { opacity: .6; cursor: default; }
-
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 16px; }
-.modal { background: #fff; border-radius: 12px; max-width: 760px; width: 100%; max-height: 85vh; display: flex; flex-direction: column; }
-.modal-head { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #eee; }
-.modal-head h2 { font-size: 16px; font-weight: 700; }
-.modal-close { background: none; border: none; font-size: 24px; line-height: 1; cursor: pointer; color: #888; }
-.modal-body { overflow-y: auto; padding: 8px 20px 20px; }
-.detail-table { font-size: 13px; }
 </style>
