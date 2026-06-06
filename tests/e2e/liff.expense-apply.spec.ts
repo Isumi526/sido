@@ -26,12 +26,15 @@ test.describe('経費申請(W1)', () => {
     await page.waitForTimeout(800)
 
     // 未申請なので申請ボタンが出る
-    const applyBtn = page.getByRole('button', { name: /この期を申請する/ })
+    const applyBtn = page.getByRole('button', { name: /経費を申請する/ })
     await expect(applyBtn).toBeVisible()
 
+    // ボタン→確認ダイアログ→申請する
     await applyBtn.click()
+    await expect(page.locator('.confirm-modal')).toContainText('申請後は内容を修正できません')
+    await page.locator('.confirm-ok').click()
     // ステータスが「申請済み」に（PDF生成/メールは best-effort、DB申請は成立）
-    await expect(page.locator('.status-bar')).toContainText('申請済み', { timeout: 20000 })
+    await expect(page.locator('.status-bar')).toContainText('申請済み', { timeout: 25000 })
     await expect(applyBtn).toHaveCount(0)
   })
 })
@@ -52,9 +55,10 @@ test.describe('経費再申請(W1: 差し戻し後)', () => {
     await page.waitForTimeout(800)
 
     await expect(page.locator('.status-bar')).toContainText('差し戻し')
-    const reBtn = page.getByRole('button', { name: /再申請する/ })
+    const reBtn = page.getByRole('button', { name: /経費を再申請する/ })
     await expect(reBtn).toBeVisible()
     await reBtn.click()
-    await expect(page.locator('.status-bar')).toContainText('申請済み', { timeout: 20000 })
+    await page.locator('.confirm-ok').click()
+    await expect(page.locator('.status-bar')).toContainText('申請済み', { timeout: 25000 })
   })
 })

@@ -39,10 +39,22 @@
 
         <!-- 申請アクション（ステータス直下で常に見える位置に） -->
         <div v-if="canApply" class="apply-actions no-print">
-          <button class="btn-apply" :disabled="applying" @click="handleApply">
-            {{ applying ? '申請中…' : (effStatus === '差し戻し' ? 'この期を再申請する' : 'この期を申請する') }}
+          <button class="btn-apply" :disabled="applying" @click="showApplyConfirm = true">
+            {{ effStatus === '差し戻し' ? 'この期間の経費を再申請する' : 'この期間の経費を申請する' }}
           </button>
           <p v-if="applyError" class="apply-error">{{ applyError }}</p>
+        </div>
+
+        <!-- 申請確認ダイアログ -->
+        <div v-if="showApplyConfirm" class="confirm-overlay no-print" @click.self="!applying && (showApplyConfirm = false)">
+          <div class="confirm-modal">
+            <p class="confirm-title">{{ effStatus === '差し戻し' ? 'この期間の経費を再申請します' : 'この期間の経費を申請します' }}</p>
+            <p class="confirm-text">申請後は内容を修正できません。<br>よろしいですか？</p>
+            <div class="confirm-actions">
+              <button class="confirm-cancel" :disabled="applying" @click="showApplyConfirm = false">キャンセル</button>
+              <button class="confirm-ok" :disabled="applying" @click="confirmApply">{{ applying ? '申請中…' : '申請する' }}</button>
+            </div>
+          </div>
         </div>
 
         <!-- ====== 印刷エリア ====== -->
@@ -177,6 +189,7 @@ const printAreaEl = ref<HTMLElement | null>(null)
 const settlement  = ref<any | null>(null)
 const applying    = ref(false)
 const applyError  = ref('')
+const showApplyConfirm = ref(false)
 
 const effStatus    = computed(() => effectiveStatus(settlement.value, selectedPeriod.value))
 const deadlineText = computed(() => deadlineLabel(selectedPeriod.value))
@@ -274,6 +287,12 @@ async function loadSettlement() {
 async function selectPeriod(key: string) {
   selectedPeriod.value = key
   await loadRows()
+}
+
+/** 確認ダイアログから申請を実行。成功時はダイアログを閉じる */
+async function confirmApply() {
+  await handleApply()
+  if (!applyError.value) showApplyConfirm.value = false
 }
 
 /** 経費申請（未申請/差し戻し → 申請中）。PDF生成・メールは best-effort */
@@ -412,6 +431,14 @@ html,body { background:var(--bg);color:var(--text);font-family:var(--font);min-h
 .btn-apply { width:100%;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);padding:16px;font-size:16px;font-weight:900;letter-spacing:1px;font-family:var(--font);cursor:pointer; }
 .btn-apply:disabled { opacity:.6;cursor:default; }
 .apply-error { color:#c0392b;font-size:13px;text-align:center; }
+.confirm-overlay { position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:200;padding:24px; }
+.confirm-modal { background:#fff;border-radius:14px;padding:24px 20px;max-width:340px;width:100%;text-align:center; }
+.confirm-title { font-size:16px;font-weight:700;margin-bottom:10px; }
+.confirm-text { font-size:13px;color:#555;line-height:1.7;margin-bottom:20px; }
+.confirm-actions { display:flex;gap:10px; }
+.confirm-cancel { flex:1;background:#f0f0f0;border:none;border-radius:10px;padding:13px;font-size:15px;font-family:var(--font);color:#555;cursor:pointer; }
+.confirm-ok { flex:1;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:13px;font-size:15px;font-weight:700;font-family:var(--font);cursor:pointer; }
+.confirm-ok:disabled,.confirm-cancel:disabled { opacity:.6;cursor:default; }
 .mode-bar { display:flex;gap:8px; }
 .mode-btn { flex:1;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;font-size:13px;font-family:var(--font);color:var(--text2);font-weight:700;cursor:pointer; }
 .mode-btn.active { background:var(--accent);color:#fff;border-color:var(--accent); }
