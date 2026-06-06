@@ -28,6 +28,41 @@ export function periodLabel(key: string): string {
   return `${year}年${parseInt(month, 10)}月 ${halfLabel}`
 }
 
+// ---------- 月次精算（申請/差し戻し）ステータス ----------
+// 正典: docs/spec/expense.md §2,§3
+
+export type SettlementStatus = '未申請' | '申請中' | '差し戻し' | '支払い済み' | '期限超過'
+
+/** 期(period_key)の締切(JST)を返す。first=当月18日10:00 / second=翌月3日10:00 */
+export function deadlineForPeriod(periodKey: string): Date {
+  const [y, m, half] = periodKey.split('-')
+  const year = Number(y), month = Number(m) // month: 1-12
+  if (half === 'first') {
+    return new Date(`${y}-${String(month).padStart(2, '0')}-18T10:00:00+09:00`)
+  }
+  // second: 翌月3日（12月は翌年1月）
+  const nm = month === 12 ? 1 : month + 1
+  const ny = month === 12 ? year + 1 : year
+  return new Date(`${ny}-${String(nm).padStart(2, '0')}-03T10:00:00+09:00`)
+}
+
+/** 締切を表示用に整形（例: '6月3日(火) 10:00'） */
+export function deadlineLabel(periodKey: string): string {
+  const d = deadlineForPeriod(periodKey)
+  const wd = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()]
+  return `${d.getMonth() + 1}月${d.getDate()}日(${wd}) ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+/** 実効ステータス。行が無ければ締切判定で 未申請/期限超過 を導出 */
+export function effectiveStatus(
+  row: { status?: string | null } | null | undefined,
+  periodKey: string,
+  now: Date = new Date(),
+): SettlementStatus {
+  if (row?.status) return row.status as SettlementStatus
+  return now.getTime() <= deadlineForPeriod(periodKey).getTime() ? '未申請' : '期限超過'
+}
+
 /** 過去6期分の期間キーを新しい順で返す */
 export function recentPeriodKeys(): string[] {
   const keys: string[] = []
@@ -525,5 +560,58 @@ export const useExpense = () => {
     return data
   }
 
-  return { getUser, registerUser, addItem, getItems, deleteItem, saveReport, saveReportById, findOrCreateProxyUser, getExpenseRowsFromReports, getExpenseRowsFromReportsById, getReports, getReportsById, getReport, getReportByUserId, getNextUnsubmittedDate, getNextUnsubmittedDateById, clearUserCache }
+  // ---------- 月次精算（申請/差し戻し） ----------
+
+  /** 指定 user の精算行を period で取得（無ければ null） */
+  async function getSettlement(userId: string, periodKey: string): Promise<any | null> {
+    const accountId = await getAccountId()
+    const { data, error } = await supabase
+      .from('expense_settlements')
+      .select('*')
+      .eq('account_id', accountId)
+      .eq('user_id', userId)
+      .eq('period_key', periodKey)
+      .maybeSingle()
+    if (error) { console.error('[useExpense] getSettlement:', error); return null }
+    return data
+  }
+
+  /** 複数 period 分の精算をまとめて取得（ホーム/一覧用） */
+  async function getSettlements(userId: string, periodKeys: string[]): Promise<any[]> {
+    if (!periodKeys.length) return []
+    const accountId = await getAccountId()
+    const { data, error } = await supabase
+      .from('expense_settlements')
+      .select('*')
+      .eq('account_id', accountId)
+      .eq('user_id', userId)
+      .in('period_key', periodKeys)
+    if (error) { console.error('[useExpense] getSettlements:', error); return [] }
+    return data ?? []
+  }
+
+  /**
+   * 経費申請: status を 申請中 にし、PDFパスを記録する。
+   * 再申請（差し戻し後）でも notified_at を null クリアして1回だけ再送できるようにする。
+   */
+  async function applySettlement(userId: string, periodKey: string, pdfPath: string | null): Promise<any> {
+    const accountId = await getAccountId()
+    const now = new Date().toISOString()
+    const { data, error } = await supabase
+      .from('expense_settlements')
+      .upsert(
+        {
+          account_id: accountId, user_id: userId, period_key: periodKey,
+          status: '申請中', applied_at: now, pdf_path: pdfPath,
+          reject_reason: null, rejected_at: null, notified_at: null, updated_at: now,
+        },
+        { onConflict: 'account_id,user_id,period_key' }
+      )
+      .select()
+      .single()
+    if (error) throw error
+    return data
+  }
+
+  return { getUser, registerUser, addItem, getItems, deleteItem, saveReport, saveReportById, findOrCreateProxyUser, getExpenseRowsFromReports, getExpenseRowsFromReportsById, getReports, getReportsById, getReport, getReportByUserId, getNextUnsubmittedDate, getNextUnsubmittedDateById, clearUserCache, getSettlement, getSettlements, applySettlement }
 }
