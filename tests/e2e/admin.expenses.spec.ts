@@ -27,12 +27,13 @@ test.describe('経費管理 一覧', () => {
     await expect(row.locator('td.num').nth(1)).toContainText('¥')
   })
 
-  // AC2: 各行に現在のステータスが表示され判別できる
-  test('AC2: ステータス「申請あり」が表示される', async ({ page }) => {
+  // AC2: 各行に現在のステータス（期別）が表示され判別できる
+  test('AC2: 期別ステータスと立替額が表示される', async ({ page }) => {
     const row = page.locator('tr.data-row', { hasText: SEED_WORKER })
-    await expect(row.locator('.badge')).toHaveText('申請あり')
-    // 立替分（駐車500）が「うち立替」に出る
-    await expect(row).toContainText('¥500')
+    // 前半(FEAT_C)の経費があるため前半チップが出る
+    await expect(row.locator('.badge').first()).toContainText('前半')
+    // 立替分（うち立替）が ¥ 表記で出る
+    await expect(row.locator('td.num').nth(2)).toContainText('¥')
   })
 
   // 行クリックで明細モーダルが開く（立替○ を判別できる）

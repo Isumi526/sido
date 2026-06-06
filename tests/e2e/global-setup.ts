@@ -20,6 +20,9 @@ export const FEAT_A_SITE = 'テスト現場B'
 export const FEAT_A_CONTRACTOR = '元請A'
 export const FEAT_C_DATE = `${YM}-05`        // day<=15 → first
 export const FEAT_C_PERIOD = `${YM}-first`
+// 経費申請(W1/H/C)テスト用: 後半(second)期は締切=翌月3日で常に未来 → 日付非依存
+export const FEAT_EXP_DATE   = `${YM}-20`      // day>15 → second
+export const FEAT_EXP_PERIOD = `${YM}-second`
 // ATT: 出退勤カード表示テスト用（固定日・専用現場で他の日報と衝突させない）
 export const FEAT_ATT_DATE = `${YM}-10`
 export const FEAT_ATT_SITE = 'テスト現場D'    // 打刻あり（この日報のみが使う専用現場）
@@ -70,6 +73,21 @@ async function seedFeatureReports() {
       subcontractors: [],
     }],
   })
+  // EXP: 経費申請テスト用（後半期）。駐車800=立替 / 高速1200=非立替
+  await upsert('daily_reports', 'user_id,date', {
+    user_id: userId, date: FEAT_EXP_DATE, is_working: true, account_id: accountId,
+    note: 'E2E:経費申請テスト',
+    sites: [{
+      siteName: SEED_SITE,
+      workers: [{ workerName: SEED_WORKER, workerRole: 'site', startTime: '08:00', endTime: '17:30', breakMinutes: 60 }],
+      expenses: {
+        vehicles: [{ vehicleName: '軽トラ2号', parkingYen: 800, parkingTategae: true, highwayYen: 1200 }],
+        trains: [], others: [],
+      },
+      subcontractors: [],
+    }],
+  })
+
   // ATT: 出退勤表示テスト用日報（テスト現場D=打刻あり / テスト現場B=打刻なし）
   await upsert('daily_reports', 'user_id,date', {
     user_id: userId, date: FEAT_ATT_DATE, is_working: true, account_id: accountId,
