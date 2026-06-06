@@ -255,7 +255,7 @@ watch(selectedMonth, load)
 /* 開発の更新履歴 */
 .updates-box { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 24px; overflow: hidden; }
 .updates-head { font-size: 13px; font-weight: 700; color: #555; padding: 12px 16px; border-bottom: 1px solid #f0f0f0; background: #fafafa; }
-.updates-list { list-style: none; margin: 0; padding: 0; }
+.updates-list { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; }
 .update-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid #f4f4f4; font-size: 14px; }
 .update-item:first-child { border-top: none; }
 .update-date { color: #999; font-size: 12px; font-variant-numeric: tabular-nums; flex-shrink: 0; width: 40px; }
