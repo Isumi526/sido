@@ -16,7 +16,9 @@
     "@schedule-x/drag-and-drop": "^3.7.3",
     "@schedule-x/theme-default": "^4.6.0",
     "@schedule-x/vue": "^4.1.0",
-    "@supabase/supabase-js": "^2.45.0"
+    "@supabase/supabase-js": "^2.45.0",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1"
   },
   "devDependencies": {
     "@nuxt/devtools": "^1.0.0",

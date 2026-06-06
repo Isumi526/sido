@@ -25,8 +25,20 @@
           <button class="mode-btn" :class="{ active: viewMode === 'tategae' }" @click="viewMode = 'tategae'">個人建て替え分のみ</button>
         </div>
 
+        <!-- 申請ステータス -->
+        <div class="status-bar no-print" :class="`st-${statusClass}`">
+          <span class="status-label">{{ statusLabel }}</span>
+          <span v-if="effStatus === '未申請' || effStatus === '差し戻し'" class="status-deadline">
+            締切 {{ deadlineText }}
+          </span>
+        </div>
+        <div v-if="effStatus === '差し戻し' && settlement?.reject_reason" class="reject-box no-print">
+          <span class="reject-title">差し戻し理由</span>
+          <p class="reject-reason">{{ settlement.reject_reason }}</p>
+        </div>
+
         <!-- ====== 印刷エリア ====== -->
-        <div class="print-area">
+        <div ref="printAreaEl" class="print-area">
           <div class="doc-header">
             <div class="doc-meta-left">
               <span class="doc-note">★必ず登録番号記入</span>
@@ -104,6 +116,14 @@
           </div>
         </div>
 
+        <!-- 申請アクション -->
+        <div v-if="canApply" class="apply-actions no-print">
+          <button class="btn-apply" :disabled="applying" @click="handleApply">
+            {{ applying ? '申請中…' : (effStatus === '差し戻し' ? 'この期を再申請する' : 'この期を申請する') }}
+          </button>
+          <p v-if="applyError" class="apply-error">{{ applyError }}</p>
+        </div>
+
         <!-- アクション -->
         <div v-if="displayRows.length > 0" class="actions no-print">
           <div class="guide-box">
@@ -124,12 +144,15 @@
 
 <script setup lang="ts">
 import type { User, ExpenseRow } from '~/types'
-import { getCurrentPeriodKey, recentPeriodKeys } from '~/composables/useExpense'
+import { getCurrentPeriodKey, recentPeriodKeys, deadlineLabel, effectiveStatus } from '~/composables/useExpense'
+import { elementToPdfBlob, uploadApplicationPdf } from '~/utils/generateExpensePdf'
 
 const liff    = useLiff()
 const expense = useExpense()
 const proxy   = useProxyMode()
 const router  = useRouter()
+const config  = useRuntimeConfig()
+const supabase = useSupabase()
 
 const initializing   = ref(true)
 const loading        = ref(false)
@@ -137,6 +160,35 @@ const selfUser       = ref<User | null>(null)
 const selectedPeriod = ref(getCurrentPeriodKey())
 const rows           = ref<ExpenseRow[]>([])
 const viewMode       = ref<'all' | 'tategae'>('all')
+
+// 申請ステータス
+const printAreaEl = ref<HTMLElement | null>(null)
+const settlement  = ref<any | null>(null)
+const applying    = ref(false)
+const applyError  = ref('')
+
+const effStatus    = computed(() => effectiveStatus(settlement.value, selectedPeriod.value))
+const deadlineText = computed(() => deadlineLabel(selectedPeriod.value))
+const statusLabel  = computed(() => {
+  switch (effStatus.value) {
+    case '申請中':   return '申請済み'
+    case '差し戻し': return '差し戻し（要再申請）'
+    case '期限超過': return '申請期限切れ'
+    case '支払い済み': return '支払い済み'
+    default:        return '未申請'
+  }
+})
+const statusClass = computed(() => ({
+  '未申請': 'todo', '申請中': 'applied', '差し戻し': 'rejected',
+  '期限超過': 'expired', '支払い済み': 'paid',
+}[effStatus.value] ?? 'todo'))
+// 未申請 or 差し戻し かつ 経費行があるとき申請可能
+const canApply = computed(() =>
+  displayRows.value.length > 0 && (effStatus.value === '未申請' || effStatus.value === '差し戻し')
+)
+
+// 申請対象のDBユーザーID（代理中は代理先）
+const applyUserId = computed(() => proxy.proxyTarget.value ? proxyUserId.value : selfUser.value?.id ?? null)
 
 // 表示中の行（全経費 / 個人建て替え分のみ）
 const displayRows = computed(() =>
@@ -194,12 +246,73 @@ async function loadRows() {
   } else {
     rows.value = await expense.getExpenseRowsFromReports(liff.profile.value!.userId, selectedPeriod.value)
   }
+  await loadSettlement()
   loading.value = false
+}
+
+async function loadSettlement() {
+  applyError.value = ''
+  settlement.value = applyUserId.value
+    ? await expense.getSettlement(applyUserId.value, selectedPeriod.value)
+    : null
 }
 
 async function selectPeriod(key: string) {
   selectedPeriod.value = key
   await loadRows()
+}
+
+/** 経費申請（未申請/差し戻し → 申請中）。PDF生成・メールは best-effort */
+async function handleApply() {
+  if (!applyUserId.value) { applyError.value = 'ユーザー情報が取得できません'; return }
+  applying.value = true
+  applyError.value = ''
+  try {
+    // 1. 申請書PDFを生成して Storage に保存（失敗しても申請は継続）
+    let pdfPath: string | null = null
+    try {
+      if (printAreaEl.value) {
+        const blob = await elementToPdfBlob(printAreaEl.value)
+        pdfPath = await uploadApplicationPdf(
+          supabase, blob, config.public.accountSlug as string,
+          applyUserId.value, selectedPeriod.value,
+        )
+      }
+    } catch (e) {
+      console.error('[expense apply] PDF生成/保存に失敗（申請は継続）:', e)
+    }
+
+    // 2. 精算ステータスを 申請中 に
+    settlement.value = await expense.applySettlement(applyUserId.value, selectedPeriod.value, pdfPath)
+
+    // 3. PDFメール送信 function を呼ぶ（best-effort）
+    triggerApplicationEmail(applyUserId.value, selectedPeriod.value)
+  } catch (e: any) {
+    console.error('[expense apply] 申請失敗:', e)
+    applyError.value = '申請に失敗しました。時間をおいて再度お試しください。'
+  } finally {
+    applying.value = false
+  }
+}
+
+/** 申請PDFメール送信 function 呼び出し（fire-and-forget） */
+function triggerApplicationEmail(userId: string, periodKey: string) {
+  const efUrl = config.public.edgeFunctionUrl
+  if (!efUrl) return
+  const fnPrefix = config.public.appEnv === 'development' ? 'test-' : ''
+  fetch(`${efUrl}/${fnPrefix}send-expense-application`, {
+    method: 'POST',
+    keepalive: true,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${config.public.supabaseAnonKey}`,
+    },
+    body: JSON.stringify({
+      accountSlug: config.public.accountSlug,
+      user_id: userId,
+      period_key: periodKey,
+    }),
+  }).catch(e => console.error('[expense apply] メール送信呼び出し失敗:', e))
 }
 
 function handlePrint() { window.print() }
@@ -251,6 +364,20 @@ html,body { background:var(--bg);color:var(--text);font-family:var(--font);min-h
 .period-bar { display:flex;gap:8px;overflow-x:auto;padding-bottom:4px; }
 .period-btn { flex-shrink:0;padding:7px 14px;border-radius:20px;border:1px solid var(--border);background:#fff;font-size:12px;font-family:var(--font);color:var(--text2);cursor:pointer; }
 .period-btn.active { background:var(--accent);color:#fff;border-color:var(--accent);font-weight:700; }
+.status-bar { display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px;border-radius:10px;font-size:13px;font-weight:700; }
+.status-bar .status-deadline { font-size:11px;font-weight:600;opacity:.8; }
+.st-todo { background:#fff7e6;color:#b26a00;border:1px solid #ffe0a3; }
+.st-applied { background:#e6f7ed;color:#1a8a4d;border:1px solid #b5e7c8; }
+.st-rejected { background:#fdeaea;color:#c0392b;border:1px solid #f5c0bb; }
+.st-expired { background:#f0f0f0;color:#999;border:1px solid #ddd; }
+.st-paid { background:#e8f0fe;color:#1a56c4;border:1px solid #c0d4f5; }
+.reject-box { background:#fdeaea;border:1px solid #f5c0bb;border-radius:10px;padding:10px 14px; }
+.reject-title { font-size:11px;font-weight:700;color:#c0392b; }
+.reject-reason { font-size:13px;color:#444;margin-top:4px;white-space:pre-wrap; }
+.apply-actions { display:flex;flex-direction:column;gap:8px; }
+.btn-apply { width:100%;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);padding:16px;font-size:16px;font-weight:900;letter-spacing:1px;font-family:var(--font);cursor:pointer; }
+.btn-apply:disabled { opacity:.6;cursor:default; }
+.apply-error { color:#c0392b;font-size:13px;text-align:center; }
 .mode-bar { display:flex;gap:8px; }
 .mode-btn { flex:1;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;font-size:13px;font-family:var(--font);color:var(--text2);font-weight:700;cursor:pointer; }
 .mode-btn.active { background:var(--accent);color:#fff;border-color:var(--accent); }
