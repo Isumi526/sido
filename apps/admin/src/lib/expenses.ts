@@ -61,12 +61,14 @@ export interface ExpenseRow {
   liters?: number
   note?: string
   registrationNumber?: string
+  fileUrls?: string[]   // 領収書・写真URL（Supabase Storage）
   tategae?: boolean
 }
 
 /**
  * 1日報の sites[].expenses を経費行に平坦化する。
- * （useExpense.getExpenseRowsFromReportsById の内側ループと同一）
+ * （useExpense.getExpenseRowsFromReportsById の内側ループと同一。fileUrls も同じく
+ *  共有URL配列をカテゴリ先頭行にだけ添付する take-once 方式）
  */
 export function flattenReportExpenses(date: string, sites: any[], rates: ExpenseRates): ExpenseRow[] {
   const rows: ExpenseRow[] = []
@@ -74,21 +76,35 @@ export function flattenReportExpenses(date: string, sites: any[], rates: Expense
     const siteName = site.siteName === '__other__' ? (site.customSiteName || '') : (site.siteName || '')
     const exp = site.expenses || {}
 
+    // 共有URL配列は最初の行にだけ添付する
+    let vehicleUrlsAttached = false
+    const takeVehicleUrls = (): string[] | undefined => {
+      if (!vehicleUrlsAttached && exp.vehicleUrls?.length) { vehicleUrlsAttached = true; return exp.vehicleUrls }
+    }
+    let trainUrlsAttached = false
+    const takeTrainUrls = (): string[] | undefined => {
+      if (!trainUrlsAttached && exp.trainUrls?.length) { trainUrlsAttached = true; return exp.trainUrls }
+    }
+    let otherUrlsAttached = false
+    const takeOtherUrls = (): string[] | undefined => {
+      if (!otherUrlsAttached && exp.otherUrls?.length) { otherUrlsAttached = true; return exp.otherUrls }
+    }
+
     for (const veh of (exp.vehicles || [])) {
-      if (veh.distanceKm) rows.push({ date, category: 'ガソリン代', siteName, amount: Math.round(veh.distanceKm * rates.gasoline), liters: veh.distanceKm, note: veh.vehicleName, tategae: !!veh.gasTategae })
-      if (veh.dieselKm)   rows.push({ date, category: '軽油代',    siteName, amount: Math.round(veh.dieselKm   * rates.diesel),   liters: veh.dieselKm,   note: veh.vehicleName, tategae: !!veh.dieselTategae })
-      if (veh.parkingYen) rows.push({ date, category: '駐車代',    siteName, amount: veh.parkingYen, tategae: !!veh.parkingTategae })
-      if (veh.highwayYen) rows.push({ date, category: '高速代',    siteName, amount: veh.highwayYen, note: veh.etcCard || '', tategae: !!veh.highwayTategae })
+      if (veh.distanceKm) rows.push({ date, category: 'ガソリン代', siteName, amount: Math.round(veh.distanceKm * rates.gasoline), liters: veh.distanceKm, note: veh.vehicleName, fileUrls: takeVehicleUrls(), tategae: !!veh.gasTategae })
+      if (veh.dieselKm)   rows.push({ date, category: '軽油代',    siteName, amount: Math.round(veh.dieselKm   * rates.diesel),   liters: veh.dieselKm,   note: veh.vehicleName, fileUrls: takeVehicleUrls(), tategae: !!veh.dieselTategae })
+      if (veh.parkingYen) rows.push({ date, category: '駐車代',    siteName, amount: veh.parkingYen, fileUrls: takeVehicleUrls(), tategae: !!veh.parkingTategae })
+      if (veh.highwayYen) rows.push({ date, category: '高速代',    siteName, amount: veh.highwayYen, note: veh.etcCard || '', fileUrls: takeVehicleUrls(), tategae: !!veh.highwayTategae })
     }
     for (const tr of (exp.trains || [])) {
-      if (tr.yen) rows.push({ date, category: '電車代', siteName, amount: tr.yen, note: tr.label, tategae: !!tr.tategae })
+      if (tr.yen) rows.push({ date, category: '電車代', siteName, amount: tr.yen, note: tr.label, fileUrls: takeTrainUrls(), tategae: !!tr.tategae })
     }
-    if (exp.hotelYen)     rows.push({ date, category: '宿泊費', siteName, amount: exp.hotelYen,     note: exp.hotelName,     registrationNumber: exp.hotelRegistration,     tategae: !!exp.hotelTategae })
-    if (exp.leopalaceYen) rows.push({ date, category: '宿泊費', siteName, amount: exp.leopalaceYen, note: exp.leopalaceName, registrationNumber: exp.leopalaceRegistration, tategae: !!exp.leopalaceTategae })
+    if (exp.hotelYen)     rows.push({ date, category: '宿泊費', siteName, amount: exp.hotelYen,     note: exp.hotelName,     registrationNumber: exp.hotelRegistration,     fileUrls: exp.hotelUrls?.length     ? exp.hotelUrls     : undefined, tategae: !!exp.hotelTategae })
+    if (exp.leopalaceYen) rows.push({ date, category: '宿泊費', siteName, amount: exp.leopalaceYen, note: exp.leopalaceName, registrationNumber: exp.leopalaceRegistration, fileUrls: exp.leopalaceUrls?.length ? exp.leopalaceUrls : undefined, tategae: !!exp.leopalaceTategae })
     for (const ot of (exp.others || [])) {
-      if (ot.yen) rows.push({ date, category: 'その他', siteName, amount: ot.yen, note: ot.label, registrationNumber: ot.registrationNumber, tategae: !!ot.tategae })
+      if (ot.yen) rows.push({ date, category: 'その他', siteName, amount: ot.yen, note: ot.label, registrationNumber: ot.registrationNumber, fileUrls: takeOtherUrls(), tategae: !!ot.tategae })
     }
-    if (exp.entertainmentYen) rows.push({ date, category: 'その他雑経費', siteName, amount: exp.entertainmentYen, note: exp.entertainmentLabel, registrationNumber: exp.entertainmentRegistration, tategae: !!exp.entertainmentTategae })
+    if (exp.entertainmentYen) rows.push({ date, category: 'その他雑経費', siteName, amount: exp.entertainmentYen, note: exp.entertainmentLabel, registrationNumber: exp.entertainmentRegistration, fileUrls: exp.entertainmentUrls?.length ? exp.entertainmentUrls : undefined, tategae: !!exp.entertainmentTategae })
   }
   return rows
 }

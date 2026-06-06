@@ -68,6 +68,7 @@ async function seedFeatureReports() {
       workers: [{ workerName: SEED_WORKER, workerRole: 'site', startTime: '08:00', endTime: '17:30', breakMinutes: 60 }],
       expenses: {
         vehicles: [{ vehicleName: '軽トラ1号', parkingYen: 500, parkingTategae: true, highwayYen: 1000 }],
+        vehicleUrls: ['https://example.com/receipt-featc.jpg'],
         trains: [], others: [],
       },
       subcontractors: [],

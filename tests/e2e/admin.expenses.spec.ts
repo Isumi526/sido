@@ -33,14 +33,19 @@ test.describe('経費管理 一覧', () => {
     await expect(firstRow.locator('td.num').nth(2)).toContainText('¥') // うち立替
   })
 
-  // 行クリックで明細モーダルが開く
-  test('明細モーダルに経費明細が表示される', async ({ page }) => {
-    // 前半行（FEAT_C: 駐車代/高速代あり）を開く
+  // 行クリックで明細モーダルが開く（領収書リンク・振込額表示も検証）
+  test('明細モーダルに経費明細・領収書・振込額が表示される', async ({ page }) => {
+    // 前半行（FEAT_C: 駐車代=立替500/高速代1000・領収書URLあり）を開く
     await page.locator('tr.data-row', { hasText: SEED_WORKER }).filter({ hasText: '前半' }).click()
     const modal = page.locator('.modal')
     await expect(modal).toBeVisible()
     await expect(modal).toContainText('駐車代')
     await expect(modal).toContainText('高速代')
+    // 振込額（立替）が主役表示され、立替分=¥500 が出る
+    await expect(modal).toContainText('振込額')
+    await expect(modal.locator('.settle-pay')).toContainText('¥500')
+    // 領収書リンク（📎）が表示される
+    await expect(modal.locator('.receipt-link').first()).toBeVisible()
   })
 
   // AC3: 自アカウント配下の作業員に限定（他テナント名が混在しない）

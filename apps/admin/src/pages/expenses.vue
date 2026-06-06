@@ -33,8 +33,8 @@
             <th>作業員</th>
             <th>期</th>
             <th class="num">件数</th>
-            <th class="num">合計金額</th>
-            <th class="num">うち立替</th>
+            <th class="num">経費合計</th>
+            <th class="num">立替（振込額）</th>
             <th>ステータス</th>
             <th></th>
           </tr>
@@ -73,10 +73,12 @@
           <!-- 申請状況 -->
           <div class="settle-row">
             <span class="badge" :class="`st-${selected.statusClass}`">{{ selected.statusLabel }}</span>
-            <span class="settle-amt">{{ yen(selected.total) }}（{{ selected.count }}件）</span>
+            <span class="settle-pay">振込額（立替）<strong>{{ yen(selected.tategaeTotal) }}</strong></span>
+            <span class="settle-amt">経費合計 {{ yen(selected.total) }}（{{ selected.count }}件）</span>
             <span v-if="selected.settlement?.reject_reason && selected.status === '差し戻し'" class="settle-reason">理由: {{ selected.settlement.reject_reason }}</span>
             <button v-if="selected.status === '申請中'" class="btn-reject" @click="openReject(selected)">差し戻し</button>
           </div>
+          <p class="settle-hint">※ 会社が作業員へ振り込むのは「立替（個人建て替え）」分のみです。経費合計は参考値です。</p>
 
           <table class="table detail-table">
             <thead>
@@ -87,6 +89,7 @@
                 <th>備考</th>
                 <th class="num">金額</th>
                 <th>立替</th>
+                <th>領収書</th>
               </tr>
             </thead>
             <tbody>
@@ -97,6 +100,14 @@
                 <td class="muted">{{ d.note || '—' }}</td>
                 <td class="num">{{ yen(d.amount) }}</td>
                 <td>{{ d.tategae ? '○' : '' }}</td>
+                <td class="receipt-cell">
+                  <template v-if="d.fileUrls && d.fileUrls.length">
+                    <a v-for="(u, ui) in d.fileUrls" :key="ui" :href="u" target="_blank" rel="noopener" class="receipt-link">
+                      📎{{ d.fileUrls.length > 1 ? ui + 1 : '' }}
+                    </a>
+                  </template>
+                  <span v-else class="muted">—</span>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -344,9 +355,14 @@ watch(dateFrom, load)
 .date-cell { white-space: nowrap; }
 
 /* 申請状況（モーダル内） */
-.settle-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 10px; background: #fafafa; border-radius: 8px; margin-bottom: 16px; }
-.settle-amt { font-size: 13px; color: #555; }
+.settle-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 12px; background: #fafafa; border-radius: 8px; margin-bottom: 6px; }
+.settle-pay { font-size: 13px; color: #1a8a4d; }
+.settle-pay strong { font-size: 17px; font-weight: 800; margin-left: 4px; }
+.settle-amt { font-size: 12px; color: #888; }
 .settle-reason { font-size: 12px; color: #c0392b; flex-basis: 100%; }
+.settle-hint { font-size: 11px; color: #999; margin: 0 0 16px; }
+.receipt-cell { white-space: nowrap; }
+.receipt-link { display: inline-block; font-size: 13px; color: #1a56c4; text-decoration: none; margin: 0 3px; }
 .btn-reject { margin-left: auto; background: #fff; border: 1px solid #f5c0bb; color: #c0392b; border-radius: 8px; padding: 6px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-reject:hover { background: #fdeaea; }
 
