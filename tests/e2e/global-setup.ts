@@ -134,7 +134,37 @@ async function seedFeatureReports() {
   console.log(`[e2e] feature reports シード OK (user=${userId})`)
 }
 
+// 予定管理カレンダーのグループ絞り込みテスト用: Worker 01 のみのグループ
+export const SCHED_GROUP_NAME = 'E2Eカレンダーグループ'
+
+async function seedScheduleGroup() {
+  const accountId = await getAccountId()
+  const wrows = await rest(`workers?account_id=eq.${accountId}&name=eq.${encodeURIComponent(SEED_WORKER)}&select=id`)
+  const wid = wrows?.[0]?.id
+  if (!wid) { console.warn('[e2e] schedule group seed: Worker 01 未検出'); return }
+
+  // 既存のE2Eグループを再利用（冪等）。無ければ作成
+  let grows = await rest(`schedule_groups?name=eq.${encodeURIComponent(SCHED_GROUP_NAME)}&created_by=eq.${wid}&select=id`)
+  let gid = grows?.[0]?.id
+  if (!gid) {
+    const created = await rest('schedule_groups', {
+      method: 'POST', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ name: SCHED_GROUP_NAME, created_by: wid, default_share: false }),
+    })
+    gid = created?.[0]?.id
+  }
+  if (gid) {
+    // メンバー = Worker 01 のみ（onConflictで冪等）
+    await rest('schedule_group_members?on_conflict=group_id,worker_id', {
+      method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ group_id: gid, worker_id: wid }),
+    }).catch(() => {})
+  }
+  console.log(`[e2e] schedule group シード OK (group=${gid})`)
+}
+
 export default async function globalSetup() {
   await ensureAdminUser().catch(e => console.warn('[e2e] admin user 作成失敗:', String(e)))
   await seedFeatureReports().catch(e => console.warn('[e2e] feature seed 失敗:', String(e)))
+  await seedScheduleGroup().catch(e => console.warn('[e2e] schedule group seed 失敗:', String(e)))
 }

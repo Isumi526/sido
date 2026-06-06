@@ -2,9 +2,13 @@
   <div class="cal-page">
     <AppNav subtitle="予定管理" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
 
-    <!-- 月ナビ（ヘッダー：年月のみ） -->
+    <!-- 月ナビ（ヘッダー：年月＋グループ絞り込み） -->
     <div class="month-nav">
       <span class="nav-label">{{ navLabel }}</span>
+      <select v-if="myGroups.length" v-model="selectedGroupId" class="group-select" aria-label="グループで絞り込み">
+        <option :value="null">全員</option>
+        <option v-for="g in myGroups" :key="g.id" :value="g.id">{{ g.name }}</option>
+      </select>
     </div>
 
     <div v-if="loading" class="loading">読み込み中...</div>
@@ -246,9 +250,28 @@ const CHANGE_LABELS: Record<string, string> = {
   is_night_shift: '夜勤',
 }
 const PIN_KEY  = 'calendar_pinned_workers'
+const GROUP_KEY = `calendar_group_filter_${config.public.accountSlug}`
 
 // ──────────────────── 状態 ────────────────────
 const workers     = ref<{ id: string; name: string }[]>([])
+
+// グループ絞り込み（自分が参加するグループのメンバー列だけ表示）
+const groupsApi = useScheduleGroups()
+const myGroups  = groupsApi.groups                         // readonly ref（テンプレートで自動unwrap）
+const selectedGroupId = ref<string | null>(null)           // null = 全員
+
+// 選択グループのメンバー worker_id 集合（null=絞り込みなし）
+const memberWorkerIds = computed<Set<string> | null>(() => {
+  if (!selectedGroupId.value) return null
+  const g = myGroups.value.find(x => x.id === selectedGroupId.value)
+  if (!g || g.members.length === 0) return null            // 不在/空グループは全員にフォールバック
+  return new Set(g.members.map(m => m.worker_id))
+})
+
+// 選択を localStorage に記憶
+watch(selectedGroupId, (v) => {
+  try { localStorage.setItem(GROUP_KEY, v ?? '') } catch { /* quota */ }
+})
 
 // ピン留め
 const pinnedWorkerIds = ref<string[]>(
@@ -268,13 +291,16 @@ function togglePin(id: string) {
 }
 
 // 表示順: 自分 → ピン済み（ピン順）→ その他（name順）
+// グループ選択時はそのメンバーの作業員だけに絞ってから並べる
 const sortedWorkers = computed(() => {
+  const ids  = memberWorkerIds.value
+  const base = ids ? workers.value.filter(w => ids.has(w.id)) : workers.value
   const myId   = effectiveWorkerId.value
-  const mine   = workers.value.filter(w => w.id === myId)
+  const mine   = base.filter(w => w.id === myId)
   const pinned = pinnedWorkerIds.value
-    .map(id => workers.value.find(w => w.id === id))
+    .map(id => base.find(w => w.id === id))
     .filter((w): w is { id: string; name: string } => !!w && w.id !== myId)
-  const rest   = workers.value.filter(w => w.id !== myId && !isPinned(w.id))
+  const rest   = base.filter(w => w.id !== myId && !isPinned(w.id))
   // 自分 → ピン留め → 残り50音順（DB側でname順取得済み）
   return [...mine, ...pinned, ...rest]
 })
@@ -607,6 +633,15 @@ onMounted(async () => {
     await schedules.resolveMyWorkerId()
     await loadWorkers()
     await loadSchedules()
+    // 自分が参加するグループを取得し、前回選択を復元（存在するグループのみ）
+    const myWid = schedules.myWorkerId.value
+    if (myWid) {
+      await groupsApi.fetchMyGroups(myWid)
+      try {
+        const saved = localStorage.getItem(GROUP_KEY)
+        if (saved && myGroups.value.some(g => g.id === saved)) selectedGroupId.value = saved
+      } catch { /* ignore */ }
+    }
   } finally {
     loading.value = false
     await nextTick()
@@ -621,10 +656,15 @@ onMounted(async () => {
 
 /* 月ナビ（ヘッダー：年月のみ） */
 .month-nav {
-  display: flex; align-items: center;
+  display: flex; align-items: center; gap: 12px;
   padding: 10px 12px; border-bottom: 1px solid #E0E0E0; flex-shrink: 0;
 }
 .nav-label { font-size: 16px; font-weight: 700; color: #111; }
+.group-select {
+  margin-left: auto; max-width: 55%;
+  border: 1px solid #ccc; border-radius: 8px; padding: 6px 10px;
+  font-size: 13px; font-family: inherit; background: #fff; color: #111;
+}
 
 /* 下部操作バー */
 .bottom-bar {
