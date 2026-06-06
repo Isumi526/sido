@@ -30,7 +30,7 @@ export async function elementToPdfBlob(el: HTMLElement): Promise<Blob> {
   let canvas: HTMLCanvasElement
   try {
     canvas = await html2canvas(el, {
-      scale: 2,
+      scale: 1.5,
       backgroundColor: '#ffffff',
       useCORS: true,
       width: RENDER_WIDTH,
@@ -42,7 +42,8 @@ export async function elementToPdfBlob(el: HTMLElement): Promise<Blob> {
     el.setAttribute('style', prevStyle)
     wraps.forEach((w, i) => w.setAttribute('style', wrapPrev[i]))
   }
-  const img = canvas.toDataURL('image/png')
+  // JPEG で出力（PNGだと数MBになりメール添付・Edge Functionのメモリ上限に当たるため）
+  const img = canvas.toDataURL('image/jpeg', 0.9)
 
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   const pageW = pdf.internal.pageSize.getWidth()
@@ -51,13 +52,13 @@ export async function elementToPdfBlob(el: HTMLElement): Promise<Blob> {
   const imgH = (canvas.height * imgW) / canvas.width
 
   if (imgH <= pageH) {
-    pdf.addImage(img, 'PNG', 0, 0, imgW, imgH)
+    pdf.addImage(img, 'JPEG', 0, 0, imgW, imgH)
   } else {
     // 複数ページに分割（縦に流す）
     let position = 0
     let remaining = imgH
     while (remaining > 0) {
-      pdf.addImage(img, 'PNG', 0, position, imgW, imgH)
+      pdf.addImage(img, 'JPEG', 0, position, imgW, imgH)
       remaining -= pageH
       position -= pageH
       if (remaining > 0) pdf.addPage()
@@ -68,7 +69,8 @@ export async function elementToPdfBlob(el: HTMLElement): Promise<Blob> {
 
 /**
  * 申請PDFを Storage に保存し、保存パスを返す。
- * パス: expense-applications/{accountSlug}/{user_id}/{period_key}.pdf
+ * kind: 'meisai'(明細=全経費) | 'seikyu'(請求書=個人建替分のみ)
+ * パス: expense-applications/{accountSlug}/{user_id}/{period_key}_{kind}.pdf
  */
 export async function uploadApplicationPdf(
   supabase: any,
@@ -76,8 +78,9 @@ export async function uploadApplicationPdf(
   accountSlug: string,
   userId: string,
   periodKey: string,
+  kind: 'meisai' | 'seikyu',
 ): Promise<string> {
-  const path = `expense-applications/${accountSlug}/${userId}/${periodKey}.pdf`
+  const path = `expense-applications/${accountSlug}/${userId}/${periodKey}_${kind}.pdf`
   const { error } = await supabase.storage
     .from(BUCKET)
     .upload(path, blob, { upsert: true, contentType: 'application/pdf' })

@@ -82,23 +82,19 @@ export function effectiveStatus(
   return now.getTime() <= deadlineForPeriod(periodKey).getTime() ? '未申請' : '期限超過'
 }
 
-/** 過去6期分の期間キーを新しい順で返す */
+/**
+ * 直近3か月分の期間キーを新しい順で返す（各月 後半→前半）。
+ * 例: 2026-06-second, 2026-06-first, 2026-05-second, 2026-05-first, ...
+ */
 export function recentPeriodKeys(): string[] {
   const keys: string[] = []
   const today = new Date()
-  for (let i = 0; i < 6; i++) {
-    const d = new Date(today)
-    d.setDate(1)
-    // 前の月を取得するために月を操作
-    const halfOffset = Math.floor(i / 2)
-    const isFirst    = i % 2 === (today.getDate() <= 15 ? 0 : 1)
-    d.setMonth(today.getMonth() - halfOffset)
-    const ym   = d.toISOString().substring(0, 7)
-    const half = isFirst ? 'first' : 'second'
-    keys.push(`${ym}-${half}`)
+  for (let i = 0; i < 3; i++) {
+    const d  = new Date(today.getFullYear(), today.getMonth() - i, 1)
+    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    keys.push(`${ym}-second`, `${ym}-first`)   // 後半→前半（新しい順）
   }
-  // 重複を除去して返す
-  return [...new Set(keys)]
+  return keys
 }
 
 // ---------- ユーザーキャッシュ（localStorage） ----------

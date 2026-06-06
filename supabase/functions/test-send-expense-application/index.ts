@@ -59,13 +59,14 @@ Deno.serve(async (req) => {
       .from('users').select('real_name, workers(name)').eq('id', user_id).maybeSingle()
     const workerName = (user as any)?.workers?.name ?? user?.real_name ?? '作業員'
 
-    // PDF を Storage から取得して base64 添付
+    // PDFを Storage から取得して base64 添付（明細=全経費 / 請求書=個人建替分のみ の2種、規約パスから取得）
+    const base = `expense-applications/${slug}/${user_id}/${period_key}`
     const attachments: { filename: string; content: string }[] = []
-    if (settlement.pdf_path) {
-      const { data: file } = await supabase.storage.from('expense-receipts').download(settlement.pdf_path)
+    for (const [label, kind] of [['明細', 'meisai'], ['請求書', 'seikyu']] as const) {
+      const { data: file } = await supabase.storage.from('expense-receipts').download(`${base}_${kind}.pdf`)
       if (file) {
         const buf = new Uint8Array(await file.arrayBuffer())
-        attachments.push({ filename: `経費申請書_${workerName}_${period_key}.pdf`, content: base64(buf) })
+        attachments.push({ filename: `${label}_${workerName}_${period_key}.pdf`, content: base64(buf) })
       }
     }
 
@@ -85,7 +86,7 @@ Deno.serve(async (req) => {
         html: `<p>${workerName} さんから経費申請がありました。</p>`
             + `<p>対象期間: ${periodLabel(period_key)}</p>`
             + `<p>申請日時: ${settlement.applied_at ?? ''}</p>`
-            + (attachments.length ? '<p>申請書PDFを添付しています。</p>' : '<p>（PDF添付なし）</p>'),
+            + (attachments.length ? `<p>PDF（${attachments.map(a => a.filename.split('_')[0]).join('・')}）を添付しています。</p>` : '<p>（PDF添付なし）</p>'),
         attachments,
       }),
     })

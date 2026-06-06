@@ -12,12 +12,12 @@
 
     <!-- レポート本体 -->
     <div v-else id="report">
-      <h1 class="company">請　求　書<span v-if="mode === 'tategae'" class="company-sub">（個人建て替え分）</span></h1>
+      <h1 class="company">{{ mode === 'tategae' ? '請　求　書' : '明　細' }}</h1>
 
       <div class="doc-top">
         <div class="doc-top-left">
           <div v-if="accountName" class="addressee">{{ accountName }} 御中</div>
-          <p class="lead">下記のとおり、ご請求申し上げます。</p>
+          <p class="lead">{{ mode === 'tategae' ? '下記のとおり、ご請求申し上げます。' : '下記のとおり、経費の明細をご報告します。' }}</p>
         </div>
         <div class="doc-top-right">
           <div class="meta-row"><span class="meta-label">請 求 日</span><span>{{ issueDate }}</span></div>

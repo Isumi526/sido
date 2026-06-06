@@ -47,12 +47,12 @@
 
         <!-- ====== 印刷エリア ====== -->
         <div ref="printAreaEl" class="print-area">
-          <h1 class="doc-h1">請　求　書<span v-if="viewMode === 'tategae'" class="doc-h1-sub">（個人建て替え分）</span></h1>
+          <h1 class="doc-h1">{{ viewMode === 'tategae' ? '請　求　書' : '明　細' }}</h1>
 
           <div class="doc-top">
             <div class="doc-top-left">
               <div v-if="accountName" class="doc-addressee">{{ accountName }} 御中</div>
-              <p class="doc-lead">下記のとおり、ご請求申し上げます。</p>
+              <p class="doc-lead">{{ viewMode === 'tategae' ? '下記のとおり、ご請求申し上げます。' : '下記のとおり、経費の明細をご報告します。' }}</p>
             </div>
             <div class="doc-top-right">
               <div class="doc-meta-row"><span class="doc-meta-label">請 求 日</span><span>{{ issueDate }}</span></div>
@@ -281,23 +281,38 @@ async function handleApply() {
   if (!applyUserId.value) { applyError.value = 'ユーザー情報が取得できません'; return }
   applying.value = true
   applyError.value = ''
+  const slug = config.public.accountSlug as string
+  const origMode = viewMode.value
   try {
-    // 1. 申請書PDFを生成して Storage に保存（失敗しても申請は継続）
-    let pdfPath: string | null = null
+    // 1. PDFを2種類生成して保存（明細=全経費 / 請求書=個人建替分のみ）。失敗しても申請は継続
+    const paths: string[] = []
     try {
+      const hasTategae = rows.value.some(r => r.tategae)
+      // 明細（全経費）
+      viewMode.value = 'all'
+      await nextTick(); await new Promise(r => setTimeout(r, 60))
       if (printAreaEl.value) {
-        const blob = await elementToPdfBlob(printAreaEl.value)
-        pdfPath = await uploadApplicationPdf(
-          supabase, blob, config.public.accountSlug as string,
-          applyUserId.value, selectedPeriod.value,
-        )
+        const meisai = await elementToPdfBlob(printAreaEl.value)
+        paths.push(await uploadApplicationPdf(supabase, meisai, slug, applyUserId.value, selectedPeriod.value, 'meisai'))
+      }
+      // 請求書（個人建替分のみ）— 建替がある時のみ
+      if (hasTategae) {
+        viewMode.value = 'tategae'
+        await nextTick(); await new Promise(r => setTimeout(r, 60))
+        if (printAreaEl.value) {
+          const seikyu = await elementToPdfBlob(printAreaEl.value)
+          paths.push(await uploadApplicationPdf(supabase, seikyu, slug, applyUserId.value, selectedPeriod.value, 'seikyu'))
+        }
       }
     } catch (e) {
       console.error('[expense apply] PDF生成/保存に失敗（申請は継続）:', e)
+    } finally {
+      viewMode.value = origMode
+      await nextTick()
     }
 
-    // 2. 精算ステータスを 申請中 に
-    settlement.value = await expense.applySettlement(applyUserId.value, selectedPeriod.value, pdfPath)
+    // 2. 精算ステータスを 申請中 に（pdf_path は記録用にカンマ連結）
+    settlement.value = await expense.applySettlement(applyUserId.value, selectedPeriod.value, paths.join(',') || null)
 
     // 3. PDFメール送信 function を呼ぶ（best-effort）
     triggerApplicationEmail(applyUserId.value, selectedPeriod.value)
