@@ -4,7 +4,7 @@
 //  seed: FEAT_EXP_PERIOD(後半) は締切=翌月3日で常に未来 → 未申請から申請できる
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, getDevUserId } from './helpers'
+import { rest, upsert, getDevUserId, getAccountId } from './helpers'
 import { FEAT_EXP_PERIOD } from './global-setup'
 
 const PERIOD_LABEL = (() => {
@@ -33,5 +33,28 @@ test.describe('経費申請(W1)', () => {
     // ステータスが「申請済み」に（PDF生成/メールは best-effort、DB申請は成立）
     await expect(page.locator('.status-bar')).toContainText('申請済み', { timeout: 20000 })
     await expect(applyBtn).toHaveCount(0)
+  })
+})
+
+test.describe('経費再申請(W1: 差し戻し後)', () => {
+  test('差し戻し → 再申請ボタンが表示され再申請できる', async ({ page }) => {
+    const uid = await getDevUserId()
+    const accountId = await getAccountId()
+    // 差し戻し状態を用意
+    await upsert('expense_settlements', 'account_id,user_id,period_key', {
+      account_id: accountId, user_id: uid, period_key: FEAT_EXP_PERIOD,
+      status: '差し戻し', reject_reason: 'E2E:領収書の添付漏れ',
+      applied_at: new Date().toISOString(), rejected_at: new Date().toISOString(), notified_at: null,
+    })
+
+    await page.goto('/expense/download', { waitUntil: 'networkidle' })
+    await page.getByRole('button', { name: PERIOD_LABEL, exact: true }).click()
+    await page.waitForTimeout(800)
+
+    await expect(page.locator('.status-bar')).toContainText('差し戻し')
+    const reBtn = page.getByRole('button', { name: /再申請する/ })
+    await expect(reBtn).toBeVisible()
+    await reBtn.click()
+    await expect(page.locator('.status-bar')).toContainText('申請済み', { timeout: 20000 })
   })
 })

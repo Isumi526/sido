@@ -37,6 +37,14 @@
           <p class="reject-reason">{{ settlement.reject_reason }}</p>
         </div>
 
+        <!-- 申請アクション（ステータス直下で常に見える位置に） -->
+        <div v-if="canApply" class="apply-actions no-print">
+          <button class="btn-apply" :disabled="applying" @click="handleApply">
+            {{ applying ? '申請中…' : (effStatus === '差し戻し' ? 'この期を再申請する' : 'この期を申請する') }}
+          </button>
+          <p v-if="applyError" class="apply-error">{{ applyError }}</p>
+        </div>
+
         <!-- ====== 印刷エリア ====== -->
         <div ref="printAreaEl" class="print-area">
           <div class="doc-header">
@@ -114,14 +122,6 @@
               先に日報を送信してください。
             </template>
           </div>
-        </div>
-
-        <!-- 申請アクション -->
-        <div v-if="canApply" class="apply-actions no-print">
-          <button class="btn-apply" :disabled="applying" @click="handleApply">
-            {{ applying ? '申請中…' : (effStatus === '差し戻し' ? 'この期を再申請する' : 'この期を申請する') }}
-          </button>
-          <p v-if="applyError" class="apply-error">{{ applyError }}</p>
         </div>
 
         <!-- アクション -->
