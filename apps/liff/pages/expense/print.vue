@@ -12,15 +12,23 @@
 
     <!-- レポート本体 -->
     <div v-else id="report">
-      <h1 class="company">御請求先<span v-if="mode === 'tategae'" class="company-sub">（個人建て替え分）</span></h1>
-      <div v-if="accountName" class="addressee">{{ accountName }} 御中</div>
+      <h1 class="company">請　求　書<span v-if="mode === 'tategae'" class="company-sub">（個人建て替え分）</span></h1>
 
-      <div class="report-header">
-        <div class="notes-left">
-          <span>★必ず登録番号記入</span>
-          <span>※領収書添付</span>
+      <div class="doc-top">
+        <div class="doc-top-left">
+          <div v-if="accountName" class="addressee">{{ accountName }} 御中</div>
+          <p class="lead">下記のとおり、ご請求申し上げます。</p>
         </div>
-        <div class="name-right">氏名：{{ user?.real_name }}</div>
+        <div class="doc-top-right">
+          <div class="meta-row"><span class="meta-label">請 求 日</span><span>{{ issueDate }}</span></div>
+          <div class="meta-row"><span class="meta-label">対象期間</span><span>{{ periodFullLabel }}</span></div>
+          <div class="sender">氏名：{{ user?.real_name }}</div>
+        </div>
+      </div>
+
+      <div class="notes-top">
+        <span>★必ず登録番号記入</span>
+        <span>※領収書添付</span>
       </div>
 
       <table class="expense-table">
@@ -71,6 +79,7 @@
 
 <script setup lang="ts">
 import type { ExpenseRow, User } from '~/types'
+import { periodLabel } from '~/composables/useExpense'
 
 // スマホでも固定幅でレンダリングし、PCと同じレイアウトでPDF保存できるようにする
 useHead({
@@ -81,6 +90,8 @@ const route  = useRoute()
 const userId = route.query.userId as string
 const period = route.query.period as string
 const mode   = (route.query.mode as string) === 'tategae' ? 'tategae' : 'all'
+const periodFullLabel = period ? periodLabel(period) : ''
+const issueDate = (() => { const d = new Date(); return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}` })()
 
 const loading = ref(true)
 const error   = ref('')
@@ -131,12 +142,17 @@ body { font-family: 'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic', sans-serif; ba
 @keyframes spin { to { transform: rotate(360deg); } }
 
 #report { padding: 16px; }
-.company { font-size: 20px; font-weight: 900; text-align: center; letter-spacing: 3px; margin-bottom: 8px; }
-.addressee { font-size: 16px; font-weight: 700; letter-spacing: 1px; margin-bottom: 10px; }
-.company-sub { font-size: 14px; font-weight: 700; letter-spacing: 1px; }
-.report-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; }
-.notes-left { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: #555; }
-.name-right { font-size: 13px; font-weight: 700; }
+.company { font-size: 24px; font-weight: 900; text-align: center; letter-spacing: 8px; margin-bottom: 18px; }
+.company-sub { font-size: 14px; font-weight: 700; letter-spacing: 1px; margin-left: 6px; }
+.doc-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 12px; }
+.doc-top-left { flex: 1; min-width: 0; }
+.addressee { font-size: 18px; font-weight: 700; letter-spacing: 1px; border-bottom: 1px solid #111; display: inline-block; padding-bottom: 2px; margin-bottom: 10px; }
+.lead { font-size: 12px; color: #111; }
+.doc-top-right { flex-shrink: 0; display: flex; flex-direction: column; gap: 3px; }
+.meta-row { display: flex; gap: 10px; font-size: 12px; }
+.meta-label { color: #555; min-width: 56px; }
+.sender { font-size: 14px; font-weight: 700; margin-top: 6px; }
+.notes-top { display: flex; gap: 14px; margin-bottom: 6px; font-size: 11px; color: #555; }
 
 .expense-table { width: 100%; border-collapse: collapse; }
 .expense-table th, .expense-table td { border: 1px solid #333; padding: 5px 6px; }

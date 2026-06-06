@@ -47,14 +47,23 @@
 
         <!-- ====== 印刷エリア ====== -->
         <div ref="printAreaEl" class="print-area">
-          <div v-if="accountName" class="doc-addressee">{{ accountName }} 御中</div>
-          <div class="doc-header">
-            <div class="doc-meta-left">
-              <span class="doc-note">★必ず登録番号記入</span>
-              <span class="doc-note">※領収書添付</span>
+          <h1 class="doc-h1">請　求　書<span v-if="viewMode === 'tategae'" class="doc-h1-sub">（個人建て替え分）</span></h1>
+
+          <div class="doc-top">
+            <div class="doc-top-left">
+              <div v-if="accountName" class="doc-addressee">{{ accountName }} 御中</div>
+              <p class="doc-lead">下記のとおり、ご請求申し上げます。</p>
             </div>
-            <div class="doc-title">御請求先<span v-if="viewMode === 'tategae'" class="doc-title-sub">（個人建て替え分）</span></div>
-            <div class="doc-name">氏名：{{ currentUser?.real_name }}</div>
+            <div class="doc-top-right">
+              <div class="doc-meta-row"><span class="doc-meta-label">請 求 日</span><span>{{ issueDate }}</span></div>
+              <div class="doc-meta-row"><span class="doc-meta-label">対象期間</span><span>{{ periodFullLabel }}</span></div>
+              <div class="doc-sender">氏名：{{ currentUser?.real_name }}</div>
+            </div>
+          </div>
+
+          <div class="doc-notes-top">
+            <span class="doc-note">★必ず登録番号記入</span>
+            <span class="doc-note">※領収書添付</span>
           </div>
 
           <div v-if="loading" class="center-text no-print">読み込み中...</div>
@@ -145,7 +154,7 @@
 
 <script setup lang="ts">
 import type { User, ExpenseRow } from '~/types'
-import { getCurrentPeriodKey, recentPeriodKeys, deadlineLabel, effectiveStatus } from '~/composables/useExpense'
+import { getCurrentPeriodKey, recentPeriodKeys, deadlineLabel, effectiveStatus, periodLabel } from '~/composables/useExpense'
 import { elementToPdfBlob, uploadApplicationPdf } from '~/utils/generateExpensePdf'
 
 const liff    = useLiff()
@@ -206,6 +215,8 @@ const currentUser = computed(() => {
 
 const periodKeys = computed(() => recentPeriodKeys().slice(0, 4))
 const total      = computed(() => displayRows.value.reduce((s, r) => s + r.amount, 0))
+const periodFullLabel = computed(() => periodLabel(selectedPeriod.value))
+const issueDate  = computed(() => { const d = new Date(); return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}` })
 
 // 代理先のDBユーザーIDをキャッシュ
 const proxyUserId = ref<string | null>(null)
@@ -389,14 +400,19 @@ html,body { background:var(--bg);color:var(--text);font-family:var(--font);min-h
 .mode-bar { display:flex;gap:8px; }
 .mode-btn { flex:1;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;font-size:13px;font-family:var(--font);color:var(--text2);font-weight:700;cursor:pointer; }
 .mode-btn.active { background:var(--accent);color:#fff;border-color:var(--accent); }
-.doc-addressee { font-size:16px;font-weight:700;margin-bottom:10px;letter-spacing:1px; }
-.doc-title-sub { font-size:12px;font-weight:700;margin-left:4px; }
 .print-area { background:#fff;border-radius:var(--radius);padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.06); }
-.doc-header { display:grid;grid-template-columns:1fr auto 1fr;align-items:center;margin-bottom:12px;gap:8px; }
-.doc-meta-left { display:flex;flex-direction:column;gap:2px; }
+.doc-h1 { font-size:24px;font-weight:900;text-align:center;letter-spacing:8px;margin-bottom:18px; }
+.doc-h1-sub { font-size:14px;font-weight:700;letter-spacing:1px;margin-left:6px; }
+.doc-top { display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:12px; }
+.doc-top-left { flex:1;min-width:0; }
+.doc-addressee { font-size:18px;font-weight:700;letter-spacing:1px;border-bottom:1px solid var(--text);display:inline-block;padding-bottom:2px;margin-bottom:10px; }
+.doc-lead { font-size:12px;color:var(--text); }
+.doc-top-right { flex-shrink:0;text-align:left;display:flex;flex-direction:column;gap:3px; }
+.doc-meta-row { display:flex;gap:10px;font-size:12px; }
+.doc-meta-label { color:var(--text2);min-width:56px; }
+.doc-sender { font-size:14px;font-weight:700;margin-top:6px; }
+.doc-notes-top { display:flex;gap:14px;margin-bottom:6px; }
 .doc-note { font-size:10px;color:var(--text2); }
-.doc-title { font-size:18px;font-weight:900;text-align:center;letter-spacing:2px; }
-.doc-name { font-size:13px;font-weight:700;text-align:right; }
 .table-wrap { overflow-x:auto; }
 .expense-table { width:100%;border-collapse:collapse;font-size:12px; }
 .expense-table th,.expense-table td { border:1px solid #333;padding:5px 6px; }
