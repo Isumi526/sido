@@ -24,7 +24,7 @@
           <button
             v-if="tab === 'unconfirmed'"
             class="update-ok" :disabled="busyId === u.id" @click="setArchived(u.id, true)"
-          >確認</button>
+          >確認済み</button>
           <button
             v-else
             class="update-undo" :disabled="busyId === u.id" @click="setArchived(u.id, false)"
