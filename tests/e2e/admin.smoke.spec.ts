@@ -10,6 +10,7 @@ const PAGES: [string, RegExp][] = [
   ['/worker-reports', /出面|勤怠/],
   ['/paid-leave',     /有給/],
   ['/site-reports',   /現場別集計/],
+  ['/expenses',       /経費管理/],
   ['/workers',        /作業員/],
   ['/sites',          /現場/],
   ['/contractors',    /元請け業者マスタ/],

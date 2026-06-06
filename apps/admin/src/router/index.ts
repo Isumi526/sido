@@ -7,6 +7,7 @@ import Contractors    from '../pages/contractors.vue'
 import Subcontractors from '../pages/subcontractors.vue'
 import Reports        from '../pages/reports.vue'
 import SiteReports    from '../pages/site-reports.vue'
+import Expenses       from '../pages/expenses.vue'
 import Settings       from '../pages/settings.vue'
 import Login          from '../pages/login.vue'
 import Users          from '../pages/users.vue'
@@ -30,6 +31,7 @@ export const router = createRouter({
     { path: '/subcontractors', component: Subcontractors },
     { path: '/reports',      component: Reports },
     { path: '/site-reports', component: SiteReports },
+    { path: '/expenses',     component: Expenses },
     { path: '/worker-reports', component: WorkerReports },
     { path: '/paid-leave',    component: PaidLeave },
     { path: '/settings',       component: Settings },
