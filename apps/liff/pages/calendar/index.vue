@@ -827,12 +827,17 @@ thead th.sticky-col { z-index: 4; }
 }
 
 /* 対象者（複数選択） */
-.worker-pick-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
-.group-pick { border: 1px solid #ccc; border-radius: 8px; padding: 6px 8px; font-size: 12px; font-family: inherit; background: #fff; color: #111; max-width: 55%; }
-.worker-chips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 140px; overflow-y: auto; }
+.worker-pick-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.group-pick { border: 1px solid #d0d0d0; border-radius: 8px; padding: 5px 8px; font-size: 12px; font-family: inherit; background: #fff; color: #111; max-width: 52%; }
+.worker-chips {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  max-height: 132px; overflow-y: auto; padding: 2px;
+}
 .worker-chip {
-  border: 1px solid #ccc; border-radius: 999px; padding: 6px 12px;
-  font-size: 13px; font-family: inherit; background: #fff; color: #555; cursor: pointer;
+  border: 1px solid #e2e2e2; border-radius: 999px; padding: 4px 11px;
+  font-size: 12.5px; line-height: 1.5; white-space: nowrap;
+  font-family: inherit; background: #f6f6f6; color: #666; cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
 }
 .worker-chip.on { background: #06C755; border-color: #06C755; color: #fff; font-weight: 700; }
 
