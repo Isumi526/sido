@@ -27,6 +27,10 @@ test('日報入力 → 送信 → 完了画面が出る', async ({ page }) => {
 
   // 完了画面
   await expect(page.getByText(/送信完了|更新しました/)).toBeVisible({ timeout: 20000 })
+
+  // リグレ: 送信後に「翌日分の日報」ボタンが出る（service_start_date設定済み＝未送信日が残る）
+  // ※ 代理入力でも同ボタンが出るよう post-submit を targetUserId で統一した変更の自己経路ガード
+  await expect(page.getByRole('button', { name: /の日報を入力する/ })).toBeVisible({ timeout: 10000 })
 })
 
 // ── 回帰: 送信済みの過去日報を「編集」で開くと、誤って「過去の未送信日報です」が出ていた ──

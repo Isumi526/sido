@@ -1154,9 +1154,11 @@ async function handleSubmit() {
     }).catch(e => console.error('[Report] URL再保存エラー:', e))
   }
 
-  // ④ 次の未送信日を取得してサクセス画面に表示（自分自身の分のみ）
-  if (!report.error.value && uid && !proxyT) {
-    const next = await expense.getNextUnsubmittedDate(uid).catch(() => null)
+  // ④ 次の未送信日を取得してサクセス画面に表示（自己・代理とも）
+  //    targetUserId は代理なら代理先・自己なら自分の user.id。これで統一して
+  //    代理入力でも「翌日分の日報」ボタンを出す。
+  if (!report.error.value && targetUserId) {
+    const next = await expense.getNextUnsubmittedDateById(targetUserId).catch(() => null)
     if (next && next !== 'NOT_CONFIGURED') {
       nextUnsubmittedDate.value = next
     }
