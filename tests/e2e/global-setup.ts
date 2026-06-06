@@ -163,8 +163,27 @@ async function seedScheduleGroup() {
   console.log(`[e2e] schedule group シード OK (group=${gid})`)
 }
 
+// 開発の更新履歴テスト用エントリ（毎回 archived=false にリセットして冪等化）
+export const DEV_UPDATE_TITLE = 'E2E更新テスト項目'
+
+async function seedDevUpdate() {
+  const rows = await rest(`dev_updates?title=eq.${encodeURIComponent(DEV_UPDATE_TITLE)}&select=id`)
+  if (rows?.length) {
+    await rest(`dev_updates?id=eq.${rows[0].id}`, {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ archived: false }),
+    })
+  } else {
+    await rest('dev_updates', {
+      method: 'POST', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ title: DEV_UPDATE_TITLE, link: '/settings', archived: false }),
+    })
+  }
+}
+
 export default async function globalSetup() {
   await ensureAdminUser().catch(e => console.warn('[e2e] admin user 作成失敗:', String(e)))
   await seedFeatureReports().catch(e => console.warn('[e2e] feature seed 失敗:', String(e)))
   await seedScheduleGroup().catch(e => console.warn('[e2e] schedule group seed 失敗:', String(e)))
+  await seedDevUpdate().catch(e => console.warn('[e2e] dev_update seed 失敗:', String(e)))
 }
