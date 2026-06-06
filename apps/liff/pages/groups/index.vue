@@ -43,22 +43,6 @@
           <!-- メンバー追加 -->
           <button class="btn-add-member" @click="openAddMember(group)">＋ メンバーを追加</button>
 
-          <!-- デフォルト共有設定 -->
-          <div class="group-setting-row">
-            <div class="group-setting-info">
-              <span class="group-setting-label">予定作成時にデフォルト共有</span>
-              <span class="group-setting-sub">ONにすると新規予定でこのグループが自動選択されます</span>
-            </div>
-            <label class="ios-toggle">
-              <input
-                type="checkbox"
-                :checked="group.default_share"
-                @change="handleToggleDefaultShare(group)"
-              />
-              <span class="ios-toggle-track"></span>
-            </label>
-          </div>
-
           <!-- グループ操作 -->
           <div class="group-actions">
             <button class="btn-leave" @click="handleLeave(group)">
@@ -250,16 +234,6 @@ async function handleRemoveMember(group: DeepReadonly<ScheduleGroup>, workerId: 
   }
 }
 
-// ──────────────────── デフォルト共有トグル ────────────────────
-async function handleToggleDefaultShare(group: DeepReadonly<ScheduleGroup>) {
-  if (!myWorkerId.value) return
-  try {
-    await groupsStore.updateGroup(group.id, { default_share: !group.default_share }, myWorkerId.value)
-  } catch (e) {
-    alert(e instanceof Error ? e.message : '更新に失敗しました')
-  }
-}
-
 // ──────────────────── 脱退 / 削除 ────────────────────
 async function handleLeave(group: DeepReadonly<ScheduleGroup>) {
   if (!myWorkerId.value) return
@@ -354,15 +328,6 @@ watch(() => proxy.proxyTarget.value, async () => {
   color: #06C755; font-size: 14px; font-weight: 600; cursor: pointer;
   margin-bottom: 10px;
 }
-
-.group-setting-row {
-  display: flex; align-items: center; gap: 12px;
-  background: #f8f9fa; border-radius: 10px;
-  padding: 12px 14px; margin-bottom: 10px;
-}
-.group-setting-info { flex: 1; }
-.group-setting-label { display: block; font-size: 14px; font-weight: 600; color: #111; }
-.group-setting-sub { display: block; font-size: 12px; color: #888; margin-top: 2px; }
 
 /* iOS トグル */
 .ios-toggle { position: relative; display: inline-block; width: 51px; height: 31px; flex-shrink: 0; }
