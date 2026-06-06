@@ -399,3 +399,7 @@ verify_jwt = false
 verify_jwt = false
 [functions.daily-reminder]
 verify_jwt = false
+[functions.send-expense-application]
+verify_jwt = false
+[functions.test-send-expense-application]
+verify_jwt = false

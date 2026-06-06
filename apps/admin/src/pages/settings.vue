@@ -52,6 +52,27 @@
     </div>
   </div>
 
+  <!-- 経費申請の通知先メール -->
+  <div class="reminder-box">
+    <div class="reminder-title">経費申請の通知先メール</div>
+    <div class="reminder-desc" style="margin-bottom: 12px;">
+      作業員が経費を申請したとき、登録したメール宛に申請内容のPDFを自動送信します（複数登録可）。
+    </div>
+    <ul class="email-list">
+      <li v-for="(em, i) in expenseEmails" :key="em" class="email-item">
+        <span class="material-symbols-rounded email-icon">mail</span>
+        <span class="email-addr">{{ em }}</span>
+        <button class="btn-email-del" @click="removeEmail(i)">削除</button>
+      </li>
+      <li v-if="!expenseEmails.length" class="email-empty">通知先メールが未登録です</li>
+    </ul>
+    <div class="email-add">
+      <input v-model="newEmail" class="email-input" type="email" placeholder="example@company.co.jp" @keyup.enter="addEmail" />
+      <button class="btn-email-add" :disabled="emailSaving" @click="addEmail">追加</button>
+    </div>
+    <p v-if="emailError" class="error">{{ emailError }}</p>
+  </div>
+
   <!-- 未送信リマインド -->
   <div class="reminder-box">
     <div class="reminder-title">未送信日報リマインド</div>
@@ -121,6 +142,47 @@ function setReportNotifyEnabled(val: boolean) {
   reportNotifySaving.value = true
   upsertSetting('notify_report_enabled', String(val), '日報通知（送信・編集）')
     .finally(() => { reportNotifySaving.value = false })
+}
+
+// ── 経費申請の通知先メール ───────────────────────────────
+const expenseEmails = ref<string[]>([])
+const newEmail      = ref('')
+const emailSaving   = ref(false)
+const emailError    = ref('')
+
+async function loadExpenseEmails() {
+  const accountId = await getAccountId()
+  const { data } = await supabase.from('settings').select('value')
+    .eq('account_id', accountId).eq('key', 'expense_notify_emails').maybeSingle()
+  const raw = data?.value
+  if (!raw) { expenseEmails.value = []; return }
+  try {
+    expenseEmails.value = JSON.parse(raw)
+  } catch {
+    expenseEmails.value = String(raw).split(',').map(s => s.trim()).filter(Boolean)
+  }
+}
+
+async function saveExpenseEmails() {
+  emailSaving.value = true
+  await upsertSetting('expense_notify_emails', JSON.stringify(expenseEmails.value), '経費申請の通知先メール')
+  emailSaving.value = false
+}
+
+function addEmail() {
+  emailError.value = ''
+  const e = newEmail.value.trim()
+  if (!e) return
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) { emailError.value = 'メールアドレスの形式が正しくありません'; return }
+  if (expenseEmails.value.includes(e)) { emailError.value = '既に登録済みです'; return }
+  expenseEmails.value.push(e)
+  newEmail.value = ''
+  saveExpenseEmails()
+}
+
+function removeEmail(i: number) {
+  expenseEmails.value.splice(i, 1)
+  saveExpenseEmails()
 }
 
 // ── リマインダー設定 ──────────────────────────────────────
@@ -240,7 +302,7 @@ async function load() {
   const accountId = await getAccountId()
   const { data } = await supabase.from('settings').select('key, value, label')
     .eq('account_id', accountId)
-    .not('key', 'in', '(reminder_enabled,reminder_time,notify_report_enabled)')
+    .not('key', 'in', '(reminder_enabled,reminder_time,notify_report_enabled,expense_notify_emails)')
     .order('key')
   const fromDb = (data ?? []) as Setting[]
 
@@ -256,6 +318,7 @@ async function load() {
 onMounted(() => {
   load()
   loadReminderConfig()
+  loadExpenseEmails()
 })
 
 function startEdit(s: Setting) {
@@ -331,4 +394,16 @@ async function save(s: Setting) {
 .reminder-result.success { background: #e8f9ef; color: #1a5c30; }
 .reminder-result.info    { background: #f0f4ff; color: #1e3a8a; }
 .reminder-result.error   { background: #fff0f0; color: #c0392b; }
+
+/* 経費通知先メール */
+.email-list { list-style: none; padding: 0; margin: 0 0 12px; display: flex; flex-direction: column; gap: 8px; }
+.email-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #f9f9f9; border-radius: 8px; }
+.email-icon { font-size: 18px; color: #888; }
+.email-addr { flex: 1; font-size: 14px; }
+.email-empty { font-size: 13px; color: #aaa; padding: 8px 0; }
+.btn-email-del { background: none; border: 1px solid #f5c0bb; color: #c0392b; border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
+.email-add { display: flex; gap: 8px; }
+.email-input { flex: 1; background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 8px 12px; font-size: 14px; }
+.btn-email-add { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 8px 18px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.btn-email-add:disabled { opacity: .6; cursor: default; }
 </style>
