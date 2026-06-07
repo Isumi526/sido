@@ -23,6 +23,12 @@
         </div>
       </div>
 
+      <!-- 下請け請求(当月・この現場) -->
+      <div v-if="activeSite && subInvoiceBySite[activeSite]" class="sub-invoice-bar">
+        下請け請求（当月）: <strong>{{ yen(subInvoiceBySite[activeSite].taxIncluded) }}</strong>
+        <span class="sub-invoice-sub">税抜 {{ yen(subInvoiceBySite[activeSite].subtotal) }} ／ {{ subInvoiceBySite[activeSite].count }}件</span>
+      </div>
+
       <!-- 一覧テーブル -->
       <div v-if="activeSite" class="table-wrap">
         <table class="table">
@@ -304,6 +310,8 @@ const dateTo = computed(() => {
 const loading    = ref(false)
 const siteMap    = ref<Record<string, any[]>>({})
 const activeSite = ref('')
+// 下請け請求（当月）の現場別合計
+const subInvoiceBySite = ref<Record<string, { subtotal: number; taxIncluded: number; count: number }>>({})
 const siteNames  = computed(() => Object.keys(siteMap.value).sort((a, b) => a.localeCompare(b, 'ja')))
 
 // 単価（settings テーブルから上書き）
@@ -371,6 +379,27 @@ async function load() {
     if (row.key === 'garbage_factory_rate_per_m3')  GF_YEN = Number(row.value)
     if (row.key === 'garbage_site_rate_per_m3')     GS_YEN = Number(row.value)
   }
+  // 下請け請求（当月）を現場別に集計
+  {
+    const { data: sii } = await supabase
+      .from('subcontractor_invoice_items')
+      .select('site_name, amount, tax_rate')
+      .eq('account_id', accountId)
+      .gte('item_date', dateFrom.value)
+      .lte('item_date', dateTo.value)
+    const map: Record<string, { subtotal: number; taxIncluded: number; count: number }> = {}
+    for (const r of (sii ?? []) as any[]) {
+      const name = r.site_name
+      if (!name) continue
+      const amt = Number(r.amount) || 0
+      const m = map[name] ??= { subtotal: 0, taxIncluded: 0, count: 0 }
+      m.subtotal += amt
+      m.taxIncluded += amt + Math.round(amt * (Number(r.tax_rate) || 0) / 100)
+      m.count += 1
+    }
+    subInvoiceBySite.value = map
+  }
+
   const priceById   = Object.fromEntries((wm ?? []).map((w: any) => [w.id,   w.unit_price]))
   const priceByName = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.unit_price]))
   const subMaster   = Object.fromEntries((sm ?? []).map((s: any) => [s.name, { category: s.category, unitPrice: s.unit_price ?? 0 }]))
@@ -496,6 +525,9 @@ watch(dateFrom, load)
 .btn-nav { background: #f0f0f0; border: none; border-radius: 8px; padding: 6px 14px; font-size: 18px; cursor: pointer; }
 .empty { color: #888; padding: 60px; text-align: center; }
 
+.sub-invoice-bar { background: #eef4ff; border: 1px solid #cdddff; color: #1a3a7a; border-radius: 8px; padding: 8px 14px; margin-bottom: 12px; font-size: 13px; }
+.sub-invoice-bar strong { font-size: 15px; }
+.sub-invoice-sub { color: #5a6b8a; margin-left: 12px; font-size: 12px; }
 .tabs-wrap { overflow-x: auto; margin-bottom: 16px; }
 .tabs { display: flex; gap: 4px; border-bottom: 2px solid #e0e0e0; min-width: max-content; }
 .tab { background: none; border: none; border-bottom: 3px solid transparent; margin-bottom: -2px; padding: 10px 16px; font-size: 13px; font-weight: 600; color: #888; cursor: pointer; white-space: nowrap; transition: color .15s, border-color .15s; }

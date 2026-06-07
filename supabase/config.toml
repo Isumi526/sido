@@ -403,3 +403,7 @@ verify_jwt = false
 verify_jwt = false
 [functions.test-send-expense-application]
 verify_jwt = false
+[functions.analyze-invoice]
+verify_jwt = false
+[functions.test-analyze-invoice]
+verify_jwt = false
