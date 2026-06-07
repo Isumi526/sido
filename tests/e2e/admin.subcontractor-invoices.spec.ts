@@ -126,15 +126,14 @@ test.describe('下請け請求', () => {
     await expect(page.locator('tr.data-row', { hasText: vendor })).toHaveCount(0)
   })
 
-  test('AC5: 現場別集計に下請け請求(当月・業者区分)が反映される', async ({ page }) => {
+  test('AC5: 現場別集計に下請け請求(当月・業者区分)が日表の請求行＋月計に反映される', async ({ page }) => {
     await page.goto('/site-reports', { waitUntil: 'networkidle' })
     // 対象現場(テスト現場A)のタブを選択（他テストの現場がアクティブな場合に備える）
     await page.locator('.tabs-wrap .tab', { hasText: SEED_SITE }).first().click()
-    const bar = page.locator('.sub-invoice-bar')
-    await expect(bar).toBeVisible({ timeout: 10000 })
-    await expect(bar).toContainText('¥11,000')          // 税込合計
-    // 区分内訳: 業者¥10,000（商社は¥0）
-    await expect(bar.locator('.sub-invoice-cats')).toContainText('業者')
-    await expect(bar.locator('.sub-invoice-cats')).toContainText('¥10,000')
+    // 日表に【請求】行が出る（業者区分の¥10,000が業者列に載る）
+    const invRow = page.locator('tr.invoice-row', { hasText: 'E2E業者区分' })
+    await expect(invRow).toBeVisible({ timeout: 10000 })
+    await expect(invRow).toContainText('【請求】')
+    await expect(invRow).toContainText('¥10,000')
   })
 })
