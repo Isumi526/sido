@@ -76,7 +76,7 @@
                 <option value="__new__">＋ 新規業者を登録…</option>
               </select>
             </label>
-            <label class="fld"><span>登録番号</span><input v-model="form.registration_number" class="inp" placeholder="T1234567890123" /></label>
+            <label class="fld"><span>登録番号</span><input v-model="form.registration_number" class="inp" placeholder="例：T1234567890123" /></label>
             <label class="fld"><span>件名</span><input v-model="form.title" class="inp" /></label>
             <label class="fld"><span>請求番号</span><input v-model="form.invoice_no" class="inp" /></label>
             <label class="fld"><span>請求日</span><input v-model="form.invoice_date" type="date" class="inp" /></label>
@@ -590,6 +590,8 @@ onMounted(load)
 .hd-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 14px; margin-bottom: 16px; }
 .fld { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: #666; }
 .inp { border: 1px solid #ddd; border-radius: 8px; padding: 8px 10px; font-size: 14px; }
+.inp::placeholder, .inp-sm::placeholder, .note-area::placeholder { color: #c4c4c4; font-style: italic; }
+.inp:placeholder-shown, .inp-sm:placeholder-shown { background: #fbfbfb; }
 .note-fld { margin-bottom: 16px; }
 .note-area { resize: vertical; font-family: inherit; }
 .new-vendor { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: #f6f8ff; border: 1px solid #cdddff; border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; }
