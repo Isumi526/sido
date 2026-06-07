@@ -29,12 +29,13 @@
           <input v-model="modal.name" class="input" placeholder="例：○○工務店" />
         </div>
         <div class="field">
-          <label>区分</label>
+          <label>区分 <span class="req">*</span></label>
           <select v-model="modal.category" class="input">
-            <option value="">未設定</option>
+            <option value="" disabled>選択してください</option>
             <option value="商社">商社</option>
             <option value="業者">業者</option>
           </select>
+          <span class="hint">集計の商社/業者の振り分けに使います</span>
         </div>
         <div class="field">
           <label>単価（日当・円）</label>
@@ -73,11 +74,12 @@ function openEdit(s: Sub) { modal.value = { ...s };                             
 
 async function save() {
   if (!modal.value?.name?.trim()) { saveError.value = '業者名を入力してください'; return }
+  if (!modal.value?.category) { saveError.value = '区分（商社/業者）を選択してください'; return }
   saving.value = true; saveError.value = ''
   try {
     const payload = {
       name:       modal.value.name!.trim(),
-      category:   modal.value.category || null,
+      category:   modal.value.category,
       unit_price: modal.value.unit_price || null,
     }
     if (modal.value.id) {
@@ -121,6 +123,8 @@ async function toggleActive(s: Sub) {
 .modal h2 { font-size: 18px; font-weight: 700; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label { font-size: 12px; font-weight: 700; color: #888; }
+.req { color: #E53935; }
+.hint { font-size: 11px; color: #aaa; }
 .input { background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px 14px; font-size: 14px; width: 100%; }
 .modal-actions { display: flex; gap: 12px; }
 .btn-save { flex: 1; background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 12px; font-weight: 700; cursor: pointer; }

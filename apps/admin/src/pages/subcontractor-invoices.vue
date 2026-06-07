@@ -97,12 +97,12 @@
           <div v-if="form.subcontractor_id === '__new__'" class="new-vendor">
             <input v-model="newVendor.name" class="inp" placeholder="業者名" />
             <select v-model="newVendor.category" class="inp">
-              <option value="">区分（任意）</option>
+              <option value="" disabled>区分を選択 *</option>
               <option value="商社">商社</option>
               <option value="業者">業者</option>
             </select>
-            <button class="btn-new-vendor" :disabled="!newVendor.name.trim() || addingVendor" @click="addVendor">業者を登録</button>
-            <span class="new-vendor-hint">登録すると以後プルダウンに出ます</span>
+            <button class="btn-new-vendor" :disabled="!newVendor.name.trim() || !newVendor.category || addingVendor" @click="addVendor">業者を登録</button>
+            <span class="new-vendor-hint">区分は必須です。登録すると以後プルダウンに出ます</span>
           </div>
           <label class="fld note-fld"><span>メモ</span>
             <textarea v-model="form.note" class="inp note-area" rows="2" placeholder="この請求に関するメモ"></textarea>
@@ -338,11 +338,12 @@ const newVendor = ref<{ name: string; category: string }>({ name: '', category: 
 const addingVendor = ref(false)
 async function addVendor() {
   const name = newVendor.value.name.trim(); if (!name) return
+  if (!newVendor.value.category) { formError.value = '区分（商社/業者）を選択してください'; return }
   addingVendor.value = true
   try {
     const accountId = await getAccountId()
     const { data, error } = await supabase.from('subcontractors')
-      .insert({ name, category: newVendor.value.category || null, account_id: accountId, active: true })
+      .insert({ name, category: newVendor.value.category, account_id: accountId, active: true })
       .select('id, name, category').single()
     if (error) throw error
     subs.value.push(data as any)

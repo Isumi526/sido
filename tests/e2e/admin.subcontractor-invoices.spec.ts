@@ -72,9 +72,10 @@ test.describe('下請け請求', () => {
   test('現場をフォームから新規追加→支払い済み(支払日必須)→支払い済みタブに出る', async ({ page }) => {
     await page.goto('/subcontractor-invoices', { waitUntil: 'networkidle' })
     await page.locator('.btn-add').click()
-    // 業者を新規登録
+    // 業者を新規登録（区分は必須）
     await page.locator('.hd-grid select').first().selectOption('__new__')
     await page.locator('.new-vendor input').fill(vendor2)
+    await page.locator('.new-vendor select').selectOption('業者')
     await page.locator('.btn-new-vendor').click()
     await expect(page.locator('.new-vendor')).toHaveCount(0)
 
@@ -144,5 +145,25 @@ test.describe('下請け請求', () => {
     // 当月の請求(業者区分¥10,000 等)が業者行に反映される
     await expect(table).toContainText('業者')
     await expect(page.locator('.stat-value').first()).not.toHaveText('¥0')
+  })
+})
+
+test.describe('下請け業者マスタ', () => {
+  const masterVendor = `E2Eマスタ業者_${Date.now()}`
+  test.afterAll(async () => {
+    await rest(`subcontractors?name=eq.${encodeURIComponent(masterVendor)}`, { method: 'DELETE' }).catch(() => {})
+  })
+
+  test('区分は必須（未選択は保存できず、選択すれば保存できる）', async ({ page }) => {
+    await page.goto('/subcontractors', { waitUntil: 'networkidle' })
+    await page.locator('.btn-add').click()
+    await page.locator('.modal input.input').first().fill(masterVendor)
+    // 区分未選択のまま保存→エラー
+    await page.locator('.btn-save').click()
+    await expect(page.locator('.modal .error')).toContainText('区分')
+    // 区分を選べば保存できる
+    await page.locator('.modal select.input').selectOption('商社')
+    await page.locator('.btn-save').click()
+    await expect(page.locator('tr', { hasText: masterVendor })).toBeVisible({ timeout: 10000 })
   })
 })
