@@ -6,12 +6,11 @@
     </div>
     <div class="table-wrap">
       <table class="table">
-        <thead><tr><th>業者名</th><th>区分</th><th>単価（日）</th><th>状態</th><th></th></tr></thead>
+        <thead><tr><th>業者名</th><th>区分</th><th>状態</th><th></th></tr></thead>
         <tbody>
           <tr v-for="s in subs" :key="s.id" :class="{ inactive: !s.active }">
             <td class="name">{{ s.name }}</td>
             <td><span v-if="s.category" class="cat-badge" :class="s.category === '商社' ? 'shosha' : 'gyosha'">{{ s.category }}</span><span v-else class="muted">—</span></td>
-            <td>{{ s.unit_price ? '¥' + s.unit_price.toLocaleString() : '—' }}</td>
             <td><span class="status" :class="s.active ? 'active' : 'off'">{{ s.active ? '有効' : '無効' }}</span></td>
             <td class="actions">
               <button class="btn-edit" @click="openEdit(s)">編集</button>
@@ -36,10 +35,6 @@
             <option value="業者">業者</option>
           </select>
           <span class="hint">集計の商社/業者の振り分けに使います</span>
-        </div>
-        <div class="field">
-          <label>単価（日当・円）</label>
-          <input v-model.number="modal.unit_price" class="input" type="number" placeholder="例：20000" />
         </div>
         <div class="modal-actions">
           <button class="btn-save" :disabled="saving" @click="save">{{ saving ? '保存中...' : '保存' }}</button>
