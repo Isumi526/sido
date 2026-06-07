@@ -394,7 +394,8 @@ async function load() {
         date: r.item_date || dateFrom.value, _isSunday: false,
         workerSummary: `【請求】${vendor}${r.description ? '・' + r.description : ''}`,
         workers: [], subs: [],
-        shoshaCost: cat === '商社' ? amt : 0, gyoshaCost: cat === '業者' ? amt : 0,
+        // 区分=商社 のみ商社列、それ以外（業者/未区分）は業者列（index.vue 月次集計と統一）
+        shoshaCost: cat === '商社' ? amt : 0, gyoshaCost: cat === '商社' ? 0 : amt,
         laborCost: 0, parkingYen: 0, fuelCost: 0, highwayCost: 0, hotelCost: 0,
         entertainCost: 0, garbageCost: 0, trainCost: 0, homeCost: 0, total: amt,
       })

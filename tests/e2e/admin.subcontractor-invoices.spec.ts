@@ -136,4 +136,13 @@ test.describe('下請け請求', () => {
     await expect(invRow).toContainText('【請求】')
     await expect(invRow).toContainText('¥10,000')
   })
+
+  test('月次集計(トップ)に下請け請求が業者として加算される', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'networkidle' })
+    const table = page.locator('.data-table')
+    await expect(table).toBeVisible({ timeout: 10000 })
+    // 当月の請求(業者区分¥10,000 等)が業者行に反映される
+    await expect(table).toContainText('業者')
+    await expect(page.locator('.stat-value').first()).not.toHaveText('¥0')
+  })
 })

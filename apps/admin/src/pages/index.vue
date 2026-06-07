@@ -196,16 +196,32 @@ async function load() {
   //（'${ym}-31' は6月/2月等で不正日付になり PostgREST が400を返すため）
   const [yy, mm] = ym.split('-').map(Number)
   const nextMonthFirst = mm === 12 ? `${yy + 1}-01-01` : `${yy}-${String(mm + 1).padStart(2, '0')}-01`
-  const { data: reports } = await supabase
-    .from('daily_reports')
-    .select('sites')
-    .eq('account_id', accountId)
-    .eq('is_working', true)
-    .gte('date', `${ym}-01`)
-    .lt('date', nextMonthFirst)
+  const [{ data: reports }, { data: invItems }] = await Promise.all([
+    supabase
+      .from('daily_reports')
+      .select('sites')
+      .eq('account_id', accountId)
+      .eq('is_working', true)
+      .gte('date', `${ym}-01`)
+      .lt('date', nextMonthFirst),
+    // 下請け請求（当月）も商社/業者に加算
+    supabase
+      .from('subcontractor_invoice_items')
+      .select('amount, subcontractor_invoices(subcontractors(category))')
+      .eq('account_id', accountId)
+      .gte('item_date', `${ym}-01`)
+      .lt('item_date', nextMonthFirst),
+  ])
 
   let labor = 0, shosha = 0, gyosha = 0
   const expMap = new Map<string, number>()
+
+  // 下請け請求（税抜）。区分=商社のみ商社、それ以外（業者/未区分）は業者
+  for (const it of (invItems ?? []) as any[]) {
+    const amt = Number(it.amount) || 0
+    if (it.subcontractor_invoices?.subcontractors?.category === '商社') shosha += amt
+    else gyosha += amt
+  }
 
   for (const rep of (reports ?? [])) {
     for (const site of (rep.sites as any[])) {
