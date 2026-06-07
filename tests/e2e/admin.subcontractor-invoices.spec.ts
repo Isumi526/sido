@@ -23,7 +23,7 @@ test.describe('下請け請求', () => {
       const c = await rest('subcontractors', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ account_id: accountId, name: 'E2E業者区分', category: '業者', active: true }) })
       subId = c?.[0]?.id
     }
-    const created = await rest('subcontractor_invoices', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ account_id: accountId, subcontractor_id: subId, vendor_name: 'E2E業者区分', category: '業者', invoice_no: AC5_INV_NO, invoice_date: `${YM}-15`, total_amount: 11000 }) })
+    const created = await rest('subcontractor_invoices', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ account_id: accountId, subcontractor_id: subId, vendor_name: 'E2E業者区分', invoice_no: AC5_INV_NO, invoice_date: `${YM}-15`, total_amount: 11000 }) })
     const id = created?.[0]?.id
     const sr = await rest(`sites?account_id=eq.${accountId}&name=eq.${encodeURIComponent(SEED_SITE)}&select=id`)
     await rest('subcontractor_invoice_items', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify([{ invoice_id: id, account_id: accountId, item_date: `${YM}-15`, site_id: sr?.[0]?.id, site_name: SEED_SITE, description: 'E2E工事', quantity: 1, unit: '式', unit_price: 10000, amount: 10000, tax_rate: 10 }]) })
@@ -32,15 +32,21 @@ test.describe('下請け請求', () => {
   test.afterAll(async () => {
     await rest(`subcontractor_invoices?invoice_no=eq.${AC5_INV_NO}`, { method: 'DELETE' }).catch(() => {})
     await rest(`subcontractor_invoices?vendor_name=eq.${encodeURIComponent(vendor)}`, { method: 'DELETE' }).catch(() => {})
+    await rest(`subcontractors?name=eq.${encodeURIComponent(vendor)}`, { method: 'DELETE' }).catch(() => {})
   })
 
-  test('AC1/2/4: ヘッダ＋明細を入力→金額自動→保存→一覧に出る', async ({ page }) => {
-    page.on('dialog', d => d.dismiss().catch(() => {}))   // 業者マスタ未登録の確認は閉じる
+  test('AC1/2/4: 業者を新規登録→ヘッダ＋明細入力→金額自動→保存→一覧に出る', async ({ page }) => {
     await page.goto('/subcontractor-invoices', { waitUntil: 'networkidle' })
     await expect(page.locator('h1')).toContainText('下請け請求')
 
     await page.locator('.btn-add').click()
-    await page.getByPlaceholder('業者名').fill(vendor)
+    // 業者プルダウン→新規登録
+    await page.locator('.hd-grid select').selectOption('__new__')
+    await page.locator('.new-vendor input').fill(vendor)
+    await page.locator('.new-vendor select').selectOption('業者')
+    await page.locator('.btn-new-vendor').click()
+    // 登録完了で新規欄が消える＝業者が選択された状態
+    await expect(page.locator('.new-vendor')).toHaveCount(0)
 
     // 明細1行: 現場=テスト現場B(AC5と分離), 数量2 × 単価5000 = 10000(自動)
     await page.locator('.btn-row-add').click()

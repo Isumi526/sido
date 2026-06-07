@@ -9,9 +9,8 @@
 create table if not exists subcontractor_invoices (
   id               uuid primary key default gen_random_uuid(),
   account_id       uuid references accounts(id) not null,
-  subcontractor_id uuid references subcontractors(id),    -- マスタ参照（任意）
-  vendor_name      text not null,                         -- 業者名（マスタ未登録でも入る）
-  category         text,                                  -- 区分（商社 / 業者）。現場別集計の内訳に使う
+  subcontractor_id uuid references subcontractors(id),    -- 下請け業者マスタ（区分はこちらが持つ）
+  vendor_name      text not null,                         -- 業者名（表示・流用用に保持）
   title            text,                                  -- 件名
   invoice_no       text,                                  -- 請求番号
   registration_number text,                              -- インボイス登録番号（T+13桁）

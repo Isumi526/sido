@@ -392,7 +392,7 @@ async function load() {
   {
     const { data: sii } = await supabase
       .from('subcontractor_invoice_items')
-      .select('site_name, item_date, amount, tax_rate, description, subcontractor_invoices(category, vendor_name)')
+      .select('site_name, item_date, amount, tax_rate, description, subcontractor_invoices(vendor_name, subcontractors(category))')
       .eq('account_id', accountId)
       .gte('item_date', dateFrom.value)
       .lte('item_date', dateTo.value)
@@ -402,7 +402,7 @@ async function load() {
       if (!name) continue
       invoiceSites.add(name)
       const amt = Number(r.amount) || 0
-      const cat = r.subcontractor_invoices?.category ?? null
+      const cat = r.subcontractor_invoices?.subcontractors?.category ?? null
       const vendor = r.subcontractor_invoices?.vendor_name ?? ''
       const m = map[name] ??= { shosha: 0, gyosha: 0, other: 0, subtotal: 0, taxIncluded: 0, count: 0 }
       if (cat === '商社') m.shosha += amt

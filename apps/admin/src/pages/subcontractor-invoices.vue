@@ -45,15 +45,11 @@
 
           <!-- ヘッダ -->
           <div class="hd-grid">
-            <label class="fld"><span>業者名 *</span>
-              <input v-model="form.vendor_name" list="sub-list" class="inp" placeholder="業者名" @change="onVendorChange" />
-              <datalist id="sub-list"><option v-for="s in subs" :key="s.id" :value="s.name" /></datalist>
-            </label>
-            <label class="fld"><span>区分</span>
-              <select v-model="form.category" class="inp">
-                <option :value="null">未区分</option>
-                <option value="商社">商社</option>
-                <option value="業者">業者</option>
+            <label class="fld"><span>下請け業者 *</span>
+              <select v-model="form.subcontractor_id" class="inp" @change="onVendorSelect">
+                <option :value="null" disabled>選択してください</option>
+                <option v-for="s in subs" :key="s.id" :value="s.id">{{ s.name }}{{ s.category ? `（${s.category}）` : '' }}</option>
+                <option value="__new__">＋ 新規業者を登録…</option>
               </select>
             </label>
             <label class="fld"><span>登録番号</span><input v-model="form.registration_number" class="inp" placeholder="T1234567890123" /></label>
@@ -63,6 +59,17 @@
             <label class="fld"><span>支払期限</span><input v-model="form.due_date" type="date" class="inp" /></label>
             <label class="fld"><span>振込日</span><input v-model="form.transfer_date" type="date" class="inp" /></label>
             <label class="fld"><span>請求金額(請求書記載)</span><input v-model.number="form.total_amount" type="number" class="inp" /></label>
+          </div>
+          <!-- 新規業者の登録 -->
+          <div v-if="form.subcontractor_id === '__new__'" class="new-vendor">
+            <input v-model="newVendor.name" class="inp" placeholder="業者名" />
+            <select v-model="newVendor.category" class="inp">
+              <option value="">区分（任意）</option>
+              <option value="商社">商社</option>
+              <option value="業者">業者</option>
+            </select>
+            <button class="btn-new-vendor" :disabled="!newVendor.name.trim() || addingVendor" @click="addVendor">業者を登録</button>
+            <span class="new-vendor-hint">登録すると以後プルダウンに出ます</span>
           </div>
           <label class="fld note-fld"><span>メモ</span>
             <textarea v-model="form.note" class="inp note-area" rows="2" placeholder="この請求に関するメモ"></textarea>
@@ -138,7 +145,7 @@ interface Item {
   unit_price: number | null; amount: number | null; tax_rate: number; note: string | null
 }
 interface Form {
-  id?: string; vendor_name: string; subcontractor_id: string | null; category: string | null; registration_number: string | null
+  id?: string; vendor_name: string; subcontractor_id: string | null; registration_number: string | null
   title: string | null; invoice_no: string | null; invoice_date: string | null; due_date: string | null
   transfer_date: string | null; total_amount: number | null; pdf_path: string | null; note: string | null; items: Item[]
 }
@@ -184,7 +191,7 @@ async function load() {
 
 function blankForm(): Form {
   const today = new Date().toISOString().slice(0, 10)
-  return { vendor_name: '', subcontractor_id: null, category: null, registration_number: null, title: null, invoice_no: null, invoice_date: today, due_date: null, transfer_date: null, total_amount: null, pdf_path: null, note: null, items: [] }
+  return { vendor_name: '', subcontractor_id: null, registration_number: null, title: null, invoice_no: null, invoice_date: today, due_date: null, transfer_date: null, total_amount: null, pdf_path: null, note: null, items: [] }
 }
 function openNew() { form.value = blankForm(); file.value = null; aiMsg.value = ''; formError.value = '' }
 
@@ -205,7 +212,7 @@ async function openEdit(inv: any) {
   const { data: items } = await supabase.from('subcontractor_invoice_items')
     .select('*').eq('invoice_id', inv.id).order('sort_order').order('item_date')
   form.value = {
-    id: inv.id, vendor_name: inv.vendor_name, subcontractor_id: inv.subcontractor_id, category: inv.category,
+    id: inv.id, vendor_name: inv.vendor_name, subcontractor_id: inv.subcontractor_id,
     registration_number: inv.registration_number, title: inv.title, invoice_no: inv.invoice_no,
     invoice_date: inv.invoice_date, due_date: inv.due_date, transfer_date: inv.transfer_date,
     total_amount: inv.total_amount, pdf_path: inv.pdf_path, note: inv.note,
@@ -217,11 +224,36 @@ function addItem() {
   form.value!.items.push({ item_date: form.value!.invoice_date, site_id: null, description: null, quantity: null, unit: null, unit_price: null, amount: null, tax_rate: 10, note: null })
 }
 
-// 業者名がマスタに一致したら区分を自動補完（手動変更は尊重）
-function onVendorChange() {
+// 業者プルダウン: 選択で vendor_name を反映
+function onVendorSelect() {
   const f = form.value; if (!f) return
-  const m = subs.value.find(s => s.name === f.vendor_name.trim())
-  if (m?.category && !f.category) f.category = m.category
+  if (f.subcontractor_id === '__new__') { newVendor.value = { name: '', category: '' }; return }
+  const s = subs.value.find(x => x.id === f.subcontractor_id)
+  if (s) f.vendor_name = s.name
+}
+
+// 新規業者をマスタに登録して選択
+const newVendor = ref<{ name: string; category: string }>({ name: '', category: '' })
+const addingVendor = ref(false)
+async function addVendor() {
+  const name = newVendor.value.name.trim(); if (!name) return
+  addingVendor.value = true
+  try {
+    const accountId = await getAccountId()
+    const { data, error } = await supabase.from('subcontractors')
+      .insert({ name, category: newVendor.value.category || null, account_id: accountId, active: true })
+      .select('id, name, category').single()
+    if (error) throw error
+    subs.value.push(data as any)
+    subs.value.sort((a, b) => a.name.localeCompare(b.name, 'ja'))
+    form.value!.subcontractor_id = data.id
+    form.value!.vendor_name = data.name
+    newVendor.value = { name: '', category: '' }
+  } catch (e: any) {
+    formError.value = '業者の登録に失敗しました: ' + (e?.message ?? '')
+  } finally {
+    addingVendor.value = false
+  }
 }
 
 function onFile(e: Event) { file.value = (e.target as HTMLInputElement).files?.[0] ?? null; aiMsg.value = '' }
@@ -247,7 +279,13 @@ async function analyze() {
     if (!res.ok) throw new Error(r.error ?? res.statusText)
     // ヘッダ流し込み（既存値があっても上書き＝確認前提）
     const f = form.value
-    if (r.vendor_name) f.vendor_name = r.vendor_name
+    if (r.vendor_name) {
+      f.vendor_name = r.vendor_name
+      // マスタに一致すれば選択、無ければ新規登録欄に名前を入れて区分選択を促す
+      const m = subs.value.find(s => s.name === String(r.vendor_name).trim())
+      if (m) { f.subcontractor_id = m.id }
+      else { f.subcontractor_id = '__new__'; newVendor.value = { name: r.vendor_name, category: '' } }
+    }
     f.registration_number = r.registration_number ?? f.registration_number
     f.title = r.title ?? f.title
     f.invoice_no = r.invoice_no ?? f.invoice_no
@@ -274,27 +312,16 @@ async function analyze() {
 
 async function save() {
   const f = form.value!
-  if (!f.vendor_name?.trim()) { formError.value = '業者名を入力してください'; return }
+  const sub = subs.value.find(s => s.id === f.subcontractor_id)
+  if (!sub) { formError.value = '下請け業者を選択してください（新規は「業者を登録」で追加）'; return }
   if (f.items.length === 0) { formError.value = '明細を1行以上入力してください'; return }
   // 現場は必須
   if (f.items.some(it => !it.site_id)) { formError.value = 'すべての明細で現場を選択してください'; return }
-  const vendorName = f.vendor_name.trim()
   saving.value = true; formError.value = ''
   try {
     const accountId = await getAccountId()
-    // 業者マスタ名寄せ。未登録なら新規登録を確認
-    let sub = subs.value.find(s => s.name === vendorName)
-    if (!sub) {
-      if (confirm(`「${vendorName}」は下請け業者マスタに未登録です。新規登録しますか？`)) {
-        const { data: created } = await supabase.from('subcontractors')
-          .insert({ name: vendorName, account_id: accountId, active: true })
-          .select('id, name').single()
-        if (created) { sub = created as any; subs.value.push(created as any) }
-      }
-    }
     const header = {
-      account_id: accountId, subcontractor_id: sub?.id ?? null, vendor_name: vendorName,
-      category: f.category || sub?.category || null,
+      account_id: accountId, subcontractor_id: sub.id, vendor_name: sub.name,
       registration_number: f.registration_number || null,
       title: f.title || null, invoice_no: f.invoice_no || null, invoice_date: f.invoice_date || null,
       due_date: f.due_date || null, transfer_date: f.transfer_date || null,
@@ -388,6 +415,11 @@ onMounted(load)
 .inp { border: 1px solid #ddd; border-radius: 8px; padding: 8px 10px; font-size: 14px; }
 .note-fld { margin-bottom: 16px; }
 .note-area { resize: vertical; font-family: inherit; }
+.new-vendor { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: #f6f8ff; border: 1px solid #cdddff; border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; }
+.new-vendor .inp { padding: 6px 8px; font-size: 13px; }
+.btn-new-vendor { background: #1a56c4; color: #fff; border: none; border-radius: 8px; padding: 6px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn-new-vendor:disabled { opacity: .5; cursor: default; }
+.new-vendor-hint { font-size: 12px; color: #5a6b8a; }
 
 .items-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 13px; font-weight: 700; color: #555; }
 .btn-row-add { background: #f0f0f0; border: none; border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; }
