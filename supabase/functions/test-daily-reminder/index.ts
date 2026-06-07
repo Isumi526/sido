@@ -11,7 +11,7 @@
 //    reminder_time      : 実行時間 JST（'HH:00' 形式、デフォルト '08:00'）
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { pushLineMessages } from '../_shared/line.ts'
+import { pushLineMessagesResult } from '../_shared/line.ts'
 
 const LINE_TOKEN        = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? ''
 const SUPABASE_URL      = Deno.env.get('SUPABASE_URL') ?? ''
@@ -54,13 +54,15 @@ type UnsubmittedEntry = {
   dates: string[]
 }
 
+type RecipientInfo = { name: string; linked: boolean }
+
 async function processAccount(
   accountId: string,
   slug: string,
   yesterday: string,
   dryRun: boolean,
   manual: boolean,
-): Promise<{ slug: string; result: string; unsubmitted: UnsubmittedEntry[] }> {
+): Promise<{ slug: string; result: string; unsubmitted: UnsubmittedEntry[]; recipients?: RecipientInfo[] }> {
 
   const { data: settings } = await supabase
     .from('settings')
@@ -70,7 +72,6 @@ async function processAccount(
 
   const s = Object.fromEntries((settings ?? []).map(r => [r.key, r.value]))
   const startDate       = s['service_start_date']
-  const groupId         = s['notify_group_id']
   const reminderEnabled = s['reminder_enabled'] ?? 'true'
   const reminderTime    = s['reminder_time']    ?? '08:00'
 
@@ -85,11 +86,6 @@ async function processAccount(
 
   if (!startDate) return { slug, result: 'service_start_date 未設定', unsubmitted: [] }
 
-  const resolvedGroupIds: string[] = groupId
-    ? [groupId]
-    : (slug === PROD_ACCOUNT_SLUG ? PROD_GROUP_IDS : DEV_GROUP_IDS)
-  if (!resolvedGroupIds.length) return { slug, result: 'notify_group_id 未設定（env varも未設定）', unsubmitted: [] }
-
   if (startDate > yesterday) return { slug, result: '対象期間なし', unsubmitted: [] }
 
   const allDates: string[] = []
@@ -101,37 +97,50 @@ async function processAccount(
 
   const { data: users } = await supabase
     .from('users')
-    .select('id, real_name, worker_id, workers(name)')
+    .select('id, real_name, worker_id, line_user_id, is_reminder_recipient, reminder_exempt, workers(name)')
     .eq('account_id', accountId)
 
   const { data: allWorkers } = await supabase
     .from('workers')
-    .select('id, name, proxy_operator_id')
+    .select('id, name')
     .eq('account_id', accountId)
     .eq('active', true)
 
-  const { data: reports } = await supabase
-    .from('daily_reports')
-    .select('user_id, date')
-    .eq('account_id', accountId)
-    .gte('date', startDate)
-    .lte('date', yesterday)
+  const [{ data: reports }, { data: proxyRels }] = await Promise.all([
+    supabase
+      .from('daily_reports')
+      .select('user_id, date')
+      .eq('account_id', accountId)
+      .gte('date', startDate)
+      .lte('date', yesterday),
+    supabase
+      .from('worker_proxies')
+      .select('worker_id, proxy_operator_id')
+      .eq('account_id', accountId),
+  ])
 
   const submittedSet = new Set((reports ?? []).map((r: any) => `${r.user_id}__${r.date}`))
 
-  const workerMap = new Map<string, { name: string; proxy_operator_id: string | null }>(
-    (allWorkers ?? []).map((w: any) => [w.id, { name: w.name, proxy_operator_id: w.proxy_operator_id ?? null }])
+  const workerNameMap = new Map<string, string>(
+    (allWorkers ?? []).map((w: any) => [w.id, w.name])
   )
+  // worker_id → 代理人名リスト
+  const proxyNamesMap = new Map<string, string[]>()
+  for (const rel of (proxyRels ?? []) as any[]) {
+    const name = workerNameMap.get(rel.proxy_operator_id)
+    if (!name) continue
+    const arr = proxyNamesMap.get(rel.worker_id) ?? []
+    arr.push(name)
+    proxyNamesMap.set(rel.worker_id, arr)
+  }
 
   function buildEntry(
     workerName: string,
     workerId: string | null | undefined,
     suffix?: string,
   ): UnsubmittedEntry {
-    const proxyId   = workerId ? workerMap.get(workerId)?.proxy_operator_id : null
-    const proxyName = proxyId  ? workerMap.get(proxyId)?.name : null
-
-    if (proxyName) return { name: `${workerName}（代理: ${proxyName}）`, dates: [] }
+    const proxyNames = workerId ? (proxyNamesMap.get(workerId) ?? []) : []
+    if (proxyNames.length > 0) return { name: `${workerName}（代理: ${proxyNames.join('・')}）`, dates: [] }
     return { name: suffix ? `${workerName}（${suffix}）` : workerName, dates: [] }
   }
 
@@ -139,8 +148,9 @@ async function processAccount(
 
   const unsubmitted: UnsubmittedEntry[] = []
   for (const user of (users ?? [])) {
+    if ((user as any).reminder_exempt) continue                 // 専用フラグで除外（worker無効化に依存しない）
     const workerId = (user as any).worker_id
-    if (workerId && !activeWorkerIds.has(workerId)) continue
+    if (workerId && !activeWorkerIds.has(workerId)) continue    // 既存ハックも当面維持（後方互換）
 
     const workerName = (user.workers as any)?.name ?? user.real_name ?? '不明'
     const entry = buildEntry(workerName, workerId)
@@ -156,11 +166,22 @@ async function processAccount(
     }
   }
 
-  if (unsubmitted.length === 0) return { slug, result: '全員送信済み', unsubmitted: [] }
+  // 受信者（指定ユーザー）を解決：is_reminder_recipient=true。line_user_id 有無で連携状態も返す
+  const recipients = (users ?? [])
+    .filter((u: any) => u.is_reminder_recipient)
+    .map((u: any) => ({
+      name: (u.workers as any)?.name ?? u.real_name ?? '不明',
+      lineUserId: (u.line_user_id ?? null) as string | null,
+      linked: !!u.line_user_id,
+    }))
+  const recipientPreview: RecipientInfo[] = recipients.map(r => ({ name: r.name, linked: r.linked }))
+
+  if (unsubmitted.length === 0) return { slug, result: '全員送信済み', unsubmitted: [], recipients: recipientPreview }
 
   const lines = [
     '📋 日報未送信リマインド（敬称略）',
     `📅 ${fmtDate(yesterday)} 時点`,
+    '※このメッセージをグループに転送してください',
     '──────────',
   ]
 
@@ -173,11 +194,27 @@ async function processAccount(
 
   const fullText = lines.join('\n')
 
-  if (!dryRun) {
-    await Promise.all(resolvedGroupIds.map(id => pushLineMessages(id, [{ type: 'text', text: fullText }], LINE_TOKEN)))
+  if (dryRun) return { slug, result: 'dry-run', unsubmitted, recipients: recipientPreview }
+
+  // 送信先 = 指定ユーザーの個人LINE（line_user_id 連携済みのみ）。グループ自動投稿は廃止
+  const sendTargets = recipients.filter(r => r.linked)
+  if (sendTargets.length === 0) {
+    const note = recipients.length ? '受信者はLINE未連携のみ' : '受信者未設定'
+    return { slug, result: note, unsubmitted, recipients: recipientPreview }
   }
 
-  return { slug, result: dryRun ? 'dry-run' : '送信完了', unsubmitted }
+  // 実送信。LINE push の失敗を握り潰さず結果に反映する
+  const pushes = await Promise.all(
+    sendTargets.map(r => pushLineMessagesResult(r.lineUserId!, [{ type: 'text', text: fullText }], LINE_TOKEN)),
+  )
+  const failed = pushes.filter(p => !p.ok)
+  if (failed.length > 0) {
+    const detail = failed.map(f => `status=${f.status} ${f.body}`).join(' | ')
+    console.error(`[daily-reminder] LINE push failed slug=${slug}: ${detail}`)
+    return { slug, result: `送信失敗（LINE: ${detail}）`, unsubmitted, recipients: recipientPreview }
+  }
+
+  return { slug, result: `送信完了（${sendTargets.length}名へDM）`, unsubmitted, recipients: recipientPreview }
 }
 
 Deno.serve(async (req) => {

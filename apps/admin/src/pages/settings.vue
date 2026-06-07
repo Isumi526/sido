@@ -108,7 +108,7 @@
 
     <!-- 手動実行 -->
     <div class="reminder-header">
-      <div class="reminder-desc">サービス開始日〜昨日の未送信者にLINE通知（手動実行）</div>
+      <div class="reminder-desc">サービス開始日〜昨日の未送信者を、指定ユーザー（ユーザー管理で「リマインド受信」ON）の個人LINEへ通知。本人がグループへ転送します。ドライランで送信先・対象を確認できます。</div>
       <div class="reminder-btns">
         <button class="btn-dry" :disabled="!!reminding" @click="runReminder(true)">
           {{ reminding === 'dry' ? '確認中...' : 'ドライラン（確認のみ）' }}
@@ -249,12 +249,21 @@ async function runReminder(dryRun: boolean) {
     const data = await res.json()
     if (!res.ok) throw new Error(data.error ?? res.statusText)
 
-    const results: { slug: string; result: string; unsubmitted: { name: string; dates: string[] }[] }[] = data.results ?? []
+    type Recipient = { name: string; linked: boolean }
+    const results: { slug: string; result: string; unsubmitted: { name: string; dates: string[] }[]; recipients?: Recipient[] }[] = data.results ?? []
     const allUnsubmitted = results.flatMap(r => r.unsubmitted)
+    const recipients = results.flatMap(r => r.recipients ?? [])
     const yesterday: string = data.yesterday ?? ''
 
+    // 送信先（受信者）プレビュー
+    const recvLines: string[] = ['👤 送信先（リマインド受信ユーザー）']
+    if (recipients.length === 0) recvLines.push('  （未設定）※ユーザー管理で「リマインド受信」をONにしてください')
+    else recipients.forEach(r => recvLines.push(`  ${r.name}${r.linked ? '' : '（LINE未連携で受信不可）'}`))
+    // 各アカウントの結果文言（受信者未設定/送信完了 等）
+    const statusLines = results.map(r => `・${r.slug}: ${r.result}`)
+
     if (allUnsubmitted.length === 0) {
-      reminderResult.value = { type: 'info', message: '✅ 全員送信済みです' }
+      reminderResult.value = { type: 'info', message: ['✅ 全員送信済みです', '', ...recvLines, '', ...statusLines].join('\n') }
     } else {
       const lines: string[] = [
         '📋 日報未送信リマインド（敬称略）',
@@ -272,7 +281,7 @@ async function runReminder(dryRun: boolean) {
       }
       reminderResult.value = {
         type: dryRun ? 'info' : 'success',
-        message: (dryRun ? '【プレビュー】\n' : '✅ 送信完了\n') + lines.join('\n'),
+        message: (dryRun ? '【プレビュー】\n' : '✅ 実行しました\n') + lines.join('\n') + '\n\n' + recvLines.join('\n') + '\n\n' + statusLines.join('\n'),
       }
     }
   } catch (e: any) {

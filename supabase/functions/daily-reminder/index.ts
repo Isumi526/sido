@@ -54,13 +54,15 @@ type UnsubmittedEntry = {
   dates: string[]
 }
 
+type RecipientInfo = { name: string; linked: boolean }
+
 async function processAccount(
   accountId: string,
   slug: string,
   yesterday: string,
   dryRun: boolean,
   manual: boolean,
-): Promise<{ slug: string; result: string; unsubmitted: UnsubmittedEntry[] }> {
+): Promise<{ slug: string; result: string; unsubmitted: UnsubmittedEntry[]; recipients?: RecipientInfo[] }> {
 
   const { data: settings } = await supabase
     .from('settings')
@@ -70,7 +72,6 @@ async function processAccount(
 
   const s = Object.fromEntries((settings ?? []).map(r => [r.key, r.value]))
   const startDate       = s['service_start_date']
-  const groupId         = s['notify_group_id']
   const reminderEnabled = s['reminder_enabled'] ?? 'true'
   const reminderTime    = s['reminder_time']    ?? '08:00'
 
@@ -85,11 +86,6 @@ async function processAccount(
 
   if (!startDate) return { slug, result: 'service_start_date 未設定', unsubmitted: [] }
 
-  const resolvedGroupIds: string[] = groupId
-    ? [groupId]
-    : (slug === PROD_ACCOUNT_SLUG ? PROD_GROUP_IDS : DEV_GROUP_IDS)
-  if (!resolvedGroupIds.length) return { slug, result: 'notify_group_id 未設定（env varも未設定）', unsubmitted: [] }
-
   if (startDate > yesterday) return { slug, result: '対象期間なし', unsubmitted: [] }
 
   const allDates: string[] = []
@@ -101,7 +97,7 @@ async function processAccount(
 
   const { data: users } = await supabase
     .from('users')
-    .select('id, real_name, worker_id, workers(name)')
+    .select('id, real_name, worker_id, line_user_id, is_reminder_recipient, reminder_exempt, workers(name)')
     .eq('account_id', accountId)
 
   const { data: allWorkers } = await supabase
@@ -152,8 +148,9 @@ async function processAccount(
 
   const unsubmitted: UnsubmittedEntry[] = []
   for (const user of (users ?? [])) {
+    if ((user as any).reminder_exempt) continue                 // 専用フラグで除外（worker無効化に依存しない）
     const workerId = (user as any).worker_id
-    if (workerId && !activeWorkerIds.has(workerId)) continue
+    if (workerId && !activeWorkerIds.has(workerId)) continue    // 既存ハックも当面維持（後方互換）
 
     const workerName = (user.workers as any)?.name ?? user.real_name ?? '不明'
     const entry = buildEntry(workerName, workerId)
@@ -169,11 +166,22 @@ async function processAccount(
     }
   }
 
-  if (unsubmitted.length === 0) return { slug, result: '全員送信済み', unsubmitted: [] }
+  // 受信者（指定ユーザー）を解決：is_reminder_recipient=true。line_user_id 有無で連携状態も返す
+  const recipients = (users ?? [])
+    .filter((u: any) => u.is_reminder_recipient)
+    .map((u: any) => ({
+      name: (u.workers as any)?.name ?? u.real_name ?? '不明',
+      lineUserId: (u.line_user_id ?? null) as string | null,
+      linked: !!u.line_user_id,
+    }))
+  const recipientPreview: RecipientInfo[] = recipients.map(r => ({ name: r.name, linked: r.linked }))
+
+  if (unsubmitted.length === 0) return { slug, result: '全員送信済み', unsubmitted: [], recipients: recipientPreview }
 
   const lines = [
     '📋 日報未送信リマインド（敬称略）',
     `📅 ${fmtDate(yesterday)} 時点`,
+    '※このメッセージをグループに転送してください',
     '──────────',
   ]
 
@@ -186,20 +194,27 @@ async function processAccount(
 
   const fullText = lines.join('\n')
 
-  if (dryRun) return { slug, result: 'dry-run', unsubmitted }
+  if (dryRun) return { slug, result: 'dry-run', unsubmitted, recipients: recipientPreview }
+
+  // 送信先 = 指定ユーザーの個人LINE（line_user_id 連携済みのみ）。グループ自動投稿は廃止
+  const sendTargets = recipients.filter(r => r.linked)
+  if (sendTargets.length === 0) {
+    const note = recipients.length ? '受信者はLINE未連携のみ' : '受信者未設定'
+    return { slug, result: note, unsubmitted, recipients: recipientPreview }
+  }
 
   // 実送信。LINE push の失敗を握り潰さず結果に反映する
   const pushes = await Promise.all(
-    resolvedGroupIds.map(id => pushLineMessagesResult(id, [{ type: 'text', text: fullText }], LINE_TOKEN)),
+    sendTargets.map(r => pushLineMessagesResult(r.lineUserId!, [{ type: 'text', text: fullText }], LINE_TOKEN)),
   )
   const failed = pushes.filter(p => !p.ok)
   if (failed.length > 0) {
     const detail = failed.map(f => `status=${f.status} ${f.body}`).join(' | ')
     console.error(`[daily-reminder] LINE push failed slug=${slug}: ${detail}`)
-    return { slug, result: `送信失敗（LINE: ${detail}）`, unsubmitted }
+    return { slug, result: `送信失敗（LINE: ${detail}）`, unsubmitted, recipients: recipientPreview }
   }
 
-  return { slug, result: '送信完了', unsubmitted }
+  return { slug, result: `送信完了（${sendTargets.length}名へDM）`, unsubmitted, recipients: recipientPreview }
 }
 
 Deno.serve(async (req) => {
