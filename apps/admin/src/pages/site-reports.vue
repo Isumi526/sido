@@ -59,7 +59,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in siteMap[activeSite]" :key="row._key" class="data-row" @click="selected = row">
+            <tr v-for="row in siteMap[activeSite]" :key="row._key" class="data-row" :class="{ 'invoice-row': row._isInvoice }" @click="!row._isInvoice && (selected = row)">
               <td class="date-cell">
                 {{ row.date.slice(5).replace('-', '/') }}
                 <span v-if="row._isSunday" class="sun">日</span>
@@ -80,7 +80,7 @@
               <td class="num">{{ row.trainCost     ? yen(row.trainCost)     : '—' }}</td>
               <td class="num">{{ row.homeCost      ? yen(row.homeCost)      : '—' }}</td>
               <td class="num total-col">{{ yen(row.total) }}</td>
-              <td class="hint">詳細 →</td>
+              <td class="hint">{{ row._isInvoice ? '請求' : '詳細 →' }}</td>
             </tr>
           </tbody>
           <tfoot>
@@ -386,12 +386,13 @@ async function load() {
     if (row.key === 'garbage_factory_rate_per_m3')  GF_YEN = Number(row.value)
     if (row.key === 'garbage_site_rate_per_m3')     GS_YEN = Number(row.value)
   }
-  // 下請け請求（当月）を現場別に集計（業者の区分 商社/業者 で内訳）
+  // 下請け請求（当月）を現場別に集計（請求の区分 商社/業者 で内訳）＋ 日表に出す請求行を構築
   const invoiceSites = new Set<string>()
+  const invoiceRowsBySite: Record<string, any[]> = {}
   {
     const { data: sii } = await supabase
       .from('subcontractor_invoice_items')
-      .select('site_name, amount, tax_rate, subcontractor_invoices(subcontractors(category))')
+      .select('site_name, item_date, amount, tax_rate, description, subcontractor_invoices(category, vendor_name)')
       .eq('account_id', accountId)
       .gte('item_date', dateFrom.value)
       .lte('item_date', dateTo.value)
@@ -401,7 +402,8 @@ async function load() {
       if (!name) continue
       invoiceSites.add(name)
       const amt = Number(r.amount) || 0
-      const cat = r.subcontractor_invoices?.subcontractors?.category ?? null
+      const cat = r.subcontractor_invoices?.category ?? null
+      const vendor = r.subcontractor_invoices?.vendor_name ?? ''
       const m = map[name] ??= { shosha: 0, gyosha: 0, other: 0, subtotal: 0, taxIncluded: 0, count: 0 }
       if (cat === '商社') m.shosha += amt
       else if (cat === '業者') m.gyosha += amt
@@ -409,6 +411,16 @@ async function load() {
       m.subtotal += amt
       m.taxIncluded += amt + Math.round(amt * (Number(r.tax_rate) || 0) / 100)
       m.count += 1
+      // 日表用の請求行（商社/業者列に金額を載せる）
+      ;(invoiceRowsBySite[name] ??= []).push({
+        _key: `inv-${name}-${r.item_date}-${m.count}`, _isInvoice: true, siteName: name,
+        date: r.item_date || dateFrom.value, _isSunday: false,
+        workerSummary: `【請求】${vendor}${r.description ? '・' + r.description : ''}`,
+        workers: [], subs: [],
+        shoshaCost: cat === '商社' ? amt : 0, gyoshaCost: cat === '業者' ? amt : 0,
+        laborCost: 0, parkingYen: 0, fuelCost: 0, highwayCost: 0, hotelCost: 0,
+        entertainCost: 0, garbageCost: 0, trainCost: 0, homeCost: 0, total: amt,
+      })
     }
     subInvoiceBySite.value = map
   }
@@ -517,11 +529,13 @@ async function load() {
     })
   }
 
+  // 下請け請求の行を各現場に追加（日報の無い現場もタブに出す）
+  for (const [name, rows] of Object.entries(invoiceRowsBySite)) {
+    ;(map[name] ??= []).push(...rows)
+  }
+
   // 日付順ソート
   for (const rows of Object.values(map)) rows.sort((a, b) => a.date.localeCompare(b.date))
-
-  // 日報は無いが下請け請求のある現場もタブに出す
-  for (const name of invoiceSites) if (!map[name]) map[name] = []
 
   siteMap.value = map
   const sorted = Object.keys(map).sort((a, b) => a.localeCompare(b, 'ja'))
@@ -559,6 +573,9 @@ watch(dateFrom, load)
 .table tfoot td { background: #f5f5f5; font-weight: 700; border-top: 2px solid #e0e0e0; font-size: 13px; }
 .data-row { cursor: pointer; transition: background .1s; }
 .data-row:hover { background: #f9fff9; }
+.invoice-row { background: #eef4ff; cursor: default; }
+.invoice-row:hover { background: #e6efff; }
+.invoice-row .hint { color: #1a3a7a; }
 .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .date-cell { font-weight: 700; white-space: nowrap; }
 .sun { color: #E53935; font-size: 10px; font-weight: 700; margin-left: 4px; }

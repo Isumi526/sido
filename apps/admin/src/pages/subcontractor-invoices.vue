@@ -46,8 +46,15 @@
           <!-- ヘッダ -->
           <div class="hd-grid">
             <label class="fld"><span>業者名 *</span>
-              <input v-model="form.vendor_name" list="sub-list" class="inp" placeholder="業者名" />
+              <input v-model="form.vendor_name" list="sub-list" class="inp" placeholder="業者名" @change="onVendorChange" />
               <datalist id="sub-list"><option v-for="s in subs" :key="s.id" :value="s.name" /></datalist>
+            </label>
+            <label class="fld"><span>区分</span>
+              <select v-model="form.category" class="inp">
+                <option :value="null">未区分</option>
+                <option value="商社">商社</option>
+                <option value="業者">業者</option>
+              </select>
             </label>
             <label class="fld"><span>登録番号</span><input v-model="form.registration_number" class="inp" placeholder="T1234567890123" /></label>
             <label class="fld"><span>件名</span><input v-model="form.title" class="inp" /></label>
@@ -76,9 +83,9 @@
               </thead>
               <tbody>
                 <tr v-for="(it, i) in form.items" :key="i">
-                  <td><input v-model="it.item_date" type="date" class="inp-sm" /></td>
+                  <td><input v-model="it.item_date" type="date" class="inp-sm inp-date" /></td>
                   <td>
-                    <select v-model="it.site_id" class="inp-sm">
+                    <select v-model="it.site_id" class="inp-sm inp-site">
                       <option :value="null">—</option>
                       <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.name }}</option>
                     </select>
@@ -131,7 +138,7 @@ interface Item {
   unit_price: number | null; amount: number | null; tax_rate: number; note: string | null
 }
 interface Form {
-  id?: string; vendor_name: string; subcontractor_id: string | null; registration_number: string | null
+  id?: string; vendor_name: string; subcontractor_id: string | null; category: string | null; registration_number: string | null
   title: string | null; invoice_no: string | null; invoice_date: string | null; due_date: string | null
   transfer_date: string | null; total_amount: number | null; pdf_path: string | null; note: string | null; items: Item[]
 }
@@ -139,7 +146,7 @@ interface Form {
 const loading  = ref(false)
 const invoices = ref<any[]>([])
 const sites    = ref<{ id: string; name: string }[]>([])
-const subs     = ref<{ id: string; name: string }[]>([])
+const subs     = ref<{ id: string; name: string; category: string | null }[]>([])
 const form     = ref<Form | null>(null)
 const file     = ref<File | null>(null)
 const analyzing = ref(false)
@@ -162,7 +169,7 @@ async function load() {
       .select('*, subcontractor_invoice_items(amount, tax_rate)')
       .eq('account_id', accountId).order('invoice_date', { ascending: false }).order('created_at', { ascending: false }),
     supabase.from('sites').select('id, name').eq('account_id', accountId).eq('active', true).order('name'),
-    supabase.from('subcontractors').select('id, name').eq('account_id', accountId).eq('active', true).order('name'),
+    supabase.from('subcontractors').select('id, name, category').eq('account_id', accountId).eq('active', true).order('name'),
   ])
   invoices.value = (inv ?? []).map((v: any) => {
     const items = v.subcontractor_invoice_items ?? []
@@ -177,7 +184,7 @@ async function load() {
 
 function blankForm(): Form {
   const today = new Date().toISOString().slice(0, 10)
-  return { vendor_name: '', subcontractor_id: null, registration_number: null, title: null, invoice_no: null, invoice_date: today, due_date: null, transfer_date: null, total_amount: null, pdf_path: null, note: null, items: [] }
+  return { vendor_name: '', subcontractor_id: null, category: null, registration_number: null, title: null, invoice_no: null, invoice_date: today, due_date: null, transfer_date: null, total_amount: null, pdf_path: null, note: null, items: [] }
 }
 function openNew() { form.value = blankForm(); file.value = null; aiMsg.value = ''; formError.value = '' }
 
@@ -198,7 +205,7 @@ async function openEdit(inv: any) {
   const { data: items } = await supabase.from('subcontractor_invoice_items')
     .select('*').eq('invoice_id', inv.id).order('sort_order').order('item_date')
   form.value = {
-    id: inv.id, vendor_name: inv.vendor_name, subcontractor_id: inv.subcontractor_id,
+    id: inv.id, vendor_name: inv.vendor_name, subcontractor_id: inv.subcontractor_id, category: inv.category,
     registration_number: inv.registration_number, title: inv.title, invoice_no: inv.invoice_no,
     invoice_date: inv.invoice_date, due_date: inv.due_date, transfer_date: inv.transfer_date,
     total_amount: inv.total_amount, pdf_path: inv.pdf_path, note: inv.note,
@@ -208,6 +215,13 @@ async function openEdit(inv: any) {
 
 function addItem() {
   form.value!.items.push({ item_date: form.value!.invoice_date, site_id: null, description: null, quantity: null, unit: null, unit_price: null, amount: null, tax_rate: 10, note: null })
+}
+
+// 業者名がマスタに一致したら区分を自動補完（手動変更は尊重）
+function onVendorChange() {
+  const f = form.value; if (!f) return
+  const m = subs.value.find(s => s.name === f.vendor_name.trim())
+  if (m?.category && !f.category) f.category = m.category
 }
 
 function onFile(e: Event) { file.value = (e.target as HTMLInputElement).files?.[0] ?? null; aiMsg.value = '' }
@@ -280,6 +294,7 @@ async function save() {
     }
     const header = {
       account_id: accountId, subcontractor_id: sub?.id ?? null, vendor_name: vendorName,
+      category: f.category || sub?.category || null,
       registration_number: f.registration_number || null,
       title: f.title || null, invoice_no: f.invoice_no || null, invoice_date: f.invoice_date || null,
       due_date: f.due_date || null, transfer_date: f.transfer_date || null,
@@ -380,6 +395,8 @@ onMounted(load)
 .items-table th, .items-table td { padding: 5px 6px; font-size: 12px; }
 .inp-sm { border: 1px solid #ddd; border-radius: 6px; padding: 5px 6px; font-size: 12px; width: 90px; }
 .inp-sm.num { width: 70px; text-align: right; } .inp-sm.unit { width: 50px; } .inp-sm.tax { width: 50px; text-align: right; } .inp-sm.wide { width: 160px; }
+.inp-sm.inp-date { width: 130px; } .inp-sm.inp-site { width: 124px; }
+.items-table th, .items-table td { white-space: nowrap; }
 .btn-row-del { background: none; border: none; color: #c0392b; font-size: 16px; cursor: pointer; }
 
 .totals { display: flex; gap: 18px; justify-content: flex-end; margin: 14px 0; font-size: 14px; color: #555; }

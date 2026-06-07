@@ -23,7 +23,7 @@ test.describe('下請け請求', () => {
       const c = await rest('subcontractors', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ account_id: accountId, name: 'E2E業者区分', category: '業者', active: true }) })
       subId = c?.[0]?.id
     }
-    const created = await rest('subcontractor_invoices', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ account_id: accountId, subcontractor_id: subId, vendor_name: 'E2E業者区分', invoice_no: AC5_INV_NO, invoice_date: `${YM}-15`, total_amount: 11000 }) })
+    const created = await rest('subcontractor_invoices', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ account_id: accountId, subcontractor_id: subId, vendor_name: 'E2E業者区分', category: '業者', invoice_no: AC5_INV_NO, invoice_date: `${YM}-15`, total_amount: 11000 }) })
     const id = created?.[0]?.id
     const sr = await rest(`sites?account_id=eq.${accountId}&name=eq.${encodeURIComponent(SEED_SITE)}&select=id`)
     await rest('subcontractor_invoice_items', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify([{ invoice_id: id, account_id: accountId, item_date: `${YM}-15`, site_id: sr?.[0]?.id, site_name: SEED_SITE, description: 'E2E工事', quantity: 1, unit: '式', unit_price: 10000, amount: 10000, tax_rate: 10 }]) })
