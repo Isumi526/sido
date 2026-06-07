@@ -386,6 +386,30 @@ async function addSite(it: Item) {
 
 function onFile(e: Event) { file.value = (e.target as HTMLInputElement).files?.[0] ?? null; aiMsg.value = '' }
 
+// 現場名→現場ID 名寄せ（完全一致→正規化一致→部分一致）。誤字や接頭/接尾辞のズレを吸収
+function normSite(s: string): string {
+  return (s || '')
+    .replace(/[（(][^）)]*[）)]/g, '')   // 括弧書き（ギフト）等を除去
+    .replace(/(改修|新築|工事|現場|様邸)/g, '')
+    .replace(/[\s　・,，.。\-ー－]/g, '')
+    .toLowerCase()
+}
+function matchSiteId(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  const exact = sites.value.find(s => s.name === raw)
+  if (exact) return exact.id
+  const t = normSite(raw)
+  if (!t) return null
+  const normExact = sites.value.find(s => normSite(s.name) === t)
+  if (normExact) return normExact.id
+  // 部分一致（どちらかが他方を含む）。最長一致を優先
+  const cands = sites.value
+    .map(s => ({ s, n: normSite(s.name) }))
+    .filter(({ n }) => n && (t.includes(n) || n.includes(t)))
+    .sort((a, b) => b.n.length - a.n.length)
+  return cands[0]?.s.id ?? null
+}
+
 function readAsDataUrl(f: File): Promise<string> {
   return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result as string); r.onerror = rej; r.readAsDataURL(f) })
 }
@@ -401,7 +425,7 @@ async function analyze() {
     const res = await fetch(`${EDGE_URL}/${fnName}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
-      body: JSON.stringify({ fileBase64: dataUrl }),
+      body: JSON.stringify({ fileBase64: dataUrl, siteNames: sites.value.map(s => s.name) }),
     })
     const r = await res.json()
     if (!res.ok) throw new Error(r.error ?? res.statusText)
@@ -420,17 +444,19 @@ async function analyze() {
     if (r.invoice_date) f.invoice_date = r.invoice_date
     if (r.due_date) f.due_date = r.due_date
     if (r.total_amount != null) f.total_amount = r.total_amount
-    // 明細流し込み（現場名はマスタと名寄せ）
+    // 明細流し込み（現場名はマスタと名寄せ：完全一致→正規化→部分一致）
+    let unmatched = 0
     f.items = (r.items ?? []).map((it: any) => {
-      const site = sites.value.find(s => s.name === it.site_name)
+      const siteId = matchSiteId(it.site_name)
+      if (it.site_name && !siteId) unmatched++
       const amount = it.amount != null ? Number(it.amount) : Math.round((Number(it.quantity) || 0) * (Number(it.unit_price) || 0))
       return {
-        item_date: it.date ?? f.invoice_date, site_id: site?.id ?? null, site_name: it.site_name ?? null,
+        item_date: it.date ?? f.invoice_date, site_id: siteId, site_name: it.site_name ?? null,
         description: it.description ?? null, quantity: it.quantity ?? null, unit: it.unit ?? null,
         unit_price: it.unit_price ?? null, amount, tax_rate: it.tax_rate ?? 10, note: it.note ?? null,
       }
     })
-    aiMsg.value = `解析しました（明細 ${f.items.length} 件）。内容を確認・修正してください。`
+    aiMsg.value = `解析しました（明細 ${f.items.length} 件）。${unmatched ? `現場が未特定の明細が ${unmatched} 件あります。プルダウンで選択してください。` : ''}内容を確認・修正してください。`
   } catch (e: any) {
     aiMsg.value = 'AI解析に失敗しました: ' + (e?.message ?? '')
   } finally {

@@ -33,12 +33,17 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
 
   try {
-    const { fileBase64 } = await req.json() as { fileBase64: string }
+    const { fileBase64, siteNames } = await req.json() as { fileBase64: string; siteNames?: string[] }
     if (!fileBase64) return json({ error: 'fileBase64 is required' }, 400)
 
     const match = fileBase64.match(/^data:([^;]+);base64,(.+)$/)
     if (!match) return json({ error: 'Invalid file format (data URL required)' }, 400)
     const [, mimeType, base64Data] = match
+
+    const siteList = Array.isArray(siteNames) ? siteNames.filter((s) => typeof s === 'string' && s.trim()) : []
+    const siteHint = siteList.length
+      ? `\n\n■ 現場名の名寄せ（重要）\n現場マスタ候補: ${JSON.stringify(siteList)}\n請求書では現場名が品名・工事内容の中に含まれることが多い。各明細の "site_name" は、品名/工事内容から現場を推定し、上の候補に【表記揺れ・誤字・接頭辞/接尾辞（「改修」「新築」「(ギフト)」等）の違いがあっても】最も近いものがあれば、その候補の表記を【そのまま】入れること。候補に該当が無ければ読み取った現場名をそのまま、現場が判断できなければ null。`
+      : ''
 
     const prompt = `これは下請け業者の請求書です。内容から以下をJSONのみで返してください（説明文・コードフェンス不要）。
 読み取れない項目は null。日付は "YYYY-MM-DD"。金額・数量は数値（カンマや円記号は除く）。
@@ -64,7 +69,7 @@ Deno.serve(async (req) => {
       "note": "備考（なければnull）"
     }
   ]
-}`
+}${siteHint}`
 
     const body = {
       contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Data } }] }],
