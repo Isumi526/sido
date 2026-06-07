@@ -25,8 +25,15 @@
 
       <!-- 下請け請求(当月・この現場) -->
       <div v-if="activeSite && subInvoiceBySite[activeSite]" class="sub-invoice-bar">
-        下請け請求（当月）: <strong>{{ yen(subInvoiceBySite[activeSite].taxIncluded) }}</strong>
-        <span class="sub-invoice-sub">税抜 {{ yen(subInvoiceBySite[activeSite].subtotal) }} ／ {{ subInvoiceBySite[activeSite].count }}件</span>
+        <div class="sub-invoice-main">
+          下請け請求（当月・税込）: <strong>{{ yen(subInvoiceBySite[activeSite].taxIncluded) }}</strong>
+          <span class="sub-invoice-sub">税抜計 {{ yen(subInvoiceBySite[activeSite].subtotal) }} ／ {{ subInvoiceBySite[activeSite].count }}件</span>
+        </div>
+        <div class="sub-invoice-cats">
+          <span>商社 <b>{{ yen(subInvoiceBySite[activeSite].shosha) }}</b></span>
+          <span>業者 <b>{{ yen(subInvoiceBySite[activeSite].gyosha) }}</b></span>
+          <span v-if="subInvoiceBySite[activeSite].other">未区分 <b>{{ yen(subInvoiceBySite[activeSite].other) }}</b></span>
+        </div>
       </div>
 
       <!-- 一覧テーブル -->
@@ -310,8 +317,8 @@ const dateTo = computed(() => {
 const loading    = ref(false)
 const siteMap    = ref<Record<string, any[]>>({})
 const activeSite = ref('')
-// 下請け請求（当月）の現場別合計
-const subInvoiceBySite = ref<Record<string, { subtotal: number; taxIncluded: number; count: number }>>({})
+// 下請け請求（当月）の現場別合計（商社/業者で区分）
+const subInvoiceBySite = ref<Record<string, { shosha: number; gyosha: number; other: number; subtotal: number; taxIncluded: number; count: number }>>({})
 const siteNames  = computed(() => Object.keys(siteMap.value).sort((a, b) => a.localeCompare(b, 'ja')))
 
 // 単価（settings テーブルから上書き）
@@ -379,20 +386,26 @@ async function load() {
     if (row.key === 'garbage_factory_rate_per_m3')  GF_YEN = Number(row.value)
     if (row.key === 'garbage_site_rate_per_m3')     GS_YEN = Number(row.value)
   }
-  // 下請け請求（当月）を現場別に集計
+  // 下請け請求（当月）を現場別に集計（業者の区分 商社/業者 で内訳）
+  const invoiceSites = new Set<string>()
   {
     const { data: sii } = await supabase
       .from('subcontractor_invoice_items')
-      .select('site_name, amount, tax_rate')
+      .select('site_name, amount, tax_rate, subcontractor_invoices(subcontractors(category))')
       .eq('account_id', accountId)
       .gte('item_date', dateFrom.value)
       .lte('item_date', dateTo.value)
-    const map: Record<string, { subtotal: number; taxIncluded: number; count: number }> = {}
+    const map: Record<string, { shosha: number; gyosha: number; other: number; subtotal: number; taxIncluded: number; count: number }> = {}
     for (const r of (sii ?? []) as any[]) {
       const name = r.site_name
       if (!name) continue
+      invoiceSites.add(name)
       const amt = Number(r.amount) || 0
-      const m = map[name] ??= { subtotal: 0, taxIncluded: 0, count: 0 }
+      const cat = r.subcontractor_invoices?.subcontractors?.category ?? null
+      const m = map[name] ??= { shosha: 0, gyosha: 0, other: 0, subtotal: 0, taxIncluded: 0, count: 0 }
+      if (cat === '商社') m.shosha += amt
+      else if (cat === '業者') m.gyosha += amt
+      else m.other += amt
       m.subtotal += amt
       m.taxIncluded += amt + Math.round(amt * (Number(r.tax_rate) || 0) / 100)
       m.count += 1
@@ -507,6 +520,9 @@ async function load() {
   // 日付順ソート
   for (const rows of Object.values(map)) rows.sort((a, b) => a.date.localeCompare(b.date))
 
+  // 日報は無いが下請け請求のある現場もタブに出す
+  for (const name of invoiceSites) if (!map[name]) map[name] = []
+
   siteMap.value = map
   const sorted = Object.keys(map).sort((a, b) => a.localeCompare(b, 'ja'))
   activeSite.value = sorted[0] ?? ''
@@ -525,9 +541,11 @@ watch(dateFrom, load)
 .btn-nav { background: #f0f0f0; border: none; border-radius: 8px; padding: 6px 14px; font-size: 18px; cursor: pointer; }
 .empty { color: #888; padding: 60px; text-align: center; }
 
-.sub-invoice-bar { background: #eef4ff; border: 1px solid #cdddff; color: #1a3a7a; border-radius: 8px; padding: 8px 14px; margin-bottom: 12px; font-size: 13px; }
+.sub-invoice-bar { background: #eef4ff; border: 1px solid #cdddff; color: #1a3a7a; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .sub-invoice-bar strong { font-size: 15px; }
 .sub-invoice-sub { color: #5a6b8a; margin-left: 12px; font-size: 12px; }
+.sub-invoice-cats { display: flex; gap: 16px; font-size: 12px; color: #3a4a6a; }
+.sub-invoice-cats b { font-size: 13px; color: #1a3a7a; }
 .tabs-wrap { overflow-x: auto; margin-bottom: 16px; }
 .tabs { display: flex; gap: 4px; border-bottom: 2px solid #e0e0e0; min-width: max-content; }
 .tab { background: none; border: none; border-bottom: 3px solid transparent; margin-bottom: -2px; padding: 10px 16px; font-size: 13px; font-weight: 600; color: #888; cursor: pointer; white-space: nowrap; transition: color .15s, border-color .15s; }

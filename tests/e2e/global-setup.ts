@@ -181,35 +181,9 @@ async function seedDevUpdate() {
   }
 }
 
-// 下請け請求テスト用: 当月・テスト現場A の請求1件（明細 amount=10000・税10%）
-export const SUB_INV_NO = 'E2E-INV-001'
-
-async function seedSubInvoice() {
-  const accountId = await getAccountId()
-  const exist = await rest(`subcontractor_invoices?account_id=eq.${accountId}&invoice_no=eq.${SUB_INV_NO}&select=id`)
-  if (exist?.length) return   // 冪等
-  const created = await rest('subcontractor_invoices', {
-    method: 'POST', headers: { Prefer: 'return=representation' },
-    body: JSON.stringify({ account_id: accountId, vendor_name: 'E2E下請', invoice_no: SUB_INV_NO, invoice_date: `${YM}-15`, total_amount: 11000 }),
-  })
-  const id = created?.[0]?.id
-  if (!id) return
-  const sr = await rest(`sites?account_id=eq.${accountId}&name=eq.${encodeURIComponent(SEED_SITE)}&select=id`)
-  const siteId = sr?.[0]?.id
-  await rest('subcontractor_invoice_items', {
-    method: 'POST', headers: { Prefer: 'return=minimal' },
-    body: JSON.stringify([{
-      invoice_id: id, account_id: accountId, item_date: `${YM}-15`, site_id: siteId, site_name: SEED_SITE,
-      description: 'E2E工事', quantity: 1, unit: '式', unit_price: 10000, amount: 10000, tax_rate: 10,
-    }]),
-  })
-  console.log('[e2e] subcontractor invoice シード OK')
-}
-
 export default async function globalSetup() {
   await ensureAdminUser().catch(e => console.warn('[e2e] admin user 作成失敗:', String(e)))
   await seedFeatureReports().catch(e => console.warn('[e2e] feature seed 失敗:', String(e)))
   await seedScheduleGroup().catch(e => console.warn('[e2e] schedule group seed 失敗:', String(e)))
   await seedDevUpdate().catch(e => console.warn('[e2e] dev_update seed 失敗:', String(e)))
-  await seedSubInvoice().catch(e => console.warn('[e2e] sub invoice seed 失敗:', String(e)))
 }
