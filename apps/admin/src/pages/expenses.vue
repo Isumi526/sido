@@ -76,7 +76,12 @@
             <span class="settle-pay">振込額（立替）<strong>{{ yen(selected.tategaeTotal) }}</strong></span>
             <span class="settle-amt">経費合計 {{ yen(selected.total) }}（{{ selected.count }}件）</span>
             <span v-if="selected.settlement?.reject_reason && selected.status === '差し戻し'" class="settle-reason">理由: {{ selected.settlement.reject_reason }}</span>
-            <button v-if="selected.status === '申請中'" class="btn-reject" @click="openReject(selected)">差し戻し</button>
+            <span v-if="selected.status === '支払い済み' && selected.settlement?.paid_on" class="settle-paid-info">支払日 {{ selected.settlement.paid_on }}</span>
+            <template v-if="selected.status === '申請中'">
+              <button class="btn-reject" @click="openReject(selected)">差し戻し</button>
+              <button class="btn-pay" @click="openPay(selected)">支払い済みにする</button>
+            </template>
+            <button v-else-if="selected.status === '支払い済み'" class="btn-status-link" @click="undoPaid(selected)">申請中に戻す</button>
           </div>
           <p class="settle-hint">※ 会社が作業員へ振り込むのは「立替（個人建て替え）」分のみです。経費合計は参考値です。</p>
 
@@ -132,6 +137,39 @@
               {{ rejecting ? '処理中…' : '差し戻す' }}
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 支払い完了モーダル（区分・支払日を必ず入力させる） -->
+    <div v-if="payTarget" class="modal-overlay confirm-overlay" @click.self="payTarget = null">
+      <div class="confirm-box">
+        <p class="confirm-msg">「{{ payTarget.workerName }}（{{ payTarget.shortLabel }}）」を支払い済みにします。</p>
+        <label class="pay-label">支払い区分（必須）</label>
+        <select v-model="payMethod" class="pay-input">
+          <option value="" disabled>選択してください</option>
+          <option value="銀行振込">銀行振込</option>
+          <option value="手渡し">手渡し</option>
+        </select>
+        <label class="pay-label">支払日（必須）</label>
+        <input v-model="payDate" type="date" class="pay-input" />
+        <p v-if="payError" class="reject-error">{{ payError }}</p>
+        <div class="confirm-actions">
+          <button class="btn-cancel" @click="payTarget = null">キャンセル</button>
+          <button class="btn-confirm-ok" :disabled="!payMethod || !payDate || paying" @click="doPay">
+            {{ paying ? '処理中…' : '支払い済みにする' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 取消（申請中に戻す）確認 -->
+    <div v-if="undoTarget" class="modal-overlay confirm-overlay" @click.self="undoTarget = null">
+      <div class="confirm-box">
+        <p class="confirm-msg">「{{ undoTarget.workerName }}（{{ undoTarget.shortLabel }}）」を申請中に戻します。<br>支払い区分・支払日は消去されます。よろしいですか？</p>
+        <div class="confirm-actions">
+          <button class="btn-cancel" @click="undoTarget = null">キャンセル</button>
+          <button class="btn-confirm-ok danger" :disabled="undoing" @click="doUndoPaid">{{ undoing ? '処理中…' : '申請中に戻す' }}</button>
         </div>
       </div>
     </div>
@@ -266,7 +304,10 @@ async function load() {
     r.workerName = nameById[r.userId] ?? r.workerName
     r.settlement = settleMap[`${r.userId}|${r.periodKey}`] ?? null
     r.status = effectiveStatus(r.settlement, r.periodKey, now)
-    r.statusLabel = r.status
+    // 支払い済みは区分を併記（旧データ=区分なしは「支払済」のみにフォールバック）
+    r.statusLabel = r.status === '支払い済み' && r.settlement?.payment_method
+      ? `支払済（${r.settlement.payment_method}）`
+      : r.status
     r.statusClass = STATUS_CLASS[r.status]
   }
 
@@ -311,6 +352,75 @@ async function doReject() {
     rejectError.value = '差し戻しに失敗しました: ' + (e?.message ?? '')
   } finally {
     rejecting.value = false
+  }
+}
+
+// ---------- 支払い済みにする ----------
+const todayStr = new Date().toISOString().slice(0, 10)
+const payTarget = ref<PeriodRow | null>(null)
+const payMethod = ref('')
+const payDate   = ref(todayStr)
+const paying    = ref(false)
+const payError  = ref('')
+
+function openPay(row: PeriodRow) {
+  payTarget.value = row
+  payMethod.value = row.settlement?.payment_method ?? ''
+  payDate.value   = row.settlement?.paid_on ?? todayStr
+  payError.value  = ''
+}
+
+async function doPay() {
+  if (!payTarget.value) return
+  if (!payMethod.value || !payDate.value) { payError.value = '支払い区分と支払日を入力してください'; return }
+  paying.value = true
+  payError.value = ''
+  try {
+    const accountId = await getAccountId()
+    const t = payTarget.value
+    const now = new Date().toISOString()
+    const { error } = await supabase
+      .from('expense_settlements')
+      .update({ status: '支払い済み', payment_method: payMethod.value, paid_on: payDate.value, updated_at: now })
+      .eq('account_id', accountId)
+      .eq('user_id', t.userId)
+      .eq('period_key', t.periodKey)
+    if (error) throw error
+    payTarget.value = null
+    selected.value = null
+    await load()
+  } catch (e: any) {
+    payError.value = '支払い確定に失敗しました: ' + (e?.message ?? '')
+  } finally {
+    paying.value = false
+  }
+}
+
+// ---------- 取消（支払い済み → 申請中） ----------
+const undoTarget = ref<PeriodRow | null>(null)
+const undoing    = ref(false)
+
+function undoPaid(row: PeriodRow) { undoTarget.value = row }
+
+async function doUndoPaid() {
+  if (!undoTarget.value) return
+  undoing.value = true
+  try {
+    const accountId = await getAccountId()
+    const t = undoTarget.value
+    const now = new Date().toISOString()
+    const { error } = await supabase
+      .from('expense_settlements')
+      .update({ status: '申請中', payment_method: null, paid_on: null, updated_at: now })
+      .eq('account_id', accountId)
+      .eq('user_id', t.userId)
+      .eq('period_key', t.periodKey)
+    if (error) throw error
+    undoTarget.value = null
+    selected.value = null
+    await load()
+  } finally {
+    undoing.value = false
   }
 }
 
@@ -365,6 +475,10 @@ watch(dateFrom, load)
 .receipt-link { display: inline-block; font-size: 13px; color: #1a56c4; text-decoration: none; margin: 0 3px; }
 .btn-reject { margin-left: auto; background: #fff; border: 1px solid #f5c0bb; color: #c0392b; border-radius: 8px; padding: 6px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-reject:hover { background: #fdeaea; }
+.btn-pay { background: #fff; color: #06951f; border: 1px solid #9bd9ad; border-radius: 8px; padding: 6px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn-pay:hover { background: #f1faf3; border-color: #06C755; }
+.btn-status-link { margin-left: auto; background: none; border: none; color: #aaa; font-size: 12px; text-decoration: underline; cursor: pointer; padding: 0; }
+.settle-paid-info { font-size: 12px; color: #1a56c4; }
 
 /* 差し戻しモーダル */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 16px; }
@@ -382,4 +496,15 @@ watch(dateFrom, load)
 .btn-cancel { background: #f0f0f0; border: none; border-radius: 8px; padding: 8px 18px; font-size: 14px; cursor: pointer; }
 .btn-reject-confirm { background: #c0392b; color: #fff; border: none; border-radius: 8px; padding: 8px 18px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-reject-confirm:disabled { opacity: .6; cursor: default; }
+
+/* 支払い／取消ダイアログ（confirm-box） */
+.confirm-overlay { z-index: 200; }
+.confirm-box { background: #fff; border-radius: 12px; padding: 22px 22px 16px; max-width: 380px; width: 100%; box-shadow: 0 8px 30px rgba(0,0,0,.2); }
+.confirm-msg { font-size: 14px; line-height: 1.6; color: #222; white-space: pre-line; margin-bottom: 16px; }
+.pay-label { display: block; font-size: 12px; font-weight: 600; color: #666; margin: 10px 0 4px; }
+.pay-input { width: 100%; border: 1px solid #ddd; border-radius: 8px; padding: 8px 10px; font-size: 14px; box-sizing: border-box; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+.btn-confirm-ok { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 8px 20px; font-weight: 700; cursor: pointer; }
+.btn-confirm-ok.danger { background: #c0392b; }
+.btn-confirm-ok:disabled { opacity: .6; cursor: default; }
 </style>
