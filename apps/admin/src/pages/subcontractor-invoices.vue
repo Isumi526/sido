@@ -32,11 +32,17 @@
             <td>{{ inv.title ?? '—' }}</td>
             <td class="num">{{ inv.item_count }}</td>
             <td class="num">{{ yen(inv.grand_total) }}</td>
-            <td>
-              <span v-if="inv.paid" class="badge paid">支払済{{ inv.transfer_date ? `（${inv.transfer_date}）` : '' }}</span>
-              <span v-else-if="inv._overdue" class="badge overdue-badge">期限超過{{ inv.due_date ? `（${inv.due_date}）` : '' }}</span>
-              <span v-else-if="inv.due_date" class="badge due">期限 {{ inv.due_date }}</span>
-              <span v-else class="badge none">未払い</span>
+            <td class="status-cell" @click.stop>
+              <template v-if="inv.paid">
+                <span class="badge paid">支払済{{ inv.transfer_date ? `（${inv.transfer_date}）` : '' }}</span>
+                <button class="btn-status-link" @click="markUnpaid(inv)">未払いに戻す</button>
+              </template>
+              <template v-else>
+                <span v-if="inv._overdue" class="badge overdue-badge">期限超過{{ inv.due_date ? `（${inv.due_date}）` : '' }}</span>
+                <span v-else-if="inv.due_date" class="badge due">期限 {{ inv.due_date }}</span>
+                <span v-else class="badge none">未払い</span>
+                <button class="btn-status-pay" @click="openPay(inv)">支払い完了</button>
+              </template>
             </td>
             <td class="chevron">›</td>
           </tr>
@@ -162,6 +168,18 @@
       </div>
     </div>
 
+    <!-- 支払い完了ダイアログ（支払日を必ず入力させる） -->
+    <div v-if="payState" class="modal-overlay confirm-overlay" @click.self="payState = null">
+      <div class="confirm-box">
+        <p class="confirm-msg">「{{ payState.vendor_name }}」を支払い済みにします。<br>支払日を入力してください。</p>
+        <input v-model="payState.date" type="date" class="inp pay-date" />
+        <div class="confirm-actions">
+          <button class="btn-cancel" @click="payState = null">キャンセル</button>
+          <button class="btn-confirm-ok" :disabled="!payState.date || paying" @click="confirmPay">支払い完了にする</button>
+        </div>
+      </div>
+    </div>
+
     <!-- 確認ダイアログ（ネイティブconfirmの英語ボタン回避・日本語ボタン） -->
     <div v-if="confirmState" class="modal-overlay confirm-overlay" @click.self="confirmState = null">
       <div class="confirm-box">
@@ -227,6 +245,26 @@ function askConfirm(message: string, okLabel: string, onOk: () => void, danger =
 }
 function runConfirm() { const s = confirmState.value; confirmState.value = null; s?.onOk() }
 
+// 一覧から支払い状況を変更
+const payState = ref<{ id: string; vendor_name: string; date: string } | null>(null)
+const paying = ref(false)
+function openPay(inv: any) { payState.value = { id: inv.id, vendor_name: inv.vendor_name, date: inv.transfer_date || todayStr } }
+async function confirmPay() {
+  const p = payState.value; if (!p || !p.date) return
+  paying.value = true
+  try {
+    await supabase.from('subcontractor_invoices').update({ paid: true, transfer_date: p.date, updated_at: new Date().toISOString() }).eq('id', p.id)
+    payState.value = null
+    await load()
+  } finally { paying.value = false }
+}
+function markUnpaid(inv: any) {
+  askConfirm(`「${inv.vendor_name}」を未払いに戻しますか？`, '未払いに戻す', async () => {
+    await supabase.from('subcontractor_invoices').update({ paid: false, updated_at: new Date().toISOString() }).eq('id', inv.id)
+    await load()
+  }, true)
+}
+
 async function load() {
   loading.value = true
   const accountId = await getAccountId()
@@ -252,13 +290,16 @@ function blankForm(): Form {
   const today = new Date().toISOString().slice(0, 10)
   return { vendor_name: '', subcontractor_id: null, registration_number: null, title: null, invoice_no: null, invoice_date: today, due_date: null, transfer_date: null, paid: false, total_amount: null, pdf_path: null, note: null, items: [] }
 }
-function openNew() { form.value = blankForm(); file.value = null; aiMsg.value = ''; formError.value = '' }
+// 開いた時点の内容スナップショット（変更有無の判定用）
+const formSnapshot = ref('')
+function snapshot() { formSnapshot.value = JSON.stringify(form.value) }
 
-// 誤って閉じてもデータが飛ばないよう、入力があれば確認
+function openNew() { form.value = blankForm(); file.value = null; aiMsg.value = ''; formError.value = ''; snapshot() }
+
+// 誤って閉じてもデータが飛ばないよう、変更があった時だけ確認
 function isDirty(): boolean {
-  const f = form.value
-  if (!f) return false
-  return !!(f.vendor_name?.trim() || f.title || f.invoice_no || f.registration_number || f.note || f.items.length || file.value)
+  if (!form.value) return false
+  return JSON.stringify(form.value) !== formSnapshot.value || !!file.value
 }
 function closeForm() {
   if (saving.value) return
@@ -277,6 +318,7 @@ async function openEdit(inv: any) {
     total_amount: inv.total_amount, pdf_path: inv.pdf_path, note: inv.note,
     items: (items ?? []).map((it: any) => ({ ...it })),
   }
+  snapshot()
 }
 
 function addItem() {
@@ -490,6 +532,10 @@ onMounted(load)
 .badge.overdue-badge { background: #fdecea; color: #c0392b; }
 .data-row.overdue { background: #fff6f5; }
 .data-row.overdue:hover { background: #ffeceb; }
+.status-cell { white-space: nowrap; cursor: default; }
+.btn-status-pay { margin-left: 8px; background: #06C755; color: #fff; border: none; border-radius: 6px; padding: 3px 10px; font-size: 11px; font-weight: 700; cursor: pointer; }
+.btn-status-link { margin-left: 8px; background: none; border: none; color: #999; font-size: 11px; text-decoration: underline; cursor: pointer; }
+.pay-date { width: 100%; margin-bottom: 16px; }
 .table-wrap { background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08); overflow-x: auto; }
 .table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .table th, .table td { padding: 10px 14px; border-bottom: 1px solid #eee; text-align: left; }

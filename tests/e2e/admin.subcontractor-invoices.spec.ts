@@ -105,6 +105,27 @@ test.describe('下請け請求', () => {
     await expect(page.locator('tr.data-row', { hasText: vendor2 })).toBeVisible({ timeout: 10000 })
   })
 
+  test('一覧から支払い状況を変更（支払い完了→未払いに戻す）', async ({ page }) => {
+    await page.goto('/subcontractor-invoices', { waitUntil: 'networkidle' })
+    // AC1で作成した未払い請求(vendor)の行で「支払い完了」
+    const unpaidRow = page.locator('tr.data-row', { hasText: vendor })
+    await expect(unpaidRow).toBeVisible({ timeout: 10000 })
+    await unpaidRow.locator('.btn-status-pay').click()
+    // 支払日を入れて確定
+    await page.locator('.confirm-box .pay-date').fill(`${YM}-12`)
+    await page.locator('.btn-confirm-ok').click()
+    // 未払いタブから消え、支払い済みタブに出る
+    await expect(page.locator('tr.data-row', { hasText: vendor })).toHaveCount(0)
+    await page.locator('.tab', { hasText: '支払い済み' }).click()
+    const paidRow = page.locator('tr.data-row', { hasText: vendor })
+    await expect(paidRow).toBeVisible({ timeout: 10000 })
+    await expect(paidRow).toContainText('支払済')
+    // 未払いに戻す
+    await paidRow.locator('.btn-status-link').click()
+    await page.locator('.btn-confirm-ok').click()
+    await expect(page.locator('tr.data-row', { hasText: vendor })).toHaveCount(0)
+  })
+
   test('AC5: 現場別集計に下請け請求(当月・業者区分)が反映される', async ({ page }) => {
     await page.goto('/site-reports', { waitUntil: 'networkidle' })
     // 対象現場(テスト現場A)のタブを選択（他テストの現場がアクティブな場合に備える）
