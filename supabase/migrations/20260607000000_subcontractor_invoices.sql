@@ -16,7 +16,8 @@ create table if not exists subcontractor_invoices (
   registration_number text,                              -- インボイス登録番号（T+13桁）
   invoice_date     date,                                  -- 請求日
   due_date         date,                                  -- 支払い期限
-  transfer_date    date,                                  -- 振込日
+  transfer_date    date,                                  -- 支払日（振込日）
+  paid             boolean not null default false,        -- 支払い済み
   total_amount     integer,                               -- 請求金額（請求書記載値・税込）
   pdf_path         text,                                  -- expense-receipts 上のPDF
   note             text,                                  -- メモ

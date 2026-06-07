@@ -29,10 +29,16 @@ test.describe('下請け請求', () => {
     await rest('subcontractor_invoice_items', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify([{ invoice_id: id, account_id: accountId, item_date: `${YM}-15`, site_id: sr?.[0]?.id, site_name: SEED_SITE, description: 'E2E工事', quantity: 1, unit: '式', unit_price: 10000, amount: 10000, tax_rate: 10 }]) })
   })
 
+  const newSite = `E2E現場_${Date.now()}`
+  const vendor2 = `E2E業者2_${Date.now()}`
+
   test.afterAll(async () => {
     await rest(`subcontractor_invoices?invoice_no=eq.${AC5_INV_NO}`, { method: 'DELETE' }).catch(() => {})
-    await rest(`subcontractor_invoices?vendor_name=eq.${encodeURIComponent(vendor)}`, { method: 'DELETE' }).catch(() => {})
-    await rest(`subcontractors?name=eq.${encodeURIComponent(vendor)}`, { method: 'DELETE' }).catch(() => {})
+    for (const v of [vendor, vendor2]) {
+      await rest(`subcontractor_invoices?vendor_name=eq.${encodeURIComponent(v)}`, { method: 'DELETE' }).catch(() => {})
+      await rest(`subcontractors?name=eq.${encodeURIComponent(v)}`, { method: 'DELETE' }).catch(() => {})
+    }
+    await rest(`sites?name=eq.${encodeURIComponent(newSite)}`, { method: 'DELETE' }).catch(() => {})
   })
 
   test('AC1/2/4: 業者を新規登録→ヘッダ＋明細入力→金額自動→保存→一覧に出る', async ({ page }) => {
@@ -41,7 +47,7 @@ test.describe('下請け請求', () => {
 
     await page.locator('.btn-add').click()
     // 業者プルダウン→新規登録
-    await page.locator('.hd-grid select').selectOption('__new__')
+    await page.locator('.hd-grid select').first().selectOption('__new__')
     await page.locator('.new-vendor input').fill(vendor)
     await page.locator('.new-vendor select').selectOption('業者')
     await page.locator('.btn-new-vendor').click()
@@ -63,8 +69,46 @@ test.describe('下請け請求', () => {
     await expect(listRow).toContainText('¥11,000')
   })
 
+  test('現場をフォームから新規追加→支払い済み(支払日必須)→支払い済みタブに出る', async ({ page }) => {
+    await page.goto('/subcontractor-invoices', { waitUntil: 'networkidle' })
+    await page.locator('.btn-add').click()
+    // 業者を新規登録
+    await page.locator('.hd-grid select').first().selectOption('__new__')
+    await page.locator('.new-vendor input').fill(vendor2)
+    await page.locator('.btn-new-vendor').click()
+    await expect(page.locator('.new-vendor')).toHaveCount(0)
+
+    // 明細1行: 現場をプルダウンから新規追加
+    await page.locator('.btn-row-add').click()
+    const row = page.locator('.items-table tbody tr').first()
+    await row.locator('.inp-site').selectOption('__new__')
+    await row.locator('.new-site input').fill(newSite)
+    await row.locator('.btn-new-site').click()
+    // 追加後はselectに戻り、新規現場が選択済み
+    await expect(row.locator('select.inp-site')).toBeVisible()
+    await expect(row.locator('select.inp-site')).toHaveValue(/.+/)
+    await row.locator('.inp-sm.num').nth(0).fill('1')
+    await row.locator('.inp-sm.num').nth(1).fill('3000')
+
+    // 支払い済みにするが支払日未入力→保存エラー
+    await page.locator('.hd-grid select').last().selectOption('true')
+    await page.locator('.btn-save').click()
+    await expect(page.locator('.error')).toContainText('支払日')
+
+    // 支払日を入れて保存
+    await page.locator('.hd-grid input[type="date"]').last().fill(`${YM}-10`)
+    await page.locator('.btn-save').click()
+
+    // 既定は未払いタブ→出ない。支払い済みタブで出る
+    await expect(page.locator('tr.data-row', { hasText: vendor2 })).toHaveCount(0)
+    await page.locator('.tab', { hasText: '支払い済み' }).click()
+    await expect(page.locator('tr.data-row', { hasText: vendor2 })).toBeVisible({ timeout: 10000 })
+  })
+
   test('AC5: 現場別集計に下請け請求(当月・業者区分)が反映される', async ({ page }) => {
     await page.goto('/site-reports', { waitUntil: 'networkidle' })
+    // 対象現場(テスト現場A)のタブを選択（他テストの現場がアクティブな場合に備える）
+    await page.locator('.tabs-wrap .tab', { hasText: SEED_SITE }).first().click()
     const bar = page.locator('.sub-invoice-bar')
     await expect(bar).toBeVisible({ timeout: 10000 })
     await expect(bar).toContainText('¥11,000')          // 税込合計

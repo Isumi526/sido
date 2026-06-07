@@ -5,21 +5,39 @@
       <button class="btn-add" @click="openNew">＋ 新規請求</button>
     </div>
 
+    <!-- タブ（未払い / 支払い済み） -->
+    <div v-if="!loading && invoices.length" class="tabs">
+      <button :class="['tab', { active: tab === 'unpaid' }]" @click="tab = 'unpaid'">
+        未払い <span class="tab-count">{{ unpaidList.length }}</span>
+      </button>
+      <button :class="['tab', { active: tab === 'paid' }]" @click="tab = 'paid'">
+        支払い済み <span class="tab-count">{{ paidList.length }}</span>
+      </button>
+      <span v-if="overdueCount" class="overdue-note">⚠ 支払期限超過 {{ overdueCount }} 件</span>
+    </div>
+
     <!-- 一覧 -->
     <div v-if="loading" class="empty">読み込み中...</div>
     <div v-else-if="invoices.length === 0" class="empty">登録された請求はありません</div>
+    <div v-else-if="visibleList.length === 0" class="empty">{{ tab === 'paid' ? '支払い済みの請求はありません' : '未払いの請求はありません' }}</div>
     <div v-else class="table-wrap">
       <table class="table">
         <thead>
-          <tr><th>請求日</th><th>業者</th><th>件名</th><th class="num">明細</th><th class="num">請求金額(税込)</th><th></th></tr>
+          <tr><th>請求日</th><th>業者</th><th>件名</th><th class="num">明細</th><th class="num">請求金額(税込)</th><th>状態</th><th></th></tr>
         </thead>
         <tbody>
-          <tr v-for="inv in invoices" :key="inv.id" class="data-row" @click="openEdit(inv)">
+          <tr v-for="inv in visibleList" :key="inv.id" class="data-row" :class="{ overdue: inv._overdue }" @click="openEdit(inv)">
             <td class="date-cell">{{ inv.invoice_date ?? '—' }}</td>
             <td class="bold">{{ inv.vendor_name }}</td>
             <td>{{ inv.title ?? '—' }}</td>
             <td class="num">{{ inv.item_count }}</td>
             <td class="num">{{ yen(inv.grand_total) }}</td>
+            <td>
+              <span v-if="inv.paid" class="badge paid">支払済{{ inv.transfer_date ? `（${inv.transfer_date}）` : '' }}</span>
+              <span v-else-if="inv._overdue" class="badge overdue-badge">期限超過{{ inv.due_date ? `（${inv.due_date}）` : '' }}</span>
+              <span v-else-if="inv.due_date" class="badge due">期限 {{ inv.due_date }}</span>
+              <span v-else class="badge none">未払い</span>
+            </td>
             <td class="chevron">›</td>
           </tr>
         </tbody>
@@ -57,8 +75,17 @@
             <label class="fld"><span>請求番号</span><input v-model="form.invoice_no" class="inp" /></label>
             <label class="fld"><span>請求日</span><input v-model="form.invoice_date" type="date" class="inp" /></label>
             <label class="fld"><span>支払期限</span><input v-model="form.due_date" type="date" class="inp" /></label>
-            <label class="fld"><span>振込日</span><input v-model="form.transfer_date" type="date" class="inp" /></label>
             <label class="fld"><span>請求金額(請求書記載)</span><input v-model.number="form.total_amount" type="number" class="inp" /></label>
+            <label class="fld"><span>支払状況</span>
+              <select v-model="form.paid" class="inp">
+                <option :value="false">未払い</option>
+                <option :value="true">支払い済み</option>
+              </select>
+            </label>
+            <label class="fld" :class="{ 'fld-required': form.paid }">
+              <span>支払日{{ form.paid ? ' *' : '' }}</span>
+              <input v-model="form.transfer_date" type="date" class="inp" />
+            </label>
           </div>
           <!-- 新規業者の登録 -->
           <div v-if="form.subcontractor_id === '__new__'" class="new-vendor">
@@ -92,9 +119,15 @@
                 <tr v-for="(it, i) in form.items" :key="i">
                   <td><input v-model="it.item_date" type="date" class="inp-sm inp-date" /></td>
                   <td>
-                    <select v-model="it.site_id" class="inp-sm inp-site">
+                    <div v-if="it.site_id === '__new__'" class="new-site">
+                      <input v-model="it._newSiteName" class="inp-sm inp-site" placeholder="現場名" @keyup.enter="addSite(it)" />
+                      <button class="btn-new-site" :disabled="!it._newSiteName?.trim() || addingSite" @click="addSite(it)">追加</button>
+                      <button class="btn-new-site-cancel" @click="it.site_id = null">×</button>
+                    </div>
+                    <select v-else v-model="it.site_id" class="inp-sm inp-site">
                       <option :value="null">—</option>
                       <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.name }}</option>
+                      <option value="__new__">＋ 新規現場…</option>
                     </select>
                   </td>
                   <td><input v-model="it.description" class="inp-sm wide" /></td>
@@ -128,6 +161,17 @@
         </div>
       </div>
     </div>
+
+    <!-- 確認ダイアログ（ネイティブconfirmの英語ボタン回避・日本語ボタン） -->
+    <div v-if="confirmState" class="modal-overlay confirm-overlay" @click.self="confirmState = null">
+      <div class="confirm-box">
+        <p class="confirm-msg">{{ confirmState.message }}</p>
+        <div class="confirm-actions">
+          <button class="btn-cancel" @click="confirmState = null">キャンセル</button>
+          <button class="btn-confirm-ok" :class="{ danger: confirmState.danger }" @click="runConfirm">{{ confirmState.okLabel }}</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -143,13 +187,16 @@ interface Item {
   id?: string; item_date: string | null; site_id: string | null; site_name?: string | null
   description: string | null; quantity: number | null; unit: string | null
   unit_price: number | null; amount: number | null; tax_rate: number; note: string | null
+  _newSiteName?: string
 }
 interface Form {
   id?: string; vendor_name: string; subcontractor_id: string | null; registration_number: string | null
   title: string | null; invoice_no: string | null; invoice_date: string | null; due_date: string | null
-  transfer_date: string | null; total_amount: number | null; pdf_path: string | null; note: string | null; items: Item[]
+  transfer_date: string | null; paid: boolean; total_amount: number | null; pdf_path: string | null; note: string | null; items: Item[]
 }
 
+const todayStr = new Date().toISOString().slice(0, 10)
+const tab      = ref<'unpaid' | 'paid'>('unpaid')
 const loading  = ref(false)
 const invoices = ref<any[]>([])
 const sites    = ref<{ id: string; name: string }[]>([])
@@ -168,6 +215,18 @@ function recalc(it: Item) { it.amount = Math.round((Number(it.quantity) || 0) * 
 const subtotal = computed(() => (form.value?.items ?? []).reduce((s, it) => s + (Number(it.amount) || 0), 0))
 const taxTotal = computed(() => Math.round((form.value?.items ?? []).reduce((s, it) => s + (Number(it.amount) || 0) * (Number(it.tax_rate) || 0) / 100, 0)))
 
+const unpaidList  = computed(() => invoices.value.filter(v => !v.paid))
+const paidList    = computed(() => invoices.value.filter(v => v.paid))
+const visibleList = computed(() => (tab.value === 'paid' ? paidList.value : unpaidList.value))
+const overdueCount = computed(() => unpaidList.value.filter(v => v._overdue).length)
+
+// 日本語ボタンの確認ダイアログ（native confirm の英語Cancel回避）
+const confirmState = ref<{ message: string; okLabel: string; danger?: boolean; onOk: () => void } | null>(null)
+function askConfirm(message: string, okLabel: string, onOk: () => void, danger = false) {
+  confirmState.value = { message, okLabel, danger, onOk }
+}
+function runConfirm() { const s = confirmState.value; confirmState.value = null; s?.onOk() }
+
 async function load() {
   loading.value = true
   const accountId = await getAccountId()
@@ -182,7 +241,7 @@ async function load() {
     const items = v.subcontractor_invoice_items ?? []
     const sub = items.reduce((s: number, it: any) => s + (Number(it.amount) || 0), 0)
     const tax = Math.round(items.reduce((s: number, it: any) => s + (Number(it.amount) || 0) * (Number(it.tax_rate) || 0) / 100, 0))
-    return { ...v, item_count: items.length, grand_total: sub + tax }
+    return { ...v, item_count: items.length, grand_total: sub + tax, _overdue: !v.paid && !!v.due_date && v.due_date < todayStr }
   })
   sites.value = si ?? []
   subs.value  = su ?? []
@@ -191,7 +250,7 @@ async function load() {
 
 function blankForm(): Form {
   const today = new Date().toISOString().slice(0, 10)
-  return { vendor_name: '', subcontractor_id: null, registration_number: null, title: null, invoice_no: null, invoice_date: today, due_date: null, transfer_date: null, total_amount: null, pdf_path: null, note: null, items: [] }
+  return { vendor_name: '', subcontractor_id: null, registration_number: null, title: null, invoice_no: null, invoice_date: today, due_date: null, transfer_date: null, paid: false, total_amount: null, pdf_path: null, note: null, items: [] }
 }
 function openNew() { form.value = blankForm(); file.value = null; aiMsg.value = ''; formError.value = '' }
 
@@ -203,7 +262,7 @@ function isDirty(): boolean {
 }
 function closeForm() {
   if (saving.value) return
-  if (isDirty() && !confirm('入力中の内容が破棄されます。閉じてもよろしいですか？')) return
+  if (isDirty()) { askConfirm('入力中の内容が破棄されます。閉じてもよろしいですか？', '閉じる', () => { form.value = null }, true); return }
   form.value = null
 }
 
@@ -214,7 +273,7 @@ async function openEdit(inv: any) {
   form.value = {
     id: inv.id, vendor_name: inv.vendor_name, subcontractor_id: inv.subcontractor_id,
     registration_number: inv.registration_number, title: inv.title, invoice_no: inv.invoice_no,
-    invoice_date: inv.invoice_date, due_date: inv.due_date, transfer_date: inv.transfer_date,
+    invoice_date: inv.invoice_date, due_date: inv.due_date, transfer_date: inv.transfer_date, paid: !!inv.paid,
     total_amount: inv.total_amount, pdf_path: inv.pdf_path, note: inv.note,
     items: (items ?? []).map((it: any) => ({ ...it })),
   }
@@ -253,6 +312,32 @@ async function addVendor() {
     formError.value = '業者の登録に失敗しました: ' + (e?.message ?? '')
   } finally {
     addingVendor.value = false
+  }
+}
+
+// 現場をマスタに登録してその行に選択（業者の新規登録と同様）
+const addingSite = ref(false)
+async function addSite(it: Item) {
+  const name = it._newSiteName?.trim(); if (!name) return
+  addingSite.value = true
+  try {
+    const accountId = await getAccountId()
+    // 同名の現場が既にあれば再利用
+    const existing = sites.value.find(s => s.name === name)
+    if (existing) { it.site_id = existing.id; it._newSiteName = ''; return }
+    const { data, error } = await supabase.from('sites')
+      .insert({ name, account_id: accountId, active: true })
+      .select('id, name').single()
+    if (error) throw error
+    sites.value.push(data as any)
+    sites.value.sort((a, b) => a.name.localeCompare(b.name, 'ja'))
+    it.site_id = data.id
+    it._newSiteName = ''
+  } catch (e: any) {
+    formError.value = '現場の登録に失敗しました: ' + (e?.message ?? '')
+    it.site_id = null
+  } finally {
+    addingSite.value = false
   }
 }
 
@@ -315,8 +400,10 @@ async function save() {
   const sub = subs.value.find(s => s.id === f.subcontractor_id)
   if (!sub) { formError.value = '下請け業者を選択してください（新規は「業者を登録」で追加）'; return }
   if (f.items.length === 0) { formError.value = '明細を1行以上入力してください'; return }
-  // 現場は必須
-  if (f.items.some(it => !it.site_id)) { formError.value = 'すべての明細で現場を選択してください'; return }
+  // 現場は必須（未確定の新規入力中も不可）
+  if (f.items.some(it => !it.site_id || it.site_id === '__new__')) { formError.value = 'すべての明細で現場を選択してください（新規は「追加」で確定）'; return }
+  // 支払い済みにする場合は支払日が必須
+  if (f.paid && !f.transfer_date) { formError.value = '支払い済みにする場合は支払日を入力してください'; return }
   saving.value = true; formError.value = ''
   try {
     const accountId = await getAccountId()
@@ -324,7 +411,7 @@ async function save() {
       account_id: accountId, subcontractor_id: sub.id, vendor_name: sub.name,
       registration_number: f.registration_number || null,
       title: f.title || null, invoice_no: f.invoice_no || null, invoice_date: f.invoice_date || null,
-      due_date: f.due_date || null, transfer_date: f.transfer_date || null,
+      due_date: f.due_date || null, transfer_date: f.transfer_date || null, paid: !!f.paid,
       total_amount: f.total_amount ?? null, pdf_path: f.pdf_path ?? null, note: f.note || null,
       updated_at: new Date().toISOString(),
     }
@@ -365,9 +452,12 @@ async function save() {
   }
 }
 
-async function removeInvoice() {
+function removeInvoice() {
   if (!form.value?.id) return
-  if (!confirm('この請求を削除しますか？')) return
+  askConfirm('この請求を削除しますか？', '削除する', doRemoveInvoice, true)
+}
+async function doRemoveInvoice() {
+  if (!form.value?.id) return
   saving.value = true
   try {
     await supabase.from('subcontractor_invoices').delete().eq('id', form.value.id)  // items はcascade
@@ -386,6 +476,20 @@ onMounted(load)
 .page-title { font-size: 22px; font-weight: 700; }
 .btn-add { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 14px; font-weight: 700; cursor: pointer; }
 .empty { color: #888; padding: 60px; text-align: center; }
+
+.tabs { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.tab { background: #f0f0f0; border: 1px solid #e2e2e2; border-radius: 999px; padding: 6px 16px; font-size: 13px; font-weight: 600; color: #666; cursor: pointer; }
+.tab.active { background: #06C755; border-color: #06C755; color: #fff; }
+.tab-count { font-size: 12px; opacity: .85; margin-left: 2px; }
+.overdue-note { margin-left: auto; font-size: 12px; font-weight: 700; color: #c0392b; }
+
+.badge { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
+.badge.paid { background: #e6f7ec; color: #0a8a3f; }
+.badge.due { background: #f3f4f6; color: #555; }
+.badge.none { background: #f3f4f6; color: #888; }
+.badge.overdue-badge { background: #fdecea; color: #c0392b; }
+.data-row.overdue { background: #fff6f5; }
+.data-row.overdue:hover { background: #ffeceb; }
 .table-wrap { background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08); overflow-x: auto; }
 .table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .table th, .table td { padding: 10px 14px; border-bottom: 1px solid #eee; text-align: left; }
@@ -420,6 +524,12 @@ onMounted(load)
 .btn-new-vendor { background: #1a56c4; color: #fff; border: none; border-radius: 8px; padding: 6px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-new-vendor:disabled { opacity: .5; cursor: default; }
 .new-vendor-hint { font-size: 12px; color: #5a6b8a; }
+.fld-required span { color: #c0392b; font-weight: 700; }
+
+.new-site { display: flex; align-items: center; gap: 4px; }
+.btn-new-site { background: #1a56c4; color: #fff; border: none; border-radius: 6px; padding: 5px 8px; font-size: 11px; font-weight: 600; cursor: pointer; }
+.btn-new-site:disabled { opacity: .5; cursor: default; }
+.btn-new-site-cancel { background: none; border: none; color: #999; font-size: 14px; cursor: pointer; padding: 0 2px; }
 
 .items-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 13px; font-weight: 700; color: #555; }
 .btn-row-add { background: #f0f0f0; border: none; border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; }
@@ -439,4 +549,11 @@ onMounted(load)
 .btn-cancel { background: #f0f0f0; border: none; border-radius: 8px; padding: 8px 18px; cursor: pointer; }
 .btn-save { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 8px 20px; font-weight: 700; cursor: pointer; }
 .btn-save:disabled { opacity: .6; cursor: default; }
+
+.confirm-overlay { z-index: 200; }
+.confirm-box { background: #fff; border-radius: 12px; padding: 22px 22px 16px; max-width: 380px; width: 100%; box-shadow: 0 8px 30px rgba(0,0,0,.2); }
+.confirm-msg { font-size: 14px; line-height: 1.6; color: #222; white-space: pre-line; margin-bottom: 18px; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.btn-confirm-ok { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 8px 20px; font-weight: 700; cursor: pointer; }
+.btn-confirm-ok.danger { background: #c0392b; }
 </style>
