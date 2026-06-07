@@ -33,16 +33,18 @@
             <td class="num">{{ inv.item_count }}</td>
             <td class="num">{{ yen(inv.grand_total) }}</td>
             <td class="status-cell" @click.stop>
-              <template v-if="inv.paid">
-                <span class="badge paid">支払済{{ inv.transfer_date ? `（${inv.transfer_date}）` : '' }}</span>
-                <button class="btn-status-link" @click="markUnpaid(inv)">未払いに戻す</button>
-              </template>
-              <template v-else>
-                <span v-if="inv._overdue" class="badge overdue-badge">期限超過{{ inv.due_date ? `（${inv.due_date}）` : '' }}</span>
-                <span v-else-if="inv.due_date" class="badge due">期限 {{ inv.due_date }}</span>
-                <span v-else class="badge none">未払い</span>
-                <button class="btn-status-pay" @click="openPay(inv)">支払い完了</button>
-              </template>
+              <div class="status-wrap">
+                <template v-if="inv.paid">
+                  <span class="badge paid">支払済{{ inv.transfer_date ? `（${inv.transfer_date}）` : '' }}</span>
+                  <button class="btn-status-link" @click="markUnpaid(inv)">未払いに戻す</button>
+                </template>
+                <template v-else>
+                  <span v-if="inv._overdue" class="badge overdue-badge">期限超過{{ inv.due_date ? `（${inv.due_date}）` : '' }}</span>
+                  <span v-else-if="inv.due_date" class="badge due">期限 {{ inv.due_date }}</span>
+                  <span v-else class="badge none">未払い</span>
+                  <button class="btn-status-pay" @click="openPay(inv)">支払い済みにする</button>
+                </template>
+              </div>
             </td>
             <td class="chevron">›</td>
           </tr>
@@ -560,8 +562,11 @@ onMounted(load)
 .data-row.overdue { background: #fff6f5; }
 .data-row.overdue:hover { background: #ffeceb; }
 .status-cell { white-space: nowrap; cursor: default; }
-.btn-status-pay { margin-left: 8px; background: #06C755; color: #fff; border: none; border-radius: 6px; padding: 3px 10px; font-size: 11px; font-weight: 700; cursor: pointer; }
-.btn-status-link { margin-left: 8px; background: none; border: none; color: #999; font-size: 11px; text-decoration: underline; cursor: pointer; }
+.status-wrap { display: flex; align-items: center; gap: 10px; }
+.status-wrap .badge { display: inline-flex; align-items: center; min-width: 60px; height: 24px; box-sizing: border-box; }
+.btn-status-pay { background: #fff; color: #06951f; border: 1px solid #9bd9ad; border-radius: 6px; height: 26px; padding: 0 12px; font-size: 12px; font-weight: 700; cursor: pointer; line-height: 1; }
+.btn-status-pay:hover { background: #f1faf3; border-color: #06C755; }
+.btn-status-link { background: none; border: none; color: #aaa; font-size: 11px; text-decoration: underline; cursor: pointer; padding: 0; }
 .pay-date { width: 100%; margin-bottom: 16px; }
 .table-wrap { background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08); overflow-x: auto; }
 .table { width: 100%; border-collapse: collapse; font-size: 14px; }
