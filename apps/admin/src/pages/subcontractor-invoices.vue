@@ -27,11 +27,11 @@
     </div>
 
     <!-- 入力モーダル -->
-    <div v-if="form" class="modal-overlay" @click.self="form = null">
+    <div v-if="form" class="modal-overlay" @click.self="closeForm">
       <div class="modal">
         <div class="modal-head">
           <h2>{{ form.id ? '請求を編集' : '請求を登録' }}</h2>
-          <button class="modal-close" @click="form = null">×</button>
+          <button class="modal-close" @click="closeForm">×</button>
         </div>
         <div class="modal-body">
           <!-- PDF→AI解析 -->
@@ -49,12 +49,17 @@
               <input v-model="form.vendor_name" list="sub-list" class="inp" placeholder="業者名" />
               <datalist id="sub-list"><option v-for="s in subs" :key="s.id" :value="s.name" /></datalist>
             </label>
+            <label class="fld"><span>登録番号</span><input v-model="form.registration_number" class="inp" placeholder="T1234567890123" /></label>
             <label class="fld"><span>件名</span><input v-model="form.title" class="inp" /></label>
             <label class="fld"><span>請求番号</span><input v-model="form.invoice_no" class="inp" /></label>
             <label class="fld"><span>請求日</span><input v-model="form.invoice_date" type="date" class="inp" /></label>
             <label class="fld"><span>支払期限</span><input v-model="form.due_date" type="date" class="inp" /></label>
+            <label class="fld"><span>振込日</span><input v-model="form.transfer_date" type="date" class="inp" /></label>
             <label class="fld"><span>請求金額(請求書記載)</span><input v-model.number="form.total_amount" type="number" class="inp" /></label>
           </div>
+          <label class="fld note-fld"><span>メモ</span>
+            <textarea v-model="form.note" class="inp note-area" rows="2" placeholder="この請求に関するメモ"></textarea>
+          </label>
 
           <!-- 明細 -->
           <div class="items-head">
@@ -103,7 +108,7 @@
           <div class="modal-actions">
             <button v-if="form.id" class="btn-del" :disabled="saving" @click="removeInvoice">削除</button>
             <span style="flex:1"></span>
-            <button class="btn-cancel" @click="form = null">キャンセル</button>
+            <button class="btn-cancel" @click="closeForm">キャンセル</button>
             <button class="btn-save" :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存' }}</button>
           </div>
         </div>
@@ -126,9 +131,9 @@ interface Item {
   unit_price: number | null; amount: number | null; tax_rate: number; note: string | null
 }
 interface Form {
-  id?: string; vendor_name: string; subcontractor_id: string | null; title: string | null
-  invoice_no: string | null; invoice_date: string | null; due_date: string | null
-  total_amount: number | null; pdf_path: string | null; items: Item[]
+  id?: string; vendor_name: string; subcontractor_id: string | null; registration_number: string | null
+  title: string | null; invoice_no: string | null; invoice_date: string | null; due_date: string | null
+  transfer_date: string | null; total_amount: number | null; pdf_path: string | null; note: string | null; items: Item[]
 }
 
 const loading  = ref(false)
@@ -172,9 +177,21 @@ async function load() {
 
 function blankForm(): Form {
   const today = new Date().toISOString().slice(0, 10)
-  return { vendor_name: '', subcontractor_id: null, title: null, invoice_no: null, invoice_date: today, due_date: null, total_amount: null, pdf_path: null, items: [] }
+  return { vendor_name: '', subcontractor_id: null, registration_number: null, title: null, invoice_no: null, invoice_date: today, due_date: null, transfer_date: null, total_amount: null, pdf_path: null, note: null, items: [] }
 }
 function openNew() { form.value = blankForm(); file.value = null; aiMsg.value = ''; formError.value = '' }
+
+// 誤って閉じてもデータが飛ばないよう、入力があれば確認
+function isDirty(): boolean {
+  const f = form.value
+  if (!f) return false
+  return !!(f.vendor_name?.trim() || f.title || f.invoice_no || f.registration_number || f.note || f.items.length || file.value)
+}
+function closeForm() {
+  if (saving.value) return
+  if (isDirty() && !confirm('入力中の内容が破棄されます。閉じてもよろしいですか？')) return
+  form.value = null
+}
 
 async function openEdit(inv: any) {
   formError.value = ''; aiMsg.value = ''; file.value = null
@@ -182,8 +199,9 @@ async function openEdit(inv: any) {
     .select('*').eq('invoice_id', inv.id).order('sort_order').order('item_date')
   form.value = {
     id: inv.id, vendor_name: inv.vendor_name, subcontractor_id: inv.subcontractor_id,
-    title: inv.title, invoice_no: inv.invoice_no, invoice_date: inv.invoice_date, due_date: inv.due_date,
-    total_amount: inv.total_amount, pdf_path: inv.pdf_path,
+    registration_number: inv.registration_number, title: inv.title, invoice_no: inv.invoice_no,
+    invoice_date: inv.invoice_date, due_date: inv.due_date, transfer_date: inv.transfer_date,
+    total_amount: inv.total_amount, pdf_path: inv.pdf_path, note: inv.note,
     items: (items ?? []).map((it: any) => ({ ...it })),
   }
 }
@@ -216,6 +234,7 @@ async function analyze() {
     // ヘッダ流し込み（既存値があっても上書き＝確認前提）
     const f = form.value
     if (r.vendor_name) f.vendor_name = r.vendor_name
+    f.registration_number = r.registration_number ?? f.registration_number
     f.title = r.title ?? f.title
     f.invoice_no = r.invoice_no ?? f.invoice_no
     if (r.invoice_date) f.invoice_date = r.invoice_date
@@ -242,15 +261,29 @@ async function analyze() {
 async function save() {
   const f = form.value!
   if (!f.vendor_name?.trim()) { formError.value = '業者名を入力してください'; return }
+  if (f.items.length === 0) { formError.value = '明細を1行以上入力してください'; return }
+  // 現場は必須
+  if (f.items.some(it => !it.site_id)) { formError.value = 'すべての明細で現場を選択してください'; return }
+  const vendorName = f.vendor_name.trim()
   saving.value = true; formError.value = ''
   try {
     const accountId = await getAccountId()
-    // 業者マスタ名寄せ
-    const sub = subs.value.find(s => s.name === f.vendor_name.trim())
+    // 業者マスタ名寄せ。未登録なら新規登録を確認
+    let sub = subs.value.find(s => s.name === vendorName)
+    if (!sub) {
+      if (confirm(`「${vendorName}」は下請け業者マスタに未登録です。新規登録しますか？`)) {
+        const { data: created } = await supabase.from('subcontractors')
+          .insert({ name: vendorName, account_id: accountId, active: true })
+          .select('id, name').single()
+        if (created) { sub = created as any; subs.value.push(created as any) }
+      }
+    }
     const header = {
-      account_id: accountId, subcontractor_id: sub?.id ?? null, vendor_name: f.vendor_name.trim(),
+      account_id: accountId, subcontractor_id: sub?.id ?? null, vendor_name: vendorName,
+      registration_number: f.registration_number || null,
       title: f.title || null, invoice_no: f.invoice_no || null, invoice_date: f.invoice_date || null,
-      due_date: f.due_date || null, total_amount: f.total_amount ?? null, pdf_path: f.pdf_path ?? null,
+      due_date: f.due_date || null, transfer_date: f.transfer_date || null,
+      total_amount: f.total_amount ?? null, pdf_path: f.pdf_path ?? null, note: f.note || null,
       updated_at: new Date().toISOString(),
     }
     let invoiceId = f.id
@@ -338,6 +371,8 @@ onMounted(load)
 .hd-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 14px; margin-bottom: 16px; }
 .fld { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: #666; }
 .inp { border: 1px solid #ddd; border-radius: 8px; padding: 8px 10px; font-size: 14px; }
+.note-fld { margin-bottom: 16px; }
+.note-area { resize: vertical; font-family: inherit; }
 
 .items-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 13px; font-weight: 700; color: #555; }
 .btn-row-add { background: #f0f0f0; border: none; border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; }

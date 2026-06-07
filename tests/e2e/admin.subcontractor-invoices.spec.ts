@@ -14,6 +14,8 @@ test.describe('下請け請求', () => {
   })
 
   test('AC1/2/4: ヘッダ＋明細を入力→金額自動→保存→一覧に出る', async ({ page }) => {
+    // 業者マスタ未登録の確認ダイアログは出たら閉じる（マスタは汚さない）
+    page.on('dialog', d => d.dismiss().catch(() => {}))
     await page.goto('/subcontractor-invoices', { waitUntil: 'networkidle' })
     await expect(page.locator('h1')).toContainText('下請け請求')
 

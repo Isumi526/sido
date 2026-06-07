@@ -26,7 +26,7 @@ function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', ...corsHeaders() } })
 }
 
-const EMPTY = { vendor_name: null, title: null, invoice_no: null, invoice_date: null, due_date: null, total_amount: null, items: [] as unknown[] }
+const EMPTY = { vendor_name: null, registration_number: null, title: null, invoice_no: null, invoice_date: null, due_date: null, total_amount: null, items: [] as unknown[] }
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders() })
@@ -45,6 +45,7 @@ Deno.serve(async (req) => {
 
 {
   "vendor_name": "請求元の業者名",
+  "registration_number": "インボイス登録番号（T+13桁。なければnull）",
   "title": "件名（なければnull）",
   "invoice_no": "請求番号（なければnull）",
   "invoice_date": "請求日",
@@ -102,6 +103,7 @@ Deno.serve(async (req) => {
 
     return json({
       vendor_name: r.vendor_name ?? null,
+      registration_number: r.registration_number ?? null,
       title: r.title ?? null,
       invoice_no: r.invoice_no ?? null,
       invoice_date: r.invoice_date ?? null,
