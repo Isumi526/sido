@@ -74,6 +74,13 @@ export function buildReportMessage(body: {
         if (vp.length)     expLines.push(vp.join(' '))
       }
     }
+    // 駐車場代・高速代（現場ごと・複数。旧形式 vehicles[].parkingYen は上で処理済み）
+    for (const p of (exp.parkings || [])) {
+      if (p?.yen) expLines.push(`駐車¥${Number(p.yen).toLocaleString()}`)
+    }
+    for (const h of (exp.highways || [])) {
+      if (h?.yen) expLines.push(`高速¥${Number(h.yen).toLocaleString()}${h.etcCard ? ` ETC${h.etcCard}` : ''}`)
+    }
     for (const t of (exp.trains || [])) {
       if (t?.yen) expLines.push(`${t.label || '電車'} ¥${Number(t.yen).toLocaleString()}`)
     }
@@ -93,7 +100,8 @@ export function buildReportMessage(body: {
 
     // 領収書フォルダ URL
     const urlKeys = ['vehicleUrls','trainUrls','hotelUrls','leopalaceUrls','otherUrls','entertainmentUrls','garbagePhotoUrls']
-    const hasFiles = urlKeys.some(k => exp[k]?.length > 0)
+    const hasItemFiles = [...(exp.parkings || []), ...(exp.highways || [])].some((it: any) => it?.fileUrls?.length > 0)
+    const hasFiles = urlKeys.some(k => exp[k]?.length > 0) || hasItemFiles
     if (hasFiles && liffUrl) {
       const day    = parseInt(date.split('-')[2], 10)
       const period = day <= 15 ? 'first' : 'second'

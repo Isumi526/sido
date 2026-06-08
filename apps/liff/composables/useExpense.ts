@@ -316,6 +316,21 @@ export const useExpense = () => {
   /**
    * 日報データをSupabaseに保存（user_id直接指定版）
    */
+  // 保存前に File[] を除去（JSONB に File をそのまま入れると [{}] のゴミになるため）。
+  //  *Files トップレベルキーと、明細ごとに files を持つ parkings/highways の files を落とす。*Urls は残す。
+  function sanitizeSitesForStorage(sites: any[]): any[] {
+    const FILE_KEYS = ['vehicleFiles','trainFiles','hotelFiles','leopalaceFiles','otherFiles','entertainmentFiles','garbagePhotos']
+    return (sites ?? []).map((site: any) => {
+      const exp = { ...(site?.expenses ?? {}) }
+      for (const k of FILE_KEYS) delete exp[k]
+      const stripItemFiles = (items: any[] | undefined) =>
+        Array.isArray(items) ? items.map(({ files, ...rest }: any) => rest) : items
+      if (exp.parkings) exp.parkings = stripItemFiles(exp.parkings)
+      if (exp.highways) exp.highways = stripItemFiles(exp.highways)
+      return { ...site, expenses: exp }
+    })
+  }
+
   async function saveReportById(
     userId: string,
     report: { date: string; isWorking: boolean; sites: unknown[]; note?: string; leaveType?: string | null }
@@ -328,7 +343,7 @@ export const useExpense = () => {
           user_id:    userId,
           date:       report.date,
           is_working: report.isWorking,
-          sites:      report.sites,
+          sites:      sanitizeSitesForStorage(report.sites as any[]),
           note:       report.note ?? null,
           leave_type: report.leaveType ?? null,
           account_id: accountId,
@@ -418,8 +433,16 @@ export const useExpense = () => {
         for (const veh of (exp.vehicles || [])) {
           if (veh.distanceKm) rows.push({ date: rep.date, category: 'ガソリン代', siteName, amount: Math.round(veh.distanceKm * gasolineRate), liters: veh.distanceKm, note: veh.vehicleName, fileUrls: takeVehicleUrls(), tategae: !!veh.gasTategae })
           if (veh.dieselKm)   rows.push({ date: rep.date, category: '軽油代',    siteName, amount: Math.round(veh.dieselKm   * dieselRate),   liters: veh.dieselKm,   note: veh.vehicleName, fileUrls: takeVehicleUrls(), tategae: !!veh.dieselTategae })
+          // 旧形式（後方互換）: 車両配下の単一 駐車場代/高速代
           if (veh.parkingYen) rows.push({ date: rep.date, category: '駐車代',    siteName, amount: veh.parkingYen, fileUrls: takeVehicleUrls(), tategae: !!veh.parkingTategae })
           if (veh.highwayYen) rows.push({ date: rep.date, category: '高速代',    siteName, amount: veh.highwayYen, note: veh.etcCard || '', fileUrls: takeVehicleUrls(), tategae: !!veh.highwayTategae })
+        }
+        // 新形式: 現場ごとの駐車場代・高速代（複数・明細ごとに個別領収書）
+        for (const pk of (exp.parkings || [])) {
+          if (pk.yen) rows.push({ date: rep.date, category: '駐車代', siteName, amount: pk.yen, fileUrls: pk.fileUrls, tategae: !!pk.tategae })
+        }
+        for (const hw of (exp.highways || [])) {
+          if (hw.yen) rows.push({ date: rep.date, category: '高速代', siteName, amount: hw.yen, note: hw.etcCard || '', fileUrls: hw.fileUrls, tategae: !!hw.tategae })
         }
         for (const tr of (exp.trains || [])) {
           if (tr.yen) rows.push({ date: rep.date, category: '電車代', siteName, amount: tr.yen, note: tr.label, fileUrls: takeTrainUrls(), tategae: !!tr.tategae })

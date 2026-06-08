@@ -240,6 +240,8 @@ function expenseLines(exp: any): string[] {
       if (p.length) out.push(p.join(' '))
     }
   }
+  for (const p of (exp.parkings || [])) if (p?.yen) out.push(`駐車¥${yen(p.yen)}`)
+  for (const h of (exp.highways || [])) if (h?.yen) out.push(`高速¥${yen(h.yen)}${h.etcCard ? ` ETC${h.etcCard}` : ''}`)
   for (const t of (exp.trains || [])) if (t?.yen) out.push(`${t.label || '電車'} ¥${yen(t.yen)}`)
   for (const o of (exp.others || [])) if (o?.yen) out.push(`${o.label || 'その他'} ¥${yen(o.yen)}`)
   if (exp.hotelYen)         out.push(`${exp.hotelName || 'ホテル'} ¥${yen(exp.hotelYen)}`)
