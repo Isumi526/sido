@@ -100,7 +100,7 @@ export function buildReportMessage(body: {
 
     // 領収書フォルダ URL
     const urlKeys = ['vehicleUrls','trainUrls','hotelUrls','leopalaceUrls','otherUrls','entertainmentUrls','garbagePhotoUrls']
-    const hasItemFiles = [...(exp.parkings || []), ...(exp.highways || [])].some((it: any) => it?.fileUrls?.length > 0)
+    const hasItemFiles = [...(exp.parkings || []), ...(exp.highways || []), ...(exp.trains || [])].some((it: any) => it?.fileUrls?.length > 0)
     const hasFiles = urlKeys.some(k => exp[k]?.length > 0) || hasItemFiles
     if (hasFiles && liffUrl) {
       const day    = parseInt(date.split('-')[2], 10)

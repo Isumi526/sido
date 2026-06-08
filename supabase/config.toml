@@ -407,3 +407,5 @@ verify_jwt = false
 verify_jwt = false
 [functions.test-analyze-invoice]
 verify_jwt = false
+[functions.analyze-receipt]
+verify_jwt = false
