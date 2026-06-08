@@ -274,7 +274,7 @@ async function load() {
     supabase.from('subcontractor_invoices')
       .select('*, subcontractor_invoice_items(amount, tax_rate)')
       .eq('account_id', accountId).order('invoice_date', { ascending: false }).order('created_at', { ascending: false }),
-    supabase.from('sites').select('id, name').eq('account_id', accountId).eq('active', true).order('name'),
+    supabase.from('sites').select('id, name').eq('account_id', accountId).eq('active', true).order('name_kana', { nullsFirst: false }).order('name'),
     supabase.from('subcontractors').select('id, name, category').eq('account_id', accountId).eq('active', true).order('name'),
   ])
   invoices.value = (inv ?? []).map((v: any) => {

@@ -8,11 +8,12 @@
     <div class="table-wrap">
       <table class="table">
         <thead>
-          <tr><th>現場名</th><th>状態</th><th></th></tr>
+          <tr><th>現場名</th><th>読み仮名</th><th>状態</th><th></th></tr>
         </thead>
         <tbody>
           <tr v-for="s in sites" :key="s.id" :class="{ inactive: !s.active }">
             <td class="name">{{ s.name }}</td>
+            <td class="kana">{{ s.name_kana || '—' }}</td>
             <td><span class="status" :class="s.active ? 'active' : 'off'">{{ s.active ? '有効' : '無効' }}</span></td>
             <td class="actions">
               <button class="btn-edit" @click="openEdit(s)">編集</button>
@@ -30,6 +31,10 @@
         <div class="field">
           <label>現場名</label>
           <input v-model="modal.name" class="input" placeholder="例：BLH名古屋" />
+        </div>
+        <div class="field">
+          <label>読み仮名（50音順の並びに使用）</label>
+          <input v-model="modal.name_kana" class="input" placeholder="例：びーえるえいちなごや" />
         </div>
         <div class="modal-actions">
           <button class="btn-save" :disabled="saving" @click="save">{{ saving ? '保存中...' : '保存' }}</button>
@@ -49,7 +54,7 @@ import { getAccountId } from '../lib/account'
 
 const router = useRouter()
 
-type Site = { id: string; name: string; active: boolean }
+type Site = { id: string; name: string; name_kana: string | null; active: boolean }
 
 const sites     = ref<Site[]>([])
 const modal     = ref<Partial<Site> | null>(null)
@@ -58,23 +63,28 @@ const saveError = ref('')
 
 async function load() {
   const accountId = await getAccountId()
-  const { data } = await supabase.from('sites').select('id, name, active').eq('account_id', accountId).order('name')
+  const { data } = await supabase.from('sites')
+    .select('id, name, name_kana, active')
+    .eq('account_id', accountId)
+    .order('name_kana', { nullsFirst: false })
+    .order('name')
   sites.value = (data ?? []) as Site[]
 }
 onMounted(load)
 
-function openAdd()        { modal.value = { name: '' }; saveError.value = '' }
+function openAdd()        { modal.value = { name: '', name_kana: '' }; saveError.value = '' }
 function openEdit(s: Site) { modal.value = { ...s };   saveError.value = '' }
 
 async function save() {
   if (!modal.value?.name?.trim()) { saveError.value = '現場名を入力してください'; return }
   saving.value = true; saveError.value = ''
   try {
+    const kana = modal.value.name_kana?.trim() || null
     if (modal.value.id) {
-      await supabase.from('sites').update({ name: modal.value.name.trim() }).eq('id', modal.value.id)
+      await supabase.from('sites').update({ name: modal.value.name.trim(), name_kana: kana }).eq('id', modal.value.id)
     } else {
       const accountId = await getAccountId()
-      await supabase.from('sites').insert({ name: modal.value.name!.trim(), account_id: accountId })
+      await supabase.from('sites').insert({ name: modal.value.name!.trim(), name_kana: kana, account_id: accountId })
     }
     modal.value = null; await load()
   } catch (e: any) {
@@ -98,6 +108,7 @@ async function toggleActive(s: Site) {
 .table td { padding: 14px 16px; border-top: 1px solid #f0f0f0; font-size: 14px; }
 .table tr.inactive td { opacity: .4; }
 .name { font-weight: 600; }
+.kana { color: #888; font-size: 13px; }
 .status { font-size: 11px; padding: 3px 8px; border-radius: 4px; }
 .status.active { background: #e8fff0; color: #0a8a3a; }
 .status.off { background: #f5f5f5; color: #aaa; }
