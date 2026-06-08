@@ -260,6 +260,9 @@
                       <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleParkingFile(si, pi, e)" />
                       <div v-if="pk.files?.length" class="photo-preview">
                         <span class="hours-label">{{ pk.files.length }}件選択済み</span>
+                        <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-parking-${pi}`" @click="analyzeReceipt(si, 'parking', pi)">
+                          {{ receipt.loading.value === `${si}-parking-${pi}` ? '解析中...' : '✨ AI解析' }}
+                        </button>
                       </div>
                       <div v-else-if="pk.fileUrls?.length" class="photo-preview">
                         <span class="hours-label">登録済み{{ pk.fileUrls.length }}件</span>
@@ -291,6 +294,9 @@
                       <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleHighwayFile(si, hi, e)" />
                       <div v-if="hw.files?.length" class="photo-preview">
                         <span class="hours-label">{{ hw.files.length }}件選択済み</span>
+                        <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-highway-${hi}`" @click="analyzeReceipt(si, 'highway', hi)">
+                          {{ receipt.loading.value === `${si}-highway-${hi}` ? '解析中...' : '✨ AI解析' }}
+                        </button>
                       </div>
                       <div v-else-if="hw.fileUrls?.length" class="photo-preview">
                         <span class="hours-label">登録済み{{ hw.fileUrls.length }}件</span>
@@ -309,19 +315,27 @@
                 <option value="あり">あり</option>
               </select>
               <template v-if="siteUsage[si].train === 'あり'">
-                <div v-for="(tr, ti) in site.expenses.trains" :key="ti" class="lineitems-row">
-                  <input v-model="tr.label" type="text" class="input" placeholder="例: 名古屋〜大阪" @keydown.enter.prevent />
-                  <ExpenseField v-model="tr.yen" v-model:tategae="tr.tategae" with-tategae label="金額" />
-                  <button v-if="site.expenses.trains.length > 1" type="button" class="btn-icon-sm" @click="report.removeTrain(si, ti)">✕</button>
-                </div>
-                <button type="button" class="btn-ghost-sm" @click="report.addTrain(si)">＋ 追加</button>
-                <div class="mt8">
-                  <label class="hours-label">領収書（JPEG/PDF）</label>
-                  <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'trainFiles', e)" />
-                  <div v-if="site.expenses.trainFiles?.length" class="photo-preview">
-                    <span class="hours-label">{{ site.expenses.trainFiles.length }}件選択済み</span>
+                <div v-for="(tr, ti) in site.expenses.trains" :key="ti" class="lineitem-card">
+                  <div class="lineitems-row">
+                    <input v-model="tr.label" type="text" class="input" placeholder="例: 名古屋〜大阪" @keydown.enter.prevent />
+                    <ExpenseField v-model="tr.yen" v-model:tategae="tr.tategae" with-tategae label="金額" />
+                    <button v-if="site.expenses.trains.length > 1" type="button" class="btn-icon-sm" @click="report.removeTrain(si, ti)">✕</button>
+                  </div>
+                  <div class="mt6">
+                    <label class="hours-label">領収書（JPEG/PDF）</label>
+                    <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleTrainFile(si, ti, e)" />
+                    <div v-if="tr.files?.length" class="photo-preview">
+                      <span class="hours-label">{{ tr.files.length }}件選択済み</span>
+                      <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-train-${ti}`" @click="analyzeReceipt(si, 'train', ti)">
+                        {{ receipt.loading.value === `${si}-train-${ti}` ? '解析中...' : '✨ AI解析' }}
+                      </button>
+                    </div>
+                    <div v-else-if="tr.fileUrls?.length" class="photo-preview">
+                      <span class="hours-label">登録済み{{ tr.fileUrls.length }}件</span>
+                    </div>
                   </div>
                 </div>
+                <button type="button" class="btn-ghost-sm" @click="report.addTrain(si)">＋ 追加</button>
               </template>
             </Field>
           </div>
@@ -738,7 +752,7 @@ async function loadEditData(date: string) {
         vehicles: [createVehicle()],
         parkings: [],
         highways: [],
-        trains:   [createLineItem()],
+        trains:   [createTrain()],
         others:   [createLineItem()],
         ...(site.expenses ?? {}),
       },
@@ -781,7 +795,7 @@ function setUsage(si: number, key: keyof UsageState, value: string) {
   if (value !== 'なし') return
   switch (key) {
     case 'train':
-      exp.trains = [createLineItem()]; exp.trainFiles = undefined
+      exp.trains = [createTrain()]; exp.trainFiles = undefined
       break
     case 'hotel':
       exp.hotelName = undefined; exp.hotelYen = undefined; exp.hotelRegistration = undefined; exp.hotelFiles = undefined
@@ -1297,17 +1311,31 @@ function handleHighwayFile(si: number, hi: number, event: Event) {
   const hw = report.form.value.sites[si].expenses.highways?.[hi]
   if (hw) hw.files = Array.from(input.files)
 }
+function handleTrainFile(si: number, ti: number, event: Event) {
+  const input = event.target as HTMLInputElement
+  if (!input.files?.length) return
+  const tr = report.form.value.sites[si].expenses.trains?.[ti]
+  if (tr) tr.files = Array.from(input.files)
+}
 
 /** 領収書 AI 解析 → フォームに自動入力 */
 async function analyzeReceipt(
   si: number,
-  field: 'hotelFiles' | 'leopalaceFiles' | 'otherFiles' | 'entertainmentFiles',
+  field: 'hotelFiles' | 'leopalaceFiles' | 'otherFiles' | 'entertainmentFiles' | 'parking' | 'highway' | 'train',
   otherIndex?: number,
 ) {
-  const files = report.form.value.sites[si].expenses[field] as File[] | undefined
-  if (!files?.length) return
-  const file   = files[0]
-  const key    = `${si}-${field}`
+  const exp = report.form.value.sites[si].expenses
+  // 明細ごと領収書（駐車/高速/電車）は item.files[0] を解析
+  let file: File | undefined
+  let key: string
+  if (field === 'parking') { file = exp.parkings?.[otherIndex!]?.files?.[0]; key = `${si}-parking-${otherIndex}` }
+  else if (field === 'highway') { file = exp.highways?.[otherIndex!]?.files?.[0]; key = `${si}-highway-${otherIndex}` }
+  else if (field === 'train') { file = exp.trains?.[otherIndex!]?.files?.[0]; key = `${si}-train-${otherIndex}` }
+  else {
+    file = (report.form.value.sites[si].expenses[field] as File[] | undefined)?.[0]
+    key = `${si}-${field}`
+  }
+  if (!file) return
   const result = await receipt.analyze(file, key)
   if (!result) {
     showReceiptToast('error', receipt.error.value ?? '解析に失敗しました')
@@ -1315,8 +1343,26 @@ async function analyzeReceipt(
   }
   showReceiptToast('success', '解析成功！目視でも必ず確認してください')
 
-  const exp = report.form.value.sites[si].expenses
   const inv = result.invoiceNumber || 'なし'
+  // 明細ごと（駐車=金額／高速=金額／電車=区間＋金額）
+  if (field === 'parking') {
+    const item = exp.parkings?.[otherIndex!]
+    if (item && result.yen) item.yen = result.yen
+    return
+  }
+  if (field === 'highway') {
+    const item = exp.highways?.[otherIndex!]
+    if (item && result.yen) item.yen = result.yen
+    return
+  }
+  if (field === 'train') {
+    const item = exp.trains?.[otherIndex!]
+    if (item) {
+      if (result.label) item.label = result.label
+      if (result.yen)   item.yen   = result.yen
+    }
+    return
+  }
   if (field === 'hotelFiles') {
     if (result.label) exp.hotelName          = result.label
     if (result.yen)   exp.hotelYen           = result.yen

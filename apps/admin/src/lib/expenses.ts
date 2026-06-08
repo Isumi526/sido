@@ -105,7 +105,8 @@ export function flattenReportExpenses(date: string, sites: any[], rates: Expense
       if (hw.yen) rows.push({ date, category: '高速代', siteName, amount: hw.yen, note: hw.etcCard || '', fileUrls: hw.fileUrls, tategae: !!hw.tategae })
     }
     for (const tr of (exp.trains || [])) {
-      if (tr.yen) rows.push({ date, category: '電車代', siteName, amount: tr.yen, note: tr.label, fileUrls: takeTrainUrls(), tategae: !!tr.tategae })
+      // 新=明細ごと領収書(tr.fileUrls) / 旧=共通(trainUrls を先頭行に take-once)
+      if (tr.yen) rows.push({ date, category: '電車代', siteName, amount: tr.yen, note: tr.label, fileUrls: tr.fileUrls?.length ? tr.fileUrls : takeTrainUrls(), tategae: !!tr.tategae })
     }
     if (exp.hotelYen)     rows.push({ date, category: '宿泊費', siteName, amount: exp.hotelYen,     note: exp.hotelName,     registrationNumber: exp.hotelRegistration,     fileUrls: exp.hotelUrls?.length     ? exp.hotelUrls     : undefined, tategae: !!exp.hotelTategae })
     if (exp.leopalaceYen) rows.push({ date, category: '宿泊費', siteName, amount: exp.leopalaceYen, note: exp.leopalaceName, registrationNumber: exp.leopalaceRegistration, fileUrls: exp.leopalaceUrls?.length ? exp.leopalaceUrls : undefined, tategae: !!exp.leopalaceTategae })

@@ -47,12 +47,13 @@ export const createVehicle = (): VehicleExpense => ({
 export const createLineItem = (): LineItem => ({ label: '', yen: undefined, tategae: false })
 export const createParking = (): ExpenseFileLineItem => ({ yen: undefined, tategae: false, files: [] })
 export const createHighway = (): HighwayLineItem => ({ yen: undefined, tategae: false, etcCard: '', files: [] })
+export const createTrain = (): ExpenseFileLineItem => ({ label: '', yen: undefined, tategae: false, files: [] })
 
 export const createSite = (): SiteReport => ({
   siteName:       '',
   contractorName: '',
   workers:        [createWorker()],
-  expenses:       { vehicles: [createVehicle()], parkings: [], highways: [], trains: [createLineItem()], others: [createLineItem()] },
+  expenses:       { vehicles: [createVehicle()], parkings: [], highways: [], trains: [createTrain()], others: [createLineItem()] },
   subcontractors: [],
   siteNote:       '',
 })
@@ -65,6 +66,7 @@ function stripFiles(expenses: Record<string, unknown> | object): Record<string, 
     (items ?? []).map(({ files, ...item }: any) => item)
   if (Array.isArray(rest.parkings)) rest.parkings = stripItemFiles(rest.parkings)
   if (Array.isArray(rest.highways)) rest.highways = stripItemFiles(rest.highways)
+  if (Array.isArray(rest.trains))   rest.trains   = stripItemFiles(rest.trains)
   return rest
 }
 
@@ -84,7 +86,7 @@ function stripEmpty(obj: unknown): unknown {
 // ファイルカテゴリ定義（*Files → *Urls のマッピング）
 const FILE_CATEGORIES = [
   { filesKey: 'vehicleFiles',       urlsKey: 'vehicleUrls',       category: 'vehicle'       },
-  { filesKey: 'trainFiles',         urlsKey: 'trainUrls',         category: 'train'         },
+  // 電車は明細ごと領収書（trains[].files）へ移行。共通 trainFiles は廃止（旧 trainUrls は集計で後方互換読み取り）
   { filesKey: 'hotelFiles',         urlsKey: 'hotelUrls',         category: 'hotel'         },
   { filesKey: 'leopalaceFiles',     urlsKey: 'leopalaceUrls',     category: 'leopalace'     },
   { filesKey: 'otherFiles',         urlsKey: 'otherUrls',         category: 'other'         },
@@ -126,7 +128,7 @@ export const useReport = () => {
   function removeParking(si: number, pi: number)     { form.value.sites[si].expenses.parkings?.splice(pi, 1) }
   function addHighway(si: number)                    { (form.value.sites[si].expenses.highways ??= []).push(createHighway()) }
   function removeHighway(si: number, hi: number)     { form.value.sites[si].expenses.highways?.splice(hi, 1) }
-  function addTrain(si: number)                      { form.value.sites[si].expenses.trains.push(createLineItem()) }
+  function addTrain(si: number)                      { form.value.sites[si].expenses.trains.push(createTrain()) }
   function removeTrain(si: number, ti: number)       { form.value.sites[si].expenses.trains.splice(ti, 1) }
   function addOther(si: number)                      { form.value.sites[si].expenses.others.push(createLineItem()) }
   function removeOther(si: number, oi: number)       { form.value.sites[si].expenses.others.splice(oi, 1) }
@@ -189,6 +191,7 @@ export const useReport = () => {
       const perItemGroups: Array<{ items: ExpenseFileLineItem[] | undefined; prefix: string }> = [
         { items: site.expenses.parkings, prefix: 'parking' },
         { items: site.expenses.highways, prefix: 'highway' },
+        { items: site.expenses.trains,   prefix: 'train'   },
       ]
       for (const { items, prefix } of perItemGroups) {
         for (let i = 0; i < (items?.length ?? 0); i++) {

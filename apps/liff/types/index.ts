@@ -89,9 +89,9 @@ export interface Expenses {
   garbageSiteM3?: number
   garbagePhotos?: File[]          // ゴミ写真
   garbagePhotoUrls?: string[]     // ゴミ写真 URL
-  trains: LineItem[]
-  trainFiles?: File[]           // 電車領収書
-  trainUrls?: string[]          // 電車領収書 URL
+  trains: ExpenseFileLineItem[]  // 明細ごと領収書（区間=label・金額=yen・per-item files/fileUrls）
+  trainFiles?: File[]           // 旧・共通電車領収書（後方互換のため型は残す・新規未使用）
+  trainUrls?: string[]          // 旧・共通電車領収書 URL（後方互換で集計が読む）
   others: LineItem[]
   otherFiles?: File[]           // その他領収書
   otherUrls?: string[]          // その他領収書 URL
