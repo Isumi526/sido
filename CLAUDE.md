@@ -91,6 +91,13 @@ git push origin main --force
 - (A) 意図が要る：業務ルール/要件が曖昧で人にしか決められない分岐 → 「要回答」（質問＋案）で記録
 - (B) 本番反映 → /ship の承認
 
+**人ボールを記録したら LINE 通知を送る**：上記 (A)/(B) もしくは「要対応」を Notion に記録したら、続けて次を実行して本人に LINE 通知する。
+```bash
+node scripts/notify-humanball.mjs --kind <要回答|要対応|ship承認> --task "<タスク名>" --detail "<質問+案や理由>" [--url "<Remote Controlのセッションurl>"]
+```
+- この通知は **「本人への個人通知」** であり、hard-stop の「外部一斉送信」には当たらない（許可）。
+- 通知は best-effort。失敗しても無視して処理を続ける（自走を止めない）。URL未設定（webhook無効）なら何もせず終了する。
+
 ### 絶対に自走NG（hard stop）
 - 本番デプロイ / mainマージ / 本番migration適用 / db push
 - データ削除・スキーマ破壊 / 認証・権限・課金・外部一斉送信の変更

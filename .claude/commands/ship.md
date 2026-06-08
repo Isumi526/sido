@@ -50,6 +50,8 @@ CC は PR作成と、承認後の migration適用 / functions deploy / スモー
    - ※ /ship は main へのマージ操作はしない。Mergeは人がGitHub上でクリックする。
 
 5. ★本番承認ゲート（人ボール）:
+   - PRの Merge クリック待ちで停止する時、本人に LINE 通知を送る（best-effort・失敗は無視）:
+     `node scripts/notify-humanball.mjs --kind ship承認 --task "<PRタイトル>" --detail "<PR URL>"`
    - 人が「preview で確認OK。Merge してええ」等と返したら、初めて本番反映へ進む。
    - Merge は人が GitHub 上でクリックする（CCはクリックしない）。
 
