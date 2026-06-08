@@ -82,6 +82,7 @@
               <button class="btn-pay" @click="openPay(selected)">支払い済みにする</button>
             </template>
             <button v-else-if="selected.status === '支払い済み'" class="btn-status-link" @click="undoPaid(selected)">申請中に戻す</button>
+            <button v-else-if="selected.status === '期限超過'" class="btn-rescue" @click="rescueOverdue(selected)">未申請に戻す（救済）</button>
           </div>
           <p class="settle-hint">※ 会社が作業員へ振り込むのは「立替（個人建て替え）」分のみです。経費合計は参考値です。</p>
 
@@ -159,6 +160,17 @@
           <button class="btn-confirm-ok" :disabled="!payMethod || !payDate || paying" @click="doPay">
             {{ paying ? '処理中…' : '支払い済みにする' }}
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 救済（未申請に戻す）確認 -->
+    <div v-if="rescueTarget" class="modal-overlay confirm-overlay" @click.self="rescueTarget = null">
+      <div class="confirm-box">
+        <p class="confirm-msg">「{{ rescueTarget.workerName }}（{{ rescueTarget.shortLabel }}）」を未申請に戻し、作業員が再申請できるようにします。<br>よろしいですか？</p>
+        <div class="confirm-actions">
+          <button class="btn-cancel" @click="rescueTarget = null">キャンセル</button>
+          <button class="btn-confirm-ok" :disabled="rescuing" @click="doRescue">{{ rescuing ? '処理中…' : '未申請に戻す' }}</button>
         </div>
       </div>
     </div>
@@ -424,6 +436,38 @@ async function doUndoPaid() {
   }
 }
 
+// ---------- 救済（期限超過 → 未申請） ----------
+// 期限超過は行なしで導出されるため UPDATE ではなく upsert（行を新規作成）。
+// status='未申請' を保存することで締切超過でも未申請として扱われ、作業員が再申請できる。
+const rescueTarget = ref<PeriodRow | null>(null)
+const rescuing     = ref(false)
+
+function rescueOverdue(row: PeriodRow) { rescueTarget.value = row }
+
+async function doRescue() {
+  if (!rescueTarget.value) return
+  rescuing.value = true
+  try {
+    const accountId = await getAccountId()
+    const t = rescueTarget.value
+    const now = new Date().toISOString()
+    const { error } = await supabase
+      .from('expense_settlements')
+      .upsert({
+        account_id: accountId, user_id: t.userId, period_key: t.periodKey,
+        status: '未申請', applied_at: null, pdf_path: null,
+        reject_reason: null, rejected_at: null, payment_method: null, paid_on: null,
+        notified_at: null, updated_at: now,
+      }, { onConflict: 'account_id,user_id,period_key' })
+    if (error) throw error
+    rescueTarget.value = null
+    selected.value = null
+    await load()
+  } finally {
+    rescuing.value = false
+  }
+}
+
 onMounted(load)
 watch(dateFrom, load)
 </script>
@@ -477,6 +521,8 @@ watch(dateFrom, load)
 .btn-reject:hover { background: #fdeaea; }
 .btn-pay { background: #fff; color: #06951f; border: 1px solid #9bd9ad; border-radius: 8px; padding: 6px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-pay:hover { background: #f1faf3; border-color: #06C755; }
+.btn-rescue { margin-left: auto; background: #fff; color: #b26a00; border: 1px solid #f0cd8a; border-radius: 8px; padding: 6px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn-rescue:hover { background: #fff7e6; }
 .btn-status-link { margin-left: auto; background: none; border: none; color: #aaa; font-size: 12px; text-decoration: underline; cursor: pointer; padding: 0; }
 .settle-paid-info { font-size: 12px; color: #1a56c4; }
 

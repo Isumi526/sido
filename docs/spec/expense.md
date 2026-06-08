@@ -51,7 +51,7 @@ deadline(periodKey): Date(JST)
 
 | ステータス | 保存/導出 | 条件 |
 |---|---|---|
-| 未申請 | 導出 | `expense_settlements` 行なし & 現在 ≤ 締切 |
+| 未申請 | 導出（救済時のみ保存） | `expense_settlements` 行なし & 現在 ≤ 締切。例外：救済処置（D）で `status='未申請'` 行を作る（期限超過→未申請に戻し再申請可能化）。行があれば `row.status='未申請'` を返す |
 | 期限超過 | 導出 | 行なし & 現在 > 締切 |
 | 申請中 | 保存 | `status='申請中'` |
 | 差し戻し | 保存 | `status='差し戻し'`（`reject_reason` あり） |
