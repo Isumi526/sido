@@ -101,8 +101,9 @@ node scripts/notify-humanball.mjs --kind <要回答|要対応|ship承認> --task
 - **1回の停止で複数の承認をまとめて聞く場合は、通知も1回にまとめる**（連投しない）。
 
 ### 絶対に自走NG（hard stop）
-- 本番デプロイ / mainマージ / 本番migration適用 / db push
+- 本番デプロイ / mainマージ / db push
 - データ削除・スキーマ破壊 / 認証・権限・課金・外部一斉送信の変更
+- **本番migration適用は条件付きでCC実行可**（hard-stopから緩和）：人の明示承認（「実行して」等）＋**追加のみDDL**（ADD COLUMN / CREATE TABLE / CREATE INDEX / ADD CONSTRAINT 等の非破壊DDL）に限り、CCが `.env` の `SUPABASE_PROD_DB_URL` 経由で psql 適用してよい。**破壊的変更**（DROP / DELETE / TRUNCATE / UPDATE / カラム型変更 / NOT NULL追加 等、既存データを失う・壊す可能性）が1つでも含まれるなら、CCは実行せず人手のSQLエディタ実行＋事前バックアップを促して停止する。`SUPABASE_PROD_DB_URL` の値はログ/チャットに残さない。db push は引き続き禁止（個別SQL適用のみ）。
 
 ### 報告（毎ユニット・非ブロック）
 - 1ユニット終えるごとに1行サマリ（何をdevに/本番待ちに/人ボールに）。承認は求めない。
