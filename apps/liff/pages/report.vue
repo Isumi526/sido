@@ -246,58 +246,60 @@
                     <span class="hours-label">{{ site.expenses.vehicleFiles.length }}件選択済み</span>
                   </div>
                 </div>
+
+                <!-- 駐車場代（複数・明細ごと領収書）— 車両ありの時のみ -->
+                <div class="veh-subexpense">
+                  <label class="hours-label">駐車場代</label>
+                  <div v-for="(pk, pi) in (site.expenses.parkings ?? [])" :key="pi" class="lineitem-card">
+                    <div class="lineitems-row">
+                      <ExpenseField v-model="pk.yen" v-model:tategae="pk.tategae" with-tategae label="金額（円）" />
+                      <button type="button" class="btn-icon-sm" @click="report.removeParking(si, pi)">✕</button>
+                    </div>
+                    <div class="mt6">
+                      <label class="hours-label">領収書（JPEG/PDF）</label>
+                      <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleParkingFile(si, pi, e)" />
+                      <div v-if="pk.files?.length" class="photo-preview">
+                        <span class="hours-label">{{ pk.files.length }}件選択済み</span>
+                      </div>
+                      <div v-else-if="pk.fileUrls?.length" class="photo-preview">
+                        <span class="hours-label">登録済み{{ pk.fileUrls.length }}件</span>
+                      </div>
+                    </div>
+                  </div>
+                  <button type="button" class="btn-ghost-sm" @click="report.addParking(si)">＋ 駐車場代を追加</button>
+                </div>
+
+                <!-- 高速代（複数・明細ごと領収書＋ETCカード）— 車両ありの時のみ -->
+                <div class="veh-subexpense">
+                  <label class="hours-label">高速代</label>
+                  <div v-for="(hw, hi) in (site.expenses.highways ?? [])" :key="hi" class="lineitem-card">
+                    <div class="lineitems-row">
+                      <ExpenseField v-model="hw.yen" v-model:tategae="hw.tategae" with-tategae label="金額（円）" />
+                      <button type="button" class="btn-icon-sm" @click="report.removeHighway(si, hi)">✕</button>
+                    </div>
+                    <div class="mt6">
+                      <label class="hours-label">ETCカード</label>
+                      <select v-model="hw.etcCard" class="select mt4">
+                        <option value="">なし</option>
+                        <option v-for="n in 7" :key="n" :value="`カード${['①','②','③','④','⑤','⑥','⑦'][n-1]}`">
+                          カード{{ ['①','②','③','④','⑤','⑥','⑦'][n-1] }}
+                        </option>
+                      </select>
+                    </div>
+                    <div class="mt6">
+                      <label class="hours-label">領収書（JPEG/PDF）</label>
+                      <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleHighwayFile(si, hi, e)" />
+                      <div v-if="hw.files?.length" class="photo-preview">
+                        <span class="hours-label">{{ hw.files.length }}件選択済み</span>
+                      </div>
+                      <div v-else-if="hw.fileUrls?.length" class="photo-preview">
+                        <span class="hours-label">登録済み{{ hw.fileUrls.length }}件</span>
+                      </div>
+                    </div>
+                  </div>
+                  <button type="button" class="btn-ghost-sm" @click="report.addHighway(si)">＋ 高速代を追加</button>
+                </div>
               </template>
-            </Field>
-
-            <!-- 駐車場代（現場ごと・複数・明細ごと領収書） -->
-            <Field label="駐車場代">
-              <div v-for="(pk, pi) in (site.expenses.parkings ?? [])" :key="pi" class="lineitem-card">
-                <div class="lineitems-row">
-                  <ExpenseField v-model="pk.yen" v-model:tategae="pk.tategae" with-tategae label="金額（円）" />
-                  <button type="button" class="btn-icon-sm" @click="report.removeParking(si, pi)">✕</button>
-                </div>
-                <div class="mt6">
-                  <label class="hours-label">領収書（JPEG/PDF）</label>
-                  <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleParkingFile(si, pi, e)" />
-                  <div v-if="pk.files?.length" class="photo-preview">
-                    <span class="hours-label">{{ pk.files.length }}件選択済み</span>
-                  </div>
-                  <div v-else-if="pk.fileUrls?.length" class="photo-preview">
-                    <span class="hours-label">登録済み{{ pk.fileUrls.length }}件</span>
-                  </div>
-                </div>
-              </div>
-              <button type="button" class="btn-ghost-sm" @click="report.addParking(si)">＋ 駐車場代を追加</button>
-            </Field>
-
-            <!-- 高速代（現場ごと・複数・明細ごと領収書＋ETCカード） -->
-            <Field label="高速代">
-              <div v-for="(hw, hi) in (site.expenses.highways ?? [])" :key="hi" class="lineitem-card">
-                <div class="lineitems-row">
-                  <ExpenseField v-model="hw.yen" v-model:tategae="hw.tategae" with-tategae label="金額（円）" />
-                  <button type="button" class="btn-icon-sm" @click="report.removeHighway(si, hi)">✕</button>
-                </div>
-                <div class="mt6">
-                  <label class="hours-label">ETCカード</label>
-                  <select v-model="hw.etcCard" class="select mt4">
-                    <option value="">なし</option>
-                    <option v-for="n in 7" :key="n" :value="`カード${['①','②','③','④','⑤','⑥','⑦'][n-1]}`">
-                      カード{{ ['①','②','③','④','⑤','⑥','⑦'][n-1] }}
-                    </option>
-                  </select>
-                </div>
-                <div class="mt6">
-                  <label class="hours-label">領収書（JPEG/PDF）</label>
-                  <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleHighwayFile(si, hi, e)" />
-                  <div v-if="hw.files?.length" class="photo-preview">
-                    <span class="hours-label">{{ hw.files.length }}件選択済み</span>
-                  </div>
-                  <div v-else-if="hw.fileUrls?.length" class="photo-preview">
-                    <span class="hours-label">登録済み{{ hw.fileUrls.length }}件</span>
-                  </div>
-                </div>
-              </div>
-              <button type="button" class="btn-ghost-sm" @click="report.addHighway(si)">＋ 高速代を追加</button>
             </Field>
 
             <!-- 電車 -->
@@ -754,6 +756,9 @@ function setUsage(si: number, key: keyof UsageState, value: string) {
       exp.carpool = true
       exp.vehicles = []
       exp.vehicleFiles = undefined
+      // 車両なし → 駐車場代・高速代は発生しないのでクリア
+      exp.parkings = []
+      exp.highways = []
     } else if (value === 'あり') {
       exp.carpool = false
       if (!exp.vehicles.length) exp.vehicles = [createVehicle()]
@@ -761,6 +766,9 @@ function setUsage(si: number, key: keyof UsageState, value: string) {
       exp.carpool = false
       exp.vehicles = [createVehicle()]
       exp.vehicleFiles = undefined
+      // 車両なし → 駐車場代・高速代は発生しないのでクリア
+      exp.parkings = []
+      exp.highways = []
     }
     return
   }
@@ -1646,6 +1654,9 @@ html, body {
   border: 1px solid var(--border); border-radius: 8px;
   padding: 10px; background: var(--surface2); margin-bottom: 8px;
 }
+/* 車両ブロック内の駐車場代・高速代サブ項目 */
+.veh-subexpense { margin-top: 12px; }
+.veh-subexpense > .hours-label { display: block; font-weight: 700; margin-bottom: 4px; }
 
 /* ── その他共通経費 ── */
 .hotel-row { display: flex; flex-direction: column; gap: 6px; }

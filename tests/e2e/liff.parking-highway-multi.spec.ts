@@ -20,6 +20,14 @@ test('駐車場代を2行・高速代を1行 追加でき、削除もできる',
   await expenseSelect.selectOption('あり')
   await page.waitForTimeout(300)
 
+  // 車両=なし の時点では駐車場代・高速代は出ない（車両経費の中に入れたため）
+  await expect(page.getByRole('button', { name: /駐車場代を追加/ })).toHaveCount(0)
+
+  // 車両=あり にして駐車場代・高速代を表示
+  const vehicleSelect = page.locator('select.select--usage').filter({ has: page.locator('option', { hasText: '乗合い' }) }).first()
+  await vehicleSelect.selectOption('あり')
+  await page.waitForTimeout(300)
+
   // 駐車場代を2行追加
   const addParking = page.getByRole('button', { name: /駐車場代を追加/ })
   await expect(addParking).toBeVisible()

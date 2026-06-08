@@ -57,18 +57,20 @@ export interface Expenses {
 
 ## 4. LIFF UI（`apps/liff/pages/report.vue` ＋ `composables/useReport.ts`）
 
-### 4-1. 交通経費セクションの再構成（`siteUsage[si].expense==='あり'` 内）
-現在の「車両」ブロックから **駐車場代・高速代を分離**し、独立セクションを新設（電車と同じ並び）。
+### 4-1. 交通経費セクションの再構成（`siteUsage[si].vehicle==='あり'` 内）
+現在の「車両」ブロックから 単一の駐車/高速 入力を外し、**車両ありの時だけ表示する複数明細サブ項目**を
+車両ブロック内（vehicleFiles の下）に新設する。
 
-- **車両ブロック**（既存・220-262行）: `vehicleName / ガソリン(distanceKm) / 軽油(dieselKm)` のみ残す。
-  **駐車場（円）・高速代（円）の ExpenseField（239-240行）と ETCカード select（242-251行）を削除**（ETCは高速代明細へ移設）。
-  車両の `vehicleFiles`（ガソリン/軽油の領収書）は据え置き。
-- **駐車場代セクション**（新規）: 電車（271-284行）と同じ「＋追加 / ✕ / 件数表示」パターン。
-  各行: `ExpenseField(yen,tategae) ＋ per-item ファイル入力`。
-- **高速代セクション**（新規）: 同上＋各行に **ETCカード select**（既存の7枚カード選択UIを流用）。
+> UI判断: 車両に乗っていない（車両=なし / 乗合い）なら駐車場代・高速代は発生しない。よって
+> **駐車場代・高速代は「車両=あり」のときのみ表示**（`siteUsage[si].vehicle === 'あり'` の template 内に配置）。
+> データモデルは現場単位（`site.expenses.parkings[]/highways[]`）のまま＝車両ごとの入れ子にはしない。
 
-トグル: 既存の交通経費（あり/なし）配下に常設（駐車場代/高速代は使わなければ空のまま＝行を増やさない）。
-初期表示は0行＋「＋ 駐車場代を追加」ボタンのみ（任意入力）。
+- **車両ブロック**（既存）: `vehicleName / ガソリン(distanceKm) / 軽油(dieselKm)` のみ残す。
+  旧 `駐車場（円）/高速代（円）` の ExpenseField と車両単位の ETCカード select を**削除**（ETCは高速代明細へ移設）。
+- **駐車場代サブ項目**（`車両=あり` 内）: 「＋追加 / ✕」で複数行。各行: `ExpenseField(yen,tategae) ＋ per-item ファイル入力`。
+- **高速代サブ項目**（同上）: 各行に **ETCカード select**（既存の7枚カード選択UIを流用）。
+- 初期0行＋「＋追加」ボタンのみ（任意入力）。
+- **クリア**: `setUsage` で車両を `なし`/`乗合い` にした時、`parkings/highways` を空配列にクリア（隠れデータを送信しない）。
 
 ### 4-2. composable（`useReport.ts`）
 - `createFileLineItem()` / `createHighwayItem()` を追加（`{ yen: undefined, tategae:false, files:[], ... }`）。
