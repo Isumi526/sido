@@ -91,12 +91,14 @@ git push origin main --force
 - (A) 意図が要る：業務ルール/要件が曖昧で人にしか決められない分岐 → 「要回答」（質問＋案）で記録
 - (B) 本番反映 → /ship の承認
 
-**人ボールを記録したら LINE 通知を送る**：上記 (A)/(B) もしくは「要対応」を Notion に記録したら、続けて次を実行して本人に LINE 通知する。
+**人の手で止まる時は必ず LINE 通知を送る（原則）**：CC が処理を止めて **人の入力・操作・承認を待つ** 状態に入る時は、止まる直前に必ず `notify-humanball.mjs` で本人に LINE 通知する。対象は人ボール（要回答/要対応/ship承認）だけでなく、**ship フロー内の各承認ゲート**（本番DBバックアップ確認待ち・migration適用承認待ち・preview確認待ち・functions deploy承認待ち・Merge待ち 等）も含む。
 ```bash
 node scripts/notify-humanball.mjs --kind <要回答|要対応|ship承認> --task "<タスク名>" --detail "<質問+案や理由>" [--url "<Remote Controlのセッションurl>"]
 ```
+- `--detail` には **「何を待っているか」＋「人がやるべき具体アクション」** を1行で含める（例：「本番migration適用待ち。SQLエディタで2件のSQLを実行して」）。
 - この通知は **「本人への個人通知」** であり、hard-stop の「外部一斉送信」には当たらない（許可）。
-- 通知は best-effort。失敗しても無視して処理を続ける（自走を止めない）。URL未設定（webhook無効）なら何もせず終了する。
+- 通知は best-effort。失敗しても無視して処理を続け、停止状態の表示は通常どおり行う。URL未設定（webhook無効）なら何もせず終了する。
+- **1回の停止で複数の承認をまとめて聞く場合は、通知も1回にまとめる**（連投しない）。
 
 ### 絶対に自走NG（hard stop）
 - 本番デプロイ / mainマージ / 本番migration適用 / db push

@@ -28,6 +28,8 @@ CC は PR作成と、承認後の migration適用 / functions deploy / スモー
    - **該当あり**：後続のPR本文に「## ⚠️ migration あり」セクションを作り、
      ファイル名・概要・後方互換性（追加のみか／破壊的か）・本番適用要否を明記する。
      さらに本番DBのバックアップ取得済みかを確認（★）。未取得なら促して停止。
+     - **停止する直前に LINE 通知（best-effort・失敗無視）**：
+       `node scripts/notify-humanball.mjs --kind ship承認 --task "<PRタイトル>" --detail "本番DBバックアップ確認待ち。Supabase Backups を確認して" [--url "<セッションurl>"]`
    - **該当なし**：後続のPR本文に「migration: なし」と明記する。
    - これにより「migration適用漏れ」を Merge 前に人が必ず認識できる状態にする。
 
@@ -47,18 +49,23 @@ CC は PR作成と、承認後の migration適用 / functions deploy / スモー
      1. 今回反映する機能が preview 上で意図どおり動くか
      2. 主要画面（ログイン／一覧／今回の対象画面）が壊れてないか
      3. migration が絡む場合、preview が本番想定のスキーマ前提で動くか
+   - **停止する直前に LINE 通知（best-effort・失敗無視）**：
+     `node scripts/notify-humanball.mjs --kind ship承認 --task "<PRタイトル>" --detail "preview確認待ち。admin/liffのpreview URLで動作確認して" [--url "<セッションurl>"]`
    - ※ /ship は main へのマージ操作はしない。Mergeは人がGitHub上でクリックする。
 
 5. ★本番承認ゲート（人ボール）:
-   - PRの Merge クリック待ちで停止する時、本人に LINE 通知を送る（best-effort・失敗は無視）:
-     `node scripts/notify-humanball.mjs --kind ship承認 --task "<PRタイトル>" --detail "<PR URL>"`
+   - PRの Merge クリック待ちで停止する直前に、本人に LINE 通知を送る（best-effort・失敗無視）:
+     `node scripts/notify-humanball.mjs --kind ship承認 --task "<PRタイトル>" --detail "<PR URL> のMergeクリック待ち" [--url "<セッションurl>"]`
    - 人が「preview で確認OK。Merge してええ」等と返したら、初めて本番反映へ進む。
    - Merge は人が GitHub 上でクリックする（CCはクリックしない）。
 
 6. 人が「マージした」と返したら、main最新を取り込み（`git fetch origin main`）、本番操作を順に（各★承認）:
+   - **各★承認で停止する直前に LINE 通知（best-effort・失敗無視）**。同じ停止で複数承認をまとめて聞く場合は通知も1回にまとめる（連投しない）。
    - DB migration適用が要る場合 → 追加のみ・後方互換を再確認 → ★承認 → 1つずつ適用
-     （db pushではなくmigration適用。不安が残るSQLは適用せず人に委ねる）。
-   - edge functions deploy が要る場合 → ★承認 → 本番refへ 1つずつ deploy。
+     （db pushではなくmigration適用。不安が残るSQLは適用せず人に委ねる）。停止直前に：
+     `node scripts/notify-humanball.mjs --kind ship承認 --task "<PRタイトル>" --detail "本番migration適用待ち。SQLエディタで N件のSQLを実行して" [--url "<セッションurl>"]`
+   - edge functions deploy が要る場合 → ★承認 → 本番refへ 1つずつ deploy。停止直前に：
+     `node scripts/notify-humanball.mjs --kind ship承認 --task "<PRタイトル>" --detail "functions deploy承認待ち。N個のfunction(<名前>)を本番refへdeploy" [--url "<セッションurl>"]`
    - Vercel本番デプロイは main マージで自動的に走る（CCは触らない）。
 
 7. スモーク（自動・本番URL）: テストアカウントで主要動線（日報・通知・配信反映など）を確認し報告。
