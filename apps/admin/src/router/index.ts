@@ -17,6 +17,7 @@ import Calendar       from '../pages/calendar.vue'
 import PaidLeave      from '../pages/paid-leave.vue'
 import SiteRules      from '../pages/site-rules.vue'
 import Attendance     from '../pages/attendance.vue'
+import ReminderHistory from '../pages/reminder-history.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -38,6 +39,7 @@ export const router = createRouter({
     { path: '/paid-leave',    component: PaidLeave },
     { path: '/settings',       component: Settings },
     { path: '/users',        component: Users },
+    { path: '/reminder-history', component: ReminderHistory },
   ],
 })
 

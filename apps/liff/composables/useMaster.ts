@@ -63,7 +63,7 @@ export const useMaster = () => {
     if (!accountId) throw new Error('account not found')
 
     const [sitesRes, contractorsRes, workersRes, subsRes, vehiclesRes] = await Promise.all([
-      supabase.from('sites').select('name').eq('active', true).eq('account_id', accountId).order('sort_order'),
+      supabase.from('sites').select('name').eq('active', true).eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
       supabase.from('contractors').select('name').eq('active', true).eq('account_id', accountId).order('sort_order'),
       supabase.from('workers').select('id, name, role, unit_price').eq('active', true).eq('account_id', accountId).order('sort_order'),
       supabase.from('subcontractors').select('name').eq('active', true).eq('account_id', accountId).order('sort_order'),
@@ -112,7 +112,8 @@ export const useMaster = () => {
       .upsert({ name: name.trim(), account_id: accountId }, { onConflict: 'name,account_id' })
     if (error) throw error
     if (!master.value.sites.includes(name.trim())) {
-      master.value = { ...master.value, sites: [...master.value.sites, name.trim()].sort((a, b) => a.localeCompare(b, 'ja')) }
+      // 読み仮名は未知のため末尾に追加（並びは次回fetchでname_kana順に再構成される）
+      master.value = { ...master.value, sites: [...master.value.sites, name.trim()] }
       saveCache(master.value)
     }
   }
@@ -158,7 +159,8 @@ export const useMaster = () => {
     saveSite,
     saveContractor,
     saveSub,
-    siteNames:           computed(() => master.value.sites.slice().sort((a, b) => a.localeCompare(b, 'ja'))),
+    // sites は Supabase 側で name_kana 昇順(null最後)→name に整列済みのため、その順序を保持する（50音順）
+    siteNames:           computed(() => master.value.sites.slice()),
     contractorNames:     computed(() => (master.value.contractors ?? []).slice().sort((a, b) => a.localeCompare(b, 'ja'))),
     workerNames:         computed(() => master.value.workers.map(w => w.name).slice().sort((a, b) => a.localeCompare(b, 'ja'))),
     factoryWorkerNames:  computed(() => { const ws = master.value.workers; const hasRole = ws.some(w => w.role); return ws.filter(w => !hasRole || w.role === 'factory').map(w => w.name).slice().sort((a, b) => a.localeCompare(b, 'ja')) }),

@@ -86,6 +86,13 @@
           </div>
           <p class="settle-hint">※ 会社が作業員へ振り込むのは「立替（個人建て替え）」分のみです。経費合計は参考値です。</p>
 
+          <!-- 申請PDF（作業員申請時にStorageへ保存された 明細/請求書 を閲覧・DL） -->
+          <div v-if="selected.settlement?.applied_at" class="pdf-row">
+            <span class="pdf-label">申請PDF：</span>
+            <a :href="pdfUrl(selected, 'meisai')" target="_blank" rel="noopener" class="pdf-link">📄 明細</a>
+            <a :href="pdfUrl(selected, 'seikyu')" target="_blank" rel="noopener" class="pdf-link">📄 請求書</a>
+          </div>
+
           <table class="table detail-table">
             <thead>
               <tr>
@@ -191,8 +198,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
-import { getAccountId } from '../lib/account'
+import { getAccountId, ACCOUNT_SLUG } from '../lib/account'
 import { flattenReportExpenses, ratesFromSettings, effectiveStatus, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
+
+/** 申請PDF(明細/請求書)のStorage公開URL。パスは generateExpensePdf.uploadApplicationPdf と一致 */
+function pdfUrl(row: { userId: string; periodKey: string }, kind: 'meisai' | 'seikyu'): string {
+  const path = `expense-applications/${ACCOUNT_SLUG}/${row.userId}/${row.periodKey}_${kind}.pdf`
+  return supabase.storage.from('expense-receipts').getPublicUrl(path).data.publicUrl
+}
 
 // 1行 = 作業員 × 期(period)
 interface PeriodRow {
@@ -515,6 +528,10 @@ watch(dateFrom, load)
 .settle-amt { font-size: 12px; color: #888; }
 .settle-reason { font-size: 12px; color: #c0392b; flex-basis: 100%; }
 .settle-hint { font-size: 11px; color: #999; margin: 0 0 16px; }
+.pdf-row { display: flex; align-items: center; gap: 10px; margin: 0 0 16px; flex-wrap: wrap; }
+.pdf-label { font-size: 12px; color: #888; font-weight: 700; }
+.pdf-link { display: inline-block; font-size: 13px; color: #1a56c4; text-decoration: none; border: 1px solid #cdd8f0; border-radius: 6px; padding: 4px 12px; }
+.pdf-link:hover { background: #f0f4ff; }
 .receipt-cell { white-space: nowrap; }
 .receipt-link { display: inline-block; font-size: 13px; color: #1a56c4; text-decoration: none; margin: 0 3px; }
 .btn-reject { margin-left: auto; background: #fff; border: 1px solid #f5c0bb; color: #c0392b; border-radius: 8px; padding: 6px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
