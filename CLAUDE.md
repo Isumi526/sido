@@ -91,7 +91,7 @@ git push origin main --force
 - (A) 意図が要る：業務ルール/要件が曖昧で人にしか決められない分岐 → 「要回答」（質問＋案）で記録
 - (B) 本番反映 → /ship の承認
 
-**人の手で止まる時は必ず LINE 通知を送る（原則）**：CC が処理を止めて **人の入力・操作・承認を待つ** 状態に入る時は、止まる直前に必ず `notify-humanball.mjs` で本人に LINE 通知する。対象は人ボール（要回答/要対応/ship承認）だけでなく、**ship フロー内の各承認ゲート**（本番DBバックアップ確認待ち・migration適用承認待ち・preview確認待ち・functions deploy承認待ち・Merge待ち 等）も含む。
+**人の手で止まる時は必ず LINE 通知を送る（原則）**：CC が処理を止めて **人の入力・操作・承認を待つ** 状態に入る時は、止まる直前に必ず `notify-humanball.mjs` で本人に LINE 通知する。対象は人ボール（要回答/要対応/ship承認）だけでなく、**ship フロー内の各承認ゲート**（本番DBバックアップ確認待ち・migration適用承認待ち・Mergeタイミング待ち・functions deploy承認待ち 等）も含む。
 ```bash
 node scripts/notify-humanball.mjs --kind <要回答|要対応|ship承認> --task "<タスク名>" --detail "<質問+案や理由>" [--url "<Remote Controlのセッションurl>"]
 ```
@@ -101,9 +101,10 @@ node scripts/notify-humanball.mjs --kind <要回答|要対応|ship承認> --task
 - **1回の停止で複数の承認をまとめて聞く場合は、通知も1回にまとめる**（連投しない）。
 
 ### 絶対に自走NG（hard stop）
-- 本番デプロイ / mainマージ / db push
+- 本番デプロイ自動化 / mainへの直接push / db push
 - データ削除・スキーマ破壊 / 認証・権限・課金・外部一斉送信の変更
 - **本番migration適用は条件付きでCC実行可**（hard-stopから緩和）：人の明示承認（「実行して」等）＋**追加のみDDL**（ADD COLUMN / CREATE TABLE / CREATE INDEX / ADD CONSTRAINT 等の非破壊DDL）に限り、CCが `.env` の `SUPABASE_PROD_DB_URL` 経由で psql 適用してよい。**破壊的変更**（DROP / DELETE / TRUNCATE / UPDATE / カラム型変更 / NOT NULL追加 等、既存データを失う・壊す可能性）が1つでも含まれるなら、CCは実行せず人手のSQLエディタ実行＋事前バックアップを促して停止する。`SUPABASE_PROD_DB_URL` の値はログ/チャットに残さない。db push は引き続き禁止（個別SQL適用のみ）。
+- **mainマージは条件付きでCC実行可**（hard-stopから緩和）：人が **本番を確認できるタイミングを明示承認**（「今Mergeして」等）した時のみ、CCが `gh pr merge` で実行してよい。人がタイミングを明示しない限りCCはMergeせず待機する（勝手にMergeしない）。main ブランチ保護は維持（gh認証経由＝人承認が前提）。直接 push / 本番デプロイの自動化は引き続き禁止。
 
 ### 報告（毎ユニット・非ブロック）
 - 1ユニット終えるごとに1行サマリ（何をdevに/本番待ちに/人ボールに）。承認は求めない。
