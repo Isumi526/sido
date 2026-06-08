@@ -236,18 +236,6 @@
                   <div class="expense-grid mt8">
                     <ExpenseField v-model="veh.distanceKm" v-model:tategae="veh.gasTategae"     with-tategae label="ガソリン（往復km）" />
                     <ExpenseField v-model="veh.dieselKm"   v-model:tategae="veh.dieselTategae"  with-tategae label="軽油（往復km）" />
-                    <ExpenseField v-model="veh.parkingYen" v-model:tategae="veh.parkingTategae" with-tategae label="駐車場（円）" />
-                    <ExpenseField v-model="veh.highwayYen" v-model:tategae="veh.highwayTategae" with-tategae label="高速代（円）" />
-                  </div>
-                  <!-- ETCカード -->
-                  <div class="mt8">
-                    <label class="hours-label">ETCカード</label>
-                    <select v-model="veh.etcCard" class="select mt4" @change="veh.etcUsed = !!veh.etcCard">
-                      <option value="">なし</option>
-                      <option v-for="n in 7" :key="n" :value="`カード${['①','②','③','④','⑤','⑥','⑦'][n-1]}`">
-                        カード{{ ['①','②','③','④','⑤','⑥','⑦'][n-1] }}
-                      </option>
-                    </select>
                   </div>
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addVehicle(si)">＋ 車両を追加</button>
@@ -259,6 +247,57 @@
                   </div>
                 </div>
               </template>
+            </Field>
+
+            <!-- 駐車場代（現場ごと・複数・明細ごと領収書） -->
+            <Field label="駐車場代">
+              <div v-for="(pk, pi) in (site.expenses.parkings ?? [])" :key="pi" class="lineitem-card">
+                <div class="lineitems-row">
+                  <ExpenseField v-model="pk.yen" v-model:tategae="pk.tategae" with-tategae label="金額（円）" />
+                  <button type="button" class="btn-icon-sm" @click="report.removeParking(si, pi)">✕</button>
+                </div>
+                <div class="mt6">
+                  <label class="hours-label">領収書（JPEG/PDF）</label>
+                  <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleParkingFile(si, pi, e)" />
+                  <div v-if="pk.files?.length" class="photo-preview">
+                    <span class="hours-label">{{ pk.files.length }}件選択済み</span>
+                  </div>
+                  <div v-else-if="pk.fileUrls?.length" class="photo-preview">
+                    <span class="hours-label">登録済み{{ pk.fileUrls.length }}件</span>
+                  </div>
+                </div>
+              </div>
+              <button type="button" class="btn-ghost-sm" @click="report.addParking(si)">＋ 駐車場代を追加</button>
+            </Field>
+
+            <!-- 高速代（現場ごと・複数・明細ごと領収書＋ETCカード） -->
+            <Field label="高速代">
+              <div v-for="(hw, hi) in (site.expenses.highways ?? [])" :key="hi" class="lineitem-card">
+                <div class="lineitems-row">
+                  <ExpenseField v-model="hw.yen" v-model:tategae="hw.tategae" with-tategae label="金額（円）" />
+                  <button type="button" class="btn-icon-sm" @click="report.removeHighway(si, hi)">✕</button>
+                </div>
+                <div class="mt6">
+                  <label class="hours-label">ETCカード</label>
+                  <select v-model="hw.etcCard" class="select mt4">
+                    <option value="">なし</option>
+                    <option v-for="n in 7" :key="n" :value="`カード${['①','②','③','④','⑤','⑥','⑦'][n-1]}`">
+                      カード{{ ['①','②','③','④','⑤','⑥','⑦'][n-1] }}
+                    </option>
+                  </select>
+                </div>
+                <div class="mt6">
+                  <label class="hours-label">領収書（JPEG/PDF）</label>
+                  <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleHighwayFile(si, hi, e)" />
+                  <div v-if="hw.files?.length" class="photo-preview">
+                    <span class="hours-label">{{ hw.files.length }}件選択済み</span>
+                  </div>
+                  <div v-else-if="hw.fileUrls?.length" class="photo-preview">
+                    <span class="hours-label">登録済み{{ hw.fileUrls.length }}件</span>
+                  </div>
+                </div>
+              </div>
+              <button type="button" class="btn-ghost-sm" @click="report.addHighway(si)">＋ 高速代を追加</button>
             </Field>
 
             <!-- 電車 -->
@@ -689,6 +728,8 @@ async function loadEditData(date: string) {
           }],
       expenses: {
         vehicles: [createVehicle()],
+        parkings: [],
+        highways: [],
         trains:   [createLineItem()],
         others:   [createLineItem()],
         ...(site.expenses ?? {}),
@@ -1229,6 +1270,20 @@ function handleExpenseFile(
   report.form.value.sites[si].expenses[field] = Array.from(input.files)
 }
 
+// 駐車場代・高速代は明細ごとに個別の領収書を持つ
+function handleParkingFile(si: number, pi: number, event: Event) {
+  const input = event.target as HTMLInputElement
+  if (!input.files?.length) return
+  const pk = report.form.value.sites[si].expenses.parkings?.[pi]
+  if (pk) pk.files = Array.from(input.files)
+}
+function handleHighwayFile(si: number, hi: number, event: Event) {
+  const input = event.target as HTMLInputElement
+  if (!input.files?.length) return
+  const hw = report.form.value.sites[si].expenses.highways?.[hi]
+  if (hw) hw.files = Array.from(input.files)
+}
+
 /** 領収書 AI 解析 → フォームに自動入力 */
 async function analyzeReceipt(
   si: number,
@@ -1585,6 +1640,12 @@ html, body {
   display: flex; align-items: center; justify-content: space-between;
 }
 .vehicle-block-label { font-size: 12px; font-weight: 700; color: var(--text2); }
+
+/* 駐車場代・高速代の明細カード（金額＋個別領収書） */
+.lineitem-card {
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px; background: var(--surface2); margin-bottom: 8px;
+}
 
 /* ── その他共通経費 ── */
 .hotel-row { display: flex; flex-direction: column; gap: 6px; }

@@ -52,11 +52,27 @@ export interface LineItem {
   tategae?:            boolean  // 個人建て替えフラグ
 }
 
+// 明細ごとに個別領収書を持つ経費行（駐車場代・高速代）
+export interface ExpenseFileLineItem {
+  label?:    string
+  yen?:      number
+  tategae?:  boolean   // 個人建て替えフラグ
+  files?:    File[]    // 送信前のローカルファイル（JSONには載せない）
+  fileUrls?: string[]  // Supabase Storage URL（保存・編集ロード・集計で使用）
+}
+
+// 高速代は ETC カードを併せ持つ
+export interface HighwayLineItem extends ExpenseFileLineItem {
+  etcCard?: string
+}
+
 export interface Expenses {
   carpool?: boolean              // 乗合いフラグ
   vehicles: VehicleExpense[]
   vehicleFiles?: File[]         // 車両領収書（アップロード前 File[]）
   vehicleUrls?: string[]        // 車両領収書（Supabase Storage URL）
+  parkings?: ExpenseFileLineItem[]  // 駐車場代（現場ごと・複数・明細ごと領収書）
+  highways?: HighwayLineItem[]      // 高速代（現場ごと・複数・明細ごと領収書＋ETCカード）
   hotelName?:             string
   hotelYen?:              number
   hotelTategae?:          boolean  // 個人建て替えフラグ

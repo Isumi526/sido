@@ -2,7 +2,7 @@
 //  composables/useReport.ts
 //  日報フォームの状態管理と送信処理
 // ============================================================
-import type { DailyReport, SiteReport, WorkerEntry, SubcontractorEntry, WorkerRole, VehicleExpense, LineItem } from '~/types'
+import type { DailyReport, SiteReport, WorkerEntry, SubcontractorEntry, WorkerRole, VehicleExpense, LineItem, ExpenseFileLineItem, HighwayLineItem } from '~/types'
 import type { RateBreakdown } from '~/utils/workerHours'
 import { computeWorkerHours, calcBreakMinutes, parseMin } from '~/utils/workerHours'
 import { uploadExpenseFiles } from '~/utils/uploadExpenseFiles'
@@ -45,12 +45,14 @@ export const createVehicle = (): VehicleExpense => ({
 })
 
 export const createLineItem = (): LineItem => ({ label: '', yen: undefined, tategae: false })
+export const createParking = (): ExpenseFileLineItem => ({ yen: undefined, tategae: false, files: [] })
+export const createHighway = (): HighwayLineItem => ({ yen: undefined, tategae: false, etcCard: '', files: [] })
 
 export const createSite = (): SiteReport => ({
   siteName:       '',
   contractorName: '',
   workers:        [createWorker()],
-  expenses:       { vehicles: [createVehicle()], trains: [createLineItem()], others: [createLineItem()] },
+  expenses:       { vehicles: [createVehicle()], parkings: [], highways: [], trains: [createLineItem()], others: [createLineItem()] },
   subcontractors: [],
   siteNote:       '',
 })
@@ -58,6 +60,11 @@ export const createSite = (): SiteReport => ({
 // 経費オブジェクトから File[] フィールドを除去（GAS送信用 - *Urls は残す）
 function stripFiles(expenses: Record<string, unknown> | object): Record<string, unknown> {
   const { vehicleFiles, trainFiles, hotelFiles, leopalaceFiles, otherFiles, entertainmentFiles, garbagePhotos, ...rest } = expenses as any
+  // 明細ごとに File[] を持つ配列（駐車場代・高速代）からも files を除去（fileUrls は残す）
+  const stripItemFiles = (items: any[] | undefined) =>
+    (items ?? []).map(({ files, ...item }: any) => item)
+  if (Array.isArray(rest.parkings)) rest.parkings = stripItemFiles(rest.parkings)
+  if (Array.isArray(rest.highways)) rest.highways = stripItemFiles(rest.highways)
   return rest
 }
 
@@ -115,6 +122,10 @@ export const useReport = () => {
 
   function addVehicle(si: number)                    { form.value.sites[si].expenses.vehicles.push(createVehicle()) }
   function removeVehicle(si: number, vi: number)     { form.value.sites[si].expenses.vehicles.splice(vi, 1) }
+  function addParking(si: number)                    { (form.value.sites[si].expenses.parkings ??= []).push(createParking()) }
+  function removeParking(si: number, pi: number)     { form.value.sites[si].expenses.parkings?.splice(pi, 1) }
+  function addHighway(si: number)                    { (form.value.sites[si].expenses.highways ??= []).push(createHighway()) }
+  function removeHighway(si: number, hi: number)     { form.value.sites[si].expenses.highways?.splice(hi, 1) }
   function addTrain(si: number)                      { form.value.sites[si].expenses.trains.push(createLineItem()) }
   function removeTrain(si: number, ti: number)       { form.value.sites[si].expenses.trains.splice(ti, 1) }
   function addOther(si: number)                      { form.value.sites[si].expenses.others.push(createLineItem()) }
@@ -171,6 +182,28 @@ export const useReport = () => {
           const msg = e instanceof Error ? e.message : String(e)
           console.error(`[FileUpload] ${filesKey}:`, msg)
           uploadErrors.push(`${category}: ${msg}`)
+        }
+      }
+
+      // 明細ごとに領収書を持つ駐車場代・高速代（per-item upload）
+      const perItemGroups: Array<{ items: ExpenseFileLineItem[] | undefined; prefix: string }> = [
+        { items: site.expenses.parkings, prefix: 'parking' },
+        { items: site.expenses.highways, prefix: 'highway' },
+      ]
+      for (const { items, prefix } of perItemGroups) {
+        for (let i = 0; i < (items?.length ?? 0); i++) {
+          const item = items![i]
+          if (!item.files?.length) continue
+          try {
+            const urls = await uploadExpenseFiles(
+              supabase, item.files, form.value.date, senderName, siteName, `${prefix}_${i}`, accountSlug, periodHalf
+            )
+            item.fileUrls = urls
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e)
+            console.error(`[FileUpload] ${prefix}_${i}:`, msg)
+            uploadErrors.push(`${prefix}: ${msg}`)
+          }
         }
       }
     }
@@ -297,6 +330,8 @@ export const useReport = () => {
     addWorker, removeWorker,
     addSub, removeSub,
     addVehicle, removeVehicle,
+    addParking, removeParking,
+    addHighway, removeHighway,
     addTrain, removeTrain,
     addOther, removeOther,
     submit, reset,
