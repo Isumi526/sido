@@ -272,6 +272,25 @@ Deno.serve(async (req) => {
       accounts.map(acc => processAccount(acc.id, acc.slug, yesterday, dryRun, manual))
     )
 
+    // 実行履歴を記録（dry-run と 実行時間外スキップ は除外。失敗してもリマインド本体は止めない）
+    if (!dryRun) {
+      await Promise.all(accounts.map((acc, i) => {
+        const r = results[i]
+        if (r.result.startsWith('スキップ（実行時間外')) return Promise.resolve()
+        return supabase.from('reminder_logs').insert({
+          account_id:        acc.id,
+          target_date:       yesterday,
+          result:            r.result,
+          unsubmitted_count: r.unsubmitted?.length ?? 0,
+          recipients_count:  r.recipients?.length ?? 0,
+          manual,
+        }).then(
+          () => {},
+          (e: unknown) => console.error(`[daily-reminder] reminder_logs insert failed slug=${acc.slug}:`, e),
+        )
+      }))
+    }
+
     return json({ success: true, dryRun, yesterday, results })
   } catch (e) {
     console.error('[daily-reminder]', e)
