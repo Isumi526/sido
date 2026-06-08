@@ -670,7 +670,13 @@ function reconstructExpenseUsage(exp: any): UsageState {
   if (!exp) return usage
   if (exp.carpool) {
     usage.vehicle = '乗合い'
-  } else if ((exp.vehicles ?? []).some((v: any) => v.vehicleName || v.distanceKm || v.dieselKm || v.parkingYen || v.highwayYen)) {
+  } else if (
+    (exp.vehicles ?? []).some((v: any) => v.vehicleName || v.distanceKm || v.dieselKm || v.parkingYen || v.highwayYen) ||
+    (exp.parkings ?? []).some((p: any) => p.yen) ||
+    (exp.highways ?? []).some((h: any) => h.yen)
+  ) {
+    // 新形式: 駐車場代・高速代は車両ブロック内（車両=あり時のみ表示）なので、
+    //   それらだけ入力された日報も編集時に車両=あり として復元する
     usage.vehicle = 'あり'
   }
   if ((exp.trains ?? []).some((t: any) => t.yen)) usage.train = 'あり'
