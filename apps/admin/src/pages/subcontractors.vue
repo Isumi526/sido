@@ -85,6 +85,26 @@
         </div>
 
         <div class="field">
+          <label>住所</label>
+          <input v-model="modal.address" class="input" placeholder="例：東京都新宿区…" />
+        </div>
+
+        <div class="field">
+          <label>振込口座</label>
+          <div class="grid2">
+            <input v-model="modal.bank_name" class="input" placeholder="銀行名（例：○○銀行）" />
+            <input v-model="modal.bank_branch" class="input" placeholder="支店名（例：△△支店）" />
+            <select v-model="modal.bank_account_type" class="input">
+              <option value="">種別（任意）</option>
+              <option value="普通">普通</option>
+              <option value="当座">当座</option>
+            </select>
+            <input v-model="modal.bank_account_number" class="input" placeholder="口座番号" />
+          </div>
+          <input v-model="modal.bank_account_holder" class="input" placeholder="口座名義（例：カ）○○）" style="margin-top:8px" />
+        </div>
+
+        <div class="field">
           <label>対応エリア</label>
           <div class="chips-input">
             <span v-for="(a, i) in modal.service_areas" :key="a" class="chip area">{{ a }}<button class="chip-x" @click="modal.service_areas!.splice(i, 1)">×</button></span>
@@ -102,6 +122,17 @@
             <span v-for="(t, i) in customTrades" :key="t" class="chip">{{ t }}<button class="chip-x" @click="removeTrade(t)">×</button></span>
             <input v-model="tradeDraft" class="chip-add" placeholder="工種を自由追加しEnter" @keydown.enter.prevent="addCustomTrade" />
           </div>
+        </div>
+
+        <div class="field">
+          <label>担当者（複数登録可・注文書/請求の宛先に使用）</label>
+          <div v-for="(c, i) in modal.contacts" :key="i" class="contact-row">
+            <input v-model="c.name" class="input" placeholder="担当者名 *" />
+            <input v-model="c.email" class="input" placeholder="メール" />
+            <input v-model="c.phone" class="input" placeholder="電話" />
+            <button type="button" class="contact-del" @click="removeContact(i)">×</button>
+          </div>
+          <button type="button" class="btn-add-contact" @click="addContact">＋ 担当者を追加</button>
         </div>
 
         <div class="modal-actions">
@@ -150,18 +181,23 @@ import { ref, computed, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 
+type Contact = { id?: string; name: string; email: string | null; phone: string | null }
 type Sub = {
   id: string; name: string; active: boolean; category: string | null; unit_price: number | null
   representative_name: string | null; mobile_phone: string | null; office_phone: string | null
   email: string | null; service_areas: string[]; is_deleted: boolean
   trade_types: string[]
+  address: string | null
+  bank_name: string | null; bank_branch: string | null; bank_account_type: string | null
+  bank_account_number: string | null; bank_account_holder: string | null
+  contacts: Contact[]
 }
 type Preset = { id: string; name: string; category: string; sort_order: number }
 type EditLog = { id: string; action: string; created_at: string }
 
 const subs        = ref<Sub[]>([])
 const presets     = ref<Preset[]>([])
-const modal       = ref<(Partial<Sub> & { service_areas: string[]; trade_types: string[] }) | null>(null)
+const modal       = ref<(Partial<Sub> & { service_areas: string[]; trade_types: string[]; contacts: Contact[] }) | null>(null)
 const saving      = ref(false)
 const saveError   = ref('')
 
@@ -181,25 +217,32 @@ const mergePick   = ref<string[]>([])
 const mergeModal  = ref<{ subs: Sub[] } | null>(null)
 const mergeTarget = ref('')
 
-const SUB_COLS = 'id, name, active, category, unit_price, representative_name, mobile_phone, office_phone, email, service_areas, is_deleted'
+const SUB_COLS = 'id, name, active, category, unit_price, representative_name, mobile_phone, office_phone, email, service_areas, is_deleted, address, bank_name, bank_branch, bank_account_type, bank_account_number, bank_account_holder'
 
 async function load() {
   const accountId = await getAccountId()
-  const [{ data: subRows }, { data: presetRows }, { data: ttRows }] = await Promise.all([
+  const [{ data: subRows }, { data: presetRows }, { data: ttRows }, { data: contactRows }] = await Promise.all([
     supabase.from('subcontractors').select(SUB_COLS).eq('account_id', accountId).order('sort_order'),
     supabase.from('trade_type_presets').select('id, name, category, sort_order').eq('account_id', accountId).order('sort_order'),
     supabase.from('subcontractor_trade_types').select('subcontractor_id, trade_type').eq('account_id', accountId),
+    supabase.from('subcontractor_contacts').select('id, subcontractor_id, name, email, phone, sort_order').eq('account_id', accountId).eq('is_deleted', false).order('sort_order'),
   ])
   const ttMap = new Map<string, string[]>()
   for (const r of (ttRows ?? []) as any[]) {
     const arr = ttMap.get(r.subcontractor_id) ?? []
     arr.push(r.trade_type); ttMap.set(r.subcontractor_id, arr)
   }
+  const contactMap = new Map<string, Contact[]>()
+  for (const r of (contactRows ?? []) as any[]) {
+    const arr = contactMap.get(r.subcontractor_id) ?? []
+    arr.push({ id: r.id, name: r.name, email: r.email, phone: r.phone }); contactMap.set(r.subcontractor_id, arr)
+  }
   subs.value = ((subRows ?? []) as any[]).map((s) => ({
     ...s,
     service_areas: s.service_areas ?? [],
     is_deleted: !!s.is_deleted,
     trade_types: ttMap.get(s.id) ?? [],
+    contacts: contactMap.get(s.id) ?? [],
   }))
   presets.value = (presetRows ?? []) as Preset[]
 }
@@ -228,10 +271,14 @@ const filtered = computed(() => {
 const customTrades = computed(() => (modal.value?.trade_types ?? []).filter((t) => !presets.value.some((p) => p.name === t)))
 
 function blankModal(): any {
-  return { name: '', category: '', unit_price: null, representative_name: '', mobile_phone: '', office_phone: '', email: '', service_areas: [], trade_types: [] }
+  return { name: '', category: '', unit_price: null, representative_name: '', mobile_phone: '', office_phone: '', email: '', service_areas: [], trade_types: [],
+    address: '', bank_name: '', bank_branch: '', bank_account_type: '', bank_account_number: '', bank_account_holder: '', contacts: [] }
 }
 function openAdd()        { modal.value = blankModal(); areaDraft.value = ''; tradeDraft.value = ''; saveError.value = '' }
-function openEdit(s: Sub) { modal.value = { ...s, service_areas: [...s.service_areas], trade_types: [...s.trade_types] }; areaDraft.value = ''; tradeDraft.value = ''; saveError.value = '' }
+function openEdit(s: Sub) { modal.value = { ...s, service_areas: [...s.service_areas], trade_types: [...s.trade_types], contacts: s.contacts.map((c) => ({ ...c })) }; areaDraft.value = ''; tradeDraft.value = ''; saveError.value = '' }
+
+function addContact()        { modal.value!.contacts.push({ name: '', email: null, phone: null }) }
+function removeContact(i: number) { modal.value!.contacts.splice(i, 1) }
 
 function addArea() {
   const v = areaDraft.value.trim()
@@ -274,6 +321,12 @@ async function save() {
       office_phone:        modal.value.office_phone?.trim() || null,
       email:               modal.value.email?.trim() || null,
       service_areas:       modal.value.service_areas,
+      address:             modal.value.address?.trim() || null,
+      bank_name:           modal.value.bank_name?.trim() || null,
+      bank_branch:         modal.value.bank_branch?.trim() || null,
+      bank_account_type:   modal.value.bank_account_type?.trim() || null,
+      bank_account_number: modal.value.bank_account_number?.trim() || null,
+      bank_account_holder: modal.value.bank_account_holder?.trim() || null,
     }
     let subId = modal.value.id
     if (subId) {
@@ -285,6 +338,7 @@ async function save() {
       if (subId) await logEdit(subId, accountId, 'create', payload)
     }
     if (subId) await syncTradeTypes(subId, accountId, modal.value.trade_types)
+    if (subId) await syncContacts(subId, accountId, modal.value.contacts)
     modal.value = null; await load()
   } catch (e: any) { saveError.value = e.message ?? '保存に失敗しました' }
   finally { saving.value = false }
@@ -298,6 +352,21 @@ async function syncTradeTypes(subId: string, accountId: string, want: string[]) 
   const toDel = have.filter((h) => !want.includes(h.trade_type))
   if (toAdd.length) await supabase.from('subcontractor_trade_types').insert(toAdd.map((t) => ({ subcontractor_id: subId, account_id: accountId, trade_type: t })))
   if (toDel.length) await supabase.from('subcontractor_trade_types').delete().in('id', toDel.map((h) => h.id))
+}
+
+// 担当者の同期：名前ありの行のみ。既存idは更新、新規は挿入、外れた既存は削除
+async function syncContacts(subId: string, accountId: string, want: Contact[]) {
+  const valid = want.filter((c) => c.name?.trim())
+  const { data } = await supabase.from('subcontractor_contacts').select('id').eq('subcontractor_id', subId).eq('is_deleted', false)
+  const haveIds = ((data ?? []) as { id: string }[]).map((h) => h.id)
+  const keepIds = valid.map((c) => c.id).filter(Boolean) as string[]
+  const toDel = haveIds.filter((id) => !keepIds.includes(id))
+  for (const [i, c] of valid.entries()) {
+    const row = { subcontractor_id: subId, account_id: accountId, name: c.name.trim(), email: c.email?.trim() || null, phone: c.phone?.trim() || null, sort_order: i, updated_at: new Date().toISOString() }
+    if (c.id) await supabase.from('subcontractor_contacts').update(row).eq('id', c.id)
+    else      await supabase.from('subcontractor_contacts').insert(row)
+  }
+  if (toDel.length) await supabase.from('subcontractor_contacts').delete().in('id', toDel)
 }
 
 async function softDelete(s: Sub) {
@@ -349,6 +418,7 @@ async function doMerge() {
     await syncTradeTypes(target.id, accountId, [...new Set([...target.trade_types, ...source.trade_types])])
     // 関連付け替え（コメント・請求）
     await supabase.from('subcontractor_comments').update({ subcontractor_id: target.id }).eq('subcontractor_id', source.id).then(() => {}, () => {})
+    await supabase.from('subcontractor_contacts').update({ subcontractor_id: target.id }).eq('subcontractor_id', source.id).then(() => {}, () => {})
     await supabase.from('subcontractor_invoices').update({ subcontractor_id: target.id }).eq('subcontractor_id', source.id).then(() => {}, () => {})
     // source を論理削除
     await supabase.from('subcontractors').update({ is_deleted: true, active: false, deleted_at: new Date().toISOString() }).eq('id', source.id)
@@ -420,4 +490,8 @@ async function doMerge() {
 .action-badge.merge { background: #fff3e0; color: #e65100; }
 .history-date { color: #888; }
 .merge-opt { display: flex; align-items: center; gap: 8px; font-size: 14px; padding: 8px 0; cursor: pointer; }
+.contact-row { display: grid; grid-template-columns: 1.2fr 1.5fr 1fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
+.contact-row .input { padding: 8px 10px; font-size: 13px; }
+.contact-del { background: none; border: 1px solid #f0caca; color: #c0392b; border-radius: 6px; width: 30px; height: 32px; cursor: pointer; font-size: 14px; }
+.btn-add-contact { background: #f0f0f0; border: none; border-radius: 6px; padding: 8px 14px; font-size: 13px; cursor: pointer; color: #555; align-self: flex-start; }
 </style>
