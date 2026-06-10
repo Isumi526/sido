@@ -162,7 +162,7 @@ test.describe('下請け業者マスタ', () => {
     await page.locator('.btn-save').click()
     await expect(page.locator('.modal .error')).toContainText('区分')
     // 区分を選べば保存できる
-    await page.locator('.modal select.input').selectOption('商社')
+    await page.locator('.modal select.input').first().selectOption('商社')
     await page.locator('.btn-save').click()
     await expect(page.locator('tr', { hasText: masterVendor })).toBeVisible({ timeout: 10000 })
   })
