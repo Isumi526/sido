@@ -1,6 +1,6 @@
 <template>
-  <!-- LIFF初期化中はスプラッシュ画面を表示 -->
-  <div v-if="!liff.initialized.value" class="splash">
+  <!-- LIFF初期化中はスプラッシュ画面を表示（業者ポータル /p/ はLIFFを経由しない） -->
+  <div v-if="!isPortal && !liff.initialized.value" class="splash">
     <div class="splash-logo">SIDO</div>
     <div class="splash-spinner"></div>
   </div>
@@ -9,6 +9,9 @@
 
 <script setup lang="ts">
 const liff = useLiff()
+const route = useRoute()
+// 業者向けトークンポータル(/p/:token)は LINE ログイン不要。LIFF 初期化・ログイン誘導を行わない。
+const isPortal = computed(() => route.path.startsWith('/p/'))
 
 // サイト名（ブラウザタブ／共有タイトル）を会社名ベースで動的に設定。
 // accounts.name 取得前は nuxt.config の '管理システム' をフォールバック表示。
@@ -20,7 +23,7 @@ useHead({
 onMounted(async () => {
   // 会社名は LIFF init に依存しない（Supabase anon クエリのみ）
   getAccountId()
-  if (!liff.initialized.value) {
+  if (!isPortal.value && !liff.initialized.value) {
     await liff.init()
   }
 })
