@@ -25,5 +25,9 @@
   "devDependencies": {
     "@playwright/test": "^1.60.0",
     "typescript": "^5.4.0"
+  },
+  "overrides": {
+    "@nuxt/schema": "3.21.8",
+    "vite": "^7.3.3"
   }
 }
