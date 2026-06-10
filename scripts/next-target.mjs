@@ -6,8 +6,13 @@
 //  - 旧 databases/query が version/endpoint エラーなら
 //    data_sources/query (Notion-Version: 2025-09-03) にフォールバック
 //
+//  ※バックログDBは sido / osarAI / Garage Connect の3プロジェクトで共用。
+//    タスクは「案件名」relation（説明=「案件管理マスタと紐付け」。"案件名 1" ではない）で
+//    各案件に紐づく。本スクリプトは .env の BACKLOG_PROJECT_ID（自分の案件page_id）で絞り、
+//    自分の案件のタスクだけを拾う。
+//
 //  使い方: node scripts/next-target.mjs
-//  必要env(.env): NOTION_TOKEN, (任意) BACKLOG_DB_ID
+//  必要env(.env): NOTION_TOKEN, BACKLOG_PROJECT_ID（必須・自分の案件page_id）, (任意) BACKLOG_DB_ID
 // ============================================================
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -30,15 +35,36 @@ const env = loadEnv(resolve(ROOT, '.env'))
 const TOKEN          = process.env.NOTION_TOKEN || env.NOTION_TOKEN
 const DB_ID          = process.env.BACKLOG_DB_ID || env.BACKLOG_DB_ID || '6e7dd24739dd431688564b12f64d8ebd'
 const DATA_SOURCE_ID = process.env.BACKLOG_DATA_SOURCE_ID || env.BACKLOG_DATA_SOURCE_ID || 'a7f5a28f-22af-4bc1-a512-4d427a934f31'
+const PROJECT_ID     = process.env.BACKLOG_PROJECT_ID || env.BACKLOG_PROJECT_ID
 
 if (!TOKEN) { console.error('✗ NOTION_TOKEN が .env にありません'); process.exit(1) }
+// 【安全装置】案件page_id 未設定なら即停止。フィルタなしで全プロジェクトのタスクを拾う事故を防ぐ。
+if (!PROJECT_ID) { console.error('✗ BACKLOG_PROJECT_ID が .env にありません（自分の案件page_idを設定してください）'); process.exit(1) }
+
+// 既知の案件page_id → 表示名（共用バックログDBの各プロジェクト）
+const PROJECT_NAMES = {
+  '3540ff81-c56b-802e-871d-ca995e01718f': 'SIDO',
+  '37a0ff81-c56b-81d9-a527-eebd543686c3': 'osarAI',
+  '37a0ff81-c56b-81b5-9341-c89f8bd69355': 'Garage Connect',
+}
+const norm = (id) => (id || '').replace(/-/g, '')
+const PROJECT_NAME = Object.entries(PROJECT_NAMES).find(([id]) => norm(id) === norm(PROJECT_ID))?.[1]
+  || `(page_id …${norm(PROJECT_ID).slice(-6)})`
 
 const STATUS_PROP   = 'ステータス'
 const PRIORITY_PROP = '優先順位'
 const TITLE_PROP    = 'タスク名'
+const PROJECT_PROP  = '案件名'   // relation（説明=「案件管理マスタと紐付け」）。"案件名 1" ではない方
 const TARGET_STATUS = '要件定義済み'
 const PRIORITY_RANK = { '緊急': 0, '高': 1, '中': 2, '低': 3 }
-const filter = { property: STATUS_PROP, status: { equals: TARGET_STATUS } }
+// ステータス＝要件定義済み かつ 案件名relationが自分の案件を含む、で絞る。
+// 【仕様】案件名が未設定（空）のタスクは relation 一致しないため、どのプロジェクトでも拾わない（＝自然に除外。正しい挙動）。
+const filter = {
+  and: [
+    { property: STATUS_PROP,  status: { equals: TARGET_STATUS } },
+    { property: PROJECT_PROP, relation: { contains: PROJECT_ID } },
+  ],
+}
 
 function queryDatabase(cursor) {
   return fetch(`https://api.notion.com/v1/databases/${DB_ID}/query`, {
@@ -91,6 +117,7 @@ async function main() {
     return (a.created_time || '').localeCompare(b.created_time || '')   // 同率は作成日古い順
   })
 
+  console.log(`▶ 対象プロジェクト: ${PROJECT_NAME}（案件で絞り込み中）`)
   console.log(`■ 要件定義済み（Readyキュー）: ${rows.length}件 — 優先度順`)
   if (rows.length === 0) {
     console.log('  （対象なし）')

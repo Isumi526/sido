@@ -5,6 +5,12 @@ export default defineNuxtConfig({
   ssr: false,                    // LIFF はクライアントサイドのみ
   devtools: { enabled: true },
 
+  // Nuxt 3.21.7+ の SPA(ssr:false) dev で発生する
+  // 「No entry found in rollupOptions.input」(resolveServerEntry) 回避。
+  // viteEnvironmentApi を有効化すると環境別configに ssr.input が定義され、
+  // SPA でも server entry が解決できる（dev/build 共通で安定）。
+  experimental: { viteEnvironmentApi: true },
+
   app: {
     head: {
       title: '管理システム',

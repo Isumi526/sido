@@ -1,15 +1,19 @@
 
 sidoの本番反映を、各本番操作の承認を取りながら進めるエージェント。
 
-本番反映は **PR経由**。main への merge は人が GitHub 上でクリックする（＝本番承認ゲート）。
-CC は PR作成と、承認後の migration適用 / functions deploy / スモークだけを行う（1つずつ承認）。
+本番反映は **PR経由**。Merge は **人がタイミングを明示承認した時のみ** CCが `gh pr merge` で実行する（＝本番承認ゲート）。
+CC は PR作成・承認後の migration適用 / Merge / functions deploy / スモークを行う（各操作ごとに人の承認）。
+品質担保は **ローカルE2E全green＋Merge後の本番スモーク（ハードリロード必須）**（dev は Vercel preview 無効のため preview URL は使わない／案内しない）。
+
+**承認を人に求める時は CLAUDE.md「人ボール報告の必須フォーマット（結論ファースト）」に従う**：画面は「🙋 [ship承認] PRタイトル／【決めてほしいこと】（例: 今Mergeしていいか）／【選択肢】A.今やる B.後で／【推奨】…」の構造で結論を先頭に。`--detail` は「何を待つか＋人がやる具体アクション」を1〜2行に圧縮（下記の各通知例は既にこの粒度）。
 
 バックログDB: https://www.notion.so/6e7dd24739dd431688564b12f64d8ebd?v=3760ff81c56b8185a056000cd43639bb&source=copy_link
 
 # 前提
 
 - main = 本番(Vercel自動デプロイ)、dev = 同期用。本番Supabase ref = nrzzesbtvswoiouhldvi。
-- 本番反映は dev → PR → main。**CCは main へ push も merge もしない**（人のMergeクリックのみ）。
+- 本番反映は dev → PR → main。**CCは main へ直接 push しない**。Merge は人がタイミングを明示承認した時だけ CCが `gh pr merge` で行う（main保護＝gh認証経由・人承認前提）。
+- dev は Vercel preview 無効（`vercel.json` の `git.deploymentEnabled.dev=false`）→ 有効な preview URL は出ない。品質担保は **ローカルE2E全green＋本番スモーク**。
 - supabase db push は絶対禁止。DB変更は正式なmigration（追加のみ・後方互換）でのみ。
 - **本番migration適用は、人の明示承認＋追加のみDDLに限りCCが psql で実行可**（`.env` の `SUPABASE_PROD_DB_URL`。値はログ/チャットに残さない）。破壊的を1つでも含むなら人手のSQLエディタ実行＋事前バックアップ（CCは実行しない）。適用は **Merge＝Vercel本番デプロイより前** に行う。
 
@@ -31,7 +35,7 @@ CC は PR作成と、承認後の migration適用 / functions deploy / スモー
      - **「追加のみ」か「破壊的を含む」かを機械的に判定して人に提示**する：
        - 追加のみ＝ADD COLUMN / CREATE TABLE / CREATE INDEX / ADD CONSTRAINT 等の非破壊DDLのみ。
        - 破壊的＝DROP / DELETE / TRUNCATE / UPDATE / カラム型変更（ALTER ... TYPE）/ NOT NULL追加 等、既存データを失う・壊す可能性が1つでもある。
-     - **追加のみ** → 手順6で人の承認後にCCが psql で適用できる（後述）。
+     - **追加のみ** → 手順5で人の承認後にCCが psql で適用できる（後述）。
      - **破壊的を含む** → CCは適用しない。本番DBのバックアップ取得済みかを確認（★）し、未取得なら促して停止。人手のSQLエディタ実行＋事前バックアップを依頼する。
        - **停止する直前に LINE 通知（best-effort・失敗無視）**：
          `node scripts/notify-humanball.mjs --kind ship承認 --task "<PRタイトル>" --detail "破壊的migrationあり。事前バックアップのうえSQLエディタで手動実行して" [--url "<セッションurl>"]`
@@ -47,16 +51,12 @@ CC は PR作成と、承認後の migration適用 / functions deploy / スモー
      ```
    - 作成後、PRのURLを表示する。
 
-4. ★Vercel preview 確認依頼（事前検知②・停止・人ボール）:
-   - PRに紐づく Vercel preview デプロイ（admin / liff **両方**）の URL を案内する。
-     - 取得できない場合は「GitHubのPR画面 or Vercelダッシュボードで preview URL を確認して」と促す。
-   - 人に対して、本番に出す前に preview URL 上で最低限これを確認するよう明示的に依頼して停止する：
-     1. 今回反映する機能が preview 上で意図どおり動くか
-     2. 主要画面（ログイン／一覧／今回の対象画面）が壊れてないか
-     3. migration が絡む場合、preview が本番想定のスキーマ前提で動くか
-   - **停止する直前に LINE 通知（best-effort・失敗無視）**：
-     `node scripts/notify-humanball.mjs --kind ship承認 --task "<PRタイトル>" --detail "preview確認待ち。admin/liffのpreview URLで動作確認して" [--url "<セッションurl>"]`
-   - ※ /ship は main へのマージ操作はしない。Mergeは人がGitHub上でクリックする。
+4. 品質担保（ローカルE2E全green・自動／preview は使わない）:
+   - dev は Vercel preview 無効で **有効な preview URL は出ない** → preview 確認はしない・案内しない。
+   - 代わりに **ローカルE2Eを全green** で品質担保する：`npm run test:e2e` を実行し、
+     `tests/e2e/*.spec.ts`（`ls tests/e2e/*.spec.ts` で実体を列挙）の対象が全て green であることを確認する。
+     - 今回の反映に関係する spec（admin系/liff系）は特に green を明示。1つでも fail なら停止して報告（本番反映に進まない）。
+   - 残りの最終確認は **Merge後の本番スモーク（ハードリロード必須）**（手順8）で担保する。ここでは止まらない（自動）。
 
 5. ★本番migration適用（追加のみ／Mergeより前・順序の罠回避）:
    - **重要：Merge＝Vercel本番デプロイ自動実行なので、migration は Merge より前に適用する**（新フロントが未適用スキーマを叩く事故を防ぐ）。
@@ -69,18 +69,20 @@ CC は PR作成と、承認後の migration適用 / functions deploy / スモー
         - 追加のみ（ADD COLUMN / CREATE TABLE / CREATE INDEX / ADD CONSTRAINT 等）であることを適用直前に再確認。破壊的が混ざっていたら中止して人へ。
      3. 適用後、**本番REST**で対象の列・テーブルの存在を検証してから次へ進む（例：`?select=<新列>&limit=0` が200か）。異常なら停止して報告。
 
-6. ★本番承認ゲート（Mergeクリック・人ボール）:
-   - PRの Merge クリック待ちで停止する直前に、本人に LINE 通知を送る（best-effort・失敗無視）:
-     `node scripts/notify-humanball.mjs --kind ship承認 --task "<PRタイトル>" --detail "<PR URL> のMergeクリック待ち" [--url "<セッションurl>"]`
-   - 人が「preview で確認OK。Merge してええ」等と返したら、初めて本番反映へ進む。
-   - Merge は人が GitHub 上でクリックする（CCはクリックしない）。Merge で Vercel本番デプロイが自動的に走る（CCは触らない）。
+6. ★本番承認ゲート（Mergeタイミング承認制・CC実行可）:
+   - **Merge＝Vercel本番デプロイ自動実行**。本番影響が出るので、**人が「今Mergeして」等、本番を確認できるタイミングを明示した時だけ** CCが実行する。
+   - タイミング待ちで停止する直前に LINE 通知（best-effort・失敗無視）:
+     `node scripts/notify-humanball.mjs --kind ship承認 --task "<PRタイトル>" --detail "<PR URL> Mergeタイミング待ち。本番を見れる時に「今Mergeして」で実行する" [--url "<セッションurl>"]`
+   - 人がタイミングを明示しない限り **CCはMergeせず待機**（勝手にMergeしない）。
+   - 人が「今Mergeして」等と返したら、CCが実行：`gh pr merge <PR番号> --merge`（main保護はgh認証＝人承認が前提）。
 
-7. 人が「マージした」と返したら、main最新を取り込み（`git fetch origin main`）、残りの本番操作（各★承認）:
+7. Merge完了後、main最新を取り込み（`git fetch origin main`）、残りの本番操作（各★承認）:
    - **各★承認で停止する直前に LINE 通知（best-effort・失敗無視）**。同じ停止で複数承認をまとめて聞く場合は通知も1回にまとめる（連投しない）。
    - edge functions deploy が要る場合 → ★承認 → 本番refへ 1つずつ deploy。停止直前に：
      `node scripts/notify-humanball.mjs --kind ship承認 --task "<PRタイトル>" --detail "functions deploy承認待ち。N個のfunction(<名前>)を本番refへdeploy" [--url "<セッションurl>"]`
 
 8. スモーク（自動・本番URL）: テストアカウントで主要動線（日報・通知・配信反映など）を確認し報告。
+   - **必ずハードリロード**（キャッシュ無効・Cmd/Ctrl+Shift+R 相当）で確認する。Vercelデプロイ直後は旧バンドルがキャッシュされ、ハードリロードしないと反映前の画面を見て誤判定する。
    - 異常があれば即停止して報告。
    - 異常なければ：対象の本番待ちタスクのNotionステータスを「完了」に更新（完了日も入れる）。
    - 更新履歴に追記（管理画面トップ）: 反映内容ごとに
@@ -93,10 +95,12 @@ CC は PR作成と、承認後の migration適用 / functions deploy / スモー
 
 厳守:
 
-- **main へは push も merge もしない**（人のMergeクリックのみ）。CCはPR作成と、承認後の migration適用（追加のみ）/ functions deploy / スモークだけ。
-- migration適用・functions deploy は必ず1つずつ承認を取る。承認なしに実行しない。
+- **main へ直接 push しない**。Merge は **人がタイミングを明示承認した時のみ** CCが `gh pr merge` で実行（タイミング未指定なら待機）。
+- migration適用 / Merge / functions deploy は必ず人の承認を取る。承認なしに実行しない。
 - **migration適用は「追加のみDDL」に限る。破壊的（DROP/DELETE/TRUNCATE/UPDATE/型変更/NOT NULL追加 等）を1つでも含むならCCは適用せず、人手＋事前バックアップを促して停止**。
 - migration適用は Merge（＝Vercel本番デプロイ）より前に行う。
+- preview は使わない（dev preview 無効）。品質担保はローカルE2E全green＋本番スモーク（**ハードリロード必須**）。
 - supabase db push は絶対にしない。`SUPABASE_PROD_DB_URL` の値はログ/チャットに残さない。
+- **停止＝LINE通知（例外なし）**：人の入力・操作・承認待ちで止まる時は直前に必ず notify-humanball.mjs（best-effort）。「対話中だから」を理由にスキップしない（見られているか判断できないため常に通知）。1停止で複数承認をまとめる時のみ通知1回。
 - スモークで異常があれば即停止して報告。
 - .env はコミットしない。
