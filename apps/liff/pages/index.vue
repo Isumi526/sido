@@ -52,6 +52,10 @@
           <span class="material-symbols-rounded menu-icon" style="color:#8b5cf6">group</span>
           <span class="menu-label">グループ管理</span>
         </NuxtLink>
+        <NuxtLink class="menu-card" to="/subcontractors">
+          <span class="material-symbols-rounded menu-icon" style="color:#0ea5e9">handyman</span>
+          <span class="menu-label">下請け業者</span>
+        </NuxtLink>
         <NuxtLink class="menu-card" to="/expense/download">
           <span class="material-symbols-rounded menu-icon" style="color:#ef4444">picture_as_pdf</span>
           <span class="menu-label">経費PDF</span>

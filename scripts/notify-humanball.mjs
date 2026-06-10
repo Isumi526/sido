@@ -51,12 +51,14 @@ if (!URL) {
 }
 
 const args = parseArgs(process.argv.slice(2))
+const DEFAULT_URL = 'https://claude.ai/code'   // Claude Code Remote Control の固定入口URL
 const payload = {
+  project: 'sido',
   secret: SECRET || '',
   kind:   typeof args.kind === 'string' ? args.kind : '',
   task:   typeof args.task === 'string' ? args.task : '',
   detail: typeof args.detail === 'string' ? args.detail : '',
-  url:    typeof args.url === 'string' ? args.url : '',
+  url:    typeof args.url === 'string' ? args.url : DEFAULT_URL,
 }
 
 try {
@@ -65,10 +67,15 @@ try {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
-  if (res.ok) {
+  // GAS は失敗時も HTTP 200 を返し、本文 {"ok":false} で失敗を表す。
+  // よって HTTP ステータスだけでなく、レスポンス本文の ok フィールドで成否を判定する。
+  const text = await res.text()
+  let body
+  try { body = JSON.parse(text) } catch { body = null }
+  if (res.ok && body?.ok === true) {
     console.log(`✓ humanball通知を送信 (${payload.kind}: ${payload.task})`)
   } else {
-    console.error(`! humanball通知に失敗 (HTTP ${res.status})。自走は継続します。`)
+    console.error(`! humanball通知に失敗 (HTTP ${res.status} / body: ${text})。自走は継続します。`)
   }
 } catch (e) {
   console.error(`! humanball通知に失敗 (${e?.message || e})。自走は継続します。`)
