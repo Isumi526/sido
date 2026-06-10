@@ -51,12 +51,14 @@ if (!URL) {
 }
 
 const args = parseArgs(process.argv.slice(2))
+const DEFAULT_URL = 'https://claude.ai/code'   // Claude Code Remote Control の固定入口URL
 const payload = {
+  project: 'sido',
   secret: SECRET || '',
   kind:   typeof args.kind === 'string' ? args.kind : '',
   task:   typeof args.task === 'string' ? args.task : '',
   detail: typeof args.detail === 'string' ? args.detail : '',
-  url:    typeof args.url === 'string' ? args.url : '',
+  url:    typeof args.url === 'string' ? args.url : DEFAULT_URL,
 }
 
 try {
