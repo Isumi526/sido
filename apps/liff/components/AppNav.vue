@@ -60,6 +60,10 @@
             <span class="drawer-item-icon material-symbols-rounded">group</span>
             <span>グループ管理</span>
           </NuxtLink>
+          <NuxtLink class="drawer-item" to="/subcontractors" @click="open = false">
+            <span class="drawer-item-icon material-symbols-rounded">handyman</span>
+            <span>下請け業者</span>
+          </NuxtLink>
           <NuxtLink class="drawer-item" to="/expense/download" @click="open = false">
             <span class="drawer-item-icon material-symbols-rounded">picture_as_pdf</span>
             <span>経費PDF</span>
