@@ -229,7 +229,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
-import { getAccountId, ACCOUNT_SLUG } from '../lib/account'
+import { getAccountId, getAccountSlug } from '../lib/account'
 import { computeWorkerHours, calcBreakMinutes } from '../lib/workerHours'
 
 const EDGE_URL  = import.meta.env.VITE_SUPABASE_EDGE_URL as string
@@ -304,7 +304,7 @@ async function sendNotification(r: any) {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${ANON_KEY}`,
       },
-      body: JSON.stringify({ report_id: r.id, account_slug: ACCOUNT_SLUG, dry_run: false }),
+      body: JSON.stringify({ report_id: r.id, account_slug: getAccountSlug(), dry_run: false }),
     })
     const data = await res.json()
     if (data.count > 0) {
