@@ -128,7 +128,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
-import { getAccountId, ACCOUNT_SLUG } from '../lib/account'
+import { getAccountId, getAccountSlug } from '../lib/account'
 
 const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
 const IS_DEV   = import.meta.env.DEV
@@ -236,7 +236,7 @@ async function runReminder(dryRun: boolean) {
   reminderResult.value = null
   try {
     const fnName = IS_DEV ? 'test-daily-reminder' : 'daily-reminder'
-    const body: any = { dry_run: dryRun, account_slug: ACCOUNT_SLUG, manual: true }
+    const body: any = { dry_run: dryRun, account_slug: getAccountSlug(), manual: true }
     const { data: { session } } = await supabase.auth.getSession()
     const res = await fetch(`${EDGE_URL}/${fnName}`, {
       method: 'POST',
