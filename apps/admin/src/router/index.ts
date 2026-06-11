@@ -19,6 +19,7 @@ import SiteRules      from '../pages/site-rules.vue'
 import Attendance     from '../pages/attendance.vue'
 import ReminderHistory from '../pages/reminder-history.vue'
 import NonSubmitters   from '../pages/non-submitters.vue'
+import Estimates       from '../pages/estimates.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -42,6 +43,7 @@ export const router = createRouter({
     { path: '/users',        component: Users },
     { path: '/reminder-history', component: ReminderHistory },
     { path: '/non-submitters',   component: NonSubmitters },
+    { path: '/estimates',        component: Estimates },
   ],
 })
 

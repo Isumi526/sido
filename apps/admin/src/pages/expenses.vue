@@ -198,12 +198,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
-import { getAccountId, ACCOUNT_SLUG } from '../lib/account'
+import { getAccountId, getAccountSlug } from '../lib/account'
 import { flattenReportExpenses, ratesFromSettings, effectiveStatus, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
 
 /** 申請PDF(明細/請求書)のStorage公開URL。パスは generateExpensePdf.uploadApplicationPdf と一致 */
 function pdfUrl(row: { userId: string; periodKey: string }, kind: 'meisai' | 'seikyu'): string {
-  const path = `expense-applications/${ACCOUNT_SLUG}/${row.userId}/${row.periodKey}_${kind}.pdf`
+  const path = `expense-applications/${getAccountSlug()}/${row.userId}/${row.periodKey}_${kind}.pdf`
   return supabase.storage.from('expense-receipts').getPublicUrl(path).data.publicUrl
 }
 

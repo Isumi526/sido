@@ -409,3 +409,5 @@ verify_jwt = false
 verify_jwt = false
 [functions.analyze-receipt]
 verify_jwt = false
+[functions.subcontractor-portal]
+verify_jwt = false

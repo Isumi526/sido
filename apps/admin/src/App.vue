@@ -26,6 +26,7 @@
         <li><RouterLink to="/paid-leave" class="nav-link"><span class="material-symbols-rounded nav-icon">beach_access</span>有給管理</RouterLink></li>
         <li><RouterLink to="/site-reports" class="nav-link"><span class="material-symbols-rounded nav-icon">bar_chart</span>現場別集計</RouterLink></li>
         <li><RouterLink to="/expenses" class="nav-link"><span class="material-symbols-rounded nav-icon">receipt_long</span>経費管理</RouterLink></li>
+        <li><RouterLink to="/estimates" class="nav-link"><span class="material-symbols-rounded nav-icon">description</span>見積書</RouterLink></li>
         <li><RouterLink to="/subcontractor-invoices" class="nav-link"><span class="material-symbols-rounded nav-icon">request_quote</span>下請け請求</RouterLink></li>
         <li><RouterLink to="/calendar" class="nav-link"><span class="material-symbols-rounded nav-icon">calendar_month</span>予定管理</RouterLink></li>
 
@@ -56,19 +57,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { currentUser, signOut } from './lib/auth'
-import { ACCOUNT_SLUG, getAccountName } from './lib/account'
+import { getAccountSlug, getAccountName } from './lib/account'
 
-const brandName = ACCOUNT_SLUG.toUpperCase()
+// ログインユーザーのテナントに追従（マルチテナント：app_metadata.account_slug 優先）
+const brandName = computed(() => getAccountSlug().toUpperCase())
 
 // サイト名（ブラウザタブ）を会社名ベースで設定。
 // fetch が解決してからセットする（未取得での空振りを避ける）。
-onMounted(async () => {
+async function refreshTitle() {
   const name = await getAccountName()
   if (name) document.title = `${name}｜管理システム`
-})
+}
+onMounted(refreshTitle)
+// ログインユーザー（テナント）が変わったらタイトルも更新（マルチテナント）
+watch(currentUser, refreshTitle)
 
 const router = useRouter()
 const route  = useRoute()
