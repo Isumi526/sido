@@ -332,6 +332,27 @@ export const useExpense = () => {
     })
   }
 
+  // 日報の現場名を現場マスタ(sites)へ確実に登録する。
+  //  「その他/新規現場」は __other__ なので customSiteName を採用。trim・空・__other__ は除外。
+  //  既存現場は onConflict + ignoreDuplicates で no-op（active/name_kana/sort_order を壊さない）。
+  //  日報保存と同じ経路で必ず await されるため、ブラウザ側 saveSite の取りこぼしを補う保険。
+  //  失敗しても日報保存は妨げない（best-effort・ログのみ）。
+  async function registerNewSites(accountId: string, sites: any[]): Promise<void> {
+    if (!accountId || !Array.isArray(sites) || sites.length === 0) return
+    const names = new Set<string>()
+    for (const s of sites) {
+      const raw  = s?.siteName === '__other__' ? s?.customSiteName : s?.siteName
+      const name = (raw ?? '').trim()
+      if (name && name !== '__other__') names.add(name)
+    }
+    if (names.size === 0) return
+    const rows = [...names].map(name => ({ name, account_id: accountId }))
+    const { error } = await supabase
+      .from('sites')
+      .upsert(rows, { onConflict: 'name,account_id', ignoreDuplicates: true })
+    if (error) console.error('[saveReportById] 現場マスタ登録に失敗:', error.message)
+  }
+
   async function saveReportById(
     userId: string,
     report: { date: string; isWorking: boolean; sites: unknown[]; note?: string; leaveType?: string | null }
@@ -356,6 +377,8 @@ export const useExpense = () => {
       console.error('[saveReportById] upsertエラー:', error.message)
       throw error
     }
+    // 日報が保存できたら、その現場名を現場マスタへ登録（新規現場がプルダウンに確実に出るように）
+    await registerNewSites(accountId, report.sites as any[])
   }
 
   /**
