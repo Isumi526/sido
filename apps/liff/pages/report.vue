@@ -518,12 +518,18 @@
           <pre class="line-preview-body">{{ linePreview }}</pre>
         </div>
 
+        <!-- 送信前の記入忘れ確認（新規送信時のみ・習慣化のため必須） -->
+        <label v-if="!isEditMode" class="submit-confirm">
+          <input type="checkbox" v-model="omissionConfirmed" />
+          <span>経費・ゴミ等の記入忘れがないか確認しました</span>
+        </label>
+
         <!-- 送信ボタン -->
         <button v-if="isDev && !isEditMode" type="button" class="btn-dev" @click="fillTestData">🔧 テストデータ入力</button>
         <button v-if="isDev" type="button" class="btn-dev" :class="{ 'btn-dev--error': forceErrorOnSubmit }" @click="fillErrorTestData">
           {{ forceErrorOnSubmit ? '🚨 次の送信でエラー発火（キャンセルするには再クリック）' : '🚨 エラーテストデータ入力' }}
         </button>
-        <button type="submit" class="btn-submit" :disabled="isEditMode ? editSubmitting : report.submitting.value">
+        <button type="submit" class="btn-submit" :disabled="isEditMode ? editSubmitting : (report.submitting.value || !omissionConfirmed)">
           <span v-if="isEditMode ? editSubmitting : report.submitting.value" class="submitting">
             <span class="dot-spin" />{{ isEditMode ? '更新中...' : '送信中...' }}
           </span>
@@ -589,6 +595,7 @@ const initializing = ref(true)
 
 // 編集モード
 const forceErrorOnSubmit = ref(false)
+const omissionConfirmed  = ref(false)  // 送信前の記入忘れ確認（新規送信時のみ。チェックで送信を有効化）
 const isEditMode      = ref(false)
 const originalReport  = ref<any>(null)  // 編集前のSupabaseデータ（差分計算用）
 const editSubmitting  = ref(false)
@@ -1274,6 +1281,7 @@ function goToNextReport() {
   if (!date) return
   nextUnsubmittedDate.value = null
   report.reset()
+  omissionConfirmed.value = false
   report.form.value.date = date
   siteUsage.value = [createUsage()]
   isWorkingStr.value = 'working'
@@ -1282,6 +1290,7 @@ function goToNextReport() {
 
 async function handleReset() {
   report.reset()
+  omissionConfirmed.value = false
   siteUsage.value = [createUsage()]
   isWorkingStr.value = 'working'
   initWorkers()
@@ -1822,6 +1831,13 @@ html, body {
 }
 .btn-submit:active:not(:disabled) { transform: scale(0.98); }
 .btn-submit:disabled { opacity: 0.45; cursor: not-allowed; }
+.submit-confirm {
+  display: flex; align-items: center; gap: 10px;
+  margin: 4px 0 8px; padding: 12px 14px;
+  background: #fff8e1; border: 1px solid #ffe082; border-radius: var(--radius);
+  font-size: 14px; font-weight: 700; color: #111; cursor: pointer;
+}
+.submit-confirm input { width: 20px; height: 20px; flex-shrink: 0; }
 
 .submitting {
   display: flex; align-items: center; justify-content: center; gap: 10px;
