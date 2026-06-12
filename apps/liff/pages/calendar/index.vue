@@ -143,7 +143,7 @@
               <input type="date" v-model="formModal.start_date" class="dt-input dt-date" />
               <span class="dt-sep"></span>
               <span class="dt-time-wrap">
-                <input type="time" v-model="formModal.start_time" class="dt-input dt-time" />
+                <input type="time" v-model="formModal.start_time" class="dt-input dt-time" step="300" />
                 <span v-if="!formModal.start_time" class="dt-placeholder">--:--</span>
               </span>
             </div>
@@ -155,7 +155,7 @@
               <input type="date" v-model="formModal.end_date" class="dt-input dt-date" />
               <span class="dt-sep"></span>
               <span class="dt-time-wrap">
-                <input type="time" v-model="formModal.end_time" class="dt-input dt-time" />
+                <input type="time" v-model="formModal.end_time" class="dt-input dt-time" step="300" />
                 <span v-if="!formModal.end_time" class="dt-placeholder">--:--</span>
               </span>
             </div>
