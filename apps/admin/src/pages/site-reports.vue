@@ -414,7 +414,7 @@ async function load() {
     .gte('date', dateFrom.value)
     .lte('date', dateTo.value)
     .order('date', { ascending: true })
-    .limit(500)
+    .limit(5000) // 1ヶ月×全作業員で500件超→一部の日が溢れて欠落するため余裕を持たせる
 
   // 現場×日でグループ化
   const grouped: Record<string, any> = {}
