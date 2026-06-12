@@ -424,7 +424,7 @@ async function load() {
     .gte('date', dateFrom.value)
     .lte('date', dateTo.value)
     .order('date', { ascending: false })
-    .limit(200)
+    .limit(5000) // 1ヶ月×全作業員（数十人）で200件超→古い日付が溢れて消えるため余裕を持たせる
 
   const mapped = (data ?? []).map((r: any) => ({
     ...r,
