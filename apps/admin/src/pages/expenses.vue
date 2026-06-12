@@ -278,7 +278,7 @@ async function load() {
       .gte('date', dateFrom.value)
       .lte('date', dateTo.value)
       .order('date', { ascending: true })
-      .limit(1000),
+      .limit(5000), // 1ヶ月×全作業員で1000件超→一部の日が溢れて欠落するため余裕を持たせる
     supabase.from('expense_settlements').select('*').eq('account_id', accountId).in('period_key', periodKeys),
   ])
 
