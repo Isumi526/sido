@@ -329,6 +329,7 @@ export const useExpense = () => {
       if (exp.highways) exp.highways = stripItemFiles(exp.highways)
       if (exp.trains)   exp.trains   = stripItemFiles(exp.trains)
       if (exp.others)   exp.others   = stripItemFiles(exp.others)
+      if (exp.entertainments) exp.entertainments = stripItemFiles(exp.entertainments)
       return { ...site, expenses: exp }
     })
   }
@@ -478,7 +479,10 @@ export const useExpense = () => {
         for (const ot of (exp.others || [])) {
           if (ot.yen) rows.push({ date: rep.date, category: 'その他', siteName, amount: ot.yen, note: ot.label, registrationNumber: ot.registrationNumber, fileUrls: ot.fileUrls?.length ? ot.fileUrls : takeOtherUrls(), tategae: !!ot.tategae })
         }
-        if (exp.entertainmentYen) rows.push({ date: rep.date, category: 'その他雑経費', siteName, amount: exp.entertainmentYen, note: exp.entertainmentLabel, registrationNumber: exp.entertainmentRegistration, fileUrls: exp.entertainmentUrls?.length ? exp.entertainmentUrls : undefined, tategae: !!exp.entertainmentTategae })
+        for (const ent of (exp.entertainments || [])) {
+          if (ent.yen) rows.push({ date: rep.date, category: 'その他雑経費', siteName, amount: ent.yen, note: ent.label, registrationNumber: ent.registrationNumber, fileUrls: ent.fileUrls?.length ? ent.fileUrls : undefined, tategae: !!ent.tategae })
+        }
+        if (exp.entertainmentYen && !(exp.entertainments || []).some((e: any) => e.yen)) rows.push({ date: rep.date, category: 'その他雑経費', siteName, amount: exp.entertainmentYen, note: exp.entertainmentLabel, registrationNumber: exp.entertainmentRegistration, fileUrls: exp.entertainmentUrls?.length ? exp.entertainmentUrls : undefined, tategae: !!exp.entertainmentTategae })
       }
     }
     return rows
