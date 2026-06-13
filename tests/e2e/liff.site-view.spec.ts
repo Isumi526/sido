@@ -1,0 +1,35 @@
+// ============================================================
+//  liff.site-view.spec.ts （dev モード）
+//  作業員が現場情報（詳細）を閲覧できる（緊急・AC3）
+// ============================================================
+import { test, expect } from '@playwright/test'
+import { rest, getAccountId } from './helpers'
+
+const TS = Date.now()
+const SITE = `E2E閲覧現場_${TS}`
+const LOC = `名古屋市テスト町${TS}`
+let siteId = ''
+
+test.beforeAll(async () => {
+  const accountId = await getAccountId()
+  siteId = (await rest('sites', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
+    account_id: accountId, name: SITE, active: true, location: LOC, construction_type: '内装', construction_details: 'クロス張替', memo: 'E2Eメモ',
+  }) }))[0].id
+})
+test.afterAll(async () => {
+  await rest(`sites?id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})
+})
+
+test('作業員が現場一覧から詳細を閲覧できる', async ({ page }) => {
+  await page.goto('/sites', { waitUntil: 'networkidle' })
+  const row = page.locator('.row', { hasText: SITE })
+  await expect(row).toBeVisible({ timeout: 15000 })
+  await expect(row).toContainText(LOC)            // 一覧に場所
+  await row.click()
+
+  const sheet = page.locator('.sheet')
+  await expect(sheet).toBeVisible()
+  await expect(sheet).toContainText(SITE)
+  await expect(sheet).toContainText(LOC)          // 詳細に場所
+  await expect(sheet).toContainText('クロス張替')  // 工事内容
+})
