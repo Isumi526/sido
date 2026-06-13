@@ -447,15 +447,19 @@ function setupIO() {
 
 function onGridScroll() {
   const wrap = gridWrapRef.value; if (!wrap) return
-  // sticky な作業員ヘッダー行の高さ分だけ下げた位置（＝ヘッダー直下の実際に見える先頭行）で月を判定する。
-  // これをしないとヘッダーに隠れた1段上の行で判定され、月ラベルが早く切り替わってしまう。
-  const headH = wrap.querySelector('thead')?.getBoundingClientRect().height ?? 0
-  const idx  = Math.min(
-    Math.floor((wrap.scrollTop + headH) / ROW_HEIGHT),
-    calendarDates.value.length - 1,
-  )
-  const date = calendarDates.value[idx]
-  if (date) navMonth.value = new Date(date + 'T00:00:00')
+  // 行の高さは予定の有無で可変なため、固定 ROW_HEIGHT での scrollTop 割り算だと行数を数えすぎて
+  // 月ラベルが大きく早くズレる。実際の行位置を測り、sticky な作業員ヘッダーの直下に来ている
+  // 「最上段の表示中の日付行」で月を判定する。
+  const headBottom = wrap.getBoundingClientRect().top
+    + (wrap.querySelector('thead')?.getBoundingClientRect().height ?? 0)
+  const rows = wrap.querySelectorAll<HTMLElement>('tr[data-date]')
+  for (const r of rows) {
+    if (r.getBoundingClientRect().bottom > headBottom + 4) {
+      const d = r.dataset.date
+      if (d) navMonth.value = new Date(d + 'T00:00:00')
+      break
+    }
+  }
 }
 
 function scrollToRow(dateStr: string) {
