@@ -428,23 +428,28 @@
                 <option value="あり">あり</option>
               </select>
               <template v-if="siteUsage[si].other === 'あり'">
-                <div class="mt6">
-                  <label class="hours-label">領収書・写真（JPEG/PDF）</label>
-                  <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'otherFiles', e)" />
-                  <div v-if="site.expenses.otherFiles?.length" class="photo-preview">
-                    <span class="hours-label">{{ site.expenses.otherFiles.length }}件選択済み</span>
-                    <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-otherFiles`" @click="analyzeReceipt(si, 'otherFiles', 0)">
-                      {{ receipt.loading.value === `${si}-otherFiles` ? '解析中...' : '✨ AI解析' }}
-                    </button>
+                <div v-for="(ot, oi) in site.expenses.others" :key="oi" class="lineitem-card mt6">
+                  <div class="lineitems-row">
+                    <input v-model="ot.label" type="text" class="input" placeholder="内容" @keydown.enter.prevent />
+                    <ExpenseField v-model="ot.yen" v-model:tategae="ot.tategae" with-tategae label="金額" />
+                    <button v-if="site.expenses.others.length > 1" type="button" class="btn-icon-sm" @click="report.removeOther(si, oi)">✕</button>
+                  </div>
+                  <input v-model="ot.registrationNumber" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" @keydown.enter.prevent />
+                  <div class="mt6">
+                    <label class="hours-label">領収書（JPEG/PDF）</label>
+                    <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleOtherFile(si, oi, e)" />
+                    <div v-if="ot.files?.length" class="photo-preview">
+                      <span class="hours-label">{{ ot.files.length }}件選択済み</span>
+                      <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-other-${oi}`" @click="analyzeReceipt(si, 'other', oi)">
+                        {{ receipt.loading.value === `${si}-other-${oi}` ? '解析中...' : '✨ AI解析' }}
+                      </button>
+                    </div>
+                    <div v-else-if="ot.fileUrls?.length" class="photo-preview">
+                      <span class="hours-label">登録済み{{ ot.fileUrls.length }}件</span>
+                    </div>
                   </div>
                 </div>
-                <div v-for="(ot, oi) in site.expenses.others" :key="oi" class="lineitems-row mt6">
-                  <input v-model="ot.label" type="text" class="input" placeholder="内容" @keydown.enter.prevent />
-                  <ExpenseField v-model="ot.yen" v-model:tategae="ot.tategae" with-tategae label="金額" />
-                  <button v-if="site.expenses.others.length > 1" type="button" class="btn-icon-sm" @click="report.removeOther(si, oi)">✕</button>
-                  <input v-model="ot.registrationNumber" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" @keydown.enter.prevent />
-                </div>
-                <button type="button" class="btn-ghost-sm" @click="report.addOther(si)">＋ 追加</button>
+                <button type="button" class="btn-ghost-sm" @click="report.addOther(si)">＋ その他を追加</button>
               </template>
             </Field>
 
@@ -1326,11 +1331,17 @@ function handleTrainFile(si: number, ti: number, event: Event) {
   const tr = report.form.value.sites[si].expenses.trains?.[ti]
   if (tr) tr.files = Array.from(input.files)
 }
+function handleOtherFile(si: number, oi: number, event: Event) {
+  const input = event.target as HTMLInputElement
+  if (!input.files?.length) return
+  const ot = report.form.value.sites[si].expenses.others?.[oi]
+  if (ot) ot.files = Array.from(input.files)
+}
 
 /** 領収書 AI 解析 → フォームに自動入力 */
 async function analyzeReceipt(
   si: number,
-  field: 'hotelFiles' | 'leopalaceFiles' | 'otherFiles' | 'entertainmentFiles' | 'parking' | 'highway' | 'train',
+  field: 'hotelFiles' | 'leopalaceFiles' | 'other' | 'entertainmentFiles' | 'parking' | 'highway' | 'train',
   otherIndex?: number,
 ) {
   const exp = report.form.value.sites[si].expenses
@@ -1340,6 +1351,7 @@ async function analyzeReceipt(
   if (field === 'parking') { file = exp.parkings?.[otherIndex!]?.files?.[0]; key = `${si}-parking-${otherIndex}` }
   else if (field === 'highway') { file = exp.highways?.[otherIndex!]?.files?.[0]; key = `${si}-highway-${otherIndex}` }
   else if (field === 'train') { file = exp.trains?.[otherIndex!]?.files?.[0]; key = `${si}-train-${otherIndex}` }
+  else if (field === 'other') { file = exp.others?.[otherIndex!]?.files?.[0]; key = `${si}-other-${otherIndex}` }
   else {
     file = (report.form.value.sites[si].expenses[field] as File[] | undefined)?.[0]
     key = `${si}-${field}`
@@ -1372,6 +1384,15 @@ async function analyzeReceipt(
     }
     return
   }
+  if (field === 'other') {
+    const item = exp.others?.[otherIndex!]
+    if (item) {
+      if (result.label) item.label              = result.label
+      if (result.yen)   item.yen                = result.yen
+      item.registrationNumber = inv
+    }
+    return
+  }
   if (field === 'hotelFiles') {
     if (result.label) exp.hotelName          = result.label
     if (result.yen)   exp.hotelYen           = result.yen
@@ -1384,13 +1405,6 @@ async function analyzeReceipt(
     if (result.label) exp.entertainmentLabel        = result.label
     if (result.yen)   exp.entertainmentYen          = result.yen
     exp.entertainmentRegistration = inv
-  } else if (field === 'otherFiles' && otherIndex !== undefined) {
-    const item = exp.others[otherIndex]
-    if (item) {
-      if (result.label) item.label              = result.label
-      if (result.yen)   item.yen                = result.yen
-      ;(item as any).registrationNumber = inv
-    }
   }
 }
 
