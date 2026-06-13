@@ -120,6 +120,7 @@
             <span class="form-row-label">{{ $t('calendar.site') }}</span>
             <select v-model="formModal.title" class="site-select">
               <option value="">{{ $t('calendar.pleaseSelect') }}</option>
+              <option value="__none__">{{ $t('calendar.noSite') }}</option>
               <option v-for="s in master.siteNames.value" :key="s" :value="s">{{ s }}</option>
               <option value="__other__">{{ $t('calendar.registerNewSite') }}</option>
             </select>
@@ -131,6 +132,16 @@
               type="text"
               class="site-select"
               :placeholder="$t('calendar.siteNamePlaceholder')"
+              @keydown.enter.prevent
+            />
+          </div>
+          <div v-if="formModal.title === '__none__'" class="form-row" style="margin-top:8px">
+            <span class="form-row-label">{{ $t('calendar.titleLabel') }}</span>
+            <input
+              v-model="(formModal as any)._noneTitle"
+              type="text"
+              class="site-select"
+              :placeholder="$t('calendar.titlePlaceholder')"
               @keydown.enter.prevent
             />
           </div>
@@ -621,6 +632,12 @@ async function saveSchedule() {
     if (!custom) { formError.value = t('calendar.errors.enterSiteName'); return }
     formModal.value.title = custom
     await master.saveSite(custom)
+  } else if (formModal.value.title === '__none__') {
+    // 現場なし: 自由タイトルを title に確定（現場マスタには保存しない＝プライベート/非現場の予定）
+    const free = ((formModal.value as any)._noneTitle ?? '').trim()
+    if (!free) { formError.value = t('calendar.errors.enterTitle'); return }
+    formModal.value.title = free
+    formModal.value.site_id = ''   // 現場紐付けなし
   }
   if (!formModal.value.title?.trim()) { formError.value = t('calendar.errors.selectSite'); return }
   if (!formModal.value.start_date || !formModal.value.end_date) { formError.value = t('calendar.errors.enterDate'); return }
