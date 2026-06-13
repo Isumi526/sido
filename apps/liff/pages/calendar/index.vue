@@ -1,17 +1,17 @@
 <template>
   <div class="cal-page">
-    <AppNav subtitle="予定管理" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
+    <AppNav :subtitle="$t('calendar.title')" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
 
     <!-- 月ナビ（ヘッダー：年月＋グループ絞り込み） -->
     <div class="month-nav">
       <span class="nav-label">{{ navLabel }}</span>
-      <select v-if="myGroups.length" v-model="selectedGroupId" class="group-select" aria-label="グループで絞り込み">
-        <option :value="null">全員</option>
+      <select v-if="myGroups.length" v-model="selectedGroupId" class="group-select" :aria-label="$t('calendar.filterByGroup')">
+        <option :value="null">{{ $t('calendar.everyone') }}</option>
         <option v-for="g in myGroups" :key="g.id" :value="g.id">{{ g.name }}</option>
       </select>
     </div>
 
-    <div v-if="loading" class="loading">読み込み中...</div>
+    <div v-if="loading" class="loading">{{ $t('common.loading') }}</div>
 
     <!-- マトリクスグリッド -->
     <div v-else ref="gridWrapRef" class="grid-wrap" @scroll.passive="onGridScroll">
@@ -44,7 +44,7 @@
             }"
           >
             <td class="sticky-col date-cell" :class="dateCellClass(date)">
-              <span v-if="date.endsWith('-01')" class="month-badge">{{ Number(date.slice(5, 7)) }}月</span>
+              <span v-if="date.endsWith('-01')" class="month-badge">{{ $t('calendar.monthBadge', { n: Number(date.slice(5, 7)) }) }}</span>
               {{ formatDateLabel(date) }}
             </td>
             <td
@@ -80,10 +80,10 @@
     <!-- 下部操作バー -->
     <div class="bottom-bar">
       <button class="nav-btn" @click="navigate(-1)">‹</button>
-      <button class="today-btn" @click="goToday">今日</button>
+      <button class="today-btn" @click="goToday">{{ $t('calendar.today') }}</button>
       <label class="deleted-toggle">
         <input type="checkbox" v-model="showDeleted" />
-        削除済み
+        {{ $t('calendar.deleted') }}
       </label>
       <button class="nav-btn" @click="navigate(1)">›</button>
     </div>
@@ -91,14 +91,14 @@
     <!-- 追加・編集モーダル -->
     <div v-if="formModal" class="modal-overlay" @click.self="formModal = null">
       <div class="modal">
-        <h2>{{ formModal.id ? '予定を編集' : '予定を追加' }}</h2>
+        <h2>{{ formModal.id ? $t('calendar.editSchedule') : $t('calendar.addSchedule') }}</h2>
 
         <!-- 対象者（複数選択＋グループ一括選択） -->
         <div class="form-card worker-card">
           <div class="worker-pick-head">
-            <span class="form-row-label">対象者 *（{{ selectedWorkerIds.size }}人）</span>
+            <span class="form-row-label">{{ $t('calendar.targetWorkers', { count: selectedWorkerIds.size }) }}</span>
             <select v-if="myGroups.length" class="group-pick" @change="onGroupBulkSelect($event)">
-              <option value="">グループから一括選択…</option>
+              <option value="">{{ $t('calendar.bulkSelectFromGroup') }}</option>
               <option v-for="g in myGroups" :key="g.id" :value="g.id">{{ g.name }}</option>
             </select>
           </div>
@@ -117,20 +117,20 @@
         <!-- 現場選択 -->
         <div class="form-card">
           <div class="form-row">
-            <span class="form-row-label">現場 *</span>
+            <span class="form-row-label">{{ $t('calendar.site') }}</span>
             <select v-model="formModal.title" class="site-select">
-              <option value="">選択してください</option>
+              <option value="">{{ $t('calendar.pleaseSelect') }}</option>
               <option v-for="s in master.siteNames.value" :key="s" :value="s">{{ s }}</option>
-              <option value="__other__">＋ 新しい現場を登録する</option>
+              <option value="__other__">{{ $t('calendar.registerNewSite') }}</option>
             </select>
           </div>
           <div v-if="formModal.title === '__other__'" class="form-row" style="margin-top:8px">
-            <span class="form-row-label">現場名 *</span>
+            <span class="form-row-label">{{ $t('calendar.siteName') }}</span>
             <input
               v-model="(formModal as any)._customTitle"
               type="text"
               class="site-select"
-              placeholder="現場名を入力"
+              :placeholder="$t('calendar.siteNamePlaceholder')"
               @keydown.enter.prevent
             />
           </div>
@@ -138,7 +138,7 @@
 
         <div class="form-card">
           <div class="form-row">
-            <span class="form-row-label">開始</span>
+            <span class="form-row-label">{{ $t('calendar.start') }}</span>
             <div class="dt-inline">
               <input type="date" v-model="formModal.start_date" class="dt-input dt-date" />
               <span class="dt-sep"></span>
@@ -150,7 +150,7 @@
           </div>
           <div class="form-divider"></div>
           <div class="form-row">
-            <span class="form-row-label">終了</span>
+            <span class="form-row-label">{{ $t('calendar.end') }}</span>
             <div class="dt-inline">
               <input type="date" v-model="formModal.end_date" class="dt-input dt-date" />
               <span class="dt-sep"></span>
@@ -164,7 +164,7 @@
 
         <div class="form-card">
           <div class="form-row">
-            <span class="form-row-label">夜勤</span>
+            <span class="form-row-label">{{ $t('calendar.nightShift') }}</span>
             <label class="ios-toggle">
               <input type="checkbox" v-model="formModal.is_night_shift" />
               <span class="ios-toggle-track"></span>
@@ -174,14 +174,14 @@
 
         <div class="form-card">
           <div class="form-row notes-row">
-            <textarea v-model="formModal.description" class="notes-input" placeholder="メモを追加" rows="2" />
+            <textarea v-model="formModal.description" class="notes-input" :placeholder="$t('calendar.addNote')" rows="2" />
           </div>
         </div>
 
         <p v-if="formError" class="error-msg">{{ formError }}</p>
         <div class="modal-actions">
-          <button class="btn-cancel" @click="formModal = null">キャンセル</button>
-          <button class="btn-save" :disabled="saving" @click="saveSchedule">{{ saving ? '保存中...' : '保存' }}</button>
+          <button class="btn-cancel" @click="formModal = null">{{ $t('common.cancel') }}</button>
+          <button class="btn-save" :disabled="saving" @click="saveSchedule">{{ saving ? $t('common.saving') : $t('common.save') }}</button>
         </div>
       </div>
     </div>
@@ -189,7 +189,7 @@
     <!-- 詳細モーダル -->
     <div v-if="detailModal" class="modal-overlay" @click.self="closeDetail">
       <div class="modal">
-        <div v-if="detailModal.schedule.is_night_shift" class="detail-night-badge">🌙 夜勤</div>
+        <div v-if="detailModal.schedule.is_night_shift" class="detail-night-badge">🌙 {{ $t('calendar.nightShift') }}</div>
         <h2 class="detail-title">{{ detailModal.schedule.title }}</h2>
         <p class="detail-meta">👤 {{ detailModal.schedule.worker?.name }}</p>
         <p class="detail-meta">
@@ -200,13 +200,13 @@
           🕐 {{ detailModal.schedule.start_time.slice(0, 5) }}〜{{ detailModal.schedule.end_time?.slice(0, 5) }}
         </p>
         <p v-if="detailModal.schedule.description" class="detail-desc">{{ detailModal.schedule.description }}</p>
-        <p v-if="detailModal.schedule.created_by_name" class="detail-created">作成: {{ detailModal.schedule.created_by_name }}</p>
-        <p v-if="detailModal.schedule.deleted_at" class="detail-deleted">🗑 削除: {{ detailModal.schedule.deleted_by_name }} ({{ fmtDateTime(detailModal.schedule.deleted_at) }})</p>
+        <p v-if="detailModal.schedule.created_by_name" class="detail-created">{{ $t('calendar.createdBy') }}: {{ detailModal.schedule.created_by_name }}</p>
+        <p v-if="detailModal.schedule.deleted_at" class="detail-deleted">🗑 {{ $t('common.delete') }}: {{ detailModal.schedule.deleted_by_name }} ({{ fmtDateTime(detailModal.schedule.deleted_at) }})</p>
 
         <!-- 編集履歴 -->
         <details class="edit-history">
-          <summary>編集履歴（{{ detailModal.edits.length }}件）</summary>
-          <p v-if="!detailModal.edits.length" class="edit-empty">編集履歴はありません</p>
+          <summary>{{ $t('calendar.editHistory', { count: detailModal.edits.length }) }}</summary>
+          <p v-if="!detailModal.edits.length" class="edit-empty">{{ $t('calendar.noEditHistory') }}</p>
           <div v-for="e in detailModal.edits" :key="e.id" class="edit-entry">
             <div class="edit-header">
               <span class="edit-who">{{ e.edited_by_name }}</span>
@@ -223,13 +223,13 @@
         </details>
 
         <div class="modal-actions">
-          <button class="btn-cancel" @click="closeDetail">閉じる</button>
+          <button class="btn-cancel" @click="closeDetail">{{ $t('common.close') }}</button>
           <template v-if="!detailModal.schedule.deleted_at">
-            <button class="btn-delete" @click="confirmDelete(detailModal.schedule.id)">削除</button>
-            <button class="btn-edit" @click="openEdit(detailModal.schedule)">編集</button>
+            <button class="btn-delete" @click="confirmDelete(detailModal.schedule.id)">{{ $t('common.delete') }}</button>
+            <button class="btn-edit" @click="openEdit(detailModal.schedule)">{{ $t('common.edit') }}</button>
           </template>
           <template v-else>
-            <button class="btn-restore" @click="restore(detailModal.schedule)">復元</button>
+            <button class="btn-restore" @click="restore(detailModal.schedule)">{{ $t('calendar.restore') }}</button>
           </template>
         </div>
       </div>
@@ -239,8 +239,10 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useSchedules, type Schedule, type ScheduleForm } from '~/composables/useSchedules'
 
+const { t } = useI18n()
 const schedules   = useSchedules()
 const master      = useMaster()
 const { profile } = useLiff()
@@ -257,16 +259,24 @@ function isMyWorker(workerId: string): boolean {
 }
 
 // ──────────────────── 定数 ────────────────────
-const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
-const CHANGE_LABELS: Record<string, string> = {
-  title:          '現場',
-  description:    '備考',
-  start_date:     '開始日',
-  end_date:       '終了日',
-  start_time:     '開始時刻',
-  end_time:       '終了時刻',
-  is_night_shift: '夜勤',
-}
+const WEEKDAYS = computed<string[]>(() => [
+  t('calendar.weekdays.sun'),
+  t('calendar.weekdays.mon'),
+  t('calendar.weekdays.tue'),
+  t('calendar.weekdays.wed'),
+  t('calendar.weekdays.thu'),
+  t('calendar.weekdays.fri'),
+  t('calendar.weekdays.sat'),
+])
+const CHANGE_LABELS = computed<Record<string, string>>(() => ({
+  title:          t('calendar.fields.title'),
+  description:    t('calendar.fields.description'),
+  start_date:     t('calendar.fields.start_date'),
+  end_date:       t('calendar.fields.end_date'),
+  start_time:     t('calendar.fields.start_time'),
+  end_time:       t('calendar.fields.end_time'),
+  is_night_shift: t('calendar.fields.is_night_shift'),
+}))
 const PIN_KEY  = 'calendar_pinned_workers'
 const GROUP_KEY = `calendar_group_filter_${config.public.accountSlug}`
 
@@ -367,7 +377,7 @@ let   ioBottom: IntersectionObserver | null = null
 
 const navLabel = computed(() => {
   const d = navMonth.value
-  return `${d.getFullYear()}年${d.getMonth() + 1}月`
+  return t('calendar.navLabel', { year: d.getFullYear(), month: d.getMonth() + 1 })
 })
 
 function genMonthDates(year: number, month: number): string[] {
@@ -517,7 +527,7 @@ function toDateStr(dt: Date): string {
 
 function formatDateLabel(date: string): string {
   const dt = new Date(date + 'T00:00:00')
-  return `${dt.getDate()}（${WEEKDAYS[dt.getDay()]}）`
+  return t('calendar.dateLabel', { day: dt.getDate(), weekday: WEEKDAYS.value[dt.getDay()] })
 }
 
 function fmtDateTime(iso: string): string {
@@ -608,15 +618,15 @@ async function saveSchedule() {
   // __other__ の場合は customTitle を title に確定し、マスタに保存
   if (formModal.value.title === '__other__') {
     const custom = ((formModal.value as any)._customTitle ?? '').trim()
-    if (!custom) { formError.value = '現場名を入力してください'; return }
+    if (!custom) { formError.value = t('calendar.errors.enterSiteName'); return }
     formModal.value.title = custom
     await master.saveSite(custom)
   }
-  if (!formModal.value.title?.trim()) { formError.value = '現場を選択してください'; return }
-  if (!formModal.value.start_date || !formModal.value.end_date) { formError.value = '日付を入力してください'; return }
-  if (formModal.value.start_date > formModal.value.end_date) { formError.value = '終了日は開始日以降にしてください'; return }
+  if (!formModal.value.title?.trim()) { formError.value = t('calendar.errors.selectSite'); return }
+  if (!formModal.value.start_date || !formModal.value.end_date) { formError.value = t('calendar.errors.enterDate'); return }
+  if (formModal.value.start_date > formModal.value.end_date) { formError.value = t('calendar.errors.endAfterStart'); return }
   const targetIds = [...selectedWorkerIds.value]
-  if (targetIds.length === 0) { formError.value = '対象者を選択してください'; return }
+  if (targetIds.length === 0) { formError.value = t('calendar.errors.selectTarget'); return }
   saving.value = true; formError.value = ''
   try {
     // 時刻が両方入力されていれば時刻あり、なければ終日
@@ -640,7 +650,7 @@ async function saveSchedule() {
       if (Object.keys(changes).length) {
         await supabase.from('schedule_edits').insert({
           schedule_id: formModal.value.id,
-          edited_by_name: workerName ?? '不明',
+          edited_by_name: workerName ?? t('calendar.unknown'),
           edited_at: new Date().toISOString(),
           changes,
         })
@@ -658,19 +668,19 @@ async function saveSchedule() {
     formModal.value = null
     await loadSchedules()
   } catch (e) {
-    formError.value = e instanceof Error ? e.message : '保存に失敗しました'
+    formError.value = e instanceof Error ? e.message : t('calendar.errors.saveFailed')
   } finally { saving.value = false }
 }
 
 async function confirmDelete(id: string) {
-  if (!confirm('この予定を削除しますか？')) return
+  if (!confirm(t('calendar.confirmDelete'))) return
   detailModal.value = null
   const workerName = proxy.proxyTarget.value?.name ?? profile.value?.displayName ?? undefined
   try {
     await schedules.deleteSchedule(id, workerName)
     await loadSchedules()
   }
-  catch (e) { alert(e instanceof Error ? e.message : '削除に失敗しました') }
+  catch (e) { alert(e instanceof Error ? e.message : t('calendar.errors.deleteFailed')) }
 }
 
 async function restore(ev: Schedule) {

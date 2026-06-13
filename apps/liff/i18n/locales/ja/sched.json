@@ -1,0 +1,9 @@
+{
+  "categoryWork": "現場作業",
+  "categoryOff": "休み",
+  "categoryTraining": "研修",
+  "categoryMeeting": "会議",
+  "categoryOther": "その他",
+  "fetchFailed": "取得に失敗しました",
+  "workerInfoUnavailable": "作業員情報が取得できません"
+}

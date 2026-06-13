@@ -3,6 +3,8 @@
 //  経費申請データの CRUD 操作
 // ============================================================
 import type { User, ExpenseItem, ExpenseItemInput, ExpenseRow } from '~/types'
+import { useI18n } from 'vue-i18n'
+import { gt } from '~/utils/i18n-global'
 import { flattenReportExpenses, ratesFromSettings } from './expense-flatten.gen'
 
 // ---------- 期間キーユーティリティ ----------
@@ -25,8 +27,8 @@ export function getCurrentPeriodKey(): string {
 /** 期間キーを表示用ラベルに変換 (例: '2026-05-first' → '2026年5月 前半') */
 export function periodLabel(key: string): string {
   const [year, month, half] = key.split('-')
-  const halfLabel = half === 'first' ? `前半（1〜15日）` : `後半（16日〜末日）`
-  return `${year}年${parseInt(month, 10)}月 ${halfLabel}`
+  const halfLabel = half === 'first' ? gt('expense.periodFirstHalf') : gt('expense.periodSecondHalf')
+  return gt('expense.periodLabel', { year, month: parseInt(month, 10), half: halfLabel })
 }
 
 // ---------- 月次精算（申請/差し戻し）ステータス ----------
@@ -69,8 +71,10 @@ export function isInDeadlineAlertWindow(periodKey: string, now: Date = new Date(
 /** 締切を表示用に整形（例: '6月3日(火) 10:00'） */
 export function deadlineLabel(periodKey: string): string {
   const d = deadlineForPeriod(periodKey)
-  const wd = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()]
-  return `${d.getMonth() + 1}月${d.getDate()}日(${wd}) ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  const wdKeys = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const
+  const wd = gt(`expense.weekday.${wdKeys[d.getDay()]}`)
+  const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return gt('expense.deadlineLabel', { month: d.getMonth() + 1, day: d.getDate(), weekday: wd, time })
 }
 
 /** 実効ステータス。行が無ければ締切判定で 未申請/期限超過 を導出 */
@@ -141,6 +145,7 @@ export const useExpense = () => {
   // コンポーザブル初期化時（同期フェーズ）に一度だけ取得してクロージャで共有
   const supabase = useSupabase()
   const { getAccountId } = useAccount()
+  const { t } = useI18n()
 
   /**
    * LINE userId でユーザーを取得（未登録なら null）
@@ -237,7 +242,7 @@ export const useExpense = () => {
   /** 経費明細を追加 */
   async function addItem(lineUserId: string, item: ExpenseItemInput): Promise<ExpenseItem> {
     const user = await getUser(lineUserId)
-    if (!user) throw new Error('ユーザーが登録されていません')
+    if (!user) throw new Error(t('expense.userNotRegistered'))
 
     const { data, error } = await supabase
       .from('expense_items')
@@ -285,7 +290,7 @@ export const useExpense = () => {
     workerRole: 'factory' | 'site'
   ): Promise<string> {
     const accountId = await getAccountId()
-    if (!accountId) throw new Error('accountId取得失敗')
+    if (!accountId) throw new Error(t('expense.accountIdFailed'))
 
     // worker_id で既存ユーザーを検索
     const { data: existing } = await supabase
@@ -310,7 +315,7 @@ export const useExpense = () => {
       .select('id')
       .single()
 
-    if (error) throw new Error('代理ユーザー作成失敗: ' + error.message)
+    if (error) throw new Error(t('expense.proxyUserCreateFailed', { message: error.message }))
     return created.id
   }
 
@@ -396,7 +401,7 @@ export const useExpense = () => {
 
     const user = await getUser(lineUserId)
     console.log('[saveReport] getUser結果=', user ? `id:${user.id} name:${user.real_name}` : 'null')
-    if (!user) throw new Error('ユーザーが登録されていません')
+    if (!user) throw new Error(t('expense.userNotRegistered'))
 
     await saveReportById(user.id, report)
     console.log('[saveReport] 保存成功 date=', report.date)

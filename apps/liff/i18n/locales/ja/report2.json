@@ -1,0 +1,4 @@
+{
+  "uploadFailed": "ファイルのアップロードに失敗しました。送信を中止します。\n{errors}",
+  "submitFailed": "送信に失敗しました"
+}

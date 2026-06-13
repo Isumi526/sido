@@ -1,33 +1,33 @@
 <template>
   <div class="subs-page">
-    <AppNav subtitle="下請け業者" :user-name="currentUser?.real_name" :user-role="currentUser?.worker_role" />
+    <AppNav :subtitle="$t('nav.subcontractors')" :user-name="currentUser?.real_name" :user-role="currentUser?.worker_role" />
 
     <div class="subs-body">
       <!-- 検索・絞り込み -->
       <div class="search-bar">
         <div class="search-row">
           <span class="material-symbols-rounded search-icon">search</span>
-          <input v-model="q" class="search-input" placeholder="業者名・代表者名で検索" />
+          <input v-model="q" class="search-input" :placeholder="$t('subcontractors.searchPlaceholder')" />
         </div>
         <div class="filter-row">
           <select v-model="filterTrade" class="filter-select">
-            <option value="">工種（すべて）</option>
+            <option value="">{{ $t('subcontractors.tradeAll') }}</option>
             <option v-for="t in tradeOptions" :key="t" :value="t">{{ t }}</option>
           </select>
-          <input v-model="filterArea" class="filter-area" placeholder="対応エリア" />
+          <input v-model="filterArea" class="filter-area" :placeholder="$t('subcontractors.areaPlaceholder')" />
         </div>
       </div>
 
       <!-- 登録ボタン -->
       <button class="btn-register" @click="openAdd">
         <span class="material-symbols-rounded">add_business</span>
-        <span>業者を登録</span>
+        <span>{{ $t('subcontractors.registerSub') }}</span>
       </button>
 
       <!-- 一覧 -->
-      <div v-if="loading" class="loading">読み込み中...</div>
+      <div v-if="loading" class="loading">{{ $t('common.loading') }}</div>
       <template v-else>
-        <div v-if="!filtered.length" class="empty">該当する業者がありません</div>
+        <div v-if="!filtered.length" class="empty">{{ $t('subcontractors.noResults') }}</div>
         <div v-for="s in filtered" :key="s.id" class="sub-card" @click="openDetail(s)">
           <div class="sub-card-head">
             <div class="sub-name">{{ s.name }}</div>
@@ -53,29 +53,29 @@
         <div class="sheet-body">
           <!-- 基本情報 -->
           <div v-if="detail.category" class="detail-row">
-            <span class="detail-label">区分</span>
+            <span class="detail-label">{{ $t('subcontractors.labelCategory') }}</span>
             <span class="cat-badge" :class="detail.category === '商社' ? 'shosha' : 'gyosha'">{{ detail.category }}</span>
           </div>
           <div v-if="detail.representative_name" class="detail-row">
-            <span class="detail-label">代表者</span>
+            <span class="detail-label">{{ $t('subcontractors.labelRep') }}</span>
             <span>{{ detail.representative_name }}</span>
           </div>
 
           <!-- 連絡先（タップで発信／メール） -->
           <div v-if="detail.mobile_phone" class="detail-row">
-            <span class="detail-label">携帯</span>
+            <span class="detail-label">{{ $t('subcontractors.labelMobile') }}</span>
             <a class="contact-link" :href="`tel:${detail.mobile_phone}`">
               <span class="material-symbols-rounded">call</span>{{ detail.mobile_phone }}
             </a>
           </div>
           <div v-if="detail.office_phone" class="detail-row">
-            <span class="detail-label">会社電話</span>
+            <span class="detail-label">{{ $t('subcontractors.labelOfficePhone') }}</span>
             <a class="contact-link" :href="`tel:${detail.office_phone}`">
               <span class="material-symbols-rounded">call</span>{{ detail.office_phone }}
             </a>
           </div>
           <div v-if="detail.email" class="detail-row">
-            <span class="detail-label">メール</span>
+            <span class="detail-label">{{ $t('subcontractors.labelEmail') }}</span>
             <a class="contact-link" :href="`mailto:${detail.email}`">
               <span class="material-symbols-rounded">mail</span>{{ detail.email }}
             </a>
@@ -83,13 +83,13 @@
 
           <!-- 工種・エリア -->
           <div v-if="detail.trade_types.length" class="detail-block">
-            <span class="detail-label">工種</span>
+            <span class="detail-label">{{ $t('subcontractors.labelTrades') }}</span>
             <div class="chips-wrap">
               <span v-for="t in detail.trade_types" :key="t" class="chip">{{ t }}</span>
             </div>
           </div>
           <div v-if="detail.service_areas.length" class="detail-block">
-            <span class="detail-label">対応エリア</span>
+            <span class="detail-label">{{ $t('subcontractors.labelAreas') }}</span>
             <div class="chips-wrap">
               <span v-for="a in detail.service_areas" :key="a" class="chip area">{{ a }}</span>
             </div>
@@ -97,14 +97,14 @@
 
           <!-- 操作 -->
           <div class="detail-actions">
-            <button class="btn-edit" @click="openEdit(detail)">編集</button>
-            <button class="btn-delete" @click="softDelete(detail)">削除</button>
+            <button class="btn-edit" @click="openEdit(detail)">{{ $t('common.edit') }}</button>
+            <button class="btn-delete" @click="softDelete(detail)">{{ $t('common.delete') }}</button>
           </div>
 
           <!-- コメント -->
           <div class="comments">
-            <div class="comments-title">コメント（{{ comments.length }}）</div>
-            <div v-if="commentsLoading" class="muted">読み込み中...</div>
+            <div class="comments-title">{{ $t('subcontractors.commentsTitle', { count: comments.length }) }}</div>
+            <div v-if="commentsLoading" class="muted">{{ $t('common.loading') }}</div>
             <template v-else>
               <div v-for="c in comments" :key="c.id" class="comment">
                 <div class="comment-head">
@@ -114,23 +114,23 @@
                 <template v-if="editingCommentId === c.id">
                   <textarea v-model="editCommentDraft" class="comment-edit" rows="2" />
                   <div class="comment-edit-actions">
-                    <button class="btn-mini" :disabled="commentBusy" @click="saveEditComment(c)">保存</button>
-                    <button class="btn-mini ghost" @click="editingCommentId = null">取消</button>
+                    <button class="btn-mini" :disabled="commentBusy" @click="saveEditComment(c)">{{ $t('subcontractors.saveComment') }}</button>
+                    <button class="btn-mini ghost" @click="editingCommentId = null">{{ $t('subcontractors.cancelComment') }}</button>
                   </div>
                 </template>
                 <template v-else>
                   <div class="comment-body">{{ c.content }}</div>
                   <div v-if="isOwnComment(c)" class="comment-own-actions">
-                    <button class="comment-link" @click="startEditComment(c)">編集</button>
-                    <button class="comment-link danger" @click="deleteComment(c)">削除</button>
+                    <button class="comment-link" @click="startEditComment(c)">{{ $t('common.edit') }}</button>
+                    <button class="comment-link danger" @click="deleteComment(c)">{{ $t('common.delete') }}</button>
                   </div>
                 </template>
               </div>
-              <p v-if="!comments.length" class="muted">まだコメントはありません</p>
+              <p v-if="!comments.length" class="muted">{{ $t('subcontractors.noComments') }}</p>
             </template>
             <div class="comment-add">
-              <textarea v-model="newComment" class="comment-input" rows="2" placeholder="コメントを追加..." />
-              <button class="btn-comment" :disabled="commentBusy || !newComment.trim()" @click="addComment">投稿</button>
+              <textarea v-model="newComment" class="comment-input" rows="2" :placeholder="$t('subcontractors.commentPlaceholder')" />
+              <button class="btn-comment" :disabled="commentBusy || !newComment.trim()" @click="addComment">{{ $t('subcontractors.postComment') }}</button>
             </div>
           </div>
         </div>
@@ -141,55 +141,55 @@
     <div v-if="modal" class="overlay" @click.self="modal = null">
       <div class="sheet">
         <div class="sheet-head">
-          <h2>{{ modal.id ? '業者を編集' : '業者を登録' }}</h2>
+          <h2>{{ modal.id ? $t('subcontractors.editSub') : $t('subcontractors.registerSub') }}</h2>
           <button class="sheet-close" @click="modal = null">✕</button>
         </div>
         <div class="sheet-body">
           <div class="form-field">
-            <label>業者名 <span class="req">*</span></label>
-            <input v-model="modal.name" class="input" placeholder="例：○○工務店" />
+            <label>{{ $t('subcontractors.labelName') }} <span class="req">*</span></label>
+            <input v-model="modal.name" class="input" :placeholder="$t('subcontractors.namePlaceholder')" />
           </div>
           <div class="form-field">
-            <label>区分</label>
+            <label>{{ $t('subcontractors.labelCategory') }}</label>
             <select v-model="modal.category" class="input">
-              <option value="業者">業者</option>
-              <option value="商社">商社</option>
+              <option value="業者">{{ $t('subcontractors.categoryGyosha') }}</option>
+              <option value="商社">{{ $t('subcontractors.categoryShosha') }}</option>
             </select>
           </div>
           <div class="form-field">
-            <label>代表者名</label>
-            <input v-model="modal.representative_name" class="input" placeholder="例：山田太郎" />
+            <label>{{ $t('subcontractors.labelRepName') }}</label>
+            <input v-model="modal.representative_name" class="input" :placeholder="$t('subcontractors.repNamePlaceholder')" />
           </div>
           <div class="form-field">
-            <label>代表者携帯</label>
+            <label>{{ $t('subcontractors.labelRepMobile') }}</label>
             <input v-model="modal.mobile_phone" class="input" type="tel" placeholder="090-..." />
           </div>
           <div class="form-field">
-            <label>会社電話</label>
+            <label>{{ $t('subcontractors.labelOfficePhone') }}</label>
             <input v-model="modal.office_phone" class="input" type="tel" placeholder="03-..." />
           </div>
           <div class="form-field">
-            <label>メールアドレス</label>
+            <label>{{ $t('subcontractors.labelEmailAddress') }}</label>
             <input v-model="modal.email" class="input" type="email" placeholder="info@example.com" />
           </div>
 
           <div class="form-field">
-            <label>対応エリア</label>
+            <label>{{ $t('subcontractors.labelAreas') }}</label>
             <div class="chips-input">
               <span v-for="(a, i) in modal.service_areas" :key="a" class="chip area">{{ a }}<button class="chip-x" @click="modal.service_areas.splice(i, 1)">×</button></span>
               <input
                 v-model="areaDraft" class="chip-add" list="pref-list"
-                placeholder="エリアを入力" @keydown.enter.prevent="addArea"
+                :placeholder="$t('subcontractors.areaInputPlaceholder')" @keydown.enter.prevent="addArea"
               />
             </div>
             <datalist id="pref-list">
               <option v-for="p in PREFECTURES" :key="p" :value="p" />
             </datalist>
-            <span class="hint">都道府県・市区など自由に追加できます（Enterで追加）</span>
+            <span class="hint">{{ $t('subcontractors.areaHint') }}</span>
           </div>
 
           <div class="form-field">
-            <label>工種</label>
+            <label>{{ $t('subcontractors.labelTrades') }}</label>
             <div class="presets">
               <button
                 v-for="p in presets" :key="p.id" type="button"
@@ -199,14 +199,14 @@
             </div>
             <div class="chips-input">
               <span v-for="t in customTrades" :key="t" class="chip">{{ t }}<button class="chip-x" @click="removeTrade(t)">×</button></span>
-              <input v-model="tradeDraft" class="chip-add" placeholder="工種を自由追加" @keydown.enter.prevent="addCustomTrade" />
+              <input v-model="tradeDraft" class="chip-add" :placeholder="$t('subcontractors.tradeCustomPlaceholder')" @keydown.enter.prevent="addCustomTrade" />
             </div>
           </div>
 
           <p v-if="saveError" class="error">{{ saveError }}</p>
           <div class="sheet-actions">
-            <button class="btn-cancel" @click="modal = null">キャンセル</button>
-            <button class="btn-save" :disabled="saving" @click="save">{{ saving ? '保存中...' : '保存' }}</button>
+            <button class="btn-cancel" @click="modal = null">{{ $t('common.cancel') }}</button>
+            <button class="btn-save" :disabled="saving" @click="save">{{ saving ? $t('common.saving') : $t('common.save') }}</button>
           </div>
         </div>
       </div>
@@ -215,7 +215,10 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import type { User } from '~/types'
+
+const { t } = useI18n()
 
 type Sub = {
   id: string; name: string; active: boolean; category: string | null
@@ -335,7 +338,7 @@ const filtered = computed(() => {
 
 const customTrades = computed(() => (modal.value?.trade_types ?? []).filter((t) => !presets.value.some((p) => p.name === t)))
 
-function workerName(id: string | null) { return (id && workersMap.value[id]) || '作業員' }
+function workerName(id: string | null) { return (id && workersMap.value[id]) || t('subcontractors.defaultWorker') }
 function fmtDate(s: string) {
   const d = new Date(s)
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
@@ -385,7 +388,7 @@ async function logEdit(subId: string, action: string, changes: unknown) {
 }
 
 async function save() {
-  if (!modal.value?.name?.trim()) { saveError.value = '業者名を入力してください'; return }
+  if (!modal.value?.name?.trim()) { saveError.value = t('subcontractors.errorNameRequired'); return }
   saving.value = true; saveError.value = ''
   try {
     const aid = accountId.value
@@ -415,7 +418,7 @@ async function save() {
     await load()
     // 詳細を開いていたら最新を反映
     if (detail.value) detail.value = subs.value.find((s) => s.id === detail.value!.id) ?? null
-  } catch (e: any) { saveError.value = e.message ?? '保存に失敗しました' }
+  } catch (e: any) { saveError.value = e.message ?? t('subcontractors.errorSaveFailed') }
   finally { saving.value = false }
 }
 
@@ -429,7 +432,7 @@ async function syncTradeTypes(subId: string, aid: string, want: string[]) {
 }
 
 async function softDelete(s: Sub) {
-  if (!confirm(`「${s.name}」を削除しますか？（管理者が復元できます）`)) return
+  if (!confirm(t('subcontractors.confirmDelete', { name: s.name }))) return
   await supabase.from('subcontractors').update({
     is_deleted: true, active: false, deleted_by: myWorkerId.value, deleted_at: new Date().toISOString(),
   }).eq('id', s.id)
@@ -479,7 +482,7 @@ async function saveEditComment(c: Comment) {
   } finally { commentBusy.value = false }
 }
 async function deleteComment(c: Comment) {
-  if (!confirm('コメントを削除しますか？')) return
+  if (!confirm(t('subcontractors.confirmDeleteComment'))) return
   commentBusy.value = true
   try {
     await supabase.from('subcontractor_comments')

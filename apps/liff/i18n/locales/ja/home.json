@@ -1,0 +1,17 @@
+{
+  "subtitle": "ホーム",
+  "loadingUser": "読み込み中...",
+  "unsubmittedTitle": "未送信の日報が {count} 件あります",
+  "unsubmittedSub": "タップして入力する",
+  "deadlineTitle": "{period}の経費申請の締切が近づいています",
+  "deadlineSub": "締切：{label} まで",
+  "menuSubcontractors": "下請け業者",
+  "proxyModalTitle": "代理入力するユーザーを選択",
+  "proxyModalClose": "✕",
+  "proxyCurrentPrefix": "代理中：",
+  "proxyClear": "解除する",
+  "proxyLoading": "読み込み中...",
+  "periodFirstHalf": "{month}月前半",
+  "periodSecondHalf": "{month}月後半",
+  "todayLabel": "{month}月{day}日"
+}

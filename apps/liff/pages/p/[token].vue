@@ -5,31 +5,34 @@
 
       <div v-if="loading" class="state">
         <div class="spinner" />
-        <p>読み込み中…</p>
+        <p>{{ t('token.loading') }}</p>
       </div>
 
       <div v-else-if="!result?.ok" class="state">
         <div class="icon-bad">⚠️</div>
-        <h1>リンクが無効です</h1>
-        <p class="muted">このリンクは期限切れ・失効済み、または正しくありません。お手数ですが発行元にお問い合わせください。</p>
+        <h1>{{ t('token.invalidTitle') }}</h1>
+        <p class="muted">{{ t('token.invalidMessage') }}</p>
       </div>
 
       <div v-else class="state ok">
         <div class="icon-ok">✓</div>
-        <p class="hello">{{ result.subcontractor?.name }} 様</p>
+        <p class="hello">{{ t('token.greeting', { name: result.subcontractor?.name }) }}</p>
         <h1>{{ purposeLabel }}</h1>
-        <p class="muted">対象の書類を準備しています。内容のご確認・お手続きはこの画面から行えます。</p>
+        <p class="muted">{{ t('token.okMessage') }}</p>
         <!-- 注文書承諾・請求フォーム等の本体UIは後続チケットでこの枠に実装 -->
-        <div class="doc-placeholder">書類の表示・お手続きUIは準備中です（{{ result.purpose }}）。</div>
+        <div class="doc-placeholder">{{ t('token.docPlaceholder', { purpose: result.purpose }) }}</div>
       </div>
     </div>
-    <p class="foot">このページはお客様専用のリンクです。第三者への共有はお控えください。</p>
+    <p class="foot">{{ t('token.footer') }}</p>
   </div>
 </template>
 
 <script setup lang="ts">
 // 業者向けポータル：LINEログイン不要。トークンを Edge Function に渡して検証・スコープ取得する。
 // ※ このページは LIFF 初期化を経由しない（app.vue が /p/ を除外）。
+import { useI18n } from 'vue-i18n'
+
+const { t }  = useI18n()
 const route  = useRoute()
 const config = useRuntimeConfig()
 
@@ -45,10 +48,10 @@ const loading = ref(true)
 const result  = ref<PortalResult | null>(null)
 
 const PURPOSE_LABELS: Record<string, string> = {
-  order_accept:   '注文書のご確認・ご承諾',
-  invoice_submit: '請求書のご提出',
+  order_accept:   t('token.purposeOrderAccept'),
+  invoice_submit: t('token.purposeInvoiceSubmit'),
 }
-const purposeLabel = computed(() => (result.value?.purpose && PURPOSE_LABELS[result.value.purpose]) || 'お手続き')
+const purposeLabel = computed(() => (result.value?.purpose && PURPOSE_LABELS[result.value.purpose]) || t('token.purposeDefault'))
 
 onMounted(async () => {
   const token = String(route.params.token ?? '')

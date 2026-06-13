@@ -1,6 +1,6 @@
 <template>
   <div class="home-page">
-    <AppNav subtitle="ホーム" :user-name="currentUser?.real_name" :user-role="currentUser?.worker_role" />
+    <AppNav :subtitle="t('home.subtitle')" :user-name="currentUser?.real_name" :user-role="currentUser?.worker_role" />
 
     <div class="home-body">
 
@@ -8,7 +8,7 @@
       <div class="user-card">
         <div class="user-avatar">{{ avatarChar }}</div>
         <div class="user-info">
-          <div class="user-name">{{ currentUser?.real_name ?? '読み込み中...' }}</div>
+          <div class="user-name">{{ currentUser?.real_name ?? t('home.loadingUser') }}</div>
           <div class="user-role">{{ roleLabel }}</div>
         </div>
         <div class="user-date">{{ todayLabel }}</div>
@@ -18,8 +18,8 @@
       <div v-if="unsubmittedCount > 0" class="alert-card" @click="navigateTo('/report')">
         <span class="material-symbols-rounded alert-icon">warning</span>
         <div class="alert-body">
-          <div class="alert-title">未送信の日報が {{ unsubmittedCount }} 件あります</div>
-          <div class="alert-sub">タップして入力する</div>
+          <div class="alert-title">{{ t('home.unsubmittedTitle', { count: unsubmittedCount }) }}</div>
+          <div class="alert-sub">{{ t('home.unsubmittedSub') }}</div>
         </div>
         <span class="material-symbols-rounded alert-arrow">chevron_right</span>
       </div>
@@ -28,8 +28,8 @@
       <NuxtLink v-if="deadlineBanner" class="deadline-card" to="/expense/download">
         <span class="material-symbols-rounded deadline-icon">schedule</span>
         <div class="deadline-body">
-          <div class="deadline-title">{{ periodShort(deadlineBanner.periodKey) }}の経費申請の締切が近づいています</div>
-          <div class="deadline-sub">締切：{{ deadlineBanner.label }} まで</div>
+          <div class="deadline-title">{{ t('home.deadlineTitle', { period: periodShort(deadlineBanner.periodKey) }) }}</div>
+          <div class="deadline-sub">{{ t('home.deadlineSub', { label: deadlineBanner.label }) }}</div>
         </div>
         <span class="material-symbols-rounded alert-arrow">chevron_right</span>
       </NuxtLink>
@@ -38,32 +38,32 @@
       <div class="menu-grid">
         <NuxtLink class="menu-card" to="/report">
           <span class="material-symbols-rounded menu-icon" style="color:#06C755">edit_note</span>
-          <span class="menu-label">日報登録</span>
+          <span class="menu-label">{{ t('nav.reportRegister') }}</span>
         </NuxtLink>
         <NuxtLink class="menu-card" to="/history">
           <span class="material-symbols-rounded menu-icon" style="color:#3b82f6">history</span>
-          <span class="menu-label">日報履歴</span>
+          <span class="menu-label">{{ t('nav.reportHistory') }}</span>
         </NuxtLink>
         <NuxtLink class="menu-card" to="/calendar">
           <span class="material-symbols-rounded menu-icon" style="color:#f59e0b">calendar_month</span>
-          <span class="menu-label">予定管理</span>
+          <span class="menu-label">{{ t('nav.schedule') }}</span>
         </NuxtLink>
         <NuxtLink class="menu-card" to="/groups">
           <span class="material-symbols-rounded menu-icon" style="color:#8b5cf6">group</span>
-          <span class="menu-label">グループ管理</span>
+          <span class="menu-label">{{ t('nav.groups') }}</span>
         </NuxtLink>
         <NuxtLink class="menu-card" to="/subcontractors">
           <span class="material-symbols-rounded menu-icon" style="color:#0ea5e9">handyman</span>
-          <span class="menu-label">下請け業者</span>
+          <span class="menu-label">{{ t('nav.subcontractors') }}</span>
         </NuxtLink>
         <NuxtLink class="menu-card" to="/expense/download">
           <span class="material-symbols-rounded menu-icon" style="color:#ef4444">picture_as_pdf</span>
-          <span class="menu-label">経費PDF</span>
+          <span class="menu-label">{{ t('nav.expensePdf') }}</span>
         </NuxtLink>
         <!-- 代理操作者のみ表示 -->
         <button v-if="proxy.canProxy.value" class="menu-card proxy-btn" @click="openProxyModal">
           <span class="material-symbols-rounded menu-icon" style="color:#dc2626">swap_horiz</span>
-          <span class="menu-label">代理入力</span>
+          <span class="menu-label">{{ t('nav.proxyInput') }}</span>
         </button>
       </div>
 
@@ -73,15 +73,15 @@
     <div v-if="proxyModalOpen" class="proxy-overlay" @click.self="proxyModalOpen = false">
       <div class="proxy-modal">
         <div class="proxy-modal-head">
-          <span class="proxy-modal-title">代理入力するユーザーを選択</span>
-          <button class="proxy-modal-close" @click="proxyModalOpen = false">✕</button>
+          <span class="proxy-modal-title">{{ t('home.proxyModalTitle') }}</span>
+          <button class="proxy-modal-close" @click="proxyModalOpen = false">{{ t('home.proxyModalClose') }}</button>
         </div>
         <div class="proxy-modal-body">
           <div v-if="proxy.isProxyMode.value" class="proxy-current">
-            <span>代理中：<strong>{{ proxy.proxyTarget.value?.name }}</strong></span>
-            <button class="proxy-clear-btn" @click="proxy.clearProxy(); proxyModalOpen = false">解除する</button>
+            <span>{{ t('home.proxyCurrentPrefix') }}<strong>{{ proxy.proxyTarget.value?.name }}</strong></span>
+            <button class="proxy-clear-btn" @click="proxy.clearProxy(); proxyModalOpen = false">{{ t('home.proxyClear') }}</button>
           </div>
-          <div v-if="proxyLoading" class="proxy-loading">読み込み中...</div>
+          <div v-if="proxyLoading" class="proxy-loading">{{ t('home.proxyLoading') }}</div>
           <template v-else>
             <div
               v-for="w in proxy.proxyTargets.value"
@@ -93,7 +93,7 @@
               <div class="proxy-user-avatar">{{ w.name.charAt(0) }}</div>
               <div class="proxy-user-info">
                 <div class="proxy-user-name">{{ w.name }}</div>
-                <div class="proxy-user-role">{{ w.worker_role === 'factory' ? '工場 / 事務所' : '現場' }}</div>
+                <div class="proxy-user-role">{{ w.worker_role === 'factory' ? t('common.roleFactory') : t('common.roleSite') }}</div>
               </div>
               <span v-if="proxy.proxyTarget.value?.id === w.id" class="material-symbols-rounded proxy-check">check_circle</span>
             </div>
@@ -105,9 +105,11 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import type { User } from '~/types'
 import { recentPeriodKeys, deadlineForPeriod, deadlineLabel, effectiveStatus, isInDeadlineAlertWindow } from '~/composables/useExpense'
 
+const { t }       = useI18n()
 const { profile } = useLiff()
 const supabase    = useSupabase()
 const config      = useRuntimeConfig()
@@ -124,7 +126,9 @@ const deadlineBanner   = ref<{ periodKey: string; label: string } | null>(null)
 /** period_key → '◯月前半/後半' */
 function periodShort(key: string): string {
   const [, month, half] = key.split('-')
-  return `${parseInt(month)}月${half === 'first' ? '前半' : '後半'}`
+  return half === 'first'
+    ? t('home.periodFirstHalf', { month: parseInt(month) })
+    : t('home.periodSecondHalf', { month: parseInt(month) })
 }
 
 /** 締切未到来かつ未申請/差し戻しの期のうち、締切が最も近いものをバナー表示 */
@@ -162,12 +166,12 @@ const avatarChar = computed(() =>
 
 const roleLabel = computed(() => {
   if (!currentUser.value?.worker_role) return ''
-  return currentUser.value.worker_role === 'factory' ? '工場 / 事務所' : '現場'
+  return currentUser.value.worker_role === 'factory' ? t('common.roleFactory') : t('common.roleSite')
 })
 
 const todayLabel = computed(() => {
   const d = new Date()
-  return `${d.getMonth() + 1}月${d.getDate()}日`
+  return t('home.todayLabel', { month: d.getMonth() + 1, day: d.getDate() })
 })
 
 onMounted(async () => {
