@@ -187,22 +187,39 @@
               <div v-if="site.expenses?.leopalaceUrls?.length" class="receipt-urls">
                 <a v-for="(url, ui) in site.expenses.leopalaceUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 レオパレス領収書{{ site.expenses.leopalaceUrls.length > 1 ? ui + 1 : '' }}</a>
               </div>
-              <div v-for="(ot, oi) in site.expenses?.others?.filter((o: any) => o.yen)" :key="'o'+oi" class="expense-row">
-                <span class="exp-cat">その他</span>
-                <span>{{ ot.label }}</span>
-                <span class="muted">¥{{ ot.yen?.toLocaleString() }}</span>
+              <div v-for="(ot, oi) in site.expenses?.others?.filter((o: any) => o.yen)" :key="'o'+oi">
+                <div class="expense-row">
+                  <span class="exp-cat">その他</span>
+                  <span>{{ ot.label }}</span>
+                  <span class="muted">¥{{ ot.yen?.toLocaleString() }}</span>
+                </div>
+                <div v-if="(ot as any).fileUrls?.length" class="receipt-urls">
+                  <a v-for="(url, ui) in (ot as any).fileUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 {{ ot.label || 'その他' }}領収書{{ (ot as any).fileUrls.length > 1 ? ui + 1 : '' }}</a>
+                </div>
               </div>
-              <div v-if="site.expenses?.otherUrls?.length" class="receipt-urls">
+              <div v-if="site.expenses?.otherUrls?.length && !site.expenses?.others?.some((o: any) => o.fileUrls?.length)" class="receipt-urls">
                 <a v-for="(url, ui) in site.expenses.otherUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 その他領収書{{ site.expenses.otherUrls.length > 1 ? ui + 1 : '' }}</a>
               </div>
-              <div v-if="site.expenses?.entertainmentYen" class="expense-row">
-                <span class="exp-cat">雑経費</span>
-                <span>{{ site.expenses.entertainmentLabel }}</span>
-                <span class="muted">¥{{ site.expenses.entertainmentYen.toLocaleString() }}</span>
+              <div v-for="(ent, ei) in site.expenses?.entertainments?.filter((e: any) => e.yen)" :key="'e'+ei">
+                <div class="expense-row">
+                  <span class="exp-cat">雑経費</span>
+                  <span>{{ ent.label }}</span>
+                  <span class="muted">¥{{ ent.yen?.toLocaleString() }}</span>
+                </div>
+                <div v-if="(ent as any).fileUrls?.length" class="receipt-urls">
+                  <a v-for="(url, ui) in (ent as any).fileUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 {{ ent.label || '雑経費' }}領収書{{ (ent as any).fileUrls.length > 1 ? ui + 1 : '' }}</a>
+                </div>
               </div>
-              <div v-if="site.expenses?.entertainmentUrls?.length" class="receipt-urls">
-                <a v-for="(url, ui) in site.expenses.entertainmentUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 雑経費領収書{{ site.expenses.entertainmentUrls.length > 1 ? ui + 1 : '' }}</a>
-              </div>
+              <template v-if="site.expenses?.entertainmentYen && !site.expenses?.entertainments?.some((e: any) => e.yen)">
+                <div class="expense-row">
+                  <span class="exp-cat">雑経費</span>
+                  <span>{{ site.expenses.entertainmentLabel }}</span>
+                  <span class="muted">¥{{ site.expenses.entertainmentYen.toLocaleString() }}</span>
+                </div>
+                <div v-if="site.expenses?.entertainmentUrls?.length" class="receipt-urls">
+                  <a v-for="(url, ui) in site.expenses.entertainmentUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 雑経費領収書{{ site.expenses.entertainmentUrls.length > 1 ? ui + 1 : '' }}</a>
+                </div>
+              </template>
               <div v-if="site.expenses?.garbagePhotoUrls?.length" class="receipt-urls">
                 <a v-for="(url, ui) in site.expenses.garbagePhotoUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 ゴミ写真{{ site.expenses.garbagePhotoUrls.length > 1 ? ui + 1 : '' }}</a>
               </div>
