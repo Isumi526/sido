@@ -90,6 +90,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN } from '../lib/workerHours'
 
 // ── 開発の更新履歴（全社共通・未確認/確認済みタブ）──────────
 interface DevUpdate { id: string; title: string; link: string | null; created_at: string }
@@ -151,21 +152,6 @@ const shoshaTotal  = ref(0)   // 商社
 const gyoshaTotal  = ref(0)   // 業者
 const expenseMap   = ref<Map<string, number>>(new Map())  // 経費カテゴリ別
 
-function calcLaborCost(w: any, unitPrice: number) {
-  if (!unitPrice) return 0
-  const ph = unitPrice / 8
-  return Math.round(
-    (w.hoursNormal        || 0) * ph * 1.00 +
-    (w.hoursOT            || 0) * ph * 1.25 +
-    (w.hoursNight         || 0) * ph * 1.25 +
-    (w.hoursOTNight       || 0) * ph * 1.50 +
-    (w.hoursSunday        || 0) * ph * 1.35 +
-    (w.hoursSundayOT      || 0) * ph * 1.60 +
-    (w.hoursSundayNight   || 0) * ph * 1.60 +
-    (w.hoursSundayOTNight || 0) * ph * 1.85
-  )
-}
-
 function addExp(map: Map<string, number>, key: string, val: number) {
   if (!val) return
   map.set(key, (map.get(key) ?? 0) + val)
@@ -199,7 +185,7 @@ async function load() {
   const [{ data: reports }, { data: invItems }] = await Promise.all([
     supabase
       .from('daily_reports')
-      .select('sites')
+      .select('date, sites')
       .eq('account_id', accountId)
       .eq('is_working', true)
       .gte('date', `${ym}-01`)
@@ -224,11 +210,14 @@ async function load() {
   }
 
   for (const rep of (reports ?? [])) {
+    // 実勤務時間ベースで料率別時間を再計算（通常×8h固定バグの修正）。複数現場は残業跨ぎ累積。
+    const isSunday = new Date((rep as any).date + 'T00:00:00').getDay() === 0
+    const laborMap = laborBreakdownForReport((rep as any).sites ?? [], isSunday)
     for (const site of (rep.sites as any[])) {
       // 社員費
       for (const w of (site.workers ?? []).filter((w: any) => w.workerName)) {
         const up = priceById[w.workerId] ?? priceByName[w.workerName] ?? 0
-        labor += calcLaborCost(w, up)
+        labor += laborCostForBreakdown(laborMap.get(w) ?? ZERO_BREAKDOWN, up)
       }
 
       // 商社・業者費
