@@ -51,6 +51,10 @@
     "endAfterStart": "終了日は開始日以降にしてください",
     "selectTarget": "対象者を選択してください",
     "saveFailed": "保存に失敗しました",
-    "deleteFailed": "削除に失敗しました"
-  }
+    "deleteFailed": "削除に失敗しました",
+    "enterTitle": "タイトルを入力してください"
+  },
+  "noSite": "現場なし（タイトルを入力）",
+  "titleLabel": "タイトル *",
+  "titlePlaceholder": "例：休暇 / 出張 / 私用"
 }
