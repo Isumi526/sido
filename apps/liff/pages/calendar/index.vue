@@ -135,6 +135,10 @@
               @keydown.enter.prevent
             />
           </div>
+          <div v-if="formModal.title === '__other__' && customSiteSimilar.length"
+               style="margin-top:6px;font-size:12px;color:#B45309;background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;padding:8px 10px;line-height:1.5">
+            ⚠️ {{ $t('calendar.similarSiteWarn') }}：<strong>{{ customSiteSimilar.join('、') }}</strong>
+          </div>
           <div v-if="formModal.title === '__none__'" class="form-row" style="margin-top:8px">
             <span class="form-row-label">{{ $t('calendar.titleLabel') }}</span>
             <input
@@ -252,10 +256,18 @@
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSchedules, type Schedule, type ScheduleForm } from '~/composables/useSchedules'
+import { findSimilarSiteNames } from '~/utils/siteSimilarity'
 
 const { t } = useI18n()
 const schedules   = useSchedules()
 const master      = useMaster()
+
+// 新規現場(__other__)手入力時、既存に似た現場があれば重複候補を出す
+const customSiteSimilar = computed(() =>
+  formModal.value?.title === '__other__'
+    ? findSimilarSiteNames((formModal.value as any)._customTitle ?? '', master.siteNames.value)
+    : [],
+)
 const { profile } = useLiff()
 const proxy       = useProxyMode()
 const supabase    = useSupabase()

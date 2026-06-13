@@ -56,5 +56,6 @@
   },
   "noSite": "No site (enter a title)",
   "titleLabel": "Title *",
-  "titlePlaceholder": "e.g. Day off / Business trip / Personal"
+  "titlePlaceholder": "e.g. Day off / Business trip / Personal",
+  "similarSiteWarn": "A similar site already exists (avoid duplicate registration)"
 }

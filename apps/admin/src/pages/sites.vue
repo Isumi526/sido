@@ -31,6 +31,9 @@
         <div class="field">
           <label>現場名</label>
           <input v-model="modal.name" class="input" placeholder="例：BLH名古屋" />
+          <div v-if="similarSites.length" class="dup-warn">
+            ⚠️ 似た現場が既にあります（重複登録に注意）：<strong>{{ similarSites.join('、') }}</strong>
+          </div>
         </div>
         <div class="field">
           <label>読み仮名（50音順の並びに使用）</label>
@@ -47,10 +50,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { findSimilarSiteNames } from '../lib/siteSimilarity'
 
 const router = useRouter()
 
@@ -60,6 +64,13 @@ const sites     = ref<Site[]>([])
 const modal     = ref<Partial<Site> | null>(null)
 const saving    = ref(false)
 const saveError = ref('')
+
+// 入力中の現場名に「似た」既存現場（自分自身=編集中のidは除外）。重複登録の気づき用。
+const similarSites = computed(() =>
+  modal.value
+    ? findSimilarSiteNames(modal.value.name ?? '', sites.value.filter((s) => s.id !== modal.value!.id).map((s) => s.name))
+    : [],
+)
 
 async function load() {
   const accountId = await getAccountId()
@@ -127,4 +138,6 @@ async function toggleActive(s: Site) {
 .btn-save:disabled { opacity: .5; }
 .btn-cancel { flex: 1; background: #f5f5f5; color: #888; border: none; border-radius: 8px; padding: 12px; cursor: pointer; }
 .error { color: #E53935; font-size: 13px; }
+.dup-warn { margin-top: 6px; font-size: 12px; color: #B45309; background: #FEF3C7; border: 1px solid #FDE68A; border-radius: 6px; padding: 8px 10px; line-height: 1.5; }
+.dup-warn strong { color: #92400E; }
 </style>

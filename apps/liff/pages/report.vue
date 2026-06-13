@@ -107,6 +107,10 @@
               required
               @keydown.enter.prevent
             />
+            <div v-if="site.siteName === '__other__' && siteSimilar(site.customSiteName).length"
+                 style="margin-top:6px;font-size:12px;color:#B45309;background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;padding:8px 10px;line-height:1.5">
+              ⚠️ {{ $t('report.similarSiteWarn') }}：<strong>{{ siteSimilar(site.customSiteName).join('、') }}</strong>
+            </div>
           </Field>
 
           <!-- ── 稼働（現場選択後に表示） ── -->
@@ -567,10 +571,16 @@
 import { computeWorkerHours, getRateLines, calcBreakMinutes, parseMin, TIME_OPTIONS } from '~/utils/workerHours'
 import type { RateBreakdown } from '~/utils/workerHours'
 import { computeDiff } from '~/utils/diffReport'
+import { findSimilarSiteNames } from '~/utils/siteSimilarity'
 import { useI18n } from 'vue-i18n'
 import type { User } from '~/types'
 
 const { t } = useI18n()
+
+// 新規現場の手入力時、既存に似た現場があれば重複候補を返す（重複登録の気づき）
+function siteSimilar(name?: string): string[] {
+  return findSimilarSiteNames(name ?? '', master.siteNames.value)
+}
 
 // クエリ（?edit=YYYY-MM-DD）が変わったらページを再マウントさせ、編集/新規の
 //  初期化（onMounted）を必ず再実行する。これが無いと、編集画面を開いた後に
