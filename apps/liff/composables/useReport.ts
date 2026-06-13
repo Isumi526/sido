@@ -67,6 +67,7 @@ function stripFiles(expenses: Record<string, unknown> | object): Record<string, 
   if (Array.isArray(rest.parkings)) rest.parkings = stripItemFiles(rest.parkings)
   if (Array.isArray(rest.highways)) rest.highways = stripItemFiles(rest.highways)
   if (Array.isArray(rest.trains))   rest.trains   = stripItemFiles(rest.trains)
+  if (Array.isArray(rest.others))   rest.others   = stripItemFiles(rest.others)
   return rest
 }
 
@@ -192,6 +193,7 @@ export const useReport = () => {
         { items: site.expenses.parkings, prefix: 'parking' },
         { items: site.expenses.highways, prefix: 'highway' },
         { items: site.expenses.trains,   prefix: 'train'   },
+        { items: site.expenses.others,   prefix: 'other'   },
       ]
       for (const { items, prefix } of perItemGroups) {
         for (let i = 0; i < (items?.length ?? 0); i++) {

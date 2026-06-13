@@ -50,6 +50,8 @@ export interface LineItem {
   yen?:                number
   registrationNumber?: string  // 登録番号（その他資材等）
   tategae?:            boolean  // 個人建て替えフラグ
+  files?:              File[]   // 明細ごとの送信前領収書（JSONには載せない）
+  fileUrls?:           string[] // Supabase Storage URL（保存・編集ロード・集計で使用）
 }
 
 // 明細ごとに個別領収書を持つ経費行（駐車場代・高速代）
