@@ -2,16 +2,24 @@
   <div>
     <div class="page-header">
       <h1 class="page-title">現場マスタ</h1>
-      <button class="btn-add" @click="openAdd">＋ 追加</button>
+      <div class="header-actions">
+        <button v-if="!mergeMode" class="btn-ghost" @click="startMerge">現場をマージ</button>
+        <template v-else>
+          <button class="btn-ghost" :disabled="mergePick.length !== 2" @click="openMerge">マージ実行（{{ mergePick.length }}/2）</button>
+          <button class="btn-ghost" @click="cancelMerge">キャンセル</button>
+        </template>
+        <button class="btn-add" @click="openAdd">＋ 追加</button>
+      </div>
     </div>
 
     <div class="table-wrap">
       <table class="table">
         <thead>
-          <tr><th>現場名</th><th>読み仮名</th><th>状態</th><th></th></tr>
+          <tr><th v-if="mergeMode"></th><th>現場名</th><th>読み仮名</th><th>状態</th><th></th></tr>
         </thead>
         <tbody>
           <tr v-for="s in sites" :key="s.id" :class="{ inactive: !s.active }">
+            <td v-if="mergeMode"><input type="checkbox" :value="s.id" v-model="mergePick" :disabled="!s.active" /></td>
             <td class="name">{{ s.name }}</td>
             <td class="kana">{{ s.name_kana || '—' }}</td>
             <td><span class="status" :class="s.active ? 'active' : 'off'">{{ s.active ? '有効' : '無効' }}</span></td>
@@ -46,6 +54,22 @@
         <p v-if="saveError" class="error">{{ saveError }}</p>
       </div>
     </div>
+
+    <!-- マージモーダル -->
+    <div v-if="mergeModal" class="modal-overlay" @click.self="mergeModal = null">
+      <div class="modal">
+        <h2>現場をマージ</h2>
+        <p class="hint">どちらに統合しますか？（残す方を選択。もう一方は無効化され、日報・予定などの参照は残す側に統合されます）</p>
+        <label class="merge-opt" v-for="s in mergeModal.sites" :key="s.id">
+          <input type="radio" :value="s.id" v-model="mergeTarget" /> <strong>{{ s.name }}</strong> を残す
+        </label>
+        <div class="modal-actions">
+          <button class="btn-save" :disabled="!mergeTarget || saving" @click="doMerge">{{ saving ? '統合中...' : 'マージ実行' }}</button>
+          <button class="btn-cancel" @click="mergeModal = null">キャンセル</button>
+        </div>
+        <p v-if="saveError" class="error">{{ saveError }}</p>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -64,6 +88,14 @@ const sites     = ref<Site[]>([])
 const modal     = ref<Partial<Site> | null>(null)
 const saving    = ref(false)
 const saveError = ref('')
+
+// ── マージ（重複現場の統合）──
+const mergeMode   = ref(false)
+const mergePick   = ref<string[]>([])
+const mergeModal  = ref<{ sites: Site[] } | null>(null)
+const mergeTarget = ref<string>('')
+// site_id(FK) を持つ参照テーブル（merge時に統合先へ付け替え）
+const SITE_FK_TABLES = ['attendance_logs', 'estimates', 'purchase_orders', 'schedules', 'site_rules', 'subcontractor_invoice_items']
 
 // 入力中の現場名に「似た」既存現場（自分自身=編集中のidは除外）。重複登録の気づき用。
 const similarSites = computed(() =>
@@ -107,6 +139,40 @@ async function toggleActive(s: Site) {
   await supabase.from('sites').update({ active: !s.active }).eq('id', s.id)
   await load()
 }
+
+function startMerge()  { mergeMode.value = true; mergePick.value = [] }
+function cancelMerge() { mergeMode.value = false; mergePick.value = [] }
+function openMerge() {
+  const picked = sites.value.filter((s) => mergePick.value.includes(s.id))
+  if (picked.length !== 2) return
+  mergeModal.value = { sites: picked }; mergeTarget.value = picked[0].id; saveError.value = ''
+}
+
+async function doMerge() {
+  const target = mergeModal.value!.sites.find((s) => s.id === mergeTarget.value)!
+  const source = mergeModal.value!.sites.find((s) => s.id !== mergeTarget.value)!
+  saving.value = true; saveError.value = ''
+  try {
+    const accountId = await getAccountId()
+    // 1) site_id(FK) を持つ参照を統合先へ付け替え
+    for (const tbl of SITE_FK_TABLES) {
+      await supabase.from(tbl).update({ site_id: target.id }).eq('site_id', source.id).then(() => {}, () => {})
+    }
+    // 2) daily_reports.sites[].siteName（文字列参照）を source.name → target.name に書き換え
+    const { data: reps } = await supabase.from('daily_reports').select('id, sites').eq('account_id', accountId).limit(10000)
+    for (const r of (reps ?? []) as any[]) {
+      const arr = Array.isArray(r.sites) ? r.sites : []
+      let changed = false
+      const next = arr.map((s: any) => (s?.siteName === source.name ? (changed = true, { ...s, siteName: target.name }) : s))
+      if (changed) await supabase.from('daily_reports').update({ sites: next }).eq('id', r.id)
+    }
+    // 3) source を無効化（統合元）
+    await supabase.from('sites').update({ active: false }).eq('id', source.id)
+    mergeModal.value = null; cancelMerge(); await load()
+  } catch (e: any) {
+    saveError.value = e.message ?? 'マージに失敗しました'
+  } finally { saving.value = false }
+}
 </script>
 
 <style scoped>
@@ -140,4 +206,8 @@ async function toggleActive(s: Site) {
 .error { color: #E53935; font-size: 13px; }
 .dup-warn { margin-top: 6px; font-size: 12px; color: #B45309; background: #FEF3C7; border: 1px solid #FDE68A; border-radius: 6px; padding: 8px 10px; line-height: 1.5; }
 .dup-warn strong { color: #92400E; }
+.header-actions { display: flex; gap: 8px; align-items: center; }
+.btn-ghost { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 10px 16px; font-size: 13px; cursor: pointer; color: #555; }
+.btn-ghost:disabled { opacity: .5; cursor: not-allowed; }
+.merge-opt { display: flex; align-items: center; gap: 8px; padding: 8px 0; font-size: 14px; cursor: pointer; }
 </style>
