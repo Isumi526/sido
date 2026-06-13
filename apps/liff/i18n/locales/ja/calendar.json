@@ -56,5 +56,6 @@
   },
   "noSite": "現場なし（タイトルを入力）",
   "titleLabel": "タイトル *",
-  "titlePlaceholder": "例：休暇 / 出張 / 私用"
+  "titlePlaceholder": "例：休暇 / 出張 / 私用",
+  "similarSiteWarn": "似た現場が既にあります（重複登録に注意）"
 }

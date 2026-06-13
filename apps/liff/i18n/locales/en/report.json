@@ -103,5 +103,6 @@
   "analyzeFailed": "Analysis failed",
   "analyzeSuccess": "Analysis succeeded! Please double-check visually as well",
   "errorNoLogin": "Could not get login information. Please reload.",
-  "errorUpdateFailed": "Failed to update"
+  "errorUpdateFailed": "Failed to update",
+  "similarSiteWarn": "A similar site already exists (avoid duplicate registration)"
 }

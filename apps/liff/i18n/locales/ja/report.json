@@ -103,5 +103,6 @@
   "analyzeFailed": "解析に失敗しました",
   "analyzeSuccess": "解析成功！目視でも必ず確認してください",
   "errorNoLogin": "ログイン情報が取得できませんでした。再読み込みしてください。",
-  "errorUpdateFailed": "更新に失敗しました"
+  "errorUpdateFailed": "更新に失敗しました",
+  "similarSiteWarn": "似た現場が既にあります（重複登録に注意）"
 }
