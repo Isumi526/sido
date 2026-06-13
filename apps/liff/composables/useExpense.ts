@@ -337,7 +337,7 @@ export const useExpense = () => {
   //  既存現場は onConflict + ignoreDuplicates で no-op（active/name_kana/sort_order を壊さない）。
   //  日報保存と同じ経路で必ず await されるため、ブラウザ側 saveSite の取りこぼしを補う保険。
   //  失敗しても日報保存は妨げない（best-effort・ログのみ）。
-  async function registerNewSites(accountId: string, sites: any[]): Promise<void> {
+  async function registerNewSites(accountId: string | null, sites: any[]): Promise<void> {
     if (!accountId || !Array.isArray(sites) || sites.length === 0) return
     const names = new Set<string>()
     for (const s of sites) {
