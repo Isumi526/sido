@@ -7,5 +7,8 @@
   "memo": "メモ",
   "photos": "写真",
   "documents": "書類",
-  "noDetail": "詳細情報はまだ登録されていません"
+  "noDetail": "詳細情報はまだ登録されていません",
+  "inactive": "無効",
+  "enable": "有効化",
+  "disable": "無効化"
 }

@@ -7,5 +7,8 @@
   "memo": "Memo",
   "photos": "Photos",
   "documents": "Documents",
-  "noDetail": "No details registered yet"
+  "noDetail": "No details registered yet",
+  "inactive": "Inactive",
+  "enable": "Enable",
+  "disable": "Disable"
 }
