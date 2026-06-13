@@ -51,6 +51,10 @@
     "endAfterStart": "End date must be on or after the start date",
     "selectTarget": "Please select at least one worker",
     "saveFailed": "Failed to save",
-    "deleteFailed": "Failed to delete"
-  }
+    "deleteFailed": "Failed to delete",
+    "enterTitle": "Please enter a title"
+  },
+  "noSite": "No site (enter a title)",
+  "titleLabel": "Title *",
+  "titlePlaceholder": "e.g. Day off / Business trip / Personal"
 }
