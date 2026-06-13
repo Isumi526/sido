@@ -345,7 +345,7 @@ function extractExpenseCols(exp: any) {
   }
 
   const hotelCost      = (exp?.hotelYen || 0) + (exp?.leopalaceYen || 0)
-  const entertainCost  = exp?.entertainmentYen || 0
+  const entertainCost  = (exp?.entertainments ?? []).reduce((s: number, e: any) => s + (e.yen || 0), 0) || (exp?.entertainmentYen || 0)
   const garbageFactoryM3 = exp?.garbageFactoryM3 || 0
   const garbageSiteM3    = exp?.garbageSiteM3    || 0
   const garbageCost    = Math.round(garbageFactoryM3 * GF_YEN + garbageSiteM3 * GS_YEN)

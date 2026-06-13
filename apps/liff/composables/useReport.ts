@@ -53,7 +53,7 @@ export const createSite = (): SiteReport => ({
   siteName:       '',
   contractorName: '',
   workers:        [createWorker()],
-  expenses:       { vehicles: [createVehicle()], parkings: [], highways: [], trains: [createTrain()], others: [createLineItem()] },
+  expenses:       { vehicles: [createVehicle()], parkings: [], highways: [], trains: [createTrain()], others: [createLineItem()], entertainments: [createLineItem()] },
   subcontractors: [],
   siteNote:       '',
 })
@@ -67,6 +67,8 @@ function stripFiles(expenses: Record<string, unknown> | object): Record<string, 
   if (Array.isArray(rest.parkings)) rest.parkings = stripItemFiles(rest.parkings)
   if (Array.isArray(rest.highways)) rest.highways = stripItemFiles(rest.highways)
   if (Array.isArray(rest.trains))   rest.trains   = stripItemFiles(rest.trains)
+  if (Array.isArray(rest.others))   rest.others   = stripItemFiles(rest.others)
+  if (Array.isArray(rest.entertainments)) rest.entertainments = stripItemFiles(rest.entertainments)
   return rest
 }
 
@@ -132,6 +134,8 @@ export const useReport = () => {
   function removeTrain(si: number, ti: number)       { form.value.sites[si].expenses.trains.splice(ti, 1) }
   function addOther(si: number)                      { form.value.sites[si].expenses.others.push(createLineItem()) }
   function removeOther(si: number, oi: number)       { form.value.sites[si].expenses.others.splice(oi, 1) }
+  function addEntertainment(si: number)                { (form.value.sites[si].expenses.entertainments ??= []).push(createLineItem()) }
+  function removeEntertainment(si: number, ei: number) { form.value.sites[si].expenses.entertainments?.splice(ei, 1) }
 
   function reset() {
     submitted.value = false
@@ -192,6 +196,8 @@ export const useReport = () => {
         { items: site.expenses.parkings, prefix: 'parking' },
         { items: site.expenses.highways, prefix: 'highway' },
         { items: site.expenses.trains,   prefix: 'train'   },
+        { items: site.expenses.others,   prefix: 'other'   },
+        { items: site.expenses.entertainments, prefix: 'entertainment' },
       ]
       for (const { items, prefix } of perItemGroups) {
         for (let i = 0; i < (items?.length ?? 0); i++) {
@@ -337,6 +343,7 @@ export const useReport = () => {
     addHighway, removeHighway,
     addTrain, removeTrain,
     addOther, removeOther,
+    addEntertainment, removeEntertainment,
     submit, reset,
   }
 }

@@ -428,23 +428,28 @@
                 <option value="あり">あり</option>
               </select>
               <template v-if="siteUsage[si].other === 'あり'">
-                <div class="mt6">
-                  <label class="hours-label">領収書・写真（JPEG/PDF）</label>
-                  <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'otherFiles', e)" />
-                  <div v-if="site.expenses.otherFiles?.length" class="photo-preview">
-                    <span class="hours-label">{{ site.expenses.otherFiles.length }}件選択済み</span>
-                    <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-otherFiles`" @click="analyzeReceipt(si, 'otherFiles', 0)">
-                      {{ receipt.loading.value === `${si}-otherFiles` ? '解析中...' : '✨ AI解析' }}
-                    </button>
+                <div v-for="(ot, oi) in site.expenses.others" :key="oi" class="lineitem-card mt6">
+                  <div class="lineitems-row">
+                    <input v-model="ot.label" type="text" class="input" placeholder="内容" @keydown.enter.prevent />
+                    <ExpenseField v-model="ot.yen" v-model:tategae="ot.tategae" with-tategae label="金額" />
+                    <button v-if="site.expenses.others.length > 1" type="button" class="btn-icon-sm" @click="report.removeOther(si, oi)">✕</button>
+                  </div>
+                  <input v-model="ot.registrationNumber" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" @keydown.enter.prevent />
+                  <div class="mt6">
+                    <label class="hours-label">領収書（JPEG/PDF）</label>
+                    <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleOtherFile(si, oi, e)" />
+                    <div v-if="ot.files?.length" class="photo-preview">
+                      <span class="hours-label">{{ ot.files.length }}件選択済み</span>
+                      <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-other-${oi}`" @click="analyzeReceipt(si, 'other', oi)">
+                        {{ receipt.loading.value === `${si}-other-${oi}` ? '解析中...' : '✨ AI解析' }}
+                      </button>
+                    </div>
+                    <div v-else-if="ot.fileUrls?.length" class="photo-preview">
+                      <span class="hours-label">登録済み{{ ot.fileUrls.length }}件</span>
+                    </div>
                   </div>
                 </div>
-                <div v-for="(ot, oi) in site.expenses.others" :key="oi" class="lineitems-row mt6">
-                  <input v-model="ot.label" type="text" class="input" placeholder="内容" @keydown.enter.prevent />
-                  <ExpenseField v-model="ot.yen" v-model:tategae="ot.tategae" with-tategae label="金額" />
-                  <button v-if="site.expenses.others.length > 1" type="button" class="btn-icon-sm" @click="report.removeOther(si, oi)">✕</button>
-                  <input v-model="ot.registrationNumber" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" @keydown.enter.prevent />
-                </div>
-                <button type="button" class="btn-ghost-sm" @click="report.addOther(si)">＋ 追加</button>
+                <button type="button" class="btn-ghost-sm" @click="report.addOther(si)">＋ その他を追加</button>
               </template>
             </Field>
 
@@ -455,21 +460,28 @@
                 <option value="あり">あり</option>
               </select>
               <template v-if="siteUsage[si].entertainment === 'あり'">
-                <div class="mt6">
-                  <label class="hours-label">領収書（JPEG/PDF）</label>
-                  <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'entertainmentFiles', e)" />
-                  <div v-if="site.expenses.entertainmentFiles?.length" class="photo-preview">
-                    <span class="hours-label">{{ site.expenses.entertainmentFiles.length }}件選択済み</span>
-                    <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-entertainmentFiles`" @click="analyzeReceipt(si, 'entertainmentFiles')">
-                      {{ receipt.loading.value === `${si}-entertainmentFiles` ? '解析中...' : '✨ AI解析' }}
-                    </button>
+                <div v-for="(ent, ei) in (site.expenses.entertainments ?? [])" :key="ei" class="lineitem-card mt6">
+                  <div class="lineitems-row">
+                    <input v-model="ent.label" type="text" class="input" placeholder="内容" @keydown.enter.prevent />
+                    <ExpenseField v-model="ent.yen" v-model:tategae="ent.tategae" with-tategae label="金額" />
+                    <button v-if="(site.expenses.entertainments?.length ?? 0) > 1" type="button" class="btn-icon-sm" @click="report.removeEntertainment(si, ei)">✕</button>
+                  </div>
+                  <input v-model="ent.registrationNumber" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" @keydown.enter.prevent />
+                  <div class="mt6">
+                    <label class="hours-label">領収書（JPEG/PDF）</label>
+                    <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleEntertainmentFile(si, ei, e)" />
+                    <div v-if="ent.files?.length" class="photo-preview">
+                      <span class="hours-label">{{ ent.files.length }}件選択済み</span>
+                      <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-entertainment-${ei}`" @click="analyzeReceipt(si, 'entertainment', ei)">
+                        {{ receipt.loading.value === `${si}-entertainment-${ei}` ? '解析中...' : '✨ AI解析' }}
+                      </button>
+                    </div>
+                    <div v-else-if="ent.fileUrls?.length" class="photo-preview">
+                      <span class="hours-label">登録済み{{ ent.fileUrls.length }}件</span>
+                    </div>
                   </div>
                 </div>
-                <div class="lineitems-row mt6">
-                  <input v-model="site.expenses.entertainmentLabel" type="text" class="input" placeholder="内容" @keydown.enter.prevent />
-                  <ExpenseField v-model="site.expenses.entertainmentYen" v-model:tategae="site.expenses.entertainmentTategae" with-tategae label="金額" />
-                </div>
-                <input v-model="site.expenses.entertainmentRegistration" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" @keydown.enter.prevent />
+                <button type="button" class="btn-ghost-sm" @click="report.addEntertainment(si)">＋ その他雑経費を追加</button>
               </template>
             </Field>
           </div>
@@ -705,7 +717,7 @@ function reconstructExpenseUsage(exp: any): UsageState {
   if (exp.leopalaceYen)                            usage.leopalace = 'あり'
   if (exp.garbageFactoryM3 || exp.garbageSiteM3)  usage.garbage = 'あり'
   if ((exp.others ?? []).some((o: any) => o.yen || o.label)) usage.other = 'あり'
-  if (exp.entertainmentYen)                        usage.entertainment = 'あり'
+  if (exp.entertainmentYen || (exp.entertainments ?? []).some((e: any) => e.yen || e.label)) usage.entertainment = 'あり'
   // いずれかの経費があれば expense = あり
   if (usage.vehicle !== 'なし' || usage.train !== 'なし' || usage.hotel !== 'なし' ||
       usage.leopalace !== 'なし' || usage.garbage !== 'なし' ||
@@ -761,10 +773,19 @@ async function loadEditData(date: string) {
         highways: [],
         trains:   [createTrain()],
         others:   [createLineItem()],
+        entertainments: [createLineItem()],
         ...(site.expenses ?? {}),
       },
       subcontractors: site.subcontractors ?? [],
     }))
+    // 旧形式（スカラーのその他雑経費）を新形式（entertainments配列）へ移行＋スカラーをクリア（金額の二重計上を防ぐ）
+    report.form.value.sites.forEach((s: any) => {
+      const e = s.expenses
+      if (e.entertainmentYen && !(e.entertainments ?? []).some((x: any) => x.yen)) {
+        e.entertainments = [{ label: e.entertainmentLabel, yen: e.entertainmentYen, registrationNumber: e.entertainmentRegistration, tategae: e.entertainmentTategae, fileUrls: e.entertainmentUrls }]
+        e.entertainmentLabel = undefined; e.entertainmentYen = undefined; e.entertainmentRegistration = undefined; e.entertainmentTategae = undefined; e.entertainmentFiles = undefined; e.entertainmentUrls = undefined
+      }
+    })
     siteUsage.value = report.form.value.sites.map((site: any) => {
       const usage = reconstructExpenseUsage(site.expenses)
       // 本人の作業員レコードが無ければ「自分の稼働なし」として復元
@@ -817,7 +838,8 @@ function setUsage(si: number, key: keyof UsageState, value: string) {
       exp.others = [createLineItem()]; exp.otherFiles = undefined
       break
     case 'entertainment':
-      exp.entertainmentLabel = undefined; exp.entertainmentYen = undefined; exp.entertainmentRegistration = undefined; exp.entertainmentFiles = undefined
+      exp.entertainments = [createLineItem()]
+      exp.entertainmentLabel = undefined; exp.entertainmentYen = undefined; exp.entertainmentRegistration = undefined; exp.entertainmentTategae = undefined; exp.entertainmentFiles = undefined; exp.entertainmentUrls = undefined
       break
   }
 }
@@ -1326,11 +1348,23 @@ function handleTrainFile(si: number, ti: number, event: Event) {
   const tr = report.form.value.sites[si].expenses.trains?.[ti]
   if (tr) tr.files = Array.from(input.files)
 }
+function handleOtherFile(si: number, oi: number, event: Event) {
+  const input = event.target as HTMLInputElement
+  if (!input.files?.length) return
+  const ot = report.form.value.sites[si].expenses.others?.[oi]
+  if (ot) ot.files = Array.from(input.files)
+}
+function handleEntertainmentFile(si: number, ei: number, event: Event) {
+  const input = event.target as HTMLInputElement
+  if (!input.files?.length) return
+  const ent = report.form.value.sites[si].expenses.entertainments?.[ei]
+  if (ent) ent.files = Array.from(input.files)
+}
 
 /** 領収書 AI 解析 → フォームに自動入力 */
 async function analyzeReceipt(
   si: number,
-  field: 'hotelFiles' | 'leopalaceFiles' | 'otherFiles' | 'entertainmentFiles' | 'parking' | 'highway' | 'train',
+  field: 'hotelFiles' | 'leopalaceFiles' | 'other' | 'entertainment' | 'parking' | 'highway' | 'train',
   otherIndex?: number,
 ) {
   const exp = report.form.value.sites[si].expenses
@@ -1340,6 +1374,8 @@ async function analyzeReceipt(
   if (field === 'parking') { file = exp.parkings?.[otherIndex!]?.files?.[0]; key = `${si}-parking-${otherIndex}` }
   else if (field === 'highway') { file = exp.highways?.[otherIndex!]?.files?.[0]; key = `${si}-highway-${otherIndex}` }
   else if (field === 'train') { file = exp.trains?.[otherIndex!]?.files?.[0]; key = `${si}-train-${otherIndex}` }
+  else if (field === 'other') { file = exp.others?.[otherIndex!]?.files?.[0]; key = `${si}-other-${otherIndex}` }
+  else if (field === 'entertainment') { file = exp.entertainments?.[otherIndex!]?.files?.[0]; key = `${si}-entertainment-${otherIndex}` }
   else {
     file = (report.form.value.sites[si].expenses[field] as File[] | undefined)?.[0]
     key = `${si}-${field}`
@@ -1372,6 +1408,24 @@ async function analyzeReceipt(
     }
     return
   }
+  if (field === 'other') {
+    const item = exp.others?.[otherIndex!]
+    if (item) {
+      if (result.label) item.label              = result.label
+      if (result.yen)   item.yen                = result.yen
+      item.registrationNumber = inv
+    }
+    return
+  }
+  if (field === 'entertainment') {
+    const item = exp.entertainments?.[otherIndex!]
+    if (item) {
+      if (result.label) item.label              = result.label
+      if (result.yen)   item.yen                = result.yen
+      item.registrationNumber = inv
+    }
+    return
+  }
   if (field === 'hotelFiles') {
     if (result.label) exp.hotelName          = result.label
     if (result.yen)   exp.hotelYen           = result.yen
@@ -1380,17 +1434,6 @@ async function analyzeReceipt(
     if (result.label) exp.leopalaceName         = result.label
     if (result.yen)   exp.leopalaceYen          = result.yen
     exp.leopalaceRegistration = inv
-  } else if (field === 'entertainmentFiles') {
-    if (result.label) exp.entertainmentLabel        = result.label
-    if (result.yen)   exp.entertainmentYen          = result.yen
-    exp.entertainmentRegistration = inv
-  } else if (field === 'otherFiles' && otherIndex !== undefined) {
-    const item = exp.others[otherIndex]
-    if (item) {
-      if (result.label) item.label              = result.label
-      if (result.yen)   item.yen                = result.yen
-      ;(item as any).registrationNumber = inv
-    }
   }
 }
 

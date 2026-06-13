@@ -246,7 +246,8 @@ function expenseLines(exp: any): string[] {
   for (const o of (exp.others || [])) if (o?.yen) out.push(`${o.label || 'その他'} ¥${yen(o.yen)}`)
   if (exp.hotelYen)         out.push(`${exp.hotelName || 'ホテル'} ¥${yen(exp.hotelYen)}`)
   if (exp.leopalaceYen)     out.push(`${exp.leopalaceName || 'レオパレス'} ¥${yen(exp.leopalaceYen)}`)
-  if (exp.entertainmentYen) out.push(`${exp.entertainmentLabel || '雑経費'} ¥${yen(exp.entertainmentYen)}`)
+  for (const e of (exp.entertainments || [])) if (e?.yen) out.push(`${e.label || '雑経費'} ¥${yen(e.yen)}`)
+  if (exp.entertainmentYen && !(exp.entertainments || []).some((e: any) => e?.yen)) out.push(`${exp.entertainmentLabel || '雑経費'} ¥${yen(exp.entertainmentYen)}`)
   if (exp.garbageFactoryM3 || exp.garbageSiteM3) {
     const g: string[] = []
     if (exp.garbageFactoryM3) g.push(`木材のみ ${exp.garbageFactoryM3}m³`)
