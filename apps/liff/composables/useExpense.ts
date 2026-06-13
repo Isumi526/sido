@@ -3,6 +3,7 @@
 //  経費申請データの CRUD 操作
 // ============================================================
 import type { User, ExpenseItem, ExpenseItemInput, ExpenseRow } from '~/types'
+import { flattenReportExpenses, ratesFromSettings } from './expense-flatten.gen'
 
 // ---------- 期間キーユーティリティ ----------
 
@@ -428,62 +429,16 @@ export const useExpense = () => {
 
     if (error) { console.error('[useExpense] getExpenseRowsFromReports:', error); return [] }
 
-    // 燃料単価をsettingsテーブルから取得（なければデフォルト値）
+    // 燃料単価をsettingsから解決（単一ソース ratesFromSettings）
     const { getAccountId: getAid } = useAccount()
     const aid = await getAid()
     const { data: settingsData } = await supabase.from('settings').select('key, value').eq('account_id', aid)
-    const settingsMap  = Object.fromEntries((settingsData ?? []).map((s: any) => [s.key, Number(s.value)]))
-    const gasolineRate = settingsMap['gasoline_rate_per_km'] ?? 23
-    const dieselRate   = settingsMap['diesel_rate_per_km']   ?? 20
+    const rates = ratesFromSettings(settingsData as any)
 
+    // 平坦化は単一ソース flattenReportExpenses（admin と共有・shared/expense-flatten.ts）
     const rows: ExpenseRow[] = []
     for (const rep of (data ?? [])) {
-      for (const site of (rep.sites as any[])) {
-        const siteName = site.siteName === '__other__' ? (site.customSiteName || '') : (site.siteName || '')
-        const exp      = site.expenses || {}
-
-        // ファイルURLを最初の行だけに添付するためのヘルパー
-        let vehicleUrlsAttached = false
-        const takeVehicleUrls = (): string[] | undefined => {
-          if (!vehicleUrlsAttached && exp.vehicleUrls?.length) { vehicleUrlsAttached = true; return exp.vehicleUrls }
-        }
-        let trainUrlsAttached = false
-        const takeTrainUrls = (): string[] | undefined => {
-          if (!trainUrlsAttached && exp.trainUrls?.length) { trainUrlsAttached = true; return exp.trainUrls }
-        }
-        let otherUrlsAttached = false
-        const takeOtherUrls = (): string[] | undefined => {
-          if (!otherUrlsAttached && exp.otherUrls?.length) { otherUrlsAttached = true; return exp.otherUrls }
-        }
-
-        for (const veh of (exp.vehicles || [])) {
-          if (veh.distanceKm) rows.push({ date: rep.date, category: 'ガソリン代', siteName, amount: Math.round(veh.distanceKm * gasolineRate), liters: veh.distanceKm, note: veh.vehicleName, fileUrls: takeVehicleUrls(), tategae: !!veh.gasTategae })
-          if (veh.dieselKm)   rows.push({ date: rep.date, category: '軽油代',    siteName, amount: Math.round(veh.dieselKm   * dieselRate),   liters: veh.dieselKm,   note: veh.vehicleName, fileUrls: takeVehicleUrls(), tategae: !!veh.dieselTategae })
-          // 旧形式（後方互換）: 車両配下の単一 駐車場代/高速代
-          if (veh.parkingYen) rows.push({ date: rep.date, category: '駐車代',    siteName, amount: veh.parkingYen, fileUrls: takeVehicleUrls(), tategae: !!veh.parkingTategae })
-          if (veh.highwayYen) rows.push({ date: rep.date, category: '高速代',    siteName, amount: veh.highwayYen, note: veh.etcCard || '', fileUrls: takeVehicleUrls(), tategae: !!veh.highwayTategae })
-        }
-        // 新形式: 現場ごとの駐車場代・高速代（複数・明細ごとに個別領収書）
-        for (const pk of (exp.parkings || [])) {
-          if (pk.yen) rows.push({ date: rep.date, category: '駐車代', siteName, amount: pk.yen, fileUrls: pk.fileUrls, tategae: !!pk.tategae })
-        }
-        for (const hw of (exp.highways || [])) {
-          if (hw.yen) rows.push({ date: rep.date, category: '高速代', siteName, amount: hw.yen, note: hw.etcCard || '', fileUrls: hw.fileUrls, tategae: !!hw.tategae })
-        }
-        for (const tr of (exp.trains || [])) {
-          // 新=明細ごと領収書(tr.fileUrls) / 旧=共通(trainUrls を先頭行に take-once)
-          if (tr.yen) rows.push({ date: rep.date, category: '電車代', siteName, amount: tr.yen, note: tr.label, fileUrls: tr.fileUrls?.length ? tr.fileUrls : takeTrainUrls(), tategae: !!tr.tategae })
-        }
-        if (exp.hotelYen)     rows.push({ date: rep.date, category: '宿泊費', siteName, amount: exp.hotelYen,     note: exp.hotelName,     registrationNumber: exp.hotelRegistration,     fileUrls: exp.hotelUrls?.length     ? exp.hotelUrls     : undefined, tategae: !!exp.hotelTategae })
-        if (exp.leopalaceYen) rows.push({ date: rep.date, category: '宿泊費', siteName, amount: exp.leopalaceYen, note: exp.leopalaceName, registrationNumber: exp.leopalaceRegistration, fileUrls: exp.leopalaceUrls?.length ? exp.leopalaceUrls : undefined, tategae: !!exp.leopalaceTategae })
-        for (const ot of (exp.others || [])) {
-          if (ot.yen) rows.push({ date: rep.date, category: 'その他', siteName, amount: ot.yen, note: ot.label, registrationNumber: ot.registrationNumber, fileUrls: ot.fileUrls?.length ? ot.fileUrls : takeOtherUrls(), tategae: !!ot.tategae })
-        }
-        for (const ent of (exp.entertainments || [])) {
-          if (ent.yen) rows.push({ date: rep.date, category: 'その他雑経費', siteName, amount: ent.yen, note: ent.label, registrationNumber: ent.registrationNumber, fileUrls: ent.fileUrls?.length ? ent.fileUrls : undefined, tategae: !!ent.tategae })
-        }
-        if (exp.entertainmentYen && !(exp.entertainments || []).some((e: any) => e.yen)) rows.push({ date: rep.date, category: 'その他雑経費', siteName, amount: exp.entertainmentYen, note: exp.entertainmentLabel, registrationNumber: exp.entertainmentRegistration, fileUrls: exp.entertainmentUrls?.length ? exp.entertainmentUrls : undefined, tategae: !!exp.entertainmentTategae })
-      }
+      rows.push(...flattenReportExpenses(rep.date, rep.sites as any[], rates))
     }
     return rows
   }

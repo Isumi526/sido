@@ -10,6 +10,7 @@
     "build:liff": "npm run build --workspace=apps/liff",
     "dev:admin": "cd apps/admin && npm run dev",
     "typecheck": "npm run typecheck --workspaces --if-present",
+    "sync:shared": "node scripts/sync-shared.mjs",
     "notify:check": "node scripts/check-notify.mjs",
     "notify:off": "node scripts/check-notify.mjs test --set off",
     "notify:on": "node scripts/check-notify.mjs test --set on",
