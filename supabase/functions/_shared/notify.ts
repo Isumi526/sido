@@ -89,7 +89,10 @@ export function buildReportMessage(body: {
     }
     if (exp.hotelYen)          expLines.push(`${exp.hotelName || 'ホテル'} ¥${Number(exp.hotelYen).toLocaleString()}`)
     if (exp.leopalaceYen)      expLines.push(`${exp.leopalaceName || 'レオパレス'} ¥${Number(exp.leopalaceYen).toLocaleString()}`)
-    if (exp.entertainmentYen)  expLines.push(`${exp.entertainmentLabel || '雑経費'} ¥${Number(exp.entertainmentYen).toLocaleString()}`)
+    for (const e of (exp.entertainments || [])) {
+      if (e?.yen) expLines.push(`${e.label || '雑経費'} ¥${Number(e.yen).toLocaleString()}`)
+    }
+    if (exp.entertainmentYen && !(exp.entertainments || []).some((e: any) => e?.yen))  expLines.push(`${exp.entertainmentLabel || '雑経費'} ¥${Number(exp.entertainmentYen).toLocaleString()}`)
     if (exp.garbageFactoryM3 || exp.garbageSiteM3) {
       const g: string[] = []
       if (exp.garbageFactoryM3) g.push(`木材のみ ${exp.garbageFactoryM3}m³`)
