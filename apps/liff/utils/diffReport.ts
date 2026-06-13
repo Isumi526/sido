@@ -148,8 +148,12 @@ function pushExpenseDiffs(lines: string[], o: any, n: any): void {
   const nOther = listSummary(n.others, (t: any) => t.yen ? `${t.label || ''}¥${Number(t.yen).toLocaleString()}` : '')
   if (oOther !== nOther) lines.push(`  ▸ その他: ${oOther || 'なし'} → ${nOther || 'なし'}`)
 
-  // 雑経費
-  diffYen(lines, '雑経費', o.entertainmentYen, n.entertainmentYen)
+  // 雑経費（新=entertainments配列 / 旧=スカラー）
+  const entSummary = (x: any) => (x.entertainments?.some((e: any) => e.yen)
+    ? listSummary(x.entertainments, (t: any) => t.yen ? `${t.label || ''}¥${Number(t.yen).toLocaleString()}` : '')
+    : (x.entertainmentYen ? `${x.entertainmentLabel || ''}¥${Number(x.entertainmentYen).toLocaleString()}` : ''))
+  const oEnt = entSummary(o), nEnt = entSummary(n)
+  if (oEnt !== nEnt) lines.push(`  ▸ 雑経費: ${oEnt || 'なし'} → ${nEnt || 'なし'}`)
 }
 
 function vehSummary(exp: any): string {

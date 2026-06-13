@@ -250,7 +250,7 @@ async function load() {
       for (const tr of (exp.trains || [])) addExp(expMap, '電車代', tr.yen || 0)
       addExp(expMap, '宿泊費',       (exp.hotelYen || 0) + (exp.leopalaceYen || 0))
       addExp(expMap, 'その他（資材等）', (exp.others || []).reduce((s: number, o: any) => s + (o.yen || 0), 0))
-      addExp(expMap, 'その他雑経費',  exp.entertainmentYen || 0)
+      addExp(expMap, 'その他雑経費',  (exp.entertainments || []).reduce((s: number, e: any) => s + (e.yen || 0), 0) || (exp.entertainmentYen || 0))
       addExp(expMap, 'ゴミ処分',
         Math.round((exp.garbageFactoryM3 || 0) * GF_YEN + (exp.garbageSiteM3 || 0) * GS_YEN))
     }
