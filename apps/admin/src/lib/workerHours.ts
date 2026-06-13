@@ -179,6 +179,66 @@ export function getRateLines(r: RateBreakdown): RateLine[] {
   return lines
 }
 
+/** 料率別時間 × 日当単価(/8h) で人件費を算出 */
+export function laborCostForBreakdown(b: RateBreakdown, unitPrice: number): number {
+  if (!unitPrice) return 0
+  const ph = unitPrice / 8
+  return Math.round(
+    (b.hoursNormal        || 0) * ph * 1.00 +
+    (b.hoursOT            || 0) * ph * 1.25 +
+    (b.hoursNight         || 0) * ph * 1.25 +
+    (b.hoursOTNight       || 0) * ph * 1.50 +
+    (b.hoursSunday        || 0) * ph * 1.35 +
+    (b.hoursSundayOT      || 0) * ph * 1.60 +
+    (b.hoursSundayNight   || 0) * ph * 1.60 +
+    (b.hoursSundayOTNight || 0) * ph * 1.85,
+  )
+}
+
+export const ZERO_BREAKDOWN: RateBreakdown = {
+  hoursNormal: 0, hoursOT: 0, hoursNight: 0, hoursOTNight: 0,
+  hoursSunday: 0, hoursSundayOT: 0, hoursSundayNight: 0, hoursSundayOTNight: 0,
+}
+
+/**
+ * 1日報(=1人1日)の sites[] から、各作業員(worker)の料率別時間を再計算して返す。
+ * 日報には開始/終了/休憩のみが保存され hoursNormal 等は持たないため、
+ * ここで実時間から計算する（保存値依存をやめ「通常×8h固定」バグを解消）。
+ * 同一作業員が複数現場に跨る場合は startTime 順に 8h 超過分を累積して残業判定する
+ * （worker-reports.vue と同じ現場跨ぎ残業ルール）。
+ * @returns 各 worker オブジェクト参照 → RateBreakdown の Map（参照一致で引く）
+ */
+export function laborBreakdownForReport(
+  sites: any[],
+  isSunday: boolean,
+): Map<any, RateBreakdown> {
+  const result = new Map<any, RateBreakdown>()
+  // 作業員(workerId||workerName)ごとに現場セグメントを集める
+  const byWorker: Record<string, { w: any; start: number }[]> = {}
+  for (const site of sites ?? []) {
+    for (const w of (site?.workers ?? [])) {
+      if (!w?.workerName) continue
+      const key = String(w.workerId ?? w.workerName)
+      ;(byWorker[key] ??= []).push({ w, start: parseMin(w.startTime || '08:00') })
+    }
+  }
+  for (const segs of Object.values(byWorker)) {
+    segs.sort((a, b) => a.start - b.start)  // 早い現場から累積
+    let acc = 0
+    for (const { w } of segs) {
+      const role = (w.workerRole === 'factory' ? 'factory' : 'site') as 'factory' | 'site'
+      const start = w.startTime || '08:00'
+      const end   = w.endTime   || '17:30'
+      const brk   = (w.breakMinutes != null) ? w.breakMinutes : calcBreakMinutes(role, start, end)
+      const h = computeWorkerHours(start, end, brk, isSunday, acc)
+      acc += h.workedMin
+      const { workedMin: _wm, ...breakdown } = h
+      result.set(w, breakdown)
+    }
+  }
+  return result
+}
+
 /** 30分刻みの時刻オプション "00:00"〜"23:30" */
 export const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
   const h = String(Math.floor(i / 2)).padStart(2, '0')
