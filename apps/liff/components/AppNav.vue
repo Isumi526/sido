@@ -64,6 +64,10 @@
             <span class="drawer-item-icon material-symbols-rounded">handyman</span>
             <span>{{ $t('nav.subcontractors') }}</span>
           </NuxtLink>
+          <NuxtLink class="drawer-item" to="/sites" @click="open = false">
+            <span class="drawer-item-icon material-symbols-rounded">location_on</span>
+            <span>{{ $t('nav.sites') }}</span>
+          </NuxtLink>
           <NuxtLink class="drawer-item" to="/expense/download" @click="open = false">
             <span class="drawer-item-icon material-symbols-rounded">picture_as_pdf</span>
             <span>{{ $t('nav.expensePdf') }}</span>

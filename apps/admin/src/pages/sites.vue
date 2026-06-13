@@ -47,6 +47,41 @@
           <label>読み仮名（50音順の並びに使用）</label>
           <input v-model="modal.name_kana" class="input" placeholder="例：びーえるえいちなごや" />
         </div>
+        <div class="field">
+          <label>場所 / 住所</label>
+          <input v-model="modal.location" class="input" placeholder="例：名古屋市〇〇区…" />
+        </div>
+        <div class="field">
+          <label>工事種類</label>
+          <input v-model="modal.construction_type" class="input" placeholder="例：内装・改修" />
+        </div>
+        <div class="field">
+          <label>工事内容</label>
+          <textarea v-model="modal.construction_details" class="input" rows="2" placeholder="例：1F内装ボード・クロス工事 一式"></textarea>
+        </div>
+        <div class="field">
+          <label>メモ</label>
+          <textarea v-model="modal.memo" class="input" rows="2" placeholder="任意"></textarea>
+        </div>
+
+        <!-- 写真・書類（既存現場のみ） -->
+        <div v-if="modal.id" class="field">
+          <label>写真・書類（複数可）</label>
+          <div v-if="attachments.length" class="att-list">
+            <div v-for="a in attachments" :key="a.id" class="att-item">
+              <span class="att-kind">{{ a.kind === 'photo' ? '📷' : '📄' }}</span>
+              <a :href="attUrl(a.path)" target="_blank" rel="noopener" class="att-link">{{ a.name || a.path.split('/').pop() }}</a>
+              <button class="att-del" @click="removeAttachment(a)">×</button>
+            </div>
+          </div>
+          <div class="att-add">
+            <label class="att-btn">＋ 写真<input type="file" accept="image/*" hidden :disabled="uploading" @change="onAttach($event, 'photo')" /></label>
+            <label class="att-btn">＋ 書類<input type="file" accept="application/pdf,image/*" hidden :disabled="uploading" @change="onAttach($event, 'document')" /></label>
+            <span v-if="uploading" class="att-up">アップロード中…</span>
+          </div>
+        </div>
+        <p v-else class="hint">写真・書類は保存後（現場作成後）に添付できます。</p>
+
         <div class="modal-actions">
           <button class="btn-save" :disabled="saving" @click="save">{{ saving ? '保存中...' : '保存' }}</button>
           <button class="btn-cancel" @click="modal = null">キャンセル</button>
@@ -82,12 +117,21 @@ import { findSimilarSiteNames } from '../lib/siteSimilarity'
 
 const router = useRouter()
 
-type Site = { id: string; name: string; name_kana: string | null; active: boolean }
+type Site = {
+  id: string; name: string; name_kana: string | null; active: boolean
+  location: string | null; construction_type: string | null; construction_details: string | null; memo: string | null
+}
+type Att = { id: string; site_id: string; kind: string; path: string; name: string | null }
 
+const BUCKET = 'expense-receipts'
 const sites     = ref<Site[]>([])
 const modal     = ref<Partial<Site> | null>(null)
 const saving    = ref(false)
 const saveError = ref('')
+// 編集中の現場の添付（写真・書類）
+const attachments = ref<Att[]>([])
+const uploading   = ref(false)
+function attUrl(path: string) { return supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl }
 
 // ── マージ（重複現場の統合）──
 const mergeMode   = ref(false)
@@ -107,7 +151,7 @@ const similarSites = computed(() =>
 async function load() {
   const accountId = await getAccountId()
   const { data } = await supabase.from('sites')
-    .select('id, name, name_kana, active')
+    .select('id, name, name_kana, active, location, construction_type, construction_details, memo')
     .eq('account_id', accountId)
     .order('name_kana', { nullsFirst: false })
     .order('name')
@@ -115,24 +159,56 @@ async function load() {
 }
 onMounted(load)
 
-function openAdd()        { modal.value = { name: '', name_kana: '' }; saveError.value = '' }
-function openEdit(s: Site) { modal.value = { ...s };   saveError.value = '' }
+function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '' }; attachments.value = []; saveError.value = '' }
+async function openEdit(s: Site) { modal.value = { ...s }; saveError.value = ''; await loadAttachments(s.id) }
 
 async function save() {
   if (!modal.value?.name?.trim()) { saveError.value = '現場名を入力してください'; return }
   saving.value = true; saveError.value = ''
   try {
-    const kana = modal.value.name_kana?.trim() || null
-    if (modal.value.id) {
-      await supabase.from('sites').update({ name: modal.value.name.trim(), name_kana: kana }).eq('id', modal.value.id)
+    const m = modal.value
+    const payload = {
+      name: m.name!.trim(), name_kana: m.name_kana?.trim() || null,
+      location: m.location?.trim() || null, construction_type: m.construction_type?.trim() || null,
+      construction_details: m.construction_details?.trim() || null, memo: m.memo?.trim() || null,
+    }
+    if (m.id) {
+      await supabase.from('sites').update(payload).eq('id', m.id)
     } else {
       const accountId = await getAccountId()
-      await supabase.from('sites').insert({ name: modal.value.name!.trim(), name_kana: kana, account_id: accountId })
+      await supabase.from('sites').insert({ ...payload, account_id: accountId })
     }
     modal.value = null; await load()
   } catch (e: any) {
     saveError.value = e.message ?? '保存に失敗しました'
   } finally { saving.value = false }
+}
+
+// ── 添付（写真・書類）──
+async function loadAttachments(siteId: string) {
+  const { data } = await supabase.from('site_attachments').select('id, site_id, kind, path, name').eq('site_id', siteId).order('created_at')
+  attachments.value = (data ?? []) as Att[]
+}
+async function onAttach(ev: Event, kind: 'photo' | 'document') {
+  const file = (ev.target as HTMLInputElement).files?.[0]
+  if (!file || !modal.value?.id) return
+  uploading.value = true; saveError.value = ''
+  try {
+    const accountId = await getAccountId()
+    const ext = (file.name.split('.').pop() || 'bin').toLowerCase()
+    const path = `site-attachments/${accountId}/${modal.value.id}/${kind}-${Date.now()}.${ext}`
+    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false, contentType: file.type || undefined })
+    if (upErr) throw upErr
+    await supabase.from('site_attachments').insert({ account_id: accountId, site_id: modal.value.id, kind, path, name: file.name })
+    await loadAttachments(modal.value.id)
+  } catch (e: any) { saveError.value = e.message ?? 'アップロードに失敗しました' }
+  finally { uploading.value = false; (ev.target as HTMLInputElement).value = '' }
+}
+async function removeAttachment(a: Att) {
+  if (!confirm(`「${a.name || a.kind}」を削除しますか？`)) return
+  await supabase.storage.from(BUCKET).remove([a.path]).then(() => {}, () => {})
+  await supabase.from('site_attachments').delete().eq('id', a.id)
+  if (modal.value?.id) await loadAttachments(modal.value.id)
 }
 
 async function toggleActive(s: Site) {
@@ -210,4 +286,12 @@ async function doMerge() {
 .btn-ghost { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 10px 16px; font-size: 13px; cursor: pointer; color: #555; }
 .btn-ghost:disabled { opacity: .5; cursor: not-allowed; }
 .merge-opt { display: flex; align-items: center; gap: 8px; padding: 8px 0; font-size: 14px; cursor: pointer; }
+.att-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.att-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.att-link { color: #1a56c4; text-decoration: none; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.att-del { background: none; border: none; color: #c0392b; cursor: pointer; font-size: 16px; }
+.att-add { display: flex; gap: 8px; align-items: center; }
+.att-btn { background: #f0f0f0; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+.att-up { font-size: 12px; color: #888; }
+textarea.input { resize: vertical; font-family: inherit; }
 </style>
