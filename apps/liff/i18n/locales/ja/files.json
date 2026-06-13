@@ -1,0 +1,13 @@
+{
+  "title": "添付ファイル",
+  "empty": "ファイルがありません",
+  "errorNoPath": "パスが指定されていません",
+  "errorFetch": "ファイルの取得に失敗しました",
+  "categoryVehicle": "車両領収書",
+  "categoryTrain": "電車領収書",
+  "categoryHotel": "ホテル領収書",
+  "categoryLeopalace": "レオパレス領収書",
+  "categoryOther": "その他領収書",
+  "categoryEntertainment": "雑経費領収書",
+  "categoryGarbage": "ゴミ写真"
+}

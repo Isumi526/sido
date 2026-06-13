@@ -1,44 +1,44 @@
 <template>
   <div class="app">
-    <AppNav subtitle="ユーザー登録" />
+    <AppNav :subtitle="t('register.subtitle')" />
 
     <main class="main">
       <div v-if="initializing" class="state-screen">
         <div class="spinner" />
-        <p class="state-text">読み込み中...</p>
+        <p class="state-text">{{ t('common.loading') }}</p>
       </div>
 
       <div v-else-if="done" class="state-screen">
         <div class="success-mark">✓</div>
-        <h2 class="state-title">登録完了！</h2>
-        <p class="state-text">{{ displayName }} さんで登録しました。</p>
-        <button class="btn-primary" @click="router.push('/')">ホームへ →</button>
+        <h2 class="state-title">{{ t('register.doneTitle') }}</h2>
+        <p class="state-text">{{ t('register.doneMessage', { name: displayName }) }}</p>
+        <button class="btn-primary" @click="router.push('/')">{{ t('register.toHome') }}</button>
       </div>
 
       <form v-else class="form" @submit.prevent="handleSubmit">
         <div class="card">
-          <h2 class="card-title">ユーザー登録</h2>
+          <h2 class="card-title">{{ t('register.title') }}</h2>
           <p class="card-desc">
-            申請書に使用する<strong>本名</strong>を登録してください。<br>
-            一覧にない場合は新規登録できます。
+            {{ t('register.descLine1') }}<strong>{{ t('register.descBold') }}</strong>{{ t('register.descLine1Suffix') }}<br>
+            {{ t('register.descLine2') }}
           </p>
 
           <div class="field">
-            <label class="label">LINE表示名（参考）</label>
+            <label class="label">{{ t('register.lineDisplayName') }}</label>
             <div class="display-name">{{ liff.profile.value?.displayName ?? '—' }}</div>
           </div>
 
           <!-- 既存作業員から選択 -->
           <div v-if="!isNewWorker" class="field">
-            <label class="label" for="workerId">本名 <span class="required">必須</span></label>
+            <label class="label" for="workerId">{{ t('register.labelRealName') }} <span class="required">{{ t('common.required') }}</span></label>
             <select
               id="workerId"
               v-model="selectedWorkerId"
               class="select"
               @change="onWorkerSelect"
             >
-              <option value="">選択してください</option>
-              <option v-if="liff.isTester.value" value="__tester__">🔧 テストユーザー</option>
+              <option value="">{{ t('register.selectPlaceholder') }}</option>
+              <option v-if="liff.isTester.value" value="__tester__">{{ t('register.testerOption') }}</option>
               <option
                 v-for="w in sortedWorkers"
                 :key="w.id"
@@ -46,57 +46,57 @@
               >{{ w.name }}</option>
             </select>
             <button type="button" class="btn-link" @click="switchToNew">
-              一覧にない場合はこちら →
+              {{ t('register.switchToNew') }}
             </button>
           </div>
 
           <!-- 新規作業員入力 -->
           <div v-else class="field">
-            <label class="label" for="newName">本名（新規）<span class="required">必須</span></label>
+            <label class="label" for="newName">{{ t('register.labelNewName') }}<span class="required">{{ t('common.required') }}</span></label>
             <input
               id="newName"
               v-model="newWorkerName"
               type="text"
               class="input"
-              placeholder="例：山田 太郎"
+              :placeholder="t('register.newNamePlaceholder')"
               required
             >
             <button type="button" class="btn-link" @click="switchToExisting">
-              ← 一覧から選ぶ
+              {{ t('register.switchToExisting') }}
             </button>
           </div>
 
           <!-- 所属（新規のときのみ選択。既存はworkerから自動取得） -->
           <div v-if="isNewWorker" class="field">
-            <label class="label">所属 <span class="required">必須</span></label>
+            <label class="label">{{ t('register.labelRole') }} <span class="required">{{ t('common.required') }}</span></label>
             <div class="role-toggle">
               <button type="button" class="role-btn" :class="{ active: workerRole === 'factory' }" @click="workerRole = 'factory'">
-                工場 / 事務所
+                {{ t('common.roleFactory') }}
               </button>
               <button type="button" class="role-btn" :class="{ active: workerRole === 'site' }" @click="workerRole = 'site'">
-                現場
+                {{ t('common.roleSite') }}
               </button>
             </div>
           </div>
 
           <!-- 選択した既存作業員の所属表示 -->
           <div v-else-if="selectedWorker" class="field">
-            <label class="label">所属</label>
+            <label class="label">{{ t('register.labelRole') }}</label>
             <div class="display-name">
-              {{ selectedWorker.role === 'factory' ? '工場 / 事務所' : '現場' }}
+              {{ selectedWorker.role === 'factory' ? t('common.roleFactory') : t('common.roleSite') }}
             </div>
           </div>
 
           <!-- テスター用：キャッシュクリア -->
           <button v-if="liff.isTester.value" type="button" class="btn-dev" @click="clearCache">
-            🔧 キャッシュクリア（テスト用）
+            {{ t('register.clearCache') }}
           </button>
 
           <div v-if="errorMsg" class="error-banner">{{ errorMsg }}</div>
 
           <button type="submit" class="btn-submit" :disabled="submitting || !canSubmit">
-            <span v-if="submitting">登録中...</span>
-            <span v-else>登録する →</span>
+            <span v-if="submitting">{{ t('register.submitting') }}</span>
+            <span v-else>{{ t('register.submit') }}</span>
           </button>
         </div>
       </form>
@@ -105,6 +105,9 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
+const { t }   = useI18n()
 const liff    = useLiff()
 const master  = useMaster()
 const expense = useExpense()
@@ -183,7 +186,7 @@ function switchToExisting() {
 
 async function handleSubmit() {
   const userId = liff.profile.value?.userId
-  if (!userId) { errorMsg.value = 'LINEユーザー情報が取得できません'; return }
+  if (!userId) { errorMsg.value = t('register.errorNoUser'); return }
 
   submitting.value = true
   errorMsg.value   = ''
@@ -202,7 +205,7 @@ async function handleSubmit() {
     }
     done.value = true
   } catch (e) {
-    errorMsg.value = '登録に失敗しました。もう一度お試しください。'
+    errorMsg.value = t('register.errorSubmit')
     console.error(e)
   } finally {
     submitting.value = false
