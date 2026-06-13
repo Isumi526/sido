@@ -6,13 +6,13 @@
         <div class="brand">
           <span class="brand-name">APP</span>
           <span class="brand-div">|</span>
-          <span class="brand-sub">管理画面</span>
+          <span class="brand-sub">{{ $t('admin.brandSub') }}</span>
         </div>
         <nav class="header-tabs">
-          <button :class="['tab-btn', { active: tab === 'dashboard' }]" @click="tab = 'dashboard'">ダッシュボード</button>
-          <button :class="['tab-btn', { active: tab === 'users' }]" @click="tab = 'users'">社員一覧</button>
-          <button :class="['tab-btn', { active: tab === 'reports' }]" @click="tab = 'reports'">日報ログ</button>
-          <button :class="['tab-btn', { active: tab === 'settings' }]" @click="tab = 'settings'">設定</button>
+          <button :class="['tab-btn', { active: tab === 'dashboard' }]" @click="tab = 'dashboard'">{{ $t('admin.tabDashboard') }}</button>
+          <button :class="['tab-btn', { active: tab === 'users' }]" @click="tab = 'users'">{{ $t('admin.tabUsers') }}</button>
+          <button :class="['tab-btn', { active: tab === 'reports' }]" @click="tab = 'reports'">{{ $t('admin.tabReports') }}</button>
+          <button :class="['tab-btn', { active: tab === 'settings' }]" @click="tab = 'settings'">{{ $t('admin.tabSettings') }}</button>
         </nav>
       </div>
     </header>
@@ -21,14 +21,14 @@
       <!-- ローディング -->
       <div v-if="loading" class="state-loading">
         <div class="spinner" />
-        <p>読み込み中...</p>
+        <p>{{ $t('common.loading') }}</p>
       </div>
 
       <template v-else>
         <!-- ━━ ダッシュボード ━━ -->
         <section v-if="tab === 'dashboard'">
           <div class="section-head">
-            <h2 class="section-title">月次経費集計</h2>
+            <h2 class="section-title">{{ $t('admin.dashTitle') }}</h2>
             <div class="filter-row">
               <select v-model="dashMonth" class="filter-input">
                 <option v-for="m in monthOptions" :key="m.value" :value="m.value">{{ m.label }}</option>
@@ -39,16 +39,16 @@
           <!-- サマリーカード -->
           <div class="dash-cards">
             <div class="dash-card accent">
-              <div class="dash-card-label">経費合計</div>
+              <div class="dash-card-label">{{ $t('admin.cardTotal') }}</div>
               <div class="dash-card-value">¥{{ dashTotal.toLocaleString() }}</div>
             </div>
             <div class="dash-card">
-              <div class="dash-card-label">日報件数（稼働日）</div>
-              <div class="dash-card-value">{{ dashReportCount }}<span class="dash-card-unit">件</span></div>
+              <div class="dash-card-label">{{ $t('admin.cardReportCount') }}</div>
+              <div class="dash-card-value">{{ dashReportCount }}<span class="dash-card-unit">{{ $t('admin.unitCount') }}</span></div>
             </div>
             <div class="dash-card">
-              <div class="dash-card-label">経費発生者</div>
-              <div class="dash-card-value">{{ dashWorkerCount }}<span class="dash-card-unit">名</span></div>
+              <div class="dash-card-label">{{ $t('admin.cardWorkerCount') }}</div>
+              <div class="dash-card-value">{{ dashWorkerCount }}<span class="dash-card-unit">{{ $t('admin.unitPerson') }}</span></div>
             </div>
           </div>
 
@@ -57,9 +57,9 @@
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>カテゴリ</th>
-                  <th class="td-right">金額</th>
-                  <th class="td-right">件数</th>
+                  <th>{{ $t('admin.colCategory') }}</th>
+                  <th class="td-right">{{ $t('admin.colAmount') }}</th>
+                  <th class="td-right">{{ $t('admin.colCount') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -71,30 +71,30 @@
               </tbody>
               <tfoot>
                 <tr class="tfoot-total">
-                  <td>合　計</td>
+                  <td>{{ $t('admin.rowTotal') }}</td>
                   <td class="td-right">¥{{ dashTotal.toLocaleString() }}</td>
                   <td class="td-right">{{ dashRows.length }}</td>
                 </tr>
               </tfoot>
             </table>
           </div>
-          <div v-else class="td-empty">この月の経費データがありません</div>
+          <div v-else class="td-empty">{{ $t('admin.noExpenseData') }}</div>
         </section>
 
         <!-- ━━ 社員一覧 ━━ -->
         <section v-if="tab === 'users'">
           <div class="section-head">
-            <h2 class="section-title">社員一覧</h2>
-            <span class="badge">{{ users.length }}名</span>
+            <h2 class="section-title">{{ $t('admin.usersTitle') }}</h2>
+            <span class="badge">{{ $t('admin.usersBadge', { count: users.length }) }}</span>
           </div>
           <div class="table-wrap">
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>氏名</th>
-                  <th>所属</th>
-                  <th>登録日</th>
-                  <th>LINE ID</th>
+                  <th>{{ $t('admin.colName') }}</th>
+                  <th>{{ $t('admin.colRole') }}</th>
+                  <th>{{ $t('admin.colRegisteredDate') }}</th>
+                  <th>{{ $t('admin.colLineId') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -102,14 +102,14 @@
                   <td class="td-name">{{ u.real_name }}</td>
                   <td>
                     <span :class="['role-tag', u.worker_role]">
-                      {{ u.worker_role === 'factory' ? '工場/事務所' : '現場' }}
+                      {{ u.worker_role === 'factory' ? $t('admin.roleFactory') : $t('admin.roleSite') }}
                     </span>
                   </td>
                   <td class="td-date">{{ fmtDate(u.created_at) }}</td>
                   <td class="td-id">{{ u.line_user_id }}</td>
                 </tr>
                 <tr v-if="users.length === 0">
-                  <td colspan="4" class="td-empty">社員が登録されていません</td>
+                  <td colspan="4" class="td-empty">{{ $t('admin.noUsers') }}</td>
                 </tr>
               </tbody>
             </table>
@@ -119,22 +119,22 @@
         <!-- ━━ 日報ログ ━━ -->
         <section v-else-if="tab === 'reports'">
           <div class="section-head">
-            <h2 class="section-title">日報ログ</h2>
+            <h2 class="section-title">{{ $t('admin.reportsTitle') }}</h2>
             <div class="filter-row">
-              <input v-model="reportFilter" type="text" class="filter-input" placeholder="名前で絞り込み" />
-              <span class="badge">{{ filteredReports.length }}件</span>
+              <input v-model="reportFilter" type="text" class="filter-input" :placeholder="$t('admin.reportsFilterPlaceholder')" />
+              <span class="badge">{{ $t('admin.reportsBadge', { count: filteredReports.length }) }}</span>
             </div>
           </div>
           <div class="table-wrap">
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>日付</th>
-                  <th>送信者</th>
-                  <th>所属</th>
-                  <th>稼働</th>
-                  <th>現場数</th>
-                  <th>登録日時</th>
+                  <th>{{ $t('admin.colDate') }}</th>
+                  <th>{{ $t('admin.colSender') }}</th>
+                  <th>{{ $t('admin.colRole') }}</th>
+                  <th>{{ $t('admin.colWorking') }}</th>
+                  <th>{{ $t('admin.colSiteCount') }}</th>
+                  <th>{{ $t('admin.colRegisteredAt') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -143,19 +143,19 @@
                   <td class="td-name">{{ r.users?.real_name ?? '—' }}</td>
                   <td>
                     <span v-if="r.users" :class="['role-tag', r.users.worker_role]">
-                      {{ r.users.worker_role === 'factory' ? '工場/事務所' : '現場' }}
+                      {{ r.users.worker_role === 'factory' ? $t('admin.roleFactory') : $t('admin.roleSite') }}
                     </span>
                   </td>
                   <td>
                     <span :class="['status-tag', r.is_working ? 'working' : 'off']">
-                      {{ r.is_working ? '稼働' : '休み' }}
+                      {{ r.is_working ? $t('admin.statusWorking') : $t('admin.statusOff') }}
                     </span>
                   </td>
                   <td class="td-center">{{ r.is_working ? (r.sites as any[]).length : '—' }}</td>
                   <td class="td-date">{{ fmtDatetime(r.created_at) }}</td>
                 </tr>
                 <tr v-if="filteredReports.length === 0">
-                  <td colspan="6" class="td-empty">日報データがありません</td>
+                  <td colspan="6" class="td-empty">{{ $t('admin.noReports') }}</td>
                 </tr>
               </tbody>
             </table>
@@ -165,10 +165,10 @@
         <!-- ━━ 設定 ━━ -->
         <section v-else-if="tab === 'settings'">
           <div class="section-head">
-            <h2 class="section-title">設定</h2>
+            <h2 class="section-title">{{ $t('admin.settingsTitle') }}</h2>
           </div>
           <div class="settings-card">
-            <h3 class="settings-group-title">燃料単価</h3>
+            <h3 class="settings-group-title">{{ $t('admin.fuelRateTitle') }}</h3>
             <div class="settings-list">
               <div v-for="s in settings" :key="s.key" class="settings-row">
                 <label class="settings-label">{{ s.label }}</label>
@@ -179,14 +179,14 @@
                     min="1"
                     class="settings-input"
                   />
-                  <span class="settings-unit">円 / km</span>
+                  <span class="settings-unit">{{ $t('admin.fuelRateUnit') }}</span>
                 </div>
               </div>
             </div>
             <div class="settings-actions">
-              <span v-if="settingsSaved" class="settings-saved">✓ 保存しました</span>
+              <span v-if="settingsSaved" class="settings-saved">{{ $t('admin.settingsSaved') }}</span>
               <button class="btn-save" :disabled="settingsSaving" @click="saveSettings">
-                {{ settingsSaving ? '保存中...' : '保存する' }}
+                {{ settingsSaving ? $t('common.saving') : $t('admin.saveButton') }}
               </button>
             </div>
           </div>
@@ -197,7 +197,10 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import type { User } from '~/types'
+
+const { t } = useI18n()
 
 type ReportRow = {
   id:         string
@@ -235,7 +238,7 @@ const monthOptions = computed(() => {
   for (let i = 0; i < 6; i++) {
     const d = new Date(today.getFullYear(), today.getMonth() - i, 1)
     const ym = d.toISOString().substring(0, 7)
-    opts.push({ value: ym, label: `${d.getFullYear()}年${d.getMonth() + 1}月` })
+    opts.push({ value: ym, label: t('admin.monthLabel', { year: d.getFullYear(), month: d.getMonth() + 1 }) })
   }
   return opts
 })
@@ -265,20 +268,20 @@ const dashRows = computed((): ExpRow[] => {
     for (const site of (rep.sites as any[])) {
       const exp = site.expenses || {}
       for (const veh of (exp.vehicles || [])) {
-        if (veh.distanceKm) rows.push({ category: 'ガソリン代', amount: Math.round(veh.distanceKm * gasolineRate.value), userId })
-        if (veh.dieselKm)   rows.push({ category: '軽油代',    amount: Math.round(veh.dieselKm   * dieselRate.value),   userId })
-        if (veh.parkingYen) rows.push({ category: '駐車代',    amount: veh.parkingYen, userId })
-        if (veh.highwayYen) rows.push({ category: '高速代',    amount: veh.highwayYen, userId })
+        if (veh.distanceKm) rows.push({ category: t('admin.catGasoline'), amount: Math.round(veh.distanceKm * gasolineRate.value), userId })
+        if (veh.dieselKm)   rows.push({ category: t('admin.catDiesel'),   amount: Math.round(veh.dieselKm   * dieselRate.value),   userId })
+        if (veh.parkingYen) rows.push({ category: t('admin.catParking'),  amount: veh.parkingYen, userId })
+        if (veh.highwayYen) rows.push({ category: t('admin.catHighway'),  amount: veh.highwayYen, userId })
       }
       for (const tr of (exp.trains || [])) {
-        if (tr.yen) rows.push({ category: '電車代', amount: tr.yen, userId })
+        if (tr.yen) rows.push({ category: t('admin.catTrain'), amount: tr.yen, userId })
       }
-      if (exp.hotelYen)         rows.push({ category: '宿泊費（ホテル）',   amount: exp.hotelYen,         userId })
-      if (exp.leopalaceYen)     rows.push({ category: '宿泊費（レオパレス）', amount: exp.leopalaceYen,    userId })
+      if (exp.hotelYen)         rows.push({ category: t('admin.catHotel'),     amount: exp.hotelYen,         userId })
+      if (exp.leopalaceYen)     rows.push({ category: t('admin.catLeopalace'), amount: exp.leopalaceYen,    userId })
       for (const ot of (exp.others || [])) {
-        if (ot.yen) rows.push({ category: 'その他（資材等）', amount: ot.yen, userId })
+        if (ot.yen) rows.push({ category: t('admin.catOthers'), amount: ot.yen, userId })
       }
-      if (exp.entertainmentYen) rows.push({ category: 'その他雑経費', amount: exp.entertainmentYen, userId })
+      if (exp.entertainmentYen) rows.push({ category: t('admin.catMisc'), amount: exp.entertainmentYen, userId })
     }
   }
   return rows

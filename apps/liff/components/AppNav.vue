@@ -3,8 +3,8 @@
     <!-- 代理入力バナー -->
     <div v-if="proxy.isProxyMode.value" class="proxy-banner">
       <span class="material-symbols-rounded proxy-banner-icon">swap_horiz</span>
-      <span class="proxy-banner-text">代理入力中：<strong>{{ proxy.proxyTarget.value?.name }}</strong></span>
-      <button class="proxy-banner-exit" @click="proxy.clearProxy()">解除</button>
+      <span class="proxy-banner-text">{{ $t('nav.proxyEditing') }}<strong>{{ proxy.proxyTarget.value?.name }}</strong></span>
+      <button class="proxy-banner-exit" @click="proxy.clearProxy()">{{ $t('nav.exit') }}</button>
     </div>
     <div class="app-nav-inner">
       <div class="app-brand">
@@ -12,7 +12,7 @@
         <span class="app-brand-div">|</span>
         <span class="app-brand-sub">{{ subtitle }}</span>
       </div>
-      <button class="app-hamburger" @click="open = true" aria-label="メニューを開く">
+      <button class="app-hamburger" @click="open = true" :aria-label="$t('nav.openMenu')">
         <span class="app-bar" />
         <span class="app-bar" />
         <span class="app-bar" />
@@ -42,48 +42,63 @@
         <nav class="drawer-nav">
           <NuxtLink class="drawer-item" to="/" @click="open = false">
             <span class="drawer-item-icon material-symbols-rounded">home</span>
-            <span>ホーム</span>
+            <span>{{ $t('nav.home') }}</span>
           </NuxtLink>
           <NuxtLink class="drawer-item" to="/report" @click="open = false">
             <span class="drawer-item-icon material-symbols-rounded">edit_note</span>
-            <span>日報登録</span>
+            <span>{{ $t('nav.reportRegister') }}</span>
           </NuxtLink>
           <NuxtLink class="drawer-item" to="/history" @click="open = false">
             <span class="drawer-item-icon material-symbols-rounded">history</span>
-            <span>日報履歴</span>
+            <span>{{ $t('nav.reportHistory') }}</span>
           </NuxtLink>
           <NuxtLink class="drawer-item" to="/calendar" @click="open = false">
             <span class="drawer-item-icon material-symbols-rounded">calendar_month</span>
-            <span>予定管理</span>
+            <span>{{ $t('nav.schedule') }}</span>
           </NuxtLink>
           <NuxtLink class="drawer-item" to="/groups" @click="open = false">
             <span class="drawer-item-icon material-symbols-rounded">group</span>
-            <span>グループ管理</span>
+            <span>{{ $t('nav.groups') }}</span>
           </NuxtLink>
           <NuxtLink class="drawer-item" to="/subcontractors" @click="open = false">
             <span class="drawer-item-icon material-symbols-rounded">handyman</span>
-            <span>下請け業者</span>
+            <span>{{ $t('nav.subcontractors') }}</span>
           </NuxtLink>
           <NuxtLink class="drawer-item" to="/expense/download" @click="open = false">
             <span class="drawer-item-icon material-symbols-rounded">picture_as_pdf</span>
-            <span>経費PDF</span>
+            <span>{{ $t('nav.expensePdf') }}</span>
           </NuxtLink>
           <button type="button" class="drawer-item" @click="openInBrowser">
             <span class="drawer-item-icon material-symbols-rounded">open_in_new</span>
-            <span>ブラウザで開く</span>
+            <span>{{ $t('nav.openInBrowser') }}</span>
           </button>
         </nav>
+
+        <!-- 言語切替 -->
+        <div class="drawer-lang">
+          <span class="drawer-lang-icon material-symbols-rounded">language</span>
+          <div class="drawer-lang-toggle">
+            <button
+              v-for="l in locales"
+              :key="l"
+              type="button"
+              class="drawer-lang-btn"
+              :class="{ active: locale === l }"
+              @click="setLocale(l)"
+            >{{ l === 'ja' ? $t('common.langJa') : $t('common.langEn') }}</button>
+          </div>
+        </div>
 
         <!-- 代理入力セクション -->
         <div v-if="proxy.canProxy.value" class="drawer-proxy">
           <div class="drawer-proxy-header">
             <span class="material-symbols-rounded drawer-proxy-icon">swap_horiz</span>
-            <span class="drawer-proxy-title">代理入力</span>
+            <span class="drawer-proxy-title">{{ $t('nav.proxyInput') }}</span>
             <button
               v-if="proxy.isProxyMode.value"
               class="drawer-proxy-clear"
               @click="proxy.clearProxy()"
-            >解除</button>
+            >{{ $t('nav.exit') }}</button>
           </div>
           <div class="drawer-proxy-list">
             <button
@@ -96,7 +111,7 @@
               <div class="drawer-proxy-avatar">{{ w.name.charAt(0) }}</div>
               <div class="drawer-proxy-info">
                 <div class="drawer-proxy-name">{{ w.name }}</div>
-                <div class="drawer-proxy-role">{{ w.worker_role === 'factory' ? '工場 / 事務所' : '現場' }}</div>
+                <div class="drawer-proxy-role">{{ w.worker_role === 'factory' ? $t('common.roleFactory') : $t('common.roleSite') }}</div>
               </div>
               <span v-if="proxy.proxyTarget.value?.id === w.id" class="material-symbols-rounded drawer-proxy-check">check_circle</span>
             </button>
@@ -108,12 +123,16 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 const props = defineProps<{
   subtitle:  string
   userName?: string
   userRole?: 'factory' | 'site'
 }>()
 
+const { t } = useI18n()
+const { locale, setLocale, locales } = useLocale()
 const { slug } = useAccount()
 const brandName = slug.toUpperCase()
 const proxy = useProxyMode()
@@ -143,7 +162,7 @@ async function openInBrowser() {
 
 const roleLabel = computed(() => {
   if (!props.userRole) return ''
-  return props.userRole === 'factory' ? '工場 / 事務所' : '現場'
+  return props.userRole === 'factory' ? t('common.roleFactory') : t('common.roleSite')
 })
 
 function selectProxy(w: import('~/composables/useProxyMode').ProxyWorker) {
@@ -317,6 +336,29 @@ button.drawer-item {
   color: #06C755;
   font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
+
+/* 言語切替 */
+.drawer-lang {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px;
+  border-top: 1px solid #E0E0E0;
+}
+.drawer-lang-icon {
+  font-size: 20px; color: #666;
+  font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 20;
+  flex-shrink: 0;
+}
+.drawer-lang-toggle {
+  display: flex; gap: 4px; flex: 1;
+  background: #f3f4f6; border-radius: 8px; padding: 3px;
+}
+.drawer-lang-btn {
+  flex: 1; border: none; background: transparent; cursor: pointer;
+  padding: 6px 8px; border-radius: 6px;
+  font-size: 13px; font-weight: 700; color: #666;
+  font-family: inherit; transition: all .15s;
+}
+.drawer-lang-btn.active { background: #fff; color: #06C755; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
 
 /* 代理入力バナー */
 .proxy-banner {

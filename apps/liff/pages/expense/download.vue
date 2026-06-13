@@ -1,10 +1,10 @@
 <template>
   <div class="app">
-    <AppNav subtitle="経費申請書" :user-name="currentUser?.real_name" :user-role="currentUser?.worker_role" />
+    <AppNav :subtitle="t('expenseDoc.navSubtitle')" :user-name="currentUser?.real_name" :user-role="currentUser?.worker_role" />
 
     <main class="main">
       <div v-if="initializing" class="state-screen no-print">
-        <div class="spinner" /><p class="state-text">読み込み中...</p>
+        <div class="spinner" /><p class="state-text">{{ t('common.loading') }}</p>
       </div>
 
       <template v-else>
@@ -21,26 +21,26 @@
 
         <!-- 表示切替（全経費 / 個人建て替え分のみ）-->
         <div class="mode-bar no-print">
-          <button class="mode-btn" :class="{ active: viewMode === 'all' }" @click="viewMode = 'all'">全経費</button>
-          <button class="mode-btn" :class="{ active: viewMode === 'tategae' }" @click="viewMode = 'tategae'">個人建て替え分のみ</button>
+          <button class="mode-btn" :class="{ active: viewMode === 'all' }" @click="viewMode = 'all'">{{ t('expenseDoc.viewAll') }}</button>
+          <button class="mode-btn" :class="{ active: viewMode === 'tategae' }" @click="viewMode = 'tategae'">{{ t('expenseDoc.viewTategae') }}</button>
         </div>
 
         <!-- 申請ステータス -->
         <div class="status-bar no-print" :class="`st-${statusClass}`">
           <span class="status-label">{{ statusLabel }}</span>
           <span v-if="effStatus === '未申請' || effStatus === '差し戻し'" class="status-deadline">
-            締切 {{ deadlineText }}
+            {{ t('expenseDoc.deadline', { date: deadlineText }) }}
           </span>
         </div>
         <div v-if="effStatus === '差し戻し' && settlement?.reject_reason" class="reject-box no-print">
-          <span class="reject-title">差し戻し理由</span>
+          <span class="reject-title">{{ t('expenseDoc.rejectTitle') }}</span>
           <p class="reject-reason">{{ settlement.reject_reason }}</p>
         </div>
 
         <!-- 申請アクション（ステータス直下で常に見える位置に） -->
         <div v-if="canApply" class="apply-actions no-print">
           <button class="btn-apply" :disabled="applying" @click="showApplyConfirm = true">
-            {{ effStatus === '差し戻し' ? 'この期間の経費を再申請する' : 'この期間の経費を申請する' }}
+            {{ effStatus === '差し戻し' ? t('expenseDoc.applyReapply') : t('expenseDoc.apply') }}
           </button>
           <p v-if="applyError" class="apply-error">{{ applyError }}</p>
         </div>
@@ -48,52 +48,52 @@
         <!-- 申請確認ダイアログ -->
         <div v-if="showApplyConfirm" class="confirm-overlay no-print" @click.self="!applying && (showApplyConfirm = false)">
           <div class="confirm-modal">
-            <p class="confirm-title">{{ effStatus === '差し戻し' ? 'この期間の経費を再申請します' : 'この期間の経費を申請します' }}</p>
-            <p class="confirm-text">申請後は内容を修正できません。<br>よろしいですか？</p>
+            <p class="confirm-title">{{ effStatus === '差し戻し' ? t('expenseDoc.confirmReapplyTitle') : t('expenseDoc.confirmApplyTitle') }}</p>
+            <p class="confirm-text" v-html="t('expenseDoc.confirmText')"></p>
             <div class="confirm-actions">
-              <button class="confirm-cancel" :disabled="applying" @click="showApplyConfirm = false">キャンセル</button>
-              <button class="confirm-ok" :disabled="applying" @click="confirmApply">{{ applying ? '申請中…' : '申請する' }}</button>
+              <button class="confirm-cancel" :disabled="applying" @click="showApplyConfirm = false">{{ t('common.cancel') }}</button>
+              <button class="confirm-ok" :disabled="applying" @click="confirmApply">{{ applying ? t('expenseDoc.applying') : t('expenseDoc.applyAction') }}</button>
             </div>
           </div>
         </div>
 
         <!-- ====== 印刷エリア ====== -->
         <div ref="printAreaEl" class="print-area">
-          <h1 class="doc-h1">{{ viewMode === 'tategae' ? '請　求　書' : '明　細' }}</h1>
+          <h1 class="doc-h1">{{ viewMode === 'tategae' ? t('expenseDoc.docTitleSeikyu') : t('expenseDoc.docTitleMeisai') }}</h1>
 
           <div class="doc-top">
             <div class="doc-top-left">
-              <div v-if="accountName" class="doc-addressee">{{ accountName }} 御中</div>
-              <p class="doc-lead">{{ viewMode === 'tategae' ? '下記のとおり、ご請求申し上げます。' : '下記のとおり、経費の明細をご報告します。' }}</p>
+              <div v-if="accountName" class="doc-addressee">{{ t('expenseDoc.addressee', { name: accountName }) }}</div>
+              <p class="doc-lead">{{ viewMode === 'tategae' ? t('expenseDoc.leadSeikyu') : t('expenseDoc.leadMeisai') }}</p>
             </div>
             <div class="doc-top-right">
-              <div class="doc-meta-row"><span class="doc-meta-label">請 求 日</span><span>{{ issueDate }}</span></div>
-              <div class="doc-meta-row"><span class="doc-meta-label">対象期間</span><span>{{ periodFullLabel }}</span></div>
-              <div class="doc-sender">氏名：{{ currentUser?.real_name }}</div>
+              <div class="doc-meta-row"><span class="doc-meta-label">{{ t('expenseDoc.metaIssueDate') }}</span><span>{{ issueDate }}</span></div>
+              <div class="doc-meta-row"><span class="doc-meta-label">{{ t('expenseDoc.metaPeriod') }}</span><span>{{ periodFullLabel }}</span></div>
+              <div class="doc-sender">{{ t('expenseDoc.sender', { name: currentUser?.real_name }) }}</div>
             </div>
           </div>
 
           <div class="doc-notes-top">
-            <span class="doc-note">★必ず登録番号記入</span>
-            <span class="doc-note">※領収書添付</span>
+            <span class="doc-note">{{ t('expenseDoc.noteRegistration') }}</span>
+            <span class="doc-note">{{ t('expenseDoc.noteReceipt') }}</span>
           </div>
 
-          <div v-if="loading" class="center-text no-print">読み込み中...</div>
+          <div v-if="loading" class="center-text no-print">{{ t('common.loading') }}</div>
 
           <template v-else-if="displayRows.length > 0">
             <div class="table-wrap">
               <table class="expense-table">
                 <thead>
                   <tr>
-                    <th class="col-date">月　日</th>
-                    <th class="col-payee">支　払　先</th>
-                    <th class="col-reg">登 録 番 号</th>
-                    <th class="col-cat">品　名</th>
-                    <th class="col-lit">ℓ</th>
-                    <th class="col-site">現 場 名</th>
+                    <th class="col-date">{{ t('expenseDoc.colDate') }}</th>
+                    <th class="col-payee">{{ t('expenseDoc.colPayee') }}</th>
+                    <th class="col-reg">{{ t('expenseDoc.colReg') }}</th>
+                    <th class="col-cat">{{ t('expenseDoc.colCategory') }}</th>
+                    <th class="col-lit">{{ t('expenseDoc.colLiters') }}</th>
+                    <th class="col-site">{{ t('expenseDoc.colSite') }}</th>
                     <th class="col-sep">/</th>
-                    <th class="col-amt">金　額</th>
-                    <th class="col-receipt no-print">領収書</th>
+                    <th class="col-amt">{{ t('expenseDoc.colAmount') }}</th>
+                    <th class="col-receipt no-print">{{ t('expenseDoc.colReceipt') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -122,7 +122,7 @@
                 </tbody>
                 <tfoot>
                   <tr class="total-row">
-                    <td colspan="7" class="right">合　計</td>
+                    <td colspan="7" class="right">{{ t('expenseDoc.totalLabel') }}</td>
                     <td class="right">¥{{ total.toLocaleString() }}</td>
                     <td class="no-print"></td>
                   </tr>
@@ -130,34 +130,31 @@
               </table>
             </div>
             <div class="doc-notes">
-              <p>※支払先ごとにまとめて計上のこと</p>
-              <p>※登録番号がない先はなしと記入のこと</p>
+              <p>{{ t('expenseDoc.footNotePayee') }}</p>
+              <p>{{ t('expenseDoc.footNoteRegistration') }}</p>
             </div>
           </template>
 
           <div v-else class="empty-notice">
             <template v-if="viewMode === 'tategae' && rows.length > 0">
-              この期間に個人建て替え分の経費はありません。
+              {{ t('expenseDoc.emptyTategae') }}
             </template>
-            <template v-else>
-              この期間の経費データがありません。<br>
-              先に日報を送信してください。
-            </template>
+            <span v-else v-html="t('expenseDoc.emptyNoData')"></span>
           </div>
         </div>
 
         <!-- アクション -->
         <div v-if="displayRows.length > 0" class="actions no-print">
           <div class="guide-box">
-            <p class="guide-title">PDF保存の手順</p>
+            <p class="guide-title">{{ t('expenseDoc.guideTitle') }}</p>
             <ol class="guide-steps">
-              <li>下の「ブラウザで開く」をタップ</li>
-              <li>Safari / Chrome で申請書が開く</li>
-              <li>共有ボタン（<span class="icon-share">⎙</span>）→「PDFとして保存」または「印刷」を選択</li>
+              <li>{{ t('expenseDoc.guideStep1') }}</li>
+              <li>{{ t('expenseDoc.guideStep2') }}</li>
+              <li><i18n-t keypath="expenseDoc.guideStep3" tag="span"><template #icon><span class="icon-share">⎙</span></template></i18n-t></li>
             </ol>
           </div>
-          <button class="btn-open-safari primary" @click="handleOpenExternal">ブラウザで開く →</button>
-          <button class="btn-print pc-only" @click="handlePrint">PDFとして保存（印刷）</button>
+          <button class="btn-open-safari primary" @click="handleOpenExternal">{{ t('expenseDoc.openInBrowser') }}</button>
+          <button class="btn-print pc-only" @click="handlePrint">{{ t('expenseDoc.saveAsPdf') }}</button>
         </div>
       </template>
     </main>
@@ -165,10 +162,12 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import type { User, ExpenseRow } from '~/types'
 import { getCurrentPeriodKey, recentPeriodKeys, deadlineLabel, effectiveStatus, periodLabel } from '~/composables/useExpense'
 import { elementToPdfBlob, uploadApplicationPdf } from '~/utils/generateExpensePdf'
 
+const { t } = useI18n()
 const liff    = useLiff()
 const expense = useExpense()
 const proxy   = useProxyMode()
@@ -195,11 +194,11 @@ const effStatus    = computed(() => effectiveStatus(settlement.value, selectedPe
 const deadlineText = computed(() => deadlineLabel(selectedPeriod.value))
 const statusLabel  = computed(() => {
   switch (effStatus.value) {
-    case '申請中':   return '申請済み'
-    case '差し戻し': return '差し戻し（要再申請）'
-    case '期限超過': return '申請期限切れ'
-    case '支払い済み': return '支払い済み'
-    default:        return '未申請'
+    case '申請中':   return t('expenseDoc.statusApplied')
+    case '差し戻し': return t('expenseDoc.statusRejected')
+    case '期限超過': return t('expenseDoc.statusExpired')
+    case '支払い済み': return t('expenseDoc.statusPaid')
+    default:        return t('expenseDoc.statusTodo')
   }
 })
 const statusClass = computed(() => ({
@@ -297,7 +296,7 @@ async function confirmApply() {
 
 /** 経費申請（未申請/差し戻し → 申請中）。PDF生成・メールは best-effort */
 async function handleApply() {
-  if (!applyUserId.value) { applyError.value = 'ユーザー情報が取得できません'; return }
+  if (!applyUserId.value) { applyError.value = t('expenseDoc.errorNoUser'); return }
   applying.value = true
   applyError.value = ''
   const slug = config.public.accountSlug as string
@@ -337,7 +336,7 @@ async function handleApply() {
     triggerApplicationEmail(applyUserId.value, selectedPeriod.value)
   } catch (e: any) {
     console.error('[expense apply] 申請失敗:', e)
-    applyError.value = '申請に失敗しました。時間をおいて再度お試しください。'
+    applyError.value = t('expenseDoc.applyError')
   } finally {
     applying.value = false
   }
@@ -379,12 +378,14 @@ async function handleOpenExternal() {
 
 function fmtDate(d: string) {
   const [, m, day] = d.split('-')
-  return `${parseInt(m)}月${parseInt(day)}日`
+  return t('expenseDoc.dateMd', { month: parseInt(m), day: parseInt(day) })
 }
 
 function shortLabel(key: string) {
   const [, month, half] = key.split('-')
-  return `${parseInt(month)}月${half === 'first' ? '前半' : '後半'}`
+  return half === 'first'
+    ? t('expenseDoc.monthFirstHalf', { month: parseInt(month) })
+    : t('expenseDoc.monthSecondHalf', { month: parseInt(month) })
 }
 
 const isMobile = computed(() => {

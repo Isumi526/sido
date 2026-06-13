@@ -2,6 +2,8 @@
 //  composables/useSchedules.ts
 //  予定管理（CRUD）+ グループ共有対応
 // ============================================================
+import { useI18n } from 'vue-i18n'
+import { gt } from '~/utils/i18n-global'
 
 export type ScheduleCategory = 'work' | 'off' | 'training' | 'meeting' | 'other'
 
@@ -50,13 +52,24 @@ export interface ScheduleForm {
   is_night_shift:  boolean
 }
 
-export const CATEGORY_LABELS: Record<ScheduleCategory, string> = {
-  work:     '現場作業',
-  off:      '休み',
-  training: '研修',
-  meeting:  '会議',
-  other:    'その他',
+const CATEGORY_LABEL_KEYS: Record<ScheduleCategory, string> = {
+  work:     'sched.categoryWork',
+  off:      'sched.categoryOff',
+  training: 'sched.categoryTraining',
+  meeting:  'sched.categoryMeeting',
+  other:    'sched.categoryOther',
 }
+
+// アクセス時に翻訳する（i18n 初期化前にモジュール評価されても値が固定されないように Proxy 経由）
+export const CATEGORY_LABELS: Record<ScheduleCategory, string> = new Proxy(
+  {} as Record<ScheduleCategory, string>,
+  {
+    get(_t, prop: string) {
+      const key = CATEGORY_LABEL_KEYS[prop as ScheduleCategory]
+      return key ? gt(key) : undefined
+    },
+  },
+)
 
 export const CATEGORY_COLORS: Record<ScheduleCategory, string> = {
   work:     '#06C755',
@@ -68,6 +81,7 @@ export const CATEGORY_COLORS: Record<ScheduleCategory, string> = {
 
 export const useSchedules = () => {
   const supabase    = useSupabase()
+  const { t }       = useI18n()
   const { profile } = useLiff()
   const config      = useRuntimeConfig()
 
@@ -141,7 +155,7 @@ export const useSchedules = () => {
 
       schedules.value = (data ?? []) as Schedule[]
     } catch (e) {
-      error.value = e instanceof Error ? e.message : '取得に失敗しました'
+      error.value = e instanceof Error ? e.message : t('sched.fetchFailed')
     } finally {
       loading.value = false
     }
@@ -152,7 +166,7 @@ export const useSchedules = () => {
   // ──────────────────────────────────────────────────────
   async function createSchedule(form: ScheduleForm, workerId?: string, creatorName?: string) {
     const wid       = workerId ?? (await resolveMyWorkerId())
-    if (!wid) throw new Error('作業員情報が取得できません')
+    if (!wid) throw new Error(t('sched.workerInfoUnavailable'))
     const accountId = await resolveAccountId()
 
     const { data, error: err } = await supabase

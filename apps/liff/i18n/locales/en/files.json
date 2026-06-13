@@ -1,0 +1,13 @@
+{
+  "title": "Attachments",
+  "empty": "No files",
+  "errorNoPath": "No path specified",
+  "errorFetch": "Failed to retrieve files",
+  "categoryVehicle": "Vehicle receipt",
+  "categoryTrain": "Train receipt",
+  "categoryHotel": "Hotel receipt",
+  "categoryLeopalace": "Leopalace receipt",
+  "categoryOther": "Other receipt",
+  "categoryEntertainment": "Misc. expense receipt",
+  "categoryGarbage": "Garbage photo"
+}

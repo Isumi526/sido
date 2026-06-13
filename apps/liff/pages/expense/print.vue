@@ -12,36 +12,36 @@
 
     <!-- レポート本体 -->
     <div v-else id="report">
-      <h1 class="company">{{ mode === 'tategae' ? '請　求　書' : '明　細' }}</h1>
+      <h1 class="company">{{ mode === 'tategae' ? t('expenseDoc.docTitleSeikyu') : t('expenseDoc.docTitleMeisai') }}</h1>
 
       <div class="doc-top">
         <div class="doc-top-left">
-          <div v-if="accountName" class="addressee">{{ accountName }} 御中</div>
-          <p class="lead">{{ mode === 'tategae' ? '下記のとおり、ご請求申し上げます。' : '下記のとおり、経費の明細をご報告します。' }}</p>
+          <div v-if="accountName" class="addressee">{{ t('expenseDoc.addressee', { name: accountName }) }}</div>
+          <p class="lead">{{ mode === 'tategae' ? t('expenseDoc.leadSeikyu') : t('expenseDoc.leadMeisai') }}</p>
         </div>
         <div class="doc-top-right">
-          <div class="meta-row"><span class="meta-label">請 求 日</span><span>{{ issueDate }}</span></div>
-          <div class="meta-row"><span class="meta-label">対象期間</span><span>{{ periodFullLabel }}</span></div>
-          <div class="sender">氏名：{{ user?.real_name }}</div>
+          <div class="meta-row"><span class="meta-label">{{ t('expenseDoc.metaIssueDate') }}</span><span>{{ issueDate }}</span></div>
+          <div class="meta-row"><span class="meta-label">{{ t('expenseDoc.metaPeriod') }}</span><span>{{ periodFullLabel }}</span></div>
+          <div class="sender">{{ t('expenseDoc.sender', { name: user?.real_name }) }}</div>
         </div>
       </div>
 
       <div class="notes-top">
-        <span>★必ず登録番号記入</span>
-        <span>※領収書添付</span>
+        <span>{{ t('expenseDoc.noteRegistration') }}</span>
+        <span>{{ t('expenseDoc.noteReceipt') }}</span>
       </div>
 
       <table class="expense-table">
         <thead>
           <tr>
-            <th class="col-date">月　日</th>
-            <th class="col-payee">支　払　先</th>
-            <th class="col-reg">登 録 番 号</th>
-            <th class="col-cat">品　名</th>
-            <th class="col-lit">ℓ</th>
-            <th class="col-site">現 場 名</th>
+            <th class="col-date">{{ t('expenseDoc.colDate') }}</th>
+            <th class="col-payee">{{ t('expenseDoc.colPayee') }}</th>
+            <th class="col-reg">{{ t('expenseDoc.colReg') }}</th>
+            <th class="col-cat">{{ t('expenseDoc.colCategory') }}</th>
+            <th class="col-lit">{{ t('expenseDoc.colLiters') }}</th>
+            <th class="col-site">{{ t('expenseDoc.colSite') }}</th>
             <th class="col-sep">/</th>
-            <th class="col-amt">金　額</th>
+            <th class="col-amt">{{ t('expenseDoc.colAmount') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -58,28 +58,31 @@
         </tbody>
         <tfoot>
           <tr class="total-row">
-            <td colspan="7" class="right">合　計</td>
+            <td colspan="7" class="right">{{ t('expenseDoc.totalLabel') }}</td>
             <td class="right">¥{{ total.toLocaleString() }}</td>
           </tr>
         </tfoot>
       </table>
 
       <div class="doc-notes">
-        <p>※支払先ごとにまとめて計上のこと</p>
-        <p>※登録番号がない先はなしと記入のこと</p>
+        <p>{{ t('expenseDoc.footNotePayee') }}</p>
+        <p>{{ t('expenseDoc.footNoteRegistration') }}</p>
       </div>
     </div>
 
     <!-- 印刷ボタン（印刷時非表示） -->
     <div v-if="!loading && !error && displayRows.length > 0" class="print-btn-area no-print">
-      <button class="btn-print" @click="window.print()">印刷 / PDFとして保存</button>
+      <button class="btn-print" @click="window.print()">{{ t('expenseDoc.printSavePdf') }}</button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import type { ExpenseRow, User } from '~/types'
 import { periodLabel } from '~/composables/useExpense'
+
+const { t } = useI18n()
 
 // スマホでも固定幅でレンダリングし、PCと同じレイアウトでPDF保存できるようにする
 useHead({
@@ -107,7 +110,7 @@ const { accountName, getAccountId } = useAccount()
 
 onMounted(async () => {
   if (!userId || !period) {
-    error.value = 'URLパラメータが不足しています。'
+    error.value = t('expenseDoc.errorMissingParams')
     loading.value = false
     return
   }
@@ -115,9 +118,9 @@ onMounted(async () => {
     await getAccountId()   // accountName（宛名）を populate
     user.value  = await expense.getUser(userId)
     rows.value  = await expense.getExpenseRowsFromReports(userId, period)
-    if (!user.value) error.value = 'ユーザーが見つかりません。'
+    if (!user.value) error.value = t('expenseDoc.errorUserNotFound')
   } catch (e) {
-    error.value = 'データの取得に失敗しました。'
+    error.value = t('expenseDoc.errorFetchFailed')
     console.error(e)
   } finally {
     loading.value = false
@@ -126,7 +129,7 @@ onMounted(async () => {
 
 function fmtDate(d: string) {
   const [, m, day] = d.split('-')
-  return `${parseInt(m)}月${parseInt(day)}日`
+  return t('expenseDoc.dateMd', { month: parseInt(m), day: parseInt(day) })
 }
 
 const window = globalThis.window

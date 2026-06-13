@@ -1,0 +1,18 @@
+{
+  "periodFirstHalf": "前半（1〜15日）",
+  "periodSecondHalf": "後半（16日〜末日）",
+  "periodLabel": "{year}年{month}月 {half}",
+  "deadlineLabel": "{month}月{day}日({weekday}) {time}",
+  "weekday": {
+    "sun": "日",
+    "mon": "月",
+    "tue": "火",
+    "wed": "水",
+    "thu": "木",
+    "fri": "金",
+    "sat": "土"
+  },
+  "userNotRegistered": "ユーザーが登録されていません",
+  "accountIdFailed": "accountId取得失敗",
+  "proxyUserCreateFailed": "代理ユーザー作成失敗: {message}"
+}
