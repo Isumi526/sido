@@ -1,0 +1,10 @@
+{
+  "normal": "Regular",
+  "ot": "Overtime",
+  "night": "Late night",
+  "otNight": "Overtime + late night",
+  "sunday": "Statutory holiday",
+  "sundayOT": "Statutory holiday + overtime",
+  "sundayNight": "Statutory holiday + late night",
+  "sundayOTNight": "Statutory holiday + overtime + late night"
+}

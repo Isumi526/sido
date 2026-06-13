@@ -1,0 +1,4 @@
+{
+  "uploadFailed": "Failed to upload files. Submission canceled.\n{errors}",
+  "submitFailed": "Submission failed"
+}

@@ -1,0 +1,10 @@
+{
+  "normal": "通常",
+  "ot": "残業",
+  "night": "深夜",
+  "otNight": "残業+深夜",
+  "sunday": "法定休日",
+  "sundayOT": "法定休日+残業",
+  "sundayNight": "法定休日+深夜",
+  "sundayOTNight": "法定休日+残業+深夜"
+}

@@ -18,7 +18,8 @@
     "@schedule-x/vue": "^4.1.0",
     "@supabase/supabase-js": "^2.45.0",
     "html2canvas": "^1.4.1",
-    "jspdf": "^4.2.1"
+    "jspdf": "^4.2.1",
+    "vue-i18n": "^9.14.5"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
