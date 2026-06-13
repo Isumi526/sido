@@ -57,14 +57,18 @@ const TITLE_PROP    = 'タスク名'
 const PROJECT_PROP  = '案件名'   // relation（説明=「案件管理マスタと紐付け」）。"案件名 1" ではない方
 const TARGET_STATUS = '要件定義済み'
 const PRIORITY_RANK = { '緊急': 0, '高': 1, '中': 2, '低': 3 }
-// ステータス＝要件定義済み かつ 案件名relationが自分の案件を含む、で絞る。
-// 【仕様】案件名が未設定（空）のタスクは relation 一致しないため、どのプロジェクトでも拾わない（＝自然に除外。正しい挙動）。
-const filter = {
-  and: [
-    { property: STATUS_PROP,  status: { equals: TARGET_STATUS } },
-    { property: PROJECT_PROP, relation: { contains: PROJECT_ID } },
-  ],
-}
+// --board: 自案件の「全ステータス」を取得（/run ステートマシン用の盤面スナップショット）。
+// 既定（/next 用・引数なし）: ステータス＝要件定義済み のみ（従来どおり・後方互換）。
+// 【仕様】案件名が未設定（空）のタスクは relation 一致しないため、どのプロジェクトでも拾わない（＝自然に除外）。
+const BOARD = process.argv.slice(2).includes('--board')
+const filter = BOARD
+  ? { property: PROJECT_PROP, relation: { contains: PROJECT_ID } }
+  : {
+      and: [
+        { property: STATUS_PROP,  status: { equals: TARGET_STATUS } },
+        { property: PROJECT_PROP, relation: { contains: PROJECT_ID } },
+      ],
+    }
 
 function queryDatabase(cursor) {
   return fetch(`https://api.notion.com/v1/databases/${DB_ID}/query`, {
@@ -97,6 +101,35 @@ async function paginate(doQuery) {
 
 const title    = (p) => (p.properties?.[TITLE_PROP]?.title || []).map((t) => t.plain_text).join('') || '(無題)'
 const priority = (p) => p.properties?.[PRIORITY_PROP]?.select?.name ?? null
+const statusOf = (p) => p.properties?.[STATUS_PROP]?.status?.name ?? '(未設定)'
+const tagsOf   = (p) => (p.properties?.['タグ']?.multi_select ?? []).map((o) => o.name)
+
+// --board: 全ステータスをグループ表示（ステートマシンが盤面を読むための機械可読寄り出力）
+function printBoard(results) {
+  const ORDER = ['未整理', '要回答', '要件定義済み', '進行中', 'レビュー待ち', '本番待ち', '保留', '完了']
+  const groups = new Map(ORDER.map((s) => [s, []]))
+  for (const p of results) {
+    const s = statusOf(p)
+    if (!groups.has(s)) groups.set(s, [])
+    groups.get(s).push(p)
+  }
+  const rank = (p) => PRIORITY_RANK[priority(p)] ?? 9
+  for (const arr of groups.values()) {
+    arr.sort((a, b) => (rank(a) - rank(b)) || (a.created_time || '').localeCompare(b.created_time || ''))
+  }
+  console.log(`▶ 対象プロジェクト: ${PROJECT_NAME} — 盤面スナップショット（全ステータス）`)
+  const counts = [...groups.entries()].map(([s, arr]) => `${s}:${arr.length}`)
+  console.log(`■ 件数: ${counts.join(' / ')}`)
+  for (const [s, arr] of groups) {
+    if (arr.length === 0) continue
+    console.log(`\n## ${s} (${arr.length})`)
+    for (const p of arr) {
+      const tg = tagsOf(p)
+      console.log(`  - [${priority(p) ?? '-'}] ${title(p)}${tg.length ? ' 〔' + tg.join(',') + '〕' : ''}`)
+      console.log(`    ${p.url}`)
+    }
+  }
+}
 
 async function main() {
   // 旧 databases/query を試し、ダメなら data_sources/query にフォールバック
@@ -109,6 +142,9 @@ async function main() {
       process.exit(1)
     }
   }
+
+  // --board: 全ステータスの盤面を出して終了（/run ステートマシン用）
+  if (BOARD) { printBoard(out.results); return }
 
   const rows = out.results.sort((a, b) => {
     const ra = PRIORITY_RANK[priority(a)] ?? 9

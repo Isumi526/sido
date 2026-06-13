@@ -143,7 +143,7 @@
               <input type="date" v-model="formModal.start_date" class="dt-input dt-date" />
               <span class="dt-sep"></span>
               <span class="dt-time-wrap">
-                <input type="time" v-model="formModal.start_time" class="dt-input dt-time" />
+                <input type="time" v-model="formModal.start_time" class="dt-input dt-time" step="300" />
                 <span v-if="!formModal.start_time" class="dt-placeholder">--:--</span>
               </span>
             </div>
@@ -155,7 +155,7 @@
               <input type="date" v-model="formModal.end_date" class="dt-input dt-date" />
               <span class="dt-sep"></span>
               <span class="dt-time-wrap">
-                <input type="time" v-model="formModal.end_time" class="dt-input dt-time" />
+                <input type="time" v-model="formModal.end_time" class="dt-input dt-time" step="300" />
                 <span v-if="!formModal.end_time" class="dt-placeholder">--:--</span>
               </span>
             </div>
@@ -704,7 +704,8 @@ onMounted(async () => {
 /* 月ナビ（ヘッダー：年月のみ） */
 .month-nav {
   display: flex; align-items: center; gap: 12px;
-  padding: 10px 12px; border-bottom: 1px solid #E0E0E0; flex-shrink: 0;
+  padding: max(10px, env(safe-area-inset-top)) 12px 10px; border-bottom: 1px solid #E0E0E0; flex-shrink: 0;
+  background: #fff; position: relative; z-index: 2;
 }
 .nav-label { font-size: 16px; font-weight: 700; color: #111; }
 .group-select {
@@ -734,8 +735,8 @@ onMounted(async () => {
 
 /* 固定列・行 */
 .sticky-col { position: sticky; left: 0; z-index: 2; background: #fff; }
-thead th { position: sticky; top: 0; z-index: 3; background: #f8f9fa; border-bottom: 2px solid #E0E0E0; }
-thead th.sticky-col { z-index: 4; }
+thead th { position: sticky; top: 0; z-index: 10; background: #f8f9fa; border-bottom: 2px solid #E0E0E0; }
+thead th.sticky-col { z-index: 11; }
 
 .date-col-header { min-width: 60px; width: 60px; }
 
