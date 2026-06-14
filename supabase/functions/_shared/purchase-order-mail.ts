@@ -133,10 +133,7 @@ export async function sendPurchaseOrder(
         + `<p>（このリンクの有効期限は発行から30日間です）</p>`
 
       if (!RESEND_API_KEY) {
-        // APIキー未設定でも DB 更新は行う
-        await supabase.from('purchase_orders')
-          .update({ email_sent_at: nowIso, email_to: email })
-          .eq('id', order.id)
+        // 送信できない＝「送信済み」にしない（email_sent_at は実送信成功時のみ更新）。失敗も握り潰さない。
         return { status: 200, body: { success: true, skipped: 'no_api_key', sent_to: maskEmail(email), test: false } }
       }
 
