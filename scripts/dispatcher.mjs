@@ -29,6 +29,9 @@ function loadEnv(p) {
 const env = loadEnv(resolve(ROOT, '.env'))
 const TOKEN = process.env.NOTION_TOKEN || env.NOTION_TOKEN
 const PROJECT_ID = process.env.BACKLOG_PROJECT_ID || env.BACKLOG_PROJECT_ID
+// 未通知の保留(レビュー待ち＋要回答)の最古経過がこれを超えたら、閾値未満でもバッチflush（既定24h・env上書き可）
+const _maxAge = Number(process.env.MAX_AGE_H ?? env.MAX_AGE_H)
+const MAX_AGE_H = (Number.isFinite(_maxAge) && _maxAge > 0) ? _maxAge : 24
 const DATA_SOURCE_ID = process.env.BACKLOG_DATA_SOURCE_ID || env.BACKLOG_DATA_SOURCE_ID || 'a7f5a28f-22af-4bc1-a512-4d427a934f31'
 const STATE_PATH = resolve(ROOT, 'scripts/.dispatcher-state.json')
 const LOCK_PATH = resolve(ROOT, 'scripts/.dispatcher.lock')
@@ -75,6 +78,7 @@ const P = (p) => ({
   dodai: !!p.properties?.['土台']?.checkbox,
   epic: p.properties?.['エピック']?.select?.name ?? '(未分類)',
   url: p.url,
+  lastEdited: p.last_edited_time ?? null,   // v1: 「現statusに入った時刻」の近似
 })
 
 const loadState = () => { try { return new Set(JSON.parse(readFileSync(STATE_PATH, 'utf8'))) } catch { return new Set() } }
@@ -133,10 +137,18 @@ async function main() {
     const newOf = (arr) => arr.filter((r) => !state.has(keyOf(r)))
     // 1) 🧱土台×レビュー待ち（即時・個別）
     for (const it of newOf(dodaiReview)) { notify('🧱土台', it.title, `🧱土台「${it.title}」レビュー待ち。後続が依存。バッチに溜めず今レビュー推奨。`); state.add(keyOf(it)); fired.push(keyOf(it)) }
-    // 2) レビューバッチ（土台以外・閾値 or 🔴≥3・新規分があれば1通）
+    // max-age flush: 未通知の保留(レビュー待ち＋要回答)の最古経過 > MAX_AGE_H なら閾値未満でもflush
+    const now = Date.now()
+    const elapsedH = (it) => it.lastEdited ? (now - Date.parse(it.lastEdited)) / 3.6e6 : 0
+    const pending = newOf([...review, ...answers])   // state未登録(未通知)分のみ
+    const oldestH = pending.length ? Math.max(...pending.map(elapsedH)) : 0
+    const maxAgeFlush = pending.length > 0 && oldestH > MAX_AGE_H
+    console.log(`[max-age] flush=${maxAgeFlush ? 'Y' : 'N'} 対象${pending.length}件 最古${oldestH.toFixed(1)}h (閾値${MAX_AGE_H}h)`)
+    // 2) レビューバッチ（土台以外・閾値 or 🔴≥3 or max-age flush・新規分があれば1通）
     const leaf = review.filter((r) => !r.dodai); const newLeaf = newOf(leaf); const c = riskCounts(leaf)
-    if ((leaf.length >= REVIEW_BATCH_THRESH || c.red >= 3) && newLeaf.length) {
-      notify('レビュー可', 'レビューバッチ', `レビュー可: 🔴${c.red}/🟡${c.yel}/🟢${c.grn}（土台以外${leaf.length}件・新規${newLeaf.length}）。要対応ビューへ。`)
+    if ((leaf.length >= REVIEW_BATCH_THRESH || c.red >= 3 || maxAgeFlush) && newLeaf.length) {
+      const why = (maxAgeFlush && leaf.length < REVIEW_BATCH_THRESH && c.red < 3) ? `（max-age flush: 最古${oldestH.toFixed(1)}h>${MAX_AGE_H}h）` : ''
+      notify('レビュー可', 'レビューバッチ', `レビュー可: 🔴${c.red}/🟡${c.yel}/🟢${c.grn}（土台以外${leaf.length}件・新規${newLeaf.length}）${why}。要対応ビューへ。`)
       for (const it of newLeaf) { state.add(keyOf(it)); fired.push(keyOf(it)) }
     }
     // 3) shipウィンドウ（新規分のみ）
