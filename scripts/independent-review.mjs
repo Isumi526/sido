@@ -36,6 +36,35 @@ const RULES_DIR = resolve(ROOT, '.kody/rules')
 const rules = existsSync(RULES_DIR)
   ? readdirSync(RULES_DIR).filter((f) => f.endsWith('.md')).map((f) => `# rule: ${f}\n${readFileSync(resolve(RULES_DIR, f), 'utf8')}`).join('\n\n')
   : ''
+
+// accepted-findings レジストリ（.kody/accepted.yml）。簡易パーサ（依存なし）。
+function unq(s) { return (s || '').replace(/^["']|["']$/g, '').trim() }
+function parseAcceptedYml(text) {
+  const entries = []; let cur = null
+  for (const raw of text.split('\n')) {
+    const line = raw.replace(/\s+$/, '')
+    if (/^\s*#/.test(line) || !line.trim()) continue
+    const mItem = line.match(/^\s*-\s*(\w+):\s*(.*)$/)   // "- rule: x"（エントリ開始）
+    const mKey  = line.match(/^\s+(\w+):\s*(.*)$/)        // "  target: x"
+    if (mItem) { if (cur) entries.push(cur); cur = { [mItem[1]]: unq(mItem[2]) } }
+    else if (mKey && cur) { cur[mKey[1]] = unq(mKey[2]) }
+  }
+  if (cur) entries.push(cur)
+  return entries.filter((e) => e.rule || e.target)
+}
+const ACCEPTED_PATH = resolve(ROOT, '.kody/accepted.yml')
+const accepted = existsSync(ACCEPTED_PATH) ? parseAcceptedYml(readFileSync(ACCEPTED_PATH, 'utf8')) : []
+// finding が accepted に一致するか（rule部分一致 ＋ target が file/message に含まれる）
+function matchAccepted(f) {
+  const fr  = (f.rule || '').toLowerCase().replace(/\.md$/, '')
+  const hay = `${f.file || ''} ${f.message || ''}`.toLowerCase()
+  return accepted.find((e) => {
+    const er = (e.rule || '').toLowerCase().replace(/\.md$/, '')
+    const ruleMatch   = er && (fr.includes(er) || er.includes(fr))
+    const targetMatch = e.target && hay.includes(String(e.target).toLowerCase())
+    return ruleMatch && targetMatch
+  })
+}
 // diff
 let diff = ''
 try { diff = execSync(`git diff ${RANGE}`, { cwd: ROOT, maxBuffer: 20 * 1024 * 1024 }).toString() }
@@ -84,22 +113,48 @@ async function flagNotion(crit, summary) {
 
 const result = await callGemini().catch((e) => { console.error('✗ ' + e.message); process.exit(2) })
 const findings = Array.isArray(result.findings) ? result.findings : []
+// 各 finding に accepted 情報を付与
+for (const f of findings) { f._accepted = matchAccepted(f) || null }
 const crit = findings.filter((f) => /critical/i.test(f.severity || ''))
 const high = findings.filter((f) => /high/i.test(f.severity || ''))
+const unacceptedCrit = crit.filter((f) => !f._accepted)
+const unacceptedSevere = findings.filter((f) => /critical|high/i.test(f.severity || '') && !f._accepted)
+const acceptedFindings = findings.filter((f) => f._accepted)
+
+// verdict は「未acceptの critical/🔴 が1件以上」なら block、それ以外は pass（accepted は除外）
+const verdict = unacceptedCrit.length >= 1 ? 'block' : 'pass'
+
+// riskClass: 機微な差分 or 未acceptの high/critical があれば high
+function computeRisk() {
+  const hi = /(^|\n)[+-].*supabase\/migrations\//.test(diff) || /supabase\/migrations\//.test(diff)
+    || /supabase\/functions\//.test(diff)
+    || (/config\.toml/.test(diff) && /verify_jwt/.test(diff))
+    || /purchase_orders|estimates|stripe|invoice|payment/i.test(diff)
+    || /\/p\/\[token\]|order_accept|document_access_tokens/.test(diff)
+    || unacceptedSevere.length > 0
+  return hi ? 'high' : 'low'
+}
+const riskClass = computeRisk()
+const acceptedSummary = acceptedFindings.map((f) => `${f.rule}:${f._accepted.target}(tracked:${f._accepted.ticket})`)
+
+result.verdict = verdict
+result.riskClass = riskClass
+result.accepted = acceptedSummary
 
 if (JSON_ONLY) { console.log(JSON.stringify(result)); }
 else {
   console.log(`\n=== 独立レビュー (Gemini ${MODEL}) ${RANGE} ===`)
   if (intentNote) console.log(intentNote)
-  console.log(`findings: 🔴critical ${crit.length} / high ${high.length} / 計 ${findings.length}`)
-  for (const f of findings) console.log(`  [${f.severity}] ${f.file}:${f.line} (${f.rule}) ${f.message}`)
+  console.log(`findings: 🔴critical ${crit.length}(未accept ${unacceptedCrit.length}) / high ${high.length} / 計 ${findings.length}`)
+  for (const f of findings) console.log(`  [${f.severity}]${f._accepted ? ' accepted(tracked:' + f._accepted.ticket + ')' : ''} ${f.file}:${f.line} (${f.rule}) ${f.message}`)
+  if (acceptedSummary.length) console.log(`accepted(block除外): ${acceptedSummary.join(' / ')}`)
   console.log(`accessRuleEnforced: ${result.accessRuleEnforced ?? '-'}`)
-  console.log(`verdictSuggestion: ${result.verdictSuggestion ?? '-'}`)
-  console.log(`\n📋ダイジェスト用: 独立レビュー=🔴${crit.length}/high${high.length}・verdict=${result.verdictSuggestion ?? '-'}`)
+  console.log(`verdict: ${verdict}  /  riskClass: ${riskClass}`)
+  console.log(`\n📋ダイジェスト用: 独立レビュー=🔴${crit.length}(未accept${unacceptedCrit.length})/high${high.length}・verdict=${verdict}・risk=${riskClass}`)
 }
-if (crit.length) {
-  if (DRY) console.log(`\n[dry-run] critical ${crit.length}件 → Notion更新は行わない（標準出力のみ）。`)
-  else await flagNotion(crit, result)
+if (unacceptedCrit.length) {
+  if (DRY) console.log(`\n[dry-run] 未accept critical ${unacceptedCrit.length}件 → Notion更新は行わない（標準出力のみ）。`)
+  else await flagNotion(unacceptedCrit, result)
 }
-// verdict=block 相当（critical あり）は非ゼロで返し、/run 側が要人間verdictを拾えるように
-process.exit(crit.length ? 1 : 0)
+// verdict=block（未accept critical あり）は非ゼロで返す（/ship/run が拾えるように）
+process.exit(verdict === 'block' ? 1 : 0)
