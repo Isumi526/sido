@@ -25,7 +25,9 @@ const has = (f) => argv.includes(f)
 const val = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : undefined }
 const DRY = has('--dry-run'); const JSON_ONLY = has('--json')
 const TICKET_ID = val('--ticket-id'); const TICKET_FILE = val('--ticket-file')
-const RANGE = argv.find((a) => !a.startsWith('--') && a !== TICKET_ID && a !== TICKET_FILE) || 'origin/main...HEAD'
+const RUNS = Math.max(1, Number(val('--runs')) || 1)   // N回実行して findings を union（gateの非決定性対策）
+const RUNS_VAL = val('--runs')
+const RANGE = argv.find((a) => !a.startsWith('--') && a !== TICKET_ID && a !== TICKET_FILE && a !== RUNS_VAL) || 'origin/main...HEAD'
 
 const API_KEY = process.env.GEMINI_REVIEW_API_KEY || env.GEMINI_REVIEW_API_KEY
 const MODEL = process.env.GEMINI_REVIEW_MODEL || env.GEMINI_REVIEW_MODEL || 'gemini-3.5-flash'   // docs現行。env上書き可
@@ -90,7 +92,7 @@ async function callGemini() {
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: SYSTEM }] },
       contents: [{ role: 'user', parts: [{ text: USER }] }],
-      generationConfig: { responseMimeType: 'application/json', temperature: 0.1 },
+      generationConfig: { responseMimeType: 'application/json', temperature: 0 },
     }),
   })
   if (!res.ok) throw new Error(`Gemini API ${res.status}: ${(await res.text()).slice(0, 300)}`)
@@ -111,8 +113,26 @@ async function flagNotion(crit, summary) {
   try { execSync(`node ${resolve(ROOT, 'scripts/notify-humanball.mjs')} --kind 要人間verdict --task "独立レビュー" --detail ${JSON.stringify(`critical ${crit.length}件(${RANGE})。要人間verdict。`)}`, { stdio: 'ignore' }) } catch {}
 }
 
-const result = await callGemini().catch((e) => { console.error('✗ ' + e.message); process.exit(2) })
-const findings = Array.isArray(result.findings) ? result.findings : []
+// N回実行して findings を union（rule|file|severity でdedup）。どれか1回でも未accept🔴が出れば
+// union に残る＝block。temperature=0 でも残る揺れに対する保険（prodゲートを保守的に）。
+const runs = []
+for (let i = 0; i < RUNS; i++) {
+  runs.push(await callGemini().catch((e) => { console.error('✗ ' + e.message); process.exit(2) }))
+}
+const _seen = new Set()
+const _union = []
+for (const r of runs) for (const f of (Array.isArray(r.findings) ? r.findings : [])) {
+  const k = `${(f.rule || '').toLowerCase().replace(/\.md$/, '')}|${f.file || ''}|${(f.severity || '').toLowerCase()}`
+  if (_seen.has(k)) continue
+  _seen.add(k); _union.push(f)
+}
+const result = {
+  findings: _union,
+  accessRuleEnforced: runs[runs.length - 1]?.accessRuleEnforced ?? '-',
+  verdictSuggestion: runs.some((r) => r.verdictSuggestion === 'block') ? 'block' : (runs[0]?.verdictSuggestion ?? '-'),
+  runs: RUNS,
+}
+const findings = result.findings
 // 各 finding に accepted 情報を付与
 for (const f of findings) { f._accepted = matchAccepted(f) || null }
 const crit = findings.filter((f) => /critical/i.test(f.severity || ''))
@@ -152,8 +172,9 @@ else {
   console.log(`verdict: ${verdict}  /  riskClass: ${riskClass}`)
   console.log(`\n📋ダイジェスト用: 独立レビュー=🔴${crit.length}(未accept${unacceptedCrit.length})/high${high.length}・verdict=${verdict}・risk=${riskClass}`)
 }
-if (unacceptedCrit.length) {
-  if (DRY) console.log(`\n[dry-run] 未accept critical ${unacceptedCrit.length}件 → Notion更新は行わない（標準出力のみ）。`)
+// --json は機械可読（ship ゲート等）。flagNotion 等の副作用/追加出力は行わず JSON のみ。
+if (unacceptedCrit.length && !JSON_ONLY) {
+  if (DRY) console.error(`[dry-run] 未accept critical ${unacceptedCrit.length}件 → Notion更新は行わない（標準出力のみ）。`)
   else await flagNotion(unacceptedCrit, result)
 }
 // verdict=block（未accept critical あり）は非ゼロで返す（/ship/run が拾えるように）
