@@ -1,0 +1,15 @@
+# 独立レビュー（scripts/independent-review.mjs）の accepted-findings レジストリ。
+# ここに載せた finding は report に「accepted(tracked: ticket)」として出るが、
+# verdict=block の集計からは除外される（＝人間が把握済み・チケットで追跡中の既知事項）。
+# verdict=block になるのは「未acceptの critical/🔴 が1件以上」の時だけ。
+#
+# entry: { rule, target, reason, ticket }
+#   rule   … ルール名（.md は省略可。finding.rule と部分一致で判定）
+#   target … 対象（テーブル名/ファイル名等。finding.file か finding.message に含まれれば一致）
+#   reason … なぜ未対応で許容しているか
+#   ticket … 追跡している Notion ページID（集約先）
+entries:
+  - rule: rls-multitenant
+    target: site_attachments
+    reason: "liff(anon)も read する liff/anon露出テーブル。purchase_orders方式のRLSを当てると作業員の現場閲覧が壊れる。liff認証導線(マルチテナント化B)確定後に全体RLS化でまとめて対応。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
