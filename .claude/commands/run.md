@@ -50,6 +50,12 @@ featureブランチ/設計書/🤖タグ のいずれかがある進行中を再
 ### 5. バックストップ（異常時のみ・回路遮断）
 **連続前進ゼロ K=3**（3連続 blocked 等）／**壁時計 MAX_WALL=180分**／**プラン枠で落ちた** 時のみ安全停止。停止時は**枯渇か異常かを明記**。API課金へ勝手に流れる動作はしない。
 
+### 6. ディスパッチャ自動発火（フロー最後に1回・枯渇/バックストップ どちらで止まっても）
+停止理由（枯渇 or 異常）に関わらず、**フローの最後に `node scripts/dispatcher.mjs`（非dry-run）を1回だけ呼ぶ**。
+- 二重起動は **flock でガード済み**（手動実行や別 /run と被っても安全＝後発は即終了）。
+- **delta-only**：プルーン＋dedup により、**新規トランジションが無ければ無音**（送信ゼロ）。新しくレビュー待ち/要回答に入った分・差し戻し再入だけが通知される。
+- `--dry-run` 時はディスパッチャも `--dry-run` で呼ぶ（送信・state更新なし・発火予定のみ表示）。
+
 ```
 selfHeal()                                    # 0
 preflightAssertLocal()                        # 0.5（検証を使う前に毎回）
@@ -67,7 +73,7 @@ while implementableReady():                   # 3 / 4(枯渇で抜ける)
     if previewConfigured(): deployPreview(); runAllAutoGates(item, onPreview)   # 3c（無ければskip）
     setRiskProp(item); setDodaiProp(item); writeReviewDigest(item)              # 3d プロパティ＆📋
     setReviewWaiting(item); 🤖外す; noProgress=0
-dispatcher()                                  # 末尾：決断の瞬間だけ通知（§ディスパッチャ）
+run(`node scripts/dispatcher.mjs`)            # 6 末尾で1回・非dry（flockガード済・delta-only＝新規なければ無音）
 report(枯渇 or 異常 / 盤面 / レビュー待ち(🔴🟡🟢・🧱土台) / blocked / 要回答パーク / 本番ゲート待ち)
 ```
 
