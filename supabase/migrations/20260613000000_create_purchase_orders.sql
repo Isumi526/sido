@@ -1,13 +1,32 @@
 -- ============================================================
 --  20260613000000_create_purchase_orders.sql
---  注文書（purchase_orders）— 見積→注文→請求エピックの「注文書発行」(#次)
+--  注文書（purchase_orders）— 見積→注文→請求エピックの「注文書発行」
 --   - 見積書(estimates)を正本に、現場ごと・注文書番号付与で注文書を発行
 --   - 見積:注文 = 1:1（見積書なしに発行不可／active な注文は見積1件に1つ）
 --   - 発行時点の現場・受注者・支払条件をスナップショット保持（注文書は正本のため）
 --   - PDF は expense-receipts バケット（purchase-orders/<account>/<id>.pdf）に保存
 --   - 発行で受注者担当者へメール（承諾用トークンURL）。トークンは document_access_tokens
---  追加のみDDL（CREATE TABLE / CREATE INDEX）。破壊的変更なし。
+--  ★standalone-safe: 生成時点で account スコープの RLS を有効化（一時的にもRLS-offにしない）。
+--   sido の購買データ経路は authenticated(admin・Supabase Auth) と service_role(edge) のみ。
+--   liff/anon は purchase_orders を一切触らないため anon は全拒否。service_role は RLS バイパス。
+--  追加のみDDL（CREATE TABLE / INDEX / FUNCTION / POLICY / enable RLS / revoke）。破壊的変更なし。
+--  ※ 前提: 全 admin auth ユーザーの app_metadata.account_slug が設定済み（未設定だと締め出される）。
 -- ============================================================
+
+-- JWT の app_metadata.account_slug → account_id を解決（STABLE / security definer）。
+-- accounts は本migrationより前段で作成済み。purchase_orders 参照前にここで定義する。
+create or replace function public.current_account_id()
+returns uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select id from accounts
+  where slug = (auth.jwt() -> 'app_metadata' ->> 'account_slug')
+  limit 1
+$$;
+
 create table if not exists purchase_orders (
   id                       uuid primary key default gen_random_uuid(),
   account_id               uuid references accounts(id) not null,
@@ -54,5 +73,19 @@ create index if not exists po_site_idx             on purchase_orders (site_id);
 create unique index if not exists po_estimate_active_unique
   on purchase_orders (estimate_id) where is_deleted = false;
 
--- 既存マスタ群と同様、アプリ/Edge側でテナント分離（anonキー運用）するため RLS は無効
-alter table purchase_orders disable row level security;
+-- ★生成時点で RLS 有効化（一時的にもRLS-offにしない＝standalone-safe）
+alter table purchase_orders enable row level security;
+
+-- authenticated は自 account のみ read/write
+create policy po_sel on purchase_orders for select to authenticated
+  using (account_id = (select public.current_account_id()));
+create policy po_ins on purchase_orders for insert to authenticated
+  with check (account_id = (select public.current_account_id()));
+create policy po_upd on purchase_orders for update to authenticated
+  using (account_id = (select public.current_account_id()))
+  with check (account_id = (select public.current_account_id()));
+create policy po_del on purchase_orders for delete to authenticated
+  using (account_id = (select public.current_account_id()));
+
+-- anon は purchase_orders を使わない → ポリシー無し＝RLSで全拒否。多層防御で直接権限も剥奪。
+revoke all on purchase_orders from anon;
