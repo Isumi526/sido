@@ -4,7 +4,7 @@
 //  ※ AI解析(PDF→Gemini)は外部依存のためE2E対象外
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, getAccountId } from './helpers'
+import { restSrv, getAccountId } from './helpers'
 import { SEED_SITE, FEAT_A_SITE } from './global-setup'
 
 const NOW = new Date()
@@ -17,28 +17,28 @@ test.describe('下請け請求', () => {
   test.beforeAll(async () => {
     const accountId = await getAccountId()
     // 業者(区分=業者)マスタを用意して subcontractor_id を紐付け（商社/業者内訳の検証用）
-    const subRows = await rest(`subcontractors?account_id=eq.${accountId}&name=eq.${encodeURIComponent('E2E業者区分')}&select=id`)
+    const subRows = await restSrv(`subcontractors?account_id=eq.${accountId}&name=eq.${encodeURIComponent('E2E業者区分')}&select=id`)
     let subId = subRows?.[0]?.id
     if (!subId) {
-      const c = await rest('subcontractors', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ account_id: accountId, name: 'E2E業者区分', category: '業者', active: true }) })
+      const c = await restSrv('subcontractors', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ account_id: accountId, name: 'E2E業者区分', category: '業者', active: true }) })
       subId = c?.[0]?.id
     }
-    const created = await rest('subcontractor_invoices', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ account_id: accountId, subcontractor_id: subId, vendor_name: 'E2E業者区分', invoice_no: AC5_INV_NO, invoice_date: `${YM}-15`, total_amount: 11000 }) })
+    const created = await restSrv('subcontractor_invoices', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ account_id: accountId, subcontractor_id: subId, vendor_name: 'E2E業者区分', invoice_no: AC5_INV_NO, invoice_date: `${YM}-15`, total_amount: 11000 }) })
     const id = created?.[0]?.id
-    const sr = await rest(`sites?account_id=eq.${accountId}&name=eq.${encodeURIComponent(SEED_SITE)}&select=id`)
-    await rest('subcontractor_invoice_items', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify([{ invoice_id: id, account_id: accountId, item_date: `${YM}-15`, site_id: sr?.[0]?.id, site_name: SEED_SITE, description: 'E2E工事', quantity: 1, unit: '式', unit_price: 10000, amount: 10000, tax_rate: 10 }]) })
+    const sr = await restSrv(`sites?account_id=eq.${accountId}&name=eq.${encodeURIComponent(SEED_SITE)}&select=id`)
+    await restSrv('subcontractor_invoice_items', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify([{ invoice_id: id, account_id: accountId, item_date: `${YM}-15`, site_id: sr?.[0]?.id, site_name: SEED_SITE, description: 'E2E工事', quantity: 1, unit: '式', unit_price: 10000, amount: 10000, tax_rate: 10 }]) })
   })
 
   const newSite = `E2E現場_${Date.now()}`
   const vendor2 = `E2E業者2_${Date.now()}`
 
   test.afterAll(async () => {
-    await rest(`subcontractor_invoices?invoice_no=eq.${AC5_INV_NO}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`subcontractor_invoices?invoice_no=eq.${AC5_INV_NO}`, { method: 'DELETE' }).catch(() => {})
     for (const v of [vendor, vendor2]) {
-      await rest(`subcontractor_invoices?vendor_name=eq.${encodeURIComponent(v)}`, { method: 'DELETE' }).catch(() => {})
-      await rest(`subcontractors?name=eq.${encodeURIComponent(v)}`, { method: 'DELETE' }).catch(() => {})
+      await restSrv(`subcontractor_invoices?vendor_name=eq.${encodeURIComponent(v)}`, { method: 'DELETE' }).catch(() => {})
+      await restSrv(`subcontractors?name=eq.${encodeURIComponent(v)}`, { method: 'DELETE' }).catch(() => {})
     }
-    await rest(`sites?name=eq.${encodeURIComponent(newSite)}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`sites?name=eq.${encodeURIComponent(newSite)}`, { method: 'DELETE' }).catch(() => {})
   })
 
   test('AC1/2/4: 業者を新規登録→ヘッダ＋明細入力→金額自動→保存→一覧に出る', async ({ page }) => {
@@ -151,7 +151,7 @@ test.describe('下請け請求', () => {
 test.describe('下請け業者マスタ', () => {
   const masterVendor = `E2Eマスタ業者_${Date.now()}`
   test.afterAll(async () => {
-    await rest(`subcontractors?name=eq.${encodeURIComponent(masterVendor)}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`subcontractors?name=eq.${encodeURIComponent(masterVendor)}`, { method: 'DELETE' }).catch(() => {})
   })
 
   test('区分は必須（未選択は保存できず、選択すれば保存できる）', async ({ page }) => {
