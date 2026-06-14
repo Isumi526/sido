@@ -13,6 +13,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 // service role があれば使う。無ければ anon（ローカル等）にフォールバック
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+// 呼び出し元JWTで RLS スコープして読むためのキー（anon/publishable）
+const ANON_KEY     = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? ''
 const PO_MAIL_FROM   = Deno.env.get('PO_MAIL_FROM') ?? Deno.env.get('EXPENSE_MAIL_FROM') ?? 'onboarding@resend.dev'
@@ -52,32 +54,31 @@ function yen(n: number | null | undefined): string {
 }
 
 export async function sendPurchaseOrder(
-  opts: { accountSlug: string | null; order_id: string; send: boolean },
+  opts: { accountSlug?: string | null; order_id: string; send: boolean; callerAuth?: string | null },
 ): Promise<{ status: number; body: any }> {
   try {
     if (!opts.order_id) return { status: 400, body: { error: 'order_id が必要です' } }
 
-    const supabase = createClient(SUPABASE_URL, SERVICE_KEY)
+    // 特権write用（service_role・RLSバイパス）＝トークン発行/送信記録のみに使う
+    const svc = createClient(SUPABASE_URL, SERVICE_KEY)
+    // 認可read用＝呼び出し元JWTでRLSスコープ。自accountの注文書しか読めない＝越境を構造的に拒否。
+    const cli = createClient(SUPABASE_URL, ANON_KEY,
+      opts.callerAuth ? { global: { headers: { Authorization: opts.callerAuth } } } : undefined)
 
-    // アカウント解決
-    const slug = opts.accountSlug || Deno.env.get('ACCOUNT_SLUG') || null
-    const { data: account } = await supabase
-      .from('accounts').select('id, slug').eq('slug', slug).maybeSingle()
-    if (!account) return { status: 404, body: { error: 'account not found' } }
-
-    // 注文書
-    const { data: order } = await supabase
+    // 注文書を「呼び出し元の権限」で読む → RLSで自accountのみ。読めなければ越境/未存在として拒否。
+    // account は order から導出（呼び出し元が申告する accountSlug は authz に使わない）。
+    const { data: order } = await cli
       .from('purchase_orders')
       .select('*')
       .eq('id', opts.order_id)
-      .eq('account_id', account.id)
       .maybeSingle()
-    if (!order) return { status: 404, body: { error: 'purchase_order not found' } }
+    if (!order) return { status: 403, body: { error: 'forbidden_or_not_found' } }
+    const account = { id: order.account_id as string }
 
-    // 宛先メール解決
+    // 宛先メール解決（order の account に限定・特権read）
     let email: string | null = null
     if (order.subcontractor_contact_id) {
-      const { data: contact } = await supabase
+      const { data: contact } = await svc
         .from('subcontractor_contacts')
         .select('email')
         .eq('id', order.subcontractor_contact_id)
@@ -93,7 +94,7 @@ export async function sendPurchaseOrder(
     const nowIso    = new Date().toISOString()
     const expiresIso = new Date(Date.now() + TOKEN_TTL_MS).toISOString()
 
-    const { error: tokErr } = await supabase.from('document_access_tokens').insert({
+    const { error: tokErr } = await svc.from('document_access_tokens').insert({
       account_id:      account.id,
       subcontractor_id: order.subcontractor_id,
       purpose:         'order_accept',
@@ -112,7 +113,7 @@ export async function sendPurchaseOrder(
       // PDF添付（任意）
       const attachments: { filename: string; content: string }[] = []
       if (order.pdf_path) {
-        const { data: file } = await supabase.storage.from('expense-receipts').download(order.pdf_path)
+        const { data: file } = await svc.storage.from('expense-receipts').download(order.pdf_path)
         if (file) {
           const buf = new Uint8Array(await file.arrayBuffer())
           attachments.push({ filename: `注文書_${order.order_number}.pdf`, content: base64(buf) })
@@ -156,7 +157,7 @@ export async function sendPurchaseOrder(
     }
 
     // DB更新（両モード共通・成功時）。issued_at は触らない。
-    await supabase.from('purchase_orders')
+    await svc.from('purchase_orders')
       .update({ email_sent_at: nowIso, email_to: email })
       .eq('id', order.id)
 
