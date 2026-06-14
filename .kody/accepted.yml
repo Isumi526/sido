@@ -13,3 +13,129 @@ entries:
     target: site_attachments
     reason: "liff(anon)も read する liff/anon露出テーブル。purchase_orders方式のRLSを当てると作業員の現場閲覧が壊れる。liff認証導線(マルチテナント化B)確定後に全体RLS化でまとめて対応。"
     ticket: "37b0ff81c56b8137827bd5d49f531777"
+
+  # --- ベースライン: 本番で既にRLS無効×anon到達可の既存表（親エピック「本番DBのRLS有効化」で追跡） ---
+  - rule: rls-multitenant
+    target: accounts
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: contractors
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: daily_reports
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: dev_updates
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: document_access_tokens
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: estimates
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: expense_items
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: expense_settlements
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: expense_users
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: hidden_rule_suggestions
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: paid_leave_grants
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: reminder_logs
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: schedule_edits
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: schedule_group_members
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: schedule_group_shares
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: schedule_groups
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: schedules
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: settings
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: site_rules
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: sites
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: subcontractor_comments
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: subcontractor_contacts
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: subcontractor_invoice_items
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: subcontractor_invoices
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: subcontractor_trade_types
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: subcontractors
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: trade_type_presets
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: users
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: vehicles
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: worker_proxies
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: workers
+    reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
