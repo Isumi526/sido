@@ -176,7 +176,7 @@ import { ref, computed, onMounted } from 'vue'
 import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
 import { supabase } from '../lib/supabase'
-import { getAccountId, getAccountSlug, getAccountName } from '../lib/account'
+import { getAccountId, getAccountName } from '../lib/account'
 
 const BUCKET   = 'expense-receipts'
 const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
@@ -361,10 +361,13 @@ async function generateAndUploadPdf(orderId: string, accountId: string) {
 async function callSendFn(orderId: string): Promise<{ ok: boolean; msg: string }> {
   if (!EDGE_URL) return { ok: false, msg: 'Edge Function URL未設定のためメール送信できません' }
   const fnName = IS_DEV ? 'test-send-purchase-order' : 'send-purchase-order'
+  // 認証JWT（ログイン中のadmin）を渡す。EF側が呼び出し元JWTで注文書をRLSスコープ readし越境を拒否。
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return { ok: false, msg: 'ログインセッションがありません（再ログインしてください）' }
   const res = await fetch(`${EDGE_URL}/${fnName}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ANON_KEY}` },
-    body: JSON.stringify({ accountSlug: getAccountSlug(), order_id: orderId }),
+    headers: { 'Content-Type': 'application/json', apikey: ANON_KEY, Authorization: `Bearer ${session.access_token}` },
+    body: JSON.stringify({ order_id: orderId }),
   })
   const r = await res.json().catch(() => ({}))
   if (!res.ok) return { ok: false, msg: r.error ?? `送信失敗 (${res.status})` }
