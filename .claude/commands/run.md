@@ -42,7 +42,8 @@ featureブランチ/設計書/🤖タグ のいずれかがある進行中を再
 - **b. 【自動テストゲート】今存在する自動テストを“全部”通す（動的検出・ハードコードしない／§テストゲート参照）**。緑でなければ **blocked**（ステータス=保留＋失敗内容を記録・🤖外す）→ 次へ（run 全体は止めない）。
 - **c. preview/staging が構成済みなら**そこへデプロイし同じスイートを再実行（**無ければスキップ**）。
 - **c'. 【独立AIレビュー（自動テストゲート緑の後・レビュー待ち昇格の直前に1回）】**：`node scripts/independent-review.mjs --ticket-id <pageId> --ticket-file <要件md>` を実行（Claude非依存の Gemini が `.kody/rules/` ＋ チケット要件で diff をレビュー）。**findings サマリ（🔴critical/high・verdict）を d の 📋ダイジェストに含める**。**🔴critical があれば対象チケットに「要人間verdict」フラグ**（スクリプトが Notion callout＋通知）。`GEMINI_REVIEW_API_KEY` 未設定なら**そのアイテムは独立レビューをスキップした旨を📋に明記**（gate扱いにはしない＝blockしない）。**/run が `--dry-run` の時は `independent-review.mjs` も `--dry-run`** で呼ぶ（Notion更新せず標準出力のみ）。
-- **d. 全緑で昇格**：`リスク`(🔴/🟡/🟢 Select) と `土台`(該当 Checkbox=true) を**プロパティに直接セット**し、本文に **📋レビューダイジェスト**（§ダイジェスト・**c' の独立レビュー結果を含む**）を書いて、ステータス=**レビュー待ち**・🤖外す。🔴critical の「要人間verdict」フラグは **§6 ディスパッチャが既存どおり拾う**。
+- **c''. 【RLS/anon 機械監査（migration差分がある時だけ・軽め）】**：そのアイテムの差分に `supabase/migrations/` の追加/変更が含まれる場合のみ、`node scripts/rls-audit.mjs --assert --json` をローカル(migration適用済)に対して回す（判定源＝`.kody/accepted.yml`・SELECTのみ）。**🔴LEAK（allowlist外で anon到達可×RLS無効）があれば d の 📋ダイジェストに🔴で載せ「要人間verdict」フラグ扱い**（§6 ディスパッチャが拾う）。**ただし /run の自動テストゲート(§3b)は止めない**＝blockせずレビュー待ちには上げ、🔴を可視化して人間の判断に委ねる（独立AIレビューの RLS観点を機械的に二重化）。migration差分が無ければスキップ。
+- **d. 全緑で昇格**：`リスク`(🔴/🟡/🟢 Select) と `土台`(該当 Checkbox=true) を**プロパティに直接セット**し、本文に **📋レビューダイジェスト**（§ダイジェスト・**c' の独立レビュー結果＋ c'' のRLS監査結果を含む**）を書いて、ステータス=**レビュー待ち**・🤖外す。🔴critical/🔴LEAK の「要人間verdict」フラグは **§6 ディスパッチャが既存どおり拾う**。
 - **e. 本番に触れない**。dev 未push前提で積む。**review→本番待ち昇格はしない**（人間が行う）。
 
 ### 4. 主停止（枯渇＝正常終了）
