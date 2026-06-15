@@ -166,7 +166,8 @@ export const useReport = () => {
 
     // ── ① ファイルを Supabase Storage にアップロードして *Urls にセット ──
     const senderName  = form.value.sender
-    const accountSlug = (config.public.accountSlug as string) || 'default'
+    // 身元優先のスラッグ（email/pwは自テナント・LINEは env）。env固定だと別テナントのstorageパスに保存される。
+    const accountSlug = (await useAccount().effectiveSlug()) || 'default'
     const periodKey   = getPeriodKey(form.value.date)          // 'YYYY-MM-first'
     const periodHalf  = periodKey.split('-').pop() as string   // 'first' | 'second'
 
@@ -292,7 +293,7 @@ export const useReport = () => {
         // ── ② Edge Function に送信（File[] を除去・*Urls はそのまま含む）──
         const mainPayload = {
           ...payload,
-          accountSlug: config.public.accountSlug as string,
+          accountSlug,
           sites: payload.sites.map(site => ({
             ...site,
             expenses: stripFiles(site.expenses),

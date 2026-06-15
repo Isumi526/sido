@@ -49,6 +49,7 @@ export const useAccount = () => {
     resolvedSlug.value = null
   }
 
+  // resolvedSlug: getAccountId 解決後の「身元のスラッグ」（表示用ブランド等に使う・未解決時はnull）。
   // 後方互換: 同期 slug は env を返す（旧コード用）。テナント判定には effectiveSlug()/getAccountId() を使うこと。
-  return { getAccountId, effectiveSlug, resetAccount, slug: envSlug, accountName }
+  return { getAccountId, effectiveSlug, resetAccount, slug: envSlug, resolvedSlug, accountName }
 }

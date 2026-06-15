@@ -49,4 +49,7 @@ test('クロステナント分離: env=test のデプロイでも sample-constru
   // ★ env(test/テストアカウント)ではなく身元(sample-construction/Sample Construction Co.)が適用される
   await expect(page).toHaveTitle(/Sample Construction/i, { timeout: 20000 })
   await expect(page).not.toHaveTitle(/テスト/)
+  // ★ ヘッダーのブランドも身元スラッグ（env=TEST ではない）
+  await expect(page.locator('.app-brand-name')).toContainText('SAMPLE-CONSTRUCTION', { timeout: 20000 })
+  await expect(page.locator('.app-brand-name')).not.toContainText('TEST')
 })

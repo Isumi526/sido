@@ -1173,6 +1173,8 @@ async function handleSubmit() {
           const now = new Date()
           const editedAt = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
           const fnPrefix = config.public.appEnv === 'development' ? 'test-' : ''
+          // 身元優先のスラッグ（email/pwは自テナント・LINEはenv）
+          const acctSlug = await useAccount().effectiveSlug()
           fetch(`${efUrl}/${fnPrefix}notify-edit`, {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1181,7 +1183,7 @@ async function handleSubmit() {
               date:        report.form.value.date,
               editedAt,
               diffs,
-              accountSlug: config.public.accountSlug,
+              accountSlug: acctSlug,
             }),
           }).catch(e => console.error('[Edit] LINE通知エラー:', e))
         }
