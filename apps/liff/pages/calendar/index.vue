@@ -574,13 +574,14 @@ function dateCellClass(date: string): Record<string, boolean> {
 
 // ──────────────────── データ取得 ────────────────────
 async function loadWorkers() {
-  const slug = config.public.accountSlug as string
-  const { data: accData } = await supabase.from('accounts').select('id').eq('slug', slug).single()
-  if (!accData) return
+  // account は身元優先（認証時は env で上書きしない＝テナント分離。env だと他テナントの作業員が並ぶ）
+  const { getAccountId } = useAccount()
+  const accId = await getAccountId()
+  if (!accId) return
   const { data } = await supabase
     .from('workers')
     .select('id, name')
-    .eq('account_id', accData.id)
+    .eq('account_id', accId)
     .eq('active', true)
     .order('name')
   workers.value = data ?? []
