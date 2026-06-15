@@ -26,23 +26,24 @@ export const useCurrentUser = () => {
 
     const wid = passwordWorkerId()
     if (wid) {
-      // email/pw: worker_id で users を引く。無ければ worker から合成。
+      // email/pw: worker_id で users を引く。
       const { data: u } = await supabase
         .from('users').select('*').eq('worker_id', wid).eq('account_id', accountId).maybeSingle()
       if (u) return u as User
+      // users 行が無い email/pw 作業員 → users 行を作成（id付き＝日報/履歴が正しく保存される）。
+      // 合成(id=null)だと daily_reports.user_id=null になり管理画面/履歴に出ないため必ず作る。
       const { data: w } = await supabase
         .from('workers').select('id, name, role, account_id').eq('id', wid).maybeSingle()
       if (!w) return null
-      // users 行が無い email/pw 作業員 → worker から合成（id=null・登録済み扱い）
-      return {
-        id: null,
-        line_user_id: null,
-        real_name: w.name,
-        worker_role: w.role,
-        account_id: w.account_id,
-        worker_id: w.id,
-        is_approved: true,
-      } as unknown as User
+      const { data: created } = await supabase
+        .from('users')
+        .insert({ worker_id: w.id, account_id: w.account_id, real_name: w.name, worker_role: w.role, is_approved: true })
+        .select('*').single()
+      if (created) return created as User
+      // 競合（同時作成）等で insert 失敗時は再取得
+      const { data: again } = await supabase
+        .from('users').select('*').eq('worker_id', wid).eq('account_id', accountId).maybeSingle()
+      return (again as User) ?? null
     }
 
     // LINE: 従来どおり line_user_id → users
