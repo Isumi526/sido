@@ -272,11 +272,11 @@ const SUB_COLS = 'id, name, active, category, representative_name, mobile_phone,
 async function load() {
   loading.value = true
   try {
-    const { data: accountData } = await supabase
-      .from('accounts').select('id').eq('slug', config.public.accountSlug).single()
-    if (!accountData) return
-    accountId.value = accountData.id
-    const aid = accountData.id
+    // account は身元優先（認証時は env で上書きしない＝テナント分離）
+    const { getAccountId } = useAccount()
+    const aid = await getAccountId()
+    if (!aid) return
+    accountId.value = aid
 
     const [{ data: subRows }, { data: presetRows }, { data: ttRows }, { data: workerRows }] = await Promise.all([
       supabase.from('subcontractors').select(SUB_COLS).eq('account_id', aid).eq('is_deleted', false).order('sort_order'),

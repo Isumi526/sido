@@ -49,6 +49,8 @@ async function submit() {
       error.value = 'ログインに失敗しました（メールアドレスまたはパスワードが違います）'
       return
     }
+    // 身元が変わるのでアカウントキャッシュを破棄（env由来の値が残らないように＝テナント分離）
+    useAccount().resetAccount()
     // セッション確立 → ホームへ。useLiff.init がセッションを検出し authenticated で動作。
     await navigateTo('/')
   } catch (e: unknown) {

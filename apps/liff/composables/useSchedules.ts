@@ -94,10 +94,9 @@ export const useSchedules = () => {
 
   async function resolveAccountId(): Promise<string | null> {
     if (_accountIdCache) return _accountIdCache
-    const cfg = useRuntimeConfig()
-    const { data } = await supabase
-      .from('accounts').select('id').eq('slug', cfg.public.accountSlug).single()
-    _accountIdCache = data?.id ?? null
+    // account は身元優先（認証時は env で上書きしない＝テナント分離）
+    const { getAccountId } = useAccount()
+    _accountIdCache = await getAccountId()
     return _accountIdCache
   }
 
