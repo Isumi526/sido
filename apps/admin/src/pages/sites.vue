@@ -70,7 +70,8 @@
           <div v-if="attachments.length" class="att-list">
             <div v-for="a in attachments" :key="a.id" class="att-item">
               <span class="att-kind">{{ a.kind === 'photo' ? '📷' : '📄' }}</span>
-              <a :href="attUrl(a.path)" target="_blank" rel="noopener" class="att-link">{{ a.name || a.path.split('/').pop() }}</a>
+              <a v-if="a.url" :href="a.url" target="_blank" rel="noopener" class="att-link">{{ a.name || a.path.split('/').pop() }}</a>
+              <span v-else class="att-link att-disabled">{{ a.name || a.path.split('/').pop() }}</span>
               <button class="att-del" @click="removeAttachment(a)">×</button>
             </div>
           </div>
@@ -121,9 +122,9 @@ type Site = {
   id: string; name: string; name_kana: string | null; active: boolean
   location: string | null; construction_type: string | null; construction_details: string | null; memo: string | null
 }
-type Att = { id: string; site_id: string; kind: string; path: string; name: string | null }
+type Att = { id: string; site_id: string; kind: string; path: string; name: string | null; url?: string | null }
 
-const BUCKET = 'expense-receipts'
+const BUCKET = 'site-attachments'
 const sites     = ref<Site[]>([])
 const modal     = ref<Partial<Site> | null>(null)
 const saving    = ref(false)
@@ -131,7 +132,14 @@ const saveError = ref('')
 // 編集中の現場の添付（写真・書類）
 const attachments = ref<Att[]>([])
 const uploading   = ref(false)
-function attUrl(path: string) { return supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl }
+// 非公開バケット → edge(site-attachment-url)で短TTL署名URLを取得（getPublicUrl廃止）
+async function signedUrl(attachmentId: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.functions.invoke('site-attachment-url', { body: { attachment_id: attachmentId } })
+    if (error || !data?.ok) return null
+    return data.url as string
+  } catch { return null }
+}
 
 // ── マージ（重複現場の統合）──
 const mergeMode   = ref(false)
@@ -187,7 +195,10 @@ async function save() {
 // ── 添付（写真・書類）──
 async function loadAttachments(siteId: string) {
   const { data } = await supabase.from('site_attachments').select('id, site_id, kind, path, name').eq('site_id', siteId).order('created_at')
-  attachments.value = (data ?? []) as Att[]
+  const atts = (data ?? []) as Att[]
+  // 表示用の署名URLを並列取得（非公開バケット）
+  await Promise.all(atts.map(async (a) => { a.url = await signedUrl(a.id) }))
+  attachments.value = atts
 }
 async function onAttach(ev: Event, kind: 'photo' | 'document') {
   const file = (ev.target as HTMLInputElement).files?.[0]
@@ -196,7 +207,8 @@ async function onAttach(ev: Event, kind: 'photo' | 'document') {
   try {
     const accountId = await getAccountId()
     const ext = (file.name.split('.').pop() || 'bin').toLowerCase()
-    const path = `site-attachments/${accountId}/${modal.value.id}/${kind}-${Date.now()}.${ext}`
+    // path 先頭フォルダ = account_id（storage RLS の account スコープに使用）
+    const path = `${accountId}/${modal.value.id}/${kind}-${Date.now()}.${ext}`
     const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false, contentType: file.type || undefined })
     if (upErr) throw upErr
     await supabase.from('site_attachments').insert({ account_id: accountId, site_id: modal.value.id, kind, path, name: file.name })
