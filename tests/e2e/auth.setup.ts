@@ -10,7 +10,7 @@ const authFile = 'tests/e2e/.auth/admin-local.json'
 
 setup('admin ログイン', async ({ page }) => {
   await page.goto('/login')
-  await page.fill('input[placeholder="ID"]', ADMIN_LOGIN_ID)
+  await page.fill('[data-testid="login-id"]', ADMIN_LOGIN_ID)
   await page.fill('input[type="password"]', ADMIN_LOGIN_PASS)
   await page.click('button[type="submit"]')
   // シェル（サイドバー）が出れば認証成功
