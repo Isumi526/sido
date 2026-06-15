@@ -1,0 +1,9 @@
+{
+  "categoryWork": "Site work",
+  "categoryOff": "Day off",
+  "categoryTraining": "Training",
+  "categoryMeeting": "Meeting",
+  "categoryOther": "Other",
+  "fetchFailed": "Failed to load",
+  "workerInfoUnavailable": "Could not retrieve worker information"
+}

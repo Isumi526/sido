@@ -7,7 +7,7 @@
 //  design: docs/design/subcontractor-detail-search.md（土台: 見積→注文→請求）
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest } from './helpers'
+import { restSrv } from './helpers'
 
 const NAME = `E2E業者マスタ_${Date.now()}`
 const ADDR = '東京都新宿区西新宿1-1-1'
@@ -20,14 +20,14 @@ test.describe.configure({ mode: 'serial' })
 
 test.afterAll(async () => {
   try {
-    const rows = await rest(`subcontractors?name=eq.${encodeURIComponent(NAME)}&select=id`)
+    const rows = await restSrv(`subcontractors?name=eq.${encodeURIComponent(NAME)}&select=id`)
     for (const r of rows ?? []) {
-      await rest(`subcontractor_contacts?subcontractor_id=eq.${r.id}`,    { method: 'DELETE' }).catch(() => {})
-      await rest(`subcontractor_edit_logs?subcontractor_id=eq.${r.id}`,   { method: 'DELETE' }).catch(() => {})
-      await rest(`subcontractor_trade_types?subcontractor_id=eq.${r.id}`, { method: 'DELETE' }).catch(() => {})
+      await restSrv(`subcontractor_contacts?subcontractor_id=eq.${r.id}`,    { method: 'DELETE' }).catch(() => {})
+      await restSrv(`subcontractor_edit_logs?subcontractor_id=eq.${r.id}`,   { method: 'DELETE' }).catch(() => {})
+      await restSrv(`subcontractor_trade_types?subcontractor_id=eq.${r.id}`, { method: 'DELETE' }).catch(() => {})
     }
   } catch { /* ignore */ }
-  await rest(`subcontractors?name=eq.${encodeURIComponent(NAME)}`, { method: 'DELETE' }).catch(() => {})
+  await restSrv(`subcontractors?name=eq.${encodeURIComponent(NAME)}`, { method: 'DELETE' }).catch(() => {})
 })
 
 test('AC1/AC2: 住所・振込口座・担当者(複数)を登録 → DB保存 & 再編集で保持', async ({ page }) => {
@@ -58,12 +58,12 @@ test('AC1/AC2: 住所・振込口座・担当者(複数)を登録 → DB保存 &
   await expect(modal).toBeHidden()
 
   // DBに業者＋担当者2件が保存されている
-  const subs = await rest(`subcontractors?name=eq.${encodeURIComponent(NAME)}&select=id,address,bank_name,bank_account_holder`)
+  const subs = await restSrv(`subcontractors?name=eq.${encodeURIComponent(NAME)}&select=id,address,bank_name,bank_account_holder`)
   expect(subs.length).toBe(1)
   expect(subs[0].address).toBe(ADDR)
   expect(subs[0].bank_name).toBe(BANK)
   expect(subs[0].bank_account_holder).toBe(HOLDER)
-  const contacts = await rest(`subcontractor_contacts?subcontractor_id=eq.${subs[0].id}&is_deleted=eq.false&select=name,email,phone&order=sort_order`)
+  const contacts = await restSrv(`subcontractor_contacts?subcontractor_id=eq.${subs[0].id}&is_deleted=eq.false&select=name,email,phone&order=sort_order`)
   expect(contacts.map((c: any) => c.name)).toEqual([C1, C2])
 
   // 再編集で保持されている
@@ -89,7 +89,7 @@ test('AC2: 担当者を1件削除して保存 → DBに反映される', async (
   await modal.locator('.btn-save').click()
   await expect(modal).toBeHidden()
 
-  const subs = await rest(`subcontractors?name=eq.${encodeURIComponent(NAME)}&select=id`)
-  const contacts = await rest(`subcontractor_contacts?subcontractor_id=eq.${subs[0].id}&is_deleted=eq.false&select=name`)
+  const subs = await restSrv(`subcontractors?name=eq.${encodeURIComponent(NAME)}&select=id`)
+  const contacts = await restSrv(`subcontractor_contacts?subcontractor_id=eq.${subs[0].id}&is_deleted=eq.false&select=name`)
   expect(contacts.map((c: any) => c.name)).toEqual([C1])
 })

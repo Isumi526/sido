@@ -1,7 +1,7 @@
 <template>
   <div class="page">
     <div class="header">
-      <h1 class="title">添付ファイル</h1>
+      <h1 class="title">{{ t('files.title') }}</h1>
       <p v-if="folderLabel" class="folder-label">{{ folderLabel }}</p>
     </div>
 
@@ -11,7 +11,7 @@
 
     <div v-else-if="error" class="state error">{{ error }}</div>
 
-    <div v-else-if="files.length === 0" class="state">ファイルがありません</div>
+    <div v-else-if="files.length === 0" class="state">{{ t('files.empty') }}</div>
 
     <div v-else class="grid">
       <a
@@ -39,6 +39,9 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
+const { t }    = useI18n()
 const route    = useRoute()
 const supabase = useSupabase()
 
@@ -57,13 +60,13 @@ const folderLabel = computed(() => {
 
 /** ファイル名をカテゴリ名に変換 */
 const CATEGORY_LABELS: Record<string, string> = {
-  vehicle:       '車両領収書',
-  train:         '電車領収書',
-  hotel:         'ホテル領収書',
-  leopalace:     'レオパレス領収書',
-  other:         'その他領収書',
-  entertainment: '雑経費領収書',
-  garbage:       'ゴミ写真',
+  vehicle:       t('files.categoryVehicle'),
+  train:         t('files.categoryTrain'),
+  hotel:         t('files.categoryHotel'),
+  leopalace:     t('files.categoryLeopalace'),
+  other:         t('files.categoryOther'),
+  entertainment: t('files.categoryEntertainment'),
+  garbage:       t('files.categoryGarbage'),
 }
 
 function labelOf(name: string): string {
@@ -86,7 +89,7 @@ function fileUrl(name: string): string {
 
 onMounted(async () => {
   if (!path.value) {
-    error.value = 'パスが指定されていません'
+    error.value = t('files.errorNoPath')
     loading.value = false
     return
   }
@@ -94,7 +97,7 @@ onMounted(async () => {
     .from('expense-receipts')
     .list(path.value, { sortBy: { column: 'name', order: 'asc' } })
   loading.value = false
-  if (e) { error.value = 'ファイルの取得に失敗しました'; return }
+  if (e) { error.value = t('files.errorFetch'); return }
   files.value = (data ?? []).filter(f => f.name !== '.emptyFolderPlaceholder')
 })
 </script>

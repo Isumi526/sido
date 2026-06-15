@@ -2,6 +2,7 @@
 //  composables/useReport.ts
 //  日報フォームの状態管理と送信処理
 // ============================================================
+import { useI18n } from 'vue-i18n'
 import type { DailyReport, SiteReport, WorkerEntry, SubcontractorEntry, WorkerRole, VehicleExpense, LineItem, ExpenseFileLineItem, HighwayLineItem } from '~/types'
 import type { RateBreakdown } from '~/utils/workerHours'
 import { computeWorkerHours, calcBreakMinutes, parseMin } from '~/utils/workerHours'
@@ -98,6 +99,7 @@ const FILE_CATEGORIES = [
 
 export const useReport = () => {
   const config   = useRuntimeConfig()
+  const { t }    = useI18n()
   const { profile, isTester } = useLiff()
   const master   = useMaster()
   const supabase = useSupabase()
@@ -218,7 +220,7 @@ export const useReport = () => {
     }
 
     if (uploadErrors.length > 0) {
-      error.value = `ファイルのアップロードに失敗しました。送信を中止します。\n${uploadErrors.join('\n')}`
+      error.value = t('report2.uploadFailed', { errors: uploadErrors.join('\n') })
       submitting.value = false
       return
     }
@@ -323,7 +325,7 @@ export const useReport = () => {
 
       submitted.value = true
     } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : '送信に失敗しました'
+      error.value = e instanceof Error ? e.message : t('report2.submitFailed')
       console.error('[Report] 送信エラー:', e)
     } finally {
       submitting.value = false

@@ -16,7 +16,7 @@
         :checked="tategae"
         @change="$emit('update:tategae', ($event.target as HTMLInputElement).checked)"
       />
-      <span>個人建て替え</span>
+      <span>{{ $t('report.personalAdvance') }}</span>
     </label>
   </div>
 </template>

@@ -4,13 +4,13 @@
     <!-- ローディング -->
     <div v-if="phase === 'loading'" class="center-box">
       <div class="spinner" />
-      <p class="loading-text">読み込み中...</p>
+      <p class="loading-text">{{ $t('common.loading') }}</p>
     </div>
 
     <!-- エラー -->
     <div v-else-if="phase === 'error'" class="center-box">
       <span class="material-symbols-rounded error-icon">error</span>
-      <p class="error-title">エラーが発生しました</p>
+      <p class="error-title">{{ $t('checkin.errorTitle') }}</p>
       <p class="error-msg">{{ errorMsg }}</p>
       <p v-if="debugUrl" class="error-debug">{{ debugUrl }}</p>
     </div>
@@ -18,21 +18,21 @@
     <!-- 本日分完了済み -->
     <div v-else-if="phase === 'already-done'" class="center-box">
       <span class="material-symbols-rounded already-icon">task_alt</span>
-      <p class="already-title">本日分は登録済みです</p>
+      <p class="already-title">{{ $t('checkin.alreadyTitle') }}</p>
       <p class="already-sub">{{ siteName }}</p>
       <div class="already-logs">
         <div class="already-row">
           <span class="material-symbols-rounded log-icon checkin-icon">login</span>
-          <span>出勤 {{ checkinTime }}</span>
+          <span>{{ $t('checkin.checkinLabel') }} {{ checkinTime }}</span>
         </div>
         <div class="already-row">
           <span class="material-symbols-rounded log-icon checkout-icon">logout</span>
-          <span>退勤 {{ checkoutTime }}</span>
+          <span>{{ $t('checkin.checkoutLabel') }} {{ checkoutTime }}</span>
         </div>
       </div>
 
       <div v-if="otherTargets.length" class="next-targets">
-        <p class="next-label">続けて他の人を登録</p>
+        <p class="next-label">{{ $t('checkin.continueOthers') }}</p>
         <button
           v-for="t in otherTargets"
           :key="t.id"
@@ -43,7 +43,7 @@
             {{ t.isSelf ? 'person' : 'switch_account' }}
           </span>
           <span class="next-name">
-            {{ t.name }}<span v-if="t.isSelf" class="self-tag">本人</span>
+            {{ t.name }}<span v-if="t.isSelf" class="self-tag">{{ $t('checkin.selfTag') }}</span>
           </span>
           <span class="material-symbols-rounded chev">chevron_right</span>
         </button>
@@ -53,14 +53,14 @@
     <!-- 送信完了 -->
     <div v-else-if="phase === 'done'" class="center-box">
       <span class="material-symbols-rounded done-icon">check_circle</span>
-      <p class="done-title">{{ attendanceType === 'checkin' ? '出勤' : '退勤' }}登録が完了しました</p>
+      <p class="done-title">{{ $t('checkin.doneTitle', { type: attendanceType === 'checkin' ? $t('checkin.checkinLabel') : $t('checkin.checkoutLabel') }) }}</p>
       <p class="done-sub">{{ siteName }} &nbsp;/&nbsp; {{ checkedAtLabel }}</p>
       <p class="done-message">
-        {{ attendanceType === 'checkin' ? '今日も一日ご安全にお願いします。' : '今日も一日お疲れ様でした。' }}
+        {{ attendanceType === 'checkin' ? $t('checkin.doneMessageCheckin') : $t('checkin.doneMessageCheckout') }}
       </p>
 
       <div v-if="otherTargets.length" class="next-targets">
-        <p class="next-label">続けて他の人を登録</p>
+        <p class="next-label">{{ $t('checkin.continueOthers') }}</p>
         <button
           v-for="t in otherTargets"
           :key="t.id"
@@ -71,7 +71,7 @@
             {{ t.isSelf ? 'person' : 'switch_account' }}
           </span>
           <span class="next-name">
-            {{ t.name }}<span v-if="t.isSelf" class="self-tag">本人</span>
+            {{ t.name }}<span v-if="t.isSelf" class="self-tag">{{ $t('checkin.selfTag') }}</span>
           </span>
           <span class="material-symbols-rounded chev">chevron_right</span>
         </button>
@@ -82,7 +82,7 @@
     <div v-else-if="phase === 'select-target'" class="select-wrap">
       <div class="select-header">
         <div class="site-label">{{ siteName }}</div>
-        <div class="select-title">誰の出退勤を登録しますか？</div>
+        <div class="select-title">{{ $t('checkin.selectTargetTitle') }}</div>
       </div>
       <div class="target-list">
         <button
@@ -95,7 +95,7 @@
             {{ t.isSelf ? 'person' : 'switch_account' }}
           </span>
           <span class="target-name">
-            {{ t.name }}<span v-if="t.isSelf" class="self-tag">本人</span>
+            {{ t.name }}<span v-if="t.isSelf" class="self-tag">{{ $t('checkin.selfTag') }}</span>
           </span>
           <span class="material-symbols-rounded chev">chevron_right</span>
         </button>
@@ -107,14 +107,14 @@
       <div class="checklist-header" :class="attendanceType">
         <div class="site-label">{{ siteName }}</div>
         <div class="checkin-title">
-          {{ attendanceType === 'checkin' ? '出勤前の確認' : '退勤前の確認' }}
+          {{ attendanceType === 'checkin' ? $t('checkin.checkinConfirmTitle') : $t('checkin.checkoutConfirmTitle') }}
         </div>
         <div v-if="isProxyMode" class="proxy-badge">
           <span class="material-symbols-rounded proxy-icon">swap_horiz</span>
-          {{ proxyTargetName }} として登録
+          {{ $t('checkin.registerAs', { name: proxyTargetName }) }}
         </div>
         <button v-if="canChangeTarget" class="change-target" @click="backToSelect">
-          <span class="material-symbols-rounded">cached</span>対象者を変更
+          <span class="material-symbols-rounded">cached</span>{{ $t('checkin.changeTarget') }}
         </button>
       </div>
 
@@ -146,23 +146,23 @@
           </span>
           <span class="loc-text">
             <template v-if="locationState === 'idle'">
-              出退勤の記録に位置情報を使います。下のボタンを押して <b>「許可」</b> を選んでください。
-              <button class="loc-get" @click="fetchLocation">現在地を取得</button>
-              <span class="loc-note">※確認は最初の1回だけ。「許可しない」を選ぶと後から戻せないことがあります</span>
+              {{ $t('checkin.locIdleIntro') }}<b>{{ $t('checkin.locIdleAllow') }}</b>{{ $t('checkin.locIdleOutro') }}
+              <button class="loc-get" @click="fetchLocation">{{ $t('checkin.locGetCurrent') }}</button>
+              <span class="loc-note">{{ $t('checkin.locIdleNote') }}</span>
             </template>
-            <template v-else-if="locationState === 'pending'">位置情報を取得中...</template>
+            <template v-else-if="locationState === 'pending'">{{ $t('checkin.locPending') }}</template>
             <template v-else-if="locationState === 'granted'">
-              位置情報取得済み（{{ locationLat!.toFixed(5) }}, {{ locationLng!.toFixed(5) }}）
+              {{ $t('checkin.locGranted', { lat: locationLat!.toFixed(5), lng: locationLng!.toFixed(5) }) }}
             </template>
             <template v-else>
-              位置情報なしで登録できます（任意）
-              <button class="loc-retry" @click="fetchLocation">再取得</button>
+              {{ $t('checkin.locUnavailable') }}
+              <button class="loc-retry" @click="fetchLocation">{{ $t('checkin.locRetry') }}</button>
               <details class="loc-help">
-                <summary>位置情報をオンにしたい場合</summary>
+                <summary>{{ $t('checkin.locHelpSummary') }}</summary>
                 <ol class="loc-steps">
-                  <li>iOS：設定 → LINE → 位置情報 を「使用中のみ」以上にする</li>
-                  <li>それでもダイアログが出ない場合は、画面右上の <b>⋯ メニュー → 「Safariで開く」</b>（Safariなら位置情報を許可し直せます）</li>
-                  <li>※ 位置情報がなくても出退勤の登録は完了します</li>
+                  <li>{{ $t('checkin.locHelpStep1') }}</li>
+                  <li>{{ $t('checkin.locHelpStep2Intro') }}<b>{{ $t('checkin.locHelpStep2Bold') }}</b>{{ $t('checkin.locHelpStep2Outro') }}</li>
+                  <li>{{ $t('checkin.locHelpStep3') }}</li>
                 </ol>
               </details>
             </template>
@@ -170,9 +170,9 @@
         </div>
 
         <p class="submit-hint">
-          {{ checkedIds.size }} / {{ rules.length }} 件確認済み
+          {{ $t('checkin.checkedCount', { checked: checkedIds.size, total: rules.length }) }}
           <template v-if="allChecked && !locationResolved">
-            <br><span class="submit-warn">「現在地を取得」を押してから記録できます</span>
+            <br><span class="submit-warn">{{ $t('checkin.submitWarn') }}</span>
           </template>
         </p>
         <button
@@ -181,7 +181,7 @@
           :disabled="!canSubmit"
           @click="submit"
         >
-          {{ submitting ? '登録中...' : (attendanceType === 'checkin' ? '出勤を記録する' : '退勤を記録する') }}
+          {{ submitting ? $t('checkin.submitting') : (attendanceType === 'checkin' ? $t('checkin.submitCheckin') : $t('checkin.submitCheckout')) }}
         </button>
       </div>
     </div>
@@ -195,6 +195,9 @@ type Phase = 'loading' | 'error' | 'select-target' | 'checklist' | 'done' | 'alr
 type SiteRule = { id: string; content: string; timing: string }
 type Target   = { id: string; name: string; isSelf: boolean }
 
+import { useI18n } from 'vue-i18n'
+
+const { t }    = useI18n()
 const route    = useRoute()
 const { profile, init: initLiff } = useLiff()
 const supabase = useSupabase()
@@ -351,14 +354,14 @@ onMounted(async () => {
 
   const lineUserId = profile.value?.userId
   if (!lineUserId) {
-    errorMsg.value = 'LINEログインに失敗しました。アプリを再起動してください。'
+    errorMsg.value = t('checkin.errLineLogin')
     phase.value = 'error'
     return
   }
 
   const resolved = resolveSiteId()
   if (!resolved) {
-    errorMsg.value = 'URLが正しくありません（site_id が見つかりません）'
+    errorMsg.value = t('checkin.errNoSiteId')
     debugUrl.value = bootHref || (typeof window !== 'undefined' ? window.location.href : '')
     phase.value = 'error'
     return
@@ -369,7 +372,7 @@ onMounted(async () => {
   const { data: siteData } = await supabase
     .from('sites').select('name').eq('id', siteId.value).single()
   if (!siteData) {
-    errorMsg.value = '現場情報が見つかりません'
+    errorMsg.value = t('checkin.errNoSite')
     phase.value = 'error'
     return
   }
@@ -391,7 +394,7 @@ onMounted(async () => {
   await proxy.fetchProxyTargets(userData.worker_id)
   const proxyTargets = proxy.proxyTargets.value
   targets.value = [
-    { id: userData.worker_id, name: myWorker?.name ?? '自分', isSelf: true },
+    { id: userData.worker_id, name: myWorker?.name ?? t('checkin.defaultSelfName'), isSelf: true },
     ...proxyTargets.map(p => ({ id: p.id, name: p.name, isSelf: false })),
   ]
 
@@ -461,7 +464,7 @@ async function loadForTarget(workerId: string) {
   checkedIds.value = new Set()   // 対象が変わったらチェックをリセット
 
   if (rules.value.length === 0) {
-    errorMsg.value = 'この現場にはルールが登録されていません。管理者に連絡してください。'
+    errorMsg.value = t('checkin.errNoRules')
     phase.value = 'error'
     return
   }
@@ -486,7 +489,7 @@ async function submit() {
   const proxyOperatorId = (target && !target.isSelf) ? myWorkerId.value : null
 
   if (!workerIdToLog) {
-    errorMsg.value = '作業員情報が見つかりません'
+    errorMsg.value = t('checkin.errNoWorker')
     phase.value = 'error'
     return
   }
@@ -504,13 +507,17 @@ async function submit() {
     })
 
   if (error) {
-    errorMsg.value = `登録に失敗しました: ${error.message}`
+    errorMsg.value = t('checkin.errInsertFailed', { message: error.message })
     phase.value = 'error'
     return
   }
 
   const now = new Date()
-  checkedAtLabel.value = `${now.getMonth() + 1}月${now.getDate()}日 ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+  checkedAtLabel.value = t('checkin.dateLabel', {
+    month: now.getMonth() + 1,
+    day:   now.getDate(),
+    time:  `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+  })
   phase.value = 'done'
   submitting.value = false
 }

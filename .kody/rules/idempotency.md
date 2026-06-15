@@ -1,0 +1,10 @@
+---
+title: Idempotency on user actions
+severity: medium
+paths:
+  - supabase/functions/**
+  - apps/admin/src/**
+  - apps/liff/**
+---
+ユーザー操作（注文書発行・承諾 等）が連打／再送で二重発火・二重送信しうる、
+べき等ガード（一意制約・トークンの単回利用・状態チェック）の無い箇所を medium として指摘する。

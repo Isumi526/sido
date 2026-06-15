@@ -2,16 +2,24 @@
   <div>
     <div class="page-header">
       <h1 class="page-title">現場マスタ</h1>
-      <button class="btn-add" @click="openAdd">＋ 追加</button>
+      <div class="header-actions">
+        <button v-if="!mergeMode" class="btn-ghost" @click="startMerge">現場をマージ</button>
+        <template v-else>
+          <button class="btn-ghost" :disabled="mergePick.length !== 2" @click="openMerge">マージ実行（{{ mergePick.length }}/2）</button>
+          <button class="btn-ghost" @click="cancelMerge">キャンセル</button>
+        </template>
+        <button class="btn-add" @click="openAdd">＋ 追加</button>
+      </div>
     </div>
 
     <div class="table-wrap">
       <table class="table">
         <thead>
-          <tr><th>現場名</th><th>読み仮名</th><th>状態</th><th></th></tr>
+          <tr><th v-if="mergeMode"></th><th>現場名</th><th>読み仮名</th><th>状態</th><th></th></tr>
         </thead>
         <tbody>
           <tr v-for="s in sites" :key="s.id" :class="{ inactive: !s.active }">
+            <td v-if="mergeMode"><input type="checkbox" :value="s.id" v-model="mergePick" :disabled="!s.active" /></td>
             <td class="name">{{ s.name }}</td>
             <td class="kana">{{ s.name_kana || '—' }}</td>
             <td><span class="status" :class="s.active ? 'active' : 'off'">{{ s.active ? '有効' : '無効' }}</span></td>
@@ -31,14 +39,69 @@
         <div class="field">
           <label>現場名</label>
           <input v-model="modal.name" class="input" placeholder="例：BLH名古屋" />
+          <div v-if="similarSites.length" class="dup-warn">
+            ⚠️ 似た現場が既にあります（重複登録に注意）：<strong>{{ similarSites.join('、') }}</strong>
+          </div>
         </div>
         <div class="field">
           <label>読み仮名（50音順の並びに使用）</label>
           <input v-model="modal.name_kana" class="input" placeholder="例：びーえるえいちなごや" />
         </div>
+        <div class="field">
+          <label>場所 / 住所</label>
+          <input v-model="modal.location" class="input" placeholder="例：名古屋市〇〇区…" />
+        </div>
+        <div class="field">
+          <label>工事種類</label>
+          <input v-model="modal.construction_type" class="input" placeholder="例：内装・改修" />
+        </div>
+        <div class="field">
+          <label>工事内容</label>
+          <textarea v-model="modal.construction_details" class="input" rows="2" placeholder="例：1F内装ボード・クロス工事 一式"></textarea>
+        </div>
+        <div class="field">
+          <label>メモ</label>
+          <textarea v-model="modal.memo" class="input" rows="2" placeholder="任意"></textarea>
+        </div>
+
+        <!-- 写真・書類（既存現場のみ） -->
+        <div v-if="modal.id" class="field">
+          <label>写真・書類（複数可）</label>
+          <div v-if="attachments.length" class="att-list">
+            <div v-for="a in attachments" :key="a.id" class="att-item">
+              <span class="att-kind">{{ a.kind === 'photo' ? '📷' : '📄' }}</span>
+              <a v-if="a.url" :href="a.url" target="_blank" rel="noopener" class="att-link">{{ a.name || a.path.split('/').pop() }}</a>
+              <span v-else class="att-link att-disabled">{{ a.name || a.path.split('/').pop() }}</span>
+              <button class="att-del" @click="removeAttachment(a)">×</button>
+            </div>
+          </div>
+          <div class="att-add">
+            <label class="att-btn">＋ 写真<input type="file" accept="image/*" hidden :disabled="uploading" @change="onAttach($event, 'photo')" /></label>
+            <label class="att-btn">＋ 書類<input type="file" accept="application/pdf,image/*" hidden :disabled="uploading" @change="onAttach($event, 'document')" /></label>
+            <span v-if="uploading" class="att-up">アップロード中…</span>
+          </div>
+        </div>
+        <p v-else class="hint">写真・書類は保存後（現場作成後）に添付できます。</p>
+
         <div class="modal-actions">
           <button class="btn-save" :disabled="saving" @click="save">{{ saving ? '保存中...' : '保存' }}</button>
           <button class="btn-cancel" @click="modal = null">キャンセル</button>
+        </div>
+        <p v-if="saveError" class="error">{{ saveError }}</p>
+      </div>
+    </div>
+
+    <!-- マージモーダル -->
+    <div v-if="mergeModal" class="modal-overlay" @click.self="mergeModal = null">
+      <div class="modal">
+        <h2>現場をマージ</h2>
+        <p class="hint">どちらに統合しますか？（残す方を選択。もう一方は無効化され、日報・予定などの参照は残す側に統合されます）</p>
+        <label class="merge-opt" v-for="s in mergeModal.sites" :key="s.id">
+          <input type="radio" :value="s.id" v-model="mergeTarget" /> <strong>{{ s.name }}</strong> を残す
+        </label>
+        <div class="modal-actions">
+          <button class="btn-save" :disabled="!mergeTarget || saving" @click="doMerge">{{ saving ? '統合中...' : 'マージ実行' }}</button>
+          <button class="btn-cancel" @click="mergeModal = null">キャンセル</button>
         </div>
         <p v-if="saveError" class="error">{{ saveError }}</p>
       </div>
@@ -47,24 +110,56 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { findSimilarSiteNames } from '../lib/siteSimilarity'
 
 const router = useRouter()
 
-type Site = { id: string; name: string; name_kana: string | null; active: boolean }
+type Site = {
+  id: string; name: string; name_kana: string | null; active: boolean
+  location: string | null; construction_type: string | null; construction_details: string | null; memo: string | null
+}
+type Att = { id: string; site_id: string; kind: string; path: string; name: string | null; url?: string | null }
 
+const BUCKET = 'site-attachments'
 const sites     = ref<Site[]>([])
 const modal     = ref<Partial<Site> | null>(null)
 const saving    = ref(false)
 const saveError = ref('')
+// 編集中の現場の添付（写真・書類）
+const attachments = ref<Att[]>([])
+const uploading   = ref(false)
+// 非公開バケット → edge(site-attachment-url)で短TTL署名URLを取得（getPublicUrl廃止）
+async function signedUrl(attachmentId: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.functions.invoke('site-attachment-url', { body: { attachment_id: attachmentId } })
+    if (error || !data?.ok) return null
+    return data.url as string
+  } catch { return null }
+}
+
+// ── マージ（重複現場の統合）──
+const mergeMode   = ref(false)
+const mergePick   = ref<string[]>([])
+const mergeModal  = ref<{ sites: Site[] } | null>(null)
+const mergeTarget = ref<string>('')
+// site_id(FK) を持つ参照テーブル（merge時に統合先へ付け替え）
+const SITE_FK_TABLES = ['attendance_logs', 'estimates', 'purchase_orders', 'schedules', 'site_rules', 'subcontractor_invoice_items']
+
+// 入力中の現場名に「似た」既存現場（自分自身=編集中のidは除外）。重複登録の気づき用。
+const similarSites = computed(() =>
+  modal.value
+    ? findSimilarSiteNames(modal.value.name ?? '', sites.value.filter((s) => s.id !== modal.value!.id).map((s) => s.name))
+    : [],
+)
 
 async function load() {
   const accountId = await getAccountId()
   const { data } = await supabase.from('sites')
-    .select('id, name, name_kana, active')
+    .select('id, name, name_kana, active, location, construction_type, construction_details, memo')
     .eq('account_id', accountId)
     .order('name_kana', { nullsFirst: false })
     .order('name')
@@ -72,19 +167,24 @@ async function load() {
 }
 onMounted(load)
 
-function openAdd()        { modal.value = { name: '', name_kana: '' }; saveError.value = '' }
-function openEdit(s: Site) { modal.value = { ...s };   saveError.value = '' }
+function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '' }; attachments.value = []; saveError.value = '' }
+async function openEdit(s: Site) { modal.value = { ...s }; saveError.value = ''; await loadAttachments(s.id) }
 
 async function save() {
   if (!modal.value?.name?.trim()) { saveError.value = '現場名を入力してください'; return }
   saving.value = true; saveError.value = ''
   try {
-    const kana = modal.value.name_kana?.trim() || null
-    if (modal.value.id) {
-      await supabase.from('sites').update({ name: modal.value.name.trim(), name_kana: kana }).eq('id', modal.value.id)
+    const m = modal.value
+    const payload = {
+      name: m.name!.trim(), name_kana: m.name_kana?.trim() || null,
+      location: m.location?.trim() || null, construction_type: m.construction_type?.trim() || null,
+      construction_details: m.construction_details?.trim() || null, memo: m.memo?.trim() || null,
+    }
+    if (m.id) {
+      await supabase.from('sites').update(payload).eq('id', m.id)
     } else {
       const accountId = await getAccountId()
-      await supabase.from('sites').insert({ name: modal.value.name!.trim(), name_kana: kana, account_id: accountId })
+      await supabase.from('sites').insert({ ...payload, account_id: accountId })
     }
     modal.value = null; await load()
   } catch (e: any) {
@@ -92,9 +192,74 @@ async function save() {
   } finally { saving.value = false }
 }
 
+// ── 添付（写真・書類）──
+async function loadAttachments(siteId: string) {
+  const { data } = await supabase.from('site_attachments').select('id, site_id, kind, path, name').eq('site_id', siteId).order('created_at')
+  const atts = (data ?? []) as Att[]
+  // 表示用の署名URLを並列取得（非公開バケット）
+  await Promise.all(atts.map(async (a) => { a.url = await signedUrl(a.id) }))
+  attachments.value = atts
+}
+async function onAttach(ev: Event, kind: 'photo' | 'document') {
+  const file = (ev.target as HTMLInputElement).files?.[0]
+  if (!file || !modal.value?.id) return
+  uploading.value = true; saveError.value = ''
+  try {
+    const accountId = await getAccountId()
+    const ext = (file.name.split('.').pop() || 'bin').toLowerCase()
+    // path 先頭フォルダ = account_id（storage RLS の account スコープに使用）
+    const path = `${accountId}/${modal.value.id}/${kind}-${Date.now()}.${ext}`
+    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false, contentType: file.type || undefined })
+    if (upErr) throw upErr
+    await supabase.from('site_attachments').insert({ account_id: accountId, site_id: modal.value.id, kind, path, name: file.name })
+    await loadAttachments(modal.value.id)
+  } catch (e: any) { saveError.value = e.message ?? 'アップロードに失敗しました' }
+  finally { uploading.value = false; (ev.target as HTMLInputElement).value = '' }
+}
+async function removeAttachment(a: Att) {
+  if (!confirm(`「${a.name || a.kind}」を削除しますか？`)) return
+  await supabase.storage.from(BUCKET).remove([a.path]).then(() => {}, () => {})
+  await supabase.from('site_attachments').delete().eq('id', a.id)
+  if (modal.value?.id) await loadAttachments(modal.value.id)
+}
+
 async function toggleActive(s: Site) {
   await supabase.from('sites').update({ active: !s.active }).eq('id', s.id)
   await load()
+}
+
+function startMerge()  { mergeMode.value = true; mergePick.value = [] }
+function cancelMerge() { mergeMode.value = false; mergePick.value = [] }
+function openMerge() {
+  const picked = sites.value.filter((s) => mergePick.value.includes(s.id))
+  if (picked.length !== 2) return
+  mergeModal.value = { sites: picked }; mergeTarget.value = picked[0].id; saveError.value = ''
+}
+
+async function doMerge() {
+  const target = mergeModal.value!.sites.find((s) => s.id === mergeTarget.value)!
+  const source = mergeModal.value!.sites.find((s) => s.id !== mergeTarget.value)!
+  saving.value = true; saveError.value = ''
+  try {
+    const accountId = await getAccountId()
+    // 1) site_id(FK) を持つ参照を統合先へ付け替え
+    for (const tbl of SITE_FK_TABLES) {
+      await supabase.from(tbl).update({ site_id: target.id }).eq('site_id', source.id).then(() => {}, () => {})
+    }
+    // 2) daily_reports.sites[].siteName（文字列参照）を source.name → target.name に書き換え
+    const { data: reps } = await supabase.from('daily_reports').select('id, sites').eq('account_id', accountId).limit(10000)
+    for (const r of (reps ?? []) as any[]) {
+      const arr = Array.isArray(r.sites) ? r.sites : []
+      let changed = false
+      const next = arr.map((s: any) => (s?.siteName === source.name ? (changed = true, { ...s, siteName: target.name }) : s))
+      if (changed) await supabase.from('daily_reports').update({ sites: next }).eq('id', r.id)
+    }
+    // 3) source を無効化（統合元）
+    await supabase.from('sites').update({ active: false }).eq('id', source.id)
+    mergeModal.value = null; cancelMerge(); await load()
+  } catch (e: any) {
+    saveError.value = e.message ?? 'マージに失敗しました'
+  } finally { saving.value = false }
 }
 </script>
 
@@ -127,4 +292,18 @@ async function toggleActive(s: Site) {
 .btn-save:disabled { opacity: .5; }
 .btn-cancel { flex: 1; background: #f5f5f5; color: #888; border: none; border-radius: 8px; padding: 12px; cursor: pointer; }
 .error { color: #E53935; font-size: 13px; }
+.dup-warn { margin-top: 6px; font-size: 12px; color: #B45309; background: #FEF3C7; border: 1px solid #FDE68A; border-radius: 6px; padding: 8px 10px; line-height: 1.5; }
+.dup-warn strong { color: #92400E; }
+.header-actions { display: flex; gap: 8px; align-items: center; }
+.btn-ghost { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 10px 16px; font-size: 13px; cursor: pointer; color: #555; }
+.btn-ghost:disabled { opacity: .5; cursor: not-allowed; }
+.merge-opt { display: flex; align-items: center; gap: 8px; padding: 8px 0; font-size: 14px; cursor: pointer; }
+.att-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.att-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.att-link { color: #1a56c4; text-decoration: none; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.att-del { background: none; border: none; color: #c0392b; cursor: pointer; font-size: 16px; }
+.att-add { display: flex; gap: 8px; align-items: center; }
+.att-btn { background: #f0f0f0; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+.att-up { font-size: 12px; color: #888; }
+textarea.input { resize: vertical; font-family: inherit; }
 </style>
