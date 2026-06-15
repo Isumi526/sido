@@ -30,6 +30,14 @@ test.beforeAll(async () => {
   )
 })
 
+test('ログイン前の /login はテナント名(env)を出さない（全テナント共通入口）', async ({ page }) => {
+  await page.goto('/login')
+  await expect(page.getByTestId('login-submit')).toBeVisible({ timeout: 15000 })
+  // env=test の 'テストアカウント' をログイン前に出さない（全テナント共通の入口のため）
+  await expect(page).toHaveTitle('作業員ログイン', { timeout: 10000 })
+  await expect(page).not.toHaveTitle(/テスト|アカウント|Construction/)
+})
+
 test('クロステナント分離: env=test のデプロイでも sample-construction 作業員は sample-construction が適用される', async ({ page }) => {
   await page.goto('/login')
   await page.getByTestId('login-email').fill(EMAIL)
@@ -41,4 +49,7 @@ test('クロステナント分離: env=test のデプロイでも sample-constru
   // ★ env(test/テストアカウント)ではなく身元(sample-construction/Sample Construction Co.)が適用される
   await expect(page).toHaveTitle(/Sample Construction/i, { timeout: 20000 })
   await expect(page).not.toHaveTitle(/テスト/)
+  // ★ ヘッダーのブランドも身元スラッグ（env=TEST ではない）
+  await expect(page.locator('.app-brand-name')).toContainText('SAMPLE-CONSTRUCTION', { timeout: 20000 })
+  await expect(page.locator('.app-brand-name')).not.toContainText('TEST')
 })

@@ -16,15 +16,19 @@ const isLogin  = computed(() => route.path.startsWith('/login'))
 const isExempt = computed(() => isPortal.value || isLogin.value)
 
 // サイト名（ブラウザタブ／共有タイトル）を会社名ベースで動的に設定。
-// accounts.name 取得前は nuxt.config の '管理システム' をフォールバック表示。
+// accounts.name 取得前は '管理システム' をフォールバック表示。
+// ★ /login は全テナント共通の入口＝ログイン前に env(デプロイ)のテナント名を出さない（誤誘導防止）。
 const { getAccountId, accountName } = useAccount()
 useHead({
-  title: () => accountName.value ? `${accountName.value}｜管理システム` : '管理システム',
+  title: () => isLogin.value
+    ? '作業員ログイン'
+    : (accountName.value ? `${accountName.value}｜管理システム` : '管理システム'),
 })
 
 onMounted(() => {
-  // 会社名は LIFF init に依存しない（Supabase anon クエリのみ）
-  getAccountId()
+  // 会社名は LIFF init に依存しない（Supabase anon クエリのみ）。
+  // /login では env テナントを解決・表示しない（ログイン後に身元のアカウントで解決される）。
+  if (!isLogin.value) getAccountId()
 })
 
 // 非exemptなルートに居る/遷移した時に LIFF（またはemail/pwセッション）初期化を行う。

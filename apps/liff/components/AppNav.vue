@@ -137,8 +137,10 @@ const props = defineProps<{
 
 const { t } = useI18n()
 const { locale, setLocale, locales } = useLocale()
-const { slug } = useAccount()
-const brandName = slug.toUpperCase()
+// ブランド表示は「身元のスラッグ」(resolvedSlug)優先・未解決時のみ env フォールバック
+// （env だと別テナント作業員でも SIDO 等と出てしまうため）
+const { slug, resolvedSlug } = useAccount()
+const brandName = computed(() => (resolvedSlug.value || slug).toUpperCase())
 const proxy = useProxyMode()
 const config = useRuntimeConfig()
 
