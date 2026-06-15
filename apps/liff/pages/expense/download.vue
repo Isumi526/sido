@@ -174,7 +174,7 @@ const proxy   = useProxyMode()
 const router  = useRouter()
 const config  = useRuntimeConfig()
 const supabase = useSupabase()
-const { accountName, getAccountId } = useAccount()
+const { accountName, getAccountId, effectiveSlug } = useAccount()
 
 const initializing   = ref(true)
 const loading        = ref(false)
@@ -299,7 +299,8 @@ async function handleApply() {
   if (!applyUserId.value) { applyError.value = t('expenseDoc.errorNoUser'); return }
   applying.value = true
   applyError.value = ''
-  const slug = config.public.accountSlug as string
+  // 身元優先のスラッグ（email/pwは自テナント・LINEはenv）。env固定だと別テナントのstorageパスに保存される。
+  const slug = await effectiveSlug()
   const origMode = viewMode.value
   try {
     // 1. PDFを2種類生成して保存（明細=全経費 / 請求書=個人建替分のみ）。失敗しても申請は継続
@@ -355,7 +356,7 @@ function triggerApplicationEmail(userId: string, periodKey: string) {
       'Authorization': `Bearer ${config.public.supabaseAnonKey}`,
     },
     body: JSON.stringify({
-      accountSlug: config.public.accountSlug,
+      accountSlug: slug,
       user_id: userId,
       period_key: periodKey,
     }),
