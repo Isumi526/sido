@@ -310,13 +310,9 @@ onMounted(async () => {
   let tries = 0
   while (!profile.value?.userId && tries++ < 20) await new Promise(r => setTimeout(r, 300))
   await load()
-  const lineUserId = profile.value?.userId
-  if (lineUserId && accountId.value) {
-    const { data: user } = await supabase
-      .from('users').select('*')
-      .eq('line_user_id', lineUserId).eq('account_id', accountId.value).maybeSingle()
-    if (user) currentUser.value = user as User
-  }
+  // email/pw は worker_id 経由・LINEは line_user_id（単一ソース解決）
+  const me = await useCurrentUser().resolve()
+  if (me) currentUser.value = me as User
 })
 
 const tradeOptions = computed(() => {

@@ -379,16 +379,16 @@ onMounted(async () => {
   siteName.value = siteData.name
 
   // 自分のworker_id・氏名取得
-  const { data: userData } = await supabase
-    .from('users').select('worker_id').eq('line_user_id', lineUserId).maybeSingle()
-  if (!userData?.worker_id) {
+  // email/pw は worker_id 経由・LINEは line_user_id（単一ソース解決）
+  const me = await useCurrentUser().resolve()
+  if (!me?.worker_id) {
     await navigateTo('/register')
     return
   }
-  myWorkerId.value = userData.worker_id
+  myWorkerId.value = me.worker_id
 
   const { data: myWorker } = await supabase
-    .from('workers').select('name').eq('id', userData.worker_id).maybeSingle()
+    .from('workers').select('name').eq('id', me.worker_id).maybeSingle()
 
   // 代理対象を取得し、選択肢リストを組み立て（先頭は本人）
   await proxy.fetchProxyTargets(userData.worker_id)

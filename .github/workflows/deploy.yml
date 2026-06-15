@@ -45,9 +45,18 @@ jobs:
       - name: Deploy Edge Functions (main → production)
         if: github.ref_name == 'main'
         run: |
-          FUNCTIONS="submit-report notify-edit notify-error get-master"
-          for fn in $FUNCTIONS; do
-            supabase functions deploy $fn \
+          # supabase/functions/ 配下の実関数を全てデプロイ。
+          # ★ test-* は本番に出さない（test関数非デプロイの原則）。_shared と非関数dirも除外。
+          # ※ 固定リストだと新規関数のデプロイ漏れが起きるため全量デプロイにする。
+          for dir in supabase/functions/*/; do
+            fn=$(basename "$dir")
+            case "$fn" in
+              _shared) echo "skip non-function: $fn"; continue ;;
+              test-*)  echo "skip test function (本番に出さない): $fn"; continue ;;
+            esac
+            [ -f "$dir/index.ts" ] || { echo "skip (no index.ts): $fn"; continue; }
+            echo "deploying $fn ..."
+            supabase functions deploy "$fn" \
               --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} \
               --no-verify-jwt
           done
