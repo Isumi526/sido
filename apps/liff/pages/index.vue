@@ -183,10 +183,11 @@ onMounted(async () => {
   const lineUserId = profile.value?.userId
   if (!lineUserId) return
 
-  const { data: accountData } = await supabase
-    .from('accounts').select('id').eq('slug', config.public.accountSlug).maybeSingle()
-  if (!accountData) return
-  accountId.value = accountData.id
+  // account は身元優先で解決（認証時は env で上書きしない＝テナント分離）
+  const { getAccountId } = useAccount()
+  const accId = await getAccountId()
+  if (!accId) return
+  accountId.value = accId
 
   // セッション種別で「自分=どの作業員か」を解決（email/pw は worker_id 経由・LINEは従来）
   const user = await useCurrentUser().resolve()
