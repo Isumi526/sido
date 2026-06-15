@@ -36,14 +36,14 @@
         <div v-if="photos.length" class="att-block">
           <div class="att-ttl">{{ $t('sitesView.photos') }}</div>
           <div class="photos">
-            <a v-for="a in photos" :key="a.id" :href="attUrl(a.path)" target="_blank" rel="noopener">
-              <img :src="attUrl(a.path)" class="photo" :alt="a.name || ''" />
+            <a v-for="a in photos" :key="a.id" v-show="a.url" :href="a.url || undefined" target="_blank" rel="noopener">
+              <img v-if="a.url" :src="a.url" class="photo" :alt="a.name || ''" />
             </a>
           </div>
         </div>
         <div v-if="docs.length" class="att-block">
           <div class="att-ttl">{{ $t('sitesView.documents') }}</div>
-          <a v-for="a in docs" :key="a.id" :href="attUrl(a.path)" target="_blank" rel="noopener" class="doc">📄 {{ a.name || a.path.split('/').pop() }}</a>
+          <a v-for="a in docs" :key="a.id" v-show="a.url" :href="a.url || undefined" target="_blank" rel="noopener" class="doc">📄 {{ a.name || a.path.split('/').pop() }}</a>
         </div>
         <p v-if="!photos.length && !docs.length && !detail.location && !detail.construction_type && !detail.construction_details && !detail.memo" class="state">{{ $t('sitesView.noDetail') }}</p>
       </div>
@@ -59,9 +59,8 @@ const proxy = useProxyMode()
 const { profile } = useLiff()
 
 type Site = { id: string; name: string; active: boolean; location: string | null; construction_type: string | null; construction_details: string | null; memo: string | null }
-type Att = { id: string; site_id: string; kind: string; path: string; name: string | null }
+type Att = { id: string; site_id: string; kind: string; path: string; name: string | null; url?: string | null }
 
-const BUCKET = 'expense-receipts'
 const loading = ref(true)
 const sites   = ref<Site[]>([])
 const detail  = ref<Site | null>(null)
@@ -70,7 +69,17 @@ const atts    = ref<Att[]>([])
 const photos = computed(() => atts.value.filter((a) => a.kind === 'photo'))
 const docs   = computed(() => atts.value.filter((a) => a.kind !== 'photo'))
 
-function attUrl(path: string) { return useSupabase().storage.from(BUCKET).getPublicUrl(path).data.publicUrl }
+// 非公開バケット → edge(site-attachment-url)で短TTL署名URLを取得（getPublicUrl廃止）。
+// LINE作業員(anon)は line_user_id を渡して account 認可、email/pw はセッションJWTで認可。
+async function signedUrl(attachmentId: string): Promise<string | null> {
+  try {
+    const { data, error } = await useSupabase().functions.invoke('site-attachment-url', {
+      body: { attachment_id: attachmentId, line_user_id: profile.value?.userId ?? '' },
+    })
+    if (error || !data?.ok) return null
+    return data.url as string
+  } catch { return null }
+}
 
 async function load() {
   loading.value = true
@@ -102,7 +111,9 @@ async function openDetail(s: Site) {
   atts.value = []
   const supabase = useSupabase()
   const { data } = await supabase.from('site_attachments').select('id, site_id, kind, path, name').eq('site_id', s.id).order('created_at')
-  atts.value = (data ?? []) as Att[]
+  const list = (data ?? []) as Att[]
+  await Promise.all(list.map(async (a) => { a.url = await signedUrl(a.id) }))
+  atts.value = list
 }
 </script>
 
