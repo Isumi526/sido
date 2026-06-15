@@ -4,12 +4,13 @@
       <div class="login-logo">APP<span class="logo-sub">管理</span></div>
       <form @submit.prevent="handleLogin" class="login-form">
         <div class="field">
-          <label>ID</label>
+          <label>ID または メールアドレス</label>
           <input
             v-model="accountId"
             type="text"
-            placeholder="ID"
+            placeholder="ID（@なし）または メール"
             autocomplete="username"
+            data-testid="login-id"
             required
           />
         </div>
@@ -45,9 +46,9 @@ const loading   = ref(false)
 const errorMsg  = ref('')
 
 // クエリパラメータで事前入力（毎回手入力しなくて済む）。
-//   ?id=demo&pass=demo1234 （pass はURLに残るため共有時は注意）
+//   ?id=demo / ?email=admin@gmail.com / &pass=xxx （pass はURLに残るため共有時は注意）
 onMounted(() => {
-  const qId = route.query.id
+  const qId = route.query.id ?? route.query.email
   const qPass = route.query.pass ?? route.query.password
   if (typeof qId === 'string') accountId.value = qId
   if (typeof qPass === 'string') password.value = qPass
@@ -57,7 +58,9 @@ async function handleLogin() {
   loading.value  = true
   errorMsg.value = ''
   try {
-    const email = `${accountId.value.trim()}@email.com`
+    // @ があればそのままメールとして使う（gmail等）。無ければ従来の ID → <id>@email.com。
+    const input = accountId.value.trim()
+    const email = input.includes('@') ? input : `${input}@email.com`
     await signIn(email, password.value)
     router.push('/')
   } catch (e: unknown) {
