@@ -105,6 +105,12 @@ export const useSchedules = () => {
 
   async function resolveMyWorkerId(): Promise<string | null> {
     if (_myWorkerIdCache.value) return _myWorkerIdCache.value
+    // email/pw（Supabase認証）は JWT の worker_id を直接使う（line_user_id を持たないため）
+    const { authMode, workerId } = useLiff()
+    if (authMode.value === 'password' && workerId.value) {
+      _myWorkerIdCache.value = workerId.value
+      return _myWorkerIdCache.value
+    }
     const lineUserId = profile.value?.userId
     if (!lineUserId) return null
     try {
@@ -113,7 +119,7 @@ export const useSchedules = () => {
         .from('accounts')
         .select('id')
         .eq('slug', accountId)
-        .single()
+        .maybeSingle()
       if (!accountData) return null
 
       const { data } = await supabase
@@ -121,7 +127,7 @@ export const useSchedules = () => {
         .select('worker_id')
         .eq('line_user_id', lineUserId)
         .eq('account_id', accountData.id)
-        .single()
+        .maybeSingle()
       _myWorkerIdCache.value = data?.worker_id ?? null
       return _myWorkerIdCache.value
     } catch { return null }

@@ -152,6 +152,21 @@ export const useExpense = () => {
    * localStorage キャッシュあり → Supabase は初回・期限切れ時のみ問い合わせ
    */
   async function getUser(lineUserId: string): Promise<User | null> {
+    // email/pw（Supabase認証）セッションは line_user_id を持たない → worker_id 経由で解決。
+    // （line_user_id 検索だと 0行→未登録誤判定で register に誘導されるため分岐）
+    const { authMode, workerId } = useLiff()
+    if (authMode.value === 'password' && workerId.value) {
+      const accId = await getAccountId()
+      const { data: u } = await supabase
+        .from('users').select('*').eq('worker_id', workerId.value).eq('account_id', accId).maybeSingle()
+      if (u) return u as User
+      const { data: w } = await supabase
+        .from('workers').select('id, name, role, account_id').eq('id', workerId.value).maybeSingle()
+      return w
+        ? ({ id: null, line_user_id: null, real_name: w.name, worker_role: w.role, account_id: w.account_id, worker_id: w.id, is_approved: true } as unknown as User)
+        : null
+    }
+
     const cached = loadUserCache(lineUserId)
 
     const accountId = await getAccountId()
