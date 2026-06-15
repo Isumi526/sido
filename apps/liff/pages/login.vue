@@ -1,7 +1,6 @@
 <template>
   <div class="login-wrap">
     <div class="login-card">
-      <div class="login-logo">SIDO</div>
       <h1 class="login-title">作業員ログイン</h1>
       <p class="login-sub">メールアドレスとパスワードでログインします。<br />（LINEから開いている場合はそのままご利用いただけます）</p>
 
@@ -24,13 +23,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 
 // /login は LINE 初期化を経由しない（app.vue の isExempt）。email/pw 専用入口。
+const route = useRoute()
 const email = ref('')
 const password = ref('')
 const loading = ref(false)
 const error = ref('')
+
+// クエリパラメータで事前入力（毎回手入力しなくて済む）。
+//   ?email=xxx&pass=yyy （pass はURLに残るため共有時は注意）
+onMounted(() => {
+  const qEmail = route.query.email
+  const qPass = route.query.pass ?? route.query.password
+  if (typeof qEmail === 'string') email.value = qEmail
+  if (typeof qPass === 'string') password.value = qPass
+})
 
 async function submit() {
   if (!email.value.trim() || !password.value) {
