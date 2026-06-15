@@ -30,6 +30,14 @@ test.beforeAll(async () => {
   )
 })
 
+test('ログイン前の /login はテナント名(env)を出さない（全テナント共通入口）', async ({ page }) => {
+  await page.goto('/login')
+  await expect(page.getByTestId('login-submit')).toBeVisible({ timeout: 15000 })
+  // env=test の 'テストアカウント' をログイン前に出さない（全テナント共通の入口のため）
+  await expect(page).toHaveTitle('作業員ログイン', { timeout: 10000 })
+  await expect(page).not.toHaveTitle(/テスト|アカウント|Construction/)
+})
+
 test('クロステナント分離: env=test のデプロイでも sample-construction 作業員は sample-construction が適用される', async ({ page }) => {
   await page.goto('/login')
   await page.getByTestId('login-email').fill(EMAIL)
