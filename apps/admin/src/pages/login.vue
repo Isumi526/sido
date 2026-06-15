@@ -33,15 +33,25 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { signIn } from '../lib/auth'
 
 const router   = useRouter()
+const route    = useRoute()
 const accountId = ref('')
 const password  = ref('')
 const loading   = ref(false)
 const errorMsg  = ref('')
+
+// クエリパラメータで事前入力（毎回手入力しなくて済む）。
+//   ?id=demo&pass=demo1234 （pass はURLに残るため共有時は注意）
+onMounted(() => {
+  const qId = route.query.id
+  const qPass = route.query.pass ?? route.query.password
+  if (typeof qId === 'string') accountId.value = qId
+  if (typeof qPass === 'string') password.value = qPass
+})
 
 async function handleLogin() {
   loading.value  = true
