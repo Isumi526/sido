@@ -116,6 +116,17 @@
             <span v-if="workers.filter(w => w.id !== modal?.id).length === 0" class="proxy-none">他に作業員がいません</span>
           </div>
         </div>
+        <div v-if="modal.id" class="field auth-field">
+          <label>
+            ログイン認証（email / password）
+            <span v-if="modal.auth_user_id" class="auth-status set" data-testid="auth-status-set">認証設定済み</span>
+            <span v-else class="auth-status unset">未設定</span>
+          </label>
+          <input v-model="authEmail" class="input" type="email" placeholder="email（ログインID）" data-testid="auth-email" />
+          <input v-model="authPassword" class="input" type="password" placeholder="パスワード（8文字以上）" data-testid="auth-password" />
+          <button class="btn-auth" :disabled="authSaving" data-testid="auth-setup-btn" @click="setupAuth">{{ authSaving ? '処理中...' : (modal.auth_user_id ? '認証を更新' : '認証を作成') }}</button>
+          <p v-if="authMsg" :class="authOk ? 'auth-ok' : 'error'" data-testid="auth-msg">{{ authMsg }}</p>
+        </div>
         <div class="modal-actions">
           <button class="btn-cancel" @click="modal = null">キャンセル</button>
           <button class="btn-save" :disabled="saving" @click="save">{{ saving ? '保存中...' : '保存' }}</button>
@@ -143,6 +154,7 @@ type Worker = {
   emergency_contact: string | null
   employment_type: 'fulltime' | 'parttime' | null
   weekly_scheduled_days: number | null
+  auth_user_id: string | null
 }
 
 const workers         = ref<Worker[]>([])
@@ -154,6 +166,12 @@ const modal           = ref<Partial<Worker> | null>(null)
 const modalProxyIds   = ref<string[]>([])
 const saving          = ref(false)
 const saveError       = ref('')
+// email/password 認証（Phase 2a）
+const authEmail       = ref('')
+const authPassword    = ref('')
+const authSaving      = ref(false)
+const authMsg         = ref('')
+const authOk          = ref(false)
 
 function workerName(id: string | null) {
   if (!id) return ''
@@ -169,7 +187,7 @@ function toggleProxyId(id: string) {
 async function load() {
   const accountId = await getAccountId()
   const [{ data: workersData }, { data: usersData }, { data: proxyData }] = await Promise.all([
-    supabase.from('workers').select('id, name, role, unit_price, active, hire_date, birth_date, address, emergency_contact, employment_type, weekly_scheduled_days').eq('account_id', accountId).order('name'),
+    supabase.from('workers').select('id, name, role, unit_price, active, hire_date, birth_date, address, emergency_contact, employment_type, weekly_scheduled_days, auth_user_id').eq('account_id', accountId).order('name'),
     supabase.from('users').select('worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
     supabase.from('worker_proxies').select('worker_id, proxy_operator_id').eq('account_id', accountId),
   ])
@@ -197,6 +215,39 @@ function openEdit(w: Worker) {
   modal.value = { ...w }
   modalProxyIds.value = [...(proxyMap.value.get(w.id) ?? [])]
   saveError.value = ''
+  authEmail.value = ''
+  authPassword.value = ''
+  authMsg.value = ''
+  authOk.value = false
+}
+
+// 作業員の email/password 認証を作成/更新（edge: worker-auth-setup・service_role）
+async function setupAuth() {
+  if (!modal.value?.id) return
+  if (!authEmail.value.trim() || authPassword.value.length < 8) {
+    authOk.value = false
+    authMsg.value = 'email と 8文字以上のパスワードを入力してください'
+    return
+  }
+  authSaving.value = true
+  authMsg.value = ''
+  try {
+    const { data, error } = await supabase.functions.invoke('worker-auth-setup', {
+      body: { worker_id: modal.value.id, email: authEmail.value.trim(), password: authPassword.value },
+    })
+    if (error) throw error
+    if (!data?.ok) throw new Error(data?.error ?? '認証設定に失敗しました')
+    authOk.value = true
+    authMsg.value = '認証を設定しました'
+    authPassword.value = ''
+    if (modal.value) modal.value.auth_user_id = data.auth_user_id
+    await load()
+  } catch (e: any) {
+    authOk.value = false
+    authMsg.value = e?.message ?? '認証設定に失敗しました'
+  } finally {
+    authSaving.value = false
+  }
 }
 
 async function save() {
@@ -299,4 +350,11 @@ async function toggleActive(w: Worker) {
 .emp-badge.fulltime { background: #f0f4ff; color: #4f46e5; }
 .emp-badge.parttime { background: #fff7ed; color: #c2710c; }
 .hire-date { font-size: 12px; color: #666; font-variant-numeric: tabular-nums; }
+.auth-field { border-top: 1px solid #f0f0f0; padding-top: 16px; }
+.auth-status { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 700; margin-left: 8px; }
+.auth-status.set { background: #e8f4ff; color: #1a6fc4; }
+.auth-status.unset { background: #f5f5f5; color: #bbb; }
+.btn-auth { background: #1a6fc4; color: #fff; border: none; border-radius: 8px; padding: 10px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.btn-auth:disabled { opacity: .5; }
+.auth-ok { color: #0a8a3a; font-size: 13px; }
 </style>

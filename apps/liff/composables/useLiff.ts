@@ -8,6 +8,10 @@ interface LiffState {
   isTester: boolean
   profile: { userId: string; displayName: string; pictureUrl?: string; statusMessage?: string } | null
   error: string | null
+  // Phase 2a: 認証経路。'line'=従来のLINE(anon相当)、'password'=email/pwのSupabase Authセッション
+  authMode: 'line' | 'password' | null
+  // Phase 2a: email/pw セッションの worker_id（app_metadata.worker_id）。LINE経路では null。
+  workerId: string | null
 }
 
 export const useLiff = () => {
@@ -18,6 +22,8 @@ export const useLiff = () => {
     isTester: false,
     profile: null,
     error: null,
+    authMode: null,
+    workerId: null,
   }))
 
   function checkTester(userId: string) {
@@ -33,6 +39,30 @@ export const useLiff = () => {
 
     if (typeof window === 'undefined') return
 
+    // Phase 2a: email/password の Supabase Auth セッションがあれば LINE より優先して採用。
+    //   /login で signInWithPassword 済み → ここで identity を確立し LINE 誘導をスキップ。
+    //   既存LINE経路は無改変（セッションが無ければ従来どおり dev/LINE フローへ）。
+    try {
+      const supabase = useSupabase()
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.user) {
+        const meta = (session.user.app_metadata ?? {}) as Record<string, unknown>
+        state.value.profile = {
+          userId: `auth:${(meta.worker_id as string) ?? session.user.id}`,
+          displayName: (session.user.email ?? '作業員'),
+          pictureUrl: '',
+          statusMessage: '',
+        }
+        state.value.authMode = 'password'
+        state.value.workerId = (meta.worker_id as string) ?? null
+        state.value.loggedIn = true
+        state.value.initialized = true
+        return
+      }
+    } catch (e) {
+      console.warn('[LIFF] auth session 取得失敗（LINE/devへフォールバック）', e)
+    }
+
     // 開発モードはLIFF初期化をスキップしてダミープロフィールを使用
     if (config.public.appEnv === 'development') {
       console.warn('[LIFF] 開発モードで動作中（LIFF未接続）')
@@ -44,6 +74,7 @@ export const useLiff = () => {
       }
       state.value.isTester = true
       state.value.loggedIn = true
+      state.value.authMode = 'line'
       state.value.initialized = true
       return
     }
@@ -60,6 +91,7 @@ export const useLiff = () => {
       state.value.profile = await liff.getProfile()
       checkTester(state.value.profile.userId)
       state.value.loggedIn = true
+      state.value.authMode = 'line'
       state.value.initialized = true
 
       console.log('[LIFF] 初期化完了:', state.value.profile?.displayName, state.value.isTester ? '(テスター)' : '')
@@ -77,5 +109,7 @@ export const useLiff = () => {
     profile:     computed(() => state.value.profile),
     isLoggedIn:  computed(() => state.value.loggedIn),
     isTester:    computed(() => state.value.isTester),
+    authMode:    computed(() => state.value.authMode),
+    workerId:    computed(() => state.value.workerId),
   }
 }
