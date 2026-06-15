@@ -1,32 +1,32 @@
 <template>
   <div class="app">
-    <AppNav subtitle="日報" :user-name="currentUser?.real_name" :user-role="currentUser?.worker_role" />
+    <AppNav :subtitle="$t('report.subtitle')" :user-name="currentUser?.real_name" :user-role="currentUser?.worker_role" />
 
     <main class="main">
       <!-- ローディング -->
       <div v-if="initializing" class="state-screen">
         <div class="spinner" />
-        <p class="state-text">読み込み中...</p>
+        <p class="state-text">{{ $t('common.loading') }}</p>
       </div>
 
       <!-- 全日送信済み -->
       <div v-else-if="allSubmitted" class="state-screen">
         <div class="success-mark">✓</div>
-        <h2 class="state-title">送信済みです</h2>
-        <p class="state-text">今日までの日報はすべて送信済みです</p>
-        <button class="btn-history" @click="navigateTo('/history')">日報履歴を見る</button>
-        <button class="btn-calendar" @click="navigateTo('/calendar')">予定を見る</button>
+        <h2 class="state-title">{{ $t('report.allSubmittedTitle') }}</h2>
+        <p class="state-text">{{ $t('report.allSubmittedText') }}</p>
+        <button class="btn-history" @click="navigateTo('/history')">{{ $t('report.viewHistory') }}</button>
+        <button class="btn-calendar" @click="navigateTo('/calendar')">{{ $t('report.viewSchedule') }}</button>
       </div>
 
       <!-- 送信完了 / 更新完了 -->
       <div v-else-if="report.submitted.value || editSubmitted" class="state-screen">
         <div class="success-mark">✓</div>
-        <h2 class="state-title">{{ editSubmitted ? '更新しました！' : '送信完了！' }}</h2>
-        <p class="state-text">{{ editSubmitted ? '日報を更新しました' : 'LINEグループに通知しました' }}</p>
+        <h2 class="state-title">{{ editSubmitted ? $t('report.updatedTitle') : $t('report.submittedTitle') }}</h2>
+        <p class="state-text">{{ editSubmitted ? $t('report.updatedText') : $t('report.submittedText') }}</p>
         <button v-if="!editSubmitted && nextUnsubmittedDate" class="btn-primary" @click="goToNextReport">
-          {{ nextDateLabel }}の日報を入力する →
+          {{ $t('report.enterNextReport', { date: nextDateLabel }) }}
         </button>
-        <button class="btn-history" @click="navigateTo('/history')">{{ editSubmitted ? '履歴に戻る' : '日報履歴を見る' }}</button>
+        <button class="btn-history" @click="navigateTo('/history')">{{ editSubmitted ? $t('report.backToHistory') : $t('report.viewHistory') }}</button>
       </div>
 
       <!-- フォーム -->
@@ -34,23 +34,23 @@
 
         <!-- 編集モードバナー -->
         <div v-if="isEditMode" class="edit-banner">
-          ✏️ 過去の日報を編集中
+          {{ $t('report.editModeBanner') }}
         </div>
 
         <!-- 日付 -->
-        <FormSection num="01" title="日付">
+        <FormSection num="01" :title="$t('report.dateSection')">
           <div class="date-fixed">{{ report.form.value.date }}</div>
           <div v-if="!isEditMode && report.form.value.date < new Date().toISOString().split('T')[0]" class="past-date-notice">
-            過去の未送信日報です。<br>休み等だった場合は、「稼働なし」を選択して送信してください。
+            <span v-html="$t('report.pastDateNotice')" />
           </div>
         </FormSection>
 
         <!-- 稼働有無 -->
-        <FormSection num="02" title="稼働有無">
+        <FormSection num="02" :title="$t('report.workStatusSection')">
           <select v-model="isWorkingStr" class="select" required>
-            <option value="working">稼働あり</option>
-            <option value="paid_leave">有給</option>
-            <option value="off">稼働なし（休み・移動日等）</option>
+            <option value="working">{{ $t('report.working') }}</option>
+            <option value="paid_leave">{{ $t('report.paidLeave') }}</option>
+            <option value="off">{{ $t('report.off') }}</option>
           </select>
         </FormSection>
 
@@ -62,7 +62,7 @@
           v-for="(site, si) in report.form.value.sites"
           :key="si"
           :num="String(si + 3).padStart(2, '0')"
-          :title="`現場${ report.form.value.sites.length > 1 ? ' ' + (si + 1) : '' }`"
+          :title="report.form.value.sites.length > 1 ? $t('report.siteNumbered', { n: si + 1 }) : $t('report.site')"
           accent
         >
           <template #action>
@@ -71,42 +71,46 @@
               type="button"
               class="btn-danger-sm"
               @click="removeSite(si)"
-            >✕ 削除</button>
+            >{{ $t('report.removeBtn') }}</button>
           </template>
 
           <!-- 元請け業者（任意） -->
-          <Field label="元請け業者">
+          <Field :label="$t('report.contractor')">
             <select v-model="site.contractorName" class="select">
-              <option value="">選択してください（任意）</option>
+              <option value="">{{ $t('report.selectOptional') }}</option>
               <option v-for="name in master.contractorNames.value" :key="name" :value="name">{{ name }}</option>
-              <option value="__other__">＋ 新しい元請け業者を登録する</option>
+              <option value="__other__">{{ $t('report.addNewContractor') }}</option>
             </select>
             <input
               v-if="site.contractorName === '__other__'"
               v-model="site.customContractorName"
               type="text"
               class="input mt6"
-              placeholder="元請け業者名を入力（例: 〇〇建設）"
+              :placeholder="$t('report.contractorPlaceholder')"
               @keydown.enter.prevent
             />
           </Field>
 
           <!-- 現場名 -->
-          <Field label="現場名">
+          <Field :label="$t('report.siteName')">
             <select v-model="site.siteName" class="select" required>
-              <option value="">選択してください</option>
+              <option value="">{{ $t('common.select') }}</option>
               <option v-for="name in master.siteNames.value" :key="name" :value="name">{{ name }}</option>
-              <option value="__other__">＋ 新しい現場を登録する</option>
+              <option value="__other__">{{ $t('report.addNewSite') }}</option>
             </select>
             <input
               v-if="site.siteName === '__other__'"
               v-model="site.customSiteName"
               type="text"
               class="input mt6"
-              placeholder="現場名を入力（例: 渋谷プロジェクト）"
+              :placeholder="$t('report.siteNamePlaceholder')"
               required
               @keydown.enter.prevent
             />
+            <div v-if="site.siteName === '__other__' && siteSimilar(site.customSiteName).length"
+                 style="margin-top:6px;font-size:12px;color:#B45309;background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;padding:8px 10px;line-height:1.5">
+              ⚠️ {{ $t('report.similarSiteWarn') }}：<strong>{{ siteSimilar(site.customSiteName).join('、') }}</strong>
+            </div>
           </Field>
 
           <!-- ── 稼働（現場選択後に表示） ── -->
@@ -122,7 +126,7 @@
                   :checked="siteUsage[si].selfWorking === 'なし'"
                   @change="(e) => setSelfWorking(si, (e.target as HTMLInputElement).checked ? 'なし' : 'あり')"
                 />
-                <span>下請けのみ（自分は稼働なし）</span>
+                <span>{{ $t('report.subcontractorOnly') }}</span>
               </label>
 
               <!-- 時刻・休憩（自分の稼働ありのみ） -->
@@ -130,14 +134,14 @@
                 <div class="worker-time-rows">
                   <div class="worker-time-row">
                     <div class="time-field">
-                      <label class="hours-label">開始</label>
+                      <label class="hours-label">{{ $t('report.startTime') }}</label>
                       <select v-model="site.workers[0].startTime" class="select">
                         <option v-for="t in startTimeOptionsForSite(si)" :key="t" :value="t">{{ t }}</option>
                       </select>
                     </div>
                     <span class="time-sep">〜</span>
                     <div class="time-field">
-                      <label class="hours-label">終了</label>
+                      <label class="hours-label">{{ $t('report.endTime') }}</label>
                       <select v-model="site.workers[0].endTime" class="select">
                         <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
                       </select>
@@ -145,11 +149,11 @@
                   </div>
                   <div class="worker-break-row">
                     <div class="time-field">
-                      <label class="hours-label">休憩</label>
+                      <label class="hours-label">{{ $t('report.break') }}</label>
                       <span class="break-auto">
                         {{ calcBreakMinutes(site.workers[0].workerRole, site.workers[0].startTime, site.workers[0].endTime) === 0
-                          ? 'なし'
-                          : calcBreakMinutes(site.workers[0].workerRole, site.workers[0].startTime, site.workers[0].endTime) + '分（自動）' }}
+                          ? $t('report.breakNone')
+                          : $t('report.breakMinutesAuto', { min: calcBreakMinutes(site.workers[0].workerRole, site.workers[0].startTime, site.workers[0].endTime) }) }}
                       </span>
                     </div>
                   </div>
@@ -174,48 +178,48 @@
             </Field>
 
             <!-- 下請け業者 -->
-            <Field label="下請け業者">
+            <Field :label="$t('report.subcontractor')">
               <div v-for="(sub, si2) in site.subcontractors" :key="si2">
                 <div class="row-worker">
                   <select v-model="sub.subcontractorName" class="select" :class="{ 'select--error': sub.subcontractorName === '' }">
-                    <option value="" disabled>業者を選択 *</option>
+                    <option value="" disabled>{{ $t('report.selectSubcontractor') }}</option>
                     <option v-for="name in master.subcontractorNames.value" :key="name" :value="name">{{ name }}</option>
-                    <option value="__other__">その他（新規追加）</option>
+                    <option value="__other__">{{ $t('report.otherNew') }}</option>
                   </select>
-                  <input v-model.number="sub.count" type="number" min="1" max="20" class="input select--h" placeholder="人数" @keydown.enter.prevent />
+                  <input v-model.number="sub.count" type="number" min="1" max="20" class="input select--h" :placeholder="$t('report.people')" @keydown.enter.prevent />
                   <button type="button" class="btn-icon-sm" @click="report.removeSub(si, si2)">✕</button>
                 </div>
                 <input
                   v-if="sub.subcontractorName === '__other__'"
                   v-model="sub.customSubcontractorName"
                   class="input"
-                  placeholder="業者名を入力 *"
+                  :placeholder="$t('report.subcontractorNamePlaceholder')"
                   style="margin-top: -4px; margin-bottom: 8px;"
                 />
               </div>
-              <button type="button" class="btn-ghost-sm" @click="report.addSub(si)">＋ 業者を追加</button>
+              <button type="button" class="btn-ghost-sm" @click="report.addSub(si)">{{ $t('report.addSubcontractor') }}</button>
             </Field>
           </div>
 
           <!-- 経費有無 -->
-          <Field label="経費">
+          <Field :label="$t('report.expense')">
             <select :value="siteUsage[si].expense" class="select select--usage" @change="(e) => setUsage(si, 'expense', (e.target as HTMLSelectElement).value)">
-              <option value="なし">なし</option>
-              <option value="あり">あり</option>
+              <option value="なし">{{ $t('report.optNone') }}</option>
+              <option value="あり">{{ $t('report.optYes') }}</option>
             </select>
           </Field>
 
           <!-- ── 交通経費 ── -->
           <div v-if="siteUsage[si].expense === 'あり'" class="sub-section">
-            <div class="sub-section-title">交通経費</div>
+            <div class="sub-section-title">{{ $t('report.transportExpense') }}</div>
 
             <!-- 車両 -->
-            <Field label="車両">
-              <p class="vehicle-note">鍵を持ち出した人が「あり」を選択し詳細を記入してください</p>
+            <Field :label="$t('report.vehicle')">
+              <p class="vehicle-note">{{ $t('report.vehicleNote') }}</p>
               <select :value="siteUsage[si].vehicle" class="select select--usage" @change="(e) => setUsage(si, 'vehicle', (e.target as HTMLSelectElement).value)">
-                <option value="なし">なし</option>
-                <option value="あり">あり</option>
-                <option value="乗合い">乗合い</option>
+                <option value="なし">{{ $t('report.optNone') }}</option>
+                <option value="あり">{{ $t('report.optYes') }}</option>
+                <option value="乗合い">{{ $t('report.optCarpool') }}</option>
               </select>
               <template v-if="siteUsage[si].vehicle === 'あり'">
                 <div
@@ -224,189 +228,189 @@
                   class="vehicle-block"
                 >
                   <div class="vehicle-block-header">
-                    <span class="vehicle-block-label">車両{{ site.expenses.vehicles.length > 1 ? ` ${vi + 1}` : '' }}</span>
+                    <span class="vehicle-block-label">{{ site.expenses.vehicles.length > 1 ? $t('report.vehicleNumbered', { n: vi + 1 }) : $t('report.vehicle') }}</span>
                     <button
                       v-if="site.expenses.vehicles.length > 1"
                       type="button"
                       class="btn-danger-sm"
                       @click="report.removeVehicle(si, vi)"
-                    >✕ 削除</button>
+                    >{{ $t('report.removeBtn') }}</button>
                   </div>
-                  <input v-model="veh.vehicleName" type="text" class="input" placeholder="車両名（例: ハイエース）" @keydown.enter.prevent />
+                  <input v-model="veh.vehicleName" type="text" class="input" :placeholder="$t('report.vehicleNamePlaceholder')" @keydown.enter.prevent />
                   <div class="expense-grid mt8">
-                    <ExpenseField v-model="veh.distanceKm" v-model:tategae="veh.gasTategae"     with-tategae label="ガソリン（往復km）" />
-                    <ExpenseField v-model="veh.dieselKm"   v-model:tategae="veh.dieselTategae"  with-tategae label="軽油（往復km）" />
+                    <ExpenseField v-model="veh.distanceKm" v-model:tategae="veh.gasTategae"     with-tategae :label="$t('report.gasoline')" />
+                    <ExpenseField v-model="veh.dieselKm"   v-model:tategae="veh.dieselTategae"  with-tategae :label="$t('report.diesel')" />
                   </div>
                 </div>
-                <button type="button" class="btn-ghost-sm" @click="report.addVehicle(si)">＋ 車両を追加</button>
+                <button type="button" class="btn-ghost-sm" @click="report.addVehicle(si)">{{ $t('report.addVehicle') }}</button>
                 <div class="mt8">
-                  <label class="hours-label">領収書・写真（JPEG/PDF）</label>
+                  <label class="hours-label">{{ $t('report.receiptPhotoLabel') }}</label>
                   <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'vehicleFiles', e)" />
                   <div v-if="site.expenses.vehicleFiles?.length" class="photo-preview">
-                    <span class="hours-label">{{ site.expenses.vehicleFiles.length }}件選択済み</span>
+                    <span class="hours-label">{{ $t('report.filesSelected', { count: site.expenses.vehicleFiles.length }) }}</span>
                   </div>
                 </div>
 
                 <!-- 駐車場代（複数・明細ごと領収書）— 車両ありの時のみ -->
                 <div class="veh-subexpense">
-                  <label class="hours-label">駐車場代</label>
+                  <label class="hours-label">{{ $t('report.parking') }}</label>
                   <div v-for="(pk, pi) in (site.expenses.parkings ?? [])" :key="pi" class="lineitem-card">
                     <div class="lineitems-row">
-                      <ExpenseField v-model="pk.yen" v-model:tategae="pk.tategae" with-tategae label="金額（円）" />
+                      <ExpenseField v-model="pk.yen" v-model:tategae="pk.tategae" with-tategae :label="$t('report.amountYen')" />
                       <button type="button" class="btn-icon-sm" @click="report.removeParking(si, pi)">✕</button>
                     </div>
                     <div class="mt6">
-                      <label class="hours-label">領収書（JPEG/PDF）</label>
+                      <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
                       <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleParkingFile(si, pi, e)" />
                       <div v-if="pk.files?.length" class="photo-preview">
-                        <span class="hours-label">{{ pk.files.length }}件選択済み</span>
+                        <span class="hours-label">{{ $t('report.filesSelected', { count: pk.files.length }) }}</span>
                         <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-parking-${pi}`" @click="analyzeReceipt(si, 'parking', pi)">
-                          {{ receipt.loading.value === `${si}-parking-${pi}` ? '解析中...' : '✨ AI解析' }}
+                          {{ receipt.loading.value === `${si}-parking-${pi}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                         </button>
                       </div>
                       <div v-else-if="pk.fileUrls?.length" class="photo-preview">
-                        <span class="hours-label">登録済み{{ pk.fileUrls.length }}件</span>
+                        <span class="hours-label">{{ $t('report.filesRegistered', { count: pk.fileUrls.length }) }}</span>
                       </div>
                     </div>
                   </div>
-                  <button type="button" class="btn-ghost-sm" @click="report.addParking(si)">＋ 駐車場代を追加</button>
+                  <button type="button" class="btn-ghost-sm" @click="report.addParking(si)">{{ $t('report.addParking') }}</button>
                 </div>
 
                 <!-- 高速代（複数・明細ごと領収書＋ETCカード）— 車両ありの時のみ -->
                 <div class="veh-subexpense">
-                  <label class="hours-label">高速代</label>
+                  <label class="hours-label">{{ $t('report.highway') }}</label>
                   <div v-for="(hw, hi) in (site.expenses.highways ?? [])" :key="hi" class="lineitem-card">
                     <div class="lineitems-row">
-                      <ExpenseField v-model="hw.yen" v-model:tategae="hw.tategae" with-tategae label="金額（円）" />
+                      <ExpenseField v-model="hw.yen" v-model:tategae="hw.tategae" with-tategae :label="$t('report.amountYen')" />
                       <button type="button" class="btn-icon-sm" @click="report.removeHighway(si, hi)">✕</button>
                     </div>
                     <div class="mt6">
-                      <label class="hours-label">ETCカード</label>
+                      <label class="hours-label">{{ $t('report.etcCard') }}</label>
                       <select v-model="hw.etcCard" class="select mt4">
-                        <option value="">なし</option>
+                        <option value="">{{ $t('report.optNone') }}</option>
                         <option v-for="n in 7" :key="n" :value="`カード${['①','②','③','④','⑤','⑥','⑦'][n-1]}`">
-                          カード{{ ['①','②','③','④','⑤','⑥','⑦'][n-1] }}
+                          {{ $t('report.cardLabel', { mark: ['①','②','③','④','⑤','⑥','⑦'][n-1] }) }}
                         </option>
                       </select>
                     </div>
                     <div class="mt6">
-                      <label class="hours-label">領収書（JPEG/PDF）</label>
+                      <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
                       <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleHighwayFile(si, hi, e)" />
                       <div v-if="hw.files?.length" class="photo-preview">
-                        <span class="hours-label">{{ hw.files.length }}件選択済み</span>
+                        <span class="hours-label">{{ $t('report.filesSelected', { count: hw.files.length }) }}</span>
                         <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-highway-${hi}`" @click="analyzeReceipt(si, 'highway', hi)">
-                          {{ receipt.loading.value === `${si}-highway-${hi}` ? '解析中...' : '✨ AI解析' }}
+                          {{ receipt.loading.value === `${si}-highway-${hi}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                         </button>
                       </div>
                       <div v-else-if="hw.fileUrls?.length" class="photo-preview">
-                        <span class="hours-label">登録済み{{ hw.fileUrls.length }}件</span>
+                        <span class="hours-label">{{ $t('report.filesRegistered', { count: hw.fileUrls.length }) }}</span>
                       </div>
                     </div>
                   </div>
-                  <button type="button" class="btn-ghost-sm" @click="report.addHighway(si)">＋ 高速代を追加</button>
+                  <button type="button" class="btn-ghost-sm" @click="report.addHighway(si)">{{ $t('report.addHighway') }}</button>
                 </div>
               </template>
             </Field>
 
             <!-- 電車 -->
-            <Field label="電車">
+            <Field :label="$t('report.train')">
               <select :value="siteUsage[si].train" class="select select--usage" @change="(e) => setUsage(si, 'train', (e.target as HTMLSelectElement).value)">
-                <option value="なし">なし</option>
-                <option value="あり">あり</option>
+                <option value="なし">{{ $t('report.optNone') }}</option>
+                <option value="あり">{{ $t('report.optYes') }}</option>
               </select>
               <template v-if="siteUsage[si].train === 'あり'">
                 <div v-for="(tr, ti) in site.expenses.trains" :key="ti" class="lineitem-card">
                   <div class="lineitems-row">
-                    <input v-model="tr.label" type="text" class="input" placeholder="例: 名古屋〜大阪" @keydown.enter.prevent />
-                    <ExpenseField v-model="tr.yen" v-model:tategae="tr.tategae" with-tategae label="金額" />
+                    <input v-model="tr.label" type="text" class="input" :placeholder="$t('report.trainRoutePlaceholder')" @keydown.enter.prevent />
+                    <ExpenseField v-model="tr.yen" v-model:tategae="tr.tategae" with-tategae :label="$t('report.amount')" />
                     <button v-if="site.expenses.trains.length > 1" type="button" class="btn-icon-sm" @click="report.removeTrain(si, ti)">✕</button>
                   </div>
                   <div class="mt6">
-                    <label class="hours-label">領収書（JPEG/PDF）</label>
+                    <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
                     <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleTrainFile(si, ti, e)" />
                     <div v-if="tr.files?.length" class="photo-preview">
-                      <span class="hours-label">{{ tr.files.length }}件選択済み</span>
+                      <span class="hours-label">{{ $t('report.filesSelected', { count: tr.files.length }) }}</span>
                       <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-train-${ti}`" @click="analyzeReceipt(si, 'train', ti)">
-                        {{ receipt.loading.value === `${si}-train-${ti}` ? '解析中...' : '✨ AI解析' }}
+                        {{ receipt.loading.value === `${si}-train-${ti}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                       </button>
                     </div>
                     <div v-else-if="tr.fileUrls?.length" class="photo-preview">
-                      <span class="hours-label">登録済み{{ tr.fileUrls.length }}件</span>
+                      <span class="hours-label">{{ $t('report.filesRegistered', { count: tr.fileUrls.length }) }}</span>
                     </div>
                   </div>
                 </div>
-                <button type="button" class="btn-ghost-sm" @click="report.addTrain(si)">＋ 追加</button>
+                <button type="button" class="btn-ghost-sm" @click="report.addTrain(si)">{{ $t('report.add') }}</button>
               </template>
             </Field>
           </div>
 
           <!-- ── 現場経費 ── -->
           <div v-if="siteUsage[si].expense === 'あり'" class="sub-section">
-            <div class="sub-section-title">現場経費</div>
+            <div class="sub-section-title">{{ $t('report.siteExpense') }}</div>
 
             <!-- ホテル -->
-            <Field label="ホテル">
+            <Field :label="$t('report.hotel')">
               <select :value="siteUsage[si].hotel" class="select select--usage" @change="(e) => setUsage(si, 'hotel', (e.target as HTMLSelectElement).value)">
-                <option value="なし">なし</option>
-                <option value="あり">あり</option>
+                <option value="なし">{{ $t('report.optNone') }}</option>
+                <option value="あり">{{ $t('report.optYes') }}</option>
               </select>
               <template v-if="siteUsage[si].hotel === 'あり'">
                 <div class="mt6">
-                  <label class="hours-label">領収書（JPEG/PDF）</label>
+                  <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
                   <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'hotelFiles', e)" />
                   <div v-if="site.expenses.hotelFiles?.length" class="photo-preview">
-                    <span class="hours-label">{{ site.expenses.hotelFiles.length }}件選択済み</span>
+                    <span class="hours-label">{{ $t('report.filesSelected', { count: site.expenses.hotelFiles.length }) }}</span>
                     <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-hotelFiles`" @click="analyzeReceipt(si, 'hotelFiles')">
-                      {{ receipt.loading.value === `${si}-hotelFiles` ? '解析中...' : '✨ AI解析' }}
+                      {{ receipt.loading.value === `${si}-hotelFiles` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                     </button>
                   </div>
                 </div>
                 <div class="hotel-row mt6">
-                  <input v-model="site.expenses.hotelName" type="text" class="input" placeholder="施設名（例: アパホテル）" @keydown.enter.prevent />
-                  <ExpenseField v-model="site.expenses.hotelYen" v-model:tategae="site.expenses.hotelTategae" with-tategae label="金額" />
+                  <input v-model="site.expenses.hotelName" type="text" class="input" :placeholder="$t('report.facilityNameHotelPlaceholder')" @keydown.enter.prevent />
+                  <ExpenseField v-model="site.expenses.hotelYen" v-model:tategae="site.expenses.hotelTategae" with-tategae :label="$t('report.amount')" />
                 </div>
-                <input v-model="site.expenses.hotelRegistration" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" @keydown.enter.prevent />
+                <input v-model="site.expenses.hotelRegistration" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
               </template>
             </Field>
 
             <!-- レオパレス等 -->
-            <Field label="レオパレス等">
+            <Field :label="$t('report.leopalace')">
               <select :value="siteUsage[si].leopalace" class="select select--usage" @change="(e) => setUsage(si, 'leopalace', (e.target as HTMLSelectElement).value)">
-                <option value="なし">なし</option>
-                <option value="あり">あり</option>
+                <option value="なし">{{ $t('report.optNone') }}</option>
+                <option value="あり">{{ $t('report.optYes') }}</option>
               </select>
               <template v-if="siteUsage[si].leopalace === 'あり'">
                 <div class="mt6">
-                  <label class="hours-label">領収書（JPEG/PDF）</label>
+                  <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
                   <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'leopalaceFiles', e)" />
                   <div v-if="site.expenses.leopalaceFiles?.length" class="photo-preview">
-                    <span class="hours-label">{{ site.expenses.leopalaceFiles.length }}件選択済み</span>
+                    <span class="hours-label">{{ $t('report.filesSelected', { count: site.expenses.leopalaceFiles.length }) }}</span>
                     <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-leopalaceFiles`" @click="analyzeReceipt(si, 'leopalaceFiles')">
-                      {{ receipt.loading.value === `${si}-leopalaceFiles` ? '解析中...' : '✨ AI解析' }}
+                      {{ receipt.loading.value === `${si}-leopalaceFiles` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                     </button>
                   </div>
                 </div>
                 <div class="hotel-row mt6">
-                  <input v-model="site.expenses.leopalaceName" type="text" class="input" placeholder="施設名" @keydown.enter.prevent />
-                  <ExpenseField v-model="site.expenses.leopalaceYen" v-model:tategae="site.expenses.leopalaceTategae" with-tategae label="金額" />
+                  <input v-model="site.expenses.leopalaceName" type="text" class="input" :placeholder="$t('report.facilityNamePlaceholder')" @keydown.enter.prevent />
+                  <ExpenseField v-model="site.expenses.leopalaceYen" v-model:tategae="site.expenses.leopalaceTategae" with-tategae :label="$t('report.amount')" />
                 </div>
-                <input v-model="site.expenses.leopalaceRegistration" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" @keydown.enter.prevent />
+                <input v-model="site.expenses.leopalaceRegistration" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
               </template>
             </Field>
 
             <!-- ゴミ -->
-            <Field label="ゴミ">
+            <Field :label="$t('report.garbage')">
               <select :value="siteUsage[si].garbage" class="select select--usage" @change="(e) => setUsage(si, 'garbage', (e.target as HTMLSelectElement).value)">
-                <option value="なし">なし</option>
-                <option value="あり">あり</option>
+                <option value="なし">{{ $t('report.optNone') }}</option>
+                <option value="あり">{{ $t('report.optYes') }}</option>
               </select>
               <template v-if="siteUsage[si].garbage === 'あり'">
                 <div class="expense-grid mt6">
-                  <ExpenseField v-model="site.expenses.garbageFactoryM3" label="木材のみ（m³）" />
-                  <ExpenseField v-model="site.expenses.garbageSiteM3"    label="混載（m³）" />
+                  <ExpenseField v-model="site.expenses.garbageFactoryM3" :label="$t('report.garbageWood')" />
+                  <ExpenseField v-model="site.expenses.garbageSiteM3"    :label="$t('report.garbageMixed')" />
                 </div>
                 <div v-if="site.expenses.garbageFactoryM3 || site.expenses.garbageSiteM3" class="mt8">
-                  <label class="hours-label">ゴミ写真（任意）</label>
+                  <label class="hours-label">{{ $t('report.garbagePhotoLabel') }}</label>
                   <input
                     type="file"
                     accept="image/*"
@@ -415,83 +419,83 @@
                     @change="(e) => handleGarbagePhoto(si, e)"
                   />
                   <div v-if="site.expenses.garbagePhotos?.length" class="photo-preview">
-                    <span class="hours-label">{{ site.expenses.garbagePhotos.length }}枚選択済み</span>
+                    <span class="hours-label">{{ $t('report.photosSelected', { count: site.expenses.garbagePhotos.length }) }}</span>
                   </div>
                 </div>
               </template>
             </Field>
 
             <!-- その他（資材等） -->
-            <Field label="その他（資材等）">
+            <Field :label="$t('report.other')">
               <select :value="siteUsage[si].other" class="select select--usage" @change="(e) => setUsage(si, 'other', (e.target as HTMLSelectElement).value)">
-                <option value="なし">なし</option>
-                <option value="あり">あり</option>
+                <option value="なし">{{ $t('report.optNone') }}</option>
+                <option value="あり">{{ $t('report.optYes') }}</option>
               </select>
               <template v-if="siteUsage[si].other === 'あり'">
                 <div v-for="(ot, oi) in site.expenses.others" :key="oi" class="lineitem-card mt6">
                   <div class="lineitems-row">
-                    <input v-model="ot.label" type="text" class="input" placeholder="内容" @keydown.enter.prevent />
-                    <ExpenseField v-model="ot.yen" v-model:tategae="ot.tategae" with-tategae label="金額" />
+                    <input v-model="ot.label" type="text" class="input" :placeholder="$t('report.contentPlaceholder')" @keydown.enter.prevent />
+                    <ExpenseField v-model="ot.yen" v-model:tategae="ot.tategae" with-tategae :label="$t('report.amount')" />
                     <button v-if="site.expenses.others.length > 1" type="button" class="btn-icon-sm" @click="report.removeOther(si, oi)">✕</button>
                   </div>
-                  <input v-model="ot.registrationNumber" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" @keydown.enter.prevent />
+                  <input v-model="ot.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                   <div class="mt6">
-                    <label class="hours-label">領収書（JPEG/PDF）</label>
+                    <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
                     <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleOtherFile(si, oi, e)" />
                     <div v-if="ot.files?.length" class="photo-preview">
-                      <span class="hours-label">{{ ot.files.length }}件選択済み</span>
+                      <span class="hours-label">{{ $t('report.filesSelected', { count: ot.files.length }) }}</span>
                       <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-other-${oi}`" @click="analyzeReceipt(si, 'other', oi)">
-                        {{ receipt.loading.value === `${si}-other-${oi}` ? '解析中...' : '✨ AI解析' }}
+                        {{ receipt.loading.value === `${si}-other-${oi}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                       </button>
                     </div>
                     <div v-else-if="ot.fileUrls?.length" class="photo-preview">
-                      <span class="hours-label">登録済み{{ ot.fileUrls.length }}件</span>
+                      <span class="hours-label">{{ $t('report.filesRegistered', { count: ot.fileUrls.length }) }}</span>
                     </div>
                   </div>
                 </div>
-                <button type="button" class="btn-ghost-sm" @click="report.addOther(si)">＋ その他を追加</button>
+                <button type="button" class="btn-ghost-sm" @click="report.addOther(si)">{{ $t('report.addOther') }}</button>
               </template>
             </Field>
 
             <!-- その他雑経費 -->
-            <Field label="その他雑経費">
+            <Field :label="$t('report.miscExpense')">
               <select :value="siteUsage[si].entertainment" class="select select--usage" @change="(e) => setUsage(si, 'entertainment', (e.target as HTMLSelectElement).value)">
-                <option value="なし">なし</option>
-                <option value="あり">あり</option>
+                <option value="なし">{{ $t('report.optNone') }}</option>
+                <option value="あり">{{ $t('report.optYes') }}</option>
               </select>
               <template v-if="siteUsage[si].entertainment === 'あり'">
                 <div v-for="(ent, ei) in (site.expenses.entertainments ?? [])" :key="ei" class="lineitem-card mt6">
                   <div class="lineitems-row">
-                    <input v-model="ent.label" type="text" class="input" placeholder="内容" @keydown.enter.prevent />
-                    <ExpenseField v-model="ent.yen" v-model:tategae="ent.tategae" with-tategae label="金額" />
+                    <input v-model="ent.label" type="text" class="input" :placeholder="$t('report.contentPlaceholder')" @keydown.enter.prevent />
+                    <ExpenseField v-model="ent.yen" v-model:tategae="ent.tategae" with-tategae :label="$t('report.amount')" />
                     <button v-if="(site.expenses.entertainments?.length ?? 0) > 1" type="button" class="btn-icon-sm" @click="report.removeEntertainment(si, ei)">✕</button>
                   </div>
-                  <input v-model="ent.registrationNumber" type="text" class="input mt6" placeholder="登録番号（ない場合はなしと記入）" @keydown.enter.prevent />
+                  <input v-model="ent.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                   <div class="mt6">
-                    <label class="hours-label">領収書（JPEG/PDF）</label>
+                    <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
                     <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleEntertainmentFile(si, ei, e)" />
                     <div v-if="ent.files?.length" class="photo-preview">
-                      <span class="hours-label">{{ ent.files.length }}件選択済み</span>
+                      <span class="hours-label">{{ $t('report.filesSelected', { count: ent.files.length }) }}</span>
                       <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-entertainment-${ei}`" @click="analyzeReceipt(si, 'entertainment', ei)">
-                        {{ receipt.loading.value === `${si}-entertainment-${ei}` ? '解析中...' : '✨ AI解析' }}
+                        {{ receipt.loading.value === `${si}-entertainment-${ei}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                       </button>
                     </div>
                     <div v-else-if="ent.fileUrls?.length" class="photo-preview">
-                      <span class="hours-label">登録済み{{ ent.fileUrls.length }}件</span>
+                      <span class="hours-label">{{ $t('report.filesRegistered', { count: ent.fileUrls.length }) }}</span>
                     </div>
                   </div>
                 </div>
-                <button type="button" class="btn-ghost-sm" @click="report.addEntertainment(si)">＋ その他雑経費を追加</button>
+                <button type="button" class="btn-ghost-sm" @click="report.addEntertainment(si)">{{ $t('report.addMiscExpense') }}</button>
               </template>
             </Field>
           </div>
 
           <!-- 現場備考 -->
-          <Field label="現場備考">
+          <Field :label="$t('report.siteNote')">
             <textarea
               v-model="site.siteNote"
               class="textarea"
-              placeholder="この現場の特記事項があれば入力してください"
+              :placeholder="$t('report.siteNotePlaceholder')"
               rows="2"
             />
           </Field>
@@ -503,18 +507,18 @@
         <button type="button" class="btn-add-site" @click="addSite()">
           <span class="btn-add-site__icon">＋</span>
           <span class="btn-add-site__text">
-            {{ report.form.value.sites.length + 1 }}個目の現場を追加する
+            {{ $t('report.addSite', { n: report.form.value.sites.length + 1 }) }}
           </span>
         </button>
 
         </template><!-- /isWorkingStr === 'working' -->
 
         <!-- 備考 -->
-        <FormSection num="✎" title="備考">
+        <FormSection num="✎" :title="$t('report.noteSection')">
           <textarea
             v-model="report.form.value.note"
             class="textarea"
-            placeholder="特記事項があれば入力してください"
+            :placeholder="$t('report.notePlaceholder')"
             rows="3"
           />
         </FormSection>
@@ -526,26 +530,26 @@
 
         <!-- LINEプレビュー（新規・編集とも全体をプレビュー）-->
         <div class="line-preview">
-          <div class="line-preview-label">{{ isEditMode ? '📲 編集後プレビュー' : '📲 LINE プレビュー' }}</div>
+          <div class="line-preview-label">{{ isEditMode ? $t('report.editPreviewLabel') : $t('report.linePreviewLabel') }}</div>
           <pre class="line-preview-body">{{ linePreview }}</pre>
         </div>
 
         <!-- 送信前の記入忘れ確認（新規送信時のみ・習慣化のため必須） -->
         <label v-if="!isEditMode" class="submit-confirm">
           <input type="checkbox" v-model="omissionConfirmed" />
-          <span>経費・ゴミ等の記入忘れがないか確認しました</span>
+          <span>{{ $t('report.omissionConfirm') }}</span>
         </label>
 
         <!-- 送信ボタン -->
-        <button v-if="isDev && !isEditMode" type="button" class="btn-dev" @click="fillTestData">🔧 テストデータ入力</button>
+        <button v-if="isDev && !isEditMode" type="button" class="btn-dev" @click="fillTestData">{{ $t('report.fillTestData') }}</button>
         <button v-if="isDev" type="button" class="btn-dev" :class="{ 'btn-dev--error': forceErrorOnSubmit }" @click="fillErrorTestData">
-          {{ forceErrorOnSubmit ? '🚨 次の送信でエラー発火（キャンセルするには再クリック）' : '🚨 エラーテストデータ入力' }}
+          {{ forceErrorOnSubmit ? $t('report.cancelErrorTest') : $t('report.fillErrorTestData') }}
         </button>
         <button type="submit" class="btn-submit" :disabled="isEditMode ? editSubmitting : (report.submitting.value || !omissionConfirmed)">
           <span v-if="isEditMode ? editSubmitting : report.submitting.value" class="submitting">
-            <span class="dot-spin" />{{ isEditMode ? '更新中...' : '送信中...' }}
+            <span class="dot-spin" />{{ isEditMode ? $t('report.updating') : $t('report.submitting') }}
           </span>
-          <span v-else>{{ isEditMode ? '日報を更新する →' : '日報を送信する →' }}</span>
+          <span v-else>{{ isEditMode ? $t('report.updateReportBtn') : $t('report.submitReportBtn') }}</span>
         </button>
 
       </form>
@@ -567,7 +571,16 @@
 import { computeWorkerHours, getRateLines, calcBreakMinutes, parseMin, TIME_OPTIONS } from '~/utils/workerHours'
 import type { RateBreakdown } from '~/utils/workerHours'
 import { computeDiff } from '~/utils/diffReport'
+import { findSimilarSiteNames } from '~/utils/siteSimilarity'
+import { useI18n } from 'vue-i18n'
 import type { User } from '~/types'
+
+const { t } = useI18n()
+
+// 新規現場の手入力時、既存に似た現場があれば重複候補を返す（重複登録の気づき）
+function siteSimilar(name?: string): string[] {
+  return findSimilarSiteNames(name ?? '', master.siteNames.value)
+}
 
 // クエリ（?edit=YYYY-MM-DD）が変わったらページを再マウントさせ、編集/新規の
 //  初期化（onMounted）を必ず再実行する。これが無いと、編集画面を開いた後に
@@ -1119,7 +1132,7 @@ async function handleSubmit() {
     editError.value = null
     try {
       const uid = liff.profile.value?.userId
-      if (!uid) throw new Error('ログイン情報が取得できませんでした。再読み込みしてください。')
+      if (!uid) throw new Error(t('report.errorNoLogin'))
 
       if (forceErrorOnSubmit.value) {
         forceErrorOnSubmit.value = false
@@ -1176,7 +1189,7 @@ async function handleSubmit() {
 
       editSubmitted.value = true
     } catch (e) {
-      const msg = e instanceof Error ? e.message : '更新に失敗しました'
+      const msg = e instanceof Error ? e.message : t('report.errorUpdateFailed')
       editError.value = msg
       notifyErrorToLine('日報編集', msg)
     } finally {
@@ -1383,10 +1396,10 @@ async function analyzeReceipt(
   if (!file) return
   const result = await receipt.analyze(file, key)
   if (!result) {
-    showReceiptToast('error', receipt.error.value ?? '解析に失敗しました')
+    showReceiptToast('error', receipt.error.value ?? t('report.analyzeFailed'))
     return
   }
-  showReceiptToast('success', '解析成功！目視でも必ず確認してください')
+  showReceiptToast('success', t('report.analyzeSuccess'))
 
   const inv = result.invoiceNumber || 'なし'
   // 明細ごと（駐車=金額／高速=金額／電車=区間＋金額）

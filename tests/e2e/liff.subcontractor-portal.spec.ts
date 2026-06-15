@@ -8,7 +8,7 @@
 // ============================================================
 import { test, expect } from '@playwright/test'
 import { createHash, randomBytes } from 'node:crypto'
-import { rest, getAccountId, SUPABASE_URL } from './helpers'
+import { restSrv, getAccountId, SUPABASE_URL } from './helpers'
 
 const sha256Hex = (s: string) => createHash('sha256').update(s).digest('hex')
 const mkToken = () => randomBytes(32).toString('base64url')
@@ -23,7 +23,7 @@ let subA = '', subB = ''
 let tokA = '', tokB = '', tokExpired = '', tokRevoked = ''
 
 async function makeSub(name: string): Promise<string> {
-  const rows = await rest('subcontractors', {
+  const rows = await restSrv('subcontractors', {
     method: 'POST',
     headers: { Prefer: 'return=representation' },
     body: JSON.stringify({ account_id: accountId, name, category: '業者', active: true }),
@@ -31,7 +31,7 @@ async function makeSub(name: string): Promise<string> {
   return rows[0].id
 }
 async function issue(subId: string, token: string, extra: Record<string, unknown> = {}) {
-  await rest('document_access_tokens', {
+  await restSrv('document_access_tokens', {
     method: 'POST', headers: { Prefer: 'return=minimal' },
     body: JSON.stringify({ account_id: accountId, subcontractor_id: subId, purpose: PURPOSE, token_hash: sha256Hex(token), ...extra }),
   })
@@ -60,8 +60,8 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   for (const id of [subA, subB]) {
     if (!id) continue
-    await rest(`document_access_tokens?subcontractor_id=eq.${id}`, { method: 'DELETE' }).catch(() => {})
-    await rest(`subcontractors?id=eq.${id}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`document_access_tokens?subcontractor_id=eq.${id}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`subcontractors?id=eq.${id}`, { method: 'DELETE' }).catch(() => {})
   }
 })
 

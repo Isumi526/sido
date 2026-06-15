@@ -1,19 +1,19 @@
 <template>
   <div class="app">
-    <AppNav subtitle="日報履歴" :user-name="currentUser?.real_name" :user-role="currentUser?.worker_role" />
+    <AppNav :subtitle="$t('history.subtitle')" :user-name="currentUser?.real_name" :user-role="currentUser?.worker_role" />
 
     <main class="main">
       <!-- ローディング -->
       <div v-if="loading" class="state-screen">
         <div class="spinner" />
-        <p class="state-text">読み込み中...</p>
+        <p class="state-text">{{ $t('common.loading') }}</p>
       </div>
 
       <!-- 空 -->
       <div v-else-if="reports.length === 0" class="empty-state">
         <div class="empty-icon">📋</div>
-        <p class="empty-text">まだ日報がありません</p>
-        <NuxtLink to="/report" class="btn-primary">日報を入力する</NuxtLink>
+        <p class="empty-text">{{ $t('history.emptyText') }}</p>
+        <NuxtLink to="/report" class="btn-primary">{{ $t('history.enterReport') }}</NuxtLink>
       </div>
 
       <!-- 一覧 -->
@@ -28,7 +28,7 @@
             <div class="report-card-top">
               <div class="report-date">{{ formatDate(rep.date) }}</div>
               <span :class="['status-badge', rep.leave_type === 'paid_leave' ? 'badge-paid-leave' : rep.is_working ? 'badge-working' : 'badge-off']">
-                {{ rep.leave_type === 'paid_leave' ? '有給' : rep.is_working ? '稼働' : '休み' }}
+                {{ rep.leave_type === 'paid_leave' ? $t('history.badgePaidLeave') : rep.is_working ? $t('history.badgeWorking') : $t('history.badgeOff') }}
               </span>
             </div>
 
@@ -36,8 +36,8 @@
 
             <!-- 詳細（常時表示・LINE通知と同粒度）-->
             <div class="detail">
-              <div v-if="rep.leave_type === 'paid_leave'" class="detail-leave">🌴 有給休暇（8h）</div>
-              <div v-else-if="!rep.is_working" class="detail-leave">稼働なし</div>
+              <div v-if="rep.leave_type === 'paid_leave'" class="detail-leave">{{ $t('history.detailPaidLeave') }}</div>
+              <div v-else-if="!rep.is_working" class="detail-leave">{{ $t('history.detailNoWork') }}</div>
               <template v-else>
                 <div v-for="(s, i) in detailMap[rep.date]" :key="i" class="detail-site">
                   <div class="detail-site-name">📍 {{ s.name }}</div>
@@ -65,13 +65,13 @@
 
                   <p v-if="s.note" class="detail-note">📝 {{ s.note }}</p>
                 </div>
-                <div v-if="!detailMap[rep.date] || !detailMap[rep.date].length" class="detail-empty">現場の記録はありません</div>
+                <div v-if="!detailMap[rep.date] || !detailMap[rep.date].length" class="detail-empty">{{ $t('history.detailNoSites') }}</div>
               </template>
             </div>
 
             <div class="report-card-footer">
-              <span class="updated-at">更新: {{ formatUpdatedAt(rep.updated_at) }}</span>
-              <NuxtLink :to="`/report?edit=${rep.date}`" class="btn-edit">編集する →</NuxtLink>
+              <span class="updated-at">{{ $t('history.updatedAt', { time: formatUpdatedAt(rep.updated_at) }) }}</span>
+              <NuxtLink :to="`/report?edit=${rep.date}`" class="btn-edit">{{ $t('history.editReport') }}</NuxtLink>
             </div>
           </div>
         </template>
@@ -81,8 +81,11 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import type { User } from '~/types'
 import { computeWorkerHours, calcBreakMinutes, parseMin } from '~/utils/workerHours'
+
+const { t } = useI18n()
 
 const liff    = useLiff()
 const expense = useExpense()
@@ -156,18 +159,22 @@ const grouped = computed(() => {
   const map: Record<string, any[]> = {}
   for (const rep of reports.value) {
     const [year, month] = rep.date.split('-')
-    const key = `${year}年${parseInt(month, 10)}月`
+    const key = t('history.monthLabel', { year, month: parseInt(month, 10) })
     if (!map[key]) map[key] = []
     map[key].push(rep)
   }
   return map
 })
 
-const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
+const WEEKDAY_KEYS = ['weekdaySun', 'weekdayMon', 'weekdayTue', 'weekdayWed', 'weekdayThu', 'weekdayFri', 'weekdaySat']
 
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00')
-  return `${d.getMonth() + 1}月${d.getDate()}日（${WEEKDAYS[d.getDay()]}）`
+  return t('history.dateLabel', {
+    month: d.getMonth() + 1,
+    day: d.getDate(),
+    weekday: t(`history.${WEEKDAY_KEYS[d.getDay()]}`),
+  })
 }
 
 function formatUpdatedAt(ts: string): string {
@@ -183,7 +190,7 @@ interface SiteDetail { name: string; contractor: string; workers: WorkerLine[]; 
 function yen(n: number): string { return Number(n).toLocaleString() }
 
 function siteDisplayName(site: any): string {
-  return site.siteName === '__other__' ? (site.customSiteName || '新規現場') : (site.siteName || '')
+  return site.siteName === '__other__' ? (site.customSiteName || t('history.newSite')) : (site.siteName || '')
 }
 
 /** startTime/endTime から料率別工数を再計算（送信時と同じロジック・現場跨ぎ累積対応）*/
@@ -210,14 +217,14 @@ function computeHoursForReport(rep: any): Record<string, any> {
 function hoursParts(h: any): string {
   if (!h) return ''
   const p: string[] = []
-  if (h.hoursNormal)        p.push(`${h.hoursNormal}h`)
-  if (h.hoursSunday)        p.push(`休日${h.hoursSunday}h`)
-  if (h.hoursOT)            p.push(`残業${h.hoursOT}h`)
-  if (h.hoursNight)         p.push(`深夜${h.hoursNight}h`)
-  if (h.hoursOTNight)       p.push(`深夜残業${h.hoursOTNight}h`)
-  if (h.hoursSundayOT)      p.push(`休日残業${h.hoursSundayOT}h`)
-  if (h.hoursSundayNight)   p.push(`休日深夜${h.hoursSundayNight}h`)
-  if (h.hoursSundayOTNight) p.push(`休日深夜残業${h.hoursSundayOTNight}h`)
+  if (h.hoursNormal)        p.push(t('history.hoursNormal', { h: h.hoursNormal }))
+  if (h.hoursSunday)        p.push(t('history.hoursSunday', { h: h.hoursSunday }))
+  if (h.hoursOT)            p.push(t('history.hoursOT', { h: h.hoursOT }))
+  if (h.hoursNight)         p.push(t('history.hoursNight', { h: h.hoursNight }))
+  if (h.hoursOTNight)       p.push(t('history.hoursOTNight', { h: h.hoursOTNight }))
+  if (h.hoursSundayOT)      p.push(t('history.hoursSundayOT', { h: h.hoursSundayOT }))
+  if (h.hoursSundayNight)   p.push(t('history.hoursSundayNight', { h: h.hoursSundayNight }))
+  if (h.hoursSundayOTNight) p.push(t('history.hoursSundayOTNight', { h: h.hoursSundayOTNight }))
   return p.join(' + ')
 }
 
@@ -226,33 +233,33 @@ function expenseLines(exp: any): string[] {
   const out: string[] = []
   if (!exp) return out
   if (exp.carpool) {
-    out.push('乗合い')
+    out.push(t('history.expCarpool'))
   } else {
     for (const v of (exp.vehicles || [])) {
       if (!v) continue
       const p: string[] = []
       if (v.vehicleName) p.push(v.vehicleName)
-      if (v.distanceKm)  p.push(`往復${v.distanceKm}km`)
-      if (v.dieselKm)    p.push(`軽油${v.dieselKm}km`)
-      if (v.parkingYen)  p.push(`駐車¥${yen(v.parkingYen)}`)
-      if (v.highwayYen)  p.push(`高速¥${yen(v.highwayYen)}`)
-      if (v.etcUsed)     p.push(`ETC${v.etcCard || ''}`)
+      if (v.distanceKm)  p.push(t('history.expRoundTrip', { km: v.distanceKm }))
+      if (v.dieselKm)    p.push(t('history.expDiesel', { km: v.dieselKm }))
+      if (v.parkingYen)  p.push(t('history.expParking', { yen: yen(v.parkingYen) }))
+      if (v.highwayYen)  p.push(t('history.expHighway', { yen: yen(v.highwayYen) }))
+      if (v.etcUsed)     p.push(t('history.expEtc', { card: v.etcCard || '' }))
       if (p.length) out.push(p.join(' '))
     }
   }
-  for (const p of (exp.parkings || [])) if (p?.yen) out.push(`駐車¥${yen(p.yen)}`)
-  for (const h of (exp.highways || [])) if (h?.yen) out.push(`高速¥${yen(h.yen)}${h.etcCard ? ` ETC${h.etcCard}` : ''}`)
-  for (const t of (exp.trains || [])) if (t?.yen) out.push(`${t.label || '電車'} ¥${yen(t.yen)}`)
-  for (const o of (exp.others || [])) if (o?.yen) out.push(`${o.label || 'その他'} ¥${yen(o.yen)}`)
-  if (exp.hotelYen)         out.push(`${exp.hotelName || 'ホテル'} ¥${yen(exp.hotelYen)}`)
-  if (exp.leopalaceYen)     out.push(`${exp.leopalaceName || 'レオパレス'} ¥${yen(exp.leopalaceYen)}`)
-  for (const e of (exp.entertainments || [])) if (e?.yen) out.push(`${e.label || '雑経費'} ¥${yen(e.yen)}`)
-  if (exp.entertainmentYen && !(exp.entertainments || []).some((e: any) => e?.yen)) out.push(`${exp.entertainmentLabel || '雑経費'} ¥${yen(exp.entertainmentYen)}`)
+  for (const p of (exp.parkings || [])) if (p?.yen) out.push(t('history.expParking', { yen: yen(p.yen) }))
+  for (const h of (exp.highways || [])) if (h?.yen) out.push(`${t('history.expHighway', { yen: yen(h.yen) })}${h.etcCard ? ` ${t('history.expEtc', { card: h.etcCard })}` : ''}`)
+  for (const tr of (exp.trains || [])) if (tr?.yen) out.push(t('history.expWithYen', { label: tr.label || t('history.expTrainDefault'), yen: yen(tr.yen) }))
+  for (const o of (exp.others || [])) if (o?.yen) out.push(t('history.expWithYen', { label: o.label || t('history.expOtherDefault'), yen: yen(o.yen) }))
+  if (exp.hotelYen)         out.push(t('history.expWithYen', { label: exp.hotelName || t('history.expHotelDefault'), yen: yen(exp.hotelYen) }))
+  if (exp.leopalaceYen)     out.push(t('history.expWithYen', { label: exp.leopalaceName || t('history.expLeopalaceDefault'), yen: yen(exp.leopalaceYen) }))
+  for (const e of (exp.entertainments || [])) if (e?.yen) out.push(t('history.expWithYen', { label: e.label || t('history.expMiscDefault'), yen: yen(e.yen) }))
+  if (exp.entertainmentYen && !(exp.entertainments || []).some((e: any) => e?.yen)) out.push(t('history.expWithYen', { label: exp.entertainmentLabel || t('history.expMiscDefault'), yen: yen(exp.entertainmentYen) }))
   if (exp.garbageFactoryM3 || exp.garbageSiteM3) {
     const g: string[] = []
-    if (exp.garbageFactoryM3) g.push(`木材のみ ${exp.garbageFactoryM3}m³`)
-    if (exp.garbageSiteM3)    g.push(`混載 ${exp.garbageSiteM3}m³`)
-    out.push(`ゴミ ${g.join(' ')}`)
+    if (exp.garbageFactoryM3) g.push(t('history.expGarbageWood', { m3: exp.garbageFactoryM3 }))
+    if (exp.garbageSiteM3)    g.push(t('history.expGarbageMixed', { m3: exp.garbageSiteM3 }))
+    out.push(t('history.expGarbage', { detail: g.join(' ') }))
   }
   return out
 }
@@ -275,8 +282,8 @@ function buildDetail(rep: any): SiteDetail[] {
     subs: (site.subcontractors || [])
       .filter((s: any) => s.subcontractorName)
       .map((s: any) => {
-        const nm = s.subcontractorName === '__other__' ? (s.customSubcontractorName || '新規業者') : s.subcontractorName
-        return `${nm} ${s.count || 1}人`
+        const nm = s.subcontractorName === '__other__' ? (s.customSubcontractorName || t('history.newSub')) : s.subcontractorName
+        return t('history.subCount', { name: nm, count: s.count || 1 })
       }),
     note: site.siteNote || '',
   })).filter((s: SiteDetail) => s.name)

@@ -1,0 +1,14 @@
+{
+  "title": "Sites",
+  "empty": "No sites",
+  "location": "Location",
+  "type": "Work type",
+  "details": "Work details",
+  "memo": "Memo",
+  "photos": "Photos",
+  "documents": "Documents",
+  "noDetail": "No details registered yet",
+  "inactive": "Inactive",
+  "enable": "Enable",
+  "disable": "Disable"
+}

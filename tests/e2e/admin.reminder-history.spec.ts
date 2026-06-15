@@ -6,7 +6,7 @@
 //  ※ reminder_logs は RLS 無効テーブル。anonキーで直接 seed/後始末する。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, getAccountId } from './helpers'
+import { restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()
 const R_OLD = `E2E古い結果_${TS}`
@@ -17,15 +17,15 @@ test.describe('リマインド履歴', () => {
 
   test.afterAll(async () => {
     if (accountId) {
-      await rest(`reminder_logs?account_id=eq.${accountId}&result=like.E2E*${TS}`, { method: 'DELETE' }).catch(() => {})
-      await rest(`reminder_logs?result=eq.${encodeURIComponent(R_OLD)}`, { method: 'DELETE' }).catch(() => {})
-      await rest(`reminder_logs?result=eq.${encodeURIComponent(R_NEW)}`, { method: 'DELETE' }).catch(() => {})
+      await restSrv(`reminder_logs?account_id=eq.${accountId}&result=like.E2E*${TS}`, { method: 'DELETE' }).catch(() => {})
+      await restSrv(`reminder_logs?result=eq.${encodeURIComponent(R_OLD)}`, { method: 'DELETE' }).catch(() => {})
+      await restSrv(`reminder_logs?result=eq.${encodeURIComponent(R_NEW)}`, { method: 'DELETE' }).catch(() => {})
     }
   })
 
   test('AC1: 履歴が新しい順・各列付きで表示される', async ({ page }) => {
     accountId = await getAccountId()
-    await rest('reminder_logs', {
+    await restSrv('reminder_logs', {
       method: 'POST', headers: { Prefer: 'return=minimal' },
       body: JSON.stringify([
         { account_id: accountId, executed_at: '2026-06-01T08:00:00+09:00', target_date: '2026-05-31', result: R_OLD, unsubmitted_count: 3, recipients_count: 2, manual: false },
@@ -59,7 +59,7 @@ test.describe('リマインド履歴', () => {
   test('AC2: 履歴ゼロのアカウントでは空メッセージ', async ({ page }) => {
     // test アカウントの履歴を空にして検証（このテストはAC1の後始末前に走らないよう独立シードを消す）
     const accId = await getAccountId()
-    await rest(`reminder_logs?account_id=eq.${accId}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`reminder_logs?account_id=eq.${accId}`, { method: 'DELETE' }).catch(() => {})
     await page.goto('/reminder-history', { waitUntil: 'networkidle' })
     await expect(page.locator('.empty')).toContainText('まだ実行履歴がありません')
   })

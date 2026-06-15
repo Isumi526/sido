@@ -5,7 +5,8 @@
 //    A: 元請け付き日報 / C: 立替(tategae)経費付き日報
 //  ※ マスタ(Worker 01 等)・dev-user-id・通常日報は seed.sql が投入済み
 // ============================================================
-import { SUPABASE_URL, ANON_KEY, ADMIN_LOGIN_EMAIL, ADMIN_LOGIN_PASS, getAccountId, rest, upsert } from './helpers'
+import { execSync } from 'node:child_process'
+import { SUPABASE_URL, ANON_KEY, ACCOUNT_SLUG, ADMIN_LOGIN_EMAIL, ADMIN_LOGIN_PASS, getAccountId, rest, upsert } from './helpers'
 
 export const DEV_LINE_ID = 'dev-user-id'
 // seed.sql と一致
@@ -36,6 +37,19 @@ async function ensureAdminUser() {
   })
   if (res.ok) console.log(`[e2e] admin auth user 作成: ${ADMIN_LOGIN_EMAIL}`)
   else console.log(`[e2e] admin auth user は既存 (${res.status})`)  // already registered 等
+
+  // RLS（purchase_orders 等）のテナント解決に使う app_metadata.account_slug を付与。
+  // 無いと current_account_id()=null で admin が自 account を読めず締め出される。
+  // ローカルGoTrue admin APIの鍵問題を避け、ローカルDBに直接SQL更新（テストハーネス＝local専用）。
+  // 次ログイン時(auth.setup.ts)のJWTに app_metadata として乗る。
+  try {
+    const dbUrl = process.env.SUPABASE_DB_URL || 'postgresql://postgres:postgres@127.0.0.1:54322/postgres'
+    execSync(
+      `psql "${dbUrl}" -c "update auth.users set raw_app_meta_data = coalesce(raw_app_meta_data,'{}'::jsonb) || jsonb_build_object('account_slug','${ACCOUNT_SLUG}') where email='${ADMIN_LOGIN_EMAIL}'"`,
+      { stdio: 'ignore' },
+    )
+    console.log(`[e2e] admin app_metadata.account_slug=${ACCOUNT_SLUG} 付与(SQL)`)
+  } catch (e) { console.warn('[e2e] app_metadata 付与失敗:', String(e)) }
 }
 
 async function getDevUserId(accountId: string): Promise<string | null> {

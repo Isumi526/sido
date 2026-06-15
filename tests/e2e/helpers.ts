@@ -55,6 +55,30 @@ export async function rest(pathAndQuery: string, init: RequestInit = {}): Promis
   return text ? JSON.parse(text) : null
 }
 
+// service_role キー（RLS バイパス）。RLS を入れた表（purchase_orders 等）の
+// シード/検証/後始末や、auth admin API（app_metadata 付与）に使う。ローカル専用。
+export const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_ROLE_KEY || ''
+const srvHeaders = { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' }
+
+/** service_role で PostgREST を叩く（RLS バイパス・テスト専用） */
+export async function restSrv(pathAndQuery: string, init: RequestInit = {}): Promise<any> {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${pathAndQuery}`, {
+    ...init,
+    headers: { ...srvHeaders, ...(init.headers || {}) },
+  })
+  const text = await res.text()
+  if (!res.ok) throw new Error(`REST(srv) ${res.status} ${pathAndQuery}: ${text}`)
+  return text ? JSON.parse(text) : null
+}
+
+/** auth admin API（service_role）。app_metadata 付与等に使う。 */
+export async function authAdmin(path: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(`${SUPABASE_URL}/auth/v1/${path}`, {
+    ...init,
+    headers: { ...srvHeaders, ...(init.headers || {}) },
+  })
+}
+
 /** test アカウントの id を返す */
 export async function getAccountId(): Promise<string> {
   const rows = await rest(`accounts?slug=eq.${encodeURIComponent(ACCOUNT_SLUG)}&select=id`)

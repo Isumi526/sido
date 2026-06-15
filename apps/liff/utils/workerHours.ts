@@ -17,6 +17,7 @@
 //   法定休日+深夜      1.60
 //   法定休日+残業+深夜 1.85
 // ============================================================
+import { gt } from '~/utils/i18n-global'
 
 export interface RateBreakdown {
   hoursNormal:        number  // 1.00  通常
@@ -164,14 +165,14 @@ export function computeWorkerHours(
 /** プレビュー用: 各料率の行データを返す（0hの行は省略） */
 export function getRateLines(r: RateBreakdown): RateLine[] {
   const lines: RateLine[] = []
-  if (r.hoursNormal        > 0) lines.push({ label: '通常',              hours: r.hoursNormal,        rate: '×1.00', color: '#374151' })
-  if (r.hoursOT            > 0) lines.push({ label: '残業',              hours: r.hoursOT,            rate: '×1.25', color: '#D97706' })
-  if (r.hoursNight         > 0) lines.push({ label: '深夜',              hours: r.hoursNight,         rate: '×1.25', color: '#7C3AED' })
-  if (r.hoursOTNight       > 0) lines.push({ label: '残業+深夜',         hours: r.hoursOTNight,       rate: '×1.50', color: '#DC2626' })
-  if (r.hoursSunday        > 0) lines.push({ label: '法定休日',          hours: r.hoursSunday,        rate: '×1.35', color: '#059669' })
-  if (r.hoursSundayOT      > 0) lines.push({ label: '法定休日+残業',     hours: r.hoursSundayOT,      rate: '×1.60', color: '#EA580C' })
-  if (r.hoursSundayNight   > 0) lines.push({ label: '法定休日+深夜',     hours: r.hoursSundayNight,   rate: '×1.60', color: '#6D28D9' })
-  if (r.hoursSundayOTNight > 0) lines.push({ label: '法定休日+残業+深夜', hours: r.hoursSundayOTNight, rate: '×1.85', color: '#9F1239' })
+  if (r.hoursNormal        > 0) lines.push({ label: gt('hours.normal'),        hours: r.hoursNormal,        rate: '×1.00', color: '#374151' })
+  if (r.hoursOT            > 0) lines.push({ label: gt('hours.ot'),            hours: r.hoursOT,            rate: '×1.25', color: '#D97706' })
+  if (r.hoursNight         > 0) lines.push({ label: gt('hours.night'),         hours: r.hoursNight,         rate: '×1.25', color: '#7C3AED' })
+  if (r.hoursOTNight       > 0) lines.push({ label: gt('hours.otNight'),       hours: r.hoursOTNight,       rate: '×1.50', color: '#DC2626' })
+  if (r.hoursSunday        > 0) lines.push({ label: gt('hours.sunday'),        hours: r.hoursSunday,        rate: '×1.35', color: '#059669' })
+  if (r.hoursSundayOT      > 0) lines.push({ label: gt('hours.sundayOT'),      hours: r.hoursSundayOT,      rate: '×1.60', color: '#EA580C' })
+  if (r.hoursSundayNight   > 0) lines.push({ label: gt('hours.sundayNight'),   hours: r.hoursSundayNight,   rate: '×1.60', color: '#6D28D9' })
+  if (r.hoursSundayOTNight > 0) lines.push({ label: gt('hours.sundayOTNight'), hours: r.hoursSundayOTNight, rate: '×1.85', color: '#9F1239' })
   return lines
 }
 

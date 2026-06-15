@@ -1,17 +1,17 @@
 <template>
   <div class="groups-page">
-    <AppNav subtitle="グループ管理" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
+    <AppNav :subtitle="$t('groups.title')" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
 
     <div class="page-header">
-      <h1 class="page-title">グループ管理</h1>
-      <button class="btn-create" @click="showCreateModal = true">＋ 作成</button>
+      <h1 class="page-title">{{ $t('groups.title') }}</h1>
+      <button class="btn-create" @click="showCreateModal = true">{{ $t('groups.create') }}</button>
     </div>
 
-    <div v-if="groupsStore.loading.value" class="loading">読み込み中...</div>
+    <div v-if="groupsStore.loading.value" class="loading">{{ $t('common.loading') }}</div>
 
     <div v-else-if="!groupsStore.groups.value.length" class="empty">
-      <p>グループがありません</p>
-      <p class="empty-sub">グループを作成して、メンバーと予定を共有しましょう</p>
+      <p>{{ $t('groups.emptyTitle') }}</p>
+      <p class="empty-sub">{{ $t('groups.emptySub') }}</p>
     </div>
 
     <div v-else class="group-list">
@@ -20,7 +20,7 @@
         <div class="group-head" @click="toggleExpand(group.id)">
           <div class="group-info">
             <span class="group-name">{{ group.name }}</span>
-            <span class="group-count">{{ group.members.length }}名</span>
+            <span class="group-count">{{ $t('groups.memberCount', { count: group.members.length }) }}</span>
           </div>
           <span class="group-chevron" :class="{ open: expanded.has(group.id) }">›</span>
         </div>
@@ -31,22 +31,22 @@
             <div v-for="m in group.members" :key="m.worker_id" class="member-row">
               <span class="member-avatar">{{ memberName(m).charAt(0) }}</span>
               <span class="member-name">{{ memberName(m) }}</span>
-              <span v-if="m.worker_id === myWorkerId" class="member-badge">自分</span>
+              <span v-if="m.worker_id === myWorkerId" class="member-badge">{{ $t('groups.selfBadge') }}</span>
               <button
                 v-else
                 class="btn-remove"
                 @click="handleRemoveMember(group, m.worker_id)"
-              >削除</button>
+              >{{ $t('common.delete') }}</button>
             </div>
           </div>
 
           <!-- メンバー追加 -->
-          <button class="btn-add-member" @click="openAddMember(group)">＋ メンバーを追加</button>
+          <button class="btn-add-member" @click="openAddMember(group)">{{ $t('groups.addMember') }}</button>
 
           <!-- グループ操作 -->
           <div class="group-actions">
             <button class="btn-leave" @click="handleLeave(group)">
-              {{ group.created_by === myWorkerId ? 'グループを削除' : 'グループから脱退' }}
+              {{ group.created_by === myWorkerId ? $t('groups.deleteGroup') : $t('groups.leaveGroup') }}
             </button>
           </div>
         </div>
@@ -56,13 +56,13 @@
     <!-- グループ作成モーダル -->
     <div v-if="showCreateModal" class="modal-overlay" @click.self="closeCreateModal">
       <div class="modal">
-        <h2>グループを作成</h2>
+        <h2>{{ $t('groups.createTitle') }}</h2>
         <div class="field">
-          <label>グループ名 *</label>
-          <input v-model="newGroupName" class="input" placeholder="例：現場チームA" />
+          <label>{{ $t('groups.groupNameLabel') }}</label>
+          <input v-model="newGroupName" class="input" :placeholder="$t('groups.groupNamePlaceholder')" />
         </div>
         <div class="field">
-          <label>招待するメンバー</label>
+          <label>{{ $t('groups.inviteLabel') }}</label>
           <div class="worker-pick-list">
             <label v-for="w in allOtherWorkers" :key="w.id" class="worker-pick-item">
               <input
@@ -72,14 +72,14 @@
               />
               <span>{{ w.name }}</span>
             </label>
-            <p v-if="!allOtherWorkers.length" class="empty-sub">他の作業員がいません</p>
+            <p v-if="!allOtherWorkers.length" class="empty-sub">{{ $t('groups.noOtherWorkers') }}</p>
           </div>
         </div>
         <p v-if="createError" class="error-msg">{{ createError }}</p>
         <div class="modal-actions">
-          <button class="btn-cancel" @click="closeCreateModal">キャンセル</button>
+          <button class="btn-cancel" @click="closeCreateModal">{{ $t('common.cancel') }}</button>
           <button class="btn-save" :disabled="creating" @click="handleCreate">
-            {{ creating ? '作成中...' : '作成' }}
+            {{ creating ? $t('groups.creating') : $t('groups.createSubmit') }}
           </button>
         </div>
       </div>
@@ -88,8 +88,8 @@
     <!-- メンバー追加モーダル -->
     <div v-if="addMemberTarget" class="modal-overlay" @click.self="addMemberTarget = null">
       <div class="modal">
-        <h2>メンバーを追加</h2>
-        <p class="modal-sub">「{{ addMemberTarget.name }}」に追加する作業員を選択</p>
+        <h2>{{ $t('groups.addMemberTitle') }}</h2>
+        <p class="modal-sub">{{ $t('groups.addMemberSub', { name: addMemberTarget.name }) }}</p>
         <div class="worker-pick-list">
           <label
             v-for="w in availableWorkers"
@@ -103,13 +103,13 @@
             />
             <span>{{ w.name }}</span>
           </label>
-          <p v-if="!availableWorkers.length" class="empty-sub">追加できる作業員がいません</p>
+          <p v-if="!availableWorkers.length" class="empty-sub">{{ $t('groups.noAvailableWorkers') }}</p>
         </div>
         <p v-if="addError" class="error-msg">{{ addError }}</p>
         <div class="modal-actions">
-          <button class="btn-cancel" @click="addMemberTarget = null">キャンセル</button>
+          <button class="btn-cancel" @click="addMemberTarget = null">{{ $t('common.cancel') }}</button>
           <button class="btn-save" :disabled="adding || !pickedWorkerIds.length" @click="handleAddMembers">
-            {{ adding ? '追加中...' : '追加' }}
+            {{ adding ? $t('groups.adding') : $t('common.add') }}
           </button>
         </div>
       </div>
@@ -119,7 +119,10 @@
 
 <script setup lang="ts">
 import type { DeepReadonly } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useScheduleGroups, type ScheduleGroup } from '~/composables/useScheduleGroups'
+
+const { t } = useI18n()
 
 // groupsStore.groups は readonly 公開（consumerは読むだけ）。
 // そのため group を受けるハンドラは DeepReadonly<ScheduleGroup> で受ける（mutateしない）。
@@ -142,7 +145,7 @@ function toggleExpand(id: string) {
 
 // ──────────────────── ヘルパー ────────────────────
 function memberName(m: ScheduleGroup['members'][number]): string {
-  return m.worker?.name ?? '(不明)'
+  return m.worker?.name ?? t('groups.unknownMember')
 }
 
 // ──────────────────── グループ作成 ────────────────────
@@ -170,8 +173,8 @@ function closeCreateModal() {
 }
 
 async function handleCreate() {
-  if (!newGroupName.value.trim()) { createError.value = 'グループ名を入力してください'; return }
-  if (!myWorkerId.value) { createError.value = '作業員情報が取得できません'; return }
+  if (!newGroupName.value.trim()) { createError.value = t('groups.errorNameRequired'); return }
+  if (!myWorkerId.value) { createError.value = t('groups.errorNoWorker'); return }
   creating.value = true; createError.value = ''
   try {
     const group = await groupsStore.createGroup(newGroupName.value.trim(), myWorkerId.value)
@@ -181,7 +184,7 @@ async function handleCreate() {
     }
     closeCreateModal()
   } catch (e) {
-    createError.value = e instanceof Error ? e.message : '作成に失敗しました'
+    createError.value = e instanceof Error ? e.message : t('groups.errorCreateFailed')
   } finally { creating.value = false }
 }
 
@@ -219,18 +222,18 @@ async function handleAddMembers() {
     }
     addMemberTarget.value = null
   } catch (e) {
-    addError.value = e instanceof Error ? e.message : '追加に失敗しました'
+    addError.value = e instanceof Error ? e.message : t('groups.errorAddFailed')
   } finally { adding.value = false }
 }
 
 // ──────────────────── メンバー削除 ────────────────────
 async function handleRemoveMember(group: DeepReadonly<ScheduleGroup>, workerId: string) {
   if (!myWorkerId.value) return
-  if (!confirm('このメンバーをグループから削除しますか？')) return
+  if (!confirm(t('groups.confirmRemoveMember'))) return
   try {
     await groupsStore.removeMember(group.id, workerId, myWorkerId.value)
   } catch (e) {
-    alert(e instanceof Error ? e.message : '削除に失敗しました')
+    alert(e instanceof Error ? e.message : t('groups.errorRemoveFailed'))
   }
 }
 
@@ -239,8 +242,8 @@ async function handleLeave(group: DeepReadonly<ScheduleGroup>) {
   if (!myWorkerId.value) return
   const isCreator = group.created_by === myWorkerId.value
   const msg = isCreator
-    ? `「${group.name}」を削除しますか？（全メンバーのグループへのアクセスが失われます）`
-    : `「${group.name}」から脱退しますか？`
+    ? t('groups.confirmDeleteGroup', { name: group.name })
+    : t('groups.confirmLeaveGroup', { name: group.name })
   if (!confirm(msg)) return
   try {
     if (isCreator) {
@@ -249,7 +252,7 @@ async function handleLeave(group: DeepReadonly<ScheduleGroup>) {
       await groupsStore.removeMember(group.id, myWorkerId.value, myWorkerId.value)
     }
   } catch (e) {
-    alert(e instanceof Error ? e.message : '操作に失敗しました')
+    alert(e instanceof Error ? e.message : t('groups.errorLeaveFailed'))
   }
 }
 

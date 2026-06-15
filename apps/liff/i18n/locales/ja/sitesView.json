@@ -1,0 +1,14 @@
+{
+  "title": "現場情報",
+  "empty": "現場がありません",
+  "location": "場所",
+  "type": "工事種類",
+  "details": "工事内容",
+  "memo": "メモ",
+  "photos": "写真",
+  "documents": "書類",
+  "noDetail": "詳細情報はまだ登録されていません",
+  "inactive": "無効",
+  "enable": "有効化",
+  "disable": "無効化"
+}

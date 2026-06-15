@@ -283,6 +283,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN } from '../lib/workerHours'
 
 const baseDate  = ref(new Date())
 const yearMonth = computed(() => `${baseDate.value.getFullYear()}年${baseDate.value.getMonth() + 1}月`)
@@ -319,21 +320,6 @@ function fmt(v: any) {
 function sumF(rows: any[], field: string) {
   return rows?.reduce((s, r) => s + (Number(r[field]) || 0), 0) ?? 0
 }
-function calcLaborCost(w: any, unitPrice: number) {
-  if (!unitPrice) return 0
-  const ph = unitPrice / 8
-  return Math.round(
-    (w.hoursNormal        || 0) * ph * 1.00 +
-    (w.hoursOT            || 0) * ph * 1.25 +
-    (w.hoursNight         || 0) * ph * 1.25 +
-    (w.hoursOTNight       || 0) * ph * 1.50 +
-    (w.hoursSunday        || 0) * ph * 1.35 +
-    (w.hoursSundayOT      || 0) * ph * 1.60 +
-    (w.hoursSundayNight   || 0) * ph * 1.60 +
-    (w.hoursSundayOTNight || 0) * ph * 1.85
-  )
-}
-
 // スプレッドシートの列に対応した経費列を抽出
 function extractExpenseCols(exp: any) {
   let parkingYen = 0, fuelCost = 0, highwayCost = 0
@@ -421,6 +407,9 @@ async function load() {
 
   for (const report of data ?? []) {
     const isSunday = new Date((report as any).date + 'T00:00:00').getDay() === 0
+    // 実勤務時間ベースで料率別時間を再計算（保存値の hoursNormal に依存しない＝通常×8h固定バグの修正）。
+    // 同一作業員が複数現場に跨る場合は現場跨ぎで残業を累積する。
+    const laborMap = laborBreakdownForReport((report as any).sites ?? [], isSunday)
 
     for (const site of ((report as any).sites ?? [])) {
       const rawName  = site.siteName ?? ''
@@ -448,7 +437,8 @@ async function load() {
       // 作業員
       for (const w of (site.workers ?? []).filter((w: any) => w.workerName)) {
         const unitPrice = priceById[w.workerId] ?? priceByName[w.workerName] ?? 0
-        g.workers.push({ ...w, role: w.workerRole ?? 'site', unitPrice, laborCost: calcLaborCost(w, unitPrice) })
+        const breakdown = laborMap.get(w) ?? ZERO_BREAKDOWN
+        g.workers.push({ ...w, ...breakdown, role: w.workerRole ?? 'site', unitPrice, laborCost: laborCostForBreakdown(breakdown, unitPrice) })
       }
 
       // 下請け（商社/業者区分・単価を master から付与）

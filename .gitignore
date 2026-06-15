@@ -30,3 +30,5 @@ tests/e2e/.artifacts/
 /test-results/
 /playwright-report/
 backups/
+scripts/.dispatcher-state.json
+scripts/.dispatcher.lock
