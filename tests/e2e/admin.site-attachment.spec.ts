@@ -71,7 +71,12 @@ test('他テナントの添付 → 403', async () => {
   expect(res.status).toBe(403)
 })
 
-test('認可情報なし（JWT/line_user_id どちらも無し）→ 401', async () => {
+test('認可情報なし（JWT/LINE ID token どちらも無し）→ 401', async () => {
   const res = await callEdge({ attachment_id: testAttId })
+  expect(res.status).toBe(401)
+})
+
+test('改ざん/偽の LINE ID token は検証で弾かれ 401（spoofable な line_user_id 直渡しは廃止）', async () => {
+  const res = await callEdge({ attachment_id: testAttId, line_id_token: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJVZmFrZSJ9.invalidsig' })
   expect(res.status).toBe(401)
 })
