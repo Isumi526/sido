@@ -56,7 +56,7 @@ import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
 const proxy = useProxyMode()
-const { profile } = useLiff()
+const { profile, getIdToken } = useLiff()
 
 type Site = { id: string; name: string; active: boolean; location: string | null; construction_type: string | null; construction_details: string | null; memo: string | null }
 type Att = { id: string; site_id: string; kind: string; path: string; name: string | null; url?: string | null }
@@ -70,11 +70,12 @@ const photos = computed(() => atts.value.filter((a) => a.kind === 'photo'))
 const docs   = computed(() => atts.value.filter((a) => a.kind !== 'photo'))
 
 // 非公開バケット → edge(site-attachment-url)で短TTL署名URLを取得（getPublicUrl廃止）。
-// LINE作業員(anon)は line_user_id を渡して account 認可、email/pw はセッションJWTで認可。
+// email/pw はセッションJWT、LINE作業員は署名済み LINE ID token を渡して account 認可（改ざん不可）。
 async function signedUrl(attachmentId: string): Promise<string | null> {
   try {
+    const idToken = await getIdToken()
     const { data, error } = await useSupabase().functions.invoke('site-attachment-url', {
-      body: { attachment_id: attachmentId, line_user_id: profile.value?.userId ?? '' },
+      body: { attachment_id: attachmentId, ...(idToken ? { line_id_token: idToken } : {}) },
     })
     if (error || !data?.ok) return null
     return data.url as string

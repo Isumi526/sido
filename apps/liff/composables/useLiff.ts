@@ -102,9 +102,23 @@ export const useLiff = () => {
     }
   }
 
+  // LINE ID token（サーバ側で改ざん検証可能な署名済みトークン）。
+  // email/pw セッション時は null（Supabase JWT を使う）。dev/未初期化時も null。
+  async function getIdToken(): Promise<string | null> {
+    if (state.value.authMode === 'password') return null
+    if (config.public.appEnv === 'development') return null
+    try {
+      const liff = (await import('@line/liff')).default
+      return liff.getIDToken() ?? null
+    } catch {
+      return null
+    }
+  }
+
   return {
     state: readonly(state),
     init,
+    getIdToken,
     initialized: computed(() => state.value.initialized),
     profile:     computed(() => state.value.profile),
     isLoggedIn:  computed(() => state.value.loggedIn),
