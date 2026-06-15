@@ -184,19 +184,15 @@ onMounted(async () => {
   if (!lineUserId) return
 
   const { data: accountData } = await supabase
-    .from('accounts').select('id').eq('slug', config.public.accountSlug).single()
+    .from('accounts').select('id').eq('slug', config.public.accountSlug).maybeSingle()
   if (!accountData) return
   accountId.value = accountData.id
 
-  const { data: user } = await supabase
-    .from('users')
-    .select('*')
-    .eq('line_user_id', lineUserId)
-    .eq('account_id', accountData.id)
-    .single()
+  // セッション種別で「自分=どの作業員か」を解決（email/pw は worker_id 経由・LINEは従来）
+  const user = await useCurrentUser().resolve()
   if (user) {
     currentUser.value = user as User
-    await proxy.fetchProxyTargets(user.worker_id)
+    if (user.worker_id) await proxy.fetchProxyTargets(user.worker_id)
     await refreshDeadlineBanner()
   }
 
