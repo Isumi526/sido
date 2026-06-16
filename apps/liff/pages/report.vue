@@ -406,8 +406,8 @@
               </select>
               <template v-if="siteUsage[si].garbage === 'あり'">
                 <div class="expense-grid mt6">
-                  <ExpenseField v-model="site.expenses.garbageFactoryM3" :label="$t('report.garbageWood')" />
-                  <ExpenseField v-model="site.expenses.garbageSiteM3"    :label="$t('report.garbageMixed')" />
+                  <ExpenseField v-model="site.expenses.garbageFactoryM3" :label="$t('report.garbageWood')" decimal />
+                  <ExpenseField v-model="site.expenses.garbageSiteM3"    :label="$t('report.garbageMixed')" decimal />
                 </div>
                 <div v-if="site.expenses.garbageFactoryM3 || site.expenses.garbageSiteM3" class="mt8">
                   <label class="hours-label">{{ $t('report.garbagePhotoLabel') }}</label>
