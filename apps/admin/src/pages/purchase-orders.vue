@@ -44,7 +44,7 @@
     </div>
 
     <!-- 発行モーダル -->
-    <div v-if="modal" class="modal-overlay" @click.self="modal = null">
+    <div v-if="modal" class="modal-overlay" @click.self="tryCloseIssue()">
       <div class="modal wide">
         <h2>注文書を発行</h2>
 
@@ -152,7 +152,7 @@
 
         <div class="modal-actions">
           <button class="btn-save" :disabled="issuing || !canIssue" @click="issue">{{ issuing ? '発行中…' : '発行してメール送信' }}</button>
-          <button class="btn-cancel" @click="modal = null">キャンセル</button>
+          <button class="btn-cancel" @click="tryCloseIssue()">キャンセル</button>
         </div>
         <p v-if="issueMsg" :class="issueOk ? 'ok-msg' : 'error'">{{ issueMsg }}</p>
       </div>
@@ -347,6 +347,15 @@ function openTrail(o: PO) {
   if (acc) trailModal.value = { order: o, acc }
 }
 
+// 発行モーダルを閉じる前に、入力途中なら確認（誤クリック/誤キャンセルで入力が飛ぶのを防ぐ）。
+// 「入力途中」= 見積を選択済み（＝詳細フィールドを触り得る状態）。未選択なら破棄しても損失なしで即閉じ。
+function tryCloseIssue() {
+  if (!modal.value) return
+  const dirty = !!modal.value.estimate_id
+  if (dirty && !window.confirm('入力中の内容が破棄されます。発行をやめて閉じますか？')) return
+  modal.value = null
+}
+
 function openIssue() {
   issueMsg.value = ''
   modal.value = {
@@ -537,7 +546,7 @@ async function remove(o: PO) {
 
 /* プレビュー（PDF生成元） */
 .preview-label { font-size: 12px; font-weight: 700; color: #888; margin-top: 6px; }
-.preview-scroll { background: #eceff1; border-radius: 8px; padding: 12px; overflow-x: auto; }
+.preview-scroll { background: #eceff1; border-radius: 8px; padding: 12px; overflow: auto; max-height: 65vh; min-height: 360px; flex-shrink: 0; resize: vertical; }
 .po-doc { width: 640px; background: #fff; padding: 36px 40px; box-sizing: border-box; color: #111; font-size: 13px; line-height: 1.7; margin: 0 auto; }
 .po-head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #111; padding-bottom: 8px; }
 .po-title { font-size: 26px; font-weight: 800; letter-spacing: 8px; }
