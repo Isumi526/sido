@@ -27,7 +27,7 @@
   "siteName": "現場名",
   "addNewSite": "＋ 新しい現場を登録する",
   "siteNamePlaceholder": "現場名を入力（例: 渋谷プロジェクト）",
-  "subcontractorOnly": "下請けのみ（自分は稼働なし）",
+  "subcontractorOnly": "下請け / 経費 / 雑費のみ（自分は稼働なし）",
   "startTime": "開始",
   "endTime": "終了",
   "break": "休憩",

@@ -135,8 +135,8 @@ async function main() {
     // ── 通常トリガー（state 非空）──
     const fired = []
     const newOf = (arr) => arr.filter((r) => !state.has(keyOf(r)))
-    // 1) 🧱土台×レビュー待ち（即時・個別）
-    for (const it of newOf(dodaiReview)) { notify('🧱土台', it.title, `🧱土台「${it.title}」レビュー待ち。後続が依存。バッチに溜めず今レビュー推奨。`); state.add(keyOf(it)); fired.push(keyOf(it)) }
+    // 1) 🧱土台×レビュー待ち（即時・個別・要約＋本文リンク／🧪人力チェック手順は本文）
+    for (const it of newOf(dodaiReview)) { notify('🧱土台', it.title, `🧱土台「${it.title}」レビュー待ち。後続が依存。バッチに溜めず今レビュー推奨。🧪人力チェック手順は本文: ${it.url}`); state.add(keyOf(it)); fired.push(keyOf(it)) }
     // max-age flush: 未通知の保留(レビュー待ち＋要回答)の最古経過 > MAX_AGE_H なら閾値未満でもflush
     const now = Date.now()
     const elapsedH = (it) => it.lastEdited ? (now - Date.parse(it.lastEdited)) / 3.6e6 : 0
@@ -148,15 +148,21 @@ async function main() {
     const leaf = review.filter((r) => !r.dodai); const newLeaf = newOf(leaf); const c = riskCounts(leaf)
     if ((leaf.length >= REVIEW_BATCH_THRESH || c.red >= 3 || maxAgeFlush) && newLeaf.length) {
       const why = (maxAgeFlush && leaf.length < REVIEW_BATCH_THRESH && c.red < 3) ? `（max-age flush: 最古${oldestH.toFixed(1)}h>${MAX_AGE_H}h）` : ''
-      notify('レビュー可', 'レビューバッチ', `レビュー可: 🔴${c.red}/🟡${c.yel}/🟢${c.grn}（土台以外${leaf.length}件・新規${newLeaf.length}）${why}。要対応ビューへ。`)
+      notify('レビュー可', 'レビューバッチ', `レビュー可: 🔴${c.red}/🟡${c.yel}/🟢${c.grn}（土台以外${leaf.length}件・新規${newLeaf.length}）${why}。要対応ビューへ（各本文に🧪人力チェック手順）。`)
       for (const it of newLeaf) { state.add(keyOf(it)); fired.push(keyOf(it)) }
     }
-    // 3) shipウィンドウ（新規分のみ）
+    // 3) エピックship（エピック単位・リスク内訳付き・新規分のみ）
+    //    あるエピックの actionable が全て本番待ち＝ship可。🔴高・🧱土台は本番レビュー対象、🟢はノールック可。
     const newShip = newOf(shipPages)
     if (newShip.length) {
-      const epics = [...new Set(newShip.map((r) => r.epic))].join('・')
-      notify('shipクラスタ', epics, `shipクラスタ「${epics}」準備OK（${newShip.length}件が本番待ち）。env前提は各📋ダイジェスト記載を本番で確認のうえ push/ship 可。`)
-      for (const it of newShip) { state.add(keyOf(it)); fired.push(keyOf(it)) }
+      const shipByEpic = {}
+      for (const it of newShip) (shipByEpic[it.epic] ??= []).push(it)
+      for (const [epic, items] of Object.entries(shipByEpic)) {
+        const cc = riskCounts(items)
+        const dodaiN = items.filter((r) => r.dodai).length
+        notify('shipクラスタ', epic, `📦エピック「${epic}」ship可: ${items.length}件(🔴${cc.red}/🧱${dodaiN}/🟢${cc.grn})。🔴高・🧱土台は本番レビューしてからship／🟢はノールック可。各本文の🧪人力チェック手順でスモーク・env前提を本番確認。`)
+        for (const it of items) { state.add(keyOf(it)); fired.push(keyOf(it)) }
+      }
     }
     // 4) 要回答（業務判断）まとめて1通（新規分があれば）
     const newAns = newOf(answers)
