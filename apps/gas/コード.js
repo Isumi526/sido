@@ -647,7 +647,25 @@ function getSubmitterIds(date) {
 /**
  * 前日分の未提出者にLINEリマインドを送る（毎朝8時トリガー）
  */
+// ⚠ 廃止: 旧GAS版の日報リマインド（毎朝8時）。Supabase版 daily-reminder（毎時・アカウント別
+//   reminder_time）へ移行済み。テスト用トリガーが個人LINEへ毎朝届くため無効化する。
+//   clasp push 後はこの空動作によりメッセージ送信が止まる（既存トリガーが残っても無害）。
+//   残った毎朝8時トリガーは removeDailyReminderTrigger() を GASエディタで一度実行して掃除する。
 function sendDailyReminder() {
+  Logger.log('sendDailyReminder は廃止済み（Supabase版 daily-reminder に移行）。送信スキップ。');
+  return;
+}
+
+// 旧 sendDailyReminder の時間主導トリガーを削除（GASエディタで一度だけ実行）。
+function removeDailyReminderTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === 'sendDailyReminder') ScriptApp.deleteTrigger(t);
+  });
+  Logger.log('旧 sendDailyReminder トリガーを削除しました。');
+}
+
+// 旧実装（参照用・未使用）。トリガーは上の no-op を呼ぶため送信されない。
+function _sendDailyReminder_DISABLED() {
   try {
     var props = PropertiesService.getScriptProperties();
     var knownRaw = props.getProperty('known_users');
