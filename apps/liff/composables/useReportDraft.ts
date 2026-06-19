@@ -82,5 +82,50 @@ export const useReportDraft = () => {
     try { window.localStorage.removeItem(keyOf(userId, date)) } catch { /* ignore */ }
   }
 
-  return { save, load, clear }
+  // ── IndexedDB（File/Blob 保存用・localStorage は文字列のみのため画像は入らない）──
+  //  領収書画像（File[]）を「パス→File[]」マップで保存し、復元時にフォームへ再注入する。
+  const IDB_NAME = 'sido-report-draft'
+  const IDB_STORE = 'files'
+  function idbOpen(): Promise<IDBDatabase> | null {
+    if (typeof indexedDB === 'undefined') return null
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(IDB_NAME, 1)
+      req.onupgradeneeded = () => {
+        if (!req.result.objectStoreNames.contains(IDB_STORE)) req.result.createObjectStore(IDB_STORE)
+      }
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error)
+    })
+  }
+  async function idbRun<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore) => IDBRequest | null): Promise<T | null> {
+    const p = idbOpen(); if (!p) return null
+    const db = await p
+    try {
+      return await new Promise<T | null>((resolve, reject) => {
+        const tx = db.transaction(IDB_STORE, mode)
+        const req = fn(tx.objectStore(IDB_STORE))
+        tx.oncomplete = () => resolve((req && (req as IDBRequest).result) ?? null)
+        tx.onerror = () => reject(tx.error)
+        tx.onabort = () => reject(tx.error)
+      })
+    } finally { db.close() }
+  }
+
+  // files: { [path]: File[] }（path 例: "0::vehicleFiles" / "0::parkings::1"）。
+  async function saveFiles(userId: string, date: string, files: Record<string, File[]>): Promise<void> {
+    if (!userId || !date) return
+    try { await idbRun('readwrite', (s) => s.put(files, keyOf(userId, date))) }
+    catch (e) { console.warn('[reportDraft] saveFiles failed:', e instanceof Error ? e.message : e) }
+  }
+  async function loadFiles(userId: string, date: string): Promise<Record<string, File[]> | null> {
+    if (!userId || !date) return null
+    try { return await idbRun<Record<string, File[]>>('readonly', (s) => s.get(keyOf(userId, date))) }
+    catch { return null }
+  }
+  async function clearFiles(userId: string, date: string): Promise<void> {
+    if (!userId || !date) return
+    try { await idbRun('readwrite', (s) => s.delete(keyOf(userId, date))) } catch { /* ignore */ }
+  }
+
+  return { save, load, clear, saveFiles, loadFiles, clearFiles }
 }

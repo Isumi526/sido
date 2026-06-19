@@ -995,7 +995,8 @@ onMounted(async () => {
     // 'NOT_CONFIGURED' の場合はデフォルト（今日）のまま
   }
 
-  // 新規モードのみ: 同じ日付の下書きがあれば復元（編集/代理は対象外・File[]は再添付）
+  // 新規モードのみ: 同じ日付の下書きがあれば復元（編集/代理は対象外）。
+  //  テキスト/選択は localStorage、領収書画像(File[])は IndexedDB から復元する。
   if (!isEditMode.value && !proxy.proxyTarget.value && userId) {
     const d = draft.load(userId, report.form.value.date)
     if (d && d.form) {
@@ -1004,6 +1005,9 @@ onMounted(async () => {
         report.form.value = d.form
         if (d.isWorkingStr) isWorkingStr.value = d.isWorkingStr as 'working' | 'paid_leave' | 'off'
         if (Array.isArray(d.siteUsage) && d.siteUsage.length) siteUsage.value = d.siteUsage
+        // 画像（File[]）を IndexedDB から復元してフォームへ再注入
+        const fm = await draft.loadFiles(userId, report.form.value.date)
+        if (fm) applyDraftFiles(report.form.value, fm)
         draftRestored.value = true
       } finally {
         draftRestoring = false
@@ -1024,11 +1028,14 @@ watch(
     draftSaveTimer = setTimeout(() => {
       const uid = liff.profile.value?.userId
       if (uid && draftEligible()) {
-        draft.save(uid, report.form.value.date, {
+        const date = report.form.value.date
+        draft.save(uid, date, {
           form:         report.form.value,
           isWorkingStr: isWorkingStr.value,
           siteUsage:    siteUsage.value,
         })
+        // 画像（File[]）は IndexedDB へ（fire-and-forget）
+        draft.saveFiles(uid, date, collectDraftFiles(report.form.value))
       }
     }, 800)
   },
@@ -1039,15 +1046,50 @@ watch(
 watch(() => report.submitted.value, (v) => {
   if (!v) return
   const uid = liff.profile.value?.userId
-  if (uid) draft.clear(uid, report.form.value.date)
+  if (uid) { draft.clear(uid, report.form.value.date); draft.clearFiles(uid, report.form.value.date) }
   draftRestored.value = false
 })
+
+// フォームから「パス→File[]」マップを収集（IndexedDB保存用）
+const DRAFT_FORM_FILE_KEYS = ['vehicleFiles', 'hotelFiles', 'leopalaceFiles', 'otherFiles', 'entertainmentFiles', 'garbagePhotos']
+const DRAFT_PER_ITEM = ['parkings', 'highways', 'trains', 'others', 'entertainments']
+function collectDraftFiles(form: any): Record<string, File[]> {
+  const map: Record<string, File[]> = {}
+  ;(form?.sites ?? []).forEach((site: any, si: number) => {
+    const exp = site?.expenses || {}
+    // ※ reactive Proxy 配列のままだと IndexedDB の structured-clone で失敗するため、
+    //   プレーン配列（Array.from）にアンラップして渡す。File 自体は非reactive。
+    for (const k of DRAFT_FORM_FILE_KEYS) {
+      if (Array.isArray(exp[k]) && exp[k].length) map[`${si}::${k}`] = Array.from(exp[k])
+    }
+    for (const arrKey of DRAFT_PER_ITEM) {
+      ;(exp[arrKey] ?? []).forEach((item: any, ii: number) => {
+        if (Array.isArray(item?.files) && item.files.length) map[`${si}::${arrKey}::${ii}`] = Array.from(item.files)
+      })
+    }
+  })
+  return map
+}
+// 収集したマップを復元後フォームの同じパスへ再注入
+function applyDraftFiles(form: any, map: Record<string, File[]>) {
+  for (const [path, files] of Object.entries(map || {})) {
+    const parts = path.split('::')
+    const site = form?.sites?.[Number(parts[0])]
+    if (!site?.expenses) continue
+    if (parts.length === 2) {
+      site.expenses[parts[1]] = files
+    } else {
+      const item = site.expenses[parts[1]]?.[Number(parts[2])]
+      if (item) item.files = files
+    }
+  }
+}
 
 // バナーから「破棄して新規入力」: 下書き削除＋当日付のまま初期化
 function discardDraft() {
   const uid = liff.profile.value?.userId
   const curDate = report.form.value.date
-  if (uid) draft.clear(uid, curDate)
+  if (uid) { draft.clear(uid, curDate); draft.clearFiles(uid, curDate) }
   draftRestoring = true
   report.reset()
   report.form.value.date = curDate
