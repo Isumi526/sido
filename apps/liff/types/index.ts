@@ -133,6 +133,8 @@ export interface MasterData {
   workers: { id?: string; name: string; unitPrice: number; role: WorkerRole }[]
   subcontractors: string[]
   vehicles: string[]
+  // 現場名 → 紐づく元請け名（未紐付けは未収録）。日報の現場絞り込みに使う（任意・後方互換）。
+  siteContractors?: Record<string, string>
 }
 
 export interface ApiResponse<T = void> {

@@ -101,7 +101,7 @@
           <Field :label="$t('report.siteName')">
             <select v-model="site.siteName" class="select" required>
               <option value="">{{ $t('common.select') }}</option>
-              <option v-for="name in master.siteNames.value" :key="name" :value="name">{{ name }}</option>
+              <option v-for="name in filteredSiteNames(site.contractorName)" :key="name" :value="name">{{ name }}</option>
               <option value="__other__">{{ $t('report.addNewSite') }}</option>
             </select>
             <input
@@ -586,6 +586,17 @@ const { t } = useI18n()
 // 新規現場の手入力時、既存に似た現場があれば重複候補を返す（重複登録の気づき）
 function siteSimilar(name?: string): string[] {
   return findSimilarSiteNames(name ?? '', master.siteNames.value)
+}
+
+// 現場プルダウン: 元請けが選択されていれば、その元請けに紐づく現場だけに絞り込む。
+//  紐づく現場が0件 or 元請け未選択/その他 なら全現場を出す（後方互換・AC3）。
+function filteredSiteNames(contractorName?: string): string[] {
+  const all = master.siteNames.value
+  const cn = (contractorName ?? '').trim()
+  if (!cn || cn === '__other__') return all
+  const map = master.siteContractors.value
+  const linked = all.filter((n) => map[n] === cn)
+  return linked.length ? linked : all
 }
 
 // クエリ（?edit=YYYY-MM-DD）が変わったらページを再マウントさせ、編集/新規の

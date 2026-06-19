@@ -48,6 +48,13 @@
           <input v-model="modal.name_kana" class="input" placeholder="例：びーえるえいちなごや" />
         </div>
         <div class="field">
+          <label>元請け（日報の現場絞り込みに使用・任意）</label>
+          <select v-model="modal.contractor_id" class="input">
+            <option :value="null">未紐付け</option>
+            <option v-for="c in contractors" :key="c.id" :value="c.id">{{ c.name }}</option>
+          </select>
+        </div>
+        <div class="field">
           <label>場所 / 住所</label>
           <input v-model="modal.location" class="input" placeholder="例：名古屋市〇〇区…" />
         </div>
@@ -121,11 +128,13 @@ const router = useRouter()
 type Site = {
   id: string; name: string; name_kana: string | null; active: boolean
   location: string | null; construction_type: string | null; construction_details: string | null; memo: string | null
+  contractor_id: string | null   // 紐づく元請け（任意）
 }
 type Att = { id: string; site_id: string; kind: string; path: string; name: string | null; url?: string | null }
 
 const BUCKET = 'site-attachments'
 const sites     = ref<Site[]>([])
+const contractors = ref<{ id: string; name: string }[]>([])   // 元請けマスタ（紐付け用）
 const modal     = ref<Partial<Site> | null>(null)
 const saving    = ref(false)
 const saveError = ref('')
@@ -158,16 +167,22 @@ const similarSites = computed(() =>
 
 async function load() {
   const accountId = await getAccountId()
-  const { data } = await supabase.from('sites')
-    .select('id, name, name_kana, active, location, construction_type, construction_details, memo')
-    .eq('account_id', accountId)
-    .order('name_kana', { nullsFirst: false })
-    .order('name')
+  const [{ data }, { data: cons }] = await Promise.all([
+    supabase.from('sites')
+      .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id')
+      .eq('account_id', accountId)
+      .order('name_kana', { nullsFirst: false })
+      .order('name'),
+    supabase.from('contractors').select('id, name').eq('account_id', accountId).eq('active', true).order('sort_order').order('name'),
+  ])
   sites.value = (data ?? []) as Site[]
+  contractors.value = (cons ?? []) as { id: string; name: string }[]
 }
 onMounted(load)
 
-function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '' }; attachments.value = []; saveError.value = '' }
+const contractorName = (id: string | null | undefined) => contractors.value.find((c) => c.id === id)?.name ?? '—'
+
+function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null }; attachments.value = []; saveError.value = '' }
 async function openEdit(s: Site) { modal.value = { ...s }; saveError.value = ''; await loadAttachments(s.id) }
 
 async function save() {
@@ -179,6 +194,7 @@ async function save() {
       name: m.name!.trim(), name_kana: m.name_kana?.trim() || null,
       location: m.location?.trim() || null, construction_type: m.construction_type?.trim() || null,
       construction_details: m.construction_details?.trim() || null, memo: m.memo?.trim() || null,
+      contractor_id: m.contractor_id || null,
     }
     if (m.id) {
       await supabase.from('sites').update(payload).eq('id', m.id)
