@@ -37,6 +37,12 @@
           {{ $t('report.editModeBanner') }}
         </div>
 
+        <!-- 下書き復元バナー（新規入力中・自動保存を復元した時のみ）-->
+        <div v-if="draftRestored && !isEditMode" class="draft-banner">
+          <span class="draft-banner-text">📝 {{ $t('report.draftRestored') }}</span>
+          <button type="button" class="draft-discard" @click="discardDraft">{{ $t('report.draftDiscard') }}</button>
+        </div>
+
         <!-- 日付 -->
         <FormSection num="01" :title="$t('report.dateSection')">
           <div class="date-fixed">{{ report.form.value.date }}</div>
@@ -618,6 +624,15 @@ const isDev = computed(() => config.public.appEnv === 'development' || liff.isTe
 
 const initializing = ref(true)
 
+// ── 下書き自動保存／復元（新規入力のみ・編集/代理では使わない）──
+const draft = useReportDraft()
+const draftRestored = ref(false)   // 復元バナー表示
+let draftRestoring = false         // 復元適用中は watcher の保存を抑止
+// 新規入力の下書き対象か（編集/代理モードや初期化中・送信済みは対象外）
+const draftEligible = () =>
+  !initializing.value && !isEditMode.value && !proxy.proxyTarget.value
+  && !report.submitted.value && !!liff.profile.value?.userId
+
 // 編集モード
 const forceErrorOnSubmit = ref(false)
 const omissionConfirmed  = ref(false)  // 送信前の記入忘れ確認（新規送信時のみ。チェックで送信を有効化）
@@ -980,8 +995,68 @@ onMounted(async () => {
     // 'NOT_CONFIGURED' の場合はデフォルト（今日）のまま
   }
 
+  // 新規モードのみ: 同じ日付の下書きがあれば復元（編集/代理は対象外・File[]は再添付）
+  if (!isEditMode.value && !proxy.proxyTarget.value && userId) {
+    const d = draft.load(userId, report.form.value.date)
+    if (d && d.form) {
+      draftRestoring = true
+      try {
+        report.form.value = d.form
+        if (d.isWorkingStr) isWorkingStr.value = d.isWorkingStr as 'working' | 'paid_leave' | 'off'
+        if (Array.isArray(d.siteUsage) && d.siteUsage.length) siteUsage.value = d.siteUsage
+        draftRestored.value = true
+      } finally {
+        draftRestoring = false
+      }
+    }
+  }
+
   initializing.value = false
 })
+
+// ── 下書き自動保存（新規入力中・800ms デバウンス・送信ロジックには触れない）──
+let draftSaveTimer: ReturnType<typeof setTimeout> | null = null
+watch(
+  () => [report.form.value, isWorkingStr.value, siteUsage.value],
+  () => {
+    if (draftRestoring || !draftEligible()) return
+    if (draftSaveTimer) clearTimeout(draftSaveTimer)
+    draftSaveTimer = setTimeout(() => {
+      const uid = liff.profile.value?.userId
+      if (uid && draftEligible()) {
+        draft.save(uid, report.form.value.date, {
+          form:         report.form.value,
+          isWorkingStr: isWorkingStr.value,
+          siteUsage:    siteUsage.value,
+        })
+      }
+    }, 800)
+  },
+  { deep: true },
+)
+
+// 送信成功で下書き破棄（新規送信の成功＝report.submitted）
+watch(() => report.submitted.value, (v) => {
+  if (!v) return
+  const uid = liff.profile.value?.userId
+  if (uid) draft.clear(uid, report.form.value.date)
+  draftRestored.value = false
+})
+
+// バナーから「破棄して新規入力」: 下書き削除＋当日付のまま初期化
+function discardDraft() {
+  const uid = liff.profile.value?.userId
+  const curDate = report.form.value.date
+  if (uid) draft.clear(uid, curDate)
+  draftRestoring = true
+  report.reset()
+  report.form.value.date = curDate
+  isWorkingStr.value = 'working'
+  siteUsage.value = [createUsage()]
+  initWorkers()
+  draftRestored.value = false
+  nextTick(() => { draftRestoring = false })
+}
 
 // ── LINE通知プレビュー ──────────────────────────────────────
 const linePreview = computed(() => {
@@ -1952,6 +2027,33 @@ html, body {
   padding: 10px 14px;
   font-size: 12px;
   font-weight: 600;
+}
+
+/* 下書き復元バナー */
+.draft-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #e8f5e9;
+  border: 1px solid #06C755;
+  color: #1b5e20;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.draft-banner-text { line-height: 1.5; }
+.draft-discard {
+  flex-shrink: 0;
+  background: #fff;
+  border: 1px solid #06C755;
+  color: #06C755;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 /* ── LINEプレビュー ── */
