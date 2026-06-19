@@ -71,12 +71,18 @@ function jstYesterday(): string {
   jst.setDate(jst.getDate() - 1)
   return `${jst.getUTCFullYear()}-${String(jst.getUTCMonth() + 1).padStart(2, '0')}-${String(jst.getUTCDate()).padStart(2, '0')}`
 }
+// リマインド作成時刻（JST・"M/D HH:MM"）。「いつ時点のものか」を時刻まで示す。
+function jstNowLabel(): string {
+  const jst = new Date(Date.now() + 9 * 60 * 60 * 1000)
+  return `${jst.getUTCMonth() + 1}/${jst.getUTCDate()} ${String(jst.getUTCHours()).padStart(2, '0')}:${String(jst.getUTCMinutes()).padStart(2, '0')}`
+}
 
 const loading   = ref(true)
 const notice    = ref('')
 const entries   = ref<Entry[]>([])
 const startDate = ref<string | null>(null)
 const yesterday = ref<string>(jstYesterday())
+const generatedAt = ref<string>(jstNowLabel())   // リマインド作成時刻（コピー文面に時刻を込める）
 const copied    = ref(false)
 
 const rangeLabel = computed(() =>
@@ -86,8 +92,7 @@ const rangeLabel = computed(() =>
 const fullText = computed(() => {
   const lines = [
     '📋 日報未送信リマインド（敬称略）',
-    `📅 ${fmtDate(yesterday.value)} 時点`,
-    '※このメッセージをグループに転送してください',
+    `📅 ${fmtDate(yesterday.value)} 時点（${generatedAt.value} 現在）`,
     '──────────',
   ]
   for (const e of entries.value) {
@@ -106,6 +111,7 @@ async function load() {
     const accountId = await getAccountId()
     const yest = jstYesterday()
     yesterday.value = yest
+    generatedAt.value = jstNowLabel()   // 読み込み（生成）時刻を時点として記録
 
     const { data: settingRows } = await supabase
       .from('settings').select('key, value')
