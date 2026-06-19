@@ -14,7 +14,7 @@
     <div v-else class="table-wrap">
       <table class="table">
         <thead><tr>
-          <th>注文書番号</th><th>受注者</th><th>現場</th><th>発行日</th><th class="num">合計金額</th><th>メール</th><th>PDF</th><th></th>
+          <th>注文書番号</th><th>受注者</th><th>現場</th><th>発行日</th><th class="num">合計金額</th><th>メール</th><th>承諾</th><th>PDF</th><th></th>
         </tr></thead>
         <tbody>
           <tr v-for="o in rows" :key="o.id">
@@ -27,6 +27,12 @@
               <span v-if="o.email_sent_at" class="badge ok">送信済み</span>
               <span v-else class="badge">未送信</span>
             </td>
+            <td>
+              <button v-if="acceptances[o.id]" class="badge ok link" @click="openTrail(o)" title="同意証跡を表示">
+                承諾済 <span class="badge-date">{{ shortDate(acceptances[o.id].accepted_at) }}</span>
+              </button>
+              <span v-else class="badge">未承諾</span>
+            </td>
             <td><a v-if="o.pdf_path" :href="pdfUrl(o.pdf_path)" target="_blank" rel="noopener" class="pdf-link">📄 PDF</a><span v-else class="muted">—</span></td>
             <td class="actions">
               <button class="btn-edit" :disabled="busyId === o.id" @click="resendEmail(o)">{{ busyId === o.id ? '送信中…' : '再送' }}</button>
@@ -38,7 +44,7 @@
     </div>
 
     <!-- 発行モーダル -->
-    <div v-if="modal" class="modal-overlay" @click.self="modal = null">
+    <div v-if="modal" class="modal-overlay" @click.self="tryCloseIssue()">
       <div class="modal wide">
         <h2>注文書を発行</h2>
 
@@ -146,7 +152,7 @@
 
         <div class="modal-actions">
           <button class="btn-save" :disabled="issuing || !canIssue" @click="issue">{{ issuing ? '発行中…' : '発行してメール送信' }}</button>
-          <button class="btn-cancel" @click="modal = null">キャンセル</button>
+          <button class="btn-cancel" @click="tryCloseIssue()">キャンセル</button>
         </div>
         <p v-if="issueMsg" :class="issueOk ? 'ok-msg' : 'error'">{{ issueMsg }}</p>
       </div>
@@ -165,6 +171,28 @@
         <div class="modal-actions">
           <button class="btn-save" :disabled="savingDefaults" @click="saveDefaults">{{ savingDefaults ? '保存中…' : '保存' }}</button>
           <button class="btn-cancel" @click="defaultsModal = false">キャンセル</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 同意証跡モーダル -->
+    <div v-if="trailModal" class="modal-overlay" @click.self="trailModal = null">
+      <div class="modal">
+        <h2>承諾の証跡</h2>
+        <p class="hint">注文書「{{ trailModal.order.order_number }}」の業者承諾記録です。</p>
+        <dl class="trail">
+          <div class="trail-row"><dt>承諾日時</dt><dd>{{ fmtDateTime(trailModal.acc.accepted_at) }}</dd></div>
+          <div class="trail-row"><dt>署名者</dt><dd>{{ trailModal.acc.signer_name || '（未入力）' }}</dd></div>
+          <div class="trail-row"><dt>IPアドレス</dt><dd class="mono">{{ trailModal.acc.accepted_ip || '—' }}</dd></div>
+          <div class="trail-row"><dt>PDFハッシュ</dt><dd class="mono hash">{{ trailModal.acc.pdf_hash || '（PDF未生成）' }}</dd></div>
+          <div v-if="trailModal.acc.user_agent" class="trail-row"><dt>端末</dt><dd class="ua">{{ trailModal.acc.user_agent }}</dd></div>
+        </dl>
+        <div v-if="trailModal.acc.signature_path" class="sig-view">
+          <div class="sig-view-label">署名</div>
+          <img :src="pdfUrl(trailModal.acc.signature_path)" alt="署名" class="sig-img" />
+        </div>
+        <div class="modal-actions">
+          <button class="btn-cancel" @click="trailModal = null">閉じる</button>
         </div>
       </div>
     </div>
@@ -201,13 +229,19 @@ const BUILTIN_DEFAULTS = {
 type PO = {
   id: string; order_number: string; order_date: string | null; total_amount: number | null
   site_name: string | null; vendor_name: string | null; vendor_contact_name: string | null
-  pdf_path: string | null; email_sent_at: string | null; status: string
+  pdf_path: string | null; email_sent_at: string | null; status: string; accepted_at: string | null
+}
+type Acceptance = {
+  purchase_order_id: string; accepted_at: string; accepted_ip: string | null
+  user_agent: string | null; signer_name: string | null; signature_path: string | null; pdf_hash: string | null
 }
 type Estimate = { id: string; subcontractor_id: string | null; site_id: string | null; estimate_number: string; total_amount: number | null }
 type Opt = { id: string; name: string }
 type Contact = { id: string; subcontractor_id: string; name: string; email: string | null; phone: string | null }
 
 const rows    = ref<PO[]>([])
+const acceptances = ref<Record<string, Acceptance>>({})   // purchase_order_id → 承諾証跡
+const trailModal  = ref<{ order: PO; acc: Acceptance } | null>(null)
 const estimates = ref<Estimate[]>([])
 const subs    = ref<Opt[]>([])
 const sites   = ref<Opt[]>([])
@@ -244,7 +278,7 @@ async function load() {
   accountName.value = (await getAccountName()) || ''
   const [{ data: poRows }, { data: est }, { data: su }, { data: si }, { data: co }] = await Promise.all([
     supabase.from('purchase_orders')
-      .select('id, estimate_id, order_number, order_date, total_amount, site_name, vendor_name, vendor_contact_name, pdf_path, email_sent_at, status')
+      .select('id, estimate_id, order_number, order_date, total_amount, site_name, vendor_name, vendor_contact_name, pdf_path, email_sent_at, status, accepted_at')
       .eq('account_id', accountId).eq('is_deleted', false).order('order_number', { ascending: false }),
     supabase.from('estimates').select('id, subcontractor_id, site_id, estimate_number, total_amount')
       .eq('account_id', accountId).eq('is_deleted', false).order('estimate_number', { ascending: false }),
@@ -254,6 +288,15 @@ async function load() {
       .eq('account_id', accountId).eq('is_deleted', false).order('sort_order'),
   ])
   rows.value = (poRows ?? []) as any[]
+  // 承諾証跡を取得（表示中の注文書分）。RLSで自account分のみ。
+  const orderIds = rows.value.map((r) => r.id)
+  acceptances.value = {}
+  if (orderIds.length) {
+    const { data: accs } = await supabase.from('purchase_order_acceptances')
+      .select('purchase_order_id, accepted_at, accepted_ip, user_agent, signer_name, signature_path, pdf_hash')
+      .in('purchase_order_id', orderIds)
+    for (const a of (accs ?? []) as Acceptance[]) acceptances.value[a.purchase_order_id] = a
+  }
   estimates.value = (est ?? []) as Estimate[]
   subs.value = (su ?? []) as Opt[]
   sites.value = (si ?? []) as Opt[]
@@ -296,6 +339,22 @@ async function saveDefaults() {
 }
 
 const today = () => new Date().toISOString().slice(0, 10)
+
+function shortDate(iso: string) { try { return new Date(iso).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' }) } catch { return '' } }
+function fmtDateTime(iso: string) { try { return new Date(iso).toLocaleString('ja-JP') } catch { return iso } }
+function openTrail(o: PO) {
+  const acc = acceptances.value[o.id]
+  if (acc) trailModal.value = { order: o, acc }
+}
+
+// 発行モーダルを閉じる前に、入力途中なら確認（誤クリック/誤キャンセルで入力が飛ぶのを防ぐ）。
+// 「入力途中」= 見積を選択済み（＝詳細フィールドを触り得る状態）。未選択なら破棄しても損失なしで即閉じ。
+function tryCloseIssue() {
+  if (!modal.value) return
+  const dirty = !!modal.value.estimate_id
+  if (dirty && !window.confirm('入力中の内容が破棄されます。発行をやめて閉じますか？')) return
+  modal.value = null
+}
 
 function openIssue() {
   issueMsg.value = ''
@@ -449,6 +508,18 @@ async function remove(o: PO) {
 .sub { color: #999; font-size: 12px; }
 .badge { font-size: 11px; padding: 3px 8px; border-radius: 10px; background: #f0f0f0; color: #888; font-weight: 700; }
 .badge.ok { background: #e6f9ef; color: #06A050; }
+.badge.link { border: none; cursor: pointer; font-family: inherit; }
+.badge.link:hover { background: #d6f5e3; }
+.badge-date { font-weight: 600; opacity: .8; }
+.trail { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+.trail-row { display: flex; gap: 12px; font-size: 13px; }
+.trail-row dt { width: 88px; flex-shrink: 0; color: #888; font-weight: 700; }
+.trail-row dd { margin: 0; color: #222; word-break: break-all; }
+.trail-row dd.hash { font-size: 11px; }
+.trail-row dd.ua { font-size: 11px; color: #777; }
+.sig-view { margin-top: 8px; }
+.sig-view-label { font-size: 12px; font-weight: 700; color: #888; margin-bottom: 6px; }
+.sig-img { width: 100%; max-height: 200px; object-fit: contain; background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; }
 .actions { display: flex; gap: 6px; }
 .btn-edit { background: #f0f0f0; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
 .btn-edit:disabled { opacity: .5; }
@@ -475,7 +546,7 @@ async function remove(o: PO) {
 
 /* プレビュー（PDF生成元） */
 .preview-label { font-size: 12px; font-weight: 700; color: #888; margin-top: 6px; }
-.preview-scroll { background: #eceff1; border-radius: 8px; padding: 12px; overflow-x: auto; }
+.preview-scroll { background: #eceff1; border-radius: 8px; padding: 12px; overflow: auto; max-height: 65vh; min-height: 360px; flex-shrink: 0; resize: vertical; }
 .po-doc { width: 640px; background: #fff; padding: 36px 40px; box-sizing: border-box; color: #111; font-size: 13px; line-height: 1.7; margin: 0 auto; }
 .po-head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #111; padding-bottom: 8px; }
 .po-title { font-size: 26px; font-weight: 800; letter-spacing: 8px; }

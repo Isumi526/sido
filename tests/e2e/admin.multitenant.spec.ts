@@ -74,7 +74,8 @@ test('app_metadata でテナント解決：ログインID≠slug でも自テナ
   await page.evaluate(() => window.localStorage.clear())
   await page.goto('/login')
 
-  await page.fill('input[placeholder="ID"]', LOGIN)
+  // login.vue の placeholder は「ID（@なし）または メール」。前方一致で陳腐化に強くする。
+  await page.fill('input[placeholder^="ID"]', LOGIN)
   await page.fill('input[type="password"]', ADMIN_LOGIN_PASS)
   await page.click('button[type="submit"]')
 
