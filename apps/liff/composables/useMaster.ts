@@ -63,8 +63,8 @@ export const useMaster = () => {
     if (!accountId) throw new Error('account not found')
 
     const [sitesRes, contractorsRes, workersRes, subsRes, vehiclesRes] = await Promise.all([
-      supabase.from('sites').select('name').eq('active', true).eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
-      supabase.from('contractors').select('name').eq('active', true).eq('account_id', accountId).order('sort_order'),
+      supabase.from('sites').select('name, contractor_id').eq('active', true).eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
+      supabase.from('contractors').select('id, name').eq('active', true).eq('account_id', accountId).order('sort_order'),
       supabase.from('workers').select('id, name, role, unit_price').eq('active', true).eq('account_id', accountId).order('sort_order'),
       supabase.from('subcontractors').select('name').eq('active', true).eq('account_id', accountId).order('sort_order'),
       supabase.from('vehicles').select('name').eq('active', true).eq('account_id', accountId).order('sort_order'),
@@ -72,12 +72,20 @@ export const useMaster = () => {
 
     if (workersRes.error) throw workersRes.error
 
+    // 現場名 → 元請け名 のマップ（紐付け済みの現場のみ）。日報の現場絞り込みに使う。
+    const contractorById = Object.fromEntries((contractorsRes.data ?? []).map((c: any) => [c.id, c.name]))
+    const siteContractors: Record<string, string> = {}
+    for (const s of (sitesRes.data ?? []) as any[]) {
+      if (s.contractor_id && contractorById[s.contractor_id]) siteContractors[s.name] = contractorById[s.contractor_id]
+    }
+
     const data: MasterData = {
       sites:          (sitesRes.data       ?? []).map(r => r.name),
       contractors:    (contractorsRes.data ?? []).map(r => r.name),
       workers:        (workersRes.data     ?? []).map(r => ({ id: r.id, name: r.name, role: r.role as 'factory' | 'site', unitPrice: r.unit_price })),
       subcontractors: (subsRes.data        ?? []).map(r => r.name),
       vehicles:       (vehiclesRes.data    ?? []).map(r => r.name),
+      siteContractors,
     }
 
     master.value = data
@@ -161,6 +169,7 @@ export const useMaster = () => {
     saveSub,
     // sites は Supabase 側で name_kana 昇順(null最後)→name に整列済みのため、その順序を保持する（50音順）
     siteNames:           computed(() => master.value.sites.slice()),
+    siteContractors:     computed(() => master.value.siteContractors ?? {}),
     contractorNames:     computed(() => (master.value.contractors ?? []).slice().sort((a, b) => a.localeCompare(b, 'ja'))),
     workerNames:         computed(() => master.value.workers.map(w => w.name).slice().sort((a, b) => a.localeCompare(b, 'ja'))),
     factoryWorkerNames:  computed(() => { const ws = master.value.workers; const hasRole = ws.some(w => w.role); return ws.filter(w => !hasRole || w.role === 'factory').map(w => w.name).slice().sort((a, b) => a.localeCompare(b, 'ja')) }),
