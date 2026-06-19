@@ -1,5 +1,7 @@
 {
   "subtitle": "日報",
+  "draftRestored": "入力途中の下書きを復元しました（領収書の画像は再添付してください）",
+  "draftDiscard": "破棄して新規入力",
   "allSubmittedTitle": "送信済みです",
   "allSubmittedText": "今日までの日報はすべて送信済みです",
   "viewHistory": "日報履歴を見る",
