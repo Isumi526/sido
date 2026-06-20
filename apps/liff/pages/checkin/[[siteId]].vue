@@ -391,22 +391,22 @@ onMounted(async () => {
     .from('workers').select('name').eq('id', me.worker_id).maybeSingle()
 
   // 代理対象を取得し、選択肢リストを組み立て（先頭は本人）
-  await proxy.fetchProxyTargets(userData.worker_id)
+  await proxy.fetchProxyTargets(me.worker_id)
   const proxyTargets = proxy.proxyTargets.value
   targets.value = [
-    { id: userData.worker_id, name: myWorker?.name ?? t('checkin.defaultSelfName'), isSelf: true },
+    { id: me.worker_id, name: myWorker?.name ?? t('checkin.defaultSelfName'), isSelf: true },
     ...proxyTargets.map(p => ({ id: p.id, name: p.name, isSelf: false })),
   ]
 
   // デフォルト選択: ホームで設定済みの代理対象があればそれ、なければ本人
-  selectedId.value = proxy.proxyTarget.value?.id ?? userData.worker_id
+  selectedId.value = proxy.proxyTarget.value?.id ?? me.worker_id
 
   // 代理対象がいるなら選択画面、いなければ本人で直行
   if (proxyTargets.length > 0) {
     phase.value = 'select-target'
     return
   }
-  await loadForTarget(userData.worker_id)
+  await loadForTarget(me.worker_id)
 })
 
 // ── 対象作業員を選択 ───────────────────────────────────────────
