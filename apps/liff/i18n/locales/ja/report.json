@@ -1,5 +1,7 @@
 {
   "subtitle": "日報",
+  "draftRestored": "入力途中の下書きを復元しました（添付画像も含む）",
+  "draftDiscard": "破棄して新規入力",
   "allSubmittedTitle": "送信済みです",
   "allSubmittedText": "今日までの日報はすべて送信済みです",
   "viewHistory": "日報履歴を見る",
@@ -54,6 +56,7 @@
   "receiptPhotoLabel": "領収書・写真（JPEG/PDF）",
   "receiptLabel": "領収書（JPEG/PDF）",
   "filesSelected": "{count}件選択済み",
+  "filesAttached": "添付済み {count}件",
   "filesRegistered": "登録済み{count}件",
   "photosSelected": "{count}枚選択済み",
   "analyzing": "解析中...",

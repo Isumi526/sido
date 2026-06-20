@@ -64,10 +64,17 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in summaryRows" :key="row.label">
+            <tr
+              v-for="row in summaryRows"
+              :key="row.label"
+              class="clickable-row"
+              :title="`${row.label} の明細を見る`"
+              @click="openDetail(row.label)"
+            >
               <td>
                 <span class="category-dot" :class="row.type" />
                 {{ row.label }}
+                <span class="detail-hint">明細 ›</span>
               </td>
               <td class="right bold">¥{{ row.amount.toLocaleString() }}</td>
             </tr>
@@ -82,6 +89,34 @@
       </div>
       <div v-else class="empty-text">この月のデータがありません</div>
     </template>
+
+    <!-- 項目明細モーダル -->
+    <div v-if="detailModal" class="modal-overlay" @click.self="detailModal = null">
+      <div class="detail-modal">
+        <div class="detail-modal-head">
+          <h3>{{ detailModal.label }} の明細（{{ monthOptions.find(m => m.value === selectedMonth)?.label }}）</h3>
+          <button class="detail-close" @click="detailModal = null">✕</button>
+        </div>
+        <div class="detail-table-wrap">
+          <table class="data-table">
+            <thead><tr><th>日付</th><th>対象</th><th class="right">金額</th></tr></thead>
+            <tbody>
+              <tr v-for="(d, i) in detailModal.rows" :key="i">
+                <td class="nowrap">{{ fmtDetailDate(d.date) }}</td>
+                <td>{{ d.who }}</td>
+                <td class="right">¥{{ d.amount.toLocaleString() }}</td>
+              </tr>
+            </tbody>
+            <tfoot>
+              <tr class="total-row">
+                <td colspan="2">合　計（{{ detailModal.rows.length }}件）</td>
+                <td class="right">¥{{ detailModalTotal.toLocaleString() }}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -152,9 +187,19 @@ const shoshaTotal  = ref(0)   // 商社
 const gyoshaTotal  = ref(0)   // 業者
 const expenseMap   = ref<Map<string, number>>(new Map())  // 経費カテゴリ別
 
+// 項目クリックで見せる「明細」（日付・対象・金額）。集計と同時にカテゴリ別に収集する。
+type Detail = { date: string; who: string; amount: number }
+const detailMap = ref<Map<string, Detail[]>>(new Map())   // カテゴリ label → 明細行
+
 function addExp(map: Map<string, number>, key: string, val: number) {
   if (!val) return
   map.set(key, (map.get(key) ?? 0) + val)
+}
+function addDetail(map: Map<string, Detail[]>, label: string, date: string, who: string, amount: number) {
+  if (!amount) return
+  const arr = map.get(label) ?? []
+  arr.push({ date, who, amount })
+  map.set(label, arr)
 }
 
 async function load() {
@@ -193,7 +238,7 @@ async function load() {
     // 下請け請求（当月）も商社/業者に加算
     supabase
       .from('subcontractor_invoice_items')
-      .select('amount, subcontractor_invoices(subcontractors(category))')
+      .select('amount, item_date, subcontractor_invoices(subcontractors(name, category))')
       .eq('account_id', accountId)
       .gte('item_date', `${ym}-01`)
       .lt('item_date', nextMonthFirst),
@@ -201,23 +246,31 @@ async function load() {
 
   let labor = 0, shosha = 0, gyosha = 0
   const expMap = new Map<string, number>()
+  const details = new Map<string, Detail[]>()
 
   // 下請け請求（税抜）。区分=商社のみ商社、それ以外（業者/未区分）は業者
   for (const it of (invItems ?? []) as any[]) {
     const amt = Number(it.amount) || 0
-    if (it.subcontractor_invoices?.subcontractors?.category === '商社') shosha += amt
+    const sub = it.subcontractor_invoices?.subcontractors
+    const isShosha = sub?.category === '商社'
+    if (isShosha) shosha += amt
     else gyosha += amt
+    addDetail(details, isShosha ? '商社' : '業者', it.item_date ?? '', `下請請求／${sub?.name ?? '—'}`, amt)
   }
 
   for (const rep of (reports ?? [])) {
     // 実勤務時間ベースで料率別時間を再計算（通常×8h固定バグの修正）。複数現場は残業跨ぎ累積。
     const isSunday = new Date((rep as any).date + 'T00:00:00').getDay() === 0
     const laborMap = laborBreakdownForReport((rep as any).sites ?? [], isSunday)
+    const date = (rep as any).date as string
     for (const site of (rep.sites as any[])) {
+      const siteName = site.siteName || '（現場名なし）'
       // 社員費
       for (const w of (site.workers ?? []).filter((w: any) => w.workerName)) {
         const up = priceById[w.workerId] ?? priceByName[w.workerName] ?? 0
-        labor += laborCostForBreakdown(laborMap.get(w) ?? ZERO_BREAKDOWN, up)
+        const cost = laborCostForBreakdown(laborMap.get(w) ?? ZERO_BREAKDOWN, up)
+        labor += cost
+        addDetail(details, '社員', date, `${w.workerName}／${siteName}`, cost)
       }
 
       // 商社・業者費
@@ -226,29 +279,38 @@ async function load() {
         const cost = (s.count || 0) * (m.unitPrice || 0)
         if (m.category === '商社') shosha += cost
         else gyosha += cost
+        addDetail(details, m.category === '商社' ? '商社' : '業者', date, `${s.subcontractorName}／${siteName}`, cost)
       }
 
       // 経費
       const exp = site.expenses || {}
       for (const veh of (exp.vehicles || [])) {
-        addExp(expMap, 'ガソリン代', Math.round((veh.distanceKm || 0) * G_YEN))
-        addExp(expMap, '軽油代',    Math.round((veh.dieselKm   || 0) * D_YEN))
-        addExp(expMap, '駐車代',    veh.parkingYen || 0)
-        addExp(expMap, '高速代',    veh.highwayYen || 0)
+        const gas = Math.round((veh.distanceKm || 0) * G_YEN), diesel = Math.round((veh.dieselKm || 0) * D_YEN)
+        addExp(expMap, 'ガソリン代', gas);                addDetail(details, 'ガソリン代', date, siteName, gas)
+        addExp(expMap, '軽油代',    diesel);             addDetail(details, '軽油代',    date, siteName, diesel)
+        addExp(expMap, '駐車代',    veh.parkingYen || 0); addDetail(details, '駐車代',    date, siteName, veh.parkingYen || 0)
+        addExp(expMap, '高速代',    veh.highwayYen || 0); addDetail(details, '高速代',    date, siteName, veh.highwayYen || 0)
       }
-      for (const tr of (exp.trains || [])) addExp(expMap, '電車代', tr.yen || 0)
-      addExp(expMap, '宿泊費',       (exp.hotelYen || 0) + (exp.leopalaceYen || 0))
-      addExp(expMap, 'その他（資材等）', (exp.others || []).reduce((s: number, o: any) => s + (o.yen || 0), 0))
-      addExp(expMap, 'その他雑経費',  (exp.entertainments || []).reduce((s: number, e: any) => s + (e.yen || 0), 0) || (exp.entertainmentYen || 0))
-      addExp(expMap, 'ゴミ処分',
-        Math.round((exp.garbageFactoryM3 || 0) * GF_YEN + (exp.garbageSiteM3 || 0) * GS_YEN))
+      for (const tr of (exp.trains || [])) { addExp(expMap, '電車代', tr.yen || 0); addDetail(details, '電車代', date, siteName, tr.yen || 0) }
+      const lodge = (exp.hotelYen || 0) + (exp.leopalaceYen || 0)
+      addExp(expMap, '宿泊費', lodge);                   addDetail(details, '宿泊費', date, siteName, lodge)
+      const others = (exp.others || []).reduce((s: number, o: any) => s + (o.yen || 0), 0)
+      addExp(expMap, 'その他（資材等）', others);         addDetail(details, 'その他（資材等）', date, siteName, others)
+      const misc = (exp.entertainments || []).reduce((s: number, e: any) => s + (e.yen || 0), 0) || (exp.entertainmentYen || 0)
+      addExp(expMap, 'その他雑経費', misc);              addDetail(details, 'その他雑経費', date, siteName, misc)
+      const garbage = Math.round((exp.garbageFactoryM3 || 0) * GF_YEN + (exp.garbageSiteM3 || 0) * GS_YEN)
+      addExp(expMap, 'ゴミ処分', garbage);               addDetail(details, 'ゴミ処分', date, siteName, garbage)
     }
   }
+
+  // 各カテゴリの明細を日付降順に整える
+  for (const arr of details.values()) arr.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
 
   laborTotal.value  = labor
   shoshaTotal.value = shosha
   gyoshaTotal.value = gyosha
   expenseMap.value  = expMap
+  detailMap.value   = details
   loading.value = false
 }
 
@@ -268,6 +330,21 @@ const summaryRows = computed((): SummaryRow[] => {
   }
   return rows
 })
+
+// ── 明細モーダル（項目クリックで当月の内訳を表示）──
+const detailModal = ref<{ label: string; rows: Detail[] } | null>(null)
+function openDetail(label: string) {
+  const rows = detailMap.value.get(label) ?? []
+  if (rows.length) detailModal.value = { label, rows }
+}
+const detailModalTotal = computed(() => (detailModal.value?.rows ?? []).reduce((s, r) => s + r.amount, 0))
+function fmtDetailDate(s: string): string {
+  if (!s) return '—'
+  const d = new Date(s + 'T12:00:00')
+  if (isNaN(d.getTime())) return s
+  const W = ['日', '月', '火', '水', '木', '金', '土']
+  return `${d.getMonth() + 1}/${d.getDate()}（${W[d.getDay()]}）`
+}
 
 onMounted(() => { load(); loadUpdates() })
 watch(selectedMonth, load)
@@ -322,6 +399,21 @@ watch(selectedMonth, load)
 .data-table tbody tr:hover td { background: #fafafa; }
 .total-row td { font-weight: 700; border-top: 2px solid #e5e7eb; background: #f9fafb; }
 .right { text-align: right; }
+.nowrap { white-space: nowrap; }
+
+/* クリック可能な集計行 */
+.clickable-row { cursor: pointer; }
+.clickable-row:hover td { background: #f3f8ff; }
+.detail-hint { margin-left: 8px; font-size: 11px; color: #2563eb; opacity: 0; transition: opacity .12s; }
+.clickable-row:hover .detail-hint { opacity: 1; }
+
+/* 明細モーダル */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 24px; }
+.detail-modal { background: #fff; border-radius: 12px; width: 560px; max-width: 100%; max-height: 84vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,.18); }
+.detail-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid #eee; }
+.detail-modal-head h3 { font-size: 15px; font-weight: 700; }
+.detail-close { background: none; border: none; font-size: 16px; cursor: pointer; color: #888; padding: 4px 8px; }
+.detail-table-wrap { overflow-y: auto; }
 .bold  { font-weight: 700; }
 
 .category-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }

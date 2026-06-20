@@ -1,5 +1,7 @@
 {
   "subtitle": "Daily Report",
+  "draftRestored": "Restored your in-progress draft (including attached images)",
+  "draftDiscard": "Discard and start new",
   "allSubmittedTitle": "All Submitted",
   "allSubmittedText": "All daily reports up to today have been submitted",
   "viewHistory": "View report history",
@@ -54,6 +56,7 @@
   "receiptPhotoLabel": "Receipt / photo (JPEG/PDF)",
   "receiptLabel": "Receipt (JPEG/PDF)",
   "filesSelected": "{count} selected",
+  "filesAttached": "{count} attached",
   "filesRegistered": "{count} registered",
   "photosSelected": "{count} photos selected",
   "analyzing": "Analyzing...",
