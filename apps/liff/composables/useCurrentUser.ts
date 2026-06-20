@@ -35,12 +35,17 @@ export const useCurrentUser = () => {
       const { data: w } = await supabase
         .from('workers').select('id, name, role, account_id').eq('id', wid).maybeSingle()
       if (!w) return null
+      // upsert(onConflict=account_id,worker_id) で「同時解決による重複行」を構造的に防ぐ。
+      // 一意 index users_account_worker_uniq（20260620000000）が衝突先。既存行があれば更新して返す。
       const { data: created } = await supabase
         .from('users')
-        .insert({ worker_id: w.id, account_id: w.account_id, real_name: w.name, worker_role: w.role, is_approved: true })
+        .upsert(
+          { worker_id: w.id, account_id: w.account_id, real_name: w.name, worker_role: w.role, is_approved: true },
+          { onConflict: 'account_id,worker_id' },
+        )
         .select('*').single()
       if (created) return created as User
-      // 競合（同時作成）等で insert 失敗時は再取得
+      // 万一の競合等で取得できなければ再取得（後方互換のフォールバック）
       const { data: again } = await supabase
         .from('users').select('*').eq('worker_id', wid).eq('account_id', accountId).maybeSingle()
       return (again as User) ?? null
