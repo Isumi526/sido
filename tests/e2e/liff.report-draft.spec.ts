@@ -63,18 +63,20 @@ test('下書き: 添付画像も IndexedDB で復元される', async ({ page })
   await page.locator('select.select--usage').filter({ has: page.locator('option', { hasText: '乗合い' }) }).first()
     .selectOption('あり')
 
-  // 車両の領収書を添付（最初の file input）→「1件選択済み」表示
+  // 車両の領収書を添付（最初の file input）→「添付済み」バッジ表示
   await page.locator('input[type="file"]').first().setInputFiles({
     name: 'receipt.png', mimeType: 'image/png', buffer: Buffer.from(PNG_1x1, 'base64'),
   })
-  await expect(page.getByText('1件選択済み')).toBeVisible({ timeout: 5000 })
+  await expect(page.getByTestId('attached-badge').filter({ hasText: '添付済み 1件' }).first()).toBeVisible({ timeout: 5000 })
   await page.waitForTimeout(1300)   // テキスト下書き + IndexedDB(saveFiles)
 
-  // リロード → 復元バナー＋「1件選択済み」（画像も復元）
+  // リロード → 復元バナー＋「添付済み」バッジ＋ファイル名（画像も復元）
   await page.reload({ waitUntil: 'networkidle' })
   await page.waitForSelector('form.form', { timeout: 10000 })
   await expect(page.locator('.draft-banner')).toBeVisible({ timeout: 8000 })
-  await expect(page.getByText('1件選択済み')).toBeVisible({ timeout: 8000 })
+  const badge = page.getByTestId('attached-badge').filter({ hasText: '添付済み 1件' }).first()
+  await expect(badge).toBeVisible({ timeout: 8000 })
+  await expect(badge).toContainText('receipt.png')   // 復元後にファイル名まで分かる（本改善の主目的）
 
   // 後始末
   await page.locator('.draft-discard').click().catch(() => {})

@@ -56,6 +56,7 @@
   "receiptPhotoLabel": "領収書・写真（JPEG/PDF）",
   "receiptLabel": "領収書（JPEG/PDF）",
   "filesSelected": "{count}件選択済み",
+  "filesAttached": "添付済み {count}件",
   "filesRegistered": "登録済み{count}件",
   "photosSelected": "{count}枚選択済み",
   "analyzing": "解析中...",
