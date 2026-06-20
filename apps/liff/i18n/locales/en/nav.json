@@ -11,5 +11,6 @@
   "expensePdf": "Expense PDF",
   "openInBrowser": "Open in browser",
   "proxyInput": "Proxy Input",
-  "sites": "Sites"
+  "sites": "Sites",
+  "logout": "Log out"
 }
