@@ -121,6 +121,12 @@
             </button>
           </div>
         </div>
+
+        <!-- ログアウト（常時表示・ドロワー末尾）-->
+        <button type="button" class="drawer-item drawer-item--logout" @click="logout">
+          <span class="drawer-item-icon material-symbols-rounded">logout</span>
+          <span>{{ $t('nav.logout') }}</span>
+        </button>
       </div>
     </Transition>
   </Teleport>
@@ -139,7 +145,7 @@ const { t } = useI18n()
 const { locale, setLocale, locales } = useLocale()
 // ブランド表示は「身元のスラッグ」(resolvedSlug)優先・未解決時のみ env フォールバック
 // （env だと別テナント作業員でも SIDO 等と出てしまうため）
-const { slug, resolvedSlug } = useAccount()
+const { slug, resolvedSlug, resetAccount } = useAccount()
 const brandName = computed(() => (resolvedSlug.value || slug).toUpperCase())
 const proxy = useProxyMode()
 const config = useRuntimeConfig()
@@ -178,6 +184,23 @@ function selectProxy(w: import('~/composables/useProxyMode').ProxyWorker) {
     proxy.setProxy(w)
   }
   open.value = false
+}
+
+// ログアウト：Supabaseセッション破棄＋テナント/代理キャッシュ破棄→ /login へ。
+// LINEモードは best-effort で liff.logout も呼び自動再開を防ぐ（dev は LIFF 未接続なのでスキップ）。
+const supabase = useSupabase()
+async function logout() {
+  open.value = false
+  proxy.clearProxy()
+  try { await supabase.auth.signOut() } catch { /* セッション無し等は無視 */ }
+  resetAccount()
+  if (config.public.appEnv !== 'development') {
+    try {
+      const liff = (await import('@line/liff')).default
+      if (liff.isLoggedIn?.()) liff.logout()
+    } catch { /* LIFF未接続等は無視 */ }
+  }
+  await navigateTo('/login')
 }
 </script>
 
@@ -252,6 +275,8 @@ function selectProxy(w: import('~/composables/useProxyMode').ProxyWorker) {
   display: flex;
   flex-direction: column;
   box-shadow: -4px 0 20px rgba(0,0,0,.12);
+  overflow-y: auto;           /* 項目が画面より長い時もスクロールで下（言語/ログアウト）に届く */
+  -webkit-overflow-scrolling: touch;
 }
 .nav-slide-enter-active,
 .nav-slide-leave-active  { transition: transform .22s ease; }
@@ -331,6 +356,13 @@ button.drawer-item {
 }
 .drawer-item:hover,
 .drawer-item.router-link-active { background: #f0fdf4; color: #06C755; }
+.drawer-item--logout {
+  margin-top: 8px;
+  border-top: 1px solid #eee;
+  border-radius: 0 0 10px 10px;
+  color: #d23b3b;
+}
+.drawer-item--logout:hover { background: #fdf0f0; color: #c01f1f; }
 .drawer-item-icon {
   font-size: 22px;
   width: 24px; text-align: center;
