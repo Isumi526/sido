@@ -251,10 +251,8 @@
                 <button type="button" class="btn-ghost-sm" @click="report.addVehicle(si)">{{ $t('report.addVehicle') }}</button>
                 <div class="mt8">
                   <label class="hours-label">{{ $t('report.receiptPhotoLabel') }}</label>
+                  <AttachedFilesBadge :files="site.expenses.vehicleFiles" />
                   <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'vehicleFiles', e)" />
-                  <div v-if="site.expenses.vehicleFiles?.length" class="photo-preview">
-                    <span class="hours-label">{{ $t('report.filesSelected', { count: site.expenses.vehicleFiles.length }) }}</span>
-                  </div>
                 </div>
 
                 <!-- 駐車場代（複数・明細ごと領収書）— 車両ありの時のみ -->
@@ -267,15 +265,12 @@
                     </div>
                     <div class="mt6">
                       <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
+                      <AttachedFilesBadge :files="pk.files" :urls="pk.fileUrls" />
                       <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleParkingFile(si, pi, e)" />
                       <div v-if="pk.files?.length" class="photo-preview">
-                        <span class="hours-label">{{ $t('report.filesSelected', { count: pk.files.length }) }}</span>
                         <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-parking-${pi}`" @click="analyzeReceipt(si, 'parking', pi)">
                           {{ receipt.loading.value === `${si}-parking-${pi}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                         </button>
-                      </div>
-                      <div v-else-if="pk.fileUrls?.length" class="photo-preview">
-                        <span class="hours-label">{{ $t('report.filesRegistered', { count: pk.fileUrls.length }) }}</span>
                       </div>
                     </div>
                   </div>
@@ -301,15 +296,12 @@
                     </div>
                     <div class="mt6">
                       <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
+                      <AttachedFilesBadge :files="hw.files" :urls="hw.fileUrls" />
                       <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleHighwayFile(si, hi, e)" />
                       <div v-if="hw.files?.length" class="photo-preview">
-                        <span class="hours-label">{{ $t('report.filesSelected', { count: hw.files.length }) }}</span>
                         <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-highway-${hi}`" @click="analyzeReceipt(si, 'highway', hi)">
                           {{ receipt.loading.value === `${si}-highway-${hi}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                         </button>
-                      </div>
-                      <div v-else-if="hw.fileUrls?.length" class="photo-preview">
-                        <span class="hours-label">{{ $t('report.filesRegistered', { count: hw.fileUrls.length }) }}</span>
                       </div>
                     </div>
                   </div>
@@ -333,15 +325,12 @@
                   </div>
                   <div class="mt6">
                     <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
+                    <AttachedFilesBadge :files="tr.files" :urls="tr.fileUrls" />
                     <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleTrainFile(si, ti, e)" />
                     <div v-if="tr.files?.length" class="photo-preview">
-                      <span class="hours-label">{{ $t('report.filesSelected', { count: tr.files.length }) }}</span>
                       <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-train-${ti}`" @click="analyzeReceipt(si, 'train', ti)">
                         {{ receipt.loading.value === `${si}-train-${ti}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                       </button>
-                    </div>
-                    <div v-else-if="tr.fileUrls?.length" class="photo-preview">
-                      <span class="hours-label">{{ $t('report.filesRegistered', { count: tr.fileUrls.length }) }}</span>
                     </div>
                   </div>
                 </div>
@@ -363,9 +352,9 @@
               <template v-if="siteUsage[si].hotel === 'あり'">
                 <div class="mt6">
                   <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
+                  <AttachedFilesBadge :files="site.expenses.hotelFiles" />
                   <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'hotelFiles', e)" />
                   <div v-if="site.expenses.hotelFiles?.length" class="photo-preview">
-                    <span class="hours-label">{{ $t('report.filesSelected', { count: site.expenses.hotelFiles.length }) }}</span>
                     <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-hotelFiles`" @click="analyzeReceipt(si, 'hotelFiles')">
                       {{ receipt.loading.value === `${si}-hotelFiles` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                     </button>
@@ -388,9 +377,9 @@
               <template v-if="siteUsage[si].leopalace === 'あり'">
                 <div class="mt6">
                   <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
+                  <AttachedFilesBadge :files="site.expenses.leopalaceFiles" />
                   <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'leopalaceFiles', e)" />
                   <div v-if="site.expenses.leopalaceFiles?.length" class="photo-preview">
-                    <span class="hours-label">{{ $t('report.filesSelected', { count: site.expenses.leopalaceFiles.length }) }}</span>
                     <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-leopalaceFiles`" @click="analyzeReceipt(si, 'leopalaceFiles')">
                       {{ receipt.loading.value === `${si}-leopalaceFiles` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                     </button>
@@ -417,6 +406,7 @@
                 </div>
                 <div v-if="site.expenses.garbageFactoryM3 || site.expenses.garbageSiteM3" class="mt8">
                   <label class="hours-label">{{ $t('report.garbagePhotoLabel') }}</label>
+                  <AttachedFilesBadge :files="site.expenses.garbagePhotos" />
                   <input
                     type="file"
                     accept="image/*"
@@ -424,9 +414,6 @@
                     class="input mt6"
                     @change="(e) => handleGarbagePhoto(si, e)"
                   />
-                  <div v-if="site.expenses.garbagePhotos?.length" class="photo-preview">
-                    <span class="hours-label">{{ $t('report.photosSelected', { count: site.expenses.garbagePhotos.length }) }}</span>
-                  </div>
                 </div>
               </template>
             </Field>
@@ -447,15 +434,12 @@
                   <input v-model="ot.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                   <div class="mt6">
                     <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
+                    <AttachedFilesBadge :files="ot.files" :urls="ot.fileUrls" />
                     <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleOtherFile(si, oi, e)" />
                     <div v-if="ot.files?.length" class="photo-preview">
-                      <span class="hours-label">{{ $t('report.filesSelected', { count: ot.files.length }) }}</span>
                       <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-other-${oi}`" @click="analyzeReceipt(si, 'other', oi)">
                         {{ receipt.loading.value === `${si}-other-${oi}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                       </button>
-                    </div>
-                    <div v-else-if="ot.fileUrls?.length" class="photo-preview">
-                      <span class="hours-label">{{ $t('report.filesRegistered', { count: ot.fileUrls.length }) }}</span>
                     </div>
                   </div>
                 </div>
@@ -479,15 +463,12 @@
                   <input v-model="ent.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                   <div class="mt6">
                     <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
+                    <AttachedFilesBadge :files="ent.files" :urls="ent.fileUrls" />
                     <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleEntertainmentFile(si, ei, e)" />
                     <div v-if="ent.files?.length" class="photo-preview">
-                      <span class="hours-label">{{ $t('report.filesSelected', { count: ent.files.length }) }}</span>
                       <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-entertainment-${ei}`" @click="analyzeReceipt(si, 'entertainment', ei)">
                         {{ receipt.loading.value === `${si}-entertainment-${ei}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                       </button>
-                    </div>
-                    <div v-else-if="ent.fileUrls?.length" class="photo-preview">
-                      <span class="hours-label">{{ $t('report.filesRegistered', { count: ent.fileUrls.length }) }}</span>
                     </div>
                   </div>
                 </div>
