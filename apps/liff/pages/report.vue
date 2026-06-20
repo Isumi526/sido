@@ -37,6 +37,12 @@
           {{ $t('report.editModeBanner') }}
         </div>
 
+        <!-- 下書き復元バナー（新規入力中・自動保存を復元した時のみ）-->
+        <div v-if="draftRestored && !isEditMode" class="draft-banner">
+          <span class="draft-banner-text">📝 {{ $t('report.draftRestored') }}</span>
+          <button type="button" class="draft-discard" @click="discardDraft">{{ $t('report.draftDiscard') }}</button>
+        </div>
+
         <!-- 日付 -->
         <FormSection num="01" :title="$t('report.dateSection')">
           <div class="date-fixed">{{ report.form.value.date }}</div>
@@ -95,7 +101,7 @@
           <Field :label="$t('report.siteName')">
             <select v-model="site.siteName" class="select" required>
               <option value="">{{ $t('common.select') }}</option>
-              <option v-for="name in master.siteNames.value" :key="name" :value="name">{{ name }}</option>
+              <option v-for="name in filteredSiteNames(site.contractorName)" :key="name" :value="name">{{ name }}</option>
               <option value="__other__">{{ $t('report.addNewSite') }}</option>
             </select>
             <input
@@ -245,10 +251,8 @@
                 <button type="button" class="btn-ghost-sm" @click="report.addVehicle(si)">{{ $t('report.addVehicle') }}</button>
                 <div class="mt8">
                   <label class="hours-label">{{ $t('report.receiptPhotoLabel') }}</label>
+                  <AttachedFilesBadge :files="site.expenses.vehicleFiles" />
                   <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'vehicleFiles', e)" />
-                  <div v-if="site.expenses.vehicleFiles?.length" class="photo-preview">
-                    <span class="hours-label">{{ $t('report.filesSelected', { count: site.expenses.vehicleFiles.length }) }}</span>
-                  </div>
                 </div>
 
                 <!-- 駐車場代（複数・明細ごと領収書）— 車両ありの時のみ -->
@@ -261,15 +265,12 @@
                     </div>
                     <div class="mt6">
                       <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
+                      <AttachedFilesBadge :files="pk.files" :urls="pk.fileUrls" />
                       <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleParkingFile(si, pi, e)" />
                       <div v-if="pk.files?.length" class="photo-preview">
-                        <span class="hours-label">{{ $t('report.filesSelected', { count: pk.files.length }) }}</span>
                         <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-parking-${pi}`" @click="analyzeReceipt(si, 'parking', pi)">
                           {{ receipt.loading.value === `${si}-parking-${pi}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                         </button>
-                      </div>
-                      <div v-else-if="pk.fileUrls?.length" class="photo-preview">
-                        <span class="hours-label">{{ $t('report.filesRegistered', { count: pk.fileUrls.length }) }}</span>
                       </div>
                     </div>
                   </div>
@@ -295,15 +296,12 @@
                     </div>
                     <div class="mt6">
                       <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
+                      <AttachedFilesBadge :files="hw.files" :urls="hw.fileUrls" />
                       <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleHighwayFile(si, hi, e)" />
                       <div v-if="hw.files?.length" class="photo-preview">
-                        <span class="hours-label">{{ $t('report.filesSelected', { count: hw.files.length }) }}</span>
                         <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-highway-${hi}`" @click="analyzeReceipt(si, 'highway', hi)">
                           {{ receipt.loading.value === `${si}-highway-${hi}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                         </button>
-                      </div>
-                      <div v-else-if="hw.fileUrls?.length" class="photo-preview">
-                        <span class="hours-label">{{ $t('report.filesRegistered', { count: hw.fileUrls.length }) }}</span>
                       </div>
                     </div>
                   </div>
@@ -327,15 +325,12 @@
                   </div>
                   <div class="mt6">
                     <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
+                    <AttachedFilesBadge :files="tr.files" :urls="tr.fileUrls" />
                     <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleTrainFile(si, ti, e)" />
                     <div v-if="tr.files?.length" class="photo-preview">
-                      <span class="hours-label">{{ $t('report.filesSelected', { count: tr.files.length }) }}</span>
                       <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-train-${ti}`" @click="analyzeReceipt(si, 'train', ti)">
                         {{ receipt.loading.value === `${si}-train-${ti}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                       </button>
-                    </div>
-                    <div v-else-if="tr.fileUrls?.length" class="photo-preview">
-                      <span class="hours-label">{{ $t('report.filesRegistered', { count: tr.fileUrls.length }) }}</span>
                     </div>
                   </div>
                 </div>
@@ -357,9 +352,9 @@
               <template v-if="siteUsage[si].hotel === 'あり'">
                 <div class="mt6">
                   <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
+                  <AttachedFilesBadge :files="site.expenses.hotelFiles" />
                   <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'hotelFiles', e)" />
                   <div v-if="site.expenses.hotelFiles?.length" class="photo-preview">
-                    <span class="hours-label">{{ $t('report.filesSelected', { count: site.expenses.hotelFiles.length }) }}</span>
                     <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-hotelFiles`" @click="analyzeReceipt(si, 'hotelFiles')">
                       {{ receipt.loading.value === `${si}-hotelFiles` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                     </button>
@@ -382,9 +377,9 @@
               <template v-if="siteUsage[si].leopalace === 'あり'">
                 <div class="mt6">
                   <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
+                  <AttachedFilesBadge :files="site.expenses.leopalaceFiles" />
                   <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'leopalaceFiles', e)" />
                   <div v-if="site.expenses.leopalaceFiles?.length" class="photo-preview">
-                    <span class="hours-label">{{ $t('report.filesSelected', { count: site.expenses.leopalaceFiles.length }) }}</span>
                     <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-leopalaceFiles`" @click="analyzeReceipt(si, 'leopalaceFiles')">
                       {{ receipt.loading.value === `${si}-leopalaceFiles` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                     </button>
@@ -411,6 +406,7 @@
                 </div>
                 <div v-if="site.expenses.garbageFactoryM3 || site.expenses.garbageSiteM3" class="mt8">
                   <label class="hours-label">{{ $t('report.garbagePhotoLabel') }}</label>
+                  <AttachedFilesBadge :files="site.expenses.garbagePhotos" />
                   <input
                     type="file"
                     accept="image/*"
@@ -418,9 +414,6 @@
                     class="input mt6"
                     @change="(e) => handleGarbagePhoto(si, e)"
                   />
-                  <div v-if="site.expenses.garbagePhotos?.length" class="photo-preview">
-                    <span class="hours-label">{{ $t('report.photosSelected', { count: site.expenses.garbagePhotos.length }) }}</span>
-                  </div>
                 </div>
               </template>
             </Field>
@@ -441,15 +434,12 @@
                   <input v-model="ot.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                   <div class="mt6">
                     <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
+                    <AttachedFilesBadge :files="ot.files" :urls="ot.fileUrls" />
                     <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleOtherFile(si, oi, e)" />
                     <div v-if="ot.files?.length" class="photo-preview">
-                      <span class="hours-label">{{ $t('report.filesSelected', { count: ot.files.length }) }}</span>
                       <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-other-${oi}`" @click="analyzeReceipt(si, 'other', oi)">
                         {{ receipt.loading.value === `${si}-other-${oi}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                       </button>
-                    </div>
-                    <div v-else-if="ot.fileUrls?.length" class="photo-preview">
-                      <span class="hours-label">{{ $t('report.filesRegistered', { count: ot.fileUrls.length }) }}</span>
                     </div>
                   </div>
                 </div>
@@ -473,15 +463,12 @@
                   <input v-model="ent.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                   <div class="mt6">
                     <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
+                    <AttachedFilesBadge :files="ent.files" :urls="ent.fileUrls" />
                     <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleEntertainmentFile(si, ei, e)" />
                     <div v-if="ent.files?.length" class="photo-preview">
-                      <span class="hours-label">{{ $t('report.filesSelected', { count: ent.files.length }) }}</span>
                       <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-entertainment-${ei}`" @click="analyzeReceipt(si, 'entertainment', ei)">
                         {{ receipt.loading.value === `${si}-entertainment-${ei}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                       </button>
-                    </div>
-                    <div v-else-if="ent.fileUrls?.length" class="photo-preview">
-                      <span class="hours-label">{{ $t('report.filesRegistered', { count: ent.fileUrls.length }) }}</span>
                     </div>
                   </div>
                 </div>
@@ -582,6 +569,17 @@ function siteSimilar(name?: string): string[] {
   return findSimilarSiteNames(name ?? '', master.siteNames.value)
 }
 
+// 現場プルダウン: 元請けが選択されていれば、その元請けに紐づく現場だけに絞り込む。
+//  紐づく現場が0件 or 元請け未選択/その他 なら全現場を出す（後方互換・AC3）。
+function filteredSiteNames(contractorName?: string): string[] {
+  const all = master.siteNames.value
+  const cn = (contractorName ?? '').trim()
+  if (!cn || cn === '__other__') return all
+  const map = master.siteContractors.value
+  const linked = all.filter((n) => map[n] === cn)
+  return linked.length ? linked : all
+}
+
 // クエリ（?edit=YYYY-MM-DD）が変わったらページを再マウントさせ、編集/新規の
 //  初期化（onMounted）を必ず再実行する。これが無いと、編集画面を開いた後に
 //  アプリ内メニュー「日報登録」(/report) を押しても再マウントされず、編集状態
@@ -617,6 +615,15 @@ const currentUser = computed(() => {
 const isDev = computed(() => config.public.appEnv === 'development' || liff.isTester.value)
 
 const initializing = ref(true)
+
+// ── 下書き自動保存／復元（新規入力のみ・編集/代理では使わない）──
+const draft = useReportDraft()
+const draftRestored = ref(false)   // 復元バナー表示
+let draftRestoring = false         // 復元適用中は watcher の保存を抑止
+// 新規入力の下書き対象か（編集/代理モードや初期化中・送信済みは対象外）
+const draftEligible = () =>
+  !initializing.value && !isEditMode.value && !proxy.proxyTarget.value
+  && !report.submitted.value && !!liff.profile.value?.userId
 
 // 編集モード
 const forceErrorOnSubmit = ref(false)
@@ -980,8 +987,110 @@ onMounted(async () => {
     // 'NOT_CONFIGURED' の場合はデフォルト（今日）のまま
   }
 
+  // 新規モードのみ: 同じ日付の下書きがあれば復元（編集/代理は対象外）。
+  //  テキスト/選択は localStorage、領収書画像(File[])は IndexedDB から復元する。
+  if (!isEditMode.value && !proxy.proxyTarget.value && userId) {
+    const d = draft.load(userId, report.form.value.date)
+    if (d && d.form) {
+      draftRestoring = true
+      try {
+        report.form.value = d.form
+        if (d.isWorkingStr) isWorkingStr.value = d.isWorkingStr as 'working' | 'paid_leave' | 'off'
+        if (Array.isArray(d.siteUsage) && d.siteUsage.length) siteUsage.value = d.siteUsage
+        // 画像（File[]）を IndexedDB から復元してフォームへ再注入
+        const fm = await draft.loadFiles(userId, report.form.value.date)
+        if (fm) applyDraftFiles(report.form.value, fm)
+        draftRestored.value = true
+      } finally {
+        draftRestoring = false
+      }
+    }
+  }
+
   initializing.value = false
 })
+
+// ── 下書き自動保存（新規入力中・800ms デバウンス・送信ロジックには触れない）──
+let draftSaveTimer: ReturnType<typeof setTimeout> | null = null
+watch(
+  () => [report.form.value, isWorkingStr.value, siteUsage.value],
+  () => {
+    if (draftRestoring || !draftEligible()) return
+    if (draftSaveTimer) clearTimeout(draftSaveTimer)
+    draftSaveTimer = setTimeout(() => {
+      const uid = liff.profile.value?.userId
+      if (uid && draftEligible()) {
+        const date = report.form.value.date
+        draft.save(uid, date, {
+          form:         report.form.value,
+          isWorkingStr: isWorkingStr.value,
+          siteUsage:    siteUsage.value,
+        })
+        // 画像（File[]）は IndexedDB へ（fire-and-forget）
+        draft.saveFiles(uid, date, collectDraftFiles(report.form.value))
+      }
+    }, 800)
+  },
+  { deep: true },
+)
+
+// 送信成功で下書き破棄（新規送信の成功＝report.submitted）
+watch(() => report.submitted.value, (v) => {
+  if (!v) return
+  const uid = liff.profile.value?.userId
+  if (uid) { draft.clear(uid, report.form.value.date); draft.clearFiles(uid, report.form.value.date) }
+  draftRestored.value = false
+})
+
+// フォームから「パス→File[]」マップを収集（IndexedDB保存用）
+const DRAFT_FORM_FILE_KEYS = ['vehicleFiles', 'hotelFiles', 'leopalaceFiles', 'otherFiles', 'entertainmentFiles', 'garbagePhotos']
+const DRAFT_PER_ITEM = ['parkings', 'highways', 'trains', 'others', 'entertainments']
+function collectDraftFiles(form: any): Record<string, File[]> {
+  const map: Record<string, File[]> = {}
+  ;(form?.sites ?? []).forEach((site: any, si: number) => {
+    const exp = site?.expenses || {}
+    // ※ reactive Proxy 配列のままだと IndexedDB の structured-clone で失敗するため、
+    //   プレーン配列（Array.from）にアンラップして渡す。File 自体は非reactive。
+    for (const k of DRAFT_FORM_FILE_KEYS) {
+      if (Array.isArray(exp[k]) && exp[k].length) map[`${si}::${k}`] = Array.from(exp[k])
+    }
+    for (const arrKey of DRAFT_PER_ITEM) {
+      ;(exp[arrKey] ?? []).forEach((item: any, ii: number) => {
+        if (Array.isArray(item?.files) && item.files.length) map[`${si}::${arrKey}::${ii}`] = Array.from(item.files)
+      })
+    }
+  })
+  return map
+}
+// 収集したマップを復元後フォームの同じパスへ再注入
+function applyDraftFiles(form: any, map: Record<string, File[]>) {
+  for (const [path, files] of Object.entries(map || {})) {
+    const parts = path.split('::')
+    const site = form?.sites?.[Number(parts[0])]
+    if (!site?.expenses) continue
+    if (parts.length === 2) {
+      site.expenses[parts[1]] = files
+    } else {
+      const item = site.expenses[parts[1]]?.[Number(parts[2])]
+      if (item) item.files = files
+    }
+  }
+}
+
+// バナーから「破棄して新規入力」: 下書き削除＋当日付のまま初期化
+function discardDraft() {
+  const uid = liff.profile.value?.userId
+  const curDate = report.form.value.date
+  if (uid) { draft.clear(uid, curDate); draft.clearFiles(uid, curDate) }
+  draftRestoring = true
+  report.reset()
+  report.form.value.date = curDate
+  isWorkingStr.value = 'working'
+  siteUsage.value = [createUsage()]
+  initWorkers()
+  draftRestored.value = false
+  nextTick(() => { draftRestoring = false })
+}
 
 // ── LINE通知プレビュー ──────────────────────────────────────
 const linePreview = computed(() => {
@@ -1952,6 +2061,33 @@ html, body {
   padding: 10px 14px;
   font-size: 12px;
   font-weight: 600;
+}
+
+/* 下書き復元バナー */
+.draft-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #e8f5e9;
+  border: 1px solid #06C755;
+  color: #1b5e20;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.draft-banner-text { line-height: 1.5; }
+.draft-discard {
+  flex-shrink: 0;
+  background: #fff;
+  border: 1px solid #06C755;
+  color: #06C755;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 /* ── LINEプレビュー ── */

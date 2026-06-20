@@ -26,7 +26,9 @@ jobs:
 
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # version: latest はリリース照会＋latestバイナリ取得でGitHub側Gateway Timeoutにより
+          # 時々失敗するため、既知良好版に固定して安定化（必要時に上げる）。
+          version: 2.75.0
 
       - name: Deploy Edge Functions (dev → test prefix)
         if: github.ref_name == 'dev'
