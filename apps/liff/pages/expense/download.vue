@@ -333,8 +333,8 @@ async function handleApply() {
     // 2. 精算ステータスを 申請中 に（pdf_path は記録用にカンマ連結）
     settlement.value = await expense.applySettlement(applyUserId.value, selectedPeriod.value, paths.join(',') || null)
 
-    // 3. PDFメール送信 function を呼ぶ（best-effort）
-    triggerApplicationEmail(applyUserId.value, selectedPeriod.value)
+    // 3. PDFメール送信 function を呼ぶ（best-effort）。身元優先スラッグを渡す（slug未定義参照のバグ修正）
+    triggerApplicationEmail(applyUserId.value, selectedPeriod.value, slug)
   } catch (e: any) {
     console.error('[expense apply] 申請失敗:', e)
     applyError.value = t('expenseDoc.applyError')
@@ -344,7 +344,7 @@ async function handleApply() {
 }
 
 /** 申請PDFメール送信 function 呼び出し（fire-and-forget） */
-function triggerApplicationEmail(userId: string, periodKey: string) {
+function triggerApplicationEmail(userId: string, periodKey: string, accountSlug: string) {
   const efUrl = config.public.edgeFunctionUrl
   if (!efUrl) return
   const fnPrefix = config.public.appEnv === 'development' ? 'test-' : ''
@@ -356,7 +356,7 @@ function triggerApplicationEmail(userId: string, periodKey: string) {
       'Authorization': `Bearer ${config.public.supabaseAnonKey}`,
     },
     body: JSON.stringify({
-      accountSlug: slug,
+      accountSlug,
       user_id: userId,
       period_key: periodKey,
     }),
