@@ -11,5 +11,6 @@
   "expensePdf": "経費PDF",
   "openInBrowser": "ブラウザで開く",
   "proxyInput": "代理入力",
-  "sites": "現場情報"
+  "sites": "現場情報",
+  "logout": "ログアウト"
 }
