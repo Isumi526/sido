@@ -56,6 +56,7 @@
   "receiptPhotoLabel": "Receipt / photo (JPEG/PDF)",
   "receiptLabel": "Receipt (JPEG/PDF)",
   "filesSelected": "{count} selected",
+  "filesAttached": "{count} attached",
   "filesRegistered": "{count} registered",
   "photosSelected": "{count} photos selected",
   "analyzing": "Analyzing...",
