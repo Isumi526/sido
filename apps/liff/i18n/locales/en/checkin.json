@@ -40,5 +40,8 @@
   "errNoWorker": "Worker information not found",
   "errInsertFailed": "Registration failed: {message}",
   "defaultSelfName": "Myself",
-  "dateLabel": "{month}/{day} {time}"
+  "dateLabel": "{month}/{day} {time}",
+  "consentTitle": "Briefing documents",
+  "consentHint": "Open each document, review it, then check the box",
+  "consentUnavailable": "(unavailable)"
 }

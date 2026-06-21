@@ -136,6 +136,30 @@
         </div>
       </div>
 
+      <!-- 送り出し資料（出退勤同意） -->
+      <div v-if="consentDocs.length" class="consent-list">
+        <div class="consent-head">{{ $t('checkin.consentTitle') }}</div>
+        <div
+          v-for="d in consentDocs"
+          :key="d.id"
+          class="rule-row consent-row"
+          :class="{ checked: consentedIds.has(d.id) }"
+        >
+          <span
+            class="material-symbols-rounded check-icon"
+            :class="{ active: consentedIds.has(d.id) }"
+            @click="toggleConsent(d.id)"
+          >
+            {{ consentedIds.has(d.id) ? 'check_box' : 'check_box_outline_blank' }}
+          </span>
+          <a v-if="d.url" :href="d.url" target="_blank" rel="noopener" class="consent-link">
+            <span class="material-symbols-rounded doc-icon">picture_as_pdf</span>{{ d.name || '資料' }}
+          </a>
+          <span v-else class="consent-link disabled">{{ d.name || '資料' }} {{ $t('checkin.consentUnavailable') }}</span>
+        </div>
+        <p class="consent-hint">{{ $t('checkin.consentHint') }}</p>
+      </div>
+
       <div class="submit-area">
         <!-- 位置情報ステータス -->
         <div class="location-status" :class="locationState">
@@ -193,13 +217,14 @@
 type Phase = 'loading' | 'error' | 'select-target' | 'checklist' | 'done' | 'already-done'
 
 type SiteRule = { id: string; content: string; timing: string }
+type ConsentDoc = { id: string; name: string | null; path: string; url?: string | null }
 type Target   = { id: string; name: string; isSelf: boolean }
 
 import { useI18n } from 'vue-i18n'
 
 const { t }    = useI18n()
 const route    = useRoute()
-const { profile, init: initLiff } = useLiff()
+const { profile, init: initLiff, getIdToken } = useLiff()
 const supabase = useSupabase()
 const proxy    = useProxyMode()
 
@@ -214,6 +239,8 @@ const siteId         = ref('')
 const siteName       = ref('')
 const rules          = ref<SiteRule[]>([])
 const checkedIds     = ref(new Set<string>())
+const consentDocs    = ref<ConsentDoc[]>([])   // 送り出し資料（出退勤同意・チェックイン時）
+const consentedIds   = ref(new Set<string>())
 const submitting     = ref(false)
 const checkedAtLabel = ref('')
 const checkinTime    = ref('')
@@ -278,13 +305,18 @@ const allChecked = computed(() =>
   rules.value.length > 0 && checkedIds.value.size === rules.value.length
 )
 
+// 送り出し資料すべてに同意したか（資料が無ければ true）
+const allConsented = computed(() =>
+  consentDocs.value.every(d => consentedIds.value.has(d.id))
+)
+
 // 位置情報の「取得を試みたか」（努力義務）。
 // idle（未タップ）・pending（取得中）以外＝結果が出た状態なら送信可（拒否/失敗でも可）。
 const locationResolved = computed(() =>
   locationState.value !== 'idle' && locationState.value !== 'pending'
 )
 const canSubmit = computed(() =>
-  allChecked.value && locationResolved.value && !submitting.value
+  allChecked.value && allConsented.value && locationResolved.value && !submitting.value
 )
 
 function toggle(id: string) {
@@ -292,6 +324,13 @@ function toggle(id: string) {
   if (next.has(id)) next.delete(id)
   else next.add(id)
   checkedIds.value = next
+}
+
+function toggleConsent(id: string) {
+  const next = new Set(consentedIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  consentedIds.value = next
 }
 
 function fmtTime(iso: string) {
@@ -469,6 +508,31 @@ async function loadForTarget(workerId: string) {
     return
   }
 
+  // 送り出し資料（出退勤同意・チェックイン時のみ提示）。非公開バケットはedge署名URLで閲覧。
+  consentedIds.value = new Set()
+  if (attendanceType.value === 'checkin') {
+    const { data: docData } = await supabase
+      .from('site_attachments')
+      .select('id, name, path')
+      .eq('site_id', siteId.value)
+      .eq('kind', 'document')
+      .eq('require_consent', true)
+      .order('created_at')
+    const docs = (docData ?? []) as ConsentDoc[]
+    const idToken = await getIdToken()
+    await Promise.all(docs.map(async (d) => {
+      try {
+        const { data } = await supabase.functions.invoke('site-attachment-url', {
+          body: { attachment_id: d.id, ...(idToken ? { line_id_token: idToken } : {}) },
+        })
+        d.url = (data as any)?.url ?? null
+      } catch { d.url = null }
+    }))
+    consentDocs.value = docs
+  } else {
+    consentDocs.value = []
+  }
+
   phase.value = 'checklist'
 
   // 位置情報は自動取得しない。
@@ -499,9 +563,10 @@ async function submit() {
     .insert({
       site_id:           siteId.value,
       worker_id:         workerIdToLog,
-      type:              attendanceType.value,
-      agreed_rule_texts: rules.value.map(r => r.content),
-      location_lat:      locationLat.value,
+      type:                  attendanceType.value,
+      agreed_rule_texts:     rules.value.map(r => r.content),
+      agreed_document_names: consentDocs.value.length ? consentDocs.value.map(d => d.name ?? '') : null,
+      location_lat:          locationLat.value,
       location_lng:      locationLng.value,
       proxy_worker_id:   proxyOperatorId,
     })
@@ -721,6 +786,13 @@ async function submit() {
 .check-icon.active { color: #06C755; }
 
 .rule-text { font-size: 15px; line-height: 1.6; color: #222; flex: 1; }
+
+.consent-list { padding: 4px 0 8px; border-top: 1px solid #ececf0; }
+.consent-head { font-size: 13px; font-weight: 700; color: #888; padding: 8px 4px 2px; }
+.consent-link { display: flex; align-items: center; gap: 4px; font-size: 15px; color: #1a56c4; text-decoration: none; flex: 1; }
+.consent-link.disabled { color: #aaa; }
+.consent-link .doc-icon { font-size: 20px; }
+.consent-hint { font-size: 12px; color: #999; padding: 4px 8px 0; }
 
 .submit-area {
   padding: 16px 20px 20px; background: #fff; border-top: 1px solid #f0f0f0;

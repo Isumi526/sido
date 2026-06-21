@@ -40,5 +40,8 @@
   "errNoWorker": "作業員情報が見つかりません",
   "errInsertFailed": "登録に失敗しました: {message}",
   "defaultSelfName": "自分",
-  "dateLabel": "{month}月{day}日 {time}"
+  "dateLabel": "{month}月{day}日 {time}",
+  "consentTitle": "送り出し資料の確認",
+  "consentHint": "資料を開いて内容を確認し、チェックしてください",
+  "consentUnavailable": "（表示できません）"
 }
