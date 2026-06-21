@@ -102,6 +102,8 @@ async function paginate(doQuery) {
 const title    = (p) => (p.properties?.[TITLE_PROP]?.title || []).map((t) => t.plain_text).join('') || '(無題)'
 const priority = (p) => p.properties?.[PRIORITY_PROP]?.select?.name ?? null
 const statusOf = (p) => p.properties?.[STATUS_PROP]?.status?.name ?? '(未設定)'
+const riskOf   = (p) => p.properties?.['リスク']?.select?.name ?? null
+const dodaiOf  = (p) => p.properties?.['土台']?.checkbox === true
 const tagsOf   = (p) => (p.properties?.['タグ']?.multi_select ?? []).map((o) => o.name)
 
 // --board: 全ステータスをグループ表示（ステートマシンが盤面を読むための機械可読寄り出力）
@@ -125,7 +127,9 @@ function printBoard(results) {
     console.log(`\n## ${s} (${arr.length})`)
     for (const p of arr) {
       const tg = tagsOf(p)
-      console.log(`  - [${priority(p) ?? '-'}] ${title(p)}${tg.length ? ' 〔' + tg.join(',') + '〕' : ''}`)
+      const risk = riskOf(p) ?? '-'
+      const dodai = dodaiOf(p) ? '🧱' : ''
+      console.log(`  - [${priority(p) ?? '-'}/${risk}${dodai}] ${title(p)}${tg.length ? ' 〔' + tg.join(',') + '〕' : ''}`)
       console.log(`    ${p.url}`)
     }
   }
