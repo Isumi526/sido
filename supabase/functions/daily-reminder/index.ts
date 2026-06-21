@@ -177,7 +177,7 @@ async function processAccount(
   const linkedWorkerIds = new Set((users ?? []).map((u: any) => u.worker_id).filter(Boolean))
   for (const worker of (allWorkers ?? [])) {
     if (!linkedWorkerIds.has(worker.id)) {
-      const entry = buildEntry(worker.name, worker.id, 'LINE未紐付け')
+      const entry = buildEntry(worker.name, worker.id)
       unsubmitted.push({ ...entry, dates: allDates })
     }
   }

@@ -180,7 +180,7 @@ async function load() {
     const linkedWorkerIds = new Set((users ?? []).map((u: any) => u.worker_id).filter(Boolean))
     for (const worker of (allWorkers ?? []) as any[]) {
       if (!linkedWorkerIds.has(worker.id)) {
-        list.push({ name: buildName(worker.name, worker.id, 'LINE未紐付け'), dates: allDates })
+        list.push({ name: buildName(worker.name, worker.id), dates: allDates })
       }
     }
 
