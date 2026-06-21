@@ -109,7 +109,7 @@ async function processAccount(
 
   const { data: allWorkers } = await supabase
     .from('workers')
-    .select('id, name')
+    .select('id, name, created_at')
     .eq('account_id', accountId)
     .eq('active', true)
 
@@ -153,9 +153,8 @@ async function processAccount(
 
   const activeWorkerIds = new Set((allWorkers ?? []).map((w: any) => w.id))
 
-  // 各ユーザーの未送信起点 = max(service_start_date, 登録日)。後から登録した人に登録前の未送信を出さない。
-  // ※ users.created_at（=LINE登録日＝確実な起点）にのみ適用。未紐付け worker は created_at が
-  //   「マスタ登録時刻」で実在開始日と乖離しうるため従来どおり全期間（service_start_date 起点）のまま。
+  // 各人の未送信起点 = max(service_start_date, 登録日)。後から登録した人に登録前の未送信を出さない。
+  // LINE紐付けユーザーは users.created_at（=LINE登録日）、未紐付け worker は workers.created_at（=マスタ登録日）を使う。
   const personStart = (createdAt: string | null | undefined): string => {
     const reg = jstDateOf(createdAt)
     return reg && reg > startDate ? reg : startDate
@@ -177,8 +176,11 @@ async function processAccount(
   const linkedWorkerIds = new Set((users ?? []).map((u: any) => u.worker_id).filter(Boolean))
   for (const worker of (allWorkers ?? [])) {
     if (!linkedWorkerIds.has(worker.id)) {
+      const ws = personStart((worker as any).created_at)
+      const dates = allDates.filter(d => d >= ws)
+      if (dates.length === 0) continue
       const entry = buildEntry(worker.name, worker.id)
-      unsubmitted.push({ ...entry, dates: allDates })
+      unsubmitted.push({ ...entry, dates })
     }
   }
 
