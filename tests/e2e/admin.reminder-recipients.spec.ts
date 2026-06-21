@@ -70,6 +70,7 @@ test.describe('未送信者リマインド：受信者/除外フラグ', () => {
   const unsub = `E2E未送信SC_${TS}`
   const exempt = `E2E除外SC_${TS}`
   const recv = `E2E受信SC_${TS}`
+  const late = `E2E新規SC_${TS}`   // service_start_date 後に登録＝登録前の未送信を出さない検証用
   let scAccountId = ''
   let prevStartDate: string | null = null
   let fnAvailable = true
@@ -95,20 +96,26 @@ test.describe('未送信者リマインド：受信者/除外フラグ', () => {
       body: JSON.stringify({ key: 'service_start_date', value: y, label: 'サービス開始日', account_id: scAccountId }),
     })
 
-    // 3ユーザーを用意（日報は無し＝未送信扱い）
+    // ユーザーを用意（日報は無し＝未送信扱い）。
+    // unsub/exempt/recv は service_start_date より前から在籍する既存ユーザー（created_at を過去日に固定）。
+    // late は service_start_date より後に登録した新規ユーザー（created_at=now）＝登録前の未送信は出ない。
+    // PostgREST のバッチ insert は全オブジェクトのキー集合が一致する必要があるため created_at を全員に付与。
+    const ESTABLISHED = '2024-01-01T00:00:00Z'
+    const NOW = new Date().toISOString()
     await rest('users', {
       method: 'POST', headers: { Prefer: 'return=minimal' },
       body: JSON.stringify([
-        { account_id: scAccountId, real_name: unsub,  worker_role: 'site', line_user_id: `e2e-sc-unsub-${TS}`,  is_reminder_recipient: false, reminder_exempt: false },
-        { account_id: scAccountId, real_name: exempt, worker_role: 'site', line_user_id: `e2e-sc-exempt-${TS}`, is_reminder_recipient: false, reminder_exempt: true },
-        { account_id: scAccountId, real_name: recv,   worker_role: 'site', line_user_id: `e2e-sc-recv-${TS}`,   is_reminder_recipient: true,  reminder_exempt: false },
+        { account_id: scAccountId, real_name: unsub,  worker_role: 'site', line_user_id: `e2e-sc-unsub-${TS}`,  is_reminder_recipient: false, reminder_exempt: false, created_at: ESTABLISHED },
+        { account_id: scAccountId, real_name: exempt, worker_role: 'site', line_user_id: `e2e-sc-exempt-${TS}`, is_reminder_recipient: false, reminder_exempt: true,  created_at: ESTABLISHED },
+        { account_id: scAccountId, real_name: recv,   worker_role: 'site', line_user_id: `e2e-sc-recv-${TS}`,   is_reminder_recipient: true,  reminder_exempt: false, created_at: ESTABLISHED },
+        { account_id: scAccountId, real_name: late,   worker_role: 'site', line_user_id: `e2e-sc-late-${TS}`,   is_reminder_recipient: false, reminder_exempt: false, created_at: NOW },
       ]),
     })
   })
 
   test.afterAll(async () => {
     if (!scAccountId) return
-    for (const n of [unsub, exempt, recv]) {
+    for (const n of [unsub, exempt, recv, late]) {
       await rest(`users?account_id=eq.${scAccountId}&real_name=eq.${encodeURIComponent(n)}`, { method: 'DELETE' }).catch(() => {})
     }
     // service_start_date を復元（無かったら削除）
@@ -133,6 +140,9 @@ test.describe('未送信者リマインド：受信者/除外フラグ', () => {
     // AC3: 未送信者は出る／除外フラグの人は出ない
     expect(unsubNames).toContain(unsub)
     expect(unsubNames).not.toContain(exempt)
+    // AC5（登録日起点）: service_start_date より後に登録した新規ユーザーは、登録前の未送信を出さない。
+    //   対象期間は service_start_date=昨日のみ＝late は本日登録のため未送信に出ない。
+    expect(unsubNames).not.toContain(late)
     // AC4: 受信者プレビューに受信フラグの人が連携済みで出る
     const recvNames = (r.recipients ?? []).map((x: any) => x.name)
     expect(recvNames).toContain(recv)

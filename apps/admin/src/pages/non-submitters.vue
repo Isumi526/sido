@@ -71,6 +71,12 @@ function jstYesterday(): string {
   jst.setDate(jst.getDate() - 1)
   return `${jst.getUTCFullYear()}-${String(jst.getUTCMonth() + 1).padStart(2, '0')}-${String(jst.getUTCDate()).padStart(2, '0')}`
 }
+// timestamptz(UTC) → JST基準の 'YYYY-MM-DD'（登録日を暦日に変換）
+function jstDateOf(ts: string | null | undefined): string | null {
+  if (!ts) return null
+  const d = new Date(new Date(ts).getTime() + 9 * 60 * 60 * 1000)
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+}
 // リマインド作成時刻（JST・"M/D HH:MM"）。「いつ時点のものか」を時刻まで示す。
 function jstNowLabel(): string {
   const jst = new Date(Date.now() + 9 * 60 * 60 * 1000)
@@ -129,7 +135,7 @@ async function load() {
 
     const [{ data: users }, { data: allWorkers }, { data: reports }, { data: proxyRels }] = await Promise.all([
       supabase.from('users')
-        .select('id, real_name, worker_id, reminder_exempt, workers(name)')
+        .select('id, real_name, worker_id, reminder_exempt, created_at, workers(name)')
         .eq('account_id', accountId),
       supabase.from('workers').select('id, name').eq('account_id', accountId).eq('active', true),
       supabase.from('daily_reports').select('user_id, date')
@@ -153,13 +159,22 @@ async function load() {
     }
     const activeWorkerIds = new Set((allWorkers ?? []).map((w: any) => w.id))
 
+    // 各ユーザーの未送信起点 = max(service_start_date, 登録日)。後から登録した人に登録前の未送信を出さない。
+    // ※ users.created_at（=LINE登録日＝確実な起点）にのみ適用。未紐付け worker は created_at が
+    //   「マスタ登録時刻」で実在開始日と乖離しうるため従来どおり全期間（service_start_date 起点）のまま。
+    const personStart = (createdAt: string | null | undefined): string => {
+      const reg = jstDateOf(createdAt)
+      return reg && reg > start ? reg : start
+    }
+
     const list: Entry[] = []
     for (const user of (users ?? []) as any[]) {
       if (user.reminder_exempt) continue
       const workerId = user.worker_id
       if (workerId && !activeWorkerIds.has(workerId)) continue
       const workerName = user.workers?.name ?? user.real_name ?? '不明'
-      const missing = allDates.filter(d => !submittedSet.has(`${user.id}__${d}`))
+      const us = personStart(user.created_at)
+      const missing = allDates.filter(d => d >= us && !submittedSet.has(`${user.id}__${d}`))
       if (missing.length > 0) list.push({ name: buildName(workerName, workerId), dates: missing })
     }
     const linkedWorkerIds = new Set((users ?? []).map((u: any) => u.worker_id).filter(Boolean))
