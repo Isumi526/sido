@@ -118,6 +118,7 @@
         </button>
       </div>
 
+      <div class="checklist-scroll">
       <div class="rules-list">
         <div
           v-for="rule in rules"
@@ -158,6 +159,7 @@
           <span v-else class="consent-link disabled">{{ d.name || '資料' }} {{ $t('checkin.consentUnavailable') }}</span>
         </div>
         <p class="consent-hint">{{ $t('checkin.consentHint') }}</p>
+      </div>
       </div>
 
       <div class="submit-area">
@@ -766,7 +768,8 @@ async function submit() {
   display: flex; align-items: center; gap: 8px;
 }
 
-.rules-list { flex: 1; padding: 12px 0; overflow-y: auto; }
+.checklist-scroll { flex: 1; overflow-y: auto; }
+.rules-list { padding: 12px 0; }
 
 .rule-row {
   display: flex; align-items: flex-start; gap: 14px;
