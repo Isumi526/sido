@@ -14,7 +14,7 @@
 
 ## §0 プリフライト（1回）
 
-1. **対象取得**: `node scripts/next-target.mjs --board` を実行し、**「レビュー待ち」グループ**を読む（このグループは既に優先度順＋作成古い順にソート済み）。`$ARGUMENTS` 指定時は notion-fetch で直接取得。0件なら「レビュー待ちなし」を報告して終了。
+1. **対象取得**: `node scripts/next-target.mjs --board` を実行し、**「レビュー待ち」グループ**を読む（既に優先度順＋作成古い順にソート済み・各行は `[優先順位/リスク🧱土台]` 形式でリスクも表示される）。`$ARGUMENTS` 指定時は notion-fetch で直接取得。0件なら「レビュー待ちなし」を報告して終了。
 2. **ローカル環境を起動**（devコードをローカルで触るため）:
    - Supabaseローカル: 落ちていれば `supabase start`。
    - admin: http://localhost:3001/ （未起動なら `cd apps/admin && npm run dev`）
