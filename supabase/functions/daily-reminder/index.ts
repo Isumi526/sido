@@ -35,6 +35,13 @@ function addDay(d: string): string {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
 }
 
+// timestamptz(UTC) → JST基準の 'YYYY-MM-DD'（登録日を暦日に変換）
+function jstDateOf(ts: string | null | undefined): string | null {
+  if (!ts) return null
+  const d = new Date(new Date(ts).getTime() + 9 * 60 * 60 * 1000)
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+}
+
 function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',
@@ -97,7 +104,7 @@ async function processAccount(
 
   const { data: users } = await supabase
     .from('users')
-    .select('id, real_name, worker_id, line_user_id, is_reminder_recipient, reminder_exempt, workers(name)')
+    .select('id, real_name, worker_id, line_user_id, is_reminder_recipient, reminder_exempt, created_at, workers(name)')
     .eq('account_id', accountId)
 
   const { data: allWorkers } = await supabase
@@ -146,6 +153,14 @@ async function processAccount(
 
   const activeWorkerIds = new Set((allWorkers ?? []).map((w: any) => w.id))
 
+  // 各ユーザーの未送信起点 = max(service_start_date, 登録日)。後から登録した人に登録前の未送信を出さない。
+  // ※ users.created_at（=LINE登録日＝確実な起点）にのみ適用。未紐付け worker は created_at が
+  //   「マスタ登録時刻」で実在開始日と乖離しうるため従来どおり全期間（service_start_date 起点）のまま。
+  const personStart = (createdAt: string | null | undefined): string => {
+    const reg = jstDateOf(createdAt)
+    return reg && reg > startDate ? reg : startDate
+  }
+
   const unsubmitted: UnsubmittedEntry[] = []
   for (const user of (users ?? [])) {
     if ((user as any).reminder_exempt) continue                 // 専用フラグで除外（worker無効化に依存しない）
@@ -154,7 +169,8 @@ async function processAccount(
 
     const workerName = (user.workers as any)?.name ?? user.real_name ?? '不明'
     const entry = buildEntry(workerName, workerId)
-    const missing = allDates.filter(d => !submittedSet.has(`${user.id}__${d}`))
+    const us = personStart((user as any).created_at)
+    const missing = allDates.filter(d => d >= us && !submittedSet.has(`${user.id}__${d}`))
     if (missing.length > 0) unsubmitted.push({ ...entry, dates: missing })
   }
 
