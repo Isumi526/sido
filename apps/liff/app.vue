@@ -51,9 +51,14 @@ async function routeFromLiffState() {
   const raw = new URLSearchParams(window.location.search).get('liff.state')
   if (!raw) return
   const target = decodeURIComponent(raw)
-  // オープンリダイレクト防止：同一オリジンの絶対パスのみ（'//' や 'http' は弾く）
-  if (!target.startsWith('/') || target.startsWith('//')) return
-  await navigateTo(target)
+  // オープンリダイレクト防止：URLコンストラクタで現オリジン基準に解決し、オリジン一致＝内部パスのみ許可。
+  // これで '//host'・'/\\host'（バックスラッシュ正規化）・'https://host' 等の外部遷移を漏れなく弾く。
+  let resolved: URL
+  try { resolved = new URL(target, window.location.origin) } catch { return }
+  if (resolved.origin !== window.location.origin) return
+  const path = resolved.pathname + resolved.search + resolved.hash
+  if (!path.startsWith('/')) return
+  await navigateTo(path)
 }
 </script>
 
