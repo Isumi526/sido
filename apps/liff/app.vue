@@ -37,8 +37,29 @@ onMounted(() => {
 watch(isExempt, async (exempt) => {
   if (!exempt && !liff.initialized.value) {
     await liff.init()
+    await routeFromLiffState()
   }
 }, { immediate: true })
+
+// 現場QR(本番 = liff.line.me/<LIFF_ID>/checkin/<id>)を LINE外ブラウザ(email/pw作業員等)で開くと
+// エンドポイントには /?liff.state=/checkin/<id> の形で着地する。email/pwセッションは init で
+// 早期returnし LIFF SDK を通らない＝liff.state が消費されずホームに留まるため、ここで同一オリジンの
+// パスへ自前で遷移させる。LINE経由で既に目的パスへ replaceState 済みなら route.path が '/' でなく no-op。
+async function routeFromLiffState() {
+  if (typeof window === 'undefined') return
+  if (route.path !== '/') return
+  const raw = new URLSearchParams(window.location.search).get('liff.state')
+  if (!raw) return
+  const target = decodeURIComponent(raw)
+  // オープンリダイレクト防止：URLコンストラクタで現オリジン基準に解決し、オリジン一致＝内部パスのみ許可。
+  // これで '//host'・'/\\host'（バックスラッシュ正規化）・'https://host' 等の外部遷移を漏れなく弾く。
+  let resolved: URL
+  try { resolved = new URL(target, window.location.origin) } catch { return }
+  if (resolved.origin !== window.location.origin) return
+  const path = resolved.pathname + resolved.search + resolved.hash
+  if (!path.startsWith('/')) return
+  await navigateTo(path)
+}
 </script>
 
 <style scoped>
