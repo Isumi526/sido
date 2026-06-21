@@ -16,6 +16,13 @@ export function getPeriodKey(date: string): string {
   return `${yearMonth}-${day <= 15 ? 'first' : 'second'}`
 }
 
+/** timestamptz(UTC) → JST基準の 'YYYY-MM-DD'（ユーザー登録日を暦日に変換） */
+export function jstDateOf(ts: string | null | undefined): string | null {
+  if (!ts) return null
+  const d = new Date(new Date(ts).getTime() + 9 * 60 * 60 * 1000)
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+}
+
 /** 現在の期間キーを返す */
 export function getCurrentPeriodKey(): string {
   const today = new Date()
@@ -479,24 +486,28 @@ export const useExpense = () => {
     console.log('[getNextUnsubmittedDate] user=', user?.id)
     if (!user) return null
 
+    // 起点 = max(service_start_date, ユーザー登録日)。登録前の日付は未送信扱いしない。
+    const regDate  = jstDateOf((user as any).created_at)
+    const effStart = (regDate && regDate > startDate) ? regDate : startDate
+
     // 今日の日付をローカルタイムゾーンで取得（toISOString はUTCになるため使わない）
     const now   = new Date()
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 
-    // 開始日〜今日の送信済み日付を一括取得
+    // 起点〜今日の送信済み日付を一括取得
     const { data: reports, error: reportsError } = await supabase
       .from('daily_reports')
       .select('date')
       .eq('user_id', user.id)
-      .gte('date', startDate)
+      .gte('date', effStart)
       .lte('date', today)
 
-    console.log('[getNextUnsubmittedDate] today=', today, 'submittedCount=', reports?.length, 'error=', reportsError?.message)
+    console.log('[getNextUnsubmittedDate] today=', today, 'effStart=', effStart, 'submittedCount=', reports?.length, 'error=', reportsError?.message)
 
     const submittedDates = new Set((reports ?? []).map((r: any) => r.date as string))
 
-    // 開始日から順に走査（純粋な文字列加算でタイムゾーン問題を回避）
-    let cursor = startDate
+    // 起点から順に走査（純粋な文字列加算でタイムゾーン問題を回避）
+    let cursor = effStart
     while (cursor <= today) {
       if (!submittedDates.has(cursor)) {
         console.log('[getNextUnsubmittedDate] next=', cursor)
@@ -528,6 +539,15 @@ export const useExpense = () => {
     const startDate = settingRows?.[0]?.value
     if (!startDate) return 'NOT_CONFIGURED'
 
+    // 起点 = max(service_start_date, ユーザー登録日)。登録前の日付は未送信扱いしない。
+    const { data: urow } = await supabase
+      .from('users')
+      .select('created_at')
+      .eq('id', userId)
+      .maybeSingle()
+    const regDate  = jstDateOf((urow as any)?.created_at)
+    const effStart = (regDate && regDate > startDate) ? regDate : startDate
+
     const now   = new Date()
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 
@@ -535,12 +555,12 @@ export const useExpense = () => {
       .from('daily_reports')
       .select('date')
       .eq('user_id', userId)
-      .gte('date', startDate)
+      .gte('date', effStart)
       .lte('date', today)
 
     const submittedDates = new Set((reports ?? []).map((r: any) => r.date as string))
 
-    let cursor = startDate
+    let cursor = effStart
     while (cursor <= today) {
       if (!submittedDates.has(cursor)) return cursor
       const d = new Date(cursor + 'T12:00:00')
