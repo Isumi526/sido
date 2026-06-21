@@ -137,7 +137,7 @@ async function load() {
       supabase.from('users')
         .select('id, real_name, worker_id, reminder_exempt, created_at, workers(name)')
         .eq('account_id', accountId),
-      supabase.from('workers').select('id, name').eq('account_id', accountId).eq('active', true),
+      supabase.from('workers').select('id, name, created_at').eq('account_id', accountId).eq('active', true),
       supabase.from('daily_reports').select('user_id, date')
         .eq('account_id', accountId).gte('date', start).lte('date', yest),
       supabase.from('worker_proxies').select('worker_id, proxy_operator_id').eq('account_id', accountId),
@@ -159,9 +159,8 @@ async function load() {
     }
     const activeWorkerIds = new Set((allWorkers ?? []).map((w: any) => w.id))
 
-    // 各ユーザーの未送信起点 = max(service_start_date, 登録日)。後から登録した人に登録前の未送信を出さない。
-    // ※ users.created_at（=LINE登録日＝確実な起点）にのみ適用。未紐付け worker は created_at が
-    //   「マスタ登録時刻」で実在開始日と乖離しうるため従来どおり全期間（service_start_date 起点）のまま。
+    // 各人の未送信起点 = max(service_start_date, 登録日)。後から登録した人に登録前の未送信を出さない。
+    // LINE紐付けユーザーは users.created_at（=LINE登録日）、未紐付け worker は workers.created_at（=マスタ登録日）を使う。
     const personStart = (createdAt: string | null | undefined): string => {
       const reg = jstDateOf(createdAt)
       return reg && reg > start ? reg : start
@@ -180,7 +179,10 @@ async function load() {
     const linkedWorkerIds = new Set((users ?? []).map((u: any) => u.worker_id).filter(Boolean))
     for (const worker of (allWorkers ?? []) as any[]) {
       if (!linkedWorkerIds.has(worker.id)) {
-        list.push({ name: buildName(worker.name, worker.id), dates: allDates })
+        const ws = personStart(worker.created_at)
+        const dates = allDates.filter(d => d >= ws)
+        if (dates.length === 0) continue
+        list.push({ name: buildName(worker.name, worker.id), dates })
       }
     }
 
