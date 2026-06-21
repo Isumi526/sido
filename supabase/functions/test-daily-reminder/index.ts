@@ -131,6 +131,10 @@ async function processAccount(
   const workerNameMap = new Map<string, string>(
     (allWorkers ?? []).map((w: any) => [w.id, w.name])
   )
+  // worker_id → 作業員マスタ登録日（起点に使う）
+  const workerCreatedMap = new Map<string, string>(
+    (allWorkers ?? []).map((w: any) => [w.id, w.created_at])
+  )
   // worker_id → 代理人名リスト
   const proxyNamesMap = new Map<string, string[]>()
   for (const rel of (proxyRels ?? []) as any[]) {
@@ -153,8 +157,8 @@ async function processAccount(
 
   const activeWorkerIds = new Set((allWorkers ?? []).map((w: any) => w.id))
 
-  // 各人の未送信起点 = max(service_start_date, 登録日)。後から登録した人に登録前の未送信を出さない。
-  // LINE紐付けユーザーは users.created_at（=LINE登録日）、未紐付け worker は workers.created_at（=マスタ登録日）を使う。
+  // 各人の未送信起点 = max(service_start_date, 作業員登録日)。後から登録した人に登録前の未送信を出さない。
+  // 起点は「作業員マスタ登録日(workers.created_at)」で統一（紐付けは worker_id 経由、無ければ users.created_at にフォールバック）。
   const personStart = (createdAt: string | null | undefined): string => {
     const reg = jstDateOf(createdAt)
     return reg && reg > startDate ? reg : startDate
@@ -168,7 +172,7 @@ async function processAccount(
 
     const workerName = (user.workers as any)?.name ?? user.real_name ?? '不明'
     const entry = buildEntry(workerName, workerId)
-    const us = personStart((user as any).created_at)
+    const us = personStart((workerId && workerCreatedMap.get(workerId)) || (user as any).created_at)
     const missing = allDates.filter(d => d >= us && !submittedSet.has(`${user.id}__${d}`))
     if (missing.length > 0) unsubmitted.push({ ...entry, dates: missing })
   }

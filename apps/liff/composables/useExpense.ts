@@ -486,8 +486,14 @@ export const useExpense = () => {
     console.log('[getNextUnsubmittedDate] user=', user?.id)
     if (!user) return null
 
-    // 起点 = max(service_start_date, ユーザー登録日)。登録前の日付は未送信扱いしない。
-    const regDate  = jstDateOf((user as any).created_at)
+    // 起点 = max(service_start_date, 作業員登録日)。登録前の日付は未送信扱いしない。
+    // 作業員マスタ登録日(workers.created_at)で統一。worker_id 経由で取得し、無ければ users.created_at にフォールバック。
+    let regSrc: string | null | undefined = (user as any).created_at
+    if ((user as any).worker_id) {
+      const { data: w } = await supabase.from('workers').select('created_at').eq('id', (user as any).worker_id).maybeSingle()
+      if ((w as any)?.created_at) regSrc = (w as any).created_at
+    }
+    const regDate  = jstDateOf(regSrc)
     const effStart = (regDate && regDate > startDate) ? regDate : startDate
 
     // 今日の日付をローカルタイムゾーンで取得（toISOString はUTCになるため使わない）
@@ -539,13 +545,19 @@ export const useExpense = () => {
     const startDate = settingRows?.[0]?.value
     if (!startDate) return 'NOT_CONFIGURED'
 
-    // 起点 = max(service_start_date, ユーザー登録日)。登録前の日付は未送信扱いしない。
+    // 起点 = max(service_start_date, 作業員登録日)。登録前の日付は未送信扱いしない。
+    // 作業員マスタ登録日(workers.created_at)で統一。無ければ users.created_at にフォールバック。
     const { data: urow } = await supabase
       .from('users')
-      .select('created_at')
+      .select('created_at, worker_id')
       .eq('id', userId)
       .maybeSingle()
-    const regDate  = jstDateOf((urow as any)?.created_at)
+    let regSrc: string | null | undefined = (urow as any)?.created_at
+    if ((urow as any)?.worker_id) {
+      const { data: w } = await supabase.from('workers').select('created_at').eq('id', (urow as any).worker_id).maybeSingle()
+      if ((w as any)?.created_at) regSrc = (w as any).created_at
+    }
+    const regDate  = jstDateOf(regSrc)
     const effStart = (regDate && regDate > startDate) ? regDate : startDate
 
     const now   = new Date()
