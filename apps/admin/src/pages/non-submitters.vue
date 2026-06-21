@@ -145,6 +145,7 @@ async function load() {
 
     const submittedSet = new Set((reports ?? []).map((r: any) => `${r.user_id}__${r.date}`))
     const workerNameMap = new Map<string, string>((allWorkers ?? []).map((w: any) => [w.id, w.name]))
+    const workerCreatedMap = new Map<string, string>((allWorkers ?? []).map((w: any) => [w.id, w.created_at]))
     const proxyNamesMap = new Map<string, string[]>()
     for (const rel of (proxyRels ?? []) as any[]) {
       const nm = workerNameMap.get(rel.proxy_operator_id)
@@ -159,8 +160,8 @@ async function load() {
     }
     const activeWorkerIds = new Set((allWorkers ?? []).map((w: any) => w.id))
 
-    // 各人の未送信起点 = max(service_start_date, 登録日)。後から登録した人に登録前の未送信を出さない。
-    // LINE紐付けユーザーは users.created_at（=LINE登録日）、未紐付け worker は workers.created_at（=マスタ登録日）を使う。
+    // 各人の未送信起点 = max(service_start_date, 作業員登録日)。後から登録した人に登録前の未送信を出さない。
+    // 起点は「作業員マスタ登録日(workers.created_at)」で統一（紐付けは worker_id 経由、無ければ users.created_at にフォールバック）。
     const personStart = (createdAt: string | null | undefined): string => {
       const reg = jstDateOf(createdAt)
       return reg && reg > start ? reg : start
@@ -172,7 +173,7 @@ async function load() {
       const workerId = user.worker_id
       if (workerId && !activeWorkerIds.has(workerId)) continue
       const workerName = user.workers?.name ?? user.real_name ?? '不明'
-      const us = personStart(user.created_at)
+      const us = personStart((workerId && workerCreatedMap.get(workerId)) || user.created_at)
       const missing = allDates.filter(d => d >= us && !submittedSet.has(`${user.id}__${d}`))
       if (missing.length > 0) list.push({ name: buildName(workerName, workerId), dates: missing })
     }
