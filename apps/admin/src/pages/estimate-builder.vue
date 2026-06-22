@@ -7,7 +7,7 @@
     <!-- 案件選択（既存を選ぶ or ＋新規案件で入力欄を出す＝二重入力を避ける） -->
     <div class="bar">
       <label>案件</label>
-      <select v-model="projectId" class="input sel" data-testid="project-select" @change="loadItems">
+      <select v-model="projectId" class="input sel" data-testid="project-select" @change="onProjectChange">
         <option :value="null" disabled>案件を選択…</option>
         <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
       </select>
@@ -18,6 +18,17 @@
         <button class="btn-del" title="キャンセル" @click="addingProject = false; newProjectName = ''">×</button>
       </template>
       <span v-if="projectErr" class="err" data-testid="project-err">{{ projectErr }}</span>
+
+      <!-- 案件に元請けを紐付け（見積書PDFの送信先になる。正式受注後に現場へ昇華する前段） -->
+      <template v-if="projectId">
+        <label>元請け</label>
+        <select :value="currentContractorId || ''" class="input sel" :disabled="projectSaving" data-testid="project-contractor"
+                @change="setProjectContractor(($event.target as HTMLSelectElement).value || null)">
+          <option value="">（未設定）</option>
+          <option v-for="c in contractors" :key="c.id" :value="c.id">{{ c.name }}</option>
+        </select>
+        <RouterLink to="/contractors" class="muted-link">元請け担当者を管理</RouterLink>
+      </template>
     </div>
 
     <!-- E5 マスタ蓄積: 入力済み材料を予測変換候補に（案件選択前から常時ロード） -->
@@ -123,22 +134,22 @@
           <div class="pdf-grand">合計　{{ yen(grandTotal) }}（税抜）</div>
         </div>
 
-        <!-- ③ 見積書PDFを商社の担当者宛にメール送信＋履歴 -->
+        <!-- ③ 見積書PDFを元請けの担当者宛にメール送信＋履歴 -->
         <div class="send-block">
-          <div class="sub-h">商社へメール送信</div>
-          <div class="send-row">
-            <select v-model="sendSupplierId" class="input sm" data-testid="send-supplier" @change="onSendSupplier">
-              <option :value="null" disabled>商社を選択…</option>
-              <option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}</option>
-            </select>
-            <select v-model="sendContactId" class="input sm" data-testid="send-contact">
-              <option :value="null" disabled>担当者を選択…</option>
-              <option v-for="c in sendContacts" :key="c.id" :value="c.id">{{ c.name || '(担当者)' }}{{ c.email ? `（${c.email}）` : '（メール未登録）' }}</option>
-            </select>
-            <button class="btn-primary" :disabled="!canSend || sending" data-testid="send-estimate" @click="sendPdf">{{ sending ? '送信中…' : 'PDFを送信' }}</button>
-          </div>
-          <span v-if="sendSupplierId && !sendContacts.length" class="muted">この商社には担当者が未登録です（下請け業者マスタで登録してください）。</span>
-          <span v-else-if="sendContactId && !sendEmail" class="err">この担当者はメール未登録です。送信できません。</span>
+          <div class="sub-h">元請けへメール送信</div>
+          <p v-if="!currentContractorId" class="muted">送信するには、上の「元請け」で案件の元請けを選んでください（担当者は<RouterLink to="/contractors">元請け業者マスタ</RouterLink>で登録）。</p>
+          <template v-else>
+            <div class="send-row">
+              <span class="send-to">{{ currentContractorName }} 御中</span>
+              <select v-model="sendContactId" class="input sm" data-testid="send-contact">
+                <option :value="null" disabled>担当者を選択…</option>
+                <option v-for="c in sendContacts" :key="c.id" :value="c.id">{{ c.name || '(担当者)' }}{{ c.email ? `（${c.email}）` : '（メール未登録）' }}</option>
+              </select>
+              <button class="btn-primary" :disabled="!canSend || sending" data-testid="send-estimate" @click="sendPdf">{{ sending ? '送信中…' : 'PDFを送信' }}</button>
+            </div>
+            <span v-if="!sendContacts.length" class="muted">この元請けには担当者が未登録です（<RouterLink to="/contractors">元請け業者マスタ</RouterLink>で登録してください）。</span>
+            <span v-else-if="sendContactId && !sendEmail" class="err">この担当者はメール未登録です。送信できません。</span>
+          </template>
           <span v-if="sendMsg" class="ok" data-testid="send-msg">{{ sendMsg }}</span>
           <span v-if="sendErr" class="err" data-testid="send-err">{{ sendErr }}</span>
 
@@ -318,7 +329,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
 import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
 import { supabase } from '../lib/supabase'
@@ -327,12 +339,13 @@ import { getAccountId, getAccountSlug } from '../lib/account'
 const BUCKET = 'expense-receipts'
 const IS_DEV = import.meta.env.DEV
 
-type Project  = { id: string; name: string; client_name: string | null }
+type Project  = { id: string; name: string; client_name: string | null; contractor_id: string | null }
+type Contractor = { id: string; name: string }
 type Trade    = { id: string; name: string }
 type Material = { id: string; name: string; unit: string | null; code: string | null }
 type Supplier = { id: string; name: string }
 type MatPrice = { id: string; material_id: string; supplier_id: string; unit_price: number; effective_date: string | null }
-type Contact  = { id: string; subcontractor_id: string; name: string | null; email: string | null }
+type Contact  = { id: string; contractor_id: string; name: string | null; email: string | null }
 type EstimateSend = { id: string; email_to: string | null; subject: string | null; sent_at: string | null; created_at: string }
 type Row = {
   id: string | null
@@ -395,14 +408,15 @@ const saving         = ref(false)
 const saveError      = ref('')
 const savedMsg       = ref('')
 let accountId = ''
-// ③ 見積書PDFのメール送信（商社の担当者宛）＋送信履歴
-const contacts       = ref<Contact[]>([])
-const sends          = ref<EstimateSend[]>([])
-const sendSupplierId = ref<string | null>(null)
-const sendContactId  = ref<string | null>(null)
-const sending        = ref(false)
-const sendMsg        = ref('')
-const sendErr        = ref('')
+// ③ 見積書PDFのメール送信（元請けの担当者宛）＋送信履歴
+const contractors       = ref<Contractor[]>([])
+const contractorContacts = ref<Contact[]>([])
+const sends             = ref<EstimateSend[]>([])
+const sendContactId     = ref<string | null>(null)
+const sending           = ref(false)
+const sendMsg           = ref('')
+const sendErr           = ref('')
+const projectSaving     = ref(false)   // 案件の元請け紐付け保存中
 
 const yen = (n: number) => '¥' + Math.round(n || 0).toLocaleString('ja-JP')
 const lineAmount = (r: Row) => (Number(r.quantity) || 0) * (Number(r.unit_price) || 0)
@@ -438,15 +452,27 @@ const previewEl = ref<HTMLElement | null>(null)
 const pdfBusy = ref(false)
 const today = new Date().toISOString().slice(0, 10)
 const currentProjectName = computed(() => projects.value.find(p => p.id === projectId.value)?.name ?? '')
-const currentClient = computed(() => projects.value.find(p => p.id === projectId.value)?.client_name ?? '')
+const currentProject   = computed(() => projects.value.find(p => p.id === projectId.value) ?? null)
+const currentContractorId = computed(() => currentProject.value?.contractor_id ?? null)
+const currentContractorName = computed(() => contractors.value.find(c => c.id === currentContractorId.value)?.name ?? '')
+// PDFの宛名（御中）は元請けを優先、無ければ従来の client_name
+const currentClient = computed(() => currentContractorName.value || (currentProject.value?.client_name ?? ''))
 
-// ③ 送信先＝商社の担当者。商社を選ぶと担当者を絞り込み、メール未登録は送信不可。
-const sendContacts = computed(() => contacts.value.filter(c => c.subcontractor_id === sendSupplierId.value))
+// ③ 送信先＝案件に紐づく元請けの担当者。元請けの担当者だけに絞り、メール未登録は送信不可。
+const sendContacts = computed(() => contractorContacts.value.filter(c => c.contractor_id === currentContractorId.value))
 const sendEmail    = computed(() => sendContacts.value.find(c => c.id === sendContactId.value)?.email || '')
-const canSend      = computed(() => rows.value.length > 0 && !!sendContactId.value && !!sendEmail.value)
-function onSendSupplier() {
-  const c = contacts.value.find(x => x.subcontractor_id === sendSupplierId.value)
-  sendContactId.value = c?.id ?? null
+const canSend      = computed(() => rows.value.length > 0 && !!currentContractorId.value && !!sendContactId.value && !!sendEmail.value)
+// 案件に元請けを紐付け（estimate_projects.contractor_id を保存）
+async function setProjectContractor(contractorId: string | null) {
+  if (!projectId.value) return
+  projectSaving.value = true
+  try {
+    await supabase.from('estimate_projects').update({ contractor_id: contractorId }).eq('id', projectId.value)
+    const p = projects.value.find(x => x.id === projectId.value)
+    if (p) p.contractor_id = contractorId
+    // 元請けが変わったら送信先担当者を初期化（先頭）
+    sendContactId.value = contractorContacts.value.find(c => c.contractor_id === contractorId)?.id ?? null
+  } finally { projectSaving.value = false }
 }
 
 // E4 差分承認: pending の価格改定を読む
@@ -624,7 +650,7 @@ async function sendPdf() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY, Authorization: `Bearer ${session?.access_token ?? ''}` },
       body: JSON.stringify({
-        project_id: projectId.value, subcontractor_id: sendSupplierId.value, subcontractor_contact_id: sendContactId.value,
+        project_id: projectId.value, contractor_id: currentContractorId.value, contractor_contact_id: sendContactId.value,
         pdf_path: path, total_amount: Math.round(grandTotal.value), project_name: currentProjectName.value,
       }),
     })
@@ -641,7 +667,7 @@ async function sendPdf() {
 
 async function loadProjects() {
   const { data } = await supabase.from('estimate_projects')
-    .select('id, name, client_name').eq('account_id', accountId).order('created_at', { ascending: false })
+    .select('id, name, client_name, contractor_id').eq('account_id', accountId).order('created_at', { ascending: false })
   projects.value = (data ?? []) as Project[]
 }
 async function loadTrades() {
@@ -665,11 +691,14 @@ async function loadMaterialPrices() {
     .select('id, material_id, supplier_id, unit_price, effective_date').eq('account_id', accountId).eq('is_current', true)
   matPrices.value = (data ?? []) as MatPrice[]
 }
-// ③ 商社の担当者（送信先候補）。subcontractor_contacts を流用（発注書と同じ）。
-async function loadContacts() {
-  const { data } = await supabase.from('subcontractor_contacts')
-    .select('id, subcontractor_id, name, email').eq('account_id', accountId).eq('is_deleted', false).order('sort_order')
-  contacts.value = (data ?? []) as Contact[]
+// ③ 元請けと担当者（見積書の送信先候補）。元請けマスタ(contractors)＋ contractor_contacts。
+async function loadContractors() {
+  const [{ data: cs }, { data: ccs }] = await Promise.all([
+    supabase.from('contractors').select('id, name').eq('account_id', accountId).eq('active', true).order('name'),
+    supabase.from('contractor_contacts').select('id, contractor_id, name, email').eq('account_id', accountId).eq('is_deleted', false).order('sort_order'),
+  ])
+  contractors.value = (cs ?? []) as Contractor[]
+  contractorContacts.value = (ccs ?? []) as Contact[]
 }
 // ③ この案件の送信履歴
 async function loadSends() {
@@ -769,7 +798,8 @@ function resolveMaterial(r: Row) {
 async function loadItems() {
   rows.value = []
   removedIds.value = []
-  if (!projectId.value) return
+  lastLoadedProjectId = projectId.value
+  if (!projectId.value) { markSaved(); return }
   const { data } = await supabase.from('estimate_items')
     .select('id, category_id, trade_id, material_id, supplier_id, item_name, unit, quantity, unit_price, note')
     .eq('project_id', projectId.value).order('sort_order')
@@ -778,7 +808,10 @@ async function loadItems() {
     supplier_id: d.supplier_id ?? null, item_name: d.item_name, unit: d.unit ?? '',
     quantity: Number(d.quantity) || 0, unit_price: Number(d.unit_price) || 0,
   }))
+  markSaved()
   await loadSends()
+  // 送信先担当者を案件の元請けの先頭で初期化
+  sendContactId.value = contractorContacts.value.find(c => c.contractor_id === currentContractorId.value)?.id ?? null
 }
 
 async function addProject() {
@@ -882,6 +915,7 @@ async function save() {
       }
     }
     if (created.size) await loadMaterials()
+    markSaved()   // 保存完了＝離脱ガードの基準を更新（以降は未保存扱いしない）
     savedMsg.value = '保存しました'
     setTimeout(() => (savedMsg.value = ''), 2500)
   } catch (e: any) {
@@ -891,9 +925,31 @@ async function save() {
   }
 }
 
+// #3 編集中の離脱ガード: 未保存の明細がある状態で 遷移/タブ閉じ/案件切替 時に確認する
+function rowsSig(): string {
+  return JSON.stringify(rows.value.map(r => [r.location, r.trade_id, r.material_id, r.supplier_id, r.item_name, r.unit, r.quantity, r.unit_price]))
+}
+const savedSig = ref('[]')
+function markSaved() { savedSig.value = rowsSig() }   // 「今の明細＝保存済み」とみなす基準を更新
+const isDirty = computed(() => !!projectId.value && (rowsSig() !== savedSig.value || removedIds.value.length > 0))
+const DIRTY_MSG = '保存していない明細があります。保存せずに移動しますか？'
+let lastLoadedProjectId: string | null = null
+
+// 案件切替時も未保存なら確認（v-modelで projectId は既に新値・キャンセルなら元に戻す）
+async function onProjectChange() {
+  if (isDirty.value && !window.confirm(DIRTY_MSG)) { projectId.value = lastLoadedProjectId; return }
+  await loadItems()
+}
+// ルート遷移（サイドメニュー等）のガード
+onBeforeRouteLeave(() => (isDirty.value ? window.confirm(DIRTY_MSG) : true))
+// タブ閉じ/リロードのガード（ブラウザのネイティブ確認）
+function beforeUnload(e: BeforeUnloadEvent) { if (isDirty.value) { e.preventDefault(); e.returnValue = '' } }
+onMounted(() => window.addEventListener('beforeunload', beforeUnload))
+onUnmounted(() => window.removeEventListener('beforeunload', beforeUnload))
+
 onMounted(async () => {
   accountId = await getAccountId()
-  await Promise.all([loadProjects(), loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices(), loadRevisions(), loadContacts()])
+  await Promise.all([loadProjects(), loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices(), loadRevisions(), loadContractors()])
   if (!activeSupplier.value && suppliers.value[0]) activeSupplier.value = suppliers.value[0].id  // 既定タブ
 })
 </script>
@@ -993,5 +1049,7 @@ onMounted(async () => {
 .send-block { margin-top: 16px; padding-top: 12px; border-top: 1px dashed #ddd; }
 .send-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
 .send-row .input.sm { min-width: 200px; width: auto; }
+.send-to { font-weight: 700; color: #333; }
+.muted-link { font-size: 12px; color: #06864a; }
 .send-history { margin-top: 12px; }
 </style>

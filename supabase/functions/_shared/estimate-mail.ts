@@ -1,8 +1,8 @@
 // ============================================================
 //  _shared/estimate-mail.ts
-//  見積書PDFを商社（下請け業者 区分=商社）の担当者アドレスへ送る中核ロジック。
+//  見積書PDFを元請け（contractors）の担当者アドレスへ送る中核ロジック。
 //  - send-estimate（本送信）/ test-send-estimate（テスト：実送信しない）の単一ソース。
-//  - 承諾フローは不要（見積の共有/依頼用途）なのでトークンは発行しない。
+//  - 承諾フローは不要（見積の共有/提出用途）なのでトークンは発行しない。
 //  - PDF（Storage: expense-receipts/<pdf_path>）を base64 添付して Resend 送信。
 //  - 送信履歴は estimate_sends に1件 insert（service_role）。
 //  認可: 呼び出し元JWTで estimate_projects を RLSスコープ read し
@@ -35,8 +35,8 @@ function yen(n: number | null | undefined): string {
 export async function sendEstimate(
   opts: {
     project_id: string
-    subcontractor_id?: string | null
-    subcontractor_contact_id: string
+    contractor_id?: string | null
+    contractor_contact_id: string
     pdf_path?: string | null
     total_amount?: number | null
     project_name?: string | null
@@ -45,8 +45,8 @@ export async function sendEstimate(
   },
 ): Promise<{ status: number; body: any }> {
   try {
-    if (!opts.project_id || !opts.subcontractor_contact_id) {
-      return { status: 400, body: { error: 'project_id と subcontractor_contact_id が必要です' } }
+    if (!opts.project_id || !opts.contractor_contact_id) {
+      return { status: 400, body: { error: 'project_id と contractor_contact_id が必要です' } }
     }
 
     const svc = createClient(SUPABASE_URL, SERVICE_KEY)
@@ -62,11 +62,11 @@ export async function sendEstimate(
     if (!project) return { status: 403, body: { error: 'forbidden_or_not_found' } }
     const accountId = project.account_id as string
 
-    // 宛先メール解決（project の account に限定・特権read）
+    // 宛先メール解決（元請けの担当者・project の account に限定・特権read）
     const { data: contact } = await svc
-      .from('subcontractor_contacts')
-      .select('name, email, subcontractor_id')
-      .eq('id', opts.subcontractor_contact_id)
+      .from('contractor_contacts')
+      .select('name, email, contractor_id')
+      .eq('id', opts.contractor_contact_id)
       .eq('account_id', accountId)
       .maybeSingle()
     const email = contact?.email ?? null
@@ -112,15 +112,15 @@ export async function sendEstimate(
 
     // 送信履歴を残す（両モード共通・成功時）。test時は sent_at=null（＝実送信していない）。
     const { error: insErr } = await svc.from('estimate_sends').insert({
-      account_id:               accountId,
-      project_id:               project.id,
-      subcontractor_id:         opts.subcontractor_id ?? contact?.subcontractor_id ?? null,
-      subcontractor_contact_id: opts.subcontractor_contact_id,
-      email_to:                 email,
+      account_id:            accountId,
+      project_id:            project.id,
+      contractor_id:         opts.contractor_id ?? contact?.contractor_id ?? null,
+      contractor_contact_id: opts.contractor_contact_id,
+      email_to:              email,
       subject,
-      pdf_path:                 opts.pdf_path ?? null,
-      total_amount:             opts.total_amount ?? null,
-      sent_at:                  opts.send ? nowIso : null,
+      pdf_path:              opts.pdf_path ?? null,
+      total_amount:          opts.total_amount ?? null,
+      sent_at:               opts.send ? nowIso : null,
     })
     if (insErr) console.error('[estimate-mail] history insert failed:', insErr.message)
 
