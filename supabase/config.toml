@@ -419,3 +419,5 @@ verify_jwt = false
 verify_jwt = true
 [functions.site-attachment-url]
 verify_jwt = false
+[functions.estimate-price-ocr]
+verify_jwt = false
