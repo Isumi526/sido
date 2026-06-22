@@ -24,6 +24,47 @@
         </select>
         <RouterLink to="/contractors" class="muted-link">元請け担当者を管理</RouterLink>
       </div>
+
+      <!-- 受注 → 現場化（受注確定で現場に紐付け。以降の日報/発注/経費を現場単位に） -->
+      <div class="bar-group">
+        <template v-if="currentProject?.site_id">
+          <span class="badge ok-badge">受注済み</span>
+          <span class="muted">現場: <RouterLink to="/sites" class="muted-link" data-testid="linked-site">{{ currentSiteName || '(現場)' }}</RouterLink></span>
+        </template>
+        <button v-else class="btn-add" data-testid="promote-open" @click="openPromote">🏗 受注して現場化</button>
+        <span v-if="promoteMsg" class="ok" data-testid="promote-msg">{{ promoteMsg }}</span>
+      </div>
+    </div>
+
+    <!-- 受注→現場化ダイアログ -->
+    <div v-if="promoteOpen" class="modal-overlay" @click.self="promoteOpen = false">
+      <div class="send-modal">
+        <h3>受注 → 現場化</h3>
+        <p class="muted">この見積を「受注」にして現場に紐付けます。以降の日報・発注・経費を現場単位で集約できます。</p>
+        <div class="field">
+          <label>方法</label>
+          <label class="recipient"><input type="radio" value="new" v-model="promoteMode" />新しい現場を作成</label>
+          <label class="recipient" :class="{ off: !sites.length }"><input type="radio" value="existing" v-model="promoteMode" :disabled="!sites.length" />既存の現場に紐付け</label>
+        </div>
+        <template v-if="promoteMode === 'new'">
+          <div class="field"><label>現場名</label><input v-model="promoteName" class="input" data-testid="promote-name" /></div>
+          <div class="field"><span class="muted">元請け: {{ currentContractorName || '—' }} ／ 工事場所: {{ doc.construction_location || '—' }}（現場に引き継ぎます）</span></div>
+        </template>
+        <template v-else>
+          <div class="field">
+            <label>紐付ける現場</label>
+            <select v-model="promoteSiteId" class="input" data-testid="promote-site">
+              <option :value="null" disabled>現場を選択…</option>
+              <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.name }}</option>
+            </select>
+          </div>
+        </template>
+        <div class="modal-actions">
+          <button class="btn-primary" :disabled="promoteBusy || (promoteMode === 'new' ? !promoteName.trim() : !promoteSiteId)" data-testid="promote-confirm" @click="promote">{{ promoteBusy ? '処理中…' : '現場化して受注にする' }}</button>
+          <button class="btn-cancel" @click="promoteOpen = false">キャンセル</button>
+        </div>
+        <span v-if="promoteErr" class="err" data-testid="promote-err">{{ promoteErr }}</span>
+      </div>
     </div>
 
     <!-- E5 マスタ蓄積: 入力済み材料を予測変換候補に（案件選択前から常時ロード） -->
@@ -363,7 +404,8 @@ async function closeDrawer() {
   await Promise.all([loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices(), loadContractors(), loadCompany()])
 }
 
-type Project  = { id: string; name: string; client_name: string | null; contractor_id: string | null }
+type Project  = { id: string; name: string; client_name: string | null; contractor_id: string | null; status: string; site_id: string | null }
+type Site     = { id: string; name: string }
 type Contractor = { id: string; name: string }
 type Trade    = { id: string; name: string }
 type Material = { id: string; name: string; unit: string | null; code: string | null }
@@ -385,6 +427,15 @@ type Row = {
 }
 
 const projects       = ref<Project[]>([])
+// 現場昇華（受注確定→現場を作成/紐付け）
+const sites          = ref<Site[]>([])
+const promoteOpen    = ref(false)
+const promoteMode    = ref<'new' | 'existing'>('new')
+const promoteName    = ref('')
+const promoteSiteId  = ref<string | null>(null)
+const promoteBusy    = ref(false)
+const promoteErr     = ref('')
+const promoteMsg     = ref('')
 const trades         = ref<Trade[]>([])
 const materials      = ref<Material[]>([])
 const suppliers      = ref<Supplier[]>([])
@@ -541,6 +592,41 @@ const currentContractorId = computed(() => currentProject.value?.contractor_id ?
 const currentContractorName = computed(() => contractors.value.find(c => c.id === currentContractorId.value)?.name ?? '')
 // PDFの宛名（御中）は元請けを優先、無ければ従来の client_name
 const currentClient = computed(() => currentContractorName.value || (currentProject.value?.client_name ?? ''))
+// 現場昇華: 紐付く現場名／受注確定で現場を作成 or 既存現場に紐付け＋ステータスを active(受注) に
+const currentSiteName = computed(() => sites.value.find(s => s.id === currentProject.value?.site_id)?.name ?? '')
+function openPromote() {
+  promoteErr.value = ''; promoteMsg.value = ''
+  promoteMode.value = 'new'
+  promoteName.value = currentProjectName.value
+  promoteSiteId.value = null
+  promoteOpen.value = true
+}
+async function promote() {
+  if (!projectId.value) return
+  promoteBusy.value = true; promoteErr.value = ''
+  try {
+    let siteId = promoteSiteId.value
+    if (promoteMode.value === 'new') {
+      const name = promoteName.value.trim()
+      if (!name) { promoteErr.value = '現場名を入力してください'; return }
+      const { data, error } = await supabase.from('sites').insert({
+        account_id: accountId, name, contractor_id: currentContractorId.value || null, location: doc.value.construction_location || null,
+      }).select('id, name').single()
+      if (error) { promoteErr.value = /duplicate|unique/i.test(error.message) ? `現場「${name}」は既にあります（「既存の現場に紐付け」を選んでください）` : error.message; return }
+      siteId = (data as any).id
+      sites.value.push(data as Site)
+    }
+    if (!siteId) { promoteErr.value = '現場を選択してください'; return }
+    const { error: upErr } = await supabase.from('estimate_projects').update({ site_id: siteId, status: 'active' }).eq('id', projectId.value)
+    if (upErr) throw upErr
+    const p = projects.value.find(x => x.id === projectId.value)
+    if (p) { p.site_id = siteId; p.status = 'active' }
+    promoteOpen.value = false
+    promoteMsg.value = `受注として現場「${currentSiteName.value}」に紐付けました`
+    setTimeout(() => (promoteMsg.value = ''), 3500)
+  } catch (e: any) { promoteErr.value = e?.message ?? '現場化に失敗しました' }
+  finally { promoteBusy.value = false }
+}
 
 // ③ 送信先＝案件に紐づく元請けの担当者。元請けの担当者だけに絞り、メール未登録は送信不可。
 const sendContacts = computed(() => contractorContacts.value.filter(c => c.contractor_id === currentContractorId.value))
@@ -759,7 +845,7 @@ async function sendPO(g: { supplierId: string; supplierName: string; items: Row[
 
 async function loadProjects() {
   const { data } = await supabase.from('estimate_projects')
-    .select('id, name, client_name, contractor_id').eq('account_id', accountId).order('created_at', { ascending: false })
+    .select('id, name, client_name, contractor_id, status, site_id').eq('account_id', accountId).order('created_at', { ascending: false })
   projects.value = (data ?? []) as Project[]
 }
 async function loadTrades() {
@@ -791,6 +877,11 @@ async function loadContractors() {
   ])
   contractors.value = (cs ?? []) as Contractor[]
   contractorContacts.value = (ccs ?? []) as Contact[]
+}
+// 現場一覧（受注時の紐付け先・現場名表示用）
+async function loadSites() {
+  const { data } = await supabase.from('sites').select('id, name').eq('account_id', accountId).eq('active', true).order('name')
+  sites.value = (data ?? []) as Site[]
 }
 // ④ 自社情報（settings）を読む
 async function loadCompany() {
@@ -985,7 +1076,7 @@ onUnmounted(() => window.removeEventListener('beforeunload', beforeUnload))
 
 onMounted(async () => {
   accountId = await getAccountId()
-  await Promise.all([loadProjects(), loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices(), loadContractors(), loadSubContacts(), loadCompany()])
+  await Promise.all([loadProjects(), loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices(), loadContractors(), loadSubContacts(), loadCompany(), loadSites()])
   // 一覧から開いた案件（?project=<id>）を初期選択
   const qp = route.query.project
   const pid = Array.isArray(qp) ? qp[0] : qp
@@ -1011,6 +1102,7 @@ onMounted(async () => {
 .new-estimate h2 { font-size: 18px; font-weight: 700; margin: 0 0 8px; }
 .new-estimate .new-row { display: flex; gap: 10px; align-items: center; margin-top: 14px; }
 .new-estimate .new-row .input { flex: 1; }
+.ok-badge { font-size: 11px; background: #e8fff0; color: #0a8a3a; border-radius: 4px; padding: 2px 8px; font-weight: 700; }
 .sel { width: 240px; }
 /* 明細のドラッグ並び替え */
 .drag-col { width: 28px; }
