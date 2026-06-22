@@ -738,7 +738,7 @@ onMounted(async () => {
 .actions { white-space: nowrap; }
 .rev-alert { background: #fff7ed; border: 1px solid #fdba74; color: #9a3412; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; }
 .settings-panel { margin-top: 20px; }
-.settings-head { background: #f7f7f7; border: 1px solid #e5e5e5; border-radius: 8px; padding: 12px 16px; font-size: 14px; font-weight: 600; color: #444; display: flex; align-items: center; gap: 10px; }
+.settings-head { font-size: 16px; font-weight: 700; color: #333; display: flex; align-items: center; gap: 10px; margin: 4px 0 12px; padding-bottom: 8px; border-bottom: 2px solid #eee; }
 .settings-toggle { width: 100%; text-align: left; background: #f7f7f7; border: 1px solid #e5e5e5; border-radius: 8px; padding: 12px 16px; font-size: 14px; font-weight: 600; color: #444; cursor: pointer; display: flex; align-items: center; gap: 10px; }
 .settings-toggle:hover { background: #f0f0f0; }
 .settings-toggle .chev { margin-left: auto; color: #888; }
