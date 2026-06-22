@@ -107,10 +107,7 @@
           <!-- E7 商社別単価 登録（材料×商社の単価。行の「商社」プルダウンに反映） -->
           <div class="price-mgr">
             <h3>商社別単価</h3>
-            <div class="trade-add">
-              <input v-model="newSupplierName" class="input sm" placeholder="新しい商社名（例：○○商事）" data-testid="new-supplier-name" />
-              <button class="btn-add" :disabled="!newSupplierName.trim()" data-testid="add-supplier" @click="addSupplier">商社を追加</button>
-            </div>
+            <p class="muted">商社は「下請け業者」マスタの<b>区分=商社</b>を使います（<RouterLink to="/subcontractors">下請け業者</RouterLink>で登録）。</p>
             <div class="trade-add">
               <select v-model="priceForm.material_id" class="input sm" data-testid="price-material">
                 <option :value="null" disabled>材料</option>
@@ -209,7 +206,6 @@ const trades         = ref<Trade[]>([])
 const materials      = ref<Material[]>([])
 const suppliers      = ref<Supplier[]>([])
 const matPrices      = ref<MatPrice[]>([])
-const newSupplierName = ref('')
 const priceForm      = ref<{ material_id: string | null; supplier_id: string | null; unit_price: number | null }>({ material_id: null, supplier_id: null, unit_price: null })
 // E4 価格表OCR取込＋差分承認
 type Revision = { id: string; material_id: string | null; supplier_id: string | null; code: string | null; name: string | null; old_price: number | null; new_price: number | null; effective_date: string | null; status: string }
@@ -374,9 +370,10 @@ async function loadMaterials() {
     .select('id, name, unit, code').eq('account_id', accountId).order('name')
   materials.value = (data ?? []) as Material[]
 }
+// 商社＝下請け業者マスタ(区分=商社)。新設せず既存 subcontractors を流用（subcontractors はRLS無効のため account_id で絞る）
 async function loadSuppliers() {
-  const { data } = await supabase.from('estimate_suppliers')
-    .select('id, name').eq('account_id', accountId).order('name')
+  const { data } = await supabase.from('subcontractors')
+    .select('id, name').eq('account_id', accountId).eq('category', '商社').order('name')
   suppliers.value = (data ?? []) as Supplier[]
 }
 async function loadMaterialPrices() {
@@ -397,14 +394,6 @@ function onSupplierPick(r: Row) {
   if (!r.material_id || !r.supplier_id) return
   const p = matPrices.value.find(x => x.material_id === r.material_id && x.supplier_id === r.supplier_id)
   if (p) r.unit_price = Number(p.unit_price)
-}
-async function addSupplier() {
-  const name = newSupplierName.value.trim()
-  if (!name) return
-  newSupplierName.value = ''
-  const { error } = await supabase.from('estimate_suppliers').insert({ account_id: accountId, name })
-  if (error) { saveError.value = error.message; newSupplierName.value = name; return }
-  await loadSuppliers()
 }
 async function addPrice() {
   const f = priceForm.value
