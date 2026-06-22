@@ -30,7 +30,7 @@
           </div>
           <table class="table">
             <thead>
-              <tr><th>場所</th><th>工種</th><th>明細</th><th class="num">数量</th><th class="num">単価</th><th class="num">金額</th><th></th></tr>
+              <tr><th>場所</th><th>工種</th><th>明細（品番予測変換）</th><th>単位</th><th class="num">数量</th><th class="num">単価</th><th class="num">金額</th><th></th></tr>
             </thead>
             <tbody>
               <tr v-for="(r, i) in rows" :key="r.id ?? 'new' + i">
@@ -41,13 +41,14 @@
                     <option v-for="t in trades" :key="t.id" :value="t.id">{{ t.name }}</option>
                   </select>
                 </td>
-                <td><input v-model="r.item_name" class="input" :data-testid="`item-name-${i}`" list="est-materials" autocomplete="off" /></td>
+                <td><input v-model="r.item_name" class="input" :data-testid="`item-name-${i}`" list="est-materials" autocomplete="off" @change="resolveMaterial(r)" @blur="resolveMaterial(r)" /></td>
+                <td><input v-model="r.unit" class="input sm" :data-testid="`item-unit-${i}`" placeholder="m²/個 等" /></td>
                 <td class="num"><input v-model.number="r.quantity" type="number" step="0.01" class="input sm num" :data-testid="`item-qty-${i}`" /></td>
                 <td class="num"><input v-model.number="r.unit_price" type="number" class="input sm num" :data-testid="`item-price-${i}`" /></td>
                 <td class="num amount" :data-testid="`item-amount-${i}`">{{ yen(lineAmount(r)) }}</td>
                 <td><button class="btn-del" @click="removeRow(i)">×</button></td>
               </tr>
-              <tr v-if="rows.length === 0"><td colspan="7" class="empty">「＋ 行追加」で明細を入力</td></tr>
+              <tr v-if="rows.length === 0"><td colspan="8" class="empty">「＋ 行追加」で明細を入力</td></tr>
             </tbody>
           </table>
           <div class="actions-row">
@@ -93,12 +94,14 @@ import { getAccountId } from '../lib/account'
 
 type Project  = { id: string; name: string }
 type Trade    = { id: string; name: string }
-type Material = { id: string; name: string }
+type Material = { id: string; name: string; unit: string | null; code: string | null }
 type Row = {
   id: string | null
   location: string
   trade_id: string | null
+  material_id: string | null
   item_name: string
+  unit: string
   quantity: number
   unit_price: number
 }
@@ -146,18 +149,31 @@ async function loadTrades() {
 }
 async function loadMaterials() {
   const { data } = await supabase.from('estimate_materials')
-    .select('id, name').eq('account_id', accountId).order('name')
+    .select('id, name, unit, code').eq('account_id', accountId).order('name')
   materials.value = (data ?? []) as Material[]
+}
+// E6 品番予測変換: 明細名が既存材料に一致したら material_id を紐付け、単位を補完
+function resolveMaterial(r: Row) {
+  const nm = (r.item_name || '').trim().toLowerCase()
+  if (!nm) { r.material_id = null; return }
+  const m = materials.value.find(x => x.name.trim().toLowerCase() === nm)
+  if (m) {
+    r.material_id = m.id
+    if (!r.unit && m.unit) r.unit = m.unit
+  } else {
+    r.material_id = null
+  }
 }
 async function loadItems() {
   rows.value = []
   removedIds.value = []
   if (!projectId.value) return
   const { data } = await supabase.from('estimate_items')
-    .select('id, category_id, trade_id, item_name, quantity, unit_price, note')
+    .select('id, category_id, trade_id, material_id, item_name, unit, quantity, unit_price, note')
     .eq('project_id', projectId.value).order('sort_order')
   rows.value = (data ?? []).map((d: any) => ({
-    id: d.id, location: d.note ?? '', trade_id: d.trade_id, item_name: d.item_name,
+    id: d.id, location: d.note ?? '', trade_id: d.trade_id, material_id: d.material_id ?? null,
+    item_name: d.item_name, unit: d.unit ?? '',
     quantity: Number(d.quantity) || 0, unit_price: Number(d.unit_price) || 0,
   }))
 }
@@ -183,7 +199,7 @@ async function addTrade() {
 }
 
 function addRow() {
-  rows.value.push({ id: null, location: '', trade_id: null, item_name: '', quantity: 0, unit_price: 0 })
+  rows.value.push({ id: null, location: '', trade_id: null, material_id: null, item_name: '', unit: '', quantity: 0, unit_price: 0 })
 }
 function removeRow(i: number) {
   const r = rows.value[i]
@@ -200,13 +216,30 @@ async function save() {
       await supabase.from('estimate_items').delete().in('id', removedIds.value)
       removedIds.value = []
     }
+    // E5 マスタ蓄積（明細保存より前）: 初回入力の材料名を estimate_materials に捕捉し、
+    // 新規材料の material_id を行に紐付けてから保存する（E6: 単位も一緒に捕捉）。
+    const known = new Map(materials.value.map(m => [m.name.trim().toLowerCase(), m.id]))
+    const created = new Map<string, string>()
+    for (const r of rows.value) {
+      const nm = (r.item_name || '').trim()
+      if (!nm || nm === '(無題)') continue
+      const key = nm.toLowerCase()
+      if (!r.material_id && known.has(key)) r.material_id = known.get(key)!
+      if (!r.material_id && created.has(key)) r.material_id = created.get(key)!
+      if (!r.material_id) {
+        const { data } = await supabase.from('estimate_materials')
+          .insert({ account_id: accountId, name: nm, unit: r.unit || null, trade_id: r.trade_id, source: 'manual' })
+          .select('id').single()
+        if (data) { r.material_id = (data as any).id; created.set(key, r.material_id!) }
+      }
+    }
     // upsert（amount は生成列なので送らない）
     let order = 0
     for (const r of rows.value) {
       const payload: any = {
         account_id: accountId, project_id: projectId.value,
-        trade_id: r.trade_id, item_name: r.item_name || '(無題)',
-        quantity: Number(r.quantity) || 0, unit_price: Number(r.unit_price) || 0,
+        trade_id: r.trade_id, material_id: r.material_id, item_name: r.item_name || '(無題)',
+        unit: r.unit || null, quantity: Number(r.quantity) || 0, unit_price: Number(r.unit_price) || 0,
         note: r.location || null, sort_order: order++,
       }
       if (r.id) await supabase.from('estimate_items').update(payload).eq('id', r.id)
@@ -215,19 +248,7 @@ async function save() {
         if (data) r.id = (data as any).id
       }
     }
-    // E5 マスタ蓄積: 初回入力の材料名を estimate_materials に捕捉（次回から予測変換候補に出る）
-    const known = new Set(materials.value.map(m => m.name.trim().toLowerCase()))
-    const seen = new Set<string>()
-    for (const r of rows.value) {
-      const nm = (r.item_name || '').trim()
-      if (!nm || nm === '(無題)') continue
-      const key = nm.toLowerCase()
-      if (known.has(key) || seen.has(key)) continue
-      seen.add(key)
-      await supabase.from('estimate_materials')
-        .insert({ account_id: accountId, name: nm, trade_id: r.trade_id, source: 'manual' })
-    }
-    if (seen.size) await loadMaterials()
+    if (created.size) await loadMaterials()
     savedMsg.value = '保存しました'
     setTimeout(() => (savedMsg.value = ''), 2500)
   } catch (e: any) {
