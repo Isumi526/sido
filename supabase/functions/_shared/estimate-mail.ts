@@ -36,7 +36,9 @@ export async function sendEstimate(
   opts: {
     project_id: string
     contractor_id?: string | null
-    contractor_contact_id: string
+    contractor_contact_ids: string[]    // 宛先＝元請けの担当者（複数可）
+    subject?: string | null             // 件名（未指定なら既定）
+    body?: string | null                // 本文（プレーンテキスト・未指定なら既定）
     pdf_path?: string | null
     total_amount?: number | null
     project_name?: string | null
@@ -45,8 +47,9 @@ export async function sendEstimate(
   },
 ): Promise<{ status: number; body: any }> {
   try {
-    if (!opts.project_id || !opts.contractor_contact_id) {
-      return { status: 400, body: { error: 'project_id と contractor_contact_id が必要です' } }
+    const contactIds = (opts.contractor_contact_ids ?? []).filter(Boolean)
+    if (!opts.project_id || !contactIds.length) {
+      return { status: 400, body: { error: 'project_id と宛先担当者が必要です' } }
     }
 
     const svc = createClient(SUPABASE_URL, SERVICE_KEY)
@@ -62,18 +65,18 @@ export async function sendEstimate(
     if (!project) return { status: 403, body: { error: 'forbidden_or_not_found' } }
     const accountId = project.account_id as string
 
-    // 宛先メール解決（元請けの担当者・project の account に限定・特権read）
-    const { data: contact } = await svc
+    // 宛先メール解決（元請けの担当者・複数可・project の account に限定・特権read）
+    const { data: contacts } = await svc
       .from('contractor_contacts')
-      .select('name, email, contractor_id')
-      .eq('id', opts.contractor_contact_id)
+      .select('id, name, email, contractor_id')
+      .in('id', contactIds)
       .eq('account_id', accountId)
-      .maybeSingle()
-    const email = contact?.email ?? null
-    if (!email) return { status: 400, body: { error: 'no_recipient_email' } }
+    const recipients = (contacts ?? []).filter((c: any) => c.email)
+    const emails = recipients.map((c: any) => c.email as string)
+    if (!emails.length) return { status: 400, body: { error: 'no_recipient_email' } }
 
     const projectName = (opts.project_name || project.name || '見積').toString()
-    const subject = `【御見積書】${projectName}`
+    const subject = (opts.subject || '').trim() || `【御見積書】${projectName}`
     const nowIso  = new Date().toISOString()
 
     if (opts.send) {
@@ -85,23 +88,24 @@ export async function sendEstimate(
           attachments.push({ filename: `見積_${projectName}.pdf`, content: base64(buf) })
         }
       }
-      const greetName = contact?.name ? `${contact.name} 様` : 'ご担当者様'
-      const html =
-        `<p>${greetName}</p>`
-        + `<p>いつもお世話になっております。下記のとおり御見積書をお送りいたします。ご査収のほどよろしくお願いいたします。</p>`
-        + `<p>案件：${projectName}<br>`
-        + (opts.total_amount != null ? `御見積金額：${yen(opts.total_amount)}（税抜）<br>` : '')
-        + `</p>`
-        + `<p>添付の見積書PDFをご確認ください。</p>`
+      // 本文: 指定があればプレーンテキストをHTML化（改行→<br>・最低限のエスケープ）。無ければ既定文面。
+      const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      const html = (opts.body || '').trim()
+        ? esc(opts.body!).replace(/\n/g, '<br>')
+        : `<p>ご担当者様</p>`
+          + `<p>いつもお世話になっております。下記のとおり御見積書をお送りいたします。ご査収のほどよろしくお願いいたします。</p>`
+          + `<p>案件：${esc(projectName)}<br>`
+          + (opts.total_amount != null ? `御見積金額：${yen(opts.total_amount)}（税抜）<br>` : '')
+          + `</p><p>添付の見積書PDFをご確認ください。</p>`
 
       if (!RESEND_API_KEY) {
         // 送信できない＝履歴を「送信済み」にしない（sent_at は実送信成功時のみ）。失敗も握り潰さない。
-        return { status: 200, body: { success: true, skipped: 'no_api_key', sent_to: maskEmail(email), test: false } }
+        return { status: 200, body: { success: true, skipped: 'no_api_key', sent_to: emails.map(maskEmail), test: false } }
       }
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from: MAIL_FROM, to: [email], subject, html, attachments }),
+        body: JSON.stringify({ from: MAIL_FROM, to: emails, subject, html, attachments }),
       })
       if (!res.ok) {
         const t = await res.text()
@@ -114,9 +118,9 @@ export async function sendEstimate(
     const { error: insErr } = await svc.from('estimate_sends').insert({
       account_id:            accountId,
       project_id:            project.id,
-      contractor_id:         opts.contractor_id ?? contact?.contractor_id ?? null,
-      contractor_contact_id: opts.contractor_contact_id,
-      email_to:              email,
+      contractor_id:         opts.contractor_id ?? recipients[0]?.contractor_id ?? null,
+      contractor_contact_id: recipients[0]?.id ?? null,
+      email_to:              emails.join(', '),
       subject,
       pdf_path:              opts.pdf_path ?? null,
       total_amount:          opts.total_amount ?? null,
@@ -124,7 +128,7 @@ export async function sendEstimate(
     })
     if (insErr) console.error('[estimate-mail] history insert failed:', insErr.message)
 
-    return { status: 200, body: { success: true, sent_to: maskEmail(email), test: !opts.send } }
+    return { status: 200, body: { success: true, sent_to: emails.map(maskEmail), test: !opts.send } }
   } catch (e) {
     console.error('[estimate-mail] error:', e instanceof Error ? e.message : String(e))
     return { status: 500, body: { error: String(e) } }

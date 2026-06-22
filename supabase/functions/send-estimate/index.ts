@@ -27,13 +27,15 @@ Deno.serve(async (req) => {
   try { body = await req.json() } catch { /* 空/不正body */ }
   const callerAuth = req.headers.get('Authorization')
   const { status, body: out } = await sendEstimate({
-    project_id:            (body.project_id ?? '').toString(),
-    contractor_id:         body.contractor_id ?? null,
-    contractor_contact_id: (body.contractor_contact_id ?? '').toString(),
-    pdf_path:              body.pdf_path ?? null,
-    total_amount:          body.total_amount ?? null,
-    project_name:          body.project_name ?? null,
-    send:                  true,
+    project_id:             (body.project_id ?? '').toString(),
+    contractor_id:          body.contractor_id ?? null,
+    contractor_contact_ids: Array.isArray(body.contractor_contact_ids) ? body.contractor_contact_ids : [],
+    subject:                body.subject ?? null,
+    body:                   body.body ?? null,
+    pdf_path:               body.pdf_path ?? null,
+    total_amount:           body.total_amount ?? null,
+    project_name:           body.project_name ?? null,
+    send:                   true,
     callerAuth,
   })
   return json(out, status)
