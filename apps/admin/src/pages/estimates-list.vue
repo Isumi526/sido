@@ -2,7 +2,10 @@
   <div>
     <div class="page-header">
       <h1 class="page-title">見積もり</h1>
-      <button class="btn-add" data-testid="new-estimate" @click="goNew">＋ 新規見積</button>
+      <div class="header-actions">
+        <RouterLink to="/estimate-masters" class="btn-ghost" data-testid="to-masters">マスタ・単価表</RouterLink>
+        <button class="btn-add" data-testid="new-estimate" @click="goNew">＋ 新規見積</button>
+      </div>
     </div>
 
     <div class="filters">
@@ -105,6 +108,9 @@ function goNew()          { router.push({ path: '/estimate-builder' }) }
 <style scoped>
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .page-title { font-size: 22px; font-weight: 700; }
+.header-actions { display: flex; align-items: center; gap: 10px; }
+.btn-ghost { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 9px 16px; font-size: 13px; cursor: pointer; text-decoration: none; color: #333; }
+.btn-ghost:hover { background: #f5f5f5; }
 .btn-add { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 700; cursor: pointer; }
 .filters { margin-bottom: 16px; }
 .filter-input { min-width: 280px; }
