@@ -20,6 +20,41 @@
       <option v-for="m in materials" :key="m.id" :value="m.name" />
     </datalist>
 
+    <!-- E4 価格表OCR取込（vision-LLM）＋差分承認（材料X ¥A→¥B を承認した分だけ反映） -->
+    <section class="panel ocr-panel">
+      <div class="panel-head"><h2>価格表OCR取込・差分承認</h2></div>
+      <div class="ocr-row">
+        <select v-model="ocrSupplierId" class="input sm" data-testid="ocr-supplier">
+          <option :value="null" disabled>取込先の商社</option>
+          <option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}</option>
+        </select>
+        <label class="btn-add" :class="{ disabled: ocrBusy }">
+          {{ ocrBusy ? '取込中…' : '単価表を取込（PDF/写真）' }}
+          <input type="file" accept="image/*,.pdf" hidden data-testid="ocr-file" :disabled="ocrBusy" @change="onOcrFile" />
+        </label>
+        <span v-if="ocrError" class="err">{{ ocrError }}</span>
+        <span class="muted">※取込結果は下の差分一覧に出ます。<b>承認した分のみ</b>単価マスタに反映（自動反映なし）。</span>
+      </div>
+
+      <table v-if="revisions.length" class="table">
+        <thead><tr><th>材料</th><th>商社</th><th class="num">現行</th><th class="num">新単価</th><th>有効日</th><th></th></tr></thead>
+        <tbody>
+          <tr v-for="r in revisions" :key="r.id" :data-testid="`rev-${r.id}`">
+            <td>{{ revMaterialName(r) }}<span v-if="!r.material_id" class="badge-new">新規</span></td>
+            <td>{{ revSupplierName(r) }}</td>
+            <td class="num">{{ r.old_price == null ? '—' : yen(r.old_price) }}</td>
+            <td class="num diff">{{ yen(r.new_price || 0) }}</td>
+            <td>{{ r.effective_date || '—' }}</td>
+            <td class="actions">
+              <button class="btn-primary sm" :disabled="revBusy" :data-testid="`approve-${r.id}`" @click="approveRevision(r)">承認</button>
+              <button class="btn-del" :data-testid="`reject-${r.id}`" @click="rejectRevision(r)">却下</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-else class="muted">承認待ちの価格差分はありません。</p>
+    </section>
+
     <template v-if="projectId">
       <div class="grid">
         <!-- 明細入力 -->
@@ -150,7 +185,7 @@ import { ref, computed, onMounted } from 'vue'
 import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
 import { supabase } from '../lib/supabase'
-import { getAccountId } from '../lib/account'
+import { getAccountId, getAccountSlug } from '../lib/account'
 
 type Project  = { id: string; name: string; client_name: string | null }
 type Trade    = { id: string; name: string }
@@ -176,6 +211,13 @@ const suppliers      = ref<Supplier[]>([])
 const matPrices      = ref<MatPrice[]>([])
 const newSupplierName = ref('')
 const priceForm      = ref<{ material_id: string | null; supplier_id: string | null; unit_price: number | null }>({ material_id: null, supplier_id: null, unit_price: null })
+// E4 価格表OCR取込＋差分承認
+type Revision = { id: string; material_id: string | null; supplier_id: string | null; code: string | null; name: string | null; old_price: number | null; new_price: number | null; effective_date: string | null; status: string }
+const revisions   = ref<Revision[]>([])
+const revBusy     = ref(false)
+const ocrBusy     = ref(false)
+const ocrError    = ref('')
+const ocrSupplierId = ref<string | null>(null)
 const projectId      = ref<string | null>(null)
 const rows           = ref<Row[]>([])
 const removedIds     = ref<string[]>([])
@@ -222,6 +264,74 @@ const today = new Date().toISOString().slice(0, 10)
 const currentProjectName = computed(() => projects.value.find(p => p.id === projectId.value)?.name ?? '')
 const currentClient = computed(() => projects.value.find(p => p.id === projectId.value)?.client_name ?? '')
 
+// E4 差分承認: pending の価格改定を読む
+async function loadRevisions() {
+  const { data } = await supabase.from('estimate_price_revisions')
+    .select('id, material_id, supplier_id, code, name, old_price, new_price, effective_date, status')
+    .eq('account_id', accountId).eq('status', 'pending').order('created_at')
+  revisions.value = (data ?? []) as Revision[]
+}
+function revMaterialName(r: Revision) {
+  return r.material_id ? (materials.value.find(m => m.id === r.material_id)?.name ?? r.name ?? '(材料)') : (r.name ?? '(新規材料)')
+}
+function revSupplierName(r: Revision) {
+  return suppliers.value.find(s => s.id === r.supplier_id)?.name ?? '(商社)'
+}
+// 承認＝material_prices へ反映（現行を履歴化→新単価をcurrent・材料が無ければ作成）＋revision applied
+async function approveRevision(r: Revision) {
+  revBusy.value = true; saveError.value = ''
+  try {
+    let materialId = r.material_id
+    if (!materialId) {
+      const nm = (r.name || '').trim()
+      const ex = materials.value.find(m => m.name.trim().toLowerCase() === nm.toLowerCase())
+      if (ex) materialId = ex.id
+      else {
+        const { data } = await supabase.from('estimate_materials')
+          .insert({ account_id: accountId, name: nm || '(新規材料)', code: r.code || null, source: 'ocr' }).select('id').single()
+        materialId = (data as any)?.id ?? null
+      }
+    }
+    if (!materialId || !r.supplier_id) { saveError.value = '材料または商社が未解決です'; return }
+    await supabase.from('estimate_material_prices').update({ is_current: false })
+      .eq('account_id', accountId).eq('material_id', materialId).eq('supplier_id', r.supplier_id).eq('is_current', true)
+    await supabase.from('estimate_material_prices')
+      .insert({ account_id: accountId, material_id: materialId, supplier_id: r.supplier_id, unit_price: r.new_price, effective_date: r.effective_date, is_current: true })
+    await supabase.from('estimate_price_revisions')
+      .update({ status: 'applied', applied_at: new Date().toISOString(), material_id: materialId }).eq('id', r.id)
+    await Promise.all([loadMaterials(), loadMaterialPrices(), loadRevisions()])
+  } finally { revBusy.value = false }
+}
+async function rejectRevision(r: Revision) {
+  await supabase.from('estimate_price_revisions').update({ status: 'rejected' }).eq('id', r.id)
+  await loadRevisions()
+}
+// OCR取込: 単価表画像を vision-LLM(Edge Function) に送り、pending revisions を作る
+async function onOcrFile(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  if (!ocrSupplierId.value) { ocrError.value = '先に取込先の商社を選んでください'; return }
+  ocrBusy.value = true; ocrError.value = ''
+  try {
+    const b64 = await new Promise<string>((res, rej) => {
+      const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1] || ''); fr.onerror = rej; fr.readAsDataURL(file)
+    })
+    const { data: sess } = await supabase.auth.getSession()
+    const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/estimate-price-ocr`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sess?.session?.access_token ?? ''}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+      body: JSON.stringify({ account_slug: getAccountSlug(), supplier_id: ocrSupplierId.value, image_base64: b64, mime: file.type || 'image/png' }),
+    })
+    const json = await resp.json()
+    if (!resp.ok || json?.error) { ocrError.value = json?.error || `取込エラー(${resp.status})`; return }
+    await loadRevisions()
+  } catch (err: any) {
+    ocrError.value = err?.message ?? '取込に失敗しました'
+  } finally {
+    ocrBusy.value = false
+    ;(e.target as HTMLInputElement).value = ''
+  }
+}
 // E2 PDF出力（表紙＋工種別内訳＋合計・A4複数ページ対応）
 async function exportPdf() {
   if (!previewEl.value) return
@@ -421,7 +531,7 @@ async function save() {
 
 onMounted(async () => {
   accountId = await getAccountId()
-  await Promise.all([loadProjects(), loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices()])
+  await Promise.all([loadProjects(), loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices(), loadRevisions()])
 })
 </script>
 
@@ -465,4 +575,13 @@ onMounted(async () => {
 .pdf-table th, .pdf-table td { border: 1px solid #ccc; padding: 4px 6px; font-size: 12px; text-align: left; }
 .pdf-table th.num, .pdf-table td.num { text-align: right; }
 .pdf-grand { text-align: right; font-size: 16px; font-weight: 700; border-top: 2px solid #333; padding-top: 8px; margin-top: 8px; }
+.ocr-panel { margin-bottom: 16px; }
+.ocr-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.ocr-row label.btn-add { cursor: pointer; }
+.ocr-row label.btn-add.disabled { opacity: .6; pointer-events: none; }
+.muted { color: #888; font-size: 12px; }
+.btn-primary.sm { padding: 4px 12px; font-size: 13px; }
+.badge-new { display: inline-block; margin-left: 6px; font-size: 11px; background: #fde68a; color: #92400e; border-radius: 4px; padding: 1px 6px; }
+.diff { color: #06864a; font-weight: 700; }
+.actions { white-space: nowrap; }
 </style>
