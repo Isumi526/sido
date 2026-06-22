@@ -15,6 +15,11 @@
       <button class="btn-add" :disabled="!newProjectName.trim()" data-testid="add-project" @click="addProject">＋ 案件追加</button>
     </div>
 
+    <!-- E5 マスタ蓄積: 入力済み材料を予測変換候補に（案件選択前から常時ロード） -->
+    <datalist id="est-materials">
+      <option v-for="m in materials" :key="m.id" :value="m.name" />
+    </datalist>
+
     <template v-if="projectId">
       <div class="grid">
         <!-- 明細入力 -->
@@ -36,7 +41,7 @@
                     <option v-for="t in trades" :key="t.id" :value="t.id">{{ t.name }}</option>
                   </select>
                 </td>
-                <td><input v-model="r.item_name" class="input" :data-testid="`item-name-${i}`" /></td>
+                <td><input v-model="r.item_name" class="input" :data-testid="`item-name-${i}`" list="est-materials" autocomplete="off" /></td>
                 <td class="num"><input v-model.number="r.quantity" type="number" step="0.01" class="input sm num" :data-testid="`item-qty-${i}`" /></td>
                 <td class="num"><input v-model.number="r.unit_price" type="number" class="input sm num" :data-testid="`item-price-${i}`" /></td>
                 <td class="num amount" :data-testid="`item-amount-${i}`">{{ yen(lineAmount(r)) }}</td>
@@ -86,8 +91,9 @@ import { ref, computed, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 
-type Project = { id: string; name: string }
-type Trade   = { id: string; name: string }
+type Project  = { id: string; name: string }
+type Trade    = { id: string; name: string }
+type Material = { id: string; name: string }
 type Row = {
   id: string | null
   location: string
@@ -99,6 +105,7 @@ type Row = {
 
 const projects       = ref<Project[]>([])
 const trades         = ref<Trade[]>([])
+const materials      = ref<Material[]>([])
 const projectId      = ref<string | null>(null)
 const rows           = ref<Row[]>([])
 const removedIds     = ref<string[]>([])
@@ -136,6 +143,11 @@ async function loadTrades() {
   const { data } = await supabase.from('estimate_trades')
     .select('id, name').eq('account_id', accountId).order('sort_order').order('name')
   trades.value = (data ?? []) as Trade[]
+}
+async function loadMaterials() {
+  const { data } = await supabase.from('estimate_materials')
+    .select('id, name').eq('account_id', accountId).order('name')
+  materials.value = (data ?? []) as Material[]
 }
 async function loadItems() {
   rows.value = []
@@ -203,6 +215,19 @@ async function save() {
         if (data) r.id = (data as any).id
       }
     }
+    // E5 マスタ蓄積: 初回入力の材料名を estimate_materials に捕捉（次回から予測変換候補に出る）
+    const known = new Set(materials.value.map(m => m.name.trim().toLowerCase()))
+    const seen = new Set<string>()
+    for (const r of rows.value) {
+      const nm = (r.item_name || '').trim()
+      if (!nm || nm === '(無題)') continue
+      const key = nm.toLowerCase()
+      if (known.has(key) || seen.has(key)) continue
+      seen.add(key)
+      await supabase.from('estimate_materials')
+        .insert({ account_id: accountId, name: nm, trade_id: r.trade_id, source: 'manual' })
+    }
+    if (seen.size) await loadMaterials()
     savedMsg.value = '保存しました'
     setTimeout(() => (savedMsg.value = ''), 2500)
   } catch (e: any) {
@@ -214,7 +239,7 @@ async function save() {
 
 onMounted(async () => {
   accountId = await getAccountId()
-  await Promise.all([loadProjects(), loadTrades()])
+  await Promise.all([loadProjects(), loadTrades(), loadMaterials()])
 })
 </script>
 
