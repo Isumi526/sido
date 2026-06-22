@@ -7,19 +7,24 @@
 
     <!-- 案件は一覧(/estimates-list)から開く前提。ここでは現在の案件名を表示し、新規作成のみ行う。 -->
     <div class="bar">
-      <label>案件</label>
-      <span v-if="projectId" class="current-project" data-testid="project-select">{{ currentProjectName }}</span>
-      <span v-else class="muted" data-testid="project-select">一覧から案件を選ぶか、新規作成してください</span>
-      <button v-if="!addingProject" class="btn-add" data-testid="new-project-toggle" @click="addingProject = true">＋ 新規案件</button>
-      <template v-else>
-        <input v-model="newProjectName" class="input" placeholder="新規案件名" data-testid="new-project-name" @keyup.enter="addProject" />
-        <button class="btn-add" :disabled="!newProjectName.trim()" data-testid="add-project" @click="addProject">追加</button>
-        <button class="btn-del" title="キャンセル" @click="addingProject = false; newProjectName = ''">×</button>
-      </template>
-      <span v-if="projectErr" class="err" data-testid="project-err">{{ projectErr }}</span>
+      <div class="bar-group">
+        <label>案件</label>
+        <template v-if="projectId">
+          <span v-if="!editingName" class="current-project" data-testid="project-select" title="クリックで名称変更" @click="startRename">{{ currentProjectName }} <span class="edit-ic">✎</span></span>
+          <input v-else v-model="projectNameEdit" class="input proj-name" data-testid="project-name-input" @keyup.enter="commitRename" @blur="commitRename" />
+        </template>
+        <span v-else class="muted" data-testid="project-select">一覧から案件を選ぶか、新規作成してください</span>
+        <button v-if="!addingProject" class="btn-add" data-testid="new-project-toggle" @click="addingProject = true">＋ 新規案件</button>
+        <template v-else>
+          <input v-model="newProjectName" class="input" placeholder="新規案件名" data-testid="new-project-name" @keyup.enter="addProject" />
+          <button class="btn-add" :disabled="!newProjectName.trim()" data-testid="add-project" @click="addProject">追加</button>
+          <button class="btn-del" title="キャンセル" @click="addingProject = false; newProjectName = ''">×</button>
+        </template>
+        <span v-if="projectErr" class="err" data-testid="project-err">{{ projectErr }}</span>
+      </div>
 
       <!-- 案件に元請けを紐付け（見積書PDFの送信先になる。正式受注後に現場へ昇華する前段） -->
-      <template v-if="projectId">
+      <div v-if="projectId" class="bar-group">
         <label>元請け</label>
         <select :value="currentContractorId || ''" class="input sel" :disabled="projectSaving" data-testid="project-contractor"
                 @change="setProjectContractor(($event.target as HTMLSelectElement).value || null)">
@@ -27,7 +32,7 @@
           <option v-for="c in contractors" :key="c.id" :value="c.id">{{ c.name }}</option>
         </select>
         <RouterLink to="/contractors" class="muted-link">元請け担当者を管理</RouterLink>
-      </template>
+      </div>
     </div>
 
     <!-- E5 マスタ蓄積: 入力済み材料を予測変換候補に（案件選択前から常時ロード） -->
@@ -45,10 +50,13 @@
           </div>
           <table class="table">
             <thead>
-              <tr><th>場所</th><th>工種</th><th>品名</th><th>単位</th><th class="num">数量</th><th>商社</th><th class="num">単価</th><th class="num">金額</th><th></th></tr>
+              <tr><th class="drag-col"></th><th>場所</th><th>工種</th><th>品名</th><th>単位</th><th class="num">数量</th><th>商社</th><th class="num">単価</th><th class="num">金額</th><th></th></tr>
             </thead>
             <tbody>
-              <tr v-for="(r, i) in rows" :key="r.id ?? 'new' + i">
+              <tr v-for="(r, i) in rows" :key="r._k"
+                  :class="{ 'drag-over': dragOverIndex === i && dragIndex !== null && dragIndex !== i }"
+                  @dragover.prevent="dragOverIndex = i" @drop="onDrop(i)" @dragleave="dragOverIndex = null">
+                <td class="drag-handle" draggable="true" title="ドラッグで並び替え" :data-testid="`item-drag-${i}`" @dragstart="onDragStart(i)" @dragend="onDragEnd">⠿</td>
                 <td><input v-model="r.location" class="input sm" :data-testid="`item-loc-${i}`" /></td>
                 <td>
                   <select v-model="r.trade_id" class="input sm" :data-testid="`item-trade-${i}`">
@@ -69,7 +77,7 @@
                 <td class="num amount" :data-testid="`item-amount-${i}`">{{ yen(lineAmount(r)) }}</td>
                 <td><button class="btn-del" @click="removeRow(i)">×</button></td>
               </tr>
-              <tr v-if="rows.length === 0"><td colspan="9" class="empty">「＋ 行追加」で明細を入力</td></tr>
+              <tr v-if="rows.length === 0"><td colspan="10" class="empty">「＋ 行追加」で明細を入力</td></tr>
             </tbody>
           </table>
           <div class="actions-row">
@@ -304,6 +312,7 @@ type Contact  = { id: string; contractor_id: string; name: string | null; email:
 type EstimateSend = { id: string; email_to: string | null; subject: string | null; sent_at: string | null; created_at: string }
 type Row = {
   id: string | null
+  _k: number           // 並び替え用の安定キー（新規行はidが無いため）
   location: string
   trade_id: string | null
   material_id: string | null
@@ -431,6 +440,37 @@ function nextPage() { if (currentPage.value < totalPages.value - 1) currentPage.
 // 明細が減ってページ数が縮んだら範囲内に丸める
 watch(totalPages, (n) => { if (currentPage.value > n - 1) currentPage.value = Math.max(0, n - 1) })
 const currentProjectName = computed(() => projects.value.find(p => p.id === projectId.value)?.name ?? '')
+// #1 案件名のインライン編集（クリックで編集→Enter/blurで保存）
+const editingName = ref(false)
+const projectNameEdit = ref('')
+function startRename() { projectNameEdit.value = currentProjectName.value; editingName.value = true }
+async function commitRename() {
+  if (!editingName.value) return
+  editingName.value = false
+  const name = projectNameEdit.value.trim()
+  const p = projects.value.find(x => x.id === projectId.value)
+  if (!p || !name || name === p.name) return
+  if (projects.value.some(x => x.id !== p.id && x.name.trim().toLowerCase() === name.toLowerCase())) { projectErr.value = `案件「${name}」は既にあります`; return }
+  projectErr.value = ''
+  const { error } = await supabase.from('estimate_projects').update({ name }).eq('id', p.id)
+  if (error) { projectErr.value = error.message; return }
+  p.name = name
+}
+// #5 明細のドラッグ並び替え（ハンドルで掴んで移動。順序は保存時 sort_order に反映）
+let rowKey = 0   // 明細行の安定キー採番（並び替え用）
+const dragIndex = ref<number | null>(null)
+const dragOverIndex = ref<number | null>(null)
+function onDragStart(i: number) { dragIndex.value = i }
+function onDragEnd() { dragIndex.value = null; dragOverIndex.value = null }
+function onDrop(i: number) {
+  const from = dragIndex.value
+  dragOverIndex.value = null
+  if (from === null || from === i) { dragIndex.value = null; return }
+  const arr = rows.value
+  const [moved] = arr.splice(from, 1)
+  arr.splice(i, 0, moved)
+  dragIndex.value = null
+}
 const currentProject   = computed(() => projects.value.find(p => p.id === projectId.value) ?? null)
 const currentContractorId = computed(() => currentProject.value?.contractor_id ?? null)
 const currentContractorName = computed(() => contractors.value.find(c => c.id === currentContractorId.value)?.name ?? '')
@@ -737,7 +777,7 @@ async function loadItems() {
       .select('construction_location, period_text, valid_until, memo, adjustment').eq('id', projectId.value).single(),
   ])
   rows.value = (data ?? []).map((d: any) => ({
-    id: d.id, location: d.note ?? '', trade_id: d.trade_id, material_id: d.material_id ?? null,
+    id: d.id, _k: ++rowKey, location: d.note ?? '', trade_id: d.trade_id, material_id: d.material_id ?? null,
     supplier_id: d.supplier_id ?? null, item_name: d.item_name, unit: d.unit ?? '',
     quantity: Number(d.quantity) || 0, unit_price: Number(d.unit_price) || 0,
   }))
@@ -746,6 +786,7 @@ async function loadItems() {
     valid_until: pj?.valid_until ?? '', memo: pj?.memo ?? '', adjustment: Number(pj?.adjustment) || 0,
   }
   currentPage.value = 0   // 案件を開いたら先頭ページへ
+  editingName.value = false
   markSaved()
   await Promise.all([loadSends(), loadProjectPOs()])
   // 送信先担当者を案件の元請けの先頭で初期化
@@ -772,7 +813,7 @@ async function addProject() {
 }
 
 function addRow() {
-  rows.value.push({ id: null, location: '', trade_id: null, material_id: null, supplier_id: null, item_name: '', unit: '', quantity: 0, unit_price: 0 })
+  rows.value.push({ id: null, _k: ++rowKey, location: '', trade_id: null, material_id: null, supplier_id: null, item_name: '', unit: '', quantity: 0, unit_price: 0 })
 }
 function removeRow(i: number) {
   const r = rows.value[i]
@@ -868,10 +909,20 @@ onMounted(async () => {
 .page-title { font-size: 22px; font-weight: 700; }
 .back-link { font-size: 13px; color: #06864a; text-decoration: none; }
 .back-link:hover { text-decoration: underline; }
-.bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+.bar { display: flex; gap: 10px 28px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+.bar-group { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .bar label { font-weight: 600; color: #444; }
-.current-project { font-size: 16px; font-weight: 700; color: #222; }
-.sel { min-width: 220px; }
+.bar .input { width: auto; }
+.current-project { font-size: 16px; font-weight: 700; color: #222; cursor: pointer; padding: 4px 6px; border-radius: 6px; }
+.current-project:hover { background: #f1f5f9; }
+.current-project .edit-ic { font-size: 12px; color: #94a3b8; }
+.proj-name { font-size: 15px; font-weight: 700; width: 220px; }
+.sel { width: 240px; }
+/* 明細のドラッグ並び替え */
+.drag-col { width: 28px; }
+.drag-handle { cursor: grab; color: #b0b6bd; text-align: center; user-select: none; font-size: 14px; }
+.drag-handle:active { cursor: grabbing; }
+tr.drag-over td { border-top: 2px solid #06C755; }
 .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; align-items: start; }
 @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
 .panel { background: #fff; border: 1px solid #e5e5e5; border-radius: 10px; padding: 14px; }
