@@ -37,7 +37,6 @@ test.describe('見積 価格表差分承認（E4）', () => {
 
     await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
     // 差分承認は「⚙️ マスタ・取込設定」内 → 開く → 対象商社タブを選ぶ（差分は商社で絞られる）
-    await page.locator('[data-testid="settings-toggle"]').click()
     await page.locator(`[data-testid="ptab-${sup.id}"]`).click()
 
     // 差分一覧に「材料X 現行→新単価」が出る（AC1相当）
