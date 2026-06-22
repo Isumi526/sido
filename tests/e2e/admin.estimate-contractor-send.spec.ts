@@ -57,8 +57,9 @@ test.describe('見積→元請け 送信先と離脱ガード', () => {
     await page.locator('[data-testid="item-name-0"]').fill('テスト材')
     await page.locator('[data-testid="item-qty-0"]').fill('1')
     await page.locator('[data-testid="item-price-0"]').fill('1000')
-    await page.locator('[data-testid="tab-preview"]').click()   // 送信は「見積書プレビュー」タブ
-    await page.locator('[data-testid="send-contact"]').selectOption({ label: `${CONTACT}（moto@example.com）` })
+    await page.locator('[data-testid="tab-preview"]').click()    // 送信は「見積書プレビュー」タブ
+    await page.locator('[data-testid="open-send"]').click()      // メール送信ダイアログ（宛先は自動で全選択）
+    await expect(page.locator('[data-testid="send-subject"]')).toHaveValue(new RegExp(PROJ_A))
     await expect(page.locator('[data-testid="send-estimate"]')).toBeEnabled()
   })
 
