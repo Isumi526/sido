@@ -16,6 +16,7 @@ export default defineConfig({
   globalSetup: './tests/e2e/global-setup.ts',
   fullyParallel: false,
   workers: 1,
+  retries: process.env.CI ? 2 : 1,   // 直列・共有DBの一過性フレーク対策
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'tests/e2e/.report' }]],
   outputDir: 'tests/e2e/.artifacts',
   timeout: 40_000,

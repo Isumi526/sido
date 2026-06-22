@@ -134,9 +134,14 @@
       </button>
 
       <div v-show="settingsOpen" class="settings-body">
+        <div class="subtabs">
+          <button class="subtab" :class="{ active: settingsTab === 'price' }" data-testid="subtab-price" @click="settingsTab = 'price'">商社別単価</button>
+          <button class="subtab" :class="{ active: settingsTab === 'material' }" data-testid="subtab-material" @click="settingsTab = 'material'">材料マスタ</button>
+          <button class="subtab" :class="{ active: settingsTab === 'trade' }" data-testid="subtab-trade" @click="settingsTab = 'trade'">工種</button>
+        </div>
         <p v-if="masterErr" class="err">{{ masterErr }}</p>
         <!-- 工種マスタ クイック追加 -->
-        <div class="setting-block">
+        <div class="setting-block" v-show="settingsTab === 'trade'">
           <h3>工種</h3>
           <div class="trade-add">
             <input v-model="newTradeName" class="input" placeholder="工種名（例: 軽鉄工事）" data-testid="new-trade-name" />
@@ -155,7 +160,7 @@
         </div>
 
         <!-- 材料マスタ（品番・品名を別管理） -->
-        <div class="setting-block">
+        <div class="setting-block" v-show="settingsTab === 'material'">
           <h3>材料マスタ（品番・品名）</h3>
           <p class="muted">品番と品名は別管理です。明細入力での品名捕捉（予測変換）でも自動で増えます。</p>
           <div class="trade-add">
@@ -179,7 +184,7 @@
         </div>
 
         <!-- 商社別単価（手入力 と 価格表OCR取込 を1ブロックに統合・商社タブが対象） -->
-        <div class="setting-block">
+        <div class="setting-block" v-show="settingsTab === 'price'">
           <h3>商社別単価</h3>
           <p class="muted">商社は「下請け業者」マスタの<b>区分=商社</b>（<RouterLink to="/subcontractors">下請け業者</RouterLink>で登録）。<b>商社タブを選ぶ</b>と、その商社の単価の追加・一覧・取込が対象になります。</p>
           <!-- 商社タブ（対象商社の選択）＋このページから商社追加（横断不要） -->
@@ -299,6 +304,7 @@ type Revision = { id: string; material_id: string | null; supplier_id: string | 
 const revisions   = ref<Revision[]>([])
 const revBusy     = ref(false)
 const settingsOpen = ref(false)
+const settingsTab = ref<'price' | 'material' | 'trade'>('price')
 const ocrBusy     = ref(false)
 const ocrError    = ref('')
 const projectId      = ref<string | null>(null)
@@ -730,6 +736,10 @@ onMounted(async () => {
 .settings-toggle:hover { background: #f0f0f0; }
 .settings-toggle .chev { margin-left: auto; color: #888; }
 .settings-body { padding: 14px 4px 4px; }
+.subtabs { display: inline-flex; gap: 2px; background: #eef0ee; border-radius: 8px; padding: 3px; margin-bottom: 8px; }
+.subtab { border: none; background: transparent; color: #555; border-radius: 6px; padding: 6px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.subtab:hover { color: #222; }
+.subtab.active { background: #fff; color: #06864a; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
 .setting-block { padding: 12px 0; border-bottom: 1px dashed #e5e5e5; }
 .setting-block:last-child { border-bottom: none; }
 .setting-block h3 { font-size: 14px; margin: 0 0 8px; }
