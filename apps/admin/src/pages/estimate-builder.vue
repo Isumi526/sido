@@ -17,6 +17,7 @@
         <button class="btn-add" :disabled="!newProjectName.trim()" data-testid="add-project" @click="addProject">追加</button>
         <button class="btn-del" title="キャンセル" @click="addingProject = false; newProjectName = ''">×</button>
       </template>
+      <span v-if="projectErr" class="err" data-testid="project-err">{{ projectErr }}</span>
     </div>
 
     <!-- E5 マスタ蓄積: 入力済み材料を予測変換候補に（案件選択前から常時ロード） -->
@@ -312,6 +313,7 @@ const rows           = ref<Row[]>([])
 const removedIds     = ref<string[]>([])
 const newProjectName = ref('')
 const addingProject  = ref(false)
+const projectErr     = ref('')
 const newTradeName   = ref('')
 const saving         = ref(false)
 const saveError      = ref('')
@@ -572,10 +574,16 @@ async function loadItems() {
 async function addProject() {
   const name = newProjectName.value.trim()
   if (!name) return
+  projectErr.value = ''
+  // 同名の案件は作らせない（大小文字無視）
+  if (projects.value.some(p => p.name.trim().toLowerCase() === name.toLowerCase())) {
+    projectErr.value = `案件「${name}」は既にあります`
+    return
+  }
   newProjectName.value = ''   // 同期クリア（連続入力のレース回避）
   const { data, error } = await supabase.from('estimate_projects')
     .insert({ account_id: accountId, name }).select('id, name, client_name').single()
-  if (error) { saveError.value = error.message; newProjectName.value = name; return }
+  if (error) { projectErr.value = /duplicate|unique/i.test(error.message) ? `案件「${name}」は既にあります` : error.message; newProjectName.value = name; return }
   await loadProjects()
   projectId.value = (data as Project).id
   addingProject.value = false

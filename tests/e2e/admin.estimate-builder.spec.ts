@@ -29,12 +29,13 @@ const SUP_INLINE = `インライン商社_${TS}`
 const TRADE_M = `工種M_${TS}`
 const MNAME_M = `品名M_${TS}`
 const MCODE_M = `PB-${TS}`
+const DUP_PROJ = `重複案件_${TS}`
 
 test.describe.configure({ mode: 'serial' })
 
 test.describe('見積もり 全体見積→工種別自動集計', () => {
   test.afterAll(async () => {
-    for (const name of [PROJ, PROJ2, PROJ3, PROJ4, PROJ5]) {
+    for (const name of [PROJ, PROJ2, PROJ3, PROJ4, PROJ5, DUP_PROJ]) {
       const projs = await restSrv(`estimate_projects?name=eq.${encodeURIComponent(name)}&select=id`).catch(() => [])
       for (const p of projs ?? []) {
         await restSrv(`estimate_items?project_id=eq.${p.id}`, { method: 'DELETE' }).catch(() => {})
@@ -338,5 +339,23 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
       const m = await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MNAME_M)}&select=id`)
       return (m ?? []).length
     }, { timeout: 10000 }).toBe(0)
+  })
+
+  // 同名の案件は作れない（重複防止）
+  test('同名の案件は登録できない（重複防止）', async ({ page }) => {
+    const accountId = await getAccountId()
+    await restSrv('estimate_projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ account_id: accountId, name: DUP_PROJ }) })
+
+    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
+    await page.locator('[data-testid="new-project-toggle"]').click()
+    await page.locator('[data-testid="new-project-name"]').fill(DUP_PROJ)
+    await page.locator('[data-testid="add-project"]').click()
+
+    // エラー表示・DBは1件のまま（増えない）
+    await expect(page.locator('[data-testid="project-err"]')).toContainText('既にあります')
+    await expect.poll(async () => {
+      const p = await restSrv(`estimate_projects?name=eq.${encodeURIComponent(DUP_PROJ)}&select=id`)
+      return (p ?? []).length
+    }, { timeout: 8000 }).toBe(1)
   })
 })
