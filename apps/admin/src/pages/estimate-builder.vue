@@ -30,7 +30,7 @@
           </div>
           <table class="table">
             <thead>
-              <tr><th>場所</th><th>工種</th><th>明細（品番予測変換）</th><th>単位</th><th class="num">数量</th><th class="num">単価</th><th class="num">金額</th><th></th></tr>
+              <tr><th>場所</th><th>工種</th><th>明細（品番予測変換）</th><th>単位</th><th class="num">数量</th><th>商社</th><th class="num">単価</th><th class="num">金額</th><th></th></tr>
             </thead>
             <tbody>
               <tr v-for="(r, i) in rows" :key="r.id ?? 'new' + i">
@@ -44,11 +44,17 @@
                 <td><input v-model="r.item_name" class="input" :data-testid="`item-name-${i}`" list="est-materials" autocomplete="off" @change="resolveMaterial(r)" @blur="resolveMaterial(r)" /></td>
                 <td><input v-model="r.unit" class="input sm" :data-testid="`item-unit-${i}`" placeholder="m²/個 等" /></td>
                 <td class="num"><input v-model.number="r.quantity" type="number" step="0.01" class="input sm num" :data-testid="`item-qty-${i}`" /></td>
+                <td>
+                  <select v-model="r.supplier_id" class="input sm" :data-testid="`item-supplier-${i}`" @change="onSupplierPick(r)">
+                    <option :value="null">—</option>
+                    <option v-for="p in pricesForMaterial(r.material_id)" :key="p.supplier_id" :value="p.supplier_id">{{ p.supplierName }} ¥{{ p.unit_price.toLocaleString('ja-JP') }}</option>
+                  </select>
+                </td>
                 <td class="num"><input v-model.number="r.unit_price" type="number" class="input sm num" :data-testid="`item-price-${i}`" /></td>
                 <td class="num amount" :data-testid="`item-amount-${i}`">{{ yen(lineAmount(r)) }}</td>
                 <td><button class="btn-del" @click="removeRow(i)">×</button></td>
               </tr>
-              <tr v-if="rows.length === 0"><td colspan="8" class="empty">「＋ 行追加」で明細を入力</td></tr>
+              <tr v-if="rows.length === 0"><td colspan="9" class="empty">「＋ 行追加」で明細を入力</td></tr>
             </tbody>
           </table>
           <div class="actions-row">
@@ -61,6 +67,27 @@
           <div class="trade-add">
             <input v-model="newTradeName" class="input sm" placeholder="新しい工種名（例：軽鉄工事）" data-testid="new-trade-name" />
             <button class="btn-add" :disabled="!newTradeName.trim()" data-testid="add-trade" @click="addTrade">工種を追加</button>
+          </div>
+
+          <!-- E7 商社別単価 登録（材料×商社の単価。行の「商社」プルダウンに反映） -->
+          <div class="price-mgr">
+            <h3>商社別単価</h3>
+            <div class="trade-add">
+              <input v-model="newSupplierName" class="input sm" placeholder="新しい商社名（例：○○商事）" data-testid="new-supplier-name" />
+              <button class="btn-add" :disabled="!newSupplierName.trim()" data-testid="add-supplier" @click="addSupplier">商社を追加</button>
+            </div>
+            <div class="trade-add">
+              <select v-model="priceForm.material_id" class="input sm" data-testid="price-material">
+                <option :value="null" disabled>材料</option>
+                <option v-for="m in materials" :key="m.id" :value="m.id">{{ m.name }}</option>
+              </select>
+              <select v-model="priceForm.supplier_id" class="input sm" data-testid="price-supplier">
+                <option :value="null" disabled>商社</option>
+                <option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}</option>
+              </select>
+              <input v-model.number="priceForm.unit_price" type="number" class="input sm num" placeholder="単価" data-testid="price-value" />
+              <button class="btn-add" :disabled="!priceForm.material_id || !priceForm.supplier_id || !(priceForm.unit_price > 0)" data-testid="add-price" @click="addPrice">単価を登録</button>
+            </div>
           </div>
         </section>
 
@@ -95,11 +122,14 @@ import { getAccountId } from '../lib/account'
 type Project  = { id: string; name: string }
 type Trade    = { id: string; name: string }
 type Material = { id: string; name: string; unit: string | null; code: string | null }
+type Supplier = { id: string; name: string }
+type MatPrice = { material_id: string; supplier_id: string; unit_price: number }
 type Row = {
   id: string | null
   location: string
   trade_id: string | null
   material_id: string | null
+  supplier_id: string | null
   item_name: string
   unit: string
   quantity: number
@@ -109,6 +139,10 @@ type Row = {
 const projects       = ref<Project[]>([])
 const trades         = ref<Trade[]>([])
 const materials      = ref<Material[]>([])
+const suppliers      = ref<Supplier[]>([])
+const matPrices      = ref<MatPrice[]>([])
+const newSupplierName = ref('')
+const priceForm      = ref<{ material_id: string | null; supplier_id: string | null; unit_price: number | null }>({ material_id: null, supplier_id: null, unit_price: null })
 const projectId      = ref<string | null>(null)
 const rows           = ref<Row[]>([])
 const removedIds     = ref<string[]>([])
@@ -152,6 +186,51 @@ async function loadMaterials() {
     .select('id, name, unit, code').eq('account_id', accountId).order('name')
   materials.value = (data ?? []) as Material[]
 }
+async function loadSuppliers() {
+  const { data } = await supabase.from('estimate_suppliers')
+    .select('id, name').eq('account_id', accountId).order('name')
+  suppliers.value = (data ?? []) as Supplier[]
+}
+async function loadMaterialPrices() {
+  const { data } = await supabase.from('estimate_material_prices')
+    .select('material_id, supplier_id, unit_price').eq('account_id', accountId).eq('is_current', true)
+  matPrices.value = (data ?? []) as MatPrice[]
+}
+// E7 商社別単価: 行の材料に対する商社別単価リスト（単価差の表示元）
+function pricesForMaterial(materialId: string | null) {
+  if (!materialId) return [] as Array<{ supplier_id: string; supplierName: string; unit_price: number }>
+  return matPrices.value
+    .filter(p => p.material_id === materialId)
+    .map(p => ({ supplier_id: p.supplier_id, supplierName: suppliers.value.find(s => s.id === p.supplier_id)?.name ?? '(商社)', unit_price: Number(p.unit_price) }))
+    .sort((a, b) => a.unit_price - b.unit_price)
+}
+// 商社を選ぶと、その商社×材料の単価を明細単価に反映（金額は生成列/computedで追従）
+function onSupplierPick(r: Row) {
+  if (!r.material_id || !r.supplier_id) return
+  const p = matPrices.value.find(x => x.material_id === r.material_id && x.supplier_id === r.supplier_id)
+  if (p) r.unit_price = Number(p.unit_price)
+}
+async function addSupplier() {
+  const name = newSupplierName.value.trim()
+  if (!name) return
+  newSupplierName.value = ''
+  const { error } = await supabase.from('estimate_suppliers').insert({ account_id: accountId, name })
+  if (error) { saveError.value = error.message; newSupplierName.value = name; return }
+  await loadSuppliers()
+}
+async function addPrice() {
+  const f = priceForm.value
+  if (!f.material_id || !f.supplier_id || !(Number(f.unit_price) > 0)) return
+  // 同一(材料×商社)の現行価格は履歴化（is_current=false）してから新価格を current で追加
+  await supabase.from('estimate_material_prices')
+    .update({ is_current: false }).eq('account_id', accountId)
+    .eq('material_id', f.material_id).eq('supplier_id', f.supplier_id).eq('is_current', true)
+  const { error } = await supabase.from('estimate_material_prices')
+    .insert({ account_id: accountId, material_id: f.material_id, supplier_id: f.supplier_id, unit_price: Number(f.unit_price), is_current: true })
+  if (error) { saveError.value = error.message; return }
+  priceForm.value = { material_id: null, supplier_id: null, unit_price: null }
+  await loadMaterialPrices()
+}
 // E6 品番予測変換: 明細名が既存材料に一致したら material_id を紐付け、単位を補完
 function resolveMaterial(r: Row) {
   const nm = (r.item_name || '').trim().toLowerCase()
@@ -163,17 +242,21 @@ function resolveMaterial(r: Row) {
   } else {
     r.material_id = null
   }
+  // 材料に単価の無い商社選択はクリア
+  if (r.supplier_id && !matPrices.value.some(p => p.material_id === r.material_id && p.supplier_id === r.supplier_id)) {
+    r.supplier_id = null
+  }
 }
 async function loadItems() {
   rows.value = []
   removedIds.value = []
   if (!projectId.value) return
   const { data } = await supabase.from('estimate_items')
-    .select('id, category_id, trade_id, material_id, item_name, unit, quantity, unit_price, note')
+    .select('id, category_id, trade_id, material_id, supplier_id, item_name, unit, quantity, unit_price, note')
     .eq('project_id', projectId.value).order('sort_order')
   rows.value = (data ?? []).map((d: any) => ({
     id: d.id, location: d.note ?? '', trade_id: d.trade_id, material_id: d.material_id ?? null,
-    item_name: d.item_name, unit: d.unit ?? '',
+    supplier_id: d.supplier_id ?? null, item_name: d.item_name, unit: d.unit ?? '',
     quantity: Number(d.quantity) || 0, unit_price: Number(d.unit_price) || 0,
   }))
 }
@@ -199,7 +282,7 @@ async function addTrade() {
 }
 
 function addRow() {
-  rows.value.push({ id: null, location: '', trade_id: null, material_id: null, item_name: '', unit: '', quantity: 0, unit_price: 0 })
+  rows.value.push({ id: null, location: '', trade_id: null, material_id: null, supplier_id: null, item_name: '', unit: '', quantity: 0, unit_price: 0 })
 }
 function removeRow(i: number) {
   const r = rows.value[i]
@@ -238,7 +321,7 @@ async function save() {
     for (const r of rows.value) {
       const payload: any = {
         account_id: accountId, project_id: projectId.value,
-        trade_id: r.trade_id, material_id: r.material_id, item_name: r.item_name || '(無題)',
+        trade_id: r.trade_id, material_id: r.material_id, supplier_id: r.supplier_id, item_name: r.item_name || '(無題)',
         unit: r.unit || null, quantity: Number(r.quantity) || 0, unit_price: Number(r.unit_price) || 0,
         note: r.location || null, sort_order: order++,
       }
@@ -260,7 +343,7 @@ async function save() {
 
 onMounted(async () => {
   accountId = await getAccountId()
-  await Promise.all([loadProjects(), loadTrades(), loadMaterials()])
+  await Promise.all([loadProjects(), loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices()])
 })
 </script>
 
