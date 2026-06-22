@@ -138,11 +138,16 @@ export async function sendPurchaseOrder(
         return { status: 200, body: { success: true, skipped: 'no_api_key', sent_to: maskEmail(email), test: false } }
       }
 
+      // 送信元: env のアドレス＋自社情報(settings.company_name)を表示名に（"会社名 <addr>"）
+      const { data: cn } = await svc.from('settings').select('value').eq('account_id', account.id).eq('key', 'company_name').maybeSingle()
+      const fromAddr = (PO_MAIL_FROM.match(/<([^>]+)>/)?.[1] || PO_MAIL_FROM).trim()
+      const fromName = (cn?.value || '').trim()
+      const from = fromName ? `${fromName} <${fromAddr}>` : PO_MAIL_FROM
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          from:    PO_MAIL_FROM,
+          from,
           to:      [email],
           subject: `【注文書】${order.order_number} のご確認・ご承諾のお願い`,
           html,
