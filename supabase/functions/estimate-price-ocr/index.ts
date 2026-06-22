@@ -15,7 +15,7 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const ANON_KEY     = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
 const GEMINI_KEY   = Deno.env.get('GEMINI_API_KEY') ?? Deno.env.get('GEMINI_REVIEW_API_KEY') ?? ''
-const OCR_MODEL    = Deno.env.get('ESTIMATE_OCR_MODEL') ?? 'gemini-2.0-flash'
+const OCR_MODEL    = Deno.env.get('ESTIMATE_OCR_MODEL') ?? 'gemini-2.5-flash'
 
 function corsHeaders() {
   return {
@@ -44,15 +44,18 @@ const PROMPT = `あなたは建材の単価表を読み取る専門家です。�
 async function geminiExtract(imageB64: string, mime: string): Promise<ExtractedRow[]> {
   if (!GEMINI_KEY) throw new Error('GEMINI_API_KEY 未設定')
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${OCR_MODEL}:generateContent`
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_KEY },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: PROMPT }, { inline_data: { mime_type: mime, data: imageB64 } }] }],
-      generationConfig: { temperature: 0, response_mime_type: 'application/json' },
-    }),
+  const body = JSON.stringify({
+    contents: [{ parts: [{ text: PROMPT }, { inline_data: { mime_type: mime, data: imageB64 } }] }],
+    generationConfig: { temperature: 0, response_mime_type: 'application/json' },
   })
-  if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 200)}`)
+  // 503（高負荷）は数回リトライ
+  let res: Response | null = null
+  for (let i = 0; i < 4; i++) {
+    res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_KEY }, body })
+    if (res.status !== 503) break
+    await new Promise((r) => setTimeout(r, 3000 * (i + 1)))
+  }
+  if (!res || !res.ok) throw new Error(`Gemini ${res?.status}: ${res ? (await res.text()).slice(0, 200) : 'no response'}`)
   const data = await res.json()
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '[]'
   let rows: ExtractedRow[]
