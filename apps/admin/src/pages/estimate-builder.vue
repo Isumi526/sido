@@ -109,6 +109,37 @@
           </table>
         </section>
       </div>
+
+      <!-- E2 帳票PDF: 見積書（表紙＋工種別内訳＋合計）を出力 -->
+      <section class="panel pdf-panel" v-if="rows.length">
+        <div class="panel-head">
+          <h2>見積書PDF</h2>
+          <button class="btn-primary" :disabled="pdfBusy" data-testid="export-pdf" @click="exportPdf">{{ pdfBusy ? '生成中…' : 'PDF出力' }}</button>
+        </div>
+        <div class="pdf-preview" ref="previewEl" data-testid="pdf-preview">
+          <h1 class="pdf-title">御 見 積 書</h1>
+          <div class="pdf-meta">
+            <div v-if="currentClient" class="pdf-client">{{ currentClient }} 御中</div>
+            <div>案件：{{ currentProjectName }}</div>
+            <div>発行日：{{ today }}</div>
+          </div>
+          <div class="pdf-total" data-testid="pdf-grandtotal">御見積金額　{{ yen(grandTotal) }}（税抜）</div>
+          <div v-for="g in groupedDetailed" :key="g.key" class="pdf-group">
+            <div class="pdf-group-head">{{ g.tradeName }}　<span class="pdf-sub">小計 {{ yen(g.total) }}</span></div>
+            <table class="pdf-table">
+              <thead><tr><th>場所</th><th>明細</th><th class="num">数量</th><th>単位</th><th class="num">単価</th><th class="num">金額</th></tr></thead>
+              <tbody>
+                <tr v-for="(it, idx) in g.items" :key="idx">
+                  <td>{{ it.location }}</td><td>{{ it.item_name }}</td>
+                  <td class="num">{{ it.quantity }}</td><td>{{ it.unit }}</td>
+                  <td class="num">{{ yen(it.unit_price) }}</td><td class="num">{{ yen(lineAmount(it)) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pdf-grand">合計　{{ yen(grandTotal) }}（税抜）</div>
+        </div>
+      </section>
     </template>
     <p v-else class="hint">案件を選択または追加すると、明細入力と工種別内訳が表示されます。</p>
   </div>
@@ -116,10 +147,12 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { jsPDF } from 'jspdf'
+import html2canvas from 'html2canvas'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 
-type Project  = { id: string; name: string }
+type Project  = { id: string; name: string; client_name: string | null }
 type Trade    = { id: string; name: string }
 type Material = { id: string; name: string; unit: string | null; code: string | null }
 type Supplier = { id: string; name: string }
@@ -171,9 +204,54 @@ const byTrade = computed(() => {
 })
 const grandTotal = computed(() => rows.value.reduce((s, r) => s + lineAmount(r), 0))
 
+// E2 帳票PDF: 工種別に明細をまとめた印刷プレビュー用データ
+const groupedDetailed = computed(() => {
+  const m = new Map<string, { key: string; tradeName: string; total: number; items: Row[] }>()
+  for (const r of rows.value) {
+    const tid = r.trade_id ?? null
+    const name = tid ? (trades.value.find(t => t.id === tid)?.name ?? '(不明)') : '(工種未設定)'
+    const key = tid ?? 'none'
+    const cur = m.get(key) ?? { key, tradeName: name, total: 0, items: [] as Row[] }
+    cur.items.push(r); cur.total += lineAmount(r); m.set(key, cur)
+  }
+  return [...m.values()].sort((a, b) => a.tradeName.localeCompare(b.tradeName, 'ja'))
+})
+const previewEl = ref<HTMLElement | null>(null)
+const pdfBusy = ref(false)
+const today = new Date().toISOString().slice(0, 10)
+const currentProjectName = computed(() => projects.value.find(p => p.id === projectId.value)?.name ?? '')
+const currentClient = computed(() => projects.value.find(p => p.id === projectId.value)?.client_name ?? '')
+
+// E2 PDF出力（表紙＋工種別内訳＋合計・A4複数ページ対応）
+async function exportPdf() {
+  if (!previewEl.value) return
+  pdfBusy.value = true
+  try {
+    const canvas = await html2canvas(previewEl.value, { scale: 2, backgroundColor: '#ffffff' })
+    const png = canvas.toDataURL('image/png')
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+    const pageW = 210, pageH = 297
+    const imgW = pageW
+    const imgH = (canvas.height / canvas.width) * imgW
+    let heightLeft = imgH
+    let position = 0
+    pdf.addImage(png, 'PNG', 0, position, imgW, imgH)
+    heightLeft -= pageH
+    while (heightLeft > 0) {
+      position = heightLeft - imgH
+      pdf.addPage()
+      pdf.addImage(png, 'PNG', 0, position, imgW, imgH)
+      heightLeft -= pageH
+    }
+    pdf.save(`見積_${currentProjectName.value || 'estimate'}.pdf`)
+  } finally {
+    pdfBusy.value = false
+  }
+}
+
 async function loadProjects() {
   const { data } = await supabase.from('estimate_projects')
-    .select('id, name').eq('account_id', accountId).order('created_at', { ascending: false })
+    .select('id, name, client_name').eq('account_id', accountId).order('created_at', { ascending: false })
   projects.value = (data ?? []) as Project[]
 }
 async function loadTrades() {
@@ -266,7 +344,7 @@ async function addProject() {
   if (!name) return
   newProjectName.value = ''   // 同期クリア（連続入力のレース回避）
   const { data, error } = await supabase.from('estimate_projects')
-    .insert({ account_id: accountId, name }).select('id, name').single()
+    .insert({ account_id: accountId, name }).select('id, name, client_name').single()
   if (error) { saveError.value = error.message; newProjectName.value = name; return }
   await loadProjects()
   projectId.value = (data as Project).id
@@ -374,4 +452,17 @@ onMounted(async () => {
 .hint { color: #777; }
 .err { color: #c00; font-size: 13px; }
 .ok { color: #06864a; font-size: 13px; }
+.pdf-panel { margin-top: 16px; }
+.pdf-preview { background: #fff; color: #111; padding: 24px; border: 1px solid #ddd; max-width: 760px; }
+.pdf-title { text-align: center; font-size: 22px; letter-spacing: 4px; margin: 0 0 16px; }
+.pdf-meta { font-size: 13px; line-height: 1.7; margin-bottom: 10px; }
+.pdf-client { font-size: 15px; font-weight: 700; }
+.pdf-total { font-size: 16px; font-weight: 700; border: 2px solid #333; display: inline-block; padding: 6px 14px; margin: 8px 0 16px; }
+.pdf-group { margin-bottom: 14px; }
+.pdf-group-head { font-weight: 700; background: #f0f4f1; padding: 5px 8px; border-left: 4px solid #06C755; }
+.pdf-sub { font-weight: 600; color: #444; font-size: 13px; }
+.pdf-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+.pdf-table th, .pdf-table td { border: 1px solid #ccc; padding: 4px 6px; font-size: 12px; text-align: left; }
+.pdf-table th.num, .pdf-table td.num { text-align: right; }
+.pdf-grand { text-align: right; font-size: 16px; font-weight: 700; border-top: 2px solid #333; padding-top: 8px; margin-top: 8px; }
 </style>
