@@ -108,5 +108,5 @@ entries:
   # --- 呼び出し元認証ベースライン: cron起動のリマインド系EFは in-code認証なし＝既存 daily-reminder と同型。恒久対策(共有シークレット)はチケットで追跡。 ---
   - rule: anon-access-token
     target: shaken-reminder
-    reason: "車検リマインドEF。pg_cronから認証ヘッダ無しで叩かれる前提で、本番稼働中のdaily-reminderと完全同型(in-code認証なし・account_slugをbody受け・--no-verify-jwtデプロイ)。新規の露出様式ではなくcron起動リマインド関数の既存ベースライン踏襲。共有シークレット認証の恒久対策をチケットで追跡。"
-    ticket: "3870ff81c56b8134b1a6c855d4216956"
+    reason: "車検リマインドEF。pg_cronから認証ヘッダ無しで叩かれる前提で、本番稼働中のdaily-reminderと完全同型(in-code認証なし・account_slugをbody受け・--no-verify-jwtデプロイ)。新規の露出様式ではなくcron起動リマインド関数の既存ベースライン踏襲。共有シークレット認証の恒久対策をチケットで追跡(両EF横断)。"
+    ticket: "3860ff81c56b81288629e4110c588411"
