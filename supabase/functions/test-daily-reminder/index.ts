@@ -35,6 +35,13 @@ function addDay(d: string): string {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
 }
 
+// timestamptz(UTC) → JST基準の 'YYYY-MM-DD'（登録日を暦日に変換）
+function jstDateOf(ts: string | null | undefined): string | null {
+  if (!ts) return null
+  const d = new Date(new Date(ts).getTime() + 9 * 60 * 60 * 1000)
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+}
+
 function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',
@@ -97,12 +104,12 @@ async function processAccount(
 
   const { data: users } = await supabase
     .from('users')
-    .select('id, real_name, worker_id, line_user_id, is_reminder_recipient, reminder_exempt, workers(name)')
+    .select('id, real_name, worker_id, line_user_id, is_reminder_recipient, reminder_exempt, created_at, workers(name)')
     .eq('account_id', accountId)
 
   const { data: allWorkers } = await supabase
     .from('workers')
-    .select('id, name')
+    .select('id, name, created_at')
     .eq('account_id', accountId)
     .eq('active', true)
 
@@ -123,6 +130,10 @@ async function processAccount(
 
   const workerNameMap = new Map<string, string>(
     (allWorkers ?? []).map((w: any) => [w.id, w.name])
+  )
+  // worker_id → 作業員マスタ登録日（起点に使う）
+  const workerCreatedMap = new Map<string, string>(
+    (allWorkers ?? []).map((w: any) => [w.id, w.created_at])
   )
   // worker_id → 代理人名リスト
   const proxyNamesMap = new Map<string, string[]>()
@@ -146,6 +157,13 @@ async function processAccount(
 
   const activeWorkerIds = new Set((allWorkers ?? []).map((w: any) => w.id))
 
+  // 各人の未送信起点 = max(service_start_date, 作業員登録日)。後から登録した人に登録前の未送信を出さない。
+  // 起点は「作業員マスタ登録日(workers.created_at)」で統一（紐付けは worker_id 経由、無ければ users.created_at にフォールバック）。
+  const personStart = (createdAt: string | null | undefined): string => {
+    const reg = jstDateOf(createdAt)
+    return reg && reg > startDate ? reg : startDate
+  }
+
   const unsubmitted: UnsubmittedEntry[] = []
   for (const user of (users ?? [])) {
     if ((user as any).reminder_exempt) continue                 // 専用フラグで除外（worker無効化に依存しない）
@@ -154,15 +172,19 @@ async function processAccount(
 
     const workerName = (user.workers as any)?.name ?? user.real_name ?? '不明'
     const entry = buildEntry(workerName, workerId)
-    const missing = allDates.filter(d => !submittedSet.has(`${user.id}__${d}`))
+    const us = personStart((workerId && workerCreatedMap.get(workerId)) || (user as any).created_at)
+    const missing = allDates.filter(d => d >= us && !submittedSet.has(`${user.id}__${d}`))
     if (missing.length > 0) unsubmitted.push({ ...entry, dates: missing })
   }
 
   const linkedWorkerIds = new Set((users ?? []).map((u: any) => u.worker_id).filter(Boolean))
   for (const worker of (allWorkers ?? [])) {
     if (!linkedWorkerIds.has(worker.id)) {
-      const entry = buildEntry(worker.name, worker.id, 'LINE未紐付け')
-      unsubmitted.push({ ...entry, dates: allDates })
+      const ws = personStart((worker as any).created_at)
+      const dates = allDates.filter(d => d >= ws)
+      if (dates.length === 0) continue
+      const entry = buildEntry(worker.name, worker.id)
+      unsubmitted.push({ ...entry, dates })
     }
   }
 
