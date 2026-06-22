@@ -25,6 +25,23 @@ create table if not exists contractor_contacts (
 create index if not exists contractor_contacts_contractor_idx on contractor_contacts (contractor_id);
 create index if not exists contractor_contacts_account_idx     on contractor_contacts (account_id);
 
+-- contractor_contacts は管理画面専用（元請け担当者・メール等の連絡先）。anon/LIFF は触らない。
+-- → RLS有効・account分離・anon全拒否（estimate_* と同方式）。EFは service_role でバイパス。
+alter table contractor_contacts enable row level security;
+drop policy if exists contractor_contacts_sel on contractor_contacts;
+drop policy if exists contractor_contacts_ins on contractor_contacts;
+drop policy if exists contractor_contacts_upd on contractor_contacts;
+drop policy if exists contractor_contacts_del on contractor_contacts;
+create policy contractor_contacts_sel on contractor_contacts for select to authenticated
+  using (account_id = (select public.current_account_id()));
+create policy contractor_contacts_ins on contractor_contacts for insert to authenticated
+  with check (account_id = (select public.current_account_id()));
+create policy contractor_contacts_upd on contractor_contacts for update to authenticated
+  using (account_id = (select public.current_account_id()))
+  with check (account_id = (select public.current_account_id()));
+create policy contractor_contacts_del on contractor_contacts for delete to authenticated
+  using (account_id = (select public.current_account_id()));
+
 -- ② 案件に元請けを紐付け（任意・現場へ昇華する前の見積段階の宛先決定に使う）
 alter table estimate_projects add column if not exists contractor_id uuid references contractors(id);
 create index if not exists est_projects_contractor_idx on estimate_projects (account_id, contractor_id);
