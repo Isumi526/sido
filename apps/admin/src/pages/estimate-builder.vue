@@ -224,9 +224,9 @@
                   <div class="ocr-bar"><div class="ocr-bar-fill" :style="{ width: ocrPct + '%' }"></div></div>
                   <div class="ocr-status">
                     <span class="spin"></span>
-                    <span>AIが単価表を読み取り中… <b>{{ ocrElapsed }}秒経過</b> ／ {{ ocrEtaText }}</span>
+                    <span>AIが読み取り中… <b>ページ {{ Math.min(ocrDone + 1, ocrTotal || 1) }}/{{ ocrTotal || 1 }}</b> ・ 経過{{ ocrElapsed }}秒 ／ {{ ocrEtaText }}</span>
                   </div>
-                  <div class="muted">ページ数が多いほど時間がかかります（通常30〜60秒ほど）。このまま少々お待ちください。</div>
+                  <div class="muted">PDFはページごとに解析します。1ページ目の実測から残り時間を見積もります。</div>
                 </div>
                 <span class="muted">読み取った差分は下に出ます。<b>承認した分だけ</b>反映（自動反映なし）。</span>
                 <span v-if="ocrError" class="err">{{ ocrError }}</span>
@@ -317,9 +317,25 @@ const ocrBusy     = ref(false)
 const ocrError    = ref('')
 const ocrElapsed  = ref(0)        // 取込の経過秒
 let   ocrTimer: ReturnType<typeof setInterval> | undefined
-const OCR_ETA     = 45            // 目安の所要秒（ページ数で前後）
-const ocrPct      = computed(() => Math.min(95, Math.round((ocrElapsed.value / OCR_ETA) * 100)))
-const ocrEtaText  = computed(() => ocrElapsed.value < OCR_ETA ? `残り約${OCR_ETA - ocrElapsed.value}秒（目安）` : 'まもなく完了します…')
+const ocrTotal    = ref(0)        // 総ページ数
+const ocrDone     = ref(0)        // 処理済みページ数
+const ocrPageStart = ref(0)       // 現ページ開始時の経過秒
+const ocrAvgPageSec = ref(0)      // 済みページの平均所要秒（実測）
+// 進捗バー: 済みページ＋現ページの推定進捗。1ページ目は実績無いので暫定15秒、以降は実測平均で正確化。
+const ocrPct = computed(() => {
+  if (!ocrTotal.value) return 0
+  const avg = ocrDone.value > 0 ? ocrAvgPageSec.value : 15
+  const cur = Math.max(0, ocrElapsed.value - ocrPageStart.value)
+  const frac = Math.min(0.95, avg > 0 ? cur / avg : 0)
+  return Math.min(98, Math.round(((ocrDone.value + frac) / ocrTotal.value) * 100))
+})
+const ocrEtaText = computed(() => {
+  if (!ocrTotal.value) return '解析中…'
+  const avg = ocrDone.value > 0 ? ocrAvgPageSec.value : 15
+  const cur = Math.max(0, ocrElapsed.value - ocrPageStart.value)
+  const remain = Math.max(0, Math.round(avg * (ocrTotal.value - ocrDone.value) - cur))
+  return ocrDone.value > 0 ? `残り約${remain}秒` : '1ページ目を解析中…'
+})
 const projectId      = ref<string | null>(null)
 const rows           = ref<Row[]>([])
 const removedIds     = ref<string[]>([])
@@ -411,25 +427,62 @@ async function rejectRevision(r: Revision) {
   await loadRevisions()
 }
 // OCR取込: 単価表画像を vision-LLM(Edge Function) に送り、pending revisions を作る
+function bytesToB64(bytes: Uint8Array): string {
+  let bin = ''
+  const chunk = 0x8000
+  for (let i = 0; i < bytes.length; i += chunk) bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)))
+  return btoa(bin)
+}
+function fileToB64(file: File): Promise<string> {
+  return new Promise((res, rej) => {
+    const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1] || ''); fr.onerror = rej; fr.readAsDataURL(file)
+  })
+}
+// 1ページ分を OCR EF に投げ、作成された差分件数を返す
+async function callOcr(b64: string, mime: string): Promise<number> {
+  const { data: sess } = await supabase.auth.getSession()
+  const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/estimate-price-ocr`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sess?.session?.access_token ?? ''}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+    body: JSON.stringify({ account_slug: getAccountSlug(), supplier_id: activeSupplier.value, image_base64: b64, mime }),
+  })
+  const json = await resp.json()
+  if (!resp.ok || json?.error) throw new Error(json?.error || `取込エラー(${resp.status})`)
+  return json?.created ?? 0
+}
+// PDFはページ分割して1ページずつ処理＝「X/Nページ」の実進捗＋実測平均で残り時間を出す
 async function onOcrFile(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
   if (!activeSupplier.value) { ocrError.value = '先に対象の商社タブを選んでください'; return }
   ocrBusy.value = true; ocrError.value = ''
-  ocrElapsed.value = 0
+  ocrElapsed.value = 0; ocrTotal.value = 0; ocrDone.value = 0; ocrPageStart.value = 0; ocrAvgPageSec.value = 0
   ocrTimer = setInterval(() => { ocrElapsed.value++ }, 1000)
   try {
-    const b64 = await new Promise<string>((res, rej) => {
-      const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1] || ''); fr.onerror = rej; fr.readAsDataURL(file)
-    })
-    const { data: sess } = await supabase.auth.getSession()
-    const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/estimate-price-ocr`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sess?.session?.access_token ?? ''}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
-      body: JSON.stringify({ account_slug: getAccountSlug(), supplier_id: activeSupplier.value, image_base64: b64, mime: file.type || 'image/png' }),
-    })
-    const json = await resp.json()
-    if (!resp.ok || json?.error) { ocrError.value = json?.error || `取込エラー(${resp.status})`; return }
+    let pages: { b64: string; mime: string }[]
+    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
+    if (isPdf) {
+      const buf = await file.arrayBuffer()
+      const { PDFDocument } = await import('pdf-lib')
+      const src = await PDFDocument.load(buf)
+      const n = src.getPageCount()
+      pages = []
+      for (let i = 0; i < n; i++) {
+        const doc = await PDFDocument.create()
+        const [pg] = await doc.copyPages(src, [i])
+        doc.addPage(pg)
+        pages.push({ b64: bytesToB64(await doc.save()), mime: 'application/pdf' })
+      }
+    } else {
+      pages = [{ b64: await fileToB64(file), mime: file.type || 'image/png' }]
+    }
+    ocrTotal.value = pages.length
+    for (const pg of pages) {
+      ocrPageStart.value = ocrElapsed.value
+      await callOcr(pg.b64, pg.mime)
+      ocrDone.value++
+      ocrAvgPageSec.value = ocrElapsed.value / ocrDone.value   // 実測平均（以降の残り時間が正確に）
+    }
     await loadRevisions()
   } catch (err: any) {
     ocrError.value = err?.message ?? '取込に失敗しました'
