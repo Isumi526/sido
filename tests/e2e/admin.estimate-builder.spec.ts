@@ -58,6 +58,8 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await page.locator('[data-testid="add-project"]').click()
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ)
 
+    // 工種追加は「⚙️ マスタ・取込設定」内 → 開く
+    await page.locator('[data-testid="settings-toggle"]').click()
     // 工種を2つ追加
     await page.locator('[data-testid="new-trade-name"]').fill(TRADE_A)
     await page.locator('[data-testid="add-trade"]').click()
