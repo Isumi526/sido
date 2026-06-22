@@ -21,6 +21,7 @@ import Attendance     from '../pages/attendance.vue'
 import ReminderHistory from '../pages/reminder-history.vue'
 import NonSubmitters   from '../pages/non-submitters.vue'
 import Estimates       from '../pages/estimates.vue'
+import EstimatesList   from '../pages/estimates-list.vue'
 import EstimateBuilder from '../pages/estimate-builder.vue'
 import PurchaseOrders  from '../pages/purchase-orders.vue'
 
@@ -48,6 +49,7 @@ export const router = createRouter({
     { path: '/reminder-history', component: ReminderHistory },
     { path: '/non-submitters',   component: NonSubmitters },
     { path: '/estimates',        component: Estimates },
+    { path: '/estimates-list',   component: EstimatesList },
     { path: '/estimate-builder', component: EstimateBuilder },
     { path: '/purchase-orders',  component: PurchaseOrders },
   ],
