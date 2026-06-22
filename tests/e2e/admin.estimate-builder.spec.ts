@@ -25,6 +25,7 @@ const TR1 = `軽鉄E2_${TS}`
 const TR2 = `ボードE2_${TS}`
 const MAT_PL = `単価表材_${TS}`
 const SUP_PL = `単価表商社_${TS}`
+const SUP_INLINE = `インライン商社_${TS}`
 
 test.describe.configure({ mode: 'serial' })
 
@@ -51,6 +52,11 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     }
     await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MAT_PL)}`, { method: 'DELETE' }).catch(() => {})  // cascade prices
     await restSrv(`subcontractors?name=eq.${encodeURIComponent(SUP_PL)}&category=eq.${encodeURIComponent('商社')}`, { method: 'DELETE' }).catch(() => {})
+    // インライン追加した商社（edit_logのFK→先に消す）
+    for (const s of (await restSrv(`subcontractors?name=eq.${encodeURIComponent(SUP_INLINE)}&select=id`).catch(() => []) ?? [])) {
+      await restSrv(`subcontractor_edit_logs?subcontractor_id=eq.${s.id}`, { method: 'DELETE' }).catch(() => {})
+    }
+    await restSrv(`subcontractors?name=eq.${encodeURIComponent(SUP_INLINE)}&category=eq.${encodeURIComponent('商社')}`, { method: 'DELETE' }).catch(() => {})
   })
 
   test('AC1/AC2: 明細入力→工種別に自動集計され、DBにも反映される', async ({ page }) => {
@@ -275,5 +281,22 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
       const ps = await restSrv(`estimate_material_prices?material_id=eq.${mat.id}&supplier_id=eq.${sup.id}&select=id`)
       return (ps ?? []).length
     }, { timeout: 10000 }).toBe(0)
+  })
+
+  // このページから商社(下請け業者 区分=商社)を追加できる（横断不要）
+  test('商社をこのページから追加できる（下請け業者 区分=商社として保存）', async ({ page }) => {
+    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
+    await page.locator('[data-testid="settings-toggle"]').click()
+    await page.locator('[data-testid="add-supplier-toggle"]').click()
+    await page.locator('[data-testid="new-supplier-name"]').fill(SUP_INLINE)
+    await page.locator('[data-testid="add-supplier"]').click()
+
+    // タブに出て選択状態になる
+    await expect(page.locator('.price-tabs')).toContainText(SUP_INLINE)
+    // DB: subcontractors に 区分=商社 で保存
+    await expect.poll(async () => {
+      const s = await restSrv(`subcontractors?name=eq.${encodeURIComponent(SUP_INLINE)}&category=eq.${encodeURIComponent('商社')}&select=id`)
+      return (s ?? []).length
+    }, { timeout: 10000 }).toBe(1)
   })
 })
