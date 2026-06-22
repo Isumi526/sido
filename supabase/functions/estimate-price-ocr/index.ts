@@ -118,7 +118,7 @@ Deno.serve(async (req) => {
     if (oldP != null && Number(oldP) === np) continue   // 据置はスキップ
     toInsert.push({
       account_id: accountId, supplier_id, material_id: m?.id ?? null,
-      code: r.code ?? null, name: r.name ?? null,
+      code: r.code ?? null, name: r.name ?? null, unit: r.unit ?? null,
       old_price: oldP, new_price: np, effective_date: r.effective_date ?? null, status: 'pending',
     })
   }
