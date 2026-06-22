@@ -2,7 +2,7 @@
   <div>
     <div class="page-header">
       <h1 class="page-title">見積もり</h1>
-      <RouterLink to="/estimates-list" class="back-link" data-testid="back-to-list">← 見積一覧へ</RouterLink>
+      <RouterLink to="/estimate-list" class="back-link" data-testid="back-to-list">← 見積一覧へ</RouterLink>
     </div>
 
     <!-- 案件を開いている時のバー（案件名の編集・元請け・別案件の新規作成） -->
@@ -11,12 +11,6 @@
         <label>案件</label>
         <span v-if="!editingName" class="current-project" data-testid="project-select" title="クリックで名称変更" @click="startRename">{{ currentProjectName }} <span class="edit-ic">✎</span></span>
         <input v-else v-model="projectNameEdit" class="input proj-name" data-testid="project-name-input" @keyup.enter="commitRename" @blur="commitRename" />
-        <button v-if="!addingProject" class="btn-add" data-testid="new-project-toggle" @click="addingProject = true">＋ 新規案件</button>
-        <template v-else>
-          <input v-model="newProjectName" class="input" placeholder="新規案件名" data-testid="new-project-name2" @keyup.enter="addProject" />
-          <button class="btn-add" :disabled="!newProjectName.trim()" data-testid="add-project2" @click="addProject">追加</button>
-          <button class="btn-del" title="キャンセル" @click="addingProject = false; newProjectName = ''">×</button>
-        </template>
         <span v-if="projectErr" class="err" data-testid="project-err">{{ projectErr }}</span>
       </div>
 
@@ -334,7 +328,7 @@
     <!-- 新規作成（一覧の＋新規見積、または案件未選択で開いた時） -->
     <div v-else class="new-estimate">
       <h2>新規見積を作成</h2>
-      <p class="muted">案件名を入力して作成、または<RouterLink to="/estimates-list">見積一覧</RouterLink>から選んでください。</p>
+      <p class="muted">案件名を入力して作成、または<RouterLink to="/estimate-list">見積一覧</RouterLink>から選んでください。</p>
       <div class="new-row">
         <input v-model="newProjectName" class="input" placeholder="案件名（例: 〇〇ビル改修）" data-testid="new-project-name" @keyup.enter="addProject" />
         <button class="btn-primary" :disabled="!newProjectName.trim()" data-testid="add-project" @click="addProject">作成</button>
