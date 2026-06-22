@@ -43,7 +43,8 @@ test.describe('見積 価格表差分承認（E4）', () => {
     const row1 = page.locator(`[data-testid="rev-${rev1.id}"]`)
     await expect(row1).toContainText(MAT)
     await expect(row1).toContainText('¥100')
-    await expect(row1).toContainText('¥140')
+    // 新単価は承認前に手修正できる editable input（①編集）。値で検証する。
+    await expect(page.locator(`[data-testid="rev-price-${rev1.id}"]`)).toHaveValue('140')
     await expect(page.locator(`[data-testid="rev-${rev2.id}"]`)).toContainText('新規')
 
     // ① 既存材料の改定を承認 → 現行100は履歴化・新単価140がcurrent・revision applied

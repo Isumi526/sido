@@ -122,6 +122,40 @@
           </div>
           <div class="pdf-grand">合計　{{ yen(grandTotal) }}（税抜）</div>
         </div>
+
+        <!-- ③ 見積書PDFを商社の担当者宛にメール送信＋履歴 -->
+        <div class="send-block">
+          <div class="sub-h">商社へメール送信</div>
+          <div class="send-row">
+            <select v-model="sendSupplierId" class="input sm" data-testid="send-supplier" @change="onSendSupplier">
+              <option :value="null" disabled>商社を選択…</option>
+              <option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}</option>
+            </select>
+            <select v-model="sendContactId" class="input sm" data-testid="send-contact">
+              <option :value="null" disabled>担当者を選択…</option>
+              <option v-for="c in sendContacts" :key="c.id" :value="c.id">{{ c.name || '(担当者)' }}{{ c.email ? `（${c.email}）` : '（メール未登録）' }}</option>
+            </select>
+            <button class="btn-primary" :disabled="!canSend || sending" data-testid="send-estimate" @click="sendPdf">{{ sending ? '送信中…' : 'PDFを送信' }}</button>
+          </div>
+          <span v-if="sendSupplierId && !sendContacts.length" class="muted">この商社には担当者が未登録です（下請け業者マスタで登録してください）。</span>
+          <span v-else-if="sendContactId && !sendEmail" class="err">この担当者はメール未登録です。送信できません。</span>
+          <span v-if="sendMsg" class="ok" data-testid="send-msg">{{ sendMsg }}</span>
+          <span v-if="sendErr" class="err" data-testid="send-err">{{ sendErr }}</span>
+
+          <div v-if="sends.length" class="send-history">
+            <div class="sub-h">送信履歴</div>
+            <table class="table">
+              <thead><tr><th>日時</th><th>宛先</th><th>件名</th></tr></thead>
+              <tbody>
+                <tr v-for="s in sends" :key="s.id" :data-testid="`send-row-${s.id}`">
+                  <td>{{ s.sent_at ? new Date(s.sent_at).toLocaleString('ja-JP') : `（記録のみ ${new Date(s.created_at).toLocaleString('ja-JP')}）` }}</td>
+                  <td>{{ s.email_to || '—' }}</td>
+                  <td>{{ s.subject || '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </section>
     </template>
     <p v-else class="hint">案件を選択または追加すると、明細入力と工種別内訳が表示されます。</p>
@@ -236,14 +270,22 @@
             <!-- 取込の承認待ち差分（この商社の分） -->
             <div v-if="revisionsFiltered.length" class="rev-section">
               <div class="sub-h">取込の承認待ち（{{ revisionsFiltered.length }}件）</div>
+              <p class="muted">承認前に各項目を手修正できます。<b>紐付け先</b>で既存材料を選ぶと、商社ごとの品番/品名の揺れを吸収して同じ材料にまとめられます（次回の取込から自動一致）。</p>
               <table class="table">
-                <thead><tr><th>材料</th><th class="num">現行</th><th class="num">新単価</th><th>有効日</th><th></th></tr></thead>
+                <thead><tr><th>品番</th><th>品名</th><th>紐付け先</th><th class="num">現行</th><th class="num">新単価</th><th>有効日</th><th></th></tr></thead>
                 <tbody>
                   <tr v-for="r in revisionsFiltered" :key="r.id" :data-testid="`rev-${r.id}`">
-                    <td>{{ revMaterialName(r) }}<span v-if="!r.material_id" class="badge-new">新規</span></td>
+                    <td><input v-model="r.code" class="input sm" :data-testid="`rev-code-${r.id}`" placeholder="品番" /></td>
+                    <td><input v-model="r.name" class="input" :data-testid="`rev-name-${r.id}`" placeholder="品名" /></td>
+                    <td>
+                      <select v-model="r.material_id" class="input sm" :data-testid="`rev-material-${r.id}`">
+                        <option :value="null">＋ 新規材料として作成</option>
+                        <option v-for="m in materials" :key="m.id" :value="m.id">{{ m.name }}{{ m.code ? `（${m.code}）` : '' }}</option>
+                      </select>
+                    </td>
                     <td class="num">{{ r.old_price == null ? '—' : yen(r.old_price) }}</td>
-                    <td class="num diff">{{ yen(r.new_price || 0) }}</td>
-                    <td>{{ r.effective_date || '—' }}</td>
+                    <td class="num"><input v-model.number="r.new_price" type="number" class="input sm num" :data-testid="`rev-price-${r.id}`" /></td>
+                    <td><input v-model="r.effective_date" type="date" class="input sm" :data-testid="`rev-date-${r.id}`" /></td>
                     <td class="actions">
                       <button class="btn-primary sm" :disabled="revBusy" :data-testid="`approve-${r.id}`" @click="approveRevision(r)">承認</button>
                       <button class="btn-del" :data-testid="`reject-${r.id}`" @click="rejectRevision(r)">却下</button>
@@ -256,12 +298,13 @@
             <!-- 現行単価 一覧 -->
             <div class="sub-h">現行単価</div>
             <table v-if="priceListFiltered.length" class="table price-list" data-testid="price-list">
-              <thead><tr><th>材料</th><th class="num">単価</th><th>有効日</th><th></th></tr></thead>
+              <thead><tr><th>品番</th><th>品名</th><th class="num">単価</th><th>有効日</th><th></th></tr></thead>
               <tbody>
                 <tr v-for="p in priceListFiltered" :key="p.id" :data-testid="`price-row-${p.id}`">
+                  <td class="code">{{ p.materialCode || '—' }}</td>
                   <td>{{ p.materialName }}</td>
-                  <td class="num">{{ yen(p.unit_price) }}</td>
-                  <td>{{ p.effective_date || '—' }}</td>
+                  <td class="num"><input v-model.number="p.unit_price" type="number" class="input sm num" :data-testid="`price-val-${p.id}`" @change="savePrice(p)" /></td>
+                  <td><input v-model="p.effective_date" type="date" class="input sm" :data-testid="`price-date-${p.id}`" @change="savePrice(p)" /></td>
                   <td><button class="btn-del" :data-testid="`price-del-${p.id}`" @click="deletePrice(p.id)">削除</button></td>
                 </tr>
               </tbody>
@@ -281,11 +324,16 @@ import html2canvas from 'html2canvas'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug } from '../lib/account'
 
+const BUCKET = 'expense-receipts'
+const IS_DEV = import.meta.env.DEV
+
 type Project  = { id: string; name: string; client_name: string | null }
 type Trade    = { id: string; name: string }
 type Material = { id: string; name: string; unit: string | null; code: string | null }
 type Supplier = { id: string; name: string }
 type MatPrice = { id: string; material_id: string; supplier_id: string; unit_price: number; effective_date: string | null }
+type Contact  = { id: string; subcontractor_id: string; name: string | null; email: string | null }
+type EstimateSend = { id: string; email_to: string | null; subject: string | null; sent_at: string | null; created_at: string }
 type Row = {
   id: string | null
   location: string
@@ -347,6 +395,14 @@ const saving         = ref(false)
 const saveError      = ref('')
 const savedMsg       = ref('')
 let accountId = ''
+// ③ 見積書PDFのメール送信（商社の担当者宛）＋送信履歴
+const contacts       = ref<Contact[]>([])
+const sends          = ref<EstimateSend[]>([])
+const sendSupplierId = ref<string | null>(null)
+const sendContactId  = ref<string | null>(null)
+const sending        = ref(false)
+const sendMsg        = ref('')
+const sendErr        = ref('')
 
 const yen = (n: number) => '¥' + Math.round(n || 0).toLocaleString('ja-JP')
 const lineAmount = (r: Row) => (Number(r.quantity) || 0) * (Number(r.unit_price) || 0)
@@ -384,6 +440,15 @@ const today = new Date().toISOString().slice(0, 10)
 const currentProjectName = computed(() => projects.value.find(p => p.id === projectId.value)?.name ?? '')
 const currentClient = computed(() => projects.value.find(p => p.id === projectId.value)?.client_name ?? '')
 
+// ③ 送信先＝商社の担当者。商社を選ぶと担当者を絞り込み、メール未登録は送信不可。
+const sendContacts = computed(() => contacts.value.filter(c => c.subcontractor_id === sendSupplierId.value))
+const sendEmail    = computed(() => sendContacts.value.find(c => c.id === sendContactId.value)?.email || '')
+const canSend      = computed(() => rows.value.length > 0 && !!sendContactId.value && !!sendEmail.value)
+function onSendSupplier() {
+  const c = contacts.value.find(x => x.subcontractor_id === sendSupplierId.value)
+  sendContactId.value = c?.id ?? null
+}
+
 // E4 差分承認: pending の価格改定を読む
 async function loadRevisions() {
   const { data } = await supabase.from('estimate_price_revisions')
@@ -397,11 +462,26 @@ function revMaterialName(r: Revision) {
 function revSupplierName(r: Revision) {
   return suppliers.value.find(s => s.id === r.supplier_id)?.name ?? '(商社)'
 }
-// 承認＝material_prices へ反映（現行を履歴化→新単価をcurrent・材料が無ければ作成）＋revision applied
+// ② 揺れ対策: 承認時の(商社×品番/品名)→自社材料 の紐付けをエイリアスとして学習。
+//   同一商社の同じ品番/品名は最新の紐付けに更新（古い対応を消してから1件入れる＝後勝ち）。
+async function recordAlias(materialId: string, supplierId: string, code: string | null, name: string | null) {
+  const c = (code || '').trim(), n = (name || '').trim()
+  if (!c && !n) return
+  if (c) await supabase.from('estimate_material_aliases')
+    .delete().eq('account_id', accountId).eq('supplier_id', supplierId).ilike('supplier_code', c)
+  if (n) await supabase.from('estimate_material_aliases')
+    .delete().eq('account_id', accountId).eq('supplier_id', supplierId).ilike('supplier_name', n)
+  await supabase.from('estimate_material_aliases')
+    .insert({ account_id: accountId, material_id: materialId, supplier_id: supplierId, supplier_code: c || null, supplier_name: n || null })
+}
+// 承認＝material_prices へ反映（現行を履歴化→新単価をcurrent・材料が無ければ作成）＋revision applied＋エイリアス学習。
+// ①編集: r.code/r.name/r.new_price/r.effective_date と紐付け先(r.material_id)は承認画面で手修正された値をそのまま使う。
 async function approveRevision(r: Revision) {
+  if (!r.supplier_id) { saveError.value = '商社が未解決です'; return }
+  if (!(Number(r.new_price) > 0)) { saveError.value = '新単価は1円以上にしてください'; return }
   revBusy.value = true; saveError.value = ''
   try {
-    let materialId = r.material_id
+    let materialId = r.material_id   // 紐付け先セレクトで既存材料を選んでいればそれを使う
     if (!materialId) {
       const nm = (r.name || '').trim()
       const ex = materials.value.find(m => m.name.trim().toLowerCase() === nm.toLowerCase())
@@ -412,13 +492,14 @@ async function approveRevision(r: Revision) {
         materialId = (data as any)?.id ?? null
       }
     }
-    if (!materialId || !r.supplier_id) { saveError.value = '材料または商社が未解決です'; return }
+    if (!materialId) { saveError.value = '材料が未解決です'; return }
     await supabase.from('estimate_material_prices').update({ is_current: false })
       .eq('account_id', accountId).eq('material_id', materialId).eq('supplier_id', r.supplier_id).eq('is_current', true)
     await supabase.from('estimate_material_prices')
-      .insert({ account_id: accountId, material_id: materialId, supplier_id: r.supplier_id, unit_price: r.new_price, effective_date: r.effective_date, is_current: true })
+      .insert({ account_id: accountId, material_id: materialId, supplier_id: r.supplier_id, unit_price: Number(r.new_price), effective_date: r.effective_date, is_current: true })
     await supabase.from('estimate_price_revisions')
       .update({ status: 'applied', applied_at: new Date().toISOString(), material_id: materialId }).eq('id', r.id)
+    await recordAlias(materialId, r.supplier_id, r.code, r.name)
     await Promise.all([loadMaterials(), loadMaterialPrices(), loadRevisions()])
   } finally { revBusy.value = false }
 }
@@ -518,6 +599,45 @@ async function exportPdf() {
     pdfBusy.value = false
   }
 }
+// ③ 見積書PDFを生成→Storageへ保存→商社の担当者宛にメール送信（履歴は EF が estimate_sends に記録）
+async function sendPdf() {
+  if (!canSend.value || !previewEl.value || !projectId.value) return
+  sending.value = true; sendErr.value = ''; sendMsg.value = ''
+  try {
+    // PDF生成（複数ページA4・exportPdf と同方式）
+    const canvas = await html2canvas(previewEl.value, { scale: 2, backgroundColor: '#ffffff' })
+    const png = canvas.toDataURL('image/png')
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+    const pageW = 210, pageH = 297, imgW = pageW
+    const imgH = (canvas.height / canvas.width) * imgW
+    let heightLeft = imgH, position = 0
+    pdf.addImage(png, 'PNG', 0, position, imgW, imgH); heightLeft -= pageH
+    while (heightLeft > 0) { position = heightLeft - imgH; pdf.addPage(); pdf.addImage(png, 'PNG', 0, position, imgW, imgH); heightLeft -= pageH }
+    // Storageへ保存（EFが添付用にダウンロードする・履歴に紐付く）
+    const path = `estimates/${accountId}/${projectId.value}-${Date.now()}.pdf`
+    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, pdf.output('blob'), { upsert: true, contentType: 'application/pdf' })
+    if (upErr) throw upErr
+    // 送信EF（devはテスト入口＝実メールは送らず履歴のみ記録）。EFが呼び出し元JWTで越境を拒否。
+    const fnName = IS_DEV ? 'test-send-estimate' : 'send-estimate'
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${fnName}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY, Authorization: `Bearer ${session?.access_token ?? ''}` },
+      body: JSON.stringify({
+        project_id: projectId.value, subcontractor_id: sendSupplierId.value, subcontractor_contact_id: sendContactId.value,
+        pdf_path: path, total_amount: Math.round(grandTotal.value), project_name: currentProjectName.value,
+      }),
+    })
+    const r = await res.json().catch(() => ({}))
+    if (!res.ok || r?.error) throw new Error(r?.error ?? `送信失敗(${res.status})`)
+    sendMsg.value = r.test ? '送信履歴を記録しました（dev: 実メールは送信しません）' : `${r.sent_to ?? ''} へ送信しました`
+    await loadSends()
+  } catch (e: any) {
+    sendErr.value = e?.message ?? '送信に失敗しました'
+  } finally {
+    sending.value = false
+  }
+}
 
 async function loadProjects() {
   const { data } = await supabase.from('estimate_projects')
@@ -545,12 +665,27 @@ async function loadMaterialPrices() {
     .select('id, material_id, supplier_id, unit_price, effective_date').eq('account_id', accountId).eq('is_current', true)
   matPrices.value = (data ?? []) as MatPrice[]
 }
+// ③ 商社の担当者（送信先候補）。subcontractor_contacts を流用（発注書と同じ）。
+async function loadContacts() {
+  const { data } = await supabase.from('subcontractor_contacts')
+    .select('id, subcontractor_id, name, email').eq('account_id', accountId).eq('is_deleted', false).order('sort_order')
+  contacts.value = (data ?? []) as Contact[]
+}
+// ③ この案件の送信履歴
+async function loadSends() {
+  sends.value = []
+  if (!projectId.value) return
+  const { data } = await supabase.from('estimate_sends')
+    .select('id, email_to, subject, sent_at, created_at').eq('project_id', projectId.value).order('created_at', { ascending: false })
+  sends.value = (data ?? []) as EstimateSend[]
+}
 // 商社別単価の現行一覧（材料名・商社名つき・材料→商社順）
 const priceList = computed(() =>
   matPrices.value
     .map(p => ({
       id: p.id, supplierId: p.supplier_id, unit_price: Number(p.unit_price), effective_date: p.effective_date,
       materialName: materials.value.find(m => m.id === p.material_id)?.name ?? '(材料)',
+      materialCode: materials.value.find(m => m.id === p.material_id)?.code ?? null,
       supplierName: suppliers.value.find(s => s.id === p.supplier_id)?.name ?? '(商社)',
     }))
     .sort((a, b) => a.materialName.localeCompare(b.materialName, 'ja') || a.supplierName.localeCompare(b.supplierName, 'ja'))
@@ -567,6 +702,12 @@ const revisionsFiltered = computed(() =>
 )
 async function deletePrice(id: string) {
   await supabase.from('estimate_material_prices').delete().eq('id', id)
+  await loadMaterialPrices()
+}
+// ①編集: 現行単価の単価・有効日を手修正（行の値を直接更新＝その場保存）
+async function savePrice(p: { id: string; unit_price: number; effective_date: string | null }) {
+  await supabase.from('estimate_material_prices')
+    .update({ unit_price: Number(p.unit_price) || 0, effective_date: p.effective_date || null }).eq('id', p.id)
   await loadMaterialPrices()
 }
 // E7 商社別単価: 行の材料に対する商社別単価リスト（単価差の表示元）
@@ -637,6 +778,7 @@ async function loadItems() {
     supplier_id: d.supplier_id ?? null, item_name: d.item_name, unit: d.unit ?? '',
     quantity: Number(d.quantity) || 0, unit_price: Number(d.unit_price) || 0,
   }))
+  await loadSends()
 }
 
 async function addProject() {
@@ -751,7 +893,7 @@ async function save() {
 
 onMounted(async () => {
   accountId = await getAccountId()
-  await Promise.all([loadProjects(), loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices(), loadRevisions()])
+  await Promise.all([loadProjects(), loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices(), loadRevisions(), loadContacts()])
   if (!activeSupplier.value && suppliers.value[0]) activeSupplier.value = suppliers.value[0].id  // 既定タブ
 })
 </script>
@@ -847,4 +989,9 @@ onMounted(async () => {
 .ocr-status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #444; margin-top: 6px; }
 .spin { width: 14px; height: 14px; border: 2px solid #cbd5e1; border-top-color: #06C755; border-radius: 50%; display: inline-block; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #555; white-space: nowrap; }
+.send-block { margin-top: 16px; padding-top: 12px; border-top: 1px dashed #ddd; }
+.send-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+.send-row .input.sm { min-width: 200px; width: auto; }
+.send-history { margin-top: 12px; }
 </style>
