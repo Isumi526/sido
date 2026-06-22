@@ -160,11 +160,15 @@
             <button class="btn-add" :disabled="!priceForm.material_id || !priceForm.supplier_id || !(priceForm.unit_price > 0)" data-testid="add-price" @click="addPrice">単価を登録</button>
           </div>
 
-          <!-- 現行の商社別単価 一覧（確認・削除） -->
-          <table v-if="priceList.length" class="table price-list" data-testid="price-list">
+          <!-- 現行の商社別単価 一覧（商社タブで絞り込み・確認・削除） -->
+          <div v-if="priceSuppliers.length" class="price-tabs">
+            <button class="ptab" :class="{ active: priceFilterSupplier === null }" data-testid="ptab-all" @click="priceFilterSupplier = null">すべて</button>
+            <button v-for="s in priceSuppliers" :key="s.id" class="ptab" :class="{ active: priceFilterSupplier === s.id }" :data-testid="`ptab-${s.id}`" @click="priceFilterSupplier = s.id">{{ s.name }}</button>
+          </div>
+          <table v-if="priceListFiltered.length" class="table price-list" data-testid="price-list">
             <thead><tr><th>材料</th><th>商社</th><th class="num">現行単価</th><th>有効日</th><th></th></tr></thead>
             <tbody>
-              <tr v-for="p in priceList" :key="p.id" :data-testid="`price-row-${p.id}`">
+              <tr v-for="p in priceListFiltered" :key="p.id" :data-testid="`price-row-${p.id}`">
                 <td>{{ p.materialName }}</td>
                 <td>{{ p.supplierName }}</td>
                 <td class="num">{{ yen(p.unit_price) }}</td>
@@ -424,11 +428,21 @@ async function loadMaterialPrices() {
 const priceList = computed(() =>
   matPrices.value
     .map(p => ({
-      id: p.id, unit_price: Number(p.unit_price), effective_date: p.effective_date,
+      id: p.id, supplierId: p.supplier_id, unit_price: Number(p.unit_price), effective_date: p.effective_date,
       materialName: materials.value.find(m => m.id === p.material_id)?.name ?? '(材料)',
       supplierName: suppliers.value.find(s => s.id === p.supplier_id)?.name ?? '(商社)',
     }))
     .sort((a, b) => a.materialName.localeCompare(b.materialName, 'ja') || a.supplierName.localeCompare(b.supplierName, 'ja'))
+)
+// 商社タブ（単価が登録されている商社のみ）＋ 絞り込み
+const priceFilterSupplier = ref<string | null>(null)
+const priceSuppliers = computed(() =>
+  [...new Set(matPrices.value.map(p => p.supplier_id))]
+    .map(id => ({ id, name: suppliers.value.find(s => s.id === id)?.name ?? '(商社)' }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'ja'))
+)
+const priceListFiltered = computed(() =>
+  priceFilterSupplier.value ? priceList.value.filter(p => p.supplierId === priceFilterSupplier.value) : priceList.value
 )
 async function deletePrice(id: string) {
   await supabase.from('estimate_material_prices').delete().eq('id', id)
@@ -647,4 +661,8 @@ onMounted(async () => {
 .setting-block .input { width: auto; min-width: 160px; }
 .setting-block .input.num { min-width: 100px; }
 .ocr-row { align-items: center; }
+.price-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 8px; }
+.ptab { border: 1px solid #d1d5db; background: #fff; color: #555; border-radius: 999px; padding: 4px 14px; font-size: 13px; cursor: pointer; }
+.ptab:hover { background: #f3f4f6; }
+.ptab.active { background: #06C755; color: #fff; border-color: #06C755; }
 </style>
