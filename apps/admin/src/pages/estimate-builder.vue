@@ -143,29 +143,65 @@
           </div>
         </div>
 
-        <!-- 商社別単価 登録 -->
+        <!-- 商社別単価（手入力 と 価格表OCR取込 を1ブロックに統合・商社タブが対象） -->
         <div class="setting-block">
           <h3>商社別単価</h3>
-          <p class="muted">商社は「下請け業者」マスタの<b>区分=商社</b>を使います（<RouterLink to="/subcontractors">下請け業者</RouterLink>で登録）。商社タブを選ぶと、その商社の単価登録・一覧・OCR取込の対象になります。</p>
-          <!-- 商社タブ（対象商社の選択。単価登録/一覧/OCR取込が連動） -->
+          <p class="muted">商社は「下請け業者」マスタの<b>区分=商社</b>（<RouterLink to="/subcontractors">下請け業者</RouterLink>で登録）。<b>商社タブを選ぶ</b>と、その商社の単価の追加・一覧・取込が対象になります。</p>
+          <!-- 商社タブ（対象商社の選択） -->
           <div v-if="suppliers.length" class="price-tabs">
             <button v-for="s in suppliers" :key="s.id" class="ptab" :class="{ active: activeSupplier === s.id }" :data-testid="`ptab-${s.id}`" @click="activeSupplier = s.id">{{ s.name }}</button>
           </div>
           <p v-else class="muted">商社（下請け業者 区分=商社）が未登録です。<RouterLink to="/subcontractors">下請け業者</RouterLink>で登録してください。</p>
 
           <template v-if="activeSupplier">
-            <!-- 単価登録（対象商社＝選択タブ） -->
-            <div class="trade-add">
-              <select v-model="priceForm.material_id" class="input sm" data-testid="price-material">
-                <option :value="null" disabled>材料</option>
-                <option v-for="m in materials" :key="m.id" :value="m.id">{{ m.name }}</option>
-              </select>
-              <input v-model.number="priceForm.unit_price" type="number" class="input sm num" placeholder="単価" data-testid="price-value" />
-              <button class="btn-add" :disabled="!priceForm.material_id || !(priceForm.unit_price > 0)" data-testid="add-price" @click="addPrice">単価を登録</button>
+            <!-- 価格の追加（2方法を並べる） -->
+            <div class="add-methods">
+              <div class="method">
+                <div class="method-label">手入力で1件ずつ</div>
+                <div class="trade-add">
+                  <select v-model="priceForm.material_id" class="input sm" data-testid="price-material">
+                    <option :value="null" disabled>材料</option>
+                    <option v-for="m in materials" :key="m.id" :value="m.id">{{ m.name }}</option>
+                  </select>
+                  <input v-model.number="priceForm.unit_price" type="number" class="input sm num" placeholder="単価" data-testid="price-value" />
+                  <button class="btn-add" :disabled="!priceForm.material_id || !(priceForm.unit_price > 0)" data-testid="add-price" @click="addPrice">登録</button>
+                </div>
+              </div>
+              <div class="method">
+                <div class="method-label">価格表から取込（OCR）</div>
+                <label class="btn-add" :class="{ disabled: ocrBusy }">
+                  {{ ocrBusy ? '取込中…' : '単価表を取込（PDF/写真）' }}
+                  <input type="file" accept="image/*,.pdf" hidden data-testid="ocr-file" :disabled="ocrBusy" @change="onOcrFile" />
+                </label>
+                <span class="muted">読み取った差分は下に出ます。<b>承認した分だけ</b>反映（自動反映なし）。</span>
+                <span v-if="ocrError" class="err">{{ ocrError }}</span>
+              </div>
             </div>
-            <!-- 一覧（商社列なし＝タブで自明） -->
+
+            <!-- 取込の承認待ち差分（この商社の分） -->
+            <div v-if="revisionsFiltered.length" class="rev-section">
+              <div class="sub-h">取込の承認待ち（{{ revisionsFiltered.length }}件）</div>
+              <table class="table">
+                <thead><tr><th>材料</th><th class="num">現行</th><th class="num">新単価</th><th>有効日</th><th></th></tr></thead>
+                <tbody>
+                  <tr v-for="r in revisionsFiltered" :key="r.id" :data-testid="`rev-${r.id}`">
+                    <td>{{ revMaterialName(r) }}<span v-if="!r.material_id" class="badge-new">新規</span></td>
+                    <td class="num">{{ r.old_price == null ? '—' : yen(r.old_price) }}</td>
+                    <td class="num diff">{{ yen(r.new_price || 0) }}</td>
+                    <td>{{ r.effective_date || '—' }}</td>
+                    <td class="actions">
+                      <button class="btn-primary sm" :disabled="revBusy" :data-testid="`approve-${r.id}`" @click="approveRevision(r)">承認</button>
+                      <button class="btn-del" :data-testid="`reject-${r.id}`" @click="rejectRevision(r)">却下</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- 現行単価 一覧 -->
+            <div class="sub-h">現行単価</div>
             <table v-if="priceListFiltered.length" class="table price-list" data-testid="price-list">
-              <thead><tr><th>材料</th><th class="num">現行単価</th><th>有効日</th><th></th></tr></thead>
+              <thead><tr><th>材料</th><th class="num">単価</th><th>有効日</th><th></th></tr></thead>
               <tbody>
                 <tr v-for="p in priceListFiltered" :key="p.id" :data-testid="`price-row-${p.id}`">
                   <td>{{ p.materialName }}</td>
@@ -175,39 +211,8 @@
                 </tr>
               </tbody>
             </table>
-            <p v-else class="muted">「{{ activeSupplierName }}」の単価はまだありません。</p>
+            <p v-else class="muted">「{{ activeSupplierName }}」の単価はまだありません。手入力か価格表取込で追加してください。</p>
           </template>
-        </div>
-
-        <!-- 価格表OCR取込・差分承認 -->
-        <div class="setting-block">
-          <h3>価格表OCR取込・差分承認</h3>
-          <div class="ocr-row">
-            <span class="muted">取込先の商社：<b>{{ activeSupplierName || '（上の商社タブで選択）' }}</b></span>
-            <label class="btn-add" :class="{ disabled: ocrBusy || !activeSupplier }">
-              {{ ocrBusy ? '取込中…' : '単価表を取込（PDF/写真）' }}
-              <input type="file" accept="image/*,.pdf" hidden data-testid="ocr-file" :disabled="ocrBusy || !activeSupplier" @change="onOcrFile" />
-            </label>
-            <span v-if="ocrError" class="err">{{ ocrError }}</span>
-          </div>
-          <p class="muted"><b>承認した分のみ</b>単価マスタに反映（自動反映なし）。</p>
-          <table v-if="revisions.length" class="table">
-            <thead><tr><th>材料</th><th>商社</th><th class="num">現行</th><th class="num">新単価</th><th>有効日</th><th></th></tr></thead>
-            <tbody>
-              <tr v-for="r in revisions" :key="r.id" :data-testid="`rev-${r.id}`">
-                <td>{{ revMaterialName(r) }}<span v-if="!r.material_id" class="badge-new">新規</span></td>
-                <td>{{ revSupplierName(r) }}</td>
-                <td class="num">{{ r.old_price == null ? '—' : yen(r.old_price) }}</td>
-                <td class="num diff">{{ yen(r.new_price || 0) }}</td>
-                <td>{{ r.effective_date || '—' }}</td>
-                <td class="actions">
-                  <button class="btn-primary sm" :disabled="revBusy" :data-testid="`approve-${r.id}`" @click="approveRevision(r)">承認</button>
-                  <button class="btn-del" :data-testid="`reject-${r.id}`" @click="rejectRevision(r)">却下</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          <p v-else class="muted">承認待ちの価格差分はありません。</p>
         </div>
       </div>
     </section>
@@ -435,6 +440,10 @@ const activeSupplierName = computed(() => suppliers.value.find(s => s.id === act
 const priceListFiltered = computed(() =>
   activeSupplier.value ? priceList.value.filter(p => p.supplierId === activeSupplier.value) : []
 )
+// 取込の承認待ち差分も選択商社で絞る
+const revisionsFiltered = computed(() =>
+  activeSupplier.value ? revisions.value.filter(r => r.supplier_id === activeSupplier.value) : []
+)
 async function deletePrice(id: string) {
   await supabase.from('estimate_material_prices').delete().eq('id', id)
   await loadMaterialPrices()
@@ -658,4 +667,9 @@ onMounted(async () => {
 .ptab { border: 1px solid #d1d5db; background: #fff; color: #555; border-radius: 999px; padding: 4px 14px; font-size: 13px; cursor: pointer; }
 .ptab:hover { background: #f3f4f6; }
 .ptab.active { background: #06C755; color: #fff; border-color: #06C755; }
+.add-methods { display: flex; gap: 24px; flex-wrap: wrap; margin: 12px 0 4px; }
+.method { display: flex; flex-direction: column; gap: 6px; }
+.method-label { font-size: 12px; font-weight: 600; color: #555; }
+.sub-h { font-size: 13px; font-weight: 700; color: #444; margin: 16px 0 6px; }
+.rev-section { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 8px 12px; margin-top: 12px; }
 </style>
