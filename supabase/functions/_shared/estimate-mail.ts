@@ -104,10 +104,15 @@ export async function sendEstimate(
         // 送信できない＝履歴を「送信済み」にしない（sent_at は実送信成功時のみ）。失敗も握り潰さない。
         return { status: 200, body: { success: true, skipped: 'no_api_key', sent_to: emails.map(maskEmail), test: false } }
       }
+      // 送信元: env のアドレス＋自社情報(settings.company_name)を表示名に（"会社名 <addr>"）
+      const { data: cn } = await svc.from('settings').select('value').eq('account_id', accountId).eq('key', 'company_name').maybeSingle()
+      const fromAddr = (MAIL_FROM.match(/<([^>]+)>/)?.[1] || MAIL_FROM).trim()
+      const fromName = (cn?.value || '').trim()
+      const from = fromName ? `${fromName} <${fromAddr}>` : MAIL_FROM
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from: MAIL_FROM, to: emails, subject, html, attachments }),
+        body: JSON.stringify({ from, to: emails, subject, html, attachments }),
       })
       if (!res.ok) {
         const t = await res.text()
