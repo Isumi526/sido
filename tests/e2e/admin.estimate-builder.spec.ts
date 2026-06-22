@@ -237,11 +237,12 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await page.goto(`/estimate-builder?project=${proj.id}`, { waitUntil: 'networkidle' })
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ5)
 
-    // プレビュー: 表紙・工種別内訳・小計・合計
+    // プレビュー(サンプル様式): 表紙(見積金額・宛名)・内訳書・工種別小計・合計
     const pv = page.locator('[data-testid="pdf-preview"]')
-    await expect(pv).toContainText('御 見 積 書')
-    await expect(pv).toContainText('テスト客先 御中')
-    await expect(page.locator('[data-testid="pdf-grandtotal"]')).toContainText('¥700')
+    await expect(pv).toContainText('テスト客先　様')
+    await expect(pv).toContainText('見積金額')
+    await expect(pv).toContainText('内訳書')
+    await expect(pv).toContainText('¥700')        // 小計(明細合計)=2×100 + 1×500
     await expect(pv).toContainText(TR1)
     await expect(pv).toContainText(TR2)
     await expect(pv).toContainText('小計 ¥200')   // 軽鉄: 2×100
