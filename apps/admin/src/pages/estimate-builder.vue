@@ -168,6 +168,56 @@
           </div>
         </div>
       </section>
+
+      <!-- F2 商社へ発注（見積明細を商社ごとに分割→各商社の担当者へ発注書を送信） -->
+      <section class="panel po-split" v-if="bySupplier.length">
+        <div class="panel-head"><h2>商社へ発注（商社ごとに分割）</h2></div>
+        <p class="muted">明細を商社ごとにまとめ、各商社の担当者へ発注書（PDF）をメール送信します。<span v-if="rowsWithoutSupplier">（商社未設定の明細 {{ rowsWithoutSupplier }} 件は対象外）</span></p>
+        <p v-if="poMsg" class="ok" data-testid="po-msg">{{ poMsg }}</p>
+        <p v-if="poErr" class="err" data-testid="po-err">{{ poErr }}</p>
+        <div class="po-cards">
+          <div v-for="g in bySupplier" :key="g.supplierId" class="po-card" :data-testid="`po-card-${g.supplierId}`">
+            <div class="po-card-head">
+              <span class="po-sup">{{ g.supplierName }}</span>
+              <span class="po-tot">{{ g.items.length }}明細 ／ {{ yen(g.total) }}</span>
+            </div>
+            <select class="input sm" :value="poContactId(g.supplierId) || ''" :data-testid="`po-contact-${g.supplierId}`"
+                    @change="poContactSel[g.supplierId] = ($event.target as HTMLSelectElement).value || null">
+              <option value="">担当者を選択…</option>
+              <option v-for="c in contactsFor(g.supplierId)" :key="c.id" :value="c.id">{{ c.name || '(担当者)' }}{{ c.email ? `（${c.email}）` : '（メール未登録）' }}</option>
+            </select>
+            <div class="po-card-foot">
+              <span v-if="poFor(g.supplierId)?.email_sent_at" class="badge-ok">送信済み {{ poFor(g.supplierId)?.order_number }}</span>
+              <span v-else-if="poFor(g.supplierId)" class="muted">発行済み {{ poFor(g.supplierId)?.order_number }}（未送信）</span>
+              <span v-else-if="!contactsFor(g.supplierId).length" class="muted">担当者未登録（<RouterLink to="/subcontractors">下請け業者マスタ</RouterLink>）</span>
+              <button class="btn-primary sm" :disabled="!canSendPO(g) || poBusy === g.supplierId" :data-testid="`po-send-${g.supplierId}`" @click="sendPO(g)">
+                {{ poBusy === g.supplierId ? '送信中…' : (poFor(g.supplierId)?.email_sent_at ? '再送' : '発注書を送信') }}
+              </button>
+            </div>
+          </div>
+        </div>
+        <!-- 発注書PDF生成用（商社1社分・オフスクリーン） -->
+        <div v-if="poTarget" ref="poPreviewEl" class="po-print">
+          <h1 class="pdf-title">発 注 書</h1>
+          <div class="pdf-meta">
+            <div class="pdf-client">{{ poTarget.supplierName }} 御中</div>
+            <div v-if="poTarget.contactName">ご担当：{{ poTarget.contactName }} 様</div>
+            <div>案件：{{ currentProjectName }}</div>
+            <div>発行日：{{ today }}</div>
+          </div>
+          <div class="pdf-total">御発注金額　{{ yen(poTarget.total) }}（税抜）</div>
+          <table class="pdf-table">
+            <thead><tr><th>品名</th><th class="num">数量</th><th>単位</th><th class="num">単価</th><th class="num">金額</th></tr></thead>
+            <tbody>
+              <tr v-for="(it, idx) in poTarget.items" :key="idx">
+                <td>{{ it.item_name }}</td><td class="num">{{ it.quantity }}</td><td>{{ it.unit }}</td>
+                <td class="num">{{ yen(it.unit_price) }}</td><td class="num">{{ yen(lineAmount(it)) }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="pdf-grand">合計　{{ yen(poTarget.total) }}（税抜）</div>
+        </div>
+      </section>
     </template>
     <p v-else class="hint">案件を選択または追加すると、明細入力と工種別内訳が表示されます。</p>
 
@@ -329,7 +379,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
@@ -417,6 +467,16 @@ const sending           = ref(false)
 const sendMsg           = ref('')
 const sendErr           = ref('')
 const projectSaving     = ref(false)   // 案件の元請け紐付け保存中
+// F2 商社への発注（見積明細を商社ごとに分割して発注書を作成→各商社の担当者へ送信）
+type SubContact = { id: string; subcontractor_id: string; name: string | null; email: string | null }
+const subContacts   = ref<SubContact[]>([])
+const projectPOs    = ref<any[]>([])                       // この案件の purchase_orders（estimate_project_id 一致）
+const poContactSel  = ref<Record<string, string | null>>({}) // 商社ごとの送信先担当者の上書き選択
+const poBusy        = ref<string | null>(null)             // 送信中の商社id
+const poMsg         = ref('')
+const poErr         = ref('')
+const poPreviewEl   = ref<HTMLElement | null>(null)
+const poTarget      = ref<null | { supplierName: string; contactName: string; items: Row[]; total: number }>(null)
 
 const yen = (n: number) => '¥' + Math.round(n || 0).toLocaleString('ja-JP')
 const lineAmount = (r: Row) => (Number(r.quantity) || 0) * (Number(r.unit_price) || 0)
@@ -474,6 +534,28 @@ async function setProjectContractor(contractorId: string | null) {
     sendContactId.value = contractorContacts.value.find(c => c.contractor_id === contractorId)?.id ?? null
   } finally { projectSaving.value = false }
 }
+
+// F2 明細を商社(supplier_id)ごとにまとめる（商社ごとに1発注書）
+const bySupplier = computed(() => {
+  const m = new Map<string, { supplierId: string; supplierName: string; items: Row[]; total: number }>()
+  for (const r of rows.value) {
+    if (!r.supplier_id) continue
+    const name = suppliers.value.find(s => s.id === r.supplier_id)?.name ?? '(商社)'
+    const cur = m.get(r.supplier_id) ?? { supplierId: r.supplier_id, supplierName: name, items: [] as Row[], total: 0 }
+    cur.items.push(r); cur.total += lineAmount(r); m.set(r.supplier_id, cur)
+  }
+  return [...m.values()].sort((a, b) => a.supplierName.localeCompare(b.supplierName, 'ja'))
+})
+const rowsWithoutSupplier = computed(() => rows.value.filter(r => !r.supplier_id).length)
+function poFor(supplierId: string) { return projectPOs.value.find(p => p.subcontractor_id === supplierId) }
+function contactsFor(supplierId: string) { return subContacts.value.filter(c => c.subcontractor_id === supplierId) }
+// 送信先担当者: 上書き選択 → 既存発注の担当者 → 先頭、の順
+function poContactId(supplierId: string): string | null {
+  if (supplierId in poContactSel.value) return poContactSel.value[supplierId]
+  return poFor(supplierId)?.subcontractor_contact_id ?? contactsFor(supplierId)[0]?.id ?? null
+}
+function poEmail(supplierId: string) { return contactsFor(supplierId).find(c => c.id === poContactId(supplierId))?.email || '' }
+function canSendPO(g: { supplierId: string; items: Row[] }) { return g.items.length > 0 && !!poContactId(g.supplierId) && !!poEmail(g.supplierId) }
 
 // E4 差分承認: pending の価格改定を読む
 async function loadRevisions() {
@@ -665,6 +747,71 @@ async function sendPdf() {
   }
 }
 
+// F2 発注書番号採番（PO-<年>-<4桁・account×年ごと連番。purchase-orders ページと同方式）
+async function nextOrderNumber(): Promise<string> {
+  const year = new Date().getFullYear(); const prefix = `PO-${year}-`
+  const { data } = await supabase.from('purchase_orders').select('order_number')
+    .eq('account_id', accountId).like('order_number', `${prefix}%`).order('order_number', { ascending: false }).limit(1)
+  const last = data?.[0]?.order_number as string | undefined
+  const seq = last ? parseInt(last.slice(prefix.length), 10) || 0 : 0
+  return `${prefix}${String(seq + 1).padStart(4, '0')}`
+}
+// F2 商社1社分の発注書PDFを生成→Storage保存→purchase_orders 作成/更新→send-purchase-order EF で送信
+async function sendPO(g: { supplierId: string; supplierName: string; items: Row[]; total: number }) {
+  const contactId = poContactId(g.supplierId)
+  if (!contactId || !poEmail(g.supplierId)) { poErr.value = `${g.supplierName}: 担当者のメールが未登録です`; return }
+  poBusy.value = g.supplierId; poErr.value = ''; poMsg.value = ''
+  try {
+    const contactName = contactsFor(g.supplierId).find(c => c.id === contactId)?.name ?? ''
+    // 発注書プレビュー（商社1社分）を描画してからPDF化
+    poTarget.value = { supplierName: g.supplierName, contactName, items: g.items.slice(), total: g.total }
+    await nextTick()
+    const canvas = await html2canvas(poPreviewEl.value!, { scale: 2, backgroundColor: '#ffffff' })
+    const png = canvas.toDataURL('image/png')
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+    const pageW = 210, pageH = 297, imgW = pageW
+    const imgH = (canvas.height / canvas.width) * imgW
+    let heightLeft = imgH, position = 0
+    pdf.addImage(png, 'PNG', 0, position, imgW, imgH); heightLeft -= pageH
+    while (heightLeft > 0) { position = heightLeft - imgH; pdf.addPage(); pdf.addImage(png, 'PNG', 0, position, imgW, imgH); heightLeft -= pageH }
+    const blob = pdf.output('blob')
+    // 同案件×商社の発注が既にあれば更新（再送＝重複発行しない）、無ければ採番して作成
+    const existing = poFor(g.supplierId)
+    let orderId = existing?.id as string | undefined
+    const orderNumber = existing?.order_number ?? await nextOrderNumber()
+    const payload: any = {
+      account_id: accountId, estimate_project_id: projectId.value, subcontractor_id: g.supplierId,
+      subcontractor_contact_id: contactId, order_number: orderNumber, order_date: today,
+      total_amount: Math.round(g.total), site_name: currentProjectName.value,
+      vendor_name: g.supplierName, vendor_contact_name: contactName,
+      status: 'issued', issued_at: new Date().toISOString(),
+    }
+    if (orderId) await supabase.from('purchase_orders').update(payload).eq('id', orderId)
+    else { const { data, error } = await supabase.from('purchase_orders').insert(payload).select('id').single(); if (error) throw error; orderId = (data as any)?.id }
+    if (!orderId) throw new Error('発注書の作成に失敗しました')
+    const path = `purchase-orders/${accountId}/${orderId}.pdf`
+    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, blob, { upsert: true, contentType: 'application/pdf' })
+    if (upErr) throw upErr
+    await supabase.from('purchase_orders').update({ pdf_path: path }).eq('id', orderId)
+    // 送信（発注書の承諾依頼。既存 send-purchase-order EF を再利用。devはtest入口で実送信なし）
+    const fn = IS_DEV ? 'test-send-purchase-order' : 'send-purchase-order'
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${fn}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY, Authorization: `Bearer ${session?.access_token ?? ''}` },
+      body: JSON.stringify({ order_id: orderId }),
+    })
+    const r = await res.json().catch(() => ({}))
+    if (!res.ok || r?.error) throw new Error(r?.error ?? `送信失敗(${res.status})`)
+    poMsg.value = r.test ? `${g.supplierName}: 発注書 ${orderNumber} を作成（dev: 実メール送信なし）` : `${g.supplierName}: ${r.sent_to ?? ''} へ送信しました`
+    await loadProjectPOs()
+  } catch (e: any) {
+    poErr.value = e?.message ?? '発注に失敗しました'
+  } finally {
+    poBusy.value = null; poTarget.value = null
+  }
+}
+
 async function loadProjects() {
   const { data } = await supabase.from('estimate_projects')
     .select('id, name, client_name, contractor_id').eq('account_id', accountId).order('created_at', { ascending: false })
@@ -699,6 +846,22 @@ async function loadContractors() {
   ])
   contractors.value = (cs ?? []) as Contractor[]
   contractorContacts.value = (ccs ?? []) as Contact[]
+}
+// F2 商社（下請け業者）の担当者＝発注書の送信先候補
+async function loadSubContacts() {
+  const { data } = await supabase.from('subcontractor_contacts')
+    .select('id, subcontractor_id, name, email').eq('account_id', accountId).eq('is_deleted', false).order('sort_order')
+  subContacts.value = (data ?? []) as SubContact[]
+}
+// F2 この案件で既に発行済みの発注書（商社ごと・送信状態の表示と再送に使う）
+async function loadProjectPOs() {
+  projectPOs.value = []
+  poContactSel.value = {}
+  if (!projectId.value) return
+  const { data } = await supabase.from('purchase_orders')
+    .select('id, subcontractor_id, subcontractor_contact_id, order_number, total_amount, email_sent_at, pdf_path, status')
+    .eq('estimate_project_id', projectId.value).eq('is_deleted', false)
+  projectPOs.value = (data ?? []) as any[]
 }
 // ③ この案件の送信履歴
 async function loadSends() {
@@ -809,7 +972,7 @@ async function loadItems() {
     quantity: Number(d.quantity) || 0, unit_price: Number(d.unit_price) || 0,
   }))
   markSaved()
-  await loadSends()
+  await Promise.all([loadSends(), loadProjectPOs()])
   // 送信先担当者を案件の元請けの先頭で初期化
   sendContactId.value = contractorContacts.value.find(c => c.contractor_id === currentContractorId.value)?.id ?? null
 }
@@ -949,7 +1112,7 @@ onUnmounted(() => window.removeEventListener('beforeunload', beforeUnload))
 
 onMounted(async () => {
   accountId = await getAccountId()
-  await Promise.all([loadProjects(), loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices(), loadRevisions(), loadContractors()])
+  await Promise.all([loadProjects(), loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices(), loadRevisions(), loadContractors(), loadSubContacts()])
   if (!activeSupplier.value && suppliers.value[0]) activeSupplier.value = suppliers.value[0].id  // 既定タブ
 })
 </script>
@@ -1052,4 +1215,16 @@ onMounted(async () => {
 .send-to { font-weight: 700; color: #333; }
 .muted-link { font-size: 12px; color: #06864a; }
 .send-history { margin-top: 12px; }
+.po-split { margin-top: 16px; }
+.po-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 10px; }
+.po-card { border: 1px solid #e5e5e5; border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.po-card-head { display: flex; justify-content: space-between; align-items: baseline; }
+.po-sup { font-weight: 700; }
+.po-tot { font-size: 12px; color: #666; }
+.po-card .input.sm { width: 100%; min-width: 0; }
+.po-card-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.po-card-foot .btn-primary.sm { margin-left: auto; }
+.badge-ok { font-size: 11px; background: #e8fff0; color: #0a8a3a; border-radius: 4px; padding: 2px 8px; font-weight: 700; }
+/* 発注書PDF生成用プレビュー: 画面外に置いて html2canvas で取り込む */
+.po-print { position: absolute; left: -10000px; top: 0; width: 760px; background: #fff; color: #111; padding: 24px; }
 </style>
