@@ -158,15 +158,15 @@
             </div>
           </div>
           </div><!-- /est-cover -->
-          <!-- ── 内訳書（2ページ目: 工種ごとの集計） ── -->
-          <div class="est-bd" data-pdf-page>
-            <div class="bd-head"><span>内訳書</span><span class="bd-date">{{ todayWareki }}</span></div>
+          <!-- ── 内訳書（2ページ目〜: 工種ごとの集計・行単位で改ページ） ── -->
+          <div v-for="(pg, pi) in breakdownPages" :key="'bd' + pi" class="est-bd" data-pdf-page>
+            <div class="bd-head"><span>内訳書<span v-if="breakdownPages.length > 1">（{{ pi + 1 }}/{{ breakdownPages.length }}）</span></span><span class="bd-date">{{ todayWareki }}</span></div>
             <table class="bd-table">
               <thead><tr><th>名　称</th><th>形状・寸法</th><th class="num">数量</th><th>単位</th><th class="num">単価</th><th class="num">金　額</th></tr></thead>
               <tbody>
-                <tr v-for="g in groupedDetailed" :key="g.key"><td>{{ g.tradeName }}</td><td></td><td></td><td></td><td></td><td class="num">{{ yen(g.total) }}</td></tr>
+                <tr v-for="g in pg" :key="g.key"><td>{{ g.tradeName }}</td><td></td><td></td><td></td><td></td><td class="num">{{ yen(g.total) }}</td></tr>
               </tbody>
-              <tfoot>
+              <tfoot v-if="pi === breakdownPages.length - 1">
                 <tr><td colspan="5" class="r">小計</td><td class="num">{{ yen(subtotal) }}</td></tr>
                 <tr><td>法定福利費</td><td>請負金額 × {{ welfareA }}％ × {{ welfareB }}％</td><td colspan="3"></td><td class="num">{{ yen(welfare) }}</td></tr>
                 <tr v-if="adjustment"><td>端数調整</td><td colspan="4"></td><td class="num" :class="{ neg: adjustment < 0 }">{{ yen(adjustment) }}</td></tr>
@@ -174,13 +174,13 @@
               </tfoot>
             </table>
           </div>
-          <!-- ── 工種別 明細（3ページ目以降: 各工種ごと） ── -->
-          <div v-for="g in groupedDetailed" :key="'d' + g.key" class="est-detail" data-pdf-page>
-            <div class="dh">{{ g.tradeName }}　<span class="dsub">小計 {{ yen(g.total) }}</span></div>
+          <!-- ── 工種別 明細（3ページ目以降: 各工種ごと・行単位で改ページ） ── -->
+          <div v-for="(pg, pi) in detailPages" :key="'d' + pi" class="est-detail" data-pdf-page>
+            <div class="dh">{{ pg.tradeName }}<span v-if="pg.parts > 1">（{{ pg.part }}/{{ pg.parts }}）</span>　<span class="dsub">小計 {{ yen(pg.total) }}</span></div>
             <table class="bd-table">
               <thead><tr><th>場所</th><th>明細</th><th class="num">数量</th><th>単位</th><th class="num">単価</th><th class="num">金額</th></tr></thead>
               <tbody>
-                <tr v-for="(it, idx) in g.items" :key="idx">
+                <tr v-for="(it, idx) in pg.items" :key="idx">
                   <td>{{ it.location }}</td><td>{{ it.item_name }}</td><td class="num">{{ it.quantity }}</td><td>{{ it.unit }}</td>
                   <td class="num">{{ yen(it.unit_price) }}</td><td class="num">{{ yen(lineAmount(it)) }}</td>
                 </tr>
@@ -589,6 +589,25 @@ const totalExclTax = computed(() => subtotal.value + welfare.value + adjustment.
 const tax          = computed(() => Math.round(totalExclTax.value * taxRate.value / 100))       // 消費税
 const totalInclTax = computed(() => totalExclTax.value + tax.value)                             // 税込
 const docValidUntil = computed(() => doc.value.valid_until || company.value.estimate_valid_until || '')
+// ページネーション: 行が途中で切れないよう行単位でページ分割（ヘッダーは各ページで繰り返す）
+const BD_ROWS_PER_PAGE = 18      // 内訳書（工種別集計）の1ページ行数
+const DETAIL_ROWS_PER_PAGE = 16  // 工種明細の1ページ行数
+function chunk<T>(arr: T[], n: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n))
+  return out.length ? out : [[]]
+}
+// 内訳書ページ（工種集計を分割・合計欄は最終ページのみ）
+const breakdownPages = computed(() => chunk(groupedDetailed.value, BD_ROWS_PER_PAGE))
+// 工種明細ページ（各工種ごとに改ページ＋明細が多ければ続きページ）
+const detailPages = computed(() => {
+  const pages: { key: string; tradeName: string; total: number; items: Row[]; part: number; parts: number }[] = []
+  for (const g of groupedDetailed.value) {
+    const cs = chunk(g.items, DETAIL_ROWS_PER_PAGE)
+    cs.forEach((items, i) => pages.push({ key: g.key, tradeName: g.tradeName, total: g.total, items, part: i + 1, parts: cs.length }))
+  }
+  return pages
+})
 const currentProjectName = computed(() => projects.value.find(p => p.id === projectId.value)?.name ?? '')
 const currentProject   = computed(() => projects.value.find(p => p.id === projectId.value) ?? null)
 const currentContractorId = computed(() => currentProject.value?.contractor_id ?? null)
@@ -780,6 +799,14 @@ async function buildEstimatePdf(): Promise<import('jspdf').jsPDF> {
     pdf.addImage(png, 'PNG', 0, position, imgW, imgH)
     heightLeft -= pageH
     while (heightLeft > 0) { position = heightLeft - imgH; pdf.addPage(); pdf.addImage(png, 'PNG', 0, position, imgW, imgH); heightLeft -= pageH }
+  }
+  // ページ番号（全ページ右下に "現在 / 総数"。数字のみ＝既定フォントで可）
+  const total = pdf.getNumberOfPages()
+  for (let i = 1; i <= total; i++) {
+    pdf.setPage(i)
+    pdf.setFontSize(9)
+    pdf.setTextColor(120)
+    pdf.text(`${i} / ${total}`, pageW - 8, pageH - 5, { align: 'right' })
   }
   return pdf
 }
