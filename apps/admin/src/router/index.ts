@@ -11,6 +11,7 @@ import SiteReports    from '../pages/site-reports.vue'
 import Expenses       from '../pages/expenses.vue'
 import SubInvoices    from '../pages/subcontractor-invoices.vue'
 import Settings       from '../pages/settings.vue'
+import CompanyProfile from '../pages/company-profile.vue'
 import Login          from '../pages/login.vue'
 import Users          from '../pages/users.vue'
 import WorkerReports  from '../pages/worker-reports.vue'
@@ -21,6 +22,8 @@ import Attendance     from '../pages/attendance.vue'
 import ReminderHistory from '../pages/reminder-history.vue'
 import NonSubmitters   from '../pages/non-submitters.vue'
 import Estimates       from '../pages/estimates.vue'
+import EstimatesList   from '../pages/estimate-list.vue'
+import EstimateMasters from '../pages/estimate-masters.vue'
 import EstimateBuilder from '../pages/estimate-builder.vue'
 import PurchaseOrders  from '../pages/purchase-orders.vue'
 
@@ -44,10 +47,13 @@ export const router = createRouter({
     { path: '/worker-reports', component: WorkerReports },
     { path: '/paid-leave',    component: PaidLeave },
     { path: '/settings',       component: Settings },
+    { path: '/company-profile', component: CompanyProfile },
     { path: '/users',        component: Users },
     { path: '/reminder-history', component: ReminderHistory },
     { path: '/non-submitters',   component: NonSubmitters },
     { path: '/estimates',        component: Estimates },
+    { path: '/estimate-list',   component: EstimatesList },
+    { path: '/estimate-masters', component: EstimateMasters },
     { path: '/estimate-builder', component: EstimateBuilder },
     { path: '/purchase-orders',  component: PurchaseOrders },
   ],

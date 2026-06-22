@@ -35,7 +35,7 @@ test.describe('見積 価格表差分承認（E4）', () => {
     const rev1 = (await post('estimate_price_revisions', { account_id: accountId, supplier_id: sup.id, material_id: mat.id, old_price: 100, new_price: 140, status: 'pending' }))[0]
     const rev2 = (await post('estimate_price_revisions', { account_id: accountId, supplier_id: sup.id, material_id: null, name: NEW, unit: 'm2', new_price: 300, status: 'pending' }))[0]
 
-    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
+    await page.goto('/estimate-masters', { waitUntil: 'networkidle' })
     // 差分承認は「⚙️ マスタ・取込設定」内 → 開く → 対象商社タブを選ぶ（差分は商社で絞られる）
     await page.locator(`[data-testid="ptab-${sup.id}"]`).click()
 
@@ -43,7 +43,8 @@ test.describe('見積 価格表差分承認（E4）', () => {
     const row1 = page.locator(`[data-testid="rev-${rev1.id}"]`)
     await expect(row1).toContainText(MAT)
     await expect(row1).toContainText('¥100')
-    await expect(row1).toContainText('¥140')
+    // 新単価は承認前に手修正できる editable input（①編集）。値で検証する。
+    await expect(page.locator(`[data-testid="rev-price-${rev1.id}"]`)).toHaveValue('140')
     await expect(page.locator(`[data-testid="rev-${rev2.id}"]`)).toContainText('新規')
 
     // ① 既存材料の改定を承認 → 現行100は履歴化・新単価140がcurrent・revision applied
