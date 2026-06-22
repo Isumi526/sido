@@ -14,12 +14,14 @@ const TRADE_A = `軽鉄_${TS}`   // 2行: 2000 + 3000 = 5000
 const TRADE_B = `ボード_${TS}` // 1行: 5000
 const PROJ2 = `E2E見積E5_${TS}`
 const MAT = `カタログ材_${TS}`
+const PROJ3 = `E2E見積E6_${TS}`
+const MAT6 = `クロス_${TS}`
 
 test.describe.configure({ mode: 'serial' })
 
 test.describe('見積もり 全体見積→工種別自動集計', () => {
   test.afterAll(async () => {
-    for (const name of [PROJ, PROJ2]) {
+    for (const name of [PROJ, PROJ2, PROJ3]) {
       const projs = await restSrv(`estimate_projects?name=eq.${encodeURIComponent(name)}&select=id`).catch(() => [])
       for (const p of projs ?? []) {
         await restSrv(`estimate_items?project_id=eq.${p.id}`, { method: 'DELETE' }).catch(() => {})
@@ -29,6 +31,7 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await restSrv(`estimate_trades?name=eq.${encodeURIComponent(TRADE_A)}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`estimate_trades?name=eq.${encodeURIComponent(TRADE_B)}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MAT)}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MAT6)}`, { method: 'DELETE' }).catch(() => {})
   })
 
   test('AC1/AC2: 明細入力→工種別に自動集計され、DBにも反映される', async ({ page }) => {
@@ -99,5 +102,43 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     // 再訪 → datalist 候補（予測変換）に出る
     await page.reload({ waitUntil: 'networkidle' })
     await expect(page.locator(`#est-materials option[value="${MAT}"]`)).toHaveCount(1)
+  })
+
+  // E6 品番予測変換: 既存材料名を入れると単位が自動補完され material_id が紐付く
+  test('E6: 既存材料を選ぶと単位が自動補完され、material_id が紐付く', async ({ page }) => {
+    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
+    await page.locator('[data-testid="new-project-name"]').fill(PROJ3)
+    await page.locator('[data-testid="add-project"]').click()
+    await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ3)
+
+    // 1行目: 新規材料を単位付きで入力 → 保存（E5でmaterials化＝unit=m2 も捕捉）
+    await page.locator('[data-testid="add-row"]').click()
+    await page.locator('[data-testid="item-name-0"]').fill(MAT6)
+    await page.locator('[data-testid="item-unit-0"]').fill('m2')
+    await page.locator('[data-testid="item-qty-0"]').fill('1')
+    await page.locator('[data-testid="item-price-0"]').fill('100')
+    await page.locator('[data-testid="save-items"]').click()
+    await expect(page.locator('[data-testid="save-items"]')).toHaveText('保存', { timeout: 10000 })
+
+    // 2行目: 同じ材料名を入力 → blur で resolveMaterial → 単位が自動補完
+    await page.locator('[data-testid="add-row"]').click()
+    await page.locator('[data-testid="item-name-1"]').fill(MAT6)
+    await page.locator('[data-testid="item-qty-1"]').click()   // blur で @blur 発火
+    await expect(page.locator('[data-testid="item-unit-1"]')).toHaveValue('m2')
+
+    // 保存 → DB: 両行に material_id が紐付く（同一材料）
+    await page.locator('[data-testid="item-qty-1"]').fill('2')
+    await page.locator('[data-testid="item-price-1"]').fill('100')
+    await page.locator('[data-testid="save-items"]').click()
+    await expect.poll(async () => {
+      const projs = await restSrv(`estimate_projects?name=eq.${encodeURIComponent(PROJ3)}&select=id`)
+      const pid = projs?.[0]?.id
+      if (!pid) return null
+      const items = await restSrv(`estimate_items?project_id=eq.${pid}&select=material_id,unit`)
+      if (!items || items.length !== 2) return `count=${items?.length}`
+      const allLinked = items.every((r: any) => r.material_id && r.unit === 'm2')
+      const sameMat = items[0].material_id === items[1].material_id
+      return allLinked && sameMat
+    }, { timeout: 10000 }).toBe(true)
   })
 })
