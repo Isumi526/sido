@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="page-header">
-      <h1 class="page-title">見積もり（全体見積）</h1>
+      <h1 class="page-title">見積もり</h1>
     </div>
 
     <!-- 案件選択（既存を選ぶ or ＋新規案件で入力欄を出す＝二重入力を避ける） -->
@@ -687,6 +687,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.page-title { font-size: 22px; font-weight: 700; }
 .bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
 .bar label { font-weight: 600; color: #444; }
 .sel { min-width: 220px; }
