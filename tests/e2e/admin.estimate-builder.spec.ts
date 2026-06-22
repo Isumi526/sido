@@ -274,7 +274,8 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     // 現行一覧に出る（商社列は無い＝タブで自明）
     const list = page.locator('[data-testid="price-list"]')
     await expect(list).toContainText(MAT_PL)
-    await expect(list).toContainText('¥1,500')
+    // 単価はその場編集できる editable input（①編集）。値で検証する。
+    await expect(list.locator('tr', { hasText: MAT_PL }).locator('input[data-testid^="price-val-"]')).toHaveValue('1500')
     await expect.poll(async () => {
       const ps = await restSrv(`estimate_material_prices?material_id=eq.${mat.id}&supplier_id=eq.${sup.id}&is_current=eq.true&select=id`)
       return (ps ?? []).length
