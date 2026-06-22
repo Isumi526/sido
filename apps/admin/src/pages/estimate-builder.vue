@@ -159,6 +159,21 @@
             <input v-model.number="priceForm.unit_price" type="number" class="input sm num" placeholder="単価" data-testid="price-value" />
             <button class="btn-add" :disabled="!priceForm.material_id || !priceForm.supplier_id || !(priceForm.unit_price > 0)" data-testid="add-price" @click="addPrice">単価を登録</button>
           </div>
+
+          <!-- 現行の商社別単価 一覧（確認・削除） -->
+          <table v-if="priceList.length" class="table price-list" data-testid="price-list">
+            <thead><tr><th>材料</th><th>商社</th><th class="num">現行単価</th><th>有効日</th><th></th></tr></thead>
+            <tbody>
+              <tr v-for="p in priceList" :key="p.id" :data-testid="`price-row-${p.id}`">
+                <td>{{ p.materialName }}</td>
+                <td>{{ p.supplierName }}</td>
+                <td class="num">{{ yen(p.unit_price) }}</td>
+                <td>{{ p.effective_date || '—' }}</td>
+                <td><button class="btn-del" :data-testid="`price-del-${p.id}`" @click="deletePrice(p.id)">削除</button></td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-else class="muted">登録済みの商社別単価はまだありません。</p>
         </div>
 
         <!-- 価格表OCR取込・差分承認 -->
@@ -210,7 +225,7 @@ type Project  = { id: string; name: string; client_name: string | null }
 type Trade    = { id: string; name: string }
 type Material = { id: string; name: string; unit: string | null; code: string | null }
 type Supplier = { id: string; name: string }
-type MatPrice = { material_id: string; supplier_id: string; unit_price: number }
+type MatPrice = { id: string; material_id: string; supplier_id: string; unit_price: number; effective_date: string | null }
 type Row = {
   id: string | null
   location: string
@@ -402,8 +417,22 @@ async function loadSuppliers() {
 }
 async function loadMaterialPrices() {
   const { data } = await supabase.from('estimate_material_prices')
-    .select('material_id, supplier_id, unit_price').eq('account_id', accountId).eq('is_current', true)
+    .select('id, material_id, supplier_id, unit_price, effective_date').eq('account_id', accountId).eq('is_current', true)
   matPrices.value = (data ?? []) as MatPrice[]
+}
+// 商社別単価の現行一覧（材料名・商社名つき・材料→商社順）
+const priceList = computed(() =>
+  matPrices.value
+    .map(p => ({
+      id: p.id, unit_price: Number(p.unit_price), effective_date: p.effective_date,
+      materialName: materials.value.find(m => m.id === p.material_id)?.name ?? '(材料)',
+      supplierName: suppliers.value.find(s => s.id === p.supplier_id)?.name ?? '(商社)',
+    }))
+    .sort((a, b) => a.materialName.localeCompare(b.materialName, 'ja') || a.supplierName.localeCompare(b.supplierName, 'ja'))
+)
+async function deletePrice(id: string) {
+  await supabase.from('estimate_material_prices').delete().eq('id', id)
+  await loadMaterialPrices()
 }
 // E7 商社別単価: 行の材料に対する商社別単価リスト（単価差の表示元）
 function pricesForMaterial(materialId: string | null) {
