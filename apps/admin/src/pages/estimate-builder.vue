@@ -20,40 +20,10 @@
       <option v-for="m in materials" :key="m.id" :value="m.name" />
     </datalist>
 
-    <!-- E4 価格表OCR取込（vision-LLM）＋差分承認（材料X ¥A→¥B を承認した分だけ反映） -->
-    <section class="panel ocr-panel">
-      <div class="panel-head"><h2>価格表OCR取込・差分承認</h2></div>
-      <div class="ocr-row">
-        <select v-model="ocrSupplierId" class="input sm" data-testid="ocr-supplier">
-          <option :value="null" disabled>取込先の商社</option>
-          <option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}</option>
-        </select>
-        <label class="btn-add" :class="{ disabled: ocrBusy }">
-          {{ ocrBusy ? '取込中…' : '単価表を取込（PDF/写真）' }}
-          <input type="file" accept="image/*,.pdf" hidden data-testid="ocr-file" :disabled="ocrBusy" @change="onOcrFile" />
-        </label>
-        <span v-if="ocrError" class="err">{{ ocrError }}</span>
-        <span class="muted">※取込結果は下の差分一覧に出ます。<b>承認した分のみ</b>単価マスタに反映（自動反映なし）。</span>
-      </div>
-
-      <table v-if="revisions.length" class="table">
-        <thead><tr><th>材料</th><th>商社</th><th class="num">現行</th><th class="num">新単価</th><th>有効日</th><th></th></tr></thead>
-        <tbody>
-          <tr v-for="r in revisions" :key="r.id" :data-testid="`rev-${r.id}`">
-            <td>{{ revMaterialName(r) }}<span v-if="!r.material_id" class="badge-new">新規</span></td>
-            <td>{{ revSupplierName(r) }}</td>
-            <td class="num">{{ r.old_price == null ? '—' : yen(r.old_price) }}</td>
-            <td class="num diff">{{ yen(r.new_price || 0) }}</td>
-            <td>{{ r.effective_date || '—' }}</td>
-            <td class="actions">
-              <button class="btn-primary sm" :disabled="revBusy" :data-testid="`approve-${r.id}`" @click="approveRevision(r)">承認</button>
-              <button class="btn-del" :data-testid="`reject-${r.id}`" @click="rejectRevision(r)">却下</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <p v-else class="muted">承認待ちの価格差分はありません。</p>
-    </section>
+    <!-- 承認待ちの価格差分があれば、案件未選択でも気づけるよう上部に出す -->
+    <div v-if="revisions.length" class="rev-alert" data-testid="rev-alert">
+      🔔 価格表の承認待ち差分が {{ revisions.length }} 件あります（下の「⚙️ マスタ・取込設定」で承認）
+    </div>
 
     <template v-if="projectId">
       <div class="grid">
@@ -65,7 +35,7 @@
           </div>
           <table class="table">
             <thead>
-              <tr><th>場所</th><th>工種</th><th>明細（品番予測変換）</th><th>単位</th><th class="num">数量</th><th>商社</th><th class="num">単価</th><th class="num">金額</th><th></th></tr>
+              <tr><th>場所</th><th>工種</th><th>明細（品番）</th><th>単位</th><th class="num">数量</th><th>商社</th><th class="num">単価</th><th class="num">金額</th><th></th></tr>
             </thead>
             <tbody>
               <tr v-for="(r, i) in rows" :key="r.id ?? 'new' + i">
@@ -96,30 +66,6 @@
             <button class="btn-primary" :disabled="saving" data-testid="save-items" @click="save">{{ saving ? '保存中…' : '保存' }}</button>
             <span v-if="saveError" class="err">{{ saveError }}</span>
             <span v-if="savedMsg" class="ok">{{ savedMsg }}</span>
-          </div>
-
-          <!-- 工種マスタ クイック追加 -->
-          <div class="trade-add">
-            <input v-model="newTradeName" class="input sm" placeholder="新しい工種名（例：軽鉄工事）" data-testid="new-trade-name" />
-            <button class="btn-add" :disabled="!newTradeName.trim()" data-testid="add-trade" @click="addTrade">工種を追加</button>
-          </div>
-
-          <!-- E7 商社別単価 登録（材料×商社の単価。行の「商社」プルダウンに反映） -->
-          <div class="price-mgr">
-            <h3>商社別単価</h3>
-            <p class="muted">商社は「下請け業者」マスタの<b>区分=商社</b>を使います（<RouterLink to="/subcontractors">下請け業者</RouterLink>で登録）。</p>
-            <div class="trade-add">
-              <select v-model="priceForm.material_id" class="input sm" data-testid="price-material">
-                <option :value="null" disabled>材料</option>
-                <option v-for="m in materials" :key="m.id" :value="m.id">{{ m.name }}</option>
-              </select>
-              <select v-model="priceForm.supplier_id" class="input sm" data-testid="price-supplier">
-                <option :value="null" disabled>商社</option>
-                <option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}</option>
-              </select>
-              <input v-model.number="priceForm.unit_price" type="number" class="input sm num" placeholder="単価" data-testid="price-value" />
-              <button class="btn-add" :disabled="!priceForm.material_id || !priceForm.supplier_id || !(priceForm.unit_price > 0)" data-testid="add-price" @click="addPrice">単価を登録</button>
-            </div>
           </div>
         </section>
 
@@ -174,6 +120,78 @@
       </section>
     </template>
     <p v-else class="hint">案件を選択または追加すると、明細入力と工種別内訳が表示されます。</p>
+
+    <!-- ⚙️ マスタ・取込設定（たまに使う設定系をまとめて折りたたみ） -->
+    <section class="panel settings-panel">
+      <button class="settings-toggle" data-testid="settings-toggle" @click="settingsOpen = !settingsOpen">
+        ⚙️ マスタ・取込設定（工種・商社別単価・価格表OCR）
+        <span class="chev">{{ settingsOpen ? '▲' : '▼' }}</span>
+        <span v-if="revisions.length" class="badge-new">承認待ち {{ revisions.length }}</span>
+      </button>
+
+      <div v-show="settingsOpen" class="settings-body">
+        <!-- 工種マスタ クイック追加 -->
+        <div class="setting-block">
+          <h3>工種を追加</h3>
+          <div class="trade-add">
+            <input v-model="newTradeName" class="input sm" placeholder="新しい工種名（例：軽鉄工事）" data-testid="new-trade-name" />
+            <button class="btn-add" :disabled="!newTradeName.trim()" data-testid="add-trade" @click="addTrade">工種を追加</button>
+          </div>
+        </div>
+
+        <!-- 商社別単価 登録 -->
+        <div class="setting-block">
+          <h3>商社別単価</h3>
+          <p class="muted">商社は「下請け業者」マスタの<b>区分=商社</b>を使います（<RouterLink to="/subcontractors">下請け業者</RouterLink>で登録）。</p>
+          <div class="trade-add">
+            <select v-model="priceForm.material_id" class="input sm" data-testid="price-material">
+              <option :value="null" disabled>材料</option>
+              <option v-for="m in materials" :key="m.id" :value="m.id">{{ m.name }}</option>
+            </select>
+            <select v-model="priceForm.supplier_id" class="input sm" data-testid="price-supplier">
+              <option :value="null" disabled>商社</option>
+              <option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}</option>
+            </select>
+            <input v-model.number="priceForm.unit_price" type="number" class="input sm num" placeholder="単価" data-testid="price-value" />
+            <button class="btn-add" :disabled="!priceForm.material_id || !priceForm.supplier_id || !(priceForm.unit_price > 0)" data-testid="add-price" @click="addPrice">単価を登録</button>
+          </div>
+        </div>
+
+        <!-- 価格表OCR取込・差分承認 -->
+        <div class="setting-block">
+          <h3>価格表OCR取込・差分承認</h3>
+          <div class="ocr-row">
+            <select v-model="ocrSupplierId" class="input sm" data-testid="ocr-supplier">
+              <option :value="null" disabled>取込先の商社</option>
+              <option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}</option>
+            </select>
+            <label class="btn-add" :class="{ disabled: ocrBusy }">
+              {{ ocrBusy ? '取込中…' : '単価表を取込（PDF/写真）' }}
+              <input type="file" accept="image/*,.pdf" hidden data-testid="ocr-file" :disabled="ocrBusy" @change="onOcrFile" />
+            </label>
+            <span v-if="ocrError" class="err">{{ ocrError }}</span>
+          </div>
+          <p class="muted"><b>承認した分のみ</b>単価マスタに反映（自動反映なし）。</p>
+          <table v-if="revisions.length" class="table">
+            <thead><tr><th>材料</th><th>商社</th><th class="num">現行</th><th class="num">新単価</th><th>有効日</th><th></th></tr></thead>
+            <tbody>
+              <tr v-for="r in revisions" :key="r.id" :data-testid="`rev-${r.id}`">
+                <td>{{ revMaterialName(r) }}<span v-if="!r.material_id" class="badge-new">新規</span></td>
+                <td>{{ revSupplierName(r) }}</td>
+                <td class="num">{{ r.old_price == null ? '—' : yen(r.old_price) }}</td>
+                <td class="num diff">{{ yen(r.new_price || 0) }}</td>
+                <td>{{ r.effective_date || '—' }}</td>
+                <td class="actions">
+                  <button class="btn-primary sm" :disabled="revBusy" :data-testid="`approve-${r.id}`" @click="approveRevision(r)">承認</button>
+                  <button class="btn-del" :data-testid="`reject-${r.id}`" @click="rejectRevision(r)">却下</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-else class="muted">承認待ちの価格差分はありません。</p>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -211,6 +229,7 @@ const priceForm      = ref<{ material_id: string | null; supplier_id: string | n
 type Revision = { id: string; material_id: string | null; supplier_id: string | null; code: string | null; name: string | null; old_price: number | null; new_price: number | null; effective_date: string | null; status: string }
 const revisions   = ref<Revision[]>([])
 const revBusy     = ref(false)
+const settingsOpen = ref(false)
 const ocrBusy     = ref(false)
 const ocrError    = ref('')
 const ocrSupplierId = ref<string | null>(null)
@@ -573,4 +592,19 @@ onMounted(async () => {
 .badge-new { display: inline-block; margin-left: 6px; font-size: 11px; background: #fde68a; color: #92400e; border-radius: 4px; padding: 1px 6px; }
 .diff { color: #06864a; font-weight: 700; }
 .actions { white-space: nowrap; }
+.rev-alert { background: #fff7ed; border: 1px solid #fdba74; color: #9a3412; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; }
+.settings-panel { margin-top: 20px; }
+.settings-toggle { width: 100%; text-align: left; background: #f7f7f7; border: 1px solid #e5e5e5; border-radius: 8px; padding: 12px 16px; font-size: 14px; font-weight: 600; color: #444; cursor: pointer; display: flex; align-items: center; gap: 10px; }
+.settings-toggle:hover { background: #f0f0f0; }
+.settings-toggle .chev { margin-left: auto; color: #888; }
+.settings-body { padding: 14px 4px 4px; }
+.setting-block { padding: 12px 0; border-bottom: 1px dashed #e5e5e5; }
+.setting-block:last-child { border-bottom: none; }
+.setting-block h3 { font-size: 14px; margin: 0 0 8px; }
+/* 明細テーブル: 列を詰めすぎず、はみ出したら横スクロール。プルダウンは読める幅に */
+.grid > .panel:first-child { overflow-x: auto; }
+.table th, .table td { white-space: nowrap; }
+.table select.input { min-width: 120px; }
+.table input.input { min-width: 90px; }
+.table input.input.num { min-width: 64px; }
 </style>
