@@ -107,6 +107,11 @@
       <section class="panel pdf-panel" v-if="rows.length">
         <div class="panel-head">
           <h2>見積書PDF</h2>
+          <div class="pager" data-testid="pdf-pager">
+            <button class="pg-btn" :disabled="currentPage === 0" data-testid="pdf-prev" @click="prevPage">‹</button>
+            <span class="pg-ind" data-testid="pdf-page-ind">{{ currentPage + 1 }} / {{ totalPages }} ページ</span>
+            <button class="pg-btn" :disabled="currentPage >= totalPages - 1" data-testid="pdf-next" @click="nextPage">›</button>
+          </div>
           <button class="btn-primary" :disabled="pdfBusy" data-testid="export-pdf" @click="exportPdf">{{ pdfBusy ? '生成中…' : 'PDF出力' }}</button>
         </div>
         <p v-if="!company.company_name" class="muted">自社情報が未登録です。<RouterLink to="/company-profile">自社情報</RouterLink>で会社名・住所・印影等を登録すると見積書に反映されます。</p>
@@ -121,7 +126,7 @@
 
         <div class="pdf-preview est-doc" ref="previewEl" data-testid="pdf-preview">
           <!-- ── 表紙（1ページ目: 全体の内容） ── -->
-          <div class="est-cover" data-pdf-page>
+          <div class="est-cover" data-pdf-page v-show="exporting || currentPage === 0">
           <h1 class="est-title">御　見　積　書</h1>
           <div class="est-date">{{ todayWareki }}</div>
           <div class="est-client">{{ currentClient }}　様</div>
@@ -159,7 +164,7 @@
           </div>
           </div><!-- /est-cover -->
           <!-- ── 内訳書（2ページ目〜: 工種ごとの集計・行単位で改ページ） ── -->
-          <div v-for="(pg, pi) in breakdownPages" :key="'bd' + pi" class="est-bd" data-pdf-page>
+          <div v-for="(pg, pi) in breakdownPages" :key="'bd' + pi" class="est-bd" data-pdf-page v-show="exporting || currentPage === 1 + pi">
             <div class="bd-head"><span>内訳書<span v-if="breakdownPages.length > 1">（{{ pi + 1 }}/{{ breakdownPages.length }}）</span></span><span class="bd-date">{{ todayWareki }}</span></div>
             <table class="bd-table">
               <thead><tr><th>名　称</th><th>形状・寸法</th><th class="num">数量</th><th>単位</th><th class="num">単価</th><th class="num">金　額</th></tr></thead>
@@ -175,7 +180,7 @@
             </table>
           </div>
           <!-- ── 工種別 明細（3ページ目以降: 各工種ごと・行単位で改ページ） ── -->
-          <div v-for="(pg, pi) in detailPages" :key="'d' + pi" class="est-detail" data-pdf-page>
+          <div v-for="(pg, pi) in detailPages" :key="'d' + pi" class="est-detail" data-pdf-page v-show="exporting || currentPage === detailBase + pi">
             <div class="dh">{{ pg.tradeName }}<span v-if="pg.parts > 1">（{{ pg.part }}/{{ pg.parts }}）</span>　<span class="dsub">小計 {{ yen(pg.total) }}</span></div>
             <table class="bd-table">
               <thead><tr><th>場所</th><th>明細</th><th class="num">数量</th><th>単位</th><th class="num">単価</th><th class="num">金額</th></tr></thead>
@@ -437,7 +442,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { onBeforeRouteLeave, useRoute } from 'vue-router'
 import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
@@ -608,6 +613,16 @@ const detailPages = computed(() => {
   }
   return pages
 })
+// プレビューのページャ: 窓は1ページ分だけ表示し ‹ › で切替（PDF出力は全ページ）。
+// ページ並び順: 0=表紙 / 1〜=内訳書 / その後=工種明細。
+const currentPage  = ref(0)
+const exporting    = ref(false)   // PDF生成中だけ全ページをDOM表示（html2canvas用）
+const detailBase   = computed(() => 1 + breakdownPages.value.length)
+const totalPages   = computed(() => 1 + breakdownPages.value.length + detailPages.value.length)
+function prevPage() { if (currentPage.value > 0) currentPage.value-- }
+function nextPage() { if (currentPage.value < totalPages.value - 1) currentPage.value++ }
+// 明細が減ってページ数が縮んだら範囲内に丸める
+watch(totalPages, (n) => { if (currentPage.value > n - 1) currentPage.value = Math.max(0, n - 1) })
 const currentProjectName = computed(() => projects.value.find(p => p.id === projectId.value)?.name ?? '')
 const currentProject   = computed(() => projects.value.find(p => p.id === projectId.value) ?? null)
 const currentContractorId = computed(() => currentProject.value?.contractor_id ?? null)
@@ -786,6 +801,15 @@ async function onOcrFile(e: Event) {
 //  1ページ目=表紙(全体)／2ページ目=内訳書(工種別集計)／3ページ目以降=工種ごとの明細。
 //  サンプルPDFと同じ構成。ブロックが1ページに収まらなければそのブロック内で複数ページに分割。
 async function buildEstimatePdf(): Promise<import('jspdf').jsPDF> {
+  exporting.value = true      // 全ページをDOM表示してから取り込む（ページャで隠れている分も）
+  await nextTick()
+  try {
+    return await renderEstimatePdf()
+  } finally {
+    exporting.value = false
+  }
+}
+async function renderEstimatePdf(): Promise<import('jspdf').jsPDF> {
   const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
   const pageW = 297, pageH = 210
   const blocks = Array.from(previewEl.value!.querySelectorAll<HTMLElement>('[data-pdf-page]'))
@@ -1095,6 +1119,7 @@ async function loadItems() {
     construction_location: pj?.construction_location ?? '', period_text: pj?.period_text ?? '',
     valid_until: pj?.valid_until ?? '', memo: pj?.memo ?? '', adjustment: Number(pj?.adjustment) || 0,
   }
+  currentPage.value = 0   // 案件を開いたら先頭ページへ
   markSaved()
   await Promise.all([loadSends(), loadProjectPOs()])
   // 送信先担当者を案件の元請けの先頭で初期化
@@ -1289,6 +1314,11 @@ onMounted(async () => {
 /* プレビューはページブロック[data-pdf-page]単位。各ブロックを横A4比率(約297:210)で表示し、
    PDFはブロックごとに改ページ（1=表紙/2=内訳書/3〜=工種明細）。 */
 .pdf-panel { overflow-x: auto; }
+.panel-head .pager { display: flex; align-items: center; gap: 8px; margin-left: auto; margin-right: 12px; }
+.pg-btn { width: 30px; height: 30px; border: 1px solid #cbd5e1; background: #fff; border-radius: 6px; font-size: 16px; line-height: 1; cursor: pointer; color: #334155; }
+.pg-btn:hover:not(:disabled) { background: #f1f5f9; }
+.pg-btn:disabled { opacity: .4; cursor: default; }
+.pg-ind { font-size: 13px; color: #555; font-variant-numeric: tabular-nums; min-width: 76px; text-align: center; }
 .pdf-preview.est-doc { max-width: none; width: 1056px; padding: 0; border: none; background: transparent; }
 .est-doc { font-size: 12px; color: #111; }
 .est-doc [data-pdf-page] { width: 1056px; min-height: 740px; box-sizing: border-box; background: #fff; border: 1px solid #ddd; padding: 28px 32px; }
