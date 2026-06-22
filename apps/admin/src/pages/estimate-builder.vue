@@ -120,7 +120,8 @@
         </div>
 
         <div class="pdf-preview est-doc" ref="previewEl" data-testid="pdf-preview">
-          <!-- ── 表紙 ── -->
+          <!-- ── 表紙（1ページ目: 全体の内容） ── -->
+          <div class="est-cover" data-pdf-page>
           <h1 class="est-title">御　見　積　書</h1>
           <div class="est-date">{{ todayWareki }}</div>
           <div class="est-client">{{ currentClient }}　様</div>
@@ -156,8 +157,9 @@
               <div class="rh">◆支払条件◆</div><div class="rb pre">{{ company.estimate_payment_terms }}</div>
             </div>
           </div>
-          <!-- ── 内訳書（工種別集計） ── -->
-          <div class="est-bd">
+          </div><!-- /est-cover -->
+          <!-- ── 内訳書（2ページ目: 工種ごとの集計） ── -->
+          <div class="est-bd" data-pdf-page>
             <div class="bd-head"><span>内訳書</span><span class="bd-date">{{ todayWareki }}</span></div>
             <table class="bd-table">
               <thead><tr><th>名　称</th><th>形状・寸法</th><th class="num">数量</th><th>単位</th><th class="num">単価</th><th class="num">金　額</th></tr></thead>
@@ -172,8 +174,8 @@
               </tfoot>
             </table>
           </div>
-          <!-- ── 工種別 明細 ── -->
-          <div v-for="g in groupedDetailed" :key="'d' + g.key" class="est-detail">
+          <!-- ── 工種別 明細（3ページ目以降: 各工種ごと） ── -->
+          <div v-for="g in groupedDetailed" :key="'d' + g.key" class="est-detail" data-pdf-page>
             <div class="dh">{{ g.tradeName }}　<span class="dsub">小計 {{ yen(g.total) }}</span></div>
             <table class="bd-table">
               <thead><tr><th>場所</th><th>明細</th><th class="num">数量</th><th>単位</th><th class="num">単価</th><th class="num">金額</th></tr></thead>
@@ -761,26 +763,31 @@ async function onOcrFile(e: Event) {
   }
 }
 // E2 PDF出力（表紙＋工種別内訳＋合計・A4複数ページ対応）
+// 見積書PDFを生成: A4横向き・ページブロック単位（[data-pdf-page]）で改ページ。
+//  1ページ目=表紙(全体)／2ページ目=内訳書(工種別集計)／3ページ目以降=工種ごとの明細。
+//  サンプルPDFと同じ構成。ブロックが1ページに収まらなければそのブロック内で複数ページに分割。
+async function buildEstimatePdf(): Promise<import('jspdf').jsPDF> {
+  const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+  const pageW = 297, pageH = 210
+  const blocks = Array.from(previewEl.value!.querySelectorAll<HTMLElement>('[data-pdf-page]'))
+  for (let b = 0; b < blocks.length; b++) {
+    const canvas = await html2canvas(blocks[b], { scale: 2, backgroundColor: '#ffffff' })
+    const png = canvas.toDataURL('image/png')
+    const imgW = pageW
+    const imgH = (canvas.height / canvas.width) * imgW
+    let heightLeft = imgH, position = 0
+    if (b > 0) pdf.addPage()
+    pdf.addImage(png, 'PNG', 0, position, imgW, imgH)
+    heightLeft -= pageH
+    while (heightLeft > 0) { position = heightLeft - imgH; pdf.addPage(); pdf.addImage(png, 'PNG', 0, position, imgW, imgH); heightLeft -= pageH }
+  }
+  return pdf
+}
 async function exportPdf() {
   if (!previewEl.value) return
   pdfBusy.value = true
   try {
-    const canvas = await html2canvas(previewEl.value, { scale: 2, backgroundColor: '#ffffff' })
-    const png = canvas.toDataURL('image/png')
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-    const pageW = 210, pageH = 297
-    const imgW = pageW
-    const imgH = (canvas.height / canvas.width) * imgW
-    let heightLeft = imgH
-    let position = 0
-    pdf.addImage(png, 'PNG', 0, position, imgW, imgH)
-    heightLeft -= pageH
-    while (heightLeft > 0) {
-      position = heightLeft - imgH
-      pdf.addPage()
-      pdf.addImage(png, 'PNG', 0, position, imgW, imgH)
-      heightLeft -= pageH
-    }
+    const pdf = await buildEstimatePdf()
     pdf.save(`見積_${currentProjectName.value || 'estimate'}.pdf`)
   } finally {
     pdfBusy.value = false
@@ -793,15 +800,8 @@ async function sendPdf() {
   if (!window.confirm(`${currentContractorName.value} 御中（${to?.name ?? ''} / ${sendEmail.value}）に見積書PDFをメール送信します。よろしいですか？`)) return
   sending.value = true; sendErr.value = ''; sendMsg.value = ''
   try {
-    // PDF生成（複数ページA4・exportPdf と同方式）
-    const canvas = await html2canvas(previewEl.value, { scale: 2, backgroundColor: '#ffffff' })
-    const png = canvas.toDataURL('image/png')
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-    const pageW = 210, pageH = 297, imgW = pageW
-    const imgH = (canvas.height / canvas.width) * imgW
-    let heightLeft = imgH, position = 0
-    pdf.addImage(png, 'PNG', 0, position, imgW, imgH); heightLeft -= pageH
-    while (heightLeft > 0) { position = heightLeft - imgH; pdf.addPage(); pdf.addImage(png, 'PNG', 0, position, imgW, imgH); heightLeft -= pageH }
+    // PDF生成（A4横向き・ページブロック単位＝exportPdf と同方式）
+    const pdf = await buildEstimatePdf()
     // Storageへ保存（EFが添付用にダウンロードする・履歴に紐付く）
     const path = `estimates/${accountId}/${projectId.value}-${Date.now()}.pdf`
     const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, pdf.output('blob'), { upsert: true, contentType: 'application/pdf' })
@@ -1258,8 +1258,14 @@ onMounted(async () => {
 .doc-field label { font-size: 11px; font-weight: 700; color: #888; }
 .doc-field .input { width: 200px; }
 .doc-field.wide .input { width: 420px; }
-/* ── 見積書(サンプル様式) ── */
+/* ── 見積書(サンプル様式・A4横向き) ── */
+/* プレビューはページブロック[data-pdf-page]単位。各ブロックを横A4比率(約297:210)で表示し、
+   PDFはブロックごとに改ページ（1=表紙/2=内訳書/3〜=工種明細）。 */
+.pdf-panel { overflow-x: auto; }
+.pdf-preview.est-doc { max-width: none; width: 1056px; padding: 0; border: none; background: transparent; }
 .est-doc { font-size: 12px; color: #111; }
+.est-doc [data-pdf-page] { width: 1056px; min-height: 740px; box-sizing: border-box; background: #fff; border: 1px solid #ddd; padding: 28px 32px; }
+.est-doc [data-pdf-page] + [data-pdf-page] { margin-top: 14px; }
 .est-title { text-align: center; font-size: 26px; letter-spacing: 8px; margin: 0 0 4px; font-weight: 700; }
 .est-date { text-align: right; font-size: 12px; }
 .est-client { font-size: 18px; border-bottom: 2px solid #333; padding: 6px 4px; margin: 6px 0 14px; }
