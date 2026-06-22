@@ -103,34 +103,88 @@
         </section>
       </div>
 
-      <!-- E2 帳票PDF: 見積書（表紙＋工種別内訳＋合計）を出力 -->
+      <!-- E2 帳票PDF: 見積書（表紙＋内訳書）。サンプル様式に準拠 -->
       <section class="panel pdf-panel" v-if="rows.length">
         <div class="panel-head">
           <h2>見積書PDF</h2>
           <button class="btn-primary" :disabled="pdfBusy" data-testid="export-pdf" @click="exportPdf">{{ pdfBusy ? '生成中…' : 'PDF出力' }}</button>
         </div>
-        <div class="pdf-preview" ref="previewEl" data-testid="pdf-preview">
-          <h1 class="pdf-title">御 見 積 書</h1>
-          <div class="pdf-meta">
-            <div v-if="currentClient" class="pdf-client">{{ currentClient }} 御中</div>
-            <div>案件：{{ currentProjectName }}</div>
-            <div>発行日：{{ today }}</div>
+        <p v-if="!company.company_name" class="muted">自社情報が未登録です。<RouterLink to="/company-profile">自社情報</RouterLink>で会社名・住所・印影等を登録すると見積書に反映されます。</p>
+        <!-- 見積書に出す案件情報（「保存」で明細と一緒に保存） -->
+        <div class="doc-form">
+          <div class="doc-field"><label>工事場所</label><input v-model="doc.construction_location" class="input" data-testid="doc-location" /></div>
+          <div class="doc-field"><label>予定工期</label><input v-model="doc.period_text" class="input" placeholder="例: 着工〜2026/3" /></div>
+          <div class="doc-field"><label>見積有効期限</label><input v-model="doc.valid_until" class="input" :placeholder="company.estimate_valid_until || '次回変更まで、もしくは3ヶ月'" /></div>
+          <div class="doc-field"><label>端数調整（±円）</label><input v-model.number="doc.adjustment" type="number" class="input num" data-testid="doc-adjustment" /></div>
+          <div class="doc-field wide"><label>MEMO</label><input v-model="doc.memo" class="input" /></div>
+        </div>
+
+        <div class="pdf-preview est-doc" ref="previewEl" data-testid="pdf-preview">
+          <!-- ── 表紙 ── -->
+          <h1 class="est-title">御　見　積　書</h1>
+          <div class="est-date">{{ todayWareki }}</div>
+          <div class="est-client">{{ currentClient }}　様</div>
+          <div class="est-head">
+            <div class="est-amounts">
+              <div class="welfare">法定福利費　{{ yen(welfare) }}</div>
+              <div class="band"><span class="lbl">見積金額：</span><span class="big" data-testid="pdf-grandtotal">{{ yen(totalExclTax) }}</span><span class="rgt">消費税別</span></div>
+              <div class="band sub"><span class="lbl">{{ yen(tax) }} <small>消費税{{ taxRate }}%</small></span><span class="big sm">{{ yen(totalInclTax) }}</span><span class="rgt">税込金額</span></div>
+            </div>
+            <div class="est-issuer">
+              <div class="cname">{{ company.company_name || '（自社情報未登録）' }}</div>
+              <div v-if="company.company_rep">{{ company.company_rep }}</div>
+              <div v-if="company.company_address">住所： {{ company.company_address }}</div>
+              <div v-if="company.company_tel">ＴＥＬ： {{ company.company_tel }}</div>
+              <div v-if="company.company_fax">ＦＡＸ： {{ company.company_fax }}</div>
+            </div>
+            <table class="est-seal">
+              <tr><th>会社</th><th>責任者</th><th>担当</th></tr>
+              <tr><td><img v-if="sealUrl" :src="sealUrl" alt="印" /></td><td></td><td></td></tr>
+            </table>
           </div>
-          <div class="pdf-total" data-testid="pdf-grandtotal">御見積金額　{{ yen(grandTotal) }}（税抜）</div>
-          <div v-for="g in groupedDetailed" :key="g.key" class="pdf-group">
-            <div class="pdf-group-head">{{ g.tradeName }}　<span class="pdf-sub">小計 {{ yen(g.total) }}</span></div>
-            <table class="pdf-table">
+          <div class="est-applied">上記の通り御見積申し上げます</div>
+          <div class="est-cols">
+            <div class="est-l">
+              <div class="kv"><span>工事件名</span><b>{{ currentProjectName }}</b></div>
+              <div class="kv"><span>工事場所</span><b>{{ doc.construction_location }}</b></div>
+              <div class="kv"><span>予定工期</span><b>{{ doc.period_text }}</b></div>
+              <div class="kv"><span>見積有効期限</span><b>{{ docValidUntil }}</b></div>
+              <div class="sepn"><b>◆別途工事◆</b><br>{{ company.estimate_separate_note || '※見積書に記載なき工事は別途' }}</div>
+            </div>
+            <div class="est-r">
+              <div class="rh">MEMO</div><div class="rb">{{ doc.memo }}</div>
+              <div class="rh">◆支払条件◆</div><div class="rb pre">{{ company.estimate_payment_terms }}</div>
+            </div>
+          </div>
+          <!-- ── 内訳書（工種別集計） ── -->
+          <div class="est-bd">
+            <div class="bd-head"><span>内訳書</span><span class="bd-date">{{ todayWareki }}</span></div>
+            <table class="bd-table">
+              <thead><tr><th>名　称</th><th>形状・寸法</th><th class="num">数量</th><th>単位</th><th class="num">単価</th><th class="num">金　額</th></tr></thead>
+              <tbody>
+                <tr v-for="g in groupedDetailed" :key="g.key"><td>{{ g.tradeName }}</td><td></td><td></td><td></td><td></td><td class="num">{{ yen(g.total) }}</td></tr>
+              </tbody>
+              <tfoot>
+                <tr><td colspan="5" class="r">小計</td><td class="num">{{ yen(subtotal) }}</td></tr>
+                <tr><td>法定福利費</td><td>請負金額 × {{ welfareA }}％ × {{ welfareB }}％</td><td colspan="3"></td><td class="num">{{ yen(welfare) }}</td></tr>
+                <tr v-if="adjustment"><td>端数調整</td><td colspan="4"></td><td class="num" :class="{ neg: adjustment < 0 }">{{ yen(adjustment) }}</td></tr>
+                <tr class="bd-grand"><td colspan="5" class="r">合計</td><td class="num">{{ yen(totalExclTax) }}</td></tr>
+              </tfoot>
+            </table>
+          </div>
+          <!-- ── 工種別 明細 ── -->
+          <div v-for="g in groupedDetailed" :key="'d' + g.key" class="est-detail">
+            <div class="dh">{{ g.tradeName }}　<span class="dsub">小計 {{ yen(g.total) }}</span></div>
+            <table class="bd-table">
               <thead><tr><th>場所</th><th>明細</th><th class="num">数量</th><th>単位</th><th class="num">単価</th><th class="num">金額</th></tr></thead>
               <tbody>
                 <tr v-for="(it, idx) in g.items" :key="idx">
-                  <td>{{ it.location }}</td><td>{{ it.item_name }}</td>
-                  <td class="num">{{ it.quantity }}</td><td>{{ it.unit }}</td>
+                  <td>{{ it.location }}</td><td>{{ it.item_name }}</td><td class="num">{{ it.quantity }}</td><td>{{ it.unit }}</td>
                   <td class="num">{{ yen(it.unit_price) }}</td><td class="num">{{ yen(lineAmount(it)) }}</td>
                 </tr>
               </tbody>
             </table>
           </div>
-          <div class="pdf-grand">合計　{{ yen(grandTotal) }}（税抜）</div>
         </div>
 
         <!-- ③ 見積書PDFを元請けの担当者宛にメール送信＋履歴 -->
@@ -480,6 +534,11 @@ const poMsg         = ref('')
 const poErr         = ref('')
 const poPreviewEl   = ref<HTMLElement | null>(null)
 const poTarget      = ref<null | { supplierName: string; contactName: string; items: Row[]; total: number }>(null)
+// ④ 見積書フォーマット: 自社情報(settings) と 案件側の見積書項目
+const COMPANY_KEYS = ['company_name', 'company_rep', 'company_address', 'company_tel', 'company_fax', 'company_seal_path', 'welfare_rate_a', 'welfare_rate_b', 'tax_rate', 'estimate_valid_until', 'estimate_payment_terms', 'estimate_separate_note']
+const company = ref<Record<string, string>>({})
+const doc     = ref<{ construction_location: string; period_text: string; valid_until: string; memo: string; adjustment: number }>(
+  { construction_location: '', period_text: '', valid_until: '', memo: '', adjustment: 0 })
 
 const yen = (n: number) => '¥' + Math.round(n || 0).toLocaleString('ja-JP')
 const lineAmount = (r: Row) => (Number(r.quantity) || 0) * (Number(r.unit_price) || 0)
@@ -514,6 +573,20 @@ const groupedDetailed = computed(() => {
 const previewEl = ref<HTMLElement | null>(null)
 const pdfBusy = ref(false)
 const today = new Date().toISOString().slice(0, 10)
+// 見積書: 和暦の発行日（例: 令和8年6月15日）。サンプル様式に合わせる。
+const todayWareki = computed(() => { const d = new Date(); return `令和${d.getFullYear() - 2018}年${d.getMonth() + 1}月${d.getDate()}日` })
+// 自社情報・金額計算（小計→法定福利費→端数調整→合計税抜→消費税→税込）
+const sealUrl  = computed(() => company.value.company_seal_path ? supabase.storage.from(BUCKET).getPublicUrl(company.value.company_seal_path).data.publicUrl : '')
+const welfareA = computed(() => Number(company.value.welfare_rate_a) || 23)
+const welfareB = computed(() => Number(company.value.welfare_rate_b) || 15)
+const taxRate  = computed(() => Number(company.value.tax_rate) || 10)
+const subtotal     = computed(() => grandTotal.value)                                          // 小計＝明細合計
+const welfare      = computed(() => Math.round(subtotal.value * welfareA.value / 100 * welfareB.value / 100)) // 法定福利費
+const adjustment   = computed(() => Number(doc.value.adjustment) || 0)                          // 端数調整(±)
+const totalExclTax = computed(() => subtotal.value + welfare.value + adjustment.value)          // 合計(税抜)
+const tax          = computed(() => Math.round(totalExclTax.value * taxRate.value / 100))       // 消費税
+const totalInclTax = computed(() => totalExclTax.value + tax.value)                             // 税込
+const docValidUntil = computed(() => doc.value.valid_until || company.value.estimate_valid_until || '')
 const currentProjectName = computed(() => projects.value.find(p => p.id === projectId.value)?.name ?? '')
 const currentProject   = computed(() => projects.value.find(p => p.id === projectId.value) ?? null)
 const currentContractorId = computed(() => currentProject.value?.contractor_id ?? null)
@@ -857,6 +930,11 @@ async function loadContractors() {
   contractors.value = (cs ?? []) as Contractor[]
   contractorContacts.value = (ccs ?? []) as Contact[]
 }
+// ④ 自社情報（settings）を読む
+async function loadCompany() {
+  const { data } = await supabase.from('settings').select('key, value').eq('account_id', accountId).in('key', COMPANY_KEYS)
+  company.value = Object.fromEntries((data ?? []).map((s: any) => [s.key, s.value]))
+}
 // F2 商社（下請け業者）の担当者＝発注書の送信先候補
 async function loadSubContacts() {
   const { data } = await supabase.from('subcontractor_contacts')
@@ -971,16 +1049,25 @@ function resolveMaterial(r: Row) {
 async function loadItems() {
   rows.value = []
   removedIds.value = []
+  doc.value = { construction_location: '', period_text: '', valid_until: '', memo: '', adjustment: 0 }
   lastLoadedProjectId = projectId.value
   if (!projectId.value) { markSaved(); return }
-  const { data } = await supabase.from('estimate_items')
-    .select('id, category_id, trade_id, material_id, supplier_id, item_name, unit, quantity, unit_price, note')
-    .eq('project_id', projectId.value).order('sort_order')
+  const [{ data }, { data: pj }] = await Promise.all([
+    supabase.from('estimate_items')
+      .select('id, category_id, trade_id, material_id, supplier_id, item_name, unit, quantity, unit_price, note')
+      .eq('project_id', projectId.value).order('sort_order'),
+    supabase.from('estimate_projects')
+      .select('construction_location, period_text, valid_until, memo, adjustment').eq('id', projectId.value).single(),
+  ])
   rows.value = (data ?? []).map((d: any) => ({
     id: d.id, location: d.note ?? '', trade_id: d.trade_id, material_id: d.material_id ?? null,
     supplier_id: d.supplier_id ?? null, item_name: d.item_name, unit: d.unit ?? '',
     quantity: Number(d.quantity) || 0, unit_price: Number(d.unit_price) || 0,
   }))
+  doc.value = {
+    construction_location: pj?.construction_location ?? '', period_text: pj?.period_text ?? '',
+    valid_until: pj?.valid_until ?? '', memo: pj?.memo ?? '', adjustment: Number(pj?.adjustment) || 0,
+  }
   markSaved()
   await Promise.all([loadSends(), loadProjectPOs()])
   // 送信先担当者を案件の元請けの先頭で初期化
@@ -1088,6 +1175,11 @@ async function save() {
       }
     }
     if (created.size) await loadMaterials()
+    // 見積書フィールド（工事場所/工期/有効期限/MEMO/端数調整）も保存
+    await supabase.from('estimate_projects').update({
+      construction_location: doc.value.construction_location || null, period_text: doc.value.period_text || null,
+      valid_until: doc.value.valid_until || null, memo: doc.value.memo || null, adjustment: Number(doc.value.adjustment) || 0,
+    }).eq('id', projectId.value)
     markSaved()   // 保存完了＝離脱ガードの基準を更新（以降は未保存扱いしない）
     savedMsg.value = '保存しました'
     setTimeout(() => (savedMsg.value = ''), 2500)
@@ -1100,7 +1192,7 @@ async function save() {
 
 // #3 編集中の離脱ガード: 未保存の明細がある状態で 遷移/タブ閉じ/案件切替 時に確認する
 function rowsSig(): string {
-  return JSON.stringify(rows.value.map(r => [r.location, r.trade_id, r.material_id, r.supplier_id, r.item_name, r.unit, r.quantity, r.unit_price]))
+  return JSON.stringify([rows.value.map(r => [r.location, r.trade_id, r.material_id, r.supplier_id, r.item_name, r.unit, r.quantity, r.unit_price]), doc.value])
 }
 const savedSig = ref('[]')
 function markSaved() { savedSig.value = rowsSig() }   // 「今の明細＝保存済み」とみなす基準を更新
@@ -1116,7 +1208,7 @@ onUnmounted(() => window.removeEventListener('beforeunload', beforeUnload))
 
 onMounted(async () => {
   accountId = await getAccountId()
-  await Promise.all([loadProjects(), loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices(), loadRevisions(), loadContractors(), loadSubContacts()])
+  await Promise.all([loadProjects(), loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices(), loadRevisions(), loadContractors(), loadSubContacts(), loadCompany()])
   if (!activeSupplier.value && suppliers.value[0]) activeSupplier.value = suppliers.value[0].id  // 既定タブ
   // 一覧から開いた案件（?project=<id>）を初期選択
   const qp = route.query.project
@@ -1160,6 +1252,50 @@ onMounted(async () => {
 .ok { color: #06864a; font-size: 13px; }
 .pdf-panel { margin-top: 16px; }
 .pdf-preview { background: #fff; color: #111; padding: 24px; border: 1px solid #ddd; max-width: 760px; }
+/* 見積書情報の入力フォーム */
+.doc-form { display: flex; flex-wrap: wrap; gap: 12px; margin: 8px 0 16px; }
+.doc-field { display: flex; flex-direction: column; gap: 4px; }
+.doc-field label { font-size: 11px; font-weight: 700; color: #888; }
+.doc-field .input { width: 200px; }
+.doc-field.wide .input { width: 420px; }
+/* ── 見積書(サンプル様式) ── */
+.est-doc { font-size: 12px; color: #111; }
+.est-title { text-align: center; font-size: 26px; letter-spacing: 8px; margin: 0 0 4px; font-weight: 700; }
+.est-date { text-align: right; font-size: 12px; }
+.est-client { font-size: 18px; border-bottom: 2px solid #333; padding: 6px 4px; margin: 6px 0 14px; }
+.est-head { display: grid; grid-template-columns: 1.3fr 1.4fr auto; gap: 14px; align-items: start; }
+.est-amounts { display: flex; flex-direction: column; gap: 4px; }
+.est-amounts .welfare { text-align: right; font-size: 11px; }
+.est-amounts .band { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; background: #ddd; padding: 6px 8px; }
+.est-amounts .band.sub { background: #eee; }
+.est-amounts .band .big { text-align: center; font-size: 20px; font-weight: 700; }
+.est-amounts .band .big.sm { font-size: 14px; }
+.est-amounts .band .rgt { font-size: 11px; }
+.est-issuer .cname { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+.est-issuer div { line-height: 1.5; }
+.est-seal { border-collapse: collapse; }
+.est-seal th, .est-seal td { border: 1px solid #333; width: 42px; height: 22px; font-size: 10px; text-align: center; }
+.est-seal td { height: 44px; }
+.est-seal img { max-width: 40px; max-height: 40px; }
+.est-applied { font-weight: 700; margin: 14px 0; }
+.est-cols { display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; }
+.est-l .kv { display: grid; grid-template-columns: 90px 1fr; border-bottom: 1px solid #333; padding: 8px 2px; }
+.est-l .kv span { font-weight: 700; }
+.est-l .sepn { margin-top: 16px; font-weight: 700; }
+.est-r .rh { font-weight: 700; margin: 4px 0; }
+.est-r .rb { border-bottom: 1px solid #ccc; min-height: 22px; padding: 2px; white-space: pre-wrap; }
+.est-bd { margin-top: 22px; }
+.bd-head { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
+.bd-table { width: 100%; border-collapse: collapse; }
+.bd-table th, .bd-table td { border: 1px solid #bbb; padding: 5px 6px; font-size: 11px; text-align: left; }
+.bd-table th { background: #ddd; text-align: center; }
+.bd-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.bd-table .r { text-align: right; font-weight: 700; }
+.bd-table .neg { color: #c00; }
+.bd-table tfoot .bd-grand td { font-weight: 700; border-top: 2px solid #333; }
+.est-detail { margin-top: 16px; }
+.est-detail .dh { font-weight: 700; background: #f0f4f1; padding: 4px 8px; border-left: 4px solid #06C755; }
+.est-detail .dsub { font-weight: 600; color: #444; font-size: 11px; }
 .pdf-title { text-align: center; font-size: 22px; letter-spacing: 4px; margin: 0 0 16px; }
 .pdf-meta { font-size: 13px; line-height: 1.7; margin-bottom: 10px; }
 .pdf-client { font-size: 15px; font-weight: 700; }
