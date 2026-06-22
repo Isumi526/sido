@@ -2,7 +2,7 @@
   <div>
     <div v-if="!embedded" class="page-header">
       <h1 class="page-title">見積マスタ・単価表</h1>
-      <RouterLink to="/estimates-list" class="back-link" data-testid="back-to-list">← 見積一覧へ</RouterLink>
+      <RouterLink to="/estimate-list" class="back-link" data-testid="back-to-list">← 見積一覧へ</RouterLink>
     </div>
     <p class="hint">材料・工種・商社別単価（単価表OCR取込／承認待ち差分）はアカウント共通のマスタです。見積の明細入力ではここで登録した値を選べます。</p>
 
