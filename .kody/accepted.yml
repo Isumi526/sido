@@ -104,3 +104,9 @@ entries:
     reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
     ticket: "37b0ff81c56b8137827bd5d49f531777"
   # expense_users は 20260619000000_expense_users_rls.sql で RLS化済み（anon全拒否）＝baseline解消。
+
+  # --- 呼び出し元認証ベースライン: cron起動のリマインド系EFは in-code認証なし＝既存 daily-reminder と同型。恒久対策(共有シークレット)はチケットで追跡。 ---
+  - rule: anon-access-token
+    target: shaken-reminder
+    reason: "車検リマインドEF。pg_cronから認証ヘッダ無しで叩かれる前提で、本番稼働中のdaily-reminderと完全同型(in-code認証なし・account_slugをbody受け・--no-verify-jwtデプロイ)。新規の露出様式ではなくcron起動リマインド関数の既存ベースライン踏襲。共有シークレット認証の恒久対策をチケットで追跡。"
+    ticket: "3870ff81c56b8134b1a6c855d4216956"
