@@ -1,6 +1,6 @@
 <template>
   <div>
-    <div class="page-header">
+    <div v-if="!embedded" class="page-header">
       <h1 class="page-title">見積マスタ・単価表</h1>
       <RouterLink to="/estimates-list" class="back-link" data-testid="back-to-list">← 見積一覧へ</RouterLink>
     </div>
@@ -159,6 +159,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug } from '../lib/account'
+
+defineProps<{ embedded?: boolean }>()
 
 type Trade    = { id: string; name: string }
 type Material = { id: string; name: string; unit: string | null; code: string | null }
