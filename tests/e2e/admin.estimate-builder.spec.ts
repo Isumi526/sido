@@ -23,6 +23,8 @@ const SUP_B = `商社B_${TS}`
 const PROJ5 = `E2E見積E2_${TS}`
 const TR1 = `軽鉄E2_${TS}`
 const TR2 = `ボードE2_${TS}`
+const MAT_PL = `単価表材_${TS}`
+const SUP_PL = `単価表商社_${TS}`
 
 test.describe.configure({ mode: 'serial' })
 
@@ -47,6 +49,8 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     for (const t of [TR1, TR2]) {
       await restSrv(`estimate_trades?name=eq.${encodeURIComponent(t)}`, { method: 'DELETE' }).catch(() => {})
     }
+    await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MAT_PL)}`, { method: 'DELETE' }).catch(() => {})  // cascade prices
+    await restSrv(`subcontractors?name=eq.${encodeURIComponent(SUP_PL)}&category=eq.${encodeURIComponent('商社')}`, { method: 'DELETE' }).catch(() => {})
   })
 
   test('AC1/AC2: 明細入力→工種別に自動集計され、DBにも反映される', async ({ page }) => {
@@ -237,5 +241,40 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
       page.locator('[data-testid="export-pdf"]').click(),
     ])
     expect(dl.suggestedFilename()).toContain('見積')
+  })
+
+  // 商社別単価: 登録UI → 現行一覧に表示 → 削除
+  test('商社別単価: 登録すると一覧に出て、削除できる', async ({ page }) => {
+    const accountId = await getAccountId()
+    const post = async (table: string, body: any) =>
+      restSrv(table, { method: 'POST', headers: { Prefer: 'return=representation', 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    const mat = (await post('estimate_materials', { account_id: accountId, name: MAT_PL, source: 'manual' }))[0]
+    const sup = (await post('subcontractors', { account_id: accountId, name: SUP_PL, category: '商社', active: true }))[0]
+
+    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
+    await page.locator('[data-testid="settings-toggle"]').click()
+
+    // 登録UIで 材料×商社×単価 を登録
+    await page.locator('[data-testid="price-material"]').selectOption({ label: MAT_PL })
+    await page.locator('[data-testid="price-supplier"]').selectOption({ label: SUP_PL })
+    await page.locator('[data-testid="price-value"]').fill('1500')
+    await page.locator('[data-testid="add-price"]').click()
+
+    // 現行一覧に出る
+    const list = page.locator('[data-testid="price-list"]')
+    await expect(list).toContainText(MAT_PL)
+    await expect(list).toContainText(SUP_PL)
+    await expect(list).toContainText('¥1,500')
+    await expect.poll(async () => {
+      const ps = await restSrv(`estimate_material_prices?material_id=eq.${mat.id}&supplier_id=eq.${sup.id}&is_current=eq.true&select=id`)
+      return (ps ?? []).length
+    }, { timeout: 10000 }).toBe(1)
+
+    // 削除（MAT_PL の行を狙う＝他の単価が混在しても誤削除しない）→ 一覧/DBから消える
+    await list.locator('tr', { hasText: MAT_PL }).locator('[data-testid^="price-del-"]').click()
+    await expect.poll(async () => {
+      const ps = await restSrv(`estimate_material_prices?material_id=eq.${mat.id}&supplier_id=eq.${sup.id}&select=id`)
+      return (ps ?? []).length
+    }, { timeout: 10000 }).toBe(0)
   })
 })
