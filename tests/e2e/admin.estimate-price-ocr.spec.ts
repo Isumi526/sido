@@ -36,6 +36,8 @@ test.describe('見積 価格表差分承認（E4）', () => {
     const rev2 = (await post('estimate_price_revisions', { account_id: accountId, supplier_id: sup.id, material_id: null, name: NEW, new_price: 300, status: 'pending' }))[0]
 
     await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
+    // 差分承認は「⚙️ マスタ・取込設定」内 → 開く
+    await page.locator('[data-testid="settings-toggle"]').click()
 
     // 差分一覧に「材料X 現行→新単価」が出る（AC1相当）
     const row1 = page.locator(`[data-testid="rev-${rev1.id}"]`)
