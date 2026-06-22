@@ -74,8 +74,9 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await page.locator('[data-testid="add-project"]').click()
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ)
 
-    // 工種追加は「⚙️ マスタ・取込設定」内 → 開く
+    // 工種追加は「⚙️ マスタ・取込設定」内 → 開く → 工種タブ
     await page.locator('[data-testid="settings-toggle"]').click()
+    await page.locator('[data-testid="subtab-trade"]').click()
     // 工種を2つ追加
     await page.locator('[data-testid="new-trade-name"]').fill(TRADE_A)
     await page.locator('[data-testid="add-trade"]').click()
@@ -309,13 +310,15 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
   test('工種一覧と材料マスタ（品番/品名別管理）の追加・一覧・削除', async ({ page }) => {
     await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
     await page.locator('[data-testid="settings-toggle"]').click()
+    await page.locator('[data-testid="subtab-trade"]').click()
 
     // 工種を追加 → 一覧に出る
     await page.locator('[data-testid="new-trade-name"]').fill(TRADE_M)
     await page.locator('[data-testid="add-trade"]').click()
     await expect(page.locator('[data-testid="trade-list"]')).toContainText(TRADE_M)
 
-    // 材料を 品番＋品名＋単位 で追加 → 一覧に品番/品名が別列で出る
+    // 材料タブへ → 材料を 品番＋品名＋単位 で追加 → 一覧に品番/品名が別列で出る
+    await page.locator('[data-testid="subtab-material"]').click()
     await page.locator('[data-testid="mat-code"]').fill(MCODE_M)
     await page.locator('[data-testid="mat-name"]').fill(MNAME_M)
     await page.locator('[data-testid="mat-unit"]').fill('枚')
