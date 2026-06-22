@@ -237,6 +237,7 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ5)
 
     // プレビュー(サンプル様式): 表紙(見積金額・宛名)・内訳書・工種別小計・合計
+    await page.locator('[data-testid="tab-preview"]').click()
     const pv = page.locator('[data-testid="pdf-preview"]')
     await expect(pv).toContainText('テスト客先　様')
     await expect(pv).toContainText('見積金額')

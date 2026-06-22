@@ -41,6 +41,14 @@
     </datalist>
 
     <template v-if="projectId">
+      <div class="builder-tabs">
+        <button class="btab" :class="{ active: builderTab === 'items' }" data-testid="tab-items" @click="builderTab = 'items'">明細入力</button>
+        <button class="btab" :class="{ active: builderTab === 'preview' }" data-testid="tab-preview" @click="builderTab = 'preview'">見積書プレビュー</button>
+        <button class="btab" :class="{ active: builderTab === 'po' }" data-testid="tab-po" @click="builderTab = 'po'">商社へ発注</button>
+        <button class="btab ghost" data-testid="open-drawer" @click="openDrawer">⚙ マスタ・自社情報</button>
+      </div>
+
+      <div v-show="builderTab === 'items'">
       <div class="grid">
         <!-- 明細入力 -->
         <section class="panel">
@@ -106,6 +114,10 @@
         </section>
       </div>
 
+      </div><!-- /tab 明細入力 -->
+
+      <div v-show="builderTab === 'preview'">
+      <p v-if="!rows.length" class="hint">明細を入力すると見積書プレビューが表示されます。</p>
       <!-- E2 帳票PDF: 見積書（表紙＋内訳書）。サンプル様式に準拠 -->
       <section class="panel pdf-panel" v-if="rows.length">
         <div class="panel-head">
@@ -232,6 +244,10 @@
         </div>
       </section>
 
+      </div><!-- /tab 見積書プレビュー -->
+
+      <div v-show="builderTab === 'po'">
+      <p v-if="!bySupplier.length" class="hint">明細に「商社」を設定すると、商社ごとに発注書を作成・送信できます。</p>
       <!-- F2 商社へ発注（見積明細を商社ごとに分割→各商社の担当者へ発注書を送信） -->
       <section class="panel po-split" v-if="bySupplier.length">
         <div class="panel-head"><h2>商社へ発注（商社ごとに分割）</h2></div>
@@ -284,6 +300,24 @@
           <div class="pdf-grand">合計　{{ yen(poTarget.total) }}（税抜）</div>
         </div>
       </section>
+      </div><!-- /tab 商社へ発注 -->
+
+      <!-- #4 マスタ・自社情報を編集する右ドロワー（閉じると明細の選択肢・見積書に即反映） -->
+      <div v-if="drawerOpen" class="drawer-overlay" @click.self="closeDrawer">
+        <div class="drawer">
+          <div class="drawer-head">
+            <div class="drawer-subtabs">
+              <button class="dtab" :class="{ active: drawerTab === 'masters' }" data-testid="drawer-masters" @click="drawerTab = 'masters'">マスタ・単価表</button>
+              <button class="dtab" :class="{ active: drawerTab === 'company' }" data-testid="drawer-company" @click="drawerTab = 'company'">自社情報</button>
+            </div>
+            <button class="drawer-close" data-testid="drawer-close" @click="closeDrawer">閉じる ✕</button>
+          </div>
+          <div class="drawer-body">
+            <EstimateMasters v-if="drawerTab === 'masters'" embedded />
+            <CompanyProfile v-else embedded />
+          </div>
+        </div>
+      </div>
     </template>
     <p v-else class="hint">案件を選択または追加すると、明細入力と工種別内訳が表示されます。</p>
 
@@ -297,10 +331,22 @@ import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import EstimateMasters from './estimate-masters.vue'
+import CompanyProfile from './company-profile.vue'
 
 const BUCKET = 'expense-receipts'
 const IS_DEV = import.meta.env.DEV
 const route  = useRoute()   // 一覧から ?project=<id> で開いた案件を初期選択する
+// #6 ビルダーのタブ（明細入力／見積書プレビュー／商社へ発注）
+const builderTab = ref<'items' | 'preview' | 'po'>('items')
+// #4 マスタ・自社情報の右ドロワー（閉じると明細の選択肢・見積書計算に即反映）
+const drawerOpen = ref(false)
+const drawerTab  = ref<'masters' | 'company'>('masters')
+function openDrawer() { drawerOpen.value = true }
+async function closeDrawer() {
+  drawerOpen.value = false
+  await Promise.all([loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices(), loadContractors(), loadCompany()])
+}
 
 type Project  = { id: string; name: string; client_name: string | null; contractor_id: string | null }
 type Contractor = { id: string; name: string }
@@ -787,6 +833,7 @@ async function loadItems() {
   }
   currentPage.value = 0   // 案件を開いたら先頭ページへ
   editingName.value = false
+  builderTab.value = 'items'
   markSaved()
   await Promise.all([loadSends(), loadProjectPOs()])
   // 送信先担当者を案件の元請けの先頭で初期化
@@ -923,6 +970,22 @@ onMounted(async () => {
 .drag-handle { cursor: grab; color: #b0b6bd; text-align: center; user-select: none; font-size: 14px; }
 .drag-handle:active { cursor: grabbing; }
 tr.drag-over td { border-top: 2px solid #06C755; }
+/* #6 ビルダーのタブ */
+.builder-tabs { display: flex; gap: 4px; border-bottom: 2px solid #eee; margin-bottom: 16px; flex-wrap: wrap; }
+.btab { border: none; background: transparent; color: #666; padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+.btab:hover { color: #222; }
+.btab.active { color: #06864a; border-bottom-color: #06C755; }
+.btab.ghost { margin-left: auto; color: #555; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 0; padding: 7px 14px; }
+.btab.ghost:hover { background: #f5f5f5; }
+/* #4 右ドロワー */
+.drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 200; display: flex; justify-content: flex-end; }
+.drawer { width: min(960px, 92vw); height: 100%; background: #f7f8f7; box-shadow: -4px 0 16px rgba(0,0,0,.15); display: flex; flex-direction: column; }
+.drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: #fff; border-bottom: 1px solid #e5e5e5; }
+.drawer-subtabs { display: inline-flex; gap: 2px; background: #eef0ee; border-radius: 8px; padding: 3px; }
+.dtab { border: none; background: transparent; color: #555; border-radius: 6px; padding: 6px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.dtab.active { background: #fff; color: #06864a; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.drawer-close { background: #f0f0f0; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; cursor: pointer; }
+.drawer-body { flex: 1; overflow-y: auto; padding: 16px; }
 .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; align-items: start; }
 @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
 .panel { background: #fff; border: 1px solid #e5e5e5; border-radius: 10px; padding: 14px; }

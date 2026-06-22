@@ -1,6 +1,6 @@
 <template>
   <div>
-    <div class="page-header">
+    <div v-if="!embedded" class="page-header">
       <h1 class="page-title">自社情報</h1>
     </div>
     <p class="hint">見積書・発注書PDFの発行元（自社）情報です。見積書の表紙・内訳書の計算に使われます。</p>
@@ -52,6 +52,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+
+defineProps<{ embedded?: boolean }>()
 
 const BUCKET = 'expense-receipts'
 // settings の key と日本語ラベル（settings.label が NOT NULL のため必須）
