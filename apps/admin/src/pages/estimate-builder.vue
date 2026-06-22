@@ -134,7 +134,7 @@
         <div class="setting-block">
           <h3>工種を追加</h3>
           <div class="trade-add">
-            <input v-model="newTradeName" class="input sm" placeholder="新しい工種名（例：軽鉄工事）" data-testid="new-trade-name" />
+            <input v-model="newTradeName" class="input" placeholder="工種名（例: 軽鉄工事）" data-testid="new-trade-name" />
             <button class="btn-add" :disabled="!newTradeName.trim()" data-testid="add-trade" @click="addTrade">工種を追加</button>
           </div>
         </div>
@@ -563,6 +563,7 @@ onMounted(async () => {
 .btn-primary { background: #06C755; color: #fff; border: none; border-radius: 6px; padding: 8px 18px; font-weight: 600; cursor: pointer; }
 .btn-primary:disabled { opacity: .6; cursor: default; }
 .btn-add { background: #eef7f0; color: #06864a; border: 1px solid #bfe3cd; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.btn-add:disabled { opacity: .4; cursor: not-allowed; background: #f3f4f6; color: #9ca3af; border-color: #e5e7eb; }
 .btn-del { background: none; border: none; color: #c00; font-size: 16px; cursor: pointer; }
 .trade-add { display: flex; gap: 8px; align-items: center; margin-top: 14px; padding-top: 12px; border-top: 1px dashed #ddd; }
 .grand td { font-weight: 700; border-top: 2px solid #333; }
@@ -607,4 +608,8 @@ onMounted(async () => {
 .table select.input { min-width: 120px; }
 .table input.input { min-width: 90px; }
 .table input.input.num { min-width: 64px; }
+/* 設定欄の入力はゆとりある幅（プレースホルダー見切れ防止） */
+.setting-block .input { width: auto; min-width: 160px; }
+.setting-block .input.num { min-width: 100px; }
+.ocr-row { align-items: center; }
 </style>
