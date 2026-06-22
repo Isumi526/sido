@@ -254,16 +254,15 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
     await page.locator('[data-testid="settings-toggle"]').click()
 
-    // 登録UIで 材料×商社×単価 を登録
+    // 商社タブで対象商社を選ぶ → 材料×単価を登録（商社はタブ＝SUP_PL）
+    await page.locator(`[data-testid="ptab-${sup.id}"]`).click()
     await page.locator('[data-testid="price-material"]').selectOption({ label: MAT_PL })
-    await page.locator('[data-testid="price-supplier"]').selectOption({ label: SUP_PL })
     await page.locator('[data-testid="price-value"]').fill('1500')
     await page.locator('[data-testid="add-price"]').click()
 
-    // 現行一覧に出る
+    // 現行一覧に出る（商社列は無い＝タブで自明）
     const list = page.locator('[data-testid="price-list"]')
     await expect(list).toContainText(MAT_PL)
-    await expect(list).toContainText(SUP_PL)
     await expect(list).toContainText('¥1,500')
     await expect.poll(async () => {
       const ps = await restSrv(`estimate_material_prices?material_id=eq.${mat.id}&supplier_id=eq.${sup.id}&is_current=eq.true&select=id`)
