@@ -6,7 +6,7 @@
 //   ※ estimate_* は RLS 有効（admin authenticated のみ）。検証/cleanup は service_role(restSrv)。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { restSrv } from './helpers'
+import { restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()
 const PROJ = `E2E見積_${TS}`
@@ -16,12 +16,16 @@ const PROJ2 = `E2E見積E5_${TS}`
 const MAT = `カタログ材_${TS}`
 const PROJ3 = `E2E見積E6_${TS}`
 const MAT6 = `クロス_${TS}`
+const PROJ4 = `E2E見積E7_${TS}`
+const MAT7 = `フロア_${TS}`
+const SUP_A = `商社A_${TS}`
+const SUP_B = `商社B_${TS}`
 
 test.describe.configure({ mode: 'serial' })
 
 test.describe('見積もり 全体見積→工種別自動集計', () => {
   test.afterAll(async () => {
-    for (const name of [PROJ, PROJ2, PROJ3]) {
+    for (const name of [PROJ, PROJ2, PROJ3, PROJ4]) {
       const projs = await restSrv(`estimate_projects?name=eq.${encodeURIComponent(name)}&select=id`).catch(() => [])
       for (const p of projs ?? []) {
         await restSrv(`estimate_items?project_id=eq.${p.id}`, { method: 'DELETE' }).catch(() => {})
@@ -32,6 +36,11 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await restSrv(`estimate_trades?name=eq.${encodeURIComponent(TRADE_B)}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MAT)}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MAT6)}`, { method: 'DELETE' }).catch(() => {})
+    // MAT7 削除で material_prices は cascade。その後 suppliers を削除
+    await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MAT7)}`, { method: 'DELETE' }).catch(() => {})
+    for (const s of [SUP_A, SUP_B]) {
+      await restSrv(`estimate_suppliers?name=eq.${encodeURIComponent(s)}`, { method: 'DELETE' }).catch(() => {})
+    }
   })
 
   test('AC1/AC2: 明細入力→工種別に自動集計され、DBにも反映される', async ({ page }) => {
@@ -140,5 +149,49 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
       const sameMat = items[0].material_id === items[1].material_id
       return allLinked && sameMat
     }, { timeout: 10000 }).toBe(true)
+  })
+
+  // E7 商社別単価: 同一材料で商社A/Bの単価差を表示し、商社切替で明細単価・金額が即時更新
+  // マスタ/単価は service_role で seed（UI経由のマスタ作成レースを避け、E7コア挙動を堅牢に検証）
+  test('E7: 同一材料の商社別単価差が出て、商社切替で単価/金額が即時更新される', async ({ page }) => {
+    const accountId = await getAccountId()
+    const post = async (table: string, body: any) =>
+      restSrv(table, { method: 'POST', headers: { Prefer: 'return=representation', 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    await post('estimate_projects', { account_id: accountId, name: PROJ4 })
+    const mat = (await post('estimate_materials', { account_id: accountId, name: MAT7, unit: 'm2', source: 'manual' }))[0]
+    const supA = (await post('estimate_suppliers', { account_id: accountId, name: SUP_A }))[0]
+    const supB = (await post('estimate_suppliers', { account_id: accountId, name: SUP_B }))[0]
+    await post('estimate_material_prices', { account_id: accountId, material_id: mat.id, supplier_id: supA.id, unit_price: 100, is_current: true })
+    await post('estimate_material_prices', { account_id: accountId, material_id: mat.id, supplier_id: supB.id, unit_price: 120, is_current: true })
+
+    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
+    await page.locator('[data-testid="project-select"]').selectOption({ label: PROJ4 })
+
+    // 行追加 → 既存材料 MAT7 を入力（resolveMaterialで material_id 紐付け）
+    await page.locator('[data-testid="add-row"]').click()
+    await page.locator('[data-testid="item-name-0"]').fill(MAT7)
+    await page.locator('[data-testid="item-qty-0"]').fill('2')   // blur で resolveMaterial 発火
+
+    // 商社プルダウンに A/B の単価差が出る（—, A¥100, B¥120 ＝ 3択）
+    await expect(page.locator('[data-testid="item-supplier-0"] option')).toHaveCount(3)
+    // 商社B(¥120)へ切替 → 単価=120・金額=¥240 に即時更新
+    await page.locator('[data-testid="item-supplier-0"]').selectOption({ label: `${SUP_B} ¥120` })
+    await expect(page.locator('[data-testid="item-price-0"]')).toHaveValue('120')
+    await expect(page.locator('[data-testid="item-amount-0"]')).toHaveText('¥240')
+    // 商社A(¥100)へ切替 → 単価=100・金額=¥200（単価差の反映）
+    await page.locator('[data-testid="item-supplier-0"]').selectOption({ label: `${SUP_A} ¥100` })
+    await expect(page.locator('[data-testid="item-price-0"]')).toHaveValue('100')
+    await expect(page.locator('[data-testid="item-amount-0"]')).toHaveText('¥200')
+
+    // 保存 → DB: supplier_id 紐付き・unit_price=100・amount=200
+    await page.locator('[data-testid="save-items"]').click()
+    await expect.poll(async () => {
+      const projs = await restSrv(`estimate_projects?name=eq.${encodeURIComponent(PROJ4)}&select=id`)
+      const pid = projs?.[0]?.id
+      if (!pid) return null
+      const items = await restSrv(`estimate_items?project_id=eq.${pid}&select=supplier_id,unit_price,amount`)
+      const r = items?.[0]
+      return r ? `${!!r.supplier_id}|${r.unit_price}|${r.amount}` : null
+    }, { timeout: 10000 }).toBe('true|100|200')
   })
 })
