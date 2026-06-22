@@ -40,7 +40,6 @@ test.describe('見積→元請け 送信先と離脱ガード', () => {
 
     await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
     // 案件を追加（自動選択される）
-    await page.locator('[data-testid="new-project-toggle"]').click()
     await page.locator('[data-testid="new-project-name"]').fill(PROJ_A)
     await page.locator('[data-testid="add-project"]').click()
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ_A)
@@ -66,7 +65,6 @@ test.describe('見積→元請け 送信先と離脱ガード', () => {
   test('編集中（未保存）に一覧へ戻ろうとすると確認ダイアログが出る', async ({ page }) => {
     await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
     // 新規案件を作って自動選択（addProject が loadItems まで完了させる）
-    await page.locator('[data-testid="new-project-toggle"]').click()
     await page.locator('[data-testid="new-project-name"]').fill(PROJ_GUARD)
     await page.locator('[data-testid="add-project"]').click()
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ_GUARD)

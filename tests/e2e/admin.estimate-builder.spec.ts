@@ -77,7 +77,6 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await expect(page.locator('h1')).toContainText('見積もり')
 
     // 案件を追加
-    await page.locator('[data-testid="new-project-toggle"]').click()
     await page.locator('[data-testid="new-project-name"]').fill(PROJ)
     await page.locator('[data-testid="add-project"]').click()
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ)
@@ -115,7 +114,6 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
   // E5 マスタ蓄積（使いながら捕捉）: 初回入力の材料が次回以降 予測変換候補に出る
   test('E5: 初回入力した材料が estimate_materials に捕捉され、再訪時に予測変換候補に出る', async ({ page }) => {
     await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-    await page.locator('[data-testid="new-project-toggle"]').click()
     await page.locator('[data-testid="new-project-name"]').fill(PROJ2)
     await page.locator('[data-testid="add-project"]').click()
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ2)
@@ -141,7 +139,6 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
   // E6 品番予測変換: 既存材料名を入れると単位が自動補完され material_id が紐付く
   test('E6: 既存材料を選ぶと単位が自動補完され、material_id が紐付く', async ({ page }) => {
     await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-    await page.locator('[data-testid="new-project-toggle"]').click()
     await page.locator('[data-testid="new-project-name"]').fill(PROJ3)
     await page.locator('[data-testid="add-project"]').click()
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ3)
@@ -345,7 +342,6 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await restSrv('estimate_projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ account_id: accountId, name: DUP_PROJ }) })
 
     await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-    await page.locator('[data-testid="new-project-toggle"]').click()
     await page.locator('[data-testid="new-project-name"]').fill(DUP_PROJ)
     await page.locator('[data-testid="add-project"]').click()
 
