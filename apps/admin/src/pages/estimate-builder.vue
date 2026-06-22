@@ -2,6 +2,7 @@
   <div>
     <div class="page-header">
       <h1 class="page-title">見積もり</h1>
+      <RouterLink to="/estimates-list" class="back-link" data-testid="back-to-list">← 見積一覧へ</RouterLink>
     </div>
 
     <!-- 案件選択（既存を選ぶ or ＋新規案件で入力欄を出す＝二重入力を避ける） -->
@@ -380,7 +381,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
-import { onBeforeRouteLeave } from 'vue-router'
+import { onBeforeRouteLeave, useRoute } from 'vue-router'
 import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
 import { supabase } from '../lib/supabase'
@@ -388,6 +389,7 @@ import { getAccountId, getAccountSlug } from '../lib/account'
 
 const BUCKET = 'expense-receipts'
 const IS_DEV = import.meta.env.DEV
+const route  = useRoute()   // 一覧から ?project=<id> で開いた案件を初期選択する
 
 type Project  = { id: string; name: string; client_name: string | null; contractor_id: string | null }
 type Contractor = { id: string; name: string }
@@ -1114,11 +1116,18 @@ onMounted(async () => {
   accountId = await getAccountId()
   await Promise.all([loadProjects(), loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices(), loadRevisions(), loadContractors(), loadSubContacts()])
   if (!activeSupplier.value && suppliers.value[0]) activeSupplier.value = suppliers.value[0].id  // 既定タブ
+  // 一覧から開いた案件（?project=<id>）を初期選択
+  const qp = route.query.project
+  const pid = Array.isArray(qp) ? qp[0] : qp
+  if (pid && projects.value.some(p => p.id === pid)) { projectId.value = pid as string; await loadItems() }
 })
 </script>
 
 <style scoped>
+.page-header { display: flex; align-items: baseline; gap: 16px; }
 .page-title { font-size: 22px; font-weight: 700; }
+.back-link { font-size: 13px; color: #06864a; text-decoration: none; }
+.back-link:hover { text-decoration: underline; }
 .bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
 .bar label { font-weight: 600; color: #444; }
 .sel { min-width: 220px; }
