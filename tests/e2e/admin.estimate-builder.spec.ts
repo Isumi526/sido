@@ -184,7 +184,7 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     const accountId = await getAccountId()
     const post = async (table: string, body: any) =>
       restSrv(table, { method: 'POST', headers: { Prefer: 'return=representation', 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    await post('estimate_projects', { account_id: accountId, name: PROJ4 })
+    const proj4 = (await post('estimate_projects', { account_id: accountId, name: PROJ4 }))[0]
     const mat = (await post('estimate_materials', { account_id: accountId, name: MAT7, unit: 'm2', source: 'manual' }))[0]
     // 商社＝下請け業者(区分=商社)
     const supA = (await post('subcontractors', { account_id: accountId, name: SUP_A, category: '商社', active: true }))[0]
@@ -192,8 +192,8 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await post('estimate_material_prices', { account_id: accountId, material_id: mat.id, supplier_id: supA.id, unit_price: 100, is_current: true })
     await post('estimate_material_prices', { account_id: accountId, material_id: mat.id, supplier_id: supB.id, unit_price: 120, is_current: true })
 
-    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-    await page.locator('[data-testid="project-select"]').selectOption({ label: PROJ4 })
+    await page.goto(`/estimate-builder?project=${proj4.id}`, { waitUntil: 'networkidle' })
+    await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ4)
 
     // 行追加 → 既存材料 MAT7 を入力（resolveMaterialで material_id 紐付け）
     await page.locator('[data-testid="add-row"]').click()
@@ -234,8 +234,8 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await post('estimate_items', { account_id: accountId, project_id: proj.id, trade_id: t1.id, item_name: 'スタッド', unit: 'm', quantity: 2, unit_price: 100, note: '1F', sort_order: 0 })
     await post('estimate_items', { account_id: accountId, project_id: proj.id, trade_id: t2.id, item_name: 'PB12.5', unit: '枚', quantity: 1, unit_price: 500, sort_order: 1 })
 
-    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-    await page.locator('[data-testid="project-select"]').selectOption({ label: PROJ5 })
+    await page.goto(`/estimate-builder?project=${proj.id}`, { waitUntil: 'networkidle' })
+    await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ5)
 
     // プレビュー: 表紙・工種別内訳・小計・合計
     const pv = page.locator('[data-testid="pdf-preview"]')
