@@ -146,51 +146,47 @@
         <!-- 商社別単価 登録 -->
         <div class="setting-block">
           <h3>商社別単価</h3>
-          <p class="muted">商社は「下請け業者」マスタの<b>区分=商社</b>を使います（<RouterLink to="/subcontractors">下請け業者</RouterLink>で登録）。</p>
-          <div class="trade-add">
-            <select v-model="priceForm.material_id" class="input sm" data-testid="price-material">
-              <option :value="null" disabled>材料</option>
-              <option v-for="m in materials" :key="m.id" :value="m.id">{{ m.name }}</option>
-            </select>
-            <select v-model="priceForm.supplier_id" class="input sm" data-testid="price-supplier">
-              <option :value="null" disabled>商社</option>
-              <option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}</option>
-            </select>
-            <input v-model.number="priceForm.unit_price" type="number" class="input sm num" placeholder="単価" data-testid="price-value" />
-            <button class="btn-add" :disabled="!priceForm.material_id || !priceForm.supplier_id || !(priceForm.unit_price > 0)" data-testid="add-price" @click="addPrice">単価を登録</button>
+          <p class="muted">商社は「下請け業者」マスタの<b>区分=商社</b>を使います（<RouterLink to="/subcontractors">下請け業者</RouterLink>で登録）。商社タブを選ぶと、その商社の単価登録・一覧・OCR取込の対象になります。</p>
+          <!-- 商社タブ（対象商社の選択。単価登録/一覧/OCR取込が連動） -->
+          <div v-if="suppliers.length" class="price-tabs">
+            <button v-for="s in suppliers" :key="s.id" class="ptab" :class="{ active: activeSupplier === s.id }" :data-testid="`ptab-${s.id}`" @click="activeSupplier = s.id">{{ s.name }}</button>
           </div>
+          <p v-else class="muted">商社（下請け業者 区分=商社）が未登録です。<RouterLink to="/subcontractors">下請け業者</RouterLink>で登録してください。</p>
 
-          <!-- 現行の商社別単価 一覧（商社タブで絞り込み・確認・削除） -->
-          <div v-if="priceSuppliers.length" class="price-tabs">
-            <button class="ptab" :class="{ active: priceFilterSupplier === null }" data-testid="ptab-all" @click="priceFilterSupplier = null">すべて</button>
-            <button v-for="s in priceSuppliers" :key="s.id" class="ptab" :class="{ active: priceFilterSupplier === s.id }" :data-testid="`ptab-${s.id}`" @click="priceFilterSupplier = s.id">{{ s.name }}</button>
-          </div>
-          <table v-if="priceListFiltered.length" class="table price-list" data-testid="price-list">
-            <thead><tr><th>材料</th><th>商社</th><th class="num">現行単価</th><th>有効日</th><th></th></tr></thead>
-            <tbody>
-              <tr v-for="p in priceListFiltered" :key="p.id" :data-testid="`price-row-${p.id}`">
-                <td>{{ p.materialName }}</td>
-                <td>{{ p.supplierName }}</td>
-                <td class="num">{{ yen(p.unit_price) }}</td>
-                <td>{{ p.effective_date || '—' }}</td>
-                <td><button class="btn-del" :data-testid="`price-del-${p.id}`" @click="deletePrice(p.id)">削除</button></td>
-              </tr>
-            </tbody>
-          </table>
-          <p v-else class="muted">登録済みの商社別単価はまだありません。</p>
+          <template v-if="activeSupplier">
+            <!-- 単価登録（対象商社＝選択タブ） -->
+            <div class="trade-add">
+              <select v-model="priceForm.material_id" class="input sm" data-testid="price-material">
+                <option :value="null" disabled>材料</option>
+                <option v-for="m in materials" :key="m.id" :value="m.id">{{ m.name }}</option>
+              </select>
+              <input v-model.number="priceForm.unit_price" type="number" class="input sm num" placeholder="単価" data-testid="price-value" />
+              <button class="btn-add" :disabled="!priceForm.material_id || !(priceForm.unit_price > 0)" data-testid="add-price" @click="addPrice">単価を登録</button>
+            </div>
+            <!-- 一覧（商社列なし＝タブで自明） -->
+            <table v-if="priceListFiltered.length" class="table price-list" data-testid="price-list">
+              <thead><tr><th>材料</th><th class="num">現行単価</th><th>有効日</th><th></th></tr></thead>
+              <tbody>
+                <tr v-for="p in priceListFiltered" :key="p.id" :data-testid="`price-row-${p.id}`">
+                  <td>{{ p.materialName }}</td>
+                  <td class="num">{{ yen(p.unit_price) }}</td>
+                  <td>{{ p.effective_date || '—' }}</td>
+                  <td><button class="btn-del" :data-testid="`price-del-${p.id}`" @click="deletePrice(p.id)">削除</button></td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else class="muted">「{{ activeSupplierName }}」の単価はまだありません。</p>
+          </template>
         </div>
 
         <!-- 価格表OCR取込・差分承認 -->
         <div class="setting-block">
           <h3>価格表OCR取込・差分承認</h3>
           <div class="ocr-row">
-            <select v-model="ocrSupplierId" class="input sm" data-testid="ocr-supplier">
-              <option :value="null" disabled>取込先の商社</option>
-              <option v-for="s in suppliers" :key="s.id" :value="s.id">{{ s.name }}</option>
-            </select>
-            <label class="btn-add" :class="{ disabled: ocrBusy }">
+            <span class="muted">取込先の商社：<b>{{ activeSupplierName || '（上の商社タブで選択）' }}</b></span>
+            <label class="btn-add" :class="{ disabled: ocrBusy || !activeSupplier }">
               {{ ocrBusy ? '取込中…' : '単価表を取込（PDF/写真）' }}
-              <input type="file" accept="image/*,.pdf" hidden data-testid="ocr-file" :disabled="ocrBusy" @change="onOcrFile" />
+              <input type="file" accept="image/*,.pdf" hidden data-testid="ocr-file" :disabled="ocrBusy || !activeSupplier" @change="onOcrFile" />
             </label>
             <span v-if="ocrError" class="err">{{ ocrError }}</span>
           </div>
@@ -247,7 +243,7 @@ const trades         = ref<Trade[]>([])
 const materials      = ref<Material[]>([])
 const suppliers      = ref<Supplier[]>([])
 const matPrices      = ref<MatPrice[]>([])
-const priceForm      = ref<{ material_id: string | null; supplier_id: string | null; unit_price: number | null }>({ material_id: null, supplier_id: null, unit_price: null })
+const priceForm      = ref<{ material_id: string | null; unit_price: number | null }>({ material_id: null, unit_price: null })
 // E4 価格表OCR取込＋差分承認
 type Revision = { id: string; material_id: string | null; supplier_id: string | null; code: string | null; name: string | null; old_price: number | null; new_price: number | null; effective_date: string | null; status: string }
 const revisions   = ref<Revision[]>([])
@@ -255,7 +251,6 @@ const revBusy     = ref(false)
 const settingsOpen = ref(false)
 const ocrBusy     = ref(false)
 const ocrError    = ref('')
-const ocrSupplierId = ref<string | null>(null)
 const projectId      = ref<string | null>(null)
 const rows           = ref<Row[]>([])
 const removedIds     = ref<string[]>([])
@@ -349,7 +344,7 @@ async function rejectRevision(r: Revision) {
 async function onOcrFile(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
-  if (!ocrSupplierId.value) { ocrError.value = '先に取込先の商社を選んでください'; return }
+  if (!activeSupplier.value) { ocrError.value = '先に対象の商社タブを選んでください'; return }
   ocrBusy.value = true; ocrError.value = ''
   try {
     const b64 = await new Promise<string>((res, rej) => {
@@ -359,7 +354,7 @@ async function onOcrFile(e: Event) {
     const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/estimate-price-ocr`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sess?.session?.access_token ?? ''}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
-      body: JSON.stringify({ account_slug: getAccountSlug(), supplier_id: ocrSupplierId.value, image_base64: b64, mime: file.type || 'image/png' }),
+      body: JSON.stringify({ account_slug: getAccountSlug(), supplier_id: activeSupplier.value, image_base64: b64, mime: file.type || 'image/png' }),
     })
     const json = await resp.json()
     if (!resp.ok || json?.error) { ocrError.value = json?.error || `取込エラー(${resp.status})`; return }
@@ -434,15 +429,11 @@ const priceList = computed(() =>
     }))
     .sort((a, b) => a.materialName.localeCompare(b.materialName, 'ja') || a.supplierName.localeCompare(b.supplierName, 'ja'))
 )
-// 商社タブ（単価が登録されている商社のみ）＋ 絞り込み
-const priceFilterSupplier = ref<string | null>(null)
-const priceSuppliers = computed(() =>
-  [...new Set(matPrices.value.map(p => p.supplier_id))]
-    .map(id => ({ id, name: suppliers.value.find(s => s.id === id)?.name ?? '(商社)' }))
-    .sort((a, b) => a.name.localeCompare(b.name, 'ja'))
-)
+// 商社タブ＝対象商社の選択（単価登録・一覧・OCR取込の対象を兼ねる）
+const activeSupplier = ref<string | null>(null)
+const activeSupplierName = computed(() => suppliers.value.find(s => s.id === activeSupplier.value)?.name ?? '')
 const priceListFiltered = computed(() =>
-  priceFilterSupplier.value ? priceList.value.filter(p => p.supplierId === priceFilterSupplier.value) : priceList.value
+  activeSupplier.value ? priceList.value.filter(p => p.supplierId === activeSupplier.value) : []
 )
 async function deletePrice(id: string) {
   await supabase.from('estimate_material_prices').delete().eq('id', id)
@@ -464,15 +455,16 @@ function onSupplierPick(r: Row) {
 }
 async function addPrice() {
   const f = priceForm.value
-  if (!f.material_id || !f.supplier_id || !(Number(f.unit_price) > 0)) return
+  const supplierId = activeSupplier.value
+  if (!f.material_id || !supplierId || !(Number(f.unit_price) > 0)) return
   // 同一(材料×商社)の現行価格は履歴化（is_current=false）してから新価格を current で追加
   await supabase.from('estimate_material_prices')
     .update({ is_current: false }).eq('account_id', accountId)
-    .eq('material_id', f.material_id).eq('supplier_id', f.supplier_id).eq('is_current', true)
+    .eq('material_id', f.material_id).eq('supplier_id', supplierId).eq('is_current', true)
   const { error } = await supabase.from('estimate_material_prices')
-    .insert({ account_id: accountId, material_id: f.material_id, supplier_id: f.supplier_id, unit_price: Number(f.unit_price), is_current: true })
+    .insert({ account_id: accountId, material_id: f.material_id, supplier_id: supplierId, unit_price: Number(f.unit_price), is_current: true })
   if (error) { saveError.value = error.message; return }
-  priceForm.value = { material_id: null, supplier_id: null, unit_price: null }
+  priceForm.value = { material_id: null, unit_price: null }
   await loadMaterialPrices()
 }
 // E6 品番予測変換: 明細名が既存材料に一致したら material_id を紐付け、単位を補完
@@ -589,6 +581,7 @@ async function save() {
 onMounted(async () => {
   accountId = await getAccountId()
   await Promise.all([loadProjects(), loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices(), loadRevisions()])
+  if (!activeSupplier.value && suppliers.value[0]) activeSupplier.value = suppliers.value[0].id  // 既定タブ
 })
 </script>
 
