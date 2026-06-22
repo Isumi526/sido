@@ -122,23 +122,28 @@
       <section class="panel pdf-panel" v-if="rows.length">
         <div class="panel-head">
           <h2>見積書PDF</h2>
-          <div class="pager" data-testid="pdf-pager">
-            <button class="pg-btn" :disabled="currentPage === 0" data-testid="pdf-prev" @click="prevPage">‹</button>
-            <span class="pg-ind" data-testid="pdf-page-ind">{{ currentPage + 1 }} / {{ totalPages }} ページ</span>
-            <button class="pg-btn" :disabled="currentPage >= totalPages - 1" data-testid="pdf-next" @click="nextPage">›</button>
+          <div class="head-actions">
+            <button class="btn-ghost" data-testid="open-send" @click="openSendDialog">✉ メール送信</button>
+            <button class="btn-primary" :disabled="pdfBusy" data-testid="export-pdf" @click="exportPdf">{{ pdfBusy ? '生成中…' : 'PDF出力' }}</button>
           </div>
-          <button class="btn-primary" :disabled="pdfBusy" data-testid="export-pdf" @click="exportPdf">{{ pdfBusy ? '生成中…' : 'PDF出力' }}</button>
         </div>
         <p v-if="!company.company_name" class="muted">自社情報が未登録です。<RouterLink to="/company-profile">自社情報</RouterLink>で会社名・住所・印影等を登録すると見積書に反映されます。</p>
-        <!-- 見積書に出す案件情報（「保存」で明細と一緒に保存） -->
+        <!-- 見積書に出す案件情報（入力を離れた時点で自動保存） -->
         <div class="doc-form">
-          <div class="doc-field"><label>工事場所</label><input v-model="doc.construction_location" class="input" data-testid="doc-location" /></div>
-          <div class="doc-field"><label>予定工期</label><input v-model="doc.period_text" class="input" placeholder="例: 着工〜2026/3" /></div>
-          <div class="doc-field"><label>見積有効期限</label><input v-model="doc.valid_until" class="input" :placeholder="company.estimate_valid_until || '次回変更まで、もしくは3ヶ月'" /></div>
-          <div class="doc-field"><label>端数調整（±円）</label><input v-model.number="doc.adjustment" type="number" class="input num" data-testid="doc-adjustment" /></div>
-          <div class="doc-field wide"><label>MEMO</label><input v-model="doc.memo" class="input" /></div>
+          <div class="doc-field"><label>工事場所</label><input v-model="doc.construction_location" class="input" data-testid="doc-location" @change="saveDoc" /></div>
+          <div class="doc-field"><label>予定工期</label><input v-model="doc.period_text" class="input" placeholder="例: 着工〜2026/3" @change="saveDoc" /></div>
+          <div class="doc-field"><label>見積有効期限</label><input v-model="doc.valid_until" class="input" :placeholder="company.estimate_valid_until || '次回変更まで、もしくは3ヶ月'" @change="saveDoc" /></div>
+          <div class="doc-field"><label>端数調整（±円）</label><input v-model.number="doc.adjustment" type="number" class="input num" data-testid="doc-adjustment" @change="saveDoc" /></div>
+          <div class="doc-field wide"><label>MEMO</label><input v-model="doc.memo" class="input" @change="saveDoc" /></div>
+          <span v-if="docSavedMsg" class="ok doc-saved">{{ docSavedMsg }}</span>
         </div>
 
+        <!-- ページ送り（プレビュー直上・中央で分かりやすく） -->
+        <div class="pager-row" data-testid="pdf-pager">
+          <button class="pg-btn" :disabled="currentPage === 0" data-testid="pdf-prev" @click="prevPage">‹ 前へ</button>
+          <span class="pg-ind" data-testid="pdf-page-ind">{{ currentPage + 1 }} / {{ totalPages }} ページ</span>
+          <button class="pg-btn" :disabled="currentPage >= totalPages - 1" data-testid="pdf-next" @click="nextPage">次へ ›</button>
+        </div>
         <div class="pdf-preview est-doc" ref="previewEl" data-testid="pdf-preview">
           <!-- ── 表紙（1ページ目: 全体の内容） ── -->
           <div class="est-cover" data-pdf-page v-show="exporting || currentPage === 0">
@@ -211,23 +216,8 @@
 
         <!-- ③ 見積書PDFを元請けの担当者宛にメール送信＋履歴 -->
         <div class="send-block">
-          <div class="sub-h">元請けへメール送信</div>
-          <p v-if="!currentContractorId" class="muted">送信するには、上の「元請け」で案件の元請けを選んでください（担当者は<RouterLink to="/contractors">元請け業者マスタ</RouterLink>で登録）。</p>
-          <template v-else>
-            <div class="send-row">
-              <span class="send-to">{{ currentContractorName }} 御中</span>
-              <select v-model="sendContactId" class="input sm" data-testid="send-contact">
-                <option :value="null" disabled>担当者を選択…</option>
-                <option v-for="c in sendContacts" :key="c.id" :value="c.id">{{ c.name || '(担当者)' }}{{ c.email ? `（${c.email}）` : '（メール未登録）' }}</option>
-              </select>
-              <button class="btn-primary" :disabled="!canSend || sending" data-testid="send-estimate" @click="sendPdf">{{ sending ? '送信中…' : 'PDFを送信' }}</button>
-            </div>
-            <span v-if="!sendContacts.length" class="muted">この元請けには担当者が未登録です（<RouterLink to="/contractors">元請け業者マスタ</RouterLink>で登録してください）。</span>
-            <span v-else-if="sendContactId && !sendEmail" class="err">この担当者はメール未登録です。送信できません。</span>
-          </template>
           <span v-if="sendMsg" class="ok" data-testid="send-msg">{{ sendMsg }}</span>
-          <span v-if="sendErr" class="err" data-testid="send-err">{{ sendErr }}</span>
-
+          <span v-if="sendErr && !sendDialogOpen" class="err" data-testid="send-err">{{ sendErr }}</span>
           <div v-if="sends.length" class="send-history">
             <div class="sub-h">送信履歴</div>
             <table class="table">
@@ -240,6 +230,31 @@
                 </tr>
               </tbody>
             </table>
+          </div>
+        </div>
+
+        <!-- ✉ メール送信ダイアログ（件名・本文・複数宛先） -->
+        <div v-if="sendDialogOpen" class="modal-overlay" @click.self="sendDialogOpen = false">
+          <div class="send-modal">
+            <h3>見積書をメール送信</h3>
+            <p v-if="!currentContractorId" class="err">案件に元請けが未設定です。先に「元請け」を選んでください。</p>
+            <template v-else>
+              <div class="field">
+                <label>宛先（{{ currentContractorName }} の担当者・複数選択可）</label>
+                <p v-if="!sendContacts.length" class="muted">担当者が未登録です（<RouterLink to="/contractors">元請け業者マスタ</RouterLink>で登録）。</p>
+                <label v-for="c in sendContacts" :key="c.id" class="recipient" :class="{ off: !c.email }">
+                  <input type="checkbox" :value="c.id" v-model="sendContactIds" :disabled="!c.email" :data-testid="`send-to-${c.id}`" />
+                  {{ c.name || '(担当者)' }} <span class="muted">{{ c.email || '（メール未登録）' }}</span>
+                </label>
+              </div>
+              <div class="field"><label>件名</label><input v-model="sendSubject" class="input" data-testid="send-subject" /></div>
+              <div class="field"><label>本文</label><textarea v-model="sendBody" class="input" rows="6" data-testid="send-body"></textarea></div>
+            </template>
+            <div class="modal-actions">
+              <button class="btn-primary" :disabled="!canSend || sending" data-testid="send-estimate" @click="sendPdf">{{ sending ? '送信中…' : '送信する' }}</button>
+              <button class="btn-cancel" @click="sendDialogOpen = false">キャンセル</button>
+            </div>
+            <span v-if="sendErr" class="err">{{ sendErr }}</span>
           </div>
         </div>
       </section>
@@ -388,10 +403,14 @@ let accountId = ''
 const contractors       = ref<Contractor[]>([])
 const contractorContacts = ref<Contact[]>([])
 const sends             = ref<EstimateSend[]>([])
-const sendContactId     = ref<string | null>(null)
+const sendContactIds    = ref<string[]>([])   // 送信先（元請け担当者・複数）
+const sendSubject       = ref('')
+const sendBody          = ref('')
+const sendDialogOpen    = ref(false)
 const sending           = ref(false)
 const sendMsg           = ref('')
 const sendErr           = ref('')
+const docSavedMsg       = ref('')              // 見積書項目の自動保存表示
 const projectSaving     = ref(false)   // 案件の元請け紐付け保存中
 // F2 商社への発注（見積明細を商社ごとに分割して発注書を作成→各商社の担当者へ送信）
 type SubContact = { id: string; subcontractor_id: string; name: string | null; email: string | null }
@@ -525,8 +544,26 @@ const currentClient = computed(() => currentContractorName.value || (currentProj
 
 // ③ 送信先＝案件に紐づく元請けの担当者。元請けの担当者だけに絞り、メール未登録は送信不可。
 const sendContacts = computed(() => contractorContacts.value.filter(c => c.contractor_id === currentContractorId.value))
-const sendEmail    = computed(() => sendContacts.value.find(c => c.id === sendContactId.value)?.email || '')
-const canSend      = computed(() => rows.value.length > 0 && !!currentContractorId.value && !!sendContactId.value && !!sendEmail.value)
+const selectedEmails = computed(() => sendContacts.value.filter(c => sendContactIds.value.includes(c.id) && c.email).map(c => c.email as string))
+const canSend      = computed(() => rows.value.length > 0 && !!currentContractorId.value && selectedEmails.value.length > 0)
+// #1/#2/#5 メール送信ダイアログを開く（宛先＝メール有り担当者を既定で全選択・件名/本文に既定値）
+function openSendDialog() {
+  sendErr.value = ''; sendMsg.value = ''
+  sendContactIds.value = sendContacts.value.filter(c => c.email).map(c => c.id)
+  sendSubject.value = `【御見積書】${currentProjectName.value}`
+  sendBody.value = `いつもお世話になっております。\n下記のとおり御見積書をお送りいたします。ご査収のほどよろしくお願いいたします。\n\n案件：${currentProjectName.value}\n御見積金額：${yen(totalExclTax.value)}（税抜）\n\n添付の見積書PDFをご確認ください。`
+  sendDialogOpen.value = true
+}
+// #6 見積書の案件側項目（工事場所/工期/有効期限/MEMO/端数調整）を入力離脱時に自動保存
+async function saveDoc() {
+  if (!projectId.value) return
+  await supabase.from('estimate_projects').update({
+    construction_location: doc.value.construction_location || null, period_text: doc.value.period_text || null,
+    valid_until: doc.value.valid_until || null, memo: doc.value.memo || null, adjustment: Number(doc.value.adjustment) || 0,
+  }).eq('id', projectId.value)
+  docSavedMsg.value = '保存しました'
+  setTimeout(() => (docSavedMsg.value = ''), 2000)
+}
 // 案件に元請けを紐付け（estimate_projects.contractor_id を保存）
 async function setProjectContractor(contractorId: string | null) {
   if (!projectId.value) return
@@ -535,8 +572,7 @@ async function setProjectContractor(contractorId: string | null) {
     await supabase.from('estimate_projects').update({ contractor_id: contractorId }).eq('id', projectId.value)
     const p = projects.value.find(x => x.id === projectId.value)
     if (p) p.contractor_id = contractorId
-    // 元請けが変わったら送信先担当者を初期化（先頭）
-    sendContactId.value = contractorContacts.value.find(c => c.contractor_id === contractorId)?.id ?? null
+    sendContactIds.value = []   // 元請けが変わったら宛先選択をリセット
   } finally { projectSaving.value = false }
 }
 
@@ -616,8 +652,6 @@ async function exportPdf() {
 // ③ 見積書PDFを生成→Storageへ保存→商社の担当者宛にメール送信（履歴は EF が estimate_sends に記録）
 async function sendPdf() {
   if (!canSend.value || !previewEl.value || !projectId.value) return
-  const to = sendContacts.value.find(c => c.id === sendContactId.value)
-  if (!window.confirm(`${currentContractorName.value} 御中（${to?.name ?? ''} / ${sendEmail.value}）に見積書PDFをメール送信します。よろしいですか？`)) return
   sending.value = true; sendErr.value = ''; sendMsg.value = ''
   try {
     // PDF生成（A4横向き・ページブロック単位＝exportPdf と同方式）
@@ -633,13 +667,16 @@ async function sendPdf() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY, Authorization: `Bearer ${session?.access_token ?? ''}` },
       body: JSON.stringify({
-        project_id: projectId.value, contractor_id: currentContractorId.value, contractor_contact_id: sendContactId.value,
+        project_id: projectId.value, contractor_id: currentContractorId.value, contractor_contact_ids: sendContactIds.value,
+        subject: sendSubject.value, body: sendBody.value,
         pdf_path: path, total_amount: Math.round(grandTotal.value), project_name: currentProjectName.value,
       }),
     })
     const r = await res.json().catch(() => ({}))
     if (!res.ok || r?.error) throw new Error(r?.error ?? `送信失敗(${res.status})`)
-    sendMsg.value = r.test ? '送信履歴を記録しました（dev: 実メールは送信しません）' : `${r.sent_to ?? ''} へ送信しました`
+    const to = Array.isArray(r.sent_to) ? r.sent_to.join('、') : (r.sent_to ?? '')
+    sendMsg.value = r.test ? `送信履歴を記録しました（dev: 実メール送信なし）／宛先 ${to}` : `${to} へ送信しました`
+    sendDialogOpen.value = false
     await loadSends()
   } catch (e: any) {
     sendErr.value = e?.message ?? '送信に失敗しました'
@@ -835,9 +872,8 @@ async function loadItems() {
   editingName.value = false
   builderTab.value = 'items'
   markSaved()
+  sendContactIds.value = []
   await Promise.all([loadSends(), loadProjectPOs()])
-  // 送信先担当者を案件の元請けの先頭で初期化
-  sendContactId.value = contractorContacts.value.find(c => c.contractor_id === currentContractorId.value)?.id ?? null
 }
 
 async function addProject() {
@@ -927,7 +963,8 @@ async function save() {
 
 // #3 編集中の離脱ガード: 未保存の明細がある状態で 遷移/タブ閉じ/案件切替 時に確認する
 function rowsSig(): string {
-  return JSON.stringify([rows.value.map(r => [r.location, r.trade_id, r.material_id, r.supplier_id, r.item_name, r.unit, r.quantity, r.unit_price]), doc.value])
+  // doc項目は自動保存するため離脱ガードの対象外（明細だけ「保存」ボタン）
+  return JSON.stringify(rows.value.map(r => [r.location, r.trade_id, r.material_id, r.supplier_id, r.item_name, r.unit, r.quantity, r.unit_price]))
 }
 const savedSig = ref('[]')
 function markSaved() { savedSig.value = rowsSig() }   // 「今の明細＝保存済み」とみなす基準を更新
@@ -1134,6 +1171,25 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .send-to { font-weight: 700; color: #333; }
 .muted-link { font-size: 12px; color: #06864a; }
 .send-history { margin-top: 12px; }
+.head-actions { display: flex; gap: 10px; align-items: center; }
+.btn-ghost { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 8px 16px; font-size: 13px; cursor: pointer; }
+.btn-ghost:hover { background: #f5f5f5; }
+/* ページ送り（プレビュー直上・中央） */
+.pager-row { display: flex; justify-content: center; align-items: center; gap: 12px; margin: 6px 0 10px; }
+.pager-row .pg-btn { width: auto; padding: 6px 14px; font-size: 13px; }
+.doc-saved { align-self: center; }
+/* メール送信ダイアログ */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 210; display: flex; align-items: center; justify-content: center; }
+.send-modal { background: #fff; border-radius: 12px; padding: 24px; width: min(560px, 92vw); max-height: 88vh; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+.send-modal h3 { font-size: 17px; font-weight: 700; margin: 0; }
+.send-modal .field { display: flex; flex-direction: column; gap: 6px; }
+.send-modal .field > label { font-size: 12px; font-weight: 700; color: #888; }
+.send-modal textarea.input { width: 100%; resize: vertical; line-height: 1.6; }
+.send-modal .input { width: 100%; }
+.recipient { display: flex; align-items: center; gap: 8px; font-size: 14px; padding: 4px 0; cursor: pointer; }
+.recipient.off { color: #aaa; cursor: not-allowed; }
+.modal-actions { display: flex; gap: 12px; margin-top: 4px; }
+.btn-cancel { background: #f5f5f5; color: #555; border: none; border-radius: 8px; padding: 10px 18px; cursor: pointer; }
 .po-split { margin-top: 16px; }
 .po-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 10px; }
 .po-card { border: 1px solid #e5e5e5; border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
