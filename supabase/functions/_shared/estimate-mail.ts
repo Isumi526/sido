@@ -85,7 +85,9 @@ export async function sendEstimate(
         const { data: file } = await svc.storage.from('expense-receipts').download(opts.pdf_path)
         if (file) {
           const buf = new Uint8Array(await file.arrayBuffer())
-          attachments.push({ filename: `見積_${projectName}.pdf`, content: base64(buf) })
+          const ymd = nowIso.slice(0, 10).replace(/-/g, '')
+          const safeName = projectName.replace(/[\\/:*?"<>|｜：＊？]/g, '_')
+          attachments.push({ filename: `見積書_${safeName}_${ymd}.pdf`, content: base64(buf) })
         }
       }
       // 本文: 指定があればプレーンテキストをHTML化（改行→<br>・最低限のエスケープ）。無ければ既定文面。

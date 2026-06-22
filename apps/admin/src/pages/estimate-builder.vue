@@ -5,26 +5,23 @@
       <RouterLink to="/estimates-list" class="back-link" data-testid="back-to-list">← 見積一覧へ</RouterLink>
     </div>
 
-    <!-- 案件は一覧(/estimates-list)から開く前提。ここでは現在の案件名を表示し、新規作成のみ行う。 -->
-    <div class="bar">
+    <!-- 案件を開いている時のバー（案件名の編集・元請け・別案件の新規作成） -->
+    <div v-if="projectId" class="bar">
       <div class="bar-group">
         <label>案件</label>
-        <template v-if="projectId">
-          <span v-if="!editingName" class="current-project" data-testid="project-select" title="クリックで名称変更" @click="startRename">{{ currentProjectName }} <span class="edit-ic">✎</span></span>
-          <input v-else v-model="projectNameEdit" class="input proj-name" data-testid="project-name-input" @keyup.enter="commitRename" @blur="commitRename" />
-        </template>
-        <span v-else class="muted" data-testid="project-select">一覧から案件を選ぶか、新規作成してください</span>
+        <span v-if="!editingName" class="current-project" data-testid="project-select" title="クリックで名称変更" @click="startRename">{{ currentProjectName }} <span class="edit-ic">✎</span></span>
+        <input v-else v-model="projectNameEdit" class="input proj-name" data-testid="project-name-input" @keyup.enter="commitRename" @blur="commitRename" />
         <button v-if="!addingProject" class="btn-add" data-testid="new-project-toggle" @click="addingProject = true">＋ 新規案件</button>
         <template v-else>
-          <input v-model="newProjectName" class="input" placeholder="新規案件名" data-testid="new-project-name" @keyup.enter="addProject" />
-          <button class="btn-add" :disabled="!newProjectName.trim()" data-testid="add-project" @click="addProject">追加</button>
+          <input v-model="newProjectName" class="input" placeholder="新規案件名" data-testid="new-project-name2" @keyup.enter="addProject" />
+          <button class="btn-add" :disabled="!newProjectName.trim()" data-testid="add-project2" @click="addProject">追加</button>
           <button class="btn-del" title="キャンセル" @click="addingProject = false; newProjectName = ''">×</button>
         </template>
         <span v-if="projectErr" class="err" data-testid="project-err">{{ projectErr }}</span>
       </div>
 
       <!-- 案件に元請けを紐付け（見積書PDFの送信先になる。正式受注後に現場へ昇華する前段） -->
-      <div v-if="projectId" class="bar-group">
+      <div class="bar-group">
         <label>元請け</label>
         <select :value="currentContractorId || ''" class="input sel" :disabled="projectSaving" data-testid="project-contractor"
                 @change="setProjectContractor(($event.target as HTMLSelectElement).value || null)">
@@ -334,7 +331,16 @@
         </div>
       </div>
     </template>
-    <p v-else class="hint">案件を選択または追加すると、明細入力と工種別内訳が表示されます。</p>
+    <!-- 新規作成（一覧の＋新規見積、または案件未選択で開いた時） -->
+    <div v-else class="new-estimate">
+      <h2>新規見積を作成</h2>
+      <p class="muted">案件名を入力して作成、または<RouterLink to="/estimates-list">見積一覧</RouterLink>から選んでください。</p>
+      <div class="new-row">
+        <input v-model="newProjectName" class="input" placeholder="案件名（例: 〇〇ビル改修）" data-testid="new-project-name" @keyup.enter="addProject" />
+        <button class="btn-primary" :disabled="!newProjectName.trim()" data-testid="add-project" @click="addProject">作成</button>
+      </div>
+      <span v-if="projectErr" class="err" data-testid="project-err">{{ projectErr }}</span>
+    </div>
 
   </div>
 </template>
@@ -639,12 +645,17 @@ async function renderEstimatePdf(): Promise<import('jspdf').jsPDF> {
   }
   return pdf
 }
+// ファイル名に使えない文字を除去（/ \ : * ? " < > | と全角コロン等）
+function safeFileName(s: string) { return (s || '').replace(/[\\/:*?"<>|｜：＊？]/g, '_').trim() }
+function ymd() { const d = new Date(); return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}` }
+// 見積書PDFのファイル名: 見積書_<案件名>_<YYYYMMDD>.pdf
+const estimateFileName = () => `見積書_${safeFileName(currentProjectName.value) || '無題'}_${ymd()}.pdf`
 async function exportPdf() {
   if (!previewEl.value) return
   pdfBusy.value = true
   try {
     const pdf = await buildEstimatePdf()
-    pdf.save(`見積_${currentProjectName.value || 'estimate'}.pdf`)
+    pdf.save(estimateFileName())
   } finally {
     pdfBusy.value = false
   }
@@ -1001,6 +1012,11 @@ onMounted(async () => {
 .current-project:hover { background: #f1f5f9; }
 .current-project .edit-ic { font-size: 12px; color: #94a3b8; }
 .proj-name { font-size: 15px; font-weight: 700; width: 220px; }
+/* 新規見積 作成カード */
+.new-estimate { background: #fff; border: 1px solid #e5e5e5; border-radius: 12px; padding: 28px; max-width: 560px; }
+.new-estimate h2 { font-size: 18px; font-weight: 700; margin: 0 0 8px; }
+.new-estimate .new-row { display: flex; gap: 10px; align-items: center; margin-top: 14px; }
+.new-estimate .new-row .input { flex: 1; }
 .sel { width: 240px; }
 /* 明細のドラッグ並び替え */
 .drag-col { width: 28px; }
