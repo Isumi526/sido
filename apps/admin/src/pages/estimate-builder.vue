@@ -4,15 +4,19 @@
       <h1 class="page-title">見積もり（全体見積）</h1>
     </div>
 
-    <!-- 案件選択 -->
+    <!-- 案件選択（既存を選ぶ or ＋新規案件で入力欄を出す＝二重入力を避ける） -->
     <div class="bar">
       <label>案件</label>
       <select v-model="projectId" class="input sel" data-testid="project-select" @change="loadItems">
         <option :value="null" disabled>案件を選択…</option>
         <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
       </select>
-      <input v-model="newProjectName" class="input" placeholder="新規案件名" data-testid="new-project-name" />
-      <button class="btn-add" :disabled="!newProjectName.trim()" data-testid="add-project" @click="addProject">＋ 案件追加</button>
+      <button v-if="!addingProject" class="btn-add" data-testid="new-project-toggle" @click="addingProject = true">＋ 新規案件</button>
+      <template v-else>
+        <input v-model="newProjectName" class="input" placeholder="新規案件名" data-testid="new-project-name" @keyup.enter="addProject" />
+        <button class="btn-add" :disabled="!newProjectName.trim()" data-testid="add-project" @click="addProject">追加</button>
+        <button class="btn-del" title="キャンセル" @click="addingProject = false; newProjectName = ''">×</button>
+      </template>
     </div>
 
     <!-- E5 マスタ蓄積: 入力済み材料を予測変換候補に（案件選択前から常時ロード） -->
@@ -237,6 +241,7 @@ const projectId      = ref<string | null>(null)
 const rows           = ref<Row[]>([])
 const removedIds     = ref<string[]>([])
 const newProjectName = ref('')
+const addingProject  = ref(false)
 const newTradeName   = ref('')
 const saving         = ref(false)
 const saveError      = ref('')
@@ -466,6 +471,7 @@ async function addProject() {
   if (error) { saveError.value = error.message; newProjectName.value = name; return }
   await loadProjects()
   projectId.value = (data as Project).id
+  addingProject.value = false
   await loadItems()
 }
 async function addTrade() {
