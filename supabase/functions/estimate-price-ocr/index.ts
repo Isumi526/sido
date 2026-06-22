@@ -55,7 +55,12 @@ async function geminiExtract(imageB64: string, mime: string): Promise<ExtractedR
     if (res.status !== 503) break
     await new Promise((r) => setTimeout(r, 3000 * (i + 1)))
   }
-  if (!res || !res.ok) throw new Error(`Gemini ${res?.status}: ${res ? (await res.text()).slice(0, 200) : 'no response'}`)
+  if (!res || !res.ok) {
+    const st = res?.status
+    if (st === 429) throw new Error('AI(Gemini)の利用上限に達しました（鍵の月間予算上限）。AI Studioで上限を引き上げるか、時間をおいて再取込してください。')
+    if (st === 503) throw new Error('AI(Gemini)が一時的に混雑しています。少し待って再取込してください。')
+    throw new Error(`AI(Gemini)エラー(${st}): ${res ? (await res.text()).slice(0, 160) : 'no response'}`)
+  }
   const data = await res.json()
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '[]'
   let rows: ExtractedRow[]
