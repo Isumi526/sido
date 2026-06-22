@@ -17,18 +17,18 @@ test.describe.configure({ mode: 'serial' })
 
 test.describe('見積 価格表差分承認（E4）', () => {
   test.afterAll(async () => {
-    const sup = await restSrv(`estimate_suppliers?name=eq.${encodeURIComponent(SUP)}&select=id`).catch(() => [])
+    const sup = await restSrv(`subcontractors?name=eq.${encodeURIComponent(SUP)}&category=eq.${encodeURIComponent('商社')}&select=id`).catch(() => [])
     if (sup?.[0]) await restSrv(`estimate_price_revisions?supplier_id=eq.${sup[0].id}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MAT)}`, { method: 'DELETE' }).catch(() => {})  // cascade prices
     await restSrv(`estimate_materials?name=eq.${encodeURIComponent(NEW)}`, { method: 'DELETE' }).catch(() => {})
-    await restSrv(`estimate_suppliers?name=eq.${encodeURIComponent(SUP)}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`subcontractors?name=eq.${encodeURIComponent(SUP)}&category=eq.${encodeURIComponent('商社')}`, { method: 'DELETE' }).catch(() => {})
   })
 
   test('差分を承認すると material_prices に反映され（現行は履歴化）、新規材料も作成される', async ({ page }) => {
     const accountId = await getAccountId()
     const post = async (table: string, body: any) =>
       restSrv(table, { method: 'POST', headers: { Prefer: 'return=representation', 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    const sup = (await post('estimate_suppliers', { account_id: accountId, name: SUP }))[0]
+    const sup = (await post('subcontractors', { account_id: accountId, name: SUP, category: '商社', active: true }))[0]  // 商社＝下請け業者(区分=商社)
     const mat = (await post('estimate_materials', { account_id: accountId, name: MAT, source: 'manual' }))[0]
     await post('estimate_material_prices', { account_id: accountId, material_id: mat.id, supplier_id: sup.id, unit_price: 100, is_current: true })
     // OCRが作る想定の pending 差分: 既存材料 100→140 / 新規材料 ¥300

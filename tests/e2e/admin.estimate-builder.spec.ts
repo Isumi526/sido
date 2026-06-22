@@ -42,7 +42,7 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     // MAT7 削除で material_prices は cascade。その後 suppliers を削除
     await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MAT7)}`, { method: 'DELETE' }).catch(() => {})
     for (const s of [SUP_A, SUP_B]) {
-      await restSrv(`estimate_suppliers?name=eq.${encodeURIComponent(s)}`, { method: 'DELETE' }).catch(() => {})
+      await restSrv(`subcontractors?name=eq.${encodeURIComponent(s)}&category=eq.${encodeURIComponent('商社')}`, { method: 'DELETE' }).catch(() => {})
     }
     for (const t of [TR1, TR2]) {
       await restSrv(`estimate_trades?name=eq.${encodeURIComponent(t)}`, { method: 'DELETE' }).catch(() => {})
@@ -133,7 +133,7 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await page.locator('[data-testid="item-qty-0"]').fill('1')
     await page.locator('[data-testid="item-price-0"]').fill('100')
     await page.locator('[data-testid="save-items"]').click()
-    await expect(page.locator('[data-testid="save-items"]')).toHaveText('保存', { timeout: 10000 })
+    await expect(page.getByText('保存しました')).toBeVisible({ timeout: 10000 })
 
     // 2行目: 同じ材料名を入力 → blur で resolveMaterial → 単位が自動補完
     await page.locator('[data-testid="add-row"]').click()
@@ -165,8 +165,9 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
       restSrv(table, { method: 'POST', headers: { Prefer: 'return=representation', 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     await post('estimate_projects', { account_id: accountId, name: PROJ4 })
     const mat = (await post('estimate_materials', { account_id: accountId, name: MAT7, unit: 'm2', source: 'manual' }))[0]
-    const supA = (await post('estimate_suppliers', { account_id: accountId, name: SUP_A }))[0]
-    const supB = (await post('estimate_suppliers', { account_id: accountId, name: SUP_B }))[0]
+    // 商社＝下請け業者(区分=商社)
+    const supA = (await post('subcontractors', { account_id: accountId, name: SUP_A, category: '商社', active: true }))[0]
+    const supB = (await post('subcontractors', { account_id: accountId, name: SUP_B, category: '商社', active: true }))[0]
     await post('estimate_material_prices', { account_id: accountId, material_id: mat.id, supplier_id: supA.id, unit_price: 100, is_current: true })
     await post('estimate_material_prices', { account_id: accountId, material_id: mat.id, supplier_id: supB.id, unit_price: 120, is_current: true })
 
