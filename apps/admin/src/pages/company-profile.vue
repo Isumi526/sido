@@ -8,11 +8,11 @@
     <div class="card">
       <h2>会社情報</h2>
       <div class="grid2">
-        <div class="field"><label>会社名</label><input v-model="f.company_name" class="input" data-testid="cp-name" placeholder="株式会社シード" /></div>
-        <div class="field"><label>代表者（役職＋氏名）</label><input v-model="f.company_rep" class="input" placeholder="代表取締役 大塚 啓史" /></div>
-        <div class="field span2"><label>住所</label><input v-model="f.company_address" class="input" placeholder="名古屋市西区砂原町108番地" /></div>
-        <div class="field"><label>TEL</label><input v-model="f.company_tel" class="input" placeholder="052-504-5100" /></div>
-        <div class="field"><label>FAX</label><input v-model="f.company_fax" class="input" placeholder="052-504-5123" /></div>
+        <div class="field"><label>会社名</label><input v-model="f.company_name" class="input" data-testid="cp-name" placeholder="例: 株式会社〇〇" /></div>
+        <div class="field"><label>代表者（役職＋氏名）</label><input v-model="f.company_rep" class="input" placeholder="例: 代表取締役 〇〇 〇〇" /></div>
+        <div class="field span2"><label>住所</label><input v-model="f.company_address" class="input" placeholder="例: 〇〇市〇〇区〇〇1-2-3" /></div>
+        <div class="field"><label>TEL</label><input v-model="f.company_tel" class="input" placeholder="例: 00-0000-0000" /></div>
+        <div class="field"><label>FAX</label><input v-model="f.company_fax" class="input" placeholder="例: 00-0000-0000" /></div>
       </div>
       <div class="field">
         <label>印影（任意・見積書の社判欄に表示）</label>
