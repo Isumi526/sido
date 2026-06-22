@@ -39,7 +39,7 @@
           </div>
           <table class="table">
             <thead>
-              <tr><th>場所</th><th>工種</th><th>明細（品番）</th><th>単位</th><th class="num">数量</th><th>商社</th><th class="num">単価</th><th class="num">金額</th><th></th></tr>
+              <tr><th>場所</th><th>工種</th><th>品名</th><th>単位</th><th class="num">数量</th><th>商社</th><th class="num">単価</th><th class="num">金額</th><th></th></tr>
             </thead>
             <tbody>
               <tr v-for="(r, i) in rows" :key="r.id ?? 'new' + i">
@@ -134,13 +134,48 @@
       </button>
 
       <div v-show="settingsOpen" class="settings-body">
+        <p v-if="masterErr" class="err">{{ masterErr }}</p>
         <!-- 工種マスタ クイック追加 -->
         <div class="setting-block">
-          <h3>工種を追加</h3>
+          <h3>工種</h3>
           <div class="trade-add">
             <input v-model="newTradeName" class="input" placeholder="工種名（例: 軽鉄工事）" data-testid="new-trade-name" />
             <button class="btn-add" :disabled="!newTradeName.trim()" data-testid="add-trade" @click="addTrade">工種を追加</button>
           </div>
+          <table v-if="trades.length" class="table" data-testid="trade-list">
+            <thead><tr><th>工種</th><th></th></tr></thead>
+            <tbody>
+              <tr v-for="t in trades" :key="t.id" :data-testid="`trade-row-${t.id}`">
+                <td>{{ t.name }}</td>
+                <td><button class="btn-del" :data-testid="`trade-del-${t.id}`" @click="deleteTrade(t.id)">削除</button></td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-else class="muted">工種はまだありません。</p>
+        </div>
+
+        <!-- 材料マスタ（品番・品名を別管理） -->
+        <div class="setting-block">
+          <h3>材料マスタ（品番・品名）</h3>
+          <p class="muted">品番と品名は別管理です。明細入力での品名捕捉（予測変換）でも自動で増えます。</p>
+          <div class="trade-add">
+            <input v-model="materialForm.code" class="input sm" placeholder="品番（任意）" data-testid="mat-code" />
+            <input v-model="materialForm.name" class="input" placeholder="品名" data-testid="mat-name" />
+            <input v-model="materialForm.unit" class="input sm" placeholder="単位" data-testid="mat-unit" />
+            <button class="btn-add" :disabled="!materialForm.name.trim()" data-testid="mat-add" @click="addMaterial">材料を追加</button>
+          </div>
+          <table v-if="materials.length" class="table" data-testid="material-list">
+            <thead><tr><th>品番</th><th>品名</th><th>単位</th><th></th></tr></thead>
+            <tbody>
+              <tr v-for="m in materials" :key="m.id" :data-testid="`mat-row-${m.id}`">
+                <td>{{ m.code || '—' }}</td>
+                <td>{{ m.name }}</td>
+                <td>{{ m.unit || '—' }}</td>
+                <td><button class="btn-del" :data-testid="`mat-del-${m.id}`" @click="deleteMaterial(m.id)">削除</button></td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-else class="muted">材料はまだありません。</p>
         </div>
 
         <!-- 商社別単価（手入力 と 価格表OCR取込 を1ブロックに統合・商社タブが対象） -->
@@ -257,6 +292,8 @@ const matPrices      = ref<MatPrice[]>([])
 const priceForm      = ref<{ material_id: string | null; unit_price: number | null }>({ material_id: null, unit_price: null })
 const addingSupplier = ref(false)
 const newSupplierName = ref('')
+const masterErr      = ref('')
+const materialForm   = ref<{ code: string; name: string; unit: string }>({ code: '', name: '', unit: '' })
 // E4 価格表OCR取込＋差分承認
 type Revision = { id: string; material_id: string | null; supplier_id: string | null; code: string | null; name: string | null; old_price: number | null; new_price: number | null; effective_date: string | null; status: string }
 const revisions   = ref<Revision[]>([])
@@ -545,6 +582,29 @@ async function addTrade() {
   const { error } = await supabase.from('estimate_trades').insert({ account_id: accountId, name })
   if (error) { saveError.value = error.message; newTradeName.value = name; return }
   await loadTrades()
+}
+async function deleteTrade(id: string) {
+  masterErr.value = ''
+  const { error } = await supabase.from('estimate_trades').delete().eq('id', id)
+  if (error) { masterErr.value = '使用中の工種は削除できません（明細で使われています）'; return }
+  await loadTrades()
+}
+// 材料マスタ（品番=code・品名=name・単位）を別管理
+async function addMaterial() {
+  const f = materialForm.value
+  if (!f.name.trim()) return
+  masterErr.value = ''
+  const { error } = await supabase.from('estimate_materials')
+    .insert({ account_id: accountId, code: f.code.trim() || null, name: f.name.trim(), unit: f.unit.trim() || null, source: 'manual' })
+  if (error) { masterErr.value = error.message; return }
+  materialForm.value = { code: '', name: '', unit: '' }
+  await loadMaterials()
+}
+async function deleteMaterial(id: string) {
+  masterErr.value = ''
+  const { error } = await supabase.from('estimate_materials').delete().eq('id', id)  // 価格は cascade
+  if (error) { masterErr.value = '使用中の材料は削除できません（明細で使われています）'; return }
+  await Promise.all([loadMaterials(), loadMaterialPrices()])
 }
 
 function addRow() {

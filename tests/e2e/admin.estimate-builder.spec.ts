@@ -26,6 +26,9 @@ const TR2 = `ボードE2_${TS}`
 const MAT_PL = `単価表材_${TS}`
 const SUP_PL = `単価表商社_${TS}`
 const SUP_INLINE = `インライン商社_${TS}`
+const TRADE_M = `工種M_${TS}`
+const MNAME_M = `品名M_${TS}`
+const MCODE_M = `PB-${TS}`
 
 test.describe.configure({ mode: 'serial' })
 
@@ -57,6 +60,8 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
       await restSrv(`subcontractor_edit_logs?subcontractor_id=eq.${s.id}`, { method: 'DELETE' }).catch(() => {})
     }
     await restSrv(`subcontractors?name=eq.${encodeURIComponent(SUP_INLINE)}&category=eq.${encodeURIComponent('商社')}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MNAME_M)}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`estimate_trades?name=eq.${encodeURIComponent(TRADE_M)}`, { method: 'DELETE' }).catch(() => {})
   })
 
   test('AC1/AC2: 明細入力→工種別に自動集計され、DBにも反映される', async ({ page }) => {
@@ -298,5 +303,37 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
       const s = await restSrv(`subcontractors?name=eq.${encodeURIComponent(SUP_INLINE)}&category=eq.${encodeURIComponent('商社')}&select=id`)
       return (s ?? []).length
     }, { timeout: 10000 }).toBe(1)
+  })
+
+  // 工種一覧＋材料マスタ（品番/品名 別管理）の表示・追加・削除
+  test('工種一覧と材料マスタ（品番/品名別管理）の追加・一覧・削除', async ({ page }) => {
+    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
+    await page.locator('[data-testid="settings-toggle"]').click()
+
+    // 工種を追加 → 一覧に出る
+    await page.locator('[data-testid="new-trade-name"]').fill(TRADE_M)
+    await page.locator('[data-testid="add-trade"]').click()
+    await expect(page.locator('[data-testid="trade-list"]')).toContainText(TRADE_M)
+
+    // 材料を 品番＋品名＋単位 で追加 → 一覧に品番/品名が別列で出る
+    await page.locator('[data-testid="mat-code"]').fill(MCODE_M)
+    await page.locator('[data-testid="mat-name"]').fill(MNAME_M)
+    await page.locator('[data-testid="mat-unit"]').fill('枚')
+    await page.locator('[data-testid="mat-add"]').click()
+    const ml = page.locator('[data-testid="material-list"]')
+    await expect(ml).toContainText(MCODE_M)
+    await expect(ml).toContainText(MNAME_M)
+    // DB: code(品番) と name(品名) が別フィールドで保存
+    await expect.poll(async () => {
+      const m = await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MNAME_M)}&select=code`)
+      return m?.[0]?.code ?? null
+    }, { timeout: 10000 }).toBe(MCODE_M)
+
+    // 材料を削除 → 一覧/DBから消える
+    await ml.locator('tr', { hasText: MNAME_M }).locator('[data-testid^="mat-del-"]').click()
+    await expect.poll(async () => {
+      const m = await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MNAME_M)}&select=id`)
+      return (m ?? []).length
+    }, { timeout: 10000 }).toBe(0)
   })
 })
