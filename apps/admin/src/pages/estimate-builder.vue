@@ -300,7 +300,7 @@ const newSupplierName = ref('')
 const masterErr      = ref('')
 const materialForm   = ref<{ code: string; name: string; unit: string }>({ code: '', name: '', unit: '' })
 // E4 価格表OCR取込＋差分承認
-type Revision = { id: string; material_id: string | null; supplier_id: string | null; code: string | null; name: string | null; old_price: number | null; new_price: number | null; effective_date: string | null; status: string }
+type Revision = { id: string; material_id: string | null; supplier_id: string | null; code: string | null; name: string | null; unit: string | null; old_price: number | null; new_price: number | null; effective_date: string | null; status: string }
 const revisions   = ref<Revision[]>([])
 const revBusy     = ref(false)
 const settingsTab = ref<'price' | 'material' | 'trade'>('price')
@@ -357,7 +357,7 @@ const currentClient = computed(() => projects.value.find(p => p.id === projectId
 // E4 差分承認: pending の価格改定を読む
 async function loadRevisions() {
   const { data } = await supabase.from('estimate_price_revisions')
-    .select('id, material_id, supplier_id, code, name, old_price, new_price, effective_date, status')
+    .select('id, material_id, supplier_id, code, name, unit, old_price, new_price, effective_date, status')
     .eq('account_id', accountId).eq('status', 'pending').order('created_at')
   revisions.value = (data ?? []) as Revision[]
 }
@@ -378,7 +378,7 @@ async function approveRevision(r: Revision) {
       if (ex) materialId = ex.id
       else {
         const { data } = await supabase.from('estimate_materials')
-          .insert({ account_id: accountId, name: nm || '(新規材料)', code: r.code || null, source: 'ocr' }).select('id').single()
+          .insert({ account_id: accountId, name: nm || '(新規材料)', code: r.code || null, unit: r.unit || null, source: 'ocr' }).select('id').single()
         materialId = (data as any)?.id ?? null
       }
     }
