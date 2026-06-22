@@ -20,12 +20,15 @@ const PROJ4 = `E2E見積E7_${TS}`
 const MAT7 = `フロア_${TS}`
 const SUP_A = `商社A_${TS}`
 const SUP_B = `商社B_${TS}`
+const PROJ5 = `E2E見積E2_${TS}`
+const TR1 = `軽鉄E2_${TS}`
+const TR2 = `ボードE2_${TS}`
 
 test.describe.configure({ mode: 'serial' })
 
 test.describe('見積もり 全体見積→工種別自動集計', () => {
   test.afterAll(async () => {
-    for (const name of [PROJ, PROJ2, PROJ3, PROJ4]) {
+    for (const name of [PROJ, PROJ2, PROJ3, PROJ4, PROJ5]) {
       const projs = await restSrv(`estimate_projects?name=eq.${encodeURIComponent(name)}&select=id`).catch(() => [])
       for (const p of projs ?? []) {
         await restSrv(`estimate_items?project_id=eq.${p.id}`, { method: 'DELETE' }).catch(() => {})
@@ -40,6 +43,9 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MAT7)}`, { method: 'DELETE' }).catch(() => {})
     for (const s of [SUP_A, SUP_B]) {
       await restSrv(`estimate_suppliers?name=eq.${encodeURIComponent(s)}`, { method: 'DELETE' }).catch(() => {})
+    }
+    for (const t of [TR1, TR2]) {
+      await restSrv(`estimate_trades?name=eq.${encodeURIComponent(t)}`, { method: 'DELETE' }).catch(() => {})
     }
   })
 
@@ -193,5 +199,37 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
       const r = items?.[0]
       return r ? `${!!r.supplier_id}|${r.unit_price}|${r.amount}` : null
     }, { timeout: 10000 }).toBe('true|100|200')
+  })
+
+  // E2 帳票PDF: 見積書プレビュー（表紙＋工種別内訳＋合計）が出て、PDF出力でDLされる
+  test('E2: 見積書プレビューが工種別内訳・合計を表示し、PDF出力でダウンロードされる', async ({ page }) => {
+    const accountId = await getAccountId()
+    const post = async (table: string, body: any) =>
+      restSrv(table, { method: 'POST', headers: { Prefer: 'return=representation', 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    const proj = (await post('estimate_projects', { account_id: accountId, name: PROJ5, client_name: 'テスト客先' }))[0]
+    const t1 = (await post('estimate_trades', { account_id: accountId, name: TR1 }))[0]
+    const t2 = (await post('estimate_trades', { account_id: accountId, name: TR2 }))[0]
+    await post('estimate_items', { account_id: accountId, project_id: proj.id, trade_id: t1.id, item_name: 'スタッド', unit: 'm', quantity: 2, unit_price: 100, note: '1F', sort_order: 0 })
+    await post('estimate_items', { account_id: accountId, project_id: proj.id, trade_id: t2.id, item_name: 'PB12.5', unit: '枚', quantity: 1, unit_price: 500, sort_order: 1 })
+
+    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
+    await page.locator('[data-testid="project-select"]').selectOption({ label: PROJ5 })
+
+    // プレビュー: 表紙・工種別内訳・小計・合計
+    const pv = page.locator('[data-testid="pdf-preview"]')
+    await expect(pv).toContainText('御 見 積 書')
+    await expect(pv).toContainText('テスト客先 御中')
+    await expect(page.locator('[data-testid="pdf-grandtotal"]')).toContainText('¥700')
+    await expect(pv).toContainText(TR1)
+    await expect(pv).toContainText(TR2)
+    await expect(pv).toContainText('小計 ¥200')   // 軽鉄: 2×100
+    await expect(pv).toContainText('小計 ¥500')   // ボード: 1×500
+
+    // PDF出力 → ダウンロードが発火し、ファイル名に「見積」を含む
+    const [dl] = await Promise.all([
+      page.waitForEvent('download', { timeout: 30000 }),
+      page.locator('[data-testid="export-pdf"]').click(),
+    ])
+    expect(dl.suggestedFilename()).toContain('見積')
   })
 })
