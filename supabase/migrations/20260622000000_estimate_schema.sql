@@ -42,14 +42,9 @@ create table if not exists estimate_trades (
   created_at              timestamptz not null default now()
 );
 
--- ── suppliers（商社/仕入先）──────────────────────────────────
-create table if not exists estimate_suppliers (
-  id          uuid primary key default gen_random_uuid(),
-  account_id  uuid references accounts(id) not null,
-  name        text not null,
-  note        text,
-  created_at  timestamptz not null default now()
-);
+-- ── 商社（仕入先）は新設せず、既存 subcontractors（区分=商社）を流用する ──
+--   工種の発注先(業者)も商社も「取引先」＝subcontractors に統一（区分 category で 商社/業者 を分ける）。
+--   見積の商社別単価は subcontractors(category='商社') を参照する。
 
 -- ── materials（材料・品番・maker属性・source）────────────────
 create table if not exists estimate_materials (
@@ -71,7 +66,7 @@ create table if not exists estimate_material_prices (
   id             uuid primary key default gen_random_uuid(),
   account_id     uuid references accounts(id) not null,
   material_id    uuid references estimate_materials(id) on delete cascade not null,
-  supplier_id    uuid references estimate_suppliers(id) not null,
+  supplier_id    uuid references subcontractors(id) not null,  -- 商社＝下請け業者マスタ(区分=商社)
   unit_price     integer not null,                 -- 単価（円）
   effective_date date,                             -- 適用日
   is_current     boolean not null default true,    -- 現行価格か（改定履歴は false で残す）
@@ -82,7 +77,7 @@ create table if not exists estimate_material_prices (
 create table if not exists estimate_price_revisions (
   id             uuid primary key default gen_random_uuid(),
   account_id     uuid references accounts(id) not null,
-  supplier_id    uuid references estimate_suppliers(id),
+  supplier_id    uuid references subcontractors(id),  -- 商社＝下請け業者マスタ(区分=商社)
   material_id    uuid references estimate_materials(id),  -- 既存材料への改定（新規材料なら null＝承認時に作成）
   code           text,                              -- OCRが読んだ品番（material未マッチ時の手掛かり）
   name           text,                              -- OCRが読んだ材料名
@@ -105,7 +100,7 @@ create table if not exists estimate_items (
   category_id uuid references estimate_categories(id),  -- 場所/部位
   trade_id    uuid references estimate_trades(id),       -- 工種
   material_id uuid references estimate_materials(id),    -- 材料（任意：自由明細も可）
-  supplier_id uuid references estimate_suppliers(id),    -- 選択商社（E7）
+  supplier_id uuid references subcontractors(id),    -- 選択商社（E7・下請け業者 区分=商社）
   item_name   text not null,                             -- 明細名（材料名 or 自由入力）
   spec        text,
   unit        text,
@@ -126,7 +121,6 @@ create table if not exists estimate_items (
 create index if not exists est_projects_account_idx     on estimate_projects (account_id);
 create index if not exists est_categories_account_idx   on estimate_categories (account_id);
 create index if not exists est_trades_account_idx       on estimate_trades (account_id);
-create index if not exists est_suppliers_account_idx    on estimate_suppliers (account_id);
 create index if not exists est_materials_account_idx    on estimate_materials (account_id);
 create index if not exists est_materials_code_idx        on estimate_materials (account_id, code);   -- E6 品番予測変換
 create index if not exists est_mat_prices_account_idx   on estimate_material_prices (account_id);
@@ -143,7 +137,7 @@ do $$
 declare t text;
 begin
   foreach t in array array[
-    'estimate_projects','estimate_categories','estimate_trades','estimate_suppliers',
+    'estimate_projects','estimate_categories','estimate_trades',
     'estimate_materials','estimate_material_prices','estimate_price_revisions','estimate_items'
   ]
   loop
