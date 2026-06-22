@@ -66,22 +66,20 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
   })
 
   test('AC1/AC2: 明細入力→工種別に自動集計され、DBにも反映される', async ({ page }) => {
+    // 工種はマスタ（/estimate-masters）管轄になったので REST で用意
+    const accountId = await getAccountId()
+    const post = async (table: string, body: any) =>
+      restSrv(table, { method: 'POST', headers: { Prefer: 'return=representation', 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    await post('estimate_trades', { account_id: accountId, name: TRADE_A })
+    await post('estimate_trades', { account_id: accountId, name: TRADE_B })
+
     await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
     await expect(page.locator('h1')).toContainText('見積もり')
 
     // 案件を追加
-    await page.locator('[data-testid="new-project-toggle"]').click()
     await page.locator('[data-testid="new-project-name"]').fill(PROJ)
     await page.locator('[data-testid="add-project"]').click()
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ)
-
-    // 工種追加は「⚙️ マスタ・取込設定」内 → 開く → 工種タブ
-    await page.locator('[data-testid="subtab-trade"]').click()
-    // 工種を2つ追加
-    await page.locator('[data-testid="new-trade-name"]').fill(TRADE_A)
-    await page.locator('[data-testid="add-trade"]').click()
-    await page.locator('[data-testid="new-trade-name"]').fill(TRADE_B)
-    await page.locator('[data-testid="add-trade"]').click()
 
     // 明細3行（軽鉄2000・ボード5000・軽鉄3000）
     const addLine = async (i: number, trade: string, name: string, qty: number, price: number) => {
@@ -116,7 +114,6 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
   // E5 マスタ蓄積（使いながら捕捉）: 初回入力の材料が次回以降 予測変換候補に出る
   test('E5: 初回入力した材料が estimate_materials に捕捉され、再訪時に予測変換候補に出る', async ({ page }) => {
     await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-    await page.locator('[data-testid="new-project-toggle"]').click()
     await page.locator('[data-testid="new-project-name"]').fill(PROJ2)
     await page.locator('[data-testid="add-project"]').click()
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ2)
@@ -142,7 +139,6 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
   // E6 品番予測変換: 既存材料名を入れると単位が自動補完され material_id が紐付く
   test('E6: 既存材料を選ぶと単位が自動補完され、material_id が紐付く', async ({ page }) => {
     await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-    await page.locator('[data-testid="new-project-toggle"]').click()
     await page.locator('[data-testid="new-project-name"]').fill(PROJ3)
     await page.locator('[data-testid="add-project"]').click()
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ3)
@@ -184,7 +180,7 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     const accountId = await getAccountId()
     const post = async (table: string, body: any) =>
       restSrv(table, { method: 'POST', headers: { Prefer: 'return=representation', 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    await post('estimate_projects', { account_id: accountId, name: PROJ4 })
+    const proj4 = (await post('estimate_projects', { account_id: accountId, name: PROJ4 }))[0]
     const mat = (await post('estimate_materials', { account_id: accountId, name: MAT7, unit: 'm2', source: 'manual' }))[0]
     // 商社＝下請け業者(区分=商社)
     const supA = (await post('subcontractors', { account_id: accountId, name: SUP_A, category: '商社', active: true }))[0]
@@ -192,8 +188,8 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await post('estimate_material_prices', { account_id: accountId, material_id: mat.id, supplier_id: supA.id, unit_price: 100, is_current: true })
     await post('estimate_material_prices', { account_id: accountId, material_id: mat.id, supplier_id: supB.id, unit_price: 120, is_current: true })
 
-    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-    await page.locator('[data-testid="project-select"]').selectOption({ label: PROJ4 })
+    await page.goto(`/estimate-builder?project=${proj4.id}`, { waitUntil: 'networkidle' })
+    await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ4)
 
     // 行追加 → 既存材料 MAT7 を入力（resolveMaterialで material_id 紐付け）
     await page.locator('[data-testid="add-row"]').click()
@@ -234,14 +230,16 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await post('estimate_items', { account_id: accountId, project_id: proj.id, trade_id: t1.id, item_name: 'スタッド', unit: 'm', quantity: 2, unit_price: 100, note: '1F', sort_order: 0 })
     await post('estimate_items', { account_id: accountId, project_id: proj.id, trade_id: t2.id, item_name: 'PB12.5', unit: '枚', quantity: 1, unit_price: 500, sort_order: 1 })
 
-    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-    await page.locator('[data-testid="project-select"]').selectOption({ label: PROJ5 })
+    await page.goto(`/estimate-builder?project=${proj.id}`, { waitUntil: 'networkidle' })
+    await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ5)
 
-    // プレビュー: 表紙・工種別内訳・小計・合計
+    // プレビュー(サンプル様式): 表紙(見積金額・宛名)・内訳書・工種別小計・合計
+    await page.locator('[data-testid="tab-preview"]').click()
     const pv = page.locator('[data-testid="pdf-preview"]')
-    await expect(pv).toContainText('御 見 積 書')
-    await expect(pv).toContainText('テスト客先 御中')
-    await expect(page.locator('[data-testid="pdf-grandtotal"]')).toContainText('¥700')
+    await expect(pv).toContainText('テスト客先　様')
+    await expect(pv).toContainText('見積金額')
+    await expect(pv).toContainText('内訳書')
+    await expect(pv).toContainText('¥700')        // 小計(明細合計)=2×100 + 1×500
     await expect(pv).toContainText(TR1)
     await expect(pv).toContainText(TR2)
     await expect(pv).toContainText('小計 ¥200')   // 軽鉄: 2×100
@@ -263,7 +261,7 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     const mat = (await post('estimate_materials', { account_id: accountId, name: MAT_PL, source: 'manual' }))[0]
     const sup = (await post('subcontractors', { account_id: accountId, name: SUP_PL, category: '商社', active: true }))[0]
 
-    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
+    await page.goto('/estimate-masters', { waitUntil: 'networkidle' })
 
     // 商社タブで対象商社を選ぶ → 材料×単価を登録（商社はタブ＝SUP_PL）
     await page.locator(`[data-testid="ptab-${sup.id}"]`).click()
@@ -274,7 +272,8 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     // 現行一覧に出る（商社列は無い＝タブで自明）
     const list = page.locator('[data-testid="price-list"]')
     await expect(list).toContainText(MAT_PL)
-    await expect(list).toContainText('¥1,500')
+    // 単価はその場編集できる editable input（①編集）。値で検証する。
+    await expect(list.locator('tr', { hasText: MAT_PL }).locator('input[data-testid^="price-val-"]')).toHaveValue('1500')
     await expect.poll(async () => {
       const ps = await restSrv(`estimate_material_prices?material_id=eq.${mat.id}&supplier_id=eq.${sup.id}&is_current=eq.true&select=id`)
       return (ps ?? []).length
@@ -290,7 +289,7 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
 
   // このページから商社(下請け業者 区分=商社)を追加できる（横断不要）
   test('商社をこのページから追加できる（下請け業者 区分=商社として保存）', async ({ page }) => {
-    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
+    await page.goto('/estimate-masters', { waitUntil: 'networkidle' })
     await page.locator('[data-testid="add-supplier-toggle"]').click()
     await page.locator('[data-testid="new-supplier-name"]').fill(SUP_INLINE)
     await page.locator('[data-testid="add-supplier"]').click()
@@ -306,7 +305,7 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
 
   // 工種一覧＋材料マスタ（品番/品名 別管理）の表示・追加・削除
   test('工種一覧と材料マスタ（品番/品名別管理）の追加・一覧・削除', async ({ page }) => {
-    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
+    await page.goto('/estimate-masters', { waitUntil: 'networkidle' })
     await page.locator('[data-testid="subtab-trade"]').click()
 
     // 工種を追加 → 一覧に出る
@@ -343,7 +342,6 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await restSrv('estimate_projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ account_id: accountId, name: DUP_PROJ }) })
 
     await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-    await page.locator('[data-testid="new-project-toggle"]').click()
     await page.locator('[data-testid="new-project-name"]').fill(DUP_PROJ)
     await page.locator('[data-testid="add-project"]').click()
 

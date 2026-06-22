@@ -26,7 +26,7 @@
         <li><RouterLink to="/paid-leave" class="nav-link"><span class="material-symbols-rounded nav-icon">beach_access</span>有給管理</RouterLink></li>
         <li><RouterLink to="/site-reports" class="nav-link"><span class="material-symbols-rounded nav-icon">bar_chart</span>現場別集計</RouterLink></li>
         <li><RouterLink to="/expenses" class="nav-link"><span class="material-symbols-rounded nav-icon">receipt_long</span>経費管理</RouterLink></li>
-        <li><RouterLink to="/estimate-builder" class="nav-link"><span class="material-symbols-rounded nav-icon">calculate</span>見積もり</RouterLink></li>
+        <li><RouterLink to="/estimate-list" class="nav-link"><span class="material-symbols-rounded nav-icon">calculate</span>見積もり</RouterLink></li>
         <li><RouterLink to="/estimates" class="nav-link"><span class="material-symbols-rounded nav-icon">description</span>見積書</RouterLink></li>
         <li><RouterLink to="/purchase-orders" class="nav-link"><span class="material-symbols-rounded nav-icon">assignment</span>注文書発行</RouterLink></li>
         <li><RouterLink to="/subcontractor-invoices" class="nav-link"><span class="material-symbols-rounded nav-icon">request_quote</span>下請け請求</RouterLink></li>
@@ -41,11 +41,13 @@
         <li><RouterLink to="/contractors" class="nav-link"><span class="material-symbols-rounded nav-icon">apartment</span>元請け業者</RouterLink></li>
         <li><RouterLink to="/subcontractors" class="nav-link"><span class="material-symbols-rounded nav-icon">handshake</span>下請け業者</RouterLink></li>
         <li><RouterLink to="/vehicles" class="nav-link"><span class="material-symbols-rounded nav-icon">directions_car</span>車両</RouterLink></li>
+        <li><RouterLink to="/estimate-masters" class="nav-link"><span class="material-symbols-rounded nav-icon">price_change</span>見積マスタ・単価表</RouterLink></li>
 
         <li class="nav-section">管理</li>
         <li><RouterLink to="/users" class="nav-link"><span class="material-symbols-rounded nav-icon">manage_accounts</span>ユーザー</RouterLink></li>
         <li><RouterLink to="/non-submitters" class="nav-link"><span class="material-symbols-rounded nav-icon">person_off</span>未送信者リスト</RouterLink></li>
         <li><RouterLink to="/reminder-history" class="nav-link"><span class="material-symbols-rounded nav-icon">history</span>リマインド履歴</RouterLink></li>
+        <li><RouterLink to="/company-profile" class="nav-link"><span class="material-symbols-rounded nav-icon">badge</span>自社情報</RouterLink></li>
         <li><RouterLink to="/settings" class="nav-link"><span class="material-symbols-rounded nav-icon">settings</span>設定</RouterLink></li>
       </ul>
       <button class="btn-logout" @click="handleLogout">ログアウト</button>

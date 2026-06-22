@@ -100,14 +100,33 @@ Deno.serve(async (req) => {
     return json({ error: String((e as Error).message) }, 502)
   }
 
-  // ── 既存マスタと差分計算 → pending revisions 作成（自動反映はしない）──
+  // ── 既存マスタ・エイリアス・差分計算 → pending revisions 作成（自動反映はしない）──
   const { data: mats } = await db.from('estimate_materials').select('id, code, name').eq('account_id', accountId)
   const { data: prices } = await db.from('estimate_material_prices')
     .select('material_id, unit_price').eq('account_id', accountId).eq('supplier_id', supplier_id).eq('is_current', true)
+  // 商社別エイリアス（学習済みの名寄せ）。この商社の品番/品名→自社材料 を最優先で当てる。
+  const { data: aliases } = await db.from('estimate_material_aliases')
+    .select('material_id, supplier_code, supplier_name').eq('account_id', accountId).eq('supplier_id', supplier_id)
   const priceByMat = new Map((prices ?? []).map((p: any) => [p.material_id, Number(p.unit_price)]))
-  const findMat = (r: ExtractedRow) => (mats ?? []).find((m: any) =>
-    (r.code && m.code && String(m.code).toLowerCase() === String(r.code).toLowerCase()) ||
-    (r.name && m.name && String(m.name).trim().toLowerCase() === String(r.name).trim().toLowerCase()))
+  // 揺れ吸収のための正規化: NFKC（全角半角統一）＋小文字＋空白/記号除去
+  const norm = (s: unknown) => String(s ?? '').normalize('NFKC').toLowerCase().replace(/[\s　・,，.。()（）\-_/]/g, '')
+  const aliasByCode = new Map<string, string>()
+  const aliasByName = new Map<string, string>()
+  for (const a of (aliases ?? []) as any[]) {
+    if (a.supplier_code) aliasByCode.set(norm(a.supplier_code), a.material_id)
+    if (a.supplier_name) aliasByName.set(norm(a.supplier_name), a.material_id)
+  }
+  // マッチ順: ①エイリアス品番 → ②エイリアス品名 → ③材料マスタ品番 → ④材料マスタ品名(正規化)
+  const findMat = (r: ExtractedRow): any => {
+    const code = r.code ? norm(r.code) : ''
+    const name = r.name ? norm(r.name) : ''
+    let id: string | undefined
+    if (code && (id = aliasByCode.get(code))) return (mats ?? []).find((m: any) => m.id === id) ?? { id }
+    if (name && (id = aliasByName.get(name))) return (mats ?? []).find((m: any) => m.id === id) ?? { id }
+    return (mats ?? []).find((m: any) =>
+      (code && m.code && norm(m.code) === code) ||
+      (name && m.name && norm(m.name) === name))
+  }
 
   const toInsert: any[] = []
   for (const r of extracted) {
