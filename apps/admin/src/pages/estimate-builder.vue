@@ -128,13 +128,12 @@
 
     <!-- ⚙️ マスタ・取込設定（たまに使う設定系をまとめて折りたたみ） -->
     <section class="panel settings-panel">
-      <button class="settings-toggle" data-testid="settings-toggle" @click="settingsOpen = !settingsOpen">
-        ⚙️ マスタ・取込設定（工種・商社別単価・価格表OCR）
-        <span class="chev">{{ settingsOpen ? '▲' : '▼' }}</span>
+      <div class="settings-head">
+        ⚙️ マスタ・取込設定
         <span v-if="revisions.length" class="badge-new">承認待ち {{ revisions.length }}</span>
-      </button>
+      </div>
 
-      <div v-show="settingsOpen" class="settings-body">
+      <div class="settings-body">
         <div class="subtabs">
           <button class="subtab" :class="{ active: settingsTab === 'price' }" data-testid="subtab-price" @click="settingsTab = 'price'">商社別単価</button>
           <button class="subtab" :class="{ active: settingsTab === 'material' }" data-testid="subtab-material" @click="settingsTab = 'material'">材料マスタ</button>
@@ -304,7 +303,6 @@ const materialForm   = ref<{ code: string; name: string; unit: string }>({ code:
 type Revision = { id: string; material_id: string | null; supplier_id: string | null; code: string | null; name: string | null; old_price: number | null; new_price: number | null; effective_date: string | null; status: string }
 const revisions   = ref<Revision[]>([])
 const revBusy     = ref(false)
-const settingsOpen = ref(false)
 const settingsTab = ref<'price' | 'material' | 'trade'>('price')
 const ocrBusy     = ref(false)
 const ocrError    = ref('')
@@ -740,6 +738,7 @@ onMounted(async () => {
 .actions { white-space: nowrap; }
 .rev-alert { background: #fff7ed; border: 1px solid #fdba74; color: #9a3412; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; }
 .settings-panel { margin-top: 20px; }
+.settings-head { background: #f7f7f7; border: 1px solid #e5e5e5; border-radius: 8px; padding: 12px 16px; font-size: 14px; font-weight: 600; color: #444; display: flex; align-items: center; gap: 10px; }
 .settings-toggle { width: 100%; text-align: left; background: #f7f7f7; border: 1px solid #e5e5e5; border-radius: 8px; padding: 12px 16px; font-size: 14px; font-weight: 600; color: #444; cursor: pointer; display: flex; align-items: center; gap: 10px; }
 .settings-toggle:hover { background: #f0f0f0; }
 .settings-toggle .chev { margin-left: auto; color: #888; }
