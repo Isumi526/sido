@@ -4,36 +4,44 @@
 //   AC1: ページが開き、未送信者が一覧表示される
 //   AC2: 朝リマインドと同じ整形のプレビュー本文が出る
 //   AC3: 「LINE用にコピー」でクリップボードに本文がコピーされる
-//  対象: 紐付けユーザーの無い active worker は「LINE未紐付け」として全期間未送信に出る
+//  対象: 紐付けユーザーの無い active worker が全期間未送信に出る
 // ============================================================
 import { test, expect } from '@playwright/test'
 import { rest, getAccountId } from './helpers'
 
 const WORKER = `E2E未送信_${Date.now()}`
+const WORKER_NEW = `E2E新規W_${Date.now()}`   // 本日登録＝登録前の未送信を出さない検証用
 
 test.describe.configure({ mode: 'serial' })
 
 test.beforeAll(async () => {
   const accountId = await getAccountId()
+  // created_at を過去日に固定＝service_start_date より前から在籍する worker（登録日起点で全期間出る）
   await rest('workers', {
-    method: 'POST',
-    headers: { Prefer: 'return=minimal' },
-    body: JSON.stringify({ account_id: accountId, name: WORKER, role: 'site', active: true }),
+    method: 'POST', headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({ account_id: accountId, name: WORKER, role: 'site', active: true, created_at: '2024-01-01T00:00:00Z' }),
+  })
+  // created_at=now＝本日登録の未紐付け worker。登録日起点なので過去（service_start_date〜昨日）の未送信は出ない。
+  await rest('workers', {
+    method: 'POST', headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({ account_id: accountId, name: WORKER_NEW, role: 'site', active: true, created_at: new Date().toISOString() }),
   })
 })
 
 test.afterAll(async () => {
   await rest(`workers?name=eq.${encodeURIComponent(WORKER)}`, { method: 'DELETE' }).catch(() => {})
+  await rest(`workers?name=eq.${encodeURIComponent(WORKER_NEW)}`, { method: 'DELETE' }).catch(() => {})
 })
 
 test('AC1/AC2: 一覧に未送信者が出て、リマインドと同じ整形プレビューが表示される', async ({ page }) => {
   await page.goto('/non-submitters', { waitUntil: 'networkidle' })
   await expect(page.locator('h1')).toContainText('未送信者リスト')
 
-  // 紐付けユーザーの無い active worker は「LINE未紐付け」で出る
+  // 紐付けユーザーの無い active worker が未送信者として出る（「LINE未紐付け」ラベルは廃止）
   const row = page.locator('tr', { hasText: WORKER })
   await expect(row).toBeVisible()
-  await expect(row).toContainText('LINE未紐付け')
+  // 登録日起点: 本日登録した worker は登録前（service_start_date〜昨日）の未送信に出ない
+  await expect(page.locator('tr', { hasText: WORKER_NEW })).toHaveCount(0)
 
   // プレビュー本文が朝リマインドと同じヘッダ＋対象者を含む
   const preview = page.locator('.preview-body')

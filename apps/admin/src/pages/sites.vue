@@ -79,6 +79,9 @@
               <span class="att-kind">{{ a.kind === 'photo' ? '📷' : '📄' }}</span>
               <a v-if="a.url" :href="a.url" target="_blank" rel="noopener" class="att-link">{{ a.name || a.path.split('/').pop() }}</a>
               <span v-else class="att-link att-disabled">{{ a.name || a.path.split('/').pop() }}</span>
+              <label v-if="a.kind === 'document'" class="att-consent" :class="{ on: a.require_consent }" :title="'出退勤（チェックイン）時に作業員へ提示し同意を取る'">
+                <input type="checkbox" :checked="a.require_consent" @change="toggleConsent(a)" />出退勤同意
+              </label>
               <button class="att-del" @click="removeAttachment(a)">×</button>
             </div>
           </div>
@@ -130,7 +133,7 @@ type Site = {
   location: string | null; construction_type: string | null; construction_details: string | null; memo: string | null
   contractor_id: string | null   // 紐づく元請け（任意）
 }
-type Att = { id: string; site_id: string; kind: string; path: string; name: string | null; url?: string | null }
+type Att = { id: string; site_id: string; kind: string; path: string; name: string | null; require_consent?: boolean; url?: string | null }
 
 const BUCKET = 'site-attachments'
 const sites     = ref<Site[]>([])
@@ -210,7 +213,7 @@ async function save() {
 
 // ── 添付（写真・書類）──
 async function loadAttachments(siteId: string) {
-  const { data } = await supabase.from('site_attachments').select('id, site_id, kind, path, name').eq('site_id', siteId).order('created_at')
+  const { data } = await supabase.from('site_attachments').select('id, site_id, kind, path, name, require_consent').eq('site_id', siteId).order('created_at')
   const atts = (data ?? []) as Att[]
   // 表示用の署名URLを並列取得（非公開バケット）
   await Promise.all(atts.map(async (a) => { a.url = await signedUrl(a.id) }))
@@ -231,6 +234,12 @@ async function onAttach(ev: Event, kind: 'photo' | 'document') {
     await loadAttachments(modal.value.id)
   } catch (e: any) { saveError.value = e.message ?? 'アップロードに失敗しました' }
   finally { uploading.value = false; (ev.target as HTMLInputElement).value = '' }
+}
+// 書類を「出退勤時に同意必須」に切替（送り出し資料）。チェックイン時に作業員へ提示・同意を取る。
+async function toggleConsent(a: Att) {
+  const next = !a.require_consent
+  await supabase.from('site_attachments').update({ require_consent: next }).eq('id', a.id)
+  a.require_consent = next
 }
 async function removeAttachment(a: Att) {
   if (!confirm(`「${a.name || a.kind}」を削除しますか？`)) return
@@ -318,6 +327,9 @@ async function doMerge() {
 .att-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .att-link { color: #1a56c4; text-decoration: none; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .att-del { background: none; border: none; color: #c0392b; cursor: pointer; font-size: 16px; }
+.att-consent { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #888; white-space: nowrap; cursor: pointer; }
+.att-consent.on { color: #0a8a3a; font-weight: 700; }
+.att-consent input { cursor: pointer; }
 .att-add { display: flex; gap: 8px; align-items: center; }
 .att-btn { background: #f0f0f0; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
 .att-up { font-size: 12px; color: #888; }
