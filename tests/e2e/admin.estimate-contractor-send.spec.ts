@@ -61,26 +61,22 @@ test.describe('見積→元請け 送信先と離脱ガード', () => {
     await expect(page.locator('[data-testid="send-estimate"]')).toBeEnabled()
   })
 
-  test('編集中（未保存）に案件を切り替えようとすると確認ダイアログが出る', async ({ page }) => {
-    const accountId = await getAccountId()
-    // 切替先の案件Bを用意（REST）
-    await restSrv('estimate_projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ account_id: accountId, name: PROJ_B }) })
-
+  test('編集中（未保存）に一覧へ戻ろうとすると確認ダイアログが出る', async ({ page }) => {
     await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-    // 新規案件を作って自動選択（addProject が loadItems まで完了させる＝明細リセットのレースを避ける）
+    // 新規案件を作って自動選択（addProject が loadItems まで完了させる）
     await page.locator('[data-testid="new-project-toggle"]').click()
     await page.locator('[data-testid="new-project-name"]').fill(PROJ_GUARD)
     await page.locator('[data-testid="add-project"]').click()
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ_GUARD)
     await page.waitForLoadState('networkidle')
 
-    // 未保存の編集を作る → 別案件へ切り替えようとすると確認ダイアログが出る
+    // 未保存の編集を作る → 「一覧へ戻る」で離脱しようとすると確認ダイアログ（ルート遷移ガード）
     await page.locator('[data-testid="add-row"]').click()
     await page.locator('[data-testid="item-name-0"]').fill('未保存の明細')
 
     let dialogMsg = ''
     page.once('dialog', (d) => { dialogMsg = d.message(); d.dismiss() })   // dismiss=移動しない
-    await page.locator('[data-testid="project-select"]').selectOption({ label: PROJ_B })
+    await page.locator('[data-testid="back-to-list"]').click()
     await expect.poll(() => dialogMsg, { timeout: 5000 }).toContain('保存していない')
   })
 })
