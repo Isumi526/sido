@@ -33,7 +33,7 @@ test.describe('見積 価格表差分承認（E4）', () => {
     await post('estimate_material_prices', { account_id: accountId, material_id: mat.id, supplier_id: sup.id, unit_price: 100, is_current: true })
     // OCRが作る想定の pending 差分: 既存材料 100→140 / 新規材料 ¥300
     const rev1 = (await post('estimate_price_revisions', { account_id: accountId, supplier_id: sup.id, material_id: mat.id, old_price: 100, new_price: 140, status: 'pending' }))[0]
-    const rev2 = (await post('estimate_price_revisions', { account_id: accountId, supplier_id: sup.id, material_id: null, name: NEW, new_price: 300, status: 'pending' }))[0]
+    const rev2 = (await post('estimate_price_revisions', { account_id: accountId, supplier_id: sup.id, material_id: null, name: NEW, unit: 'm2', new_price: 300, status: 'pending' }))[0]
 
     await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
     // 差分承認は「⚙️ マスタ・取込設定」内 → 開く → 対象商社タブを選ぶ（差分は商社で絞られる）
@@ -59,13 +59,14 @@ test.describe('見積 価格表差分承認（E4）', () => {
     // ② 新規材料の改定を承認 → 材料が作成され、その現行単価=300・revision applied
     await page.locator(`[data-testid="approve-${rev2.id}"]`).click()
     await expect.poll(async () => {
-      const m = await restSrv(`estimate_materials?name=eq.${encodeURIComponent(NEW)}&select=id`)
+      const m = await restSrv(`estimate_materials?name=eq.${encodeURIComponent(NEW)}&select=id,unit`)
       const mid = m?.[0]?.id
       if (!mid) return 'no-material'
       const ps = await restSrv(`estimate_material_prices?material_id=eq.${mid}&supplier_id=eq.${sup.id}&is_current=eq.true&select=unit_price`)
       const rev = await restSrv(`estimate_price_revisions?id=eq.${rev2.id}&select=status`)
-      return `${ps?.[0]?.unit_price}|${rev?.[0]?.status}`
-    }, { timeout: 10000 }).toBe('300|applied')
+      // 単位(unit)もOCR差分→承認で材料に引き継がれる
+      return `${ps?.[0]?.unit_price}|${rev?.[0]?.status}|${m?.[0]?.unit}`
+    }, { timeout: 10000 }).toBe('300|applied|m2')
 
     // 承認後は pending 一覧から消える（人間承認した分だけ反映＝自動反映なし）
     await expect(page.locator(`[data-testid="rev-${rev1.id}"]`)).toHaveCount(0)
