@@ -46,6 +46,7 @@
         <li><RouterLink to="/users" class="nav-link"><span class="material-symbols-rounded nav-icon">manage_accounts</span>ユーザー</RouterLink></li>
         <li><RouterLink to="/non-submitters" class="nav-link"><span class="material-symbols-rounded nav-icon">person_off</span>未送信者リスト</RouterLink></li>
         <li><RouterLink to="/reminder-history" class="nav-link"><span class="material-symbols-rounded nav-icon">history</span>リマインド履歴</RouterLink></li>
+        <li><RouterLink to="/company-profile" class="nav-link"><span class="material-symbols-rounded nav-icon">badge</span>自社情報</RouterLink></li>
         <li><RouterLink to="/settings" class="nav-link"><span class="material-symbols-rounded nav-icon">settings</span>設定</RouterLink></li>
       </ul>
       <button class="btn-logout" @click="handleLogout">ログアウト</button>

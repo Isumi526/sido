@@ -11,6 +11,7 @@ import SiteReports    from '../pages/site-reports.vue'
 import Expenses       from '../pages/expenses.vue'
 import SubInvoices    from '../pages/subcontractor-invoices.vue'
 import Settings       from '../pages/settings.vue'
+import CompanyProfile from '../pages/company-profile.vue'
 import Login          from '../pages/login.vue'
 import Users          from '../pages/users.vue'
 import WorkerReports  from '../pages/worker-reports.vue'
@@ -45,6 +46,7 @@ export const router = createRouter({
     { path: '/worker-reports', component: WorkerReports },
     { path: '/paid-leave',    component: PaidLeave },
     { path: '/settings',       component: Settings },
+    { path: '/company-profile', component: CompanyProfile },
     { path: '/users',        component: Users },
     { path: '/reminder-history', component: ReminderHistory },
     { path: '/non-submitters',   component: NonSubmitters },
