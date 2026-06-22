@@ -35,7 +35,7 @@ test.describe('見積 価格表差分承認（E4）', () => {
     const rev1 = (await post('estimate_price_revisions', { account_id: accountId, supplier_id: sup.id, material_id: mat.id, old_price: 100, new_price: 140, status: 'pending' }))[0]
     const rev2 = (await post('estimate_price_revisions', { account_id: accountId, supplier_id: sup.id, material_id: null, name: NEW, unit: 'm2', new_price: 300, status: 'pending' }))[0]
 
-    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
+    await page.goto('/estimate-masters', { waitUntil: 'networkidle' })
     // 差分承認は「⚙️ マスタ・取込設定」内 → 開く → 対象商社タブを選ぶ（差分は商社で絞られる）
     await page.locator(`[data-testid="ptab-${sup.id}"]`).click()
 

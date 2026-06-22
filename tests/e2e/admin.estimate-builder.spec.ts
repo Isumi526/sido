@@ -66,6 +66,13 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
   })
 
   test('AC1/AC2: 明細入力→工種別に自動集計され、DBにも反映される', async ({ page }) => {
+    // 工種はマスタ（/estimate-masters）管轄になったので REST で用意
+    const accountId = await getAccountId()
+    const post = async (table: string, body: any) =>
+      restSrv(table, { method: 'POST', headers: { Prefer: 'return=representation', 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    await post('estimate_trades', { account_id: accountId, name: TRADE_A })
+    await post('estimate_trades', { account_id: accountId, name: TRADE_B })
+
     await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
     await expect(page.locator('h1')).toContainText('見積もり')
 
@@ -74,14 +81,6 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await page.locator('[data-testid="new-project-name"]').fill(PROJ)
     await page.locator('[data-testid="add-project"]').click()
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ)
-
-    // 工種追加は「⚙️ マスタ・取込設定」内 → 開く → 工種タブ
-    await page.locator('[data-testid="subtab-trade"]').click()
-    // 工種を2つ追加
-    await page.locator('[data-testid="new-trade-name"]').fill(TRADE_A)
-    await page.locator('[data-testid="add-trade"]').click()
-    await page.locator('[data-testid="new-trade-name"]').fill(TRADE_B)
-    await page.locator('[data-testid="add-trade"]').click()
 
     // 明細3行（軽鉄2000・ボード5000・軽鉄3000）
     const addLine = async (i: number, trade: string, name: string, qty: number, price: number) => {
@@ -264,7 +263,7 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     const mat = (await post('estimate_materials', { account_id: accountId, name: MAT_PL, source: 'manual' }))[0]
     const sup = (await post('subcontractors', { account_id: accountId, name: SUP_PL, category: '商社', active: true }))[0]
 
-    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
+    await page.goto('/estimate-masters', { waitUntil: 'networkidle' })
 
     // 商社タブで対象商社を選ぶ → 材料×単価を登録（商社はタブ＝SUP_PL）
     await page.locator(`[data-testid="ptab-${sup.id}"]`).click()
@@ -292,7 +291,7 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
 
   // このページから商社(下請け業者 区分=商社)を追加できる（横断不要）
   test('商社をこのページから追加できる（下請け業者 区分=商社として保存）', async ({ page }) => {
-    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
+    await page.goto('/estimate-masters', { waitUntil: 'networkidle' })
     await page.locator('[data-testid="add-supplier-toggle"]').click()
     await page.locator('[data-testid="new-supplier-name"]').fill(SUP_INLINE)
     await page.locator('[data-testid="add-supplier"]').click()
@@ -308,7 +307,7 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
 
   // 工種一覧＋材料マスタ（品番/品名 別管理）の表示・追加・削除
   test('工種一覧と材料マスタ（品番/品名別管理）の追加・一覧・削除', async ({ page }) => {
-    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
+    await page.goto('/estimate-masters', { waitUntil: 'networkidle' })
     await page.locator('[data-testid="subtab-trade"]').click()
 
     // 工種を追加 → 一覧に出る
