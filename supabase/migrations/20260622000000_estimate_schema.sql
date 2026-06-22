@@ -119,6 +119,8 @@ create table if not exists estimate_items (
 
 -- ── インデックス（account_id ＋ 主要参照 ＋ 予測変換キー）──────
 create index if not exists est_projects_account_idx     on estimate_projects (account_id);
+-- 同一account内で同名案件を作らせない（大小文字無視）
+create unique index if not exists est_projects_name_uniq on estimate_projects (account_id, lower(name));
 create index if not exists est_categories_account_idx   on estimate_categories (account_id);
 create index if not exists est_trades_account_idx       on estimate_trades (account_id);
 create index if not exists est_materials_account_idx    on estimate_materials (account_id);
