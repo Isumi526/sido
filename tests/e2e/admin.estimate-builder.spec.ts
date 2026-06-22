@@ -12,18 +12,23 @@ const TS = Date.now()
 const PROJ = `E2E見積_${TS}`
 const TRADE_A = `軽鉄_${TS}`   // 2行: 2000 + 3000 = 5000
 const TRADE_B = `ボード_${TS}` // 1行: 5000
+const PROJ2 = `E2E見積E5_${TS}`
+const MAT = `カタログ材_${TS}`
 
 test.describe.configure({ mode: 'serial' })
 
 test.describe('見積もり 全体見積→工種別自動集計', () => {
   test.afterAll(async () => {
-    const projs = await restSrv(`estimate_projects?name=eq.${encodeURIComponent(PROJ)}&select=id`).catch(() => [])
-    for (const p of projs ?? []) {
-      await restSrv(`estimate_items?project_id=eq.${p.id}`, { method: 'DELETE' }).catch(() => {})
+    for (const name of [PROJ, PROJ2]) {
+      const projs = await restSrv(`estimate_projects?name=eq.${encodeURIComponent(name)}&select=id`).catch(() => [])
+      for (const p of projs ?? []) {
+        await restSrv(`estimate_items?project_id=eq.${p.id}`, { method: 'DELETE' }).catch(() => {})
+      }
+      await restSrv(`estimate_projects?name=eq.${encodeURIComponent(name)}`, { method: 'DELETE' }).catch(() => {})
     }
-    await restSrv(`estimate_projects?name=eq.${encodeURIComponent(PROJ)}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`estimate_trades?name=eq.${encodeURIComponent(TRADE_A)}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`estimate_trades?name=eq.${encodeURIComponent(TRADE_B)}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MAT)}`, { method: 'DELETE' }).catch(() => {})
   })
 
   test('AC1/AC2: 明細入力→工種別に自動集計され、DBにも反映される', async ({ page }) => {
@@ -69,5 +74,30 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
       if (!items || items.length !== 3) return `count=${items?.length}`
       return items.reduce((s: number, r: any) => s + Number(r.amount), 0)
     }, { timeout: 10000 }).toBe(10000)
+  })
+
+  // E5 マスタ蓄積（使いながら捕捉）: 初回入力の材料が次回以降 予測変換候補に出る
+  test('E5: 初回入力した材料が estimate_materials に捕捉され、再訪時に予測変換候補に出る', async ({ page }) => {
+    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
+    await page.locator('[data-testid="new-project-name"]').fill(PROJ2)
+    await page.locator('[data-testid="add-project"]').click()
+    await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ2)
+
+    // 新規材料名で1行入力 → 保存
+    await page.locator('[data-testid="add-row"]').click()
+    await page.locator('[data-testid="item-name-0"]').fill(MAT)
+    await page.locator('[data-testid="item-qty-0"]').fill('1')
+    await page.locator('[data-testid="item-price-0"]').fill('800')
+    await page.locator('[data-testid="save-items"]').click()
+
+    // DB: estimate_materials に捕捉される
+    await expect.poll(async () => {
+      const r = await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MAT)}&select=id`)
+      return (r ?? []).length
+    }, { timeout: 10000 }).toBe(1)
+
+    // 再訪 → datalist 候補（予測変換）に出る
+    await page.reload({ waitUntil: 'networkidle' })
+    await expect(page.locator(`#est-materials option[value="${MAT}"]`)).toHaveCount(1)
   })
 })
