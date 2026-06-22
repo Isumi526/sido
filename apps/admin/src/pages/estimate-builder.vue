@@ -147,11 +147,17 @@
         <div class="setting-block">
           <h3>商社別単価</h3>
           <p class="muted">商社は「下請け業者」マスタの<b>区分=商社</b>（<RouterLink to="/subcontractors">下請け業者</RouterLink>で登録）。<b>商社タブを選ぶ</b>と、その商社の単価の追加・一覧・取込が対象になります。</p>
-          <!-- 商社タブ（対象商社の選択） -->
-          <div v-if="suppliers.length" class="price-tabs">
+          <!-- 商社タブ（対象商社の選択）＋このページから商社追加（横断不要） -->
+          <div class="price-tabs">
             <button v-for="s in suppliers" :key="s.id" class="ptab" :class="{ active: activeSupplier === s.id }" :data-testid="`ptab-${s.id}`" @click="activeSupplier = s.id">{{ s.name }}</button>
+            <button v-if="!addingSupplier" class="ptab ptab-add" data-testid="add-supplier-toggle" @click="addingSupplier = true">＋ 商社を追加</button>
+            <template v-else>
+              <input v-model="newSupplierName" class="input sm" placeholder="商社名" data-testid="new-supplier-name" @keyup.enter="addSupplier" />
+              <button class="btn-add" :disabled="!newSupplierName.trim()" data-testid="add-supplier" @click="addSupplier">追加</button>
+              <button class="btn-del" title="キャンセル" @click="addingSupplier = false; newSupplierName = ''">×</button>
+            </template>
           </div>
-          <p v-else class="muted">商社（下請け業者 区分=商社）が未登録です。<RouterLink to="/subcontractors">下請け業者</RouterLink>で登録してください。</p>
+          <p v-if="!suppliers.length && !addingSupplier" class="muted">まだ商社がありません。「＋ 商社を追加」で登録できます（下請け業者 区分=商社として保存）。</p>
 
           <template v-if="activeSupplier">
             <!-- 価格の追加（2方法を並べる） -->
@@ -249,6 +255,8 @@ const materials      = ref<Material[]>([])
 const suppliers      = ref<Supplier[]>([])
 const matPrices      = ref<MatPrice[]>([])
 const priceForm      = ref<{ material_id: string | null; unit_price: number | null }>({ material_id: null, unit_price: null })
+const addingSupplier = ref(false)
+const newSupplierName = ref('')
 // E4 価格表OCR取込＋差分承認
 type Revision = { id: string; material_id: string | null; supplier_id: string | null; code: string | null; name: string | null; old_price: number | null; new_price: number | null; effective_date: string | null; status: string }
 const revisions   = ref<Revision[]>([])
@@ -462,6 +470,18 @@ function onSupplierPick(r: Row) {
   const p = matPrices.value.find(x => x.material_id === r.material_id && x.supplier_id === r.supplier_id)
   if (p) r.unit_price = Number(p.unit_price)
 }
+// このページから商社（＝下請け業者 区分=商社）を追加（横断不要）
+async function addSupplier() {
+  const name = newSupplierName.value.trim()
+  if (!name) return
+  newSupplierName.value = ''
+  const { data, error } = await supabase.from('subcontractors')
+    .insert({ account_id: accountId, name, category: '商社', active: true }).select('id, name').single()
+  if (error) { saveError.value = error.message; newSupplierName.value = name; return }
+  addingSupplier.value = false
+  await loadSuppliers()
+  activeSupplier.value = (data as any).id
+}
 async function addPrice() {
   const f = priceForm.value
   const supplierId = activeSupplier.value
@@ -667,6 +687,7 @@ onMounted(async () => {
 .ptab { border: 1px solid #d1d5db; background: #fff; color: #555; border-radius: 999px; padding: 4px 14px; font-size: 13px; cursor: pointer; }
 .ptab:hover { background: #f3f4f6; }
 .ptab.active { background: #06C755; color: #fff; border-color: #06C755; }
+.ptab-add { border-style: dashed; color: #06864a; }
 .add-methods { display: flex; gap: 24px; flex-wrap: wrap; margin: 12px 0 4px; }
 .method { display: flex; flex-direction: column; gap: 6px; }
 .method-label { font-size: 12px; font-weight: 600; color: #555; }
