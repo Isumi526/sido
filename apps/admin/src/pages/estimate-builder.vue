@@ -219,6 +219,15 @@
                   {{ ocrBusy ? '取込中…' : '単価表を取込（PDF/写真）' }}
                   <input type="file" accept="image/*,.pdf" hidden data-testid="ocr-file" :disabled="ocrBusy" @change="onOcrFile" />
                 </label>
+                <!-- 取込中の進捗（不安解消用：経過秒＋残り目安＋バー） -->
+                <div v-if="ocrBusy" class="ocr-progress" data-testid="ocr-progress">
+                  <div class="ocr-bar"><div class="ocr-bar-fill" :style="{ width: ocrPct + '%' }"></div></div>
+                  <div class="ocr-status">
+                    <span class="spin"></span>
+                    <span>AIが単価表を読み取り中… <b>{{ ocrElapsed }}秒経過</b> ／ {{ ocrEtaText }}</span>
+                  </div>
+                  <div class="muted">ページ数が多いほど時間がかかります（通常30〜60秒ほど）。このまま少々お待ちください。</div>
+                </div>
                 <span class="muted">読み取った差分は下に出ます。<b>承認した分だけ</b>反映（自動反映なし）。</span>
                 <span v-if="ocrError" class="err">{{ ocrError }}</span>
               </div>
@@ -306,6 +315,11 @@ const revBusy     = ref(false)
 const settingsTab = ref<'price' | 'material' | 'trade'>('price')
 const ocrBusy     = ref(false)
 const ocrError    = ref('')
+const ocrElapsed  = ref(0)        // 取込の経過秒
+let   ocrTimer: ReturnType<typeof setInterval> | undefined
+const OCR_ETA     = 45            // 目安の所要秒（ページ数で前後）
+const ocrPct      = computed(() => Math.min(95, Math.round((ocrElapsed.value / OCR_ETA) * 100)))
+const ocrEtaText  = computed(() => ocrElapsed.value < OCR_ETA ? `残り約${OCR_ETA - ocrElapsed.value}秒（目安）` : 'まもなく完了します…')
 const projectId      = ref<string | null>(null)
 const rows           = ref<Row[]>([])
 const removedIds     = ref<string[]>([])
@@ -402,6 +416,8 @@ async function onOcrFile(e: Event) {
   if (!file) return
   if (!activeSupplier.value) { ocrError.value = '先に対象の商社タブを選んでください'; return }
   ocrBusy.value = true; ocrError.value = ''
+  ocrElapsed.value = 0
+  ocrTimer = setInterval(() => { ocrElapsed.value++ }, 1000)
   try {
     const b64 = await new Promise<string>((res, rej) => {
       const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1] || ''); fr.onerror = rej; fr.readAsDataURL(file)
@@ -419,6 +435,7 @@ async function onOcrFile(e: Event) {
     ocrError.value = err?.message ?? '取込に失敗しました'
   } finally {
     ocrBusy.value = false
+    if (ocrTimer) clearInterval(ocrTimer)
     ;(e.target as HTMLInputElement).value = ''
   }
 }
@@ -771,4 +788,10 @@ onMounted(async () => {
 .method-label { font-size: 12px; font-weight: 600; color: #555; }
 .sub-h { font-size: 13px; font-weight: 700; color: #444; margin: 16px 0 6px; }
 .rev-section { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 8px 12px; margin-top: 12px; }
+.ocr-progress { margin-top: 8px; max-width: 460px; }
+.ocr-bar { height: 8px; background: #e5e7eb; border-radius: 999px; overflow: hidden; }
+.ocr-bar-fill { height: 100%; background: linear-gradient(90deg, #06C755, #34d399); border-radius: 999px; transition: width .8s ease; }
+.ocr-status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #444; margin-top: 6px; }
+.spin { width: 14px; height: 14px; border: 2px solid #cbd5e1; border-top-color: #06C755; border-radius: 50%; display: inline-block; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>
