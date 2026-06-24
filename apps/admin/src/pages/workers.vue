@@ -25,7 +25,7 @@
             <td class="name">{{ w.name }}</td>
             <td><span class="badge" :class="w.role">{{ w.role === 'factory' ? '工場/事務所' : '現場' }}</span></td>
             <td class="price">¥{{ w.unit_price.toLocaleString() }}</td>
-            <td><span class="emp-badge" :class="w.employment_type ?? 'fulltime'">{{ (w.employment_type ?? 'fulltime') === 'fulltime' ? '正社員' : `パート(週${w.weekly_scheduled_days ?? '?'}日)` }}</span></td>
+            <td><span class="emp-badge" :class="w.employment_type ?? 'fulltime'">{{ w.employment_type === 'contractor' ? '業務委託' : (w.employment_type ?? 'fulltime') === 'fulltime' ? '正社員' : `パート(週${w.weekly_scheduled_days ?? '?'}日)` }}</span></td>
             <td class="hire-date">{{ w.hire_date ?? '—' }}</td>
             <td><span class="status" :class="w.active ? 'active' : 'off'">{{ w.active ? '有効' : '無効' }}</span></td>
             <td><span class="user-link" :class="linkedWorkerIds.has(w.id) ? 'linked' : 'unlinked'">{{ linkedWorkerIds.has(w.id) ? '紐付け済み' : '未紐付け' }}</span></td>
@@ -69,6 +69,7 @@
           <div class="toggle">
             <button :class="{ active: (modal.employment_type ?? 'fulltime') === 'fulltime' }" @click="modal.employment_type = 'fulltime'">正社員</button>
             <button :class="{ active: modal.employment_type === 'parttime' }" @click="modal.employment_type = 'parttime'">パート・アルバイト</button>
+            <button :class="{ active: modal.employment_type === 'contractor' }" @click="modal.employment_type = 'contractor'">業務委託</button>
           </div>
         </div>
         <div v-if="modal.employment_type === 'parttime'" class="field">
@@ -152,7 +153,7 @@ type Worker = {
   birth_date: string | null
   address: string | null
   emergency_contact: string | null
-  employment_type: 'fulltime' | 'parttime' | null
+  employment_type: 'fulltime' | 'parttime' | 'contractor' | null
   weekly_scheduled_days: number | null
   auth_user_id: string | null
 }
@@ -349,6 +350,7 @@ async function toggleActive(w: Worker) {
 .emp-badge { font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 700; }
 .emp-badge.fulltime { background: #f0f4ff; color: #4f46e5; }
 .emp-badge.parttime { background: #fff7ed; color: #c2710c; }
+.emp-badge.contractor { background: #ecfdf5; color: #047857; }
 .hire-date { font-size: 12px; color: #666; font-variant-numeric: tabular-nums; }
 .auth-field { border-top: 1px solid #f0f0f0; padding-top: 16px; }
 .auth-status { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 700; margin-left: 8px; }

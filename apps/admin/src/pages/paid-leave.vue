@@ -34,7 +34,7 @@
               <td class="name">{{ w.name }}</td>
               <td>
                 <span class="emp-badge" :class="w.employment_type ?? 'fulltime'">
-                  {{ (w.employment_type ?? 'fulltime') === 'fulltime' ? '正社員' : 'パート' }}
+                  {{ w.employment_type === 'contractor' ? '業務委託' : (w.employment_type ?? 'fulltime') === 'fulltime' ? '正社員' : 'パート' }}
                 </span>
               </td>
               <td class="mono">{{ w.hire_date ?? '—' }}</td>
@@ -69,7 +69,7 @@
             <div>
               <div class="drawer-name">{{ detail.name }}</div>
               <div class="drawer-sub">
-                {{ (detail.employment_type ?? 'fulltime') === 'fulltime' ? '正社員' : `パート(週${detail.weekly_scheduled_days ?? '?'}日)` }}
+                {{ detail.employment_type === 'contractor' ? '業務委託' : (detail.employment_type ?? 'fulltime') === 'fulltime' ? '正社員' : `パート(週${detail.weekly_scheduled_days ?? '?'}日)` }}
                 {{ detail.hire_date ? ' / 入社: ' + detail.hire_date : '' }}
               </div>
             </div>
@@ -207,7 +207,7 @@
             <tr v-for="row in printRows" :key="row.workerId">
               <td class="col-name fw">{{ row.name }}</td>
               <td class="col-hire sm">{{ row.hireDate ?? '—' }}</td>
-              <td class="col-type sm">{{ row.employmentType === 'fulltime' ? '正社員' : `パート\n(週${row.weeklyDays ?? '?'}日)` }}</td>
+              <td class="col-type sm">{{ row.employmentType === 'contractor' ? '業務委託' : row.employmentType === 'fulltime' ? '正社員' : `パート\n(週${row.weeklyDays ?? '?'}日)` }}</td>
               <td class="col-grant-date sm">{{ row.latestGrantDate ?? '—' }}</td>
               <td class="col-grant-days center">{{ row.totalGranted > 0 ? row.totalGranted : '—' }}</td>
               <td class="col-dates dates-cell">{{ row.usedDates.join('　') || '—' }}</td>
@@ -263,6 +263,8 @@ function tenureMonths(hireDate: string): number {
 }
 
 function suggestedGrant(w: WorkerStat): number {
+  // 業務委託は労働者でない＝有給休暇の付与対象外（法定の年次有給は雇用関係が前提）
+  if (w.employment_type === 'contractor') return 0
   if (!w.hire_date) return 0
   const months = tenureMonths(w.hire_date)
   if (months < 6) return 0
@@ -283,7 +285,7 @@ type WorkerStat = {
   name: string
   active: boolean
   hire_date: string | null
-  employment_type: 'fulltime' | 'parttime' | null
+  employment_type: 'fulltime' | 'parttime' | 'contractor' | null
   weekly_scheduled_days: number | null
   totalGranted: number
   totalUsed: number
@@ -565,6 +567,7 @@ onMounted(load)
 .emp-badge          { font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 700; }
 .emp-badge.fulltime { background: #f0f4ff; color: #4f46e5; }
 .emp-badge.parttime { background: #fff7ed; color: #c2710c; }
+.emp-badge.contractor { background: #ecfdf5; color: #047857; }
 .remaining     { font-size: 13px; font-weight: 700; }
 .remaining.ok  { color: #0a8a3a; }
 .remaining.low { color: #e67e22; }
