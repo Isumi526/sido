@@ -470,6 +470,9 @@ async function analyze() {
       let r: any
       try { r = await analyzeOne(targets[idx]) }
       catch { failed++; continue }
+      // 解析の待機中にフォームが差し替えられた（＋新規/別行を編集で開いた）場合は、
+      // 古い（切り離された）フォームを汚さず・aiMsgも残さず中断する（複数秒のOCR中の競合対策）。
+      if (form.value !== f) return
       // ── ヘッダ流し込み（各項目とも最初に取れたページの値で確定。以降のページは上書きしない）──
       if (r.vendor_name && !headerSet.has('vendor')) {
         headerSet.add('vendor')
@@ -498,6 +501,8 @@ async function analyze() {
         added++
       }
     }
+    // ループ終了後にも再確認（最後のawait後にフォームが差し替わっていたら結果を反映しない）。
+    if (form.value !== f) return
     if (added === 0 && failed === targets.length) {
       aiMsg.value = 'AI解析に失敗しました。ファイルを確認して再度お試しください。'
       return
