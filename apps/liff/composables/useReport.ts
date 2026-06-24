@@ -273,7 +273,7 @@ export const useReport = () => {
           subcontractors: site.subcontractors
             .filter(s => s.subcontractorName)
             .map(s => s.subcontractorName === '__other__'
-              ? { ...s, subcontractorName: s.customSubcontractorName || '' }
+              ? { ...s, subcontractorName: s.customSubcontractorName || '', _isNew: true }  // 新規作成＝現場へ自動紐付け対象
               : s
             )
             .filter(s => s.subcontractorName)
@@ -317,7 +317,10 @@ export const useReport = () => {
         if (site.siteName) masterSaves.push(master.saveSite(site.siteName))
         if (site.contractorName) masterSaves.push(master.saveContractor(site.contractorName))
         for (const sub of site.subcontractors) {
-          if (sub.subcontractorName && sub.subcontractorName !== '__other__') masterSaves.push(master.saveSub(sub.subcontractorName))
+          // 新規作成(__other__)の業者だけ、その現場へ自動紐付け(AC4)。既存業者の紐付けは変えない。
+          if (sub.subcontractorName && sub.subcontractorName !== '__other__') {
+            masterSaves.push(master.saveSub(sub.subcontractorName, (sub as any)._isNew ? site.siteName : undefined))
+          }
         }
       }
       const masterResults = await Promise.allSettled(masterSaves)

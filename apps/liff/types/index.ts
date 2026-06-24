@@ -135,6 +135,10 @@ export interface MasterData {
   vehicles: string[]
   // 現場名 → 紐づく元請け名（未紐付けは未収録）。日報の現場絞り込みに使う（任意・後方互換）。
   siteContractors?: Record<string, string>
+  // 現場名 → 紐づく下請け業者名[]（未紐付けは未収録＝全件表示にフォールバック）。日報の業者プルダウン絞り込み用。
+  siteSubcontractors?: Record<string, string[]>
+  // 現場名 → 現場id。日報からの業者新規作成時に現場へ自動紐付けするため。
+  siteIds?: Record<string, string>
 }
 
 export interface ApiResponse<T = void> {

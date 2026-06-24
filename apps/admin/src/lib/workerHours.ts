@@ -179,6 +179,39 @@ export function getRateLines(r: RateBreakdown): RateLine[] {
   return lines
 }
 
+// ── 昇給(単価変更)履歴を使った「日付別の有効単価」解決 ────────────────
+export type WageChange = { effectiveDate: string; oldUnitPrice: number | null; newUnitPrice: number }
+
+/** wage_history 行 → 作業員ごとの timeline（effectiveDate 昇順）。effective_date 未設定行は changed_at の日付で代替。 */
+export function buildWageTimelines(
+  rows: { worker_id: string; effective_date?: string | null; changed_at?: string | null; old_unit_price: number | null; new_unit_price: number }[],
+): Map<string, WageChange[]> {
+  const m = new Map<string, WageChange[]>()
+  for (const r of rows ?? []) {
+    const ed = (r.effective_date || (r.changed_at || '').slice(0, 10))
+    if (!ed || !r.worker_id) continue
+    const arr = m.get(r.worker_id) ?? []
+    arr.push({ effectiveDate: ed, oldUnitPrice: r.old_unit_price, newUnitPrice: r.new_unit_price })
+    m.set(r.worker_id, arr)
+  }
+  for (const arr of m.values()) arr.sort((a, b) => a.effectiveDate.localeCompare(b.effectiveDate))
+  return m
+}
+
+/** 日報日付(YYYY-MM-DD)に有効だった日当単価。timeline は effectiveDate 昇順。
+ *  date >= effectiveDate の最新 newUnitPrice。全昇給より前なら最古の oldUnitPrice、履歴無しは currentPrice。 */
+export function unitPriceForDate(date: string, timeline: WageChange[] | undefined, currentPrice: number): number {
+  if (!timeline || timeline.length === 0) return currentPrice
+  let applied: number | null = null
+  for (const c of timeline) {
+    if (c.effectiveDate <= date) applied = c.newUnitPrice
+    else break
+  }
+  if (applied != null) return applied
+  const firstOld = timeline[0].oldUnitPrice
+  return firstOld != null ? firstOld : currentPrice
+}
+
 /** 料率別時間 × 日当単価(/8h) で人件費を算出 */
 export function laborCostForBreakdown(b: RateBreakdown, unitPrice: number): number {
   if (!unitPrice) return 0

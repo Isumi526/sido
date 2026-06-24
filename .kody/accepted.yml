@@ -103,6 +103,22 @@ entries:
     target: workers
     reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
     ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: worker_wage_history
+    reason: "昇給履歴(2026-06-24新設)。親の workers が RLS無効×anon で開いている以上、子の単価履歴だけRLS化しても無意味(vehicle_repair_logs と同型)。マスタ層は親エピック「本番DBのRLS有効化」で一括RLS化する。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: anon-access-token
+    target: worker_wage_history
+    reason: "上記昇給履歴の anon 公開。他マスタ表(workers/contractors等)と同じ pre-RLS ベースライン。トークン制御ではなく親エピック「本番DBのRLS有効化」で一括RLS化(account_idで論理分離済)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: site_subcontractors
+    reason: "現場↔下請け業者の紐付け(2026-06-24新設)。LIFF日報(anon)が現場の業者プルダウン絞り込みに read する必要があり、親の sites/subcontractors も RLS無効×anon で開いている。子だけRLS化しても無意味。マスタ層は親エピック「本番DBのRLS有効化」で一括RLS化(account_idで論理分離済)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: anon-access-token
+    target: site_subcontractors
+    reason: "上記と同じ紐付けマスタ。anon公開は他のマスタ表(sites/subcontractors/contractors等)と同じpre-RLSベースライン。LIFF日報がanonで読むマスタ系のため、トークン制御ではなく親エピックの一括RLS化で対応(account_idで論理分離済)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
   # expense_users は 20260619000000_expense_users_rls.sql で RLS化済み（anon全拒否）＝baseline解消。
 
   # --- 呼び出し元認証ベースライン: cron起動のリマインド系EFは in-code認証なし＝既存 daily-reminder と同型。恒久対策(共有シークレット)はチケットで追跡。 ---

@@ -55,6 +55,16 @@
           </select>
         </div>
         <div class="field">
+          <label>この現場に紐づく下請け業者（日報の業者プルダウンを絞り込み）</label>
+          <div class="sub-link-list" data-testid="site-sub-links">
+            <label v-for="s in subcontractors" :key="s.id" class="sub-link-item">
+              <input type="checkbox" :value="s.id" v-model="modal.linkedSubs" />{{ s.name }}
+            </label>
+            <span v-if="!subcontractors.length" class="hint">下請け業者マスタが空です</span>
+          </div>
+          <p class="hint">未選択なら日報では全業者が出ます（紐付けすると、その現場では選択した業者のみに絞り込み）。</p>
+        </div>
+        <div class="field">
           <label>場所 / 住所</label>
           <input v-model="modal.location" class="input" placeholder="例：名古屋市〇〇区…" />
         </div>
@@ -138,7 +148,8 @@ type Att = { id: string; site_id: string; kind: string; path: string; name: stri
 const BUCKET = 'site-attachments'
 const sites     = ref<Site[]>([])
 const contractors = ref<{ id: string; name: string }[]>([])   // 元請けマスタ（紐付け用）
-const modal     = ref<Partial<Site> | null>(null)
+const subcontractors = ref<{ id: string; name: string }[]>([]) // 下請け業者マスタ（現場紐付け用）
+const modal     = ref<Partial<Site> & { linkedSubs?: string[] } | null>(null)
 const saving    = ref(false)
 const saveError = ref('')
 // 編集中の現場の添付（写真・書類）
@@ -180,13 +191,30 @@ async function load() {
   ])
   sites.value = (data ?? []) as Site[]
   contractors.value = (cons ?? []) as { id: string; name: string }[]
+  const { data: subs } = await supabase.from('subcontractors').select('id, name').eq('account_id', accountId).eq('active', true).order('name')
+  subcontractors.value = (subs ?? []) as { id: string; name: string }[]
 }
 onMounted(load)
 
 const contractorName = (id: string | null | undefined) => contractors.value.find((c) => c.id === id)?.name ?? '—'
 
-function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null }; attachments.value = []; saveError.value = '' }
-async function openEdit(s: Site) { modal.value = { ...s }; saveError.value = ''; await loadAttachments(s.id) }
+function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, linkedSubs: [] }; attachments.value = []; saveError.value = '' }
+async function openEdit(s: Site) {
+  modal.value = { ...s, linkedSubs: [] }; saveError.value = ''
+  const { data: links } = await supabase.from('site_subcontractors').select('subcontractor_id').eq('site_id', s.id)
+  if (modal.value) modal.value.linkedSubs = ((links ?? []) as any[]).map(l => l.subcontractor_id)
+  await loadAttachments(s.id)
+}
+
+// 現場↔下請け業者の紐付けを同期（チェックされたものだけ残す）
+async function syncSiteSubcontractors(siteId: string, accountId: string, want: string[]) {
+  const { data } = await supabase.from('site_subcontractors').select('subcontractor_id').eq('site_id', siteId)
+  const have = ((data ?? []) as any[]).map(l => l.subcontractor_id as string)
+  const toAdd = want.filter(id => !have.includes(id))
+  const toDel = have.filter(id => !want.includes(id))
+  if (toAdd.length) await supabase.from('site_subcontractors').insert(toAdd.map(subId => ({ site_id: siteId, subcontractor_id: subId, account_id: accountId })))
+  if (toDel.length) await supabase.from('site_subcontractors').delete().eq('site_id', siteId).in('subcontractor_id', toDel)
+}
 
 async function save() {
   if (!modal.value?.name?.trim()) { saveError.value = '現場名を入力してください'; return }
@@ -199,12 +227,15 @@ async function save() {
       construction_details: m.construction_details?.trim() || null, memo: m.memo?.trim() || null,
       contractor_id: m.contractor_id || null,
     }
-    if (m.id) {
-      await supabase.from('sites').update(payload).eq('id', m.id)
+    const accountId = await getAccountId()
+    let siteId = m.id
+    if (siteId) {
+      await supabase.from('sites').update(payload).eq('id', siteId)
     } else {
-      const accountId = await getAccountId()
-      await supabase.from('sites').insert({ ...payload, account_id: accountId })
+      const { data } = await supabase.from('sites').insert({ ...payload, account_id: accountId }).select('id').single()
+      siteId = (data as any)?.id
     }
+    if (siteId) await syncSiteSubcontractors(siteId, accountId, m.linkedSubs ?? [])
     modal.value = null; await load()
   } catch (e: any) {
     saveError.value = e.message ?? '保存に失敗しました'
@@ -307,10 +338,12 @@ async function doMerge() {
 .btn-edit { background: #f0f0f0; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
 .btn-toggle { background: none; border: 1px solid #ddd; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; color: #888; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 12px; padding: 32px; width: 360px; display: flex; flex-direction: column; gap: 20px; }
+.modal { background: #fff; border-radius: 12px; padding: 32px; width: 360px; display: flex; flex-direction: column; gap: 20px; max-height: 90vh; overflow-y: auto; }
 .modal h2 { font-size: 18px; font-weight: 700; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label { font-size: 12px; font-weight: 700; color: #888; }
+.sub-link-list { display: flex; flex-direction: column; gap: 4px; max-height: 160px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; padding: 8px 10px; background: #fafafa; }
+.sub-link-item { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 400; color: #333; cursor: pointer; }
 .input { background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px 14px; font-size: 14px; width: 100%; }
 .modal-actions { display: flex; gap: 12px; }
 .btn-save { flex: 1; background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 12px; font-weight: 700; cursor: pointer; }
