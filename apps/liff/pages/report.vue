@@ -189,7 +189,7 @@
                 <div class="row-worker">
                   <select v-model="sub.subcontractorName" class="select" :class="{ 'select--error': sub.subcontractorName === '' }">
                     <option value="" disabled>{{ $t('report.selectSubcontractor') }}</option>
-                    <option v-for="name in master.subcontractorNames.value" :key="name" :value="name">{{ name }}</option>
+                    <option v-for="name in master.subNamesForSite(site.siteName, sub.subcontractorName)" :key="name" :value="name">{{ name }}</option>
                     <option value="__other__">{{ $t('report.otherNew') }}</option>
                   </select>
                   <input v-model.number="sub.count" type="number" min="1" max="20" class="input select--h" :placeholder="$t('report.people')" @keydown.enter.prevent />
