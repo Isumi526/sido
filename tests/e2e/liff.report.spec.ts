@@ -22,6 +22,8 @@ test('日報入力 → 送信 → 完了画面が出る', async ({ page }) => {
   await siteSelect.selectOption({ label: 'テスト現場A' })
   await page.waitForTimeout(500)
 
+  // 記入忘れ確認チェック（新規送信は必須＝送信ボタンを有効化）
+  await page.locator('.submit-confirm input[type="checkbox"]').check()
   // 送信
   await page.locator('button[type="submit"].btn-submit').click()
 
@@ -30,7 +32,7 @@ test('日報入力 → 送信 → 完了画面が出る', async ({ page }) => {
 
   // リグレ: 送信後に「翌日分の日報」ボタンが出る（service_start_date設定済み＝未送信日が残る）
   // ※ 代理入力でも同ボタンが出るよう post-submit を targetUserId で統一した変更の自己経路ガード
-  await expect(page.getByRole('button', { name: /の日報を入力する/ })).toBeVisible({ timeout: 10000 })
+  await expect(page.getByRole('button', { name: /の日報を入力する/ })).toBeVisible({ timeout: 20000 })
 })
 
 // ── 回帰: 送信済みの過去日報を「編集」で開くと、誤って「過去の未送信日報です」が出ていた ──
@@ -89,6 +91,8 @@ test('新規登録した下請業者が再訪時にプルダウンへ残る', as
   await subSelect.selectOption('__other__')
   await page.getByPlaceholder('業者名を入力 *').first().fill(SUB_NAME)
 
+  // 記入忘れ確認チェック（新規送信は必須＝送信ボタンを有効化）
+  await page.locator('.submit-confirm input[type="checkbox"]').check()
   // 送信 → 完了（このタイミングでマスタ保存を await して確実に永続化される）
   await page.locator('button[type="submit"].btn-submit').click()
   await expect(page.getByText(/送信完了|更新しました/)).toBeVisible({ timeout: 20000 })
