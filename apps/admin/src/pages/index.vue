@@ -125,7 +125,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, unitPriceForDate } from '../lib/workerHours'
+import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, unitPriceForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
 
 // ── 開発の更新履歴（全社共通・未確認/確認済みタブ）──────────
 interface DevUpdate { id: string; title: string; link: string | null; created_at: string }
@@ -233,7 +233,7 @@ async function load() {
   const [{ data: reports }, { data: invItems }] = await Promise.all([
     supabase
       .from('daily_reports')
-      .select('date, sites')
+      .select('date, sites, is_business_trip')
       .eq('account_id', accountId)
       .eq('is_working', true)
       .gte('date', `${ym}-01`)
@@ -265,6 +265,8 @@ async function load() {
     // 実勤務時間ベースで料率別時間を再計算（通常×8h固定バグの修正）。複数現場は残業跨ぎ累積。
     const isSunday = new Date((rep as any).date + 'T00:00:00').getDay() === 0
     const laborMap = laborBreakdownForReport((rep as any).sites ?? [], isSunday)
+    // 出張日：作業員ごとの主たる現場（最長稼働）にだけ +¥3,000（二重計上回避）
+    const tripSet = (rep as any).is_business_trip ? businessTripMainEntries((rep as any).sites ?? []) : null
     const date = (rep as any).date as string
     for (const site of (rep.sites as any[])) {
       const siteName = site.siteName || '（現場名なし）'
@@ -274,9 +276,10 @@ async function load() {
         const wid = w.workerId || idByName[w.workerName]
         // 日報の日付に有効だった単価で計算（昇給で過去の人件費が動かないように）
         const up = unitPriceForDate(date, wid ? wageTimelines.get(wid) : undefined, curUp)
-        const cost = laborCostForBreakdown(laborMap.get(w) ?? ZERO_BREAKDOWN, up)
+        const tripBonus = tripSet?.has(w) ? BUSINESS_TRIP_ALLOWANCE : 0
+        const cost = laborCostForBreakdown(laborMap.get(w) ?? ZERO_BREAKDOWN, up) + tripBonus
         labor += cost
-        addDetail(details, '社員', date, `${w.workerName}／${siteName}`, cost)
+        addDetail(details, '社員', date, `${w.workerName}／${siteName}${tripBonus ? '（出張手当込）' : ''}`, cost)
       }
 
       // 商社・業者費
