@@ -60,6 +60,11 @@
           <span class="material-symbols-rounded menu-icon" style="color:#ef4444">picture_as_pdf</span>
           <span class="menu-label">{{ t('nav.expensePdf') }}</span>
         </NuxtLink>
+        <!-- email/pw ログイン作業員のみ：パスワード変更 -->
+        <NuxtLink v-if="authMode === 'password'" class="menu-card" to="/password" data-testid="menu-password">
+          <span class="material-symbols-rounded menu-icon" style="color:#64748b">lock_reset</span>
+          <span class="menu-label">{{ t('nav.passwordChange') }}</span>
+        </NuxtLink>
         <!-- 代理操作者のみ表示 -->
         <button v-if="proxy.canProxy.value" class="menu-card proxy-btn" @click="openProxyModal">
           <span class="material-symbols-rounded menu-icon" style="color:#dc2626">swap_horiz</span>
@@ -110,7 +115,7 @@ import type { User } from '~/types'
 import { recentPeriodKeys, deadlineForPeriod, deadlineLabel, effectiveStatus, isInDeadlineAlertWindow } from '~/composables/useExpense'
 
 const { t }       = useI18n()
-const { profile } = useLiff()
+const { profile, authMode } = useLiff()
 const supabase    = useSupabase()
 const config      = useRuntimeConfig()
 const proxy       = useProxyMode()
