@@ -127,7 +127,7 @@
 
             <!-- 下請け業者 -->
             <div v-if="site.subcontractors?.filter((s: any) => s.subcontractorName).length" class="section">
-              <div class="section-label">下請け業者</div>
+              <div class="section-label">協力会社</div>
               <div v-for="(s, si2) in site.subcontractors.filter((s: any) => s.subcontractorName)" :key="si2" class="sub-row">
                 <span>{{ s.subcontractorName === '__other__' ? (s.customSubcontractorName || '新規業者') : s.subcontractorName }}</span>
                 <span class="muted">{{ s.count }}名</span>
@@ -137,7 +137,7 @@
               </div>
               <!-- 合計 -->
               <div class="labor-cost">
-                下請け費合計
+                協力会社費合計
                 <span class="labor-cost-amount">
                   ¥{{ site.subcontractors.filter((s: any) => s.subcontractorName)
                     .reduce((sum: number, s: any) => {

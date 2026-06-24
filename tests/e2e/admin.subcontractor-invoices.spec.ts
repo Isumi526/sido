@@ -43,7 +43,7 @@ test.describe('下請け請求', () => {
 
   test('AC1/2/4: 業者を新規登録→ヘッダ＋明細入力→金額自動→保存→一覧に出る', async ({ page }) => {
     await page.goto('/subcontractor-invoices', { waitUntil: 'networkidle' })
-    await expect(page.locator('h1')).toContainText('下請け請求')
+    await expect(page.locator('h1')).toContainText('協力会社請求')
 
     await page.locator('.btn-add').click()
     // 業者プルダウン→新規登録
