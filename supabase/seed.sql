@@ -11,8 +11,12 @@ insert into accounts (name, slug) values ('ローカルテスト建設', 'test')
 on conflict (slug) do nothing;
 
 -- ── 作業員マスタ（架空）──────────────────────────────────
-insert into workers (name, role, unit_price, sort_order, account_id)
-select v.name, v.role, v.price, v.ord, a.id
+-- created_at を service_start_date(2026-01-01)より前に固定：
+--   getNextUnsubmittedDate の起点 effStart=max(service_start_date, workers.created_at) が
+--   reset当日にならず、未送信日が複数残る → liff 日報送信系E2E(report/ai-receipt/parking)が
+--   「未送信日が1日だけ→1本submit後skip」にならず安定して走る。
+insert into workers (name, role, unit_price, sort_order, account_id, created_at)
+select v.name, v.role, v.price, v.ord, a.id, timestamptz '2025-12-01 00:00:00+09'
 from accounts a
 cross join (values
   ('Worker 01', 'site',    20000, 1),
@@ -90,3 +94,19 @@ cross join (values
 ) as v(key, val, label)
 where a.slug = 'test'
 on conflict (key, account_id) do nothing;
+
+-- ────────────────────────────────────────────────────────────────
+-- ローカルE2E用 GRANT（root fix / 2026-06-24）
+--   liff・admin は anon キーで public 表を読み書きする設計（RLS未有効）。
+--   fresh `supabase db reset` 直後は anon/authenticated/service_role が
+--   public 表へアクセスできず、E2E global-setup のシードが 401 で全落ちし
+--   liff の現場プルダウン等も空になっていた（過去はアドホックGRANTのドリフトで成立）。
+--   seed.sql は **ローカル db reset 専用**（本番migrationには含まれない）ため、
+--   ここで明示GRANTしてローカルのテスト基盤を毎回再現可能にする。
+-- ────────────────────────────────────────────────────────────────
+grant usage on schema public to anon, authenticated, service_role;
+grant select, insert, update, delete on all tables in schema public to anon, authenticated, service_role;
+grant usage, select on all sequences in schema public to anon, authenticated, service_role;
+-- 以降に作られる表にも自動付与（将来のmigration追加表もシード後に取りこぼさない）
+alter default privileges in schema public grant select, insert, update, delete on tables to anon, authenticated, service_role;
+alter default privileges in schema public grant usage, select on sequences to anon, authenticated, service_role;
