@@ -19,6 +19,7 @@
   "working": "Worked",
   "paidLeave": "Paid leave",
   "off": "No work (day off, travel day, etc.)",
+  "businessTrip": "Business trip (+¥3,000/day allowance)",
   "site": "Site",
   "siteNumbered": "Site {n}",
   "removeBtn": "✕ Remove",

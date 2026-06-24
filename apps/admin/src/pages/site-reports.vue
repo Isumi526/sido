@@ -116,7 +116,7 @@
             </thead>
             <tbody>
               <tr v-for="(w, i) in selected.workers" :key="i">
-                <td>{{ w.workerName }}</td>
+                <td>{{ w.workerName }}<span v-if="w._tripBonus" class="trip-badge" data-testid="trip-badge" title="出張手当 +¥3,000（主たる現場に1回）">出張+¥3,000</span></td>
                 <td><span class="role-badge" :class="w.role">{{ w.role === 'factory' ? '工場' : '現場' }}</span></td>
                 <td class="num">{{ fmt(w.hoursNormal) }}</td>
                 <td class="num">{{ fmt(w.hoursOT) }}</td>
@@ -283,7 +283,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, unitPriceForDate } from '../lib/workerHours'
+import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, unitPriceForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
 
 const baseDate  = ref(new Date())
 const yearMonth = computed(() => `${baseDate.value.getFullYear()}年${baseDate.value.getMonth() + 1}月`)
@@ -397,7 +397,7 @@ async function load() {
 
   const { data } = await supabase
     .from('daily_reports')
-    .select('id, date, is_working, sites')
+    .select('id, date, is_working, is_business_trip, sites')
     .eq('account_id', accountId)
     .eq('is_working', true)
     .gte('date', dateFrom.value)
@@ -413,6 +413,8 @@ async function load() {
     // 実勤務時間ベースで料率別時間を再計算（保存値の hoursNormal に依存しない＝通常×8h固定バグの修正）。
     // 同一作業員が複数現場に跨る場合は現場跨ぎで残業を累積する。
     const laborMap = laborBreakdownForReport((report as any).sites ?? [], isSunday)
+    // 出張日：作業員ごとの主たる現場（最長稼働）にだけ +¥3,000 を計上（二重計上回避）
+    const tripSet = (report as any).is_business_trip ? businessTripMainEntries((report as any).sites ?? []) : null
 
     for (const site of ((report as any).sites ?? [])) {
       const rawName  = site.siteName ?? ''
@@ -444,7 +446,8 @@ async function load() {
         // 日報の日付に有効だった単価で計算（昇給で過去の人件費が動かないように）
         const unitPrice = unitPriceForDate(date, wid ? wageTimelines.get(wid) : undefined, curPrice)
         const breakdown = laborMap.get(w) ?? ZERO_BREAKDOWN
-        g.workers.push({ ...w, ...breakdown, role: w.workerRole ?? 'site', unitPrice, laborCost: laborCostForBreakdown(breakdown, unitPrice) })
+        const tripBonus = tripSet?.has(w) ? BUSINESS_TRIP_ALLOWANCE : 0
+        g.workers.push({ ...w, ...breakdown, role: w.workerRole ?? 'site', unitPrice, _tripBonus: tripBonus, laborCost: laborCostForBreakdown(breakdown, unitPrice) + tripBonus })
       }
 
       // 下請け（商社/業者区分・単価を master から付与）
@@ -565,6 +568,7 @@ watch(dateFrom, load)
 .inner-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .inner-table th { background: #f9f9f9; padding: 7px 10px; text-align: left; font-size: 11px; color: #888; font-weight: 700; }
 .inner-table td { padding: 8px 10px; border-top: 1px solid #f5f5f5; }
+.trip-badge { display: inline-block; margin-left: 6px; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 700; background: #eef2ff; color: #4338ca; white-space: nowrap; }
 .role-badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 700; }
 .role-badge.factory { background: #e8f4ff; color: #1a6fc4; }
 .role-badge.site { background: #e8fff0; color: #0a8a3a; }

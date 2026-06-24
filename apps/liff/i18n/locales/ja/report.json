@@ -19,6 +19,7 @@
   "working": "稼働あり",
   "paidLeave": "有給",
   "off": "稼働なし（休み・移動日等）",
+  "businessTrip": "出張（出張手当 +¥3,000/日）",
   "site": "現場",
   "siteNumbered": "現場 {n}",
   "removeBtn": "✕ 削除",
