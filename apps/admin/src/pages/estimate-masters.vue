@@ -25,10 +25,15 @@
           <input v-model="newTradeName" class="input" placeholder="工種名（例: 軽鉄工事）" data-testid="new-trade-name" />
           <button class="btn-add" :disabled="!newTradeName.trim()" data-testid="add-trade" @click="addTrade">工種を追加</button>
         </div>
+        <p class="muted dnd-hint">行を上下にドラッグ&ドロップで並び替えできます（順番は保存されます）。</p>
         <table v-if="trades.length" class="table" data-testid="trade-list">
-          <thead><tr><th>工種</th><th></th></tr></thead>
+          <thead><tr><th class="drag-col"></th><th>工種</th><th></th></tr></thead>
           <tbody>
-            <tr v-for="t in trades" :key="t.id" :data-testid="`trade-row-${t.id}`">
+            <tr v-for="(t, i) in trades" :key="t.id" :data-testid="`trade-row-${t.id}`"
+                draggable="true" @dragstart="onTradeDragStart(i)" @dragend="onTradeDragEnd"
+                @dragover.prevent="dragOverIndex = i" @drop="onTradeDrop(i)"
+                :class="{ 'drag-over': dragOverIndex === i, 'dragging': dragIndex === i }">
+              <td class="drag-col" title="ドラッグで並び替え">⠿</td>
               <td>{{ t.name }}</td>
               <td><button class="btn-del" :data-testid="`trade-del-${t.id}`" @click="deleteTrade(t.id)">削除</button></td>
             </tr>
@@ -394,6 +399,25 @@ async function deleteTrade(id: string) {
   if (error) { masterErr.value = '使用中の工種は削除できません（明細で使われています）'; return }
   await loadTrades()
 }
+
+// ── 工種のドラッグ&ドロップ並び替え（sort_order を永続化）──
+const dragIndex     = ref<number | null>(null)
+const dragOverIndex = ref<number | null>(null)
+function onTradeDragStart(i: number) { dragIndex.value = i }
+function onTradeDragEnd() { dragIndex.value = null; dragOverIndex.value = null }
+async function onTradeDrop(i: number) {
+  const from = dragIndex.value
+  dragIndex.value = null; dragOverIndex.value = null
+  if (from == null || from === i) return
+  const arr = trades.value.slice()
+  const [moved] = arr.splice(from, 1)
+  arr.splice(i, 0, moved)
+  trades.value = arr
+  // 並び順を sort_order に保存（index = 表示順）
+  const accountId = await getAccountId()
+  await Promise.all(trades.value.map((t, idx) =>
+    supabase.from('estimate_trades').update({ sort_order: idx }).eq('id', t.id).eq('account_id', accountId)))
+}
 async function addMaterial() {
   const f = materialForm.value
   if (!f.name.trim()) return
@@ -440,6 +464,11 @@ onMounted(async () => {
 .btn-add:disabled { opacity: .4; cursor: not-allowed; background: #f3f4f6; color: #9ca3af; border-color: #e5e7eb; }
 .btn-add.disabled { opacity: .6; pointer-events: none; }
 .btn-del { background: none; border: none; color: #c00; font-size: 16px; cursor: pointer; }
+.dnd-hint { font-size: 11px; color: #999; margin: 0 0 6px; }
+.table td.drag-col, .table th.drag-col { width: 24px; text-align: center; color: #bbb; cursor: grab; user-select: none; }
+.table tr[draggable="true"] { cursor: grab; }
+.table tr.dragging { opacity: .4; }
+.table tr.drag-over td { border-top: 2px solid #1a56c4; }
 .btn-primary { background: #06C755; color: #fff; border: none; border-radius: 6px; padding: 8px 18px; font-weight: 600; cursor: pointer; }
 .btn-primary.sm { padding: 4px 12px; font-size: 13px; }
 .trade-add { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
