@@ -60,12 +60,15 @@
           <button class="modal-close" @click="closeForm">×</button>
         </div>
         <div class="modal-body">
-          <!-- PDF→AI解析 -->
-          <div class="ai-row">
+          <!-- PDF→AI解析（ドラッグ&ドロップ対応） -->
+          <div class="ai-row" :class="{ 'drag-active': dragActive }"
+               @dragover.prevent="dragActive = true" @dragenter.prevent="dragActive = true"
+               @dragleave.prevent="dragActive = false" @drop.prevent="onDrop">
             <input ref="fileInput" type="file" accept="application/pdf,image/*" multiple @change="onFile" />
             <button class="btn-ai" :disabled="!files.length || analyzing" @click="analyze">
               {{ analyzing ? 'AI解析中…' : files.length > 1 ? `PDF/画像${files.length}枚をAI解析して自動入力` : 'PDFをAI解析して自動入力' }}
             </button>
+            <span class="drop-hint">{{ dragActive ? 'ここにドロップ' : 'またはここにPDF/画像をドラッグ&ドロップ（複数可）' }}</span>
           </div>
           <p v-if="aiMsg" class="ai-msg">{{ aiMsg }}</p>
 
@@ -196,7 +199,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 
@@ -223,6 +227,7 @@ const sites    = ref<{ id: string; name: string }[]>([])
 const subs     = ref<{ id: string; name: string; category: string | null }[]>([])
 const form     = ref<Form | null>(null)
 const files    = ref<File[]>([])   // 複数枚（請求書が複数ページに分かれている場合）対応
+const dragActive = ref(false)      // ファイルD&D中のハイライト
 const analyzing = ref(false)
 const aiMsg    = ref('')
 const saving   = ref(false)
@@ -387,6 +392,25 @@ async function addSite(it: Item) {
 }
 
 function onFile(e: Event) { files.value = Array.from((e.target as HTMLInputElement).files ?? []); aiMsg.value = '' }
+
+// ドラッグ&ドロップでファイルをセット（PDF/画像のみ・複数可）。input選択と同じく置き換え。
+function onDrop(e: DragEvent) {
+  dragActive.value = false
+  const dropped = Array.from(e.dataTransfer?.files ?? [])
+    .filter(f => f.type === 'application/pdf' || f.type.startsWith('image/'))
+  if (dropped.length) { files.value = dropped; aiMsg.value = '' }
+}
+
+// 入力中の離脱ガード：モーダルの×だけでなく、リロード/タブ閉じ/ページ遷移でも破棄確認を出す。
+function onBeforeUnload(e: BeforeUnloadEvent) {
+  if (isDirty()) { e.preventDefault(); e.returnValue = '' }
+}
+onMounted(() => window.addEventListener('beforeunload', onBeforeUnload))
+onBeforeUnmount(() => window.removeEventListener('beforeunload', onBeforeUnload))
+// アプリ内ページ遷移（Vue Router）でも入力中なら確認（ガード内は同期confirmで判定）。
+onBeforeRouteLeave(() => {
+  if (isDirty()) return window.confirm('入力中の内容が破棄されます。移動してよろしいですか？')
+})
 
 // 現場名→現場ID 名寄せ（完全一致→正規化一致→部分一致）。誤字や接頭/接尾辞のズレを吸収
 function normSite(s: string): string {
@@ -619,7 +643,10 @@ onMounted(load)
 .modal-close { background: none; border: none; font-size: 24px; cursor: pointer; color: #888; }
 .modal-body { overflow-y: auto; padding: 16px 20px 20px; }
 
-.ai-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.ai-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; padding: 10px; border: 1.5px dashed #cfd6e4; border-radius: 10px; transition: border-color .15s, background .15s; }
+.ai-row.drag-active { border-color: #1a56c4; background: #eef3fd; }
+.drop-hint { font-size: 12px; color: #8a93a6; }
+.ai-row.drag-active .drop-hint { color: #1a56c4; font-weight: 700; }
 .btn-ai { background: #1a56c4; color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-ai:disabled { opacity: .5; cursor: default; }
 .ai-msg { font-size: 12px; color: #1a56c4; margin: 0 0 12px; }
