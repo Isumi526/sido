@@ -126,6 +126,41 @@
           <button type="button" class="btn-add-family" data-testid="add-family" @click="addFamily">＋ 家族を追加</button>
         </div>
         <div class="field">
+          <label>会社情報</label>
+          <input v-model="modal.company_info" class="input" placeholder="例：株式会社○○／所在地・代表者など" data-testid="company-info" />
+        </div>
+        <div class="field">
+          <label>インボイス登録番号</label>
+          <input v-model="modal.invoice_number" class="input" placeholder="例：T1234567890123" data-testid="invoice-number" />
+        </div>
+        <div class="field">
+          <label>会社の保険</label>
+          <input v-model="modal.insurance_info" class="input" placeholder="例：労働保険／賠償責任保険 など" data-testid="insurance-info" />
+        </div>
+        <div v-if="modal.employment_type === 'contractor'" class="field">
+          <label>労災保険番号（業務委託）</label>
+          <input v-model="modal.labor_insurance_number" class="input" placeholder="例：12-3-45-678901-0" data-testid="labor-insurance-number" />
+        </div>
+        <div class="field">
+          <label>車検履歴（車両・車検日・満了日）</label>
+          <div v-for="(vi, i) in vehicleInspections" :key="i" class="family-row" data-testid="inspection-row">
+            <input v-model="vi.vehicle_name" class="input" placeholder="車両名" />
+            <input v-model="vi.inspection_date" type="date" class="input" />
+            <input v-model="vi.expiry_date" type="date" class="input" />
+            <button type="button" class="family-del" @click="removeInspection(i)">×</button>
+          </div>
+          <button type="button" class="btn-add-family" data-testid="add-inspection" @click="addInspection">＋ 車検を追加</button>
+        </div>
+        <div class="field">
+          <label>健康診断履歴（受診日・結果）</label>
+          <div v-for="(hc, i) in healthCheckups" :key="i" class="checkup-row" data-testid="checkup-row">
+            <input v-model="hc.checkup_date" type="date" class="input" />
+            <input v-model="hc.result" class="input" placeholder="結果（例：異常なし）" />
+            <button type="button" class="family-del" @click="removeCheckup(i)">×</button>
+          </div>
+          <button type="button" class="btn-add-family" data-testid="add-checkup" @click="addCheckup">＋ 健診を追加</button>
+        </div>
+        <div class="field">
           <label>代理人（LINEを持たない場合、代わりに入力する作業員）</label>
           <div class="proxy-check-list">
             <label
@@ -182,6 +217,10 @@ type Worker = {
   emergency_contact: string | null
   employment_type: 'fulltime' | 'parttime' | 'contractor' | null
   weekly_scheduled_days: number | null
+  company_info: string | null
+  invoice_number: string | null
+  insurance_info: string | null
+  labor_insurance_number: string | null
   auth_user_id: string | null
 }
 
@@ -224,6 +263,52 @@ async function syncFamily(workerId: string, accountId: string, want: FamilyMembe
   }
   if (toDel.length) await supabase.from('worker_family_members').delete().in('id', toDel)
 }
+// 車検履歴（1作業員に複数）
+type VehicleInspection = { id?: string; vehicle_name: string | null; inspection_date: string | null; expiry_date: string | null }
+const vehicleInspections = ref<VehicleInspection[]>([])
+function addInspection()            { vehicleInspections.value.push({ vehicle_name: null, inspection_date: null, expiry_date: null }) }
+function removeInspection(i: number){ vehicleInspections.value.splice(i, 1) }
+async function loadInspections(workerId: string) {
+  const { data } = await supabase.from('worker_vehicle_inspections')
+    .select('id, vehicle_name, inspection_date, expiry_date').eq('worker_id', workerId).order('sort_order')
+  vehicleInspections.value = ((data ?? []) as any[]).map(r => ({ id: r.id, vehicle_name: r.vehicle_name, inspection_date: r.inspection_date, expiry_date: r.expiry_date }))
+}
+async function syncInspections(workerId: string, accountId: string, want: VehicleInspection[]) {
+  const valid = want.filter(r => r.vehicle_name?.trim() || r.inspection_date || r.expiry_date)
+  const { data } = await supabase.from('worker_vehicle_inspections').select('id').eq('worker_id', workerId)
+  const haveIds = ((data ?? []) as { id: string }[]).map(h => h.id)
+  const keepIds = valid.map(r => r.id).filter(Boolean) as string[]
+  const toDel = haveIds.filter(id => !keepIds.includes(id))
+  for (const [i, r] of valid.entries()) {
+    const row = { worker_id: workerId, account_id: accountId, vehicle_name: r.vehicle_name?.trim() || null, inspection_date: r.inspection_date || null, expiry_date: r.expiry_date || null, sort_order: i, updated_at: new Date().toISOString() }
+    if (r.id) await supabase.from('worker_vehicle_inspections').update(row).eq('id', r.id)
+    else      await supabase.from('worker_vehicle_inspections').insert(row)
+  }
+  if (toDel.length) await supabase.from('worker_vehicle_inspections').delete().in('id', toDel)
+}
+// 健康診断履歴（1作業員に複数）
+type HealthCheckup = { id?: string; checkup_date: string | null; result: string | null }
+const healthCheckups = ref<HealthCheckup[]>([])
+function addCheckup()            { healthCheckups.value.push({ checkup_date: null, result: null }) }
+function removeCheckup(i: number){ healthCheckups.value.splice(i, 1) }
+async function loadCheckups(workerId: string) {
+  const { data } = await supabase.from('worker_health_checkups')
+    .select('id, checkup_date, result').eq('worker_id', workerId).order('sort_order')
+  healthCheckups.value = ((data ?? []) as any[]).map(r => ({ id: r.id, checkup_date: r.checkup_date, result: r.result }))
+}
+async function syncCheckups(workerId: string, accountId: string, want: HealthCheckup[]) {
+  const valid = want.filter(r => r.checkup_date || r.result?.trim())
+  const { data } = await supabase.from('worker_health_checkups').select('id').eq('worker_id', workerId)
+  const haveIds = ((data ?? []) as { id: string }[]).map(h => h.id)
+  const keepIds = valid.map(r => r.id).filter(Boolean) as string[]
+  const toDel = haveIds.filter(id => !keepIds.includes(id))
+  for (const [i, r] of valid.entries()) {
+    const row = { worker_id: workerId, account_id: accountId, checkup_date: r.checkup_date || null, result: r.result?.trim() || null, sort_order: i, updated_at: new Date().toISOString() }
+    if (r.id) await supabase.from('worker_health_checkups').update(row).eq('id', r.id)
+    else      await supabase.from('worker_health_checkups').insert(row)
+  }
+  if (toDel.length) await supabase.from('worker_health_checkups').delete().in('id', toDel)
+}
 const saveError       = ref('')
 // email/password 認証（Phase 2a）
 const authEmail       = ref('')
@@ -246,7 +331,7 @@ function toggleProxyId(id: string) {
 async function load() {
   const accountId = await getAccountId()
   const [{ data: workersData }, { data: usersData }, { data: proxyData }] = await Promise.all([
-    supabase.from('workers').select('id, name, role, unit_price, active, hire_date, birth_date, address, emergency_contact, employment_type, weekly_scheduled_days, auth_user_id').eq('account_id', accountId).order('name'),
+    supabase.from('workers').select('id, name, role, unit_price, active, hire_date, birth_date, address, emergency_contact, employment_type, weekly_scheduled_days, company_info, invoice_number, insurance_info, labor_insurance_number, auth_user_id').eq('account_id', accountId).order('name'),
     supabase.from('users').select('worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
     supabase.from('worker_proxies').select('worker_id, proxy_operator_id').eq('account_id', accountId),
   ])
@@ -265,9 +350,11 @@ async function load() {
 onMounted(load)
 
 function openAdd() {
-  modal.value = { name: '', role: 'site', unit_price: 20000, hire_date: null, birth_date: null, address: null, emergency_contact: null, employment_type: 'fulltime', weekly_scheduled_days: null }
+  modal.value = { name: '', role: 'site', unit_price: 20000, hire_date: null, birth_date: null, address: null, emergency_contact: null, employment_type: 'fulltime', weekly_scheduled_days: null, company_info: null, invoice_number: null, insurance_info: null, labor_insurance_number: null }
   modalProxyIds.value = []
   familyMembers.value = []
+  vehicleInspections.value = []
+  healthCheckups.value = []
   saveError.value = ''
 }
 
@@ -287,6 +374,10 @@ function openEdit(w: Worker) {
   loadWageHistory(w.id)
   familyMembers.value = []
   loadFamily(w.id)
+  vehicleInspections.value = []
+  loadInspections(w.id)
+  healthCheckups.value = []
+  loadCheckups(w.id)
 }
 
 async function loadWageHistory(workerId: string) {
@@ -343,6 +434,11 @@ async function save() {
       emergency_contact:     modal.value.emergency_contact?.trim() || null,
       employment_type:       modal.value.employment_type ?? 'fulltime',
       weekly_scheduled_days: modal.value.employment_type === 'parttime' ? (modal.value.weekly_scheduled_days ?? null) : null,
+      company_info:           modal.value.company_info?.trim() || null,
+      invoice_number:         modal.value.invoice_number?.trim() || null,
+      insurance_info:         modal.value.insurance_info?.trim() || null,
+      // 労災保険番号は区分=業務委託のときのみ保持（他区分では常にnull）
+      labor_insurance_number: modal.value.employment_type === 'contractor' ? (modal.value.labor_insurance_number?.trim() || null) : null,
     }
 
     if (workerId) {
@@ -374,8 +470,10 @@ async function save() {
       )
     }
 
-    // 家族構成の同期
+    // 家族構成・車検履歴・健診履歴の同期
     await syncFamily(workerId!, accountId, familyMembers.value)
+    await syncInspections(workerId!, accountId, vehicleInspections.value)
+    await syncCheckups(workerId!, accountId, healthCheckups.value)
 
     modal.value = null
     await load()
@@ -442,6 +540,8 @@ async function toggleActive(w: Worker) {
 .wage-hist .wage-reason { color: #888; }
 .hint-sm { font-size: 11px; color: #999; margin: 2px 0 0; }
 .family-row { display: grid; grid-template-columns: 1.2fr 1fr 1fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
+.checkup-row { display: grid; grid-template-columns: 1fr 1.6fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
+.checkup-row .input { padding: 8px 10px; font-size: 13px; }
 .family-row .input { padding: 8px 10px; font-size: 13px; }
 .family-del { background: none; border: 1px solid #f0caca; color: #c0392b; border-radius: 6px; width: 30px; height: 32px; cursor: pointer; font-size: 14px; }
 .btn-add-family { background: #f0f0f0; border: none; border-radius: 6px; padding: 8px 14px; font-size: 13px; cursor: pointer; color: #555; align-self: flex-start; }
