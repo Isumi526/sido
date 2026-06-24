@@ -31,9 +31,32 @@
       <div class="modal">
         <h2>{{ modal.id ? '元請け業者を編集' : '元請け業者を追加' }}</h2>
         <div class="field">
-          <label>元請け業者名</label>
-          <input v-model="modal.name" class="input" placeholder="例：〇〇建設" />
+          <label>元請け業者名 *</label>
+          <input v-model="modal.name" class="input" placeholder="例：〇〇建設" data-testid="contractor-name" />
         </div>
+        <div class="grid2">
+          <div class="field"><label>代表者名</label><input v-model="modal.representative_name" class="input" /></div>
+          <div class="field"><label>登録番号（インボイス）</label><input v-model="modal.registration_number" class="input" placeholder="例：T1234567890123" /></div>
+          <div class="field"><label>携帯電話</label><input v-model="modal.mobile_phone" class="input" /></div>
+          <div class="field"><label>会社電話</label><input v-model="modal.office_phone" class="input" /></div>
+          <div class="field"><label>メール</label><input v-model="modal.email" class="input" /></div>
+          <div class="field"><label>住所</label><input v-model="modal.address" class="input" /></div>
+        </div>
+        <div class="field"><label>備考</label><textarea v-model="modal.note" class="input" rows="2" placeholder="この元請けに関するメモ"></textarea></div>
+        <details class="bank">
+          <summary>振込口座（任意）</summary>
+          <div class="grid2">
+            <div class="field"><label>銀行名</label><input v-model="modal.bank_name" class="input" /></div>
+            <div class="field"><label>支店</label><input v-model="modal.bank_branch" class="input" /></div>
+            <div class="field"><label>種別</label>
+              <select v-model="modal.bank_account_type" class="input">
+                <option :value="null">—</option><option value="普通">普通</option><option value="当座">当座</option>
+              </select>
+            </div>
+            <div class="field"><label>口座番号</label><input v-model="modal.bank_account_number" class="input" /></div>
+            <div class="field"><label>口座名義</label><input v-model="modal.bank_account_holder" class="input" /></div>
+          </div>
+        </details>
         <div class="field">
           <label>担当者（複数登録可・見積書の送信先に使用）</label>
           <div v-for="(c, i) in modal.contacts" :key="i" class="contact-row">
@@ -60,8 +83,17 @@ import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 
 type Contact = { id?: string; name: string; email: string | null; phone: string | null }
-type Contractor = { id: string; name: string; active: boolean; contacts: Contact[] }
+type Contractor = {
+  id: string; name: string; active: boolean
+  representative_name: string | null; mobile_phone: string | null; office_phone: string | null
+  email: string | null; address: string | null; registration_number: string | null; note: string | null
+  bank_name: string | null; bank_branch: string | null; bank_account_type: string | null
+  bank_account_number: string | null; bank_account_holder: string | null
+  contacts: Contact[]
+}
 type ModalState = Partial<Contractor> & { contacts: Contact[] }
+
+const CON_COLS = 'id, name, active, representative_name, mobile_phone, office_phone, email, address, registration_number, note, bank_name, bank_branch, bank_account_type, bank_account_number, bank_account_holder'
 
 const contractors = ref<Contractor[]>([])
 const modal       = ref<ModalState | null>(null)
@@ -71,7 +103,7 @@ const saveError   = ref('')
 async function load() {
   const accountId = await getAccountId()
   const [{ data: rows }, { data: contactRows }] = await Promise.all([
-    supabase.from('contractors').select('id, name, active').eq('account_id', accountId).order('name'),
+    supabase.from('contractors').select(CON_COLS).eq('account_id', accountId).order('name'),
     supabase.from('contractor_contacts').select('id, contractor_id, name, email, phone, sort_order')
       .eq('account_id', accountId).eq('is_deleted', false).order('sort_order'),
   ])
@@ -95,10 +127,26 @@ async function save() {
   try {
     const accountId = await getAccountId()
     let id = modal.value.id
+    const m = modal.value
+    const fields = {
+      name: m.name!.trim(),
+      representative_name: m.representative_name?.trim() || null,
+      mobile_phone: m.mobile_phone?.trim() || null,
+      office_phone: m.office_phone?.trim() || null,
+      email: m.email?.trim() || null,
+      address: m.address?.trim() || null,
+      registration_number: m.registration_number?.trim() || null,
+      note: m.note?.trim() || null,
+      bank_name: m.bank_name?.trim() || null,
+      bank_branch: m.bank_branch?.trim() || null,
+      bank_account_type: m.bank_account_type?.trim() || null,
+      bank_account_number: m.bank_account_number?.trim() || null,
+      bank_account_holder: m.bank_account_holder?.trim() || null,
+    }
     if (id) {
-      await supabase.from('contractors').update({ name: modal.value.name.trim() }).eq('id', id)
+      await supabase.from('contractors').update(fields).eq('id', id)
     } else {
-      const { data } = await supabase.from('contractors').insert({ name: modal.value.name!.trim(), account_id: accountId }).select('id').single()
+      const { data } = await supabase.from('contractors').insert({ ...fields, account_id: accountId }).select('id').single()
       id = (data as any)?.id
     }
     if (id) await syncContacts(id, accountId, modal.value.contacts)
@@ -146,7 +194,12 @@ async function toggleActive(c: Contractor) {
 .btn-edit { background: #f0f0f0; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
 .btn-toggle { background: none; border: 1px solid #ddd; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; color: #888; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 12px; padding: 32px; width: 360px; display: flex; flex-direction: column; gap: 20px; }
+.modal { background: #fff; border-radius: 12px; padding: 32px; width: min(560px, 94vw); display: flex; flex-direction: column; gap: 16px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+.bank { border: 1px solid #eee; border-radius: 8px; padding: 8px 12px; }
+.bank summary { font-size: 13px; font-weight: 700; color: #666; cursor: pointer; }
+.bank .grid2 { margin-top: 12px; }
+textarea.input { resize: vertical; font-family: inherit; }
 .modal h2 { font-size: 18px; font-weight: 700; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label { font-size: 12px; font-weight: 700; color: #888; }
