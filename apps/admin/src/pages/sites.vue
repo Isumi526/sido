@@ -103,6 +103,18 @@
         </div>
         <p v-else class="hint">写真・書類は保存後（現場作成後）に添付できます。</p>
 
+        <div v-if="modal.id" class="field">
+          <label>この現場の見積書</label>
+          <div v-if="siteEstimates.length" class="att-list" data-testid="site-estimates">
+            <div v-for="e in siteEstimates" :key="e.id" class="att-item">
+              <span class="att-kind">📄</span>
+              <span class="att-link">{{ e.estimate_number || '（番号なし）' }}<span class="muted"> ・{{ e.estimate_date || '—' }} ・¥{{ (e.total_amount ?? 0).toLocaleString() }}</span></span>
+              <a v-if="e.pdf_path" :href="estPdfUrl(e.pdf_path)" target="_blank" rel="noopener" class="att-link pdf-link">📄 PDF</a>
+            </div>
+          </div>
+          <p v-else class="hint">この現場に紐づく見積書はありません（見積書登録時に現場を選ぶと自動で紐付きます）。</p>
+        </div>
+
         <div class="modal-actions">
           <button class="btn-save" :disabled="saving" @click="save">{{ saving ? '保存中...' : '保存' }}</button>
           <button class="btn-cancel" @click="modal = null">キャンセル</button>
@@ -155,6 +167,18 @@ const saveError = ref('')
 // 編集中の現場の添付（写真・書類）
 const attachments = ref<Att[]>([])
 const uploading   = ref(false)
+// この現場に紐づく見積書（estimates.site_id）。閲覧専用。
+type SiteEstimate = { id: string; estimate_number: string | null; estimate_date: string | null; total_amount: number | null; pdf_path: string | null }
+const siteEstimates = ref<SiteEstimate[]>([])
+const ESTIMATE_BUCKET = 'expense-receipts'
+function estPdfUrl(path: string) { return supabase.storage.from(ESTIMATE_BUCKET).getPublicUrl(path).data.publicUrl }
+async function loadSiteEstimates(siteId: string) {
+  const { data } = await supabase.from('estimates')
+    .select('id, estimate_number, estimate_date, total_amount, pdf_path')
+    .eq('site_id', siteId).eq('is_deleted', false)
+    .order('estimate_date', { ascending: false, nullsFirst: false })
+  siteEstimates.value = (data ?? []) as SiteEstimate[]
+}
 // 非公開バケット → edge(site-attachment-url)で短TTL署名URLを取得（getPublicUrl廃止）
 async function signedUrl(attachmentId: string): Promise<string | null> {
   try {
@@ -198,12 +222,13 @@ onMounted(load)
 
 const contractorName = (id: string | null | undefined) => contractors.value.find((c) => c.id === id)?.name ?? '—'
 
-function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, linkedSubs: [] }; attachments.value = []; saveError.value = '' }
+function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, linkedSubs: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = '' }
 async function openEdit(s: Site) {
   modal.value = { ...s, linkedSubs: [] }; saveError.value = ''
   const { data: links } = await supabase.from('site_subcontractors').select('subcontractor_id').eq('site_id', s.id)
   if (modal.value) modal.value.linkedSubs = ((links ?? []) as any[]).map(l => l.subcontractor_id)
-  await loadAttachments(s.id)
+  siteEstimates.value = []
+  await Promise.all([loadAttachments(s.id), loadSiteEstimates(s.id)])
 }
 
 // 現場↔下請け業者の紐付けを同期（チェックされたものだけ残す）
