@@ -69,7 +69,7 @@
       <!-- 商社別単価（手入力 と 価格表OCR取込） -->
       <div class="setting-block" v-show="settingsTab === 'price'">
         <h3>商社別単価</h3>
-        <p class="muted">商社は「下請け業者」マスタの<b>区分=商社</b>（<RouterLink to="/subcontractors">下請け業者</RouterLink>で登録）。<b>商社タブを選ぶ</b>と、その商社の単価の追加・一覧・取込が対象になります。</p>
+        <p class="muted">商社は「協力会社」マスタの<b>区分=商社</b>（<RouterLink to="/subcontractors">協力会社</RouterLink>で登録）。<b>商社タブを選ぶ</b>と、その商社の単価の追加・一覧・取込が対象になります。</p>
         <div class="price-tabs">
           <button v-for="s in suppliers" :key="s.id" class="ptab" :class="{ active: activeSupplier === s.id }" :data-testid="`ptab-${s.id}`" @click="activeSupplier = s.id">{{ s.name }}</button>
           <button v-if="!addingSupplier" class="ptab ptab-add" data-testid="add-supplier-toggle" @click="addingSupplier = true">＋ 商社を追加</button>
@@ -79,7 +79,7 @@
             <button class="btn-del" title="キャンセル" @click="addingSupplier = false; newSupplierName = ''">×</button>
           </template>
         </div>
-        <p v-if="!suppliers.length && !addingSupplier" class="muted">まだ商社がありません。「＋ 商社を追加」で登録できます（下請け業者 区分=商社として保存）。</p>
+        <p v-if="!suppliers.length && !addingSupplier" class="muted">まだ商社がありません。「＋ 商社を追加」で登録できます（協力会社 区分=商社として保存）。</p>
 
         <template v-if="activeSupplier">
           <div class="add-methods">
