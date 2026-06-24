@@ -119,6 +119,14 @@ entries:
     target: site_subcontractors
     reason: "上記と同じ紐付けマスタ。anon公開は他のマスタ表(sites/subcontractors/contractors等)と同じpre-RLSベースライン。LIFF日報がanonで読むマスタ系のため、トークン制御ではなく親エピックの一括RLS化で対応(account_idで論理分離済)。"
     ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: worker_family_members
+    reason: "作業員の家族構成(2026-06-24新設)。親の workers が RLS無効×anon で開いている以上、子の家族情報だけRLS化しても無意味(worker_wage_history と同型)。マスタ層は親エピック「本番DBのRLS有効化」で一括RLS化(account_idで論理分離済)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: anon-access-token
+    target: worker_family_members
+    reason: "上記家族構成の anon 公開。他マスタ表と同じ pre-RLS ベースライン。機微個人情報のため本番RLS化は親エピックで優先度高く一括対応(account_idで論理分離済)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
   # expense_users は 20260619000000_expense_users_rls.sql で RLS化済み（anon全拒否）＝baseline解消。
 
   # --- 呼び出し元認証ベースライン: cron起動のリマインド系EFは in-code認証なし＝既存 daily-reminder と同型。恒久対策(共有シークレット)はチケットで追跡。 ---
