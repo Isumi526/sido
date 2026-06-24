@@ -62,12 +62,13 @@ export const useMaster = () => {
     const accountId = await getAccountId()
     if (!accountId) throw new Error('account not found')
 
-    const [sitesRes, contractorsRes, workersRes, subsRes, vehiclesRes] = await Promise.all([
-      supabase.from('sites').select('name, contractor_id').eq('active', true).eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
+    const [sitesRes, contractorsRes, workersRes, subsRes, vehiclesRes, siteSubsRes] = await Promise.all([
+      supabase.from('sites').select('id, name, contractor_id').eq('active', true).eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
       supabase.from('contractors').select('id, name').eq('active', true).eq('account_id', accountId).order('sort_order'),
       supabase.from('workers').select('id, name, role, unit_price').eq('active', true).eq('account_id', accountId).order('sort_order'),
-      supabase.from('subcontractors').select('name').eq('active', true).eq('account_id', accountId).order('sort_order'),
+      supabase.from('subcontractors').select('id, name').eq('active', true).eq('account_id', accountId).order('sort_order'),
       supabase.from('vehicles').select('name').eq('active', true).eq('account_id', accountId).order('sort_order'),
+      supabase.from('site_subcontractors').select('site_id, subcontractor_id').eq('account_id', accountId),
     ])
 
     if (workersRes.error) throw workersRes.error
@@ -75,8 +76,20 @@ export const useMaster = () => {
     // 現場名 → 元請け名 のマップ（紐付け済みの現場のみ）。日報の現場絞り込みに使う。
     const contractorById = Object.fromEntries((contractorsRes.data ?? []).map((c: any) => [c.id, c.name]))
     const siteContractors: Record<string, string> = {}
+    const siteIds: Record<string, string> = {}
+    const siteNameById: Record<string, string> = {}
     for (const s of (sitesRes.data ?? []) as any[]) {
       if (s.contractor_id && contractorById[s.contractor_id]) siteContractors[s.name] = contractorById[s.contractor_id]
+      siteIds[s.name] = s.id
+      siteNameById[s.id] = s.name
+    }
+    // 現場名 → 紐づく下請け業者名[]（site_subcontractors join）。未紐付け現場は未収録＝全件にフォールバック。
+    const subNameById = Object.fromEntries(((subsRes.data ?? []) as any[]).map(r => [r.id, r.name]))
+    const siteSubcontractors: Record<string, string[]> = {}
+    for (const link of (siteSubsRes.data ?? []) as any[]) {
+      const sName = siteNameById[link.site_id]; const subName = subNameById[link.subcontractor_id]
+      if (!sName || !subName) continue
+      ;(siteSubcontractors[sName] ??= []).push(subName)
     }
 
     const data: MasterData = {
@@ -86,6 +99,8 @@ export const useMaster = () => {
       subcontractors: (subsRes.data        ?? []).map(r => r.name),
       vehicles:       (vehiclesRes.data    ?? []).map(r => r.name),
       siteContractors,
+      siteSubcontractors,
+      siteIds,
     }
 
     master.value = data
@@ -143,8 +158,8 @@ export const useMaster = () => {
     }
   }
 
-  /** 下請け業者名を Supabase に保存 */
-  async function saveSub(name: string) {
+  /** 下請け業者名を Supabase に保存。siteName を渡すとその現場へ自動で紐付ける（日報からの新規作成時）。 */
+  async function saveSub(name: string, siteName?: string) {
     if (!name.trim()) return
     const supabase  = useSupabase()
     const { getAccountId } = useAccount()
@@ -158,6 +173,40 @@ export const useMaster = () => {
       master.value = { ...master.value, subcontractors: [...master.value.subcontractors, name.trim()].sort((a, b) => a.localeCompare(b, 'ja')) }
       saveCache(master.value)
     }
+    // 現場への自動紐付け（best-effort：失敗しても業者作成は成立させる）
+    if (siteName?.trim()) {
+      try {
+        const sName = siteName.trim()
+        const [{ data: subRow }, { data: siteRow }] = await Promise.all([
+          supabase.from('subcontractors').select('id').eq('name', name.trim()).eq('account_id', accountId).maybeSingle(),
+          supabase.from('sites').select('id').eq('name', sName).eq('account_id', accountId).maybeSingle(),
+        ])
+        if (subRow?.id && siteRow?.id) {
+          await supabase.from('site_subcontractors').upsert(
+            { site_id: siteRow.id, subcontractor_id: subRow.id, account_id: accountId },
+            { onConflict: 'site_id,subcontractor_id' },
+          )
+          const cur = master.value.siteSubcontractors ?? {}
+          const list = cur[sName] ?? []
+          if (!list.includes(name.trim())) {
+            master.value = { ...master.value, siteSubcontractors: { ...cur, [sName]: [...list, name.trim()] } }
+            saveCache(master.value)
+          }
+        }
+      } catch { /* 紐付け失敗は無視（業者は作成済み） */ }
+    }
+  }
+
+  /** 指定現場に紐づく下請け業者名[]。紐付けゼロの現場は全件にフォールバック（後方互換）。
+   *  include に現在選択中の業者名を渡すと、紐付け外でも選択肢に残す（編集モードで消えない）。 */
+  function subNamesForSite(siteName: string | null | undefined, include?: string | null): string[] {
+    const all = master.value.subcontractors.slice().sort((a, b) => a.localeCompare(b, 'ja'))
+    const links = siteName ? master.value.siteSubcontractors?.[siteName] : null
+    if (!links || links.length === 0) return all
+    const set = new Set(links)
+    const filtered = all.filter(n => set.has(n))
+    if (include && include !== '__other__' && all.includes(include) && !set.has(include)) filtered.push(include)
+    return filtered
   }
 
   return {
@@ -167,6 +216,9 @@ export const useMaster = () => {
     saveSite,
     saveContractor,
     saveSub,
+    subNamesForSite,
+    siteIds:             computed(() => master.value.siteIds ?? {}),
+    siteSubcontractors:  computed(() => master.value.siteSubcontractors ?? {}),
     // sites は Supabase 側で name_kana 昇順(null最後)→name に整列済みのため、その順序を保持する（50音順）
     siteNames:           computed(() => master.value.sites.slice()),
     siteContractors:     computed(() => master.value.siteContractors ?? {}),
