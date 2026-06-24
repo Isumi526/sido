@@ -125,7 +125,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN } from '../lib/workerHours'
+import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, unitPriceForDate } from '../lib/workerHours'
 
 // ── 開発の更新履歴（全社共通・未確認/確認済みタブ）──────────
 interface DevUpdate { id: string; title: string; link: string | null; created_at: string }
@@ -208,11 +208,13 @@ async function load() {
   const accountId = await getAccountId()
 
   // マスタ・設定を並列取得
-  const [{ data: wm }, { data: sm }, { data: cfg }] = await Promise.all([
+  const [{ data: wm }, { data: sm }, { data: cfg }, { data: wh }] = await Promise.all([
     supabase.from('workers').select('id, name, unit_price').eq('account_id', accountId),
     supabase.from('subcontractors').select('name, category, unit_price').eq('account_id', accountId),
     supabase.from('settings').select('key, value').eq('account_id', accountId),
+    supabase.from('worker_wage_history').select('worker_id, effective_date, changed_at, old_unit_price, new_unit_price').eq('account_id', accountId),
   ])
+  const wageTimelines = buildWageTimelines((wh ?? []) as any[])
   for (const row of (cfg ?? [])) {
     if (row.key === 'gasoline_rate_per_km')        G_YEN  = Number(row.value)
     if (row.key === 'diesel_rate_per_km')           D_YEN  = Number(row.value)
@@ -221,6 +223,7 @@ async function load() {
   }
   const priceById   = Object.fromEntries((wm ?? []).map((w: any) => [w.id,   w.unit_price]))
   const priceByName = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.unit_price]))
+  const idByName    = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.id]))
   const subMaster   = Object.fromEntries((sm ?? []).map((s: any) => [s.name, { category: s.category, unitPrice: s.unit_price ?? 0 }]))
 
   // 対象月の日報取得。月末は翌月1日の手前(.lt)で表す
@@ -267,7 +270,10 @@ async function load() {
       const siteName = site.siteName || '（現場名なし）'
       // 社員費
       for (const w of (site.workers ?? []).filter((w: any) => w.workerName)) {
-        const up = priceById[w.workerId] ?? priceByName[w.workerName] ?? 0
+        const curUp = priceById[w.workerId] ?? priceByName[w.workerName] ?? 0
+        const wid = w.workerId || idByName[w.workerName]
+        // 日報の日付に有効だった単価で計算（昇給で過去の人件費が動かないように）
+        const up = unitPriceForDate(date, wid ? wageTimelines.get(wid) : undefined, curUp)
         const cost = laborCostForBreakdown(laborMap.get(w) ?? ZERO_BREAKDOWN, up)
         labor += cost
         addDetail(details, '社員', date, `${w.workerName}／${siteName}`, cost)
