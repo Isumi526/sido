@@ -74,11 +74,11 @@ import { getAccountSlug, getAccountName } from './lib/account'
 // ログインユーザーのテナントに追従（マルチテナント：app_metadata.account_slug 優先）
 const brandName = computed(() => getAccountSlug().toUpperCase())
 
-// サイト名（ブラウザタブ）を会社名ベースで設定。
+// サイト名（ブラウザタブ）= プロダクト名 GENLINKS 固定＋会社名（データ）を併記。
 // fetch が解決してからセットする（未取得での空振りを避ける）。
 async function refreshTitle() {
   const name = await getAccountName()
-  if (name) document.title = `${name}｜管理システム`
+  document.title = name ? `${name}｜GENLINKS` : 'GENLINKS'
 }
 onMounted(refreshTitle)
 // ログインユーザー（テナント）が変わったらタイトルも更新（マルチテナント）
