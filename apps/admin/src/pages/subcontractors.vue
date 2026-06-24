@@ -264,7 +264,8 @@ const filtered = computed(() => {
     if (filterTrade.value && !s.trade_types.includes(filterTrade.value)) return false
     if (area && !s.service_areas.some((a) => a.includes(area))) return false
     return true
-  })
+  // 五十音順（日本語ロケール照合）で表示。読み仮名カラムは持たないため name を ja で比較。
+  }).sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '', 'ja'))
 })
 
 // 編集モーダルの工種を「プリセット選択分」と「自由追加分」に分けて扱う

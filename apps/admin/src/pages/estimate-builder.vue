@@ -1118,7 +1118,7 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .btab.ghost:hover { background: #f5f5f5; }
 /* #4 右ドロワー */
 .drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 200; display: flex; justify-content: flex-end; }
-.drawer { width: min(960px, 92vw); height: 100%; background: #f7f8f7; box-shadow: -4px 0 16px rgba(0,0,0,.15); display: flex; flex-direction: column; }
+.drawer { width: min(1200px, 96vw); height: 100%; background: #f7f8f7; box-shadow: -4px 0 16px rgba(0,0,0,.15); display: flex; flex-direction: column; }
 .drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: #fff; border-bottom: 1px solid #e5e5e5; }
 .drawer-subtabs { display: inline-flex; gap: 2px; background: #eef0ee; border-radius: 8px; padding: 3px; }
 .dtab { border: none; background: transparent; color: #555; border-radius: 6px; padding: 6px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
