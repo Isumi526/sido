@@ -60,12 +60,15 @@
           <button class="modal-close" @click="closeForm">×</button>
         </div>
         <div class="modal-body">
-          <!-- PDF→AI解析 -->
-          <div class="ai-row">
-            <input ref="fileInput" type="file" accept="application/pdf,image/*" @change="onFile" />
-            <button class="btn-ai" :disabled="!file || analyzing" @click="analyze">
-              {{ analyzing ? 'AI解析中…' : 'PDFをAI解析して自動入力' }}
+          <!-- PDF→AI解析（ドラッグ&ドロップ対応） -->
+          <div class="ai-row" :class="{ 'drag-active': dragActive }"
+               @dragover.prevent="dragActive = true" @dragenter.prevent="dragActive = true"
+               @dragleave.prevent="dragActive = false" @drop.prevent="onDrop">
+            <input ref="fileInput" type="file" accept="application/pdf,image/*" multiple @change="onFile" />
+            <button class="btn-ai" :disabled="!files.length || analyzing" @click="analyze">
+              {{ analyzing ? 'AI解析中…' : files.length > 1 ? `PDF/画像${files.length}枚をAI解析して自動入力` : 'PDFをAI解析して自動入力' }}
             </button>
+            <span class="drop-hint">{{ dragActive ? 'ここにドロップ' : 'またはここにPDF/画像をドラッグ&ドロップ（複数可）' }}</span>
           </div>
           <p v-if="aiMsg" class="ai-msg">{{ aiMsg }}</p>
 
@@ -196,7 +199,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 
@@ -222,7 +226,8 @@ const invoices = ref<any[]>([])
 const sites    = ref<{ id: string; name: string }[]>([])
 const subs     = ref<{ id: string; name: string; category: string | null }[]>([])
 const form     = ref<Form | null>(null)
-const file     = ref<File | null>(null)
+const files    = ref<File[]>([])   // 複数枚（請求書が複数ページに分かれている場合）対応
+const dragActive = ref(false)      // ファイルD&D中のハイライト
 const analyzing = ref(false)
 const aiMsg    = ref('')
 const saving   = ref(false)
@@ -296,12 +301,12 @@ function blankForm(): Form {
 const formSnapshot = ref('')
 function snapshot() { formSnapshot.value = JSON.stringify(form.value) }
 
-function openNew() { form.value = blankForm(); file.value = null; aiMsg.value = ''; formError.value = ''; snapshot() }
+function openNew() { form.value = blankForm(); files.value = []; aiMsg.value = ''; formError.value = ''; snapshot() }
 
 // 誤って閉じてもデータが飛ばないよう、変更があった時だけ確認
 function isDirty(): boolean {
   if (!form.value) return false
-  return JSON.stringify(form.value) !== formSnapshot.value || !!file.value
+  return JSON.stringify(form.value) !== formSnapshot.value || files.value.length > 0
 }
 function closeForm() {
   if (saving.value) return
@@ -310,7 +315,7 @@ function closeForm() {
 }
 
 async function openEdit(inv: any) {
-  formError.value = ''; aiMsg.value = ''; file.value = null
+  formError.value = ''; aiMsg.value = ''; files.value = []
   const { data: items } = await supabase.from('subcontractor_invoice_items')
     .select('*').eq('invoice_id', inv.id).order('sort_order').order('item_date')
   form.value = {
@@ -386,7 +391,26 @@ async function addSite(it: Item) {
   }
 }
 
-function onFile(e: Event) { file.value = (e.target as HTMLInputElement).files?.[0] ?? null; aiMsg.value = '' }
+function onFile(e: Event) { files.value = Array.from((e.target as HTMLInputElement).files ?? []); aiMsg.value = '' }
+
+// ドラッグ&ドロップでファイルをセット（PDF/画像のみ・複数可）。input選択と同じく置き換え。
+function onDrop(e: DragEvent) {
+  dragActive.value = false
+  const dropped = Array.from(e.dataTransfer?.files ?? [])
+    .filter(f => f.type === 'application/pdf' || f.type.startsWith('image/'))
+  if (dropped.length) { files.value = dropped; aiMsg.value = '' }
+}
+
+// 入力中の離脱ガード：モーダルの×だけでなく、リロード/タブ閉じ/ページ遷移でも破棄確認を出す。
+function onBeforeUnload(e: BeforeUnloadEvent) {
+  if (isDirty()) { e.preventDefault(); e.returnValue = '' }
+}
+onMounted(() => window.addEventListener('beforeunload', onBeforeUnload))
+onBeforeUnmount(() => window.removeEventListener('beforeunload', onBeforeUnload))
+// アプリ内ページ遷移（Vue Router）でも入力中なら確認（ガード内は同期confirmで判定）。
+onBeforeRouteLeave(() => {
+  if (isDirty()) return window.confirm('入力中の内容が破棄されます。移動してよろしいですか？')
+})
 
 // 現場名→現場ID 名寄せ（完全一致→正規化一致→部分一致）。誤字や接頭/接尾辞のズレを吸収
 function normSite(s: string): string {
@@ -416,49 +440,79 @@ function readAsDataUrl(f: File): Promise<string> {
   return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result as string); r.onerror = rej; r.readAsDataURL(f) })
 }
 
+// 1ファイル（PDF/画像）をAI解析して生の結果オブジェクトを返す
+async function analyzeOne(f: File): Promise<any> {
+  const dataUrl = await readAsDataUrl(f)
+  const fnName = IS_DEV ? 'test-analyze-invoice' : 'analyze-invoice'
+  const { data: { session } } = await supabase.auth.getSession()
+  const res = await fetch(`${EDGE_URL}/${fnName}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+    body: JSON.stringify({ fileBase64: dataUrl, siteNames: sites.value.map(s => s.name) }),
+  })
+  const r = await res.json()
+  if (!res.ok) throw new Error(r.error ?? res.statusText)
+  return r
+}
+
 async function analyze() {
-  if (!file.value || !form.value) return
+  if (!files.value.length || !form.value) return
   if (!EDGE_URL) { aiMsg.value = 'Edge Function URL未設定のため解析できません'; return }
   analyzing.value = true; aiMsg.value = ''
+  const f = form.value
+  const targets = files.value
+  // ヘッダは「最初に値を返したページ」を採用し、後続ページで上書きしない（複数枚で先頭の請求情報を保護）
+  const headerSet = new Set<string>()
+  let unmatched = 0, added = 0, failed = 0
   try {
-    const dataUrl = await readAsDataUrl(file.value)
-    const fnName = IS_DEV ? 'test-analyze-invoice' : 'analyze-invoice'
-    const { data: { session } } = await supabase.auth.getSession()
-    const res = await fetch(`${EDGE_URL}/${fnName}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
-      body: JSON.stringify({ fileBase64: dataUrl, siteNames: sites.value.map(s => s.name) }),
-    })
-    const r = await res.json()
-    if (!res.ok) throw new Error(r.error ?? res.statusText)
-    // ヘッダ流し込み（既存値があっても上書き＝確認前提）
-    const f = form.value
-    if (r.vendor_name) {
-      f.vendor_name = r.vendor_name
-      // マスタに一致すれば選択、無ければ新規登録欄に名前を入れて区分選択を促す
-      const m = subs.value.find(s => s.name === String(r.vendor_name).trim())
-      if (m) { f.subcontractor_id = m.id }
-      else { f.subcontractor_id = '__new__'; newVendor.value = { name: r.vendor_name, category: '' } }
-    }
-    f.registration_number = r.registration_number ?? f.registration_number
-    f.title = r.title ?? f.title
-    f.invoice_no = r.invoice_no ?? f.invoice_no
-    if (r.invoice_date) f.invoice_date = r.invoice_date
-    if (r.due_date) f.due_date = r.due_date
-    if (r.total_amount != null) f.total_amount = r.total_amount
-    // 明細流し込み（現場名はマスタと名寄せ：完全一致→正規化→部分一致）
-    let unmatched = 0
-    f.items = (r.items ?? []).map((it: any) => {
-      const siteId = matchSiteId(it.site_name)
-      if (it.site_name && !siteId) unmatched++
-      const amount = it.amount != null ? Number(it.amount) : Math.round((Number(it.quantity) || 0) * (Number(it.unit_price) || 0))
-      return {
-        item_date: it.date ?? f.invoice_date, site_id: siteId, site_name: it.site_name ?? null,
-        description: it.description ?? null, quantity: it.quantity ?? null, unit: it.unit ?? null,
-        unit_price: it.unit_price ?? null, amount, tax_rate: it.tax_rate ?? 10, note: it.note ?? null,
+    for (let idx = 0; idx < targets.length; idx++) {
+      if (targets.length > 1) aiMsg.value = `AI解析中… (${idx + 1}/${targets.length}枚目)`
+      let r: any
+      try { r = await analyzeOne(targets[idx]) }
+      catch { failed++; continue }
+      // 解析の待機中にフォームが差し替えられた（＋新規/別行を編集で開いた）場合は、
+      // 古い（切り離された）フォームを汚さず・aiMsgも残さず中断する（複数秒のOCR中の競合対策）。
+      if (form.value !== f) return
+      // ── ヘッダ流し込み（各項目とも最初に取れたページの値で確定。以降のページは上書きしない）──
+      if (r.vendor_name && !headerSet.has('vendor')) {
+        headerSet.add('vendor')
+        f.vendor_name = r.vendor_name
+        // マスタに一致すれば選択、無ければ新規登録欄に名前を入れて区分選択を促す
+        const m = subs.value.find(s => s.name === String(r.vendor_name).trim())
+        if (m) { f.subcontractor_id = m.id }
+        else { f.subcontractor_id = '__new__'; newVendor.value = { name: r.vendor_name, category: '' } }
       }
-    })
-    aiMsg.value = `解析しました（明細 ${f.items.length} 件）。${unmatched ? `現場が未特定の明細が ${unmatched} 件あります。プルダウンで選択してください。` : ''}内容を確認・修正してください。`
+      if (r.registration_number && !headerSet.has('reg')) { headerSet.add('reg'); f.registration_number = r.registration_number }
+      if (r.title && !headerSet.has('title')) { headerSet.add('title'); f.title = r.title }
+      if (r.invoice_no && !headerSet.has('inv_no')) { headerSet.add('inv_no'); f.invoice_no = r.invoice_no }
+      if (r.invoice_date && !headerSet.has('inv_date')) { headerSet.add('inv_date'); f.invoice_date = r.invoice_date }
+      if (r.due_date && !headerSet.has('due')) { headerSet.add('due'); f.due_date = r.due_date }
+      if (r.total_amount != null && !headerSet.has('total')) { headerSet.add('total'); f.total_amount = r.total_amount }
+      // ── 明細を「累積」（既存明細・他ページの明細を消さず追加）。現場名はマスタと名寄せ──
+      for (const it of (r.items ?? [])) {
+        const siteId = matchSiteId(it.site_name)
+        if (it.site_name && !siteId) unmatched++
+        const amount = it.amount != null ? Number(it.amount) : Math.round((Number(it.quantity) || 0) * (Number(it.unit_price) || 0))
+        f.items.push({
+          item_date: it.date ?? f.invoice_date, site_id: siteId, site_name: it.site_name ?? null,
+          description: it.description ?? null, quantity: it.quantity ?? null, unit: it.unit ?? null,
+          unit_price: it.unit_price ?? null, amount, tax_rate: it.tax_rate ?? 10, note: it.note ?? null,
+        })
+        added++
+      }
+    }
+    // ループ終了後にも再確認（最後のawait後にフォームが差し替わっていたら結果を反映しない）。
+    if (form.value !== f) return
+    if (added === 0 && failed === targets.length) {
+      aiMsg.value = 'AI解析に失敗しました。ファイルを確認して再度お試しください。'
+      return
+    }
+    const msg: string[] = [`解析しました（明細 計${f.items.length} 件${targets.length > 1 ? ` / ${targets.length}枚` : ''}）。`]
+    if (targets.length > 1) msg.push('複数枚を1件の請求として明細を累積しました。請求金額(請求書記載)は合計をご確認ください。')
+    if (unmatched) msg.push(`現場が未特定の明細が ${unmatched} 件あります。プルダウンで選択してください。`)
+    if (failed) msg.push(`${failed}枚は解析に失敗しました。`)
+    msg.push('内容を確認・修正してください。')
+    aiMsg.value = msg.join('')
   } catch (e: any) {
     aiMsg.value = 'AI解析に失敗しました: ' + (e?.message ?? '')
   } finally {
@@ -496,11 +550,18 @@ async function save() {
       if (error) throw error
       invoiceId = data.id
     }
-    // PDFアップロード（任意）
-    if (file.value) {
-      const path = `subcontractor-invoices/${accountId}/${invoiceId}.pdf`
-      await supabase.storage.from('expense-receipts').upload(path, file.value, { upsert: true, contentType: file.value.type || 'application/pdf' }).catch(() => {})
-      await supabase.from('subcontractor_invoices').update({ pdf_path: path }).eq('id', invoiceId)
+    // PDF/画像アップロード（任意・複数枚対応）
+    // 先頭ファイルは従来どおり {invoiceId}.pdf として pdf_path に保存（既存ビューア互換）。
+    // 2枚目以降は {invoiceId}-{n}.{ext} として保存し、原本を失わないようにする。
+    if (files.value.length) {
+      const ext = (f: File) => (f.name.split('.').pop() || 'pdf').toLowerCase()
+      const primaryPath = `subcontractor-invoices/${accountId}/${invoiceId}.pdf`
+      await supabase.storage.from('expense-receipts').upload(primaryPath, files.value[0], { upsert: true, contentType: files.value[0].type || 'application/pdf' }).catch(() => {})
+      for (let n = 1; n < files.value.length; n++) {
+        const extraPath = `subcontractor-invoices/${accountId}/${invoiceId}-${n + 1}.${ext(files.value[n])}`
+        await supabase.storage.from('expense-receipts').upload(extraPath, files.value[n], { upsert: true, contentType: files.value[n].type || 'application/pdf' }).catch(() => {})
+      }
+      await supabase.from('subcontractor_invoices').update({ pdf_path: primaryPath }).eq('id', invoiceId)
     }
     // 明細insert
     const rows = f.items.map((it, i) => ({
@@ -587,7 +648,10 @@ onMounted(load)
 .modal-close { background: none; border: none; font-size: 24px; cursor: pointer; color: #888; }
 .modal-body { overflow-y: auto; padding: 16px 20px 20px; }
 
-.ai-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.ai-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; padding: 10px; border: 1.5px dashed #cfd6e4; border-radius: 10px; transition: border-color .15s, background .15s; }
+.ai-row.drag-active { border-color: #1a56c4; background: #eef3fd; }
+.drop-hint { font-size: 12px; color: #8a93a6; }
+.ai-row.drag-active .drop-hint { color: #1a56c4; font-weight: 700; }
 .btn-ai { background: #1a56c4; color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-ai:disabled { opacity: .5; cursor: default; }
 .ai-msg { font-size: 12px; color: #1a56c4; margin: 0 0 12px; }
