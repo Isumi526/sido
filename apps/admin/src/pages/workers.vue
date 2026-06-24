@@ -65,14 +65,19 @@
           <input v-model.number="modal.unit_price" type="number" class="input" placeholder="20000" />
         </div>
         <div v-if="modal.id" class="field">
-          <label>単価変更の理由（任意・変更時に履歴へ記録）</label>
+          <label>昇給年月日（発効日・単価を変えた時に記録）</label>
+          <input v-model="wageEffectiveDate" type="date" class="input" data-testid="wage-effective-date" />
+          <p class="hint-sm">この日以降の稼働が新単価で人件費計算されます（編集した日と違ってもOK）。</p>
+        </div>
+        <div v-if="modal.id" class="field">
+          <label>単価変更の理由（任意）</label>
           <input v-model="wageReason" class="input" placeholder="例：定期昇給 / 資格取得" data-testid="wage-reason" />
         </div>
         <div v-if="modal.id && wageHistory.length" class="field">
-          <label>昇給履歴</label>
+          <label>昇給履歴（発効日）</label>
           <ul class="wage-hist" data-testid="wage-history">
             <li v-for="h in wageHistory" :key="h.id">
-              {{ (h.changed_at || '').slice(0, 10) }}：{{ h.old_unit_price != null ? `¥${h.old_unit_price.toLocaleString()}` : '—' }} → ¥{{ (h.new_unit_price ?? 0).toLocaleString() }}<span v-if="h.reason" class="wage-reason"> （{{ h.reason }}）</span>
+              {{ (h.effective_date || (h.changed_at || '').slice(0, 10)) }}：{{ h.old_unit_price != null ? `¥${h.old_unit_price.toLocaleString()}` : '—' }} → ¥{{ (h.new_unit_price ?? 0).toLocaleString() }}<span v-if="h.reason" class="wage-reason"> （{{ h.reason }}）</span>
             </li>
           </ul>
         </div>
@@ -179,10 +184,12 @@ const modal           = ref<Partial<Worker> | null>(null)
 const modalProxyIds   = ref<string[]>([])
 const saving          = ref(false)
 // 昇給履歴（単価変更ログ）
-type WageHist = { id: string; old_unit_price: number | null; new_unit_price: number; reason: string | null; changed_at: string }
-const wageHistory     = ref<WageHist[]>([])
-const wageReason      = ref('')
-const origUnitPrice   = ref<number | null>(null)
+type WageHist = { id: string; old_unit_price: number | null; new_unit_price: number; reason: string | null; changed_at: string; effective_date: string | null }
+const wageHistory      = ref<WageHist[]>([])
+const wageReason       = ref('')
+const wageEffectiveDate = ref('')   // 昇給年月日（発効日）。この日以降の稼働は新単価で人件費計算される。
+const origUnitPrice    = ref<number | null>(null)
+const todayStr = () => new Date().toISOString().slice(0, 10)
 const saveError       = ref('')
 // email/password 認証（Phase 2a）
 const authEmail       = ref('')
@@ -240,14 +247,15 @@ function openEdit(w: Worker) {
   // 昇給履歴：変更前単価を控え、履歴を読み込む
   origUnitPrice.value = w.unit_price ?? null
   wageReason.value = ''
+  wageEffectiveDate.value = todayStr()
   wageHistory.value = []
   loadWageHistory(w.id)
 }
 
 async function loadWageHistory(workerId: string) {
   const { data } = await supabase.from('worker_wage_history')
-    .select('id, old_unit_price, new_unit_price, reason, changed_at')
-    .eq('worker_id', workerId).order('changed_at', { ascending: false })
+    .select('id, old_unit_price, new_unit_price, reason, changed_at, effective_date')
+    .eq('worker_id', workerId).order('effective_date', { ascending: false, nullsFirst: false }).order('changed_at', { ascending: false })
   wageHistory.value = (data ?? []) as WageHist[]
 }
 
@@ -309,6 +317,7 @@ async function save() {
           worker_id: workerId, account_id: accountId,
           old_unit_price: origUnitPrice.value, new_unit_price: newPrice,
           reason: wageReason.value.trim() || null,
+          effective_date: wageEffectiveDate.value || todayStr(),
         })
       }
     } else {
@@ -391,6 +400,7 @@ async function toggleActive(w: Worker) {
 .emp-badge.contractor { background: #ecfdf5; color: #047857; }
 .wage-hist { list-style: none; margin: 0; padding: 8px 12px; background: #f9fafb; border: 1px solid #eee; border-radius: 8px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; max-height: 140px; overflow-y: auto; }
 .wage-hist .wage-reason { color: #888; }
+.hint-sm { font-size: 11px; color: #999; margin: 2px 0 0; }
 .hire-date { font-size: 12px; color: #666; font-variant-numeric: tabular-nums; }
 .auth-field { border-top: 1px solid #f0f0f0; padding-top: 16px; }
 .auth-status { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 700; margin-left: 8px; }
