@@ -350,6 +350,7 @@ export const useExpense = () => {
       if (exp.trains)   exp.trains   = stripItemFiles(exp.trains)
       if (exp.others)   exp.others   = stripItemFiles(exp.others)
       if (exp.entertainments) exp.entertainments = stripItemFiles(exp.entertainments)
+      if (exp.hotels)         exp.hotels         = stripItemFiles(exp.hotels)
       return { ...site, expenses: exp }
     })
   }
