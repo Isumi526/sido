@@ -272,6 +272,38 @@ export function laborBreakdownForReport(
   return result
 }
 
+/** 出張手当（+¥3,000/日・作業員ごと）。出張日(daily_reports.is_business_trip)に計上。 */
+export const BUSINESS_TRIP_ALLOWANCE = 3000
+
+/**
+ * 出張日に出張手当を二重計上せず計上するための
+ * 「各作業員の主たる現場（その日 最も稼働時間が長い現場）の worker-entry」集合。
+ * 同一作業員が複数現場に跨る出張日でも、最長現場の1エントリだけを対象にする＝+3000は1回だけ。
+ * 戻り値 Set に含まれる worker オブジェクト参照（= site.workers[] の要素）に手当を加える。
+ */
+export function businessTripMainEntries(sites: any[]): Set<any> {
+  const byWorker: Record<string, { w: any; mins: number }[]> = {}
+  for (const site of sites ?? []) {
+    for (const w of (site?.workers ?? [])) {
+      if (!w?.workerName) continue
+      const role  = (w.workerRole === 'factory' ? 'factory' : 'site') as 'factory' | 'site'
+      const start = w.startTime || '08:00'
+      const end   = w.endTime   || '17:30'
+      const brk   = (w.breakMinutes != null) ? w.breakMinutes : calcBreakMinutes(role, start, end)
+      const mins  = Math.max(0, parseMin(end) - parseMin(start) - brk)
+      const key   = String(w.workerId ?? w.workerName)
+      ;(byWorker[key] ??= []).push({ w, mins })
+    }
+  }
+  const set = new Set<any>()
+  for (const segs of Object.values(byWorker)) {
+    let best: { w: any; mins: number } | null = null
+    for (const s of segs) if (!best || s.mins > best.mins) best = s
+    if (best) set.add(best.w)
+  }
+  return set
+}
+
 /** 30分刻みの時刻オプション "00:00"〜"23:30" */
 export const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
   const h = String(Math.floor(i / 2)).padStart(2, '0')

@@ -5,7 +5,7 @@
       <button class="hamburger" aria-label="メニュー" @click="drawerOpen = true">
         <span class="material-symbols-rounded">menu</span>
       </button>
-      <div class="topbar-brand">{{ brandName }}<span class="topbar-sub">管理</span></div>
+      <div class="topbar-brand">GENLINKS<span class="topbar-sub">{{ accountDisplayName }}</span></div>
     </header>
 
     <!-- ドロワー開時のオーバーレイ -->
@@ -13,7 +13,7 @@
 
     <nav class="sidebar" :class="{ open: drawerOpen }">
       <div class="sidebar-head">
-        <div class="logo">{{ brandName }}<span class="logo-sub">管理</span></div>
+        <div class="logo">GENLINKS<span class="logo-sub">{{ accountDisplayName }}</span></div>
         <button class="drawer-close" aria-label="閉じる" @click="drawerOpen = false">
           <span class="material-symbols-rounded">close</span>
         </button>
@@ -37,13 +37,13 @@
 
         <li class="nav-section">経費・請求</li>
         <li><RouterLink to="/expenses" class="nav-link"><span class="material-symbols-rounded nav-icon">receipt_long</span>経費管理</RouterLink></li>
-        <li><RouterLink to="/subcontractor-invoices" class="nav-link"><span class="material-symbols-rounded nav-icon">request_quote</span>下請け請求</RouterLink></li>
+        <li><RouterLink to="/subcontractor-invoices" class="nav-link"><span class="material-symbols-rounded nav-icon">request_quote</span>協力業者請求</RouterLink></li>
 
         <li class="nav-section">マスタ</li>
         <li><RouterLink to="/workers" class="nav-link"><span class="material-symbols-rounded nav-icon">engineering</span>作業員</RouterLink></li>
         <li><RouterLink to="/sites" class="nav-link"><span class="material-symbols-rounded nav-icon">location_on</span>現場</RouterLink></li>
         <li><RouterLink to="/contractors" class="nav-link"><span class="material-symbols-rounded nav-icon">apartment</span>元請け業者</RouterLink></li>
-        <li><RouterLink to="/subcontractors" class="nav-link"><span class="material-symbols-rounded nav-icon">handshake</span>下請け業者</RouterLink></li>
+        <li><RouterLink to="/subcontractors" class="nav-link"><span class="material-symbols-rounded nav-icon">handshake</span>協力業者</RouterLink></li>
         <li><RouterLink to="/vehicles" class="nav-link"><span class="material-symbols-rounded nav-icon">directions_car</span>車両</RouterLink></li>
         <li><RouterLink to="/estimate-masters" class="nav-link"><span class="material-symbols-rounded nav-icon">price_change</span>見積マスタ・単価表</RouterLink></li>
 
@@ -69,16 +69,17 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { currentUser, signOut } from './lib/auth'
-import { getAccountSlug, getAccountName } from './lib/account'
+import { getAccountName } from './lib/account'
 
-// ログインユーザーのテナントに追従（マルチテナント：app_metadata.account_slug 優先）
-const brandName = computed(() => getAccountSlug().toUpperCase())
+// ヘッダー: メイン=プロダクト名 GENLINKS 固定、サブ=会社名(account名・データ)
+const accountDisplayName = ref('')
 
-// サイト名（ブラウザタブ）を会社名ベースで設定。
+// サイト名（ブラウザタブ）= プロダクト名 GENLINKS 固定＋会社名（データ）を併記。
 // fetch が解決してからセットする（未取得での空振りを避ける）。
 async function refreshTitle() {
   const name = await getAccountName()
-  if (name) document.title = `${name}｜管理システム`
+  accountDisplayName.value = name || ''
+  document.title = name ? `${name}｜GENLINKS` : 'GENLINKS'
 }
 onMounted(refreshTitle)
 // ログインユーザー（テナント）が変わったらタイトルも更新（マルチテナント）
@@ -109,8 +110,8 @@ async function handleLogout() {
   position: fixed; top: 0; left: 0; bottom: 0; z-index: 50;
 }
 .sidebar-head { display: flex; align-items: center; justify-content: space-between; padding: 0 20px; }
-.logo { font-size: 18px; font-weight: 900; letter-spacing: 4px; color: #06C755; }
-.logo-sub { font-size: 11px; letter-spacing: 2px; color: #888; margin-left: 8px; font-weight: 400; }
+.logo { font-size: 18px; font-weight: 900; letter-spacing: 4px; color: #06C755; display: flex; flex-direction: column; align-items: flex-start; line-height: 1.25; }
+.logo-sub { font-size: 11px; letter-spacing: normal; color: #888; margin-left: 0; margin-top: 3px; font-weight: 500; }
 .drawer-close { display: none; background: none; border: none; color: #888; cursor: pointer; padding: 4px; }
 .nav-list { list-style: none; display: flex; flex-direction: column; flex: 1; padding: 0; margin: 0; overflow-y: auto; }
 .nav-section {
@@ -164,7 +165,7 @@ async function handleLogout() {
   }
   .hamburger .material-symbols-rounded { font-size: 26px; }
   .topbar-brand { font-size: 16px; font-weight: 900; letter-spacing: 3px; color: #06C755; }
-  .topbar-sub { font-size: 10px; letter-spacing: 1px; color: #888; margin-left: 6px; font-weight: 400; }
+  .topbar-sub { font-size: 10px; letter-spacing: normal; color: #888; margin-left: 6px; font-weight: 400; }
 
   .admin-shell { display: block; }
 

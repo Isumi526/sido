@@ -123,11 +123,16 @@
                   ¥{{ site.workers.reduce((sum: number, w: any) => sum + (w.startTime && w.endTime ? calcLaborCost(w, selected.date, selected.users.workers.unit_price) : 0), 0).toLocaleString() }}
                 </span>
               </div>
+              <!-- 出張費（別費目・人件費とは別表示／主たる現場に1回） -->
+              <div v-if="siteTripYen(site)" class="labor-cost">
+                出張費
+                <span class="labor-cost-amount">¥{{ siteTripYen(site).toLocaleString() }}</span>
+              </div>
             </div>
 
             <!-- 下請け業者 -->
             <div v-if="site.subcontractors?.filter((s: any) => s.subcontractorName).length" class="section">
-              <div class="section-label">下請け業者</div>
+              <div class="section-label">協力業者</div>
               <div v-for="(s, si2) in site.subcontractors.filter((s: any) => s.subcontractorName)" :key="si2" class="sub-row">
                 <span>{{ s.subcontractorName === '__other__' ? (s.customSubcontractorName || '新規業者') : s.subcontractorName }}</span>
                 <span class="muted">{{ s.count }}名</span>
@@ -137,7 +142,7 @@
               </div>
               <!-- 合計 -->
               <div class="labor-cost">
-                下請け費合計
+                協力業者費合計
                 <span class="labor-cost-amount">
                   ¥{{ site.subcontractors.filter((s: any) => s.subcontractorName)
                     .reduce((sum: number, s: any) => {
@@ -247,7 +252,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug } from '../lib/account'
-import { computeWorkerHours, calcBreakMinutes } from '../lib/workerHours'
+import { computeWorkerHours, calcBreakMinutes, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
 
 const EDGE_URL  = import.meta.env.VITE_SUPABASE_EDGE_URL as string
 const ANON_KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY as string
@@ -365,6 +370,14 @@ function calcHours(w: any, date: string) {
   }
 }
 
+// 出張費（別費目）: その日が出張で、この現場が作業員の主たる現場(最長稼働)なら ¥3,000/該当人。
+function siteTripYen(site: any): number {
+  if (!selected.value?.is_business_trip) return 0
+  const mains = businessTripMainEntries(selected.value.sites ?? [])
+  let n = 0
+  for (const w of (site.workers ?? [])) if (mains.has(w)) n++
+  return n * BUSINESS_TRIP_ALLOWANCE
+}
 function calcLaborCost(w: any, date: string, unitPrice: number): number {
   const isSunday = new Date(date + 'T00:00:00').getDay() === 0
   const role = w.workerRole || 'site'
@@ -436,7 +449,7 @@ async function load() {
 
   const { data } = await supabase
     .from('daily_reports')
-    .select('id, date, is_working, leave_type, line_notified_at, sites, note, user_id, users(real_name, worker_id, workers(name, unit_price))')
+    .select('id, date, is_working, is_business_trip, leave_type, line_notified_at, sites, note, user_id, users(real_name, worker_id, workers(name, unit_price))')
     .eq('account_id', accountId)
     .gte('date', dateFrom.value)
     .lte('date', dateTo.value)

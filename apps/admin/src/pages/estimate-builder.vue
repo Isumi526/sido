@@ -318,7 +318,7 @@
               <a v-if="poFor(g.supplierId)?.pdf_path" :href="poPdfUrl(poFor(g.supplierId)!.pdf_path)" target="_blank" rel="noopener" class="pdf-link" :data-testid="`po-pdf-${g.supplierId}`">📄 PDFを表示/DL</a>
             </div>
             <div class="po-card-foot">
-              <span v-if="!contactsFor(g.supplierId).length" class="muted">担当者未登録（<RouterLink to="/subcontractors">下請け業者マスタ</RouterLink>）</span>
+              <span v-if="!contactsFor(g.supplierId).length" class="muted">担当者未登録（<RouterLink to="/subcontractors">協力業者マスタ</RouterLink>）</span>
               <button class="btn-primary sm" :disabled="!canSendPO(g) || poBusy === g.supplierId" :data-testid="`po-send-${g.supplierId}`" @click="sendPO(g)">
                 {{ poBusy === g.supplierId ? '送信中…' : (poFor(g.supplierId)?.email_sent_at ? '再送' : '発注書を送信') }}
               </button>
