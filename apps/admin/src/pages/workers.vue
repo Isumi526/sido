@@ -143,11 +143,13 @@
         </div>
         <div class="field">
           <label>車検履歴（車両・車検日・満了日）</label>
-          <div v-for="(vi, i) in vehicleInspections" :key="i" class="family-row" data-testid="inspection-row">
+          <div v-for="(vi, i) in vehicleInspections" :key="i" class="inspect-row" data-testid="inspection-row">
             <input v-model="vi.vehicle_name" class="input" placeholder="車両名" />
-            <input v-model="vi.inspection_date" type="date" class="input" />
-            <input v-model="vi.expiry_date" type="date" class="input" />
-            <button type="button" class="family-del" @click="removeInspection(i)">×</button>
+            <div class="inspect-dates">
+              <input v-model="vi.inspection_date" type="date" class="input" title="車検日" />
+              <input v-model="vi.expiry_date" type="date" class="input" title="満了日" />
+              <button type="button" class="family-del" @click="removeInspection(i)">×</button>
+            </div>
           </div>
           <button type="button" class="btn-add-family" data-testid="add-inspection" @click="addInspection">＋ 車検を追加</button>
         </div>
@@ -513,7 +515,7 @@ async function toggleActive(w: Worker) {
 .proxy-badge { display: inline-block; font-size: 11px; padding: 3px 8px; border-radius: 4px; background: #fee2e2; color: #dc2626; font-weight: 700; margin-right: 4px; }
 .proxy-none { font-size: 12px; color: #ccc; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 12px; padding: 32px; width: 400px; max-height: 90vh; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
+.modal { background: #fff; border-radius: 12px; padding: 32px; width: 520px; max-width: 92vw; max-height: 90vh; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
 .modal h2 { font-size: 18px; font-weight: 700; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label { font-size: 12px; font-weight: 700; color: #888; }
@@ -542,6 +544,9 @@ async function toggleActive(w: Worker) {
 .family-row { display: grid; grid-template-columns: 1.2fr 1fr 1fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
 .checkup-row { display: grid; grid-template-columns: 1fr 1.6fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
 .checkup-row .input { padding: 8px 10px; font-size: 13px; }
+.inspect-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.inspect-row .input { padding: 8px 10px; font-size: 13px; }
+.inspect-dates { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; align-items: center; }
 .family-row .input { padding: 8px 10px; font-size: 13px; }
 .family-del { background: none; border: 1px solid #f0caca; color: #c0392b; border-radius: 6px; width: 30px; height: 32px; cursor: pointer; font-size: 14px; }
 .btn-add-family { background: #f0f0f0; border: none; border-radius: 6px; padding: 8px 14px; font-size: 13px; cursor: pointer; color: #555; align-self: flex-start; }
