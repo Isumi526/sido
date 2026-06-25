@@ -61,8 +61,15 @@
           </div>
         </div>
         <div class="field">
-          <label>日当単価（円）</label>
-          <input v-model.number="modal.unit_price" type="number" class="input" placeholder="20000" />
+          <label>賃金タイプ</label>
+          <div class="toggle">
+            <button :class="{ active: (modal.wage_type ?? 'daily') === 'daily' }" @click="modal.wage_type = 'daily'">日当（固定）</button>
+            <button :class="{ active: modal.wage_type === 'hourly' }" @click="modal.wage_type = 'hourly'">時間給</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>{{ modal.wage_type === 'hourly' ? '時給（円/h）' : '日当単価（円/日）' }}</label>
+          <input v-model.number="modal.unit_price" type="number" class="input" :placeholder="modal.wage_type === 'hourly' ? '2000' : '20000'" />
         </div>
         <div v-if="modal.id" class="field">
           <label>昇給年月日（発効日・単価を変えた時に記録）</label>
@@ -74,10 +81,11 @@
           <input v-model="wageReason" class="input" placeholder="例：定期昇給 / 資格取得" data-testid="wage-reason" />
         </div>
         <div v-if="modal.id && wageHistory.length" class="field">
-          <label>昇給履歴（発効日）</label>
+          <label>賃金変更履歴（発効日〜 で当時の賃金で計算）</label>
           <ul class="wage-hist" data-testid="wage-history">
             <li v-for="h in wageHistory" :key="h.id">
-              {{ (h.effective_date || (h.changed_at || '').slice(0, 10)) }}：{{ h.old_unit_price != null ? `¥${h.old_unit_price.toLocaleString()}` : '—' }} → ¥{{ (h.new_unit_price ?? 0).toLocaleString() }}<span v-if="h.reason" class="wage-reason"> （{{ h.reason }}）</span>
+              <b>{{ (h.effective_date || (h.changed_at || '').slice(0, 10)) }}〜</b> {{ wageTypeLabel(h.wage_type) }} ¥{{ (h.new_unit_price ?? 0).toLocaleString() }}{{ wageUnit(h.wage_type) }}
+              <span class="wage-from">（{{ wageTypeLabel(h.old_wage_type) }}{{ h.old_unit_price != null ? `¥${h.old_unit_price.toLocaleString()}` : '—' }} → {{ wageTypeLabel(h.wage_type) }}¥{{ (h.new_unit_price ?? 0).toLocaleString() }}）</span><span v-if="h.reason" class="wage-reason"> （{{ h.reason }}）</span>
             </li>
           </ul>
         </div>
@@ -212,6 +220,7 @@ type Worker = {
   name: string
   role: 'factory' | 'site'
   unit_price: number
+  wage_type: 'daily' | 'hourly'
   active: boolean
   hire_date: string | null
   birth_date: string | null
@@ -235,11 +244,14 @@ const modal           = ref<Partial<Worker> | null>(null)
 const modalProxyIds   = ref<string[]>([])
 const saving          = ref(false)
 // 昇給履歴（単価変更ログ）
-type WageHist = { id: string; old_unit_price: number | null; new_unit_price: number; reason: string | null; changed_at: string; effective_date: string | null }
+type WageHist = { id: string; old_unit_price: number | null; new_unit_price: number; reason: string | null; changed_at: string; effective_date: string | null; wage_type: string | null; old_wage_type: string | null }
+function wageTypeLabel(t: string | null | undefined) { return t === 'hourly' ? '時給' : '日当' }
+function wageUnit(t: string | null | undefined) { return t === 'hourly' ? '/h' : '/日' }
 const wageHistory      = ref<WageHist[]>([])
 const wageReason       = ref('')
 const wageEffectiveDate = ref('')   // 昇給年月日（発効日）。この日以降の稼働は新単価で人件費計算される。
 const origUnitPrice    = ref<number | null>(null)
+const origWageType     = ref<'daily' | 'hourly' | null>(null)
 const todayStr = () => new Date().toISOString().slice(0, 10)
 // 家族構成
 type FamilyMember = { id?: string; name: string; relationship: string | null; birth_date: string | null }
@@ -333,7 +345,7 @@ function toggleProxyId(id: string) {
 async function load() {
   const accountId = await getAccountId()
   const [{ data: workersData }, { data: usersData }, { data: proxyData }] = await Promise.all([
-    supabase.from('workers').select('id, name, role, unit_price, active, hire_date, birth_date, address, emergency_contact, employment_type, weekly_scheduled_days, company_info, invoice_number, insurance_info, labor_insurance_number, auth_user_id').eq('account_id', accountId).order('name'),
+    supabase.from('workers').select('id, name, role, unit_price, wage_type, active, hire_date, birth_date, address, emergency_contact, employment_type, weekly_scheduled_days, company_info, invoice_number, insurance_info, labor_insurance_number, auth_user_id').eq('account_id', accountId).order('name'),
     supabase.from('users').select('worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
     supabase.from('worker_proxies').select('worker_id, proxy_operator_id').eq('account_id', accountId),
   ])
@@ -352,7 +364,7 @@ async function load() {
 onMounted(load)
 
 function openAdd() {
-  modal.value = { name: '', role: 'site', unit_price: 20000, hire_date: null, birth_date: null, address: null, emergency_contact: null, employment_type: 'fulltime', weekly_scheduled_days: null, company_info: null, invoice_number: null, insurance_info: null, labor_insurance_number: null }
+  modal.value = { name: '', role: 'site', unit_price: 20000, wage_type: 'daily', hire_date: null, birth_date: null, address: null, emergency_contact: null, employment_type: 'fulltime', weekly_scheduled_days: null, company_info: null, invoice_number: null, insurance_info: null, labor_insurance_number: null }
   modalProxyIds.value = []
   familyMembers.value = []
   vehicleInspections.value = []
@@ -370,6 +382,7 @@ function openEdit(w: Worker) {
   authOk.value = false
   // 昇給履歴：変更前単価を控え、履歴を読み込む
   origUnitPrice.value = w.unit_price ?? null
+  origWageType.value  = (w.wage_type ?? 'daily') as 'daily' | 'hourly'
   wageReason.value = ''
   wageEffectiveDate.value = todayStr()
   wageHistory.value = []
@@ -384,7 +397,7 @@ function openEdit(w: Worker) {
 
 async function loadWageHistory(workerId: string) {
   const { data } = await supabase.from('worker_wage_history')
-    .select('id, old_unit_price, new_unit_price, reason, changed_at, effective_date')
+    .select('id, old_unit_price, new_unit_price, reason, changed_at, effective_date, wage_type, old_wage_type')
     .eq('worker_id', workerId).order('effective_date', { ascending: false, nullsFirst: false }).order('changed_at', { ascending: false })
   wageHistory.value = (data ?? []) as WageHist[]
 }
@@ -430,6 +443,7 @@ async function save() {
       name:                  modal.value.name!.trim(),
       role:                  modal.value.role ?? 'site',
       unit_price:            modal.value.unit_price ?? 0,
+      wage_type:             modal.value.wage_type ?? 'daily',
       hire_date:             modal.value.hire_date || null,
       birth_date:            modal.value.birth_date || null,
       address:               modal.value.address?.trim() || null,
@@ -445,12 +459,16 @@ async function save() {
 
     if (workerId) {
       await supabase.from('workers').update(workerPayload).eq('id', workerId)
-      // 単価(日当)が変わったら昇給履歴を1行記録（集計は最新単価のまま・履歴は記録のみ）
+      // 単価 or 賃金タイプ が変わったら昇給履歴を1行記録（発効日以降の日報がこの値で計算される）
       const newPrice = modal.value.unit_price ?? 0
-      if (origUnitPrice.value != null && newPrice !== origUnitPrice.value) {
+      const newWageType = (modal.value.wage_type ?? 'daily') as 'daily' | 'hourly'
+      const priceChanged = origUnitPrice.value != null && newPrice !== origUnitPrice.value
+      const typeChanged  = origWageType.value != null && newWageType !== origWageType.value
+      if (priceChanged || typeChanged) {
         await supabase.from('worker_wage_history').insert({
           worker_id: workerId, account_id: accountId,
           old_unit_price: origUnitPrice.value, new_unit_price: newPrice,
+          wage_type: newWageType, old_wage_type: origWageType.value,
           reason: wageReason.value.trim() || null,
           effective_date: wageEffectiveDate.value || todayStr(),
         })
@@ -540,6 +558,7 @@ async function toggleActive(w: Worker) {
 .emp-badge.contractor { background: #ecfdf5; color: #047857; }
 .wage-hist { list-style: none; margin: 0; padding: 8px 12px; background: #f9fafb; border: 1px solid #eee; border-radius: 8px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; max-height: 140px; overflow-y: auto; }
 .wage-hist .wage-reason { color: #888; }
+.wage-hist .wage-from { color: #aaa; font-size: 11px; }
 .hint-sm { font-size: 11px; color: #999; margin: 2px 0 0; }
 .family-row { display: grid; grid-template-columns: 1.2fr 1fr 1fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
 .checkup-row { display: grid; grid-template-columns: 1fr 1.6fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }

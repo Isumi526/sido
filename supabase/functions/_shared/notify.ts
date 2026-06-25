@@ -87,8 +87,13 @@ export function buildReportMessage(body: {
     for (const o of (exp.others || [])) {
       if (o?.yen) expLines.push(`${o.label || 'その他'} ¥${Number(o.yen).toLocaleString()}`)
     }
-    if (exp.hotelYen)          expLines.push(`${exp.hotelName || 'ホテル'} ¥${Number(exp.hotelYen).toLocaleString()}`)
-    if (exp.leopalaceYen)      expLines.push(`${exp.leopalaceName || 'レオパレス'} ¥${Number(exp.leopalaceYen).toLocaleString()}`)
+    // 宿泊費: 新形式 hotels[]（複数）。旧スカラーは hotels[] に金額が無い時だけ（二重計上防止）。
+    for (const ho of (exp.hotels || [])) {
+      if (ho?.yen) expLines.push(`${ho.label || 'ホテル'} ¥${Number(ho.yen).toLocaleString()}`)
+    }
+    const hasHotelsArr = (exp.hotels || []).some((h: any) => h?.yen)
+    if (exp.hotelYen     && !hasHotelsArr) expLines.push(`${exp.hotelName || 'ホテル'} ¥${Number(exp.hotelYen).toLocaleString()}`)
+    if (exp.leopalaceYen && !hasHotelsArr) expLines.push(`${exp.leopalaceName || 'レオパレス'} ¥${Number(exp.leopalaceYen).toLocaleString()}`)
     for (const e of (exp.entertainments || [])) {
       if (e?.yen) expLines.push(`${e.label || '雑経費'} ¥${Number(e.yen).toLocaleString()}`)
     }

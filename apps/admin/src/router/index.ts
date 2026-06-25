@@ -20,6 +20,7 @@ import PaidLeave      from '../pages/paid-leave.vue'
 import SiteRules      from '../pages/site-rules.vue'
 import Attendance     from '../pages/attendance.vue'
 import ReminderHistory from '../pages/reminder-history.vue'
+import OperationLogs   from '../pages/operation-logs.vue'
 import NonSubmitters   from '../pages/non-submitters.vue'
 import Estimates       from '../pages/estimates.vue'
 import EstimatesList   from '../pages/estimate-list.vue'
@@ -35,6 +36,7 @@ export const router = createRouter({
     { path: '/calendar',     component: Calendar },
     { path: '/workers',      component: Workers },
     { path: '/sites',        component: Sites },
+    { path: '/sites/:id',    component: () => import('../pages/site-detail.vue') },
     { path: '/contractors',  component: Contractors },
     { path: '/site-rules',   component: SiteRules },
     { path: '/attendance',   component: Attendance },
@@ -50,6 +52,7 @@ export const router = createRouter({
     { path: '/company-profile', component: CompanyProfile },
     { path: '/users',        component: Users },
     { path: '/reminder-history', component: ReminderHistory },
+    { path: '/operation-logs',   component: OperationLogs },
     { path: '/non-submitters',   component: NonSubmitters },
     { path: '/estimates',        component: Estimates },
     { path: '/estimate-list',   component: EstimatesList },

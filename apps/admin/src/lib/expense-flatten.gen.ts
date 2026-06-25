@@ -81,8 +81,14 @@ export function flattenReportExpenses(date: string, sites: any[], rates: Expense
       // 新=明細ごと領収書(tr.fileUrls) / 旧=共通(trainUrls を先頭行に take-once)
       if (tr.yen) rows.push({ date, category: '電車代', siteName, amount: tr.yen, note: tr.label, fileUrls: tr.fileUrls?.length ? tr.fileUrls : takeTrainUrls(), tategae: !!tr.tategae })
     }
-    if (exp.hotelYen)     rows.push({ date, category: '宿泊費', siteName, amount: exp.hotelYen,     note: exp.hotelName,     registrationNumber: exp.hotelRegistration,     fileUrls: exp.hotelUrls?.length     ? exp.hotelUrls     : undefined, tategae: !!exp.hotelTategae })
-    if (exp.leopalaceYen) rows.push({ date, category: '宿泊費', siteName, amount: exp.leopalaceYen, note: exp.leopalaceName, registrationNumber: exp.leopalaceRegistration, fileUrls: exp.leopalaceUrls?.length ? exp.leopalaceUrls : undefined, tategae: !!exp.leopalaceTategae })
+    // 宿泊費（複数登録・新形式 hotels[]）。明細ごとに1行。
+    for (const ho of (exp.hotels || [])) {
+      if (ho.yen) rows.push({ date, category: '宿泊費', siteName, amount: ho.yen, note: ho.label, registrationNumber: ho.registrationNumber, fileUrls: ho.fileUrls?.length ? ho.fileUrls : undefined, tategae: !!ho.tategae })
+    }
+    // 旧スカラー（hotel*/leopalace*）は hotels[] に金額が無い時だけ読む＝二重計上を防ぐ後方互換。
+    const hasHotelsArr = (exp.hotels || []).some((h: any) => h.yen)
+    if (exp.hotelYen     && !hasHotelsArr) rows.push({ date, category: '宿泊費', siteName, amount: exp.hotelYen,     note: exp.hotelName,     registrationNumber: exp.hotelRegistration,     fileUrls: exp.hotelUrls?.length     ? exp.hotelUrls     : undefined, tategae: !!exp.hotelTategae })
+    if (exp.leopalaceYen && !hasHotelsArr) rows.push({ date, category: '宿泊費', siteName, amount: exp.leopalaceYen, note: exp.leopalaceName, registrationNumber: exp.leopalaceRegistration, fileUrls: exp.leopalaceUrls?.length ? exp.leopalaceUrls : undefined, tategae: !!exp.leopalaceTategae })
     for (const ot of (exp.others || [])) {
       if (ot.yen) rows.push({ date, category: 'その他', siteName, amount: ot.yen, note: ot.label, registrationNumber: ot.registrationNumber, fileUrls: ot.fileUrls?.length ? ot.fileUrls : takeOtherUrls(), tategae: !!ot.tategae })
     }

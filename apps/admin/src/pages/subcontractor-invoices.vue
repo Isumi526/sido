@@ -81,12 +81,22 @@
                 <option value="__new__">＋ 新規業者を登録…</option>
               </select>
             </label>
+            <label v-if="posForVendor.length" class="fld"><span>注文書（出来高請求の紐付け）</span>
+              <select v-model="form.purchase_order_id" class="inp" data-testid="po-select">
+                <option :value="null">紐付けなし（単発請求）</option>
+                <option v-for="p in posForVendor" :key="p.id" :value="p.id">{{ p.order_number || '注文書' }}（¥{{ (p.total_amount ?? 0).toLocaleString() }}）</option>
+              </select>
+            </label>
             <label class="fld"><span>登録番号</span><input v-model="form.registration_number" class="inp" placeholder="例：T1234567890123" /></label>
             <label class="fld"><span>件名</span><input v-model="form.title" class="inp" /></label>
             <label class="fld"><span>請求番号</span><input v-model="form.invoice_no" class="inp" /></label>
             <label class="fld"><span>請求日</span><input v-model="form.invoice_date" type="date" class="inp" /></label>
             <label class="fld"><span>支払期限</span><input v-model="form.due_date" type="date" class="inp" /></label>
             <label class="fld"><span>請求金額(請求書記載)</span><input v-model.number="form.total_amount" type="number" class="inp" /></label>
+            <div v-if="selectedPo" class="fld po-residual" :class="{ over: poOverResidual }" data-testid="po-residual">
+              <span>注文書残額</span>
+              <div class="po-residual-val">残額 <b>{{ yen(poResidual) }}</b>（注文書 {{ yen(selectedPo.total_amount) }} − 既請求 {{ yen(poBilledOthers) }}）／ 今回の請求額 {{ yen(effectiveBilled) }}<span v-if="poOverResidual" class="po-over-msg"> ⚠ 残額を超えています</span></div>
+            </div>
             <label class="fld"><span>支払状況</span>
               <select v-model="form.paid" class="inp">
                 <option :value="false">未払い</option>
@@ -199,10 +209,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { logOperation } from '../lib/operationLog'
 
 const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
 const IS_DEV   = import.meta.env.DEV
@@ -215,6 +226,7 @@ interface Item {
 }
 interface Form {
   id?: string; vendor_name: string; subcontractor_id: string | null; registration_number: string | null
+  purchase_order_id: string | null
   title: string | null; invoice_no: string | null; invoice_date: string | null; due_date: string | null
   transfer_date: string | null; paid: boolean; total_amount: number | null; pdf_path: string | null; note: string | null; items: Item[]
 }
@@ -225,6 +237,37 @@ const loading  = ref(false)
 const invoices = ref<any[]>([])
 const sites    = ref<{ id: string; name: string }[]>([])
 const subs     = ref<{ id: string; name: string; category: string | null }[]>([])
+type PO = { id: string; order_number: string | null; total_amount: number | null; subcontractor_id: string | null; vendor_name: string | null }
+const pos      = ref<PO[]>([])
+// 選択中の業者に紐づく注文書（出来高請求の紐付け候補）
+const posForVendor = computed<PO[]>(() => {
+  const sid = form.value?.subcontractor_id
+  if (!sid || sid === '__new__') return []
+  return pos.value.filter(p => p.subcontractor_id === sid)
+})
+// 選択注文書の残額 = 注文書金額 − その注文書に紐づく既請求合計（編集中の本請求は除外）
+const selectedPo = computed<PO | null>(() => pos.value.find(p => p.id === form.value?.purchase_order_id) ?? null)
+const poBilledOthers = computed(() => {
+  const poId = form.value?.purchase_order_id; if (!poId) return 0
+  return invoices.value
+    .filter(v => v.purchase_order_id === poId && v.id !== form.value?.id)
+    .reduce((s, v) => s + (Number(v.total_amount) || 0), 0)
+})
+const poResidual = computed(() => {
+  const po = selectedPo.value; if (!po) return null
+  return (Number(po.total_amount) || 0) - poBilledOthers.value
+})
+// 残額判定に使う実効請求額: 請求金額(記載)が入っていればそれ、無ければ明細小計(税抜)
+const effectiveBilled = computed(() => {
+  const t = Number(form.value?.total_amount) || 0
+  return t > 0 ? t : subtotal.value
+})
+const poOverResidual = computed(() => {
+  if (poResidual.value == null) return false
+  return effectiveBilled.value > poResidual.value
+})
+// 残額エラーは超過が解消したら自動でクリア（古いメッセージが残らないように）
+watch(poOverResidual, (over) => { if (!over && formError.value.includes('残額')) formError.value = '' })
 const form     = ref<Form | null>(null)
 const files    = ref<File[]>([])   // 複数枚（請求書が複数ページに分かれている場合）対応
 const dragActive = ref(false)      // ファイルD&D中のハイライト
@@ -261,6 +304,7 @@ async function confirmPay() {
   paying.value = true
   try {
     await supabase.from('subcontractor_invoices').update({ paid: true, transfer_date: p.date, updated_at: new Date().toISOString() }).eq('id', p.id)
+    await logOperation('請求支払登録', { targetType: 'subcontractor_invoice', targetId: p.id, summary: `${p.vendor_name} 支払日${p.date}` })
     payState.value = null
     await load()
   } finally { paying.value = false }
@@ -275,12 +319,14 @@ function markUnpaid(inv: any) {
 async function load() {
   loading.value = true
   const accountId = await getAccountId()
-  const [{ data: inv }, { data: si }, { data: su }] = await Promise.all([
+  const [{ data: inv }, { data: si }, { data: su }, { data: po }] = await Promise.all([
     supabase.from('subcontractor_invoices')
       .select('*, subcontractor_invoice_items(amount, tax_rate)')
       .eq('account_id', accountId).order('invoice_date', { ascending: false }).order('created_at', { ascending: false }),
     supabase.from('sites').select('id, name').eq('account_id', accountId).eq('active', true).order('name_kana', { nullsFirst: false }).order('name'),
     supabase.from('subcontractors').select('id, name, category').eq('account_id', accountId).eq('active', true).order('name'),
+    supabase.from('purchase_orders').select('id, order_number, total_amount, subcontractor_id, vendor_name')
+      .eq('account_id', accountId).neq('is_deleted', true).order('order_date', { ascending: false }),
   ])
   invoices.value = (inv ?? []).map((v: any) => {
     const items = v.subcontractor_invoice_items ?? []
@@ -290,12 +336,13 @@ async function load() {
   })
   sites.value = si ?? []
   subs.value  = su ?? []
+  pos.value   = (po ?? []) as PO[]
   loading.value = false
 }
 
 function blankForm(): Form {
   const today = new Date().toISOString().slice(0, 10)
-  return { vendor_name: '', subcontractor_id: null, registration_number: null, title: null, invoice_no: null, invoice_date: today, due_date: null, transfer_date: null, paid: false, total_amount: null, pdf_path: null, note: null, items: [] }
+  return { vendor_name: '', subcontractor_id: null, purchase_order_id: null, registration_number: null, title: null, invoice_no: null, invoice_date: today, due_date: null, transfer_date: null, paid: false, total_amount: null, pdf_path: null, note: null, items: [] }
 }
 // 開いた時点の内容スナップショット（変更有無の判定用）
 const formSnapshot = ref('')
@@ -320,6 +367,7 @@ async function openEdit(inv: any) {
     .select('*').eq('invoice_id', inv.id).order('sort_order').order('item_date')
   form.value = {
     id: inv.id, vendor_name: inv.vendor_name, subcontractor_id: inv.subcontractor_id,
+    purchase_order_id: inv.purchase_order_id ?? null,
     registration_number: inv.registration_number, title: inv.title, invoice_no: inv.invoice_no,
     invoice_date: inv.invoice_date, due_date: inv.due_date, transfer_date: inv.transfer_date, paid: !!inv.paid,
     total_amount: inv.total_amount, pdf_path: inv.pdf_path, note: inv.note,
@@ -529,11 +577,16 @@ async function save() {
   if (f.items.some(it => !it.site_id || it.site_id === '__new__')) { formError.value = 'すべての明細で現場を選択してください（新規は「追加」で確定）'; return }
   // 支払い済みにする場合は支払日が必須
   if (f.paid && !f.transfer_date) { formError.value = '支払い済みにする場合は支払日を入力してください'; return }
+  // 出来高: 注文書に紐付けた請求は残額を超えられない（勝手な増額防止）。請求金額(記載)が空なら明細小計で判定。
+  if (f.purchase_order_id && poResidual.value != null && effectiveBilled.value > poResidual.value) {
+    formError.value = `請求額（${yen(effectiveBilled.value)}）が注文書の残額（${yen(poResidual.value)}）を超えています。出来高の範囲内で入力してください。`; return
+  }
   saving.value = true; formError.value = ''
   try {
     const accountId = await getAccountId()
     const header = {
       account_id: accountId, subcontractor_id: sub.id, vendor_name: sub.name,
+      purchase_order_id: f.purchase_order_id || null,
       registration_number: f.registration_number || null,
       title: f.title || null, invoice_no: f.invoice_no || null, invoice_date: f.invoice_date || null,
       due_date: f.due_date || null, transfer_date: f.transfer_date || null, paid: !!f.paid,
@@ -575,6 +628,7 @@ async function save() {
       const { error } = await supabase.from('subcontractor_invoice_items').insert(rows)
       if (error) throw error
     }
+    await logOperation(f.id ? '請求更新' : '請求登録', { targetType: 'subcontractor_invoice', targetId: invoiceId, summary: `${sub.name} ${yen(f.total_amount)}` })
     form.value = null
     await load()
   } catch (e: any) {
@@ -669,6 +723,10 @@ onMounted(load)
 .btn-new-vendor:disabled { opacity: .5; cursor: default; }
 .new-vendor-hint { font-size: 12px; color: #5a6b8a; }
 .fld-required span { color: #c0392b; font-weight: 700; }
+.po-residual { grid-column: 1 / -1; background: #f4f8ff; border: 1px solid #d8e4ff; border-radius: 8px; padding: 8px 12px; }
+.po-residual.over { background: #fff0f0; border-color: #f0caca; }
+.po-residual-val { font-size: 13px; color: #34406b; margin-top: 2px; }
+.po-over-msg { color: #c0392b; font-weight: 700; }
 
 .new-site { display: flex; align-items: center; gap: 4px; }
 .btn-new-site { background: #1a56c4; color: #fff; border: none; border-radius: 6px; padding: 5px 8px; font-size: 11px; font-weight: 600; cursor: pointer; }

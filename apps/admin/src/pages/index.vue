@@ -125,7 +125,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, unitPriceForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
+import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, unitPriceForDate, wageTypeForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
 
 // ── 開発の更新履歴（全社共通・未確認/確認済みタブ）──────────
 interface DevUpdate { id: string; title: string; link: string | null; created_at: string }
@@ -209,10 +209,10 @@ async function load() {
 
   // マスタ・設定を並列取得
   const [{ data: wm }, { data: sm }, { data: cfg }, { data: wh }] = await Promise.all([
-    supabase.from('workers').select('id, name, unit_price').eq('account_id', accountId),
+    supabase.from('workers').select('id, name, unit_price, wage_type').eq('account_id', accountId),
     supabase.from('subcontractors').select('name, category, unit_price').eq('account_id', accountId),
     supabase.from('settings').select('key, value').eq('account_id', accountId),
-    supabase.from('worker_wage_history').select('worker_id, effective_date, changed_at, old_unit_price, new_unit_price').eq('account_id', accountId),
+    supabase.from('worker_wage_history').select('worker_id, effective_date, changed_at, old_unit_price, new_unit_price, wage_type, old_wage_type').eq('account_id', accountId),
   ])
   const wageTimelines = buildWageTimelines((wh ?? []) as any[])
   for (const row of (cfg ?? [])) {
@@ -223,6 +223,8 @@ async function load() {
   }
   const priceById   = Object.fromEntries((wm ?? []).map((w: any) => [w.id,   w.unit_price]))
   const priceByName = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.unit_price]))
+  const wageTypeById   = Object.fromEntries((wm ?? []).map((w: any) => [w.id,   w.wage_type || 'daily']))
+  const wageTypeByName = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.wage_type || 'daily']))
   const idByName    = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.id]))
   const subMaster   = Object.fromEntries((sm ?? []).map((s: any) => [s.name, { category: s.category, unitPrice: s.unit_price ?? 0 }]))
 
@@ -276,7 +278,9 @@ async function load() {
         const wid = w.workerId || idByName[w.workerName]
         // 日報の日付に有効だった単価で計算（昇給で過去の人件費が動かないように）
         const up = unitPriceForDate(date, wid ? wageTimelines.get(wid) : undefined, curUp)
-        const cost = laborCostForBreakdown(laborMap.get(w) ?? ZERO_BREAKDOWN, up)
+        const curWageType = (wageTypeById[w.workerId] ?? wageTypeByName[w.workerName] ?? 'daily') as 'daily' | 'hourly'
+        const wageType = wageTypeForDate(date, wid ? wageTimelines.get(wid) : undefined, curWageType)
+        const cost = laborCostForBreakdown(laborMap.get(w) ?? ZERO_BREAKDOWN, up, wageType)
         labor += cost
         addDetail(details, '社員', date, `${w.workerName}／${siteName}`, cost)
       }
@@ -300,7 +304,9 @@ async function load() {
         addExp(expMap, '高速代',    veh.highwayYen || 0); addDetail(details, '高速代',    date, siteName, veh.highwayYen || 0)
       }
       for (const tr of (exp.trains || [])) { addExp(expMap, '電車代', tr.yen || 0); addDetail(details, '電車代', date, siteName, tr.yen || 0) }
-      const lodge = (exp.hotelYen || 0) + (exp.leopalaceYen || 0)
+      // 宿泊費: 新形式 hotels[] があればその合計、無ければ旧スカラー（二重計上を防ぐ後方互換）
+      const hotelsSum = (exp.hotels || []).reduce((s: number, h: any) => s + (Number(h.yen) || 0), 0)
+      const lodge = hotelsSum > 0 ? hotelsSum : (exp.hotelYen || 0) + (exp.leopalaceYen || 0)
       addExp(expMap, '宿泊費', lodge);                   addDetail(details, '宿泊費', date, siteName, lodge)
       const others = (exp.others || []).reduce((s: number, o: any) => s + (o.yen || 0), 0)
       addExp(expMap, 'その他（資材等）', others);         addDetail(details, 'その他（資材等）', date, siteName, others)
