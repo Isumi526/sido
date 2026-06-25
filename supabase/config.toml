@@ -425,3 +425,7 @@ verify_jwt = false
 verify_jwt = true
 [functions.test-send-estimate]
 verify_jwt = false
+[functions.send-invoice-request]
+verify_jwt = true
+[functions.test-send-invoice-request]
+verify_jwt = false

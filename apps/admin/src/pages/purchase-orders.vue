@@ -36,6 +36,9 @@
             <td><a v-if="o.pdf_path" :href="pdfUrl(o.pdf_path)" target="_blank" rel="noopener" class="pdf-link">📄 PDF</a><span v-else class="muted">—</span></td>
             <td class="actions">
               <button class="btn-edit" :disabled="busyId === o.id" @click="resendEmail(o)">{{ busyId === o.id ? '送信中…' : '再送' }}</button>
+              <button v-if="isAccepted(o)" class="btn-edit invoice" :disabled="busyId === o.id" @click="requestInvoice(o)" :title="o.invoice_requested_at ? `請求依頼済み ${shortDate(o.invoice_requested_at)}` : '業者へ請求フォームURLを送る'">
+                {{ busyId === o.id ? '送信中…' : (o.invoice_requested_at ? '請求再依頼' : '請求依頼') }}
+              </button>
               <button class="btn-ghost-sm danger" @click="remove(o)">削除</button>
             </td>
           </tr>
@@ -230,6 +233,7 @@ type PO = {
   id: string; order_number: string; order_date: string | null; total_amount: number | null
   site_name: string | null; vendor_name: string | null; vendor_contact_name: string | null
   pdf_path: string | null; email_sent_at: string | null; status: string; accepted_at: string | null
+  invoice_requested_at: string | null
 }
 type Acceptance = {
   purchase_order_id: string; accepted_at: string; accepted_ip: string | null
@@ -278,7 +282,7 @@ async function load() {
   accountName.value = (await getAccountName()) || ''
   const [{ data: poRows }, { data: est }, { data: su }, { data: si }, { data: co }] = await Promise.all([
     supabase.from('purchase_orders')
-      .select('id, estimate_id, order_number, order_date, total_amount, site_name, vendor_name, vendor_contact_name, pdf_path, email_sent_at, status, accepted_at')
+      .select('id, estimate_id, order_number, order_date, total_amount, site_name, vendor_name, vendor_contact_name, pdf_path, email_sent_at, status, accepted_at, invoice_requested_at')
       .eq('account_id', accountId).eq('is_deleted', false).order('order_number', { ascending: false }),
     supabase.from('estimates').select('id, subcontractor_id, site_id, estimate_number, total_amount')
       .eq('account_id', accountId).eq('is_deleted', false).order('estimate_number', { ascending: false }),
@@ -483,6 +487,42 @@ async function resendEmail(o: PO) {
   } finally { busyId.value = null }
 }
 
+// 注文書が業者承諾済みか（請求依頼の前提＝AC4）。証跡 or status で判定。
+function isAccepted(o: PO): boolean {
+  return !!acceptances.value[o.id] || o.status === 'accepted'
+}
+
+// 「請求依頼」：承諾済み注文書に対し、業者へ請求フォームURLをメール送信（① AC1）
+async function callInvoiceFn(orderId: string): Promise<{ ok: boolean; msg: string }> {
+  if (!EDGE_URL) return { ok: false, msg: 'Edge Function URL未設定のためメール送信できません' }
+  const fnName = IS_DEV ? 'test-send-invoice-request' : 'send-invoice-request'
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return { ok: false, msg: 'ログインセッションがありません（再ログインしてください）' }
+  const res = await fetch(`${EDGE_URL}/${fnName}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: ANON_KEY, Authorization: `Bearer ${session.access_token}` },
+    body: JSON.stringify({ order_id: orderId }),
+  })
+  const r = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    if (r.error === 'not_accepted') return { ok: false, msg: 'この注文書はまだ業者承諾されていません' }
+    if (r.error === 'no_recipient_email') return { ok: false, msg: '宛先メールが未登録です（担当者のメールを確認してください）' }
+    return { ok: false, msg: r.error ?? `送信失敗 (${res.status})` }
+  }
+  return { ok: true, msg: r.test ? '請求フォームURLを発行しました（dev: 実メールは送信しません）' : `${r.sent_to ?? ''} へ請求依頼を送信しました` }
+}
+
+async function requestInvoice(o: PO) {
+  if (!isAccepted(o)) { alert('業者が承諾していないため請求依頼を送れません。'); return }
+  if (o.invoice_requested_at && !confirm(`注文書「${o.order_number}」の請求依頼を再送しますか？`)) return
+  busyId.value = o.id
+  try {
+    const sent = await callInvoiceFn(o.id)
+    alert(sent.ok ? sent.msg : `請求依頼の送信に失敗しました: ${sent.msg}`)
+    await load()
+  } finally { busyId.value = null }
+}
+
 async function remove(o: PO) {
   if (!confirm(`注文書「${o.order_number}」を削除しますか？`)) return
   await supabase.from('purchase_orders').update({ is_deleted: true, updated_at: new Date().toISOString() }).eq('id', o.id)
@@ -523,6 +563,7 @@ async function remove(o: PO) {
 .actions { display: flex; gap: 6px; }
 .btn-edit { background: #f0f0f0; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
 .btn-edit:disabled { opacity: .5; }
+.btn-edit.invoice { background: #e8f9ef; color: #06A050; font-weight: 700; }
 .btn-ghost-sm { background: none; border: 1px solid #ddd; border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; color: #888; }
 .btn-ghost-sm.danger { color: #c0392b; border-color: #f0caca; }
 .pdf-link { display: inline-block; font-size: 13px; color: #1a56c4; text-decoration: none; border: 1px solid #cdd8f0; border-radius: 6px; padding: 3px 10px; }
