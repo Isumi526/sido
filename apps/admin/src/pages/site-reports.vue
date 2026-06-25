@@ -135,7 +135,7 @@
                 <td class="num">{{ fmt(w.hoursNormal) }}</td>
                 <td class="num">{{ fmt(w.hoursOT) }}</td>
                 <td class="num">{{ fmt(w.hoursNight) }}</td>
-                <td class="num">{{ w.unitPrice ? yen(w.unitPrice) : '—' }}</td>
+                <td class="num">{{ w.unitPrice ? yen(w.unitPrice) + (w._wageType === 'hourly' ? '/h' : '/日') : '—' }}</td>
                 <td class="num">{{ w.laborCost ? yen(w.laborCost) : '—' }}</td>
               </tr>
             </tbody>
@@ -297,7 +297,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, unitPriceForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
+import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, unitPriceForDate, wageTypeForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
 import JSZip from 'jszip'
 
 const exporting = ref(false)
@@ -403,7 +403,7 @@ async function load() {
     supabase.from('workers').select('id, name, unit_price, wage_type').eq('account_id', accountId),
     supabase.from('subcontractors').select('name, category, unit_price').eq('account_id', accountId),
     supabase.from('settings').select('key, value').eq('account_id', accountId),
-    supabase.from('worker_wage_history').select('worker_id, effective_date, changed_at, old_unit_price, new_unit_price').eq('account_id', accountId),
+    supabase.from('worker_wage_history').select('worker_id, effective_date, changed_at, old_unit_price, new_unit_price, wage_type, old_wage_type').eq('account_id', accountId),
   ])
   const wageTimelines = buildWageTimelines((wh ?? []) as any[])  // 作業員ごとの昇給timeline（日付別単価解決用）
   // 設定値を上書き
@@ -499,11 +499,12 @@ async function load() {
       for (const w of (site.workers ?? []).filter((w: any) => w.workerName)) {
         const curPrice = priceById[w.workerId] ?? priceByName[w.workerName] ?? 0
         const wid = w.workerId || idByName[w.workerName]
-        // 日報の日付に有効だった単価で計算（昇給で過去の人件費が動かないように）
+        // 日報の日付に有効だった単価・賃金タイプで計算（昇給/タイプ切替で過去の人件費が動かないように）
         const unitPrice = unitPriceForDate(date, wid ? wageTimelines.get(wid) : undefined, curPrice)
         const breakdown = laborMap.get(w) ?? ZERO_BREAKDOWN
-        const wageType = (wageTypeById[w.workerId] ?? wageTypeByName[w.workerName] ?? 'daily') as 'daily' | 'hourly'
-        g.workers.push({ ...w, ...breakdown, role: w.workerRole ?? 'site', unitPrice, laborCost: laborCostForBreakdown(breakdown, unitPrice, wageType) })
+        const curWageType = (wageTypeById[w.workerId] ?? wageTypeByName[w.workerName] ?? 'daily') as 'daily' | 'hourly'
+        const wageType = wageTypeForDate(date, wid ? wageTimelines.get(wid) : undefined, curWageType)
+        g.workers.push({ ...w, ...breakdown, role: w.workerRole ?? 'site', unitPrice, _wageType: wageType, laborCost: laborCostForBreakdown(breakdown, unitPrice, wageType) })
         // 出張費は人件費(社員)に混ぜず、主たる現場の別費目として計上（原価視点・複数現場でも主現場に1回）
         if (tripSet?.has(w)) g.tripCost += BUSINESS_TRIP_ALLOWANCE
       }

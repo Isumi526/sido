@@ -125,7 +125,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, unitPriceForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
+import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, unitPriceForDate, wageTypeForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
 
 // ── 開発の更新履歴（全社共通・未確認/確認済みタブ）──────────
 interface DevUpdate { id: string; title: string; link: string | null; created_at: string }
@@ -212,7 +212,7 @@ async function load() {
     supabase.from('workers').select('id, name, unit_price, wage_type').eq('account_id', accountId),
     supabase.from('subcontractors').select('name, category, unit_price').eq('account_id', accountId),
     supabase.from('settings').select('key, value').eq('account_id', accountId),
-    supabase.from('worker_wage_history').select('worker_id, effective_date, changed_at, old_unit_price, new_unit_price').eq('account_id', accountId),
+    supabase.from('worker_wage_history').select('worker_id, effective_date, changed_at, old_unit_price, new_unit_price, wage_type, old_wage_type').eq('account_id', accountId),
   ])
   const wageTimelines = buildWageTimelines((wh ?? []) as any[])
   for (const row of (cfg ?? [])) {
@@ -278,7 +278,8 @@ async function load() {
         const wid = w.workerId || idByName[w.workerName]
         // 日報の日付に有効だった単価で計算（昇給で過去の人件費が動かないように）
         const up = unitPriceForDate(date, wid ? wageTimelines.get(wid) : undefined, curUp)
-        const wageType = (wageTypeById[w.workerId] ?? wageTypeByName[w.workerName] ?? 'daily') as 'daily' | 'hourly'
+        const curWageType = (wageTypeById[w.workerId] ?? wageTypeByName[w.workerName] ?? 'daily') as 'daily' | 'hourly'
+        const wageType = wageTypeForDate(date, wid ? wageTimelines.get(wid) : undefined, curWageType)
         const cost = laborCostForBreakdown(laborMap.get(w) ?? ZERO_BREAKDOWN, up, wageType)
         labor += cost
         addDetail(details, '社員', date, `${w.workerName}／${siteName}`, cost)

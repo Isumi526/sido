@@ -248,6 +248,7 @@ const wageHistory      = ref<WageHist[]>([])
 const wageReason       = ref('')
 const wageEffectiveDate = ref('')   // 昇給年月日（発効日）。この日以降の稼働は新単価で人件費計算される。
 const origUnitPrice    = ref<number | null>(null)
+const origWageType     = ref<'daily' | 'hourly' | null>(null)
 const todayStr = () => new Date().toISOString().slice(0, 10)
 // 家族構成
 type FamilyMember = { id?: string; name: string; relationship: string | null; birth_date: string | null }
@@ -378,6 +379,7 @@ function openEdit(w: Worker) {
   authOk.value = false
   // 昇給履歴：変更前単価を控え、履歴を読み込む
   origUnitPrice.value = w.unit_price ?? null
+  origWageType.value  = (w.wage_type ?? 'daily') as 'daily' | 'hourly'
   wageReason.value = ''
   wageEffectiveDate.value = todayStr()
   wageHistory.value = []
@@ -454,12 +456,16 @@ async function save() {
 
     if (workerId) {
       await supabase.from('workers').update(workerPayload).eq('id', workerId)
-      // 単価(日当)が変わったら昇給履歴を1行記録（集計は最新単価のまま・履歴は記録のみ）
+      // 単価 or 賃金タイプ が変わったら昇給履歴を1行記録（発効日以降の日報がこの値で計算される）
       const newPrice = modal.value.unit_price ?? 0
-      if (origUnitPrice.value != null && newPrice !== origUnitPrice.value) {
+      const newWageType = (modal.value.wage_type ?? 'daily') as 'daily' | 'hourly'
+      const priceChanged = origUnitPrice.value != null && newPrice !== origUnitPrice.value
+      const typeChanged  = origWageType.value != null && newWageType !== origWageType.value
+      if (priceChanged || typeChanged) {
         await supabase.from('worker_wage_history').insert({
           worker_id: workerId, account_id: accountId,
           old_unit_price: origUnitPrice.value, new_unit_price: newPrice,
+          wage_type: newWageType, old_wage_type: origWageType.value,
           reason: wageReason.value.trim() || null,
           effective_date: wageEffectiveDate.value || todayStr(),
         })
