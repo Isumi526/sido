@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="page-header">
-      <h1 class="page-title">協力会社請求</h1>
+      <h1 class="page-title">協力業者請求</h1>
       <button class="btn-add" @click="openNew">＋ 新規請求</button>
     </div>
 
@@ -74,7 +74,7 @@
 
           <!-- ヘッダ -->
           <div class="hd-grid">
-            <label class="fld"><span>協力会社 *</span>
+            <label class="fld"><span>協力業者 *</span>
               <select v-model="form.subcontractor_id" class="inp" @change="onVendorSelect">
                 <option :value="null" disabled>選択してください</option>
                 <option v-for="s in subs" :key="s.id" :value="s.id">{{ s.name }}{{ s.category ? `（${s.category}）` : '' }}</option>
@@ -523,7 +523,7 @@ async function analyze() {
 async function save() {
   const f = form.value!
   const sub = subs.value.find(s => s.id === f.subcontractor_id)
-  if (!sub) { formError.value = '協力会社を選択してください（新規は「業者を登録」で追加）'; return }
+  if (!sub) { formError.value = '協力業者を選択してください（新規は「業者を登録」で追加）'; return }
   if (f.items.length === 0) { formError.value = '明細を1行以上入力してください'; return }
   // 現場は必須（未確定の新規入力中も不可）
   if (f.items.some(it => !it.site_id || it.site_id === '__new__')) { formError.value = 'すべての明細で現場を選択してください（新規は「追加」で確定）'; return }

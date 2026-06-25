@@ -48,6 +48,10 @@
             <div class="summary-label">休み</div>
             <div class="summary-value off">{{ workerMap[activeWorker].offDays }}<span class="unit">日</span></div>
           </div>
+          <div class="summary-card" v-if="activeTripDays > 0">
+            <div class="summary-label">出張日数</div>
+            <div class="summary-value">{{ activeTripDays }}<span class="unit">日</span></div>
+          </div>
           <div class="summary-card">
             <div class="summary-label">通常</div>
             <div class="summary-value">{{ fmtH(workerMap[activeWorker].totals.normal) }}<span class="unit">h</span></div>
@@ -501,6 +505,11 @@ watch(dateFrom, load)
 const activeUnitPrice = computed(() =>
   activeWorker.value ? (unitPriceMap.value[activeWorker.value] ?? 0) : 0
 )
+// 出張日数（出張費 ÷ ¥3,000）。サマリーカード用。
+const activeTripDays = computed(() => {
+  const y = activeWorker.value ? (workerMap.value[activeWorker.value]?.tripYen ?? 0) : 0
+  return Math.round(y / BUSINESS_TRIP_ALLOWANCE)
+})
 
 const laborCostBreakdown = computed(() => {
   if (!activeWorker.value || !workerMap.value[activeWorker.value]) return []

@@ -32,7 +32,7 @@ test.afterAll(async () => {
 
 test('AC1: 詳細を登録 → 一覧に工種・対応エリアが反映される', async ({ page }) => {
   await page.goto('/subcontractors', { waitUntil: 'networkidle' })
-  await expect(page.locator('h1')).toContainText('協力会社マスタ')
+  await expect(page.locator('h1')).toContainText('協力業者マスタ')
 
   await page.locator('.btn-add').click()
   const modal = page.locator('.modal.wide')

@@ -14,7 +14,7 @@ const PAGES: [string, RegExp][] = [
   ['/workers',        /作業員/],
   ['/sites',          /現場/],
   ['/contractors',    /元請け業者マスタ/],
-  ['/subcontractors', /協力会社/],
+  ['/subcontractors', /協力業者/],
   ['/users',          /ユーザー/],
   ['/settings',       /設定/],
 ]
