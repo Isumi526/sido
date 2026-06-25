@@ -87,6 +87,7 @@ export interface Expenses {
   leopalaceRegistration?:     string   // レオパレス登録番号
   leopalaceFiles?: File[]              // レオパレス領収書
   leopalaceUrls?: string[]             // レオパレス領収書 URL
+  hotels?:                    LineItem[] // 宿泊費（明細ごと領収書・新形式・複数登録可。旧 hotel*/leopalace* スカラーは後方互換で読む）
   garbageFactoryM3?: number
   garbageSiteM3?: number
   garbagePhotos?: File[]          // ゴミ写真

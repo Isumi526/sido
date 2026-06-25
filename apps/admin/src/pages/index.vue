@@ -304,7 +304,9 @@ async function load() {
         addExp(expMap, '高速代',    veh.highwayYen || 0); addDetail(details, '高速代',    date, siteName, veh.highwayYen || 0)
       }
       for (const tr of (exp.trains || [])) { addExp(expMap, '電車代', tr.yen || 0); addDetail(details, '電車代', date, siteName, tr.yen || 0) }
-      const lodge = (exp.hotelYen || 0) + (exp.leopalaceYen || 0)
+      // 宿泊費: 新形式 hotels[] があればその合計、無ければ旧スカラー（二重計上を防ぐ後方互換）
+      const hotelsSum = (exp.hotels || []).reduce((s: number, h: any) => s + (Number(h.yen) || 0), 0)
+      const lodge = hotelsSum > 0 ? hotelsSum : (exp.hotelYen || 0) + (exp.leopalaceYen || 0)
       addExp(expMap, '宿泊費', lodge);                   addDetail(details, '宿泊費', date, siteName, lodge)
       const others = (exp.others || []).reduce((s: number, o: any) => s + (o.yen || 0), 0)
       addExp(expMap, 'その他（資材等）', others);         addDetail(details, 'その他（資材等）', date, siteName, others)

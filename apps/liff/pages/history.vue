@@ -251,8 +251,11 @@ function expenseLines(exp: any): string[] {
   for (const h of (exp.highways || [])) if (h?.yen) out.push(`${t('history.expHighway', { yen: yen(h.yen) })}${h.etcCard ? ` ${t('history.expEtc', { card: h.etcCard })}` : ''}`)
   for (const tr of (exp.trains || [])) if (tr?.yen) out.push(t('history.expWithYen', { label: tr.label || t('history.expTrainDefault'), yen: yen(tr.yen) }))
   for (const o of (exp.others || [])) if (o?.yen) out.push(t('history.expWithYen', { label: o.label || t('history.expOtherDefault'), yen: yen(o.yen) }))
-  if (exp.hotelYen)         out.push(t('history.expWithYen', { label: exp.hotelName || t('history.expHotelDefault'), yen: yen(exp.hotelYen) }))
-  if (exp.leopalaceYen)     out.push(t('history.expWithYen', { label: exp.leopalaceName || t('history.expLeopalaceDefault'), yen: yen(exp.leopalaceYen) }))
+  // 宿泊費: 新形式 hotels[]（複数）。旧スカラーは hotels[] に金額が無い時だけ（二重計上防止）。
+  for (const ho of (exp.hotels || [])) if (ho?.yen) out.push(t('history.expWithYen', { label: ho.label || t('history.expHotelDefault'), yen: yen(ho.yen) }))
+  const _hasHotelsArr = (exp.hotels || []).some((h: any) => h?.yen)
+  if (exp.hotelYen     && !_hasHotelsArr) out.push(t('history.expWithYen', { label: exp.hotelName || t('history.expHotelDefault'), yen: yen(exp.hotelYen) }))
+  if (exp.leopalaceYen && !_hasHotelsArr) out.push(t('history.expWithYen', { label: exp.leopalaceName || t('history.expLeopalaceDefault'), yen: yen(exp.leopalaceYen) }))
   for (const e of (exp.entertainments || [])) if (e?.yen) out.push(t('history.expWithYen', { label: e.label || t('history.expMiscDefault'), yen: yen(e.yen) }))
   if (exp.entertainmentYen && !(exp.entertainments || []).some((e: any) => e?.yen)) out.push(t('history.expWithYen', { label: exp.entertainmentLabel || t('history.expMiscDefault'), yen: yen(exp.entertainmentYen) }))
   if (exp.garbageFactoryM3 || exp.garbageSiteM3) {

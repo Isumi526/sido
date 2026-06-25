@@ -54,7 +54,7 @@ export const createSite = (): SiteReport => ({
   siteName:       '',
   contractorName: '',
   workers:        [createWorker()],
-  expenses:       { vehicles: [createVehicle()], parkings: [], highways: [], trains: [createTrain()], others: [createLineItem()], entertainments: [createLineItem()] },
+  expenses:       { vehicles: [createVehicle()], parkings: [], highways: [], trains: [createTrain()], others: [createLineItem()], entertainments: [createLineItem()], hotels: [createLineItem()] },
   subcontractors: [],
   siteNote:       '',
 })
@@ -70,6 +70,7 @@ function stripFiles(expenses: Record<string, unknown> | object): Record<string, 
   if (Array.isArray(rest.trains))   rest.trains   = stripItemFiles(rest.trains)
   if (Array.isArray(rest.others))   rest.others   = stripItemFiles(rest.others)
   if (Array.isArray(rest.entertainments)) rest.entertainments = stripItemFiles(rest.entertainments)
+  if (Array.isArray(rest.hotels))         rest.hotels         = stripItemFiles(rest.hotels)
   return rest
 }
 
@@ -139,6 +140,8 @@ export const useReport = () => {
   function removeOther(si: number, oi: number)       { form.value.sites[si].expenses.others.splice(oi, 1) }
   function addEntertainment(si: number)                { (form.value.sites[si].expenses.entertainments ??= []).push(createLineItem()) }
   function removeEntertainment(si: number, ei: number) { form.value.sites[si].expenses.entertainments?.splice(ei, 1) }
+  function addHotel(si: number)                        { (form.value.sites[si].expenses.hotels ??= []).push(createLineItem()) }
+  function removeHotel(si: number, hi: number)         { form.value.sites[si].expenses.hotels?.splice(hi, 1) }
 
   function reset() {
     submitted.value = false
@@ -202,6 +205,7 @@ export const useReport = () => {
         { items: site.expenses.trains,   prefix: 'train'   },
         { items: site.expenses.others,   prefix: 'other'   },
         { items: site.expenses.entertainments, prefix: 'entertainment' },
+        { items: site.expenses.hotels, prefix: 'hotel' },
       ]
       for (const { items, prefix } of perItemGroups) {
         for (let i = 0; i < (items?.length ?? 0); i++) {
@@ -351,6 +355,7 @@ export const useReport = () => {
     addTrain, removeTrain,
     addOther, removeOther,
     addEntertainment, removeEntertainment,
+    addHotel, removeHotel,
     submit, reset,
   }
 }
