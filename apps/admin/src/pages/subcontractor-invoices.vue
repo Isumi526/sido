@@ -213,6 +213,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { logOperation } from '../lib/operationLog'
 
 const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
 const IS_DEV   = import.meta.env.DEV
@@ -296,6 +297,7 @@ async function confirmPay() {
   paying.value = true
   try {
     await supabase.from('subcontractor_invoices').update({ paid: true, transfer_date: p.date, updated_at: new Date().toISOString() }).eq('id', p.id)
+    await logOperation('請求支払登録', { targetType: 'subcontractor_invoice', targetId: p.id, summary: `${p.vendor_name} 支払日${p.date}` })
     payState.value = null
     await load()
   } finally { paying.value = false }
@@ -619,6 +621,7 @@ async function save() {
       const { error } = await supabase.from('subcontractor_invoice_items').insert(rows)
       if (error) throw error
     }
+    await logOperation(f.id ? '請求更新' : '請求登録', { targetType: 'subcontractor_invoice', targetId: invoiceId, summary: `${sub.name} ${yen(f.total_amount)}` })
     form.value = null
     await load()
   } catch (e: any) {
