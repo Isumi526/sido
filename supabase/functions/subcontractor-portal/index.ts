@@ -86,6 +86,7 @@ Deno.serve(async (req) => {
   let signerName = ''
   let invoiceMode = 'full'   // 'full'=全額 / 'partial'=出来高
   let invoiceAmount = 0
+  let regFields: Record<string, unknown> = {}
   try {
     const body = await req.json()
     token       = (body.token ?? '').toString()
@@ -94,6 +95,7 @@ Deno.serve(async (req) => {
     signerName  = (body.signer_name ?? '').toString().slice(0, 100)
     invoiceMode = (body.invoice_mode ?? 'full').toString()
     invoiceAmount = Math.round(Number(body.invoice_amount ?? 0)) || 0
+    regFields   = (body.fields && typeof body.fields === 'object') ? body.fields : {}
   } catch { /* 空/不正body */ }
 
   if (!token) return json({ ok: false })
@@ -113,7 +115,7 @@ Deno.serve(async (req) => {
     if (!tok) return json({ ok: false })
     if (tok.expires_at && tok.expires_at < nowIso) return json({ ok: false })
 
-    const KNOWN_ACTIONS = ['resolve', 'accept', 'invoice_resolve', 'invoice_submit', 'change_accept']
+    const KNOWN_ACTIONS = ['resolve', 'accept', 'invoice_resolve', 'invoice_submit', 'change_accept', 'register_resolve', 'register_submit']
     if (!KNOWN_ACTIONS.includes(action)) return json({ ok: false, error: 'unsupported_action' }, 400)
 
     // 受注者（業者）を account/業者ID の二重スコープで取得
@@ -253,6 +255,66 @@ Deno.serve(async (req) => {
     // ─────────────────────────────────────────────────────
     //  change_accept : 変更注文書の再承諾（署名＋証跡）→ 注文書金額を変更後金額へ更新
     // ─────────────────────────────────────────────────────
+    // 新規業者 登録フォームの初期表示（招待時の名称/メールを prefill）
+    if (action === 'register_resolve') {
+      if (tok.purpose !== 'vendor_register') return json({ ok: false, error: 'not_registerable' }, 400)
+      const { data: stub } = await supabase
+        .from('subcontractors')
+        .select('id, name, category, representative_name, mobile_phone, office_phone, email, address, registration_status')
+        .eq('id', tok.subcontractor_id).eq('account_id', tok.account_id).maybeSingle()
+      if (!stub) return json({ ok: false })
+      await supabase.from('document_access_tokens').update({ last_accessed_at: nowIso }).eq('id', tok.id).then(() => {}, () => {})
+      return json({
+        ok: true, purpose: tok.purpose, vendor: stub,
+        already_submitted: !!tok.used_at || stub.registration_status !== 'pending',
+      })
+    }
+
+    // 業者がフォーム記入 → 業者マスタを更新（承認待ちのまま）＋担当者を起票
+    if (action === 'register_submit') {
+      if (tok.purpose !== 'vendor_register') return json({ ok: false, error: 'not_registerable' }, 400)
+      if (tok.used_at) return json({ ok: false, error: 'already_submitted' }, 409)
+
+      // 外部入力を許可フィールドだけに絞る（任意列更新を防ぐサニタイズ）
+      const s = (v: unknown, max = 200) => (v == null ? null : String(v).slice(0, max))
+      const name = s((regFields as any).name, 100)
+      if (!name) return json({ ok: false, error: 'name_required' }, 400)
+      const update: Record<string, unknown> = {
+        name,
+        category:            s((regFields as any).category, 20) ?? '業者',
+        representative_name: s((regFields as any).representative_name, 100),
+        mobile_phone:        s((regFields as any).mobile_phone, 30),
+        office_phone:        s((regFields as any).office_phone, 30),
+        email:               s((regFields as any).email, 200),
+        address:             s((regFields as any).address, 300),
+        bank_name:           s((regFields as any).bank_name, 100),
+        bank_branch:         s((regFields as any).bank_branch, 100),
+        bank_account_type:   s((regFields as any).bank_account_type, 20),
+        bank_account_number: s((regFields as any).bank_account_number, 30),
+        bank_account_holder: s((regFields as any).bank_account_holder, 100),
+        registration_submitted_at: nowIso,
+        // registration_status は 'pending' のまま（管理者承認で 'approved'）
+      }
+
+      // 単回トークンを原子的に消費（二重送信防止）
+      const { data: claimed } = await supabase.from('document_access_tokens')
+        .update({ used_at: nowIso }).eq('id', tok.id).is('used_at', null).select('id')
+      if (!claimed || claimed.length === 0) return json({ ok: false, error: 'already_submitted' }, 409)
+
+      const { error: updErr } = await supabase.from('subcontractors')
+        .update(update).eq('id', tok.subcontractor_id).eq('account_id', tok.account_id).eq('registration_status', 'pending')
+      if (updErr) return json({ ok: false, error: 'register_update_failed' }, 500)
+
+      if (update.email || update.representative_name) {
+        await supabase.from('subcontractor_contacts').insert({
+          account_id: tok.account_id, subcontractor_id: tok.subcontractor_id,
+          name: update.representative_name ?? name, email: update.email ?? null,
+          phone: update.mobile_phone ?? update.office_phone ?? null,
+        })
+      }
+      return json({ ok: true, submitted: true })
+    }
+
     if (action === 'change_accept') {
       if (!change) return json({ ok: false, error: 'not_acceptable' }, 400)
       // 既に再承諾済みなら冪等に返す
