@@ -77,6 +77,41 @@
         </div>
       </div>
 
+      <!-- 変更注文書の再承諾フロー -->
+      <div v-else-if="isChangeAccept && change && order" class="state">
+        <p class="hello">{{ t('token.greeting', { name: result.subcontractor?.name }) }}</p>
+        <h1>{{ t('token.purposeChangeAccept') }}</h1>
+
+        <div class="order-box">
+          <div class="order-title">{{ t('token.change.heading') }}</div>
+          <dl class="kv">
+            <div class="kv-row"><dt>{{ t('token.order.number') }}</dt><dd class="mono">{{ order.order_number }}</dd></div>
+            <div class="kv-row"><dt>{{ t('token.order.site') }}</dt><dd>{{ order.site_name || t('token.order.none') }}</dd></div>
+            <div class="kv-row"><dt>{{ t('token.change.oldAmount') }}</dt><dd>{{ yen(change.old_amount) }}</dd></div>
+            <div class="kv-row amount"><dt>{{ t('token.change.newAmount') }}</dt><dd>{{ yen(change.new_amount) }}</dd></div>
+            <div v-if="change.reason" class="kv-row"><dt>{{ t('token.change.reason') }}</dt><dd>{{ change.reason }}</dd></div>
+          </dl>
+        </div>
+
+        <div class="accept-box">
+          <div class="accept-title">{{ t('token.change.acceptHeading') }}</div>
+          <p class="muted small">{{ t('token.change.intro') }}</p>
+          <label class="fld"><span>{{ t('token.accept.signerName') }}</span>
+            <input v-model="signerName" class="inp" :placeholder="t('token.accept.signerNamePlaceholder')" maxlength="100" />
+          </label>
+          <div class="sig-label">{{ t('token.accept.signaturePrompt') }}</div>
+          <div class="sig-wrap">
+            <canvas ref="canvasEl" class="sig-canvas" @pointerdown="startDraw" @pointermove="draw" @pointerup="endDraw" @pointerleave="endDraw" />
+            <button v-if="hasSignature" type="button" class="sig-clear" @click="clearSignature">{{ t('token.accept.clear') }}</button>
+          </div>
+          <p class="muted small note">{{ t('token.change.agreeNote') }}</p>
+          <p v-if="acceptError" class="err">{{ acceptError }}</p>
+          <button type="button" class="btn-accept" :disabled="submitting" @click="submitChangeAccept">
+            {{ submitting ? t('token.accept.submitting') : t('token.change.submit') }}
+          </button>
+        </div>
+      </div>
+
       <!-- 請求受付完了（このセッションで送信 or 既に送信済み） -->
       <div v-else-if="invoiceDone" class="state ok">
         <div class="icon-ok">✓</div>
@@ -153,6 +188,10 @@ type OrderView = {
   change_rule: string | null; special_notes: string | null
   status: string | null; accepted_at: string | null; has_pdf: boolean
 }
+type ChangeView = {
+  id: string; seq: number; old_amount: number | null; new_amount: number
+  reason: string | null; status: string | null; accepted_at: string | null
+}
 type PortalResult = {
   ok: boolean
   purpose?: string
@@ -160,6 +199,7 @@ type PortalResult = {
   document_id?: string | null
   subcontractor?: { id: string; name: string }
   order?: OrderView | null
+  change?: ChangeView | null
   pdf_url?: string | null
 }
 
@@ -182,10 +222,13 @@ const invoiceError     = ref('')
 const invoiceDone      = ref(false)
 const invoiceDoneAmount = ref(0)
 const isInvoiceSubmit  = computed(() => result.value?.purpose === 'invoice_submit')
+const isChangeAccept   = computed(() => result.value?.purpose === 'change_accept')
+const change = computed<ChangeView | null>(() => result.value?.change ?? null)
 
 const PURPOSE_LABELS: Record<string, string> = {
   order_accept:   t('token.purposeOrderAccept'),
   invoice_submit: t('token.purposeInvoiceSubmit'),
+  change_accept:  t('token.purposeChangeAccept'),
 }
 const purposeLabel = computed(() => (result.value?.purpose && PURPOSE_LABELS[result.value.purpose]) || t('token.purposeDefault'))
 const isOrderAccept = computed(() => result.value?.purpose === 'order_accept')
@@ -292,6 +335,25 @@ async function submitAccept() {
   }
 }
 
+async function submitChangeAccept() {
+  acceptError.value = ''
+  if (!hasSignature.value || !canvasEl.value) { acceptError.value = t('token.accept.errorSignature'); return }
+  submitting.value = true
+  try {
+    const signature = canvasEl.value.toDataURL('image/png')
+    const r = await callPortal({ action: 'change_accept', signature, signer_name: signerName.value })
+    if (r?.ok) {
+      acceptedAt.value = r.accepted_at || new Date().toISOString()
+    } else {
+      acceptError.value = r?.error === 'signature_required' ? t('token.accept.errorSignature') : t('token.accept.errorFailed')
+    }
+  } catch {
+    acceptError.value = t('token.accept.errorFailed')
+  } finally {
+    submitting.value = false
+  }
+}
+
 async function submitInvoice() {
   invoiceError.value = ''
   if (!invoiceAccepted.value) { invoiceError.value = t('token.invoice.errorNotAccepted'); return }
@@ -325,8 +387,12 @@ onMounted(async () => {
   try {
     result.value = await callPortal({ action: 'resolve' })
     // 既に承諾済みの注文書なら、承諾完了画面を出す
-    if (result.value?.ok && result.value.order?.accepted_at) {
+    if (result.value?.ok && result.value.order?.accepted_at && !isChangeAccept.value) {
       acceptedAt.value = result.value.order.accepted_at
+    }
+    // 変更注文書が既に再承諾済みなら完了画面
+    if (result.value?.ok && isChangeAccept.value && result.value.change?.accepted_at) {
+      acceptedAt.value = result.value.change.accepted_at
     }
     // 請求フォーム用なら残額・承諾状態を取得（invoice_resolve）
     if (result.value?.ok && isInvoiceSubmit.value) {

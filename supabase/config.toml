@@ -429,3 +429,7 @@ verify_jwt = false
 verify_jwt = true
 [functions.test-send-invoice-request]
 verify_jwt = false
+[functions.send-change-order]
+verify_jwt = true
+[functions.test-send-change-order]
+verify_jwt = false
