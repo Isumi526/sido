@@ -36,24 +36,23 @@ test.describe('出来高 注文書残額', () => {
     // 残額¥50,000 が表示される
     await expect(page.locator('[data-testid="po-residual"]')).toContainText('残額 ¥50,000')
 
-    // 明細1行（保存に必須）
+    // 明細1行: 数量1 × 単価60,000 = ¥60,000（請求金額(記載)は空欄＝明細小計で残額判定）
     await page.locator('.btn-row-add').click()
     const row = page.locator('.items-table tbody tr').first()
     await row.locator('select').selectOption({ label: FEAT_A_SITE })
     await row.locator('.inp-sm.num').nth(0).fill('1')
-    await row.locator('.inp-sm.num').nth(1).fill('30000')
+    const priceCell = row.locator('.inp-sm.num').nth(1)
+    await priceCell.fill('60000')
 
-    // 請求金額 ¥60,000（残額超過）→ over表示＋保存で弾かれる
-    const amountInput = page.locator('.fld', { hasText: '請求金額' }).locator('input[type="number"]')
-    await amountInput.fill('60000')
+    // 残額¥50,000 < 請求額¥60,000（明細）→ over表示＋保存で弾かれる（請求金額記載は空のまま）
     await expect(page.locator('[data-testid="po-residual"]')).toContainText('残額を超えています')
     await page.locator('.btn-save').click()
-    await expect(page.locator('.form-error, .error').first()).toContainText('残額')
-    // 一覧には出ていない（保存されていない）
+    await expect(page.locator('.error').first()).toContainText('残額')
     await expect(page.locator('tr.data-row', { hasText: VENDOR })).toHaveCount(0)
 
-    // 請求金額 ¥30,000（残額内）→ 保存できる
-    await amountInput.fill('30000')
+    // 明細を ¥30,000 に（残額内）→ over解除＋保存できる
+    await priceCell.fill('30000')
+    await expect(page.locator('[data-testid="po-residual"]')).not.toContainText('残額を超えています')
     await page.locator('.btn-save').click()
     await expect(page.locator('tr.data-row', { hasText: VENDOR })).toBeVisible({ timeout: 10000 })
   })
