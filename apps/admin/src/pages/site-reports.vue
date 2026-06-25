@@ -23,6 +23,11 @@
         </div>
       </div>
 
+      <!-- エクスポート -->
+      <div v-if="activeSite" class="export-bar">
+        <button class="btn-export" :disabled="exporting" data-testid="export-site" @click="exportSite">{{ exporting ? 'エクスポート中…' : '⬇ エクスポート（CSV＋見積書PDF）' }}</button>
+      </div>
+
       <!-- 一覧テーブル -->
       <div v-if="activeSite" class="table-wrap">
         <table class="table">
@@ -293,6 +298,46 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, unitPriceForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
+import JSZip from 'jszip'
+
+const exporting = ref(false)
+// 現場別集計（当該現場の表）＋ 紐づく見積書PDF を zip でエクスポート（見積書フォルダ内包）
+async function exportSite() {
+  const site = activeSite.value
+  if (!site) return
+  exporting.value = true
+  try {
+    const rows = (siteMap.value[site] ?? []).filter((r: any) => !r._isInvoice)
+    const head = ['日付','作業員','商社','業者','社員','駐車場','燃料','高速','宿泊','接待費','ゴミ','交通費','ホーム','出張費','合計']
+    const csv = [head.join(',')].concat(rows.map((r: any) => [
+      r.date, '"' + String(r.workerSummary ?? '').replace(/"/g, '""') + '"',
+      r.shoshaCost||0, r.gyoshaCost||0, r.laborCost||0, r.parkingYen||0, r.fuelCost||0, r.highwayCost||0,
+      r.hotelCost||0, r.entertainCost||0, r.garbageCost||0, r.trainCost||0, r.homeCost||0, r.tripCost||0, r.total||0,
+    ].join(','))).join('\r\n')
+    const zip = new JSZip()
+    zip.file(`現場別集計_${site}_${yearMonth.value}.csv`, '﻿' + csv) // BOM付き=Excelで文字化けしない
+    // 紐づく見積書PDF（estimates.site_id）を「見積書」フォルダに内包
+    const accountId = await getAccountId()
+    const { data: siteRow } = await supabase.from('sites').select('id').eq('account_id', accountId).eq('name', site).maybeSingle()
+    if (siteRow?.id) {
+      const { data: ests } = await supabase.from('estimates')
+        .select('estimate_number, pdf_path').eq('site_id', siteRow.id).eq('is_deleted', false)
+      const folder = zip.folder('見積書')
+      for (const e of (ests ?? []) as any[]) {
+        if (!e.pdf_path) continue
+        try {
+          const url = supabase.storage.from('expense-receipts').getPublicUrl(e.pdf_path).data.publicUrl
+          const resp = await fetch(url); if (!resp.ok) continue
+          folder?.file(`${e.estimate_number || 'estimate'}.pdf`, await resp.blob())
+        } catch { /* 1件失敗しても続行 */ }
+      }
+    }
+    const blob = await zip.generateAsync({ type: 'blob' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob); a.download = `現場別集計_${site}_${yearMonth.value}.zip`
+    a.click(); URL.revokeObjectURL(a.href)
+  } finally { exporting.value = false }
+}
 
 const baseDate  = ref(new Date())
 const yearMonth = computed(() => `${baseDate.value.getFullYear()}年${baseDate.value.getMonth() + 1}月`)
@@ -542,6 +587,9 @@ watch(dateFrom, load)
 .empty { color: #888; padding: 60px; text-align: center; }
 
 .tabs-wrap { overflow-x: auto; margin-bottom: 16px; }
+.export-bar { display: flex; justify-content: flex-end; margin: 10px 0 0; }
+.btn-export { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.btn-export:disabled { opacity: .5; cursor: default; }
 .tabs { display: flex; gap: 4px; border-bottom: 2px solid #e0e0e0; min-width: max-content; }
 .tab { background: none; border: none; border-bottom: 3px solid transparent; margin-bottom: -2px; padding: 10px 16px; font-size: 13px; font-weight: 600; color: #888; cursor: pointer; white-space: nowrap; transition: color .15s, border-color .15s; }
 .tab:hover { color: #333; }
