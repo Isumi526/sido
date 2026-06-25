@@ -41,6 +41,7 @@
               <th class="num">ゴミ</th>
               <th class="num">交通費</th>
               <th class="num">ホーム</th>
+              <th class="num">出張費</th>
               <th class="num">合計</th>
               <th></th>
             </tr>
@@ -66,6 +67,7 @@
               <td class="num">{{ row.garbageCost ? yen(row.garbageCost) : '—' }}</td>
               <td class="num">{{ row.trainCost     ? yen(row.trainCost)     : '—' }}</td>
               <td class="num">{{ row.homeCost      ? yen(row.homeCost)      : '—' }}</td>
+              <td class="num">{{ row.tripCost      ? yen(row.tripCost)      : '—' }}</td>
               <td class="num total-col">{{ yen(row.total) }}</td>
               <td class="hint">{{ row._isInvoice ? '請求' : '詳細 →' }}</td>
             </tr>
@@ -84,6 +86,7 @@
               <td class="num">{{ yen(sumF(siteMap[activeSite], 'garbageCost')) }}</td>
               <td class="num">{{ yen(sumF(siteMap[activeSite], 'trainCost'))     }}</td>
               <td class="num">{{ yen(sumF(siteMap[activeSite], 'homeCost'))      }}</td>
+              <td class="num">{{ yen(sumF(siteMap[activeSite], 'tripCost'))     }}</td>
               <td class="num total-col">{{ yen(sumF(siteMap[activeSite], 'total')) }}</td>
               <td></td>
             </tr>
@@ -103,6 +106,12 @@
           <button class="btn-close" @click="selected = null">✕</button>
         </div>
 
+        <!-- 出張費（別費目・主たる現場に計上／社員には含めない） -->
+        <div class="modal-section" v-if="selected.tripCost" data-testid="trip-cost-section">
+          <div class="section-label">出張費（{{ yen(selected.tripCost) }}）</div>
+          <p class="muted" style="font-size:12px;margin:2px 0 0">出張日の手当 ¥3,000/人。主たる現場（最長稼働）に1回計上。社員（人件費）には含みません。</p>
+        </div>
+
         <!-- 稼働 -->
         <div class="modal-section" v-if="selected.workers.length">
           <div class="section-label">稼働（社員 {{ yen(selected.laborCost) }}）</div>
@@ -116,7 +125,7 @@
             </thead>
             <tbody>
               <tr v-for="(w, i) in selected.workers" :key="i">
-                <td>{{ w.workerName }}<span v-if="w._tripBonus" class="trip-badge" data-testid="trip-badge" title="出張手当 +¥3,000（主たる現場に1回）">出張+¥3,000</span></td>
+                <td>{{ w.workerName }}</td>
                 <td><span class="role-badge" :class="w.role">{{ w.role === 'factory' ? '工場' : '現場' }}</span></td>
                 <td class="num">{{ fmt(w.hoursNormal) }}</td>
                 <td class="num">{{ fmt(w.hoursOT) }}</td>
@@ -434,7 +443,7 @@ async function load() {
           parkingYen: 0, fuelCost: 0, highwayCost: 0,
           hotelCost: 0, entertainCost: 0,
           garbageFactoryM3: 0, garbageSiteM3: 0, garbageCost: 0,
-          trainCost: 0, homeCost: 0,
+          trainCost: 0, homeCost: 0, tripCost: 0,
         }
       }
       const g = grouped[gKey]
@@ -446,8 +455,9 @@ async function load() {
         // 日報の日付に有効だった単価で計算（昇給で過去の人件費が動かないように）
         const unitPrice = unitPriceForDate(date, wid ? wageTimelines.get(wid) : undefined, curPrice)
         const breakdown = laborMap.get(w) ?? ZERO_BREAKDOWN
-        const tripBonus = tripSet?.has(w) ? BUSINESS_TRIP_ALLOWANCE : 0
-        g.workers.push({ ...w, ...breakdown, role: w.workerRole ?? 'site', unitPrice, _tripBonus: tripBonus, laborCost: laborCostForBreakdown(breakdown, unitPrice) + tripBonus })
+        g.workers.push({ ...w, ...breakdown, role: w.workerRole ?? 'site', unitPrice, laborCost: laborCostForBreakdown(breakdown, unitPrice) })
+        // 出張費は人件費(社員)に混ぜず、主たる現場の別費目として計上（原価視点・複数現場でも主現場に1回）
+        if (tripSet?.has(w)) g.tripCost += BUSINESS_TRIP_ALLOWANCE
       }
 
       // 下請け（商社/業者区分・単価を master から付与）
@@ -493,7 +503,7 @@ async function load() {
       .reduce((s: number, sub: any) => s + sub.count * (sub.unitPrice || 0), 0)
     const total = shoshaCost + gyoshaCost + laborCost
       + g.parkingYen + g.fuelCost + g.highwayCost
-      + g.hotelCost + g.entertainCost + g.garbageCost + g.trainCost + g.homeCost
+      + g.hotelCost + g.entertainCost + g.garbageCost + g.trainCost + g.homeCost + g.tripCost
 
     const workerNames   = [...new Set(g.workers.map((w: any) => w.workerName))] as string[]
     const workerSummary = workerNames.join('・')
