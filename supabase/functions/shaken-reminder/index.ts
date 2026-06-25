@@ -11,6 +11,7 @@
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { pushLineMessagesResult } from '../_shared/line.ts'
+import { authorizeReminderTrigger } from '../_shared/reminder-auth.ts'
 
 const LINE_TOKEN   = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
@@ -90,6 +91,14 @@ async function processAccount(
 
   if (due.length === 0) return { slug, result: '対象車両なし', due: [], recipients: recipientPreview }
 
+  // べき等化: 同じ対象日に送信完了済みなら再送しない（dry-run除く・二重実行対策）
+  if (!dryRun) {
+    const { data: prior } = await supabase.from('reminder_logs')
+      .select('id').eq('account_id', accountId).eq('kind', 'shaken').eq('target_date', today)
+      .like('result', '送信完了%').limit(1)
+    if (prior && prior.length) return { slug, result: '既送信スキップ（重複防止）', due, recipients: recipientPreview }
+  }
+
   const lines = [
     '🚗 車検期日リマインド',
     `📅 ${fmtDate(today)} 時点`,
@@ -124,6 +133,9 @@ async function processAccount(
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders() })
 
+  // トリガー認可（cron=共有シークレット / admin手動=認証JWT）。第三者のURL直叩きを弾く。
+  if (!(await authorizeReminderTrigger(req, supabase))) return json({ error: 'unauthorized' }, 401)
+
   let dryRun = false, targetSlug: string | null = null, leadDays = DEFAULT_LEAD_DAYS
   try {
     const body = await req.json()
@@ -144,6 +156,26 @@ Deno.serve(async (req) => {
     const results = await Promise.all(
       accounts.map(acc => processAccount(acc.id, acc.slug, today, leadDays, dryRun)),
     )
+
+    // 実行履歴を記録（dry-run除く・べき等化の判定材料）。失敗してもリマインド本体は止めない。
+    if (!dryRun) {
+      await Promise.all(accounts.map((acc, i) => {
+        const r = results[i]
+        return supabase.from('reminder_logs').insert({
+          account_id:        acc.id,
+          kind:              'shaken',
+          target_date:       today,
+          result:            r.result,
+          unsubmitted_count: r.due?.length ?? 0,
+          recipients_count:  r.recipients?.length ?? 0,
+          manual:            false,
+        }).then(
+          () => {},
+          (e: unknown) => console.error(`[shaken-reminder] reminder_logs insert failed slug=${acc.slug}:`, e),
+        )
+      }))
+    }
+
     return json({ success: true, dryRun, today, leadDays, results })
   } catch (e) {
     console.error('[shaken-reminder]', e)

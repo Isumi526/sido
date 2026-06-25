@@ -150,3 +150,7 @@ entries:
     target: shaken-reminder
     reason: "車検リマインドEF。pg_cronから認証ヘッダ無しで叩かれる前提で、本番稼働中のdaily-reminderと完全同型(in-code認証なし・account_slugをbody受け・--no-verify-jwtデプロイ)。新規の露出様式ではなくcron起動リマインド関数の既存ベースライン踏襲。共有シークレット認証の恒久対策をチケットで追跡(両EF横断)。"
     ticket: "3860ff81c56b81288629e4110c588411"
+  - rule: anon-access-token
+    target: reminder-auth
+    reason: "リマインドEFのトリガー認可(_shared/reminder-auth.ts)を実装: cron=共有シークレット(x-reminder-secret)/admin手動=認証JWT で保護。REMINDER_TRIGGER_SECRET 未設定時のみ後方互換で通すフォールバックを残す(段階移行用＝Gemini指摘箇所)。ship時にVault『reminder_trigger_secret』とEF env『REMINDER_TRIGGER_SECRET』へ同一値を設定すると enforcement 有効化＝第三者URL直叩きを401。従来の完全無認証より厳格でnet改善。secret設定後のフォールバック削除は別タスクで追跡可。"
+    ticket: "3860ff81c56b81288629e4110c588411"
