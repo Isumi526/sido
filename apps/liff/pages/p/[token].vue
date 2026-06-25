@@ -77,7 +77,52 @@
         </div>
       </div>
 
-      <!-- その他 purpose（請求等）は後続チケットでこの枠に実装 -->
+      <!-- 請求受付完了（このセッションで送信 or 既に送信済み） -->
+      <div v-else-if="invoiceDone" class="state ok">
+        <div class="icon-ok">✓</div>
+        <h1>{{ t('token.invoice.doneTitle') }}</h1>
+        <p class="muted">{{ invoiceDoneAmount > 0 ? t('token.invoice.doneMessage', { amount: yen(invoiceDoneAmount) }) : t('token.invoice.errorAlready') }}</p>
+      </div>
+
+      <!-- 請求フォーム（purpose=invoice_submit） -->
+      <div v-else-if="isInvoiceSubmit && order" class="state">
+        <p class="hello">{{ t('token.greeting', { name: result.subcontractor?.name }) }}</p>
+        <h1>{{ t('token.purposeInvoiceSubmit') }}</h1>
+
+        <!-- 注文書サマリ -->
+        <div class="order-box">
+          <div class="order-title">{{ t('token.order.heading') }}</div>
+          <dl class="kv">
+            <div class="kv-row"><dt>{{ t('token.order.number') }}</dt><dd class="mono">{{ order.order_number }}</dd></div>
+            <div class="kv-row"><dt>{{ t('token.order.site') }}</dt><dd>{{ order.site_name || t('token.order.none') }}</dd></div>
+            <div class="kv-row"><dt>{{ t('token.invoice.orderAmount') }}</dt><dd>{{ yen(order.total_amount) }}</dd></div>
+            <div v-if="invoiceBilled > 0" class="kv-row"><dt>{{ t('token.invoice.billed') }}</dt><dd>{{ yen(invoiceBilled) }}</dd></div>
+            <div class="kv-row amount"><dt>{{ t('token.invoice.residual') }}</dt><dd>{{ yen(invoiceResidual) }}</dd></div>
+          </dl>
+        </div>
+
+        <!-- 請求入力 -->
+        <div class="accept-box">
+          <div class="accept-title">{{ t('token.invoice.heading') }}</div>
+          <p class="muted small">{{ t('token.invoice.intro') }}</p>
+
+          <label class="radio-row"><input type="radio" value="full" v-model="invoiceMode" /> {{ t('token.invoice.modeFull') }}（{{ yen(invoiceResidual) }}）</label>
+          <label class="radio-row"><input type="radio" value="partial" v-model="invoiceMode" /> {{ t('token.invoice.modePartial') }}</label>
+
+          <label v-if="invoiceMode === 'partial'" class="fld"><span>{{ t('token.invoice.amountLabel') }}</span>
+            <input v-model.number="invoiceAmount" type="number" inputmode="numeric" class="inp" :placeholder="t('token.invoice.amountPlaceholder')" min="1" :max="invoiceResidual" />
+          </label>
+
+          <p v-if="invoiceError" class="err">{{ invoiceError }}</p>
+
+          <button type="button" class="btn-accept" :disabled="invoiceSubmitting || !invoiceAccepted" @click="submitInvoice">
+            {{ invoiceSubmitting ? t('token.invoice.submitting') : t('token.invoice.submit') }}
+          </button>
+          <p v-if="!invoiceAccepted" class="err">{{ t('token.invoice.errorNotAccepted') }}</p>
+        </div>
+      </div>
+
+      <!-- その他 purpose は後続チケットでこの枠に実装 -->
       <div v-else class="state ok">
         <div class="icon-ok">✓</div>
         <p class="hello">{{ t('token.greeting', { name: result.subcontractor?.name }) }}</p>
@@ -125,6 +170,18 @@ const acceptedAt = ref<string | null>(null)
 const signerName  = ref('')
 const submitting  = ref(false)
 const acceptError = ref('')
+
+// ── 請求フォーム（purpose=invoice_submit）──
+const invoiceMode      = ref<'full' | 'partial'>('full')
+const invoiceAmount    = ref<number | null>(null)
+const invoiceResidual  = ref(0)
+const invoiceBilled    = ref(0)
+const invoiceAccepted  = ref(false)
+const invoiceSubmitting = ref(false)
+const invoiceError     = ref('')
+const invoiceDone      = ref(false)
+const invoiceDoneAmount = ref(0)
+const isInvoiceSubmit  = computed(() => result.value?.purpose === 'invoice_submit')
 
 const PURPOSE_LABELS: Record<string, string> = {
   order_accept:   t('token.purposeOrderAccept'),
@@ -235,12 +292,51 @@ async function submitAccept() {
   }
 }
 
+async function submitInvoice() {
+  invoiceError.value = ''
+  if (!invoiceAccepted.value) { invoiceError.value = t('token.invoice.errorNotAccepted'); return }
+  const amount = invoiceMode.value === 'full' ? invoiceResidual.value : Math.round(Number(invoiceAmount.value) || 0)
+  if (!amount || amount <= 0) { invoiceError.value = t('token.invoice.errorAmount'); return }
+  if (amount > invoiceResidual.value) { invoiceError.value = t('token.invoice.errorOver', { residual: yen(invoiceResidual.value) }); return }
+  invoiceSubmitting.value = true
+  try {
+    const r = await callPortal({ action: 'invoice_submit', invoice_mode: invoiceMode.value, invoice_amount: amount })
+    if (r?.ok) {
+      invoiceDone.value = true
+      invoiceDoneAmount.value = r.amount ?? amount
+    } else if (r?.error === 'over_residual') {
+      invoiceResidual.value = r.residual ?? invoiceResidual.value
+      invoiceError.value = t('token.invoice.errorOver', { residual: yen(invoiceResidual.value) })
+    } else if (r?.error === 'not_accepted') {
+      invoiceError.value = t('token.invoice.errorNotAccepted')
+    } else if (r?.error === 'already_submitted') {
+      invoiceError.value = t('token.invoice.errorAlready')
+    } else {
+      invoiceError.value = t('token.invoice.errorFailed')
+    }
+  } catch {
+    invoiceError.value = t('token.invoice.errorFailed')
+  } finally {
+    invoiceSubmitting.value = false
+  }
+}
+
 onMounted(async () => {
   try {
     result.value = await callPortal({ action: 'resolve' })
     // 既に承諾済みの注文書なら、承諾完了画面を出す
     if (result.value?.ok && result.value.order?.accepted_at) {
       acceptedAt.value = result.value.order.accepted_at
+    }
+    // 請求フォーム用なら残額・承諾状態を取得（invoice_resolve）
+    if (result.value?.ok && isInvoiceSubmit.value) {
+      const inv = await callPortal({ action: 'invoice_resolve' })
+      if (inv?.ok) {
+        invoiceResidual.value = Number(inv.residual) || 0
+        invoiceBilled.value   = Number(inv.billed) || 0
+        invoiceAccepted.value = !!inv.accepted
+        if (inv.already_submitted) { invoiceDone.value = true; invoiceDoneAmount.value = 0; invoiceError.value = t('token.invoice.errorAlready') }
+      }
     }
   } catch {
     result.value = { ok: false }
@@ -285,6 +381,8 @@ onMounted(async () => {
 /* 承諾フォーム */
 .accept-box { width: 100%; box-sizing: border-box; text-align: left; margin-top: 18px; }
 .accept-title { font-size: 14px; font-weight: 800; color: #111; margin-bottom: 8px; }
+.radio-row { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #222; margin: 10px 0; cursor: pointer; }
+.radio-row input { width: 18px; height: 18px; }
 .fld { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
 .fld span { font-size: 12px; font-weight: 700; color: #888; }
 .inp { background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px 14px; font-size: 14px; width: 100%; box-sizing: border-box; font-family: inherit; }
