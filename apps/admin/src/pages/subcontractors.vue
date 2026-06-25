@@ -31,7 +31,7 @@
           <th>業者名</th><th>区分</th><th>工種</th><th>対応エリア</th><th>状態</th><th></th>
         </tr></thead>
         <tbody>
-          <tr v-for="s in filtered" :key="s.id" :class="{ inactive: !s.active || s.is_deleted }">
+          <tr v-for="s in filtered" :key="s.id" :class="{ inactive: (!s.active || s.is_deleted) && s.registration_status !== 'pending' }">
             <td v-if="mergeMode"><input type="checkbox" :value="s.id" v-model="mergePick" :disabled="s.is_deleted" /></td>
             <td class="name">{{ s.name }}<span v-if="s.is_deleted" class="del-badge">削除済み</span></td>
             <td><span v-if="s.category" class="cat-badge" :class="s.category === '商社' ? 'shosha' : 'gyosha'">{{ s.category }}</span><span v-else class="muted">—</span></td>
