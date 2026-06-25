@@ -79,8 +79,10 @@ test('app_metadata でテナント解決：ログインID≠slug でも自テナ
   await page.fill('input[type="password"]', ADMIN_LOGIN_PASS)
   await page.click('button[type="submit"]')
 
-  // サイドバーのロゴ(slug由来)が account_slug(metadata) ベースになる
-  await expect(page.locator('.logo')).toContainText(SLUG2.toUpperCase(), { timeout: 15000 })
+  // ヘッダーは「GENLINKS(固定)＋会社名(account名)」。解決テナントの会社名NAME2がサブに出る
+  // （旧: slug大文字をロゴ表示 → GENLINKS固定化＋会社名サブ表示に変更）
+  await expect(page.locator('.logo')).toContainText('GENLINKS', { timeout: 15000 })
+  await expect(page.locator('.logo')).toContainText(NAME2)
 
   await page.goto('/sites', { waitUntil: 'networkidle' })
   await expect(page.locator('tr', { hasText: SITE2 })).toBeVisible()        // 自テナントの現場は見える
