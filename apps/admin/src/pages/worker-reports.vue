@@ -48,6 +48,10 @@
             <div class="summary-label">休み</div>
             <div class="summary-value off">{{ workerMap[activeWorker].offDays }}<span class="unit">日</span></div>
           </div>
+          <div class="summary-card" v-if="activeTripDays > 0">
+            <div class="summary-label">出張日数</div>
+            <div class="summary-value">{{ activeTripDays }}<span class="unit">日</span></div>
+          </div>
           <div class="summary-card">
             <div class="summary-label">通常</div>
             <div class="summary-value">{{ fmtH(workerMap[activeWorker].totals.normal) }}<span class="unit">h</span></div>
@@ -105,9 +109,9 @@
               <tbody>
                 <tr v-for="line in laborCostBreakdown" :key="line.label">
                   <td>{{ line.label }}</td>
-                  <td class="num">{{ fmtH(line.hours) }}h</td>
-                  <td class="num">×{{ line.rate.toFixed(2) }}</td>
-                  <td class="num">{{ fmtYen(line.unitPerH) }}</td>
+                  <td class="num">{{ line.flat ? '—' : fmtH(line.hours) + 'h' }}</td>
+                  <td class="num">{{ line.flat ? '—' : '×' + line.rate.toFixed(2) }}</td>
+                  <td class="num">{{ line.flat ? '¥3,000/人' : fmtYen(line.unitPerH) }}</td>
                   <td class="num cost-cell">{{ fmtYen(line.cost) }}</td>
                 </tr>
               </tbody>
@@ -223,7 +227,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { computeWorkerHours, calcBreakMinutes, parseMin } from '../lib/workerHours'
+import { computeWorkerHours, calcBreakMinutes, parseMin, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
 
 // ---------- 月ナビ ----------
 const baseDate = ref(new Date())
@@ -262,6 +266,7 @@ type WorkerData = {
   }
   siteBreakdown: { siteName: string; days: number; normal: number; ot: number; night: number; otNight: number; sunday: number; sundayOt: number; sundayNight: number; sundayOtNight: number }[]
   rows: WorkerRow[]
+  tripYen: number  // 出張費（出張日×¥3,000・主たる現場分）＝給与視点で人件費合計に算入
 }
 
 const loading        = ref(false)
@@ -307,7 +312,7 @@ async function load() {
 
   const { data } = await supabase
     .from('daily_reports')
-    .select('date, is_working, leave_type, sites, user_id')
+    .select('date, is_working, leave_type, is_business_trip, sites, user_id')
     .eq('account_id', accountId)
     .gte('date', dateFrom.value)
     .lte('date', dateTo.value)
@@ -324,6 +329,8 @@ async function load() {
   // 休み日: user_id → workerName で収集
   type OffEntry = { date: string; isSunday: boolean }
   const offByWorker: Record<string, OffEntry[]> = {}
+  // 出張費: 作業員ごと（出張日×¥3,000・主たる現場分）。給与視点で人件費合計に算入。
+  const tripYenByWorker: Record<string, number> = {}
 
   for (const report of data ?? []) {
     const r = report as any
@@ -353,6 +360,14 @@ async function load() {
         })
       }
       continue
+    }
+
+    // 出張日：作業員ごと主たる現場の1エントリにだけ出張費（二重計上回避）
+    if (r.is_business_trip) {
+      for (const w of businessTripMainEntries(r.sites ?? [])) {
+        const nm = (w as any).workerName as string
+        if (nm) tripYenByWorker[nm] = (tripYenByWorker[nm] ?? 0) + BUSINESS_TRIP_ALLOWANCE
+      }
     }
 
     for (const site of (r.sites ?? [])) {
@@ -473,6 +488,7 @@ async function load() {
       siteBreakdown: Object.entries(a.siteAcc)
         .map(([siteName, s]) => ({ siteName, days: s.dates.size, normal: s.normal, ot: s.ot, night: s.night, otNight: s.otNight, sunday: s.sunday, sundayOt: s.sundayOt, sundayNight: s.sundayNight, sundayOtNight: s.sundayOtNight }))
         .sort((a, b) => a.siteName.localeCompare(b.siteName, 'ja')),
+      tripYen: tripYenByWorker[name] ?? 0,
     }
   }
 
@@ -489,6 +505,11 @@ watch(dateFrom, load)
 const activeUnitPrice = computed(() =>
   activeWorker.value ? (unitPriceMap.value[activeWorker.value] ?? 0) : 0
 )
+// 出張日数（出張費 ÷ ¥3,000）。サマリーカード用。
+const activeTripDays = computed(() => {
+  const y = activeWorker.value ? (workerMap.value[activeWorker.value]?.tripYen ?? 0) : 0
+  return Math.round(y / BUSINESS_TRIP_ALLOWANCE)
+})
 
 const laborCostBreakdown = computed(() => {
   if (!activeWorker.value || !workerMap.value[activeWorker.value]) return []
@@ -508,7 +529,11 @@ const laborCostBreakdown = computed(() => {
     ...l,
     unitPerH: Math.round(hourRate * l.rate),
     cost: Math.round(hourRate * l.rate * l.hours),
+    flat: false,
   }))
+  // 出張費（給与視点）：時間に依らない定額。人件費合計に算入。
+  const tripYen = workerMap.value[activeWorker.value].tripYen ?? 0
+  if (tripYen > 0) lines.push({ label: '出張費', hours: 0, rate: 0, unitPerH: 0, cost: tripYen, flat: true })
   return lines
 })
 

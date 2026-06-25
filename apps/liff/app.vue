@@ -15,14 +15,14 @@ const isPortal = computed(() => route.path.startsWith('/p/'))
 const isLogin  = computed(() => route.path.startsWith('/login'))
 const isExempt = computed(() => isPortal.value || isLogin.value)
 
-// サイト名（ブラウザタブ／共有タイトル）を会社名ベースで動的に設定。
-// accounts.name 取得前は '管理システム' をフォールバック表示。
+// サイト名（ブラウザタブ／共有タイトル）= プロダクト名 GENLINKS 固定＋会社名（データ）を併記。
+// accounts.name 取得前は 'GENLINKS' をフォールバック表示。
 // ★ /login は全テナント共通の入口＝ログイン前に env(デプロイ)のテナント名を出さない（誤誘導防止）。
 const { getAccountId, accountName } = useAccount()
 useHead({
   title: () => isLogin.value
-    ? '作業員ログイン'
-    : (accountName.value ? `${accountName.value}｜管理システム` : '管理システム'),
+    ? '作業員ログイン｜GENLINKS'
+    : (accountName.value ? `${accountName.value}｜GENLINKS` : 'GENLINKS'),
 })
 
 onMounted(() => {

@@ -63,6 +63,12 @@
         <!-- 現場ブロック（稼働ありの場合のみ表示） -->
         <template v-if="isWorkingStr === 'working'">
 
+        <!-- 出張区分（稼働ありの日のみ・出張手当 +¥3,000/日を集計に計上） -->
+        <label class="trip-toggle" data-testid="business-trip-toggle">
+          <input type="checkbox" v-model="report.form.value.isBusinessTrip" />
+          <span>{{ $t('report.businessTrip') }}</span>
+        </label>
+
         <!-- 現場ブロック -->
         <FormSection
           v-for="(site, si) in report.form.value.sites"
@@ -769,6 +775,7 @@ async function loadEditData(date: string) {
 
   report.form.value.date = saved.date
   isWorkingStr.value = saved.leave_type === 'paid_leave' ? 'paid_leave' : saved.is_working ? 'working' : 'off'
+  report.form.value.isBusinessTrip = !!saved.is_business_trip
   report.form.value.note = saved.note ?? ''
 
   if (saved.sites && saved.sites.length > 0) {
@@ -1256,6 +1263,7 @@ async function handleSubmit() {
           date:      report.form.value.date,
           isWorking:  report.form.value.isWorking,
           leaveType:  isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null,
+          isBusinessTrip: isWorkingStr.value === 'working' ? !!report.form.value.isBusinessTrip : false,
           sites:      report.form.value.sites,
           note:       report.form.value.note,
         })
@@ -1264,6 +1272,7 @@ async function handleSubmit() {
           date:      report.form.value.date,
           isWorking:  report.form.value.isWorking,
           leaveType:  isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null,
+          isBusinessTrip: isWorkingStr.value === 'working' ? !!report.form.value.isBusinessTrip : false,
           sites:      report.form.value.sites,
           note:       report.form.value.note,
         })
@@ -1345,6 +1354,7 @@ async function handleSubmit() {
         date:      report.form.value.date,
         isWorking: report.form.value.isWorking,
         leaveType: report.form.value.leaveType,
+        isBusinessTrip: isWorkingStr.value === 'working' ? !!report.form.value.isBusinessTrip : false,
         sites:     report.form.value.sites,
         note:      report.form.value.note,
       })
@@ -1371,6 +1381,7 @@ async function handleSubmit() {
       date:      report.form.value.date,
       isWorking: report.form.value.isWorking,
       leaveType: report.form.value.leaveType,
+      isBusinessTrip: isWorkingStr.value === 'working' ? !!report.form.value.isBusinessTrip : false,
       sites:     report.form.value.sites,
       note:      report.form.value.note,
     }).catch(e => console.error('[Report] URL再保存エラー:', e))
@@ -1888,6 +1899,8 @@ html, body {
 
 /* ── その他共通経費 ── */
 .hotel-row { display: flex; flex-direction: column; gap: 6px; }
+.trip-toggle { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; padding: 10px 12px; background: #f6f8ff; border: 1px solid #d8e0ff; border-radius: 8px; font-size: 14px; font-weight: 600; color: #34406b; cursor: pointer; }
+.trip-toggle input { width: 18px; height: 18px; }
 .lineitems-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; margin-bottom: 6px; }
 /* ExpenseField の入れ子(.expense-item)を解いて、行直下のフレックス要素として並べる */
 .lineitems-row .expense-item { display: contents; }

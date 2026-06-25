@@ -1,12 +1,12 @@
 // ============================================================
 //  admin.title.spec.ts （実ログイン済み storageState）
-//  AC2/AC3: タブ名が {accounts.name}｜管理システム になる
+//  AC2/AC3: タブ名が {accounts.name}｜GENLINKS になる（プロダクト名固定）
 //  ローカル DB: slug=test / name=テストアカウント
 //  注: document.title は getAccountName() の解決後に App.vue でセットされる
 // ============================================================
 import { test, expect } from '@playwright/test'
 
-const EXPECTED = 'テストアカウント｜管理システム'
+const EXPECTED = 'テストアカウント｜GENLINKS'
 
 test('AC2: タブ名が会社名ベースになる', async ({ page }) => {
   await page.goto('/', { waitUntil: 'networkidle' })

@@ -123,6 +123,7 @@ export interface DailyReport {
   senderId: string
   isWorking: boolean  // true=稼働あり, false=稼働なし（休み等）
   leaveType?: string | null  // 'paid_leave' = 有給
+  isBusinessTrip?: boolean  // true=出張日（出張手当 +¥3,000/日 の対象）
   sites: SiteReport[]
   note?: string
 }

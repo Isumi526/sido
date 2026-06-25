@@ -69,7 +69,7 @@
                 <option v-for="c in vendorContacts" :key="c.id" :value="c.id">{{ c.name }}{{ c.email ? `（${c.email}）` : '（メール未登録）' }}</option>
               </select>
               <span v-if="modal.subcontractor_contact_id && !selectedContactEmail" class="error-inline">この担当者はメール未登録です。メール送信できません。</span>
-              <span v-else-if="!vendorContacts.length" class="hint">この業者に担当者が未登録です。下請け業者マスタで担当者（メール）を登録してください。</span>
+              <span v-else-if="!vendorContacts.length" class="hint">この業者に担当者が未登録です。協力業者マスタで担当者（メール）を登録してください。</span>
             </label>
             <label class="fld"><span>注文書発行日</span>
               <input v-model="modal.order_date" type="date" class="inp" />

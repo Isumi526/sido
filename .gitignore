@@ -32,3 +32,4 @@ tests/e2e/.artifacts/
 backups/
 scripts/.dispatcher-state.json
 scripts/.dispatcher.lock
+scheduled_tasks.lock

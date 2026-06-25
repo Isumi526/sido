@@ -113,6 +113,7 @@ export const useReport = () => {
     sender:    '',
     senderId:  '',
     isWorking: true,
+    isBusinessTrip: false,
     sites:     [createSite()],
     note:      '',
   })

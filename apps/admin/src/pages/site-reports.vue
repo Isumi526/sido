@@ -41,6 +41,7 @@
               <th class="num">ゴミ</th>
               <th class="num">交通費</th>
               <th class="num">ホーム</th>
+              <th class="num">出張費</th>
               <th class="num">合計</th>
               <th></th>
             </tr>
@@ -66,6 +67,7 @@
               <td class="num">{{ row.garbageCost ? yen(row.garbageCost) : '—' }}</td>
               <td class="num">{{ row.trainCost     ? yen(row.trainCost)     : '—' }}</td>
               <td class="num">{{ row.homeCost      ? yen(row.homeCost)      : '—' }}</td>
+              <td class="num">{{ row.tripCost      ? yen(row.tripCost)      : '—' }}</td>
               <td class="num total-col">{{ yen(row.total) }}</td>
               <td class="hint">{{ row._isInvoice ? '請求' : '詳細 →' }}</td>
             </tr>
@@ -84,6 +86,7 @@
               <td class="num">{{ yen(sumF(siteMap[activeSite], 'garbageCost')) }}</td>
               <td class="num">{{ yen(sumF(siteMap[activeSite], 'trainCost'))     }}</td>
               <td class="num">{{ yen(sumF(siteMap[activeSite], 'homeCost'))      }}</td>
+              <td class="num">{{ yen(sumF(siteMap[activeSite], 'tripCost'))     }}</td>
               <td class="num total-col">{{ yen(sumF(siteMap[activeSite], 'total')) }}</td>
               <td></td>
             </tr>
@@ -101,6 +104,12 @@
             <div class="modal-date">{{ selected.date }}</div>
           </div>
           <button class="btn-close" @click="selected = null">✕</button>
+        </div>
+
+        <!-- 出張費（別費目・主たる現場に計上／社員には含めない） -->
+        <div class="modal-section" v-if="selected.tripCost" data-testid="trip-cost-section">
+          <div class="section-label">出張費（{{ yen(selected.tripCost) }}）</div>
+          <p class="muted" style="font-size:12px;margin:2px 0 0">出張日の手当 ¥3,000/人。主たる現場（最長稼働）に1回計上。社員（人件費）には含みません。</p>
         </div>
 
         <!-- 稼働 -->
@@ -162,7 +171,7 @@
 
         <!-- カテゴリ未設定の下請け -->
         <div class="modal-section" v-if="selected.subs.filter((s: any) => !s.category).length">
-          <div class="section-label">下請け（区分未設定）</div>
+          <div class="section-label">協力業者（区分未設定）</div>
           <table class="inner-table">
             <thead><tr><th>業者名</th><th class="num">人数</th></tr></thead>
             <tbody>
@@ -283,7 +292,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, unitPriceForDate } from '../lib/workerHours'
+import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, unitPriceForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
 
 const baseDate  = ref(new Date())
 const yearMonth = computed(() => `${baseDate.value.getFullYear()}年${baseDate.value.getMonth() + 1}月`)
@@ -397,7 +406,7 @@ async function load() {
 
   const { data } = await supabase
     .from('daily_reports')
-    .select('id, date, is_working, sites')
+    .select('id, date, is_working, is_business_trip, sites')
     .eq('account_id', accountId)
     .eq('is_working', true)
     .gte('date', dateFrom.value)
@@ -413,6 +422,8 @@ async function load() {
     // 実勤務時間ベースで料率別時間を再計算（保存値の hoursNormal に依存しない＝通常×8h固定バグの修正）。
     // 同一作業員が複数現場に跨る場合は現場跨ぎで残業を累積する。
     const laborMap = laborBreakdownForReport((report as any).sites ?? [], isSunday)
+    // 出張日：作業員ごとの主たる現場（最長稼働）にだけ +¥3,000 を計上（二重計上回避）
+    const tripSet = (report as any).is_business_trip ? businessTripMainEntries((report as any).sites ?? []) : null
 
     for (const site of ((report as any).sites ?? [])) {
       const rawName  = site.siteName ?? ''
@@ -432,7 +443,7 @@ async function load() {
           parkingYen: 0, fuelCost: 0, highwayCost: 0,
           hotelCost: 0, entertainCost: 0,
           garbageFactoryM3: 0, garbageSiteM3: 0, garbageCost: 0,
-          trainCost: 0, homeCost: 0,
+          trainCost: 0, homeCost: 0, tripCost: 0,
         }
       }
       const g = grouped[gKey]
@@ -445,6 +456,8 @@ async function load() {
         const unitPrice = unitPriceForDate(date, wid ? wageTimelines.get(wid) : undefined, curPrice)
         const breakdown = laborMap.get(w) ?? ZERO_BREAKDOWN
         g.workers.push({ ...w, ...breakdown, role: w.workerRole ?? 'site', unitPrice, laborCost: laborCostForBreakdown(breakdown, unitPrice) })
+        // 出張費は人件費(社員)に混ぜず、主たる現場の別費目として計上（原価視点・複数現場でも主現場に1回）
+        if (tripSet?.has(w)) g.tripCost += BUSINESS_TRIP_ALLOWANCE
       }
 
       // 下請け（商社/業者区分・単価を master から付与）
@@ -490,7 +503,7 @@ async function load() {
       .reduce((s: number, sub: any) => s + sub.count * (sub.unitPrice || 0), 0)
     const total = shoshaCost + gyoshaCost + laborCost
       + g.parkingYen + g.fuelCost + g.highwayCost
-      + g.hotelCost + g.entertainCost + g.garbageCost + g.trainCost + g.homeCost
+      + g.hotelCost + g.entertainCost + g.garbageCost + g.trainCost + g.homeCost + g.tripCost
 
     const workerNames   = [...new Set(g.workers.map((w: any) => w.workerName))] as string[]
     const workerSummary = workerNames.join('・')
@@ -565,6 +578,7 @@ watch(dateFrom, load)
 .inner-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .inner-table th { background: #f9f9f9; padding: 7px 10px; text-align: left; font-size: 11px; color: #888; font-weight: 700; }
 .inner-table td { padding: 8px 10px; border-top: 1px solid #f5f5f5; }
+.trip-badge { display: inline-block; margin-left: 6px; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 700; background: #eef2ff; color: #4338ca; white-space: nowrap; }
 .role-badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 700; }
 .role-badge.factory { background: #e8f4ff; color: #1a6fc4; }
 .role-badge.site { background: #e8fff0; color: #0a8a3a; }

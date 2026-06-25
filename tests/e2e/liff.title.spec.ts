@@ -1,11 +1,11 @@
 // ============================================================
 //  liff.title.spec.ts （dev モード・認証不要）
-//  AC1/AC3: サイト名が {accounts.name}｜管理システム になる
+//  AC1/AC3: サイト名が {accounts.name}｜GENLINKS になる（プロダクト名固定）
 //  ローカル DB: slug=test / name=テストアカウント
 // ============================================================
 import { test, expect } from '@playwright/test'
 
-const EXPECTED = 'テストアカウント｜管理システム'
+const EXPECTED = 'テストアカウント｜GENLINKS'
 
 test.beforeEach(async ({ page }) => {
   try { await page.goto('/', { waitUntil: 'networkidle', timeout: 8000 }) }
