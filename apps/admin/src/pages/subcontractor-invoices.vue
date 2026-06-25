@@ -95,7 +95,7 @@
             <label class="fld"><span>請求金額(請求書記載)</span><input v-model.number="form.total_amount" type="number" class="inp" /></label>
             <div v-if="selectedPo" class="fld po-residual" :class="{ over: poOverResidual }" data-testid="po-residual">
               <span>注文書残額</span>
-              <div class="po-residual-val">残額 <b>{{ yen(poResidual) }}</b>（注文書 {{ yen(selectedPo.total_amount) }} − 既請求 {{ yen(poBilledOthers) }}）<span v-if="poOverResidual" class="po-over-msg"> ⚠ 残額を超えています</span></div>
+              <div class="po-residual-val">残額 <b>{{ yen(poResidual) }}</b>（注文書 {{ yen(selectedPo.total_amount) }} − 既請求 {{ yen(poBilledOthers) }}）／ 今回の請求額 {{ yen(effectiveBilled) }}<span v-if="poOverResidual" class="po-over-msg"> ⚠ 残額を超えています</span></div>
             </div>
             <label class="fld"><span>支払状況</span>
               <select v-model="form.paid" class="inp">
@@ -257,9 +257,14 @@ const poResidual = computed(() => {
   const po = selectedPo.value; if (!po) return null
   return (Number(po.total_amount) || 0) - poBilledOthers.value
 })
+// 残額判定に使う実効請求額: 請求金額(記載)が入っていればそれ、無ければ明細小計(税抜)
+const effectiveBilled = computed(() => {
+  const t = Number(form.value?.total_amount) || 0
+  return t > 0 ? t : subtotal.value
+})
 const poOverResidual = computed(() => {
   if (poResidual.value == null) return false
-  return (Number(form.value?.total_amount) || 0) > poResidual.value
+  return effectiveBilled.value > poResidual.value
 })
 const form     = ref<Form | null>(null)
 const files    = ref<File[]>([])   // 複数枚（請求書が複数ページに分かれている場合）対応
@@ -570,9 +575,9 @@ async function save() {
   if (f.items.some(it => !it.site_id || it.site_id === '__new__')) { formError.value = 'すべての明細で現場を選択してください（新規は「追加」で確定）'; return }
   // 支払い済みにする場合は支払日が必須
   if (f.paid && !f.transfer_date) { formError.value = '支払い済みにする場合は支払日を入力してください'; return }
-  // 出来高: 注文書に紐付けた請求は残額を超えられない（勝手な増額防止）
-  if (f.purchase_order_id && poResidual.value != null && (Number(f.total_amount) || 0) > poResidual.value) {
-    formError.value = `請求金額が注文書の残額（${yen(poResidual.value)}）を超えています。出来高の範囲内で入力してください。`; return
+  // 出来高: 注文書に紐付けた請求は残額を超えられない（勝手な増額防止）。請求金額(記載)が空なら明細小計で判定。
+  if (f.purchase_order_id && poResidual.value != null && effectiveBilled.value > poResidual.value) {
+    formError.value = `請求額（${yen(effectiveBilled.value)}）が注文書の残額（${yen(poResidual.value)}）を超えています。出来高の範囲内で入力してください。`; return
   }
   saving.value = true; formError.value = ''
   try {
