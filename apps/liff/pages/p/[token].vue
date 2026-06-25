@@ -457,8 +457,9 @@ async function submitInvoice() {
 onMounted(async () => {
   try {
     result.value = await callPortal({ action: 'resolve' })
-    // 既に承諾済みの注文書なら、承諾完了画面を出す
-    if (result.value?.ok && result.value.order?.accepted_at && !isChangeAccept.value) {
+    // 既に承諾済みの注文書なら、承諾完了画面を出す（order_accept purpose のみ。
+    // invoice_submit/change_accept/vendor_register は承諾済みPOでも各フォームを出す）
+    if (result.value?.ok && isOrderAccept.value && result.value.order?.accepted_at) {
       acceptedAt.value = result.value.order.accepted_at
     }
     // 変更注文書が既に再承諾済みなら完了画面
