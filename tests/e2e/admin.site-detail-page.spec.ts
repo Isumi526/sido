@@ -33,10 +33,20 @@ test.describe('現場詳細ページ /sites/:id', () => {
 
     await expect(page).toHaveURL(new RegExp(`/sites/${siteId}`))
     await expect(page.locator('.page-title')).toContainText(SITE)
+    // 概要タブ（既定）: 基本情報に住所＋地図リンク
     await expect(page.locator('.card', { hasText: '基本情報' })).toContainText(LOC)
     await expect(page.locator('a.map-link')).toBeVisible()
+    // タブ切替: 日報タブに関連日報
+    await page.locator('.tab', { hasText: '日報' }).click()
     const repCard = page.locator('.card', { hasText: '関連日報' })
     await expect(repCard).toContainText('2026-06-18')
     await expect(repCard).toContainText('E2E作業員')
+    // 概要タブの基本情報を「編集する」→ 住所を変更して保存（ページ内編集）
+    await page.locator('.tab', { hasText: '概要' }).click()
+    await page.locator('.card', { hasText: '基本情報' }).locator('button', { hasText: '編集する' }).click()
+    const newLoc = LOC + '更新'
+    await page.locator('.edit-form input[placeholder="例：名古屋市〇〇区…"]').fill(newLoc)   // 住所フィールド
+    await page.locator('button', { hasText: '保存' }).click()
+    await expect(page.locator('.card', { hasText: '基本情報' })).toContainText(newLoc)
   })
 })
