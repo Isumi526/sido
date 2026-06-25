@@ -276,8 +276,12 @@ const dashRows = computed((): ExpRow[] => {
       for (const tr of (exp.trains || [])) {
         if (tr.yen) rows.push({ category: t('admin.catTrain'), amount: tr.yen, userId })
       }
-      if (exp.hotelYen)         rows.push({ category: t('admin.catHotel'),     amount: exp.hotelYen,         userId })
-      if (exp.leopalaceYen)     rows.push({ category: t('admin.catLeopalace'), amount: exp.leopalaceYen,    userId })
+      // 宿泊費: 新形式 hotels[]（複数）。明細ごとに計上。
+      for (const ho of (exp.hotels || [])) { if (ho.yen) rows.push({ category: t('admin.catHotel'), amount: ho.yen, userId }) }
+      // 旧スカラーは hotels[] に金額が無い時だけ（二重計上を防ぐ後方互換）
+      const hasHotelsArr = (exp.hotels || []).some((h: any) => h.yen)
+      if (exp.hotelYen     && !hasHotelsArr) rows.push({ category: t('admin.catHotel'),     amount: exp.hotelYen,     userId })
+      if (exp.leopalaceYen && !hasHotelsArr) rows.push({ category: t('admin.catLeopalace'), amount: exp.leopalaceYen, userId })
       for (const ot of (exp.others || [])) {
         if (ot.yen) rows.push({ category: t('admin.catOthers'), amount: ot.yen, userId })
       }
