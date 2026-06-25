@@ -77,6 +77,47 @@
         </div>
       </div>
 
+      <!-- 登録完了 -->
+      <div v-else-if="registerDone" class="state ok">
+        <div class="icon-ok">✓</div>
+        <h1>{{ t('token.register.doneTitle') }}</h1>
+        <p class="muted">{{ t('token.register.doneMessage') }}</p>
+      </div>
+
+      <!-- 新規業者 登録フォーム（purpose=vendor_register） -->
+      <div v-else-if="isVendorRegister" class="state">
+        <h1>{{ t('token.purposeVendorRegister') }}</h1>
+        <p class="muted small">{{ t('token.register.intro') }}</p>
+        <div class="accept-box">
+          <label class="fld"><span>{{ t('token.register.name') }} *</span><input v-model="reg.name" class="inp" maxlength="100" /></label>
+          <label class="fld"><span>{{ t('token.register.category') }}</span>
+            <select v-model="reg.category" class="inp">
+              <option value="業者">{{ t('token.register.catGyosha') }}</option>
+              <option value="商社">{{ t('token.register.catShosha') }}</option>
+            </select>
+          </label>
+          <label class="fld"><span>{{ t('token.register.representative') }}</span><input v-model="reg.representative_name" class="inp" maxlength="100" /></label>
+          <label class="fld"><span>{{ t('token.register.mobile') }}</span><input v-model="reg.mobile_phone" class="inp" maxlength="30" /></label>
+          <label class="fld"><span>{{ t('token.register.office') }}</span><input v-model="reg.office_phone" class="inp" maxlength="30" /></label>
+          <label class="fld"><span>{{ t('token.register.email') }}</span><input v-model="reg.email" type="email" class="inp" maxlength="200" /></label>
+          <label class="fld"><span>{{ t('token.register.address') }}</span><input v-model="reg.address" class="inp" maxlength="300" /></label>
+          <div class="reg-bank-title">{{ t('token.register.bankTitle') }}</div>
+          <div class="hotel-row">
+            <input v-model="reg.bank_name" class="inp" :placeholder="t('token.register.bankName')" maxlength="100" />
+            <input v-model="reg.bank_branch" class="inp" :placeholder="t('token.register.bankBranch')" maxlength="100" />
+          </div>
+          <div class="hotel-row mt6">
+            <input v-model="reg.bank_account_type" class="inp" :placeholder="t('token.register.bankType')" maxlength="20" />
+            <input v-model="reg.bank_account_number" class="inp" :placeholder="t('token.register.bankNumber')" maxlength="30" />
+          </div>
+          <input v-model="reg.bank_account_holder" class="inp mt6" :placeholder="t('token.register.bankHolder')" maxlength="100" />
+          <p v-if="registerError" class="err">{{ registerError }}</p>
+          <button type="button" class="btn-accept" :disabled="registerSubmitting" @click="submitRegister">
+            {{ registerSubmitting ? t('token.register.submitting') : t('token.register.submit') }}
+          </button>
+        </div>
+      </div>
+
       <!-- 変更注文書の再承諾フロー -->
       <div v-else-if="isChangeAccept && change && order" class="state">
         <p class="hello">{{ t('token.greeting', { name: result.subcontractor?.name }) }}</p>
@@ -223,12 +264,20 @@ const invoiceDone      = ref(false)
 const invoiceDoneAmount = ref(0)
 const isInvoiceSubmit  = computed(() => result.value?.purpose === 'invoice_submit')
 const isChangeAccept   = computed(() => result.value?.purpose === 'change_accept')
+const isVendorRegister = computed(() => result.value?.purpose === 'vendor_register')
 const change = computed<ChangeView | null>(() => result.value?.change ?? null)
 
+// ── 新規業者 登録フォーム（purpose=vendor_register）──
+const reg = ref<Record<string, string>>({ name: '', category: '業者', representative_name: '', mobile_phone: '', office_phone: '', email: '', address: '', bank_name: '', bank_branch: '', bank_account_type: '', bank_account_number: '', bank_account_holder: '' })
+const registerSubmitting = ref(false)
+const registerError = ref('')
+const registerDone = ref(false)
+
 const PURPOSE_LABELS: Record<string, string> = {
-  order_accept:   t('token.purposeOrderAccept'),
-  invoice_submit: t('token.purposeInvoiceSubmit'),
-  change_accept:  t('token.purposeChangeAccept'),
+  order_accept:    t('token.purposeOrderAccept'),
+  invoice_submit:  t('token.purposeInvoiceSubmit'),
+  change_accept:   t('token.purposeChangeAccept'),
+  vendor_register: t('token.purposeVendorRegister'),
 }
 const purposeLabel = computed(() => (result.value?.purpose && PURPOSE_LABELS[result.value.purpose]) || t('token.purposeDefault'))
 const isOrderAccept = computed(() => result.value?.purpose === 'order_accept')
@@ -335,6 +384,28 @@ async function submitAccept() {
   }
 }
 
+async function submitRegister() {
+  registerError.value = ''
+  if (!reg.value.name?.trim()) { registerError.value = t('token.register.errorName'); return }
+  registerSubmitting.value = true
+  try {
+    const r = await callPortal({ action: 'register_submit', fields: { ...reg.value } })
+    if (r?.ok) {
+      registerDone.value = true
+    } else if (r?.error === 'already_submitted') {
+      registerError.value = t('token.register.errorAlready')
+    } else if (r?.error === 'name_required') {
+      registerError.value = t('token.register.errorName')
+    } else {
+      registerError.value = t('token.register.errorFailed')
+    }
+  } catch {
+    registerError.value = t('token.register.errorFailed')
+  } finally {
+    registerSubmitting.value = false
+  }
+}
+
 async function submitChangeAccept() {
   acceptError.value = ''
   if (!hasSignature.value || !canvasEl.value) { acceptError.value = t('token.accept.errorSignature'); return }
@@ -394,6 +465,18 @@ onMounted(async () => {
     if (result.value?.ok && isChangeAccept.value && result.value.change?.accepted_at) {
       acceptedAt.value = result.value.change.accepted_at
     }
+    // 新規業者 登録フォームなら招待時の名称/メールを prefill（register_resolve）
+    if (result.value?.ok && isVendorRegister.value) {
+      const rr = await callPortal({ action: 'register_resolve' })
+      if (rr?.ok) {
+        if (rr.already_submitted) { registerDone.value = true }
+        else if (rr.vendor) {
+          reg.value.name = rr.vendor.name ?? ''
+          reg.value.email = rr.vendor.email ?? ''
+          if (rr.vendor.category) reg.value.category = rr.vendor.category
+        }
+      }
+    }
     // 請求フォーム用なら残額・承諾状態を取得（invoice_resolve）
     if (result.value?.ok && isInvoiceSubmit.value) {
       const inv = await callPortal({ action: 'invoice_resolve' })
@@ -447,6 +530,7 @@ onMounted(async () => {
 /* 承諾フォーム */
 .accept-box { width: 100%; box-sizing: border-box; text-align: left; margin-top: 18px; }
 .accept-title { font-size: 14px; font-weight: 800; color: #111; margin-bottom: 8px; }
+.reg-bank-title { font-size: 13px; font-weight: 700; color: #555; margin: 14px 0 6px; }
 .radio-row { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #222; margin: 10px 0; cursor: pointer; }
 .radio-row input { width: 18px; height: 18px; }
 .fld { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }

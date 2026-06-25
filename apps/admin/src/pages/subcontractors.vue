@@ -8,6 +8,7 @@
           <button class="btn-ghost" :disabled="mergePick.length !== 2" @click="openMerge">マージ実行（{{ mergePick.length }}/2）</button>
           <button class="btn-ghost" @click="cancelMerge">キャンセル</button>
         </template>
+        <button class="btn-ghost" @click="openInvite">✉ 新規業者を招待</button>
         <button class="btn-add" @click="openAdd">＋ 追加</button>
       </div>
     </div>
@@ -36,8 +37,12 @@
             <td><span v-if="s.category" class="cat-badge" :class="s.category === '商社' ? 'shosha' : 'gyosha'">{{ s.category }}</span><span v-else class="muted">—</span></td>
             <td><span v-for="t in s.trade_types" :key="t" class="chip sm">{{ t }}</span><span v-if="!s.trade_types.length" class="muted">—</span></td>
             <td><span v-for="a in s.service_areas" :key="a" class="chip sm area">{{ a }}</span><span v-if="!s.service_areas.length" class="muted">—</span></td>
-            <td><span class="status" :class="s.active ? 'active' : 'off'">{{ s.active ? '有効' : '無効' }}</span></td>
+            <td>
+              <span v-if="s.registration_status === 'pending'" class="status pending">承認待ち</span>
+              <span v-else class="status" :class="s.active ? 'active' : 'off'">{{ s.active ? '有効' : '無効' }}</span>
+            </td>
             <td class="actions">
+              <button v-if="s.registration_status === 'pending'" class="btn-edit approve" @click="approveVendor(s)">承認</button>
               <button class="btn-edit" @click="openEdit(s)">編集</button>
               <button class="btn-ghost-sm" @click="openHistory(s)">履歴</button>
               <button v-if="!s.is_deleted" class="btn-ghost-sm danger" @click="softDelete(s)">削除</button>
@@ -47,6 +52,24 @@
           <tr v-if="!filtered.length"><td :colspan="mergeMode ? 7 : 6" class="empty">該当する業者がありません</td></tr>
         </tbody>
       </table>
+    </div>
+
+    <!-- 新規業者 招待モーダル -->
+    <div v-if="inviteModal" class="modal-overlay" @click.self="inviteModal = null">
+      <div class="modal">
+        <h2>新規業者をメール招待</h2>
+        <p class="hint">業者名とメールアドレスを入力すると、登録フォームのURLをメールで送ります。業者がフォームを記入・送信すると「承認待ち」で起票され、承認すると正式登録されます。</p>
+        <label class="fld"><span>業者名 <em>*</em></span>
+          <input v-model="inviteModal.name" class="input" placeholder="例：株式会社〇〇" />
+        </label>
+        <label class="fld"><span>メールアドレス <em>*</em></span>
+          <input v-model="inviteModal.email" type="email" class="input" placeholder="例：info@example.com" />
+        </label>
+        <div class="modal-actions">
+          <button class="btn-ghost" @click="inviteModal = null">キャンセル</button>
+          <button class="btn-add" :disabled="inviteBusy" @click="submitInvite">{{ inviteBusy ? '送信中…' : '招待を送信' }}</button>
+        </div>
+      </div>
     </div>
 
     <!-- 追加・編集モーダル -->
@@ -191,6 +214,7 @@ type Sub = {
   bank_name: string | null; bank_branch: string | null; bank_account_type: string | null
   bank_account_number: string | null; bank_account_holder: string | null
   contacts: Contact[]
+  registration_status: string | null; registration_submitted_at: string | null
 }
 type Preset = { id: string; name: string; category: string; sort_order: number }
 type EditLog = { id: string; action: string; created_at: string }
@@ -217,7 +241,13 @@ const mergePick   = ref<string[]>([])
 const mergeModal  = ref<{ subs: Sub[] } | null>(null)
 const mergeTarget = ref('')
 
-const SUB_COLS = 'id, name, active, category, unit_price, representative_name, mobile_phone, office_phone, email, service_areas, is_deleted, address, bank_name, bank_branch, bank_account_type, bank_account_number, bank_account_holder'
+const SUB_COLS = 'id, name, active, category, unit_price, representative_name, mobile_phone, office_phone, email, service_areas, is_deleted, address, bank_name, bank_branch, bank_account_type, bank_account_number, bank_account_holder, registration_status, registration_submitted_at'
+
+const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
+const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
+const IS_DEV   = import.meta.env.DEV
+const inviteModal = ref<{ name: string; email: string } | null>(null)
+const inviteBusy  = ref(false)
 
 async function load() {
   const accountId = await getAccountId()
@@ -247,6 +277,53 @@ async function load() {
   presets.value = (presetRows ?? []) as Preset[]
 }
 onMounted(load)
+
+// ── 新規業者をメール招待（承認待ちスタブ作成 → 登録フォームURLを送信）──
+function openInvite() { inviteModal.value = { name: '', email: '' } }
+async function submitInvite() {
+  const m = inviteModal.value
+  if (!m) return
+  if (!m.name.trim() || !m.email.trim()) { alert('業者名とメールアドレスを入力してください。'); return }
+  inviteBusy.value = true
+  try {
+    const accountId = await getAccountId()
+    // 承認待ちスタブを起票（registration_status='pending'・非active）
+    const { data: ins, error: insErr } = await supabase.from('subcontractors').insert({
+      account_id: accountId, name: m.name.trim(), email: m.email.trim(), category: '業者',
+      active: false, registration_status: 'pending',
+    }).select('id').single()
+    if (insErr || !ins) { alert(`スタブ作成に失敗しました: ${insErr?.message ?? ''}`); return }
+    // 招待メール（dev=test・実送信なし）
+    const sent = await callRegisterFn(ins.id)
+    alert(sent.ok ? `登録フォームを送信しました。${sent.msg}` : `スタブは作成しましたが送信に失敗: ${sent.msg}`)
+    inviteModal.value = null
+    await load()
+  } finally { inviteBusy.value = false }
+}
+async function callRegisterFn(subId: string): Promise<{ ok: boolean; msg: string }> {
+  if (!EDGE_URL) return { ok: false, msg: 'Edge Function URL未設定のためメール送信できません' }
+  const fnName = IS_DEV ? 'test-send-vendor-register' : 'send-vendor-register'
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return { ok: false, msg: 'ログインセッションがありません（再ログインしてください）' }
+  const res = await fetch(`${EDGE_URL}/${fnName}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: ANON_KEY, Authorization: `Bearer ${session.access_token}` },
+    body: JSON.stringify({ subcontractor_id: subId }),
+  })
+  const r = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    if (r.error === 'no_recipient_email') return { ok: false, msg: '宛先メールが未登録です' }
+    return { ok: false, msg: r.error ?? `送信失敗 (${res.status})` }
+  }
+  return { ok: true, msg: r.test ? '登録フォームURLを発行しました（dev: 実メールは送信しません）' : `${r.sent_to ?? ''} へ送信しました` }
+}
+
+// 承認待ち業者を正式登録（承認制・AC3 暫定）
+async function approveVendor(s: Sub) {
+  if (!confirm(`「${s.name}」を承認して正式登録しますか？`)) return
+  await supabase.from('subcontractors').update({ registration_status: 'approved', active: true }).eq('id', s.id)
+  await load()
+}
 
 // 工種フィルタの選択肢 = プリセット ∪ 既存の自由追加工種
 const tradeOptions = computed(() => {
@@ -453,6 +530,8 @@ async function doMerge() {
 .status { font-size: 11px; padding: 3px 8px; border-radius: 4px; }
 .status.active { background: #e8fff0; color: #0a8a3a; }
 .status.off { background: #f5f5f5; color: #aaa; }
+.status.pending { background: #fff4e5; color: #b8741a; font-weight: 700; }
+.btn-edit.approve { background: #e8f9ef; color: #06A050; font-weight: 700; }
 .actions { display: flex; gap: 6px; }
 .btn-edit { background: #f0f0f0; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
 .btn-ghost-sm { background: none; border: 1px solid #ddd; border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; color: #888; }
