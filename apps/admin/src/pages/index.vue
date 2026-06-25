@@ -276,10 +276,9 @@ async function load() {
         const wid = w.workerId || idByName[w.workerName]
         // 日報の日付に有効だった単価で計算（昇給で過去の人件費が動かないように）
         const up = unitPriceForDate(date, wid ? wageTimelines.get(wid) : undefined, curUp)
-        const tripBonus = tripSet?.has(w) ? BUSINESS_TRIP_ALLOWANCE : 0
-        const cost = laborCostForBreakdown(laborMap.get(w) ?? ZERO_BREAKDOWN, up) + tripBonus
+        const cost = laborCostForBreakdown(laborMap.get(w) ?? ZERO_BREAKDOWN, up)
         labor += cost
-        addDetail(details, '社員', date, `${w.workerName}／${siteName}${tripBonus ? '（出張手当込）' : ''}`, cost)
+        addDetail(details, '社員', date, `${w.workerName}／${siteName}`, cost)
       }
 
       // 商社・業者費
@@ -309,6 +308,11 @@ async function load() {
       addExp(expMap, 'その他雑経費', misc);              addDetail(details, 'その他雑経費', date, siteName, misc)
       const garbage = Math.round((exp.garbageFactoryM3 || 0) * GF_YEN + (exp.garbageSiteM3 || 0) * GS_YEN)
       addExp(expMap, 'ゴミ処分', garbage);               addDetail(details, 'ゴミ処分', date, siteName, garbage)
+    }
+    // 出張費（別費目・人件費には含めない）: 出張日は作業員ごとに主たる現場へ¥3,000を1回
+    if (tripSet) for (const w of tripSet) {
+      addExp(expMap, '出張費', BUSINESS_TRIP_ALLOWANCE)
+      addDetail(details, '出張費', date, (w as any).workerName ?? '', BUSINESS_TRIP_ALLOWANCE)
     }
   }
 
