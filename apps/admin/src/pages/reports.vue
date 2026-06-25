@@ -120,7 +120,7 @@
               <div v-if="selected.users?.workers?.unit_price" class="labor-cost">
                 人件費
                 <span class="labor-cost-amount">
-                  ¥{{ site.workers.reduce((sum: number, w: any) => sum + (w.startTime && w.endTime ? calcLaborCost(w, selected.date, selected.users.workers.unit_price) : 0), 0).toLocaleString() }}
+                  ¥{{ site.workers.reduce((sum: number, w: any) => sum + (w.startTime && w.endTime ? calcLaborCost(w, selected.date, selected.users.workers.unit_price, selected.users.workers.wage_type || 'daily') : 0), 0).toLocaleString() }}
                 </span>
               </div>
               <!-- 出張費（別費目・人件費とは別表示／主たる現場に1回） -->
@@ -378,12 +378,12 @@ function siteTripYen(site: any): number {
   for (const w of (site.workers ?? [])) if (mains.has(w)) n++
   return n * BUSINESS_TRIP_ALLOWANCE
 }
-function calcLaborCost(w: any, date: string, unitPrice: number): number {
+function calcLaborCost(w: any, date: string, unitPrice: number, wageType: 'daily' | 'hourly' = 'daily'): number {
   const isSunday = new Date(date + 'T00:00:00').getDay() === 0
   const role = w.workerRole || 'site'
   const brk  = calcBreakMinutes(role, w.startTime, w.endTime)
   const h    = computeWorkerHours(w.startTime, w.endTime, brk, isSunday)
-  const rate = unitPrice / 8
+  const rate = wageType === 'hourly' ? unitPrice : unitPrice / 8
   return Math.round(rate * (
     h.hoursNormal        * 1.00 +
     h.hoursOT            * 1.25 +
@@ -449,7 +449,7 @@ async function load() {
 
   const { data } = await supabase
     .from('daily_reports')
-    .select('id, date, is_working, is_business_trip, leave_type, line_notified_at, sites, note, user_id, users(real_name, worker_id, workers(name, unit_price))')
+    .select('id, date, is_working, is_business_trip, leave_type, line_notified_at, sites, note, user_id, users(real_name, worker_id, workers(name, unit_price, wage_type))')
     .eq('account_id', accountId)
     .gte('date', dateFrom.value)
     .lte('date', dateTo.value)

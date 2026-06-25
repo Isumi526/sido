@@ -400,7 +400,7 @@ async function load() {
 
   const accountId = await getAccountId()
   const [{ data: wm }, { data: sm }, { data: cfg }, { data: wh }] = await Promise.all([
-    supabase.from('workers').select('id, name, unit_price').eq('account_id', accountId),
+    supabase.from('workers').select('id, name, unit_price, wage_type').eq('account_id', accountId),
     supabase.from('subcontractors').select('name, category, unit_price').eq('account_id', accountId),
     supabase.from('settings').select('key, value').eq('account_id', accountId),
     supabase.from('worker_wage_history').select('worker_id, effective_date, changed_at, old_unit_price, new_unit_price').eq('account_id', accountId),
@@ -446,6 +446,8 @@ async function load() {
 
   const priceById   = Object.fromEntries((wm ?? []).map((w: any) => [w.id,   w.unit_price]))
   const priceByName = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.unit_price]))
+  const wageTypeById   = Object.fromEntries((wm ?? []).map((w: any) => [w.id,   w.wage_type || 'daily']))
+  const wageTypeByName = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.wage_type || 'daily']))
   const idByName    = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.id]))  // 日報がworkerId空でも昇給timelineを引けるように
   const subMaster   = Object.fromEntries((sm ?? []).map((s: any) => [s.name, { category: s.category, unitPrice: s.unit_price ?? 0 }]))
 
@@ -500,7 +502,8 @@ async function load() {
         // 日報の日付に有効だった単価で計算（昇給で過去の人件費が動かないように）
         const unitPrice = unitPriceForDate(date, wid ? wageTimelines.get(wid) : undefined, curPrice)
         const breakdown = laborMap.get(w) ?? ZERO_BREAKDOWN
-        g.workers.push({ ...w, ...breakdown, role: w.workerRole ?? 'site', unitPrice, laborCost: laborCostForBreakdown(breakdown, unitPrice) })
+        const wageType = (wageTypeById[w.workerId] ?? wageTypeByName[w.workerName] ?? 'daily') as 'daily' | 'hourly'
+        g.workers.push({ ...w, ...breakdown, role: w.workerRole ?? 'site', unitPrice, laborCost: laborCostForBreakdown(breakdown, unitPrice, wageType) })
         // 出張費は人件費(社員)に混ぜず、主たる現場の別費目として計上（原価視点・複数現場でも主現場に1回）
         if (tripSet?.has(w)) g.tripCost += BUSINESS_TRIP_ALLOWANCE
       }
