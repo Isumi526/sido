@@ -94,12 +94,16 @@
                 <button class="btn-add" :disabled="!priceForm.material_id || !(priceForm.unit_price > 0)" data-testid="add-price" @click="addPrice">登録</button>
               </div>
             </div>
-            <div class="method">
+            <div class="method ocr-dropzone" :class="{ 'drag-over': ocrDragOver }"
+                 data-testid="ocr-dropzone"
+                 @dragover.prevent="ocrDragOver = true" @dragenter.prevent="ocrDragOver = true"
+                 @dragleave.prevent="ocrDragOver = false" @drop.prevent="onOcrDrop">
               <div class="method-label">価格表から取込（OCR）</div>
               <label class="btn-add" :class="{ disabled: ocrBusy }">
-                {{ ocrBusy ? '取込中…' : '単価表を取込（PDF/写真）' }}
-                <input type="file" accept="image/*,.pdf" hidden data-testid="ocr-file" :disabled="ocrBusy" @change="onOcrFile" />
+                {{ ocrBusy ? '取込中…' : '単価表を取込（PDF/写真・複数可）' }}
+                <input type="file" accept="image/*,.pdf" multiple hidden data-testid="ocr-file" :disabled="ocrBusy" @change="onOcrFile" />
               </label>
+              <span class="muted ocr-dnd-hint">ここに <b>ドラッグ&ドロップ</b> でもOK（複数ファイル・PDF/写真をまとめて取込）</span>
               <div v-if="ocrBusy" class="ocr-progress" data-testid="ocr-progress">
                 <div class="ocr-bar"><div class="ocr-bar-fill" :style="{ width: ocrPct + '%' }"></div></div>
                 <div class="ocr-status">
@@ -313,31 +317,37 @@ async function callOcr(b64: string, mime: string): Promise<number> {
   if (!resp.ok || json?.error) throw new Error(json?.error || `取込エラー(${resp.status})`)
   return json?.created ?? 0
 }
-async function onOcrFile(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0]
-  if (!file) return
+// 1ファイル→ページ配列（PDFはページ分割・画像は1ページ）
+async function buildOcrPages(file: File): Promise<{ b64: string; mime: string }[]> {
+  const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
+  if (isPdf) {
+    const buf = await file.arrayBuffer()
+    const { PDFDocument } = await import('pdf-lib')
+    const src = await PDFDocument.load(buf)
+    const n = src.getPageCount()
+    const out: { b64: string; mime: string }[] = []
+    for (let i = 0; i < n; i++) {
+      const docp = await PDFDocument.create()
+      const [pg] = await docp.copyPages(src, [i])
+      docp.addPage(pg)
+      out.push({ b64: bytesToB64(await docp.save()), mime: 'application/pdf' })
+    }
+    return out
+  }
+  return [{ b64: await fileToB64(file), mime: file.type || 'image/png' }]
+}
+// 複数ファイル（PDF/画像）をまとめてOCR取込。全ファイルの全ページを通しで処理。
+async function processOcrFiles(files: File[]) {
+  const targets = files.filter(f => f.type.startsWith('image/') || f.type === 'application/pdf' || /\.(pdf|png|jpe?g|webp|gif|heic)$/i.test(f.name))
+  if (!targets.length) return
   if (!activeSupplier.value) { ocrError.value = '先に対象の商社タブを選んでください'; return }
   ocrBusy.value = true; ocrError.value = ''
   ocrElapsed.value = 0; ocrTotal.value = 0; ocrDone.value = 0; ocrPageStart.value = 0; ocrAvgPageSec.value = 0
   ocrTimer = setInterval(() => { ocrElapsed.value++ }, 1000)
   try {
-    let pages: { b64: string; mime: string }[]
-    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
-    if (isPdf) {
-      const buf = await file.arrayBuffer()
-      const { PDFDocument } = await import('pdf-lib')
-      const src = await PDFDocument.load(buf)
-      const n = src.getPageCount()
-      pages = []
-      for (let i = 0; i < n; i++) {
-        const docp = await PDFDocument.create()
-        const [pg] = await docp.copyPages(src, [i])
-        docp.addPage(pg)
-        pages.push({ b64: bytesToB64(await docp.save()), mime: 'application/pdf' })
-      }
-    } else {
-      pages = [{ b64: await fileToB64(file), mime: file.type || 'image/png' }]
-    }
+    // 全ファイルをページ単位に展開してから通しでOCR（複数ファイル＝1取込として進捗集計）
+    const pages: { b64: string; mime: string }[] = []
+    for (const f of targets) pages.push(...await buildOcrPages(f))
     ocrTotal.value = pages.length
     for (const pg of pages) {
       ocrPageStart.value = ocrElapsed.value
@@ -351,8 +361,20 @@ async function onOcrFile(e: Event) {
   } finally {
     ocrBusy.value = false
     if (ocrTimer) clearInterval(ocrTimer)
-    ;(e.target as HTMLInputElement).value = ''
   }
+}
+function onOcrFile(e: Event) {
+  const input = e.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  input.value = ''
+  if (files.length) processOcrFiles(files)
+}
+const ocrDragOver = ref(false)
+function onOcrDrop(e: DragEvent) {
+  ocrDragOver.value = false
+  if (ocrBusy.value) return
+  const files = Array.from(e.dataTransfer?.files ?? [])
+  if (files.length) processOcrFiles(files)
 }
 
 async function deletePrice(id: string) {
@@ -482,6 +504,9 @@ onMounted(async () => {
 .add-methods { display: flex; gap: 24px; flex-wrap: wrap; margin: 12px 0 4px; }
 .method { display: flex; flex-direction: column; gap: 6px; }
 .method-label { font-size: 12px; font-weight: 600; color: #555; }
+.ocr-dropzone { border: 1.5px dashed #cdd6e6; border-radius: 10px; padding: 12px; transition: border-color .15s, background .15s; }
+.ocr-dropzone.drag-over { border-color: #1a56c4; background: #eef4ff; }
+.ocr-dnd-hint { font-size: 11px; }
 .sub-h { font-size: 13px; font-weight: 700; color: #444; margin: 16px 0 6px; }
 .rev-section { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 8px 12px; margin-top: 12px; }
 .rev-alert { background: #fff7ed; border: 1px solid #fdba74; color: #9a3412; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; }
