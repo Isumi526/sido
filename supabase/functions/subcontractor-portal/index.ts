@@ -113,7 +113,7 @@ Deno.serve(async (req) => {
     if (!tok) return json({ ok: false })
     if (tok.expires_at && tok.expires_at < nowIso) return json({ ok: false })
 
-    const KNOWN_ACTIONS = ['resolve', 'accept', 'invoice_resolve', 'invoice_submit']
+    const KNOWN_ACTIONS = ['resolve', 'accept', 'invoice_resolve', 'invoice_submit', 'change_accept']
     if (!KNOWN_ACTIONS.includes(action)) return json({ ok: false, error: 'unsupported_action' }, 400)
 
     // 受注者（業者）を account/業者ID の二重スコープで取得
@@ -140,6 +140,24 @@ Deno.serve(async (req) => {
         .maybeSingle()
       order = po ?? null
       if (!order) return json({ ok: false })  // 文書が無い/別業者 → 列挙対策で ok:false
+    }
+
+    // 変更注文書（purpose=change_accept）を二重スコープで取得し、親注文書も読む
+    let change: any = null
+    if (tok.purpose === 'change_accept' && tok.document_type === 'purchase_order_change' && tok.document_id) {
+      const { data: ch } = await supabase
+        .from('purchase_order_changes')
+        .select('*')
+        .eq('id', tok.document_id)
+        .eq('account_id', tok.account_id)
+        .eq('subcontractor_id', tok.subcontractor_id)   // 越境防止：このトークンの業者の変更のみ
+        .maybeSingle()
+      change = ch ?? null
+      if (!change) return json({ ok: false })
+      const { data: po } = await supabase
+        .from('purchase_orders').select('*')
+        .eq('id', change.purchase_order_id).eq('account_id', tok.account_id).maybeSingle()
+      order = po ?? null   // 表示・金額更新の対象
     }
 
     // 請求フォーム系（purpose=invoice_submit）の共通計算：承諾状態＋残額
@@ -233,6 +251,56 @@ Deno.serve(async (req) => {
     }
 
     // ─────────────────────────────────────────────────────
+    //  change_accept : 変更注文書の再承諾（署名＋証跡）→ 注文書金額を変更後金額へ更新
+    // ─────────────────────────────────────────────────────
+    if (action === 'change_accept') {
+      if (!change) return json({ ok: false, error: 'not_acceptable' }, 400)
+      // 既に再承諾済みなら冪等に返す
+      if (change.status === 'accepted' && change.accepted_at) {
+        return json({ ok: true, already_accepted: true, accepted_at: change.accepted_at })
+      }
+      const sigBytes = decodeImageDataUrl(signature)
+      if (!sigBytes || sigBytes.length === 0) return json({ ok: false, error: 'signature_required' }, 400)
+
+      const sigPath = `purchase-orders/${change.account_id}/${change.purchase_order_id}/change-${change.id}-signature.png`
+      const { error: upErr } = await supabase.storage.from(BUCKET)
+        .upload(sigPath, sigBytes, { upsert: true, contentType: 'image/png' })
+      if (upErr) return json({ ok: false, error: 'signature_upload_failed' }, 500)
+
+      // 親注文書PDFのハッシュ（証跡・任意）
+      let pdfHash: string | null = null
+      if (order?.pdf_path) {
+        const { data: file } = await supabase.storage.from(BUCKET).download(order.pdf_path)
+        if (file) pdfHash = await sha256Hex(new Uint8Array(await file.arrayBuffer()))
+      }
+      const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || req.headers.get('x-real-ip') || null
+      const ua = req.headers.get('user-agent') || null
+
+      // 変更注文書を再承諾済みに（status='issued' の時だけ＝原子的に二重承諾を防ぐ）
+      const { data: upd, error: updErr } = await supabase.from('purchase_order_changes')
+        .update({
+          status: 'accepted', accepted_at: nowIso, accepted_ip: ip, user_agent: ua,
+          signer_name: signerName || null, signature_path: sigPath, pdf_hash: pdfHash, updated_at: nowIso,
+        })
+        .eq('id', change.id).eq('account_id', change.account_id).eq('status', 'issued')
+        .select('id')
+      if (updErr) return json({ ok: false, error: 'change_accept_failed' }, 500)
+      if (!upd || upd.length === 0) {
+        // 既に他で承諾済み → 冪等
+        const { data: ex } = await supabase.from('purchase_order_changes').select('accepted_at').eq('id', change.id).maybeSingle()
+        return json({ ok: true, already_accepted: true, accepted_at: ex?.accepted_at ?? nowIso })
+      }
+
+      // 最新の承諾済金額を注文書に反映（AC3：請求照合＝①の残額計算の基準になる）
+      await supabase.from('purchase_orders')
+        .update({ total_amount: change.new_amount, status: 'accepted', accepted_at: nowIso, updated_at: nowIso })
+        .eq('id', change.purchase_order_id).eq('account_id', change.account_id)
+
+      await supabase.from('document_access_tokens').update({ used_at: nowIso }).eq('id', tok.id)
+      return json({ ok: true, accepted: true, accepted_at: nowIso, new_amount: change.new_amount })
+    }
+
+    // ─────────────────────────────────────────────────────
     //  accept : 注文書承諾（署名＋証跡保存）
     // ─────────────────────────────────────────────────────
     if (action === 'accept') {
@@ -320,6 +388,12 @@ Deno.serve(async (req) => {
       pdfUrl = supabase.storage.from(BUCKET).getPublicUrl(order.pdf_path).data.publicUrl ?? null
     }
 
+    // 変更注文書の表示用（業者に見せてよい範囲のみ）
+    const changeView = change ? {
+      id: change.id, seq: change.seq, old_amount: change.old_amount, new_amount: change.new_amount,
+      reason: change.reason, status: change.status, accepted_at: change.accepted_at,
+    } : null
+
     return json({
       ok: true,
       purpose:       tok.purpose,
@@ -327,6 +401,7 @@ Deno.serve(async (req) => {
       document_id:   tok.document_id,
       subcontractor: { id: sub.id, name: sub.name },
       order:         order ? orderView(order) : null,
+      change:        changeView,
       pdf_url:       pdfUrl,
     })
   } catch (e) {

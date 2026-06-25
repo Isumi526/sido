@@ -32,10 +32,14 @@
                 承諾済 <span class="badge-date">{{ shortDate(acceptances[o.id].accepted_at) }}</span>
               </button>
               <span v-else class="badge">未承諾</span>
+              <div v-if="changes[o.id]?.length" class="change-hist">
+                <span v-for="c in changes[o.id]" :key="c.id" class="badge change" :class="{ ok: c.status === 'accepted' }" :title="c.reason || ''">{{ changeLabel(c) }}</span>
+              </div>
             </td>
             <td><a v-if="o.pdf_path" :href="pdfUrl(o.pdf_path)" target="_blank" rel="noopener" class="pdf-link">📄 PDF</a><span v-else class="muted">—</span></td>
             <td class="actions">
               <button class="btn-edit" :disabled="busyId === o.id" @click="resendEmail(o)">{{ busyId === o.id ? '送信中…' : '再送' }}</button>
+              <button class="btn-edit" :disabled="changeBusy" @click="openChange(o)" title="金額の増減（変更注文書）を発行し業者に再承諾を依頼">変更注文</button>
               <button v-if="isAccepted(o)" class="btn-edit invoice" :disabled="busyId === o.id" @click="requestInvoice(o)" :title="o.invoice_requested_at ? `請求依頼済み ${shortDate(o.invoice_requested_at)}` : '業者へ請求フォームURLを送る'">
                 {{ busyId === o.id ? '送信中…' : (o.invoice_requested_at ? '請求再依頼' : '請求依頼') }}
               </button>
@@ -199,6 +203,27 @@
         </div>
       </div>
     </div>
+
+    <!-- 変更注文書モーダル -->
+    <div v-if="changeModal" class="modal-overlay" @click.self="changeModal = null">
+      <div class="modal">
+        <h2>変更注文書を発行</h2>
+        <p class="hint">注文書「{{ changeModal.order.order_number }}」の金額を変更し、業者に再承諾を依頼します。再承諾されると注文書金額が更新され、以後の請求照合の基準になります。</p>
+        <label class="fld"><span>変更前金額</span>
+          <input :value="changeModal.order.total_amount != null ? `¥${changeModal.order.total_amount.toLocaleString()}` : '—'" class="inp" disabled />
+        </label>
+        <label class="fld"><span>変更後金額 <em>*</em></span>
+          <input v-model.number="changeModal.new_amount" type="number" inputmode="numeric" class="inp" placeholder="例：1200000" min="1" />
+        </label>
+        <label class="fld"><span>変更理由</span>
+          <textarea v-model="changeModal.reason" class="inp" rows="2" placeholder="例：追加工事に伴う増額" />
+        </label>
+        <div class="modal-actions">
+          <button class="btn-cancel" @click="changeModal = null">キャンセル</button>
+          <button class="btn-save" :disabled="changeBusy" @click="submitChange">{{ changeBusy ? '発行中…' : '変更注文書を発行して再承諾依頼' }}</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -233,7 +258,7 @@ type PO = {
   id: string; order_number: string; order_date: string | null; total_amount: number | null
   site_name: string | null; vendor_name: string | null; vendor_contact_name: string | null
   pdf_path: string | null; email_sent_at: string | null; status: string; accepted_at: string | null
-  invoice_requested_at: string | null
+  invoice_requested_at: string | null; subcontractor_id: string | null
 }
 type Acceptance = {
   purchase_order_id: string; accepted_at: string; accepted_ip: string | null
@@ -243,9 +268,17 @@ type Estimate = { id: string; subcontractor_id: string | null; site_id: string |
 type Opt = { id: string; name: string }
 type Contact = { id: string; subcontractor_id: string; name: string; email: string | null; phone: string | null }
 
+type Change = {
+  id: string; purchase_order_id: string; seq: number; old_amount: number | null; new_amount: number
+  reason: string | null; status: string; accepted_at: string | null; email_sent_at: string | null
+}
+
 const rows    = ref<PO[]>([])
 const acceptances = ref<Record<string, Acceptance>>({})   // purchase_order_id → 承諾証跡
+const changes = ref<Record<string, Change[]>>({})         // purchase_order_id → 変更注文書（履歴・新しい順）
 const trailModal  = ref<{ order: PO; acc: Acceptance } | null>(null)
+const changeModal = ref<{ order: PO; new_amount: number | null; reason: string } | null>(null)
+const changeBusy  = ref(false)
 const estimates = ref<Estimate[]>([])
 const subs    = ref<Opt[]>([])
 const sites   = ref<Opt[]>([])
@@ -282,7 +315,7 @@ async function load() {
   accountName.value = (await getAccountName()) || ''
   const [{ data: poRows }, { data: est }, { data: su }, { data: si }, { data: co }] = await Promise.all([
     supabase.from('purchase_orders')
-      .select('id, estimate_id, order_number, order_date, total_amount, site_name, vendor_name, vendor_contact_name, pdf_path, email_sent_at, status, accepted_at, invoice_requested_at')
+      .select('id, estimate_id, order_number, order_date, total_amount, site_name, vendor_name, vendor_contact_name, pdf_path, email_sent_at, status, accepted_at, invoice_requested_at, subcontractor_id')
       .eq('account_id', accountId).eq('is_deleted', false).order('order_number', { ascending: false }),
     supabase.from('estimates').select('id, subcontractor_id, site_id, estimate_number, total_amount')
       .eq('account_id', accountId).eq('is_deleted', false).order('estimate_number', { ascending: false }),
@@ -300,6 +333,12 @@ async function load() {
       .select('purchase_order_id, accepted_at, accepted_ip, user_agent, signer_name, signature_path, pdf_hash')
       .in('purchase_order_id', orderIds)
     for (const a of (accs ?? []) as Acceptance[]) acceptances.value[a.purchase_order_id] = a
+    // 変更注文書（履歴）を取得。RLSで自account分のみ。
+    const { data: chs } = await supabase.from('purchase_order_changes')
+      .select('id, purchase_order_id, seq, old_amount, new_amount, reason, status, accepted_at, email_sent_at')
+      .in('purchase_order_id', orderIds).order('seq', { ascending: false })
+    changes.value = {}
+    for (const c of (chs ?? []) as Change[]) (changes.value[c.purchase_order_id] ??= []).push(c)
   }
   estimates.value = (est ?? []) as Estimate[]
   subs.value = (su ?? []) as Opt[]
@@ -523,6 +562,56 @@ async function requestInvoice(o: PO) {
   } finally { busyId.value = null }
 }
 
+// ── 変更注文書（増減額）＋業者再承諾 ──
+function changeLabel(c: Change): string {
+  const st = c.status === 'accepted' ? `再承諾済 ${c.accepted_at ? shortDate(c.accepted_at) : ''}` : '再承諾待ち'
+  return `変更${c.seq}: ¥${Number(c.new_amount).toLocaleString()}（${st}）`
+}
+function openChange(o: PO) {
+  changeModal.value = { order: o, new_amount: o.total_amount ?? null, reason: '' }
+}
+async function submitChange() {
+  const m = changeModal.value
+  if (!m) return
+  const newAmount = Math.round(Number(m.new_amount) || 0)
+  if (!newAmount || newAmount <= 0) { alert('変更後金額を正しく入力してください。'); return }
+  if (newAmount === (m.order.total_amount ?? 0)) { alert('現在の金額と同じです。増減額を入力してください。'); return }
+  changeBusy.value = true
+  try {
+    const accountId = await getAccountId()
+    const existing = changes.value[m.order.id] ?? []
+    const seq = (existing.reduce((mx, c) => Math.max(mx, c.seq), 0)) + 1
+    // 変更注文書を起票（RLS authenticated insert）。subcontractor_id は親POから引き継ぐ（業者スコープに使う）
+    const { data: ins, error: insErr } = await supabase.from('purchase_order_changes').insert({
+      account_id: accountId, purchase_order_id: m.order.id, subcontractor_id: m.order.subcontractor_id,
+      seq, old_amount: m.order.total_amount, new_amount: newAmount, reason: m.reason || null, status: 'issued',
+    }).select('id').single()
+    if (insErr || !ins) { alert(`変更注文書の作成に失敗しました: ${insErr?.message ?? ''}`); return }
+    // 再承諾依頼メール（dev=test・実送信なし）
+    const sent = await callChangeFn(ins.id)
+    alert(sent.ok ? `変更注文書を発行しました。${sent.msg}` : `変更注文書は作成しましたが送信に失敗: ${sent.msg}`)
+    changeModal.value = null
+    await load()
+  } finally { changeBusy.value = false }
+}
+async function callChangeFn(changeId: string): Promise<{ ok: boolean; msg: string }> {
+  if (!EDGE_URL) return { ok: false, msg: 'Edge Function URL未設定のためメール送信できません' }
+  const fnName = IS_DEV ? 'test-send-change-order' : 'send-change-order'
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return { ok: false, msg: 'ログインセッションがありません（再ログインしてください）' }
+  const res = await fetch(`${EDGE_URL}/${fnName}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: ANON_KEY, Authorization: `Bearer ${session.access_token}` },
+    body: JSON.stringify({ change_id: changeId }),
+  })
+  const r = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    if (r.error === 'no_recipient_email') return { ok: false, msg: '宛先メールが未登録です（担当者のメールを確認してください）' }
+    return { ok: false, msg: r.error ?? `送信失敗 (${res.status})` }
+  }
+  return { ok: true, msg: r.test ? '再承諾URLを発行しました（dev: 実メールは送信しません）' : `${r.sent_to ?? ''} へ送信しました` }
+}
+
 async function remove(o: PO) {
   if (!confirm(`注文書「${o.order_number}」を削除しますか？`)) return
   await supabase.from('purchase_orders').update({ is_deleted: true, updated_at: new Date().toISOString() }).eq('id', o.id)
@@ -564,6 +653,9 @@ async function remove(o: PO) {
 .btn-edit { background: #f0f0f0; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
 .btn-edit:disabled { opacity: .5; }
 .btn-edit.invoice { background: #e8f9ef; color: #06A050; font-weight: 700; }
+.change-hist { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
+.badge.change { background: #fff4e5; color: #b8741a; font-size: 11px; }
+.badge.change.ok { background: #e8f9ef; color: #06A050; }
 .btn-ghost-sm { background: none; border: 1px solid #ddd; border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; color: #888; }
 .btn-ghost-sm.danger { color: #c0392b; border-color: #f0caca; }
 .pdf-link { display: inline-block; font-size: 13px; color: #1a56c4; text-decoration: none; border: 1px solid #cdd8f0; border-radius: 6px; padding: 3px 10px; }
