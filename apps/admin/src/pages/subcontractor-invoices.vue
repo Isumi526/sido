@@ -209,7 +209,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
@@ -266,6 +266,8 @@ const poOverResidual = computed(() => {
   if (poResidual.value == null) return false
   return effectiveBilled.value > poResidual.value
 })
+// 残額エラーは超過が解消したら自動でクリア（古いメッセージが残らないように）
+watch(poOverResidual, (over) => { if (!over && formError.value.includes('残額')) formError.value = '' })
 const form     = ref<Form | null>(null)
 const files    = ref<File[]>([])   // 複数枚（請求書が複数ページに分かれている場合）対応
 const dragActive = ref(false)      // ファイルD&D中のハイライト
