@@ -180,22 +180,40 @@ export function getRateLines(r: RateBreakdown): RateLine[] {
 }
 
 // ── 昇給(単価変更)履歴を使った「日付別の有効単価」解決 ────────────────
-export type WageChange = { effectiveDate: string; oldUnitPrice: number | null; newUnitPrice: number }
+export type WageChange = { effectiveDate: string; oldUnitPrice: number | null; newUnitPrice: number; wageType?: 'daily' | 'hourly' | null; oldWageType?: 'daily' | 'hourly' | null }
 
 /** wage_history 行 → 作業員ごとの timeline（effectiveDate 昇順）。effective_date 未設定行は changed_at の日付で代替。 */
 export function buildWageTimelines(
-  rows: { worker_id: string; effective_date?: string | null; changed_at?: string | null; old_unit_price: number | null; new_unit_price: number }[],
+  rows: { worker_id: string; effective_date?: string | null; changed_at?: string | null; old_unit_price: number | null; new_unit_price: number; wage_type?: string | null; old_wage_type?: string | null }[],
 ): Map<string, WageChange[]> {
   const m = new Map<string, WageChange[]>()
   for (const r of rows ?? []) {
     const ed = (r.effective_date || (r.changed_at || '').slice(0, 10))
     if (!ed || !r.worker_id) continue
     const arr = m.get(r.worker_id) ?? []
-    arr.push({ effectiveDate: ed, oldUnitPrice: r.old_unit_price, newUnitPrice: r.new_unit_price })
+    arr.push({ effectiveDate: ed, oldUnitPrice: r.old_unit_price, newUnitPrice: r.new_unit_price, wageType: (r.wage_type as 'daily' | 'hourly' | null) ?? null, oldWageType: (r.old_wage_type as 'daily' | 'hourly' | null) ?? null })
     m.set(r.worker_id, arr)
   }
   for (const arr of m.values()) arr.sort((a, b) => a.effectiveDate.localeCompare(b.effectiveDate))
   return m
+}
+
+/** 日報日付に有効だった賃金タイプ。timeline は effectiveDate 昇順。
+ *  date >= effectiveDate の最新 wageType(切替後)。全変更より前なら最古の oldWageType(切替前)。
+ *  いずれも記録なしは currentWageType。※固定タイプは常に currentWageType に一致＝正しい。 */
+export function wageTypeForDate(date: string, timeline: WageChange[] | undefined, currentWageType: 'daily' | 'hourly'): 'daily' | 'hourly' {
+  if (!timeline || timeline.length === 0) return currentWageType
+  let applied: 'daily' | 'hourly' | null = null
+  for (const c of timeline) {
+    if (c.effectiveDate <= date && c.wageType) applied = c.wageType
+    else if (c.effectiveDate > date) break
+  }
+  if (applied) return applied
+  // 全変更より前 → 最初の記録の「切替前」タイプ（old_unit_price と同じ扱い）
+  const firstOld = timeline.find(c => c.oldWageType)?.oldWageType
+  if (firstOld) return firstOld
+  const firstTyped = timeline.find(c => c.wageType)?.wageType
+  return firstTyped ?? currentWageType
 }
 
 /** 日報日付(YYYY-MM-DD)に有効だった日当単価。timeline は effectiveDate 昇順。
