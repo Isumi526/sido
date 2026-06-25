@@ -35,13 +35,14 @@
         <tbody>
           <tr v-for="s in filtered" :key="s.id" :class="{ inactive: !s.active }">
             <td v-if="mergeMode"><input type="checkbox" :value="s.id" v-model="mergePick" :disabled="!s.active" /></td>
-            <td class="name">{{ s.name }}<span v-if="s.name_kana" class="kana-sub">{{ s.name_kana }}</span></td>
+            <td class="name"><a class="name-link" @click="router.push(`/sites/${s.id}`)">{{ s.name }}</a><span v-if="s.name_kana" class="kana-sub">{{ s.name_kana }}</span></td>
             <td class="loc">{{ s.location || '—' }}</td>
             <td>{{ s.contractor_id ? contractorName(s.contractor_id) : '—' }}</td>
             <td class="num">{{ siteStats[s.name]?.count || '—' }}</td>
             <td>{{ siteStats[s.name]?.lastDate || '—' }}</td>
             <td><span class="status" :class="s.active ? 'active' : 'off'">{{ s.active ? '有効' : '無効' }}</span></td>
             <td class="actions">
+              <button class="btn-detail" @click="router.push(`/sites/${s.id}`)">詳細</button>
               <button class="btn-edit" @click="openEdit(s)">編集</button>
               <button class="btn-toggle" @click="toggleActive(s)">{{ s.active ? '無効化' : '有効化' }}</button>
               <button class="btn-rules" @click="router.push(`/site-rules?site_id=${s.id}`)">ルール・QR設定</button>
@@ -409,6 +410,9 @@ async function doMerge() {
 .filter-input { max-width: 280px; }
 .result-count { color: #888; font-size: 13px; margin-left: auto; }
 .kana-sub { color: #aaa; font-size: 11px; margin-left: 8px; font-weight: 400; }
+.name-link { color: #06A050; cursor: pointer; text-decoration: none; }
+.name-link:hover { text-decoration: underline; }
+.btn-detail { background: #e8f9ef; color: #06A050; font-weight: 700; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
 .loc { color: #555; font-size: 13px; }
 .table-wrap { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
 .table { width: 100%; border-collapse: collapse; }

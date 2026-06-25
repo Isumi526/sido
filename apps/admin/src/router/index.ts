@@ -36,6 +36,7 @@ export const router = createRouter({
     { path: '/calendar',     component: Calendar },
     { path: '/workers',      component: Workers },
     { path: '/sites',        component: Sites },
+    { path: '/sites/:id',    component: () => import('../pages/site-detail.vue') },
     { path: '/contractors',  component: Contractors },
     { path: '/site-rules',   component: SiteRules },
     { path: '/attendance',   component: Attendance },
