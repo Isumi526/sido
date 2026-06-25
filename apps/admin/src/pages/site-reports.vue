@@ -222,16 +222,27 @@
           <table class="inner-table">
             <thead><tr><th>種別</th><th>名称</th><th class="num">金額</th></tr></thead>
             <tbody>
-              <tr v-if="selected._exp?.hotelYen">
-                <td>ホテル</td>
-                <td>{{ selected._exp.hotelName || '—' }}</td>
-                <td class="num">{{ yen(selected._exp.hotelYen) }}</td>
-              </tr>
-              <tr v-if="selected._exp?.leopalaceYen">
-                <td>レオパレス</td>
-                <td>{{ selected._exp.leopalaceName || '—' }}</td>
-                <td class="num">{{ yen(selected._exp.leopalaceYen) }}</td>
-              </tr>
+              <!-- 新形式 hotels[]（複数） -->
+              <template v-if="(selected._exp?.hotels || []).some((h: any) => h.yen)">
+                <tr v-for="(h, hi) in (selected._exp.hotels || []).filter((x: any) => x.yen)" :key="hi">
+                  <td>宿泊</td>
+                  <td>{{ h.label || '—' }}</td>
+                  <td class="num">{{ yen(h.yen) }}</td>
+                </tr>
+              </template>
+              <!-- 旧スカラー（後方互換） -->
+              <template v-else>
+                <tr v-if="selected._exp?.hotelYen">
+                  <td>ホテル</td>
+                  <td>{{ selected._exp.hotelName || '—' }}</td>
+                  <td class="num">{{ yen(selected._exp.hotelYen) }}</td>
+                </tr>
+                <tr v-if="selected._exp?.leopalaceYen">
+                  <td>レオパレス</td>
+                  <td>{{ selected._exp.leopalaceName || '—' }}</td>
+                  <td class="num">{{ yen(selected._exp.leopalaceYen) }}</td>
+                </tr>
+              </template>
             </tbody>
           </table>
         </div>
@@ -420,7 +431,9 @@ function extractExpenseCols(exp: any) {
     highwayCost += v.highwayYen || 0
   }
 
-  const hotelCost      = (exp?.hotelYen || 0) + (exp?.leopalaceYen || 0)
+  // 宿泊費: 新形式 hotels[] があればその合計、無ければ旧スカラー(hotel/leopalace)＝二重計上を防ぐ後方互換
+  const hotelsSum      = (exp?.hotels || []).reduce((s: number, h: any) => s + (Number(h.yen) || 0), 0)
+  const hotelCost      = hotelsSum > 0 ? hotelsSum : (exp?.hotelYen || 0) + (exp?.leopalaceYen || 0)
   const entertainCost  = (exp?.entertainments ?? []).reduce((s: number, e: any) => s + (e.yen || 0), 0) || (exp?.entertainmentYen || 0)
   const garbageFactoryM3 = exp?.garbageFactoryM3 || 0
   const garbageSiteM3    = exp?.garbageSiteM3    || 0
