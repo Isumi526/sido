@@ -356,11 +356,11 @@
                 <option value="あり">{{ $t('report.optYes') }}</option>
               </select>
               <template v-if="siteUsage[si].hotel === 'あり'">
-                <div v-for="(ho, hi) in (site.expenses.hotels ?? [])" :key="hi" class="lineitem-card mt6">
+                <div v-for="(ho, hi) in (site.expenses.hotels ?? [])" :key="hi" class="lineitem-card mt6 hotel-item">
+                  <button v-if="(site.expenses.hotels?.length ?? 0) > 1" type="button" class="btn-remove-card" :aria-label="$t('report.removeHotel')" @click="report.removeHotel(si, hi)">✕</button>
                   <div class="lineitems-row">
                     <input v-model="ho.label" type="text" class="input" :placeholder="$t('report.facilityNameHotelPlaceholder')" @keydown.enter.prevent />
                     <ExpenseField v-model="ho.yen" v-model:tategae="ho.tategae" with-tategae :label="$t('report.amount')" />
-                    <button v-if="(site.expenses.hotels?.length ?? 0) > 1" type="button" class="btn-icon-sm" @click="report.removeHotel(si, hi)">✕</button>
                   </div>
                   <input v-model="ho.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                   <div class="mt6">
@@ -1903,6 +1903,13 @@ html, body {
 .lineitem-card {
   border: 1px solid var(--border); border-radius: 8px;
   padding: 10px; background: var(--surface2); margin-bottom: 8px;
+}
+/* 宿泊先カード: 削除✕はカード右上（金額横ではなく「この宿泊先を削除」と分かる位置） */
+.hotel-item { position: relative; padding-top: 14px; }
+.hotel-item .btn-remove-card {
+  position: absolute; top: 6px; right: 6px; z-index: 1;
+  width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: #888; font-size: 14px; line-height: 1; cursor: pointer;
 }
 /* 車両ブロック内の駐車場代・高速代サブ項目 */
 .veh-subexpense { margin-top: 12px; }
