@@ -89,6 +89,7 @@
   "miscExpense": "その他雑経費",
   "addMiscExpense": "＋ その他雑経費を追加",
   "addHotel": "＋ 宿泊先を追加",
+  "removeHotel": "この宿泊先を削除",
   "siteNote": "現場備考",
   "siteNotePlaceholder": "この現場の特記事項があれば入力してください",
   "addSite": "{n}個目の現場を追加する",
