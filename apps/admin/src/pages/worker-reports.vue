@@ -88,7 +88,7 @@
           <div v-if="showLaborCost" class="summary-card cost-card">
             <div class="summary-label">人件費合計</div>
             <div class="summary-value cost-value">{{ fmtYen(totalLaborCost) }}</div>
-            <div class="cost-rate-hint" v-if="activeUnitPrice">日当 {{ fmtYen(activeUnitPrice) }} / 時給 {{ fmtYen(Math.round(activeUnitPrice / 8)) }}</div>
+            <div class="cost-rate-hint" v-if="activeUnitPrice">{{ activeWageType === 'hourly' ? `時給 ${fmtYen(activeUnitPrice)}` : `日当 ${fmtYen(activeUnitPrice)} / 時給換算 ${fmtYen(Math.round(activeUnitPrice / 8))}` }}</div>
           </div>
         </div>
 
@@ -273,7 +273,8 @@ const loading        = ref(false)
 const workerMap      = ref<Record<string, WorkerData>>({})
 const activeWorker   = ref('')
 const workerOrder    = ref<string[]>([])  // DBの名前昇順
-const unitPriceMap   = ref<Record<string, number>>({})  // name → 日当単価
+const unitPriceMap   = ref<Record<string, number>>({})  // name → 単価(日当 or 時給)
+const wageTypeMap    = ref<Record<string, 'daily' | 'hourly'>>({})  // name → 賃金タイプ
 const showLaborCost  = ref(false)
 
 const workerNames = computed(() => {
@@ -294,12 +295,15 @@ async function load() {
   // 作業員名・単価を五十音順で取得
   const { data: workersData } = await supabase
     .from('workers')
-    .select('name, unit_price')
+    .select('name, unit_price, wage_type')
     .eq('account_id', accountId)
     .order('name')
   workerOrder.value = (workersData ?? []).map((w: any) => w.name)
   unitPriceMap.value = Object.fromEntries(
     (workersData ?? []).map((w: any) => [w.name, Number(w.unit_price ?? 0)])
+  )
+  wageTypeMap.value = Object.fromEntries(
+    (workersData ?? []).map((w: any) => [w.name, (w.wage_type || 'daily') as 'daily' | 'hourly'])
   )
 
   // ユーザーID → real_name マップ（休み日の名前解決用）
@@ -505,6 +509,9 @@ watch(dateFrom, load)
 const activeUnitPrice = computed(() =>
   activeWorker.value ? (unitPriceMap.value[activeWorker.value] ?? 0) : 0
 )
+const activeWageType = computed<'daily' | 'hourly'>(() =>
+  activeWorker.value ? (wageTypeMap.value[activeWorker.value] ?? 'daily') : 'daily'
+)
 // 出張日数（出張費 ÷ ¥3,000）。サマリーカード用。
 const activeTripDays = computed(() => {
   const y = activeWorker.value ? (workerMap.value[activeWorker.value]?.tripYen ?? 0) : 0
@@ -515,7 +522,7 @@ const laborCostBreakdown = computed(() => {
   if (!activeWorker.value || !workerMap.value[activeWorker.value]) return []
   const t = workerMap.value[activeWorker.value].totals
   const dayRate  = activeUnitPrice.value
-  const hourRate = dayRate / 8
+  const hourRate = activeWageType.value === 'hourly' ? dayRate : dayRate / 8
   const lines = [
     { label: '通常',       hours: t.normal,        rate: 1.00 },
     { label: '残業',       hours: t.ot,             rate: 1.25 },

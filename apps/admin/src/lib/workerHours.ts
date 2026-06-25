@@ -212,10 +212,13 @@ export function unitPriceForDate(date: string, timeline: WageChange[] | undefine
   return firstOld != null ? firstOld : currentPrice
 }
 
-/** 料率別時間 × 日当単価(/8h) で人件費を算出 */
-export function laborCostForBreakdown(b: RateBreakdown, unitPrice: number): number {
+/** 料率別時間 × 時給 で人件費を算出。
+ *  wageType='daily'(既定): unitPrice=日当 → 時給換算は /8h。
+ *  wageType='hourly':      unitPrice=時給 → そのまま /h。
+ *  残業/深夜/休日の割増率は賃金タイプに依らず同一(労基準拠＝時給者も割増あり)。 */
+export function laborCostForBreakdown(b: RateBreakdown, unitPrice: number, wageType: 'daily' | 'hourly' = 'daily'): number {
   if (!unitPrice) return 0
-  const ph = unitPrice / 8
+  const ph = wageType === 'hourly' ? unitPrice : unitPrice / 8
   return Math.round(
     (b.hoursNormal        || 0) * ph * 1.00 +
     (b.hoursOT            || 0) * ph * 1.25 +
