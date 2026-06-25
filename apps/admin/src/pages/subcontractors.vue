@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="page-header">
-      <h1 class="page-title">協力会社マスタ</h1>
+      <h1 class="page-title">協力業者マスタ</h1>
       <div class="header-actions">
         <button v-if="!mergeMode" class="btn-ghost" @click="startMerge">業者をマージ</button>
         <template v-else>

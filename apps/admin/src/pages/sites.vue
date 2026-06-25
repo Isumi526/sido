@@ -55,12 +55,12 @@
           </select>
         </div>
         <div class="field">
-          <label>この現場に紐づく協力会社（日報の業者プルダウンを絞り込み）</label>
+          <label>この現場に紐づく協力業者（日報の業者プルダウンを絞り込み）</label>
           <div class="sub-link-list" data-testid="site-sub-links">
             <label v-for="s in subcontractors" :key="s.id" class="sub-link-item">
               <input type="checkbox" :value="s.id" v-model="modal.linkedSubs" />{{ s.name }}
             </label>
-            <span v-if="!subcontractors.length" class="hint">協力会社マスタが空です</span>
+            <span v-if="!subcontractors.length" class="hint">協力業者マスタが空です</span>
           </div>
           <p class="hint">未選択なら日報では全業者が出ます（紐付けすると、その現場では選択した業者のみに絞り込み）。</p>
         </div>

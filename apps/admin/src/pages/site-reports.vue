@@ -171,7 +171,7 @@
 
         <!-- カテゴリ未設定の下請け -->
         <div class="modal-section" v-if="selected.subs.filter((s: any) => !s.category).length">
-          <div class="section-label">協力会社（区分未設定）</div>
+          <div class="section-label">協力業者（区分未設定）</div>
           <table class="inner-table">
             <thead><tr><th>業者名</th><th class="num">人数</th></tr></thead>
             <tbody>
