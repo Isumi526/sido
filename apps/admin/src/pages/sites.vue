@@ -12,23 +12,43 @@
       </div>
     </div>
 
+    <!-- AC3: 検索・絞り込み・並び替え -->
+    <div class="filters">
+      <input v-model="q" class="input filter-input" placeholder="現場名・読み仮名・住所・元請けで検索" />
+      <select v-model="statusFilter" class="input filter-input">
+        <option value="all">状態（すべて）</option>
+        <option value="active">有効のみ</option>
+        <option value="inactive">無効のみ</option>
+      </select>
+      <select v-model="sortBy" class="input filter-input">
+        <option value="kana">並び替え：五十音</option>
+        <option value="recent">並び替え：直近日報が新しい順</option>
+      </select>
+      <span class="result-count">{{ filtered.length }} 件</span>
+    </div>
+
     <div class="table-wrap">
       <table class="table">
         <thead>
-          <tr><th v-if="mergeMode"></th><th>現場名</th><th>読み仮名</th><th>状態</th><th></th></tr>
+          <tr><th v-if="mergeMode"></th><th>現場名</th><th>住所</th><th>元請け</th><th class="num">日報(90日)</th><th>直近日報</th><th>状態</th><th></th></tr>
         </thead>
         <tbody>
-          <tr v-for="s in sites" :key="s.id" :class="{ inactive: !s.active }">
+          <tr v-for="s in filtered" :key="s.id" :class="{ inactive: !s.active }">
             <td v-if="mergeMode"><input type="checkbox" :value="s.id" v-model="mergePick" :disabled="!s.active" /></td>
-            <td class="name">{{ s.name }}</td>
-            <td class="kana">{{ s.name_kana || '—' }}</td>
+            <td class="name"><a class="name-link" @click="router.push(`/sites/${s.id}`)">{{ s.name }}</a><span v-if="s.name_kana" class="kana-sub">{{ s.name_kana }}</span></td>
+            <td class="loc">{{ s.location || '—' }}</td>
+            <td>{{ s.contractor_id ? contractorName(s.contractor_id) : '—' }}</td>
+            <td class="num">{{ siteStats[s.name]?.count || '—' }}</td>
+            <td>{{ siteStats[s.name]?.lastDate || '—' }}</td>
             <td><span class="status" :class="s.active ? 'active' : 'off'">{{ s.active ? '有効' : '無効' }}</span></td>
             <td class="actions">
+              <button class="btn-detail" @click="router.push(`/sites/${s.id}`)">詳細</button>
               <button class="btn-edit" @click="openEdit(s)">編集</button>
               <button class="btn-toggle" @click="toggleActive(s)">{{ s.active ? '無効化' : '有効化' }}</button>
               <button class="btn-rules" @click="router.push(`/site-rules?site_id=${s.id}`)">ルール・QR設定</button>
             </td>
           </tr>
+          <tr v-if="!filtered.length"><td :colspan="mergeMode ? 8 : 7" class="empty">該当する現場がありません</td></tr>
         </tbody>
       </table>
     </div>
@@ -217,10 +237,48 @@ async function load() {
   contractors.value = (cons ?? []) as { id: string; name: string }[]
   const { data: subs } = await supabase.from('subcontractors').select('id, name').eq('account_id', accountId).eq('active', true).order('name')
   subcontractors.value = (subs ?? []) as { id: string; name: string }[]
+  // AC1: 現場ごとの「直近日報日」「日報件数（直近90日）」を集計（daily_reports.sites JSON の現場名で突合）
+  const since = new Date(); since.setDate(since.getDate() - 90)
+  const sinceStr = since.toISOString().split('T')[0]
+  const { data: reps } = await supabase.from('daily_reports')
+    .select('date, sites').eq('account_id', accountId).gte('date', sinceStr)
+  const stats: Record<string, { count: number; lastDate: string }> = {}
+  for (const r of (reps ?? []) as any[]) {
+    for (const st of (r.sites ?? [])) {
+      const nm = (st?.siteName === '__other__' ? st?.customSiteName : st?.siteName)?.trim()
+      if (!nm) continue
+      const cur = stats[nm] ??= { count: 0, lastDate: '' }
+      cur.count++
+      if (r.date > cur.lastDate) cur.lastDate = r.date
+    }
+  }
+  siteStats.value = stats
 }
 onMounted(load)
 
+const siteStats = ref<Record<string, { count: number; lastDate: string }>>({})
 const contractorName = (id: string | null | undefined) => contractors.value.find((c) => c.id === id)?.name ?? '—'
+
+// AC3: 検索（名称/読み仮名/住所/元請け）・状態絞り込み・並び替え
+const q          = ref('')
+const statusFilter = ref<'all' | 'active' | 'inactive'>('all')
+const sortBy     = ref<'kana' | 'recent'>('kana')
+const filtered = computed(() => {
+  const kw = q.value.trim().toLowerCase()
+  let list = sites.value.filter((s) => {
+    if (statusFilter.value === 'active' && !s.active) return false
+    if (statusFilter.value === 'inactive' && s.active) return false
+    if (!kw) return true
+    const hay = [s.name, s.name_kana, s.location, contractorName(s.contractor_id)].filter(Boolean).join(' ').toLowerCase()
+    return hay.includes(kw)
+  })
+  if (sortBy.value === 'recent') {
+    list = [...list].sort((a, b) => (siteStats.value[b.name]?.lastDate ?? '').localeCompare(siteStats.value[a.name]?.lastDate ?? ''))
+  } else {
+    list = [...list].sort((a, b) => (a.name_kana ?? a.name).localeCompare(b.name_kana ?? b.name, 'ja'))
+  }
+  return list
+})
 
 function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, linkedSubs: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = '' }
 async function openEdit(s: Site) {
@@ -348,6 +406,14 @@ async function doMerge() {
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
 .page-title { font-size: 22px; font-weight: 700; }
 .btn-add { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.filters { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.filter-input { max-width: 280px; }
+.result-count { color: #888; font-size: 13px; margin-left: auto; }
+.kana-sub { color: #aaa; font-size: 11px; margin-left: 8px; font-weight: 400; }
+.name-link { color: #06A050; cursor: pointer; text-decoration: none; }
+.name-link:hover { text-decoration: underline; }
+.btn-detail { background: #e8f9ef; color: #06A050; font-weight: 700; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+.loc { color: #555; font-size: 13px; }
 .table-wrap { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
 .table { width: 100%; border-collapse: collapse; }
 .table th { background: #f9f9f9; padding: 12px 16px; text-align: left; font-size: 12px; color: #888; font-weight: 700; }

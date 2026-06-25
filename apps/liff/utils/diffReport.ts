@@ -133,11 +133,12 @@ function pushExpenseDiffs(lines: string[], o: any, n: any): void {
   const nTrain = listSummary(n.trains, (t: any) => t.yen ? gt('diff.labeledYen', { label: t.label || gt('diff.trainLabel'), amount: Number(t.yen).toLocaleString() }) : '')
   if (oTrain !== nTrain) lines.push(gt('diff.train', { from: oTrain || gt('diff.none'), to: nTrain || gt('diff.none') }))
 
-  // ホテル
-  diffYen(lines, gt('diff.labelHotel'), o.hotelYen, n.hotelYen)
-
-  // レオパレス
-  diffYen(lines, gt('diff.labelLeopalace'), o.leopalaceYen, n.leopalaceYen)
+  // 宿泊費（新形式 hotels[] 合計、無ければ旧スカラー hotel+leopalace ＝二重計上を防ぐ後方互換）
+  const hotelTotal = (e: any) => {
+    const s = (e.hotels || []).reduce((a: number, h: any) => a + (Number(h.yen) || 0), 0)
+    return s > 0 ? s : (e.hotelYen || 0) + (e.leopalaceYen || 0)
+  }
+  diffYen(lines, gt('diff.labelHotel'), hotelTotal(o), hotelTotal(n))
 
   // ゴミ
   const oGarb = garbSummary(o)

@@ -120,7 +120,7 @@
               <div v-if="selected.users?.workers?.unit_price" class="labor-cost">
                 人件費
                 <span class="labor-cost-amount">
-                  ¥{{ site.workers.reduce((sum: number, w: any) => sum + (w.startTime && w.endTime ? calcLaborCost(w, selected.date, selected.users.workers.unit_price) : 0), 0).toLocaleString() }}
+                  ¥{{ site.workers.reduce((sum: number, w: any) => sum + (w.startTime && w.endTime ? calcLaborCost(w, selected.date, selected.users.workers.unit_price, selected.users.workers.wage_type || 'daily') : 0), 0).toLocaleString() }}
                 </span>
               </div>
               <!-- 出張費（別費目・人件費とは別表示／主たる現場に1回） -->
@@ -176,22 +176,38 @@
               <div v-if="site.expenses?.trainUrls?.length" class="receipt-urls">
                 <a v-for="(url, ui) in site.expenses.trainUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 電車領収書{{ site.expenses.trainUrls.length > 1 ? ui + 1 : '' }}</a>
               </div>
-              <div v-if="site.expenses?.hotelYen" class="expense-row">
-                <span class="exp-cat">宿泊</span>
-                <span>{{ site.expenses.hotelName }}</span>
-                <span class="muted">¥{{ site.expenses.hotelYen.toLocaleString() }}</span>
-              </div>
-              <div v-if="site.expenses?.hotelUrls?.length" class="receipt-urls">
-                <a v-for="(url, ui) in site.expenses.hotelUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 宿泊領収書{{ site.expenses.hotelUrls.length > 1 ? ui + 1 : '' }}</a>
-              </div>
-              <div v-if="site.expenses?.leopalaceYen" class="expense-row">
-                <span class="exp-cat">宿泊</span>
-                <span>{{ site.expenses.leopalaceName }}</span>
-                <span class="muted">¥{{ site.expenses.leopalaceYen.toLocaleString() }}</span>
-              </div>
-              <div v-if="site.expenses?.leopalaceUrls?.length" class="receipt-urls">
-                <a v-for="(url, ui) in site.expenses.leopalaceUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 レオパレス領収書{{ site.expenses.leopalaceUrls.length > 1 ? ui + 1 : '' }}</a>
-              </div>
+              <!-- 宿泊費: 新形式 hotels[]（複数）。明細ごと領収書。 -->
+              <template v-if="site.expenses?.hotels?.some((h: any) => h.yen)">
+                <template v-for="(ho, hi) in site.expenses.hotels.filter((h: any) => h.yen)" :key="'h'+hi">
+                  <div class="expense-row">
+                    <span class="exp-cat">宿泊</span>
+                    <span>{{ ho.label }}</span>
+                    <span class="muted">¥{{ Number(ho.yen).toLocaleString() }}</span>
+                  </div>
+                  <div v-if="ho.fileUrls?.length" class="receipt-urls">
+                    <a v-for="(url, ui) in ho.fileUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 宿泊領収書{{ ho.fileUrls.length > 1 ? ui + 1 : '' }}</a>
+                  </div>
+                </template>
+              </template>
+              <!-- 旧スカラー（後方互換） -->
+              <template v-else>
+                <div v-if="site.expenses?.hotelYen" class="expense-row">
+                  <span class="exp-cat">宿泊</span>
+                  <span>{{ site.expenses.hotelName }}</span>
+                  <span class="muted">¥{{ site.expenses.hotelYen.toLocaleString() }}</span>
+                </div>
+                <div v-if="site.expenses?.hotelUrls?.length" class="receipt-urls">
+                  <a v-for="(url, ui) in site.expenses.hotelUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 宿泊領収書{{ site.expenses.hotelUrls.length > 1 ? ui + 1 : '' }}</a>
+                </div>
+                <div v-if="site.expenses?.leopalaceYen" class="expense-row">
+                  <span class="exp-cat">宿泊</span>
+                  <span>{{ site.expenses.leopalaceName }}</span>
+                  <span class="muted">¥{{ site.expenses.leopalaceYen.toLocaleString() }}</span>
+                </div>
+                <div v-if="site.expenses?.leopalaceUrls?.length" class="receipt-urls">
+                  <a v-for="(url, ui) in site.expenses.leopalaceUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 レオパレス領収書{{ site.expenses.leopalaceUrls.length > 1 ? ui + 1 : '' }}</a>
+                </div>
+              </template>
               <div v-for="(ot, oi) in site.expenses?.others?.filter((o: any) => o.yen)" :key="'o'+oi">
                 <div class="expense-row">
                   <span class="exp-cat">その他</span>
@@ -378,12 +394,12 @@ function siteTripYen(site: any): number {
   for (const w of (site.workers ?? [])) if (mains.has(w)) n++
   return n * BUSINESS_TRIP_ALLOWANCE
 }
-function calcLaborCost(w: any, date: string, unitPrice: number): number {
+function calcLaborCost(w: any, date: string, unitPrice: number, wageType: 'daily' | 'hourly' = 'daily'): number {
   const isSunday = new Date(date + 'T00:00:00').getDay() === 0
   const role = w.workerRole || 'site'
   const brk  = calcBreakMinutes(role, w.startTime, w.endTime)
   const h    = computeWorkerHours(w.startTime, w.endTime, brk, isSunday)
-  const rate = unitPrice / 8
+  const rate = wageType === 'hourly' ? unitPrice : unitPrice / 8
   return Math.round(rate * (
     h.hoursNormal        * 1.00 +
     h.hoursOT            * 1.25 +
@@ -426,6 +442,7 @@ function hasExpenses(exp: any): boolean {
   return !!(
     exp.vehicles?.some((v: any) => v.vehicleName) ||
     exp.trains?.some((t: any) => t.yen) ||
+    exp.hotels?.some((h: any) => h.yen) ||
     exp.hotelYen ||
     exp.leopalaceYen ||
     exp.others?.some((o: any) => o.yen) ||
@@ -449,7 +466,7 @@ async function load() {
 
   const { data } = await supabase
     .from('daily_reports')
-    .select('id, date, is_working, is_business_trip, leave_type, line_notified_at, sites, note, user_id, users(real_name, worker_id, workers(name, unit_price))')
+    .select('id, date, is_working, is_business_trip, leave_type, line_notified_at, sites, note, user_id, users(real_name, worker_id, workers(name, unit_price, wage_type))')
     .eq('account_id', accountId)
     .gte('date', dateFrom.value)
     .lte('date', dateTo.value)

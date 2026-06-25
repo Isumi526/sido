@@ -349,53 +349,32 @@
           <div v-if="siteUsage[si].expense === 'あり'" class="sub-section">
             <div class="sub-section-title">{{ $t('report.siteExpense') }}</div>
 
-            <!-- ホテル -->
+            <!-- 宿泊費（ホテル・レオパレス等／複数登録可） -->
             <Field :label="$t('report.hotel')">
               <select :value="siteUsage[si].hotel" class="select select--usage" @change="(e) => setUsage(si, 'hotel', (e.target as HTMLSelectElement).value)">
                 <option value="なし">{{ $t('report.optNone') }}</option>
                 <option value="あり">{{ $t('report.optYes') }}</option>
               </select>
               <template v-if="siteUsage[si].hotel === 'あり'">
-                <div class="mt6">
-                  <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
-                  <AttachedFilesBadge :files="site.expenses.hotelFiles" />
-                  <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'hotelFiles', e)" />
-                  <div v-if="site.expenses.hotelFiles?.length" class="photo-preview">
-                    <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-hotelFiles`" @click="analyzeReceipt(si, 'hotelFiles')">
-                      {{ receipt.loading.value === `${si}-hotelFiles` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
-                    </button>
+                <div v-for="(ho, hi) in (site.expenses.hotels ?? [])" :key="hi" class="lineitem-card mt6 hotel-item">
+                  <button v-if="(site.expenses.hotels?.length ?? 0) > 1" type="button" class="btn-remove-card" :aria-label="$t('report.removeHotel')" @click="report.removeHotel(si, hi)">✕</button>
+                  <div class="lineitems-row">
+                    <input v-model="ho.label" type="text" class="input" :placeholder="$t('report.facilityNameHotelPlaceholder')" @keydown.enter.prevent />
+                    <ExpenseField v-model="ho.yen" v-model:tategae="ho.tategae" with-tategae :label="$t('report.amount')" />
+                  </div>
+                  <input v-model="ho.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
+                  <div class="mt6">
+                    <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
+                    <AttachedFilesBadge :files="ho.files" :urls="ho.fileUrls" />
+                    <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleHotelFile(si, hi, e)" />
+                    <div v-if="ho.files?.length" class="photo-preview">
+                      <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-hotel-${hi}`" @click="analyzeReceipt(si, 'hotel', hi)">
+                        {{ receipt.loading.value === `${si}-hotel-${hi}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
+                      </button>
+                    </div>
                   </div>
                 </div>
-                <div class="hotel-row mt6">
-                  <input v-model="site.expenses.hotelName" type="text" class="input" :placeholder="$t('report.facilityNameHotelPlaceholder')" @keydown.enter.prevent />
-                  <ExpenseField v-model="site.expenses.hotelYen" v-model:tategae="site.expenses.hotelTategae" with-tategae :label="$t('report.amount')" />
-                </div>
-                <input v-model="site.expenses.hotelRegistration" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
-              </template>
-            </Field>
-
-            <!-- レオパレス等 -->
-            <Field :label="$t('report.leopalace')">
-              <select :value="siteUsage[si].leopalace" class="select select--usage" @change="(e) => setUsage(si, 'leopalace', (e.target as HTMLSelectElement).value)">
-                <option value="なし">{{ $t('report.optNone') }}</option>
-                <option value="あり">{{ $t('report.optYes') }}</option>
-              </select>
-              <template v-if="siteUsage[si].leopalace === 'あり'">
-                <div class="mt6">
-                  <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
-                  <AttachedFilesBadge :files="site.expenses.leopalaceFiles" />
-                  <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'leopalaceFiles', e)" />
-                  <div v-if="site.expenses.leopalaceFiles?.length" class="photo-preview">
-                    <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-leopalaceFiles`" @click="analyzeReceipt(si, 'leopalaceFiles')">
-                      {{ receipt.loading.value === `${si}-leopalaceFiles` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
-                    </button>
-                  </div>
-                </div>
-                <div class="hotel-row mt6">
-                  <input v-model="site.expenses.leopalaceName" type="text" class="input" :placeholder="$t('report.facilityNamePlaceholder')" @keydown.enter.prevent />
-                  <ExpenseField v-model="site.expenses.leopalaceYen" v-model:tategae="site.expenses.leopalaceTategae" with-tategae :label="$t('report.amount')" />
-                </div>
-                <input v-model="site.expenses.leopalaceRegistration" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
+                <button type="button" class="btn-ghost-sm" @click="report.addHotel(si)">{{ $t('report.addHotel') }}</button>
               </template>
             </Field>
 
@@ -739,8 +718,8 @@ function reconstructExpenseUsage(exp: any): UsageState {
     usage.vehicle = 'あり'
   }
   if ((exp.trains ?? []).some((t: any) => t.yen)) usage.train = 'あり'
-  if (exp.hotelYen)                                usage.hotel = 'あり'
-  if (exp.leopalaceYen)                            usage.leopalace = 'あり'
+  // 宿泊費: 新形式 hotels[] か旧スカラー(hotel/leopalace)のどちらかに金額があれば あり
+  if ((exp.hotels ?? []).some((h: any) => h.yen || h.label) || exp.hotelYen || exp.leopalaceYen) usage.hotel = 'あり'
   if (exp.garbageFactoryM3 || exp.garbageSiteM3)  usage.garbage = 'あり'
   if ((exp.others ?? []).some((o: any) => o.yen || o.label)) usage.other = 'あり'
   if (exp.entertainmentYen || (exp.entertainments ?? []).some((e: any) => e.yen || e.label)) usage.entertainment = 'あり'
@@ -812,6 +791,15 @@ async function loadEditData(date: string) {
         e.entertainments = [{ label: e.entertainmentLabel, yen: e.entertainmentYen, registrationNumber: e.entertainmentRegistration, tategae: e.entertainmentTategae, fileUrls: e.entertainmentUrls }]
         e.entertainmentLabel = undefined; e.entertainmentYen = undefined; e.entertainmentRegistration = undefined; e.entertainmentTategae = undefined; e.entertainmentFiles = undefined; e.entertainmentUrls = undefined
       }
+      // 旧スカラーの宿泊費(hotel/leopalace)を新形式 hotels[] へ移行＋スカラーをクリア（二重計上を防ぐ）
+      if (!(e.hotels ?? []).some((x: any) => x.yen) && (e.hotelYen || e.leopalaceYen)) {
+        const migrated: any[] = []
+        if (e.hotelYen)     migrated.push({ label: e.hotelName, yen: e.hotelYen, registrationNumber: e.hotelRegistration, tategae: e.hotelTategae, fileUrls: e.hotelUrls })
+        if (e.leopalaceYen) migrated.push({ label: e.leopalaceName, yen: e.leopalaceYen, registrationNumber: e.leopalaceRegistration, tategae: e.leopalaceTategae, fileUrls: e.leopalaceUrls })
+        e.hotels = migrated
+        e.hotelName = undefined; e.hotelYen = undefined; e.hotelRegistration = undefined; e.hotelTategae = undefined; e.hotelFiles = undefined; e.hotelUrls = undefined
+        e.leopalaceName = undefined; e.leopalaceYen = undefined; e.leopalaceRegistration = undefined; e.leopalaceTategae = undefined; e.leopalaceFiles = undefined; e.leopalaceUrls = undefined
+      }
     })
     siteUsage.value = report.form.value.sites.map((site: any) => {
       const usage = reconstructExpenseUsage(site.expenses)
@@ -847,13 +835,21 @@ function setUsage(si: number, key: keyof UsageState, value: string) {
     }
     return
   }
+  // 宿泊費を「あり」にしたら明細を1件用意（複数登録可・hotels[]）
+  if (key === 'hotel' && value === 'あり') {
+    if (!(exp.hotels?.length)) exp.hotels = [createLineItem()]
+    return
+  }
   if (value !== 'なし') return
   switch (key) {
     case 'train':
       exp.trains = [createTrain()]; exp.trainFiles = undefined
       break
     case 'hotel':
-      exp.hotelName = undefined; exp.hotelYen = undefined; exp.hotelRegistration = undefined; exp.hotelFiles = undefined
+      // 宿泊費なし → 新形式 hotels[] と旧スカラー(hotel/leopalace)を両方クリア
+      exp.hotels = [createLineItem()]
+      exp.hotelName = undefined; exp.hotelYen = undefined; exp.hotelRegistration = undefined; exp.hotelFiles = undefined; exp.hotelUrls = undefined
+      exp.leopalaceName = undefined; exp.leopalaceYen = undefined; exp.leopalaceRegistration = undefined; exp.leopalaceFiles = undefined; exp.leopalaceUrls = undefined
       break
     case 'leopalace':
       exp.leopalaceName = undefined; exp.leopalaceYen = undefined; exp.leopalaceRegistration = undefined; exp.leopalaceFiles = undefined
@@ -1051,7 +1047,7 @@ watch(() => report.submitted.value, (v) => {
 
 // フォームから「パス→File[]」マップを収集（IndexedDB保存用）
 const DRAFT_FORM_FILE_KEYS = ['vehicleFiles', 'hotelFiles', 'leopalaceFiles', 'otherFiles', 'entertainmentFiles', 'garbagePhotos']
-const DRAFT_PER_ITEM = ['parkings', 'highways', 'trains', 'others', 'entertainments']
+const DRAFT_PER_ITEM = ['parkings', 'highways', 'trains', 'others', 'entertainments', 'hotels']
 function collectDraftFiles(form: any): Record<string, File[]> {
   const map: Record<string, File[]> = {}
   ;(form?.sites ?? []).forEach((site: any, si: number) => {
@@ -1178,9 +1174,12 @@ const linePreview = computed(() => {
       if (t?.yen) expLines.push(`${t.label || '電車'} ¥${Number(t.yen).toLocaleString()}`)
     for (const o of (exp.others || []))
       if (o?.yen) expLines.push(`${o.label || 'その他'} ¥${Number(o.yen).toLocaleString()}`)
-    if (exp.hotelYen)
+    for (const ho of (exp.hotels || []))
+      if (ho?.yen) expLines.push(`${ho.label || 'ホテル'} ¥${Number(ho.yen).toLocaleString()}`)
+    const _hasHotelsArr = (exp.hotels || []).some((h: any) => h?.yen)
+    if (exp.hotelYen && !_hasHotelsArr)
       expLines.push(`${exp.hotelName || 'ホテル'} ¥${Number(exp.hotelYen).toLocaleString()}`)
-    if (exp.leopalaceYen)
+    if (exp.leopalaceYen && !_hasHotelsArr)
       expLines.push(`${exp.leopalaceName || 'レオパレス'} ¥${Number(exp.leopalaceYen).toLocaleString()}`)
     if (exp.garbageFactoryM3 || exp.garbageSiteM3) {
       const g: string[] = []
@@ -1496,10 +1495,17 @@ function handleEntertainmentFile(si: number, ei: number, event: Event) {
   if (ent) ent.files = Array.from(input.files)
 }
 
+function handleHotelFile(si: number, hi: number, event: Event) {
+  const input = event.target as HTMLInputElement
+  if (!input.files?.length) return
+  const ho = report.form.value.sites[si].expenses.hotels?.[hi]
+  if (ho) ho.files = Array.from(input.files)
+}
+
 /** 領収書 AI 解析 → フォームに自動入力 */
 async function analyzeReceipt(
   si: number,
-  field: 'hotelFiles' | 'leopalaceFiles' | 'other' | 'entertainment' | 'parking' | 'highway' | 'train',
+  field: 'hotelFiles' | 'leopalaceFiles' | 'hotel' | 'other' | 'entertainment' | 'parking' | 'highway' | 'train',
   otherIndex?: number,
 ) {
   const exp = report.form.value.sites[si].expenses
@@ -1511,6 +1517,7 @@ async function analyzeReceipt(
   else if (field === 'train') { file = exp.trains?.[otherIndex!]?.files?.[0]; key = `${si}-train-${otherIndex}` }
   else if (field === 'other') { file = exp.others?.[otherIndex!]?.files?.[0]; key = `${si}-other-${otherIndex}` }
   else if (field === 'entertainment') { file = exp.entertainments?.[otherIndex!]?.files?.[0]; key = `${si}-entertainment-${otherIndex}` }
+  else if (field === 'hotel') { file = exp.hotels?.[otherIndex!]?.files?.[0]; key = `${si}-hotel-${otherIndex}` }
   else {
     file = (report.form.value.sites[si].expenses[field] as File[] | undefined)?.[0]
     key = `${si}-${field}`
@@ -1554,6 +1561,15 @@ async function analyzeReceipt(
   }
   if (field === 'entertainment') {
     const item = exp.entertainments?.[otherIndex!]
+    if (item) {
+      if (result.label) item.label              = result.label
+      if (result.yen)   item.yen                = result.yen
+      item.registrationNumber = inv
+    }
+    return
+  }
+  if (field === 'hotel') {
+    const item = exp.hotels?.[otherIndex!]
     if (item) {
       if (result.label) item.label              = result.label
       if (result.yen)   item.yen                = result.yen
@@ -1615,15 +1631,10 @@ function fillTestData() {
     siteUsage.value[0].train = 'あり'
     site0.expenses.trains = [{ label: '名古屋→大阪', yen: 3000, tategae: true }]
     siteUsage.value[0].hotel = 'あり'
-    site0.expenses.hotelName = 'アパホテル名古屋'
-    site0.expenses.hotelYen  = 8000
-    site0.expenses.hotelTategae = false
-    site0.expenses.hotelRegistration = 'T1234567890123'
-    siteUsage.value[0].leopalace = 'あり'
-    site0.expenses.leopalaceName = 'レオパレス栄'
-    site0.expenses.leopalaceYen  = 50000
-    site0.expenses.leopalaceTategae = false
-    site0.expenses.leopalaceRegistration = 'T9876543210987'
+    site0.expenses.hotels = [
+      { label: 'アパホテル名古屋', yen: 8000,  tategae: false, registrationNumber: 'T1234567890123' },
+      { label: 'レオパレス栄',     yen: 50000, tategae: false, registrationNumber: 'T9876543210987' },
+    ]
     siteUsage.value[0].garbage = 'あり'
     site0.expenses.garbageFactoryM3 = 3
     site0.expenses.garbageSiteM3    = 5
@@ -1892,6 +1903,13 @@ html, body {
 .lineitem-card {
   border: 1px solid var(--border); border-radius: 8px;
   padding: 10px; background: var(--surface2); margin-bottom: 8px;
+}
+/* 宿泊先カード: 削除✕はカード右上（金額横ではなく「この宿泊先を削除」と分かる位置） */
+.hotel-item { position: relative; padding-top: 14px; }
+.hotel-item .btn-remove-card {
+  position: absolute; top: 6px; right: 6px; z-index: 1;
+  width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: #888; font-size: 14px; line-height: 1; cursor: pointer;
 }
 /* 車両ブロック内の駐車場代・高速代サブ項目 */
 .veh-subexpense { margin-top: 12px; }

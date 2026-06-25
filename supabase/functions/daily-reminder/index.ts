@@ -12,6 +12,7 @@
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { pushLineMessagesResult } from '../_shared/line.ts'
+import { authorizeReminderTrigger } from '../_shared/reminder-auth.ts'
 
 const LINE_TOKEN        = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? ''
 const SUPABASE_URL      = Deno.env.get('SUPABASE_URL') ?? ''
@@ -94,6 +95,14 @@ async function processAccount(
   if (!startDate) return { slug, result: 'service_start_date 未設定', unsubmitted: [] }
 
   if (startDate > yesterday) return { slug, result: '対象期間なし', unsubmitted: [] }
+
+  // べき等化: 同じ対象日に送信完了済みなら再送しない（dry-run除く・cron/手動の二重実行対策）
+  if (!dryRun) {
+    const { data: prior } = await supabase.from('reminder_logs')
+      .select('id').eq('account_id', accountId).eq('kind', 'daily').eq('target_date', yesterday)
+      .like('result', '送信完了%').limit(1)
+    if (prior && prior.length) return { slug, result: '既送信スキップ（重複防止）', unsubmitted: [] }
+  }
 
   const allDates: string[] = []
   let cursor = startDate
@@ -242,6 +251,9 @@ async function processAccount(
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders() })
 
+  // トリガー認可（cron=共有シークレット / admin手動=認証JWT）。第三者のURL直叩きを弾く。
+  if (!(await authorizeReminderTrigger(req, supabase))) return json({ error: 'unauthorized' }, 401)
+
   if (req.method === 'GET') {
     const { data: accounts } = await supabase.from('accounts').select('id, slug')
     const info = await Promise.all((accounts ?? []).map(async acc => {
@@ -301,6 +313,7 @@ Deno.serve(async (req) => {
         if (r.result.startsWith('スキップ（実行時間外')) return Promise.resolve()
         return supabase.from('reminder_logs').insert({
           account_id:        acc.id,
+          kind:              'daily',
           target_date:       yesterday,
           result:            r.result,
           unsubmitted_count: r.unsubmitted?.length ?? 0,

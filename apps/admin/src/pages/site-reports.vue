@@ -23,6 +23,23 @@
         </div>
       </div>
 
+      <!-- エクスポート -->
+      <div v-if="activeSite" class="export-bar">
+        <label class="export-range-lbl">期間
+          <select v-model="exportRange" class="export-range" data-testid="export-range">
+            <option value="month">当月（{{ yearMonth }}）</option>
+            <option value="range">年月範囲</option>
+            <option value="all">全期間</option>
+          </select>
+        </label>
+        <template v-if="exportRange === 'range'">
+          <input type="month" v-model="exportFromYM" class="export-ym" data-testid="export-from" />
+          <span>〜</span>
+          <input type="month" v-model="exportToYM" class="export-ym" data-testid="export-to" />
+        </template>
+        <button class="btn-export" :disabled="exporting" data-testid="export-site" @click="exportSite">{{ exporting ? 'エクスポート中…' : '⬇ エクスポート（CSV＋見積書PDF）' }}</button>
+      </div>
+
       <!-- 一覧テーブル -->
       <div v-if="activeSite" class="table-wrap">
         <table class="table">
@@ -130,7 +147,7 @@
                 <td class="num">{{ fmt(w.hoursNormal) }}</td>
                 <td class="num">{{ fmt(w.hoursOT) }}</td>
                 <td class="num">{{ fmt(w.hoursNight) }}</td>
-                <td class="num">{{ w.unitPrice ? yen(w.unitPrice) : '—' }}</td>
+                <td class="num">{{ w.unitPrice ? yen(w.unitPrice) + (w._wageType === 'hourly' ? '/h' : '/日') : '—' }}</td>
                 <td class="num">{{ w.laborCost ? yen(w.laborCost) : '—' }}</td>
               </tr>
             </tbody>
@@ -205,16 +222,27 @@
           <table class="inner-table">
             <thead><tr><th>種別</th><th>名称</th><th class="num">金額</th></tr></thead>
             <tbody>
-              <tr v-if="selected._exp?.hotelYen">
-                <td>ホテル</td>
-                <td>{{ selected._exp.hotelName || '—' }}</td>
-                <td class="num">{{ yen(selected._exp.hotelYen) }}</td>
-              </tr>
-              <tr v-if="selected._exp?.leopalaceYen">
-                <td>レオパレス</td>
-                <td>{{ selected._exp.leopalaceName || '—' }}</td>
-                <td class="num">{{ yen(selected._exp.leopalaceYen) }}</td>
-              </tr>
+              <!-- 新形式 hotels[]（複数） -->
+              <template v-if="(selected._exp?.hotels || []).some((h: any) => h.yen)">
+                <tr v-for="(h, hi) in (selected._exp.hotels || []).filter((x: any) => x.yen)" :key="hi">
+                  <td>宿泊</td>
+                  <td>{{ h.label || '—' }}</td>
+                  <td class="num">{{ yen(h.yen) }}</td>
+                </tr>
+              </template>
+              <!-- 旧スカラー（後方互換） -->
+              <template v-else>
+                <tr v-if="selected._exp?.hotelYen">
+                  <td>ホテル</td>
+                  <td>{{ selected._exp.hotelName || '—' }}</td>
+                  <td class="num">{{ yen(selected._exp.hotelYen) }}</td>
+                </tr>
+                <tr v-if="selected._exp?.leopalaceYen">
+                  <td>レオパレス</td>
+                  <td>{{ selected._exp.leopalaceName || '—' }}</td>
+                  <td class="num">{{ yen(selected._exp.leopalaceYen) }}</td>
+                </tr>
+              </template>
             </tbody>
           </table>
         </div>
@@ -292,7 +320,71 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, unitPriceForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
+import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, unitPriceForDate, wageTypeForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
+import JSZip from 'jszip'
+
+const exporting = ref(false)
+// エクスポート期間の選択（当月／年月範囲／全期間）
+const _nowYM = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` })()
+const exportRange  = ref<'month' | 'range' | 'all'>('month')
+const exportFromYM = ref(_nowYM)   // 'YYYY-MM'
+const exportToYM   = ref(_nowYM)
+function ymToFrom(ym: string) { return `${ym}-01` }
+function ymToTo(ym: string) {
+  const [y, m] = ym.split('-').map(Number)
+  const last = new Date(y, m, 0).getDate()   // 当月末日（m は1-12のまま=翌月0日）
+  return `${y}-${String(m).padStart(2, '0')}-${String(last).padStart(2, '0')}`
+}
+// 選択中の期間を {from, to, label} に解決（label はファイル名に使う）
+function exportPeriod(): { from: string; to: string; label: string } {
+  if (exportRange.value === 'all') return { from: '2000-01-01', to: '2999-12-31', label: '全期間' }
+  if (exportRange.value === 'range' && exportFromYM.value && exportToYM.value) {
+    const [a, b] = exportFromYM.value <= exportToYM.value
+      ? [exportFromYM.value, exportToYM.value] : [exportToYM.value, exportFromYM.value]
+    return { from: ymToFrom(a), to: ymToTo(b), label: `${a}〜${b}` }
+  }
+  return { from: dateFrom.value, to: dateTo.value, label: yearMonth.value }
+}
+// 現場別集計（当該現場の表・選択期間）＋ 紐づく見積書PDF を zip でエクスポート（見積書フォルダ内包）
+async function exportSite() {
+  const site = activeSite.value
+  if (!site) return
+  exporting.value = true
+  try {
+    const { from, to, label } = exportPeriod()
+    // 表示中の当月ならロード済みの siteMap を流用、それ以外は選択期間で再集計
+    const map = (exportRange.value === 'month') ? siteMap.value : await computeSiteMap(from, to)
+    const rows = (map[site] ?? []).filter((r: any) => !r._isInvoice)
+    const head = ['日付','作業員','商社','業者','社員','駐車場','燃料','高速','宿泊','接待費','ゴミ','交通費','ホーム','出張費','合計']
+    const csv = [head.join(',')].concat(rows.map((r: any) => [
+      r.date, '"' + String(r.workerSummary ?? '').replace(/"/g, '""') + '"',
+      r.shoshaCost||0, r.gyoshaCost||0, r.laborCost||0, r.parkingYen||0, r.fuelCost||0, r.highwayCost||0,
+      r.hotelCost||0, r.entertainCost||0, r.garbageCost||0, r.trainCost||0, r.homeCost||0, r.tripCost||0, r.total||0,
+    ].join(','))).join('\r\n')
+    const zip = new JSZip()
+    zip.file(`現場別集計_${site}_${label}.csv`, '﻿' + csv) // BOM付き=Excelで文字化けしない
+    // 紐づく見積書PDF（estimates.site_id）を「見積書」フォルダに内包（期間に依らず当該現場の全見積）
+    const accountId = await getAccountId()
+    const { data: siteRow } = await supabase.from('sites').select('id').eq('account_id', accountId).eq('name', site).maybeSingle()
+    if (siteRow?.id) {
+      const { data: ests } = await supabase.from('estimates')
+        .select('estimate_number, pdf_path').eq('site_id', siteRow.id).eq('is_deleted', false)
+      const folder = zip.folder('見積書')
+      for (const e of (ests ?? []) as any[]) {
+        if (!e.pdf_path) continue
+        try {
+          const url = supabase.storage.from('expense-receipts').getPublicUrl(e.pdf_path).data.publicUrl
+          const resp = await fetch(url); if (!resp.ok) continue
+          folder?.file(`${e.estimate_number || 'estimate'}.pdf`, await resp.blob())
+        } catch { /* 1件失敗しても続行 */ }
+      }
+    }
+    const blob = await zip.generateAsync({ type: 'blob' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob); a.download = `現場別集計_${site}_${label}.zip`
+    a.click(); URL.revokeObjectURL(a.href)
+  } finally { exporting.value = false }
+}
 
 const baseDate  = ref(new Date())
 const yearMonth = computed(() => `${baseDate.value.getFullYear()}年${baseDate.value.getMonth() + 1}月`)
@@ -339,7 +431,9 @@ function extractExpenseCols(exp: any) {
     highwayCost += v.highwayYen || 0
   }
 
-  const hotelCost      = (exp?.hotelYen || 0) + (exp?.leopalaceYen || 0)
+  // 宿泊費: 新形式 hotels[] があればその合計、無ければ旧スカラー(hotel/leopalace)＝二重計上を防ぐ後方互換
+  const hotelsSum      = (exp?.hotels || []).reduce((s: number, h: any) => s + (Number(h.yen) || 0), 0)
+  const hotelCost      = hotelsSum > 0 ? hotelsSum : (exp?.hotelYen || 0) + (exp?.leopalaceYen || 0)
   const entertainCost  = (exp?.entertainments ?? []).reduce((s: number, e: any) => s + (e.yen || 0), 0) || (exp?.entertainmentYen || 0)
   const garbageFactoryM3 = exp?.garbageFactoryM3 || 0
   const garbageSiteM3    = exp?.garbageSiteM3    || 0
@@ -350,15 +444,13 @@ function extractExpenseCols(exp: any) {
   return { parkingYen, fuelCost, highwayCost, hotelCost, entertainCost, garbageFactoryM3, garbageSiteM3, garbageCost, trainCost, homeCost }
 }
 
-async function load() {
-  loading.value = true
-
+async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<string, any[]>> {
   const accountId = await getAccountId()
   const [{ data: wm }, { data: sm }, { data: cfg }, { data: wh }] = await Promise.all([
-    supabase.from('workers').select('id, name, unit_price').eq('account_id', accountId),
+    supabase.from('workers').select('id, name, unit_price, wage_type').eq('account_id', accountId),
     supabase.from('subcontractors').select('name, category, unit_price').eq('account_id', accountId),
     supabase.from('settings').select('key, value').eq('account_id', accountId),
-    supabase.from('worker_wage_history').select('worker_id, effective_date, changed_at, old_unit_price, new_unit_price').eq('account_id', accountId),
+    supabase.from('worker_wage_history').select('worker_id, effective_date, changed_at, old_unit_price, new_unit_price, wage_type, old_wage_type').eq('account_id', accountId),
   ])
   const wageTimelines = buildWageTimelines((wh ?? []) as any[])  // 作業員ごとの昇給timeline（日付別単価解決用）
   // 設定値を上書き
@@ -376,8 +468,8 @@ async function load() {
       .from('subcontractor_invoice_items')
       .select('site_name, item_date, amount, tax_rate, description, subcontractor_invoices(vendor_name, subcontractors(category))')
       .eq('account_id', accountId)
-      .gte('item_date', dateFrom.value)
-      .lte('item_date', dateTo.value)
+      .gte('item_date', fromDate)
+      .lte('item_date', toDate)
     for (const r of (sii ?? []) as any[]) {
       const name = r.site_name
       if (!name) continue
@@ -401,6 +493,8 @@ async function load() {
 
   const priceById   = Object.fromEntries((wm ?? []).map((w: any) => [w.id,   w.unit_price]))
   const priceByName = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.unit_price]))
+  const wageTypeById   = Object.fromEntries((wm ?? []).map((w: any) => [w.id,   w.wage_type || 'daily']))
+  const wageTypeByName = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.wage_type || 'daily']))
   const idByName    = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.id]))  // 日報がworkerId空でも昇給timelineを引けるように
   const subMaster   = Object.fromEntries((sm ?? []).map((s: any) => [s.name, { category: s.category, unitPrice: s.unit_price ?? 0 }]))
 
@@ -409,8 +503,8 @@ async function load() {
     .select('id, date, is_working, is_business_trip, sites')
     .eq('account_id', accountId)
     .eq('is_working', true)
-    .gte('date', dateFrom.value)
-    .lte('date', dateTo.value)
+    .gte('date', fromDate)
+    .lte('date', toDate)
     .order('date', { ascending: true })
     .limit(5000) // 1ヶ月×全作業員で500件超→一部の日が溢れて欠落するため余裕を持たせる
 
@@ -452,10 +546,12 @@ async function load() {
       for (const w of (site.workers ?? []).filter((w: any) => w.workerName)) {
         const curPrice = priceById[w.workerId] ?? priceByName[w.workerName] ?? 0
         const wid = w.workerId || idByName[w.workerName]
-        // 日報の日付に有効だった単価で計算（昇給で過去の人件費が動かないように）
+        // 日報の日付に有効だった単価・賃金タイプで計算（昇給/タイプ切替で過去の人件費が動かないように）
         const unitPrice = unitPriceForDate(date, wid ? wageTimelines.get(wid) : undefined, curPrice)
         const breakdown = laborMap.get(w) ?? ZERO_BREAKDOWN
-        g.workers.push({ ...w, ...breakdown, role: w.workerRole ?? 'site', unitPrice, laborCost: laborCostForBreakdown(breakdown, unitPrice) })
+        const curWageType = (wageTypeById[w.workerId] ?? wageTypeByName[w.workerName] ?? 'daily') as 'daily' | 'hourly'
+        const wageType = wageTypeForDate(date, wid ? wageTimelines.get(wid) : undefined, curWageType)
+        g.workers.push({ ...w, ...breakdown, role: w.workerRole ?? 'site', unitPrice, _wageType: wageType, laborCost: laborCostForBreakdown(breakdown, unitPrice, wageType) })
         // 出張費は人件費(社員)に混ぜず、主たる現場の別費目として計上（原価視点・複数現場でも主現場に1回）
         if (tripSet?.has(w)) g.tripCost += BUSINESS_TRIP_ALLOWANCE
       }
@@ -523,6 +619,12 @@ async function load() {
   // 日付順ソート
   for (const rows of Object.values(map)) rows.sort((a, b) => a.date.localeCompare(b.date))
 
+  return map
+}
+
+async function load() {
+  loading.value = true
+  const map = await computeSiteMap(dateFrom.value, dateTo.value)
   siteMap.value = map
   const sorted = Object.keys(map).sort((a, b) => a.localeCompare(b, 'ja'))
   activeSite.value = sorted[0] ?? ''
@@ -542,6 +644,11 @@ watch(dateFrom, load)
 .empty { color: #888; padding: 60px; text-align: center; }
 
 .tabs-wrap { overflow-x: auto; margin-bottom: 16px; }
+.export-bar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin: 10px 0 0; flex-wrap: wrap; }
+.export-range-lbl { font-size: 12px; color: #555; display: flex; align-items: center; gap: 4px; }
+.export-range, .export-ym { border: 1px solid #ccc; border-radius: 6px; padding: 5px 8px; font-size: 13px; }
+.btn-export { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.btn-export:disabled { opacity: .5; cursor: default; }
 .tabs { display: flex; gap: 4px; border-bottom: 2px solid #e0e0e0; min-width: max-content; }
 .tab { background: none; border: none; border-bottom: 3px solid transparent; margin-bottom: -2px; padding: 10px 16px; font-size: 13px; font-weight: 600; color: #888; cursor: pointer; white-space: nowrap; transition: color .15s, border-color .15s; }
 .tab:hover { color: #333; }

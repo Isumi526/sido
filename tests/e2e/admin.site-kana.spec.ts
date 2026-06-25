@@ -43,7 +43,7 @@ test.describe('現場マスタ：読み仮名と50音順', () => {
     // 一覧に行が出て読み仮名セルに反映
     const row = page.locator('tr', { hasText: name })
     await expect(row).toBeVisible({ timeout: 10000 })
-    await expect(row.locator('.kana')).toHaveText(kana)
+    await expect(row.locator(".kana-sub")).toHaveText(kana)
 
     // DB反映
     await expect.poll(async () => {
@@ -54,7 +54,7 @@ test.describe('現場マスタ：読み仮名と50音順', () => {
     // 再読込後も保持
     await page.reload({ waitUntil: 'networkidle' })
     const row2 = page.locator('tr', { hasText: name })
-    await expect(row2.locator('.kana')).toHaveText(kana)
+    await expect(row2.locator(".kana-sub")).toHaveText(kana)
   })
 
   test('AC2: 読み仮名の50音順で並ぶ（名前順ではない）', async ({ page }) => {
