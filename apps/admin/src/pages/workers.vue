@@ -81,10 +81,11 @@
           <input v-model="wageReason" class="input" placeholder="例：定期昇給 / 資格取得" data-testid="wage-reason" />
         </div>
         <div v-if="modal.id && wageHistory.length" class="field">
-          <label>昇給履歴（発効日）</label>
+          <label>賃金変更履歴（発効日〜 で当時の賃金で計算）</label>
           <ul class="wage-hist" data-testid="wage-history">
             <li v-for="h in wageHistory" :key="h.id">
-              {{ (h.effective_date || (h.changed_at || '').slice(0, 10)) }}：{{ h.old_unit_price != null ? `¥${h.old_unit_price.toLocaleString()}` : '—' }} → ¥{{ (h.new_unit_price ?? 0).toLocaleString() }}<span v-if="h.reason" class="wage-reason"> （{{ h.reason }}）</span>
+              <b>{{ (h.effective_date || (h.changed_at || '').slice(0, 10)) }}〜</b> {{ wageTypeLabel(h.wage_type) }} ¥{{ (h.new_unit_price ?? 0).toLocaleString() }}{{ wageUnit(h.wage_type) }}
+              <span class="wage-from">（{{ wageTypeLabel(h.old_wage_type) }}{{ h.old_unit_price != null ? `¥${h.old_unit_price.toLocaleString()}` : '—' }} → {{ wageTypeLabel(h.wage_type) }}¥{{ (h.new_unit_price ?? 0).toLocaleString() }}）</span><span v-if="h.reason" class="wage-reason"> （{{ h.reason }}）</span>
             </li>
           </ul>
         </div>
@@ -243,7 +244,9 @@ const modal           = ref<Partial<Worker> | null>(null)
 const modalProxyIds   = ref<string[]>([])
 const saving          = ref(false)
 // 昇給履歴（単価変更ログ）
-type WageHist = { id: string; old_unit_price: number | null; new_unit_price: number; reason: string | null; changed_at: string; effective_date: string | null }
+type WageHist = { id: string; old_unit_price: number | null; new_unit_price: number; reason: string | null; changed_at: string; effective_date: string | null; wage_type: string | null; old_wage_type: string | null }
+function wageTypeLabel(t: string | null | undefined) { return t === 'hourly' ? '時給' : '日当' }
+function wageUnit(t: string | null | undefined) { return t === 'hourly' ? '/h' : '/日' }
 const wageHistory      = ref<WageHist[]>([])
 const wageReason       = ref('')
 const wageEffectiveDate = ref('')   // 昇給年月日（発効日）。この日以降の稼働は新単価で人件費計算される。
@@ -394,7 +397,7 @@ function openEdit(w: Worker) {
 
 async function loadWageHistory(workerId: string) {
   const { data } = await supabase.from('worker_wage_history')
-    .select('id, old_unit_price, new_unit_price, reason, changed_at, effective_date')
+    .select('id, old_unit_price, new_unit_price, reason, changed_at, effective_date, wage_type, old_wage_type')
     .eq('worker_id', workerId).order('effective_date', { ascending: false, nullsFirst: false }).order('changed_at', { ascending: false })
   wageHistory.value = (data ?? []) as WageHist[]
 }
@@ -555,6 +558,7 @@ async function toggleActive(w: Worker) {
 .emp-badge.contractor { background: #ecfdf5; color: #047857; }
 .wage-hist { list-style: none; margin: 0; padding: 8px 12px; background: #f9fafb; border: 1px solid #eee; border-radius: 8px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; max-height: 140px; overflow-y: auto; }
 .wage-hist .wage-reason { color: #888; }
+.wage-hist .wage-from { color: #aaa; font-size: 11px; }
 .hint-sm { font-size: 11px; color: #999; margin: 2px 0 0; }
 .family-row { display: grid; grid-template-columns: 1.2fr 1fr 1fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
 .checkup-row { display: grid; grid-template-columns: 1fr 1.6fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
