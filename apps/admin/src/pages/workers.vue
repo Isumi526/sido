@@ -380,6 +380,8 @@ function openEdit(w: Worker) {
   authPassword.value = ''
   authMsg.value = ''
   authOk.value = false
+  // 認証済みなら現在のログインメールを取得して email 欄に表示（編集時に確認できるように）
+  if (w.auth_user_id) loadAuthEmail(w.id)
   // 昇給履歴：変更前単価を控え、履歴を読み込む
   origUnitPrice.value = w.unit_price ?? null
   origWageType.value  = (w.wage_type ?? 'daily') as 'daily' | 'hourly'
@@ -400,6 +402,16 @@ async function loadWageHistory(workerId: string) {
     .select('id, old_unit_price, new_unit_price, reason, changed_at, effective_date, wage_type, old_wage_type')
     .eq('worker_id', workerId).order('effective_date', { ascending: false, nullsFirst: false }).order('changed_at', { ascending: false })
   wageHistory.value = (data ?? []) as WageHist[]
+}
+
+// 認証済み作業員の現在のログインメールを取得して email 欄に表示（mode='get'）
+async function loadAuthEmail(workerId: string) {
+  try {
+    const { data, error } = await supabase.functions.invoke('worker-auth-setup', { body: { worker_id: workerId, mode: 'get' } })
+    if (error || !data?.ok) return
+    // モーダルが別の作業員に切り替わっていたら反映しない
+    if (modal.value?.id === workerId && data.email) authEmail.value = data.email
+  } catch { /* 取得失敗時は空のまま（手入力可） */ }
 }
 
 // 作業員の email/password 認証を作成/更新（edge: worker-auth-setup・service_role）
