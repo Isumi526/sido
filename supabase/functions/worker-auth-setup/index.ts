@@ -88,6 +88,7 @@ Deno.serve(async (req) => {
   const app_metadata = { account_slug: acct.slug, worker_id: worker.id, role: 'worker' }
 
   let authUserId = (worker as { auth_user_id?: string | null }).auth_user_id ?? null
+  const oldAuthUserId = authUserId   // 再設定前の紐付け（後で不要になった旧authの掃除に使う）
 
   // ★メール起点で認証ユーザーを解決し直す（合流の解消＋再発防止）。
   //  Supabase Auth のメールはシステム全体で一意。worker.auth_user_id を「そのまま更新」すると、
@@ -138,8 +139,35 @@ Deno.serve(async (req) => {
   const { error: linkErr } = await svc.from('workers').update({ auth_user_id: authUserId }).eq('id', worker.id)
   if (linkErr) return json({ ok: false, error: 'link_failed', detail: linkErr.message }, 400)
 
+  // ★旧authの掃除：別メールへ移行して旧authが不要になった場合、旧メール/パスワードで
+  //   ログインできてしまわないよう、旧auth を削除する。安全条件：
+  //    - 同一account内に旧authを参照する他の作業員がいない（共有中なら残す＝再設定まで必要）
+  //    - 旧auth が本当にこのテナントのものである（別テナントのauthは絶対に消さない）
+  //   削除失敗は応答(old_auth_cleanup)で可視化する（握り潰さない＝旧資格が残る可能性を伝える）。
+  let oldAuthCleanup: 'removed' | 'kept_shared' | 'kept_foreign' | 'failed' | 'na' = 'na'
+  if (oldAuthUserId && oldAuthUserId !== authUserId) {
+    const { data: others } = await svc.from('workers')
+      .select('id').eq('account_id', worker.account_id).eq('auth_user_id', oldAuthUserId).neq('id', worker.id).limit(1)
+    if (others && others.length > 0) {
+      oldAuthCleanup = 'kept_shared'
+    } else {
+      // 旧authがこのテナント所有か確認してからのみ削除
+      let belongsHere = false
+      try {
+        const { data: ou } = await svc.auth.admin.getUserById(oldAuthUserId)
+        belongsHere = ((ou?.user?.app_metadata as Record<string, unknown> | undefined)?.account_slug) === acct.slug
+      } catch { belongsHere = false }
+      if (!belongsHere) {
+        oldAuthCleanup = 'kept_foreign'
+      } else {
+        try { await svc.auth.admin.deleteUser(oldAuthUserId); oldAuthCleanup = 'removed' }
+        catch (e) { oldAuthCleanup = 'failed'; console.warn('[worker-auth-setup] old auth delete failed:', e instanceof Error ? e.message : String(e)) }
+      }
+    }
+  }
+
   // password は返さない
-  return json({ ok: true, worker_id: worker.id, auth_user_id: authUserId, email })
+  return json({ ok: true, worker_id: worker.id, auth_user_id: authUserId, email, old_auth_cleanup: oldAuthCleanup })
 })
 
 // admin.listUsers をページングして email 一致を探す（getUserByEmail が無いため）
