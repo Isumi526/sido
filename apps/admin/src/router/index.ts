@@ -45,6 +45,7 @@ export const router = createRouter({
     { path: '/reports',      component: Reports },
     { path: '/site-reports', component: SiteReports },
     { path: '/expenses',     component: Expenses },
+    { path: '/gasoline-allocation', component: () => import('../pages/gasoline-allocation.vue') },
     { path: '/subcontractor-invoices', component: SubInvoices },
     { path: '/worker-reports', component: WorkerReports },
     { path: '/paid-leave',    component: PaidLeave },

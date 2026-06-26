@@ -110,5 +110,17 @@
   "analyzeSuccess": "解析成功！目視でも必ず確認してください",
   "errorNoLogin": "ログイン情報が取得できませんでした。再読み込みしてください。",
   "errorUpdateFailed": "更新に失敗しました",
-  "similarSiteWarn": "似た現場が既にあります（重複登録に注意）"
+  "similarSiteWarn": "似た現場が既にあります（重複登録に注意）",
+  "gasolineSection": "本日のガソリン代",
+  "gasolineSectionHint": "1回の給油で全現場ぶんをカバー。各現場へは走行距離の比率で自動配賦します。",
+  "gasolineCost": "ガソリン代（円・任意）",
+  "aiAnalyzeGas": "✨ 領収書から金額",
+  "uploading": "アップロード中…",
+  "gasolineFueledLabel": "本日の給油",
+  "gasolineFueledNo": "なし",
+  "gasolineFueledYes": "あり（給油した）",
+  "gasUploadFailed": "領収書のアップロードに失敗しました。",
+  "gasAnalyzeFailed": "領収書を読み取れませんでした。金額を手入力してください。",
+  "gasPayeePlaceholder": "支払い先（店名）",
+  "addGasoline": "＋ 給油を追加"
 }
