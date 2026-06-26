@@ -86,8 +86,10 @@ export const useLiff = () => {
       if (!liff.isLoggedIn()) {
         // LINE未ログイン（外部ブラウザの作業員等）→ LINEのログイン画面ではなく、
         // アプリの email/password ログインページ(/login)へ誘導する。
+        // ※ navigateTo はマウント前(init中)だとクライアント遷移が正しく走らず / のスプラッシュが
+        //   残ることがあるため、ハード遷移(location.replace)で /login を読み込み直す（確実に着地）。
         // ※ LINEアプリ内で開いた場合は isLoggedIn()=true のためここは通らず、従来どおりLINE経路。
-        await navigateTo('/login')
+        if (typeof window !== 'undefined') window.location.replace('/login')
         return
       }
 
