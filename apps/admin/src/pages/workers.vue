@@ -432,7 +432,10 @@ async function setupAuth() {
     // 重複メール等のガードは 200 + {ok:false, message} で返る。message を優先表示。
     if (!data?.ok) throw new Error(data?.message ?? data?.error ?? '認証設定に失敗しました')
     authOk.value = true
-    authMsg.value = '認証を設定しました'
+    // 旧authの削除に失敗した場合は、旧メール/パスワードがまだ有効な可能性を警告
+    authMsg.value = data.old_auth_cleanup === 'failed'
+      ? '認証を設定しました（※旧メール/パスワードの無効化に失敗。旧資格でログインできる可能性があります）'
+      : '認証を設定しました'
     authPassword.value = ''
     if (modal.value) modal.value.auth_user_id = data.auth_user_id
     await load()
