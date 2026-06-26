@@ -380,6 +380,8 @@ function openEdit(w: Worker) {
   authPassword.value = ''
   authMsg.value = ''
   authOk.value = false
+  // 認証済みなら現在のログインメールを取得して email 欄に表示（編集時に確認できるように）
+  if (w.auth_user_id) loadAuthEmail(w.id)
   // 昇給履歴：変更前単価を控え、履歴を読み込む
   origUnitPrice.value = w.unit_price ?? null
   origWageType.value  = (w.wage_type ?? 'daily') as 'daily' | 'hourly'
@@ -402,6 +404,16 @@ async function loadWageHistory(workerId: string) {
   wageHistory.value = (data ?? []) as WageHist[]
 }
 
+// 認証済み作業員の現在のログインメールを取得して email 欄に表示（mode='get'）
+async function loadAuthEmail(workerId: string) {
+  try {
+    const { data, error } = await supabase.functions.invoke('worker-auth-setup', { body: { worker_id: workerId, mode: 'get' } })
+    if (error || !data?.ok) return
+    // モーダルが別の作業員に切り替わっていたら反映しない
+    if (modal.value?.id === workerId && data.email) authEmail.value = data.email
+  } catch { /* 取得失敗時は空のまま（手入力可） */ }
+}
+
 // 作業員の email/password 認証を作成/更新（edge: worker-auth-setup・service_role）
 async function setupAuth() {
   if (!modal.value?.id) return
@@ -417,7 +429,8 @@ async function setupAuth() {
       body: { worker_id: modal.value.id, email: authEmail.value.trim(), password: authPassword.value },
     })
     if (error) throw error
-    if (!data?.ok) throw new Error(data?.error ?? '認証設定に失敗しました')
+    // 重複メール等のガードは 200 + {ok:false, message} で返る。message を優先表示。
+    if (!data?.ok) throw new Error(data?.message ?? data?.error ?? '認証設定に失敗しました')
     authOk.value = true
     authMsg.value = '認証を設定しました'
     authPassword.value = ''
