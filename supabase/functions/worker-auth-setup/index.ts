@@ -43,15 +43,20 @@ Deno.serve(async (req) => {
   if (!callerSlug) return json({ ok: false, error: 'caller_no_account_slug' }, 403)
 
   // --- 入力 ---
-  let worker_id = '', email = '', password = ''
+  //  mode: 'set'(既定=認証作成/更新) / 'get'(現在のログインメールを返すだけ・email/password不要)
+  let worker_id = '', email = '', password = '', mode = 'set'
   try {
     const b = await req.json()
     worker_id = (b.worker_id ?? '').toString().trim()
+    mode      = (b.mode ?? 'set').toString()
     email     = (b.email ?? '').toString().trim().toLowerCase()
     password  = (b.password ?? '').toString()
   } catch { return json({ ok: false, error: 'bad_json' }, 400) }
-  if (!worker_id || !email || !password) return json({ ok: false, error: 'worker_id_email_password_required' }, 400)
-  if (password.length < 8) return json({ ok: false, error: 'password_too_short' }, 400)
+  if (!worker_id) return json({ ok: false, error: 'worker_id_required' }, 400)
+  if (mode !== 'get') {
+    if (!email || !password) return json({ ok: false, error: 'worker_id_email_password_required' }, 400)
+    if (password.length < 8) return json({ ok: false, error: 'password_too_short' }, 400)
+  }
 
   const svc = createClient(SUPABASE_URL, SERVICE_KEY)
 
@@ -67,6 +72,18 @@ Deno.serve(async (req) => {
 
   // ★越境防止: 呼び出し元 admin の account と worker の account が一致しないと拒否
   if (acct.slug !== callerSlug) return json({ ok: false, error: 'forbidden_cross_account' }, 403)
+
+  // --- get モード：現在のログインメールを返すだけ（編集モーダルの表示用） ---
+  if (mode === 'get') {
+    let currentEmail: string | null = null
+    if (worker.auth_user_id) {
+      try {
+        const { data: u } = await svc.auth.admin.getUserById(worker.auth_user_id)
+        currentEmail = u?.user?.email ?? null
+      } catch { /* admin API 不可(ローカル等)は null のまま */ }
+    }
+    return json({ ok: true, worker_id: worker.id, email: currentEmail, has_auth: !!worker.auth_user_id })
+  }
 
   const app_metadata = { account_slug: acct.slug, worker_id: worker.id, role: 'worker' }
 
