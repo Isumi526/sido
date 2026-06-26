@@ -84,7 +84,10 @@ export const useLiff = () => {
       await liff.init({ liffId: config.public.liffId })
 
       if (!liff.isLoggedIn()) {
-        liff.login()
+        // LINE未ログイン（外部ブラウザの作業員等）→ LINEのログイン画面ではなく、
+        // アプリの email/password ログインページ(/login)へ誘導する。
+        // ※ LINEアプリ内で開いた場合は isLoggedIn()=true のためここは通らず、従来どおりLINE経路。
+        await navigateTo('/login')
         return
       }
 
