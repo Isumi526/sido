@@ -195,8 +195,9 @@
             <span v-if="modal.auth_user_id" class="auth-status set" data-testid="auth-status-set">認証設定済み</span>
             <span v-else class="auth-status unset">未設定</span>
           </label>
-          <input v-model="authEmail" class="input" type="email" placeholder="email（ログインID）" data-testid="auth-email" />
-          <input v-model="authPassword" class="input" type="password" placeholder="パスワード（8文字以上）" data-testid="auth-password" />
+          <!-- 管理者自身のログイン情報がオートフィルされないよう抑制（作業員の認証を設定する欄のため） -->
+          <input v-model="authEmail" class="input" type="text" inputmode="email" name="worker-login-id" autocomplete="off" placeholder="email（ログインID）" data-testid="auth-email" />
+          <input v-model="authPassword" class="input" type="password" name="worker-login-pass" autocomplete="new-password" placeholder="パスワード（8文字以上）" data-testid="auth-password" />
           <button class="btn-auth" :disabled="authSaving" data-testid="auth-setup-btn" @click="setupAuth">{{ authSaving ? '処理中...' : (modal.auth_user_id ? '認証を更新' : '認証を作成') }}</button>
           <p v-if="authMsg" :class="authOk ? 'auth-ok' : 'error'" data-testid="auth-msg">{{ authMsg }}</p>
         </div>
