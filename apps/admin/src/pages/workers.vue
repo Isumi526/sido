@@ -417,7 +417,8 @@ async function setupAuth() {
       body: { worker_id: modal.value.id, email: authEmail.value.trim(), password: authPassword.value },
     })
     if (error) throw error
-    if (!data?.ok) throw new Error(data?.error ?? '認証設定に失敗しました')
+    // 重複メール等のガードは 200 + {ok:false, message} で返る。message を優先表示。
+    if (!data?.ok) throw new Error(data?.message ?? data?.error ?? '認証設定に失敗しました')
     authOk.value = true
     authMsg.value = '認証を設定しました'
     authPassword.value = ''
