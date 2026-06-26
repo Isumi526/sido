@@ -60,6 +60,9 @@ async function submit() {
     }
     // 身元が変わるのでアカウントキャッシュを破棄（env由来の値が残らないように＝テナント分離）
     useAccount().resetAccount()
+    // ★前のユーザーの身元状態(initialized/profile/workerId)を破棄。これをしないと init() が
+    //   早期returnして前のユーザーのまま表示・解決されてしまう（別人の日報になる事故の防止）。
+    useLiff().reset()
     // セッション確立 → ホームへ。useLiff.init がセッションを検出し authenticated で動作。
     await navigateTo('/')
   } catch (e: unknown) {

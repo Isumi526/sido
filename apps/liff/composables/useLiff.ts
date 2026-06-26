@@ -120,9 +120,20 @@ export const useLiff = () => {
     }
   }
 
+  // 身元状態をまっさらに戻す（ログイン/ログアウト時に呼ぶ）。
+  //  これをしないと init() の「if (initialized) return」で前のユーザーの profile/workerId が残り、
+  //  別ユーザーで再ログインしても前のユーザーとして表示・解決されてしまう。
+  function reset() {
+    state.value = {
+      initialized: false, loggedIn: false, isTester: false,
+      profile: null, error: null, authMode: null, workerId: null,
+    }
+  }
+
   return {
     state: readonly(state),
     init,
+    reset,
     getIdToken,
     initialized: computed(() => state.value.initialized),
     profile:     computed(() => state.value.profile),
