@@ -132,13 +132,22 @@ function timingLabel(t: string) {
 async function load() {
   loading.value = true
 
-  const [{ data: site }, { data: ruleData }] = await Promise.all([
-    supabase.from('sites').select('name').eq('id', siteId).single(),
-    supabase.from('site_rules').select('id, content, timing, sort_order')
-      .eq('site_id', siteId).order('sort_order'),
-  ])
+  // マルチテナント: URL の site_id が自テナントの現場か所有権を検証してから読む（他テナント現場の閲覧/改変を防ぐ）
+  const accountId = await getAccountId()
+  const { data: site } = await supabase.from('sites')
+    .select('name').eq('account_id', accountId).eq('id', siteId).maybeSingle()
+  if (!site) {
+    // 自テナントの現場でない → ルールを読まずに現場一覧へ戻す
+    loading.value = false
+    router.replace('/sites')
+    return
+  }
 
-  siteName.value = site?.name ?? ''
+  const { data: ruleData } = await supabase.from('site_rules')
+    .select('id, content, timing, sort_order')
+    .eq('site_id', siteId).order('sort_order')
+
+  siteName.value = site.name ?? ''
   rules.value    = (ruleData ?? []) as Rule[]
   loading.value  = false
 }

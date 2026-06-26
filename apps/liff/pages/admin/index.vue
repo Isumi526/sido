@@ -311,14 +311,17 @@ const dashCategoryRows = computed(() => {
 
 onMounted(async () => {
   const supabase = useSupabase()
+  // マルチテナント: 自テナント(account)に必ず絞る（旧画面のクロステナント全件取得を閉鎖）
+  const accountId = await useAccount().getAccountId()
   const [usersRes, reportsRes, settingsRes] = await Promise.all([
-    supabase.from('users').select('*').order('created_at', { ascending: true }),
+    supabase.from('users').select('*').eq('account_id', accountId).order('created_at', { ascending: true }),
     supabase
       .from('daily_reports')
       .select('id, date, is_working, sites, note, created_at, user_id, users(real_name, worker_role)')
+      .eq('account_id', accountId)
       .order('date', { ascending: false })
       .limit(500),
-    supabase.from('settings').select('*').order('key'),
+    supabase.from('settings').select('*').eq('account_id', accountId).order('key'),
   ])
 
   if (usersRes.data)   users.value   = usersRes.data
@@ -334,10 +337,13 @@ async function saveSettings() {
   settingsSaving.value = true
   settingsSaved.value  = false
   const supabase = useSupabase()
+  // マルチテナント: 自テナントの設定だけ更新（key一致のみの全テナント上書きを防ぐ）
+  const accountId = await useAccount().getAccountId()
   for (const s of settings.value) {
     await supabase
       .from('settings')
       .update({ value: String(s.editValue), updated_at: new Date().toISOString() })
+      .eq('account_id', accountId)
       .eq('key', s.key)
     s.value = String(s.editValue)
   }
