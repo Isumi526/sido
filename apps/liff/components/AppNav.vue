@@ -194,6 +194,7 @@ async function logout() {
   proxy.clearProxy()
   try { await supabase.auth.signOut() } catch { /* セッション無し等は無視 */ }
   resetAccount()
+  useLiff().reset()   // 身元状態を破棄（次のユーザーが前のユーザーとして解決されるのを防ぐ）
   if (config.public.appEnv !== 'development') {
     try {
       const liff = (await import('@line/liff')).default
