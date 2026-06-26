@@ -158,6 +158,12 @@ async function loadMasters() {
 
 async function load() {
   loading.value = true
+  // マルチテナント: attendance_logs に account_id 列が無いため、自テナントの作業員集合で隔離する
+  const accountId = await getAccountId()
+  const { data: accWorkers } = await supabase.from('workers').select('id').eq('account_id', accountId)
+  const accWorkerIds = (accWorkers ?? []).map((w: any) => w.id)
+  if (accWorkerIds.length === 0) { logs.value = []; loading.value = false; return }
+
   let query = supabase
     .from('attendance_logs')
     .select(`
@@ -171,6 +177,7 @@ async function load() {
       workers!attendance_logs_worker_id_fkey(name),
       proxy:workers!attendance_logs_proxy_worker_id_fkey(name)
     `)
+    .in('worker_id', accWorkerIds)
     .order('checked_at', { ascending: false })
     .limit(LIMIT)
 
