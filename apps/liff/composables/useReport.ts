@@ -3,7 +3,7 @@
 //  日報フォームの状態管理と送信処理
 // ============================================================
 import { useI18n } from 'vue-i18n'
-import type { DailyReport, SiteReport, WorkerEntry, SubcontractorEntry, WorkerRole, VehicleExpense, LineItem, ExpenseFileLineItem, HighwayLineItem } from '~/types'
+import type { DailyReport, SiteReport, WorkerEntry, SubcontractorEntry, WorkerRole, VehicleExpense, LineItem, ExpenseFileLineItem, HighwayLineItem, GasolineItem } from '~/types'
 import type { RateBreakdown } from '~/utils/workerHours'
 import { computeWorkerHours, calcBreakMinutes, parseMin } from '~/utils/workerHours'
 import { uploadExpenseFiles } from '~/utils/uploadExpenseFiles'
@@ -44,6 +44,9 @@ export const createVehicle = (): VehicleExpense => ({
   parkingTategae: false,
   highwayTategae: false,
 })
+
+let gasItemSeq = 0
+export const createGasolineItem = (): GasolineItem => ({ _id: ++gasItemSeq, payee: '', yen: undefined, registrationNumber: '', tategae: false, fileUrls: [] })
 
 export const createLineItem = (): LineItem => ({ label: '', yen: undefined, tategae: false })
 export const createParking = (): ExpenseFileLineItem => ({ yen: undefined, tategae: false, files: [] })
@@ -117,6 +120,7 @@ export const useReport = () => {
     isBusinessTrip: false,
     sites:     [createSite()],
     note:      '',
+    gasolineItems: [],
   })
 
   function addSite()            { form.value.sites.push(createSite()) }
@@ -142,6 +146,9 @@ export const useReport = () => {
   function removeEntertainment(si: number, ei: number) { form.value.sites[si].expenses.entertainments?.splice(ei, 1) }
   function addHotel(si: number)                        { (form.value.sites[si].expenses.hotels ??= []).push(createLineItem()) }
   function removeHotel(si: number, hi: number)         { form.value.sites[si].expenses.hotels?.splice(hi, 1) }
+  // 本日のガソリン代（日報レベル・複数給油対応）
+  function addGasolineItem()            { (form.value.gasolineItems ??= []).push(createGasolineItem()) }
+  function removeGasolineItem(gi: number) { form.value.gasolineItems?.splice(gi, 1) }
 
   function reset() {
     submitted.value = false
@@ -153,6 +160,7 @@ export const useReport = () => {
       isWorking: true,
       sites:     [createSite()],
       note:      '',
+      gasolineItems: [],
     }
   }
 
@@ -356,6 +364,7 @@ export const useReport = () => {
     addOther, removeOther,
     addEntertainment, removeEntertainment,
     addHotel, removeHotel,
+    addGasolineItem, removeGasolineItem,
     submit, reset,
   }
 }
