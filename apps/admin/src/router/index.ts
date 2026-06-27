@@ -28,6 +28,7 @@ import EstimateMasters from '../pages/estimate-masters.vue'
 import EstimateBuilder from '../pages/estimate-builder.vue'
 import PurchaseOrders  from '../pages/purchase-orders.vue'
 import Process         from '../pages/process.vue'
+import AiHelp          from '../pages/ai-help.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -57,6 +58,7 @@ export const router = createRouter({
     { path: '/reminder-history', component: ReminderHistory },
     { path: '/operation-logs',   component: OperationLogs },
     { path: '/non-submitters',   component: NonSubmitters },
+    { path: '/ai-help',          component: AiHelp },
     { path: '/estimates',        component: Estimates },
     { path: '/estimate-list',   component: EstimatesList },
     { path: '/estimate-masters', component: EstimateMasters },
