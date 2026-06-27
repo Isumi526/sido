@@ -222,7 +222,7 @@ async function load() {
   tasks.value = (data ?? []) as Task[]
   loading.value = false
 }
-onMounted(loadSites)
+onMounted(async () => { await loadSites(); siteId.value = '__all__'; await load() })
 
 function openAdd()  { modal.value = { name: '', assignee: '', start_date: null, end_date: null, progress: 0, site_id: isAll.value ? '' : siteId.value, work_type: null, contract_amount: null, site_manager: '', memo: '' }; saveError.value = '' }
 function openEdit(t: Task) { modal.value = { ...t }; saveError.value = '' }
