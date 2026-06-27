@@ -5,8 +5,23 @@
 //  - Gemini(GEMINI_REVIEW_API_KEY/MODEL流用)へ systemInstruction(アプリ仕様)＋会話履歴 を渡す。
 //  ※ ユーザー入力はそのまま回答用。チケット起票は別EF(ai-create-ticket)で管理者の明示操作のみ。
 // ============================================================
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
 const API_KEY = Deno.env.get('GEMINI_REVIEW_API_KEY') ?? ''
 const MODEL   = Deno.env.get('GEMINI_REVIEW_MODEL') ?? 'gemini-3.5-flash'
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
+const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+
+// in-code認可：有効なユーザーJWT（ログイン済み管理者セッション）必須。
+// CIが --no-verify-jwt でデプロイするため、anon鍵単体の匿名呼び出しをここで弾く（コスト悪用防止）。
+async function requireUser(req: Request): Promise<boolean> {
+  const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
+  if (!jwt || jwt === ANON_KEY) return false
+  try {
+    const { data, error } = await createClient(SUPABASE_URL, ANON_KEY).auth.getUser(jwt)
+    return !!data?.user && !error
+  } catch { return false }
+}
 
 const SYSTEM = `あなたは内装施工会社向け業務システム「sido」の操作ヘルプAIです。日本語で簡潔に、手順は箇条書きで答えてください。
 主な機能:
@@ -26,6 +41,7 @@ function json(b:unknown,s=200){return new Response(JSON.stringify(b),{status:s,h
 Deno.serve(async(req)=>{
   if(req.method==='OPTIONS')return new Response('ok',{headers:cors()})
   if(req.method!=='POST')return json({ok:false,error:'method'},405)
+  if(!(await requireUser(req)))return json({ok:false,error:'unauthorized'},401)
   if(!API_KEY)return json({ok:false,error:'ai_unconfigured'},503)
   let message='';let history:any[]=[]
   try{const b=await req.json();message=(b.message??'').toString().slice(0,2000);history=Array.isArray(b.history)?b.history.slice(-8):[]}catch{}
