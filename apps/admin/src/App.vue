@@ -24,6 +24,7 @@
         <li><RouterLink to="/reports" class="nav-link"><span class="material-symbols-rounded nav-icon">list_alt</span>日報一覧</RouterLink></li>
         <li><RouterLink to="/site-reports" class="nav-link"><span class="material-symbols-rounded nav-icon">bar_chart</span>現場別集計</RouterLink></li>
         <li><RouterLink to="/calendar" class="nav-link"><span class="material-symbols-rounded nav-icon">calendar_month</span>予定管理</RouterLink></li>
+        <li><RouterLink to="/process" class="nav-link"><span class="material-symbols-rounded nav-icon">view_timeline</span>工程管理</RouterLink></li>
 
         <li class="nav-section">勤怠</li>
         <li><RouterLink to="/worker-reports" class="nav-link"><span class="material-symbols-rounded nav-icon">badge</span>出面・勤怠</RouterLink></li>
@@ -49,6 +50,7 @@
         <li><RouterLink to="/estimate-masters" class="nav-link"><span class="material-symbols-rounded nav-icon">price_change</span>見積マスタ・単価表</RouterLink></li>
 
         <li class="nav-section">管理・設定</li>
+        <li><RouterLink to="/ai-help" class="nav-link"><span class="material-symbols-rounded nav-icon">support_agent</span>AIヘルプ</RouterLink></li>
         <li><RouterLink to="/non-submitters" class="nav-link"><span class="material-symbols-rounded nav-icon">person_off</span>未送信者リスト</RouterLink></li>
         <li><RouterLink to="/reminder-history" class="nav-link"><span class="material-symbols-rounded nav-icon">history</span>リマインド履歴</RouterLink></li>
         <li><RouterLink to="/operation-logs" class="nav-link"><span class="material-symbols-rounded nav-icon">receipt_long</span>操作ログ</RouterLink></li>
@@ -148,7 +150,7 @@ async function handleLogout() {
   transition: border-color .15s, color .15s;
 }
 .btn-logout:hover { border-color: #f87171; color: #f87171; }
-.content { margin-left: 200px; flex: 1; padding: 32px; min-height: 100vh; }
+.content { margin-left: 200px; flex: 1; min-width: 0; padding: 32px; min-height: 100vh; }
 
 .drawer-overlay { display: none; }
 
