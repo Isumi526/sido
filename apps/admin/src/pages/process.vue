@@ -93,8 +93,20 @@
         </label>
         <label class="fld"><span>工程名 <em>*</em></span><input v-model="modal.name" class="input" placeholder="例：内装ボード" /></label>
         <div class="grid2">
-          <label class="fld"><span>担当</span><input v-model="modal.assignee" class="input" placeholder="例：山田" /></label>
-          <label class="fld"><span>現場管理</span><input v-model="modal.site_manager" class="input" placeholder="例：佐藤" /></label>
+          <label class="fld"><span>担当</span>
+            <select v-model="modal.assignee" class="input">
+              <option :value="null">未設定</option>
+              <option v-if="modal.assignee && !workers.some(w => w.name === modal.assignee)" :value="modal.assignee">{{ modal.assignee }}（マスタ外）</option>
+              <option v-for="w in workers" :key="w.id" :value="w.name">{{ w.name }}</option>
+            </select>
+          </label>
+          <label class="fld"><span>現場管理</span>
+            <select v-model="modal.site_manager" class="input">
+              <option :value="null">未設定</option>
+              <option v-if="modal.site_manager && !workers.some(w => w.name === modal.site_manager)" :value="modal.site_manager">{{ modal.site_manager }}（マスタ外）</option>
+              <option v-for="w in workers" :key="w.id" :value="w.name">{{ w.name }}</option>
+            </select>
+          </label>
         </div>
         <div class="grid2">
           <label class="fld"><span>工事区分</span>
@@ -147,6 +159,7 @@ const LABEL_W = 240   // 左ラベル列の幅(px)
 const WD = ['日', '月', '火', '水', '木', '金', '土']
 
 const sites   = ref<{ id: string; name: string }[]>([])
+const workers = ref<{ id: string; name: string }[]>([])
 const siteId  = ref('')
 const tasks   = ref<Task[]>([])
 const loading = ref(false)
@@ -212,6 +225,12 @@ async function loadSites() {
   const { data } = await supabase.from('sites').select('id, name').eq('account_id', accountId).eq('active', true).order('name_kana', { nullsFirst: false }).order('name')
   sites.value = (data ?? []) as any[]
 }
+async function loadWorkers() {
+  const accountId = await getAccountId()
+  // 作業員マスタ（account絞り込み・有効のみ）— [[project_node_modules_workspaces]] 同様にaccount漏れ厳禁
+  const { data } = await supabase.from('workers').select('id, name').eq('account_id', accountId).eq('active', true).order('name')
+  workers.value = (data ?? []) as any[]
+}
 async function load() {
   if (!siteId.value) return
   loading.value = true
@@ -222,7 +241,7 @@ async function load() {
   tasks.value = (data ?? []) as Task[]
   loading.value = false
 }
-onMounted(async () => { await loadSites(); siteId.value = '__all__'; await load() })
+onMounted(async () => { await Promise.all([loadSites(), loadWorkers()]); siteId.value = '__all__'; await load() })
 
 function openAdd()  { modal.value = { name: '', assignee: '', start_date: null, end_date: null, progress: 0, site_id: isAll.value ? '' : siteId.value, work_type: null, contract_amount: null, site_manager: '', memo: '' }; saveError.value = '' }
 function openEdit(t: Task) { modal.value = { ...t }; saveError.value = '' }
@@ -274,8 +293,8 @@ async function remove(t: Task) {
 
 /* ヘッダー */
 .cal-head { position: sticky; top: 0; z-index: 3; }
-.cal-row { display: flex; }
-.cal-corner { width: var(--label-w); min-width: var(--label-w); position: sticky; left: 0; z-index: 4; background: #f4f6f8; border-bottom: 1px solid #e3e7ec; font-size: 12px; font-weight: 700; color: #555; display: flex; align-items: center; padding: 0 10px; }
+.cal-row { display: flex; width: max-content; }
+.cal-corner { width: var(--label-w); min-width: var(--label-w); position: sticky; left: 0; z-index: 6; background: #f4f6f8; border-bottom: 1px solid #e3e7ec; font-size: 12px; font-weight: 700; color: #555; display: flex; align-items: center; padding: 0 10px; }
 .cal-corner.sub { background: #f4f6f8; }
 .cal-months { display: flex; }
 .cal-month { box-sizing: border-box; border-left: 1px solid #d7dde4; border-bottom: 1px solid #e3e7ec; background: #eef1f5; font-size: 12px; font-weight: 700; color: #333; text-align: center; padding: 2px 0; }
@@ -286,13 +305,13 @@ async function remove(t: Task) {
 .cal-day.wd.sat { color: #1E88E5; }
 
 /* 現場見出し（横断） */
-.cal-site-row { display: flex; }
-.cal-site-header { width: var(--label-w); min-width: var(--label-w); position: sticky; left: 0; z-index: 2; background: #eafaf1; color: #06A050; font-size: 13px; font-weight: 700; padding: 6px 10px; border-bottom: 1px solid #d9efe2; }
+.cal-site-row { display: flex; width: max-content; }
+.cal-site-header { width: var(--label-w); min-width: var(--label-w); position: sticky; left: 0; z-index: 4; background: #eafaf1; color: #06A050; font-size: 13px; font-weight: 700; padding: 6px 10px; border-bottom: 1px solid #d9efe2; }
 .cal-site-fill { background: #eafaf1; border-bottom: 1px solid #d9efe2; }
 
 /* 行 */
-.g-row { display: flex; align-items: stretch; }
-.g-label { width: var(--label-w); min-width: var(--label-w); position: sticky; left: 0; z-index: 2; background: #fff; border-bottom: 1px solid #f0f0f0; padding: 6px 10px; }
+.g-row { display: flex; align-items: stretch; width: max-content; }
+.g-label { width: var(--label-w); min-width: var(--label-w); position: sticky; left: 0; z-index: 3; background: #fff; border-bottom: 1px solid #f0f0f0; padding: 6px 10px; }
 .g-name { font-size: 13px; font-weight: 700; color: #222; }
 .g-sub { font-size: 10px; color: #999; }
 .g-meta { font-size: 10px; color: #666; display: flex; gap: 8px; margin-top: 2px; }

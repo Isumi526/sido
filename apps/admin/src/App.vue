@@ -149,7 +149,7 @@ async function handleLogout() {
   transition: border-color .15s, color .15s;
 }
 .btn-logout:hover { border-color: #f87171; color: #f87171; }
-.content { margin-left: 200px; flex: 1; padding: 32px; min-height: 100vh; }
+.content { margin-left: 200px; flex: 1; min-width: 0; padding: 32px; min-height: 100vh; }
 
 .drawer-overlay { display: none; }
 
