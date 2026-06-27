@@ -4,9 +4,9 @@
       <h1 class="page-title">工程管理
         <HelpButton title="工程管理の使い方" :items="[
           '現場を選び、工程（タスク）を開始日・終了日・担当・進捗で登録します。',
-          'バーは各工程の期間、緑の塗りは進捗%を表します。',
+          'バーは各工程の期間、緑の塗りは進捗%を表します。横軸は年月日のカレンダーです。',
           '「＋ 工程を追加」から登録。各行の編集/削除で更新できます。',
-          '現場プルダウンで「全現場（横断ビュー）」を選ぶと、全現場の工程を同じ時間軸で並べて確認できます（エクセル工程表のような全体俯瞰）。',
+          '現場プルダウンで「全現場（横断ビュー）」を選ぶと、全現場の工程を同じカレンダー上に並べて確認できます。横断ビューでも追加でき、その場合は現場を選んで登録します。',
         ]" />
       </h1>
       <div class="header-actions">
@@ -15,32 +15,57 @@
           <option value="__all__">▤ 全現場（横断ビュー）</option>
           <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.name }}</option>
         </select>
-        <button class="btn-add" :disabled="!siteId || isAll" @click="openAdd">＋ 工程を追加</button>
+        <button class="btn-add" :disabled="!siteId" @click="openAdd">＋ 工程を追加</button>
       </div>
     </div>
 
     <div v-if="!siteId" class="empty">現場を選択してください。</div>
     <div v-else-if="loading" class="empty">読み込み中…</div>
-    <div v-else-if="!tasks.length" class="empty">{{ isAll ? 'まだ工程がありません。各現場で「＋ 工程を追加」から登録してください。' : 'この現場の工程はまだありません。「＋ 工程を追加」から登録してください。' }}</div>
+    <div v-else-if="!tasks.length" class="empty">{{ isAll ? 'まだ工程がありません。「＋ 工程を追加」から登録してください。' : 'この現場の工程はまだありません。「＋ 工程を追加」から登録してください。' }}</div>
     <div v-else class="gantt-wrap">
-      <div class="gantt-range">{{ rangeStart }} 〜 {{ rangeEnd }}<span v-if="isAll" class="all-note">（全現場を同じ時間軸で表示）</span></div>
-      <div v-for="g in groupedTasks" :key="g.siteId" class="g-group">
-        <div v-if="isAll" class="g-site-header">{{ g.siteName }}</div>
-        <div class="gantt">
+      <div class="cal" :style="{ '--day-w': DAY_W + 'px', '--label-w': LABEL_W + 'px' }">
+        <!-- カレンダー・ヘッダー（月／日／曜日） -->
+        <div class="cal-head">
+          <div class="cal-row">
+            <div class="cal-corner">工程</div>
+            <div class="cal-months" :style="{ width: trackWidth + 'px' }">
+              <div v-for="m in monthGroups" :key="m.ym" class="cal-month" :style="{ width: m.span * DAY_W + 'px' }">{{ m.label }}</div>
+            </div>
+          </div>
+          <div class="cal-row">
+            <div class="cal-corner sub"></div>
+            <div class="cal-days" :style="{ width: trackWidth + 'px' }">
+              <div v-for="d in axisDays" :key="d.key" class="cal-day" :class="{ weekend: d.weekend }">{{ d.dom }}</div>
+            </div>
+          </div>
+          <div class="cal-row">
+            <div class="cal-corner sub"></div>
+            <div class="cal-days" :style="{ width: trackWidth + 'px' }">
+              <div v-for="d in axisDays" :key="d.key" class="cal-day wd" :class="{ sun: d.wd === '日', sat: d.wd === '土' }">{{ d.wd }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 本体（現場ごとにグループ・横断時のみ見出し） -->
+        <div v-for="g in groupedTasks" :key="g.siteId" class="cal-group">
+          <div v-if="isAll" class="cal-site-row">
+            <div class="cal-site-header">{{ g.siteName }}</div>
+            <div class="cal-site-fill" :style="{ width: trackWidth + 'px' }"></div>
+          </div>
           <div v-for="t in g.tasks" :key="t.id" class="g-row">
             <div class="g-label">
               <div class="g-name">{{ t.name }}</div>
               <div class="g-sub">{{ t.assignee || '担当未設定' }} ・ {{ t.start_date || '—' }}〜{{ t.end_date || '—' }}</div>
+              <div class="g-rowactions">
+                <button class="btn-edit" @click="openEdit(t)">編集</button>
+                <button class="btn-ghost-sm danger" @click="remove(t)">削除</button>
+              </div>
             </div>
-            <div class="g-track">
+            <div class="g-track" :style="{ width: trackWidth + 'px' }">
               <div class="g-bar" :style="barStyle(t)">
                 <div class="g-fill" :style="{ width: (t.progress || 0) + '%' }" />
                 <span class="g-pct">{{ t.progress || 0 }}%</span>
               </div>
-            </div>
-            <div class="g-actions">
-              <button class="btn-edit" @click="openEdit(t)">編集</button>
-              <button class="btn-ghost-sm danger" @click="remove(t)">削除</button>
             </div>
           </div>
         </div>
@@ -51,6 +76,12 @@
     <div v-if="modal" class="modal-overlay" @click.self="modal = null">
       <div class="modal">
         <h2>{{ modal.id ? '工程を編集' : '工程を追加' }}</h2>
+        <label v-if="isAll" class="fld"><span>現場 <em>*</em></span>
+          <select v-model="modal.site_id" class="input">
+            <option :value="''" disabled>現場を選択</option>
+            <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.name }}</option>
+          </select>
+        </label>
         <label class="fld"><span>工程名 <em>*</em></span><input v-model="modal.name" class="input" placeholder="例：内装ボード" /></label>
         <label class="fld"><span>担当</span><input v-model="modal.assignee" class="input" placeholder="例：山田" /></label>
         <div class="grid2">
@@ -77,6 +108,12 @@ import { getAccountId } from '../lib/account'
 import HelpButton from '../components/HelpButton.vue'
 
 type Task = { id: string; site_id: string; name: string; assignee: string | null; start_date: string | null; end_date: string | null; progress: number; sort_order: number }
+type Day = { ym: string; label: string; dom: number; wd: string; weekend: boolean; key: string; ms: number }
+
+const DAY = 86400000
+const DAY_W = 28      // 1日の横幅(px)
+const LABEL_W = 240   // 左ラベル列の幅(px)
+const WD = ['日', '月', '火', '水', '木', '金', '土']
 
 const sites   = ref<{ id: string; name: string }[]>([])
 const siteId  = ref('')
@@ -86,13 +123,46 @@ const modal   = ref<Partial<Task> | null>(null)
 const saving  = ref(false)
 const saveError = ref('')
 
-const DAY = 86400000
 const isAll = computed(() => siteId.value === '__all__')
 const siteName = (id: string) => sites.value.find((s) => s.id === id)?.name ?? '—'
-const rangeStart = computed(() => tasks.value.reduce((m, t) => (t.start_date && (!m || t.start_date < m) ? t.start_date : m), '' as string))
-const rangeEnd   = computed(() => tasks.value.reduce((m, t) => (t.end_date && (!m || t.end_date > m) ? t.end_date : m), '' as string))
 
-// 単一現場は1グループ（見出し非表示）／全現場は現場ごとにグループ化（共通の時間軸で横断表示）
+function ymdMs(ymd: string) { const [y, m, d] = ymd.split('-').map(Number); return new Date(y, m - 1, d).getTime() }
+
+// カレンダー軸：全工程の最小開始〜最大終了を月初〜月末でカバー
+const axisDays = computed<Day[]>(() => {
+  const dates = tasks.value.flatMap((t) => [t.start_date, t.end_date]).filter(Boolean) as string[]
+  if (!dates.length) return []
+  const min = dates.reduce((a, b) => (a < b ? a : b))
+  const max = dates.reduce((a, b) => (a > b ? a : b))
+  const s = new Date(ymdMs(min)); s.setDate(1)
+  const e = new Date(ymdMs(max)); e.setMonth(e.getMonth() + 1, 0)
+  const out: Day[] = []
+  for (const d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
+    const wd = d.getDay()
+    out.push({ ym: `${d.getFullYear()}-${d.getMonth() + 1}`, label: `${d.getMonth() + 1}月`, dom: d.getDate(), wd: WD[wd], weekend: wd === 0 || wd === 6, key: `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`, ms: d.getTime() })
+  }
+  return out
+})
+const trackWidth = computed(() => axisDays.value.length * DAY_W)
+const axisStartMs = computed(() => (axisDays.value.length ? axisDays.value[0].ms : 0))
+const monthGroups = computed(() => {
+  const g: { ym: string; label: string; span: number }[] = []
+  for (const d of axisDays.value) {
+    const last = g[g.length - 1]
+    if (last && last.ym === d.ym) last.span++
+    else g.push({ ym: d.ym, label: d.label, span: 1 })
+  }
+  return g
+})
+
+function barStyle(t: Task) {
+  if (!t.start_date || !axisDays.value.length) return { display: 'none' }
+  const startIdx = Math.round((ymdMs(t.start_date) - axisStartMs.value) / DAY)
+  const endIdx = t.end_date ? Math.round((ymdMs(t.end_date) - axisStartMs.value) / DAY) : startIdx
+  return { left: startIdx * DAY_W + 'px', width: Math.max(DAY_W, (endIdx - startIdx + 1) * DAY_W) + 'px' }
+}
+
+// 単一現場は1グループ（見出し非表示）／全現場は現場ごとにグループ化（共通カレンダーで横断表示）
 const groupedTasks = computed(() => {
   if (!isAll.value) return tasks.value.length ? [{ siteId: siteId.value, siteName: '', tasks: tasks.value }] : []
   const m = new Map<string, Task[]>()
@@ -101,17 +171,6 @@ const groupedTasks = computed(() => {
     .map(([sid, ts]) => ({ siteId: sid, siteName: siteName(sid), tasks: ts }))
     .sort((a, b) => a.siteName.localeCompare(b.siteName, 'ja'))
 })
-
-function barStyle(t: Task) {
-  const s = rangeStart.value ? new Date(rangeStart.value).getTime() : 0
-  const e = rangeEnd.value ? new Date(rangeEnd.value).getTime() : 0
-  const span = Math.max(e - s, DAY)
-  const ts = t.start_date ? new Date(t.start_date).getTime() : s
-  const te = t.end_date ? new Date(t.end_date).getTime() : ts + DAY
-  const left = Math.max(0, ((ts - s) / span) * 100)
-  const width = Math.max(4, ((te - ts + DAY) / span) * 100)
-  return { left: left + '%', width: Math.min(width, 100 - left) + '%' }
-}
 
 async function loadSites() {
   const accountId = await getAccountId()
@@ -130,10 +189,11 @@ async function load() {
 }
 onMounted(loadSites)
 
-function openAdd()  { modal.value = { name: '', assignee: '', start_date: null, end_date: null, progress: 0 }; saveError.value = '' }
+function openAdd()  { modal.value = { name: '', assignee: '', start_date: null, end_date: null, progress: 0, site_id: isAll.value ? '' : siteId.value }; saveError.value = '' }
 function openEdit(t: Task) { modal.value = { ...t }; saveError.value = '' }
 
 async function save() {
+  if (isAll.value && !modal.value?.site_id) { saveError.value = '現場を選択してください'; return }
   if (!modal.value?.name?.trim()) { saveError.value = '工程名を入力してください'; return }
   if (modal.value.start_date && modal.value.end_date && modal.value.end_date < modal.value.start_date) { saveError.value = '終了日は開始日以降にしてください'; return }
   saving.value = true; saveError.value = ''
@@ -145,7 +205,7 @@ async function save() {
       progress: Math.max(0, Math.min(100, Number(modal.value.progress) || 0)), updated_at: new Date().toISOString(),
     }
     if (modal.value.id) await supabase.from('process_tasks').update(payload).eq('id', modal.value.id)
-    else await supabase.from('process_tasks').insert({ ...payload, account_id: accountId, site_id: siteId.value, sort_order: tasks.value.length })
+    else await supabase.from('process_tasks').insert({ ...payload, account_id: accountId, site_id: modal.value.site_id || siteId.value, sort_order: tasks.value.length })
     modal.value = null; await load()
   } catch (e: any) { saveError.value = e.message ?? '保存に失敗しました' }
   finally { saving.value = false }
@@ -166,24 +226,39 @@ async function remove(t: Task) {
 .btn-add:disabled { opacity: .5; }
 .empty { color: #888; padding: 50px; text-align: center; }
 
-.gantt-wrap { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
-.gantt-range { font-size: 12px; color: #888; margin-bottom: 12px; }
-.all-note { margin-left: 8px; color: #06A050; }
-.g-group { margin-bottom: 18px; }
-.g-group:last-child { margin-bottom: 0; }
-.g-site-header { font-size: 13px; font-weight: 700; color: #06A050; padding: 6px 0 8px; border-bottom: 1px solid #eee; margin-bottom: 8px; }
-.gantt { display: flex; flex-direction: column; gap: 8px; }
-.g-row { display: grid; grid-template-columns: 220px 1fr 120px; gap: 12px; align-items: center; }
-.g-label { min-width: 0; }
-.g-name { font-size: 14px; font-weight: 700; color: #222; }
-.g-sub { font-size: 11px; color: #999; }
-.g-track { position: relative; height: 26px; background: #f4f6f8; border-radius: 6px; }
-.g-bar { position: absolute; top: 3px; height: 20px; background: #cdd8f0; border-radius: 5px; overflow: hidden; min-width: 8px; }
+.gantt-wrap { background: #fff; border-radius: 12px; padding: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.cal { overflow-x: auto; }
+
+/* ヘッダー */
+.cal-head { position: sticky; top: 0; z-index: 3; }
+.cal-row { display: flex; }
+.cal-corner { width: var(--label-w); min-width: var(--label-w); position: sticky; left: 0; z-index: 4; background: #f4f6f8; border-bottom: 1px solid #e3e7ec; font-size: 12px; font-weight: 700; color: #555; display: flex; align-items: center; padding: 0 10px; }
+.cal-corner.sub { background: #f4f6f8; }
+.cal-months { display: flex; }
+.cal-month { box-sizing: border-box; border-left: 1px solid #d7dde4; border-bottom: 1px solid #e3e7ec; background: #eef1f5; font-size: 12px; font-weight: 700; color: #333; text-align: center; padding: 2px 0; }
+.cal-days { display: flex; }
+.cal-day { box-sizing: border-box; width: var(--day-w); min-width: var(--day-w); border-left: 1px solid #eef1f4; border-bottom: 1px solid #e3e7ec; font-size: 10px; color: #777; text-align: center; padding: 1px 0; }
+.cal-day.weekend { background: #fafafa; }
+.cal-day.wd.sun { color: #E53935; }
+.cal-day.wd.sat { color: #1E88E5; }
+
+/* 現場見出し（横断） */
+.cal-site-row { display: flex; }
+.cal-site-header { width: var(--label-w); min-width: var(--label-w); position: sticky; left: 0; z-index: 2; background: #eafaf1; color: #06A050; font-size: 13px; font-weight: 700; padding: 6px 10px; border-bottom: 1px solid #d9efe2; }
+.cal-site-fill { background: #eafaf1; border-bottom: 1px solid #d9efe2; }
+
+/* 行 */
+.g-row { display: flex; align-items: stretch; }
+.g-label { width: var(--label-w); min-width: var(--label-w); position: sticky; left: 0; z-index: 2; background: #fff; border-bottom: 1px solid #f0f0f0; padding: 6px 10px; }
+.g-name { font-size: 13px; font-weight: 700; color: #222; }
+.g-sub { font-size: 10px; color: #999; }
+.g-rowactions { display: flex; gap: 6px; margin-top: 4px; }
+.g-track { position: relative; border-bottom: 1px solid #f0f0f0; min-height: 34px; background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(var(--day-w) - 1px), #f2f4f6 calc(var(--day-w) - 1px), #f2f4f6 var(--day-w)); }
+.g-bar { position: absolute; top: 7px; height: 20px; background: #cdd8f0; border-radius: 5px; overflow: hidden; min-width: 8px; }
 .g-fill { position: absolute; left: 0; top: 0; height: 100%; background: #06C755; opacity: .7; }
 .g-pct { position: absolute; right: 6px; top: 2px; font-size: 11px; font-weight: 700; color: #333; z-index: 1; }
-.g-actions { display: flex; gap: 6px; justify-content: flex-end; }
-.btn-edit { background: #f0f0f0; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
-.btn-ghost-sm { background: none; border: 1px solid #e0e0e0; border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; color: #666; }
+.btn-edit { background: #f0f0f0; border: none; border-radius: 6px; padding: 4px 10px; font-size: 11px; cursor: pointer; }
+.btn-ghost-sm { background: none; border: 1px solid #e0e0e0; border-radius: 6px; padding: 4px 8px; font-size: 11px; cursor: pointer; color: #666; }
 .btn-ghost-sm.danger { color: #E53935; border-color: #f5c6c6; }
 
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
