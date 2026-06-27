@@ -1,7 +1,8 @@
 <template>
   <div class="app">
-    <ReportOnboarding />
+    <ReportOnboarding ref="onboardingRef" />
     <AppNav :subtitle="$t('report.subtitle')" :user-name="currentUser?.real_name" :user-role="currentUser?.worker_role" />
+    <button type="button" class="ob-replay" @click="onboardingRef?.open()">❓ {{ $t('onboarding.replay') }}</button>
 
     <main class="main">
       <!-- ローディング -->
@@ -585,6 +586,9 @@ import { useI18n } from 'vue-i18n'
 import type { User } from '~/types'
 
 const { t } = useI18n()
+
+// オンボーディングを手動で再表示するための参照（使い方ガイドボタン）
+const onboardingRef = ref<{ open: () => void } | null>(null)
 
 // 新規現場の手入力時、既存に似た現場があれば重複候補を返す（重複登録の気づき）
 function siteSimilar(name?: string): string[] {
@@ -1788,6 +1792,10 @@ function fillTestData() {
 <style>
 /* ── リセット＆変数 ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* 使い方ガイド再表示ボタン */
+.ob-replay { display: block; margin: 8px auto 0; background: #fff; border: 1px solid #d6dde2; color: #5a6b78; border-radius: 999px; padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.ob-replay:hover { background: #f4f7f9; }
 
 :root {
   --bg:       #EFEFEF;
