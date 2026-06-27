@@ -63,6 +63,9 @@
     <main class="content">
       <RouterView />
     </main>
+
+    <!-- どのページでも右下に常駐するAIヘルプ（ログイン中のみ・遷移で消えない） -->
+    <AiHelpWidget />
   </div>
 
   <!-- 未ログイン時はログイン画面のみ表示 -->
@@ -74,6 +77,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { currentUser, signOut } from './lib/auth'
 import { getAccountName } from './lib/account'
+import AiHelpWidget from './components/AiHelpWidget.vue'
 
 // ヘッダー: メイン=プロダクト名 GENLINKS 固定、サブ=会社名(account名・データ)
 const accountDisplayName = ref('')
