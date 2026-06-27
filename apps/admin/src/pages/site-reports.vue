@@ -1,7 +1,13 @@
 <template>
   <div>
     <div class="page-header">
-      <h1 class="page-title">現場別集計</h1>
+      <h1 class="page-title">現場別集計
+        <HelpButton title="現場別集計の使い方" :items="[
+          '現場ごとに日報の稼働（人工）と経費を集計して表示します。',
+          '上部の月ナビで対象月を切り替えられます。',
+          '行を開くと、日報単位の内訳（作業員・経費）を確認できます。',
+        ]" />
+      </h1>
       <div class="month-nav">
         <button class="btn-nav" @click="shiftMonth(-1)">‹</button>
         <span class="month-label">{{ yearMonth }}</span>
@@ -320,6 +326,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import HelpButton from '../components/HelpButton.vue'
 import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, unitPriceForDate, wageTypeForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
 import JSZip from 'jszip'
 

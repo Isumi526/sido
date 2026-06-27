@@ -1,7 +1,13 @@
 <template>
   <div>
     <div class="page-header">
-      <h1 class="page-title">協力業者請求</h1>
+      <h1 class="page-title">協力業者請求
+        <HelpButton title="協力業者請求の使い方" :items="[
+          '協力業者からの請求（支払）を登録・管理します。',
+          '「＋ 新規請求」から、業者・対象・金額を入力して登録します。',
+          '登録済みの請求は一覧から編集・確認できます。',
+        ]" />
+      </h1>
       <button class="btn-add" @click="openNew">＋ 新規請求</button>
     </div>
 
@@ -213,6 +219,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import HelpButton from '../components/HelpButton.vue'
 import { logOperation } from '../lib/operationLog'
 
 const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
