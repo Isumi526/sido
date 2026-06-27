@@ -49,4 +49,20 @@ test.describe('作業員マスタ拡張', () => {
     await page.locator('.btn-add').click()
     await expect(page.locator('[data-testid="labor-insurance-number"]')).toHaveCount(0)
   })
+
+  test('日報提出開始日を設定→保存→再編集で保持される', async ({ page }) => {
+    const startName = `E2E起点_${Date.now()}`
+    await page.goto('/workers', { waitUntil: 'networkidle' })
+    await page.locator('.btn-add').click()
+    await page.locator('input[placeholder="例：山田 太郎"]').fill(startName)
+    await page.locator('[data-testid="report-start-date"]').fill('2026-05-01')
+    await page.locator('.btn-save').click()
+
+    const row = page.locator('tr', { hasText: startName })
+    await expect(row).toBeVisible({ timeout: 10000 })
+    await row.locator('.btn-edit').click()
+    await expect(page.locator('[data-testid="report-start-date"]')).toHaveValue('2026-05-01')
+
+    await restSrv(`workers?name=eq.${encodeURIComponent(startName)}`, { method: 'DELETE' }).catch(() => {})
+  })
 })
