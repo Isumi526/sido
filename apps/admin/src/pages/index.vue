@@ -235,7 +235,7 @@ async function load() {
   const [{ data: reports }, { data: invItems }] = await Promise.all([
     supabase
       .from('daily_reports')
-      .select('date, sites, is_business_trip')
+      .select('date, sites, is_business_trip, gasoline_items')
       .eq('account_id', accountId)
       .eq('is_working', true)
       .gte('date', `${ym}-01`)
@@ -315,6 +315,9 @@ async function load() {
       const garbage = Math.round((exp.garbageFactoryM3 || 0) * GF_YEN + (exp.garbageSiteM3 || 0) * GS_YEN)
       addExp(expMap, 'ゴミ処分', garbage);               addDetail(details, 'ゴミ処分', date, siteName, garbage)
     }
+    // 日報レベルの「本日のガソリン代」（複数給油・現場に紐づかない実費・経費合計に計上）
+    const dayGas = ((rep as any).gasoline_items ?? []).reduce((s: number, g: any) => s + (Math.round(Number(g?.yen) || 0)), 0)
+    if (dayGas > 0) { addExp(expMap, 'ガソリン代', dayGas); addDetail(details, 'ガソリン代', date, '本日のガソリン代', dayGas) }
     // 出張費（別費目・人件費には含めない）: 出張日は作業員ごとに主たる現場へ¥3,000を1回
     if (tripSet) for (const w of tripSet) {
       addExp(expMap, '出張費', BUSINESS_TRIP_ALLOWANCE)

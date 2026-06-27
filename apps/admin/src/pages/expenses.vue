@@ -272,7 +272,7 @@ async function load() {
     supabase.from('settings').select('key, value').eq('account_id', accountId),
     supabase
       .from('daily_reports')
-      .select('date, sites, user_id, users(real_name, worker_id, workers(name))')
+      .select('date, sites, gasoline_items, user_id, users(real_name, worker_id, workers(name))')
       .eq('account_id', accountId)
       .eq('is_working', true)
       .gte('date', dateFrom.value)
@@ -308,6 +308,18 @@ async function load() {
       pr.total += row.amount
       if (row.tategae) pr.tategaeTotal += row.amount
       pr.details.push(row)
+    }
+    // 日報レベルの「本日のガソリン代」（複数給油）を立替明細として加算（按分は別・ここは作業員への精算分）
+    for (const g of (rep.gasoline_items ?? [])) {
+      const gasYen = Math.round(Number(g?.yen) || 0)
+      if (gasYen <= 0) continue
+      const pr = ensure(userId, workerName, `${ym}-${halfOf(rep.date)}`)
+      const isTat = !!g.tategae
+      const urls = Array.isArray(g.fileUrls) ? g.fileUrls : []
+      pr.count += 1
+      pr.total += gasYen
+      if (isTat) pr.tategaeTotal += gasYen
+      pr.details.push({ date: rep.date, category: 'ガソリン代（本日）', siteName: g.payee || '—', amount: gasYen, note: g.registrationNumber || '', fileUrls: urls, tategae: isTat })
     }
   }
 

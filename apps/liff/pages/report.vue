@@ -1,5 +1,6 @@
 <template>
   <div class="app">
+    <ReportOnboarding />
     <AppNav :subtitle="$t('report.subtitle')" :user-name="currentUser?.real_name" :user-role="currentUser?.worker_role" />
 
     <main class="main">
@@ -69,11 +70,45 @@
           <span>{{ $t('report.businessTrip') }}</span>
         </label>
 
+        <!-- 本日のガソリン代（日報レベル・現場に紐づかない実費。按分で各現場へ距離比配賦） -->
+        <FormSection num="03" :title="$t('report.gasolineSection')">
+          <!-- 給油有無（大半の日は給油なし。あり の時だけ金額・領収書を表示） -->
+          <label class="hours-label">{{ $t('report.gasolineFueledLabel') }}</label>
+          <select :value="gasFueled ? 'yes' : 'no'" class="select mt4" @change="setGasFueled(($event.target as HTMLSelectElement).value === 'yes')">
+            <option value="no">{{ $t('report.gasolineFueledNo') }}</option>
+            <option value="yes">{{ $t('report.gasolineFueledYes') }}</option>
+          </select>
+
+          <template v-if="gasFueled">
+            <!-- 給油1回ぶん＝1明細。複数給油はカードを追加 -->
+            <div v-for="(g, gi) in report.form.value.gasolineItems" :key="g._id ?? gi" class="lineitem-card mt8">
+              <!-- ① 領収書＋AI解析（手入力より上） -->
+              <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
+              <AttachedFilesBadge :files="gasFilesById[g._id ?? -1] ?? []" :urls="g.fileUrls" />
+              <input type="file" accept="image/*,.pdf" class="input mt4" @change="(e) => onGasItemFile(gi, e)" />
+              <p v-if="gasUploadingId === g._id" class="section-hint">{{ $t('report.uploading') }}</p>
+              <div v-if="(gasFilesById[g._id ?? -1]?.length) || g.fileUrls?.length" class="photo-preview">
+                <button type="button" class="btn-ai" :disabled="gasAnalyzingId === g._id || !(gasFilesById[g._id ?? -1]?.length)" @click="analyzeGasItem(gi)">
+                  {{ gasAnalyzingId === g._id ? $t('report.analyzing') : $t('report.aiAnalyzeGas') }}
+                </button>
+              </div>
+              <!-- ② 手入力（支払い先・金額・登録番号） -->
+              <div class="lineitems-row mt6">
+                <input v-model="g.payee" type="text" class="input" :placeholder="$t('report.gasPayeePlaceholder')" @keydown.enter.prevent />
+                <ExpenseField v-model="g.yen" v-model:tategae="g.tategae" with-tategae :label="$t('report.gasolineCost')" />
+                <button v-if="(report.form.value.gasolineItems?.length ?? 0) > 1" type="button" class="btn-icon-sm" @click="report.removeGasolineItem(gi)">✕</button>
+              </div>
+              <input v-model="g.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
+            </div>
+            <button type="button" class="btn-ghost-sm" @click="report.addGasolineItem()">{{ $t('report.addGasoline') }}</button>
+          </template>
+        </FormSection>
+
         <!-- 現場ブロック -->
         <FormSection
           v-for="(site, si) in report.form.value.sites"
           :key="si"
-          :num="String(si + 3).padStart(2, '0')"
+          :num="String(si + 4).padStart(2, '0')"
           :title="report.form.value.sites.length > 1 ? $t('report.siteNumbered', { n: si + 1 }) : $t('report.site')"
           accent
         >
@@ -265,11 +300,7 @@
                 <div class="veh-subexpense">
                   <label class="hours-label">{{ $t('report.parking') }}</label>
                   <div v-for="(pk, pi) in (site.expenses.parkings ?? [])" :key="pi" class="lineitem-card">
-                    <div class="lineitems-row">
-                      <ExpenseField v-model="pk.yen" v-model:tategae="pk.tategae" with-tategae :label="$t('report.amountYen')" />
-                      <button type="button" class="btn-icon-sm" @click="report.removeParking(si, pi)">✕</button>
-                    </div>
-                    <div class="mt6">
+                    <div>
                       <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
                       <AttachedFilesBadge :files="pk.files" :urls="pk.fileUrls" />
                       <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleParkingFile(si, pi, e)" />
@@ -279,6 +310,10 @@
                         </button>
                       </div>
                     </div>
+                    <div class="lineitems-row mt6">
+                      <ExpenseField v-model="pk.yen" v-model:tategae="pk.tategae" with-tategae :label="$t('report.amountYen')" />
+                      <button type="button" class="btn-icon-sm" @click="report.removeParking(si, pi)">✕</button>
+                    </div>
                   </div>
                   <button type="button" class="btn-ghost-sm" @click="report.addParking(si)">{{ $t('report.addParking') }}</button>
                 </div>
@@ -287,7 +322,17 @@
                 <div class="veh-subexpense">
                   <label class="hours-label">{{ $t('report.highway') }}</label>
                   <div v-for="(hw, hi) in (site.expenses.highways ?? [])" :key="hi" class="lineitem-card">
-                    <div class="lineitems-row">
+                    <div>
+                      <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
+                      <AttachedFilesBadge :files="hw.files" :urls="hw.fileUrls" />
+                      <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleHighwayFile(si, hi, e)" />
+                      <div v-if="hw.files?.length" class="photo-preview">
+                        <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-highway-${hi}`" @click="analyzeReceipt(si, 'highway', hi)">
+                          {{ receipt.loading.value === `${si}-highway-${hi}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
+                        </button>
+                      </div>
+                    </div>
+                    <div class="lineitems-row mt6">
                       <ExpenseField v-model="hw.yen" v-model:tategae="hw.tategae" with-tategae :label="$t('report.amountYen')" />
                       <button type="button" class="btn-icon-sm" @click="report.removeHighway(si, hi)">✕</button>
                     </div>
@@ -299,16 +344,6 @@
                           {{ $t('report.cardLabel', { mark: ['①','②','③','④','⑤','⑥','⑦'][n-1] }) }}
                         </option>
                       </select>
-                    </div>
-                    <div class="mt6">
-                      <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
-                      <AttachedFilesBadge :files="hw.files" :urls="hw.fileUrls" />
-                      <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleHighwayFile(si, hi, e)" />
-                      <div v-if="hw.files?.length" class="photo-preview">
-                        <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-highway-${hi}`" @click="analyzeReceipt(si, 'highway', hi)">
-                          {{ receipt.loading.value === `${si}-highway-${hi}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
-                        </button>
-                      </div>
                     </div>
                   </div>
                   <button type="button" class="btn-ghost-sm" @click="report.addHighway(si)">{{ $t('report.addHighway') }}</button>
@@ -324,12 +359,7 @@
               </select>
               <template v-if="siteUsage[si].train === 'あり'">
                 <div v-for="(tr, ti) in site.expenses.trains" :key="ti" class="lineitem-card">
-                  <div class="lineitems-row">
-                    <input v-model="tr.label" type="text" class="input" :placeholder="$t('report.trainRoutePlaceholder')" @keydown.enter.prevent />
-                    <ExpenseField v-model="tr.yen" v-model:tategae="tr.tategae" with-tategae :label="$t('report.amount')" />
-                    <button v-if="site.expenses.trains.length > 1" type="button" class="btn-icon-sm" @click="report.removeTrain(si, ti)">✕</button>
-                  </div>
-                  <div class="mt6">
+                  <div>
                     <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
                     <AttachedFilesBadge :files="tr.files" :urls="tr.fileUrls" />
                     <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleTrainFile(si, ti, e)" />
@@ -338,6 +368,11 @@
                         {{ receipt.loading.value === `${si}-train-${ti}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                       </button>
                     </div>
+                  </div>
+                  <div class="lineitems-row mt6">
+                    <input v-model="tr.label" type="text" class="input" :placeholder="$t('report.trainRoutePlaceholder')" @keydown.enter.prevent />
+                    <ExpenseField v-model="tr.yen" v-model:tategae="tr.tategae" with-tategae :label="$t('report.amount')" />
+                    <button v-if="site.expenses.trains.length > 1" type="button" class="btn-icon-sm" @click="report.removeTrain(si, ti)">✕</button>
                   </div>
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addTrain(si)">{{ $t('report.add') }}</button>
@@ -358,12 +393,7 @@
               <template v-if="siteUsage[si].hotel === 'あり'">
                 <div v-for="(ho, hi) in (site.expenses.hotels ?? [])" :key="hi" class="lineitem-card mt6 hotel-item">
                   <button v-if="(site.expenses.hotels?.length ?? 0) > 1" type="button" class="btn-remove-card" :aria-label="$t('report.removeHotel')" @click="report.removeHotel(si, hi)">✕</button>
-                  <div class="lineitems-row">
-                    <input v-model="ho.label" type="text" class="input" :placeholder="$t('report.facilityNameHotelPlaceholder')" @keydown.enter.prevent />
-                    <ExpenseField v-model="ho.yen" v-model:tategae="ho.tategae" with-tategae :label="$t('report.amount')" />
-                  </div>
-                  <input v-model="ho.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
-                  <div class="mt6">
+                  <div>
                     <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
                     <AttachedFilesBadge :files="ho.files" :urls="ho.fileUrls" />
                     <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleHotelFile(si, hi, e)" />
@@ -373,6 +403,11 @@
                       </button>
                     </div>
                   </div>
+                  <div class="lineitems-row mt6">
+                    <input v-model="ho.label" type="text" class="input" :placeholder="$t('report.facilityNameHotelPlaceholder')" @keydown.enter.prevent />
+                    <ExpenseField v-model="ho.yen" v-model:tategae="ho.tategae" with-tategae :label="$t('report.amount')" />
+                  </div>
+                  <input v-model="ho.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addHotel(si)">{{ $t('report.addHotel') }}</button>
               </template>
@@ -411,13 +446,7 @@
               </select>
               <template v-if="siteUsage[si].other === 'あり'">
                 <div v-for="(ot, oi) in site.expenses.others" :key="oi" class="lineitem-card mt6">
-                  <div class="lineitems-row">
-                    <input v-model="ot.label" type="text" class="input" :placeholder="$t('report.contentPlaceholder')" @keydown.enter.prevent />
-                    <ExpenseField v-model="ot.yen" v-model:tategae="ot.tategae" with-tategae :label="$t('report.amount')" />
-                    <button v-if="site.expenses.others.length > 1" type="button" class="btn-icon-sm" @click="report.removeOther(si, oi)">✕</button>
-                  </div>
-                  <input v-model="ot.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
-                  <div class="mt6">
+                  <div>
                     <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
                     <AttachedFilesBadge :files="ot.files" :urls="ot.fileUrls" />
                     <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleOtherFile(si, oi, e)" />
@@ -427,6 +456,12 @@
                       </button>
                     </div>
                   </div>
+                  <div class="lineitems-row mt6">
+                    <input v-model="ot.label" type="text" class="input" :placeholder="$t('report.contentPlaceholder')" @keydown.enter.prevent />
+                    <ExpenseField v-model="ot.yen" v-model:tategae="ot.tategae" with-tategae :label="$t('report.amount')" />
+                    <button v-if="site.expenses.others.length > 1" type="button" class="btn-icon-sm" @click="report.removeOther(si, oi)">✕</button>
+                  </div>
+                  <input v-model="ot.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addOther(si)">{{ $t('report.addOther') }}</button>
               </template>
@@ -440,13 +475,7 @@
               </select>
               <template v-if="siteUsage[si].entertainment === 'あり'">
                 <div v-for="(ent, ei) in (site.expenses.entertainments ?? [])" :key="ei" class="lineitem-card mt6">
-                  <div class="lineitems-row">
-                    <input v-model="ent.label" type="text" class="input" :placeholder="$t('report.contentPlaceholder')" @keydown.enter.prevent />
-                    <ExpenseField v-model="ent.yen" v-model:tategae="ent.tategae" with-tategae :label="$t('report.amount')" />
-                    <button v-if="(site.expenses.entertainments?.length ?? 0) > 1" type="button" class="btn-icon-sm" @click="report.removeEntertainment(si, ei)">✕</button>
-                  </div>
-                  <input v-model="ent.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
-                  <div class="mt6">
+                  <div>
                     <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
                     <AttachedFilesBadge :files="ent.files" :urls="ent.fileUrls" />
                     <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleEntertainmentFile(si, ei, e)" />
@@ -456,6 +485,12 @@
                       </button>
                     </div>
                   </div>
+                  <div class="lineitems-row mt6">
+                    <input v-model="ent.label" type="text" class="input" :placeholder="$t('report.contentPlaceholder')" @keydown.enter.prevent />
+                    <ExpenseField v-model="ent.yen" v-model:tategae="ent.tategae" with-tategae :label="$t('report.amount')" />
+                    <button v-if="(site.expenses.entertainments?.length ?? 0) > 1" type="button" class="btn-icon-sm" @click="report.removeEntertainment(si, ei)">✕</button>
+                  </div>
+                  <input v-model="ent.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addEntertainment(si)">{{ $t('report.addMiscExpense') }}</button>
               </template>
@@ -544,6 +579,8 @@ import { computeWorkerHours, getRateLines, calcBreakMinutes, parseMin, TIME_OPTI
 import type { RateBreakdown } from '~/utils/workerHours'
 import { computeDiff } from '~/utils/diffReport'
 import { findSimilarSiteNames } from '~/utils/siteSimilarity'
+import { uploadExpenseFiles } from '~/utils/uploadExpenseFiles'
+import { createGasolineItem } from '~/composables/useReport'
 import { useI18n } from 'vue-i18n'
 import type { User } from '~/types'
 
@@ -756,6 +793,12 @@ async function loadEditData(date: string) {
   isWorkingStr.value = saved.leave_type === 'paid_leave' ? 'paid_leave' : saved.is_working ? 'working' : 'off'
   report.form.value.isBusinessTrip = !!saved.is_business_trip
   report.form.value.note = saved.note ?? ''
+  // 日報レベルのガソリン代（複数給油）を復元（_id は createGasolineItem 由来で一意）
+  report.form.value.gasolineItems = (Array.isArray(saved.gasoline_items) ? saved.gasoline_items : []).map((g: any) => ({
+    ...createGasolineItem(), payee: g.payee ?? '', yen: g.yen != null ? Number(g.yen) : undefined,
+    registrationNumber: g.registrationNumber ?? '', tategae: !!g.tategae, fileUrls: Array.isArray(g.fileUrls) ? g.fileUrls : [],
+  }))
+  gasFueled.value = (report.form.value.gasolineItems?.length ?? 0) > 0
 
   if (saved.sites && saved.sites.length > 0) {
     report.form.value.sites = saved.sites.map((site: any) => ({
@@ -998,6 +1041,7 @@ onMounted(async () => {
       draftRestoring = true
       try {
         report.form.value = d.form
+        gasFueled.value = (report.form.value.gasolineItems?.length ?? 0) > 0   // 下書きにガソリン明細があれば「給油あり」を復元
         if (d.isWorkingStr) isWorkingStr.value = d.isWorkingStr as 'working' | 'paid_leave' | 'off'
         if (Array.isArray(d.siteUsage) && d.siteUsage.length) siteUsage.value = d.siteUsage
         // 画像（File[]）を IndexedDB から復元してフォームへ再注入
@@ -1265,6 +1309,7 @@ async function handleSubmit() {
           isBusinessTrip: isWorkingStr.value === 'working' ? !!report.form.value.isBusinessTrip : false,
           sites:      report.form.value.sites,
           note:       report.form.value.note,
+          gasolineItems:   isWorkingStr.value === 'working' ? (report.form.value.gasolineItems ?? []) : [],
         })
       } else {
         await expense.saveReport(uid, {
@@ -1274,6 +1319,7 @@ async function handleSubmit() {
           isBusinessTrip: isWorkingStr.value === 'working' ? !!report.form.value.isBusinessTrip : false,
           sites:      report.form.value.sites,
           note:       report.form.value.note,
+          gasolineItems:   isWorkingStr.value === 'working' ? (report.form.value.gasolineItems ?? []) : [],
         })
       }
 
@@ -1356,6 +1402,7 @@ async function handleSubmit() {
         isBusinessTrip: isWorkingStr.value === 'working' ? !!report.form.value.isBusinessTrip : false,
         sites:     report.form.value.sites,
         note:      report.form.value.note,
+        gasolineItems:   isWorkingStr.value === 'working' ? (report.form.value.gasolineItems ?? []) : [],
       })
     } catch (e: unknown) {
       const msg = String((e as any)?.message ?? e ?? 'Supabase保存エラー')
@@ -1383,6 +1430,7 @@ async function handleSubmit() {
       isBusinessTrip: isWorkingStr.value === 'working' ? !!report.form.value.isBusinessTrip : false,
       sites:     report.form.value.sites,
       note:      report.form.value.note,
+      gasolineItems:   isWorkingStr.value === 'working' ? (report.form.value.gasolineItems ?? []) : [],
     }).catch(e => console.error('[Report] URL再保存エラー:', e))
   }
 
@@ -1503,6 +1551,62 @@ function handleHotelFile(si: number, hi: number, event: Event) {
 }
 
 /** 領収書 AI 解析 → フォームに自動入力 */
+// ── 本日のガソリン代（日報レベル・複数給油）：給油有無トグル＋明細ごとの領収書アップロード＋AI解析 ──
+const gasFueled = ref(false)   // 本日 給油あり/なし。なし の時は明細を隠す
+const gasFilesById = ref<Record<number, File[]>>({})   // 明細(_id)ごとの選択File（AI/表示用・非永続）
+const gasUploadingId = ref<number | null>(null)
+const gasAnalyzingId = ref<number | null>(null)
+
+function setGasFueled(yes: boolean) {
+  gasFueled.value = yes
+  if (yes) {
+    // 「あり」にしたら明細が無ければ1件用意
+    if (!(report.form.value.gasolineItems?.length)) report.addGasolineItem()
+  } else {
+    // 「なし」に戻したら明細をクリア（誤集計防止）
+    report.form.value.gasolineItems = []
+    gasFilesById.value = {}
+  }
+}
+
+async function onGasItemFile(gi: number, e: Event) {
+  const item = report.form.value.gasolineItems?.[gi]
+  const f = (e.target as HTMLInputElement).files?.[0]
+  if (!item || !f) return
+  const id = item._id ?? -1
+  gasFilesById.value = { ...gasFilesById.value, [id]: [f] }
+  // 即アップロード → item.fileUrls に格納（送信時のアップロード配線に依存しない）
+  gasUploadingId.value = id
+  try {
+    const slug = await useAccount().effectiveSlug()
+    const date = report.form.value.date
+    const period = Number(date.slice(8, 10)) <= 15 ? 'first' : 'second'
+    const urls = await uploadExpenseFiles(useSupabase(), [f], date, currentUser.value?.real_name || 'worker', 'gasoline', `gasoline_${gi}`, slug, period)
+    item.fileUrls = urls
+  } catch (err) {
+    showReceiptToast('error', t('report.gasUploadFailed'))
+  } finally {
+    gasUploadingId.value = null
+  }
+  // AI解析は自動では走らせない（任意・「✨領収書から金額」ボタンで実行）。
+}
+
+async function analyzeGasItem(gi: number) {
+  const item = report.form.value.gasolineItems?.[gi]
+  if (!item) return
+  const id = item._id ?? -1
+  const f = gasFilesById.value[id]?.[0]
+  if (!f) return
+  gasAnalyzingId.value = id
+  const result = await receipt.analyze(f, `gasoline-${id}`)
+  gasAnalyzingId.value = null
+  if (!result || (!result.yen && !result.label && !result.invoiceNumber)) { showReceiptToast('error', t('report.gasAnalyzeFailed')); return }
+  if (result.yen) item.yen = result.yen
+  if (result.label) item.payee = result.label
+  if (result.invoiceNumber) item.registrationNumber = result.invoiceNumber
+  showReceiptToast('success', t('report.analyzeSuccess'))
+}
+
 async function analyzeReceipt(
   si: number,
   field: 'hotelFiles' | 'leopalaceFiles' | 'hotel' | 'other' | 'entertainment' | 'parking' | 'highway' | 'train',
