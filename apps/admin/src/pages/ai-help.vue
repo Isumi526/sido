@@ -70,8 +70,10 @@ async function callEF(fn: string, payload: any) {
   if (!EDGE_URL) return { ok: false, error: 'Edge Function URL未設定' }
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return { ok: false, error: '再ログインしてください' }
-  const res = await fetch(`${EDGE_URL}/${fn}`, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: ANON_KEY, Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify(payload) })
-  return await res.json().catch(() => ({ ok: false, error: `エラー (${res.status})` }))
+  try {
+    const res = await fetch(`${EDGE_URL}/${fn}`, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: ANON_KEY, Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify(payload) })
+    return await res.json().catch(() => ({ ok: false, error: `エラー (${res.status})` }))
+  } catch { return { ok: false, error: '接続できませんでした' } }
 }
 async function scrollDown() { await nextTick(); if (chatEl.value) chatEl.value.scrollTop = chatEl.value.scrollHeight }
 
@@ -99,7 +101,7 @@ async function submitBug() {
   const r = await callEF('ai-create-ticket', { title: bug.value.title.trim(), body: bug.value.body })
   bugBusy.value = false
   if (r?.ok) { lastTicketUrl.value = r.url ?? ''; bug.value = null }
-  else bugError.value = '起票に失敗しました: ' + (r?.error ?? '')
+  else bugError.value = '起票に失敗しました: ' + (r?.error || '時間をおいて再度お試しください。')
 }
 </script>
 
