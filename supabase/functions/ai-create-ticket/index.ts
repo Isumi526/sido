@@ -8,8 +8,22 @@
 //    案件紐付けは案件DBを共有後に別途付与する（本文に印を残す）。
 //  ※ 作成のみ（タイトル/本文を許可フィールドに限定）。安全のため status は常に『未整理』。
 // ============================================================
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
 const NOTION_TOKEN = Deno.env.get('NOTION_TOKEN') ?? ''
 const DS = Deno.env.get('BACKLOG_DATA_SOURCE') ?? 'a7f5a28f-22af-4bc1-a512-4d427a934f31'
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
+const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+
+// in-code認可：有効なユーザーJWT（ログイン済み）必須。CIが --no-verify-jwt のため anon単体を弾く（無認可起票/スパム防止）。
+async function requireUser(req: Request): Promise<boolean> {
+  const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
+  if (!jwt || jwt === ANON_KEY) return false
+  try {
+    const { data, error } = await createClient(SUPABASE_URL, ANON_KEY).auth.getUser(jwt)
+    return !!data?.user && !error
+  } catch { return false }
+}
 
 function cors(){return{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization, x-client-info, apikey, content-type','Access-Control-Allow-Methods':'POST, OPTIONS'}}
 function json(b:unknown,s=200){return new Response(JSON.stringify(b),{status:s,headers:{...cors(),'Content-Type':'application/json'}})}
@@ -17,6 +31,7 @@ function json(b:unknown,s=200){return new Response(JSON.stringify(b),{status:s,h
 Deno.serve(async(req)=>{
   if(req.method==='OPTIONS')return new Response('ok',{headers:cors()})
   if(req.method!=='POST')return json({ok:false,error:'method'},405)
+  if(!(await requireUser(req)))return json({ok:false,error:'unauthorized'},401)
   if(!NOTION_TOKEN)return json({ok:false,error:'notion_unconfigured'},503)
   let title='';let body=''
   try{const b=await req.json();title=(b.title??'').toString().slice(0,200);body=(b.body??'').toString().slice(0,4000)}catch{}
