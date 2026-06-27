@@ -1,0 +1,13 @@
+{
+  "skip": "Skip",
+  "next": "Next",
+  "start": "Get started",
+  "s1Title": "1. Pick the date",
+  "s1Body": "First choose the date for the report. For proxy entry, select the target person and date.",
+  "s2Title": "2. Work status & site",
+  "s2Body": "Choose your work status for the day and add the site(s) you worked at. Multiple sites are fine.",
+  "s3Title": "3. Enter expenses",
+  "s3Body": "Enter transport, lodging, fuel, etc. You can attach receipt photos and auto-fill with AI analysis.",
+  "s4Title": "4. Submit",
+  "s4Body": "Review and submit. Your input is auto-saved, so you can resume where you left off if you step away."
+}
