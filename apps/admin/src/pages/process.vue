@@ -10,10 +10,15 @@
         ]" />
       </h1>
       <div class="header-actions">
-        <select v-model="siteId" class="input" @change="load">
+        <select v-model="siteId" class="input site-select" @change="load">
           <option :value="''" disabled>現場を選択</option>
           <option value="__all__">▤ 全現場（横断ビュー）</option>
           <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.name }}</option>
+        </select>
+        <select v-model="sortMode" class="input" title="縦の並び順">
+          <option value="site">並び順: 現場別</option>
+          <option value="assignee">並び順: 担当（作業員）別</option>
+          <option value="start">並び順: 開始日順</option>
         </select>
         <button class="btn-add" :disabled="!siteId" @click="openAdd">＋ 工程を追加</button>
       </div>
@@ -51,11 +56,11 @@
         </div>
 
         <!-- 本体（現場ごとにグループ・横断時のみ見出し） -->
-        <div v-for="g in groupedTasks" :key="g.siteId" class="cal-group">
-          <div v-if="isAll" class="cal-site-row">
+        <div v-for="g in groupedTasks" :key="g.key" class="cal-group">
+          <div v-if="g.showHeader" class="cal-site-row">
             <div class="cal-site-header">
-              <span class="cal-site-name">{{ g.siteName }}</span>
-              <button class="btn-mini" @click="openSiteEditor(g.siteId)">工程を編集</button>
+              <span class="cal-site-name">{{ g.label }}</span>
+              <button v-if="sortMode === 'site'" class="btn-mini" @click="openSiteEditor(g.key)">工程を編集</button>
             </div>
             <div class="cal-site-fill" :style="{ width: trackWidth + 'px' }"></div>
           </div>
@@ -271,14 +276,31 @@ function memoStyle(t: Task) {
   return { left: s.display === 'none' ? '0px' : s.left }
 }
 
-// 単一現場は1グループ（見出し非表示）／全現場は現場ごとにグループ化（共通カレンダーで横断表示）
-const groupedTasks = computed(() => {
-  if (!isAll.value) return tasks.value.length ? [{ siteId: siteId.value, siteName: '', tasks: tasks.value }] : []
+// 縦の並び順: 現場別（既定）／担当(作業員)別／開始日順（フラット）
+const sortMode = ref<'site' | 'assignee' | 'start'>('site')
+const byStart = (a: Task, b: Task) => (a.start_date || '9999-99-99').localeCompare(b.start_date || '9999-99-99')
+
+type Group = { key: string; label: string; tasks: Task[]; showHeader: boolean }
+const groupedTasks = computed<Group[]>(() => {
+  const list = tasks.value
+  if (sortMode.value === 'start') {
+    const sorted = [...list].sort(byStart)
+    return sorted.length ? [{ key: '__flat__', label: '', tasks: sorted, showHeader: false }] : []
+  }
+  if (sortMode.value === 'assignee') {
+    const m = new Map<string, Task[]>()
+    for (const t of list) { const k = t.assignee || '（担当未設定）'; if (!m.has(k)) m.set(k, []); m.get(k)!.push(t) }
+    return [...m.entries()]
+      .map(([k, ts]) => ({ key: 'a:' + k, label: k, tasks: ts.sort(byStart), showHeader: true }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'ja'))
+  }
+  // 現場別
+  if (!isAll.value) return list.length ? [{ key: siteId.value, label: '', tasks: list, showHeader: false }] : []
   const m = new Map<string, Task[]>()
-  for (const t of tasks.value) { if (!m.has(t.site_id)) m.set(t.site_id, []); m.get(t.site_id)!.push(t) }
+  for (const t of list) { if (!m.has(t.site_id)) m.set(t.site_id, []); m.get(t.site_id)!.push(t) }
   return [...m.entries()]
-    .map(([sid, ts]) => ({ siteId: sid, siteName: siteName(sid), tasks: ts }))
-    .sort((a, b) => a.siteName.localeCompare(b.siteName, 'ja'))
+    .map(([sid, ts]) => ({ key: sid, label: siteName(sid), tasks: ts, showHeader: true }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'ja'))
 })
 
 async function loadSites() {

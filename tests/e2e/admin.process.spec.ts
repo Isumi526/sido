@@ -25,7 +25,7 @@ test.describe('工程管理', () => {
 
     await page.goto('/process', { waitUntil: 'networkidle' })
     await expect(page.locator('h1')).toContainText('工程管理')
-    await page.locator('.header-actions select').selectOption({ label: SITE })
+    await page.locator('.header-actions .site-select').selectOption({ label: SITE })
 
     // 一括エディタを開く
     await page.locator('.btn-add').click()
@@ -63,7 +63,7 @@ test.describe('工程管理', () => {
 
     // 再読込で保持
     await page.reload({ waitUntil: 'networkidle' })
-    await page.locator('.header-actions select').selectOption({ label: SITE })
+    await page.locator('.header-actions .site-select').selectOption({ label: SITE })
     await expect(page.locator('.g-row', { hasText: TASK })).toBeVisible()
     await expect(page.locator('.g-row', { hasText: TASK2 })).toBeVisible()
   })
