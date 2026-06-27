@@ -17,7 +17,8 @@ const SYSTEM = `あなたは内装施工会社向け業務システム「sido」
 - ガソリン按分: 月次実費を現場の走行距離比で実績配賦(見込み/実績/差異)。
 - 賃金: 作業員ごとに日当/時給を選択、発効日付きの賃金変更履歴で過去日報も正しく計算。
 - リマインド: 日報未送信や車検期限の通知。
-わからない事や不具合の疑いは「バグとして報告できます」と案内してください。`
+
+【バグ検知】ユーザーのメッセージが「操作の質問・使い方」ではなく「不具合・想定外の挙動・エラー・データがおかしい等の報告」だと判断したら isBug=true とし、bugTitle(短い要約・60字以内)と bugSummary(どの画面で/何をしたら/どうなったか・期待との差 を簡潔に)を埋めてください。単なる使い方の質問なら isBug=false で bugTitle/bugSummary は空。answer には常にユーザー向けの回答を入れ、isBug=true のときは末尾に「不具合の可能性があるのでバックログに記録できます」と添えてください。`
 
 function cors(){return{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization, x-client-info, apikey, content-type','Access-Control-Allow-Methods':'POST, OPTIONS'}}
 function json(b:unknown,s=200){return new Response(JSON.stringify(b),{status:s,headers:{...cors(),'Content-Type':'application/json'}})}
@@ -33,11 +34,13 @@ Deno.serve(async(req)=>{
   try{
     const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,{
       method:'POST',headers:{'x-goog-api-key':API_KEY,'Content-Type':'application/json'},
-      body:JSON.stringify({systemInstruction:{parts:[{text:SYSTEM}]},contents,generationConfig:{temperature:0.3}}),
+      body:JSON.stringify({systemInstruction:{parts:[{text:SYSTEM}]},contents,generationConfig:{temperature:0.3,responseMimeType:'application/json',responseSchema:{type:'object',properties:{answer:{type:'string'},isBug:{type:'boolean'},bugTitle:{type:'string'},bugSummary:{type:'string'}},required:['answer','isBug']}}}),
     })
     if(!res.ok){const t=await res.text();console.error('[ai-chat] gemini',res.status,t.slice(0,200));return json({ok:false,error:'ai_unavailable'},502)}
     const j=await res.json()
-    const answer=j?.candidates?.[0]?.content?.parts?.map((p:any)=>p.text).join('')??''
-    return json({ok:true,answer:answer||'うまく回答できませんでした。'})
+    const raw=j?.candidates?.[0]?.content?.parts?.map((p:any)=>p.text).join('')??''
+    let answer=raw,isBug=false,bugTitle='',bugSummary=''
+    try{const o=JSON.parse(raw);answer=(o.answer??'').toString();isBug=!!o.isBug;bugTitle=(o.bugTitle??'').toString();bugSummary=(o.bugSummary??'').toString()}catch{/* JSONでなければ素のテキストをanswerに */}
+    return json({ok:true,answer:answer||'うまく回答できませんでした。',isBug,bugTitle,bugSummary})
   }catch(e){console.error('[ai-chat]',e instanceof Error?e.message:String(e));return json({ok:false,error:'ai_error'},500)}
 })
