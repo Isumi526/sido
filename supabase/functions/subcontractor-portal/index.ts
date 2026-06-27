@@ -52,6 +52,18 @@ function decodeImageDataUrl(input: string): Uint8Array | null {
   } catch { return null }
 }
 
+// 見積書番号の連番を n 件分発行：EST-<年>-<4桁連番>（accountごと・年ごと／admin estimates.vue と同形式）
+async function nextEstimateNumbers(accountId: string, n: number): Promise<string[]> {
+  const year = new Date().getFullYear()
+  const prefix = `EST-${year}-`
+  const { data } = await supabase.from('estimates')
+    .select('estimate_number').eq('account_id', accountId)
+    .like('estimate_number', `${prefix}%`).order('estimate_number', { ascending: false }).limit(1)
+  const last = data?.[0]?.estimate_number as string | undefined
+  let seq = last ? parseInt(last.slice(prefix.length), 10) || 0 : 0
+  return Array.from({ length: n }, () => `${prefix}${String(++seq).padStart(4, '0')}`)
+}
+
 // 注文書の表示用フィールド（業者に見せてよい範囲のみ。内部キーは返さない）
 function orderView(o: any) {
   return {
@@ -87,6 +99,8 @@ Deno.serve(async (req) => {
   let invoiceMode = 'full'   // 'full'=全額 / 'partial'=出来高
   let invoiceAmount = 0
   let regFields: Record<string, unknown> = {}
+  let pdf = ''               // 見積書アップロード（inline data URL）
+  let paths: string[] = []   // 見積書アップロード（直アップロード済みのstorage path群）
   try {
     const body = await req.json()
     token       = (body.token ?? '').toString()
@@ -96,6 +110,8 @@ Deno.serve(async (req) => {
     invoiceMode = (body.invoice_mode ?? 'full').toString()
     invoiceAmount = Math.round(Number(body.invoice_amount ?? 0)) || 0
     regFields   = (body.fields && typeof body.fields === 'object') ? body.fields : {}
+    pdf         = (body.pdf ?? '').toString()
+    paths       = Array.isArray(body.paths) ? body.paths.map((p: unknown) => String(p)) : []
   } catch { /* 空/不正body */ }
 
   if (!token) return json({ ok: false })
@@ -115,7 +131,7 @@ Deno.serve(async (req) => {
     if (!tok) return json({ ok: false })
     if (tok.expires_at && tok.expires_at < nowIso) return json({ ok: false })
 
-    const KNOWN_ACTIONS = ['resolve', 'accept', 'invoice_resolve', 'invoice_submit', 'change_accept', 'register_resolve', 'register_submit']
+    const KNOWN_ACTIONS = ['resolve', 'accept', 'invoice_resolve', 'invoice_submit', 'change_accept', 'register_resolve', 'register_submit', 'estimate_resolve', 'estimate_sign', 'estimate_upload']
     if (!KNOWN_ACTIONS.includes(action)) return json({ ok: false, error: 'unsupported_action' }, 400)
 
     // 受注者（業者）を account/業者ID の二重スコープで取得
@@ -360,6 +376,93 @@ Deno.serve(async (req) => {
 
       await supabase.from('document_access_tokens').update({ used_at: nowIso }).eq('id', tok.id)
       return json({ ok: true, accepted: true, accepted_at: nowIso, new_amount: change.new_amount })
+    }
+
+    // ─────────────────────────────────────────────────────
+    //  estimate_resolve : 業者見積アップロード用。業者＋「その業者に紐づく現場一覧」を返す
+    //  （purpose=estimate_upload・業者ごと再利用リンク。document_type='subcontractor'）
+    // ─────────────────────────────────────────────────────
+    if (action === 'estimate_resolve') {
+      if (tok.purpose !== 'estimate_upload') return json({ ok: false, error: 'not_uploadable' }, 400)
+      const { data: links } = await supabase.from('site_subcontractors')
+        .select('site_id').eq('account_id', tok.account_id).eq('subcontractor_id', sub.id)
+      const siteIds = (links ?? []).map((l: any) => l.site_id)
+      let sites: any[] = []
+      if (siteIds.length) {
+        const { data: ss } = await supabase.from('sites')
+          .select('id, name').eq('account_id', tok.account_id).in('id', siteIds).eq('active', true).order('name')
+        sites = ss ?? []
+      }
+      await supabase.from('document_access_tokens').update({ last_accessed_at: nowIso }).eq('id', tok.id).then(() => {}, () => {})
+      return json({ ok: true, purpose: tok.purpose, subcontractor: { id: sub.id, name: sub.name }, sites })
+    }
+
+    // ─────────────────────────────────────────────────────
+    //  estimate_sign : 直アップロード用の署名付きアップロードURLを count 件発行
+    //  （path は estimate-uploads/<業者ID>/ 配下に固定＝越境/不正パス防止）
+    // ─────────────────────────────────────────────────────
+    if (action === 'estimate_sign') {
+      if (tok.purpose !== 'estimate_upload') return json({ ok: false, error: 'not_uploadable' }, 400)
+      const count = Math.min(Math.max(1, Math.round(Number((regFields as any).count) || 1)), 20)
+      const uploads: any[] = []
+      for (let i = 0; i < count; i++) {
+        const path = `estimate-uploads/${sub.id}/${crypto.randomUUID()}.pdf`
+        const { data, error } = await supabase.storage.from(BUCKET).createSignedUploadUrl(path)
+        if (error || !data) return json({ ok: false, error: 'sign_failed' }, 500)
+        uploads.push({ path, token: data.token, signedUrl: data.signedUrl })
+      }
+      return json({ ok: true, uploads })
+    }
+
+    // ─────────────────────────────────────────────────────
+    //  estimate_upload : 業者が現場を選び見積書PDFをアップ → estimates に新規起票
+    //  （uploaded_via_portal=true・同リンクで複数現場/複数回=再利用可）
+    //   - inline pdf（data URL）モード ／ paths[]（直アップロード済み）モード の両対応
+    //   - 越境防止：紐付いていない現場/不正pathは拒否
+    // ─────────────────────────────────────────────────────
+    if (action === 'estimate_upload') {
+      if (tok.purpose !== 'estimate_upload') return json({ ok: false, error: 'not_uploadable' }, 400)
+      const siteId = (regFields as any).site_id ? String((regFields as any).site_id) : ''
+      if (!siteId) return json({ ok: false, error: 'site_required' }, 400)
+      // 越境防止：このトークンの業者に紐づく現場のみ受理
+      const { data: link } = await supabase.from('site_subcontractors')
+        .select('site_id').eq('account_id', tok.account_id).eq('subcontractor_id', sub.id).eq('site_id', siteId).maybeSingle()
+      if (!link) return json({ ok: false, error: 'site_not_linked' }, 400)
+
+      const todayIso = nowIso.slice(0, 10)
+      const prefixPath = `estimate-uploads/${sub.id}/`
+
+      // モードB：直アップロード済みの paths[] を起票
+      if (paths.length) {
+        for (const p of paths) {
+          if (!p.startsWith(prefixPath)) return json({ ok: false, error: 'bad_path' }, 400)  // 越境/不正パス防止
+        }
+        const numbers = await nextEstimateNumbers(tok.account_id, paths.length)
+        const rows = paths.map((p, i) => ({
+          account_id: tok.account_id, subcontractor_id: sub.id, site_id: siteId,
+          estimate_number: numbers[i], estimate_date: todayIso, pdf_path: p, uploaded_via_portal: true,
+        }))
+        const { error: insErr } = await supabase.from('estimates').insert(rows)
+        if (insErr) return json({ ok: false, error: 'estimate_insert_failed' }, 500)
+        await supabase.from('document_access_tokens').update({ last_accessed_at: nowIso }).eq('id', tok.id).then(() => {}, () => {})
+        return json({ ok: true, uploaded: true, count: paths.length, estimate_numbers: numbers })
+      }
+
+      // モードA：inline pdf（data URL）を保存して1件起票
+      if (!pdf) return json({ ok: false, error: 'pdf_required' }, 400)
+      const bytes = decodeImageDataUrl(pdf)
+      if (!bytes || bytes.length === 0) return json({ ok: false, error: 'pdf_required' }, 400)
+      const path = `${prefixPath}${crypto.randomUUID()}.pdf`
+      const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, bytes, { upsert: false, contentType: 'application/pdf' })
+      if (upErr) return json({ ok: false, error: 'pdf_upload_failed' }, 500)
+      const [number] = await nextEstimateNumbers(tok.account_id, 1)
+      const { error: insErr } = await supabase.from('estimates').insert({
+        account_id: tok.account_id, subcontractor_id: sub.id, site_id: siteId,
+        estimate_number: number, estimate_date: todayIso, pdf_path: path, uploaded_via_portal: true,
+      })
+      if (insErr) return json({ ok: false, error: 'estimate_insert_failed' }, 500)
+      await supabase.from('document_access_tokens').update({ last_accessed_at: nowIso }).eq('id', tok.id).then(() => {}, () => {})
+      return json({ ok: true, uploaded: true, estimate_number: number })
     }
 
     // ─────────────────────────────────────────────────────
