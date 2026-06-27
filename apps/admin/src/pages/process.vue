@@ -23,6 +23,10 @@
     <div v-else-if="loading" class="empty">読み込み中…</div>
     <div v-else-if="!tasks.length" class="empty">{{ isAll ? 'まだ工程がありません。「＋ 工程を追加」から登録してください。' : 'この現場の工程はまだありません。「＋ 工程を追加」から登録してください。' }}</div>
     <div v-else class="gantt-wrap">
+      <div class="legend">
+        <span v-for="w in WORK_TYPES" :key="w.key" class="legend-item"><i :style="{ background: w.color }"></i>{{ w.key }}工事</span>
+        <span class="legend-item"><i style="background:#8aa0c8"></i>未設定</span>
+      </div>
       <div class="cal" :style="{ '--day-w': DAY_W + 'px', '--label-w': LABEL_W + 'px' }">
         <!-- カレンダー・ヘッダー（月／日／曜日） -->
         <div class="cal-head">
@@ -56,14 +60,19 @@
             <div class="g-label">
               <div class="g-name">{{ t.name }}</div>
               <div class="g-sub">{{ t.assignee || '担当未設定' }} ・ {{ t.start_date || '—' }}〜{{ t.end_date || '—' }}</div>
+              <div v-if="t.site_manager || t.contract_amount != null" class="g-meta">
+                <span v-if="t.site_manager">現場管理: {{ t.site_manager }}</span>
+                <span v-if="t.contract_amount != null" class="g-amount">{{ yen(t.contract_amount) }}</span>
+              </div>
               <div class="g-rowactions">
                 <button class="btn-edit" @click="openEdit(t)">編集</button>
                 <button class="btn-ghost-sm danger" @click="remove(t)">削除</button>
               </div>
             </div>
             <div class="g-track" :style="{ width: trackWidth + 'px' }">
-              <div class="g-bar" :style="barStyle(t)">
-                <div class="g-fill" :style="{ width: (t.progress || 0) + '%' }" />
+              <div v-if="t.memo" class="g-memo" :style="memoStyle(t)">{{ t.memo }}</div>
+              <div class="g-bar" :style="[barStyle(t), { background: typeColor(t.work_type) + '59' }]">
+                <div class="g-fill" :style="{ width: (t.progress || 0) + '%', background: typeColor(t.work_type) }" />
                 <span class="g-pct">{{ t.progress || 0 }}%</span>
               </div>
             </div>
@@ -83,7 +92,19 @@
           </select>
         </label>
         <label class="fld"><span>工程名 <em>*</em></span><input v-model="modal.name" class="input" placeholder="例：内装ボード" /></label>
-        <label class="fld"><span>担当</span><input v-model="modal.assignee" class="input" placeholder="例：山田" /></label>
+        <div class="grid2">
+          <label class="fld"><span>担当</span><input v-model="modal.assignee" class="input" placeholder="例：山田" /></label>
+          <label class="fld"><span>現場管理</span><input v-model="modal.site_manager" class="input" placeholder="例：佐藤" /></label>
+        </div>
+        <div class="grid2">
+          <label class="fld"><span>工事区分</span>
+            <select v-model="modal.work_type" class="input">
+              <option :value="null">未設定</option>
+              <option v-for="w in WORK_TYPES" :key="w.key" :value="w.key">{{ w.key }}工事</option>
+            </select>
+          </label>
+          <label class="fld"><span>請負金額</span><input v-model.number="modal.contract_amount" type="number" min="0" class="input" placeholder="例：9500000" /></label>
+        </div>
         <div class="grid2">
           <label class="fld"><span>開始日</span><input v-model="modal.start_date" type="date" class="input" /></label>
           <label class="fld"><span>終了日</span><input v-model="modal.end_date" type="date" class="input" /></label>
@@ -91,6 +112,7 @@
         <label class="fld"><span>進捗：{{ modal.progress || 0 }}%</span>
           <input v-model.number="modal.progress" type="range" min="0" max="100" step="5" />
         </label>
+        <label class="fld"><span>メモ（付箋）</span><input v-model="modal.memo" class="input" placeholder="例：入札 / 2026年1月中旬?" /></label>
         <p v-if="saveError" class="error">{{ saveError }}</p>
         <div class="modal-actions">
           <button class="btn-cancel" @click="modal = null">キャンセル</button>
@@ -107,8 +129,17 @@ import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import HelpButton from '../components/HelpButton.vue'
 
-type Task = { id: string; site_id: string; name: string; assignee: string | null; start_date: string | null; end_date: string | null; progress: number; sort_order: number }
+type Task = { id: string; site_id: string; name: string; assignee: string | null; start_date: string | null; end_date: string | null; progress: number; sort_order: number; work_type: string | null; contract_amount: number | null; site_manager: string | null; memo: string | null }
 type Day = { ym: string; label: string; dom: number; wd: string; weekend: boolean; key: string; ms: number }
+
+// 工事区分の色（エクセルの凡例に対応）
+const WORK_TYPES = [
+  { key: '日中', color: '#F6A623' },
+  { key: '夜間', color: '#1E88E5' },
+  { key: '家具', color: '#43A047' },
+] as const
+const typeColor = (wt: string | null) => WORK_TYPES.find((w) => w.key === wt)?.color ?? '#8aa0c8'
+const yen = (n: number | null | undefined) => (n == null ? '' : '¥' + Number(n).toLocaleString('ja-JP'))
 
 const DAY = 86400000
 const DAY_W = 28      // 1日の横幅(px)
@@ -161,6 +192,10 @@ function barStyle(t: Task) {
   const endIdx = t.end_date ? Math.round((ymdMs(t.end_date) - axisStartMs.value) / DAY) : startIdx
   return { left: startIdx * DAY_W + 'px', width: Math.max(DAY_W, (endIdx - startIdx + 1) * DAY_W) + 'px' }
 }
+function memoStyle(t: Task) {
+  const s = barStyle(t) as any
+  return { left: s.display === 'none' ? '0px' : s.left }
+}
 
 // 単一現場は1グループ（見出し非表示）／全現場は現場ごとにグループ化（共通カレンダーで横断表示）
 const groupedTasks = computed(() => {
@@ -180,7 +215,7 @@ async function loadSites() {
 async function load() {
   if (!siteId.value) return
   loading.value = true
-  let q = supabase.from('process_tasks').select('id, site_id, name, assignee, start_date, end_date, progress, sort_order')
+  let q = supabase.from('process_tasks').select('id, site_id, name, assignee, start_date, end_date, progress, sort_order, work_type, contract_amount, site_manager, memo')
   if (isAll.value) { const accountId = await getAccountId(); q = q.eq('account_id', accountId) }
   else q = q.eq('site_id', siteId.value)
   const { data } = await q.order('start_date', { nullsFirst: false }).order('sort_order')
@@ -189,7 +224,7 @@ async function load() {
 }
 onMounted(loadSites)
 
-function openAdd()  { modal.value = { name: '', assignee: '', start_date: null, end_date: null, progress: 0, site_id: isAll.value ? '' : siteId.value }; saveError.value = '' }
+function openAdd()  { modal.value = { name: '', assignee: '', start_date: null, end_date: null, progress: 0, site_id: isAll.value ? '' : siteId.value, work_type: null, contract_amount: null, site_manager: '', memo: '' }; saveError.value = '' }
 function openEdit(t: Task) { modal.value = { ...t }; saveError.value = '' }
 
 async function save() {
@@ -202,7 +237,12 @@ async function save() {
     const payload = {
       name: modal.value.name!.trim(), assignee: modal.value.assignee?.trim() || null,
       start_date: modal.value.start_date || null, end_date: modal.value.end_date || null,
-      progress: Math.max(0, Math.min(100, Number(modal.value.progress) || 0)), updated_at: new Date().toISOString(),
+      progress: Math.max(0, Math.min(100, Number(modal.value.progress) || 0)),
+      work_type: modal.value.work_type || null,
+      contract_amount: modal.value.contract_amount != null && modal.value.contract_amount !== ('' as any) ? Math.round(Number(modal.value.contract_amount)) : null,
+      site_manager: modal.value.site_manager?.trim() || null,
+      memo: modal.value.memo?.trim() || null,
+      updated_at: new Date().toISOString(),
     }
     if (modal.value.id) await supabase.from('process_tasks').update(payload).eq('id', modal.value.id)
     else await supabase.from('process_tasks').insert({ ...payload, account_id: accountId, site_id: modal.value.site_id || siteId.value, sort_order: tasks.value.length })
@@ -227,6 +267,9 @@ async function remove(t: Task) {
 .empty { color: #888; padding: 50px; text-align: center; }
 
 .gantt-wrap { background: #fff; border-radius: 12px; padding: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; font-size: 12px; color: #555; }
+.legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.legend-item i { width: 14px; height: 10px; border-radius: 2px; display: inline-block; }
 .cal { overflow-x: auto; }
 
 /* ヘッダー */
@@ -252,10 +295,13 @@ async function remove(t: Task) {
 .g-label { width: var(--label-w); min-width: var(--label-w); position: sticky; left: 0; z-index: 2; background: #fff; border-bottom: 1px solid #f0f0f0; padding: 6px 10px; }
 .g-name { font-size: 13px; font-weight: 700; color: #222; }
 .g-sub { font-size: 10px; color: #999; }
+.g-meta { font-size: 10px; color: #666; display: flex; gap: 8px; margin-top: 2px; }
+.g-amount { font-weight: 700; color: #333; }
 .g-rowactions { display: flex; gap: 6px; margin-top: 4px; }
-.g-track { position: relative; border-bottom: 1px solid #f0f0f0; min-height: 34px; background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(var(--day-w) - 1px), #f2f4f6 calc(var(--day-w) - 1px), #f2f4f6 var(--day-w)); }
-.g-bar { position: absolute; top: 7px; height: 20px; background: #cdd8f0; border-radius: 5px; overflow: hidden; min-width: 8px; }
-.g-fill { position: absolute; left: 0; top: 0; height: 100%; background: #06C755; opacity: .7; }
+.g-track { position: relative; border-bottom: 1px solid #f0f0f0; min-height: 42px; background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(var(--day-w) - 1px), #f2f4f6 calc(var(--day-w) - 1px), #f2f4f6 var(--day-w)); }
+.g-bar { position: absolute; top: 18px; height: 19px; background: #cdd8f0; border-radius: 5px; overflow: hidden; min-width: 8px; }
+.g-fill { position: absolute; left: 0; top: 0; height: 100%; opacity: .85; }
+.g-memo { position: absolute; top: 1px; background: #FFF59D; border: 1px solid #FBC02D; color: #6d4c00; font-size: 10px; padding: 0 4px; border-radius: 3px; white-space: nowrap; z-index: 2; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
 .g-pct { position: absolute; right: 6px; top: 2px; font-size: 11px; font-weight: 700; color: #333; z-index: 1; }
 .btn-edit { background: #f0f0f0; border: none; border-radius: 6px; padding: 4px 10px; font-size: 11px; cursor: pointer; }
 .btn-ghost-sm { background: none; border: 1px solid #e0e0e0; border-radius: 6px; padding: 4px 8px; font-size: 11px; cursor: pointer; color: #666; }
