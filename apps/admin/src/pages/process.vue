@@ -68,7 +68,7 @@
                 <span v-if="t.contract_amount != null" class="g-amount">{{ yen(t.contract_amount) }}</span>
               </div>
               <div class="g-rowactions">
-                <button class="btn-edit" @click="openSiteEditor(t.site_id)">編集</button>
+                <button class="btn-edit" @click="openEditOne(t)">編集</button>
                 <button class="btn-ghost-sm danger" @click="remove(t)">削除</button>
               </div>
             </div>
@@ -140,6 +140,52 @@
         </div>
       </div>
     </div>
+
+    <!-- 1工程だけの編集モーダル（各行の「編集」用） -->
+    <div v-if="single" class="modal-overlay" @click.self="single = null">
+      <div class="modal">
+        <h2>工程を編集</h2>
+        <label class="fld"><span>工程名 <em>*</em></span><input v-model="single.name" class="input" placeholder="例：内装ボード" /></label>
+        <div class="grid2">
+          <label class="fld"><span>担当</span>
+            <select v-model="single.assignee" class="input">
+              <option :value="null">未設定</option>
+              <option v-if="single.assignee && !workers.some(w => w.name === single!.assignee)" :value="single.assignee">{{ single.assignee }}（マスタ外）</option>
+              <option v-for="w in workers" :key="w.id" :value="w.name">{{ w.name }}</option>
+            </select>
+          </label>
+          <label class="fld"><span>現場管理</span>
+            <select v-model="single.site_manager" class="input">
+              <option :value="null">未設定</option>
+              <option v-if="single.site_manager && !workers.some(w => w.name === single!.site_manager)" :value="single.site_manager">{{ single.site_manager }}（マスタ外）</option>
+              <option v-for="w in workers" :key="w.id" :value="w.name">{{ w.name }}</option>
+            </select>
+          </label>
+        </div>
+        <div class="grid2">
+          <label class="fld"><span>工事区分</span>
+            <select v-model="single.work_type" class="input">
+              <option :value="null">未設定</option>
+              <option v-for="w in WORK_TYPES" :key="w.key" :value="w.key">{{ w.key }}工事</option>
+            </select>
+          </label>
+          <label class="fld"><span>請負金額</span><input v-model.number="single.contract_amount" type="number" min="0" class="input" placeholder="例：9500000" /></label>
+        </div>
+        <div class="grid2">
+          <label class="fld"><span>開始日</span><input v-model="single.start_date" type="date" class="input" /></label>
+          <label class="fld"><span>終了日</span><input v-model="single.end_date" type="date" class="input" /></label>
+        </div>
+        <label class="fld"><span>進捗：{{ single.progress || 0 }}%</span>
+          <input v-model.number="single.progress" type="range" min="0" max="100" step="5" />
+        </label>
+        <label class="fld"><span>メモ（付箋）</span><input v-model="single.memo" class="input" placeholder="例：入札 / 2026年1月中旬?" /></label>
+        <p v-if="saveError" class="error">{{ saveError }}</p>
+        <div class="modal-actions">
+          <button class="btn-cancel" @click="single = null">キャンセル</button>
+          <button class="btn-save" :disabled="saving" @click="saveSingle">{{ saving ? '保存中…' : '保存' }}</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -177,6 +223,7 @@ const saveError = ref('')
 // 一括エディタ（1現場×複数工程をまとめて追加/編集）
 type Draft = { id?: string; _key: number; name: string; assignee: string | null; site_manager: string | null; work_type: string | null; contract_amount: number | null; start_date: string | null; end_date: string | null; progress: number; memo: string | null }
 const editor = ref<{ siteId: string; rows: Draft[]; deleted: string[] } | null>(null)
+const single = ref<(Draft & { site_id: string }) | null>(null)  // 1工程だけの編集
 let keySeq = 1
 const newDraft = (): Draft => ({ _key: keySeq++, name: '', assignee: null, site_manager: null, work_type: null, contract_amount: null, start_date: null, end_date: null, progress: 0, memo: null })
 const toDraft = (t: Task): Draft => ({ id: t.id, _key: keySeq++, name: t.name, assignee: t.assignee, site_manager: t.site_manager, work_type: t.work_type, contract_amount: t.contract_amount, start_date: t.start_date, end_date: t.end_date, progress: t.progress, memo: t.memo })
@@ -308,6 +355,23 @@ async function saveEditor() {
       }).eq('id', r.id)
     }
     editor.value = null; await load()
+  } catch (err: any) { saveError.value = err.message ?? '保存に失敗しました' }
+  finally { saving.value = false }
+}
+// 1工程だけの編集（各行の「編集」ボタン用）
+function openEditOne(t: Task) { single.value = { ...toDraft(t), site_id: t.site_id }; saveError.value = '' }
+async function saveSingle() {
+  const r = single.value; if (!r) return
+  if (!r.name.trim()) { saveError.value = '工程名を入力してください'; return }
+  if (r.start_date && r.end_date && r.end_date < r.start_date) { saveError.value = '終了日は開始日以降にしてください'; return }
+  saving.value = true; saveError.value = ''
+  try {
+    await supabase.from('process_tasks').update({
+      name: r.name.trim(), assignee: r.assignee || null, site_manager: r.site_manager || null, work_type: r.work_type || null,
+      contract_amount: amt(r.contract_amount), start_date: r.start_date || null, end_date: r.end_date || null,
+      progress: clampPct(r.progress), memo: r.memo?.trim() || null, updated_at: new Date().toISOString(),
+    }).eq('id', r.id!)
+    single.value = null; await load()
   } catch (err: any) { saveError.value = err.message ?? '保存に失敗しました' }
   finally { saving.value = false }
 }
