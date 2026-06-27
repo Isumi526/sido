@@ -127,6 +127,19 @@ export interface DailyReport {
   isBusinessTrip?: boolean  // true=出張日（出張手当 +¥3,000/日 の対象）
   sites: SiteReport[]
   note?: string
+  // 日報レベルの「本日のガソリン代」（給油は全現場ぶんをカバーし現場に紐づかないため report 直下に持つ）
+  //  1日に複数回給油できるよう明細リストで持つ。
+  gasolineItems?: GasolineItem[]
+}
+
+// 本日のガソリン代の1明細（給油1回ぶん）
+export interface GasolineItem {
+  _id?: number                 // クライアント用の一意キー（領収書File対応づけ用・永続時は除去）
+  payee?: string               // 支払い先（店名）
+  yen?: number                 // 金額
+  registrationNumber?: string  // 登録番号（インボイス T+13桁）
+  tategae?: boolean            // 個人立替（会社が精算する分）
+  fileUrls?: string[]          // 領収書URL（選択時に即アップロード）
 }
 
 export interface MasterData {

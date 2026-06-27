@@ -378,9 +378,19 @@ export const useExpense = () => {
 
   async function saveReportById(
     userId: string,
-    report: { date: string; isWorking: boolean; sites: unknown[]; note?: string; leaveType?: string | null; isBusinessTrip?: boolean }
+    report: { date: string; isWorking: boolean; sites: unknown[]; note?: string; leaveType?: string | null; isBusinessTrip?: boolean; gasolineItems?: any[] }
   ): Promise<void> {
     const accountId = await getAccountId()
+    // 本日のガソリン代（明細リスト）：金額のある明細だけを保存（_id は除去）
+    const gasItems = (report.gasolineItems ?? [])
+      .filter((it: any) => Number(it?.yen) > 0)
+      .map((it: any) => ({
+        yen: Math.round(Number(it.yen) || 0),
+        payee: it.payee?.trim() || null,
+        registrationNumber: it.registrationNumber?.trim() || null,
+        tategae: !!it.tategae,
+        fileUrls: Array.isArray(it.fileUrls) ? it.fileUrls : [],
+      }))
     const { error } = await supabase
       .from('daily_reports')
       .upsert(
@@ -392,6 +402,8 @@ export const useExpense = () => {
           note:       report.note ?? null,
           leave_type: report.leaveType ?? null,
           is_business_trip: report.isBusinessTrip ?? false,
+          // 日報レベルの「本日のガソリン代」（実費・複数給油対応）。現場に紐づかないため report 直下に持つ。
+          gasoline_items: gasItems,
           account_id: accountId,
           updated_at: new Date().toISOString(),
         },
@@ -411,7 +423,7 @@ export const useExpense = () => {
    */
   async function saveReport(
     lineUserId: string,
-    report: { date: string; isWorking: boolean; sites: unknown[]; note?: string; leaveType?: string | null; isBusinessTrip?: boolean }
+    report: { date: string; isWorking: boolean; sites: unknown[]; note?: string; leaveType?: string | null; isBusinessTrip?: boolean; gasolineItems?: any[] }
   ): Promise<void> {
     console.log('[saveReport] 開始 lineUserId=', lineUserId)
 
@@ -441,7 +453,7 @@ export const useExpense = () => {
 
     const { data, error } = await supabase
       .from('daily_reports')
-      .select('date, sites')
+      .select('date, sites, gasoline_items')
       .eq('user_id', userId)
       .eq('is_working', true)
       .gte('date', dateFrom)
@@ -460,6 +472,13 @@ export const useExpense = () => {
     const rows: ExpenseRow[] = []
     for (const rep of (data ?? [])) {
       rows.push(...flattenReportExpenses(rep.date, rep.sites as any[], rates))
+      // 日報レベルの「本日のガソリン代」（複数給油）も明細に含める（admin 経費精算と整合）
+      for (const g of ((rep as any).gasoline_items ?? [])) {
+        const gasYen = Math.round(Number(g?.yen) || 0)
+        if (gasYen <= 0) continue
+        const urls = Array.isArray(g.fileUrls) ? g.fileUrls : []
+        rows.push({ date: rep.date, category: 'ガソリン代（本日）', siteName: g.payee || '—', amount: gasYen, note: g.registrationNumber || '', fileUrls: urls, tategae: !!g.tategae } as ExpenseRow)
+      }
     }
     return rows
   }
@@ -609,7 +628,7 @@ export const useExpense = () => {
     if (!user) return null
     const { data, error } = await supabase
       .from('daily_reports')
-      .select('date, is_working, leave_type, is_business_trip, sites, note')
+      .select('date, is_working, leave_type, is_business_trip, sites, note, gasoline_items')
       .eq('user_id', user.id)
       .eq('date', date)
       .maybeSingle()
@@ -621,7 +640,7 @@ export const useExpense = () => {
   async function getReportByUserId(userId: string, date: string): Promise<any | null> {
     const { data, error } = await supabase
       .from('daily_reports')
-      .select('date, is_working, leave_type, is_business_trip, sites, note')
+      .select('date, is_working, leave_type, is_business_trip, sites, note, gasoline_items')
       .eq('user_id', userId)
       .eq('date', date)
       .maybeSingle()

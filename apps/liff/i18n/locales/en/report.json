@@ -110,5 +110,17 @@
   "analyzeSuccess": "Analysis succeeded! Please double-check visually as well",
   "errorNoLogin": "Could not get login information. Please reload.",
   "errorUpdateFailed": "Failed to update",
-  "similarSiteWarn": "A similar site already exists (avoid duplicate registration)"
+  "similarSiteWarn": "A similar site already exists (avoid duplicate registration)",
+  "gasolineSection": "Today's gasoline",
+  "gasolineSectionHint": "One fill-up covers all sites; it is allocated to each site by driving distance.",
+  "gasolineCost": "Gasoline cost (¥, optional)",
+  "aiAnalyzeGas": "✨ Read amount from receipt",
+  "uploading": "Uploading…",
+  "gasolineFueledLabel": "Filled up today?",
+  "gasolineFueledNo": "No",
+  "gasolineFueledYes": "Yes (filled up)",
+  "gasUploadFailed": "Failed to upload the receipt.",
+  "gasAnalyzeFailed": "Could not read the receipt. Please enter the amount manually.",
+  "gasPayeePlaceholder": "Payee (store)",
+  "addGasoline": "＋ Add fill-up"
 }
