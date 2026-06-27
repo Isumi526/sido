@@ -118,7 +118,7 @@ async function processAccount(
 
   const { data: allWorkers } = await supabase
     .from('workers')
-    .select('id, name, created_at')
+    .select('id, name, created_at, report_start_date')
     .eq('account_id', accountId)
     .eq('active', true)
 
@@ -144,6 +144,10 @@ async function processAccount(
   const workerCreatedMap = new Map<string, string>(
     (allWorkers ?? []).map((w: any) => [w.id, w.created_at])
   )
+  // worker_id → 日報提出開始日（明示設定があれば起点に優先）
+  const workerReportStartMap = new Map<string, string | null>(
+    (allWorkers ?? []).map((w: any) => [w.id, w.report_start_date ?? null])
+  )
   // worker_id → 代理人名リスト
   const proxyNamesMap = new Map<string, string[]>()
   for (const rel of (proxyRels ?? []) as any[]) {
@@ -166,10 +170,12 @@ async function processAccount(
 
   const activeWorkerIds = new Set((allWorkers ?? []).map((w: any) => w.id))
 
-  // 各人の未送信起点 = max(service_start_date, 作業員登録日)。後から登録した人に登録前の未送信を出さない。
-  // 起点は「作業員マスタ登録日(workers.created_at)」で統一（紐付けは worker_id 経由、無ければ users.created_at にフォールバック）。
-  const personStart = (createdAt: string | null | undefined): string => {
-    const reg = jstDateOf(createdAt)
+  // 各人の未送信起点 = max(service_start_date, 各人の起点日)。後から登録した人に登録前の未送信を出さない。
+  // 各人の起点日 = report_start_date（作業員ごとの提出開始日・明示設定があれば優先） ?? 作業員マスタ登録日(workers.created_at)。
+  // report_start_date が service_start_date より前でも、allDates は startDate 起点なので max(startDate, …) で吸収される。
+  const personStart = (createdAt: string | null | undefined, reportStart?: string | null): string => {
+    const base = reportStart || createdAt
+    const reg = jstDateOf(base)
     return reg && reg > startDate ? reg : startDate
   }
 
@@ -181,7 +187,7 @@ async function processAccount(
 
     const workerName = (user.workers as any)?.name ?? user.real_name ?? '不明'
     const entry = buildEntry(workerName, workerId)
-    const us = personStart((workerId && workerCreatedMap.get(workerId)) || (user as any).created_at)
+    const us = personStart((workerId && workerCreatedMap.get(workerId)) || (user as any).created_at, workerId ? workerReportStartMap.get(workerId) : null)
     const missing = allDates.filter(d => d >= us && !submittedSet.has(`${user.id}__${d}`))
     if (missing.length > 0) unsubmitted.push({ ...entry, dates: missing })
   }
@@ -189,7 +195,7 @@ async function processAccount(
   const linkedWorkerIds = new Set((users ?? []).map((u: any) => u.worker_id).filter(Boolean))
   for (const worker of (allWorkers ?? [])) {
     if (!linkedWorkerIds.has(worker.id)) {
-      const ws = personStart((worker as any).created_at)
+      const ws = personStart((worker as any).created_at, (worker as any).report_start_date)
       const dates = allDates.filter(d => d >= ws)
       if (dates.length === 0) continue
       const entry = buildEntry(worker.name, worker.id)
