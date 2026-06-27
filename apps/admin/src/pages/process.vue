@@ -6,37 +6,42 @@
           '現場を選び、工程（タスク）を開始日・終了日・担当・進捗で登録します。',
           'バーは各工程の期間、緑の塗りは進捗%を表します。',
           '「＋ 工程を追加」から登録。各行の編集/削除で更新できます。',
+          '現場プルダウンで「全現場（横断ビュー）」を選ぶと、全現場の工程を同じ時間軸で並べて確認できます（エクセル工程表のような全体俯瞰）。',
         ]" />
       </h1>
       <div class="header-actions">
         <select v-model="siteId" class="input" @change="load">
           <option :value="''" disabled>現場を選択</option>
+          <option value="__all__">▤ 全現場（横断ビュー）</option>
           <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.name }}</option>
         </select>
-        <button class="btn-add" :disabled="!siteId" @click="openAdd">＋ 工程を追加</button>
+        <button class="btn-add" :disabled="!siteId || isAll" @click="openAdd">＋ 工程を追加</button>
       </div>
     </div>
 
     <div v-if="!siteId" class="empty">現場を選択してください。</div>
     <div v-else-if="loading" class="empty">読み込み中…</div>
-    <div v-else-if="!tasks.length" class="empty">この現場の工程はまだありません。「＋ 工程を追加」から登録してください。</div>
+    <div v-else-if="!tasks.length" class="empty">{{ isAll ? 'まだ工程がありません。各現場で「＋ 工程を追加」から登録してください。' : 'この現場の工程はまだありません。「＋ 工程を追加」から登録してください。' }}</div>
     <div v-else class="gantt-wrap">
-      <div class="gantt-range">{{ rangeStart }} 〜 {{ rangeEnd }}</div>
-      <div class="gantt">
-        <div v-for="t in tasks" :key="t.id" class="g-row">
-          <div class="g-label">
-            <div class="g-name">{{ t.name }}</div>
-            <div class="g-sub">{{ t.assignee || '担当未設定' }} ・ {{ t.start_date || '—' }}〜{{ t.end_date || '—' }}</div>
-          </div>
-          <div class="g-track">
-            <div class="g-bar" :style="barStyle(t)">
-              <div class="g-fill" :style="{ width: (t.progress || 0) + '%' }" />
-              <span class="g-pct">{{ t.progress || 0 }}%</span>
+      <div class="gantt-range">{{ rangeStart }} 〜 {{ rangeEnd }}<span v-if="isAll" class="all-note">（全現場を同じ時間軸で表示）</span></div>
+      <div v-for="g in groupedTasks" :key="g.siteId" class="g-group">
+        <div v-if="isAll" class="g-site-header">{{ g.siteName }}</div>
+        <div class="gantt">
+          <div v-for="t in g.tasks" :key="t.id" class="g-row">
+            <div class="g-label">
+              <div class="g-name">{{ t.name }}</div>
+              <div class="g-sub">{{ t.assignee || '担当未設定' }} ・ {{ t.start_date || '—' }}〜{{ t.end_date || '—' }}</div>
             </div>
-          </div>
-          <div class="g-actions">
-            <button class="btn-edit" @click="openEdit(t)">編集</button>
-            <button class="btn-ghost-sm danger" @click="remove(t)">削除</button>
+            <div class="g-track">
+              <div class="g-bar" :style="barStyle(t)">
+                <div class="g-fill" :style="{ width: (t.progress || 0) + '%' }" />
+                <span class="g-pct">{{ t.progress || 0 }}%</span>
+              </div>
+            </div>
+            <div class="g-actions">
+              <button class="btn-edit" @click="openEdit(t)">編集</button>
+              <button class="btn-ghost-sm danger" @click="remove(t)">削除</button>
+            </div>
           </div>
         </div>
       </div>
@@ -82,8 +87,20 @@ const saving  = ref(false)
 const saveError = ref('')
 
 const DAY = 86400000
+const isAll = computed(() => siteId.value === '__all__')
+const siteName = (id: string) => sites.value.find((s) => s.id === id)?.name ?? '—'
 const rangeStart = computed(() => tasks.value.reduce((m, t) => (t.start_date && (!m || t.start_date < m) ? t.start_date : m), '' as string))
 const rangeEnd   = computed(() => tasks.value.reduce((m, t) => (t.end_date && (!m || t.end_date > m) ? t.end_date : m), '' as string))
+
+// 単一現場は1グループ（見出し非表示）／全現場は現場ごとにグループ化（共通の時間軸で横断表示）
+const groupedTasks = computed(() => {
+  if (!isAll.value) return tasks.value.length ? [{ siteId: siteId.value, siteName: '', tasks: tasks.value }] : []
+  const m = new Map<string, Task[]>()
+  for (const t of tasks.value) { if (!m.has(t.site_id)) m.set(t.site_id, []); m.get(t.site_id)!.push(t) }
+  return [...m.entries()]
+    .map(([sid, ts]) => ({ siteId: sid, siteName: siteName(sid), tasks: ts }))
+    .sort((a, b) => a.siteName.localeCompare(b.siteName, 'ja'))
+})
 
 function barStyle(t: Task) {
   const s = rangeStart.value ? new Date(rangeStart.value).getTime() : 0
@@ -104,7 +121,10 @@ async function loadSites() {
 async function load() {
   if (!siteId.value) return
   loading.value = true
-  const { data } = await supabase.from('process_tasks').select('id, site_id, name, assignee, start_date, end_date, progress, sort_order').eq('site_id', siteId.value).order('start_date', { nullsFirst: false }).order('sort_order')
+  let q = supabase.from('process_tasks').select('id, site_id, name, assignee, start_date, end_date, progress, sort_order')
+  if (isAll.value) { const accountId = await getAccountId(); q = q.eq('account_id', accountId) }
+  else q = q.eq('site_id', siteId.value)
+  const { data } = await q.order('start_date', { nullsFirst: false }).order('sort_order')
   tasks.value = (data ?? []) as Task[]
   loading.value = false
 }
@@ -148,6 +168,10 @@ async function remove(t: Task) {
 
 .gantt-wrap { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
 .gantt-range { font-size: 12px; color: #888; margin-bottom: 12px; }
+.all-note { margin-left: 8px; color: #06A050; }
+.g-group { margin-bottom: 18px; }
+.g-group:last-child { margin-bottom: 0; }
+.g-site-header { font-size: 13px; font-weight: 700; color: #06A050; padding: 6px 0 8px; border-bottom: 1px solid #eee; margin-bottom: 8px; }
 .gantt { display: flex; flex-direction: column; gap: 8px; }
 .g-row { display: grid; grid-template-columns: 220px 1fr 120px; gap: 12px; align-items: center; }
 .g-label { min-width: 0; }
