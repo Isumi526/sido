@@ -112,6 +112,11 @@
           <input v-model="modal.hire_date" type="date" class="input" />
         </div>
         <div class="field">
+          <label>日報提出開始日（未送信チェックの起点・任意）</label>
+          <input v-model="modal.report_start_date" type="date" class="input" data-testid="report-start-date" />
+          <p class="hint-sm">この日以降の未送信のみリマインド/未送信者一覧に出ます。未設定なら従来どおり作業員登録日が起点です。</p>
+        </div>
+        <div class="field">
           <label>生年月日</label>
           <input v-model="modal.birth_date" type="date" class="input" />
         </div>
@@ -233,6 +238,7 @@ type Worker = {
   invoice_number: string | null
   insurance_info: string | null
   labor_insurance_number: string | null
+  report_start_date: string | null
   auth_user_id: string | null
 }
 
@@ -346,7 +352,7 @@ function toggleProxyId(id: string) {
 async function load() {
   const accountId = await getAccountId()
   const [{ data: workersData }, { data: usersData }, { data: proxyData }] = await Promise.all([
-    supabase.from('workers').select('id, name, role, unit_price, wage_type, active, hire_date, birth_date, address, emergency_contact, employment_type, weekly_scheduled_days, company_info, invoice_number, insurance_info, labor_insurance_number, auth_user_id').eq('account_id', accountId).order('name'),
+    supabase.from('workers').select('id, name, role, unit_price, wage_type, active, hire_date, birth_date, address, emergency_contact, employment_type, weekly_scheduled_days, company_info, invoice_number, insurance_info, labor_insurance_number, report_start_date, auth_user_id').eq('account_id', accountId).order('name'),
     supabase.from('users').select('worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
     supabase.from('worker_proxies').select('worker_id, proxy_operator_id').eq('account_id', accountId),
   ])
@@ -365,7 +371,7 @@ async function load() {
 onMounted(load)
 
 function openAdd() {
-  modal.value = { name: '', role: 'site', unit_price: 20000, wage_type: 'daily', hire_date: null, birth_date: null, address: null, emergency_contact: null, employment_type: 'fulltime', weekly_scheduled_days: null, company_info: null, invoice_number: null, insurance_info: null, labor_insurance_number: null }
+  modal.value = { name: '', role: 'site', unit_price: 20000, wage_type: 'daily', hire_date: null, birth_date: null, address: null, emergency_contact: null, employment_type: 'fulltime', weekly_scheduled_days: null, company_info: null, invoice_number: null, insurance_info: null, labor_insurance_number: null, report_start_date: null }
   modalProxyIds.value = []
   familyMembers.value = []
   vehicleInspections.value = []
@@ -472,6 +478,7 @@ async function save() {
       insurance_info:         modal.value.insurance_info?.trim() || null,
       // 労災保険番号は区分=業務委託のときのみ保持（他区分では常にnull）
       labor_insurance_number: modal.value.employment_type === 'contractor' ? (modal.value.labor_insurance_number?.trim() || null) : null,
+      report_start_date:      modal.value.report_start_date || null,
     }
 
     if (workerId) {
