@@ -10,7 +10,7 @@ test('AIヘルプでメッセージを送ると吹き出しが出て応答が返
   await page.goto('/ai-help', { waitUntil: 'networkidle' })
   await expect(page.locator('h1')).toContainText('AIヘルプ')
   await expect(page.locator('.chat-empty')).toBeVisible()
-  await expect(page.locator('.btn-bug')).toBeVisible()
+  await expect(page.locator('.btn-bug-manual')).toBeVisible()
 
   await page.locator('.composer-input').fill('日報はどこから入力しますか？')
   await page.locator('.btn-send').click()
@@ -23,7 +23,7 @@ test('AIヘルプでメッセージを送ると吹き出しが出て応答が返
 
 test('バグ報告モーダルが開き、タイトル必須が効く', async ({ page }) => {
   await page.goto('/ai-help', { waitUntil: 'networkidle' })
-  await page.locator('.btn-bug').click()
+  await page.locator('.btn-bug-manual').click()
   const modal = page.locator('.modal')
   await expect(modal).toBeVisible()
   await expect(modal.locator('h2')).toContainText('バグとして報告')
