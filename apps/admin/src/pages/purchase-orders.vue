@@ -36,7 +36,7 @@
                 <span v-for="c in changes[o.id]" :key="c.id" class="badge change" :class="{ ok: c.status === 'accepted' }" :title="c.reason || ''">{{ changeLabel(c) }}</span>
               </div>
             </td>
-            <td><a v-if="o.pdf_path" :href="pdfUrl(o.pdf_path)" target="_blank" rel="noopener" class="pdf-link">📄 PDF</a><span v-else class="muted">—</span></td>
+            <td><a v-if="o.pdf_path" href="#" @click.prevent="openDoc(o.pdf_path, o.pdf_bucket)" class="pdf-link">📄 PDF</a><span v-else class="muted">—</span></td>
             <td class="actions">
               <button class="btn-edit" :disabled="busyId === o.id" @click="resendEmail(o)">{{ busyId === o.id ? '送信中…' : '再送' }}</button>
               <button class="btn-edit" :disabled="changeBusy" @click="openChange(o)" title="金額の増減（変更注文書）を発行し業者に再承諾を依頼">変更注文</button>
@@ -233,8 +233,10 @@ import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountName } from '../lib/account'
+import { openDoc } from '../lib/docUrl'
 
-const BUCKET   = 'expense-receipts'
+const BUCKET     = 'expense-receipts'     // 署名画像など既存公開物の表示用（後方互換）
+const PDF_BUCKET = 'admin-docs'           // 新規発行の注文書PDFは非公開バケットへ（署名URL配信）
 const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
 const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 const IS_DEV   = import.meta.env.DEV
@@ -257,7 +259,7 @@ const BUILTIN_DEFAULTS = {
 type PO = {
   id: string; order_number: string; order_date: string | null; total_amount: number | null
   site_name: string | null; vendor_name: string | null; vendor_contact_name: string | null
-  pdf_path: string | null; email_sent_at: string | null; status: string; accepted_at: string | null
+  pdf_path: string | null; pdf_bucket: string | null; email_sent_at: string | null; status: string; accepted_at: string | null
   invoice_requested_at: string | null; subcontractor_id: string | null
 }
 type Acceptance = {
@@ -315,7 +317,7 @@ async function load() {
   accountName.value = (await getAccountName()) || ''
   const [{ data: poRows }, { data: est }, { data: su }, { data: si }, { data: co }] = await Promise.all([
     supabase.from('purchase_orders')
-      .select('id, estimate_id, order_number, order_date, total_amount, site_name, vendor_name, vendor_contact_name, pdf_path, email_sent_at, status, accepted_at, invoice_requested_at, subcontractor_id')
+      .select('id, estimate_id, order_number, order_date, total_amount, site_name, vendor_name, vendor_contact_name, pdf_path, pdf_bucket, email_sent_at, status, accepted_at, invoice_requested_at, subcontractor_id')
       .eq('account_id', accountId).eq('is_deleted', false).order('order_number', { ascending: false }),
     supabase.from('estimates').select('id, subcontractor_id, site_id, estimate_number, total_amount')
       .eq('account_id', accountId).eq('is_deleted', false).order('estimate_number', { ascending: false }),
@@ -453,10 +455,12 @@ async function generateAndUploadPdf(orderId: string, accountId: string) {
   const imgH = (canvas.height / canvas.width) * imgW
   pdf.addImage(png, 'PNG', 0, 0, imgW, Math.min(imgH, pageH))
   const blob = pdf.output('blob')
-  const path = `purchase-orders/${accountId}/${orderId}.pdf`
-  const { error } = await supabase.storage.from(BUCKET).upload(path, blob, { upsert: true, contentType: 'application/pdf' })
+  // admin-docs のRLSは path 先頭=account_id を要求するため account_id を先頭に置く。
+  const path = `${accountId}/purchase-orders/${orderId}.pdf`
+  // 新規発行PDFは非公開バケット(admin-docs)へ。表示/メール/portalは pdf_bucket を見て署名URLで配信。
+  const { error } = await supabase.storage.from(PDF_BUCKET).upload(path, blob, { upsert: true, contentType: 'application/pdf' })
   if (error) throw error
-  await supabase.from('purchase_orders').update({ pdf_path: path }).eq('id', orderId)
+  await supabase.from('purchase_orders').update({ pdf_path: path, pdf_bucket: PDF_BUCKET }).eq('id', orderId)
   return path
 }
 

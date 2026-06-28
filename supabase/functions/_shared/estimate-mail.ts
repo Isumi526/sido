@@ -40,6 +40,7 @@ export async function sendEstimate(
     subject?: string | null             // 件名（未指定なら既定）
     body?: string | null                // 本文（プレーンテキスト・未指定なら既定）
     pdf_path?: string | null
+    pdf_bucket?: string | null          // 添付PDFのStorageバケット（既定 expense-receipts／新規 admin-docs）
     total_amount?: number | null
     project_name?: string | null
     send: boolean
@@ -82,7 +83,7 @@ export async function sendEstimate(
     if (opts.send) {
       const attachments: { filename: string; content: string }[] = []
       if (opts.pdf_path) {
-        const { data: file } = await svc.storage.from('expense-receipts').download(opts.pdf_path)
+        const { data: file } = await svc.storage.from(opts.pdf_bucket ?? 'expense-receipts').download(opts.pdf_path)
         if (file) {
           const buf = new Uint8Array(await file.arrayBuffer())
           const ymd = nowIso.slice(0, 10).replace(/-/g, '')
@@ -130,6 +131,7 @@ export async function sendEstimate(
       email_to:              emails.join(', '),
       subject,
       pdf_path:              opts.pdf_path ?? null,
+      pdf_bucket:            opts.pdf_bucket ?? 'expense-receipts',
       total_amount:          opts.total_amount ?? null,
       sent_at:               opts.send ? nowIso : null,
     })
