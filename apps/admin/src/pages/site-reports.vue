@@ -326,6 +326,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { resolveDocUrl } from '../lib/docUrl'
 import HelpButton from '../components/HelpButton.vue'
 import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, unitPriceForDate, wageTypeForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
 import JSZip from 'jszip'
@@ -375,12 +376,13 @@ async function exportSite() {
     const { data: siteRow } = await supabase.from('sites').select('id').eq('account_id', accountId).eq('name', site).maybeSingle()
     if (siteRow?.id) {
       const { data: ests } = await supabase.from('estimates')
-        .select('estimate_number, pdf_path').eq('site_id', siteRow.id).eq('is_deleted', false)
+        .select('estimate_number, pdf_path, pdf_bucket').eq('site_id', siteRow.id).eq('is_deleted', false)
       const folder = zip.folder('見積書')
       for (const e of (ests ?? []) as any[]) {
         if (!e.pdf_path) continue
         try {
-          const url = supabase.storage.from('expense-receipts').getPublicUrl(e.pdf_path).data.publicUrl
+          // pdf_bucket で出し分け（admin-docs=署名URL / expense-receipts=公開URL）
+          const url = await resolveDocUrl(e.pdf_path, e.pdf_bucket); if (!url) continue
           const resp = await fetch(url); if (!resp.ok) continue
           folder?.file(`${e.estimate_number || 'estimate'}.pdf`, await resp.blob())
         } catch { /* 1件失敗しても続行 */ }

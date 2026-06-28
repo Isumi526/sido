@@ -31,6 +31,7 @@ Deno.serve(async (req) => {
     subject:                body.subject ?? null,
     body:                   body.body ?? null,
     pdf_path:               body.pdf_path ?? null,
+    pdf_bucket:             body.pdf_bucket ?? null,
     total_amount:           body.total_amount ?? null,
     project_name:           body.project_name ?? null,
     send:                   false,

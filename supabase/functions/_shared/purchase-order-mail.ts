@@ -113,7 +113,8 @@ export async function sendPurchaseOrder(
       // PDF添付（任意）
       const attachments: { filename: string; content: string }[] = []
       if (order.pdf_path) {
-        const { data: file } = await svc.storage.from('expense-receipts').download(order.pdf_path)
+        // pdf_bucket でバケット出し分け（新規=admin-docs非公開 / 既存=expense-receipts公開）。order は select('*')。
+        const { data: file } = await svc.storage.from(order.pdf_bucket ?? 'expense-receipts').download(order.pdf_path)
         if (file) {
           const buf = new Uint8Array(await file.arrayBuffer())
           attachments.push({ filename: `注文書_${order.order_number}.pdf`, content: base64(buf) })

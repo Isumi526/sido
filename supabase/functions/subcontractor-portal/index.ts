@@ -345,10 +345,10 @@ Deno.serve(async (req) => {
         .upload(sigPath, sigBytes, { upsert: true, contentType: 'image/png' })
       if (upErr) return json({ ok: false, error: 'signature_upload_failed' }, 500)
 
-      // 親注文書PDFのハッシュ（証跡・任意）
+      // 親注文書PDFのハッシュ（証跡・任意）。pdf_bucket でバケット出し分け（order は select('*')）。
       let pdfHash: string | null = null
       if (order?.pdf_path) {
-        const { data: file } = await supabase.storage.from(BUCKET).download(order.pdf_path)
+        const { data: file } = await supabase.storage.from(order.pdf_bucket ?? BUCKET).download(order.pdf_path)
         if (file) pdfHash = await sha256Hex(new Uint8Array(await file.arrayBuffer()))
       }
       const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || req.headers.get('x-real-ip') || null
@@ -490,10 +490,10 @@ Deno.serve(async (req) => {
         .upload(sigPath, sigBytes, { upsert: true, contentType: 'image/png' })
       if (upErr) return json({ ok: false, error: `signature_upload_failed` }, 500)
 
-      // 対象注文書PDFのSHA-256（証跡：承諾時点のPDFを特定）。PDF未生成なら null。
+      // 対象注文書PDFのSHA-256（証跡：承諾時点のPDFを特定）。PDF未生成なら null。pdf_bucket で出し分け。
       let pdfHash: string | null = null
       if (order.pdf_path) {
-        const { data: file } = await supabase.storage.from(BUCKET).download(order.pdf_path)
+        const { data: file } = await supabase.storage.from(order.pdf_bucket ?? BUCKET).download(order.pdf_path)
         if (file) pdfHash = await sha256Hex(new Uint8Array(await file.arrayBuffer()))
       }
 
@@ -547,10 +547,16 @@ Deno.serve(async (req) => {
     // アクセス記録（best-effort）
     await supabase.from('document_access_tokens').update({ last_accessed_at: nowIso }).eq('id', tok.id).then(() => {}, () => {})
 
-    // 注文書PDFの公開URL（添付確認用・任意）
+    // 注文書PDFのURL（添付確認用・任意）。admin-docs(非公開)は署名URL、expense-receipts(公開)は公開URL。
     let pdfUrl: string | null = null
     if (order?.pdf_path) {
-      pdfUrl = supabase.storage.from(BUCKET).getPublicUrl(order.pdf_path).data.publicUrl ?? null
+      const pob = order.pdf_bucket ?? BUCKET
+      if (pob !== 'expense-receipts') {
+        const { data: signed } = await supabase.storage.from(pob).createSignedUrl(order.pdf_path, 300)
+        pdfUrl = signed?.signedUrl ?? null
+      } else {
+        pdfUrl = supabase.storage.from('expense-receipts').getPublicUrl(order.pdf_path).data.publicUrl ?? null
+      }
     }
 
     // 変更注文書の表示用（業者に見せてよい範囲のみ）

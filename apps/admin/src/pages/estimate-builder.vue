@@ -315,7 +315,7 @@
             <div class="po-status" v-if="poFor(g.supplierId)">
               <span v-if="poFor(g.supplierId)?.email_sent_at" class="badge-ok" :data-testid="`po-sent-${g.supplierId}`">送信済み {{ poFor(g.supplierId)?.order_number }}・{{ fmtDateTime(poFor(g.supplierId)?.email_sent_at) }}</span>
               <span v-else class="muted">発行済み {{ poFor(g.supplierId)?.order_number }}（未送信）</span>
-              <a v-if="poFor(g.supplierId)?.pdf_path" :href="poPdfUrl(poFor(g.supplierId)!.pdf_path)" target="_blank" rel="noopener" class="pdf-link" :data-testid="`po-pdf-${g.supplierId}`">📄 PDFを表示/DL</a>
+              <a v-if="poFor(g.supplierId)?.pdf_path" href="#" @click.prevent="openDoc(poFor(g.supplierId)!.pdf_path, poFor(g.supplierId)!.pdf_bucket)" class="pdf-link" :data-testid="`po-pdf-${g.supplierId}`">📄 PDFを表示/DL</a>
             </div>
             <div class="po-card-foot">
               <span v-if="!contactsFor(g.supplierId).length" class="muted">担当者未登録（<RouterLink to="/subcontractors">協力業者マスタ</RouterLink>）</span>
@@ -387,10 +387,12 @@ import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { openDoc } from '../lib/docUrl'
 import EstimateMasters from './estimate-masters.vue'
 import CompanyProfile from './company-profile.vue'
 
-const BUCKET = 'expense-receipts'
+const BUCKET = 'expense-receipts'        // 印影など既存公開物の表示用（後方互換）
+const PDF_BUCKET = 'admin-docs'          // 新規の見積/発注PDFは非公開バケット（署名URL配信）
 const IS_DEV = import.meta.env.DEV
 const route  = useRoute()   // 一覧から ?project=<id> で開いた案件を初期選択する
 // #6 ビルダーのタブ（明細入力／見積書プレビュー／商社へ発注）
@@ -683,8 +685,7 @@ function poContactId(supplierId: string): string | null {
 }
 function poEmail(supplierId: string) { return contactsFor(supplierId).find(c => c.id === poContactId(supplierId))?.email || '' }
 function canSendPO(g: { supplierId: string; items: Row[] }) { return g.items.length > 0 && !!poContactId(g.supplierId) && !!poEmail(g.supplierId) }
-// 発注書PDFのURL（プレビュー/ダウンロード）と送信日時表示
-function poPdfUrl(path: string) { return supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl }
+// 送信日時表示（発注書PDFの表示は openDoc(path, pdf_bucket) で署名URL対応）
 function fmtDateTime(iso: string | null) { if (!iso) return ''; try { return new Date(iso).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) } catch { return '' } }
 
 // E2 PDF出力（表紙＋工種別内訳＋合計・A4複数ページ対応）
@@ -748,8 +749,9 @@ async function sendPdf() {
     // PDF生成（A4横向き・ページブロック単位＝exportPdf と同方式）
     const pdf = await buildEstimatePdf()
     // Storageへ保存（EFが添付用にダウンロードする・履歴に紐付く）
-    const path = `estimates/${accountId}/${projectId.value}-${Date.now()}.pdf`
-    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, pdf.output('blob'), { upsert: true, contentType: 'application/pdf' })
+    // admin-docs のRLSは path 先頭=account_id を要求するため account_id を先頭に置く。
+    const path = `${accountId}/estimates/${projectId.value}-${Date.now()}.pdf`
+    const { error: upErr } = await supabase.storage.from(PDF_BUCKET).upload(path, pdf.output('blob'), { upsert: true, contentType: 'application/pdf' })
     if (upErr) throw upErr
     // 送信EF（devはテスト入口＝実メールは送らず履歴のみ記録）。EFが呼び出し元JWTで越境を拒否。
     const fnName = IS_DEV ? 'test-send-estimate' : 'send-estimate'
@@ -760,7 +762,7 @@ async function sendPdf() {
       body: JSON.stringify({
         project_id: projectId.value, contractor_id: currentContractorId.value, contractor_contact_ids: sendContactIds.value,
         subject: sendSubject.value, body: sendBody.value,
-        pdf_path: path, total_amount: Math.round(grandTotal.value), project_name: currentProjectName.value,
+        pdf_path: path, pdf_bucket: PDF_BUCKET, total_amount: Math.round(grandTotal.value), project_name: currentProjectName.value,
       }),
     })
     const r = await res.json().catch(() => ({}))
@@ -820,10 +822,10 @@ async function sendPO(g: { supplierId: string; supplierName: string; items: Row[
     if (orderId) await supabase.from('purchase_orders').update(payload).eq('id', orderId)
     else { const { data, error } = await supabase.from('purchase_orders').insert(payload).select('id').single(); if (error) throw error; orderId = (data as any)?.id }
     if (!orderId) throw new Error('発注書の作成に失敗しました')
-    const path = `purchase-orders/${accountId}/${orderId}.pdf`
-    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, blob, { upsert: true, contentType: 'application/pdf' })
+    const path = `${accountId}/purchase-orders/${orderId}.pdf`
+    const { error: upErr } = await supabase.storage.from(PDF_BUCKET).upload(path, blob, { upsert: true, contentType: 'application/pdf' })
     if (upErr) throw upErr
-    await supabase.from('purchase_orders').update({ pdf_path: path }).eq('id', orderId)
+    await supabase.from('purchase_orders').update({ pdf_path: path, pdf_bucket: PDF_BUCKET }).eq('id', orderId)
     // 送信（発注書の承諾依頼。既存 send-purchase-order EF を再利用。devはtest入口で実送信なし）
     const fn = IS_DEV ? 'test-send-purchase-order' : 'send-purchase-order'
     const { data: { session } } = await supabase.auth.getSession()
@@ -900,7 +902,7 @@ async function loadProjectPOs() {
   poContactSel.value = {}
   if (!projectId.value) return
   const { data } = await supabase.from('purchase_orders')
-    .select('id, subcontractor_id, subcontractor_contact_id, order_number, total_amount, email_sent_at, pdf_path, status')
+    .select('id, subcontractor_id, subcontractor_contact_id, order_number, total_amount, email_sent_at, pdf_path, pdf_bucket, status')
     .eq('estimate_project_id', projectId.value).eq('is_deleted', false)
   projectPOs.value = (data ?? []) as any[]
 }
