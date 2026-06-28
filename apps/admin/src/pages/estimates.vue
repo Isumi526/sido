@@ -27,7 +27,7 @@
             <td>{{ e.estimate_date || '—' }}</td>
             <td class="num">{{ e.total_amount != null ? `¥${e.total_amount.toLocaleString()}` : '—' }}</td>
             <td>
-              <a v-if="e.pdf_path" :href="pdfUrl(e.pdf_path)" target="_blank" rel="noopener" class="pdf-link">📄 PDF</a><span v-else class="muted">—</span>
+              <a v-if="e.pdf_path" href="#" @click.prevent="openDoc(e.pdf_path, e.pdf_bucket)" class="pdf-link">📄 PDF</a><span v-else class="muted">—</span>
               <span v-if="e.uploaded_via_portal" class="badge-up" title="業者がポータルからアップロード">業者UP</span>
             </td>
             <td class="actions">
@@ -72,7 +72,7 @@
 
         <label class="fld"><span>見積書PDF</span>
           <input ref="fileInput" type="file" accept="application/pdf,image/*" class="file-input" @change="onFile" />
-          <span v-if="modal.pdf_path && !file" class="hint">登録済み：<a :href="pdfUrl(modal.pdf_path)" target="_blank" rel="noopener" class="pdf-link">📄 現在のPDF</a>（新しく選ぶと差し替え）</span>
+          <span v-if="modal.pdf_path && !file" class="hint">登録済み：<a href="#" @click.prevent="openDoc(modal.pdf_path, modal.pdf_bucket)" class="pdf-link">📄 現在のPDF</a>（新しく選ぶと差し替え）</span>
         </label>
 
         <label class="fld"><span>メモ</span>
@@ -108,23 +108,24 @@ import { ref, computed, onMounted } from 'vue'
 import HelpButton from '../components/HelpButton.vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { openDoc } from '../lib/docUrl'
 
 type Estimate = {
   id: string; subcontractor_id: string | null; site_id: string | null
   estimate_number: string; estimate_date: string | null; total_amount: number | null
-  construction_details: string | null; pdf_path: string | null; note: string | null
+  construction_details: string | null; pdf_path: string | null; pdf_bucket: string | null; note: string | null
   uploaded_via_portal?: boolean
 }
 type Opt = { id: string; name: string; category?: string | null }
 
-const BUCKET = 'expense-receipts'
+const PDF_BUCKET = 'admin-docs'          // 新規アップロードの見積PDFは非公開バケット（署名URL配信）
 const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
 const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 const IS_DEV   = import.meta.env.DEV
 const busyId   = ref<string | null>(null)
 const comments = ref<{ id: string; body: string; author: string | null; created_at: string }[]>([])
 const commentDraft = ref('')
-const EST_COLS = 'id, subcontractor_id, site_id, estimate_number, estimate_date, total_amount, construction_details, pdf_path, note, uploaded_via_portal'
+const EST_COLS = 'id, subcontractor_id, site_id, estimate_number, estimate_date, total_amount, construction_details, pdf_path, pdf_bucket, note, uploaded_via_portal'
 
 const rows    = ref<Estimate[]>([])
 const subs    = ref<Opt[]>([])
@@ -139,7 +140,6 @@ const fileInput = ref<HTMLInputElement | null>(null)
 
 const subName  = (id: string | null) => subs.value.find((s) => s.id === id)?.name ?? '—'
 const siteName = (id: string | null) => sites.value.find((s) => s.id === id)?.name ?? '—'
-function pdfUrl(path: string) { return supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl }
 
 // 選択中の業者に紐づく現場のみ（紐付け0件なら全件にフォールバック＝UX破綻防止）
 const linkedSiteIds = computed(() => new Set(siteLinks.value.filter(l => l.subcontractor_id === modal.value?.subcontractor_id).map(l => l.site_id)))
@@ -245,10 +245,12 @@ async function save() {
     }
     // PDF差し替え（任意）
     if (estId && file.value) {
-      const path = `estimates/${accountId}/${estId}.pdf`
-      const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file.value, { upsert: true, contentType: file.value.type || 'application/pdf' })
+      // admin-docs のRLSは path 先頭=account_id を要求するため account_id を先頭に置く。
+      const path = `${accountId}/estimates/${estId}.pdf`
+      // 管理者アップロードの見積PDFは非公開バケット(admin-docs)へ。表示は openDoc(path, pdf_bucket) で署名URL。
+      const { error: upErr } = await supabase.storage.from(PDF_BUCKET).upload(path, file.value, { upsert: true, contentType: file.value.type || 'application/pdf' })
       if (upErr) throw upErr
-      await supabase.from('estimates').update({ pdf_path: path }).eq('id', estId)
+      await supabase.from('estimates').update({ pdf_path: path, pdf_bucket: PDF_BUCKET }).eq('id', estId)
     }
     modal.value = null; await load()
   } catch (e: any) {
