@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="format-detection" content="telephone=no">
+<title>GENLINKS 機能一覧（営業用）</title>
+<style>
+  :root{
+    --green:#06C755; --ink:#1a1a1a; --sub:#667085; --line:#eceff3; --bg:#f6f8fa;
+    --ok-bg:#e8fff0; --ok-fg:#0a8a3a; --beta-bg:#fff7e6; --beta-fg:#b8741a;
+  }
+  *{box-sizing:border-box;-webkit-text-size-adjust:100%;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+    color:var(--ink);background:var(--bg);line-height:1.7;font-size:16px;
+    padding-bottom:48px;}
+  header{position:sticky;top:0;z-index:10;background:#111;color:#fff;
+    padding:14px 18px calc(14px + env(safe-area-inset-top)) 18px;padding-top:max(14px,env(safe-area-inset-top));
+    box-shadow:0 2px 12px rgba(0,0,0,.18);}
+  .brand{font-weight:900;letter-spacing:3px;color:var(--green);font-size:20px;}
+  .brand small{display:block;letter-spacing:0;color:#aab;font-weight:500;font-size:12px;margin-top:2px;}
+  .wrap{max-width:680px;margin:0 auto;padding:0 16px;}
+  .hero{background:#fff;border-radius:16px;padding:20px;margin:18px 0;box-shadow:0 1px 6px rgba(16,24,40,.06);}
+  .hero h1{font-size:19px;margin:0 0 8px;line-height:1.5;}
+  .hero p{margin:8px 0 0;color:#344054;font-size:14.5px;}
+  .hero .pts{margin:14px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px;}
+  .hero .pts li{background:var(--bg);border-radius:10px;padding:10px 12px;font-size:14px;font-weight:600;}
+  h2{font-size:17px;margin:30px 0 6px;display:flex;align-items:center;gap:8px;}
+  h2 .bar{width:5px;height:18px;background:var(--green);border-radius:3px;display:inline-block;}
+  h3{font-size:14px;color:var(--sub);margin:18px 0 8px;font-weight:700;}
+  .card{background:#fff;border-radius:14px;box-shadow:0 1px 5px rgba(16,24,40,.05);overflow:hidden;margin-bottom:12px;}
+  .feat{display:flex;gap:10px;padding:13px 15px;border-top:1px solid var(--line);align-items:flex-start;}
+  .feat:first-child{border-top:0;}
+  .feat .body{flex:1;min-width:0;}
+  .feat .name{font-weight:700;font-size:15px;}
+  .feat .desc{color:#475467;font-size:13.5px;margin-top:3px;}
+  .badge{flex-shrink:0;font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;white-space:nowrap;align-self:center;}
+  .ok{background:var(--ok-bg);color:var(--ok-fg);}
+  .beta{background:var(--beta-bg);color:var(--beta-fg);}
+  .note{background:#fff;border:1px dashed #d0d5dd;border-radius:12px;padding:14px 16px;margin:18px 0;font-size:13.5px;color:#475467;}
+  .note b{color:var(--ink);}
+  footer{text-align:center;color:#98a2b3;font-size:12px;margin-top:30px;padding:0 16px;}
+  .legend{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 0;}
+  .legend span{font-size:11.5px;color:#475467;}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap" style="padding:0;">
+    <div class="brand">GENLINKS<small>内装施工 台帳まるごと自動化 ｜ 実装機能一覧（営業用）</small></div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="hero">
+    <h1>職人さんは LINE で日報を出すだけ。<br>台帳・原価・請求が、ぜんぶ自動でつながる。</h1>
+    <p>現場・経費・領収書・写真がそのまま本社の管理画面に集約。原価集計／見積〜発注〜請求／勤怠・有給・車両・工程まで一気通貫。領収書・請求書・価格表は AI が読み取って自動入力。</p>
+    <ul class="pts">
+      <li>📲 入力は LINE だけ・AIが領収書を読み取り（現場の手間を最小化）</li>
+      <li>🔗 1つのデータで台帳が全部つながる（二重入力なし）</li>
+      <li>✉️ 見積・発注・請求・督促まで自動（業者ポータル・署名証跡つき）</li>
+    </ul>
+    <div class="legend"><span>✅ 本番稼働中（実機コードで確認済み）</span></div>
+  </div>
+
+  <h2><span class="bar"></span>作業員向け（LINE 日報アプリ）</h2>
+  <div class="card">
+    <div class="feat"><div class="body"><div class="name">LINE日報入力</div><div class="desc">稼働区分→現場→経費→送信を LINE 上で。複数現場を1日でまとめて報告</div></div><span class="badge ok">本番稼働</span></div>
+    <div class="feat"><div class="body"><div class="name">領収書AI自動入力</div><div class="desc">撮るだけで支払先・金額・インボイス番号を自動抽出（ガソリン/駐車/高速/電車/宿泊/資材/雑費すべて）</div></div><span class="badge ok">本番稼働</span></div>
+    <div class="feat"><div class="body"><div class="name">経費の複数明細・個人立替</div><div class="desc">宿泊・駐車・高速・電車を1件ずつ明細＋領収書で。立替フラグも明細単位</div></div><span class="badge ok">本番稼働</span></div>
+    <div class="feat"><div class="body"><div class="name">下書き自動保存</div><div class="desc">入力途中で中断しても自動保存。領収書画像も含めて復元</div></div><span class="badge ok">本番稼働</span></div>
+    <div class="feat"><div class="body"><div class="name">送信前プレビュー＆編集</div><div class="desc">LINE通知の見え方を事前確認。送信済み日報の編集→変更箇所だけ差分通知。月別履歴も</div></div><span class="badge ok">本番稼働</span></div>
+    <div class="feat"><div class="body"><div class="name">出退勤チェックイン（QR）</div><div class="desc">現場QRから出退勤。安全ルール・送り出し資料への同意をGPS位置つきで記録</div></div><span class="badge ok">本番稼働</span></div>
+    <div class="feat"><div class="body"><div class="name">経費申請PDF・代理入力・スケジュール</div><div class="desc">立替経費を期間ごとPDFでワンタップ申請／LINEを持たない職人の代理入力／勤務予定の閲覧</div></div><span class="badge ok">本番稼働</span></div>
+  </div>
+
+  <h2><span class="bar"></span>管理画面（本社）</h2>
+
+  <h3>日次管理・原価の見える化</h3>
+  <div class="card">
+    <div class="feat"><div class="body"><div class="name">ダッシュボード</div><div class="desc">月次の経営数字を一目で。原価カテゴリ別（社員・商社・業者・経費）集計＋明細ドリルダウン</div></div><span class="badge ok">本番稼働</span></div>
+    <div class="feat"><div class="body"><div class="name">日報一覧</div><div class="desc">人件費（残業・深夜・日曜割増）を自動計算。LINE通知・経費内訳確認</div></div><span class="badge ok">本番稼働</span></div>
+    <div class="feat"><div class="body"><div class="name">現場別集計</div><div class="desc">現場ごとの人工・経費・請求をまとめて。CSV＋見積書PDFでエクスポート</div></div><span class="badge ok">本番稼働</span></div>
+  </div>
+
+  <h3>見積 → 発注 → 請求（一気通貫）</h3>
+  <div class="card">
+    <div class="feat"><div class="body"><div class="name">見積もり（案件一覧／ビルダー）</div><div class="desc">明細を組んで見積書PDF発行。受注で現場化、商社へ発注書を自動生成・メール送信</div></div><span class="badge ok">本番稼働</span></div>
+    <div class="feat"><div class="body"><div class="name">見積マスタ・単価表</div><div class="desc">工種・材料・商社別単価を管理。価格表をAI(OCR)で取込、差分を承認して反映</div></div><span class="badge ok">本番稼働</span></div>
+    <div class="feat"><div class="body"><div class="name">注文書発行</div><div class="desc">注文書をメール送信。業者がリンクで承諾（署名）、変更注文書の再承諾、請求依頼まで</div></div><span class="badge ok">本番稼働</span></div>
+    <div class="feat"><div class="body"><div class="name">協力業者請求</div><div class="desc">下請け請求を受領・管理。請求書PDFをAI解析で自動入力、支払期限・状況を追跡</div></div><span class="badge ok">本番稼働</span></div>
+  </div>
+
+  <h3>経費・原価配賦</h3>
+  <div class="card">
+    <div class="feat"><div class="body"><div class="name">経費管理</div><div class="desc">作業員の立替経費を申請→承認→支払→回収まで管理</div></div><span class="badge ok">本番稼働</span></div>
+    <div class="feat"><div class="body"><div class="name">ガソリン按分</div><div class="desc">月次のガソリン実費を現場の走行距離比で配賦。見込み／実績／差異を並記</div></div><span class="badge ok">本番稼働</span></div>
+  </div>
+
+  <h3>勤怠・労務</h3>
+  <div class="card">
+    <div class="feat"><div class="body"><div class="name">出面・勤怠 / 出退勤ログ</div><div class="desc">稼働日数・時間帯別時間・人件費を集計しPDF出力／出退勤をGPS・同意証跡つきで記録</div></div><span class="badge ok">本番稼働</span></div>
+    <div class="feat"><div class="body"><div class="name">有給管理</div><div class="desc">付与・使用・残日数を管理、法定5日取得義務の達成度も。管理簿を印刷</div></div><span class="badge ok">本番稼働</span></div>
+    <div class="feat"><div class="body"><div class="name">予定管理 / 確認ルール・QR</div><div class="desc">作業員×日付のシフトを可視化（夜勤・複数日対応）／現場ごとの安全ルールと出退勤QR発行</div></div><span class="badge ok">本番稼働</span></div>
+  </div>
+
+  <h3>工程</h3>
+  <div class="card">
+    <div class="feat"><div class="body"><div class="name">工程管理</div><div class="desc">複数現場の工程をエクセル風ガントで統合管理。並び替え（現場/担当/開始日）、工種色分け、契約金額・現場管理者・メモ</div></div><span class="badge ok">本番稼働</span></div>
+  </div>
+
+  <h3>マスタ管理</h3>
+  <div class="card">
+    <div class="feat"><div class="body"><div class="name">作業員</div><div class="desc">職員情報・単価（昇給履歴）・雇用形態・家族構成・車検/健診履歴・ログイン認証を一元管理</div></div><span class="badge ok">本番稼働</span></div>
+    <div class="feat"><div class="body"><div class="name">現場 / 元請け / 協力業者 / 車両</div><div class="desc">現場（添付・重複マージ・見積紐付け）／取引先・口座／下請け（招待・工種・単価）／車検・保険・修理ログ</div></div><span class="badge ok">本番稼働</span></div>
+  </div>
+
+  <h3>通知・運用・設定</h3>
+  <div class="card">
+    <div class="feat"><div class="body"><div class="name">未送信者リスト / リマインド履歴</div><div class="desc">日報未送信者を朝礼用にリスト化・LINEコピー／自動リマインドの実行結果を監視</div></div><span class="badge ok">本番稼働</span></div>
+    <div class="feat"><div class="body"><div class="name">操作ログ / ユーザー / 設定 / 自社情報</div><div class="desc">主要操作の監査証跡／リマインド受信管理／各種単価・通知・時刻／会社情報・印影・法定福利費率</div></div><span class="badge ok">本番稼働</span></div>
+    <div class="feat"><div class="body"><div class="name">AIヘルプ（常駐）</div><div class="desc">どの画面でも右下から操作をAIに質問。不具合の可能性をAIが検知してバックログ起票も</div></div><span class="badge ok">本番稼働</span></div>
+  </div>
+
+  <h2><span class="bar"></span>裏側で自動で動く仕組み</h2>
+  <div class="card">
+    <div class="feat"><div class="body"><div class="name">日報未送信リマインド / 車検期日リマインド</div><div class="desc">設定時刻に未送信者をLINE個人通知（会社単位で時刻/対象/ON-OFF）／車検が近い車両を週次通知</div></div><span class="badge ok">本番稼働</span></div>
+    <div class="feat"><div class="body"><div class="name">領収書・請求書・価格表のAI解析</div><div class="desc">撮影/PDFから店名・金額・インボイス番号・明細を抽出。価格表は単価マスタへ（承認制）</div></div><span class="badge ok">本番稼働</span></div>
+    <div class="feat"><div class="body"><div class="name">各種メール自動送信 / 下請けポータル</div><div class="desc">見積・注文書・変更注文・請求依頼・業者登録・経費申請PDF／業者がログイン不要のリンクで承諾・請求・見積UP（署名証跡）</div></div><span class="badge ok">本番稼働</span></div>
+  </div>
+
+  <div class="note">
+    <b>正直ベースの注記：</b>本一覧の機能はすべて実機のソースコードで実装・配線を確認済み（admin 30画面・LINE日報フロー全体・バックエンド23本）。<b>構想中・未実装の項目は載せていません。</b>（参考：AIヘルプ常駐化・RLS強化・マルチテナント完全化・権限ロール体系などは現在開発バックログに控え中。営業では現状の✅のみ訴求。）
+  </div>
+
+  <footer>GENLINKS ｜ 実装機能一覧（2026-06-28 時点・実機コード監査ベース）</footer>
+</div>
+</body>
+</html>
