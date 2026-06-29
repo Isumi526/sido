@@ -530,9 +530,11 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
 
     for (const site of ((report as any).sites ?? [])) {
       const rawName  = site.siteName ?? ''
-      const siteName = rawName === '__other__'
-        ? (site.customSiteName?.trim() || '新規現場')
-        : (rawName.trim() || '(不明)')
+      const siteName = rawName === '__unset__'
+        ? '現場未設定'
+        : rawName === '__other__'
+          ? (site.customSiteName?.trim() || '新規現場')
+          : (rawName.trim() || '(不明)')
       const date  = (report as any).date
       const gKey  = `${siteName}__${date}`
 
