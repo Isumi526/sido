@@ -364,6 +364,7 @@ export const useExpense = () => {
     if (!accountId || !Array.isArray(sites) || sites.length === 0) return
     const names = new Set<string>()
     for (const s of sites) {
+      if (s?.siteName === '__unset__') continue   // 現場未設定はマスタ登録しない（あとで紐付け）
       const raw  = s?.siteName === '__other__' ? s?.customSiteName : s?.siteName
       const name = (raw ?? '').trim()
       if (name && name !== '__other__') names.add(name)

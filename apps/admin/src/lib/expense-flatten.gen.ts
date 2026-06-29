@@ -46,7 +46,7 @@ export interface ExpenseRow {
 export function flattenReportExpenses(date: string, sites: any[], rates: ExpenseRates): ExpenseRow[] {
   const rows: ExpenseRow[] = []
   for (const site of (sites ?? [])) {
-    const siteName = site.siteName === '__other__' ? (site.customSiteName || '') : (site.siteName || '')
+    const siteName = site.siteName === '__unset__' ? '現場未設定' : site.siteName === '__other__' ? (site.customSiteName || '') : (site.siteName || '')
     const exp = site.expenses || {}
 
     // 共有URL配列は最初の行にだけ添付する（take-once）

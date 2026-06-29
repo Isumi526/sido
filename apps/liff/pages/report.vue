@@ -144,9 +144,11 @@
           <Field :label="$t('report.siteName')">
             <select v-model="site.siteName" class="select" required>
               <option value="">{{ $t('common.select') }}</option>
+              <option value="__unset__">{{ $t('report.siteUnset') }}</option>
               <option v-for="name in filteredSiteNames(site.contractorName)" :key="name" :value="name">{{ name }}</option>
               <option value="__other__">{{ $t('report.addNewSite') }}</option>
             </select>
+            <div v-if="site.siteName === '__unset__'" class="unset-note">{{ $t('report.siteUnsetNote') }}</div>
             <input
               v-if="site.siteName === '__other__'"
               v-model="site.customSiteName"
@@ -2030,6 +2032,7 @@ html, body {
 .expense-list { display: flex; flex-direction: column; gap: 12px; }
 .expense-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .mt6  { margin-top: 6px; }
+.unset-note { margin-top: 6px; font-size: 12px; color: #475569; background: #f1f5f9; border-radius: 6px; padding: 7px 10px; line-height: 1.5; }
 .mt8  { margin-top: 8px; }
 
 /* ── 車両ブロック ── */
