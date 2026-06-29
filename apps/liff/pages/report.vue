@@ -51,6 +51,7 @@
           <div v-if="!isEditMode && report.form.value.date < new Date().toISOString().split('T')[0]" class="past-date-notice">
             <span v-html="$t('report.pastDateNotice')" />
           </div>
+          <div v-if="currentDateLocked" class="locked-notice">🔒 {{ $t('report.lockedBanner') }}</div>
         </FormSection>
 
         <!-- 稼働有無 -->
@@ -553,7 +554,7 @@
         <button v-if="isDev" type="button" class="btn-dev" :class="{ 'btn-dev--error': forceErrorOnSubmit }" @click="fillErrorTestData">
           {{ forceErrorOnSubmit ? $t('report.cancelErrorTest') : $t('report.fillErrorTestData') }}
         </button>
-        <button type="submit" class="btn-submit" :disabled="isEditMode ? editSubmitting : (report.submitting.value || !omissionConfirmed)">
+        <button type="submit" class="btn-submit" :disabled="currentDateLocked || (isEditMode ? editSubmitting : (report.submitting.value || !omissionConfirmed))">
           <span v-if="isEditMode ? editSubmitting : report.submitting.value" class="submitting">
             <span class="dot-spin" />{{ isEditMode ? $t('report.updating') : $t('report.submitting') }}
           </span>
@@ -639,6 +640,17 @@ const currentUser = computed(() => {
 })
 
 const isDev = computed(() => config.public.appEnv === 'development' || liff.isTester.value)
+
+// ── 過去3日編集ロック（提出/編集の期限ガード）──
+const lock = useReportLock()
+const currentDateLocked = ref(false)
+async function refreshLock() {
+  const d = report.form.value.date
+  const wid = currentUser.value?.worker_id ?? null
+  if (!wid || !lock.isPastLockWindow(d)) { currentDateLocked.value = false; return }
+  currentDateLocked.value = await lock.isLocked(wid, d)
+}
+watch([() => report.form.value.date, () => currentUser.value?.worker_id], refreshLock, { immediate: true })
 
 const initializing = ref(true)
 
@@ -1296,6 +1308,21 @@ function notifyErrorToLine(actionName: string, errorMsg: string) {
 async function handleSubmit() {
   report.form.value.isWorking  = isWorkingStr.value === 'working' || isWorkingStr.value === 'paid_leave'
   report.form.value.leaveType  = isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null
+
+  // ── 過去3日ロック: ロック窓(3日以上前)かつ未承認なら 提出/編集を弾く（バックストップ）──
+  {
+    const lockDate = report.form.value.date
+    if (lock.isPastLockWindow(lockDate)) {
+      const wid = currentUser.value?.worker_id ?? null
+      if (await lock.isLocked(wid, lockDate)) {
+        currentDateLocked.value = true
+        const msg = t('report.lockedSubmit')
+        if (isEditMode.value) editError.value = msg
+        alert(msg)
+        return
+      }
+    }
+  }
 
   // ── 編集モード: Supabase のみ更新（GAS には再送しない）──
   if (isEditMode.value) {
@@ -2190,6 +2217,17 @@ html, body {
   font-size: 13px;
   color: #C2410C;
   font-weight: 600;
+}
+.locked-notice {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #B91C1C;
+  font-weight: 700;
+  line-height: 1.6;
 }
 
 /* ── 日付固定表示 ── */
