@@ -47,7 +47,7 @@
 
         <!-- 日付 -->
         <FormSection num="01" :title="$t('report.dateSection')">
-          <div class="date-fixed">{{ report.form.value.date }}</div>
+          <div class="date-fixed">{{ dateWithWeekday }}</div>
           <div v-if="!isEditMode && report.form.value.date < new Date().toISOString().split('T')[0]" class="past-date-notice">
             <span v-html="$t('report.pastDateNotice')" />
           </div>
@@ -689,6 +689,15 @@ const isWorkingStr = ref<'working' | 'paid_leave' | 'off'>('working')
 const isSunday = computed(() =>
   new Date(report.form.value.date + 'T00:00:00').getDay() === 0
 )
+
+// 日付表示用（曜日併記）: 2026-06-29（月）
+const dateWithWeekday = computed(() => {
+  const ds = report.form.value.date
+  if (!ds) return ''
+  const d = new Date(ds + 'T00:00:00')
+  const weekdays = ['日', '月', '火', '水', '木', '金', '土']
+  return `${ds}（${weekdays[d.getDay()]}）`
+})
 
 // 現場跨ぎ残業対応: 各現場の workers[0] のプレビュー用 breakdown（startTime 順で累積）
 const sitePreviewBreakdowns = computed((): Record<number, RateBreakdown> => {
