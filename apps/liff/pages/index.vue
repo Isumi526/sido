@@ -60,6 +60,10 @@
           <span class="material-symbols-rounded menu-icon" style="color:#ef4444">picture_as_pdf</span>
           <span class="menu-label">{{ t('nav.expensePdf') }}</span>
         </NuxtLink>
+        <NuxtLink class="menu-card" to="/rules">
+          <span class="material-symbols-rounded menu-icon" style="color:#0d9488">menu_book</span>
+          <span class="menu-label">{{ t('nav.rulebook') }}</span>
+        </NuxtLink>
         <!-- email/pw ログイン作業員のみ：パスワード変更 -->
         <NuxtLink v-if="authMode === 'password'" class="menu-card" to="/password" data-testid="menu-password">
           <span class="material-symbols-rounded menu-icon" style="color:#64748b">lock_reset</span>
