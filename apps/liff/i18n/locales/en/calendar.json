@@ -12,6 +12,8 @@
   "targetWorkers": "Workers * ({count})",
   "bulkSelectFromGroup": "Select all from group…",
   "site": "Site *",
+  "contractor": "Primary contractor",
+  "contractorAll": "All contractors",
   "pleaseSelect": "Please select",
   "registerNewSite": "＋ Register new site",
   "siteName": "Site name *",
