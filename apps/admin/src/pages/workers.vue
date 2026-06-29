@@ -61,6 +61,16 @@
           </div>
         </div>
         <div class="field">
+          <label>権限ロール</label>
+          <div class="toggle role-toggle">
+            <button :class="{ active: (modal.permission_role ?? 'worker') === 'admin' }" @click="modal.permission_role = 'admin'">管理者</button>
+            <button :class="{ active: (modal.permission_role ?? 'worker') === 'office' }" @click="modal.permission_role = 'office'">事務員</button>
+            <button :class="{ active: (modal.permission_role ?? 'worker') === 'site_manager' }" @click="modal.permission_role = 'site_manager'">現場担当者</button>
+            <button :class="{ active: (modal.permission_role ?? 'worker') === 'worker' }" @click="modal.permission_role = 'worker'">職人</button>
+          </div>
+          <p class="role-hint">権限階層: 管理者 &gt; 事務員 &gt; 現場担当者 &gt; 職人。画面/操作の制御は今後のフェーズで適用されます。</p>
+        </div>
+        <div class="field">
           <label>賃金タイプ</label>
           <div class="toggle">
             <button :class="{ active: (modal.wage_type ?? 'daily') === 'daily' }" @click="modal.wage_type = 'daily'">日当（固定）</button>
@@ -225,6 +235,7 @@ type Worker = {
   id: string
   name: string
   role: 'factory' | 'site'
+  permission_role?: 'admin' | 'office' | 'site_manager' | 'worker'
   unit_price: number
   wage_type: 'daily' | 'hourly'
   active: boolean
@@ -352,7 +363,7 @@ function toggleProxyId(id: string) {
 async function load() {
   const accountId = await getAccountId()
   const [{ data: workersData }, { data: usersData }, { data: proxyData }] = await Promise.all([
-    supabase.from('workers').select('id, name, role, unit_price, wage_type, active, hire_date, birth_date, address, emergency_contact, employment_type, weekly_scheduled_days, company_info, invoice_number, insurance_info, labor_insurance_number, report_start_date, auth_user_id').eq('account_id', accountId).order('name'),
+    supabase.from('workers').select('id, name, role, permission_role, unit_price, wage_type, active, hire_date, birth_date, address, emergency_contact, employment_type, weekly_scheduled_days, company_info, invoice_number, insurance_info, labor_insurance_number, report_start_date, auth_user_id').eq('account_id', accountId).order('name'),
     supabase.from('users').select('worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
     supabase.from('worker_proxies').select('worker_id, proxy_operator_id').eq('account_id', accountId),
   ])
@@ -371,7 +382,7 @@ async function load() {
 onMounted(load)
 
 function openAdd() {
-  modal.value = { name: '', role: 'site', unit_price: 20000, wage_type: 'daily', hire_date: null, birth_date: null, address: null, emergency_contact: null, employment_type: 'fulltime', weekly_scheduled_days: null, company_info: null, invoice_number: null, insurance_info: null, labor_insurance_number: null, report_start_date: null }
+  modal.value = { name: '', role: 'site', permission_role: 'worker', unit_price: 20000, wage_type: 'daily', hire_date: null, birth_date: null, address: null, emergency_contact: null, employment_type: 'fulltime', weekly_scheduled_days: null, company_info: null, invoice_number: null, insurance_info: null, labor_insurance_number: null, report_start_date: null }
   modalProxyIds.value = []
   familyMembers.value = []
   vehicleInspections.value = []
@@ -465,6 +476,7 @@ async function save() {
     const workerPayload = {
       name:                  modal.value.name!.trim(),
       role:                  modal.value.role ?? 'site',
+      permission_role:       modal.value.permission_role ?? 'worker',
       unit_price:            modal.value.unit_price ?? 0,
       wage_type:             modal.value.wage_type ?? 'daily',
       hire_date:             modal.value.hire_date || null,
@@ -565,6 +577,8 @@ async function toggleActive(w: Worker) {
 .toggle { display: flex; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; }
 .toggle button { flex: 1; padding: 10px; background: #f5f5f5; color: #888; border: none; cursor: pointer; font-size: 13px; }
 .toggle button.active { background: #06C755; color: #fff; font-weight: 700; }
+.role-toggle button { font-size: 12px; padding: 9px 4px; }
+.role-hint { font-size: 11px; color: #94a3b8; margin: 6px 0 0; line-height: 1.5; }
 .proxy-check-list { display: flex; flex-direction: column; gap: 8px; background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px 14px; max-height: 160px; overflow-y: auto; }
 .proxy-check-item { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
 .proxy-check-item input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
