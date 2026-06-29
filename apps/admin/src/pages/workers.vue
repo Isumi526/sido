@@ -11,6 +11,7 @@
           <tr>
             <th>名前</th>
             <th>所属</th>
+            <th>権限</th>
             <th>日当単価</th>
             <th>雇用形態</th>
             <th>入社日</th>
@@ -24,6 +25,7 @@
           <tr v-for="w in workers" :key="w.id" :class="{ inactive: !w.active }">
             <td class="name">{{ w.name }}</td>
             <td><span class="badge" :class="w.role">{{ w.role === 'factory' ? '工場/事務所' : '現場' }}</span></td>
+            <td><span class="perm-badge" :class="w.permission_role ?? 'worker'">{{ permLabel(w.permission_role) }}</span></td>
             <td class="price">¥{{ w.unit_price.toLocaleString() }}</td>
             <td><span class="emp-badge" :class="w.employment_type ?? 'fulltime'">{{ w.employment_type === 'contractor' ? '業務委託' : (w.employment_type ?? 'fulltime') === 'fulltime' ? '正社員' : `パート(週${w.weekly_scheduled_days ?? '?'}日)` }}</span></td>
             <td class="hire-date">{{ w.hire_date ?? '—' }}</td>
@@ -354,6 +356,11 @@ function workerName(id: string | null) {
   return workers.value.find(w => w.id === id)?.name ?? '不明'
 }
 
+const PERM_LABELS: Record<string, string> = { admin: '管理者', office: '事務員', site_manager: '現場担当者', worker: '職人' }
+function permLabel(r: string | null | undefined): string {
+  return PERM_LABELS[r ?? 'worker'] ?? '職人'
+}
+
 function toggleProxyId(id: string) {
   const idx = modalProxyIds.value.indexOf(id)
   if (idx >= 0) modalProxyIds.value.splice(idx, 1)
@@ -560,6 +567,11 @@ async function toggleActive(w: Worker) {
 .badge { font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 700; }
 .badge.factory { background: #e8f4ff; color: #1a6fc4; }
 .badge.site { background: #e8fff0; color: #0a8a3a; }
+.perm-badge { font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 700; background: #f1f5f9; color: #475569; }
+.perm-badge.admin { background: #fee2e2; color: #b91c1c; }
+.perm-badge.office { background: #ffedd5; color: #c2410c; }
+.perm-badge.site_manager { background: #e0e7ff; color: #4338ca; }
+.perm-badge.worker { background: #f1f5f9; color: #475569; }
 .status { font-size: 11px; padding: 3px 8px; border-radius: 4px; }
 .status.active { background: #e8fff0; color: #0a8a3a; }
 .status.off { background: #f5f5f5; color: #aaa; }
