@@ -79,6 +79,30 @@ git push origin main --force
 - Phase 2 予定: 月次集計レポート・経費PDF自動生成
 - Phase 3 予定: 複数テナント展開
 
+## Pipeline設定（/run・/review・/ship harness 用・cc-pipeline 正本の `{{...}}` 解決元）
+`.claude/commands/run.md`・`review.md`・`ship.md`（cc-pipeline 正本のコピー）の `{{...}}` はここと `.env` から解決する。
+| キー | 実値 | 備考 |
+|---|---|---|
+| **APP_LAYOUT** | npm workspaces モノレポ | `apps/admin`(Vite/Vue・`vite --port 3001`) / `apps/liff`(Nuxt) / `apps/gas`(Google Apps Script・clasp) |
+| **TYPECHECK** | `npm run typecheck`（=`--workspaces --if-present`） | |
+| **BUILD** | `npm run build --workspaces --if-present` | admin=`vite build` / liff=`nuxt build` |
+| **TEST** | `npm run test:e2e`（Playwright） | |
+| **PLAYWRIGHT_PROJECTS** | `admin` / `liff` | `playwright.config.ts`（root） |
+| **LOCAL_STACK** | supabase（標準 API 54321 / DB 54322 / Studio 54323） | `supabase start`。`LOCAL_DB_URL` は既定54322で不要 |
+| **MIGRATIONS_DIR** | `supabase/migrations` | RLS は `account_id` 論理分離。anon公開キー前提の pre-RLS ベースラインあり（`.kody/accepted.yml` で追跡） |
+| **DEPLOY_PLATFORM** | Vercel（admin/liff）＋ Supabase edge functions ＋ GAS(clasp) | |
+| **DEPLOY_TRIGGER** | `auto-on-merge` | `main` Merge ＝ Vercel 自動デプロイ。edge functions / GAS は別途反映（ship 手順7 の edge deploy 該当） |
+| **DEV_URL** | `http://localhost:3001`（admin） | liff は Nuxt dev |
+| **PROD_BRANCH** | `main`／AUTO_MERGE_TARGET=`dev`／AUTO_TIER=`低`／MAX_WALL=`180` | |
+| **本番 Supabase ref** | `nrzzesbtvswoiouhldvi` | 誤接続ガード／`--prod-readonly` 監査用 |
+| **PROD_URL** | ⚠️**要確認**（sido 本番URL未記入） | ship 手順8スモークで使用。判明したらここに記入 |
+
+### APP_LAYOUT_NOTES（/review が参照）
+- 構成: `apps/admin`(管理画面・ブラウザ {{DEV_URL}}) ＋ `apps/liff`(Nuxt・LINEミニアプリ)。UI/ロジックは原則ブラウザ。**LINEアプリ内固有（友だち追加・トーク内 LIFF 起動・Flex体裁）は `⚠実機確認`**。
+- 画面パス例（admin）: 下請け管理／現場／日報／月次集計 ※実パスは apps ルーティングに合わせる。
+- 外部送信媒体＝**LINE（liff・GAS webhook 経由）・メール**（実送信は自分宛・隔離）。
+- 本番: DEPLOY_TRIGGER=`auto-on-merge`（Vercel）。**Supabase edge functions 使用＝ship 手順7 で本番ref へ deploy 該当**。`NOTIFY_PREFIX=[sido]`。スモークの認可ガード対象＝GAS/edge webhook・公開リンク等。
+
 ## 自走ポリシー（被害範囲で判断）
 判断軸：可逆 & dev内 = 自走。不可逆 / 本番 / 業務意図 = 人。
 
