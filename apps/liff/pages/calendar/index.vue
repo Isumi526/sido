@@ -116,12 +116,20 @@
 
         <!-- 現場選択 -->
         <div class="form-card">
+          <!-- 元請け業者（任意）: 選ぶと現場プルダウンをその元請けに紐づく現場へ絞り込む -->
+          <div v-if="master.contractorNames.value.length" class="form-row" style="margin-bottom:8px">
+            <span class="form-row-label">{{ $t('calendar.contractor') }}</span>
+            <select v-model="(formModal as any)._contractor" class="site-select">
+              <option value="">{{ $t('calendar.contractorAll') }}</option>
+              <option v-for="name in master.contractorNames.value" :key="name" :value="name">{{ name }}</option>
+            </select>
+          </div>
           <div class="form-row">
             <span class="form-row-label">{{ $t('calendar.site') }}</span>
             <select v-model="formModal.title" class="site-select">
               <option value="">{{ $t('calendar.pleaseSelect') }}</option>
               <option value="__none__">{{ $t('calendar.noSite') }}</option>
-              <option v-for="s in master.siteNames.value" :key="s" :value="s">{{ s }}</option>
+              <option v-for="s in filteredSiteNames((formModal as any)._contractor)" :key="s" :value="s">{{ s }}</option>
               <option value="__other__">{{ $t('calendar.registerNewSite') }}</option>
             </select>
           </div>
@@ -268,6 +276,17 @@ const customSiteSimilar = computed(() =>
     ? findSimilarSiteNames((formModal.value as any)._customTitle ?? '', master.siteNames.value)
     : [],
 )
+
+// 現場プルダウン: 元請けが選択されていれば、その元請けに紐づく現場だけに絞り込む。
+//  紐づく現場が0件 or 元請け未選択 なら全現場を出す（後方互換）。report.vue と同一ロジック。
+function filteredSiteNames(contractorName?: string): string[] {
+  const all = master.siteNames.value
+  const cn = (contractorName ?? '').trim()
+  if (!cn) return all
+  const map = master.siteContractors.value
+  const linked = all.filter((n) => map[n] === cn)
+  return linked.length ? linked : all
+}
 const { profile } = useLiff()
 const proxy       = useProxyMode()
 const supabase    = useSupabase()
@@ -601,7 +620,8 @@ function onCellTap(date: string, workerId: string) {
     all_day: true, start_date: date, end_date: date,
     start_time: '', end_time: '',
     is_night_shift: false,
-  }
+    _contractor: '',
+  } as any
   selectedWorkerIds.value = new Set([workerId])   // タップした作業員を初期選択
   formError.value = ''
 }
@@ -615,13 +635,14 @@ function openEdit(ev: Schedule) {
     start_date: ev.start_date, end_date: ev.end_date,
     start_time: ev.start_time ?? '', end_time: ev.end_time ?? '',
     is_night_shift: ev.is_night_shift,
+    _contractor: '',
     _original: {
       title: ev.title, description: ev.description ?? null,
       start_date: ev.start_date, end_date: ev.end_date,
       start_time: ev.start_time ?? null, end_time: ev.end_time ?? null,
       is_night_shift: ev.is_night_shift,
     },
-  }
+  } as any
   selectedWorkerIds.value = new Set([ev.worker_id])   // 編集対象の作業員（担当変更可）
   formError.value = ''
 }
