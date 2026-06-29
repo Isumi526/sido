@@ -941,8 +941,8 @@ thead th.sticky-col { z-index: 11; }
 .form-row { display: flex; align-items: center; padding: 12px 14px; min-height: 44px; }
 .form-divider { height: 1px; background: #f0f0f0; margin-left: 14px; }
 .form-row-label { font-size: 15px; color: #111; flex-shrink: 0; }
-.no-site-toggle { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #334155; cursor: pointer; padding: 4px 0 10px; }
-.no-site-toggle input { width: 18px; height: 18px; }
+.no-site-toggle { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #334155; cursor: pointer; padding: 12px 14px; margin-bottom: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; }
+.no-site-toggle input { width: 18px; height: 18px; flex-shrink: 0; }
 
 .dt-input {
   border: none; background: none; outline: none;
