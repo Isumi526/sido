@@ -23,6 +23,7 @@
         <li><RouterLink to="/" class="nav-link"><span class="material-symbols-rounded nav-icon">dashboard</span>ダッシュボード</RouterLink></li>
         <li><RouterLink to="/reports" class="nav-link"><span class="material-symbols-rounded nav-icon">list_alt</span>日報一覧</RouterLink></li>
         <li><RouterLink to="/report-edit-approvals" class="nav-link"><span class="material-symbols-rounded nav-icon">lock_open</span>日報編集の許可申請</RouterLink></li>
+        <li><RouterLink to="/report-site-relink" class="nav-link"><span class="material-symbols-rounded nav-icon">link</span>現場未設定の紐付け</RouterLink></li>
         <li><RouterLink to="/site-reports" class="nav-link"><span class="material-symbols-rounded nav-icon">bar_chart</span>現場別集計</RouterLink></li>
         <li><RouterLink to="/calendar" class="nav-link"><span class="material-symbols-rounded nav-icon">calendar_month</span>予定管理</RouterLink></li>
         <li><RouterLink to="/process" class="nav-link"><span class="material-symbols-rounded nav-icon">view_timeline</span>工程管理</RouterLink></li>
