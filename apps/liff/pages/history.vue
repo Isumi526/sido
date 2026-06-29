@@ -71,7 +71,12 @@
 
             <div class="report-card-footer">
               <span class="updated-at">{{ $t('history.updatedAt', { time: formatUpdatedAt(rep.updated_at) }) }}</span>
-              <NuxtLink :to="`/report?edit=${rep.date}`" class="btn-edit">{{ $t('history.editReport') }}</NuxtLink>
+              <NuxtLink v-if="rowLockState(rep.date) === 'open' || rowLockState(rep.date) === 'approved'"
+                        :to="`/report?edit=${rep.date}`" class="btn-edit">{{ $t('history.editReport') }}</NuxtLink>
+              <span v-else-if="rowLockState(rep.date) === 'pending'" class="lock-pending">🕒 {{ $t('history.unlockPending') }}</span>
+              <button v-else type="button" class="btn-unlock" :disabled="requesting === rep.date" @click="requestUnlock(rep.date)">
+                🔒 {{ requesting === rep.date ? $t('history.unlockRequesting') : $t('history.unlockRequest') }}
+              </button>
             </div>
           </div>
         </template>
@@ -117,6 +122,36 @@ const currentUser = computed(() => {
   return selfUser.value
 })
 
+// ── 過去3日編集ロック ──
+const lock = useReportLock()
+const grantMap = ref<Record<string, 'pending' | 'approved' | 'rejected'>>({})
+const requesting = ref<string | null>(null)
+// ロック判定に使う作業員: 代理中は代理先、通常は自分（worker_id基準）
+const effectiveWorkerId = computed<string | null>(() => {
+  const t = proxy.proxyTarget.value
+  if (t) return (t as any).id ?? null
+  return (selfUser.value as any)?.worker_id ?? null
+})
+async function loadGrants() {
+  grantMap.value = await lock.grantsByDate(effectiveWorkerId.value)
+}
+// open=編集可 / approved=許可で解除 / pending=申請中 / locked=ロック(要申請)
+function rowLockState(date: string): 'open' | 'approved' | 'pending' | 'locked' {
+  if (!lock.isPastLockWindow(date)) return 'open'
+  const s = grantMap.value[date]
+  if (s === 'approved') return 'approved'
+  if (s === 'pending') return 'pending'
+  return 'locked'
+}
+async function requestUnlock(date: string) {
+  if (requesting.value) return
+  requesting.value = date
+  const r = await lock.requestGrant(effectiveWorkerId.value, date, '')
+  requesting.value = null
+  if (r.ok) grantMap.value = { ...grantMap.value, [date]: 'pending' }
+  else alert(t('history.unlockRequestFailed'))
+}
+
 async function loadReports() {
   const uid = liff.profile.value?.userId
   if (!uid) return
@@ -143,6 +178,7 @@ onMounted(async () => {
     selfUser.value = await expense.getUser(uid)
     if (!selfUser.value) { await navigateTo('/register'); return }
     await loadReports()
+    await loadGrants()
   }
   loading.value = false
 })
@@ -151,6 +187,7 @@ watch(() => proxy.proxyTarget.value, async () => {
   if (!selfUser.value) return
   loading.value = true
   await loadReports()
+  await loadGrants()
   loading.value = false
 })
 
@@ -404,4 +441,11 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--font)
   transition: background .15s, color .15s;
 }
 .btn-edit:hover { background: var(--accent); color: #fff; }
+.btn-unlock {
+  font-size: 13px; font-weight: 700; color: #b45309;
+  background: #fef3c7; border: 1px solid #fcd34d;
+  border-radius: 6px; padding: 6px 14px; cursor: pointer;
+}
+.btn-unlock:disabled { opacity: .6; cursor: default; }
+.lock-pending { font-size: 12px; font-weight: 700; color: #92400e; }
 </style>
