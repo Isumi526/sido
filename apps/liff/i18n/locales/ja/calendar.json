@@ -14,6 +14,7 @@
   "site": "現場 *",
   "contractor": "元請け業者",
   "contractorAll": "すべての元請け",
+  "noSiteToggle": "現場と紐付けない（タイトルを入力）",
   "pleaseSelect": "選択してください",
   "registerNewSite": "＋ 新しい現場を登録する",
   "siteName": "現場名 *",
