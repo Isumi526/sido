@@ -23,6 +23,7 @@ import ReminderHistory from '../pages/reminder-history.vue'
 import OperationLogs   from '../pages/operation-logs.vue'
 import NonSubmitters   from '../pages/non-submitters.vue'
 import ReportEditApprovals from '../pages/report-edit-approvals.vue'
+import ReportSiteRelink   from '../pages/report-site-relink.vue'
 import Estimates       from '../pages/estimates.vue'
 import EstimatesList   from '../pages/estimate-list.vue'
 import EstimateMasters from '../pages/estimate-masters.vue'
@@ -60,6 +61,7 @@ export const router = createRouter({
     { path: '/operation-logs',   component: OperationLogs },
     { path: '/non-submitters',   component: NonSubmitters },
     { path: '/report-edit-approvals', component: ReportEditApprovals },
+    { path: '/report-site-relink',    component: ReportSiteRelink },
     { path: '/ai-help',          component: AiHelp },
     { path: '/estimates',        component: Estimates },
     { path: '/estimate-list',   component: EstimatesList },

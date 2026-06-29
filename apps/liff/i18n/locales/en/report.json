@@ -31,6 +31,8 @@
   "contractorPlaceholder": "Enter contractor name (e.g. ABC Construction)",
   "siteName": "Site name",
   "addNewSite": "＋ Register a new site",
+  "siteUnset": "Site not set (link later)",
+  "siteUnsetNote": "You can record even if the site isn't created yet. An admin will link it to the correct site later.",
   "siteNamePlaceholder": "Enter site name (e.g. Shibuya Project)",
   "subcontractorOnly": "Partner / expenses / misc only (I did not work)",
   "startTime": "Start",

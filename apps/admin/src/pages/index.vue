@@ -271,7 +271,7 @@ async function load() {
     const tripSet = (rep as any).is_business_trip ? businessTripMainEntries((rep as any).sites ?? []) : null
     const date = (rep as any).date as string
     for (const site of (rep.sites as any[])) {
-      const siteName = site.siteName || '（現場名なし）'
+      const siteName = site.siteName === '__unset__' ? '現場未設定' : (site.siteName || '（現場名なし）')
       // 社員費
       for (const w of (site.workers ?? []).filter((w: any) => w.workerName)) {
         const curUp = priceById[w.workerId] ?? priceByName[w.workerName] ?? 0
