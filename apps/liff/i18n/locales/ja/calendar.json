@@ -12,6 +12,8 @@
   "targetWorkers": "対象者 *（{count}人）",
   "bulkSelectFromGroup": "グループから一括選択…",
   "site": "現場 *",
+  "contractor": "元請け業者",
+  "contractorAll": "すべての元請け",
   "pleaseSelect": "選択してください",
   "registerNewSite": "＋ 新しい現場を登録する",
   "siteName": "現場名 *",
