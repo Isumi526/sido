@@ -96,5 +96,16 @@ export function useReportLock() {
     return { ok: true }
   }
 
-  return { isPastLockWindow, grantStatus, isLocked, approvedDates, grantsByDate, requestGrant }
+  // 誤った申請の取り消し（pending を撤回）。pending のみ削除＝承認済みは消さない。
+  async function cancelRequest(workerId: string | null | undefined, date: string): Promise<{ ok: boolean; error?: string }> {
+    if (!workerId || !date) return { ok: false, error: 'no-worker-or-date' }
+    const accountId = await getAccountId()
+    if (!accountId) return { ok: false, error: 'no-account' }
+    const { error } = await supabase.from('report_edit_grants').delete()
+      .eq('account_id', accountId).eq('worker_id', workerId).eq('date', date).eq('status', 'pending')
+    if (error) return { ok: false, error: error.message }
+    return { ok: true }
+  }
+
+  return { isPastLockWindow, grantStatus, isLocked, approvedDates, grantsByDate, requestGrant, cancelRequest }
 }

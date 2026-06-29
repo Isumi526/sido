@@ -35,7 +35,8 @@ create index if not exists report_edit_grants_lookup_idx
 
 -- 既存 LIFF 露出テーブルに合わせ anon 運用（RLS無効）。本番RLS化は親エピックで一括。
 alter table public.report_edit_grants disable row level security;
-grant select, insert, update on public.report_edit_grants to anon, authenticated, service_role;
+-- delete は「作業員が誤った申請を取り消す（pending を撤回）」のために許可（anon運用）。
+grant select, insert, update, delete on public.report_edit_grants to anon, authenticated, service_role;
 
 comment on table public.report_edit_grants is
   '過去3日ロックの編集許可申請/承認（worker×date）。LIFF=依頼insert/自状況read、admin=承認update。';
