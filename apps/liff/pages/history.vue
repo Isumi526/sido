@@ -73,15 +73,32 @@
               <span class="updated-at">{{ $t('history.updatedAt', { time: formatUpdatedAt(rep.updated_at) }) }}</span>
               <NuxtLink v-if="rowLockState(rep.date) === 'open' || rowLockState(rep.date) === 'approved'"
                         :to="`/report?edit=${rep.date}`" class="btn-edit">{{ $t('history.editReport') }}</NuxtLink>
-              <span v-else-if="rowLockState(rep.date) === 'pending'" class="lock-pending">🕒 {{ $t('history.unlockPending') }}</span>
-              <button v-else type="button" class="btn-unlock" :disabled="requesting === rep.date" @click="requestUnlock(rep.date)">
-                🔒 {{ requesting === rep.date ? $t('history.unlockRequesting') : $t('history.unlockRequest') }}
+              <button v-else-if="rowLockState(rep.date) === 'pending'" type="button" class="btn-cancel-unlock" :disabled="requesting === rep.date" @click="cancelUnlock(rep.date)">
+                🕒 {{ requesting === rep.date ? $t('history.unlockRequesting') : $t('history.unlockPendingCancel') }}
+              </button>
+              <button v-else type="button" class="btn-unlock" @click="openRequestModal(rep.date)">
+                🔒 {{ $t('history.unlockRequest') }}
               </button>
             </div>
           </div>
         </template>
       </div>
     </main>
+
+    <!-- 編集許可の依頼モーダル（理由コメントを添える） -->
+    <div v-if="requestModalDate" class="req-overlay" @click.self="closeRequestModal">
+      <div class="req-modal">
+        <h2 class="req-title">{{ $t('history.unlockRequest') }}</h2>
+        <p class="req-sub">{{ $t('history.unlockReasonLabel') }}</p>
+        <textarea v-model="requestReason" class="req-textarea" rows="3" :placeholder="$t('history.unlockReasonPlaceholder')"></textarea>
+        <div class="req-actions">
+          <button type="button" class="req-cancel" @click="closeRequestModal">{{ $t('history.unlockReasonCancel') }}</button>
+          <button type="button" class="req-submit" :disabled="requesting === requestModalDate" @click="submitUnlockRequest">
+            {{ requesting === requestModalDate ? $t('history.unlockRequesting') : $t('history.unlockReasonSubmit') }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -126,6 +143,11 @@ const currentUser = computed(() => {
 const lock = useReportLock()
 const grantMap = ref<Record<string, 'pending' | 'approved' | 'rejected'>>({})
 const requesting = ref<string | null>(null)
+// 許可依頼モーダル（理由コメントを添えて申請）
+const requestModalDate = ref<string | null>(null)
+const requestReason = ref('')
+function openRequestModal(date: string) { requestModalDate.value = date; requestReason.value = '' }
+function closeRequestModal() { requestModalDate.value = null; requestReason.value = '' }
 // ロック判定に使う作業員: 代理中は代理先、通常は自分（worker_id基準）
 const effectiveWorkerId = computed<string | null>(() => {
   const t = proxy.proxyTarget.value
@@ -143,12 +165,21 @@ function rowLockState(date: string): 'open' | 'approved' | 'pending' | 'locked' 
   if (s === 'pending') return 'pending'
   return 'locked'
 }
-async function requestUnlock(date: string) {
+async function submitUnlockRequest() {
+  const date = requestModalDate.value
+  if (!date || requesting.value) return
+  requesting.value = date
+  const r = await lock.requestGrant(effectiveWorkerId.value, date, requestReason.value.trim())
+  requesting.value = null
+  if (r.ok) { grantMap.value = { ...grantMap.value, [date]: 'pending' }; closeRequestModal() }
+  else alert(t('history.unlockRequestFailed'))
+}
+async function cancelUnlock(date: string) {
   if (requesting.value) return
   requesting.value = date
-  const r = await lock.requestGrant(effectiveWorkerId.value, date, '')
+  const r = await lock.cancelRequest(effectiveWorkerId.value, date)
   requesting.value = null
-  if (r.ok) grantMap.value = { ...grantMap.value, [date]: 'pending' }
+  if (r.ok) { const m = { ...grantMap.value }; delete m[date]; grantMap.value = m }
   else alert(t('history.unlockRequestFailed'))
 }
 
@@ -448,4 +479,19 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--font)
 }
 .btn-unlock:disabled { opacity: .6; cursor: default; }
 .lock-pending { font-size: 12px; font-weight: 700; color: #92400e; }
+.btn-cancel-unlock {
+  font-size: 13px; font-weight: 700; color: #92400e;
+  background: #fffbeb; border: 1px solid #fde68a;
+  border-radius: 6px; padding: 6px 14px; cursor: pointer;
+}
+.btn-cancel-unlock:disabled { opacity: .6; cursor: default; }
+.req-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 100; }
+.req-modal { background: #fff; border-radius: 14px; padding: 20px; width: 100%; max-width: 420px; }
+.req-title { font-size: 16px; font-weight: 700; margin: 0 0 4px; color: #111827; }
+.req-sub { font-size: 12px; color: #6b7280; margin: 0 0 10px; line-height: 1.5; }
+.req-textarea { width: 100%; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; font-size: 14px; resize: vertical; }
+.req-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; }
+.req-cancel { font-size: 14px; color: #64748b; background: #f1f5f9; border: none; border-radius: 8px; padding: 9px 16px; cursor: pointer; }
+.req-submit { font-size: 14px; font-weight: 700; color: #fff; background: #06C755; border: none; border-radius: 8px; padding: 9px 18px; cursor: pointer; }
+.req-submit:disabled { opacity: .6; cursor: default; }
 </style>
