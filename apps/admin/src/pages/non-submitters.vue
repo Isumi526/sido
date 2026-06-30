@@ -137,7 +137,7 @@ async function load() {
       supabase.from('users')
         .select('id, real_name, worker_id, reminder_exempt, created_at, workers(name)')
         .eq('account_id', accountId),
-      supabase.from('workers').select('id, name, created_at').eq('account_id', accountId).eq('active', true),
+      supabase.from('workers').select('id, name, created_at, report_start_date').eq('account_id', accountId).eq('active', true),
       supabase.from('daily_reports').select('user_id, date')
         .eq('account_id', accountId).gte('date', start).lte('date', yest),
       supabase.from('worker_proxies').select('worker_id, proxy_operator_id').eq('account_id', accountId),
@@ -146,6 +146,8 @@ async function load() {
     const submittedSet = new Set((reports ?? []).map((r: any) => `${r.user_id}__${r.date}`))
     const workerNameMap = new Map<string, string>((allWorkers ?? []).map((w: any) => [w.id, w.name]))
     const workerCreatedMap = new Map<string, string>((allWorkers ?? []).map((w: any) => [w.id, w.created_at]))
+    // worker_id → 日報提出開始日（明示設定があれば起点に優先）
+    const workerReportStartMap = new Map<string, string | null>((allWorkers ?? []).map((w: any) => [w.id, w.report_start_date ?? null]))
     const proxyNamesMap = new Map<string, string[]>()
     for (const rel of (proxyRels ?? []) as any[]) {
       const nm = workerNameMap.get(rel.proxy_operator_id)
@@ -160,10 +162,12 @@ async function load() {
     }
     const activeWorkerIds = new Set((allWorkers ?? []).map((w: any) => w.id))
 
-    // 各人の未送信起点 = max(service_start_date, 作業員登録日)。後から登録した人に登録前の未送信を出さない。
-    // 起点は「作業員マスタ登録日(workers.created_at)」で統一（紐付けは worker_id 経由、無ければ users.created_at にフォールバック）。
-    const personStart = (createdAt: string | null | undefined): string => {
-      const reg = jstDateOf(createdAt)
+    // 各人の未送信起点 = max(service_start_date, 各人の起点日)。後から登録した人に登録前の未送信を出さない。
+    // 各人の起点日 = report_start_date（作業員ごとの提出開始日・明示設定があれば優先） ?? 作業員マスタ登録日(workers.created_at)。
+    // report_start_date が service_start_date より前でも、allDates は start 起点なので max(start, …) で吸収される。
+    const personStart = (createdAt: string | null | undefined, reportStart?: string | null): string => {
+      const base = reportStart || createdAt
+      const reg = jstDateOf(base)
       return reg && reg > start ? reg : start
     }
 
@@ -173,14 +177,14 @@ async function load() {
       const workerId = user.worker_id
       if (workerId && !activeWorkerIds.has(workerId)) continue
       const workerName = user.workers?.name ?? user.real_name ?? '不明'
-      const us = personStart((workerId && workerCreatedMap.get(workerId)) || user.created_at)
+      const us = personStart((workerId && workerCreatedMap.get(workerId)) || user.created_at, workerId ? workerReportStartMap.get(workerId) : null)
       const missing = allDates.filter(d => d >= us && !submittedSet.has(`${user.id}__${d}`))
       if (missing.length > 0) list.push({ name: buildName(workerName, workerId), dates: missing })
     }
     const linkedWorkerIds = new Set((users ?? []).map((u: any) => u.worker_id).filter(Boolean))
     for (const worker of (allWorkers ?? []) as any[]) {
       if (!linkedWorkerIds.has(worker.id)) {
-        const ws = personStart(worker.created_at)
+        const ws = personStart(worker.created_at, worker.report_start_date)
         const dates = allDates.filter(d => d >= ws)
         if (dates.length === 0) continue
         list.push({ name: buildName(worker.name, worker.id), dates })

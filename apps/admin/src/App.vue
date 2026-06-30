@@ -22,6 +22,8 @@
         <li class="nav-section">日次</li>
         <li><RouterLink to="/" class="nav-link"><span class="material-symbols-rounded nav-icon">dashboard</span>ダッシュボード</RouterLink></li>
         <li><RouterLink to="/reports" class="nav-link"><span class="material-symbols-rounded nav-icon">list_alt</span>日報一覧</RouterLink></li>
+        <li><RouterLink to="/report-edit-approvals" class="nav-link"><span class="material-symbols-rounded nav-icon">lock_open</span>日報編集の許可申請</RouterLink></li>
+        <li><RouterLink to="/report-site-relink" class="nav-link"><span class="material-symbols-rounded nav-icon">link</span>現場未設定の紐付け</RouterLink></li>
         <li><RouterLink to="/site-reports" class="nav-link"><span class="material-symbols-rounded nav-icon">bar_chart</span>現場別集計</RouterLink></li>
         <li><RouterLink to="/calendar" class="nav-link"><span class="material-symbols-rounded nav-icon">calendar_month</span>予定管理</RouterLink></li>
         <li><RouterLink to="/process" class="nav-link"><span class="material-symbols-rounded nav-icon">view_timeline</span>工程管理</RouterLink></li>
@@ -63,6 +65,9 @@
     <main class="content">
       <RouterView />
     </main>
+
+    <!-- どのページでも右下に常駐するAIヘルプ（ログイン中のみ・遷移で消えない） -->
+    <AiHelpWidget />
   </div>
 
   <!-- 未ログイン時はログイン画面のみ表示 -->
@@ -74,6 +79,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { currentUser, signOut } from './lib/auth'
 import { getAccountName } from './lib/account'
+import AiHelpWidget from './components/AiHelpWidget.vue'
 
 // ヘッダー: メイン=プロダクト名 GENLINKS 固定、サブ=会社名(account名・データ)
 const accountDisplayName = ref('')

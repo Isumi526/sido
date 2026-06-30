@@ -116,30 +116,47 @@
 
         <!-- 現場選択 -->
         <div class="form-card">
-          <div class="form-row">
-            <span class="form-row-label">{{ $t('calendar.site') }}</span>
-            <select v-model="formModal.title" class="site-select">
-              <option value="">{{ $t('calendar.pleaseSelect') }}</option>
-              <option value="__none__">{{ $t('calendar.noSite') }}</option>
-              <option v-for="s in master.siteNames.value" :key="s" :value="s">{{ s }}</option>
-              <option value="__other__">{{ $t('calendar.registerNewSite') }}</option>
-            </select>
-          </div>
-          <div v-if="formModal.title === '__other__'" class="form-row" style="margin-top:8px">
-            <span class="form-row-label">{{ $t('calendar.siteName') }}</span>
-            <input
-              v-model="(formModal as any)._customTitle"
-              type="text"
-              class="site-select"
-              :placeholder="$t('calendar.siteNamePlaceholder')"
-              @keydown.enter.prevent
-            />
-          </div>
-          <div v-if="formModal.title === '__other__' && customSiteSimilar.length"
-               style="margin-top:6px;font-size:12px;color:#B45309;background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;padding:8px 10px;line-height:1.5">
-            ⚠️ {{ $t('calendar.similarSiteWarn') }}：<strong>{{ customSiteSimilar.join('、') }}</strong>
-          </div>
-          <div v-if="formModal.title === '__none__'" class="form-row" style="margin-top:8px">
+          <!-- 現場と紐付けない トグル（独立・現場プルダウンと分離） -->
+          <label class="no-site-toggle">
+            <input type="checkbox" v-model="noSiteMode" />
+            <span>{{ $t('calendar.noSiteToggle') }}</span>
+          </label>
+
+          <template v-if="!noSiteMode">
+            <!-- 元請け業者（任意）: 選ぶと現場プルダウンをその元請けに紐づく現場へ絞り込む -->
+            <div v-if="master.contractorNames.value.length" class="form-row" style="margin-bottom:8px">
+              <span class="form-row-label">{{ $t('calendar.contractor') }}</span>
+              <select v-model="(formModal as any)._contractor" class="site-select">
+                <option value="">{{ $t('calendar.contractorAll') }}</option>
+                <option v-for="name in master.contractorNames.value" :key="name" :value="name">{{ name }}</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <span class="form-row-label">{{ $t('calendar.site') }}</span>
+              <select v-model="formModal.title" class="site-select">
+                <option value="">{{ $t('calendar.pleaseSelect') }}</option>
+                <option v-for="s in filteredSiteNames((formModal as any)._contractor)" :key="s" :value="s">{{ s }}</option>
+                <option value="__other__">{{ $t('calendar.registerNewSite') }}</option>
+              </select>
+            </div>
+            <div v-if="formModal.title === '__other__'" class="form-row" style="margin-top:8px">
+              <span class="form-row-label">{{ $t('calendar.siteName') }}</span>
+              <input
+                v-model="(formModal as any)._customTitle"
+                type="text"
+                class="site-select"
+                :placeholder="$t('calendar.siteNamePlaceholder')"
+                @keydown.enter.prevent
+              />
+            </div>
+            <div v-if="formModal.title === '__other__' && customSiteSimilar.length"
+                 style="margin-top:6px;font-size:12px;color:#B45309;background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;padding:8px 10px;line-height:1.5">
+              ⚠️ {{ $t('calendar.similarSiteWarn') }}：<strong>{{ customSiteSimilar.join('、') }}</strong>
+            </div>
+          </template>
+
+          <!-- 現場と紐付けない 場合のタイトル入力 -->
+          <div v-if="noSiteMode" class="form-row" style="margin-top:8px">
             <span class="form-row-label">{{ $t('calendar.titleLabel') }}</span>
             <input
               v-model="(formModal as any)._noneTitle"
@@ -268,6 +285,25 @@ const customSiteSimilar = computed(() =>
     ? findSimilarSiteNames((formModal.value as any)._customTitle ?? '', master.siteNames.value)
     : [],
 )
+
+// 現場プルダウン: 元請けが選択されていれば、その元請けに紐づく現場だけに絞り込む。
+//  紐づく現場が0件 or 元請け未選択 なら全現場を出す（後方互換）。report.vue と同一ロジック。
+function filteredSiteNames(contractorName?: string): string[] {
+  const all = master.siteNames.value
+  const cn = (contractorName ?? '').trim()
+  if (!cn) return all
+  const map = master.siteContractors.value
+  const linked = all.filter((n) => map[n] === cn)
+  return linked.length ? linked : all
+}
+
+// 「現場と紐付けない」トグル。内部状態は title==='__none__'（保存ロジックは従来どおり）。
+//  ON で現場プルダウンを隠してタイトル入力に切替、OFF で現場選択に戻す。
+const noSiteMode = computed<boolean>({
+  get: () => formModal.value?.title === '__none__',
+  set: (v) => { if (formModal.value) formModal.value.title = v ? '__none__' : '' },
+})
+
 const { profile } = useLiff()
 const proxy       = useProxyMode()
 const supabase    = useSupabase()
@@ -601,7 +637,8 @@ function onCellTap(date: string, workerId: string) {
     all_day: true, start_date: date, end_date: date,
     start_time: '', end_time: '',
     is_night_shift: false,
-  }
+    _contractor: '',
+  } as any
   selectedWorkerIds.value = new Set([workerId])   // タップした作業員を初期選択
   formError.value = ''
 }
@@ -615,13 +652,14 @@ function openEdit(ev: Schedule) {
     start_date: ev.start_date, end_date: ev.end_date,
     start_time: ev.start_time ?? '', end_time: ev.end_time ?? '',
     is_night_shift: ev.is_night_shift,
+    _contractor: '',
     _original: {
       title: ev.title, description: ev.description ?? null,
       start_date: ev.start_date, end_date: ev.end_date,
       start_time: ev.start_time ?? null, end_time: ev.end_time ?? null,
       is_night_shift: ev.is_night_shift,
     },
-  }
+  } as any
   selectedWorkerIds.value = new Set([ev.worker_id])   // 編集対象の作業員（担当変更可）
   formError.value = ''
 }
@@ -903,6 +941,8 @@ thead th.sticky-col { z-index: 11; }
 .form-row { display: flex; align-items: center; padding: 12px 14px; min-height: 44px; }
 .form-divider { height: 1px; background: #f0f0f0; margin-left: 14px; }
 .form-row-label { font-size: 15px; color: #111; flex-shrink: 0; }
+.no-site-toggle { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #334155; cursor: pointer; padding: 12px 14px; margin-bottom: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; }
+.no-site-toggle input { width: 18px; height: 18px; flex-shrink: 0; }
 
 .dt-input {
   border: none; background: none; outline: none;

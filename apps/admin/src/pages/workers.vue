@@ -11,6 +11,7 @@
           <tr>
             <th>名前</th>
             <th>所属</th>
+            <th>権限</th>
             <th>日当単価</th>
             <th>雇用形態</th>
             <th>入社日</th>
@@ -24,6 +25,7 @@
           <tr v-for="w in workers" :key="w.id" :class="{ inactive: !w.active }">
             <td class="name">{{ w.name }}</td>
             <td><span class="badge" :class="w.role">{{ w.role === 'factory' ? '工場/事務所' : '現場' }}</span></td>
+            <td><span class="perm-badge" :class="w.permission_role ?? 'worker'">{{ permLabel(w.permission_role) }}</span></td>
             <td class="price">¥{{ w.unit_price.toLocaleString() }}</td>
             <td><span class="emp-badge" :class="w.employment_type ?? 'fulltime'">{{ w.employment_type === 'contractor' ? '業務委託' : (w.employment_type ?? 'fulltime') === 'fulltime' ? '正社員' : `パート(週${w.weekly_scheduled_days ?? '?'}日)` }}</span></td>
             <td class="hire-date">{{ w.hire_date ?? '—' }}</td>
@@ -59,6 +61,16 @@
             <button :class="{ active: modal.role === 'factory' }" @click="modal.role = 'factory'">工場/事務所</button>
             <button :class="{ active: modal.role === 'site' }" @click="modal.role = 'site'">現場</button>
           </div>
+        </div>
+        <div class="field">
+          <label>権限ロール</label>
+          <div class="toggle role-toggle">
+            <button :class="{ active: (modal.permission_role ?? 'worker') === 'admin' }" @click="modal.permission_role = 'admin'">管理者</button>
+            <button :class="{ active: (modal.permission_role ?? 'worker') === 'office' }" @click="modal.permission_role = 'office'">事務員</button>
+            <button :class="{ active: (modal.permission_role ?? 'worker') === 'site_manager' }" @click="modal.permission_role = 'site_manager'">現場担当者</button>
+            <button :class="{ active: (modal.permission_role ?? 'worker') === 'worker' }" @click="modal.permission_role = 'worker'">職人</button>
+          </div>
+          <p class="role-hint">権限階層: 管理者 &gt; 事務員 &gt; 現場担当者 &gt; 職人。画面/操作の制御は今後のフェーズで適用されます。</p>
         </div>
         <div class="field">
           <label>賃金タイプ</label>
@@ -110,6 +122,11 @@
         <div class="field">
           <label>入社日</label>
           <input v-model="modal.hire_date" type="date" class="input" />
+        </div>
+        <div class="field">
+          <label>日報提出開始日（未送信チェックの起点・任意）</label>
+          <input v-model="modal.report_start_date" type="date" class="input" data-testid="report-start-date" />
+          <p class="hint-sm">この日以降の未送信のみリマインド/未送信者一覧に出ます。未設定なら従来どおり作業員登録日が起点です。</p>
         </div>
         <div class="field">
           <label>生年月日</label>
@@ -220,6 +237,7 @@ type Worker = {
   id: string
   name: string
   role: 'factory' | 'site'
+  permission_role?: 'admin' | 'office' | 'site_manager' | 'worker'
   unit_price: number
   wage_type: 'daily' | 'hourly'
   active: boolean
@@ -233,6 +251,7 @@ type Worker = {
   invoice_number: string | null
   insurance_info: string | null
   labor_insurance_number: string | null
+  report_start_date: string | null
   auth_user_id: string | null
 }
 
@@ -337,6 +356,11 @@ function workerName(id: string | null) {
   return workers.value.find(w => w.id === id)?.name ?? '不明'
 }
 
+const PERM_LABELS: Record<string, string> = { admin: '管理者', office: '事務員', site_manager: '現場担当者', worker: '職人' }
+function permLabel(r: string | null | undefined): string {
+  return PERM_LABELS[r ?? 'worker'] ?? '職人'
+}
+
 function toggleProxyId(id: string) {
   const idx = modalProxyIds.value.indexOf(id)
   if (idx >= 0) modalProxyIds.value.splice(idx, 1)
@@ -346,7 +370,7 @@ function toggleProxyId(id: string) {
 async function load() {
   const accountId = await getAccountId()
   const [{ data: workersData }, { data: usersData }, { data: proxyData }] = await Promise.all([
-    supabase.from('workers').select('id, name, role, unit_price, wage_type, active, hire_date, birth_date, address, emergency_contact, employment_type, weekly_scheduled_days, company_info, invoice_number, insurance_info, labor_insurance_number, auth_user_id').eq('account_id', accountId).order('name'),
+    supabase.from('workers').select('id, name, role, permission_role, unit_price, wage_type, active, hire_date, birth_date, address, emergency_contact, employment_type, weekly_scheduled_days, company_info, invoice_number, insurance_info, labor_insurance_number, report_start_date, auth_user_id').eq('account_id', accountId).order('name'),
     supabase.from('users').select('worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
     supabase.from('worker_proxies').select('worker_id, proxy_operator_id').eq('account_id', accountId),
   ])
@@ -365,7 +389,7 @@ async function load() {
 onMounted(load)
 
 function openAdd() {
-  modal.value = { name: '', role: 'site', unit_price: 20000, wage_type: 'daily', hire_date: null, birth_date: null, address: null, emergency_contact: null, employment_type: 'fulltime', weekly_scheduled_days: null, company_info: null, invoice_number: null, insurance_info: null, labor_insurance_number: null }
+  modal.value = { name: '', role: 'site', permission_role: 'worker', unit_price: 20000, wage_type: 'daily', hire_date: null, birth_date: null, address: null, emergency_contact: null, employment_type: 'fulltime', weekly_scheduled_days: null, company_info: null, invoice_number: null, insurance_info: null, labor_insurance_number: null, report_start_date: null }
   modalProxyIds.value = []
   familyMembers.value = []
   vehicleInspections.value = []
@@ -459,6 +483,7 @@ async function save() {
     const workerPayload = {
       name:                  modal.value.name!.trim(),
       role:                  modal.value.role ?? 'site',
+      permission_role:       modal.value.permission_role ?? 'worker',
       unit_price:            modal.value.unit_price ?? 0,
       wage_type:             modal.value.wage_type ?? 'daily',
       hire_date:             modal.value.hire_date || null,
@@ -472,6 +497,7 @@ async function save() {
       insurance_info:         modal.value.insurance_info?.trim() || null,
       // 労災保険番号は区分=業務委託のときのみ保持（他区分では常にnull）
       labor_insurance_number: modal.value.employment_type === 'contractor' ? (modal.value.labor_insurance_number?.trim() || null) : null,
+      report_start_date:      modal.value.report_start_date || null,
     }
 
     if (workerId) {
@@ -541,6 +567,11 @@ async function toggleActive(w: Worker) {
 .badge { font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 700; }
 .badge.factory { background: #e8f4ff; color: #1a6fc4; }
 .badge.site { background: #e8fff0; color: #0a8a3a; }
+.perm-badge { font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 700; background: #f1f5f9; color: #475569; }
+.perm-badge.admin { background: #fee2e2; color: #b91c1c; }
+.perm-badge.office { background: #ffedd5; color: #c2410c; }
+.perm-badge.site_manager { background: #e0e7ff; color: #4338ca; }
+.perm-badge.worker { background: #f1f5f9; color: #475569; }
 .status { font-size: 11px; padding: 3px 8px; border-radius: 4px; }
 .status.active { background: #e8fff0; color: #0a8a3a; }
 .status.off { background: #f5f5f5; color: #aaa; }
@@ -558,6 +589,8 @@ async function toggleActive(w: Worker) {
 .toggle { display: flex; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; }
 .toggle button { flex: 1; padding: 10px; background: #f5f5f5; color: #888; border: none; cursor: pointer; font-size: 13px; }
 .toggle button.active { background: #06C755; color: #fff; font-weight: 700; }
+.role-toggle button { font-size: 12px; padding: 9px 4px; }
+.role-hint { font-size: 11px; color: #94a3b8; margin: 6px 0 0; line-height: 1.5; }
 .proxy-check-list { display: flex; flex-direction: column; gap: 8px; background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px 14px; max-height: 160px; overflow-y: auto; }
 .proxy-check-item { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
 .proxy-check-item input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
