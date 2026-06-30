@@ -78,11 +78,50 @@ async function shotHistoryModal(name) {
   assets[name] = b64(file)
   console.log('✓ shot', name)
 }
+// 初回オンボーディング（使い方ガイド）が出ていたら閉じる
+async function dismissOnboarding() {
+  const skip = mp.locator('.ob-skip')
+  if (await skip.count().catch(() => 0)) { await skip.first().click().catch(() => {}); await mp.waitForTimeout(400) }
+}
+// 新規日報(未送信×期限切れ): /report のロックバナーの「編集の許可を依頼」ボタンに赤丸
+async function shotReportLockedButton(name) {
+  await mp.goto(LIFF + '/report', { waitUntil: 'networkidle', timeout: 25000 })
+  await mp.waitForTimeout(3500)
+  await dismissOnboarding()
+  const btn = mp.locator('.btn-unlock').first()
+  const box = await btn.boundingBox().catch(() => null)
+  if (box) {
+    await mp.evaluate(({ x, y, w, h }) => {
+      const d = document.createElement('div'); d.id = '__ring__'
+      d.style.cssText = `position:fixed;left:${x - 6}px;top:${y - 6}px;width:${w + 12}px;height:${h + 12}px;border:3px solid #ef4444;border-radius:10px;z-index:99999;pointer-events:none;box-shadow:0 0 0 3px rgba(239,68,68,.22)`
+      document.body.appendChild(d)
+    }, { x: box.x, y: box.y, w: box.width, h: box.height })
+  }
+  const file = path.join(ASSETS, name + '.png')
+  await mp.screenshot({ path: file, fullPage: false })
+  await mp.evaluate(() => document.getElementById('__ring__')?.remove())
+  assets[name] = b64(file)
+  console.log('✓ shot', name)
+}
+// /report の依頼モーダル
+async function shotReportModal(name) {
+  await mp.goto(LIFF + '/report', { waitUntil: 'networkidle', timeout: 25000 })
+  await mp.waitForTimeout(3500)
+  await dismissOnboarding()
+  await mp.locator('.btn-unlock').first().click().catch(() => {})
+  await mp.waitForTimeout(800)
+  const file = path.join(ASSETS, name + '.png')
+  await mp.screenshot({ path: file, fullPage: false })
+  assets[name] = b64(file)
+  console.log('✓ shot', name)
+}
 
 await shotHomeRing('残業申請', 'home-overtime')
 await shotHomeRing('出退勤', 'home-checkin')
 await shot('/checkin', 'checkin')
 await shot('/overtime', 'overtime')
+await shotReportLockedButton('report-locked')
+await shotReportModal('report-modal')
 await shotHistoryButton('history-button')
 await shotHistoryModal('history-modal')
 await mob.close()
@@ -131,8 +170,10 @@ const html = `<!doctype html><html lang="ja"><head><meta charset="utf-8"><style>
     'やむを得ず期限を過ぎた分を直したいときは、<strong>管理者へ許可を依頼</strong>してください。許可されると、その日に限り再度入力できます。',
     '提出忘れを防ぐため、未提出のリマインドが届きます。早めの提出をお願いします。',
   ]),
-    fig('history-button', '日報履歴でロックされた日の「編集の許可を依頼」（赤丸）') +
-    fig('history-modal', '理由を入力して依頼。管理者が承認するとその日だけ編集できます'))}
+    fig('report-locked', '未送信×期限切れの日報: /report で「編集の許可を依頼」（赤丸）') +
+    fig('report-modal', '理由を入力して依頼。管理者が承認すると提出でき、画面は自動で反映されます') +
+    fig('history-button', '送信済みの日報を編集したい時は日報履歴から依頼（赤丸）') +
+    fig('history-modal', 'こちらも理由を添えて依頼します'))}
 
   ${card(2, '残業の申請', ul([
     '残業が発生する日は、<span class="hl">当日の15:00までに残業申請</span>を行ってください。',
