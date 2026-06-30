@@ -32,6 +32,7 @@
         <li><RouterLink to="/reports" class="nav-link"><span class="material-symbols-rounded nav-icon">list_alt</span>日報一覧</RouterLink></li>
         <li><RouterLink to="/report-edit-approvals" class="nav-link"><span class="material-symbols-rounded nav-icon">lock_open</span>日報編集の許可申請<span v-if="editApprovalCount" class="nav-badge">{{ editApprovalCount }}</span></RouterLink></li>
         <li><RouterLink to="/report-site-relink" class="nav-link"><span class="material-symbols-rounded nav-icon">link</span>現場未設定の紐付け<span v-if="siteUnsetCount" class="nav-badge">{{ siteUnsetCount }}</span></RouterLink></li>
+        <li><RouterLink to="/overtime-approvals" class="nav-link"><span class="material-symbols-rounded nav-icon">more_time</span>残業申請の承認<span v-if="overtimePendingCount" class="nav-badge">{{ overtimePendingCount }}</span></RouterLink></li>
         <li><RouterLink to="/site-reports" class="nav-link"><span class="material-symbols-rounded nav-icon">bar_chart</span>現場別集計</RouterLink></li>
         <li><RouterLink to="/calendar" class="nav-link"><span class="material-symbols-rounded nav-icon">calendar_month</span>予定管理</RouterLink></li>
         <li><RouterLink to="/process" class="nav-link"><span class="material-symbols-rounded nav-icon">view_timeline</span>工程管理</RouterLink></li>
@@ -127,14 +128,20 @@ watch(() => route.path, () => { drawerOpen.value = false })
 // ── ナビ未処理バッジ（日報編集の許可申請=pending件数 / 現場未設定の紐付け=__unset__件数）──
 const editApprovalCount = ref(0)
 const siteUnsetCount    = ref(0)
+const overtimePendingCount = ref(0)
 async function loadNavBadges() {
   const accountId = await getAccountId()
-  if (!accountId) { editApprovalCount.value = 0; siteUnsetCount.value = 0; return }
+  if (!accountId) { editApprovalCount.value = 0; siteUnsetCount.value = 0; overtimePendingCount.value = 0; return }
   // 許可申請: pending件数（DBカウント）
   const { count } = await supabase.from('report_edit_grants')
     .select('id', { count: 'exact', head: true })
     .eq('account_id', accountId).eq('status', 'pending')
   editApprovalCount.value = count ?? 0
+  // 残業申請: pending件数（DBカウント）
+  const { count: otCount } = await supabase.from('overtime_requests')
+    .select('id', { count: 'exact', head: true })
+    .eq('account_id', accountId).eq('status', 'pending')
+  overtimePendingCount.value = otCount ?? 0
   // 現場未設定: 直近90日の日報の sites JSON に siteName='__unset__' が含まれる数（relink画面と同窓）
   const since = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0]
   const { data: reps } = await supabase.from('daily_reports')

@@ -199,7 +199,11 @@
                     </div>
                   </div>
                   <div v-if="siteFixedEnd(site.siteName)" class="fixed-time-note">
-                    ⏱ {{ $t('report.fixedTimeNote', { end: siteFixedEnd(site.siteName) }) }}
+                    <template v-if="overtimeApprovedForDate">✅ {{ $t('report.overtimeApprovedNote') }}</template>
+                    <template v-else>
+                      ⏱ {{ $t('report.fixedTimeNote', { end: siteFixedEnd(site.siteName) }) }}
+                      <NuxtLink to="/overtime" class="overtime-link">{{ $t('report.overtimeApplyLink') }}</NuxtLink>
+                    </template>
                   </div>
                   <div class="worker-break-row">
                     <div class="time-field">
@@ -657,6 +661,16 @@ async function refreshLock() {
 }
 watch([() => report.form.value.date, () => currentUser.value?.worker_id], refreshLock, { immediate: true })
 
+// ── 残業申請（架空残業対策）: 承認済みの worker×date は固定終了の上限を解放 ──
+const overtime = useOvertimeRequest()
+const overtimeApprovedForDate = ref(false)
+async function refreshOvertime() {
+  const d = report.form.value.date
+  const wid = currentUser.value?.worker_id ?? null
+  overtimeApprovedForDate.value = (wid && d) ? await overtime.isApproved(wid, d) : false
+}
+watch([() => report.form.value.date, () => currentUser.value?.worker_id], refreshOvertime, { immediate: true })
+
 const initializing = ref(true)
 
 // ── 下書き自動保存／復元（新規入力のみ・編集/代理では使わない）──
@@ -1048,6 +1062,8 @@ function endTimeOptionsForSite(si: number): string[] {
   const s = report.form.value.sites[si]
   const endCap = siteFixedEnd(s?.siteName)
   if (!endCap) return TIME_OPTIONS
+  // 残業申請が承認済みの日付は固定終了の上限を解放（架空残業対策の例外）。
+  if (overtimeApprovedForDate.value) return TIME_OPTIONS
   const capMin = parseMin(endCap)
   const cur = s?.workers?.[0]?.endTime
   return TIME_OPTIONS.filter(t => parseMin(t) <= capMin || t === cur)
@@ -2080,6 +2096,7 @@ html, body {
 .mt6  { margin-top: 6px; }
 .unset-note { margin-top: 6px; font-size: 12px; color: #475569; background: #f1f5f9; border-radius: 6px; padding: 7px 10px; line-height: 1.5; }
 .fixed-time-note { margin-top: 4px; font-size: 12px; color: #1d4ed8; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 6px 10px; line-height: 1.5; }
+.overtime-link { display: inline-block; margin-top: 2px; color: #b45309; font-weight: 700; text-decoration: underline; }
 .mt8  { margin-top: 8px; }
 
 /* ── 車両ブロック ── */

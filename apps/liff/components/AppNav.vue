@@ -52,6 +52,10 @@
             <span class="drawer-item-icon material-symbols-rounded">history</span>
             <span>{{ $t('nav.reportHistory') }}</span>
           </NuxtLink>
+          <NuxtLink class="drawer-item" to="/overtime" @click="open = false">
+            <span class="drawer-item-icon material-symbols-rounded">more_time</span>
+            <span>{{ $t('nav.overtimeRequest') }}</span>
+          </NuxtLink>
           <NuxtLink class="drawer-item" to="/calendar" @click="open = false">
             <span class="drawer-item-icon material-symbols-rounded">calendar_month</span>
             <span>{{ $t('nav.schedule') }}</span>
