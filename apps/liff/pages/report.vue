@@ -713,16 +713,40 @@ async function cancelUnlockRequest() {
   if (r.ok) lockGrantStatus.value = 'none'
 }
 
-// 管理画面で承認したら日報画面へ自動反映: タブ復帰(フォーカス)時＋申請中はポーリングでロック/残業を再取得。
+// 管理画面で承認したら日報画面へ自動反映（リロード不要・ブラウザ開きっぱなしでも反映）。
+//  ① Realtime: 承認の瞬間に push 受信（即時）。② ポーリング: webview等でwebsocketが切れても確実に追従。
+//  ③ タブ復帰: フォーカス時にも再取得。
 function refreshGates() { refreshLock(); refreshOvertime() }
 function onVisible() { if (typeof document !== 'undefined' && document.visibilityState === 'visible') refreshGates() }
 let gatePoll: ReturnType<typeof setInterval> | null = null
 function stopGatePoll() { if (gatePoll) { clearInterval(gatePoll); gatePoll = null } }
 function startGatePoll() { stopGatePoll(); gatePoll = setInterval(refreshGates, 15000) }
-// 申請中(pending)の間だけポーリング（承認/却下で止まる）
+
+// Realtime購読（自分のworkerの許可/残業の変更を即時受信）
+let gateChannel: ReturnType<ReturnType<typeof useSupabase>['channel']> | null = null
+function stopRealtime() { if (gateChannel) { useSupabase().removeChannel(gateChannel); gateChannel = null } }
+function startRealtime() {
+  stopRealtime()
+  const wid = currentUser.value?.worker_id
+  if (!wid) return
+  gateChannel = useSupabase()
+    .channel(`report-gates-${wid}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'report_edit_grants', filter: `worker_id=eq.${wid}` }, () => refreshGates())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'overtime_requests',  filter: `worker_id=eq.${wid}` }, () => refreshGates())
+    .subscribe()
+}
+
+// 申請中(pending)の間だけポーリング（承認/却下で止まる）。Realtimeは常時。
 watch(lockGrantStatus, (s) => { if (s === 'pending') startGatePoll(); else stopGatePoll() }, { immediate: true })
-onMounted(() => { if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible) })
-onUnmounted(() => { if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisible); stopGatePoll() })
+watch(() => currentUser.value?.worker_id, () => startRealtime())
+onMounted(() => {
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible)
+  startRealtime()
+})
+onUnmounted(() => {
+  if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisible)
+  stopGatePoll(); stopRealtime()
+})
 
 // ── 残業申請（架空残業対策）: 承認済みの worker×date は固定終了の上限を解放 ──
 const overtime = useOvertimeRequest()
