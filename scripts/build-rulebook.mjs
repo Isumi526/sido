@@ -146,7 +146,7 @@ const html = `<!doctype html><html lang="ja"><head><meta charset="utf-8"><style>
   h1.ttl { font-size: 24px; font-weight: 800; margin: 0 0 4px; color: #0f172a; }
   .meta { font-size: 11px; color: #94a3b8; margin: 0 0 14px; }
   .lead { font-size: 13px; color: #4b5563; line-height: 1.8; margin: 0 0 16px; }
-  .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px 18px; margin-bottom: 14px; page-break-inside: avoid; }
+  .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px 18px; margin-bottom: 14px; }
   .sec { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; color: #0f172a; margin: 0 0 10px; }
   .num { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; background: #0d9488; color: #fff; font-size: 14px; font-weight: 700; }
   ul { margin: 0; padding-left: 20px; }
@@ -155,7 +155,7 @@ const html = `<!doctype html><html lang="ja"><head><meta charset="utf-8"><style>
   /* 重要フレーズの赤線 */
   .hl { background: linear-gradient(transparent 60%, #fecaca 60%); border-bottom: 2px solid #ef4444; font-weight: 700; color: #b91c1c; padding: 0 1px; }
   .shots { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 12px; }
-  .shot { margin: 0; width: 47%; }
+  .shot { margin: 0; width: 47%; page-break-inside: avoid; }
   .shot img { width: 100%; border: 1px solid #e5e7eb; border-radius: 10px; }
   .shot figcaption { font-size: 10.5px; color: #6b7280; line-height: 1.5; margin-top: 6px; }
   .note { font-size: 11px; color: #6b7280; line-height: 1.6; margin-top: 16px; }
