@@ -154,6 +154,8 @@ export interface MasterData {
   siteSubcontractors?: Record<string, string[]>
   // 現場名 → 現場id。日報からの業者新規作成時に現場へ自動紐付けするため。
   siteIds?: Record<string, string>
+  // 現場名 → 固定勤務時刻 {start,end}（未設定は未収録）。日報の作業時刻の既定＆終了上限に使う。
+  siteWorkTimes?: Record<string, { start: string | null; end: string | null }>
 }
 
 export interface ApiResponse<T = void> {
