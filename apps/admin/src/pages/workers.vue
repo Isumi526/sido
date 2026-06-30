@@ -128,7 +128,7 @@
           <input v-model="modal.report_start_date" type="date" class="input" data-testid="report-start-date" />
           <p class="hint-sm">この日以降の未送信のみリマインド/未送信者一覧に出ます。未設定なら従来どおり作業員登録日が起点です。</p>
         </div>
-        <button type="button" class="detail-toggle" @click="showDetails = !showDetails">
+        <button type="button" class="detail-toggle" data-testid="detail-toggle" @click="showDetails = !showDetails">
           {{ showDetails ? '▾ 詳細情報を隠す' : '▸ 詳細情報（個人情報・会社・保険・資格・代理人・認証）を表示' }}
         </button>
         <div v-show="showDetails" class="detail-section">
