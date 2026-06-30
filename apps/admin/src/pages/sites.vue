@@ -93,9 +93,9 @@
         <div class="field">
           <label>固定勤務時刻（日報の既定＆終了上限・任意）</label>
           <div style="display:flex;align-items:center;gap:8px">
-            <input v-model="modal.default_start_time" type="time" class="input" style="width:auto" />
+            <input v-model="modal.default_start_time" type="time" class="input" style="width:auto" @focus="modal.default_start_time || (modal.default_start_time = '08:30')" />
             <span>〜</span>
-            <input v-model="modal.default_end_time" type="time" class="input" style="width:auto" />
+            <input v-model="modal.default_end_time" type="time" class="input" style="width:auto" @focus="modal.default_end_time || (modal.default_end_time = '17:30')" />
           </div>
           <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">設定すると日報でこの現場を選んだ時に作業時刻の既定値になり、終了は固定終了を超えて報告できません（早退で下回るのは可）。</p>
         </div>

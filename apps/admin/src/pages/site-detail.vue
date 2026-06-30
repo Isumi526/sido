@@ -71,9 +71,9 @@
             <label class="fld"><span>工事内容</span><textarea v-model="form.construction_details" class="input" rows="2" /></label>
             <div class="fld"><span>固定勤務時刻</span>
               <div style="display:flex;align-items:center;gap:8px">
-                <input v-model="form.default_start_time" type="time" class="input" style="width:auto" />
+                <input v-model="form.default_start_time" type="time" class="input" style="width:auto" @focus="form.default_start_time || (form.default_start_time = '08:30')" />
                 <span>〜</span>
-                <input v-model="form.default_end_time" type="time" class="input" style="width:auto" />
+                <input v-model="form.default_end_time" type="time" class="input" style="width:auto" @focus="form.default_end_time || (form.default_end_time = '17:30')" />
               </div>
             </div>
             <p class="hint" style="font-size:12px;color:#94a3b8;margin:-4px 0 0">日報入力時の作業時刻の既定。終了時刻はこの値を超えて入力できません（残業申請が無い限り）。未設定なら従来どおり。</p>
