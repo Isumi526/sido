@@ -1,4 +1,12 @@
 <template>
+  <!-- 独自ドメイン移行: 旧ドメインアクセス時のみ案内＋自動リダイレクト（NEW_ADMIN_ORIGIN未設定なら出ない） -->
+  <div v-if="migrationUrl" class="domain-migrate-overlay">
+    <div class="domain-migrate-card">
+      <h1>ページが移行しました</h1>
+      <p>新しいURL（<b>{{ migrationUrl }}</b>）へ <b>{{ countdown }}</b> 秒後に自動で移動します。</p>
+      <a :href="migrationUrl" class="domain-migrate-link">今すぐ移動する</a>
+    </div>
+  </div>
   <div v-if="currentUser" class="admin-shell">
     <!-- モバイル用トップバー（≤768pxで表示）-->
     <header class="topbar">
@@ -80,7 +88,19 @@ import { useRouter, useRoute } from 'vue-router'
 import { currentUser, signOut } from './lib/auth'
 import { getAccountName } from './lib/account'
 import { HIDE_LINE_SECTIONS } from './lib/featureFlags'
+import { migrationTargetUrl, REDIRECT_SECONDS } from './lib/domainMigration'
 import AiHelpWidget from './components/AiHelpWidget.vue'
+
+// 独自ドメイン移行: 旧ドメインアクセス時のみ案内＋5秒後リダイレクト（既定オフ＝NEW_ADMIN_ORIGIN空）。
+const migrationUrl = ref<string | null>(migrationTargetUrl())
+const countdown    = ref(REDIRECT_SECONDS)
+onMounted(() => {
+  if (!migrationUrl.value) return
+  const timer = setInterval(() => {
+    countdown.value -= 1
+    if (countdown.value <= 0) { clearInterval(timer); window.location.replace(migrationUrl.value!) }
+  }, 1000)
+})
 
 // ヘッダー: メイン=プロダクト名 GENLINKS 固定、サブ=会社名(account名・データ)
 const accountDisplayName = ref('')
@@ -111,6 +131,13 @@ async function handleLogout() {
 
 <style scoped>
 .admin-shell { display: flex; min-height: 100vh; }
+
+/* 独自ドメイン移行の案内オーバーレイ */
+.domain-migrate-overlay { position: fixed; inset: 0; z-index: 9999; background: #0f172a; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.domain-migrate-card { background: #fff; border-radius: 16px; padding: 32px 28px; max-width: 480px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
+.domain-migrate-card h1 { font-size: 20px; font-weight: 700; margin-bottom: 12px; color: #0f172a; }
+.domain-migrate-card p { font-size: 14px; line-height: 1.7; color: #475569; margin-bottom: 20px; word-break: break-all; }
+.domain-migrate-link { display: inline-block; background: #06C755; color: #fff; text-decoration: none; border-radius: 8px; padding: 12px 24px; font-size: 14px; font-weight: 700; }
 
 /* ── モバイル用トップバー（既定は非表示）── */
 .topbar { display: none; }
