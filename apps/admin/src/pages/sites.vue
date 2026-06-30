@@ -56,6 +56,7 @@
     <div v-if="modal" class="modal-overlay" @click.self="modal = null">
       <div class="modal">
         <h2>{{ modal.id ? '現場を編集' : '現場を追加' }}</h2>
+        <!-- ① 識別情報（名前・かな・住所） -->
         <div class="field">
           <label>現場名</label>
           <input v-model="modal.name" class="input" placeholder="例：BLH名古屋" />
@@ -68,12 +69,42 @@
           <input v-model="modal.name_kana" class="input" placeholder="例：びーえるえいちなごや" />
         </div>
         <div class="field">
+          <label>場所 / 住所</label>
+          <input v-model="modal.location" class="input" placeholder="例：名古屋市〇〇区…" />
+        </div>
+        <!-- ② 関係（元請け） -->
+        <div class="field">
           <label>元請け（日報の現場絞り込みに使用・任意）</label>
           <select v-model="modal.contractor_id" class="input">
             <option :value="null">未紐付け</option>
             <option v-for="c in contractors" :key="c.id" :value="c.id">{{ c.name }}</option>
           </select>
         </div>
+        <!-- ③ 工事内容 -->
+        <div class="field">
+          <label>工事種類</label>
+          <input v-model="modal.construction_type" class="input" placeholder="例：内装・改修" />
+        </div>
+        <div class="field">
+          <label>工事内容</label>
+          <textarea v-model="modal.construction_details" class="input" rows="2" placeholder="例：1F内装ボード・クロス工事 一式"></textarea>
+        </div>
+        <!-- ④ 運用（固定勤務時刻・日報の既定＆終了上限） -->
+        <div class="field">
+          <label>固定勤務時刻（日報の既定＆終了上限・任意）</label>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input v-model="modal.default_start_time" type="time" class="input" style="width:auto" />
+            <span>〜</span>
+            <input v-model="modal.default_end_time" type="time" class="input" style="width:auto" />
+          </div>
+          <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">設定すると日報でこの現場を選んだ時に作業時刻の既定値になり、終了は固定終了を超えて報告できません（早退で下回るのは可）。</p>
+        </div>
+        <!-- ⑤ メモ -->
+        <div class="field">
+          <label>メモ</label>
+          <textarea v-model="modal.memo" class="input" rows="2" placeholder="任意"></textarea>
+        </div>
+        <!-- ⑥ 絞り込み（協力業者・長いリストは添付の直前＝最下部へ） -->
         <div class="field">
           <label>この現場に紐づく協力業者（日報の業者プルダウンを絞り込み）</label>
           <div class="sub-link-list" data-testid="site-sub-links">
@@ -83,31 +114,6 @@
             <span v-if="!subcontractors.length" class="hint">協力業者マスタが空です</span>
           </div>
           <p class="hint">未選択なら日報では全業者が出ます（紐付けすると、その現場では選択した業者のみに絞り込み）。</p>
-        </div>
-        <div class="field">
-          <label>場所 / 住所</label>
-          <input v-model="modal.location" class="input" placeholder="例：名古屋市〇〇区…" />
-        </div>
-        <div class="field">
-          <label>工事種類</label>
-          <input v-model="modal.construction_type" class="input" placeholder="例：内装・改修" />
-        </div>
-        <div class="field">
-          <label>工事内容</label>
-          <textarea v-model="modal.construction_details" class="input" rows="2" placeholder="例：1F内装ボード・クロス工事 一式"></textarea>
-        </div>
-        <div class="field">
-          <label>メモ</label>
-          <textarea v-model="modal.memo" class="input" rows="2" placeholder="任意"></textarea>
-        </div>
-        <div class="field">
-          <label>固定勤務時刻（日報の既定＆終了上限・任意）</label>
-          <div style="display:flex;align-items:center;gap:8px">
-            <input v-model="modal.default_start_time" type="time" class="input" style="width:auto" />
-            <span>〜</span>
-            <input v-model="modal.default_end_time" type="time" class="input" style="width:auto" />
-          </div>
-          <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">設定すると日報でこの現場を選んだ時に作業時刻の既定値になり、終了は固定終了を超えて報告できません（早退で下回るのは可）。</p>
         </div>
 
         <!-- 写真・書類（既存現場のみ） -->
