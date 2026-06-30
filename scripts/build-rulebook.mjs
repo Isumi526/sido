@@ -131,8 +131,8 @@ const today = new Date().toISOString().split('T')[0]
 const fig = (name, caption) => assets[name]
   ? `<figure class="shot"><img src="data:image/png;base64,${assets[name]}"/><figcaption>${caption}</figcaption></figure>`
   : ''
-const card = (n, title, bodyHtml, figsHtml = '') => `
-  <section class="card">
+const card = (n, title, bodyHtml, figsHtml = '', keep = false) => `
+  <section class="card${keep ? ' card-keep' : ''}">
     <h2 class="sec"><span class="num">${n}</span>${title}</h2>
     ${bodyHtml}
     ${figsHtml ? `<div class="shots">${figsHtml}</div>` : ''}
@@ -147,6 +147,7 @@ const html = `<!doctype html><html lang="ja"><head><meta charset="utf-8"><style>
   .meta { font-size: 11px; color: #94a3b8; margin: 0 0 14px; }
   .lead { font-size: 13px; color: #4b5563; line-height: 1.8; margin: 0 0 16px; }
   .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px 18px; margin-bottom: 14px; }
+  .card-keep { page-break-inside: avoid; }  /* ②残業・④出退勤 はヘッダー＋キャプチャごと同一ページに */
   .sec { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; color: #0f172a; margin: 0 0 10px; }
   .num { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; background: #0d9488; color: #fff; font-size: 14px; font-weight: 700; }
   ul { margin: 0; padding-left: 20px; }
@@ -181,12 +182,12 @@ const html = `<!doctype html><html lang="ja"><head><meta charset="utf-8"><style>
     '未申請の日は、<strong>定時（終了時刻）以降の入力ができません</strong>。',
   ]),
     fig('home-overtime', 'ホームの「残業申請」（赤丸）から申請') +
-    fig('overtime', '希望の終了時刻と理由を入力（当日15:00まで）'))}
+    fig('overtime', '希望の終了時刻と理由を入力（当日15:00まで）'), true)}
 
   ${card(3, '勤務時間の基準', ul([
     '勤務時間は、<strong>現場ごとに担当者が設定した開始／終了時刻が基準</strong>になります。',
     '早朝搬入など例外的に時間がずれる場合は、残業申請で対応してください。',
-  ]))}
+  ]), '', true)}
 
   ${card(4, '出退勤の打刻', ul([
     '現場への<strong>到着時と退出時の打刻は必須</strong>です。忘れずに行ってください。',
@@ -195,7 +196,7 @@ const html = `<!doctype html><html lang="ja"><head><meta charset="utf-8"><style>
     '確認事項（チェック項目）が設定された現場では、出退勤時に確認のうえチェックしてください。',
   ]),
     fig('home-checkin', 'ホームの「出退勤」（赤丸）から打刻') +
-    fig('checkin', 'QRが無い現場はメニューから選択（元請け・現場名で絞り込み）'))}
+    fig('checkin', 'QRが無い現場はメニューから選択（元請け・現場名で絞り込み）'), true)}
 
   <p class="note">※ 本ルールは運用に合わせて更新されることがあります。最新の内容はアプリの「ルールブック」ページでご確認ください。</p>
 </div></body></html>`
