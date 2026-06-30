@@ -46,11 +46,45 @@ async function shot(route, name, wait = 2200) {
   assets[name] = b64(file)
   console.log('✓ shot', name)
 }
+// 履歴: ロック済み日報の「編集の許可を依頼」ボタンに赤丸を重ねて撮影
+async function shotHistoryButton(name) {
+  await mp.goto(LIFF + '/history', { waitUntil: 'networkidle', timeout: 25000 })
+  await mp.waitForTimeout(2500)
+  const btn = mp.locator('.btn-unlock').first()
+  const box = await btn.boundingBox().catch(() => null)
+  if (box) {
+    await btn.scrollIntoViewIfNeeded().catch(() => {})
+    const b2 = await btn.boundingBox()
+    await mp.evaluate(({ x, y, w, h }) => {
+      const d = document.createElement('div'); d.id = '__ring__'
+      d.style.cssText = `position:fixed;left:${x - 6}px;top:${y - 6}px;width:${w + 12}px;height:${h + 12}px;border:3px solid #ef4444;border-radius:10px;z-index:99999;pointer-events:none;box-shadow:0 0 0 3px rgba(239,68,68,.22)`
+      document.body.appendChild(d)
+    }, { x: b2.x, y: b2.y, w: b2.width, h: b2.height })
+  }
+  const file = path.join(ASSETS, name + '.png')
+  await mp.screenshot({ path: file, fullPage: false })
+  await mp.evaluate(() => document.getElementById('__ring__')?.remove())
+  assets[name] = b64(file)
+  console.log('✓ shot', name)
+}
+// 履歴: 「編集の許可を依頼」モーダル（理由入力）を開いて撮影
+async function shotHistoryModal(name) {
+  await mp.goto(LIFF + '/history', { waitUntil: 'networkidle', timeout: 25000 })
+  await mp.waitForTimeout(2500)
+  await mp.locator('.btn-unlock').first().click().catch(() => {})
+  await mp.waitForTimeout(800)
+  const file = path.join(ASSETS, name + '.png')
+  await mp.screenshot({ path: file, fullPage: false })
+  assets[name] = b64(file)
+  console.log('✓ shot', name)
+}
 
 await shotHomeRing('残業申請', 'home-overtime')
 await shotHomeRing('出退勤', 'home-checkin')
 await shot('/checkin', 'checkin')
 await shot('/overtime', 'overtime')
+await shotHistoryButton('history-button')
+await shotHistoryModal('history-modal')
 await mob.close()
 
 // ── ルールブックHTML（rules.vue と同内容＋セクション内キャプチャ＋赤線）──
@@ -96,7 +130,9 @@ const html = `<!doctype html><html lang="ja"><head><meta charset="utf-8"><style>
     'それより前の日付は<strong>ロックされ、提出・編集できません</strong>。日報・経費のどちらも対象です。',
     'やむを得ず期限を過ぎた分を直したいときは、<strong>管理者へ許可を依頼</strong>してください。許可されると、その日に限り再度入力できます。',
     '提出忘れを防ぐため、未提出のリマインドが届きます。早めの提出をお願いします。',
-  ]))}
+  ]),
+    fig('history-button', '日報履歴でロックされた日の「編集の許可を依頼」（赤丸）') +
+    fig('history-modal', '理由を入力して依頼。管理者が承認するとその日だけ編集できます'))}
 
   ${card(2, '残業の申請', ul([
     '残業が発生する日は、<span class="hl">当日の15:00までに残業申請</span>を行ってください。',
