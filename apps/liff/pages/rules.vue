@@ -19,6 +19,7 @@
         <h2 class="sec"><span class="num">2</span>残業の申請</h2>
         <ul class="rules">
           <li>残業が発生する日は、<strong>当日の15:00までに残業申請</strong>を行ってください。</li>
+          <li>メニューの<strong>「残業申請」</strong>から、希望の終了時刻と理由を入力して申請します。管理者が承認すると、その日だけ定時を超える終了時刻を入力できます。</li>
           <li>未申請の日は、<strong>定時（終了時刻）以降の入力ができません</strong>。</li>
         </ul>
       </section>
@@ -35,6 +36,9 @@
         <h2 class="sec"><span class="num">4</span>出退勤の打刻</h2>
         <ul class="rules">
           <li>現場への<strong>到着時と退出時の打刻は必須</strong>です。忘れずに行ってください。</li>
+          <li>打刻は<strong>現場のQRコードを読み取る</strong>か、メニューの<strong>「出退勤」</strong>から行えます。</li>
+          <li>QRコードが無い現場は、<strong>「出退勤」から現場を選んで</strong>打刻してください（元請けや現場名で絞り込めます）。</li>
+          <li>確認事項（チェック項目）が設定された現場では、出退勤時に確認のうえチェックしてください。</li>
         </ul>
       </section>
 
