@@ -87,7 +87,11 @@ export function useOvertimeRequest() {
       account_id: accountId, worker_id: workerId, date,
       requested_end_time: requestedEndTime || null, reason: reason || null, status: 'pending',
     })
-    if (error) return { ok: false, error: error.message }
+    // 競合で同時insertされた場合、部分一意index(active_uidx)が弾く＝既に有効申請あり＝成功扱い。
+    if (error) {
+      if ((error as any).code === '23505') return { ok: true }
+      return { ok: false, error: error.message }
+    }
     return { ok: true }
   }
 

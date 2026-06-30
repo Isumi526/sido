@@ -30,6 +30,12 @@ create index if not exists overtime_requests_account_idx
 create index if not exists overtime_requests_lookup_idx
   on public.overtime_requests (account_id, worker_id, date);
 
+-- 二重申請防止（DBレベル）: 同一 worker×date の「有効な申請」(pending/approved)は1件まで。
+--   却下(rejected)は対象外＝再申請できる。アプリ側の select→insert 競合の最終防壁。
+create unique index if not exists overtime_requests_active_uidx
+  on public.overtime_requests (account_id, worker_id, date)
+  where status in ('pending', 'approved');
+
 -- 既存 LIFF 露出テーブルに合わせ anon 運用（RLS無効）。本番RLS化は親エピックで一括。
 alter table public.overtime_requests disable row level security;
 -- delete は「作業員が誤った申請を取り消す（pending 撤回）」のために許可（anon運用）。
