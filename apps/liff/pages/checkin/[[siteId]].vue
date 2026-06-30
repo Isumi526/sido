@@ -84,6 +84,10 @@
       <div class="select-header">
         <div class="select-title">{{ $t('checkin.selectSiteTitle') }}</div>
       </div>
+      <select v-if="contractorOptions.length > 1" v-model="selectedContractor" class="site-filter">
+        <option value="">{{ $t('checkin.filterContractorAll') }}</option>
+        <option v-for="c in contractorOptions" :key="c.id" :value="c.id">{{ c.name }}</option>
+      </select>
       <input
         v-if="siteOptions.length > 6"
         v-model="siteQuery"
@@ -267,14 +271,19 @@ const errorMsg       = ref('')
 const debugUrl       = ref('')
 const siteId         = ref('')
 const siteName       = ref('')
-// QRなしのリンク導線（/checkin）で現場を選ぶための候補（有効現場）＋検索絞り込み
-const siteOptions    = ref<{ id: string; name: string; name_kana: string | null }[]>([])
+// QRなしのリンク導線（/checkin）で現場を選ぶための候補（有効現場）＋検索/元請け絞り込み
+const siteOptions    = ref<{ id: string; name: string; name_kana: string | null; contractor_id: string | null }[]>([])
+const contractorOptions = ref<{ id: string; name: string }[]>([])  // 元請けプルダウン（紐づく現場がある分のみ）
 const siteQuery      = ref('')
+const selectedContractor = ref('')  // '' = すべて
 const filteredSiteOptions = computed(() => {
   const q = siteQuery.value.trim().toLowerCase()
-  if (!q) return siteOptions.value
-  return siteOptions.value.filter(s =>
-    s.name.toLowerCase().includes(q) || (s.name_kana ?? '').toLowerCase().includes(q))
+  const c = selectedContractor.value
+  return siteOptions.value.filter(s => {
+    if (c && s.contractor_id !== c) return false
+    if (!q) return true
+    return s.name.toLowerCase().includes(q) || (s.name_kana ?? '').toLowerCase().includes(q)
+  })
 })
 const rules          = ref<SiteRule[]>([])
 const checkedIds     = ref(new Set<string>())
@@ -457,10 +466,15 @@ onMounted(async () => {
 async function loadSiteOptions() {
   const accountId = await useAccount().getAccountId()
   if (!accountId) return
-  const { data } = await supabase
-    .from('sites').select('id, name, name_kana').eq('account_id', accountId).eq('active', true)
-    .order('name_kana', { nullsFirst: false }).order('name')
-  siteOptions.value = (data ?? []) as { id: string; name: string; name_kana: string | null }[]
+  const [{ data }, { data: contractors }] = await Promise.all([
+    supabase.from('sites').select('id, name, name_kana, contractor_id').eq('account_id', accountId).eq('active', true)
+      .order('name_kana', { nullsFirst: false }).order('name'),
+    supabase.from('contractors').select('id, name').eq('account_id', accountId).eq('active', true).order('sort_order').order('name'),
+  ])
+  siteOptions.value = (data ?? []) as { id: string; name: string; name_kana: string | null; contractor_id: string | null }[]
+  // 元請けプルダウンは「紐づく現場が1件以上ある元請け」だけ出す
+  const usedContractorIds = new Set(siteOptions.value.map(s => s.contractor_id).filter(Boolean) as string[])
+  contractorOptions.value = ((contractors ?? []) as { id: string; name: string }[]).filter(c => usedContractorIds.has(c.id))
 }
 
 // ── 現場を選択（QRなし導線）→ 通常フローへ ──
@@ -776,7 +790,8 @@ async function submit() {
 }
 .select-title { font-size: 20px; font-weight: 700; }
 
-.site-search { width: 100%; box-sizing: border-box; margin: 12px 0 0; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 15px; }
+.site-filter { width: 100%; box-sizing: border-box; margin: 12px 0 0; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 15px; background: #fff; }
+.site-search { width: 100%; box-sizing: border-box; margin: 8px 0 0; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 15px; }
 .site-empty { padding: 24px 0; text-align: center; color: #94a3b8; font-size: 14px; }
 .target-list { padding: 12px 0; }
 .target-row {

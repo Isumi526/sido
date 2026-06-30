@@ -11,6 +11,7 @@
   "selectTargetTitle": "誰の出退勤を登録しますか？",
   "selectSiteTitle": "出退勤する現場を選んでください",
   "noRulesNote": "この現場には確認事項がありません。下のボタンから出勤／退勤を登録してください。",
+  "filterContractorAll": "元請け：すべて",
   "siteSearchPlaceholder": "現場名・読み仮名で検索",
   "siteSearchEmpty": "該当する現場がありません",
   "checkinConfirmTitle": "出勤前の確認",
