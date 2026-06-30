@@ -60,13 +60,13 @@
           <div v-else class="edit-form">
             <label class="fld"><span>現場名</span><input v-model="form.name" class="input" /></label>
             <label class="fld"><span>読み仮名</span><input v-model="form.name_kana" class="input" /></label>
+            <label class="fld"><span>住所</span><input v-model="form.location" class="input" placeholder="例：名古屋市〇〇区…" /></label>
             <label class="fld"><span>元請け</span>
               <select v-model="form.contractor_id" class="input">
                 <option :value="null">（未設定）</option>
                 <option v-for="c in contractors" :key="c.id" :value="c.id">{{ c.name }}</option>
               </select>
             </label>
-            <label class="fld"><span>住所</span><input v-model="form.location" class="input" placeholder="例：名古屋市〇〇区…" /></label>
             <label class="fld"><span>工種</span><input v-model="form.construction_type" class="input" placeholder="例：内装・改修" /></label>
             <label class="fld"><span>工事内容</span><textarea v-model="form.construction_details" class="input" rows="2" /></label>
             <div class="fld"><span>固定勤務時刻</span>
