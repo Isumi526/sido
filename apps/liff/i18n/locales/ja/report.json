@@ -34,6 +34,8 @@
   "siteUnset": "現場未設定（あとで紐付け）",
   "siteUnsetNote": "現場が未作成でも記録できます。後で管理者が正しい現場へ紐付けます。",
   "fixedTimeNote": "この現場の固定終了時刻は {end} です。これを超える勤務報告は残業申請が必要です（早退などで下回るのは可）。",
+  "overtimeApplyLink": "残業を申請する →",
+  "overtimeApprovedNote": "残業申請が承認済みです。固定終了を超える終了時刻を入力できます。",
   "siteNamePlaceholder": "現場名を入力（例: 渋谷プロジェクト）",
   "subcontractorOnly": "協力業者 / 経費 / 雑費のみ（自分は稼働なし）",
   "startTime": "開始",
