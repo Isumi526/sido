@@ -1001,13 +1001,24 @@ function addSite() {
 
 /** 開始時刻のオプション: si>0 の場合は前現場の終了時刻より前を除外（日跨ぎ除く） */
 function startTimeOptionsForSite(si: number): string[] {
-  if (si === 0) return TIME_OPTIONS
-  const prev = report.form.value.sites[si - 1]?.workers[0]
-  if (!prev) return TIME_OPTIONS
-  const prevEndMin   = parseMin(prev.endTime   || '17:30')
-  const prevStartMin = parseMin(prev.startTime  || '08:00')
-  if (prevEndMin <= prevStartMin) return TIME_OPTIONS  // 日跨ぎは制限なし
-  return TIME_OPTIONS.filter(t => parseMin(t) >= prevEndMin)
+  const s = report.form.value.sites[si]
+  const cur = s?.workers?.[0]?.startTime
+  let floorMin = -1   // この値「以上」のみ選択可（複数の下限の最大を採る）
+  // ① 前の現場の終了以降（複数現場の時系列連続性）
+  if (si > 0) {
+    const prev = report.form.value.sites[si - 1]?.workers[0]
+    if (prev) {
+      const prevEndMin   = parseMin(prev.endTime   || '17:30')
+      const prevStartMin = parseMin(prev.startTime || '08:00')
+      if (prevEndMin > prevStartMin) floorMin = Math.max(floorMin, prevEndMin)  // 日跨ぎは制限なし
+    }
+  }
+  // ② 現場の固定開始以降（固定開始より前=早出は不可・遅刻=後ろ倒しは可）
+  const fStart = siteFixedStart(s?.siteName)
+  if (fStart) floorMin = Math.max(floorMin, parseMin(fStart))
+  if (floorMin < 0) return TIME_OPTIONS
+  // 編集で開いた古い下限割れ値は snap させないため、現在値は必ず含める。
+  return TIME_OPTIONS.filter(t => parseMin(t) >= floorMin || t === cur)
 }
 
 // ── 現場の固定勤務時刻（master・name keyed）。__other__/__unset__/未設定は null ──
@@ -1017,6 +1028,9 @@ function siteFixedTimes(siteName: string | undefined): { start: string | null; e
 }
 function siteFixedEnd(siteName: string | undefined): string {
   return siteFixedTimes(siteName)?.end || ''
+}
+function siteFixedStart(siteName: string | undefined): string {
+  return siteFixedTimes(siteName)?.start || ''
 }
 // 現場を選び直した時、固定時刻があれば作業時刻の既定にする（新規入力のみ。編集中の既存値は触らない）。
 function onSiteChange(si: number) {
