@@ -11,6 +11,7 @@
   "selectTargetTitle": "Whose attendance do you want to register?",
   "selectSiteTitle": "Select the site for attendance",
   "noRulesNote": "No checklist for this site. Use the button below to register attendance.",
+  "filterContractorAll": "Contractor: All",
   "siteSearchPlaceholder": "Search by site name or reading",
   "siteSearchEmpty": "No matching site",
   "checkinConfirmTitle": "Pre-check-in confirmation",
