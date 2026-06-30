@@ -44,6 +44,10 @@
           <span class="material-symbols-rounded menu-icon" style="color:#3b82f6">history</span>
           <span class="menu-label">{{ t('nav.reportHistory') }}</span>
         </NuxtLink>
+        <NuxtLink class="menu-card" to="/checkin">
+          <span class="material-symbols-rounded menu-icon" style="color:#10b981">how_to_reg</span>
+          <span class="menu-label">{{ t('nav.checkin') }}</span>
+        </NuxtLink>
         <NuxtLink class="menu-card" to="/overtime">
           <span class="material-symbols-rounded menu-icon" style="color:#f59e0b">more_time</span>
           <span class="menu-label">{{ t('nav.overtimeRequest') }}</span>

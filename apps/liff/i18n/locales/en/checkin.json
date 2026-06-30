@@ -9,6 +9,7 @@
   "doneMessageCheckin": "Have a safe day today.",
   "doneMessageCheckout": "Thank you for your hard work today.",
   "selectTargetTitle": "Whose attendance do you want to register?",
+  "selectSiteTitle": "Select the site for attendance",
   "checkinConfirmTitle": "Pre-check-in confirmation",
   "checkoutConfirmTitle": "Pre-check-out confirmation",
   "registerAs": "Registering as {name}",

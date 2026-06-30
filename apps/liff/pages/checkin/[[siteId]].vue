@@ -79,6 +79,25 @@
     </div>
 
     <!-- 対象作業員の選択（代理対象がいる場合のみ） -->
+    <!-- 現場選択（QRなしのリンク導線）-->
+    <div v-else-if="phase === 'select-site'" class="select-wrap">
+      <div class="select-header">
+        <div class="select-title">{{ $t('checkin.selectSiteTitle') }}</div>
+      </div>
+      <div class="target-list">
+        <button
+          v-for="s in siteOptions"
+          :key="s.id"
+          class="target-row"
+          @click="selectSite(s.id)"
+        >
+          <span class="material-symbols-rounded target-icon">location_on</span>
+          <span class="target-name">{{ s.name }}</span>
+          <span class="material-symbols-rounded chev">chevron_right</span>
+        </button>
+      </div>
+    </div>
+
     <div v-else-if="phase === 'select-target'" class="select-wrap">
       <div class="select-header">
         <div class="site-label">{{ siteName }}</div>
@@ -216,7 +235,7 @@
 </template>
 
 <script setup lang="ts">
-type Phase = 'loading' | 'error' | 'select-target' | 'checklist' | 'done' | 'already-done'
+type Phase = 'loading' | 'error' | 'select-site' | 'select-target' | 'checklist' | 'done' | 'already-done'
 
 type SiteRule = { id: string; content: string; timing: string }
 type ConsentDoc = { id: string; name: string | null; path: string; url?: string | null }
@@ -239,6 +258,8 @@ const errorMsg       = ref('')
 const debugUrl       = ref('')
 const siteId         = ref('')
 const siteName       = ref('')
+// QRなしのリンク導線（/checkin）で現場を選ぶための候補（有効現場）
+const siteOptions    = ref<{ id: string; name: string }[]>([])
 const rules          = ref<SiteRule[]>([])
 const checkedIds     = ref(new Set<string>())
 const consentDocs    = ref<ConsentDoc[]>([])   // 送り出し資料（出退勤同意・チェックイン時）
@@ -402,11 +423,38 @@ onMounted(async () => {
 
   const resolved = resolveSiteId()
   if (!resolved) {
-    errorMsg.value = t('checkin.errNoSiteId')
-    debugUrl.value = bootHref || (typeof window !== 'undefined' ? window.location.href : '')
-    phase.value = 'error'
+    // QRなしのリンク導線（/checkin）: 現場を選んでもらう（QRを貼れない現場向け）
+    await loadSiteOptions()
+    if (!siteOptions.value.length) {
+      errorMsg.value = t('checkin.errNoSiteId')
+      debugUrl.value = bootHref || (typeof window !== 'undefined' ? window.location.href : '')
+      phase.value = 'error'
+      return
+    }
+    phase.value = 'select-site'
     return
   }
+  await proceedWithSite(resolved)
+})
+
+// ── 有効現場の一覧を取得（QRなしの現場選択用）──
+async function loadSiteOptions() {
+  const accountId = await useAccount().getAccountId()
+  if (!accountId) return
+  const { data } = await supabase
+    .from('sites').select('id, name').eq('account_id', accountId).eq('active', true)
+    .order('name_kana', { nullsFirst: false }).order('name')
+  siteOptions.value = (data ?? []) as { id: string; name: string }[]
+}
+
+// ── 現場を選択（QRなし導線）→ 通常フローへ ──
+async function selectSite(id: string) {
+  phase.value = 'loading'
+  await proceedWithSite(id)
+}
+
+// ── siteId 確定後の共通フロー（QR・リンクどちらからも）──
+async function proceedWithSite(resolved: string) {
   siteId.value = resolved
 
   // 現場名取得
@@ -448,7 +496,7 @@ onMounted(async () => {
     return
   }
   await loadForTarget(me.worker_id)
-})
+}
 
 // ── 対象作業員を選択 ───────────────────────────────────────────
 function selectTarget(id: string) {
