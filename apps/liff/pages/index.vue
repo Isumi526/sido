@@ -252,6 +252,14 @@ async function refreshUnsubmittedCount() {
     if (settingRows?.[0]?.value) fromStr = settingRows[0].value
   }
 
+  // 日報提出開始日(workers.report_start_date)があれば、それ以降のみ未送信対象にする（提出開始日より前はカウントしない）。
+  const { data: urow } = await supabase.from('users').select('worker_id').eq('id', targetUserId).maybeSingle()
+  if ((urow as any)?.worker_id) {
+    const { data: w } = await supabase.from('workers').select('report_start_date').eq('id', (urow as any).worker_id).maybeSingle()
+    const rsd = (w as any)?.report_start_date
+    if (rsd && rsd > fromStr) fromStr = rsd
+  }
+
   const { data: reports } = await supabase
     .from('daily_reports')
     .select('date')
