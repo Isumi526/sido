@@ -84,9 +84,16 @@
       <div class="select-header">
         <div class="select-title">{{ $t('checkin.selectSiteTitle') }}</div>
       </div>
+      <input
+        v-if="siteOptions.length > 6"
+        v-model="siteQuery"
+        class="site-search"
+        type="search"
+        :placeholder="$t('checkin.siteSearchPlaceholder')"
+      />
       <div class="target-list">
         <button
-          v-for="s in siteOptions"
+          v-for="s in filteredSiteOptions"
           :key="s.id"
           class="target-row"
           @click="selectSite(s.id)"
@@ -95,6 +102,7 @@
           <span class="target-name">{{ s.name }}</span>
           <span class="material-symbols-rounded chev">chevron_right</span>
         </button>
+        <div v-if="!filteredSiteOptions.length" class="site-empty">{{ $t('checkin.siteSearchEmpty') }}</div>
       </div>
     </div>
 
@@ -259,8 +267,15 @@ const errorMsg       = ref('')
 const debugUrl       = ref('')
 const siteId         = ref('')
 const siteName       = ref('')
-// QRなしのリンク導線（/checkin）で現場を選ぶための候補（有効現場）
-const siteOptions    = ref<{ id: string; name: string }[]>([])
+// QRなしのリンク導線（/checkin）で現場を選ぶための候補（有効現場）＋検索絞り込み
+const siteOptions    = ref<{ id: string; name: string; name_kana: string | null }[]>([])
+const siteQuery      = ref('')
+const filteredSiteOptions = computed(() => {
+  const q = siteQuery.value.trim().toLowerCase()
+  if (!q) return siteOptions.value
+  return siteOptions.value.filter(s =>
+    s.name.toLowerCase().includes(q) || (s.name_kana ?? '').toLowerCase().includes(q))
+})
 const rules          = ref<SiteRule[]>([])
 const checkedIds     = ref(new Set<string>())
 const consentDocs    = ref<ConsentDoc[]>([])   // 送り出し資料（出退勤同意・チェックイン時）
@@ -443,9 +458,9 @@ async function loadSiteOptions() {
   const accountId = await useAccount().getAccountId()
   if (!accountId) return
   const { data } = await supabase
-    .from('sites').select('id, name').eq('account_id', accountId).eq('active', true)
+    .from('sites').select('id, name, name_kana').eq('account_id', accountId).eq('active', true)
     .order('name_kana', { nullsFirst: false }).order('name')
-  siteOptions.value = (data ?? []) as { id: string; name: string }[]
+  siteOptions.value = (data ?? []) as { id: string; name: string; name_kana: string | null }[]
 }
 
 // ── 現場を選択（QRなし導線）→ 通常フローへ ──
@@ -761,6 +776,8 @@ async function submit() {
 }
 .select-title { font-size: 20px; font-weight: 700; }
 
+.site-search { width: 100%; box-sizing: border-box; margin: 12px 0 0; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 15px; }
+.site-empty { padding: 24px 0; text-align: center; color: #94a3b8; font-size: 14px; }
 .target-list { padding: 12px 0; }
 .target-row {
   display: flex; align-items: center; gap: 14px; width: 100%;
