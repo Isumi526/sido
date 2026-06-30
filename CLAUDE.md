@@ -95,7 +95,7 @@ git push origin main --force
 | **DEV_URL** | `http://localhost:3001`（admin） | liff は Nuxt dev |
 | **PROD_BRANCH** | `main`／AUTO_MERGE_TARGET=`dev`／AUTO_TIER=`低`／MAX_WALL=`180` | |
 | **本番 Supabase ref** | `nrzzesbtvswoiouhldvi` | 誤接続ガード／`--prod-readonly` 監査用 |
-| **PROD_URL** | ⚠️**要確認**（sido 本番URL未記入） | ship 手順8スモークで使用。判明したらここに記入 |
+| **PROD_URL** | admin=`https://sido-admin-stism.vercel.app/` ／ liff=`https://sido-liff.vercel.app/` | ship 手順8スモークで使用 |
 
 ### APP_LAYOUT_NOTES（/review が参照）
 - 構成: `apps/admin`(管理画面・ブラウザ {{DEV_URL}}) ＋ `apps/liff`(Nuxt・LINEミニアプリ)。UI/ロジックは原則ブラウザ。**LINEアプリ内固有（友だち追加・トーク内 LIFF 起動・Flex体裁）は `⚠実機確認`**。
