@@ -20,6 +20,7 @@ test('作業員編集モーダルに email/password 認証セクションが表�
   const row = page.locator('tr', { hasText: SEED_WORKER }).first()
   await expect(row).toBeVisible({ timeout: 15000 })
   await row.getByRole('button', { name: '編集' }).click()
+  await page.locator('[data-testid="detail-toggle"]').click()   // 認証セクションは詳細情報内なので展開
   await expect(page.getByTestId('auth-email')).toBeVisible()
   await expect(page.getByTestId('auth-password')).toBeVisible()
   await expect(page.getByTestId('auth-setup-btn')).toBeVisible()
