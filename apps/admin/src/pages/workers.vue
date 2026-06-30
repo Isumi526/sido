@@ -33,7 +33,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="w in filteredWorkers" :key="w.id" :class="{ inactive: !w.active }">
+          <tr v-for="w in filteredWorkers" :key="w.id">
             <td class="name">{{ w.name }}</td>
             <td><span class="badge" :class="w.role">{{ w.role === 'factory' ? '工場/事務所' : '現場' }}</span></td>
             <td><span class="perm-badge" :class="w.permission_role ?? 'worker'">{{ permLabel(w.permission_role) }}</span></td>
@@ -663,7 +663,7 @@ async function confirmDelete() {
 .table { width: 100%; border-collapse: collapse; }
 .table th { background: #f9f9f9; padding: 12px 16px; text-align: left; font-size: 12px; color: #888; font-weight: 700; }
 .table td { padding: 14px 16px; border-top: 1px solid #f0f0f0; font-size: 14px; }
-.table tr.inactive td { opacity: .4; }
+/* タブで状態を分けるため行のグレーアウトは廃止（状態カラムのバッジで表現） */
 .name { font-weight: 600; }
 .price { font-variant-numeric: tabular-nums; }
 .badge { font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 700; }
