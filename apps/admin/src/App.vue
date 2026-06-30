@@ -87,8 +87,8 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { currentUser, signOut } from './lib/auth'
-import { getAccountName, getAccountId } from './lib/account'
-import { supabase } from './lib/supabase'
+import { getAccountName } from './lib/account'
+import { editApprovalCount, siteUnsetCount, overtimePendingCount, refreshNavBadges } from './lib/navBadges'
 import { HIDE_LINE_SECTIONS } from './lib/featureFlags'
 import { migrationTargetUrl, REDIRECT_SECONDS } from './lib/domainMigration'
 import AiHelpWidget from './components/AiHelpWidget.vue'
@@ -125,38 +125,11 @@ const route  = useRoute()
 const drawerOpen = ref(false)
 watch(() => route.path, () => { drawerOpen.value = false })
 
-// ── ナビ未処理バッジ（日報編集の許可申請=pending件数 / 現場未設定の紐付け=__unset__件数）──
-const editApprovalCount = ref(0)
-const siteUnsetCount    = ref(0)
-const overtimePendingCount = ref(0)
-async function loadNavBadges() {
-  const accountId = await getAccountId()
-  if (!accountId) { editApprovalCount.value = 0; siteUnsetCount.value = 0; overtimePendingCount.value = 0; return }
-  // 許可申請: pending件数（DBカウント）
-  const { count } = await supabase.from('report_edit_grants')
-    .select('id', { count: 'exact', head: true })
-    .eq('account_id', accountId).eq('status', 'pending')
-  editApprovalCount.value = count ?? 0
-  // 残業申請: pending件数（DBカウント）
-  const { count: otCount } = await supabase.from('overtime_requests')
-    .select('id', { count: 'exact', head: true })
-    .eq('account_id', accountId).eq('status', 'pending')
-  overtimePendingCount.value = otCount ?? 0
-  // 現場未設定: 直近90日の日報の sites JSON に siteName='__unset__' が含まれる数（relink画面と同窓）
-  const since = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0]
-  const { data: reps } = await supabase.from('daily_reports')
-    .select('sites').eq('account_id', accountId).gte('date', since)
-  let unset = 0
-  for (const rep of (reps ?? []) as any[]) {
-    const arr = Array.isArray(rep.sites) ? rep.sites : []
-    for (const site of arr) if (site?.siteName === '__unset__') unset++
-  }
-  siteUnsetCount.value = unset
-}
-onMounted(loadNavBadges)
-watch(currentUser, loadNavBadges)
-// 画面遷移のたびに再取得（許可/紐付けを処理した後にバッジが減るように）
-watch(() => route.path, loadNavBadges)
+// ── ナビ未処理バッジ（共有ストア navBadges.ts）。処理画面は refreshNavBadges() を直接呼ぶ ──
+onMounted(refreshNavBadges)
+watch(currentUser, refreshNavBadges)
+// 画面遷移のたびに再取得（許可/紐付け/残業を処理した後にバッジが減るように）
+watch(() => route.path, refreshNavBadges)
 
 async function handleLogout() {
   await signOut()
