@@ -100,6 +100,15 @@
           <label>メモ</label>
           <textarea v-model="modal.memo" class="input" rows="2" placeholder="任意"></textarea>
         </div>
+        <div class="field">
+          <label>固定勤務時刻（日報の既定＆終了上限・任意）</label>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input v-model="modal.default_start_time" type="time" class="input" style="width:auto" />
+            <span>〜</span>
+            <input v-model="modal.default_end_time" type="time" class="input" style="width:auto" />
+          </div>
+          <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">設定すると日報でこの現場を選んだ時に作業時刻の既定値になり、終了は固定終了を超えて報告できません（早退で下回るのは可）。</p>
+        </div>
 
         <!-- 写真・書類（既存現場のみ） -->
         <div v-if="modal.id" class="field">
@@ -174,6 +183,7 @@ type Site = {
   id: string; name: string; name_kana: string | null; active: boolean
   location: string | null; construction_type: string | null; construction_details: string | null; memo: string | null
   contractor_id: string | null   // 紐づく元請け（任意）
+  default_start_time: string | null; default_end_time: string | null   // 固定勤務時刻（日報の既定＆終了上限）
 }
 type Att = { id: string; site_id: string; kind: string; path: string; name: string | null; require_consent?: boolean; url?: string | null }
 
@@ -227,7 +237,7 @@ async function load() {
   const accountId = await getAccountId()
   const [{ data }, { data: cons }] = await Promise.all([
     supabase.from('sites')
-      .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id')
+      .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id, default_start_time, default_end_time')
       .eq('account_id', accountId)
       .order('name_kana', { nullsFirst: false })
       .order('name'),
@@ -280,9 +290,10 @@ const filtered = computed(() => {
   return list
 })
 
-function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, linkedSubs: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = '' }
+function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', linkedSubs: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = '' }
 async function openEdit(s: Site) {
-  modal.value = { ...s, linkedSubs: [] }; saveError.value = ''
+  // time入力は HH:MM を期待するため DB の HH:MM:SS を切り詰める
+  modal.value = { ...s, default_start_time: (s.default_start_time ?? '').slice(0, 5), default_end_time: (s.default_end_time ?? '').slice(0, 5), linkedSubs: [] }; saveError.value = ''
   const { data: links } = await supabase.from('site_subcontractors').select('subcontractor_id').eq('site_id', s.id)
   if (modal.value) modal.value.linkedSubs = ((links ?? []) as any[]).map(l => l.subcontractor_id)
   siteEstimates.value = []
@@ -309,6 +320,7 @@ async function save() {
       location: m.location?.trim() || null, construction_type: m.construction_type?.trim() || null,
       construction_details: m.construction_details?.trim() || null, memo: m.memo?.trim() || null,
       contractor_id: m.contractor_id || null,
+      default_start_time: m.default_start_time || null, default_end_time: m.default_end_time || null,
     }
     const accountId = await getAccountId()
     let siteId = m.id
