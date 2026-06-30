@@ -30,8 +30,8 @@
         <li class="nav-section">日次</li>
         <li><RouterLink to="/" class="nav-link"><span class="material-symbols-rounded nav-icon">dashboard</span>ダッシュボード</RouterLink></li>
         <li><RouterLink to="/reports" class="nav-link"><span class="material-symbols-rounded nav-icon">list_alt</span>日報一覧</RouterLink></li>
-        <li><RouterLink to="/report-edit-approvals" class="nav-link"><span class="material-symbols-rounded nav-icon">lock_open</span>日報編集の許可申請</RouterLink></li>
-        <li><RouterLink to="/report-site-relink" class="nav-link"><span class="material-symbols-rounded nav-icon">link</span>現場未設定の紐付け</RouterLink></li>
+        <li><RouterLink to="/report-edit-approvals" class="nav-link"><span class="material-symbols-rounded nav-icon">lock_open</span>日報編集の許可申請<span v-if="editApprovalCount" class="nav-badge">{{ editApprovalCount }}</span></RouterLink></li>
+        <li><RouterLink to="/report-site-relink" class="nav-link"><span class="material-symbols-rounded nav-icon">link</span>現場未設定の紐付け<span v-if="siteUnsetCount" class="nav-badge">{{ siteUnsetCount }}</span></RouterLink></li>
         <li><RouterLink to="/site-reports" class="nav-link"><span class="material-symbols-rounded nav-icon">bar_chart</span>現場別集計</RouterLink></li>
         <li><RouterLink to="/calendar" class="nav-link"><span class="material-symbols-rounded nav-icon">calendar_month</span>予定管理</RouterLink></li>
         <li><RouterLink to="/process" class="nav-link"><span class="material-symbols-rounded nav-icon">view_timeline</span>工程管理</RouterLink></li>
@@ -86,7 +86,8 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { currentUser, signOut } from './lib/auth'
-import { getAccountName } from './lib/account'
+import { getAccountName, getAccountId } from './lib/account'
+import { supabase } from './lib/supabase'
 import { HIDE_LINE_SECTIONS } from './lib/featureFlags'
 import { migrationTargetUrl, REDIRECT_SECONDS } from './lib/domainMigration'
 import AiHelpWidget from './components/AiHelpWidget.vue'
@@ -122,6 +123,33 @@ const route  = useRoute()
 // 画面遷移したらドロワーを閉じる
 const drawerOpen = ref(false)
 watch(() => route.path, () => { drawerOpen.value = false })
+
+// ── ナビ未処理バッジ（日報編集の許可申請=pending件数 / 現場未設定の紐付け=__unset__件数）──
+const editApprovalCount = ref(0)
+const siteUnsetCount    = ref(0)
+async function loadNavBadges() {
+  const accountId = await getAccountId()
+  if (!accountId) { editApprovalCount.value = 0; siteUnsetCount.value = 0; return }
+  // 許可申請: pending件数（DBカウント）
+  const { count } = await supabase.from('report_edit_grants')
+    .select('id', { count: 'exact', head: true })
+    .eq('account_id', accountId).eq('status', 'pending')
+  editApprovalCount.value = count ?? 0
+  // 現場未設定: 直近90日の日報の sites JSON に siteName='__unset__' が含まれる数（relink画面と同窓）
+  const since = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0]
+  const { data: reps } = await supabase.from('daily_reports')
+    .select('sites').eq('account_id', accountId).gte('date', since)
+  let unset = 0
+  for (const rep of (reps ?? []) as any[]) {
+    const arr = Array.isArray(rep.sites) ? rep.sites : []
+    for (const site of arr) if (site?.siteName === '__unset__') unset++
+  }
+  siteUnsetCount.value = unset
+}
+onMounted(loadNavBadges)
+watch(currentUser, loadNavBadges)
+// 画面遷移のたびに再取得（許可/紐付けを処理した後にバッジが減るように）
+watch(() => route.path, loadNavBadges)
 
 async function handleLogout() {
   await signOut()
@@ -171,6 +199,13 @@ async function handleLogout() {
 .router-link-exact-active .nav-icon {
   font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 20;
   color: #06C755;
+}
+/* ナビ未処理バッジ（右寄せの赤丸カウント） */
+.nav-badge {
+  margin-left: auto; flex-shrink: 0;
+  min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box;
+  background: #ef4444; color: #fff; border-radius: 9px;
+  font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
 }
 .btn-logout {
   margin: 0 16px 8px;
