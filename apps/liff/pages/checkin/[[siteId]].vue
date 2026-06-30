@@ -84,7 +84,7 @@
       <div class="select-header">
         <div class="select-title">{{ $t('checkin.selectSiteTitle') }}</div>
       </div>
-      <select v-if="contractorOptions.length > 1" v-model="selectedContractor" class="site-filter">
+      <select v-if="contractorOptions.length > 0" v-model="selectedContractor" class="site-filter">
         <option value="">{{ $t('checkin.filterContractorAll') }}</option>
         <option v-for="c in contractorOptions" :key="c.id" :value="c.id">{{ c.name }}</option>
       </select>
@@ -478,7 +478,12 @@ async function loadSiteOptions() {
 }
 
 // ── 現場を選択（QRなし導線）→ 通常フローへ ──
+//  URLを /checkin/<id> に反映して「その現場の出退勤ページ」をブックマーク可能にする
+//  （再マウントせず続行。リロード/再訪時は param から現場を解決）。
 async function selectSite(id: string) {
+  if (typeof window !== 'undefined') {
+    try { window.history.replaceState(window.history.state, '', `/checkin/${id}`) } catch { /* URL更新失敗は無視 */ }
+  }
   phase.value = 'loading'
   await proceedWithSite(id)
 }
