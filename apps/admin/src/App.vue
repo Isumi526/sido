@@ -7,7 +7,20 @@
       <a :href="migrationUrl" class="domain-migrate-link">今すぐ移動する</a>
     </div>
   </div>
-  <div v-if="currentUser" class="admin-shell">
+  <!-- 権限解決待ち（ロックアウト/素通しを防ぐためフリッカー回避） -->
+  <div v-if="currentUser && !roleResolved" class="access-gate">
+    <div class="gate-card"><div class="gate-spinner" /></div>
+  </div>
+  <!-- 現場担当者・職人は管理画面の利用不可 -->
+  <div v-else-if="currentUser && !isAdminAllowed" class="access-gate">
+    <div class="gate-card">
+      <span class="material-symbols-rounded gate-icon">block</span>
+      <h1 class="gate-title">この画面を利用する権限がありません</h1>
+      <p class="gate-text">管理画面は管理者・事務員のみ利用できます。<br>作業員の方は LINE / 作業員アプリをご利用ください。</p>
+      <button class="gate-logout" @click="handleLogout">ログアウト</button>
+    </div>
+  </div>
+  <div v-else-if="currentUser" class="admin-shell">
     <!-- モバイル用トップバー（≤768pxで表示）-->
     <header class="topbar">
       <button class="hamburger" aria-label="メニュー" @click="drawerOpen = true">
@@ -86,7 +99,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { currentUser, signOut } from './lib/auth'
+import { currentUser, signOut, isAdminAllowed, roleResolved } from './lib/auth'
 import { getAccountName } from './lib/account'
 import { editApprovalCount, siteUnsetCount, overtimePendingCount, refreshNavBadges } from './lib/navBadges'
 import { HIDE_LINE_SECTIONS } from './lib/featureFlags'
@@ -139,6 +152,16 @@ async function handleLogout() {
 
 <style scoped>
 .admin-shell { display: flex; min-height: 100vh; }
+
+/* 権限ガード画面（現場担当者・職人 / 解決待ち） */
+.access-gate { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #f1f5f9; padding: 24px; }
+.gate-card { background: #fff; border-radius: 16px; padding: 36px 32px; max-width: 420px; text-align: center; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
+.gate-icon { font-size: 48px; color: #ef4444; }
+.gate-title { font-size: 18px; font-weight: 700; color: #0f172a; margin: 12px 0 8px; }
+.gate-text { font-size: 13px; color: #64748b; line-height: 1.8; margin: 0 0 20px; }
+.gate-logout { background: #0f172a; color: #fff; border: none; border-radius: 8px; padding: 11px 24px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.gate-spinner { width: 32px; height: 32px; border: 3px solid #e2e8f0; border-top-color: #06C755; border-radius: 50%; animation: gate-spin .8s linear infinite; margin: 0 auto; }
+@keyframes gate-spin { to { transform: rotate(360deg); } }
 
 /* 独自ドメイン移行の案内オーバーレイ */
 .domain-migrate-overlay { position: fixed; inset: 0; z-index: 9999; background: #0f172a; display: flex; align-items: center; justify-content: center; padding: 24px; }
