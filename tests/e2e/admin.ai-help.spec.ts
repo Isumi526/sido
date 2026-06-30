@@ -21,6 +21,21 @@ test('AIヘルプでメッセージを送ると吹き出しが出て応答が返
   await expect(page.locator('.msg.ai .bubble')).toBeVisible({ timeout: 30000 })
 })
 
+test('常駐ウィジェット: どのページでもFABから開け、SPA遷移しても保持される', async ({ page }) => {
+  await page.goto('/', { waitUntil: 'networkidle' })
+  const fab = page.locator('[data-testid="ai-help-fab"]')
+  await expect(fab).toBeVisible()                       // ダッシュボードでも右下にFAB常駐
+  await fab.click()
+  await expect(page.locator('.ai-panel')).toBeVisible() // パネルが開く
+  await expect(page.locator('.ai-panel .composer-input')).toBeVisible()
+
+  // SPA内のページ遷移（リロードしない）でウィジェットがアンマウントされず、開いた状態が保持される
+  await page.locator('a.nav-link[href="/reports"]').first().click()
+  await expect(page).toHaveURL(/\/reports/)
+  await expect(fab).toBeVisible()
+  await expect(page.locator('.ai-panel')).toBeVisible() // 遷移後もパネルは開いたまま
+})
+
 test('バグ報告モーダルが開き、タイトル必須が効く', async ({ page }) => {
   await page.goto('/ai-help', { waitUntil: 'networkidle' })
   await page.locator('.btn-bug-manual').click()

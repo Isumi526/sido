@@ -47,10 +47,11 @@
 
         <!-- 日付 -->
         <FormSection num="01" :title="$t('report.dateSection')">
-          <div class="date-fixed">{{ report.form.value.date }}</div>
+          <div class="date-fixed">{{ dateWithWeekday }}</div>
           <div v-if="!isEditMode && report.form.value.date < new Date().toISOString().split('T')[0]" class="past-date-notice">
             <span v-html="$t('report.pastDateNotice')" />
           </div>
+          <div v-if="currentDateLocked" class="locked-notice">🔒 {{ $t('report.lockedBanner') }}</div>
         </FormSection>
 
         <!-- 稼働有無 -->
@@ -143,9 +144,11 @@
           <Field :label="$t('report.siteName')">
             <select v-model="site.siteName" class="select" required>
               <option value="">{{ $t('common.select') }}</option>
+              <option value="__unset__">{{ $t('report.siteUnset') }}</option>
               <option v-for="name in filteredSiteNames(site.contractorName)" :key="name" :value="name">{{ name }}</option>
               <option value="__other__">{{ $t('report.addNewSite') }}</option>
             </select>
+            <div v-if="site.siteName === '__unset__'" class="unset-note">{{ $t('report.siteUnsetNote') }}</div>
             <input
               v-if="site.siteName === '__other__'"
               v-model="site.customSiteName"
@@ -553,7 +556,7 @@
         <button v-if="isDev" type="button" class="btn-dev" :class="{ 'btn-dev--error': forceErrorOnSubmit }" @click="fillErrorTestData">
           {{ forceErrorOnSubmit ? $t('report.cancelErrorTest') : $t('report.fillErrorTestData') }}
         </button>
-        <button type="submit" class="btn-submit" :disabled="isEditMode ? editSubmitting : (report.submitting.value || !omissionConfirmed)">
+        <button type="submit" class="btn-submit" :disabled="currentDateLocked || (isEditMode ? editSubmitting : (report.submitting.value || !omissionConfirmed))">
           <span v-if="isEditMode ? editSubmitting : report.submitting.value" class="submitting">
             <span class="dot-spin" />{{ isEditMode ? $t('report.updating') : $t('report.submitting') }}
           </span>
@@ -640,6 +643,17 @@ const currentUser = computed(() => {
 
 const isDev = computed(() => config.public.appEnv === 'development' || liff.isTester.value)
 
+// ── 過去3日編集ロック（提出/編集の期限ガード）──
+const lock = useReportLock()
+const currentDateLocked = ref(false)
+async function refreshLock() {
+  const d = report.form.value.date
+  const wid = currentUser.value?.worker_id ?? null
+  if (!wid || !lock.isPastLockWindow(d)) { currentDateLocked.value = false; return }
+  currentDateLocked.value = await lock.isLocked(wid, d)
+}
+watch([() => report.form.value.date, () => currentUser.value?.worker_id], refreshLock, { immediate: true })
+
 const initializing = ref(true)
 
 // ── 下書き自動保存／復元（新規入力のみ・編集/代理では使わない）──
@@ -689,6 +703,15 @@ const isWorkingStr = ref<'working' | 'paid_leave' | 'off'>('working')
 const isSunday = computed(() =>
   new Date(report.form.value.date + 'T00:00:00').getDay() === 0
 )
+
+// 日付表示用（曜日併記）: 2026-06-29（月）
+const dateWithWeekday = computed(() => {
+  const ds = report.form.value.date
+  if (!ds) return ''
+  const d = new Date(ds + 'T00:00:00')
+  const weekdays = ['日', '月', '火', '水', '木', '金', '土']
+  return `${ds}（${weekdays[d.getDay()]}）`
+})
 
 // 現場跨ぎ残業対応: 各現場の workers[0] のプレビュー用 breakdown（startTime 順で累積）
 const sitePreviewBreakdowns = computed((): Record<number, RateBreakdown> => {
@@ -1287,6 +1310,21 @@ function notifyErrorToLine(actionName: string, errorMsg: string) {
 async function handleSubmit() {
   report.form.value.isWorking  = isWorkingStr.value === 'working' || isWorkingStr.value === 'paid_leave'
   report.form.value.leaveType  = isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null
+
+  // ── 過去3日ロック: ロック窓(3日以上前)かつ未承認なら 提出/編集を弾く（バックストップ）──
+  {
+    const lockDate = report.form.value.date
+    if (lock.isPastLockWindow(lockDate)) {
+      const wid = currentUser.value?.worker_id ?? null
+      if (await lock.isLocked(wid, lockDate)) {
+        currentDateLocked.value = true
+        const msg = t('report.lockedSubmit')
+        if (isEditMode.value) editError.value = msg
+        alert(msg)
+        return
+      }
+    }
+  }
 
   // ── 編集モード: Supabase のみ更新（GAS には再送しない）──
   if (isEditMode.value) {
@@ -1994,6 +2032,7 @@ html, body {
 .expense-list { display: flex; flex-direction: column; gap: 12px; }
 .expense-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .mt6  { margin-top: 6px; }
+.unset-note { margin-top: 6px; font-size: 12px; color: #475569; background: #f1f5f9; border-radius: 6px; padding: 7px 10px; line-height: 1.5; }
 .mt8  { margin-top: 8px; }
 
 /* ── 車両ブロック ── */
@@ -2181,6 +2220,17 @@ html, body {
   font-size: 13px;
   color: #C2410C;
   font-weight: 600;
+}
+.locked-notice {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #B91C1C;
+  font-weight: 700;
+  line-height: 1.6;
 }
 
 /* ── 日付固定表示 ── */

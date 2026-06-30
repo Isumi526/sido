@@ -162,3 +162,11 @@ entries:
     target: reminder-auth
     reason: "リマインドEFのトリガー認可(_shared/reminder-auth.ts)を実装: cron=共有シークレット(x-reminder-secret)/admin手動=認証JWT で保護。REMINDER_TRIGGER_SECRET 未設定時のみ後方互換で通すフォールバックを残す(段階移行用＝Gemini指摘箇所)。ship時にVault『reminder_trigger_secret』とEF env『REMINDER_TRIGGER_SECRET』へ同一値を設定すると enforcement 有効化＝第三者URL直叩きを401。従来の完全無認証より厳格でnet改善。secret設定後のフォールバック削除は別タスクで追跡可。"
     ticket: "3860ff81c56b81288629e4110c588411"
+  - rule: rls-multitenant
+    target: report_edit_grants
+    reason: "過去3日編集ロックの許可申請/承認(worker×date)。LIFF(anon)が依頼insert・自状況readするため既存のLIFF露出マスタ群と同じ anon運用(RLS無効・account_idで論理分離)。ロックは UX/運用ガード(クライアント判定)でありセキュリティ境界ではない(daily_reports自体が現状anon-writable)。本番RLS化は親エピック「本番DBのRLS有効化」で一括。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: anon-access-token
+    target: report_edit_grants
+    reason: "上記許可申請テーブルの anon select/insert/update。LIFF(公開anonキー)が依頼と自状況参照を行うため。他のLIFF露出表(daily_reports/schedules等)と同じ pre-RLS ベースライン＝親エピックで一括RLS化。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"

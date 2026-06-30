@@ -109,6 +109,7 @@ async function load() {
   for (const r of (reps ?? []) as any[]) {
     for (const g of (r.gasoline_items ?? [])) gasSum += Number(g?.yen) || 0
     for (const st of (r.sites ?? [])) {
+      if (st?.siteName === '__unset__') continue   // 現場未設定は按分基準にしない（紐付け後に反映）
       const nm = (st?.siteName === '__other__' ? st?.customSiteName : st?.siteName)?.trim()
       if (!nm) continue
       for (const v of (st.expenses?.vehicles ?? [])) dist[nm] = (dist[nm] ?? 0) + (Number(v.distanceKm) || 0)
