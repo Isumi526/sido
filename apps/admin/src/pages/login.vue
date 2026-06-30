@@ -4,11 +4,11 @@
       <div class="login-logo">APP<span class="logo-sub">管理</span></div>
       <form @submit.prevent="handleLogin" class="login-form">
         <div class="field">
-          <label>ID または メールアドレス</label>
+          <label>メールアドレス</label>
           <input
             v-model="accountId"
             type="text"
-            placeholder="ID（@なし）または メール"
+            placeholder="メールアドレス"
             autocomplete="username"
             data-testid="login-id"
             required

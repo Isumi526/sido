@@ -16,8 +16,9 @@
     <div class="gate-card">
       <span class="material-symbols-rounded gate-icon">block</span>
       <h1 class="gate-title">この画面を利用する権限がありません</h1>
-      <p class="gate-text">管理画面は管理者・事務員のみ利用できます。<br>作業員の方は LINE / 作業員アプリをご利用ください。</p>
-      <button class="gate-logout" @click="handleLogout">ログアウト</button>
+      <p class="gate-text">管理画面は管理者・事務員のみ利用できます。<br>作業員の方は下のボタンから作業員アプリをご利用ください。</p>
+      <a class="gate-liff" :href="liffUrl">作業員アプリを開く →</a>
+      <button class="gate-logout-link" @click="handleLogout">ログアウト</button>
     </div>
   </div>
   <div v-else-if="currentUser" class="admin-shell">
@@ -100,6 +101,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { currentUser, signOut, isAdminAllowed, roleResolved } from './lib/auth'
+import { liffAppUrl } from './lib/links'
 import { getAccountName } from './lib/account'
 import { editApprovalCount, siteUnsetCount, overtimePendingCount, refreshNavBadges } from './lib/navBadges'
 import { HIDE_LINE_SECTIONS } from './lib/featureFlags'
@@ -116,6 +118,9 @@ onMounted(() => {
     if (countdown.value <= 0) { clearInterval(timer); window.location.replace(migrationUrl.value!) }
   }, 1000)
 })
+
+// 権限ガード拒否画面から作業員アプリ(LIFF)へ誘導するURL（環境差を吸収）
+const liffUrl = liffAppUrl()
 
 // ヘッダー: メイン=プロダクト名 GENLINKS 固定、サブ=会社名(account名・データ)
 const accountDisplayName = ref('')
@@ -159,7 +164,8 @@ async function handleLogout() {
 .gate-icon { font-size: 48px; color: #ef4444; }
 .gate-title { font-size: 18px; font-weight: 700; color: #0f172a; margin: 12px 0 8px; }
 .gate-text { font-size: 13px; color: #64748b; line-height: 1.8; margin: 0 0 20px; }
-.gate-logout { background: #0f172a; color: #fff; border: none; border-radius: 8px; padding: 11px 24px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.gate-liff { display: inline-block; background: #06C755; color: #fff; text-decoration: none; border-radius: 8px; padding: 12px 28px; font-size: 15px; font-weight: 700; }
+.gate-logout-link { display: block; margin: 14px auto 0; background: none; border: none; color: #94a3b8; font-size: 13px; text-decoration: underline; cursor: pointer; }
 .gate-spinner { width: 32px; height: 32px; border: 3px solid #e2e8f0; border-top-color: #06C755; border-radius: 50%; animation: gate-spin .8s linear infinite; margin: 0 auto; }
 @keyframes gate-spin { to { transform: rotate(360deg); } }
 
