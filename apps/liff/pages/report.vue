@@ -713,6 +713,17 @@ async function cancelUnlockRequest() {
   if (r.ok) lockGrantStatus.value = 'none'
 }
 
+// 管理画面で承認したら日報画面へ自動反映: タブ復帰(フォーカス)時＋申請中はポーリングでロック/残業を再取得。
+function refreshGates() { refreshLock(); refreshOvertime() }
+function onVisible() { if (typeof document !== 'undefined' && document.visibilityState === 'visible') refreshGates() }
+let gatePoll: ReturnType<typeof setInterval> | null = null
+function stopGatePoll() { if (gatePoll) { clearInterval(gatePoll); gatePoll = null } }
+function startGatePoll() { stopGatePoll(); gatePoll = setInterval(refreshGates, 15000) }
+// 申請中(pending)の間だけポーリング（承認/却下で止まる）
+watch(lockGrantStatus, (s) => { if (s === 'pending') startGatePoll(); else stopGatePoll() }, { immediate: true })
+onMounted(() => { if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible) })
+onUnmounted(() => { if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisible); stopGatePoll() })
+
 // ── 残業申請（架空残業対策）: 承認済みの worker×date は固定終了の上限を解放 ──
 const overtime = useOvertimeRequest()
 const overtimeApprovedForDate = ref(false)
