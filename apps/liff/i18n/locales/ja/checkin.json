@@ -10,6 +10,7 @@
   "doneMessageCheckout": "今日も一日お疲れ様でした。",
   "selectTargetTitle": "誰の出退勤を登録しますか？",
   "selectSiteTitle": "出退勤する現場を選んでください",
+  "noRulesNote": "この現場には確認事項がありません。下のボタンから出勤／退勤を登録してください。",
   "checkinConfirmTitle": "出勤前の確認",
   "checkoutConfirmTitle": "退勤前の確認",
   "registerAs": "{name} として登録",

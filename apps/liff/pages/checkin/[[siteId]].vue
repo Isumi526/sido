@@ -138,6 +138,7 @@
       </div>
 
       <div class="checklist-scroll">
+      <p v-if="rules.length === 0 && !consentDocs.length" class="no-rules-note">{{ $t('checkin.noRulesNote') }}</p>
       <div class="rules-list">
         <div
           v-for="rule in rules"
@@ -215,9 +216,9 @@
         </div>
 
         <p class="submit-hint">
-          {{ $t('checkin.checkedCount', { checked: checkedIds.size, total: rules.length }) }}
+          <template v-if="rules.length">{{ $t('checkin.checkedCount', { checked: checkedIds.size, total: rules.length }) }}</template>
           <template v-if="allChecked && !locationResolved">
-            <br><span class="submit-warn">{{ $t('checkin.submitWarn') }}</span>
+            <template v-if="rules.length"><br></template><span class="submit-warn">{{ $t('checkin.submitWarn') }}</span>
           </template>
         </p>
         <button
@@ -323,9 +324,9 @@ const canChangeTarget  = computed(() => targets.value.length > 1)
 // 完了画面で「続けて登録」できる、今登録した人以外の対象
 const otherTargets     = computed(() => targets.value.filter(t => t.id !== selectedId.value))
 
-// ── 全件チェック済みか ───────────────────────────────────────
+// ── 全件チェック済みか（ルール未設定=確認事項なし＝チェック条件は満たす扱い）──
 const allChecked = computed(() =>
-  rules.value.length > 0 && checkedIds.value.size === rules.value.length
+  rules.value.length === 0 || checkedIds.value.size === rules.value.length
 )
 
 // 送り出し資料すべてに同意したか（資料が無ければ true）
@@ -817,6 +818,7 @@ async function submit() {
 }
 
 .checklist-scroll { flex: 1; overflow-y: auto; }
+.no-rules-note { margin: 16px 4px; font-size: 14px; line-height: 1.7; color: #475569; }
 .rules-list { padding: 12px 0; }
 
 .rule-row {
