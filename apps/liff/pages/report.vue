@@ -142,7 +142,7 @@
 
           <!-- 現場名 -->
           <Field :label="$t('report.siteName')">
-            <select v-model="site.siteName" class="select" required>
+            <select v-model="site.siteName" class="select" required @change="onSiteChange(si)">
               <option value="">{{ $t('common.select') }}</option>
               <option value="__unset__">{{ $t('report.siteUnset') }}</option>
               <option v-for="name in filteredSiteNames(site.contractorName)" :key="name" :value="name">{{ name }}</option>
@@ -194,9 +194,12 @@
                     <div class="time-field">
                       <label class="hours-label">{{ $t('report.endTime') }}</label>
                       <select v-model="site.workers[0].endTime" class="select">
-                        <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
+                        <option v-for="t in endTimeOptionsForSite(si)" :key="t" :value="t">{{ t }}</option>
                       </select>
                     </div>
+                  </div>
+                  <div v-if="siteFixedEnd(site.siteName)" class="fixed-time-note">
+                    ⏱ {{ $t('report.fixedTimeNote', { end: siteFixedEnd(site.siteName) }) }}
                   </div>
                   <div class="worker-break-row">
                     <div class="time-field">
@@ -1005,6 +1008,35 @@ function startTimeOptionsForSite(si: number): string[] {
   const prevStartMin = parseMin(prev.startTime  || '08:00')
   if (prevEndMin <= prevStartMin) return TIME_OPTIONS  // 日跨ぎは制限なし
   return TIME_OPTIONS.filter(t => parseMin(t) >= prevEndMin)
+}
+
+// ── 現場の固定勤務時刻（master・name keyed）。__other__/__unset__/未設定は null ──
+function siteFixedTimes(siteName: string | undefined): { start: string | null; end: string | null } | null {
+  if (!siteName || siteName === '__other__' || siteName === '__unset__') return null
+  return master.siteWorkTimes.value[siteName] ?? null
+}
+function siteFixedEnd(siteName: string | undefined): string {
+  return siteFixedTimes(siteName)?.end || ''
+}
+// 現場を選び直した時、固定時刻があれば作業時刻の既定にする（新規入力のみ。編集中の既存値は触らない）。
+function onSiteChange(si: number) {
+  if (isEditMode.value) return
+  const s = report.form.value.sites[si]
+  const ft = siteFixedTimes(s?.siteName)
+  const w = s?.workers?.[0]
+  if (!ft || !w) return
+  if (ft.start) w.startTime = ft.start
+  if (ft.end) w.endTime = ft.end
+}
+// 終了時刻の選択肢: 固定終了がある現場は それ以下に制限（残業申請が無い限り超過不可・早退は可）。
+//  編集で開いた古い超過値は snap させないため、現在値は必ず含める。
+function endTimeOptionsForSite(si: number): string[] {
+  const s = report.form.value.sites[si]
+  const endCap = siteFixedEnd(s?.siteName)
+  if (!endCap) return TIME_OPTIONS
+  const capMin = parseMin(endCap)
+  const cur = s?.workers?.[0]?.endTime
+  return TIME_OPTIONS.filter(t => parseMin(t) <= capMin || t === cur)
 }
 function removeSite(i: number) {
   report.removeSite(i)
@@ -2033,6 +2065,7 @@ html, body {
 .expense-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .mt6  { margin-top: 6px; }
 .unset-note { margin-top: 6px; font-size: 12px; color: #475569; background: #f1f5f9; border-radius: 6px; padding: 7px 10px; line-height: 1.5; }
+.fixed-time-note { margin-top: 4px; font-size: 12px; color: #1d4ed8; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 6px 10px; line-height: 1.5; }
 .mt8  { margin-top: 8px; }
 
 /* ── 車両ブロック ── */

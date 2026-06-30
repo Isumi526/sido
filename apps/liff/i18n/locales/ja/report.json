@@ -33,6 +33,7 @@
   "addNewSite": "＋ 新しい現場を登録する",
   "siteUnset": "現場未設定（あとで紐付け）",
   "siteUnsetNote": "現場が未作成でも記録できます。後で管理者が正しい現場へ紐付けます。",
+  "fixedTimeNote": "この現場の固定終了時刻は {end} です。これを超える勤務報告は残業申請が必要です（早退などで下回るのは可）。",
   "siteNamePlaceholder": "現場名を入力（例: 渋谷プロジェクト）",
   "subcontractorOnly": "協力業者 / 経費 / 雑費のみ（自分は稼働なし）",
   "startTime": "開始",
