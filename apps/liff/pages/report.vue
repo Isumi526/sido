@@ -51,8 +51,32 @@
           <div v-if="!isEditMode && report.form.value.date < new Date().toISOString().split('T')[0]" class="past-date-notice">
             <span v-html="$t('report.pastDateNotice')" />
           </div>
-          <div v-if="currentDateLocked" class="locked-notice">🔒 {{ $t('report.lockedBanner') }}</div>
+          <div v-if="currentDateLocked" class="locked-notice">
+            🔒 {{ $t('report.lockedBanner') }}
+            <div class="locked-actions">
+              <template v-if="lockGrantStatus === 'pending'">
+                <span class="locked-pending">🕒 {{ $t('report.unlockPending') }}</span>
+                <button type="button" class="btn-unlock-cancel" :disabled="unlockRequesting" @click="cancelUnlockRequest">{{ $t('report.unlockPendingCancel') }}</button>
+              </template>
+              <button v-else type="button" class="btn-unlock" @click="openUnlockModal">🔒 {{ $t('report.unlockRequest') }}</button>
+            </div>
+          </div>
         </FormSection>
+
+        <!-- 編集許可の依頼モーダル（未送信×期限切れもこの画面から依頼） -->
+        <div v-if="unlockModalOpen" class="req-overlay" @click.self="closeUnlockModal">
+          <div class="req-modal">
+            <h2 class="req-title">{{ $t('report.unlockRequest') }}</h2>
+            <p class="req-sub">{{ $t('report.unlockReasonLabel') }}</p>
+            <textarea v-model="unlockReason" class="req-textarea" rows="3" :placeholder="$t('report.unlockReasonPlaceholder')"></textarea>
+            <div class="req-actions">
+              <button type="button" class="req-cancel" @click="closeUnlockModal">{{ $t('report.unlockReasonCancel') }}</button>
+              <button type="button" class="req-submit" :disabled="unlockRequesting" @click="submitUnlockRequest">
+                {{ unlockRequesting ? $t('report.unlockRequesting') : $t('report.unlockReasonSubmit') }}
+              </button>
+            </div>
+          </div>
+        </div>
 
         <!-- 稼働有無 -->
         <FormSection num="02" :title="$t('report.workStatusSection')">
@@ -653,13 +677,41 @@ const isDev = computed(() => config.public.appEnv === 'development' || liff.isTe
 // ── 過去3日編集ロック（提出/編集の期限ガード）──
 const lock = useReportLock()
 const currentDateLocked = ref(false)
+const lockGrantStatus = ref<'none' | 'pending' | 'approved' | 'rejected'>('none')
 async function refreshLock() {
   const d = report.form.value.date
   const wid = currentUser.value?.worker_id ?? null
-  if (!wid || !lock.isPastLockWindow(d)) { currentDateLocked.value = false; return }
-  currentDateLocked.value = await lock.isLocked(wid, d)
+  if (!wid || !lock.isPastLockWindow(d)) { currentDateLocked.value = false; lockGrantStatus.value = 'none'; return }
+  lockGrantStatus.value = await lock.grantStatus(wid, d)
+  currentDateLocked.value = lockGrantStatus.value !== 'approved'
 }
 watch([() => report.form.value.date, () => currentUser.value?.worker_id], refreshLock, { immediate: true })
+
+// ── ロック日の「編集の許可を依頼」（未送信×期限切れもこの画面から依頼できる）──
+const unlockModalOpen  = ref(false)
+const unlockReason     = ref('')
+const unlockRequesting = ref(false)
+function openUnlockModal()  { unlockReason.value = ''; unlockModalOpen.value = true }
+function closeUnlockModal() { unlockModalOpen.value = false; unlockReason.value = '' }
+async function submitUnlockRequest() {
+  const d = report.form.value.date
+  const wid = currentUser.value?.worker_id ?? null
+  if (!d || !wid || unlockRequesting.value) return
+  unlockRequesting.value = true
+  const r = await lock.requestGrant(wid, d, unlockReason.value.trim())
+  unlockRequesting.value = false
+  if (r.ok) { lockGrantStatus.value = 'pending'; closeUnlockModal() }
+  else alert(t('report.unlockRequestFailed'))
+}
+async function cancelUnlockRequest() {
+  const d = report.form.value.date
+  const wid = currentUser.value?.worker_id ?? null
+  if (!d || !wid || unlockRequesting.value) return
+  unlockRequesting.value = true
+  const r = await lock.cancelRequest(wid, d)
+  unlockRequesting.value = false
+  if (r.ok) lockGrantStatus.value = 'none'
+}
 
 // ── 残業申請（架空残業対策）: 承認済みの worker×date は固定終了の上限を解放 ──
 const overtime = useOvertimeRequest()
@@ -2296,6 +2348,20 @@ html, body {
   font-weight: 700;
   line-height: 1.6;
 }
+/* ロック日の許可依頼ボタン／申請中表示＋モーダル */
+.locked-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.btn-unlock { font-size: 13px; font-weight: 700; color: #b45309; background: #fff; border: 1px solid #fbbf24; border-radius: 8px; padding: 8px 14px; cursor: pointer; }
+.btn-unlock-cancel { font-size: 12px; color: #64748b; background: #f1f5f9; border: none; border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+.locked-pending { font-size: 12px; color: #b45309; font-weight: 700; }
+.req-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 100; }
+.req-modal { background: #fff; border-radius: 14px; padding: 20px; width: 100%; max-width: 420px; }
+.req-title { font-size: 16px; font-weight: 700; margin: 0 0 4px; color: #111827; }
+.req-sub { font-size: 12px; color: #6b7280; margin: 0 0 10px; line-height: 1.5; }
+.req-textarea { width: 100%; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; font-size: 14px; resize: vertical; }
+.req-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; }
+.req-cancel { font-size: 14px; color: #64748b; background: #f1f5f9; border: none; border-radius: 8px; padding: 9px 16px; cursor: pointer; }
+.req-submit { font-size: 14px; font-weight: 700; color: #fff; background: #06C755; border: none; border-radius: 8px; padding: 9px 18px; cursor: pointer; }
+.req-submit:disabled { opacity: .6; cursor: default; }
 
 /* ── 日付固定表示 ── */
 .date-fixed {
