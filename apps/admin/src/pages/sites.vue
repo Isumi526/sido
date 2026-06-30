@@ -283,7 +283,8 @@ function fixedTimeLabel(s: Site): string {
 
 // AC3: 検索（名称/読み仮名/住所/元請け）・状態絞り込み・並び替え
 const q          = ref('')
-const statusFilter = ref<'all' | 'active' | 'inactive'>('all')
+// 既定は『有効のみ』表示（無効現場はデフォルト非表示・フィルタで切替可）
+const statusFilter = ref<'all' | 'active' | 'inactive'>('active')
 const sortBy     = ref<'kana' | 'recent'>('kana')
 const filtered = computed(() => {
   const kw = q.value.trim().toLowerCase()
