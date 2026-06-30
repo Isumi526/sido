@@ -44,7 +44,7 @@
         </div>
         <div class="card-actions">
           <button
-            v-if="!r.line_notified_at"
+            v-if="!HIDE_LINE_SECTIONS && !r.line_notified_at"
             class="btn-notify-sm"
             :disabled="notifying === r.id"
             @click.stop="sendNotification(r)"
@@ -268,6 +268,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug } from '../lib/account'
+import { HIDE_LINE_SECTIONS } from '../lib/featureFlags'
 import { computeWorkerHours, calcBreakMinutes, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
 
 const EDGE_URL  = import.meta.env.VITE_SUPABASE_EDGE_URL as string
