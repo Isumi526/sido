@@ -29,7 +29,8 @@ test.describe('現場詳細ページ /sites/:id', () => {
 
     await page.goto('/sites', { waitUntil: 'networkidle' })
     await page.locator('.filter-input').first().fill(LOC)
-    await page.locator('tr', { hasText: SITE }).locator('button.btn-detail').click()
+    // 現場名リンクから詳細ページへ（旧「詳細」ボタンは現場名がリンクのため廃止）
+    await page.locator('tr', { hasText: SITE }).locator('a.name-link').click()
 
     await expect(page).toHaveURL(new RegExp(`/sites/${siteId}`))
     await expect(page.locator('.page-title')).toContainText(SITE)

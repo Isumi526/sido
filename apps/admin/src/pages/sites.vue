@@ -30,7 +30,7 @@
     <div class="table-wrap">
       <table class="table">
         <thead>
-          <tr><th v-if="mergeMode"></th><th>現場名</th><th>住所</th><th>元請け</th><th class="num">日報(90日)</th><th>直近日報</th><th>状態</th><th></th></tr>
+          <tr><th v-if="mergeMode"></th><th>現場名</th><th>住所</th><th>元請け</th><th>固定時刻</th><th class="num">日報(90日)</th><th>直近日報</th><th>状態</th><th></th></tr>
         </thead>
         <tbody>
           <tr v-for="s in filtered" :key="s.id" :class="{ inactive: !s.active }">
@@ -38,17 +38,17 @@
             <td class="name"><a class="name-link" @click="router.push(`/sites/${s.id}`)">{{ s.name }}</a><span v-if="s.name_kana" class="kana-sub">{{ s.name_kana }}</span></td>
             <td class="loc">{{ s.location || '—' }}</td>
             <td>{{ s.contractor_id ? contractorName(s.contractor_id) : '—' }}</td>
+            <td class="fixed-time">{{ fixedTimeLabel(s) }}</td>
             <td class="num">{{ siteStats[s.name]?.count || '—' }}</td>
             <td>{{ siteStats[s.name]?.lastDate || '—' }}</td>
             <td><span class="status" :class="s.active ? 'active' : 'off'">{{ s.active ? '有効' : '無効' }}</span></td>
             <td class="actions">
-              <button class="btn-detail" @click="router.push(`/sites/${s.id}`)">詳細</button>
               <button class="btn-edit" @click="openEdit(s)">編集</button>
               <button class="btn-toggle" @click="toggleActive(s)">{{ s.active ? '無効化' : '有効化' }}</button>
               <button class="btn-rules" @click="router.push(`/site-rules?site_id=${s.id}`)">ルール・QR設定</button>
             </td>
           </tr>
-          <tr v-if="!filtered.length"><td :colspan="mergeMode ? 8 : 7" class="empty">該当する現場がありません</td></tr>
+          <tr v-if="!filtered.length"><td :colspan="mergeMode ? 9 : 8" class="empty">該当する現場がありません</td></tr>
         </tbody>
       </table>
     </div>
@@ -274,6 +274,12 @@ onMounted(load)
 
 const siteStats = ref<Record<string, { count: number; lastDate: string }>>({})
 const contractorName = (id: string | null | undefined) => contractors.value.find((c) => c.id === id)?.name ?? '—'
+// 一覧の固定時刻カラム表示（HH:MM:SS → HH:MM、未設定は —）
+function fixedTimeLabel(s: Site): string {
+  const a = (s.default_start_time ?? '').slice(0, 5)
+  const b = (s.default_end_time ?? '').slice(0, 5)
+  return (!a && !b) ? '—' : `${a || '—'}〜${b || '—'}`
+}
 
 // AC3: 検索（名称/読み仮名/住所/元請け）・状態絞り込み・並び替え
 const q          = ref('')
