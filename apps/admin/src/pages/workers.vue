@@ -5,6 +5,17 @@
       <button class="btn-add" @click="openAdd">＋ 追加</button>
     </div>
 
+    <div class="status-tabs">
+      <button
+        v-for="tab in STATUS_TABS"
+        :key="tab.key"
+        class="status-tab"
+        :class="{ active: statusTab === tab.key }"
+        :data-testid="`status-tab-${tab.key}`"
+        @click="statusTab = tab.key"
+      >{{ tab.label }} <span class="tab-count">{{ statusCount(tab.key) }}</span></button>
+    </div>
+
     <div class="table-wrap">
       <table class="table">
         <thead>
@@ -22,14 +33,14 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="w in workers" :key="w.id" :class="{ inactive: !w.active }">
+          <tr v-for="w in filteredWorkers" :key="w.id" :class="{ inactive: !w.active }">
             <td class="name">{{ w.name }}</td>
             <td><span class="badge" :class="w.role">{{ w.role === 'factory' ? '工場/事務所' : '現場' }}</span></td>
             <td><span class="perm-badge" :class="w.permission_role ?? 'worker'">{{ permLabel(w.permission_role) }}</span></td>
             <td class="price">¥{{ w.unit_price.toLocaleString() }}</td>
             <td><span class="emp-badge" :class="w.employment_type ?? 'fulltime'">{{ w.employment_type === 'contractor' ? '業務委託' : (w.employment_type ?? 'fulltime') === 'fulltime' ? '正社員' : `パート(週${w.weekly_scheduled_days ?? '?'}日)` }}</span></td>
             <td class="hire-date">{{ w.hire_date ?? '—' }}</td>
-            <td><span class="status" :class="w.active ? 'active' : 'off'">{{ w.active ? '有効' : '無効' }}</span></td>
+            <td><span class="status" :class="wStatus(w)" data-testid="worker-status">{{ STATUS_LABELS[wStatus(w)] }}</span></td>
             <td><span class="user-link" :class="linkedWorkerIds.has(w.id) ? 'linked' : 'unlinked'">{{ linkedWorkerIds.has(w.id) ? '紐付け済み' : '未紐付け' }}</span></td>
             <td>
               <template v-if="proxyMap.get(w.id)?.length">
@@ -41,7 +52,17 @@
             </td>
             <td class="actions">
               <button class="btn-edit" @click="openEdit(w)">編集</button>
-              <button class="btn-toggle" @click="toggleActive(w)">{{ w.active ? '無効化' : '有効化' }}</button>
+              <template v-if="wStatus(w) === 'active'">
+                <button class="btn-toggle" data-testid="to-retired" @click="setStatus(w, 'retired')">退職</button>
+              </template>
+              <template v-else-if="wStatus(w) === 'retired'">
+                <button class="btn-toggle" data-testid="to-active" @click="setStatus(w, 'active')">復帰</button>
+                <button class="btn-toggle" data-testid="to-inactive" @click="setStatus(w, 'inactive')">無効化</button>
+              </template>
+              <template v-else>
+                <button class="btn-toggle" data-testid="to-retired-back" @click="setStatus(w, 'retired')">退職済みへ</button>
+                <button class="btn-del" data-testid="del-worker" @click="askDelete(w)">削除</button>
+              </template>
             </td>
           </tr>
         </tbody>
@@ -230,11 +251,32 @@
         <p v-if="saveError" class="error">{{ saveError }}</p>
       </div>
     </div>
+
+    <!-- 物理削除の2重確認（無効の作業員のみ・不可逆） -->
+    <div v-if="delTarget" class="modal-overlay" @click.self="delTarget = null">
+      <div class="modal modal-sm">
+        <h2>作業員を完全に削除</h2>
+        <p class="del-warn">
+          <b>{{ delTarget.name }}</b> を完全に削除します。この操作は<b>取り消せません</b>。<br>
+          作業員マスタの情報・代理人・賃金履歴・家族/車検/健診・予定が削除されます。<br>
+          （日報データが紐づく作業員は保全のため削除できません。その場合は『無効』のまま保管してください。）
+        </p>
+        <div class="field">
+          <label>確認のため作業員名「{{ delTarget.name }}」を入力</label>
+          <input v-model="delConfirmText" class="input" :placeholder="delTarget.name" data-testid="del-confirm-input" />
+        </div>
+        <div class="modal-actions">
+          <button class="btn-cancel" @click="delTarget = null">キャンセル</button>
+          <button class="btn-del-confirm" :disabled="deleting || delConfirmText.trim() !== delTarget.name" data-testid="del-confirm-btn" @click="confirmDelete">{{ deleting ? '削除中...' : '完全に削除する' }}</button>
+        </div>
+        <p v-if="delError" class="error" data-testid="del-error">{{ delError }}</p>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 
@@ -246,6 +288,7 @@ type Worker = {
   unit_price: number
   wage_type: 'daily' | 'hourly'
   active: boolean
+  status?: 'active' | 'retired' | 'inactive'   // ライフサイクル状態（active=有効 / retired=退職済み / inactive=無効）。active(bool) と同義に保つ。
   hire_date: string | null
   birth_date: string | null
   address: string | null
@@ -261,6 +304,18 @@ type Worker = {
 }
 
 const workers         = ref<Worker[]>([])
+// 状態タブ（有効/退職済み/無効）。status 未設定の既存行は active から導出。
+type WStatus = 'active' | 'retired' | 'inactive'
+const STATUS_TABS: { key: WStatus; label: string }[] = [
+  { key: 'active',   label: '有効' },
+  { key: 'retired',  label: '退職済み' },
+  { key: 'inactive', label: '無効' },
+]
+const STATUS_LABELS: Record<WStatus, string> = { active: '有効', retired: '退職済み', inactive: '無効' }
+const statusTab = ref<WStatus>('active')
+function wStatus(w: Worker): WStatus { return w.status ?? (w.active ? 'active' : 'inactive') }
+function statusCount(s: WStatus): number { return workers.value.filter(w => wStatus(w) === s).length }
+const filteredWorkers = computed(() => workers.value.filter(w => wStatus(w) === statusTab.value))
 const linkedWorkerIds = ref<Set<string>>(new Set())
 // worker_id → 代理人の worker_id 配列
 const proxyMap        = ref<Map<string, string[]>>(new Map())
@@ -378,7 +433,7 @@ function toggleProxyId(id: string) {
 async function load() {
   const accountId = await getAccountId()
   const [{ data: workersData }, { data: usersData }, { data: proxyData }] = await Promise.all([
-    supabase.from('workers').select('id, name, role, permission_role, unit_price, wage_type, active, hire_date, birth_date, address, emergency_contact, employment_type, weekly_scheduled_days, company_info, invoice_number, insurance_info, labor_insurance_number, report_start_date, auth_user_id').eq('account_id', accountId).order('name'),
+    supabase.from('workers').select('id, name, role, permission_role, unit_price, wage_type, active, status, hire_date, birth_date, address, emergency_contact, employment_type, weekly_scheduled_days, company_info, invoice_number, insurance_info, labor_insurance_number, report_start_date, auth_user_id').eq('account_id', accountId).order('name'),
     supabase.from('users').select('worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
     supabase.from('worker_proxies').select('worker_id, proxy_operator_id').eq('account_id', accountId),
   ])
@@ -525,7 +580,7 @@ async function save() {
         })
       }
     } else {
-      const { data } = await supabase.from('workers').insert({ ...workerPayload, account_id: accountId }).select('id').single()
+      const { data } = await supabase.from('workers').insert({ ...workerPayload, account_id: accountId, status: 'active' }).select('id').single()
       workerId = data!.id
     }
 
@@ -555,9 +610,48 @@ async function save() {
   }
 }
 
-async function toggleActive(w: Worker) {
-  await supabase.from('workers').update({ active: !w.active }).eq('id', w.id)
+// 状態遷移（有効⇄退職済み⇄無効）。active(boolean) は status='active' と同義に保つ（既存フィルタ互換）。
+async function setStatus(w: Worker, status: WStatus) {
+  await supabase.from('workers').update({ status, active: status === 'active' }).eq('id', w.id)
   await load()
+}
+
+// ── 物理削除（無効の作業員のみ・2重確認）──
+//  日報データ保全のため、日報が1件でも紐づく作業員は削除不可（『無効』のまま保管）。
+//  紐付くログイン(users)は日報ゼロなら解除してから worker 行を削除（master子テーブルはFKカスケード）。
+const delTarget      = ref<Worker | null>(null)
+const delConfirmText = ref('')
+const deleting       = ref(false)
+const delError       = ref('')
+function askDelete(w: Worker) { delTarget.value = w; delConfirmText.value = ''; delError.value = '' }
+async function confirmDelete() {
+  const w = delTarget.value
+  if (!w) return
+  if (delConfirmText.value.trim() !== w.name) { delError.value = '確認のため作業員名を正確に入力してください'; return }
+  deleting.value = true; delError.value = ''
+  try {
+    const accountId = await getAccountId()
+    // 紐付くログイン(users)を確認：日報があれば削除中止（データ保全）、無ければ解除
+    const { data: us } = await supabase.from('users').select('id').eq('worker_id', w.id).eq('account_id', accountId)
+    for (const u of (us ?? []) as { id: string }[]) {
+      const { count } = await supabase.from('daily_reports').select('id', { count: 'exact', head: true }).eq('user_id', u.id)
+      if ((count ?? 0) > 0) {
+        delError.value = 'この作業員には日報データが紐づいています。データ保全のため完全削除はできません（『無効』のまま保管してください）。'
+        deleting.value = false; return
+      }
+      await supabase.from('users').delete().eq('id', u.id)
+    }
+    const { error } = await supabase.from('workers').delete().eq('id', w.id)
+    if (error) throw error
+    delTarget.value = null
+    await load()
+  } catch (e: any) {
+    delError.value = e?.message?.includes('foreign key')
+      ? '他のデータ（勤怠・見積・業者など）から参照されているため削除できません。先に参照を解除してください。'
+      : (e?.message ?? '削除に失敗しました')
+  } finally {
+    deleting.value = false
+  }
 }
 </script>
 
@@ -582,7 +676,20 @@ async function toggleActive(w: Worker) {
 .perm-badge.worker { background: #f1f5f9; color: #475569; }
 .status { font-size: 11px; padding: 3px 8px; border-radius: 4px; }
 .status.active { background: #e8fff0; color: #0a8a3a; }
-.status.off { background: #f5f5f5; color: #aaa; }
+.status.retired { background: #fff4e5; color: #b96a00; }
+.status.inactive { background: #f5f5f5; color: #aaa; }
+/* 状態タブ */
+.status-tabs { display: flex; gap: 4px; margin-bottom: 14px; }
+.status-tab { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 700; color: #64748b; cursor: pointer; }
+.status-tab.active { background: #06C755; border-color: #06C755; color: #fff; }
+.status-tab .tab-count { font-size: 11px; opacity: .8; margin-left: 2px; }
+/* 削除ボタン・確認モーダル */
+.btn-del { background: #fff; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 700; cursor: pointer; margin-left: 4px; }
+.btn-del:hover { background: #fef2f2; }
+.modal-sm { max-width: 440px; }
+.del-warn { font-size: 13px; line-height: 1.7; color: #475569; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; }
+.btn-del-confirm { background: #dc2626; color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.btn-del-confirm:disabled { background: #fca5a5; cursor: not-allowed; }
 .actions { display: flex; gap: 8px; }
 .btn-edit { background: #f0f0f0; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
 .btn-toggle { background: none; border: 1px solid #ddd; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; color: #888; }
