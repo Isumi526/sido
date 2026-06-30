@@ -553,11 +553,7 @@ async function loadForTarget(workerId: string) {
   rules.value      = (ruleData ?? []) as SiteRule[]
   checkedIds.value = new Set()   // 対象が変わったらチェックをリセット
 
-  if (rules.value.length === 0) {
-    errorMsg.value = t('checkin.errNoRules')
-    phase.value = 'error'
-    return
-  }
+  // ルール未設定でもシンプル出退勤として継続（確認事項なし＝allChecked が true 扱い）。
 
   // 送り出し資料（出退勤同意・チェックイン時のみ提示）。非公開バケットはedge署名URLで閲覧。
   consentedIds.value = new Set()
