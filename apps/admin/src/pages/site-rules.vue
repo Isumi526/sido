@@ -41,14 +41,11 @@
       </table>
     </div>
 
-    <!-- QRコード発行（確認ルールを1件以上登録した後のみ） -->
+    <!-- QRコード発行（ルール未設定でもシンプル出退勤として発行可）-->
     <div v-if="!loading" class="qr-section">
       <h2 class="section-title">QRコード発行</h2>
-      <SiteQrPanel v-if="rules.length > 0" :site-id="siteId" :site-name="siteName" />
-      <div v-else class="qr-locked">
-        確認ルールを1件以上登録すると、QRコードを発行できます。<br>
-        （ルール未設定のQRは出退勤登録ができないため）
-      </div>
+      <p v-if="rules.length === 0" class="qr-note">確認ルール未設定でもQRを発行できます（出退勤のみのシンプル運用）。ルールを追加すると出退勤時に確認事項を表示します。</p>
+      <SiteQrPanel :site-id="siteId" :site-name="siteName" />
     </div>
 
     <!-- 追加モーダル -->
@@ -285,6 +282,7 @@ async function moveDown(rule: Rule) {
   padding: 24px 28px; max-width: 440px;
   font-size: 13px; color: #6b7280; line-height: 1.7;
 }
+.qr-note { font-size: 13px; color: #64748b; line-height: 1.7; margin: 0 0 14px; max-width: 560px; }
 
 .table-wrap { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
 .table { width: 100%; border-collapse: collapse; }
