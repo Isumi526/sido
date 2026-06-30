@@ -16,7 +16,8 @@ test.describe('作業員 家族構成', () => {
     await page.goto('/workers', { waitUntil: 'networkidle' })
     await page.locator('.btn-add').click()
     await page.locator('input[placeholder="例：山田 太郎"]').fill(name)
-    // 家族を1人追加
+    // 家族を1人追加（家族構成は詳細情報セクション内なので展開）
+    await page.locator('[data-testid="detail-toggle"]').click()
     await page.locator('[data-testid="add-family"]').click()
     const row = page.locator('[data-testid="family-row"]').first()
     await row.locator('input[placeholder="氏名 *"]').fill('山田 花子')
@@ -26,6 +27,7 @@ test.describe('作業員 家族構成', () => {
     await expect(listRow).toBeVisible({ timeout: 10000 })
     // 再編集 → 家族が保持されている
     await listRow.locator('.btn-edit').click()
+    await page.locator('[data-testid="detail-toggle"]').click()   // 詳細情報を展開
     const frow = page.locator('[data-testid="family-row"]').first()
     await expect(frow.locator('input[placeholder="氏名 *"]')).toHaveValue('山田 花子')
     await expect(frow.locator('input[placeholder="続柄（例：配偶者）"]')).toHaveValue('配偶者')
