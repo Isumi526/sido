@@ -47,6 +47,7 @@ import { ref, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { currentUser } from '../lib/auth'
+import { refreshNavBadges } from '../lib/navBadges'
 
 type OvertimeReq = {
   id: string
@@ -105,6 +106,7 @@ async function decide(g: OvertimeReq, status: 'approved' | 'rejected') {
   busy.value = null
   if (error) { alert('更新に失敗しました: ' + error.message); return }
   pending.value = pending.value.filter(x => x.id !== g.id)
+  await refreshNavBadges()  // ナビバッジを即時更新（リロード不要）
 }
 
 onMounted(load)
