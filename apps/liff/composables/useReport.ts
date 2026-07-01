@@ -299,6 +299,11 @@ export const useReport = () => {
       const efUrl = config.public.edgeFunctionUrl
       if (!efUrl) {
         console.log('[Report] Edge Function URL未設定 - 送信ペイロード:', JSON.stringify(payload, null, 2))
+      } else if (!config.public.reportLineNotify) {
+        // 脱LINE（既定）: submit-report(LINE通知)は呼ばない。日報保存(daily_reports)は別経路で完了済み。
+        //   submit-report EF は全社共通グループ(NOTIFY_GROUP_IDS)へ送るクロステナント漏洩バグがあるため、
+        //   per-tenant 化して修正するまで LIFF からは絶対に呼ばない。
+        console.log('[Report] 日報LINE通知はオフ（脱LINE）: submit-report をスキップ')
       } else {
         // dev環境またはテスターはtest-プレフィックスの関数を呼び出す
         const fnPrefix = config.public.appEnv === 'development' ? 'test-' : ''
