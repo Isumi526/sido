@@ -5,14 +5,14 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { pushLineText } from '../_shared/line.ts'
 import { buildReportMessage } from '../_shared/notify.ts'
-import { isReportNotifyEnabled } from '../_shared/resolveGroupId.ts'
+import { isReportNotifyEnabled, resolveGroupIds } from '../_shared/resolveGroupId.ts'
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')              ?? '',
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
 )
 
-// NOTIFY_GROUP_IDS は JSON配列 or カンマ区切り文字列どちらでも受け付ける
+// グループID環境変数（DEV_NOTIFY_GROUP_IDS 等）は JSON配列 or カンマ区切り文字列どちらでも受け付ける
 function parseGroupIds(raw: string | undefined): string[] {
   if (!raw) return []
   const trimmed = raw.trim()
@@ -23,11 +23,13 @@ function parseGroupIds(raw: string | undefined): string[] {
 }
 
 const LINE_TOKEN     = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? ''
-const PROD_GROUP_IDS = parseGroupIds(Deno.env.get('NOTIFY_GROUP_IDS'))
+// ⚠️ 本番の送信先は「テナントごとの settings.notify_group_id」だけを使う（resolveGroupIds）。
+//   グローバル env NOTIFY_GROUP_IDS へのフォールバックはクロステナント漏洩の原因だったため撤廃。
+//   未設定テナントは送らない（下の targets.length===0 で graceful skip）。
 const DEV_GROUP_IDS  = parseGroupIds(Deno.env.get('DEV_NOTIFY_GROUP_IDS'))
 const LIFF_URL       = Deno.env.get('LIFF_URL') ?? ''
 
-console.log('[submit-report] init PROD_GROUP_IDS:', PROD_GROUP_IDS, 'DEV_GROUP_IDS:', DEV_GROUP_IDS)
+console.log('[submit-report] init DEV_GROUP_IDS:', DEV_GROUP_IDS)
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -52,15 +54,18 @@ Deno.serve(async (req) => {
       return json({ success: true, skipped: 'notify_disabled' })
     }
 
+    // 本番の送信先は「そのテナント(accountSlug)の settings.notify_group_id」だけ（未設定なら空=送らない）。
+    //   グローバルフォールバックは撤廃済み＝他テナントのグループへ流れる余地は無い。
     const targets: string[] = _devNotifyGroupId
       ? [_devNotifyGroupId]
-      : (isTest ? DEV_GROUP_IDS : PROD_GROUP_IDS)
+      : (isTest ? DEV_GROUP_IDS : await resolveGroupIds(accountSlug, []))
 
-    console.log(`[submit-report] date=${date} sender=${sender} isTest=${isTest} targets=${JSON.stringify(targets)} leaveType=${leaveType} isWorking=${isWorking}`)
+    console.log(`[submit-report] date=${date} sender=${sender} account=${accountSlug} isTest=${isTest} targets=${JSON.stringify(targets)} leaveType=${leaveType} isWorking=${isWorking}`)
 
+    // 送信先グループが未設定のテナントは通知しない（エラーではなく正常スキップ＝クロステナント防止の既定動作）。
     if (targets.length === 0) {
-      console.error('[submit-report] targets is empty! NOTIFY_GROUP_IDS may not be set correctly.')
-      return json({ error: 'no targets', debug: { isTest, PROD_GROUP_IDS, DEV_GROUP_IDS } }, 500)
+      console.log(`[submit-report] 送信先グループ未設定 (account=${accountSlug}) → 送信スキップ`)
+      return json({ success: true, skipped: 'no_group_configured' })
     }
 
     // 有給
