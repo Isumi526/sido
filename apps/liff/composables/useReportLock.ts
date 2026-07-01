@@ -3,12 +3,18 @@
 //  - ロック窓: 対象日付が「当日含む過去3日」より前（=3日以上前）ならロック対象。
 //    （当日／前日／前々日は編集可。4日前以降はロック＝管理者の許可が要る）
 //    ※境界はルールブック「当日含む直近3日」に合わせる。LOCK_AFTER_DAYS で一元管理。
+//  - 適用開始日: LOCK_START_DATE（この日付以降の日報のみロック対象）。それより前（=移行前の
+//    過去日報）は常に編集自由＝ロックも許可申請も不要。運用開始日にロックを遡及させないための
+//    グランドファザリング。2026-07-01 運用開始。
 //  - ロックは UX/運用ガード（クライアント判定）。daily_reports 自体が anon-writable な
 //    現アーキテクチャ上、セキュリティ境界ではない（本番RLS化は別エピック）。
 //  - 救済: 作業員が許可を依頼 → 管理者が admin で承認 → その worker×date のみ解除。
 //    キーは worker_id（ログイン方式跨ぎで安定）。
 // ============================================================
 export const LOCK_AFTER_DAYS = 3
+
+// この日付（YYYY-MM-DD）以降の日報のみロック対象。これより前は常に編集可（移行前データを遡及ロックしない）。
+export const LOCK_START_DATE = '2026-07-01'
 
 function diffDaysFromToday(date: string): number {
   const d = new Date(date + 'T00:00:00').getTime()
@@ -21,8 +27,10 @@ export function useReportLock() {
   const { getAccountId } = useAccount()
 
   // 対象日付がロック窓（3日以上前）か。承認の有無は見ない＝表示用の素の判定。
+  // LOCK_START_DATE より前の日付はロック対象外（移行前の過去日報は遡及ロックしない）。
   function isPastLockWindow(date: string | null | undefined): boolean {
     if (!date) return false
+    if (date < LOCK_START_DATE) return false
     return diffDaysFromToday(date) >= LOCK_AFTER_DAYS
   }
 
