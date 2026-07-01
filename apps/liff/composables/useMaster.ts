@@ -63,7 +63,7 @@ export const useMaster = () => {
     if (!accountId) throw new Error('account not found')
 
     const [sitesRes, contractorsRes, workersRes, subsRes, vehiclesRes, siteSubsRes] = await Promise.all([
-      supabase.from('sites').select('id, name, contractor_id').eq('active', true).eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
+      supabase.from('sites').select('id, name, contractor_id, default_start_time, default_end_time').eq('active', true).eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
       supabase.from('contractors').select('id, name').eq('active', true).eq('account_id', accountId).order('sort_order'),
       supabase.from('workers').select('id, name, role, unit_price').eq('active', true).eq('account_id', accountId).order('sort_order'),
       supabase.from('subcontractors').select('id, name').eq('active', true).eq('account_id', accountId).order('sort_order'),
@@ -78,10 +78,14 @@ export const useMaster = () => {
     const siteContractors: Record<string, string> = {}
     const siteIds: Record<string, string> = {}
     const siteNameById: Record<string, string> = {}
+    const siteWorkTimes: Record<string, { start: string | null; end: string | null }> = {}
     for (const s of (sitesRes.data ?? []) as any[]) {
       if (s.contractor_id && contractorById[s.contractor_id]) siteContractors[s.name] = contractorById[s.contractor_id]
       siteIds[s.name] = s.id
       siteNameById[s.id] = s.name
+      if (s.default_start_time || s.default_end_time) {
+        siteWorkTimes[s.name] = { start: (s.default_start_time ?? null)?.slice(0, 5) ?? null, end: (s.default_end_time ?? null)?.slice(0, 5) ?? null }
+      }
     }
     // 現場名 → 紐づく下請け業者名[]（site_subcontractors join）。未紐付け現場は未収録＝全件にフォールバック。
     const subNameById = Object.fromEntries(((subsRes.data ?? []) as any[]).map(r => [r.id, r.name]))
@@ -101,6 +105,7 @@ export const useMaster = () => {
       siteContractors,
       siteSubcontractors,
       siteIds,
+      siteWorkTimes,
     }
 
     master.value = data
@@ -222,6 +227,7 @@ export const useMaster = () => {
     // sites は Supabase 側で name_kana 昇順(null最後)→name に整列済みのため、その順序を保持する（50音順）
     siteNames:           computed(() => master.value.sites.slice()),
     siteContractors:     computed(() => master.value.siteContractors ?? {}),
+    siteWorkTimes:       computed(() => master.value.siteWorkTimes ?? {}),
     contractorNames:     computed(() => (master.value.contractors ?? []).slice().sort((a, b) => a.localeCompare(b, 'ja'))),
     workerNames:         computed(() => master.value.workers.map(w => w.name).slice().sort((a, b) => a.localeCompare(b, 'ja'))),
     factoryWorkerNames:  computed(() => { const ws = master.value.workers; const hasRole = ws.some(w => w.role); return ws.filter(w => !hasRole || w.role === 'factory').map(w => w.name).slice().sort((a, b) => a.localeCompare(b, 'ja')) }),

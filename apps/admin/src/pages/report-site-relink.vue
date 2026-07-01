@@ -48,6 +48,7 @@
 import { ref, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { refreshNavBadges } from '../lib/navBadges'
 
 const DAYS = 90
 
@@ -117,6 +118,7 @@ async function relink(r: Row) {
   busy.value = null
   if (e2) { alert('紐付けに失敗しました: ' + e2.message); return }
   rows.value = rows.value.filter(x => x.key !== r.key)
+  await refreshNavBadges()  // ナビバッジを即時更新（リロード不要）
 }
 
 onMounted(load)

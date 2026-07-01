@@ -51,8 +51,32 @@
           <div v-if="!isEditMode && report.form.value.date < new Date().toISOString().split('T')[0]" class="past-date-notice">
             <span v-html="$t('report.pastDateNotice')" />
           </div>
-          <div v-if="currentDateLocked" class="locked-notice">🔒 {{ $t('report.lockedBanner') }}</div>
+          <div v-if="currentDateLocked" class="locked-notice">
+            🔒 {{ $t('report.lockedBanner') }}
+            <div class="locked-actions">
+              <template v-if="lockGrantStatus === 'pending'">
+                <span class="locked-pending">🕒 {{ $t('report.unlockPending') }}</span>
+                <button type="button" class="btn-unlock-cancel" :disabled="unlockRequesting" @click="cancelUnlockRequest">{{ $t('report.unlockPendingCancel') }}</button>
+              </template>
+              <button v-else type="button" class="btn-unlock" @click="openUnlockModal">🔒 {{ $t('report.unlockRequest') }}</button>
+            </div>
+          </div>
         </FormSection>
+
+        <!-- 編集許可の依頼モーダル（未送信×期限切れもこの画面から依頼） -->
+        <div v-if="unlockModalOpen" class="req-overlay" @click.self="closeUnlockModal">
+          <div class="req-modal">
+            <h2 class="req-title">{{ $t('report.unlockRequest') }}</h2>
+            <p class="req-sub">{{ $t('report.unlockReasonLabel') }}</p>
+            <textarea v-model="unlockReason" class="req-textarea" rows="3" :placeholder="$t('report.unlockReasonPlaceholder')"></textarea>
+            <div class="req-actions">
+              <button type="button" class="req-cancel" @click="closeUnlockModal">{{ $t('report.unlockReasonCancel') }}</button>
+              <button type="button" class="req-submit" :disabled="unlockRequesting" @click="submitUnlockRequest">
+                {{ unlockRequesting ? $t('report.unlockRequesting') : $t('report.unlockReasonSubmit') }}
+              </button>
+            </div>
+          </div>
+        </div>
 
         <!-- 稼働有無 -->
         <FormSection num="02" :title="$t('report.workStatusSection')">
@@ -142,7 +166,7 @@
 
           <!-- 現場名 -->
           <Field :label="$t('report.siteName')">
-            <select v-model="site.siteName" class="select" required>
+            <select v-model="site.siteName" class="select" required @change="onSiteChange(si)">
               <option value="">{{ $t('common.select') }}</option>
               <option value="__unset__">{{ $t('report.siteUnset') }}</option>
               <option v-for="name in filteredSiteNames(site.contractorName)" :key="name" :value="name">{{ name }}</option>
@@ -194,9 +218,16 @@
                     <div class="time-field">
                       <label class="hours-label">{{ $t('report.endTime') }}</label>
                       <select v-model="site.workers[0].endTime" class="select">
-                        <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
+                        <option v-for="t in endTimeOptionsForSite(si)" :key="t" :value="t">{{ t }}</option>
                       </select>
                     </div>
+                  </div>
+                  <div v-if="siteFixedEnd(site.siteName)" class="fixed-time-note">
+                    <template v-if="overtimeApprovedForDate">✅ {{ $t('report.overtimeApprovedNote') }}</template>
+                    <template v-else>
+                      ⏱ {{ $t('report.fixedTimeNote', { end: siteFixedEnd(site.siteName) }) }}
+                      <NuxtLink to="/overtime" class="overtime-link">{{ $t('report.overtimeApplyLink') }}</NuxtLink>
+                    </template>
                   </div>
                   <div class="worker-break-row">
                     <div class="time-field">
@@ -646,13 +677,86 @@ const isDev = computed(() => config.public.appEnv === 'development' || liff.isTe
 // ── 過去3日編集ロック（提出/編集の期限ガード）──
 const lock = useReportLock()
 const currentDateLocked = ref(false)
+const lockGrantStatus = ref<'none' | 'pending' | 'approved' | 'rejected'>('none')
 async function refreshLock() {
   const d = report.form.value.date
   const wid = currentUser.value?.worker_id ?? null
-  if (!wid || !lock.isPastLockWindow(d)) { currentDateLocked.value = false; return }
-  currentDateLocked.value = await lock.isLocked(wid, d)
+  if (!wid || !lock.isPastLockWindow(d)) { currentDateLocked.value = false; lockGrantStatus.value = 'none'; return }
+  lockGrantStatus.value = await lock.grantStatus(wid, d)
+  currentDateLocked.value = lockGrantStatus.value !== 'approved'
 }
 watch([() => report.form.value.date, () => currentUser.value?.worker_id], refreshLock, { immediate: true })
+
+// ── ロック日の「編集の許可を依頼」（未送信×期限切れもこの画面から依頼できる）──
+const unlockModalOpen  = ref(false)
+const unlockReason     = ref('')
+const unlockRequesting = ref(false)
+function openUnlockModal()  { unlockReason.value = ''; unlockModalOpen.value = true }
+function closeUnlockModal() { unlockModalOpen.value = false; unlockReason.value = '' }
+async function submitUnlockRequest() {
+  const d = report.form.value.date
+  const wid = currentUser.value?.worker_id ?? null
+  if (!d || !wid || unlockRequesting.value) return
+  unlockRequesting.value = true
+  const r = await lock.requestGrant(wid, d, unlockReason.value.trim())
+  unlockRequesting.value = false
+  if (r.ok) { lockGrantStatus.value = 'pending'; closeUnlockModal() }
+  else alert(t('report.unlockRequestFailed'))
+}
+async function cancelUnlockRequest() {
+  const d = report.form.value.date
+  const wid = currentUser.value?.worker_id ?? null
+  if (!d || !wid || unlockRequesting.value) return
+  unlockRequesting.value = true
+  const r = await lock.cancelRequest(wid, d)
+  unlockRequesting.value = false
+  if (r.ok) lockGrantStatus.value = 'none'
+}
+
+// 管理画面で承認したら日報画面へ自動反映（リロード不要・ブラウザ開きっぱなしでも反映）。
+//  ① Realtime: 承認の瞬間に push 受信（即時）。② ポーリング: webview等でwebsocketが切れても確実に追従。
+//  ③ タブ復帰: フォーカス時にも再取得。
+function refreshGates() { refreshLock(); refreshOvertime() }
+function onVisible() { if (typeof document !== 'undefined' && document.visibilityState === 'visible') refreshGates() }
+let gatePoll: ReturnType<typeof setInterval> | null = null
+function stopGatePoll() { if (gatePoll) { clearInterval(gatePoll); gatePoll = null } }
+function startGatePoll() { stopGatePoll(); gatePoll = setInterval(refreshGates, 15000) }
+
+// Realtime購読（自分のworkerの許可/残業の変更を即時受信）
+let gateChannel: ReturnType<ReturnType<typeof useSupabase>['channel']> | null = null
+function stopRealtime() { if (gateChannel) { useSupabase().removeChannel(gateChannel); gateChannel = null } }
+function startRealtime() {
+  stopRealtime()
+  const wid = currentUser.value?.worker_id
+  if (!wid) return
+  gateChannel = useSupabase()
+    .channel(`report-gates-${wid}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'report_edit_grants', filter: `worker_id=eq.${wid}` }, () => refreshGates())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'overtime_requests',  filter: `worker_id=eq.${wid}` }, () => refreshGates())
+    .subscribe()
+}
+
+// 申請中(pending)の間だけポーリング（承認/却下で止まる）。Realtimeは常時。
+watch(lockGrantStatus, (s) => { if (s === 'pending') startGatePoll(); else stopGatePoll() }, { immediate: true })
+watch(() => currentUser.value?.worker_id, () => startRealtime())
+onMounted(() => {
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible)
+  startRealtime()
+})
+onUnmounted(() => {
+  if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisible)
+  stopGatePoll(); stopRealtime()
+})
+
+// ── 残業申請（架空残業対策）: 承認済みの worker×date は固定終了の上限を解放 ──
+const overtime = useOvertimeRequest()
+const overtimeApprovedForDate = ref(false)
+async function refreshOvertime() {
+  const d = report.form.value.date
+  const wid = currentUser.value?.worker_id ?? null
+  overtimeApprovedForDate.value = (wid && d) ? await overtime.isApproved(wid, d) : false
+}
+watch([() => report.form.value.date, () => currentUser.value?.worker_id], refreshOvertime, { immediate: true })
 
 const initializing = ref(true)
 
@@ -998,13 +1102,58 @@ function addSite() {
 
 /** 開始時刻のオプション: si>0 の場合は前現場の終了時刻より前を除外（日跨ぎ除く） */
 function startTimeOptionsForSite(si: number): string[] {
-  if (si === 0) return TIME_OPTIONS
-  const prev = report.form.value.sites[si - 1]?.workers[0]
-  if (!prev) return TIME_OPTIONS
-  const prevEndMin   = parseMin(prev.endTime   || '17:30')
-  const prevStartMin = parseMin(prev.startTime  || '08:00')
-  if (prevEndMin <= prevStartMin) return TIME_OPTIONS  // 日跨ぎは制限なし
-  return TIME_OPTIONS.filter(t => parseMin(t) >= prevEndMin)
+  const s = report.form.value.sites[si]
+  const cur = s?.workers?.[0]?.startTime
+  let floorMin = -1   // この値「以上」のみ選択可（複数の下限の最大を採る）
+  // ① 前の現場の終了以降（複数現場の時系列連続性）
+  if (si > 0) {
+    const prev = report.form.value.sites[si - 1]?.workers[0]
+    if (prev) {
+      const prevEndMin   = parseMin(prev.endTime   || '17:30')
+      const prevStartMin = parseMin(prev.startTime || '08:00')
+      if (prevEndMin > prevStartMin) floorMin = Math.max(floorMin, prevEndMin)  // 日跨ぎは制限なし
+    }
+  }
+  // ② 現場の固定開始以降（固定開始より前=早出は不可・遅刻=後ろ倒しは可）
+  const fStart = siteFixedStart(s?.siteName)
+  if (fStart) floorMin = Math.max(floorMin, parseMin(fStart))
+  if (floorMin < 0) return TIME_OPTIONS
+  // 編集で開いた古い下限割れ値は snap させないため、現在値は必ず含める。
+  return TIME_OPTIONS.filter(t => parseMin(t) >= floorMin || t === cur)
+}
+
+// ── 現場の固定勤務時刻（master・name keyed）。__other__/__unset__/未設定は null ──
+function siteFixedTimes(siteName: string | undefined): { start: string | null; end: string | null } | null {
+  if (!siteName || siteName === '__other__' || siteName === '__unset__') return null
+  return master.siteWorkTimes.value[siteName] ?? null
+}
+function siteFixedEnd(siteName: string | undefined): string {
+  return siteFixedTimes(siteName)?.end || ''
+}
+function siteFixedStart(siteName: string | undefined): string {
+  return siteFixedTimes(siteName)?.start || ''
+}
+// 現場を選び直した時、固定時刻があれば作業時刻の既定にする（新規入力のみ。編集中の既存値は触らない）。
+function onSiteChange(si: number) {
+  if (isEditMode.value) return
+  const s = report.form.value.sites[si]
+  const ft = siteFixedTimes(s?.siteName)
+  const w = s?.workers?.[0]
+  if (!ft || !w) return
+  if (ft.start) w.startTime = ft.start
+  if (ft.end) w.endTime = ft.end
+}
+// 終了時刻の選択肢: 固定終了がある現場は それ以下に制限（残業申請が無い限り超過不可・早退は可）。
+//  編集で開いた古い超過値は snap させないため、現在値は必ず含める。
+function endTimeOptionsForSite(si: number): string[] {
+  const s = report.form.value.sites[si]
+  const endCap = siteFixedEnd(s?.siteName)
+  if (!endCap) return TIME_OPTIONS
+  // 残業申請が承認済みの日付は固定終了の上限を解放（架空残業対策の例外）。
+  if (overtimeApprovedForDate.value) return TIME_OPTIONS
+  const capMin = parseMin(endCap)
+  const cur = s?.workers?.[0]?.endTime
+  return TIME_OPTIONS.filter(t => parseMin(t) <= capMin || t === cur)
 }
 function removeSite(i: number) {
   report.removeSite(i)
@@ -2033,6 +2182,8 @@ html, body {
 .expense-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .mt6  { margin-top: 6px; }
 .unset-note { margin-top: 6px; font-size: 12px; color: #475569; background: #f1f5f9; border-radius: 6px; padding: 7px 10px; line-height: 1.5; }
+.fixed-time-note { margin-top: 4px; font-size: 12px; color: #1d4ed8; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 6px 10px; line-height: 1.5; }
+.overtime-link { display: inline-block; margin-top: 2px; color: #b45309; font-weight: 700; text-decoration: underline; }
 .mt8  { margin-top: 8px; }
 
 /* ── 車両ブロック ── */
@@ -2232,6 +2383,20 @@ html, body {
   font-weight: 700;
   line-height: 1.6;
 }
+/* ロック日の許可依頼ボタン／申請中表示＋モーダル */
+.locked-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.btn-unlock { font-size: 13px; font-weight: 700; color: #b45309; background: #fff; border: 1px solid #fbbf24; border-radius: 8px; padding: 8px 14px; cursor: pointer; }
+.btn-unlock-cancel { font-size: 12px; color: #64748b; background: #f1f5f9; border: none; border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+.locked-pending { font-size: 12px; color: #b45309; font-weight: 700; }
+.req-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 100; }
+.req-modal { background: #fff; border-radius: 14px; padding: 20px; width: 100%; max-width: 420px; }
+.req-title { font-size: 16px; font-weight: 700; margin: 0 0 4px; color: #111827; }
+.req-sub { font-size: 12px; color: #6b7280; margin: 0 0 10px; line-height: 1.5; }
+.req-textarea { width: 100%; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; font-size: 14px; resize: vertical; }
+.req-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; }
+.req-cancel { font-size: 14px; color: #64748b; background: #f1f5f9; border: none; border-radius: 8px; padding: 9px 16px; cursor: pointer; }
+.req-submit { font-size: 14px; font-weight: 700; color: #fff; background: #06C755; border: none; border-radius: 8px; padding: 9px 18px; cursor: pointer; }
+.req-submit:disabled { opacity: .6; cursor: default; }
 
 /* ── 日付固定表示 ── */
 .date-fixed {

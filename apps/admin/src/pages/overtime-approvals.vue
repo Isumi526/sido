@@ -1,15 +1,15 @@
 <template>
   <div>
     <div class="page-header">
-      <h1 class="page-title">日報編集の許可申請</h1>
+      <h1 class="page-title">残業申請の承認</h1>
     </div>
     <p class="hint">
-      過去3日を過ぎてロックされた日報・経費について、作業員から届いた「編集の許可依頼」を承認/却下します。
-      承認すると、その作業員のその日付だけ再度 提出・編集できるようになります。
+      作業員から届いた「残業申請」を承認/却下します。
+      承認すると、その作業員のその日付だけ 現場の固定終了時刻を超える終了時刻を日報に入力できるようになります。
     </p>
 
     <div v-if="loading" class="empty">読み込み中…</div>
-    <div v-else-if="!pending.length" class="empty">承認待ちの申請はありません。</div>
+    <div v-else-if="!pending.length" class="empty">承認待ちの残業申請はありません。</div>
     <template v-else>
       <div class="table-wrap">
         <table class="table">
@@ -17,6 +17,7 @@
             <tr>
               <th>作業員</th>
               <th>対象日</th>
+              <th>希望終了</th>
               <th>理由</th>
               <th>申請日時</th>
               <th class="actions-col">操作</th>
@@ -26,6 +27,7 @@
             <tr v-for="g in pending" :key="g.id">
               <td class="name">{{ workerName(g.worker_id) }}</td>
               <td>{{ fmtDate(g.date) }}</td>
+              <td>{{ (g.requested_end_time || '').slice(0, 5) || '—' }}</td>
               <td class="reason">{{ g.reason || '—' }}</td>
               <td class="muted">{{ fmtDateTime(g.requested_at) }}</td>
               <td class="actions-col">
@@ -47,10 +49,11 @@ import { getAccountId } from '../lib/account'
 import { currentUser } from '../lib/auth'
 import { refreshNavBadges } from '../lib/navBadges'
 
-type Grant = {
+type OvertimeReq = {
   id: string
   worker_id: string | null
   date: string
+  requested_end_time: string | null
   reason: string | null
   status: string
   requested_at: string
@@ -58,7 +61,7 @@ type Grant = {
 
 const loading = ref(true)
 const busy    = ref<string | null>(null)
-const pending = ref<Grant[]>([])
+const pending = ref<OvertimeReq[]>([])
 const workers = ref<Record<string, string>>({})
 
 function workerName(id: string | null): string {
@@ -80,24 +83,24 @@ async function load() {
   loading.value = true
   const accountId = await getAccountId()
   if (!accountId) { loading.value = false; return }
-  const [{ data: grants }, { data: ws }] = await Promise.all([
-    supabase.from('report_edit_grants')
-      .select('id, worker_id, date, reason, status, requested_at')
+  const [{ data: reqs }, { data: ws }] = await Promise.all([
+    supabase.from('overtime_requests')
+      .select('id, worker_id, date, requested_end_time, reason, status, requested_at')
       .eq('account_id', accountId).eq('status', 'pending')
       .order('requested_at', { ascending: true }),
     supabase.from('workers').select('id, name').eq('account_id', accountId),
   ])
-  pending.value = (grants ?? []) as Grant[]
+  pending.value = (reqs ?? []) as OvertimeReq[]
   const map: Record<string, string> = {}
   for (const w of ws ?? []) map[(w as any).id] = (w as any).name
   workers.value = map
   loading.value = false
 }
 
-async function decide(g: Grant, status: 'approved' | 'rejected') {
+async function decide(g: OvertimeReq, status: 'approved' | 'rejected') {
   if (busy.value) return
   busy.value = g.id
-  const { error } = await supabase.from('report_edit_grants')
+  const { error } = await supabase.from('overtime_requests')
     .update({ status, approved_by: currentUser.value?.email ?? null, decided_at: new Date().toISOString() })
     .eq('id', g.id)
   busy.value = null

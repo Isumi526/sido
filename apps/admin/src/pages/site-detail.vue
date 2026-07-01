@@ -60,15 +60,23 @@
           <div v-else class="edit-form">
             <label class="fld"><span>現場名</span><input v-model="form.name" class="input" /></label>
             <label class="fld"><span>読み仮名</span><input v-model="form.name_kana" class="input" /></label>
+            <label class="fld"><span>住所</span><input v-model="form.location" class="input" placeholder="例：名古屋市〇〇区…" /></label>
             <label class="fld"><span>元請け</span>
               <select v-model="form.contractor_id" class="input">
                 <option :value="null">（未設定）</option>
                 <option v-for="c in contractors" :key="c.id" :value="c.id">{{ c.name }}</option>
               </select>
             </label>
-            <label class="fld"><span>住所</span><input v-model="form.location" class="input" placeholder="例：名古屋市〇〇区…" /></label>
             <label class="fld"><span>工種</span><input v-model="form.construction_type" class="input" placeholder="例：内装・改修" /></label>
             <label class="fld"><span>工事内容</span><textarea v-model="form.construction_details" class="input" rows="2" /></label>
+            <div class="fld"><span>固定勤務時刻</span>
+              <div style="display:flex;align-items:center;gap:8px">
+                <input v-model="form.default_start_time" type="time" class="input" style="width:auto" @focus="form.default_start_time || (form.default_start_time = '08:30')" />
+                <span>〜</span>
+                <input v-model="form.default_end_time" type="time" class="input" style="width:auto" @focus="form.default_end_time || (form.default_end_time = '17:30')" />
+              </div>
+            </div>
+            <p class="hint" style="font-size:12px;color:#94a3b8;margin:-4px 0 0">日報入力時の作業時刻の既定。終了時刻はこの値を超えて入力できません（残業申請が無い限り）。未設定なら従来どおり。</p>
             <label class="fld"><span>メモ</span><textarea v-model="form.memo" class="input" rows="2" /></label>
             <div class="fld"><span>紐づく協力業者</span>
               <div class="sub-pick">
@@ -166,7 +174,7 @@ const route = useRoute()
 const router = useRouter()
 const siteId = String(route.params.id ?? '')
 
-type Site = { id: string; name: string; name_kana: string | null; active: boolean; location: string | null; construction_type: string | null; construction_details: string | null; memo: string | null; contractor_id: string | null }
+type Site = { id: string; name: string; name_kana: string | null; active: boolean; location: string | null; construction_type: string | null; construction_details: string | null; memo: string | null; contractor_id: string | null; default_start_time: string | null; default_end_time: string | null }
 type Att = { id: string; kind: string; path: string; name: string | null; require_consent?: boolean; url?: string | null }
 
 const BUCKET = 'site-attachments'
@@ -197,8 +205,8 @@ const TABS = computed(() => [
 const editing = ref(false)
 const saving = ref(false)
 const saveError = ref('')
-const form = ref<{ name: string; name_kana: string; contractor_id: string | null; location: string; construction_type: string; construction_details: string; memo: string; linkedSubs: string[] }>(
-  { name: '', name_kana: '', contractor_id: null, location: '', construction_type: '', construction_details: '', memo: '', linkedSubs: [] })
+const form = ref<{ name: string; name_kana: string; contractor_id: string | null; location: string; construction_type: string; construction_details: string; memo: string; default_start_time: string; default_end_time: string; linkedSubs: string[] }>(
+  { name: '', name_kana: '', contractor_id: null, location: '', construction_type: '', construction_details: '', memo: '', default_start_time: '', default_end_time: '', linkedSubs: [] })
 
 function estPdfUrl(path: string) { return supabase.storage.from(ESTIMATE_BUCKET).getPublicUrl(path).data.publicUrl }
 const mapUrl = computed(() => site.value?.location ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(site.value.location)}` : '#')
@@ -217,6 +225,7 @@ function startEdit() {
     name: site.value.name, name_kana: site.value.name_kana ?? '', contractor_id: site.value.contractor_id,
     location: site.value.location ?? '', construction_type: site.value.construction_type ?? '',
     construction_details: site.value.construction_details ?? '', memo: site.value.memo ?? '',
+    default_start_time: (site.value.default_start_time ?? '').slice(0, 5), default_end_time: (site.value.default_end_time ?? '').slice(0, 5),
     linkedSubs: linkedSubs.value.map(s => s.id),
   }
   saveError.value = ''; editing.value = true
@@ -234,6 +243,7 @@ async function saveBasic() {
       contractor_id: form.value.contractor_id || null, location: form.value.location.trim() || null,
       construction_type: form.value.construction_type.trim() || null,
       construction_details: form.value.construction_details.trim() || null, memo: form.value.memo.trim() || null,
+      default_start_time: form.value.default_start_time || null, default_end_time: form.value.default_end_time || null,
     }).eq('id', site.value.id)
     // 紐づく協力業者の差分同期
     const { data: cur } = await supabase.from('site_subcontractors').select('subcontractor_id').eq('site_id', site.value.id)
@@ -287,7 +297,7 @@ async function load() {
   loading.value = true
   const accountId = await getAccountId()
   const { data: s } = await supabase.from('sites')
-    .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id')
+    .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id, default_start_time, default_end_time')
     .eq('account_id', accountId).eq('id', siteId).maybeSingle()
   site.value = (s as Site) ?? null
   if (!site.value) { loading.value = false; return }

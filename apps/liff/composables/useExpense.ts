@@ -508,15 +508,20 @@ export const useExpense = () => {
     console.log('[getNextUnsubmittedDate] user=', user?.id)
     if (!user) return null
 
-    // 起点 = max(service_start_date, 作業員登録日)。登録前の日付は未送信扱いしない。
+    // 起点 = max(service_start_date, 作業員登録日, 日報提出開始日)。これより前の日付は未送信扱いしない。
     // 作業員マスタ登録日(workers.created_at)で統一。worker_id 経由で取得し、無ければ users.created_at にフォールバック。
+    // report_start_date（日報提出開始日・任意）が設定されていれば、それ以降のみ未送信対象にする。
     let regSrc: string | null | undefined = (user as any).created_at
+    let reportStartDate: string | null = null
     if ((user as any).worker_id) {
-      const { data: w } = await supabase.from('workers').select('created_at').eq('id', (user as any).worker_id).maybeSingle()
+      const { data: w } = await supabase.from('workers').select('created_at, report_start_date').eq('id', (user as any).worker_id).maybeSingle()
       if ((w as any)?.created_at) regSrc = (w as any).created_at
+      reportStartDate = (w as any)?.report_start_date ?? null
     }
-    const regDate  = jstDateOf(regSrc)
-    const effStart = (regDate && regDate > startDate) ? regDate : startDate
+    const regDate = jstDateOf(regSrc)
+    let effStart = startDate
+    if (regDate && regDate > effStart) effStart = regDate
+    if (reportStartDate && reportStartDate > effStart) effStart = reportStartDate
 
     // 今日の日付をローカルタイムゾーンで取得（toISOString はUTCになるため使わない）
     const now   = new Date()
@@ -567,20 +572,25 @@ export const useExpense = () => {
     const startDate = settingRows?.[0]?.value
     if (!startDate) return 'NOT_CONFIGURED'
 
-    // 起点 = max(service_start_date, 作業員登録日)。登録前の日付は未送信扱いしない。
+    // 起点 = max(service_start_date, 作業員登録日, 日報提出開始日)。これより前の日付は未送信扱いしない。
     // 作業員マスタ登録日(workers.created_at)で統一。無ければ users.created_at にフォールバック。
+    // report_start_date（日報提出開始日・任意）が設定されていれば、それ以降のみ未送信対象にする。
     const { data: urow } = await supabase
       .from('users')
       .select('created_at, worker_id')
       .eq('id', userId)
       .maybeSingle()
     let regSrc: string | null | undefined = (urow as any)?.created_at
+    let reportStartDate: string | null = null
     if ((urow as any)?.worker_id) {
-      const { data: w } = await supabase.from('workers').select('created_at').eq('id', (urow as any).worker_id).maybeSingle()
+      const { data: w } = await supabase.from('workers').select('created_at, report_start_date').eq('id', (urow as any).worker_id).maybeSingle()
       if ((w as any)?.created_at) regSrc = (w as any).created_at
+      reportStartDate = (w as any)?.report_start_date ?? null
     }
-    const regDate  = jstDateOf(regSrc)
-    const effStart = (regDate && regDate > startDate) ? regDate : startDate
+    const regDate = jstDateOf(regSrc)
+    let effStart = startDate
+    if (regDate && regDate > effStart) effStart = regDate
+    if (reportStartDate && reportStartDate > effStart) effStart = reportStartDate
 
     const now   = new Date()
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`

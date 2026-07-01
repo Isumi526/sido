@@ -19,6 +19,7 @@ test.describe('作業員マスタ拡張', () => {
     await page.locator('input[placeholder="例：山田 太郎"]').fill(name)
     // 区分=業務委託 → 労災保険番号欄が表示される
     await page.getByRole('button', { name: '業務委託' }).click()
+    await page.locator('[data-testid="detail-toggle"]').click()   // 詳細情報セクションを展開
     await expect(page.locator('[data-testid="labor-insurance-number"]')).toBeVisible()
     await page.locator('[data-testid="company-info"]').fill('株式会社テスト')
     await page.locator('[data-testid="invoice-number"]').fill('T1234567890123')
@@ -36,6 +37,7 @@ test.describe('作業員マスタ拡張', () => {
     await expect(listRow).toBeVisible({ timeout: 10000 })
     // 再編集 → 各項目・履歴が保持されている
     await listRow.locator('.btn-edit').click()
+    await page.locator('[data-testid="detail-toggle"]').click()   // 詳細情報セクションを展開
     await expect(page.locator('[data-testid="company-info"]')).toHaveValue('株式会社テスト')
     await expect(page.locator('[data-testid="invoice-number"]')).toHaveValue('T1234567890123')
     await expect(page.locator('[data-testid="insurance-info"]')).toHaveValue('労働保険')

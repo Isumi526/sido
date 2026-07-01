@@ -79,6 +79,37 @@
     </div>
 
     <!-- 対象作業員の選択（代理対象がいる場合のみ） -->
+    <!-- 現場選択（QRなしのリンク導線）-->
+    <div v-else-if="phase === 'select-site'" class="select-wrap">
+      <div class="select-header">
+        <div class="select-title">{{ $t('checkin.selectSiteTitle') }}</div>
+      </div>
+      <select v-if="contractorOptions.length > 0" v-model="selectedContractor" class="site-filter">
+        <option value="">{{ $t('checkin.filterContractorAll') }}</option>
+        <option v-for="c in contractorOptions" :key="c.id" :value="c.id">{{ c.name }}</option>
+      </select>
+      <input
+        v-if="siteOptions.length > 6"
+        v-model="siteQuery"
+        class="site-search"
+        type="search"
+        :placeholder="$t('checkin.siteSearchPlaceholder')"
+      />
+      <div class="target-list">
+        <button
+          v-for="s in filteredSiteOptions"
+          :key="s.id"
+          class="target-row"
+          @click="selectSite(s.id)"
+        >
+          <span class="material-symbols-rounded target-icon">location_on</span>
+          <span class="target-name">{{ s.name }}</span>
+          <span class="material-symbols-rounded chev">chevron_right</span>
+        </button>
+        <div v-if="!filteredSiteOptions.length" class="site-empty">{{ $t('checkin.siteSearchEmpty') }}</div>
+      </div>
+    </div>
+
     <div v-else-if="phase === 'select-target'" class="select-wrap">
       <div class="select-header">
         <div class="site-label">{{ siteName }}</div>
@@ -119,6 +150,7 @@
       </div>
 
       <div class="checklist-scroll">
+      <p v-if="rules.length === 0 && !consentDocs.length" class="no-rules-note">{{ $t('checkin.noRulesNote') }}</p>
       <div class="rules-list">
         <div
           v-for="rule in rules"
@@ -196,9 +228,9 @@
         </div>
 
         <p class="submit-hint">
-          {{ $t('checkin.checkedCount', { checked: checkedIds.size, total: rules.length }) }}
+          <template v-if="rules.length">{{ $t('checkin.checkedCount', { checked: checkedIds.size, total: rules.length }) }}</template>
           <template v-if="allChecked && !locationResolved">
-            <br><span class="submit-warn">{{ $t('checkin.submitWarn') }}</span>
+            <template v-if="rules.length"><br></template><span class="submit-warn">{{ $t('checkin.submitWarn') }}</span>
           </template>
         </p>
         <button
@@ -216,7 +248,7 @@
 </template>
 
 <script setup lang="ts">
-type Phase = 'loading' | 'error' | 'select-target' | 'checklist' | 'done' | 'already-done'
+type Phase = 'loading' | 'error' | 'select-site' | 'select-target' | 'checklist' | 'done' | 'already-done'
 
 type SiteRule = { id: string; content: string; timing: string }
 type ConsentDoc = { id: string; name: string | null; path: string; url?: string | null }
@@ -239,6 +271,20 @@ const errorMsg       = ref('')
 const debugUrl       = ref('')
 const siteId         = ref('')
 const siteName       = ref('')
+// QRなしのリンク導線（/checkin）で現場を選ぶための候補（有効現場）＋検索/元請け絞り込み
+const siteOptions    = ref<{ id: string; name: string; name_kana: string | null; contractor_id: string | null }[]>([])
+const contractorOptions = ref<{ id: string; name: string }[]>([])  // 元請けプルダウン（紐づく現場がある分のみ）
+const siteQuery      = ref('')
+const selectedContractor = ref('')  // '' = すべて
+const filteredSiteOptions = computed(() => {
+  const q = siteQuery.value.trim().toLowerCase()
+  const c = selectedContractor.value
+  return siteOptions.value.filter(s => {
+    if (c && s.contractor_id !== c) return false
+    if (!q) return true
+    return s.name.toLowerCase().includes(q) || (s.name_kana ?? '').toLowerCase().includes(q)
+  })
+})
 const rules          = ref<SiteRule[]>([])
 const checkedIds     = ref(new Set<string>())
 const consentDocs    = ref<ConsentDoc[]>([])   // 送り出し資料（出退勤同意・チェックイン時）
@@ -302,9 +348,9 @@ const canChangeTarget  = computed(() => targets.value.length > 1)
 // 完了画面で「続けて登録」できる、今登録した人以外の対象
 const otherTargets     = computed(() => targets.value.filter(t => t.id !== selectedId.value))
 
-// ── 全件チェック済みか ───────────────────────────────────────
+// ── 全件チェック済みか（ルール未設定=確認事項なし＝チェック条件は満たす扱い）──
 const allChecked = computed(() =>
-  rules.value.length > 0 && checkedIds.value.size === rules.value.length
+  rules.value.length === 0 || checkedIds.value.size === rules.value.length
 )
 
 // 送り出し資料すべてに同意したか（資料が無ければ true）
@@ -402,11 +448,48 @@ onMounted(async () => {
 
   const resolved = resolveSiteId()
   if (!resolved) {
-    errorMsg.value = t('checkin.errNoSiteId')
-    debugUrl.value = bootHref || (typeof window !== 'undefined' ? window.location.href : '')
-    phase.value = 'error'
+    // QRなしのリンク導線（/checkin）: 現場を選んでもらう（QRを貼れない現場向け）
+    await loadSiteOptions()
+    if (!siteOptions.value.length) {
+      errorMsg.value = t('checkin.errNoSiteId')
+      debugUrl.value = bootHref || (typeof window !== 'undefined' ? window.location.href : '')
+      phase.value = 'error'
+      return
+    }
+    phase.value = 'select-site'
     return
   }
+  await proceedWithSite(resolved)
+})
+
+// ── 有効現場の一覧を取得（QRなしの現場選択用）──
+async function loadSiteOptions() {
+  const accountId = await useAccount().getAccountId()
+  if (!accountId) return
+  const [{ data }, { data: contractors }] = await Promise.all([
+    supabase.from('sites').select('id, name, name_kana, contractor_id').eq('account_id', accountId).eq('active', true)
+      .order('name_kana', { nullsFirst: false }).order('name'),
+    supabase.from('contractors').select('id, name').eq('account_id', accountId).eq('active', true).order('sort_order').order('name'),
+  ])
+  siteOptions.value = (data ?? []) as { id: string; name: string; name_kana: string | null; contractor_id: string | null }[]
+  // 元請けプルダウンは「紐づく現場が1件以上ある元請け」だけ出す
+  const usedContractorIds = new Set(siteOptions.value.map(s => s.contractor_id).filter(Boolean) as string[])
+  contractorOptions.value = ((contractors ?? []) as { id: string; name: string }[]).filter(c => usedContractorIds.has(c.id))
+}
+
+// ── 現場を選択（QRなし導線）→ 通常フローへ ──
+//  URLを /checkin/<id> に反映して「その現場の出退勤ページ」をブックマーク可能にする
+//  （再マウントせず続行。リロード/再訪時は param から現場を解決）。
+async function selectSite(id: string) {
+  if (typeof window !== 'undefined') {
+    try { window.history.replaceState(window.history.state, '', `/checkin/${id}`) } catch { /* URL更新失敗は無視 */ }
+  }
+  phase.value = 'loading'
+  await proceedWithSite(id)
+}
+
+// ── siteId 確定後の共通フロー（QR・リンクどちらからも）──
+async function proceedWithSite(resolved: string) {
   siteId.value = resolved
 
   // 現場名取得
@@ -448,7 +531,7 @@ onMounted(async () => {
     return
   }
   await loadForTarget(me.worker_id)
-})
+}
 
 // ── 対象作業員を選択 ───────────────────────────────────────────
 function selectTarget(id: string) {
@@ -504,11 +587,7 @@ async function loadForTarget(workerId: string) {
   rules.value      = (ruleData ?? []) as SiteRule[]
   checkedIds.value = new Set()   // 対象が変わったらチェックをリセット
 
-  if (rules.value.length === 0) {
-    errorMsg.value = t('checkin.errNoRules')
-    phase.value = 'error'
-    return
-  }
+  // ルール未設定でもシンプル出退勤として継続（確認事項なし＝allChecked が true 扱い）。
 
   // 送り出し資料（出退勤同意・チェックイン時のみ提示）。非公開バケットはedge署名URLで閲覧。
   consentedIds.value = new Set()
@@ -716,6 +795,9 @@ async function submit() {
 }
 .select-title { font-size: 20px; font-weight: 700; }
 
+.site-filter { width: 100%; box-sizing: border-box; margin: 12px 0 0; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 15px; background: #fff; }
+.site-search { width: 100%; box-sizing: border-box; margin: 8px 0 0; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 15px; }
+.site-empty { padding: 24px 0; text-align: center; color: #94a3b8; font-size: 14px; }
 .target-list { padding: 12px 0; }
 .target-row {
   display: flex; align-items: center; gap: 14px; width: 100%;
@@ -769,6 +851,7 @@ async function submit() {
 }
 
 .checklist-scroll { flex: 1; overflow-y: auto; }
+.no-rules-note { margin: 16px 4px; font-size: 14px; line-height: 1.7; color: #475569; }
 .rules-list { padding: 12px 0; }
 
 .rule-row {

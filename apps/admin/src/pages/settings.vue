@@ -30,8 +30,8 @@
     </div>
     <p v-if="saveError" class="error">{{ saveError }}</p>
 
-  <!-- 日報通知 ON/OFF -->
-  <div class="reminder-box">
+  <!-- 日報通知 ON/OFF（脱LINE段階移行で非表示・EFは継続） -->
+  <div v-if="!HIDE_LINE_SECTIONS" class="reminder-box">
     <div class="reminder-title">日報通知（LINE）</div>
     <div class="reminder-config">
       <div class="config-row">
@@ -73,8 +73,8 @@
     <p v-if="emailError" class="error">{{ emailError }}</p>
   </div>
 
-  <!-- 未送信リマインド -->
-  <div class="reminder-box">
+  <!-- 未送信リマインド（脱LINE段階移行で非表示・cron/EFは継続） -->
+  <div v-if="!HIDE_LINE_SECTIONS" class="reminder-box">
     <div class="reminder-title">未送信日報リマインド</div>
 
     <!-- 自動実行設定 -->
@@ -129,6 +129,10 @@
 import { ref, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug } from '../lib/account'
+import { HIDE_LINE_SECTIONS } from '../lib/featureFlags'
+
+// 脱LINE段階移行で非表示にする汎用設定キー（LINE固有）。データは保持・行のみ隠す。
+const LINE_SETTING_KEYS = new Set(['notify_group_id'])
 
 const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
 const IS_DEV   = import.meta.env.DEV
@@ -320,7 +324,8 @@ async function load() {
     ...fromDb.map(s => ({ ...s, inputType: DEFAULTS.find(d => d.key === s.key)?.inputType })),
     ...DEFAULTS.filter(d => !dbKeys.has(d.key)),
   ]
-  settings.value = merged
+  // 脱LINE段階移行: LINE固有の設定行（LINE通知グループID 等）は非表示（データは保持）。
+  settings.value = HIDE_LINE_SECTIONS ? merged.filter(s => !LINE_SETTING_KEYS.has(s.key)) : merged
   loading.value = false
 }
 
