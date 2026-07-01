@@ -34,8 +34,13 @@
         <span class="material-symbols-rounded alert-arrow">chevron_right</span>
       </NuxtLink>
 
-      <!-- メニューグリッド -->
+      <!-- メニュー（記録／予定・連絡／情報・設定 に整理） -->
+      <div class="menu-section">{{ t('nav.secDaily') }}</div>
       <div class="menu-grid">
+        <NuxtLink class="menu-card" to="/checkin">
+          <span class="material-symbols-rounded menu-icon" style="color:#10b981">how_to_reg</span>
+          <span class="menu-label">{{ t('nav.checkin') }}</span>
+        </NuxtLink>
         <NuxtLink class="menu-card" to="/report">
           <span class="material-symbols-rounded menu-icon" style="color:#06C755">edit_note</span>
           <span class="menu-label">{{ t('nav.reportRegister') }}</span>
@@ -44,6 +49,14 @@
           <span class="material-symbols-rounded menu-icon" style="color:#3b82f6">history</span>
           <span class="menu-label">{{ t('nav.reportHistory') }}</span>
         </NuxtLink>
+        <NuxtLink class="menu-card" to="/overtime">
+          <span class="material-symbols-rounded menu-icon" style="color:#f59e0b">more_time</span>
+          <span class="menu-label">{{ t('nav.overtimeRequest') }}</span>
+        </NuxtLink>
+      </div>
+
+      <div class="menu-section">{{ t('nav.secPlan') }}</div>
+      <div class="menu-grid">
         <NuxtLink class="menu-card" to="/calendar">
           <span class="material-symbols-rounded menu-icon" style="color:#f59e0b">calendar_month</span>
           <span class="menu-label">{{ t('nav.schedule') }}</span>
@@ -56,6 +69,10 @@
           <span class="material-symbols-rounded menu-icon" style="color:#0ea5e9">handyman</span>
           <span class="menu-label">{{ t('nav.subcontractors') }}</span>
         </NuxtLink>
+      </div>
+
+      <div class="menu-section">{{ t('nav.secInfo') }}</div>
+      <div class="menu-grid">
         <NuxtLink class="menu-card" to="/expense/download">
           <span class="material-symbols-rounded menu-icon" style="color:#ef4444">picture_as_pdf</span>
           <span class="menu-label">{{ t('nav.expensePdf') }}</span>
@@ -252,6 +269,14 @@ async function refreshUnsubmittedCount() {
     if (settingRows?.[0]?.value) fromStr = settingRows[0].value
   }
 
+  // 日報提出開始日(workers.report_start_date)があれば、それ以降のみ未送信対象にする（提出開始日より前はカウントしない）。
+  const { data: urow } = await supabase.from('users').select('worker_id').eq('id', targetUserId).maybeSingle()
+  if ((urow as any)?.worker_id) {
+    const { data: w } = await supabase.from('workers').select('report_start_date').eq('id', (urow as any).worker_id).maybeSingle()
+    const rsd = (w as any)?.report_start_date
+    if (rsd && rsd > fromStr) fromStr = rsd
+  }
+
   const { data: reports } = await supabase
     .from('daily_reports')
     .select('date')
@@ -322,11 +347,17 @@ async function refreshUnsubmittedCount() {
 .deadline-sub   { font-size: 12px; color: #ef4444; margin-top: 2px; font-weight: 600; }
 
 /* メニューグリッド */
+.menu-section {
+  font-size: 12px; font-weight: 700; color: #94a3b8;
+  margin: 18px 2px 8px; letter-spacing: .04em;
+}
+.menu-section:first-of-type { margin-top: 4px; }
 .menu-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 10px;
 }
+.menu-grid + .menu-section { margin-top: 18px; }
 .menu-card {
   background: #fff; border-radius: 14px;
   padding: 20px 12px 16px; text-decoration: none;

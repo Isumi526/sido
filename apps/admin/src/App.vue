@@ -1,5 +1,27 @@
 <template>
-  <div v-if="currentUser" class="admin-shell">
+  <!-- 独自ドメイン移行: 旧ドメインアクセス時のみ案内＋自動リダイレクト（NEW_ADMIN_ORIGIN未設定なら出ない） -->
+  <div v-if="migrationUrl" class="domain-migrate-overlay">
+    <div class="domain-migrate-card">
+      <h1>ページが移行しました</h1>
+      <p>新しいURL（<b>{{ migrationUrl }}</b>）へ <b>{{ countdown }}</b> 秒後に自動で移動します。</p>
+      <a :href="migrationUrl" class="domain-migrate-link">今すぐ移動する</a>
+    </div>
+  </div>
+  <!-- 権限解決待ち（ロックアウト/素通しを防ぐためフリッカー回避） -->
+  <div v-if="currentUser && !roleResolved" class="access-gate">
+    <div class="gate-card"><div class="gate-spinner" /></div>
+  </div>
+  <!-- 現場担当者・職人は管理画面の利用不可 -->
+  <div v-else-if="currentUser && !isAdminAllowed" class="access-gate">
+    <div class="gate-card">
+      <span class="material-symbols-rounded gate-icon">block</span>
+      <h1 class="gate-title">この画面を利用する権限がありません</h1>
+      <p class="gate-text">管理画面は管理者・事務員のみ利用できます。<br>作業員の方は下のボタンから作業員アプリをご利用ください。</p>
+      <a class="gate-liff" :href="liffUrl">作業員アプリを開く →</a>
+      <button class="gate-logout-link" @click="handleLogout">ログアウト</button>
+    </div>
+  </div>
+  <div v-else-if="currentUser" class="admin-shell">
     <!-- モバイル用トップバー（≤768pxで表示）-->
     <header class="topbar">
       <button class="hamburger" aria-label="メニュー" @click="drawerOpen = true">
@@ -22,8 +44,9 @@
         <li class="nav-section">日次</li>
         <li><RouterLink to="/" class="nav-link"><span class="material-symbols-rounded nav-icon">dashboard</span>ダッシュボード</RouterLink></li>
         <li><RouterLink to="/reports" class="nav-link"><span class="material-symbols-rounded nav-icon">list_alt</span>日報一覧</RouterLink></li>
-        <li><RouterLink to="/report-edit-approvals" class="nav-link"><span class="material-symbols-rounded nav-icon">lock_open</span>日報編集の許可申請</RouterLink></li>
-        <li><RouterLink to="/report-site-relink" class="nav-link"><span class="material-symbols-rounded nav-icon">link</span>現場未設定の紐付け</RouterLink></li>
+        <li><RouterLink to="/report-edit-approvals" class="nav-link"><span class="material-symbols-rounded nav-icon">lock_open</span>日報編集の許可申請<span v-if="editApprovalCount" class="nav-badge">{{ editApprovalCount }}</span></RouterLink></li>
+        <li><RouterLink to="/report-site-relink" class="nav-link"><span class="material-symbols-rounded nav-icon">link</span>現場未設定の紐付け<span v-if="siteUnsetCount" class="nav-badge">{{ siteUnsetCount }}</span></RouterLink></li>
+        <li><RouterLink to="/overtime-approvals" class="nav-link"><span class="material-symbols-rounded nav-icon">more_time</span>残業申請の承認<span v-if="overtimePendingCount" class="nav-badge">{{ overtimePendingCount }}</span></RouterLink></li>
         <li><RouterLink to="/site-reports" class="nav-link"><span class="material-symbols-rounded nav-icon">bar_chart</span>現場別集計</RouterLink></li>
         <li><RouterLink to="/calendar" class="nav-link"><span class="material-symbols-rounded nav-icon">calendar_month</span>予定管理</RouterLink></li>
         <li><RouterLink to="/process" class="nav-link"><span class="material-symbols-rounded nav-icon">view_timeline</span>工程管理</RouterLink></li>
@@ -54,9 +77,9 @@
         <li class="nav-section">管理・設定</li>
         <li><RouterLink to="/ai-help" class="nav-link"><span class="material-symbols-rounded nav-icon">support_agent</span>AIヘルプ</RouterLink></li>
         <li><RouterLink to="/non-submitters" class="nav-link"><span class="material-symbols-rounded nav-icon">person_off</span>未送信者リスト</RouterLink></li>
-        <li><RouterLink to="/reminder-history" class="nav-link"><span class="material-symbols-rounded nav-icon">history</span>リマインド履歴</RouterLink></li>
+        <li v-if="!HIDE_LINE_SECTIONS"><RouterLink to="/reminder-history" class="nav-link"><span class="material-symbols-rounded nav-icon">history</span>リマインド履歴</RouterLink></li>
         <li><RouterLink to="/operation-logs" class="nav-link"><span class="material-symbols-rounded nav-icon">receipt_long</span>操作ログ</RouterLink></li>
-        <li><RouterLink to="/users" class="nav-link"><span class="material-symbols-rounded nav-icon">manage_accounts</span>ユーザー</RouterLink></li>
+        <li v-if="!HIDE_LINE_SECTIONS"><RouterLink to="/users" class="nav-link"><span class="material-symbols-rounded nav-icon">manage_accounts</span>ユーザー</RouterLink></li>
         <li><RouterLink to="/company-profile" class="nav-link"><span class="material-symbols-rounded nav-icon">business</span>自社情報</RouterLink></li>
         <li><RouterLink to="/settings" class="nav-link"><span class="material-symbols-rounded nav-icon">settings</span>設定</RouterLink></li>
       </ul>
@@ -77,9 +100,27 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { currentUser, signOut } from './lib/auth'
+import { currentUser, signOut, isAdminAllowed, roleResolved } from './lib/auth'
+import { liffAppUrl } from './lib/links'
 import { getAccountName } from './lib/account'
+import { editApprovalCount, siteUnsetCount, overtimePendingCount, refreshNavBadges } from './lib/navBadges'
+import { HIDE_LINE_SECTIONS } from './lib/featureFlags'
+import { migrationTargetUrl, REDIRECT_SECONDS } from './lib/domainMigration'
 import AiHelpWidget from './components/AiHelpWidget.vue'
+
+// 独自ドメイン移行: 旧ドメインアクセス時のみ案内＋5秒後リダイレクト（既定オフ＝NEW_ADMIN_ORIGIN空）。
+const migrationUrl = ref<string | null>(migrationTargetUrl())
+const countdown    = ref(REDIRECT_SECONDS)
+onMounted(() => {
+  if (!migrationUrl.value) return
+  const timer = setInterval(() => {
+    countdown.value -= 1
+    if (countdown.value <= 0) { clearInterval(timer); window.location.replace(migrationUrl.value!) }
+  }, 1000)
+})
+
+// 権限ガード拒否画面から作業員アプリ(LIFF)へ誘導するURL（環境差を吸収）
+const liffUrl = liffAppUrl()
 
 // ヘッダー: メイン=プロダクト名 GENLINKS 固定、サブ=会社名(account名・データ)
 const accountDisplayName = ref('')
@@ -102,6 +143,12 @@ const route  = useRoute()
 const drawerOpen = ref(false)
 watch(() => route.path, () => { drawerOpen.value = false })
 
+// ── ナビ未処理バッジ（共有ストア navBadges.ts）。処理画面は refreshNavBadges() を直接呼ぶ ──
+onMounted(refreshNavBadges)
+watch(currentUser, refreshNavBadges)
+// 画面遷移のたびに再取得（許可/紐付け/残業を処理した後にバッジが減るように）
+watch(() => route.path, refreshNavBadges)
+
 async function handleLogout() {
   await signOut()
   router.push('/login')
@@ -110,6 +157,24 @@ async function handleLogout() {
 
 <style scoped>
 .admin-shell { display: flex; min-height: 100vh; }
+
+/* 権限ガード画面（現場担当者・職人 / 解決待ち） */
+.access-gate { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #f1f5f9; padding: 24px; }
+.gate-card { background: #fff; border-radius: 16px; padding: 36px 32px; max-width: 420px; text-align: center; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
+.gate-icon { font-size: 48px; color: #ef4444; }
+.gate-title { font-size: 18px; font-weight: 700; color: #0f172a; margin: 12px 0 8px; }
+.gate-text { font-size: 13px; color: #64748b; line-height: 1.8; margin: 0 0 20px; }
+.gate-liff { display: inline-block; background: #06C755; color: #fff; text-decoration: none; border-radius: 8px; padding: 12px 28px; font-size: 15px; font-weight: 700; }
+.gate-logout-link { display: block; margin: 14px auto 0; background: none; border: none; color: #94a3b8; font-size: 13px; text-decoration: underline; cursor: pointer; }
+.gate-spinner { width: 32px; height: 32px; border: 3px solid #e2e8f0; border-top-color: #06C755; border-radius: 50%; animation: gate-spin .8s linear infinite; margin: 0 auto; }
+@keyframes gate-spin { to { transform: rotate(360deg); } }
+
+/* 独自ドメイン移行の案内オーバーレイ */
+.domain-migrate-overlay { position: fixed; inset: 0; z-index: 9999; background: #0f172a; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.domain-migrate-card { background: #fff; border-radius: 16px; padding: 32px 28px; max-width: 480px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
+.domain-migrate-card h1 { font-size: 20px; font-weight: 700; margin-bottom: 12px; color: #0f172a; }
+.domain-migrate-card p { font-size: 14px; line-height: 1.7; color: #475569; margin-bottom: 20px; word-break: break-all; }
+.domain-migrate-link { display: inline-block; background: #06C755; color: #fff; text-decoration: none; border-radius: 8px; padding: 12px 24px; font-size: 14px; font-weight: 700; }
 
 /* ── モバイル用トップバー（既定は非表示）── */
 .topbar { display: none; }
@@ -143,6 +208,13 @@ async function handleLogout() {
 .router-link-exact-active .nav-icon {
   font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 20;
   color: #06C755;
+}
+/* ナビ未処理バッジ（右寄せの赤丸カウント） */
+.nav-badge {
+  margin-left: auto; flex-shrink: 0;
+  min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box;
+  background: #ef4444; color: #fff; border-radius: 9px;
+  font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
 }
 .btn-logout {
   margin: 0 16px 8px;

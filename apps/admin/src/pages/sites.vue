@@ -30,7 +30,7 @@
     <div class="table-wrap">
       <table class="table">
         <thead>
-          <tr><th v-if="mergeMode"></th><th>現場名</th><th>住所</th><th>元請け</th><th class="num">日報(90日)</th><th>直近日報</th><th>状態</th><th></th></tr>
+          <tr><th v-if="mergeMode"></th><th>現場名</th><th>住所</th><th>元請け</th><th>固定時刻</th><th class="num">日報(90日)</th><th>直近日報</th><th>状態</th><th></th></tr>
         </thead>
         <tbody>
           <tr v-for="s in filtered" :key="s.id" :class="{ inactive: !s.active }">
@@ -38,17 +38,17 @@
             <td class="name"><a class="name-link" @click="router.push(`/sites/${s.id}`)">{{ s.name }}</a><span v-if="s.name_kana" class="kana-sub">{{ s.name_kana }}</span></td>
             <td class="loc">{{ s.location || '—' }}</td>
             <td>{{ s.contractor_id ? contractorName(s.contractor_id) : '—' }}</td>
+            <td class="fixed-time">{{ fixedTimeLabel(s) }}</td>
             <td class="num">{{ siteStats[s.name]?.count || '—' }}</td>
             <td>{{ siteStats[s.name]?.lastDate || '—' }}</td>
             <td><span class="status" :class="s.active ? 'active' : 'off'">{{ s.active ? '有効' : '無効' }}</span></td>
             <td class="actions">
-              <button class="btn-detail" @click="router.push(`/sites/${s.id}`)">詳細</button>
               <button class="btn-edit" @click="openEdit(s)">編集</button>
               <button class="btn-toggle" @click="toggleActive(s)">{{ s.active ? '無効化' : '有効化' }}</button>
               <button class="btn-rules" @click="router.push(`/site-rules?site_id=${s.id}`)">ルール・QR設定</button>
             </td>
           </tr>
-          <tr v-if="!filtered.length"><td :colspan="mergeMode ? 8 : 7" class="empty">該当する現場がありません</td></tr>
+          <tr v-if="!filtered.length"><td :colspan="mergeMode ? 9 : 8" class="empty">該当する現場がありません</td></tr>
         </tbody>
       </table>
     </div>
@@ -56,6 +56,7 @@
     <div v-if="modal" class="modal-overlay" @click.self="modal = null">
       <div class="modal">
         <h2>{{ modal.id ? '現場を編集' : '現場を追加' }}</h2>
+        <!-- ① 識別情報（名前・かな・住所） -->
         <div class="field">
           <label>現場名</label>
           <input v-model="modal.name" class="input" placeholder="例：BLH名古屋" />
@@ -68,12 +69,42 @@
           <input v-model="modal.name_kana" class="input" placeholder="例：びーえるえいちなごや" />
         </div>
         <div class="field">
+          <label>場所 / 住所</label>
+          <input v-model="modal.location" class="input" placeholder="例：名古屋市〇〇区…" />
+        </div>
+        <!-- ② 関係（元請け） -->
+        <div class="field">
           <label>元請け（日報の現場絞り込みに使用・任意）</label>
           <select v-model="modal.contractor_id" class="input">
             <option :value="null">未紐付け</option>
             <option v-for="c in contractors" :key="c.id" :value="c.id">{{ c.name }}</option>
           </select>
         </div>
+        <!-- ③ 工事内容 -->
+        <div class="field">
+          <label>工事種類</label>
+          <input v-model="modal.construction_type" class="input" placeholder="例：内装・改修" />
+        </div>
+        <div class="field">
+          <label>工事内容</label>
+          <textarea v-model="modal.construction_details" class="input" rows="2" placeholder="例：1F内装ボード・クロス工事 一式"></textarea>
+        </div>
+        <!-- ④ 運用（固定勤務時刻・日報の既定＆終了上限） -->
+        <div class="field">
+          <label>固定勤務時刻（日報の既定＆終了上限・任意）</label>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input v-model="modal.default_start_time" type="time" class="input" style="width:auto" @focus="modal.default_start_time || (modal.default_start_time = '08:30')" />
+            <span>〜</span>
+            <input v-model="modal.default_end_time" type="time" class="input" style="width:auto" @focus="modal.default_end_time || (modal.default_end_time = '17:30')" />
+          </div>
+          <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">設定すると日報でこの現場を選んだ時に作業時刻の既定値になり、終了は固定終了を超えて報告できません（早退で下回るのは可）。</p>
+        </div>
+        <!-- ⑤ メモ -->
+        <div class="field">
+          <label>メモ</label>
+          <textarea v-model="modal.memo" class="input" rows="2" placeholder="任意"></textarea>
+        </div>
+        <!-- ⑥ 絞り込み（協力業者・長いリストは添付の直前＝最下部へ） -->
         <div class="field">
           <label>この現場に紐づく協力業者（日報の業者プルダウンを絞り込み）</label>
           <div class="sub-link-list" data-testid="site-sub-links">
@@ -83,22 +114,6 @@
             <span v-if="!subcontractors.length" class="hint">協力業者マスタが空です</span>
           </div>
           <p class="hint">未選択なら日報では全業者が出ます（紐付けすると、その現場では選択した業者のみに絞り込み）。</p>
-        </div>
-        <div class="field">
-          <label>場所 / 住所</label>
-          <input v-model="modal.location" class="input" placeholder="例：名古屋市〇〇区…" />
-        </div>
-        <div class="field">
-          <label>工事種類</label>
-          <input v-model="modal.construction_type" class="input" placeholder="例：内装・改修" />
-        </div>
-        <div class="field">
-          <label>工事内容</label>
-          <textarea v-model="modal.construction_details" class="input" rows="2" placeholder="例：1F内装ボード・クロス工事 一式"></textarea>
-        </div>
-        <div class="field">
-          <label>メモ</label>
-          <textarea v-model="modal.memo" class="input" rows="2" placeholder="任意"></textarea>
         </div>
 
         <!-- 写真・書類（既存現場のみ） -->
@@ -174,6 +189,7 @@ type Site = {
   id: string; name: string; name_kana: string | null; active: boolean
   location: string | null; construction_type: string | null; construction_details: string | null; memo: string | null
   contractor_id: string | null   // 紐づく元請け（任意）
+  default_start_time: string | null; default_end_time: string | null   // 固定勤務時刻（日報の既定＆終了上限）
 }
 type Att = { id: string; site_id: string; kind: string; path: string; name: string | null; require_consent?: boolean; url?: string | null }
 
@@ -227,7 +243,7 @@ async function load() {
   const accountId = await getAccountId()
   const [{ data }, { data: cons }] = await Promise.all([
     supabase.from('sites')
-      .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id')
+      .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id, default_start_time, default_end_time')
       .eq('account_id', accountId)
       .order('name_kana', { nullsFirst: false })
       .order('name'),
@@ -258,10 +274,17 @@ onMounted(load)
 
 const siteStats = ref<Record<string, { count: number; lastDate: string }>>({})
 const contractorName = (id: string | null | undefined) => contractors.value.find((c) => c.id === id)?.name ?? '—'
+// 一覧の固定時刻カラム表示（HH:MM:SS → HH:MM、未設定は —）
+function fixedTimeLabel(s: Site): string {
+  const a = (s.default_start_time ?? '').slice(0, 5)
+  const b = (s.default_end_time ?? '').slice(0, 5)
+  return (!a && !b) ? '—' : `${a || '—'}〜${b || '—'}`
+}
 
 // AC3: 検索（名称/読み仮名/住所/元請け）・状態絞り込み・並び替え
 const q          = ref('')
-const statusFilter = ref<'all' | 'active' | 'inactive'>('all')
+// 既定は『有効のみ』表示（無効現場はデフォルト非表示・フィルタで切替可）
+const statusFilter = ref<'all' | 'active' | 'inactive'>('active')
 const sortBy     = ref<'kana' | 'recent'>('kana')
 const filtered = computed(() => {
   const kw = q.value.trim().toLowerCase()
@@ -280,9 +303,10 @@ const filtered = computed(() => {
   return list
 })
 
-function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, linkedSubs: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = '' }
+function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', linkedSubs: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = '' }
 async function openEdit(s: Site) {
-  modal.value = { ...s, linkedSubs: [] }; saveError.value = ''
+  // time入力は HH:MM を期待するため DB の HH:MM:SS を切り詰める
+  modal.value = { ...s, default_start_time: (s.default_start_time ?? '').slice(0, 5), default_end_time: (s.default_end_time ?? '').slice(0, 5), linkedSubs: [] }; saveError.value = ''
   const { data: links } = await supabase.from('site_subcontractors').select('subcontractor_id').eq('site_id', s.id)
   if (modal.value) modal.value.linkedSubs = ((links ?? []) as any[]).map(l => l.subcontractor_id)
   siteEstimates.value = []
@@ -309,6 +333,7 @@ async function save() {
       location: m.location?.trim() || null, construction_type: m.construction_type?.trim() || null,
       construction_details: m.construction_details?.trim() || null, memo: m.memo?.trim() || null,
       contractor_id: m.contractor_id || null,
+      default_start_time: m.default_start_time || null, default_end_time: m.default_end_time || null,
     }
     const accountId = await getAccountId()
     let siteId = m.id
