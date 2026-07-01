@@ -41,6 +41,10 @@ export default defineNuxtConfig({
       supabaseAnonKey: process.env.NUXT_PUBLIC_SUPABASE_ANON_KEY || '',
       accountSlug: process.env.NUXT_PUBLIC_ACCOUNT_SLUG || 'sample-construction',
       edgeFunctionUrl: process.env.NUXT_PUBLIC_EDGE_FUNCTION_URL || '',
+      // 脱LINE: 日報送信時の submit-report(LINE通知)呼び出しは既定オフ。
+      //   'true' を明示した時のみ通知する。submit-report EF が全社共通グループへ送る
+      //   クロステナント漏洩バグがあるため、EF側を per-tenant 化して修正するまでは絶対に有効化しない。
+      reportLineNotify: process.env.NUXT_PUBLIC_REPORT_LINE_NOTIFY === 'true',
     },
   },
 
