@@ -2,12 +2,12 @@
   <div class="login-wrap">
     <div class="login-card">
       <h1 class="login-title">作業員ログイン</h1>
-      <p class="login-sub">メールアドレスとパスワードでログインします。<br />（LINEから開いている場合はそのままご利用いただけます）</p>
+      <p class="login-sub">ログインID（またはメールアドレス）とパスワードでログインします。<br />（LINEから開いている場合はそのままご利用いただけます）</p>
 
       <form class="login-form" @submit.prevent="submit">
         <div class="field">
-          <label>メールアドレス</label>
-          <input v-model="email" type="email" autocomplete="username" class="input" placeholder="email" data-testid="login-email" />
+          <label>ログインID または メールアドレス</label>
+          <input v-model="email" type="text" autocapitalize="off" autocorrect="off" autocomplete="username" class="input" placeholder="ID または email" data-testid="login-email" />
         </div>
         <div class="field">
           <label>パスワード</label>
@@ -41,9 +41,18 @@ onMounted(() => {
   if (typeof qPass === 'string') password.value = qPass
 })
 
+// ログインID→ダミーemail 変換（worker-auth-setup と同一規則・同一ドメイン）。
+// 入力に '@' が含まれればメールとしてそのまま、無ければ login_id として <id>@worker.sido-liff.app に変換。
+const WORKER_LOGIN_EMAIL_DOMAIN = 'worker.sido-liff.app'
+function resolveLoginEmail(input: string): string {
+  const v = input.trim()
+  if (v.includes('@')) return v.toLowerCase()
+  return `${v.toLowerCase()}@${WORKER_LOGIN_EMAIL_DOMAIN}`
+}
+
 async function submit() {
   if (!email.value.trim() || !password.value) {
-    error.value = 'メールアドレスとパスワードを入力してください'
+    error.value = 'ログインID（またはメール）とパスワードを入力してください'
     return
   }
   loading.value = true
@@ -51,11 +60,11 @@ async function submit() {
   try {
     const supabase = useSupabase()
     const { error: signInErr } = await supabase.auth.signInWithPassword({
-      email: email.value.trim(),
+      email: resolveLoginEmail(email.value),
       password: password.value,
     })
     if (signInErr) {
-      error.value = 'ログインに失敗しました（メールアドレスまたはパスワードが違います）'
+      error.value = 'ログインに失敗しました（ログインID／メールまたはパスワードが違います）'
       return
     }
     // 身元が変わるのでアカウントキャッシュを破棄（env由来の値が残らないように＝テナント分離）
