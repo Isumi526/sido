@@ -63,6 +63,7 @@
                     'night-shift': s.is_night_shift,
                     'deleted-chip': !!s.deleted_at,
                   }"
+                  :style="chipStyle(s)"
                   @click.stop="openDetail(s)"
                 >
                   <span class="chip-title">{{ s.title }}</span>
@@ -165,6 +166,12 @@
               :placeholder="$t('calendar.titlePlaceholder')"
               @keydown.enter.prevent
             />
+          </div>
+          <div v-if="schedCats.length" class="form-row" style="margin-top:8px">
+            <span class="form-row-label">カテゴリ</span>
+            <select v-model="formModal.category" class="site-select">
+              <option v-for="c in schedCats.filter(x => x.active || x.key === formModal!.category)" :key="c.key" :value="c.key">{{ c.label }}</option>
+            </select>
           </div>
         </div>
 
@@ -308,6 +315,28 @@ const { profile } = useLiff()
 const proxy       = useProxyMode()
 const supabase    = useSupabase()
 const config      = useRuntimeConfig()
+
+// 予定カテゴリマスタ（#A・色分け）。admin(schedule-categories)で管理・ここは色/ラベルの消費。
+type SchedCat = { key: string; label: string; color: string; active: boolean; sort_order: number }
+const schedCats = ref<SchedCat[]>([])
+const catColor  = computed<Record<string, string>>(() => {
+  const m: Record<string, string> = {}
+  for (const c of schedCats.value) m[c.key] = c.color
+  return m
+})
+async function loadSchedCats() {
+  const { getAccountId } = useAccount()
+  const accountId = await getAccountId()
+  if (!accountId) return
+  const { data } = await supabase.from('schedule_categories')
+    .select('key, label, color, active, sort_order').eq('account_id', accountId).order('sort_order')
+  schedCats.value = ((data ?? []) as SchedCat[])
+}
+function chipStyle(s: Schedule): Record<string, string> {
+  if (s.deleted_at || s.is_night_shift) return {}
+  const col = catColor.value[s.category] || '#94a3b8'
+  return { borderLeftColor: col, background: col + '1a' }
+}
 
 const effectiveWorkerId = computed(() =>
   proxy.proxyTarget.value?.id ?? schedules.myWorkerId.value
@@ -766,6 +795,7 @@ onMounted(async () => {
     await master.fetch()
     await schedules.resolveMyWorkerId()
     await loadWorkers()
+    await loadSchedCats()
     await loadSchedules()
     // 自分が参加するグループを取得し、前回選択を復元（存在するグループのみ）
     const myWid = schedules.myWorkerId.value
