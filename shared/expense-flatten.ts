@@ -61,8 +61,9 @@ export function flattenReportExpenses(date: string, sites: any[], rates: Expense
     }
 
     for (const veh of (exp.vehicles || [])) {
-      if (veh.distanceKm) rows.push({ date, category: 'ガソリン代', siteName, amount: Math.round(veh.distanceKm * rates.gasoline), liters: veh.distanceKm, note: veh.vehicleName, fileUrls: takeVehicleUrls(), tategae: !!veh.gasTategae })
-      if (veh.dieselKm)   rows.push({ date, category: '軽油代',    siteName, amount: Math.round(veh.dieselKm   * rates.diesel),   liters: veh.dieselKm,   note: veh.vehicleName, fileUrls: takeVehicleUrls(), tategae: !!veh.dieselTategae })
+      // 車両の距離按分（ガソリン/軽油）は距離ベースの配賦＝個人建て替え(tategae)は付けない（実費は「本日のガソリン代」で別入力）
+      if (veh.distanceKm) rows.push({ date, category: 'ガソリン代', siteName, amount: Math.round(veh.distanceKm * rates.gasoline), liters: veh.distanceKm, note: veh.vehicleName, fileUrls: takeVehicleUrls(), tategae: false })
+      if (veh.dieselKm)   rows.push({ date, category: '軽油代',    siteName, amount: Math.round(veh.dieselKm   * rates.diesel),   liters: veh.dieselKm,   note: veh.vehicleName, fileUrls: takeVehicleUrls(), tategae: false })
       // 旧形式（後方互換）: 車両配下の単一 駐車場代/高速代
       if (veh.parkingYen) rows.push({ date, category: '駐車代',    siteName, amount: veh.parkingYen, fileUrls: takeVehicleUrls(), tategae: !!veh.parkingTategae })
       if (veh.highwayYen) rows.push({ date, category: '高速代',    siteName, amount: veh.highwayYen, note: veh.etcCard || '', fileUrls: takeVehicleUrls(), tategae: !!veh.highwayTategae })

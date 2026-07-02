@@ -320,8 +320,8 @@
                   </div>
                   <input v-model="veh.vehicleName" type="text" class="input" :placeholder="$t('report.vehicleNamePlaceholder')" @keydown.enter.prevent />
                   <div class="expense-grid mt8">
-                    <ExpenseField v-model="veh.distanceKm" v-model:tategae="veh.gasTategae"     with-tategae :label="$t('report.gasoline')" />
-                    <ExpenseField v-model="veh.dieselKm"   v-model:tategae="veh.dieselTategae"  with-tategae :label="$t('report.diesel')" />
+                    <ExpenseField v-model="veh.distanceKm" :label="$t('report.gasoline')" />
+                    <ExpenseField v-model="veh.dieselKm"   :label="$t('report.diesel')" />
                   </div>
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addVehicle(si)">{{ $t('report.addVehicle') }}</button>
