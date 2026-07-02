@@ -57,6 +57,7 @@
                   'night-shift': s.is_night_shift,
                   'deleted-chip': !!s.deleted_at,
                 }"
+                :style="chipStyle(s)"
                 @click.stop="openDetail(s)"
               >
                 <span class="chip-title">{{ s.title }}</span>
@@ -83,6 +84,13 @@
         <div class="field">
           <label>タイトル *</label>
           <input v-model="formModal.title" class="input" placeholder="例：アルペン現場" />
+        </div>
+        <div class="field">
+          <label>カテゴリ</label>
+          <select v-model="formModal.category" class="input">
+            <option v-for="c in scheduleCategories.filter(x => x.active || x.key === formModal!.category)" :key="c.key" :value="c.key">{{ c.label }}</option>
+          </select>
+          <span class="cat-swatch" :style="{ background: categoryColor[formModal.category] || '#94a3b8' }" />
         </div>
         <div class="field-row">
           <div class="field">
@@ -186,6 +194,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { loadScheduleCategories, FALLBACK_CATEGORY_COLOR, type ScheduleCategory } from '../lib/scheduleCategories'
 
 // ──── 型定義 ────────────────────────────────────────────────
 interface Schedule {
@@ -224,6 +233,7 @@ interface FormData {
   start_time:     string
   end_time:       string
   is_night_shift: boolean
+  category:       string
   _original?:     Partial<Schedule>
 }
 
@@ -233,6 +243,19 @@ const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
 // ──── 状態 ─────────────────────────────────────────────────
 const allSchedules  = ref<Schedule[]>([])
 const workers       = ref<{ id: string; name: string }[]>([])
+// 予定カテゴリマスタ（#A・色分け）。key→color の早見表つき。
+const scheduleCategories = ref<ScheduleCategory[]>([])
+const categoryColor = computed(() => {
+  const m: Record<string, string> = {}
+  for (const c of scheduleCategories.value) m[c.key] = c.color
+  return m
+})
+function chipStyle(s: Schedule) {
+  const col = categoryColor.value[s.category] || FALLBACK_CATEGORY_COLOR
+  // 削除済み/夜勤は既存の見た目を優先（色は左ボーダーとうっすら背景で表現）
+  if (s.deleted_at || s.is_night_shift) return {}
+  return { borderLeftColor: col, background: col + '1a' }  // 1a≒10%
+}
 const loading       = ref(false)
 const currentDate   = ref(new Date())
 const showDeleted   = ref(false)
@@ -359,6 +382,7 @@ function openAddBlank() {
     start_date: date, end_date: date,
     start_time: '', end_time: '',
     is_night_shift: false,
+    category: defaultCategoryKey(),
   }
   formError.value = ''
 }
@@ -369,8 +393,12 @@ function openAddForCell(date: string, workerId: string) {
     start_date: date, end_date: date,
     start_time: '', end_time: '',
     is_night_shift: false,
+    category: defaultCategoryKey(),
   }
   formError.value = ''
+}
+function defaultCategoryKey() {
+  return scheduleCategories.value.find(c => c.active)?.key ?? 'work'
 }
 
 async function openDetail(schedule: Schedule) {
@@ -395,6 +423,7 @@ function openEditFromDetail() {
     start_time:     s.start_time ?? '',
     end_time:       s.end_time   ?? '',
     is_night_shift: s.is_night_shift,
+    category:       s.category ?? 'work',
     _original: {
       worker_id:      s.worker_id,
       title:          s.title,
@@ -404,6 +433,7 @@ function openEditFromDetail() {
       start_time:     s.start_time,
       end_time:       s.end_time,
       is_night_shift: s.is_night_shift,
+      category:       s.category,
     },
   }
   detailModal.value = null
@@ -430,7 +460,7 @@ async function saveSchedule() {
       worker_id:      formModal.value.worker_id,
       title:          formModal.value.title.trim(),
       description:    formModal.value.description || null,
-      category:       'work',
+      category:       formModal.value.category || 'work',
       all_day:        !hasTime,
       start_date:     formModal.value.start_date,
       end_date:       formModal.value.end_date,
@@ -447,7 +477,7 @@ async function saveSchedule() {
       const changes: Record<string, { old: unknown; new: unknown }> = {}
       const diffKeys: (keyof typeof payload)[] = [
         'worker_id', 'title', 'description', 'start_date', 'end_date',
-        'start_time', 'end_time', 'is_night_shift',
+        'start_time', 'end_time', 'is_night_shift', 'category',
       ]
       for (const k of diffKeys) {
         const oldVal = (orig as any)[k] ?? null
@@ -512,12 +542,14 @@ onMounted(async () => {
   const { data: { session } } = await supabase.auth.getSession()
   currentUserName = session?.user?.email ?? '管理者'
   await loadWorkers()
+  scheduleCategories.value = await loadScheduleCategories(accountId)
   await loadSchedules()
 })
 </script>
 
 <style scoped>
 .cal-page { }
+.cat-swatch { display: inline-block; width: 16px; height: 16px; border-radius: 4px; border: 1px solid #e0e0e0; margin-top: 4px; }
 
 .page-header {
   display: flex;
