@@ -23,7 +23,7 @@
             <th>名前</th>
             <th>所属</th>
             <th>権限</th>
-            <th>日当単価</th>
+            <th v-if="canViewWages">日当単価</th>
             <th>雇用形態</th>
             <th>入社日</th>
             <th>状態</th>
@@ -37,7 +37,7 @@
             <td class="name">{{ w.name }}</td>
             <td><span class="badge" :class="w.role">{{ w.role === 'factory' ? '工場/事務所' : '現場' }}</span></td>
             <td><span class="perm-badge" :class="w.permission_role ?? 'worker'">{{ permLabel(w.permission_role) }}</span></td>
-            <td class="price">¥{{ w.unit_price.toLocaleString() }}</td>
+            <td v-if="canViewWages" class="price">¥{{ w.unit_price.toLocaleString() }}</td>
             <td><span class="emp-badge" :class="w.employment_type ?? 'fulltime'">{{ w.employment_type === 'contractor' ? '業務委託' : (w.employment_type ?? 'fulltime') === 'fulltime' ? '正社員' : `パート(週${w.weekly_scheduled_days ?? '?'}日)` }}</span></td>
             <td class="hire-date">{{ w.hire_date ?? '—' }}</td>
             <td><span class="status" :class="wStatus(w)" data-testid="worker-status">{{ STATUS_LABELS[wStatus(w)] }}</span></td>
@@ -93,6 +93,7 @@
           </div>
           <p class="role-hint">権限階層: オーナー &gt; 役員・経理 &gt; 現場管理者 &gt; 作業員。画面/操作の制御は今後のフェーズで適用されます。</p>
         </div>
+        <template v-if="canViewWages">
         <div class="field">
           <label>賃金タイプ</label>
           <div class="toggle">
@@ -122,6 +123,7 @@
             </li>
           </ul>
         </div>
+        </template>
         <div class="field">
           <label>雇用形態</label>
           <div class="toggle">
@@ -276,6 +278,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { canViewWages } from '../lib/auth'
 
 type Worker = {
   id: string

@@ -46,7 +46,7 @@
 
     <div v-if="loading" class="loading-text">集計中...</div>
     <template v-else>
-      <!-- 合計カード -->
+      <!-- 合計カード（月次合計は全ロールに表示。人件費の直接内訳行のみ非表示ロールに隠す） -->
       <div class="cards mt16">
         <div class="stat-card accent">
           <div class="stat-value">¥{{ grandTotal.toLocaleString() }}</div>
@@ -66,6 +66,7 @@
           <tbody>
             <tr
               v-for="row in summaryRows"
+              v-show="canViewWages || row.type !== 'labor'"
               :key="row.label"
               class="clickable-row"
               :title="`${row.label} の明細を見る`"
@@ -126,6 +127,7 @@ import { RouterLink } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, unitPriceForDate, wageTypeForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
+import { canViewWages } from '../lib/auth'
 
 // ── 開発の更新履歴（全社共通・未確認/確認済みタブ）──────────
 interface DevUpdate { id: string; title: string; link: string | null; created_at: string }
