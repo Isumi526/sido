@@ -119,6 +119,12 @@
           </label>
         </div>
         <div class="field">
+          <label class="checkbox-label">
+            <input type="checkbox" v-model="formModal.is_public" />
+            他のユーザーに共有する（OFF＝本人と管理者のみ閲覧）
+          </label>
+        </div>
+        <div class="field">
           <label>メモ</label>
           <textarea v-model="formModal.description" class="input textarea" rows="3" />
         </div>
@@ -209,6 +215,7 @@ interface Schedule {
   start_time:      string | null
   end_time:        string | null
   is_night_shift:  boolean
+  is_public:       boolean
   created_by_name: string | null
   deleted_at:      string | null
   deleted_by_name: string | null
@@ -234,6 +241,7 @@ interface FormData {
   end_time:       string
   is_night_shift: boolean
   category:       string
+  is_public:      boolean
   _original?:     Partial<Schedule>
 }
 
@@ -383,6 +391,7 @@ function openAddBlank() {
     start_time: '', end_time: '',
     is_night_shift: false,
     category: defaultCategoryKey(),
+    is_public: false,   // 既定は非共有（A方針）・共有したい時だけON
   }
   formError.value = ''
 }
@@ -394,6 +403,7 @@ function openAddForCell(date: string, workerId: string) {
     start_time: '', end_time: '',
     is_night_shift: false,
     category: defaultCategoryKey(),
+    is_public: false,
   }
   formError.value = ''
 }
@@ -424,6 +434,7 @@ function openEditFromDetail() {
     end_time:       s.end_time   ?? '',
     is_night_shift: s.is_night_shift,
     category:       s.category ?? 'work',
+    is_public:      s.is_public,
     _original: {
       worker_id:      s.worker_id,
       title:          s.title,
@@ -434,6 +445,7 @@ function openEditFromDetail() {
       end_time:       s.end_time,
       is_night_shift: s.is_night_shift,
       category:       s.category,
+      is_public:      s.is_public,
     },
   }
   detailModal.value = null
@@ -467,7 +479,7 @@ async function saveSchedule() {
       start_time:     hasTime ? formModal.value.start_time : null,
       end_time:       hasTime ? formModal.value.end_time   : null,
       is_night_shift: formModal.value.is_night_shift,
-      is_public:      true,
+      is_public:      formModal.value.is_public ?? false,   // 既定は非共有（A方針）
       updated_at:     now,
     }
 
@@ -477,7 +489,7 @@ async function saveSchedule() {
       const changes: Record<string, { old: unknown; new: unknown }> = {}
       const diffKeys: (keyof typeof payload)[] = [
         'worker_id', 'title', 'description', 'start_date', 'end_date',
-        'start_time', 'end_time', 'is_night_shift', 'category',
+        'start_time', 'end_time', 'is_night_shift', 'category', 'is_public',
       ]
       for (const k of diffKeys) {
         const oldVal = (orig as any)[k] ?? null
