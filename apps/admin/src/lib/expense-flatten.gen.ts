@@ -72,14 +72,14 @@ export function flattenReportExpenses(date: string, sites: any[], rates: Expense
     }
     // 新形式: 現場ごとの駐車場代・高速代（複数・明細ごとに個別領収書）
     for (const pk of (exp.parkings || [])) {
-      if (pk.yen) rows.push({ date, category: '駐車代', siteName, amount: pk.yen, fileUrls: pk.fileUrls, tategae: !!pk.tategae })
+      if (pk.yen) rows.push({ date, category: '駐車代', siteName, amount: pk.yen, registrationNumber: pk.registrationNumber, fileUrls: pk.fileUrls, tategae: !!pk.tategae })
     }
     for (const hw of (exp.highways || [])) {
-      if (hw.yen) rows.push({ date, category: '高速代', siteName, amount: hw.yen, note: hw.etcCard || '', fileUrls: hw.fileUrls, tategae: !!hw.tategae })
+      if (hw.yen) rows.push({ date, category: '高速代', siteName, amount: hw.yen, note: hw.etcCard || '', registrationNumber: hw.registrationNumber, fileUrls: hw.fileUrls, tategae: !!hw.tategae })
     }
     for (const tr of (exp.trains || [])) {
       // 新=明細ごと領収書(tr.fileUrls) / 旧=共通(trainUrls を先頭行に take-once)
-      if (tr.yen) rows.push({ date, category: '電車代', siteName, amount: tr.yen, note: tr.label, fileUrls: tr.fileUrls?.length ? tr.fileUrls : takeTrainUrls(), tategae: !!tr.tategae })
+      if (tr.yen) rows.push({ date, category: '電車代', siteName, amount: tr.yen, note: tr.label, registrationNumber: tr.registrationNumber, fileUrls: tr.fileUrls?.length ? tr.fileUrls : takeTrainUrls(), tategae: !!tr.tategae })
     }
     // 宿泊費（複数登録・新形式 hotels[]）。明細ごとに1行。
     for (const ho of (exp.hotels || [])) {

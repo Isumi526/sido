@@ -349,6 +349,7 @@
                       <ExpenseField v-model="pk.yen" v-model:tategae="pk.tategae" with-tategae :label="$t('report.amountYen')" />
                       <button type="button" class="btn-icon-sm" @click="report.removeParking(si, pi)">✕</button>
                     </div>
+                    <input v-model="pk.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                   </div>
                   <button type="button" class="btn-ghost-sm" @click="report.addParking(si)">{{ $t('report.addParking') }}</button>
                 </div>
@@ -371,6 +372,7 @@
                       <ExpenseField v-model="hw.yen" v-model:tategae="hw.tategae" with-tategae :label="$t('report.amountYen')" />
                       <button type="button" class="btn-icon-sm" @click="report.removeHighway(si, hi)">✕</button>
                     </div>
+                    <input v-model="hw.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                     <div class="mt6">
                       <label class="hours-label">{{ $t('report.etcCard') }}</label>
                       <select v-model="hw.etcCard" class="select mt4">
@@ -409,6 +411,7 @@
                     <ExpenseField v-model="tr.yen" v-model:tategae="tr.tategae" with-tategae :label="$t('report.amount')" />
                     <button v-if="site.expenses.trains.length > 1" type="button" class="btn-icon-sm" @click="report.removeTrain(si, ti)">✕</button>
                   </div>
+                  <input v-model="tr.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addTrain(si)">{{ $t('report.add') }}</button>
               </template>
