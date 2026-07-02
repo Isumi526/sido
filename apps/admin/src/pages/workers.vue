@@ -219,7 +219,10 @@
             <span v-if="workers.filter(w => w.id !== modal?.id).length === 0" class="proxy-none">他に作業員がいません</span>
           </div>
         </div>
-        <div v-if="modal.id" class="field auth-field">
+        </div><!-- /detail-section -->
+
+        <!-- ログイン認証（常時表示＝新規/編集どちらでも／保存ボタンで作業員情報と一体反映） -->
+        <div class="field auth-field">
           <label>
             ログイン認証
             <span v-if="modal.auth_user_id" class="auth-status set" data-testid="auth-status-set">認証設定済み</span>
@@ -232,12 +235,12 @@
           <!-- 管理者自身のログイン情報がオートフィルされないよう抑制（作業員の認証を設定する欄のため） -->
           <input v-if="authMode === 'id'" v-model="authLoginId" class="input" type="text" name="worker-login-id" autocomplete="off" placeholder="ログインID（半角英数・. _ - 3文字以上）" data-testid="auth-login-id" />
           <input v-else v-model="authEmail" class="input" type="text" inputmode="email" name="worker-login-email" autocomplete="off" placeholder="email（現場管理者以上は必須）" data-testid="auth-email" />
-          <input v-model="authPassword" class="input" type="password" name="worker-login-pass" autocomplete="new-password" placeholder="パスワード（8文字以上）" data-testid="auth-password" />
-          <p class="auth-hint">{{ authMode === 'id' ? 'メール無し作業員向け。ログイン画面で「ID＋パスワード」でログインできます（IDはグローバル一意）。' : '現場管理者以上は通知受信のためメール必須。' }}</p>
-          <button class="btn-auth" :disabled="authSaving" data-testid="auth-setup-btn" @click="setupAuth">{{ authSaving ? '処理中...' : (modal.auth_user_id ? '認証を更新' : '認証を作成') }}</button>
+          <!-- パスワード：未設定なら常時入力欄／設定済みは「変更」ボタンで展開 -->
+          <input v-if="!modal.auth_user_id || showPwField" v-model="authPassword" class="input" type="password" name="worker-login-pass" autocomplete="new-password" placeholder="パスワード（8文字以上）" data-testid="auth-password" />
+          <button v-else type="button" class="btn-pw-change" data-testid="auth-pw-change" @click="showPwField = true">パスワードを変更</button>
+          <p class="auth-hint">{{ authMode === 'id' ? 'メール無し作業員向け。ログイン画面で「ID＋パスワード」でログインできます（IDはグローバル一意）。' : '現場管理者以上は通知受信のためメール必須。' }}<br>下の「保存」で作業員情報と一緒に反映されます（パスワード欄が空なら認証は変更されません）。</p>
           <p v-if="authMsg" :class="authOk ? 'auth-ok' : 'error'" data-testid="auth-msg">{{ authMsg }}</p>
         </div>
-        </div><!-- /detail-section -->
         <div class="modal-actions">
           <button class="btn-cancel" @click="modal = null">キャンセル</button>
           <button class="btn-save" :disabled="saving" @click="save">{{ saving ? '保存中...' : '保存' }}</button>
@@ -380,7 +383,7 @@ const authMode        = ref<'email' | 'id'>('email')
 const authEmail       = ref('')
 const authLoginId     = ref('')
 const authPassword    = ref('')
-const authSaving      = ref(false)
+const showPwField     = ref(false)   // 認証設定済みの時、パスワード欄は「変更」ボタンで展開
 const authMsg         = ref('')
 const authOk          = ref(false)
 
@@ -430,6 +433,9 @@ function openAdd() {
   familyMembers.value = []
   healthCheckups.value = []
   saveError.value = ''
+  // 新規でも認証UIを出す（保存で一体作成・二度手間回避）＝状態を初期化
+  authEmail.value = ''; authLoginId.value = ''; authMode.value = 'id'; authPassword.value = ''
+  showPwField.value = false; authMsg.value = ''; authOk.value = false
 }
 
 function openEdit(w: Worker) {
@@ -440,6 +446,7 @@ function openEdit(w: Worker) {
   authLoginId.value = ''
   authMode.value = 'email'
   authPassword.value = ''
+  showPwField.value = false
   authMsg.value = ''
   authOk.value = false
   // 認証済みなら現在のログインメール/IDを取得して欄に表示（編集時に確認できるように）
@@ -476,42 +483,7 @@ async function loadAuthEmail(workerId: string) {
   } catch { /* 取得失敗時は空のまま（手入力可） */ }
 }
 
-// 作業員の email/password 認証を作成/更新（edge: worker-auth-setup・service_role）
-async function setupAuth() {
-  if (!modal.value?.id) return
-  const useId = authMode.value === 'id'
-  const cred = useId ? authLoginId.value.trim() : authEmail.value.trim()
-  if (!cred || authPassword.value.length < 8) {
-    authOk.value = false
-    authMsg.value = useId ? 'ログインID と 8文字以上のパスワードを入力してください' : 'email と 8文字以上のパスワードを入力してください'
-    return
-  }
-  authSaving.value = true
-  authMsg.value = ''
-  try {
-    const { data, error } = await supabase.functions.invoke('worker-auth-setup', {
-      body: useId
-        ? { worker_id: modal.value.id, login_id: authLoginId.value.trim(), password: authPassword.value }
-        : { worker_id: modal.value.id, email: authEmail.value.trim(), password: authPassword.value },
-    })
-    if (error) throw error
-    // 重複メール等のガードは 200 + {ok:false, message} で返る。message を優先表示。
-    if (!data?.ok) throw new Error(data?.message ?? data?.error ?? '認証設定に失敗しました')
-    authOk.value = true
-    // 旧authの削除に失敗した場合は、旧メール/パスワードがまだ有効な可能性を警告
-    authMsg.value = data.old_auth_cleanup === 'failed'
-      ? '認証を設定しました（※旧メール/パスワードの無効化に失敗。旧資格でログインできる可能性があります）'
-      : '認証を設定しました'
-    authPassword.value = ''
-    if (modal.value) modal.value.auth_user_id = data.auth_user_id
-    await load()
-  } catch (e: any) {
-    authOk.value = false
-    authMsg.value = e?.message ?? '認証設定に失敗しました'
-  } finally {
-    authSaving.value = false
-  }
-}
+// 認証は save() に統一（別ボタン廃止）。作成/更新は保存ボタンで一緒に反映する。
 
 async function save() {
   if (!modal.value?.name?.trim()) { saveError.value = '名前を入力してください'; return }
@@ -560,6 +532,7 @@ async function save() {
     } else {
       const { data } = await supabase.from('workers').insert({ ...workerPayload, account_id: accountId, status: 'active' }).select('id').single()
       workerId = data!.id
+      if (modal.value) modal.value.id = workerId   // 以降のエラー時に再保存で二重insertしないよう即idを持たせる
     }
 
     // 代理人関係を全削除して再挿入
@@ -577,6 +550,24 @@ async function save() {
     // 家族構成・健診履歴の同期
     await syncFamily(workerId!, accountId, familyMembers.value)
     await syncCheckups(workerId!, accountId, healthCheckups.value)
+
+    // ログイン認証（保存ボタンに統一）：パスワードが入力された時だけ作成/更新する。
+    //  空なら認証は変更しない（＝通常の作業員編集で毎回パス入力を求めない）。
+    if (authPassword.value) {
+      const useId = authMode.value === 'id'
+      const cred = (useId ? authLoginId.value : authEmail.value).trim()
+      if (!cred) throw new Error(useId ? 'ログインIDを入力してください' : 'メールアドレスを入力してください')
+      if (authPassword.value.length < 8) throw new Error('パスワードは8文字以上で入力してください')
+      const { data: ad, error: ae } = await supabase.functions.invoke('worker-auth-setup', {
+        body: useId
+          ? { worker_id: workerId, login_id: cred, password: authPassword.value }
+          : { worker_id: workerId, email: cred, password: authPassword.value },
+      })
+      if (ae) throw ae
+      if (!ad?.ok) throw new Error(ad?.message ?? ad?.error ?? '認証設定に失敗しました')
+      // 旧authの無効化に失敗した場合は警告（旧資格が残る可能性）
+      if (ad.old_auth_cleanup === 'failed') { saveError.value = '保存しました（※旧ログインの無効化に失敗。旧資格でログインできる可能性があります）' }
+    }
 
     modal.value = null
     await load()
@@ -721,6 +712,7 @@ async function confirmDelete() {
 .auth-mode-toggle button { flex: 1; padding: 8px; background: #f5f5f5; color: #888; border: none; cursor: pointer; font-size: 12px; }
 .auth-mode-toggle button.active { background: #1a6fc4; color: #fff; font-weight: 700; }
 .auth-hint { font-size: 11px; color: #94a3b8; margin: 6px 0; line-height: 1.5; }
+.btn-pw-change { align-self: flex-start; background: #eef2ff; color: #4338ca; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; }
 .auth-status { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 700; margin-left: 8px; }
 .auth-status.set { background: #e8f4ff; color: #1a6fc4; }
 .auth-status.unset { background: #f5f5f5; color: #bbb; }
