@@ -29,12 +29,13 @@
         </div>
       </div>
 
-      <!-- エクスポート -->
+      <!-- エクスポート（※表の表示月は上の ‹ 年月 › ナビで切替。ここはCSV/PDF出力の範囲だけ） -->
       <div v-if="activeSite" class="export-bar">
-        <label class="export-range-lbl">期間
+        <span class="export-bar-title">エクスポート</span>
+        <label class="export-range-lbl">出力範囲
           <select v-model="exportRange" class="export-range" data-testid="export-range">
-            <option value="month">当月（{{ yearMonth }}）</option>
-            <option value="range">年月範囲</option>
+            <option value="month">表示中の月（{{ yearMonth }}）</option>
+            <option value="range">年月範囲を指定</option>
             <option value="all">全期間</option>
           </select>
         </label>
@@ -657,6 +658,7 @@ watch(dateFrom, load)
 
 .tabs-wrap { overflow-x: auto; margin-bottom: 16px; }
 .export-bar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin: 10px 0 0; flex-wrap: wrap; }
+.export-bar-title { font-size: 12px; font-weight: 700; color: #334155; margin-right: 2px; }
 .export-range-lbl { font-size: 12px; color: #555; display: flex; align-items: center; gap: 4px; }
 .export-range, .export-ym { border: 1px solid #ccc; border-radius: 6px; padding: 5px 8px; font-size: 13px; }
 .btn-export { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 700; cursor: pointer; }
