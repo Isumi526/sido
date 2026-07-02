@@ -17,6 +17,7 @@
             <tr>
               <th>作業員</th>
               <th>対象日</th>
+              <th>対象現場</th>
               <th>希望終了</th>
               <th>理由</th>
               <th>申請日時</th>
@@ -27,6 +28,7 @@
             <tr v-for="g in pending" :key="g.id">
               <td class="name">{{ workerName(g.worker_id) }}</td>
               <td>{{ fmtDate(g.date) }}</td>
+              <td class="sites">{{ (g.site_names && g.site_names.length) ? g.site_names.join('、') : '—' }}</td>
               <td>{{ (g.requested_end_time || '').slice(0, 5) || '—' }}</td>
               <td class="reason">{{ g.reason || '—' }}</td>
               <td class="muted">{{ fmtDateTime(g.requested_at) }}</td>
@@ -55,6 +57,7 @@ type OvertimeReq = {
   date: string
   requested_end_time: string | null
   reason: string | null
+  site_names: string[] | null
   status: string
   requested_at: string
 }
@@ -85,7 +88,7 @@ async function load() {
   if (!accountId) { loading.value = false; return }
   const [{ data: reqs }, { data: ws }] = await Promise.all([
     supabase.from('overtime_requests')
-      .select('id, worker_id, date, requested_end_time, reason, status, requested_at')
+      .select('id, worker_id, date, requested_end_time, reason, site_names, status, requested_at')
       .eq('account_id', accountId).eq('status', 'pending')
       .order('requested_at', { ascending: true }),
     supabase.from('workers').select('id, name').eq('account_id', accountId),
@@ -121,6 +124,7 @@ onMounted(load)
 .table th { background: #f8fafc; color: #475569; font-weight: 700; }
 .name { font-weight: 700; color: #0f172a; }
 .reason { max-width: 260px; white-space: pre-wrap; }
+.sites { max-width: 200px; font-size: 13px; color: #334155; }
 .muted { color: #94a3b8; }
 .actions-col { white-space: nowrap; }
 .btn-approve, .btn-reject {
