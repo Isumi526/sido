@@ -57,6 +57,14 @@
         <div class="field">
           <label>ナンバー</label>
           <input v-model="modal.plate_number" class="input" placeholder="例：品川 500 あ 12-34" />
+          <div class="plate-ai">
+            <label class="btn-plate-ai" :class="{ busy: plateOcrBusy }">
+              {{ plateOcrBusy ? 'AI解析中…' : '🤖 車両画像からAI読取' }}
+              <input type="file" accept="image/*" hidden :disabled="plateOcrBusy" @change="onPlateOcr" />
+            </label>
+            <span class="plate-ai-hint">ナンバーが写った画像を選ぶと自動入力（読取後に手動修正できます）</span>
+          </div>
+          <p v-if="plateOcrMsg" class="plate-ai-msg" :class="{ err: plateOcrErr }">{{ plateOcrMsg }}</p>
         </div>
         <div class="field">
           <label>車検年月日</label>
@@ -135,7 +143,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
-import { getAccountId } from '../lib/account'
+import { getAccountId, getAccountSlug } from '../lib/account'
 
 type Vehicle = {
   id: string
@@ -201,6 +209,44 @@ async function onUploadPhoto(ev: Event) {
   } catch (e: any) { saveError.value = e.message ?? '写真のアップロードに失敗しました' }
   finally { photoUploading.value = false; (ev.target as HTMLInputElement).value = '' }
 }
+// ── ナンバーAI解析（#9・画像→Gemini vision→plate_number を prefill・手動修正可）──
+const plateOcrBusy = ref(false)
+const plateOcrMsg  = ref('')
+const plateOcrErr  = ref(false)
+function fileToB64(file: File): Promise<string> {
+  return new Promise((res, rej) => {
+    const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1] || ''); fr.onerror = rej; fr.readAsDataURL(file)
+  })
+}
+async function onPlateOcr(ev: Event) {
+  const file = (ev.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  plateOcrBusy.value = true; plateOcrMsg.value = ''; plateOcrErr.value = false
+  try {
+    const b64 = await fileToB64(file)
+    const { data: sess } = await supabase.auth.getSession()
+    const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vehicle-plate-ocr`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sess?.session?.access_token ?? ''}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+      body: JSON.stringify({ account_slug: getAccountSlug(), image_base64: b64, mime: file.type || 'image/jpeg' }),
+    })
+    const j = await resp.json()
+    if (!resp.ok || j?.error) throw new Error(j?.error || `解析エラー(${resp.status})`)
+    if (j?.plate_number) {
+      if (modal.value) modal.value.plate_number = j.plate_number
+      plateOcrMsg.value = `読み取りました：${j.plate_number}（内容を確認・修正してください）`
+    } else {
+      plateOcrErr.value = true
+      plateOcrMsg.value = 'ナンバーを読み取れませんでした。別の画像を試すか手動入力してください。'
+    }
+  } catch (e: any) {
+    plateOcrErr.value = true
+    plateOcrMsg.value = e.message ?? 'AI解析に失敗しました'
+  } finally {
+    plateOcrBusy.value = false; (ev.target as HTMLInputElement).value = ''
+  }
+}
+
 async function renamePhoto(p: VehiclePhoto) {
   await supabase.from('vehicle_attachments').update({ name: (p.name ?? '').trim() || null }).eq('id', p.id)
 }
@@ -252,6 +298,7 @@ function openAdd() {
   photos.value = []
   newPhotoName.value = ''
   saveError.value = ''
+  plateOcrMsg.value = ''; plateOcrErr.value = false
 }
 
 async function openEdit(v: Vehicle) {
@@ -260,6 +307,7 @@ async function openEdit(v: Vehicle) {
   newRepair.value = { repair_date: null, description: '', cost: null }
   newPhotoName.value = ''
   photos.value = []
+  plateOcrMsg.value = ''; plateOcrErr.value = false
   await Promise.all([loadRepairs(v.id), loadPhotos(v.id)])
 }
 
@@ -371,6 +419,12 @@ async function toggleActive(v: Vehicle) {
 .toggle { display: flex; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; }
 .toggle button { flex: 1; padding: 10px; background: #f5f5f5; color: #888; border: none; cursor: pointer; font-size: 13px; }
 .toggle button.active { background: #06C755; color: #fff; font-weight: 700; }
+.plate-ai { display: flex; align-items: center; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
+.btn-plate-ai { background: #eef2ff; color: #4338ca; border: none; border-radius: 8px; padding: 7px 14px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.btn-plate-ai.busy { opacity: .6; cursor: default; }
+.plate-ai-hint { font-size: 11px; color: #94a3b8; }
+.plate-ai-msg { font-size: 12px; color: #0a8a3a; margin-top: 4px; }
+.plate-ai-msg.err { color: #dc2626; }
 .photo-field { border-top: 1px solid #f0f0f0; padding-top: 16px; }
 .photo-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
 .photo-item { display: flex; align-items: center; gap: 10px; }
