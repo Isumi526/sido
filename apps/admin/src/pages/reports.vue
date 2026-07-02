@@ -65,7 +65,7 @@
               <span v-if="selected.sites?.[0]?.workers?.[0]?.workerRole" class="worker-role-inline">
                 / {{ selected.sites[0].workers[0].workerRole === 'factory' ? '工場' : '現場' }}
               </span>
-              <span v-if="selected.users?.workers?.unit_price" class="unit-price-inline">
+              <span v-if="canViewWages && selected.users?.workers?.unit_price" class="unit-price-inline">
                 ¥{{ selected.users.workers.unit_price.toLocaleString() }}/日
               </span>
             </div>
@@ -117,7 +117,7 @@
                   </template>
                 </tbody>
               </table>
-              <div v-if="selected.users?.workers?.unit_price" class="labor-cost">
+              <div v-if="canViewWages && selected.users?.workers?.unit_price" class="labor-cost">
                 人件費
                 <span class="labor-cost-amount">
                   ¥{{ site.workers.reduce((sum: number, w: any) => sum + (w.startTime && w.endTime ? calcLaborCost(w, selected.date, selected.users.workers.unit_price, selected.users.workers.wage_type || 'daily') : 0), 0).toLocaleString() }}
@@ -270,6 +270,7 @@ import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug } from '../lib/account'
 import { HIDE_LINE_SECTIONS } from '../lib/featureFlags'
 import { computeWorkerHours, calcBreakMinutes, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
+import { canViewWages } from '../lib/auth'
 
 const EDGE_URL  = import.meta.env.VITE_SUPABASE_EDGE_URL as string
 const ANON_KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY as string
