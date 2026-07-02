@@ -26,7 +26,6 @@
           <span class="report-date">{{ r.date }}</span>
           <span class="report-worker">{{ r.worker_name ?? '—' }}</span>
           <span class="badge" :class="r.leave_type === 'paid_leave' ? 'paid-leave' : r.is_working ? 'working' : 'off'">{{ r.leave_type === 'paid_leave' ? '有給' : r.is_working ? '稼働' : '休み' }}</span>
-          <span class="badge" :class="r.line_notified_at ? 'notified' : 'not-notified'">{{ r.line_notified_at ? 'LINE済' : '未通知' }}</span>
           <span class="detail-hint">詳細 →</span>
         </div>
         <div v-if="r.is_working && r.sites?.length" class="sites" @click="selected = r">
@@ -37,9 +36,9 @@
               🕒 {{ site.workers[0].startTime }}〜{{ site.workers[0].endTime }}
             </span>
             <span class="attendance">
-              🟢 出勤 {{ attendanceFor(r, site)?.checkin ?? '—' }} / 退勤 {{ attendanceFor(r, site)?.checkout ?? '—' }}
+              <template v-if="attendanceFor(r, site)?.checkin || attendanceFor(r, site)?.checkout">🟢 出勤 {{ attendanceFor(r, site)?.checkin ?? '—' }} / 退勤 {{ attendanceFor(r, site)?.checkout ?? '—' }}</template>
+              <span v-else class="no-punch">打刻なし</span>
             </span>
-            <span class="worker-count">作業員 {{ site.workers?.length ?? 0 }}名</span>
           </div>
         </div>
         <div class="card-actions">
@@ -323,6 +322,7 @@ const grantedIds = ref<Set<string>>(new Set())
 async function issueEditGrant(r: any) {
   const workerId = r.users?.worker_id
   if (!workerId || !r.date) return
+  if (!confirm(`${r.worker_name ?? 'この作業員'} の ${r.date} の日報に編集許可を発行します。よろしいですか？\n（対象の作業員に通知され、申請なしでこの日を再編集できるようになります）`)) return
   granting.value = r.id
   try {
     const accountId = await getAccountId()
@@ -601,6 +601,7 @@ onMounted(load)
 .attendance-tag { font-size: 12px; font-weight: 600; color: #0a8a3a; margin-left: 8px; font-variant-numeric: tabular-nums; }
 .work-time { color: #1a7abf; font-weight: 600; font-variant-numeric: tabular-nums; }
 .attendance { color: #0a8a3a; font-weight: 600; font-variant-numeric: tabular-nums; }
+.no-punch { color: #94a3b8; font-weight: 500; }
 .worker-count { color: #888; }
 
 /* モーダル */
