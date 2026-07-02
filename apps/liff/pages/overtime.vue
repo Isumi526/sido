@@ -29,6 +29,11 @@
               <select v-model="endTime" class="ot-input">
                 <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
               </select>
+              <label class="ot-label">対象現場（複数選択可・責任者へ通知）</label>
+              <div class="ot-sites">
+                <label v-for="s in siteOptions" :key="s" class="ot-site"><input type="checkbox" :value="s" v-model="selectedSites" /> {{ s }}</label>
+                <p v-if="!siteOptions.length" class="ot-sites-empty">現場がありません</p>
+              </div>
               <label class="ot-label">{{ $t('overtime.reasonLabel') }}</label>
               <textarea v-model="reason" class="ot-input" rows="2" :placeholder="$t('overtime.reasonPlaceholder')" />
               <button class="ot-submit" :disabled="busy" @click="onSubmit">{{ busy ? $t('overtime.submitting') : $t('overtime.submit') }}</button>
@@ -80,6 +85,11 @@ const endTime = ref('18:00')
 const reason  = ref('')
 const msg     = ref('')
 const msgOk   = ref(false)
+const siteOptions   = ref<string[]>([])   // 対象現場の候補（有効現場）
+const selectedSites = ref<string[]>([])   // 選択された対象現場（責任者へ通知 #5）
+const supabase = useSupabase()
+const { getAccountId, effectiveSlug } = useAccount()
+const config = useRuntimeConfig()
 
 function statusLabel(s: string) {
   return s === 'approved' ? t('overtime.statusApproved')
@@ -92,12 +102,18 @@ async function refresh() {
   todayStatus.value   = wid ? await overtime.status(wid, today) : 'none'
   canRequestToday.value = overtime.canRequest(today)
   recent.value        = wid ? await overtime.myRecent(wid) : []
+  const accountId = await getAccountId()
+  if (accountId && !siteOptions.value.length) {
+    const { data } = await supabase.from('sites').select('name').eq('active', true).eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name')
+    siteOptions.value = ((data ?? []) as any[]).map(r => r.name)
+  }
 }
 
 async function onSubmit() {
   if (!workerId.value) { msg.value = t('overtime.errorNoLogin'); msgOk.value = false; return }
   busy.value = true; msg.value = ''
-  const res = await overtime.requestOvertime(workerId.value, today, endTime.value, reason.value)
+  const sites = [...selectedSites.value]
+  const res = await overtime.requestOvertime(workerId.value, today, endTime.value, reason.value, sites)
   busy.value = false
   if (!res.ok) {
     msg.value = res.error === 'deadline-passed' ? t('overtime.errorDeadline') : t('overtime.errorGeneric')
@@ -106,6 +122,16 @@ async function onSubmit() {
     return
   }
   msg.value = t('overtime.submitted'); msgOk.value = true
+  // 選択現場の責任者へメール通知（best-effort・失敗しても申請自体は成立）#5
+  const efUrl = (config.public as any).edgeFunctionUrl
+  if (efUrl && sites.length) {
+    const slug = await effectiveSlug()
+    fetch(`${efUrl}/notify-overtime`, {
+      method: 'POST', keepalive: true,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${(config.public as any).supabaseAnonKey}` },
+      body: JSON.stringify({ accountSlug: slug, sender: selfUser.value?.real_name ?? '作業員', date: today, site_names: sites, requested_end_time: endTime.value, reason: reason.value }),
+    }).catch(() => {})
+  }
   await refresh()
 }
 
