@@ -146,7 +146,7 @@ export interface GasolineItem {
 export interface MasterData {
   sites: string[]
   contractors: string[]
-  workers: { id?: string; name: string; unitPrice: number; role: WorkerRole }[]
+  workers: { id?: string; name: string; role: WorkerRole }[]  // 時給(unit_price)は liff に持たせない（作業員に他人の時給を渡さない・#4）
   subcontractors: string[]
   vehicles: string[]
   // 現場名 → 紐づく元請け名（未紐付けは未収録）。日報の現場絞り込みに使う（任意・後方互換）。
