@@ -2,6 +2,17 @@
   <div class="cal-page">
     <AppNav :subtitle="$t('calendar.title')" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
 
+    <!-- 予定追加のお知らせ（未読・気づかないケース対策 #予定通知） -->
+    <div v-if="notifs.length" class="notif-banner">
+      <div class="notif-head">
+        <span>🔔 あなたに新しい予定が {{ notifs.length }} 件追加されました</span>
+        <button class="notif-dismiss" @click="dismissNotifs">既読にする</button>
+      </div>
+      <ul class="notif-list">
+        <li v-for="n in notifs" :key="n.id">{{ n.body || n.title }}</li>
+      </ul>
+    </div>
+
     <!-- 月ナビ（ヘッダー：年月＋グループ絞り込み） -->
     <div class="month-nav">
       <span class="nav-label">{{ navLabel }}</span>
@@ -336,6 +347,27 @@ function chipStyle(s: Schedule): Record<string, string> {
   if (s.deleted_at || s.is_night_shift) return {}
   const col = catColor.value[s.category] || '#94a3b8'
   return { borderLeftColor: col, background: col + '1a' }
+}
+
+// 予定追加のアプリ内通知（未読）。開いた時にバナーで気づかせ、既読で消す #予定通知
+type SchedNotif = { id: string; title: string | null; body: string | null }
+const notifs = ref<SchedNotif[]>([])
+async function loadNotifs() {
+  const wid = effectiveWorkerId.value
+  if (!wid) return
+  const { getAccountId } = useAccount()
+  const accountId = await getAccountId()
+  if (!accountId) return
+  const { data } = await supabase.from('schedule_notifications')
+    .select('id, title, body').eq('account_id', accountId).eq('worker_id', wid).is('read_at', null)
+    .order('created_at', { ascending: false }).limit(20)
+  notifs.value = ((data ?? []) as SchedNotif[])
+}
+async function dismissNotifs() {
+  const ids = notifs.value.map(n => n.id)
+  notifs.value = []
+  if (!ids.length) return
+  await supabase.from('schedule_notifications').update({ read_at: new Date().toISOString() }).in('id', ids)
 }
 
 const effectiveWorkerId = computed(() =>
@@ -796,6 +828,7 @@ onMounted(async () => {
     await schedules.resolveMyWorkerId()
     await loadWorkers()
     await loadSchedCats()
+    await loadNotifs()
     await loadSchedules()
     // 自分が参加するグループを取得し、前回選択を復元（存在するグループのみ）
     const myWid = schedules.myWorkerId.value
@@ -817,6 +850,10 @@ onMounted(async () => {
 
 <style scoped>
 .cal-page { display: flex; flex-direction: column; height: 100dvh; background: #fff; color: #111; overflow: hidden; }
+.notif-banner { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; margin: 8px 12px; padding: 10px 12px; flex-shrink: 0; }
+.notif-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 700; color: #b45309; }
+.notif-dismiss { background: #f59e0b; color: #fff; border: none; border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.notif-list { margin: 8px 0 0; padding-left: 18px; font-size: 12px; color: #78350f; line-height: 1.6; }
 
 /* 月ナビ（ヘッダー：年月のみ） */
 .month-nav {
