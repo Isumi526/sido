@@ -12,14 +12,15 @@
       </div>
     </div>
 
-    <!-- AC3: 検索・絞り込み・並び替え -->
+    <!-- 有効 / 無効化済み タブ -->
+    <div class="status-tabs">
+      <button class="status-tab" :class="{ active: statusFilter === 'active' }" @click="statusFilter = 'active'">有効 <span class="tab-count">{{ sites.filter(s => s.active).length }}</span></button>
+      <button class="status-tab" :class="{ active: statusFilter === 'inactive' }" @click="statusFilter = 'inactive'">無効化済み <span class="tab-count">{{ sites.filter(s => !s.active).length }}</span></button>
+    </div>
+
+    <!-- AC3: 検索・並び替え -->
     <div class="filters">
       <input v-model="q" class="input filter-input" placeholder="現場名・読み仮名・住所・元請けで検索" />
-      <select v-model="statusFilter" class="input filter-input">
-        <option value="all">状態（すべて）</option>
-        <option value="active">有効のみ</option>
-        <option value="inactive">無効のみ</option>
-      </select>
       <select v-model="sortBy" class="input filter-input">
         <option value="kana">並び替え：五十音</option>
         <option value="recent">並び替え：直近日報が新しい順</option>
@@ -30,30 +31,26 @@
     <div class="table-wrap">
       <table class="table">
         <thead>
-          <tr><th v-if="mergeMode"></th><th>現場名</th><th>住所</th><th>元請け</th><th>責任者</th><th>固定時刻</th><th class="num">日報(90日)</th><th>直近日報</th><th>状態</th><th></th></tr>
+          <tr><th v-if="mergeMode"></th><th>現場名</th><th>責任者</th><th>元請け</th><th>固定時刻</th><th></th></tr>
         </thead>
         <tbody>
           <tr v-for="s in filtered" :key="s.id" :class="{ inactive: !s.active }">
             <td v-if="mergeMode"><input type="checkbox" :value="s.id" v-model="mergePick" :disabled="!s.active" /></td>
             <td class="name"><a class="name-link" @click="router.push(`/sites/${s.id}`)">{{ s.name }}</a><span v-if="s.name_kana" class="kana-sub">{{ s.name_kana }}</span></td>
-            <td class="loc">{{ s.location || '—' }}</td>
-            <td>{{ s.contractor_id ? contractorName(s.contractor_id) : '—' }}</td>
             <td class="resp">
               <template v-if="s.responsible_worker_id">{{ responsibleName(s.responsible_worker_id) }}</template>
               <span v-else-if="s.active" class="resp-warn" title="責任者が未登録です。編集から登録してください">未登録</span>
               <span v-else>—</span>
             </td>
+            <td>{{ s.contractor_id ? contractorName(s.contractor_id) : '—' }}</td>
             <td class="fixed-time">{{ fixedTimeLabel(s) }}</td>
-            <td class="num">{{ siteStats[s.name]?.count || '—' }}</td>
-            <td>{{ siteStats[s.name]?.lastDate || '—' }}</td>
-            <td><span class="status" :class="s.active ? 'active' : 'off'">{{ s.active ? '有効' : '無効' }}</span></td>
             <td class="actions">
               <button class="btn-edit" @click="openEdit(s)">編集</button>
               <button class="btn-toggle" @click="toggleActive(s)">{{ s.active ? '無効化' : '有効化' }}</button>
               <button class="btn-rules" @click="router.push(`/site-rules?site_id=${s.id}`)">ルール・QR設定</button>
             </td>
           </tr>
-          <tr v-if="!filtered.length"><td :colspan="mergeMode ? 10 : 9" class="empty">該当する現場がありません</td></tr>
+          <tr v-if="!filtered.length"><td :colspan="mergeMode ? 6 : 5" class="empty">該当する現場がありません</td></tr>
         </tbody>
       </table>
     </div>
@@ -336,7 +333,7 @@ function fixedTimeLabel(s: Site): string {
 // AC3: 検索（名称/読み仮名/住所/元請け）・状態絞り込み・並び替え
 const q          = ref('')
 // 既定は『有効のみ』表示（無効現場はデフォルト非表示・フィルタで切替可）
-const statusFilter = ref<'all' | 'active' | 'inactive'>('active')
+const statusFilter = ref<'active' | 'inactive'>('active')   // 有効/無効化済みタブ
 const sortBy     = ref<'kana' | 'recent'>('kana')
 const filtered = computed(() => {
   const kw = q.value.trim().toLowerCase()
@@ -541,6 +538,10 @@ async function doMerge() {
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
 .page-title { font-size: 22px; font-weight: 700; }
 .btn-add { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.status-tabs { display: flex; gap: 4px; margin-bottom: 14px; }
+.status-tab { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 700; color: #64748b; cursor: pointer; }
+.status-tab.active { background: #06C755; border-color: #06C755; color: #fff; }
+.status-tab .tab-count { font-size: 11px; opacity: .8; margin-left: 2px; }
 .filters { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
 .filter-input { max-width: 280px; }
 .result-count { color: #888; font-size: 13px; margin-left: auto; }
