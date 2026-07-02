@@ -11,12 +11,12 @@
   <div v-if="currentUser && !roleResolved" class="access-gate">
     <div class="gate-card"><div class="gate-spinner" /></div>
   </div>
-  <!-- 現場担当者・職人は管理画面の利用不可 -->
+  <!-- 現場管理者・作業員は管理画面の利用不可 -->
   <div v-else-if="currentUser && !isAdminAllowed" class="access-gate">
     <div class="gate-card">
       <span class="material-symbols-rounded gate-icon">block</span>
       <h1 class="gate-title">この画面を利用する権限がありません</h1>
-      <p class="gate-text">管理画面は管理者・事務員のみ利用できます。<br>作業員の方は下のボタンから作業員アプリをご利用ください。</p>
+      <p class="gate-text">管理画面はオーナー・役員・経理のみ利用できます。<br>作業員の方は下のボタンから作業員アプリをご利用ください。</p>
       <a class="gate-liff" :href="liffUrl">作業員アプリを開く →</a>
       <button class="gate-logout-link" @click="handleLogout">ログアウト</button>
     </div>
