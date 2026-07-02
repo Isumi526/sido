@@ -12,11 +12,19 @@ export const currentRole = ref<string | null>(null)
 // 権限解決が済んだか（解決前にガード判定しないためのフラグ）。
 export const roleResolved = ref(false)
 
-// /admin の利用可否: 管理者/事務員、または worker行を持たない純粋adminのみ許可。
-//  現場担当者(site_manager)・職人(worker) は弾く。
-export const ADMIN_ALLOWED_ROLES = ['admin', 'office']
+// /admin の利用可否: 管理者/事務員/現場管理者、または worker行を持たない純粋adminのみ許可。
+//  現場管理者(site_manager)は現場登録等のため admin を使う（ただし時給/人件費は canViewWages で非表示）。
+//  職人(worker) は弾く。
+export const ADMIN_ALLOWED_ROLES = ['admin', 'office', 'site_manager']
 export const isAdminAllowed = computed(() =>
   !currentRole.value || ADMIN_ALLOWED_ROLES.includes(currentRole.value))
+
+// 時給・人件費（金額）の閲覧可否: admin/office/純admin(role=null) のみ。site_manager/worker は不可。
+//  ＝ site_manager は admin を使えるが、各作業員の時給・人件費は見えない（金額×権限の分離）。
+//  ※role=null は「worker行の無い純粋admin＝オーナー」を想定し許可。取得失敗でnullになる稀ケースの
+//    厳密遮断は列単位権限/RLS（親エピック『本番DBのRLS有効化』）に委ねる。
+export const canViewWages = computed(() =>
+  !currentRole.value || currentRole.value === 'admin' || currentRole.value === 'office')
 
 // auth_user_id（=ログインユーザー）に紐づく worker の permission_role を解決。
 //  auth_user_id は Supabase auth ユーザー単位で一意のため account 絞り込み不要。
