@@ -35,7 +35,7 @@
         <tbody>
           <tr v-for="s in filtered" :key="s.id" :class="{ inactive: !s.active }">
             <td v-if="mergeMode"><input type="checkbox" :value="s.id" v-model="mergePick" :disabled="!s.active" /></td>
-            <td class="name"><a class="name-link" @click="router.push(`/sites/${s.id}`)">{{ s.name }}</a><span v-if="s.name_kana" class="kana-sub">{{ s.name_kana }}</span></td>
+            <td class="name"><a class="name-link" @click="router.push(`/sites/${s.id}`)">{{ s.name }}</a><span v-if="s.name_kana" class="kana-sub">{{ s.name_kana }}</span><span v-if="s.active && !s.responsible_worker_id" class="resp-warn" title="責任者が未登録です。編集から登録してください">責任者未登録</span></td>
             <td class="loc">{{ s.location || '—' }}</td>
             <td>{{ s.contractor_id ? contractorName(s.contractor_id) : '—' }}</td>
             <td class="fixed-time">{{ fixedTimeLabel(s) }}</td>
@@ -79,6 +79,14 @@
             <option :value="null">未紐付け</option>
             <option v-for="c in contractors" :key="c.id" :value="c.id">{{ c.name }}</option>
           </select>
+        </div>
+        <div class="field">
+          <label>責任者（必須・現場管理者以上）</label>
+          <select v-model="modal.responsible_worker_id" class="input">
+            <option :value="null">選択してください</option>
+            <option v-for="w in responsibleCandidates" :key="w.id" :value="w.id">{{ w.name }}</option>
+          </select>
+          <p v-if="!modal.responsible_worker_id" class="resp-hint">責任者は必須です（残業申請の通知先等に使用）。新規現場は既定でログイン中のあなたが入ります。</p>
         </div>
         <!-- ③ 工事内容 -->
         <div class="field">
@@ -181,6 +189,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { currentUser } from '../lib/auth'
 import { findSimilarSiteNames } from '../lib/siteSimilarity'
 
 const router = useRouter()
@@ -190,6 +199,7 @@ type Site = {
   location: string | null; construction_type: string | null; construction_details: string | null; memo: string | null
   contractor_id: string | null   // 紐づく元請け（任意）
   default_start_time: string | null; default_end_time: string | null   // 固定勤務時刻（日報の既定＆終了上限）
+  responsible_worker_id: string | null   // 現場責任者（現場管理者以上のworker・必須はUIで担保）
 }
 type Att = { id: string; site_id: string; kind: string; path: string; name: string | null; require_consent?: boolean; url?: string | null }
 
@@ -197,6 +207,10 @@ const BUCKET = 'site-attachments'
 const sites     = ref<Site[]>([])
 const contractors = ref<{ id: string; name: string }[]>([])   // 元請けマスタ（紐付け用）
 const subcontractors = ref<{ id: string; name: string }[]>([]) // 下請け業者マスタ（現場紐付け用）
+// 現場責任者の候補＝現場管理者以上(permission_role in admin/office/site_manager)のworker。myWorkerId=ログイン中ユーザーのworker(新規現場の既定)。
+const responsibleCandidates = ref<{ id: string; name: string }[]>([])
+const myWorkerId = ref<string | null>(null)
+function responsibleName(id: string | null | undefined): string { return responsibleCandidates.value.find(w => w.id === id)?.name ?? (id ? '（無効/対象外）' : '') }
 const modal     = ref<Partial<Site> & { linkedSubs?: string[] } | null>(null)
 const saving    = ref(false)
 const saveError = ref('')
@@ -243,7 +257,7 @@ async function load() {
   const accountId = await getAccountId()
   const [{ data }, { data: cons }] = await Promise.all([
     supabase.from('sites')
-      .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id, default_start_time, default_end_time')
+      .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id, default_start_time, default_end_time, responsible_worker_id')
       .eq('account_id', accountId)
       .order('name_kana', { nullsFirst: false })
       .order('name'),
@@ -253,6 +267,12 @@ async function load() {
   contractors.value = (cons ?? []) as { id: string; name: string }[]
   const { data: subs } = await supabase.from('subcontractors').select('id, name').eq('account_id', accountId).eq('active', true).order('name')
   subcontractors.value = (subs ?? []) as { id: string; name: string }[]
+  // 責任者候補＝現場管理者以上のworker。ログイン中ユーザーのworker(auth_user_id一致)を新規現場の既定に。
+  const { data: cand } = await supabase.from('workers')
+    .select('id, name, auth_user_id, permission_role').eq('account_id', accountId).eq('active', true)
+    .in('permission_role', ['admin', 'office', 'site_manager']).order('sort_order').order('name')
+  responsibleCandidates.value = ((cand ?? []) as any[]).map(w => ({ id: w.id, name: w.name }))
+  myWorkerId.value = ((cand ?? []) as any[]).find(w => w.auth_user_id && w.auth_user_id === currentUser.value?.id)?.id ?? null
   // AC1: 現場ごとの「直近日報日」「日報件数（直近90日）」を集計（daily_reports.sites JSON の現場名で突合）
   const since = new Date(); since.setDate(since.getDate() - 90)
   const sinceStr = since.toISOString().split('T')[0]
@@ -303,7 +323,7 @@ const filtered = computed(() => {
   return list
 })
 
-function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', linkedSubs: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = '' }
+function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', responsible_worker_id: myWorkerId.value ?? null, linkedSubs: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = '' }
 async function openEdit(s: Site) {
   // time入力は HH:MM を期待するため DB の HH:MM:SS を切り詰める
   modal.value = { ...s, default_start_time: (s.default_start_time ?? '').slice(0, 5), default_end_time: (s.default_end_time ?? '').slice(0, 5), linkedSubs: [] }; saveError.value = ''
@@ -325,6 +345,7 @@ async function syncSiteSubcontractors(siteId: string, accountId: string, want: s
 
 async function save() {
   if (!modal.value?.name?.trim()) { saveError.value = '現場名を入力してください'; return }
+  if (!modal.value?.responsible_worker_id) { saveError.value = '責任者を選択してください（現場管理者以上）'; return }
   saving.value = true; saveError.value = ''
   try {
     const m = modal.value
@@ -334,6 +355,7 @@ async function save() {
       construction_details: m.construction_details?.trim() || null, memo: m.memo?.trim() || null,
       contractor_id: m.contractor_id || null,
       default_start_time: m.default_start_time || null, default_end_time: m.default_end_time || null,
+      responsible_worker_id: m.responsible_worker_id || null,
     }
     const accountId = await getAccountId()
     let siteId = m.id
@@ -501,6 +523,8 @@ async function doMerge() {
 .btn-ghost { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 10px 16px; font-size: 13px; cursor: pointer; color: #555; }
 .btn-ghost:disabled { opacity: .5; cursor: not-allowed; }
 .merge-opt { display: flex; align-items: center; gap: 8px; padding: 8px 0; font-size: 14px; cursor: pointer; }
+.resp-warn { display: inline-block; margin-left: 8px; padding: 1px 6px; font-size: 11px; font-weight: 700; color: #b91c1c; background: #fef2f2; border: 1px solid #fca5a5; border-radius: 4px; }
+.resp-hint { margin: 4px 0 0; font-size: 12px; color: #b45309; }
 .att-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
 .att-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .att-link { color: #1a56c4; text-decoration: none; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
