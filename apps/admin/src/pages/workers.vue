@@ -584,7 +584,12 @@ async function save() {
           ? { worker_id: workerId, login_id: cred, password: authPassword.value }
           : { worker_id: workerId, email: cred, password: authPassword.value },
       })
-      if (ae) throw ae
+      if (ae) {
+        // 非2xx時は EF 本文の message/error を取り出して分かりやすく表示（'non-2xx status code' の握り潰し回避）
+        let msg = '認証設定に失敗しました'
+        try { const b = await (ae as any).context?.json?.(); if (b) msg = b.message ?? b.error ?? msg } catch { /* 本文取れなければ既定 */ }
+        throw new Error(msg)
+      }
       if (!ad?.ok) throw new Error(ad?.message ?? ad?.error ?? '認証設定に失敗しました')
       // 旧authの無効化に失敗した場合は警告（旧資格が残る可能性）
       if (ad.old_auth_cleanup === 'failed') { saveError.value = '保存しました（※旧ログインの無効化に失敗。旧資格でログインできる可能性があります）' }
