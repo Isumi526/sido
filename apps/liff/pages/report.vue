@@ -1844,12 +1844,18 @@ async function analyzeReceipt(
   // 明細ごと（駐車=金額／高速=金額／電車=区間＋金額）
   if (field === 'parking') {
     const item = exp.parkings?.[otherIndex!]
-    if (item && result.yen) item.yen = result.yen
+    if (item) {
+      if (result.yen) item.yen = result.yen
+      item.registrationNumber = inv   // AI解析の登録番号を反映（読めなければ「なし」）
+    }
     return
   }
   if (field === 'highway') {
     const item = exp.highways?.[otherIndex!]
-    if (item && result.yen) item.yen = result.yen
+    if (item) {
+      if (result.yen) item.yen = result.yen
+      item.registrationNumber = inv
+    }
     return
   }
   if (field === 'train') {
@@ -1857,6 +1863,7 @@ async function analyzeReceipt(
     if (item) {
       if (result.label) item.label = result.label
       if (result.yen)   item.yen   = result.yen
+      item.registrationNumber = inv
     }
     return
   }
