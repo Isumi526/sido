@@ -50,6 +50,7 @@ export interface ScheduleForm {
   start_time:      string
   end_time:        string
   is_night_shift:  boolean
+  is_public?:      boolean   // 他ユーザーへ共有するか（既定OFF=非共有・A方針）
 }
 
 const CATEGORY_LABEL_KEYS: Record<ScheduleCategory, string> = {
@@ -146,16 +147,29 @@ export const useSchedules = () => {
       const wid = workerIdOverride ?? _myWorkerIdCache.value
       if (!wid) return
 
-      // アカウント全体の公開予定を取得（削除済みを除く）
+      // アカウント全体の予定を取得（削除済みを除く）
       const accountId = await resolveAccountId()
 
-      const { data, error: err } = await supabase
+      // 可視性（A方針）：非公開(is_public=false)は「本人」または「管理者(admin/office)」のみ閲覧可。
+      //  それ以外の閲覧者には公開(is_public=true)＋自分の予定だけを返す。既存予定は is_public=true 既定のため従来どおり全員に見える。
+      const viewerWid = _myWorkerIdCache.value
+      let canSeeAll = false
+      if (viewerWid) {
+        const { data: vw } = await supabase.from('workers').select('permission_role').eq('id', viewerWid).maybeSingle()
+        const role = (vw as { permission_role?: string } | null)?.permission_role
+        canSeeAll = role === 'admin' || role === 'office'
+      }
+
+      let query = supabase
         .from('schedules')
         .select('*, worker:workers(id, name)')
         .eq('account_id', accountId)
         .lte('start_date', to)
         .gte('end_date', from)
-        .order('start_date')
+      if (!canSeeAll && viewerWid) {
+        query = query.or(`is_public.eq.true,worker_id.eq.${viewerWid}`)
+      }
+      const { data, error: err } = await query.order('start_date')
       if (err) throw err
 
       schedules.value = (data ?? []) as Schedule[]
@@ -176,7 +190,7 @@ export const useSchedules = () => {
 
     const { data, error: err } = await supabase
       .from('schedules')
-      .insert({ ...buildPayload(form, wid), account_id: accountId, created_by_name: creatorName ?? null, is_public: true })
+      .insert({ ...buildPayload(form, wid), account_id: accountId, created_by_name: creatorName ?? null, is_public: form.is_public ?? false })
       .select('*, worker:workers(id, name)')
       .single()
     if (err) throw err
@@ -209,6 +223,7 @@ export const useSchedules = () => {
     if (form.site_id         !== undefined) updates.site_id        = form.site_id || null
     if (form.all_day         !== undefined) updates.all_day        = form.all_day
     if (form.is_night_shift  !== undefined) updates.is_night_shift = form.is_night_shift
+    if (form.is_public       !== undefined) updates.is_public      = form.is_public
     if (form.start_date      !== undefined) updates.start_date     = form.start_date
     if (form.end_date        !== undefined) updates.end_date       = form.end_date
     if (!form.all_day) {

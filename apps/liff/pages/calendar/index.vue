@@ -220,6 +220,13 @@
               <span class="ios-toggle-track"></span>
             </label>
           </div>
+          <div class="form-row">
+            <span class="form-row-label">他のユーザーに共有</span>
+            <label class="ios-toggle">
+              <input type="checkbox" v-model="formModal.is_public" />
+              <span class="ios-toggle-track"></span>
+            </label>
+          </div>
         </div>
 
         <div class="form-card">
@@ -698,6 +705,7 @@ function onCellTap(date: string, workerId: string) {
     all_day: true, start_date: date, end_date: date,
     start_time: '', end_time: '',
     is_night_shift: false,
+    is_public: false,   // 既定は非共有（A方針）・共有したい時だけトグルON
     _contractor: '',
   } as any
   selectedWorkerIds.value = new Set([workerId])   // タップした作業員を初期選択
@@ -713,6 +721,7 @@ function openEdit(ev: Schedule) {
     start_date: ev.start_date, end_date: ev.end_date,
     start_time: ev.start_time ?? '', end_time: ev.end_time ?? '',
     is_night_shift: ev.is_night_shift,
+    is_public: ev.is_public,
     _contractor: '',
     _original: {
       title: ev.title, description: ev.description ?? null,
