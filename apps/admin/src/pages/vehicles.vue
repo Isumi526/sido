@@ -81,6 +81,27 @@
           <input v-model="modal.insurance_note" class="input" placeholder="例：◯◯損保 対人対物無制限・車両あり" />
         </div>
 
+        <!-- 写真＋名称（編集時のみ。新規は保存後に編集で追加） -->
+        <div v-if="modal.id" class="field photo-field">
+          <label>写真（複数可・各写真に名称）</label>
+          <div v-if="photos.length" class="photo-list">
+            <div v-for="p in photos" :key="p.id" class="photo-item">
+              <a v-if="p.url" :href="p.url" target="_blank" rel="noopener" class="photo-thumb-link">
+                <img :src="p.url" class="photo-thumb" :alt="p.name || '写真'" />
+              </a>
+              <span v-else class="photo-thumb photo-thumb-empty">📷</span>
+              <input v-model="p.name" class="input photo-name" placeholder="名称（例：運転席側）" @change="renamePhoto(p)" />
+              <button class="photo-del" title="削除" @click="deletePhoto(p)">×</button>
+            </div>
+          </div>
+          <span v-else class="muted">まだ写真がありません</span>
+          <div class="photo-add">
+            <input v-model="newPhotoName" class="input photo-name" placeholder="名称（任意）" />
+            <label class="btn-photo-add">＋ 写真を追加<input type="file" accept="image/*" hidden :disabled="photoUploading" @change="onUploadPhoto" /></label>
+            <span v-if="photoUploading" class="muted">アップロード中…</span>
+          </div>
+        </div>
+
         <!-- 修理ログ（編集時のみ。新規は保存後に編集で追加） -->
         <div v-if="modal.id" class="field repair-field">
           <label>修理ログ</label>
@@ -143,6 +164,53 @@ const repairLogs  = ref<RepairLog[]>([])
 const newRepair   = ref<{ repair_date: string | null; description: string; cost: number | null }>({ repair_date: null, description: '', cost: null })
 const repairSaving = ref(false)
 
+// 車両写真＋名称（#8・非公開バケット vehicle-attachments・署名URLで表示）
+type VehiclePhoto = { id: string; vehicle_id: string; name: string | null; path: string; url?: string | null }
+const PHOTO_BUCKET   = 'vehicle-attachments'
+const photos         = ref<VehiclePhoto[]>([])
+const newPhotoName   = ref('')
+const photoUploading = ref(false)
+async function photoSignedUrl(attachmentId: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.functions.invoke('vehicle-attachment-url', { body: { attachment_id: attachmentId } })
+    if (error || !data?.ok) return null
+    return data.url as string
+  } catch { return null }
+}
+async function loadPhotos(vehicleId: string) {
+  const { data } = await supabase.from('vehicle_attachments')
+    .select('id, vehicle_id, name, path').eq('vehicle_id', vehicleId).order('created_at')
+  const list = (data ?? []) as VehiclePhoto[]
+  await Promise.all(list.map(async (p) => { p.url = await photoSignedUrl(p.id) }))
+  photos.value = list
+}
+async function onUploadPhoto(ev: Event) {
+  const file = (ev.target as HTMLInputElement).files?.[0]
+  if (!file || !modal.value?.id) return
+  photoUploading.value = true; saveError.value = ''
+  try {
+    const accountId = await getAccountId()
+    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+    // path 先頭フォルダ = account_id（storage RLS の account スコープに使用）
+    const path = `${accountId}/${modal.value.id}/photo-${Date.now()}.${ext}`
+    const { error: upErr } = await supabase.storage.from(PHOTO_BUCKET).upload(path, file, { upsert: false, contentType: file.type || undefined })
+    if (upErr) throw upErr
+    await supabase.from('vehicle_attachments').insert({ account_id: accountId, vehicle_id: modal.value.id, kind: 'photo', name: newPhotoName.value.trim() || null, path })
+    newPhotoName.value = ''
+    await loadPhotos(modal.value.id)
+  } catch (e: any) { saveError.value = e.message ?? '写真のアップロードに失敗しました' }
+  finally { photoUploading.value = false; (ev.target as HTMLInputElement).value = '' }
+}
+async function renamePhoto(p: VehiclePhoto) {
+  await supabase.from('vehicle_attachments').update({ name: (p.name ?? '').trim() || null }).eq('id', p.id)
+}
+async function deletePhoto(p: VehiclePhoto) {
+  if (!confirm('この写真を削除しますか？')) return
+  await supabase.storage.from(PHOTO_BUCKET).remove([p.path])
+  await supabase.from('vehicle_attachments').delete().eq('id', p.id)
+  if (modal.value?.id) await loadPhotos(modal.value.id)
+}
+
 // 車検期日までの残日数（JST基準）。null は車検日未設定
 function daysUntil(dateStr: string): number {
   const today = new Date()
@@ -181,6 +249,8 @@ function openAdd() {
   modal.value = { name: '', plate_number: null, inspection_date: null, has_studless: false, has_insurance: false, insurance_note: null }
   repairLogs.value = []
   newRepair.value = { repair_date: null, description: '', cost: null }
+  photos.value = []
+  newPhotoName.value = ''
   saveError.value = ''
 }
 
@@ -188,7 +258,9 @@ async function openEdit(v: Vehicle) {
   modal.value = { ...v }
   saveError.value = ''
   newRepair.value = { repair_date: null, description: '', cost: null }
-  await loadRepairs(v.id)
+  newPhotoName.value = ''
+  photos.value = []
+  await Promise.all([loadRepairs(v.id), loadPhotos(v.id)])
 }
 
 async function loadRepairs(vehicleId: string) {
@@ -299,6 +371,16 @@ async function toggleActive(v: Vehicle) {
 .toggle { display: flex; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; }
 .toggle button { flex: 1; padding: 10px; background: #f5f5f5; color: #888; border: none; cursor: pointer; font-size: 13px; }
 .toggle button.active { background: #06C755; color: #fff; font-weight: 700; }
+.photo-field { border-top: 1px solid #f0f0f0; padding-top: 16px; }
+.photo-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+.photo-item { display: flex; align-items: center; gap: 10px; }
+.photo-thumb { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; border: 1px solid #e0e0e0; display: block; }
+.photo-thumb-empty { display: flex; align-items: center; justify-content: center; background: #f5f5f5; font-size: 20px; }
+.photo-thumb-link { flex-shrink: 0; }
+.photo-name { flex: 1; }
+.photo-del { background: none; border: none; color: #dc2626; cursor: pointer; font-size: 18px; line-height: 1; flex-shrink: 0; }
+.photo-add { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.btn-photo-add { background: #e0f2fe; color: #0369a1; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .repair-field { border-top: 1px solid #f0f0f0; padding-top: 16px; }
 .repair-list { display: flex; flex-direction: column; gap: 6px; background: #f9f9f9; border-radius: 8px; padding: 10px; max-height: 160px; overflow-y: auto; }
 .repair-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
