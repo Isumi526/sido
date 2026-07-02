@@ -5,7 +5,7 @@
       <div class="header-actions">
         <button v-if="!mergeMode" class="btn-ghost" @click="startMerge">現場をマージ</button>
         <template v-else>
-          <button class="btn-ghost" :disabled="mergePick.length !== 2" @click="openMerge">マージ実行（{{ mergePick.length }}/2）</button>
+          <button class="btn-ghost" :disabled="mergePick.length < 2" @click="openMerge">マージ実行（{{ mergePick.length }}件選択）</button>
           <button class="btn-ghost" @click="cancelMerge">キャンセル</button>
         </template>
         <button class="btn-add" @click="openAdd">＋ 追加</button>
@@ -162,7 +162,7 @@
     <div v-if="mergeModal" class="modal-overlay" @click.self="mergeModal = null">
       <div class="modal">
         <h2>現場をマージ</h2>
-        <p class="hint">どちらに統合しますか？（残す方を選択。もう一方は無効化され、日報・予定などの参照は残す側に統合されます）</p>
+        <p class="hint">どれに統合しますか？（残す1つを選択。他はすべて無効化され、日報・経費・集計・予定・添付・下請けなどの参照は残す側に統合されます）</p>
         <label class="merge-opt" v-for="s in mergeModal.sites" :key="s.id">
           <input type="radio" :value="s.id" v-model="mergeTarget" /> <strong>{{ s.name }}</strong> を残す
         </label>
@@ -396,30 +396,59 @@ function startMerge()  { mergeMode.value = true; mergePick.value = [] }
 function cancelMerge() { mergeMode.value = false; mergePick.value = [] }
 function openMerge() {
   const picked = sites.value.filter((s) => mergePick.value.includes(s.id))
-  if (picked.length !== 2) return
+  if (picked.length < 2) return   // 2現場以上（3つ以上の同時マージ対応）
   mergeModal.value = { sites: picked }; mergeTarget.value = picked[0].id; saveError.value = ''
 }
 
 async function doMerge() {
-  const target = mergeModal.value!.sites.find((s) => s.id === mergeTarget.value)!
-  const source = mergeModal.value!.sites.find((s) => s.id !== mergeTarget.value)!
+  const all = mergeModal.value!.sites
+  const target = all.find((s) => s.id === mergeTarget.value)!
+  const sources = all.filter((s) => s.id !== target.id)   // 統合元＝target以外の全選択（複数対応）
+  if (!sources.length) return
+  const sourceIds = sources.map((s) => s.id)
+  const sourceNames = sources.map((s) => s.name)
   saving.value = true; saveError.value = ''
   try {
     const accountId = await getAccountId()
-    // 1) site_id(FK) を持つ参照を統合先へ付け替え
-    for (const tbl of SITE_FK_TABLES) {
-      await supabase.from(tbl).update({ site_id: target.id }).eq('site_id', source.id).then(() => {}, () => {})
+    // 1) site_id(FK) を持つ参照を統合先へ付け替え（単純repoint）。付け替え漏れ防止で消費テーブルを網羅。
+    const SIMPLE_FK = [...SITE_FK_TABLES, 'site_attachments', 'process_tasks', 'estimate_projects']
+    for (const tbl of SIMPLE_FK) {
+      await supabase.from(tbl).update({ site_id: target.id }).in('site_id', sourceIds).then(() => {}, () => {})
     }
-    // 2) daily_reports.sites[].siteName（文字列参照）を source.name → target.name に書き換え
+    // 1b) site_subcontractors は unique(site_id,subcontractor_id)。統合先に既にある業者は重複になるので除去してから付け替え。
+    const { data: tgtSubs } = await supabase.from('site_subcontractors').select('subcontractor_id').eq('site_id', target.id)
+    const tgtSet = new Set((tgtSubs ?? []).map((x: any) => x.subcontractor_id))
+    const { data: srcSubs } = await supabase.from('site_subcontractors').select('id, subcontractor_id').in('site_id', sourceIds)
+    for (const row of (srcSubs ?? []) as any[]) {
+      if (tgtSet.has(row.subcontractor_id)) {
+        await supabase.from('site_subcontractors').delete().eq('id', row.id).then(() => {}, () => {})
+      } else {
+        await supabase.from('site_subcontractors').update({ site_id: target.id }).eq('id', row.id).then(() => {}, () => {})
+        tgtSet.add(row.subcontractor_id)
+      }
+    }
+    // 2) 名称スナップショット(site_name)も target.name に更新。集計は現場名キーのため site_id 付け替えだけでは統合されない。
+    //    id-scoped（付け替え済み=site_id が target のもの）に限定＝他テナントの同名現場を巻き込まない。
+    for (const tbl of ['subcontractor_invoice_items', 'purchase_orders']) {
+      await supabase.from(tbl).update({ site_name: target.name }).eq('site_id', target.id).in('site_name', sourceNames).then(() => {}, () => {})
+    }
+    // 3) daily_reports.sites[] の現場参照を target.name へ寄せる。
+    //    siteName===source.name だけでなく、__other__ の customSiteName===source.name も統合（集計は現場名/customSiteName キーのため取りこぼし防止）。
     const { data: reps } = await supabase.from('daily_reports').select('id, sites').eq('account_id', accountId).limit(10000)
     for (const r of (reps ?? []) as any[]) {
       const arr = Array.isArray(r.sites) ? r.sites : []
       let changed = false
-      const next = arr.map((s: any) => (s?.siteName === source.name ? (changed = true, { ...s, siteName: target.name }) : s))
+      const next = arr.map((s: any) => {
+        if (s?.siteName && sourceNames.includes(s.siteName)) { changed = true; return { ...s, siteName: target.name } }
+        if (s?.siteName === '__other__' && s?.customSiteName && sourceNames.includes(s.customSiteName)) {
+          changed = true; return { ...s, siteName: target.name, customSiteName: '' }
+        }
+        return s
+      })
       if (changed) await supabase.from('daily_reports').update({ sites: next }).eq('id', r.id)
     }
-    // 3) source を無効化（統合元）
-    await supabase.from('sites').update({ active: false }).eq('id', source.id)
+    // 4) 統合元を無効化（複数）
+    await supabase.from('sites').update({ active: false }).in('id', sourceIds)
     mergeModal.value = null; cancelMerge(); await load()
   } catch (e: any) {
     saveError.value = e.message ?? 'マージに失敗しました'
