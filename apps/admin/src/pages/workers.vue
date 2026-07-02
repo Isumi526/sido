@@ -578,6 +578,12 @@ async function save() {
       const useId = authMode.value === 'id'
       const cred = (useId ? authLoginId.value : authEmail.value).trim()
       if (!cred) throw new Error(useId ? 'ログインIDを入力してください' : 'メールアドレスを入力してください')
+      // フォーマット検証（EFに投げる前に分かりやすいメッセージを出す）
+      if (useId) {
+        if (!/^[A-Za-z0-9][A-Za-z0-9._-]{2,}$/.test(cred)) throw new Error('ログインIDは半角英数（. _ -）で3文字以上にしてください')
+      } else {
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(cred)) throw new Error('有効なメールアドレスを入力してください（例: name@example.com）。メール無し作業員は「ID認証」タブを使ってください')
+      }
       if (authPassword.value.length < 8) throw new Error('パスワードは8文字以上で入力してください')
       const { data: ad, error: ae } = await supabase.functions.invoke('worker-auth-setup', {
         body: useId
