@@ -401,6 +401,8 @@ verify_jwt = false
 verify_jwt = false
 [functions.vehicle-plate-ocr]
 verify_jwt = false
+[functions.vehicle-shaken-ocr]
+verify_jwt = false
 [functions.resend-notifications]
 verify_jwt = false
 [functions.daily-reminder]
