@@ -129,8 +129,9 @@ Deno.serve(async (req) => {
       conflictName = (owner as { name?: string } | null)?.name ?? null
     }
     const who = conflictName ? `「${conflictName}」` : '別のユーザー'
+    const credNoun = login_id ? 'ログインID' : 'メールアドレス'
     // 200 + ok:false（4xxだと supabase-js が error 側に隠すため body を確実に届ける）
-    return json({ ok: false, error: 'email_in_use_by_other', message: `このメールアドレスは既に${who}で使用されています。作業員ごとに別々のメールアドレスを設定してください。`, conflict_worker_name: conflictName })
+    return json({ ok: false, error: 'email_in_use_by_other', message: `この${credNoun}は既に${who}で使用されています。作業員ごとに別々の${credNoun}を設定してください。`, conflict_worker_name: conflictName })
   }
 
   // 2)/3) メール起点で解決：既存(自分の/未所有)があれば更新、無ければ新規作成
@@ -144,7 +145,8 @@ Deno.serve(async (req) => {
       // このメールはまだ未使用 → 新規auth作成（共有authに紐付いていた作業員を固有ログインへ分離）
       const { data: created, error } = await svc.auth.admin.createUser({ email, password, email_confirm: true, app_metadata })
       if (error) {
-        return json({ ok: false, error: 'email_in_use_by_other', message: 'このメールアドレスは別のユーザーで使用されている可能性があります。別のメールアドレスを設定してください。', detail: error.message })
+        const credNoun = login_id ? 'ログインID' : 'メールアドレス'
+        return json({ ok: false, error: 'email_in_use_by_other', message: `この${credNoun}は別のユーザーで使用されている可能性があります。別の${credNoun}を設定してください。`, detail: error.message })
       }
       authUserId = created.user.id
     }
