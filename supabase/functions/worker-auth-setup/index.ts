@@ -8,7 +8,10 @@
 //     app_metadata に { account_slug, worker_id, role:'worker' } を必ずセット
 //     （user_metadata は本人が改変可能なため使わない＝RLSは app_metadata 依存）。
 //   - workers.auth_user_id に生成/特定した auth ユーザ id を保存。
-//  ※ verify_jwt=true（admin のJWT必須）。service_role キー・password はレスポンス/ログに出さない。
+//  ※ verify_jwt=false だが関数内で admin JWT を厳密検証する（cli.auth.getUser()＋app_metadata.account_slug
+//    ＋越境ガード）。ゲートウェイの verify_jwt はローカル新キー形式でES256検証が壊れるため false にし、
+//    他関数と同様に内部検証へ統一（本番も内部検証で担保＝deploy は --no-verify-jwt）。
+//    service_role キー・password はレスポンス/ログに出さない。
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
