@@ -149,7 +149,10 @@ Deno.serve(async (req) => {
       const { data: created, error } = await svc.auth.admin.createUser({ email, password, email_confirm: true, app_metadata })
       if (error) {
         const credNoun = login_id ? 'ログインID' : 'メールアドレス'
-        return json({ ok: false, error: 'email_in_use_by_other', message: `この${credNoun}は別のユーザーで使用されている可能性があります。別の${credNoun}を設定してください。`, detail: error.message })
+        // 「重複」と決め打ちしない：メッセージが重複系の時だけ重複扱い、それ以外は実エラーを返す。
+        const isDup = /already|registered|exist|duplicate|使用/i.test(error.message ?? '')
+        if (isDup) return json({ ok: false, error: 'email_in_use_by_other', message: `この${credNoun}は別のユーザーで使用されている可能性があります。別の${credNoun}を設定してください。`, detail: error.message })
+        return json({ ok: false, error: 'auth_create_failed', message: `認証ユーザーの作成に失敗しました（${error.message}）`, detail: error.message })
       }
       authUserId = created.user.id
     }
