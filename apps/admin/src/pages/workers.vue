@@ -221,13 +221,19 @@
         </div>
         <div v-if="modal.id" class="field auth-field">
           <label>
-            ログイン認証（email / password）
+            ログイン認証
             <span v-if="modal.auth_user_id" class="auth-status set" data-testid="auth-status-set">認証設定済み</span>
             <span v-else class="auth-status unset">未設定</span>
           </label>
+          <div class="auth-mode-toggle">
+            <button type="button" :class="{ active: authMode === 'id' }" @click="authMode = 'id'">ID認証（メール無し作業員）</button>
+            <button type="button" :class="{ active: authMode === 'email' }" @click="authMode = 'email'">メール認証</button>
+          </div>
           <!-- 管理者自身のログイン情報がオートフィルされないよう抑制（作業員の認証を設定する欄のため） -->
-          <input v-model="authEmail" class="input" type="text" inputmode="email" name="worker-login-id" autocomplete="off" placeholder="email（ログインID）" data-testid="auth-email" />
+          <input v-if="authMode === 'id'" v-model="authLoginId" class="input" type="text" name="worker-login-id" autocomplete="off" placeholder="ログインID（半角英数・. _ - 3文字以上）" data-testid="auth-login-id" />
+          <input v-else v-model="authEmail" class="input" type="text" inputmode="email" name="worker-login-email" autocomplete="off" placeholder="email（現場管理者以上は必須）" data-testid="auth-email" />
           <input v-model="authPassword" class="input" type="password" name="worker-login-pass" autocomplete="new-password" placeholder="パスワード（8文字以上）" data-testid="auth-password" />
+          <p class="auth-hint">{{ authMode === 'id' ? 'メール無し作業員向け。ログイン画面で「ID＋パスワード」でログインできます（IDはグローバル一意）。' : '現場管理者以上は通知受信のためメール必須。' }}</p>
           <button class="btn-auth" :disabled="authSaving" data-testid="auth-setup-btn" @click="setupAuth">{{ authSaving ? '処理中...' : (modal.auth_user_id ? '認証を更新' : '認証を作成') }}</button>
           <p v-if="authMsg" :class="authOk ? 'auth-ok' : 'error'" data-testid="auth-msg">{{ authMsg }}</p>
         </div>
@@ -369,8 +375,10 @@ async function syncCheckups(workerId: string, accountId: string, want: HealthChe
   if (toDel.length) await supabase.from('worker_health_checkups').delete().in('id', toDel)
 }
 const saveError       = ref('')
-// email/password 認証（Phase 2a）
+// email/password 認証（Phase 2a）＋ ID/password 認証（メール無し作業員）
+const authMode        = ref<'email' | 'id'>('email')
 const authEmail       = ref('')
+const authLoginId     = ref('')
 const authPassword    = ref('')
 const authSaving      = ref(false)
 const authMsg         = ref('')
@@ -429,10 +437,12 @@ function openEdit(w: Worker) {
   modalProxyIds.value = [...(proxyMap.value.get(w.id) ?? [])]
   saveError.value = ''
   authEmail.value = ''
+  authLoginId.value = ''
+  authMode.value = 'email'
   authPassword.value = ''
   authMsg.value = ''
   authOk.value = false
-  // 認証済みなら現在のログインメールを取得して email 欄に表示（編集時に確認できるように）
+  // 認証済みなら現在のログインメール/IDを取得して欄に表示（編集時に確認できるように）
   if (w.auth_user_id) loadAuthEmail(w.id)
   // 昇給履歴：変更前単価を控え、履歴を読み込む
   origUnitPrice.value = w.unit_price ?? null
@@ -460,23 +470,29 @@ async function loadAuthEmail(workerId: string) {
     const { data, error } = await supabase.functions.invoke('worker-auth-setup', { body: { worker_id: workerId, mode: 'get' } })
     if (error || !data?.ok) return
     // モーダルが別の作業員に切り替わっていたら反映しない
-    if (modal.value?.id === workerId && data.email) authEmail.value = data.email
+    if (modal.value?.id !== workerId) return
+    if (data.login_id) { authMode.value = 'id'; authLoginId.value = data.login_id }   // ID認証の作業員
+    else if (data.email) { authMode.value = 'email'; authEmail.value = data.email }
   } catch { /* 取得失敗時は空のまま（手入力可） */ }
 }
 
 // 作業員の email/password 認証を作成/更新（edge: worker-auth-setup・service_role）
 async function setupAuth() {
   if (!modal.value?.id) return
-  if (!authEmail.value.trim() || authPassword.value.length < 8) {
+  const useId = authMode.value === 'id'
+  const cred = useId ? authLoginId.value.trim() : authEmail.value.trim()
+  if (!cred || authPassword.value.length < 8) {
     authOk.value = false
-    authMsg.value = 'email と 8文字以上のパスワードを入力してください'
+    authMsg.value = useId ? 'ログインID と 8文字以上のパスワードを入力してください' : 'email と 8文字以上のパスワードを入力してください'
     return
   }
   authSaving.value = true
   authMsg.value = ''
   try {
     const { data, error } = await supabase.functions.invoke('worker-auth-setup', {
-      body: { worker_id: modal.value.id, email: authEmail.value.trim(), password: authPassword.value },
+      body: useId
+        ? { worker_id: modal.value.id, login_id: authLoginId.value.trim(), password: authPassword.value }
+        : { worker_id: modal.value.id, email: authEmail.value.trim(), password: authPassword.value },
     })
     if (error) throw error
     // 重複メール等のガードは 200 + {ok:false, message} で返る。message を優先表示。
@@ -701,6 +717,10 @@ async function confirmDelete() {
 .btn-add-family { background: #f0f0f0; border: none; border-radius: 6px; padding: 8px 14px; font-size: 13px; cursor: pointer; color: #555; align-self: flex-start; }
 .hire-date { font-size: 12px; color: #666; font-variant-numeric: tabular-nums; }
 .auth-field { border-top: 1px solid #f0f0f0; padding-top: 16px; }
+.auth-mode-toggle { display: flex; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; margin-bottom: 8px; }
+.auth-mode-toggle button { flex: 1; padding: 8px; background: #f5f5f5; color: #888; border: none; cursor: pointer; font-size: 12px; }
+.auth-mode-toggle button.active { background: #1a6fc4; color: #fff; font-weight: 700; }
+.auth-hint { font-size: 11px; color: #94a3b8; margin: 6px 0; line-height: 1.5; }
 .auth-status { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 700; margin-left: 8px; }
 .auth-status.set { background: #e8f4ff; color: #1a6fc4; }
 .auth-status.unset { background: #f5f5f5; color: #bbb; }

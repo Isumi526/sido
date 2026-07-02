@@ -16,6 +16,13 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
 const ANON_KEY     = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
 
+// メール無し作業員のログインID→ダミーemail 変換用ドメイン。★liff の login.vue と同一値にすること（実送信は無い＝email_confirm:true）。
+const WORKER_LOGIN_EMAIL_DOMAIN = 'worker.sido-liff.app'
+// login_id 正規化＝小文字trim。半角英数と ._- のみ・3文字以上（liff 側と同一規則）。
+function normalizeLoginId(raw: string): string { return (raw ?? '').toString().trim().toLowerCase() }
+function isValidLoginId(id: string): boolean { return /^[a-z0-9][a-z0-9._-]{2,}$/.test(id) }
+function loginIdToEmail(id: string): string { return `${id}@${WORKER_LOGIN_EMAIL_DOMAIN}` }
+
 function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',
@@ -44,16 +51,24 @@ Deno.serve(async (req) => {
 
   // --- 入力 ---
   //  mode: 'set'(既定=認証作成/更新) / 'get'(現在のログインメールを返すだけ・email/password不要)
-  let worker_id = '', email = '', password = '', mode = 'set'
+  //  login_id 指定時（メール無し作業員）は <login_id>@worker.sido-liff.app のダミーemailに変換して
+  //  以降の email 起点ロジック（衝突検出・作成/更新・旧auth掃除）をそのまま流用する。
+  let worker_id = '', email = '', password = '', mode = 'set', login_id = ''
   try {
     const b = await req.json()
     worker_id = (b.worker_id ?? '').toString().trim()
     mode      = (b.mode ?? 'set').toString()
     email     = (b.email ?? '').toString().trim().toLowerCase()
     password  = (b.password ?? '').toString()
+    login_id  = normalizeLoginId(b.login_id ?? '')
   } catch { return json({ ok: false, error: 'bad_json' }, 400) }
   if (!worker_id) return json({ ok: false, error: 'worker_id_required' }, 400)
   if (mode !== 'get') {
+    if (login_id) {
+      // ID認証: login_id を検証しダミーemailを合成（email 指定は無視）
+      if (!isValidLoginId(login_id)) return json({ ok: false, error: 'invalid_login_id', message: 'ログインIDは半角英数（. _ -）3文字以上で入力してください。' }, 400)
+      email = loginIdToEmail(login_id)
+    }
     if (!email || !password) return json({ ok: false, error: 'worker_id_email_password_required' }, 400)
     if (password.length < 8) return json({ ok: false, error: 'password_too_short' }, 400)
   }
@@ -62,7 +77,7 @@ Deno.serve(async (req) => {
 
   // --- 対象 worker と account ---
   const { data: worker, error: wErr } = await svc
-    .from('workers').select('id, account_id, name, auth_user_id').eq('id', worker_id).single()
+    .from('workers').select('id, account_id, name, auth_user_id, login_id').eq('id', worker_id).single()
   if (wErr || !worker) return json({ ok: false, error: 'worker_not_found' }, 404)
   if (!worker.account_id) return json({ ok: false, error: 'worker_has_no_account' }, 400)
 
@@ -82,7 +97,9 @@ Deno.serve(async (req) => {
         currentEmail = u?.user?.email ?? null
       } catch { /* admin API 不可(ローカル等)は null のまま */ }
     }
-    return json({ ok: true, worker_id: worker.id, email: currentEmail, has_auth: !!worker.auth_user_id })
+    // login_id 認証の作業員はダミーemailを見せず login_id を返す（表示用）
+    const wLoginId = (worker as { login_id?: string | null }).login_id ?? null
+    return json({ ok: true, worker_id: worker.id, email: wLoginId ? null : currentEmail, login_id: wLoginId, has_auth: !!worker.auth_user_id })
   }
 
   const app_metadata = { account_slug: acct.slug, worker_id: worker.id, role: 'worker' }
@@ -135,8 +152,8 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: 'auth_admin_error', detail: String((e as Error)?.message ?? e) }, 500)
   }
 
-  // --- workers.auth_user_id を保存 ---
-  const { error: linkErr } = await svc.from('workers').update({ auth_user_id: authUserId }).eq('id', worker.id)
+  // --- workers.auth_user_id ＋ login_id を保存（ID認証なら login_id、email認証なら null に更新）---
+  const { error: linkErr } = await svc.from('workers').update({ auth_user_id: authUserId, login_id: login_id || null }).eq('id', worker.id)
   if (linkErr) return json({ ok: false, error: 'link_failed', detail: linkErr.message }, 400)
 
   // ★旧authの掃除：別メールへ移行して旧authが不要になった場合、旧メール/パスワードで
@@ -166,8 +183,8 @@ Deno.serve(async (req) => {
     }
   }
 
-  // password は返さない
-  return json({ ok: true, worker_id: worker.id, auth_user_id: authUserId, email, old_auth_cleanup: oldAuthCleanup })
+  // password は返さない。login_id 認証時はダミーemailでなく login_id を返す
+  return json({ ok: true, worker_id: worker.id, auth_user_id: authUserId, email: login_id ? null : email, login_id: login_id || null, old_auth_cleanup: oldAuthCleanup })
 })
 
 // admin.listUsers をページングして email 一致を探す（getUserByEmail が無いため）
