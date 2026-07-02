@@ -322,7 +322,7 @@ const grantedIds = ref<Set<string>>(new Set())
 async function issueEditGrant(r: any) {
   const workerId = r.users?.worker_id
   if (!workerId || !r.date) return
-  if (!confirm(`${r.worker_name ?? 'この作業員'} の ${r.date} の日報に編集許可を発行します。よろしいですか？\n（対象の作業員に通知され、申請なしでこの日を再編集できるようになります）`)) return
+  if (!confirm(`${r.worker_name ?? 'この作業員'} の ${r.date} の日報に編集許可を発行します。よろしいですか？\n（この作業員は申請なしでこの日を再編集できるようになります）`)) return
   granting.value = r.id
   try {
     const accountId = await getAccountId()
