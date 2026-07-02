@@ -498,11 +498,20 @@ async function saveSchedule() {
       }
     } else {
       // 新規作成
-      const { error } = await supabase.from('schedules').insert({
+      const { data: created, error } = await supabase.from('schedules').insert({
         ...payload,
         created_by_name: currentUserName,
-      })
+      }).select('id').single()
       if (error) throw error
+      // 対象作業員へアプリ内通知（気づかないケース対策 #予定通知）。失敗しても予定作成は成立(best-effort)
+      try {
+        const label = scheduleCategories.value.find(c => c.key === payload.category)?.label ?? '予定'
+        await supabase.from('schedule_notifications').insert({
+          account_id: accountId, worker_id: payload.worker_id, schedule_id: (created as any)?.id ?? null,
+          title: `新しい${label}が追加されました`,
+          body: `${payload.title}（${payload.start_date}${payload.end_date !== payload.start_date ? '〜' + payload.end_date : ''}）`,
+        })
+      } catch { /* 通知失敗は無視 */ }
     }
 
     formModal.value = null

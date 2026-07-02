@@ -183,6 +183,17 @@ export const useSchedules = () => {
 
     const schedule = data as Schedule
     schedules.value.push(schedule)
+    // 対象作業員へアプリ内通知（自分で自分の予定を作った時は不要）。best-effort・失敗しても作成は成立 #予定通知
+    try {
+      const me = _myWorkerIdCache.value
+      if (wid && wid !== me) {
+        await supabase.from('schedule_notifications').insert({
+          account_id: accountId, worker_id: wid, schedule_id: schedule.id,
+          title: '新しい予定が追加されました',
+          body: `${schedule.title}（${schedule.start_date}${schedule.end_date !== schedule.start_date ? '〜' + schedule.end_date : ''}）`,
+        })
+      }
+    } catch { /* 通知失敗は無視 */ }
     return schedule
   }
 
