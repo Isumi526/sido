@@ -424,7 +424,7 @@ verify_jwt = true
 [functions.test-send-purchase-order]
 verify_jwt = false
 [functions.worker-auth-setup]
-verify_jwt = true
+verify_jwt = false
 [functions.site-attachment-url]
 verify_jwt = false
 [functions.estimate-price-ocr]
