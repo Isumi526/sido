@@ -192,18 +192,6 @@
           <input v-model="modal.labor_insurance_number" class="input" placeholder="例：12-3-45-678901-0" data-testid="labor-insurance-number" />
         </div>
         <div class="field">
-          <label>車検履歴（車両・車検日・満了日）</label>
-          <div v-for="(vi, i) in vehicleInspections" :key="i" class="inspect-row" data-testid="inspection-row">
-            <input v-model="vi.vehicle_name" class="input" placeholder="車両名" />
-            <div class="inspect-dates">
-              <input v-model="vi.inspection_date" type="date" class="input" title="車検日" />
-              <input v-model="vi.expiry_date" type="date" class="input" title="満了日" />
-              <button type="button" class="family-del" @click="removeInspection(i)">×</button>
-            </div>
-          </div>
-          <button type="button" class="btn-add-family" data-testid="add-inspection" @click="addInspection">＋ 車検を追加</button>
-        </div>
-        <div class="field">
           <label>健康診断履歴（受診日・結果）</label>
           <div v-for="(hc, i) in healthCheckups" :key="i" class="checkup-row" data-testid="checkup-row">
             <input v-model="hc.checkup_date" type="date" class="input" />
@@ -258,7 +246,7 @@
         <h2>作業員を完全に削除</h2>
         <p class="del-warn">
           <b>{{ delTarget.name }}</b> を完全に削除します。この操作は<b>取り消せません</b>。<br>
-          作業員マスタの情報・代理人・賃金履歴・家族/車検/健診・予定が削除されます。<br>
+          作業員マスタの情報・代理人・賃金履歴・家族/健診・予定が削除されます。<br>
           （日報データが紐づく作業員は保全のため削除できません。その場合は『無効』のまま保管してください。）
         </p>
         <div class="field">
@@ -357,29 +345,6 @@ async function syncFamily(workerId: string, accountId: string, want: FamilyMembe
   }
   if (toDel.length) await supabase.from('worker_family_members').delete().in('id', toDel)
 }
-// 車検履歴（1作業員に複数）
-type VehicleInspection = { id?: string; vehicle_name: string | null; inspection_date: string | null; expiry_date: string | null }
-const vehicleInspections = ref<VehicleInspection[]>([])
-function addInspection()            { vehicleInspections.value.push({ vehicle_name: null, inspection_date: null, expiry_date: null }) }
-function removeInspection(i: number){ vehicleInspections.value.splice(i, 1) }
-async function loadInspections(workerId: string) {
-  const { data } = await supabase.from('worker_vehicle_inspections')
-    .select('id, vehicle_name, inspection_date, expiry_date').eq('worker_id', workerId).order('sort_order')
-  vehicleInspections.value = ((data ?? []) as any[]).map(r => ({ id: r.id, vehicle_name: r.vehicle_name, inspection_date: r.inspection_date, expiry_date: r.expiry_date }))
-}
-async function syncInspections(workerId: string, accountId: string, want: VehicleInspection[]) {
-  const valid = want.filter(r => r.vehicle_name?.trim() || r.inspection_date || r.expiry_date)
-  const { data } = await supabase.from('worker_vehicle_inspections').select('id').eq('worker_id', workerId)
-  const haveIds = ((data ?? []) as { id: string }[]).map(h => h.id)
-  const keepIds = valid.map(r => r.id).filter(Boolean) as string[]
-  const toDel = haveIds.filter(id => !keepIds.includes(id))
-  for (const [i, r] of valid.entries()) {
-    const row = { worker_id: workerId, account_id: accountId, vehicle_name: r.vehicle_name?.trim() || null, inspection_date: r.inspection_date || null, expiry_date: r.expiry_date || null, sort_order: i, updated_at: new Date().toISOString() }
-    if (r.id) await supabase.from('worker_vehicle_inspections').update(row).eq('id', r.id)
-    else      await supabase.from('worker_vehicle_inspections').insert(row)
-  }
-  if (toDel.length) await supabase.from('worker_vehicle_inspections').delete().in('id', toDel)
-}
 // 健康診断履歴（1作業員に複数）
 type HealthCheckup = { id?: string; checkup_date: string | null; result: string | null }
 const healthCheckups = ref<HealthCheckup[]>([])
@@ -455,7 +420,6 @@ function openAdd() {
   modal.value = { name: '', role: 'site', permission_role: 'worker', unit_price: 20000, wage_type: 'daily', hire_date: null, birth_date: null, address: null, emergency_contact: null, employment_type: 'fulltime', weekly_scheduled_days: null, company_info: null, invoice_number: null, insurance_info: null, labor_insurance_number: null, report_start_date: null }
   modalProxyIds.value = []
   familyMembers.value = []
-  vehicleInspections.value = []
   healthCheckups.value = []
   saveError.value = ''
 }
@@ -479,8 +443,6 @@ function openEdit(w: Worker) {
   loadWageHistory(w.id)
   familyMembers.value = []
   loadFamily(w.id)
-  vehicleInspections.value = []
-  loadInspections(w.id)
   healthCheckups.value = []
   loadCheckups(w.id)
 }
@@ -596,9 +558,8 @@ async function save() {
       )
     }
 
-    // 家族構成・車検履歴・健診履歴の同期
+    // 家族構成・健診履歴の同期
     await syncFamily(workerId!, accountId, familyMembers.value)
-    await syncInspections(workerId!, accountId, vehicleInspections.value)
     await syncCheckups(workerId!, accountId, healthCheckups.value)
 
     modal.value = null
@@ -735,9 +696,6 @@ async function confirmDelete() {
 .family-row { display: grid; grid-template-columns: 1.2fr 1fr 1fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
 .checkup-row { display: grid; grid-template-columns: 1fr 1.6fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
 .checkup-row .input { padding: 8px 10px; font-size: 13px; }
-.inspect-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
-.inspect-row .input { padding: 8px 10px; font-size: 13px; }
-.inspect-dates { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; align-items: center; }
 .family-row .input { padding: 8px 10px; font-size: 13px; }
 .family-del { background: none; border: 1px solid #f0caca; color: #c0392b; border-radius: 6px; width: 30px; height: 32px; cursor: pointer; font-size: 14px; }
 .btn-add-family { background: #f0f0f0; border: none; border-radius: 6px; padding: 8px 14px; font-size: 13px; cursor: pointer; color: #555; align-self: flex-start; }
