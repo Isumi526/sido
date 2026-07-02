@@ -55,7 +55,7 @@
             :disabled="notifying === r.id"
             @click.stop="sendNotification(r)"
           >{{ notifying === r.id ? '送信中...' : 'LINE通知' }}</button>
-          <button class="btn-delete-sm" @click.stop="confirmDelete(r)">削除</button>
+          <!-- 削除は誤操作防止のため一覧からは行わない。詳細（詳細→）を開いてから削除する -->
         </div>
       </div>
     </div>
@@ -80,8 +80,17 @@
             <span class="badge" :class="selected.leave_type === 'paid_leave' ? 'paid-leave' : selected.is_working ? 'working' : 'off'">
               {{ selected.leave_type === 'paid_leave' ? '有給' : selected.is_working ? '稼働' : '休み' }}
             </span>
-            <button class="btn-delete" @click="confirmDelete(selected)">削除</button>
+            <button class="btn-delete" @click="deleteArmed = true">削除</button>
             <button class="btn-close" @click="selected = null">✕</button>
+          </div>
+        </div>
+
+        <!-- 削除は2段階（誤操作防止）：⚠ 元に戻せない旨を明示してから確定 -->
+        <div v-if="deleteArmed" class="delete-confirm">
+          <span class="delete-confirm-msg">⚠️ この日報を削除すると<b>元に戻せません</b>（工数・経費・添付も消えます）。本当に削除しますか？</span>
+          <div class="delete-confirm-actions">
+            <button class="btn-delete" :disabled="deleting" @click="doDeleteFromModal">{{ deleting ? '削除中…' : 'この日報を削除する' }}</button>
+            <button class="btn-cancel-sm" @click="deleteArmed = false">キャンセル</button>
           </div>
         </div>
 
@@ -271,7 +280,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug } from '../lib/account'
 import { HIDE_LINE_SECTIONS } from '../lib/featureFlags'
@@ -349,9 +358,13 @@ async function issueEditGrant(r: any) {
 // 出退勤マップ: `${worker_id}|${date}|${現場名}` → { checkin, checkout }（HH:MM, JST）
 const attendanceMap = ref<Record<string, { checkin?: string; checkout?: string }>>({})
 
-function confirmDelete(r: any) {
-  if (!confirm(`${r.date} ${r.worker_name ?? ''} の日報を削除しますか？`)) return
-  deleteReport(r)
+// 削除は詳細モーダル内の2段階のみ（一覧からは不可・誤操作防止）
+const deleteArmed = ref(false)
+watch(selected, () => { deleteArmed.value = false })   // 別日報を開いた/閉じたら武装解除
+async function doDeleteFromModal() {
+  if (!selected.value) return
+  await deleteReport(selected.value)   // 成功時に selected=null でモーダルを閉じる
+  deleteArmed.value = false
 }
 
 const URL_KEYS = ['vehicleUrls', 'trainUrls', 'hotelUrls', 'leopalaceUrls', 'otherUrls', 'entertainmentUrls', 'garbagePhotoUrls'] as const
@@ -581,7 +594,12 @@ onMounted(load)
 .btn-notify-sm:disabled { opacity: .5; cursor: not-allowed; }
 .btn-delete-sm { background: none; border: 1px solid #fca5a5; color: #dc2626; border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
 .btn-delete-sm:hover { background: #fef2f2; }
+.delete-confirm { background: #fef2f2; border: 1px solid #fca5a5; border-radius: 8px; padding: 12px 14px; margin: 0 0 12px; display: flex; flex-direction: column; gap: 10px; }
+.delete-confirm-msg { font-size: 13px; color: #991b1b; line-height: 1.6; }
+.delete-confirm-actions { display: flex; gap: 10px; }
+.btn-cancel-sm { background: #fff; border: 1px solid #d1d5db; color: #374151; border-radius: 8px; padding: 6px 14px; font-size: 13px; cursor: pointer; }
 .btn-delete { background: #dc2626; color: #fff; border: none; border-radius: 8px; padding: 6px 14px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.btn-delete:disabled { opacity: .6; }
 .btn-delete:hover { background: #b91c1c; }
 .report-header { display: flex; align-items: center; gap: 12px; }
 .report-date { font-weight: 700; font-size: 15px; min-width: 100px; }
