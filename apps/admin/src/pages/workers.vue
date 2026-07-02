@@ -86,12 +86,12 @@
         <div class="field">
           <label>権限ロール</label>
           <div class="toggle role-toggle">
-            <button :class="{ active: (modal.permission_role ?? 'worker') === 'admin' }" @click="modal.permission_role = 'admin'">管理者</button>
-            <button :class="{ active: (modal.permission_role ?? 'worker') === 'office' }" @click="modal.permission_role = 'office'">事務員</button>
-            <button :class="{ active: (modal.permission_role ?? 'worker') === 'site_manager' }" @click="modal.permission_role = 'site_manager'">現場担当者</button>
-            <button :class="{ active: (modal.permission_role ?? 'worker') === 'worker' }" @click="modal.permission_role = 'worker'">職人</button>
+            <button :class="{ active: (modal.permission_role ?? 'worker') === 'admin' }" @click="modal.permission_role = 'admin'">オーナー</button>
+            <button :class="{ active: (modal.permission_role ?? 'worker') === 'office' }" @click="modal.permission_role = 'office'">役員・経理</button>
+            <button :class="{ active: (modal.permission_role ?? 'worker') === 'site_manager' }" @click="modal.permission_role = 'site_manager'">現場管理者</button>
+            <button :class="{ active: (modal.permission_role ?? 'worker') === 'worker' }" @click="modal.permission_role = 'worker'">作業員</button>
           </div>
-          <p class="role-hint">権限階層: 管理者 &gt; 事務員 &gt; 現場担当者 &gt; 職人。画面/操作の制御は今後のフェーズで適用されます。</p>
+          <p class="role-hint">権限階層: オーナー &gt; 役員・経理 &gt; 現場管理者 &gt; 作業員。画面/操作の制御は今後のフェーズで適用されます。</p>
         </div>
         <div class="field">
           <label>賃金タイプ</label>
@@ -381,9 +381,9 @@ function workerName(id: string | null) {
   return workers.value.find(w => w.id === id)?.name ?? '不明'
 }
 
-const PERM_LABELS: Record<string, string> = { admin: '管理者', office: '事務員', site_manager: '現場担当者', worker: '職人' }
+const PERM_LABELS: Record<string, string> = { admin: 'オーナー', office: '役員・経理', site_manager: '現場管理者', worker: '作業員' }
 function permLabel(r: string | null | undefined): string {
-  return PERM_LABELS[r ?? 'worker'] ?? '職人'
+  return PERM_LABELS[r ?? 'worker'] ?? '作業員'
 }
 
 // 編集ダイアログ: よく使う項目だけ常時表示し、個人情報/会社/保険/資格/代理人/認証は折りたたむ。
