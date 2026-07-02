@@ -30,14 +30,19 @@
     <div class="table-wrap">
       <table class="table">
         <thead>
-          <tr><th v-if="mergeMode"></th><th>現場名</th><th>住所</th><th>元請け</th><th>固定時刻</th><th class="num">日報(90日)</th><th>直近日報</th><th>状態</th><th></th></tr>
+          <tr><th v-if="mergeMode"></th><th>現場名</th><th>住所</th><th>元請け</th><th>責任者</th><th>固定時刻</th><th class="num">日報(90日)</th><th>直近日報</th><th>状態</th><th></th></tr>
         </thead>
         <tbody>
           <tr v-for="s in filtered" :key="s.id" :class="{ inactive: !s.active }">
             <td v-if="mergeMode"><input type="checkbox" :value="s.id" v-model="mergePick" :disabled="!s.active" /></td>
-            <td class="name"><a class="name-link" @click="router.push(`/sites/${s.id}`)">{{ s.name }}</a><span v-if="s.name_kana" class="kana-sub">{{ s.name_kana }}</span><span v-if="s.active && !s.responsible_worker_id" class="resp-warn" title="責任者が未登録です。編集から登録してください">責任者未登録</span></td>
+            <td class="name"><a class="name-link" @click="router.push(`/sites/${s.id}`)">{{ s.name }}</a><span v-if="s.name_kana" class="kana-sub">{{ s.name_kana }}</span></td>
             <td class="loc">{{ s.location || '—' }}</td>
             <td>{{ s.contractor_id ? contractorName(s.contractor_id) : '—' }}</td>
+            <td class="resp">
+              <template v-if="s.responsible_worker_id">{{ responsibleName(s.responsible_worker_id) }}</template>
+              <span v-else-if="s.active" class="resp-warn" title="責任者が未登録です。編集から登録してください">未登録</span>
+              <span v-else>—</span>
+            </td>
             <td class="fixed-time">{{ fixedTimeLabel(s) }}</td>
             <td class="num">{{ siteStats[s.name]?.count || '—' }}</td>
             <td>{{ siteStats[s.name]?.lastDate || '—' }}</td>
@@ -48,7 +53,7 @@
               <button class="btn-rules" @click="router.push(`/site-rules?site_id=${s.id}`)">ルール・QR設定</button>
             </td>
           </tr>
-          <tr v-if="!filtered.length"><td :colspan="mergeMode ? 9 : 8" class="empty">該当する現場がありません</td></tr>
+          <tr v-if="!filtered.length"><td :colspan="mergeMode ? 10 : 9" class="empty">該当する現場がありません</td></tr>
         </tbody>
       </table>
     </div>
