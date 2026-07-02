@@ -67,8 +67,29 @@
           <p v-if="plateOcrMsg" class="plate-ai-msg" :class="{ err: plateOcrErr }">{{ plateOcrMsg }}</p>
         </div>
         <div class="field">
-          <label>車検年月日</label>
+          <label>車検年月日（満了日）</label>
           <input v-model="modal.inspection_date" type="date" class="input" data-testid="vehicle-inspection-date" />
+        </div>
+
+        <!-- 車検証（編集時のみ・画像→PDF化保存＋満了日をAI読取）#10 -->
+        <div v-if="modal.id" class="field shaken-field">
+          <label>車検証（画像/PDFをアップロード→PDF保存・満了日を自動読取）</label>
+          <div v-if="shakenDocs.length" class="shaken-list">
+            <div v-for="d in shakenDocs" :key="d.id" class="shaken-item">
+              <span class="shaken-icon">📄</span>
+              <a v-if="d.url" :href="d.url" target="_blank" rel="noopener" class="shaken-link">{{ d.name || '車検証' }}</a>
+              <span v-else class="shaken-link muted">{{ d.name || '車検証' }}</span>
+              <button class="shaken-del" title="削除" @click="deleteShaken(d)">×</button>
+            </div>
+          </div>
+          <span v-else class="muted">まだ車検証がありません</span>
+          <div class="shaken-add">
+            <label class="btn-shaken-add" :class="{ busy: shakenUploading }">
+              {{ shakenUploading ? '処理中…' : '＋ 車検証をアップロード' }}
+              <input type="file" accept="image/*,application/pdf" hidden :disabled="shakenUploading" @change="onUploadShaken" />
+            </label>
+          </div>
+          <p v-if="shakenMsg" class="shaken-msg" :class="{ err: shakenErr }">{{ shakenMsg }}</p>
         </div>
         <div class="field">
           <label>スタッドレスタイヤ</label>
@@ -172,12 +193,16 @@ const repairLogs  = ref<RepairLog[]>([])
 const newRepair   = ref<{ repair_date: string | null; description: string; cost: number | null }>({ repair_date: null, description: '', cost: null })
 const repairSaving = ref(false)
 
-// 車両写真＋名称（#8・非公開バケット vehicle-attachments・署名URLで表示）
-type VehiclePhoto = { id: string; vehicle_id: string; name: string | null; path: string; url?: string | null }
+// 車両添付（#8 写真＋名称 / #10 車検証PDF）・非公開バケット vehicle-attachments・署名URLで表示
+type VehiclePhoto = { id: string; vehicle_id: string; kind: string; name: string | null; path: string; url?: string | null }
 const PHOTO_BUCKET   = 'vehicle-attachments'
-const photos         = ref<VehiclePhoto[]>([])
+const photos         = ref<VehiclePhoto[]>([])   // kind='photo'
+const shakenDocs     = ref<VehiclePhoto[]>([])   // kind='shaken'（車検証PDF）
 const newPhotoName   = ref('')
 const photoUploading = ref(false)
+const shakenUploading = ref(false)
+const shakenMsg       = ref('')
+const shakenErr       = ref(false)
 async function photoSignedUrl(attachmentId: string): Promise<string | null> {
   try {
     const { data, error } = await supabase.functions.invoke('vehicle-attachment-url', { body: { attachment_id: attachmentId } })
@@ -187,10 +212,11 @@ async function photoSignedUrl(attachmentId: string): Promise<string | null> {
 }
 async function loadPhotos(vehicleId: string) {
   const { data } = await supabase.from('vehicle_attachments')
-    .select('id, vehicle_id, name, path').eq('vehicle_id', vehicleId).order('created_at')
+    .select('id, vehicle_id, kind, name, path').eq('vehicle_id', vehicleId).order('created_at')
   const list = (data ?? []) as VehiclePhoto[]
   await Promise.all(list.map(async (p) => { p.url = await photoSignedUrl(p.id) }))
-  photos.value = list
+  photos.value     = list.filter(p => p.kind !== 'shaken')
+  shakenDocs.value = list.filter(p => p.kind === 'shaken')
 }
 async function onUploadPhoto(ev: Event) {
   const file = (ev.target as HTMLInputElement).files?.[0]
@@ -250,6 +276,69 @@ async function onPlateOcr(ev: Event) {
 async function renamePhoto(p: VehiclePhoto) {
   await supabase.from('vehicle_attachments').update({ name: (p.name ?? '').trim() || null }).eq('id', p.id)
 }
+
+// ── 車検証（#10）: 画像→PDF化して保存＋満了日をAI読取→inspection_date へ prefill ──
+// 画像1枚をPDF1ページに埋め込んでPDFバイト列を返す（PDFファイルはそのまま使う）
+async function toShakenPdfBytes(file: File): Promise<Uint8Array> {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) return bytes
+  const { PDFDocument } = await import('pdf-lib')
+  const pdf = await PDFDocument.create()
+  const isPng = file.type === 'image/png' || /\.png$/i.test(file.name)
+  const img = isPng ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes)
+  const page = pdf.addPage([img.width, img.height])
+  page.drawImage(img, { x: 0, y: 0, width: img.width, height: img.height })
+  return await pdf.save()
+}
+async function onUploadShaken(ev: Event) {
+  const file = (ev.target as HTMLInputElement).files?.[0]
+  if (!file || !modal.value?.id) return
+  shakenUploading.value = true; shakenMsg.value = ''; shakenErr.value = false; saveError.value = ''
+  try {
+    const accountId = await getAccountId()
+    // 1) PDF化して非公開バケットへ保存（kind='shaken'）
+    const pdfBytes = await toShakenPdfBytes(file)
+    const path = `${accountId}/${modal.value.id}/shaken-${Date.now()}.pdf`
+    const { error: upErr } = await supabase.storage.from(PHOTO_BUCKET).upload(path, new Blob([pdfBytes], { type: 'application/pdf' }), { upsert: false, contentType: 'application/pdf' })
+    if (upErr) throw upErr
+    await supabase.from('vehicle_attachments').insert({ account_id: accountId, vehicle_id: modal.value.id, kind: 'shaken', name: '車検証', path })
+    await loadPhotos(modal.value.id)
+    shakenMsg.value = '車検証をPDFで保存しました。満了日をAI解析中…'
+    // 2) 満了日をAI読取して inspection_date に prefill（画像時のみ・失敗は握りつぶして手動入力に委ねる）
+    if (file.type.startsWith('image/')) {
+      try {
+        const b64 = await fileToB64(file)
+        const { data: sess } = await supabase.auth.getSession()
+        const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vehicle-shaken-ocr`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sess?.session?.access_token ?? ''}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+          body: JSON.stringify({ account_slug: getAccountSlug(), image_base64: b64, mime: file.type || 'image/jpeg' }),
+        })
+        const j = await resp.json()
+        if (resp.ok && j?.inspection_date) {
+          if (modal.value) modal.value.inspection_date = j.inspection_date
+          shakenMsg.value = `車検証を保存し、車検満了日を読み取りました：${j.inspection_date}（確認・修正してください）`
+        } else {
+          shakenMsg.value = '車検証を保存しました。満了日は読み取れなかったため手動で入力してください。'
+        }
+      } catch {
+        shakenMsg.value = '車検証を保存しました。満了日のAI読取に失敗したため手動で入力してください。'
+      }
+    } else {
+      shakenMsg.value = '車検証(PDF)を保存しました。満了日は手動で入力してください。'
+    }
+  } catch (e: any) {
+    shakenErr.value = true; shakenMsg.value = e.message ?? '車検証の保存に失敗しました'
+  } finally {
+    shakenUploading.value = false; (ev.target as HTMLInputElement).value = ''
+  }
+}
+async function deleteShaken(p: VehiclePhoto) {
+  if (!confirm('この車検証を削除しますか？')) return
+  await supabase.storage.from(PHOTO_BUCKET).remove([p.path])
+  await supabase.from('vehicle_attachments').delete().eq('id', p.id)
+  if (modal.value?.id) await loadPhotos(modal.value.id)
+}
 async function deletePhoto(p: VehiclePhoto) {
   if (!confirm('この写真を削除しますか？')) return
   await supabase.storage.from(PHOTO_BUCKET).remove([p.path])
@@ -296,9 +385,11 @@ function openAdd() {
   repairLogs.value = []
   newRepair.value = { repair_date: null, description: '', cost: null }
   photos.value = []
+  shakenDocs.value = []
   newPhotoName.value = ''
   saveError.value = ''
   plateOcrMsg.value = ''; plateOcrErr.value = false
+  shakenMsg.value = ''; shakenErr.value = false
 }
 
 async function openEdit(v: Vehicle) {
@@ -307,7 +398,9 @@ async function openEdit(v: Vehicle) {
   newRepair.value = { repair_date: null, description: '', cost: null }
   newPhotoName.value = ''
   photos.value = []
+  shakenDocs.value = []
   plateOcrMsg.value = ''; plateOcrErr.value = false
+  shakenMsg.value = ''; shakenErr.value = false
   await Promise.all([loadRepairs(v.id), loadPhotos(v.id)])
 }
 
@@ -425,6 +518,18 @@ async function toggleActive(v: Vehicle) {
 .plate-ai-hint { font-size: 11px; color: #94a3b8; }
 .plate-ai-msg { font-size: 12px; color: #0a8a3a; margin-top: 4px; }
 .plate-ai-msg.err { color: #dc2626; }
+.shaken-field { border-top: 1px solid #f0f0f0; padding-top: 16px; }
+.shaken-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.shaken-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.shaken-icon { flex-shrink: 0; }
+.shaken-link { flex: 1; color: #0369a1; text-decoration: none; }
+.shaken-link:hover { text-decoration: underline; }
+.shaken-del { background: none; border: none; color: #dc2626; cursor: pointer; font-size: 18px; line-height: 1; flex-shrink: 0; }
+.shaken-add { margin-top: 4px; }
+.btn-shaken-add { background: #fef3c7; color: #92400e; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.btn-shaken-add.busy { opacity: .6; cursor: default; }
+.shaken-msg { font-size: 12px; color: #0a8a3a; margin-top: 6px; }
+.shaken-msg.err { color: #dc2626; }
 .photo-field { border-top: 1px solid #f0f0f0; padding-top: 16px; }
 .photo-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
 .photo-item { display: flex; align-items: center; gap: 10px; }
