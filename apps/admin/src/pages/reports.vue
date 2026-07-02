@@ -44,6 +44,13 @@
         </div>
         <div class="card-actions">
           <button
+            v-if="r.users?.worker_id"
+            class="btn-grant-sm"
+            :disabled="granting === r.id"
+            :title="'この作業員のこの日を、申請なしで編集可にします'"
+            @click.stop="issueEditGrant(r)"
+          >{{ grantedIds.has(r.id) ? '✓ 編集許可済' : (granting === r.id ? '発行中…' : '✏️ 編集許可を発行') }}</button>
+          <button
             v-if="!HIDE_LINE_SECTIONS && !r.line_notified_at"
             class="btn-notify-sm"
             :disabled="notifying === r.id"
@@ -270,7 +277,7 @@ import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug } from '../lib/account'
 import { HIDE_LINE_SECTIONS } from '../lib/featureFlags'
 import { computeWorkerHours, calcBreakMinutes, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
-import { canViewWages } from '../lib/auth'
+import { canViewWages, currentUser } from '../lib/auth'
 
 const EDGE_URL  = import.meta.env.VITE_SUPABASE_EDGE_URL as string
 const ANON_KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY as string
@@ -308,6 +315,36 @@ const deleting = ref(false)
 const notifying = ref<string | null>(null)
 const reports  = ref<any[]>([])
 const selected = ref<any | null>(null)
+
+// 管理者から編集許可を発行：この日報の worker×date に approved grant を作成し、申請なしで編集可にする。
+//  （日報の間違いを見ながらその場で許可を出せる。作業員側は既存の realtime/ポーリングで自動反映）
+const granting   = ref<string | null>(null)
+const grantedIds = ref<Set<string>>(new Set())
+async function issueEditGrant(r: any) {
+  const workerId = r.users?.worker_id
+  if (!workerId || !r.date) return
+  granting.value = r.id
+  try {
+    const accountId = await getAccountId()
+    const email = currentUser.value?.email ?? null
+    const now = new Date().toISOString()
+    // 同 worker×date の既存grantがあれば approved へ更新、無ければ approved で新規（DB一意制約なし）
+    const { data: existing } = await supabase.from('report_edit_grants')
+      .select('id').eq('account_id', accountId).eq('worker_id', workerId).eq('date', r.date).limit(1)
+    if (existing && existing.length) {
+      await supabase.from('report_edit_grants')
+        .update({ status: 'approved', approved_by: email, decided_at: now }).eq('id', (existing[0] as any).id)
+    } else {
+      await supabase.from('report_edit_grants')
+        .insert({ account_id: accountId, worker_id: workerId, date: r.date, status: 'approved', approved_by: email, decided_at: now, requested_at: now })
+    }
+    grantedIds.value = new Set(grantedIds.value).add(r.id)
+  } catch (e) {
+    alert('編集許可の発行に失敗しました')
+  } finally {
+    granting.value = null
+  }
+}
 
 // 出退勤マップ: `${worker_id}|${date}|${現場名}` → { checkin, checkout }（HH:MM, JST）
 const attendanceMap = ref<Record<string, { checkin?: string; checkout?: string }>>({})
@@ -536,6 +573,9 @@ onMounted(load)
 .report-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.1); }
 .report-header { cursor: pointer; }
 .card-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+.btn-grant-sm { background: none; border: 1px solid #f0b429; color: #b45309; border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
+.btn-grant-sm:hover:not(:disabled) { background: #fffbeb; }
+.btn-grant-sm:disabled { opacity: .6; cursor: default; }
 .btn-notify-sm { background: none; border: 1px solid #6db8e8; color: #1a7abf; border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
 .btn-notify-sm:hover:not(:disabled) { background: #e8f4fd; }
 .btn-notify-sm:disabled { opacity: .5; cursor: not-allowed; }

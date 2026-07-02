@@ -8,21 +8,9 @@
       承認すると、その作業員のその日付だけ再度 提出・編集できるようになります。
     </p>
 
-    <!-- 管理者から編集許可を発行（作業員の申請を待たずに直接許可・間違い修正の依頼など） -->
-    <div class="issue-card">
-      <h2 class="issue-title">管理者から編集許可を発行</h2>
-      <p class="issue-hint">作業員の申請を待たずに、指定した作業員・日付の編集許可を直接発行します（管理者側で日報の間違い修正を依頼する場合など）。発行するとその作業員はその日付を再編集できます。</p>
-      <div class="issue-form">
-        <select v-model="issueWorkerId" class="issue-input" aria-label="作業員">
-          <option value="">作業員を選択</option>
-          <option v-for="w in workerOptions" :key="w.id" :value="w.id">{{ w.name }}</option>
-        </select>
-        <input v-model="issueDate" type="date" class="issue-input" aria-label="対象日" />
-        <input v-model="issueReason" type="text" class="issue-input issue-reason" placeholder="理由（任意）" />
-        <button class="btn-approve" :disabled="!issueWorkerId || !issueDate || issuing" @click="issueGrant">発行</button>
-      </div>
-      <p v-if="issueMsg" class="issue-msg">{{ issueMsg }}</p>
-    </div>
+    <p class="issue-hint-inline">
+      💡 管理者から直接編集許可を出したい時は、<router-link to="/reports" class="inline-link">日報一覧</router-link>で該当日報の「✏️ 編集許可を発行」ボタンから発行できます（作業員の申請を待たずに、その日報を見ながら許可できます）。
+    </p>
 
     <div v-if="loading" class="empty">読み込み中…</div>
     <div v-else-if="!pending.length" class="empty">承認待ちの申請はありません。</div>
@@ -172,6 +160,8 @@ onMounted(load)
 
 <style scoped>
 .hint { color: #64748b; font-size: 13px; margin: 0 0 16px; line-height: 1.7; }
+.issue-hint-inline { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 14px; color: #78350f; font-size: 13px; line-height: 1.7; margin: 0 0 20px; }
+.inline-link { color: #b45309; font-weight: 700; text-decoration: underline; }
 .empty { color: #94a3b8; padding: 32px 0; text-align: center; }
 .table-wrap { overflow-x: auto; }
 .table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; }
