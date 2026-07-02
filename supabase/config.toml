@@ -397,6 +397,8 @@ verify_jwt = false
 verify_jwt = false
 [functions.notify-overtime]
 verify_jwt = false
+[functions.vehicle-attachment-url]
+verify_jwt = false
 [functions.resend-notifications]
 verify_jwt = false
 [functions.daily-reminder]
