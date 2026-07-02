@@ -73,6 +73,7 @@ export function useOvertimeRequest() {
   // 残業を申請（pending を作成）。当日15:00まで・既に pending/approved があれば二重作成しない。
   async function requestOvertime(
     workerId: string | null | undefined, date: string, requestedEndTime: string | null, reason: string,
+    siteNames: string[] = [],   // 対象現場（複数可・その責任者へメール通知する #5）
   ): Promise<{ ok: boolean; error?: string }> {
     if (!workerId || !date) return { ok: false, error: 'no-worker-or-date' }
     if (!canRequest(date)) return { ok: false, error: 'deadline-passed' }  // 当日15:00超 or 当日以外
@@ -86,6 +87,7 @@ export function useOvertimeRequest() {
     const { error } = await supabase.from('overtime_requests').insert({
       account_id: accountId, worker_id: workerId, date,
       requested_end_time: requestedEndTime || null, reason: reason || null, status: 'pending',
+      site_names: siteNames.length ? siteNames : null,
     })
     // 競合で同時insertされた場合、部分一意index(active_uidx)が弾く＝既に有効申請あり＝成功扱い。
     if (error) {
