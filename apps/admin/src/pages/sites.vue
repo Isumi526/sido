@@ -233,8 +233,16 @@ const contractors = ref<{ id: string; name: string }[]>([])   // 元請けマス
 const subcontractors = ref<{ id: string; name: string }[]>([]) // 下請け業者マスタ（現場紐付け用）
 // 現場責任者の候補＝現場管理者以上(permission_role in admin/office/site_manager)のworker。myWorkerId=ログイン中ユーザーのworker(新規現場の既定)。
 const responsibleCandidates = ref<{ id: string; name: string }[]>([])
+const workerNames = ref<Record<string, string>>({})   // 全作業員 id→名前（表示用）
 const myWorkerId = ref<string | null>(null)
-function responsibleName(id: string | null | undefined): string { return responsibleCandidates.value.find(w => w.id === id)?.name ?? (id ? '（無効/対象外）' : '') }
+// 責任者名の表示: 実名を出し、候補条件(現場管理者以上・有効)を満たさない人には「要再設定」を添える。
+function responsibleName(id: string | null | undefined): string {
+  if (!id) return ''
+  const name = workerNames.value[id]
+  if (!name) return '（不明な作業員・要再設定）'
+  const isCandidate = responsibleCandidates.value.some(w => w.id === id)
+  return isCandidate ? name : `${name}（要再設定）`
+}
 const modal     = ref<Partial<Site> & { linkedSubs?: string[] } | null>(null)
 const saving    = ref(false)
 const saveError = ref('')
@@ -302,6 +310,9 @@ async function load() {
     .in('permission_role', ['admin', 'office', 'site_manager']).order('sort_order').order('name')
   responsibleCandidates.value = ((cand ?? []) as any[]).map(w => ({ id: w.id, name: w.name }))
   myWorkerId.value = ((cand ?? []) as any[]).find(w => w.auth_user_id && w.auth_user_id === currentUser.value?.id)?.id ?? null
+  // 表示用: 全作業員の id→名前（候補外の責任者でも実名を出せるように）
+  const { data: allW } = await supabase.from('workers').select('id, name').eq('account_id', accountId)
+  workerNames.value = Object.fromEntries(((allW ?? []) as any[]).map(w => [w.id, w.name]))
   // AC1: 現場ごとの「直近日報日」「日報件数（直近90日）」を集計（daily_reports.sites JSON の現場名で突合）
   const since = new Date(); since.setDate(since.getDate() - 90)
   const sinceStr = since.toISOString().split('T')[0]
