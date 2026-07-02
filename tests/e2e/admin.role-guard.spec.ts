@@ -1,34 +1,42 @@
 // ============================================================
 //  admin.role-guard.spec.ts
-//  /admin の権限ガード: 現場担当者(site_manager)・職人(worker) の作業員アカウントで
-//  管理画面にログインしても、アクセス拒否画面が出る（管理者/事務員のみ利用可）。
+//  /admin の権限ガード（2026-07-02 仕様変更）:
+//   - 現場管理者(site_manager) は admin を利用できる（現場登録等）。ただし
+//     worker の時給/人件費（日当単価 等）は見えない（canViewWages=false）。
+//   - 職人(worker) は従来どおり弾く（アクセス拒否ゲート）。
 // ============================================================
 import { test, expect } from '@playwright/test'
 import { SUPABASE_URL, ANON_KEY } from './helpers'
 
-const EMAIL = 'worker01.login.e2e@example.com'  // site_manager の作業員（liff.worker-loginで用意）
-const PASS  = 'worker-login-1234'
+const SM_EMAIL = 'worker01.login.e2e@example.com'  // site_manager の作業員（liff.worker-loginで用意）
+const SM_PASS  = 'worker-login-1234'
 
-// このテストは「作業員」でログインするため、保存済みadmin認証は使わない
+// 作業員アカウントでログインするため、保存済みadmin認証は使わない
 test.use({ storageState: { cookies: [], origins: [] } })
 
-test.describe('管理画面 権限ガード（作業員は弾く）', () => {
+test.describe('管理画面 権限ガード（site_manager可・時給は非表示）', () => {
   test.beforeAll(async () => {
-    // 作業員のauthユーザーを用意（既存なら無視）。site_manager worker への紐付けは既存テストデータ。
     await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
       method: 'POST', headers: { apikey: ANON_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: EMAIL, password: PASS }),
+      body: JSON.stringify({ email: SM_EMAIL, password: SM_PASS }),
     }).catch(() => {})
   })
 
-  test('site_manager の作業員でログイン→アクセス拒否画面', async ({ page }) => {
+  test('site_manager は admin に入れるが、作業員の時給(日当単価)は見えない', async ({ page }) => {
     await page.goto('/login', { waitUntil: 'networkidle' })
-    await page.getByTestId('login-id').fill(EMAIL)
-    await page.locator('input[type="password"]').fill(PASS)
+    await page.getByTestId('login-id').fill(SM_EMAIL)
+    await page.locator('input[type="password"]').fill(SM_PASS)
     await page.locator('button[type="submit"]').click()
-    // 管理画面ではなくアクセス拒否ゲートが出る
-    await expect(page.locator('.gate-title')).toContainText('権限がありません', { timeout: 10000 })
-    // ナビ（管理画面シェル）は出ない
-    await expect(page.locator('.nav-list')).toHaveCount(0)
+
+    // 管理画面シェル（ナビ）が出る＝アクセス拒否されない
+    await expect(page.locator('.nav-list')).toBeVisible({ timeout: 10000 })
+    await expect(page.locator('.gate-title')).toHaveCount(0)
+
+    // 作業員マスタへ → 時給列(日当単価)が出ないこと（canViewWages=false）
+    await page.goto('/workers', { waitUntil: 'networkidle' })
+    await expect(page.locator('table.table')).toBeVisible({ timeout: 10000 })
+    await expect(page.getByRole('columnheader', { name: '日当単価' })).toHaveCount(0)
+    // 非金額の列（名前・権限）は見える＝過剰に隠していない
+    await expect(page.getByRole('columnheader', { name: '名前' })).toBeVisible()
   })
 })
