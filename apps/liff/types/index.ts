@@ -54,13 +54,14 @@ export interface LineItem {
   fileUrls?:           string[] // Supabase Storage URL（保存・編集ロード・集計で使用）
 }
 
-// 明細ごとに個別領収書を持つ経費行（駐車場代・高速代）
+// 明細ごとに個別領収書を持つ経費行（駐車場代・高速代・電車代）
 export interface ExpenseFileLineItem {
-  label?:    string
-  yen?:      number
-  tategae?:  boolean   // 個人建て替えフラグ
-  files?:    File[]    // 送信前のローカルファイル（JSONには載せない）
-  fileUrls?: string[]  // Supabase Storage URL（保存・編集ロード・集計で使用）
+  label?:              string
+  yen?:                number
+  registrationNumber?: string  // 登録番号（インボイス・AI解析で出ない時は手入力）
+  tategae?:            boolean  // 個人建て替えフラグ
+  files?:              File[]   // 送信前のローカルファイル（JSONには載せない）
+  fileUrls?:           string[] // Supabase Storage URL（保存・編集ロード・集計で使用）
 }
 
 // 高速代は ETC カードを併せ持つ
