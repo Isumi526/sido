@@ -124,6 +124,28 @@
           <p class="hint">未選択なら日報では全業者が出ます（紐付けすると、その現場では選択した業者のみに絞り込み）。</p>
         </div>
 
+        <!-- ⑦ 現場ルール（新規現場のみここで同時設定・既存はルール/QR設定画面へ） -->
+        <div v-if="!modal.id" class="field">
+          <label>現場ルール（任意・出退勤時に確認事項を表示）</label>
+          <div v-if="modalRules.length" class="rule-list">
+            <div v-for="(r, i) in modalRules" :key="i" class="rule-row">
+              <textarea v-model="r.content" class="input rule-content" rows="1" placeholder="例：ヘルメットを必ず着用すること" />
+              <select v-model="r.timing" class="input rule-timing">
+                <option value="checkin">出勤時のみ</option>
+                <option value="checkout">退勤時のみ</option>
+                <option value="both">出勤・退勤両方</option>
+              </select>
+              <button type="button" class="rule-del" title="削除" @click="modalRules.splice(i, 1)">×</button>
+            </div>
+          </div>
+          <div v-if="ruleHistory.length" class="rule-history">
+            <span class="hint">過去のルールから追加：</span>
+            <button v-for="(h, i) in ruleHistory" :key="i" type="button" class="rule-hist-btn" @click="addRuleRow(h.content, h.timing)">{{ h.content }}</button>
+          </div>
+          <button type="button" class="btn-rule-add" @click="addRuleRow()">＋ ルールを追加</button>
+          <p class="hint">現場作成後は「ルール・QR設定」からいつでも追加・編集できます。</p>
+        </div>
+
         <!-- 写真・書類（既存現場のみ） -->
         <div v-if="modal.id" class="field">
           <label>写真・書類（複数可）</label>
@@ -214,6 +236,11 @@ function responsibleName(id: string | null | undefined): string { return respons
 const modal     = ref<Partial<Site> & { linkedSubs?: string[] } | null>(null)
 const saving    = ref(false)
 const saveError = ref('')
+// 新規現場追加時にその場で設定する現場ルール（保存時に site_rules へ一括insert・#12）
+type RuleTiming = 'checkin' | 'checkout' | 'both'
+const modalRules  = ref<{ content: string; timing: RuleTiming }[]>([])
+const ruleHistory = ref<{ content: string; timing: RuleTiming }[]>([])
+function addRuleRow(content = '', timing: RuleTiming = 'both') { modalRules.value.push({ content, timing }) }
 // 編集中の現場の添付（写真・書類）
 const attachments = ref<Att[]>([])
 const uploading   = ref(false)
@@ -323,7 +350,25 @@ const filtered = computed(() => {
   return list
 })
 
-function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', responsible_worker_id: myWorkerId.value ?? null, linkedSubs: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = '' }
+function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', responsible_worker_id: myWorkerId.value ?? null, linkedSubs: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = ''; modalRules.value = []; fetchRuleHistory() }
+
+// アカウント内の既存現場ルールを重複排除して候補化（新規現場のルール設定を素早くするため・site-rules.vue と同方針）
+async function fetchRuleHistory() {
+  const accountId = await getAccountId()
+  if (!accountId) return
+  const [{ data }, { data: hiddenData }] = await Promise.all([
+    supabase.from('site_rules').select('content, timing, sites!inner(account_id)').eq('sites.account_id', accountId).order('created_at', { ascending: false }),
+    supabase.from('hidden_rule_suggestions').select('content').eq('account_id', accountId),
+  ])
+  const hidden = new Set(((hiddenData ?? []) as any[]).map(r => (r.content ?? '').trim()))
+  const seen = new Set<string>(); const list: { content: string; timing: RuleTiming }[] = []
+  for (const r of (data ?? []) as any[]) {
+    const c = (r.content ?? '').trim()
+    if (!c || seen.has(c) || hidden.has(c)) continue
+    seen.add(c); list.push({ content: c, timing: r.timing as RuleTiming })
+  }
+  ruleHistory.value = list
+}
 async function openEdit(s: Site) {
   // time入力は HH:MM を期待するため DB の HH:MM:SS を切り詰める
   modal.value = { ...s, default_start_time: (s.default_start_time ?? '').slice(0, 5), default_end_time: (s.default_end_time ?? '').slice(0, 5), linkedSubs: [] }; saveError.value = ''
@@ -364,6 +409,15 @@ async function save() {
     } else {
       const { data } = await supabase.from('sites').insert({ ...payload, account_id: accountId }).select('id').single()
       siteId = (data as any)?.id
+      // 新規現場: その場で入力された現場ルールを site_rules へ一括登録（#12・空行は除外・重複contentは1つに）
+      if (siteId) {
+        const seen = new Set<string>()
+        const rows = modalRules.value
+          .map(r => ({ content: (r.content ?? '').trim(), timing: r.timing }))
+          .filter(r => r.content && !seen.has(r.content) && seen.add(r.content))
+          .map((r, idx) => ({ site_id: siteId, content: r.content, timing: r.timing, sort_order: idx }))
+        if (rows.length) await supabase.from('site_rules').insert(rows)
+      }
     }
     if (siteId) await syncSiteSubcontractors(siteId, accountId, m.linkedSubs ?? [])
     modal.value = null; await load()
@@ -536,4 +590,14 @@ async function doMerge() {
 .att-btn { background: #f0f0f0; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
 .att-up { font-size: 12px; color: #888; }
 textarea.input { resize: vertical; font-family: inherit; }
+.rule-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+.rule-row { display: flex; gap: 8px; align-items: flex-start; }
+.rule-content { flex: 1; }
+.rule-timing { width: 140px; flex-shrink: 0; }
+.rule-del { flex-shrink: 0; width: 32px; height: 32px; border: 1px solid #fca5a5; background: none; color: #ef4444; border-radius: 6px; cursor: pointer; font-size: 14px; }
+.rule-del:hover { background: #fef2f2; }
+.rule-history { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+.rule-hist-btn { background: #fff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 5px 10px; font-size: 12px; color: #222; cursor: pointer; }
+.rule-hist-btn:hover { background: #f0fdf4; border-color: #06C755; }
+.btn-rule-add { align-self: flex-start; background: #e0f2fe; border: none; border-radius: 6px; padding: 7px 14px; font-size: 13px; color: #0369a1; font-weight: 600; cursor: pointer; }
 </style>
