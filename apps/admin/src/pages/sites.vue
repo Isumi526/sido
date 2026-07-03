@@ -131,13 +131,15 @@
           <label>現場ルール（任意・出退勤時に確認事項を表示）</label>
           <div v-if="modalRules.length" class="rule-list">
             <div v-for="(r, i) in modalRules" :key="i" class="rule-row">
-              <textarea v-model="r.content" class="input rule-content" rows="1" placeholder="例：ヘルメットを必ず着用すること" />
-              <select v-model="r.timing" class="input rule-timing">
-                <option value="checkin">出勤時のみ</option>
-                <option value="checkout">退勤時のみ</option>
-                <option value="both">出勤・退勤両方</option>
-              </select>
-              <button type="button" class="rule-del" title="削除" @click="modalRules.splice(i, 1)">×</button>
+              <textarea v-model="r.content" class="input rule-content" rows="2" placeholder="例：ヘルメットを必ず着用すること" />
+              <div class="rule-row-sub">
+                <select v-model="r.timing" class="input rule-timing">
+                  <option value="checkin">出勤時のみ</option>
+                  <option value="checkout">退勤時のみ</option>
+                  <option value="both">出勤・退勤両方</option>
+                </select>
+                <button type="button" class="rule-del" title="削除" @click="modalRules.splice(i, 1)">×</button>
+              </div>
             </div>
           </div>
           <div v-if="ruleHistory.length" class="rule-history">
@@ -608,9 +610,10 @@ async function doMerge() {
 .att-up { font-size: 12px; color: #888; }
 textarea.input { resize: vertical; font-family: inherit; }
 .rule-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
-.rule-row { display: flex; gap: 8px; align-items: flex-start; }
-.rule-content { flex: 1; }
-.rule-timing { width: 140px; flex-shrink: 0; }
+.rule-row { display: flex; flex-direction: column; gap: 6px; align-items: stretch; padding: 8px; border: 1px solid #eee; border-radius: 8px; margin-bottom: 8px; }
+.rule-content { width: 100%; min-height: 48px; resize: vertical; box-sizing: border-box; }
+.rule-row-sub { display: flex; gap: 8px; align-items: center; }
+.rule-timing { flex: 1; min-width: 0; }
 .rule-del { flex-shrink: 0; width: 32px; height: 32px; border: 1px solid #fca5a5; background: none; color: #ef4444; border-radius: 6px; cursor: pointer; font-size: 14px; }
 .rule-del:hover { background: #fef2f2; }
 .rule-history { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
