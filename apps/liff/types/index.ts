@@ -48,6 +48,7 @@ export interface VehicleExpense {
 export interface LineItem {
   label?:              string
   yen?:                number
+  payee?:              string  // 支払い先（店名/業者）
   registrationNumber?: string  // 登録番号（その他資材等）
   tategae?:            boolean  // 個人建て替えフラグ
   files?:              File[]   // 明細ごとの送信前領収書（JSONには載せない）
@@ -58,6 +59,7 @@ export interface LineItem {
 export interface ExpenseFileLineItem {
   label?:              string
   yen?:                number
+  payee?:              string  // 支払い先（店名/業者）
   registrationNumber?: string  // 登録番号（インボイス・AI解析で出ない時は手入力）
   tategae?:            boolean  // 個人建て替えフラグ
   files?:              File[]   // 送信前のローカルファイル（JSONには載せない）
@@ -220,6 +222,7 @@ export interface ExpenseRow {
   amount:              number
   liters?:             number
   note?:               string  // 備考（車両名・電車区間など）
+  payee?:              string  // 支払い先（店名/業者）
   registrationNumber?: string  // 登録番号
   fileUrls?:           string[]  // 領収書・写真 URL（Supabase Storage）
   tategae?:            boolean   // 個人建て替え分

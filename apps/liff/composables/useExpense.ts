@@ -478,7 +478,7 @@ export const useExpense = () => {
         const gasYen = Math.round(Number(g?.yen) || 0)
         if (gasYen <= 0) continue
         const urls = Array.isArray(g.fileUrls) ? g.fileUrls : []
-        rows.push({ date: rep.date, category: 'ガソリン代（本日）', siteName: g.payee || '—', amount: gasYen, note: g.registrationNumber || '', fileUrls: urls, tategae: !!g.tategae } as ExpenseRow)
+        rows.push({ date: rep.date, category: 'ガソリン代（本日）', siteName: '—', payee: g.payee || '', amount: gasYen, note: g.registrationNumber || '', registrationNumber: g.registrationNumber || '', fileUrls: urls, tategae: !!g.tategae } as ExpenseRow)
       }
     }
     return rows
