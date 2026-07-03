@@ -69,16 +69,15 @@
             </div>
             <div v-for="(p, i) in pendingPhotos" :key="'pend' + i" class="photo-item pending">
               <span class="photo-thumb photo-thumb-empty">📷</span>
-              <span class="pending-name">{{ p.name || p.file.name }}（保存時にアップロード）</span>
+              <input v-model="p.name" class="input photo-name" placeholder="名称（任意・後で付けられます）" />
               <button class="photo-del" title="取り消し" @click="removePendingPhoto(i)">×</button>
             </div>
           </div>
           <span v-else class="muted">まだ写真がありません</span>
           <div class="photo-add photo-dropzone" :class="{ dragover: photoDragOver, busy: photoUploading }"
                @drop.prevent="onDropPhoto" @dragover.prevent="photoDragOver = true" @dragleave.prevent="photoDragOver = false">
-            <input v-model="newPhotoName" class="input photo-name" placeholder="名称（任意）" />
-            <label class="btn-photo-add">＋ 写真を追加<input type="file" accept="image/*" hidden :disabled="photoUploading" @change="onUploadPhoto" /></label>
-            <span class="photo-drop-hint">{{ photoDragOver ? 'ここにドロップ' : 'またはここに画像をドラッグ&ドロップ' }}</span>
+            <label class="btn-photo-add">＋ 写真を追加（複数可）<input type="file" accept="image/*" multiple hidden :disabled="photoUploading" @change="onUploadPhoto" /></label>
+            <span class="photo-drop-hint">{{ photoDragOver ? 'ここにドロップ' : 'またはここに画像を複数まとめてドラッグ&ドロップ（名称は後で）' }}</span>
             <span v-if="photoUploading" class="muted">アップロード中…</span>
           </div>
         </div>
@@ -114,11 +113,12 @@
           <label>ナンバー</label>
           <input v-model="modal.plate_number" class="input" placeholder="例：品川 500 あ 12-34" />
           <div class="plate-ai">
-            <label class="btn-plate-ai" :class="{ busy: plateOcrBusy }">
-              {{ plateOcrBusy ? 'AI解析中…' : '🤖 車両画像からAI読取' }}
-              <input type="file" accept="image/*" hidden :disabled="plateOcrBusy" @change="onPlateOcr" />
-            </label>
-            <span class="plate-ai-hint">ナンバーが写った画像を選ぶと自動入力（読取後に手動修正できます）</span>
+            <button type="button" class="btn-plate-ai" :class="{ busy: plateOcrBusy }"
+                    :disabled="plateOcrBusy || (!pendingPhotos.length && !photos.length)"
+                    @click="readPlateFromPhotos">
+              {{ plateOcrBusy ? 'AI解析中…' : '🤖 アップロードした写真からナンバー読取' }}
+            </button>
+            <span class="plate-ai-hint">上でアップロードした車両写真からナンバーを探して自動入力（読取後に手動修正できます）</span>
           </div>
           <p v-if="plateOcrMsg" class="plate-ai-msg" :class="{ err: plateOcrErr }">{{ plateOcrMsg }}</p>
         </div>
@@ -248,37 +248,36 @@ async function loadPhotos(vehicleId: string) {
   photos.value     = list.filter(p => p.kind !== 'shaken')
   shakenDocs.value = list.filter(p => p.kind === 'shaken')
 }
+// 写真は複数同時アップロード可（選択・ドロップとも全ファイルを順に処理）
 async function onUploadPhoto(ev: Event) {
   const input = ev.target as HTMLInputElement
-  await processPhotoFile(input.files?.[0])
+  for (const f of Array.from(input.files ?? [])) await processPhotoFile(f)
   input.value = ''
 }
-// 写真もドラッグ&ドロップ対応（車検証と同じパターン）
 const photoDragOver = ref(false)
 async function onDropPhoto(ev: DragEvent) {
   photoDragOver.value = false
   if (photoUploading.value) return
-  await processPhotoFile(ev.dataTransfer?.files?.[0])
+  for (const f of Array.from(ev.dataTransfer?.files ?? [])) await processPhotoFile(f)
 }
 async function processPhotoFile(file: File | undefined | null) {
   if (!file || !modal.value) return
   if (!file.type.startsWith('image/')) { saveError.value = '画像ファイルを選択してください'; return }
-  // 新規登録: 保留リストへ（保存時にアップロード）
+  // 新規登録: 保留リストへ（名称は後付け・保存時にアップロード）
   if (!modal.value.id) {
-    pendingPhotos.value.push({ file, name: newPhotoName.value.trim() })
-    newPhotoName.value = ''
+    pendingPhotos.value.push({ file, name: '' })
     return
   }
   photoUploading.value = true; saveError.value = ''
   try {
     const accountId = await getAccountId()
     const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
-    // path 先頭フォルダ = account_id（storage RLS の account スコープに使用）
-    const path = `${accountId}/${modal.value.id}/photo-${Date.now()}.${ext}`
+    // path 先頭フォルダ = account_id（storage RLS の account スコープに使用）。複数同時でも衝突しないよう乱数付与
+    const path = `${accountId}/${modal.value.id}/photo-${Date.now()}-${Math.round(file.size % 100000)}.${ext}`
     const { error: upErr } = await supabase.storage.from(PHOTO_BUCKET).upload(path, file, { upsert: false, contentType: file.type || undefined })
     if (upErr) throw upErr
-    await supabase.from('vehicle_attachments').insert({ account_id: accountId, vehicle_id: modal.value.id, kind: 'photo', name: newPhotoName.value.trim() || null, path })
-    newPhotoName.value = ''
+    // 名称は後付け（一覧の各写真で入力）＝ここでは null で保存
+    await supabase.from('vehicle_attachments').insert({ account_id: accountId, vehicle_id: modal.value.id, kind: 'photo', name: null, path })
     await loadPhotos(modal.value.id)
   } catch (e: any) { saveError.value = e.message ?? '写真のアップロードに失敗しました' }
   finally { photoUploading.value = false }
@@ -309,32 +308,48 @@ function fileToB64(file: File): Promise<string> {
     const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1] || ''); fr.onerror = rej; fr.readAsDataURL(file)
   })
 }
-async function onPlateOcr(ev: Event) {
-  const file = (ev.target as HTMLInputElement).files?.[0]
-  if (!file) return
-  plateOcrBusy.value = true; plateOcrMsg.value = ''; plateOcrErr.value = false
+// URL(署名URL含む)の画像を base64 に変換
+async function urlToB64(url: string): Promise<{ b64: string; mime: string } | null> {
   try {
-    const b64 = await fileToB64(file)
+    const resp = await fetch(url)
+    const blob = await resp.blob()
+    const b64 = await new Promise<string>((res, rej) => {
+      const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1] || ''); fr.onerror = rej; fr.readAsDataURL(blob)
+    })
+    return { b64, mime: blob.type || 'image/jpeg' }
+  } catch { return null }
+}
+// ナンバープレートOCRを1枚呼ぶ（読めたら plate_number 文字列・失敗は null）
+async function callPlateOcr(b64: string, mime: string): Promise<string | null> {
+  try {
     const { data: sess } = await supabase.auth.getSession()
     const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vehicle-plate-ocr`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sess?.session?.access_token ?? ''}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
-      body: JSON.stringify({ account_slug: getAccountSlug(), image_base64: b64, mime: file.type || 'image/jpeg' }),
+      body: JSON.stringify({ account_slug: getAccountSlug(), image_base64: b64, mime }),
     })
     const j = await resp.json()
-    if (!resp.ok || j?.error) throw new Error(j?.error || `解析エラー(${resp.status})`)
-    if (j?.plate_number) {
-      if (modal.value) modal.value.plate_number = j.plate_number
-      plateOcrMsg.value = `読み取りました：${j.plate_number}（内容を確認・修正してください）`
-    } else {
-      plateOcrErr.value = true
-      plateOcrMsg.value = 'ナンバーを読み取れませんでした。別の画像を試すか手動入力してください。'
+    return (resp.ok && j?.plate_number) ? (j.plate_number as string) : null
+  } catch { return null }
+}
+// アップロード済み(保留＋保存済み)の車両写真からナンバーを探して自動入力（読めた最初の1枚を採用）
+async function readPlateFromPhotos() {
+  plateOcrBusy.value = true; plateOcrMsg.value = ''; plateOcrErr.value = false
+  try {
+    const getters: Array<() => Promise<{ b64: string; mime: string } | null>> = []
+    for (const p of pendingPhotos.value) getters.push(async () => ({ b64: await fileToB64(p.file), mime: p.file.type || 'image/jpeg' }))
+    for (const ph of photos.value) if (ph.url) getters.push(() => urlToB64(ph.url!))
+    if (!getters.length) { plateOcrErr.value = true; plateOcrMsg.value = '先に車両写真をアップロードしてください（写真からナンバーを読み取ります）'; return }
+    for (const get of getters) {
+      const img = await get(); if (!img?.b64) continue
+      const plate = await callPlateOcr(img.b64, img.mime)
+      if (plate) { if (modal.value) modal.value.plate_number = plate; plateOcrMsg.value = `写真からナンバーを読み取りました：${plate}（確認・修正してください）`; return }
     }
+    plateOcrErr.value = true; plateOcrMsg.value = 'アップロードした写真からナンバーを読み取れませんでした。別の写真を追加するか手動で入力してください。'
   } catch (e: any) {
-    plateOcrErr.value = true
-    plateOcrMsg.value = e.message ?? 'AI解析に失敗しました'
+    plateOcrErr.value = true; plateOcrMsg.value = e.message ?? 'AI解析に失敗しました'
   } finally {
-    plateOcrBusy.value = false; (ev.target as HTMLInputElement).value = ''
+    plateOcrBusy.value = false
   }
 }
 
@@ -610,6 +625,7 @@ async function toggleActive(v: Vehicle) {
 .plate-ai { display: flex; align-items: center; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
 .btn-plate-ai { background: #eef2ff; color: #4338ca; border: none; border-radius: 8px; padding: 7px 14px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .btn-plate-ai.busy { opacity: .6; cursor: default; }
+.btn-plate-ai:disabled { opacity: .45; cursor: not-allowed; }
 .plate-ai-hint { font-size: 11px; color: #94a3b8; }
 .plate-ai-msg { font-size: 12px; color: #0a8a3a; margin-top: 4px; }
 .plate-ai-msg.err { color: #dc2626; }
