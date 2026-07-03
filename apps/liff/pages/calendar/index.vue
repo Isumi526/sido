@@ -247,39 +247,21 @@
       </div>
     </div>
 
-    <!-- カテゴリ管理モーダル（現場管理者以上・アカウント単位・色/名前編集・追加・削除）-->
+    <!-- カテゴリ管理モーダル（現場管理者以上・アカウント単位・色は固定・使わないカテゴリを非表示にするだけ）-->
     <div v-if="catManageOpen" class="modal-overlay" @click.self="catManageOpen = false">
       <div class="modal cat-manage">
         <div class="cat-manage-head">
           <span class="cat-manage-title">カテゴリ設定</span>
           <button type="button" class="cat-manage-close" @click="catManageOpen = false">閉じる</button>
         </div>
+        <p class="cat-manage-hint">使わないカテゴリは「非表示」にすると予定追加の選択肢から消えます。</p>
         <ul class="cat-list">
           <li v-for="c in schedCats" :key="c.key" class="cat-item" :class="{ inactive: !c.active }">
-            <div class="cat-item-top">
-              <span class="cat-dot" :style="{ background: c.color }" />
-              <input type="text" class="cat-name" :value="c.label" @change="updateCat(c, { label: ($event.target as HTMLInputElement).value })" />
-              <button type="button" class="cat-active-toggle" :title="c.active ? '無効にする' : '有効にする'" @click="updateCat(c, { active: !c.active })">{{ c.active ? '表示' : '非表示' }}</button>
-              <button type="button" class="cat-del" title="削除" @click="deleteCat(c)">🗑</button>
-            </div>
-            <div class="cat-swatches">
-              <button v-for="col in CAT_PALETTE" :key="col" type="button" class="swatch"
-                      :class="{ sel: sameColor(c.color, col) }" :style="{ background: col }"
-                      @click="updateCat(c, { color: col })" />
-            </div>
+            <span class="cat-dot" :style="{ background: c.color }" />
+            <span class="cat-name-label">{{ c.label }}</span>
+            <button type="button" class="cat-active-toggle" :class="{ off: !c.active }" @click="updateCat(c, { active: !c.active })">{{ c.active ? '表示' : '非表示' }}</button>
           </li>
         </ul>
-        <div class="cat-add-panel">
-          <input v-model="newCatLabel" type="text" class="site-select" placeholder="新しいカテゴリ名（例：打合せ）" @keydown.enter.prevent="addCategory" />
-          <div class="cat-swatches">
-            <button v-for="col in CAT_PALETTE" :key="col" type="button" class="swatch"
-                    :class="{ sel: sameColor(newCatColor, col) }" :style="{ background: col }"
-                    @click="newCatColor = col" />
-          </div>
-          <div class="cat-add-row">
-            <button type="button" class="cat-save" :disabled="!newCatLabel.trim() || catSaving" @click="addCategory">{{ catSaving ? '追加中…' : '＋ 追加' }}</button>
-          </div>
-        </div>
       </div>
     </div>
 
@@ -391,20 +373,8 @@ async function loadSchedCats() {
   schedCats.value = ((data ?? []) as SchedCat[])
 }
 
-// 現場管理者以上か（カテゴリのその場追加を許可・元要件「現場管理者以上がマスタ管理」に準拠）
+// 現場管理者以上か（カテゴリの表示/非表示を管理できる。色・名前は固定＝編集不可）
 const canManageCat = ref(false)
-const showCatAdd   = ref(false)
-const newCatLabel  = ref('')
-// カラーはピッカーでなくキャプチャのパターンから選択（iOSカレンダー設定の10色）
-const CAT_PALETTE = [
-  '#34C6E0', '#1F7A34', '#8CC63F', '#C62828', '#F35C8B',
-  '#283593', '#F9C74F', '#2B2B2B', '#E0A800', '#9CA3AF',
-]
-function sameColor(a: string, b: string): boolean {
-  return (a || '').toLowerCase() === (b || '').toLowerCase()
-}
-const newCatColor  = ref('#8CC63F')
-const catSaving    = ref(false)
 async function resolveCanManageCat() {
   const wid = schedules.myWorkerId.value
   if (!wid) return
@@ -412,51 +382,17 @@ async function resolveCanManageCat() {
   const role = (data as { permission_role?: string } | null)?.permission_role
   canManageCat.value = role === 'admin' || role === 'office' || role === 'site_manager'
 }
-function makeCatKey(label: string): string {
-  const base = label.trim().toLowerCase().normalize('NFKC').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'cat'
-  const used = new Set(schedCats.value.map(c => c.key))
-  let key = base, n = 1
-  while (used.has(key)) key = `${base}-${n++}`
-  return key
-}
-async function addCategory() {
-  const label = newCatLabel.value.trim()
-  if (!label || !canManageCat.value) return
-  catSaving.value = true
-  try {
-    const { getAccountId } = useAccount()
-    const accountId = await getAccountId()
-    const key = makeCatKey(label)
-    const sort_order = schedCats.value.reduce((m, c) => Math.max(m, c.sort_order), -1) + 1
-    await supabase.from('schedule_categories').insert({ account_id: accountId, key, label, color: newCatColor.value, sort_order, active: true })
-    await loadSchedCats()                 // 追加を即反映（リアルタイム）
-    if (formModal.value) formModal.value.category = key as any   // カスタムカテゴリkey（固定enum外）を選択状態に
-    showCatAdd.value = false; newCatLabel.value = ''; newCatColor.value = '#8CC63F'
-  } catch { /* 失敗時は何もしない（再試行可） */ }
-  finally { catSaving.value = false }
-}
-// カテゴリマスタ管理（現場管理者以上・アカウント単位）
+// カテゴリマスタ管理（現場管理者以上・アカウント単位・使わないカテゴリの表示/非表示のみ）
 const catManageOpen = ref(false)
 function openCatManage() { catManageOpen.value = true }
-async function updateCat(c: SchedCat, patch: Partial<Pick<SchedCat, 'label' | 'color' | 'active'>>) {
+async function updateCat(c: SchedCat, patch: { active: boolean }) {
   if (!canManageCat.value) return
-  const label = patch.label !== undefined ? patch.label.trim() : undefined
-  if (patch.label !== undefined && !label) return   // 空名は無視
   const { getAccountId } = useAccount()
   const accountId = await getAccountId()
   await supabase.from('schedule_categories')
-    .update({ ...patch, ...(label !== undefined ? { label } : {}) })
+    .update(patch)
     .eq('account_id', accountId).eq('key', c.key)
   await loadSchedCats()   // 即反映
-}
-async function deleteCat(c: SchedCat) {
-  if (!canManageCat.value) return
-  if (!confirm(`カテゴリ「${c.label}」を削除しますか？\n（このカテゴリの既存予定は色が既定に戻ります）`)) return
-  const { getAccountId } = useAccount()
-  const accountId = await getAccountId()
-  await supabase.from('schedule_categories').delete().eq('account_id', accountId).eq('key', c.key)
-  await loadSchedCats()
-  if (formModal.value && formModal.value.category === c.key) formModal.value.category = (schedCats.value[0]?.key ?? 'work') as any
 }
 function chipStyle(s: Schedule): Record<string, string> {
   if (s.deleted_at) return {}
@@ -1129,28 +1065,18 @@ thead th.sticky-col { z-index: 11; }
 .cat-manage-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .cat-manage-title { font-size: 16px; font-weight: 700; color: #111; }
 .cat-manage-close { background: none; border: none; color: #06C755; font-size: 14px; font-weight: 700; }
-.cat-list { list-style: none; padding: 0; margin: 0 0 14px; display: flex; flex-direction: column; }
-.cat-item { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
-.cat-item.inactive { opacity: .5; }
-.cat-item-top { display: flex; align-items: center; gap: 8px; }
+.cat-manage-hint { font-size: 12px; color: #64748b; margin: 0 0 10px; line-height: 1.5; }
+.cat-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; }
+.cat-item { display: flex; align-items: center; gap: 10px; padding: 12px 2px; border-bottom: 1px solid #f0f0f0; }
+.cat-item.inactive { opacity: .55; }
 .cat-dot { flex-shrink: 0; width: 16px; height: 16px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,.08) inset; }
-.cat-item .cat-name { flex: 1; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px 10px; font-size: 14px; }
-.cat-swatches { display: flex; flex-wrap: wrap; gap: 8px; padding-left: 24px; }
-.cat-add-panel .cat-swatches { padding-left: 0; }
-.swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; padding: 0; cursor: pointer; box-shadow: 0 0 0 1px rgba(0,0,0,.08) inset; }
-.swatch.sel { border-color: #111; box-shadow: 0 0 0 2px #fff inset; }
-.cat-active-toggle { flex-shrink: 0; background: #f1f5f9; border: none; border-radius: 6px; padding: 6px 10px; font-size: 12px; color: #475569; }
-.cat-del { flex-shrink: 0; background: none; border: none; font-size: 16px; cursor: pointer; }
+.cat-name-label { flex: 1; font-size: 15px; color: #111; }
+.cat-active-toggle { flex-shrink: 0; background: #dcfce7; color: #15803d; border: none; border-radius: 999px; padding: 6px 16px; font-size: 13px; font-weight: 700; cursor: pointer; min-width: 68px; }
+.cat-active-toggle.off { background: #f1f5f9; color: #94a3b8; }
 .cat-select-wrap { display: flex; align-items: center; gap: 8px; flex: 1; }
 .cat-select-wrap--gap { margin-left: 10px; }
 .cat-manage-inline { margin-left: 8px; }
 .cat-add-btn { flex-shrink: 0; background: #eef2ff; color: #4338ca; border: none; border-radius: 8px; padding: 8px 12px; font-size: 13px; font-weight: 700; }
-.cat-add-panel { padding: 10px 14px; background: #f8fafc; border-top: 1px solid #eee; display: flex; flex-direction: column; gap: 8px; }
-.cat-add-row { display: flex; align-items: center; gap: 8px; }
-.cat-color { width: 44px; height: 40px; border: 1px solid #e0e0e0; border-radius: 8px; padding: 2px; background: #fff; }
-.cat-save { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 14px; font-weight: 700; }
-.cat-save:disabled { opacity: .5; }
-.cat-cancel { background: #fff; border: 1px solid #d1d5db; color: #555; border-radius: 8px; padding: 8px 14px; font-size: 14px; }
 .form-row { display: flex; align-items: center; padding: 12px 14px; min-height: 44px; }
 .form-divider { height: 1px; background: #f0f0f0; margin-left: 14px; }
 .form-row-label { font-size: 15px; color: #111; flex-shrink: 0; }
