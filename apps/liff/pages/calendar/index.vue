@@ -256,16 +256,27 @@
         </div>
         <ul class="cat-list">
           <li v-for="c in schedCats" :key="c.key" class="cat-item" :class="{ inactive: !c.active }">
-            <input type="color" class="cat-color" :value="c.color" @change="updateCat(c, { color: ($event.target as HTMLInputElement).value })" />
-            <input type="text" class="cat-name" :value="c.label" @change="updateCat(c, { label: ($event.target as HTMLInputElement).value })" />
-            <button type="button" class="cat-active-toggle" :title="c.active ? '無効にする' : '有効にする'" @click="updateCat(c, { active: !c.active })">{{ c.active ? '表示' : '非表示' }}</button>
-            <button type="button" class="cat-del" title="削除" @click="deleteCat(c)">🗑</button>
+            <div class="cat-item-top">
+              <span class="cat-dot" :style="{ background: c.color }" />
+              <input type="text" class="cat-name" :value="c.label" @change="updateCat(c, { label: ($event.target as HTMLInputElement).value })" />
+              <button type="button" class="cat-active-toggle" :title="c.active ? '無効にする' : '有効にする'" @click="updateCat(c, { active: !c.active })">{{ c.active ? '表示' : '非表示' }}</button>
+              <button type="button" class="cat-del" title="削除" @click="deleteCat(c)">🗑</button>
+            </div>
+            <div class="cat-swatches">
+              <button v-for="col in CAT_PALETTE" :key="col" type="button" class="swatch"
+                      :class="{ sel: sameColor(c.color, col) }" :style="{ background: col }"
+                      @click="updateCat(c, { color: col })" />
+            </div>
           </li>
         </ul>
         <div class="cat-add-panel">
           <input v-model="newCatLabel" type="text" class="site-select" placeholder="新しいカテゴリ名（例：打合せ）" @keydown.enter.prevent="addCategory" />
+          <div class="cat-swatches">
+            <button v-for="col in CAT_PALETTE" :key="col" type="button" class="swatch"
+                    :class="{ sel: sameColor(newCatColor, col) }" :style="{ background: col }"
+                    @click="newCatColor = col" />
+          </div>
           <div class="cat-add-row">
-            <input v-model="newCatColor" type="color" class="cat-color" />
             <button type="button" class="cat-save" :disabled="!newCatLabel.trim() || catSaving" @click="addCategory">{{ catSaving ? '追加中…' : '＋ 追加' }}</button>
           </div>
         </div>
@@ -384,7 +395,15 @@ async function loadSchedCats() {
 const canManageCat = ref(false)
 const showCatAdd   = ref(false)
 const newCatLabel  = ref('')
-const newCatColor  = ref('#06C755')
+// カラーはピッカーでなくキャプチャのパターンから選択（iOSカレンダー設定の10色）
+const CAT_PALETTE = [
+  '#34C6E0', '#1F7A34', '#8CC63F', '#C62828', '#F35C8B',
+  '#283593', '#F9C74F', '#2B2B2B', '#E0A800', '#9CA3AF',
+]
+function sameColor(a: string, b: string): boolean {
+  return (a || '').toLowerCase() === (b || '').toLowerCase()
+}
+const newCatColor  = ref('#8CC63F')
 const catSaving    = ref(false)
 async function resolveCanManageCat() {
   const wid = schedules.myWorkerId.value
@@ -412,7 +431,7 @@ async function addCategory() {
     await supabase.from('schedule_categories').insert({ account_id: accountId, key, label, color: newCatColor.value, sort_order, active: true })
     await loadSchedCats()                 // 追加を即反映（リアルタイム）
     if (formModal.value) formModal.value.category = key as any   // カスタムカテゴリkey（固定enum外）を選択状態に
-    showCatAdd.value = false; newCatLabel.value = ''; newCatColor.value = '#06C755'
+    showCatAdd.value = false; newCatLabel.value = ''; newCatColor.value = '#8CC63F'
   } catch { /* 失敗時は何もしない（再試行可） */ }
   finally { catSaving.value = false }
 }
@@ -1111,9 +1130,15 @@ thead th.sticky-col { z-index: 11; }
 .cat-manage-title { font-size: 16px; font-weight: 700; color: #111; }
 .cat-manage-close { background: none; border: none; color: #06C755; font-size: 14px; font-weight: 700; }
 .cat-list { list-style: none; padding: 0; margin: 0 0 14px; display: flex; flex-direction: column; }
-.cat-item { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+.cat-item { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
 .cat-item.inactive { opacity: .5; }
+.cat-item-top { display: flex; align-items: center; gap: 8px; }
+.cat-dot { flex-shrink: 0; width: 16px; height: 16px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,.08) inset; }
 .cat-item .cat-name { flex: 1; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px 10px; font-size: 14px; }
+.cat-swatches { display: flex; flex-wrap: wrap; gap: 8px; padding-left: 24px; }
+.cat-add-panel .cat-swatches { padding-left: 0; }
+.swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; padding: 0; cursor: pointer; box-shadow: 0 0 0 1px rgba(0,0,0,.08) inset; }
+.swatch.sel { border-color: #111; box-shadow: 0 0 0 2px #fff inset; }
 .cat-active-toggle { flex-shrink: 0; background: #f1f5f9; border: none; border-radius: 6px; padding: 6px 10px; font-size: 12px; color: #475569; }
 .cat-del { flex-shrink: 0; background: none; border: none; font-size: 16px; cursor: pointer; }
 .cat-select-wrap { display: flex; align-items: center; gap: 8px; flex: 1; }

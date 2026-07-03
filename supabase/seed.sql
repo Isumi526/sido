@@ -95,6 +95,26 @@ cross join (values
 where a.slug = 'test'
 on conflict (key, account_id) do nothing;
 
+-- ── 予定カテゴリマスタ（#A・iOSカレンダー設定キャプチャの名目/カラーそのまま）─
+insert into schedule_categories (account_id, key, label, color, sort_order, active)
+select a.id, v.key, v.label, v.color, v.ord, true
+from accounts a
+cross join (values
+  ('general',          'カレンダー',       '#34C6E0', 0),
+  ('meeting-survey',   '打ち合わせ現調',   '#1F7A34', 1),
+  ('work',             '現場作業',         '#8CC63F', 2),
+  ('meeting',          '会議、会合',       '#C62828', 3),
+  ('private',          'プライベート',     '#F35C8B', 4),
+  ('business-trip',    '出張',             '#283593', 5),
+  ('birthday',         '誕生日',           '#F9C74F', 6),
+  ('night-work',       '現場作業　夜勤',   '#2B2B2B', 7),
+  ('important',        '重要',             '#E0A800', 8),
+  ('schedule-process', '現場工程',         '#9CA3AF', 9)
+) as v(key, label, color, ord)
+where a.slug = 'test'
+on conflict (account_id, key) do update
+  set label = excluded.label, color = excluded.color, sort_order = excluded.sort_order, active = true;
+
 -- ────────────────────────────────────────────────────────────────
 -- ローカルE2E用 GRANT（root fix / 2026-06-24）
 --   liff・admin は anon キーで public 表を読み書きする設計（RLS未有効）。
