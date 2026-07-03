@@ -323,7 +323,7 @@ async function load() {
       pr.count += 1
       pr.total += gasYen
       if (isTat) pr.tategaeTotal += gasYen
-      pr.details.push({ date: rep.date, category: 'ガソリン代（本日）', siteName: '—', payee: g.payee || '', amount: gasYen, note: g.registrationNumber || '', registrationNumber: g.registrationNumber || '', fileUrls: urls, tategae: isTat })
+      pr.details.push({ date: rep.date, category: 'ガソリン代（本日）', siteName: '—', payee: g.payee || '', amount: gasYen, note: '', registrationNumber: g.registrationNumber || '', fileUrls: urls, tategae: isTat })
     }
   }
 
