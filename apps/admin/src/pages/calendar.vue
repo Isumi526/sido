@@ -8,6 +8,9 @@
           <input type="checkbox" v-model="showDeleted" />
           削除済みを表示
         </label>
+        <RouterLink to="/schedule-categories" class="btn-cat-settings">
+          <span class="material-symbols-rounded">palette</span>カテゴリ設定
+        </RouterLink>
         <button class="btn-add" @click="openAddBlank">＋ 予定を追加</button>
       </div>
     </div>
@@ -583,6 +586,8 @@ onMounted(async () => {
 .header-actions { display: flex; align-items: center; gap: 12px; }
 .deleted-toggle { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #666; cursor: pointer; user-select: none; }
 .btn-add { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.btn-cat-settings { display: inline-flex; align-items: center; gap: 6px; background: #eef2ff; color: #4338ca; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 700; text-decoration: none; }
+.btn-cat-settings .material-symbols-rounded { font-size: 18px; }
 
 /* 月ナビ */
 .month-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
