@@ -87,6 +87,7 @@
                   <tr>
                     <th class="col-date">{{ t('expenseDoc.colDate') }}</th>
                     <th class="col-payee">{{ t('expenseDoc.colPayee') }}</th>
+                    <th class="col-content">{{ t('expenseDoc.colContent') }}</th>
                     <th class="col-reg">{{ t('expenseDoc.colReg') }}</th>
                     <th class="col-cat">{{ t('expenseDoc.colCategory') }}</th>
                     <th class="col-lit">{{ t('expenseDoc.colLiters') }}</th>
@@ -99,7 +100,8 @@
                 <tbody>
                   <tr v-for="(row, i) in displayRows" :key="i">
                     <td class="center">{{ fmtDate(row.date) }}</td>
-                    <td class="small">{{ row.payee || row.note || '' }}</td>
+                    <td class="small">{{ row.payee || '' }}</td>
+                    <td class="small">{{ row.note || '' }}</td>
                     <td class="small">{{ row.registrationNumber || '' }}</td>
                     <td class="center">{{ row.category }}</td>
                     <td class="center">{{ row.liters ?? '' }}</td>
@@ -122,7 +124,7 @@
                 </tbody>
                 <tfoot>
                   <tr class="total-row">
-                    <td colspan="7" class="right">{{ t('expenseDoc.totalLabel') }}</td>
+                    <td colspan="8" class="right">{{ t('expenseDoc.totalLabel') }}</td>
                     <td class="right">¥{{ total.toLocaleString() }}</td>
                     <td class="no-print"></td>
                   </tr>
@@ -461,7 +463,7 @@ html,body { background:var(--bg);color:var(--text);font-family:var(--font);min-h
 .expense-table { width:100%;border-collapse:collapse;font-size:12px; }
 .expense-table th,.expense-table td { border:1px solid #333;padding:5px 6px; }
 .expense-table thead th { background:#f0f0f0;font-weight:700;text-align:center;font-size:11px; }
-.col-date{width:62px}.col-payee{min-width:100px}.col-reg{width:110px}.col-cat{width:72px}.col-lit{width:28px}.col-site{width:90px}.col-sep{width:18px}.col-amt{width:82px}.col-receipt{width:60px}
+.col-date{width:62px}.col-payee{min-width:90px}.col-content{min-width:90px}.col-reg{width:110px}.col-cat{width:72px}.col-lit{width:28px}.col-site{width:90px}.col-sep{width:18px}.col-amt{width:82px}.col-receipt{width:60px}
 .center{text-align:center}.right{text-align:right}.small{font-size:10px}
 .receipt-cell{text-align:center;white-space:nowrap}
 .receipt-link{display:inline-block;font-size:11px;color:var(--accent);text-decoration:none;margin:1px 2px}
