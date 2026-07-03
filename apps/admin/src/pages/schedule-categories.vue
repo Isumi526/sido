@@ -1,7 +1,10 @@
 <template>
   <div>
     <div class="page-header">
-      <h1 class="page-title">予定カテゴリ設定</h1>
+      <div>
+        <RouterLink to="/calendar" class="back-link">‹ 予定管理へ戻る</RouterLink>
+        <h1 class="page-title">予定カテゴリ設定</h1>
+      </div>
       <button class="btn-add" @click="openAdd">＋ カテゴリ追加</button>
     </div>
     <p class="page-note">予定管理カレンダーのカテゴリと色を管理します。色はカレンダー上の予定チップに反映されます。</p>
@@ -138,6 +141,7 @@ async function move(c: ScheduleCategory, dir: -1 | 1) {
 <style scoped>
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .page-title { font-size: 22px; font-weight: 700; }
+.back-link { display: inline-block; margin-bottom: 4px; font-size: 13px; color: #4338ca; text-decoration: none; font-weight: 600; }
 .page-note { color: #64748b; font-size: 13px; margin: 0 0 20px; }
 .btn-add { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 700; cursor: pointer; }
 .table-wrap { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06); }

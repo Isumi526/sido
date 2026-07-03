@@ -49,7 +49,6 @@
         <li><RouterLink to="/overtime-approvals" class="nav-link"><span class="material-symbols-rounded nav-icon">more_time</span>残業申請の承認<span v-if="overtimePendingCount" class="nav-badge">{{ overtimePendingCount }}</span></RouterLink></li>
         <li><RouterLink to="/site-reports" class="nav-link"><span class="material-symbols-rounded nav-icon">bar_chart</span>現場別集計</RouterLink></li>
         <li><RouterLink to="/calendar" class="nav-link"><span class="material-symbols-rounded nav-icon">calendar_month</span>予定管理</RouterLink></li>
-        <li><RouterLink to="/schedule-categories" class="nav-link"><span class="material-symbols-rounded nav-icon">palette</span>予定カテゴリ設定</RouterLink></li>
         <li><RouterLink to="/process" class="nav-link"><span class="material-symbols-rounded nav-icon">view_timeline</span>工程管理</RouterLink></li>
 
         <li class="nav-section">勤怠</li>
