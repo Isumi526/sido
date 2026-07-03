@@ -54,6 +54,62 @@
           <label>車両名</label>
           <input v-model="modal.name" class="input" placeholder="例：ハイエース1号車" data-testid="vehicle-name" />
         </div>
+
+        <!-- ▼ アップロード→自動入力（新規でも可・保存時に添付確定）: 写真＋車検証を上部に配置 -->
+        <div class="field photo-field">
+          <label>写真（複数可・各写真に名称）</label>
+          <div v-if="photos.length || pendingPhotos.length" class="photo-list">
+            <div v-for="p in photos" :key="p.id" class="photo-item">
+              <a v-if="p.url" :href="p.url" target="_blank" rel="noopener" class="photo-thumb-link">
+                <img :src="p.url" class="photo-thumb" :alt="p.name || '写真'" />
+              </a>
+              <span v-else class="photo-thumb photo-thumb-empty">📷</span>
+              <input v-model="p.name" class="input photo-name" placeholder="名称（例：運転席側）" @change="renamePhoto(p)" />
+              <button class="photo-del" title="削除" @click="deletePhoto(p)">×</button>
+            </div>
+            <div v-for="(p, i) in pendingPhotos" :key="'pend' + i" class="photo-item pending">
+              <span class="photo-thumb photo-thumb-empty">📷</span>
+              <span class="pending-name">{{ p.name || p.file.name }}（保存時にアップロード）</span>
+              <button class="photo-del" title="取り消し" @click="removePendingPhoto(i)">×</button>
+            </div>
+          </div>
+          <span v-else class="muted">まだ写真がありません</span>
+          <div class="photo-add photo-dropzone" :class="{ dragover: photoDragOver, busy: photoUploading }"
+               @drop.prevent="onDropPhoto" @dragover.prevent="photoDragOver = true" @dragleave.prevent="photoDragOver = false">
+            <input v-model="newPhotoName" class="input photo-name" placeholder="名称（任意）" />
+            <label class="btn-photo-add">＋ 写真を追加<input type="file" accept="image/*" hidden :disabled="photoUploading" @change="onUploadPhoto" /></label>
+            <span class="photo-drop-hint">{{ photoDragOver ? 'ここにドロップ' : 'またはここに画像をドラッグ&ドロップ' }}</span>
+            <span v-if="photoUploading" class="muted">アップロード中…</span>
+          </div>
+        </div>
+
+        <div class="field shaken-field">
+          <label>車検証（画像/PDFをアップロード→PDF保存・満了日を自動読取）</label>
+          <div v-if="shakenDocs.length || pendingShaken.length" class="shaken-list">
+            <div v-for="d in shakenDocs" :key="d.id" class="shaken-item">
+              <span class="shaken-icon">📄</span>
+              <a v-if="d.url" :href="d.url" target="_blank" rel="noopener" class="shaken-link">{{ d.name || '車検証' }}</a>
+              <span v-else class="shaken-link muted">{{ d.name || '車検証' }}</span>
+              <button class="shaken-del" title="削除" @click="deleteShaken(d)">×</button>
+            </div>
+            <div v-for="(f, i) in pendingShaken" :key="'ps' + i" class="shaken-item pending">
+              <span class="shaken-icon">📄</span>
+              <span class="shaken-link muted">{{ f.name }}（保存時にアップロード）</span>
+              <button class="shaken-del" title="取り消し" @click="removePendingShaken(i)">×</button>
+            </div>
+          </div>
+          <span v-else class="muted">まだ車検証がありません</span>
+          <div class="shaken-add shaken-dropzone" :class="{ dragover: shakenDragOver, busy: shakenUploading }"
+               @drop.prevent="onDropShaken" @dragover.prevent="shakenDragOver = true" @dragleave.prevent="shakenDragOver = false">
+            <label class="btn-shaken-add" :class="{ busy: shakenUploading }">
+              {{ shakenUploading ? '処理中…' : '＋ 車検証をアップロード' }}
+              <input type="file" accept="image/*,application/pdf" hidden :disabled="shakenUploading" @change="onUploadShaken" />
+            </label>
+            <span class="shaken-drop-hint">{{ shakenDragOver ? 'ここにドロップ' : 'またはここに画像/PDFをドラッグ&ドロップ' }}</span>
+          </div>
+          <p v-if="shakenMsg" class="shaken-msg" :class="{ err: shakenErr }">{{ shakenMsg }}</p>
+        </div>
+
         <div class="field">
           <label>ナンバー</label>
           <input v-model="modal.plate_number" class="input" placeholder="例：品川 500 あ 12-34" />
@@ -71,28 +127,6 @@
           <input v-model="modal.inspection_date" type="date" class="input" data-testid="vehicle-inspection-date" />
         </div>
 
-        <!-- 車検証（編集時のみ・画像→PDF化保存＋満了日をAI読取）#10 -->
-        <div v-if="modal.id" class="field shaken-field">
-          <label>車検証（画像/PDFをアップロード→PDF保存・満了日を自動読取）</label>
-          <div v-if="shakenDocs.length" class="shaken-list">
-            <div v-for="d in shakenDocs" :key="d.id" class="shaken-item">
-              <span class="shaken-icon">📄</span>
-              <a v-if="d.url" :href="d.url" target="_blank" rel="noopener" class="shaken-link">{{ d.name || '車検証' }}</a>
-              <span v-else class="shaken-link muted">{{ d.name || '車検証' }}</span>
-              <button class="shaken-del" title="削除" @click="deleteShaken(d)">×</button>
-            </div>
-          </div>
-          <span v-else class="muted">まだ車検証がありません</span>
-          <div class="shaken-add shaken-dropzone" :class="{ dragover: shakenDragOver, busy: shakenUploading }"
-               @drop.prevent="onDropShaken" @dragover.prevent="shakenDragOver = true" @dragleave.prevent="shakenDragOver = false">
-            <label class="btn-shaken-add" :class="{ busy: shakenUploading }">
-              {{ shakenUploading ? '処理中…' : '＋ 車検証をアップロード' }}
-              <input type="file" accept="image/*,application/pdf" hidden :disabled="shakenUploading" @change="onUploadShaken" />
-            </label>
-            <span class="shaken-drop-hint">{{ shakenDragOver ? 'ここにドロップ' : 'またはここに画像/PDFをドラッグ&ドロップ' }}</span>
-          </div>
-          <p v-if="shakenMsg" class="shaken-msg" :class="{ err: shakenErr }">{{ shakenMsg }}</p>
-        </div>
         <div class="field">
           <label>スタッドレスタイヤ</label>
           <div class="toggle">
@@ -110,29 +144,6 @@
         <div v-if="modal.has_insurance" class="field">
           <label>保険の内容（軽く）</label>
           <input v-model="modal.insurance_note" class="input" placeholder="例：◯◯損保 対人対物無制限・車両あり" />
-        </div>
-
-        <!-- 写真＋名称（編集時のみ。新規は保存後に編集で追加） -->
-        <div v-if="modal.id" class="field photo-field">
-          <label>写真（複数可・各写真に名称）</label>
-          <div v-if="photos.length" class="photo-list">
-            <div v-for="p in photos" :key="p.id" class="photo-item">
-              <a v-if="p.url" :href="p.url" target="_blank" rel="noopener" class="photo-thumb-link">
-                <img :src="p.url" class="photo-thumb" :alt="p.name || '写真'" />
-              </a>
-              <span v-else class="photo-thumb photo-thumb-empty">📷</span>
-              <input v-model="p.name" class="input photo-name" placeholder="名称（例：運転席側）" @change="renamePhoto(p)" />
-              <button class="photo-del" title="削除" @click="deletePhoto(p)">×</button>
-            </div>
-          </div>
-          <span v-else class="muted">まだ写真がありません</span>
-          <div class="photo-add photo-dropzone" :class="{ dragover: photoDragOver, busy: photoUploading }"
-               @drop.prevent="onDropPhoto" @dragover.prevent="photoDragOver = true" @dragleave.prevent="photoDragOver = false">
-            <input v-model="newPhotoName" class="input photo-name" placeholder="名称（任意）" />
-            <label class="btn-photo-add">＋ 写真を追加<input type="file" accept="image/*" hidden :disabled="photoUploading" @change="onUploadPhoto" /></label>
-            <span class="photo-drop-hint">{{ photoDragOver ? 'ここにドロップ' : 'またはここに画像をドラッグ&ドロップ' }}</span>
-            <span v-if="photoUploading" class="muted">アップロード中…</span>
-          </div>
         </div>
 
         <!-- 修理ログ（編集時のみ。新規は保存後に編集で追加） -->
@@ -207,6 +218,10 @@ const photoUploading = ref(false)
 const shakenUploading = ref(false)
 const shakenMsg       = ref('')
 const shakenErr       = ref(false)
+// 新規登録時（vehicle_id 未確定）はファイルを保留し、保存時にまとめて添付アップロードする。
+// アップロード時に OCR で満了日/ナンバーを即 prefill する＝「アップロード→自動入力」を新規でも成立させる。
+const pendingPhotos  = ref<{ file: File; name: string }[]>([])
+const pendingShaken  = ref<File[]>([])
 // 署名URLのホストを公開オリジン(VITE_SUPABASE_URL)に正規化する。
 // ローカルの storage は内部ホスト(kong:8000)を埋めて返すためブラウザから開けない。
 // 署名はパス+tokenに対して有効なのでホスト差し替えは安全。本番は同一ホスト＝no-op。
@@ -246,8 +261,14 @@ async function onDropPhoto(ev: DragEvent) {
   await processPhotoFile(ev.dataTransfer?.files?.[0])
 }
 async function processPhotoFile(file: File | undefined | null) {
-  if (!file || !modal.value?.id) return
+  if (!file || !modal.value) return
   if (!file.type.startsWith('image/')) { saveError.value = '画像ファイルを選択してください'; return }
+  // 新規登録: 保留リストへ（保存時にアップロード）
+  if (!modal.value.id) {
+    pendingPhotos.value.push({ file, name: newPhotoName.value.trim() })
+    newPhotoName.value = ''
+    return
+  }
   photoUploading.value = true; saveError.value = ''
   try {
     const accountId = await getAccountId()
@@ -261,6 +282,23 @@ async function processPhotoFile(file: File | undefined | null) {
     await loadPhotos(modal.value.id)
   } catch (e: any) { saveError.value = e.message ?? '写真のアップロードに失敗しました' }
   finally { photoUploading.value = false }
+}
+function removePendingPhoto(i: number) { pendingPhotos.value.splice(i, 1) }
+// 保存直後(新規): 保留していた写真・車検証を、確定した vehicle_id で添付アップロード
+async function uploadPendingAttachments(vehicleId: string, accountId: string) {
+  for (const { file, name } of pendingPhotos.value) {
+    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+    const path = `${accountId}/${vehicleId}/photo-${Date.now()}-${Math.round(file.size % 100000)}.${ext}`
+    const { error } = await supabase.storage.from(PHOTO_BUCKET).upload(path, file, { upsert: false, contentType: file.type || undefined })
+    if (!error) await supabase.from('vehicle_attachments').insert({ account_id: accountId, vehicle_id: vehicleId, kind: 'photo', name: name || null, path })
+  }
+  for (const file of pendingShaken.value) {
+    const pdfBytes = await toShakenPdfBytes(file)
+    const path = `${accountId}/${vehicleId}/shaken-${Date.now()}-${Math.round(file.size % 100000)}.pdf`
+    const { error } = await supabase.storage.from(PHOTO_BUCKET).upload(path, new Blob([pdfBytes], { type: 'application/pdf' }), { upsert: false, contentType: 'application/pdf' })
+    if (!error) await supabase.from('vehicle_attachments').insert({ account_id: accountId, vehicle_id: vehicleId, kind: 'shaken', name: '車検証', path })
+  }
+  pendingPhotos.value = []; pendingShaken.value = []
 }
 // ── ナンバーAI解析（#9・画像→Gemini vision→plate_number を prefill・手動修正可）──
 const plateOcrBusy = ref(false)
@@ -331,15 +369,38 @@ async function onDropShaken(ev: DragEvent) {
   const file = ev.dataTransfer?.files?.[0]
   await processShakenFile(file)
 }
+// 車検証画像から満了日を読取（画像時のみ・失敗は null）。edit/new 両方で共用。
+async function ocrShakenDate(file: File): Promise<string | null> {
+  if (!file.type.startsWith('image/')) return null
+  try {
+    const b64 = await fileToB64(file)
+    const { data: sess } = await supabase.auth.getSession()
+    const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vehicle-shaken-ocr`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sess?.session?.access_token ?? ''}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+      body: JSON.stringify({ account_slug: getAccountSlug(), image_base64: b64, mime: file.type || 'image/jpeg' }),
+    })
+    const j = await resp.json()
+    return (resp.ok && j?.inspection_date) ? (j.inspection_date as string) : null
+  } catch { return null }
+}
 async function processShakenFile(file: File | undefined | null) {
-  if (!file || !modal.value?.id) return
+  if (!file || !modal.value) return
   if (!(file.type.startsWith('image/') || file.type === 'application/pdf' || /\.(pdf|png|jpe?g)$/i.test(file.name))) {
     shakenErr.value = true; shakenMsg.value = '画像またはPDFファイルを選択してください'; return
   }
   shakenUploading.value = true; shakenMsg.value = ''; shakenErr.value = false; saveError.value = ''
   try {
+    // 新規登録（vehicle_id 未確定）: ファイルを保留し、満了日だけ先に読取って prefill。保存時に添付確定。
+    if (!modal.value.id) {
+      pendingShaken.value.push(file)
+      const d = await ocrShakenDate(file)
+      if (d) { modal.value.inspection_date = d; shakenMsg.value = `車検証を追加。満了日を読み取りました：${d}（保存時にアップロード）` }
+      else shakenMsg.value = file.type.startsWith('image/') ? '車検証を追加（満了日は読取れず・手動入力／保存時にアップロード）' : '車検証(PDF)を追加（満了日は手動／保存時にアップロード）'
+      return
+    }
+    // 編集: 即PDF化して保存
     const accountId = await getAccountId()
-    // 1) PDF化して非公開バケットへ保存（kind='shaken'）
     const pdfBytes = await toShakenPdfBytes(file)
     const path = `${accountId}/${modal.value.id}/shaken-${Date.now()}.pdf`
     const { error: upErr } = await supabase.storage.from(PHOTO_BUCKET).upload(path, new Blob([pdfBytes], { type: 'application/pdf' }), { upsert: false, contentType: 'application/pdf' })
@@ -347,35 +408,16 @@ async function processShakenFile(file: File | undefined | null) {
     await supabase.from('vehicle_attachments').insert({ account_id: accountId, vehicle_id: modal.value.id, kind: 'shaken', name: '車検証', path })
     await loadPhotos(modal.value.id)
     shakenMsg.value = '車検証をPDFで保存しました。満了日をAI解析中…'
-    // 2) 満了日をAI読取して inspection_date に prefill（画像時のみ・失敗は握りつぶして手動入力に委ねる）
-    if (file.type.startsWith('image/')) {
-      try {
-        const b64 = await fileToB64(file)
-        const { data: sess } = await supabase.auth.getSession()
-        const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vehicle-shaken-ocr`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sess?.session?.access_token ?? ''}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
-          body: JSON.stringify({ account_slug: getAccountSlug(), image_base64: b64, mime: file.type || 'image/jpeg' }),
-        })
-        const j = await resp.json()
-        if (resp.ok && j?.inspection_date) {
-          if (modal.value) modal.value.inspection_date = j.inspection_date
-          shakenMsg.value = `車検証を保存し、車検満了日を読み取りました：${j.inspection_date}（確認・修正してください）`
-        } else {
-          shakenMsg.value = '車検証を保存しました。満了日は読み取れなかったため手動で入力してください。'
-        }
-      } catch {
-        shakenMsg.value = '車検証を保存しました。満了日のAI読取に失敗したため手動で入力してください。'
-      }
-    } else {
-      shakenMsg.value = '車検証(PDF)を保存しました。満了日は手動で入力してください。'
-    }
+    const d = await ocrShakenDate(file)
+    if (d) { if (modal.value) modal.value.inspection_date = d; shakenMsg.value = `車検証を保存し、車検満了日を読み取りました：${d}（確認・修正してください）` }
+    else shakenMsg.value = file.type.startsWith('image/') ? '車検証を保存しました。満了日は読み取れなかったため手動で入力してください。' : '車検証(PDF)を保存しました。満了日は手動で入力してください。'
   } catch (e: any) {
     shakenErr.value = true; shakenMsg.value = e.message ?? '車検証の保存に失敗しました'
   } finally {
     shakenUploading.value = false   // input のクリアは呼び出し側(onUploadShaken)で実施
   }
 }
+function removePendingShaken(i: number) { pendingShaken.value.splice(i, 1) }
 async function deleteShaken(p: VehiclePhoto) {
   if (!confirm('この車検証を削除しますか？')) return
   await supabase.storage.from(PHOTO_BUCKET).remove([p.path])
@@ -429,7 +471,10 @@ function openAdd() {
   newRepair.value = { repair_date: null, description: '', cost: null }
   photos.value = []
   shakenDocs.value = []
+  pendingPhotos.value = []
+  pendingShaken.value = []
   newPhotoName.value = ''
+  shakenMsg.value = ''; shakenErr.value = false
   saveError.value = ''
   plateOcrMsg.value = ''; plateOcrErr.value = false
   shakenMsg.value = ''; shakenErr.value = false
@@ -442,6 +487,8 @@ async function openEdit(v: Vehicle) {
   newPhotoName.value = ''
   photos.value = []
   shakenDocs.value = []
+  pendingPhotos.value = []
+  pendingShaken.value = []
   plateOcrMsg.value = ''; plateOcrErr.value = false
   shakenMsg.value = ''; shakenErr.value = false
   await Promise.all([loadRepairs(v.id), loadPhotos(v.id)])
@@ -504,7 +551,12 @@ async function save() {
     if (modal.value.id) {
       await supabase.from('vehicles').update(payload).eq('id', modal.value.id)
     } else {
-      await supabase.from('vehicles').insert({ ...payload, account_id: accountId })
+      const { data: created, error: insErr } = await supabase.from('vehicles').insert({ ...payload, account_id: accountId }).select('id').single()
+      if (insErr) throw insErr
+      // 新規登録で保留していた写真・車検証を、確定した vehicle_id で添付アップロード
+      if (created?.id && (pendingPhotos.value.length || pendingShaken.value.length)) {
+        await uploadPendingAttachments(created.id as string, accountId)
+      }
     }
     modal.value = null
     await load()
@@ -580,6 +632,8 @@ async function toggleActive(v: Vehicle) {
 .photo-field { border-top: 1px solid #f0f0f0; padding-top: 16px; }
 .photo-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
 .photo-item { display: flex; align-items: center; gap: 10px; }
+.photo-item.pending, .shaken-item.pending { opacity: .85; }
+.pending-name { flex: 1; font-size: 13px; color: #92400e; }
 .photo-thumb { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; border: 1px solid #e0e0e0; display: block; }
 .photo-thumb-empty { display: flex; align-items: center; justify-content: center; background: #f5f5f5; font-size: 20px; }
 .photo-thumb-link { flex-shrink: 0; }
