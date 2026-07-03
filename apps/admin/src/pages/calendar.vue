@@ -259,10 +259,11 @@ const categoryColor = computed(() => {
   return m
 })
 function chipStyle(s: Schedule) {
+  if (s.deleted_at) return {}                                  // 削除済みはグレー据置
   const col = categoryColor.value[s.category] || FALLBACK_CATEGORY_COLOR
-  // 削除済み/夜勤は既存の見た目を優先（色は左ボーダーとうっすら背景で表現）
-  if (s.deleted_at || s.is_night_shift) return {}
-  return { borderLeftColor: col, background: col + '1a' }  // 1a≒10%
+  // カテゴリ色を太い左バーで常に表示（夜勤も暗背景を保ったままカテゴリ色バーを出す＝見分けやすく）
+  if (s.is_night_shift) return { borderLeftColor: col, borderLeftWidth: '6px' }
+  return { borderLeftColor: col, borderLeftWidth: '6px', background: col + '26' }  // 26≒15%
 }
 const loading       = ref(false)
 const currentDate   = ref(new Date())
