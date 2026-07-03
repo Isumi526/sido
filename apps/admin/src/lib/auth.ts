@@ -13,17 +13,22 @@ export const currentRole = ref<string | null>(null)
 export const roleResolved = ref(false)
 
 // /admin の利用可否: 管理者/事務員/現場管理者、または worker行を持たない純粋adminのみ許可。
-//  現場管理者(site_manager)は現場登録等のため admin を使う（ただし時給/人件費は canViewWages で非表示）。
+//  現場管理者(site_manager)は現場登録等のため admin を使う（ただし時給と出面勤怠の人件費は canViewHourlyWage で非表示）。
 //  職人(worker) は弾く。
 export const ADMIN_ALLOWED_ROLES = ['admin', 'office', 'site_manager']
 export const isAdminAllowed = computed(() =>
   !currentRole.value || ADMIN_ALLOWED_ROLES.includes(currentRole.value))
 
-// 時給・人件費（金額）の閲覧可否: admin/office/純admin(role=null) のみ。site_manager/worker は不可。
-//  ＝ site_manager は admin を使えるが、各作業員の時給・人件費は見えない（金額×権限の分離）。
-//  ※role=null は「worker行の無い純粋admin＝オーナー」を想定し許可。取得失敗でnullになる稀ケースの
-//    厳密遮断は列単位権限/RLS（親エピック『本番DBのRLS有効化』）に委ねる。
-export const canViewWages = computed(() =>
+// 日当単価・人件費・現場原価（原価計算の設定値）の閲覧可否: admin/office/site_manager/純admin(role=null)。
+//  ＝ これらは「機密」ではなく原価計算の設定値のため、admin を使える全ロールに見せる（2026-07-03 仕様変更）。
+//  ※worker は isAdminAllowed で弾かれるため、ここに来る＝全員可。
+export const canViewWages = computed(() => isAdminAllowed.value)
+
+// 時給（実賃金の値）と 出面勤怠(出面勤怠ページの人件費) の閲覧可否: admin/office/純admin(role=null) のみ。
+//  site_manager は不可。＝ 時給（wage_type='hourly' の unit_price 実値）と、時給から算出する出面勤怠の
+//   人件費を site_manager から隠す（日当単価/人件費/現場原価は canViewWages で全員に見せる）。
+//  ※role=null は「worker行の無い純粋admin＝オーナー」を想定し許可。
+export const canViewHourlyWage = computed(() =>
   !currentRole.value || currentRole.value === 'admin' || currentRole.value === 'office')
 
 // auth_user_id（=ログインユーザー）に紐づく worker の permission_role を解決。

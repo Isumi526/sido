@@ -153,7 +153,7 @@
                 <td class="num">{{ fmt(w.hoursNormal) }}</td>
                 <td class="num">{{ fmt(w.hoursOT) }}</td>
                 <td class="num">{{ fmt(w.hoursNight) }}</td>
-                <td v-if="canViewWages" class="num">{{ w.unitPrice ? yen(w.unitPrice) + (w._wageType === 'hourly' ? '/h' : '/日') : '—' }}</td>
+                <td v-if="canViewWages" class="num">{{ !w.unitPrice ? '—' : (w._wageType === 'hourly' && !canViewHourlyWage ? '—' : yen(w.unitPrice) + (w._wageType === 'hourly' ? '/h' : '/日')) }}</td>
                 <td v-if="canViewWages" class="num">{{ w.laborCost ? yen(w.laborCost) : '—' }}</td>
               </tr>
             </tbody>
@@ -329,7 +329,7 @@ import { getAccountId } from '../lib/account'
 import { resolveDocUrl } from '../lib/docUrl'
 import HelpButton from '../components/HelpButton.vue'
 import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, unitPriceForDate, wageTypeForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
-import { canViewWages } from '../lib/auth'
+import { canViewWages, canViewHourlyWage } from '../lib/auth'
 import JSZip from 'jszip'
 
 const exporting = ref(false)
