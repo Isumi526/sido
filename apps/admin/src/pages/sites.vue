@@ -55,7 +55,7 @@
       </table>
     </div>
 
-    <div v-if="modal" class="modal-overlay" @click.self="modal = null">
+    <div v-if="modal" class="modal-overlay" @click.self="tryCloseModal">
       <div class="modal">
         <h2>{{ modal.id ? '現場を編集' : '現場を追加' }}</h2>
         <!-- ① 識別情報（名前・かな・住所） -->
@@ -132,14 +132,12 @@
           <div v-if="modalRules.length" class="rule-list">
             <div v-for="(r, i) in modalRules" :key="i" class="rule-row">
               <textarea v-model="r.content" class="input rule-content" rows="2" placeholder="例：ヘルメットを必ず着用すること" />
-              <div class="rule-row-sub">
-                <select v-model="r.timing" class="input rule-timing">
-                  <option value="checkin">出勤時のみ</option>
-                  <option value="checkout">退勤時のみ</option>
-                  <option value="both">出勤・退勤両方</option>
-                </select>
-                <button type="button" class="rule-del" title="削除" @click="modalRules.splice(i, 1)">×</button>
-              </div>
+              <select v-model="r.timing" class="input rule-timing">
+                <option value="checkin">出勤時のみ</option>
+                <option value="checkout">退勤時のみ</option>
+                <option value="both">出勤・退勤両方</option>
+              </select>
+              <button type="button" class="rule-del" title="削除" @click="modalRules.splice(i, 1)">×</button>
             </div>
           </div>
           <div v-if="ruleHistory.length" class="rule-history">
@@ -150,10 +148,10 @@
           <p class="hint">現場作成後は「ルール・QR設定」からいつでも追加・編集できます。</p>
         </div>
 
-        <!-- 写真・書類（既存現場のみ） -->
-        <div v-if="modal.id" class="field">
+        <!-- 写真・書類（新規でも添付可・新規は保存時に確定） -->
+        <div class="field">
           <label>写真・書類（複数可）</label>
-          <div v-if="attachments.length" class="att-list">
+          <div v-if="attachments.length || pendingAtts.length" class="att-list">
             <div v-for="a in attachments" :key="a.id" class="att-item">
               <span class="att-kind">{{ a.kind === 'photo' ? '📷' : '📄' }}</span>
               <a v-if="a.url" :href="a.url" target="_blank" rel="noopener" class="att-link">{{ a.name || a.path.split('/').pop() }}</a>
@@ -163,14 +161,20 @@
               </label>
               <button class="att-del" @click="removeAttachment(a)">×</button>
             </div>
+            <div v-for="(p, i) in pendingAtts" :key="'pa' + i" class="att-item pending">
+              <img v-if="p.preview" :src="p.preview" class="att-thumb" :alt="p.name" />
+              <span v-else class="att-kind">📄</span>
+              <span class="att-link">{{ p.name }}<span class="muted">（保存時にアップロード）</span></span>
+              <button class="att-del" title="取り消し" @click="removePendingAtt(i)">×</button>
+            </div>
           </div>
           <div class="att-add">
             <label class="att-btn">＋ 写真<input type="file" accept="image/*" hidden :disabled="uploading" @change="onAttach($event, 'photo')" /></label>
             <label class="att-btn">＋ 書類<input type="file" accept="application/pdf,image/*" hidden :disabled="uploading" @change="onAttach($event, 'document')" /></label>
             <span v-if="uploading" class="att-up">アップロード中…</span>
           </div>
+          <p v-if="!modal.id" class="hint">新規はここで選ぶと「保存時にアップロード」されます。出退勤同意の設定は作成後に「ルール・QR設定」で行えます。</p>
         </div>
-        <p v-else class="hint">写真・書類は保存後（現場作成後）に添付できます。</p>
 
         <div v-if="modal.id" class="field">
           <label>この現場の見積書</label>
@@ -186,7 +190,7 @@
 
         <div class="modal-actions">
           <button class="btn-save" :disabled="saving" @click="save">{{ saving ? '保存中...' : '保存' }}</button>
-          <button class="btn-cancel" @click="modal = null">キャンセル</button>
+          <button class="btn-cancel" @click="tryCloseModal">キャンセル</button>
         </div>
         <p v-if="saveError" class="error">{{ saveError }}</p>
       </div>
@@ -211,7 +215,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
@@ -253,9 +257,43 @@ type RuleTiming = 'checkin' | 'checkout' | 'both'
 const modalRules  = ref<{ content: string; timing: RuleTiming }[]>([])
 const ruleHistory = ref<{ content: string; timing: RuleTiming }[]>([])
 function addRuleRow(content = '', timing: RuleTiming = 'both') { modalRules.value.push({ content, timing }) }
+// 未保存の入力があるままモーダルを閉じようとしたら確認を挟む
+const formDirty = ref(false)
+let armDirty = false
+function markFormOpened() {
+  armDirty = false
+  formDirty.value = false
+  nextTick(() => { armDirty = true })
+}
+watch([() => modal.value, modalRules], () => { if (armDirty && modal.value) formDirty.value = true }, { deep: true })
+function tryCloseModal() {
+  if (formDirty.value && !confirm('入力中の内容が保存されていません。閉じてもよろしいですか？')) return
+  formDirty.value = false
+  modal.value = null
+}
 // 編集中の現場の添付（写真・書類）
 const attachments = ref<Att[]>([])
 const uploading   = ref(false)
+// 新規現場作成時（site_id 未確定）は添付を保留し、保存時にまとめてアップロードする
+const pendingAtts = ref<{ file: File; kind: 'photo' | 'document'; name: string; preview?: string }[]>([])
+function removePendingAtt(i: number) {
+  const p = pendingAtts.value[i]
+  if (p?.preview) URL.revokeObjectURL(p.preview)
+  pendingAtts.value.splice(i, 1)
+}
+function clearPendingAtts() {
+  for (const p of pendingAtts.value) if (p.preview) URL.revokeObjectURL(p.preview)
+  pendingAtts.value = []
+}
+async function uploadPendingAtts(siteId: string, accountId: string) {
+  for (const p of pendingAtts.value) {
+    const ext = (p.file.name.split('.').pop() || 'bin').toLowerCase()
+    const path = `${accountId}/${siteId}/${p.kind}-${Date.now()}-${Math.round(p.file.size % 100000)}.${ext}`
+    const { error } = await supabase.storage.from(BUCKET).upload(path, p.file, { upsert: false, contentType: p.file.type || undefined })
+    if (!error) await supabase.from('site_attachments').insert({ account_id: accountId, site_id: siteId, kind: p.kind, path, name: p.file.name })
+  }
+  clearPendingAtts()
+}
 // この現場に紐づく見積書（estimates.site_id）。閲覧専用。
 type SiteEstimate = { id: string; estimate_number: string | null; estimate_date: string | null; total_amount: number | null; pdf_path: string | null }
 const siteEstimates = ref<SiteEstimate[]>([])
@@ -365,7 +403,7 @@ const filtered = computed(() => {
   return list
 })
 
-function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', responsible_worker_id: myWorkerId.value ?? null, linkedSubs: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = ''; modalRules.value = []; fetchRuleHistory() }
+function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', responsible_worker_id: myWorkerId.value ?? null, linkedSubs: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = ''; modalRules.value = []; clearPendingAtts(); markFormOpened(); fetchRuleHistory() }
 
 // アカウント内の既存現場ルールを重複排除して候補化（新規現場のルール設定を素早くするため・site-rules.vue と同方針）
 async function fetchRuleHistory() {
@@ -390,7 +428,9 @@ async function openEdit(s: Site) {
   const { data: links } = await supabase.from('site_subcontractors').select('subcontractor_id').eq('site_id', s.id)
   if (modal.value) modal.value.linkedSubs = ((links ?? []) as any[]).map(l => l.subcontractor_id)
   siteEstimates.value = []
+  clearPendingAtts()
   await Promise.all([loadAttachments(s.id), loadSiteEstimates(s.id)])
+  markFormOpened()   // 非同期ロード後に dirty 監視を開始（ロード自体を編集と誤認しない）
 }
 
 // 現場↔下請け業者の紐付けを同期（チェックされたものだけ残す）
@@ -432,10 +472,12 @@ async function save() {
           .filter(r => r.content && !seen.has(r.content) && seen.add(r.content))
           .map((r, idx) => ({ site_id: siteId, content: r.content, timing: r.timing, sort_order: idx }))
         if (rows.length) await supabase.from('site_rules').insert(rows)
+        // 新規現場: 保留していた写真・書類を確定した site_id で添付アップロード
+        if (pendingAtts.value.length) await uploadPendingAtts(siteId, accountId)
       }
     }
     if (siteId) await syncSiteSubcontractors(siteId, accountId, m.linkedSubs ?? [])
-    modal.value = null; await load()
+    formDirty.value = false; modal.value = null; await load()
   } catch (e: any) {
     saveError.value = e.message ?? '保存に失敗しました'
   } finally { saving.value = false }
@@ -450,8 +492,15 @@ async function loadAttachments(siteId: string) {
   attachments.value = atts
 }
 async function onAttach(ev: Event, kind: 'photo' | 'document') {
-  const file = (ev.target as HTMLInputElement).files?.[0]
-  if (!file || !modal.value?.id) return
+  const input = ev.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file || !modal.value) return
+  // 新規現場: 保留（保存時にアップロード）。写真はサムネ用プレビュー生成。
+  if (!modal.value.id) {
+    pendingAtts.value.push({ file, kind, name: file.name, preview: kind === 'photo' ? URL.createObjectURL(file) : undefined })
+    return
+  }
   uploading.value = true; saveError.value = ''
   try {
     const accountId = await getAccountId()
@@ -578,7 +627,7 @@ async function doMerge() {
 .btn-edit { background: #f0f0f0; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
 .btn-toggle { background: none; border: 1px solid #ddd; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; color: #888; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 12px; padding: 32px; width: 360px; display: flex; flex-direction: column; gap: 20px; max-height: 90vh; overflow-y: auto; }
+.modal { background: #fff; border-radius: 12px; padding: 32px; width: min(560px, 92vw); display: flex; flex-direction: column; gap: 20px; max-height: 90vh; overflow-y: auto; }
 .modal h2 { font-size: 18px; font-weight: 700; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label { font-size: 12px; font-weight: 700; color: #888; }
@@ -600,6 +649,8 @@ async function doMerge() {
 .resp-hint { margin: 4px 0 0; font-size: 12px; color: #b45309; }
 .att-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
 .att-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.att-item.pending { opacity: .9; }
+.att-thumb { width: 32px; height: 32px; object-fit: cover; border-radius: 4px; flex-shrink: 0; box-shadow: 0 0 0 1px rgba(0,0,0,.08) inset; }
 .att-link { color: #1a56c4; text-decoration: none; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .att-del { background: none; border: none; color: #c0392b; cursor: pointer; font-size: 16px; }
 .att-consent { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #888; white-space: nowrap; cursor: pointer; }
@@ -610,10 +661,9 @@ async function doMerge() {
 .att-up { font-size: 12px; color: #888; }
 textarea.input { resize: vertical; font-family: inherit; }
 .rule-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
-.rule-row { display: flex; flex-direction: column; gap: 6px; align-items: stretch; padding: 8px; border: 1px solid #eee; border-radius: 8px; margin-bottom: 8px; }
-.rule-content { width: 100%; min-height: 48px; resize: vertical; box-sizing: border-box; }
-.rule-row-sub { display: flex; gap: 8px; align-items: center; }
-.rule-timing { flex: 1; min-width: 0; }
+.rule-row { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 8px; }
+.rule-content { flex: 1; min-width: 0; min-height: 48px; resize: vertical; box-sizing: border-box; }
+.rule-timing { width: 150px; flex-shrink: 0; }
 .rule-del { flex-shrink: 0; width: 32px; height: 32px; border: 1px solid #fca5a5; background: none; color: #ef4444; border-radius: 6px; cursor: pointer; font-size: 14px; }
 .rule-del:hover { background: #fef2f2; }
 .rule-history { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
