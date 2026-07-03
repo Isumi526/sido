@@ -394,7 +394,7 @@ async function addCategory() {
     const sort_order = schedCats.value.reduce((m, c) => Math.max(m, c.sort_order), -1) + 1
     await supabase.from('schedule_categories').insert({ account_id: accountId, key, label, color: newCatColor.value, sort_order, active: true })
     await loadSchedCats()                 // 追加を即反映（リアルタイム）
-    if (formModal.value) formModal.value.category = key   // 追加したカテゴリを選択状態に
+    if (formModal.value) formModal.value.category = key as any   // カスタムカテゴリkey（固定enum外）を選択状態に
     showCatAdd.value = false; newCatLabel.value = ''; newCatColor.value = '#06C755'
   } catch { /* 失敗時は何もしない（再試行可） */ }
   finally { catSaving.value = false }
