@@ -37,7 +37,10 @@
             <td class="name">{{ w.name }}</td>
             <td><span class="badge" :class="w.role">{{ w.role === 'factory' ? '工場/事務所' : '現場' }}</span></td>
             <td><span class="perm-badge" :class="w.permission_role ?? 'worker'">{{ permLabel(w.permission_role) }}</span></td>
-            <td v-if="canViewWages" class="price">¥{{ w.unit_price.toLocaleString() }}</td>
+            <td v-if="canViewWages" class="price">
+              <template v-if="w.wage_type === 'hourly' && !canViewHourlyWage">—</template>
+              <template v-else>¥{{ w.unit_price.toLocaleString() }}</template>
+            </td>
             <td><span class="emp-badge" :class="w.employment_type ?? 'fulltime'">{{ w.employment_type === 'contractor' ? '業務委託' : (w.employment_type ?? 'fulltime') === 'fulltime' ? '正社員' : `パート(週${w.weekly_scheduled_days ?? '?'}日)` }}</span></td>
             <td class="hire-date">{{ w.hire_date ?? '—' }}</td>
             <td><span class="status" :class="wStatus(w)" data-testid="worker-status">{{ STATUS_LABELS[wStatus(w)] }}</span></td>
@@ -103,7 +106,8 @@
         </div>
         <div class="field">
           <label>{{ modal.wage_type === 'hourly' ? '時給（円/h）' : '日当単価（円/日）' }}</label>
-          <input v-model.number="modal.unit_price" type="number" class="input" :placeholder="modal.wage_type === 'hourly' ? '2000' : '20000'" />
+          <p v-if="modal.wage_type === 'hourly' && !canViewHourlyWage" class="hint-sm">時給は権限により非表示です</p>
+          <input v-else v-model.number="modal.unit_price" type="number" class="input" :placeholder="modal.wage_type === 'hourly' ? '2000' : '20000'" />
         </div>
         <div v-if="modal.id" class="field">
           <label>昇給年月日（発効日・単価を変えた時に記録）</label>
@@ -114,7 +118,7 @@
           <label>単価変更の理由（任意）</label>
           <input v-model="wageReason" class="input" placeholder="例：定期昇給 / 資格取得" data-testid="wage-reason" />
         </div>
-        <div v-if="modal.id && wageHistory.length" class="field">
+        <div v-if="modal.id && wageHistory.length && canViewHourlyWage" class="field">
           <label>賃金変更履歴（発効日〜 で当時の賃金で計算）</label>
           <ul class="wage-hist" data-testid="wage-history">
             <li v-for="h in wageHistory" :key="h.id">
@@ -278,7 +282,7 @@
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { canViewWages } from '../lib/auth'
+import { canViewWages, canViewHourlyWage } from '../lib/auth'
 
 type Worker = {
   id: string
