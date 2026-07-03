@@ -124,7 +124,7 @@
         <div class="field">
           <label class="checkbox-label">
             <input type="checkbox" v-model="formModal.is_public" />
-            他のユーザーに共有する（OFF＝本人と管理者のみ閲覧）
+            他のユーザーに共有する（OFF＝本人のみ閲覧・管理者にも非表示）
           </label>
         </div>
         <div class="field">

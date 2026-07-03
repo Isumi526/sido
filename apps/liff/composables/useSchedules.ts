@@ -50,7 +50,7 @@ export interface ScheduleForm {
   start_time:      string
   end_time:        string
   is_night_shift:  boolean
-  is_public?:      boolean   // 他ユーザーへ共有するか（既定OFF=非共有・A方針）
+  is_public?:      boolean   // 他ユーザーへ共有するか（既定OFF=非共有＝本人のみ閲覧・管理者にも非表示）
 }
 
 const CATEGORY_LABEL_KEYS: Record<ScheduleCategory, string> = {
