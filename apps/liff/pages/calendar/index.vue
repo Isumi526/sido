@@ -254,11 +254,11 @@
           <span class="cat-manage-title">カテゴリ設定</span>
           <button type="button" class="cat-manage-close" @click="catManageOpen = false">閉じる</button>
         </div>
-        <p class="cat-manage-hint">使わないカテゴリは「非表示」にすると予定追加の選択肢から消えます。</p>
+        <p class="cat-manage-hint">名前は編集できます。使わないカテゴリは「非表示」にすると予定追加の選択肢から消えます（色は固定）。</p>
         <ul class="cat-list">
           <li v-for="c in schedCats" :key="c.key" class="cat-item" :class="{ inactive: !c.active }">
             <span class="cat-dot" :style="{ background: c.color }" />
-            <span class="cat-name-label">{{ c.label }}</span>
+            <input type="text" class="cat-name-input" :value="c.label" @change="updateCat(c, { label: ($event.target as HTMLInputElement).value })" />
             <button type="button" class="cat-active-toggle" :class="{ off: !c.active }" @click="updateCat(c, { active: !c.active })">{{ c.active ? '表示' : '非表示' }}</button>
           </li>
         </ul>
@@ -385,12 +385,14 @@ async function resolveCanManageCat() {
 // カテゴリマスタ管理（現場管理者以上・アカウント単位・使わないカテゴリの表示/非表示のみ）
 const catManageOpen = ref(false)
 function openCatManage() { catManageOpen.value = true }
-async function updateCat(c: SchedCat, patch: { active: boolean }) {
+async function updateCat(c: SchedCat, patch: { active?: boolean; label?: string }) {
   if (!canManageCat.value) return
+  const label = patch.label !== undefined ? patch.label.trim() : undefined
+  if (patch.label !== undefined && !label) { await loadSchedCats(); return }   // 空名は無視して元に戻す
   const { getAccountId } = useAccount()
   const accountId = await getAccountId()
   await supabase.from('schedule_categories')
-    .update(patch)
+    .update({ ...(patch.active !== undefined ? { active: patch.active } : {}), ...(label !== undefined ? { label } : {}) })
     .eq('account_id', accountId).eq('key', c.key)
   await loadSchedCats()   // 即反映
 }
@@ -1070,7 +1072,7 @@ thead th.sticky-col { z-index: 11; }
 .cat-item { display: flex; align-items: center; gap: 10px; padding: 12px 2px; border-bottom: 1px solid #f0f0f0; }
 .cat-item.inactive { opacity: .55; }
 .cat-dot { flex-shrink: 0; width: 16px; height: 16px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,.08) inset; }
-.cat-name-label { flex: 1; font-size: 15px; color: #111; }
+.cat-name-input { flex: 1; min-width: 0; font-size: 15px; color: #111; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px 10px; }
 .cat-active-toggle { flex-shrink: 0; background: #dcfce7; color: #15803d; border: none; border-radius: 999px; padding: 6px 16px; font-size: 13px; font-weight: 700; cursor: pointer; min-width: 68px; }
 .cat-active-toggle.off { background: #f1f5f9; color: #94a3b8; }
 .cat-select-wrap { display: flex; align-items: center; gap: 8px; flex: 1; }
