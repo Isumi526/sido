@@ -55,9 +55,6 @@ jobs:
             case "$fn" in
               _shared) echo "skip non-function: $fn"; continue ;;
               test-*)  echo "skip test function (本番に出さない): $fn"; continue ;;
-              # notify-overtime: 未認証で任意テナントの責任者にメール送信可能な脆弱性のため
-              #   ハードニング完了までデプロイ保留（Notion: notify-overtime EFハードニング）。
-              notify-overtime) echo "skip (ハードニング保留・要認証追加): $fn"; continue ;;
             esac
             [ -f "$dir/index.ts" ] || { echo "skip (no index.ts): $fn"; continue; }
             echo "deploying $fn ..."
