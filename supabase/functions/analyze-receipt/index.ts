@@ -46,7 +46,8 @@ Deno.serve(async (req) => {
 必ずJSON形式のみで返してください。説明文は不要です。
 
 {
-  "label": "店名・施設名・商品名・サービス名（電車・鉄道・乗車券の領収書なら乗車区間を『A〜B』の形式で。なければnull）",
+  "storeName": "支払い先＝発行元の店名・会社名・施設名（領収書を発行した事業者名。例: 東日本旅客鉄道株式会社、東日本高速道路、タイムズ24、〇〇損保。なければnull）",
+  "label": "内容・品名・サービス名（電車・鉄道・乗車券なら乗車区間を『A〜B』の形式で／駐車なら『駐車料金』等の内容。発行元名ではなく“何の代金か”。なければnull）",
   "yen": 合計金額（数値、税込、円、不明ならnull）,
   "invoiceNumber": "インボイス登録番号（T+13桁の数字形式、なければnull）"
 }`
@@ -92,12 +93,14 @@ Deno.serve(async (req) => {
     if (!jsonMatch) return json({ label: null, yen: null, invoiceNumber: null })
 
     const result = JSON.parse(jsonMatch[0]) as {
+      storeName: string | null
       label: string | null
       yen: number | null
       invoiceNumber: string | null
     }
 
     return json({
+      storeName:     result.storeName ?? null,
       label:         result.label ?? null,
       yen:           result.yen != null ? Number(result.yen) : null,
       invoiceNumber: result.invoiceNumber ?? null,
