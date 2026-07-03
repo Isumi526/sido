@@ -83,11 +83,13 @@
             </div>
           </div>
           <span v-else class="muted">まだ車検証がありません</span>
-          <div class="shaken-add">
+          <div class="shaken-add shaken-dropzone" :class="{ dragover: shakenDragOver, busy: shakenUploading }"
+               @drop.prevent="onDropShaken" @dragover.prevent="shakenDragOver = true" @dragleave.prevent="shakenDragOver = false">
             <label class="btn-shaken-add" :class="{ busy: shakenUploading }">
               {{ shakenUploading ? '処理中…' : '＋ 車検証をアップロード' }}
               <input type="file" accept="image/*,application/pdf" hidden :disabled="shakenUploading" @change="onUploadShaken" />
             </label>
+            <span class="shaken-drop-hint">{{ shakenDragOver ? 'ここにドロップ' : 'またはここに画像/PDFをドラッグ&ドロップ' }}</span>
           </div>
           <p v-if="shakenMsg" class="shaken-msg" :class="{ err: shakenErr }">{{ shakenMsg }}</p>
         </div>
@@ -203,11 +205,22 @@ const photoUploading = ref(false)
 const shakenUploading = ref(false)
 const shakenMsg       = ref('')
 const shakenErr       = ref(false)
+// 署名URLのホストを公開オリジン(VITE_SUPABASE_URL)に正規化する。
+// ローカルの storage は内部ホスト(kong:8000)を埋めて返すためブラウザから開けない。
+// 署名はパス+tokenに対して有効なのでホスト差し替えは安全。本番は同一ホスト＝no-op。
+function normalizeStorageUrl(url: string): string {
+  try {
+    const base = new URL(import.meta.env.VITE_SUPABASE_URL as string)
+    const u = new URL(url)
+    if (u.host !== base.host) { u.protocol = base.protocol; u.host = base.host }
+    return u.toString()
+  } catch { return url }
+}
 async function photoSignedUrl(attachmentId: string): Promise<string | null> {
   try {
     const { data, error } = await supabase.functions.invoke('vehicle-attachment-url', { body: { attachment_id: attachmentId } })
     if (error || !data?.ok) return null
-    return data.url as string
+    return normalizeStorageUrl(data.url as string)
   } catch { return null }
 }
 async function loadPhotos(vehicleId: string) {
@@ -291,8 +304,24 @@ async function toShakenPdfBytes(file: File): Promise<Uint8Array> {
   return await pdf.save()
 }
 async function onUploadShaken(ev: Event) {
-  const file = (ev.target as HTMLInputElement).files?.[0]
+  const input = ev.target as HTMLInputElement
+  const file = input.files?.[0]
+  await processShakenFile(file)
+  input.value = ''
+}
+// ドラッグ&ドロップ対応：1枚目のファイルを処理（画像/PDFのみ）
+const shakenDragOver = ref(false)
+async function onDropShaken(ev: DragEvent) {
+  shakenDragOver.value = false
+  if (shakenUploading.value) return
+  const file = ev.dataTransfer?.files?.[0]
+  await processShakenFile(file)
+}
+async function processShakenFile(file: File | undefined | null) {
   if (!file || !modal.value?.id) return
+  if (!(file.type.startsWith('image/') || file.type === 'application/pdf' || /\.(pdf|png|jpe?g)$/i.test(file.name))) {
+    shakenErr.value = true; shakenMsg.value = '画像またはPDFファイルを選択してください'; return
+  }
   shakenUploading.value = true; shakenMsg.value = ''; shakenErr.value = false; saveError.value = ''
   try {
     const accountId = await getAccountId()
@@ -526,6 +555,10 @@ async function toggleActive(v: Vehicle) {
 .shaken-link:hover { text-decoration: underline; }
 .shaken-del { background: none; border: none; color: #dc2626; cursor: pointer; font-size: 18px; line-height: 1; flex-shrink: 0; }
 .shaken-add { margin-top: 4px; }
+.shaken-dropzone { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; border: 2px dashed #e5d3a1; border-radius: 10px; padding: 12px 14px; background: #fffdf5; transition: border-color .15s, background .15s; }
+.shaken-dropzone.dragover { border-color: #d97706; background: #fef3c7; }
+.shaken-dropzone.busy { opacity: .7; }
+.shaken-drop-hint { font-size: 12px; color: #a16207; pointer-events: none; }
 .btn-shaken-add { background: #fef3c7; color: #92400e; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .btn-shaken-add.busy { opacity: .6; cursor: default; }
 .shaken-msg { font-size: 12px; color: #0a8a3a; margin-top: 6px; }
