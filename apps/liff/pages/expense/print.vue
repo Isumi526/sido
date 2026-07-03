@@ -47,7 +47,7 @@
         <tbody>
           <tr v-for="(row, i) in displayRows" :key="i">
             <td class="center">{{ fmtDate(row.date) }}</td>
-            <td class="small">{{ row.note || '' }}</td>
+            <td class="small">{{ row.payee || row.note || '' }}</td>
             <td class="small">{{ row.registrationNumber || '' }}</td>
             <td class="center">{{ row.category }}</td>
             <td class="center">{{ row.liters ?? '' }}</td>

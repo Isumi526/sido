@@ -345,6 +345,7 @@
                       <ExpenseField v-model="pk.yen" v-model:tategae="pk.tategae" with-tategae :label="$t('report.amountYen')" />
                       <button type="button" class="btn-icon-sm" @click="report.removeParking(si, pi)">✕</button>
                     </div>
+                    <input v-model="pk.payee" type="text" class="input mt6" placeholder="支払い先（店名/業者）" @keydown.enter.prevent />
                     <input v-model="pk.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                   </div>
                   <button type="button" class="btn-ghost-sm" @click="report.addParking(si)">{{ $t('report.addParking') }}</button>
@@ -368,6 +369,7 @@
                       <ExpenseField v-model="hw.yen" v-model:tategae="hw.tategae" with-tategae :label="$t('report.amountYen')" />
                       <button type="button" class="btn-icon-sm" @click="report.removeHighway(si, hi)">✕</button>
                     </div>
+                    <input v-model="hw.payee" type="text" class="input mt6" placeholder="支払い先（店名/業者）" @keydown.enter.prevent />
                     <input v-model="hw.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                     <div class="mt6">
                       <label class="hours-label">{{ $t('report.etcCard') }}</label>
@@ -407,6 +409,7 @@
                     <ExpenseField v-model="tr.yen" v-model:tategae="tr.tategae" with-tategae :label="$t('report.amount')" />
                     <button v-if="site.expenses.trains.length > 1" type="button" class="btn-icon-sm" @click="report.removeTrain(si, ti)">✕</button>
                   </div>
+                  <input v-model="tr.payee" type="text" class="input mt6" placeholder="支払い先（店名/業者）" @keydown.enter.prevent />
                   <input v-model="tr.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addTrain(si)">{{ $t('report.add') }}</button>
@@ -441,6 +444,7 @@
                     <input v-model="ho.label" type="text" class="input" :placeholder="$t('report.facilityNameHotelPlaceholder')" @keydown.enter.prevent />
                     <ExpenseField v-model="ho.yen" v-model:tategae="ho.tategae" with-tategae :label="$t('report.amount')" />
                   </div>
+                  <input v-model="ho.payee" type="text" class="input mt6" placeholder="支払い先（店名/業者）" @keydown.enter.prevent />
                   <input v-model="ho.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addHotel(si)">{{ $t('report.addHotel') }}</button>
@@ -495,6 +499,7 @@
                     <ExpenseField v-model="ot.yen" v-model:tategae="ot.tategae" with-tategae :label="$t('report.amount')" />
                     <button v-if="site.expenses.others.length > 1" type="button" class="btn-icon-sm" @click="report.removeOther(si, oi)">✕</button>
                   </div>
+                  <input v-model="ot.payee" type="text" class="input mt6" placeholder="支払い先（店名/業者）" @keydown.enter.prevent />
                   <input v-model="ot.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addOther(si)">{{ $t('report.addOther') }}</button>
@@ -524,6 +529,7 @@
                     <ExpenseField v-model="ent.yen" v-model:tategae="ent.tategae" with-tategae :label="$t('report.amount')" />
                     <button v-if="(site.expenses.entertainments?.length ?? 0) > 1" type="button" class="btn-icon-sm" @click="report.removeEntertainment(si, ei)">✕</button>
                   </div>
+                  <input v-model="ent.payee" type="text" class="input mt6" placeholder="支払い先（店名/業者）" @keydown.enter.prevent />
                   <input v-model="ent.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addEntertainment(si)">{{ $t('report.addMiscExpense') }}</button>
@@ -1842,6 +1848,7 @@ async function analyzeReceipt(
     const item = exp.parkings?.[otherIndex!]
     if (item) {
       if (result.yen) item.yen = result.yen
+      if (result.label) item.payee = result.label
       item.registrationNumber = inv   // AI解析の登録番号を反映（読めなければ「なし」）
     }
     return
@@ -1850,6 +1857,7 @@ async function analyzeReceipt(
     const item = exp.highways?.[otherIndex!]
     if (item) {
       if (result.yen) item.yen = result.yen
+      if (result.label) item.payee = result.label
       item.registrationNumber = inv
     }
     return
@@ -1858,6 +1866,7 @@ async function analyzeReceipt(
     const item = exp.trains?.[otherIndex!]
     if (item) {
       if (result.label) item.label = result.label
+      if (result.label) item.payee = result.label
       if (result.yen)   item.yen   = result.yen
       item.registrationNumber = inv
     }
@@ -1867,6 +1876,7 @@ async function analyzeReceipt(
     const item = exp.others?.[otherIndex!]
     if (item) {
       if (result.label) item.label              = result.label
+      if (result.label) item.payee              = result.label
       if (result.yen)   item.yen                = result.yen
       item.registrationNumber = inv
     }
@@ -1876,6 +1886,7 @@ async function analyzeReceipt(
     const item = exp.entertainments?.[otherIndex!]
     if (item) {
       if (result.label) item.label              = result.label
+      if (result.label) item.payee              = result.label
       if (result.yen)   item.yen                = result.yen
       item.registrationNumber = inv
     }
@@ -1885,6 +1896,7 @@ async function analyzeReceipt(
     const item = exp.hotels?.[otherIndex!]
     if (item) {
       if (result.label) item.label              = result.label
+      if (result.label) item.payee              = result.label
       if (result.yen)   item.yen                = result.yen
       item.registrationNumber = inv
     }
