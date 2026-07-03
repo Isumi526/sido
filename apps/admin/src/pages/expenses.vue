@@ -305,6 +305,8 @@ async function load() {
     if (!userId) continue
     const workerName = rep.users?.workers?.name ?? rep.users?.real_name ?? '—'
     for (const row of flattenReportExpenses(rep.date, rep.sites ?? [], rates)) {
+      // 車両の距離按分「ガソリン代/軽油代」は現場別集計(内部原価)への配賦＝作業員への精算には含めない（実費は下で加算）
+      if (row.category === 'ガソリン代' || row.category === '軽油代') continue
       const pr = ensure(userId, workerName, `${ym}-${halfOf(row.date)}`)
       pr.count += 1
       pr.total += row.amount
