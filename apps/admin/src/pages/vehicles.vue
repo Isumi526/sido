@@ -373,7 +373,7 @@ async function processShakenFile(file: File | undefined | null) {
   } catch (e: any) {
     shakenErr.value = true; shakenMsg.value = e.message ?? '車検証の保存に失敗しました'
   } finally {
-    shakenUploading.value = false; (ev.target as HTMLInputElement).value = ''
+    shakenUploading.value = false   // input のクリアは呼び出し側(onUploadShaken)で実施
   }
 }
 async function deleteShaken(p: VehiclePhoto) {
