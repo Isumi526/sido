@@ -1810,7 +1810,7 @@ async function analyzeGasItem(gi: number) {
   gasAnalyzingId.value = null
   if (!result || (!result.yen && !result.label && !result.invoiceNumber)) { showReceiptToast('error', t('report.gasAnalyzeFailed')); return }
   if (result.yen) item.yen = result.yen
-  if (result.label) item.payee = result.label
+  if (result.storeName) item.payee = result.storeName
   if (result.invoiceNumber) item.registrationNumber = result.invoiceNumber
   showReceiptToast('success', t('report.analyzeSuccess'))
 }
@@ -1848,7 +1848,7 @@ async function analyzeReceipt(
     const item = exp.parkings?.[otherIndex!]
     if (item) {
       if (result.yen) item.yen = result.yen
-      if (result.label) item.payee = result.label
+      if (result.storeName) item.payee = result.storeName
       item.registrationNumber = inv   // AI解析の登録番号を反映（読めなければ「なし」）
     }
     return
@@ -1857,7 +1857,7 @@ async function analyzeReceipt(
     const item = exp.highways?.[otherIndex!]
     if (item) {
       if (result.yen) item.yen = result.yen
-      if (result.label) item.payee = result.label
+      if (result.storeName) item.payee = result.storeName
       item.registrationNumber = inv
     }
     return
@@ -1866,7 +1866,7 @@ async function analyzeReceipt(
     const item = exp.trains?.[otherIndex!]
     if (item) {
       if (result.label) item.label = result.label
-      if (result.label) item.payee = result.label
+      if (result.storeName) item.payee = result.storeName
       if (result.yen)   item.yen   = result.yen
       item.registrationNumber = inv
     }
