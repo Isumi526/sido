@@ -126,9 +126,11 @@
             </div>
           </div>
           <span v-else class="muted">まだ写真がありません</span>
-          <div class="photo-add">
+          <div class="photo-add photo-dropzone" :class="{ dragover: photoDragOver, busy: photoUploading }"
+               @drop.prevent="onDropPhoto" @dragover.prevent="photoDragOver = true" @dragleave.prevent="photoDragOver = false">
             <input v-model="newPhotoName" class="input photo-name" placeholder="名称（任意）" />
             <label class="btn-photo-add">＋ 写真を追加<input type="file" accept="image/*" hidden :disabled="photoUploading" @change="onUploadPhoto" /></label>
+            <span class="photo-drop-hint">{{ photoDragOver ? 'ここにドロップ' : 'またはここに画像をドラッグ&ドロップ' }}</span>
             <span v-if="photoUploading" class="muted">アップロード中…</span>
           </div>
         </div>
@@ -232,8 +234,20 @@ async function loadPhotos(vehicleId: string) {
   shakenDocs.value = list.filter(p => p.kind === 'shaken')
 }
 async function onUploadPhoto(ev: Event) {
-  const file = (ev.target as HTMLInputElement).files?.[0]
+  const input = ev.target as HTMLInputElement
+  await processPhotoFile(input.files?.[0])
+  input.value = ''
+}
+// 写真もドラッグ&ドロップ対応（車検証と同じパターン）
+const photoDragOver = ref(false)
+async function onDropPhoto(ev: DragEvent) {
+  photoDragOver.value = false
+  if (photoUploading.value) return
+  await processPhotoFile(ev.dataTransfer?.files?.[0])
+}
+async function processPhotoFile(file: File | undefined | null) {
   if (!file || !modal.value?.id) return
+  if (!file.type.startsWith('image/')) { saveError.value = '画像ファイルを選択してください'; return }
   photoUploading.value = true; saveError.value = ''
   try {
     const accountId = await getAccountId()
@@ -246,7 +260,7 @@ async function onUploadPhoto(ev: Event) {
     newPhotoName.value = ''
     await loadPhotos(modal.value.id)
   } catch (e: any) { saveError.value = e.message ?? '写真のアップロードに失敗しました' }
-  finally { photoUploading.value = false; (ev.target as HTMLInputElement).value = '' }
+  finally { photoUploading.value = false }
 }
 // ── ナンバーAI解析（#9・画像→Gemini vision→plate_number を prefill・手動修正可）──
 const plateOcrBusy = ref(false)
@@ -571,7 +585,11 @@ async function toggleActive(v: Vehicle) {
 .photo-thumb-link { flex-shrink: 0; }
 .photo-name { flex: 1; }
 .photo-del { background: none; border: none; color: #dc2626; cursor: pointer; font-size: 18px; line-height: 1; flex-shrink: 0; }
-.photo-add { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.photo-add { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+.photo-dropzone { border: 2px dashed #bae6fd; border-radius: 10px; padding: 12px 14px; background: #f8fdff; transition: border-color .15s, background .15s; }
+.photo-dropzone.dragover { border-color: #0284c7; background: #e0f2fe; }
+.photo-dropzone.busy { opacity: .7; }
+.photo-drop-hint { font-size: 12px; color: #0369a1; pointer-events: none; }
 .btn-photo-add { background: #e0f2fe; color: #0369a1; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .repair-field { border-top: 1px solid #f0f0f0; padding-top: 16px; }
 .repair-list { display: flex; flex-direction: column; gap: 6px; background: #f9f9f9; border-radius: 8px; padding: 10px; max-height: 160px; overflow-y: auto; }
