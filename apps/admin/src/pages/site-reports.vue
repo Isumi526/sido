@@ -440,6 +440,9 @@ function extractExpenseCols(exp: any) {
     fuelCost    += Math.round((v.distanceKm || 0) * G_YEN) + Math.round((v.dieselKm || 0) * D_YEN)
     highwayCost += v.highwayYen || 0
   }
+  // 新形式: 現場ごとの駐車場代/高速代（複数・明細ごと）も集計に含める（旧の車両埋め込みだけだと漏れる）
+  parkingYen  += (exp?.parkings  ?? []).reduce((s: number, p: any) => s + (Number(p.yen) || 0), 0)
+  highwayCost += (exp?.highways  ?? []).reduce((s: number, h: any) => s + (Number(h.yen) || 0), 0)
 
   // 宿泊費: 新形式 hotels[] があればその合計、無ければ旧スカラー(hotel/leopalace)＝二重計上を防ぐ後方互換
   const hotelsSum      = (exp?.hotels || []).reduce((s: number, h: any) => s + (Number(h.yen) || 0), 0)
