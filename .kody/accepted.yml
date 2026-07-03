@@ -96,6 +96,18 @@ entries:
     reason: "車両管理(2026-06-21)で新設した修理ログ。既存マスタ(vehicles/workers/sites)と同じくRLS無効×anonで運用。修理ログ単体をRLS化しても親のvehiclesが開いていれば無意味なため、マスタ層は親エピック「本番DBのRLS有効化」で一括RLS化する。"
     ticket: "37b0ff81c56b8137827bd5d49f531777"
   - rule: rls-multitenant
+    target: vehicle_attachments
+    reason: "車両写真＋名称(2026-07-02・#8)で新設。既存マスタ(vehicles/vehicle_repair_logs と同型)でRLS無効×anon運用。ファイル実体は非公開バケット vehicle-attachments(authenticatedのみ・account_idパススコープ)＋署名URL(vehicle-attachment-url)で保護。テーブル行のRLS化は親のvehiclesが開いている以上単体では無意味なため、マスタ層は親エピック「本番DBのRLS有効化」で一括対応。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: schedule_categories
+    reason: "予定カテゴリマスタ(2026-07-02・#A)で新設。既存マスタ(sites/vehicles/schedules等)と同じくRLS無効×anon運用。account_idスコープはアプリ側クエリで担保。マスタ層のRLS化は親エピック「本番DBのRLS有効化」で一括対応。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
+    target: schedule_notifications
+    reason: "予定追加のアプリ内通知(2026-07-02・#予定通知)で新設。既存の schedules と同じくRLS無効×anon運用。worker_id/account_idスコープはアプリ側クエリで担保。マスタ/業務層のRLS化は親エピック「本番DBのRLS有効化」で一括対応。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: rls-multitenant
     target: worker_proxies
     reason: "本番既存のRLS未適用ベースライン。LIFF anonキーは公開のため要RLS化。親エピック「本番DBのRLS有効化」で段階的に対応(ratchet基準＝新規のRLS無効×anon表だけ違反計上)。"
     ticket: "37b0ff81c56b8137827bd5d49f531777"

@@ -110,7 +110,7 @@
             <div v-for="(g, gi) in report.form.value.gasolineItems" :key="g._id ?? gi" class="lineitem-card mt8">
               <!-- ① 領収書＋AI解析（手入力より上） -->
               <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
-              <AttachedFilesBadge :files="gasFilesById[g._id ?? -1] ?? []" :urls="g.fileUrls" />
+              <AttachedFilesBadge :files="gasFilesById[g._id ?? -1] ?? []" :urls="g.fileUrls" @remove-file="(p) => removeGasFile(g, p)" />
               <input type="file" accept="image/*,.pdf" class="input mt4" @change="(e) => onGasItemFile(gi, e)" />
               <p v-if="gasUploadingId === g._id" class="section-hint">{{ $t('report.uploading') }}</p>
               <div v-if="(gasFilesById[g._id ?? -1]?.length) || g.fileUrls?.length" class="photo-preview">
@@ -320,16 +320,12 @@
                   </div>
                   <input v-model="veh.vehicleName" type="text" class="input" :placeholder="$t('report.vehicleNamePlaceholder')" @keydown.enter.prevent />
                   <div class="expense-grid mt8">
-                    <ExpenseField v-model="veh.distanceKm" v-model:tategae="veh.gasTategae"     with-tategae :label="$t('report.gasoline')" />
-                    <ExpenseField v-model="veh.dieselKm"   v-model:tategae="veh.dieselTategae"  with-tategae :label="$t('report.diesel')" />
+                    <ExpenseField v-model="veh.distanceKm" :label="$t('report.gasoline')" />
+                    <ExpenseField v-model="veh.dieselKm"   :label="$t('report.diesel')" />
                   </div>
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addVehicle(si)">{{ $t('report.addVehicle') }}</button>
-                <div class="mt8">
-                  <label class="hours-label">{{ $t('report.receiptPhotoLabel') }}</label>
-                  <AttachedFilesBadge :files="site.expenses.vehicleFiles" />
-                  <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'vehicleFiles', e)" />
-                </div>
+                <!-- 車両レベルの領収書は廃止（ガソリン/軽油=距離ベースで領収書不要・駐車/高速は各明細に領収書あり） -->
 
                 <!-- 駐車場代（複数・明細ごと領収書）— 車両ありの時のみ -->
                 <div class="veh-subexpense">
@@ -337,7 +333,7 @@
                   <div v-for="(pk, pi) in (site.expenses.parkings ?? [])" :key="pi" class="lineitem-card">
                     <div>
                       <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
-                      <AttachedFilesBadge :files="pk.files" :urls="pk.fileUrls" />
+                      <AttachedFilesBadge :files="pk.files" :urls="pk.fileUrls" @remove-file="(p) => removeItemFile(pk, p)" />
                       <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleParkingFile(si, pi, e)" />
                       <div v-if="pk.files?.length" class="photo-preview">
                         <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-parking-${pi}`" @click="analyzeReceipt(si, 'parking', pi)">
@@ -349,6 +345,8 @@
                       <ExpenseField v-model="pk.yen" v-model:tategae="pk.tategae" with-tategae :label="$t('report.amountYen')" />
                       <button type="button" class="btn-icon-sm" @click="report.removeParking(si, pi)">✕</button>
                     </div>
+                    <input v-model="pk.payee" type="text" class="input mt6" placeholder="支払い先（店名/業者）" @keydown.enter.prevent />
+                    <input v-model="pk.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                   </div>
                   <button type="button" class="btn-ghost-sm" @click="report.addParking(si)">{{ $t('report.addParking') }}</button>
                 </div>
@@ -359,7 +357,7 @@
                   <div v-for="(hw, hi) in (site.expenses.highways ?? [])" :key="hi" class="lineitem-card">
                     <div>
                       <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
-                      <AttachedFilesBadge :files="hw.files" :urls="hw.fileUrls" />
+                      <AttachedFilesBadge :files="hw.files" :urls="hw.fileUrls" @remove-file="(p) => removeItemFile(hw, p)" />
                       <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleHighwayFile(si, hi, e)" />
                       <div v-if="hw.files?.length" class="photo-preview">
                         <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-highway-${hi}`" @click="analyzeReceipt(si, 'highway', hi)">
@@ -371,6 +369,8 @@
                       <ExpenseField v-model="hw.yen" v-model:tategae="hw.tategae" with-tategae :label="$t('report.amountYen')" />
                       <button type="button" class="btn-icon-sm" @click="report.removeHighway(si, hi)">✕</button>
                     </div>
+                    <input v-model="hw.payee" type="text" class="input mt6" placeholder="支払い先（店名/業者）" @keydown.enter.prevent />
+                    <input v-model="hw.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                     <div class="mt6">
                       <label class="hours-label">{{ $t('report.etcCard') }}</label>
                       <select v-model="hw.etcCard" class="select mt4">
@@ -396,7 +396,7 @@
                 <div v-for="(tr, ti) in site.expenses.trains" :key="ti" class="lineitem-card">
                   <div>
                     <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
-                    <AttachedFilesBadge :files="tr.files" :urls="tr.fileUrls" />
+                    <AttachedFilesBadge :files="tr.files" :urls="tr.fileUrls" @remove-file="(p) => removeItemFile(tr, p)" />
                     <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleTrainFile(si, ti, e)" />
                     <div v-if="tr.files?.length" class="photo-preview">
                       <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-train-${ti}`" @click="analyzeReceipt(si, 'train', ti)">
@@ -409,6 +409,8 @@
                     <ExpenseField v-model="tr.yen" v-model:tategae="tr.tategae" with-tategae :label="$t('report.amount')" />
                     <button v-if="site.expenses.trains.length > 1" type="button" class="btn-icon-sm" @click="report.removeTrain(si, ti)">✕</button>
                   </div>
+                  <input v-model="tr.payee" type="text" class="input mt6" placeholder="支払い先（店名/業者）" @keydown.enter.prevent />
+                  <input v-model="tr.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addTrain(si)">{{ $t('report.add') }}</button>
               </template>
@@ -430,7 +432,7 @@
                   <button v-if="(site.expenses.hotels?.length ?? 0) > 1" type="button" class="btn-remove-card" :aria-label="$t('report.removeHotel')" @click="report.removeHotel(si, hi)">✕</button>
                   <div>
                     <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
-                    <AttachedFilesBadge :files="ho.files" :urls="ho.fileUrls" />
+                    <AttachedFilesBadge :files="ho.files" :urls="ho.fileUrls" @remove-file="(p) => removeItemFile(ho, p)" />
                     <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleHotelFile(si, hi, e)" />
                     <div v-if="ho.files?.length" class="photo-preview">
                       <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-hotel-${hi}`" @click="analyzeReceipt(si, 'hotel', hi)">
@@ -442,6 +444,7 @@
                     <input v-model="ho.label" type="text" class="input" :placeholder="$t('report.facilityNameHotelPlaceholder')" @keydown.enter.prevent />
                     <ExpenseField v-model="ho.yen" v-model:tategae="ho.tategae" with-tategae :label="$t('report.amount')" />
                   </div>
+                  <input v-model="ho.payee" type="text" class="input mt6" placeholder="支払い先（店名/業者）" @keydown.enter.prevent />
                   <input v-model="ho.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addHotel(si)">{{ $t('report.addHotel') }}</button>
@@ -461,7 +464,7 @@
                 </div>
                 <div v-if="site.expenses.garbageFactoryM3 || site.expenses.garbageSiteM3" class="mt8">
                   <label class="hours-label">{{ $t('report.garbagePhotoLabel') }}</label>
-                  <AttachedFilesBadge :files="site.expenses.garbagePhotos" />
+                  <AttachedFilesBadge :files="site.expenses.garbagePhotos" @remove-file="(p) => site.expenses.garbagePhotos?.splice(p.index, 1)" />
                   <input
                     type="file"
                     accept="image/*"
@@ -483,7 +486,7 @@
                 <div v-for="(ot, oi) in site.expenses.others" :key="oi" class="lineitem-card mt6">
                   <div>
                     <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
-                    <AttachedFilesBadge :files="ot.files" :urls="ot.fileUrls" />
+                    <AttachedFilesBadge :files="ot.files" :urls="ot.fileUrls" @remove-file="(p) => removeItemFile(ot, p)" />
                     <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleOtherFile(si, oi, e)" />
                     <div v-if="ot.files?.length" class="photo-preview">
                       <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-other-${oi}`" @click="analyzeReceipt(si, 'other', oi)">
@@ -496,6 +499,7 @@
                     <ExpenseField v-model="ot.yen" v-model:tategae="ot.tategae" with-tategae :label="$t('report.amount')" />
                     <button v-if="site.expenses.others.length > 1" type="button" class="btn-icon-sm" @click="report.removeOther(si, oi)">✕</button>
                   </div>
+                  <input v-model="ot.payee" type="text" class="input mt6" placeholder="支払い先（店名/業者）" @keydown.enter.prevent />
                   <input v-model="ot.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addOther(si)">{{ $t('report.addOther') }}</button>
@@ -512,7 +516,7 @@
                 <div v-for="(ent, ei) in (site.expenses.entertainments ?? [])" :key="ei" class="lineitem-card mt6">
                   <div>
                     <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
-                    <AttachedFilesBadge :files="ent.files" :urls="ent.fileUrls" />
+                    <AttachedFilesBadge :files="ent.files" :urls="ent.fileUrls" @remove-file="(p) => removeItemFile(ent, p)" />
                     <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleEntertainmentFile(si, ei, e)" />
                     <div v-if="ent.files?.length" class="photo-preview">
                       <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-entertainment-${ei}`" @click="analyzeReceipt(si, 'entertainment', ei)">
@@ -525,6 +529,7 @@
                     <ExpenseField v-model="ent.yen" v-model:tategae="ent.tategae" with-tategae :label="$t('report.amount')" />
                     <button v-if="(site.expenses.entertainments?.length ?? 0) > 1" type="button" class="btn-icon-sm" @click="report.removeEntertainment(si, ei)">✕</button>
                   </div>
+                  <input v-model="ent.payee" type="text" class="input mt6" placeholder="支払い先（店名/業者）" @keydown.enter.prevent />
                   <input v-model="ent.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addEntertainment(si)">{{ $t('report.addMiscExpense') }}</button>
@@ -1703,6 +1708,18 @@ function handleExpenseFile(
 }
 
 // 駐車場代・高速代は明細ごとに個別の領収書を持つ
+// 添付ファイルの削除（AttachedFilesBadge の ✕ から）。source='file'=選択中File / 'url'=保存済みfileUrls。
+function removeItemFile(item: { files?: File[]; fileUrls?: string[] } | null | undefined, p: { source: 'file' | 'url'; index: number }) {
+  if (!item) return
+  if (p.source === 'file') item.files?.splice(p.index, 1)
+  else item.fileUrls?.splice(p.index, 1)
+}
+// ガソリン明細はFileを gasFilesById(map) に持つため別ハンドラ。
+function removeGasFile(g: { _id?: number; fileUrls?: string[] }, p: { source: 'file' | 'url'; index: number }) {
+  if (p.source === 'file') gasFilesById.value[g._id ?? -1]?.splice(p.index, 1)
+  else g.fileUrls?.splice(p.index, 1)
+}
+
 function handleParkingFile(si: number, pi: number, event: Event) {
   const input = event.target as HTMLInputElement
   if (!input.files?.length) return
@@ -1793,7 +1810,7 @@ async function analyzeGasItem(gi: number) {
   gasAnalyzingId.value = null
   if (!result || (!result.yen && !result.label && !result.invoiceNumber)) { showReceiptToast('error', t('report.gasAnalyzeFailed')); return }
   if (result.yen) item.yen = result.yen
-  if (result.label) item.payee = result.label
+  if (result.storeName) item.payee = result.storeName
   if (result.invoiceNumber) item.registrationNumber = result.invoiceNumber
   showReceiptToast('success', t('report.analyzeSuccess'))
 }
@@ -1829,19 +1846,29 @@ async function analyzeReceipt(
   // 明細ごと（駐車=金額／高速=金額／電車=区間＋金額）
   if (field === 'parking') {
     const item = exp.parkings?.[otherIndex!]
-    if (item && result.yen) item.yen = result.yen
+    if (item) {
+      if (result.yen) item.yen = result.yen
+      if (result.storeName) item.payee = result.storeName
+      item.registrationNumber = inv   // AI解析の登録番号を反映（読めなければ「なし」）
+    }
     return
   }
   if (field === 'highway') {
     const item = exp.highways?.[otherIndex!]
-    if (item && result.yen) item.yen = result.yen
+    if (item) {
+      if (result.yen) item.yen = result.yen
+      if (result.storeName) item.payee = result.storeName
+      item.registrationNumber = inv
+    }
     return
   }
   if (field === 'train') {
     const item = exp.trains?.[otherIndex!]
     if (item) {
       if (result.label) item.label = result.label
+      if (result.storeName) item.payee = result.storeName
       if (result.yen)   item.yen   = result.yen
+      item.registrationNumber = inv
     }
     return
   }
@@ -1849,6 +1876,7 @@ async function analyzeReceipt(
     const item = exp.others?.[otherIndex!]
     if (item) {
       if (result.label) item.label              = result.label
+      if (result.label) item.payee              = result.label
       if (result.yen)   item.yen                = result.yen
       item.registrationNumber = inv
     }
@@ -1858,6 +1886,7 @@ async function analyzeReceipt(
     const item = exp.entertainments?.[otherIndex!]
     if (item) {
       if (result.label) item.label              = result.label
+      if (result.label) item.payee              = result.label
       if (result.yen)   item.yen                = result.yen
       item.registrationNumber = inv
     }
@@ -1867,6 +1896,7 @@ async function analyzeReceipt(
     const item = exp.hotels?.[otherIndex!]
     if (item) {
       if (result.label) item.label              = result.label
+      if (result.label) item.payee              = result.label
       if (result.yen)   item.yen                = result.yen
       item.registrationNumber = inv
     }

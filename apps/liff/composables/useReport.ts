@@ -48,10 +48,10 @@ export const createVehicle = (): VehicleExpense => ({
 let gasItemSeq = 0
 export const createGasolineItem = (): GasolineItem => ({ _id: ++gasItemSeq, payee: '', yen: undefined, registrationNumber: '', tategae: false, fileUrls: [] })
 
-export const createLineItem = (): LineItem => ({ label: '', yen: undefined, tategae: false })
-export const createParking = (): ExpenseFileLineItem => ({ yen: undefined, tategae: false, files: [] })
-export const createHighway = (): HighwayLineItem => ({ yen: undefined, tategae: false, etcCard: '', files: [] })
-export const createTrain = (): ExpenseFileLineItem => ({ label: '', yen: undefined, tategae: false, files: [] })
+export const createLineItem = (): LineItem => ({ label: '', yen: undefined, payee: '', tategae: false })
+export const createParking = (): ExpenseFileLineItem => ({ yen: undefined, payee: '', tategae: false, files: [] })
+export const createHighway = (): HighwayLineItem => ({ yen: undefined, payee: '', tategae: false, etcCard: '', files: [] })
+export const createTrain = (): ExpenseFileLineItem => ({ label: '', yen: undefined, payee: '', tategae: false, files: [] })
 
 export const createSite = (): SiteReport => ({
   siteName:       '',

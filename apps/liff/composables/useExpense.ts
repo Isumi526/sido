@@ -472,13 +472,16 @@ export const useExpense = () => {
     // 平坦化は単一ソース flattenReportExpenses（admin と共有・shared/expense-flatten.ts）
     const rows: ExpenseRow[] = []
     for (const rep of (data ?? [])) {
-      rows.push(...flattenReportExpenses(rep.date, rep.sites as any[], rates))
-      // 日報レベルの「本日のガソリン代」（複数給油）も明細に含める（admin 経費精算と整合）
+      // 経費PDF＝作業員への精算書。車両の距離按分「ガソリン代/軽油代」(distanceKm×単価)は
+      //  実費でなく現場別集計(内部原価)への配賦なので**精算書には載せない**。実費は下の「本日のガソリン代」で載る。
+      rows.push(...flattenReportExpenses(rep.date, rep.sites as any[], rates)
+        .filter(r => r.category !== 'ガソリン代' && r.category !== '軽油代'))
+      // 日報レベルの「本日のガソリン代」（複数給油・実費）も明細に含める（admin 経費精算と整合）
       for (const g of ((rep as any).gasoline_items ?? [])) {
         const gasYen = Math.round(Number(g?.yen) || 0)
         if (gasYen <= 0) continue
         const urls = Array.isArray(g.fileUrls) ? g.fileUrls : []
-        rows.push({ date: rep.date, category: 'ガソリン代（本日）', siteName: g.payee || '—', amount: gasYen, note: g.registrationNumber || '', fileUrls: urls, tategae: !!g.tategae } as ExpenseRow)
+        rows.push({ date: rep.date, category: 'ガソリン代（本日）', siteName: '—', payee: g.payee || '', amount: gasYen, note: '', registrationNumber: g.registrationNumber || '', fileUrls: urls, tategae: !!g.tategae } as ExpenseRow)
       }
     }
     return rows

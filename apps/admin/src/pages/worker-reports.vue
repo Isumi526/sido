@@ -15,7 +15,7 @@
           <span class="month-label">{{ yearMonthLabel }}</span>
           <button class="btn-nav" @click="shiftMonth(1)">›</button>
         </div>
-        <button class="btn-toggle-cost" :class="{ active: showLaborCost }" @click="showLaborCost = !showLaborCost">
+        <button v-if="canViewHourlyWage" class="btn-toggle-cost" :class="{ active: showLaborCost }" @click="showLaborCost = !showLaborCost">
           <span class="material-symbols-rounded" style="font-size:16px; vertical-align: middle;">payments</span>
           {{ showLaborCost ? '人件費 表示中' : '人件費 表示' }}
         </button>
@@ -85,7 +85,7 @@
             <div class="summary-value">{{ fmtH(workerMap[activeWorker].totals.sundayOtNight) }}<span class="unit">h</span></div>
           </div>
           <!-- 人件費カード -->
-          <div v-if="showLaborCost" class="summary-card cost-card">
+          <div v-if="canViewHourlyWage && showLaborCost" class="summary-card cost-card">
             <div class="summary-label">人件費合計</div>
             <div class="summary-value cost-value">{{ fmtYen(totalLaborCost) }}</div>
             <div class="cost-rate-hint" v-if="activeUnitPrice">{{ activeWageType === 'hourly' ? `時給 ${fmtYen(activeUnitPrice)}` : `日当 ${fmtYen(activeUnitPrice)} / 時給換算 ${fmtYen(Math.round(activeUnitPrice / 8))}` }}</div>
@@ -93,7 +93,7 @@
         </div>
 
         <!-- 人件費内訳 -->
-        <template v-if="showLaborCost && laborCostBreakdown.length">
+        <template v-if="canViewHourlyWage && showLaborCost && laborCostBreakdown.length">
           <div class="section-title">人件費内訳</div>
           <div class="table-wrap">
             <table class="table">
@@ -228,6 +228,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { computeWorkerHours, calcBreakMinutes, parseMin, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
+import { canViewHourlyWage } from '../lib/auth'
 
 // ---------- 月ナビ ----------
 const baseDate = ref(new Date())

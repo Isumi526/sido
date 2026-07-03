@@ -48,19 +48,22 @@ export interface VehicleExpense {
 export interface LineItem {
   label?:              string
   yen?:                number
+  payee?:              string  // 支払い先（店名/業者）
   registrationNumber?: string  // 登録番号（その他資材等）
   tategae?:            boolean  // 個人建て替えフラグ
   files?:              File[]   // 明細ごとの送信前領収書（JSONには載せない）
   fileUrls?:           string[] // Supabase Storage URL（保存・編集ロード・集計で使用）
 }
 
-// 明細ごとに個別領収書を持つ経費行（駐車場代・高速代）
+// 明細ごとに個別領収書を持つ経費行（駐車場代・高速代・電車代）
 export interface ExpenseFileLineItem {
-  label?:    string
-  yen?:      number
-  tategae?:  boolean   // 個人建て替えフラグ
-  files?:    File[]    // 送信前のローカルファイル（JSONには載せない）
-  fileUrls?: string[]  // Supabase Storage URL（保存・編集ロード・集計で使用）
+  label?:              string
+  yen?:                number
+  payee?:              string  // 支払い先（店名/業者）
+  registrationNumber?: string  // 登録番号（インボイス・AI解析で出ない時は手入力）
+  tategae?:            boolean  // 個人建て替えフラグ
+  files?:              File[]   // 送信前のローカルファイル（JSONには載せない）
+  fileUrls?:           string[] // Supabase Storage URL（保存・編集ロード・集計で使用）
 }
 
 // 高速代は ETC カードを併せ持つ
@@ -145,7 +148,7 @@ export interface GasolineItem {
 export interface MasterData {
   sites: string[]
   contractors: string[]
-  workers: { id?: string; name: string; unitPrice: number; role: WorkerRole }[]
+  workers: { id?: string; name: string; role: WorkerRole }[]  // 時給(unit_price)は liff に持たせない（作業員に他人の時給を渡さない・#4）
   subcontractors: string[]
   vehicles: string[]
   // 現場名 → 紐づく元請け名（未紐付けは未収録）。日報の現場絞り込みに使う（任意・後方互換）。
@@ -219,6 +222,7 @@ export interface ExpenseRow {
   amount:              number
   liters?:             number
   note?:               string  // 備考（車両名・電車区間など）
+  payee?:              string  // 支払い先（店名/業者）
   registrationNumber?: string  // 登録番号
   fileUrls?:           string[]  // 領収書・写真 URL（Supabase Storage）
   tategae?:            boolean   // 個人建て替え分
