@@ -29,12 +29,12 @@
         </div>
       </div>
 
-      <!-- エクスポート -->
+      <!-- 出力（※表の表示月は上の ‹ 年月 › ナビで切替。ここはCSV/PDF出力の範囲だけ） -->
       <div v-if="activeSite" class="export-bar">
-        <label class="export-range-lbl">期間
+        <label class="export-range-lbl">出力範囲
           <select v-model="exportRange" class="export-range" data-testid="export-range">
-            <option value="month">当月（{{ yearMonth }}）</option>
-            <option value="range">年月範囲</option>
+            <option value="month">表示中の月（{{ yearMonth }}）</option>
+            <option value="range">年月範囲を指定</option>
             <option value="all">全期間</option>
           </select>
         </label>
@@ -43,7 +43,7 @@
           <span>〜</span>
           <input type="month" v-model="exportToYM" class="export-ym" data-testid="export-to" />
         </template>
-        <button class="btn-export" :disabled="exporting" data-testid="export-site" @click="exportSite">{{ exporting ? 'エクスポート中…' : '⬇ エクスポート（CSV＋見積書PDF）' }}</button>
+        <button class="btn-export" :disabled="exporting" data-testid="export-site" @click="exportSite">{{ exporting ? '出力中…' : '⬇ CSV＋見積書PDFを出力' }}</button>
       </div>
 
       <!-- 一覧テーブル -->
@@ -55,7 +55,7 @@
               <th>作業員</th>
               <th class="num">商社</th>
               <th class="num">業者</th>
-              <th class="num">社員</th>
+              <th v-if="canViewWages" class="num">社員</th>
               <th class="num">駐車場</th>
               <th class="num">燃料</th>
               <th class="num">高速</th>
@@ -81,7 +81,7 @@
               </td>
               <td class="num">{{ row.shoshaCost ? yen(row.shoshaCost) : '—' }}</td>
               <td class="num">{{ row.gyoshaCost ? yen(row.gyoshaCost) : '—' }}</td>
-              <td class="num">{{ row.laborCost     ? yen(row.laborCost)     : '—' }}</td>
+              <td v-if="canViewWages" class="num">{{ row.laborCost     ? yen(row.laborCost)     : '—' }}</td>
               <td class="num">{{ row.parkingYen    ? yen(row.parkingYen)    : '—' }}</td>
               <td class="num">{{ row.fuelCost      ? yen(row.fuelCost)      : '—' }}</td>
               <td class="num">{{ row.highwayCost   ? yen(row.highwayCost)   : '—' }}</td>
@@ -100,7 +100,7 @@
               <td colspan="2">月計</td>
               <td class="num">{{ yen(sumF(siteMap[activeSite], 'shoshaCost'))    }}</td>
               <td class="num">{{ yen(sumF(siteMap[activeSite], 'gyoshaCost'))    }}</td>
-              <td class="num">{{ yen(sumF(siteMap[activeSite], 'laborCost'))     }}</td>
+              <td v-if="canViewWages" class="num">{{ yen(sumF(siteMap[activeSite], 'laborCost'))     }}</td>
               <td class="num">{{ yen(sumF(siteMap[activeSite], 'parkingYen'))    }}</td>
               <td class="num">{{ yen(sumF(siteMap[activeSite], 'fuelCost'))      }}</td>
               <td class="num">{{ yen(sumF(siteMap[activeSite], 'highwayCost'))   }}</td>
@@ -137,13 +137,13 @@
 
         <!-- 稼働 -->
         <div class="modal-section" v-if="selected.workers.length">
-          <div class="section-label">稼働（社員 {{ yen(selected.laborCost) }}）</div>
+          <div class="section-label">稼働<template v-if="canViewWages">（社員 {{ yen(selected.laborCost) }}）</template></div>
           <table class="inner-table">
             <thead>
               <tr>
                 <th>作業員</th><th>区分</th>
                 <th class="num">通常</th><th class="num">残業</th><th class="num">深夜</th>
-                <th class="num">単価</th><th class="num">人件費</th>
+                <th v-if="canViewWages" class="num">単価</th><th v-if="canViewWages" class="num">人件費</th>
               </tr>
             </thead>
             <tbody>
@@ -153,8 +153,8 @@
                 <td class="num">{{ fmt(w.hoursNormal) }}</td>
                 <td class="num">{{ fmt(w.hoursOT) }}</td>
                 <td class="num">{{ fmt(w.hoursNight) }}</td>
-                <td class="num">{{ w.unitPrice ? yen(w.unitPrice) + (w._wageType === 'hourly' ? '/h' : '/日') : '—' }}</td>
-                <td class="num">{{ w.laborCost ? yen(w.laborCost) : '—' }}</td>
+                <td v-if="canViewWages" class="num">{{ !w.unitPrice ? '—' : (w._wageType === 'hourly' && !canViewHourlyWage ? '—' : yen(w.unitPrice) + (w._wageType === 'hourly' ? '/h' : '/日')) }}</td>
+                <td v-if="canViewWages" class="num">{{ w.laborCost ? yen(w.laborCost) : '—' }}</td>
               </tr>
             </tbody>
           </table>
@@ -329,6 +329,7 @@ import { getAccountId } from '../lib/account'
 import { resolveDocUrl } from '../lib/docUrl'
 import HelpButton from '../components/HelpButton.vue'
 import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, unitPriceForDate, wageTypeForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
+import { canViewWages, canViewHourlyWage } from '../lib/auth'
 import JSZip from 'jszip'
 
 const exporting = ref(false)
@@ -439,6 +440,9 @@ function extractExpenseCols(exp: any) {
     fuelCost    += Math.round((v.distanceKm || 0) * G_YEN) + Math.round((v.dieselKm || 0) * D_YEN)
     highwayCost += v.highwayYen || 0
   }
+  // 新形式: 現場ごとの駐車場代/高速代（複数・明細ごと）も集計に含める（旧の車両埋め込みだけだと漏れる）
+  parkingYen  += (exp?.parkings  ?? []).reduce((s: number, p: any) => s + (Number(p.yen) || 0), 0)
+  highwayCost += (exp?.highways  ?? []).reduce((s: number, h: any) => s + (Number(h.yen) || 0), 0)
 
   // 宿泊費: 新形式 hotels[] があればその合計、無ければ旧スカラー(hotel/leopalace)＝二重計上を防ぐ後方互換
   const hotelsSum      = (exp?.hotels || []).reduce((s: number, h: any) => s + (Number(h.yen) || 0), 0)

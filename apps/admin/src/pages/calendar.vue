@@ -8,6 +8,9 @@
           <input type="checkbox" v-model="showDeleted" />
           削除済みを表示
         </label>
+        <RouterLink to="/schedule-categories" class="btn-cat-settings">
+          <span class="material-symbols-rounded">palette</span>カテゴリ設定
+        </RouterLink>
         <button class="btn-add" @click="openAddBlank">＋ 予定を追加</button>
       </div>
     </div>
@@ -57,6 +60,7 @@
                   'night-shift': s.is_night_shift,
                   'deleted-chip': !!s.deleted_at,
                 }"
+                :style="chipStyle(s)"
                 @click.stop="openDetail(s)"
               >
                 <span class="chip-title">{{ s.title }}</span>
@@ -84,6 +88,13 @@
           <label>タイトル *</label>
           <input v-model="formModal.title" class="input" placeholder="例：アルペン現場" />
         </div>
+        <div class="field">
+          <label>カテゴリ</label>
+          <select v-model="formModal.category" class="input">
+            <option v-for="c in scheduleCategories.filter(x => x.active || x.key === formModal!.category)" :key="c.key" :value="c.key">{{ c.label }}</option>
+          </select>
+          <span class="cat-swatch" :style="{ background: categoryColor[formModal.category] || '#94a3b8' }" />
+        </div>
         <div class="field-row">
           <div class="field">
             <label>開始日</label>
@@ -108,6 +119,12 @@
           <label class="checkbox-label">
             <input type="checkbox" v-model="formModal.is_night_shift" />
             夜勤
+          </label>
+        </div>
+        <div class="field">
+          <label class="checkbox-label">
+            <input type="checkbox" v-model="formModal.is_public" />
+            他のユーザーに共有する（OFF＝本人のみ閲覧・管理者にも非表示）
           </label>
         </div>
         <div class="field">
@@ -186,6 +203,8 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { currentWorkerId } from '../lib/auth'
+import { loadScheduleCategories, FALLBACK_CATEGORY_COLOR, type ScheduleCategory } from '../lib/scheduleCategories'
 
 // ──── 型定義 ────────────────────────────────────────────────
 interface Schedule {
@@ -200,6 +219,7 @@ interface Schedule {
   start_time:      string | null
   end_time:        string | null
   is_night_shift:  boolean
+  is_public:       boolean
   created_by_name: string | null
   deleted_at:      string | null
   deleted_by_name: string | null
@@ -224,6 +244,8 @@ interface FormData {
   start_time:     string
   end_time:       string
   is_night_shift: boolean
+  category:       string
+  is_public:      boolean
   _original?:     Partial<Schedule>
 }
 
@@ -233,6 +255,20 @@ const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
 // ──── 状態 ─────────────────────────────────────────────────
 const allSchedules  = ref<Schedule[]>([])
 const workers       = ref<{ id: string; name: string }[]>([])
+// 予定カテゴリマスタ（#A・色分け）。key→color の早見表つき。
+const scheduleCategories = ref<ScheduleCategory[]>([])
+const categoryColor = computed(() => {
+  const m: Record<string, string> = {}
+  for (const c of scheduleCategories.value) m[c.key] = c.color
+  return m
+})
+function chipStyle(s: Schedule) {
+  if (s.deleted_at) return {}                                  // 削除済みはグレー据置
+  const col = categoryColor.value[s.category] || FALLBACK_CATEGORY_COLOR
+  // カテゴリ色を太い左バーで常に表示（夜勤も暗背景を保ったままカテゴリ色バーを出す＝見分けやすく）
+  if (s.is_night_shift) return { borderLeftColor: col, borderLeftWidth: '6px' }
+  return { borderLeftColor: col, borderLeftWidth: '6px', background: col + '26' }  // 26≒15%
+}
 const loading       = ref(false)
 const currentDate   = ref(new Date())
 const showDeleted   = ref(false)
@@ -331,12 +367,15 @@ async function loadSchedules() {
     const from = toDateStr(new Date(d.getFullYear(), d.getMonth(), 1))
     const to   = toDateStr(new Date(d.getFullYear(), d.getMonth() + 1, 0))
 
+    // 可視性：非公開(is_public=false)は本人のみ（管理者=admin/office も他者の非公開は見られない）
+    const meId = currentWorkerId.value || '00000000-0000-0000-0000-000000000000'
     const { data, error } = await supabase
       .from('schedules')
       .select('*, worker:workers(id, name)')
       .eq('account_id', accountId)
       .lte('start_date', to)
       .gte('end_date', from)
+      .or(`is_public.eq.true,worker_id.eq.${meId}`)
       .order('start_date')
 
     if (error) throw error
@@ -359,6 +398,8 @@ function openAddBlank() {
     start_date: date, end_date: date,
     start_time: '', end_time: '',
     is_night_shift: false,
+    category: defaultCategoryKey(),
+    is_public: false,   // 既定は非共有（A方針）・共有したい時だけON
   }
   formError.value = ''
 }
@@ -369,8 +410,13 @@ function openAddForCell(date: string, workerId: string) {
     start_date: date, end_date: date,
     start_time: '', end_time: '',
     is_night_shift: false,
+    category: defaultCategoryKey(),
+    is_public: false,
   }
   formError.value = ''
+}
+function defaultCategoryKey() {
+  return scheduleCategories.value.find(c => c.active)?.key ?? 'work'
 }
 
 async function openDetail(schedule: Schedule) {
@@ -395,6 +441,8 @@ function openEditFromDetail() {
     start_time:     s.start_time ?? '',
     end_time:       s.end_time   ?? '',
     is_night_shift: s.is_night_shift,
+    category:       s.category ?? 'work',
+    is_public:      s.is_public,
     _original: {
       worker_id:      s.worker_id,
       title:          s.title,
@@ -404,6 +452,8 @@ function openEditFromDetail() {
       start_time:     s.start_time,
       end_time:       s.end_time,
       is_night_shift: s.is_night_shift,
+      category:       s.category,
+      is_public:      s.is_public,
     },
   }
   detailModal.value = null
@@ -430,14 +480,14 @@ async function saveSchedule() {
       worker_id:      formModal.value.worker_id,
       title:          formModal.value.title.trim(),
       description:    formModal.value.description || null,
-      category:       'work',
+      category:       formModal.value.category || 'work',
       all_day:        !hasTime,
       start_date:     formModal.value.start_date,
       end_date:       formModal.value.end_date,
       start_time:     hasTime ? formModal.value.start_time : null,
       end_time:       hasTime ? formModal.value.end_time   : null,
       is_night_shift: formModal.value.is_night_shift,
-      is_public:      true,
+      is_public:      formModal.value.is_public ?? false,   // 既定は非共有（A方針）
       updated_at:     now,
     }
 
@@ -447,7 +497,7 @@ async function saveSchedule() {
       const changes: Record<string, { old: unknown; new: unknown }> = {}
       const diffKeys: (keyof typeof payload)[] = [
         'worker_id', 'title', 'description', 'start_date', 'end_date',
-        'start_time', 'end_time', 'is_night_shift',
+        'start_time', 'end_time', 'is_night_shift', 'category', 'is_public',
       ]
       for (const k of diffKeys) {
         const oldVal = (orig as any)[k] ?? null
@@ -468,11 +518,20 @@ async function saveSchedule() {
       }
     } else {
       // 新規作成
-      const { error } = await supabase.from('schedules').insert({
+      const { data: created, error } = await supabase.from('schedules').insert({
         ...payload,
         created_by_name: currentUserName,
-      })
+      }).select('id').single()
       if (error) throw error
+      // 対象作業員へアプリ内通知（気づかないケース対策 #予定通知）。失敗しても予定作成は成立(best-effort)
+      try {
+        const label = scheduleCategories.value.find(c => c.key === payload.category)?.label ?? '予定'
+        await supabase.from('schedule_notifications').insert({
+          account_id: accountId, worker_id: payload.worker_id, schedule_id: (created as any)?.id ?? null,
+          title: `新しい${label}が追加されました`,
+          body: `${payload.title}（${payload.start_date}${payload.end_date !== payload.start_date ? '〜' + payload.end_date : ''}）`,
+        })
+      } catch { /* 通知失敗は無視 */ }
     }
 
     formModal.value = null
@@ -512,12 +571,14 @@ onMounted(async () => {
   const { data: { session } } = await supabase.auth.getSession()
   currentUserName = session?.user?.email ?? '管理者'
   await loadWorkers()
+  scheduleCategories.value = await loadScheduleCategories(accountId)
   await loadSchedules()
 })
 </script>
 
 <style scoped>
 .cal-page { }
+.cat-swatch { display: inline-block; width: 16px; height: 16px; border-radius: 4px; border: 1px solid #e0e0e0; margin-top: 4px; }
 
 .page-header {
   display: flex;
@@ -529,6 +590,8 @@ onMounted(async () => {
 .header-actions { display: flex; align-items: center; gap: 12px; }
 .deleted-toggle { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #666; cursor: pointer; user-select: none; }
 .btn-add { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.btn-cat-settings { display: inline-flex; align-items: center; gap: 6px; background: #eef2ff; color: #4338ca; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 700; text-decoration: none; }
+.btn-cat-settings .material-symbols-rounded { font-size: 18px; }
 
 /* 月ナビ */
 .month-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }

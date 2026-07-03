@@ -90,6 +90,7 @@ git push origin main --force
 | **PLAYWRIGHT_PROJECTS** | `admin` / `liff` | `playwright.config.ts`（root） |
 | **LOCAL_STACK** | supabase（標準 API 54321 / DB 54322 / Studio 54323） | `supabase start`。`LOCAL_DB_URL` は既定54322で不要 |
 | **MIGRATIONS_DIR** | `supabase/migrations` | RLS は `account_id` 論理分離。anon公開キー前提の pre-RLS ベースラインあり（`.kody/accepted.yml` で追跡） |
+| **MINUTES_DS_ID** | `b5a34ae0-d5cd-4448-87a4-6a5035358e91`（`.env`） | 議事録テーブル（会議/電話で複数タスク発生源＝②パターン）。**3リポ共有**・案件relationで絞る。`/intake` が `処理状態=未処理`×自案件を分解し**未整理**を生成→議事録に出所リンク（実装はしない＝/runへ）。単発依頼（①）は従来どおり未整理へ直接。 |
 | **DEPLOY_PLATFORM** | Vercel（admin/liff）＋ Supabase edge functions ＋ GAS(clasp) | |
 | **DEPLOY_TRIGGER** | `auto-on-merge` | `main` Merge ＝ Vercel 自動デプロイ。edge functions / GAS は別途反映（ship 手順7 の edge deploy 該当） |
 | **DEV_URL** | `http://localhost:3001`（admin） | liff は Nuxt dev |

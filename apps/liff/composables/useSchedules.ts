@@ -50,6 +50,7 @@ export interface ScheduleForm {
   start_time:      string
   end_time:        string
   is_night_shift:  boolean
+  is_public?:      boolean   // 他ユーザーへ共有するか（既定OFF=非共有＝本人のみ閲覧・管理者にも非表示）
 }
 
 const CATEGORY_LABEL_KEYS: Record<ScheduleCategory, string> = {
@@ -146,16 +147,23 @@ export const useSchedules = () => {
       const wid = workerIdOverride ?? _myWorkerIdCache.value
       if (!wid) return
 
-      // アカウント全体の公開予定を取得（削除済みを除く）
+      // アカウント全体の予定を取得（削除済みを除く）
       const accountId = await resolveAccountId()
 
-      const { data, error: err } = await supabase
+      // 可視性：非公開(is_public=false)は「本人のみ」閲覧可（管理者=admin/office も他者の非公開は見られない）。
+      //  誰にでも公開(is_public=true)＋自分の予定だけを返す。既存予定は is_public=true 既定のため従来どおり全員に見える。
+      const viewerWid = _myWorkerIdCache.value
+      // 本人IDが無い場合は公開のみ（非公開が漏れない安全側の既定）
+      const meId = viewerWid || '00000000-0000-0000-0000-000000000000'
+
+      const query = supabase
         .from('schedules')
         .select('*, worker:workers(id, name)')
         .eq('account_id', accountId)
         .lte('start_date', to)
         .gte('end_date', from)
-        .order('start_date')
+        .or(`is_public.eq.true,worker_id.eq.${meId}`)
+      const { data, error: err } = await query.order('start_date')
       if (err) throw err
 
       schedules.value = (data ?? []) as Schedule[]
@@ -176,13 +184,24 @@ export const useSchedules = () => {
 
     const { data, error: err } = await supabase
       .from('schedules')
-      .insert({ ...buildPayload(form, wid), account_id: accountId, created_by_name: creatorName ?? null, is_public: true })
+      .insert({ ...buildPayload(form, wid), account_id: accountId, created_by_name: creatorName ?? null, is_public: form.is_public ?? false })
       .select('*, worker:workers(id, name)')
       .single()
     if (err) throw err
 
     const schedule = data as Schedule
     schedules.value.push(schedule)
+    // 対象作業員へアプリ内通知（自分で自分の予定を作った時は不要）。best-effort・失敗しても作成は成立 #予定通知
+    try {
+      const me = _myWorkerIdCache.value
+      if (wid && wid !== me) {
+        await supabase.from('schedule_notifications').insert({
+          account_id: accountId, worker_id: wid, schedule_id: schedule.id,
+          title: '新しい予定が追加されました',
+          body: `${schedule.title}（${schedule.start_date}${schedule.end_date !== schedule.start_date ? '〜' + schedule.end_date : ''}）`,
+        })
+      }
+    } catch { /* 通知失敗は無視 */ }
     return schedule
   }
 
@@ -198,6 +217,7 @@ export const useSchedules = () => {
     if (form.site_id         !== undefined) updates.site_id        = form.site_id || null
     if (form.all_day         !== undefined) updates.all_day        = form.all_day
     if (form.is_night_shift  !== undefined) updates.is_night_shift = form.is_night_shift
+    if (form.is_public       !== undefined) updates.is_public      = form.is_public
     if (form.start_date      !== undefined) updates.start_date     = form.start_date
     if (form.end_date        !== undefined) updates.end_date       = form.end_date
     if (!form.all_day) {

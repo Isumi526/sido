@@ -39,6 +39,7 @@ export const router = createRouter({
     { path: '/login',        component: Login,          meta: { public: true } },
     { path: '/',             component: Dashboard },
     { path: '/calendar',     component: Calendar },
+    { path: '/schedule-categories', component: () => import('../pages/schedule-categories.vue') },
     { path: '/process',      component: Process },
     { path: '/workers',      component: Workers },
     { path: '/sites',        component: Sites },

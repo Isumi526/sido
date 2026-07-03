@@ -99,6 +99,7 @@
                 <th>日付</th>
                 <th>品名</th>
                 <th>現場名</th>
+                <th>支払い先</th>
                 <th>備考</th>
                 <th class="num">金額</th>
                 <th>立替</th>
@@ -110,6 +111,7 @@
                 <td class="date-cell">{{ d.date.slice(5).replace('-', '/') }}</td>
                 <td>{{ d.category }}</td>
                 <td>{{ d.siteName || '—' }}</td>
+                <td class="muted">{{ d.payee || '—' }}</td>
                 <td class="muted">{{ d.note || '—' }}</td>
                 <td class="num">{{ yen(d.amount) }}</td>
                 <td>{{ d.tategae ? '○' : '' }}</td>
@@ -303,6 +305,8 @@ async function load() {
     if (!userId) continue
     const workerName = rep.users?.workers?.name ?? rep.users?.real_name ?? '—'
     for (const row of flattenReportExpenses(rep.date, rep.sites ?? [], rates)) {
+      // 車両の距離按分「ガソリン代/軽油代」は現場別集計(内部原価)への配賦＝作業員への精算には含めない（実費は下で加算）
+      if (row.category === 'ガソリン代' || row.category === '軽油代') continue
       const pr = ensure(userId, workerName, `${ym}-${halfOf(row.date)}`)
       pr.count += 1
       pr.total += row.amount
@@ -319,7 +323,7 @@ async function load() {
       pr.count += 1
       pr.total += gasYen
       if (isTat) pr.tategaeTotal += gasYen
-      pr.details.push({ date: rep.date, category: 'ガソリン代（本日）', siteName: g.payee || '—', amount: gasYen, note: g.registrationNumber || '', fileUrls: urls, tategae: isTat })
+      pr.details.push({ date: rep.date, category: 'ガソリン代（本日）', siteName: '—', payee: g.payee || '', amount: gasYen, note: '', registrationNumber: g.registrationNumber || '', fileUrls: urls, tategae: isTat })
     }
   }
 

@@ -2,6 +2,17 @@
   <div class="cal-page">
     <AppNav :subtitle="$t('calendar.title')" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
 
+    <!-- 予定追加のお知らせ（未読・気づかないケース対策 #予定通知） -->
+    <div v-if="notifs.length" class="notif-banner">
+      <div class="notif-head">
+        <span>🔔 あなたに新しい予定が {{ notifs.length }} 件追加されました</span>
+        <button class="notif-dismiss" @click="dismissNotifs">既読にする</button>
+      </div>
+      <ul class="notif-list">
+        <li v-for="n in notifs" :key="n.id">{{ n.body || n.title }}</li>
+      </ul>
+    </div>
+
     <!-- 月ナビ（ヘッダー：年月＋グループ絞り込み） -->
     <div class="month-nav">
       <span class="nav-label">{{ navLabel }}</span>
@@ -63,6 +74,7 @@
                     'night-shift': s.is_night_shift,
                     'deleted-chip': !!s.deleted_at,
                   }"
+                  :style="chipStyle(s)"
                   @click.stop="openDetail(s)"
                 >
                   <span class="chip-title">{{ s.title }}</span>
@@ -166,6 +178,16 @@
               @keydown.enter.prevent
             />
           </div>
+          <div v-if="schedCats.length" class="form-row" style="margin-top:8px">
+            <span class="form-row-label">カテゴリ</span>
+            <!-- 現場管理者以上はカテゴリマスタを管理できる（ラベルの右に配置・一覧/色/名前編集/追加/削除） -->
+            <button v-if="canManageCat" type="button" class="cat-add-btn cat-manage-inline" @click="openCatManage">⚙ 管理</button>
+            <div class="cat-select-wrap cat-select-wrap--gap">
+              <select v-model="formModal.category" class="site-select">
+                <option v-for="c in schedCats.filter(x => x.active || x.key === formModal!.category)" :key="c.key" :value="c.key">{{ c.label }}</option>
+              </select>
+            </div>
+          </div>
         </div>
 
         <div class="form-card">
@@ -202,6 +224,13 @@
               <span class="ios-toggle-track"></span>
             </label>
           </div>
+          <div class="form-row">
+            <span class="form-row-label">他のユーザーに共有</span>
+            <label class="ios-toggle">
+              <input type="checkbox" v-model="formModal.is_public" />
+              <span class="ios-toggle-track"></span>
+            </label>
+          </div>
         </div>
 
         <div class="form-card">
@@ -215,6 +244,24 @@
           <button class="btn-cancel" @click="formModal = null">{{ $t('common.cancel') }}</button>
           <button class="btn-save" :disabled="saving" @click="saveSchedule">{{ saving ? $t('common.saving') : $t('common.save') }}</button>
         </div>
+      </div>
+    </div>
+
+    <!-- カテゴリ管理モーダル（現場管理者以上・アカウント単位・色は固定・使わないカテゴリを非表示にするだけ）-->
+    <div v-if="catManageOpen" class="modal-overlay" @click.self="catManageOpen = false">
+      <div class="modal cat-manage">
+        <div class="cat-manage-head">
+          <span class="cat-manage-title">カテゴリ設定</span>
+          <button type="button" class="cat-manage-close" @click="catManageOpen = false">閉じる</button>
+        </div>
+        <p class="cat-manage-hint">名前は編集できます。使わないカテゴリは「非表示」にすると予定追加の選択肢から消えます（色は固定）。</p>
+        <ul class="cat-list">
+          <li v-for="c in schedCats" :key="c.key" class="cat-item" :class="{ inactive: !c.active }">
+            <span class="cat-dot" :style="{ background: c.color }" />
+            <input type="text" class="cat-name-input" :value="c.label" @change="updateCat(c, { label: ($event.target as HTMLInputElement).value })" />
+            <button type="button" class="cat-active-toggle" :class="{ off: !c.active }" @click="updateCat(c, { active: !c.active })">{{ c.active ? '表示' : '非表示' }}</button>
+          </li>
+        </ul>
       </div>
     </div>
 
@@ -308,6 +355,75 @@ const { profile } = useLiff()
 const proxy       = useProxyMode()
 const supabase    = useSupabase()
 const config      = useRuntimeConfig()
+
+// 予定カテゴリマスタ（#A・色分け）。admin(schedule-categories)で管理・ここは色/ラベルの消費。
+type SchedCat = { key: string; label: string; color: string; active: boolean; sort_order: number }
+const schedCats = ref<SchedCat[]>([])
+const catColor  = computed<Record<string, string>>(() => {
+  const m: Record<string, string> = {}
+  for (const c of schedCats.value) m[c.key] = c.color
+  return m
+})
+async function loadSchedCats() {
+  const { getAccountId } = useAccount()
+  const accountId = await getAccountId()
+  if (!accountId) return
+  const { data } = await supabase.from('schedule_categories')
+    .select('key, label, color, active, sort_order').eq('account_id', accountId).order('sort_order')
+  schedCats.value = ((data ?? []) as SchedCat[])
+}
+
+// 現場管理者以上か（カテゴリの表示/非表示を管理できる。色・名前は固定＝編集不可）
+const canManageCat = ref(false)
+async function resolveCanManageCat() {
+  const wid = schedules.myWorkerId.value
+  if (!wid) return
+  const { data } = await supabase.from('workers').select('permission_role').eq('id', wid).maybeSingle()
+  const role = (data as { permission_role?: string } | null)?.permission_role
+  canManageCat.value = role === 'admin' || role === 'office' || role === 'site_manager'
+}
+// カテゴリマスタ管理（現場管理者以上・アカウント単位・使わないカテゴリの表示/非表示のみ）
+const catManageOpen = ref(false)
+function openCatManage() { catManageOpen.value = true }
+async function updateCat(c: SchedCat, patch: { active?: boolean; label?: string }) {
+  if (!canManageCat.value) return
+  const label = patch.label !== undefined ? patch.label.trim() : undefined
+  if (patch.label !== undefined && !label) { await loadSchedCats(); return }   // 空名は無視して元に戻す
+  const { getAccountId } = useAccount()
+  const accountId = await getAccountId()
+  await supabase.from('schedule_categories')
+    .update({ ...(patch.active !== undefined ? { active: patch.active } : {}), ...(label !== undefined ? { label } : {}) })
+    .eq('account_id', accountId).eq('key', c.key)
+  await loadSchedCats()   // 即反映
+}
+function chipStyle(s: Schedule): Record<string, string> {
+  if (s.deleted_at) return {}
+  const col = catColor.value[s.category] || '#94a3b8'
+  // カテゴリ色を太い左バーで常に表示（夜勤も暗背景維持＋カテゴリ色バー＝見分けやすく）
+  if (s.is_night_shift) return { borderLeftColor: col, borderLeftWidth: '6px' }
+  return { borderLeftColor: col, borderLeftWidth: '6px', background: col + '26' }
+}
+
+// 予定追加のアプリ内通知（未読）。開いた時にバナーで気づかせ、既読で消す #予定通知
+type SchedNotif = { id: string; title: string | null; body: string | null }
+const notifs = ref<SchedNotif[]>([])
+async function loadNotifs() {
+  const wid = effectiveWorkerId.value
+  if (!wid) return
+  const { getAccountId } = useAccount()
+  const accountId = await getAccountId()
+  if (!accountId) return
+  const { data } = await supabase.from('schedule_notifications')
+    .select('id, title, body').eq('account_id', accountId).eq('worker_id', wid).is('read_at', null)
+    .order('created_at', { ascending: false }).limit(20)
+  notifs.value = ((data ?? []) as SchedNotif[])
+}
+async function dismissNotifs() {
+  const ids = notifs.value.map(n => n.id)
+  notifs.value = []
+  if (!ids.length) return
+  await supabase.from('schedule_notifications').update({ read_at: new Date().toISOString() }).in('id', ids)
+}
 
 const effectiveWorkerId = computed(() =>
   proxy.proxyTarget.value?.id ?? schedules.myWorkerId.value
@@ -637,6 +753,7 @@ function onCellTap(date: string, workerId: string) {
     all_day: true, start_date: date, end_date: date,
     start_time: '', end_time: '',
     is_night_shift: false,
+    is_public: false,   // 既定は非共有（A方針）・共有したい時だけトグルON
     _contractor: '',
   } as any
   selectedWorkerIds.value = new Set([workerId])   // タップした作業員を初期選択
@@ -652,6 +769,7 @@ function openEdit(ev: Schedule) {
     start_date: ev.start_date, end_date: ev.end_date,
     start_time: ev.start_time ?? '', end_time: ev.end_time ?? '',
     is_night_shift: ev.is_night_shift,
+    is_public: ev.is_public,
     _contractor: '',
     _original: {
       title: ev.title, description: ev.description ?? null,
@@ -765,7 +883,10 @@ onMounted(async () => {
   try {
     await master.fetch()
     await schedules.resolveMyWorkerId()
+    await resolveCanManageCat()
     await loadWorkers()
+    await loadSchedCats()
+    await loadNotifs()
     await loadSchedules()
     // 自分が参加するグループを取得し、前回選択を復元（存在するグループのみ）
     const myWid = schedules.myWorkerId.value
@@ -787,6 +908,10 @@ onMounted(async () => {
 
 <style scoped>
 .cal-page { display: flex; flex-direction: column; height: 100dvh; background: #fff; color: #111; overflow: hidden; }
+.notif-banner { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; margin: 8px 12px; padding: 10px 12px; flex-shrink: 0; }
+.notif-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 700; color: #b45309; }
+.notif-dismiss { background: #f59e0b; color: #fff; border: none; border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.notif-list { margin: 8px 0 0; padding-left: 18px; font-size: 12px; color: #78350f; line-height: 1.6; }
 
 /* 月ナビ（ヘッダー：年月のみ） */
 .month-nav {
@@ -938,6 +1063,22 @@ thead th.sticky-col { z-index: 11; }
 }
 
 .form-card { background: #fff; border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
+.cat-manage { max-width: 460px; }
+.cat-manage-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.cat-manage-title { font-size: 16px; font-weight: 700; color: #111; }
+.cat-manage-close { background: none; border: none; color: #06C755; font-size: 14px; font-weight: 700; }
+.cat-manage-hint { font-size: 12px; color: #64748b; margin: 0 0 10px; line-height: 1.5; }
+.cat-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; }
+.cat-item { display: flex; align-items: center; gap: 10px; padding: 12px 2px; border-bottom: 1px solid #f0f0f0; }
+.cat-item.inactive { opacity: .55; }
+.cat-dot { flex-shrink: 0; width: 16px; height: 16px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,.08) inset; }
+.cat-name-input { flex: 1; min-width: 0; font-size: 15px; color: #111; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px 10px; }
+.cat-active-toggle { flex-shrink: 0; background: #dcfce7; color: #15803d; border: none; border-radius: 999px; padding: 6px 16px; font-size: 13px; font-weight: 700; cursor: pointer; min-width: 68px; }
+.cat-active-toggle.off { background: #f1f5f9; color: #94a3b8; }
+.cat-select-wrap { display: flex; align-items: center; gap: 8px; flex: 1; }
+.cat-select-wrap--gap { margin-left: 10px; }
+.cat-manage-inline { margin-left: 8px; }
+.cat-add-btn { flex-shrink: 0; background: #eef2ff; color: #4338ca; border: none; border-radius: 8px; padding: 8px 12px; font-size: 13px; font-weight: 700; }
 .form-row { display: flex; align-items: center; padding: 12px 14px; min-height: 44px; }
 .form-divider { height: 1px; background: #f0f0f0; margin-left: 14px; }
 .form-row-label { font-size: 15px; color: #111; flex-shrink: 0; }

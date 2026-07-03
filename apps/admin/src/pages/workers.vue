@@ -23,7 +23,7 @@
             <th>名前</th>
             <th>所属</th>
             <th>権限</th>
-            <th>日当単価</th>
+            <th v-if="canViewWages">日当単価</th>
             <th>雇用形態</th>
             <th>入社日</th>
             <th>状態</th>
@@ -37,7 +37,10 @@
             <td class="name">{{ w.name }}</td>
             <td><span class="badge" :class="w.role">{{ w.role === 'factory' ? '工場/事務所' : '現場' }}</span></td>
             <td><span class="perm-badge" :class="w.permission_role ?? 'worker'">{{ permLabel(w.permission_role) }}</span></td>
-            <td class="price">¥{{ w.unit_price.toLocaleString() }}</td>
+            <td v-if="canViewWages" class="price">
+              <template v-if="w.wage_type === 'hourly' && !canViewHourlyWage">—</template>
+              <template v-else>¥{{ w.unit_price.toLocaleString() }}</template>
+            </td>
             <td><span class="emp-badge" :class="w.employment_type ?? 'fulltime'">{{ w.employment_type === 'contractor' ? '業務委託' : (w.employment_type ?? 'fulltime') === 'fulltime' ? '正社員' : `パート(週${w.weekly_scheduled_days ?? '?'}日)` }}</span></td>
             <td class="hire-date">{{ w.hire_date ?? '—' }}</td>
             <td><span class="status" :class="wStatus(w)" data-testid="worker-status">{{ STATUS_LABELS[wStatus(w)] }}</span></td>
@@ -69,7 +72,7 @@
       </table>
     </div>
 
-    <div v-if="modal" class="modal-overlay" @click.self="modal = null">
+    <div v-if="modal" class="modal-overlay" @click.self="tryCloseModal">
       <div class="modal">
         <h2>{{ modal.id ? '作業員を編集' : '作業員を追加' }}</h2>
         <div class="field">
@@ -86,13 +89,14 @@
         <div class="field">
           <label>権限ロール</label>
           <div class="toggle role-toggle">
-            <button :class="{ active: (modal.permission_role ?? 'worker') === 'admin' }" @click="modal.permission_role = 'admin'">管理者</button>
-            <button :class="{ active: (modal.permission_role ?? 'worker') === 'office' }" @click="modal.permission_role = 'office'">事務員</button>
-            <button :class="{ active: (modal.permission_role ?? 'worker') === 'site_manager' }" @click="modal.permission_role = 'site_manager'">現場担当者</button>
-            <button :class="{ active: (modal.permission_role ?? 'worker') === 'worker' }" @click="modal.permission_role = 'worker'">職人</button>
+            <button :class="{ active: (modal.permission_role ?? 'worker') === 'admin' }" @click="modal.permission_role = 'admin'">オーナー</button>
+            <button :class="{ active: (modal.permission_role ?? 'worker') === 'office' }" @click="modal.permission_role = 'office'">役員・経理</button>
+            <button :class="{ active: (modal.permission_role ?? 'worker') === 'site_manager' }" @click="modal.permission_role = 'site_manager'">現場管理者</button>
+            <button :class="{ active: (modal.permission_role ?? 'worker') === 'worker' }" @click="modal.permission_role = 'worker'">作業員</button>
           </div>
-          <p class="role-hint">権限階層: 管理者 &gt; 事務員 &gt; 現場担当者 &gt; 職人。画面/操作の制御は今後のフェーズで適用されます。</p>
+          <p class="role-hint">権限階層: オーナー &gt; 役員・経理 &gt; 現場管理者 &gt; 作業員。画面/操作の制御は今後のフェーズで適用されます。</p>
         </div>
+        <template v-if="canViewWages">
         <div class="field">
           <label>賃金タイプ</label>
           <div class="toggle">
@@ -102,7 +106,8 @@
         </div>
         <div class="field">
           <label>{{ modal.wage_type === 'hourly' ? '時給（円/h）' : '日当単価（円/日）' }}</label>
-          <input v-model.number="modal.unit_price" type="number" class="input" :placeholder="modal.wage_type === 'hourly' ? '2000' : '20000'" />
+          <p v-if="modal.wage_type === 'hourly' && !canViewHourlyWage" class="hint-sm">時給は権限により非表示です</p>
+          <input v-else v-model.number="modal.unit_price" type="number" class="input" :placeholder="modal.wage_type === 'hourly' ? '2000' : '20000'" />
         </div>
         <div v-if="modal.id" class="field">
           <label>昇給年月日（発効日・単価を変えた時に記録）</label>
@@ -113,7 +118,7 @@
           <label>単価変更の理由（任意）</label>
           <input v-model="wageReason" class="input" placeholder="例：定期昇給 / 資格取得" data-testid="wage-reason" />
         </div>
-        <div v-if="modal.id && wageHistory.length" class="field">
+        <div v-if="modal.id && wageHistory.length && canViewHourlyWage" class="field">
           <label>賃金変更履歴（発効日〜 で当時の賃金で計算）</label>
           <ul class="wage-hist" data-testid="wage-history">
             <li v-for="h in wageHistory" :key="h.id">
@@ -122,6 +127,7 @@
             </li>
           </ul>
         </div>
+        </template>
         <div class="field">
           <label>雇用形態</label>
           <div class="toggle">
@@ -192,18 +198,6 @@
           <input v-model="modal.labor_insurance_number" class="input" placeholder="例：12-3-45-678901-0" data-testid="labor-insurance-number" />
         </div>
         <div class="field">
-          <label>車検履歴（車両・車検日・満了日）</label>
-          <div v-for="(vi, i) in vehicleInspections" :key="i" class="inspect-row" data-testid="inspection-row">
-            <input v-model="vi.vehicle_name" class="input" placeholder="車両名" />
-            <div class="inspect-dates">
-              <input v-model="vi.inspection_date" type="date" class="input" title="車検日" />
-              <input v-model="vi.expiry_date" type="date" class="input" title="満了日" />
-              <button type="button" class="family-del" @click="removeInspection(i)">×</button>
-            </div>
-          </div>
-          <button type="button" class="btn-add-family" data-testid="add-inspection" @click="addInspection">＋ 車検を追加</button>
-        </div>
-        <div class="field">
           <label>健康診断履歴（受診日・結果）</label>
           <div v-for="(hc, i) in healthCheckups" :key="i" class="checkup-row" data-testid="checkup-row">
             <input v-model="hc.checkup_date" type="date" class="input" />
@@ -231,21 +225,30 @@
             <span v-if="workers.filter(w => w.id !== modal?.id).length === 0" class="proxy-none">他に作業員がいません</span>
           </div>
         </div>
-        <div v-if="modal.id" class="field auth-field">
+        </div><!-- /detail-section -->
+
+        <!-- ログイン認証（常時表示＝新規/編集どちらでも／保存ボタンで作業員情報と一体反映） -->
+        <div class="field auth-field">
           <label>
-            ログイン認証（email / password）
+            ログイン認証
             <span v-if="modal.auth_user_id" class="auth-status set" data-testid="auth-status-set">認証設定済み</span>
             <span v-else class="auth-status unset">未設定</span>
           </label>
+          <div class="auth-mode-toggle">
+            <button type="button" :class="{ active: authMode === 'id' }" @click="authMode = 'id'">ID認証（メール無し作業員）</button>
+            <button type="button" :class="{ active: authMode === 'email' }" @click="authMode = 'email'">メール認証</button>
+          </div>
           <!-- 管理者自身のログイン情報がオートフィルされないよう抑制（作業員の認証を設定する欄のため） -->
-          <input v-model="authEmail" class="input" type="text" inputmode="email" name="worker-login-id" autocomplete="off" placeholder="email（ログインID）" data-testid="auth-email" />
-          <input v-model="authPassword" class="input" type="password" name="worker-login-pass" autocomplete="new-password" placeholder="パスワード（8文字以上）" data-testid="auth-password" />
-          <button class="btn-auth" :disabled="authSaving" data-testid="auth-setup-btn" @click="setupAuth">{{ authSaving ? '処理中...' : (modal.auth_user_id ? '認証を更新' : '認証を作成') }}</button>
+          <input v-if="authMode === 'id'" v-model="authLoginId" class="input" type="text" name="worker-login-id" autocomplete="off" placeholder="ログインID（半角英数・. _ - 3文字以上）" data-testid="auth-login-id" />
+          <input v-else v-model="authEmail" class="input" type="text" inputmode="email" name="worker-login-email" autocomplete="off" placeholder="email（現場管理者以上は必須）" data-testid="auth-email" />
+          <!-- パスワード：未設定なら常時入力欄／設定済みは「変更」ボタンで展開 -->
+          <input v-if="!modal.auth_user_id || showPwField" v-model="authPassword" class="input" type="password" name="worker-login-pass" autocomplete="new-password" placeholder="パスワード（8文字以上）" data-testid="auth-password" />
+          <button v-else type="button" class="btn-pw-change" data-testid="auth-pw-change" @click="showPwField = true">パスワードを変更</button>
+          <p class="auth-hint">{{ authMode === 'id' ? 'メール無し作業員向け。ログイン画面で「ID＋パスワード」でログインできます（IDはグローバル一意）。' : '現場管理者以上は通知受信のためメール必須。' }}<br>下の「保存」で作業員情報と一緒に反映されます（パスワード欄が空なら認証は変更されません）。</p>
           <p v-if="authMsg" :class="authOk ? 'auth-ok' : 'error'" data-testid="auth-msg">{{ authMsg }}</p>
         </div>
-        </div><!-- /detail-section -->
         <div class="modal-actions">
-          <button class="btn-cancel" @click="modal = null">キャンセル</button>
+          <button class="btn-cancel" @click="tryCloseModal">キャンセル</button>
           <button class="btn-save" :disabled="saving" @click="save">{{ saving ? '保存中...' : '保存' }}</button>
         </div>
         <p v-if="saveError" class="error">{{ saveError }}</p>
@@ -258,7 +261,7 @@
         <h2>作業員を完全に削除</h2>
         <p class="del-warn">
           <b>{{ delTarget.name }}</b> を完全に削除します。この操作は<b>取り消せません</b>。<br>
-          作業員マスタの情報・代理人・賃金履歴・家族/車検/健診・予定が削除されます。<br>
+          作業員マスタの情報・代理人・賃金履歴・家族/健診・予定が削除されます。<br>
           （日報データが紐づく作業員は保全のため削除できません。その場合は『無効』のまま保管してください。）
         </p>
         <div class="field">
@@ -276,9 +279,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { canViewWages, canViewHourlyWage } from '../lib/auth'
 
 type Worker = {
   id: string
@@ -357,29 +361,6 @@ async function syncFamily(workerId: string, accountId: string, want: FamilyMembe
   }
   if (toDel.length) await supabase.from('worker_family_members').delete().in('id', toDel)
 }
-// 車検履歴（1作業員に複数）
-type VehicleInspection = { id?: string; vehicle_name: string | null; inspection_date: string | null; expiry_date: string | null }
-const vehicleInspections = ref<VehicleInspection[]>([])
-function addInspection()            { vehicleInspections.value.push({ vehicle_name: null, inspection_date: null, expiry_date: null }) }
-function removeInspection(i: number){ vehicleInspections.value.splice(i, 1) }
-async function loadInspections(workerId: string) {
-  const { data } = await supabase.from('worker_vehicle_inspections')
-    .select('id, vehicle_name, inspection_date, expiry_date').eq('worker_id', workerId).order('sort_order')
-  vehicleInspections.value = ((data ?? []) as any[]).map(r => ({ id: r.id, vehicle_name: r.vehicle_name, inspection_date: r.inspection_date, expiry_date: r.expiry_date }))
-}
-async function syncInspections(workerId: string, accountId: string, want: VehicleInspection[]) {
-  const valid = want.filter(r => r.vehicle_name?.trim() || r.inspection_date || r.expiry_date)
-  const { data } = await supabase.from('worker_vehicle_inspections').select('id').eq('worker_id', workerId)
-  const haveIds = ((data ?? []) as { id: string }[]).map(h => h.id)
-  const keepIds = valid.map(r => r.id).filter(Boolean) as string[]
-  const toDel = haveIds.filter(id => !keepIds.includes(id))
-  for (const [i, r] of valid.entries()) {
-    const row = { worker_id: workerId, account_id: accountId, vehicle_name: r.vehicle_name?.trim() || null, inspection_date: r.inspection_date || null, expiry_date: r.expiry_date || null, sort_order: i, updated_at: new Date().toISOString() }
-    if (r.id) await supabase.from('worker_vehicle_inspections').update(row).eq('id', r.id)
-    else      await supabase.from('worker_vehicle_inspections').insert(row)
-  }
-  if (toDel.length) await supabase.from('worker_vehicle_inspections').delete().in('id', toDel)
-}
 // 健康診断履歴（1作業員に複数）
 type HealthCheckup = { id?: string; checkup_date: string | null; result: string | null }
 const healthCheckups = ref<HealthCheckup[]>([])
@@ -404,21 +385,34 @@ async function syncCheckups(workerId: string, accountId: string, want: HealthChe
   if (toDel.length) await supabase.from('worker_health_checkups').delete().in('id', toDel)
 }
 const saveError       = ref('')
-// email/password 認証（Phase 2a）
+// email/password 認証（Phase 2a）＋ ID/password 認証（メール無し作業員）
+const authMode        = ref<'email' | 'id'>('email')
 const authEmail       = ref('')
+const authLoginId     = ref('')
 const authPassword    = ref('')
-const authSaving      = ref(false)
+const showPwField     = ref(false)   // 認証設定済みの時、パスワード欄は「変更」ボタンで展開
 const authMsg         = ref('')
 const authOk          = ref(false)
+
+// 未保存の離脱確認：フォームに変更があれば閉じる前に確認する
+const formDirty = ref(false)
+let   formReady = false   // 開いた直後の初期化による watch 発火を dirty 扱いしないためのガード
+watch([modal, authLoginId, authEmail, authPassword, authMode, modalProxyIds, familyMembers, healthCheckups, wageReason, wageEffectiveDate],
+  () => { if (formReady) formDirty.value = true }, { deep: true })
+function markFormLoaded() { formDirty.value = false; formReady = false; nextTick(() => { formReady = true }) }
+function tryCloseModal() {
+  if (formDirty.value && !confirm('未保存の変更があります。破棄して閉じてもよろしいですか？')) return
+  formReady = false; modal.value = null
+}
 
 function workerName(id: string | null) {
   if (!id) return ''
   return workers.value.find(w => w.id === id)?.name ?? '不明'
 }
 
-const PERM_LABELS: Record<string, string> = { admin: '管理者', office: '事務員', site_manager: '現場担当者', worker: '職人' }
+const PERM_LABELS: Record<string, string> = { admin: 'オーナー', office: '役員・経理', site_manager: '現場管理者', worker: '作業員' }
 function permLabel(r: string | null | undefined): string {
-  return PERM_LABELS[r ?? 'worker'] ?? '職人'
+  return PERM_LABELS[r ?? 'worker'] ?? '作業員'
 }
 
 // 編集ダイアログ: よく使う項目だけ常時表示し、個人情報/会社/保険/資格/代理人/認証は折りたたむ。
@@ -455,34 +449,39 @@ function openAdd() {
   modal.value = { name: '', role: 'site', permission_role: 'worker', unit_price: 20000, wage_type: 'daily', hire_date: null, birth_date: null, address: null, emergency_contact: null, employment_type: 'fulltime', weekly_scheduled_days: null, company_info: null, invoice_number: null, insurance_info: null, labor_insurance_number: null, report_start_date: null }
   modalProxyIds.value = []
   familyMembers.value = []
-  vehicleInspections.value = []
   healthCheckups.value = []
   saveError.value = ''
+  // 新規でも認証UIを出す（保存で一体作成・二度手間回避）＝状態を初期化
+  authEmail.value = ''; authLoginId.value = ''; authMode.value = 'id'; authPassword.value = ''
+  showPwField.value = false; authMsg.value = ''; authOk.value = false
+  markFormLoaded()
 }
 
-function openEdit(w: Worker) {
+async function openEdit(w: Worker) {
   modal.value = { ...w }
   modalProxyIds.value = [...(proxyMap.value.get(w.id) ?? [])]
   saveError.value = ''
   authEmail.value = ''
+  authLoginId.value = ''
+  authMode.value = 'email'
   authPassword.value = ''
+  showPwField.value = false
   authMsg.value = ''
   authOk.value = false
-  // 認証済みなら現在のログインメールを取得して email 欄に表示（編集時に確認できるように）
-  if (w.auth_user_id) loadAuthEmail(w.id)
-  // 昇給履歴：変更前単価を控え、履歴を読み込む
+  // 昇給履歴：変更前単価を控える
   origUnitPrice.value = w.unit_price ?? null
   origWageType.value  = (w.wage_type ?? 'daily') as 'daily' | 'hourly'
   wageReason.value = ''
   wageEffectiveDate.value = todayStr()
   wageHistory.value = []
-  loadWageHistory(w.id)
   familyMembers.value = []
-  loadFamily(w.id)
-  vehicleInspections.value = []
-  loadInspections(w.id)
   healthCheckups.value = []
-  loadCheckups(w.id)
+  // 非同期ロードは await してから dirty 監視を開始（ロード発火を誤って dirty 扱いしない）
+  await Promise.all([
+    w.auth_user_id ? loadAuthEmail(w.id) : Promise.resolve(),
+    loadWageHistory(w.id), loadFamily(w.id), loadCheckups(w.id),
+  ])
+  markFormLoaded()
 }
 
 async function loadWageHistory(workerId: string) {
@@ -498,42 +497,13 @@ async function loadAuthEmail(workerId: string) {
     const { data, error } = await supabase.functions.invoke('worker-auth-setup', { body: { worker_id: workerId, mode: 'get' } })
     if (error || !data?.ok) return
     // モーダルが別の作業員に切り替わっていたら反映しない
-    if (modal.value?.id === workerId && data.email) authEmail.value = data.email
+    if (modal.value?.id !== workerId) return
+    if (data.login_id) { authMode.value = 'id'; authLoginId.value = data.login_id }   // ID認証の作業員
+    else if (data.email) { authMode.value = 'email'; authEmail.value = data.email }
   } catch { /* 取得失敗時は空のまま（手入力可） */ }
 }
 
-// 作業員の email/password 認証を作成/更新（edge: worker-auth-setup・service_role）
-async function setupAuth() {
-  if (!modal.value?.id) return
-  if (!authEmail.value.trim() || authPassword.value.length < 8) {
-    authOk.value = false
-    authMsg.value = 'email と 8文字以上のパスワードを入力してください'
-    return
-  }
-  authSaving.value = true
-  authMsg.value = ''
-  try {
-    const { data, error } = await supabase.functions.invoke('worker-auth-setup', {
-      body: { worker_id: modal.value.id, email: authEmail.value.trim(), password: authPassword.value },
-    })
-    if (error) throw error
-    // 重複メール等のガードは 200 + {ok:false, message} で返る。message を優先表示。
-    if (!data?.ok) throw new Error(data?.message ?? data?.error ?? '認証設定に失敗しました')
-    authOk.value = true
-    // 旧authの削除に失敗した場合は、旧メール/パスワードがまだ有効な可能性を警告
-    authMsg.value = data.old_auth_cleanup === 'failed'
-      ? '認証を設定しました（※旧メール/パスワードの無効化に失敗。旧資格でログインできる可能性があります）'
-      : '認証を設定しました'
-    authPassword.value = ''
-    if (modal.value) modal.value.auth_user_id = data.auth_user_id
-    await load()
-  } catch (e: any) {
-    authOk.value = false
-    authMsg.value = e?.message ?? '認証設定に失敗しました'
-  } finally {
-    authSaving.value = false
-  }
-}
+// 認証は save() に統一（別ボタン廃止）。作成/更新は保存ボタンで一緒に反映する。
 
 async function save() {
   if (!modal.value?.name?.trim()) { saveError.value = '名前を入力してください'; return }
@@ -580,8 +550,14 @@ async function save() {
         })
       }
     } else {
-      const { data } = await supabase.from('workers').insert({ ...workerPayload, account_id: accountId, status: 'active' }).select('id').single()
-      workerId = data!.id
+      const { data, error: insErr } = await supabase.from('workers').insert({ ...workerPayload, account_id: accountId, status: 'active' }).select('id').single()
+      if (insErr || !data) {
+        // 作業員名は一意制約あり＝同名が既にいると 23505。分かりやすいメッセージに。
+        if ((insErr as any)?.code === '23505') throw new Error('同じ名前の作業員が既に登録されています。名前を変えてください。')
+        throw new Error(insErr?.message ?? '作業員の作成に失敗しました')
+      }
+      workerId = data.id
+      if (modal.value) modal.value.id = workerId   // 以降のエラー時に再保存で二重insertしないよう即idを持たせる
     }
 
     // 代理人関係を全削除して再挿入
@@ -596,11 +572,40 @@ async function save() {
       )
     }
 
-    // 家族構成・車検履歴・健診履歴の同期
+    // 家族構成・健診履歴の同期
     await syncFamily(workerId!, accountId, familyMembers.value)
-    await syncInspections(workerId!, accountId, vehicleInspections.value)
     await syncCheckups(workerId!, accountId, healthCheckups.value)
 
+    // ログイン認証（保存ボタンに統一）：パスワードが入力された時だけ作成/更新する。
+    //  空なら認証は変更しない（＝通常の作業員編集で毎回パス入力を求めない）。
+    if (authPassword.value) {
+      const useId = authMode.value === 'id'
+      const cred = (useId ? authLoginId.value : authEmail.value).trim()
+      if (!cred) throw new Error(useId ? 'ログインIDを入力してください' : 'メールアドレスを入力してください')
+      // フォーマット検証（EFに投げる前に分かりやすいメッセージを出す）
+      if (useId) {
+        if (!/^[A-Za-z0-9][A-Za-z0-9._-]{2,}$/.test(cred)) throw new Error('ログインIDは半角英数（. _ -）で3文字以上にしてください')
+      } else {
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(cred)) throw new Error('有効なメールアドレスを入力してください（例: name@example.com）。メール無し作業員は「ID認証」タブを使ってください')
+      }
+      if (authPassword.value.length < 8) throw new Error('パスワードは8文字以上で入力してください')
+      const { data: ad, error: ae } = await supabase.functions.invoke('worker-auth-setup', {
+        body: useId
+          ? { worker_id: workerId, login_id: cred, password: authPassword.value }
+          : { worker_id: workerId, email: cred, password: authPassword.value },
+      })
+      if (ae) {
+        // 非2xx時は EF 本文の message/error を取り出して分かりやすく表示（'non-2xx status code' の握り潰し回避）
+        let msg = '認証設定に失敗しました'
+        try { const b = await (ae as any).context?.json?.(); if (b) msg = b.message ?? b.error ?? msg } catch { /* 本文取れなければ既定 */ }
+        throw new Error(msg)
+      }
+      if (!ad?.ok) throw new Error(ad?.message ?? ad?.error ?? '認証設定に失敗しました')
+      // 旧authの無効化に失敗した場合は警告（旧資格が残る可能性）
+      if (ad.old_auth_cleanup === 'failed') { saveError.value = '保存しました（※旧ログインの無効化に失敗。旧資格でログインできる可能性があります）' }
+    }
+
+    formReady = false; formDirty.value = false
     modal.value = null
     await load()
   } catch (e: any) {
@@ -735,14 +740,16 @@ async function confirmDelete() {
 .family-row { display: grid; grid-template-columns: 1.2fr 1fr 1fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
 .checkup-row { display: grid; grid-template-columns: 1fr 1.6fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
 .checkup-row .input { padding: 8px 10px; font-size: 13px; }
-.inspect-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
-.inspect-row .input { padding: 8px 10px; font-size: 13px; }
-.inspect-dates { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; align-items: center; }
 .family-row .input { padding: 8px 10px; font-size: 13px; }
 .family-del { background: none; border: 1px solid #f0caca; color: #c0392b; border-radius: 6px; width: 30px; height: 32px; cursor: pointer; font-size: 14px; }
 .btn-add-family { background: #f0f0f0; border: none; border-radius: 6px; padding: 8px 14px; font-size: 13px; cursor: pointer; color: #555; align-self: flex-start; }
 .hire-date { font-size: 12px; color: #666; font-variant-numeric: tabular-nums; }
 .auth-field { border-top: 1px solid #f0f0f0; padding-top: 16px; }
+.auth-mode-toggle { display: flex; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; margin-bottom: 8px; }
+.auth-mode-toggle button { flex: 1; padding: 8px; background: #f5f5f5; color: #888; border: none; cursor: pointer; font-size: 12px; }
+.auth-mode-toggle button.active { background: #1a6fc4; color: #fff; font-weight: 700; }
+.auth-hint { font-size: 11px; color: #94a3b8; margin: 6px 0; line-height: 1.5; }
+.btn-pw-change { align-self: flex-start; background: #eef2ff; color: #4338ca; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; }
 .auth-status { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 700; margin-left: 8px; }
 .auth-status.set { background: #e8f4ff; color: #1a6fc4; }
 .auth-status.unset { background: #f5f5f5; color: #bbb; }

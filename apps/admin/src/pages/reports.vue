@@ -26,7 +26,6 @@
           <span class="report-date">{{ r.date }}</span>
           <span class="report-worker">{{ r.worker_name ?? '—' }}</span>
           <span class="badge" :class="r.leave_type === 'paid_leave' ? 'paid-leave' : r.is_working ? 'working' : 'off'">{{ r.leave_type === 'paid_leave' ? '有給' : r.is_working ? '稼働' : '休み' }}</span>
-          <span class="badge" :class="r.line_notified_at ? 'notified' : 'not-notified'">{{ r.line_notified_at ? 'LINE済' : '未通知' }}</span>
           <span class="detail-hint">詳細 →</span>
         </div>
         <div v-if="r.is_working && r.sites?.length" class="sites" @click="selected = r">
@@ -37,19 +36,26 @@
               🕒 {{ site.workers[0].startTime }}〜{{ site.workers[0].endTime }}
             </span>
             <span class="attendance">
-              🟢 出勤 {{ attendanceFor(r, site)?.checkin ?? '—' }} / 退勤 {{ attendanceFor(r, site)?.checkout ?? '—' }}
+              <template v-if="attendanceFor(r, site)?.checkin || attendanceFor(r, site)?.checkout">🟢 出勤 {{ attendanceFor(r, site)?.checkin ?? '—' }} / 退勤 {{ attendanceFor(r, site)?.checkout ?? '—' }}</template>
+              <span v-else class="no-punch">打刻なし</span>
             </span>
-            <span class="worker-count">作業員 {{ site.workers?.length ?? 0 }}名</span>
           </div>
         </div>
         <div class="card-actions">
+          <button
+            v-if="r.users?.worker_id"
+            class="btn-grant-sm"
+            :disabled="granting === r.id"
+            :title="'この作業員のこの日を、申請なしで編集可にします'"
+            @click.stop="issueEditGrant(r)"
+          >{{ grantedIds.has(r.id) ? '✓ 編集許可済' : (granting === r.id ? '発行中…' : '✏️ 編集許可を発行') }}</button>
           <button
             v-if="!HIDE_LINE_SECTIONS && !r.line_notified_at"
             class="btn-notify-sm"
             :disabled="notifying === r.id"
             @click.stop="sendNotification(r)"
           >{{ notifying === r.id ? '送信中...' : 'LINE通知' }}</button>
-          <button class="btn-delete-sm" @click.stop="confirmDelete(r)">削除</button>
+          <!-- 削除は誤操作防止のため一覧からは行わない。詳細（詳細→）を開いてから削除する -->
         </div>
       </div>
     </div>
@@ -65,7 +71,7 @@
               <span v-if="selected.sites?.[0]?.workers?.[0]?.workerRole" class="worker-role-inline">
                 / {{ selected.sites[0].workers[0].workerRole === 'factory' ? '工場' : '現場' }}
               </span>
-              <span v-if="selected.users?.workers?.unit_price" class="unit-price-inline">
+              <span v-if="canViewWages && selected.users?.workers?.unit_price && !(selected.users?.workers?.wage_type === 'hourly' && !canViewHourlyWage)" class="unit-price-inline">
                 ¥{{ selected.users.workers.unit_price.toLocaleString() }}/日
               </span>
             </div>
@@ -74,8 +80,17 @@
             <span class="badge" :class="selected.leave_type === 'paid_leave' ? 'paid-leave' : selected.is_working ? 'working' : 'off'">
               {{ selected.leave_type === 'paid_leave' ? '有給' : selected.is_working ? '稼働' : '休み' }}
             </span>
-            <button class="btn-delete" @click="confirmDelete(selected)">削除</button>
+            <button class="btn-delete" @click="deleteArmed = true">削除</button>
             <button class="btn-close" @click="selected = null">✕</button>
+          </div>
+        </div>
+
+        <!-- 削除は2段階（誤操作防止）：⚠ 元に戻せない旨を明示してから確定 -->
+        <div v-if="deleteArmed" class="delete-confirm">
+          <span class="delete-confirm-msg">⚠️ この日報を削除すると<b>元に戻せません</b>（工数・経費・添付も消えます）。本当に削除しますか？</span>
+          <div class="delete-confirm-actions">
+            <button class="btn-delete" :disabled="deleting" @click="doDeleteFromModal">{{ deleting ? '削除中…' : 'この日報を削除する' }}</button>
+            <button class="btn-cancel-sm" @click="deleteArmed = false">キャンセル</button>
           </div>
         </div>
 
@@ -117,7 +132,7 @@
                   </template>
                 </tbody>
               </table>
-              <div v-if="selected.users?.workers?.unit_price" class="labor-cost">
+              <div v-if="canViewWages && selected.users?.workers?.unit_price" class="labor-cost">
                 人件費
                 <span class="labor-cost-amount">
                   ¥{{ site.workers.reduce((sum: number, w: any) => sum + (w.startTime && w.endTime ? calcLaborCost(w, selected.date, selected.users.workers.unit_price, selected.users.workers.wage_type || 'daily') : 0), 0).toLocaleString() }}
@@ -265,11 +280,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug } from '../lib/account'
 import { HIDE_LINE_SECTIONS } from '../lib/featureFlags'
 import { computeWorkerHours, calcBreakMinutes, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
+import { canViewWages, canViewHourlyWage, currentUser } from '../lib/auth'
 
 const EDGE_URL  = import.meta.env.VITE_SUPABASE_EDGE_URL as string
 const ANON_KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY as string
@@ -308,12 +324,47 @@ const notifying = ref<string | null>(null)
 const reports  = ref<any[]>([])
 const selected = ref<any | null>(null)
 
+// 管理者から編集許可を発行：この日報の worker×date に approved grant を作成し、申請なしで編集可にする。
+//  （日報の間違いを見ながらその場で許可を出せる。作業員側は既存の realtime/ポーリングで自動反映）
+const granting   = ref<string | null>(null)
+const grantedIds = ref<Set<string>>(new Set())
+async function issueEditGrant(r: any) {
+  const workerId = r.users?.worker_id
+  if (!workerId || !r.date) return
+  if (!confirm(`${r.worker_name ?? 'この作業員'} の ${r.date} の日報に編集許可を発行します。よろしいですか？\n（この作業員は申請なしでこの日を再編集できるようになります）`)) return
+  granting.value = r.id
+  try {
+    const accountId = await getAccountId()
+    const email = currentUser.value?.email ?? null
+    const now = new Date().toISOString()
+    // 同 worker×date の既存grantがあれば approved へ更新、無ければ approved で新規（DB一意制約なし）
+    const { data: existing } = await supabase.from('report_edit_grants')
+      .select('id').eq('account_id', accountId).eq('worker_id', workerId).eq('date', r.date).limit(1)
+    if (existing && existing.length) {
+      await supabase.from('report_edit_grants')
+        .update({ status: 'approved', approved_by: email, decided_at: now }).eq('id', (existing[0] as any).id)
+    } else {
+      await supabase.from('report_edit_grants')
+        .insert({ account_id: accountId, worker_id: workerId, date: r.date, status: 'approved', approved_by: email, decided_at: now, requested_at: now })
+    }
+    grantedIds.value = new Set(grantedIds.value).add(r.id)
+  } catch (e) {
+    alert('編集許可の発行に失敗しました')
+  } finally {
+    granting.value = null
+  }
+}
+
 // 出退勤マップ: `${worker_id}|${date}|${現場名}` → { checkin, checkout }（HH:MM, JST）
 const attendanceMap = ref<Record<string, { checkin?: string; checkout?: string }>>({})
 
-function confirmDelete(r: any) {
-  if (!confirm(`${r.date} ${r.worker_name ?? ''} の日報を削除しますか？`)) return
-  deleteReport(r)
+// 削除は詳細モーダル内の2段階のみ（一覧からは不可・誤操作防止）
+const deleteArmed = ref(false)
+watch(selected, () => { deleteArmed.value = false })   // 別日報を開いた/閉じたら武装解除
+async function doDeleteFromModal() {
+  if (!selected.value) return
+  await deleteReport(selected.value)   // 成功時に selected=null でモーダルを閉じる
+  deleteArmed.value = false
 }
 
 const URL_KEYS = ['vehicleUrls', 'trainUrls', 'hotelUrls', 'leopalaceUrls', 'otherUrls', 'entertainmentUrls', 'garbagePhotoUrls'] as const
@@ -535,12 +586,20 @@ onMounted(load)
 .report-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.1); }
 .report-header { cursor: pointer; }
 .card-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+.btn-grant-sm { background: none; border: 1px solid #f0b429; color: #b45309; border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
+.btn-grant-sm:hover:not(:disabled) { background: #fffbeb; }
+.btn-grant-sm:disabled { opacity: .6; cursor: default; }
 .btn-notify-sm { background: none; border: 1px solid #6db8e8; color: #1a7abf; border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
 .btn-notify-sm:hover:not(:disabled) { background: #e8f4fd; }
 .btn-notify-sm:disabled { opacity: .5; cursor: not-allowed; }
 .btn-delete-sm { background: none; border: 1px solid #fca5a5; color: #dc2626; border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
 .btn-delete-sm:hover { background: #fef2f2; }
+.delete-confirm { background: #fef2f2; border: 1px solid #fca5a5; border-radius: 8px; padding: 12px 14px; margin: 0 0 12px; display: flex; flex-direction: column; gap: 10px; }
+.delete-confirm-msg { font-size: 13px; color: #991b1b; line-height: 1.6; }
+.delete-confirm-actions { display: flex; gap: 10px; }
+.btn-cancel-sm { background: #fff; border: 1px solid #d1d5db; color: #374151; border-radius: 8px; padding: 6px 14px; font-size: 13px; cursor: pointer; }
 .btn-delete { background: #dc2626; color: #fff; border: none; border-radius: 8px; padding: 6px 14px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.btn-delete:disabled { opacity: .6; }
 .btn-delete:hover { background: #b91c1c; }
 .report-header { display: flex; align-items: center; gap: 12px; }
 .report-date { font-weight: 700; font-size: 15px; min-width: 100px; }
@@ -560,6 +619,7 @@ onMounted(load)
 .attendance-tag { font-size: 12px; font-weight: 600; color: #0a8a3a; margin-left: 8px; font-variant-numeric: tabular-nums; }
 .work-time { color: #1a7abf; font-weight: 600; font-variant-numeric: tabular-nums; }
 .attendance { color: #0a8a3a; font-weight: 600; font-variant-numeric: tabular-nums; }
+.no-punch { color: #94a3b8; font-weight: 500; }
 .worker-count { color: #888; }
 
 /* モーダル */

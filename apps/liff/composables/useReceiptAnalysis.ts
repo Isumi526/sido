@@ -4,6 +4,7 @@
 // ============================================================
 
 export interface ReceiptResult {
+  storeName:     string | null   // 支払い先＝発行元(店名/会社)
   label:         string | null
   yen:           number | null
   invoiceNumber: string | null

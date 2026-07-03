@@ -8,7 +8,7 @@ import type { MasterData } from '~/types'
 const FALLBACK: MasterData = {
   sites:          [],
   contractors:    [],
-  workers:        [{ name: 'テストユーザー', unitPrice: 0, role: 'site' }],
+  workers:        [{ name: 'テストユーザー', role: 'site' }],
   subcontractors: [],
   vehicles:       ['ハイエース', 'キャラバン', 'プロボックス', 'その他'],
 }
@@ -65,7 +65,7 @@ export const useMaster = () => {
     const [sitesRes, contractorsRes, workersRes, subsRes, vehiclesRes, siteSubsRes] = await Promise.all([
       supabase.from('sites').select('id, name, contractor_id, default_start_time, default_end_time').eq('active', true).eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
       supabase.from('contractors').select('id, name').eq('active', true).eq('account_id', accountId).order('sort_order'),
-      supabase.from('workers').select('id, name, role, unit_price').eq('active', true).eq('account_id', accountId).order('sort_order'),
+      supabase.from('workers').select('id, name, role').eq('active', true).eq('account_id', accountId).order('sort_order'),  // unit_price は取得しない（anon公開キーで他人の時給がliffに降りないように・#4）
       supabase.from('subcontractors').select('id, name').eq('active', true).eq('account_id', accountId).order('sort_order'),
       supabase.from('vehicles').select('name').eq('active', true).eq('account_id', accountId).order('sort_order'),
       supabase.from('site_subcontractors').select('site_id, subcontractor_id').eq('account_id', accountId),
@@ -99,7 +99,7 @@ export const useMaster = () => {
     const data: MasterData = {
       sites:          (sitesRes.data       ?? []).map(r => r.name),
       contractors:    (contractorsRes.data ?? []).map(r => r.name),
-      workers:        (workersRes.data     ?? []).map(r => ({ id: r.id, name: r.name, role: r.role as 'factory' | 'site', unitPrice: r.unit_price })),
+      workers:        (workersRes.data     ?? []).map(r => ({ id: r.id, name: r.name, role: r.role as 'factory' | 'site' })),
       subcontractors: (subsRes.data        ?? []).map(r => r.name),
       vehicles:       (vehiclesRes.data    ?? []).map(r => r.name),
       siteContractors,

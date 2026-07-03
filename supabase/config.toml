@@ -395,6 +395,14 @@ verify_jwt = false
 verify_jwt = false
 [functions.notify-error]
 verify_jwt = false
+[functions.notify-overtime]
+verify_jwt = false
+[functions.vehicle-attachment-url]
+verify_jwt = false
+[functions.vehicle-plate-ocr]
+verify_jwt = false
+[functions.vehicle-shaken-ocr]
+verify_jwt = false
 [functions.resend-notifications]
 verify_jwt = false
 [functions.daily-reminder]
@@ -416,7 +424,7 @@ verify_jwt = true
 [functions.test-send-purchase-order]
 verify_jwt = false
 [functions.worker-auth-setup]
-verify_jwt = true
+verify_jwt = false
 [functions.site-attachment-url]
 verify_jwt = false
 [functions.estimate-price-ocr]
