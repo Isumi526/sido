@@ -203,6 +203,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { currentWorkerId } from '../lib/auth'
 import { loadScheduleCategories, FALLBACK_CATEGORY_COLOR, type ScheduleCategory } from '../lib/scheduleCategories'
 
 // ──── 型定義 ────────────────────────────────────────────────
@@ -366,12 +367,15 @@ async function loadSchedules() {
     const from = toDateStr(new Date(d.getFullYear(), d.getMonth(), 1))
     const to   = toDateStr(new Date(d.getFullYear(), d.getMonth() + 1, 0))
 
+    // 可視性：非公開(is_public=false)は本人のみ（管理者=admin/office も他者の非公開は見られない）
+    const meId = currentWorkerId.value || '00000000-0000-0000-0000-000000000000'
     const { data, error } = await supabase
       .from('schedules')
       .select('*, worker:workers(id, name)')
       .eq('account_id', accountId)
       .lte('start_date', to)
       .gte('end_date', from)
+      .or(`is_public.eq.true,worker_id.eq.${meId}`)
       .order('start_date')
 
     if (error) throw error

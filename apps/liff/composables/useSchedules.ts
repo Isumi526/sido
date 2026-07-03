@@ -150,25 +150,19 @@ export const useSchedules = () => {
       // アカウント全体の予定を取得（削除済みを除く）
       const accountId = await resolveAccountId()
 
-      // 可視性（A方針）：非公開(is_public=false)は「本人」または「管理者(admin/office)」のみ閲覧可。
-      //  それ以外の閲覧者には公開(is_public=true)＋自分の予定だけを返す。既存予定は is_public=true 既定のため従来どおり全員に見える。
+      // 可視性：非公開(is_public=false)は「本人のみ」閲覧可（管理者=admin/office も他者の非公開は見られない）。
+      //  誰にでも公開(is_public=true)＋自分の予定だけを返す。既存予定は is_public=true 既定のため従来どおり全員に見える。
       const viewerWid = _myWorkerIdCache.value
-      let canSeeAll = false
-      if (viewerWid) {
-        const { data: vw } = await supabase.from('workers').select('permission_role').eq('id', viewerWid).maybeSingle()
-        const role = (vw as { permission_role?: string } | null)?.permission_role
-        canSeeAll = role === 'admin' || role === 'office'
-      }
+      // 本人IDが無い場合は公開のみ（非公開が漏れない安全側の既定）
+      const meId = viewerWid || '00000000-0000-0000-0000-000000000000'
 
-      let query = supabase
+      const query = supabase
         .from('schedules')
         .select('*, worker:workers(id, name)')
         .eq('account_id', accountId)
         .lte('start_date', to)
         .gte('end_date', from)
-      if (!canSeeAll && viewerWid) {
-        query = query.or(`is_public.eq.true,worker_id.eq.${viewerWid}`)
-      }
+        .or(`is_public.eq.true,worker_id.eq.${meId}`)
       const { data, error: err } = await query.order('start_date')
       if (err) throw err
 
