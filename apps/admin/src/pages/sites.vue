@@ -168,9 +168,11 @@
               <button class="att-del" title="取り消し" @click="removePendingAtt(i)">×</button>
             </div>
           </div>
-          <div class="att-add">
-            <label class="att-btn">＋ 写真<input type="file" accept="image/*" hidden :disabled="uploading" @change="onAttach($event, 'photo')" /></label>
-            <label class="att-btn">＋ 書類<input type="file" accept="application/pdf,image/*" hidden :disabled="uploading" @change="onAttach($event, 'document')" /></label>
+          <div class="att-add att-dropzone" :class="{ dragover: attDragOver, busy: uploading }"
+               @drop.prevent="onDropAtt" @dragover.prevent="attDragOver = true" @dragleave.prevent="attDragOver = false">
+            <label class="att-btn">＋ 写真<input type="file" accept="image/*" multiple hidden :disabled="uploading" @change="onAttach($event, 'photo')" /></label>
+            <label class="att-btn">＋ 書類<input type="file" accept="application/pdf,image/*" multiple hidden :disabled="uploading" @change="onAttach($event, 'document')" /></label>
+            <span class="att-drop-hint">{{ attDragOver ? 'ここにドロップ' : 'またはここに画像/PDFを複数まとめてドラッグ&ドロップ' }}</span>
             <span v-if="uploading" class="att-up">アップロード中…</span>
           </div>
           <p v-if="!modal.id" class="hint">新規はここで選ぶと「保存時にアップロード」されます。出退勤同意の設定は作成後に「ルール・QR設定」で行えます。</p>
@@ -491,10 +493,23 @@ async function loadAttachments(siteId: string) {
   await Promise.all(atts.map(async (a) => { a.url = await signedUrl(a.id) }))
   attachments.value = atts
 }
+// ボタン選択（複数可）→ 各ファイルを処理
 async function onAttach(ev: Event, kind: 'photo' | 'document') {
   const input = ev.target as HTMLInputElement
-  const file = input.files?.[0]
+  for (const f of Array.from(input.files ?? [])) await processAttFile(f, kind)
   input.value = ''
+}
+// ドラッグ&ドロップ（写真/PDF混在可）→ ファイル種別から kind を推定して処理
+const attDragOver = ref(false)
+async function onDropAtt(ev: DragEvent) {
+  attDragOver.value = false
+  if (uploading.value) return
+  for (const f of Array.from(ev.dataTransfer?.files ?? [])) {
+    const kind: 'photo' | 'document' = f.type.startsWith('image/') ? 'photo' : 'document'
+    await processAttFile(f, kind)
+  }
+}
+async function processAttFile(file: File | undefined | null, kind: 'photo' | 'document') {
   if (!file || !modal.value) return
   // 新規現場: 保留（保存時にアップロード）。写真はサムネ用プレビュー生成。
   if (!modal.value.id) {
@@ -505,14 +520,14 @@ async function onAttach(ev: Event, kind: 'photo' | 'document') {
   try {
     const accountId = await getAccountId()
     const ext = (file.name.split('.').pop() || 'bin').toLowerCase()
-    // path 先頭フォルダ = account_id（storage RLS の account スコープに使用）
-    const path = `${accountId}/${modal.value.id}/${kind}-${Date.now()}.${ext}`
+    // path 先頭フォルダ = account_id（storage RLS の account スコープに使用）。複数同時でも衝突しないよう乱数付与
+    const path = `${accountId}/${modal.value.id}/${kind}-${Date.now()}-${Math.round(file.size % 100000)}.${ext}`
     const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false, contentType: file.type || undefined })
     if (upErr) throw upErr
     await supabase.from('site_attachments').insert({ account_id: accountId, site_id: modal.value.id, kind, path, name: file.name })
     await loadAttachments(modal.value.id)
   } catch (e: any) { saveError.value = e.message ?? 'アップロードに失敗しました' }
-  finally { uploading.value = false; (ev.target as HTMLInputElement).value = '' }
+  finally { uploading.value = false }
 }
 // 書類を「出退勤時に同意必須」に切替（送り出し資料）。チェックイン時に作業員へ提示・同意を取る。
 async function toggleConsent(a: Att) {
@@ -656,7 +671,11 @@ async function doMerge() {
 .att-consent { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #888; white-space: nowrap; cursor: pointer; }
 .att-consent.on { color: #0a8a3a; font-weight: 700; }
 .att-consent input { cursor: pointer; }
-.att-add { display: flex; gap: 8px; align-items: center; }
+.att-add { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.att-dropzone { border: 2px dashed #d1d5db; border-radius: 10px; padding: 12px 14px; background: #fafafa; transition: border-color .15s, background .15s; }
+.att-dropzone.dragover { border-color: #2563eb; background: #eff6ff; }
+.att-dropzone.busy { opacity: .7; }
+.att-drop-hint { font-size: 12px; color: #6b7280; pointer-events: none; }
 .att-btn { background: #f0f0f0; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
 .att-up { font-size: 12px; color: #888; }
 textarea.input { resize: vertical; font-family: inherit; }
