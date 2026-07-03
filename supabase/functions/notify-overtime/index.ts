@@ -43,11 +43,12 @@ Deno.serve(async (req) => {
 
     // ★ 実在する残業申請を検証し、通知内容を DB から導出（body は信頼しない）
     const { data: reqs } = await supabase.from('overtime_requests')
-      .select('worker_id, date, requested_end_time, reason, site_names, created_at, status')
+      .select('id, worker_id, date, requested_end_time, reason, site_names, created_at, status, notified_at')
       .eq('account_id', accountId).eq('worker_id', worker_id).eq('date', date).eq('status', 'pending')
       .order('created_at', { ascending: false }).limit(1)
     const otr = (reqs ?? [])[0] as any
     if (!otr) return json({ success: true, skipped: 'no_pending_request' })   // 実在しない＝通知しない
+    if (otr.notified_at) return json({ success: true, skipped: 'already_notified' })  // べき等: 通知済みは再送しない
     if (Date.now() - new Date(otr.created_at).getTime() > MAX_AGE_MS) {
       return json({ success: true, skipped: 'request_too_old' })              // 古い申請の再送/リプレイ防止
     }
@@ -84,6 +85,10 @@ Deno.serve(async (req) => {
       ${link ? `<p><a href="${link}" style="display:inline-block;padding:8px 16px;background:#047857;color:#fff;text-decoration:none;border-radius:6px">残業申請の承認画面を開く →</a></p>` : ''}
     `
     const r = await sendResend(supabase, accountId, emails, `【残業申請】${sender}（${date}）`, html)
+    // べき等: 送信成功したら notified_at を記録し、連打/再送で重複メールを送らない
+    if (r.status === 200) {
+      await supabase.from('overtime_requests').update({ notified_at: new Date().toISOString() }).eq('id', otr.id)
+    }
     return json({ success: r.status === 200, sent: r.body })
   } catch (e) {
     console.error('[notify-overtime] error:', e)
