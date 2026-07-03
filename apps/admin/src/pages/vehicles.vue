@@ -68,7 +68,7 @@
               <button class="photo-del" title="削除" @click="deletePhoto(p)">×</button>
             </div>
             <div v-for="(p, i) in pendingPhotos" :key="'pend' + i" class="photo-item pending">
-              <span class="photo-thumb photo-thumb-empty">📷</span>
+              <img :src="p.preview" class="photo-thumb" :alt="p.name || '写真'" />
               <input v-model="p.name" class="input photo-name" placeholder="名称（任意・後で付けられます）" />
               <button class="photo-del" title="取り消し" @click="removePendingPhoto(i)">×</button>
             </div>
@@ -220,7 +220,7 @@ const shakenMsg       = ref('')
 const shakenErr       = ref(false)
 // 新規登録時（vehicle_id 未確定）はファイルを保留し、保存時にまとめて添付アップロードする。
 // アップロード時に OCR で満了日/ナンバーを即 prefill する＝「アップロード→自動入力」を新規でも成立させる。
-const pendingPhotos  = ref<{ file: File; name: string }[]>([])
+const pendingPhotos  = ref<{ file: File; name: string; preview: string }[]>([])
 const pendingShaken  = ref<File[]>([])
 // 署名URLのホストを公開オリジン(VITE_SUPABASE_URL)に正規化する。
 // ローカルの storage は内部ホスト(kong:8000)を埋めて返すためブラウザから開けない。
@@ -263,9 +263,9 @@ async function onDropPhoto(ev: DragEvent) {
 async function processPhotoFile(file: File | undefined | null) {
   if (!file || !modal.value) return
   if (!file.type.startsWith('image/')) { saveError.value = '画像ファイルを選択してください'; return }
-  // 新規登録: 保留リストへ（名称は後付け・保存時にアップロード）
+  // 新規登録: 保留リストへ（サムネ用にプレビューURL生成・名称は後付け・保存時にアップロード）
   if (!modal.value.id) {
-    pendingPhotos.value.push({ file, name: '' })
+    pendingPhotos.value.push({ file, name: '', preview: URL.createObjectURL(file) })
     return
   }
   photoUploading.value = true; saveError.value = ''
@@ -282,7 +282,14 @@ async function processPhotoFile(file: File | undefined | null) {
   } catch (e: any) { saveError.value = e.message ?? '写真のアップロードに失敗しました' }
   finally { photoUploading.value = false }
 }
-function removePendingPhoto(i: number) { pendingPhotos.value.splice(i, 1) }
+function removePendingPhoto(i: number) {
+  const p = pendingPhotos.value[i]
+  if (p?.preview) URL.revokeObjectURL(p.preview)
+  pendingPhotos.value.splice(i, 1)
+}
+function clearPendingPreviews() {
+  for (const p of pendingPhotos.value) if (p.preview) URL.revokeObjectURL(p.preview)
+}
 // 保存直後(新規): 保留していた写真・車検証を、確定した vehicle_id で添付アップロード
 async function uploadPendingAttachments(vehicleId: string, accountId: string) {
   for (const { file, name } of pendingPhotos.value) {
@@ -297,6 +304,7 @@ async function uploadPendingAttachments(vehicleId: string, accountId: string) {
     const { error } = await supabase.storage.from(PHOTO_BUCKET).upload(path, new Blob([pdfBytes], { type: 'application/pdf' }), { upsert: false, contentType: 'application/pdf' })
     if (!error) await supabase.from('vehicle_attachments').insert({ account_id: accountId, vehicle_id: vehicleId, kind: 'shaken', name: '車検証', path })
   }
+  clearPendingPreviews()
   pendingPhotos.value = []; pendingShaken.value = []
 }
 // ── ナンバーAI解析（#9・画像→Gemini vision→plate_number を prefill・手動修正可）──
@@ -486,6 +494,7 @@ function openAdd() {
   newRepair.value = { repair_date: null, description: '', cost: null }
   photos.value = []
   shakenDocs.value = []
+  clearPendingPreviews()
   pendingPhotos.value = []
   pendingShaken.value = []
   newPhotoName.value = ''
@@ -502,6 +511,7 @@ async function openEdit(v: Vehicle) {
   newPhotoName.value = ''
   photos.value = []
   shakenDocs.value = []
+  clearPendingPreviews()
   pendingPhotos.value = []
   pendingShaken.value = []
   plateOcrMsg.value = ''; plateOcrErr.value = false
@@ -576,7 +586,13 @@ async function save() {
     modal.value = null
     await load()
   } catch (e: any) {
-    saveError.value = e.message ?? '保存に失敗しました'
+    const msg = String(e?.message ?? '')
+    // 車両名の一意制約違反はわかりやすく案内
+    if (/duplicate key|vehicles_name_account_uidx|unique constraint/i.test(msg)) {
+      saveError.value = `「${modal.value?.name?.trim()}」は既に登録されています。別の車両名にしてください。`
+    } else {
+      saveError.value = msg || '保存に失敗しました'
+    }
   } finally {
     saving.value = false
   }
