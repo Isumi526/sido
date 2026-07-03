@@ -325,11 +325,7 @@
                   </div>
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addVehicle(si)">{{ $t('report.addVehicle') }}</button>
-                <div class="mt8">
-                  <label class="hours-label">{{ $t('report.receiptPhotoLabel') }}</label>
-                  <AttachedFilesBadge :files="site.expenses.vehicleFiles" @remove-file="(p) => site.expenses.vehicleFiles?.splice(p.index, 1)" />
-                  <input type="file" accept="image/*,.pdf" multiple class="input mt6" @change="(e) => handleExpenseFile(si, 'vehicleFiles', e)" />
-                </div>
+                <!-- 車両レベルの領収書は廃止（ガソリン/軽油=距離ベースで領収書不要・駐車/高速は各明細に領収書あり） -->
 
                 <!-- 駐車場代（複数・明細ごと領収書）— 車両ありの時のみ -->
                 <div class="veh-subexpense">
