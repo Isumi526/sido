@@ -180,9 +180,21 @@
           </div>
           <div v-if="schedCats.length" class="form-row" style="margin-top:8px">
             <span class="form-row-label">カテゴリ</span>
-            <select v-model="formModal.category" class="site-select">
-              <option v-for="c in schedCats.filter(x => x.active || x.key === formModal!.category)" :key="c.key" :value="c.key">{{ c.label }}</option>
-            </select>
+            <div class="cat-select-wrap">
+              <select v-model="formModal.category" class="site-select">
+                <option v-for="c in schedCats.filter(x => x.active || x.key === formModal!.category)" :key="c.key" :value="c.key">{{ c.label }}</option>
+              </select>
+              <!-- 現場管理者以上はその場でカテゴリを追加できる -->
+              <button v-if="canManageCat && !showCatAdd" type="button" class="cat-add-btn" @click="showCatAdd = true">＋新規</button>
+            </div>
+          </div>
+          <div v-if="canManageCat && showCatAdd" class="cat-add-panel">
+            <input v-model="newCatLabel" type="text" class="site-select" placeholder="新しいカテゴリ名（例：打合せ）" @keydown.enter.prevent="addCategory" />
+            <div class="cat-add-row">
+              <input v-model="newCatColor" type="color" class="cat-color" />
+              <button type="button" class="cat-save" :disabled="!newCatLabel.trim() || catSaving" @click="addCategory">{{ catSaving ? '追加中…' : '追加' }}</button>
+              <button type="button" class="cat-cancel" @click="showCatAdd = false; newCatLabel = ''">やめる</button>
+            </div>
           </div>
         </div>
 
@@ -349,6 +361,43 @@ async function loadSchedCats() {
   const { data } = await supabase.from('schedule_categories')
     .select('key, label, color, active, sort_order').eq('account_id', accountId).order('sort_order')
   schedCats.value = ((data ?? []) as SchedCat[])
+}
+
+// 現場管理者以上か（カテゴリのその場追加を許可・元要件「現場管理者以上がマスタ管理」に準拠）
+const canManageCat = ref(false)
+const showCatAdd   = ref(false)
+const newCatLabel  = ref('')
+const newCatColor  = ref('#06C755')
+const catSaving    = ref(false)
+async function resolveCanManageCat() {
+  const wid = schedules.myWorkerId.value
+  if (!wid) return
+  const { data } = await supabase.from('workers').select('permission_role').eq('id', wid).maybeSingle()
+  const role = (data as { permission_role?: string } | null)?.permission_role
+  canManageCat.value = role === 'admin' || role === 'office' || role === 'site_manager'
+}
+function makeCatKey(label: string): string {
+  const base = label.trim().toLowerCase().normalize('NFKC').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'cat'
+  const used = new Set(schedCats.value.map(c => c.key))
+  let key = base, n = 1
+  while (used.has(key)) key = `${base}-${n++}`
+  return key
+}
+async function addCategory() {
+  const label = newCatLabel.value.trim()
+  if (!label || !canManageCat.value) return
+  catSaving.value = true
+  try {
+    const { getAccountId } = useAccount()
+    const accountId = await getAccountId()
+    const key = makeCatKey(label)
+    const sort_order = schedCats.value.reduce((m, c) => Math.max(m, c.sort_order), -1) + 1
+    await supabase.from('schedule_categories').insert({ account_id: accountId, key, label, color: newCatColor.value, sort_order, active: true })
+    await loadSchedCats()                 // 追加を即反映（リアルタイム）
+    if (formModal.value) formModal.value.category = key   // 追加したカテゴリを選択状態に
+    showCatAdd.value = false; newCatLabel.value = ''; newCatColor.value = '#06C755'
+  } catch { /* 失敗時は何もしない（再試行可） */ }
+  finally { catSaving.value = false }
 }
 function chipStyle(s: Schedule): Record<string, string> {
   if (s.deleted_at || s.is_night_shift) return {}
@@ -835,6 +884,7 @@ onMounted(async () => {
   try {
     await master.fetch()
     await schedules.resolveMyWorkerId()
+    await resolveCanManageCat()
     await loadWorkers()
     await loadSchedCats()
     await loadNotifs()
@@ -1014,6 +1064,14 @@ thead th.sticky-col { z-index: 11; }
 }
 
 .form-card { background: #fff; border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
+.cat-select-wrap { display: flex; align-items: center; gap: 8px; flex: 1; }
+.cat-add-btn { flex-shrink: 0; background: #eef2ff; color: #4338ca; border: none; border-radius: 8px; padding: 8px 12px; font-size: 13px; font-weight: 700; }
+.cat-add-panel { padding: 10px 14px; background: #f8fafc; border-top: 1px solid #eee; display: flex; flex-direction: column; gap: 8px; }
+.cat-add-row { display: flex; align-items: center; gap: 8px; }
+.cat-color { width: 44px; height: 40px; border: 1px solid #e0e0e0; border-radius: 8px; padding: 2px; background: #fff; }
+.cat-save { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 14px; font-weight: 700; }
+.cat-save:disabled { opacity: .5; }
+.cat-cancel { background: #fff; border: 1px solid #d1d5db; color: #555; border-radius: 8px; padding: 8px 14px; font-size: 14px; }
 .form-row { display: flex; align-items: center; padding: 12px 14px; min-height: 44px; }
 .form-divider { height: 1px; background: #f0f0f0; margin-left: 14px; }
 .form-row-label { font-size: 15px; color: #111; flex-shrink: 0; }
