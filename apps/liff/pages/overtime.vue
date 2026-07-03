@@ -135,10 +135,11 @@ async function onSubmit() {
   const efUrl = (config.public as any).edgeFunctionUrl
   if (efUrl && sites.length) {
     const slug = await effectiveSlug()
+    // ハードニング後: body は照合キーのみ。通知内容はEFが overtime_requests(実在行)から導出する。
     fetch(`${efUrl}/notify-overtime`, {
       method: 'POST', keepalive: true,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${(config.public as any).supabaseAnonKey}` },
-      body: JSON.stringify({ accountSlug: slug, sender: selfUser.value?.real_name ?? '作業員', date: today, site_names: sites, requested_end_time: endTime.value, reason: reason.value }),
+      body: JSON.stringify({ accountSlug: slug, worker_id: workerId.value, date: today }),
     }).catch(() => {})
   }
   await refresh()
