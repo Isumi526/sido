@@ -180,12 +180,12 @@
           </div>
           <div v-if="schedCats.length" class="form-row" style="margin-top:8px">
             <span class="form-row-label">カテゴリ</span>
-            <div class="cat-select-wrap">
+            <!-- 現場管理者以上はカテゴリマスタを管理できる（ラベルの右に配置・一覧/色/名前編集/追加/削除） -->
+            <button v-if="canManageCat" type="button" class="cat-add-btn cat-manage-inline" @click="openCatManage">⚙ 管理</button>
+            <div class="cat-select-wrap cat-select-wrap--gap">
               <select v-model="formModal.category" class="site-select">
                 <option v-for="c in schedCats.filter(x => x.active || x.key === formModal!.category)" :key="c.key" :value="c.key">{{ c.label }}</option>
               </select>
-              <!-- 現場管理者以上はカテゴリマスタを管理できる（一覧・色/名前編集・追加・削除） -->
-              <button v-if="canManageCat" type="button" class="cat-add-btn" @click="openCatManage">⚙ 管理</button>
             </div>
           </div>
         </div>
@@ -1142,6 +1142,8 @@ thead th.sticky-col { z-index: 11; }
 .cat-active-toggle { flex-shrink: 0; background: #f1f5f9; border: none; border-radius: 6px; padding: 6px 10px; font-size: 12px; color: #475569; }
 .cat-del { flex-shrink: 0; background: none; border: none; font-size: 16px; cursor: pointer; }
 .cat-select-wrap { display: flex; align-items: center; gap: 8px; flex: 1; }
+.cat-select-wrap--gap { margin-left: 10px; }
+.cat-manage-inline { margin-left: 8px; }
 .cat-add-btn { flex-shrink: 0; background: #eef2ff; color: #4338ca; border: none; border-radius: 8px; padding: 8px 12px; font-size: 13px; font-weight: 700; }
 .cat-add-panel { padding: 10px 14px; background: #f8fafc; border-top: 1px solid #eee; display: flex; flex-direction: column; gap: 8px; }
 .cat-add-row { display: flex; align-items: center; gap: 8px; }
