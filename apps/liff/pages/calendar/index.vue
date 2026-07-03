@@ -184,16 +184,8 @@
               <select v-model="formModal.category" class="site-select">
                 <option v-for="c in schedCats.filter(x => x.active || x.key === formModal!.category)" :key="c.key" :value="c.key">{{ c.label }}</option>
               </select>
-              <!-- 現場管理者以上はその場でカテゴリを追加できる -->
-              <button v-if="canManageCat && !showCatAdd" type="button" class="cat-add-btn" @click="showCatAdd = true">＋新規</button>
-            </div>
-          </div>
-          <div v-if="canManageCat && showCatAdd" class="cat-add-panel">
-            <input v-model="newCatLabel" type="text" class="site-select" placeholder="新しいカテゴリ名（例：打合せ）" @keydown.enter.prevent="addCategory" />
-            <div class="cat-add-row">
-              <input v-model="newCatColor" type="color" class="cat-color" />
-              <button type="button" class="cat-save" :disabled="!newCatLabel.trim() || catSaving" @click="addCategory">{{ catSaving ? '追加中…' : '追加' }}</button>
-              <button type="button" class="cat-cancel" @click="showCatAdd = false; newCatLabel = ''">やめる</button>
+              <!-- 現場管理者以上はカテゴリマスタを管理できる（一覧・色/名前編集・追加・削除） -->
+              <button v-if="canManageCat" type="button" class="cat-add-btn" @click="openCatManage">⚙ 管理</button>
             </div>
           </div>
         </div>
@@ -251,6 +243,31 @@
         <div class="modal-actions">
           <button class="btn-cancel" @click="formModal = null">{{ $t('common.cancel') }}</button>
           <button class="btn-save" :disabled="saving" @click="saveSchedule">{{ saving ? $t('common.saving') : $t('common.save') }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- カテゴリ管理モーダル（現場管理者以上・アカウント単位・色/名前編集・追加・削除）-->
+    <div v-if="catManageOpen" class="modal-overlay" @click.self="catManageOpen = false">
+      <div class="modal cat-manage">
+        <div class="cat-manage-head">
+          <span class="cat-manage-title">カテゴリ設定</span>
+          <button type="button" class="cat-manage-close" @click="catManageOpen = false">閉じる</button>
+        </div>
+        <ul class="cat-list">
+          <li v-for="c in schedCats" :key="c.key" class="cat-item" :class="{ inactive: !c.active }">
+            <input type="color" class="cat-color" :value="c.color" @change="updateCat(c, { color: ($event.target as HTMLInputElement).value })" />
+            <input type="text" class="cat-name" :value="c.label" @change="updateCat(c, { label: ($event.target as HTMLInputElement).value })" />
+            <button type="button" class="cat-active-toggle" :title="c.active ? '無効にする' : '有効にする'" @click="updateCat(c, { active: !c.active })">{{ c.active ? '表示' : '非表示' }}</button>
+            <button type="button" class="cat-del" title="削除" @click="deleteCat(c)">🗑</button>
+          </li>
+        </ul>
+        <div class="cat-add-panel">
+          <input v-model="newCatLabel" type="text" class="site-select" placeholder="新しいカテゴリ名（例：打合せ）" @keydown.enter.prevent="addCategory" />
+          <div class="cat-add-row">
+            <input v-model="newCatColor" type="color" class="cat-color" />
+            <button type="button" class="cat-save" :disabled="!newCatLabel.trim() || catSaving" @click="addCategory">{{ catSaving ? '追加中…' : '＋ 追加' }}</button>
+          </div>
         </div>
       </div>
     </div>
@@ -398,6 +415,29 @@ async function addCategory() {
     showCatAdd.value = false; newCatLabel.value = ''; newCatColor.value = '#06C755'
   } catch { /* 失敗時は何もしない（再試行可） */ }
   finally { catSaving.value = false }
+}
+// カテゴリマスタ管理（現場管理者以上・アカウント単位）
+const catManageOpen = ref(false)
+function openCatManage() { catManageOpen.value = true }
+async function updateCat(c: SchedCat, patch: Partial<Pick<SchedCat, 'label' | 'color' | 'active'>>) {
+  if (!canManageCat.value) return
+  const label = patch.label !== undefined ? patch.label.trim() : undefined
+  if (patch.label !== undefined && !label) return   // 空名は無視
+  const { getAccountId } = useAccount()
+  const accountId = await getAccountId()
+  await supabase.from('schedule_categories')
+    .update({ ...patch, ...(label !== undefined ? { label } : {}) })
+    .eq('account_id', accountId).eq('key', c.key)
+  await loadSchedCats()   // 即反映
+}
+async function deleteCat(c: SchedCat) {
+  if (!canManageCat.value) return
+  if (!confirm(`カテゴリ「${c.label}」を削除しますか？\n（このカテゴリの既存予定は色が既定に戻ります）`)) return
+  const { getAccountId } = useAccount()
+  const accountId = await getAccountId()
+  await supabase.from('schedule_categories').delete().eq('account_id', accountId).eq('key', c.key)
+  await loadSchedCats()
+  if (formModal.value && formModal.value.category === c.key) formModal.value.category = (schedCats.value[0]?.key ?? 'work') as any
 }
 function chipStyle(s: Schedule): Record<string, string> {
   if (s.deleted_at) return {}
@@ -1066,6 +1106,16 @@ thead th.sticky-col { z-index: 11; }
 }
 
 .form-card { background: #fff; border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
+.cat-manage { max-width: 460px; }
+.cat-manage-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.cat-manage-title { font-size: 16px; font-weight: 700; color: #111; }
+.cat-manage-close { background: none; border: none; color: #06C755; font-size: 14px; font-weight: 700; }
+.cat-list { list-style: none; padding: 0; margin: 0 0 14px; display: flex; flex-direction: column; }
+.cat-item { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+.cat-item.inactive { opacity: .5; }
+.cat-item .cat-name { flex: 1; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px 10px; font-size: 14px; }
+.cat-active-toggle { flex-shrink: 0; background: #f1f5f9; border: none; border-radius: 6px; padding: 6px 10px; font-size: 12px; color: #475569; }
+.cat-del { flex-shrink: 0; background: none; border: none; font-size: 16px; cursor: pointer; }
 .cat-select-wrap { display: flex; align-items: center; gap: 8px; flex: 1; }
 .cat-add-btn { flex-shrink: 0; background: #eef2ff; color: #4338ca; border: none; border-radius: 8px; padding: 8px 12px; font-size: 13px; font-weight: 700; }
 .cat-add-panel { padding: 10px 14px; background: #f8fafc; border-top: 1px solid #eee; display: flex; flex-direction: column; gap: 8px; }
