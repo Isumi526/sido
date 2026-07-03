@@ -400,9 +400,11 @@ async function addCategory() {
   finally { catSaving.value = false }
 }
 function chipStyle(s: Schedule): Record<string, string> {
-  if (s.deleted_at || s.is_night_shift) return {}
+  if (s.deleted_at) return {}
   const col = catColor.value[s.category] || '#94a3b8'
-  return { borderLeftColor: col, background: col + '1a' }
+  // カテゴリ色を太い左バーで常に表示（夜勤も暗背景維持＋カテゴリ色バー＝見分けやすく）
+  if (s.is_night_shift) return { borderLeftColor: col, borderLeftWidth: '6px' }
+  return { borderLeftColor: col, borderLeftWidth: '6px', background: col + '26' }
 }
 
 // 予定追加のアプリ内通知（未読）。開いた時にバナーで気づかせ、既読で消す #予定通知
