@@ -11,7 +11,10 @@ export interface WorkerEntry {
   workerRole:   WorkerRole
   startTime:    string   // "08:00"
   endTime:      string   // "17:30"
-  breakMinutes: number   // 休憩時間（分）
+  breakMinutes: number   // 休憩時間（分・合計）。breaks[]がある時はその合計＝表示/後方互換用。
+  breaks?: { start: string; minutes: number }[]  // 現場既定からスナップショットした複数休憩[{start:"12:00",minutes:60}]。開始時刻を料率に反映。
+  breakSnapshot?: boolean // true=現場の既定休憩(breaks[])をスナップショットした値＝人件費計算で保存値を尊重。
+                          // 未設定(レガシー/自動計算)は消費側で従来どおりライブ再計算＝過去給与不変。
   // 料率別稼働時間（送信前に自動計算）
   hoursNormal:        number  // 1.00  通常
   hoursOT:            number  // 1.25  残業
@@ -159,6 +162,8 @@ export interface MasterData {
   siteIds?: Record<string, string>
   // 現場名 → 固定勤務時刻 {start,end}（未設定は未収録）。日報の作業時刻の既定＆終了上限に使う。
   siteWorkTimes?: Record<string, { start: string | null; end: string | null }>
+  // 現場名 → 既定休憩[{start,minutes}]（未設定は未収録）。新規日報で現場選択時に休憩をこの値でスナップショット。
+  siteBreaks?: Record<string, { start: string; minutes: number }[]>
 }
 
 export interface ApiResponse<T = void> {
@@ -227,6 +232,11 @@ export interface ExpenseRow {
   fileUrls?:           string[]  // 領収書・写真 URL（Supabase Storage）
   tategae?:            boolean   // 個人建て替え分
   vehicle?:            string    // 使用車（車両系経費のみ・現場の車両名）
+  // 出所（申請前インライン編集の書き戻し用・追加のみ／金額・集計に無影響）。
+  //  新形式配列カテゴリ(parkings/highways/trains/hotels/others/entertainments)＋本日ガソリン(gasolineItems)のみ付与。
+  srcSiteIndex?:       number    // sites[] のindex（本日ガソリンは無し）
+  srcKey?:             string    // 'parkings'|'highways'|'trains'|'hotels'|'others'|'entertainments'|'gasolineItems'
+  srcIndex?:           number    // その配列内のindex
 }
 
 export interface ExpenseItemInput {

@@ -63,7 +63,7 @@ export const useMaster = () => {
     if (!accountId) throw new Error('account not found')
 
     const [sitesRes, contractorsRes, workersRes, subsRes, vehiclesRes, siteSubsRes] = await Promise.all([
-      supabase.from('sites').select('id, name, contractor_id, default_start_time, default_end_time').eq('active', true).eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
+      supabase.from('sites').select('id, name, contractor_id, default_start_time, default_end_time, default_breaks').eq('active', true).eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
       supabase.from('contractors').select('id, name').eq('active', true).eq('account_id', accountId).order('sort_order'),
       supabase.from('workers').select('id, name, role').eq('active', true).eq('account_id', accountId).order('sort_order'),  // unit_price は取得しない（anon公開キーで他人の時給がliffに降りないように・#4）
       supabase.from('subcontractors').select('id, name').eq('active', true).eq('account_id', accountId).order('sort_order'),
@@ -79,12 +79,20 @@ export const useMaster = () => {
     const siteIds: Record<string, string> = {}
     const siteNameById: Record<string, string> = {}
     const siteWorkTimes: Record<string, { start: string | null; end: string | null }> = {}
+    const siteBreaks: Record<string, { start: string; minutes: number }[]> = {}   // 現場名 → 既定休憩[{start,minutes}]。設定ある現場のみ収録。
     for (const s of (sitesRes.data ?? []) as any[]) {
       if (s.contractor_id && contractorById[s.contractor_id]) siteContractors[s.name] = contractorById[s.contractor_id]
       siteIds[s.name] = s.id
       siteNameById[s.id] = s.name
       if (s.default_start_time || s.default_end_time) {
         siteWorkTimes[s.name] = { start: (s.default_start_time ?? null)?.slice(0, 5) ?? null, end: (s.default_end_time ?? null)?.slice(0, 5) ?? null }
+      }
+      // default_breaks(jsonb) → [{start,minutes}] に正規化（start必須・minutes>0のみ収録）
+      if (Array.isArray(s.default_breaks) && s.default_breaks.length) {
+        const wins = (s.default_breaks as any[])
+          .filter(b => b && b.start && (Number(b.minutes) || 0) > 0)
+          .map(b => ({ start: String(b.start).slice(0, 5), minutes: Number(b.minutes) || 0 }))
+        if (wins.length) siteBreaks[s.name] = wins
       }
     }
     // 現場名 → 紐づく下請け業者名[]（site_subcontractors join）。未紐付け現場は未収録＝全件にフォールバック。
@@ -106,6 +114,7 @@ export const useMaster = () => {
       siteSubcontractors,
       siteIds,
       siteWorkTimes,
+      siteBreaks,
     }
 
     master.value = data
@@ -228,6 +237,7 @@ export const useMaster = () => {
     siteNames:           computed(() => master.value.sites.slice()),
     siteContractors:     computed(() => master.value.siteContractors ?? {}),
     siteWorkTimes:       computed(() => master.value.siteWorkTimes ?? {}),
+    siteBreaks:          computed(() => master.value.siteBreaks ?? {}),
     contractorNames:     computed(() => (master.value.contractors ?? []).slice().sort((a, b) => a.localeCompare(b, 'ja'))),
     workerNames:         computed(() => master.value.workers.map(w => w.name).slice().sort((a, b) => a.localeCompare(b, 'ja'))),
     factoryWorkerNames:  computed(() => { const ws = master.value.workers; const hasRole = ws.some(w => w.role); return ws.filter(w => !hasRole || w.role === 'factory').map(w => w.name).slice().sort((a, b) => a.localeCompare(b, 'ja')) }),
