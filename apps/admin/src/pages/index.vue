@@ -75,6 +75,15 @@
               <td>
                 <span class="category-dot" :class="row.type" />
                 {{ row.label }}
+                <span v-if="row.type === 'labor' && wageMode === 'real'" class="wage-mode-tag">実質賃金</span>
+                <button
+                  v-if="row.type === 'labor' && canViewHourlyWage"
+                  type="button"
+                  class="wage-toggle-btn"
+                  :class="{ on: wageMode === 'real' }"
+                  :title="wageMode === 'real' ? '日当ベースに戻す' : '実質賃金(時給×稼働)で集計'"
+                  @click.stop="toggleWageMode"
+                >{{ wageMode === 'real' ? '日当に戻す' : '実質賃金' }}</button>
                 <span class="detail-hint">明細 ›</span>
               </td>
               <td class="right bold">¥{{ row.amount.toLocaleString() }}</td>
@@ -126,8 +135,9 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, unitPriceForDate, wageTypeForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
-import { canViewWages } from '../lib/auth'
+import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, wageForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
+import type { WageMode } from '../lib/workerHours'
+import { canViewWages, canViewHourlyWage } from '../lib/auth'
 
 // ── 開発の更新履歴（全社共通・未確認/確認済みタブ）──────────
 interface DevUpdate { id: string; title: string; link: string | null; created_at: string }
@@ -179,6 +189,12 @@ const selectedMonth = ref(monthOptions.value[0].value)
 
 // ── 集計 ─────────────────────────────────────────────────────
 const loading = ref(false)
+// 賃金モード（office以上のみ切替可）。既定=日当/8×稼働（現場管理者も閲覧OK）／real=実質賃金(時給×稼働)
+const wageMode = ref<WageMode>('daily')
+function toggleWageMode() {
+  if (!canViewHourlyWage.value) return
+  wageMode.value = wageMode.value === 'daily' ? 'real' : 'daily'
+}
 
 // 単価マスタ
 let G_YEN = 23, D_YEN = 20, GF_YEN = 8000, GS_YEN = 14000
@@ -211,10 +227,10 @@ async function load() {
 
   // マスタ・設定を並列取得
   const [{ data: wm }, { data: sm }, { data: cfg }, { data: wh }] = await Promise.all([
-    supabase.from('workers').select('id, name, unit_price, wage_type').eq('account_id', accountId),
+    supabase.from('workers').select('id, name, daily_wage, hourly_wage').eq('account_id', accountId),
     supabase.from('subcontractors').select('name, category, unit_price').eq('account_id', accountId),
     supabase.from('settings').select('key, value').eq('account_id', accountId),
-    supabase.from('worker_wage_history').select('worker_id, effective_date, changed_at, old_unit_price, new_unit_price, wage_type, old_wage_type').eq('account_id', accountId),
+    supabase.from('worker_wage_history').select('worker_id, effective_date, changed_at, old_unit_price, new_unit_price, wage_type, old_wage_type, old_daily_wage, new_daily_wage, old_hourly_wage, new_hourly_wage').eq('account_id', accountId),
   ])
   const wageTimelines = buildWageTimelines((wh ?? []) as any[])
   for (const row of (cfg ?? [])) {
@@ -223,10 +239,10 @@ async function load() {
     if (row.key === 'garbage_factory_rate_per_m3')  GF_YEN = Number(row.value)
     if (row.key === 'garbage_site_rate_per_m3')     GS_YEN = Number(row.value)
   }
-  const priceById   = Object.fromEntries((wm ?? []).map((w: any) => [w.id,   w.unit_price]))
-  const priceByName = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.unit_price]))
-  const wageTypeById   = Object.fromEntries((wm ?? []).map((w: any) => [w.id,   w.wage_type || 'daily']))
-  const wageTypeByName = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.wage_type || 'daily']))
+  const dailyById    = Object.fromEntries((wm ?? []).map((w: any) => [w.id,   w.daily_wage  ?? 0]))
+  const dailyByName  = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.daily_wage  ?? 0]))
+  const hourlyById   = Object.fromEntries((wm ?? []).map((w: any) => [w.id,   w.hourly_wage ?? 0]))
+  const hourlyByName = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.hourly_wage ?? 0]))
   const idByName    = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.id]))
   const subMaster   = Object.fromEntries((sm ?? []).map((s: any) => [s.name, { category: s.category, unitPrice: s.unit_price ?? 0 }]))
 
@@ -276,13 +292,13 @@ async function load() {
       const siteName = site.siteName === '__unset__' ? '現場未設定' : (site.siteName || '（現場名なし）')
       // 社員費
       for (const w of (site.workers ?? []).filter((w: any) => w.workerName)) {
-        const curUp = priceById[w.workerId] ?? priceByName[w.workerName] ?? 0
+        const curDaily  = dailyById[w.workerId]  ?? dailyByName[w.workerName]  ?? 0
+        const curHourly = hourlyById[w.workerId] ?? hourlyByName[w.workerName] ?? 0
         const wid = w.workerId || idByName[w.workerName]
-        // 日報の日付に有効だった単価で計算（昇給で過去の人件費が動かないように）
-        const up = unitPriceForDate(date, wid ? wageTimelines.get(wid) : undefined, curUp)
-        const curWageType = (wageTypeById[w.workerId] ?? wageTypeByName[w.workerName] ?? 'daily') as 'daily' | 'hourly'
-        const wageType = wageTypeForDate(date, wid ? wageTimelines.get(wid) : undefined, curWageType)
-        const cost = laborCostForBreakdown(laborMap.get(w) ?? ZERO_BREAKDOWN, up, wageType)
+        // 日報の日付に有効だった賃金で計算（昇給で過去の人件費が動かないように）
+        const { daily, hourly } = wageForDate(date, wid ? wageTimelines.get(wid) : undefined, curDaily, curHourly)
+        // 既定は日当/8×稼働。office以上が実質賃金トグルONなら時給×稼働。
+        const cost = laborCostForBreakdown(laborMap.get(w) ?? ZERO_BREAKDOWN, daily, hourly, wageMode.value)
         labor += cost
         addDetail(details, '社員', date, `${w.workerName}／${siteName}`, cost)
       }
@@ -372,6 +388,7 @@ function fmtDetailDate(s: string): string {
 
 onMounted(() => { load(); loadUpdates() })
 watch(selectedMonth, load)
+watch(wageMode, load)   // 日当↔実質賃金の切替で社員人件費を再集計
 </script>
 
 <style scoped>
@@ -430,6 +447,9 @@ watch(selectedMonth, load)
 .clickable-row:hover td { background: #f3f8ff; }
 .detail-hint { margin-left: 8px; font-size: 11px; color: #2563eb; opacity: 0; transition: opacity .12s; }
 .clickable-row:hover .detail-hint { opacity: 1; }
+.wage-toggle-btn { margin-left: 8px; font-size: 11px; font-weight: 700; border: 1px solid #c7d2fe; background: #eef2ff; color: #4338ca; border-radius: 999px; padding: 2px 10px; cursor: pointer; }
+.wage-toggle-btn.on { background: #4338ca; color: #fff; border-color: #4338ca; }
+.wage-mode-tag { margin-left: 6px; font-size: 10px; font-weight: 700; color: #b45309; background: #fef3c7; border-radius: 4px; padding: 1px 6px; }
 
 /* 明細モーダル */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 24px; }

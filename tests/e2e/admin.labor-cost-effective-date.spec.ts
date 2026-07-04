@@ -31,9 +31,10 @@ let devUserId = ''
 test.beforeAll(async () => {
   accountId = await getAccountId()
   devUserId = (await rest(`users?account_id=eq.${accountId}&line_user_id=eq.dev-user-id&select=id`))[0].id
-  workerId = (await rest('workers', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ account_id: accountId, name: WORKER, role: 'site', unit_price: 25000, active: true, sort_order: 900 }) }))[0].id
-  // 昇給履歴: 20,000 → 25,000（発効日=15日）
-  await rest('worker_wage_history', { method: 'POST', body: JSON.stringify({ worker_id: workerId, account_id: accountId, old_unit_price: 20000, new_unit_price: 25000, effective_date: EFFECTIVE, reason: 'E2E昇給' }) })
+  // 新モデル: 現在の日当=25,000（daily_wage）。時給はこのテストでは不使用。
+  workerId = (await rest('workers', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ account_id: accountId, name: WORKER, role: 'site', daily_wage: 25000, hourly_wage: 3125, active: true, sort_order: 900 }) }))[0].id
+  // 昇給履歴: 日当 20,000 → 25,000（発効日=15日）。日当履歴は old/new_daily_wage で記録。
+  await rest('worker_wage_history', { method: 'POST', body: JSON.stringify({ worker_id: workerId, account_id: accountId, old_unit_price: 20000, new_unit_price: 25000, old_daily_wage: 20000, new_daily_wage: 25000, effective_date: EFFECTIVE, reason: 'E2E昇給' }) })
   // 日報2件（発効前/発効後）。8h稼働。
   for (const date of [DATE_BEFORE, DATE_AFTER]) {
     await rest('daily_reports?on_conflict=user_id,date', {
