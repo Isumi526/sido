@@ -54,5 +54,10 @@
   "dateMd": "{month}月{day}日",
   "errorMissingParams": "URLパラメータが不足しています。",
   "errorUserNotFound": "ユーザーが見つかりません。",
-  "errorFetchFailed": "データの取得に失敗しました。"
+  "errorFetchFailed": "データの取得に失敗しました。",
+  "editStart": "内容を修正",
+  "editDone": "修正を終了",
+  "editHint": "支払い先・内容・登録番号をその場で修正できます（申請前のみ）。修正したら各行の「保存」を押してください。",
+  "saveOk": "保存しました",
+  "saveFail": "保存に失敗しました。時間をおいて再度お試しください。"
 }

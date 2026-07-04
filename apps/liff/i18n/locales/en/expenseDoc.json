@@ -54,5 +54,10 @@
   "dateMd": "{month}/{day}",
   "errorMissingParams": "URL parameters are missing.",
   "errorUserNotFound": "User not found.",
-  "errorFetchFailed": "Failed to retrieve data."
+  "errorFetchFailed": "Failed to retrieve data.",
+  "editStart": "Edit details",
+  "editDone": "Done editing",
+  "editHint": "You can edit payee, details and registration number here (before applying). Press Save on each row after editing.",
+  "saveOk": "Saved",
+  "saveFail": "Failed to save. Please try again later."
 }
