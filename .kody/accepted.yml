@@ -190,3 +190,7 @@ entries:
     target: overtime_requests
     reason: "上記残業申請テーブルの anon select/insert/update/delete。LIFF(公開anonキー)が申請と自状況参照・pending撤回を行うため。他のLIFF露出表(daily_reports/report_edit_grants等)と同じ pre-RLS ベースライン＝親エピックで一括RLS化。"
     ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: anon-access-token
+    target: download.vue
+    reason: "経費申請書(liff /expense/download)のインライン編集追加(2026-07-04)に対するanon-access指摘。誤検知寄り＋既知ベースライン: このページはURLのuidを読まず applyUserId=認証済みLIFFセッション(self)または承認済み代理先(proxy)から解決(uid推測での他人編集は不可)。書き戻しは既存 saveReportById 経路(daily_reports)を使うだけで新しい露出クラスを追加していない。根っこの anon×RLS未適用(daily_reports等)は他のLIFF露出表と同じ pre-RLS ベースライン＝親エピック「本番DBのRLS有効化」で一括RLS化(account_idで論理分離済)。"
+    ticket: "37b0ff81c56b8137827bd5d49f531777"
