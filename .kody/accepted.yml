@@ -104,6 +104,10 @@ entries:
     reason: "予定カテゴリマスタ(2026-07-02・#A)で新設。既存マスタ(sites/vehicles/schedules等)と同じくRLS無効×anon運用。account_idスコープはアプリ側クエリで担保。マスタ層のRLS化は親エピック「本番DBのRLS有効化」で一括対応。"
     ticket: "37b0ff81c56b8137827bd5d49f531777"
   - rule: rls-multitenant
+    target: faq_entries
+    reason: "FAQナレッジDB土台(2026-07-04・AIチャットBot)で新設。既存マスタ(schedule_categories/sites等)と同じくRLS無効×anon運用。account_idスコープはアプリ側クエリ(admin)とai-chat EF(account_slug→account_id絞り込み)で担保。マスタ層のRLS化は親エピック「本番DBのRLS有効化」で一括対応。"
+    ticket: "3930ff81c56b819da3a3f65e74d261c6"
+  - rule: rls-multitenant
     target: schedule_notifications
     reason: "予定追加のアプリ内通知(2026-07-02・#予定通知)で新設。既存の schedules と同じくRLS無効×anon運用。worker_id/account_idスコープはアプリ側クエリで担保。マスタ/業務層のRLS化は親エピック「本番DBのRLS有効化」で一括対応。"
     ticket: "37b0ff81c56b8137827bd5d49f531777"
