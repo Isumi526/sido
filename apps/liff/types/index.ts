@@ -12,6 +12,8 @@ export interface WorkerEntry {
   startTime:    string   // "08:00"
   endTime:      string   // "17:30"
   breakMinutes: number   // 休憩時間（分）
+  breakSnapshot?: boolean // true=現場の既定休憩をスナップショットした値＝人件費計算で保存値を尊重。
+                          // 未設定(レガシー/自動計算)は消費側で従来どおりライブ再計算＝過去給与不変。
   // 料率別稼働時間（送信前に自動計算）
   hoursNormal:        number  // 1.00  通常
   hoursOT:            number  // 1.25  残業
@@ -159,6 +161,8 @@ export interface MasterData {
   siteIds?: Record<string, string>
   // 現場名 → 固定勤務時刻 {start,end}（未設定は未収録）。日報の作業時刻の既定＆終了上限に使う。
   siteWorkTimes?: Record<string, { start: string | null; end: string | null }>
+  // 現場名 → 既定休憩(分)（未設定は未収録）。新規日報で現場選択時に休憩をこの値でスナップショット。
+  siteBreakMinutes?: Record<string, number>
 }
 
 export interface ApiResponse<T = void> {

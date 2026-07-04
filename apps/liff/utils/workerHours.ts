@@ -107,6 +107,20 @@ export function calcBreakMinutes(
     .reduce((sum, w) => sum + (w.end - w.start), 0)
 }
 
+/**
+ * 人件費計算に使う実効休憩（分）。
+ *  - breakSnapshot=true（現場の既定休憩をスナップショットした新規日報）→ 保存値 breakMinutes を尊重。
+ *  - それ以外（レガシー/自動計算）→ 従来どおり calcBreakMinutes でライブ再計算＝過去日報の給与は不変。
+ */
+export function effectiveBreakMinutes(w: {
+  breakSnapshot?: boolean; breakMinutes?: number | null
+  workerRole?: string | null; startTime?: string | null; endTime?: string | null
+}): number {
+  if (w?.breakSnapshot && w.breakMinutes != null) return w.breakMinutes
+  const role = (w?.workerRole === 'factory' ? 'factory' : 'site') as 'factory' | 'site'
+  return calcBreakMinutes(role, w?.startTime || '08:00', w?.endTime || '17:30')
+}
+
 export function computeWorkerHours(
   startTime:      string,
   endTime:        string,

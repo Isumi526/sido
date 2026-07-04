@@ -71,8 +71,8 @@
               <span v-if="selected.sites?.[0]?.workers?.[0]?.workerRole" class="worker-role-inline">
                 / {{ selected.sites[0].workers[0].workerRole === 'factory' ? '工場' : '現場' }}
               </span>
-              <span v-if="canViewWages && selected.users?.workers?.unit_price && !(selected.users?.workers?.wage_type === 'hourly' && !canViewHourlyWage)" class="unit-price-inline">
-                ¥{{ selected.users.workers.unit_price.toLocaleString() }}/日
+              <span v-if="canViewWages && selected.users?.workers?.daily_wage" class="unit-price-inline">
+                ¥{{ selected.users.workers.daily_wage.toLocaleString() }}/日
               </span>
             </div>
           </div>
@@ -120,7 +120,7 @@
                       <td>{{ w.startTime }}</td>
                       <td>{{ w.endTime }}</td>
                       <template v-if="w.startTime && w.endTime">
-                        <td>{{ calcBreakMinutes(w.workerRole || 'site', w.startTime, w.endTime) / 60 }}</td>
+                        <td>{{ effectiveBreakMinutes(w) / 60 }}</td>
                         <td>{{ calcHours(w, selected.date).normal }}</td>
                         <td>{{ calcHours(w, selected.date).ot }}</td>
                         <td>{{ calcHours(w, selected.date).night }}</td>
@@ -132,10 +132,10 @@
                   </template>
                 </tbody>
               </table>
-              <div v-if="canViewWages && selected.users?.workers?.unit_price" class="labor-cost">
+              <div v-if="canViewWages && selected.users?.workers?.daily_wage" class="labor-cost">
                 人件費
                 <span class="labor-cost-amount">
-                  ¥{{ site.workers.reduce((sum: number, w: any) => sum + (w.startTime && w.endTime ? calcLaborCost(w, selected.date, selected.users.workers.unit_price, selected.users.workers.wage_type || 'daily') : 0), 0).toLocaleString() }}
+                  ¥{{ site.workers.reduce((sum: number, w: any) => sum + (w.startTime && w.endTime ? calcLaborCost(w, selected.date, selected.users.workers.daily_wage) : 0), 0).toLocaleString() }}
                 </span>
               </div>
               <!-- 出張費（別費目・人件費とは別表示／主たる現場に1回） -->
@@ -284,8 +284,8 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug } from '../lib/account'
 import { HIDE_LINE_SECTIONS } from '../lib/featureFlags'
-import { computeWorkerHours, calcBreakMinutes, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
-import { canViewWages, canViewHourlyWage, currentUser } from '../lib/auth'
+import { computeWorkerHours, calcBreakMinutes, effectiveBreakMinutes, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
+import { canViewWages, currentUser } from '../lib/auth'
 
 const EDGE_URL  = import.meta.env.VITE_SUPABASE_EDGE_URL as string
 const ANON_KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY as string
@@ -429,7 +429,7 @@ async function deleteReport(r: any) {
 function calcHours(w: any, date: string) {
   const isSunday = new Date(date + 'T00:00:00').getDay() === 0
   const role = w.workerRole || 'site'
-  const brk  = calcBreakMinutes(role, w.startTime, w.endTime)
+  const brk  = effectiveBreakMinutes(w)
   const h    = computeWorkerHours(w.startTime, w.endTime, brk, isSunday)
   return {
     normal: h.hoursNormal + h.hoursSunday,
@@ -446,12 +446,13 @@ function siteTripYen(site: any): number {
   for (const w of (site.workers ?? [])) if (mains.has(w)) n++
   return n * BUSINESS_TRIP_ALLOWANCE
 }
-function calcLaborCost(w: any, date: string, unitPrice: number, wageType: 'daily' | 'hourly' = 'daily'): number {
+// 日報詳細は既定の日当ベース（日当/8h × 稼働時間）で人件費を表示（現場管理者も閲覧OK）
+function calcLaborCost(w: any, date: string, dailyWage: number): number {
   const isSunday = new Date(date + 'T00:00:00').getDay() === 0
   const role = w.workerRole || 'site'
-  const brk  = calcBreakMinutes(role, w.startTime, w.endTime)
+  const brk  = effectiveBreakMinutes(w)
   const h    = computeWorkerHours(w.startTime, w.endTime, brk, isSunday)
-  const rate = wageType === 'hourly' ? unitPrice : unitPrice / 8
+  const rate = (dailyWage || 0) / 8
   return Math.round(rate * (
     h.hoursNormal        * 1.00 +
     h.hoursOT            * 1.25 +
@@ -518,7 +519,7 @@ async function load() {
 
   const { data } = await supabase
     .from('daily_reports')
-    .select('id, date, is_working, is_business_trip, leave_type, line_notified_at, sites, note, user_id, users(real_name, worker_id, workers(name, unit_price, wage_type))')
+    .select('id, date, is_working, is_business_trip, leave_type, line_notified_at, sites, note, user_id, users(real_name, worker_id, workers(name, daily_wage, hourly_wage))')
     .eq('account_id', accountId)
     .gte('date', dateFrom.value)
     .lte('date', dateTo.value)
