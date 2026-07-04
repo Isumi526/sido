@@ -284,7 +284,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug } from '../lib/account'
 import { HIDE_LINE_SECTIONS } from '../lib/featureFlags'
-import { computeWorkerHours, calcBreakMinutes, effectiveBreakMinutes, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
+import { computeWorkerHours, calcBreakMinutes, effectiveBreakMinutes, effectiveBreakWindows, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
 import { canViewWages, currentUser } from '../lib/auth'
 
 const EDGE_URL  = import.meta.env.VITE_SUPABASE_EDGE_URL as string
@@ -429,8 +429,9 @@ async function deleteReport(r: any) {
 function calcHours(w: any, date: string) {
   const isSunday = new Date(date + 'T00:00:00').getDay() === 0
   const role = w.workerRole || 'site'
-  const brk  = effectiveBreakMinutes(w)
-  const h    = computeWorkerHours(w.startTime, w.endTime, brk, isSunday)
+  const wins = effectiveBreakWindows(w)
+  const brk  = wins ? 0 : effectiveBreakMinutes(w)
+  const h    = computeWorkerHours(w.startTime, w.endTime, brk, isSunday, 0, wins)
   return {
     normal: h.hoursNormal + h.hoursSunday,
     ot:     h.hoursOT + h.hoursOTNight + h.hoursSundayOT + h.hoursSundayOTNight,
@@ -450,8 +451,9 @@ function siteTripYen(site: any): number {
 function calcLaborCost(w: any, date: string, dailyWage: number): number {
   const isSunday = new Date(date + 'T00:00:00').getDay() === 0
   const role = w.workerRole || 'site'
-  const brk  = effectiveBreakMinutes(w)
-  const h    = computeWorkerHours(w.startTime, w.endTime, brk, isSunday)
+  const wins = effectiveBreakWindows(w)
+  const brk  = wins ? 0 : effectiveBreakMinutes(w)
+  const h    = computeWorkerHours(w.startTime, w.endTime, brk, isSunday, 0, wins)
   const rate = (dailyWage || 0) / 8
   return Math.round(rate * (
     h.hoursNormal        * 1.00 +

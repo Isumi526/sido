@@ -106,19 +106,37 @@ export function calcBreakMinutes(
     .reduce((sum, w) => sum + (w.end - w.start), 0)
 }
 
+/** 現場の既定休憩＝日報にスナップショットする「開始時刻＋分」の1休憩 */
+export interface BreakSpec { start: string; minutes: number }  // start="12:00", minutes=60
+
 /**
- * 人件費計算に使う実効休憩（分）。
- *  - breakSnapshot=true（現場の既定休憩をスナップショットした新規日報）→ 保存値 breakMinutes を尊重。
+ * 人件費計算に使う実効休憩（分・合計）。表示・レガシー単一ブロック配置に使う。
+ *  - breakSnapshot=true かつ breaks[]あり（現場既定をスナップショットした新規日報）→ breaks の合計分。
  *  - それ以外（レガシー/自動計算）→ 従来どおり calcBreakMinutes でライブ再計算＝過去日報の給与は不変。
- * 現場休憩設定(#現場休憩) の A-1 実装の要（過去給与を動かさないための唯一の分岐点）。
+ * 現場休憩設定(#現場休憩) の要（過去給与を動かさないための分岐点）。
  */
 export function effectiveBreakMinutes(w: {
-  breakSnapshot?: boolean; breakMinutes?: number | null
+  breakSnapshot?: boolean; breakMinutes?: number | null; breaks?: BreakSpec[] | null
   workerRole?: string | null; startTime?: string | null; endTime?: string | null
 }): number {
-  if (w?.breakSnapshot && w.breakMinutes != null) return w.breakMinutes
+  if (w?.breakSnapshot && Array.isArray(w.breaks) && w.breaks.length)
+    return w.breaks.reduce((s, b) => s + (Number(b?.minutes) || 0), 0)
   const role = (w?.workerRole === 'factory' ? 'factory' : 'site') as 'factory' | 'site'
   return calcBreakMinutes(role, w?.startTime || '08:00', w?.endTime || '17:30')
+}
+
+/**
+ * 人件費計算に使う実効休憩「時間帯」。開始時刻を料率(深夜/残業)に効かせるための窓リスト。
+ *  - breakSnapshot=true かつ breaks[]あり → その複数時間帯をそのまま返す（各窓の開始時刻でskip）。
+ *  - それ以外（レガシー）→ null（＝computeWorkerHours は従来の単一ブロック配置にフォールバック＝過去給与不変）。
+ */
+export function effectiveBreakWindows(w: {
+  breakSnapshot?: boolean; breaks?: BreakSpec[] | null
+}): BreakSpec[] | null {
+  if (w?.breakSnapshot && Array.isArray(w.breaks) && w.breaks.length)
+    return w.breaks.filter(b => b && b.start && (Number(b.minutes) || 0) > 0)
+                   .map(b => ({ start: b.start, minutes: Number(b.minutes) || 0 }))
+  return null
 }
 
 export function computeWorkerHours(
@@ -127,6 +145,7 @@ export function computeWorkerHours(
   breakMinutes:   number,
   isSunday:       boolean,
   prevWorkedMin = 0,
+  breakWindows?:  BreakSpec[] | null,  // 指定あり=複数時間帯をskip(開始時刻を料率に反映) / なし=従来の単一ブロック配置
 ): RateBreakdown & { workedMin: number } {
   const zero = {
     hoursNormal: 0, hoursOT: 0, hoursNight: 0, hoursOTNight: 0,
@@ -139,13 +158,31 @@ export function computeWorkerHours(
   if (endMin <= startMin) endMin += 1440
 
   const totalMin = endMin - startMin
-  if (totalMin <= 0 || breakMinutes >= totalMin) return zero
 
-  // ブレーク配置: シフト開始4h後（最大 totalMin - breakMin で詰める）
-  // 15分刻みでスナップ（15分休憩にも対応）
-  const breakOffset   = Math.min(240, totalMin - breakMinutes)
-  const breakStartMin = startMin + Math.round(breakOffset / 15) * 15
-  const breakEndMin   = breakStartMin + breakMinutes
+  // 休憩ウィンドウ（分・シフト開始基準の絶対分）を構築
+  const windows: { start: number; end: number }[] = []
+  if (breakWindows && breakWindows.length) {
+    // 新: 指定の複数時間帯をそのままskip（開始時刻をそのまま料率計算に反映）
+    if (totalMin <= 0) return zero
+    for (const b of breakWindows) {
+      const mins = Math.max(0, Math.round(Number(b?.minutes) || 0))
+      if (mins <= 0 || !b?.start) continue
+      let bs = parseMin(b.start)
+      if (bs < startMin) bs += 1440  // 日跨ぎ: 開始以前なら翌日扱い（夜勤の深夜休憩に対応）
+      const be = bs + mins
+      if (be <= startMin || bs >= endMin) continue  // 勤務外はskip
+      windows.push({ start: Math.max(bs, startMin), end: Math.min(be, endMin) })
+    }
+  } else {
+    // 従来: 単一休憩ブロックを配置（レガシー日報＝過去給与不変）
+    if (totalMin <= 0 || breakMinutes >= totalMin) return zero
+    if (breakMinutes > 0) {
+      // ブレーク配置: シフト開始4h後（最大 totalMin - breakMin で詰める）・15分刻みでスナップ
+      const breakOffset   = Math.min(240, totalMin - breakMinutes)
+      const breakStartMin = startMin + Math.round(breakOffset / 15) * 15
+      windows.push({ start: breakStartMin, end: breakStartMin + breakMinutes })
+    }
+  }
 
   const OT = 480  // 8h = 480min
   let workedMin = prevWorkedMin  // 前現場からの累積を引き継ぐ
@@ -155,7 +192,7 @@ export function computeWorkerHours(
   let ownWorkedMin = 0
 
   for (let t = startMin; t < endMin; t += 15) {
-    if (t >= breakStartMin && t < breakEndMin) continue  // 休憩スキップ
+    if (windows.some(w => t >= w.start && t < w.end)) continue  // 休憩スキップ
 
     const dn = isDeepNight(t)
     const ot = workedMin >= OT
@@ -321,8 +358,10 @@ export function laborBreakdownForReport(
       const role = (w.workerRole === 'factory' ? 'factory' : 'site') as 'factory' | 'site'
       const start = w.startTime || '08:00'
       const end   = w.endTime   || '17:30'
-      const brk   = (w.breakMinutes != null) ? w.breakMinutes : calcBreakMinutes(role, start, end)
-      const h = computeWorkerHours(start, end, brk, isSunday, acc)
+      // 現場休憩スナップショット(breakSnapshot+breaks[])なら時間帯skip・レガシーは従来の単一ブロック
+      const wins  = effectiveBreakWindows(w)
+      const brk   = wins ? 0 : ((w.breakMinutes != null) ? w.breakMinutes : calcBreakMinutes(role, start, end))
+      const h = computeWorkerHours(start, end, brk, isSunday, acc, wins)
       acc += h.workedMin
       const { workedMin: _wm, ...breakdown } = h
       result.set(w, breakdown)
