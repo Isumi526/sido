@@ -93,12 +93,11 @@
                   <tr>
                     <th class="col-date">{{ t('expenseDoc.colDate') }}</th>
                     <th class="col-payee">{{ t('expenseDoc.colPayee') }}</th>
-                    <th class="col-content">{{ t('expenseDoc.colContent') }}</th>
                     <th class="col-reg">{{ t('expenseDoc.colReg') }}</th>
                     <th class="col-cat">{{ t('expenseDoc.colCategory') }}</th>
                     <th class="col-lit">{{ t('expenseDoc.colLiters') }}</th>
                     <th class="col-site">{{ t('expenseDoc.colSite') }}</th>
-                    <th class="col-sep">/</th>
+                    <th class="col-vehicle">{{ t('expenseDoc.colVehicle') }}</th>
                     <th class="col-amt">{{ t('expenseDoc.colAmount') }}</th>
                     <th class="col-receipt no-print">{{ t('expenseDoc.colReceipt') }}</th>
                   </tr>
@@ -106,25 +105,20 @@
                 <tbody>
                   <tr v-for="(row, i) in displayRows" :key="i">
                     <td class="center">{{ fmtDate(row.date) }}</td>
-                    <!-- 支払い先: 編集モード＆出所ありなら入力 -->
+                    <!-- 支払い先: 編集モード＆出所ありなら入力（内容列は統一フォーマットで廃止） -->
                     <td class="small">
                       <input v-if="editMode && row.srcKey" v-model="row.payee" class="cell-edit" :placeholder="t('expenseDoc.colPayee')" @input="row._dirty = true" />
                       <template v-else>{{ row.payee || '' }}</template>
-                    </td>
-                    <!-- 内容: label系カテゴリ(電車/宿泊/その他/雑経費)のみ編集可 -->
-                    <td class="small">
-                      <input v-if="editMode && isNoteEditable(row)" v-model="row.note" class="cell-edit" :placeholder="t('expenseDoc.colContent')" @input="row._dirty = true" />
-                      <template v-else>{{ row.note || '' }}</template>
                     </td>
                     <!-- 登録番号: 編集モード＆出所ありなら入力 -->
                     <td class="small">
                       <input v-if="editMode && row.srcKey" v-model="row.registrationNumber" class="cell-edit" :placeholder="t('expenseDoc.colReg')" @input="row._dirty = true" />
                       <template v-else>{{ row.registrationNumber || '' }}</template>
                     </td>
-                    <td class="center">{{ row.category }}</td>
+                    <td class="center">{{ expenseDisplayCategory(row.category) }}</td>
                     <td class="center">{{ row.liters ?? '' }}</td>
                     <td class="small">{{ row.siteName }}</td>
-                    <td></td>
+                    <td class="center">{{ row.vehicle || '' }}</td>
                     <td class="right">{{ row.amount ? '¥' + row.amount.toLocaleString() : '' }}</td>
                     <td class="receipt-cell no-print">
                       <!-- 編集モード: 変更行に保存ボタン -->
@@ -146,7 +140,7 @@
                 </tbody>
                 <tfoot>
                   <tr class="total-row">
-                    <td colspan="8" class="right">{{ t('expenseDoc.totalLabel') }}</td>
+                    <td colspan="7" class="right">{{ t('expenseDoc.totalLabel') }}</td>
                     <td class="right">¥{{ total.toLocaleString() }}</td>
                     <td class="no-print"></td>
                   </tr>
@@ -189,6 +183,7 @@
 import { useI18n } from 'vue-i18n'
 import type { User, ExpenseRow } from '~/types'
 import { getCurrentPeriodKey, recentPeriodKeys, deadlineLabel, effectiveStatus, periodLabel } from '~/composables/useExpense'
+import { expenseDisplayCategory } from '~/composables/expense-flatten.gen'
 import { elementToPdfBlob, uploadApplicationPdf } from '~/utils/generateExpensePdf'
 
 const { t } = useI18n()
@@ -214,21 +209,19 @@ const applying    = ref(false)
 const applyError  = ref('')
 const showApplyConfirm = ref(false)
 
-// ── インライン編集（申請前のみ・支払い先/内容/登録番号）──
+// ── インライン編集（申請前のみ・支払い先/登録番号。統一フォーマットで内容列は廃止のため note は編集しない）──
 const editMode   = ref(false)
 const savingRow  = ref<any | null>(null)
 const rowSaveMsg = ref('')
 const rowSaveErr = ref(false)
-const NOTE_EDITABLE_KEYS = ['trains', 'hotels', 'others', 'entertainments']  // 内容(label)を持つカテゴリのみ
-function isNoteEditable(row: any): boolean { return editMode.value && !!row?.srcKey && NOTE_EDITABLE_KEYS.includes(row.srcKey) }
 function toggleEdit() { editMode.value = !editMode.value; rowSaveMsg.value = '' }
 async function saveRow(row: any) {
   if (!applyUserId.value || !row?.srcKey) return
   savingRow.value = row; rowSaveMsg.value = ''
   try {
+    // note(内容)は書き戻さない=元のlabel(区間/会社名)を保持。支払い先/登録番号のみ更新。
     const ok = await expense.patchExpenseItem(applyUserId.value, row, {
       payee: row.payee ?? '', registrationNumber: row.registrationNumber ?? '',
-      ...(NOTE_EDITABLE_KEYS.includes(row.srcKey) ? { note: row.note ?? '' } : {}),
     })
     if (!ok) throw new Error('patch failed')
     row._dirty = false

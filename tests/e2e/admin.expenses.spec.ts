@@ -39,7 +39,7 @@ test.describe('経費管理 一覧', () => {
     await page.locator('tr.data-row', { hasText: SEED_WORKER }).filter({ hasText: '前半' }).click()
     const modal = page.locator('.modal')
     await expect(modal).toBeVisible()
-    await expect(modal).toContainText('駐車代')
+    await expect(modal).toContainText('P代')      // 品名は客先ラベル表示(駐車代→P代)
     await expect(modal).toContainText('高速代')
     // 振込額（立替）が主役表示され、立替分=¥500 が出る
     await expect(modal).toContainText('振込額')

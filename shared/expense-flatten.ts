@@ -25,7 +25,7 @@ export function ratesFromSettings(rows: Array<{ key: string; value: any }> | nul
 
 export interface ExpenseRow {
   date: string
-  category: string
+  category: string      // 生カテゴリ（集計/フィルタ用の正典。表示は expenseDisplayCategory で変換）
   siteName: string
   amount: number
   liters?: number
@@ -34,12 +34,27 @@ export interface ExpenseRow {
   registrationNumber?: string
   fileUrls?: string[]   // 領収書・写真URL（Supabase Storage）
   tategae?: boolean
+  vehicle?: string      // 使用車（車両系経費のみ・現場の車両名。交通費/その他/宿泊は無し）
   // ── 出所（申請前インライン編集の書き戻し用・追加のみ／金額・集計には無影響）──
   //  新形式配列カテゴリ(parkings/highways/trains/hotels/others/entertainments)のみ付与。
   //  レガシースカラー・車両按分・旧車両配下(駐車/高速)は付けない＝編集対象外。
   srcSiteIndex?: number  // sites[] のindex
   srcKey?: string        // expenses配下の配列キー（'parkings'|'highways'|'trains'|'hotels'|'others'|'entertainments'）
   srcIndex?: number      // その配列内のindex
+}
+
+/**
+ * 経費PDF/明細の「品名」列に出す表示ラベル（客先フォーマットに寄せる）。
+ * ※ 生カテゴリ(row.category)は集計/フィルタの正典なので変えない。表示のみここで変換する。
+ */
+export function expenseDisplayCategory(category: string): string {
+  switch (category) {
+    case '電車代': case 'バス代': case 'タクシー代': case '駐輪代': return '交通費'
+    case '駐車代':                                                  return 'P代'
+    case 'ガソリン代': case 'ガソリン代（本日）': case '軽油代':      return 'ガソリン代'
+    case 'その他雑経費':                                            return 'その他'
+    default:                                                       return category  // 高速代/宿泊費/その他/材料費/名刺 はそのまま
+  }
 }
 
 /**
@@ -54,6 +69,8 @@ export function flattenReportExpenses(date: string, sites: any[], rates: Expense
     const site = allSites[si]
     const siteName = site.siteName === '__unset__' ? '現場未設定' : site.siteName === '__other__' ? (site.customSiteName || '') : (site.siteName || '')
     const exp = site.expenses || {}
+    // 使用車: その現場の車両名（複数あれば先頭1台）。車両系経費(駐車/高速/ガソリン)に付ける。
+    const siteVehicle: string | undefined = ((exp.vehicles || []).map((v: any) => v?.vehicleName).filter(Boolean))[0] || undefined
 
     // 共有URL配列は最初の行にだけ添付する（take-once）
     let vehicleUrlsAttached = false
@@ -71,20 +88,20 @@ export function flattenReportExpenses(date: string, sites: any[], rates: Expense
 
     for (const veh of (exp.vehicles || [])) {
       // 車両の距離按分（ガソリン/軽油）は距離ベースの配賦＝個人建て替え(tategae)は付けない（実費は「本日のガソリン代」で別入力）
-      if (veh.distanceKm) rows.push({ date, category: 'ガソリン代', siteName, amount: Math.round(veh.distanceKm * rates.gasoline), liters: veh.distanceKm, note: veh.vehicleName, fileUrls: takeVehicleUrls(), tategae: false })
-      if (veh.dieselKm)   rows.push({ date, category: '軽油代',    siteName, amount: Math.round(veh.dieselKm   * rates.diesel),   liters: veh.dieselKm,   note: veh.vehicleName, fileUrls: takeVehicleUrls(), tategae: false })
+      if (veh.distanceKm) rows.push({ date, category: 'ガソリン代', siteName, amount: Math.round(veh.distanceKm * rates.gasoline), liters: veh.distanceKm, note: veh.vehicleName, vehicle: veh.vehicleName, fileUrls: takeVehicleUrls(), tategae: false })
+      if (veh.dieselKm)   rows.push({ date, category: '軽油代',    siteName, amount: Math.round(veh.dieselKm   * rates.diesel),   liters: veh.dieselKm,   note: veh.vehicleName, vehicle: veh.vehicleName, fileUrls: takeVehicleUrls(), tategae: false })
       // 旧形式（後方互換）: 車両配下の単一 駐車場代/高速代
-      if (veh.parkingYen) rows.push({ date, category: '駐車代',    siteName, amount: veh.parkingYen, fileUrls: takeVehicleUrls(), tategae: !!veh.parkingTategae })
-      if (veh.highwayYen) rows.push({ date, category: '高速代',    siteName, amount: veh.highwayYen, note: veh.etcCard || '', fileUrls: takeVehicleUrls(), tategae: !!veh.highwayTategae })
+      if (veh.parkingYen) rows.push({ date, category: '駐車代',    siteName, amount: veh.parkingYen, vehicle: veh.vehicleName, fileUrls: takeVehicleUrls(), tategae: !!veh.parkingTategae })
+      if (veh.highwayYen) rows.push({ date, category: '高速代',    siteName, amount: veh.highwayYen, note: veh.etcCard || '', vehicle: veh.vehicleName, fileUrls: takeVehicleUrls(), tategae: !!veh.highwayTategae })
     }
     // 新形式: 現場ごとの駐車場代・高速代（複数・明細ごとに個別領収書）
     for (let i = 0; i < (exp.parkings || []).length; i++) {
       const pk = exp.parkings[i]
-      if (pk.yen) rows.push({ date, category: '駐車代', siteName, amount: pk.yen, payee: pk.payee, registrationNumber: pk.registrationNumber, fileUrls: pk.fileUrls, tategae: !!pk.tategae, srcSiteIndex: si, srcKey: 'parkings', srcIndex: i })
+      if (pk.yen) rows.push({ date, category: '駐車代', siteName, amount: pk.yen, payee: pk.payee, registrationNumber: pk.registrationNumber, vehicle: siteVehicle, fileUrls: pk.fileUrls, tategae: !!pk.tategae, srcSiteIndex: si, srcKey: 'parkings', srcIndex: i })
     }
     for (let i = 0; i < (exp.highways || []).length; i++) {
       const hw = exp.highways[i]
-      if (hw.yen) rows.push({ date, category: '高速代', siteName, amount: hw.yen, note: hw.etcCard || '', payee: hw.payee, registrationNumber: hw.registrationNumber, fileUrls: hw.fileUrls, tategae: !!hw.tategae, srcSiteIndex: si, srcKey: 'highways', srcIndex: i })
+      if (hw.yen) rows.push({ date, category: '高速代', siteName, amount: hw.yen, note: hw.etcCard || '', payee: hw.payee, registrationNumber: hw.registrationNumber, vehicle: siteVehicle, fileUrls: hw.fileUrls, tategae: !!hw.tategae, srcSiteIndex: si, srcKey: 'highways', srcIndex: i })
     }
     for (let i = 0; i < (exp.trains || []).length; i++) {
       const tr = exp.trains[i]
@@ -109,6 +126,23 @@ export function flattenReportExpenses(date: string, sites: any[], rates: Expense
       if (ent.yen) rows.push({ date, category: 'その他雑経費', siteName, amount: ent.yen, note: ent.label, payee: ent.payee, registrationNumber: ent.registrationNumber, fileUrls: ent.fileUrls?.length ? ent.fileUrls : undefined, tategae: !!ent.tategae, srcSiteIndex: si, srcKey: 'entertainments', srcIndex: i })
     }
     if (exp.entertainmentYen && !(exp.entertainments || []).some((e: any) => e.yen)) rows.push({ date, category: 'その他雑経費', siteName, amount: exp.entertainmentYen, note: exp.entertainmentLabel, payee: exp.entertainmentLabel, registrationNumber: exp.entertainmentRegistration, fileUrls: exp.entertainmentUrls?.length ? exp.entertainmentUrls : undefined, tategae: !!exp.entertainmentTategae })
+  }
+  return applyPayeeFallback(rows)
+}
+
+// 支払い先(payee)は 2026-07-03 に追加された新カラム。それ以前 or 未入力の既存データは payee が空で、
+// 会社名が 内容(note=label) 側にだけ入っている（PDF/adminの支払先列が空白＝ズレて見える）。
+// 対策: payee が空で、内容が「発行元(会社/店名)」であるカテゴリ(その他/雑経費/宿泊/電車)に限り、
+//        内容(note)を支払い先に昇格し内容を空にする（表示のみ・非破壊・可逆／金額・集計は不変）。
+//  ※ 高速代(note=ETCカード名)・駐車代/ガソリン(note無し) は昇格しない＝誤って支払先に出さない。
+//  ※ payee がある新しい正入力データは発火しない＝無影響。
+const PAYEE_FALLBACK_CATEGORIES = new Set(['その他', 'その他雑経費', '宿泊費', '電車代'])
+function applyPayeeFallback(rows: ExpenseRow[]): ExpenseRow[] {
+  for (const r of rows) {
+    if (!r.payee && r.note && PAYEE_FALLBACK_CATEGORIES.has(r.category)) {
+      r.payee = r.note
+      r.note = undefined
+    }
   }
   return rows
 }
