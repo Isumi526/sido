@@ -11,7 +11,7 @@
         </div>
         <div class="field">
           <label>パスワード</label>
-          <input v-model="password" type="password" autocomplete="current-password" class="input" placeholder="パスワード" data-testid="login-password" />
+          <PasswordInput v-model="password" autocomplete="current-password" class="input" placeholder="パスワード" data-testid="login-password" />
         </div>
         <button type="submit" class="btn-login" :disabled="loading" data-testid="login-submit">
           {{ loading ? 'ログイン中…' : 'ログイン' }}

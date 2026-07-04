@@ -244,7 +244,7 @@
           <input v-if="authMode === 'id'" v-model="authLoginId" class="input" type="text" name="worker-login-id" autocomplete="off" placeholder="ログインID（半角英数・. _ - 3文字以上）" data-testid="auth-login-id" />
           <input v-else v-model="authEmail" class="input" type="text" inputmode="email" name="worker-login-email" autocomplete="off" placeholder="email（現場管理者以上は必須）" data-testid="auth-email" />
           <!-- パスワード：未設定なら常時入力欄／設定済みは「変更」ボタンで展開 -->
-          <input v-if="!modal.auth_user_id || showPwField" v-model="authPassword" class="input" type="password" name="worker-login-pass" autocomplete="new-password" placeholder="パスワード（8文字以上）" data-testid="auth-password" />
+          <PasswordInput v-if="!modal.auth_user_id || showPwField" v-model="authPassword" class="input" name="worker-login-pass" autocomplete="new-password" placeholder="パスワード（8文字以上）" data-testid="auth-password" />
           <button v-else type="button" class="btn-pw-change" data-testid="auth-pw-change" @click="showPwField = true">パスワードを変更</button>
           <p class="auth-hint">{{ authMode === 'id' ? 'メール無し作業員向け。ログイン画面で「ID＋パスワード」でログインできます（IDはグローバル一意）。' : '現場管理者以上は通知受信のためメール必須。' }}<br>下の「保存」で作業員情報と一緒に反映されます（パスワード欄が空なら認証は変更されません）。</p>
           <p v-if="authMsg" :class="authOk ? 'auth-ok' : 'error'" data-testid="auth-msg">{{ authMsg }}</p>
@@ -282,6 +282,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import PasswordInput from '../components/PasswordInput.vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { canViewWages, canViewHourlyWage } from '../lib/auth'
