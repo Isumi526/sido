@@ -15,8 +15,9 @@ on conflict (slug) do nothing;
 --   getNextUnsubmittedDate の起点 effStart=max(service_start_date, workers.created_at) が
 --   reset当日にならず、未送信日が複数残る → liff 日報送信系E2E(report/ai-receipt/parking)が
 --   「未送信日が1日だけ→1本submit後skip」にならず安定して走る。
-insert into workers (name, role, unit_price, sort_order, account_id, created_at)
-select v.name, v.role, v.price, v.ord, a.id, timestamptz '2025-12-01 00:00:00+09'
+-- daily_wage=日当(=unit_price)・hourly_wage=時給(=日当/8 の概算)を明示（新モデル：両方必須）
+insert into workers (name, role, unit_price, daily_wage, hourly_wage, sort_order, account_id, created_at)
+select v.name, v.role, v.price, v.price, round(v.price / 8.0)::int, v.ord, a.id, timestamptz '2025-12-01 00:00:00+09'
 from accounts a
 cross join (values
   ('Worker 01', 'site',    20000, 1),

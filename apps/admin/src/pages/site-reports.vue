@@ -55,7 +55,17 @@
               <th>作業員</th>
               <th class="num">商社</th>
               <th class="num">業者</th>
-              <th v-if="canViewWages" class="num">社員</th>
+              <th v-if="canViewWages" class="num">
+                社員<span v-if="wageMode === 'real'" class="wage-mode-tag">実質</span>
+                <button
+                  v-if="canViewHourlyWage"
+                  type="button"
+                  class="wage-toggle-btn"
+                  :class="{ on: wageMode === 'real' }"
+                  :title="wageMode === 'real' ? '日当ベースに戻す' : '実質賃金(時給×稼働)で集計'"
+                  @click.stop="toggleWageMode"
+                >{{ wageMode === 'real' ? '日当に戻す' : '実質賃金' }}</button>
+              </th>
               <th class="num">駐車場</th>
               <th class="num">燃料</th>
               <th class="num">高速</th>
@@ -153,7 +163,7 @@
                 <td class="num">{{ fmt(w.hoursNormal) }}</td>
                 <td class="num">{{ fmt(w.hoursOT) }}</td>
                 <td class="num">{{ fmt(w.hoursNight) }}</td>
-                <td v-if="canViewWages" class="num">{{ !w.unitPrice ? '—' : (w._wageType === 'hourly' && !canViewHourlyWage ? '—' : yen(w.unitPrice) + (w._wageType === 'hourly' ? '/h' : '/日')) }}</td>
+                <td v-if="canViewWages" class="num">{{ !w.unitPrice ? '—' : yen(w.unitPrice) + (w._wageMode === 'real' ? '/h' : '/日') }}</td>
                 <td v-if="canViewWages" class="num">{{ w.laborCost ? yen(w.laborCost) : '—' }}</td>
               </tr>
             </tbody>
@@ -328,7 +338,8 @@ import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { resolveDocUrl } from '../lib/docUrl'
 import HelpButton from '../components/HelpButton.vue'
-import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, unitPriceForDate, wageTypeForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
+import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, wageForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
+import type { WageMode } from '../lib/workerHours'
 import { canViewWages, canViewHourlyWage } from '../lib/auth'
 import JSZip from 'jszip'
 
@@ -416,6 +427,12 @@ const dateTo = computed(() => {
 const loading    = ref(false)
 const siteMap    = ref<Record<string, any[]>>({})
 const activeSite = ref('')
+// 賃金モード（office以上のみ切替可）。既定=日当/8×稼働（現場管理者も閲覧OK）／real=実質賃金(時給×稼働)
+const wageMode = ref<WageMode>('daily')
+function toggleWageMode() {
+  if (!canViewHourlyWage.value) return
+  wageMode.value = wageMode.value === 'daily' ? 'real' : 'daily'
+}
 const siteNames  = computed(() => Object.keys(siteMap.value).sort((a, b) => a.localeCompare(b, 'ja')))
 
 // 単価（settings テーブルから上書き）
@@ -460,10 +477,10 @@ function extractExpenseCols(exp: any) {
 async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<string, any[]>> {
   const accountId = await getAccountId()
   const [{ data: wm }, { data: sm }, { data: cfg }, { data: wh }] = await Promise.all([
-    supabase.from('workers').select('id, name, unit_price, wage_type').eq('account_id', accountId),
+    supabase.from('workers').select('id, name, daily_wage, hourly_wage').eq('account_id', accountId),
     supabase.from('subcontractors').select('name, category, unit_price').eq('account_id', accountId),
     supabase.from('settings').select('key, value').eq('account_id', accountId),
-    supabase.from('worker_wage_history').select('worker_id, effective_date, changed_at, old_unit_price, new_unit_price, wage_type, old_wage_type').eq('account_id', accountId),
+    supabase.from('worker_wage_history').select('worker_id, effective_date, changed_at, old_unit_price, new_unit_price, wage_type, old_wage_type, old_daily_wage, new_daily_wage, old_hourly_wage, new_hourly_wage').eq('account_id', accountId),
   ])
   const wageTimelines = buildWageTimelines((wh ?? []) as any[])  // 作業員ごとの昇給timeline（日付別単価解決用）
   // 設定値を上書き
@@ -504,10 +521,10 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
     }
   }
 
-  const priceById   = Object.fromEntries((wm ?? []).map((w: any) => [w.id,   w.unit_price]))
-  const priceByName = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.unit_price]))
-  const wageTypeById   = Object.fromEntries((wm ?? []).map((w: any) => [w.id,   w.wage_type || 'daily']))
-  const wageTypeByName = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.wage_type || 'daily']))
+  const dailyById    = Object.fromEntries((wm ?? []).map((w: any) => [w.id,   w.daily_wage  ?? 0]))
+  const dailyByName  = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.daily_wage  ?? 0]))
+  const hourlyById   = Object.fromEntries((wm ?? []).map((w: any) => [w.id,   w.hourly_wage ?? 0]))
+  const hourlyByName = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.hourly_wage ?? 0]))
   const idByName    = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.id]))  // 日報がworkerId空でも昇給timelineを引けるように
   const subMaster   = Object.fromEntries((sm ?? []).map((s: any) => [s.name, { category: s.category, unitPrice: s.unit_price ?? 0 }]))
 
@@ -559,14 +576,15 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
 
       // 作業員
       for (const w of (site.workers ?? []).filter((w: any) => w.workerName)) {
-        const curPrice = priceById[w.workerId] ?? priceByName[w.workerName] ?? 0
+        const curDaily  = dailyById[w.workerId]  ?? dailyByName[w.workerName]  ?? 0
+        const curHourly = hourlyById[w.workerId] ?? hourlyByName[w.workerName] ?? 0
         const wid = w.workerId || idByName[w.workerName]
-        // 日報の日付に有効だった単価・賃金タイプで計算（昇給/タイプ切替で過去の人件費が動かないように）
-        const unitPrice = unitPriceForDate(date, wid ? wageTimelines.get(wid) : undefined, curPrice)
+        // 日報の日付に有効だった日当・時給で計算（昇給で過去の人件費が動かないように）
+        const { daily, hourly } = wageForDate(date, wid ? wageTimelines.get(wid) : undefined, curDaily, curHourly)
         const breakdown = laborMap.get(w) ?? ZERO_BREAKDOWN
-        const curWageType = (wageTypeById[w.workerId] ?? wageTypeByName[w.workerName] ?? 'daily') as 'daily' | 'hourly'
-        const wageType = wageTypeForDate(date, wid ? wageTimelines.get(wid) : undefined, curWageType)
-        g.workers.push({ ...w, ...breakdown, role: w.workerRole ?? 'site', unitPrice, _wageType: wageType, laborCost: laborCostForBreakdown(breakdown, unitPrice, wageType) })
+        // 単価セルは選択中モードの単価を表示（既定=日当／実質賃金ONは時給）
+        const unitPrice = wageMode.value === 'real' ? hourly : daily
+        g.workers.push({ ...w, ...breakdown, role: w.workerRole ?? 'site', unitPrice, _wageMode: wageMode.value, laborCost: laborCostForBreakdown(breakdown, daily, hourly, wageMode.value) })
         // 出張費は人件費(社員)に混ぜず、主たる現場の別費目として計上（原価視点・複数現場でも主現場に1回）
         if (tripSet?.has(w)) g.tripCost += BUSINESS_TRIP_ALLOWANCE
       }
@@ -648,6 +666,7 @@ async function load() {
 
 onMounted(load)
 watch(dateFrom, load)
+watch(wageMode, load)   // 日当↔実質賃金の切替で社員人件費を再集計
 </script>
 
 <style scoped>
@@ -657,6 +676,9 @@ watch(dateFrom, load)
 .month-label { font-size: 16px; font-weight: 700; min-width: 100px; text-align: center; }
 .btn-nav { background: #f0f0f0; border: none; border-radius: 8px; padding: 6px 14px; font-size: 18px; cursor: pointer; }
 .empty { color: #888; padding: 60px; text-align: center; }
+.wage-toggle-btn { display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 700; border: 1px solid #c7d2fe; background: #eef2ff; color: #4338ca; border-radius: 999px; padding: 1px 8px; cursor: pointer; white-space: nowrap; }
+.wage-toggle-btn.on { background: #4338ca; color: #fff; border-color: #4338ca; }
+.wage-mode-tag { margin-left: 4px; font-size: 9px; font-weight: 700; color: #b45309; background: #fef3c7; border-radius: 3px; padding: 0 4px; }
 
 .tabs-wrap { overflow-x: auto; margin-bottom: 16px; }
 .export-bar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin: 10px 0 0; flex-wrap: wrap; }
