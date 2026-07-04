@@ -99,5 +99,22 @@ export function flattenReportExpenses(date: string, sites: any[], rates: Expense
     }
     if (exp.entertainmentYen && !(exp.entertainments || []).some((e: any) => e.yen)) rows.push({ date, category: 'その他雑経費', siteName, amount: exp.entertainmentYen, note: exp.entertainmentLabel, payee: exp.entertainmentLabel, registrationNumber: exp.entertainmentRegistration, fileUrls: exp.entertainmentUrls?.length ? exp.entertainmentUrls : undefined, tategae: !!exp.entertainmentTategae })
   }
+  return applyPayeeFallback(rows)
+}
+
+// 支払い先(payee)は 2026-07-03 に追加された新カラム。それ以前 or 未入力の既存データは payee が空で、
+// 会社名が 内容(note=label) 側にだけ入っている（PDF/adminの支払先列が空白＝ズレて見える）。
+// 対策: payee が空で、内容が「発行元(会社/店名)」であるカテゴリ(その他/雑経費/宿泊/電車)に限り、
+//        内容(note)を支払い先に昇格し内容を空にする（表示のみ・非破壊・可逆／金額・集計は不変）。
+//  ※ 高速代(note=ETCカード名)・駐車代/ガソリン(note無し) は昇格しない＝誤って支払先に出さない。
+//  ※ payee がある新しい正入力データは発火しない＝無影響。
+const PAYEE_FALLBACK_CATEGORIES = new Set(['その他', 'その他雑経費', '宿泊費', '電車代'])
+function applyPayeeFallback(rows: ExpenseRow[]): ExpenseRow[] {
+  for (const r of rows) {
+    if (!r.payee && r.note && PAYEE_FALLBACK_CATEGORIES.has(r.category)) {
+      r.payee = r.note
+      r.note = undefined
+    }
+  }
   return rows
 }

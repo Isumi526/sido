@@ -65,13 +65,25 @@
     <!-- 明細モーダル（1期分） -->
     <div v-if="selected" class="modal-overlay" @click.self="selected = null">
       <div class="modal">
-        <div class="modal-head">
+        <div class="modal-head no-print">
           <h2>{{ selected.workerName }} — {{ yearMonth }} {{ selected.shortLabel }} の経費明細</h2>
-          <button class="modal-close" @click="selected = null">×</button>
+          <div class="modal-head-actions">
+            <button class="btn-pdf" @click="printExpenseDoc">📄 PDF出力</button>
+            <button class="modal-close" @click="selected = null">×</button>
+          </div>
         </div>
         <div class="modal-body">
+          <!-- 印刷/PDF出力時のみ表示するドキュメントヘッダ -->
+          <div class="print-only print-doc-head">
+            <h1 class="print-doc-title">明　細</h1>
+            <div class="print-doc-meta">
+              <div>請求日 {{ printIssueDate }}</div>
+              <div>対象期間 {{ yearMonth }} {{ selected.shortLabel }}</div>
+              <div class="print-doc-name">氏名：{{ selected.workerName }}</div>
+            </div>
+          </div>
           <!-- 申請状況 -->
-          <div class="settle-row">
+          <div class="settle-row no-print">
             <span class="badge" :class="`st-${selected.statusClass}`">{{ selected.statusLabel }}</span>
             <span class="settle-pay">振込額（立替）<strong>{{ yen(selected.tategaeTotal) }}</strong></span>
             <span class="settle-amt">経費合計 {{ yen(selected.total) }}（{{ selected.count }}件）</span>
@@ -84,10 +96,10 @@
             <button v-else-if="selected.status === '支払い済み'" class="btn-status-link" @click="undoPaid(selected)">申請中に戻す</button>
             <button v-else-if="selected.status === '期限超過'" class="btn-rescue" @click="rescueOverdue(selected)">未申請に戻す（救済）</button>
           </div>
-          <p class="settle-hint">※ 会社が作業員へ振り込むのは「立替（個人建て替え）」分のみです。経費合計は参考値です。</p>
+          <p class="settle-hint no-print">※ 会社が作業員へ振り込むのは「立替（個人建て替え）」分のみです。経費合計は参考値です。</p>
 
           <!-- 申請PDF（作業員申請時にStorageへ保存された 明細/請求書 を閲覧・DL） -->
-          <div v-if="selected.settlement?.applied_at" class="pdf-row">
+          <div v-if="selected.settlement?.applied_at" class="pdf-row no-print">
             <span class="pdf-label">申請PDF：</span>
             <a :href="pdfUrl(selected, 'meisai')" target="_blank" rel="noopener" class="pdf-link">📄 明細</a>
             <a :href="pdfUrl(selected, 'seikyu')" target="_blank" rel="noopener" class="pdf-link">📄 請求書</a>
@@ -98,9 +110,11 @@
               <tr>
                 <th>日付</th>
                 <th>品名</th>
-                <th>現場名</th>
                 <th>支払い先</th>
-                <th>備考</th>
+                <th>内容</th>
+                <th>登録番号</th>
+                <th class="num">ℓ</th>
+                <th>現場名</th>
                 <th class="num">金額</th>
                 <th>立替</th>
                 <th>領収書</th>
@@ -110,9 +124,11 @@
               <tr v-for="(d, i) in selected.details" :key="i">
                 <td class="date-cell">{{ d.date.slice(5).replace('-', '/') }}</td>
                 <td>{{ d.category }}</td>
-                <td>{{ d.siteName || '—' }}</td>
                 <td class="muted">{{ d.payee || '—' }}</td>
                 <td class="muted">{{ d.note || '—' }}</td>
+                <td class="muted">{{ d.registrationNumber || '—' }}</td>
+                <td class="num muted">{{ d.liters ?? '' }}</td>
+                <td>{{ d.siteName || '—' }}</td>
                 <td class="num">{{ yen(d.amount) }}</td>
                 <td>{{ d.tategae ? '○' : '' }}</td>
                 <td class="receipt-cell">
@@ -125,6 +141,13 @@
                 </td>
               </tr>
             </tbody>
+            <tfoot>
+              <tr class="detail-total-row">
+                <td colspan="7" class="right">合計</td>
+                <td class="num">{{ yen(selected.total) }}</td>
+                <td colspan="2"></td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>
@@ -243,6 +266,10 @@ const grandTotal   = computed(() => visibleRows.value.reduce((s, r) => s + r.tot
 const grandTategae = computed(() => visibleRows.value.reduce((s, r) => s + r.tategaeTotal, 0))
 
 function yen(v: number) { return '¥' + Math.round(v).toLocaleString() }
+
+// PDF出力（印刷CSS方式＝liff /expense/print と同方式。ブラウザの印刷→PDF保存で明細を出力）
+const printIssueDate = (() => { const d = new Date(); return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}` })()
+function printExpenseDoc() { window.print() }
 
 const STATUS_CLASS: Record<SettlementStatus, string> = {
   '未申請': 'todo', '申請中': 'applied', '差し戻し': 'rejected', '期限超過': 'expired', '支払い済み': 'paid',
@@ -586,4 +613,31 @@ watch(dateFrom, load)
 .btn-confirm-ok { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 8px 20px; font-weight: 700; cursor: pointer; }
 .btn-confirm-ok.danger { background: #c0392b; }
 .btn-confirm-ok:disabled { opacity: .6; cursor: default; }
+
+/* PDF出力ボタン・詳細合計 */
+.modal-head-actions { display: flex; align-items: center; gap: 8px; }
+.btn-pdf { background: #0ea5e9; color: #fff; border: none; border-radius: 8px; padding: 7px 14px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.btn-pdf:hover { background: #0284c7; }
+.detail-total-row td { font-weight: 700; border-top: 2px solid #333; padding: 8px 10px; }
+.detail-total-row .right { text-align: right; }
+
+/* 印刷/PDF出力（liff /expense/print と同じ印刷CSS方式） */
+.print-only { display: none; }
+.print-doc-head { margin-bottom: 14px; }
+.print-doc-title { font-size: 22px; font-weight: 800; letter-spacing: 6px; text-align: center; margin: 0 0 12px; }
+.print-doc-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 13px; }
+.print-doc-name { font-weight: 700; font-size: 15px; margin-top: 4px; }
+@media print {
+  /* 画面の全要素を隠し、開いている明細モーダルだけをドキュメントとして印刷する */
+  body * { visibility: hidden; }
+  .modal-overlay, .modal-overlay * { visibility: visible; }
+  .modal-overlay { position: absolute; inset: 0; background: #fff; display: block; padding: 0; }
+  .modal { box-shadow: none; max-width: 100%; width: 100%; max-height: none; border-radius: 0; }
+  .modal-body { padding: 12px 4px !important; overflow: visible !important; }
+  .no-print { display: none !important; }
+  .print-only { display: block !important; }
+  .detail-table { font-size: 11px; }
+  .detail-table th, .detail-table td { padding: 4px 6px !important; }
+  .receipt-link { text-decoration: none; }
+}
 </style>
