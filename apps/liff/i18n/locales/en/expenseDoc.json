@@ -35,6 +35,7 @@
   "colCategory": "Item",
   "colLiters": "ℓ",
   "colSite": "Site",
+  "colVehicle": "Vehicle",
   "colAmount": "Amount",
   "colReceipt": "Receipt",
   "totalLabel": "Total",
@@ -55,9 +56,9 @@
   "errorMissingParams": "URL parameters are missing.",
   "errorUserNotFound": "User not found.",
   "errorFetchFailed": "Failed to retrieve data.",
-  "editStart": "Edit details",
+  "editStart": "Edit",
   "editDone": "Done editing",
-  "editHint": "You can edit payee, details and registration number here (before applying). Press Save on each row after editing.",
+  "editHint": "You can edit payee and registration number here (before applying). Press Save on each row after editing.",
   "saveOk": "Saved",
   "saveFail": "Failed to save. Please try again later."
 }
