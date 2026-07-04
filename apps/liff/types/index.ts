@@ -226,6 +226,7 @@ export interface ExpenseRow {
   registrationNumber?: string  // 登録番号
   fileUrls?:           string[]  // 領収書・写真 URL（Supabase Storage）
   tategae?:            boolean   // 個人建て替え分
+  vehicle?:            string    // 使用車（車両系経費のみ・現場の車両名）
 }
 
 export interface ExpenseItemInput {
