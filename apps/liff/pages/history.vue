@@ -105,7 +105,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import type { User } from '~/types'
-import { computeWorkerHours, calcBreakMinutes, parseMin } from '~/utils/workerHours'
+import { computeWorkerHours, calcBreakMinutes, effectiveBreakMinutes, parseMin } from '~/utils/workerHours'
 
 const { t } = useI18n()
 
@@ -274,7 +274,7 @@ function computeHoursForReport(rep: any): Record<string, any> {
   for (const { si, wi, w } of list) {
     const key = w.workerId || w.workerName
     const { workedMin, ...bd } = computeWorkerHours(
-      w.startTime, w.endTime, calcBreakMinutes(w.workerRole, w.startTime, w.endTime), isSunday, accum[key] ?? 0)
+      w.startTime, w.endTime, effectiveBreakMinutes(w), isSunday, accum[key] ?? 0)
     accum[key] = workedMin
     map[`${si}-${wi}`] = bd
   }

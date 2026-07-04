@@ -109,6 +109,12 @@
           </div>
           <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">設定すると日報でこの現場を選んだ時に作業時刻の既定値になり、終了は固定終了を超えて報告できません（早退で下回るのは可）。</p>
         </div>
+        <!-- ④' 既定休憩時間（日報でこの現場を選ぶと休憩がこの値に・人件費計算に反映） -->
+        <div class="field">
+          <label>既定休憩時間（分・任意）</label>
+          <input v-model.number="modal.default_break_minutes" type="number" min="0" step="15" class="input" style="width:auto" placeholder="例：60" />
+          <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">設定すると<b>新規</b>日報でこの現場を選んだ時に休憩がこの値になり、稼働時間・人件費に反映されます（未設定＝役割×勤務時間の自動計算のまま）。過去の日報は変わりません。</p>
+        </div>
         <!-- ⑤ メモ -->
         <div class="field">
           <label>メモ</label>
@@ -231,6 +237,7 @@ type Site = {
   location: string | null; construction_type: string | null; construction_details: string | null; memo: string | null
   contractor_id: string | null   // 紐づく元請け（任意）
   default_start_time: string | null; default_end_time: string | null   // 固定勤務時刻（日報の既定＆終了上限）
+  default_break_minutes?: number | null   // 既定休憩(分)。新規日報で現場選択時にスナップショット
   responsible_worker_id: string | null   // 現場責任者（現場管理者以上のworker・必須はUIで担保）
 }
 type Att = { id: string; site_id: string; kind: string; path: string; name: string | null; require_consent?: boolean; url?: string | null }
@@ -336,7 +343,7 @@ async function load() {
   const accountId = await getAccountId()
   const [{ data }, { data: cons }] = await Promise.all([
     supabase.from('sites')
-      .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id, default_start_time, default_end_time, responsible_worker_id')
+      .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id, default_start_time, default_end_time, default_break_minutes, responsible_worker_id')
       .eq('account_id', accountId)
       .order('name_kana', { nullsFirst: false })
       .order('name'),
@@ -405,7 +412,7 @@ const filtered = computed(() => {
   return list
 })
 
-function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', responsible_worker_id: myWorkerId.value ?? null, linkedSubs: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = ''; modalRules.value = []; clearPendingAtts(); markFormOpened(); fetchRuleHistory() }
+function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', default_break_minutes: null, responsible_worker_id: myWorkerId.value ?? null, linkedSubs: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = ''; modalRules.value = []; clearPendingAtts(); markFormOpened(); fetchRuleHistory() }
 
 // アカウント内の既存現場ルールを重複排除して候補化（新規現場のルール設定を素早くするため・site-rules.vue と同方針）
 async function fetchRuleHistory() {
@@ -457,6 +464,7 @@ async function save() {
       construction_details: m.construction_details?.trim() || null, memo: m.memo?.trim() || null,
       contractor_id: m.contractor_id || null,
       default_start_time: m.default_start_time || null, default_end_time: m.default_end_time || null,
+      default_break_minutes: (m.default_break_minutes === '' || m.default_break_minutes == null) ? null : Number(m.default_break_minutes),
       responsible_worker_id: m.responsible_worker_id || null,
     }
     const accountId = await getAccountId()

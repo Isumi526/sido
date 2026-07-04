@@ -5,7 +5,7 @@
 import { useI18n } from 'vue-i18n'
 import type { DailyReport, SiteReport, WorkerEntry, SubcontractorEntry, WorkerRole, VehicleExpense, LineItem, ExpenseFileLineItem, HighwayLineItem, GasolineItem } from '~/types'
 import type { RateBreakdown } from '~/utils/workerHours'
-import { computeWorkerHours, calcBreakMinutes, parseMin } from '~/utils/workerHours'
+import { computeWorkerHours, calcBreakMinutes, effectiveBreakMinutes, parseMin } from '~/utils/workerHours'
 import { uploadExpenseFiles } from '~/utils/uploadExpenseFiles'
 import { getPeriodKey } from '~/composables/useExpense'
 
@@ -257,7 +257,7 @@ export const useReport = () => {
       const key    = w.workerId || w.workerName
       const accum  = workerAccum[key] ?? 0
       const { workedMin, ...breakdown } = computeWorkerHours(
-        w.startTime, w.endTime, calcBreakMinutes(w.workerRole, w.startTime, w.endTime), isSunday, accum
+        w.startTime, w.endTime, effectiveBreakMinutes(w), isSunday, accum
       )
       workerAccum[key] = workedMin
       breakdownMap.set(`${siteIdx}-${workerIdx}`, breakdown)

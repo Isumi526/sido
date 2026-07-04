@@ -106,6 +106,21 @@ export function calcBreakMinutes(
     .reduce((sum, w) => sum + (w.end - w.start), 0)
 }
 
+/**
+ * 人件費計算に使う実効休憩（分）。
+ *  - breakSnapshot=true（現場の既定休憩をスナップショットした新規日報）→ 保存値 breakMinutes を尊重。
+ *  - それ以外（レガシー/自動計算）→ 従来どおり calcBreakMinutes でライブ再計算＝過去日報の給与は不変。
+ * 現場休憩設定(#現場休憩) の A-1 実装の要（過去給与を動かさないための唯一の分岐点）。
+ */
+export function effectiveBreakMinutes(w: {
+  breakSnapshot?: boolean; breakMinutes?: number | null
+  workerRole?: string | null; startTime?: string | null; endTime?: string | null
+}): number {
+  if (w?.breakSnapshot && w.breakMinutes != null) return w.breakMinutes
+  const role = (w?.workerRole === 'factory' ? 'factory' : 'site') as 'factory' | 'site'
+  return calcBreakMinutes(role, w?.startTime || '08:00', w?.endTime || '17:30')
+}
+
 export function computeWorkerHours(
   startTime:      string,
   endTime:        string,
@@ -179,74 +194,97 @@ export function getRateLines(r: RateBreakdown): RateLine[] {
   return lines
 }
 
-// ── 昇給(単価変更)履歴を使った「日付別の有効単価」解決 ────────────────
-export type WageChange = { effectiveDate: string; oldUnitPrice: number | null; newUnitPrice: number; wageType?: 'daily' | 'hourly' | null; oldWageType?: 'daily' | 'hourly' | null }
+// ── 賃金モード ─────────────────────────────────────────────────
+//  'daily'(既定): 日当/8h × 稼働時間（原価設定・現場管理者も閲覧OK）
+//  'real'       : 時給(実質賃金) × 稼働時間（office以上のみ切替可）
+export type WageMode = 'daily' | 'real'
 
-/** wage_history 行 → 作業員ごとの timeline（effectiveDate 昇順）。effective_date 未設定行は changed_at の日付で代替。 */
+// ── 昇給(賃金変更)履歴を使った「日付別の有効賃金(日当・時給の両方)」解決 ──
+export type WageChange = {
+  effectiveDate: string
+  daily: number | null       // 切替後の日当
+  hourly: number | null      // 切替後の時給
+  oldDaily: number | null    // 切替前の日当
+  oldHourly: number | null   // 切替前の時給
+}
+
+/** wage_history 行 → 作業員ごとの timeline（effectiveDate 昇順）。
+ *  新カラム(new_daily_wage/new_hourly_wage)があればそれを使い、無い旧行は
+ *  unit_price + wage_type から日当/時給を推定（migrationのバックフィルと同一規則）。 */
 export function buildWageTimelines(
-  rows: { worker_id: string; effective_date?: string | null; changed_at?: string | null; old_unit_price: number | null; new_unit_price: number; wage_type?: string | null; old_wage_type?: string | null }[],
+  rows: {
+    worker_id: string; effective_date?: string | null; changed_at?: string | null
+    old_unit_price: number | null; new_unit_price: number; wage_type?: string | null; old_wage_type?: string | null
+    old_daily_wage?: number | null; new_daily_wage?: number | null; old_hourly_wage?: number | null; new_hourly_wage?: number | null
+  }[],
 ): Map<string, WageChange[]> {
+  // 旧行の unit_price+wage_type → {daily,hourly}（バックフィル規則と一致）
+  const derive = (price: number | null, wt?: string | null): { daily: number | null; hourly: number | null } => {
+    if (price == null) return { daily: null, hourly: null }
+    return wt === 'hourly'
+      ? { daily: price * 8, hourly: price }
+      : { daily: price, hourly: Math.round(price / 8) }
+  }
   const m = new Map<string, WageChange[]>()
   for (const r of rows ?? []) {
     const ed = (r.effective_date || (r.changed_at || '').slice(0, 10))
     if (!ed || !r.worker_id) continue
+    const newDerived = derive(r.new_unit_price, r.wage_type)
+    const oldDerived = derive(r.old_unit_price, r.old_wage_type ?? r.wage_type)
     const arr = m.get(r.worker_id) ?? []
-    arr.push({ effectiveDate: ed, oldUnitPrice: r.old_unit_price, newUnitPrice: r.new_unit_price, wageType: (r.wage_type as 'daily' | 'hourly' | null) ?? null, oldWageType: (r.old_wage_type as 'daily' | 'hourly' | null) ?? null })
+    arr.push({
+      effectiveDate: ed,
+      daily:     r.new_daily_wage  ?? newDerived.daily,
+      hourly:    r.new_hourly_wage ?? newDerived.hourly,
+      oldDaily:  r.old_daily_wage  ?? oldDerived.daily,
+      oldHourly: r.old_hourly_wage ?? oldDerived.hourly,
+    })
     m.set(r.worker_id, arr)
   }
   for (const arr of m.values()) arr.sort((a, b) => a.effectiveDate.localeCompare(b.effectiveDate))
   return m
 }
 
-/** 日報日付に有効だった賃金タイプ。timeline は effectiveDate 昇順。
- *  date >= effectiveDate の最新 wageType(切替後)。全変更より前なら最古の oldWageType(切替前)。
- *  いずれも記録なしは currentWageType。※固定タイプは常に currentWageType に一致＝正しい。 */
-export function wageTypeForDate(date: string, timeline: WageChange[] | undefined, currentWageType: 'daily' | 'hourly'): 'daily' | 'hourly' {
-  if (!timeline || timeline.length === 0) return currentWageType
-  let applied: 'daily' | 'hourly' | null = null
+/** 日報日付(YYYY-MM-DD)に有効だった日当・時給。timeline は effectiveDate 昇順。
+ *  date >= effectiveDate の最新値(切替後)。全変更より前なら最古の切替前値、履歴無しは current。 */
+export function wageForDate(
+  date: string, timeline: WageChange[] | undefined, currentDaily: number, currentHourly: number,
+): { daily: number; hourly: number } {
+  if (!timeline || timeline.length === 0) return { daily: currentDaily, hourly: currentHourly }
+  let daily: number | null = null, hourly: number | null = null
   for (const c of timeline) {
-    if (c.effectiveDate <= date && c.wageType) applied = c.wageType
-    else if (c.effectiveDate > date) break
-  }
-  if (applied) return applied
-  // 全変更より前 → 最初の記録の「切替前」タイプ（old_unit_price と同じ扱い）
-  const firstOld = timeline.find(c => c.oldWageType)?.oldWageType
-  if (firstOld) return firstOld
-  const firstTyped = timeline.find(c => c.wageType)?.wageType
-  return firstTyped ?? currentWageType
-}
-
-/** 日報日付(YYYY-MM-DD)に有効だった日当単価。timeline は effectiveDate 昇順。
- *  date >= effectiveDate の最新 newUnitPrice。全昇給より前なら最古の oldUnitPrice、履歴無しは currentPrice。 */
-export function unitPriceForDate(date: string, timeline: WageChange[] | undefined, currentPrice: number): number {
-  if (!timeline || timeline.length === 0) return currentPrice
-  let applied: number | null = null
-  for (const c of timeline) {
-    if (c.effectiveDate <= date) applied = c.newUnitPrice
+    if (c.effectiveDate <= date) { if (c.daily != null) daily = c.daily; if (c.hourly != null) hourly = c.hourly }
     else break
   }
-  if (applied != null) return applied
-  const firstOld = timeline[0].oldUnitPrice
-  return firstOld != null ? firstOld : currentPrice
+  if (daily == null)  daily  = timeline[0].oldDaily  ?? currentDaily
+  if (hourly == null) hourly = timeline[0].oldHourly ?? currentHourly
+  return { daily, hourly }
 }
 
-/** 料率別時間 × 時給 で人件費を算出。
- *  wageType='daily'(既定): unitPrice=日当 → 時給換算は /8h。
- *  wageType='hourly':      unitPrice=時給 → そのまま /h。
- *  残業/深夜/休日の割増率は賃金タイプに依らず同一(労基準拠＝時給者も割増あり)。 */
-export function laborCostForBreakdown(b: RateBreakdown, unitPrice: number, wageType: 'daily' | 'hourly' = 'daily'): number {
-  if (!unitPrice) return 0
-  const ph = wageType === 'hourly' ? unitPrice : unitPrice / 8
+/** 賃金モードに応じた時給(perHour)。daily=日当/8h ／ real=時給そのまま。 */
+export function perHourForMode(dailyWage: number, hourlyWage: number, mode: WageMode = 'daily'): number {
+  return mode === 'real' ? (hourlyWage || 0) : (dailyWage || 0) / 8
+}
+
+/** 料率別時間 × perHour で人件費を算出（割増率は労基準拠で日当/実質賃金いずれも共通）。 */
+export function laborCostFromPerHour(b: RateBreakdown, perHour: number): number {
+  if (!perHour) return 0
   return Math.round(
-    (b.hoursNormal        || 0) * ph * 1.00 +
-    (b.hoursOT            || 0) * ph * 1.25 +
-    (b.hoursNight         || 0) * ph * 1.25 +
-    (b.hoursOTNight       || 0) * ph * 1.50 +
-    (b.hoursSunday        || 0) * ph * 1.35 +
-    (b.hoursSundayOT      || 0) * ph * 1.60 +
-    (b.hoursSundayNight   || 0) * ph * 1.60 +
-    (b.hoursSundayOTNight || 0) * ph * 1.85,
+    (b.hoursNormal        || 0) * perHour * 1.00 +
+    (b.hoursOT            || 0) * perHour * 1.25 +
+    (b.hoursNight         || 0) * perHour * 1.25 +
+    (b.hoursOTNight       || 0) * perHour * 1.50 +
+    (b.hoursSunday        || 0) * perHour * 1.35 +
+    (b.hoursSundayOT      || 0) * perHour * 1.60 +
+    (b.hoursSundayNight   || 0) * perHour * 1.60 +
+    (b.hoursSundayOTNight || 0) * perHour * 1.85,
   )
+}
+
+/** 料率別時間 × 賃金(日当/時給 + mode) で人件費を算出。
+ *  mode='daily'(既定): 日当/8h × 稼働。 mode='real': 時給 × 稼働。 */
+export function laborCostForBreakdown(b: RateBreakdown, dailyWage: number, hourlyWage: number, mode: WageMode = 'daily'): number {
+  return laborCostFromPerHour(b, perHourForMode(dailyWage, hourlyWage, mode))
 }
 
 export const ZERO_BREAKDOWN: RateBreakdown = {
