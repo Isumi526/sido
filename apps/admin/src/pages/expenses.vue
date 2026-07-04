@@ -109,29 +109,29 @@
             <thead>
               <tr>
                 <th>日付</th>
-                <th>品名</th>
                 <th>支払い先</th>
-                <th>内容</th>
                 <th>登録番号</th>
+                <th>品名</th>
                 <th class="num">ℓ</th>
                 <th>現場名</th>
+                <th>使用車</th>
                 <th class="num">金額</th>
-                <th>立替</th>
-                <th>領収書</th>
+                <th class="no-print">立替</th>
+                <th class="no-print">領収書</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="(d, i) in selected.details" :key="i">
                 <td class="date-cell">{{ d.date.slice(5).replace('-', '/') }}</td>
-                <td>{{ d.category }}</td>
                 <td class="muted">{{ d.payee || '—' }}</td>
-                <td class="muted">{{ d.note || '—' }}</td>
                 <td class="muted">{{ d.registrationNumber || '—' }}</td>
+                <td>{{ expenseDisplayCategory(d.category) }}</td>
                 <td class="num muted">{{ d.liters ?? '' }}</td>
                 <td>{{ d.siteName || '—' }}</td>
+                <td class="muted">{{ d.vehicle || '' }}</td>
                 <td class="num">{{ yen(d.amount) }}</td>
-                <td>{{ d.tategae ? '○' : '' }}</td>
-                <td class="receipt-cell">
+                <td class="no-print">{{ d.tategae ? '○' : '' }}</td>
+                <td class="receipt-cell no-print">
                   <template v-if="d.fileUrls && d.fileUrls.length">
                     <a v-for="(u, ui) in d.fileUrls" :key="ui" :href="u" target="_blank" rel="noopener" class="receipt-link">
                       📎{{ d.fileUrls.length > 1 ? ui + 1 : '' }}
@@ -145,7 +145,7 @@
               <tr class="detail-total-row">
                 <td colspan="7" class="right">合計</td>
                 <td class="num">{{ yen(selected.total) }}</td>
-                <td colspan="2"></td>
+                <td colspan="2" class="no-print"></td>
               </tr>
             </tfoot>
           </table>
@@ -224,7 +224,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug } from '../lib/account'
-import { flattenReportExpenses, ratesFromSettings, effectiveStatus, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
+import { flattenReportExpenses, ratesFromSettings, effectiveStatus, expenseDisplayCategory, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
 
 /** 申請PDF(明細/請求書)のStorage公開URL。パスは generateExpensePdf.uploadApplicationPdf と一致 */
 function pdfUrl(row: { userId: string; periodKey: string }, kind: 'meisai' | 'seikyu'): string {
