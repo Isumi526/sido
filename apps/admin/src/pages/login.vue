@@ -16,9 +16,8 @@
         </div>
         <div class="field">
           <label>パスワード</label>
-          <input
+          <PasswordInput
             v-model="password"
-            type="password"
             placeholder="パスワード"
             autocomplete="current-password"
             required
@@ -37,6 +36,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { signIn } from '../lib/auth'
+import PasswordInput from '../components/PasswordInput.vue'
 
 const router   = useRouter()
 const route    = useRoute()
