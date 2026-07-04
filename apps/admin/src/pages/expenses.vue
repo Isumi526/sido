@@ -68,18 +68,25 @@
         <div class="modal-head no-print">
           <h2>{{ selected.workerName }} — {{ yearMonth }} {{ selected.shortLabel }} の経費明細</h2>
           <div class="modal-head-actions">
-            <button class="btn-pdf" @click="printExpenseDoc">📄 PDF出力</button>
+            <button class="btn-pdf" @click="printExpenseDoc('meisai')">📄 明細PDF</button>
+            <button class="btn-pdf btn-pdf-seikyu" @click="printExpenseDoc('seikyu')">📄 請求書PDF（立替）</button>
             <button class="modal-close" @click="selected = null">×</button>
           </div>
         </div>
-        <div class="modal-body">
+        <div class="modal-body" :class="{ 'print-seikyu': printMode === 'seikyu' }">
           <!-- 印刷/PDF出力時のみ表示するドキュメントヘッダ -->
           <div class="print-only print-doc-head">
-            <h1 class="print-doc-title">明　細</h1>
-            <div class="print-doc-meta">
-              <div>請求日 {{ printIssueDate }}</div>
-              <div>対象期間 {{ yearMonth }} {{ selected.shortLabel }}</div>
-              <div class="print-doc-name">氏名：{{ selected.workerName }}</div>
+            <h1 class="print-doc-title">{{ printMode === 'seikyu' ? '請　求　書' : '明　細' }}</h1>
+            <div class="print-doc-top">
+              <div class="print-doc-left">
+                <div v-if="accountName" class="print-addressee">{{ accountName }}　御中</div>
+                <p class="print-lead">{{ printMode === 'seikyu' ? '下記のとおり、個人立替分の経費をご請求します。' : '下記のとおり、経費の明細をご報告します。' }}</p>
+              </div>
+              <div class="print-doc-meta">
+                <div>請求日 {{ printIssueDate }}</div>
+                <div>対象期間 {{ yearMonth }} {{ selected.shortLabel }}</div>
+                <div class="print-doc-name">氏名：{{ selected.workerName }}</div>
+              </div>
             </div>
           </div>
           <!-- 申請状況 -->
@@ -121,7 +128,8 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(d, i) in selected.details" :key="i">
+              <!-- 請求書(立替のみ)印刷時は 立替でない行を隠す（画面表示は常に全件） -->
+              <tr v-for="(d, i) in selected.details" :key="i" :class="{ 'pdf-hide-row': printMode === 'seikyu' && !d.tategae }">
                 <td class="date-cell">{{ d.date.slice(5).replace('-', '/') }}</td>
                 <td class="muted">{{ d.payee || '—' }}</td>
                 <td class="muted">{{ d.registrationNumber || '—' }}</td>
@@ -143,8 +151,8 @@
             </tbody>
             <tfoot>
               <tr class="detail-total-row">
-                <td colspan="7" class="right">合計</td>
-                <td class="num">{{ yen(selected.total) }}</td>
+                <td colspan="7" class="right">{{ printMode === 'seikyu' ? '振込額（立替）' : '合計' }}</td>
+                <td class="num">{{ yen(printMode === 'seikyu' ? selected.tategaeTotal : selected.total) }}</td>
                 <td colspan="2" class="no-print"></td>
               </tr>
             </tfoot>
@@ -221,9 +229,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { supabase } from '../lib/supabase'
-import { getAccountId, getAccountSlug } from '../lib/account'
+import { getAccountId, getAccountSlug, getAccountName } from '../lib/account'
 import { flattenReportExpenses, ratesFromSettings, effectiveStatus, expenseDisplayCategory, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
 
 /** 申請PDF(明細/請求書)のStorage公開URL。パスは generateExpensePdf.uploadApplicationPdf と一致 */
@@ -269,7 +277,17 @@ function yen(v: number) { return '¥' + Math.round(v).toLocaleString() }
 
 // PDF出力（印刷CSS方式＝liff /expense/print と同方式。ブラウザの印刷→PDF保存で明細を出力）
 const printIssueDate = (() => { const d = new Date(); return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}` })()
-function printExpenseDoc() { window.print() }
+// 宛先（請求先＝アカウント名 御中）
+const accountName = ref<string | null>(null)
+// PDF出力モード: 明細(全経費) / 請求書(個人立替のみ)。liff の全経費/立替分と同じ2モード。
+const printMode = ref<'meisai' | 'seikyu'>('meisai')
+// モーダルを開き直すたびに明細モードへリセット（前回の請求書モードを持ち越さない）
+watch(selected, () => { printMode.value = 'meisai' })
+async function printExpenseDoc(mode: 'meisai' | 'seikyu') {
+  printMode.value = mode
+  await nextTick()
+  window.print()
+}
 
 const STATUS_CLASS: Record<SettlementStatus, string> = {
   '未申請': 'todo', '申請中': 'applied', '差し戻し': 'rejected', '期限超過': 'expired', '支払い済み': 'paid',
@@ -293,6 +311,7 @@ async function load() {
   loading.value = true
   selected.value = null
   const accountId = await getAccountId()
+  if (!accountName.value) accountName.value = await getAccountName()
 
   const ym = dateFrom.value.slice(0, 7)            // YYYY-MM
   const periodKeys = [`${ym}-first`, `${ym}-second`]
@@ -618,6 +637,8 @@ watch(dateFrom, load)
 .modal-head-actions { display: flex; align-items: center; gap: 8px; }
 .btn-pdf { background: #0ea5e9; color: #fff; border: none; border-radius: 8px; padding: 7px 14px; font-size: 13px; font-weight: 700; cursor: pointer; }
 .btn-pdf:hover { background: #0284c7; }
+.btn-pdf-seikyu { background: #7c3aed; }
+.btn-pdf-seikyu:hover { background: #6d28d9; }
 .detail-total-row td { font-weight: 700; border-top: 2px solid #333; padding: 8px 10px; }
 .detail-total-row .right { text-align: right; }
 
@@ -625,7 +646,11 @@ watch(dateFrom, load)
 .print-only { display: none; }
 .print-doc-head { margin-bottom: 14px; }
 .print-doc-title { font-size: 22px; font-weight: 800; letter-spacing: 6px; text-align: center; margin: 0 0 12px; }
-.print-doc-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 13px; }
+.print-doc-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.print-doc-left { flex: 1; min-width: 0; }
+.print-addressee { font-size: 18px; font-weight: 700; letter-spacing: 1px; border-bottom: 1px solid #111; display: inline-block; padding-bottom: 2px; margin-bottom: 8px; }
+.print-lead { font-size: 12px; color: #111; }
+.print-doc-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 13px; flex-shrink: 0; }
 .print-doc-name { font-weight: 700; font-size: 15px; margin-top: 4px; }
 @media print {
   /* 画面の全要素を隠し、開いている明細モーダルだけをドキュメントとして印刷する */
@@ -636,6 +661,7 @@ watch(dateFrom, load)
   .modal-body { padding: 12px 4px !important; overflow: visible !important; }
   .no-print { display: none !important; }
   .print-only { display: block !important; }
+  .pdf-hide-row { display: none !important; }   /* 請求書(立替のみ)で非立替行を隠す */
   .detail-table { font-size: 11px; }
   .detail-table th, .detail-table td { padding: 4px 6px !important; }
   .receipt-link { text-decoration: none; }
