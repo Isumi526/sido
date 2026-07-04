@@ -233,6 +233,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { useQueryParam } from '../composables/useQueryParam'
 import { currentUser } from '../lib/auth'
 import { findSimilarSiteNames } from '../lib/siteSimilarity'
 
@@ -397,10 +398,10 @@ function fixedTimeLabel(s: Site): string {
 }
 
 // AC3: 検索（名称/読み仮名/住所/元請け）・状態絞り込み・並び替え
-const q          = ref('')
+const q          = useQueryParam('q', '')                                  // URL ?q= 検索
 // 既定は『有効のみ』表示（無効現場はデフォルト非表示・フィルタで切替可）
-const statusFilter = ref<'active' | 'inactive'>('active')   // 有効/無効化済みタブ
-const sortBy     = ref<'kana' | 'recent'>('kana')
+const statusFilter = useQueryParam<'active' | 'inactive'>('status', 'active')   // ?status= 有効/無効化済みタブ
+const sortBy     = useQueryParam<'kana' | 'recent'>('sort', 'kana')             // ?sort= 並び順
 const filtered = computed(() => {
   const kw = q.value.trim().toLowerCase()
   let list = sites.value.filter((s) => {
