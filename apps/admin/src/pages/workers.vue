@@ -558,15 +558,19 @@ async function save() {
       const dailyChanged  = origDaily.value  != null && newDaily  !== origDaily.value
       const hourlyChanged = origHourly.value != null && newHourly !== origHourly.value
       if (dailyChanged || hourlyChanged) {
-        await supabase.from('worker_wage_history').insert({
+        const effDate = wageEffectiveDate.value || todayStr()
+        // べき等化: (worker_id, effective_date) の一意indexで upsert=同一発効日の再送/連打でも二重登録しない。
+        await supabase.from('worker_wage_history').upsert({
           worker_id: workerId, account_id: accountId,
           // 後方互換: old/new_unit_price には日当を入れ、wage_type='daily' 固定（旧集計との互換）
           old_unit_price: origDaily.value, new_unit_price: newDaily, wage_type: 'daily', old_wage_type: 'daily',
           old_daily_wage:  origDaily.value,  new_daily_wage:  newDaily,
           old_hourly_wage: origHourly.value, new_hourly_wage: newHourly,
           reason: wageReason.value.trim() || null,
-          effective_date: wageEffectiveDate.value || todayStr(),
-        })
+          effective_date: effDate,
+        }, { onConflict: 'worker_id,effective_date' })
+        // 同一セッションでの再保存が履歴を再検知しないよう、基準値を新値に更新
+        origDaily.value = newDaily; origHourly.value = newHourly
       }
     } else {
       const { data, error: insErr } = await supabase.from('workers').insert({ ...workerPayload, account_id: accountId, status: 'active' }).select('id').single()
