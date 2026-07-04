@@ -128,7 +128,7 @@
                     <td class="right">{{ row.amount ? '¥' + row.amount.toLocaleString() : '' }}</td>
                     <td class="receipt-cell no-print">
                       <!-- 編集モード: 変更行に保存ボタン -->
-                      <button v-if="editMode && row.srcKey && row._dirty" class="row-save-btn" :disabled="savingRow === row" @click="saveRow(row)">
+                      <button v-if="editMode && row.srcKey && row._dirty" class="row-save-btn" :disabled="!!savingRow" @click="saveRow(row)">
                         {{ savingRow === row ? '保存中…' : '保存' }}
                       </button>
                       <template v-else-if="row.fileUrls?.length">
