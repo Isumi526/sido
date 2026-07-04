@@ -423,12 +423,15 @@ function resolveSiteId(): string | undefined {
 }
 
 // 今日（JST）の開始・終了タイムスタンプ
-function todayRange() {
-  const now   = new Date()
+// JST基準の年月日文字列（YYYY-MM-DD）
+function jstYmd(d: Date): string {
   const jstOffset = 9 * 60
-  const jstNow = new Date(now.getTime() + (jstOffset + now.getTimezoneOffset()) * 60000)
-  const ymd = `${jstNow.getFullYear()}-${String(jstNow.getMonth() + 1).padStart(2, '0')}-${String(jstNow.getDate()).padStart(2, '0')}`
-  return { from: `${ymd}T00:00:00+09:00`, to: `${ymd}T23:59:59+09:00` }
+  const jst = new Date(d.getTime() + (jstOffset + d.getTimezoneOffset()) * 60000)
+  return `${jst.getFullYear()}-${String(jst.getMonth() + 1).padStart(2, '0')}-${String(jst.getDate()).padStart(2, '0')}`
+}
+// 指定ISO時刻がJSTで「今日」か
+function isJstToday(iso: string): boolean {
+  return jstYmd(new Date(iso)) === jstYmd(new Date())
 }
 
 // ── 初期化 ──────────────────────────────────────────────────
@@ -547,30 +550,36 @@ function backToSelect() {
 async function loadForTarget(workerId: string) {
   phase.value = 'loading'
 
-  // 自動判定: 今日×この現場×この作業員のログを確認
-  const { from, to } = todayRange()
-  const { data: todayLogs } = await supabase
+  // 自動判定: この現場×この作業員の「直近サイクル」で判定する。
+  //  ★夜勤の日跨ぎ対応: 当日(カレンダー日)固定だと、前日夜の出勤が拾えず翌朝の退勤ができなかった。
+  //   直近20時間のログを見て「未退勤の出勤が残っていれば退勤」＝日を跨いでも退勤できる。
+  const windowStart = new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString()
+  const { data: recentLogs } = await supabase
     .from('attendance_logs')
     .select('type, checked_at')
     .eq('site_id', siteId.value)
     .eq('worker_id', workerId)
-    .gte('checked_at', from)
-    .lte('checked_at', to)
+    .gte('checked_at', windowStart)
     .order('checked_at')
 
-  const hasCheckin  = todayLogs?.some(l => l.type === 'checkin')
-  const hasCheckout = todayLogs?.some(l => l.type === 'checkout')
+  const logs = (recentLogs ?? []) as { type: string; checked_at: string }[]
+  const last = logs[logs.length - 1]
 
-  if (hasCheckin && hasCheckout) {
-    // 出退勤どちらも済み
-    checkinTime.value  = fmtTime(todayLogs!.find(l => l.type === 'checkin')!.checked_at)
-    checkoutTime.value = fmtTime(todayLogs!.find(l => l.type === 'checkout')!.checked_at)
+  if (last?.type === 'checkin') {
+    // 出勤中・退勤未（前日夜の出勤でもここに来る）→ 退勤フォーム
+    attendanceType.value = 'checkout'
+    checkinTime.value = fmtTime(last.checked_at)
+  } else if (last?.type === 'checkout' && isJstToday(last.checked_at)) {
+    // 本日すでに退勤済み（＝直近サイクル完了）→ 完了画面。直近の出勤とセットで表示。
+    const lastCheckin = [...logs].reverse().find(l => l.type === 'checkin')
+    checkinTime.value  = lastCheckin ? fmtTime(lastCheckin.checked_at) : '—'
+    checkoutTime.value = fmtTime(last.checked_at)
     phase.value = 'already-done'
     return
+  } else {
+    // 未打刻 or 前回退勤が本日でない（＝新しいシフト）→ 出勤フォーム
+    attendanceType.value = 'checkin'
   }
-
-  // 出勤済み・退勤未 → 退勤フォーム / 両方なし → 出勤フォーム
-  attendanceType.value = hasCheckin ? 'checkout' : 'checkin'
 
   // ルール取得（タイミングでフィルタ）
   const timings = attendanceType.value === 'checkin'
