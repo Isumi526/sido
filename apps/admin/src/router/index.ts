@@ -32,6 +32,7 @@ import EstimateBuilder from '../pages/estimate-builder.vue'
 import PurchaseOrders  from '../pages/purchase-orders.vue'
 import Process         from '../pages/process.vue'
 import AiHelp          from '../pages/ai-help.vue'
+import Faq             from '../pages/faq.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -66,6 +67,7 @@ export const router = createRouter({
     { path: '/report-site-relink',    component: ReportSiteRelink },
     { path: '/overtime-approvals',    component: OvertimeApprovals },
     { path: '/ai-help',          component: AiHelp },
+    { path: '/faq',              component: Faq },
     { path: '/estimates',        component: Estimates },
     { path: '/estimate-list',   component: EstimatesList },
     { path: '/estimate-masters', component: EstimateMasters },

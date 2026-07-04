@@ -14,13 +14,43 @@ const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
 
 // in-code認可：有効なユーザーJWT（ログイン済み管理者セッション）必須。
 // CIが --no-verify-jwt でデプロイするため、anon鍵単体の匿名呼び出しをここで弾く（コスト悪用防止）。
-async function requireUser(req: Request): Promise<boolean> {
+// 併せて、FAQナレッジのテナント絞り込みに使う account_slug を app_metadata から返す。
+async function getUser(req: Request): Promise<{ ok: boolean; accountSlug: string }> {
   const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
-  if (!jwt || jwt === ANON_KEY) return false
+  if (!jwt || jwt === ANON_KEY) return { ok: false, accountSlug: '' }
   try {
     const { data, error } = await createClient(SUPABASE_URL, ANON_KEY).auth.getUser(jwt)
-    return !!data?.user && !error
-  } catch { return false }
+    if (!data?.user || error) return { ok: false, accountSlug: '' }
+    const meta = (data.user.app_metadata ?? {}) as Record<string, unknown>
+    const accountSlug = typeof meta.account_slug === 'string' ? meta.account_slug : ''
+    return { ok: true, accountSlug }
+  } catch { return { ok: false, accountSlug: '' } }
+}
+
+// テナントの有効FAQ（faq_entries）を取得し、systemInstruction に注入するテキストにする。
+// account_slug が無い/取得0件なら空文字（＝従来どおり固定SYSTEMのみで動く＝後方互換）。
+async function buildFaqBlock(accountSlug: string): Promise<string> {
+  if (!accountSlug) return ''
+  try {
+    const sb = createClient(SUPABASE_URL, ANON_KEY)
+    const { data: account } = await sb.from('accounts').select('id').eq('slug', accountSlug).maybeSingle()
+    if (!account?.id) return ''
+    const { data: rows } = await sb
+      .from('faq_entries')
+      .select('question, answer, category, variations')
+      .eq('account_id', account.id)
+      .eq('is_active', true)
+      .order('sort_order')
+      .limit(200)
+    if (!rows || rows.length === 0) return ''
+    const items = rows.map((r: any, i: number) => {
+      const vars = Array.isArray(r.variations) && r.variations.length
+        ? `\n  （言い換え: ${r.variations.map((v: any) => String(v)).join(' / ')}）` : ''
+      const cat = r.category ? `[${r.category}] ` : ''
+      return `${i + 1}. ${cat}Q: ${r.question}\n  A: ${r.answer}${vars}`
+    }).join('\n')
+    return `\n\n【このテナント固有のFAQ（最優先で根拠に使う。該当が無ければ一般知識で答える）】\n${items}`
+  } catch { return '' }
 }
 
 const SYSTEM = `あなたは内装施工会社向け業務システム「sido」の操作ヘルプAIです。日本語で簡潔に、手順は箇条書きで答えてください。
@@ -41,16 +71,18 @@ function json(b:unknown,s=200){return new Response(JSON.stringify(b),{status:s,h
 Deno.serve(async(req)=>{
   if(req.method==='OPTIONS')return new Response('ok',{headers:cors()})
   if(req.method!=='POST')return json({ok:false,error:'method'},405)
-  if(!(await requireUser(req)))return json({ok:false,error:'unauthorized'},401)
+  const auth=await getUser(req)
+  if(!auth.ok)return json({ok:false,error:'unauthorized'},401)
   if(!API_KEY)return json({ok:false,error:'ai_unconfigured'},503)
   let message='';let history:any[]=[]
   try{const b=await req.json();message=(b.message??'').toString().slice(0,2000);history=Array.isArray(b.history)?b.history.slice(-8):[]}catch{}
   if(!message.trim())return json({ok:false,error:'empty'},400)
+  const faqBlock=await buildFaqBlock(auth.accountSlug)
   const contents=[...history.filter((h:any)=>h&&h.text).map((h:any)=>({role:h.role==='ai'?'model':'user',parts:[{text:String(h.text).slice(0,2000)}]})),{role:'user',parts:[{text:message}]}]
   try{
     const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,{
       method:'POST',headers:{'x-goog-api-key':API_KEY,'Content-Type':'application/json'},
-      body:JSON.stringify({systemInstruction:{parts:[{text:SYSTEM}]},contents,generationConfig:{temperature:0.3,responseMimeType:'application/json',responseSchema:{type:'object',properties:{answer:{type:'string'},isBug:{type:'boolean'},bugTitle:{type:'string'},bugSummary:{type:'string'}},required:['answer','isBug']}}}),
+      body:JSON.stringify({systemInstruction:{parts:[{text:SYSTEM+faqBlock}]},contents,generationConfig:{temperature:0.3,responseMimeType:'application/json',responseSchema:{type:'object',properties:{answer:{type:'string'},isBug:{type:'boolean'},bugTitle:{type:'string'},bugSummary:{type:'string'}},required:['answer','isBug']}}}),
     })
     if(!res.ok){const t=await res.text();console.error('[ai-chat] gemini',res.status,t.slice(0,200));return json({ok:false,error:'ai_unavailable'},502)}
     const j=await res.json()
