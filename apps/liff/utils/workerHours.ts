@@ -119,8 +119,23 @@ export function effectiveBreakMinutes(w: {
   breakSnapshot?: boolean; breakMinutes?: number | null; breaks?: BreakSpec[] | null
   workerRole?: string | null; startTime?: string | null; endTime?: string | null
 }): number {
-  if (w?.breakSnapshot && Array.isArray(w.breaks) && w.breaks.length)
-    return w.breaks.reduce((s, b) => s + (Number(b?.minutes) || 0), 0)
+  if (w?.breakSnapshot && Array.isArray(w.breaks) && w.breaks.length) {
+    // ★シフト内に入る休憩だけ合計する（computeWorkerHours が実際にskipする窓と一致）。
+    //  例: 現場が昼勤用12:00＋夜勤用22:30を持つ時、昼勤(08:30-17:30)では12:00分だけ数える。
+    let startMin = parseMin(w.startTime || '08:00')
+    let endMin   = parseMin(w.endTime   || '17:30')
+    if (endMin <= startMin) endMin += 1440
+    let sum = 0
+    for (const b of w.breaks) {
+      const mins = Math.max(0, Math.round(Number(b?.minutes) || 0))
+      if (mins <= 0 || !b?.start) continue
+      let bs = parseMin(b.start)
+      if (bs < startMin) bs += 1440
+      const s = Math.max(bs, startMin), e = Math.min(bs + mins, endMin)
+      if (e > s) sum += (e - s)
+    }
+    return sum
+  }
   const role = (w?.workerRole === 'factory' ? 'factory' : 'site') as 'factory' | 'site'
   return calcBreakMinutes(role, w?.startTime || '08:00', w?.endTime || '17:30')
 }
