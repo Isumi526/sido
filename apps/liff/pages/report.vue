@@ -233,10 +233,9 @@
                     <div class="time-field">
                       <label class="hours-label">{{ $t('report.break') }}</label>
                       <span class="break-auto">
-                        {{ effectiveBreakMinutes(site.workers[0]) === 0
-                          ? $t('report.breakNone')
-                          : $t('report.breakMinutesAuto', { min: effectiveBreakMinutes(site.workers[0]) }) }}
-                        <template v-if="site.workers[0].breakSnapshot">（現場設定）</template>
+                        <template v-if="effectiveBreakMinutes(site.workers[0]) === 0">{{ $t('report.breakNone') }}</template>
+                        <template v-else-if="site.workers[0].breakSnapshot">{{ effectiveBreakMinutes(site.workers[0]) }}分（現場設定）</template>
+                        <template v-else>{{ $t('report.breakMinutesAuto', { min: effectiveBreakMinutes(site.workers[0]) }) }}</template>
                       </span>
                     </div>
                   </div>
@@ -2181,7 +2180,8 @@ html, body {
 .worker-time-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 .worker-time-row  { display: flex; gap: 6px; align-items: flex-end; }
 .worker-time-row .time-field { flex: 1; }
-.worker-break-row .time-field { width: 140px; }
+.worker-break-row .time-field { width: auto; min-width: 140px; }
+.break-auto { white-space: nowrap; }
 .time-field {
   display: flex; flex-direction: column; gap: 3px;
 }
