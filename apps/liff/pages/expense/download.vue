@@ -42,8 +42,14 @@
           <button class="btn-apply" :disabled="applying" @click="showApplyConfirm = true">
             {{ effStatus === '差し戻し' ? t('expenseDoc.applyReapply') : t('expenseDoc.apply') }}
           </button>
+          <!-- 申請前のみ: 支払い先/内容/登録番号 のインライン修正 -->
+          <button class="btn-edit-toggle" :class="{ active: editMode }" @click="toggleEdit">
+            {{ editMode ? t('expenseDoc.editDone') : t('expenseDoc.editStart') }}
+          </button>
           <p v-if="applyError" class="apply-error">{{ applyError }}</p>
         </div>
+        <p v-if="canApply && editMode" class="edit-hint no-print">{{ t('expenseDoc.editHint') }}</p>
+        <p v-if="rowSaveMsg" class="edit-save-msg no-print" :class="rowSaveErr ? 'err' : 'ok'">{{ rowSaveMsg }}</p>
 
         <!-- 申請確認ダイアログ -->
         <div v-if="showApplyConfirm" class="confirm-overlay no-print" @click.self="!applying && (showApplyConfirm = false)">
@@ -100,16 +106,32 @@
                 <tbody>
                   <tr v-for="(row, i) in displayRows" :key="i">
                     <td class="center">{{ fmtDate(row.date) }}</td>
-                    <td class="small">{{ row.payee || '' }}</td>
-                    <td class="small">{{ row.note || '' }}</td>
-                    <td class="small">{{ row.registrationNumber || '' }}</td>
+                    <!-- 支払い先: 編集モード＆出所ありなら入力 -->
+                    <td class="small">
+                      <input v-if="editMode && row.srcKey" v-model="row.payee" class="cell-edit" :placeholder="t('expenseDoc.colPayee')" @input="row._dirty = true" />
+                      <template v-else>{{ row.payee || '' }}</template>
+                    </td>
+                    <!-- 内容: label系カテゴリ(電車/宿泊/その他/雑経費)のみ編集可 -->
+                    <td class="small">
+                      <input v-if="editMode && isNoteEditable(row)" v-model="row.note" class="cell-edit" :placeholder="t('expenseDoc.colContent')" @input="row._dirty = true" />
+                      <template v-else>{{ row.note || '' }}</template>
+                    </td>
+                    <!-- 登録番号: 編集モード＆出所ありなら入力 -->
+                    <td class="small">
+                      <input v-if="editMode && row.srcKey" v-model="row.registrationNumber" class="cell-edit" :placeholder="t('expenseDoc.colReg')" @input="row._dirty = true" />
+                      <template v-else>{{ row.registrationNumber || '' }}</template>
+                    </td>
                     <td class="center">{{ row.category }}</td>
                     <td class="center">{{ row.liters ?? '' }}</td>
                     <td class="small">{{ row.siteName }}</td>
                     <td></td>
                     <td class="right">{{ row.amount ? '¥' + row.amount.toLocaleString() : '' }}</td>
                     <td class="receipt-cell no-print">
-                      <template v-if="row.fileUrls?.length">
+                      <!-- 編集モード: 変更行に保存ボタン -->
+                      <button v-if="editMode && row.srcKey && row._dirty" class="row-save-btn" :disabled="savingRow === row" @click="saveRow(row)">
+                        {{ savingRow === row ? '保存中…' : '保存' }}
+                      </button>
+                      <template v-else-if="row.fileUrls?.length">
                         <a
                           v-for="(url, ui) in row.fileUrls"
                           :key="ui"
@@ -182,7 +204,7 @@ const initializing   = ref(true)
 const loading        = ref(false)
 const selfUser       = ref<User | null>(null)
 const selectedPeriod = ref(getCurrentPeriodKey())
-const rows           = ref<ExpenseRow[]>([])
+const rows           = ref<(ExpenseRow & { _dirty?: boolean })[]>([])
 const viewMode       = ref<'all' | 'tategae'>('all')
 
 // 申請ステータス
@@ -191,6 +213,34 @@ const settlement  = ref<any | null>(null)
 const applying    = ref(false)
 const applyError  = ref('')
 const showApplyConfirm = ref(false)
+
+// ── インライン編集（申請前のみ・支払い先/内容/登録番号）──
+const editMode   = ref(false)
+const savingRow  = ref<any | null>(null)
+const rowSaveMsg = ref('')
+const rowSaveErr = ref(false)
+const NOTE_EDITABLE_KEYS = ['trains', 'hotels', 'others', 'entertainments']  // 内容(label)を持つカテゴリのみ
+function isNoteEditable(row: any): boolean { return editMode.value && !!row?.srcKey && NOTE_EDITABLE_KEYS.includes(row.srcKey) }
+function toggleEdit() { editMode.value = !editMode.value; rowSaveMsg.value = '' }
+async function saveRow(row: any) {
+  if (!applyUserId.value || !row?.srcKey) return
+  savingRow.value = row; rowSaveMsg.value = ''
+  try {
+    const ok = await expense.patchExpenseItem(applyUserId.value, row, {
+      payee: row.payee ?? '', registrationNumber: row.registrationNumber ?? '',
+      ...(NOTE_EDITABLE_KEYS.includes(row.srcKey) ? { note: row.note ?? '' } : {}),
+    })
+    if (!ok) throw new Error('patch failed')
+    row._dirty = false
+    rowSaveErr.value = false; rowSaveMsg.value = t('expenseDoc.saveOk')
+  } catch (e) {
+    console.error('[download] saveRow:', e)
+    rowSaveErr.value = true; rowSaveMsg.value = t('expenseDoc.saveFail')
+    await loadRows()  // 失敗時はDB値へ戻す
+  } finally {
+    savingRow.value = null
+  }
+}
 
 const effStatus    = computed(() => effectiveStatus(settlement.value, selectedPeriod.value))
 const deadlineText = computed(() => deadlineLabel(selectedPeriod.value))
@@ -489,4 +539,15 @@ html,body { background:var(--bg);color:var(--text);font-family:var(--font);min-h
   .expense-table th,.expense-table td { font-size:10px !important;padding:4px 5px !important; }
   body { background:#fff !important; }
 }
+
+/* ── インライン編集（申請前のみ）── */
+.btn-edit-toggle { margin-left:8px;padding:8px 14px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#334155;font-size:13px;cursor:pointer; }
+.btn-edit-toggle.active { background:#0ea5e9;border-color:#0ea5e9;color:#fff; }
+.edit-hint { margin:6px 0 0;font-size:12px;color:#64748b; }
+.edit-save-msg { margin:6px 0 0;font-size:13px; }
+.edit-save-msg.ok { color:#059669; }
+.edit-save-msg.err { color:#dc2626; }
+.cell-edit { width:100%;box-sizing:border-box;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px; }
+.row-save-btn { padding:3px 10px;border:none;border-radius:6px;background:#0ea5e9;color:#fff;font-size:12px;cursor:pointer;white-space:nowrap; }
+.row-save-btn:disabled { opacity:.6;cursor:not-allowed; }
 </style>

@@ -231,6 +231,11 @@ export interface ExpenseRow {
   registrationNumber?: string  // 登録番号
   fileUrls?:           string[]  // 領収書・写真 URL（Supabase Storage）
   tategae?:            boolean   // 個人建て替え分
+  // 出所（申請前インライン編集の書き戻し用・追加のみ／金額・集計に無影響）。
+  //  新形式配列カテゴリ(parkings/highways/trains/hotels/others/entertainments)＋本日ガソリン(gasolineItems)のみ付与。
+  srcSiteIndex?:       number    // sites[] のindex（本日ガソリンは無し）
+  srcKey?:             string    // 'parkings'|'highways'|'trains'|'hotels'|'others'|'entertainments'|'gasolineItems'
+  srcIndex?:           number    // その配列内のindex
 }
 
 export interface ExpenseItemInput {
