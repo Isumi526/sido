@@ -418,6 +418,50 @@ export const useExpense = () => {
     await registerNewSites(accountId, report.sites as any[])
   }
 
+  // 内容(note)を label キーに書き戻せるカテゴリ（それ以外は payee/登録番号のみ編集）
+  const LABEL_SRC_KEYS = new Set(['trains', 'hotels', 'others', 'entertainments'])
+
+  /**
+   * 経費申請書のインライン編集：1明細の 支払い先/内容/登録番号 を daily_reports.sites JSON（本日ガソリンは gasoline_items）へ書き戻す。
+   * 申請前(未申請/差し戻し)のガードは呼び出し側(download.vue canApply)で担保。ExpenseRow の出所(srcKey/srcSiteIndex/srcIndex)で対象を辿る。
+   * @returns 保存できたら true（出所不明・対象不在なら false）
+   */
+  async function patchExpenseItem(
+    userId: string,
+    row: { date: string; srcKey?: string; srcSiteIndex?: number; srcIndex?: number },
+    patch: { payee?: string; registrationNumber?: string; note?: string }
+  ): Promise<boolean> {
+    if (!row?.srcKey || row.srcIndex == null) return false
+    const rep = await getReportByUserId(userId, row.date)
+    if (!rep) return false
+
+    // 書き戻し対象の明細オブジェクトを取得
+    let target: any = null
+    if (row.srcKey === 'gasolineItems') {
+      target = (rep.gasoline_items ?? [])[row.srcIndex]
+    } else if (row.srcSiteIndex != null) {
+      const site = (rep.sites ?? [])[row.srcSiteIndex]
+      target = site?.expenses?.[row.srcKey]?.[row.srcIndex]
+    }
+    if (!target) return false
+
+    // フィールド書き戻し（未指定は触らない）。内容(note)は label 系カテゴリのみ label へ。
+    if (patch.payee !== undefined) target.payee = patch.payee.trim() || null
+    if (patch.registrationNumber !== undefined) target.registrationNumber = patch.registrationNumber.trim() || null
+    if (patch.note !== undefined && LABEL_SRC_KEYS.has(row.srcKey)) target.label = patch.note.trim() || null
+
+    await saveReportById(userId, {
+      date: rep.date,
+      isWorking: rep.is_working,
+      sites: rep.sites ?? [],
+      note: rep.note ?? undefined,
+      leaveType: rep.leave_type ?? null,
+      isBusinessTrip: rep.is_business_trip ?? false,
+      gasolineItems: rep.gasoline_items ?? [],
+    })
+    return true
+  }
+
   /**
    * 日報データをSupabaseに保存（管理画面・履歴用）
    * 同じ user_id + date がある場合は上書き（upsert）
@@ -477,11 +521,14 @@ export const useExpense = () => {
       rows.push(...flattenReportExpenses(rep.date, rep.sites as any[], rates)
         .filter(r => r.category !== 'ガソリン代' && r.category !== '軽油代'))
       // 日報レベルの「本日のガソリン代」（複数給油・実費）も明細に含める（admin 経費精算と整合）
-      for (const g of ((rep as any).gasoline_items ?? [])) {
+      //  srcKey='gasolineItems'（report直下・srcSiteIndex無し）で書き戻し先を区別。srcIndexは元配列のindex。
+      const gitems = ((rep as any).gasoline_items ?? [])
+      for (let gi = 0; gi < gitems.length; gi++) {
+        const g = gitems[gi]
         const gasYen = Math.round(Number(g?.yen) || 0)
         if (gasYen <= 0) continue
         const urls = Array.isArray(g.fileUrls) ? g.fileUrls : []
-        rows.push({ date: rep.date, category: 'ガソリン代（本日）', siteName: '—', payee: g.payee || '', amount: gasYen, note: '', registrationNumber: g.registrationNumber || '', fileUrls: urls, tategae: !!g.tategae } as ExpenseRow)
+        rows.push({ date: rep.date, category: 'ガソリン代（本日）', siteName: '—', payee: g.payee || '', amount: gasYen, note: '', registrationNumber: g.registrationNumber || '', fileUrls: urls, tategae: !!g.tategae, srcKey: 'gasolineItems', srcIndex: gi } as ExpenseRow)
       }
     }
     return rows
@@ -715,5 +762,5 @@ export const useExpense = () => {
     return data
   }
 
-  return { getUser, registerUser, addItem, getItems, deleteItem, saveReport, saveReportById, findOrCreateProxyUser, getExpenseRowsFromReports, getExpenseRowsFromReportsById, getReports, getReportsById, getReport, getReportByUserId, getNextUnsubmittedDate, getNextUnsubmittedDateById, clearUserCache, getSettlement, getSettlements, applySettlement }
+  return { getUser, registerUser, addItem, getItems, deleteItem, saveReport, saveReportById, patchExpenseItem, findOrCreateProxyUser, getExpenseRowsFromReports, getExpenseRowsFromReportsById, getReports, getReportsById, getReport, getReportByUserId, getNextUnsubmittedDate, getNextUnsubmittedDateById, clearUserCache, getSettlement, getSettlements, applySettlement }
 }

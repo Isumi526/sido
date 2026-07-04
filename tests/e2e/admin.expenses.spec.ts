@@ -53,4 +53,21 @@ test.describe('経費管理 一覧', () => {
     await expect(page.locator('tr.data-row', { hasText: SEED_WORKER }).first()).toBeVisible()
     await expect(page.locator('tbody')).not.toContainText('OtherTenant')
   })
+
+  // PDF出力: 明細/請求書(立替のみ)の2ボタン＋請求先(宛先=アカウント名 御中)＋請求書は振込額(立替)を出す
+  test('PDF出力: 明細/請求書の2モード＋宛先(御中)が印刷ヘッダにある', async ({ page }) => {
+    await page.locator('tr.data-row', { hasText: SEED_WORKER }).filter({ hasText: '前半' }).click()
+    const modal = page.locator('.modal')
+    await expect(modal).toBeVisible()
+    // 2ボタンが出る
+    await expect(modal.getByRole('button', { name: '📄 明細PDF' })).toBeVisible()
+    await expect(modal.getByRole('button', { name: /請求書PDF/ })).toBeVisible()
+    // 宛先(print-only・御中)＋リードがDOMにある（textContentは非表示要素でも取れる）
+    await expect(modal.locator('.print-addressee')).toContainText('御中')
+    // 既定=明細（合計）／請求書ボタンを押すと 振込額（立替）表記＋立替総額(¥500)に切替わる
+    await expect(modal.locator('.detail-total-row')).toContainText('合計')
+    await modal.getByRole('button', { name: /請求書PDF/ }).click()
+    await expect(modal.locator('.detail-total-row')).toContainText('振込額（立替）')
+    await expect(modal.locator('.detail-total-row')).toContainText('¥500')
+  })
 })

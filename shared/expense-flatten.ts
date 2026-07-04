@@ -35,6 +35,12 @@ export interface ExpenseRow {
   fileUrls?: string[]   // 領収書・写真URL（Supabase Storage）
   tategae?: boolean
   vehicle?: string      // 使用車（車両系経費のみ・現場の車両名。交通費/その他/宿泊は無し）
+  // ── 出所（申請前インライン編集の書き戻し用・追加のみ／金額・集計には無影響）──
+  //  新形式配列カテゴリ(parkings/highways/trains/hotels/others/entertainments)のみ付与。
+  //  レガシースカラー・車両按分・旧車両配下(駐車/高速)は付けない＝編集対象外。
+  srcSiteIndex?: number  // sites[] のindex
+  srcKey?: string        // expenses配下の配列キー（'parkings'|'highways'|'trains'|'hotels'|'others'|'entertainments'）
+  srcIndex?: number      // その配列内のindex
 }
 
 /**
@@ -58,7 +64,9 @@ export function expenseDisplayCategory(category: string): string {
  */
 export function flattenReportExpenses(date: string, sites: any[], rates: ExpenseRates): ExpenseRow[] {
   const rows: ExpenseRow[] = []
-  for (const site of (sites ?? [])) {
+  const allSites = (sites ?? [])
+  for (let si = 0; si < allSites.length; si++) {
+    const site = allSites[si]
     const siteName = site.siteName === '__unset__' ? '現場未設定' : site.siteName === '__other__' ? (site.customSiteName || '') : (site.siteName || '')
     const exp = site.expenses || {}
     // 使用車: その現場の車両名（複数あれば先頭1台）。車両系経費(駐車/高速/ガソリン)に付ける。
@@ -87,29 +95,35 @@ export function flattenReportExpenses(date: string, sites: any[], rates: Expense
       if (veh.highwayYen) rows.push({ date, category: '高速代',    siteName, amount: veh.highwayYen, note: veh.etcCard || '', vehicle: veh.vehicleName, fileUrls: takeVehicleUrls(), tategae: !!veh.highwayTategae })
     }
     // 新形式: 現場ごとの駐車場代・高速代（複数・明細ごとに個別領収書）
-    for (const pk of (exp.parkings || [])) {
-      if (pk.yen) rows.push({ date, category: '駐車代', siteName, amount: pk.yen, payee: pk.payee, registrationNumber: pk.registrationNumber, vehicle: siteVehicle, fileUrls: pk.fileUrls, tategae: !!pk.tategae })
+    for (let i = 0; i < (exp.parkings || []).length; i++) {
+      const pk = exp.parkings[i]
+      if (pk.yen) rows.push({ date, category: '駐車代', siteName, amount: pk.yen, payee: pk.payee, registrationNumber: pk.registrationNumber, vehicle: siteVehicle, fileUrls: pk.fileUrls, tategae: !!pk.tategae, srcSiteIndex: si, srcKey: 'parkings', srcIndex: i })
     }
-    for (const hw of (exp.highways || [])) {
-      if (hw.yen) rows.push({ date, category: '高速代', siteName, amount: hw.yen, note: hw.etcCard || '', payee: hw.payee, registrationNumber: hw.registrationNumber, vehicle: siteVehicle, fileUrls: hw.fileUrls, tategae: !!hw.tategae })
+    for (let i = 0; i < (exp.highways || []).length; i++) {
+      const hw = exp.highways[i]
+      if (hw.yen) rows.push({ date, category: '高速代', siteName, amount: hw.yen, note: hw.etcCard || '', payee: hw.payee, registrationNumber: hw.registrationNumber, vehicle: siteVehicle, fileUrls: hw.fileUrls, tategae: !!hw.tategae, srcSiteIndex: si, srcKey: 'highways', srcIndex: i })
     }
-    for (const tr of (exp.trains || [])) {
+    for (let i = 0; i < (exp.trains || []).length; i++) {
+      const tr = exp.trains[i]
       // 新=明細ごと領収書(tr.fileUrls) / 旧=共通(trainUrls を先頭行に take-once)
-      if (tr.yen) rows.push({ date, category: '電車代', siteName, amount: tr.yen, note: tr.label, payee: tr.payee, registrationNumber: tr.registrationNumber, fileUrls: tr.fileUrls?.length ? tr.fileUrls : takeTrainUrls(), tategae: !!tr.tategae })
+      if (tr.yen) rows.push({ date, category: '電車代', siteName, amount: tr.yen, note: tr.label, payee: tr.payee, registrationNumber: tr.registrationNumber, fileUrls: tr.fileUrls?.length ? tr.fileUrls : takeTrainUrls(), tategae: !!tr.tategae, srcSiteIndex: si, srcKey: 'trains', srcIndex: i })
     }
     // 宿泊費（複数登録・新形式 hotels[]）。明細ごとに1行。
-    for (const ho of (exp.hotels || [])) {
-      if (ho.yen) rows.push({ date, category: '宿泊費', siteName, amount: ho.yen, note: ho.label, payee: ho.payee, registrationNumber: ho.registrationNumber, fileUrls: ho.fileUrls?.length ? ho.fileUrls : undefined, tategae: !!ho.tategae })
+    for (let i = 0; i < (exp.hotels || []).length; i++) {
+      const ho = exp.hotels[i]
+      if (ho.yen) rows.push({ date, category: '宿泊費', siteName, amount: ho.yen, note: ho.label, payee: ho.payee, registrationNumber: ho.registrationNumber, fileUrls: ho.fileUrls?.length ? ho.fileUrls : undefined, tategae: !!ho.tategae, srcSiteIndex: si, srcKey: 'hotels', srcIndex: i })
     }
     // 旧スカラー（hotel*/leopalace*）は hotels[] に金額が無い時だけ読む＝二重計上を防ぐ後方互換。
     const hasHotelsArr = (exp.hotels || []).some((h: any) => h.yen)
     if (exp.hotelYen     && !hasHotelsArr) rows.push({ date, category: '宿泊費', siteName, amount: exp.hotelYen,     note: exp.hotelName,     payee: exp.hotelName,     registrationNumber: exp.hotelRegistration,     fileUrls: exp.hotelUrls?.length     ? exp.hotelUrls     : undefined, tategae: !!exp.hotelTategae })
     if (exp.leopalaceYen && !hasHotelsArr) rows.push({ date, category: '宿泊費', siteName, amount: exp.leopalaceYen, note: exp.leopalaceName, payee: exp.leopalaceName, registrationNumber: exp.leopalaceRegistration, fileUrls: exp.leopalaceUrls?.length ? exp.leopalaceUrls : undefined, tategae: !!exp.leopalaceTategae })
-    for (const ot of (exp.others || [])) {
-      if (ot.yen) rows.push({ date, category: 'その他', siteName, amount: ot.yen, note: ot.label, payee: ot.payee, registrationNumber: ot.registrationNumber, fileUrls: ot.fileUrls?.length ? ot.fileUrls : takeOtherUrls(), tategae: !!ot.tategae })
+    for (let i = 0; i < (exp.others || []).length; i++) {
+      const ot = exp.others[i]
+      if (ot.yen) rows.push({ date, category: 'その他', siteName, amount: ot.yen, note: ot.label, payee: ot.payee, registrationNumber: ot.registrationNumber, fileUrls: ot.fileUrls?.length ? ot.fileUrls : takeOtherUrls(), tategae: !!ot.tategae, srcSiteIndex: si, srcKey: 'others', srcIndex: i })
     }
-    for (const ent of (exp.entertainments || [])) {
-      if (ent.yen) rows.push({ date, category: 'その他雑経費', siteName, amount: ent.yen, note: ent.label, payee: ent.payee, registrationNumber: ent.registrationNumber, fileUrls: ent.fileUrls?.length ? ent.fileUrls : undefined, tategae: !!ent.tategae })
+    for (let i = 0; i < (exp.entertainments || []).length; i++) {
+      const ent = exp.entertainments[i]
+      if (ent.yen) rows.push({ date, category: 'その他雑経費', siteName, amount: ent.yen, note: ent.label, payee: ent.payee, registrationNumber: ent.registrationNumber, fileUrls: ent.fileUrls?.length ? ent.fileUrls : undefined, tategae: !!ent.tategae, srcSiteIndex: si, srcKey: 'entertainments', srcIndex: i })
     }
     if (exp.entertainmentYen && !(exp.entertainments || []).some((e: any) => e.yen)) rows.push({ date, category: 'その他雑経費', siteName, amount: exp.entertainmentYen, note: exp.entertainmentLabel, payee: exp.entertainmentLabel, registrationNumber: exp.entertainmentRegistration, fileUrls: exp.entertainmentUrls?.length ? exp.entertainmentUrls : undefined, tategae: !!exp.entertainmentTategae })
   }

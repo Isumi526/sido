@@ -233,9 +233,9 @@
                     <div class="time-field">
                       <label class="hours-label">{{ $t('report.break') }}</label>
                       <span class="break-auto">
-                        {{ calcBreakMinutes(site.workers[0].workerRole, site.workers[0].startTime, site.workers[0].endTime) === 0
-                          ? $t('report.breakNone')
-                          : $t('report.breakMinutesAuto', { min: calcBreakMinutes(site.workers[0].workerRole, site.workers[0].startTime, site.workers[0].endTime) }) }}
+                        <template v-if="effectiveBreakMinutes(site.workers[0]) === 0">{{ $t('report.breakNone') }}</template>
+                        <template v-else-if="site.workers[0].breakSnapshot">{{ effectiveBreakMinutes(site.workers[0]) }}分（現場設定）</template>
+                        <template v-else>{{ $t('report.breakMinutesAuto', { min: effectiveBreakMinutes(site.workers[0]) }) }}</template>
                       </span>
                     </div>
                   </div>
@@ -615,7 +615,7 @@
 </template>
 
 <script setup lang="ts">
-import { computeWorkerHours, getRateLines, calcBreakMinutes, parseMin, TIME_OPTIONS } from '~/utils/workerHours'
+import { computeWorkerHours, getRateLines, calcBreakMinutes, effectiveBreakMinutes, effectiveBreakWindows, parseMin, TIME_OPTIONS } from '~/utils/workerHours'
 import type { RateBreakdown } from '~/utils/workerHours'
 import { computeDiff } from '~/utils/diffReport'
 import { findSimilarSiteNames } from '~/utils/siteSimilarity'
@@ -839,8 +839,9 @@ const sitePreviewBreakdowns = computed((): Record<number, RateBreakdown> => {
 
   for (const { si, w } of entries) {
     const key = w.workerId || w.workerName || `site-${si}`
-    const brk = calcBreakMinutes(w.workerRole, w.startTime, w.endTime)
-    const { workedMin, ...breakdown } = computeWorkerHours(w.startTime, w.endTime, brk, sun, accum[key] ?? 0)
+    const wins = effectiveBreakWindows(w)
+    const brk = wins ? 0 : effectiveBreakMinutes(w)
+    const { workedMin, ...breakdown } = computeWorkerHours(w.startTime, w.endTime, brk, sun, accum[key] ?? 0, wins)
     accum[key] = workedMin
     result[si] = breakdown
   }
@@ -1138,15 +1139,31 @@ function siteFixedEnd(siteName: string | undefined): string {
 function siteFixedStart(siteName: string | undefined): string {
   return siteFixedTimes(siteName)?.start || ''
 }
-// 現場を選び直した時、固定時刻があれば作業時刻の既定にする（新規入力のみ。編集中の既存値は触らない）。
+// 現場の既定休憩[{start,minutes}]。設定ある現場のみ返す。
+function siteFixedBreaks(siteName: string | undefined): { start: string; minutes: number }[] | null {
+  if (!siteName || siteName === '__other__' || siteName === '__unset__') return null
+  const v = master.siteBreaks.value[siteName]
+  return (Array.isArray(v) && v.length) ? v : null
+}
+// 現場を選び直した時、固定時刻/既定休憩があれば作業時刻の既定にする（新規入力のみ。編集中の既存値は触らない）。
 function onSiteChange(si: number) {
   if (isEditMode.value) return
   const s = report.form.value.sites[si]
-  const ft = siteFixedTimes(s?.siteName)
   const w = s?.workers?.[0]
-  if (!ft || !w) return
-  if (ft.start) w.startTime = ft.start
-  if (ft.end) w.endTime = ft.end
+  if (!w) return
+  const ft = siteFixedTimes(s?.siteName)
+  if (ft?.start) w.startTime = ft.start
+  if (ft?.end) w.endTime = ft.end
+  // 現場に既定休憩があれば、その複数時間帯をスナップショット（breakSnapshot=trueで人件費計算が保存値を尊重）。
+  //  設定が無ければ従来どおり自動計算のまま（breakSnapshotは付けない＝レガシー挙動）。
+  const brks = siteFixedBreaks(s?.siteName)
+  if (brks) {
+    w.breaks = brks.map(b => ({ start: b.start, minutes: b.minutes }))
+    w.breakMinutes = brks.reduce((sum, b) => sum + (Number(b.minutes) || 0), 0)  // 表示/後方互換用の合計
+    w.breakSnapshot = true
+  } else if (w.breakSnapshot) {
+    w.breakSnapshot = false; w.breaks = undefined  // 休憩なし現場へ選び直したらスナップショット解除
+  }
 }
 // 終了時刻の選択肢: 固定終了がある現場は それ以下に制限（残業申請が無い限り超過不可・早退は可）。
 //  編集で開いた古い超過値は snap させないため、現在値は必ず含める。
@@ -1362,8 +1379,9 @@ const linePreview = computed(() => {
     const workers = (site.workers || []).filter((w: any) => w.workerName)
     if (workers.length > 0) {
       for (const w of workers) {
-        const brk = calcBreakMinutes(w.workerRole || 'site', w.startTime || '08:00', w.endTime || '17:30')
-        const h   = computeWorkerHours(w.startTime || '08:00', w.endTime || '17:30', brk, sunday)
+        const wins = effectiveBreakWindows(w)
+        const brk = wins ? 0 : effectiveBreakMinutes(w)
+        const h   = computeWorkerHours(w.startTime || '08:00', w.endTime || '17:30', brk, sunday, 0, wins)
         const parts: string[] = []
         if (h.hoursNormal)        parts.push(`${h.hoursNormal}h`)
         if (h.hoursSunday)        parts.push(`休日${h.hoursSunday}h`)
@@ -2162,7 +2180,8 @@ html, body {
 .worker-time-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 .worker-time-row  { display: flex; gap: 6px; align-items: flex-end; }
 .worker-time-row .time-field { flex: 1; }
-.worker-break-row .time-field { width: 140px; }
+.worker-break-row .time-field { width: auto; min-width: 140px; }
+.break-auto { white-space: nowrap; }
 .time-field {
   display: flex; flex-direction: column; gap: 3px;
 }
