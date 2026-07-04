@@ -283,6 +283,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug } from '../lib/account'
+import { useQueryParam } from '../composables/useQueryParam'
 import { HIDE_LINE_SECTIONS } from '../lib/featureFlags'
 import { computeWorkerHours, calcBreakMinutes, effectiveBreakMinutes, effectiveBreakWindows, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
 import { canViewWages, currentUser } from '../lib/auth'
@@ -294,7 +295,7 @@ const ANON_KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 const subMaster = ref<Record<string, { unit_price: number | null; category: string | null }>>({})
 
 // 作業員フィルター
-const selectedWorker = ref('')
+const selectedWorker = useQueryParam('worker', '')   // URL ?worker= に同期（ページ跨ぎで復元）
 const workerOptions  = ref<string[]>([])
 
 // 月ナビ
