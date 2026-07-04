@@ -46,13 +46,13 @@ test.describe('経費申請書 インライン編集(申請前)', () => {
     await page.getByRole('button', { name: PERIOD_LABEL, exact: true }).click()
     await page.waitForTimeout(800)
 
-    // 電車代の行が出ている
-    const row = page.locator('.expense-table tbody tr', { hasText: '電車代' })
+    // 電車代の行を品名「交通費」(非編集セル=編集モードでも安定)で特定。編集前は支払先=旧支払先。
+    const row = page.locator('.expense-table tbody tr', { hasText: '交通費' })
     await expect(row).toBeVisible({ timeout: 10000 })
-    await expect(row).toContainText('旧支払先')
+    await expect(row).toContainText('旧支払先')  // 編集前の支払先表示
 
-    // 編集モードON（申請前のみ表示される「内容を修正」）
-    await page.getByRole('button', { name: '内容を修正' }).click()
+    // 編集モードON（申請前のみ表示される「修正する」）
+    await page.getByRole('button', { name: '修正する' }).click()
 
     // 支払い先(1つ目のcell-edit入力)を修正
     const payeeInput = row.locator('input.cell-edit').first()
@@ -74,6 +74,6 @@ test.describe('経費申請書 インライン編集(申請前)', () => {
     await page.reload({ waitUntil: 'networkidle' })
     await page.getByRole('button', { name: PERIOD_LABEL, exact: true }).click()
     await page.waitForTimeout(800)
-    await expect(page.locator('.expense-table tbody tr', { hasText: '電車代' })).toContainText(NEW_PAYEE)
+    await expect(page.locator('.expense-table tbody tr', { hasText: NEW_PAYEE })).toContainText('交通費')
   })
 })
