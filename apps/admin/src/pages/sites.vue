@@ -462,9 +462,31 @@ async function syncSiteSubcontractors(siteId: string, accountId: string, want: s
   if (toDel.length) await supabase.from('site_subcontractors').delete().eq('site_id', siteId).in('subcontractor_id', toDel)
 }
 
+// 既定休憩を「開始時刻でソート」＋「時間帯の重なりバリデート」して返す（人件費計算の入力を堅くする）
+function brkToMin(s: string): number { const [h, mm] = String(s).split(':').map(Number); return (h || 0) * 60 + (mm || 0) }
+function normalizeBreaks(breaks: { start: string; minutes: number }[] | null | undefined):
+  { ok: true; breaks: { start: string; minutes: number }[] } | { ok: false; error: string } {
+  const arr = (breaks ?? [])
+    .filter(b => b && b.start && (Number(b.minutes) || 0) > 0)
+    .map(b => ({ start: String(b.start).slice(0, 5), minutes: Number(b.minutes) || 0 }))
+    .sort((a, b) => brkToMin(a.start) - brkToMin(b.start))   // 開始時刻で自動ソート
+  // 重なり/重複チェック: 前の休憩の終了 > 次の休憩の開始 なら重なり
+  for (let i = 0; i + 1 < arr.length; i++) {
+    const endPrev = brkToMin(arr[i].start) + arr[i].minutes
+    if (endPrev > brkToMin(arr[i + 1].start)) {
+      return { ok: false, error: `既定休憩が重なっています（${arr[i].start}〜 と ${arr[i + 1].start}〜）。時間帯が重ならないよう修正してください。` }
+    }
+  }
+  return { ok: true, breaks: arr }
+}
+
 async function save() {
   if (!modal.value?.name?.trim()) { saveError.value = '現場名を入力してください'; return }
   if (!modal.value?.responsible_worker_id) { saveError.value = '責任者を選択してください（現場管理者以上）'; return }
+  // 既定休憩をソート＋重なり検証（重なりがあれば保存を止める）
+  const nb = normalizeBreaks(modal.value.default_breaks)
+  if (!nb.ok) { saveError.value = nb.error; return }
+  modal.value.default_breaks = nb.breaks   // 画面の並びもソート済みに反映
   saving.value = true; saveError.value = ''
   try {
     const m = modal.value
@@ -474,11 +496,9 @@ async function save() {
       construction_details: m.construction_details?.trim() || null, memo: m.memo?.trim() || null,
       contractor_id: m.contractor_id || null,
       default_start_time: m.default_start_time || null, default_end_time: m.default_end_time || null,
-      // 既定休憩: start必須・minutes>0 のみ保存。空なら null（＝現場休憩なし＝自動計算に戻す）。
+      // 既定休憩: ソート＋重なり検証済み。空なら null（＝現場休憩なし＝自動計算に戻す）。
       default_breaks: (() => {
-        const arr = (m.default_breaks ?? [])
-          .filter(b => b && b.start && (Number(b.minutes) || 0) > 0)
-          .map(b => ({ start: String(b.start).slice(0, 5), minutes: Number(b.minutes) || 0 }))
+        const arr = nb.breaks
         return arr.length ? arr : null
       })(),
       responsible_worker_id: m.responsible_worker_id || null,
