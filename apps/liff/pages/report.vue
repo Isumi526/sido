@@ -1111,21 +1111,34 @@ function startTimeOptionsForSite(si: number): string[] {
   const s = report.form.value.sites[si]
   const cur = s?.workers?.[0]?.startTime
   let floorMin = -1   // この値「以上」のみ選択可（複数の下限の最大を採る）
-  // ① 前の現場の終了以降（複数現場の時系列連続性）
-  if (si > 0) {
-    const prev = report.form.value.sites[si - 1]?.workers[0]
-    if (prev) {
-      const prevEndMin   = parseMin(prev.endTime   || '17:30')
-      const prevStartMin = parseMin(prev.startTime || '08:00')
-      if (prevEndMin > prevStartMin) floorMin = Math.max(floorMin, prevEndMin)  // 日跨ぎは制限なし
-    }
-  }
-  // ② 現場の固定開始以降（固定開始より前=早出は不可・遅刻=後ろ倒しは可）
+  // ※ 前現場終了以降の制限は撤廃（前現場終了より前でも設定可＝80c2）。重複は送信時にバリデートする。
+  // 現場の固定開始以降のみ維持（固定開始より前=早出は不可・遅刻=後ろ倒しは可）
   const fStart = siteFixedStart(s?.siteName)
   if (fStart) floorMin = Math.max(floorMin, parseMin(fStart))
   if (floorMin < 0) return TIME_OPTIONS
   // 編集で開いた古い下限割れ値は snap させないため、現在値は必ず含める。
   return TIME_OPTIONS.filter(t => parseMin(t) >= floorMin || t === cur)
+}
+
+// 送信バリデート: 同一作業員の複数現場の作業時間帯が重複していないか（重複していたらエラー文言を返す・無ければ null）
+function findWorkerTimeOverlap(): string | null {
+  const segs: { name: string; start: number; end: number }[] = []
+  for (const s of (report.form.value.sites ?? [])) {
+    const w = s?.workers?.[0]
+    if (!w?.startTime || !w?.endTime) continue          // 稼働なし/未入力の現場はスキップ
+    let start = parseMin(w.startTime)
+    let end   = parseMin(w.endTime)
+    if (end <= start) end += 1440                        // 日跨ぎ補正
+    const name = s.siteName === '__other__' ? (s.customSiteName || '新規現場') : (s.siteName || '現場')
+    segs.push({ name, start, end })
+  }
+  segs.sort((a, b) => a.start - b.start)
+  for (let i = 0; i + 1 < segs.length; i++) {
+    if (segs[i].end > segs[i + 1].start) {               // 前の終了 > 次の開始 = 重複
+      return t('report.timeOverlapError', { a: segs[i].name, b: segs[i + 1].name })
+    }
+  }
+  return null
 }
 
 // ── 現場の固定勤務時刻（master・name keyed）。__other__/__unset__/未設定は null ──
@@ -1495,6 +1508,16 @@ async function handleSubmit() {
         alert(msg)
         return
       }
+    }
+  }
+
+  // ── 送信バリデート: 稼働ありで複数現場の作業時間帯が重複していたら弾く（80c2・開始時刻の制限撤廃に伴う安全網）──
+  if (report.form.value.isWorking) {
+    const overlapMsg = findWorkerTimeOverlap()
+    if (overlapMsg) {
+      if (isEditMode.value) editError.value = overlapMsg
+      alert(overlapMsg)
+      return
     }
   }
 

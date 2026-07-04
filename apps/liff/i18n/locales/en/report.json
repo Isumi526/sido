@@ -17,6 +17,7 @@
   "pastDateNotice": "This is a past unsubmitted report.<br>If it was a day off, select \"No work\" and submit.",
   "lockedBanner": "This date is past the edit deadline (within the last 3 days incl. today). To submit it, request edit permission with the button below.",
   "lockedSubmit": "Past the edit deadline (3 days). Request edit permission and submit after it is approved.",
+  "timeOverlapError": "Work times overlap: \"{a}\" and \"{b}\". Please fix so the time ranges do not overlap.",
   "unlockRequest": "Request edit permission",
   "unlockRequesting": "Requesting…",
   "unlockPending": "Edit permission requested (awaiting approval)",
