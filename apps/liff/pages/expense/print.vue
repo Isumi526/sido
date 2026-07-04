@@ -36,12 +36,11 @@
           <tr>
             <th class="col-date">{{ t('expenseDoc.colDate') }}</th>
             <th class="col-payee">{{ t('expenseDoc.colPayee') }}</th>
-            <th class="col-content">{{ t('expenseDoc.colContent') }}</th>
             <th class="col-reg">{{ t('expenseDoc.colReg') }}</th>
             <th class="col-cat">{{ t('expenseDoc.colCategory') }}</th>
             <th class="col-lit">{{ t('expenseDoc.colLiters') }}</th>
             <th class="col-site">{{ t('expenseDoc.colSite') }}</th>
-            <th class="col-sep">/</th>
+            <th class="col-vehicle">{{ t('expenseDoc.colVehicle') }}</th>
             <th class="col-amt">{{ t('expenseDoc.colAmount') }}</th>
           </tr>
         </thead>
@@ -49,18 +48,17 @@
           <tr v-for="(row, i) in displayRows" :key="i">
             <td class="center">{{ fmtDate(row.date) }}</td>
             <td class="small">{{ row.payee || '' }}</td>
-            <td class="small">{{ row.note || '' }}</td>
             <td class="small">{{ row.registrationNumber || '' }}</td>
-            <td class="center">{{ row.category }}</td>
+            <td class="center">{{ expenseDisplayCategory(row.category) }}</td>
             <td class="center">{{ row.liters ?? '' }}</td>
             <td class="small">{{ row.siteName }}</td>
-            <td></td>
+            <td class="center">{{ row.vehicle || '' }}</td>
             <td class="right">{{ row.amount ? '¥' + row.amount.toLocaleString() : '' }}</td>
           </tr>
         </tbody>
         <tfoot>
           <tr class="total-row">
-            <td colspan="8" class="right">{{ t('expenseDoc.totalLabel') }}</td>
+            <td colspan="7" class="right">{{ t('expenseDoc.totalLabel') }}</td>
             <td class="right">¥{{ total.toLocaleString() }}</td>
           </tr>
         </tfoot>
@@ -83,6 +81,7 @@
 import { useI18n } from 'vue-i18n'
 import type { ExpenseRow, User } from '~/types'
 import { periodLabel } from '~/composables/useExpense'
+import { expenseDisplayCategory } from '~/composables/expense-flatten.gen'
 
 const { t } = useI18n()
 

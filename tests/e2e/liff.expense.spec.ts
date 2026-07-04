@@ -26,6 +26,6 @@ test('経費PDF（印刷）が全経費/立替分のみで分割される(Featur
 
   expect(allRows, `all=${allRows} / tategae=${tatRows}`).toBeGreaterThan(tatRows)
   expect(allText, '全経費には高速(非立替)が含まれる').toContain('高速')
-  expect(tatText, '立替分には駐車(立替)が含まれる').toContain('駐車')
+  expect(tatText, '立替分には駐車(立替)が含まれる=品名P代').toContain('P代')  // 品名は客先ラベル(駐車代→P代)
   expect(tatText, '立替分に非立替の高速は出ない').not.toContain('高速')
 })
