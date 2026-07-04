@@ -109,11 +109,17 @@
           </div>
           <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">設定すると日報でこの現場を選んだ時に作業時刻の既定値になり、終了は固定終了を超えて報告できません（早退で下回るのは可）。</p>
         </div>
-        <!-- ④' 既定休憩時間（日報でこの現場を選ぶと休憩がこの値に・人件費計算に反映） -->
+        <!-- ④' 既定休憩（開始時刻＋分の複数登録。日報でこの現場を選ぶと反映・人件費計算に反映） -->
         <div class="field">
-          <label>既定休憩時間（分・任意）</label>
-          <input v-model.number="modal.default_break_minutes" type="number" min="0" step="15" class="input" style="width:auto" placeholder="例：60" />
-          <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">設定すると<b>新規</b>日報でこの現場を選んだ時に休憩がこの値になり、稼働時間・人件費に反映されます（未設定＝役割×勤務時間の自動計算のまま）。過去の日報は変わりません。</p>
+          <label>既定休憩（開始時刻＋休憩時間・任意・複数可）</label>
+          <div v-for="(brk, bi) in (modal.default_breaks || [])" :key="bi" style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <input v-model="brk.start" type="time" class="input" style="width:auto" data-testid="break-start" />
+            <input v-model.number="brk.minutes" type="number" min="0" step="15" class="input" style="width:90px" placeholder="60" data-testid="break-minutes" />
+            <span style="font-size:13px;color:#64748b">分</span>
+            <button type="button" class="btn-ghost" style="padding:2px 8px" @click="removeBreak(bi)">×</button>
+          </div>
+          <button type="button" class="btn-ghost" style="padding:4px 10px;font-size:13px" data-testid="add-break" @click="addBreak">＋ 休憩を追加</button>
+          <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">設定すると<b>新規</b>日報でこの現場を選んだ時に休憩がこの時間帯になり、稼働時間・人件費に反映されます（開始時刻が深夜/残業帯なら割増分が減る）。未設定＝役割×勤務時間の自動計算のまま。過去の日報は変わりません。</p>
         </div>
         <!-- ⑤ メモ -->
         <div class="field">
@@ -237,7 +243,7 @@ type Site = {
   location: string | null; construction_type: string | null; construction_details: string | null; memo: string | null
   contractor_id: string | null   // 紐づく元請け（任意）
   default_start_time: string | null; default_end_time: string | null   // 固定勤務時刻（日報の既定＆終了上限）
-  default_break_minutes?: number | null   // 既定休憩(分)。新規日報で現場選択時にスナップショット
+  default_breaks?: { start: string; minutes: number }[] | null   // 既定休憩[{start,minutes}]。新規日報で現場選択時にスナップショット
   responsible_worker_id: string | null   // 現場責任者（現場管理者以上のworker・必須はUIで担保）
 }
 type Att = { id: string; site_id: string; kind: string; path: string; name: string | null; require_consent?: boolean; url?: string | null }
@@ -343,7 +349,7 @@ async function load() {
   const accountId = await getAccountId()
   const [{ data }, { data: cons }] = await Promise.all([
     supabase.from('sites')
-      .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id, default_start_time, default_end_time, default_break_minutes, responsible_worker_id')
+      .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id, default_start_time, default_end_time, default_breaks, responsible_worker_id')
       .eq('account_id', accountId)
       .order('name_kana', { nullsFirst: false })
       .order('name'),
@@ -412,7 +418,9 @@ const filtered = computed(() => {
   return list
 })
 
-function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', default_break_minutes: null, responsible_worker_id: myWorkerId.value ?? null, linkedSubs: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = ''; modalRules.value = []; clearPendingAtts(); markFormOpened(); fetchRuleHistory() }
+function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', default_breaks: [], responsible_worker_id: myWorkerId.value ?? null, linkedSubs: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = ''; modalRules.value = []; clearPendingAtts(); markFormOpened(); fetchRuleHistory() }
+function addBreak()    { if (!modal.value) return; (modal.value.default_breaks ??= []).push({ start: '12:00', minutes: 60 }) }
+function removeBreak(i: number) { modal.value?.default_breaks?.splice(i, 1) }
 
 // アカウント内の既存現場ルールを重複排除して候補化（新規現場のルール設定を素早くするため・site-rules.vue と同方針）
 async function fetchRuleHistory() {
@@ -433,7 +441,9 @@ async function fetchRuleHistory() {
 }
 async function openEdit(s: Site) {
   // time入力は HH:MM を期待するため DB の HH:MM:SS を切り詰める
-  modal.value = { ...s, default_start_time: (s.default_start_time ?? '').slice(0, 5), default_end_time: (s.default_end_time ?? '').slice(0, 5), linkedSubs: [] }; saveError.value = ''
+  modal.value = { ...s, default_start_time: (s.default_start_time ?? '').slice(0, 5), default_end_time: (s.default_end_time ?? '').slice(0, 5),
+    default_breaks: Array.isArray(s.default_breaks) ? s.default_breaks.map(b => ({ start: String(b.start ?? '').slice(0, 5), minutes: Number(b.minutes) || 0 })) : [],
+    linkedSubs: [] }; saveError.value = ''
   const { data: links } = await supabase.from('site_subcontractors').select('subcontractor_id').eq('site_id', s.id)
   if (modal.value) modal.value.linkedSubs = ((links ?? []) as any[]).map(l => l.subcontractor_id)
   siteEstimates.value = []
@@ -464,7 +474,13 @@ async function save() {
       construction_details: m.construction_details?.trim() || null, memo: m.memo?.trim() || null,
       contractor_id: m.contractor_id || null,
       default_start_time: m.default_start_time || null, default_end_time: m.default_end_time || null,
-      default_break_minutes: (m.default_break_minutes === '' || m.default_break_minutes == null) ? null : Number(m.default_break_minutes),
+      // 既定休憩: start必須・minutes>0 のみ保存。空なら null（＝現場休憩なし＝自動計算に戻す）。
+      default_breaks: (() => {
+        const arr = (m.default_breaks ?? [])
+          .filter(b => b && b.start && (Number(b.minutes) || 0) > 0)
+          .map(b => ({ start: String(b.start).slice(0, 5), minutes: Number(b.minutes) || 0 }))
+        return arr.length ? arr : null
+      })(),
       responsible_worker_id: m.responsible_worker_id || null,
     }
     const accountId = await getAccountId()

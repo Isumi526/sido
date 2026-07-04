@@ -227,7 +227,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { computeWorkerHours, calcBreakMinutes, effectiveBreakMinutes, parseMin, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
+import { computeWorkerHours, calcBreakMinutes, effectiveBreakMinutes, effectiveBreakWindows, parseMin, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
 import { canViewHourlyWage } from '../lib/auth'
 
 // ---------- 月ナビ ----------
@@ -428,8 +428,9 @@ async function load() {
 
       let workedMinAccum = 0
       for (const e of dayEntries) {
-        const brk = effectiveBreakMinutes(e)
-        const { workedMin, ...bd } = computeWorkerHours(e.startTime, e.endTime, brk, e.isSunday, workedMinAccum)
+        const wins = effectiveBreakWindows(e)
+        const brk = wins ? 0 : effectiveBreakMinutes(e)
+        const { workedMin, ...bd } = computeWorkerHours(e.startTime, e.endTime, brk, e.isSunday, workedMinAccum, wins)
         workedMinAccum += workedMin
 
         a.totals.normal        += bd.hoursNormal
