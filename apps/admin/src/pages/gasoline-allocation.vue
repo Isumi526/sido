@@ -64,9 +64,10 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { useYearMonthParam } from '../composables/useQueryParam'
 import HelpButton from '../components/HelpButton.vue'
 
-const baseDate = ref(new Date())
+const baseDate = useYearMonthParam()   // 対象月を ?ym=YYYY-MM でURL同期
 const ym = computed(() => `${baseDate.value.getFullYear()}年${baseDate.value.getMonth() + 1}月`)
 const yearMonth = computed(() => `${baseDate.value.getFullYear()}-${String(baseDate.value.getMonth() + 1).padStart(2, '0')}`)
 const dateFrom = computed(() => `${yearMonth.value}-01`)
