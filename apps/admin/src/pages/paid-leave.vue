@@ -14,11 +14,17 @@
     <div v-if="loading" class="loading no-print">読み込み中...</div>
     <div v-else>
 
-      <!-- 付与待ちバナー（未付与の基準日がある作業員がいる時・付与できる権限者のみ表示） -->
-      <div v-if="canViewHourlyWage && pendingWorkers.length" class="pending-banner no-print" data-testid="pending-banner">
+      <!-- 自動付与の通知（開いた時に基準日到来分を自動付与＝A方式）。誤りは詳細から修正可。 -->
+      <div v-if="autoGrantNotice" class="autogrant-notice no-print" data-testid="autogrant-notice">
+        <span class="material-symbols-rounded" style="font-size:18px;vertical-align:middle;line-height:1">check_circle</span>
+        <span class="autogrant-text">{{ autoGrantNotice }}</span>
+        <button class="notice-close" aria-label="閉じる" @click="autoGrantNotice = ''"><span class="material-symbols-rounded" style="font-size:16px;line-height:1">close</span></button>
+      </div>
+      <!-- 未付与が残る場合の手動フォールバック（自動付与が権限/エラーで走らなかった時のみ表示） -->
+      <div v-if="canViewHourlyWage && !autoGrantNotice && pendingWorkers.length" class="pending-banner no-print" data-testid="pending-banner">
         <span class="pending-badge"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">schedule</span> 付与待ち {{ pendingWorkers.length }}人</span>
-        <span class="pending-text">基準日を過ぎた未付与の有給があります（{{ pendingWorkers.map(w => w.name).slice(0, 5).join('・') }}{{ pendingWorkers.length > 5 ? ' ほか' : '' }}）</span>
-        <button v-if="canViewHourlyWage" class="btn-batch-grant" :disabled="batchGranting" data-testid="batch-grant" @click="batchGrantPending">{{ batchGranting ? '付与中…' : 'まとめて法令付与' }}</button>
+        <span class="pending-text">基準日を過ぎた未付与の有給があります。</span>
+        <button class="btn-batch-grant" :disabled="batchGranting" data-testid="batch-grant" @click="batchGrantPending">{{ batchGranting ? '付与中…' : 'まとめて法令付与' }}</button>
       </div>
 
       <!-- ── 画面: サマリーテーブル（印刷非表示） ── -->
@@ -657,7 +663,35 @@ function doPrint() {
   window.print()
 }
 
-onMounted(load)
+// ── A: 無人自動付与（ページを開いた時に未付与の基準日を自動反映） ──
+// 役員経理以上のみ・差分（既存付与日はskip）・付与日は基準日にバックデート＝残高は正しい。
+// マウント時に1回だけ実行（毎load実行にすると、誤りを削除しても即再作成されてしまうため）。
+const autoGrantNotice = ref('')
+async function initialAutoGrant() {
+  if (!canViewHourlyWage.value) return
+  const accountId = await getAccountId()
+  const rows: { worker_id: string; account_id: string; granted_at: string; expires_at: string; days: number; note: string }[] = []
+  for (const w of workerStats.value) {
+    if (w.pendingCount <= 0) continue
+    const existing = new Set((allGrantsByWorker[w.id] ?? []).map(g => g.granted_at))
+    for (const p of pendingBaseDatesFor(w.hire_date, w.employment_type, w.weekly_scheduled_days, existing, today)) {
+      rows.push({ worker_id: w.id, account_id: accountId, granted_at: p.granted, expires_at: p.expires, days: p.days, note: p.note })
+    }
+  }
+  if (rows.length === 0) return
+  try {
+    await supabase.from('paid_leave_grants').insert(rows)
+    autoGrantNotice.value = `法令に基づき ${rows.length}件 を自動付与しました（付与履歴で確認できます。誤りは各作業員の詳細から削除・調整できます）`
+    await load()
+  } catch (e: any) {
+    autoGrantNotice.value = `自動付与でエラー: ${e.message ?? '失敗'}（手動で付与してください）`
+  }
+}
+
+onMounted(async () => {
+  await load()
+  await initialAutoGrant()   // A: 開いた時点で法令付与を自動反映
+})
 </script>
 
 <style scoped>
@@ -761,6 +795,9 @@ onMounted(load)
 .btn-batch-grant { background: #ea580c; color: #fff; border: none; border-radius: 8px; padding: 9px 18px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .btn-batch-grant:disabled { opacity: .5; cursor: default; }
 .pending-row-badge { display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 700; color: #c2410c; background: #ffedd5; border-radius: 4px; padding: 1px 6px; vertical-align: middle; }
+.autogrant-notice { display: flex; align-items: center; gap: 8px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; color: #065f46; }
+.autogrant-text { flex: 1; font-size: 13px; }
+.notice-close { background: none; border: none; cursor: pointer; color: #065f46; display: inline-flex; align-items: center; padding: 2px; }
 
 /* ── 印刷専用: 管理簿 ── */
 .print-only { display: none; }
