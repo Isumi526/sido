@@ -230,6 +230,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { useYearMonthParam } from '../composables/useQueryParam'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug, getAccountName } from '../lib/account'
 import { flattenReportExpenses, ratesFromSettings, effectiveStatus, expenseDisplayCategory, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
@@ -257,7 +258,7 @@ interface PeriodRow {
   statusClass: string
 }
 
-const baseDate  = ref(new Date())
+const baseDate  = useYearMonthParam()   // 対象月を ?ym=YYYY-MM でURL同期
 const yearMonth = computed(() => `${baseDate.value.getFullYear()}年${baseDate.value.getMonth() + 1}月`)
 const loading   = ref(false)
 const rows      = ref<PeriodRow[]>([])

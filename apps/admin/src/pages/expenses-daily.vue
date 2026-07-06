@@ -58,6 +58,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { useYearMonthParam } from '../composables/useQueryParam'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { flattenReportExpenses, ratesFromSettings, expenseDisplayCategory, type ExpenseRow } from '../lib/expenses'
@@ -66,7 +67,7 @@ type DailyRow = ExpenseRow & { workerName: string }
 
 const loading = ref(true)
 const q = ref('')
-const baseDate = ref(new Date())
+const baseDate = useYearMonthParam()   // 対象月を ?ym=YYYY-MM でURL同期
 const allRows = ref<DailyRow[]>([])
 
 const yearMonth = computed(() => `${baseDate.value.getFullYear()}年${baseDate.value.getMonth() + 1}月`)
