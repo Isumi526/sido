@@ -66,6 +66,7 @@ const loading = ref(true)
 const busy    = ref<string | null>(null)
 const rows    = ref<Row[]>([])
 const siteNames = ref<string[]>([])
+const siteIdByName = ref<Record<string, string>>({})  // 紐付け時に site_id も刻むため
 
 function fmtDate(d: string): string {
   if (!d) return '—'
@@ -83,9 +84,10 @@ async function load() {
       .select('id, date, sites')
       .eq('account_id', accountId).gte('date', since)
       .order('date', { ascending: false }),
-    supabase.from('sites').select('name').eq('account_id', accountId).eq('active', true).order('name'),
+    supabase.from('sites').select('id, name').eq('account_id', accountId).eq('active', true).order('name'),
   ])
   siteNames.value = (sites ?? []).map((s: any) => s.name)
+  siteIdByName.value = Object.fromEntries((sites ?? []).map((s: any) => [s.name, s.id]))
   const out: Row[] = []
   for (const rep of (reps ?? []) as any[]) {
     const arr = Array.isArray(rep.sites) ? rep.sites : []
@@ -113,7 +115,7 @@ async function relink(r: Row) {
   if (!arr[r.siteIndex] || arr[r.siteIndex].siteName !== '__unset__') {
     busy.value = null; alert('対象の現場未設定エントリが見つかりません（再読込してください）'); await load(); return
   }
-  arr[r.siteIndex] = { ...arr[r.siteIndex], siteName: r.pick, customSiteName: '' }
+  arr[r.siteIndex] = { ...arr[r.siteIndex], siteName: r.pick, customSiteName: '', site_id: siteIdByName.value[r.pick] ?? null }
   const { error: e2 } = await supabase.from('daily_reports').update({ sites: arr }).eq('id', r.reportId)
   busy.value = null
   if (e2) { alert('紐付けに失敗しました: ' + e2.message); return }
