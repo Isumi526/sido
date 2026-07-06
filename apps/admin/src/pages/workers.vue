@@ -221,8 +221,8 @@
           <label>履歴書・書類（PDF/画像・複数可）<span class="hint-sm" style="font-weight:400"> ※権限者のみ・非公開（署名URLで閲覧）</span></label>
           <div v-if="resumes.length" class="resume-list">
             <div v-for="r in resumes" :key="r.id" class="resume-item" data-testid="resume-item">
-              <a v-if="r.url" :href="r.url" target="_blank" rel="noopener" class="resume-link">📄 {{ r.name || 'ファイル' }}</a>
-              <span v-else class="resume-link muted">📄 {{ r.name || 'ファイル' }}（読込中…）</span>
+              <a v-if="r.url" :href="r.url" target="_blank" rel="noopener" class="resume-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> {{ r.name || 'ファイル' }}</a>
+              <span v-else class="resume-link muted"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> {{ r.name || 'ファイル' }}（読込中…）</span>
               <input v-model="r.name" class="input resume-name" placeholder="名称" @change="renameResume(r)" />
               <button type="button" class="family-del" title="削除" @click="deleteResume(r)">×</button>
             </div>

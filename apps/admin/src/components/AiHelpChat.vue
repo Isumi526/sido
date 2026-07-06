@@ -2,7 +2,7 @@
   <div class="ai-chat-root">
     <div class="chat" ref="chatEl">
       <div v-if="!messages.length" class="chat-empty">
-        <div class="ai-emoji">🤖</div>
+        <div class="ai-emoji"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">smart_toy</span></div>
         <p>アプリの使い方や仕様について聞いてください。<br>例:「見積書の業者を選ぶと現場が絞られるのはなぜ？」</p>
       </div>
       <div v-for="(m, i) in messages" :key="i" class="msg" :class="m.role">
@@ -18,7 +18,7 @@
 
     <!-- AIが不具合と判定したときだけ起票を促す（バグ検知はユーザーでなくAI） -->
     <div v-if="bugSuggestion" class="bug-suggest">
-      <span class="bug-suggest-text">🐛 不具合の可能性があります：「{{ bugSuggestion.title }}」</span>
+      <span class="bug-suggest-text"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">bug_report</span> 不具合の可能性があります：「{{ bugSuggestion.title }}」</span>
       <button class="btn-bug" @click="openBug(bugSuggestion)">バックログに記録</button>
       <button class="btn-dismiss" @click="bugSuggestion = null">閉じる</button>
     </div>

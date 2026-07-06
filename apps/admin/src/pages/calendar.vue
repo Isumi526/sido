@@ -150,15 +150,15 @@
           <span v-if="detailModal.schedule.deleted_at" class="badge-deleted">削除済み</span>
         </div>
         <h2 class="detail-title">{{ detailModal.schedule.title }}</h2>
-        <p class="detail-meta">👤 {{ detailModal.schedule.worker?.name }}</p>
+        <p class="detail-meta"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">person</span> {{ detailModal.schedule.worker?.name }}</p>
         <p class="detail-meta">
-          📅 {{ detailModal.schedule.start_date }}
+          <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">calendar_month</span> {{ detailModal.schedule.start_date }}
           <template v-if="detailModal.schedule.end_date !== detailModal.schedule.start_date">
             〜 {{ detailModal.schedule.end_date }}
           </template>
         </p>
         <p v-if="detailModal.schedule.start_time" class="detail-meta">
-          🕐 {{ detailModal.schedule.start_time.slice(0, 5) }}〜{{ detailModal.schedule.end_time?.slice(0, 5) }}
+          <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">schedule</span> {{ detailModal.schedule.start_time.slice(0, 5) }}〜{{ detailModal.schedule.end_time?.slice(0, 5) }}
         </p>
         <p v-if="detailModal.schedule.description" class="detail-desc">
           {{ detailModal.schedule.description }}

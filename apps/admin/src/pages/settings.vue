@@ -260,24 +260,24 @@ async function runReminder(dryRun: boolean) {
     const yesterday: string = data.yesterday ?? ''
 
     // 送信先（受信者）プレビュー
-    const recvLines: string[] = ['👤 送信先（リマインド受信ユーザー）']
+    const recvLines: string[] = ['送信先（リマインド受信ユーザー）']
     if (recipients.length === 0) recvLines.push('  （未設定）※ユーザー管理で「リマインド受信」をONにしてください')
     else recipients.forEach(r => recvLines.push(`  ${r.name}${r.linked ? '' : '（LINE未連携で受信不可）'}`))
     // 各アカウントの結果文言（受信者未設定/送信完了 等）
     const statusLines = results.map(r => `・${r.slug}: ${r.result}`)
 
     if (allUnsubmitted.length === 0) {
-      reminderResult.value = { type: 'info', message: ['✅ 全員送信済みです', '', ...recvLines, '', ...statusLines].join('\n') }
+      reminderResult.value = { type: 'info', message: ['全員送信済みです', '', ...recvLines, '', ...statusLines].join('\n') }
     } else {
       const lines: string[] = [
-        '📋 日報未送信リマインド（敬称略）',
-        `📅 ${yesterday ? fmtDate(yesterday) : ''} 時点`,
+        '【日報未送信リマインド】（敬称略）',
+        `${yesterday ? fmtDate(yesterday) : ''} 時点`,
         '──────────',
       ]
       for (const r of results) {
         if (!r.unsubmitted.length) continue
         for (const u of r.unsubmitted) {
-          lines.push(`⚠️ ${u.name}`)
+          lines.push(`・${u.name}`)
           const MAX = 5
           u.dates.slice(0, MAX).forEach(d => lines.push(`  ${fmtDate(d)}`))
           if (u.dates.length > MAX) lines.push(`  他${u.dates.length - MAX}日`)
@@ -285,11 +285,11 @@ async function runReminder(dryRun: boolean) {
       }
       reminderResult.value = {
         type: dryRun ? 'info' : 'success',
-        message: (dryRun ? '【プレビュー】\n' : '✅ 実行しました\n') + lines.join('\n') + '\n\n' + recvLines.join('\n') + '\n\n' + statusLines.join('\n'),
+        message: (dryRun ? '【プレビュー】\n' : '実行しました\n') + lines.join('\n') + '\n\n' + recvLines.join('\n') + '\n\n' + statusLines.join('\n'),
       }
     }
   } catch (e: any) {
-    reminderResult.value = { type: 'error', message: `❌ エラー: ${e.message}` }
+    reminderResult.value = { type: 'error', message: `エラー: ${e.message}` }
   } finally {
     reminding.value = false
   }

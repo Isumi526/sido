@@ -16,9 +16,9 @@
 
       <!-- 付与待ちバナー（未付与の基準日がある作業員がいる時） -->
       <div v-if="pendingWorkers.length" class="pending-banner no-print" data-testid="pending-banner">
-        <span class="pending-badge">⏰ 付与待ち {{ pendingWorkers.length }}人</span>
+        <span class="pending-badge"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">schedule</span> 付与待ち {{ pendingWorkers.length }}人</span>
         <span class="pending-text">基準日を過ぎた未付与の有給があります（{{ pendingWorkers.map(w => w.name).slice(0, 5).join('・') }}{{ pendingWorkers.length > 5 ? ' ほか' : '' }}）</span>
-        <button class="btn-batch-grant" :disabled="batchGranting" data-testid="batch-grant" @click="batchGrantPending">{{ batchGranting ? '付与中…' : 'まとめて法令付与' }}</button>
+        <button v-if="canViewHourlyWage" class="btn-batch-grant" :disabled="batchGranting" data-testid="batch-grant" @click="batchGrantPending">{{ batchGranting ? '付与中…' : 'まとめて法令付与' }}</button>
       </div>
 
       <!-- ── 画面: サマリーテーブル（印刷非表示） ── -->
@@ -104,16 +104,17 @@
             </div>
           </div>
 
-          <!-- ② 付与する（主アクション＝法令の自動付与） -->
+          <!-- ② 付与する（主アクション＝法令の自動付与）＝付与操作は役員経理以上のみ -->
           <div class="section-title">有給を付与する</div>
-          <div v-if="detail.employment_type === 'contractor'" class="info-note">業務委託は年次有給の付与対象外です。</div>
+          <div v-if="!canViewHourlyWage" class="info-note">有給の付与操作は役員・経理以上の権限者のみ行えます（閲覧のみ可）。</div>
+          <template v-else-if="detail.employment_type === 'contractor'"><div class="info-note">業務委託は年次有給の付与対象外です。</div></template>
           <template v-else>
             <div v-if="detail.hire_date" class="auto-grant-panel">
               <div class="auto-grant-lead">
                 <span class="auto-grant-ref">法令の付与日数 <b>{{ suggestedGrant(detail) }} 日</b><span class="ref-note">（勤続 {{ tenureMonths(detail.hire_date) }} ヶ月）</span></span>
               </div>
               <button type="button" class="btn-auto-grant" :disabled="grantSaving" data-testid="auto-grant" @click="autoGrantFromHireDate(detail)">
-                📅 法令どおり自動付与（未付与の基準日を追加）
+                <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">calendar_month</span> 法令どおり自動付与（未付与の基準日を追加）
               </button>
               <div class="auto-grant-hint">入社日＋労基法スケジュール（6ヶ月→10日…毎年）で未付与の基準日だけ追加。<strong>毎年押せば法令どおり</strong>・重複しません。</div>
               <p v-if="grantError" class="grant-error">{{ grantError }}</p>
@@ -123,11 +124,11 @@
             </div>
           </template>
 
-          <!-- 手動で付与（特別付与・調整・移行初期残高）＝折りたたみ -->
-          <button type="button" class="collapse-toggle" data-testid="toggle-manual-grant" @click="showManualGrant = !showManualGrant">
+          <!-- 手動で付与（特別付与・調整・移行初期残高）＝折りたたみ・役員経理以上のみ -->
+          <button v-if="canViewHourlyWage" type="button" class="collapse-toggle" data-testid="toggle-manual-grant" @click="showManualGrant = !showManualGrant">
             {{ showManualGrant ? '▾' : '▸' }} 手動で付与する（特別付与・手動調整・残日数の直接登録）
           </button>
-          <div v-show="showManualGrant" class="grant-form">
+          <div v-show="showManualGrant && canViewHourlyWage" class="grant-form">
             <div class="form-row">
               <div class="form-field">
                 <label>付与日</label>
@@ -156,7 +157,7 @@
 
           <!-- ③ 入社日・移行設定（折りたたみ・初期セットアップ用） -->
           <button type="button" class="collapse-toggle" data-testid="toggle-settings" @click="showSettings = !showSettings">
-            {{ showSettings ? '▾' : '▸' }} ⚙ 入社日・移行設定
+            {{ showSettings ? '▾' : '▸' }} <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">settings</span> 入社日・移行設定
           </button>
           <div v-show="showSettings" class="settings-panel">
             <div v-if="canViewHourlyWage" class="setting-field">
@@ -562,6 +563,7 @@ async function loadDetailData(workerId: string) {
 
 async function addGrant() {
   if (!detail.value) return
+  if (!canViewHourlyWage.value) { grantError.value = '付与操作は役員・経理以上の権限者のみです'; return }
   if (!newGrant.value.granted_at || !newGrant.value.expires_at || !newGrant.value.days) {
     grantError.value = '付与日・有効期限・日数を入力してください'; return
   }
@@ -592,6 +594,7 @@ async function addGrant() {
 // 法令の自動付与（差分追加）: 入社日から今日までの基準日のうち、まだ付与していないものだけ追加。
 // 既存の付与日(granted_at)は skip＝何度押しても重複しない。毎年押せば法令どおり付与される。
 async function autoGrantFromHireDate(w: WorkerStat) {
+  if (!canViewHourlyWage.value) { grantError.value = '付与操作は役員・経理以上の権限者のみです'; return }
   if (!w.hire_date) { grantError.value = '入社日が未設定です'; return }
   if (w.employment_type === 'contractor') { grantError.value = '業務委託は有給付与対象外です'; return }
   const existingDates = new Set(detailGrants.value.map(g => g.granted_at))   // 既存付与日（重複防止）
@@ -617,6 +620,7 @@ async function autoGrantFromHireDate(w: WorkerStat) {
 const batchGranting = ref(false)
 const pendingWorkers = computed(() => workerStats.value.filter(w => w.pendingCount > 0))
 async function batchGrantPending() {
+  if (!canViewHourlyWage.value) return
   const targets = pendingWorkers.value
   if (targets.length === 0) return
   if (!confirm(`付与待ちの ${targets.length}人 に法令の有給をまとめて付与します。よろしいですか？`)) return

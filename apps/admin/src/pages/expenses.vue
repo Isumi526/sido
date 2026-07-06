@@ -68,8 +68,8 @@
         <div class="modal-head no-print">
           <h2>{{ selected.workerName }} — {{ yearMonth }} {{ selected.shortLabel }} の経費明細</h2>
           <div class="modal-head-actions">
-            <button class="btn-pdf" @click="printExpenseDoc('meisai')">📄 明細PDF</button>
-            <button class="btn-pdf btn-pdf-seikyu" @click="printExpenseDoc('seikyu')">📄 請求書PDF（立替）</button>
+            <button class="btn-pdf" @click="printExpenseDoc('meisai')"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> 明細PDF</button>
+            <button class="btn-pdf btn-pdf-seikyu" @click="printExpenseDoc('seikyu')"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> 請求書PDF（立替）</button>
             <button class="modal-close" @click="selected = null">×</button>
           </div>
         </div>
@@ -108,8 +108,8 @@
           <!-- 申請PDF（作業員申請時にStorageへ保存された 明細/請求書 を閲覧・DL） -->
           <div v-if="selected.settlement?.applied_at" class="pdf-row no-print">
             <span class="pdf-label">申請PDF：</span>
-            <a :href="pdfUrl(selected, 'meisai')" target="_blank" rel="noopener" class="pdf-link">📄 明細</a>
-            <a :href="pdfUrl(selected, 'seikyu')" target="_blank" rel="noopener" class="pdf-link">📄 請求書</a>
+            <a :href="pdfUrl(selected, 'meisai')" target="_blank" rel="noopener" class="pdf-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> 明細</a>
+            <a :href="pdfUrl(selected, 'seikyu')" target="_blank" rel="noopener" class="pdf-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> 請求書</a>
           </div>
 
           <table class="table detail-table">
@@ -142,7 +142,7 @@
                 <td class="receipt-cell no-print">
                   <template v-if="d.fileUrls && d.fileUrls.length">
                     <a v-for="(u, ui) in d.fileUrls" :key="ui" :href="u" target="_blank" rel="noopener" class="receipt-link">
-                      📎{{ d.fileUrls.length > 1 ? ui + 1 : '' }}
+                      <span class="material-symbols-rounded" style="font-size:16px;vertical-align:middle;line-height:1">attach_file</span>{{ d.fileUrls.length > 1 ? ui + 1 : '' }}
                     </a>
                   </template>
                   <span v-else class="muted">—</span>

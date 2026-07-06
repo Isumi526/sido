@@ -31,12 +31,12 @@
         <div v-if="r.is_working && r.sites?.length" class="sites" @click="selected = r">
           <div v-for="(site, i) in r.sites" :key="i" class="site-row">
             <span class="site-name">{{ resolveSiteName(site) }}</span>
-            <span v-if="resolveContractorName(site)" class="contractor-chip">🏢 {{ resolveContractorName(site) }}</span>
+            <span v-if="resolveContractorName(site)" class="contractor-chip"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">apartment</span> {{ resolveContractorName(site) }}</span>
             <span v-if="site.workers?.[0]?.startTime && site.workers?.[0]?.endTime" class="work-time">
-              🕒 {{ site.workers[0].startTime }}〜{{ site.workers[0].endTime }}
+              <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">schedule</span> {{ site.workers[0].startTime }}〜{{ site.workers[0].endTime }}
             </span>
             <span class="attendance">
-              <template v-if="attendanceFor(r, site)?.checkin || attendanceFor(r, site)?.checkout">🟢 出勤 {{ attendanceFor(r, site)?.checkin ?? '—' }} / 退勤 {{ attendanceFor(r, site)?.checkout ?? '—' }}</template>
+              <template v-if="attendanceFor(r, site)?.checkin || attendanceFor(r, site)?.checkout"><span class="material-symbols-rounded" style="font-size:12px;vertical-align:middle;line-height:1;color:#16a34a">circle</span> 出勤 {{ attendanceFor(r, site)?.checkin ?? '—' }} / 退勤 {{ attendanceFor(r, site)?.checkout ?? '—' }}</template>
               <span v-else class="no-punch">打刻なし</span>
             </span>
           </div>
@@ -48,7 +48,7 @@
             :disabled="granting === r.id"
             :title="'この作業員のこの日を、申請なしで編集可にします'"
             @click.stop="issueEditGrant(r)"
-          >{{ grantedIds.has(r.id) ? '✓ 編集許可済' : (granting === r.id ? '発行中…' : '✏️ 編集許可を発行') }}</button>
+          ><span v-if="grantedIds.has(r.id)"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">check</span> 編集許可済</span><span v-else-if="granting === r.id">発行中…</span><span v-else><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">edit</span> 編集許可を発行</span></button>
           <button
             v-if="!HIDE_LINE_SECTIONS && !r.line_notified_at"
             class="btn-notify-sm"
@@ -85,9 +85,9 @@
           </div>
         </div>
 
-        <!-- 削除は2段階（誤操作防止）：⚠ 元に戻せない旨を明示してから確定 -->
+        <!-- 削除は2段階（誤操作防止）：元に戻せない旨を明示してから確定 -->
         <div v-if="deleteArmed" class="delete-confirm">
-          <span class="delete-confirm-msg">⚠️ この日報を削除すると<b>元に戻せません</b>（工数・経費・添付も消えます）。本当に削除しますか？</span>
+          <span class="delete-confirm-msg"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">warning</span> この日報を削除すると<b>元に戻せません</b>（工数・経費・添付も消えます）。本当に削除しますか？</span>
           <div class="delete-confirm-actions">
             <button class="btn-delete" :disabled="deleting" @click="doDeleteFromModal">{{ deleting ? '削除中…' : 'この日報を削除する' }}</button>
             <button class="btn-cancel-sm" @click="deleteArmed = false">キャンセル</button>
@@ -101,9 +101,9 @@
           <div v-for="(site, si) in selected.sites" :key="si" class="site-block">
             <div class="site-block-title">
               {{ resolveSiteName(site) }}
-              <span v-if="resolveContractorName(site)" class="contractor-tag">🏢 {{ resolveContractorName(site) }}</span>
+              <span v-if="resolveContractorName(site)" class="contractor-tag"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">apartment</span> {{ resolveContractorName(site) }}</span>
               <span class="attendance-tag">
-                🟢 出勤 {{ attendanceFor(selected, site)?.checkin ?? '—' }} / 退勤 {{ attendanceFor(selected, site)?.checkout ?? '—' }}
+                <span class="material-symbols-rounded" style="font-size:12px;vertical-align:middle;line-height:1;color:#16a34a">circle</span> 出勤 {{ attendanceFor(selected, site)?.checkin ?? '—' }} / 退勤 {{ attendanceFor(selected, site)?.checkout ?? '—' }}
               </span>
             </div>
 
@@ -181,7 +181,7 @@
                 <span v-if="veh.highwayYen" class="muted">高速 ¥{{ veh.highwayYen.toLocaleString() }}</span>
               </div>
               <div v-if="site.expenses?.vehicleUrls?.length" class="receipt-urls">
-                <a v-for="(url, ui) in site.expenses.vehicleUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 車両領収書{{ site.expenses.vehicleUrls.length > 1 ? ui + 1 : '' }}</a>
+                <a v-for="(url, ui) in site.expenses.vehicleUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link"><span class="material-symbols-rounded" style="font-size:16px;vertical-align:middle;line-height:1">attach_file</span>車両領収書{{ site.expenses.vehicleUrls.length > 1 ? ui + 1 : '' }}</a>
               </div>
               <div v-for="(tr, ti) in site.expenses?.trains?.filter((t: any) => t.yen)" :key="'t'+ti" class="expense-row">
                 <span class="exp-cat">電車</span>
@@ -189,7 +189,7 @@
                 <span class="muted">¥{{ tr.yen?.toLocaleString() }}</span>
               </div>
               <div v-if="site.expenses?.trainUrls?.length" class="receipt-urls">
-                <a v-for="(url, ui) in site.expenses.trainUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 電車領収書{{ site.expenses.trainUrls.length > 1 ? ui + 1 : '' }}</a>
+                <a v-for="(url, ui) in site.expenses.trainUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link"><span class="material-symbols-rounded" style="font-size:16px;vertical-align:middle;line-height:1">attach_file</span>電車領収書{{ site.expenses.trainUrls.length > 1 ? ui + 1 : '' }}</a>
               </div>
               <!-- 宿泊費: 新形式 hotels[]（複数）。明細ごと領収書。 -->
               <template v-if="site.expenses?.hotels?.some((h: any) => h.yen)">
@@ -200,7 +200,7 @@
                     <span class="muted">¥{{ Number(ho.yen).toLocaleString() }}</span>
                   </div>
                   <div v-if="ho.fileUrls?.length" class="receipt-urls">
-                    <a v-for="(url, ui) in ho.fileUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 宿泊領収書{{ ho.fileUrls.length > 1 ? ui + 1 : '' }}</a>
+                    <a v-for="(url, ui) in ho.fileUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link"><span class="material-symbols-rounded" style="font-size:16px;vertical-align:middle;line-height:1">attach_file</span>宿泊領収書{{ ho.fileUrls.length > 1 ? ui + 1 : '' }}</a>
                   </div>
                 </template>
               </template>
@@ -212,7 +212,7 @@
                   <span class="muted">¥{{ site.expenses.hotelYen.toLocaleString() }}</span>
                 </div>
                 <div v-if="site.expenses?.hotelUrls?.length" class="receipt-urls">
-                  <a v-for="(url, ui) in site.expenses.hotelUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 宿泊領収書{{ site.expenses.hotelUrls.length > 1 ? ui + 1 : '' }}</a>
+                  <a v-for="(url, ui) in site.expenses.hotelUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link"><span class="material-symbols-rounded" style="font-size:16px;vertical-align:middle;line-height:1">attach_file</span>宿泊領収書{{ site.expenses.hotelUrls.length > 1 ? ui + 1 : '' }}</a>
                 </div>
                 <div v-if="site.expenses?.leopalaceYen" class="expense-row">
                   <span class="exp-cat">宿泊</span>
@@ -220,7 +220,7 @@
                   <span class="muted">¥{{ site.expenses.leopalaceYen.toLocaleString() }}</span>
                 </div>
                 <div v-if="site.expenses?.leopalaceUrls?.length" class="receipt-urls">
-                  <a v-for="(url, ui) in site.expenses.leopalaceUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 レオパレス領収書{{ site.expenses.leopalaceUrls.length > 1 ? ui + 1 : '' }}</a>
+                  <a v-for="(url, ui) in site.expenses.leopalaceUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link"><span class="material-symbols-rounded" style="font-size:16px;vertical-align:middle;line-height:1">attach_file</span>レオパレス領収書{{ site.expenses.leopalaceUrls.length > 1 ? ui + 1 : '' }}</a>
                 </div>
               </template>
               <div v-for="(ot, oi) in site.expenses?.others?.filter((o: any) => o.yen)" :key="'o'+oi">
@@ -230,11 +230,11 @@
                   <span class="muted">¥{{ ot.yen?.toLocaleString() }}</span>
                 </div>
                 <div v-if="(ot as any).fileUrls?.length" class="receipt-urls">
-                  <a v-for="(url, ui) in (ot as any).fileUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 {{ ot.label || 'その他' }}領収書{{ (ot as any).fileUrls.length > 1 ? ui + 1 : '' }}</a>
+                  <a v-for="(url, ui) in (ot as any).fileUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link"><span class="material-symbols-rounded" style="font-size:16px;vertical-align:middle;line-height:1">attach_file</span>{{ ot.label || 'その他' }}領収書{{ (ot as any).fileUrls.length > 1 ? ui + 1 : '' }}</a>
                 </div>
               </div>
               <div v-if="site.expenses?.otherUrls?.length && !site.expenses?.others?.some((o: any) => o.fileUrls?.length)" class="receipt-urls">
-                <a v-for="(url, ui) in site.expenses.otherUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 その他領収書{{ site.expenses.otherUrls.length > 1 ? ui + 1 : '' }}</a>
+                <a v-for="(url, ui) in site.expenses.otherUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link"><span class="material-symbols-rounded" style="font-size:16px;vertical-align:middle;line-height:1">attach_file</span>その他領収書{{ site.expenses.otherUrls.length > 1 ? ui + 1 : '' }}</a>
               </div>
               <div v-for="(ent, ei) in site.expenses?.entertainments?.filter((e: any) => e.yen)" :key="'e'+ei">
                 <div class="expense-row">
@@ -243,7 +243,7 @@
                   <span class="muted">¥{{ ent.yen?.toLocaleString() }}</span>
                 </div>
                 <div v-if="(ent as any).fileUrls?.length" class="receipt-urls">
-                  <a v-for="(url, ui) in (ent as any).fileUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 {{ ent.label || '雑経費' }}領収書{{ (ent as any).fileUrls.length > 1 ? ui + 1 : '' }}</a>
+                  <a v-for="(url, ui) in (ent as any).fileUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link"><span class="material-symbols-rounded" style="font-size:16px;vertical-align:middle;line-height:1">attach_file</span>{{ ent.label || '雑経費' }}領収書{{ (ent as any).fileUrls.length > 1 ? ui + 1 : '' }}</a>
                 </div>
               </div>
               <template v-if="site.expenses?.entertainmentYen && !site.expenses?.entertainments?.some((e: any) => e.yen)">
@@ -253,11 +253,11 @@
                   <span class="muted">¥{{ site.expenses.entertainmentYen.toLocaleString() }}</span>
                 </div>
                 <div v-if="site.expenses?.entertainmentUrls?.length" class="receipt-urls">
-                  <a v-for="(url, ui) in site.expenses.entertainmentUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 雑経費領収書{{ site.expenses.entertainmentUrls.length > 1 ? ui + 1 : '' }}</a>
+                  <a v-for="(url, ui) in site.expenses.entertainmentUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link"><span class="material-symbols-rounded" style="font-size:16px;vertical-align:middle;line-height:1">attach_file</span>雑経費領収書{{ site.expenses.entertainmentUrls.length > 1 ? ui + 1 : '' }}</a>
                 </div>
               </template>
               <div v-if="site.expenses?.garbagePhotoUrls?.length" class="receipt-urls">
-                <a v-for="(url, ui) in site.expenses.garbagePhotoUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link">📎 ゴミ写真{{ site.expenses.garbagePhotoUrls.length > 1 ? ui + 1 : '' }}</a>
+                <a v-for="(url, ui) in site.expenses.garbagePhotoUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link"><span class="material-symbols-rounded" style="font-size:16px;vertical-align:middle;line-height:1">attach_file</span>ゴミ写真{{ site.expenses.garbagePhotoUrls.length > 1 ? ui + 1 : '' }}</a>
               </div>
             </div>
 
