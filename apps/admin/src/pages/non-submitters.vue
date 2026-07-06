@@ -26,7 +26,7 @@
           </thead>
           <tbody>
             <tr v-for="(e, i) in entries" :key="i">
-              <td class="name">⚠️ {{ e.name }}</td>
+              <td class="name"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">warning</span> {{ e.name }}</td>
               <td class="dates">
                 <span v-for="d in e.dates.slice(0, MAX)" :key="d" class="date-chip">{{ fmtDate(d) }}</span>
                 <span v-if="e.dates.length > MAX" class="more">他{{ e.dates.length - MAX }}日</span>
@@ -97,12 +97,12 @@ const rangeLabel = computed(() =>
 
 const fullText = computed(() => {
   const lines = [
-    '📋 日報未送信リマインド（敬称略）',
-    `📅 ${fmtDate(yesterday.value)} 時点（${generatedAt.value} 現在）`,
+    '【日報未送信リマインド】（敬称略）',
+    `${fmtDate(yesterday.value)} 時点（${generatedAt.value} 現在）`,
     '──────────',
   ]
   for (const e of entries.value) {
-    lines.push(`⚠️ ${e.name}`)
+    lines.push(`・${e.name}`)
     e.dates.slice(0, MAX).forEach(d => lines.push(`  ${fmtDate(d)}`))
     if (e.dates.length > MAX) lines.push(`  他${e.dates.length - MAX}日`)
   }
@@ -192,7 +192,7 @@ async function load() {
     }
 
     entries.value = list
-    if (!list.length) notice.value = '全員送信済みです 🎉'
+    if (!list.length) notice.value = '全員送信済みです'
   } finally {
     loading.value = false
   }

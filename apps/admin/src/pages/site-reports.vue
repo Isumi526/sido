@@ -32,7 +32,7 @@
       <!-- 出力（※表の表示月は上の ‹ 年月 › ナビで切替。出力ボタンを押すと出力期間を選ぶ） -->
       <div v-if="activeSite" class="export-bar">
         <div class="export-pop-wrap">
-          <button class="btn-export" data-testid="export-site" @click="exportPanelOpen = !exportPanelOpen">⬇ CSV＋見積書PDFを出力</button>
+          <button class="btn-export" data-testid="export-site" @click="exportPanelOpen = !exportPanelOpen"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">download</span> CSV＋見積書PDFを出力</button>
           <div v-if="exportPanelOpen" class="export-pop" data-testid="export-panel">
             <div class="export-pop-title">出力する期間を選んでください</div>
             <label class="export-range-lbl">出力範囲
@@ -678,7 +678,7 @@ async function load() {
 
 onMounted(load)
 watch(dateFrom, load)
-watch(wageMode, load)   // 日当↔実質賃金の切替で社員人件費を再集計
+watch(wageMode, load)   // 日当-実質賃金の切替で社員人件費を再集計
 </script>
 
 <style scoped>

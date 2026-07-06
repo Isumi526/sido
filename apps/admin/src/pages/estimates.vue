@@ -27,7 +27,7 @@
             <td>{{ e.estimate_date || '—' }}</td>
             <td class="num">{{ e.total_amount != null ? `¥${e.total_amount.toLocaleString()}` : '—' }}</td>
             <td>
-              <a v-if="e.pdf_path" href="#" @click.prevent="openDoc(e.pdf_path, e.pdf_bucket)" class="pdf-link">📄 PDF</a><span v-else class="muted">—</span>
+              <a v-if="e.pdf_path" href="#" @click.prevent="openDoc(e.pdf_path, e.pdf_bucket)" class="pdf-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> PDF</a><span v-else class="muted">—</span>
               <span v-if="e.uploaded_via_portal" class="badge-up" title="業者がポータルからアップロード">業者UP</span>
             </td>
             <td class="actions">
@@ -77,7 +77,7 @@
             <span class="pdf-drop-hint">{{ pdfDragOver ? 'ここにドロップ' : 'ファイル選択 または ドラッグ&ドロップ' }}</span>
           </div>
           <span v-if="file" class="hint">選択中：{{ file.name }}</span>
-          <span v-if="modal.pdf_path && !file" class="hint">登録済み：<a href="#" @click.prevent="openDoc(modal.pdf_path, modal.pdf_bucket)" class="pdf-link">📄 現在のPDF</a>（新しく選ぶと差し替え）</span>
+          <span v-if="modal.pdf_path && !file" class="hint">登録済み：<a href="#" @click.prevent="openDoc(modal.pdf_path, modal.pdf_bucket)" class="pdf-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> 現在のPDF</a>（新しく選ぶと差し替え）</span>
         </label>
 
         <label class="fld"><span>メモ</span>
@@ -135,7 +135,7 @@ const EST_COLS = 'id, subcontractor_id, site_id, estimate_number, estimate_date,
 const rows    = ref<Estimate[]>([])
 const subs    = ref<Opt[]>([])
 const sites   = ref<Opt[]>([])
-const siteLinks = ref<{ site_id: string; subcontractor_id: string }[]>([])  // 現場↔業者 1:n 紐付け
+const siteLinks = ref<{ site_id: string; subcontractor_id: string }[]>([])  // 現場-業者 1:n 紐付け
 const loading = ref(true)
 const saving  = ref(false)
 const saveError = ref('')

@@ -4,7 +4,7 @@
     <!-- パネル（開いている時） -->
     <div v-show="open" class="ai-panel" role="dialog" aria-label="AIヘルプ">
       <div class="ai-panel-head">
-        <span class="ai-panel-title">🤖 AIヘルプ</span>
+        <span class="ai-panel-title"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">smart_toy</span> AIヘルプ</span>
         <div class="ai-panel-head-actions">
           <RouterLink to="/ai-help" class="ai-panel-expand" title="フルページで開く" @click="open = false">⤢</RouterLink>
           <button class="ai-panel-close" aria-label="閉じる" @click="open = false">✕</button>
@@ -18,7 +18,7 @@
 
     <!-- 起動ボタン（FAB） -->
     <button class="ai-fab" :class="{ active: open }" :aria-label="open ? 'AIヘルプを閉じる' : 'AIヘルプを開く'" data-testid="ai-help-fab" @click="toggle">
-      <span v-if="!open" class="ai-fab-icon">🤖</span>
+      <span v-if="!open" class="ai-fab-icon"><span class="material-symbols-rounded" style="font-size:1em;line-height:1">smart_toy</span></span>
       <span v-else class="ai-fab-icon">✕</span>
     </button>
   </div>

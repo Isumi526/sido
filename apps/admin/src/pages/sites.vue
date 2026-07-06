@@ -63,7 +63,7 @@
           <label>現場名</label>
           <input v-model="modal.name" class="input" placeholder="例：BLH名古屋" />
           <div v-if="similarSites.length" class="dup-warn">
-            ⚠️ 似た現場が既にあります（重複登録に注意）：<strong>{{ similarSites.join('、') }}</strong>
+            <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">warning</span> 似た現場が既にあります（重複登録に注意）：<strong>{{ similarSites.join('、') }}</strong>
           </div>
         </div>
         <div class="field">
@@ -165,7 +165,7 @@
           <label>写真・書類（複数可）</label>
           <div v-if="attachments.length || pendingAtts.length" class="att-list">
             <div v-for="a in attachments" :key="a.id" class="att-item">
-              <span class="att-kind">{{ a.kind === 'photo' ? '📷' : '📄' }}</span>
+              <span class="att-kind"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">{{ a.kind === 'photo' ? 'photo_camera' : 'description' }}</span></span>
               <a v-if="a.url" :href="a.url" target="_blank" rel="noopener" class="att-link">{{ a.name || a.path.split('/').pop() }}</a>
               <span v-else class="att-link att-disabled">{{ a.name || a.path.split('/').pop() }}</span>
               <label v-if="a.kind === 'document'" class="att-consent" :class="{ on: a.require_consent }" :title="'出退勤（チェックイン）時に作業員へ提示し同意を取る'">
@@ -175,7 +175,7 @@
             </div>
             <div v-for="(p, i) in pendingAtts" :key="'pa' + i" class="att-item pending">
               <img v-if="p.preview" :src="p.preview" class="att-thumb" :alt="p.name" />
-              <span v-else class="att-kind">📄</span>
+              <span v-else class="att-kind"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span></span>
               <span class="att-link">{{ p.name }}<span class="muted">（保存時にアップロード）</span></span>
               <button class="att-del" title="取り消し" @click="removePendingAtt(i)">×</button>
             </div>
@@ -194,9 +194,9 @@
           <label>この現場の見積書</label>
           <div v-if="siteEstimates.length" class="att-list" data-testid="site-estimates">
             <div v-for="e in siteEstimates" :key="e.id" class="att-item">
-              <span class="att-kind">📄</span>
+              <span class="att-kind"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span></span>
               <span class="att-link">{{ e.estimate_number || '（番号なし）' }}<span class="muted"> ・{{ e.estimate_date || '—' }} ・¥{{ (e.total_amount ?? 0).toLocaleString() }}</span></span>
-              <a v-if="e.pdf_path" :href="estPdfUrl(e.pdf_path)" target="_blank" rel="noopener" class="att-link pdf-link">📄 PDF</a>
+              <a v-if="e.pdf_path" :href="estPdfUrl(e.pdf_path)" target="_blank" rel="noopener" class="att-link pdf-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> PDF</a>
             </div>
           </div>
           <p v-else class="hint">この現場に紐づく見積書はありません（見積書登録時に現場を選ぶと自動で紐付きます）。</p>
@@ -453,7 +453,7 @@ async function openEdit(s: Site) {
   markFormOpened()   // 非同期ロード後に dirty 監視を開始（ロード自体を編集と誤認しない）
 }
 
-// 現場↔下請け業者の紐付けを同期（チェックされたものだけ残す）
+// 現場-下請け業者の紐付けを同期（チェックされたものだけ残す）
 async function syncSiteSubcontractors(siteId: string, accountId: string, want: string[]) {
   const { data } = await supabase.from('site_subcontractors').select('subcontractor_id').eq('site_id', siteId)
   const have = ((data ?? []) as any[]).map(l => l.subcontractor_id as string)

@@ -49,7 +49,7 @@
             <div class="kv-row"><dt>読み仮名</dt><dd>{{ site.name_kana || '—' }}</dd></div>
             <div class="kv-row"><dt>元請け</dt><dd>{{ contractorName || '—' }}</dd></div>
             <div class="kv-row"><dt>住所</dt><dd>
-              <template v-if="site.location">{{ site.location }} <a :href="mapUrl" target="_blank" rel="noopener" class="map-link">🗺 地図で開く</a></template>
+              <template v-if="site.location">{{ site.location }} <a :href="mapUrl" target="_blank" rel="noopener" class="map-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">map</span> 地図で開く</a></template>
               <template v-else>—</template>
             </dd></div>
             <div class="kv-row"><dt>工種</dt><dd>{{ site.construction_type || '—' }}</dd></div>
@@ -119,7 +119,7 @@
             <tbody><tr v-for="e in estimates" :key="e.id">
               <td>{{ e.estimate_number || '—' }}</td><td>{{ e.estimate_date || '—' }}</td>
               <td class="num">{{ e.total_amount != null ? `¥${e.total_amount.toLocaleString()}` : '—' }}</td>
-              <td><a v-if="e.pdf_path" :href="estPdfUrl(e.pdf_path)" target="_blank" rel="noopener" class="pdf-link">📄</a><span v-else class="muted">—</span></td>
+              <td><a v-if="e.pdf_path" :href="estPdfUrl(e.pdf_path)" target="_blank" rel="noopener" class="pdf-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span></a><span v-else class="muted">—</span></td>
             </tr></tbody>
           </table>
           <p v-else class="muted">見積書はありません</p>
@@ -144,8 +144,8 @@
         <div class="card-head"><h2 class="card-title">写真・資料（{{ attachments.length }}）</h2>
           <div class="upload-actions att-dropzone" :class="{ dragover: attDragOver, busy: uploading }"
                @drop.prevent="onDropAtt" @dragover.prevent="attDragOver = true" @dragleave.prevent="attDragOver = false">
-            <label class="btn-ghost sm">📷 写真追加<input type="file" accept="image/*" multiple hidden @change="(e) => onAttach(e, 'photo')" /></label>
-            <label class="btn-ghost sm">📄 書類追加<input type="file" accept="image/*,.pdf" multiple hidden @change="(e) => onAttach(e, 'document')" /></label>
+            <label class="btn-ghost sm"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">photo_camera</span> 写真追加<input type="file" accept="image/*" multiple hidden @change="(e) => onAttach(e, 'photo')" /></label>
+            <label class="btn-ghost sm"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> 書類追加<input type="file" accept="image/*,.pdf" multiple hidden @change="(e) => onAttach(e, 'document')" /></label>
             <span class="att-drop-hint">{{ attDragOver ? 'ここにドロップ' : 'ドラッグ&ドロップも可' }}</span>
           </div>
         </div>
@@ -154,7 +154,7 @@
           <div v-for="a in attachments" :key="a.id" class="att-item">
             <a :href="a.url || '#'" target="_blank" rel="noopener" class="att-thumb">
               <img v-if="a.kind === 'photo' && a.url" :src="a.url" :alt="a.name || ''" />
-              <span v-else class="att-ico">📄</span>
+              <span v-else class="att-ico"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span></span>
             </a>
             <div class="att-name">{{ a.name || a.kind }}</div>
             <button class="att-del" @click="removeAttachment(a)">削除</button>
