@@ -1,8 +1,8 @@
 {
   "subtitle": "Overtime Request",
   "todayLabel": "Today",
-  "deadlineNote": "Request overtime by 15:00 the same day. Once approved, you can enter an end time beyond the site's fixed end for that day.",
-  "deadlinePassed": "Today's overtime request window has closed (until 15:00).",
+  "deadlineNote": "Request overtime by 16:00 the same day. Once approved, you can enter an end time beyond the site's fixed end for that day.",
+  "deadlinePassed": "Today's overtime request window has closed (until 16:00).",
   "endTimeLabel": "Requested end time",
   "reasonLabel": "Reason (optional)",
   "reasonPlaceholder": "e.g. extra work",
@@ -16,7 +16,7 @@
   "submitted": "Overtime requested. Awaiting admin approval.",
   "canceled": "Request canceled.",
   "errorNoLogin": "Could not get login info.",
-  "errorDeadline": "Past the deadline (15:00 same day); cannot request.",
+  "errorDeadline": "Past the deadline (16:00 same day); cannot request.",
   "errorGeneric": "Request failed.",
   "recentTitle": "Recent requests",
   "empty": "No request history."

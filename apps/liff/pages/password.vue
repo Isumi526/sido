@@ -14,15 +14,15 @@
         <form class="pw-form" @submit.prevent="submit">
           <div class="field">
             <label>{{ t('password.current') }}</label>
-            <input v-model="current" type="password" autocomplete="current-password" class="input" data-testid="pw-current" />
+            <PasswordInput v-model="current" autocomplete="current-password" class="input" data-testid="pw-current" />
           </div>
           <div class="field">
             <label>{{ t('password.new') }}</label>
-            <input v-model="next" type="password" autocomplete="new-password" class="input" data-testid="pw-new" />
+            <PasswordInput v-model="next" autocomplete="new-password" class="input" data-testid="pw-new" />
           </div>
           <div class="field">
             <label>{{ t('password.confirm') }}</label>
-            <input v-model="confirm" type="password" autocomplete="new-password" class="input" data-testid="pw-confirm" />
+            <PasswordInput v-model="confirm" autocomplete="new-password" class="input" data-testid="pw-confirm" />
           </div>
           <button type="submit" class="btn-submit" :disabled="loading" data-testid="pw-submit">
             {{ loading ? t('password.submitting') : t('password.submit') }}

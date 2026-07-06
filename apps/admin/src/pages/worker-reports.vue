@@ -84,16 +84,22 @@
             <div class="summary-label">休日深夜残業</div>
             <div class="summary-value">{{ fmtH(workerMap[activeWorker].totals.sundayOtNight) }}<span class="unit">h</span></div>
           </div>
-          <!-- 人件費カード -->
+          <!-- 人件費カード（出面勤怠＝時給ベース。日当は無関係） -->
           <div v-if="canViewHourlyWage && showLaborCost" class="summary-card cost-card">
             <div class="summary-label">人件費合計</div>
-            <div class="summary-value cost-value">{{ fmtYen(totalLaborCost) }}</div>
-            <div class="cost-rate-hint" v-if="activeDailyWage">日当 {{ fmtYen(activeDailyWage) }} / 時給換算 {{ fmtYen(Math.round(activeDailyWage / 8)) }}<template v-if="activeHourlyWage">（実質時給 {{ fmtYen(activeHourlyWage) }}）</template></div>
+            <template v-if="activeHourlyWage">
+              <div class="summary-value cost-value">{{ fmtYen(totalLaborCost) }}</div>
+              <div class="cost-rate-hint">時給 {{ fmtYen(activeHourlyWage) }}/h ベース</div>
+            </template>
+            <template v-else>
+              <div class="summary-value cost-value rate-unset">時給 未設定</div>
+              <div class="cost-rate-hint rate-unset">出面勤怠の人件費は時給ベース。作業員マスタで時給を設定してください</div>
+            </template>
           </div>
         </div>
 
-        <!-- 人件費内訳 -->
-        <template v-if="canViewHourlyWage && showLaborCost && laborCostBreakdown.length">
+        <!-- 人件費内訳（時給未設定時は単価0になるため非表示） -->
+        <template v-if="canViewHourlyWage && showLaborCost && activeHourlyWage && laborCostBreakdown.length">
           <div class="section-title">人件費内訳</div>
           <div class="table-wrap">
             <table class="table">
@@ -507,10 +513,7 @@ async function load() {
 onMounted(load)
 watch(dateFrom, load)
 
-// ---------- 人件費計算 ----------
-const activeDailyWage = computed(() =>
-  activeWorker.value ? (dailyWageMap.value[activeWorker.value] ?? 0) : 0
-)
+// ---------- 人件費計算（出面勤怠＝時給ベース。日当は無関係） ----------
 const activeHourlyWage = computed(() =>
   activeWorker.value ? (hourlyWageMap.value[activeWorker.value] ?? 0) : 0
 )
@@ -523,8 +526,9 @@ const activeTripDays = computed(() => {
 const laborCostBreakdown = computed(() => {
   if (!activeWorker.value || !workerMap.value[activeWorker.value]) return []
   const t = workerMap.value[activeWorker.value].totals
-  // 出面勤怠の人件費は既定の日当ベース（日当/8h × 稼働時間）
-  const hourRate = activeDailyWage.value / 8
+  // 出面勤怠の人件費は「時給 × 稼働時間（割増率適用）」。日当は出面勤怠には無関係。
+  // 時給未設定(0)なら労働分は算出不可＝0（カード側で「時給未設定」を明示）。
+  const hourRate = activeHourlyWage.value
   const lines = [
     { label: '通常',       hours: t.normal,        rate: 1.00 },
     { label: '残業',       hours: t.ot,             rate: 1.25 },
@@ -603,6 +607,7 @@ function printPdf() {
 .cost-card { background: #fffbeb; border: 1px solid #f0c040; }
 .cost-value { font-size: 22px; color: #92600a; }
 .cost-rate-hint { font-size: 10px; color: #a07830; margin-top: 4px; }
+.rate-unset { color: #b0392e; }
 .cost-cell { color: #92600a; font-weight: 700; }
 
 /* テーブル共通 */

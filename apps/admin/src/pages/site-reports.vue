@@ -336,6 +336,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { useQueryParam } from '../composables/useQueryParam'
 import { resolveDocUrl } from '../lib/docUrl'
 import HelpButton from '../components/HelpButton.vue'
 import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, wageForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
@@ -426,7 +427,7 @@ const dateTo = computed(() => {
 
 const loading    = ref(false)
 const siteMap    = ref<Record<string, any[]>>({})
-const activeSite = ref('')
+const activeSite = useQueryParam('site', '')   // URL ?site= に同期（ページ跨ぎで復元）
 // 賃金モード（office以上のみ切替可）。既定=日当/8×稼働（現場管理者も閲覧OK）／real=実質賃金(時給×稼働)
 const wageMode = ref<WageMode>('daily')
 function toggleWageMode() {
