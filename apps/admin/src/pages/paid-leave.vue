@@ -523,15 +523,33 @@ async function saveInitialUsed() {
   }
 }
 
-// 入社日を保存（役員経理以上のみ・自動付与の前提）。空なら null にする。
+// 1作業員の未付与の基準日を法令付与（確認なし・A自動用）。入社日保存直後などに使う。
+async function autoGrantWorkerSilently(workerId: string, hireDate: string | null, empType: string | null | undefined, weeklyDays: number | null | undefined): Promise<number> {
+  if (!canViewHourlyWage.value || !hireDate || empType === 'contractor') return 0
+  const accountId = await getAccountId()
+  const existing = new Set((allGrantsByWorker[workerId] ?? []).map(g => g.granted_at))
+  const rows = pendingBaseDatesFor(hireDate, empType, weeklyDays, existing, today)
+    .map(p => ({ worker_id: workerId, account_id: accountId, granted_at: p.granted, expires_at: p.expires, days: p.days, note: p.note }))
+  if (rows.length === 0) return 0
+  await supabase.from('paid_leave_grants').insert(rows)
+  return rows.length
+}
+
+// 入社日を保存（役員経理以上のみ・自動付与の前提）。空なら null にする。保存後、その場で法令付与も自動反映（A）。
 async function saveHireDate() {
   if (!detail.value) return
   if (!canViewHourlyWage.value) { hireError.value = '権限がありません'; return }
   savingHire.value = true; hireError.value = ''
   try {
-    await supabase.from('workers').update({ hire_date: hireDateInput.value || null }).eq('id', detail.value.id)
-    await load()
-    detail.value = workerStats.value.find(x => x.id === detail.value!.id) ?? detail.value
+    const wid = detail.value.id
+    await supabase.from('workers').update({ hire_date: hireDateInput.value || null }).eq('id', wid)
+    await load()   // allGrantsByWorker/workerStats を最新化（既存付与の把握）
+    // A: 入社日を設定したら、その場で法令付与を自動反映（押す動作なし）
+    const w = workerStats.value.find(x => x.id === wid)
+    const granted = w ? await autoGrantWorkerSilently(wid, w.hire_date, w.employment_type, w.weekly_scheduled_days) : 0
+    if (granted > 0) { autoGrantNotice.value = `入社日の設定に伴い、法令の有給 ${granted}件 を自動付与しました。`; await load() }
+    await loadDetailData(wid)
+    detail.value = workerStats.value.find(x => x.id === wid) ?? detail.value
     if (detail.value) hireDateInput.value = detail.value.hire_date ?? ''
   } catch (e: any) {
     hireError.value = e.message ?? '保存に失敗しました'
