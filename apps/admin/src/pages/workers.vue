@@ -100,34 +100,7 @@
         <div class="field">
           <label>日当単価（円/日・原価設定）</label>
           <input v-model.number="modal.daily_wage" type="number" class="input" placeholder="20000" data-testid="daily-wage" />
-          <p class="hint-sm">諸々含めた経費計算用の設定単価。日報・集計は「日当/8h × 稼働時間」で計算（現場管理者も閲覧可）。</p>
-        </div>
-        <div class="field">
-          <label>時給（円/h・実質賃金）</label>
-          <p v-if="!canViewHourlyWage" class="hint-sm">時給（実質賃金）は権限により非表示です</p>
-          <template v-else>
-            <input v-model.number="modal.hourly_wage" type="number" class="input" placeholder="2000" data-testid="hourly-wage" />
-            <p class="hint-sm">実際に支払う時給。役員・経理以上のみ、月次/現場別集計の「実質賃金」トグルで使用。</p>
-          </template>
-        </div>
-        <div v-if="modal.id" class="field">
-          <label>昇給年月日（発効日・単価を変えた時に記録）</label>
-          <input v-model="wageEffectiveDate" type="date" class="input" data-testid="wage-effective-date" />
-          <p class="hint-sm">この日以降の稼働が新単価で人件費計算されます（編集した日と違ってもOK）。</p>
-        </div>
-        <div v-if="modal.id" class="field">
-          <label>単価変更の理由（任意）</label>
-          <input v-model="wageReason" class="input" placeholder="例：定期昇給 / 資格取得" data-testid="wage-reason" />
-        </div>
-        <div v-if="modal.id && wageHistory.length && canViewHourlyWage" class="field">
-          <label>賃金変更履歴（発効日〜 で当時の賃金で計算）</label>
-          <ul class="wage-hist" data-testid="wage-history">
-            <li v-for="h in wageHistory" :key="h.id">
-              <b>{{ (h.effective_date || (h.changed_at || '').slice(0, 10)) }}〜</b>
-              日当 <template v-if="histOldDaily(h) !== histDaily(h)">¥{{ histOldDaily(h).toLocaleString() }}→</template>¥{{ histDaily(h).toLocaleString() }}／時給 <template v-if="histOldHourly(h) !== histHourly(h)">¥{{ histOldHourly(h).toLocaleString() }}→</template>¥{{ histHourly(h).toLocaleString() }}
-              <span v-if="h.reason" class="wage-reason"> （{{ h.reason }}）</span>
-            </li>
-          </ul>
+          <p class="hint-sm">諸々含めた経費計算用の設定単価。日報・集計は「日当/8h × 稼働時間」で計算（現場管理者も閲覧可）。時給（実質賃金）は下の「詳細情報」内で設定します。</p>
         </div>
         </template>
         <div class="field">
@@ -161,6 +134,34 @@
           {{ showDetails ? '▾ 詳細情報を隠す' : '▸ 詳細情報（個人情報・会社・保険・資格・代理人・認証）を表示' }}
         </button>
         <div v-show="showDetails" class="detail-section">
+        <!-- 時給・賃金変更（実質賃金＝権限ガード：office以上のみ／#8007 回答A で詳細情報内へ移動） -->
+        <div class="field">
+          <label>時給（円/h・実質賃金）</label>
+          <p v-if="!canViewHourlyWage" class="hint-sm">時給（実質賃金）は権限により非表示です</p>
+          <template v-else>
+            <input v-model.number="modal.hourly_wage" type="number" class="input" placeholder="2000" data-testid="hourly-wage" />
+            <p class="hint-sm">実際に支払う時給。役員・経理以上のみ、月次/現場別集計の「実質賃金」トグルで使用。デフォルトの日当/8ではなく実際の時給を手動設定してください。</p>
+          </template>
+        </div>
+        <div v-if="modal.id" class="field">
+          <label>昇給年月日（発効日・単価を変えた時に記録）</label>
+          <input v-model="wageEffectiveDate" type="date" class="input" data-testid="wage-effective-date" />
+          <p class="hint-sm">この日以降の稼働が新単価で人件費計算されます（編集した日と違ってもOK）。</p>
+        </div>
+        <div v-if="modal.id" class="field">
+          <label>単価変更の理由（任意）</label>
+          <input v-model="wageReason" class="input" placeholder="例：定期昇給 / 資格取得" data-testid="wage-reason" />
+        </div>
+        <div v-if="modal.id && wageHistory.length && canViewHourlyWage" class="field">
+          <label>賃金変更履歴（発効日〜 で当時の賃金で計算）</label>
+          <ul class="wage-hist" data-testid="wage-history">
+            <li v-for="h in wageHistory" :key="h.id">
+              <b>{{ (h.effective_date || (h.changed_at || '').slice(0, 10)) }}〜</b>
+              日当 <template v-if="histOldDaily(h) !== histDaily(h)">¥{{ histOldDaily(h).toLocaleString() }}→</template>¥{{ histDaily(h).toLocaleString() }}／時給 <template v-if="histOldHourly(h) !== histHourly(h)">¥{{ histOldHourly(h).toLocaleString() }}→</template>¥{{ histHourly(h).toLocaleString() }}
+              <span v-if="h.reason" class="wage-reason"> （{{ h.reason }}）</span>
+            </li>
+          </ul>
+        </div>
         <div class="field">
           <label>生年月日</label>
           <input v-model="modal.birth_date" type="date" class="input" />
@@ -472,6 +473,7 @@ function openAdd() {
   // 新規でも認証UIを出す（保存で一体作成・二度手間回避）＝状態を初期化
   authEmail.value = ''; authLoginId.value = ''; authMode.value = 'id'; authPassword.value = ''
   showPwField.value = false; authMsg.value = ''; authOk.value = false
+  showDetails.value = false   // 詳細情報（時給含む）は毎回たたんで開く
   markFormLoaded()
 }
 
@@ -492,6 +494,7 @@ async function openEdit(w: Worker) {
   wageReason.value = ''
   wageEffectiveDate.value = todayStr()
   wageHistory.value = []
+  showDetails.value = false   // 詳細情報（時給含む）は毎回たたんで開く
   familyMembers.value = []
   healthCheckups.value = []
   // 非同期ロードは await してから dirty 監視を開始（ロード発火を誤って dirty 扱いしない）
