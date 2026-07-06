@@ -27,6 +27,13 @@
         <button class="btn-batch-grant" :disabled="batchGranting" data-testid="batch-grant" @click="batchGrantPending">{{ batchGranting ? '付与中…' : 'まとめて法令付与' }}</button>
       </div>
 
+      <!-- 在籍/業務委託/退職・無効 の絞り込みタブ -->
+      <div class="status-tabs no-print">
+        <button class="status-tab" :class="{ active: leaveTab === 'active' }" @click="leaveTab = 'active'">在籍<span class="tab-count">{{ tabCounts.active }}</span></button>
+        <button class="status-tab" :class="{ active: leaveTab === 'contractor' }" @click="leaveTab = 'contractor'">業務委託<span class="tab-count">{{ tabCounts.contractor }}</span></button>
+        <button class="status-tab" :class="{ active: leaveTab === 'inactive' }" @click="leaveTab = 'inactive'">退職・無効<span class="tab-count">{{ tabCounts.inactive }}</span></button>
+      </div>
+
       <!-- ── 画面: サマリーテーブル（印刷非表示） ── -->
       <div class="table-wrap no-print">
         <table class="table">
@@ -43,7 +50,8 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="w in workerStats" :key="w.id" :class="{ inactive: !w.active }">
+            <tr v-if="!filteredWorkers.length"><td colspan="8" class="empty">該当する作業員がいません</td></tr>
+            <tr v-for="w in filteredWorkers" :key="w.id" :class="{ inactive: !w.active }">
               <td class="name">{{ w.name }}</td>
               <td>
                 <span class="emp-badge" :class="w.employment_type ?? 'fulltime'">
@@ -338,6 +346,18 @@ type UsageEntry = { date: string; note: string | null }
 // ── State ────────────────────────────────────────────────────
 const loading      = ref(true)
 const workerStats  = ref<WorkerStat[]>([])
+// 一覧の絞り込みタブ（業務委託は有給対象外・退職無効は別枠）
+const leaveTab = ref<'active' | 'contractor' | 'inactive'>('active')
+const filteredWorkers = computed(() => workerStats.value.filter(w => {
+  if (leaveTab.value === 'inactive') return !w.active
+  if (leaveTab.value === 'contractor') return w.active && w.employment_type === 'contractor'
+  return w.active && w.employment_type !== 'contractor'   // 在籍（業務委託除く）
+}))
+const tabCounts = computed(() => ({
+  active:     workerStats.value.filter(w => w.active && w.employment_type !== 'contractor').length,
+  contractor: workerStats.value.filter(w => w.active && w.employment_type === 'contractor').length,
+  inactive:   workerStats.value.filter(w => !w.active).length,
+}))
 const detail       = ref<WorkerStat | null>(null)
 const detailGrants = ref<Grant[]>([])
 const detailUsage  = ref<UsageEntry[]>([])
@@ -453,7 +473,7 @@ async function load() {
     const pendingCount  = pendingBaseDatesFor(w.hire_date, w.employment_type, w.weekly_scheduled_days, existingDates, today, new Set(excludedDates)).length
 
     // ── 年5日義務: 最新の基準日から1年間で判定 ──
-    const latestGrant = validGrants.sort((a, b) => b.granted_at.localeCompare(a.granted_at))[0]
+    const latestGrant = wGrants.filter(g => !isExpired(g.expires_at)).sort((a, b) => b.granted_at.localeCompare(a.granted_at))[0]
     let duty: WorkerStat['duty']
     if (!latestGrant) {
       duty = { isSubject: false, isMet: false, usedInPeriod: 0, remaining: 5, grantedAt: null, deadline: null }
@@ -779,6 +799,12 @@ onMounted(async () => {
 .btn-print    { background: #1a1a1a; color: #fff; border: none; border-radius: 8px; padding: 10px 18px; font-size: 14px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 6px; }
 .btn-print:hover { background: #333; }
 .loading      { color: #888; padding: 40px; text-align: center; }
+
+/* ── 絞り込みタブ ── */
+.status-tabs { display: flex; gap: 4px; margin-bottom: 14px; }
+.status-tab { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 700; color: #64748b; cursor: pointer; }
+.status-tab.active { background: #06C755; border-color: #06C755; color: #fff; }
+.status-tab .tab-count { font-size: 11px; opacity: .8; margin-left: 4px; }
 
 /* ── 画面テーブル ── */
 .table-wrap { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
