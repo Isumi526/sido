@@ -9,6 +9,7 @@ import Vehicles       from '../pages/vehicles.vue'
 import Reports        from '../pages/reports.vue'
 import SiteReports    from '../pages/site-reports.vue'
 import Expenses       from '../pages/expenses.vue'
+import ExpensesDaily  from '../pages/expenses-daily.vue'
 import SubInvoices    from '../pages/subcontractor-invoices.vue'
 import Settings       from '../pages/settings.vue'
 import CompanyProfile from '../pages/company-profile.vue'
@@ -53,6 +54,7 @@ export const router = createRouter({
     { path: '/reports',      component: Reports },
     { path: '/site-reports', component: SiteReports },
     { path: '/expenses',     component: Expenses },
+    { path: '/expenses-daily', component: ExpensesDaily },
     { path: '/gasoline-allocation', component: () => import('../pages/gasoline-allocation.vue') },
     { path: '/subcontractor-invoices', component: SubInvoices },
     { path: '/worker-reports', component: WorkerReports },

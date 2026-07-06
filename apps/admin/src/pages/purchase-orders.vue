@@ -3,7 +3,7 @@
     <div class="page-header">
       <h1 class="page-title">注文書発行</h1>
       <div class="header-actions">
-        <button class="btn-ghost" @click="openDefaults">⚙ デフォルト設定</button>
+        <button class="btn-ghost" @click="openDefaults"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">settings</span> デフォルト設定</button>
         <button class="btn-add" @click="openIssue">＋ 注文書を発行</button>
       </div>
     </div>
@@ -36,7 +36,7 @@
                 <span v-for="c in changes[o.id]" :key="c.id" class="badge change" :class="{ ok: c.status === 'accepted' }" :title="c.reason || ''">{{ changeLabel(c) }}</span>
               </div>
             </td>
-            <td><a v-if="o.pdf_path" href="#" @click.prevent="openDoc(o.pdf_path, o.pdf_bucket)" class="pdf-link">📄 PDF</a><span v-else class="muted">—</span></td>
+            <td><a v-if="o.pdf_path" href="#" @click.prevent="openDoc(o.pdf_path, o.pdf_bucket)" class="pdf-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> PDF</a><span v-else class="muted">—</span></td>
             <td class="actions">
               <button class="btn-edit" :disabled="busyId === o.id" @click="resendEmail(o)">{{ busyId === o.id ? '送信中…' : '再送' }}</button>
               <button class="btn-edit" :disabled="changeBusy" @click="openChange(o)" title="金額の増減（変更注文書）を発行し業者に再承諾を依頼">変更注文</button>

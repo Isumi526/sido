@@ -6,14 +6,17 @@
 import { ref } from 'vue'
 import { supabase } from './supabase'
 import { getAccountId } from './account'
+import { pendingBaseDatesFor } from './paidLeaveGrant'
+import { canViewHourlyWage } from './auth'
 
 export const editApprovalCount    = ref(0)  // 日報編集の許可申請(pending)
 export const siteUnsetCount       = ref(0)  // 現場未設定の日報(直近90日)
 export const overtimePendingCount = ref(0)  // 残業申請(pending)
+export const pendingGrantCount    = ref(0)  // 有給の付与待ち(未付与の基準日がある作業員数)
 
 export async function refreshNavBadges() {
   const accountId = await getAccountId()
-  if (!accountId) { editApprovalCount.value = 0; siteUnsetCount.value = 0; overtimePendingCount.value = 0; return }
+  if (!accountId) { editApprovalCount.value = 0; siteUnsetCount.value = 0; overtimePendingCount.value = 0; pendingGrantCount.value = 0; return }
   // 許可申請: pending件数（DBカウント）
   const { count } = await supabase.from('report_edit_grants')
     .select('id', { count: 'exact', head: true })
@@ -34,4 +37,21 @@ export async function refreshNavBadges() {
     for (const site of arr) if (site?.siteName === '__unset__') unset++
   }
   siteUnsetCount.value = unset
+  // 有給の付与待ち: 入社日ありの作業員で、未付与の基準日がある人数。
+  // 付与できる権限者（役員経理以上）だけが対象＝行動できない人にアラートを出さない。
+  if (!canViewHourlyWage.value) { pendingGrantCount.value = 0; return }
+  const today = new Date().toISOString().split('T')[0]
+  const [{ data: workers }, { data: grants }] = await Promise.all([
+    supabase.from('workers').select('id, hire_date, employment_type, weekly_scheduled_days, excluded_grant_dates').eq('account_id', accountId).eq('active', true),
+    supabase.from('paid_leave_grants').select('worker_id, granted_at').eq('account_id', accountId),
+  ])
+  const grantDatesByWorker: Record<string, Set<string>> = {}
+  for (const g of (grants ?? []) as any[]) (grantDatesByWorker[g.worker_id] ??= new Set()).add(g.granted_at)
+  let pending = 0
+  for (const w of (workers ?? []) as any[]) {
+    const existing = grantDatesByWorker[w.id] ?? new Set<string>()
+    const excluded = new Set((Array.isArray(w.excluded_grant_dates) ? w.excluded_grant_dates : []).map((d: any) => String(d)))
+    if (pendingBaseDatesFor(w.hire_date, w.employment_type, w.weekly_scheduled_days, existing, today, excluded).length > 0) pending++
+  }
+  pendingGrantCount.value = pending
 }

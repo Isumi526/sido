@@ -388,7 +388,7 @@ function fmtDetailDate(s: string): string {
 
 onMounted(() => { load(); loadUpdates() })
 watch(selectedMonth, load)
-watch(wageMode, load)   // 日当↔実質賃金の切替で社員人件費を再集計
+watch(wageMode, load)   // 日当-実質賃金の切替で社員人件費を再集計
 </script>
 
 <style scoped>

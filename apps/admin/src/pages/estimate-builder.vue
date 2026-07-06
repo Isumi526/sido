@@ -31,7 +31,7 @@
           <span class="badge ok-badge">受注済み</span>
           <span class="muted">現場: <RouterLink to="/sites" class="muted-link" data-testid="linked-site">{{ currentSiteName || '(現場)' }}</RouterLink></span>
         </template>
-        <button v-else class="btn-add" data-testid="promote-open" @click="openPromote">🏗 受注して現場化</button>
+        <button v-else class="btn-add" data-testid="promote-open" @click="openPromote"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">construction</span> 受注して現場化</button>
         <span v-if="promoteMsg" class="ok" data-testid="promote-msg">{{ promoteMsg }}</span>
       </div>
     </div>
@@ -77,7 +77,7 @@
         <button class="btab" :class="{ active: builderTab === 'items' }" data-testid="tab-items" @click="builderTab = 'items'">明細入力</button>
         <button class="btab" :class="{ active: builderTab === 'preview' }" data-testid="tab-preview" @click="builderTab = 'preview'">見積書プレビュー</button>
         <button class="btab" :class="{ active: builderTab === 'po' }" data-testid="tab-po" @click="builderTab = 'po'">商社へ発注</button>
-        <button class="btab ghost" data-testid="open-drawer" @click="openDrawer">⚙ マスタ・自社情報</button>
+        <button class="btab ghost" data-testid="open-drawer" @click="openDrawer"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">settings</span> マスタ・自社情報</button>
       </div>
 
       <div v-show="builderTab === 'items'">
@@ -155,7 +155,7 @@
         <div class="panel-head">
           <h2>見積書PDF</h2>
           <div class="head-actions">
-            <button class="btn-ghost" data-testid="open-send" @click="openSendDialog">✉ メール送信</button>
+            <button class="btn-ghost" data-testid="open-send" @click="openSendDialog"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">mail</span> メール送信</button>
             <button class="btn-primary" :disabled="pdfBusy" data-testid="export-pdf" @click="exportPdf">{{ pdfBusy ? '生成中…' : 'PDF出力' }}</button>
           </div>
         </div>
@@ -265,7 +265,7 @@
           </div>
         </div>
 
-        <!-- ✉ メール送信ダイアログ（件名・本文・複数宛先） -->
+        <!-- メール送信ダイアログ（件名・本文・複数宛先） -->
         <div v-if="sendDialogOpen" class="modal-overlay" @click.self="sendDialogOpen = false">
           <div class="send-modal">
             <h3>見積書をメール送信</h3>
@@ -315,7 +315,7 @@
             <div class="po-status" v-if="poFor(g.supplierId)">
               <span v-if="poFor(g.supplierId)?.email_sent_at" class="badge-ok" :data-testid="`po-sent-${g.supplierId}`">送信済み {{ poFor(g.supplierId)?.order_number }}・{{ fmtDateTime(poFor(g.supplierId)?.email_sent_at) }}</span>
               <span v-else class="muted">発行済み {{ poFor(g.supplierId)?.order_number }}（未送信）</span>
-              <a v-if="poFor(g.supplierId)?.pdf_path" href="#" @click.prevent="openDoc(poFor(g.supplierId)!.pdf_path, poFor(g.supplierId)!.pdf_bucket)" class="pdf-link" :data-testid="`po-pdf-${g.supplierId}`">📄 PDFを表示/DL</a>
+              <a v-if="poFor(g.supplierId)?.pdf_path" href="#" @click.prevent="openDoc(poFor(g.supplierId)!.pdf_path, poFor(g.supplierId)!.pdf_bucket)" class="pdf-link" :data-testid="`po-pdf-${g.supplierId}`"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> PDFを表示/DL</a>
             </div>
             <div class="po-card-foot">
               <span v-if="!contactsFor(g.supplierId).length" class="muted">担当者未登録（<RouterLink to="/subcontractors">協力業者マスタ</RouterLink>）</span>

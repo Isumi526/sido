@@ -19,7 +19,7 @@
       <button :class="['tab', { active: tab === 'paid' }]" @click="tab = 'paid'">
         支払い済み <span class="tab-count">{{ paidList.length }}</span>
       </button>
-      <span v-if="overdueCount" class="overdue-note">⚠ 支払期限超過 {{ overdueCount }} 件</span>
+      <span v-if="overdueCount" class="overdue-note"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">warning</span> 支払期限超過 {{ overdueCount }} 件</span>
     </div>
 
     <!-- 一覧 -->
@@ -101,7 +101,7 @@
             <label class="fld"><span>請求金額(請求書記載)</span><input v-model.number="form.total_amount" type="number" class="inp" /></label>
             <div v-if="selectedPo" class="fld po-residual" :class="{ over: poOverResidual }" data-testid="po-residual">
               <span>注文書残額</span>
-              <div class="po-residual-val">残額 <b>{{ yen(poResidual) }}</b>（注文書 {{ yen(selectedPo.total_amount) }} − 既請求 {{ yen(poBilledOthers) }}）／ 今回の請求額 {{ yen(effectiveBilled) }}<span v-if="poOverResidual" class="po-over-msg"> ⚠ 残額を超えています</span></div>
+              <div class="po-residual-val">残額 <b>{{ yen(poResidual) }}</b>（注文書 {{ yen(selectedPo.total_amount) }} − 既請求 {{ yen(poBilledOthers) }}）／ 今回の請求額 {{ yen(effectiveBilled) }}<span v-if="poOverResidual" class="po-over-msg"> <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">warning</span> 残額を超えています</span></div>
             </div>
             <label class="fld"><span>支払状況</span>
               <select v-model="form.paid" class="inp">

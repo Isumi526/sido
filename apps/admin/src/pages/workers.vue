@@ -217,6 +217,23 @@
           </div>
           <button type="button" class="btn-add-family" data-testid="add-checkup" @click="addCheckup">＋ 健診を追加</button>
         </div>
+        <div v-if="modal.id && canViewHourlyWage" class="field">
+          <label>履歴書・書類（PDF/画像・複数可）<span class="hint-sm" style="font-weight:400"> ※権限者のみ・非公開（署名URLで閲覧）</span></label>
+          <div v-if="resumes.length" class="resume-list">
+            <div v-for="r in resumes" :key="r.id" class="resume-item" data-testid="resume-item">
+              <a v-if="r.url" :href="r.url" target="_blank" rel="noopener" class="resume-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> {{ r.name || 'ファイル' }}</a>
+              <span v-else class="resume-link muted"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> {{ r.name || 'ファイル' }}（読込中…）</span>
+              <input v-model="r.name" class="input resume-name" placeholder="名称" @change="renameResume(r)" />
+              <button type="button" class="family-del" title="削除" @click="deleteResume(r)">×</button>
+            </div>
+          </div>
+          <div class="resume-dropzone" :class="{ dragover: resumeDragOver, busy: resumeUploading }"
+               @drop.prevent="onDropResume" @dragover.prevent="resumeDragOver = true" @dragleave.prevent="resumeDragOver = false">
+            <label class="btn-add-family">＋ 履歴書・書類を追加<input type="file" accept="image/*,application/pdf" multiple hidden :disabled="resumeUploading" data-testid="resume-input" @change="onUploadResume" /></label>
+            <span class="resume-drop-hint">{{ resumeDragOver ? 'ここにドロップ' : 'またはドラッグ&ドロップ' }}</span>
+            <span v-if="resumeUploading" class="muted">アップロード中…</span>
+          </div>
+        </div>
         <div class="field">
           <label>代理人（LINEを持たない場合、代わりに入力する作業員）</label>
           <div class="proxy-check-list">
@@ -400,6 +417,72 @@ async function loadCheckups(workerId: string) {
     .select('id, checkup_date, result').eq('worker_id', workerId).order('sort_order')
   healthCheckups.value = ((data ?? []) as any[]).map(r => ({ id: r.id, checkup_date: r.checkup_date, result: r.result }))
 }
+
+// 履歴書・書類の添付（非公開バケット worker-attachments・権限者=office以上のみ・署名URL閲覧）
+type WorkerResume = { id: string; worker_id: string; kind: string; name: string | null; path: string; url?: string | null }
+const RESUME_BUCKET = 'worker-attachments'
+const resumes = ref<WorkerResume[]>([])
+const resumeUploading = ref(false)
+const resumeDragOver = ref(false)
+// ローカルの storage host(kong:8000)を VITE_SUPABASE_URL に揃える（ブラウザから開けるように）
+function normalizeStorageUrl(url: string): string {
+  try {
+    const base = new URL(import.meta.env.VITE_SUPABASE_URL as string)
+    const u = new URL(url)
+    if (u.host !== base.host) { u.protocol = base.protocol; u.host = base.host }
+    return u.toString()
+  } catch { return url }
+}
+async function resumeSignedUrl(attachmentId: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.functions.invoke('worker-attachment-url', { body: { attachment_id: attachmentId } })
+    if (error || !data?.ok) return null
+    return normalizeStorageUrl(data.url as string)
+  } catch { return null }
+}
+async function loadResumes(workerId: string) {
+  const { data } = await supabase.from('worker_attachments')
+    .select('id, worker_id, kind, name, path').eq('worker_id', workerId).order('created_at')
+  const list = (data ?? []) as WorkerResume[]
+  await Promise.all(list.map(async (r) => { r.url = await resumeSignedUrl(r.id) }))
+  resumes.value = list
+}
+async function processResumeFile(file: File | undefined | null) {
+  if (!file || !modal.value?.id) return
+  const ok = file.type.startsWith('image/') || file.type === 'application/pdf'
+  if (!ok) { saveError.value = 'PDFまたは画像ファイルを選択してください'; return }
+  resumeUploading.value = true; saveError.value = ''
+  try {
+    const accountId = await getAccountId()
+    const ext = (file.name.split('.').pop() || 'pdf').toLowerCase()
+    // path 先頭フォルダ = account_id（storage RLS の account スコープに使用）
+    const path = `${accountId}/${modal.value.id}/resume-${Date.now()}-${Math.round(file.size % 100000)}.${ext}`
+    const { error: upErr } = await supabase.storage.from(RESUME_BUCKET).upload(path, file, { upsert: false, contentType: file.type || undefined })
+    if (upErr) throw upErr
+    await supabase.from('worker_attachments').insert({ account_id: accountId, worker_id: modal.value.id, kind: 'resume', name: file.name, path })
+    await loadResumes(modal.value.id)
+  } catch (e: any) { saveError.value = e.message ?? 'アップロードに失敗しました' }
+  finally { resumeUploading.value = false }
+}
+function onUploadResume(e: Event) {
+  const files = (e.target as HTMLInputElement).files
+  if (files) for (const f of Array.from(files)) processResumeFile(f)
+  ;(e.target as HTMLInputElement).value = ''
+}
+function onDropResume(e: DragEvent) {
+  resumeDragOver.value = false
+  const files = e.dataTransfer?.files
+  if (files) for (const f of Array.from(files)) processResumeFile(f)
+}
+async function renameResume(r: WorkerResume) {
+  await supabase.from('worker_attachments').update({ name: (r.name ?? '').trim() || null }).eq('id', r.id)
+}
+async function deleteResume(r: WorkerResume) {
+  if (!confirm('この書類を削除しますか？')) return
+  await supabase.storage.from(RESUME_BUCKET).remove([r.path])
+  await supabase.from('worker_attachments').delete().eq('id', r.id)
+  if (modal.value?.id) await loadResumes(modal.value.id)
+}
 async function syncCheckups(workerId: string, accountId: string, want: HealthCheckup[]) {
   const valid = want.filter(r => r.checkup_date || r.result?.trim())
   const { data } = await supabase.from('worker_health_checkups').select('id').eq('worker_id', workerId)
@@ -479,6 +562,7 @@ function openAdd() {
   modalProxyIds.value = []
   familyMembers.value = []
   healthCheckups.value = []
+  resumes.value = []
   saveError.value = ''
   // 新規でも認証UIを出す（保存で一体作成・二度手間回避）＝状態を初期化
   authEmail.value = ''; authLoginId.value = ''; authMode.value = 'id'; authPassword.value = ''
@@ -508,10 +592,12 @@ async function openEdit(w: Worker) {
   showDetails.value = false   // 詳細情報（時給含む）は毎回たたんで開く
   familyMembers.value = []
   healthCheckups.value = []
+  resumes.value = []
   // 非同期ロードは await してから dirty 監視を開始（ロード発火を誤って dirty 扱いしない）
   await Promise.all([
     w.auth_user_id ? loadAuthEmail(w.id) : Promise.resolve(),
     loadWageHistory(w.id), loadFamily(w.id), loadCheckups(w.id),
+    canViewHourlyWage.value ? loadResumes(w.id) : Promise.resolve(),
   ])
   markFormLoaded()
 }
@@ -785,6 +871,15 @@ async function confirmDelete() {
 .family-row .input { padding: 8px 10px; font-size: 13px; }
 .family-del { background: none; border: 1px solid #f0caca; color: #c0392b; border-radius: 6px; width: 30px; height: 32px; cursor: pointer; font-size: 14px; }
 .btn-add-family { background: #f0f0f0; border: none; border-radius: 6px; padding: 8px 14px; font-size: 13px; cursor: pointer; color: #555; align-self: flex-start; }
+.resume-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.resume-item { display: grid; grid-template-columns: 1fr 1.2fr auto; gap: 6px; align-items: center; }
+.resume-link { color: #1a56c4; text-decoration: none; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resume-link.muted { color: #aaa; }
+.resume-name { font-size: 12px; }
+.resume-dropzone { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border: 1px dashed #d0d0d0; border-radius: 8px; padding: 10px; background: #fafafa; }
+.resume-dropzone.dragover { border-color: #06C755; background: #eafbf1; }
+.resume-dropzone.busy { opacity: .6; }
+.resume-drop-hint { font-size: 12px; color: #aaa; }
 .hire-date { font-size: 12px; color: #666; font-variant-numeric: tabular-nums; }
 .auth-field { border-top: 1px solid #f0f0f0; padding-top: 16px; }
 .auth-mode-toggle { display: flex; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; margin-bottom: 8px; }

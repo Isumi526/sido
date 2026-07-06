@@ -7,7 +7,7 @@
     <p class="hint">材料・工種・商社別単価（単価表OCR取込／承認待ち差分）はアカウント共通のマスタです。見積の明細入力ではここで登録した値を選べます。</p>
 
     <div v-if="revisions.length" class="rev-alert" data-testid="rev-alert">
-      🔔 価格表の承認待ち差分が {{ revisions.length }} 件あります（「商社別単価」タブで商社を選ぶと承認できます）
+      <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">notifications</span> 価格表の承認待ち差分が {{ revisions.length }} 件あります（「商社別単価」タブで商社を選ぶと承認できます）
     </div>
 
     <section class="panel">
