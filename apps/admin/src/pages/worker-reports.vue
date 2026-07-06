@@ -89,7 +89,7 @@
             <div class="summary-label">人件費合計</div>
             <template v-if="activeHourlyWage">
               <div class="summary-value cost-value">{{ fmtYen(totalLaborCost) }}</div>
-              <div class="cost-rate-hint">時給 {{ fmtYen(activeHourlyWage) }}/h ベース</div>
+              <div class="cost-rate-hint">時給 {{ fmtYen(activeHourlyWage) }}/h ベース<template v-if="wageVariedInPeriod">（期間内で昇給あり＝日付ごとの発効時給で計算）</template></div>
             </template>
             <template v-else>
               <div class="summary-value cost-value rate-unset">時給 未設定</div>
@@ -117,7 +117,7 @@
                   <td>{{ line.label }}</td>
                   <td class="num">{{ line.flat ? '—' : fmtH(line.hours) + 'h' }}</td>
                   <td class="num">{{ line.flat ? '—' : '×' + line.rate.toFixed(2) }}</td>
-                  <td class="num">{{ line.flat ? '¥3,000/人' : fmtYen(line.unitPerH) }}</td>
+                  <td class="num">{{ line.flat ? '¥3,000/人' : (wageVariedInPeriod ? '期間内変動' : fmtYen(line.unitPerH)) }}</td>
                   <td class="num cost-cell">{{ fmtYen(line.cost) }}</td>
                 </tr>
               </tbody>
@@ -234,7 +234,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useYearMonthParam } from '../composables/useQueryParam'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { computeWorkerHours, calcBreakMinutes, effectiveBreakMinutes, effectiveBreakWindows, parseMin, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
+import { computeWorkerHours, calcBreakMinutes, effectiveBreakMinutes, effectiveBreakWindows, parseMin, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE, buildWageTimelines, wageForDate, type WageChange } from '../lib/workerHours'
 import { canViewHourlyWage } from '../lib/auth'
 
 // ---------- 月ナビ ----------
@@ -282,7 +282,8 @@ const workerMap      = ref<Record<string, WorkerData>>({})
 const activeWorker   = ref('')
 const workerOrder    = ref<string[]>([])  // DBの名前昇順
 const dailyWageMap   = ref<Record<string, number>>({})  // name → 日当単価(原価設定)
-const hourlyWageMap  = ref<Record<string, number>>({})  // name → 時給(実質賃金・ヒント表示用)
+const hourlyWageMap  = ref<Record<string, number>>({})  // name → 時給(実質賃金・現在値)
+const wageTimelineByName = ref<Record<string, WageChange[]>>({})  // name → 昇給履歴タイムライン(発効日ベース計算用)
 const showLaborCost  = ref(false)
 
 const workerNames = computed(() => {
@@ -303,7 +304,7 @@ async function load() {
   // 作業員名・単価を五十音順で取得
   const { data: workersData } = await supabase
     .from('workers')
-    .select('name, daily_wage, hourly_wage')
+    .select('id, name, daily_wage, hourly_wage')
     .eq('account_id', accountId)
     .order('name')
   workerOrder.value = (workersData ?? []).map((w: any) => w.name)
@@ -313,6 +314,22 @@ async function load() {
   hourlyWageMap.value = Object.fromEntries(
     (workersData ?? []).map((w: any) => [w.name, Number(w.hourly_wage ?? 0)])
   )
+  // name → worker_id（昇給履歴の発効日ベース計算用）
+  const nameToId: Record<string, string> = Object.fromEntries(
+    (workersData ?? []).map((w: any) => [w.name, w.id])
+  )
+  // 昇給(賃金変更)履歴 → worker_id ごとの発効日タイムライン → name キーに詰め替え
+  const { data: wageHist } = await supabase
+    .from('worker_wage_history')
+    .select('worker_id, effective_date, changed_at, old_unit_price, new_unit_price, wage_type, old_wage_type, old_daily_wage, new_daily_wage, old_hourly_wage, new_hourly_wage')
+    .eq('account_id', accountId)
+  const timelineById = buildWageTimelines((wageHist ?? []) as any[])
+  const tl: Record<string, ReturnType<typeof buildWageTimelines> extends Map<string, infer V> ? V : never> = {}
+  for (const [name, id] of Object.entries(nameToId)) {
+    const t = timelineById.get(id)
+    if (t) tl[name] = t
+  }
+  wageTimelineByName.value = tl
 
   // ユーザーID → real_name マップ（休み日の名前解決用）
   const { data: usersData } = await supabase
@@ -524,29 +541,61 @@ const activeTripDays = computed(() => {
   return Math.round(y / BUSINESS_TRIP_ALLOWANCE)
 })
 
+// その日の日報日付に有効だった時給（昇給履歴の発効日ベース）。履歴無しは現在の時給。
+function hourlyForDate(name: string, date: string): number {
+  const cur = hourlyWageMap.value[name] ?? 0
+  const tl = wageTimelineByName.value[name]
+  if (!tl || tl.length === 0) return cur
+  // daily は使わないので現在日当を渡す（hourly のみ参照）
+  return wageForDate(date, tl, dailyWageMap.value[name] ?? 0, cur).hourly
+}
+// 期間内で時給が変動したか（表示の単価/h を「変動」にするか単一値にするか判定）
+const wageVariedInPeriod = computed(() => {
+  const name = activeWorker.value
+  const wd = workerMap.value[name]
+  if (!name || !wd) return false
+  const rates = new Set(wd.rows.filter(r => !r.isOff).map(r => hourlyForDate(name, r.date)))
+  return rates.size > 1
+})
+
+const CATEGORIES: { label: string; key: keyof WorkerRow; rate: number }[] = [
+  { label: '通常',        key: 'hoursNormal',        rate: 1.00 },
+  { label: '残業',        key: 'hoursOT',            rate: 1.25 },
+  { label: '深夜',        key: 'hoursNight',         rate: 1.25 },
+  { label: '深夜残業',    key: 'hoursOTNight',       rate: 1.50 },
+  { label: '休日',        key: 'hoursSunday',        rate: 1.35 },
+  { label: '休日残業',    key: 'hoursSundayOT',      rate: 1.60 },
+  { label: '休日深夜',    key: 'hoursSundayNight',   rate: 1.60 },
+  { label: '休日深夜残業', key: 'hoursSundayOTNight', rate: 1.85 },
+]
+
 const laborCostBreakdown = computed(() => {
-  if (!activeWorker.value || !workerMap.value[activeWorker.value]) return []
-  const t = workerMap.value[activeWorker.value].totals
-  // 出面勤怠の人件費は「時給 × 稼働時間（割増率適用）」。日当は出面勤怠には無関係。
-  // 時給未設定(0)なら労働分は算出不可＝0（カード側で「時給未設定」を明示）。
-  const hourRate = activeHourlyWage.value
-  const lines = [
-    { label: '通常',       hours: t.normal,        rate: 1.00 },
-    { label: '残業',       hours: t.ot,             rate: 1.25 },
-    { label: '深夜',       hours: t.night,          rate: 1.25 },
-    { label: '深夜残業',   hours: t.otNight,        rate: 1.50 },
-    { label: '休日',       hours: t.sunday,         rate: 1.35 },
-    { label: '休日残業',   hours: t.sundayOt,       rate: 1.60 },
-    { label: '休日深夜',   hours: t.sundayNight,    rate: 1.60 },
-    { label: '休日深夜残業', hours: t.sundayOtNight, rate: 1.85 },
-  ].filter(l => l.hours > 0).map(l => ({
-    ...l,
-    unitPerH: Math.round(hourRate * l.rate),
-    cost: Math.round(hourRate * l.rate * l.hours),
-    flat: false,
-  }))
+  const name = activeWorker.value
+  const wd = workerMap.value[name]
+  if (!name || !wd) return []
+  // 出面勤怠の人件費は「時給 × 稼働時間（割増率適用）」を日報日付ごとの発効時給で計算し合算。
+  // 日当は出面勤怠には無関係。時給未設定(0)なら労働分は0（カード側で「時給未設定」を明示）。
+  const varied = wageVariedInPeriod.value
+  const curHourly = activeHourlyWage.value
+  const lines = CATEGORIES.map(c => {
+    let hours = 0, cost = 0
+    for (const row of wd.rows) {
+      if (row.isOff) continue
+      const h = (row[c.key] as number) || 0
+      if (h <= 0) continue
+      hours += h
+      cost += h * c.rate * hourlyForDate(name, row.date)   // 発効日ベースの時給で日別に計算
+    }
+    return {
+      label: c.label, hours, rate: c.rate,
+      // 単価/h: 期間内で時給が変わった場合は「変動」表示（単価×時間≠小計の誤解を避ける）
+      unitPerH: Math.round(curHourly * c.rate),
+      cost: Math.round(cost),
+      flat: false,
+    }
+  }).filter(l => l.hours > 0)
   // 出張費（給与視点）：時間に依らない定額。人件費合計に算入。
-  const tripYen = workerMap.value[activeWorker.value].tripYen ?? 0
+  const tripYen = wd.tripYen ?? 0
   if (tripYen > 0) lines.push({ label: '出張費', hours: 0, rate: 0, unitPerH: 0, cost: tripYen, flat: true })
   return lines
 })
