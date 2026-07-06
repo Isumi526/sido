@@ -140,11 +140,19 @@
           </template>
         </div>
         <div v-if="modal.id" class="field">
+          <label>この時給・単価の記録方法</label>
+          <div class="toggle">
+            <button type="button" :class="{ active: wageEntryMode === 'initial' }" @click="wageEntryMode = 'initial'" data-testid="wage-mode-initial">初期設定（全期間に適用）</button>
+            <button type="button" :class="{ active: wageEntryMode === 'raise' }" @click="wageEntryMode = 'raise'" data-testid="wage-mode-raise">昇給（発効日から）</button>
+          </div>
+          <p class="hint-sm">初期設定＝正しい単価を初めて入れる（履歴を作らず、過去含む全ての出面勤怠に反映・日付不要）。昇給＝ある日から変わった（発効日以降のみ新単価）。</p>
+        </div>
+        <div v-if="modal.id && wageEntryMode === 'raise'" class="field">
           <label>昇給年月日（発効日・単価を変えた時に記録）</label>
           <input v-model="wageEffectiveDate" type="date" class="input" data-testid="wage-effective-date" />
           <p class="hint-sm">この日以降の稼働が新単価で人件費計算されます（編集した日と違ってもOK）。</p>
         </div>
-        <div v-if="modal.id" class="field">
+        <div v-if="modal.id && wageEntryMode === 'raise'" class="field">
           <label>単価変更の理由（任意）</label>
           <input v-model="wageReason" class="input" placeholder="例：定期昇給 / 資格取得" data-testid="wage-reason" />
         </div>
@@ -353,6 +361,8 @@ function histOldHourly(h: WageHist): number {
 const wageHistory      = ref<WageHist[]>([])
 const wageReason       = ref('')
 const wageEffectiveDate = ref('')   // 昇給年月日（発効日）。この日以降の稼働は新単価で人件費計算される。
+// 賃金の記録方法: 'initial'=初期設定(履歴を作らず基準単価を上書き＝過去含む全期間に反映)/'raise'=昇給(発効日付き履歴)
+const wageEntryMode    = ref<'initial' | 'raise'>('initial')
 const origDaily        = ref<number | null>(null)
 const origHourly       = ref<number | null>(null)
 const todayStr = () => new Date().toISOString().slice(0, 10)
@@ -493,6 +503,7 @@ async function openEdit(w: Worker) {
   origHourly.value = w.hourly_wage ?? null
   wageReason.value = ''
   wageEffectiveDate.value = todayStr()
+  wageEntryMode.value = 'initial'   // 既定は初期設定（正しい単価を入れ直す＝全期間反映）。昇給時のみ切替。
   wageHistory.value = []
   showDetails.value = false   // 詳細情報（時給含む）は毎回たたんで開く
   familyMembers.value = []
@@ -561,7 +572,9 @@ async function save() {
       const newHourly = modal.value.hourly_wage ?? 0
       const dailyChanged  = origDaily.value  != null && newDaily  !== origDaily.value
       const hourlyChanged = origHourly.value != null && newHourly !== origHourly.value
-      if (dailyChanged || hourlyChanged) {
+      // 昇給(raise)のときだけ発効日付き履歴を記録。初期設定(initial)は履歴を作らず基準単価の上書きのみ＝
+      // 履歴が無い→wageForDate/出面勤怠は現在単価を全期間に適用＝過去の出面勤怠にも反映される。
+      if ((dailyChanged || hourlyChanged) && wageEntryMode.value === 'raise') {
         const effDate = wageEffectiveDate.value || todayStr()
         // べき等化: (worker_id, effective_date) の一意indexで upsert=同一発効日の再送/連打でも二重登録しない。
         await supabase.from('worker_wage_history').upsert({
@@ -573,9 +586,9 @@ async function save() {
           reason: wageReason.value.trim() || null,
           effective_date: effDate,
         }, { onConflict: 'worker_id,effective_date' })
-        // 同一セッションでの再保存が履歴を再検知しないよう、基準値を新値に更新
-        origDaily.value = newDaily; origHourly.value = newHourly
       }
+      // 同一セッションでの再保存が履歴を再検知しないよう、基準値を新値に更新（初期設定/昇給いずれも）
+      if (dailyChanged || hourlyChanged) { origDaily.value = newDaily; origHourly.value = newHourly }
     } else {
       const { data, error: insErr } = await supabase.from('workers').insert({ ...workerPayload, account_id: accountId, status: 'active' }).select('id').single()
       if (insErr || !data) {
