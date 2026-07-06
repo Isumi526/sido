@@ -70,24 +70,14 @@
               <div class="drawer-name">{{ detail.name }}</div>
               <div class="drawer-sub">
                 {{ detail.employment_type === 'contractor' ? '業務委託' : (detail.employment_type ?? 'fulltime') === 'fulltime' ? '正社員' : `パート(週${detail.weekly_scheduled_days ?? '?'}日)` }}
-                {{ detail.hire_date ? ' / 入社: ' + detail.hire_date : '' }}
+                <template v-if="detail.hire_date"> ・ 入社 {{ detail.hire_date }}</template>
+                <span v-else class="hire-missing">・ 入社日未設定</span>
               </div>
             </div>
             <button class="btn-close" @click="detail = null">✕</button>
           </div>
 
-          <!-- 入社日の設定（役員経理以上=canViewHourlyWage のみ・自動付与の前提） -->
-          <div v-if="canViewHourlyWage" class="hire-edit-box">
-            <label class="hire-edit-lbl">入社日
-              <div class="hire-edit-row">
-                <input v-model="hireDateInput" type="date" class="input hire-edit-input" data-testid="hire-date-edit" />
-                <button class="btn-save-hire" :disabled="savingHire || hireDateInput === (detail.hire_date ?? '')" data-testid="save-hire-date" @click="saveHireDate">{{ savingHire ? '保存中…' : '保存' }}</button>
-              </div>
-            </label>
-            <p class="hire-edit-hint">入社日を設定すると「法令の有給を自動付与」が使えます（未設定だと自動付与不可）。</p>
-            <p v-if="hireError" class="grant-error">{{ hireError }}</p>
-          </div>
-
+          <!-- ① 残高（読み取り最優先・残日数を強調） -->
           <div class="balance-summary">
             <div class="balance-card">
               <div class="balance-label">付与合計（有効期限内）</div>
@@ -104,55 +94,30 @@
             </div>
           </div>
 
-          <!-- 導入前に既に消化した日数（マイナス入力・移行初期残高の＋付与では表せない分） -->
-          <div class="initial-used-box">
-            <label class="initial-used-lbl">導入前に消化した有給（初期使用済み日数）
-              <div class="initial-used-row">
-                <input v-model.number="initialUsedInput" type="number" min="0" step="0.5" class="input initial-used-input" data-testid="initial-used" />
-                <span class="initial-used-unit">日</span>
-                <button class="btn-save-used" :disabled="savingUsed || initialUsedInput === detail.initialUsed" data-testid="save-initial-used" @click="saveInitialUsed">{{ savingUsed ? '保存中…' : '保存' }}</button>
+          <!-- ② 付与する（主アクション＝法令の自動付与） -->
+          <div class="section-title">有給を付与する</div>
+          <div v-if="detail.employment_type === 'contractor'" class="info-note">業務委託は年次有給の付与対象外です。</div>
+          <template v-else>
+            <div v-if="detail.hire_date" class="auto-grant-panel">
+              <div class="auto-grant-lead">
+                <span class="auto-grant-ref">法令の付与日数 <b>{{ suggestedGrant(detail) }} 日</b><span class="ref-note">（勤続 {{ tenureMonths(detail.hire_date) }} ヶ月）</span></span>
               </div>
-            </label>
-            <p class="initial-used-hint">システム導入前に既に取得済みの有給日数。残日数から控除されます（導入後の有給申請はアプリが自動集計）。</p>
-            <p v-if="usedError" class="grant-error">{{ usedError }}</p>
-          </div>
-
-          <div v-if="detail.hire_date" class="ref-grant">
-            <div class="ref-label">参考: 法令上の付与日数</div>
-            <div class="ref-val">
-              {{ suggestedGrant(detail) }} 日
-              <span class="ref-note">（勤続 {{ tenureMonths(detail.hire_date) }} ヶ月）</span>
+              <button type="button" class="btn-auto-grant" :disabled="grantSaving" data-testid="auto-grant" @click="autoGrantFromHireDate(detail)">
+                📅 法令どおり自動付与（未付与の基準日を追加）
+              </button>
+              <div class="auto-grant-hint">入社日＋労基法スケジュール（6ヶ月→10日…毎年）で未付与の基準日だけ追加。<strong>毎年押せば法令どおり</strong>・重複しません。</div>
+              <p v-if="grantError" class="grant-error">{{ grantError }}</p>
             </div>
-          </div>
-
-          <!-- 法令の自動付与（差分追加）: 入社日から今日までの未付与の基準日を追加。何度押しても重複しない。 -->
-          <div v-if="detail.hire_date && detail.employment_type !== 'contractor'" class="auto-grant-box standalone">
-            <button type="button" class="btn-auto-grant" :disabled="grantSaving" data-testid="auto-grant" @click="autoGrantFromHireDate(detail)">
-              📅 法令の有給を自動付与（未付与の基準日を追加）
-            </button>
-            <div class="auto-grant-hint">
-              入社日＋労基法スケジュール（入社6ヶ月→10日…毎年）で、まだ付与していない基準日だけを追加します。<strong>毎年これを押せば法令どおり付与</strong>されます（既存の付与と重複しません）。<br>
-              ※ 既に有給を消化してきた既存者は、消化分を下の「導入前に消化した有給（初期使用済み日数）」に登録してください。
+            <div v-else class="info-note warn">
+              入社日が未設定のため自動付与できません。下の<strong>「入社日・移行設定」</strong>で入社日を設定してください。
             </div>
-          </div>
+          </template>
 
-          <!-- 移行登録ガイド（付与履歴がない作業員のみ表示） -->
-          <div v-if="detailGrants.length === 0" class="migration-guide">
-            <div class="migration-guide-icon">💡</div>
-            <div class="migration-guide-body">
-              <div class="migration-guide-title">残日数の引き継ぎ方法</div>
-              <div class="migration-guide-text">
-                付与履歴がありません。次のいずれかで今日時点の残日数を引き継げます。
-              </div>
-              <ol class="migration-guide-steps">
-                <li><strong>上の「法令の有給を自動付与」</strong>で入社日から一括付与（＋消化済みは「初期使用済み日数」に登録）</li>
-                <li>または、残日数だけ引き継ぐ場合は下の「有給を付与する」で <strong>付与日=今日／日数=残日数／備考=移行初期残高</strong> を登録</li>
-              </ol>
-            </div>
-          </div>
-
-          <div class="section-title">有給を付与する<span class="section-sub">（特別付与・手動調整・移行初期残高など）</span></div>
-          <div class="grant-form">
+          <!-- 手動で付与（特別付与・調整・移行初期残高）＝折りたたみ -->
+          <button type="button" class="collapse-toggle" data-testid="toggle-manual-grant" @click="showManualGrant = !showManualGrant">
+            {{ showManualGrant ? '▾' : '▸' }} 手動で付与する（特別付与・手動調整・残日数の直接登録）
+          </button>
+          <div v-show="showManualGrant" class="grant-form">
             <div class="form-row">
               <div class="form-field">
                 <label>付与日</label>
@@ -170,13 +135,39 @@
               </div>
               <div class="form-field">
                 <label>備考</label>
-                <input v-model="newGrant.note" class="input" placeholder="例: 2024年度付与" />
+                <input v-model="newGrant.note" class="input" placeholder="例: 2024年度付与 / 移行初期残高" />
               </div>
             </div>
             <button class="btn-grant" :disabled="grantSaving" @click="addGrant">
               {{ grantSaving ? '保存中...' : '付与を追加' }}
             </button>
-            <p v-if="grantError" class="error">{{ grantError }}</p>
+            <p v-if="grantError && !showManualGrant" class="error">{{ grantError }}</p>
+          </div>
+
+          <!-- ③ 入社日・移行設定（折りたたみ・初期セットアップ用） -->
+          <button type="button" class="collapse-toggle" data-testid="toggle-settings" @click="showSettings = !showSettings">
+            {{ showSettings ? '▾' : '▸' }} ⚙ 入社日・移行設定
+          </button>
+          <div v-show="showSettings" class="settings-panel">
+            <div v-if="canViewHourlyWage" class="setting-field">
+              <label class="setting-lbl">入社日</label>
+              <div class="setting-row">
+                <input v-model="hireDateInput" type="date" class="input setting-input" data-testid="hire-date-edit" />
+                <button class="btn-setting-save" :disabled="savingHire || hireDateInput === (detail.hire_date ?? '')" data-testid="save-hire-date" @click="saveHireDate">{{ savingHire ? '保存中…' : '保存' }}</button>
+              </div>
+              <p class="setting-hint">自動付与の前提。役員・経理以上のみ編集できます。</p>
+              <p v-if="hireError" class="grant-error">{{ hireError }}</p>
+            </div>
+            <div class="setting-field">
+              <label class="setting-lbl">導入前に消化した有給（初期使用済み日数）</label>
+              <div class="setting-row">
+                <input v-model.number="initialUsedInput" type="number" min="0" step="0.5" class="input setting-input" data-testid="initial-used" />
+                <span class="setting-unit">日</span>
+                <button class="btn-setting-save" :disabled="savingUsed || initialUsedInput === detail.initialUsed" data-testid="save-initial-used" @click="saveInitialUsed">{{ savingUsed ? '保存中…' : '保存' }}</button>
+              </div>
+              <p class="setting-hint">システム導入前に取得済みの日数。残日数から控除（導入後はアプリが自動集計）。</p>
+              <p v-if="usedError" class="grant-error">{{ usedError }}</p>
+            </div>
           </div>
 
           <div class="section-title">付与履歴</div>
@@ -370,6 +361,8 @@ const usedError    = ref('')
 const hireDateInput = ref('')   // 入社日の編集値
 const savingHire   = ref(false)
 const hireError    = ref('')
+const showManualGrant = ref(false)   // 手動付与フォームの折りたたみ
+const showSettings    = ref(false)   // 入社日・移行設定の折りたたみ
 
 // 全作業員の使用履歴・付与履歴（印刷用）
 const allUsageByWorker:  Record<string, UsageEntry[]> = {}
@@ -522,6 +515,9 @@ async function openDetail(w: WorkerStat) {
   hireError.value = ''
   initialUsedInput.value = w.initialUsed   // 初期使用済み日数の編集値をセット
   hireDateInput.value = w.hire_date ?? ''   // 入社日の編集値をセット
+  showManualGrant.value = false
+  // 入社日が未設定なら設定パネルを開いた状態で出す（次にやるべきことが分かるように）
+  showSettings.value = !w.hire_date && canViewHourlyWage.value
   newGrant.value = {
     granted_at: today,
     expires_at: `${thisYear + 2}-${today.slice(5)}`,
@@ -720,30 +716,34 @@ onMounted(load)
 .balance-label   { font-size: 11px; color: #888; margin-bottom: 6px; }
 .balance-val     { font-size: 22px; font-weight: 700; color: #1a1a1a; }
 .balance-sub     { font-size: 10px; color: #a16207; margin-top: 4px; }
-.initial-used-box { margin: 14px 0; padding: 12px 14px; background: #fffdf5; border: 1px solid #f0e6c8; border-radius: 10px; }
-.initial-used-lbl { font-size: 12px; font-weight: 700; color: #7a5f1a; display: block; }
-.initial-used-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-.initial-used-input { width: 90px; }
-.initial-used-unit { font-size: 13px; color: #555; }
-.btn-save-used { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer; }
-.btn-save-used:disabled { opacity: .5; cursor: default; }
-.initial-used-hint { font-size: 11px; color: #8a6d3b; margin: 8px 0 0; line-height: 1.6; }
 .balance-card.highlight .balance-val { color: #0a8a3a; }
-.ref-grant  { background: #f0f4ff; border-radius: 8px; padding: 12px 16px; display: flex; align-items: center; gap: 16px; }
-.ref-label  { font-size: 11px; color: #4f46e5; font-weight: 700; white-space: nowrap; }
-.ref-val    { font-size: 18px; font-weight: 700; color: #1a1a1a; }
-.ref-note   { font-size: 12px; color: #888; font-weight: 400; }
+.hire-missing { color: #d97706; font-weight: 700; }
+.ref-note   { font-size: 12px; color: #888; font-weight: 400; margin-left: 4px; }
 .section-title { font-size: 13px; font-weight: 700; color: #444; border-bottom: 1px solid #eee; padding-bottom: 8px; }
-.section-sub { font-size: 11px; font-weight: 400; color: #999; margin-left: 6px; }
-.hire-edit-box { margin: 12px 0; padding: 12px 14px; background: #f5f8ff; border: 1px solid #d6e2f5; border-radius: 10px; }
-.hire-edit-lbl { font-size: 12px; font-weight: 700; color: #3355aa; display: block; }
-.hire-edit-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-.hire-edit-input { width: 170px; }
-.btn-save-hire { background: #4338ca; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer; }
-.btn-save-hire:disabled { opacity: .5; cursor: default; }
-.hire-edit-hint { font-size: 11px; color: #667; margin: 8px 0 0; line-height: 1.6; }
-.auto-grant-box.standalone { margin: 14px 0; padding: 14px; border: 1px solid #bfe6cd; border-radius: 10px; background: #f4fdf7; border-top: 1px solid #bfe6cd; }
-.grant-form    { display: flex; flex-direction: column; gap: 12px; }
+.info-note { font-size: 12px; color: #667; background: #f7f8fa; border-radius: 8px; padding: 10px 12px; line-height: 1.6; }
+.info-note.warn { color: #92400e; background: #fffbeb; border: 1px solid #fcd34d; }
+/* ② 自動付与パネル（主アクション） */
+.auto-grant-panel { background: #f4fdf7; border: 1px solid #bfe6cd; border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.auto-grant-lead { display: flex; align-items: baseline; justify-content: space-between; }
+.auto-grant-ref { font-size: 13px; color: #256b45; }
+.auto-grant-ref b { font-size: 16px; }
+.btn-auto-grant { display: block; width: 100%; background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 12px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.btn-auto-grant:disabled { opacity: .5; cursor: default; }
+.auto-grant-hint { font-size: 11px; color: #4b7a5e; line-height: 1.6; margin: 0; }
+/* 折りたたみトグル */
+.collapse-toggle { background: none; border: none; text-align: left; width: 100%; font-size: 13px; font-weight: 700; color: #555; cursor: pointer; padding: 8px 0; }
+.collapse-toggle:hover { color: #06843c; }
+/* ③ 設定パネル */
+.settings-panel { display: flex; flex-direction: column; gap: 14px; background: #f7f9fc; border: 1px solid #e2e8f2; border-radius: 10px; padding: 14px; }
+.setting-field { display: flex; flex-direction: column; gap: 4px; }
+.setting-lbl { font-size: 12px; font-weight: 700; color: #556; }
+.setting-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.setting-input { width: 170px; }
+.setting-unit { font-size: 13px; color: #555; }
+.btn-setting-save { background: #4338ca; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.btn-setting-save:disabled { opacity: .5; cursor: default; }
+.setting-hint { font-size: 11px; color: #889; margin: 4px 0 0; line-height: 1.6; }
+.grant-form    { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; }
 .form-row      { display: flex; gap: 12px; }
 .form-field    { flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .form-field label { font-size: 11px; font-weight: 700; color: #888; }
@@ -761,28 +761,7 @@ onMounted(load)
 .exp-badge.expired { background: #f5f5f5; color: #aaa; }
 .btn-del { background: none; border: 1px solid #fca5a5; color: #e53935; border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer; }
 .empty   { color: #aaa; font-size: 13px; padding: 12px 0; }
-
-/* 移行登録ガイド */
-.migration-guide {
-  display: flex; gap: 14px;
-  background: #fffbeb; border: 1px solid #fcd34d; border-radius: 10px;
-  padding: 16px;
-}
-.migration-guide-icon { font-size: 22px; flex-shrink: 0; line-height: 1; }
-.migration-guide-body { display: flex; flex-direction: column; gap: 8px; }
-.migration-guide-title { font-size: 14px; font-weight: 700; color: #92400e; }
-.migration-guide-text  { font-size: 13px; color: #78350f; }
-.migration-guide-steps {
-  margin: 0; padding-left: 20px;
-  font-size: 12px; color: #78350f; display: flex; flex-direction: column; gap: 4px;
-}
-.migration-guide-steps li { line-height: 1.6; }
-.migration-guide-note { font-size: 11px; color: #a16207; }
-.auto-grant-box { margin: 10px 0; padding-top: 10px; border-top: 1px dashed #e0cfa0; }
-.auto-grant-or { font-size: 11px; color: #a16207; text-align: center; margin-bottom: 8px; }
-.btn-auto-grant { display: block; width: 100%; background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 10px; font-size: 14px; font-weight: 700; cursor: pointer; }
-.btn-auto-grant:disabled { opacity: .5; cursor: default; }
-.auto-grant-hint { font-size: 11px; color: #8a6d3b; margin-top: 6px; line-height: 1.6; }
+.grant-error { color: #e53935; font-size: 12px; margin: 4px 0 0; }
 
 /* ── 印刷専用: 管理簿 ── */
 .print-only { display: none; }
