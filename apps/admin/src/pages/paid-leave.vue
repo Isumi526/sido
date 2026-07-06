@@ -14,8 +14,8 @@
     <div v-if="loading" class="loading no-print">読み込み中...</div>
     <div v-else>
 
-      <!-- 付与待ちバナー（未付与の基準日がある作業員がいる時） -->
-      <div v-if="pendingWorkers.length" class="pending-banner no-print" data-testid="pending-banner">
+      <!-- 付与待ちバナー（未付与の基準日がある作業員がいる時・付与できる権限者のみ表示） -->
+      <div v-if="canViewHourlyWage && pendingWorkers.length" class="pending-banner no-print" data-testid="pending-banner">
         <span class="pending-badge"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">schedule</span> 付与待ち {{ pendingWorkers.length }}人</span>
         <span class="pending-text">基準日を過ぎた未付与の有給があります（{{ pendingWorkers.map(w => w.name).slice(0, 5).join('・') }}{{ pendingWorkers.length > 5 ? ' ほか' : '' }}）</span>
         <button v-if="canViewHourlyWage" class="btn-batch-grant" :disabled="batchGranting" data-testid="batch-grant" @click="batchGrantPending">{{ batchGranting ? '付与中…' : 'まとめて法令付与' }}</button>
@@ -47,7 +47,7 @@
               <td class="mono">{{ w.hire_date ?? '—' }}</td>
               <td class="mono">
                 {{ w.totalGranted > 0 ? w.totalGranted + ' 日' : '—' }}
-                <span v-if="w.pendingCount > 0" class="pending-row-badge" :title="`未付与の基準日が${w.pendingCount}件あります`">付与待ち{{ w.pendingCount }}</span>
+                <span v-if="canViewHourlyWage && w.pendingCount > 0" class="pending-row-badge" :title="`未付与の基準日が${w.pendingCount}件あります`">付与待ち{{ w.pendingCount }}</span>
               </td>
               <td class="mono">{{ w.duty.usedInPeriod }} 日</td>
               <td>
