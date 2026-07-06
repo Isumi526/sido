@@ -144,6 +144,8 @@ export interface GasolineItem {
   payee?: string               // 支払い先（店名）
   yen?: number                 // 金額
   registrationNumber?: string  // 登録番号（インボイス T+13桁）
+  liters?: number              // 給油量（ℓ）
+  fuelType?: 'regular' | 'diesel'  // 燃料種別（レギュラー/ディーゼル）
   tategae?: boolean            // 個人立替（会社が精算する分）
   fileUrls?: string[]          // 領収書URL（選択時に即アップロード）
 }
