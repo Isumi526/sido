@@ -46,7 +46,7 @@ export const createVehicle = (): VehicleExpense => ({
 })
 
 let gasItemSeq = 0
-export const createGasolineItem = (): GasolineItem => ({ _id: ++gasItemSeq, payee: '', yen: undefined, registrationNumber: '', tategae: false, fileUrls: [] })
+export const createGasolineItem = (): GasolineItem => ({ _id: ++gasItemSeq, payee: '', yen: undefined, registrationNumber: '', liters: undefined, fuelType: 'regular', tategae: false, fileUrls: [] })
 
 export const createLineItem = (): LineItem => ({ label: '', yen: undefined, payee: '', tategae: false })
 export const createParking = (): ExpenseFileLineItem => ({ yen: undefined, payee: '', tategae: false, files: [] })

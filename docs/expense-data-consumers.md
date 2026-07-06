@@ -44,3 +44,9 @@
 ## 検証
 - `npm run typecheck`（apps/liff）／admin は `any` 型のため型では落ちないので**目視必須**
 - 本番反映前に、admin月次集計・ダッシュボード・現場別の**金額合計**が新旧データで合うか確認
+
+## gasoline_items（本日のガソリン代・実費）※flatten非経由・各ページで直接読む
+- 書き込み: report.vue ガソリンカード / createGasolineItem(useReport) / **saveReportById の gasItems whitelist（未知フィールドは落ちる＝新フィールド追加時は必ずここに追加）** / loadEditData 復元(report.vue)
+- 読み: useExpense.getExpenseRowsFromReportsById 手組み行 / expenses.vue / expenses-daily.vue / gasoline-allocation.vue(yenのみ) / index.vue(yenのみ)
+- フィールド: yen/payee/registrationNumber/**liters/fuelType(regular|diesel)**/tategae/fileUrls
+- 注意: gasoline_items はスキーマレスJSONB。新フィールドは①型 ②createGasolineItem ③report.vue入力 ④loadEditData復元 ⑤saveReportById whitelist ⑥各表示行 の6箇所を必ず直す（silent-drop注意）。距離按分(distanceKm/dieselKm)とは別系統。

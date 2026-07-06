@@ -389,6 +389,8 @@ export const useExpense = () => {
         yen: Math.round(Number(it.yen) || 0),
         payee: it.payee?.trim() || null,
         registrationNumber: it.registrationNumber?.trim() || null,
+        liters: Number(it.liters) > 0 ? Number(it.liters) : null,
+        fuelType: it.fuelType === 'diesel' ? 'diesel' : (it.fuelType === 'regular' ? 'regular' : null),
         tategae: !!it.tategae,
         fileUrls: Array.isArray(it.fileUrls) ? it.fileUrls : [],
       }))
@@ -528,7 +530,7 @@ export const useExpense = () => {
         const gasYen = Math.round(Number(g?.yen) || 0)
         if (gasYen <= 0) continue
         const urls = Array.isArray(g.fileUrls) ? g.fileUrls : []
-        rows.push({ date: rep.date, category: 'ガソリン代（本日）', siteName: '—', payee: g.payee || '', amount: gasYen, note: '', registrationNumber: g.registrationNumber || '', fileUrls: urls, tategae: !!g.tategae, srcKey: 'gasolineItems', srcIndex: gi } as ExpenseRow)
+        rows.push({ date: rep.date, category: 'ガソリン代（本日）', siteName: '—', payee: g.payee || '', amount: gasYen, note: g.fuelType === 'diesel' ? 'ディーゼル' : (g.fuelType === 'regular' ? 'レギュラー' : ''), registrationNumber: g.registrationNumber || '', liters: Number(g.liters) > 0 ? Number(g.liters) : undefined, fileUrls: urls, tategae: !!g.tategae, srcKey: 'gasolineItems', srcIndex: gi } as ExpenseRow)
       }
     }
     return rows
