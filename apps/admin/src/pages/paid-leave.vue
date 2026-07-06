@@ -14,6 +14,13 @@
     <div v-if="loading" class="loading no-print">読み込み中...</div>
     <div v-else>
 
+      <!-- 付与待ちバナー（未付与の基準日がある作業員がいる時） -->
+      <div v-if="pendingWorkers.length" class="pending-banner no-print" data-testid="pending-banner">
+        <span class="pending-badge">⏰ 付与待ち {{ pendingWorkers.length }}人</span>
+        <span class="pending-text">基準日を過ぎた未付与の有給があります（{{ pendingWorkers.map(w => w.name).slice(0, 5).join('・') }}{{ pendingWorkers.length > 5 ? ' ほか' : '' }}）</span>
+        <button class="btn-batch-grant" :disabled="batchGranting" data-testid="batch-grant" @click="batchGrantPending">{{ batchGranting ? '付与中…' : 'まとめて法令付与' }}</button>
+      </div>
+
       <!-- ── 画面: サマリーテーブル（印刷非表示） ── -->
       <div class="table-wrap no-print">
         <table class="table">
@@ -38,7 +45,10 @@
                 </span>
               </td>
               <td class="mono">{{ w.hire_date ?? '—' }}</td>
-              <td class="mono">{{ w.totalGranted > 0 ? w.totalGranted + ' 日' : '—' }}</td>
+              <td class="mono">
+                {{ w.totalGranted > 0 ? w.totalGranted + ' 日' : '—' }}
+                <span v-if="w.pendingCount > 0" class="pending-row-badge" :title="`未付与の基準日が${w.pendingCount}件あります`">付与待ち{{ w.pendingCount }}</span>
+              </td>
               <td class="mono">{{ w.duty.usedInPeriod }} 日</td>
               <td>
                 <span class="remaining" :class="remainingClass(w.remaining)">
@@ -261,57 +271,12 @@ import { ref, computed, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { canViewHourlyWage } from '../lib/auth'
+import { refreshNavBadges } from '../lib/navBadges'
+import { tenureMonths, suggestedGrantDays, pendingBaseDatesFor } from '../lib/paidLeaveGrant'
 
-// ── 法令付与日数テーブル ──────────────────────────────────────
-const FULLTIME_TABLE: { minMonths: number; days: number }[] = [
-  { minMonths: 78, days: 20 },
-  { minMonths: 66, days: 18 },
-  { minMonths: 54, days: 16 },
-  { minMonths: 42, days: 14 },
-  { minMonths: 30, days: 12 },
-  { minMonths: 18, days: 11 },
-  { minMonths:  6, days: 10 },
-]
-const PARTTIME_TABLE: Record<number, number[]> = {
-  4: [7, 8, 9, 10, 12, 13, 15],
-  3: [5, 6, 6,  8,  9, 10, 11],
-  2: [3, 4, 4,  5,  6,  6,  7],
-  1: [1, 2, 2,  2,  3,  3,  3],
-}
-const TENURE_STEPS = [6, 18, 30, 42, 54, 66, 78]
-
-function tenureMonths(hireDate: string): number {
-  const hire = new Date(hireDate)
-  const now  = new Date()
-  return (now.getFullYear() - hire.getFullYear()) * 12 + (now.getMonth() - hire.getMonth())
-}
-
-// 日付文字列(YYYY-MM-DD)に months ヶ月足す（付与基準日/有効期限の計算用）。
-function addMonths(dateStr: string, months: number): string {
-  const d = new Date(dateStr + 'T00:00:00')
-  d.setMonth(d.getMonth() + months)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-// 勤続月数 → 法令付与日数（雇用形態・週所定労働日数で分岐）。自動付与でも参照表示でも共通に使う。
-function daysForTenureMonths(months: number, employmentType: string | null | undefined, weeklyDays: number | null | undefined): number {
-  if (months < 6) return 0
-  if ((employmentType ?? 'fulltime') === 'fulltime') {
-    return FULLTIME_TABLE.find(r => months >= r.minMonths)?.days ?? 0
-  }
-  const days = weeklyDays ?? 5
-  if (days >= 5) return FULLTIME_TABLE.find(r => months >= r.minMonths)?.days ?? 0
-  const table = PARTTIME_TABLE[days]
-  if (!table) return 0
-  const idx = TENURE_STEPS.filter(m => months >= m).length - 1
-  return idx < 0 ? 0 : (table[idx] ?? 0)
-}
-
+// 法令付与計算は lib/paidLeaveGrant.ts（付与待ちバッジ navBadges と共用）。
 function suggestedGrant(w: WorkerStat): number {
-  // 業務委託は労働者でない＝有給休暇の付与対象外（法定の年次有給は雇用関係が前提）
-  if (w.employment_type === 'contractor') return 0
-  if (!w.hire_date) return 0
-  return daysForTenureMonths(tenureMonths(w.hire_date), w.employment_type, w.weekly_scheduled_days)
+  return suggestedGrantDays(w.hire_date, w.employment_type, w.weekly_scheduled_days)
 }
 
 // ── 型定義 ────────────────────────────────────────────────────
@@ -326,6 +291,7 @@ type WorkerStat = {
   totalGranted: number
   totalUsed: number     // 初期使用済み ＋ システム使用の合計
   remaining: number
+  pendingCount: number  // 未付与の基準日の件数（付与待ちバッジ用）
   duty: {
     isSubject: boolean   // 10日以上付与で義務対象
     isMet: boolean
@@ -458,6 +424,9 @@ async function load() {
     const initialUsed  = Number(w.initial_used_leave_days ?? 0)   // 導入前に消化した分（控除）
     const systemUsed   = (allUsageByWorker[w.id] ?? []).length    // 導入後のアプリ有給申請
     const totalUsed    = initialUsed + systemUsed
+    // 未付与の基準日（付与待ち）
+    const existingDates = new Set(wGrants.map(g => g.granted_at))
+    const pendingCount  = pendingBaseDatesFor(w.hire_date, w.employment_type, w.weekly_scheduled_days, existingDates, today).length
 
     // ── 年5日義務: 最新の基準日から1年間で判定 ──
     const latestGrant = validGrants.sort((a, b) => b.granted_at.localeCompare(a.granted_at))[0]
@@ -501,11 +470,13 @@ async function load() {
       totalGranted,
       totalUsed,
       remaining: totalGranted - totalUsed,
+      pendingCount,
       duty,
     }
   })
 
   loading.value = false
+  refreshNavBadges()   // ナビの付与待ちバッジを同期（付与操作後も即反映）
 }
 
 async function openDetail(w: WorkerStat) {
@@ -625,17 +596,8 @@ async function autoGrantFromHireDate(w: WorkerStat) {
   if (w.employment_type === 'contractor') { grantError.value = '業務委託は有給付与対象外です'; return }
   const existingDates = new Set(detailGrants.value.map(g => g.granted_at))   // 既存付与日（重複防止）
   const accountId = await getAccountId()
-  const rows: { worker_id: string; account_id: string; granted_at: string; expires_at: string; days: number; note: string }[] = []
-  for (let m = 6; ; m += 12) {
-    const granted = addMonths(w.hire_date, m)
-    if (granted > today) break                       // 未来の基準日は付与しない
-    if (existingDates.has(granted)) continue         // 既に付与済みの基準日はスキップ（差分追加）
-    const expires = addMonths(granted, 24)
-    if (expires < today) continue                    // 既に失効＝残に影響しないのでスキップ
-    const days = daysForTenureMonths(m, w.employment_type, w.weekly_scheduled_days)
-    if (days <= 0) continue
-    rows.push({ worker_id: w.id, account_id: accountId, granted_at: granted, expires_at: expires, days, note: `自動付与（勤続${m}ヶ月）` })
-  }
+  const pending = pendingBaseDatesFor(w.hire_date, w.employment_type, w.weekly_scheduled_days, existingDates, today)
+  const rows = pending.map(p => ({ worker_id: w.id, account_id: accountId, granted_at: p.granted, expires_at: p.expires, days: p.days, note: p.note }))
   if (rows.length === 0) { grantError.value = '追加する基準日がありません（すべて付与済み、または入社6ヶ月未満）'; return }
   if (!confirm(`法令の有給を ${rows.length}件 追加付与します（未付与の基準日）。よろしいですか？`)) return
   grantSaving.value = true; grantError.value = ''
@@ -648,6 +610,32 @@ async function autoGrantFromHireDate(w: WorkerStat) {
     grantError.value = e.message ?? '自動付与に失敗しました'
   } finally {
     grantSaving.value = false
+  }
+}
+
+// 付与待ち（未付与の基準日がある）作業員をまとめて法令付与。
+const batchGranting = ref(false)
+const pendingWorkers = computed(() => workerStats.value.filter(w => w.pendingCount > 0))
+async function batchGrantPending() {
+  const targets = pendingWorkers.value
+  if (targets.length === 0) return
+  if (!confirm(`付与待ちの ${targets.length}人 に法令の有給をまとめて付与します。よろしいですか？`)) return
+  batchGranting.value = true
+  try {
+    const accountId = await getAccountId()
+    const rows: { worker_id: string; account_id: string; granted_at: string; expires_at: string; days: number; note: string }[] = []
+    for (const w of targets) {
+      const existing = new Set((allGrantsByWorker[w.id] ?? []).map(g => g.granted_at))
+      for (const p of pendingBaseDatesFor(w.hire_date, w.employment_type, w.weekly_scheduled_days, existing, today)) {
+        rows.push({ worker_id: w.id, account_id: accountId, granted_at: p.granted, expires_at: p.expires, days: p.days, note: p.note })
+      }
+    }
+    if (rows.length > 0) await supabase.from('paid_leave_grants').insert(rows)
+    await load()
+  } catch (e: any) {
+    alert(e.message ?? 'まとめて付与に失敗しました')
+  } finally {
+    batchGranting.value = false
   }
 }
 
@@ -762,6 +750,13 @@ onMounted(load)
 .btn-del { background: none; border: 1px solid #fca5a5; color: #e53935; border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer; }
 .empty   { color: #aaa; font-size: 13px; padding: 12px 0; }
 .grant-error { color: #e53935; font-size: 12px; margin: 4px 0 0; }
+/* 付与待ちバナー・バッジ */
+.pending-banner { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: #fff7ed; border: 1px solid #fdba74; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; }
+.pending-badge { font-size: 14px; font-weight: 800; color: #c2410c; white-space: nowrap; }
+.pending-text { font-size: 12px; color: #9a3412; flex: 1; min-width: 0; }
+.btn-batch-grant { background: #ea580c; color: #fff; border: none; border-radius: 8px; padding: 9px 18px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.btn-batch-grant:disabled { opacity: .5; cursor: default; }
+.pending-row-badge { display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 700; color: #c2410c; background: #ffedd5; border-radius: 4px; padding: 1px 6px; vertical-align: middle; }
 
 /* ── 印刷専用: 管理簿 ── */
 .print-only { display: none; }

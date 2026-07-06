@@ -54,7 +54,7 @@
         <li class="nav-section">勤怠</li>
         <li><RouterLink to="/worker-reports" class="nav-link"><span class="material-symbols-rounded nav-icon">badge</span>出面・勤怠</RouterLink></li>
         <li><RouterLink to="/attendance" class="nav-link"><span class="material-symbols-rounded nav-icon">login</span>出退勤ログ</RouterLink></li>
-        <li><RouterLink to="/paid-leave" class="nav-link"><span class="material-symbols-rounded nav-icon">beach_access</span>有給管理</RouterLink></li>
+        <li><RouterLink to="/paid-leave" class="nav-link"><span class="material-symbols-rounded nav-icon">beach_access</span>有給管理<span v-if="pendingGrantCount" class="nav-badge">{{ pendingGrantCount }}</span></RouterLink></li>
 
         <li class="nav-section">見積・発注</li>
         <li><RouterLink to="/estimate-list" class="nav-link"><span class="material-symbols-rounded nav-icon">calculate</span>見積もり</RouterLink></li>
@@ -105,7 +105,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { currentUser, signOut, isAdminAllowed, roleResolved } from './lib/auth'
 import { liffAppUrl } from './lib/links'
 import { getAccountName } from './lib/account'
-import { editApprovalCount, siteUnsetCount, overtimePendingCount, refreshNavBadges } from './lib/navBadges'
+import { editApprovalCount, siteUnsetCount, overtimePendingCount, pendingGrantCount, refreshNavBadges } from './lib/navBadges'
 import { HIDE_LINE_SECTIONS } from './lib/featureFlags'
 import { migrationTargetUrl, REDIRECT_SECONDS } from './lib/domainMigration'
 import AiHelpWidget from './components/AiHelpWidget.vue'
