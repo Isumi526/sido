@@ -351,6 +351,7 @@ import HelpButton from '../components/HelpButton.vue'
 import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, wageForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
 import type { WageMode } from '../lib/workerHours'
 import { canViewWages, canViewHourlyWage } from '../lib/auth'
+import { resolveSiteRef, type SiteResolveCtx } from '../lib/siteKey'
 import JSZip from 'jszip'
 
 const exporting = ref(false)
@@ -488,12 +489,18 @@ function extractExpenseCols(exp: any) {
 
 async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<string, any[]>> {
   const accountId = await getAccountId()
-  const [{ data: wm }, { data: sm }, { data: cfg }, { data: wh }] = await Promise.all([
+  const [{ data: wm }, { data: sm }, { data: cfg }, { data: wh }, { data: siteRows }] = await Promise.all([
     supabase.from('workers').select('id, name, daily_wage, hourly_wage').eq('account_id', accountId),
     supabase.from('subcontractors').select('name, category, unit_price').eq('account_id', accountId),
     supabase.from('settings').select('key, value').eq('account_id', accountId),
     supabase.from('worker_wage_history').select('worker_id, effective_date, changed_at, old_unit_price, new_unit_price, wage_type, old_wage_type, old_daily_wage, new_daily_wage, old_hourly_wage, new_hourly_wage').eq('account_id', accountId),
+    supabase.from('sites').select('id, name, active, created_at').eq('account_id', accountId).order('created_at', { ascending: true }),
   ])
+  // 現場参照の解決コンテキスト: site_id 優先＋active名一致で表記ゆれ/マージ孤児を1バケットへ統合（根本対策）
+  const siteCtx: SiteResolveCtx = {
+    activeSites: (siteRows ?? []).filter((s: any) => s.active).map((s: any) => ({ id: s.id, name: s.name })),
+    siteNameById: Object.fromEntries((siteRows ?? []).map((s: any) => [s.id, s.name])),
+  }
   const wageTimelines = buildWageTimelines((wh ?? []) as any[])  // 作業員ごとの昇給timeline（日付別単価解決用）
   // 設定値を上書き
   for (const row of (cfg ?? [])) {
@@ -513,8 +520,9 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
       .gte('item_date', fromDate)
       .lte('item_date', toDate)
     for (const r of (sii ?? []) as any[]) {
-      const name = r.site_name
-      if (!name) continue
+      if (!r.site_name) continue
+      // 請求の現場名も同じ解決を通し、日報側と同じ正式名バケットに合流させる（表記ゆれ吸収）
+      const name = resolveSiteRef({ siteName: r.site_name }, siteCtx).name || r.site_name
       invoiceSites.add(name)
       const amt = Number(r.amount) || 0
       const cat = r.subcontractor_invoices?.subcontractors?.category ?? null
@@ -563,11 +571,9 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
 
     for (const site of ((report as any).sites ?? [])) {
       const rawName  = site.siteName ?? ''
-      const siteName = rawName === '__unset__'
-        ? '現場未設定'
-        : rawName === '__other__'
-          ? (site.customSiteName?.trim() || '新規現場')
-          : (rawName.trim() || '(不明)')
+      // site_id（保存済み or active名一致で解決）→ 正式名でグループ化。表記ゆれ/マージ孤児が1バケットに統合される。
+      const siteName = resolveSiteRef(site, siteCtx).name?.trim()
+        || (rawName === '__other__' ? '新規現場' : '(不明)')
       const date  = (report as any).date
       const gKey  = `${siteName}__${date}`
 

@@ -171,6 +171,8 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { normalizeSiteName } from '../lib/siteSimilarity'
+import { siteStoredName } from '../lib/siteKey'
 
 const route = useRoute()
 const router = useRouter()
@@ -345,8 +347,12 @@ async function load() {
   let count = 0, lastDate = ''
   for (const r of (reps ?? []) as any[]) {
     for (const st of (r.sites ?? [])) {
-      const nm = (st?.siteName === '__other__' ? st?.customSiteName : st?.siteName)?.trim()
-      if (nm !== site.value.name) continue
+      // site_id があればそれで厳密一致（マージ後もこの現場に正しく残る）。
+      // 無い旧データは正規化名一致で拾う（全角スペース等の表記ゆれでも当現場の履歴を漏らさない）。
+      const belongs = st?.site_id
+        ? st.site_id === siteId
+        : normalizeSiteName(siteStoredName(st)) === normalizeSiteName(site.value.name)
+      if (!belongs) continue
       count++
       if (r.date > lastDate) lastDate = r.date
       const ws = (st.workers ?? []).map((w: any) => w.workerName).filter(Boolean)
