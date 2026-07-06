@@ -16,12 +16,14 @@
       </div>
       <div class="field">
         <label>印影（任意・見積書の社判欄に表示）</label>
-        <div class="seal-row">
+        <div class="seal-row seal-dropzone" :class="{ dragover: sealDragOver, busy: uploadingSeal }"
+             @drop.prevent="onDropSeal" @dragover.prevent="sealDragOver = true" @dragleave.prevent="sealDragOver = false">
           <img v-if="sealUrl" :src="sealUrl" class="seal-preview" alt="印影" />
           <label class="btn-ghost">
             {{ uploadingSeal ? 'アップロード中…' : '画像を選択' }}
             <input type="file" accept="image/*" hidden :disabled="uploadingSeal" @change="onSeal" />
           </label>
+          <span class="seal-drop-hint">{{ sealDragOver ? 'ここにドロップ' : 'D&D可' }}</span>
           <button v-if="f.company_seal_path" class="btn-ghost danger" @click="f.company_seal_path = ''">削除</button>
         </div>
       </div>
@@ -89,8 +91,7 @@ async function load() {
 }
 onMounted(load)
 
-async function onSeal(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0]
+async function processSeal(file: File | undefined | null) {
   if (!file) return
   uploadingSeal.value = true; err.value = ''
   try {
@@ -100,7 +101,16 @@ async function onSeal(e: Event) {
     if (error) throw error
     f.value.company_seal_path = path
   } catch (e: any) { err.value = e?.message ?? '印影のアップロードに失敗しました' }
-  finally { uploadingSeal.value = false; (e.target as HTMLInputElement).value = '' }
+  finally { uploadingSeal.value = false }
+}
+async function onSeal(e: Event) {
+  const input = e.target as HTMLInputElement
+  await processSeal(input.files?.[0]); input.value = ''
+}
+const sealDragOver = ref(false)
+async function onDropSeal(ev: DragEvent) {
+  sealDragOver.value = false
+  await processSeal(ev.dataTransfer?.files?.[0])
 }
 
 async function save() {
@@ -129,6 +139,10 @@ async function save() {
 .field label { font-size: 12px; font-weight: 700; color: #888; }
 .input { background: #f7f7f7; border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px 12px; font-size: 14px; width: 100%; box-sizing: border-box; }
 .seal-row { display: flex; align-items: center; gap: 12px; }
+.seal-dropzone { border: 2px dashed transparent; border-radius: 10px; padding: 8px 10px; flex-wrap: wrap; transition: border-color .15s, background .15s; }
+.seal-dropzone.dragover { border-color: #2563eb; background: #eff6ff; }
+.seal-dropzone.busy { opacity: .7; }
+.seal-drop-hint { font-size: 11px; color: #9ca3af; }
 .seal-preview { width: 64px; height: 64px; object-fit: contain; border: 1px solid #eee; border-radius: 8px; }
 .btn-ghost { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 9px 16px; font-size: 13px; cursor: pointer; }
 .btn-ghost.danger { color: #c0392b; border-color: #f0caca; }
