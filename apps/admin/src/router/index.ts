@@ -79,5 +79,8 @@ export const router = createRouter({
 router.beforeEach((to) => {
   const isPublic = to.meta.public === true
   if (!isPublic && !currentUser.value) return '/login'
-  if (to.path === '/login' && currentUser.value) return '/'
+  // ログイン済みで /login に来たらホームへ。ただしクエリにID/PASS等がある時は
+  // 自動ログイン/アカウント切替の意図なので弾かず通す（デモURL用）。
+  const hasLoginQuery = !!(to.query.email || to.query.id || to.query.pass || to.query.password)
+  if (to.path === '/login' && currentUser.value && !hasLoginQuery) return '/'
 })
