@@ -189,7 +189,7 @@
               <label class="setting-lbl">自動付与から除外中の基準日</label>
               <div v-for="d in detail.excludedDates" :key="d" class="excluded-row">
                 <span class="mono">{{ d }}</span>
-                <button class="btn-unexclude" data-testid="unexclude" @click="unexcludeDate(d)">除外解除</button>
+                <button class="btn-unexclude" data-testid="unexclude" :disabled="grantMutating" @click="unexcludeDate(d)">除外解除</button>
               </div>
               <p class="setting-hint">削除で除外した基準日。解除すると再び法令の自動付与対象になります。</p>
             </div>
@@ -208,7 +208,7 @@
                 <td class="mono">{{ g.expires_at }}</td>
                 <td><span class="exp-badge" :class="isExpired(g.expires_at) ? 'expired' : 'valid'">{{ isExpired(g.expires_at) ? '期限切れ' : '有効' }}</span></td>
                 <td class="note-cell">{{ g.note ?? '—' }}</td>
-                <td><button v-if="canViewHourlyWage" class="btn-del" @click="deleteGrant(g)">削除</button></td>
+                <td><button v-if="canViewHourlyWage" class="btn-del" :disabled="grantMutating" @click="deleteGrant(g)">削除</button></td>
               </tr>
             </tbody>
           </table>
@@ -685,40 +685,47 @@ async function batchGrantPending() {
 
 // 付与を削除。自動付与(法令の基準日)を消す時は、その基準日を恒久除外に記録
 // ＝再検知・再付与しない（A＋修正の除外機能）。誤りは「除外解除」で戻せる。
+const grantMutating = ref(false)   // 削除/除外解除の二重実行ガード
 async function deleteGrant(g: Grant) {
-  if (!canViewHourlyWage.value) return
-  if (!detail.value) return
+  if (!canViewHourlyWage.value || !detail.value || grantMutating.value) return
   const isAuto = (g.note ?? '').startsWith('自動付与')
   const msg = isAuto
     ? 'この自動付与を削除し、今後の自動付与からもこの基準日を除外しますか？（誤ったら除外解除で戻せます）'
     : 'この付与記録を削除しますか？'
   if (!confirm(msg)) return
-  await supabase.from('paid_leave_grants').delete().eq('id', g.id)
-  if (isAuto) {
-    // この基準日を恒久除外へ追加
-    const w = workerStats.value.find(x => x.id === detail.value!.id)
-    const excluded = new Set(w?.excludedDates ?? [])
-    excluded.add(g.granted_at)
-    await supabase.from('workers').update({ excluded_grant_dates: [...excluded] }).eq('id', detail.value.id)
-  }
-  await loadDetailData(detail.value.id)
-  await load()
-  detail.value = workerStats.value.find(w => w.id === detail.value!.id) ?? detail.value
+  grantMutating.value = true
+  try {
+    const accountId = await getAccountId()   // 多層防御: RLSに加えクライアント側でも account_id で絞る
+    await supabase.from('paid_leave_grants').delete().eq('id', g.id).eq('account_id', accountId)
+    if (isAuto) {
+      const w = workerStats.value.find(x => x.id === detail.value!.id)
+      const excluded = new Set(w?.excludedDates ?? [])
+      excluded.add(g.granted_at)
+      await supabase.from('workers').update({ excluded_grant_dates: [...excluded] }).eq('id', detail.value.id).eq('account_id', accountId)
+    }
+    await loadDetailData(detail.value.id)
+    await load()
+    detail.value = workerStats.value.find(w => w.id === detail.value!.id) ?? detail.value
+  } finally { grantMutating.value = false }
 }
 
 // 恒久除外を解除（再び自動付与の対象に）。解除後その場で再付与する。
 async function unexcludeDate(dateStr: string) {
-  if (!canViewHourlyWage.value || !detail.value) return
-  const w = workerStats.value.find(x => x.id === detail.value!.id)
-  const excluded = (w?.excludedDates ?? []).filter(d => d !== dateStr)
-  await supabase.from('workers').update({ excluded_grant_dates: excluded }).eq('id', detail.value.id)
-  await load()
-  // 解除に伴い、その基準日を再付与（差分）
-  const w2 = workerStats.value.find(x => x.id === detail.value!.id)
-  if (w2) await autoGrantWorkerSilently(w2.id, w2.hire_date, w2.employment_type, w2.weekly_scheduled_days)
-  await load()
-  await loadDetailData(detail.value.id)
-  detail.value = workerStats.value.find(x => x.id === detail.value!.id) ?? detail.value
+  if (!canViewHourlyWage.value || !detail.value || grantMutating.value) return
+  grantMutating.value = true
+  try {
+    const accountId = await getAccountId()
+    const w = workerStats.value.find(x => x.id === detail.value!.id)
+    const excluded = (w?.excludedDates ?? []).filter(d => d !== dateStr)
+    await supabase.from('workers').update({ excluded_grant_dates: excluded }).eq('id', detail.value.id).eq('account_id', accountId)
+    await load()
+    // 解除に伴い、その基準日を再付与（差分）
+    const w2 = workerStats.value.find(x => x.id === detail.value!.id)
+    if (w2) await autoGrantWorkerSilently(w2.id, w2.hire_date, w2.employment_type, w2.weekly_scheduled_days)
+    await load()
+    await loadDetailData(detail.value.id)
+    detail.value = workerStats.value.find(x => x.id === detail.value!.id) ?? detail.value
+  } finally { grantMutating.value = false }
 }
 
 function doPrint() {
