@@ -18,6 +18,7 @@
           <label>パスワード</label>
           <PasswordInput
             v-model="password"
+            class="input"
             placeholder="パスワード"
             autocomplete="current-password"
             required
@@ -117,7 +118,8 @@ async function handleLogin() {
   font-size: 13px;
   color: #aaa;
 }
-.field input {
+.field input,
+.field .input {
   background: #2a2a2a;
   border: 1px solid #333;
   border-radius: 6px;
@@ -127,7 +129,8 @@ async function handleLogin() {
   outline: none;
   transition: border-color .15s;
 }
-.field input:focus {
+.field input:focus,
+.field .input:focus-within {
   border-color: #06C755;
 }
 .error {

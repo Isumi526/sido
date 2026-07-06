@@ -122,10 +122,6 @@
           </select>
         </div>
         <div class="field">
-          <label>入社日</label>
-          <input v-model="modal.hire_date" type="date" class="input" />
-        </div>
-        <div class="field">
           <label>日報提出開始日（未送信チェックの起点・任意）</label>
           <input v-model="modal.report_start_date" type="date" class="input" data-testid="report-start-date" />
           <p class="hint-sm">この日以降の未送信のみリマインド/未送信者一覧に出ます。未設定なら従来どおり作業員登録日が起点です。</p>
@@ -161,6 +157,10 @@
               <span v-if="h.reason" class="wage-reason"> （{{ h.reason }}）</span>
             </li>
           </ul>
+        </div>
+        <div class="field">
+          <label>入社日</label>
+          <input v-model="modal.hire_date" type="date" class="input" />
         </div>
         <div class="field">
           <label>生年月日</label>
