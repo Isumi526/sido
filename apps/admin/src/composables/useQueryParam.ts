@@ -24,3 +24,30 @@ export function useQueryParam<T extends string>(key: string, defaultVal: T): Ref
 
   return state
 }
+
+// 対象月（Date）を ?ym=YYYY-MM で URL 同期する。月ナビ(shiftMonth)を持つ集計ページ用。
+//  ・初期値は ?ym= があればその月の1日、無ければ今月。
+//  ・baseDate 変更時に ?ym を更新（今月ならキーを消す＝URLを汚さない）。
+export function useYearMonthParam(): Ref<Date> {
+  const route  = useRoute()
+  const router = useRouter()
+  const now = new Date()
+  const thisYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  function ymOf(d: Date) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
+  function parse(ym: string | undefined): Date {
+    const m = (ym ?? '').match(/^(\d{4})-(\d{2})$/)
+    if (!m) return new Date()
+    return new Date(Number(m[1]), Number(m[2]) - 1, 1)
+  }
+  const state = ref(parse(route.query.ym as string | undefined)) as Ref<Date>
+
+  watch(state, (d) => {
+    const ym = ymOf(d)
+    const next = { ...route.query } as Record<string, any>
+    if (ym === thisYm) delete next.ym                                  // 今月はキーを消す
+    else next.ym = ym
+    if ((route.query.ym ?? '') !== (next.ym ?? '')) router.replace({ query: next })
+  })
+
+  return state
+}
