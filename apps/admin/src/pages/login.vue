@@ -36,7 +36,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { signIn } from '../lib/auth'
+import { signIn, signOut, currentUser } from '../lib/auth'
 import PasswordInput from '../components/PasswordInput.vue'
 
 const router   = useRouter()
@@ -48,11 +48,17 @@ const errorMsg  = ref('')
 
 // クエリパラメータで事前入力（毎回手入力しなくて済む）。
 //   ?id=demo / ?email=admin@gmail.com / &pass=xxx （pass はURLに残るため共有時は注意）
-onMounted(() => {
+//   ID/PASSが揃っていれば自動ログイン。別アカウントでログイン中でもサインアウトして切替（デモURL用）。
+onMounted(async () => {
   const qId = route.query.id ?? route.query.email
   const qPass = route.query.pass ?? route.query.password
   if (typeof qId === 'string') accountId.value = qId
   if (typeof qPass === 'string') password.value = qPass
+  if (typeof qId === 'string' && qId && typeof qPass === 'string' && qPass) {
+    // 既に別アカウントでログイン中なら一旦サインアウトしてから、クエリの資格情報でログイン＝アカウント切替
+    if (currentUser.value) { try { await signOut() } catch { /* noop */ } }
+    await handleLogin()
+  }
 })
 
 async function handleLogin() {
