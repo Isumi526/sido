@@ -185,6 +185,14 @@
               <p class="setting-hint">システム導入前に取得済みの日数。残日数から控除（導入後はアプリが自動集計）。</p>
               <p v-if="usedError" class="grant-error">{{ usedError }}</p>
             </div>
+            <div v-if="detail.excludedDates.length" class="setting-field">
+              <label class="setting-lbl">自動付与から除外中の基準日</label>
+              <div v-for="d in detail.excludedDates" :key="d" class="excluded-row">
+                <span class="mono">{{ d }}</span>
+                <button class="btn-unexclude" data-testid="unexclude" @click="unexcludeDate(d)">除外解除</button>
+              </div>
+              <p class="setting-hint">削除で除外した基準日。解除すると再び法令の自動付与対象になります。</p>
+            </div>
           </div>
 
           <div class="section-title">付与履歴</div>
@@ -200,7 +208,7 @@
                 <td class="mono">{{ g.expires_at }}</td>
                 <td><span class="exp-badge" :class="isExpired(g.expires_at) ? 'expired' : 'valid'">{{ isExpired(g.expires_at) ? '期限切れ' : '有効' }}</span></td>
                 <td class="note-cell">{{ g.note ?? '—' }}</td>
-                <td><button class="btn-del" @click="deleteGrant(g.id)">削除</button></td>
+                <td><button v-if="canViewHourlyWage" class="btn-del" @click="deleteGrant(g)">削除</button></td>
               </tr>
             </tbody>
           </table>
@@ -295,6 +303,7 @@ type WorkerStat = {
   employment_type: 'fulltime' | 'parttime' | 'contractor' | null
   weekly_scheduled_days: number | null
   initialUsed: number   // 導入前に既に消化した有給日数（控除）
+  excludedDates: string[]  // 法令自動付与から恒久除外する基準日
   totalGranted: number
   totalUsed: number     // 初期使用済み ＋ システム使用の合計
   remaining: number
@@ -398,7 +407,7 @@ async function load() {
   const accountId = await getAccountId()
 
   const [{ data: workersData }, { data: grantsData }, { data: usersData }, { data: leaveData }] = await Promise.all([
-    supabase.from('workers').select('id, name, active, hire_date, employment_type, weekly_scheduled_days, initial_used_leave_days').eq('account_id', accountId).order('name'),
+    supabase.from('workers').select('id, name, active, hire_date, employment_type, weekly_scheduled_days, initial_used_leave_days, excluded_grant_dates').eq('account_id', accountId).order('name'),
     supabase.from('paid_leave_grants').select('id, worker_id, granted_at, expires_at, days, note').eq('account_id', accountId),
     supabase.from('users').select('id, worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
     supabase.from('daily_reports').select('user_id, date, note').eq('account_id', accountId).eq('leave_type', 'paid_leave').order('date', { ascending: false }),
@@ -431,9 +440,10 @@ async function load() {
     const initialUsed  = Number(w.initial_used_leave_days ?? 0)   // 導入前に消化した分（控除）
     const systemUsed   = (allUsageByWorker[w.id] ?? []).length    // 導入後のアプリ有給申請
     const totalUsed    = initialUsed + systemUsed
-    // 未付与の基準日（付与待ち）
+    // 未付与の基準日（付与待ち）。恒久除外された基準日は除く。
     const existingDates = new Set(wGrants.map(g => g.granted_at))
-    const pendingCount  = pendingBaseDatesFor(w.hire_date, w.employment_type, w.weekly_scheduled_days, existingDates, today).length
+    const excludedDates = (Array.isArray(w.excluded_grant_dates) ? w.excluded_grant_dates : []).map((d: any) => String(d))
+    const pendingCount  = pendingBaseDatesFor(w.hire_date, w.employment_type, w.weekly_scheduled_days, existingDates, today, new Set(excludedDates)).length
 
     // ── 年5日義務: 最新の基準日から1年間で判定 ──
     const latestGrant = validGrants.sort((a, b) => b.granted_at.localeCompare(a.granted_at))[0]
@@ -474,6 +484,7 @@ async function load() {
       employment_type:       w.employment_type,
       weekly_scheduled_days: w.weekly_scheduled_days,
       initialUsed,
+      excludedDates,
       totalGranted,
       totalUsed,
       remaining: totalGranted - totalUsed,
@@ -523,12 +534,17 @@ async function saveInitialUsed() {
   }
 }
 
-// 1作業員の未付与の基準日を法令付与（確認なし・A自動用）。入社日保存直後などに使う。
+// 作業員の恒久除外基準日セット（workerStatsから）。
+function excludedSetFor(workerId: string): Set<string> {
+  return new Set(workerStats.value.find(x => x.id === workerId)?.excludedDates ?? [])
+}
+
+// 1作業員の未付与の基準日を法令付与（確認なし・A自動用）。入社日保存直後などに使う。除外基準日はスキップ。
 async function autoGrantWorkerSilently(workerId: string, hireDate: string | null, empType: string | null | undefined, weeklyDays: number | null | undefined): Promise<number> {
   if (!canViewHourlyWage.value || !hireDate || empType === 'contractor') return 0
   const accountId = await getAccountId()
   const existing = new Set((allGrantsByWorker[workerId] ?? []).map(g => g.granted_at))
-  const rows = pendingBaseDatesFor(hireDate, empType, weeklyDays, existing, today)
+  const rows = pendingBaseDatesFor(hireDate, empType, weeklyDays, existing, today, excludedSetFor(workerId))
     .map(p => ({ worker_id: workerId, account_id: accountId, granted_at: p.granted, expires_at: p.expires, days: p.days, note: p.note }))
   if (rows.length === 0) return 0
   await supabase.from('paid_leave_grants').insert(rows)
@@ -623,9 +639,9 @@ async function autoGrantFromHireDate(w: WorkerStat) {
   if (w.employment_type === 'contractor') { grantError.value = '業務委託は有給付与対象外です'; return }
   const existingDates = new Set(detailGrants.value.map(g => g.granted_at))   // 既存付与日（重複防止）
   const accountId = await getAccountId()
-  const pending = pendingBaseDatesFor(w.hire_date, w.employment_type, w.weekly_scheduled_days, existingDates, today)
+  const pending = pendingBaseDatesFor(w.hire_date, w.employment_type, w.weekly_scheduled_days, existingDates, today, excludedSetFor(w.id))
   const rows = pending.map(p => ({ worker_id: w.id, account_id: accountId, granted_at: p.granted, expires_at: p.expires, days: p.days, note: p.note }))
-  if (rows.length === 0) { grantError.value = '追加する基準日がありません（すべて付与済み、または入社6ヶ月未満）'; return }
+  if (rows.length === 0) { grantError.value = '追加する基準日がありません（すべて付与済み・除外済み、または入社6ヶ月未満）'; return }
   if (!confirm(`法令の有給を ${rows.length}件 追加付与します（未付与の基準日）。よろしいですか？`)) return
   grantSaving.value = true; grantError.value = ''
   try {
@@ -654,7 +670,7 @@ async function batchGrantPending() {
     const rows: { worker_id: string; account_id: string; granted_at: string; expires_at: string; days: number; note: string }[] = []
     for (const w of targets) {
       const existing = new Set((allGrantsByWorker[w.id] ?? []).map(g => g.granted_at))
-      for (const p of pendingBaseDatesFor(w.hire_date, w.employment_type, w.weekly_scheduled_days, existing, today)) {
+      for (const p of pendingBaseDatesFor(w.hire_date, w.employment_type, w.weekly_scheduled_days, existing, today, new Set(w.excludedDates))) {
         rows.push({ worker_id: w.id, account_id: accountId, granted_at: p.granted, expires_at: p.expires, days: p.days, note: p.note })
       }
     }
@@ -667,14 +683,42 @@ async function batchGrantPending() {
   }
 }
 
-async function deleteGrant(grantId: string) {
-  if (!confirm('この付与記録を削除しますか？')) return
-  await supabase.from('paid_leave_grants').delete().eq('id', grantId)
-  if (detail.value) {
-    await loadDetailData(detail.value.id)
-    await load()
-    detail.value = workerStats.value.find(w => w.id === detail.value!.id) ?? detail.value
+// 付与を削除。自動付与(法令の基準日)を消す時は、その基準日を恒久除外に記録
+// ＝再検知・再付与しない（A＋修正の除外機能）。誤りは「除外解除」で戻せる。
+async function deleteGrant(g: Grant) {
+  if (!canViewHourlyWage.value) return
+  if (!detail.value) return
+  const isAuto = (g.note ?? '').startsWith('自動付与')
+  const msg = isAuto
+    ? 'この自動付与を削除し、今後の自動付与からもこの基準日を除外しますか？（誤ったら除外解除で戻せます）'
+    : 'この付与記録を削除しますか？'
+  if (!confirm(msg)) return
+  await supabase.from('paid_leave_grants').delete().eq('id', g.id)
+  if (isAuto) {
+    // この基準日を恒久除外へ追加
+    const w = workerStats.value.find(x => x.id === detail.value!.id)
+    const excluded = new Set(w?.excludedDates ?? [])
+    excluded.add(g.granted_at)
+    await supabase.from('workers').update({ excluded_grant_dates: [...excluded] }).eq('id', detail.value.id)
   }
+  await loadDetailData(detail.value.id)
+  await load()
+  detail.value = workerStats.value.find(w => w.id === detail.value!.id) ?? detail.value
+}
+
+// 恒久除外を解除（再び自動付与の対象に）。解除後その場で再付与する。
+async function unexcludeDate(dateStr: string) {
+  if (!canViewHourlyWage.value || !detail.value) return
+  const w = workerStats.value.find(x => x.id === detail.value!.id)
+  const excluded = (w?.excludedDates ?? []).filter(d => d !== dateStr)
+  await supabase.from('workers').update({ excluded_grant_dates: excluded }).eq('id', detail.value.id)
+  await load()
+  // 解除に伴い、その基準日を再付与（差分）
+  const w2 = workerStats.value.find(x => x.id === detail.value!.id)
+  if (w2) await autoGrantWorkerSilently(w2.id, w2.hire_date, w2.employment_type, w2.weekly_scheduled_days)
+  await load()
+  await loadDetailData(detail.value.id)
+  detail.value = workerStats.value.find(x => x.id === detail.value!.id) ?? detail.value
 }
 
 function doPrint() {
@@ -692,7 +736,7 @@ async function initialAutoGrant() {
   for (const w of workerStats.value) {
     if (w.pendingCount <= 0) continue
     const existing = new Set((allGrantsByWorker[w.id] ?? []).map(g => g.granted_at))
-    for (const p of pendingBaseDatesFor(w.hire_date, w.employment_type, w.weekly_scheduled_days, existing, today)) {
+    for (const p of pendingBaseDatesFor(w.hire_date, w.employment_type, w.weekly_scheduled_days, existing, today, new Set(w.excludedDates))) {
       rows.push({ worker_id: w.id, account_id: accountId, granted_at: p.granted, expires_at: p.expires, days: p.days, note: p.note })
     }
   }
@@ -804,6 +848,8 @@ onMounted(async () => {
 .exp-badge.valid   { background: #e8fff0; color: #0a8a3a; }
 .exp-badge.expired { background: #f5f5f5; color: #aaa; }
 .btn-del { background: none; border: 1px solid #fca5a5; color: #e53935; border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer; }
+.excluded-row { display: flex; align-items: center; gap: 10px; padding: 3px 0; }
+.btn-unexclude { background: #eef2ff; border: 1px solid #c7d2fe; color: #4338ca; border-radius: 6px; padding: 3px 10px; font-size: 11px; font-weight: 700; cursor: pointer; }
 .empty   { color: #aaa; font-size: 13px; padding: 12px 0; }
 .grant-error { color: #e53935; font-size: 12px; margin: 4px 0 0; }
 /* 付与待ちバナー・バッジ */
