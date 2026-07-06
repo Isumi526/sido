@@ -65,6 +65,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { useYearMonthParam } from '../composables/useQueryParam'
+import { resolveSiteRef, type SiteResolveCtx } from '../lib/siteKey'
 import HelpButton from '../components/HelpButton.vue'
 
 const baseDate = useYearMonthParam()   // 対象月を ?ym=YYYY-MM でURL同期
@@ -104,6 +105,11 @@ async function load() {
   const { data: cfg } = await supabase.from('settings').select('value').eq('account_id', accountId).eq('key', 'gasoline_rate_per_km').maybeSingle()
   if (cfg?.value) G_YEN = Number(cfg.value)
   // 当月の現場別走行距離（按分比率・日報の車両 distanceKm）＋ 日報レベルのガソリン実費（gasoline_items 合計）
+  const { data: siteRows } = await supabase.from('sites').select('id, name, active, created_at').eq('account_id', accountId).order('created_at', { ascending: true })
+  const siteCtx: SiteResolveCtx = {
+    activeSites: (siteRows ?? []).filter((s: any) => s.active).map((s: any) => ({ id: s.id, name: s.name })),
+    siteNameById: Object.fromEntries((siteRows ?? []).map((s: any) => [s.id, s.name])),
+  }
   const { data: reps } = await supabase.from('daily_reports').select('sites, gasoline_items').eq('account_id', accountId).gte('date', dateFrom.value).lte('date', dateTo.value).limit(5000)
   const dist: Record<string, number> = {}
   let gasSum = 0
@@ -111,7 +117,8 @@ async function load() {
     for (const g of (r.gasoline_items ?? [])) gasSum += Number(g?.yen) || 0
     for (const st of (r.sites ?? [])) {
       if (st?.siteName === '__unset__') continue   // 現場未設定は按分基準にしない（紐付け後に反映）
-      const nm = (st?.siteName === '__other__' ? st?.customSiteName : st?.siteName)?.trim()
+      // site_id（保存済み or active名一致）→ 正式名で按分キーを統一（表記ゆれで比率が割れない）
+      const nm = resolveSiteRef(st, siteCtx).name?.trim()
       if (!nm) continue
       for (const v of (st.expenses?.vehicles ?? [])) dist[nm] = (dist[nm] ?? 0) + (Number(v.distanceKm) || 0)
     }
