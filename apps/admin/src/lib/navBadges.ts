@@ -7,6 +7,7 @@ import { ref } from 'vue'
 import { supabase } from './supabase'
 import { getAccountId } from './account'
 import { pendingBaseDatesFor } from './paidLeaveGrant'
+import { canViewHourlyWage } from './auth'
 
 export const editApprovalCount    = ref(0)  // 日報編集の許可申請(pending)
 export const siteUnsetCount       = ref(0)  // 現場未設定の日報(直近90日)
@@ -36,7 +37,9 @@ export async function refreshNavBadges() {
     for (const site of arr) if (site?.siteName === '__unset__') unset++
   }
   siteUnsetCount.value = unset
-  // 有給の付与待ち: 入社日ありの作業員で、未付与の基準日がある人数
+  // 有給の付与待ち: 入社日ありの作業員で、未付与の基準日がある人数。
+  // 付与できる権限者（役員経理以上）だけが対象＝行動できない人にアラートを出さない。
+  if (!canViewHourlyWage.value) { pendingGrantCount.value = 0; return }
   const today = new Date().toISOString().split('T')[0]
   const [{ data: workers }, { data: grants }] = await Promise.all([
     supabase.from('workers').select('id, hire_date, employment_type, weekly_scheduled_days').eq('account_id', accountId).eq('active', true),
