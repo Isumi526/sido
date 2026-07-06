@@ -336,7 +336,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { useQueryParam } from '../composables/useQueryParam'
+import { useQueryParam, useYearMonthParam } from '../composables/useQueryParam'
 import { resolveDocUrl } from '../lib/docUrl'
 import HelpButton from '../components/HelpButton.vue'
 import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, wageForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
@@ -408,7 +408,7 @@ async function exportSite() {
   } finally { exporting.value = false }
 }
 
-const baseDate  = ref(new Date())
+const baseDate  = useYearMonthParam()   // 対象月を ?ym=YYYY-MM でURL同期
 const yearMonth = computed(() => `${baseDate.value.getFullYear()}年${baseDate.value.getMonth() + 1}月`)
 const selected  = ref<any | null>(null)
 

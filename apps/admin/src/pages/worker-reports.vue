@@ -231,13 +231,14 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { useYearMonthParam } from '../composables/useQueryParam'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { computeWorkerHours, calcBreakMinutes, effectiveBreakMinutes, effectiveBreakWindows, parseMin, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
 import { canViewHourlyWage } from '../lib/auth'
 
 // ---------- 月ナビ ----------
-const baseDate = ref(new Date())
+const baseDate = useYearMonthParam()   // 対象月を ?ym=YYYY-MM でURL同期
 
 const yearMonthLabel = computed(() =>
   `${baseDate.value.getFullYear()}年${baseDate.value.getMonth() + 1}月`
