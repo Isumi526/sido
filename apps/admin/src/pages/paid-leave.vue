@@ -76,6 +76,18 @@
             <button class="btn-close" @click="detail = null">✕</button>
           </div>
 
+          <!-- 入社日の設定（役員経理以上=canViewHourlyWage のみ・自動付与の前提） -->
+          <div v-if="canViewHourlyWage" class="hire-edit-box">
+            <label class="hire-edit-lbl">入社日
+              <div class="hire-edit-row">
+                <input v-model="hireDateInput" type="date" class="input hire-edit-input" data-testid="hire-date-edit" />
+                <button class="btn-save-hire" :disabled="savingHire || hireDateInput === (detail.hire_date ?? '')" data-testid="save-hire-date" @click="saveHireDate">{{ savingHire ? '保存中…' : '保存' }}</button>
+              </div>
+            </label>
+            <p class="hire-edit-hint">入社日を設定すると「法令の有給を自動付与」が使えます（未設定だと自動付与不可）。</p>
+            <p v-if="hireError" class="grant-error">{{ hireError }}</p>
+          </div>
+
           <div class="balance-summary">
             <div class="balance-card">
               <div class="balance-label">付与合計（有効期限内）</div>
@@ -113,36 +125,33 @@
             </div>
           </div>
 
+          <!-- 法令の自動付与（差分追加）: 入社日から今日までの未付与の基準日を追加。何度押しても重複しない。 -->
+          <div v-if="detail.hire_date && detail.employment_type !== 'contractor'" class="auto-grant-box standalone">
+            <button type="button" class="btn-auto-grant" :disabled="grantSaving" data-testid="auto-grant" @click="autoGrantFromHireDate(detail)">
+              📅 法令の有給を自動付与（未付与の基準日を追加）
+            </button>
+            <div class="auto-grant-hint">
+              入社日＋労基法スケジュール（入社6ヶ月→10日…毎年）で、まだ付与していない基準日だけを追加します。<strong>毎年これを押せば法令どおり付与</strong>されます（既存の付与と重複しません）。<br>
+              ※ 既に有給を消化してきた既存者は、消化分を下の「導入前に消化した有給（初期使用済み日数）」に登録してください。
+            </div>
+          </div>
+
           <!-- 移行登録ガイド（付与履歴がない作業員のみ表示） -->
           <div v-if="detailGrants.length === 0" class="migration-guide">
             <div class="migration-guide-icon">💡</div>
             <div class="migration-guide-body">
-              <div class="migration-guide-title">導入時の残日数を登録してください</div>
+              <div class="migration-guide-title">残日数の引き継ぎ方法</div>
               <div class="migration-guide-text">
-                付与履歴がありません。以下の手順で今日時点の残日数をシステムに引き継げます。
+                付与履歴がありません。次のいずれかで今日時点の残日数を引き継げます。
               </div>
               <ol class="migration-guide-steps">
-                <li>今日時点の残有休日数を確認する</li>
-                <li>付与日に <strong>今日の日付</strong>、付与日数に <strong>残日数</strong> を入力</li>
-                <li>有効期限は残日数の本来の期限に合わせるか、不明なら <strong>2年後</strong> でOK</li>
-                <li>備考を <strong>「移行初期残高（導入時点）」</strong> にして登録</li>
+                <li><strong>上の「法令の有給を自動付与」</strong>で入社日から一括付与（＋消化済みは「初期使用済み日数」に登録）</li>
+                <li>または、残日数だけ引き継ぐ場合は下の「有給を付与する」で <strong>付与日=今日／日数=残日数／備考=移行初期残高</strong> を登録</li>
               </ol>
-              <div v-if="detail.hire_date && detail.employment_type !== 'contractor'" class="auto-grant-box">
-                <div class="auto-grant-or">— または、新規入社者は入社日から自動で —</div>
-                <button type="button" class="btn-auto-grant" :disabled="grantSaving" data-testid="auto-grant" @click="autoGrantFromHireDate(detail)">
-                  📅 入社日から法令の有給を自動付与
-                </button>
-                <div class="auto-grant-hint">
-                  入社日＋労基法スケジュールで各基準日（入社6ヶ月→10日…）の付与を自動生成します。<strong>付与履歴が無い作業員向け</strong>。既に有給を消化してきた既存者は、上の手順で残日数を登録してください（自動付与すると消化前の日数になります）。
-                </div>
-              </div>
-              <div class="migration-guide-note">
-                ※ 次回付与から通常通り法令日数で登録すればOKです
-              </div>
             </div>
           </div>
 
-          <div class="section-title">有給を付与する</div>
+          <div class="section-title">有給を付与する<span class="section-sub">（特別付与・手動調整・移行初期残高など）</span></div>
           <div class="grant-form">
             <div class="form-row">
               <div class="form-field">
@@ -260,6 +269,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { canViewHourlyWage } from '../lib/auth'
 
 // ── 法令付与日数テーブル ──────────────────────────────────────
 const FULLTIME_TABLE: { minMonths: number; days: number }[] = [
@@ -357,6 +367,9 @@ const grantError   = ref('')
 const initialUsedInput = ref(0)   // 初期使用済み日数の編集値
 const savingUsed   = ref(false)
 const usedError    = ref('')
+const hireDateInput = ref('')   // 入社日の編集値
+const savingHire   = ref(false)
+const hireError    = ref('')
 
 // 全作業員の使用履歴・付与履歴（印刷用）
 const allUsageByWorker:  Record<string, UsageEntry[]> = {}
@@ -506,7 +519,9 @@ async function openDetail(w: WorkerStat) {
   detail.value   = w
   grantError.value = ''
   usedError.value = ''
+  hireError.value = ''
   initialUsedInput.value = w.initialUsed   // 初期使用済み日数の編集値をセット
+  hireDateInput.value = w.hire_date ?? ''   // 入社日の編集値をセット
   newGrant.value = {
     granted_at: today,
     expires_at: `${thisYear + 2}-${today.slice(5)}`,
@@ -531,6 +546,23 @@ async function saveInitialUsed() {
     usedError.value = e.message ?? '保存に失敗しました'
   } finally {
     savingUsed.value = false
+  }
+}
+
+// 入社日を保存（役員経理以上のみ・自動付与の前提）。空なら null にする。
+async function saveHireDate() {
+  if (!detail.value) return
+  if (!canViewHourlyWage.value) { hireError.value = '権限がありません'; return }
+  savingHire.value = true; hireError.value = ''
+  try {
+    await supabase.from('workers').update({ hire_date: hireDateInput.value || null }).eq('id', detail.value.id)
+    await load()
+    detail.value = workerStats.value.find(x => x.id === detail.value!.id) ?? detail.value
+    if (detail.value) hireDateInput.value = detail.value.hire_date ?? ''
+  } catch (e: any) {
+    hireError.value = e.message ?? '保存に失敗しました'
+  } finally {
+    savingHire.value = false
   }
 }
 
@@ -590,25 +622,28 @@ async function addGrant() {
 
 // 入社日から法令付与を自動生成（回答A: 付与履歴ゼロの作業員のみ＝既存の移行初期残高運用と二重付与しない）。
 // 各基準日(入社+6ヶ月, +18, +30…每12ヶ月)を今日まで生成。既に失効した過去分(基準日+2年<今日)は残に影響しないのでスキップ。
+// 法令の自動付与（差分追加）: 入社日から今日までの基準日のうち、まだ付与していないものだけ追加。
+// 既存の付与日(granted_at)は skip＝何度押しても重複しない。毎年押せば法令どおり付与される。
 async function autoGrantFromHireDate(w: WorkerStat) {
   if (!w.hire_date) { grantError.value = '入社日が未設定です'; return }
   if (w.employment_type === 'contractor') { grantError.value = '業務委託は有給付与対象外です'; return }
-  if (detailGrants.value.length > 0) { grantError.value = '既に付与履歴があります。自動付与は履歴ゼロの作業員のみ（重複防止）'; return }
-  if (!confirm('入社日から法令の有給を自動付与します。よろしいですか？（付与履歴が無い作業員向け）')) return
+  const existingDates = new Set(detailGrants.value.map(g => g.granted_at))   // 既存付与日（重複防止）
+  const accountId = await getAccountId()
+  const rows: { worker_id: string; account_id: string; granted_at: string; expires_at: string; days: number; note: string }[] = []
+  for (let m = 6; ; m += 12) {
+    const granted = addMonths(w.hire_date, m)
+    if (granted > today) break                       // 未来の基準日は付与しない
+    if (existingDates.has(granted)) continue         // 既に付与済みの基準日はスキップ（差分追加）
+    const expires = addMonths(granted, 24)
+    if (expires < today) continue                    // 既に失効＝残に影響しないのでスキップ
+    const days = daysForTenureMonths(m, w.employment_type, w.weekly_scheduled_days)
+    if (days <= 0) continue
+    rows.push({ worker_id: w.id, account_id: accountId, granted_at: granted, expires_at: expires, days, note: `自動付与（勤続${m}ヶ月）` })
+  }
+  if (rows.length === 0) { grantError.value = '追加する基準日がありません（すべて付与済み、または入社6ヶ月未満）'; return }
+  if (!confirm(`法令の有給を ${rows.length}件 追加付与します（未付与の基準日）。よろしいですか？`)) return
   grantSaving.value = true; grantError.value = ''
   try {
-    const accountId = await getAccountId()
-    const rows: { worker_id: string; account_id: string; granted_at: string; expires_at: string; days: number; note: string }[] = []
-    for (let m = 6; ; m += 12) {
-      const granted = addMonths(w.hire_date, m)
-      if (granted > today) break                       // 未来の基準日は付与しない
-      const expires = addMonths(granted, 24)
-      if (expires < today) continue                    // 既に失効＝残に影響しないのでスキップ
-      const days = daysForTenureMonths(m, w.employment_type, w.weekly_scheduled_days)
-      if (days <= 0) continue
-      rows.push({ worker_id: w.id, account_id: accountId, granted_at: granted, expires_at: expires, days, note: `自動付与（勤続${m}ヶ月）` })
-    }
-    if (rows.length === 0) { grantError.value = '付与対象の基準日がありません（入社6ヶ月未満、または全て失効済み）'; return }
     await supabase.from('paid_leave_grants').insert(rows)
     await loadDetailData(w.id)
     await load()
@@ -699,6 +734,15 @@ onMounted(load)
 .ref-val    { font-size: 18px; font-weight: 700; color: #1a1a1a; }
 .ref-note   { font-size: 12px; color: #888; font-weight: 400; }
 .section-title { font-size: 13px; font-weight: 700; color: #444; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+.section-sub { font-size: 11px; font-weight: 400; color: #999; margin-left: 6px; }
+.hire-edit-box { margin: 12px 0; padding: 12px 14px; background: #f5f8ff; border: 1px solid #d6e2f5; border-radius: 10px; }
+.hire-edit-lbl { font-size: 12px; font-weight: 700; color: #3355aa; display: block; }
+.hire-edit-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.hire-edit-input { width: 170px; }
+.btn-save-hire { background: #4338ca; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.btn-save-hire:disabled { opacity: .5; cursor: default; }
+.hire-edit-hint { font-size: 11px; color: #667; margin: 8px 0 0; line-height: 1.6; }
+.auto-grant-box.standalone { margin: 14px 0; padding: 14px; border: 1px solid #bfe6cd; border-radius: 10px; background: #f4fdf7; border-top: 1px solid #bfe6cd; }
 .grant-form    { display: flex; flex-direction: column; gap: 12px; }
 .form-row      { display: flex; gap: 12px; }
 .form-field    { flex: 1; display: flex; flex-direction: column; gap: 4px; }
