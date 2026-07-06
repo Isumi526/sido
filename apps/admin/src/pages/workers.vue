@@ -100,34 +100,7 @@
         <div class="field">
           <label>日当単価（円/日・原価設定）</label>
           <input v-model.number="modal.daily_wage" type="number" class="input" placeholder="20000" data-testid="daily-wage" />
-          <p class="hint-sm">諸々含めた経費計算用の設定単価。日報・集計は「日当/8h × 稼働時間」で計算（現場管理者も閲覧可）。</p>
-        </div>
-        <div class="field">
-          <label>時給（円/h・実質賃金）</label>
-          <p v-if="!canViewHourlyWage" class="hint-sm">時給（実質賃金）は権限により非表示です</p>
-          <template v-else>
-            <input v-model.number="modal.hourly_wage" type="number" class="input" placeholder="2000" data-testid="hourly-wage" />
-            <p class="hint-sm">実際に支払う時給。役員・経理以上のみ、月次/現場別集計の「実質賃金」トグルで使用。</p>
-          </template>
-        </div>
-        <div v-if="modal.id" class="field">
-          <label>昇給年月日（発効日・単価を変えた時に記録）</label>
-          <input v-model="wageEffectiveDate" type="date" class="input" data-testid="wage-effective-date" />
-          <p class="hint-sm">この日以降の稼働が新単価で人件費計算されます（編集した日と違ってもOK）。</p>
-        </div>
-        <div v-if="modal.id" class="field">
-          <label>単価変更の理由（任意）</label>
-          <input v-model="wageReason" class="input" placeholder="例：定期昇給 / 資格取得" data-testid="wage-reason" />
-        </div>
-        <div v-if="modal.id && wageHistory.length && canViewHourlyWage" class="field">
-          <label>賃金変更履歴（発効日〜 で当時の賃金で計算）</label>
-          <ul class="wage-hist" data-testid="wage-history">
-            <li v-for="h in wageHistory" :key="h.id">
-              <b>{{ (h.effective_date || (h.changed_at || '').slice(0, 10)) }}〜</b>
-              日当 <template v-if="histOldDaily(h) !== histDaily(h)">¥{{ histOldDaily(h).toLocaleString() }}→</template>¥{{ histDaily(h).toLocaleString() }}／時給 <template v-if="histOldHourly(h) !== histHourly(h)">¥{{ histOldHourly(h).toLocaleString() }}→</template>¥{{ histHourly(h).toLocaleString() }}
-              <span v-if="h.reason" class="wage-reason"> （{{ h.reason }}）</span>
-            </li>
-          </ul>
+          <p class="hint-sm">諸々含めた経費計算用の設定単価。日報・集計は「日当/8h × 稼働時間」で計算（現場管理者も閲覧可）。時給（実質賃金）は下の「詳細情報」内で設定します。</p>
         </div>
         </template>
         <div class="field">
@@ -149,10 +122,6 @@
           </select>
         </div>
         <div class="field">
-          <label>入社日</label>
-          <input v-model="modal.hire_date" type="date" class="input" />
-        </div>
-        <div class="field">
           <label>日報提出開始日（未送信チェックの起点・任意）</label>
           <input v-model="modal.report_start_date" type="date" class="input" data-testid="report-start-date" />
           <p class="hint-sm">この日以降の未送信のみリマインド/未送信者一覧に出ます。未設定なら従来どおり作業員登録日が起点です。</p>
@@ -161,6 +130,46 @@
           {{ showDetails ? '▾ 詳細情報を隠す' : '▸ 詳細情報（個人情報・会社・保険・資格・代理人・認証）を表示' }}
         </button>
         <div v-show="showDetails" class="detail-section">
+        <!-- 時給・賃金変更（実質賃金＝権限ガード：office以上のみ／#8007 回答A で詳細情報内へ移動） -->
+        <div class="field">
+          <label>時給（円/h・実質賃金）</label>
+          <p v-if="!canViewHourlyWage" class="hint-sm">時給（実質賃金）は権限により非表示です</p>
+          <template v-else>
+            <input v-model.number="modal.hourly_wage" type="number" class="input" placeholder="2000" data-testid="hourly-wage" />
+            <p class="hint-sm">実際に支払う時給。役員・経理以上のみ、月次/現場別集計の「実質賃金」トグルで使用。デフォルトの日当/8ではなく実際の時給を手動設定してください。</p>
+          </template>
+        </div>
+        <div v-if="modal.id" class="field">
+          <label>この時給・単価の記録方法</label>
+          <div class="toggle">
+            <button type="button" :class="{ active: wageEntryMode === 'initial' }" @click="wageEntryMode = 'initial'" data-testid="wage-mode-initial">初期設定（全期間に適用）</button>
+            <button type="button" :class="{ active: wageEntryMode === 'raise' }" @click="wageEntryMode = 'raise'" data-testid="wage-mode-raise">昇給（発効日から）</button>
+          </div>
+          <p class="hint-sm">初期設定＝正しい単価を初めて入れる（履歴を作らず、過去含む全ての出面勤怠に反映・日付不要）。昇給＝ある日から変わった（発効日以降のみ新単価）。</p>
+        </div>
+        <div v-if="modal.id && wageEntryMode === 'raise'" class="field">
+          <label>昇給年月日（発効日・単価を変えた時に記録）</label>
+          <input v-model="wageEffectiveDate" type="date" class="input" data-testid="wage-effective-date" />
+          <p class="hint-sm">この日以降の稼働が新単価で人件費計算されます（編集した日と違ってもOK）。</p>
+        </div>
+        <div v-if="modal.id && wageEntryMode === 'raise'" class="field">
+          <label>単価変更の理由（任意）</label>
+          <input v-model="wageReason" class="input" placeholder="例：定期昇給 / 資格取得" data-testid="wage-reason" />
+        </div>
+        <div v-if="modal.id && wageHistory.length && canViewHourlyWage" class="field">
+          <label>賃金変更履歴（発効日〜 で当時の賃金で計算）</label>
+          <ul class="wage-hist" data-testid="wage-history">
+            <li v-for="h in wageHistory" :key="h.id">
+              <b>{{ (h.effective_date || (h.changed_at || '').slice(0, 10)) }}〜</b>
+              日当 <template v-if="histOldDaily(h) !== histDaily(h)">¥{{ histOldDaily(h).toLocaleString() }}→</template>¥{{ histDaily(h).toLocaleString() }}／時給 <template v-if="histOldHourly(h) !== histHourly(h)">¥{{ histOldHourly(h).toLocaleString() }}→</template>¥{{ histHourly(h).toLocaleString() }}
+              <span v-if="h.reason" class="wage-reason"> （{{ h.reason }}）</span>
+            </li>
+          </ul>
+        </div>
+        <div class="field">
+          <label>入社日</label>
+          <input v-model="modal.hire_date" type="date" class="input" />
+        </div>
         <div class="field">
           <label>生年月日</label>
           <input v-model="modal.birth_date" type="date" class="input" />
@@ -244,7 +253,7 @@
           <input v-if="authMode === 'id'" v-model="authLoginId" class="input" type="text" name="worker-login-id" autocomplete="off" placeholder="ログインID（半角英数・. _ - 3文字以上）" data-testid="auth-login-id" />
           <input v-else v-model="authEmail" class="input" type="text" inputmode="email" name="worker-login-email" autocomplete="off" placeholder="email（現場管理者以上は必須）" data-testid="auth-email" />
           <!-- パスワード：未設定なら常時入力欄／設定済みは「変更」ボタンで展開 -->
-          <input v-if="!modal.auth_user_id || showPwField" v-model="authPassword" class="input" type="password" name="worker-login-pass" autocomplete="new-password" placeholder="パスワード（8文字以上）" data-testid="auth-password" />
+          <PasswordInput v-if="!modal.auth_user_id || showPwField" v-model="authPassword" class="input" name="worker-login-pass" autocomplete="new-password" placeholder="パスワード（8文字以上）" data-testid="auth-password" />
           <button v-else type="button" class="btn-pw-change" data-testid="auth-pw-change" @click="showPwField = true">パスワードを変更</button>
           <p class="auth-hint">{{ authMode === 'id' ? 'メール無し作業員向け。ログイン画面で「ID＋パスワード」でログインできます（IDはグローバル一意）。' : '現場管理者以上は通知受信のためメール必須。' }}<br>下の「保存」で作業員情報と一緒に反映されます（パスワード欄が空なら認証は変更されません）。</p>
           <p v-if="authMsg" :class="authOk ? 'auth-ok' : 'error'" data-testid="auth-msg">{{ authMsg }}</p>
@@ -282,6 +291,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import PasswordInput from '../components/PasswordInput.vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { canViewWages, canViewHourlyWage } from '../lib/auth'
@@ -351,6 +361,8 @@ function histOldHourly(h: WageHist): number {
 const wageHistory      = ref<WageHist[]>([])
 const wageReason       = ref('')
 const wageEffectiveDate = ref('')   // 昇給年月日（発効日）。この日以降の稼働は新単価で人件費計算される。
+// 賃金の記録方法: 'initial'=初期設定(履歴を作らず基準単価を上書き＝過去含む全期間に反映)/'raise'=昇給(発効日付き履歴)
+const wageEntryMode    = ref<'initial' | 'raise'>('initial')
 const origDaily        = ref<number | null>(null)
 const origHourly       = ref<number | null>(null)
 const todayStr = () => new Date().toISOString().slice(0, 10)
@@ -471,6 +483,7 @@ function openAdd() {
   // 新規でも認証UIを出す（保存で一体作成・二度手間回避）＝状態を初期化
   authEmail.value = ''; authLoginId.value = ''; authMode.value = 'id'; authPassword.value = ''
   showPwField.value = false; authMsg.value = ''; authOk.value = false
+  showDetails.value = false   // 詳細情報（時給含む）は毎回たたんで開く
   markFormLoaded()
 }
 
@@ -490,7 +503,9 @@ async function openEdit(w: Worker) {
   origHourly.value = w.hourly_wage ?? null
   wageReason.value = ''
   wageEffectiveDate.value = todayStr()
+  wageEntryMode.value = 'initial'   // 既定は初期設定（正しい単価を入れ直す＝全期間反映）。昇給時のみ切替。
   wageHistory.value = []
+  showDetails.value = false   // 詳細情報（時給含む）は毎回たたんで開く
   familyMembers.value = []
   healthCheckups.value = []
   // 非同期ロードは await してから dirty 監視を開始（ロード発火を誤って dirty 扱いしない）
@@ -557,7 +572,9 @@ async function save() {
       const newHourly = modal.value.hourly_wage ?? 0
       const dailyChanged  = origDaily.value  != null && newDaily  !== origDaily.value
       const hourlyChanged = origHourly.value != null && newHourly !== origHourly.value
-      if (dailyChanged || hourlyChanged) {
+      // 昇給(raise)のときだけ発効日付き履歴を記録。初期設定(initial)は履歴を作らず基準単価の上書きのみ＝
+      // 履歴が無い→wageForDate/出面勤怠は現在単価を全期間に適用＝過去の出面勤怠にも反映される。
+      if ((dailyChanged || hourlyChanged) && wageEntryMode.value === 'raise') {
         const effDate = wageEffectiveDate.value || todayStr()
         // べき等化: (worker_id, effective_date) の一意indexで upsert=同一発効日の再送/連打でも二重登録しない。
         await supabase.from('worker_wage_history').upsert({
@@ -569,9 +586,9 @@ async function save() {
           reason: wageReason.value.trim() || null,
           effective_date: effDate,
         }, { onConflict: 'worker_id,effective_date' })
-        // 同一セッションでの再保存が履歴を再検知しないよう、基準値を新値に更新
-        origDaily.value = newDaily; origHourly.value = newHourly
       }
+      // 同一セッションでの再保存が履歴を再検知しないよう、基準値を新値に更新（初期設定/昇給いずれも）
+      if (dailyChanged || hourlyChanged) { origDaily.value = newDaily; origHourly.value = newHourly }
     } else {
       const { data, error: insErr } = await supabase.from('workers').insert({ ...workerPayload, account_id: accountId, status: 'active' }).select('id').single()
       if (insErr || !data) {

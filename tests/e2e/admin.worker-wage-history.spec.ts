@@ -22,18 +22,49 @@ test.describe('作業員 昇給履歴', () => {
     await page.locator('.btn-save').click()
     const row = page.locator('tr', { hasText: name })
     await expect(row).toBeVisible({ timeout: 10000 })
-    // 編集：単価 20000→25000 ＋ 理由
+    // 編集：単価 20000→25000 ＋ 理由（昇給年月日/理由/履歴は #8007 で「詳細情報」内へ移動）
     await row.locator('.btn-edit').click()
     await page.locator('input[placeholder="20000"]').fill('25000')
+    await page.locator('[data-testid="detail-toggle"]').click()
+    // 昇給(発効日付き履歴)として記録する＝初期設定モードから切替（既定は初期設定=履歴を作らない）
+    await page.locator('[data-testid="wage-mode-raise"]').click()
     await page.locator('[data-testid="wage-reason"]').fill('定期昇給')
     await page.locator('.btn-save').click()
     await expect(row).toBeVisible()
     // 再編集 → 昇給履歴に 20,000 → 25,000（定期昇給）が出る
     await row.locator('.btn-edit').click()
+    await page.locator('[data-testid="detail-toggle"]').click()
     const hist = page.locator('[data-testid="wage-history"]')
     await expect(hist).toBeVisible({ timeout: 5000 })
     await expect(hist).toContainText('¥20,000')
     await expect(hist).toContainText('¥25,000')
     await expect(hist).toContainText('定期昇給')
+  })
+
+  // 初期設定モード（既定）: 履歴を作らず基準単価を上書き＝過去含む全期間に反映（発効日を作らない）
+  const name2 = `E2E初期時給_${Date.now()}`
+  test.afterAll(async () => {
+    await restSrv(`workers?name=eq.${encodeURIComponent(name2)}`, { method: 'DELETE' }).catch(() => {})
+  })
+  test('初期設定モード（既定）では時給を変えても昇給履歴を作らない', async ({ page }) => {
+    await page.goto('/workers', { waitUntil: 'networkidle' })
+    await page.locator('.btn-add').click()
+    await page.locator('input[placeholder="例：山田 太郎"]').fill(name2)
+    await page.locator('input[placeholder="20000"]').fill('20000')
+    await page.locator('.btn-save').click()
+    const row = page.locator('tr', { hasText: name2 })
+    await expect(row).toBeVisible({ timeout: 10000 })
+    // 編集：詳細情報を開き、時給を 3000 に。モードは既定=初期設定のまま保存（発効日/理由は出ない）。
+    await row.locator('.btn-edit').click()
+    await page.locator('[data-testid="detail-toggle"]').click()
+    await page.locator('[data-testid="hourly-wage"]').fill('3000')
+    // 初期設定モードでは発効日/理由フィールドが出ない
+    await expect(page.locator('[data-testid="wage-effective-date"]')).toHaveCount(0)
+    await page.locator('.btn-save').click()
+    await expect(row).toBeVisible()
+    // 再編集 → 昇給履歴は作られていない（初期設定＝基準単価の上書きのみ）
+    await row.locator('.btn-edit').click()
+    await page.locator('[data-testid="detail-toggle"]').click()
+    await expect(page.locator('[data-testid="wage-history"]')).toHaveCount(0)
   })
 })

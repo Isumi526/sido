@@ -6,7 +6,12 @@
         <p>アプリの使い方や仕様について聞いてください。<br>例:「見積書の業者を選ぶと現場が絞られるのはなぜ？」</p>
       </div>
       <div v-for="(m, i) in messages" :key="i" class="msg" :class="m.role">
-        <div class="bubble">{{ m.text }}</div>
+        <div class="msg-col">
+          <div class="bubble">{{ m.text }}</div>
+          <div v-if="m.options && m.options.length && i === messages.length - 1" class="quick-replies">
+            <button v-for="(op, k) in m.options" :key="k" class="qr-btn" :disabled="thinking" @click="send(op)">{{ op }}</button>
+          </div>
+        </div>
       </div>
       <div v-if="thinking" class="msg ai"><div class="bubble thinking">考え中…</div></div>
     </div>
@@ -51,7 +56,7 @@ import { supabase } from '../lib/supabase'
 const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
 const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 
-type Msg = { role: 'user' | 'ai'; text: string }
+type Msg = { role: 'user' | 'ai'; text: string; options?: string[] }
 const messages = ref<Msg[]>([])
 const draft = ref('')
 const thinking = ref(false)
@@ -75,17 +80,22 @@ async function callEF(fn: string, payload: any) {
 }
 async function scrollDown() { await nextTick(); if (chatEl.value) chatEl.value.scrollTop = chatEl.value.scrollHeight }
 
-async function send() {
-  const msg = draft.value.trim()
+async function send(optionText?: string) {
+  const msg = (optionText ?? draft.value).trim()
   if (!msg || thinking.value) return
+  // 直前のAIが聞き返し(選択肢付き)なら、次は聞き返さず即答させる（聞き返しは1回まで＝ループ防止）
+  const last = messages.value[messages.value.length - 1]
+  const allowClarify = !(last?.role === 'ai' && !!last.options?.length)
   messages.value.push({ role: 'user', text: msg })
-  draft.value = ''; thinking.value = true; await scrollDown()
-  const r = await callEF('ai-chat', { message: msg, history: messages.value.slice(-9, -1) })
+  if (!optionText) draft.value = ''
+  thinking.value = true; await scrollDown()
+  const r = await callEF('ai-chat', { message: msg, history: messages.value.slice(-9, -1), allowClarify })
   thinking.value = false
   if (r?.ok) {
-    messages.value.push({ role: 'ai', text: r.answer })
-    // バグ検知はユーザーでなくAIが判定。isBugなら起票を促す（実起票は人の確認後）
-    bugSuggestion.value = r.isBug
+    const opts = r.needClarify && Array.isArray(r.options) && r.options.length ? r.options as string[] : undefined
+    messages.value.push({ role: 'ai', text: r.answer, options: opts })
+    // バグ検知はユーザーでなくAIが判定。isBugなら起票を促す（実起票は人の確認後）。聞き返し中は促さない。
+    bugSuggestion.value = r.isBug && !opts
       ? { title: (r.bugTitle || msg).slice(0, 80), body: r.bugSummary?.trim() || `質問: ${msg}\nAI回答: ${r.answer}` }
       : null
   } else {
@@ -120,7 +130,13 @@ async function submitBug() {
 .chat-empty p { font-size: 13px; line-height: 1.8; }
 .msg { display: flex; }
 .msg.user { justify-content: flex-end; }
-.bubble { max-width: 76%; padding: 10px 14px; border-radius: 14px; font-size: 14px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
+.msg-col { display: flex; flex-direction: column; gap: 8px; max-width: 76%; align-items: flex-start; }
+.msg.user .msg-col { align-items: flex-end; }
+.quick-replies { display: flex; flex-wrap: wrap; gap: 8px; }
+.qr-btn { background: #fff; color: #06843c; border: 1px solid #9fd8b6; border-radius: 16px; padding: 7px 14px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.qr-btn:hover { background: #eafbf1; }
+.qr-btn:disabled { opacity: .5; cursor: default; }
+.bubble { max-width: 100%; padding: 10px 14px; border-radius: 14px; font-size: 14px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
 .msg.user .bubble { background: #06C755; color: #fff; border-bottom-right-radius: 4px; }
 .msg.ai .bubble { background: #fff; color: #222; border: 1px solid #e8ebee; border-bottom-left-radius: 4px; }
 .bubble.thinking { color: #999; }
