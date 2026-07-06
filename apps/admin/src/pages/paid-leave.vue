@@ -119,10 +119,16 @@
               <div class="auto-grant-lead">
                 <span class="auto-grant-ref">法令の付与日数 <b>{{ suggestedGrant(detail) }} 日</b><span class="ref-note">（勤続 {{ tenureMonths(detail.hire_date) }} ヶ月）</span></span>
               </div>
-              <button type="button" class="btn-auto-grant" :disabled="grantSaving" data-testid="auto-grant" @click="autoGrantFromHireDate(detail)">
-                <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">calendar_month</span> 法令どおり自動付与（未付与の基準日を追加）
-              </button>
-              <div class="auto-grant-hint">入社日＋労基法スケジュール（6ヶ月→10日…毎年）で未付与の基準日だけ追加。<strong>毎年押せば法令どおり</strong>・重複しません。</div>
+              <template v-if="detail.pendingCount > 0">
+                <button type="button" class="btn-auto-grant" :disabled="grantSaving" data-testid="auto-grant" @click="autoGrantFromHireDate(detail)">
+                  <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">calendar_month</span> 未付与の基準日 {{ detail.pendingCount }}件 を付与
+                </button>
+                <div class="auto-grant-hint">入社日＋労基法スケジュールに基づく付与です（重複しません）。</div>
+              </template>
+              <div v-else class="auto-grant-done">
+                <span class="material-symbols-rounded" style="font-size:16px;vertical-align:middle;line-height:1">check_circle</span>
+                法令どおり付与済みです。次の基準日が来ると自動で付与されます。
+              </div>
               <p v-if="grantError" class="grant-error">{{ grantError }}</p>
             </div>
             <div v-else class="info-note warn">
@@ -825,6 +831,7 @@ onMounted(async () => {
 .btn-auto-grant { display: block; width: 100%; background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 12px; font-size: 14px; font-weight: 700; cursor: pointer; }
 .btn-auto-grant:disabled { opacity: .5; cursor: default; }
 .auto-grant-hint { font-size: 11px; color: #4b7a5e; line-height: 1.6; margin: 0; }
+.auto-grant-done { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #256b45; }
 /* 折りたたみトグル */
 .collapse-toggle { background: none; border: none; text-align: left; width: 100%; font-size: 13px; font-weight: 700; color: #555; cursor: pointer; padding: 8px 0; }
 .collapse-toggle:hover { color: #06843c; }
