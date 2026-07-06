@@ -293,7 +293,7 @@ import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { canViewHourlyWage } from '../lib/auth'
 import { refreshNavBadges } from '../lib/navBadges'
-import { tenureMonths, suggestedGrantDays, pendingBaseDatesFor } from '../lib/paidLeaveGrant'
+import { tenureMonths, suggestedGrantDays, pendingBaseDatesFor, fifoBalance } from '../lib/paidLeaveGrant'
 
 // 法令付与計算は lib/paidLeaveGrant.ts（付与待ちバッジ navBadges と共用）。
 function suggestedGrant(w: WorkerStat): number {
@@ -401,7 +401,7 @@ const printRows = computed(() => {
       totalGranted,
       usedDates,
       usedCount:       usage.length,
-      remaining:       totalGranted - (allUsageByWorker[w.id] ?? []).length,
+      remaining:       w.remaining,   // FIFO残高（workerStatsで算出済み）
       duty:            w.duty,
     }
   })
@@ -441,11 +441,12 @@ async function load() {
 
   workerStats.value = (workersData ?? []).map((w: any) => {
     const wGrants     = allGrantsByWorker[w.id] ?? []
-    const validGrants = wGrants.filter(g => !isExpired(g.expires_at))
-    const totalGranted = validGrants.reduce((s, g) => s + Number(g.days), 0)
     const initialUsed  = Number(w.initial_used_leave_days ?? 0)   // 導入前に消化した分（控除）
     const systemUsed   = (allUsageByWorker[w.id] ?? []).length    // 導入後のアプリ有給申請
     const totalUsed    = initialUsed + systemUsed
+    // FIFO残高: 消化を古い付与から充当し、有効付与の未消化分を残とする（失効の未使用分のみ消滅）。
+    const bal = fifoBalance(wGrants, totalUsed, today)
+    const totalGranted = bal.validGranted   // 有効期限内の付与合計
     // 未付与の基準日（付与待ち）。恒久除外された基準日は除く。
     const existingDates = new Set(wGrants.map(g => g.granted_at))
     const excludedDates = (Array.isArray(w.excluded_grant_dates) ? w.excluded_grant_dates : []).map((d: any) => String(d))
@@ -493,7 +494,7 @@ async function load() {
       excludedDates,
       totalGranted,
       totalUsed,
-      remaining: totalGranted - totalUsed,
+      remaining: bal.remaining,   // FIFO残高（失効の未使用分のみ消滅・過少計上バグ修正）
       pendingCount,
       duty,
     }
