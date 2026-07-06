@@ -84,11 +84,25 @@
             <div class="balance-card">
               <div class="balance-label">使用済み（全期間）</div>
               <div class="balance-val">{{ detail.totalUsed }} 日</div>
+              <div v-if="detail.initialUsed > 0" class="balance-sub">うち導入前 {{ detail.initialUsed }} 日</div>
             </div>
             <div class="balance-card highlight">
               <div class="balance-label">残日数</div>
               <div class="balance-val">{{ detail.remaining >= 0 ? detail.remaining + ' 日' : '—' }}</div>
             </div>
+          </div>
+
+          <!-- 導入前に既に消化した日数（マイナス入力・移行初期残高の＋付与では表せない分） -->
+          <div class="initial-used-box">
+            <label class="initial-used-lbl">導入前に消化した有給（初期使用済み日数）
+              <div class="initial-used-row">
+                <input v-model.number="initialUsedInput" type="number" min="0" step="0.5" class="input initial-used-input" data-testid="initial-used" />
+                <span class="initial-used-unit">日</span>
+                <button class="btn-save-used" :disabled="savingUsed || initialUsedInput === detail.initialUsed" data-testid="save-initial-used" @click="saveInitialUsed">{{ savingUsed ? '保存中…' : '保存' }}</button>
+              </div>
+            </label>
+            <p class="initial-used-hint">システム導入前に既に取得済みの有給日数。残日数から控除されます（導入後の有給申請はアプリが自動集計）。</p>
+            <p v-if="usedError" class="grant-error">{{ usedError }}</p>
           </div>
 
           <div v-if="detail.hire_date" class="ref-grant">
@@ -307,8 +321,9 @@ type WorkerStat = {
   hire_date: string | null
   employment_type: 'fulltime' | 'parttime' | 'contractor' | null
   weekly_scheduled_days: number | null
+  initialUsed: number   // 導入前に既に消化した有給日数（控除）
   totalGranted: number
-  totalUsed: number
+  totalUsed: number     // 初期使用済み ＋ システム使用の合計
   remaining: number
   duty: {
     isSubject: boolean   // 10日以上付与で義務対象
@@ -339,6 +354,9 @@ const detailGrants = ref<Grant[]>([])
 const detailUsage  = ref<UsageEntry[]>([])
 const grantSaving  = ref(false)
 const grantError   = ref('')
+const initialUsedInput = ref(0)   // 初期使用済み日数の編集値
+const savingUsed   = ref(false)
+const usedError    = ref('')
 
 // 全作業員の使用履歴・付与履歴（印刷用）
 const allUsageByWorker:  Record<string, UsageEntry[]> = {}
@@ -401,7 +419,7 @@ async function load() {
   const accountId = await getAccountId()
 
   const [{ data: workersData }, { data: grantsData }, { data: usersData }, { data: leaveData }] = await Promise.all([
-    supabase.from('workers').select('id, name, active, hire_date, employment_type, weekly_scheduled_days').eq('account_id', accountId).order('name'),
+    supabase.from('workers').select('id, name, active, hire_date, employment_type, weekly_scheduled_days, initial_used_leave_days').eq('account_id', accountId).order('name'),
     supabase.from('paid_leave_grants').select('id, worker_id, granted_at, expires_at, days, note').eq('account_id', accountId),
     supabase.from('users').select('id, worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
     supabase.from('daily_reports').select('user_id, date, note').eq('account_id', accountId).eq('leave_type', 'paid_leave').order('date', { ascending: false }),
@@ -431,7 +449,9 @@ async function load() {
     const wGrants     = allGrantsByWorker[w.id] ?? []
     const validGrants = wGrants.filter(g => !isExpired(g.expires_at))
     const totalGranted = validGrants.reduce((s, g) => s + Number(g.days), 0)
-    const totalUsed    = (allUsageByWorker[w.id] ?? []).length
+    const initialUsed  = Number(w.initial_used_leave_days ?? 0)   // 導入前に消化した分（控除）
+    const systemUsed   = (allUsageByWorker[w.id] ?? []).length    // 導入後のアプリ有給申請
+    const totalUsed    = initialUsed + systemUsed
 
     // ── 年5日義務: 最新の基準日から1年間で判定 ──
     const latestGrant = validGrants.sort((a, b) => b.granted_at.localeCompare(a.granted_at))[0]
@@ -471,6 +491,7 @@ async function load() {
       hire_date:             w.hire_date,
       employment_type:       w.employment_type,
       weekly_scheduled_days: w.weekly_scheduled_days,
+      initialUsed,
       totalGranted,
       totalUsed,
       remaining: totalGranted - totalUsed,
@@ -484,6 +505,8 @@ async function load() {
 async function openDetail(w: WorkerStat) {
   detail.value   = w
   grantError.value = ''
+  usedError.value = ''
+  initialUsedInput.value = w.initialUsed   // 初期使用済み日数の編集値をセット
   newGrant.value = {
     granted_at: today,
     expires_at: `${thisYear + 2}-${today.slice(5)}`,
@@ -491,6 +514,24 @@ async function openDetail(w: WorkerStat) {
     note:       `${thisYear}年度付与`,
   }
   await loadDetailData(w.id)
+}
+
+// 初期使用済み日数（導入前に消化した分）を保存し、残日数を再計算。
+async function saveInitialUsed() {
+  if (!detail.value) return
+  const v = Number(initialUsedInput.value)
+  if (!Number.isFinite(v) || v < 0) { usedError.value = '0以上の日数を入力してください'; return }
+  savingUsed.value = true; usedError.value = ''
+  try {
+    await supabase.from('workers').update({ initial_used_leave_days: v }).eq('id', detail.value.id)
+    await load()
+    detail.value = workerStats.value.find(x => x.id === detail.value!.id) ?? detail.value
+    if (detail.value) initialUsedInput.value = detail.value.initialUsed
+  } catch (e: any) {
+    usedError.value = e.message ?? '保存に失敗しました'
+  } finally {
+    savingUsed.value = false
+  }
 }
 
 async function loadDetailData(workerId: string) {
@@ -643,6 +684,15 @@ onMounted(load)
 .balance-card.highlight { background: #e8fff0; }
 .balance-label   { font-size: 11px; color: #888; margin-bottom: 6px; }
 .balance-val     { font-size: 22px; font-weight: 700; color: #1a1a1a; }
+.balance-sub     { font-size: 10px; color: #a16207; margin-top: 4px; }
+.initial-used-box { margin: 14px 0; padding: 12px 14px; background: #fffdf5; border: 1px solid #f0e6c8; border-radius: 10px; }
+.initial-used-lbl { font-size: 12px; font-weight: 700; color: #7a5f1a; display: block; }
+.initial-used-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.initial-used-input { width: 90px; }
+.initial-used-unit { font-size: 13px; color: #555; }
+.btn-save-used { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.btn-save-used:disabled { opacity: .5; cursor: default; }
+.initial-used-hint { font-size: 11px; color: #8a6d3b; margin: 8px 0 0; line-height: 1.6; }
 .balance-card.highlight .balance-val { color: #0a8a3a; }
 .ref-grant  { background: #f0f4ff; border-radius: 8px; padding: 12px 16px; display: flex; align-items: center; gap: 16px; }
 .ref-label  { font-size: 11px; color: #4f46e5; font-weight: 700; white-space: nowrap; }
