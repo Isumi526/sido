@@ -88,7 +88,7 @@
           <div v-if="canViewHourlyWage && showLaborCost" class="summary-card cost-card">
             <div class="summary-label">人件費合計</div>
             <div class="summary-value cost-value">{{ fmtYen(totalLaborCost) }}</div>
-            <div class="cost-rate-hint" v-if="activeDailyWage">日当 {{ fmtYen(activeDailyWage) }} / 時給換算 {{ fmtYen(Math.round(activeDailyWage / 8)) }}<template v-if="activeHourlyWage">（実質時給 {{ fmtYen(activeHourlyWage) }}）</template></div>
+            <div class="cost-rate-hint" v-if="activeDailyWage">日当 {{ fmtYen(activeDailyWage) }}<template v-if="activeHourlyWage"> / 時給 {{ fmtYen(activeHourlyWage) }}</template><span v-else class="rate-unset"> / 時給 未設定</span></div>
           </div>
         </div>
 
@@ -603,6 +603,7 @@ function printPdf() {
 .cost-card { background: #fffbeb; border: 1px solid #f0c040; }
 .cost-value { font-size: 22px; color: #92600a; }
 .cost-rate-hint { font-size: 10px; color: #a07830; margin-top: 4px; }
+.rate-unset { color: #b0392e; }
 .cost-cell { color: #92600a; font-weight: 700; }
 
 /* テーブル共通 */
