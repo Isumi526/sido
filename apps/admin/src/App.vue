@@ -63,6 +63,7 @@
 
         <li class="nav-section">経費・請求</li>
         <li><RouterLink to="/expenses" class="nav-link"><span class="material-symbols-rounded nav-icon">receipt_long</span>経費管理</RouterLink></li>
+        <li><RouterLink to="/expenses-daily" class="nav-link"><span class="material-symbols-rounded nav-icon">calendar_view_day</span>経費 日毎集計</RouterLink></li>
         <li><RouterLink to="/gasoline-allocation" class="nav-link"><span class="material-symbols-rounded nav-icon">local_gas_station</span>ガソリン按分</RouterLink></li>
         <li><RouterLink to="/subcontractor-invoices" class="nav-link"><span class="material-symbols-rounded nav-icon">request_quote</span>協力業者請求</RouterLink></li>
 
