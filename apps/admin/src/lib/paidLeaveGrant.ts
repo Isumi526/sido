@@ -57,10 +57,11 @@ export function suggestedGrantDays(hireDate: string | null, employmentType: stri
   return daysForTenureMonths(tenureMonths(hireDate), employmentType, weeklyDays)
 }
 
-// 未付与の基準日（入社+6,+18…今日まで・既存付与日に無い・失効前）。自動付与と付与待ちバッジで共用。
+// 未付与の基準日（入社+6,+18…今日まで・既存付与日に無い・失効前・除外指定でない）。自動付与と付与待ちバッジで共用。
+//  excludedDates: 恒久除外する基準日(削除で記録)。ここに含まれる基準日はスキップ＝再付与しない。
 export function pendingBaseDatesFor(
   hireDate: string | null, employmentType: string | null | undefined, weeklyDays: number | null | undefined,
-  existingGrantDates: Set<string>, todayStr: string,
+  existingGrantDates: Set<string>, todayStr: string, excludedDates?: Set<string>,
 ): { granted: string; expires: string; days: number; note: string }[] {
   if (!hireDate || employmentType === 'contractor') return []
   const rows: { granted: string; expires: string; days: number; note: string }[] = []
@@ -68,6 +69,7 @@ export function pendingBaseDatesFor(
     const granted = addMonths(hireDate, m)
     if (granted > todayStr) break
     if (existingGrantDates.has(granted)) continue
+    if (excludedDates?.has(granted)) continue         // 恒久除外された基準日はスキップ
     const expires = addMonths(granted, 24)
     if (expires < todayStr) continue
     const days = daysForTenureMonths(m, employmentType, weeklyDays)

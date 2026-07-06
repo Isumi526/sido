@@ -42,7 +42,7 @@ export async function refreshNavBadges() {
   if (!canViewHourlyWage.value) { pendingGrantCount.value = 0; return }
   const today = new Date().toISOString().split('T')[0]
   const [{ data: workers }, { data: grants }] = await Promise.all([
-    supabase.from('workers').select('id, hire_date, employment_type, weekly_scheduled_days').eq('account_id', accountId).eq('active', true),
+    supabase.from('workers').select('id, hire_date, employment_type, weekly_scheduled_days, excluded_grant_dates').eq('account_id', accountId).eq('active', true),
     supabase.from('paid_leave_grants').select('worker_id, granted_at').eq('account_id', accountId),
   ])
   const grantDatesByWorker: Record<string, Set<string>> = {}
@@ -50,7 +50,8 @@ export async function refreshNavBadges() {
   let pending = 0
   for (const w of (workers ?? []) as any[]) {
     const existing = grantDatesByWorker[w.id] ?? new Set<string>()
-    if (pendingBaseDatesFor(w.hire_date, w.employment_type, w.weekly_scheduled_days, existing, today).length > 0) pending++
+    const excluded = new Set((Array.isArray(w.excluded_grant_dates) ? w.excluded_grant_dates : []).map((d: any) => String(d)))
+    if (pendingBaseDatesFor(w.hire_date, w.employment_type, w.weekly_scheduled_days, existing, today, excluded).length > 0) pending++
   }
   pendingGrantCount.value = pending
 }
