@@ -26,7 +26,7 @@
       <template v-else>
         <div class="sdm-recipient">
           <span class="sdm-label">宛先（複数選択可）</span>
-          <span v-if="!hasRecipient" class="sdm-noto">⚠ 宛先メール未登録（送信不可・URLコピーは可能）</span>
+          <span v-if="!hasRecipient" class="sdm-noto"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">warning</span> 宛先メール未登録（送信不可・URLコピーは可能）</span>
         </div>
         <div v-if="hasRecipient" class="sdm-recips">
           <label v-for="r in recipients" :key="r.email" class="sdm-recip">
@@ -44,23 +44,23 @@
         </label>
         <p class="sdm-note">※ 本文の末尾に「リンクボタン＋URL」が自動で付きます（送信時に発行）。</p>
 
-        <p v-if="copiedUrl" class="sdm-copied">📋 URLをコピーしました（メールは送信していません）<br><span class="sdm-url">{{ copiedUrl }}</span></p>
+        <p v-if="copiedUrl" class="sdm-copied"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">content_paste</span> URLをコピーしました（メールは送信していません）<br><span class="sdm-url">{{ copiedUrl }}</span></p>
         <p v-if="errorMsg" class="sdm-error">{{ errorMsg }}</p>
         <p v-if="okMsg" class="sdm-ok">{{ okMsg }}</p>
 
         <div class="sdm-actions">
           <button class="sdm-btn ghost" @click="close">キャンセル</button>
-          <button class="sdm-btn copy" :class="{ primary: !hasRecipient }" :disabled="busy === 'copy'" @click="doCopy">{{ busy === 'copy' ? '発行中…' : '🔗 URLをコピー' }}</button>
+          <button class="sdm-btn copy" :class="{ primary: !hasRecipient }" :disabled="busy === 'copy'" @click="doCopy"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">link</span> {{ busy === 'copy' ? '発行中…' : 'URLをコピー' }}</button>
           <button class="sdm-btn send" :disabled="!!busy || !hasRecipient || !selectedTo.length"
             :title="!hasRecipient ? 'この業者は宛先メールが未登録のため送信できません（URLをコピーして手渡してください）' : (!selectedTo.length ? '送信先を1つ以上選んでください' : '')"
             @click="doSend">{{ busy === 'send' ? '送信中…' : sendLabel }}</button>
         </div>
-        <p v-if="!hasRecipient" class="sdm-hint-noto">※ 宛先メール未登録のため「送信」は使えません。「🔗 URLをコピー」でリンクを取得し、LINE等で業者へ渡してください。</p>
+        <p v-if="!hasRecipient" class="sdm-hint-noto">※ 宛先メール未登録のため「送信」は使えません。「URLをコピー」でリンクを取得し、LINE等で業者へ渡してください。</p>
 
         <div v-if="history.length" class="sdm-history">
           <div class="sdm-history-title">送信履歴（最新{{ history.length }}件）</div>
           <div v-for="(h, i) in history" :key="i" class="sdm-history-row">
-            <span class="sdm-hist-kind" :class="h.kind">{{ h.kind === 'send' ? '📧送信' : '🔗コピー' }}</span>
+            <span class="sdm-hist-kind" :class="h.kind"><span class="material-symbols-rounded" style="font-size:14px;vertical-align:middle;line-height:1">{{ h.kind === 'send' ? 'mail' : 'link' }}</span>{{ h.kind === 'send' ? '送信' : 'コピー' }}</span>
             <span class="sdm-hist-at">{{ fmtDate(h.created_at) }}</span>
             <span class="sdm-hist-to">{{ h.kind === 'send' ? (h.recipients_masked || []).join(', ') : 'URL発行' }}</span>
           </div>
@@ -87,7 +87,7 @@ const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
 const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 const IS_DEV = import.meta.env.DEV
 
-const sendLabel = props.sendLabel ?? '📧 送信する'
+const sendLabel = props.sendLabel ?? '送信する'
 const loading = ref(false)
 const busy = ref<'' | 'send' | 'copy'>('')
 const subject = ref('')

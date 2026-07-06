@@ -8,7 +8,7 @@
           <button class="btn-ghost" :disabled="mergePick.length !== 2" @click="openMerge">マージ実行（{{ mergePick.length }}/2）</button>
           <button class="btn-ghost" @click="cancelMerge">キャンセル</button>
         </template>
-        <button class="btn-ghost" @click="openInvite">✉ 新規業者を招待</button>
+        <button class="btn-ghost" @click="openInvite"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">mail</span> 新規業者を招待</button>
         <button class="btn-add" @click="openAdd">＋ 追加</button>
       </div>
     </div>

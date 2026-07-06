@@ -9,7 +9,7 @@
     </p>
 
     <p class="issue-hint-inline">
-      💡 管理者から直接編集許可を出したい時は、<router-link to="/reports" class="inline-link">日報一覧</router-link>で該当日報の「✏️ 編集許可を発行」ボタンから発行できます（作業員の申請を待たずに、その日報を見ながら許可できます）。
+      <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">lightbulb</span> 管理者から直接編集許可を出したい時は、<router-link to="/reports" class="inline-link">日報一覧</router-link>で該当日報の「編集許可を発行」ボタンから発行できます（作業員の申請を待たずに、その日報を見ながら許可できます）。
     </p>
 
     <div v-if="loading" class="empty">読み込み中…</div>

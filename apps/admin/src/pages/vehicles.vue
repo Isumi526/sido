@@ -63,7 +63,7 @@
               <a v-if="p.url" :href="p.url" target="_blank" rel="noopener" class="photo-thumb-link">
                 <img :src="p.url" class="photo-thumb" :alt="p.name || '写真'" />
               </a>
-              <span v-else class="photo-thumb photo-thumb-empty">📷</span>
+              <span v-else class="photo-thumb photo-thumb-empty"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">photo_camera</span></span>
               <input v-model="p.name" class="input photo-name" placeholder="名称（例：運転席側）" @change="renamePhoto(p)" />
               <button class="photo-del" title="削除" @click="deletePhoto(p)">×</button>
             </div>
@@ -86,13 +86,13 @@
           <label>車検証（画像/PDFをアップロード→PDF保存・満了日を自動読取）</label>
           <div v-if="shakenDocs.length || pendingShaken.length" class="shaken-list">
             <div v-for="d in shakenDocs" :key="d.id" class="shaken-item">
-              <span class="shaken-icon">📄</span>
+              <span class="shaken-icon"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span></span>
               <a v-if="d.url" :href="d.url" target="_blank" rel="noopener" class="shaken-link">{{ d.name || '車検証' }}</a>
               <span v-else class="shaken-link muted">{{ d.name || '車検証' }}</span>
               <button class="shaken-del" title="削除" @click="deleteShaken(d)">×</button>
             </div>
             <div v-for="(f, i) in pendingShaken" :key="'ps' + i" class="shaken-item pending">
-              <span class="shaken-icon">📄</span>
+              <span class="shaken-icon"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span></span>
               <span class="shaken-link muted">{{ f.name }}（保存時にアップロード）</span>
               <button class="shaken-del" title="取り消し" @click="removePendingShaken(i)">×</button>
             </div>
@@ -116,7 +116,7 @@
             <button type="button" class="btn-plate-ai" :class="{ busy: plateOcrBusy }"
                     :disabled="plateOcrBusy || (!pendingPhotos.length && !photos.length)"
                     @click="readPlateFromPhotos">
-              {{ plateOcrBusy ? 'AI解析中…' : '🤖 アップロードした写真からナンバー読取' }}
+              <span v-if="plateOcrBusy">AI解析中…</span><span v-else><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">smart_toy</span> アップロードした写真からナンバー読取</span>
             </button>
             <span class="plate-ai-hint">上でアップロードした車両写真からナンバーを探して自動入力（読取後に手動修正できます）</span>
           </div>

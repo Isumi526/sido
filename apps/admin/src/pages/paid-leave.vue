@@ -14,6 +14,19 @@
     <div v-if="loading" class="loading no-print">読み込み中...</div>
     <div v-else>
 
+      <!-- 自動付与の通知（開いた時に基準日到来分を自動付与＝A方式）。誤りは詳細から修正可。 -->
+      <div v-if="autoGrantNotice" class="autogrant-notice no-print" data-testid="autogrant-notice">
+        <span class="material-symbols-rounded" style="font-size:18px;vertical-align:middle;line-height:1">check_circle</span>
+        <span class="autogrant-text">{{ autoGrantNotice }}</span>
+        <button class="notice-close" aria-label="閉じる" @click="autoGrantNotice = ''"><span class="material-symbols-rounded" style="font-size:16px;line-height:1">close</span></button>
+      </div>
+      <!-- 未付与が残る場合の手動フォールバック（自動付与が権限/エラーで走らなかった時のみ表示） -->
+      <div v-if="canViewHourlyWage && !autoGrantNotice && pendingWorkers.length" class="pending-banner no-print" data-testid="pending-banner">
+        <span class="pending-badge"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">schedule</span> 付与待ち {{ pendingWorkers.length }}人</span>
+        <span class="pending-text">基準日を過ぎた未付与の有給があります。</span>
+        <button class="btn-batch-grant" :disabled="batchGranting" data-testid="batch-grant" @click="batchGrantPending">{{ batchGranting ? '付与中…' : 'まとめて法令付与' }}</button>
+      </div>
+
       <!-- ── 画面: サマリーテーブル（印刷非表示） ── -->
       <div class="table-wrap no-print">
         <table class="table">
@@ -38,7 +51,10 @@
                 </span>
               </td>
               <td class="mono">{{ w.hire_date ?? '—' }}</td>
-              <td class="mono">{{ w.totalGranted > 0 ? w.totalGranted + ' 日' : '—' }}</td>
+              <td class="mono">
+                {{ w.totalGranted > 0 ? w.totalGranted + ' 日' : '—' }}
+                <span v-if="canViewHourlyWage && w.pendingCount > 0" class="pending-row-badge" :title="`未付与の基準日が${w.pendingCount}件あります`">付与待ち{{ w.pendingCount }}</span>
+              </td>
               <td class="mono">{{ w.duty.usedInPeriod }} 日</td>
               <td>
                 <span class="remaining" :class="remainingClass(w.remaining)">
@@ -70,12 +86,14 @@
               <div class="drawer-name">{{ detail.name }}</div>
               <div class="drawer-sub">
                 {{ detail.employment_type === 'contractor' ? '業務委託' : (detail.employment_type ?? 'fulltime') === 'fulltime' ? '正社員' : `パート(週${detail.weekly_scheduled_days ?? '?'}日)` }}
-                {{ detail.hire_date ? ' / 入社: ' + detail.hire_date : '' }}
+                <template v-if="detail.hire_date"> ・ 入社 {{ detail.hire_date }}</template>
+                <span v-else class="hire-missing">・ 入社日未設定</span>
               </div>
             </div>
             <button class="btn-close" @click="detail = null">✕</button>
           </div>
 
+          <!-- ① 残高（読み取り最優先・残日数を強調） -->
           <div class="balance-summary">
             <div class="balance-card">
               <div class="balance-label">付与合計（有効期限内）</div>
@@ -84,6 +102,7 @@
             <div class="balance-card">
               <div class="balance-label">使用済み（全期間）</div>
               <div class="balance-val">{{ detail.totalUsed }} 日</div>
+              <div v-if="detail.initialUsed > 0" class="balance-sub">うち導入前 {{ detail.initialUsed }} 日</div>
             </div>
             <div class="balance-card highlight">
               <div class="balance-label">残日数</div>
@@ -91,36 +110,37 @@
             </div>
           </div>
 
-          <div v-if="detail.hire_date" class="ref-grant">
-            <div class="ref-label">参考: 法令上の付与日数</div>
-            <div class="ref-val">
-              {{ suggestedGrant(detail) }} 日
-              <span class="ref-note">（勤続 {{ tenureMonths(detail.hire_date) }} ヶ月）</span>
-            </div>
-          </div>
-
-          <!-- 移行登録ガイド（付与履歴がない作業員のみ表示） -->
-          <div v-if="detailGrants.length === 0" class="migration-guide">
-            <div class="migration-guide-icon">💡</div>
-            <div class="migration-guide-body">
-              <div class="migration-guide-title">導入時の残日数を登録してください</div>
-              <div class="migration-guide-text">
-                付与履歴がありません。以下の手順で今日時点の残日数をシステムに引き継げます。
-              </div>
-              <ol class="migration-guide-steps">
-                <li>今日時点の残有休日数を確認する</li>
-                <li>付与日に <strong>今日の日付</strong>、付与日数に <strong>残日数</strong> を入力</li>
-                <li>有効期限は残日数の本来の期限に合わせるか、不明なら <strong>2年後</strong> でOK</li>
-                <li>備考を <strong>「移行初期残高（導入時点）」</strong> にして登録</li>
-              </ol>
-              <div class="migration-guide-note">
-                ※ 次回付与から通常通り法令日数で登録すればOKです
-              </div>
-            </div>
-          </div>
-
+          <!-- ② 付与する（主アクション＝法令の自動付与）＝付与操作は役員経理以上のみ -->
           <div class="section-title">有給を付与する</div>
-          <div class="grant-form">
+          <div v-if="!canViewHourlyWage" class="info-note">有給の付与操作は役員・経理以上の権限者のみ行えます（閲覧のみ可）。</div>
+          <template v-else-if="detail.employment_type === 'contractor'"><div class="info-note">業務委託は年次有給の付与対象外です。</div></template>
+          <template v-else>
+            <div v-if="detail.hire_date" class="auto-grant-panel">
+              <div class="auto-grant-lead">
+                <span class="auto-grant-ref">法令の付与日数 <b>{{ suggestedGrant(detail) }} 日</b><span class="ref-note">（勤続 {{ tenureMonths(detail.hire_date) }} ヶ月）</span></span>
+              </div>
+              <template v-if="detail.pendingCount > 0">
+                <button type="button" class="btn-auto-grant" :disabled="grantSaving" data-testid="auto-grant" @click="autoGrantFromHireDate(detail)">
+                  <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">calendar_month</span> 未付与の基準日 {{ detail.pendingCount }}件 を付与
+                </button>
+                <div class="auto-grant-hint">入社日＋労基法スケジュールに基づく付与です（重複しません）。</div>
+              </template>
+              <div v-else class="auto-grant-done">
+                <span class="material-symbols-rounded" style="font-size:16px;vertical-align:middle;line-height:1">check_circle</span>
+                法令どおり付与済みです。次の基準日が来ると自動で付与されます。
+              </div>
+              <p v-if="grantError" class="grant-error">{{ grantError }}</p>
+            </div>
+            <div v-else class="info-note warn">
+              入社日が未設定のため自動付与できません。下の<strong>「入社日・移行設定」</strong>で入社日を設定してください。
+            </div>
+          </template>
+
+          <!-- 手動で付与（特別付与・調整・移行初期残高）＝折りたたみ・役員経理以上のみ -->
+          <button v-if="canViewHourlyWage" type="button" class="collapse-toggle" data-testid="toggle-manual-grant" @click="showManualGrant = !showManualGrant">
+            {{ showManualGrant ? '▾' : '▸' }} 手動で付与する（特別付与・手動調整・残日数の直接登録）
+          </button>
+          <div v-show="showManualGrant && canViewHourlyWage" class="grant-form">
             <div class="form-row">
               <div class="form-field">
                 <label>付与日</label>
@@ -138,13 +158,47 @@
               </div>
               <div class="form-field">
                 <label>備考</label>
-                <input v-model="newGrant.note" class="input" placeholder="例: 2024年度付与" />
+                <input v-model="newGrant.note" class="input" placeholder="例: 2024年度付与 / 移行初期残高" />
               </div>
             </div>
             <button class="btn-grant" :disabled="grantSaving" @click="addGrant">
               {{ grantSaving ? '保存中...' : '付与を追加' }}
             </button>
-            <p v-if="grantError" class="error">{{ grantError }}</p>
+            <p v-if="grantError && !showManualGrant" class="error">{{ grantError }}</p>
+          </div>
+
+          <!-- ③ 入社日・移行設定（折りたたみ・初期セットアップ用） -->
+          <button type="button" class="collapse-toggle" data-testid="toggle-settings" @click="showSettings = !showSettings">
+            {{ showSettings ? '▾' : '▸' }} <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">settings</span> 入社日・移行設定
+          </button>
+          <div v-show="showSettings" class="settings-panel">
+            <div v-if="canViewHourlyWage" class="setting-field">
+              <label class="setting-lbl">入社日</label>
+              <div class="setting-row">
+                <input v-model="hireDateInput" type="date" class="input setting-input" data-testid="hire-date-edit" />
+                <button class="btn-setting-save" :disabled="savingHire || hireDateInput === (detail.hire_date ?? '')" data-testid="save-hire-date" @click="saveHireDate">{{ savingHire ? '保存中…' : '保存' }}</button>
+              </div>
+              <p class="setting-hint">自動付与の前提。役員・経理以上のみ編集できます。</p>
+              <p v-if="hireError" class="grant-error">{{ hireError }}</p>
+            </div>
+            <div class="setting-field">
+              <label class="setting-lbl">導入前に消化した有給（初期使用済み日数）</label>
+              <div class="setting-row">
+                <input v-model.number="initialUsedInput" type="number" min="0" step="0.5" class="input setting-input" data-testid="initial-used" />
+                <span class="setting-unit">日</span>
+                <button class="btn-setting-save" :disabled="savingUsed || initialUsedInput === detail.initialUsed" data-testid="save-initial-used" @click="saveInitialUsed">{{ savingUsed ? '保存中…' : '保存' }}</button>
+              </div>
+              <p class="setting-hint">システム導入前に取得済みの日数。残日数から控除（導入後はアプリが自動集計）。</p>
+              <p v-if="usedError" class="grant-error">{{ usedError }}</p>
+            </div>
+            <div v-if="detail.excludedDates.length" class="setting-field">
+              <label class="setting-lbl">自動付与から除外中の基準日</label>
+              <div v-for="d in detail.excludedDates" :key="d" class="excluded-row">
+                <span class="mono">{{ d }}</span>
+                <button class="btn-unexclude" data-testid="unexclude" :disabled="grantMutating" @click="unexcludeDate(d)">除外解除</button>
+              </div>
+              <p class="setting-hint">削除で除外した基準日。解除すると再び法令の自動付与対象になります。</p>
+            </div>
           </div>
 
           <div class="section-title">付与履歴</div>
@@ -160,7 +214,7 @@
                 <td class="mono">{{ g.expires_at }}</td>
                 <td><span class="exp-badge" :class="isExpired(g.expires_at) ? 'expired' : 'valid'">{{ isExpired(g.expires_at) ? '期限切れ' : '有効' }}</span></td>
                 <td class="note-cell">{{ g.note ?? '—' }}</td>
-                <td><button class="btn-del" @click="deleteGrant(g.id)">削除</button></td>
+                <td><button v-if="canViewHourlyWage" class="btn-del" :disabled="grantMutating" @click="deleteGrant(g)">削除</button></td>
               </tr>
             </tbody>
           </table>
@@ -237,46 +291,13 @@
 import { ref, computed, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { canViewHourlyWage } from '../lib/auth'
+import { refreshNavBadges } from '../lib/navBadges'
+import { tenureMonths, suggestedGrantDays, pendingBaseDatesFor } from '../lib/paidLeaveGrant'
 
-// ── 法令付与日数テーブル ──────────────────────────────────────
-const FULLTIME_TABLE: { minMonths: number; days: number }[] = [
-  { minMonths: 78, days: 20 },
-  { minMonths: 66, days: 18 },
-  { minMonths: 54, days: 16 },
-  { minMonths: 42, days: 14 },
-  { minMonths: 30, days: 12 },
-  { minMonths: 18, days: 11 },
-  { minMonths:  6, days: 10 },
-]
-const PARTTIME_TABLE: Record<number, number[]> = {
-  4: [7, 8, 9, 10, 12, 13, 15],
-  3: [5, 6, 6,  8,  9, 10, 11],
-  2: [3, 4, 4,  5,  6,  6,  7],
-  1: [1, 2, 2,  2,  3,  3,  3],
-}
-const TENURE_STEPS = [6, 18, 30, 42, 54, 66, 78]
-
-function tenureMonths(hireDate: string): number {
-  const hire = new Date(hireDate)
-  const now  = new Date()
-  return (now.getFullYear() - hire.getFullYear()) * 12 + (now.getMonth() - hire.getMonth())
-}
-
+// 法令付与計算は lib/paidLeaveGrant.ts（付与待ちバッジ navBadges と共用）。
 function suggestedGrant(w: WorkerStat): number {
-  // 業務委託は労働者でない＝有給休暇の付与対象外（法定の年次有給は雇用関係が前提）
-  if (w.employment_type === 'contractor') return 0
-  if (!w.hire_date) return 0
-  const months = tenureMonths(w.hire_date)
-  if (months < 6) return 0
-  if ((w.employment_type ?? 'fulltime') === 'fulltime') {
-    return FULLTIME_TABLE.find(r => months >= r.minMonths)?.days ?? 0
-  }
-  const days = w.weekly_scheduled_days ?? 5
-  if (days >= 5) return FULLTIME_TABLE.find(r => months >= r.minMonths)?.days ?? 0
-  const table = PARTTIME_TABLE[days]
-  if (!table) return 0
-  const idx = TENURE_STEPS.filter(m => months >= m).length - 1
-  return idx < 0 ? 0 : (table[idx] ?? 0)
+  return suggestedGrantDays(w.hire_date, w.employment_type, w.weekly_scheduled_days)
 }
 
 // ── 型定義 ────────────────────────────────────────────────────
@@ -287,9 +308,12 @@ type WorkerStat = {
   hire_date: string | null
   employment_type: 'fulltime' | 'parttime' | 'contractor' | null
   weekly_scheduled_days: number | null
+  initialUsed: number   // 導入前に既に消化した有給日数（控除）
+  excludedDates: string[]  // 法令自動付与から恒久除外する基準日
   totalGranted: number
-  totalUsed: number
+  totalUsed: number     // 初期使用済み ＋ システム使用の合計
   remaining: number
+  pendingCount: number  // 未付与の基準日の件数（付与待ちバッジ用）
   duty: {
     isSubject: boolean   // 10日以上付与で義務対象
     isMet: boolean
@@ -319,6 +343,14 @@ const detailGrants = ref<Grant[]>([])
 const detailUsage  = ref<UsageEntry[]>([])
 const grantSaving  = ref(false)
 const grantError   = ref('')
+const initialUsedInput = ref(0)   // 初期使用済み日数の編集値
+const savingUsed   = ref(false)
+const usedError    = ref('')
+const hireDateInput = ref('')   // 入社日の編集値
+const savingHire   = ref(false)
+const hireError    = ref('')
+const showManualGrant = ref(false)   // 手動付与フォームの折りたたみ
+const showSettings    = ref(false)   // 入社日・移行設定の折りたたみ
 
 // 全作業員の使用履歴・付与履歴（印刷用）
 const allUsageByWorker:  Record<string, UsageEntry[]> = {}
@@ -381,7 +413,7 @@ async function load() {
   const accountId = await getAccountId()
 
   const [{ data: workersData }, { data: grantsData }, { data: usersData }, { data: leaveData }] = await Promise.all([
-    supabase.from('workers').select('id, name, active, hire_date, employment_type, weekly_scheduled_days').eq('account_id', accountId).order('name'),
+    supabase.from('workers').select('id, name, active, hire_date, employment_type, weekly_scheduled_days, initial_used_leave_days, excluded_grant_dates').eq('account_id', accountId).order('name'),
     supabase.from('paid_leave_grants').select('id, worker_id, granted_at, expires_at, days, note').eq('account_id', accountId),
     supabase.from('users').select('id, worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
     supabase.from('daily_reports').select('user_id, date, note').eq('account_id', accountId).eq('leave_type', 'paid_leave').order('date', { ascending: false }),
@@ -411,7 +443,13 @@ async function load() {
     const wGrants     = allGrantsByWorker[w.id] ?? []
     const validGrants = wGrants.filter(g => !isExpired(g.expires_at))
     const totalGranted = validGrants.reduce((s, g) => s + Number(g.days), 0)
-    const totalUsed    = (allUsageByWorker[w.id] ?? []).length
+    const initialUsed  = Number(w.initial_used_leave_days ?? 0)   // 導入前に消化した分（控除）
+    const systemUsed   = (allUsageByWorker[w.id] ?? []).length    // 導入後のアプリ有給申請
+    const totalUsed    = initialUsed + systemUsed
+    // 未付与の基準日（付与待ち）。恒久除外された基準日は除く。
+    const existingDates = new Set(wGrants.map(g => g.granted_at))
+    const excludedDates = (Array.isArray(w.excluded_grant_dates) ? w.excluded_grant_dates : []).map((d: any) => String(d))
+    const pendingCount  = pendingBaseDatesFor(w.hire_date, w.employment_type, w.weekly_scheduled_days, existingDates, today, new Set(excludedDates)).length
 
     // ── 年5日義務: 最新の基準日から1年間で判定 ──
     const latestGrant = validGrants.sort((a, b) => b.granted_at.localeCompare(a.granted_at))[0]
@@ -451,19 +489,30 @@ async function load() {
       hire_date:             w.hire_date,
       employment_type:       w.employment_type,
       weekly_scheduled_days: w.weekly_scheduled_days,
+      initialUsed,
+      excludedDates,
       totalGranted,
       totalUsed,
       remaining: totalGranted - totalUsed,
+      pendingCount,
       duty,
     }
   })
 
   loading.value = false
+  refreshNavBadges()   // ナビの付与待ちバッジを同期（付与操作後も即反映）
 }
 
 async function openDetail(w: WorkerStat) {
   detail.value   = w
   grantError.value = ''
+  usedError.value = ''
+  hireError.value = ''
+  initialUsedInput.value = w.initialUsed   // 初期使用済み日数の編集値をセット
+  hireDateInput.value = w.hire_date ?? ''   // 入社日の編集値をセット
+  showManualGrant.value = false
+  // 入社日が未設定なら設定パネルを開いた状態で出す（次にやるべきことが分かるように）
+  showSettings.value = !w.hire_date && canViewHourlyWage.value
   newGrant.value = {
     granted_at: today,
     expires_at: `${thisYear + 2}-${today.slice(5)}`,
@@ -471,6 +520,64 @@ async function openDetail(w: WorkerStat) {
     note:       `${thisYear}年度付与`,
   }
   await loadDetailData(w.id)
+}
+
+// 初期使用済み日数（導入前に消化した分）を保存し、残日数を再計算。
+async function saveInitialUsed() {
+  if (!detail.value) return
+  const v = Number(initialUsedInput.value)
+  if (!Number.isFinite(v) || v < 0) { usedError.value = '0以上の日数を入力してください'; return }
+  savingUsed.value = true; usedError.value = ''
+  try {
+    await supabase.from('workers').update({ initial_used_leave_days: v }).eq('id', detail.value.id)
+    await load()
+    detail.value = workerStats.value.find(x => x.id === detail.value!.id) ?? detail.value
+    if (detail.value) initialUsedInput.value = detail.value.initialUsed
+  } catch (e: any) {
+    usedError.value = e.message ?? '保存に失敗しました'
+  } finally {
+    savingUsed.value = false
+  }
+}
+
+// 作業員の恒久除外基準日セット（workerStatsから）。
+function excludedSetFor(workerId: string): Set<string> {
+  return new Set(workerStats.value.find(x => x.id === workerId)?.excludedDates ?? [])
+}
+
+// 1作業員の未付与の基準日を法令付与（確認なし・A自動用）。入社日保存直後などに使う。除外基準日はスキップ。
+async function autoGrantWorkerSilently(workerId: string, hireDate: string | null, empType: string | null | undefined, weeklyDays: number | null | undefined): Promise<number> {
+  if (!canViewHourlyWage.value || !hireDate || empType === 'contractor') return 0
+  const accountId = await getAccountId()
+  const existing = new Set((allGrantsByWorker[workerId] ?? []).map(g => g.granted_at))
+  const rows = pendingBaseDatesFor(hireDate, empType, weeklyDays, existing, today, excludedSetFor(workerId))
+    .map(p => ({ worker_id: workerId, account_id: accountId, granted_at: p.granted, expires_at: p.expires, days: p.days, note: p.note }))
+  if (rows.length === 0) return 0
+  await supabase.from('paid_leave_grants').insert(rows)
+  return rows.length
+}
+
+// 入社日を保存（役員経理以上のみ・自動付与の前提）。空なら null にする。保存後、その場で法令付与も自動反映（A）。
+async function saveHireDate() {
+  if (!detail.value) return
+  if (!canViewHourlyWage.value) { hireError.value = '権限がありません'; return }
+  savingHire.value = true; hireError.value = ''
+  try {
+    const wid = detail.value.id
+    await supabase.from('workers').update({ hire_date: hireDateInput.value || null }).eq('id', wid)
+    await load()   // allGrantsByWorker/workerStats を最新化（既存付与の把握）
+    // A: 入社日を設定したら、その場で法令付与を自動反映（押す動作なし）
+    const w = workerStats.value.find(x => x.id === wid)
+    const granted = w ? await autoGrantWorkerSilently(wid, w.hire_date, w.employment_type, w.weekly_scheduled_days) : 0
+    if (granted > 0) { autoGrantNotice.value = `入社日の設定に伴い、法令の有給 ${granted}件 を自動付与しました。`; await load() }
+    await loadDetailData(wid)
+    detail.value = workerStats.value.find(x => x.id === wid) ?? detail.value
+    if (detail.value) hireDateInput.value = detail.value.hire_date ?? ''
+  } catch (e: any) {
+    hireError.value = e.message ?? '保存に失敗しました'
+  } finally {
+    savingHire.value = false
+  }
 }
 
 async function loadDetailData(workerId: string) {
@@ -502,6 +609,7 @@ async function loadDetailData(workerId: string) {
 
 async function addGrant() {
   if (!detail.value) return
+  if (!canViewHourlyWage.value) { grantError.value = '付与操作は役員・経理以上の権限者のみです'; return }
   if (!newGrant.value.granted_at || !newGrant.value.expires_at || !newGrant.value.days) {
     grantError.value = '付与日・有効期限・日数を入力してください'; return
   }
@@ -527,21 +635,138 @@ async function addGrant() {
   }
 }
 
-async function deleteGrant(grantId: string) {
-  if (!confirm('この付与記録を削除しますか？')) return
-  await supabase.from('paid_leave_grants').delete().eq('id', grantId)
-  if (detail.value) {
+// 入社日から法令付与を自動生成（回答A: 付与履歴ゼロの作業員のみ＝既存の移行初期残高運用と二重付与しない）。
+// 各基準日(入社+6ヶ月, +18, +30…每12ヶ月)を今日まで生成。既に失効した過去分(基準日+2年<今日)は残に影響しないのでスキップ。
+// 法令の自動付与（差分追加）: 入社日から今日までの基準日のうち、まだ付与していないものだけ追加。
+// 既存の付与日(granted_at)は skip＝何度押しても重複しない。毎年押せば法令どおり付与される。
+async function autoGrantFromHireDate(w: WorkerStat) {
+  if (!canViewHourlyWage.value) { grantError.value = '付与操作は役員・経理以上の権限者のみです'; return }
+  if (!w.hire_date) { grantError.value = '入社日が未設定です'; return }
+  if (w.employment_type === 'contractor') { grantError.value = '業務委託は有給付与対象外です'; return }
+  const existingDates = new Set(detailGrants.value.map(g => g.granted_at))   // 既存付与日（重複防止）
+  const accountId = await getAccountId()
+  const pending = pendingBaseDatesFor(w.hire_date, w.employment_type, w.weekly_scheduled_days, existingDates, today, excludedSetFor(w.id))
+  const rows = pending.map(p => ({ worker_id: w.id, account_id: accountId, granted_at: p.granted, expires_at: p.expires, days: p.days, note: p.note }))
+  if (rows.length === 0) { grantError.value = '追加する基準日がありません（すべて付与済み・除外済み、または入社6ヶ月未満）'; return }
+  if (!confirm(`法令の有給を ${rows.length}件 追加付与します（未付与の基準日）。よろしいですか？`)) return
+  grantSaving.value = true; grantError.value = ''
+  try {
+    await supabase.from('paid_leave_grants').insert(rows)
+    await loadDetailData(w.id)
+    await load()
+    detail.value = workerStats.value.find(x => x.id === w.id) ?? detail.value
+  } catch (e: any) {
+    grantError.value = e.message ?? '自動付与に失敗しました'
+  } finally {
+    grantSaving.value = false
+  }
+}
+
+// 付与待ち（未付与の基準日がある）作業員をまとめて法令付与。
+const batchGranting = ref(false)
+const pendingWorkers = computed(() => workerStats.value.filter(w => w.pendingCount > 0))
+async function batchGrantPending() {
+  if (!canViewHourlyWage.value) return
+  const targets = pendingWorkers.value
+  if (targets.length === 0) return
+  if (!confirm(`付与待ちの ${targets.length}人 に法令の有給をまとめて付与します。よろしいですか？`)) return
+  batchGranting.value = true
+  try {
+    const accountId = await getAccountId()
+    const rows: { worker_id: string; account_id: string; granted_at: string; expires_at: string; days: number; note: string }[] = []
+    for (const w of targets) {
+      const existing = new Set((allGrantsByWorker[w.id] ?? []).map(g => g.granted_at))
+      for (const p of pendingBaseDatesFor(w.hire_date, w.employment_type, w.weekly_scheduled_days, existing, today, new Set(w.excludedDates))) {
+        rows.push({ worker_id: w.id, account_id: accountId, granted_at: p.granted, expires_at: p.expires, days: p.days, note: p.note })
+      }
+    }
+    if (rows.length > 0) await supabase.from('paid_leave_grants').insert(rows)
+    await load()
+  } catch (e: any) {
+    alert(e.message ?? 'まとめて付与に失敗しました')
+  } finally {
+    batchGranting.value = false
+  }
+}
+
+// 付与を削除。自動付与(法令の基準日)を消す時は、その基準日を恒久除外に記録
+// ＝再検知・再付与しない（A＋修正の除外機能）。誤りは「除外解除」で戻せる。
+const grantMutating = ref(false)   // 削除/除外解除の二重実行ガード
+async function deleteGrant(g: Grant) {
+  if (!canViewHourlyWage.value || !detail.value || grantMutating.value) return
+  const isAuto = (g.note ?? '').startsWith('自動付与')
+  const msg = isAuto
+    ? 'この自動付与を削除し、今後の自動付与からもこの基準日を除外しますか？（誤ったら除外解除で戻せます）'
+    : 'この付与記録を削除しますか？'
+  if (!confirm(msg)) return
+  grantMutating.value = true
+  try {
+    const accountId = await getAccountId()   // 多層防御: RLSに加えクライアント側でも account_id で絞る
+    await supabase.from('paid_leave_grants').delete().eq('id', g.id).eq('account_id', accountId)
+    if (isAuto) {
+      const w = workerStats.value.find(x => x.id === detail.value!.id)
+      const excluded = new Set(w?.excludedDates ?? [])
+      excluded.add(g.granted_at)
+      await supabase.from('workers').update({ excluded_grant_dates: [...excluded] }).eq('id', detail.value.id).eq('account_id', accountId)
+    }
     await loadDetailData(detail.value.id)
     await load()
     detail.value = workerStats.value.find(w => w.id === detail.value!.id) ?? detail.value
-  }
+  } finally { grantMutating.value = false }
+}
+
+// 恒久除外を解除（再び自動付与の対象に）。解除後その場で再付与する。
+async function unexcludeDate(dateStr: string) {
+  if (!canViewHourlyWage.value || !detail.value || grantMutating.value) return
+  grantMutating.value = true
+  try {
+    const accountId = await getAccountId()
+    const w = workerStats.value.find(x => x.id === detail.value!.id)
+    const excluded = (w?.excludedDates ?? []).filter(d => d !== dateStr)
+    await supabase.from('workers').update({ excluded_grant_dates: excluded }).eq('id', detail.value.id).eq('account_id', accountId)
+    await load()
+    // 解除に伴い、その基準日を再付与（差分）
+    const w2 = workerStats.value.find(x => x.id === detail.value!.id)
+    if (w2) await autoGrantWorkerSilently(w2.id, w2.hire_date, w2.employment_type, w2.weekly_scheduled_days)
+    await load()
+    await loadDetailData(detail.value.id)
+    detail.value = workerStats.value.find(x => x.id === detail.value!.id) ?? detail.value
+  } finally { grantMutating.value = false }
 }
 
 function doPrint() {
   window.print()
 }
 
-onMounted(load)
+// ── A: 無人自動付与（ページを開いた時に未付与の基準日を自動反映） ──
+// 役員経理以上のみ・差分（既存付与日はskip）・付与日は基準日にバックデート＝残高は正しい。
+// マウント時に1回だけ実行（毎load実行にすると、誤りを削除しても即再作成されてしまうため）。
+const autoGrantNotice = ref('')
+async function initialAutoGrant() {
+  if (!canViewHourlyWage.value) return
+  const accountId = await getAccountId()
+  const rows: { worker_id: string; account_id: string; granted_at: string; expires_at: string; days: number; note: string }[] = []
+  for (const w of workerStats.value) {
+    if (w.pendingCount <= 0) continue
+    const existing = new Set((allGrantsByWorker[w.id] ?? []).map(g => g.granted_at))
+    for (const p of pendingBaseDatesFor(w.hire_date, w.employment_type, w.weekly_scheduled_days, existing, today, new Set(w.excludedDates))) {
+      rows.push({ worker_id: w.id, account_id: accountId, granted_at: p.granted, expires_at: p.expires, days: p.days, note: p.note })
+    }
+  }
+  if (rows.length === 0) return
+  try {
+    await supabase.from('paid_leave_grants').insert(rows)
+    autoGrantNotice.value = `法令に基づき ${rows.length}件 を自動付与しました（付与履歴で確認できます。誤りは各作業員の詳細から削除・調整できます）`
+    await load()
+  } catch (e: any) {
+    autoGrantNotice.value = `自動付与でエラー: ${e.message ?? '失敗'}（手動で付与してください）`
+  }
+}
+
+onMounted(async () => {
+  await load()
+  await initialAutoGrant()   // A: 開いた時点で法令付与を自動反映
+})
 </script>
 
 <style scoped>
@@ -591,13 +816,36 @@ onMounted(load)
 .balance-card.highlight { background: #e8fff0; }
 .balance-label   { font-size: 11px; color: #888; margin-bottom: 6px; }
 .balance-val     { font-size: 22px; font-weight: 700; color: #1a1a1a; }
+.balance-sub     { font-size: 10px; color: #a16207; margin-top: 4px; }
 .balance-card.highlight .balance-val { color: #0a8a3a; }
-.ref-grant  { background: #f0f4ff; border-radius: 8px; padding: 12px 16px; display: flex; align-items: center; gap: 16px; }
-.ref-label  { font-size: 11px; color: #4f46e5; font-weight: 700; white-space: nowrap; }
-.ref-val    { font-size: 18px; font-weight: 700; color: #1a1a1a; }
-.ref-note   { font-size: 12px; color: #888; font-weight: 400; }
+.hire-missing { color: #d97706; font-weight: 700; }
+.ref-note   { font-size: 12px; color: #888; font-weight: 400; margin-left: 4px; }
 .section-title { font-size: 13px; font-weight: 700; color: #444; border-bottom: 1px solid #eee; padding-bottom: 8px; }
-.grant-form    { display: flex; flex-direction: column; gap: 12px; }
+.info-note { font-size: 12px; color: #667; background: #f7f8fa; border-radius: 8px; padding: 10px 12px; line-height: 1.6; }
+.info-note.warn { color: #92400e; background: #fffbeb; border: 1px solid #fcd34d; }
+/* ② 自動付与パネル（主アクション） */
+.auto-grant-panel { background: #f4fdf7; border: 1px solid #bfe6cd; border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.auto-grant-lead { display: flex; align-items: baseline; justify-content: space-between; }
+.auto-grant-ref { font-size: 13px; color: #256b45; }
+.auto-grant-ref b { font-size: 16px; }
+.btn-auto-grant { display: block; width: 100%; background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 12px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.btn-auto-grant:disabled { opacity: .5; cursor: default; }
+.auto-grant-hint { font-size: 11px; color: #4b7a5e; line-height: 1.6; margin: 0; }
+.auto-grant-done { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #256b45; }
+/* 折りたたみトグル */
+.collapse-toggle { background: none; border: none; text-align: left; width: 100%; font-size: 13px; font-weight: 700; color: #555; cursor: pointer; padding: 8px 0; }
+.collapse-toggle:hover { color: #06843c; }
+/* ③ 設定パネル */
+.settings-panel { display: flex; flex-direction: column; gap: 14px; background: #f7f9fc; border: 1px solid #e2e8f2; border-radius: 10px; padding: 14px; }
+.setting-field { display: flex; flex-direction: column; gap: 4px; }
+.setting-lbl { font-size: 12px; font-weight: 700; color: #556; }
+.setting-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.setting-input { width: 170px; }
+.setting-unit { font-size: 13px; color: #555; }
+.btn-setting-save { background: #4338ca; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.btn-setting-save:disabled { opacity: .5; cursor: default; }
+.setting-hint { font-size: 11px; color: #889; margin: 4px 0 0; line-height: 1.6; }
+.grant-form    { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; }
 .form-row      { display: flex; gap: 12px; }
 .form-field    { flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .form-field label { font-size: 11px; font-weight: 700; color: #888; }
@@ -614,24 +862,20 @@ onMounted(load)
 .exp-badge.valid   { background: #e8fff0; color: #0a8a3a; }
 .exp-badge.expired { background: #f5f5f5; color: #aaa; }
 .btn-del { background: none; border: 1px solid #fca5a5; color: #e53935; border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer; }
+.excluded-row { display: flex; align-items: center; gap: 10px; padding: 3px 0; }
+.btn-unexclude { background: #eef2ff; border: 1px solid #c7d2fe; color: #4338ca; border-radius: 6px; padding: 3px 10px; font-size: 11px; font-weight: 700; cursor: pointer; }
 .empty   { color: #aaa; font-size: 13px; padding: 12px 0; }
-
-/* 移行登録ガイド */
-.migration-guide {
-  display: flex; gap: 14px;
-  background: #fffbeb; border: 1px solid #fcd34d; border-radius: 10px;
-  padding: 16px;
-}
-.migration-guide-icon { font-size: 22px; flex-shrink: 0; line-height: 1; }
-.migration-guide-body { display: flex; flex-direction: column; gap: 8px; }
-.migration-guide-title { font-size: 14px; font-weight: 700; color: #92400e; }
-.migration-guide-text  { font-size: 13px; color: #78350f; }
-.migration-guide-steps {
-  margin: 0; padding-left: 20px;
-  font-size: 12px; color: #78350f; display: flex; flex-direction: column; gap: 4px;
-}
-.migration-guide-steps li { line-height: 1.6; }
-.migration-guide-note { font-size: 11px; color: #a16207; }
+.grant-error { color: #e53935; font-size: 12px; margin: 4px 0 0; }
+/* 付与待ちバナー・バッジ */
+.pending-banner { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: #fff7ed; border: 1px solid #fdba74; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; }
+.pending-badge { font-size: 14px; font-weight: 800; color: #c2410c; white-space: nowrap; }
+.pending-text { font-size: 12px; color: #9a3412; flex: 1; min-width: 0; }
+.btn-batch-grant { background: #ea580c; color: #fff; border: none; border-radius: 8px; padding: 9px 18px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.btn-batch-grant:disabled { opacity: .5; cursor: default; }
+.pending-row-badge { display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 700; color: #c2410c; background: #ffedd5; border-radius: 4px; padding: 1px 6px; vertical-align: middle; }
+.autogrant-notice { display: flex; align-items: center; gap: 8px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; color: #065f46; }
+.autogrant-text { flex: 1; font-size: 13px; }
+.notice-close { background: none; border: none; cursor: pointer; color: #065f46; display: inline-flex; align-items: center; padding: 2px; }
 
 /* ── 印刷専用: 管理簿 ── */
 .print-only { display: none; }

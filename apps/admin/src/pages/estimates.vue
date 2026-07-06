@@ -27,7 +27,7 @@
             <td>{{ e.estimate_date || '—' }}</td>
             <td class="num">{{ e.total_amount != null ? `¥${e.total_amount.toLocaleString()}` : '—' }}</td>
             <td>
-              <a v-if="e.pdf_path" href="#" @click.prevent="openDoc(e.pdf_path, e.pdf_bucket)" class="pdf-link">📄 PDF</a><span v-else class="muted">—</span>
+              <a v-if="e.pdf_path" href="#" @click.prevent="openDoc(e.pdf_path, e.pdf_bucket)" class="pdf-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> PDF</a><span v-else class="muted">—</span>
               <span v-if="e.uploaded_via_portal" class="badge-up" title="業者がポータルからアップロード">業者UP</span>
             </td>
             <td class="actions">
@@ -71,8 +71,13 @@
         </label>
 
         <label class="fld"><span>見積書PDF</span>
-          <input ref="fileInput" type="file" accept="application/pdf,image/*" class="file-input" @change="onFile" />
-          <span v-if="modal.pdf_path && !file" class="hint">登録済み：<a href="#" @click.prevent="openDoc(modal.pdf_path, modal.pdf_bucket)" class="pdf-link">📄 現在のPDF</a>（新しく選ぶと差し替え）</span>
+          <div class="pdf-dropzone" :class="{ dragover: pdfDragOver }"
+               @drop.prevent="onDropPdf" @dragover.prevent="pdfDragOver = true" @dragleave.prevent="pdfDragOver = false">
+            <input ref="fileInput" type="file" accept="application/pdf,image/*" class="file-input" @change="onFile" />
+            <span class="pdf-drop-hint">{{ pdfDragOver ? 'ここにドロップ' : 'ファイル選択 または ドラッグ&ドロップ' }}</span>
+          </div>
+          <span v-if="file" class="hint">選択中：{{ file.name }}</span>
+          <span v-if="modal.pdf_path && !file" class="hint">登録済み：<a href="#" @click.prevent="openDoc(modal.pdf_path, modal.pdf_bucket)" class="pdf-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> 現在のPDF</a>（新しく選ぶと差し替え）</span>
         </label>
 
         <label class="fld"><span>メモ</span>
@@ -130,7 +135,7 @@ const EST_COLS = 'id, subcontractor_id, site_id, estimate_number, estimate_date,
 const rows    = ref<Estimate[]>([])
 const subs    = ref<Opt[]>([])
 const sites   = ref<Opt[]>([])
-const siteLinks = ref<{ site_id: string; subcontractor_id: string }[]>([])  // 現場↔業者 1:n 紐付け
+const siteLinks = ref<{ site_id: string; subcontractor_id: string }[]>([])  // 現場-業者 1:n 紐付け
 const loading = ref(true)
 const saving  = ref(false)
 const saveError = ref('')
@@ -203,6 +208,12 @@ async function requestUpload(e: Estimate) {
   } finally { busyId.value = null }
 }
 function onFile(ev: Event) { file.value = (ev.target as HTMLInputElement).files?.[0] ?? null }
+const pdfDragOver = ref(false)
+function onDropPdf(ev: DragEvent) {
+  pdfDragOver.value = false
+  const f = ev.dataTransfer?.files?.[0]
+  if (f) file.value = f
+}
 
 // 見積書番号採番：EST-<年>-<4桁連番>（accountごと・年ごと）
 async function nextEstimateNumber(accountId: string): Promise<string> {
@@ -306,6 +317,9 @@ async function remove(e: Estimate) {
 .fld em { color: #E53935; font-style: normal; }
 .inp { background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px 14px; font-size: 14px; width: 100%; box-sizing: border-box; font-family: inherit; }
 .file-input { font-size: 13px; }
+.pdf-dropzone { display: flex; flex-direction: column; gap: 6px; border: 2px dashed #d1d5db; border-radius: 10px; padding: 12px; background: #fafafa; transition: border-color .15s, background .15s; }
+.pdf-dropzone.dragover { border-color: #2563eb; background: #eff6ff; }
+.pdf-drop-hint { font-size: 11px; color: #9ca3af; }
 .modal-actions { display: flex; gap: 12px; }
 .btn-save { flex: 1; background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 12px; font-weight: 700; cursor: pointer; }
 .btn-save:disabled { opacity: .5; }
