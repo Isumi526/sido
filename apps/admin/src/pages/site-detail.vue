@@ -142,9 +142,11 @@
       <!-- ───────── 写真・資料 ───────── -->
       <section v-else-if="tab === 'files'" class="card">
         <div class="card-head"><h2 class="card-title">写真・資料（{{ attachments.length }}）</h2>
-          <div class="upload-actions">
-            <label class="btn-ghost sm">📷 写真追加<input type="file" accept="image/*" hidden @change="(e) => onAttach(e, 'photo')" /></label>
-            <label class="btn-ghost sm">📄 書類追加<input type="file" accept="image/*,.pdf" hidden @change="(e) => onAttach(e, 'document')" /></label>
+          <div class="upload-actions att-dropzone" :class="{ dragover: attDragOver, busy: uploading }"
+               @drop.prevent="onDropAtt" @dragover.prevent="attDragOver = true" @dragleave.prevent="attDragOver = false">
+            <label class="btn-ghost sm">📷 写真追加<input type="file" accept="image/*" multiple hidden @change="(e) => onAttach(e, 'photo')" /></label>
+            <label class="btn-ghost sm">📄 書類追加<input type="file" accept="image/*,.pdf" multiple hidden @change="(e) => onAttach(e, 'document')" /></label>
+            <span class="att-drop-hint">{{ attDragOver ? 'ここにドロップ' : 'ドラッグ&ドロップも可' }}</span>
           </div>
         </div>
         <p v-if="uploading" class="muted">アップロード中…</p>
@@ -265,8 +267,7 @@ async function toggleActive() {
   await load()
 }
 
-async function onAttach(ev: Event, kind: 'photo' | 'document') {
-  const file = (ev.target as HTMLInputElement).files?.[0]
+async function processAttach(file: File | undefined | null, kind: 'photo' | 'document') {
   if (!file || !site.value) return
   uploading.value = true
   try {
@@ -278,7 +279,20 @@ async function onAttach(ev: Event, kind: 'photo' | 'document') {
     await supabase.from('site_attachments').insert({ account_id: accountId, site_id: site.value.id, kind, path, name: file.name })
     await loadAttachments()
   } catch (e: any) { alert(e.message ?? 'アップロードに失敗しました') }
-  finally { uploading.value = false; (ev.target as HTMLInputElement).value = '' }
+  finally { uploading.value = false }
+}
+async function onAttach(ev: Event, kind: 'photo' | 'document') {
+  const input = ev.target as HTMLInputElement
+  for (const f of Array.from(input.files ?? [])) await processAttach(f, kind)
+  input.value = ''
+}
+// D&D: 画像→写真、PDF→書類として振り分けて受け取る
+const attDragOver = ref(false)
+async function onDropAtt(ev: DragEvent) {
+  attDragOver.value = false
+  for (const f of Array.from(ev.dataTransfer?.files ?? [])) {
+    await processAttach(f, f.type === 'application/pdf' ? 'document' : 'photo')
+  }
 }
 async function removeAttachment(a: Att) {
   if (!confirm(`「${a.name || a.kind}」を削除しますか？`)) return
@@ -382,6 +396,10 @@ onMounted(load)
 .card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; }
 .card-title { font-size: 14px; font-weight: 800; color: #333; margin: 0; }
 .edit-actions, .upload-actions { display: flex; gap: 8px; }
+.att-dropzone { align-items: center; flex-wrap: wrap; border: 2px dashed transparent; border-radius: 10px; padding: 6px 10px; transition: border-color .15s, background .15s; }
+.att-dropzone.dragover { border-color: #2563eb; background: #eff6ff; }
+.att-dropzone.busy { opacity: .7; }
+.att-drop-hint { font-size: 11px; color: #9ca3af; }
 .kv { margin: 0; display: flex; flex-direction: column; gap: 8px; }
 .kv-row { display: flex; gap: 12px; font-size: 14px; }
 .kv-row dt { color: #888; flex: 0 0 90px; }
