@@ -13,6 +13,31 @@ export function normalizeSiteName(s: string): string {
     .toLowerCase()
 }
 
+/**
+ * 日報の現場オブジェクトを、現場マスタ(active)へ「正規化名一致」で解決して site_id を返す。
+ *  ・完全一致が1件以上ならその先頭（activeSites は作成日昇順で渡す前提＝最古を正）。
+ *  ・完全一致が無ければ正規化一致（全角スペース/記号ゆれ吸収）が1件ならそれ。
+ *  ・正規化一致が0件 or 複数（別現場が同名正規化＝曖昧）は null（＝名前フォールバック／誤配賦回避）。
+ *  ・__unset__ / 空 / __other__(customSiteName空) は null。
+ * 保存時（LIFF）と既存データのバックフィルで同一ロジックを使う（表記ゆれ再発の根本対策）。
+ */
+export function resolveActiveSiteId(
+  site: { siteName?: string; customSiteName?: string } | any,
+  activeSites: Array<{ id: string; name: string }>,
+): string | null {
+  const raw = site?.siteName
+  if (!raw || raw === '__unset__') return null
+  const name = raw === '__other__' ? (site?.customSiteName || '') : raw
+  if (!name) return null
+  const exact = (activeSites || []).filter((s) => s.name === name)
+  if (exact.length >= 1) return exact[0].id
+  const nn = normalizeSiteName(name)
+  if (!nn) return null
+  const norm = (activeSites || []).filter((s) => normalizeSiteName(s.name) === nn)
+  if (norm.length === 1) return norm[0].id
+  return null
+}
+
 function levenshtein(a: string, b: string): number {
   const m = a.length, n = b.length
   if (!m) return n

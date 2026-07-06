@@ -138,6 +138,7 @@ import { getAccountId } from '../lib/account'
 import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, wageForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
 import type { WageMode } from '../lib/workerHours'
 import { canViewWages, canViewHourlyWage } from '../lib/auth'
+import { resolveSiteRef, type SiteResolveCtx } from '../lib/siteKey'
 
 // ── 開発の更新履歴（全社共通・未確認/確認済みタブ）──────────
 interface DevUpdate { id: string; title: string; link: string | null; created_at: string }
@@ -232,6 +233,12 @@ async function load() {
     supabase.from('settings').select('key, value').eq('account_id', accountId),
     supabase.from('worker_wage_history').select('worker_id, effective_date, changed_at, old_unit_price, new_unit_price, wage_type, old_wage_type, old_daily_wage, new_daily_wage, old_hourly_wage, new_hourly_wage').eq('account_id', accountId),
   ])
+  // 現場マスタ（明細ラベルを正式名に統一＝表記ゆれで別行に割れないように）
+  const { data: siteRows } = await supabase.from('sites').select('id, name, active, created_at').eq('account_id', accountId).order('created_at', { ascending: true })
+  const siteCtx: SiteResolveCtx = {
+    activeSites: (siteRows ?? []).filter((s: any) => s.active).map((s: any) => ({ id: s.id, name: s.name })),
+    siteNameById: Object.fromEntries((siteRows ?? []).map((s: any) => [s.id, s.name])),
+  }
   const wageTimelines = buildWageTimelines((wh ?? []) as any[])
   for (const row of (cfg ?? [])) {
     if (row.key === 'gasoline_rate_per_km')        G_YEN  = Number(row.value)
@@ -289,7 +296,7 @@ async function load() {
     const tripSet = (rep as any).is_business_trip ? businessTripMainEntries((rep as any).sites ?? []) : null
     const date = (rep as any).date as string
     for (const site of (rep.sites as any[])) {
-      const siteName = site.siteName === '__unset__' ? '現場未設定' : (site.siteName || '（現場名なし）')
+      const siteName = resolveSiteRef(site, siteCtx).name || '（現場名なし）'
       // 社員費
       for (const w of (site.workers ?? []).filter((w: any) => w.workerName)) {
         const curDaily  = dailyById[w.workerId]  ?? dailyByName[w.workerName]  ?? 0
