@@ -34,11 +34,16 @@ const error = ref('')
 
 // クエリパラメータで事前入力（毎回手入力しなくて済む）。
 //   ?email=xxx&pass=yyy （pass はURLに残るため共有時は注意）
+//   ID/PASSが揃っていれば自動ログイン。別作業員でログイン中でも submit() が
+//   resetAccount()+useLiff().reset()+再サインインで切替する（デモURL用）。
 onMounted(() => {
   const qEmail = route.query.email
   const qPass = route.query.pass ?? route.query.password
   if (typeof qEmail === 'string') email.value = qEmail
   if (typeof qPass === 'string') password.value = qPass
+  if (typeof qEmail === 'string' && qEmail && typeof qPass === 'string' && qPass) {
+    submit()
+  }
 })
 
 // ログインID→ダミーemail 変換（worker-auth-setup と同一規則・同一ドメイン）。
