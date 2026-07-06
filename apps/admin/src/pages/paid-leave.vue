@@ -113,6 +113,15 @@
                 <li>有効期限は残日数の本来の期限に合わせるか、不明なら <strong>2年後</strong> でOK</li>
                 <li>備考を <strong>「移行初期残高（導入時点）」</strong> にして登録</li>
               </ol>
+              <div v-if="detail.hire_date && detail.employment_type !== 'contractor'" class="auto-grant-box">
+                <div class="auto-grant-or">— または、新規入社者は入社日から自動で —</div>
+                <button type="button" class="btn-auto-grant" :disabled="grantSaving" data-testid="auto-grant" @click="autoGrantFromHireDate(detail)">
+                  📅 入社日から法令の有給を自動付与
+                </button>
+                <div class="auto-grant-hint">
+                  入社日＋労基法スケジュールで各基準日（入社6ヶ月→10日…）の付与を自動生成します。<strong>付与履歴が無い作業員向け</strong>。既に有給を消化してきた既存者は、上の手順で残日数を登録してください（自動付与すると消化前の日数になります）。
+                </div>
+              </div>
               <div class="migration-guide-note">
                 ※ 次回付与から通常通り法令日数で登録すればOKです
               </div>
@@ -262,21 +271,32 @@ function tenureMonths(hireDate: string): number {
   return (now.getFullYear() - hire.getFullYear()) * 12 + (now.getMonth() - hire.getMonth())
 }
 
-function suggestedGrant(w: WorkerStat): number {
-  // 業務委託は労働者でない＝有給休暇の付与対象外（法定の年次有給は雇用関係が前提）
-  if (w.employment_type === 'contractor') return 0
-  if (!w.hire_date) return 0
-  const months = tenureMonths(w.hire_date)
+// 日付文字列(YYYY-MM-DD)に months ヶ月足す（付与基準日/有効期限の計算用）。
+function addMonths(dateStr: string, months: number): string {
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setMonth(d.getMonth() + months)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// 勤続月数 → 法令付与日数（雇用形態・週所定労働日数で分岐）。自動付与でも参照表示でも共通に使う。
+function daysForTenureMonths(months: number, employmentType: string | null | undefined, weeklyDays: number | null | undefined): number {
   if (months < 6) return 0
-  if ((w.employment_type ?? 'fulltime') === 'fulltime') {
+  if ((employmentType ?? 'fulltime') === 'fulltime') {
     return FULLTIME_TABLE.find(r => months >= r.minMonths)?.days ?? 0
   }
-  const days = w.weekly_scheduled_days ?? 5
+  const days = weeklyDays ?? 5
   if (days >= 5) return FULLTIME_TABLE.find(r => months >= r.minMonths)?.days ?? 0
   const table = PARTTIME_TABLE[days]
   if (!table) return 0
   const idx = TENURE_STEPS.filter(m => months >= m).length - 1
   return idx < 0 ? 0 : (table[idx] ?? 0)
+}
+
+function suggestedGrant(w: WorkerStat): number {
+  // 業務委託は労働者でない＝有給休暇の付与対象外（法定の年次有給は雇用関係が前提）
+  if (w.employment_type === 'contractor') return 0
+  if (!w.hire_date) return 0
+  return daysForTenureMonths(tenureMonths(w.hire_date), w.employment_type, w.weekly_scheduled_days)
 }
 
 // ── 型定義 ────────────────────────────────────────────────────
@@ -527,6 +547,38 @@ async function addGrant() {
   }
 }
 
+// 入社日から法令付与を自動生成（回答A: 付与履歴ゼロの作業員のみ＝既存の移行初期残高運用と二重付与しない）。
+// 各基準日(入社+6ヶ月, +18, +30…每12ヶ月)を今日まで生成。既に失効した過去分(基準日+2年<今日)は残に影響しないのでスキップ。
+async function autoGrantFromHireDate(w: WorkerStat) {
+  if (!w.hire_date) { grantError.value = '入社日が未設定です'; return }
+  if (w.employment_type === 'contractor') { grantError.value = '業務委託は有給付与対象外です'; return }
+  if (detailGrants.value.length > 0) { grantError.value = '既に付与履歴があります。自動付与は履歴ゼロの作業員のみ（重複防止）'; return }
+  if (!confirm('入社日から法令の有給を自動付与します。よろしいですか？（付与履歴が無い作業員向け）')) return
+  grantSaving.value = true; grantError.value = ''
+  try {
+    const accountId = await getAccountId()
+    const rows: { worker_id: string; account_id: string; granted_at: string; expires_at: string; days: number; note: string }[] = []
+    for (let m = 6; ; m += 12) {
+      const granted = addMonths(w.hire_date, m)
+      if (granted > today) break                       // 未来の基準日は付与しない
+      const expires = addMonths(granted, 24)
+      if (expires < today) continue                    // 既に失効＝残に影響しないのでスキップ
+      const days = daysForTenureMonths(m, w.employment_type, w.weekly_scheduled_days)
+      if (days <= 0) continue
+      rows.push({ worker_id: w.id, account_id: accountId, granted_at: granted, expires_at: expires, days, note: `自動付与（勤続${m}ヶ月）` })
+    }
+    if (rows.length === 0) { grantError.value = '付与対象の基準日がありません（入社6ヶ月未満、または全て失効済み）'; return }
+    await supabase.from('paid_leave_grants').insert(rows)
+    await loadDetailData(w.id)
+    await load()
+    detail.value = workerStats.value.find(x => x.id === w.id) ?? detail.value
+  } catch (e: any) {
+    grantError.value = e.message ?? '自動付与に失敗しました'
+  } finally {
+    grantSaving.value = false
+  }
+}
+
 async function deleteGrant(grantId: string) {
   if (!confirm('この付与記録を削除しますか？')) return
   await supabase.from('paid_leave_grants').delete().eq('id', grantId)
@@ -632,6 +684,11 @@ onMounted(load)
 }
 .migration-guide-steps li { line-height: 1.6; }
 .migration-guide-note { font-size: 11px; color: #a16207; }
+.auto-grant-box { margin: 10px 0; padding-top: 10px; border-top: 1px dashed #e0cfa0; }
+.auto-grant-or { font-size: 11px; color: #a16207; text-align: center; margin-bottom: 8px; }
+.btn-auto-grant { display: block; width: 100%; background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 10px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.btn-auto-grant:disabled { opacity: .5; cursor: default; }
+.auto-grant-hint { font-size: 11px; color: #8a6d3b; margin-top: 6px; line-height: 1.6; }
 
 /* ── 印刷専用: 管理簿 ── */
 .print-only { display: none; }
