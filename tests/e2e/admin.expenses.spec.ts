@@ -60,7 +60,7 @@ test.describe('経費管理 一覧', () => {
     const modal = page.locator('.modal')
     await expect(modal).toBeVisible()
     // 2ボタンが出る
-    await expect(modal.getByRole('button', { name: '📄 明細PDF' })).toBeVisible()
+    await expect(modal.getByRole('button', { name: /明細PDF/ })).toBeVisible()   // 15222cb(main反映済)で📄→Material Symbolsアイコンに変更
     await expect(modal.getByRole('button', { name: /請求書PDF/ })).toBeVisible()
     // 宛先(print-only・御中)＋リードがDOMにある（textContentは非表示要素でも取れる）
     await expect(modal.locator('.print-addressee')).toContainText('御中')
