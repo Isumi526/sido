@@ -23,14 +23,14 @@
       <div class="tabs-wrap">
         <div class="tabs">
           <button v-for="name in siteNames" :key="name" class="tab"
-            :class="{ active: activeSite === name }" @click="activeSite = name">
+            :class="{ active: displaySite === name }" @click="activeSite = name">
             {{ name }}
           </button>
         </div>
       </div>
 
       <!-- 出力（※表の表示月は上の ‹ 年月 › ナビで切替。出力ボタンを押すと出力期間を選ぶ） -->
-      <div v-if="activeSite" class="export-bar">
+      <div v-if="displaySite" class="export-bar">
         <div class="export-pop-wrap">
           <button class="btn-export" data-testid="export-site" @click="exportPanelOpen = !exportPanelOpen"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">download</span> CSV＋見積書PDFを出力</button>
           <div v-if="exportPanelOpen" class="export-pop" data-testid="export-panel">
@@ -56,7 +56,7 @@
       </div>
 
       <!-- 一覧テーブル -->
-      <div v-if="activeSite" class="table-wrap">
+      <div v-if="displaySite" class="table-wrap">
         <table class="table">
           <thead>
             <tr>
@@ -89,7 +89,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in siteMap[activeSite]" :key="row._key" class="data-row" :class="{ 'invoice-row': row._isInvoice }" @click="!row._isInvoice && (selected = row)">
+            <tr v-for="row in siteMap[displaySite]" :key="row._key" class="data-row" :class="{ 'invoice-row': row._isInvoice }" @click="!row._isInvoice && (selected = row)">
               <td class="date-cell">
                 {{ row.date.slice(5).replace('-', '/') }}
                 <span v-if="row._isSunday" class="sun">日</span>
@@ -117,19 +117,19 @@
           <tfoot>
             <tr class="total-row">
               <td colspan="2">月計</td>
-              <td class="num">{{ yen(sumF(siteMap[activeSite], 'shoshaCost'))    }}</td>
-              <td class="num">{{ yen(sumF(siteMap[activeSite], 'gyoshaCost'))    }}</td>
-              <td v-if="canViewWages" class="num">{{ yen(sumF(siteMap[activeSite], 'laborCost'))     }}</td>
-              <td class="num">{{ yen(sumF(siteMap[activeSite], 'parkingYen'))    }}</td>
-              <td class="num">{{ yen(sumF(siteMap[activeSite], 'fuelCost'))      }}</td>
-              <td class="num">{{ yen(sumF(siteMap[activeSite], 'highwayCost'))   }}</td>
-              <td class="num">{{ yen(sumF(siteMap[activeSite], 'hotelCost'))     }}</td>
-              <td class="num">{{ yen(sumF(siteMap[activeSite], 'entertainCost')) }}</td>
-              <td class="num">{{ yen(sumF(siteMap[activeSite], 'garbageCost')) }}</td>
-              <td class="num">{{ yen(sumF(siteMap[activeSite], 'trainCost'))     }}</td>
-              <td class="num">{{ yen(sumF(siteMap[activeSite], 'homeCost'))      }}</td>
-              <td class="num">{{ yen(sumF(siteMap[activeSite], 'tripCost'))     }}</td>
-              <td class="num total-col">{{ yen(sumF(siteMap[activeSite], 'total')) }}</td>
+              <td class="num">{{ yen(sumF(siteMap[displaySite], 'shoshaCost'))    }}</td>
+              <td class="num">{{ yen(sumF(siteMap[displaySite], 'gyoshaCost'))    }}</td>
+              <td v-if="canViewWages" class="num">{{ yen(sumF(siteMap[displaySite], 'laborCost'))     }}</td>
+              <td class="num">{{ yen(sumF(siteMap[displaySite], 'parkingYen'))    }}</td>
+              <td class="num">{{ yen(sumF(siteMap[displaySite], 'fuelCost'))      }}</td>
+              <td class="num">{{ yen(sumF(siteMap[displaySite], 'highwayCost'))   }}</td>
+              <td class="num">{{ yen(sumF(siteMap[displaySite], 'hotelCost'))     }}</td>
+              <td class="num">{{ yen(sumF(siteMap[displaySite], 'entertainCost')) }}</td>
+              <td class="num">{{ yen(sumF(siteMap[displaySite], 'garbageCost')) }}</td>
+              <td class="num">{{ yen(sumF(siteMap[displaySite], 'trainCost'))     }}</td>
+              <td class="num">{{ yen(sumF(siteMap[displaySite], 'homeCost'))      }}</td>
+              <td class="num">{{ yen(sumF(siteMap[displaySite], 'tripCost'))     }}</td>
+              <td class="num total-col">{{ yen(sumF(siteMap[displaySite], 'total')) }}</td>
               <td></td>
             </tr>
           </tfoot>
@@ -379,7 +379,7 @@ function exportPeriod(): { from: string; to: string; label: string } {
 }
 // 現場別集計（当該現場の表・選択期間）＋ 紐づく見積書PDF を zip でエクスポート（見積書フォルダ内包）
 async function exportSite() {
-  const site = activeSite.value
+  const site = displaySite.value
   if (!site) return
   exporting.value = true
   try {
@@ -439,7 +439,7 @@ const dateTo = computed(() => {
 
 const loading    = ref(false)
 const siteMap    = ref<Record<string, any[]>>({})
-const activeSite = useQueryParam('site', '')   // URL ?site= に同期（ページ跨ぎで復元）
+const activeSite = useQueryParam('site', '')   // URL ?site= に同期（ユーザーが選んだ現場そのもの・月を跨いでも書き換えない）
 // 賃金モード（office以上のみ切替可）。既定=日当/8×稼働（現場管理者も閲覧OK）／real=実質賃金(時給×稼働)
 const wageMode = ref<WageMode>('daily')
 function toggleWageMode() {
@@ -447,6 +447,8 @@ function toggleWageMode() {
   wageMode.value = wageMode.value === 'daily' ? 'real' : 'daily'
 }
 const siteNames  = computed(() => Object.keys(siteMap.value).sort((a, b) => a.localeCompare(b, 'ja')))
+// 表示用に選択現場を解決：今月に存在すればそれを使い、無ければ先頭にフォールバック（activeSite自体は書き換えない＝月を戻せば復元される）
+const displaySite = computed(() => siteNames.value.includes(activeSite.value) ? activeSite.value : (siteNames.value[0] ?? ''))
 
 // 単価（settings テーブルから上書き）
 let G_YEN = 23
@@ -677,8 +679,6 @@ async function load() {
   loading.value = true
   const map = await computeSiteMap(dateFrom.value, dateTo.value)
   siteMap.value = map
-  const sorted = Object.keys(map).sort((a, b) => a.localeCompare(b, 'ja'))
-  activeSite.value = sorted[0] ?? ''
   loading.value = false
 }
 
