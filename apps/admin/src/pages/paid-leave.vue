@@ -27,10 +27,9 @@
         <button class="btn-batch-grant" :disabled="batchGranting" data-testid="batch-grant" @click="batchGrantPending">{{ batchGranting ? '付与中…' : 'まとめて法令付与' }}</button>
       </div>
 
-      <!-- 在籍/業務委託/退職・無効 の絞り込みタブ -->
+      <!-- 在籍/退職・無効 の絞り込みタブ（業務委託は有給の概念が無いため一覧・集計から除外） -->
       <div class="status-tabs no-print">
         <button class="status-tab" :class="{ active: leaveTab === 'active' }" @click="leaveTab = 'active'">在籍<span class="tab-count">{{ tabCounts.active }}</span></button>
-        <button class="status-tab" :class="{ active: leaveTab === 'contractor' }" @click="leaveTab = 'contractor'">業務委託<span class="tab-count">{{ tabCounts.contractor }}</span></button>
         <button class="status-tab" :class="{ active: leaveTab === 'inactive' }" @click="leaveTab = 'inactive'">退職・無効<span class="tab-count">{{ tabCounts.inactive }}</span></button>
       </div>
 
@@ -346,17 +345,15 @@ type UsageEntry = { date: string; note: string | null }
 // ── State ────────────────────────────────────────────────────
 const loading      = ref(true)
 const workerStats  = ref<WorkerStat[]>([])
-// 一覧の絞り込みタブ（業務委託は有給対象外・退職無効は別枠）
-const leaveTab = ref<'active' | 'contractor' | 'inactive'>('active')
+// 一覧の絞り込みタブ（業務委託は有給の概念が無い＝一覧・集計・印刷簿から除外。レビュー指摘⑨で2タブ化）
+const leaveTab = ref<'active' | 'inactive'>('active')
 const filteredWorkers = computed(() => workerStats.value.filter(w => {
-  if (leaveTab.value === 'inactive') return !w.active
-  if (leaveTab.value === 'contractor') return w.active && w.employment_type === 'contractor'
-  return w.active && w.employment_type !== 'contractor'   // 在籍（業務委託除く）
+  if (w.employment_type === 'contractor') return false
+  return leaveTab.value === 'inactive' ? !w.active : w.active
 }))
 const tabCounts = computed(() => ({
-  active:     workerStats.value.filter(w => w.active && w.employment_type !== 'contractor').length,
-  contractor: workerStats.value.filter(w => w.active && w.employment_type === 'contractor').length,
-  inactive:   workerStats.value.filter(w => !w.active).length,
+  active:   workerStats.value.filter(w => w.active && w.employment_type !== 'contractor').length,
+  inactive: workerStats.value.filter(w => !w.active && w.employment_type !== 'contractor').length,
 }))
 const detail       = ref<WorkerStat | null>(null)
 const detailGrants = ref<Grant[]>([])
@@ -401,7 +398,7 @@ function remainingClass(days: number): string {
 // ── 印刷用データ ──────────────────────────────────────────────
 const printRows = computed(() => {
   const yr = String(printYear.value)
-  return workerStats.value.map(w => {
+  return workerStats.value.filter(w => w.employment_type !== 'contractor').map(w => {
     const grants  = allGrantsByWorker[w.id] ?? []
     // 選択年に有効な付与（付与日が選択年以前 かつ 有効期限が選択年以後）
     const validGrants = grants.filter(g => g.granted_at.slice(0, 4) <= yr && g.expires_at.slice(0, 4) >= yr)
