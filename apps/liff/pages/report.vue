@@ -125,6 +125,14 @@
                 <button v-if="(report.form.value.gasolineItems?.length ?? 0) > 1" type="button" class="btn-icon-sm" @click="report.removeGasolineItem(gi)">✕</button>
               </div>
               <input v-model="g.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
+              <!-- 燃料種別・給油量（ℓ） -->
+              <div class="lineitems-row mt6">
+                <select v-model="g.fuelType" class="input">
+                  <option value="regular">{{ $t('report.fuelRegular') }}</option>
+                  <option value="diesel">{{ $t('report.fuelDiesel') }}</option>
+                </select>
+                <input v-model.number="g.liters" type="number" inputmode="decimal" step="0.01" min="0" class="input" :placeholder="$t('report.litersPlaceholder')" @keydown.enter.prevent />
+              </div>
             </div>
             <button type="button" class="btn-ghost-sm" @click="report.addGasolineItem()">{{ $t('report.addGasoline') }}</button>
           </template>
@@ -933,7 +941,10 @@ async function loadEditData(date: string) {
   // 日報レベルのガソリン代（複数給油）を復元（_id は createGasolineItem 由来で一意）
   report.form.value.gasolineItems = (Array.isArray(saved.gasoline_items) ? saved.gasoline_items : []).map((g: any) => ({
     ...createGasolineItem(), payee: g.payee ?? '', yen: g.yen != null ? Number(g.yen) : undefined,
-    registrationNumber: g.registrationNumber ?? '', tategae: !!g.tategae, fileUrls: Array.isArray(g.fileUrls) ? g.fileUrls : [],
+    registrationNumber: g.registrationNumber ?? '',
+    liters: g.liters != null ? Number(g.liters) : undefined,
+    fuelType: g.fuelType === 'diesel' ? 'diesel' : 'regular',
+    tategae: !!g.tategae, fileUrls: Array.isArray(g.fileUrls) ? g.fileUrls : [],
   }))
   gasFueled.value = (report.form.value.gasolineItems?.length ?? 0) > 0
 

@@ -3,7 +3,7 @@
 //  ③ 日報レベルの「本日のガソリン代」(daily_reports.gasoline_yen) が立替(gasoline_tategae=true)の時、
 //     経費精算(expenses)に日報日の期(前半/後半)の「立替」として計上されることを検証。
 //   - 日報の少ないクリーンな月(2026-09)に gasoline_yen=12,345/tategae の日報を投入
-//     → /expenses の当該作業員×前半 行の立替・合計に ¥12,345 が乗り、明細に「ガソリン代（本日）」が出る
+//     → /expenses の当該作業員×前半 行の立替・合計に ¥12,345 が乗り、明細に「ガソリン代」が出る（表示はflatten正規化ラベル）
 // ============================================================
 import { test, expect } from '@playwright/test'
 import { restSrv, getAccountId } from './helpers'
@@ -45,7 +45,7 @@ test.describe('日報ガソリン代→経費精算', () => {
     await row.click()
     const modal = page.locator('.modal')
     await expect(modal).toBeVisible()
-    await expect(modal).toContainText('ガソリン代（本日）')
+    await expect(modal).toContainText('ガソリン代')   // 表示ラベルはflatten正規化（ガソリン代（本日）→ガソリン代・main反映済み）
     await expect(modal.locator('.settle-pay')).toContainText('¥12,345')
   })
 })

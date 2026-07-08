@@ -108,7 +108,7 @@ async function load() {
       if (gasYen <= 0) continue
       out.push({
         date: rep.date, category: 'ガソリン代', siteName: '—', payee: g.payee || '',
-        amount: gasYen, note: g.label || '', registrationNumber: g.registrationNumber || '',
+        amount: gasYen, note: g.fuelType === 'diesel' ? 'ディーゼル' : (g.fuelType === 'regular' ? 'レギュラー' : (g.label || '')), registrationNumber: g.registrationNumber || '',
         liters: Number(g.liters) || undefined, tategae: !!g.tategae, fileUrls: Array.isArray(g.fileUrls) ? g.fileUrls : [],
         workerName,
       } as DailyRow)

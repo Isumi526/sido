@@ -57,6 +57,30 @@ export function suggestedGrantDays(hireDate: string | null, employmentType: stri
   return daysForTenureMonths(tenureMonths(hireDate), employmentType, weeklyDays)
 }
 
+// FIFO残高計算: 消化(初期使用済み＋システム使用)を古い付与から順に充当し、各付与の残を出す。
+//  失効した付与は「未使用分のみ消滅」＝消化済み分は残に影響しない（従来の『有効付与合計−全期間使用』の
+//  過少計上バグを修正）。remaining = 有効な付与の未消化分の合計 −（付与総量を超えた過剰消化分）。
+export type GrantLite = { granted_at: string; expires_at: string; days: number }
+export function fifoBalance(
+  grants: GrantLite[], consumed: number, todayStr: string,
+): { remaining: number; validGranted: number; perGrant: (GrantLite & { used: number; leftover: number; expired: boolean })[] } {
+  const sorted = [...grants].sort((a, b) => a.granted_at.localeCompare(b.granted_at))  // 古い付与から
+  let c = Math.max(0, consumed)
+  let validRemaining = 0, validGranted = 0
+  const perGrant: (GrantLite & { used: number; leftover: number; expired: boolean })[] = []
+  for (const g of sorted) {
+    const days = Number(g.days) || 0
+    const used = Math.min(c, days)   // FIFO: 古い付与から消化を充当
+    c -= used
+    const leftover = days - used
+    const expired = g.expires_at < todayStr
+    if (!expired) { validRemaining += leftover; validGranted += days }
+    perGrant.push({ ...g, used, leftover, expired })
+  }
+  // c>0 = 付与総量を超えた消化（過剰）。有効残から引く（通常は c=0）。
+  return { remaining: validRemaining - c, validGranted, perGrant }
+}
+
 // 未付与の基準日（入社+6,+18…今日まで・既存付与日に無い・失効前・除外指定でない）。自動付与と付与待ちバッジで共用。
 //  excludedDates: 恒久除外する基準日(削除で記録)。ここに含まれる基準日はスキップ＝再付与しない。
 export function pendingBaseDatesFor(
