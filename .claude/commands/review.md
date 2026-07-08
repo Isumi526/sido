@@ -2,6 +2,7 @@
 description: レビュー待ちを優先順位順に人力テストをステップ・ナビ → 承認で本番待ちへ
 argument-hint: "[empty|<page>|--list]"
 disable-model-invocation: true
+model: sonnet
 ---
 
 # /review — レビュー待ちを優先順位順に人力テストをステップ・ナビ → 承認で本番待ちへ
