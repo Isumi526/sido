@@ -24,8 +24,8 @@
     </div>
 
     <div class="composer">
-      <textarea v-model="draft" class="composer-input" rows="2" placeholder="質問を入力…（Enterで改行 / ⌘・Ctrl+Enterで送信）" :disabled="thinking" @keydown.enter.meta.prevent="send" @keydown.enter.ctrl.prevent="send"></textarea>
-      <button class="btn-send" :disabled="thinking || !draft.trim()" @click="send">送信</button>
+      <textarea v-model="draft" class="composer-input" rows="2" placeholder="質問を入力…（Enterで改行 / ⌘・Ctrl+Enterで送信）" :disabled="thinking" @keydown.enter.meta.prevent="send()" @keydown.enter.ctrl.prevent="send()"></textarea>
+      <button class="btn-send" :disabled="thinking || !draft.trim()" @click="send()">送信</button>
     </div>
     <div class="composer-actions">
       <button class="btn-bug-manual" @click="openBug()">不具合を手動で報告</button>

@@ -3,7 +3,7 @@
     <!-- 印刷用ヘッダー（画面では非表示） -->
     <div class="print-header">
       <div class="print-title">出面・勤怠管理</div>
-      <div class="print-meta">{{ activeWorker }}　{{ yearMonthLabel }}</div>
+      <div class="print-meta">{{ displayWorker }}　{{ yearMonthLabel }}</div>
     </div>
 
     <!-- ヘッダー -->
@@ -19,7 +19,7 @@
           <span class="material-symbols-rounded" style="font-size:16px; vertical-align: middle;">payments</span>
           {{ showLaborCost ? '人件費 表示中' : '人件費 表示' }}
         </button>
-        <button v-if="activeWorker" class="btn-pdf" @click="printPdf">PDF出力</button>
+        <button v-if="displayWorker" class="btn-pdf" @click="printPdf">PDF出力</button>
       </div>
     </div>
 
@@ -37,16 +37,16 @@
         </div>
       </div>
 
-      <template v-if="activeWorker && workerMap[activeWorker]">
+      <template v-if="displayWorker && workerMap[displayWorker]">
         <!-- サマリーカード -->
         <div class="summary-grid">
           <div class="summary-card">
             <div class="summary-label">稼働日数</div>
-            <div class="summary-value">{{ workerMap[activeWorker].totalDays }}<span class="unit">日</span></div>
+            <div class="summary-value">{{ workerMap[displayWorker].totalDays }}<span class="unit">日</span></div>
           </div>
-          <div class="summary-card" v-if="workerMap[activeWorker].offDays > 0">
+          <div class="summary-card" v-if="workerMap[displayWorker].offDays > 0">
             <div class="summary-label">休み</div>
-            <div class="summary-value off">{{ workerMap[activeWorker].offDays }}<span class="unit">日</span></div>
+            <div class="summary-value off">{{ workerMap[displayWorker].offDays }}<span class="unit">日</span></div>
           </div>
           <div class="summary-card" v-if="activeTripDays > 0">
             <div class="summary-label">出張日数</div>
@@ -54,35 +54,35 @@
           </div>
           <div class="summary-card">
             <div class="summary-label">通常</div>
-            <div class="summary-value">{{ fmtH(workerMap[activeWorker].totals.normal) }}<span class="unit">h</span></div>
+            <div class="summary-value">{{ fmtH(workerMap[displayWorker].totals.normal) }}<span class="unit">h</span></div>
           </div>
-          <div class="summary-card" v-if="workerMap[activeWorker].totals.ot > 0">
+          <div class="summary-card" v-if="workerMap[displayWorker].totals.ot > 0">
             <div class="summary-label">残業</div>
-            <div class="summary-value accent">{{ fmtH(workerMap[activeWorker].totals.ot) }}<span class="unit">h</span></div>
+            <div class="summary-value accent">{{ fmtH(workerMap[displayWorker].totals.ot) }}<span class="unit">h</span></div>
           </div>
-          <div class="summary-card" v-if="workerMap[activeWorker].totals.night > 0">
+          <div class="summary-card" v-if="workerMap[displayWorker].totals.night > 0">
             <div class="summary-label">深夜</div>
-            <div class="summary-value">{{ fmtH(workerMap[activeWorker].totals.night) }}<span class="unit">h</span></div>
+            <div class="summary-value">{{ fmtH(workerMap[displayWorker].totals.night) }}<span class="unit">h</span></div>
           </div>
-          <div class="summary-card" v-if="workerMap[activeWorker].totals.otNight > 0">
+          <div class="summary-card" v-if="workerMap[displayWorker].totals.otNight > 0">
             <div class="summary-label">深夜残業</div>
-            <div class="summary-value">{{ fmtH(workerMap[activeWorker].totals.otNight) }}<span class="unit">h</span></div>
+            <div class="summary-value">{{ fmtH(workerMap[displayWorker].totals.otNight) }}<span class="unit">h</span></div>
           </div>
-          <div class="summary-card" v-if="workerMap[activeWorker].totals.sunday > 0">
+          <div class="summary-card" v-if="workerMap[displayWorker].totals.sunday > 0">
             <div class="summary-label">休日</div>
-            <div class="summary-value">{{ fmtH(workerMap[activeWorker].totals.sunday) }}<span class="unit">h</span></div>
+            <div class="summary-value">{{ fmtH(workerMap[displayWorker].totals.sunday) }}<span class="unit">h</span></div>
           </div>
-          <div class="summary-card" v-if="workerMap[activeWorker].totals.sundayOt > 0">
+          <div class="summary-card" v-if="workerMap[displayWorker].totals.sundayOt > 0">
             <div class="summary-label">休日残業</div>
-            <div class="summary-value">{{ fmtH(workerMap[activeWorker].totals.sundayOt) }}<span class="unit">h</span></div>
+            <div class="summary-value">{{ fmtH(workerMap[displayWorker].totals.sundayOt) }}<span class="unit">h</span></div>
           </div>
-          <div class="summary-card" v-if="workerMap[activeWorker].totals.sundayNight > 0">
+          <div class="summary-card" v-if="workerMap[displayWorker].totals.sundayNight > 0">
             <div class="summary-label">休日深夜</div>
-            <div class="summary-value">{{ fmtH(workerMap[activeWorker].totals.sundayNight) }}<span class="unit">h</span></div>
+            <div class="summary-value">{{ fmtH(workerMap[displayWorker].totals.sundayNight) }}<span class="unit">h</span></div>
           </div>
-          <div class="summary-card" v-if="workerMap[activeWorker].totals.sundayOtNight > 0">
+          <div class="summary-card" v-if="workerMap[displayWorker].totals.sundayOtNight > 0">
             <div class="summary-label">休日深夜残業</div>
-            <div class="summary-value">{{ fmtH(workerMap[activeWorker].totals.sundayOtNight) }}<span class="unit">h</span></div>
+            <div class="summary-value">{{ fmtH(workerMap[displayWorker].totals.sundayOtNight) }}<span class="unit">h</span></div>
           </div>
           <!-- 人件費カード（出面勤怠＝時給ベース。日当は無関係） -->
           <div v-if="canViewHourlyWage && showLaborCost" class="summary-card cost-card">
@@ -150,7 +150,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="site in workerMap[activeWorker].siteBreakdown" :key="site.siteName">
+              <tr v-for="site in workerMap[displayWorker].siteBreakdown" :key="site.siteName">
                 <td class="site-name">{{ site.siteName }}</td>
                 <td class="num">{{ site.days }}</td>
                 <td class="num">{{ fmtH(site.normal) || '—' }}</td>
@@ -166,15 +166,15 @@
             <tfoot>
               <tr class="total-row">
                 <td>合計</td>
-                <td class="num">{{ workerMap[activeWorker].totalDays }}</td>
-                <td class="num">{{ fmtH(workerMap[activeWorker].totals.normal) || '—' }}</td>
-                <td class="num">{{ fmtH(workerMap[activeWorker].totals.ot) || '—' }}</td>
-                <td class="num">{{ fmtH(workerMap[activeWorker].totals.night) || '—' }}</td>
-                <td class="num">{{ fmtH(workerMap[activeWorker].totals.otNight) || '—' }}</td>
-                <td class="num">{{ fmtH(workerMap[activeWorker].totals.sunday) || '—' }}</td>
-                <td class="num">{{ fmtH(workerMap[activeWorker].totals.sundayOt) || '—' }}</td>
-                <td class="num">{{ fmtH(workerMap[activeWorker].totals.sundayNight) || '—' }}</td>
-                <td class="num">{{ fmtH(workerMap[activeWorker].totals.sundayOtNight) || '—' }}</td>
+                <td class="num">{{ workerMap[displayWorker].totalDays }}</td>
+                <td class="num">{{ fmtH(workerMap[displayWorker].totals.normal) || '—' }}</td>
+                <td class="num">{{ fmtH(workerMap[displayWorker].totals.ot) || '—' }}</td>
+                <td class="num">{{ fmtH(workerMap[displayWorker].totals.night) || '—' }}</td>
+                <td class="num">{{ fmtH(workerMap[displayWorker].totals.otNight) || '—' }}</td>
+                <td class="num">{{ fmtH(workerMap[displayWorker].totals.sunday) || '—' }}</td>
+                <td class="num">{{ fmtH(workerMap[displayWorker].totals.sundayOt) || '—' }}</td>
+                <td class="num">{{ fmtH(workerMap[displayWorker].totals.sundayNight) || '—' }}</td>
+                <td class="num">{{ fmtH(workerMap[displayWorker].totals.sundayOtNight) || '—' }}</td>
               </tr>
             </tfoot>
           </table>
@@ -200,7 +200,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in workerMap[activeWorker].rows" :key="row.date + row.siteName" :class="{ 'row-off': row.isOff }">
+              <tr v-for="row in workerMap[displayWorker].rows" :key="row.date + row.siteName" :class="{ 'row-off': row.isOff }">
                 <td class="date-cell">
                   {{ fmtDate(row.date) }}
                   <span v-if="row.isSunday" class="sun">日</span>
@@ -231,7 +231,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { useYearMonthParam } from '../composables/useQueryParam'
+import { useYearMonthParam, useQueryParam } from '../composables/useQueryParam'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { computeWorkerHours, calcBreakMinutes, effectiveBreakMinutes, effectiveBreakWindows, parseMin, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE, buildWageTimelines, wageForDate, type WageChange } from '../lib/workerHours'
@@ -280,7 +280,7 @@ type WorkerData = {
 
 const loading        = ref(false)
 const workerMap      = ref<Record<string, WorkerData>>({})
-const activeWorker   = ref('')
+const activeWorker   = useQueryParam('worker', '')   // URL ?worker= に同期（ユーザーが選んだ作業員そのもの・月を跨いでも書き換えない）
 const workerOrder    = ref<string[]>([])  // DBの名前昇順
 const dailyWageMap   = ref<Record<string, number>>({})  // name → 日当単価(原価設定)
 const hourlyWageMap  = ref<Record<string, number>>({})  // name → 時給(実質賃金・現在値)
@@ -294,11 +294,12 @@ const workerNames = computed(() => {
   const rest    = inData.filter(n => !ordered.includes(n)).sort((a, b) => a.localeCompare(b, 'ja'))
   return [...ordered, ...rest]
 })
+// 表示用に選択作業員を解決：今月に存在すればそれを使い、無ければ先頭にフォールバック（activeWorker自体は書き換えない＝月を戻せば復元される）
+const displayWorker = computed(() => workerNames.value.includes(activeWorker.value) ? activeWorker.value : (workerNames.value[0] ?? ''))
 
 async function load() {
   loading.value = true
   workerMap.value = {}
-  activeWorker.value = ''
 
   const accountId = await getAccountId()
 
@@ -531,8 +532,6 @@ async function load() {
   }
 
   workerMap.value  = result
-  const names = Object.keys(result).sort((a, b) => a.localeCompare(b, 'ja'))
-  activeWorker.value = names[0] ?? ''
   loading.value = false
 }
 
@@ -541,11 +540,11 @@ watch(dateFrom, load)
 
 // ---------- 人件費計算（出面勤怠＝時給ベース。日当は無関係） ----------
 const activeHourlyWage = computed(() =>
-  activeWorker.value ? (hourlyWageMap.value[activeWorker.value] ?? 0) : 0
+  displayWorker.value ? (hourlyWageMap.value[displayWorker.value] ?? 0) : 0
 )
 // 出張日数（出張費 ÷ ¥3,000）。サマリーカード用。
 const activeTripDays = computed(() => {
-  const y = activeWorker.value ? (workerMap.value[activeWorker.value]?.tripYen ?? 0) : 0
+  const y = displayWorker.value ? (workerMap.value[displayWorker.value]?.tripYen ?? 0) : 0
   return Math.round(y / BUSINESS_TRIP_ALLOWANCE)
 })
 
@@ -559,7 +558,7 @@ function hourlyForDate(name: string, date: string): number {
 }
 // 期間内で時給が変動したか（表示の単価/h を「変動」にするか単一値にするか判定）
 const wageVariedInPeriod = computed(() => {
-  const name = activeWorker.value
+  const name = displayWorker.value
   const wd = workerMap.value[name]
   if (!name || !wd) return false
   const rates = new Set(wd.rows.filter(r => !r.isOff).map(r => hourlyForDate(name, r.date)))
@@ -578,7 +577,7 @@ const CATEGORIES: { label: string; key: keyof WorkerRow; rate: number }[] = [
 ]
 
 const laborCostBreakdown = computed(() => {
-  const name = activeWorker.value
+  const name = displayWorker.value
   const wd = workerMap.value[name]
   if (!name || !wd) return []
   // 出面勤怠の人件費は「時給 × 稼働時間（割増率適用）」を日報日付ごとの発効時給で計算し合算。

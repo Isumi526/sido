@@ -76,8 +76,8 @@
         <li><RouterLink to="/estimate-masters" class="nav-link"><span class="material-symbols-rounded nav-icon">price_change</span>見積マスタ・単価表</RouterLink></li>
 
         <li class="nav-section">管理・設定</li>
-        <li><RouterLink to="/ai-help" class="nav-link"><span class="material-symbols-rounded nav-icon">support_agent</span>AIヘルプ</RouterLink></li>
-        <li><RouterLink to="/faq" class="nav-link"><span class="material-symbols-rounded nav-icon">quiz</span>FAQナレッジ</RouterLink></li>
+        <li v-if="!HIDE_AI_HELP_SECTIONS"><RouterLink to="/ai-help" class="nav-link"><span class="material-symbols-rounded nav-icon">support_agent</span>AIヘルプ</RouterLink></li>
+        <li v-if="!HIDE_AI_HELP_SECTIONS"><RouterLink to="/faq" class="nav-link"><span class="material-symbols-rounded nav-icon">quiz</span>FAQナレッジ</RouterLink></li>
         <li><RouterLink to="/non-submitters" class="nav-link"><span class="material-symbols-rounded nav-icon">person_off</span>未送信者リスト</RouterLink></li>
         <li v-if="!HIDE_LINE_SECTIONS"><RouterLink to="/reminder-history" class="nav-link"><span class="material-symbols-rounded nav-icon">history</span>リマインド履歴</RouterLink></li>
         <li><RouterLink to="/operation-logs" class="nav-link"><span class="material-symbols-rounded nav-icon">receipt_long</span>操作ログ</RouterLink></li>
@@ -92,7 +92,7 @@
     </main>
 
     <!-- どのページでも右下に常駐するAIヘルプ（ログイン中のみ・遷移で消えない） -->
-    <AiHelpWidget />
+    <AiHelpWidget v-if="!HIDE_AI_HELP_SECTIONS" />
   </div>
 
   <!-- 未ログイン時はログイン画面のみ表示 -->
@@ -106,7 +106,7 @@ import { currentUser, signOut, isAdminAllowed, roleResolved } from './lib/auth'
 import { liffAppUrl } from './lib/links'
 import { getAccountName } from './lib/account'
 import { editApprovalCount, siteUnsetCount, overtimePendingCount, pendingGrantCount, refreshNavBadges } from './lib/navBadges'
-import { HIDE_LINE_SECTIONS } from './lib/featureFlags'
+import { HIDE_LINE_SECTIONS, HIDE_AI_HELP_SECTIONS } from './lib/featureFlags'
 import { migrationTargetUrl, REDIRECT_SECONDS } from './lib/domainMigration'
 import AiHelpWidget from './components/AiHelpWidget.vue'
 

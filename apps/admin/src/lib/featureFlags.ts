@@ -7,3 +7,8 @@
 //   true = LINE/リマインド系のナビ・設定セクションを「非表示」にする（データ・EFは保持）。
 //   ロールバックは false に戻すだけ（コード削除はしない＝可逆）。
 export const HIDE_LINE_SECTIONS = true
+
+// AIヘルプ/FAQナレッジ 一時保留（2026-07-08）: レビューで未検証の不具合が見つかったため、
+//   ナビ入口・常駐ウィジェットを非表示にする。ページ/コード/EFは保持（URL直打ちはガードしない）。
+//   ロールバックは false に戻すだけ（可逆）。
+export const HIDE_AI_HELP_SECTIONS = true
