@@ -115,6 +115,7 @@ export interface Expenses {
 
 export interface SiteReport {
   siteName: string
+  site_id?: string | null  // 現場マスタ(sites)への正規化名一致で解決した権威キー。集計はこれ優先（表記ゆれ/マージ漏れ耐性）。旧データ/フリーテキストは null で siteName フォールバック
   customSiteName?: string  // 「その他（新規現場）」選択時の自由記入現場名
   contractorName?: string        // 元請け業者名（任意）
   customContractorName?: string  // 「＋新しい元請け業者」選択時の自由記入名
@@ -144,6 +145,8 @@ export interface GasolineItem {
   payee?: string               // 支払い先（店名）
   yen?: number                 // 金額
   registrationNumber?: string  // 登録番号（インボイス T+13桁）
+  liters?: number              // 給油量（ℓ）
+  fuelType?: 'regular' | 'diesel'  // 燃料種別（レギュラー/ディーゼル）
   tategae?: boolean            // 個人立替（会社が精算する分）
   fileUrls?: string[]          // 領収書URL（選択時に即アップロード）
 }

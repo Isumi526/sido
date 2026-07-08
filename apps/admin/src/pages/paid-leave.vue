@@ -27,6 +27,12 @@
         <button class="btn-batch-grant" :disabled="batchGranting" data-testid="batch-grant" @click="batchGrantPending">{{ batchGranting ? '付与中…' : 'まとめて法令付与' }}</button>
       </div>
 
+      <!-- 在籍/退職・無効 の絞り込みタブ（業務委託は有給の概念が無いため一覧・集計から除外） -->
+      <div class="status-tabs no-print">
+        <button class="status-tab" :class="{ active: leaveTab === 'active' }" @click="leaveTab = 'active'">在籍<span class="tab-count">{{ tabCounts.active }}</span></button>
+        <button class="status-tab" :class="{ active: leaveTab === 'inactive' }" @click="leaveTab = 'inactive'">退職・無効<span class="tab-count">{{ tabCounts.inactive }}</span></button>
+      </div>
+
       <!-- ── 画面: サマリーテーブル（印刷非表示） ── -->
       <div class="table-wrap no-print">
         <table class="table">
@@ -43,7 +49,8 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="w in workerStats" :key="w.id" :class="{ inactive: !w.active }">
+            <tr v-if="!filteredWorkers.length"><td colspan="8" class="empty">該当する作業員がいません</td></tr>
+            <tr v-for="w in filteredWorkers" :key="w.id" :class="{ inactive: !w.active }">
               <td class="name">{{ w.name }}</td>
               <td>
                 <span class="emp-badge" :class="w.employment_type ?? 'fulltime'">
@@ -293,7 +300,7 @@ import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { canViewHourlyWage } from '../lib/auth'
 import { refreshNavBadges } from '../lib/navBadges'
-import { tenureMonths, suggestedGrantDays, pendingBaseDatesFor } from '../lib/paidLeaveGrant'
+import { tenureMonths, suggestedGrantDays, pendingBaseDatesFor, fifoBalance } from '../lib/paidLeaveGrant'
 
 // 法令付与計算は lib/paidLeaveGrant.ts（付与待ちバッジ navBadges と共用）。
 function suggestedGrant(w: WorkerStat): number {
@@ -338,6 +345,16 @@ type UsageEntry = { date: string; note: string | null }
 // ── State ────────────────────────────────────────────────────
 const loading      = ref(true)
 const workerStats  = ref<WorkerStat[]>([])
+// 一覧の絞り込みタブ（業務委託は有給の概念が無い＝一覧・集計・印刷簿から除外。レビュー指摘⑨で2タブ化）
+const leaveTab = ref<'active' | 'inactive'>('active')
+const filteredWorkers = computed(() => workerStats.value.filter(w => {
+  if (w.employment_type === 'contractor') return false
+  return leaveTab.value === 'inactive' ? !w.active : w.active
+}))
+const tabCounts = computed(() => ({
+  active:   workerStats.value.filter(w => w.active && w.employment_type !== 'contractor').length,
+  inactive: workerStats.value.filter(w => !w.active && w.employment_type !== 'contractor').length,
+}))
 const detail       = ref<WorkerStat | null>(null)
 const detailGrants = ref<Grant[]>([])
 const detailUsage  = ref<UsageEntry[]>([])
@@ -381,7 +398,7 @@ function remainingClass(days: number): string {
 // ── 印刷用データ ──────────────────────────────────────────────
 const printRows = computed(() => {
   const yr = String(printYear.value)
-  return workerStats.value.map(w => {
+  return workerStats.value.filter(w => w.employment_type !== 'contractor').map(w => {
     const grants  = allGrantsByWorker[w.id] ?? []
     // 選択年に有効な付与（付与日が選択年以前 かつ 有効期限が選択年以後）
     const validGrants = grants.filter(g => g.granted_at.slice(0, 4) <= yr && g.expires_at.slice(0, 4) >= yr)
@@ -401,7 +418,7 @@ const printRows = computed(() => {
       totalGranted,
       usedDates,
       usedCount:       usage.length,
-      remaining:       totalGranted - (allUsageByWorker[w.id] ?? []).length,
+      remaining:       w.remaining,   // FIFO残高（workerStatsで算出済み）
       duty:            w.duty,
     }
   })
@@ -441,18 +458,19 @@ async function load() {
 
   workerStats.value = (workersData ?? []).map((w: any) => {
     const wGrants     = allGrantsByWorker[w.id] ?? []
-    const validGrants = wGrants.filter(g => !isExpired(g.expires_at))
-    const totalGranted = validGrants.reduce((s, g) => s + Number(g.days), 0)
     const initialUsed  = Number(w.initial_used_leave_days ?? 0)   // 導入前に消化した分（控除）
     const systemUsed   = (allUsageByWorker[w.id] ?? []).length    // 導入後のアプリ有給申請
     const totalUsed    = initialUsed + systemUsed
+    // FIFO残高: 消化を古い付与から充当し、有効付与の未消化分を残とする（失効の未使用分のみ消滅）。
+    const bal = fifoBalance(wGrants, totalUsed, today)
+    const totalGranted = bal.validGranted   // 有効期限内の付与合計
     // 未付与の基準日（付与待ち）。恒久除外された基準日は除く。
     const existingDates = new Set(wGrants.map(g => g.granted_at))
     const excludedDates = (Array.isArray(w.excluded_grant_dates) ? w.excluded_grant_dates : []).map((d: any) => String(d))
     const pendingCount  = pendingBaseDatesFor(w.hire_date, w.employment_type, w.weekly_scheduled_days, existingDates, today, new Set(excludedDates)).length
 
     // ── 年5日義務: 最新の基準日から1年間で判定 ──
-    const latestGrant = validGrants.sort((a, b) => b.granted_at.localeCompare(a.granted_at))[0]
+    const latestGrant = wGrants.filter(g => !isExpired(g.expires_at)).sort((a, b) => b.granted_at.localeCompare(a.granted_at))[0]
     let duty: WorkerStat['duty']
     if (!latestGrant) {
       duty = { isSubject: false, isMet: false, usedInPeriod: 0, remaining: 5, grantedAt: null, deadline: null }
@@ -493,7 +511,7 @@ async function load() {
       excludedDates,
       totalGranted,
       totalUsed,
-      remaining: totalGranted - totalUsed,
+      remaining: bal.remaining,   // FIFO残高（失効の未使用分のみ消滅・過少計上バグ修正）
       pendingCount,
       duty,
     }
@@ -778,6 +796,12 @@ onMounted(async () => {
 .btn-print    { background: #1a1a1a; color: #fff; border: none; border-radius: 8px; padding: 10px 18px; font-size: 14px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 6px; }
 .btn-print:hover { background: #333; }
 .loading      { color: #888; padding: 40px; text-align: center; }
+
+/* ── 絞り込みタブ ── */
+.status-tabs { display: flex; gap: 4px; margin-bottom: 14px; }
+.status-tab { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 700; color: #64748b; cursor: pointer; }
+.status-tab.active { background: #06C755; border-color: #06C755; color: #fff; }
+.status-tab .tab-count { font-size: 11px; opacity: .8; margin-left: 4px; }
 
 /* ── 画面テーブル ── */
 .table-wrap { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06); }

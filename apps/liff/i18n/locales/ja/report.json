@@ -140,5 +140,8 @@
   "gasUploadFailed": "領収書のアップロードに失敗しました。",
   "gasAnalyzeFailed": "領収書を読み取れませんでした。金額を手入力してください。",
   "gasPayeePlaceholder": "支払い先（店名）",
-  "addGasoline": "＋ 給油を追加"
+  "addGasoline": "＋ 給油を追加",
+  "fuelRegular": "レギュラー",
+  "fuelDiesel": "ディーゼル（軽油）",
+  "litersPlaceholder": "給油量（ℓ・任意）"
 }

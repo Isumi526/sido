@@ -140,5 +140,8 @@
   "gasUploadFailed": "Failed to upload the receipt.",
   "gasAnalyzeFailed": "Could not read the receipt. Please enter the amount manually.",
   "gasPayeePlaceholder": "Payee (store)",
-  "addGasoline": "＋ Add fill-up"
+  "addGasoline": "＋ Add fill-up",
+  "fuelRegular": "Regular",
+  "fuelDiesel": "Diesel",
+  "litersPlaceholder": "Liters (optional)"
 }

@@ -634,16 +634,20 @@ async function doMerge() {
     }
     // 3) daily_reports.sites[] の現場参照を target.name へ寄せる。
     //    siteName===source.name だけでなく、__other__ の customSiteName===source.name も統合（集計は現場名/customSiteName キーのため取りこぼし防止）。
+    //    さらに site_id（保存済み）が source のものも付け替え、site_id を target.id へ寄せる（id基準集計の統合＝根本対策）。
     const { data: reps } = await supabase.from('daily_reports').select('id, sites').eq('account_id', accountId).limit(10000)
     for (const r of (reps ?? []) as any[]) {
       const arr = Array.isArray(r.sites) ? r.sites : []
       let changed = false
       const next = arr.map((s: any) => {
-        if (s?.siteName && sourceNames.includes(s.siteName)) { changed = true; return { ...s, siteName: target.name } }
-        if (s?.siteName === '__other__' && s?.customSiteName && sourceNames.includes(s.customSiteName)) {
-          changed = true; return { ...s, siteName: target.name, customSiteName: '' }
-        }
-        return s
+        const belongs = (s?.site_id && sourceIds.includes(s.site_id))
+          || (s?.siteName && sourceNames.includes(s.siteName))
+          || (s?.siteName === '__other__' && s?.customSiteName && sourceNames.includes(s.customSiteName))
+        if (!belongs) return s
+        changed = true
+        const out: any = { ...s, site_id: target.id, siteName: target.name }
+        if (s?.siteName === '__other__' || s?.customSiteName) out.customSiteName = ''
+        return out
       })
       if (changed) await supabase.from('daily_reports').update({ sites: next }).eq('id', r.id)
     }

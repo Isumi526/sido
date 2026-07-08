@@ -6,6 +6,7 @@ import type { User, ExpenseItem, ExpenseItemInput, ExpenseRow } from '~/types'
 import { useI18n } from 'vue-i18n'
 import { gt } from '~/utils/i18n-global'
 import { flattenReportExpenses, ratesFromSettings } from './expense-flatten.gen'
+import { resolveActiveSiteId } from '~/utils/siteSimilarity'
 
 // ---------- 期間キーユーティリティ ----------
 
@@ -338,7 +339,7 @@ export const useExpense = () => {
    */
   // 保存前に File[] を除去（JSONB に File をそのまま入れると [{}] のゴミになるため）。
   //  *Files トップレベルキーと、明細ごとに files を持つ parkings/highways の files を落とす。*Urls は残す。
-  function sanitizeSitesForStorage(sites: any[]): any[] {
+  function sanitizeSitesForStorage(sites: any[], activeSites: Array<{ id: string; name: string }> = []): any[] {
     const FILE_KEYS = ['vehicleFiles','trainFiles','hotelFiles','leopalaceFiles','otherFiles','entertainmentFiles','garbagePhotos']
     return (sites ?? []).map((site: any) => {
       const exp = { ...(site?.expenses ?? {}) }
@@ -351,7 +352,11 @@ export const useExpense = () => {
       if (exp.others)   exp.others   = stripItemFiles(exp.others)
       if (exp.entertainments) exp.entertainments = stripItemFiles(exp.entertainments)
       if (exp.hotels)         exp.hotels         = stripItemFiles(exp.hotels)
-      return { ...site, expenses: exp }
+      // 現場マスタ(active)へ正規化名一致で site_id を解決して刻む（集計をid基準にする根本対策）。
+      //  解決できなければ既存の site_id を保持（＝マージ/非アクティブ化後の安定性）、それも無ければ null。
+      const resolved = resolveActiveSiteId(site, activeSites)
+      const site_id = resolved ?? (site?.site_id ?? null)
+      return { ...site, expenses: exp, site_id }
     })
   }
 
@@ -382,6 +387,16 @@ export const useExpense = () => {
     report: { date: string; isWorking: boolean; sites: unknown[]; note?: string; leaveType?: string | null; isBusinessTrip?: boolean; gasolineItems?: any[] }
   ): Promise<void> {
     const accountId = await getAccountId()
+    // 現場マスタを先に確実化 → その後 active 一覧を取得して各現場に site_id を解決する。
+    //  （新規現場 __other__ も先に登録しておけば id を解決できる。best-effort・失敗時は name フォールバック）
+    await registerNewSites(accountId, report.sites as any[])
+    const { data: activeSitesRaw } = await supabase
+      .from('sites')
+      .select('id, name')
+      .eq('account_id', accountId)
+      .eq('active', true)
+      .order('created_at', { ascending: true }) // 同名重複時は最古を正とする
+    const activeSites = (activeSitesRaw ?? []) as Array<{ id: string; name: string }>
     // 本日のガソリン代（明細リスト）：金額のある明細だけを保存（_id は除去）
     const gasItems = (report.gasolineItems ?? [])
       .filter((it: any) => Number(it?.yen) > 0)
@@ -389,6 +404,8 @@ export const useExpense = () => {
         yen: Math.round(Number(it.yen) || 0),
         payee: it.payee?.trim() || null,
         registrationNumber: it.registrationNumber?.trim() || null,
+        liters: Number(it.liters) > 0 ? Number(it.liters) : null,
+        fuelType: it.fuelType === 'diesel' ? 'diesel' : (it.fuelType === 'regular' ? 'regular' : null),
         tategae: !!it.tategae,
         fileUrls: Array.isArray(it.fileUrls) ? it.fileUrls : [],
       }))
@@ -399,7 +416,7 @@ export const useExpense = () => {
           user_id:    userId,
           date:       report.date,
           is_working: report.isWorking,
-          sites:      sanitizeSitesForStorage(report.sites as any[]),
+          sites:      sanitizeSitesForStorage(report.sites as any[], activeSites),
           note:       report.note ?? null,
           leave_type: report.leaveType ?? null,
           is_business_trip: report.isBusinessTrip ?? false,
@@ -414,8 +431,7 @@ export const useExpense = () => {
       console.error('[saveReportById] upsertエラー:', error.message)
       throw error
     }
-    // 日報が保存できたら、その現場名を現場マスタへ登録（新規現場がプルダウンに確実に出るように）
-    await registerNewSites(accountId, report.sites as any[])
+    // ※ 現場マスタ登録(registerNewSites)は upsert 前に実施済み（site_id 解決のため前倒し）。
   }
 
   // 内容(note)を label キーに書き戻せるカテゴリ（それ以外は payee/登録番号のみ編集）
@@ -528,7 +544,7 @@ export const useExpense = () => {
         const gasYen = Math.round(Number(g?.yen) || 0)
         if (gasYen <= 0) continue
         const urls = Array.isArray(g.fileUrls) ? g.fileUrls : []
-        rows.push({ date: rep.date, category: 'ガソリン代（本日）', siteName: '—', payee: g.payee || '', amount: gasYen, note: '', registrationNumber: g.registrationNumber || '', fileUrls: urls, tategae: !!g.tategae, srcKey: 'gasolineItems', srcIndex: gi } as ExpenseRow)
+        rows.push({ date: rep.date, category: 'ガソリン代（本日）', siteName: '—', payee: g.payee || '', amount: gasYen, note: g.fuelType === 'diesel' ? 'ディーゼル' : (g.fuelType === 'regular' ? 'レギュラー' : ''), registrationNumber: g.registrationNumber || '', liters: Number(g.liters) > 0 ? Number(g.liters) : undefined, fileUrls: urls, tategae: !!g.tategae, srcKey: 'gasolineItems', srcIndex: gi } as ExpenseRow)
       }
     }
     return rows

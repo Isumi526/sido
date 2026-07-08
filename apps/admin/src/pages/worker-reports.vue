@@ -236,6 +236,7 @@ import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { computeWorkerHours, calcBreakMinutes, effectiveBreakMinutes, effectiveBreakWindows, parseMin, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE, buildWageTimelines, wageForDate, type WageChange } from '../lib/workerHours'
 import { canViewHourlyWage } from '../lib/auth'
+import { resolveSiteRef, type SiteResolveCtx } from '../lib/siteKey'
 
 // ---------- 月ナビ ----------
 const baseDate = useYearMonthParam()   // 対象月を ?ym=YYYY-MM でURL同期
@@ -339,6 +340,13 @@ async function load() {
   const userNameMap: Record<string, string> = {}
   for (const u of usersData ?? []) userNameMap[(u as any).id] = (u as any).real_name
 
+  // 現場マスタ（site_id 解決＋正式名表示用）
+  const { data: siteRows } = await supabase.from('sites').select('id, name, active, created_at').eq('account_id', accountId).order('created_at', { ascending: true })
+  const siteCtx: SiteResolveCtx = {
+    activeSites: (siteRows ?? []).filter((s: any) => s.active).map((s: any) => ({ id: s.id, name: s.name })),
+    siteNameById: Object.fromEntries((siteRows ?? []).map((s: any) => [s.id, s.name])),
+  }
+
   const { data } = await supabase
     .from('daily_reports')
     .select('date, is_working, leave_type, is_business_trip, sites, user_id')
@@ -401,9 +409,9 @@ async function load() {
 
     for (const site of (r.sites ?? [])) {
       const rawName  = site.siteName ?? ''
-      const siteName = rawName === '__other__'
-        ? (site.customSiteName?.trim() || '新規現場')
-        : (rawName.trim() || '(不明)')
+      // site_id（保存済み or active名一致）→ 正式名でグループ化（表記ゆれ/マージ孤児を統合）
+      const siteName = resolveSiteRef(site, siteCtx).name?.trim()
+        || (rawName === '__other__' ? '新規現場' : '(不明)')
       for (const w of (site.workers ?? []).filter((w: any) => w.workerName)) {
         const name = w.workerName as string
         if (!rawByWorker[name]) rawByWorker[name] = []
