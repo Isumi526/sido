@@ -2,6 +2,7 @@
 description: 自走ループ（リスク2レーン/緊急/エピックship/Gemini二重レビュー）
 argument-hint: "[--dry-run]"
 disable-model-invocation: true
+model: sonnet
 ---
 
 # /run — 自走 ＋ リスク2レーン ＋ 緊急プリエンプト ＋ エピックship ＋ Gemini二重レビュー（統合版）
