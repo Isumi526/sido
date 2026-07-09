@@ -64,7 +64,6 @@
               </template>
               <template v-else>
                 <button class="btn-toggle" data-testid="to-retired-back" @click="setStatus(w, 'retired')">退職済みへ</button>
-                <button class="btn-del" data-testid="del-worker" @click="askDelete(w)">削除</button>
               </template>
             </td>
           </tr>
@@ -283,26 +282,6 @@
       </div>
     </div>
 
-    <!-- 物理削除の2重確認（無効の作業員のみ・不可逆） -->
-    <div v-if="delTarget" class="modal-overlay" @click.self="delTarget = null">
-      <div class="modal modal-sm">
-        <h2>作業員を完全に削除</h2>
-        <p class="del-warn">
-          <b>{{ delTarget.name }}</b> を完全に削除します。この操作は<b>取り消せません</b>。<br>
-          作業員マスタの情報・代理人・賃金履歴・家族/健診・予定が削除されます。<br>
-          （日報データが紐づく作業員は保全のため削除できません。その場合は『無効』のまま保管してください。）
-        </p>
-        <div class="field">
-          <label>確認のため作業員名「{{ delTarget.name }}」を入力</label>
-          <input v-model="delConfirmText" class="input" :placeholder="delTarget.name" data-testid="del-confirm-input" />
-        </div>
-        <div class="modal-actions">
-          <button class="btn-cancel" @click="delTarget = null">キャンセル</button>
-          <button class="btn-del-confirm" :disabled="deleting || delConfirmText.trim() !== delTarget.name" data-testid="del-confirm-btn" @click="confirmDelete">{{ deleting ? '削除中...' : '完全に削除する' }}</button>
-        </div>
-        <p v-if="delError" class="error" data-testid="del-error">{{ delError }}</p>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -757,43 +736,6 @@ async function setStatus(w: Worker, status: WStatus) {
   await load()
 }
 
-// ── 物理削除（無効の作業員のみ・2重確認）──
-//  日報データ保全のため、日報が1件でも紐づく作業員は削除不可（『無効』のまま保管）。
-//  紐付くログイン(users)は日報ゼロなら解除してから worker 行を削除（master子テーブルはFKカスケード）。
-const delTarget      = ref<Worker | null>(null)
-const delConfirmText = ref('')
-const deleting       = ref(false)
-const delError       = ref('')
-function askDelete(w: Worker) { delTarget.value = w; delConfirmText.value = ''; delError.value = '' }
-async function confirmDelete() {
-  const w = delTarget.value
-  if (!w) return
-  if (delConfirmText.value.trim() !== w.name) { delError.value = '確認のため作業員名を正確に入力してください'; return }
-  deleting.value = true; delError.value = ''
-  try {
-    const accountId = await getAccountId()
-    // 紐付くログイン(users)を確認：日報があれば削除中止（データ保全）、無ければ解除
-    const { data: us } = await supabase.from('users').select('id').eq('worker_id', w.id).eq('account_id', accountId)
-    for (const u of (us ?? []) as { id: string }[]) {
-      const { count } = await supabase.from('daily_reports').select('id', { count: 'exact', head: true }).eq('user_id', u.id)
-      if ((count ?? 0) > 0) {
-        delError.value = 'この作業員には日報データが紐づいています。データ保全のため完全削除はできません（『無効』のまま保管してください）。'
-        deleting.value = false; return
-      }
-      await supabase.from('users').delete().eq('id', u.id)
-    }
-    const { error } = await supabase.from('workers').delete().eq('id', w.id)
-    if (error) throw error
-    delTarget.value = null
-    await load()
-  } catch (e: any) {
-    delError.value = e?.message?.includes('foreign key')
-      ? '他のデータ（勤怠・見積・業者など）から参照されているため削除できません。先に参照を解除してください。'
-      : (e?.message ?? '削除に失敗しました')
-  } finally {
-    deleting.value = false
-  }
-}
 </script>
 
 <style scoped>
