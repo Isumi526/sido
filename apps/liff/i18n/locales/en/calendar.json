@@ -1,5 +1,9 @@
 {
   "title": "Schedule",
+  "tabShared": "Shared",
+  "tabPersonal": "Personal",
+  "viewWeek": "Week",
+  "viewMonth": "Month",
   "filterByGroup": "Filter by group",
   "everyone": "Everyone",
   "monthBadge": "{n}",
