@@ -723,10 +723,10 @@ onMounted(load)
 .btn-status-pay:hover { background: #f1faf3; border-color: #06C755; }
 .btn-status-link { background: none; border: none; color: #aaa; font-size: 11px; text-decoration: underline; cursor: pointer; padding: 0; }
 .pay-date { width: 100%; margin-bottom: 16px; }
-.table-wrap { background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08); overflow-x: auto; }
+.table-wrap { background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08);  max-height: 70vh; overflow: auto; }
 .table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .table th, .table td { padding: 10px 14px; border-bottom: 1px solid #eee; text-align: left; }
-.table thead th { background: #fafafa; font-weight: 700; font-size: 12px; color: #666; }
+.table thead th { background: #fafafa; font-weight: 700; font-size: 12px; color: #666; position: sticky; top: 0; z-index: 2;}
 .table .num { text-align: right; }
 .bold { font-weight: 600; }
 .date-cell { white-space: nowrap; }

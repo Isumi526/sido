@@ -669,9 +669,9 @@ function printPdf() {
 
 /* テーブル共通 */
 .section-title { font-size: 13px; font-weight: 700; color: #888; margin-bottom: 10px; margin-top: 24px; }
-.table-wrap { background: #fff; border-radius: 12px; overflow: auto; box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 8px; }
+.table-wrap { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 8px;  max-height: 70vh; overflow: auto; }
 .table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.table th { background: #f9f9f9; padding: 9px 10px; text-align: left; font-size: 11px; color: #888; font-weight: 700; white-space: nowrap; }
+.table th { background: #f9f9f9; padding: 9px 10px; text-align: left; font-size: 11px; color: #888; font-weight: 700; white-space: nowrap; position: sticky; top: 0; z-index: 2;}
 .table td { padding: 9px 10px; border-top: 1px solid #f0f0f0; vertical-align: middle; }
 .table tfoot td { background: #f5f5f5; font-weight: 700; border-top: 2px solid #e0e0e0; }
 .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -698,7 +698,7 @@ function printPdf() {
   .btn-toggle-cost { display: none !important; }
 
   .summary-card { box-shadow: none; border: 1px solid #ddd; }
-  .table-wrap { box-shadow: none; overflow: visible; }
+  .table-wrap { box-shadow: none; max-height: none; overflow: visible; }
 
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }

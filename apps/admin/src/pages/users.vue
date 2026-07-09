@@ -107,9 +107,9 @@ onMounted(load)
 <style scoped>
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
 .page-title  { font-size: 22px; font-weight: 700; }
-.table-wrap  { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.table-wrap  { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06);  max-height: 70vh; overflow: auto; }
 .table       { width: 100%; border-collapse: collapse; }
-.table th    { text-align: left; padding: 12px 16px; font-size: 12px; color: #888; border-bottom: 1px solid #f0f0f0; font-weight: 600; }
+.table th    { text-align: left; padding: 12px 16px; font-size: 12px; color: #888; border-bottom: 1px solid #f0f0f0; font-weight: 600; position: sticky; top: 0; z-index: 2;}
 .table th.center, .table td.center { text-align: center; }
 .table td    { padding: 14px 16px; font-size: 14px; border-bottom: 1px solid #f5f5f5; }
 .table tr:last-child td { border-bottom: none; }
