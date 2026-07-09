@@ -1,8 +1,11 @@
 <template>
   <div class="field">
     <label v-if="label" class="label">
-      <span>{{ label }}<span v-if="required" class="required">{{ t('common.required') }}</span></span>
-      <HintIcon v-if="hint" :text="hint" :label="label" />
+      <template v-if="required || hint">
+        <span>{{ label }}<span v-if="required" class="required">{{ t('common.required') }}</span></span>
+        <HintIcon v-if="hint" :text="hint" :label="label" />
+      </template>
+      <template v-else>{{ label }}</template>
     </label>
     <slot />
   </div>
