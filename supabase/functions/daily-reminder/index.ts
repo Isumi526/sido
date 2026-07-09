@@ -37,6 +37,29 @@ function addDay(d: string): string {
 }
 
 // timestamptz(UTC) → JST基準の 'YYYY-MM-DD'（登録日を暦日に変換）
+// PostgRESTは既定でmax_rows(既定1000)を超えると黙って切り詰める。
+// 対象期間の日報がこれを超えると一部提出者がsubmittedSetから漏れ、未送信と誤判定される
+// （2026-07-09発覚：service_start_date以降の累積件数が1000超で発生）。.range()でページングして全件取得する。
+async function fetchAllReports(
+  supabase: ReturnType<typeof createClient>, accountId: string, startDate: string, endDate: string,
+): Promise<{ user_id: string; date: string }[]> {
+  const PAGE = 1000
+  const all: { user_id: string; date: string }[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from('daily_reports')
+      .select('user_id, date')
+      .eq('account_id', accountId)
+      .gte('date', startDate)
+      .lte('date', endDate)
+      .range(from, from + PAGE - 1)
+    if (error) throw error
+    all.push(...((data ?? []) as any[]))
+    if (!data || data.length < PAGE) break
+  }
+  return all
+}
+
 function jstDateOf(ts: string | null | undefined): string | null {
   if (!ts) return null
   const d = new Date(new Date(ts).getTime() + 9 * 60 * 60 * 1000)
@@ -122,20 +145,15 @@ async function processAccount(
     .eq('account_id', accountId)
     .eq('active', true)
 
-  const [{ data: reports }, { data: proxyRels }] = await Promise.all([
-    supabase
-      .from('daily_reports')
-      .select('user_id, date')
-      .eq('account_id', accountId)
-      .gte('date', startDate)
-      .lte('date', yesterday),
+  const [reports, { data: proxyRels }] = await Promise.all([
+    fetchAllReports(supabase, accountId, startDate, yesterday),
     supabase
       .from('worker_proxies')
       .select('worker_id, proxy_operator_id')
       .eq('account_id', accountId),
   ])
 
-  const submittedSet = new Set((reports ?? []).map((r: any) => `${r.user_id}__${r.date}`))
+  const submittedSet = new Set(reports.map((r) => `${r.user_id}__${r.date}`))
 
   const workerNameMap = new Map<string, string>(
     (allWorkers ?? []).map((w: any) => [w.id, w.name])

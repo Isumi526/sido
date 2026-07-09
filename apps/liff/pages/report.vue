@@ -79,7 +79,7 @@
         </div>
 
         <!-- 稼働有無 -->
-        <FormSection num="02" :title="$t('report.workStatusSection')">
+        <FormSection num="02" :title="$t('report.workStatusSection')" required>
           <select v-model="isWorkingStr" class="select" required>
             <option value="working">{{ $t('report.working') }}</option>
             <option value="paid_leave">{{ $t('report.paidLeave') }}</option>
@@ -173,14 +173,16 @@
           </Field>
 
           <!-- 現場名 -->
-          <Field :label="$t('report.siteName')">
+          <Field :label="$t('report.siteName')" required>
             <select v-model="site.siteName" class="select" required @change="onSiteChange(si)">
               <option value="">{{ $t('common.select') }}</option>
               <option value="__unset__">{{ $t('report.siteUnset') }}</option>
               <option v-for="name in filteredSiteNames(site.contractorName)" :key="name" :value="name">{{ name }}</option>
               <option value="__other__">{{ $t('report.addNewSite') }}</option>
             </select>
-            <div v-if="site.siteName === '__unset__'" class="unset-note">{{ $t('report.siteUnsetNote') }}</div>
+            <div v-if="site.siteName === '__unset__'" class="unset-hint">
+              <HintIcon :text="$t('report.siteUnsetNote')" :label="$t('report.siteUnset')" />
+            </div>
             <input
               v-if="site.siteName === '__other__'"
               v-model="site.customSiteName"
@@ -304,8 +306,7 @@
             <div class="sub-section-title">{{ $t('report.transportExpense') }}</div>
 
             <!-- 車両 -->
-            <Field :label="$t('report.vehicle')">
-              <p class="vehicle-note">{{ $t('report.vehicleNote') }}</p>
+            <Field :label="$t('report.vehicle')" :hint="$t('report.vehicleNote')">
               <select :value="siteUsage[si].vehicle" class="select select--usage" @change="(e) => setUsage(si, 'vehicle', (e.target as HTMLSelectElement).value)">
                 <option value="なし">{{ $t('report.optNone') }}</option>
                 <option value="あり">{{ $t('report.optYes') }}</option>
@@ -1841,7 +1842,12 @@ async function onGasItemFile(gi: number, e: Event) {
     const slug = await useAccount().effectiveSlug()
     const date = report.form.value.date
     const period = Number(date.slice(8, 10)) <= 15 ? 'first' : 'second'
-    const urls = await uploadExpenseFiles(useSupabase(), [f], date, currentUser.value?.real_name || 'worker', 'gasoline', `gasoline_${gi}`, slug, period)
+    const lineIdToken = (await liff.getIdToken()) ?? ''
+    const urls = await uploadExpenseFiles(useSupabase(), [f], date, currentUser.value?.real_name || 'worker', 'gasoline', `gasoline_${gi}`, slug, period, lineIdToken, {
+      edgeFunctionUrl: config.public.edgeFunctionUrl as string,
+      supabaseUrl: config.public.supabaseUrl as string,
+      supabaseAnonKey: config.public.supabaseAnonKey as string,
+    })
     item.fileUrls = urls
   } catch (err) {
     showReceiptToast('error', t('report.gasUploadFailed'))
@@ -2264,7 +2270,7 @@ html, body {
 .expense-list { display: flex; flex-direction: column; gap: 12px; }
 .expense-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .mt6  { margin-top: 6px; }
-.unset-note { margin-top: 6px; font-size: 12px; color: #475569; background: #f1f5f9; border-radius: 6px; padding: 7px 10px; line-height: 1.5; }
+.unset-hint { margin-top: 6px; }
 .fixed-time-note { margin-top: 4px; font-size: 12px; color: #1d4ed8; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 6px 10px; line-height: 1.5; }
 .overtime-link { display: inline-block; margin-top: 2px; color: #b45309; font-weight: 700; text-decoration: underline; }
 .mt8  { margin-top: 8px; }
@@ -2274,10 +2280,6 @@ html, body {
   border: 1px solid var(--border); border-radius: 8px;
   padding: 12px; display: flex; flex-direction: column; gap: 8px;
   background: var(--surface2); margin-top: 8px;
-}
-.vehicle-note {
-  font-size: 11px; color: var(--text2);
-  margin-top: 4px;
 }
 .vehicle-block-header {
   display: flex; align-items: center; justify-content: space-between;

@@ -29,7 +29,7 @@
     <div v-else class="table-wrap">
       <table class="table">
         <thead>
-          <tr><th>請求日</th><th>業者</th><th>件名</th><th class="num">明細</th><th class="num">請求金額(税込)</th><th>状態</th><th></th></tr>
+          <tr><th>請求日</th><th>業者</th><th>件名</th><th class="num">明細</th><th class="num">請求金額(税込)</th><th>PDF</th><th>状態</th><th></th></tr>
         </thead>
         <tbody>
           <tr v-for="inv in visibleList" :key="inv.id" class="data-row" :class="{ overdue: inv._overdue }" @click="openEdit(inv)">
@@ -38,6 +38,10 @@
             <td>{{ inv.title ?? '—' }}</td>
             <td class="num">{{ inv.item_count }}</td>
             <td class="num">{{ yen(inv.grand_total) }}</td>
+            <td @click.stop>
+              <a v-if="inv.pdf_path" href="#" @click.prevent="openDoc(inv.pdf_path)" class="pdf-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> PDF</a>
+              <span v-else class="muted">—</span>
+            </td>
             <td class="status-cell" @click.stop>
               <div class="status-wrap">
                 <template v-if="inv.paid">
@@ -66,6 +70,9 @@
           <button class="modal-close" @click="closeForm">×</button>
         </div>
         <div class="modal-body">
+          <p v-if="form.pdf_path" class="existing-pdf-link">
+            <a href="#" @click.prevent="openDoc(form.pdf_path)"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> アップロード済みのPDFを見る</a>
+          </p>
           <!-- PDF→AI解析（ドラッグ&ドロップ対応） -->
           <div class="ai-row" :class="{ 'drag-active': dragActive }"
                @dragover.prevent="dragActive = true" @dragenter.prevent="dragActive = true"
@@ -76,6 +83,9 @@
             </button>
             <span class="drop-hint">{{ dragActive ? 'ここにドロップ' : 'またはここにPDF/画像をドラッグ&ドロップ（複数可）' }}</span>
           </div>
+          <!-- ドラッグ&ドロップで選択した場合、ネイティブのinputの表示("選択されていません"等)は
+               更新されないため、選択中ファイル名をここに明示する（D&D後にUIが変わらず分かりづらい対策）。 -->
+          <p v-if="files.length" class="selected-files">選択中: {{ files.map(f => f.name).join('、') }}</p>
           <p v-if="aiMsg" class="ai-msg">{{ aiMsg }}</p>
 
           <!-- ヘッダ -->
@@ -221,6 +231,7 @@ import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import HelpButton from '../components/HelpButton.vue'
 import { logOperation } from '../lib/operationLog'
+import { openDoc } from '../lib/docUrl'
 
 const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
 const IS_DEV   = import.meta.env.DEV
@@ -449,11 +460,21 @@ async function addSite(it: Item) {
 function onFile(e: Event) { files.value = Array.from((e.target as HTMLInputElement).files ?? []); aiMsg.value = '' }
 
 // ドラッグ&ドロップでファイルをセット（PDF/画像のみ・複数可）。input選択と同じく置き換え。
+// ★File.type はドラッグ元(OS/ファイラー)によっては空文字になることがあり、type判定だけだと
+//   何もエラーを出さずファイルが無視される（「ドラッグしてもアップされない」の一因）。
+//   type が空/不明な場合は拡張子でもフォールバック判定する。
 function onDrop(e: DragEvent) {
   dragActive.value = false
-  const dropped = Array.from(e.dataTransfer?.files ?? [])
-    .filter(f => f.type === 'application/pdf' || f.type.startsWith('image/'))
+  const isAcceptable = (f: File) => {
+    if (f.type === 'application/pdf' || f.type.startsWith('image/')) return true
+    if (f.type) return false // 明示的に対象外のtypeなら拡張子は見ない
+    return /\.(pdf|png|jpe?g|heic|gif|webp)$/i.test(f.name)
+  }
+  const dropped = Array.from(e.dataTransfer?.files ?? []).filter(isAcceptable)
   if (dropped.length) { files.value = dropped; aiMsg.value = '' }
+  else if (e.dataTransfer?.files.length) {
+    aiMsg.value = 'PDFまたは画像ファイルをドロップしてください'
+  }
 }
 
 // 入力中の離脱ガード：モーダルの×だけでなく、リロード/タブ閉じ/ページ遷移でも破棄確認を出す。
@@ -613,15 +634,27 @@ async function save() {
     // PDF/画像アップロード（任意・複数枚対応）
     // 先頭ファイルは従来どおり {invoiceId}.pdf として pdf_path に保存（既存ビューア互換）。
     // 2枚目以降は {invoiceId}-{n}.{ext} として保存し、原本を失わないようにする。
+    // ★アップロード失敗を握りつぶさない（従来は.catch(()=>{})で失敗してもpdf_pathを更新していた＝
+    //   「ドラッグしてもアップされない」の実体。失敗時はエラーを表示しpdf_path更新もスキップする。
     if (files.value.length) {
       const ext = (f: File) => (f.name.split('.').pop() || 'pdf').toLowerCase()
       const primaryPath = `subcontractor-invoices/${accountId}/${invoiceId}.pdf`
-      await supabase.storage.from('expense-receipts').upload(primaryPath, files.value[0], { upsert: true, contentType: files.value[0].type || 'application/pdf' }).catch(() => {})
+      const { error: primaryUpErr } = await supabase.storage.from('expense-receipts')
+        .upload(primaryPath, files.value[0], { upsert: true, contentType: files.value[0].type || 'application/pdf' })
+      const uploadErrors: string[] = []
+      if (primaryUpErr) uploadErrors.push(primaryUpErr.message)
       for (let n = 1; n < files.value.length; n++) {
         const extraPath = `subcontractor-invoices/${accountId}/${invoiceId}-${n + 1}.${ext(files.value[n])}`
-        await supabase.storage.from('expense-receipts').upload(extraPath, files.value[n], { upsert: true, contentType: files.value[n].type || 'application/pdf' }).catch(() => {})
+        const { error: extraUpErr } = await supabase.storage.from('expense-receipts')
+          .upload(extraPath, files.value[n], { upsert: true, contentType: files.value[n].type || 'application/pdf' })
+        if (extraUpErr) uploadErrors.push(extraUpErr.message)
       }
-      await supabase.from('subcontractor_invoices').update({ pdf_path: primaryPath }).eq('id', invoiceId)
+      if (uploadErrors.length) {
+        formError.value = `請求データは保存しましたが、ファイルのアップロードに失敗しました: ${uploadErrors[0]}`
+      }
+      if (!primaryUpErr) {
+        await supabase.from('subcontractor_invoices').update({ pdf_path: primaryPath }).eq('id', invoiceId)
+      }
     }
     // 明細insert
     const rows = f.items.map((it, i) => ({

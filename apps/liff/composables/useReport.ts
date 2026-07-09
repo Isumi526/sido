@@ -104,7 +104,7 @@ const FILE_CATEGORIES = [
 export const useReport = () => {
   const config   = useRuntimeConfig()
   const { t }    = useI18n()
-  const { profile, isTester } = useLiff()
+  const { profile, isTester, getIdToken } = useLiff()
   const master   = useMaster()
   const supabase = useSupabase()
 
@@ -184,6 +184,12 @@ export const useReport = () => {
     const periodHalf  = periodKey.split('-').pop() as string   // 'first' | 'second'
 
     const uploadErrors: string[] = []
+    const lineIdToken = (await getIdToken()) ?? ''
+    const uploadRuntimeEnv = {
+      edgeFunctionUrl: config.public.edgeFunctionUrl as string,
+      supabaseUrl: config.public.supabaseUrl as string,
+      supabaseAnonKey: config.public.supabaseAnonKey as string,
+    }
 
     for (const site of form.value.sites) {
       const siteName = site.siteName === '__other__'
@@ -196,7 +202,7 @@ export const useReport = () => {
         if (!files?.length) continue
         try {
           const urls = await uploadExpenseFiles(
-            supabase, files, form.value.date, senderName, siteName, category, accountSlug, periodHalf
+            supabase, files, form.value.date, senderName, siteName, category, accountSlug, periodHalf, lineIdToken, uploadRuntimeEnv
           )
           ;(site.expenses as any)[urlsKey] = urls
         } catch (e) {
@@ -221,7 +227,7 @@ export const useReport = () => {
           if (!item.files?.length) continue
           try {
             const urls = await uploadExpenseFiles(
-              supabase, item.files, form.value.date, senderName, siteName, `${prefix}_${i}`, accountSlug, periodHalf
+              supabase, item.files, form.value.date, senderName, siteName, `${prefix}_${i}`, accountSlug, periodHalf, lineIdToken, uploadRuntimeEnv
             )
             item.fileUrls = urls
           } catch (e) {
