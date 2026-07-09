@@ -120,6 +120,13 @@ async function decide(g: Grant, status: 'approved' | 'rejected') {
   if (error) { alert('更新に失敗しました: ' + error.message); return }
   pending.value = pending.value.filter(x => x.id !== g.id)
   await refreshNavBadges()  // ナビバッジを即時更新（リロード不要）
+  if (status === 'approved') notifyGrant(g.id)
+}
+
+// 編集許可の通知メール送信（作業員がnotify_emailを登録していれば送信・失敗しても承認自体は成立済みなので握りつぶす）
+function notifyGrant(grantId: string) {
+  supabase.functions.invoke('notify-edit-grant', { body: { grant_id: grantId } })
+    .catch((e) => console.error('[notify-edit-grant]', e))
 }
 
 // 管理者から編集許可を発行：worker×date に approved grant を作成（申請なしで編集可にする）。
