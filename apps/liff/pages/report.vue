@@ -1841,7 +1841,12 @@ async function onGasItemFile(gi: number, e: Event) {
     const slug = await useAccount().effectiveSlug()
     const date = report.form.value.date
     const period = Number(date.slice(8, 10)) <= 15 ? 'first' : 'second'
-    const urls = await uploadExpenseFiles(useSupabase(), [f], date, currentUser.value?.real_name || 'worker', 'gasoline', `gasoline_${gi}`, slug, period)
+    const lineIdToken = (await liff.getIdToken()) ?? ''
+    const urls = await uploadExpenseFiles(useSupabase(), [f], date, currentUser.value?.real_name || 'worker', 'gasoline', `gasoline_${gi}`, slug, period, lineIdToken, {
+      edgeFunctionUrl: config.public.edgeFunctionUrl as string,
+      supabaseUrl: config.public.supabaseUrl as string,
+      supabaseAnonKey: config.public.supabaseAnonKey as string,
+    })
     item.fileUrls = urls
   } catch (err) {
     showReceiptToast('error', t('report.gasUploadFailed'))
