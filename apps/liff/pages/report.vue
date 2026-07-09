@@ -79,7 +79,7 @@
         </div>
 
         <!-- 稼働有無 -->
-        <FormSection num="02" :title="$t('report.workStatusSection')">
+        <FormSection num="02" :title="$t('report.workStatusSection')" required>
           <select v-model="isWorkingStr" class="select" required>
             <option value="working">{{ $t('report.working') }}</option>
             <option value="paid_leave">{{ $t('report.paidLeave') }}</option>
@@ -173,7 +173,7 @@
           </Field>
 
           <!-- 現場名 -->
-          <Field :label="$t('report.siteName')">
+          <Field :label="$t('report.siteName')" required>
             <select v-model="site.siteName" class="select" required @change="onSiteChange(si)">
               <option value="">{{ $t('common.select') }}</option>
               <option value="__unset__">{{ $t('report.siteUnset') }}</option>
