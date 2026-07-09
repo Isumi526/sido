@@ -177,7 +177,15 @@
             <select v-model="site.siteName" class="select" required @change="onSiteChange(si)">
               <option value="">{{ $t('common.select') }}</option>
               <option value="__unset__">{{ $t('report.siteUnset') }}</option>
-              <option v-for="name in filteredSiteNames(site.contractorName)" :key="name" :value="name">{{ name }}</option>
+              <template v-if="groupedSiteNames(site.contractorName).linked.length">
+                <optgroup :label="$t('report.siteGroupLinked')">
+                  <option v-for="name in groupedSiteNames(site.contractorName).linked" :key="name" :value="name">{{ name }}</option>
+                </optgroup>
+                <optgroup :label="$t('report.siteGroupOther')">
+                  <option v-for="name in groupedSiteNames(site.contractorName).others" :key="name" :value="name">{{ name }}</option>
+                </optgroup>
+              </template>
+              <option v-else v-for="name in groupedSiteNames(site.contractorName).others" :key="name" :value="name">{{ name }}</option>
               <option value="__other__">{{ $t('report.addNewSite') }}</option>
             </select>
             <div v-if="site.siteName === '__unset__'" class="unset-hint">
@@ -643,15 +651,18 @@ function siteSimilar(name?: string): string[] {
   return findSimilarSiteNames(name ?? '', master.siteNames.value)
 }
 
-// 現場プルダウン: 元請けが選択されていれば、その元請けに紐づく現場だけに絞り込む。
-//  紐づく現場が0件 or 元請け未選択/その他 なら全現場を出す（後方互換・AC3）。
-function filteredSiteNames(contractorName?: string): string[] {
-  const all = master.siteNames.value
+// 現場プルダウン: 元請けが選択されていれば、その元請けに紐づく現場を優先表示。
+//  紐づけ忘れで現場が選べない不便を防ぐため、紐づいていない現場も「その他の現場」として
+//  下部に残す（元請け未選択/その他の時は linked=[] で全件が others に入る＝後方互換）。
+function groupedSiteNames(contractorName?: string): { linked: string[]; others: string[] } {
+  // '__unset__' という名前の現場行は「現場未設定」用の特殊値で、専用optionを別途出すため除外
+  const all = master.siteNames.value.filter((n) => n !== '__unset__')
   const cn = (contractorName ?? '').trim()
-  if (!cn || cn === '__other__') return all
+  if (!cn || cn === '__other__') return { linked: [], others: all }
   const map = master.siteContractors.value
   const linked = all.filter((n) => map[n] === cn)
-  return linked.length ? linked : all
+  const others = all.filter((n) => map[n] !== cn)
+  return { linked, others }
 }
 
 // クエリ（?edit=YYYY-MM-DD）が変わったらページを再マウントさせ、編集/新規の
