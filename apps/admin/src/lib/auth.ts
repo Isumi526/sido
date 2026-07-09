@@ -33,6 +33,11 @@ export const canViewWages = computed(() => isAdminAllowed.value)
 export const canViewHourlyWage = computed(() =>
   !currentRole.value || currentRole.value === 'admin' || currentRole.value === 'office')
 
+// 作業員の permission_role（権限ロール）変更・ユーザー管理系の破壊的操作の可否: admin/office/純admin のみ。
+//  site_manager がisAdminAllowedを満たすだけで他作業員のロールをオーナーへ昇格できてしまう穴を塞ぐ（2026-07-09）。
+export const canManageUsers = computed(() =>
+  !currentRole.value || currentRole.value === 'admin' || currentRole.value === 'office')
+
 // auth_user_id（=ログインユーザー）に紐づく worker の permission_role を解決。
 //  auth_user_id は Supabase auth ユーザー単位で一意のため account 絞り込み不要。
 async function resolveRole(user: User | null): Promise<void> {

@@ -86,7 +86,7 @@
             <button :class="{ active: modal.role === 'site' }" @click="modal.role = 'site'">現場</button>
           </div>
         </div>
-        <div class="field">
+        <div class="field" v-if="canManageUsers">
           <label>権限ロール</label>
           <div class="toggle role-toggle">
             <button :class="{ active: (modal.permission_role ?? 'worker') === 'admin' }" @click="modal.permission_role = 'admin'">オーナー</button>
@@ -311,7 +311,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import PasswordInput from '../components/PasswordInput.vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { canViewWages, canViewHourlyWage } from '../lib/auth'
+import { canViewWages, canViewHourlyWage, canManageUsers } from '../lib/auth'
 
 type Worker = {
   id: string
