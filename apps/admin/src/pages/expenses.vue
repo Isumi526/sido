@@ -557,10 +557,10 @@ watch(dateFrom, load)
 .note { font-size: 13px; color: #555; margin: 0 0 16px; }
 .empty { color: #888; padding: 60px; text-align: center; }
 
-.table-wrap { overflow-x: auto; background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.table-wrap { background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08);  max-height: 70vh; overflow: auto; }
 .table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .table th, .table td { padding: 10px 14px; border-bottom: 1px solid #eee; text-align: left; }
-.table thead th { background: #fafafa; font-weight: 700; font-size: 12px; color: #666; }
+.table thead th { background: #fafafa; font-weight: 700; font-size: 12px; color: #666; position: sticky; top: 0; z-index: 2;}
 .table .num { text-align: right; }
 .worker-cell { font-weight: 600; }
 .period-chip { display: inline-block; padding: 2px 10px; border-radius: 6px; background: #eef1f5; color: #445; font-size: 12px; font-weight: 600; }

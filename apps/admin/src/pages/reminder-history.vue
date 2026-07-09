@@ -78,9 +78,9 @@ onMounted(load)
 .page-title { font-size: 22px; font-weight: 700; }
 .hint { font-size: 12px; color: #999; margin: 0 0 20px; }
 .empty { background: #fff; border-radius: 12px; padding: 40px; text-align: center; color: #aaa; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
-.table-wrap { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.table-wrap { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06);  max-height: 70vh; overflow: auto; }
 .table { width: 100%; border-collapse: collapse; }
-.table th { background: #f9f9f9; padding: 12px 16px; text-align: left; font-size: 12px; color: #888; font-weight: 700; }
+.table th { background: #f9f9f9; padding: 12px 16px; text-align: left; font-size: 12px; color: #888; font-weight: 700; position: sticky; top: 0; z-index: 2;}
 .table td { padding: 12px 16px; border-top: 1px solid #f0f0f0; font-size: 14px; }
 .table th.num, .table td.num { text-align: right; }
 .dt { white-space: nowrap; font-variant-numeric: tabular-nums; }

@@ -232,9 +232,9 @@ async function move(f: FaqEntry, dir: -1 | 1) {
 .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .search { flex: 1; max-width: 360px; background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 9px 14px; font-size: 14px; box-sizing: border-box; }
 .count { font-size: 12px; color: #888; }
-.table-wrap { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.table-wrap { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06);  max-height: 70vh; overflow: auto; }
 .table { width: 100%; border-collapse: collapse; }
-.table th { background: #f9f9f9; padding: 12px 16px; text-align: left; font-size: 12px; color: #888; font-weight: 700; }
+.table th { background: #f9f9f9; padding: 12px 16px; text-align: left; font-size: 12px; color: #888; font-weight: 700; position: sticky; top: 0; z-index: 2;}
 .table td { padding: 12px 16px; border-top: 1px solid #f0f0f0; font-size: 14px; vertical-align: top; }
 .table tr.inactive td { opacity: .45; }
 .order-cell { text-align: center; }

@@ -716,9 +716,9 @@ watch(wageMode, load)   // 日当-実質賃金の切替で社員人件費を再�
 .tab:hover { color: #333; }
 .tab.active { color: #06C755; border-bottom-color: #06C755; }
 
-.table-wrap { background: #fff; border-radius: 12px; overflow: auto; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.table-wrap { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06);  max-height: 70vh; overflow: auto; }
 .table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.table th { background: #f9f9f9; padding: 9px 10px; text-align: left; font-size: 11px; color: #888; font-weight: 700; white-space: nowrap; }
+.table th { background: #f9f9f9; padding: 9px 10px; text-align: left; font-size: 11px; color: #888; font-weight: 700; white-space: nowrap; position: sticky; top: 0; z-index: 2;}
 .table td { padding: 9px 10px; border-top: 1px solid #f0f0f0; vertical-align: middle; }
 .table tfoot td { background: #f5f5f5; font-weight: 700; border-top: 2px solid #e0e0e0; font-size: 13px; }
 .data-row { cursor: pointer; transition: background .1s; }
