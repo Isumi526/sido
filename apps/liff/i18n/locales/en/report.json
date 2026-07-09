@@ -40,6 +40,8 @@
   "addNewContractor": "＋ Register a new main contractor",
   "contractorPlaceholder": "Enter contractor name (e.g. ABC Construction)",
   "siteName": "Site name",
+  "siteGroupLinked": "Sites linked to this contractor",
+  "siteGroupOther": "Other sites",
   "addNewSite": "＋ Register a new site",
   "siteUnset": "Site not set (link later)",
   "siteUnsetNote": "You can record even if the site isn't created yet. An admin will link it to the correct site later.",
