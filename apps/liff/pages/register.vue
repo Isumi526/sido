@@ -17,11 +17,10 @@
 
       <form v-else class="form" @submit.prevent="handleSubmit">
         <div class="card">
-          <h2 class="card-title">{{ t('register.title') }}</h2>
-          <p class="card-desc">
-            {{ t('register.descLine1') }}<strong>{{ t('register.descBold') }}</strong>{{ t('register.descLine1Suffix') }}<br>
-            {{ t('register.descLine2') }}
-          </p>
+          <h2 class="card-title">
+            {{ t('register.title') }}
+            <HintIcon :text="registerHintText" :label="t('register.title')" />
+          </h2>
 
           <div class="field">
             <label class="label">{{ t('register.lineDisplayName') }}</label>
@@ -112,6 +111,11 @@ const liff    = useLiff()
 const master  = useMaster()
 const expense = useExpense()
 const router  = useRouter()
+
+// カードタイトル横の「？」アイコンにまとめる登録方法の説明（従来は常時表示のcard-descだった）
+const registerHintText = computed(() =>
+  `${t('register.descLine1')}${t('register.descBold')}${t('register.descLine1Suffix')} ${t('register.descLine2')}`
+)
 
 const initializing    = ref(true)
 const submitting      = ref(false)
@@ -247,8 +251,7 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--font)
 .state-text { font-size: 14px; color: var(--text2); }
 .form { display: flex; flex-direction: column; gap: 16px; }
 .card { background: #fff; border-radius: var(--radius); padding: 24px; display: flex; flex-direction: column; gap: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
-.card-title { font-size: 18px; font-weight: 700; }
-.card-desc { font-size: 13px; color: var(--text2); line-height: 1.6; }
+.card-title { display: flex; align-items: center; font-size: 18px; font-weight: 700; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .label { font-size: 12px; font-weight: 700; color: var(--text2); }
 .required { color: var(--danger); margin-left: 4px; }

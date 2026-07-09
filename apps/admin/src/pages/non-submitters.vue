@@ -71,6 +71,25 @@ function jstYesterday(): string {
   jst.setDate(jst.getDate() - 1)
   return `${jst.getUTCFullYear()}-${String(jst.getUTCMonth() + 1).padStart(2, '0')}-${String(jst.getUTCDate()).padStart(2, '0')}`
 }
+// PostgRESTは既定でmax_rows(既定1000)を超えると黙って切り詰める。
+// 対象期間の日報がこれを超えると一部提出者がsubmittedSetから漏れ、未送信と誤判定される
+// （2026-07-09発覚：service_start_date以降の累積件数が1000超で発生・daily-reminder EFと同一ロジック）。
+// .range()でページングして全件取得する。
+async function fetchAllReports(accountId: string, startDate: string, endDate: string): Promise<{ user_id: string; date: string }[]> {
+  const PAGE = 1000
+  const all: { user_id: string; date: string }[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from('daily_reports').select('user_id, date')
+      .eq('account_id', accountId).gte('date', startDate).lte('date', endDate)
+      .range(from, from + PAGE - 1)
+    if (error) throw error
+    all.push(...((data ?? []) as any[]))
+    if (!data || data.length < PAGE) break
+  }
+  return all
+}
+
 // timestamptz(UTC) → JST基準の 'YYYY-MM-DD'（登録日を暦日に変換）
 function jstDateOf(ts: string | null | undefined): string | null {
   if (!ts) return null
@@ -133,17 +152,16 @@ async function load() {
     let cursor = start
     while (cursor <= yest) { allDates.push(cursor); cursor = addDay(cursor) }
 
-    const [{ data: users }, { data: allWorkers }, { data: reports }, { data: proxyRels }] = await Promise.all([
+    const [{ data: users }, { data: allWorkers }, reports, { data: proxyRels }] = await Promise.all([
       supabase.from('users')
         .select('id, real_name, worker_id, reminder_exempt, created_at, workers(name)')
         .eq('account_id', accountId),
       supabase.from('workers').select('id, name, created_at, report_start_date').eq('account_id', accountId).eq('active', true),
-      supabase.from('daily_reports').select('user_id, date')
-        .eq('account_id', accountId).gte('date', start).lte('date', yest),
+      fetchAllReports(accountId, start, yest),
       supabase.from('worker_proxies').select('worker_id, proxy_operator_id').eq('account_id', accountId),
     ])
 
-    const submittedSet = new Set((reports ?? []).map((r: any) => `${r.user_id}__${r.date}`))
+    const submittedSet = new Set(reports.map((r) => `${r.user_id}__${r.date}`))
     const workerNameMap = new Map<string, string>((allWorkers ?? []).map((w: any) => [w.id, w.name]))
     const workerCreatedMap = new Map<string, string>((allWorkers ?? []).map((w: any) => [w.id, w.created_at]))
     // worker_id → 日報提出開始日（明示設定があれば起点に優先）
