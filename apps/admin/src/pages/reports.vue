@@ -341,14 +341,23 @@ async function issueEditGrant(r: any) {
     // 同 worker×date の既存grantがあれば approved へ更新、無ければ approved で新規（DB一意制約なし）
     const { data: existing } = await supabase.from('report_edit_grants')
       .select('id').eq('account_id', accountId).eq('worker_id', workerId).eq('date', r.date).limit(1)
+    let grantId: string | null = null
     if (existing && existing.length) {
+      grantId = (existing[0] as any).id
       await supabase.from('report_edit_grants')
-        .update({ status: 'approved', approved_by: email, decided_at: now }).eq('id', (existing[0] as any).id)
+        .update({ status: 'approved', approved_by: email, decided_at: now }).eq('id', grantId)
     } else {
-      await supabase.from('report_edit_grants')
+      const { data } = await supabase.from('report_edit_grants')
         .insert({ account_id: accountId, worker_id: workerId, date: r.date, status: 'approved', approved_by: email, decided_at: now, requested_at: now })
+        .select('id').single()
+      grantId = (data as any)?.id ?? null
     }
     grantedIds.value = new Set(grantedIds.value).add(r.id)
+    // 通知メール送信（作業員がnotify_emailを登録していれば送信・失敗しても発行自体は成立済みなので握りつぶす）
+    if (grantId) {
+      supabase.functions.invoke('notify-edit-grant', { body: { grant_id: grantId } })
+        .catch((e) => console.error('[notify-edit-grant]', e))
+    }
   } catch (e) {
     alert('編集許可の発行に失敗しました')
   } finally {
