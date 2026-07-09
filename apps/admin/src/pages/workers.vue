@@ -768,13 +768,6 @@ async function setStatus(w: Worker, status: WStatus) {
 .status-tab { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 700; color: #64748b; cursor: pointer; }
 .status-tab.active { background: #06C755; border-color: #06C755; color: #fff; }
 .status-tab .tab-count { font-size: 11px; opacity: .8; margin-left: 2px; }
-/* 削除ボタン・確認モーダル */
-.btn-del { background: #fff; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 700; cursor: pointer; margin-left: 4px; }
-.btn-del:hover { background: #fef2f2; }
-.modal-sm { max-width: 440px; }
-.del-warn { font-size: 13px; line-height: 1.7; color: #475569; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; }
-.btn-del-confirm { background: #dc2626; color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 700; cursor: pointer; }
-.btn-del-confirm:disabled { background: #fca5a5; cursor: not-allowed; }
 .actions { display: flex; gap: 8px; }
 .btn-edit { background: #f0f0f0; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
 .btn-toggle { background: none; border: 1px solid #ddd; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; color: #888; }
