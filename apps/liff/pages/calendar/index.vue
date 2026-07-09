@@ -54,7 +54,7 @@
               'month-first-row': date.endsWith('-01'),
             }"
           >
-            <td class="sticky-col date-cell" :class="dateCellClass(date)">
+            <td class="sticky-col date-cell" :class="dateCellClass(date, todayStr)">
               <span v-if="date.endsWith('-01')" class="month-badge">{{ $t('calendar.monthBadge', { n: Number(date.slice(5, 7)) }) }}</span>
               {{ formatDateLabel(date) }}
             </td>
@@ -321,6 +321,10 @@ import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSchedules, type Schedule, type ScheduleForm } from '~/composables/useSchedules'
 import { findSimilarSiteNames } from '~/utils/siteSimilarity'
+import {
+  shiftMonth, genMonthDates, isWeekend, weekdayIndex, dateCellClass, fmtDateTime,
+  cellSchedules as coreCellSchedules, chipStyle as coreChipStyle, buildScheduleDiff,
+} from '~/composables/schedule-core.gen'
 
 const { t } = useI18n()
 const schedules   = useSchedules()
@@ -396,12 +400,10 @@ async function updateCat(c: SchedCat, patch: { active?: boolean; label?: string 
     .eq('account_id', accountId).eq('key', c.key)
   await loadSchedCats()   // 即反映
 }
+// カテゴリ色を太い左バーで常に表示（夜勤も暗背景維持＋カテゴリ色バー＝見分けやすく）。
+// ロジックは shared/schedule-core.ts（admin と共有）。
 function chipStyle(s: Schedule): Record<string, string> {
-  if (s.deleted_at) return {}
-  const col = catColor.value[s.category] || '#94a3b8'
-  // カテゴリ色を太い左バーで常に表示（夜勤も暗背景維持＋カテゴリ色バー＝見分けやすく）
-  if (s.is_night_shift) return { borderLeftColor: col, borderLeftWidth: '6px' }
-  return { borderLeftColor: col, borderLeftWidth: '6px', background: col + '26' }
+  return coreChipStyle(s, catColor.value)
 }
 
 // 予定追加のアプリ内通知（未読）。開いた時にバナーで気づかせ、既読で消す #予定通知
@@ -555,17 +557,7 @@ const navLabel = computed(() => {
   return t('calendar.navLabel', { year: d.getFullYear(), month: d.getMonth() + 1 })
 })
 
-function genMonthDates(year: number, month: number): string[] {
-  const last  = new Date(year, month + 1, 0).getDate()
-  const dates: string[] = []
-  for (let d = 1; d <= last; d++)
-    dates.push(`${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`)
-  return dates
-}
-
-function shiftMonth(base: Date, n: number): Date {
-  const d = new Date(base); d.setDate(1); d.setMonth(d.getMonth() + n); return d
-}
+// genMonthDates / shiftMonth は shared/schedule-core.ts（admin と共有）から import 済み。
 
 function initCalendar() {
   const now  = new Date()
@@ -685,43 +677,16 @@ function goToday() {
 }
 
 // ──────────────────── セル別スケジュール ────────────────────
+// フィルタ＋開始時刻昇順ソート（時刻未設定は末尾）は shared/schedule-core.ts（admin と共有）。
 function cellSchedules(date: string, workerId: string): Schedule[] {
-  return schedules.schedules.value
-    .filter(
-      s => s.worker_id === workerId && s.start_date <= date && s.end_date >= date
-        && (showDeleted.value || !s.deleted_at)
-    )
-    // 開始時刻の昇順。時刻未設定の予定は末尾にまとめる
-    .sort((a, b) => (a.start_time || '99:99').localeCompare(b.start_time || '99:99'))
+  return coreCellSchedules(schedules.schedules.value, date, workerId, showDeleted.value, true)
 }
 
 // ──────────────────── 日付ユーティリティ ────────────────────
-function toDateStr(dt: Date): string {
-  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
-}
-
+// toDateStr / isWeekend / fmtDateTime は shared/schedule-core.ts（admin と共有）から import 済み。
 function formatDateLabel(date: string): string {
   const dt = new Date(date + 'T00:00:00')
-  return t('calendar.dateLabel', { day: dt.getDate(), weekday: WEEKDAYS.value[dt.getDay()] })
-}
-
-function fmtDateTime(iso: string): string {
-  const dt = new Date(iso)
-  return `${dt.getMonth() + 1}/${dt.getDate()} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`
-}
-
-function isWeekend(date: string): boolean {
-  const dow = new Date(date + 'T00:00:00').getDay()
-  return dow === 0 || dow === 6
-}
-
-function dateCellClass(date: string): Record<string, boolean> {
-  const dow = new Date(date + 'T00:00:00').getDay()
-  return {
-    'date-sunday':   dow === 0,
-    'date-saturday': dow === 6,
-    'date-today':    date === todayStr,
-  }
+  return t('calendar.dateLabel', { day: dt.getDate(), weekday: WEEKDAYS.value[weekdayIndex(date)] })
 }
 
 // ──────────────────── データ取得 ────────────────────
@@ -825,14 +790,10 @@ async function saveSchedule() {
       ;(form as any).worker_id = targetIds[0]
       const orig = (formModal.value as any)._original ?? {}
       await schedules.updateSchedule(formModal.value.id, form)
-      // 編集履歴を記録
-      const changes: Record<string, { old: unknown; new: unknown }> = {}
-      const diffKeys = ['title', 'start_date', 'end_date', 'start_time', 'end_time', 'is_night_shift', 'description']
+      // 編集履歴を記録（差分ビルダーは shared/schedule-core.ts＝admin と共有）
+      const diffKeys = ['title', 'start_date', 'end_date', 'start_time', 'end_time', 'is_night_shift', 'description'] as const
       const norm = (v: unknown) => (v === '' || v === null || v === undefined) ? null : v
-      for (const k of diffKeys) {
-        const ov = norm(orig[k]); const nv = norm((form as any)[k])
-        if (ov !== nv) changes[k] = { old: ov, new: nv }
-      }
+      const changes = buildScheduleDiff(orig, form as unknown as Record<string, unknown>, diffKeys, norm)
       if (Object.keys(changes).length) {
         await supabase.from('schedule_edits').insert({
           schedule_id: formModal.value.id,
