@@ -263,8 +263,8 @@
         </div>
         </div><!-- /detail-section -->
 
-        <!-- ログイン認証（常時表示＝新規/編集どちらでも／保存ボタンで作業員情報と一体反映） -->
-        <div class="field auth-field">
+        <!-- ログイン認証（オーナーのみ＝他者のパスワードを設定できる操作のため／保存ボタンで作業員情報と一体反映） -->
+        <div v-if="canManageAuth" class="field auth-field">
           <label>
             ログイン認証
             <span v-if="modal.auth_user_id" class="auth-status set" data-testid="auth-status-set">認証設定済み</span>
@@ -299,7 +299,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import PasswordInput from '../components/PasswordInput.vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { canViewWages, canViewHourlyWage, canManageUsers } from '../lib/auth'
+import { canViewWages, canViewHourlyWage, canManageUsers, canManageAuth } from '../lib/auth'
 
 type Worker = {
   id: string
