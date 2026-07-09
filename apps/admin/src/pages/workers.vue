@@ -178,6 +178,10 @@
           <input v-model="modal.address" class="input" placeholder="例：東京都新宿区..." />
         </div>
         <div class="field">
+          <label>携帯電話番号</label>
+          <input v-model="modal.mobile_phone" class="input" placeholder="例：090-1234-5678" />
+        </div>
+        <div class="field">
           <label>緊急連絡先</label>
           <input v-model="modal.emergency_contact" class="input" placeholder="例：090-1234-5678（配偶者）" />
         </div>
@@ -304,6 +308,7 @@ type Worker = {
   hire_date: string | null
   birth_date: string | null
   address: string | null
+  mobile_phone: string | null
   emergency_contact: string | null
   employment_type: 'fulltime' | 'parttime' | 'contractor' | null
   weekly_scheduled_days: number | null
@@ -519,7 +524,7 @@ function toggleProxyId(id: string) {
 async function load() {
   const accountId = await getAccountId()
   const [{ data: workersData }, { data: usersData }, { data: proxyData }] = await Promise.all([
-    supabase.from('workers').select('id, name, role, permission_role, daily_wage, hourly_wage, active, status, hire_date, birth_date, address, emergency_contact, employment_type, weekly_scheduled_days, company_info, invoice_number, insurance_info, labor_insurance_number, report_start_date, auth_user_id').eq('account_id', accountId).order('name'),
+    supabase.from('workers').select('id, name, role, permission_role, daily_wage, hourly_wage, active, status, hire_date, birth_date, address, mobile_phone, emergency_contact, employment_type, weekly_scheduled_days, company_info, invoice_number, insurance_info, labor_insurance_number, report_start_date, auth_user_id').eq('account_id', accountId).order('name'),
     supabase.from('users').select('worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
     supabase.from('worker_proxies').select('worker_id, proxy_operator_id').eq('account_id', accountId),
   ])
@@ -538,7 +543,7 @@ async function load() {
 onMounted(load)
 
 function openAdd() {
-  modal.value = { name: '', role: 'site', permission_role: 'worker', daily_wage: 20000, hourly_wage: 2000, hire_date: null, birth_date: null, address: null, emergency_contact: null, employment_type: 'fulltime', weekly_scheduled_days: null, company_info: null, invoice_number: null, insurance_info: null, labor_insurance_number: null, report_start_date: null }
+  modal.value = { name: '', role: 'site', permission_role: 'worker', daily_wage: 20000, hourly_wage: 2000, hire_date: null, birth_date: null, address: null, mobile_phone: null, emergency_contact: null, employment_type: 'fulltime', weekly_scheduled_days: null, company_info: null, invoice_number: null, insurance_info: null, labor_insurance_number: null, report_start_date: null }
   modalProxyIds.value = []
   familyMembers.value = []
   healthCheckups.value = []
@@ -623,6 +628,7 @@ async function save() {
       hire_date:             modal.value.hire_date || null,
       birth_date:            modal.value.birth_date || null,
       address:               modal.value.address?.trim() || null,
+      mobile_phone:          modal.value.mobile_phone?.trim() || null,
       emergency_contact:     modal.value.emergency_contact?.trim() || null,
       employment_type:       modal.value.employment_type ?? 'fulltime',
       weekly_scheduled_days: modal.value.employment_type === 'parttime' ? (modal.value.weekly_scheduled_days ?? null) : null,
