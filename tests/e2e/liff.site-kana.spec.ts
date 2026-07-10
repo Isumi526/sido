@@ -5,6 +5,7 @@
 // ============================================================
 import { test, expect } from '@playwright/test'
 import { rest, getAccountId } from './helpers'
+import { FEAT_C_DATE } from './global-setup'
 
 const TS = Date.now()
 // 仮名順と名前順が逆（A: 名前zzz/仮名あ, B: 名前aaa/仮名わ）→ A が先に並べば仮名順の証明
@@ -32,7 +33,10 @@ test.describe('LIFF：現場選択リストの50音順', () => {
   })
 
   test('AC3: 現場optionが仮名順（あ→わ）で並ぶ', async ({ page }) => {
-    await page.goto('/report', { waitUntil: 'networkidle' })
+    // 新規(/report)は「次の未送信日」に依存し、1回のフルランで複数specが新規送信するため
+    // 枯渇すると「送信済みです」になりフォームが出ない。この spec は送信しない（並び順チェックのみ）ので、
+    // global-setupが必ず用意する既存日報(FEAT_C・テスト現場A)を編集モードで開き、枯渇の影響を受けないようにする。
+    await page.goto(`/report?edit=${FEAT_C_DATE}`, { waitUntil: 'networkidle' })
 
     // 現場の select（'テスト現場A' を含む）。master fetch完了を待つ
     const siteSelect = page.locator('select.select').filter({ has: page.locator('option', { hasText: 'テスト現場A' }) }).first()

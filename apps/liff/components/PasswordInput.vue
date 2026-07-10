@@ -4,12 +4,13 @@
        これで <input class="input"> と同じ見た目・高さになる（Vue scoped CSS が子コンポーネント内の
        input に届かない問題を回避）。data-testid/autocomplete/placeholder 等は input へ委譲。 -->
 <script setup lang="ts">
+import type { ClassValue } from 'vue'
 defineOptions({ inheritAttrs: false })
 defineProps<{ modelValue: string }>()
 defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 const show = ref(false)
 const attrs = useAttrs()
-const wrapClass = computed(() => (attrs as Record<string, unknown>).class)
+const wrapClass = computed<ClassValue>(() => (attrs as Record<string, unknown>).class as ClassValue)
 const inputAttrs = computed(() => {
   const { class: _c, ...rest } = attrs as Record<string, unknown>
   return rest

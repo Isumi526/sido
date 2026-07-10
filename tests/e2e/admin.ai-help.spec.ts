@@ -21,7 +21,11 @@ test('AIヘルプでメッセージを送ると吹き出しが出て応答が返
   await expect(page.locator('.msg.ai .bubble')).toBeVisible({ timeout: 30000 })
 })
 
-test('常駐ウィジェット: どのページでもFABから開け、SPA遷移しても保持される', async ({ page }) => {
+// apps/admin/src/lib/featureFlags.ts の HIDE_AI_HELP_SECTIONS=true（2026-07-08・
+// 「レビューで未検証の不具合が見つかった」ため一時保留）で常駐ウィジェット(FAB)は
+// 全ページで非表示になっている。ページ自体(/ai-help直打ち)はガードされないため上のspecは通るが、
+// このFABテストはフラグがtrueの間は原理的に失敗する。フラグを false に戻したら復活させる。
+test.skip('常駐ウィジェット: どのページでもFABから開け、SPA遷移しても保持される', async ({ page }) => {
   await page.goto('/', { waitUntil: 'networkidle' })
   const fab = page.locator('[data-testid="ai-help-fab"]')
   await expect(fab).toBeVisible()                       // ダッシュボードでも右下にFAB常駐

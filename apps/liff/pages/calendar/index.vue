@@ -197,14 +197,14 @@
             <!-- 元請け業者（任意）: 選ぶと現場プルダウンをその元請けに紐づく現場へ絞り込む -->
             <div v-if="master.contractorNames.value.length" class="form-row" style="margin-bottom:8px">
               <span class="form-row-label">{{ $t('calendar.contractor') }}</span>
-              <select v-model="(formModal as any)._contractor" class="site-select">
+              <select v-model="(formModal as any)._contractor" class="site-select" data-testid="contractor-select">
                 <option value="">{{ $t('calendar.contractorAll') }}</option>
                 <option v-for="name in master.contractorNames.value" :key="name" :value="name">{{ name }}</option>
               </select>
             </div>
             <div class="form-row">
               <span class="form-row-label">{{ $t('calendar.site') }}</span>
-              <select v-model="formModal.title" class="site-select">
+              <select v-model="formModal.title" class="site-select" data-testid="site-select">
                 <option value="">{{ $t('calendar.pleaseSelect') }}</option>
                 <option v-for="s in filteredSiteNames((formModal as any)._contractor)" :key="s" :value="s">{{ s }}</option>
                 <option value="__other__">{{ $t('calendar.registerNewSite') }}</option>
@@ -242,7 +242,7 @@
             <!-- 現場管理者以上はカテゴリマスタを管理できる（ラベルの右に配置・一覧/色/名前編集/追加/削除） -->
             <button v-if="canManageCat" type="button" class="cat-add-btn cat-manage-inline" @click="openCatManage">⚙ 管理</button>
             <div class="cat-select-wrap cat-select-wrap--gap">
-              <select v-model="formModal.category" class="site-select">
+              <select v-model="formModal.category" class="site-select" data-testid="category-select">
                 <option v-for="c in schedCats.filter(x => x.active || x.key === formModal!.category)" :key="c.key" :value="c.key">{{ c.label }}</option>
               </select>
             </div>
