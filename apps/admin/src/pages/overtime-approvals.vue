@@ -118,10 +118,10 @@ onMounted(load)
 <style scoped>
 .hint { color: #64748b; font-size: 13px; margin: 0 0 16px; line-height: 1.7; }
 .empty { color: #94a3b8; padding: 32px 0; text-align: center; }
-.table-wrap { overflow-x: auto; }
+.table-wrap {  max-height: 70vh; overflow: auto; }
 .table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; }
 .table th, .table td { padding: 10px 14px; text-align: left; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
-.table th { background: #f8fafc; color: #475569; font-weight: 700; }
+.table th { background: #f8fafc; color: #475569; font-weight: 700; position: sticky; top: 0; z-index: 2;}
 .name { font-weight: 700; color: #0f172a; }
 .reason { max-width: 260px; white-space: pre-wrap; }
 .sites { max-width: 200px; font-size: 13px; color: #334155; }

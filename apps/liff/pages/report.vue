@@ -592,10 +592,47 @@
           ⚠️ {{ report.error.value || editError }}
         </div>
 
-        <!-- LINEプレビュー（新規・編集とも全体をプレビュー）-->
-        <div class="line-preview">
-          <div class="line-preview-label">{{ isEditMode ? $t('report.editPreviewLabel') : $t('report.linePreviewLabel') }}</div>
-          <pre class="line-preview-body">{{ linePreview }}</pre>
+        <!-- 送信前の最終確認テーブル（新規・編集とも全体をプレビュー） -->
+        <div class="preview-block">
+          <div class="preview-label">
+            <span class="material-symbols-rounded" style="font-size:1.1em;vertical-align:middle;line-height:1">fact_check</span>
+            {{ isEditMode ? $t('report.editPreviewLabel') : $t('report.linePreviewLabel') }}
+          </div>
+          <div class="preview-head">
+            <span>{{ previewData.dateLabel }} {{ $t('report.subtitle') }}</span>
+            <span class="preview-sender">{{ previewData.senderName }}</span>
+          </div>
+
+          <p v-if="previewData.mode === 'paid_leave'" class="preview-leave">{{ $t('report.badgePaidLeave') }}</p>
+          <p v-else-if="previewData.mode === 'off'" class="preview-leave">{{ $t('report.badgeOff') }}</p>
+          <template v-else>
+            <div v-if="!previewData.sites.length" class="preview-empty">{{ $t('report.previewEmptySites') }}</div>
+            <div v-for="(site, si) in previewData.sites" :key="si" class="preview-site-wrap">
+              <div class="preview-site-title">
+                <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">location_on</span>
+                {{ site.name }}
+                <span v-if="site.contractor" class="preview-contractor">（{{ site.contractor }}）</span>
+              </div>
+              <table v-if="site.workers.length" class="preview-table">
+                <thead><tr><th>{{ $t('report.workerName') }}</th><th>{{ $t('report.workHours') }}</th></tr></thead>
+                <tbody>
+                  <tr v-for="(w, wi) in site.workers" :key="wi"><td>{{ w.name }}</td><td>{{ w.hours }}</td></tr>
+                </tbody>
+              </table>
+              <ul v-if="site.expenses.length" class="preview-list">
+                <li v-for="(e, ei) in site.expenses" :key="ei">
+                  <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">payments</span> {{ e }}
+                </li>
+              </ul>
+              <ul v-if="site.subs.length" class="preview-list">
+                <li v-for="(s, sbi) in site.subs" :key="sbi">
+                  <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">handshake</span> {{ s }}
+                </li>
+              </ul>
+              <p v-if="site.note" class="preview-note">{{ site.note }}</p>
+            </div>
+          </template>
+          <p v-if="previewData.note" class="preview-note preview-note-main">{{ previewData.note }}</p>
         </div>
 
         <!-- 送信前の記入忘れ確認（新規送信時のみ・習慣化のため必須） -->
@@ -1374,68 +1411,71 @@ function discardDraft() {
 }
 
 // ── LINE通知プレビュー ──────────────────────────────────────
-const linePreview = computed(() => {
+// 送信前の最終確認テーブル用データ。実際の保存(saveReportById等)と同じ form/computeWorkerHours
+// から組むため、プレビューと保存後表示のズレが起きない（旧LINE風テキスト<pre>から移行・2026-07-10）。
+type PreviewWorkerRow = { name: string; hours: string }
+type PreviewSite = {
+  name: string
+  contractor: string
+  workers: PreviewWorkerRow[]
+  expenses: string[]
+  subs: string[]
+  note: string
+}
+type PreviewData = {
+  dateLabel: string
+  senderName: string
+  mode: 'paid_leave' | 'off' | 'working'
+  note: string
+  sites: PreviewSite[]
+}
+const previewData = computed<PreviewData>(() => {
   const form      = report.form.value
   const isWorking = isWorkingStr.value === 'working'
   const d         = new Date(form.date + 'T00:00:00')
   const weekdays  = ['日', '月', '火', '水', '木', '金', '土']
   const dateLabel = `${d.getMonth() + 1}/${d.getDate()}（${weekdays[d.getDay()]}）`
   const sunday    = d.getDay() === 0
-
-  const lines: string[] = [
-    `📋 ${dateLabel} 日報`,
-    `👤 ${currentUser.value?.real_name || '（未登録）'}`,
-    '─────────────────',
-  ]
+  const senderName = currentUser.value?.real_name || '（未登録）'
 
   if (isWorkingStr.value === 'paid_leave') {
-    lines.push('\n🌴 有給休暇（8h）')
-    if (form.note) lines.push(`📝 ${form.note}`)
-    return lines.join('\n')
+    return { dateLabel, senderName, mode: 'paid_leave', note: form.note || '', sites: [] }
   }
-
   if (!isWorking) {
-    if (form.note) lines.push(`\n📝 ${form.note}`)
-    else           lines.push('\n稼働なし')
-    return lines.join('\n')
+    return { dateLabel, senderName, mode: 'off', note: form.note || '', sites: [] }
   }
 
+  const sites: PreviewSite[] = []
   for (const site of form.sites) {
     if (!site.siteName) continue
     const displayName = site.siteName === '__other__'
       ? (site.customSiteName || '新規現場')
       : site.siteName
-    lines.push('', `📍 ${displayName}`)
     const contractorName = site.contractorName === '__other__'
       ? (site.customContractorName || '')
       : (site.contractorName || '')
-    if (contractorName) lines.push(`🏢 ${contractorName}`)
 
-    // 稼働時間（名前なし・時間のみ）
-    const workers = (site.workers || []).filter((w: any) => w.workerName)
-    if (workers.length > 0) {
-      for (const w of workers) {
-        const wins = effectiveBreakWindows(w)
-        const brk = wins ? 0 : effectiveBreakMinutes(w)
-        const h   = computeWorkerHours(w.startTime || '08:00', w.endTime || '17:30', brk, sunday, 0, wins)
-        const parts: string[] = []
-        if (h.hoursNormal)        parts.push(`${h.hoursNormal}h`)
-        if (h.hoursSunday)        parts.push(`休日${h.hoursSunday}h`)
-        if (h.hoursOT)            parts.push(`残業${h.hoursOT}h`)
-        if (h.hoursNight)         parts.push(`深夜${h.hoursNight}h`)
-        if (h.hoursOTNight)       parts.push(`深夜残業${h.hoursOTNight}h`)
-        if (h.hoursSundayOT)      parts.push(`休日残業${h.hoursSundayOT}h`)
-        if (h.hoursSundayNight)   parts.push(`休日深夜${h.hoursSundayNight}h`)
-        if (h.hoursSundayOTNight) parts.push(`休日深夜残業${h.hoursSundayOTNight}h`)
-        if (parts.length) lines.push('・' + parts.join(' + '))
-      }
+    const workers: PreviewWorkerRow[] = []
+    for (const w of (site.workers || []).filter((w: any) => w.workerName)) {
+      const wins = effectiveBreakWindows(w)
+      const brk = wins ? 0 : effectiveBreakMinutes(w)
+      const h   = computeWorkerHours(w.startTime || '08:00', w.endTime || '17:30', brk, sunday, 0, wins)
+      const parts: string[] = []
+      if (h.hoursNormal)        parts.push(`${h.hoursNormal}h`)
+      if (h.hoursSunday)        parts.push(`休日${h.hoursSunday}h`)
+      if (h.hoursOT)            parts.push(`残業${h.hoursOT}h`)
+      if (h.hoursNight)         parts.push(`深夜${h.hoursNight}h`)
+      if (h.hoursOTNight)       parts.push(`深夜残業${h.hoursOTNight}h`)
+      if (h.hoursSundayOT)      parts.push(`休日残業${h.hoursSundayOT}h`)
+      if (h.hoursSundayNight)   parts.push(`休日深夜${h.hoursSundayNight}h`)
+      if (h.hoursSundayOTNight) parts.push(`休日深夜残業${h.hoursSundayOTNight}h`)
+      workers.push({ name: w.workerName, hours: parts.join(' + ') || '—' })
     }
 
-    // 経費
     const exp = site.expenses || {}
-    const expLines: string[] = []
+    const expenses: string[] = []
     if (exp.carpool) {
-      expLines.push('乗合い')
+      expenses.push('乗合い')
     } else {
       for (const v of (exp.vehicles || [])) {
         if (!v) continue
@@ -1446,45 +1486,40 @@ const linePreview = computed(() => {
         if (v.parkingYen)  p.push(`駐車¥${Number(v.parkingYen).toLocaleString()}`)
         if (v.highwayYen)  p.push(`高速¥${Number(v.highwayYen).toLocaleString()}`)
         if (v.etcUsed)     p.push(`ETC${v.etcCard || ''}`)
-        if (p.length) expLines.push(p.join(' '))
+        if (p.length) expenses.push(p.join(' '))
       }
     }
     for (const t of (exp.trains || []))
-      if (t?.yen) expLines.push(`${t.label || '電車'} ¥${Number(t.yen).toLocaleString()}`)
+      if (t?.yen) expenses.push(`${t.label || '電車'} ¥${Number(t.yen).toLocaleString()}`)
     for (const o of (exp.others || []))
-      if (o?.yen) expLines.push(`${o.label || 'その他'} ¥${Number(o.yen).toLocaleString()}`)
+      if (o?.yen) expenses.push(`${o.label || 'その他'} ¥${Number(o.yen).toLocaleString()}`)
     for (const ho of (exp.hotels || []))
-      if (ho?.yen) expLines.push(`${ho.label || 'ホテル'} ¥${Number(ho.yen).toLocaleString()}`)
+      if (ho?.yen) expenses.push(`${ho.label || 'ホテル'} ¥${Number(ho.yen).toLocaleString()}`)
     const _hasHotelsArr = (exp.hotels || []).some((h: any) => h?.yen)
     if (exp.hotelYen && !_hasHotelsArr)
-      expLines.push(`${exp.hotelName || 'ホテル'} ¥${Number(exp.hotelYen).toLocaleString()}`)
+      expenses.push(`${exp.hotelName || 'ホテル'} ¥${Number(exp.hotelYen).toLocaleString()}`)
     if (exp.leopalaceYen && !_hasHotelsArr)
-      expLines.push(`${exp.leopalaceName || 'レオパレス'} ¥${Number(exp.leopalaceYen).toLocaleString()}`)
+      expenses.push(`${exp.leopalaceName || 'レオパレス'} ¥${Number(exp.leopalaceYen).toLocaleString()}`)
     if (exp.garbageFactoryM3 || exp.garbageSiteM3) {
       const g: string[] = []
       if (exp.garbageFactoryM3) g.push(`木材のみ ${exp.garbageFactoryM3}m³`)
       if (exp.garbageSiteM3)    g.push(`混載 ${exp.garbageSiteM3}m³`)
-      expLines.push(`ゴミ ${g.join(' ')}`)
+      expenses.push(`ゴミ ${g.join(' ')}`)
     }
     if (exp.entertainmentYen)
-      expLines.push(`${exp.entertainmentLabel || '雑経費'} ¥${Number(exp.entertainmentYen).toLocaleString()}`)
-    if (expLines.length) { expLines.forEach(l => lines.push(`・${l}`)) }
+      expenses.push(`${exp.entertainmentLabel || '雑経費'} ¥${Number(exp.entertainmentYen).toLocaleString()}`)
 
-    // 下請け業者
-    const subs = (site.subcontractors || []).filter((s: any) => s.subcontractorName)
-    if (subs.length) {
-      subs.forEach((s: any) => {
+    const subs: string[] = (site.subcontractors || [])
+      .filter((s: any) => s.subcontractorName)
+      .map((s: any) => {
         const name = s.subcontractorName === '__other__' ? (s.customSubcontractorName || '新規業者') : s.subcontractorName
-        lines.push(`・${name} ${s.count || 1}人`)
+        return `${name} ${s.count || 1}人`
       })
-    }
 
-    // 現場備考
-    if (site.siteNote) lines.push(`  📝 ${site.siteNote}`)
+    sites.push({ name: displayName, contractor: contractorName, workers, expenses, subs, note: site.siteNote || '' })
   }
 
-  if (form.note) lines.push(`\n📝 ${form.note}`)
-  return lines.join('\n')
+  return { dateLabel, senderName, mode: 'working', note: form.note || '', sites }
 })
 
 /** [dev] エラーテストデータ入力 + 次の送信でエラーを強制発火 */
@@ -2544,23 +2579,39 @@ html, body {
   cursor: pointer;
 }
 
-/* ── LINEプレビュー ── */
-.line-preview {
-  background: #f0fdf4;
-  border: 1px solid #bbf7d0;
+/* ── 送信前の最終確認テーブル ── */
+.preview-block {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
   border-radius: var(--radius);
   overflow: hidden;
 }
-.line-preview-label {
+.preview-label {
   font-size: 11px; font-weight: 800; letter-spacing: 1px;
-  color: #06C755; padding: 8px 14px;
-  background: #dcfce7; border-bottom: 1px solid #bbf7d0;
+  color: #475569; padding: 8px 14px;
+  background: #f1f5f9; border-bottom: 1px solid #e2e8f0;
 }
-.line-preview-body {
-  font-size: 13px; line-height: 1.7; color: var(--text);
-  padding: 12px 14px; white-space: pre-wrap; word-break: break-all;
-  font-family: var(--font); margin: 0;
+.preview-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 10px 14px 0; font-size: 13px; font-weight: 700; color: var(--text);
 }
+.preview-sender { font-weight: 400; color: #64748b; }
+.preview-leave { padding: 12px 14px; font-size: 13px; color: var(--text); margin: 0; }
+.preview-empty { padding: 12px 14px; font-size: 13px; color: #94a3b8; margin: 0; }
+.preview-site-wrap { padding: 10px 14px; border-top: 1px solid #e2e8f0; }
+.preview-site-wrap:first-of-type { border-top: none; }
+.preview-site-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.preview-contractor { font-weight: 400; color: #64748b; font-size: 12px; }
+.preview-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 6px; }
+.preview-table th {
+  text-align: left; font-weight: 700; color: #64748b; font-size: 11px;
+  padding: 4px 8px; border-bottom: 1px solid #e2e8f0;
+}
+.preview-table td { padding: 4px 8px; border-bottom: 1px solid #f1f5f9; color: var(--text); }
+.preview-list { list-style: none; margin: 0 0 6px; padding: 0; font-size: 12px; color: var(--text); }
+.preview-list li { padding: 2px 0; }
+.preview-note { font-size: 12px; color: #64748b; margin: 0; }
+.preview-note-main { padding: 8px 14px 12px; border-top: 1px solid #e2e8f0; }
 
 /* ── レスポンシブ ── */
 @media (max-width: 380px) {

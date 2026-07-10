@@ -34,59 +34,30 @@
         <span class="material-symbols-rounded alert-arrow">chevron_right</span>
       </NuxtLink>
 
-      <!-- メニュー（記録／予定・連絡／情報・設定 に整理） -->
+      <!-- メニュー（記録／予定・連絡／情報・設定 に整理／ハンバーガーメニューと共通定義＝useNavItems） -->
       <div class="menu-section">{{ t('nav.secDaily') }}</div>
       <div class="menu-grid">
-        <NuxtLink class="menu-card" to="/checkin">
-          <span class="material-symbols-rounded menu-icon" style="color:#10b981">how_to_reg</span>
-          <span class="menu-label">{{ t('nav.checkin') }}</span>
-        </NuxtLink>
-        <NuxtLink class="menu-card" to="/report">
-          <span class="material-symbols-rounded menu-icon" style="color:#06C755">edit_note</span>
-          <span class="menu-label">{{ t('nav.reportRegister') }}</span>
-        </NuxtLink>
-        <NuxtLink class="menu-card" to="/history">
-          <span class="material-symbols-rounded menu-icon" style="color:#3b82f6">history</span>
-          <span class="menu-label">{{ t('nav.reportHistory') }}</span>
-        </NuxtLink>
-        <NuxtLink class="menu-card" to="/overtime">
-          <span class="material-symbols-rounded menu-icon" style="color:#f59e0b">more_time</span>
-          <span class="menu-label">{{ t('nav.overtimeRequest') }}</span>
+        <NuxtLink v-for="item in navBySection.daily" :key="item.path" class="menu-card" :to="item.path">
+          <span class="material-symbols-rounded menu-icon" :style="{ color: navIconColor(item.path) }">{{ item.icon }}</span>
+          <span class="menu-label">{{ item.label }}</span>
         </NuxtLink>
       </div>
 
       <div class="menu-section">{{ t('nav.secPlan') }}</div>
       <div class="menu-grid">
-        <NuxtLink class="menu-card" to="/calendar">
-          <span class="material-symbols-rounded menu-icon" style="color:#f59e0b">calendar_month</span>
-          <span class="menu-label">{{ t('nav.schedule') }}</span>
-        </NuxtLink>
-        <NuxtLink class="menu-card" to="/groups">
-          <span class="material-symbols-rounded menu-icon" style="color:#8b5cf6">group</span>
-          <span class="menu-label">{{ t('nav.groups') }}</span>
-        </NuxtLink>
-        <NuxtLink class="menu-card" to="/subcontractors">
-          <span class="material-symbols-rounded menu-icon" style="color:#0ea5e9">handyman</span>
-          <span class="menu-label">{{ t('nav.subcontractors') }}</span>
+        <NuxtLink v-for="item in navBySection.plan" :key="item.path" class="menu-card" :to="item.path">
+          <span class="material-symbols-rounded menu-icon" :style="{ color: navIconColor(item.path) }">{{ item.icon }}</span>
+          <span class="menu-label">{{ item.label }}</span>
         </NuxtLink>
       </div>
 
       <div class="menu-section">{{ t('nav.secInfo') }}</div>
       <div class="menu-grid">
-        <NuxtLink class="menu-card" to="/expense/download">
-          <span class="material-symbols-rounded menu-icon" style="color:#ef4444">picture_as_pdf</span>
-          <span class="menu-label">{{ t('nav.expensePdf') }}</span>
+        <NuxtLink v-for="item in navBySection.info" :key="item.path" class="menu-card" :to="item.path" :data-testid="item.testId">
+          <span class="material-symbols-rounded menu-icon" :style="{ color: navIconColor(item.path) }">{{ item.icon }}</span>
+          <span class="menu-label">{{ item.label }}</span>
         </NuxtLink>
-        <NuxtLink class="menu-card" to="/rules">
-          <span class="material-symbols-rounded menu-icon" style="color:#0d9488">menu_book</span>
-          <span class="menu-label">{{ t('nav.rulebook') }}</span>
-        </NuxtLink>
-        <!-- email/pw ログイン作業員のみ：パスワード変更 -->
-        <NuxtLink v-if="authMode === 'password'" class="menu-card" to="/password" data-testid="menu-password">
-          <span class="material-symbols-rounded menu-icon" style="color:#64748b">lock_reset</span>
-          <span class="menu-label">{{ t('nav.passwordChange') }}</span>
-        </NuxtLink>
-        <!-- 代理操作者のみ表示 -->
+        <!-- 代理操作者のみ表示（遷移先ではなくモーダル起動のためnav定義の対象外） -->
         <button v-if="proxy.canProxy.value" class="menu-card proxy-btn" @click="openProxyModal">
           <span class="material-symbols-rounded menu-icon" style="color:#dc2626">swap_horiz</span>
           <span class="menu-label">{{ t('nav.proxyInput') }}</span>
@@ -141,6 +112,15 @@ const supabase    = useSupabase()
 const config      = useRuntimeConfig()
 const proxy       = useProxyMode()
 const expense     = useExpense()
+
+// ハンバーガーメニュー(AppNav.vue)と共通のナビ項目定義（2026-07-10）
+const { bySection: navBySection } = useNavItems(() => authMode.value)
+const NAV_ICON_COLORS: Record<string, string> = {
+  '/checkin': '#10b981', '/report': '#06C755', '/history': '#3b82f6', '/overtime': '#f59e0b',
+  '/calendar': '#f59e0b', '/groups': '#8b5cf6', '/subcontractors': '#0ea5e9',
+  '/sites': '#22c55e', '/expense/download': '#ef4444', '/rules': '#0d9488', '/password': '#64748b',
+}
+function navIconColor(path: string): string { return NAV_ICON_COLORS[path] ?? '#64748b' }
 
 const currentUser      = ref<User | null>(null)
 const unsubmittedCount = ref(0)

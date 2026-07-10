@@ -161,9 +161,9 @@ const byDate = computed(() => {
 .date-label { font-weight: 700; font-size: 15px; }
 .date-total { font-weight: 700; color: #06843c; }
 .date-tategae { font-size: 12px; color: #b8741a; font-weight: 400; margin-left: 6px; }
-.table-wrap { background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.table-wrap { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.06);  max-height: 70vh; overflow: auto; }
 .table { width: 100%; border-collapse: collapse; }
-.table th { background: #f9f9f9; padding: 9px 12px; text-align: left; font-size: 11px; color: #888; font-weight: 700; }
+.table th { background: #f9f9f9; padding: 9px 12px; text-align: left; font-size: 11px; color: #888; font-weight: 700; position: sticky; top: 0; z-index: 2;}
 .table td { padding: 9px 12px; border-top: 1px solid #f0f0f0; font-size: 13px; }
 .table .num { text-align: right; }
 .mono { font-family: ui-monospace, monospace; }
