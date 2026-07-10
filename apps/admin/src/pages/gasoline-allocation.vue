@@ -165,9 +165,9 @@ watch(yearMonth, load)
 .btn-save:disabled { opacity: .5; }
 .hint { font-size: 12px; color: #999; margin: 8px 0 0; }
 .empty { color: #888; padding: 50px; text-align: center; }
-.table-wrap { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.table-wrap { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06);  max-height: 70vh; overflow: auto; }
 .table { width: 100%; border-collapse: collapse; }
-.table th { text-align: left; font-size: 12px; color: #888; padding: 10px 14px; border-bottom: 1px solid #eee; background: #fafbfc; }
+.table th { text-align: left; font-size: 12px; color: #888; padding: 10px 14px; border-bottom: 1px solid #eee; background: #fafbfc; position: sticky; top: 0; z-index: 2;}
 .table td { padding: 10px 14px; border-bottom: 1px solid #f3f3f3; font-size: 14px; }
 .table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .total-row td { font-weight: 800; background: #fafbfc; border-top: 2px solid #eceff1; }

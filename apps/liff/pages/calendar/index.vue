@@ -13,8 +13,14 @@
       </ul>
     </div>
 
+    <!-- 共有／個人タブ -->
+    <div class="cal-tabs">
+      <button type="button" class="cal-tab" :class="{ active: activeTab === 'shared' }" @click="activeTab = 'shared'">{{ $t('calendar.tabShared') }}</button>
+      <button type="button" class="cal-tab" :class="{ active: activeTab === 'personal' }" @click="activeTab = 'personal'">{{ $t('calendar.tabPersonal') }}</button>
+    </div>
+
     <!-- 月ナビ（ヘッダー：年月＋グループ絞り込み） -->
-    <div class="month-nav">
+    <div v-if="activeTab === 'shared'" class="month-nav">
       <span class="nav-label">{{ navLabel }}</span>
       <select v-if="myGroups.length" v-model="selectedGroupId" class="group-select" :aria-label="$t('calendar.filterByGroup')">
         <option :value="null">{{ $t('calendar.everyone') }}</option>
@@ -22,10 +28,10 @@
       </select>
     </div>
 
-    <div v-if="loading" class="loading">{{ $t('common.loading') }}</div>
+    <div v-if="activeTab === 'shared' && loading" class="loading">{{ $t('common.loading') }}</div>
 
-    <!-- マトリクスグリッド -->
-    <div v-else ref="gridWrapRef" class="grid-wrap" @scroll.passive="onGridScroll">
+    <!-- マトリクスグリッド（共有タブ） -->
+    <div v-if="activeTab === 'shared'" ref="gridWrapRef" class="grid-wrap" @scroll.passive="onGridScroll">
       <table class="matrix-table">
         <thead>
           <tr>
@@ -54,7 +60,7 @@
               'month-first-row': date.endsWith('-01'),
             }"
           >
-            <td class="sticky-col date-cell" :class="dateCellClass(date)">
+            <td class="sticky-col date-cell" :class="dateCellClass(date, todayStr)">
               <span v-if="date.endsWith('-01')" class="month-badge">{{ $t('calendar.monthBadge', { n: Number(date.slice(5, 7)) }) }}</span>
               {{ formatDateLabel(date) }}
             </td>
@@ -89,8 +95,61 @@
       </table>
     </div>
 
+    <!-- 個人カレンダー（週間／月間） -->
+    <div v-if="activeTab === 'personal'" class="personal-cal">
+      <div class="personal-nav">
+        <button type="button" class="nav-btn" @click="personalNavigate(-1)">‹</button>
+        <span class="nav-label">{{ personalNavLabel }}</span>
+        <button type="button" class="nav-btn" @click="personalNavigate(1)">›</button>
+      </div>
+      <div class="personal-view-toggle">
+        <button type="button" class="cal-tab" :class="{ active: personalViewMode === 'week' }" @click="personalViewMode = 'week'">{{ $t('calendar.viewWeek') }}</button>
+        <button type="button" class="cal-tab" :class="{ active: personalViewMode === 'month' }" @click="personalViewMode = 'month'">{{ $t('calendar.viewMonth') }}</button>
+        <button type="button" class="today-btn" @click="personalGoToday">{{ $t('calendar.today') }}</button>
+      </div>
+
+      <!-- 週間（画面幅に応じて可変日数） -->
+      <div v-if="personalViewMode === 'week'" class="personal-week" :style="{ gridTemplateColumns: `repeat(${personalWeekDates.length}, 1fr)` }">
+        <div v-for="date in personalWeekDates" :key="date" class="personal-day-col" :class="dateCellClass(date, todayStr)">
+          <div class="personal-day-head">{{ formatDateLabel(date) }}</div>
+          <div class="personal-day-body">
+            <div
+              v-for="s in personalCellSchedules(date)"
+              :key="s.id"
+              class="sched-chip personal-chip"
+              :class="{ 'night-shift': s.is_night_shift, 'deleted-chip': !!s.deleted_at }"
+              :style="chipStyle(s)"
+              @click="openDetail(s)"
+            >
+              <span class="chip-title">{{ s.title }}</span>
+              <span v-if="s.start_time" class="chip-time">{{ s.start_time.slice(0, 5) }}</span>
+            </div>
+            <button type="button" class="cell-add-btn personal-add-btn" @click="personalAddSchedule(date)">＋</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 月間（7列グリッド） -->
+      <div v-else class="personal-month-grid">
+        <div v-for="wd in WEEKDAYS" :key="wd" class="personal-month-wd">{{ wd }}</div>
+        <div v-for="cell in personalMonthCells" :key="cell.date || cell.key" class="personal-month-cell" :class="[cell.date ? dateCellClass(cell.date, todayStr) : 'blank']">
+          <template v-if="cell.date">
+            <div class="personal-month-daynum" @click="personalAddSchedule(cell.date)">{{ Number(cell.date.slice(8, 10)) }}</div>
+            <div
+              v-for="s in personalCellSchedules(cell.date)"
+              :key="s.id"
+              class="sched-chip personal-chip-sm"
+              :class="{ 'night-shift': s.is_night_shift, 'deleted-chip': !!s.deleted_at }"
+              :style="chipStyle(s)"
+              @click="openDetail(s)"
+            >{{ s.title }}</div>
+          </template>
+        </div>
+      </div>
+    </div>
+
     <!-- 下部操作バー -->
-    <div class="bottom-bar">
+    <div v-if="activeTab === 'shared'" class="bottom-bar">
       <button class="nav-btn" @click="navigate(-1)">‹</button>
       <button class="today-btn" @click="goToday">{{ $t('calendar.today') }}</button>
       <label class="deleted-toggle">
@@ -317,10 +376,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSchedules, type Schedule, type ScheduleForm } from '~/composables/useSchedules'
 import { findSimilarSiteNames } from '~/utils/siteSimilarity'
+import {
+  shiftMonth, genMonthDates, isWeekend, weekdayIndex, dateCellClass, fmtDateTime,
+  cellSchedules as coreCellSchedules, chipStyle as coreChipStyle, buildScheduleDiff,
+} from '~/composables/schedule-core.gen'
 
 const { t } = useI18n()
 const schedules   = useSchedules()
@@ -396,12 +459,10 @@ async function updateCat(c: SchedCat, patch: { active?: boolean; label?: string 
     .eq('account_id', accountId).eq('key', c.key)
   await loadSchedCats()   // 即反映
 }
+// カテゴリ色を太い左バーで常に表示（夜勤も暗背景維持＋カテゴリ色バー＝見分けやすく）。
+// ロジックは shared/schedule-core.ts（admin と共有）。
 function chipStyle(s: Schedule): Record<string, string> {
-  if (s.deleted_at) return {}
-  const col = catColor.value[s.category] || '#94a3b8'
-  // カテゴリ色を太い左バーで常に表示（夜勤も暗背景維持＋カテゴリ色バー＝見分けやすく）
-  if (s.is_night_shift) return { borderLeftColor: col, borderLeftWidth: '6px' }
-  return { borderLeftColor: col, borderLeftWidth: '6px', background: col + '26' }
+  return coreChipStyle(s, catColor.value)
 }
 
 // 予定追加のアプリ内通知（未読）。開いた時にバナーで気づかせ、既読で消す #予定通知
@@ -555,17 +616,7 @@ const navLabel = computed(() => {
   return t('calendar.navLabel', { year: d.getFullYear(), month: d.getMonth() + 1 })
 })
 
-function genMonthDates(year: number, month: number): string[] {
-  const last  = new Date(year, month + 1, 0).getDate()
-  const dates: string[] = []
-  for (let d = 1; d <= last; d++)
-    dates.push(`${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`)
-  return dates
-}
-
-function shiftMonth(base: Date, n: number): Date {
-  const d = new Date(base); d.setDate(1); d.setMonth(d.getMonth() + n); return d
-}
+// genMonthDates / shiftMonth は shared/schedule-core.ts（admin と共有）から import 済み。
 
 function initCalendar() {
   const now  = new Date()
@@ -685,43 +736,85 @@ function goToday() {
 }
 
 // ──────────────────── セル別スケジュール ────────────────────
+// フィルタ＋開始時刻昇順ソート（時刻未設定は末尾）は shared/schedule-core.ts（admin と共有）。
 function cellSchedules(date: string, workerId: string): Schedule[] {
-  return schedules.schedules.value
-    .filter(
-      s => s.worker_id === workerId && s.start_date <= date && s.end_date >= date
-        && (showDeleted.value || !s.deleted_at)
-    )
-    // 開始時刻の昇順。時刻未設定の予定は末尾にまとめる
-    .sort((a, b) => (a.start_time || '99:99').localeCompare(b.start_time || '99:99'))
+  return coreCellSchedules(schedules.schedules.value, date, workerId, showDeleted.value, true)
 }
+
+// ──────────────────── 個人カレンダー（週間／月間・共有グリッドと別タブ） ────────────────────
+// 既存の共有ビュー用データ(schedules.schedules)をそのまま流用し、自分の予定だけに絞る
+// （is_public問わず＝本人分は既存fetchSchedulesの可視性ルールで既に取得済み）。
+const activeTab = ref<'shared' | 'personal'>('shared')
+const personalViewMode = ref<'week' | 'month'>('week')
+const personalAnchor = ref(new Date())   // 週間=表示開始日／月間=表示月の基準日
+
+function personalCellSchedules(date: string): Schedule[] {
+  return cellSchedules(date, effectiveWorkerId.value ?? '')
+}
+function personalAddSchedule(date: string) {
+  if (!effectiveWorkerId.value) return
+  onCellTap(date, effectiveWorkerId.value)
+}
+
+// 画面幅に応じた同時表示日数（3〜7日）。リサイズにも追従。
+const personalDayCount = ref(4)
+function updatePersonalDayCount() {
+  if (typeof window === 'undefined') return
+  const w = window.innerWidth
+  personalDayCount.value = w >= 900 ? 7 : w >= 700 ? 5 : w >= 480 ? 4 : 3
+}
+onMounted(() => {
+  updatePersonalDayCount()
+  window.addEventListener('resize', updatePersonalDayCount)
+})
+onUnmounted(() => window.removeEventListener('resize', updatePersonalDayCount))
+
+const personalWeekDates = computed<string[]>(() => {
+  const start = new Date(personalAnchor.value)
+  const out: string[] = []
+  for (let i = 0; i < personalDayCount.value; i++) {
+    const d = new Date(start)
+    d.setDate(d.getDate() + i)
+    out.push(toDateStr(d))
+  }
+  return out
+})
+
+const personalMonthCells = computed<{ date: string | null; key: string }[]>(() => {
+  const y = personalAnchor.value.getFullYear()
+  const m = personalAnchor.value.getMonth()
+  const dates = genMonthDates(y, m)
+  const leadBlank = weekdayIndex(dates[0])
+  const cells: { date: string | null; key: string }[] = []
+  for (let i = 0; i < leadBlank; i++) cells.push({ date: null, key: `blank-${i}` })
+  for (const d of dates) cells.push({ date: d, key: d })
+  return cells
+})
+
+const personalNavLabel = computed(() => {
+  if (personalViewMode.value === 'week') {
+    const dates = personalWeekDates.value
+    if (!dates.length) return ''
+    const first = new Date(dates[0] + 'T00:00:00')
+    const last = new Date(dates[dates.length - 1] + 'T00:00:00')
+    return `${first.getMonth() + 1}/${first.getDate()} – ${last.getMonth() + 1}/${last.getDate()}`
+  }
+  return t('calendar.monthBadge', { n: personalAnchor.value.getMonth() + 1 })
+})
+
+function personalNavigate(dir: 1 | -1) {
+  const d = new Date(personalAnchor.value)
+  if (personalViewMode.value === 'week') d.setDate(d.getDate() + dir * personalDayCount.value)
+  else d.setMonth(d.getMonth() + dir)
+  personalAnchor.value = d
+}
+function personalGoToday() { personalAnchor.value = new Date() }
 
 // ──────────────────── 日付ユーティリティ ────────────────────
-function toDateStr(dt: Date): string {
-  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
-}
-
+// toDateStr / isWeekend / fmtDateTime は shared/schedule-core.ts（admin と共有）から import 済み。
 function formatDateLabel(date: string): string {
   const dt = new Date(date + 'T00:00:00')
-  return t('calendar.dateLabel', { day: dt.getDate(), weekday: WEEKDAYS.value[dt.getDay()] })
-}
-
-function fmtDateTime(iso: string): string {
-  const dt = new Date(iso)
-  return `${dt.getMonth() + 1}/${dt.getDate()} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`
-}
-
-function isWeekend(date: string): boolean {
-  const dow = new Date(date + 'T00:00:00').getDay()
-  return dow === 0 || dow === 6
-}
-
-function dateCellClass(date: string): Record<string, boolean> {
-  const dow = new Date(date + 'T00:00:00').getDay()
-  return {
-    'date-sunday':   dow === 0,
-    'date-saturday': dow === 6,
-    'date-today':    date === todayStr,
-  }
+  return t('calendar.dateLabel', { day: dt.getDate(), weekday: WEEKDAYS.value[weekdayIndex(date)] })
 }
 
 // ──────────────────── データ取得 ────────────────────
@@ -825,14 +918,10 @@ async function saveSchedule() {
       ;(form as any).worker_id = targetIds[0]
       const orig = (formModal.value as any)._original ?? {}
       await schedules.updateSchedule(formModal.value.id, form)
-      // 編集履歴を記録
-      const changes: Record<string, { old: unknown; new: unknown }> = {}
-      const diffKeys = ['title', 'start_date', 'end_date', 'start_time', 'end_time', 'is_night_shift', 'description']
+      // 編集履歴を記録（差分ビルダーは shared/schedule-core.ts＝admin と共有）
+      const diffKeys = ['title', 'start_date', 'end_date', 'start_time', 'end_time', 'is_night_shift', 'description'] as const
       const norm = (v: unknown) => (v === '' || v === null || v === undefined) ? null : v
-      for (const k of diffKeys) {
-        const ov = norm(orig[k]); const nv = norm((form as any)[k])
-        if (ov !== nv) changes[k] = { old: ov, new: nv }
-      }
+      const changes = buildScheduleDiff(orig, form as unknown as Record<string, unknown>, diffKeys, norm)
       if (Object.keys(changes).length) {
         await supabase.from('schedule_edits').insert({
           schedule_id: formModal.value.id,
@@ -939,6 +1028,50 @@ onMounted(async () => {
 .deleted-toggle { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #888; cursor: pointer; user-select: none; }
 
 .loading { flex: 1; display: flex; align-items: center; justify-content: center; color: #888; font-size: 14px; }
+
+/* ── 共有／個人タブ ── */
+.cal-tabs { display: flex; gap: 4px; padding: 8px 12px 0; background: #fff; flex-shrink: 0; }
+.cal-tab {
+  flex: 1; background: #f5f5f5; border: 1px solid #E0E0E0; color: #666;
+  border-radius: 8px 8px 0 0; padding: 8px 4px; font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.cal-tab.active { background: #fff; border-bottom-color: #fff; color: #06C755; }
+
+/* ── 個人カレンダー ── */
+.personal-cal { flex: 1; display: flex; flex-direction: column; overflow-y: auto; background: #fff; }
+.personal-nav {
+  display: flex; align-items: center; justify-content: center; gap: 16px;
+  padding: 10px 12px; border-bottom: 1px solid #E0E0E0;
+}
+.personal-view-toggle { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid #E0E0E0; }
+.personal-view-toggle .cal-tab { flex: 0 0 auto; border-radius: 8px; padding: 6px 14px; }
+.personal-view-toggle .today-btn { margin-left: auto; }
+
+.personal-week { display: grid; gap: 1px; background: #E0E0E0; flex: 1; min-height: 0; }
+.personal-day-col { background: #fff; display: flex; flex-direction: column; min-width: 0; }
+.personal-day-head { font-size: 11px; font-weight: 700; color: #666; text-align: center; padding: 6px 2px; border-bottom: 1px solid #f0f0f0; }
+.personal-day-col.date-sunday .personal-day-head { color: #ef4444; }
+.personal-day-col.date-saturday .personal-day-head { color: #3b82f6; }
+.personal-day-col.date-today .personal-day-head { background: #ecfdf5; }
+.personal-day-body { flex: 1; padding: 4px; display: flex; flex-direction: column; gap: 4px; min-height: 120px; }
+.personal-chip { font-size: 11px; padding: 4px 6px; border-radius: 4px; }
+.personal-add-btn {
+  margin-top: auto; background: none; border: 1px dashed #ccc; border-radius: 6px;
+  color: #aaa; font-size: 14px; padding: 4px; cursor: pointer;
+}
+
+.personal-month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: #E0E0E0; }
+.personal-month-wd { background: #f5f5f5; text-align: center; font-size: 11px; font-weight: 700; color: #666; padding: 6px 0; }
+.personal-month-cell { background: #fff; min-height: 64px; padding: 2px; }
+.personal-month-cell.blank { background: #fafafa; }
+.personal-month-daynum { font-size: 11px; color: #666; padding: 2px 4px; cursor: pointer; }
+.personal-month-cell.date-sunday .personal-month-daynum { color: #ef4444; }
+.personal-month-cell.date-saturday .personal-month-daynum { color: #3b82f6; }
+.personal-month-cell.date-today { background: #ecfdf5; }
+.personal-chip-sm {
+  font-size: 10px; padding: 1px 4px; border-radius: 3px; margin: 1px 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 
 /* グリッド */
 .grid-wrap { flex: 1; overflow: auto; -webkit-overflow-scrolling: touch; }

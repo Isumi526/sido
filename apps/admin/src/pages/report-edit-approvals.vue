@@ -120,6 +120,13 @@ async function decide(g: Grant, status: 'approved' | 'rejected') {
   if (error) { alert('更新に失敗しました: ' + error.message); return }
   pending.value = pending.value.filter(x => x.id !== g.id)
   await refreshNavBadges()  // ナビバッジを即時更新（リロード不要）
+  if (status === 'approved') notifyGrant(g.id)
+}
+
+// 編集許可の通知メール送信（作業員がnotify_emailを登録していれば送信・失敗しても承認自体は成立済みなので握りつぶす）
+function notifyGrant(grantId: string) {
+  supabase.functions.invoke('notify-edit-grant', { body: { grant_id: grantId } })
+    .catch((e) => console.error('[notify-edit-grant]', e))
 }
 
 // 管理者から編集許可を発行：worker×date に approved grant を作成（申請なしで編集可にする）。
@@ -163,10 +170,10 @@ onMounted(load)
 .issue-hint-inline { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 14px; color: #78350f; font-size: 13px; line-height: 1.7; margin: 0 0 20px; }
 .inline-link { color: #b45309; font-weight: 700; text-decoration: underline; }
 .empty { color: #94a3b8; padding: 32px 0; text-align: center; }
-.table-wrap { overflow-x: auto; }
+.table-wrap {  max-height: 70vh; overflow: auto; }
 .table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; }
 .table th, .table td { padding: 10px 14px; text-align: left; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
-.table th { background: #f8fafc; color: #475569; font-weight: 700; }
+.table th { background: #f8fafc; color: #475569; font-weight: 700; position: sticky; top: 0; z-index: 2;}
 .name { font-weight: 700; color: #0f172a; }
 .reason { max-width: 260px; white-space: pre-wrap; }
 .muted { color: #94a3b8; }

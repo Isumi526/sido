@@ -22,6 +22,13 @@ const SHARES = [
       'apps/liff/composables/expense-flatten.gen.ts',
     ],
   },
+  {
+    src: 'shared/schedule-core.ts',
+    dests: [
+      'apps/admin/src/lib/schedule-core.gen.ts',
+      'apps/liff/composables/schedule-core.gen.ts',
+    ],
+  },
 ]
 
 const HEADER = (srcRel) =>

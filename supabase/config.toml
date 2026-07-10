@@ -429,6 +429,8 @@ verify_jwt = false
 verify_jwt = false
 [functions.expense-receipt-upload]
 verify_jwt = false
+[functions.notify-edit-grant]
+verify_jwt = false
 [functions.estimate-price-ocr]
 verify_jwt = false
 [functions.send-estimate]

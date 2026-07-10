@@ -1,5 +1,9 @@
 {
   "title": "予定管理",
+  "tabShared": "共有",
+  "tabPersonal": "個人",
+  "viewWeek": "週間",
+  "viewMonth": "月間",
   "filterByGroup": "グループで絞り込み",
   "everyone": "全員",
   "monthBadge": "{n}月",

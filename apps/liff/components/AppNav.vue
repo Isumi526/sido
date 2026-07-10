@@ -38,48 +38,18 @@
           <button class="drawer-close" @click="open = false">✕</button>
         </div>
 
-        <!-- ナビゲーション -->
+        <!-- ナビゲーション（ホーム画面と共通定義＝useNavItems） -->
         <nav class="drawer-nav">
           <NuxtLink class="drawer-item" to="/" @click="open = false">
             <span class="drawer-item-icon material-symbols-rounded">home</span>
             <span>{{ $t('nav.home') }}</span>
           </NuxtLink>
-          <NuxtLink class="drawer-item" to="/report" @click="open = false">
-            <span class="drawer-item-icon material-symbols-rounded">edit_note</span>
-            <span>{{ $t('nav.reportRegister') }}</span>
-          </NuxtLink>
-          <NuxtLink class="drawer-item" to="/history" @click="open = false">
-            <span class="drawer-item-icon material-symbols-rounded">history</span>
-            <span>{{ $t('nav.reportHistory') }}</span>
-          </NuxtLink>
-          <NuxtLink class="drawer-item" to="/checkin" @click="open = false">
-            <span class="drawer-item-icon material-symbols-rounded">how_to_reg</span>
-            <span>{{ $t('nav.checkin') }}</span>
-          </NuxtLink>
-          <NuxtLink class="drawer-item" to="/overtime" @click="open = false">
-            <span class="drawer-item-icon material-symbols-rounded">more_time</span>
-            <span>{{ $t('nav.overtimeRequest') }}</span>
-          </NuxtLink>
-          <NuxtLink class="drawer-item" to="/calendar" @click="open = false">
-            <span class="drawer-item-icon material-symbols-rounded">calendar_month</span>
-            <span>{{ $t('nav.schedule') }}</span>
-          </NuxtLink>
-          <NuxtLink class="drawer-item" to="/groups" @click="open = false">
-            <span class="drawer-item-icon material-symbols-rounded">group</span>
-            <span>{{ $t('nav.groups') }}</span>
-          </NuxtLink>
-          <NuxtLink class="drawer-item" to="/subcontractors" @click="open = false">
-            <span class="drawer-item-icon material-symbols-rounded">handyman</span>
-            <span>{{ $t('nav.subcontractors') }}</span>
-          </NuxtLink>
-          <NuxtLink class="drawer-item" to="/sites" @click="open = false">
-            <span class="drawer-item-icon material-symbols-rounded">location_on</span>
-            <span>{{ $t('nav.sites') }}</span>
-          </NuxtLink>
-          <NuxtLink class="drawer-item" to="/expense/download" @click="open = false">
-            <span class="drawer-item-icon material-symbols-rounded">picture_as_pdf</span>
-            <span>{{ $t('nav.expensePdf') }}</span>
-          </NuxtLink>
+          <template v-for="item in [...bySection.daily, ...bySection.plan, ...bySection.info]" :key="item.path">
+            <NuxtLink class="drawer-item" :to="item.path" :data-testid="item.testId" @click="open = false">
+              <span class="drawer-item-icon material-symbols-rounded">{{ item.icon }}</span>
+              <span>{{ item.label }}</span>
+            </NuxtLink>
+          </template>
           <button type="button" class="drawer-item" @click="openInBrowser">
             <span class="drawer-item-icon material-symbols-rounded">open_in_new</span>
             <span>{{ $t('nav.openInBrowser') }}</span>
@@ -157,8 +127,13 @@ const { slug, resolvedSlug, resetAccount } = useAccount()
 const brandName = computed(() => (resolvedSlug.value || slug).toUpperCase())
 const proxy = useProxyMode()
 const config = useRuntimeConfig()
+const { authMode } = useLiff()
 
 const open = ref(false)
+
+// ホーム画面(pages/index.vue)と共通のナビ項目定義（composables/useNavItems.ts）。
+// 表記・並び・表示条件(パスワード変更等)のズレを防ぐ（2026-07-10）。
+const { bySection } = useNavItems(() => authMode.value)
 
 // 現在の画面を外部ブラウザで開く（LINEの⋮メニューに依存せず常に開けるようにする）
 async function openInBrowser() {

@@ -38,6 +38,12 @@ export const canViewHourlyWage = computed(() =>
 export const canManageUsers = computed(() =>
   !currentRole.value || currentRole.value === 'admin' || currentRole.value === 'office')
 
+// 作業員のログイン認証（ID/メール・パスワード発行/変更）の可否: 純admin(オーナー)のみ。
+//  他者のパスワードを任意に設定できる操作のため、office/site_managerも含め弾く
+//  （office止まりのcanManageUsersより厳格＝アカウント乗っ取りに直結するため）（2026-07-10）。
+export const canManageAuth = computed(() =>
+  !currentRole.value || currentRole.value === 'admin')
+
 // auth_user_id（=ログインユーザー）に紐づく worker の permission_role を解決。
 //  auth_user_id は Supabase auth ユーザー単位で一意のため account 絞り込み不要。
 async function resolveRole(user: User | null): Promise<void> {

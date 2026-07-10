@@ -178,8 +178,17 @@
           <input v-model="modal.address" class="input" placeholder="例：東京都新宿区..." />
         </div>
         <div class="field">
+          <label>携帯電話番号</label>
+          <input v-model="modal.mobile_phone" class="input" placeholder="例：090-1234-5678" />
+        </div>
+        <div class="field">
           <label>緊急連絡先</label>
           <input v-model="modal.emergency_contact" class="input" placeholder="例：090-1234-5678（配偶者）" />
+        </div>
+        <div class="field">
+          <label>通知メールアドレス（任意）</label>
+          <input v-model="modal.notify_email" class="input" type="email" placeholder="例：worker@example.com" data-testid="notify-email" />
+          <p class="hint-sm">編集許可発行などのお知らせをメールで送る場合に設定してください。未設定なら送信しません。</p>
         </div>
         <div class="field">
           <label>家族構成（氏名・続柄・生年月日）</label>
@@ -254,8 +263,8 @@
         </div>
         </div><!-- /detail-section -->
 
-        <!-- ログイン認証（常時表示＝新規/編集どちらでも／保存ボタンで作業員情報と一体反映） -->
-        <div class="field auth-field">
+        <!-- ログイン認証（オーナーのみ＝他者のパスワードを設定できる操作のため／保存ボタンで作業員情報と一体反映） -->
+        <div v-if="canManageAuth" class="field auth-field">
           <label>
             ログイン認証
             <span v-if="modal.auth_user_id" class="auth-status set" data-testid="auth-status-set">認証設定済み</span>
@@ -290,7 +299,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import PasswordInput from '../components/PasswordInput.vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { canViewWages, canViewHourlyWage, canManageUsers } from '../lib/auth'
+import { canViewWages, canViewHourlyWage, canManageUsers, canManageAuth } from '../lib/auth'
 
 type Worker = {
   id: string
@@ -304,6 +313,8 @@ type Worker = {
   hire_date: string | null
   birth_date: string | null
   address: string | null
+  mobile_phone: string | null
+  notify_email: string | null
   emergency_contact: string | null
   employment_type: 'fulltime' | 'parttime' | 'contractor' | null
   weekly_scheduled_days: number | null
@@ -519,7 +530,7 @@ function toggleProxyId(id: string) {
 async function load() {
   const accountId = await getAccountId()
   const [{ data: workersData }, { data: usersData }, { data: proxyData }] = await Promise.all([
-    supabase.from('workers').select('id, name, role, permission_role, daily_wage, hourly_wage, active, status, hire_date, birth_date, address, emergency_contact, employment_type, weekly_scheduled_days, company_info, invoice_number, insurance_info, labor_insurance_number, report_start_date, auth_user_id').eq('account_id', accountId).order('name'),
+    supabase.from('workers').select('id, name, role, permission_role, daily_wage, hourly_wage, active, status, hire_date, birth_date, address, mobile_phone, notify_email, emergency_contact, employment_type, weekly_scheduled_days, company_info, invoice_number, insurance_info, labor_insurance_number, report_start_date, auth_user_id').eq('account_id', accountId).order('name'),
     supabase.from('users').select('worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
     supabase.from('worker_proxies').select('worker_id, proxy_operator_id').eq('account_id', accountId),
   ])
@@ -538,7 +549,7 @@ async function load() {
 onMounted(load)
 
 function openAdd() {
-  modal.value = { name: '', role: 'site', permission_role: 'worker', daily_wage: 20000, hourly_wage: 2000, hire_date: null, birth_date: null, address: null, emergency_contact: null, employment_type: 'fulltime', weekly_scheduled_days: null, company_info: null, invoice_number: null, insurance_info: null, labor_insurance_number: null, report_start_date: null }
+  modal.value = { name: '', role: 'site', permission_role: 'worker', daily_wage: 20000, hourly_wage: 2000, hire_date: null, birth_date: null, address: null, mobile_phone: null, notify_email: null, emergency_contact: null, employment_type: 'fulltime', weekly_scheduled_days: null, company_info: null, invoice_number: null, insurance_info: null, labor_insurance_number: null, report_start_date: null }
   modalProxyIds.value = []
   familyMembers.value = []
   healthCheckups.value = []
@@ -623,6 +634,8 @@ async function save() {
       hire_date:             modal.value.hire_date || null,
       birth_date:            modal.value.birth_date || null,
       address:               modal.value.address?.trim() || null,
+      mobile_phone:          modal.value.mobile_phone?.trim() || null,
+      notify_email:          modal.value.notify_email?.trim() || null,
       emergency_contact:     modal.value.emergency_contact?.trim() || null,
       employment_type:       modal.value.employment_type ?? 'fulltime',
       weekly_scheduled_days: modal.value.employment_type === 'parttime' ? (modal.value.weekly_scheduled_days ?? null) : null,
@@ -742,9 +755,9 @@ async function setStatus(w: Worker, status: WStatus) {
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
 .page-title { font-size: 22px; font-weight: 700; }
 .btn-add { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 700; cursor: pointer; }
-.table-wrap { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.table-wrap { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06);  max-height: 70vh; overflow: auto; }
 .table { width: 100%; border-collapse: collapse; }
-.table th { background: #f9f9f9; padding: 12px 16px; text-align: left; font-size: 12px; color: #888; font-weight: 700; }
+.table th { background: #f9f9f9; padding: 12px 16px; text-align: left; font-size: 12px; color: #888; font-weight: 700; position: sticky; top: 0; z-index: 2;}
 .table td { padding: 14px 16px; border-top: 1px solid #f0f0f0; font-size: 14px; }
 /* タブで状態を分けるため行のグレーアウトは廃止（状態カラムのバッジで表現） */
 .name { font-weight: 600; }
