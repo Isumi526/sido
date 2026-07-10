@@ -84,7 +84,7 @@
         </div>
         <div class="field">
           <label>責任者（必須・現場管理者以上）</label>
-          <select v-model="modal.responsible_worker_id" class="input">
+          <select v-model="modal.responsible_worker_id" class="input" data-testid="site-responsible-select">
             <option :value="null">選択してください</option>
             <option v-for="w in responsibleCandidates" :key="w.id" :value="w.id">{{ w.name }}</option>
           </select>

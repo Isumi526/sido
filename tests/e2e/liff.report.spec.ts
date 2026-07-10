@@ -75,7 +75,9 @@ test('新規登録した下請業者が再訪時にプルダウンへ残る', as
   await page.waitForSelector('form.form', { timeout: 10000 })
 
   // 送信対象の日付を控える（再訪検証は編集モードで同じ日を開く）
-  const date = (await page.locator('.date-fixed').first().innerText()).trim()
+  // 8ad1af1(2026-06-29)で.date-fixedの表示が「YYYY-MM-DD」→「YYYY-MM-DD（曜）」に変更済み。
+  // 曜日表記が付いたままURLの?edit=に使うと日付として解決できないため、先頭のISO日付だけ取る。
+  const date = (await page.locator('.date-fixed').first().innerText()).trim().split('（')[0]
 
   // 現場を選択（送信を成立させるため）
   const siteSelect = page.locator('select.select').filter({ has: page.locator('option', { hasText: 'テスト現場A' }) }).first()

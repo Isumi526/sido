@@ -5,7 +5,7 @@
 //   - AC2: 読み仮名を設定した現場が現場マスタ一覧で50音順に並ぶ（名前順ではなく仮名順）
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, getAccountId } from './helpers'
+import { rest, getAccountId, ensureResponsibleWorkerId } from './helpers'
 
 const TS = Date.now()
 
@@ -18,8 +18,15 @@ const B_NAME = `E2EカナA_aaa_${TS}`
 const B_KANA = `わ_${TS}`
 
 let accountId = ''
+let respWorkerId = ''
 
 test.describe('現場マスタ：読み仮名と50音順', () => {
+  test.beforeAll(async () => {
+    accountId = await getAccountId()
+    // 現場作成フォームは責任者(現場管理者以上)が必須(a472f7e)。
+    respWorkerId = await ensureResponsibleWorkerId(accountId)
+  })
+
   test.afterAll(async () => {
     for (const n of [A_NAME, B_NAME, `E2E手入力カナ_${TS}`]) {
       await rest(`sites?name=eq.${encodeURIComponent(n)}`, { method: 'DELETE' }).catch(() => {})
@@ -38,6 +45,8 @@ test.describe('現場マスタ：読み仮名と50音順', () => {
     // .input[0]=現場名, [1]=読み仮名
     await modal.locator('.input').nth(0).fill(name)
     await modal.locator('.input').nth(1).fill(kana)
+    // 責任者は必須(a472f7e)。専用に用意した候補を選択。
+    await modal.locator('[data-testid="site-responsible-select"]').selectOption(respWorkerId)
     await modal.locator('.btn-save').click()
 
     // 一覧に行が出て読み仮名セルに反映

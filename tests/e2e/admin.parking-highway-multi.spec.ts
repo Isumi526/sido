@@ -59,7 +59,9 @@ test.describe('駐車場代・高速代 複数登録（admin集計）', () => {
     await expect(modal).toContainText('¥444')
     await expect(modal).toContainText('¥555')
     // 駐車代の明細セルが2つ以上（本シード分）
-    const parkingCells = modal.locator('td', { hasText: /^駐車代$/ })
+    // 4e3e3ad(客先フォーマット統一)で品名列の表示は expenseDisplayCategory() により「P代」に短縮済み
+    // （生カテゴリ'駐車代'自体は変えず、表示のみ変換。集計・フィルタは引き続き'駐車代'キーを使う）。
+    const parkingCells = modal.locator('td', { hasText: /^P代$/ })
     expect(await parkingCells.count()).toBeGreaterThanOrEqual(2)
     // 高速代も1行以上
     await expect(modal.locator('td', { hasText: /^高速代$/ }).first()).toBeVisible()

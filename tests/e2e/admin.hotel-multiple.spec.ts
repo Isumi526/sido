@@ -11,6 +11,13 @@ import { restSrv, getAccountId } from './helpers'
 const TS = Date.now()
 const SITE_A = `E2E宿泊A_${TS}`   // hotels[] 2件 = ¥58,003
 const SITE_B = `E2E宿泊B_${TS}`   // hotels[] ¥8,001 ＋ 旧スカラー99,999（無視されるべき）
+// 現場別集計(/site-reports)は既定で「表示中の月」= 当月のみを表示する。
+// 旧: '2026-06-05' 等の絶対日付を直書きしていたため、月が変わると当月に現れず
+// タブ自体が出ない（陳腐化）。当月内の未使用日（global-setupのFEAT_*は01/05/10/20を使用）で動的に生成する。
+const NOW = new Date()
+const YM = `${NOW.getFullYear()}-${String(NOW.getMonth() + 1).padStart(2, '0')}`
+const DATE_A = `${YM}-06`
+const DATE_B = `${YM}-07`
 
 test.describe('宿泊費 複数登録 hotels[]', () => {
   let accountId = ''
@@ -30,10 +37,10 @@ test.describe('宿泊費 複数登録 hotels[]', () => {
     })
     // 現場A: hotels[] 2件（¥8,001 ＋ ¥50,002 ＝ ¥58,003）
     await restSrv('daily_reports?on_conflict=user_id,date', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify(mk('2026-06-05', SITE_A, { hotels: [{ label: 'ホテルA1', yen: 8001 }, { label: 'ホテルA2', yen: 50002 }] })) })
+      body: JSON.stringify(mk(DATE_A, SITE_A, { hotels: [{ label: 'ホテルA1', yen: 8001 }, { label: 'ホテルA2', yen: 50002 }] })) })
     // 現場B: hotels[] ¥8,001 ＋ 旧スカラー hotelYen 99,999（hotels[] があるので無視される）
     await restSrv('daily_reports?on_conflict=user_id,date', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify(mk('2026-06-06', SITE_B, { hotels: [{ label: 'ホテルB', yen: 8001 }], hotelName: '旧スカラー', hotelYen: 99999 })) })
+      body: JSON.stringify(mk(DATE_B, SITE_B, { hotels: [{ label: 'ホテルB', yen: 8001 }], hotelName: '旧スカラー', hotelYen: 99999 })) })
 
     await page.goto('/site-reports', { waitUntil: 'networkidle' })
 

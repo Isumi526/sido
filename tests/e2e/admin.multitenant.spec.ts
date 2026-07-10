@@ -12,9 +12,9 @@
 import { test, expect } from '@playwright/test'
 import { execSync } from 'node:child_process'
 import { writeFileSync, unlinkSync } from 'node:fs'
-import { rest, ADMIN_LOGIN_PASS } from './helpers'
+import { rest, ADMIN_LOGIN_PASS, DB_URL } from './helpers'
 
-const LOCAL_DB = 'postgresql://postgres:postgres@127.0.0.1:54322/postgres'
+const LOCAL_DB = DB_URL
 const TS    = Date.now()
 const SLUG2 = `e2eslug${TS}`                 // テナントの slug（metadata に入れる）
 const NAME2 = 'E2EテナントB'
@@ -74,8 +74,11 @@ test('app_metadata でテナント解決：ログインID≠slug でも自テナ
   await page.evaluate(() => window.localStorage.clear())
   await page.goto('/login')
 
-  // login.vue の placeholder は「ID（@なし）または メール」。前方一致で陳腐化に強くする。
-  await page.fill('input[placeholder^="ID"]', LOGIN)
+  // c1a4ba4でplaceholderは「ID（@なし）またはメール」→「メールアドレス」に簡素化され前方一致('ID')が
+  // 陳腐化・恒久ヒットしなくなった（40sタイムアウトの真因＝負荷起因の不安定ではなかった）。
+  // data-testid="login-id"（auth.setup.tsと同じ安定セレクタ）を使う。
+  await page.locator('[data-testid="login-id"]').waitFor({ state: 'visible', timeout: 15000 })
+  await page.fill('[data-testid="login-id"]', LOGIN)
   await page.fill('input[type="password"]', ADMIN_LOGIN_PASS)
   await page.click('button[type="submit"]')
 

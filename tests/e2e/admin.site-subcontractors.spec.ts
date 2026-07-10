@@ -4,7 +4,7 @@
 //  日報の業者プルダウンは紐付けで絞り込まれる（DB側の紐付け永続を検証）。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, getAccountId } from './helpers'
+import { rest, getAccountId, ensureResponsibleWorkerId } from './helpers'
 
 const TS = Date.now()
 const SITE = `E2E紐付現場_${TS}`
@@ -13,7 +13,9 @@ let siteId = ''
 
 test.beforeAll(async () => {
   const accountId = await getAccountId()
-  siteId = (await rest('sites', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ account_id: accountId, name: SITE, active: true }) }))[0].id
+  // 現場編集モーダルの保存(.btn-save)は責任者必須(a472f7e)。UIで保存まで行うため事前に用意。
+  const respWorkerId = await ensureResponsibleWorkerId(accountId)
+  siteId = (await rest('sites', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ account_id: accountId, name: SITE, active: true, responsible_worker_id: respWorkerId }) }))[0].id
   await rest('subcontractors', { method: 'POST', body: JSON.stringify({ account_id: accountId, name: SUB, active: true }) })
 })
 test.afterAll(async () => {
