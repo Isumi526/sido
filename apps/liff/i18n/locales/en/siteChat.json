@@ -2,5 +2,6 @@
   "title": "Chat",
   "empty": "No messages yet",
   "placeholder": "Type a message",
-  "unknownSender": "(Unknown)"
+  "unknownSender": "(Unknown)",
+  "uploadFailed": "Failed to send the file"
 }
