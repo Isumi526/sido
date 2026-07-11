@@ -263,7 +263,8 @@ async function load() {
       .eq('account_id', accountId)
       .eq('is_working', true)
       .gte('date', `${ym}-01`)
-      .lt('date', nextMonthFirst),
+      .lt('date', nextMonthFirst)
+      .limit(5000), // 1ヶ月×全作業員で上限(既定1000)超による原価集計漏れ防止（reports.vue等と同じ余裕）
     // 下請け請求（当月）も商社/業者に加算
     supabase
       .from('subcontractor_invoice_items')
