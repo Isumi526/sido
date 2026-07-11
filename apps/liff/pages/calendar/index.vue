@@ -258,13 +258,18 @@
                 v-model="(formModal as any)._customTitle"
                 type="text"
                 class="site-select"
+                data-testid="custom-site-title"
                 :placeholder="$t('calendar.siteNamePlaceholder')"
                 @keydown.enter.prevent
               />
             </div>
             <div v-if="formModal.title === '__other__' && customSiteSimilar.length"
                  style="margin-top:6px;font-size:12px;color:#B45309;background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;padding:8px 10px;line-height:1.5">
-              ⚠️ {{ $t('calendar.similarSiteWarn') }}：<strong>{{ customSiteSimilar.join('、') }}</strong>
+              ⚠️ {{ $t('calendar.similarSiteWarn') }}：<template v-for="(name, i) in customSiteSimilar" :key="name"><span
+                class="similar-site-pick" role="button" tabindex="0" data-testid="similar-site-pick"
+                @click="(formModal as any)._customTitle = name"
+                @keydown.enter.prevent="(formModal as any)._customTitle = name"
+              >{{ name }}</span>{{ i < customSiteSimilar.length - 1 ? '、' : '' }}</template>
             </div>
           </template>
 
@@ -1168,6 +1173,8 @@ onMounted(async () => {
 
 <style scoped>
 .cal-page { display: flex; flex-direction: column; height: 100dvh; background: #fff; color: #111; overflow: hidden; }
+.similar-site-pick { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.similar-site-pick:active { opacity: .6; }
 .notif-banner { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; margin: 8px 12px; padding: 10px 12px; flex-shrink: 0; }
 .notif-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 700; color: #b45309; }
 .notif-dismiss { background: #f59e0b; color: #fff; border: none; border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
