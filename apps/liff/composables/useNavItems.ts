@@ -29,6 +29,7 @@ export function useNavItems(authMode: () => string | null | undefined) {
       { path: '/history',          icon: 'history',           label: t('nav.reportHistory'),    section: 'daily' },
       { path: '/overtime',         icon: 'more_time',         label: t('nav.overtimeRequest'),  section: 'daily' },
       { path: '/calendar',         icon: 'calendar_month',    label: t('nav.schedule'),         section: 'plan' },
+      { path: '/company-schedule', icon: 'apartment',         label: t('nav.companySchedule'),  section: 'plan' },
       { path: '/groups',           icon: 'group',             label: t('nav.groups'),           section: 'plan' },
       { path: '/subcontractors',   icon: 'handyman',          label: t('nav.subcontractors'),   section: 'plan' },
       { path: '/sites',            icon: 'location_on',       label: t('nav.sites'),             section: 'info' },
