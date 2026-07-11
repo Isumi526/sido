@@ -189,11 +189,16 @@ function selectProxy(w: import('~/composables/useProxyMode').ProxyWorker) {
 
 // ログアウト：Supabaseセッション破棄＋テナント/代理キャッシュ破棄→ /login へ。
 // LINEモードは best-effort で liff.logout も呼び自動再開を防ぐ（dev は LIFF 未接続なのでスキップ）。
+// ★先に /login へ遷移してから身元状態(liff.reset())を破棄する（#ログアウトローディング停止対策）。
+//   app.vue のスプラッシュは「非exemptルート ＆ liff未初期化」の時に出る。/login は exempt のため
+//   影響しないが、reset()を先に行うと遷移完了前の一瞬(非exemptルートのまま)にスプラッシュへ入り、
+//   そのまま復帰しなくなるケースがあった。遷移を先に済ませてから状態を破棄すれば発生しない。
 const supabase = useSupabase()
 async function logout() {
   open.value = false
   proxy.clearProxy()
   try { await supabase.auth.signOut() } catch { /* セッション無し等は無視 */ }
+  await navigateTo('/login')
   resetAccount()
   useLiff().reset()   // 身元状態を破棄（次のユーザーが前のユーザーとして解決されるのを防ぐ）
   if (config.public.appEnv !== 'development') {
@@ -202,7 +207,6 @@ async function logout() {
       if (liff.isLoggedIn?.()) liff.logout()
     } catch { /* LIFF未接続等は無視 */ }
   }
-  await navigateTo('/login')
 }
 </script>
 
