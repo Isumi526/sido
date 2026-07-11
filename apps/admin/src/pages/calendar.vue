@@ -561,7 +561,11 @@ function setupIO() {
   }
 }
 
+// scrollToRow()によるprogrammatic scroll中はonGridScrollでのnavMonth更新を止める（#navMonth追従不具合・liffと同じ手法）。
+let pendingProgrammaticScrolls = 0
+
 function onGridScroll() {
+  if (pendingProgrammaticScrolls > 0) return
   const wrap = gridWrapRef.value; if (!wrap) return
   // 行の高さは予定の有無で可変なため、実際の行位置を測り、sticky ヘッダー直下に来ている
   // 「最上段の表示中の日付行」で月を判定する（liff と同じ手法）。
@@ -581,7 +585,13 @@ function scrollToRow(dateStr: string) {
   const wrap = gridWrapRef.value; if (!wrap || !dateStr) return
   const row  = wrap.querySelector<HTMLElement>(`tr[data-date="${dateStr}"]`)
   const headH = wrap.querySelector('thead')?.getBoundingClientRect().height ?? 0
-  if (row) wrap.scrollTop = Math.max(0, row.offsetTop - wrap.offsetTop - headH - 8)
+  if (row) {
+    pendingProgrammaticScrolls++
+    wrap.scrollTop = Math.max(0, row.offsetTop - wrap.offsetTop - headH - 8)
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      pendingProgrammaticScrolls = Math.max(0, pendingProgrammaticScrolls - 1)
+    }))
+  }
 }
 
 function scrollToToday() {
@@ -590,6 +600,10 @@ function scrollToToday() {
 
 function navigate(dir: 1 | -1) {
   const target    = shiftMonth(navMonth.value, dir)
+  // ボタン操作はscrollイベント経由のonGridScrollでのnavMonth更新を待たず即座に反映する。
+  // programmatic scroll(scrollToRow)が既に同じscrollTopに対しては'scroll'イベントを発火しないため
+  // (連打で2回目以降がonGridScroll未発火のまま navMonth が古い値から計算され1ヶ月先で足踏みしていた)。
+  navMonth.value  = target
   const targetStr = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-01`
   const prefix    = targetStr.slice(0, 7)
   const found     = calendarDates.value.find(d => d.startsWith(prefix))

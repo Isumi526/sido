@@ -729,7 +729,14 @@ function setupIO() {
   }
 }
 
+// scrollToRow()によるprogrammatic scroll中はonGridScrollでのnavMonth更新を止める（#navMonth追従不具合）。
+// navigate()/goTodayはnavMonthを直接確定させる権威ソースになったため、その結果としてscrollToRowが
+// 起こす'scroll'イベントでonGridScrollが（連打時のロード待ち等で）古い/中間の行を読んでnavMonthを
+// 巻き戻すのを防ぐ。カウンタなのは連続したscrollToRow呼び出し（連打）にも対応するため。
+let pendingProgrammaticScrolls = 0
+
 function onGridScroll() {
+  if (pendingProgrammaticScrolls > 0) return
   const wrap = gridWrapRef.value; if (!wrap) return
   // 行の高さは予定の有無で可変なため、固定 ROW_HEIGHT での scrollTop 割り算だと行数を数えすぎて
   // 月ラベルが大きく早くズレる。実際の行位置を測り、sticky な作業員ヘッダーの直下に来ている
@@ -751,7 +758,13 @@ function scrollToRow(dateStr: string) {
   const row  = wrap.querySelector<HTMLElement>(`tr[data-date="${dateStr}"]`)
   // sticky ヘッダーの高さ分も引いて、対象行がヘッダーに隠れず直下に来るようにする。
   const headH = wrap.querySelector('thead')?.getBoundingClientRect().height ?? 0
-  if (row) wrap.scrollTop = Math.max(0, row.offsetTop - wrap.offsetTop - headH - 8)
+  if (row) {
+    pendingProgrammaticScrolls++
+    wrap.scrollTop = Math.max(0, row.offsetTop - wrap.offsetTop - headH - 8)
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      pendingProgrammaticScrolls = Math.max(0, pendingProgrammaticScrolls - 1)
+    }))
+  }
 }
 
 function scrollToToday() {
@@ -760,6 +773,10 @@ function scrollToToday() {
 
 function navigate(dir: 1 | -1) {
   const target    = shiftMonth(navMonth.value, dir)
+  // ボタン操作はscrollイベント経由のonGridScrollでのnavMonth更新を待たず即座に反映する。
+  // programmatic scroll(scrollToRow)が既に同じscrollTopに対しては'scroll'イベントを発火しないため
+  // (連打で2回目以降がonGridScroll未発火のまま navMonth が古い値から計算され1ヶ月先で足踏みしていた)。
+  navMonth.value  = target
   const targetStr = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-01`
   const prefix    = targetStr.slice(0, 7)
   const found     = calendarDates.value.find(d => d.startsWith(prefix))
