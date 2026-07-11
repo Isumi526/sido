@@ -58,6 +58,7 @@
             <NuxtLink class="drawer-item" :to="item.path" :data-testid="item.testId" @click="open = false">
               <span class="drawer-item-icon material-symbols-rounded">{{ item.icon }}</span>
               <span>{{ item.label }}</span>
+              <span v-if="item.path === '/calendar' && unreadScheduleCount > 0" class="drawer-item-badge" data-testid="drawer-schedule-badge">{{ unreadScheduleCount }}</span>
             </NuxtLink>
           </template>
 
@@ -152,6 +153,9 @@ const open = ref(false)
 // ホーム画面(pages/index.vue)と共通のナビ項目定義（composables/useNavItems.ts）。
 // 表記・並び・表示条件(パスワード変更等)のズレを防ぐ（2026-07-10）。
 const { bySection } = useNavItems(() => authMode.value)
+
+// 予定管理ナビの未読バッジ（#予定通知バッジ・2026-07-11）
+onMounted(() => { refreshScheduleNotifBadge() })
 
 // 現在の画面を外部ブラウザで開く（LINEの⋮メニューに依存せず常に開けるようにする）
 async function openInBrowser() {
@@ -350,6 +354,20 @@ async function logout() {
   font-size: 15px;
   font-weight: 600;
   transition: background .15s;
+}
+.drawer-item-badge {
+  margin-left: auto;
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
 }
 .drawer-section {
   font-size: 12px;

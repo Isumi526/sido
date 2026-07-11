@@ -526,6 +526,7 @@ async function dismissNotifs() {
   notifs.value = []
   if (!ids.length) return
   await supabase.from('schedule_notifications').update({ read_at: new Date().toISOString() }).in('id', ids)
+  await refreshScheduleNotifBadge()   // HOME/ハンバーガーの未読バッジも即時反映（#予定通知バッジ）
 }
 
 const effectiveWorkerId = computed(() =>
