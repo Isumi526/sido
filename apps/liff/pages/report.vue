@@ -614,9 +614,9 @@
                 <span v-if="site.contractor" class="preview-contractor">（{{ site.contractor }}）</span>
               </div>
               <table v-if="site.workers.length" class="preview-table">
-                <thead><tr><th>{{ $t('report.workerName') }}</th><th>{{ $t('report.workHours') }}</th></tr></thead>
+                <thead><tr><th>{{ $t('report.workerName') }}</th><th>{{ $t('report.workTime') }}</th><th>{{ $t('report.workHours') }}</th></tr></thead>
                 <tbody>
-                  <tr v-for="(w, wi) in site.workers" :key="wi"><td>{{ w.name }}</td><td>{{ w.hours }}</td></tr>
+                  <tr v-for="(w, wi) in site.workers" :key="wi"><td>{{ w.name }}</td><td class="preview-time">{{ w.timeRange }}</td><td>{{ w.hours }}</td></tr>
                 </tbody>
               </table>
               <ul v-if="site.expenses.length" class="preview-list">
@@ -1419,7 +1419,7 @@ function discardDraft() {
 // ── LINE通知プレビュー ──────────────────────────────────────
 // 送信前の最終確認テーブル用データ。実際の保存(saveReportById等)と同じ form/computeWorkerHours
 // から組むため、プレビューと保存後表示のズレが起きない（旧LINE風テキスト<pre>から移行・2026-07-10）。
-type PreviewWorkerRow = { name: string; hours: string }
+type PreviewWorkerRow = { name: string; hours: string; timeRange: string }
 type PreviewSite = {
   name: string
   contractor: string
@@ -1475,7 +1475,8 @@ const previewData = computed<PreviewData>(() => {
       if (h.hoursSundayOT)      parts.push(`休日残業${h.hoursSundayOT}h`)
       if (h.hoursSundayNight)   parts.push(`休日深夜${h.hoursSundayNight}h`)
       if (h.hoursSundayOTNight) parts.push(`休日深夜残業${h.hoursSundayOTNight}h`)
-      workers.push({ name: w.workerName, hours: parts.join(' + ') || '—' })
+      const timeRange = w.startTime && w.endTime ? `${w.startTime}〜${w.endTime}` : '—'
+      workers.push({ name: w.workerName, hours: parts.join(' + ') || '—', timeRange })
     }
 
     const exp = site.expenses || {}
@@ -2614,6 +2615,7 @@ html, body {
   padding: 4px 8px; border-bottom: 1px solid #e2e8f0;
 }
 .preview-table td { padding: 4px 8px; border-bottom: 1px solid #f1f5f9; color: var(--text); }
+.preview-table td.preview-time { white-space: nowrap; color: #64748b; font-size: 11px; }
 .preview-list { list-style: none; margin: 0 0 6px; padding: 0; font-size: 12px; color: var(--text); }
 .preview-list li { padding: 2px 0; }
 .preview-note { font-size: 12px; color: #64748b; margin: 0; }
