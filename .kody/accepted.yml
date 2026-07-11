@@ -246,6 +246,14 @@ entries:
     target: site-chat
     reason: "チャット送信(LIFF site-chat/[id].vue・admin SiteChatPanel.vue)にべき等ガード(一意リクエストID等)が無い指摘。UI側はsendingフラグで連打を防止済み。Supabase-jsクライアントはPOST/insertを自動リトライしない設計のため、ネットワーク再送による二重投稿の実際の発生率は低い(通信断なら単に送信失敗としてユーザーに見え、ユーザーが再送を判断する＝チャットの性質上、明らかな二重投稿は目視で気付ける)。一意制約による恒久対策は将来の要望(既読/削除機能等)と合わせて検討する。"
     ticket: "3980ff81c56b8057a369e89a2d048c2d"
+  - rule: rls-multitenant
+    target: site_chat_invites
+    reason: "site_chat_invites作成マイグレーション(20260711050000)ではRLS無効のままauthenticatedにgrantしていた指摘＝『RLS有効化は同一マイグレーションファイル内で行うべき』。実際には同じコミット内の後続マイグレーション(20260711060000)でRLSを有効化し、current_account_id()ベースのポリシー(process_tasks/purchase_ordersと同型)を追加済み。2ファイルに分けて作業したが、devにマージされる時点・本番適用される時点のどちらでも『RLS無効×authenticated grant』の状態が単独で存在する瞬間は無い(常にセットで適用される)ため、実質的なリスクは無い。将来はテーブル作成と同一ファイルにまとめる運用を徹底する。"
+    ticket: "39a0ff81c56b81e19438e02fc532f33a"
+  - rule: idempotency
+    target: chat-invite
+    reason: "ゲストチャット送信(apps/liff/pages/chat-invite/[token].vue)にべき等ガードが無い指摘。既存のsite-chat/SiteChatPanel.vueのidempotency受容と同じ理由([[site-chat]]参照): sendingフラグで連打防止済み・Supabase-jsは自動リトライしない・チャットの性質上二重投稿は目視で気付ける。"
+    ticket: "39a0ff81c56b81e19438e02fc532f33a"
   - rule: idempotency
     target: SiteChatPanel.vue
     reason: "上記と同一指摘のadmin側(SiteChatPanel.vue)。理由は同じ([[site-chat]]エントリ参照): sendingフラグで連打防止済み・Supabase-jsは自動リトライしない・チャットの性質上二重投稿は目視で気付ける。"
