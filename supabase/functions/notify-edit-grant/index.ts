@@ -1,15 +1,15 @@
 // ============================================================
 //  notify-edit-grant
-//  日報編集許可(report_edit_grants)が承認された時、作業員の登録メール
-//  (workers.notify_email)へお知らせを送る。
+//  日報編集許可(report_edit_grants)が承認された時、作業員の認証用メール
+//  (auth.users.email)へお知らせを送る。
 //   - 入力: { grant_id }（account_id/メール本文は一切クライアントから受け取らない）
 //   - 認可: Authorization JWT の呼び出し元(admin)の account_slug を解決し、
 //     対象grantのaccount_idと一致する時のみ送信（他テナントのgrant_idを
 //     指定されても送れない＝クロステナント漏洩防止）。
-//   - grant.status!=='approved' / worker.notify_email 未設定 は no-op（エラーにしない）。
+//   - grant.status!=='approved' / 認証用メール未解決(ID認証の作業員含む) は no-op（エラーにしない）。
 //  ※ verify_jwt=false（CIが全関数を--no-verify-jwtでデプロイするため。認可はin-code必須）。
 // ============================================================
-import { svcClient, sendResend, resolveCallerAccount } from '../_shared/doc-mail.ts'
+import { svcClient, sendResend, resolveCallerAccount, resolveWorkerNotifyEmail } from '../_shared/doc-mail.ts'
 
 function corsHeaders() {
   return {
@@ -48,8 +48,11 @@ Deno.serve(async (req) => {
   if (!grant.worker_id) return json({ ok: true, skipped: 'no_worker' })
 
   const { data: worker } = await svc.from('workers')
-    .select('id, name, notify_email').eq('id', grant.worker_id).eq('account_id', grant.account_id).maybeSingle()
-  if (!worker?.notify_email) return json({ ok: true, skipped: 'no_notify_email' })
+    .select('id, name').eq('id', grant.worker_id).eq('account_id', grant.account_id).maybeSingle()
+  if (!worker) return json({ ok: true, skipped: 'no_worker' })
+
+  const notifyEmail = await resolveWorkerNotifyEmail(svc, grant.account_id as string, grant.worker_id as string)
+  if (!notifyEmail) return json({ ok: true, skipped: 'no_notify_email' })
 
   const dateLabel = fmtDate(grant.date as string)
   const subject = `【日報編集許可】${dateLabel}の日報を編集できるようになりました`
@@ -59,6 +62,6 @@ Deno.serve(async (req) => {
     アプリから該当日の日報を開き、編集・再提出してください。</p>
   `.trim()
 
-  const result = await sendResend(svc, grant.account_id, worker.notify_email as string, subject, html)
+  const result = await sendResend(svc, grant.account_id, notifyEmail, subject, html)
   return json({ ok: true, sent: result.status === 200, resend: result.body })
 })
