@@ -57,7 +57,10 @@
       <div class="menu-section">{{ t('nav.secInfo') }}</div>
       <div class="menu-grid">
         <NuxtLink v-for="item in navBySection.info" :key="item.path" class="menu-card" :to="item.path" :data-testid="item.testId">
-          <span class="material-symbols-rounded menu-icon" :style="{ color: navIconColor(item.path) }">{{ item.icon }}</span>
+          <span class="menu-icon-wrap">
+            <span class="material-symbols-rounded menu-icon" :style="{ color: navIconColor(item.path) }">{{ item.icon }}</span>
+            <span v-if="item.path === '/sites' && unreadMentionCount > 0" class="menu-card-badge" data-testid="home-mention-badge">{{ unreadMentionCount }}</span>
+          </span>
           <span class="menu-label">{{ item.label }}</span>
         </NuxtLink>
         <!-- 代理操作者のみ表示（遷移先ではなくモーダル起動のためnav定義の対象外） -->
@@ -212,6 +215,8 @@ onMounted(async () => {
 
 // 予定管理ナビの未読バッジ（#予定通知バッジ・2026-07-11）
 onMounted(() => { refreshScheduleNotifBadge() })
+// 現場情報ナビの未読メンションバッジ（現場チャット③・2026-07-11）
+onMounted(() => { refreshSiteChatMentionBadge() })
 
 async function refreshUnsubmittedCount() {
   // 代理モード時: proxy targetのuser_idを取得（なければ作成）
