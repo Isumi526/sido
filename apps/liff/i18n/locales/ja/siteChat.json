@@ -2,5 +2,6 @@
   "title": "チャット",
   "empty": "まだメッセージはありません",
   "placeholder": "メッセージを入力",
-  "unknownSender": "（不明）"
+  "unknownSender": "（不明）",
+  "uploadFailed": "ファイルの送信に失敗しました"
 }
