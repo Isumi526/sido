@@ -129,21 +129,26 @@
         </div>
       </div>
 
-      <!-- 月間（7列グリッド） -->
-      <div v-else class="personal-month-grid">
-        <div v-for="wd in WEEKDAYS" :key="wd" class="personal-month-wd">{{ wd }}</div>
-        <div v-for="cell in personalMonthCells" :key="cell.date || cell.key" class="personal-month-cell" :class="[cell.date ? dateCellClass(cell.date, todayStr) : 'blank']">
-          <template v-if="cell.date">
-            <div class="personal-month-daynum" @click="personalAddSchedule(cell.date)">{{ Number(cell.date.slice(8, 10)) }}</div>
-            <div
-              v-for="s in personalCellSchedules(cell.date)"
-              :key="s.id"
-              class="sched-chip personal-chip-sm"
-              :class="{ 'night-shift': s.is_night_shift, 'deleted-chip': !!s.deleted_at }"
-              :style="chipStyle(s)"
-              @click="openDetail(s)"
-            >{{ s.title }}</div>
-          </template>
+      <!-- 月間（複数月を縦に連結し無限スクロール。前後スクロールで月が継ぎ足され自動切替） -->
+      <div v-else ref="personalMonthScrollRef" class="personal-month-scroll" @scroll="onPersonalMonthScroll">
+        <div v-for="m in personalMonths" :key="monthKey(m.year, m.month)" class="personal-month-block" :data-year="m.year" :data-month="m.month">
+          <div class="personal-month-block-label">{{ monthLabel(m.year, m.month) }}</div>
+          <div class="personal-month-grid">
+            <div v-for="wd in WEEKDAYS" :key="wd" class="personal-month-wd">{{ wd }}</div>
+            <div v-for="cell in monthCellsFor(m.year, m.month)" :key="cell.date || cell.key" class="personal-month-cell" :class="[cell.date ? dateCellClass(cell.date, todayStr) : 'blank']">
+              <template v-if="cell.date">
+                <div class="personal-month-daynum" @click="personalAddSchedule(cell.date)">{{ Number(cell.date.slice(8, 10)) }}</div>
+                <div
+                  v-for="s in personalCellSchedules(cell.date)"
+                  :key="s.id"
+                  class="sched-chip personal-chip-sm"
+                  :class="{ 'night-shift': s.is_night_shift, 'deleted-chip': !!s.deleted_at }"
+                  :style="chipStyle(s)"
+                  @click="openDetail(s)"
+                >{{ s.title }}</div>
+              </template>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -780,15 +785,105 @@ const personalWeekDates = computed<string[]>(() => {
   return out
 })
 
-const personalMonthCells = computed<{ date: string | null; key: string }[]>(() => {
-  const y = personalAnchor.value.getFullYear()
-  const m = personalAnchor.value.getMonth()
-  const dates = genMonthDates(y, m)
+// ── 月間ビュー：複数月を縦に連結して無限スクロール（#個人月間無限スクロール） ──
+// 週間ビューと違い月間は「固定7列グリッドを月単位で再生成」する構造のため、
+// 共有タブの日リスト無限スクロール(calendarDates/ROW_HEIGHT固定行高)とは別実装。
+// 月ブロックは高さが可変(5〜6週)なため、行高計算ではなくscrollHeightの差分で
+// スクロール位置を補正する。
+const personalMonths = ref<{ year: number; month: number }[]>([])
+const personalMonthScrollRef = ref<HTMLElement | null>(null)
+const MONTH_SCROLL_THRESHOLD = 300   // 上端/下端からこの距離(px)以内で月を継ぎ足す
+
+function monthKey(year: number, month: number): string { return `${year}-${month}` }
+function monthLabel(year: number, month: number): string { return t('calendar.monthBadge', { n: month + 1 }) }
+
+function monthCellsFor(year: number, month: number): { date: string | null; key: string }[] {
+  const dates = genMonthDates(year, month)
   const leadBlank = weekdayIndex(dates[0])
   const cells: { date: string | null; key: string }[] = []
-  for (let i = 0; i < leadBlank; i++) cells.push({ date: null, key: `blank-${i}` })
+  for (let i = 0; i < leadBlank; i++) cells.push({ date: null, key: `blank-${year}-${month}-${i}` })
   for (const d of dates) cells.push({ date: d, key: d })
   return cells
+}
+
+function initPersonalMonths() {
+  const y = personalAnchor.value.getFullYear()
+  const m = personalAnchor.value.getMonth()
+  personalMonths.value = [-1, 0, 1].map((off) => {
+    const d = new Date(y, m + off, 1)
+    return { year: d.getFullYear(), month: d.getMonth() }
+  })
+}
+function extendMonthsTop() {
+  const first = personalMonths.value[0]
+  const d = new Date(first.year, first.month - 1, 1)
+  personalMonths.value = [{ year: d.getFullYear(), month: d.getMonth() }, ...personalMonths.value]
+}
+function extendMonthsBottom() {
+  const last = personalMonths.value[personalMonths.value.length - 1]
+  const d = new Date(last.year, last.month + 1, 1)
+  personalMonths.value = [...personalMonths.value, { year: d.getFullYear(), month: d.getMonth() }]
+}
+
+let monthScrollTicking = false
+async function onPersonalMonthScroll() {
+  if (monthScrollTicking) return
+  monthScrollTicking = true
+  requestAnimationFrame(async () => {
+    monthScrollTicking = false
+    const el = personalMonthScrollRef.value
+    if (!el) return
+
+    if (el.scrollTop < MONTH_SCROLL_THRESHOLD) {
+      const prevHeight = el.scrollHeight
+      extendMonthsTop()
+      await nextTick()
+      el.scrollTop += (el.scrollHeight - prevHeight)   // 継ぎ足し分だけ相殺しスクロール位置のジャンプを防ぐ
+    } else if (el.scrollHeight - el.scrollTop - el.clientHeight < MONTH_SCROLL_THRESHOLD) {
+      extendMonthsBottom()
+    }
+    updateAnchorFromScroll()
+  })
+}
+
+// 現在スクロールで見えている月ブロックを判定し、ヘッダーラベル(personalAnchor)を自動追従させる
+function updateAnchorFromScroll() {
+  const el = personalMonthScrollRef.value
+  if (!el) return
+  const containerTop = el.getBoundingClientRect().top
+  const blocks = el.querySelectorAll<HTMLElement>('.personal-month-block')
+  for (const block of Array.from(blocks)) {
+    const rect = block.getBoundingClientRect()
+    if (rect.bottom - containerTop > 40) {
+      const y = Number(block.dataset.year)
+      const m = Number(block.dataset.month)
+      if (!Number.isNaN(y) && !Number.isNaN(m) && (personalAnchor.value.getFullYear() !== y || personalAnchor.value.getMonth() !== m)) {
+        personalAnchor.value = new Date(y, m, 1)
+      }
+      break
+    }
+  }
+}
+
+async function scrollToMonth(year: number, month: number) {
+  if (!personalMonths.value.length) initPersonalMonths()
+  let guard = 0
+  while (!personalMonths.value.some((mm) => mm.year === year && mm.month === month) && guard < 24) {
+    const first = personalMonths.value[0]
+    const target = new Date(year, month, 1).getTime()
+    if (target < new Date(first.year, first.month, 1).getTime()) extendMonthsTop()
+    else extendMonthsBottom()
+    guard++
+  }
+  personalAnchor.value = new Date(year, month, 1)
+  await nextTick()
+  const el = personalMonthScrollRef.value
+  const block = el?.querySelector<HTMLElement>(`.personal-month-block[data-year="${year}"][data-month="${month}"]`)
+  if (el && block) el.scrollTop = block.offsetTop
+}
+
+watch(personalViewMode, async (mode) => {
+  if (mode === 'month') await scrollToMonth(personalAnchor.value.getFullYear(), personalAnchor.value.getMonth())
 })
 
 const personalNavLabel = computed(() => {
@@ -802,13 +897,22 @@ const personalNavLabel = computed(() => {
   return t('calendar.monthBadge', { n: personalAnchor.value.getMonth() + 1 })
 })
 
-function personalNavigate(dir: 1 | -1) {
+async function personalNavigate(dir: 1 | -1) {
+  if (personalViewMode.value === 'week') {
+    const d = new Date(personalAnchor.value)
+    d.setDate(d.getDate() + dir * personalDayCount.value)
+    personalAnchor.value = d
+    return
+  }
   const d = new Date(personalAnchor.value)
-  if (personalViewMode.value === 'week') d.setDate(d.getDate() + dir * personalDayCount.value)
-  else d.setMonth(d.getMonth() + dir)
-  personalAnchor.value = d
+  d.setMonth(d.getMonth() + dir)
+  await scrollToMonth(d.getFullYear(), d.getMonth())
 }
-function personalGoToday() { personalAnchor.value = new Date() }
+async function personalGoToday() {
+  if (personalViewMode.value === 'week') { personalAnchor.value = new Date(); return }
+  const now = new Date()
+  await scrollToMonth(now.getFullYear(), now.getMonth())
+}
 
 // ──────────────────── 日付ユーティリティ ────────────────────
 // toDateStr / isWeekend / fmtDateTime は shared/schedule-core.ts（admin と共有）から import 済み。
@@ -1060,9 +1164,12 @@ onMounted(async () => {
   color: #aaa; font-size: 14px; padding: 4px; cursor: pointer;
 }
 
+.personal-month-scroll { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.personal-month-block { margin-bottom: 14px; }
+.personal-month-block-label { font-size: 12px; font-weight: 700; color: #888; padding: 6px 4px 4px; }
 .personal-month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: #E0E0E0; }
 .personal-month-wd { background: #f5f5f5; text-align: center; font-size: 11px; font-weight: 700; color: #666; padding: 6px 0; }
-.personal-month-cell { background: #fff; min-height: 64px; padding: 2px; }
+.personal-month-cell { background: #fff; min-height: 64px; padding: 2px; overflow: hidden; min-width: 0; }
 .personal-month-cell.blank { background: #fafafa; }
 .personal-month-daynum { font-size: 11px; color: #666; padding: 2px 4px; cursor: pointer; }
 .personal-month-cell.date-sunday .personal-month-daynum { color: #ef4444; }
@@ -1070,7 +1177,7 @@ onMounted(async () => {
 .personal-month-cell.date-today { background: #ecfdf5; }
 .personal-chip-sm {
   font-size: 10px; padding: 1px 4px; border-radius: 3px; margin: 1px 2px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; box-sizing: border-box;
 }
 
 /* グリッド */
