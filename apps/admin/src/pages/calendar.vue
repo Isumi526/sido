@@ -51,6 +51,9 @@
         </thead>
         <tbody>
           <tr class="sentinel-top"><td :colspan="visibleWorkers.length + 1" style="height:0;padding:0;border:none;"></td></tr>
+          <tr v-if="isExtending === 'top'" class="extend-loading-row" data-testid="extend-loading-top">
+            <td :colspan="visibleWorkers.length + 1" class="extend-loading-cell"><span class="extend-spinner" /> 読み込み中…</td>
+          </tr>
           <tr
             v-for="date in calendarDates"
             :key="date"
@@ -87,6 +90,9 @@
                 <span v-if="s.start_time" class="chip-time">{{ s.start_time.slice(0, 5) }}</span>
               </div>
             </td>
+          </tr>
+          <tr v-if="isExtending === 'bottom'" class="extend-loading-row" data-testid="extend-loading-bottom">
+            <td :colspan="visibleWorkers.length + 1" class="extend-loading-cell"><span class="extend-spinner" /> 読み込み中…</td>
           </tr>
           <tr class="sentinel-bottom"><td :colspan="visibleWorkers.length + 1" style="height:0;padding:0;border:none;"></td></tr>
         </tbody>
@@ -483,7 +489,7 @@ const calendarDates  = ref<string[]>([])
 let   loadedFrom     = ''
 let   loadedTo       = ''
 const navMonth       = ref(new Date())
-let   isExtending    = false
+const isExtending = ref<'top' | 'bottom' | null>(null)   // 月継ぎ足し中のローディング表示用
 let   ioTop:    IntersectionObserver | null = null
 let   ioBottom: IntersectionObserver | null = null
 
@@ -508,7 +514,7 @@ function initCalendar() {
 }
 
 async function extendTop() {
-  if (isExtending) return; isExtending = true
+  if (isExtending.value) return; isExtending.value = 'top'
   try {
     const base     = new Date(loadedFrom + 'T00:00:00')
     const target   = shiftMonth(base, -1)
@@ -520,11 +526,11 @@ async function extendTop() {
     await nextTick()
     if (wrap) wrap.scrollTop = prevTop + newDates.length * ROW_HEIGHT
     await loadSchedules()
-  } finally { isExtending = false }
+  } finally { isExtending.value = null }
 }
 
 async function extendBottom() {
-  if (isExtending) return; isExtending = true
+  if (isExtending.value) return; isExtending.value = 'bottom'
   try {
     const base     = new Date(loadedTo + 'T00:00:00')
     const target   = shiftMonth(base, +1)
@@ -532,7 +538,7 @@ async function extendBottom() {
     calendarDates.value = [...calendarDates.value, ...newDates]
     loadedTo = newDates[newDates.length - 1]
     await loadSchedules()
-  } finally { isExtending = false }
+  } finally { isExtending.value = null }
 }
 
 function setupIO() {
@@ -941,6 +947,15 @@ onMounted(async () => {
 .group-select { margin-left: auto; border: 1px solid #ddd; border-radius: 6px; padding: 6px 10px; font-size: 13px; font-family: inherit; background: #fff; color: #333; }
 
 .loading { text-align: center; padding: 60px; color: #888; }
+
+.extend-loading-row { background: #fafbfc; }
+.extend-loading-cell { text-align: center; padding: 10px 0; color: #999; font-size: 12px; }
+.extend-spinner {
+  display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: -2px;
+  border: 2px solid #ddd; border-top-color: #06C755; border-radius: 50%;
+  animation: extend-spin .7s linear infinite;
+}
+@keyframes extend-spin { to { transform: rotate(360deg); } }
 
 /* グリッド */
 .grid-wrap {
