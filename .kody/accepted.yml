@@ -230,6 +230,18 @@ entries:
     target: site_chat_messages
     reason: "上記チャットテーブルの anon select/insert/update。LIFF(公開anonキー)が現場チャットの送受信を行うため。他のLIFF露出表(overtime_requests/report_edit_grants等)と同じ pre-RLS ベースライン＝親エピックで一括RLS化。"
     ticket: "3980ff81c56b8057a369e89a2d048c2d"
+  - rule: rls-multitenant
+    target: site_chat_mentions
+    reason: "現場ごとのチャット③(2026-07-11・メンション+通知)。schedule_notificationsと同型のアプリ内通知テーブル(未読バッジ用)。LIFF(anon)が既読化更新・未読件数取得を行うため、既存のLIFF露出通知表(schedule_notifications)と同じ anon運用(RLS無効・account_id+worker_idで論理分離)。通知メタデータのみ(本文はsite_chat_messages側)で機微度は低い。本番RLS化は親エピック「本番DBのRLS有効化」で一括。"
+    ticket: "39a0ff81c56b81989087db446a25a2ce"
+  - rule: anon-access-token
+    target: site_chat_mentions
+    reason: "上記メンション通知表の anon select/insert/update。LIFF(公開anonキー)が未読バッジ取得・既読化を行うため。schedule_notificationsと同じ pre-RLS ベースライン＝親エピックで一括RLS化。"
+    ticket: "39a0ff81c56b81989087db446a25a2ce"
+  - rule: side-effect-integrity
+    target: site-chat
+    reason: "site_chat_messages insert成功後にsite_chat_mentions insertが失敗すると、メッセージは送信済みなのにメンション通知だけ届かない不整合になる指摘。ブラウザのSupabase-jsクライアントからは2テーブルをまたぐ真のトランザクションは組めない(RPC/edge化が必要=このMVPの規模には過大)ため、根本対策の代わりに『サイレント失敗をなくす』対応をした：mention insertのerrorを検知し、console.errorに加えて送信者本人に『メッセージは送信されましたが、メンション通知の送信に失敗しました』とalertする(apps/liff/pages/site-chat/[id].vue・apps/admin/src/components/SiteChatPanel.vue 共通)。メッセージ本体(主目的)の送信は失われず、通知欠落だけを本人が即座に把握でき、必要なら再送や口頭補足で対処できる。完全なトランザクション化は将来チケットで対応可。"
+    ticket: "39a0ff81c56b81989087db446a25a2ce"
   - rule: idempotency
     target: site-chat
     reason: "チャット送信(LIFF site-chat/[id].vue・admin SiteChatPanel.vue)にべき等ガード(一意リクエストID等)が無い指摘。UI側はsendingフラグで連打を防止済み。Supabase-jsクライアントはPOST/insertを自動リトライしない設計のため、ネットワーク再送による二重投稿の実際の発生率は低い(通信断なら単に送信失敗としてユーザーに見え、ユーザーが再送を判断する＝チャットの性質上、明らかな二重投稿は目視で気付ける)。一意制約による恒久対策は将来の要望(既読/削除機能等)と合わせて検討する。"

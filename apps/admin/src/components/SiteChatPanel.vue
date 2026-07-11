@@ -24,12 +24,15 @@
           <span class="material-symbols-rounded">close</span>
         </button>
       </div>
+      <ul v-if="mentionCandidates.length" class="mention-list" data-testid="mention-list">
+        <li v-for="w in mentionCandidates" :key="w.id" class="mention-item" data-testid="mention-item" @click="pickMention(w)">{{ w.name }}</li>
+      </ul>
       <form class="msg-form" @submit.prevent="send">
         <label class="msg-attach-btn">
           <span class="material-symbols-rounded">attach_file</span>
           <input type="file" accept="image/*,.pdf" hidden data-testid="chat-file-input" @change="onFilePick" />
         </label>
-        <input v-model="draft" type="text" class="msg-input" placeholder="メッセージを入力" data-testid="chat-input" />
+        <input v-model="draft" type="text" class="msg-input" placeholder="メッセージを入力" data-testid="chat-input" @input="onDraftInput" />
         <button type="submit" class="msg-send" :disabled="(!draft.trim() && !pendingFile) || sending" data-testid="chat-send">送信</button>
       </form>
     </template>
@@ -56,10 +59,26 @@ const draft    = ref('')
 const sending  = ref(false)
 const listRef  = ref<HTMLElement | null>(null)
 const pendingFile = ref<File | null>(null)
+const mentionedIds = ref<Set<string>>(new Set())
+const mentionCandidates = ref<{ id: string; name: string }[]>([])
 
 let accountId = ''
+let allWorkers: { id: string; name: string }[] = []
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let channel: ReturnType<typeof supabase.channel> | null = null
+
+// 入力末尾の「@検索語」を検出して候補を絞る（単純なchat実装の一般的な方式・カーソル位置は見ない）
+function onDraftInput() {
+  const m = draft.value.match(/@([^\s@]*)$/)
+  if (!m) { mentionCandidates.value = []; return }
+  const q = m[1].toLowerCase()
+  mentionCandidates.value = allWorkers.filter(w => w.name.toLowerCase().includes(q)).slice(0, 8)
+}
+function pickMention(w: { id: string; name: string }) {
+  draft.value = draft.value.replace(/@([^\s@]*)$/, `@${w.name} `)
+  mentionedIds.value.add(w.id)
+  mentionCandidates.value = []
+}
 
 function fmtTime(iso: string): string {
   const d = new Date(iso)
@@ -122,21 +141,33 @@ async function send() {
     attachment = await uploadAttachment(pendingFile.value)
     if (!attachment) { sending.value = false; alert('ファイルの送信に失敗しました'); return }
   }
-  const { error } = await supabase.from('site_chat_messages').insert({
+  const mentionIds = Array.from(mentionedIds.value)
+  const { data: inserted, error } = await supabase.from('site_chat_messages').insert({
     account_id: accountId, site_id: props.siteId,
     sender_worker_id: null, sender_is_admin: true,
     sender_name: currentWorkerName.value || currentUser.value?.email || '管理者',
     body,
     attachment_url: attachment?.url ?? null, attachment_name: attachment?.name ?? null, attachment_kind: attachment?.kind ?? null,
-  })
+    mentioned_worker_ids: mentionIds,
+  }).select('id').maybeSingle()
+  if (!error && inserted?.id && mentionIds.length) {
+    const { error: mentionError } = await supabase.from('site_chat_mentions').insert(
+      mentionIds.map(workerId => ({ account_id: accountId, worker_id: workerId, message_id: inserted.id, site_id: props.siteId })),
+    )
+    // メッセージ本体は既に送信済み(取り消さない)。通知だけ失敗した場合は本人に知らせる
+    // （気づけないまま「メンションしたのに届いていない」不整合を防ぐ）。
+    if (mentionError) { console.error('[site-chat] mention insert failed', mentionError); alert('メッセージは送信されましたが、メンション通知の送信に失敗しました') }
+  }
   sending.value = false
-  if (!error) { draft.value = ''; pendingFile.value = null; await loadMessages() }
+  if (!error) { draft.value = ''; pendingFile.value = null; mentionedIds.value = new Set(); mentionCandidates.value = []; await loadMessages() }
 }
 
 onMounted(async () => {
   loading.value = true
   accountId = (await getAccountId()) ?? ''
   if (accountId) {
+    const { data: workersData } = await supabase.from('workers').select('id, name').eq('account_id', accountId).eq('active', true).order('name')
+    allWorkers = (workersData ?? []) as { id: string; name: string }[]
     await loadMessages()
     pollTimer = setInterval(loadMessages, 8000)
     channel = supabase.channel(`site-chat-${props.siteId}`)
@@ -170,6 +201,9 @@ onUnmounted(() => {
 .msg-attach-btn:hover { background: #f0f0f0; }
 .pending-file { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #555; background: #f5f5f5; border-radius: 8px; padding: 6px 10px; margin-top: 8px; }
 .pending-file-clear { margin-left: auto; border: none; background: none; color: #888; cursor: pointer; display: flex; }
+.mention-list { list-style: none; margin: 6px 0 0; padding: 4px; border: 1px solid #eee; border-radius: 8px; background: #fff; max-height: 140px; overflow-y: auto; }
+.mention-item { padding: 6px 10px; font-size: 13px; border-radius: 6px; cursor: pointer; }
+.mention-item:hover { background: #f0f0f0; }
 .msg-attachment-img { max-width: 100%; max-height: 220px; border-radius: 8px; display: block; margin-bottom: 4px; }
 .msg-attachment-file { display: flex; align-items: center; gap: 4px; color: #1a56c4; text-decoration: none; font-size: 13px; margin-bottom: 4px; }
 </style>

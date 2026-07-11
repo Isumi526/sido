@@ -59,3 +59,31 @@ test('チャットにファイル(PDF)を添付して送信すると、edge(site
   await expect(attLink).toBeVisible({ timeout: 15000 })
   await expect(attLink).toHaveAttribute('href', /^https?:\/\//)
 })
+
+test('@入力で作業員候補が出て選択でき、送信するとメンション通知(site_chat_mentions)が作られる', async ({ page }) => {
+  const accountId = await getAccountId()
+  const mentionTargetName = `E2E管理メンション対象_${TS}`
+  const target = (await restSrv('workers', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
+    account_id: accountId, name: mentionTargetName, role: 'site', active: true,
+  }) }))[0]
+  try {
+    await page.goto(`/sites/${siteAId}`, { waitUntil: 'networkidle' })
+    await page.locator('.tab', { hasText: 'チャット' }).click()
+
+    await page.locator('[data-testid="chat-input"]').pressSequentially(`@${mentionTargetName.slice(0, 8)}`)
+    const item = page.locator('[data-testid="mention-item"]', { hasText: mentionTargetName })
+    await expect(item).toBeVisible({ timeout: 10000 })
+    await item.click()
+    await expect(page.locator('[data-testid="chat-input"]')).toHaveValue(new RegExp(`@${mentionTargetName}`))
+
+    await page.locator('[data-testid="chat-send"]').click()
+    await expect(page.locator('.msg-body', { hasText: `@${mentionTargetName}` })).toBeVisible({ timeout: 10000 })
+
+    const mentions = await restSrv(`site_chat_mentions?worker_id=eq.${target.id}&select=id,read_at`)
+    expect(mentions.length).toBeGreaterThan(0)
+    expect(mentions[0].read_at).toBeNull()
+  } finally {
+    await restSrv(`site_chat_mentions?worker_id=eq.${target.id}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`workers?id=eq.${target.id}`, { method: 'DELETE' }).catch(() => {})
+  }
+})
