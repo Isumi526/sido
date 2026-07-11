@@ -77,6 +77,7 @@
               @click="onCellTap(date, w.id)"
             >
               <div class="cell-inner">
+                <span v-if="isBirthday(date, w.id)" class="birthday-badge material-symbols-rounded" :title="`${w.name}${$t('calendar.birthdayOf')}`">cake</span>
                 <div
                   v-for="s in cellSchedules(date, w.id)"
                   :key="s.id"
@@ -429,7 +430,7 @@ import { useSchedules, type Schedule, type ScheduleForm } from '~/composables/us
 import { findSimilarSiteNames } from '~/utils/siteSimilarity'
 import {
   shiftMonth, genMonthDates, isWeekend, weekdayIndex, dateCellClass, fmtDateTime,
-  cellSchedules as coreCellSchedules, chipStyle as coreChipStyle, buildScheduleDiff,
+  cellSchedules as coreCellSchedules, chipStyle as coreChipStyle, buildScheduleDiff, birthdayDatesByWorker,
 } from '~/composables/schedule-core.gen'
 
 const { t } = useI18n()
@@ -565,7 +566,7 @@ const PIN_KEY  = 'calendar_pinned_workers'
 const GROUP_KEY = `calendar_group_filter_${config.public.accountSlug}`
 
 // ──────────────────── 状態 ────────────────────
-const workers     = ref<{ id: string; name: string }[]>([])
+const workers     = ref<{ id: string; name: string; birth_date: string | null }[]>([])
 
 // グループ絞り込み（自分が参加するグループのメンバー列だけ表示）
 const groupsApi = useScheduleGroups()
@@ -805,6 +806,11 @@ function goToday() {
 function cellSchedules(date: string, workerId: string): Schedule[] {
   return coreCellSchedules(schedules.schedules.value, date, workerId, showDeleted.value, true)
 }
+// 誕生日バッジ（DB保存なしの表示専用・要件化回答A「予定管理カレンダーに誕生日を自動表示」）
+const birthdayByDate = computed(() => birthdayDatesByWorker(workers.value, calendarDates.value))
+function isBirthday(date: string, workerId: string): boolean {
+  return !!birthdayByDate.value[date]?.includes(workerId)
+}
 
 // ──────────────────── 個人カレンダー（週間／月間・共有グリッドと別タブ） ────────────────────
 // 既存の共有ビュー用データ(schedules.schedules)をそのまま流用し、自分の予定だけに絞る
@@ -1018,7 +1024,7 @@ async function loadWorkers() {
   if (!accId) return
   const { data } = await supabase
     .from('workers')
-    .select('id, name')
+    .select('id, name, birth_date')
     .eq('account_id', accId)
     .eq('active', true)
     .order('name')
@@ -1362,11 +1368,13 @@ thead th.sticky-col { z-index: 11; }
   min-height: 72px;
 }
 .cell-inner {
+  position: relative;
   display: flex; flex-direction: column;
   padding: 2px 3px;
   min-height: 72px;
 }
 .sched-cell.my-col-cell { background: rgba(6, 199, 85, .03); }
+.birthday-badge { position: absolute; top: 1px; right: 2px; font-size: 13px; color: #f59e0b; pointer-events: none; }
 
 /* スケジュールチップ */
 .sched-chip {
