@@ -21,11 +21,17 @@ export default defineNuxtConfig({
         { 'http-equiv': 'Cache-Control', content: 'no-cache, no-store, must-revalidate' },
         { 'http-equiv': 'Pragma', content: 'no-cache' },
         { 'http-equiv': 'Expires', content: '0' },
+        // ホーム画面追加時のアイコン/名称をGENLINKS固定にする（未設定だとaccount名の頭文字が使われてしまうため）
+        { name: 'apple-mobile-web-app-title', content: 'GENLINKS' },
+        { name: 'apple-mobile-web-app-capable', content: 'yes' },
       ],
       link: [
         { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
         { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap' },
         { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block' },
+        { rel: 'manifest', href: '/manifest.json' },
+        { rel: 'icon', href: '/favicon.ico' },
+        { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' },
       ],
     },
   },
