@@ -433,6 +433,8 @@ verify_jwt = false
 verify_jwt = false
 [functions.notify-overtime-decision]
 verify_jwt = false
+[functions.liff-process-summary]
+verify_jwt = false
 [functions.estimate-price-ocr]
 verify_jwt = false
 [functions.process-excel-import]

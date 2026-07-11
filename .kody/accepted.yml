@@ -218,3 +218,7 @@ entries:
     target: overtime-approvals.vue
     reason: "notify-overtime-decision呼び出しをfire-and-forget(.catch(console.error)のみ)にした指摘。承認/却下という主操作(overtime_requests.update)は既に成功しUIにも反映済みで、後続のメール通知は付随的な副作用。失敗してもDBの承認結果自体は正しく確定しており、admin側でリトライ操作をブロックする必要はない(sendResend自体もRESEND_API_KEY未設定時は200 skippedを返すbest-effort設計)。同一の fire-and-forget + console.error パターンは notify-edit-grant の既存呼び出し元(reports.vue:358, report-edit-approvals.vue:128)でも使われている確立済みの慣習で、この1箇所だけ挙動を変えると却って一貫性を欠く。恒久対策(通知失敗の可視化/リトライ)が要るなら送信系呼び出し全体を横断で見直す別スコープ。"
     ticket: "39a0ff81c56b81998304c049947ad243"
+  - rule: anon-access-token
+    target: liff-process-summary
+    reason: "liff-process-summary(2026-07-11・会社予定ページ新設)への指摘＝『account_idはアクセストークンではなくテナント識別子のため、知っていれば誰でも閲覧できる』。指摘自体は正確だが、account_idはこのアプリの他の大部分の anon露出テーブル(sites/schedules/workers等・accepted.yml内 rls-multitenant baseline群)と全く同じ既存の信頼モデルであり、LIFF側もそもそも accounts テーブルをanonキーで直接読んでaccount_idを解決している(useAccount().getAccountId())＝account_id自体はこのアプリの設計上secretとして扱われていない。本関数が新設したのは『その既存の信頼モデルの範囲内で、process_tasks(元は authenticated限定RLS)から金額/顧客名/担当者名などの機微情報を一切含まない最小投影(現場名・工程名・期間のみ)だけを追加露出する』ことであり、露出面としては既存ベースラインより狭い(他表は行全体をanon selectできるが、本関数は4フィールドの読み取り専用サマリのみ)。恒久対策(署名付きトークン/JWT必須化)は匿名LIFF全体の認証再設計が必要なため別スコープ(親エピック「本番DBのRLS有効化」)。"
+    ticket: "3980ff81c56b80b4a3f9cb0a4b308a96"
