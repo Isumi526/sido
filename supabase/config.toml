@@ -433,6 +433,10 @@ verify_jwt = false
 verify_jwt = false
 [functions.estimate-price-ocr]
 verify_jwt = false
+[functions.process-excel-import]
+verify_jwt = false
+[functions.test-process-excel-import]
+verify_jwt = false
 [functions.send-estimate]
 verify_jwt = true
 [functions.test-send-estimate]
