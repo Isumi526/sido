@@ -222,3 +222,19 @@ entries:
     target: liff-process-summary
     reason: "liff-process-summary(2026-07-11・会社予定ページ新設)への指摘＝『account_idはアクセストークンではなくテナント識別子のため、知っていれば誰でも閲覧できる』。指摘自体は正確だが、account_idはこのアプリの他の大部分の anon露出テーブル(sites/schedules/workers等・accepted.yml内 rls-multitenant baseline群)と全く同じ既存の信頼モデルであり、LIFF側もそもそも accounts テーブルをanonキーで直接読んでaccount_idを解決している(useAccount().getAccountId())＝account_id自体はこのアプリの設計上secretとして扱われていない。本関数が新設したのは『その既存の信頼モデルの範囲内で、process_tasks(元は authenticated限定RLS)から金額/顧客名/担当者名などの機微情報を一切含まない最小投影(現場名・工程名・期間のみ)だけを追加露出する』ことであり、露出面としては既存ベースラインより狭い(他表は行全体をanon selectできるが、本関数は4フィールドの読み取り専用サマリのみ)。恒久対策(署名付きトークン/JWT必須化)は匿名LIFF全体の認証再設計が必要なため別スコープ(親エピック「本番DBのRLS有効化」)。"
     ticket: "3980ff81c56b80b4a3f9cb0a4b308a96"
+  - rule: rls-multitenant
+    target: site_chat_messages
+    reason: "現場ごとのチャット機能(2026-07-11・①MVP)。LIFF(anon)が現場に紐づく作業員として送受信するため、既存のLIFF露出マスタ群(overtime_requests/report_edit_grants等)と同じ anon運用(RLS無効・account_id+site_idで論理分離)。チャット本文はメッセージのやり取り自体が目的でありdaily_reports等の他anon表と同水準の機微度。本番RLS化は親エピック「本番DBのRLS有効化」で一括。"
+    ticket: "3980ff81c56b8057a369e89a2d048c2d"
+  - rule: anon-access-token
+    target: site_chat_messages
+    reason: "上記チャットテーブルの anon select/insert/update。LIFF(公開anonキー)が現場チャットの送受信を行うため。他のLIFF露出表(overtime_requests/report_edit_grants等)と同じ pre-RLS ベースライン＝親エピックで一括RLS化。"
+    ticket: "3980ff81c56b8057a369e89a2d048c2d"
+  - rule: idempotency
+    target: site-chat
+    reason: "チャット送信(LIFF site-chat/[id].vue・admin SiteChatPanel.vue)にべき等ガード(一意リクエストID等)が無い指摘。UI側はsendingフラグで連打を防止済み。Supabase-jsクライアントはPOST/insertを自動リトライしない設計のため、ネットワーク再送による二重投稿の実際の発生率は低い(通信断なら単に送信失敗としてユーザーに見え、ユーザーが再送を判断する＝チャットの性質上、明らかな二重投稿は目視で気付ける)。一意制約による恒久対策は将来の要望(既読/削除機能等)と合わせて検討する。"
+    ticket: "3980ff81c56b8057a369e89a2d048c2d"
+  - rule: idempotency
+    target: SiteChatPanel.vue
+    reason: "上記と同一指摘のadmin側(SiteChatPanel.vue)。理由は同じ([[site-chat]]エントリ参照): sendingフラグで連打防止済み・Supabase-jsは自動リトライしない・チャットの性質上二重投稿は目視で気付ける。"
+    ticket: "3980ff81c56b8057a369e89a2d048c2d"

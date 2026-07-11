@@ -9,6 +9,10 @@
       <template v-else>
         <h1 class="ttl">{{ site.name }}<span v-if="!site.active" class="badge-off">{{ $t('sitesView.inactive') }}</span></h1>
 
+        <NuxtLink :to="`/site-chat/${site.id}`" class="chat-link" data-testid="site-chat-link">
+          <span class="material-symbols-rounded">chat</span>{{ $t('siteChat.title') }}
+        </NuxtLink>
+
         <dl class="fields">
           <template v-if="site.location"><dt>{{ $t('sitesView.location') }}</dt><dd>{{ site.location }}</dd></template>
           <template v-if="site.construction_type"><dt>{{ $t('sitesView.type') }}</dt><dd>{{ site.construction_type }}</dd></template>
@@ -92,6 +96,8 @@ onMounted(load)
 .back-link { display: inline-block; color: #1a56c4; text-decoration: none; font-size: 14px; font-weight: 700; margin-bottom: 12px; }
 .ttl { font-size: 18px; font-weight: 800; margin: 4px 0 16px; }
 .badge-off { font-size: 10px; font-weight: 700; color: #888; background: #eee; border-radius: 4px; padding: 1px 6px; margin-left: 6px; }
+.chat-link { display: inline-flex; align-items: center; gap: 4px; color: #06A050; text-decoration: none; font-size: 13px; font-weight: 700; margin-bottom: 12px; }
+.chat-link .material-symbols-rounded { font-size: 18px; }
 .state { color: #888; text-align: center; padding: 32px; }
 .fields { display: grid; grid-template-columns: 88px 1fr; gap: 6px 12px; margin: 0; }
 .fields dt { font-size: 12px; font-weight: 700; color: #888; }
