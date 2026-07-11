@@ -46,7 +46,10 @@
       <div class="menu-section">{{ t('nav.secPlan') }}</div>
       <div class="menu-grid">
         <NuxtLink v-for="item in navBySection.plan" :key="item.path" class="menu-card" :to="item.path">
-          <span class="material-symbols-rounded menu-icon" :style="{ color: navIconColor(item.path) }">{{ item.icon }}</span>
+          <span class="menu-icon-wrap">
+            <span class="material-symbols-rounded menu-icon" :style="{ color: navIconColor(item.path) }">{{ item.icon }}</span>
+            <span v-if="item.path === '/calendar' && unreadScheduleCount > 0" class="menu-card-badge" data-testid="home-schedule-badge">{{ unreadScheduleCount }}</span>
+          </span>
           <span class="menu-label">{{ item.label }}</span>
         </NuxtLink>
       </div>
@@ -207,6 +210,9 @@ onMounted(async () => {
   await refreshUnsubmittedCount()
 })
 
+// 予定管理ナビの未読バッジ（#予定通知バッジ・2026-07-11）
+onMounted(() => { refreshScheduleNotifBadge() })
+
 async function refreshUnsubmittedCount() {
   // 代理モード時: proxy targetのuser_idを取得（なければ作成）
   let targetUserId: string | null = null
@@ -346,9 +352,16 @@ async function refreshUnsubmittedCount() {
   transition: background .15s;
 }
 .menu-card:active { background: #f5f5f5; }
+.menu-icon-wrap { position: relative; display: inline-flex; }
 .menu-icon {
   font-size: 32px;
   font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 32;
+}
+.menu-card-badge {
+  position: absolute; top: -4px; right: -8px;
+  background: #ef4444; color: #fff; font-size: 10px; font-weight: 700;
+  min-width: 16px; height: 16px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center; padding: 0 4px;
 }
 .menu-label { font-size: 12px; font-weight: 600; color: #333; text-align: center; }
 .proxy-btn { background: #fff3f3; border: none; cursor: pointer; }
