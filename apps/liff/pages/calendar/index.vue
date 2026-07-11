@@ -108,23 +108,50 @@
         <button type="button" class="today-btn" @click="personalGoToday">{{ $t('calendar.today') }}</button>
       </div>
 
-      <!-- 週間（画面幅に応じて可変日数） -->
-      <div v-if="personalViewMode === 'week'" class="personal-week" :style="{ gridTemplateColumns: `repeat(${personalWeekDates.length}, 1fr)` }">
-        <div v-for="date in personalWeekDates" :key="date" class="personal-day-col" :class="dateCellClass(date, todayStr)">
-          <div class="personal-day-head">{{ formatDateLabel(date) }}</div>
-          <div class="personal-day-body">
+      <!-- 週間（画面幅に応じて可変日数・時間軸メモリ表示で予定を開始時刻の位置に配置） -->
+      <div v-if="personalViewMode === 'week'" class="personal-week">
+        <div class="personal-week-head" :style="{ gridTemplateColumns: `56px repeat(${personalWeekDates.length}, 1fr)` }">
+          <div class="week-head-corner"></div>
+          <div v-for="date in personalWeekDates" :key="date" class="personal-day-head" :class="dateCellClass(date, todayStr)">
+            <span>{{ formatDateLabel(date) }}</span>
+            <button type="button" class="cell-add-btn week-head-add-btn" @click="personalAddSchedule(date)">＋</button>
+          </div>
+        </div>
+
+        <!-- 終日・時刻未設定の予定 -->
+        <div v-if="personalWeekDates.some(d => personalCellSchedules(d).some(s => !s.start_time))" class="personal-week-allday" :style="{ gridTemplateColumns: `56px repeat(${personalWeekDates.length}, 1fr)` }">
+          <div class="week-head-corner"></div>
+          <div v-for="date in personalWeekDates" :key="date" class="week-allday-col">
             <div
-              v-for="s in personalCellSchedules(date)"
+              v-for="s in personalCellSchedules(date).filter(x => !x.start_time)"
               :key="s.id"
-              class="sched-chip personal-chip"
+              class="sched-chip personal-chip-sm"
               :class="{ 'night-shift': s.is_night_shift, 'deleted-chip': !!s.deleted_at }"
               :style="chipStyle(s)"
               @click="openDetail(s)"
-            >
-              <span class="chip-title">{{ s.title }}</span>
-              <span v-if="s.start_time" class="chip-time">{{ s.start_time.slice(0, 5) }}</span>
+            >{{ s.title }}</div>
+          </div>
+        </div>
+
+        <div ref="weekTimelineScrollRef" class="personal-week-scroll">
+          <div class="personal-week-timeline" :style="{ gridTemplateColumns: `56px repeat(${personalWeekDates.length}, 1fr)`, height: WEEK_HOUR_HEIGHT * 24 + 'px' }">
+            <div class="week-hour-axis">
+              <div v-for="h in 24" :key="h" class="week-hour-label" :style="{ top: (h - 1) * WEEK_HOUR_HEIGHT + 'px' }">{{ h - 1 }}:00</div>
             </div>
-            <button type="button" class="cell-add-btn personal-add-btn" @click="personalAddSchedule(date)">＋</button>
+            <div v-for="date in personalWeekDates" :key="date" class="week-day-timeline" :class="dateCellClass(date, todayStr)">
+              <div v-for="h in 24" :key="h" class="week-hour-line" :style="{ top: (h - 1) * WEEK_HOUR_HEIGHT + 'px' }"></div>
+              <div
+                v-for="s in personalCellSchedules(date).filter(x => x.start_time)"
+                :key="s.id"
+                class="sched-chip week-timed-chip"
+                :class="{ 'night-shift': s.is_night_shift, 'deleted-chip': !!s.deleted_at }"
+                :style="[chipStyle(s), timedChipStyle(s)]"
+                @click="openDetail(s)"
+              >
+                <span class="chip-title">{{ s.title }}</span>
+                <span class="chip-time">{{ s.start_time?.slice(0, 5) }}{{ s.end_time ? '–' + s.end_time.slice(0, 5) : '' }}</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -761,6 +788,34 @@ function personalAddSchedule(date: string) {
   onCellTap(date, effectiveWorkerId.value)
 }
 
+// ── 週間ビュー：時間軸メモリ表示（#週間時間軸） ──
+const WEEK_HOUR_HEIGHT = 48   // 1時間あたりの高さ(px)
+const weekTimelineScrollRef = ref<HTMLElement | null>(null)
+const WEEK_DEFAULT_SCROLL_HOUR = 6   // 初期表示は朝6時付近から見せる（深夜0時始まりだと使いにくいため）
+
+function timeToMinutes(t: string): number {
+  const [h, m] = t.split(':').map(Number)
+  return (h || 0) * 60 + (m || 0)
+}
+function timedChipStyle(s: Schedule): Record<string, string> {
+  const startMin = s.start_time ? timeToMinutes(s.start_time) : 0
+  let endMin = s.end_time ? timeToMinutes(s.end_time) : startMin + 60
+  if (endMin <= startMin) endMin = startMin + 30   // 日跨ぎ/不正値のフォールバック（最低30分ぶんは確保して潰れないように）
+  const top = (startMin / 60) * WEEK_HOUR_HEIGHT
+  const height = Math.max(18, ((endMin - startMin) / 60) * WEEK_HOUR_HEIGHT)
+  return { position: 'absolute', top: `${top}px`, height: `${height}px`, left: '2px', right: '2px' }
+}
+function scrollWeekTimelineToDefault() {
+  const el = weekTimelineScrollRef.value
+  if (el) el.scrollTop = WEEK_DEFAULT_SCROLL_HOUR * WEEK_HOUR_HEIGHT
+}
+watch(personalViewMode, async (mode) => {
+  if (mode === 'week') { await nextTick(); scrollWeekTimelineToDefault() }
+})
+watch(activeTab, async (tab) => {
+  if (tab === 'personal' && personalViewMode.value === 'week') { await nextTick(); scrollWeekTimelineToDefault() }
+})
+
 // 画面幅に応じた同時表示日数（3〜7日）。リサイズにも追従。
 const personalDayCount = ref(4)
 function updatePersonalDayCount() {
@@ -771,6 +826,7 @@ function updatePersonalDayCount() {
 onMounted(() => {
   updatePersonalDayCount()
   window.addEventListener('resize', updatePersonalDayCount)
+  nextTick(() => scrollWeekTimelineToDefault())
 })
 onUnmounted(() => window.removeEventListener('resize', updatePersonalDayCount))
 
@@ -1151,18 +1207,45 @@ onMounted(async () => {
 .personal-view-toggle .cal-tab { flex: 0 0 auto; border-radius: 8px; padding: 6px 14px; }
 .personal-view-toggle .today-btn { margin-left: auto; }
 
-.personal-week { display: grid; gap: 1px; background: #E0E0E0; flex: 1; min-height: 0; }
-.personal-day-col { background: #fff; display: flex; flex-direction: column; min-width: 0; }
-.personal-day-head { font-size: 11px; font-weight: 700; color: #666; text-align: center; padding: 6px 2px; border-bottom: 1px solid #f0f0f0; }
-.personal-day-col.date-sunday .personal-day-head { color: #ef4444; }
-.personal-day-col.date-saturday .personal-day-head { color: #3b82f6; }
-.personal-day-col.date-today .personal-day-head { background: #ecfdf5; }
-.personal-day-body { flex: 1; padding: 4px; display: flex; flex-direction: column; gap: 4px; min-height: 120px; }
+.personal-week { display: flex; flex-direction: column; flex: 1; min-height: 0; background: #fff; }
 .personal-chip { font-size: 11px; padding: 4px 6px; border-radius: 4px; }
-.personal-add-btn {
-  margin-top: auto; background: none; border: 1px dashed #ccc; border-radius: 6px;
-  color: #aaa; font-size: 14px; padding: 4px; cursor: pointer;
+
+/* 週ヘッダー（日付＋追加ボタン） */
+.personal-week-head { display: grid; gap: 1px; background: #E0E0E0; border-bottom: 1px solid #E0E0E0; }
+.week-head-corner { background: #fff; }
+.personal-day-head {
+  background: #fff; display: flex; align-items: center; justify-content: space-between; gap: 4px;
+  font-size: 11px; font-weight: 700; color: #666; padding: 6px 6px 6px 8px; min-width: 0;
 }
+.personal-day-head span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.personal-day-head.date-sunday { color: #ef4444; }
+.personal-day-head.date-saturday { color: #3b82f6; }
+.personal-day-head.date-today { background: #ecfdf5; }
+.week-head-add-btn {
+  flex-shrink: 0; background: none; border: 1px dashed #ccc; border-radius: 6px;
+  color: #aaa; font-size: 12px; padding: 2px 6px; cursor: pointer; line-height: 1.4;
+}
+
+/* 終日・時刻未設定の予定 */
+.personal-week-allday { display: grid; gap: 1px; background: #E0E0E0; border-bottom: 1px solid #E0E0E0; }
+.week-allday-col { background: #fbfbfb; padding: 2px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+/* 時間軸タイムライン */
+.personal-week-scroll { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.personal-week-timeline { display: grid; position: relative; }
+.week-hour-axis { position: relative; border-right: 1px solid #E0E0E0; }
+.week-hour-label { position: absolute; right: 4px; transform: translateY(-50%); font-size: 10px; color: #999; }
+.week-day-timeline { position: relative; border-left: 1px solid #f0f0f0; min-width: 0; }
+.week-day-timeline.date-sunday { background: #fff8f8; }
+.week-day-timeline.date-saturday { background: #f8fafd; }
+.week-day-timeline.date-today { background: #ecfdf5; }
+.week-hour-line { position: absolute; left: 0; right: 0; border-top: 1px solid #f0f0f0; }
+.week-timed-chip {
+  font-size: 10px; padding: 2px 4px; border-radius: 4px; overflow: hidden; cursor: pointer;
+  display: flex; flex-direction: column; line-height: 1.3; box-sizing: border-box;
+}
+.week-timed-chip .chip-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.week-timed-chip .chip-time { font-size: 9px; opacity: .85; }
 
 .personal-month-scroll { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .personal-month-block { margin-bottom: 14px; }
