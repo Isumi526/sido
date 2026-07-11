@@ -431,6 +431,8 @@ verify_jwt = false
 verify_jwt = false
 [functions.notify-edit-grant]
 verify_jwt = false
+[functions.notify-overtime-decision]
+verify_jwt = false
 [functions.estimate-price-ocr]
 verify_jwt = false
 [functions.process-excel-import]
