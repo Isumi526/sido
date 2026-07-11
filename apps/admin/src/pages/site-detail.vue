@@ -343,6 +343,7 @@ async function load() {
   const since = new Date(); since.setDate(since.getDate() - 180)
   const { data: reps } = await supabase.from('daily_reports')
     .select('date, sites').eq('account_id', accountId).gte('date', since.toISOString().split('T')[0]).order('date', { ascending: false })
+    .limit(30000) // 180日×全作業員で上限(既定1000)超による現場別件数/直近日報日の集計漏れ防止（reports.vue等の1ヶ月5000の6倍相当）
   const rows: { date: string; workers: string }[] = []
   let count = 0, lastDate = ''
   for (const r of (reps ?? []) as any[]) {

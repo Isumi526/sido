@@ -374,6 +374,7 @@ async function load() {
   const sinceStr = since.toISOString().split('T')[0]
   const { data: reps } = await supabase.from('daily_reports')
     .select('date, sites').eq('account_id', accountId).gte('date', sinceStr)
+    .limit(15000) // 90日×全作業員で上限(既定1000)超による現場別集計漏れ防止（reports.vue等の1ヶ月5000の3倍相当）
   const stats: Record<string, { count: number; lastDate: string }> = {}
   for (const r of (reps ?? []) as any[]) {
     for (const st of (r.sites ?? [])) {

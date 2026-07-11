@@ -307,6 +307,28 @@ function suggestedGrant(w: WorkerStat): number {
   return suggestedGrantDays(w.hire_date, w.employment_type, w.weekly_scheduled_days)
 }
 
+// PostgRESTは既定でmax_rows(既定1000)を超えると黙って切り詰める。
+// 有給消化履歴は日付範囲で絞れない（account全期間が対象）ため、上限に達すると
+// FIFO残日数計算が一部消化を見落として過大表示になる（2026-07-11・データ取得上限超過の横断調査で発覚）。
+// .range()でページングして全件取得する。
+async function fetchAllPaidLeaveReports(accountId: string): Promise<{ user_id: string; date: string; note: string | null }[]> {
+  const PAGE = 1000
+  const all: { user_id: string; date: string; note: string | null }[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from('daily_reports')
+      .select('user_id, date, note')
+      .eq('account_id', accountId)
+      .eq('leave_type', 'paid_leave')
+      .order('date', { ascending: false })
+      .range(from, from + PAGE - 1)
+    if (error) throw error
+    all.push(...((data ?? []) as any[]))
+    if (!data || data.length < PAGE) break
+  }
+  return all
+}
+
 // ── 型定義 ────────────────────────────────────────────────────
 type WorkerStat = {
   id: string
@@ -429,11 +451,11 @@ async function load() {
   loading.value = true
   const accountId = await getAccountId()
 
-  const [{ data: workersData }, { data: grantsData }, { data: usersData }, { data: leaveData }] = await Promise.all([
+  const [{ data: workersData }, { data: grantsData }, { data: usersData }, leaveData] = await Promise.all([
     supabase.from('workers').select('id, name, active, hire_date, employment_type, weekly_scheduled_days, initial_used_leave_days, excluded_grant_dates').eq('account_id', accountId).order('name'),
     supabase.from('paid_leave_grants').select('id, worker_id, granted_at, expires_at, days, note').eq('account_id', accountId),
     supabase.from('users').select('id, worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
-    supabase.from('daily_reports').select('user_id, date, note').eq('account_id', accountId).eq('leave_type', 'paid_leave').order('date', { ascending: false }),
+    fetchAllPaidLeaveReports(accountId),
   ])
 
   const userToWorker: Record<string, string> = {}

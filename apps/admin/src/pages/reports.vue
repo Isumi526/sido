@@ -559,6 +559,7 @@ async function load() {
       .gte('checked_at', loUtc)
       .lte('checked_at', hiUtc)
       .order('checked_at', { ascending: true })
+      .limit(5000) // 1ヶ月×全作業員(出退勤で1日2件以上)で上限(既定1000)超による欠落防止（daily_reportsクエリと同じ余裕）
     for (const log of (logs ?? []) as any[]) {
       const siteName = log.sites?.name
       if (!siteName) continue
