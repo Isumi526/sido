@@ -210,3 +210,7 @@ entries:
     target: notify-overtime
     reason: "notify-overtime EFはLIFF(anon・LINE作業員はJWTを持たない)が残業申請insert直後に叩く設計のため元々verify_jwt=false・JWT無しで呼び出し可能(ハードニング2026-07-03のコメントに明記済みの既知トレードオフ)。今回(2026-07-11)は宛先解決の別バグ(存在しないusers.emailカラム参照で常にno-op)を直しただけで、この anon-access 自体は変更していない。悪用面: 本文/宛先ともクライアント入力を信頼せずDB(overtime_requests/sites.responsible_worker_id)から導出＝内容偽装不可。呼び出しには実在するpendingな残業申請の worker_id(UUID・推測困難)+date一致が必須＝公開情報から特定不可。15分以内の直近申請のみ・notified_atで送信後は冪等（連打で複数通は送れない）。悪用できても『既存の正規申請の通知を少し早める』程度に限定され、任意テナントへの迷惑メール送信や内容改ざんはできない。恒久対策(JWT必須化)は匿名LIFF申請フロー自体の認証再設計が必要なため別スコープ。"
     ticket: "39a0ff81c56b81b6a350d5326fe56685"
+  - rule: anon-access-token
+    target: notify-edit-grant
+    reason: "notify-edit-grant(2026-07-11・日報画面リンク追加)に対するanon-access指摘＝誤検知。指摘は『/report?edit=YYYY-MM-DDのリンクに推測困難なトークンが無く、URLを知れば誰でもアクセスできる』というものだが、リンク先のapps/liff/pages/report.vueはURLの日付パラメータだけでは特定の日報レコードを一切参照しない設計を確認済み：全データ取得はcurrentUser(認証済みLIFFセッション)のworker_idから解決し、?editはその『自分の』日報の中でどの日付を開くかを選ぶだけ(apps/liff/pages/report.vue:1284 editDate → currentUser.value.worker_id起点のfetch)。未ログイン状態でリンクを開けば通常のLIFF/email認証フローに入るだけで、他人の日報が見える経路は存在しない。ゆえに『日付を知れば他人の日報が見える』という指摘の前提が成立しない。トークン化は不要な複雑化。"
+    ticket: "39a0ff81c56b818995f4cb165ace5bad"
