@@ -37,9 +37,9 @@ test.describe('予定管理 個人カレンダー', () => {
     // 週間ビューに反映
     await expect(page.locator('.personal-chip', { hasText: TITLE })).toBeVisible({ timeout: 10000 })
 
-    // 月間ビューに切替えても同じ予定が見える
+    // 月間ビューに切替えても同じ予定が見える（無限スクロール化で複数月ブロックが並ぶため.personal-month-scrollで検証）
     await page.locator('.personal-view-toggle .cal-tab', { hasText: '月間' }).click()
-    await expect(page.locator('.personal-month-grid')).toBeVisible()
+    await expect(page.locator('.personal-month-scroll')).toBeVisible()
     await expect(page.locator('.personal-chip-sm', { hasText: TITLE })).toBeVisible({ timeout: 10000 })
 
     const rows = await rest(`schedules?title=eq.${encodeURIComponent(TITLE)}&select=worker_id`)
