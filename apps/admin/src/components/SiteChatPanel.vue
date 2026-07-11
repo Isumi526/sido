@@ -2,6 +2,16 @@
   <div class="chat-panel">
     <div v-if="loading" class="muted">読み込み中…</div>
     <template v-else>
+      <div class="invite-row">
+        <button type="button" class="btn-invite" :disabled="inviteBusy" data-testid="invite-create-btn" @click="createInvite">
+          <span class="material-symbols-rounded">link</span>
+          {{ inviteBusy ? '発行中…' : '招待リンクを発行' }}
+        </button>
+        <div v-if="inviteUrl" class="invite-url-box">
+          <input class="invite-url-input" :value="inviteUrl" readonly data-testid="invite-url" @click="($event.target as HTMLInputElement).select()" />
+          <button type="button" class="btn-ghost-sm" @click="copyInviteUrl">コピー</button>
+        </div>
+      </div>
       <div ref="listRef" class="msg-list">
         <p v-if="!messages.length" class="muted">まだメッセージはありません</p>
         <div v-for="m in messages" :key="m.id" class="msg-row" :class="{ mine: m.sender_is_admin }">
@@ -61,11 +71,26 @@ const listRef  = ref<HTMLElement | null>(null)
 const pendingFile = ref<File | null>(null)
 const mentionedIds = ref<Set<string>>(new Set())
 const mentionCandidates = ref<{ id: string; name: string }[]>([])
+const inviteBusy = ref(false)
+const inviteUrl  = ref('')
 
 let accountId = ''
 let allWorkers: { id: string; name: string }[] = []
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let channel: ReturnType<typeof supabase.channel> | null = null
+
+async function createInvite() {
+  inviteBusy.value = true
+  const { data, error } = await supabase.functions.invoke('site-chat-invite', {
+    body: { action: 'create', site_id: props.siteId },
+  })
+  inviteBusy.value = false
+  if (error || !data?.ok) { alert('招待リンクの発行に失敗しました'); return }
+  inviteUrl.value = data.url as string
+}
+async function copyInviteUrl() {
+  try { await navigator.clipboard.writeText(inviteUrl.value) } catch { /* クリップボード不可環境は選択コピーに任せる */ }
+}
 
 // 入力末尾の「@検索語」を検出して候補を絞る（単純なchat実装の一般的な方式・カーソル位置は見ない）
 function onDraftInput() {
@@ -184,6 +209,12 @@ onUnmounted(() => {
 
 <style scoped>
 .chat-panel { display: flex; flex-direction: column; height: 480px; }
+.invite-row { flex-shrink: 0; margin-bottom: 8px; }
+.btn-invite { display: inline-flex; align-items: center; gap: 4px; border: 1px solid #ddd; background: #fff; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 700; color: #333; cursor: pointer; }
+.btn-invite:disabled { opacity: .6; cursor: default; }
+.invite-url-box { display: flex; gap: 6px; margin-top: 6px; }
+.invite-url-input { flex: 1; border: 1px solid #ddd; border-radius: 6px; padding: 6px 10px; font-size: 12px; color: #555; background: #f8fafc; }
+.btn-ghost-sm { flex-shrink: 0; border: 1px solid #ddd; background: #fff; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
 .muted { color: #94a3b8; padding: 16px 0; }
 .msg-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 4px 0; }
 .msg-row { display: flex; }
