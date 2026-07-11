@@ -97,6 +97,7 @@ git push origin main --force
 | **PROD_BRANCH** | `main`／AUTO_MERGE_TARGET=`dev`／AUTO_TIER=`低`／MAX_WALL=`180` | |
 | **本番 Supabase ref** | `nrzzesbtvswoiouhldvi` | 誤接続ガード／`--prod-readonly` 監査用 |
 | **PROD_URL** | admin=`https://sido-admin-stism.vercel.app/` ／ liff=`https://sido-liff.vercel.app/` | ship 手順8スモークで使用 |
+| **REVIEW_LOGIN** | admin: ID=`e2e`（`ADMIN_LOGIN_ID`）／PASS=`e2e-pass-1234`（`ADMIN_LOGIN_PASS`）。自動ログインURL＝`{{DEV_URL}}/login?id=e2e&pass=e2e-pass-1234` | `/review` が admin のログイン必須画面をナビする時に使う（`apps/admin/src/pages/login.vue` の `?id=&pass=` クエリ自動ログイン対応）。liff は dev モードでLIFF認証スキップのため通常不要。 |
 
 ### APP_LAYOUT_NOTES（/review が参照）
 - 構成: `apps/admin`(管理画面・ブラウザ {{DEV_URL}}) ＋ `apps/liff`(Nuxt・LINEミニアプリ)。UI/ロジックは原則ブラウザ。**LINEアプリ内固有（友だち追加・トーク内 LIFF 起動・Flex体裁）は `⚠実機確認`**。
