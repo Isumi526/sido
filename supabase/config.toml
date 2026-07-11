@@ -439,6 +439,8 @@ verify_jwt = false
 verify_jwt = false
 [functions.site-chat-invite]
 verify_jwt = false
+[functions.drawing-material-extract]
+verify_jwt = false
 [functions.estimate-price-ocr]
 verify_jwt = false
 [functions.process-excel-import]

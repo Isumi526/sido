@@ -75,6 +75,7 @@ export const router = createRouter({
     { path: '/estimate-masters', component: EstimateMasters },
     { path: '/estimate-builder', component: EstimateBuilder },
     { path: '/purchase-orders',  component: PurchaseOrders },
+    { path: '/drawing-materials', component: () => import('../pages/drawing-materials.vue') },
   ],
 })
 
