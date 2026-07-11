@@ -11,6 +11,8 @@
 // ============================================================
 import { svcClient, sendResend, resolveCallerAccount, resolveWorkerNotifyEmail } from '../_shared/doc-mail.ts'
 
+const LIFF_URL = Deno.env.get('LIFF_URL') ?? ''
+
 function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',
@@ -56,10 +58,12 @@ Deno.serve(async (req) => {
 
   const dateLabel = fmtDate(grant.date as string)
   const subject = `【日報編集許可】${dateLabel}の日報を編集できるようになりました`
+  const reportLink = LIFF_URL ? `${LIFF_URL.replace(/\/+$/, '')}/report?edit=${grant.date}` : ''
   const html = `
     <p>${(worker.name as string) ?? ''} 様</p>
     <p>${dateLabel}の日報について、編集許可が発行されました。<br>
     アプリから該当日の日報を開き、編集・再提出してください。</p>
+    ${reportLink ? `<p><a href="${reportLink}" style="display:inline-block;padding:8px 16px;background:#06C755;color:#fff;text-decoration:none;border-radius:6px">該当日の日報を開く →</a></p>` : ''}
   `.trim()
 
   const result = await sendResend(svc, grant.account_id, notifyEmail, subject, html)
