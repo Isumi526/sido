@@ -38,13 +38,31 @@
           <button class="drawer-close" @click="open = false">✕</button>
         </div>
 
-        <!-- ナビゲーション（ホーム画面と共通定義＝useNavItems） -->
+        <!-- ナビゲーション（ホーム画面と共通定義＝useNavItems・セクション階層化はHOMEと同じ構成） -->
         <nav class="drawer-nav">
           <NuxtLink class="drawer-item" to="/" @click="open = false">
             <span class="drawer-item-icon material-symbols-rounded">home</span>
             <span>{{ $t('nav.home') }}</span>
           </NuxtLink>
-          <template v-for="item in [...bySection.daily, ...bySection.plan, ...bySection.info]" :key="item.path">
+
+          <div class="drawer-section">{{ $t('nav.secDaily') }}</div>
+          <template v-for="item in bySection.daily" :key="item.path">
+            <NuxtLink class="drawer-item" :to="item.path" :data-testid="item.testId" @click="open = false">
+              <span class="drawer-item-icon material-symbols-rounded">{{ item.icon }}</span>
+              <span>{{ item.label }}</span>
+            </NuxtLink>
+          </template>
+
+          <div class="drawer-section">{{ $t('nav.secPlan') }}</div>
+          <template v-for="item in bySection.plan" :key="item.path">
+            <NuxtLink class="drawer-item" :to="item.path" :data-testid="item.testId" @click="open = false">
+              <span class="drawer-item-icon material-symbols-rounded">{{ item.icon }}</span>
+              <span>{{ item.label }}</span>
+            </NuxtLink>
+          </template>
+
+          <div class="drawer-section">{{ $t('nav.secInfo') }}</div>
+          <template v-for="item in bySection.info" :key="item.path">
             <NuxtLink class="drawer-item" :to="item.path" :data-testid="item.testId" @click="open = false">
               <span class="drawer-item-icon material-symbols-rounded">{{ item.icon }}</span>
               <span>{{ item.label }}</span>
@@ -329,6 +347,14 @@ async function logout() {
   font-weight: 600;
   transition: background .15s;
 }
+.drawer-section {
+  font-size: 12px;
+  font-weight: 700;
+  color: #94a3b8;
+  margin: 14px 12px 4px;
+  letter-spacing: .04em;
+}
+.drawer-section:first-of-type { margin-top: 6px; }
 button.drawer-item {
   width: 100%;
   appearance: none;
