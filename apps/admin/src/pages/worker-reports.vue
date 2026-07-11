@@ -197,6 +197,7 @@
                 <th class="num">休残h</th>
                 <th class="num">休深h</th>
                 <th class="num">休深残h</th>
+                <th v-if="canViewHourlyWage && showLaborCost" class="num">人件費</th>
               </tr>
             </thead>
             <tbody>
@@ -206,7 +207,7 @@
                   <span v-if="row.isSunday" class="sun">日</span>
                 </td>
                 <template v-if="row.isOff">
-                  <td class="off-cell" colspan="9">休み</td>
+                  <td class="off-cell" :colspan="canViewHourlyWage && showLaborCost ? 10 : 9">休み</td>
                 </template>
                 <template v-else>
                   <td class="site-name">{{ row.siteName }}</td>
@@ -219,6 +220,7 @@
                   <td class="num">{{ fmtH(row.hoursSundayOT) || '—' }}</td>
                   <td class="num">{{ fmtH(row.hoursSundayNight) || '—' }}</td>
                   <td class="num">{{ fmtH(row.hoursSundayOTNight) || '—' }}</td>
+                  <td v-if="canViewHourlyWage && showLaborCost" class="num" data-testid="row-labor-cost">¥{{ rowLaborCost(row).toLocaleString() }}</td>
                 </template>
               </tr>
             </tbody>
@@ -610,6 +612,19 @@ const laborCostBreakdown = computed(() => {
 const totalLaborCost = computed(() =>
   laborCostBreakdown.value.reduce((s, l) => s + l.cost, 0)
 )
+
+// 日別詳細テーブルの「人件費」列用。laborCostBreakdownと同じ計算(割増率×発効日時給)をその日1行分だけに適用。
+function rowLaborCost(row: WorkerRow): number {
+  const name = displayWorker.value
+  if (!name || row.isOff) return 0
+  const hourly = hourlyForDate(name, row.date)
+  let cost = 0
+  for (const c of CATEGORIES) {
+    const h = (row[c.key] as number) || 0
+    if (h > 0) cost += h * c.rate * hourly
+  }
+  return Math.round(cost)
+}
 
 // ---------- ユーティリティ ----------
 function fmtH(v: number) {
