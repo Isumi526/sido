@@ -33,6 +33,13 @@ export const canViewWages = computed(() => isAdminAllowed.value)
 export const canViewHourlyWage = computed(() =>
   !currentRole.value || currentRole.value === 'admin' || currentRole.value === 'office')
 
+// 作業員マスタ編集の「詳細情報」モーダル(個人情報・会社・保険・資格・代理人)の閲覧可否: admin/office/純admin(role=null) のみ。
+//  site_manager は不可。canViewHourlyWage は詳細情報内の時給欄のみを個別ガードしていたが、
+//  家族構成/会社情報/保険/健康診断/代理人など未ガードの機微フィールドも site_manager に見えてしまっていたため、
+//  詳細情報トグル＋セクション全体を丸ごと非表示にする広いガードとして新設（2026-07-11・議事録起点の緊急対応）。
+export const canViewWorkerDetails = computed(() =>
+  !currentRole.value || currentRole.value === 'admin' || currentRole.value === 'office')
+
 // 作業員の permission_role（権限ロール）変更・ユーザー管理系の破壊的操作の可否: admin/office/純admin のみ。
 //  site_manager がisAdminAllowedを満たすだけで他作業員のロールをオーナーへ昇格できてしまう穴を塞ぐ（2026-07-09）。
 export const canManageUsers = computed(() =>
