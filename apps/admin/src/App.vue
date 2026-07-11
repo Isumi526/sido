@@ -40,6 +40,13 @@
           <span class="material-symbols-rounded">close</span>
         </button>
       </div>
+      <div class="sidebar-user" data-testid="sidebar-user">
+        <div class="sidebar-user-avatar">{{ (currentWorkerName || currentUser?.email || '?').charAt(0) }}</div>
+        <div class="sidebar-user-info">
+          <div class="sidebar-user-name">{{ currentWorkerName || currentUser?.email || '—' }}</div>
+          <div class="sidebar-user-role">{{ roleLabel(currentRole) }}</div>
+        </div>
+      </div>
       <ul class="nav-list">
         <li class="nav-section">日次</li>
         <li><RouterLink to="/" class="nav-link"><span class="material-symbols-rounded nav-icon">dashboard</span>ダッシュボード</RouterLink></li>
@@ -102,7 +109,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { currentUser, signOut, isAdminAllowed, roleResolved } from './lib/auth'
+import { currentUser, currentRole, currentWorkerName, signOut, isAdminAllowed, roleResolved, roleLabel } from './lib/auth'
 import { liffAppUrl } from './lib/links'
 import { getAccountName } from './lib/account'
 import { editApprovalCount, siteUnsetCount, overtimePendingCount, pendingGrantCount, refreshNavBadges } from './lib/navBadges'
@@ -190,6 +197,11 @@ async function handleLogout() {
 .logo { font-size: 18px; font-weight: 900; letter-spacing: 4px; color: #06C755; display: flex; flex-direction: column; align-items: flex-start; line-height: 1.25; }
 .logo-sub { font-size: 11px; letter-spacing: normal; color: #888; margin-left: 0; margin-top: 3px; font-weight: 500; }
 .drawer-close { display: none; background: none; border: none; color: #888; cursor: pointer; padding: 4px; }
+.sidebar-user { display: flex; align-items: center; gap: 10px; padding: 10px 20px; margin: -16px 0; }
+.sidebar-user-avatar { flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; background: #06C755; color: #fff; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.sidebar-user-info { min-width: 0; }
+.sidebar-user-name { font-size: 13px; font-weight: 700; color: #222; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar-user-role { font-size: 11px; color: #888; }
 .nav-list { list-style: none; display: flex; flex-direction: column; flex: 1; padding: 0; margin: 0; overflow-y: auto; }
 .nav-section {
   padding: 16px 20px 4px;
