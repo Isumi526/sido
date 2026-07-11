@@ -1139,6 +1139,12 @@ function initWorkers() {
 }
 
 function addSite() {
+  // iPad Safariで現場を追加すると、フォームの高さ変化＋再描画の際にブラウザが
+  // スクロール位置を勝手に戻すことがある（#現場追加スクロール位置）。
+  // 追加前の位置を保持し、再描画後(nextTick)に明示的に復元して打ち消す。
+  const prevScrollY = window.scrollY
+  nextTick(() => { window.scrollTo(0, prevScrollY) })
+
   // 追加前に前現場の終了時刻を取得（日跨ぎでなければ次現場の開始時刻に使う）
   const sites = report.form.value.sites
   const prevWorker   = sites.length > 0 ? sites[sites.length - 1].workers[0] : null
