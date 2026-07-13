@@ -165,7 +165,7 @@
         </div>
         <div class="field">
           <label class="checkbox-label">
-            <input type="checkbox" v-model="formModal.is_public" />
+            <input type="checkbox" v-model="formModal.is_public" @change="isPublicTouched = true" />
             他のユーザーに共有する（OFF＝本人のみ閲覧・管理者にも非表示）
           </label>
         </div>
@@ -417,6 +417,16 @@ function toggleWorkerSel(id: string) {
   if (s.has(id)) s.delete(id); else s.add(id)
   selectedWorkerIds.value = s
 }
+// 方針C: 新規予定で対象に「自分以外」が含まれるなら共有トグルを既定ON。
+// ユーザーが手動でトグルしたら（isPublicTouched）尊重し自動更新しない。編集(id有)は対象外。
+// 純粋admin(currentWorkerId=null)は選択作業員が常に他者=既定ON。
+const isPublicTouched = ref(false)
+watch(selectedWorkerIds, (ids) => {
+  const f = formModal.value
+  if (!f || f.id || isPublicTouched.value) return
+  const self = currentWorkerId.value
+  f.is_public = [...ids].some(id => id !== self)
+})
 function onGroupBulkSelect(e: Event) {
   const gid = (e.target as HTMLSelectElement).value
   ;(e.target as HTMLSelectElement).value = ''   // プレースホルダに戻す
@@ -684,8 +694,9 @@ function openAddBlank() {
     start_time: '', end_time: '',
     is_night_shift: false,
     category: defaultCategoryKey(),
-    is_public: false,   // 既定は非共有（A方針）・共有したい時だけON
+    is_public: false,   // 既定は非共有（A方針）・共有したい時だけON（対象選択で自分以外なら watch が既定ON）
   }
+  isPublicTouched.value = false
   selectedWorkerIds.value = new Set()
   formError.value = ''
 }
@@ -697,8 +708,11 @@ function openAddForCell(date: string, workerId: string) {
     start_time: '', end_time: '',
     is_night_shift: false,
     category: defaultCategoryKey(),
-    is_public: false,
+    // 「自分以外のユーザーへ予定追加」時は既定ON（他者アサインは共有前提／方針C）。
+    // 自分の予定（自分のworker=currentWorkerId）は非共有。純粋admin(currentWorkerId=null)は常に他者宛=ON。
+    is_public: workerId !== currentWorkerId.value,
   }
+  isPublicTouched.value = false
   selectedWorkerIds.value = new Set([workerId])   // タップした作業員を初期選択
   formError.value = ''
 }
