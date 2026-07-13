@@ -20,16 +20,20 @@ test.afterAll(async () => {
   await rest(`sites?id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})
 })
 
-test('作業員が現場一覧から詳細を閲覧できる', async ({ page }) => {
+test('作業員が現場一覧から詳細ページ（固定ページ）を閲覧できる', async ({ page }) => {
   await page.goto('/sites', { waitUntil: 'networkidle' })
   const row = page.locator('.row', { hasText: SITE })
   await expect(row).toBeVisible({ timeout: 15000 })
   await expect(row).toContainText(LOC)            // 一覧に場所
   await row.click()
 
-  const sheet = page.locator('.sheet')
-  await expect(sheet).toBeVisible()
-  await expect(sheet).toContainText(SITE)
-  await expect(sheet).toContainText(LOC)          // 詳細に場所
-  await expect(sheet).toContainText('クロス張替')  // 工事内容
+  // モーダルではなく /sites/:id の固定ページへ遷移する
+  await expect(page).toHaveURL(new RegExp(`/sites/${siteId}$`), { timeout: 10000 })
+  await expect(page.locator('.ttl')).toContainText(SITE)
+  await expect(page.locator('main')).toContainText(LOC)          // 詳細に場所
+  await expect(page.locator('main')).toContainText('クロス張替')  // 工事内容
+
+  // 「一覧へ戻る」で /sites に戻れる
+  await page.locator('.back-link').click()
+  await expect(page).toHaveURL(/\/sites$/, { timeout: 10000 })
 })

@@ -11,6 +11,7 @@
   "overtimeRequest": "Overtime Request",
   "checkin": "Attendance",
   "schedule": "Schedule",
+  "companySchedule": "Company Schedule",
   "groups": "Groups",
   "subcontractors": "Partners",
   "expensePdf": "Expense PDF",

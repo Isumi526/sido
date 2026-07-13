@@ -4,11 +4,10 @@
 // テストアカウントのデータに混ざらない（liff露出表はRLS無効=2b前ゆえアプリ側の account 解決が防御線）。
 import { execSync } from 'node:child_process'
 import { test, expect } from '@playwright/test'
-import { SUPABASE_URL, ANON_KEY, restSrv } from './helpers'
+import { SUPABASE_URL, ANON_KEY, DB_URL, restSrv } from './helpers'
 
 const EMAIL = 'hiro.tenant.e2e@example.com'
 const PASS = 'tenant-iso-1234'
-const DB_URL = process.env.SUPABASE_DB_URL || 'postgresql://postgres:postgres@127.0.0.1:54322/postgres'
 
 test.beforeAll(async () => {
   // 別テナント(sample-construction)の作業員に email/pw 認証を用意（signup + app_metadata + 紐付け）

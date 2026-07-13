@@ -88,7 +88,7 @@ git push origin main --force
 | **BUILD** | `npm run build --workspaces --if-present` | admin=`vite build` / liff=`nuxt build` |
 | **TEST** | `npm run test:e2e`（Playwright） | |
 | **PLAYWRIGHT_PROJECTS** | `admin` / `liff` | `playwright.config.ts`（root） |
-| **LOCAL_STACK** | supabase（標準 API 54321 / DB 54322 / Studio 54323） | `supabase start`。`LOCAL_DB_URL` は既定54322で不要 |
+| **LOCAL_STACK** | supabase（**56321番台に固定**＝API 56321 / DB 56322 / Studio 56323。他プロジェクトと同一マシンで共存のため標準54321番台ではない） | `supabase start`。**`.env` に `LOCAL_DB_URL=postgresql://postgres:postgres@127.0.0.1:56322/postgres` が必須**（未設定だと `scripts/rls-audit.mjs` 等が既定54322＝別プロジェクトのDBを誤って監査してしまう。2026-07-11発見・`.env`はgitignore対象のため新規cloneや別マシンでは都度設定要） |
 | **MIGRATIONS_DIR** | `supabase/migrations` | RLS は `account_id` 論理分離。anon公開キー前提の pre-RLS ベースラインあり（`.kody/accepted.yml` で追跡） |
 | **MINUTES_DS_ID** | `b5a34ae0-d5cd-4448-87a4-6a5035358e91`（`.env`） | 議事録テーブル（会議/電話で複数タスク発生源＝②パターン）。**3リポ共有**・案件relationで絞る。`/intake` が `処理状態=未処理`×自案件を分解し**未整理**を生成→議事録に出所リンク（実装はしない＝/runへ）。単発依頼（①）は従来どおり未整理へ直接。 |
 | **DEPLOY_PLATFORM** | Vercel（admin/liff）＋ Supabase edge functions ＋ GAS(clasp) | |
@@ -97,6 +97,7 @@ git push origin main --force
 | **PROD_BRANCH** | `main`／AUTO_MERGE_TARGET=`dev`／AUTO_TIER=`低`／MAX_WALL=`180` | |
 | **本番 Supabase ref** | `nrzzesbtvswoiouhldvi` | 誤接続ガード／`--prod-readonly` 監査用 |
 | **PROD_URL** | admin=`https://sido-admin-stism.vercel.app/` ／ liff=`https://sido-liff.vercel.app/` | ship 手順8スモークで使用 |
+| **REVIEW_LOGIN** | admin: ID=`e2e`（`ADMIN_LOGIN_ID`）／PASS=`e2e-pass-1234`（`ADMIN_LOGIN_PASS`）。自動ログインURL＝`{{DEV_URL}}/login?id=e2e&pass=e2e-pass-1234` | `/review` が admin のログイン必須画面をナビする時に使う（`apps/admin/src/pages/login.vue` の `?id=&pass=` クエリ自動ログイン対応）。liff は dev モードでLIFF認証スキップのため通常不要。 |
 
 ### APP_LAYOUT_NOTES（/review が参照）
 - 構成: `apps/admin`(管理画面・ブラウザ {{DEV_URL}}) ＋ `apps/liff`(Nuxt・LINEミニアプリ)。UI/ロジックは原則ブラウザ。**LINEアプリ内固有（友だち追加・トーク内 LIFF 起動・Flex体裁）は `⚠実機確認`**。

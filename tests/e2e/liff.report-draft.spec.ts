@@ -63,11 +63,14 @@ test('下書き: 添付画像も IndexedDB で復元される', async ({ page })
   await page.locator('select.select--usage').filter({ has: page.locator('option', { hasText: '乗合い' }) }).first()
     .selectOption('あり')
 
-  // 車両の領収書を添付（最初の file input）→「添付済み」バッジ表示
-  await page.locator('input[type="file"]').first().setInputFiles({
+  // 7f6a898(2026-07-03)で車両レベルの領収書添付は廃止済み（駐車/高速の明細ごと領収書のみ）。
+  // 駐車場代を1件追加してから、その明細の file input に添付する。
+  await page.getByRole('button', { name: /駐車場代を追加/ }).click()
+  const pkCard = page.locator('.veh-subexpense').first().locator('.lineitem-card').first()
+  await pkCard.locator('input[type="file"]').setInputFiles({
     name: 'receipt.png', mimeType: 'image/png', buffer: Buffer.from(PNG_1x1, 'base64'),
   })
-  await expect(page.getByTestId('attached-badge').filter({ hasText: '添付済み 1件' }).first()).toBeVisible({ timeout: 5000 })
+  await expect(pkCard.getByTestId('attached-badge').filter({ hasText: '添付済み 1件' }).first()).toBeVisible({ timeout: 5000 })
   await page.waitForTimeout(1300)   // テキスト下書き + IndexedDB(saveFiles)
 
   // リロード → 復元バナー＋「添付済み」バッジ＋ファイル名（画像も復元）

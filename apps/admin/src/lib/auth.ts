@@ -11,8 +11,16 @@ export const currentUser = ref<User | null>(null)
 export const currentRole = ref<string | null>(null)
 // ログインユーザーに紐づく worker.id（自分の非公開予定の判定に使う）
 export const currentWorkerId = ref<string | null>(null)
+// ログインユーザーに紐づく worker.name（サイドバーの固定表示用・worker行が無い純粋adminはnull）
+export const currentWorkerName = ref<string | null>(null)
 // 権限解決が済んだか（解決前にガード判定しないためのフラグ）。
 export const roleResolved = ref(false)
+
+// permission_role の表示ラベル（サイドバー等の権限表示に使用・workers.vueの選択肢ラベルと同じ対応）
+const ROLE_LABELS: Record<string, string> = { admin: 'オーナー', office: '役員・経理', site_manager: '現場管理者', worker: '作業員' }
+export function roleLabel(role: string | null): string {
+  return role ? (ROLE_LABELS[role] ?? role) : 'オーナー'
+}
 
 // /admin の利用可否: 管理者/事務員/現場管理者、または worker行を持たない純粋adminのみ許可。
 //  現場管理者(site_manager)は現場登録等のため admin を使う（ただし時給と出面勤怠の人件費は canViewHourlyWage で非表示）。
@@ -48,15 +56,17 @@ export const canManageAuth = computed(() =>
 //  auth_user_id は Supabase auth ユーザー単位で一意のため account 絞り込み不要。
 async function resolveRole(user: User | null): Promise<void> {
   roleResolved.value = false
-  if (!user) { currentRole.value = null; currentWorkerId.value = null; roleResolved.value = true; return }
+  if (!user) { currentRole.value = null; currentWorkerId.value = null; currentWorkerName.value = null; roleResolved.value = true; return }
   try {
     const { data } = await supabase
-      .from('workers').select('id, permission_role').eq('auth_user_id', user.id).limit(1)
+      .from('workers').select('id, name, permission_role').eq('auth_user_id', user.id).limit(1)
     currentRole.value = (data && (data[0] as any)?.permission_role) ?? null
     currentWorkerId.value = (data && (data[0] as any)?.id) ?? null
+    currentWorkerName.value = (data && (data[0] as any)?.name) ?? null
   } catch {
     currentRole.value = null   // 取得失敗時はロックアウトを避け null(=許可寄り)
     currentWorkerId.value = null
+    currentWorkerName.value = null
   } finally {
     roleResolved.value = true
   }

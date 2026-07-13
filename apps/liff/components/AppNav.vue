@@ -38,16 +38,36 @@
           <button class="drawer-close" @click="open = false">✕</button>
         </div>
 
-        <!-- ナビゲーション（ホーム画面と共通定義＝useNavItems） -->
+        <!-- ナビゲーション（ホーム画面と共通定義＝useNavItems・セクション階層化はHOMEと同じ構成） -->
         <nav class="drawer-nav">
           <NuxtLink class="drawer-item" to="/" @click="open = false">
             <span class="drawer-item-icon material-symbols-rounded">home</span>
             <span>{{ $t('nav.home') }}</span>
           </NuxtLink>
-          <template v-for="item in [...bySection.daily, ...bySection.plan, ...bySection.info]" :key="item.path">
+
+          <div class="drawer-section">{{ $t('nav.secDaily') }}</div>
+          <template v-for="item in bySection.daily" :key="item.path">
             <NuxtLink class="drawer-item" :to="item.path" :data-testid="item.testId" @click="open = false">
               <span class="drawer-item-icon material-symbols-rounded">{{ item.icon }}</span>
               <span>{{ item.label }}</span>
+            </NuxtLink>
+          </template>
+
+          <div class="drawer-section">{{ $t('nav.secPlan') }}</div>
+          <template v-for="item in bySection.plan" :key="item.path">
+            <NuxtLink class="drawer-item" :to="item.path" :data-testid="item.testId" @click="open = false">
+              <span class="drawer-item-icon material-symbols-rounded">{{ item.icon }}</span>
+              <span>{{ item.label }}</span>
+              <span v-if="item.path === '/calendar' && unreadScheduleCount > 0" class="drawer-item-badge" data-testid="drawer-schedule-badge">{{ unreadScheduleCount }}</span>
+            </NuxtLink>
+          </template>
+
+          <div class="drawer-section">{{ $t('nav.secInfo') }}</div>
+          <template v-for="item in bySection.info" :key="item.path">
+            <NuxtLink class="drawer-item" :to="item.path" :data-testid="item.testId" @click="open = false">
+              <span class="drawer-item-icon material-symbols-rounded">{{ item.icon }}</span>
+              <span>{{ item.label }}</span>
+              <span v-if="item.path === '/sites' && unreadMentionCount > 0" class="drawer-item-badge" data-testid="drawer-mention-badge">{{ unreadMentionCount }}</span>
             </NuxtLink>
           </template>
           <button type="button" class="drawer-item" @click="openInBrowser">
@@ -130,10 +150,20 @@ const config = useRuntimeConfig()
 const { authMode } = useLiff()
 
 const open = ref(false)
+// ハンバーガーを開くたびにバッジを再取得（/calendar等で既読化した直後でも最新件数を反映・2026-07-13）。
+// ※ @click ハンドラ内で直接呼ぶと useSchedules() 内の useI18n() が「setup外」判定で例外になり
+//   サイレントに失敗する(コンポーネントinstance文脈が無いDOMイベントハンドラのため)。
+//   watchはVueのeffectスコープ内で実行されinstance文脈が保持されるためここに書く。
+watch(open, (isOpen) => { if (isOpen) refreshScheduleNotifBadge() })
 
 // ホーム画面(pages/index.vue)と共通のナビ項目定義（composables/useNavItems.ts）。
 // 表記・並び・表示条件(パスワード変更等)のズレを防ぐ（2026-07-10）。
 const { bySection } = useNavItems(() => authMode.value)
+
+// 予定管理ナビの未読バッジ（#予定通知バッジ・2026-07-11）
+onMounted(() => { refreshScheduleNotifBadge() })
+// 現場情報ナビの未読メンションバッジ（現場チャット③・2026-07-11）
+onMounted(() => { refreshSiteChatMentionBadge() })
 
 // 現在の画面を外部ブラウザで開く（LINEの⋮メニューに依存せず常に開けるようにする）
 async function openInBrowser() {
@@ -171,11 +201,16 @@ function selectProxy(w: import('~/composables/useProxyMode').ProxyWorker) {
 
 // ログアウト：Supabaseセッション破棄＋テナント/代理キャッシュ破棄→ /login へ。
 // LINEモードは best-effort で liff.logout も呼び自動再開を防ぐ（dev は LIFF 未接続なのでスキップ）。
+// ★先に /login へ遷移してから身元状態(liff.reset())を破棄する（#ログアウトローディング停止対策）。
+//   app.vue のスプラッシュは「非exemptルート ＆ liff未初期化」の時に出る。/login は exempt のため
+//   影響しないが、reset()を先に行うと遷移完了前の一瞬(非exemptルートのまま)にスプラッシュへ入り、
+//   そのまま復帰しなくなるケースがあった。遷移を先に済ませてから状態を破棄すれば発生しない。
 const supabase = useSupabase()
 async function logout() {
   open.value = false
   proxy.clearProxy()
   try { await supabase.auth.signOut() } catch { /* セッション無し等は無視 */ }
+  await navigateTo('/login')
   resetAccount()
   useLiff().reset()   // 身元状態を破棄（次のユーザーが前のユーザーとして解決されるのを防ぐ）
   if (config.public.appEnv !== 'development') {
@@ -184,7 +219,6 @@ async function logout() {
       if (liff.isLoggedIn?.()) liff.logout()
     } catch { /* LIFF未接続等は無視 */ }
   }
-  await navigateTo('/login')
 }
 </script>
 
@@ -329,6 +363,28 @@ async function logout() {
   font-weight: 600;
   transition: background .15s;
 }
+.drawer-item-badge {
+  margin-left: auto;
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+}
+.drawer-section {
+  font-size: 12px;
+  font-weight: 700;
+  color: #94a3b8;
+  margin: 14px 12px 4px;
+  letter-spacing: .04em;
+}
+.drawer-section:first-of-type { margin-top: 6px; }
 button.drawer-item {
   width: 100%;
   appearance: none;

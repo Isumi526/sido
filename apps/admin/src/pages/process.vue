@@ -100,6 +100,17 @@
           </select>
         </label>
 
+        <div class="excel-row" :class="{ 'drag-active': excelDragActive }"
+             @dragover.prevent="excelDragActive = true" @dragenter.prevent="excelDragActive = true"
+             @dragleave.prevent="excelDragActive = false" @drop.prevent="onExcelDrop">
+          <input ref="excelInput" type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" @change="onExcelFile" />
+          <button type="button" class="btn-excel" :disabled="!editor.siteId || excelBusy" @click="excelInput?.click()">
+            {{ excelBusy ? 'AI解析中…' : '📄 Excelから読み込む（AI解析）' }}
+          </button>
+          <span class="excel-hint">{{ excelDragActive ? 'ここにドロップ' : 'または工程表Excelをドラッグ&ドロップ' }}</span>
+        </div>
+        <p v-if="excelMsg" class="excel-msg" :class="{ ok: excelOk }">{{ excelMsg }}</p>
+
         <div class="ed-list">
           <div class="ed-head">
             <span class="ed-num">#</span>
@@ -326,12 +337,81 @@ async function load() {
 }
 onMounted(async () => { await Promise.all([loadSites(), loadWorkers()]); siteId.value = '__all__'; await load() })
 
+// ── Excelドラッグ&ドロップ→AI解析で工程を読み込む（誤読み取りは保存前にエディタで人が修正可） ──
+const excelInput = ref<HTMLInputElement | null>(null)
+const excelDragActive = ref(false)
+const excelBusy = ref(false)
+const excelMsg = ref('')
+const excelOk = ref(false)
+
+function onExcelFile(e: Event) {
+  const f = (e.target as HTMLInputElement).files?.[0]
+  if (f) importExcelFile(f)
+  ;(e.target as HTMLInputElement).value = ''
+}
+function onExcelDrop(e: DragEvent) {
+  excelDragActive.value = false
+  const isAcceptable = (f: File) => {
+    if (f.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || f.type === 'application/vnd.ms-excel') return true
+    if (f.type) return false
+    return /\.xlsx?$/i.test(f.name)
+  }
+  const f = Array.from(e.dataTransfer?.files ?? []).find(isAcceptable)
+  if (f) importExcelFile(f)
+  else if (e.dataTransfer?.files.length) { excelOk.value = false; excelMsg.value = 'Excelファイル(.xlsx/.xls)をドロップしてください' }
+}
+
+// シートをCSVテキスト化（複数シートは連結・シート名を見出しに）
+// xlsxは重い(~340KB)ため、Excel取込を実際に使う時だけ動的import(全ユーザーの初期バンドルを太らせない)。
+async function excelToCsvText(buf: ArrayBuffer): Promise<string> {
+  const XLSX = await import('xlsx')
+  const wb = XLSX.read(buf, { type: 'array' })
+  return wb.SheetNames.map((name) => `■ シート「${name}」\n${XLSX.utils.sheet_to_csv(wb.Sheets[name])}`).join('\n\n')
+}
+
+async function importExcelFile(file: File) {
+  const e = editor.value; if (!e) return
+  excelBusy.value = true; excelMsg.value = ''
+  try {
+    const buf = await file.arrayBuffer()
+    const csvText = await excelToCsvText(buf)
+    if (!csvText.trim()) { excelOk.value = false; excelMsg.value = 'ファイルから読み取れるデータがありませんでした'; return }
+    const fnName = import.meta.env.DEV ? 'test-process-excel-import' : 'process-excel-import'
+    const edgeUrl = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
+    if (!edgeUrl) { excelOk.value = false; excelMsg.value = 'Edge Function URL未設定のため解析できません'; return }
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(`${edgeUrl}/${fnName}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+      body: JSON.stringify({ text: csvText, siteName: siteName(e.siteId) }),
+    })
+    const r = await res.json()
+    if (!res.ok || r.ok === false) { excelOk.value = false; excelMsg.value = r.error ?? 'AI解析に失敗しました'; return }
+    const extracted = Array.isArray(r.tasks) ? r.tasks : []
+    if (!extracted.length) { excelOk.value = false; excelMsg.value = '工程を読み取れませんでした。内容をご確認のうえ手動で追加してください'; return }
+    // 空の未入力行だけなら置き換え、既に入力済みの行があれば末尾に追加（既存入力を消さない）
+    const hasFilledRows = e.rows.some((row) => row.name.trim())
+    const newRows: Draft[] = extracted.map((t: any) => ({
+      _key: keySeq++, name: t.name, assignee: t.assignee ?? null, site_manager: t.site_manager ?? null,
+      work_type: t.work_type ?? null, contract_amount: t.contract_amount ?? null,
+      start_date: t.start_date ?? null, end_date: t.end_date ?? null, progress: 0, memo: t.memo ?? null,
+    }))
+    e.rows = hasFilledRows ? [...e.rows, ...newRows] : newRows
+    excelOk.value = true; excelMsg.value = `${extracted.length}件の工程を読み取りました。内容を確認・修正してから保存してください`
+  } catch (err: any) {
+    excelOk.value = false; excelMsg.value = err?.message ?? 'AI解析に失敗しました'
+  } finally {
+    excelBusy.value = false
+  }
+}
+
 // 指定現場の既存工程をまとめて開く（無ければ空行1つ）
 function openSiteEditor(sid: string) {
   const rows = tasks.value.filter((t) => t.site_id === sid).map(toDraft)
   if (!rows.length) rows.push(newDraft())
   editor.value = { siteId: sid, rows, deleted: [] }
   saveError.value = ''
+  excelMsg.value = ''
 }
 function openAdd() { openSiteEditor(isAll.value ? '' : siteId.value) }
 // エディタ内で現場を選び直したら、その現場の既存工程を読み込む（全現場ビューからの追加用）
@@ -458,6 +538,15 @@ async function remove(t: Task) {
 .modal { background: #fff; border-radius: 14px; padding: 22px; width: 100%; max-width: 420px; }
 .editor-modal { max-width: min(1040px, 96vw); max-height: 90vh; display: flex; flex-direction: column; }
 .ed-site { max-width: 320px; }
+.excel-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; padding: 10px; border: 1.5px dashed #cfd6e4; border-radius: 10px; transition: border-color .15s, background .15s; }
+.excel-row.drag-active { border-color: #1a56c4; background: #eef3fd; }
+.excel-row input[type="file"] { display: none; }
+.excel-hint { font-size: 12px; color: #8a93a6; }
+.excel-row.drag-active .excel-hint { color: #1a56c4; font-weight: 700; }
+.btn-excel { background: #1a56c4; color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn-excel:disabled { opacity: .5; cursor: default; }
+.excel-msg { font-size: 12px; color: #E53935; margin: -2px 0 8px; }
+.excel-msg.ok { color: #06A050; }
 .ed-list { flex: 1; overflow-y: auto; border: 1px solid #eee; border-radius: 10px; padding: 6px; margin-bottom: 10px; }
 .ed-head { display: flex; gap: 8px; align-items: center; padding: 2px 6px 6px; font-size: 11px; color: #999; font-weight: 700; }
 .ed-head .ed-col-name { width: 200px; }

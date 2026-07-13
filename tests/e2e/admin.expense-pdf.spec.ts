@@ -8,7 +8,7 @@
 //     E2EではダミーPDFをStorageへ直接アップして検証する。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, getDevUserId, getAccountId, SUPABASE_URL, ANON_KEY, ACCOUNT_SLUG } from './helpers'
+import { rest, getDevUserId, getAccountId, SUPABASE_URL, ANON_KEY, ACCOUNT_SLUG, SERVICE_ROLE_KEY } from './helpers'
 import { SEED_WORKER, FEAT_EXP_DATE, FEAT_EXP_PERIOD } from './global-setup'
 
 const BUCKET = 'expense-receipts'
@@ -16,10 +16,14 @@ const PUB = (path: string) => `${SUPABASE_URL}/storage/v1/object/public/${BUCKET
 
 async function uploadDummyPdf(path: string) {
   // 最小の有効PDF
+  // 20260709010000_expense_receipts_v2_private_bucket.sql で anon insert/update を遮断済み。
+  // 実アプリの申請PDF生成(apps/liff/utils/generateExpensePdf.ts)はLIFFクライアント(authenticated/anon)から
+  // 直接この bucket へ upload しており、E2Eのフィクスチャ投入はそれを模す必要はない（テストデータの
+  // 準備はRLSバイパスで良い）ため service_role で行う。
   const body = '%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n'
   const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`, {
     method: 'POST',
-    headers: { apikey: ANON_KEY, Authorization: `Bearer ${ANON_KEY}`, 'Content-Type': 'application/pdf', 'x-upsert': 'true' },
+    headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}`, 'Content-Type': 'application/pdf', 'x-upsert': 'true' },
     body,
   })
   if (!res.ok && res.status !== 409) throw new Error(`upload ${path}: ${res.status} ${await res.text()}`)
@@ -55,7 +59,7 @@ test.describe('経費管理：申請PDFの閲覧/DL', () => {
     await rest(`expense_settlements?account_id=eq.${accountId}&user_id=eq.${userId}&period_key=eq.${encodeURIComponent(FEAT_EXP_PERIOD)}`, { method: 'DELETE' }).catch(() => {})
     for (const k of ['meisai', 'seikyu']) {
       await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${basePath}_${k}.pdf`, {
-        method: 'DELETE', headers: { apikey: ANON_KEY, Authorization: `Bearer ${ANON_KEY}` },
+        method: 'DELETE', headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` },
       }).catch(() => {})
     }
   })

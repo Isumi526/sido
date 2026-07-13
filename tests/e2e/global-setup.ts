@@ -6,7 +6,7 @@
 //  ※ マスタ(Worker 01 等)・dev-user-id・通常日報は seed.sql が投入済み
 // ============================================================
 import { execSync } from 'node:child_process'
-import { SUPABASE_URL, ANON_KEY, ACCOUNT_SLUG, ADMIN_LOGIN_EMAIL, ADMIN_LOGIN_PASS, getAccountId, rest, upsert } from './helpers'
+import { SUPABASE_URL, ANON_KEY, ACCOUNT_SLUG, ADMIN_LOGIN_EMAIL, ADMIN_LOGIN_PASS, DB_URL, getAccountId, rest, upsert } from './helpers'
 
 export const DEV_LINE_ID = 'dev-user-id'
 // seed.sql と一致
@@ -29,6 +29,33 @@ export const FEAT_ATT_DATE = `${YM}-10`
 export const FEAT_ATT_SITE = 'テスト現場D'    // 打刻あり（この日報のみが使う専用現場）
 export const FEAT_ATT_NO_SITE = 'テスト現場B' // 打刻なし（— 表示の検証用・同一カード内）
 
+// EF(Edge Functions)未配信の事前検査。
+//  `supabase start` だけでは functions serve が別プロセスのため EF は配信されない。
+//  漏れると EF依存spec＋liffフォーム群(マスタ読込=get-master EF)が「HTTP 000/40秒タイムアウトで
+//  大量fail」し、原因不明のまま個々のspecタイムアウトを何十回も観測する羽目になる
+//  （2026-07-08実測: 52失敗の主因）。ここで1回・数秒で疎通確認し、未配信なら即・明示的に落とす。
+async function checkFunctionsServed() {
+  const url = `${SUPABASE_URL}/functions/v1/get-master`
+  try {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 5000)
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { apikey: ANON_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+      signal: ctrl.signal,
+    }).finally(() => clearTimeout(timer))
+    // 到達さえしていればOK（account not found 等の4xxは「配信されている」証拠として十分）。
+    console.log(`[e2e] EF疎通OK (get-master → HTTP ${res.status})`)
+  } catch (e) {
+    throw new Error(
+      '[e2e] Edge Functions が応答しません（get-master に接続できない）。\n' +
+      '  `supabase functions serve --no-verify-jwt --env-file supabase/functions/.env` を別ターミナルで起動してから再実行してください。\n' +
+      `  (${String(e)})`,
+    )
+  }
+}
+
 async function ensureAdminUser() {
   const res = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
     method: 'POST',
@@ -43,9 +70,8 @@ async function ensureAdminUser() {
   // ローカルGoTrue admin APIの鍵問題を避け、ローカルDBに直接SQL更新（テストハーネス＝local専用）。
   // 次ログイン時(auth.setup.ts)のJWTに app_metadata として乗る。
   try {
-    const dbUrl = process.env.SUPABASE_DB_URL || 'postgresql://postgres:postgres@127.0.0.1:54322/postgres'
     execSync(
-      `psql "${dbUrl}" -c "update auth.users set raw_app_meta_data = coalesce(raw_app_meta_data,'{}'::jsonb) || jsonb_build_object('account_slug','${ACCOUNT_SLUG}') where email='${ADMIN_LOGIN_EMAIL}'"`,
+      `psql "${DB_URL}" -c "update auth.users set raw_app_meta_data = coalesce(raw_app_meta_data,'{}'::jsonb) || jsonb_build_object('account_slug','${ACCOUNT_SLUG}') where email='${ADMIN_LOGIN_EMAIL}'"`,
       { stdio: 'ignore' },
     )
     console.log(`[e2e] admin app_metadata.account_slug=${ACCOUNT_SLUG} 付与(SQL)`)
@@ -55,6 +81,43 @@ async function ensureAdminUser() {
 async function getDevUserId(accountId: string): Promise<string | null> {
   const rows = await rest(`users?account_id=eq.${accountId}&line_user_id=eq.${DEV_LINE_ID}&select=id`)
   return rows?.[0]?.id ?? null
+}
+
+// liffの「次の未送信日」(getNextUnsubmittedDate)は report_start_date（無ければworker.created_at）
+// を起点に today まで日毎に空きを探す。ローカルDBは何ヶ月もE2E実行を積み重ねており、当月の
+// FEAT_*(01/05/10/20)以外の日は空きがちなので、起点が古いまま(例: 先月末)だと大昔の穴を
+// 「次の未送信日」として返してしまい、その日は編集期限（当日含む過去3日）を過ぎてロック済み＝
+// 送信ボタンが恒久的に disabled のまま→送信系specが軒並み40秒タイムアウトする
+// （2026-07-01頃から報告されていたliffフォーム群の「click不全」の一因）。
+// SEED_WORKERのreport_start_dateを毎回「編集可能windowの最古日」に更新し、スキャン起点を
+// 編集可能windowの先頭に固定する。
+// ※ ロック判定(useReportLock.ts)は diffDaysFromToday(date) >= LOCK_AFTER_DAYS(=3) でロック
+//   ＝実際に編集可能なのは diff 0/1/2（today・today-1・today-2）の3日だけで、today-3は
+//   既にロック境界（最初この off-by-one で today-3 を起点にしてしまい、真っ先に見つかる
+//   「次の未送信日」がロック済みで送信ボタンが恒久disabledになる回帰を作り込んだ→ today-2 に修正）。
+// 同時に、そのwindow内(today除く。todayはFEAT_ATTが使うことがあるため触らない)の既存日報を
+// 削除して毎回まっさらにする＝1回のE2Eフルランで複数specが「新規送信」を行っても
+// （report/ai-receipt/parking-highway-multi 等）枯渇して「送信済みです」に倒れにくくする。
+async function ensureRecentReportStartDate(accountId: string) {
+  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const today = new Date()
+  const start = new Date(today); start.setDate(start.getDate() - 2)
+  const startStr = fmt(start)
+  try {
+    await rest(`workers?account_id=eq.${accountId}&name=eq.${encodeURIComponent(SEED_WORKER)}`, {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ report_start_date: startStr }),
+    })
+    const userId = await getDevUserId(accountId)
+    if (userId) {
+      for (let i = 1; i <= 2; i++) {
+        const d = new Date(today); d.setDate(d.getDate() - i)
+        const ds = fmt(d)
+        await rest(`daily_reports?user_id=eq.${userId}&date=eq.${ds}`, { method: 'DELETE' }).catch(() => {})
+      }
+    }
+    console.log(`[e2e] ${SEED_WORKER}.report_start_date=${startStr} に更新＋直近3日をクリア（未送信日スキャンの枯渇防止）`)
+  } catch (e) { console.warn('[e2e] report_start_date 更新失敗:', String(e)) }
 }
 
 async function seedFeatureReports() {
@@ -196,7 +259,9 @@ async function seedDevUpdate() {
 }
 
 export default async function globalSetup() {
+  await checkFunctionsServed()   // 未配信なら即・明示エラーで落とす（catchしない＝個別spec大量timeoutを防ぐ）
   await ensureAdminUser().catch(e => console.warn('[e2e] admin user 作成失敗:', String(e)))
+  await ensureRecentReportStartDate(await getAccountId()).catch(e => console.warn('[e2e] report_start_date 更新失敗:', String(e)))
   await seedFeatureReports().catch(e => console.warn('[e2e] feature seed 失敗:', String(e)))
   await seedScheduleGroup().catch(e => console.warn('[e2e] schedule group seed 失敗:', String(e)))
   await seedDevUpdate().catch(e => console.warn('[e2e] dev_update seed 失敗:', String(e)))

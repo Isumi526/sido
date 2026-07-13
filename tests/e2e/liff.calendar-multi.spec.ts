@@ -28,7 +28,9 @@ test.describe('予定 複数作業員に一括追加', () => {
     }
 
     // 現場は新規(__other__)でユニークタイトルを入れる（検証・後始末を容易に）
-    await page.locator('select.site-select').selectOption('__other__')
+    // .site-select は元請け/現場/カテゴリの3つのselectで共有されるスタイル用classのため
+    // data-testid で現場selectを明示的に指定する
+    await page.locator('select[data-testid="site-select"]').selectOption('__other__')
     await page.locator('input[placeholder="現場名を入力"]').fill(TITLE)
 
     await page.locator('.btn-save').click()

@@ -29,10 +29,12 @@ onMounted(() => {
     if (migrationCountdown.value <= 0) { clearInterval(timer); window.location.replace(migrationUrl.value!) }
   }, 1000)
 })
-// 業者向けトークンポータル(/p/:token)・email/pwログイン(/login)は LINE ログイン誘導を行わない。
-const isPortal = computed(() => route.path.startsWith('/p/'))
-const isLogin  = computed(() => route.path.startsWith('/login'))
-const isExempt = computed(() => isPortal.value || isLogin.value)
+// 業者向けトークンポータル(/p/:token)・email/pwログイン(/login)・現場チャット非ユーザー招待
+// (/chat-invite/:token) は LINE ログイン誘導を行わない（LIFF未登録者がブラウザで直接開くため）。
+const isPortal      = computed(() => route.path.startsWith('/p/'))
+const isLogin       = computed(() => route.path.startsWith('/login'))
+const isChatInvite  = computed(() => route.path.startsWith('/chat-invite/'))
+const isExempt = computed(() => isPortal.value || isLogin.value || isChatInvite.value)
 
 // サイト名（ブラウザタブ／共有タイトル）= プロダクト名 GENLINKS 固定＋会社名（データ）を併記。
 // accounts.name 取得前は 'GENLINKS' をフォールバック表示。

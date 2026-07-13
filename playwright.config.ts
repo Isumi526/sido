@@ -46,6 +46,17 @@ export default defineConfig({
         ...devices['Pixel 5'],       // chromium ベースのモバイル端末
         baseURL: LIFF_URL,
         screenshot: 'only-on-failure',
+        // ReportOnboarding.vue（apps/liff/components）は初回訪問で全画面オーバーレイ(.ob-overlay・z-index:1000)
+        // を出し、Playwrightは毎テスト新規contextのため localStorage が空＝全testで初回表示になる。
+        // オーバーレイは.click()の対象(ボタン等)を覆ってpointer eventsを奪うため、配下のボタンクリックが
+        // 40秒タイムアウトするまで気づかれない「visible/enabledなのにclick未完了」の主因になっていた
+        // （2026-06-27導入・7/1から報告されていたliff 13スペック分の送信/操作クリック不全の根本原因）。
+        // 通常のE2Eは「初見済み」を既定にし、liff.report-onboarding.spec.ts だけが自分でフラグを消して
+        // 初回状態を明示的に再現する（このstorageStateとは独立して動作＝非破壊）。
+        storageState: {
+          cookies: [],
+          origins: [{ origin: LIFF_URL, localStorage: [{ name: 'sido_report_onboarded_v1', value: '1' }] }],
+        },
       },
     },
   ],

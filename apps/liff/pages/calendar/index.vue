@@ -49,6 +49,11 @@
         </thead>
         <tbody>
           <tr class="sentinel-top"><td :colspan="sortedWorkers.length + 1" style="height:0;padding:0;border:none;"></td></tr>
+          <tr v-if="isExtending === 'top'" class="extend-loading-row" data-testid="extend-loading-top">
+            <td :colspan="sortedWorkers.length + 1" class="extend-loading-cell">
+              <span class="extend-spinner" /> {{ $t('common.loading') }}
+            </td>
+          </tr>
           <tr
             v-for="date in calendarDates"
             :key="date"
@@ -72,6 +77,7 @@
               @click="onCellTap(date, w.id)"
             >
               <div class="cell-inner">
+                <span v-if="isBirthday(date, w.id)" class="birthday-badge material-symbols-rounded" :title="`${w.name}${$t('calendar.birthdayOf')}`">cake</span>
                 <div
                   v-for="s in cellSchedules(date, w.id)"
                   :key="s.id"
@@ -88,6 +94,11 @@
                 </div>
                 <button class="cell-add-btn" @click.stop="onCellTap(date, w.id)">＋</button>
               </div>
+            </td>
+          </tr>
+          <tr v-if="isExtending === 'bottom'" class="extend-loading-row" data-testid="extend-loading-bottom">
+            <td :colspan="sortedWorkers.length + 1" class="extend-loading-cell">
+              <span class="extend-spinner" /> {{ $t('common.loading') }}
             </td>
           </tr>
           <tr class="sentinel-bottom"><td :colspan="sortedWorkers.length + 1" style="height:0;padding:0;border:none;"></td></tr>
@@ -108,42 +119,74 @@
         <button type="button" class="today-btn" @click="personalGoToday">{{ $t('calendar.today') }}</button>
       </div>
 
-      <!-- 週間（画面幅に応じて可変日数） -->
-      <div v-if="personalViewMode === 'week'" class="personal-week" :style="{ gridTemplateColumns: `repeat(${personalWeekDates.length}, 1fr)` }">
-        <div v-for="date in personalWeekDates" :key="date" class="personal-day-col" :class="dateCellClass(date, todayStr)">
-          <div class="personal-day-head">{{ formatDateLabel(date) }}</div>
-          <div class="personal-day-body">
-            <div
-              v-for="s in personalCellSchedules(date)"
-              :key="s.id"
-              class="sched-chip personal-chip"
-              :class="{ 'night-shift': s.is_night_shift, 'deleted-chip': !!s.deleted_at }"
-              :style="chipStyle(s)"
-              @click="openDetail(s)"
-            >
-              <span class="chip-title">{{ s.title }}</span>
-              <span v-if="s.start_time" class="chip-time">{{ s.start_time.slice(0, 5) }}</span>
-            </div>
-            <button type="button" class="cell-add-btn personal-add-btn" @click="personalAddSchedule(date)">＋</button>
+      <!-- 週間（画面幅に応じて可変日数・時間軸メモリ表示で予定を開始時刻の位置に配置） -->
+      <div v-if="personalViewMode === 'week'" class="personal-week">
+        <div class="personal-week-head" :style="{ gridTemplateColumns: `56px repeat(${personalWeekDates.length}, 1fr)` }">
+          <div class="week-head-corner"></div>
+          <div v-for="date in personalWeekDates" :key="date" class="personal-day-head" :class="dateCellClass(date, todayStr)">
+            <span>{{ formatDateLabel(date) }}</span>
+            <button type="button" class="cell-add-btn week-head-add-btn" @click="personalAddSchedule(date)">＋</button>
           </div>
         </div>
-      </div>
 
-      <!-- 月間（7列グリッド） -->
-      <div v-else class="personal-month-grid">
-        <div v-for="wd in WEEKDAYS" :key="wd" class="personal-month-wd">{{ wd }}</div>
-        <div v-for="cell in personalMonthCells" :key="cell.date || cell.key" class="personal-month-cell" :class="[cell.date ? dateCellClass(cell.date, todayStr) : 'blank']">
-          <template v-if="cell.date">
-            <div class="personal-month-daynum" @click="personalAddSchedule(cell.date)">{{ Number(cell.date.slice(8, 10)) }}</div>
+        <!-- 終日・時刻未設定の予定 -->
+        <div v-if="personalWeekDates.some(d => personalCellSchedules(d).some(s => !s.start_time))" class="personal-week-allday" :style="{ gridTemplateColumns: `56px repeat(${personalWeekDates.length}, 1fr)` }">
+          <div class="week-head-corner"></div>
+          <div v-for="date in personalWeekDates" :key="date" class="week-allday-col">
             <div
-              v-for="s in personalCellSchedules(cell.date)"
+              v-for="s in personalCellSchedules(date).filter(x => !x.start_time)"
               :key="s.id"
               class="sched-chip personal-chip-sm"
               :class="{ 'night-shift': s.is_night_shift, 'deleted-chip': !!s.deleted_at }"
               :style="chipStyle(s)"
               @click="openDetail(s)"
             >{{ s.title }}</div>
-          </template>
+          </div>
+        </div>
+
+        <div ref="weekTimelineScrollRef" class="personal-week-scroll">
+          <div class="personal-week-timeline" :style="{ gridTemplateColumns: `56px repeat(${personalWeekDates.length}, 1fr)`, height: WEEK_HOUR_HEIGHT * 24 + 'px' }">
+            <div class="week-hour-axis">
+              <div v-for="h in 24" :key="h" class="week-hour-label" :style="{ top: (h - 1) * WEEK_HOUR_HEIGHT + 'px' }">{{ h - 1 }}:00</div>
+            </div>
+            <div v-for="date in personalWeekDates" :key="date" class="week-day-timeline" :class="dateCellClass(date, todayStr)">
+              <div v-for="h in 24" :key="h" class="week-hour-line" :style="{ top: (h - 1) * WEEK_HOUR_HEIGHT + 'px' }"></div>
+              <div
+                v-for="s in personalCellSchedules(date).filter(x => x.start_time)"
+                :key="s.id"
+                class="sched-chip week-timed-chip"
+                :class="{ 'night-shift': s.is_night_shift, 'deleted-chip': !!s.deleted_at }"
+                :style="[chipStyle(s), timedChipStyle(s)]"
+                @click="openDetail(s)"
+              >
+                <span class="chip-title">{{ s.title }}</span>
+                <span class="chip-time">{{ s.start_time?.slice(0, 5) }}{{ s.end_time ? '–' + s.end_time.slice(0, 5) : '' }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 月間（複数月を縦に連結し無限スクロール。前後スクロールで月が継ぎ足され自動切替） -->
+      <div v-else ref="personalMonthScrollRef" class="personal-month-scroll" @scroll="onPersonalMonthScroll">
+        <div v-for="m in personalMonths" :key="monthKey(m.year, m.month)" class="personal-month-block" :data-year="m.year" :data-month="m.month">
+          <div class="personal-month-block-label">{{ monthLabel(m.year, m.month) }}</div>
+          <div class="personal-month-grid">
+            <div v-for="wd in WEEKDAYS" :key="wd" class="personal-month-wd">{{ wd }}</div>
+            <div v-for="cell in monthCellsFor(m.year, m.month)" :key="cell.date || cell.key" class="personal-month-cell" :class="[cell.date ? dateCellClass(cell.date, todayStr) : 'blank']">
+              <template v-if="cell.date">
+                <div class="personal-month-daynum" @click="personalAddSchedule(cell.date)">{{ Number(cell.date.slice(8, 10)) }}</div>
+                <div
+                  v-for="s in personalCellSchedules(cell.date)"
+                  :key="s.id"
+                  class="sched-chip personal-chip-sm"
+                  :class="{ 'night-shift': s.is_night_shift, 'deleted-chip': !!s.deleted_at }"
+                  :style="chipStyle(s)"
+                  @click="openDetail(s)"
+                >{{ s.title }}</div>
+              </template>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -197,14 +240,14 @@
             <!-- 元請け業者（任意）: 選ぶと現場プルダウンをその元請けに紐づく現場へ絞り込む -->
             <div v-if="master.contractorNames.value.length" class="form-row" style="margin-bottom:8px">
               <span class="form-row-label">{{ $t('calendar.contractor') }}</span>
-              <select v-model="(formModal as any)._contractor" class="site-select">
+              <select v-model="(formModal as any)._contractor" class="site-select" data-testid="contractor-select">
                 <option value="">{{ $t('calendar.contractorAll') }}</option>
                 <option v-for="name in master.contractorNames.value" :key="name" :value="name">{{ name }}</option>
               </select>
             </div>
             <div class="form-row">
               <span class="form-row-label">{{ $t('calendar.site') }}</span>
-              <select v-model="formModal.title" class="site-select">
+              <select v-model="formModal.title" class="site-select" data-testid="site-select">
                 <option value="">{{ $t('calendar.pleaseSelect') }}</option>
                 <option v-for="s in filteredSiteNames((formModal as any)._contractor)" :key="s" :value="s">{{ s }}</option>
                 <option value="__other__">{{ $t('calendar.registerNewSite') }}</option>
@@ -216,13 +259,18 @@
                 v-model="(formModal as any)._customTitle"
                 type="text"
                 class="site-select"
+                data-testid="custom-site-title"
                 :placeholder="$t('calendar.siteNamePlaceholder')"
                 @keydown.enter.prevent
               />
             </div>
             <div v-if="formModal.title === '__other__' && customSiteSimilar.length"
                  style="margin-top:6px;font-size:12px;color:#B45309;background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;padding:8px 10px;line-height:1.5">
-              ⚠️ {{ $t('calendar.similarSiteWarn') }}：<strong>{{ customSiteSimilar.join('、') }}</strong>
+              ⚠️ {{ $t('calendar.similarSiteWarn') }}：<template v-for="(name, i) in customSiteSimilar" :key="name"><span
+                class="similar-site-pick" role="button" tabindex="0" data-testid="similar-site-pick"
+                @click="(formModal as any)._customTitle = name"
+                @keydown.enter.prevent="(formModal as any)._customTitle = name"
+              >{{ name }}</span>{{ i < customSiteSimilar.length - 1 ? '、' : '' }}</template>
             </div>
           </template>
 
@@ -242,7 +290,7 @@
             <!-- 現場管理者以上はカテゴリマスタを管理できる（ラベルの右に配置・一覧/色/名前編集/追加/削除） -->
             <button v-if="canManageCat" type="button" class="cat-add-btn cat-manage-inline" @click="openCatManage">⚙ 管理</button>
             <div class="cat-select-wrap cat-select-wrap--gap">
-              <select v-model="formModal.category" class="site-select">
+              <select v-model="formModal.category" class="site-select" data-testid="category-select">
                 <option v-for="c in schedCats.filter(x => x.active || x.key === formModal!.category)" :key="c.key" :value="c.key">{{ c.label }}</option>
               </select>
             </div>
@@ -382,7 +430,7 @@ import { useSchedules, type Schedule, type ScheduleForm } from '~/composables/us
 import { findSimilarSiteNames } from '~/utils/siteSimilarity'
 import {
   shiftMonth, genMonthDates, isWeekend, weekdayIndex, dateCellClass, fmtDateTime,
-  cellSchedules as coreCellSchedules, chipStyle as coreChipStyle, buildScheduleDiff,
+  cellSchedules as coreCellSchedules, chipStyle as coreChipStyle, buildScheduleDiff, birthdayDatesByWorker,
 } from '~/composables/schedule-core.gen'
 
 const { t } = useI18n()
@@ -484,6 +532,7 @@ async function dismissNotifs() {
   notifs.value = []
   if (!ids.length) return
   await supabase.from('schedule_notifications').update({ read_at: new Date().toISOString() }).in('id', ids)
+  await refreshScheduleNotifBadge()   // HOME/ハンバーガーの未読バッジも即時反映（#予定通知バッジ）
 }
 
 const effectiveWorkerId = computed(() =>
@@ -517,7 +566,7 @@ const PIN_KEY  = 'calendar_pinned_workers'
 const GROUP_KEY = `calendar_group_filter_${config.public.accountSlug}`
 
 // ──────────────────── 状態 ────────────────────
-const workers     = ref<{ id: string; name: string }[]>([])
+const workers     = ref<{ id: string; name: string; birth_date: string | null }[]>([])
 
 // グループ絞り込み（自分が参加するグループのメンバー列だけ表示）
 const groupsApi = useScheduleGroups()
@@ -607,7 +656,7 @@ const calendarDates = ref<string[]>([])
 let   loadedFrom    = ''
 let   loadedTo      = ''
 const navMonth      = ref(new Date())
-let   isExtending   = false
+const isExtending = ref<'top' | 'bottom' | null>(null)   // 月継ぎ足し中のローディング表示用（#月切替ローディング）
 let   ioTop:    IntersectionObserver | null = null
 let   ioBottom: IntersectionObserver | null = null
 
@@ -634,7 +683,7 @@ function initCalendar() {
 }
 
 async function extendTop() {
-  if (isExtending) return; isExtending = true
+  if (isExtending.value) return; isExtending.value = 'top'
   try {
     const base   = new Date(loadedFrom + 'T00:00:00')
     const target = shiftMonth(base, -1)
@@ -646,11 +695,11 @@ async function extendTop() {
     await nextTick()
     if (wrap) wrap.scrollTop = prevTop + newDates.length * ROW_HEIGHT
     await loadSchedules()
-  } finally { isExtending = false }
+  } finally { isExtending.value = null }
 }
 
 async function extendBottom() {
-  if (isExtending) return; isExtending = true
+  if (isExtending.value) return; isExtending.value = 'bottom'
   try {
     const base     = new Date(loadedTo + 'T00:00:00')
     const target   = shiftMonth(base, +1)
@@ -658,7 +707,7 @@ async function extendBottom() {
     calendarDates.value = [...calendarDates.value, ...newDates]
     loadedTo = newDates[newDates.length - 1]
     await loadSchedules()
-  } finally { isExtending = false }
+  } finally { isExtending.value = null }
 }
 
 function setupIO() {
@@ -681,7 +730,14 @@ function setupIO() {
   }
 }
 
+// scrollToRow()によるprogrammatic scroll中はonGridScrollでのnavMonth更新を止める（#navMonth追従不具合）。
+// navigate()/goTodayはnavMonthを直接確定させる権威ソースになったため、その結果としてscrollToRowが
+// 起こす'scroll'イベントでonGridScrollが（連打時のロード待ち等で）古い/中間の行を読んでnavMonthを
+// 巻き戻すのを防ぐ。カウンタなのは連続したscrollToRow呼び出し（連打）にも対応するため。
+let pendingProgrammaticScrolls = 0
+
 function onGridScroll() {
+  if (pendingProgrammaticScrolls > 0) return
   const wrap = gridWrapRef.value; if (!wrap) return
   // 行の高さは予定の有無で可変なため、固定 ROW_HEIGHT での scrollTop 割り算だと行数を数えすぎて
   // 月ラベルが大きく早くズレる。実際の行位置を測り、sticky な作業員ヘッダーの直下に来ている
@@ -703,7 +759,13 @@ function scrollToRow(dateStr: string) {
   const row  = wrap.querySelector<HTMLElement>(`tr[data-date="${dateStr}"]`)
   // sticky ヘッダーの高さ分も引いて、対象行がヘッダーに隠れず直下に来るようにする。
   const headH = wrap.querySelector('thead')?.getBoundingClientRect().height ?? 0
-  if (row) wrap.scrollTop = Math.max(0, row.offsetTop - wrap.offsetTop - headH - 8)
+  if (row) {
+    pendingProgrammaticScrolls++
+    wrap.scrollTop = Math.max(0, row.offsetTop - wrap.offsetTop - headH - 8)
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      pendingProgrammaticScrolls = Math.max(0, pendingProgrammaticScrolls - 1)
+    }))
+  }
 }
 
 function scrollToToday() {
@@ -712,6 +774,10 @@ function scrollToToday() {
 
 function navigate(dir: 1 | -1) {
   const target    = shiftMonth(navMonth.value, dir)
+  // ボタン操作はscrollイベント経由のonGridScrollでのnavMonth更新を待たず即座に反映する。
+  // programmatic scroll(scrollToRow)が既に同じscrollTopに対しては'scroll'イベントを発火しないため
+  // (連打で2回目以降がonGridScroll未発火のまま navMonth が古い値から計算され1ヶ月先で足踏みしていた)。
+  navMonth.value  = target
   const targetStr = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-01`
   const prefix    = targetStr.slice(0, 7)
   const found     = calendarDates.value.find(d => d.startsWith(prefix))
@@ -740,6 +806,11 @@ function goToday() {
 function cellSchedules(date: string, workerId: string): Schedule[] {
   return coreCellSchedules(schedules.schedules.value, date, workerId, showDeleted.value, true)
 }
+// 誕生日バッジ（DB保存なしの表示専用・要件化回答A「予定管理カレンダーに誕生日を自動表示」）
+const birthdayByDate = computed(() => birthdayDatesByWorker(workers.value, calendarDates.value))
+function isBirthday(date: string, workerId: string): boolean {
+  return !!birthdayByDate.value[date]?.includes(workerId)
+}
 
 // ──────────────────── 個人カレンダー（週間／月間・共有グリッドと別タブ） ────────────────────
 // 既存の共有ビュー用データ(schedules.schedules)をそのまま流用し、自分の予定だけに絞る
@@ -756,6 +827,34 @@ function personalAddSchedule(date: string) {
   onCellTap(date, effectiveWorkerId.value)
 }
 
+// ── 週間ビュー：時間軸メモリ表示（#週間時間軸） ──
+const WEEK_HOUR_HEIGHT = 48   // 1時間あたりの高さ(px)
+const weekTimelineScrollRef = ref<HTMLElement | null>(null)
+const WEEK_DEFAULT_SCROLL_HOUR = 6   // 初期表示は朝6時付近から見せる（深夜0時始まりだと使いにくいため）
+
+function timeToMinutes(t: string): number {
+  const [h, m] = t.split(':').map(Number)
+  return (h || 0) * 60 + (m || 0)
+}
+function timedChipStyle(s: Schedule): Record<string, string> {
+  const startMin = s.start_time ? timeToMinutes(s.start_time) : 0
+  let endMin = s.end_time ? timeToMinutes(s.end_time) : startMin + 60
+  if (endMin <= startMin) endMin = startMin + 30   // 日跨ぎ/不正値のフォールバック（最低30分ぶんは確保して潰れないように）
+  const top = (startMin / 60) * WEEK_HOUR_HEIGHT
+  const height = Math.max(18, ((endMin - startMin) / 60) * WEEK_HOUR_HEIGHT)
+  return { position: 'absolute', top: `${top}px`, height: `${height}px`, left: '2px', right: '2px' }
+}
+function scrollWeekTimelineToDefault() {
+  const el = weekTimelineScrollRef.value
+  if (el) el.scrollTop = WEEK_DEFAULT_SCROLL_HOUR * WEEK_HOUR_HEIGHT
+}
+watch(personalViewMode, async (mode) => {
+  if (mode === 'week') { await nextTick(); scrollWeekTimelineToDefault() }
+})
+watch(activeTab, async (tab) => {
+  if (tab === 'personal' && personalViewMode.value === 'week') { await nextTick(); scrollWeekTimelineToDefault() }
+})
+
 // 画面幅に応じた同時表示日数（3〜7日）。リサイズにも追従。
 const personalDayCount = ref(4)
 function updatePersonalDayCount() {
@@ -766,6 +865,7 @@ function updatePersonalDayCount() {
 onMounted(() => {
   updatePersonalDayCount()
   window.addEventListener('resize', updatePersonalDayCount)
+  nextTick(() => scrollWeekTimelineToDefault())
 })
 onUnmounted(() => window.removeEventListener('resize', updatePersonalDayCount))
 
@@ -780,15 +880,105 @@ const personalWeekDates = computed<string[]>(() => {
   return out
 })
 
-const personalMonthCells = computed<{ date: string | null; key: string }[]>(() => {
-  const y = personalAnchor.value.getFullYear()
-  const m = personalAnchor.value.getMonth()
-  const dates = genMonthDates(y, m)
+// ── 月間ビュー：複数月を縦に連結して無限スクロール（#個人月間無限スクロール） ──
+// 週間ビューと違い月間は「固定7列グリッドを月単位で再生成」する構造のため、
+// 共有タブの日リスト無限スクロール(calendarDates/ROW_HEIGHT固定行高)とは別実装。
+// 月ブロックは高さが可変(5〜6週)なため、行高計算ではなくscrollHeightの差分で
+// スクロール位置を補正する。
+const personalMonths = ref<{ year: number; month: number }[]>([])
+const personalMonthScrollRef = ref<HTMLElement | null>(null)
+const MONTH_SCROLL_THRESHOLD = 300   // 上端/下端からこの距離(px)以内で月を継ぎ足す
+
+function monthKey(year: number, month: number): string { return `${year}-${month}` }
+function monthLabel(year: number, month: number): string { return t('calendar.monthBadge', { n: month + 1 }) }
+
+function monthCellsFor(year: number, month: number): { date: string | null; key: string }[] {
+  const dates = genMonthDates(year, month)
   const leadBlank = weekdayIndex(dates[0])
   const cells: { date: string | null; key: string }[] = []
-  for (let i = 0; i < leadBlank; i++) cells.push({ date: null, key: `blank-${i}` })
+  for (let i = 0; i < leadBlank; i++) cells.push({ date: null, key: `blank-${year}-${month}-${i}` })
   for (const d of dates) cells.push({ date: d, key: d })
   return cells
+}
+
+function initPersonalMonths() {
+  const y = personalAnchor.value.getFullYear()
+  const m = personalAnchor.value.getMonth()
+  personalMonths.value = [-1, 0, 1].map((off) => {
+    const d = new Date(y, m + off, 1)
+    return { year: d.getFullYear(), month: d.getMonth() }
+  })
+}
+function extendMonthsTop() {
+  const first = personalMonths.value[0]
+  const d = new Date(first.year, first.month - 1, 1)
+  personalMonths.value = [{ year: d.getFullYear(), month: d.getMonth() }, ...personalMonths.value]
+}
+function extendMonthsBottom() {
+  const last = personalMonths.value[personalMonths.value.length - 1]
+  const d = new Date(last.year, last.month + 1, 1)
+  personalMonths.value = [...personalMonths.value, { year: d.getFullYear(), month: d.getMonth() }]
+}
+
+let monthScrollTicking = false
+async function onPersonalMonthScroll() {
+  if (monthScrollTicking) return
+  monthScrollTicking = true
+  requestAnimationFrame(async () => {
+    monthScrollTicking = false
+    const el = personalMonthScrollRef.value
+    if (!el) return
+
+    if (el.scrollTop < MONTH_SCROLL_THRESHOLD) {
+      const prevHeight = el.scrollHeight
+      extendMonthsTop()
+      await nextTick()
+      el.scrollTop += (el.scrollHeight - prevHeight)   // 継ぎ足し分だけ相殺しスクロール位置のジャンプを防ぐ
+    } else if (el.scrollHeight - el.scrollTop - el.clientHeight < MONTH_SCROLL_THRESHOLD) {
+      extendMonthsBottom()
+    }
+    updateAnchorFromScroll()
+  })
+}
+
+// 現在スクロールで見えている月ブロックを判定し、ヘッダーラベル(personalAnchor)を自動追従させる
+function updateAnchorFromScroll() {
+  const el = personalMonthScrollRef.value
+  if (!el) return
+  const containerTop = el.getBoundingClientRect().top
+  const blocks = el.querySelectorAll<HTMLElement>('.personal-month-block')
+  for (const block of Array.from(blocks)) {
+    const rect = block.getBoundingClientRect()
+    if (rect.bottom - containerTop > 40) {
+      const y = Number(block.dataset.year)
+      const m = Number(block.dataset.month)
+      if (!Number.isNaN(y) && !Number.isNaN(m) && (personalAnchor.value.getFullYear() !== y || personalAnchor.value.getMonth() !== m)) {
+        personalAnchor.value = new Date(y, m, 1)
+      }
+      break
+    }
+  }
+}
+
+async function scrollToMonth(year: number, month: number) {
+  if (!personalMonths.value.length) initPersonalMonths()
+  let guard = 0
+  while (!personalMonths.value.some((mm) => mm.year === year && mm.month === month) && guard < 24) {
+    const first = personalMonths.value[0]
+    const target = new Date(year, month, 1).getTime()
+    if (target < new Date(first.year, first.month, 1).getTime()) extendMonthsTop()
+    else extendMonthsBottom()
+    guard++
+  }
+  personalAnchor.value = new Date(year, month, 1)
+  await nextTick()
+  const el = personalMonthScrollRef.value
+  const block = el?.querySelector<HTMLElement>(`.personal-month-block[data-year="${year}"][data-month="${month}"]`)
+  if (el && block) el.scrollTop = block.offsetTop
+}
+
+watch(personalViewMode, async (mode) => {
+  if (mode === 'month') await scrollToMonth(personalAnchor.value.getFullYear(), personalAnchor.value.getMonth())
 })
 
 const personalNavLabel = computed(() => {
@@ -802,13 +992,22 @@ const personalNavLabel = computed(() => {
   return t('calendar.monthBadge', { n: personalAnchor.value.getMonth() + 1 })
 })
 
-function personalNavigate(dir: 1 | -1) {
+async function personalNavigate(dir: 1 | -1) {
+  if (personalViewMode.value === 'week') {
+    const d = new Date(personalAnchor.value)
+    d.setDate(d.getDate() + dir * personalDayCount.value)
+    personalAnchor.value = d
+    return
+  }
   const d = new Date(personalAnchor.value)
-  if (personalViewMode.value === 'week') d.setDate(d.getDate() + dir * personalDayCount.value)
-  else d.setMonth(d.getMonth() + dir)
-  personalAnchor.value = d
+  d.setMonth(d.getMonth() + dir)
+  await scrollToMonth(d.getFullYear(), d.getMonth())
 }
-function personalGoToday() { personalAnchor.value = new Date() }
+async function personalGoToday() {
+  if (personalViewMode.value === 'week') { personalAnchor.value = new Date(); return }
+  const now = new Date()
+  await scrollToMonth(now.getFullYear(), now.getMonth())
+}
 
 // ──────────────────── 日付ユーティリティ ────────────────────
 // toDateStr / isWeekend / fmtDateTime は shared/schedule-core.ts（admin と共有）から import 済み。
@@ -825,7 +1024,7 @@ async function loadWorkers() {
   if (!accId) return
   const { data } = await supabase
     .from('workers')
-    .select('id, name')
+    .select('id, name, birth_date')
     .eq('account_id', accId)
     .eq('active', true)
     .order('name')
@@ -997,6 +1196,8 @@ onMounted(async () => {
 
 <style scoped>
 .cal-page { display: flex; flex-direction: column; height: 100dvh; background: #fff; color: #111; overflow: hidden; }
+.similar-site-pick { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.similar-site-pick:active { opacity: .6; }
 .notif-banner { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; margin: 8px 12px; padding: 10px 12px; flex-shrink: 0; }
 .notif-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 700; color: #b45309; }
 .notif-dismiss { background: #f59e0b; color: #fff; border: none; border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
@@ -1029,6 +1230,15 @@ onMounted(async () => {
 
 .loading { flex: 1; display: flex; align-items: center; justify-content: center; color: #888; font-size: 14px; }
 
+.extend-loading-row { background: #fafbfc; }
+.extend-loading-cell { text-align: center; padding: 10px 0; color: #999; font-size: 12px; }
+.extend-spinner {
+  display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: -2px;
+  border: 2px solid #ddd; border-top-color: #06C755; border-radius: 50%;
+  animation: extend-spin .7s linear infinite;
+}
+@keyframes extend-spin { to { transform: rotate(360deg); } }
+
 /* ── 共有／個人タブ ── */
 .cal-tabs { display: flex; gap: 4px; padding: 8px 12px 0; background: #fff; flex-shrink: 0; }
 .cal-tab {
@@ -1047,22 +1257,52 @@ onMounted(async () => {
 .personal-view-toggle .cal-tab { flex: 0 0 auto; border-radius: 8px; padding: 6px 14px; }
 .personal-view-toggle .today-btn { margin-left: auto; }
 
-.personal-week { display: grid; gap: 1px; background: #E0E0E0; flex: 1; min-height: 0; }
-.personal-day-col { background: #fff; display: flex; flex-direction: column; min-width: 0; }
-.personal-day-head { font-size: 11px; font-weight: 700; color: #666; text-align: center; padding: 6px 2px; border-bottom: 1px solid #f0f0f0; }
-.personal-day-col.date-sunday .personal-day-head { color: #ef4444; }
-.personal-day-col.date-saturday .personal-day-head { color: #3b82f6; }
-.personal-day-col.date-today .personal-day-head { background: #ecfdf5; }
-.personal-day-body { flex: 1; padding: 4px; display: flex; flex-direction: column; gap: 4px; min-height: 120px; }
+.personal-week { display: flex; flex-direction: column; flex: 1; min-height: 0; background: #fff; }
 .personal-chip { font-size: 11px; padding: 4px 6px; border-radius: 4px; }
-.personal-add-btn {
-  margin-top: auto; background: none; border: 1px dashed #ccc; border-radius: 6px;
-  color: #aaa; font-size: 14px; padding: 4px; cursor: pointer;
+
+/* 週ヘッダー（日付＋追加ボタン） */
+.personal-week-head { display: grid; gap: 1px; background: #E0E0E0; border-bottom: 1px solid #E0E0E0; }
+.week-head-corner { background: #fff; }
+.personal-day-head {
+  background: #fff; display: flex; align-items: center; justify-content: space-between; gap: 4px;
+  font-size: 11px; font-weight: 700; color: #666; padding: 6px 6px 6px 8px; min-width: 0;
+}
+.personal-day-head span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.personal-day-head.date-sunday { color: #ef4444; }
+.personal-day-head.date-saturday { color: #3b82f6; }
+.personal-day-head.date-today { background: #ecfdf5; }
+.week-head-add-btn {
+  flex-shrink: 0; background: none; border: 1px dashed #ccc; border-radius: 6px;
+  color: #aaa; font-size: 12px; padding: 2px 6px; cursor: pointer; line-height: 1.4;
 }
 
+/* 終日・時刻未設定の予定 */
+.personal-week-allday { display: grid; gap: 1px; background: #E0E0E0; border-bottom: 1px solid #E0E0E0; }
+.week-allday-col { background: #fbfbfb; padding: 2px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+/* 時間軸タイムライン */
+.personal-week-scroll { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.personal-week-timeline { display: grid; position: relative; }
+.week-hour-axis { position: relative; border-right: 1px solid #E0E0E0; }
+.week-hour-label { position: absolute; right: 4px; transform: translateY(-50%); font-size: 10px; color: #999; }
+.week-day-timeline { position: relative; border-left: 1px solid #f0f0f0; min-width: 0; }
+.week-day-timeline.date-sunday { background: #fff8f8; }
+.week-day-timeline.date-saturday { background: #f8fafd; }
+.week-day-timeline.date-today { background: #ecfdf5; }
+.week-hour-line { position: absolute; left: 0; right: 0; border-top: 1px solid #f0f0f0; }
+.week-timed-chip {
+  font-size: 10px; padding: 2px 4px; border-radius: 4px; overflow: hidden; cursor: pointer;
+  display: flex; flex-direction: column; line-height: 1.3; box-sizing: border-box;
+}
+.week-timed-chip .chip-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.week-timed-chip .chip-time { font-size: 9px; opacity: .85; }
+
+.personal-month-scroll { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.personal-month-block { margin-bottom: 14px; }
+.personal-month-block-label { font-size: 12px; font-weight: 700; color: #888; padding: 6px 4px 4px; }
 .personal-month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: #E0E0E0; }
 .personal-month-wd { background: #f5f5f5; text-align: center; font-size: 11px; font-weight: 700; color: #666; padding: 6px 0; }
-.personal-month-cell { background: #fff; min-height: 64px; padding: 2px; }
+.personal-month-cell { background: #fff; min-height: 64px; padding: 2px; overflow: hidden; min-width: 0; }
 .personal-month-cell.blank { background: #fafafa; }
 .personal-month-daynum { font-size: 11px; color: #666; padding: 2px 4px; cursor: pointer; }
 .personal-month-cell.date-sunday .personal-month-daynum { color: #ef4444; }
@@ -1070,7 +1310,7 @@ onMounted(async () => {
 .personal-month-cell.date-today { background: #ecfdf5; }
 .personal-chip-sm {
   font-size: 10px; padding: 1px 4px; border-radius: 3px; margin: 1px 2px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; box-sizing: border-box;
 }
 
 /* グリッド */
@@ -1128,11 +1368,13 @@ thead th.sticky-col { z-index: 11; }
   min-height: 72px;
 }
 .cell-inner {
+  position: relative;
   display: flex; flex-direction: column;
   padding: 2px 3px;
   min-height: 72px;
 }
 .sched-cell.my-col-cell { background: rgba(6, 199, 85, .03); }
+.birthday-badge { position: absolute; top: 1px; right: 2px; font-size: 13px; color: #f59e0b; pointer-events: none; }
 
 /* スケジュールチップ */
 .sched-chip {

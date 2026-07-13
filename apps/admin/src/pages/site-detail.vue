@@ -162,6 +162,12 @@
         </div>
         <p v-else class="muted">写真・資料はありません（上のボタンから追加）</p>
       </section>
+
+      <!-- ───────── チャット ───────── -->
+      <section v-else-if="tab === 'chat'" class="card">
+        <div class="card-head"><h2 class="card-title">チャット</h2></div>
+        <SiteChatPanel :site-id="siteId" />
+      </section>
     </template>
   </div>
 </template>
@@ -173,6 +179,7 @@ import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { normalizeSiteName } from '../lib/siteSimilarity'
 import { siteStoredName } from '../lib/siteKey'
+import SiteChatPanel from '../components/SiteChatPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -197,12 +204,13 @@ const stats = ref<{ count: number; lastDate: string }>({ count: 0, lastDate: '' 
 const loading = ref(true)
 const uploading = ref(false)
 
-const tab = ref<'overview' | 'reports' | 'docs' | 'files'>('overview')
+const tab = ref<'overview' | 'reports' | 'docs' | 'files' | 'chat'>('overview')
 const TABS = computed(() => [
   { key: 'overview', label: '概要', count: null as number | null },
   { key: 'reports',  label: '日報', count: stats.value.count },
   { key: 'docs',     label: '見積・注文', count: estimates.value.length + orders.value.length },
   { key: 'files',    label: '写真・資料', count: attachments.value.length },
+  { key: 'chat',     label: 'チャット', count: null as number | null },
 ])
 
 // 編集（基本情報 inline）
@@ -343,6 +351,7 @@ async function load() {
   const since = new Date(); since.setDate(since.getDate() - 180)
   const { data: reps } = await supabase.from('daily_reports')
     .select('date, sites').eq('account_id', accountId).gte('date', since.toISOString().split('T')[0]).order('date', { ascending: false })
+    .limit(30000) // 180日×全作業員で上限(既定1000)超による現場別件数/直近日報日の集計漏れ防止（reports.vue等の1ヶ月5000の6倍相当）
   const rows: { date: string; workers: string }[] = []
   let count = 0, lastDate = ''
   for (const r of (reps ?? []) as any[]) {

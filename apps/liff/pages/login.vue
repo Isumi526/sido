@@ -2,7 +2,7 @@
   <div class="login-wrap">
     <div class="login-card">
       <h1 class="login-title">作業員ログイン</h1>
-      <p class="login-sub">ログインID（またはメールアドレス）とパスワードでログインします。<br />（LINEから開いている場合はそのままご利用いただけます）</p>
+      <p class="login-sub">ログインID（またはメールアドレス）とパスワードでログインします。</p>
 
       <form class="login-form" @submit.prevent="submit">
         <div class="field">

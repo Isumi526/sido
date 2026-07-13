@@ -31,6 +31,7 @@ export async function refreshNavBadges() {
   const since = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0]
   const { data: reps } = await supabase.from('daily_reports')
     .select('sites').eq('account_id', accountId).gte('date', since)
+    .limit(15000) // 90日×全作業員で上限(既定1000)超によるバッジ件数漏れ防止（reports.vue等の1ヶ月5000の3倍相当）
   let unset = 0
   for (const rep of (reps ?? []) as any[]) {
     const arr = Array.isArray(rep.sites) ? rep.sites : []

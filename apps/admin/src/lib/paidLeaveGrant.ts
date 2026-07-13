@@ -57,14 +57,17 @@ export function suggestedGrantDays(hireDate: string | null, employmentType: stri
   return daysForTenureMonths(tenureMonths(hireDate), employmentType, weeklyDays)
 }
 
-// FIFO残高計算: 消化(初期使用済み＋システム使用)を古い付与から順に充当し、各付与の残を出す。
+// FIFO残高計算: 消化(初期使用済み＋システム使用)を失効が近い付与から順に充当し、各付与の残を出す。
+//  通常の年次付与(失効=付与+24ヶ月で一律)なら「古い付与から」と「失効が近い付与から」は一致するが、
+//  移行初期残高等の失効日が不規則な手動付与が混じると食い違いうる＝消化順の意図(失効が近い方を優先し
+//  切り捨てを防ぐ)を直接表現するため expires_at でソートする(2026-07-13)。
 //  失効した付与は「未使用分のみ消滅」＝消化済み分は残に影響しない（従来の『有効付与合計−全期間使用』の
 //  過少計上バグを修正）。remaining = 有効な付与の未消化分の合計 −（付与総量を超えた過剰消化分）。
 export type GrantLite = { granted_at: string; expires_at: string; days: number }
 export function fifoBalance(
   grants: GrantLite[], consumed: number, todayStr: string,
 ): { remaining: number; validGranted: number; perGrant: (GrantLite & { used: number; leftover: number; expired: boolean })[] } {
-  const sorted = [...grants].sort((a, b) => a.granted_at.localeCompare(b.granted_at))  // 古い付与から
+  const sorted = [...grants].sort((a, b) => a.expires_at.localeCompare(b.expires_at) || a.granted_at.localeCompare(b.granted_at))  // 失効が近い付与から
   let c = Math.max(0, consumed)
   let validRemaining = 0, validGranted = 0
   const perGrant: (GrantLite & { used: number; leftover: number; expired: boolean })[] = []
