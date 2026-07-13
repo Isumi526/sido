@@ -3,5 +3,6 @@
   "hint": "Overall company schedule (no pricing or client details included)",
   "loading": "Loading…",
   "empty": "No upcoming schedule",
-  "period": "Period"
+  "period": "Period",
+  "noDate": "No date"
 }
