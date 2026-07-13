@@ -100,11 +100,11 @@ async function copyInviteUrl() {
 
 // 入力末尾の「@検索語」を検出して候補を絞る（単純なchat実装の一般的な方式・カーソル位置は見ない）
 function onDraftInput() {
+  autoResizeDraft()
   const m = draft.value.match(/@([^\s@]*)$/)
   if (!m) { mentionCandidates.value = []; return }
   const q = m[1].toLowerCase()
   mentionCandidates.value = allWorkers.filter(w => w.name.toLowerCase().includes(q)).slice(0, 8)
-  autoResizeDraft()
 }
 // テキストエリアを内容量に合わせて自動リサイズ（LINE等の一般的なチャット入力欄と同様）
 function autoResizeDraft() {
