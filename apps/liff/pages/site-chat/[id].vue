@@ -14,16 +14,18 @@
             class="msg-row"
             :class="{ mine: m.sender_worker_id === myWorkerId && !m.sender_is_admin }"
           >
-            <div class="msg-bubble">
+            <div class="msg-col">
               <div class="msg-sender">{{ m.sender_name }}</div>
-              <a v-if="m.attachment_url && m.attachment_kind === 'image'" :href="m.attachment_url" target="_blank" rel="noopener">
-                <img :src="m.attachment_url" class="msg-attachment-img" :alt="m.attachment_name || ''" />
-              </a>
-              <a v-else-if="m.attachment_url" :href="m.attachment_url" target="_blank" rel="noopener" class="msg-attachment-file">
-                <span class="material-symbols-rounded">description</span>{{ m.attachment_name || 'ファイル' }}
-              </a>
-              <div v-if="m.body" class="msg-body">{{ m.body }}</div>
-              <div class="msg-time">{{ fmtTime(m.created_at) }}</div>
+              <div class="msg-bubble">
+                <a v-if="m.attachment_url && m.attachment_kind === 'image'" :href="m.attachment_url" target="_blank" rel="noopener">
+                  <img :src="m.attachment_url" class="msg-attachment-img" :alt="m.attachment_name || ''" />
+                </a>
+                <a v-else-if="m.attachment_url" :href="m.attachment_url" target="_blank" rel="noopener" class="msg-attachment-file">
+                  <span class="material-symbols-rounded">description</span>{{ m.attachment_name || 'ファイル' }}
+                </a>
+                <div v-if="m.body" class="msg-body">{{ m.body }}</div>
+                <div class="msg-time">{{ fmtTime(m.created_at) }}</div>
+              </div>
             </div>
           </div>
         </div>
@@ -42,8 +44,8 @@
             <span class="material-symbols-rounded">attach_file</span>
             <input type="file" accept="image/*,.pdf" hidden data-testid="chat-file-input" @change="onFilePick" />
           </label>
-          <input
-            v-model="draft" type="text" class="msg-input" :placeholder="$t('siteChat.placeholder')"
+          <textarea
+            ref="draftRef" v-model="draft" rows="1" class="msg-input" :placeholder="$t('siteChat.placeholder')"
             data-testid="chat-input" @input="onDraftInput"
           />
           <button type="submit" class="msg-send" :disabled="(!draft.trim() && !pendingFile) || sending" data-testid="chat-send">
@@ -76,6 +78,7 @@ const loading   = ref(true)
 const site      = ref<{ id: string; name: string } | null>(null)
 const messages  = ref<ChatMessage[]>([])
 const draft     = ref('')
+const draftRef  = ref<HTMLTextAreaElement | null>(null)
 const sending   = ref(false)
 const listRef   = ref<HTMLElement | null>(null)
 const myWorkerId = ref<string | null>(null)
@@ -95,6 +98,14 @@ function onDraftInput() {
   if (!m) { mentionCandidates.value = []; return }
   const q = m[1].toLowerCase()
   mentionCandidates.value = allWorkers.filter(w => w.name.toLowerCase().includes(q)).slice(0, 8)
+  autoResizeDraft()
+}
+// テキストエリアを内容量に合わせて自動リサイズ（LINE等の一般的なチャット入力欄と同様）
+function autoResizeDraft() {
+  const el = draftRef.value
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = `${Math.min(el.scrollHeight, 120)}px`
 }
 function pickMention(w: { id: string; name: string }) {
   draft.value = draft.value.replace(/@([^\s@]*)$/, `@${w.name} `)
@@ -185,7 +196,11 @@ async function send() {
     if (mentionError) { console.error('[site-chat] mention insert failed', mentionError); alert(t('siteChat.mentionNotifyFailed')) }
   }
   sending.value = false
-  if (!error) { draft.value = ''; pendingFile.value = null; mentionedIds.value = new Set(); mentionCandidates.value = []; await loadMessages() }
+  if (!error) {
+    draft.value = ''; pendingFile.value = null; mentionedIds.value = new Set(); mentionCandidates.value = []
+    nextTick(autoResizeDraft)
+    await loadMessages()
+  }
 }
 
 async function load() {
@@ -232,13 +247,15 @@ onUnmounted(() => {
 .msg-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 8px 0; }
 .msg-row { display: flex; }
 .msg-row.mine { justify-content: flex-end; }
-.msg-bubble { max-width: 78%; background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 8px 12px; }
+.msg-col { max-width: 78%; display: flex; flex-direction: column; }
+.msg-row.mine .msg-col { align-items: flex-end; }
+.msg-sender { font-size: 11px; font-weight: 700; color: #888; margin-bottom: 2px; padding: 0 2px; }
+.msg-bubble { background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 8px 12px; }
 .msg-row.mine .msg-bubble { background: #e7f8ee; border-color: #b7ebcb; }
-.msg-sender { font-size: 11px; font-weight: 700; color: #888; margin-bottom: 2px; }
 .msg-body { font-size: 14px; white-space: pre-wrap; word-break: break-word; }
 .msg-time { font-size: 10px; color: #aaa; text-align: right; margin-top: 3px; }
-.msg-form { flex-shrink: 0; display: flex; gap: 8px; padding: 10px 0; border-top: 1px solid #eee; align-items: center; }
-.msg-input { flex: 1; border: 1px solid #ddd; border-radius: 20px; padding: 10px 16px; font-size: 14px; }
+.msg-form { flex-shrink: 0; display: flex; gap: 8px; padding: 10px 0; border-top: 1px solid #eee; align-items: flex-end; }
+.msg-input { flex: 1; border: 1px solid #ddd; border-radius: 20px; padding: 10px 16px; font-size: 14px; resize: none; overflow-y: auto; line-height: 1.4; max-height: 120px; font-family: inherit; }
 .msg-send { flex-shrink: 0; width: 44px; height: 44px; border-radius: 50%; border: none; background: #06C755; color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .msg-send:disabled { background: #ccc; cursor: default; }
 .msg-attach-btn { flex-shrink: 0; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #888; cursor: pointer; }
