@@ -334,7 +334,7 @@
           <div class="form-row">
             <span class="form-row-label">他のユーザーに共有</span>
             <label class="ios-toggle">
-              <input type="checkbox" v-model="formModal.is_public" />
+              <input type="checkbox" v-model="formModal.is_public" @change="isPublicTouched = true" />
               <span class="ios-toggle-track"></span>
             </label>
           </div>
@@ -646,6 +646,15 @@ function onGroupBulkSelect(e: Event) {
   for (const m of g.members) s.add(m.worker_id)
   selectedWorkerIds.value = s
 }
+// 方針C: 新規予定で対象に「自分以外」が含まれるなら共有トグルを既定ON。
+// ユーザーが手動でトグルしたら（isPublicTouched）それ以降は尊重し自動更新しない。編集(id有)は対象外。
+const isPublicTouched = ref(false)
+watch(selectedWorkerIds, (ids) => {
+  const f = formModal.value
+  if (!f || f.id || isPublicTouched.value) return
+  const self = effectiveWorkerId.value
+  f.is_public = [...ids].some(id => id !== self)
+})
 const detailModal = ref<{ schedule: Schedule; edits: ScheduleEdit[] } | null>(null)
 const saving      = ref(false)
 const formError   = ref('')
@@ -1045,9 +1054,12 @@ function onCellTap(date: string, workerId: string) {
     all_day: true, start_date: date, end_date: date,
     start_time: '', end_time: '',
     is_night_shift: false,
-    is_public: false,   // 既定は非共有（A方針）・共有したい時だけトグルON
+    // 既定は非共有。ただし「自分以外のユーザーへ予定追加」時は既定ON（他者アサインは共有前提／方針C）。
+    // 自分の予定(personalAddSchedule→effectiveWorkerId)は従来どおり非共有。ユーザーは保存前にトグルで変更可。
+    is_public: workerId !== effectiveWorkerId.value,
     _contractor: '',
   } as any
+  isPublicTouched.value = false   // 新規追加のたびに手動フラグをリセット（既定ON判定を有効化）
   selectedWorkerIds.value = new Set([workerId])   // タップした作業員を初期選択
   formError.value = ''
 }
@@ -1061,7 +1073,7 @@ function openEdit(ev: Schedule) {
     start_date: ev.start_date, end_date: ev.end_date,
     start_time: ev.start_time ?? '', end_time: ev.end_time ?? '',
     is_night_shift: ev.is_night_shift,
-    is_public: ev.is_public,
+    is_public: ev.is_public,   // 編集は既存値を維持（watchは id 有で自動更新しない）
     _contractor: '',
     _original: {
       title: ev.title, description: ev.description ?? null,
