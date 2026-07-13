@@ -414,11 +414,15 @@ function openSiteEditor(sid: string) {
   excelMsg.value = ''
 }
 function openAdd() { openSiteEditor(isAll.value ? '' : siteId.value) }
-// エディタ内で現場を選び直したら、その現場の既存工程を読み込む（全現場ビューからの追加用）
+// エディタ内で現場を選び直したら、その現場の既存工程を読み込む（全現場ビューからの追加用）。
+// ★未保存の入力行（id無し＝Excel取込や手入力で追加した行のうち内容あり）は破棄せず新現場へ引き継ぐ。
+//   導線「先に取り込む→後で現場を選ぶ」で取込内容が消えるバグの修正。旧現場の既存工程(id有り)は
+//   別現場のため引き継がない。引き継いだ行は保存時に新現場(e.siteId)へ insert される。
 function editorPickSite(sid: string) {
   if (!editor.value) return
-  const rows = tasks.value.filter((t) => t.site_id === sid).map(toDraft)
-  rows.push(newDraft())
+  const carried = editor.value.rows.filter((r) => !r.id && r.name.trim())   // 未保存かつ内容ありの行
+  const rows = [...tasks.value.filter((t) => t.site_id === sid).map(toDraft), ...carried]
+  rows.push(newDraft())   // 末尾に空の入力行を1つ
   editor.value = { siteId: sid, rows, deleted: [] }
 }
 function addRow() { editor.value?.rows.push(newDraft()) }
