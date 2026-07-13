@@ -125,6 +125,7 @@
           <input v-model="modal.report_start_date" type="date" class="input" data-testid="report-start-date" />
           <p class="hint-sm">この日以降の未送信のみリマインド/未送信者一覧に出ます。未設定なら従来どおり作業員登録日が起点です。</p>
         </div>
+        <template v-if="canViewWorkerDetails">
         <button type="button" class="detail-toggle" data-testid="detail-toggle" @click="showDetails = !showDetails">
           {{ showDetails ? '▾ 詳細情報を隠す' : '▸ 詳細情報（個人情報・会社・保険・資格・代理人・認証）を表示' }}
         </button>
@@ -262,6 +263,7 @@
           </div>
         </div>
         </div><!-- /detail-section -->
+        </template>
 
         <!-- ログイン認証（オーナーのみ＝他者のパスワードを設定できる操作のため／保存ボタンで作業員情報と一体反映） -->
         <div v-if="canManageAuth" class="field auth-field">
@@ -299,7 +301,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import PasswordInput from '../components/PasswordInput.vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { canViewWages, canViewHourlyWage, canManageUsers, canManageAuth } from '../lib/auth'
+import { canViewWages, canViewHourlyWage, canManageUsers, canManageAuth, canViewWorkerDetails } from '../lib/auth'
 
 type Worker = {
   id: string
