@@ -258,3 +258,7 @@ entries:
     target: SiteChatPanel.vue
     reason: "上記と同一指摘のadmin側(SiteChatPanel.vue)。理由は同じ([[site-chat]]エントリ参照): sendingフラグで連打防止済み・Supabase-jsは自動リトライしない・チャットの性質上二重投稿は目視で気付ける。"
     ticket: "3980ff81c56b8057a369e89a2d048c2d"
+  - rule: side-effect-integrity
+    target: SiteChatPanel.vue
+    reason: "side-effect-integrity/site-chat(target: site-chat)と同一指摘のadmin側(SiteChatPanel.vue)。target導出の差で別entryが要るだけで理由は完全に同一：site_chat_messages insert成功後にsite_chat_mentions insertが失敗しても、ブラウザのSupabase-jsからは2テーブルをまたぐ真のトランザクションは組めない(RPC/edge化=このMVP規模には過大)ため、mention insertのerrorを検知し送信者本人に『メッセージは送信されましたが、メンション通知の送信に失敗しました』とalertする緩和策をadmin側(SiteChatPanel.vue:198付近)にも実装済み。メッセージ本体(主目的)の送信は失われず、通知欠落を本人が即座に把握できる。完全なトランザクション化は将来チケットで対応可。"
+    ticket: "39a0ff81c56b81989087db446a25a2ce"
