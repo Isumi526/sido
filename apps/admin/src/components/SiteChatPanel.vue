@@ -9,7 +9,7 @@
         </button>
         <div v-if="inviteUrl" class="invite-url-box">
           <input class="invite-url-input" :value="inviteUrl" readonly data-testid="invite-url" @click="($event.target as HTMLInputElement).select()" />
-          <button type="button" class="btn-ghost-sm" @click="copyInviteUrl">コピー</button>
+          <button type="button" class="btn-ghost-sm" @click="copyInviteUrl">{{ inviteCopied ? 'コピーしました' : 'コピー' }}</button>
         </div>
       </div>
       <div ref="listRef" class="msg-list">
@@ -79,6 +79,7 @@ const mentionedIds = ref<Set<string>>(new Set())
 const mentionCandidates = ref<{ id: string; name: string }[]>([])
 const inviteBusy = ref(false)
 const inviteUrl  = ref('')
+const inviteCopied = ref(false)
 
 let accountId = ''
 let allWorkers: { id: string; name: string }[] = []
@@ -95,7 +96,11 @@ async function createInvite() {
   inviteUrl.value = data.url as string
 }
 async function copyInviteUrl() {
-  try { await navigator.clipboard.writeText(inviteUrl.value) } catch { /* クリップボード不可環境は選択コピーに任せる */ }
+  try {
+    await navigator.clipboard.writeText(inviteUrl.value)
+    inviteCopied.value = true
+    setTimeout(() => { inviteCopied.value = false }, 2000)
+  } catch { /* クリップボード不可環境は選択コピーに任せる */ }
 }
 
 // 入力末尾の「@検索語」を検出して候補を絞る（単純なchat実装の一般的な方式・カーソル位置は見ない）
