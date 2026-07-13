@@ -150,6 +150,11 @@ const config = useRuntimeConfig()
 const { authMode } = useLiff()
 
 const open = ref(false)
+// ハンバーガーを開くたびにバッジを再取得（/calendar等で既読化した直後でも最新件数を反映・2026-07-13）。
+// ※ @click ハンドラ内で直接呼ぶと useSchedules() 内の useI18n() が「setup外」判定で例外になり
+//   サイレントに失敗する(コンポーネントinstance文脈が無いDOMイベントハンドラのため)。
+//   watchはVueのeffectスコープ内で実行されinstance文脈が保持されるためここに書く。
+watch(open, (isOpen) => { if (isOpen) refreshScheduleNotifBadge() })
 
 // ホーム画面(pages/index.vue)と共通のナビ項目定義（composables/useNavItems.ts）。
 // 表記・並び・表示条件(パスワード変更等)のズレを防ぐ（2026-07-10）。
