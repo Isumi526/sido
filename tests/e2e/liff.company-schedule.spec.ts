@@ -34,12 +34,14 @@ test.afterAll(async () => {
   await rest(`sites?id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})
 })
 
-test('作業員が会社予定ページで現場名・工程名・期間を閲覧できる', async ({ page }) => {
+test('作業員が会社予定ページで現場名・工程名・期間をガント形式で閲覧できる', async ({ page }) => {
   await page.goto('/company-schedule', { waitUntil: 'networkidle' })
-  const row = page.locator('.row', { hasText: SITE })
-  await expect(row).toBeVisible({ timeout: 15000 })
-  await expect(row).toContainText(TASK)
-  await expect(row).toContainText('〜')
+  // ガント形式: 現場ごとのグループに現場名・工程名・期間バー(ラベルに期間)が出る
+  const group = page.locator('.gantt-group', { hasText: SITE })
+  await expect(group).toBeVisible({ timeout: 15000 })
+  await expect(group).toContainText(TASK)
+  // 期間はバーの title 属性に必ず入る（狭いバーは内側ラベルを出さないため title で検証）
+  await expect(group.locator('.gantt-bar').first()).toHaveAttribute('title', /〜/)
 })
 
 test('ナビ(HOME/ハンバーガー)に会社予定への導線がある', async ({ page }) => {
