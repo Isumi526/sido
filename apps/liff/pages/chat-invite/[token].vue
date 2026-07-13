@@ -18,15 +18,20 @@
       <div ref="listRef" class="msg-list">
         <div v-if="!messages.length" class="state">まだメッセージはありません</div>
         <div v-for="m in messages" :key="m.id" class="msg-row" :class="{ mine: m.sender_name === guestName && !m.sender_is_admin && !m.sender_worker_id }">
-          <div class="msg-bubble">
+          <div class="msg-col">
             <div class="msg-sender">{{ m.sender_name }}</div>
-            <div v-if="m.body" class="msg-body">{{ m.body }}</div>
-            <div class="msg-time">{{ fmtTime(m.created_at) }}</div>
+            <div class="msg-bubble">
+              <div v-if="m.body" class="msg-body">{{ m.body }}</div>
+              <div class="msg-time">{{ fmtTime(m.created_at) }}</div>
+            </div>
           </div>
         </div>
       </div>
       <form class="msg-form" @submit.prevent="send">
-        <input v-model="draft" type="text" class="msg-input" placeholder="メッセージを入力" data-testid="chat-input" />
+        <textarea
+          ref="draftRef" v-model="draft" rows="1" class="msg-input" placeholder="メッセージを入力"
+          data-testid="chat-input" @input="autoResizeDraft"
+        />
         <button type="submit" class="msg-send" :disabled="!draft.trim() || sending" data-testid="chat-send">送信</button>
       </form>
     </template>
@@ -49,8 +54,17 @@ const guestName = ref('')
 const nameInput = ref('')
 const messages  = ref<GuestMessage[]>([])
 const draft     = ref('')
+const draftRef  = ref<HTMLTextAreaElement | null>(null)
 const sending   = ref(false)
 const listRef   = ref<HTMLElement | null>(null)
+
+// テキストエリアを内容量に合わせて自動リサイズ（LINE等の一般的なチャット入力欄と同様）
+function autoResizeDraft() {
+  const el = draftRef.value
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = `${Math.min(el.scrollHeight, 120)}px`
+}
 
 let accountId = ''
 let siteId = ''
@@ -96,7 +110,7 @@ async function send() {
     sender_worker_id: null, sender_is_admin: false, sender_name: guestName.value, body,
   })
   sending.value = false
-  if (!error) { draft.value = ''; await loadMessages() }
+  if (!error) { draft.value = ''; nextTick(autoResizeDraft); await loadMessages() }
 }
 
 function startChat() {
@@ -139,13 +153,15 @@ onUnmounted(() => {
 .msg-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; }
 .msg-row { display: flex; }
 .msg-row.mine { justify-content: flex-end; }
-.msg-bubble { max-width: 78%; background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 8px 12px; }
+.msg-col { max-width: 78%; display: flex; flex-direction: column; }
+.msg-row.mine .msg-col { align-items: flex-end; }
+.msg-sender { font-size: 11px; font-weight: 700; color: #888; margin-bottom: 2px; padding: 0 2px; }
+.msg-bubble { background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 8px 12px; }
 .msg-row.mine .msg-bubble { background: #e7f8ee; border-color: #b7ebcb; }
-.msg-sender { font-size: 11px; font-weight: 700; color: #888; margin-bottom: 2px; }
 .msg-body { font-size: 14px; white-space: pre-wrap; word-break: break-word; }
 .msg-time { font-size: 10px; color: #aaa; text-align: right; margin-top: 3px; }
-.msg-form { flex-shrink: 0; display: flex; gap: 8px; padding: 10px 16px; background: #fff; border-top: 1px solid #eee; }
-.msg-input { flex: 1; border: 1px solid #ddd; border-radius: 20px; padding: 10px 16px; font-size: 14px; }
+.msg-form { flex-shrink: 0; display: flex; gap: 8px; padding: 10px 16px; background: #fff; border-top: 1px solid #eee; align-items: flex-end; }
+.msg-input { flex: 1; border: 1px solid #ddd; border-radius: 20px; padding: 10px 16px; font-size: 14px; resize: none; overflow-y: auto; line-height: 1.4; max-height: 120px; font-family: inherit; }
 .msg-send { flex-shrink: 0; border: none; border-radius: 20px; padding: 0 18px; background: #06C755; color: #fff; font-weight: 700; cursor: pointer; }
 .msg-send:disabled { background: #ccc; cursor: default; }
 </style>
