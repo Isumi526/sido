@@ -12,23 +12,31 @@
           <button type="button" class="btn-ghost-sm" @click="copyInviteUrl">{{ inviteCopied ? 'コピーしました' : 'コピー' }}</button>
         </div>
       </div>
-      <div ref="listRef" class="msg-list">
-        <p v-if="!messages.length" class="muted">まだメッセージはありません</p>
-        <div v-for="m in messages" :key="m.id" class="msg-row" :class="{ mine: m.sender_is_admin }">
-          <div class="msg-col">
-            <div class="msg-sender">{{ m.sender_name }}</div>
-            <div class="msg-bubble">
-              <a v-if="m.attachment_url && m.attachment_kind === 'image'" :href="m.attachment_url" target="_blank" rel="noopener">
-                <img :src="m.attachment_url" class="msg-attachment-img" :alt="m.attachment_name || ''" />
-              </a>
-              <a v-else-if="m.attachment_url" :href="m.attachment_url" target="_blank" rel="noopener" class="msg-attachment-file">
-                <span class="material-symbols-rounded">description</span>{{ m.attachment_name || 'ファイル' }}
-              </a>
-              <div v-if="m.body" class="msg-body">{{ m.body }}</div>
-              <div class="msg-time">{{ fmtTime(m.created_at) }}</div>
+      <div class="msg-list-wrap">
+        <div ref="listRef" class="msg-list" @scroll="onListScroll">
+          <p v-if="!messages.length" class="muted">まだメッセージはありません</p>
+          <div v-for="m in messages" :key="m.id" class="msg-row" :class="{ mine: m.sender_is_admin }">
+            <div class="msg-col">
+              <div class="msg-sender">{{ m.sender_name }}</div>
+              <div class="msg-bubble">
+                <a v-if="m.attachment_url && m.attachment_kind === 'image'" :href="m.attachment_url" target="_blank" rel="noopener">
+                  <img :src="m.attachment_url" class="msg-attachment-img" :alt="m.attachment_name || ''" />
+                </a>
+                <a v-else-if="m.attachment_url" :href="m.attachment_url" target="_blank" rel="noopener" class="msg-attachment-file">
+                  <span class="material-symbols-rounded">description</span>{{ m.attachment_name || 'ファイル' }}
+                </a>
+                <div v-if="m.body" class="msg-body">{{ m.body }}</div>
+                <div class="msg-time">{{ fmtTime(m.created_at) }}</div>
+              </div>
             </div>
           </div>
         </div>
+        <button
+          v-if="showScrollBtn" type="button" class="scroll-bottom-btn"
+          aria-label="最下部へ" title="最下部へ" @click="scrollToBottom"
+        >
+          <span class="material-symbols-rounded">keyboard_double_arrow_down</span>
+        </button>
       </div>
       <div v-if="pendingFile" class="pending-file">
         <span class="material-symbols-rounded">attach_file</span>{{ pendingFile.name }}
@@ -74,6 +82,7 @@ const draft    = ref('')
 const draftRef = ref<HTMLTextAreaElement | null>(null)
 const sending  = ref(false)
 const listRef  = ref<HTMLElement | null>(null)
+const showScrollBtn = ref(false)
 const pendingFile = ref<File | null>(null)
 const mentionedIds = ref<Set<string>>(new Set())
 const mentionCandidates = ref<{ id: string; name: string }[]>([])
@@ -130,6 +139,13 @@ function fmtTime(iso: string): string {
 }
 function scrollToBottom() {
   nextTick(() => { if (listRef.value) listRef.value.scrollTop = listRef.value.scrollHeight })
+  showScrollBtn.value = false
+}
+// 上にスクロールして最下部から離れている時だけ「最下部へ」ボタンを出す（一般的なチャットUI）。
+function onListScroll() {
+  const el = listRef.value
+  if (!el) return
+  showScrollBtn.value = el.scrollHeight - el.scrollTop - el.clientHeight > 120
 }
 
 async function loadMessages() {
@@ -217,6 +233,7 @@ onMounted(async () => {
     const { data: workersData } = await supabase.from('workers').select('id, name').eq('account_id', accountId).eq('active', true).order('name')
     allWorkers = (workersData ?? []) as { id: string; name: string }[]
     await loadMessages()
+    scrollToBottom()   // 初回表示は最下部（最新メッセージ）から
     pollTimer = setInterval(loadMessages, 8000)
     channel = supabase.channel(`site-chat-${props.siteId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'site_chat_messages', filter: `site_id=eq.${props.siteId}` }, () => loadMessages())
@@ -239,7 +256,16 @@ onUnmounted(() => {
 .invite-url-input { flex: 1; border: 1px solid #ddd; border-radius: 6px; padding: 6px 10px; font-size: 12px; color: #555; background: #f8fafc; }
 .btn-ghost-sm { flex-shrink: 0; border: 1px solid #ddd; background: #fff; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
 .muted { color: #94a3b8; padding: 16px 0; }
+.msg-list-wrap { position: relative; flex: 1; min-height: 0; display: flex; }
 .msg-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 4px 0; }
+.scroll-bottom-btn {
+  position: absolute; right: 12px; bottom: 12px; z-index: 5;
+  width: 36px; height: 36px; border-radius: 50%; border: 1px solid #e2e8f0;
+  background: #fff; color: #334155; box-shadow: 0 2px 8px rgba(0,0,0,.18);
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.scroll-bottom-btn:hover { background: #f1f5f9; }
+.scroll-bottom-btn .material-symbols-rounded { font-size: 22px; }
 .msg-row { display: flex; }
 .msg-row.mine { justify-content: flex-end; }
 .msg-col { max-width: 70%; display: flex; flex-direction: column; }
