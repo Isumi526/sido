@@ -362,19 +362,29 @@ async function saveEditor() {
   saving.value = true; saveError.value = ''
   try {
     const accountId = await getAccountId()
-    if (e.deleted.length) await supabase.from('process_tasks').delete().in('id', e.deleted)
+    // ★ supabase-js は insert/update/delete 失敗時に throw せず { error } を返す。
+    //   error を検知せず editor を閉じていたため、RLS/権限/制約で保存が弾かれても
+    //   「保存したのに何も表示されない」サイレント失敗になっていた（2026-07-14 shipスモークで発覚）。
+    if (e.deleted.length) {
+      const { error } = await supabase.from('process_tasks').delete().in('id', e.deleted)
+      if (error) throw error
+    }
     const inserts = rows.filter((r) => !r.id).map((r, i) => ({
       account_id: accountId, site_id: e.siteId, name: r.name.trim(), assignee: r.assignee || null, site_manager: r.site_manager || null,
       work_type: r.work_type || null, contract_amount: amt(r.contract_amount), start_date: r.start_date || null, end_date: r.end_date || null,
       progress: clampPct(r.progress), memo: r.memo?.trim() || null, sort_order: tasks.value.length + i,
     }))
-    if (inserts.length) await supabase.from('process_tasks').insert(inserts)
+    if (inserts.length) {
+      const { error } = await supabase.from('process_tasks').insert(inserts)
+      if (error) throw error
+    }
     for (const r of rows.filter((r) => r.id)) {
-      await supabase.from('process_tasks').update({
+      const { error } = await supabase.from('process_tasks').update({
         name: r.name.trim(), assignee: r.assignee || null, site_manager: r.site_manager || null, work_type: r.work_type || null,
         contract_amount: amt(r.contract_amount), start_date: r.start_date || null, end_date: r.end_date || null, progress: clampPct(r.progress),
         memo: r.memo?.trim() || null, updated_at: new Date().toISOString(),
       }).eq('id', r.id)
+      if (error) throw error
     }
     editor.value = null; await load()
   } catch (err: any) { saveError.value = err.message ?? '保存に失敗しました' }
@@ -388,18 +398,20 @@ async function saveSingle() {
   if (r.start_date && r.end_date && r.end_date < r.start_date) { saveError.value = '終了日は開始日以降にしてください'; return }
   saving.value = true; saveError.value = ''
   try {
-    await supabase.from('process_tasks').update({
+    const { error } = await supabase.from('process_tasks').update({
       name: r.name.trim(), assignee: r.assignee || null, site_manager: r.site_manager || null, work_type: r.work_type || null,
       contract_amount: amt(r.contract_amount), start_date: r.start_date || null, end_date: r.end_date || null,
       progress: clampPct(r.progress), memo: r.memo?.trim() || null, updated_at: new Date().toISOString(),
     }).eq('id', r.id!)
+    if (error) throw error
     single.value = null; await load()
   } catch (err: any) { saveError.value = err.message ?? '保存に失敗しました' }
   finally { saving.value = false }
 }
 async function remove(t: Task) {
   if (!confirm(`工程「${t.name}」を削除しますか？`)) return
-  await supabase.from('process_tasks').delete().eq('id', t.id)
+  const { error } = await supabase.from('process_tasks').delete().eq('id', t.id)
+  if (error) { alert(`削除に失敗しました: ${error.message}`); return }
   await load()
 }
 </script>
