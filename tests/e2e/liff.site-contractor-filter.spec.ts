@@ -7,6 +7,7 @@
 // ============================================================
 import { test, expect } from '@playwright/test'
 import { rest, getAccountId } from './helpers'
+import { FEAT_C_DATE } from './global-setup'
 
 const TS = Date.now()
 const CON   = `E2E元請_${TS}`
@@ -36,13 +37,14 @@ test.afterAll(async () => {
 })
 
 test('日報: 元請け選択で紐づく現場のみに絞り込まれる', async ({ page }) => {
+  // 新規(/report)は「次の未送信日」に依存し、1回のフルランで複数specが新規送信するため
+  // 枯渇すると「送信済みです」になりフォームが出ない。この spec は送信しない（絞り込みチェックのみ）ので、
+  // global-setupが必ず用意する既存日報(FEAT_C・テスト現場A)を編集モードで開き、枯渇の影響を受けないようにする。
   // 古いマスタキャッシュを消してからフォームを開く（force fetch される）
-  try { await page.goto('/report', { waitUntil: 'networkidle', timeout: 8000 }) }
+  try { await page.goto(`/report?edit=${FEAT_C_DATE}`, { waitUntil: 'networkidle', timeout: 8000 }) }
   catch { test.skip(true, 'liff dev(3000) 未起動'); return }
   await page.evaluate(() => localStorage.removeItem('app_master_cache'))
   await page.reload({ waitUntil: 'networkidle' })
-
-  if (await page.getByText('送信済みです').count()) { test.skip(true, '全日送信済みのためフォーム無し'); return }
   await page.waitForSelector('form.form', { timeout: 10000 })
 
   // 現場セレクト（__other__「新しい現場」optionを持つのが現場select＝安定特定・絞り込み後も不変）
@@ -51,10 +53,14 @@ test('日報: 元請け選択で紐づく現場のみに絞り込まれる', asy
   await expect(siteSelect.locator('option', { hasText: LINKED })).toHaveCount(1)
   await expect(siteSelect.locator('option', { hasText: FREE })).toHaveCount(1)
 
-  // 元請けを選択 → 紐づく現場のみに絞り込み（未紐付け現場は消える）
+  // 元請けを選択 → 現場が「紐づく現場」「その他の現場」の2 optgroup に階層化される
+  // （d65e1a0・2026-07-09。旧: 未紐付け現場は非表示 → 新: 下部の「その他」optgroupに残す方針に変更）
   const conSelect = page.locator('select.select').filter({ has: page.locator('option', { hasText: CON }) }).first()
   await conSelect.selectOption({ label: CON })
 
-  await expect(siteSelect.locator('option', { hasText: LINKED })).toHaveCount(1)   // 紐づく現場は残る
-  await expect(siteSelect.locator('option', { hasText: FREE })).toHaveCount(0)     // 未紐付け現場は消える
+  const linkedGroup = siteSelect.locator('optgroup[label="この元請けに紐づく現場"]')
+  const otherGroup  = siteSelect.locator('optgroup[label="その他の現場"]')
+  await expect(linkedGroup.locator('option', { hasText: LINKED })).toHaveCount(1)   // 紐づく現場は「紐づく現場」グループに残る
+  await expect(linkedGroup.locator('option', { hasText: FREE })).toHaveCount(0)     // 未紐付け現場は「紐づく現場」グループには出ない
+  await expect(otherGroup.locator('option', { hasText: FREE })).toHaveCount(1)      // 未紐付け現場は「その他」グループへ降格して残る
 })

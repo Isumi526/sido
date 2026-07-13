@@ -22,7 +22,8 @@ test.describe('予定 現場なし（自由タイトル）', () => {
     await expect(page.locator('.worker-chips')).toBeVisible()
 
     // 現場なしを選択 → 自由タイトル入力欄が出る
-    await page.locator('select.site-select').selectOption('__none__')
+    // de77561で「現場なし」はプルダウンの__none__選択肢から独立トグル(.no-site-toggle)に変更済み
+    await page.locator('.no-site-toggle input[type="checkbox"]').check()
     const titleInput = page.locator('input[placeholder="例：休暇 / 出張 / 私用"]')
     await expect(titleInput).toBeVisible()
     await titleInput.fill(TITLE)

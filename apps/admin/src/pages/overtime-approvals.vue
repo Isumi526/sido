@@ -103,13 +103,19 @@ async function load() {
 async function decide(g: OvertimeReq, status: 'approved' | 'rejected') {
   if (busy.value) return
   busy.value = g.id
-  const { error } = await supabase.from('overtime_requests')
+  // .eq('status','pending') により、既に決裁済みの二重実行(連打/再試行)ではdataが空になり通知も送らない
+  const { data, error } = await supabase.from('overtime_requests')
     .update({ status, approved_by: currentUser.value?.email ?? null, decided_at: new Date().toISOString() })
-    .eq('id', g.id)
+    .eq('id', g.id).eq('status', 'pending')
+    .select('id')
   busy.value = null
   if (error) { alert('更新に失敗しました: ' + error.message); return }
   pending.value = pending.value.filter(x => x.id !== g.id)
   await refreshNavBadges()  // ナビバッジを即時更新（リロード不要）
+  if (data && data.length) {
+    supabase.functions.invoke('notify-overtime-decision', { body: { request_id: g.id } })
+      .catch((e) => console.error('[notify-overtime-decision]', e))
+  }
 }
 
 onMounted(load)

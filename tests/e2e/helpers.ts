@@ -30,6 +30,23 @@ export const SUPABASE_URL  = process.env.SUPABASE_URL      || env.VITE_SUPABASE_
 export const ANON_KEY      = process.env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY
 export const ACCOUNT_SLUG  = process.env.ACCOUNT_SLUG      || env.VITE_ACCOUNT_SLUG || 'test'
 
+// psql 直接接続用（auth.users 等 REST 非公開のテーブルを操作するテスト向け）。
+// ハードコード54322を避け、SUPABASE_URL のポートから逆算する（supabase CLI の既定割当＝ API port + 1 = DB port）。
+// このプロジェクトのローカルスタックは 56321/56322 に固定（他プロジェクトと共存のため）なので
+// 決め打ちすると環境が変わった時にサイレントに間違った(または存在しない)DBへ繋ぎにいく。
+// 明示的に SUPABASE_DB_URL が設定されていればそちらを優先。
+function deriveDbUrl(): string {
+  if (process.env.SUPABASE_DB_URL) return process.env.SUPABASE_DB_URL
+  try {
+    const u = new URL(SUPABASE_URL)
+    const apiPort = Number(u.port || 80)
+    return `postgresql://postgres:postgres@${u.hostname}:${apiPort + 1}/postgres`
+  } catch {
+    return 'postgresql://postgres:postgres@127.0.0.1:54322/postgres'
+  }
+}
+export const DB_URL = deriveDbUrl()
+
 // admin 実ログイン用（ID=e2e → e2e@email.com）
 export const ADMIN_LOGIN_ID   = process.env.ADMIN_LOGIN_ID   || 'e2e'
 export const ADMIN_LOGIN_PASS = process.env.ADMIN_LOGIN_PASS || 'e2e-pass-1234'
@@ -84,6 +101,28 @@ export async function getAccountId(): Promise<string> {
   const rows = await rest(`accounts?slug=eq.${encodeURIComponent(ACCOUNT_SLUG)}&select=id`)
   if (!rows?.length) throw new Error(`account not found: ${ACCOUNT_SLUG}`)
   return rows[0].id
+}
+
+// 現場マスタの責任者候補（現場管理者以上=admin/office/site_manager）のキャッシュ。
+// 複数specがそれぞれ専用ワーカーを作ると無駄に増えるため、プロセス内で使い回す。
+let _respWorkerId: string | null | undefined
+
+/**
+ * 現場マスタの追加/編集フォームは責任者(現場管理者以上)が必須(a472f7e)。
+ * REST で直接 site を作る spec が admin UI の編集モーダルで保存(.btn-save)まで行う場合、
+ * responsible_worker_id が無いと save() が「責任者を選択してください」で弾いて保存が完了しない。
+ * 既存の候補を探し、無ければテスト専用の候補を1体作って使い回す（他specの実行順に依存しない）。
+ */
+export async function ensureResponsibleWorkerId(accountId: string): Promise<string> {
+  if (_respWorkerId) return _respWorkerId
+  const existing = await rest(`workers?account_id=eq.${accountId}&active=eq.true&permission_role=in.(admin,office,site_manager)&select=id&limit=1`)
+  if (existing?.[0]?.id) { _respWorkerId = existing[0].id; return _respWorkerId! }
+  const created = await rest('workers', {
+    method: 'POST', headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ account_id: accountId, name: 'E2E責任者候補(共通)', role: 'site', permission_role: 'site_manager', unit_price: 20000, active: true, sort_order: 997 }),
+  })
+  _respWorkerId = created?.[0]?.id
+  return _respWorkerId!
 }
 
 /** dev-user-id（LIFF devモード用ユーザー）の users.id を返す */

@@ -206,3 +206,59 @@ entries:
     target: download.vue
     reason: "経費申請書(liff /expense/download)のインライン編集追加(2026-07-04)に対するanon-access指摘。誤検知寄り＋既知ベースライン: このページはURLのuidを読まず applyUserId=認証済みLIFFセッション(self)または承認済み代理先(proxy)から解決(uid推測での他人編集は不可)。書き戻しは既存 saveReportById 経路(daily_reports)を使うだけで新しい露出クラスを追加していない。根っこの anon×RLS未適用(daily_reports等)は他のLIFF露出表と同じ pre-RLS ベースライン＝親エピック「本番DBのRLS有効化」で一括RLS化(account_idで論理分離済)。"
     ticket: "37b0ff81c56b8137827bd5d49f531777"
+  - rule: anon-access-token
+    target: notify-overtime
+    reason: "notify-overtime EFはLIFF(anon・LINE作業員はJWTを持たない)が残業申請insert直後に叩く設計のため元々verify_jwt=false・JWT無しで呼び出し可能(ハードニング2026-07-03のコメントに明記済みの既知トレードオフ)。今回(2026-07-11)は宛先解決の別バグ(存在しないusers.emailカラム参照で常にno-op)を直しただけで、この anon-access 自体は変更していない。悪用面: 本文/宛先ともクライアント入力を信頼せずDB(overtime_requests/sites.responsible_worker_id)から導出＝内容偽装不可。呼び出しには実在するpendingな残業申請の worker_id(UUID・推測困難)+date一致が必須＝公開情報から特定不可。15分以内の直近申請のみ・notified_atで送信後は冪等（連打で複数通は送れない）。悪用できても『既存の正規申請の通知を少し早める』程度に限定され、任意テナントへの迷惑メール送信や内容改ざんはできない。恒久対策(JWT必須化)は匿名LIFF申請フロー自体の認証再設計が必要なため別スコープ。"
+    ticket: "39a0ff81c56b81b6a350d5326fe56685"
+  - rule: anon-access-token
+    target: notify-edit-grant
+    reason: "notify-edit-grant(2026-07-11・日報画面リンク追加)に対するanon-access指摘＝誤検知。指摘は『/report?edit=YYYY-MM-DDのリンクに推測困難なトークンが無く、URLを知れば誰でもアクセスできる』というものだが、リンク先のapps/liff/pages/report.vueはURLの日付パラメータだけでは特定の日報レコードを一切参照しない設計を確認済み：全データ取得はcurrentUser(認証済みLIFFセッション)のworker_idから解決し、?editはその『自分の』日報の中でどの日付を開くかを選ぶだけ(apps/liff/pages/report.vue:1284 editDate → currentUser.value.worker_id起点のfetch)。未ログイン状態でリンクを開けば通常のLIFF/email認証フローに入るだけで、他人の日報が見える経路は存在しない。ゆえに『日付を知れば他人の日報が見える』という指摘の前提が成立しない。トークン化は不要な複雑化。"
+    ticket: "39a0ff81c56b818995f4cb165ace5bad"
+  - rule: side-effect-integrity
+    target: overtime-approvals.vue
+    reason: "notify-overtime-decision呼び出しをfire-and-forget(.catch(console.error)のみ)にした指摘。承認/却下という主操作(overtime_requests.update)は既に成功しUIにも反映済みで、後続のメール通知は付随的な副作用。失敗してもDBの承認結果自体は正しく確定しており、admin側でリトライ操作をブロックする必要はない(sendResend自体もRESEND_API_KEY未設定時は200 skippedを返すbest-effort設計)。同一の fire-and-forget + console.error パターンは notify-edit-grant の既存呼び出し元(reports.vue:358, report-edit-approvals.vue:128)でも使われている確立済みの慣習で、この1箇所だけ挙動を変えると却って一貫性を欠く。恒久対策(通知失敗の可視化/リトライ)が要るなら送信系呼び出し全体を横断で見直す別スコープ。"
+    ticket: "39a0ff81c56b81998304c049947ad243"
+  - rule: anon-access-token
+    target: liff-process-summary
+    reason: "liff-process-summary(2026-07-11・会社予定ページ新設)への指摘＝『account_idはアクセストークンではなくテナント識別子のため、知っていれば誰でも閲覧できる』。指摘自体は正確だが、account_idはこのアプリの他の大部分の anon露出テーブル(sites/schedules/workers等・accepted.yml内 rls-multitenant baseline群)と全く同じ既存の信頼モデルであり、LIFF側もそもそも accounts テーブルをanonキーで直接読んでaccount_idを解決している(useAccount().getAccountId())＝account_id自体はこのアプリの設計上secretとして扱われていない。本関数が新設したのは『その既存の信頼モデルの範囲内で、process_tasks(元は authenticated限定RLS)から金額/顧客名/担当者名などの機微情報を一切含まない最小投影(現場名・工程名・期間のみ)だけを追加露出する』ことであり、露出面としては既存ベースラインより狭い(他表は行全体をanon selectできるが、本関数は4フィールドの読み取り専用サマリのみ)。恒久対策(署名付きトークン/JWT必須化)は匿名LIFF全体の認証再設計が必要なため別スコープ(親エピック「本番DBのRLS有効化」)。"
+    ticket: "3980ff81c56b80b4a3f9cb0a4b308a96"
+  - rule: rls-multitenant
+    target: site_chat_messages
+    reason: "現場ごとのチャット機能(2026-07-11・①MVP)。LIFF(anon)が現場に紐づく作業員として送受信するため、既存のLIFF露出マスタ群(overtime_requests/report_edit_grants等)と同じ anon運用(RLS無効・account_id+site_idで論理分離)。チャット本文はメッセージのやり取り自体が目的でありdaily_reports等の他anon表と同水準の機微度。本番RLS化は親エピック「本番DBのRLS有効化」で一括。"
+    ticket: "3980ff81c56b8057a369e89a2d048c2d"
+  - rule: anon-access-token
+    target: site_chat_messages
+    reason: "上記チャットテーブルの anon select/insert/update。LIFF(公開anonキー)が現場チャットの送受信を行うため。他のLIFF露出表(overtime_requests/report_edit_grants等)と同じ pre-RLS ベースライン＝親エピックで一括RLS化。"
+    ticket: "3980ff81c56b8057a369e89a2d048c2d"
+  - rule: rls-multitenant
+    target: site_chat_mentions
+    reason: "現場ごとのチャット③(2026-07-11・メンション+通知)。schedule_notificationsと同型のアプリ内通知テーブル(未読バッジ用)。LIFF(anon)が既読化更新・未読件数取得を行うため、既存のLIFF露出通知表(schedule_notifications)と同じ anon運用(RLS無効・account_id+worker_idで論理分離)。通知メタデータのみ(本文はsite_chat_messages側)で機微度は低い。本番RLS化は親エピック「本番DBのRLS有効化」で一括。"
+    ticket: "39a0ff81c56b81989087db446a25a2ce"
+  - rule: anon-access-token
+    target: site_chat_mentions
+    reason: "上記メンション通知表の anon select/insert/update。LIFF(公開anonキー)が未読バッジ取得・既読化を行うため。schedule_notificationsと同じ pre-RLS ベースライン＝親エピックで一括RLS化。"
+    ticket: "39a0ff81c56b81989087db446a25a2ce"
+  - rule: side-effect-integrity
+    target: site-chat
+    reason: "site_chat_messages insert成功後にsite_chat_mentions insertが失敗すると、メッセージは送信済みなのにメンション通知だけ届かない不整合になる指摘。ブラウザのSupabase-jsクライアントからは2テーブルをまたぐ真のトランザクションは組めない(RPC/edge化が必要=このMVPの規模には過大)ため、根本対策の代わりに『サイレント失敗をなくす』対応をした：mention insertのerrorを検知し、console.errorに加えて送信者本人に『メッセージは送信されましたが、メンション通知の送信に失敗しました』とalertする(apps/liff/pages/site-chat/[id].vue・apps/admin/src/components/SiteChatPanel.vue 共通)。メッセージ本体(主目的)の送信は失われず、通知欠落だけを本人が即座に把握でき、必要なら再送や口頭補足で対処できる。完全なトランザクション化は将来チケットで対応可。"
+    ticket: "39a0ff81c56b81989087db446a25a2ce"
+  - rule: idempotency
+    target: site-chat
+    reason: "チャット送信(LIFF site-chat/[id].vue・admin SiteChatPanel.vue)にべき等ガード(一意リクエストID等)が無い指摘。UI側はsendingフラグで連打を防止済み。Supabase-jsクライアントはPOST/insertを自動リトライしない設計のため、ネットワーク再送による二重投稿の実際の発生率は低い(通信断なら単に送信失敗としてユーザーに見え、ユーザーが再送を判断する＝チャットの性質上、明らかな二重投稿は目視で気付ける)。一意制約による恒久対策は将来の要望(既読/削除機能等)と合わせて検討する。"
+    ticket: "3980ff81c56b8057a369e89a2d048c2d"
+  - rule: rls-multitenant
+    target: site_chat_invites
+    reason: "site_chat_invites作成マイグレーション(20260711050000)ではRLS無効のままauthenticatedにgrantしていた指摘＝『RLS有効化は同一マイグレーションファイル内で行うべき』。実際には同じコミット内の後続マイグレーション(20260711060000)でRLSを有効化し、current_account_id()ベースのポリシー(process_tasks/purchase_ordersと同型)を追加済み。2ファイルに分けて作業したが、devにマージされる時点・本番適用される時点のどちらでも『RLS無効×authenticated grant』の状態が単独で存在する瞬間は無い(常にセットで適用される)ため、実質的なリスクは無い。将来はテーブル作成と同一ファイルにまとめる運用を徹底する。"
+    ticket: "39a0ff81c56b81e19438e02fc532f33a"
+  - rule: idempotency
+    target: chat-invite
+    reason: "ゲストチャット送信(apps/liff/pages/chat-invite/[token].vue)にべき等ガードが無い指摘。既存のsite-chat/SiteChatPanel.vueのidempotency受容と同じ理由([[site-chat]]参照): sendingフラグで連打防止済み・Supabase-jsは自動リトライしない・チャットの性質上二重投稿は目視で気付ける。"
+    ticket: "39a0ff81c56b81e19438e02fc532f33a"
+  - rule: idempotency
+    target: SiteChatPanel.vue
+    reason: "上記と同一指摘のadmin側(SiteChatPanel.vue)。理由は同じ([[site-chat]]エントリ参照): sendingフラグで連打防止済み・Supabase-jsは自動リトライしない・チャットの性質上二重投稿は目視で気付ける。"
+    ticket: "3980ff81c56b8057a369e89a2d048c2d"
+  - rule: side-effect-integrity
+    target: SiteChatPanel.vue
+    reason: "side-effect-integrity/site-chat(target: site-chat)と同一指摘のadmin側(SiteChatPanel.vue)。target導出の差で別entryが要るだけで理由は完全に同一：site_chat_messages insert成功後にsite_chat_mentions insertが失敗しても、ブラウザのSupabase-jsからは2テーブルをまたぐ真のトランザクションは組めない(RPC/edge化=このMVP規模には過大)ため、mention insertのerrorを検知し送信者本人に『メッセージは送信されましたが、メンション通知の送信に失敗しました』とalertする緩和策をadmin側(SiteChatPanel.vue:198付近)にも実装済み。メッセージ本体(主目的)の送信は失われず、通知欠落を本人が即座に把握できる。完全なトランザクション化は将来チケットで対応可。"
+    ticket: "39a0ff81c56b81989087db446a25a2ce"

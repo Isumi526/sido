@@ -168,6 +168,7 @@
                 <input v-model="newGrant.note" class="input" placeholder="例: 2024年度付与 / 移行初期残高" />
               </div>
             </div>
+            <p v-if="manualGrantOverlapWarning" class="grant-warning" data-testid="grant-overlap-warning">{{ manualGrantOverlapWarning }}</p>
             <button class="btn-grant" :disabled="grantSaving" @click="addGrant">
               {{ grantSaving ? '保存中...' : '付与を追加' }}
             </button>
@@ -307,6 +308,28 @@ function suggestedGrant(w: WorkerStat): number {
   return suggestedGrantDays(w.hire_date, w.employment_type, w.weekly_scheduled_days)
 }
 
+// PostgRESTは既定でmax_rows(既定1000)を超えると黙って切り詰める。
+// 有給消化履歴は日付範囲で絞れない（account全期間が対象）ため、上限に達すると
+// FIFO残日数計算が一部消化を見落として過大表示になる（2026-07-11・データ取得上限超過の横断調査で発覚）。
+// .range()でページングして全件取得する。
+async function fetchAllPaidLeaveReports(accountId: string): Promise<{ user_id: string; date: string; note: string | null }[]> {
+  const PAGE = 1000
+  const all: { user_id: string; date: string; note: string | null }[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from('daily_reports')
+      .select('user_id, date, note')
+      .eq('account_id', accountId)
+      .eq('leave_type', 'paid_leave')
+      .order('date', { ascending: false })
+      .range(from, from + PAGE - 1)
+    if (error) throw error
+    all.push(...((data ?? []) as any[]))
+    if (!data || data.length < PAGE) break
+  }
+  return all
+}
+
 // ── 型定義 ────────────────────────────────────────────────────
 type WorkerStat = {
   id: string
@@ -388,6 +411,22 @@ const newGrant = ref({ granted_at: today, expires_at: `${thisYear + 2}-${today.s
 // ── ヘルパー ─────────────────────────────────────────────────
 function isExpired(expiresAt: string): boolean { return expiresAt < today }
 
+// 手動付与の注意喚起（ブロックはしない・特別付与/移行残高等の正当なケースもあるため）:
+// 有給は時効2年＝通常は同時に有効な付与が2件(当年+前年)を超えることは無い。
+// この新規付与を加えると3件以上同時有効になる場合、意図しない重複登録の可能性を警告する
+// （2026-07-11・実際に本番で1名だけ3件同時有効=60日になっていたケースが起点・[[project_sido]]）。
+const manualGrantOverlapWarning = computed(() => {
+  const g = newGrant.value
+  if (!g.granted_at || !g.expires_at) return ''
+  const validOthers = detailGrants.value.filter(x => !isExpired(x.expires_at))
+  const willOverlap = validOthers.filter(x => x.granted_at <= g.expires_at && g.granted_at <= x.expires_at)
+  const total = validOthers.length + 1
+  if (willOverlap.length >= 2) {
+    return `⚠ この付与を追加すると、同時に有効な付与が${total}件になります（通常は繰越込みで最大2件＝当年+前年）。誤って重複登録していないか確認してください。`
+  }
+  return ''
+})
+
 function remainingClass(days: number): string {
   if (days < 0)  return 'neg'
   if (days <= 5) return 'low'
@@ -429,11 +468,11 @@ async function load() {
   loading.value = true
   const accountId = await getAccountId()
 
-  const [{ data: workersData }, { data: grantsData }, { data: usersData }, { data: leaveData }] = await Promise.all([
+  const [{ data: workersData }, { data: grantsData }, { data: usersData }, leaveData] = await Promise.all([
     supabase.from('workers').select('id, name, active, hire_date, employment_type, weekly_scheduled_days, initial_used_leave_days, excluded_grant_dates').eq('account_id', accountId).order('name'),
     supabase.from('paid_leave_grants').select('id, worker_id, granted_at, expires_at, days, note').eq('account_id', accountId),
     supabase.from('users').select('id, worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
-    supabase.from('daily_reports').select('user_id, date, note').eq('account_id', accountId).eq('leave_type', 'paid_leave').order('date', { ascending: false }),
+    fetchAllPaidLeaveReports(accountId),
   ])
 
   const userToWorker: Record<string, string> = {}
@@ -877,6 +916,7 @@ onMounted(async () => {
 .btn-grant     { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 12px; font-weight: 700; cursor: pointer; font-size: 14px; }
 .btn-grant:disabled { opacity: .5; }
 .error         { color: #e53935; font-size: 13px; margin: 0; }
+.grant-warning { color: #b45309; background: #fef3c7; border: 1px solid #fde68a; border-radius: 6px; font-size: 12px; padding: 8px 10px; margin: 4px 0; }
 .sub-table    { width: 100%; border-collapse: collapse; font-size: 13px; }
 .sub-table th { background: #f9f9f9; padding: 8px 12px; text-align: left; font-size: 11px; color: #888; font-weight: 700; }
 .sub-table td { padding: 10px 12px; border-top: 1px solid #f0f0f0; }

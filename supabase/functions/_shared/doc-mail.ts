@@ -59,6 +59,28 @@ export async function resolveCaller(svc: ReturnType<typeof createClient>, authHe
   return { accountId: acct.id as string, userId: (data?.user?.id as string) ?? null }
 }
 
+// ID認証（メール無し作業員）のダミーemail変換ドメイン。worker-auth-setup/liff login.vue と同一値。
+const WORKER_LOGIN_EMAIL_DOMAIN = 'worker.sido-liff.app'
+
+// 作業員への通知先メールを「認証用メール(auth.users.email)」から解決する。
+//  - workers.login_id が設定されている（ID認証＝メール無し作業員）→ null（通知しない・将来はpushのみ）。
+//  - workers.auth_user_id が無い（未認証設定）→ null。
+//  - 認証メールがダミードメイン(<login_id>@worker.sido-liff.app)の場合も念のため null 扱い。
+//  ※ 旧 workers.notify_email（作業員が任意入力する連絡先）はもう通知先として使わない
+//    （議事録: 「通知用メールではなく認証用メール宛に送りたい」）。
+export async function resolveWorkerNotifyEmail(
+  svc: ReturnType<typeof createClient>, accountId: string, workerId: string,
+): Promise<string | null> {
+  const { data: worker } = await svc.from('workers')
+    .select('auth_user_id, login_id').eq('id', workerId).eq('account_id', accountId).maybeSingle()
+  if (!worker?.auth_user_id || worker.login_id) return null
+  const { data, error } = await svc.auth.admin.getUserById(worker.auth_user_id as string)
+  if (error || !data?.user?.email) return null
+  const email = data.user.email
+  if (email.toLowerCase().endsWith(`@${WORKER_LOGIN_EMAIL_DOMAIN}`)) return null
+  return email
+}
+
 // 業者の宛先候補（担当者メール群＋業者全体メール・重複除外）。admin が複数選んで送れる。
 export async function recipientCandidates(
   svc: ReturnType<typeof createClient>, accountId: string, subcontractorId: string,

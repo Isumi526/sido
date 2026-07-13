@@ -83,7 +83,8 @@ async function load() {
     supabase.from('daily_reports')
       .select('id, date, sites')
       .eq('account_id', accountId).gte('date', since)
-      .order('date', { ascending: false }),
+      .order('date', { ascending: false })
+      .limit(15000), // 90日×全作業員で上限(既定1000)超による未紐付け検出漏れ防止（reports.vue等の1ヶ月5000の3倍相当）
     supabase.from('sites').select('id, name').eq('account_id', accountId).eq('active', true).order('name'),
   ])
   siteNames.value = (sites ?? []).map((s: any) => s.name)

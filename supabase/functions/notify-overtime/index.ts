@@ -7,7 +7,7 @@
 //   - RESEND_API_KEY 未設定なら送信スキップ（sendResend が skip を返す）＝gate化しない。
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { sendResend } from '../_shared/doc-mail.ts'
+import { sendResend, resolveWorkerNotifyEmail } from '../_shared/doc-mail.ts'
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')              ?? '',
@@ -62,14 +62,15 @@ Deno.serve(async (req) => {
       .select('real_name').eq('account_id', accountId).eq('worker_id', worker_id).maybeSingle()
     const sender = (reqUser as any)?.real_name ?? '作業員'
 
-    // 選択現場 → 責任者worker → responsible のメール（users.email・現場管理者以上=email必須）
+    // 選択現場 → 責任者worker → responsible の認証用メール（auth.users.email・ID認証の作業員はスキップ）
     const { data: sites } = await supabase.from('sites')
       .select('name, responsible_worker_id').eq('account_id', accountId).in('name', site_names)
     const respWorkerIds = [...new Set(((sites ?? []) as any[]).map(s => s.responsible_worker_id).filter(Boolean))]
     if (!respWorkerIds.length) return json({ success: true, skipped: 'no_responsible' })
-    const { data: users } = await supabase.from('users')
-      .select('email').eq('account_id', accountId).in('worker_id', respWorkerIds)
-    const emails = [...new Set(((users ?? []) as any[]).map(u => u.email).filter(Boolean))]
+    const resolvedEmails = await Promise.all(
+      respWorkerIds.map((wid) => resolveWorkerNotifyEmail(supabase, accountId, wid as string))
+    )
+    const emails = [...new Set(resolvedEmails.filter((e): e is string => !!e))]
     if (!emails.length) return json({ success: true, skipped: 'no_responsible_email' })
 
     const link = ADMIN_URL ? `${ADMIN_URL.replace(/\/+$/, '')}/overtime-approvals` : ''

@@ -60,6 +60,7 @@
         <li><RouterLink to="/estimate-list" class="nav-link"><span class="material-symbols-rounded nav-icon">calculate</span>見積もり</RouterLink></li>
         <li><RouterLink to="/estimates" class="nav-link"><span class="material-symbols-rounded nav-icon">description</span>見積書（受領）</RouterLink></li>
         <li><RouterLink to="/purchase-orders" class="nav-link"><span class="material-symbols-rounded nav-icon">assignment</span>注文書発行</RouterLink></li>
+        <li><RouterLink to="/drawing-materials" class="nav-link"><span class="material-symbols-rounded nav-icon">architecture</span>実施図面 材料抽出(AI)</RouterLink></li>
 
         <li class="nav-section">経費・請求</li>
         <li><RouterLink to="/expenses" class="nav-link"><span class="material-symbols-rounded nav-icon">receipt_long</span>経費管理</RouterLink></li>
@@ -85,7 +86,13 @@
         <li><RouterLink to="/company-profile" class="nav-link"><span class="material-symbols-rounded nav-icon">business</span>自社情報</RouterLink></li>
         <li><RouterLink to="/settings" class="nav-link"><span class="material-symbols-rounded nav-icon">settings</span>設定</RouterLink></li>
       </ul>
-      <button class="btn-logout" @click="handleLogout">ログアウト</button>
+      <div class="sidebar-account">
+        <div class="sidebar-user" data-testid="sidebar-user">
+          <div class="sidebar-user-name">{{ currentWorkerName || currentUser?.email || '—' }}</div>
+          <div class="sidebar-user-role">{{ roleLabel(currentRole) }}</div>
+        </div>
+        <button class="btn-logout" @click="handleLogout">ログアウト</button>
+      </div>
     </nav>
     <main class="content">
       <RouterView />
@@ -102,7 +109,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { currentUser, signOut, isAdminAllowed, roleResolved } from './lib/auth'
+import { currentUser, currentRole, currentWorkerName, signOut, isAdminAllowed, roleResolved, roleLabel } from './lib/auth'
 import { liffAppUrl } from './lib/links'
 import { getAccountName } from './lib/account'
 import { editApprovalCount, siteUnsetCount, overtimePendingCount, pendingGrantCount, refreshNavBadges } from './lib/navBadges'
@@ -190,6 +197,10 @@ async function handleLogout() {
 .logo { font-size: 18px; font-weight: 900; letter-spacing: 4px; color: #06C755; display: flex; flex-direction: column; align-items: flex-start; line-height: 1.25; }
 .logo-sub { font-size: 11px; letter-spacing: normal; color: #888; margin-left: 0; margin-top: 3px; font-weight: 500; }
 .drawer-close { display: none; background: none; border: none; color: #888; cursor: pointer; padding: 4px; }
+.sidebar-account { border-top: 1px solid #2a2a2a; padding: 12px 16px; margin: 0 4px; display: flex; flex-direction: column; gap: 10px; }
+.sidebar-user { min-width: 0; }
+.sidebar-user-name { font-size: 13px; font-weight: 700; color: #eee; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar-user-role { font-size: 11px; color: #888; }
 .nav-list { list-style: none; display: flex; flex-direction: column; flex: 1; padding: 0; margin: 0; overflow-y: auto; }
 .nav-section {
   padding: 16px 20px 4px;
@@ -219,7 +230,6 @@ async function handleLogout() {
   font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
 }
 .btn-logout {
-  margin: 0 16px 8px;
   background: transparent;
   border: 1px solid #444;
   border-radius: 6px;

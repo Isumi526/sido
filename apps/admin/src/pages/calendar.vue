@@ -51,6 +51,9 @@
         </thead>
         <tbody>
           <tr class="sentinel-top"><td :colspan="visibleWorkers.length + 1" style="height:0;padding:0;border:none;"></td></tr>
+          <tr v-if="isExtending === 'top'" class="extend-loading-row" data-testid="extend-loading-top">
+            <td :colspan="visibleWorkers.length + 1" class="extend-loading-cell"><span class="extend-spinner" /> 読み込み中…</td>
+          </tr>
           <tr
             v-for="date in calendarDates"
             :key="date"
@@ -72,6 +75,7 @@
               class="sched-cell"
               @click="openAddForCell(date, w.id)"
             >
+              <span v-if="isBirthday(date, w.id)" class="birthday-badge material-symbols-rounded" :title="`${w.name}さんの誕生日`">cake</span>
               <div
                 v-for="s in cellSchedules(date, w.id)"
                 :key="s.id"
@@ -87,6 +91,9 @@
                 <span v-if="s.start_time" class="chip-time">{{ s.start_time.slice(0, 5) }}</span>
               </div>
             </td>
+          </tr>
+          <tr v-if="isExtending === 'bottom'" class="extend-loading-row" data-testid="extend-loading-bottom">
+            <td :colspan="visibleWorkers.length + 1" class="extend-loading-cell"><span class="extend-spinner" /> 読み込み中…</td>
           </tr>
           <tr class="sentinel-bottom"><td :colspan="visibleWorkers.length + 1" style="height:0;padding:0;border:none;"></td></tr>
         </tbody>
@@ -314,7 +321,7 @@ import { currentWorkerId } from '../lib/auth'
 import { loadScheduleCategories, FALLBACK_CATEGORY_COLOR, type ScheduleCategory } from '../lib/scheduleCategories'
 import {
   shiftMonth, genMonthDates, toDateStr, isWeekend, weekdayIndex, dateCellClass, fmtDateTime,
-  cellSchedules as coreCellSchedules, chipStyle as coreChipStyle, buildScheduleDiff,
+  cellSchedules as coreCellSchedules, chipStyle as coreChipStyle, buildScheduleDiff, birthdayDatesByWorker,
 } from '../lib/schedule-core.gen'
 
 // ──── 型定義 ────────────────────────────────────────────────
@@ -371,7 +378,7 @@ const ROW_HEIGHT = 36   // extendTop 時のスクロール位置補正の目安�
 
 // ──── 状態 ─────────────────────────────────────────────────
 const allSchedules  = ref<Schedule[]>([])
-const workers       = ref<{ id: string; name: string }[]>([])
+const workers       = ref<{ id: string; name: string; birth_date: string | null }[]>([])
 // 予定カテゴリマスタ（#A・色分け）。key→color の早見表つき。
 const scheduleCategories = ref<ScheduleCategory[]>([])
 const categoryColor = computed(() => {
@@ -386,6 +393,11 @@ function chipStyle(s: Schedule) {
 }
 function cellSchedules(date: string, workerId: string): Schedule[] {
   return coreCellSchedules(allSchedules.value, date, workerId, showDeleted.value, false)
+}
+// 誕生日バッジ（DB保存なしの表示専用・要件化回答A「予定管理カレンダーに誕生日を自動表示」）
+const birthdayByDate = computed(() => birthdayDatesByWorker(workers.value, calendarDates.value))
+function isBirthday(date: string, workerId: string): boolean {
+  return !!birthdayByDate.value[date]?.includes(workerId)
 }
 
 const loading       = ref(false)
@@ -483,7 +495,7 @@ const calendarDates  = ref<string[]>([])
 let   loadedFrom     = ''
 let   loadedTo       = ''
 const navMonth       = ref(new Date())
-let   isExtending    = false
+const isExtending = ref<'top' | 'bottom' | null>(null)   // 月継ぎ足し中のローディング表示用
 let   ioTop:    IntersectionObserver | null = null
 let   ioBottom: IntersectionObserver | null = null
 
@@ -508,7 +520,7 @@ function initCalendar() {
 }
 
 async function extendTop() {
-  if (isExtending) return; isExtending = true
+  if (isExtending.value) return; isExtending.value = 'top'
   try {
     const base     = new Date(loadedFrom + 'T00:00:00')
     const target   = shiftMonth(base, -1)
@@ -520,11 +532,11 @@ async function extendTop() {
     await nextTick()
     if (wrap) wrap.scrollTop = prevTop + newDates.length * ROW_HEIGHT
     await loadSchedules()
-  } finally { isExtending = false }
+  } finally { isExtending.value = null }
 }
 
 async function extendBottom() {
-  if (isExtending) return; isExtending = true
+  if (isExtending.value) return; isExtending.value = 'bottom'
   try {
     const base     = new Date(loadedTo + 'T00:00:00')
     const target   = shiftMonth(base, +1)
@@ -532,7 +544,7 @@ async function extendBottom() {
     calendarDates.value = [...calendarDates.value, ...newDates]
     loadedTo = newDates[newDates.length - 1]
     await loadSchedules()
-  } finally { isExtending = false }
+  } finally { isExtending.value = null }
 }
 
 function setupIO() {
@@ -555,7 +567,11 @@ function setupIO() {
   }
 }
 
+// scrollToRow()によるprogrammatic scroll中はonGridScrollでのnavMonth更新を止める（#navMonth追従不具合・liffと同じ手法）。
+let pendingProgrammaticScrolls = 0
+
 function onGridScroll() {
+  if (pendingProgrammaticScrolls > 0) return
   const wrap = gridWrapRef.value; if (!wrap) return
   // 行の高さは予定の有無で可変なため、実際の行位置を測り、sticky ヘッダー直下に来ている
   // 「最上段の表示中の日付行」で月を判定する（liff と同じ手法）。
@@ -575,7 +591,13 @@ function scrollToRow(dateStr: string) {
   const wrap = gridWrapRef.value; if (!wrap || !dateStr) return
   const row  = wrap.querySelector<HTMLElement>(`tr[data-date="${dateStr}"]`)
   const headH = wrap.querySelector('thead')?.getBoundingClientRect().height ?? 0
-  if (row) wrap.scrollTop = Math.max(0, row.offsetTop - wrap.offsetTop - headH - 8)
+  if (row) {
+    pendingProgrammaticScrolls++
+    wrap.scrollTop = Math.max(0, row.offsetTop - wrap.offsetTop - headH - 8)
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      pendingProgrammaticScrolls = Math.max(0, pendingProgrammaticScrolls - 1)
+    }))
+  }
 }
 
 function scrollToToday() {
@@ -584,6 +606,10 @@ function scrollToToday() {
 
 function navigate(dir: 1 | -1) {
   const target    = shiftMonth(navMonth.value, dir)
+  // ボタン操作はscrollイベント経由のonGridScrollでのnavMonth更新を待たず即座に反映する。
+  // programmatic scroll(scrollToRow)が既に同じscrollTopに対しては'scroll'イベントを発火しないため
+  // (連打で2回目以降がonGridScroll未発火のまま navMonth が古い値から計算され1ヶ月先で足踏みしていた)。
+  navMonth.value  = target
   const targetStr = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-01`
   const prefix    = targetStr.slice(0, 7)
   const found     = calendarDates.value.find(d => d.startsWith(prefix))
@@ -617,7 +643,7 @@ function formatDateLabel(date: string): string {
 async function loadWorkers() {
   const { data } = await supabase
     .from('workers')
-    .select('id, name')
+    .select('id, name, birth_date')
     .eq('account_id', accountId)
     .eq('active', true)
     .order('name')
@@ -942,6 +968,15 @@ onMounted(async () => {
 
 .loading { text-align: center; padding: 60px; color: #888; }
 
+.extend-loading-row { background: #fafbfc; }
+.extend-loading-cell { text-align: center; padding: 10px 0; color: #999; font-size: 12px; }
+.extend-spinner {
+  display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: -2px;
+  border: 2px solid #ddd; border-top-color: #06C755; border-radius: 50%;
+  animation: extend-spin .7s linear infinite;
+}
+@keyframes extend-spin { to { transform: rotate(360deg); } }
+
 /* グリッド */
 .grid-wrap {
   overflow: auto;
@@ -1014,6 +1049,7 @@ thead th.sticky-col { z-index: 4; }
 
 /* スケジュールセル */
 .sched-cell {
+  position: relative;
   padding: 3px 4px;
   vertical-align: top;
   border-left: 1px solid #e2e8f0;
@@ -1023,6 +1059,7 @@ thead th.sticky-col { z-index: 4; }
   min-height: 32px;
 }
 .sched-cell:hover { background: #f0fdf4; }
+.birthday-badge { position: absolute; top: 2px; right: 4px; font-size: 15px; color: #f59e0b; pointer-events: none; }
 
 /* スケジュールチップ */
 .sched-chip {

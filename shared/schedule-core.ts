@@ -93,6 +93,39 @@ export function cellSchedules<T extends ScheduleCoreItem>(
   return [...rows].sort((a, b) => (a.start_time || '99:99').localeCompare(b.start_time || '99:99'))
 }
 
+// ──────────────────── 誕生日バッジ（DB保存なし・表示専用の合成予定） ────────────────────
+
+export interface BirthdayWorkerInput {
+  id:         string
+  birth_date: string | null  // 'YYYY-MM-DD'
+}
+
+/**
+ * カレンダーに表示中の日付範囲(dates)のうち、作業員の誕生日(月日一致)に該当する
+ * 'YYYY-MM-DD' → worker_id[] のマップを返す（DBに保存しない合成データ・要件化回答A対応）。
+ * うるう年2/29生まれは非うるう年では2/28に丸める（該当日が存在しないため）。
+ */
+export function birthdayDatesByWorker(
+  workers: readonly BirthdayWorkerInput[],
+  dates: readonly string[],
+): Record<string, string[]> {
+  const out: Record<string, string[]> = {}
+  const dateSet = new Set(dates)
+  const years = new Set(dates.map(d => Number(d.slice(0, 4))))
+  for (const w of workers) {
+    if (!w.birth_date) continue
+    const [, mm, dd] = w.birth_date.split('-')
+    for (const year of years) {
+      let day = Number(dd)
+      if (mm === '02' && dd === '29' && new Date(year, 1, 29).getMonth() !== 1) day = 28
+      const dateStr = `${year}-${mm}-${String(day).padStart(2, '0')}`
+      if (!dateSet.has(dateStr)) continue
+      ;(out[dateStr] ??= []).push(w.id)
+    }
+  }
+  return out
+}
+
 /** 既定のカテゴリフォールバック色（カテゴリマスタに色が無い時） */
 export const FALLBACK_CATEGORY_COLOR = '#94a3b8'
 

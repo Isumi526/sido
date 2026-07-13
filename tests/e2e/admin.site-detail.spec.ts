@@ -4,7 +4,7 @@
 //  写真/書類を登録・編集でき、再編集で保持される。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, getAccountId } from './helpers'
+import { rest, getAccountId, ensureResponsibleWorkerId } from './helpers'
 
 const TS = Date.now()
 const SITE = `E2E詳細現場_${TS}`
@@ -13,7 +13,9 @@ let siteId = ''
 
 test.beforeAll(async () => {
   const accountId = await getAccountId()
-  siteId = (await rest('sites', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ account_id: accountId, name: SITE, active: true }) }))[0].id
+  // 現場編集モーダルの保存(.btn-save)は責任者必須(a472f7e)。UIで保存まで行うため事前に用意。
+  const respWorkerId = await ensureResponsibleWorkerId(accountId)
+  siteId = (await rest('sites', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ account_id: accountId, name: SITE, active: true, responsible_worker_id: respWorkerId }) }))[0].id
 })
 test.afterAll(async () => {
   await rest(`site_attachments?site_id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})

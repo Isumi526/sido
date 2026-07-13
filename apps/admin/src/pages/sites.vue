@@ -84,7 +84,7 @@
         </div>
         <div class="field">
           <label>責任者（必須・現場管理者以上）</label>
-          <select v-model="modal.responsible_worker_id" class="input">
+          <select v-model="modal.responsible_worker_id" class="input" data-testid="site-responsible-select">
             <option :value="null">選択してください</option>
             <option v-for="w in responsibleCandidates" :key="w.id" :value="w.id">{{ w.name }}</option>
           </select>
@@ -374,6 +374,7 @@ async function load() {
   const sinceStr = since.toISOString().split('T')[0]
   const { data: reps } = await supabase.from('daily_reports')
     .select('date, sites').eq('account_id', accountId).gte('date', sinceStr)
+    .limit(15000) // 90日×全作業員で上限(既定1000)超による現場別集計漏れ防止（reports.vue等の1ヶ月5000の3倍相当）
   const stats: Record<string, { count: number; lastDate: string }> = {}
   for (const r of (reps ?? []) as any[]) {
     for (const st of (r.sites ?? [])) {
