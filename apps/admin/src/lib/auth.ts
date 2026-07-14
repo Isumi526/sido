@@ -54,17 +54,35 @@ export const canManageAuth = computed(() =>
 
 // auth_user_id（=ログインユーザー）に紐づく worker の permission_role を解決。
 //  auth_user_id は Supabase auth ユーザー単位で一意のため account 絞り込み不要。
+//  ★フェイルオープン防止(2026-07-14・回答B): worker行が0件でも一律 null(=オーナー全権限)にはしない。
+//   「意図的な純粋オーナー」= accounts.owner_auth_user_id に自分の auth.id が登録されている時だけ
+//   オーナー(null)扱い。それ以外の0件(退職者のworker削除・auth_user_id未リンク・データ不整合)や
+//   取得失敗は最小権限(worker)へ倒す＝事故で全権限を得る穴を塞ぐ。
 async function resolveRole(user: User | null): Promise<void> {
   roleResolved.value = false
   if (!user) { currentRole.value = null; currentWorkerId.value = null; currentWorkerName.value = null; roleResolved.value = true; return }
   try {
-    const { data } = await supabase
+    const { data: workers, error: wErr } = await supabase
       .from('workers').select('id, name, permission_role').eq('auth_user_id', user.id).limit(1)
-    currentRole.value = (data && (data[0] as any)?.permission_role) ?? null
-    currentWorkerId.value = (data && (data[0] as any)?.id) ?? null
-    currentWorkerName.value = (data && (data[0] as any)?.name) ?? null
+    if (wErr) throw wErr
+    const w = workers?.[0] as { id: string; name: string; permission_role: string } | undefined
+    if (w) {
+      // worker行あり → その permission_role をそのまま採用（従来どおり）
+      currentRole.value = w.permission_role ?? 'worker'
+      currentWorkerId.value = w.id
+      currentWorkerName.value = w.name
+    } else {
+      // worker行なし → 明示オーナー(accounts.owner_auth_user_id 一致)のみ null(オーナー)、他は worker へ倒す
+      const { data: owned, error: oErr } = await supabase
+        .from('accounts').select('id').eq('owner_auth_user_id', user.id).limit(1)
+      if (oErr) throw oErr
+      currentRole.value = owned && owned[0] ? null : 'worker'
+      currentWorkerId.value = null
+      currentWorkerName.value = null
+    }
   } catch {
-    currentRole.value = null   // 取得失敗時はロックアウトを避け null(=許可寄り)
+    // 取得失敗(transient等): フェイルセーフで最小権限(worker)。フェイルオープン(オーナー)にはしない。
+    currentRole.value = 'worker'
     currentWorkerId.value = null
     currentWorkerName.value = null
   } finally {
