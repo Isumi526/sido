@@ -53,11 +53,16 @@ Deno.serve(async (req) => {
   if (userErr || !userData?.user) return json({ error: 'トークン不正' }, 401)
 
   try {
-    const { text, siteName } = await req.json() as { text?: string; siteName?: string }
+    const { text, siteName, multiSite } = await req.json() as { text?: string; siteName?: string; multiSite?: boolean }
     if (!text || !text.trim()) return json({ error: 'text is required' }, 400)
 
     const truncated = text.length > MAX_TEXT_LEN ? text.slice(0, MAX_TEXT_LEN) : text
-    const siteHint = siteName ? `\n現場名: ${siteName}（この現場の工程表として読み取る）` : ''
+    const siteHint = multiSite
+      ? '\nこのファイルには複数の現場が混在しています。各タスクがどの現場のものか(シート名・現場列・見出し等から判断)を site_name に必ず入れてください。'
+      : (siteName ? `\n現場名: ${siteName}（この現場の工程表として読み取る）` : '')
+    const siteField = multiSite
+      ? '      "site_name": "この工程が属する現場名（複数現場混在のため必須。判別できなければnull）",\n'
+      : ''
 
     const prompt = `これは工程表(スケジュール表)のExcelをCSV化したテキストです。内容から工程(タスク)の一覧をJSONのみで返してください（説明文・コードフェンス不要）。${siteHint}
 
@@ -68,7 +73,7 @@ Deno.serve(async (req) => {
   "tasks": [
     {
       "name": "工程名（必須。例：内装ボード工事）",
-      "assignee": "担当者名（なければnull）",
+${siteField}      "assignee": "担当者名（なければnull）",
       "site_manager": "現場管理者名（なければnull）",
       "work_type": "日中" | "夜間" | "家具" | null,
       "contract_amount": 請負金額（数値。カンマ・円記号は除く。なければnull）,
@@ -116,6 +121,7 @@ ${truncated}`
           .filter((t: any) => typeof t?.name === 'string' && t.name.trim())
           .map((t: any) => ({
             name: String(t.name).trim(),
+            ...(multiSite ? { site_name: (typeof t.site_name === 'string' && t.site_name.trim()) ? t.site_name.trim() : null } : {}),
             assignee: t.assignee || null,
             site_manager: t.site_manager || null,
             work_type: WORK_TYPES.includes(t.work_type) ? t.work_type : null,
