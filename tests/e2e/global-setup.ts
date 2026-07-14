@@ -76,6 +76,17 @@ async function ensureAdminUser() {
     )
     console.log(`[e2e] admin app_metadata.account_slug=${ACCOUNT_SLUG} 付与(SQL)`)
   } catch (e) { console.warn('[e2e] app_metadata 付与失敗:', String(e)) }
+
+  // フェイルオープン修正(2026-07-14): e2e admin は worker行を持たない「純粋オーナー」。
+  //  resolveRole は worker行0件時 accounts.owner_auth_user_id 一致のみオーナー扱いに変わったため、
+  //  この account の owner を e2e ユーザーに設定しないと admin が worker 扱いで締め出される。
+  try {
+    execSync(
+      `psql "${DB_URL}" -c "update accounts set owner_auth_user_id = (select id from auth.users where email='${ADMIN_LOGIN_EMAIL}') where slug='${ACCOUNT_SLUG}'"`,
+      { stdio: 'ignore' },
+    )
+    console.log(`[e2e] accounts.owner_auth_user_id=${ADMIN_LOGIN_EMAIL} を ${ACCOUNT_SLUG} に設定(SQL)`)
+  } catch (e) { console.warn('[e2e] owner_auth_user_id 設定失敗:', String(e)) }
 }
 
 async function getDevUserId(accountId: string): Promise<string | null> {
