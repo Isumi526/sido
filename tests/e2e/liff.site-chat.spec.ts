@@ -79,6 +79,55 @@ test('ファイルをドラッグ&ドロップすると送信前プレビュー(
   await expect(page.locator('.pending-file')).toContainText('drag-drop-sample.pdf')
 })
 
+test('上限(15MB)を超えるファイルは送信前にクライアント側で弾かれ専用エラーが出る(アップロードもされない)', async ({ page }) => {
+  await page.goto(`/site-chat/${siteAId}`, { waitUntil: 'networkidle' })
+
+  let dialogMessage = ''
+  page.once('dialog', async (d) => { dialogMessage = d.message(); await d.accept() })
+  let uploadCalled = false
+  page.on('request', (req) => { if (req.url().includes('site-chat-attachment-upload')) uploadCalled = true })
+
+  const dataTransfer = await page.evaluateHandle(() => {
+    const dt = new DataTransfer()
+    const file = new File([new Uint8Array(20 * 1024 * 1024)], 'huge.pdf', { type: 'application/pdf' })
+    dt.items.add(file)
+    return dt
+  })
+  await page.locator('.page').dispatchEvent('drop', { dataTransfer })
+  await page.waitForTimeout(500)
+
+  expect(dialogMessage).toContain('ファイルサイズが大きすぎます')
+  await expect(page.locator('.pending-file')).toHaveCount(0)
+  expect(uploadCalled).toBe(false)
+})
+
+// 圧縮自体(client-side)はここで検証する。実アップロードの成功可否(edge到達)はLINE ID token検証が
+// dev-modeで再現できないため対象外(下記コメントの既存制約と同じ)。
+test('上限超過サイズ相当の画像は自動圧縮され、圧縮後(jpg)としてpendingFileに載る', async ({ page }) => {
+  test.setTimeout(30000)
+  await page.goto(`/site-chat/${siteAId}`, { waitUntil: 'networkidle' })
+
+  const dataTransfer = await page.evaluateHandle(async () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 3000; canvas.height = 3000
+    const ctx = canvas.getContext('2d')!
+    const grad = ctx.createLinearGradient(0, 0, 3000, 3000)
+    grad.addColorStop(0, 'red'); grad.addColorStop(0.5, 'blue'); grad.addColorStop(1, 'green')
+    ctx.fillStyle = grad
+    ctx.fillRect(0, 0, 3000, 3000)
+    for (let i = 0; i < 5000; i++) {
+      ctx.fillStyle = `hsl(${Math.random() * 360},100%,50%)`
+      ctx.fillRect(Math.random() * 3000, Math.random() * 3000, 5, 5)
+    }
+    const blob: Blob = await new Promise((resolve) => canvas.toBlob((b) => resolve(b!), 'image/png'))
+    const dt = new DataTransfer()
+    dt.items.add(new File([blob], 'big-photo.png', { type: 'image/png' }))
+    return dt
+  })
+  await page.locator('.page').dispatchEvent('drop', { dataTransfer })
+  await expect(page.locator('.pending-file')).toContainText('big-photo.jpg', { timeout: 10000 })
+})
+
 // アップロード自体(edge site-chat-attachment-upload・LINE ID token検証)はLIFF dev-modeでは
 // 実LINEセッションが無く再現できない(このプロジェクトの既存の同種upload系EFも同様に未検証)ため、
 // アップロード結果(attachment_url等)をDB直挿入で再現し、UI描画側を検証する。

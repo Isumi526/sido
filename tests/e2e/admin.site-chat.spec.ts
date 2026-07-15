@@ -79,6 +79,57 @@ test('ファイルをドラッグ&ドロップすると送信前プレビュー(
   await expect(page.locator('.pending-file')).toContainText('drag-drop-sample.pdf')
 })
 
+test('上限(15MB)を超えるファイルは送信前にクライアント側で弾かれ専用エラーが出る(アップロードもされない)', async ({ page }) => {
+  await page.goto(`/chats/${siteAId}`, { waitUntil: 'networkidle' })
+
+  let dialogMessage = ''
+  page.once('dialog', async (d) => { dialogMessage = d.message(); await d.accept() })
+  let uploadCalled = false
+  page.on('request', (req) => { if (req.url().includes('site-chat-attachment-upload')) uploadCalled = true })
+
+  const dataTransfer = await page.evaluateHandle(() => {
+    const dt = new DataTransfer()
+    const file = new File([new Uint8Array(20 * 1024 * 1024)], 'huge.pdf', { type: 'application/pdf' })
+    dt.items.add(file)
+    return dt
+  })
+  await page.locator('.chat-panel').dispatchEvent('drop', { dataTransfer })
+  await page.waitForTimeout(500)
+
+  expect(dialogMessage).toContain('ファイルサイズが大きすぎます')
+  await expect(page.locator('.pending-file')).toHaveCount(0)
+  expect(uploadCalled).toBe(false)
+})
+
+test('画像は上限超過でも自動圧縮され送信できる(圧縮前20MB相当→圧縮後jpgとしてアップロード成功)', async ({ page }) => {
+  test.setTimeout(60000)
+  await page.goto(`/chats/${siteAId}`, { waitUntil: 'networkidle' })
+
+  // 圧縮無しなら15MB上限に確実に引っかかる大きさの画像をcanvasで生成
+  const dataTransfer = await page.evaluateHandle(async () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 3000; canvas.height = 3000
+    const ctx = canvas.getContext('2d')!
+    const grad = ctx.createLinearGradient(0, 0, 3000, 3000)
+    grad.addColorStop(0, 'red'); grad.addColorStop(0.5, 'blue'); grad.addColorStop(1, 'green')
+    ctx.fillStyle = grad
+    ctx.fillRect(0, 0, 3000, 3000)
+    for (let i = 0; i < 5000; i++) {
+      ctx.fillStyle = `hsl(${Math.random() * 360},100%,50%)`
+      ctx.fillRect(Math.random() * 3000, Math.random() * 3000, 5, 5)
+    }
+    const blob: Blob = await new Promise((resolve) => canvas.toBlob((b) => resolve(b!), 'image/png'))
+    const dt = new DataTransfer()
+    dt.items.add(new File([blob], 'big-photo.png', { type: 'image/png' }))
+    return dt
+  })
+  await page.locator('.chat-panel').dispatchEvent('drop', { dataTransfer })
+  await expect(page.locator('.pending-file')).toContainText('big-photo.jpg', { timeout: 10000 })
+
+  await page.locator('[data-testid="chat-send"]').click()
+  await expect(page.locator('.msg-attachment-img[alt="big-photo.jpg"]')).toBeVisible({ timeout: 15000 })
+})
+
 test('@入力で作業員候補が出て選択でき、送信するとメンション通知(site_chat_mentions)が作られる', async ({ page }) => {
   const accountId = await getAccountId()
   const mentionTargetName = `E2E管理メンション対象_${TS}`
