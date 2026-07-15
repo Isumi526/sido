@@ -24,7 +24,7 @@
                   <a v-else-if="m.attachment_url" :href="m.attachment_url" target="_blank" rel="noopener" class="msg-attachment-file">
                     <span class="material-symbols-rounded">description</span>{{ m.attachment_name || 'ファイル' }}
                   </a>
-                  <div v-if="m.body" class="msg-body">{{ m.body }}</div>
+                  <div v-if="m.body" class="msg-body"><template v-for="(seg, i) in splitMentionSegments(m.body, allWorkers.map(w => w.name))" :key="i"><span v-if="seg.mention" class="msg-mention">{{ seg.text }}</span><template v-else>{{ seg.text }}</template></template></div>
                   <div class="msg-time">{{ fmtTime(m.created_at) }}</div>
                 </div>
               </div>
@@ -279,6 +279,7 @@ onUnmounted(() => {
 .msg-bubble { background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 8px 12px; }
 .msg-row.mine .msg-bubble { background: #e7f8ee; border-color: #b7ebcb; }
 .msg-body { font-size: 14px; white-space: pre-wrap; word-break: break-word; }
+.msg-mention { color: #06A050; font-weight: 700; }
 .msg-time { font-size: 10px; color: #aaa; text-align: right; margin-top: 3px; }
 .msg-form { flex-shrink: 0; display: flex; gap: 8px; padding: 10px 0; border-top: 1px solid #eee; align-items: flex-end; }
 .msg-input { flex: 1; border: 1px solid #ddd; border-radius: 20px; padding: 10px 16px; font-size: 14px; resize: none; overflow-y: auto; line-height: 1.4; max-height: 120px; font-family: inherit; }
