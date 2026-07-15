@@ -1,5 +1,8 @@
 <template>
-  <div class="chat-panel">
+  <div class="chat-panel" :class="{ 'drag-active': dragActive }"
+       @dragover.prevent="dragActive = true" @dragenter.prevent="dragActive = true"
+       @dragleave.prevent="dragActive = false" @drop.prevent="onDrop">
+    <div v-if="dragActive" class="drop-overlay">ここにドロップして添付</div>
     <div v-if="loading" class="muted">読み込み中…</div>
     <template v-else>
       <div class="invite-row">
@@ -85,6 +88,7 @@ const sending  = ref(false)
 const listRef  = ref<HTMLElement | null>(null)
 const showScrollBtn = ref(false)
 const pendingFile = ref<File | null>(null)
+const dragActive  = ref(false)
 const mentionedIds = ref<Set<string>>(new Set())
 const mentionCandidates = ref<{ id: string; name: string }[]>([])
 const inviteBusy = ref(false)
@@ -169,6 +173,13 @@ async function loadMessages() {
 function onFilePick(ev: Event) {
   const file = (ev.target as HTMLInputElement).files?.[0]
   pendingFile.value = file ?? null
+}
+// ドラッグ&ドロップ添付（既存のファイル選択(onFilePick)と同じpendingFileに載せる・
+// バリデーションは既存(送信時のuploadAttachment/edge側)をそのまま流用し、ここでは追加しない）
+function onDrop(e: DragEvent) {
+  dragActive.value = false
+  const file = e.dataTransfer?.files?.[0]
+  if (file) pendingFile.value = file
 }
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -256,7 +267,12 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.chat-panel { display: flex; flex-direction: column; height: 480px; }
+.chat-panel { display: flex; flex-direction: column; height: 480px; position: relative; }
+.chat-panel.drag-active { outline: 2px dashed #06A050; outline-offset: -2px; }
+.drop-overlay {
+  position: absolute; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
+  background: rgba(6, 160, 80, .08); color: #06A050; font-weight: 700; font-size: 14px; pointer-events: none;
+}
 .invite-row { flex-shrink: 0; margin-bottom: 8px; }
 .btn-invite { display: inline-flex; align-items: center; gap: 4px; border: 1px solid #ddd; background: #fff; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 700; color: #333; cursor: pointer; }
 .btn-invite:disabled { opacity: .6; cursor: default; }

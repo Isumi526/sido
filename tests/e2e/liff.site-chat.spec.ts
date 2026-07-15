@@ -6,6 +6,7 @@
 // ============================================================
 import { test, expect } from '@playwright/test'
 import path from 'path'
+import fs from 'fs'
 import { rest, restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()
@@ -57,6 +58,25 @@ test('ファイル選択でpending表示になる（送信前プレビュー）'
   await expect(page.locator('.pending-file')).toContainText('sample.pdf')
   await page.locator('.pending-file-clear').click()
   await expect(page.locator('.pending-file')).toHaveCount(0)
+})
+
+test('ファイルをドラッグ&ドロップすると送信前プレビュー(pendingFile)に載る', async ({ page }) => {
+  await page.goto(`/site-chat/${siteAId}`, { waitUntil: 'networkidle' })
+
+  const buffer = fs.readFileSync(path.resolve(__dirname, 'fixtures/sample.pdf'))
+  const dataTransfer = await page.evaluateHandle((data) => {
+    const dt = new DataTransfer()
+    const bytes = Uint8Array.from(atob(data), c => c.charCodeAt(0))
+    const file = new File([bytes], 'drag-drop-sample.pdf', { type: 'application/pdf' })
+    dt.items.add(file)
+    return dt
+  }, buffer.toString('base64'))
+  await page.locator('.page').dispatchEvent('dragover', { dataTransfer })
+  await expect(page.locator('.drop-overlay')).toBeVisible()
+  await page.locator('.page').dispatchEvent('drop', { dataTransfer })
+
+  await expect(page.locator('.drop-overlay')).toHaveCount(0)
+  await expect(page.locator('.pending-file')).toContainText('drag-drop-sample.pdf')
 })
 
 // アップロード自体(edge site-chat-attachment-upload・LINE ID token検証)はLIFF dev-modeでは

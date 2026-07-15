@@ -7,6 +7,7 @@
 // ============================================================
 import { test, expect } from '@playwright/test'
 import path from 'path'
+import fs from 'fs'
 import { restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()
@@ -57,6 +58,25 @@ test('チャットにファイル(PDF)を添付して送信すると、edge(site
   const attLink = page.locator('.msg-attachment-file', { hasText: 'sample.pdf' })
   await expect(attLink).toBeVisible({ timeout: 15000 })
   await expect(attLink).toHaveAttribute('href', /^https?:\/\//)
+})
+
+test('ファイルをドラッグ&ドロップすると送信前プレビュー(pendingFile)に載る', async ({ page }) => {
+  await page.goto(`/chats/${siteAId}`, { waitUntil: 'networkidle' })
+
+  const buffer = fs.readFileSync(path.resolve(__dirname, 'fixtures/sample.pdf'))
+  const dataTransfer = await page.evaluateHandle((data) => {
+    const dt = new DataTransfer()
+    const bytes = Uint8Array.from(atob(data), c => c.charCodeAt(0))
+    const file = new File([bytes], 'drag-drop-sample.pdf', { type: 'application/pdf' })
+    dt.items.add(file)
+    return dt
+  }, buffer.toString('base64'))
+  await page.locator('.chat-panel').dispatchEvent('dragover', { dataTransfer })
+  await expect(page.locator('.drop-overlay')).toBeVisible()
+  await page.locator('.chat-panel').dispatchEvent('drop', { dataTransfer })
+
+  await expect(page.locator('.drop-overlay')).toHaveCount(0)
+  await expect(page.locator('.pending-file')).toContainText('drag-drop-sample.pdf')
 })
 
 test('@入力で作業員候補が出て選択でき、送信するとメンション通知(site_chat_mentions)が作られる', async ({ page }) => {
