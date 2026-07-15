@@ -53,7 +53,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import HelpButton from '../components/HelpButton.vue'
 
@@ -65,6 +66,13 @@ const dragOver = ref(false)
 const errorMsg = ref('')
 const total    = ref(0)
 const done     = ref(0)
+
+// 解析中(busy)の画面離脱ガード（estimate-builder.vueと同型）。離脱すると解析が中断され抽出結果も失われるため。
+const LEAVE_MSG = '解析中です。移動すると解析が中断され、抽出結果が失われます。移動しますか？'
+onBeforeRouteLeave(() => (busy.value ? window.confirm(LEAVE_MSG) : true))
+function beforeUnload(e: BeforeUnloadEvent) { if (busy.value) { e.preventDefault(); e.returnValue = '' } }
+onMounted(() => window.addEventListener('beforeunload', beforeUnload))
+onUnmounted(() => window.removeEventListener('beforeunload', beforeUnload))
 
 function bytesToB64(bytes: Uint8Array): string {
   let bin = ''
