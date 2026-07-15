@@ -24,7 +24,7 @@
                   <a v-else-if="m.attachment_url" :href="m.attachment_url" target="_blank" rel="noopener" class="msg-attachment-file">
                     <span class="material-symbols-rounded">description</span>{{ m.attachment_name || 'ファイル' }}
                   </a>
-                  <div v-if="m.body" class="msg-body"><template v-for="(seg, i) in splitMentionSegments(m.body, allWorkers.map(w => w.name))" :key="i"><span v-if="seg.mention" class="msg-mention">{{ seg.text }}</span><template v-else>{{ seg.text }}</template></template></div>
+                  <div v-if="m.body" class="msg-body"><template v-for="(seg, i) in splitMentionSegments(m.body, [...allWorkers.map(w => w.name), ALL_MENTION.name])" :key="i"><span v-if="seg.mention" class="msg-mention">{{ seg.text }}</span><template v-else>{{ seg.text }}</template></template></div>
                   <div class="msg-time">{{ fmtTime(m.created_at) }}</div>
                 </div>
               </div>
@@ -45,7 +45,7 @@
           </button>
         </div>
         <ul v-if="mentionCandidates.length" class="mention-list" data-testid="mention-list">
-          <li v-for="w in mentionCandidates" :key="w.id" class="mention-item" data-testid="mention-item" @click="pickMention(w)">{{ w.name }}</li>
+          <li v-for="w in mentionCandidates" :key="w.id" class="mention-item" data-testid="mention-item" @click="pickMention(w)">{{ w.id === ALL_MENTION.id ? '@all（全員）' : w.name }}</li>
         </ul>
         <form class="msg-form" @submit.prevent="send">
           <label class="msg-attach-btn">
@@ -101,13 +101,19 @@ let allWorkers: { id: string; name: string }[] = []
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let channel: ReturnType<ReturnType<typeof useSupabase>['channel']> | null = null
 
+// @all(全員宛メンション・LINEの@全員相当)。現場に紐づくメンバー一覧の仕組みが無い(site_sharesはPart Aで
+// 未強制・そもそもworkerでなくuser向け)ため、既存のチャット閲覧と同じ範囲=account内の全アクティブworkerを対象にする。
+const ALL_MENTION = { id: '__all__', name: 'all' }
+
 // 入力末尾の「@検索語」を検出して候補を絞る（単純なchat実装の一般的な方式・カーソル位置は見ない）
 function onDraftInput() {
   autoResizeDraft()
   const m = draft.value.match(/@([^\s@]*)$/)
   if (!m) { mentionCandidates.value = []; return }
   const q = m[1].toLowerCase()
-  mentionCandidates.value = allWorkers.filter(w => w.name.toLowerCase().includes(q)).slice(0, 8)
+  const showAll = ALL_MENTION.name.includes(q)
+  const nameMatches = allWorkers.filter(w => w.name.toLowerCase().includes(q)).slice(0, showAll ? 7 : 8)
+  mentionCandidates.value = showAll ? [ALL_MENTION, ...nameMatches] : nameMatches
 }
 // テキストエリアを内容量に合わせて自動リサイズ（LINE等の一般的なチャット入力欄と同様）
 function autoResizeDraft() {
@@ -118,7 +124,8 @@ function autoResizeDraft() {
 }
 function pickMention(w: { id: string; name: string }) {
   draft.value = draft.value.replace(/@([^\s@]*)$/, `@${w.name} `)
-  mentionedIds.value.add(w.id)
+  if (w.id === ALL_MENTION.id) { allWorkers.forEach((worker) => mentionedIds.value.add(worker.id)) }
+  else { mentionedIds.value.add(w.id) }
   mentionCandidates.value = []
 }
 
