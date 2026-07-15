@@ -24,8 +24,7 @@ test.afterAll(async () => {
 })
 
 test('admin で招待リンクを発行できる', async ({ page }) => {
-  await page.goto(`/sites/${siteId}`, { waitUntil: 'networkidle' })
-  await page.locator('.tab', { hasText: 'チャット' }).click()
+  await page.goto(`/chats/${siteId}`, { waitUntil: 'networkidle' })
 
   await page.locator('[data-testid="invite-create-btn"]').click()
   const urlInput = page.locator('[data-testid="invite-url"]')
