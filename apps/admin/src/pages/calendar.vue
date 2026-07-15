@@ -506,6 +506,10 @@ let   loadedFrom     = ''
 let   loadedTo       = ''
 const navMonth       = ref(new Date())
 const isExtending = ref<'top' | 'bottom' | null>(null)   // 月継ぎ足し中のローディング表示用
+// 表示用isExtendingは短いディレイ後にセットする（素早く終わる読み込みでのチラつき防止・2026-07-15）。
+// 排他制御(二重発火防止)は即座に効かせる必要があるため、ディレイの影響を受けない別変数で持つ。
+let   extendingLock: 'top' | 'bottom' | null = null
+const EXTEND_LOADING_DELAY_MS = 250
 let   ioTop:    IntersectionObserver | null = null
 let   ioBottom: IntersectionObserver | null = null
 
@@ -530,7 +534,8 @@ function initCalendar() {
 }
 
 async function extendTop() {
-  if (isExtending.value) return; isExtending.value = 'top'
+  if (extendingLock) return; extendingLock = 'top'
+  const timer = setTimeout(() => { isExtending.value = 'top' }, EXTEND_LOADING_DELAY_MS)
   try {
     const base     = new Date(loadedFrom + 'T00:00:00')
     const target   = shiftMonth(base, -1)
@@ -542,11 +547,12 @@ async function extendTop() {
     await nextTick()
     if (wrap) wrap.scrollTop = prevTop + newDates.length * ROW_HEIGHT
     await loadSchedules()
-  } finally { isExtending.value = null }
+  } finally { clearTimeout(timer); isExtending.value = null; extendingLock = null }
 }
 
 async function extendBottom() {
-  if (isExtending.value) return; isExtending.value = 'bottom'
+  if (extendingLock) return; extendingLock = 'bottom'
+  const timer = setTimeout(() => { isExtending.value = 'bottom' }, EXTEND_LOADING_DELAY_MS)
   try {
     const base     = new Date(loadedTo + 'T00:00:00')
     const target   = shiftMonth(base, +1)
@@ -554,7 +560,7 @@ async function extendBottom() {
     calendarDates.value = [...calendarDates.value, ...newDates]
     loadedTo = newDates[newDates.length - 1]
     await loadSchedules()
-  } finally { isExtending.value = null }
+  } finally { clearTimeout(timer); isExtending.value = null; extendingLock = null }
 }
 
 function setupIO() {
