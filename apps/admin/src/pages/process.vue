@@ -234,6 +234,14 @@
                     <option value="__new__">新規作成：{{ g.extractedName || '（名称未設定）' }}</option>
                     <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.name }}</option>
                   </select>
+                  <p v-if="g.target === '__new__' && g.similarCandidates.length" class="import-similar-hint">
+                    似ている現場:
+                    <button
+                      v-for="s in g.similarCandidates" :key="s.id" type="button" class="import-similar-chip"
+                      :data-testid="`import-similar-${gi}-${s.id}`"
+                      @click="g.target = s.id"
+                    >{{ s.name }}</button>
+                  </p>
                 </td>
                 <td>
                   <template v-if="g.target !== '__skip__' && g.target !== '__new__' && existingCount(g.target) > 0">
@@ -266,6 +274,7 @@ import { ref, computed, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import HelpButton from '../components/HelpButton.vue'
+import { findSimilarSiteNames } from '../lib/siteSimilarity'
 
 type Task = { id: string; site_id: string; name: string; assignee: string | null; start_date: string | null; end_date: string | null; progress: number; sort_order: number; work_type: string | null; contract_amount: number | null; site_manager: string | null; memo: string | null }
 type Day = { ym: string; label: string; dom: number; wd: string; weekend: boolean; key: string; ms: number }
@@ -541,7 +550,7 @@ async function importExcelFile(file: File) {
 
 // ── 複数現場インポート（1ファイルに複数現場が混在した工程表を一括取込） ──
 type ImportTask = { name: string; site_name?: string | null; assignee: string | null; site_manager: string | null; work_type: string | null; contract_amount: number | null; start_date: string | null; end_date: string | null; memo: string | null }
-type ImportGroup = { extractedName: string; tasks: ImportTask[]; target: string; mode: 'append' | 'replace' }
+type ImportGroup = { extractedName: string; tasks: ImportTask[]; target: string; mode: 'append' | 'replace'; similarCandidates: { id: string; name: string }[] }
 const importModal = ref(false)
 const importInput = ref<HTMLInputElement | null>(null)
 const importDragActive = ref(false)
@@ -609,11 +618,15 @@ async function importMultiSite(file: File) {
     for (const row of (allTasks ?? []) as { site_id: string }[]) counts[row.site_id] = (counts[row.site_id] ?? 0) + 1
     existingCounts.value = counts
 
-    // 現場名を既存マスタに突合（正規化名一致）→ 一致すればその現場・なければ新規作成をデフォルト
+    // 現場名を既存マスタに突合（正規化名一致）→ 一致すればその現場・なければ新規作成をデフォルト。
+    // 完全一致が無い場合は、既存の重複検知ヘルパー(findSimilarSiteNames)で近い現場名を候補として提示する
+    // （現場名の表記ゆれ・誤字で誤って「新規作成」されてしまうのを防ぐ気づき）。
     importGroups.value = [...byName.entries()].map(([name, tasks]) => {
       const extractedName = name === '（現場名なし）' ? '' : name
       const match = extractedName ? sites.value.find((s) => normName(s.name) === normName(extractedName)) : null
-      return { extractedName, tasks, target: match ? match.id : (extractedName ? '__new__' : '__skip__'), mode: 'append' as const }
+      const similarNames = (!match && extractedName) ? findSimilarSiteNames(extractedName, sites.value.map((s) => s.name), undefined, 3) : []
+      const similarCandidates = similarNames.map((n) => sites.value.find((s) => s.name === n)).filter((s): s is { id: string; name: string } => !!s)
+      return { extractedName, tasks, target: match ? match.id : (extractedName ? '__new__' : '__skip__'), mode: 'append' as const, similarCandidates }
     })
     importOk.value = true
     importMsg.value = `${extracted.length}件の工程を${importGroups.value.length}現場に振り分けました。取込先を確認してください。`
@@ -829,6 +842,12 @@ async function remove(t: Task) {
 .import-table th, .import-table td { border-bottom: 1px solid #eee; padding: 8px 6px; text-align: left; vertical-align: middle; }
 .import-table th { font-size: 11px; color: #999; font-weight: 700; }
 .import-table select.input { min-width: 160px; }
+.import-similar-hint { margin: 4px 0 0; font-size: 11px; color: #8a93a6; }
+.import-similar-chip {
+  margin-left: 4px; border: 1px solid #cfd6e4; background: #eef3fd; color: #1a56c4;
+  border-radius: 10px; padding: 1px 8px; font-size: 11px; cursor: pointer;
+}
+.import-similar-chip:hover { background: #dfe9fc; }
 .ed-list { flex: 1; overflow-y: auto; border: 1px solid #eee; border-radius: 10px; padding: 6px; margin-bottom: 10px; }
 .ed-head { display: flex; gap: 8px; align-items: center; padding: 2px 6px 6px; font-size: 11px; color: #999; font-weight: 700; }
 .ed-head .ed-col-name { width: 200px; }

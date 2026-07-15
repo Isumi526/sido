@@ -78,4 +78,54 @@ test.describe('工程表インポート（複数現場）', () => {
     expect(aNames).toContain('解体')
     expect(bNames).toContain('配線')
   })
+
+  test('完全一致する現場が無くても、近い現場名があれば候補として提示され選択できる', async ({ page }) => {
+    test.setTimeout(120000)
+    page.on('dialog', (d) => d.accept())
+    const accountId = await getAccountId()
+    const resp = await ensureResponsibleWorkerId(accountId)
+    // このdescribe内のbeforeAllが完全一致の「E2E現場アルファ」(siteAId)を用意済みのため、
+    // 完全一致無しのケースを再現するには一旦削除する(このテストの間だけ・他テストは既に完了済み)。
+    // sites 削除は他テーブルのFK(process_tasks/site_chat_messages/site_chat_last_read等)が
+    // 残っていると失敗するため、参照している可能性のあるテーブルを先に掃除してから削除する。
+    await restSrv(`process_tasks?site_id=eq.${siteAId}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`site_chat_messages?site_id=eq.${siteAId}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`site_chat_last_read?site_id=eq.${siteAId}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`sites?id=eq.${siteAId}`, { method: 'DELETE' }).catch(() => {})
+    // 抽出される「E2E現場アルファ」とは完全一致しない、近い名前の現場を用意（正規化後に部分一致するよう末尾に文字を足す）
+    const nearName = `${SITE_A}2号館`
+    const nearSiteId = await ensureSite(accountId, nearName, resp)
+    try {
+      await page.goto('/process', { waitUntil: 'networkidle' })
+      await page.locator('.btn-import').click()
+      const dt = await page.evaluateHandle((data) => {
+        const d = new DataTransfer()
+        const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0))
+        d.items.add(new File([bytes], 'process-multisite.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
+        return d
+      }, fs.readFileSync(path.resolve(__dirname, 'fixtures/process-multisite.xlsx')).toString('base64'))
+      await page.locator('.import-drop').dispatchEvent('drop', { dataTransfer: dt })
+      await expect(page.locator('[data-testid="import-review"]')).toBeVisible({ timeout: 60000 })
+
+      const rows = page.locator('.import-table tbody tr')
+      const n = await rows.count()
+      let alphaRow = null as ReturnType<typeof rows.nth> | null
+      for (let i = 0; i < n; i++) {
+        const nameText = (await rows.nth(i).locator('td').first().innerText()).trim()
+        if (nameText.includes('アルファ')) alphaRow = rows.nth(i)
+      }
+      if (!alphaRow) throw new Error('アルファ行が見つかりません')
+
+      // 完全一致が無いため既定は「新規作成」のまま
+      await expect(alphaRow.locator('select').first()).toHaveValue('__new__')
+      // 近い現場名が候補チップとして出て、クリックすると取込先がその現場に切り替わる
+      const chip = alphaRow.locator(`[data-testid^="import-similar-"]`, { hasText: nearName })
+      await expect(chip).toBeVisible()
+      await chip.click()
+      await expect(alphaRow.locator('select').first()).toHaveValue(nearSiteId)
+    } finally {
+      await restSrv(`process_tasks?site_id=eq.${nearSiteId}`, { method: 'DELETE' }).catch(() => {})
+      await rest(`sites?id=eq.${nearSiteId}`, { method: 'DELETE' }).catch(() => {})
+    }
+  })
 })
