@@ -160,16 +160,26 @@ async function loadMessages() {
   if (wasAtBottom) scrollToBottom()
 }
 
+// 画像は容量が大きければ自動圧縮し、その上でedge側の実上限(MAX_ATTACHMENT_BYTES)を
+// クライアント側でも事前チェックする(無駄なアップロード＋汎用エラーを避ける)。
+async function setPendingFile(file: File | null) {
+  if (!file) { pendingFile.value = null; return }
+  const compressed = await compressImageIfNeeded(file)
+  if (compressed.size > MAX_ATTACHMENT_BYTES) {
+    alert(`ファイルサイズが大きすぎます(上限${formatMB(MAX_ATTACHMENT_BYTES)})`)
+    return
+  }
+  pendingFile.value = compressed
+}
 function onFilePick(ev: Event) {
   const file = (ev.target as HTMLInputElement).files?.[0]
-  pendingFile.value = file ?? null
+  setPendingFile(file ?? null)
 }
-// ドラッグ&ドロップ添付（既存のファイル選択(onFilePick)と同じpendingFileに載せる・
-// バリデーションは既存(送信時のuploadAttachment/edge側)をそのまま流用し、ここでは追加しない）
+// ドラッグ&ドロップ添付（既存のファイル選択(onFilePick)と同じpendingFileに載せる）
 function onDrop(e: DragEvent) {
   dragActive.value = false
   const file = e.dataTransfer?.files?.[0]
-  if (file) pendingFile.value = file
+  if (file) setPendingFile(file)
 }
 
 function fileToBase64(file: File): Promise<string> {
