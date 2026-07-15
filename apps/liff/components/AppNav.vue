@@ -50,6 +50,7 @@
             <NuxtLink class="drawer-item" :to="item.path" :data-testid="item.testId" @click="open = false">
               <span class="drawer-item-icon material-symbols-rounded">{{ item.icon }}</span>
               <span>{{ item.label }}</span>
+              <span v-if="item.path === '/chats' && unreadChatCount > 0" class="drawer-item-badge" data-testid="drawer-chat-badge">{{ unreadChatCount }}</span>
             </NuxtLink>
           </template>
 
@@ -67,7 +68,6 @@
             <NuxtLink class="drawer-item" :to="item.path" :data-testid="item.testId" @click="open = false">
               <span class="drawer-item-icon material-symbols-rounded">{{ item.icon }}</span>
               <span>{{ item.label }}</span>
-              <span v-if="item.path === '/sites' && unreadMentionCount > 0" class="drawer-item-badge" data-testid="drawer-mention-badge">{{ unreadMentionCount }}</span>
             </NuxtLink>
           </template>
           <button type="button" class="drawer-item" @click="openInBrowser">
@@ -162,8 +162,8 @@ const { bySection } = useNavItems(() => authMode.value)
 
 // 予定管理ナビの未読バッジ（#予定通知バッジ・2026-07-11）
 onMounted(() => { refreshScheduleNotifBadge() })
-// 現場情報ナビの未読メンションバッジ（現場チャット③・2026-07-11）
-onMounted(() => { refreshSiteChatMentionBadge() })
+// チャット一覧ナビの未読バッジ（2026-07-14・現場情報ナビの未読メンションバッジから移設・集約）
+onMounted(() => { refreshSiteChatListBadge() })
 
 // 現在の画面を外部ブラウザで開く（LINEの⋮メニューに依存せず常に開けるようにする）
 async function openInBrowser() {
