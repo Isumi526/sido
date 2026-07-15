@@ -8,6 +8,7 @@
       <div v-else-if="!rows.length" class="state">{{ $t('chatsView.empty') }}</div>
       <ul v-else class="list">
         <li v-for="r in rows" :key="r.site.id" class="row" data-testid="chat-list-row" @click="navigateTo(`/site-chat/${r.site.id}`)">
+          <div class="row-avatar" :style="{ background: siteColor(r.site.name) }" data-testid="chat-avatar">{{ initial(r.site.name) }}</div>
           <div class="row-main">
             <div class="row-name">{{ r.site.name }}</div>
             <div class="row-sub">
@@ -40,6 +41,17 @@ type Row = { site: Site; lastMessage: LastMessage | null; unreadCount: number }
 
 const loading = ref(true)
 const rows = ref<Row[]>([])
+
+// 現場名から安定した色を作る（LINE/Chatwork的なUIに寄せるための丸アバター用・機微情報は含まない）。
+// company-schedule.vue の siteColor() と同一ロジック。
+function siteColor(name: string): string {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360
+  return `hsl(${h}, 62%, 52%)`
+}
+function initial(name: string): string {
+  return (name || '').trim().slice(0, 1).toUpperCase() || '?'
+}
 
 function fmtTime(iso: string): string {
   const d = new Date(iso)
@@ -105,10 +117,15 @@ onMounted(load)
 .state { color: #888; text-align: center; padding: 32px; }
 .list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
 .row { background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 14px 16px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.row-avatar {
+  width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 700; font-size: 17px;
+}
 .row-main { flex: 1; min-width: 0; }
 .row-name { font-weight: 700; }
 .row-sub { font-size: 12px; color: #888; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.row-trail { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.row-trail { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
 .row-time { font-size: 11px; color: #aaa; }
 .row-badge { background: #ef4444; color: #fff; font-size: 11px; font-weight: 700; border-radius: 9px; min-width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; padding: 0 5px; }
 .row-attach { display: inline-flex; align-items: center; gap: 2px; vertical-align: middle; }
