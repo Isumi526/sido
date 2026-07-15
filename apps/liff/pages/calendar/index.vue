@@ -117,6 +117,10 @@
         <button type="button" class="cal-tab" :class="{ active: personalViewMode === 'week' }" @click="personalViewMode = 'week'">{{ $t('calendar.viewWeek') }}</button>
         <button type="button" class="cal-tab" :class="{ active: personalViewMode === 'month' }" @click="personalViewMode = 'month'">{{ $t('calendar.viewMonth') }}</button>
         <button type="button" class="today-btn" @click="personalGoToday">{{ $t('calendar.today') }}</button>
+        <label class="deleted-toggle">
+          <input type="checkbox" v-model="showDeleted" />
+          {{ $t('calendar.deleted') }}
+        </label>
       </div>
 
       <!-- 週間（画面幅に応じて可変日数・時間軸メモリ表示で予定を開始時刻の位置に配置） -->
