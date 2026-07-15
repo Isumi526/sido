@@ -11,7 +11,7 @@
 <template>
   <div v-if="count > 0" class="attached-badge" data-testid="attached-badge">
     <div class="attached-badge__head">
-      <span class="attached-badge__ico" aria-hidden="true">📎</span>
+      <span class="material-symbols-rounded attached-badge__ico" aria-hidden="true">attach_file</span>
       <span class="attached-badge__main">{{ t('report.filesAttached', { count }) }}</span>
     </div>
     <div class="attached-badge__thumbs">
@@ -19,7 +19,7 @@
         <a v-if="it.isImage" :href="it.src" target="_blank" rel="noopener" class="thumb__link">
           <img :src="it.src" :alt="it.name" class="thumb__img" />
         </a>
-        <span v-else class="thumb__file" aria-hidden="true">📄</span>
+        <span v-else class="material-symbols-rounded thumb__file" aria-hidden="true">description</span>
         <span class="thumb__name">{{ it.name }}</span>
         <button
           type="button"

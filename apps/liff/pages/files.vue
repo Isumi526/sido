@@ -30,7 +30,7 @@
             :alt="f.name"
             loading="lazy"
           />
-          <div v-else class="file-icon">📄</div>
+          <div v-else class="material-symbols-rounded file-icon">description</div>
         </div>
         <span class="file-name">{{ labelOf(f.name) }}</span>
       </a>

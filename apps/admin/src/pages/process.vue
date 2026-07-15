@@ -106,7 +106,7 @@
              @dragleave.prevent="excelDragActive = false" @drop.prevent="onExcelDrop">
           <input ref="excelInput" type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" @change="onExcelFile" />
           <button type="button" class="btn-excel" :disabled="!editor.siteId || excelBusy" @click="excelInput?.click()">
-            {{ excelBusy ? 'AI解析中…' : '📄 Excelから読み込む（AI解析）' }}
+            <span v-if="!excelBusy" class="material-symbols-rounded btn-excel-icon">description</span>{{ excelBusy ? 'AI解析中…' : 'Excelから読み込む（AI解析）' }}
           </button>
           <span class="excel-hint">{{ excelDragActive ? 'ここにドロップ' : 'または工程表Excelをドラッグ&ドロップ' }}</span>
         </div>
@@ -728,6 +728,7 @@ async function remove(t: Task) {
 .excel-row.drag-active .excel-hint { color: #1a56c4; font-weight: 700; }
 .btn-excel { background: #1a56c4; color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-excel:disabled { opacity: .5; cursor: default; }
+.btn-excel-icon { font-size: 14px; vertical-align: -2px; margin-right: 2px; }
 .excel-msg { font-size: 12px; color: #E53935; margin: -2px 0 8px; }
 .excel-msg.ok { color: #06A050; }
 /* 複数現場インポート */

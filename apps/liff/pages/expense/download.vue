@@ -133,7 +133,7 @@
                           target="_blank"
                           rel="noopener"
                           class="receipt-link"
-                        >📎{{ row.fileUrls.length > 1 ? ui + 1 : '' }}</a>
+                        ><span class="material-symbols-rounded receipt-link-icon">attach_file</span>{{ row.fileUrls.length > 1 ? ui + 1 : '' }}</a>
                       </template>
                     </td>
                   </tr>
@@ -510,6 +510,7 @@ html,body { background:var(--bg);color:var(--text);font-family:var(--font);min-h
 .center{text-align:center}.right{text-align:right}.small{font-size:10px}
 .receipt-cell{text-align:center;white-space:nowrap}
 .receipt-link{display:inline-block;font-size:11px;color:var(--accent);text-decoration:none;margin:1px 2px}
+.receipt-link-icon{font-size:12px;vertical-align:-2px}
 .total-row td { font-weight:700;border-top:2px solid #333; }
 .doc-notes { margin-top:10px;display:flex;flex-direction:column;gap:2px; }
 .doc-notes p { font-size:10px;color:var(--text2); }

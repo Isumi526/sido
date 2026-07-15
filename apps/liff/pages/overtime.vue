@@ -15,12 +15,12 @@
         <section class="ot-card">
           <div class="ot-card-title">{{ $t('overtime.statusLabel') }}（{{ $t('overtime.todayLabel') }} {{ today }}）</div>
 
-          <div v-if="todayStatus === 'approved'" class="ot-status approved">✅ {{ $t('overtime.statusApproved') }}</div>
+          <div v-if="todayStatus === 'approved'" class="ot-status approved"><span class="material-symbols-rounded ot-icon">check_circle</span>{{ $t('overtime.statusApproved') }}</div>
           <div v-else-if="todayStatus === 'pending'" class="ot-status pending">
-            ⏳ {{ $t('overtime.statusPending') }}
+            <span class="material-symbols-rounded ot-icon">pending</span>{{ $t('overtime.statusPending') }}
             <button class="ot-cancel" :disabled="busy" @click="onCancel">{{ $t('overtime.cancel') }}</button>
           </div>
-          <div v-else-if="todayStatus === 'rejected'" class="ot-status rejected">⛔ {{ $t('overtime.statusRejected') }}</div>
+          <div v-else-if="todayStatus === 'rejected'" class="ot-status rejected"><span class="material-symbols-rounded ot-icon">block</span>{{ $t('overtime.statusRejected') }}</div>
 
           <!-- 申請フォーム（未申請 かつ 締切前） -->
           <template v-else>
@@ -40,7 +40,7 @@
               <textarea v-model="reason" class="ot-input" rows="2" :placeholder="$t('overtime.reasonPlaceholder')" />
               <button class="ot-submit" :disabled="busy" @click="onSubmit">{{ busy ? $t('overtime.submitting') : $t('overtime.submit') }}</button>
             </template>
-            <div v-else class="ot-status closed">🔒 {{ $t('overtime.deadlinePassed') }}</div>
+            <div v-else class="ot-status closed"><span class="material-symbols-rounded ot-icon">lock</span>{{ $t('overtime.deadlinePassed') }}</div>
           </template>
 
           <p v-if="msg" class="ot-msg" :class="{ ok: msgOk }">{{ msg }}</p>
@@ -178,6 +178,7 @@ onMounted(async () => {
 .ot-status.pending  { background: #fffbeb; color: #b45309; }
 .ot-status.rejected { background: #fef2f2; color: #b91c1c; }
 .ot-status.closed   { background: #f1f5f9; color: #64748b; }
+.ot-icon { font-size: 16px; }
 .ot-label { display: block; font-size: 12px; color: #64748b; margin: 12px 0 4px; font-weight: 700; }
 .ot-sel-count { color: #06C755; margin-left: 6px; }
 .ot-site-search { margin-bottom: 6px; }
