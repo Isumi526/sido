@@ -25,6 +25,7 @@
 
     <p v-if="busy" class="muted" data-testid="drawing-progress">解析中… ({{ done }}/{{ total }}ページ)</p>
     <p v-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
+    <p v-if="successMsg" class="muted" data-testid="drawing-success">{{ successMsg }}</p>
 
     <div v-if="rows.length" class="table-wrap">
       <table class="table">
@@ -64,6 +65,7 @@ const rows     = ref<Row[]>([])
 const busy     = ref(false)
 const dragOver = ref(false)
 const errorMsg = ref('')
+const successMsg = ref('')
 const total    = ref(0)
 const done     = ref(0)
 
@@ -115,15 +117,20 @@ async function callExtract(b64: string, mime: string, pageNo: number): Promise<R
 async function processFiles(files: File[]) {
   const targets = files.filter(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name))
   if (!targets.length) return
-  busy.value = true; errorMsg.value = ''; done.value = 0; total.value = 0
+  busy.value = true; errorMsg.value = ''; successMsg.value = ''; done.value = 0; total.value = 0
   try {
     const pages: { b64: string; mime: string }[] = []
     for (const f of targets) pages.push(...await buildPages(f))
     total.value = pages.length
+    let extractedCount = 0
     for (let i = 0; i < pages.length; i++) {
       const extracted = await callExtract(pages[i].b64, pages[i].mime, i + 1)
       rows.value.push(...extracted)
+      extractedCount += extracted.length
       done.value++
+    }
+    if (extractedCount > 0) {
+      successMsg.value = `${extractedCount}件を抽出しました。内容を確認・修正してください（AIによる自動抽出のため誤読の可能性があります）`
     }
   } catch (err: any) {
     errorMsg.value = err?.message ?? '解析に失敗しました'
