@@ -91,7 +91,7 @@
     </div>
 
     <!-- 一括追加・編集モーダル（1現場×複数工程） -->
-    <div v-if="editor" class="modal-overlay" @click.self="editor = null">
+    <div v-if="editor" class="modal-overlay" @click.self="closeEditor">
       <div class="modal editor-modal">
         <h2>工程の一括追加・編集</h2>
         <label class="fld ed-site"><span>現場 <em>*</em></span>
@@ -152,7 +152,7 @@
         <button class="btn-addrow" @click="addRow">＋ 行を追加</button>
         <p v-if="saveError" class="error">{{ saveError }}</p>
         <div class="modal-actions">
-          <button class="btn-cancel" @click="editor = null">キャンセル</button>
+          <button class="btn-cancel" @click="closeEditor">キャンセル</button>
           <button class="btn-save" :disabled="saving" @click="saveEditor">{{ saving ? '保存中…' : '保存' }}</button>
         </div>
       </div>
@@ -205,7 +205,7 @@
     </div>
 
     <!-- 複数現場インポート（元請け配布の複数現場混在Excelを一括取込） -->
-    <div v-if="importModal" class="modal-overlay" @click.self="importModal = false">
+    <div v-if="importModal" class="modal-overlay" @click.self="closeImportModal">
       <div class="modal import-modal">
         <h2>工程表インポート（複数現場）</h2>
         <p class="hint">複数の現場が混在した工程表Excelを取り込み、AI解析で工程を現場ごとに振り分けます。各現場の取込先を確認してから実行してください。</p>
@@ -251,7 +251,7 @@
         </div>
 
         <div class="modal-actions">
-          <button class="btn-cancel" @click="importModal = false">閉じる</button>
+          <button class="btn-cancel" @click="closeImportModal">閉じる</button>
           <button v-if="importGroups.length" class="btn-save" :disabled="importBusy" data-testid="import-run" @click="runImport">
             {{ importBusy ? '取込中…' : '取込を実行' }}
           </button>
@@ -560,6 +560,10 @@ function openImport() {
   importGroups.value = []
   importMsg.value = ''; importOk.value = false; importError.value = ''
 }
+function closeImportModal() {
+  if (importBusy.value && !confirm('AI解析・取込処理中です。破棄して閉じますか？')) return
+  importModal.value = false
+}
 function onImportFile(e: Event) {
   const f = (e.target as HTMLInputElement).files?.[0]
   if (f) importMultiSite(f)
@@ -652,6 +656,7 @@ async function runImport() {
       }
     }
     importModal.value = false
+    await loadSites()   // 新規作成した現場をガントの現場名解決(siteName)に反映させる
     await load()
     excelMsg.value = ''
     alert(`${imported}件の工程を取り込みました`)
@@ -675,6 +680,10 @@ function openAdd() { openSiteEditor(isAll.value ? '' : siteId.value) }
 // ★未保存の入力行（id無し＝Excel取込や手入力で追加した行のうち内容あり）は破棄せず新現場へ引き継ぐ。
 //   導線「先に取り込む→後で現場を選ぶ」で取込内容が消えるバグの修正。旧現場の既存工程(id有り)は
 //   別現場のため引き継がない。引き継いだ行は保存時に新現場(e.siteId)へ insert される。
+function closeEditor() {
+  if (excelBusy.value && !confirm('AI解析中です。破棄して閉じますか？')) return
+  editor.value = null
+}
 function editorPickSite(sid: string) {
   if (!editor.value) return
   const carried = editor.value.rows.filter((r) => !r.id && r.name.trim())   // 未保存かつ内容ありの行
