@@ -259,7 +259,7 @@ async function load() {
   const [{ data: reports }, { data: invItems }] = await Promise.all([
     supabase
       .from('daily_reports')
-      .select('date, sites, is_business_trip, gasoline_items')
+      .select('date, sites, is_business_trip, gasoline_items, user_id, users(real_name, workers(name))')
       .eq('account_id', accountId)
       .eq('is_working', true)
       .gte('date', `${ym}-01`)
@@ -295,6 +295,9 @@ async function load() {
     // 出張日：作業員ごとの主たる現場（最長稼働）にだけ +¥3,000（二重計上回避）
     const tripSet = (rep as any).is_business_trip ? businessTripMainEntries((rep as any).sites ?? []) : null
     const date = (rep as any).date as string
+    // 経費の申請者＝その日報の送信者（expensesは日報単位でsite.expensesに紐づき、
+    // 社員費のworkerNameのような「現場で稼働した人」とは別概念のため個別に解決する）。
+    const submitterName = (rep as any).users?.workers?.name ?? (rep as any).users?.real_name ?? '—'
     for (const site of (rep.sites as any[])) {
       const siteName = resolveSiteRef(site, siteCtx).name || '（現場名なし）'
       // 社員費
@@ -323,26 +326,26 @@ async function load() {
       const exp = site.expenses || {}
       for (const veh of (exp.vehicles || [])) {
         const gas = Math.round((veh.distanceKm || 0) * G_YEN), diesel = Math.round((veh.dieselKm || 0) * D_YEN)
-        addExp(expMap, 'ガソリン代', gas);                addDetail(details, 'ガソリン代', date, siteName, gas)
-        addExp(expMap, '軽油代',    diesel);             addDetail(details, '軽油代',    date, siteName, diesel)
-        addExp(expMap, '駐車代',    veh.parkingYen || 0); addDetail(details, '駐車代',    date, siteName, veh.parkingYen || 0)
-        addExp(expMap, '高速代',    veh.highwayYen || 0); addDetail(details, '高速代',    date, siteName, veh.highwayYen || 0)
+        addExp(expMap, 'ガソリン代', gas);                addDetail(details, 'ガソリン代', date, `${submitterName}／${siteName}`, gas)
+        addExp(expMap, '軽油代',    diesel);             addDetail(details, '軽油代',    date, `${submitterName}／${siteName}`, diesel)
+        addExp(expMap, '駐車代',    veh.parkingYen || 0); addDetail(details, '駐車代',    date, `${submitterName}／${siteName}`, veh.parkingYen || 0)
+        addExp(expMap, '高速代',    veh.highwayYen || 0); addDetail(details, '高速代',    date, `${submitterName}／${siteName}`, veh.highwayYen || 0)
       }
-      for (const tr of (exp.trains || [])) { addExp(expMap, '電車代', tr.yen || 0); addDetail(details, '電車代', date, siteName, tr.yen || 0) }
+      for (const tr of (exp.trains || [])) { addExp(expMap, '電車代', tr.yen || 0); addDetail(details, '電車代', date, `${submitterName}／${siteName}`, tr.yen || 0) }
       // 宿泊費: 新形式 hotels[] があればその合計、無ければ旧スカラー（二重計上を防ぐ後方互換）
       const hotelsSum = (exp.hotels || []).reduce((s: number, h: any) => s + (Number(h.yen) || 0), 0)
       const lodge = hotelsSum > 0 ? hotelsSum : (exp.hotelYen || 0) + (exp.leopalaceYen || 0)
-      addExp(expMap, '宿泊費', lodge);                   addDetail(details, '宿泊費', date, siteName, lodge)
+      addExp(expMap, '宿泊費', lodge);                   addDetail(details, '宿泊費', date, `${submitterName}／${siteName}`, lodge)
       const others = (exp.others || []).reduce((s: number, o: any) => s + (o.yen || 0), 0)
-      addExp(expMap, 'その他（資材等）', others);         addDetail(details, 'その他（資材等）', date, siteName, others)
+      addExp(expMap, 'その他（資材等）', others);         addDetail(details, 'その他（資材等）', date, `${submitterName}／${siteName}`, others)
       const misc = (exp.entertainments || []).reduce((s: number, e: any) => s + (e.yen || 0), 0) || (exp.entertainmentYen || 0)
-      addExp(expMap, 'その他雑経費', misc);              addDetail(details, 'その他雑経費', date, siteName, misc)
+      addExp(expMap, 'その他雑経費', misc);              addDetail(details, 'その他雑経費', date, `${submitterName}／${siteName}`, misc)
       const garbage = Math.round((exp.garbageFactoryM3 || 0) * GF_YEN + (exp.garbageSiteM3 || 0) * GS_YEN)
-      addExp(expMap, 'ゴミ処分', garbage);               addDetail(details, 'ゴミ処分', date, siteName, garbage)
+      addExp(expMap, 'ゴミ処分', garbage);               addDetail(details, 'ゴミ処分', date, `${submitterName}／${siteName}`, garbage)
     }
     // 日報レベルの「本日のガソリン代」（複数給油・現場に紐づかない実費・経費合計に計上）
     const dayGas = ((rep as any).gasoline_items ?? []).reduce((s: number, g: any) => s + (Math.round(Number(g?.yen) || 0)), 0)
-    if (dayGas > 0) { addExp(expMap, 'ガソリン代', dayGas); addDetail(details, 'ガソリン代', date, '本日のガソリン代', dayGas) }
+    if (dayGas > 0) { addExp(expMap, 'ガソリン代', dayGas); addDetail(details, 'ガソリン代', date, `${submitterName}／本日のガソリン代`, dayGas) }
     // 出張費（別費目・人件費には含めない）: 出張日は作業員ごとに主たる現場へ¥3,000を1回
     if (tripSet) for (const w of tripSet) {
       addExp(expMap, '出張費', BUSINESS_TRIP_ALLOWANCE)
