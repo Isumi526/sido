@@ -3,7 +3,6 @@
     <AppNav :subtitle="$t('companySchedule.title')" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
     <main class="wrap">
       <h1 class="ttl">{{ $t('companySchedule.title') }}</h1>
-      <p class="hint">{{ $t('companySchedule.hint') }}</p>
 
       <div v-if="loading" class="state">{{ $t('companySchedule.loading') }}</div>
       <div v-else-if="!items.length" class="state">{{ $t('companySchedule.empty') }}</div>
