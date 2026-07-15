@@ -28,7 +28,8 @@
                   <span v-for="tk in ticks" :key="tk.day" class="gantt-gridline" :style="{ left: tk.pct + '%' }" />
                 </div>
                 <div
-                  v-if="barStyle(t)" class="gantt-bar" :class="{ 'gantt-bar-truncated': isTruncated(t) }"
+                  v-if="barStyle(t)" class="gantt-bar"
+                  :class="{ 'gantt-bar-truncated-start': truncatedStart(t), 'gantt-bar-truncated-end': truncatedEnd(t) }"
                   :style="{ ...barStyle(t), background: siteColor(g.site) }"
                   :title="`${t.task_name} / ${fmtRange(t.start_date, t.end_date)}`"
                 >
@@ -86,20 +87,27 @@ function toDay(d: string): number {
 const MAX_WINDOW_DAYS = 120
 
 // 全タスクの開始/終了から日付レンジ（最小日〜最大日）を求める。日付が1つも無ければ null。
-// max は表示軸用にクランプ済みの値・trueMax はクランプ前の実際の最大日（打ち切り判定に使う）。
+// min/max は表示軸用にクランプ済みの値・trueMin/trueMax はクランプ前の実際の日付レンジ
+// （打ち切り判定に使う）。窓は「今日を中心とした MAX_WINDOW_DAYS 日」を基準に、実データの
+// レンジ内に収まるよう位置調整する。最早タスクを起点に固定すると、そのタスクが通常タスク群
+// より大きく離れた日付にある場合（今回のケースは長期タスクの開始が通常タスクより早い）に、
+// 通常タスクが窓の外に押し出されて潰れてしまうため（要修正・2026-07-16発見）。
 const bounds = computed(() => {
-  let min = Infinity, trueMax = -Infinity
+  let trueMin = Infinity, trueMax = -Infinity
   for (const it of items.value) {
     for (const d of [it.start_date, it.end_date]) {
       if (!d) continue
       const v = toDay(d)
-      if (v < min) min = v
+      if (v < trueMin) trueMin = v
       if (v > trueMax) trueMax = v
     }
   }
-  if (!isFinite(min)) return null
-  const max = Math.min(trueMax, min + MAX_WINDOW_DAYS - 1)
-  return { min, max, trueMax, total: max - min + 1, truncated: trueMax > max }
+  if (!isFinite(trueMin)) return null
+  const todayDay = Math.floor(Date.now() / 86400000)
+  const maxMinAnchor = Math.max(trueMin, trueMax - MAX_WINDOW_DAYS + 1)
+  const min = Math.min(Math.max(todayDay - Math.floor(MAX_WINDOW_DAYS / 2), trueMin), maxMinAnchor)
+  const max = min + MAX_WINDOW_DAYS - 1
+  return { min, max, trueMin, trueMax, total: max - min + 1, truncated: trueMax > max || trueMin < min }
 })
 
 // 現場ごとにグルーピング（現場名→タスク配列）。
@@ -134,26 +142,31 @@ const ticks = computed(() => {
 })
 
 // タスクの期間バーの位置/幅（%）。開始・終了どちらか片方でも単日バーにする。両方無ければ null。
-// 表示軸(b.max)を超える終了日はクランプし、右端で打ち切り表示にする(isTruncatedで判定・
-// 通常タスクの帯が長期タスクに押し潰されないようにするため)。
+// 表示軸(b.min〜b.max)からはみ出す開始/終了日は両端ともクランプし、はみ出した側で打ち切り表示に
+// する(isTruncatedで判定・通常タスクの帯が長期タスクに押し潰されないようにするため)。
 function barStyle(it: ProcessItem): Record<string, string> | null {
   const b = bounds.value
   if (!b) return null
   const s = it.start_date || it.end_date
   const e = it.end_date || it.start_date
   if (!s || !e) return null
-  const sd = Math.min(toDay(s), b.max), ed = Math.min(toDay(e), b.max)
+  const sd = Math.min(Math.max(toDay(s), b.min), b.max), ed = Math.min(Math.max(toDay(e), b.min), b.max)
   const left = (sd - b.min) / b.total * 100
   const width = (ed - sd + 1) / b.total * 100
   return { left: `${left}%`, width: `${Math.max(width, 1.5)}%` }  // 単日でも見えるよう最小幅
 }
 
-// 表示軸の右端を超えて続くタスクか（打ち切り表示のインジケータ表示用）。
-function isTruncated(it: ProcessItem): boolean {
+// 表示軸をはみ出して始まる/続くタスクか（打ち切り表示のインジケータ・フェード方向の判定用）。
+function truncatedStart(it: ProcessItem): boolean {
   const b = bounds.value
-  if (!b) return false
+  const s = it.start_date || it.end_date
+  if (!b || !s) return false
+  return toDay(s) < b.min
+}
+function truncatedEnd(it: ProcessItem): boolean {
+  const b = bounds.value
   const e = it.end_date || it.start_date
-  if (!e) return false
+  if (!b || !e) return false
   return toDay(e) > b.max
 }
 
@@ -165,7 +178,7 @@ function barWideEnough(it: ProcessItem): boolean {
   const s = it.start_date || it.end_date
   const e = it.end_date || it.start_date
   if (!s || !e) return false
-  const sd = Math.min(toDay(s), b.max), ed = Math.min(toDay(e), b.max)
+  const sd = Math.min(Math.max(toDay(s), b.min), b.max), ed = Math.min(Math.max(toDay(e), b.min), b.max)
   const width = (ed - sd + 1) / b.total * 100
   return width >= 14
 }
@@ -218,11 +231,18 @@ onMounted(load)
   display: flex; align-items: center; overflow: hidden; min-width: 6px;
   box-shadow: inset 0 -1px 0 rgba(0,0,0,.08);
 }
-/* 表示軸の右端で打ち切られたタスク（長期タスク）の目印。右端を角丸なしにし
-   グラデーションでフェードさせ「続きがある」ことを示す */
-.gantt-bar-truncated {
+/* 表示軸の端で打ち切られたタスク（長期タスク）の目印。打ち切られた側を角丸なしにし
+   グラデーションでフェードさせ「続きがある/前から続いている」ことを示す */
+.gantt-bar-truncated-end {
   border-top-right-radius: 0; border-bottom-right-radius: 0;
   background-image: linear-gradient(to right, transparent 0%, transparent 70%, rgba(255,255,255,.55) 100%) !important;
+}
+.gantt-bar-truncated-start {
+  border-top-left-radius: 0; border-bottom-left-radius: 0;
+  background-image: linear-gradient(to left, transparent 0%, transparent 70%, rgba(255,255,255,.55) 100%) !important;
+}
+.gantt-bar-truncated-start.gantt-bar-truncated-end {
+  background-image: linear-gradient(to right, rgba(255,255,255,.55) 0%, transparent 30%, transparent 70%, rgba(255,255,255,.55) 100%) !important;
 }
 .gantt-truncate-note { font-size: 11px; color: #888; margin: 0 0 8px; }
 .gantt-bar-label {
