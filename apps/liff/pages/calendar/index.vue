@@ -125,7 +125,6 @@
           <div class="week-head-corner"></div>
           <div v-for="date in personalWeekDates" :key="date" class="personal-day-head" :class="dateCellClass(date, todayStr)">
             <span>{{ formatDateLabel(date) }}</span>
-            <button type="button" class="cell-add-btn week-head-add-btn" @click="personalAddSchedule(date)">＋</button>
           </div>
         </div>
 
@@ -149,7 +148,10 @@
             <div class="week-hour-axis">
               <div v-for="h in 24" :key="h" class="week-hour-label" :style="{ top: (h - 1) * WEEK_HOUR_HEIGHT + 'px' }">{{ h - 1 }}:00</div>
             </div>
-            <div v-for="date in personalWeekDates" :key="date" class="week-day-timeline" :class="dateCellClass(date, todayStr)">
+            <div
+              v-for="date in personalWeekDates" :key="date" class="week-day-timeline" :class="dateCellClass(date, todayStr)"
+              data-testid="week-slot" @click="onWeekSlotTap(date, $event)"
+            >
               <div v-for="h in 24" :key="h" class="week-hour-line" :style="{ top: (h - 1) * WEEK_HOUR_HEIGHT + 'px' }"></div>
               <div
                 v-for="s in personalCellSchedules(date).filter(x => x.start_time)"
@@ -157,7 +159,7 @@
                 class="sched-chip week-timed-chip"
                 :class="{ 'night-shift': s.is_night_shift, 'deleted-chip': !!s.deleted_at }"
                 :style="[chipStyle(s), timedChipStyle(s)]"
-                @click="openDetail(s)"
+                @click.stop="openDetail(s)"
               >
                 <span class="chip-title">{{ s.title }}</span>
                 <span class="chip-time">{{ s.start_time?.slice(0, 5) }}{{ s.end_time ? '–' + s.end_time.slice(0, 5) : '' }}</span>
@@ -165,6 +167,9 @@
             </div>
           </div>
         </div>
+        <button type="button" class="personal-week-fab" data-testid="personal-week-fab" :aria-label="$t('calendar.addSchedule')" @click="personalFabAdd">
+          <span class="material-symbols-rounded">add</span>
+        </button>
       </div>
 
       <!-- 月間（複数月を縦に連結し無限スクロール。前後スクロールで月が継ぎ足され自動切替） -->
@@ -835,6 +840,35 @@ function personalAddSchedule(date: string) {
   if (!effectiveWorkerId.value) return
   onCellTap(date, effectiveWorkerId.value)
 }
+// 週間タイムラインの時間区画タップでその日時に予定追加(区画内+ボタンはレイアウトを圧迫するため廃止・
+// タップ位置から30分刻みで時刻を推定し既定1時間の予定を用意する。ユーザーはモーダル内で時刻調整可能)。
+function onWeekSlotTap(date: string, ev: MouseEvent) {
+  if (!effectiveWorkerId.value) return
+  const target = ev.currentTarget as HTMLElement
+  const rect = target.getBoundingClientRect()
+  const offsetY = Math.max(0, ev.clientY - rect.top)
+  const rawMinutes = (offsetY / WEEK_HOUR_HEIGHT) * 60
+  const snapped = Math.min(24 * 60 - 30, Math.round(rawMinutes / 30) * 30)
+  const toHHMM = (min: number) => `${String(Math.floor(min / 60) % 24).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`
+
+  formModal.value = {
+    _worker_id: effectiveWorkerId.value,
+    title: '', description: '', category: 'work', site_id: '',
+    all_day: false, start_date: date, end_date: date,
+    start_time: toHHMM(snapped), end_time: toHHMM(Math.min(24 * 60, snapped + 60)),
+    is_night_shift: false,
+    is_public: false,
+    _contractor: '',
+  } as any
+  isPublicTouched.value = false
+  selectedWorkerIds.value = new Set([effectiveWorkerId.value])
+  formError.value = ''
+}
+// 右下固定の+ボタン：日時未指定でフォームを開き、モーダル内の日付/時刻欄で選択してもらう
+function personalFabAdd() {
+  if (!effectiveWorkerId.value) return
+  onCellTap(todayStr, effectiveWorkerId.value)
+}
 
 // ── 週間ビュー：時間軸メモリ表示（#週間時間軸） ──
 const WEEK_HOUR_HEIGHT = 48   // 1時間あたりの高さ(px)
@@ -1287,10 +1321,14 @@ onMounted(async () => {
 .personal-day-head.date-sunday { color: #ef4444; }
 .personal-day-head.date-saturday { color: #3b82f6; }
 .personal-day-head.date-today { background: #ecfdf5; }
-.week-head-add-btn {
-  flex-shrink: 0; background: none; border: 1px dashed #ccc; border-radius: 6px;
-  color: #aaa; font-size: 12px; padding: 2px 6px; cursor: pointer; line-height: 1.4;
+.personal-week-fab {
+  position: fixed; right: 18px; bottom: 24px; z-index: 20;
+  width: 52px; height: 52px; border-radius: 50%; border: none;
+  background: #06C755; color: #fff; box-shadow: 0 3px 10px rgba(0,0,0,.25);
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
 }
+.personal-week-fab:active { background: #05a847; }
+.personal-week-fab .material-symbols-rounded { font-size: 26px; }
 
 /* 終日・時刻未設定の予定 */
 .personal-week-allday { display: grid; gap: 1px; background: #E0E0E0; border-bottom: 1px solid #E0E0E0; }
@@ -1301,7 +1339,7 @@ onMounted(async () => {
 .personal-week-timeline { display: grid; position: relative; }
 .week-hour-axis { position: relative; border-right: 1px solid #E0E0E0; }
 .week-hour-label { position: absolute; right: 4px; transform: translateY(-50%); font-size: 10px; color: #999; }
-.week-day-timeline { position: relative; border-left: 1px solid #f0f0f0; min-width: 0; }
+.week-day-timeline { position: relative; border-left: 1px solid #f0f0f0; min-width: 0; cursor: pointer; }
 .week-day-timeline.date-sunday { background: #fff8f8; }
 .week-day-timeline.date-saturday { background: #f8fafd; }
 .week-day-timeline.date-today { background: #ecfdf5; }
