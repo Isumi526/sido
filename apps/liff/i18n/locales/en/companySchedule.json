@@ -3,5 +3,6 @@
   "loading": "Loading…",
   "empty": "No upcoming schedule",
   "period": "Period",
-  "noDate": "No date"
+  "noDate": "No date",
+  "truncateNote": "Some long-running tasks extend beyond the shown range and are cut off at the right edge (tap a bar to see its full period)."
 }
