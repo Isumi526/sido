@@ -190,10 +190,10 @@ test('@allを選択して送信すると、その時点のaccount内の全アク
   await page.goto(`/site-chat/${siteAId}`, { waitUntil: 'networkidle' })
 
   await page.locator('[data-testid="chat-input"]').pressSequentially('@')
-  const allItem = page.locator('[data-testid="mention-item"]', { hasText: '@all（全員）' })
+  const allItem = page.locator('[data-testid="mention-item"]', { hasText: '@ALL（全員）' })
   await expect(allItem).toBeVisible({ timeout: 10000 })
   await allItem.click()
-  await expect(page.locator('[data-testid="chat-input"]')).toHaveValue('@all ')
+  await expect(page.locator('[data-testid="chat-input"]')).toHaveValue('@ALL ')
 
   const msgText = `全員宛テスト_${TS}`
   await page.locator('[data-testid="chat-input"]').pressSequentially(msgText)
@@ -201,9 +201,9 @@ test('@allを選択して送信すると、その時点のaccount内の全アク
 
   const bodyLocator = page.locator('.msg-body', { hasText: msgText })
   await expect(bodyLocator).toBeVisible({ timeout: 10000 })
-  await expect(bodyLocator.locator('.msg-mention', { hasText: '@all' })).toBeVisible()
+  await expect(bodyLocator.locator('.msg-mention', { hasText: '@ALL' })).toBeVisible()
 
-  const [msg] = await restSrv(`site_chat_messages?site_id=eq.${siteAId}&body=eq.${encodeURIComponent(`@all ${msgText}`)}&select=id`)
+  const [msg] = await restSrv(`site_chat_messages?site_id=eq.${siteAId}&body=eq.${encodeURIComponent(`@ALL ${msgText}`)}&select=id`)
   const mentions = await restSrv(`site_chat_mentions?message_id=eq.${msg.id}&select=worker_id`)
   expect(mentions.length).toBe(expectedCount)
   await restSrv(`site_chat_mentions?message_id=eq.${msg.id}`, { method: 'DELETE' }).catch(() => {})

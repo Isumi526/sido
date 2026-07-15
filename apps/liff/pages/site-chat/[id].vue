@@ -48,7 +48,7 @@
           </button>
         </div>
         <ul v-if="mentionCandidates.length" class="mention-list" data-testid="mention-list">
-          <li v-for="w in mentionCandidates" :key="w.id" class="mention-item" data-testid="mention-item" @click="pickMention(w)">{{ w.id === ALL_MENTION.id ? '@all（全員）' : w.name }}</li>
+          <li v-for="w in mentionCandidates" :key="w.id" class="mention-item" data-testid="mention-item" @click="pickMention(w)">{{ w.id === ALL_MENTION.id ? '@ALL（全員）' : w.name }}</li>
         </ul>
         <form class="msg-form" @submit.prevent="send">
           <label class="msg-attach-btn">
@@ -107,7 +107,7 @@ let channel: ReturnType<ReturnType<typeof useSupabase>['channel']> | null = null
 
 // @all(全員宛メンション・LINEの@全員相当)。現場に紐づくメンバー一覧の仕組みが無い(site_sharesはPart Aで
 // 未強制・そもそもworkerでなくuser向け)ため、既存のチャット閲覧と同じ範囲=account内の全アクティブworkerを対象にする。
-const ALL_MENTION = { id: '__all__', name: 'all' }
+const ALL_MENTION = { id: '__all__', name: 'ALL' }
 
 // 入力末尾の「@検索語」を検出して候補を絞る（単純なchat実装の一般的な方式・カーソル位置は見ない）
 function onDraftInput() {
@@ -115,7 +115,7 @@ function onDraftInput() {
   const m = draft.value.match(/@([^\s@]*)$/)
   if (!m) { mentionCandidates.value = []; return }
   const q = m[1].toLowerCase()
-  const showAll = ALL_MENTION.name.includes(q)
+  const showAll = ALL_MENTION.name.toLowerCase().includes(q)
   const nameMatches = allWorkers.filter(w => w.name.toLowerCase().includes(q)).slice(0, showAll ? 7 : 8)
   mentionCandidates.value = showAll ? [ALL_MENTION, ...nameMatches] : nameMatches
 }
