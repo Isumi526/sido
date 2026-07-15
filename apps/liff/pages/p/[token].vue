@@ -9,7 +9,7 @@
       </div>
 
       <div v-else-if="!result?.ok" class="state">
-        <div class="icon-bad">⚠️</div>
+        <div class="material-symbols-rounded icon-bad">warning</div>
         <h1>{{ t('token.invalidTitle') }}</h1>
         <p class="muted">{{ t('token.invalidMessage') }}</p>
       </div>
@@ -43,7 +43,7 @@
             <div v-if="order.change_rule" class="kv-row"><dt>{{ t('token.order.changeRule') }}</dt><dd>{{ order.change_rule }}</dd></div>
             <div v-if="order.special_notes" class="kv-row"><dt>{{ t('token.order.specialNotes') }}</dt><dd>{{ order.special_notes }}</dd></div>
           </dl>
-          <a v-if="result.pdf_url" :href="result.pdf_url" target="_blank" rel="noopener" class="pdf-link">📄 {{ t('token.order.viewPdf') }}</a>
+          <a v-if="result.pdf_url" :href="result.pdf_url" target="_blank" rel="noopener" class="pdf-link"><span class="material-symbols-rounded pdf-link-icon">description</span>{{ t('token.order.viewPdf') }}</a>
         </div>
 
         <!-- 承諾フォーム -->
@@ -527,6 +527,7 @@ onMounted(async () => {
 .kv-row.amount dt { font-weight: 700; color: #333; }
 .kv-row.amount dd { font-size: 18px; font-weight: 800; color: #06A050; }
 .pdf-link { display: inline-block; margin-top: 12px; font-size: 13px; color: #1a56c4; text-decoration: none; border: 1px solid #cdd8f0; border-radius: 6px; padding: 6px 12px; }
+.pdf-link-icon { font-size: 14px; vertical-align: -2px; margin-right: 2px; }
 
 /* 承諾フォーム */
 .accept-box { width: 100%; box-sizing: border-box; text-align: left; margin-top: 18px; }

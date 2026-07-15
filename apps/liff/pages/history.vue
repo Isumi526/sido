@@ -11,7 +11,7 @@
 
       <!-- 空 -->
       <div v-else-if="reports.length === 0" class="empty-state">
-        <div class="empty-icon">📋</div>
+        <div class="material-symbols-rounded empty-icon">list_alt</div>
         <p class="empty-text">{{ $t('history.emptyText') }}</p>
         <NuxtLink to="/report" class="btn-primary">{{ $t('history.enterReport') }}</NuxtLink>
       </div>
@@ -40,8 +40,8 @@
               <div v-else-if="!rep.is_working" class="detail-leave">{{ $t('history.detailNoWork') }}</div>
               <template v-else>
                 <div v-for="(s, i) in detailMap[rep.date]" :key="i" class="detail-site">
-                  <div class="detail-site-name">📍 {{ s.name }}</div>
-                  <div v-if="s.contractor" class="detail-contractor">🏢 {{ s.contractor }}</div>
+                  <div class="detail-site-name"><span class="material-symbols-rounded detail-icon">location_on</span>{{ s.name }}</div>
+                  <div v-if="s.contractor" class="detail-contractor"><span class="material-symbols-rounded detail-icon">apartment</span>{{ s.contractor }}</div>
 
                   <ul v-if="s.workers.length" class="detail-list">
                     <li v-for="(w, wi) in s.workers" :key="wi">
@@ -56,14 +56,14 @@
                   </ul>
 
                   <ul v-if="s.expenses.length" class="detail-list expense">
-                    <li v-for="(e, ei) in s.expenses" :key="ei">💴 {{ e }}</li>
+                    <li v-for="(e, ei) in s.expenses" :key="ei"><span class="material-symbols-rounded detail-icon">payments</span>{{ e }}</li>
                   </ul>
 
                   <ul v-if="s.subs.length" class="detail-list sub">
-                    <li v-for="(sub, sbi) in s.subs" :key="sbi">🤝 {{ sub }}</li>
+                    <li v-for="(sub, sbi) in s.subs" :key="sbi"><span class="material-symbols-rounded detail-icon">handshake</span>{{ sub }}</li>
                   </ul>
 
-                  <p v-if="s.note" class="detail-note">📝 {{ s.note }}</p>
+                  <p v-if="s.note" class="detail-note"><span class="material-symbols-rounded detail-icon">edit_note</span>{{ s.note }}</p>
                 </div>
                 <div v-if="!detailMap[rep.date] || !detailMap[rep.date].length" class="detail-empty">{{ $t('history.detailNoSites') }}</div>
               </template>
@@ -74,10 +74,10 @@
               <NuxtLink v-if="rowLockState(rep.date) === 'open' || rowLockState(rep.date) === 'approved'"
                         :to="`/report?edit=${rep.date}`" class="btn-edit">{{ $t('history.editReport') }}</NuxtLink>
               <button v-else-if="rowLockState(rep.date) === 'pending'" type="button" class="btn-cancel-unlock" :disabled="requesting === rep.date" @click="cancelUnlock(rep.date)">
-                🕒 {{ requesting === rep.date ? $t('history.unlockRequesting') : $t('history.unlockPendingCancel') }}
+                <span class="material-symbols-rounded btn-icon">schedule</span>{{ requesting === rep.date ? $t('history.unlockRequesting') : $t('history.unlockPendingCancel') }}
               </button>
               <button v-else type="button" class="btn-unlock" @click="openRequestModal(rep.date)">
-                🔒 {{ $t('history.unlockRequest') }}
+                <span class="material-symbols-rounded btn-icon">lock</span>{{ $t('history.unlockRequest') }}
               </button>
             </div>
           </div>
@@ -446,6 +446,8 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--font)
 .detail-site { display: flex; flex-direction: column; gap: 6px; }
 .detail-site-name { font-size: 14px; font-weight: 700; color: var(--text); }
 .detail-contractor { font-size: 13px; font-weight: 600; color: #6b4eff; }
+.detail-icon { font-size: 14px; vertical-align: -2px; margin-right: 2px; }
+.btn-icon { font-size: 14px; vertical-align: -2px; margin-right: 2px; }
 .detail-list { list-style: none; display: flex; flex-direction: column; gap: 4px; padding: 0; margin: 0; }
 .detail-list li {
   font-size: 13px; color: #444; line-height: 1.5;

@@ -168,7 +168,7 @@
                 <input v-model="newGrant.note" class="input" placeholder="例: 2024年度付与 / 移行初期残高" />
               </div>
             </div>
-            <p v-if="manualGrantOverlapWarning" class="grant-warning" data-testid="grant-overlap-warning">{{ manualGrantOverlapWarning }}</p>
+            <p v-if="manualGrantOverlapWarning" class="grant-warning" data-testid="grant-overlap-warning"><span class="material-symbols-rounded warning-icon">warning</span>{{ manualGrantOverlapWarning }}</p>
             <button class="btn-grant" :disabled="grantSaving" @click="addGrant">
               {{ grantSaving ? '保存中...' : '付与を追加' }}
             </button>
@@ -422,7 +422,7 @@ const manualGrantOverlapWarning = computed(() => {
   const willOverlap = validOthers.filter(x => x.granted_at <= g.expires_at && g.granted_at <= x.expires_at)
   const total = validOthers.length + 1
   if (willOverlap.length >= 2) {
-    return `⚠ この付与を追加すると、同時に有効な付与が${total}件になります（通常は繰越込みで最大2件＝当年+前年）。誤って重複登録していないか確認してください。`
+    return `この付与を追加すると、同時に有効な付与が${total}件になります（通常は繰越込みで最大2件＝当年+前年）。誤って重複登録していないか確認してください。`
   }
   return ''
 })
@@ -917,6 +917,7 @@ onMounted(async () => {
 .btn-grant:disabled { opacity: .5; }
 .error         { color: #e53935; font-size: 13px; margin: 0; }
 .grant-warning { color: #b45309; background: #fef3c7; border: 1px solid #fde68a; border-radius: 6px; font-size: 12px; padding: 8px 10px; margin: 4px 0; }
+.warning-icon { font-size: 13px; vertical-align: -2px; margin-right: 2px; }
 .sub-table    { width: 100%; border-collapse: collapse; font-size: 13px; }
 .sub-table th { background: #f9f9f9; padding: 8px 12px; text-align: left; font-size: 11px; color: #888; font-weight: 700; }
 .sub-table td { padding: 10px 12px; border-top: 1px solid #f0f0f0; }

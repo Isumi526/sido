@@ -2,7 +2,7 @@
   <div class="app">
     <ReportOnboarding ref="onboardingRef" />
     <AppNav :subtitle="$t('report.subtitle')" :user-name="currentUser?.real_name" :user-role="currentUser?.worker_role" />
-    <button type="button" class="ob-replay" @click="onboardingRef?.open()">❓ {{ $t('onboarding.replay') }}</button>
+    <button type="button" class="ob-replay" @click="onboardingRef?.open()"><span class="material-symbols-rounded ob-replay-icon">help</span>{{ $t('onboarding.replay') }}</button>
 
     <main class="main">
       <!-- ローディング -->
@@ -41,7 +41,7 @@
 
         <!-- 下書き復元バナー（新規入力中・自動保存を復元した時のみ）-->
         <div v-if="draftRestored && !isEditMode" class="draft-banner">
-          <span class="draft-banner-text">📝 {{ $t('report.draftRestored') }}</span>
+          <span class="draft-banner-text"><span class="material-symbols-rounded banner-icon">edit_note</span>{{ $t('report.draftRestored') }}</span>
           <button type="button" class="draft-discard" @click="discardDraft">{{ $t('report.draftDiscard') }}</button>
         </div>
 
@@ -52,13 +52,13 @@
             <span v-html="$t('report.pastDateNotice')" />
           </div>
           <div v-if="currentDateLocked" class="locked-notice">
-            🔒 {{ $t('report.lockedBanner') }}
+            <span class="material-symbols-rounded banner-icon">lock</span>{{ $t('report.lockedBanner') }}
             <div class="locked-actions">
               <template v-if="lockGrantStatus === 'pending'">
-                <span class="locked-pending">🕒 {{ $t('report.unlockPending') }}</span>
+                <span class="locked-pending"><span class="material-symbols-rounded banner-icon">schedule</span>{{ $t('report.unlockPending') }}</span>
                 <button type="button" class="btn-unlock-cancel" :disabled="unlockRequesting" @click="cancelUnlockRequest">{{ $t('report.unlockPendingCancel') }}</button>
               </template>
-              <button v-else type="button" class="btn-unlock" @click="openUnlockModal">🔒 {{ $t('report.unlockRequest') }}</button>
+              <button v-else type="button" class="btn-unlock" @click="openUnlockModal"><span class="material-symbols-rounded banner-icon">lock</span>{{ $t('report.unlockRequest') }}</button>
             </div>
           </div>
         </FormSection>
@@ -202,7 +202,7 @@
             />
             <div v-if="site.siteName === '__other__' && siteSimilar(site.customSiteName).length"
                  style="margin-top:6px;font-size:12px;color:#B45309;background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;padding:8px 10px;line-height:1.5">
-              ⚠️ {{ $t('report.similarSiteWarn') }}：<strong>{{ siteSimilar(site.customSiteName).join('、') }}</strong>
+              <span class="material-symbols-rounded banner-icon">warning</span>{{ $t('report.similarSiteWarn') }}：<strong>{{ siteSimilar(site.customSiteName).join('、') }}</strong>
             </div>
           </Field>
 
@@ -241,9 +241,9 @@
                     </div>
                   </div>
                   <div v-if="siteFixedEnd(site.siteName)" class="fixed-time-note">
-                    <template v-if="overtimeApprovedForDate">✅ {{ $t('report.overtimeApprovedNote') }}</template>
+                    <template v-if="overtimeApprovedForDate"><span class="material-symbols-rounded banner-icon">check_circle</span>{{ $t('report.overtimeApprovedNote') }}</template>
                     <template v-else>
-                      ⏱ {{ $t('report.fixedTimeNote', { end: siteFixedEnd(site.siteName) }) }}
+                      <span class="material-symbols-rounded banner-icon">timer</span>{{ $t('report.fixedTimeNote', { end: siteFixedEnd(site.siteName) }) }}
                       <NuxtLink to="/overtime" class="overtime-link">{{ $t('report.overtimeApplyLink') }}</NuxtLink>
                     </template>
                   </div>
@@ -589,7 +589,7 @@
 
         <!-- エラー表示 -->
         <div v-if="report.error.value || editError" class="error-banner">
-          ⚠️ {{ report.error.value || editError }}
+          <span class="material-symbols-rounded banner-icon">warning</span>{{ report.error.value || editError }}
         </div>
 
         <!-- 送信前の最終確認テーブル（新規・編集とも全体をプレビュー） -->
@@ -1907,7 +1907,7 @@ async function onGasItemFile(gi: number, e: Event) {
   } finally {
     gasUploadingId.value = null
   }
-  // AI解析は自動では走らせない（任意・「✨領収書から金額」ボタンで実行）。
+  // AI解析は自動では走らせない（任意・「領収書から金額」ボタンで実行）。
 }
 
 async function analyzeGasItem(gi: number) {
@@ -2124,6 +2124,8 @@ function fillTestData() {
 /* 使い方ガイド再表示ボタン */
 .ob-replay { display: block; margin: 8px auto 0; background: #fff; border: 1px solid #d6dde2; color: #5a6b78; border-radius: 999px; padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer; }
 .ob-replay:hover { background: #f4f7f9; }
+.ob-replay-icon { font-size: 13px; vertical-align: -2px; margin-right: 2px; }
+.banner-icon { font-size: 14px; vertical-align: -2px; margin-right: 2px; }
 
 :root {
   --bg:       #EFEFEF;

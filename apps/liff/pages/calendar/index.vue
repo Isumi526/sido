@@ -5,7 +5,7 @@
     <!-- 予定追加のお知らせ（未読・気づかないケース対策 #予定通知） -->
     <div v-if="notifs.length" class="notif-banner">
       <div class="notif-head">
-        <span>🔔 あなたに新しい予定が {{ notifs.length }} 件追加されました</span>
+        <span><span class="material-symbols-rounded notif-icon">notifications</span>あなたに新しい予定が {{ notifs.length }} 件追加されました</span>
         <button class="notif-dismiss" @click="dismissNotifs">既読にする</button>
       </div>
       <ul class="notif-list">
@@ -43,7 +43,7 @@
               :class="{ 'my-col': isMyWorker(w.id), 'pinned-col': isPinned(w.id) }"
               @click="togglePin(w.id)"
             >
-              <span class="pin-icon" v-if="isPinned(w.id)">📌</span>{{ w.name }}
+              <span class="material-symbols-rounded pin-icon" v-if="isPinned(w.id)">push_pin</span>{{ w.name }}
             </th>
           </tr>
         </thead>
@@ -266,7 +266,7 @@
             </div>
             <div v-if="formModal.title === '__other__' && customSiteSimilar.length"
                  style="margin-top:6px;font-size:12px;color:#B45309;background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;padding:8px 10px;line-height:1.5">
-              ⚠️ {{ $t('calendar.similarSiteWarn') }}：<template v-for="(name, i) in customSiteSimilar" :key="name"><span
+              <span class="material-symbols-rounded warn-icon">warning</span>{{ $t('calendar.similarSiteWarn') }}：<template v-for="(name, i) in customSiteSimilar" :key="name"><span
                 class="similar-site-pick" role="button" tabindex="0" data-testid="similar-site-pick"
                 @click="(formModal as any)._customTitle = name"
                 @keydown.enter.prevent="(formModal as any)._customTitle = name"
@@ -288,7 +288,7 @@
           <div v-if="schedCats.length" class="form-row" style="margin-top:8px">
             <span class="form-row-label">カテゴリ</span>
             <!-- 現場管理者以上はカテゴリマスタを管理できる（ラベルの右に配置・一覧/色/名前編集/追加/削除） -->
-            <button v-if="canManageCat" type="button" class="cat-add-btn cat-manage-inline" @click="openCatManage">⚙ 管理</button>
+            <button v-if="canManageCat" type="button" class="cat-add-btn cat-manage-inline" @click="openCatManage"><span class="material-symbols-rounded btn-icon">settings</span>管理</button>
             <div class="cat-select-wrap cat-select-wrap--gap">
               <select v-model="formModal.category" class="site-select" data-testid="category-select">
                 <option v-for="c in schedCats.filter(x => x.active || x.key === formModal!.category)" :key="c.key" :value="c.key">{{ c.label }}</option>
@@ -375,19 +375,19 @@
     <!-- 詳細モーダル -->
     <div v-if="detailModal" class="modal-overlay" @click.self="closeDetail">
       <div class="modal">
-        <div v-if="detailModal.schedule.is_night_shift" class="detail-night-badge">🌙 {{ $t('calendar.nightShift') }}</div>
+        <div v-if="detailModal.schedule.is_night_shift" class="detail-night-badge"><span class="material-symbols-rounded meta-icon">bedtime</span>{{ $t('calendar.nightShift') }}</div>
         <h2 class="detail-title">{{ detailModal.schedule.title }}</h2>
-        <p class="detail-meta">👤 {{ detailModal.schedule.worker?.name }}</p>
+        <p class="detail-meta"><span class="material-symbols-rounded meta-icon">person</span>{{ detailModal.schedule.worker?.name }}</p>
         <p class="detail-meta">
-          📅 {{ detailModal.schedule.start_date }}
+          <span class="material-symbols-rounded meta-icon">calendar_month</span>{{ detailModal.schedule.start_date }}
           <template v-if="detailModal.schedule.end_date !== detailModal.schedule.start_date">〜 {{ detailModal.schedule.end_date }}</template>
         </p>
         <p v-if="detailModal.schedule.start_time" class="detail-meta">
-          🕐 {{ detailModal.schedule.start_time.slice(0, 5) }}〜{{ detailModal.schedule.end_time?.slice(0, 5) }}
+          <span class="material-symbols-rounded meta-icon">schedule</span>{{ detailModal.schedule.start_time.slice(0, 5) }}〜{{ detailModal.schedule.end_time?.slice(0, 5) }}
         </p>
         <p v-if="detailModal.schedule.description" class="detail-desc">{{ detailModal.schedule.description }}</p>
         <p v-if="detailModal.schedule.created_by_name" class="detail-created">{{ $t('calendar.createdBy') }}: {{ detailModal.schedule.created_by_name }}</p>
-        <p v-if="detailModal.schedule.deleted_at" class="detail-deleted">🗑 {{ $t('common.delete') }}: {{ detailModal.schedule.deleted_by_name }} ({{ fmtDateTime(detailModal.schedule.deleted_at) }})</p>
+        <p v-if="detailModal.schedule.deleted_at" class="detail-deleted"><span class="material-symbols-rounded meta-icon">delete</span>{{ $t('common.delete') }}: {{ detailModal.schedule.deleted_by_name }} ({{ fmtDateTime(detailModal.schedule.deleted_at) }})</p>
 
         <!-- 編集履歴 -->
         <details class="edit-history">
@@ -1212,6 +1212,10 @@ onMounted(async () => {
 .similar-site-pick:active { opacity: .6; }
 .notif-banner { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; margin: 8px 12px; padding: 10px 12px; flex-shrink: 0; }
 .notif-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 700; color: #b45309; }
+.notif-icon { font-size: 15px; vertical-align: -2px; margin-right: 3px; }
+.warn-icon { font-size: 14px; vertical-align: -2px; margin-right: 2px; }
+.btn-icon { font-size: 14px; vertical-align: -2px; margin-right: 2px; }
+.meta-icon { font-size: 14px; vertical-align: -2px; margin-right: 3px; }
 .notif-dismiss { background: #f59e0b; color: #fff; border: none; border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .notif-list { margin: 8px 0 0; padding-left: 18px; font-size: 12px; color: #78350f; line-height: 1.6; }
 
