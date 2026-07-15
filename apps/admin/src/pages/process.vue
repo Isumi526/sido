@@ -425,12 +425,90 @@ async function excelToCsvText(buf: ArrayBuffer): Promise<string> {
   return wb.SheetNames.map((name) => `■ シート「${name}」\n${XLSX.utils.sheet_to_csv(wb.Sheets[name])}`).join('\n\n')
 }
 
+// 色塗りガントチャート形式(AC4)の検出＋開始日/終了日の計算。xlsx(sheet_to_csv)はセルの塗り色を
+// 読めず開始日/終了日が全件nullになるため、excelToCsvTextとは別にexceljsで塗り色だけを追加検出する
+// (既存のCSV化・AC1-3の出力には手を加えない・検出時のみ追加テキストを付与する加算のみの拡張)。
+// 判定: 日付が5個以上並ぶヘッダー行があり、かつ値の無い色塗りセルが1つでもあれば色ガント形式とみなす。
+// 各行の開始日/終了日はヘッダーの日付と列位置を突き合わせてこちら側で確定計算する
+// (LLMに■マーカーの列位置を数えさせる方式は1列ズレる事故が実測で起きたため採用しない)。
+async function buildColorGanttMarkerText(buf: ArrayBuffer): Promise<string> {
+  const ExcelJS = await import('exceljs')
+  const wb = new ExcelJS.Workbook()
+  await wb.xlsx.load(buf)
+
+  const isFilled = (cell: any): boolean => {
+    const fill = cell.fill
+    if (!fill || fill.type !== 'pattern' || fill.pattern !== 'solid') return false
+    const argb = fill.fgColor?.argb as string | undefined
+    if (!argb) return false
+    return argb !== 'FFFFFFFF' && argb !== '00FFFFFF' && argb !== '00000000'
+  }
+
+  const sections: string[] = []
+  for (const ws of wb.worksheets) {
+    let headerRowNum = -1
+    ws.eachRow((row, rowNum) => {
+      if (headerRowNum > 0) return
+      let count = 0
+      row.eachCell({ includeEmpty: false }, (cell) => { if (cell.value instanceof Date) count++ })
+      if (count >= 5) headerRowNum = rowNum
+    })
+    if (headerRowNum < 0) continue
+
+    // includeEmpty:false だと値の無いセル(色塗りのみ)自体がeachCellの対象から外れて判定できないため、
+    // ここは includeEmpty:true で全セルを見る（値が無く色塗りのみのセルを数えたいため）。
+    let filledEmptyCount = 0
+    ws.eachRow({ includeEmpty: true }, (row) => {
+      row.eachCell({ includeEmpty: true }, (cell) => { if (cell.value == null && isFilled(cell)) filledEmptyCount++ })
+    })
+    // 1件でも値無し色塗りセルがあれば色ガント形式とみなす（誤検出のコストは低い＝マーカー版が
+    // 余分に付くだけ。閾値を厳しくして見逃す方が実害が大きいため緩めに判定する）。
+    if (filledEmptyCount === 0) continue
+
+    // 列位置とヘッダー行の日付を対応付ける（マーカー■を並べて列を数えさせる方式はLLMが
+    // カンマの数を数え間違えて1列ズレる事故が実測で起きたため、開始日/終了日はこちら側で
+    // 確定計算し「行ラベル: 開始日=…終了日=…」という曖昧さの無い文で渡す）。
+    const headerRow = ws.getRow(headerRowNum)
+    const dateByCol = new Map<number, string>()
+    for (let c = 1; c <= ws.columnCount; c++) {
+      const v = headerRow.getCell(c).value
+      if (v instanceof Date) dateByCol.set(c, v.toISOString().slice(0, 10))
+    }
+
+    const hints: string[] = []
+    ws.eachRow({ includeEmpty: false }, (row, rowNum) => {
+      if (rowNum === headerRowNum) return
+      const label = String(row.getCell(1).value ?? '').trim()
+      if (!label) return
+      const markedDates: string[] = []
+      for (const [col, dateStr] of dateByCol) {
+        const cell = row.getCell(col)
+        if (cell.value == null && isFilled(cell)) markedDates.push(dateStr)
+      }
+      if (!markedDates.length) return
+      markedDates.sort()
+      hints.push(`行「${label}」: 開始日=${markedDates[0]}, 終了日=${markedDates[markedDates.length - 1]}`)
+    })
+    if (!hints.length) continue
+    sections.push(`■ シート「${ws.name}」の色塗り期間（元は空セルの色塗りで稼働日を表していた箇所を、列の日付ヘッダーと突き合わせて開始日・終了日を計算済み）:\n${hints.join('\n')}`)
+  }
+  return sections.join('\n\n')
+}
+
+// excelToCsvText(通常CSV)に色ガントマーカーがあれば追加する。マーカー生成の失敗はbest-effortで無視
+// (通常の取込フロー自体は壊さない)。
+async function excelToImportText(buf: ArrayBuffer): Promise<string> {
+  const csvText = await excelToCsvText(buf)
+  const markerText = await buildColorGanttMarkerText(buf).catch(() => '')
+  return markerText ? `${csvText}\n\n${markerText}` : csvText
+}
+
 async function importExcelFile(file: File) {
   const e = editor.value; if (!e) return
   excelBusy.value = true; excelMsg.value = ''
   try {
     const buf = await file.arrayBuffer()
-    const csvText = await excelToCsvText(buf)
+    const csvText = await excelToImportText(buf)
     if (!csvText.trim()) { excelOk.value = false; excelMsg.value = 'ファイルから読み取れるデータがありませんでした'; return }
     const fnName = import.meta.env.DEV ? 'test-process-excel-import' : 'process-excel-import'
     const edgeUrl = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
@@ -497,7 +575,7 @@ async function importMultiSite(file: File) {
   importBusy.value = true; importMsg.value = ''; importError.value = ''
   try {
     const buf = await file.arrayBuffer()
-    const csvText = await excelToCsvText(buf)
+    const csvText = await excelToImportText(buf)
     if (!csvText.trim()) { importOk.value = false; importMsg.value = 'ファイルから読み取れるデータがありませんでした'; return }
     const fnName = import.meta.env.DEV ? 'test-process-excel-import' : 'process-excel-import'
     const edgeUrl = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
