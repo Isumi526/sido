@@ -1,5 +1,8 @@
 <template>
-  <div class="page">
+  <div class="page" :class="{ 'drag-active': dragActive }"
+       @dragover.prevent="dragActive = true" @dragenter.prevent="dragActive = true"
+       @dragleave.prevent="dragActive = false" @drop.prevent="onDrop">
+    <div v-if="dragActive" class="drop-overlay">ここにドロップして添付</div>
     <AppNav :subtitle="site?.name ? `${site.name} ${$t('siteChat.title')}` : $t('siteChat.title')" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
     <main class="wrap">
       <NuxtLink :to="`/sites/${siteId}`" class="back-link">‹ {{ site?.name ?? $t('sitesView.title') }}</NuxtLink>
@@ -93,6 +96,7 @@ const showScrollBtn = ref(false)
 const myWorkerId = ref<string | null>(null)
 const myName      = ref('')
 const pendingFile = ref<File | null>(null)
+const dragActive  = ref(false)
 const mentionedIds = ref<Set<string>>(new Set())
 const mentionCandidates = ref<{ id: string; name: string }[]>([])
 
@@ -159,6 +163,13 @@ async function loadMessages() {
 function onFilePick(ev: Event) {
   const file = (ev.target as HTMLInputElement).files?.[0]
   pendingFile.value = file ?? null
+}
+// ドラッグ&ドロップ添付（既存のファイル選択(onFilePick)と同じpendingFileに載せる・
+// バリデーションは既存(送信時のuploadAttachment/edge側)をそのまま流用し、ここでは追加しない）
+function onDrop(e: DragEvent) {
+  dragActive.value = false
+  const file = e.dataTransfer?.files?.[0]
+  if (file) pendingFile.value = file
 }
 
 function fileToBase64(file: File): Promise<string> {
@@ -265,7 +276,12 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.page { display: flex; flex-direction: column; height: 100dvh; }
+.page { display: flex; flex-direction: column; height: 100dvh; position: relative; }
+.page.drag-active { outline: 2px dashed #06A050; outline-offset: -2px; }
+.drop-overlay {
+  position: absolute; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
+  background: rgba(6, 160, 80, .08); color: #06A050; font-weight: 700; font-size: 14px; pointer-events: none;
+}
 .wrap { max-width: 840px; width: 100%; margin: 0 auto; padding: 12px 16px; display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .back-link { display: inline-block; color: #1a56c4; text-decoration: none; font-size: 14px; font-weight: 700; margin-bottom: 8px; flex-shrink: 0; }
 .state { color: #888; text-align: center; padding: 32px; }
