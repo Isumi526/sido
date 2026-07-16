@@ -202,7 +202,11 @@
             />
             <div v-if="site.siteName === '__other__' && siteSimilar(site.customSiteName).length"
                  style="margin-top:6px;font-size:12px;color:#B45309;background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;padding:8px 10px;line-height:1.5">
-              <span class="material-symbols-rounded banner-icon">warning</span>{{ $t('report.similarSiteWarn') }}：<strong>{{ siteSimilar(site.customSiteName).join('、') }}</strong>
+              <span class="material-symbols-rounded banner-icon">warning</span>{{ $t('report.similarSiteWarn') }}：<template v-for="(name, i) in siteSimilar(site.customSiteName)" :key="name"><span
+                class="similar-site-pick" role="button" tabindex="0" data-testid="similar-site-pick"
+                @click="pickSimilarSite(si, name)"
+                @keydown.enter.prevent="pickSimilarSite(si, name)"
+              >{{ name }}</span>{{ i < siteSimilar(site.customSiteName).length - 1 ? '、' : '' }}</template>
             </div>
           </Field>
 
@@ -689,6 +693,14 @@ const onboardingRef = ref<{ open: () => void } | null>(null)
 // 新規現場の手入力時、既存に似た現場があれば重複候補を返す（重複登録の気づき）
 function siteSimilar(name?: string): string[] {
   return findSimilarSiteNames(name ?? '', master.siteNames.value)
+}
+// 似た現場候補をクリックしたら、手入力(__other__)をやめて既存の現場をその場で選択する
+function pickSimilarSite(si: number, name: string) {
+  const s = report.form.value.sites[si]
+  if (!s) return
+  s.siteName = name
+  s.customSiteName = ''
+  onSiteChange(si)
 }
 
 // 現場プルダウン: 元請けが選択されていれば、その元請けに紐づく現場を優先表示。
@@ -2133,6 +2145,8 @@ function fillTestData() {
 .ob-replay:hover { background: #f4f7f9; }
 .ob-replay-icon { font-size: 13px; vertical-align: -2px; margin-right: 2px; }
 .banner-icon { font-size: 14px; vertical-align: -2px; margin-right: 2px; }
+.similar-site-pick { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.similar-site-pick:active { opacity: .6; }
 
 :root {
   --bg:       #EFEFEF;

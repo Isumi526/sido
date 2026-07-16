@@ -63,7 +63,12 @@
           <label>現場名</label>
           <input v-model="modal.name" class="input" placeholder="例：BLH名古屋" />
           <div v-if="similarSites.length" class="dup-warn">
-            <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">warning</span> 似た現場が既にあります（重複登録に注意）：<strong>{{ similarSites.join('、') }}</strong>
+            <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">warning</span> 似た現場が既にあります（重複登録に注意）：
+            <button
+              v-for="s in similarSites" :key="s.id" type="button" class="similar-site-chip"
+              :data-testid="`similar-site-${s.id}`"
+              @click="pickSimilarSite(s)"
+            >{{ s.name }}</button>
           </div>
         </div>
         <div class="field">
@@ -353,11 +358,17 @@ const mergeTarget = ref<string>('')
 const SITE_FK_TABLES = ['attendance_logs', 'estimates', 'purchase_orders', 'schedules', 'site_rules', 'subcontractor_invoice_items']
 
 // 入力中の現場名に「似た」既存現場（自分自身=編集中のidは除外）。重複登録の気づき用。
-const similarSites = computed(() =>
-  modal.value
-    ? findSimilarSiteNames(modal.value.name ?? '', sites.value.filter((s) => s.id !== modal.value!.id).map((s) => s.name))
-    : [],
-)
+const similarSites = computed(() => {
+  if (!modal.value) return []
+  const candidates = sites.value.filter((s) => s.id !== modal.value!.id)
+  const names = findSimilarSiteNames(modal.value.name ?? '', candidates.map((s) => s.name))
+  return names.map((n) => candidates.find((s) => s.name === n)).filter((s): s is Site => !!s)
+})
+// 似た現場をクリックしたら、新規作成を続けず既存のその現場を編集する画面へ切り替える(重複登録の防止)
+function pickSimilarSite(s: Site) {
+  if (formDirty.value && !confirm('入力中の内容が保存されていません。既存の現場を編集する画面に切り替えますか？')) return
+  openEdit(s)
+}
 
 async function load() {
   const accountId = await getAccountId()
@@ -735,6 +746,11 @@ async function doMerge() {
 .error { color: #E53935; font-size: 13px; }
 .dup-warn { margin-top: 6px; font-size: 12px; color: #B45309; background: #FEF3C7; border: 1px solid #FDE68A; border-radius: 6px; padding: 8px 10px; line-height: 1.5; }
 .dup-warn strong { color: #92400E; }
+.similar-site-chip {
+  margin-left: 4px; border: 1px solid #FDE68A; background: #fff; color: #92400E;
+  border-radius: 10px; padding: 1px 8px; font-size: 11px; cursor: pointer;
+}
+.similar-site-chip:hover { background: #FEF3C7; }
 .header-actions { display: flex; gap: 8px; align-items: center; }
 .btn-ghost { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 10px 16px; font-size: 13px; cursor: pointer; color: #555; }
 .btn-ghost:disabled { opacity: .5; cursor: not-allowed; }
