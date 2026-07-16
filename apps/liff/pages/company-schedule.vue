@@ -132,7 +132,7 @@ const ticks = computed(() => {
   for (let guard = 0; guard < 120; guard++) {
     const day = Math.floor(Date.UTC(y, mo, 1) / 86400000)
     if (day > b.max) break
-    out.push({ day, px: (day - b.min) * DAY_W, label: `${mo + 1}月` })
+    out.push({ day, px: (day - b.min) * DAY_W, label: `${mo + 1}/1` })
     mo += 1; if (mo > 11) { mo = 0; y += 1 }
   }
   return out
