@@ -177,6 +177,7 @@ async function processFiles(files: File[]) {
 }
 
 async function retryPage(fp: FailedPage) {
+  if (fp.retrying) return   // 連打/DOM更新前の二重発火ガード(二重抽出防止)
   fp.retrying = true
   try {
     const extracted = await callExtract(fp.b64, fp.mime, fp.pageNo)
