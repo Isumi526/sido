@@ -1251,7 +1251,8 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.cal-page { display: flex; flex-direction: column; height: 100dvh; background: #fff; color: #111; overflow: hidden; }
+/* 下部固定ナビ(2026-07-16追加)の高さ分を差し引き、内部の可変領域が隠れないようにする */
+.cal-page { display: flex; flex-direction: column; height: calc(100dvh - var(--app-bottom-nav-h, 54px) - env(safe-area-inset-bottom, 0px)); background: #fff; color: #111; overflow: hidden; }
 .similar-site-pick { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .similar-site-pick:active { opacity: .6; }
 .notif-banner { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; margin: 8px 12px; padding: 10px 12px; flex-shrink: 0; }
@@ -1332,7 +1333,8 @@ onMounted(async () => {
 .personal-day-head.date-saturday { color: #3b82f6; }
 .personal-day-head.date-today { background: #ecfdf5; }
 .personal-week-fab {
-  position: fixed; right: 18px; bottom: 24px; z-index: 20;
+  /* 下部固定ナビ(2026-07-16追加)の高さ分だけ上にずらし、ナビと重ならないようにする */
+  position: fixed; right: 18px; bottom: calc(24px + var(--app-bottom-nav-h, 54px) + env(safe-area-inset-bottom, 0px)); z-index: 20;
   width: 52px; height: 52px; border-radius: 50%; border: none;
   background: #06C755; color: #fff; box-shadow: 0 3px 10px rgba(0,0,0,.25);
   display: flex; align-items: center; justify-content: center; cursor: pointer;
