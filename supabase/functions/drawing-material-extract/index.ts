@@ -4,6 +4,10 @@
 //   - 施工図面(PDF各ページ画像/写真)をGeminiで読み取り、記載されているメーカー品番を
 //     全て抽出して構造化JSONで返す(見積/工程表への反映は本EFではしない＝人が確認してから)。
 //   - DB永続化はしない(その場で抽出→admin画面で確認・CSV書き出しのみ＝要件化回答A)。
+//   - 規格サイズが読み取れなかった品番は、Gemini google_search グラウンディングで
+//     Web検索し規格サイズ＋出典URLを自動で埋める(2026-07-16要件化回答A)。
+//     ※Gemini APIはtools(google_search)とresponse_mime_type:jsonを同時指定できないため、
+//       画像からの構造化抽出とは別のテキストのみの追加呼び出しとして行う。
 //   認証: 呼び出し元 admin の JWT を検証し app_metadata.account_slug があることのみ確認
 //        (Gemini API呼び出しコストの野良利用防止・estimate-price-ocrと同型)。
 //   env(本番secret): SUPABASE_URL / SUPABASE_ANON_KEY / GEMINI_API_KEY
@@ -30,6 +34,7 @@ function json(body: unknown, status = 200): Response {
 type ExtractedRow = {
   part?: string | null; manufacturer?: string | null; code?: string | null
   size?: string | null; spec?: string | null; quantity?: string | null; note?: string | null
+  sizeSourceUrl?: string | null
 }
 
 const PROMPT = `あなたは建築の実施図面を読み取る専門家です。添付画像は施工図面(PDFページ画像)です。
@@ -79,6 +84,58 @@ async function geminiExtract(imageB64: string, mime: string): Promise<ExtractedR
   return Array.isArray(rows) ? rows : []
 }
 
+// 規格サイズが不明な品番をGemini google_search グラウンディングでWeb検索し、規格サイズ＋出典URLを返す。
+// 見つからない/エラー時はnullを返す(呼び出し側で「不明」のまま扱う＝致命的エラーにしない)。
+async function geminiLookupSize(manufacturer: string, code: string): Promise<{ size: string; sourceUrl: string } | null> {
+  if (!GEMINI_KEY) return null
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`
+  const prompt = `建材製品「メーカー: ${manufacturer} / 品番: ${code}」の規格サイズ(寸法)をWeb検索で調べてください。
+見つかった場合は次の2行のみを出力してください（他の説明文は不要）:
+規格サイズ: <サイズ>
+出典URL: <URL>
+見つからない場合は「不明」とだけ出力してください。`
+  const body = JSON.stringify({
+    contents: [{ parts: [{ text: prompt }] }],
+    tools: [{ google_search: {} }],
+    generationConfig: { temperature: 0 },
+  })
+  let res: Response
+  try {
+    res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_KEY }, body })
+  } catch { return null }
+  if (!res.ok) return null
+  const data = await res.json()
+  const parts = data?.candidates?.[0]?.content?.parts ?? []
+  const text: string = parts.map((p: any) => p?.text ?? '').join('')
+  const sizeMatch = text.match(/規格サイズ[:：]\s*(.+)/)
+  if (!sizeMatch?.[1]?.trim()) return null
+  let sourceUrl = text.match(/出典URL[:：]\s*(\S+)/)?.[1] ?? ''
+  if (!sourceUrl) {
+    const chunks = data?.candidates?.[0]?.groundingMetadata?.groundingChunks ?? []
+    sourceUrl = chunks.find((c: any) => c?.web?.uri)?.web?.uri ?? ''
+  }
+  return { size: sizeMatch[1].trim(), sourceUrl }
+}
+
+// rows中「規格サイズ不明」な品番についてgeminiLookupSizeで補完する(同一メーカー+品番はページ内で1回のみ検索)。
+async function fillUnknownSizes(rows: ExtractedRow[]): Promise<void> {
+  const cache = new Map<string, { size: string; sourceUrl: string } | null>()
+  for (const r of rows) {
+    const sizeUnknown = !r.size?.trim() || /不明/.test(r.size)
+    if (!sizeUnknown || !r.manufacturer?.trim() || !r.code?.trim()) continue
+    const key = `${r.manufacturer.trim()}|${r.code.trim()}`
+    if (!cache.has(key)) {
+      try { cache.set(key, await geminiLookupSize(r.manufacturer, r.code)) } catch { cache.set(key, null) }
+    }
+    const found = cache.get(key)
+    if (found) {
+      r.size = found.size
+      r.sizeSourceUrl = found.sourceUrl || null
+      r.note = r.note ? `${r.note} / AI Web調査による規格サイズ` : 'AI Web調査による規格サイズ'
+    }
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders() })
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405)
@@ -98,6 +155,7 @@ Deno.serve(async (req) => {
 
   try {
     const rows = await geminiExtract(image_base64, mime)
+    await fillUnknownSizes(rows)
     return json({ ok: true, page: page ?? null, rows })
   } catch (e) {
     return json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500)

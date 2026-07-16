@@ -31,7 +31,7 @@
       <table class="table">
         <thead>
           <tr>
-            <th>ページ</th><th>部位</th><th>メーカー名</th><th>品番</th><th>規格サイズ</th><th>仕様</th><th>数量</th><th>備考</th><th></th>
+            <th>ページ</th><th>部位</th><th>メーカー名</th><th>品番</th><th>規格サイズ</th><th>出典</th><th>仕様</th><th>数量</th><th>備考</th><th></th>
           </tr>
         </thead>
         <tbody>
@@ -41,6 +41,9 @@
             <td><input v-model="r.manufacturer" class="cell-input" /></td>
             <td><input v-model="r.code" class="cell-input" /></td>
             <td><input v-model="r.size" class="cell-input" /></td>
+            <td>
+              <a v-if="r.sizeSourceUrl" :href="r.sizeSourceUrl" target="_blank" rel="noopener noreferrer" class="size-source-link" title="AI Web調査による規格サイズの出典">出典</a>
+            </td>
             <td><input v-model="r.spec" class="cell-input" /></td>
             <td><input v-model="r.quantity" class="cell-input" /></td>
             <td><input v-model="r.note" class="cell-input" :class="{ warn: r.note }" /></td>
@@ -59,7 +62,7 @@ import { onBeforeRouteLeave } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import HelpButton from '../components/HelpButton.vue'
 
-type Row = { page: number; part: string; manufacturer: string; code: string; size: string; spec: string; quantity: string; note: string }
+type Row = { page: number; part: string; manufacturer: string; code: string; size: string; spec: string; quantity: string; note: string; sizeSourceUrl: string }
 
 const rows     = ref<Row[]>([])
 const busy     = ref(false)
@@ -111,6 +114,7 @@ async function callExtract(b64: string, mime: string, pageNo: number): Promise<R
   return ((json.rows ?? []) as any[]).map((r) => ({
     page: pageNo, part: r.part ?? '', manufacturer: r.manufacturer ?? '', code: r.code ?? '',
     size: r.size ?? '', spec: r.spec ?? '', quantity: r.quantity ?? '', note: r.note ?? '',
+    sizeSourceUrl: r.sizeSourceUrl ?? '',
   }))
 }
 
@@ -156,10 +160,10 @@ function csvEscape(v: string): string {
   return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
 }
 function exportCsv() {
-  const header = ['ページ', '部位', 'メーカー名', '品番', '規格サイズ', '仕様', '数量', '備考']
+  const header = ['ページ', '部位', 'メーカー名', '品番', '規格サイズ', '規格サイズ出典URL', '仕様', '数量', '備考']
   const lines = [header.join(',')]
   for (const r of rows.value) {
-    lines.push([String(r.page), r.part, r.manufacturer, r.code, r.size, r.spec, r.quantity, r.note].map(csvEscape).join(','))
+    lines.push([String(r.page), r.part, r.manufacturer, r.code, r.size, r.sizeSourceUrl, r.spec, r.quantity, r.note].map(csvEscape).join(','))
   }
   const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
@@ -191,4 +195,5 @@ function exportCsv() {
 .cell-input.warn { color: #b45309; }
 .row-del { border: none; background: none; color: #94a3b8; font-size: 12px; cursor: pointer; }
 .row-del:hover { color: #dc2626; }
+.size-source-link { color: #06A050; font-size: 12px; text-decoration: underline; white-space: nowrap; }
 </style>
