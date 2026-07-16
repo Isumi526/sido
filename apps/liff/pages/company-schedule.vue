@@ -8,28 +8,32 @@
       <div v-else-if="!items.length" class="state">{{ $t('companySchedule.empty') }}</div>
 
       <template v-else>
-        <!-- ガントチャート: 横軸=日付・現場ごとに工程の期間バー -->
-        <div v-if="bounds" class="gantt">
-          <p v-if="bounds.truncated" class="gantt-truncate-note">{{ $t('companySchedule.truncateNote') }}</p>
+        <!-- ガントチャート: 横軸=日付(固定px幅)・横スクロールで全期間を省略せず表示・現場ごとに工程の期間バー -->
+        <div v-if="bounds" ref="ganttScrollRef" class="gantt" :style="{ '--day-w': DAY_W + 'px', '--label-w': LABEL_W + 'px' }">
           <!-- 日付軸（月境界のティック） -->
-          <div class="gantt-axis">
-            <span
-              v-for="tk in ticks" :key="tk.day"
-              class="gantt-tick" :style="{ left: tk.pct + '%' }"
-            >{{ tk.label }}</span>
+          <div class="gantt-head-row">
+            <div class="gantt-corner"></div>
+            <div class="gantt-axis" :style="{ width: trackWidth + 'px' }">
+              <span
+                v-for="tk in ticks" :key="tk.day"
+                class="gantt-tick" :style="{ left: tk.px + 'px' }"
+              >{{ tk.label }}</span>
+            </div>
           </div>
 
           <div v-for="g in groups" :key="g.site" class="gantt-group">
-            <div class="gantt-site">{{ g.site }}</div>
+            <div class="gantt-site-row">
+              <div class="gantt-site">{{ g.site }}</div>
+              <div class="gantt-site-fill" :style="{ width: trackWidth + 'px' }" />
+            </div>
             <div v-for="(t, i) in g.tasks" :key="i" class="gantt-lane">
               <div class="gantt-task-name" :title="t.task_name">{{ t.task_name }}</div>
-              <div class="gantt-track">
+              <div class="gantt-track" :style="{ width: trackWidth + 'px' }">
                 <div class="gantt-grid" aria-hidden="true">
-                  <span v-for="tk in ticks" :key="tk.day" class="gantt-gridline" :style="{ left: tk.pct + '%' }" />
+                  <span v-for="tk in ticks" :key="tk.day" class="gantt-gridline" :style="{ left: tk.px + 'px' }" />
                 </div>
                 <div
                   v-if="barStyle(t)" class="gantt-bar"
-                  :class="{ 'gantt-bar-truncated-start': truncatedStart(t), 'gantt-bar-truncated-end': truncatedEnd(t) }"
                   :style="{ ...barStyle(t), background: siteColor(g.site) }"
                   :title="`${t.task_name} / ${fmtRange(t.start_date, t.end_date)}`"
                 >
@@ -81,34 +85,27 @@ function toDay(d: string): number {
   return Math.floor(Date.UTC(y, m - 1, dd) / 86400000)
 }
 
-// 表示軸の最大幅（日数）。長期タスクが1件でも混ざると軸全体が支配され、他の通常タスク
-// (数日〜週単位)の帯が視認できなくなる問題への対策として、軸の表示レンジを一定日数に
-// クランプする(該当タスクは右端で打ち切り表示＝isTruncatedで判定)。
-const MAX_WINDOW_DAYS = 120
+// 横スクロール方式(クランプ方式から変更・2026-07-16): 表示軸は全タスクの実レンジを
+// 省略せずカバーする(打ち切り無し)。1日あたり固定px幅(DAY_W)で横スクロール表示する
+// (apps/admin/src/pages/process.vueの固定px幅ガントと同型パターン)。
+const DAY_W = 26      // 1日の横幅(px)
+const LABEL_W = 96    // 左の工程名ラベル列の幅(px)
 
 // 全タスクの開始/終了から日付レンジ（最小日〜最大日）を求める。日付が1つも無ければ null。
-// min/max は表示軸用にクランプ済みの値・trueMin/trueMax はクランプ前の実際の日付レンジ
-// （打ち切り判定に使う）。窓は「今日を中心とした MAX_WINDOW_DAYS 日」を基準に、実データの
-// レンジ内に収まるよう位置調整する。最早タスクを起点に固定すると、そのタスクが通常タスク群
-// より大きく離れた日付にある場合（今回のケースは長期タスクの開始が通常タスクより早い）に、
-// 通常タスクが窓の外に押し出されて潰れてしまうため（要修正・2026-07-16発見）。
 const bounds = computed(() => {
-  let trueMin = Infinity, trueMax = -Infinity
+  let min = Infinity, max = -Infinity
   for (const it of items.value) {
     for (const d of [it.start_date, it.end_date]) {
       if (!d) continue
       const v = toDay(d)
-      if (v < trueMin) trueMin = v
-      if (v > trueMax) trueMax = v
+      if (v < min) min = v
+      if (v > max) max = v
     }
   }
-  if (!isFinite(trueMin)) return null
-  const todayDay = Math.floor(Date.now() / 86400000)
-  const maxMinAnchor = Math.max(trueMin, trueMax - MAX_WINDOW_DAYS + 1)
-  const min = Math.min(Math.max(todayDay - Math.floor(MAX_WINDOW_DAYS / 2), trueMin), maxMinAnchor)
-  const max = min + MAX_WINDOW_DAYS - 1
-  return { min, max, trueMin, trueMax, total: max - min + 1, truncated: trueMax > max || trueMin < min }
+  if (!isFinite(min)) return null
+  return { min, max, total: max - min + 1 }
 })
+const trackWidth = computed(() => (bounds.value ? bounds.value.total * DAY_W : 0))
 
 // 現場ごとにグルーピング（現場名→タスク配列）。
 const groups = computed(() => {
@@ -121,66 +118,47 @@ const groups = computed(() => {
   return [...m.entries()].map(([site, tasks]) => ({ site, tasks }))
 })
 
-// 月初の目盛り（横軸ラベル＋グリッド線）。レンジ内の各月1日を % 位置で並べる。
+// 月初の目盛り（横軸ラベル＋グリッド線）。レンジ内の各月1日をpx位置で並べる。
 const ticks = computed(() => {
   const b = bounds.value
-  if (!b) return [] as { day: number; pct: number; label: string }[]
-  const out: { day: number; pct: number; label: string }[] = []
+  if (!b) return [] as { day: number; px: number; label: string }[]
+  const out: { day: number; px: number; label: string }[] = []
   const start = new Date(b.min * 86400000)
   let y = start.getUTCFullYear(), mo = start.getUTCMonth()
   // 最初は必ずレンジ先頭を出す
-  out.push({ day: b.min, pct: 0, label: `${mo + 1}/${start.getUTCDate()}` })
+  out.push({ day: b.min, px: 0, label: `${mo + 1}/${start.getUTCDate()}` })
   // 以降は各月1日
   mo += 1; if (mo > 11) { mo = 0; y += 1 }
-  for (let guard = 0; guard < 60; guard++) {
+  for (let guard = 0; guard < 120; guard++) {
     const day = Math.floor(Date.UTC(y, mo, 1) / 86400000)
     if (day > b.max) break
-    out.push({ day, pct: (day - b.min) / b.total * 100, label: `${mo + 1}月` })
+    out.push({ day, px: (day - b.min) * DAY_W, label: `${mo + 1}月` })
     mo += 1; if (mo > 11) { mo = 0; y += 1 }
   }
   return out
 })
 
-// タスクの期間バーの位置/幅（%）。開始・終了どちらか片方でも単日バーにする。両方無ければ null。
-// 表示軸(b.min〜b.max)からはみ出す開始/終了日は両端ともクランプし、はみ出した側で打ち切り表示に
-// する(isTruncatedで判定・通常タスクの帯が長期タスクに押し潰されないようにするため)。
+// タスクの期間バーの位置/幅（px）。開始・終了どちらか片方でも単日バーにする。両方無ければ null。
+// 横スクロール方式のため打ち切り(クランプ)は無し＝実際の期間をそのまま表示する。
 function barStyle(it: ProcessItem): Record<string, string> | null {
   const b = bounds.value
   if (!b) return null
   const s = it.start_date || it.end_date
   const e = it.end_date || it.start_date
   if (!s || !e) return null
-  const sd = Math.min(Math.max(toDay(s), b.min), b.max), ed = Math.min(Math.max(toDay(e), b.min), b.max)
-  const left = (sd - b.min) / b.total * 100
-  const width = (ed - sd + 1) / b.total * 100
-  return { left: `${left}%`, width: `${Math.max(width, 1.5)}%` }  // 単日でも見えるよう最小幅
-}
-
-// 表示軸をはみ出して始まる/続くタスクか（打ち切り表示のインジケータ・フェード方向の判定用）。
-function truncatedStart(it: ProcessItem): boolean {
-  const b = bounds.value
-  const s = it.start_date || it.end_date
-  if (!b || !s) return false
-  return toDay(s) < b.min
-}
-function truncatedEnd(it: ProcessItem): boolean {
-  const b = bounds.value
-  const e = it.end_date || it.start_date
-  if (!b || !e) return false
-  return toDay(e) > b.max
+  const sd = toDay(s), ed = toDay(e)
+  const left = (sd - b.min) * DAY_W
+  const width = (ed - sd + 1) * DAY_W
+  return { left: `${left}px`, width: `${Math.max(width, 10)}px` }  // 単日でも見えるよう最小幅
 }
 
 // バーが十分広い時だけ内側に期間ラベルを出す（狭いバーは見切れて崩れるため非表示・title で補完）。
-// 幅はクランプ後の表示位置で判定する(実際の期間でなく画面上の見え方で決める)。
 function barWideEnough(it: ProcessItem): boolean {
-  const b = bounds.value
-  if (!b) return false
   const s = it.start_date || it.end_date
   const e = it.end_date || it.start_date
   if (!s || !e) return false
-  const sd = Math.min(Math.max(toDay(s), b.min), b.max), ed = Math.min(Math.max(toDay(e), b.min), b.max)
-  const width = (ed - sd + 1) / b.total * 100
-  return width >= 14
+  const width = (toDay(e) - toDay(s) + 1) * DAY_W
+  return width >= 60
 }
 
 // 現場名から安定した色を作る（色分け＝現場の識別用。金額等の機微情報は含まない）。
@@ -198,6 +176,20 @@ async function load() {
   const { data, error } = await useSupabase().functions.invoke('liff-process-summary', { body: { account_id: accountId } })
   if (!error) items.value = (data?.items ?? []) as ProcessItem[]
   loading.value = false
+  await nextTick()
+  scrollToToday()
+}
+
+// 開いた時に当日日付を含む位置が最初から見えるよう横スクロール位置を合わせる
+// （当日を左端ぴったりにせず少し手前の余白を持たせる）。
+const ganttScrollRef = ref<HTMLElement | null>(null)
+function scrollToToday() {
+  const b = bounds.value
+  const el = ganttScrollRef.value
+  if (!b || !el) return
+  const todayDay = Math.floor(Date.now() / 86400000)
+  const todayPx = (todayDay - b.min) * DAY_W
+  el.scrollLeft = Math.max(0, todayPx - DAY_W * 3)
 }
 onMounted(load)
 </script>
@@ -208,22 +200,27 @@ onMounted(load)
 .hint { font-size: 12px; color: #888; margin: 0 0 16px; }
 .state { color: #888; text-align: center; padding: 32px; }
 
-/* ガントチャート（% ベースでレスポンシブ・横スクロール無し） */
-.gantt { background: #fff; border: 1px solid #eee; border-radius: 12px; padding: 10px 12px 14px; }
-.gantt-axis { position: relative; height: 18px; margin-left: 38%; margin-bottom: 6px; }
+/* ガントチャート（1日固定px幅・横スクロール方式。apps/admin/process.vueと同型パターン） */
+.gantt { background: #fff; border: 1px solid #eee; border-radius: 12px; padding: 10px 0 14px; overflow-x: auto; }
+.gantt-head-row { display: flex; align-items: stretch; width: max-content; position: sticky; top: 0; z-index: 5; background: #fff; }
+.gantt-corner { width: var(--label-w); min-width: var(--label-w); position: sticky; left: 0; z-index: 6; background: #fff; }
+.gantt-axis { position: relative; height: 18px; margin-bottom: 6px; }
 .gantt-tick {
   position: absolute; top: 0; transform: translateX(-2px);
   font-size: 10px; color: #999; white-space: nowrap;
 }
-.gantt-group { margin-top: 10px; }
+.gantt-group { margin-top: 10px; width: max-content; min-width: 100%; }
 .gantt-group:first-of-type { margin-top: 0; }
-.gantt-site { font-weight: 700; font-size: 13px; margin: 6px 0 4px; color: #333; }
-.gantt-lane { display: flex; align-items: center; gap: 8px; min-height: 26px; }
+.gantt-site-row { display: flex; align-items: stretch; width: max-content; }
+.gantt-site { width: var(--label-w); min-width: var(--label-w); position: sticky; left: 0; z-index: 4; background: #fff; font-weight: 700; font-size: 13px; padding: 6px 10px 4px 12px; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gantt-site-fill { border-bottom: 1px solid #f1f1f1; }
+.gantt-lane { display: flex; align-items: center; gap: 0; min-height: 26px; width: max-content; }
 .gantt-task-name {
-  width: 38%; flex: 0 0 38%; font-size: 12px; color: #555;
+  width: var(--label-w); min-width: var(--label-w); position: sticky; left: 0; z-index: 3;
+  background: #fff; font-size: 12px; color: #555; padding: 0 8px 0 12px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.gantt-track { position: relative; flex: 1 1 auto; height: 20px; }
+.gantt-track { position: relative; height: 20px; flex: none; }
 .gantt-grid { position: absolute; inset: 0; }
 .gantt-gridline { position: absolute; top: 0; bottom: 0; width: 1px; background: #f1f1f1; }
 .gantt-bar {
@@ -231,25 +228,11 @@ onMounted(load)
   display: flex; align-items: center; overflow: hidden; min-width: 6px;
   box-shadow: inset 0 -1px 0 rgba(0,0,0,.08);
 }
-/* 表示軸の端で打ち切られたタスク（長期タスク）の目印。打ち切られた側を角丸なしにし
-   グラデーションでフェードさせ「続きがある/前から続いている」ことを示す */
-.gantt-bar-truncated-end {
-  border-top-right-radius: 0; border-bottom-right-radius: 0;
-  background-image: linear-gradient(to right, transparent 0%, transparent 70%, rgba(255,255,255,.55) 100%) !important;
-}
-.gantt-bar-truncated-start {
-  border-top-left-radius: 0; border-bottom-left-radius: 0;
-  background-image: linear-gradient(to left, transparent 0%, transparent 70%, rgba(255,255,255,.55) 100%) !important;
-}
-.gantt-bar-truncated-start.gantt-bar-truncated-end {
-  background-image: linear-gradient(to right, rgba(255,255,255,.55) 0%, transparent 30%, transparent 70%, rgba(255,255,255,.55) 100%) !important;
-}
-.gantt-truncate-note { font-size: 11px; color: #888; margin: 0 0 8px; }
 .gantt-bar-label {
   font-size: 9px; color: #fff; padding: 0 6px; white-space: nowrap;
   text-shadow: 0 1px 1px rgba(0,0,0,.25);
 }
-.gantt-nodate { font-size: 11px; color: #bbb; line-height: 20px; }
+.gantt-nodate { font-size: 11px; color: #bbb; line-height: 20px; padding-left: 4px; }
 
 /* 日付が1つも無い時のフォールバック一覧 */
 .list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
