@@ -186,6 +186,9 @@ function measureHeights() {
   if (typeof document === 'undefined') return
   const bottomH = showBottomNav.value && bottomNavRef.value ? bottomNavRef.value.getBoundingClientRect().height : 0
   document.documentElement.style.setProperty('--app-bottom-nav-h', `${bottomH}px`)
+  // ヘッダー実高さ(スペーサーと同じ値)もCSS変数化。ヘッダー+下部ナビ両方を差し引いて
+  // 高さ計算したいページ(checkin等)向け(2026-07-16)。
+  document.documentElement.style.setProperty('--app-header-h', `${navHeight.value}px`)
   document.body.style.paddingBottom = bottomH > 0 ? 'calc(var(--app-bottom-nav-h) + env(safe-area-inset-bottom, 0px))' : ''
 }
 onMounted(() => {

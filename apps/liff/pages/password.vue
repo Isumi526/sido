@@ -1,5 +1,7 @@
 <template>
-  <div class="pw-wrap">
+  <div>
+    <AppNav :subtitle="t('password.title')" />
+    <div class="pw-wrap">
     <div class="pw-card">
       <h1 class="pw-title">{{ t('password.title') }}</h1>
 
@@ -32,6 +34,7 @@
         </form>
         <NuxtLink to="/" class="pw-back">{{ t('password.back') }}</NuxtLink>
       </template>
+    </div>
     </div>
   </div>
 </template>

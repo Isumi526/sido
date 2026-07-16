@@ -2655,7 +2655,7 @@ html, body {
 /* ── AI解析トースト ── */
 .receipt-toast {
   position: fixed;
-  bottom: 80px; left: 50%; transform: translateX(-50%);
+  bottom: calc(80px + var(--app-bottom-nav-h, 54px)); left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: 8px;
   padding: 12px 20px;
   border-radius: 12px;
