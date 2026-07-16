@@ -24,7 +24,13 @@
     </div>
 
     <p v-if="busy" class="muted" data-testid="drawing-progress">解析中… ({{ done }}/{{ total }}ページ)</p>
-    <p v-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
+    <p v-if="errorMsg" class="error-msg" data-testid="drawing-error">{{ errorMsg }}</p>
+    <ul v-if="failedPages.length" class="failed-pages" data-testid="drawing-failed-pages">
+      <li v-for="fp in failedPages" :key="fp.pageNo">
+        <span>{{ fp.pageNo }}ページ目: {{ fp.errorMsg }}</span>
+        <button class="btn-retry" :disabled="fp.retrying" data-testid="drawing-retry-page" @click="retryPage(fp)">{{ fp.retrying ? '再試行中…' : '再試行' }}</button>
+      </li>
+    </ul>
     <p v-if="successMsg" class="muted" data-testid="drawing-success">{{ successMsg }}</p>
 
     <div v-if="rows.length" class="table-wrap">
@@ -60,17 +66,33 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { supabase } from '../lib/supabase'
+import { getAccountId } from '../lib/account'
 import HelpButton from '../components/HelpButton.vue'
 
 type Row = { page: number; part: string; manufacturer: string; code: string; size: string; spec: string; quantity: string; note: string; sizeSourceUrl: string }
+// 解析に失敗したページ(504等)。b64/mimeを保持し「再試行」で当該ページのみ再解析できる。
+type FailedPage = { pageNo: number; b64: string; mime: string; errorMsg: string; retrying: boolean }
 
-const rows     = ref<Row[]>([])
+const rows        = ref<Row[]>([])
+const failedPages = ref<FailedPage[]>([])
 const busy     = ref(false)
 const dragOver = ref(false)
 const errorMsg = ref('')
 const successMsg = ref('')
 const total    = ref(0)
 const done     = ref(0)
+const SOURCE_PDF_BUCKET = 'drawing-source-pdfs'
+
+// アップロード時点でPDF原本をStorageに保存(再試行時の再選択不要・失敗しても解析は続行する)
+async function backupSourcePdf(file: File) {
+  try {
+    const accountId = await getAccountId()
+    const path = `${accountId}/${Date.now()}-${Math.round(Math.random() * 100000)}-${file.name}`
+    await supabase.storage.from(SOURCE_PDF_BUCKET).upload(path, file, { upsert: false, contentType: 'application/pdf' })
+  } catch {
+    // 原本保存は補助機能のため失敗しても解析自体は止めない
+  }
+}
 
 // 解析中(busy)の画面離脱ガード（estimate-builder.vueと同型）。離脱すると解析が中断され抽出結果も失われるため。
 const LEAVE_MSG = '解析中です。移動すると解析が中断され、抽出結果が失われます。移動しますか？'
@@ -122,24 +144,51 @@ async function processFiles(files: File[]) {
   const targets = files.filter(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name))
   if (!targets.length) return
   busy.value = true; errorMsg.value = ''; successMsg.value = ''; done.value = 0; total.value = 0
+  failedPages.value = []
+  for (const f of targets) backupSourcePdf(f)   // 原本保存は解析と並行(結果を待たない・失敗しても解析は継続)
   try {
     const pages: { b64: string; mime: string }[] = []
     for (const f of targets) pages.push(...await buildPages(f))
     total.value = pages.length
     let extractedCount = 0
+    // 1ページの失敗(504等)で全体を止めない。失敗ページは記録し個別に再試行できるようにする。
     for (let i = 0; i < pages.length; i++) {
-      const extracted = await callExtract(pages[i].b64, pages[i].mime, i + 1)
-      rows.value.push(...extracted)
-      extractedCount += extracted.length
+      const pageNo = i + 1
+      try {
+        const extracted = await callExtract(pages[i].b64, pages[i].mime, pageNo)
+        rows.value.push(...extracted)
+        extractedCount += extracted.length
+      } catch (pageErr: any) {
+        failedPages.value.push({ pageNo, b64: pages[i].b64, mime: pages[i].mime, errorMsg: pageErr?.message ?? '解析に失敗しました', retrying: false })
+      }
       done.value++
     }
     if (extractedCount > 0) {
       successMsg.value = `${extractedCount}件を抽出しました。内容を確認・修正してください（AIによる自動抽出のため誤読の可能性があります）`
     }
+    if (failedPages.value.length > 0) {
+      errorMsg.value = `${failedPages.value.length}ページで解析エラーが発生しました。下記の「再試行」からページ単位でやり直せます。`
+    }
   } catch (err: any) {
     errorMsg.value = err?.message ?? '解析に失敗しました'
   } finally {
     busy.value = false
+  }
+}
+
+async function retryPage(fp: FailedPage) {
+  fp.retrying = true
+  try {
+    const extracted = await callExtract(fp.b64, fp.mime, fp.pageNo)
+    rows.value.push(...extracted)
+    failedPages.value = failedPages.value.filter(p => p !== fp)
+    if (failedPages.value.length === 0) errorMsg.value = ''
+    if (extracted.length > 0 && !successMsg.value) {
+      successMsg.value = `${extracted.length}件を抽出しました。内容を確認・修正してください（AIによる自動抽出のため誤読の可能性があります）`
+    }
+  } catch (err: any) {
+    fp.errorMsg = err?.message ?? '解析に失敗しました'
+    fp.retrying = false
   }
 }
 
@@ -196,4 +245,8 @@ function exportCsv() {
 .row-del { border: none; background: none; color: #94a3b8; font-size: 12px; cursor: pointer; }
 .row-del:hover { color: #dc2626; }
 .size-source-link { color: #06A050; font-size: 12px; text-decoration: underline; white-space: nowrap; }
+.failed-pages { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.failed-pages li { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 8px 12px; font-size: 13px; color: #991b1b; }
+.btn-retry { border: 1px solid #dc2626; background: #fff; color: #dc2626; border-radius: 6px; padding: 4px 12px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.btn-retry:disabled { opacity: .5; cursor: default; }
 </style>
