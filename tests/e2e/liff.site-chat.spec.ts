@@ -7,7 +7,7 @@
 import { test, expect } from '@playwright/test'
 import path from 'path'
 import fs from 'fs'
-import { rest, restSrv, getAccountId } from './helpers'
+import { rest, restSrv, getAccountId, grantSiteShare } from './helpers'
 
 const TS = Date.now()
 const SITE_A = `E2Eチャット現場A_${TS}`
@@ -28,6 +28,8 @@ test.beforeAll(async () => {
   seedMsgId = (await restSrv('site_chat_messages', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
     account_id: accountId, site_id: siteBId, sender_is_admin: true, sender_name: 'テスト管理者', body: `他現場メッセージ_${TS}`,
   }) }))[0].id
+  // 現場情報共有(site_shares・Part B): 現場Aだけ共有登録(現場Bは非共有のまま=他現場として使う)
+  await grantSiteShare(siteAId)
 })
 test.afterAll(async () => {
   await restSrv(`site_chat_messages?site_id=eq.${siteAId}`, { method: 'DELETE' }).catch(() => {})

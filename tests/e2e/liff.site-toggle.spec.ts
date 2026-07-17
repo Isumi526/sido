@@ -7,11 +7,12 @@
 //  引き続き無効化ボタンがあり、そちらで運用する）。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, getAccountId } from './helpers'
+import { rest, getAccountId, grantSiteShare } from './helpers'
 const TS = Date.now(); const SITE = `E2E切替現場_${TS}`; let siteId = ''
 test.beforeAll(async () => {
   const a = await getAccountId()
   siteId = (await rest('sites',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify({account_id:a,name:SITE,active:true})}))[0].id
+  await grantSiteShare(siteId)   // 現場情報共有(site_shares・Part B): 絞り込み後もこのテストで見えるようにする
 })
 test.afterAll(async () => { await rest(`sites?id=eq.${siteId}`,{method:'DELETE'}).catch(()=>{}) })
 test('現場一覧に有効/無効の切替ボタンが表示されない(閲覧のみ・active は不変)', async ({ page }) => {

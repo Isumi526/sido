@@ -66,12 +66,16 @@ async function load() {
   loading.value = true
   const supabase = useSupabase()
   const { getAccountId } = useAccount()
+  const { resolveMySiteIds } = useMySiteIds()
   const accountId = await getAccountId()
   if (!accountId) { rows.value = []; loading.value = false; return }
   const workerId = await resolveMyWorkerId()
 
+  // 現場情報共有(site_shares・2026-07-17 Part B): 自分が共有登録されている現場のチャットだけに絞る。
+  const mySiteIds = await resolveMySiteIds()
+  if (!mySiteIds.length) { rows.value = []; loading.value = false; return }
   const { data: sites } = await supabase.from('sites')
-    .select('id, name').eq('account_id', accountId).eq('active', true)
+    .select('id, name').eq('account_id', accountId).eq('active', true).in('id', mySiteIds)
   const siteList = (sites ?? []) as Site[]
   const siteIds = siteList.map((s) => s.id)
   if (!siteIds.length) { rows.value = []; loading.value = false; return }

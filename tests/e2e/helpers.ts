@@ -132,6 +132,22 @@ export async function getDevUserId(): Promise<string | null> {
   return rows?.[0]?.id ?? null
 }
 
+/**
+ * 現場情報共有(site_shares・Part B・2026-07-17): LIFF devユーザーに指定現場の閲覧権を付与する。
+ * sites/index.vue・chats/index.vue・site-chat/[id].vue が site_shares 基準に絞り込むようになった
+ * ため、これらのページ/機能をテストするE2Eは対象現場ごとに本関数で共有登録しておく必要がある
+ * （responsible_worker_id で現場責任者になっている場合は不要＝そちらは別途自動で見える）。
+ */
+export async function grantSiteShare(siteId: string): Promise<void> {
+  const accountId = await getAccountId()
+  const userId = await getDevUserId()
+  if (!userId) { console.warn('[e2e] grantSiteShare: dev-user-id の users行が見つかりません'); return }
+  await rest('site_shares', {
+    method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({ account_id: accountId, site_id: siteId, user_id: userId }),
+  })
+}
+
 /** upsert（merge-duplicates）して representation を返す */
 export async function upsert(table: string, onConflict: string, body: unknown): Promise<any[]> {
   return rest(`${table}?on_conflict=${onConflict}`, {
