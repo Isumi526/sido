@@ -3,7 +3,7 @@
 //  作業員が現場情報（詳細）を閲覧できる（緊急・AC3）
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, getAccountId } from './helpers'
+import { rest, getAccountId, grantSiteShare } from './helpers'
 
 const TS = Date.now()
 const SITE = `E2E閲覧現場_${TS}`
@@ -15,6 +15,7 @@ test.beforeAll(async () => {
   siteId = (await rest('sites', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
     account_id: accountId, name: SITE, active: true, location: LOC, construction_type: '内装', construction_details: 'クロス張替', memo: 'E2Eメモ',
   }) }))[0].id
+  await grantSiteShare(siteId)   // 現場情報共有(site_shares・Part B): 絞り込み後もこのテストで見えるようにする
 })
 test.afterAll(async () => {
   await rest(`sites?id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})

@@ -5,7 +5,7 @@
 //  チャット(/site-chat/:id)へ遷移する（2026-07-14・[[project_sido]]）。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, restSrv, getAccountId } from './helpers'
+import { rest, restSrv, getAccountId, grantSiteShare } from './helpers'
 
 const TS = Date.now()
 const SITE_WITH_MSG = `E2ELIFFチャット一覧現場A_${TS}`
@@ -25,6 +25,9 @@ test.beforeAll(async () => {
   await restSrv('site_chat_messages', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
     account_id: accountId, site_id: siteWithMsgId, sender_is_admin: true, sender_name: 'テスト管理者', body: MSG_BODY,
   }) })
+  // 現場情報共有(site_shares・Part B): 絞り込み後もこのテストで両現場が見えるようにする
+  await grantSiteShare(siteWithMsgId)
+  await grantSiteShare(siteNoMsgId)
 })
 test.afterAll(async () => {
   await restSrv(`site_chat_messages?site_id=eq.${siteWithMsgId}`, { method: 'DELETE' }).catch(() => {})

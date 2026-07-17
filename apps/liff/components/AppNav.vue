@@ -145,6 +145,15 @@
   </Teleport>
 </template>
 
+<script lang="ts">
+// ページ遷移時、新ページのAppNavがmount(padding-bottomを正しくセット)→旧ページのAppNavが
+// unmount、の順で起こりうる（Vueは新をmountしてから旧をunmountする）。unmount側が無条件に
+// padding-bottomを空へクリアすると、直後の新側の設定が消えてナビと本文が被る(2026-07-17実機で発覚)。
+// モジュールスコープ(全AppNavインスタンス共有)の参照カウントで「最後の1個がunmountされる時だけ」
+// クリアするようにし、page→page遷移(常に1件は生き残る)では絶対にクリアさせない。
+let appNavInstanceCount = 0
+</script>
+
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 
@@ -192,12 +201,16 @@ function measureHeights() {
   document.body.style.paddingBottom = bottomH > 0 ? 'calc(var(--app-bottom-nav-h) + env(safe-area-inset-bottom, 0px))' : ''
 }
 onMounted(() => {
+  appNavInstanceCount++
   measureHeights()
   window.addEventListener('resize', measureHeights)
 })
 onUnmounted(() => {
+  appNavInstanceCount--
   window.removeEventListener('resize', measureHeights)
-  if (typeof document !== 'undefined') document.body.style.paddingBottom = ''
+  // 他のAppNavインスタンス(次ページ側。新→旧の順でmount/unmountされるため既にmount済み)が
+  // 残っている間はクリアしない＝その生存インスタンスが設定した正しい値を消さない。
+  if (appNavInstanceCount <= 0 && typeof document !== 'undefined') document.body.style.paddingBottom = ''
 })
 watch(() => proxy.isProxyMode.value, () => nextTick(measureHeights))   // バナー表示切替で高さが変わる
 watch(showBottomNav, () => nextTick(measureHeights))                   // site-chat遷移でナビ表示が切り替わる

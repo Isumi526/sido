@@ -75,6 +75,10 @@ async function load() {
   const { getAccountId } = useAccount()
   const accountId = await getAccountId()
   const siteId = String(route.params.id)
+  // 現場情報共有(site_shares・2026-07-17 Part B): 一覧に出ない現場のURL直打ちも塞ぐ。
+  const { resolveMySiteIds } = useMySiteIds()
+  const mySiteIds = await resolveMySiteIds()
+  if (!mySiteIds.includes(siteId)) { await navigateTo('/sites'); return }
   // account_id で絞り込み、他テナントの現場IDを直打ちされても見えないようにする
   const { data } = await supabase.from('sites')
     .select('id, name, active, location, construction_type, construction_details, memo')
