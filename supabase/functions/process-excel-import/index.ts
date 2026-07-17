@@ -52,6 +52,7 @@ Deno.serve(async (req) => {
   const { data: userData, error: userErr } = await authClient.auth.getUser(token)
   if (userErr || !userData?.user) return json({ error: 'トークン不正' }, 401)
 
+  try {
     const { text, siteName, multiSite } = await req.json() as { text?: string; siteName?: string; multiSite?: boolean }
     if (!text || !text.trim()) return json({ error: 'text is required' }, 400)
 
