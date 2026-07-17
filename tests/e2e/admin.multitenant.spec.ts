@@ -12,6 +12,7 @@
 import { test, expect } from '@playwright/test'
 import { execSync } from 'node:child_process'
 import { writeFileSync, unlinkSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { rest, ADMIN_LOGIN_PASS, DB_URL } from './helpers'
 
 const LOCAL_DB = DB_URL
@@ -21,6 +22,7 @@ const NAME2 = 'E2EテナントB'
 const SITE2 = `E2EテナントB現場_${TS}`
 const LOGIN = `e2elogin${TS}`                // ログインID（→ e2elogin...@email.com）。slug とは別物
 const EMAIL = `${LOGIN}@email.com`
+const AUTH_USER_ID = randomUUID()            // フェイルオープン修正(74022be)後: accounts.owner_auth_user_id との突合に使うため事前に採番
 
 function runSql(sql: string) {
   const f = `/tmp/e2e-mt-${TS}-${Math.abs(sql.length)}.sql`
@@ -38,28 +40,31 @@ test.beforeAll(async () => {
   acc2 = a[0].id
   await rest('sites', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ name: SITE2, account_id: acc2 }) })
   // app_metadata.account_slug を持つ認証ユーザーを local DB に直接作成
+  // （id は事前採番のAUTH_USER_ID固定＝下のaccounts.owner_auth_user_id突合に使うため）
   runSql(`
-    with nu as (
-      insert into auth.users (
-        id, instance_id, aud, role, email, encrypted_password,
-        email_confirmed_at, created_at, updated_at,
-        raw_app_meta_data, raw_user_meta_data,
-        confirmation_token, recovery_token, email_change_token_new, email_change,
-        is_sso_user, is_anonymous
-      ) values (
-        gen_random_uuid(), '00000000-0000-0000-0000-000000000000',
-        'authenticated','authenticated', '${EMAIL}',
-        crypt('${ADMIN_LOGIN_PASS}', gen_salt('bf')),
-        now(), now(), now(),
-        '{"provider":"email","providers":["email"],"account_slug":"${SLUG2}"}'::jsonb, '{}'::jsonb,
-        '','','','', false, false
-      ) returning id
-    )
+    insert into auth.users (
+      id, instance_id, aud, role, email, encrypted_password,
+      email_confirmed_at, created_at, updated_at,
+      raw_app_meta_data, raw_user_meta_data,
+      confirmation_token, recovery_token, email_change_token_new, email_change,
+      is_sso_user, is_anonymous
+    ) values (
+      '${AUTH_USER_ID}', '00000000-0000-0000-0000-000000000000',
+      'authenticated','authenticated', '${EMAIL}',
+      crypt('${ADMIN_LOGIN_PASS}', gen_salt('bf')),
+      now(), now(), now(),
+      '{"provider":"email","providers":["email"],"account_slug":"${SLUG2}"}'::jsonb, '{}'::jsonb,
+      '','','','', false, false
+    );
     insert into auth.identities (provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
-    select id::text, id,
-      jsonb_build_object('sub', id::text, 'email', '${EMAIL}', 'email_verified', true, 'phone_verified', false),
-      'email', now(), now(), now() from nu;
+    values ('${AUTH_USER_ID}', '${AUTH_USER_ID}',
+      jsonb_build_object('sub', '${AUTH_USER_ID}', 'email', '${EMAIL}', 'email_verified', true, 'phone_verified', false),
+      'email', now(), now(), now());
   `)
+  // フェイルオープン修正(74022be)後: worker行が無いユーザーは accounts.owner_auth_user_id と
+  // 一致しない限り最小権限(worker)へ倒され管理画面から締め出される。このテストユーザーは
+  // テナントB(acc2)の意図的な純粋オーナーとして扱わせるため明示的に設定する。
+  await rest(`accounts?id=eq.${acc2}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ owner_auth_user_id: AUTH_USER_ID }) })
 })
 
 test.afterAll(async () => {
