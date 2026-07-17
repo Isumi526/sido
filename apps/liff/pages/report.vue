@@ -2,7 +2,7 @@
   <div class="app">
     <ReportOnboarding ref="onboardingRef" />
     <AppNav :subtitle="$t('report.subtitle')" :user-name="currentUser?.real_name" :user-role="currentUser?.worker_role" />
-    <button type="button" class="ob-replay" @click="onboardingRef?.open()">❓ {{ $t('onboarding.replay') }}</button>
+    <button type="button" class="ob-replay" @click="onboardingRef?.open()"><span class="material-symbols-rounded ob-replay-icon">help</span>{{ $t('onboarding.replay') }}</button>
 
     <main class="main">
       <!-- ローディング -->
@@ -41,7 +41,7 @@
 
         <!-- 下書き復元バナー（新規入力中・自動保存を復元した時のみ）-->
         <div v-if="draftRestored && !isEditMode" class="draft-banner">
-          <span class="draft-banner-text">📝 {{ $t('report.draftRestored') }}</span>
+          <span class="draft-banner-text"><span class="material-symbols-rounded banner-icon">edit_note</span>{{ $t('report.draftRestored') }}</span>
           <button type="button" class="draft-discard" @click="discardDraft">{{ $t('report.draftDiscard') }}</button>
         </div>
 
@@ -52,13 +52,13 @@
             <span v-html="$t('report.pastDateNotice')" />
           </div>
           <div v-if="currentDateLocked" class="locked-notice">
-            🔒 {{ $t('report.lockedBanner') }}
+            <span class="material-symbols-rounded banner-icon">lock</span>{{ $t('report.lockedBanner') }}
             <div class="locked-actions">
               <template v-if="lockGrantStatus === 'pending'">
-                <span class="locked-pending">🕒 {{ $t('report.unlockPending') }}</span>
+                <span class="locked-pending"><span class="material-symbols-rounded banner-icon">schedule</span>{{ $t('report.unlockPending') }}</span>
                 <button type="button" class="btn-unlock-cancel" :disabled="unlockRequesting" @click="cancelUnlockRequest">{{ $t('report.unlockPendingCancel') }}</button>
               </template>
-              <button v-else type="button" class="btn-unlock" @click="openUnlockModal">🔒 {{ $t('report.unlockRequest') }}</button>
+              <button v-else type="button" class="btn-unlock" @click="openUnlockModal"><span class="material-symbols-rounded banner-icon">lock</span>{{ $t('report.unlockRequest') }}</button>
             </div>
           </div>
         </FormSection>
@@ -202,7 +202,11 @@
             />
             <div v-if="site.siteName === '__other__' && siteSimilar(site.customSiteName).length"
                  style="margin-top:6px;font-size:12px;color:#B45309;background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;padding:8px 10px;line-height:1.5">
-              ⚠️ {{ $t('report.similarSiteWarn') }}：<strong>{{ siteSimilar(site.customSiteName).join('、') }}</strong>
+              <span class="material-symbols-rounded banner-icon">warning</span>{{ $t('report.similarSiteWarn') }}：<template v-for="(name, i) in siteSimilar(site.customSiteName)" :key="name"><span
+                class="similar-site-pick" role="button" tabindex="0" data-testid="similar-site-pick"
+                @click="pickSimilarSite(si, name)"
+                @keydown.enter.prevent="pickSimilarSite(si, name)"
+              >{{ name }}</span>{{ i < siteSimilar(site.customSiteName).length - 1 ? '、' : '' }}</template>
             </div>
           </Field>
 
@@ -241,9 +245,9 @@
                     </div>
                   </div>
                   <div v-if="siteFixedEnd(site.siteName)" class="fixed-time-note">
-                    <template v-if="overtimeApprovedForDate">✅ {{ $t('report.overtimeApprovedNote') }}</template>
+                    <template v-if="overtimeApprovedForDate"><span class="material-symbols-rounded banner-icon">check_circle</span>{{ $t('report.overtimeApprovedNote') }}</template>
                     <template v-else>
-                      ⏱ {{ $t('report.fixedTimeNote', { end: siteFixedEnd(site.siteName) }) }}
+                      <span class="material-symbols-rounded banner-icon">timer</span>{{ $t('report.fixedTimeNote', { end: siteFixedEnd(site.siteName) }) }}
                       <NuxtLink to="/overtime" class="overtime-link">{{ $t('report.overtimeApplyLink') }}</NuxtLink>
                     </template>
                   </div>
@@ -589,7 +593,7 @@
 
         <!-- エラー表示 -->
         <div v-if="report.error.value || editError" class="error-banner">
-          ⚠️ {{ report.error.value || editError }}
+          <span class="material-symbols-rounded banner-icon">warning</span>{{ report.error.value || editError }}
         </div>
 
         <!-- 送信前の最終確認テーブル（新規・編集とも全体をプレビュー） -->
@@ -614,9 +618,9 @@
                 <span v-if="site.contractor" class="preview-contractor">（{{ site.contractor }}）</span>
               </div>
               <table v-if="site.workers.length" class="preview-table">
-                <thead><tr><th>{{ $t('report.workerName') }}</th><th>{{ $t('report.workTime') }}</th><th>{{ $t('report.workHours') }}</th></tr></thead>
+                <thead><tr><th>{{ $t('report.workerName') }}</th><th>{{ $t('report.workTime') }}</th><th>{{ $t('report.workHours') }}</th><th>{{ $t('report.previewBreak') }}</th></tr></thead>
                 <tbody>
-                  <tr v-for="(w, wi) in site.workers" :key="wi"><td>{{ w.name }}</td><td class="preview-time">{{ w.timeRange }}</td><td>{{ w.hours }}</td></tr>
+                  <tr v-for="(w, wi) in site.workers" :key="wi"><td>{{ w.name }}</td><td class="preview-time">{{ w.timeRange }}</td><td>{{ w.hours }}</td><td class="preview-break">{{ w.breakMinutes > 0 ? $t('report.previewBreakMin', { min: w.breakMinutes }) : '—' }}</td></tr>
                 </tbody>
               </table>
               <ul v-if="site.expenses.length" class="preview-list">
@@ -630,6 +634,9 @@
                 </li>
               </ul>
               <p v-if="site.note" class="preview-note">{{ site.note }}</p>
+            </div>
+            <div v-if="previewData.sites.length" class="preview-total">
+              {{ $t('report.previewTotalHours', { hours: previewData.totalHours }) }}
             </div>
           </template>
           <p v-if="previewData.note" class="preview-note preview-note-main">{{ previewData.note }}</p>
@@ -686,6 +693,14 @@ const onboardingRef = ref<{ open: () => void } | null>(null)
 // 新規現場の手入力時、既存に似た現場があれば重複候補を返す（重複登録の気づき）
 function siteSimilar(name?: string): string[] {
   return findSimilarSiteNames(name ?? '', master.siteNames.value)
+}
+// 似た現場候補をクリックしたら、手入力(__other__)をやめて既存の現場をその場で選択する
+function pickSimilarSite(si: number, name: string) {
+  const s = report.form.value.sites[si]
+  if (!s) return
+  s.siteName = name
+  s.customSiteName = ''
+  onSiteChange(si)
 }
 
 // 現場プルダウン: 元請けが選択されていれば、その元請けに紐づく現場を優先表示。
@@ -1419,7 +1434,7 @@ function discardDraft() {
 // ── LINE通知プレビュー ──────────────────────────────────────
 // 送信前の最終確認テーブル用データ。実際の保存(saveReportById等)と同じ form/computeWorkerHours
 // から組むため、プレビューと保存後表示のズレが起きない（旧LINE風テキスト<pre>から移行・2026-07-10）。
-type PreviewWorkerRow = { name: string; hours: string; timeRange: string }
+type PreviewWorkerRow = { name: string; hours: string; timeRange: string; breakMinutes: number }
 type PreviewSite = {
   name: string
   contractor: string
@@ -1434,6 +1449,7 @@ type PreviewData = {
   mode: 'paid_leave' | 'off' | 'working'
   note: string
   sites: PreviewSite[]
+  totalHours: number
 }
 const previewData = computed<PreviewData>(() => {
   const form      = report.form.value
@@ -1445,13 +1461,14 @@ const previewData = computed<PreviewData>(() => {
   const senderName = currentUser.value?.real_name || '（未登録）'
 
   if (isWorkingStr.value === 'paid_leave') {
-    return { dateLabel, senderName, mode: 'paid_leave', note: form.note || '', sites: [] }
+    return { dateLabel, senderName, mode: 'paid_leave', note: form.note || '', sites: [], totalHours: 0 }
   }
   if (!isWorking) {
-    return { dateLabel, senderName, mode: 'off', note: form.note || '', sites: [] }
+    return { dateLabel, senderName, mode: 'off', note: form.note || '', sites: [], totalHours: 0 }
   }
 
   const sites: PreviewSite[] = []
+  let totalHours = 0
   for (const site of form.sites) {
     if (!site.siteName) continue
     const displayName = site.siteName === '__other__'
@@ -1476,7 +1493,9 @@ const previewData = computed<PreviewData>(() => {
       if (h.hoursSundayNight)   parts.push(`休日深夜${h.hoursSundayNight}h`)
       if (h.hoursSundayOTNight) parts.push(`休日深夜残業${h.hoursSundayOTNight}h`)
       const timeRange = w.startTime && w.endTime ? `${w.startTime}〜${w.endTime}` : '—'
-      workers.push({ name: w.workerName, hours: parts.join(' + ') || '—', timeRange })
+      totalHours += h.hoursNormal + h.hoursSunday + h.hoursOT + h.hoursNight
+        + h.hoursOTNight + h.hoursSundayOT + h.hoursSundayNight + h.hoursSundayOTNight
+      workers.push({ name: w.workerName, hours: parts.join(' + ') || '—', timeRange, breakMinutes: effectiveBreakMinutes(w) })
     }
 
     const exp = site.expenses || {}
@@ -1526,7 +1545,7 @@ const previewData = computed<PreviewData>(() => {
     sites.push({ name: displayName, contractor: contractorName, workers, expenses, subs, note: site.siteNote || '' })
   }
 
-  return { dateLabel, senderName, mode: 'working', note: form.note || '', sites }
+  return { dateLabel, senderName, mode: 'working', note: form.note || '', sites, totalHours: Math.round(totalHours * 100) / 100 }
 })
 
 /** [dev] エラーテストデータ入力 + 次の送信でエラーを強制発火 */
@@ -1907,7 +1926,7 @@ async function onGasItemFile(gi: number, e: Event) {
   } finally {
     gasUploadingId.value = null
   }
-  // AI解析は自動では走らせない（任意・「✨領収書から金額」ボタンで実行）。
+  // AI解析は自動では走らせない（任意・「領収書から金額」ボタンで実行）。
 }
 
 async function analyzeGasItem(gi: number) {
@@ -2124,6 +2143,10 @@ function fillTestData() {
 /* 使い方ガイド再表示ボタン */
 .ob-replay { display: block; margin: 8px auto 0; background: #fff; border: 1px solid #d6dde2; color: #5a6b78; border-radius: 999px; padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer; }
 .ob-replay:hover { background: #f4f7f9; }
+.ob-replay-icon { font-size: 13px; vertical-align: -2px; margin-right: 2px; }
+.banner-icon { font-size: 14px; vertical-align: -2px; margin-right: 2px; }
+.similar-site-pick { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.similar-site-pick:active { opacity: .6; }
 
 :root {
   --bg:       #EFEFEF;
@@ -2616,10 +2639,12 @@ html, body {
 }
 .preview-table td { padding: 4px 8px; border-bottom: 1px solid #f1f5f9; color: var(--text); }
 .preview-table td.preview-time { white-space: nowrap; color: #64748b; font-size: 11px; }
+.preview-table td.preview-break { white-space: nowrap; color: #64748b; font-size: 11px; }
 .preview-list { list-style: none; margin: 0 0 6px; padding: 0; font-size: 12px; color: var(--text); }
 .preview-list li { padding: 2px 0; }
 .preview-note { font-size: 12px; color: #64748b; margin: 0; }
 .preview-note-main { padding: 8px 14px 12px; border-top: 1px solid #e2e8f0; }
+.preview-total { text-align: right; font-size: 12px; font-weight: 700; color: var(--text); padding: 4px 14px 2px; }
 
 /* ── レスポンシブ ── */
 @media (max-width: 380px) {
@@ -2630,7 +2655,7 @@ html, body {
 /* ── AI解析トースト ── */
 .receipt-toast {
   position: fixed;
-  bottom: 80px; left: 50%; transform: translateX(-50%);
+  bottom: calc(80px + var(--app-bottom-nav-h, 54px)); left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: 8px;
   padding: 12px 20px;
   border-radius: 12px;

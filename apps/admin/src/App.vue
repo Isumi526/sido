@@ -47,6 +47,7 @@
         <li><RouterLink to="/report-edit-approvals" class="nav-link"><span class="material-symbols-rounded nav-icon">lock_open</span>日報編集の許可申請<span v-if="editApprovalCount" class="nav-badge">{{ editApprovalCount }}</span></RouterLink></li>
         <li><RouterLink to="/report-site-relink" class="nav-link"><span class="material-symbols-rounded nav-icon">link</span>現場未設定の紐付け<span v-if="siteUnsetCount" class="nav-badge">{{ siteUnsetCount }}</span></RouterLink></li>
         <li><RouterLink to="/overtime-approvals" class="nav-link"><span class="material-symbols-rounded nav-icon">more_time</span>残業申請の承認<span v-if="overtimePendingCount" class="nav-badge">{{ overtimePendingCount }}</span></RouterLink></li>
+        <li><RouterLink to="/chats" class="nav-link"><span class="material-symbols-rounded nav-icon">forum</span>チャット<span v-if="unreadChatCount" class="nav-badge">{{ unreadChatCount }}</span></RouterLink></li>
         <li><RouterLink to="/site-reports" class="nav-link"><span class="material-symbols-rounded nav-icon">bar_chart</span>現場別集計</RouterLink></li>
         <li><RouterLink to="/calendar" class="nav-link"><span class="material-symbols-rounded nav-icon">calendar_month</span>予定管理</RouterLink></li>
         <li><RouterLink to="/process" class="nav-link"><span class="material-symbols-rounded nav-icon">view_timeline</span>工程管理</RouterLink></li>
@@ -113,6 +114,7 @@ import { currentUser, currentRole, currentWorkerName, signOut, isAdminAllowed, r
 import { liffAppUrl } from './lib/links'
 import { getAccountName } from './lib/account'
 import { editApprovalCount, siteUnsetCount, overtimePendingCount, pendingGrantCount, refreshNavBadges } from './lib/navBadges'
+import { unreadChatCount, refreshChatBadge } from './lib/chatBadge'
 import { HIDE_LINE_SECTIONS, HIDE_AI_HELP_SECTIONS } from './lib/featureFlags'
 import { migrationTargetUrl, REDIRECT_SECONDS } from './lib/domainMigration'
 import AiHelpWidget from './components/AiHelpWidget.vue'
@@ -157,6 +159,11 @@ onMounted(refreshNavBadges)
 watch(currentUser, refreshNavBadges)
 // 画面遷移のたびに再取得（許可/紐付け/残業を処理した後にバッジが減るように）
 watch(() => route.path, refreshNavBadges)
+
+// ── チャット未読バッジ（chatBadge.ts）。チャット詳細を開いた時にも markSiteChatRead() から再取得される ──
+onMounted(refreshChatBadge)
+watch(currentUser, refreshChatBadge)
+watch(() => route.path, refreshChatBadge)
 
 async function handleLogout() {
   await signOut()

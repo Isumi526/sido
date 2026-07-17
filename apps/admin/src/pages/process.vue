@@ -21,6 +21,7 @@
           <option value="start">並び順: 開始日順</option>
         </select>
         <button class="btn-add" :disabled="!siteId" @click="openAdd">＋ 工程を追加</button>
+        <button class="btn-import" type="button" @click="openImport" title="複数現場が混在した工程表Excelを一括取込">工程表インポート（複数現場）</button>
       </div>
     </div>
 
@@ -90,7 +91,7 @@
     </div>
 
     <!-- 一括追加・編集モーダル（1現場×複数工程） -->
-    <div v-if="editor" class="modal-overlay" @click.self="editor = null">
+    <div v-if="editor" class="modal-overlay" @click.self="closeEditor">
       <div class="modal editor-modal">
         <h2>工程の一括追加・編集</h2>
         <label class="fld ed-site"><span>現場 <em>*</em></span>
@@ -105,7 +106,7 @@
              @dragleave.prevent="excelDragActive = false" @drop.prevent="onExcelDrop">
           <input ref="excelInput" type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" @change="onExcelFile" />
           <button type="button" class="btn-excel" :disabled="!editor.siteId || excelBusy" @click="excelInput?.click()">
-            {{ excelBusy ? 'AI解析中…' : '📄 Excelから読み込む（AI解析）' }}
+            <span v-if="!excelBusy" class="material-symbols-rounded btn-excel-icon">description</span>{{ excelBusy ? 'AI解析中…' : 'Excelから読み込む（AI解析）' }}
           </button>
           <span class="excel-hint">{{ excelDragActive ? 'ここにドロップ' : 'または工程表Excelをドラッグ&ドロップ' }}</span>
         </div>
@@ -151,7 +152,7 @@
         <button class="btn-addrow" @click="addRow">＋ 行を追加</button>
         <p v-if="saveError" class="error">{{ saveError }}</p>
         <div class="modal-actions">
-          <button class="btn-cancel" @click="editor = null">キャンセル</button>
+          <button class="btn-cancel" @click="closeEditor">キャンセル</button>
           <button class="btn-save" :disabled="saving" @click="saveEditor">{{ saving ? '保存中…' : '保存' }}</button>
         </div>
       </div>
@@ -202,6 +203,69 @@
         </div>
       </div>
     </div>
+
+    <!-- 複数現場インポート（元請け配布の複数現場混在Excelを一括取込） -->
+    <div v-if="importModal" class="modal-overlay" @click.self="closeImportModal">
+      <div class="modal import-modal">
+        <h2>工程表インポート（複数現場）</h2>
+        <p class="hint">複数の現場が混在した工程表Excelを取り込み、AI解析で工程を現場ごとに振り分けます。各現場の取込先を確認してから実行してください。</p>
+
+        <div v-if="!importGroups.length" class="import-drop"
+             :class="{ 'drag-active': importDragActive }"
+             @dragover.prevent="importDragActive = true" @dragleave.prevent="importDragActive = false" @drop.prevent="onImportDrop">
+          <input ref="importInput" type="file" accept=".xlsx,.xls" hidden data-testid="import-file" @change="onImportFile" />
+          <button type="button" class="btn-excel" :disabled="importBusy" @click="importInput?.click()">
+            {{ importBusy ? 'AI解析中…' : 'Excelを選択' }}
+          </button>
+          <span class="excel-hint">{{ importDragActive ? 'ここにドロップ' : 'または工程表Excelをドラッグ&ドロップ' }}</span>
+        </div>
+        <p v-if="importMsg" class="excel-msg" :class="{ ok: importOk }">{{ importMsg }}</p>
+
+        <div v-if="importGroups.length" class="import-review" data-testid="import-review">
+          <table class="import-table">
+            <thead><tr><th>抽出された現場名</th><th>工程数</th><th>取込先の現場</th><th>既存工程</th></tr></thead>
+            <tbody>
+              <tr v-for="(g, gi) in importGroups" :key="gi">
+                <td>{{ g.extractedName || '（現場名なし）' }}</td>
+                <td>{{ g.tasks.length }}</td>
+                <td>
+                  <select v-model="g.target" class="input" :data-testid="`import-target-${gi}`">
+                    <option value="__skip__">スキップ（取り込まない）</option>
+                    <option value="__new__">新規作成：{{ g.extractedName || '（名称未設定）' }}</option>
+                    <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.name }}</option>
+                  </select>
+                  <p v-if="g.target === '__new__' && g.similarCandidates.length" class="import-similar-hint">
+                    似ている現場:
+                    <button
+                      v-for="s in g.similarCandidates" :key="s.id" type="button" class="import-similar-chip"
+                      :data-testid="`import-similar-${gi}-${s.id}`"
+                      @click="g.target = s.id"
+                    >{{ s.name }}</button>
+                  </p>
+                </td>
+                <td>
+                  <template v-if="g.target !== '__skip__' && g.target !== '__new__' && existingCount(g.target) > 0">
+                    <select v-model="g.mode" class="input" :data-testid="`import-mode-${gi}`">
+                      <option value="append">追加（既存を残す）</option>
+                      <option value="replace">上書き（既存を置換）</option>
+                    </select>
+                  </template>
+                  <span v-else class="hint">—</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-if="importError" class="error">{{ importError }}</p>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn-cancel" @click="closeImportModal">閉じる</button>
+          <button v-if="importGroups.length" class="btn-save" :disabled="importBusy" data-testid="import-run" @click="runImport">
+            {{ importBusy ? '取込中…' : '取込を実行' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -210,6 +274,7 @@ import { ref, computed, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import HelpButton from '../components/HelpButton.vue'
+import { findSimilarSiteNames } from '../lib/siteSimilarity'
 
 type Task = { id: string; site_id: string; name: string; assignee: string | null; start_date: string | null; end_date: string | null; progress: number; sort_order: number; work_type: string | null; contract_amount: number | null; site_manager: string | null; memo: string | null }
 type Day = { ym: string; label: string; dom: number; wd: string; weekend: boolean; key: string; ms: number }
@@ -369,12 +434,90 @@ async function excelToCsvText(buf: ArrayBuffer): Promise<string> {
   return wb.SheetNames.map((name) => `■ シート「${name}」\n${XLSX.utils.sheet_to_csv(wb.Sheets[name])}`).join('\n\n')
 }
 
+// 色塗りガントチャート形式(AC4)の検出＋開始日/終了日の計算。xlsx(sheet_to_csv)はセルの塗り色を
+// 読めず開始日/終了日が全件nullになるため、excelToCsvTextとは別にexceljsで塗り色だけを追加検出する
+// (既存のCSV化・AC1-3の出力には手を加えない・検出時のみ追加テキストを付与する加算のみの拡張)。
+// 判定: 日付が5個以上並ぶヘッダー行があり、かつ値の無い色塗りセルが1つでもあれば色ガント形式とみなす。
+// 各行の開始日/終了日はヘッダーの日付と列位置を突き合わせてこちら側で確定計算する
+// (LLMに■マーカーの列位置を数えさせる方式は1列ズレる事故が実測で起きたため採用しない)。
+async function buildColorGanttMarkerText(buf: ArrayBuffer): Promise<string> {
+  const ExcelJS = await import('exceljs')
+  const wb = new ExcelJS.Workbook()
+  await wb.xlsx.load(buf)
+
+  const isFilled = (cell: any): boolean => {
+    const fill = cell.fill
+    if (!fill || fill.type !== 'pattern' || fill.pattern !== 'solid') return false
+    const argb = fill.fgColor?.argb as string | undefined
+    if (!argb) return false
+    return argb !== 'FFFFFFFF' && argb !== '00FFFFFF' && argb !== '00000000'
+  }
+
+  const sections: string[] = []
+  for (const ws of wb.worksheets) {
+    let headerRowNum = -1
+    ws.eachRow((row, rowNum) => {
+      if (headerRowNum > 0) return
+      let count = 0
+      row.eachCell({ includeEmpty: false }, (cell) => { if (cell.value instanceof Date) count++ })
+      if (count >= 5) headerRowNum = rowNum
+    })
+    if (headerRowNum < 0) continue
+
+    // includeEmpty:false だと値の無いセル(色塗りのみ)自体がeachCellの対象から外れて判定できないため、
+    // ここは includeEmpty:true で全セルを見る（値が無く色塗りのみのセルを数えたいため）。
+    let filledEmptyCount = 0
+    ws.eachRow({ includeEmpty: true }, (row) => {
+      row.eachCell({ includeEmpty: true }, (cell) => { if (cell.value == null && isFilled(cell)) filledEmptyCount++ })
+    })
+    // 1件でも値無し色塗りセルがあれば色ガント形式とみなす（誤検出のコストは低い＝マーカー版が
+    // 余分に付くだけ。閾値を厳しくして見逃す方が実害が大きいため緩めに判定する）。
+    if (filledEmptyCount === 0) continue
+
+    // 列位置とヘッダー行の日付を対応付ける（マーカー■を並べて列を数えさせる方式はLLMが
+    // カンマの数を数え間違えて1列ズレる事故が実測で起きたため、開始日/終了日はこちら側で
+    // 確定計算し「行ラベル: 開始日=…終了日=…」という曖昧さの無い文で渡す）。
+    const headerRow = ws.getRow(headerRowNum)
+    const dateByCol = new Map<number, string>()
+    for (let c = 1; c <= ws.columnCount; c++) {
+      const v = headerRow.getCell(c).value
+      if (v instanceof Date) dateByCol.set(c, v.toISOString().slice(0, 10))
+    }
+
+    const hints: string[] = []
+    ws.eachRow({ includeEmpty: false }, (row, rowNum) => {
+      if (rowNum === headerRowNum) return
+      const label = String(row.getCell(1).value ?? '').trim()
+      if (!label) return
+      const markedDates: string[] = []
+      for (const [col, dateStr] of dateByCol) {
+        const cell = row.getCell(col)
+        if (cell.value == null && isFilled(cell)) markedDates.push(dateStr)
+      }
+      if (!markedDates.length) return
+      markedDates.sort()
+      hints.push(`行「${label}」: 開始日=${markedDates[0]}, 終了日=${markedDates[markedDates.length - 1]}`)
+    })
+    if (!hints.length) continue
+    sections.push(`■ シート「${ws.name}」の色塗り期間（元は空セルの色塗りで稼働日を表していた箇所を、列の日付ヘッダーと突き合わせて開始日・終了日を計算済み）:\n${hints.join('\n')}`)
+  }
+  return sections.join('\n\n')
+}
+
+// excelToCsvText(通常CSV)に色ガントマーカーがあれば追加する。マーカー生成の失敗はbest-effortで無視
+// (通常の取込フロー自体は壊さない)。
+async function excelToImportText(buf: ArrayBuffer): Promise<string> {
+  const csvText = await excelToCsvText(buf)
+  const markerText = await buildColorGanttMarkerText(buf).catch(() => '')
+  return markerText ? `${csvText}\n\n${markerText}` : csvText
+}
+
 async function importExcelFile(file: File) {
   const e = editor.value; if (!e) return
   excelBusy.value = true; excelMsg.value = ''
   try {
     const buf = await file.arrayBuffer()
-    const csvText = await excelToCsvText(buf)
+    const csvText = await excelToImportText(buf)
     if (!csvText.trim()) { excelOk.value = false; excelMsg.value = 'ファイルから読み取れるデータがありませんでした'; return }
     const fnName = import.meta.env.DEV ? 'test-process-excel-import' : 'process-excel-import'
     const edgeUrl = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
@@ -405,6 +548,138 @@ async function importExcelFile(file: File) {
   }
 }
 
+// ── 複数現場インポート（1ファイルに複数現場が混在した工程表を一括取込） ──
+type ImportTask = { name: string; site_name?: string | null; assignee: string | null; site_manager: string | null; work_type: string | null; contract_amount: number | null; start_date: string | null; end_date: string | null; memo: string | null }
+type ImportGroup = { extractedName: string; tasks: ImportTask[]; target: string; mode: 'append' | 'replace'; similarCandidates: { id: string; name: string }[] }
+const importModal = ref(false)
+const importInput = ref<HTMLInputElement | null>(null)
+const importDragActive = ref(false)
+const importBusy = ref(false)
+const importOk = ref(false)
+const importMsg = ref('')
+const importError = ref('')
+const importGroups = ref<ImportGroup[]>([])
+const existingCounts = ref<Record<string, number>>({})   // site_id → 既存工程数
+
+function existingCount(sid: string): number { return existingCounts.value[sid] ?? 0 }
+const normName = (s: string) => (s ?? '').trim().replace(/\s+/g, '').toLowerCase()
+
+function openImport() {
+  importModal.value = true
+  importGroups.value = []
+  importMsg.value = ''; importOk.value = false; importError.value = ''
+}
+function closeImportModal() {
+  if (importBusy.value && !confirm('AI解析・取込処理中です。破棄して閉じますか？')) return
+  importModal.value = false
+}
+function onImportFile(e: Event) {
+  const f = (e.target as HTMLInputElement).files?.[0]
+  if (f) importMultiSite(f)
+  ;(e.target as HTMLInputElement).value = ''
+}
+function onImportDrop(e: DragEvent) {
+  importDragActive.value = false
+  const f = Array.from(e.dataTransfer?.files ?? []).find((x) => /\.xlsx?$/i.test(x.name))
+  if (f) importMultiSite(f)
+}
+
+async function importMultiSite(file: File) {
+  importBusy.value = true; importMsg.value = ''; importError.value = ''
+  try {
+    const buf = await file.arrayBuffer()
+    const csvText = await excelToImportText(buf)
+    if (!csvText.trim()) { importOk.value = false; importMsg.value = 'ファイルから読み取れるデータがありませんでした'; return }
+    const fnName = import.meta.env.DEV ? 'test-process-excel-import' : 'process-excel-import'
+    const edgeUrl = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
+    if (!edgeUrl) { importOk.value = false; importMsg.value = 'Edge Function URL未設定のため解析できません'; return }
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(`${edgeUrl}/${fnName}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+      body: JSON.stringify({ text: csvText, multiSite: true }),
+    })
+    const r = await res.json()
+    if (!res.ok || r.ok === false) { importOk.value = false; importMsg.value = r.error ?? 'AI解析に失敗しました'; return }
+    const extracted: ImportTask[] = Array.isArray(r.tasks) ? r.tasks : []
+    if (!extracted.length) { importOk.value = false; importMsg.value = '工程を読み取れませんでした'; return }
+
+    // 抽出された現場名でグルーピング
+    const byName = new Map<string, ImportTask[]>()
+    for (const t of extracted) {
+      const key = (t.site_name || '').trim() || '（現場名なし）'
+      if (!byName.has(key)) byName.set(key, [])
+      byName.get(key)!.push(t)
+    }
+    // 既存現場の工程数を集計（上書き/追加の判定用）
+    const accountId = await getAccountId()
+    const { data: allTasks } = await supabase.from('process_tasks').select('site_id').eq('account_id', accountId)
+    const counts: Record<string, number> = {}
+    for (const row of (allTasks ?? []) as { site_id: string }[]) counts[row.site_id] = (counts[row.site_id] ?? 0) + 1
+    existingCounts.value = counts
+
+    // 現場名を既存マスタに突合（正規化名一致）→ 一致すればその現場・なければ新規作成をデフォルト。
+    // 完全一致が無い場合は、既存の重複検知ヘルパー(findSimilarSiteNames)で近い現場名を候補として提示する
+    // （現場名の表記ゆれ・誤字で誤って「新規作成」されてしまうのを防ぐ気づき）。
+    importGroups.value = [...byName.entries()].map(([name, tasks]) => {
+      const extractedName = name === '（現場名なし）' ? '' : name
+      const match = extractedName ? sites.value.find((s) => normName(s.name) === normName(extractedName)) : null
+      const similarNames = (!match && extractedName) ? findSimilarSiteNames(extractedName, sites.value.map((s) => s.name), undefined, 3) : []
+      const similarCandidates = similarNames.map((n) => sites.value.find((s) => s.name === n)).filter((s): s is { id: string; name: string } => !!s)
+      return { extractedName, tasks, target: match ? match.id : (extractedName ? '__new__' : '__skip__'), mode: 'append' as const, similarCandidates }
+    })
+    importOk.value = true
+    importMsg.value = `${extracted.length}件の工程を${importGroups.value.length}現場に振り分けました。取込先を確認してください。`
+  } catch (err: any) {
+    importOk.value = false; importMsg.value = err?.message ?? 'AI解析に失敗しました'
+  } finally {
+    importBusy.value = false
+  }
+}
+
+async function runImport() {
+  if (importBusy.value) return   // 連打/再送での二重取込を防ぐ（disabled属性に加えた同期ガード）
+  importBusy.value = true; importError.value = ''
+  try {
+    const accountId = await getAccountId()
+    let imported = 0
+    for (const g of importGroups.value) {
+      if (g.target === '__skip__') continue
+      let targetId = g.target
+      if (g.target === '__new__') {
+        if (!g.extractedName) { continue }
+        const { data: created, error } = await supabase.from('sites').insert({ account_id: accountId, name: g.extractedName, active: true }).select('id').single()
+        if (error || !created) { importError.value = `現場「${g.extractedName}」の作成に失敗しました`; return }
+        targetId = (created as any).id
+      }
+      // マージ規則(回答A): 既存工程があり「上書き」選択なら置換、それ以外は追加。
+      // account_id も明示して他テナント巻き込みを防ぐ（テナント分離の徹底）。
+      if (g.mode === 'replace' && existingCount(targetId) > 0) {
+        await supabase.from('process_tasks').delete().eq('account_id', accountId).eq('site_id', targetId)
+      }
+      const inserts = g.tasks.map((t, i) => ({
+        account_id: accountId, site_id: targetId, name: t.name, assignee: t.assignee || null, site_manager: t.site_manager || null,
+        work_type: t.work_type || null, contract_amount: amt(t.contract_amount), start_date: t.start_date || null, end_date: t.end_date || null,
+        progress: 0, memo: t.memo || null, sort_order: i,
+      }))
+      if (inserts.length) {
+        const { error } = await supabase.from('process_tasks').insert(inserts)
+        if (error) { importError.value = `取込に失敗しました: ${error.message}`; return }
+        imported += inserts.length
+      }
+    }
+    importModal.value = false
+    await loadSites()   // 新規作成した現場をガントの現場名解決(siteName)に反映させる
+    await load()
+    excelMsg.value = ''
+    alert(`${imported}件の工程を取り込みました`)
+  } catch (err: any) {
+    importError.value = err?.message ?? '取込に失敗しました'
+  } finally {
+    importBusy.value = false
+  }
+}
+
 // 指定現場の既存工程をまとめて開く（無ければ空行1つ）
 function openSiteEditor(sid: string) {
   const rows = tasks.value.filter((t) => t.site_id === sid).map(toDraft)
@@ -414,11 +689,19 @@ function openSiteEditor(sid: string) {
   excelMsg.value = ''
 }
 function openAdd() { openSiteEditor(isAll.value ? '' : siteId.value) }
-// エディタ内で現場を選び直したら、その現場の既存工程を読み込む（全現場ビューからの追加用）
+// エディタ内で現場を選び直したら、その現場の既存工程を読み込む（全現場ビューからの追加用）。
+// ★未保存の入力行（id無し＝Excel取込や手入力で追加した行のうち内容あり）は破棄せず新現場へ引き継ぐ。
+//   導線「先に取り込む→後で現場を選ぶ」で取込内容が消えるバグの修正。旧現場の既存工程(id有り)は
+//   別現場のため引き継がない。引き継いだ行は保存時に新現場(e.siteId)へ insert される。
+function closeEditor() {
+  if (excelBusy.value && !confirm('AI解析中です。破棄して閉じますか？')) return
+  editor.value = null
+}
 function editorPickSite(sid: string) {
   if (!editor.value) return
-  const rows = tasks.value.filter((t) => t.site_id === sid).map(toDraft)
-  rows.push(newDraft())
+  const carried = editor.value.rows.filter((r) => !r.id && r.name.trim())   // 未保存かつ内容ありの行
+  const rows = [...tasks.value.filter((t) => t.site_id === sid).map(toDraft), ...carried]
+  rows.push(newDraft())   // 末尾に空の入力行を1つ
   editor.value = { siteId: sid, rows, deleted: [] }
 }
 function addRow() { editor.value?.rows.push(newDraft()) }
@@ -557,8 +840,26 @@ async function remove(t: Task) {
 .excel-row.drag-active .excel-hint { color: #1a56c4; font-weight: 700; }
 .btn-excel { background: #1a56c4; color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-excel:disabled { opacity: .5; cursor: default; }
+.btn-excel-icon { font-size: 14px; vertical-align: -2px; margin-right: 2px; }
 .excel-msg { font-size: 12px; color: #E53935; margin: -2px 0 8px; }
 .excel-msg.ok { color: #06A050; }
+/* 複数現場インポート */
+.btn-import { background: #fff; color: #1a56c4; border: 1.5px solid #1a56c4; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.btn-import:hover { background: #eef3fd; }
+.import-modal { max-width: 760px; width: 92vw; }
+.import-drop { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 18px; border: 1.5px dashed #cfd6e4; border-radius: 10px; margin: 10px 0; transition: border-color .15s, background .15s; }
+.import-drop.drag-active { border-color: #1a56c4; background: #eef3fd; }
+.import-review { max-height: 50vh; overflow-y: auto; margin: 8px 0; }
+.import-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.import-table th, .import-table td { border-bottom: 1px solid #eee; padding: 8px 6px; text-align: left; vertical-align: middle; }
+.import-table th { font-size: 11px; color: #999; font-weight: 700; }
+.import-table select.input { min-width: 160px; }
+.import-similar-hint { margin: 4px 0 0; font-size: 11px; color: #8a93a6; }
+.import-similar-chip {
+  margin-left: 4px; border: 1px solid #cfd6e4; background: #eef3fd; color: #1a56c4;
+  border-radius: 10px; padding: 1px 8px; font-size: 11px; cursor: pointer;
+}
+.import-similar-chip:hover { background: #dfe9fc; }
 .ed-list { flex: 1; overflow-y: auto; border: 1px solid #eee; border-radius: 10px; padding: 6px; margin-bottom: 10px; }
 .ed-head { display: flex; gap: 8px; align-items: center; padding: 2px 6px 6px; font-size: 11px; color: #999; font-weight: 700; }
 .ed-head .ed-col-name { width: 200px; }

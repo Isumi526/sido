@@ -4,7 +4,7 @@
       <div class="ob-step-dots">
         <span v-for="(s, i) in steps" :key="i" class="ob-dot" :class="{ on: i === idx }" />
       </div>
-      <div class="ob-emoji">{{ steps[idx].emoji }}</div>
+      <span class="material-symbols-rounded ob-icon">{{ steps[idx].icon }}</span>
       <h2 class="ob-title">{{ steps[idx].title }}</h2>
       <p class="ob-body">{{ steps[idx].body }}</p>
       <div class="ob-actions">
@@ -26,10 +26,10 @@ const show = ref(false)
 const idx = ref(0)
 
 const steps = [
-  { emoji: '📅', title: t('onboarding.s1Title'), body: t('onboarding.s1Body') },
-  { emoji: '🏗', title: t('onboarding.s2Title'), body: t('onboarding.s2Body') },
-  { emoji: '💴', title: t('onboarding.s3Title'), body: t('onboarding.s3Body') },
-  { emoji: '✅', title: t('onboarding.s4Title'), body: t('onboarding.s4Body') },
+  { icon: 'calendar_month', title: t('onboarding.s1Title'), body: t('onboarding.s1Body') },
+  { icon: 'construction', title: t('onboarding.s2Title'), body: t('onboarding.s2Body') },
+  { icon: 'payments', title: t('onboarding.s3Title'), body: t('onboarding.s3Body') },
+  { icon: 'check_circle', title: t('onboarding.s4Title'), body: t('onboarding.s4Body') },
 ]
 
 function done() { try { localStorage.setItem(KEY, '1') } catch { /* noop */ } show.value = false }
@@ -51,7 +51,7 @@ onMounted(() => {
 .ob-step-dots { display: flex; gap: 6px; justify-content: center; margin-bottom: 14px; }
 .ob-dot { width: 7px; height: 7px; border-radius: 50%; background: #dfe4e8; transition: background .2s; }
 .ob-dot.on { background: #06C755; }
-.ob-emoji { font-size: 42px; }
+.ob-icon { font-size: 42px; color: #06C755; }
 .ob-title { font-size: 18px; font-weight: 800; color: #111; margin: 8px 0 6px; }
 .ob-body { font-size: 14px; color: #555; line-height: 1.7; margin: 0 0 18px; }
 .ob-actions { display: flex; gap: 10px; }

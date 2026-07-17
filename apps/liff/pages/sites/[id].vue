@@ -30,7 +30,7 @@
         </div>
         <div v-if="docs.length" class="att-block">
           <div class="att-ttl">{{ $t('sitesView.documents') }}</div>
-          <a v-for="a in docs" :key="a.id" v-show="a.url" :href="a.url || undefined" target="_blank" rel="noopener" class="doc">📄 {{ a.name || a.path.split('/').pop() }}</a>
+          <a v-for="a in docs" :key="a.id" v-show="a.url" :href="a.url || undefined" target="_blank" rel="noopener" class="doc"><span class="material-symbols-rounded doc-icon">description</span>{{ a.name || a.path.split('/').pop() }}</a>
         </div>
         <p v-if="!photos.length && !docs.length && !site.location && !site.construction_type && !site.construction_details && !site.memo" class="state">{{ $t('sitesView.noDetail') }}</p>
       </template>
@@ -108,4 +108,5 @@ onMounted(load)
 .photos { display: flex; flex-wrap: wrap; gap: 8px; }
 .photo { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; border: 1px solid #eee; }
 .doc { display: block; color: #1a56c4; text-decoration: none; font-size: 14px; padding: 4px 0; }
+.doc-icon { font-size: 14px; vertical-align: -2px; margin-right: 2px; }
 </style>

@@ -63,7 +63,12 @@
           <label>現場名</label>
           <input v-model="modal.name" class="input" placeholder="例：BLH名古屋" />
           <div v-if="similarSites.length" class="dup-warn">
-            <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">warning</span> 似た現場が既にあります（重複登録に注意）：<strong>{{ similarSites.join('、') }}</strong>
+            <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">warning</span> 似た現場が既にあります（重複登録に注意）：
+            <button
+              v-for="s in similarSites" :key="s.id" type="button" class="similar-site-chip"
+              :data-testid="`similar-site-${s.id}`"
+              @click="pickSimilarSite(s)"
+            >{{ s.name }}</button>
           </div>
         </div>
         <div class="field">
@@ -136,6 +141,18 @@
             <span v-if="!subcontractors.length" class="hint">協力業者マスタが空です</span>
           </div>
           <p class="hint">未選択なら日報では全業者が出ます（紐付けすると、その現場では選択した業者のみに絞り込み）。</p>
+        </div>
+
+        <!-- ⑥' 現場情報の共有ユーザー（この現場情報/図面をLIFFで閲覧できるユーザーを複数選択） -->
+        <div class="field">
+          <label>この現場情報を共有するユーザー（LIFFで現場情報・図面を閲覧可）</label>
+          <div class="sub-link-list" data-testid="site-share-users">
+            <label v-for="u in shareUsers" :key="u.id" class="sub-link-item">
+              <input type="checkbox" :value="u.id" v-model="modal.shareUsers" />{{ u.name }}
+            </label>
+            <span v-if="!shareUsers.length" class="hint">共有できるユーザーがいません</span>
+          </div>
+          <p class="hint">選択したユーザーだけがこの現場情報を閲覧できます（閲覧の実制御は今後の対応で有効化）。</p>
         </div>
 
         <!-- ⑦ 現場ルール（新規現場のみここで同時設定・既存はルール/QR設定画面へ） -->
@@ -253,6 +270,7 @@ const BUCKET = 'site-attachments'
 const sites     = ref<Site[]>([])
 const contractors = ref<{ id: string; name: string }[]>([])   // 元請けマスタ（紐付け用）
 const subcontractors = ref<{ id: string; name: string }[]>([]) // 下請け業者マスタ（現場紐付け用）
+const shareUsers = ref<{ id: string; name: string }[]>([])      // 共有先ユーザー候補（この現場情報を閲覧させるユーザー）
 // 現場責任者の候補＝現場管理者以上(permission_role in admin/office/site_manager)のworker。myWorkerId=ログイン中ユーザーのworker(新規現場の既定)。
 const responsibleCandidates = ref<{ id: string; name: string }[]>([])
 const workerNames = ref<Record<string, string>>({})   // 全作業員 id→名前（表示用）
@@ -265,7 +283,7 @@ function responsibleName(id: string | null | undefined): string {
   const isCandidate = responsibleCandidates.value.some(w => w.id === id)
   return isCandidate ? name : `${name}（要再設定）`
 }
-const modal     = ref<Partial<Site> & { linkedSubs?: string[] } | null>(null)
+const modal     = ref<Partial<Site> & { linkedSubs?: string[]; shareUsers?: string[] } | null>(null)
 const saving    = ref(false)
 const saveError = ref('')
 // 新規現場追加時にその場で設定する現場ルール（保存時に site_rules へ一括insert・#12）
@@ -340,11 +358,17 @@ const mergeTarget = ref<string>('')
 const SITE_FK_TABLES = ['attendance_logs', 'estimates', 'purchase_orders', 'schedules', 'site_rules', 'subcontractor_invoice_items']
 
 // 入力中の現場名に「似た」既存現場（自分自身=編集中のidは除外）。重複登録の気づき用。
-const similarSites = computed(() =>
-  modal.value
-    ? findSimilarSiteNames(modal.value.name ?? '', sites.value.filter((s) => s.id !== modal.value!.id).map((s) => s.name))
-    : [],
-)
+const similarSites = computed(() => {
+  if (!modal.value) return []
+  const candidates = sites.value.filter((s) => s.id !== modal.value!.id)
+  const names = findSimilarSiteNames(modal.value.name ?? '', candidates.map((s) => s.name))
+  return names.map((n) => candidates.find((s) => s.name === n)).filter((s): s is Site => !!s)
+})
+// 似た現場をクリックしたら、新規作成を続けず既存のその現場を編集する画面へ切り替える(重複登録の防止)
+function pickSimilarSite(s: Site) {
+  if (formDirty.value && !confirm('入力中の内容が保存されていません。既存の現場を編集する画面に切り替えますか？')) return
+  openEdit(s)
+}
 
 async function load() {
   const accountId = await getAccountId()
@@ -360,6 +384,9 @@ async function load() {
   contractors.value = (cons ?? []) as { id: string; name: string }[]
   const { data: subs } = await supabase.from('subcontractors').select('id, name').eq('account_id', accountId).eq('active', true).order('name')
   subcontractors.value = (subs ?? []) as { id: string; name: string }[]
+  // 共有先ユーザー候補（この account の登録ユーザー＝LIFFで現場情報を見る人）
+  const { data: us } = await supabase.from('users').select('id, real_name').eq('account_id', accountId).order('real_name')
+  shareUsers.value = ((us ?? []) as any[]).filter(u => u.real_name).map(u => ({ id: u.id as string, name: u.real_name as string }))
   // 責任者候補＝現場管理者以上のworker。ログイン中ユーザーのworker(auth_user_id一致)を新規現場の既定に。
   const { data: cand } = await supabase.from('workers')
     .select('id, name, auth_user_id, permission_role').eq('account_id', accountId).eq('active', true)
@@ -420,7 +447,7 @@ const filtered = computed(() => {
   return list
 })
 
-function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', default_breaks: [], responsible_worker_id: myWorkerId.value ?? null, linkedSubs: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = ''; modalRules.value = []; clearPendingAtts(); markFormOpened(); fetchRuleHistory() }
+function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', default_breaks: [], responsible_worker_id: myWorkerId.value ?? null, linkedSubs: [], shareUsers: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = ''; modalRules.value = []; clearPendingAtts(); markFormOpened(); fetchRuleHistory() }
 function addBreak()    { if (!modal.value) return; (modal.value.default_breaks ??= []).push({ start: '12:00', minutes: 60 }) }
 function removeBreak(i: number) { modal.value?.default_breaks?.splice(i, 1) }
 
@@ -445,9 +472,11 @@ async function openEdit(s: Site) {
   // time入力は HH:MM を期待するため DB の HH:MM:SS を切り詰める
   modal.value = { ...s, default_start_time: (s.default_start_time ?? '').slice(0, 5), default_end_time: (s.default_end_time ?? '').slice(0, 5),
     default_breaks: Array.isArray(s.default_breaks) ? s.default_breaks.map(b => ({ start: String(b.start ?? '').slice(0, 5), minutes: Number(b.minutes) || 0 })) : [],
-    linkedSubs: [] }; saveError.value = ''
+    linkedSubs: [], shareUsers: [] }; saveError.value = ''
   const { data: links } = await supabase.from('site_subcontractors').select('subcontractor_id').eq('site_id', s.id)
   if (modal.value) modal.value.linkedSubs = ((links ?? []) as any[]).map(l => l.subcontractor_id)
+  const { data: shares } = await supabase.from('site_shares').select('user_id').eq('site_id', s.id)
+  if (modal.value) modal.value.shareUsers = ((shares ?? []) as any[]).map(l => l.user_id)
   siteEstimates.value = []
   clearPendingAtts()
   await Promise.all([loadAttachments(s.id), loadSiteEstimates(s.id)])
@@ -462,6 +491,16 @@ async function syncSiteSubcontractors(siteId: string, accountId: string, want: s
   const toDel = have.filter(id => !want.includes(id))
   if (toAdd.length) await supabase.from('site_subcontractors').insert(toAdd.map(subId => ({ site_id: siteId, subcontractor_id: subId, account_id: accountId })))
   if (toDel.length) await supabase.from('site_subcontractors').delete().eq('site_id', siteId).in('subcontractor_id', toDel)
+}
+
+// 現場-共有ユーザーの紐付けを同期（チェックされたユーザーだけ残す）
+async function syncSiteShares(siteId: string, accountId: string, want: string[]) {
+  const { data } = await supabase.from('site_shares').select('user_id').eq('site_id', siteId)
+  const have = ((data ?? []) as any[]).map(l => l.user_id as string)
+  const toAdd = want.filter(id => !have.includes(id))
+  const toDel = have.filter(id => !want.includes(id))
+  if (toAdd.length) await supabase.from('site_shares').insert(toAdd.map(uid => ({ site_id: siteId, user_id: uid, account_id: accountId })))
+  if (toDel.length) await supabase.from('site_shares').delete().eq('site_id', siteId).in('user_id', toDel)
 }
 
 // 既定休憩を「開始時刻でソート」＋「時間帯の重なりバリデート」して返す（人件費計算の入力を堅くする）
@@ -525,6 +564,7 @@ async function save() {
       }
     }
     if (siteId) await syncSiteSubcontractors(siteId, accountId, m.linkedSubs ?? [])
+    if (siteId) await syncSiteShares(siteId, accountId, m.shareUsers ?? [])
     formDirty.value = false; modal.value = null; await load()
   } catch (e: any) {
     saveError.value = e.message ?? '保存に失敗しました'
@@ -706,6 +746,11 @@ async function doMerge() {
 .error { color: #E53935; font-size: 13px; }
 .dup-warn { margin-top: 6px; font-size: 12px; color: #B45309; background: #FEF3C7; border: 1px solid #FDE68A; border-radius: 6px; padding: 8px 10px; line-height: 1.5; }
 .dup-warn strong { color: #92400E; }
+.similar-site-chip {
+  margin-left: 4px; border: 1px solid #FDE68A; background: #fff; color: #92400E;
+  border-radius: 10px; padding: 1px 8px; font-size: 11px; cursor: pointer;
+}
+.similar-site-chip:hover { background: #FEF3C7; }
 .header-actions { display: flex; gap: 8px; align-items: center; }
 .btn-ghost { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 10px 16px; font-size: 13px; cursor: pointer; color: #555; }
 .btn-ghost:disabled { opacity: .5; cursor: not-allowed; }

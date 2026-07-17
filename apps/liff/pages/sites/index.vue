@@ -12,9 +12,6 @@
             <div class="row-name">{{ s.name }}<span v-if="!s.active" class="badge-off">{{ $t('sitesView.inactive') }}</span></div>
             <div v-if="s.location" class="row-sub">{{ s.location }}</div>
           </div>
-          <button class="row-toggle" :class="{ on: s.active }" @click="toggleActive(s, $event)">
-            {{ s.active ? $t('sitesView.disable') : $t('sitesView.enable') }}
-          </button>
         </li>
       </ul>
     </main>
@@ -38,7 +35,7 @@ async function load() {
   const supabase = useSupabase()
   const { getAccountId } = useAccount()
   const accountId = await getAccountId()
-  // 有効/無効の切替もできるよう、無効現場も含めて取得（有効を先に）
+  // 無効現場も含めて取得し閲覧はできるようにする（有効/無効の切替はadmin側限定・LIFFからは不可＝2026-07-15）
   const { data } = await supabase.from('sites')
     .select('id, name, active, location, construction_type, construction_details, memo')
     .eq('account_id', accountId)
@@ -46,15 +43,6 @@ async function load() {
     .order('name_kana', { nullsFirst: false }).order('name')
   sites.value = (data ?? []) as Site[]
   loading.value = false
-}
-
-async function toggleActive(s: Site, ev: Event) {
-  ev.stopPropagation()
-  const supabase = useSupabase()
-  await supabase.from('sites').update({ active: !s.active }).eq('id', s.id)
-  s.active = !s.active
-  // 並べ替え（有効を先に）を反映
-  sites.value = [...sites.value].sort((a, b) => Number(b.active) - Number(a.active))
 }
 onMounted(load)
 </script>
@@ -70,6 +58,4 @@ onMounted(load)
 .row-name { font-weight: 700; }
 .badge-off { font-size: 10px; font-weight: 700; color: #888; background: #eee; border-radius: 4px; padding: 1px 6px; margin-left: 6px; }
 .row-sub { font-size: 12px; color: #888; margin-top: 2px; }
-.row-toggle { flex-shrink: 0; border: 1px solid #ddd; background: #fff; color: #888; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 700; cursor: pointer; }
-.row-toggle.on { color: #06A050; border-color: #b7ebcb; background: #f0fdf4; }
 </style>
