@@ -34,11 +34,16 @@ async function load() {
   loading.value = true
   const supabase = useSupabase()
   const { getAccountId } = useAccount()
+  const { resolveMySiteIds } = useMySiteIds()
   const accountId = await getAccountId()
+  // 現場情報共有(site_shares・2026-07-17 Part B): 自分が共有登録されている現場だけに絞る。
+  const siteIds = await resolveMySiteIds()
+  if (!siteIds.length) { sites.value = []; loading.value = false; return }
   // 無効現場も含めて取得し閲覧はできるようにする（有効/無効の切替はadmin側限定・LIFFからは不可＝2026-07-15）
   const { data } = await supabase.from('sites')
     .select('id, name, active, location, construction_type, construction_details, memo')
     .eq('account_id', accountId)
+    .in('id', siteIds)
     .order('active', { ascending: false })
     .order('name_kana', { nullsFirst: false }).order('name')
   sites.value = (data ?? []) as Site[]

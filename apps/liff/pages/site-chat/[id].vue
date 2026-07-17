@@ -254,6 +254,12 @@ async function load() {
   accountId = (await getAccountId()) ?? ''
   if (!accountId) { loading.value = false; return }
 
+  // 現場情報共有(site_shares・2026-07-17 Part B): 一覧に出ない現場のチャットへURL直打ちされても
+  // 入れないようにする（一覧側の絞り込みだけだとURLを知っていれば誰でも開けてしまうため）。
+  const { resolveMySiteIds } = useMySiteIds()
+  const mySiteIds = await resolveMySiteIds()
+  if (!mySiteIds.includes(siteId)) { await navigateTo('/chats'); return }
+
   const { data: siteData } = await supabase.from('sites').select('id, name').eq('account_id', accountId).eq('id', siteId).maybeSingle()
   site.value = (siteData ?? null) as { id: string; name: string } | null
 
