@@ -6,12 +6,15 @@
       <span class="proxy-banner-text">{{ $t('nav.proxyEditing') }}<strong>{{ proxy.proxyTarget.value?.name }}</strong></span>
       <button class="proxy-banner-exit" @click="proxy.clearProxy()">{{ $t('nav.exit') }}</button>
     </div>
-    <div class="app-nav-inner">
-      <div class="app-brand">
+    <div ref="navInnerRef" class="app-nav-inner">
+      <button v-if="showBack" class="app-back" :aria-label="$t('nav.back')" @click="router.back()">
+        <span class="material-symbols-rounded">arrow_back</span>
+      </button>
+      <span v-else class="app-back-spacer" />
+      <span class="app-title-col">
+        <span class="app-title">{{ subtitle }}</span>
         <span class="app-brand-name">{{ brandName }}</span>
-        <span class="app-brand-div">|</span>
-        <span class="app-brand-sub">{{ subtitle }}</span>
-      </div>
+      </span>
       <button class="app-hamburger" @click="open = true" :aria-label="$t('nav.openMenu')">
         <span class="app-bar" />
         <span class="app-bar" />
@@ -19,6 +22,18 @@
       </button>
     </div>
   </header>
+  <div class="app-nav-spacer" :style="{ height: navHeight + 'px' }" />
+
+  <!-- 下部固定ナビ（本文末尾の余白はbody.paddingBottomをJS側で付与＝ページ側のDOM構造に依存しない） -->
+  <nav v-if="showBottomNav" ref="bottomNavRef" class="app-bottom-nav no-print">
+    <NuxtLink v-for="item in bottomNavItems" :key="item.path" class="bottom-nav-item" :class="{ active: isNavActive(item.path) }" :to="item.path" :data-testid="`bottom-nav-${item.testId}`">
+      <span class="bottom-nav-icon-wrap">
+        <span class="material-symbols-rounded bottom-nav-icon">{{ item.icon }}</span>
+        <span v-if="item.badge > 0" class="bottom-nav-badge" :data-testid="`bottom-nav-badge-${item.testId}`">{{ item.badge }}</span>
+      </span>
+      <span class="bottom-nav-label">{{ item.label }}</span>
+    </NuxtLink>
+  </nav>
 
   <Teleport to="body">
     <Transition name="nav-fade">
@@ -50,6 +65,7 @@
             <NuxtLink class="drawer-item" :to="item.path" :data-testid="item.testId" @click="open = false">
               <span class="drawer-item-icon material-symbols-rounded">{{ item.icon }}</span>
               <span>{{ item.label }}</span>
+              <span v-if="item.path === '/chats' && unreadChatCount > 0" class="drawer-item-badge" data-testid="drawer-chat-badge">{{ unreadChatCount }}</span>
             </NuxtLink>
           </template>
 
@@ -67,7 +83,6 @@
             <NuxtLink class="drawer-item" :to="item.path" :data-testid="item.testId" @click="open = false">
               <span class="drawer-item-icon material-symbols-rounded">{{ item.icon }}</span>
               <span>{{ item.label }}</span>
-              <span v-if="item.path === '/sites' && unreadMentionCount > 0" class="drawer-item-badge" data-testid="drawer-mention-badge">{{ unreadMentionCount }}</span>
             </NuxtLink>
           </template>
           <button type="button" class="drawer-item" @click="openInBrowser">
@@ -142,12 +157,50 @@ const props = defineProps<{
 const { t } = useI18n()
 const { locale, setLocale, locales } = useLocale()
 // ブランド表示は「身元のスラッグ」(resolvedSlug)優先・未解決時のみ env フォールバック
-// （env だと別テナント作業員でも SIDO 等と出てしまうため）
+// （env だと別テナント作業員でも SIDO 等と出てしまうため）。テナント確認用の安全表示のため
+// ヘッダー簡素化(2026-07-16)後もタイトル直下に残す（liff.tenant-*.spec.ts が検証）。
 const { slug, resolvedSlug, resetAccount } = useAccount()
 const brandName = computed(() => (resolvedSlug.value || slug).toUpperCase())
 const proxy = useProxyMode()
 const config = useRuntimeConfig()
 const { authMode } = useLiff()
+
+// ヘッダー: 戻るボタン(左・ホームでは非表示)＋タイトル(中央)＋ハンバーガー(右)。position:fixed化に
+// 伴い、直後にヘッダー実高さ分のスペーサーを置いてページ本文が隠れないようにする(2026-07-16)。
+const router = useRouter()
+const route = useRoute()
+const showBack = computed(() => route.path !== '/')
+// 現場チャットの個別スレッド(/site-chat/:id)は全画面表示のメッセージ入力欄と競合するため、
+// タブ遷移先である一覧画面(/chats)とは別に下部固定ナビを非表示にする(drill-in詳細画面の慣例)。
+const showBottomNav = computed(() => !route.path.startsWith('/site-chat/'))
+
+const navInnerRef   = ref<HTMLElement | null>(null)
+const bottomNavRef  = ref<HTMLElement | null>(null)
+const navHeight     = ref(52)   // ヘッダー実高さ(スペーサーdiv用・素直にflowへ反映できる)
+
+// 下部固定ナビは各ページ独自のルート要素の先頭にAppNavが置かれる都合上、ページ末尾に
+// スペーサーdivを置けない（ページごとにDOM構造が違うため）。実測した高さをCSS変数として
+// documentElementに公開し、bodyのpadding-bottomと各ページ側の固定要素(FAB等)から共通参照する。
+function measureHeights() {
+  if (navInnerRef.value) navHeight.value = navInnerRef.value.getBoundingClientRect().height
+  if (typeof document === 'undefined') return
+  const bottomH = showBottomNav.value && bottomNavRef.value ? bottomNavRef.value.getBoundingClientRect().height : 0
+  document.documentElement.style.setProperty('--app-bottom-nav-h', `${bottomH}px`)
+  // ヘッダー実高さ(スペーサーと同じ値)もCSS変数化。ヘッダー+下部ナビ両方を差し引いて
+  // 高さ計算したいページ(checkin等)向け(2026-07-16)。
+  document.documentElement.style.setProperty('--app-header-h', `${navHeight.value}px`)
+  document.body.style.paddingBottom = bottomH > 0 ? 'calc(var(--app-bottom-nav-h) + env(safe-area-inset-bottom, 0px))' : ''
+}
+onMounted(() => {
+  measureHeights()
+  window.addEventListener('resize', measureHeights)
+})
+onUnmounted(() => {
+  window.removeEventListener('resize', measureHeights)
+  if (typeof document !== 'undefined') document.body.style.paddingBottom = ''
+})
+watch(() => proxy.isProxyMode.value, () => nextTick(measureHeights))   // バナー表示切替で高さが変わる
+watch(showBottomNav, () => nextTick(measureHeights))                   // site-chat遷移でナビ表示が切り替わる
 
 const open = ref(false)
 // ハンバーガーを開くたびにバッジを再取得（/calendar等で既読化した直後でも最新件数を反映・2026-07-13）。
@@ -162,8 +215,23 @@ const { bySection } = useNavItems(() => authMode.value)
 
 // 予定管理ナビの未読バッジ（#予定通知バッジ・2026-07-11）
 onMounted(() => { refreshScheduleNotifBadge() })
-// 現場情報ナビの未読メンションバッジ（現場チャット③・2026-07-11）
-onMounted(() => { refreshSiteChatMentionBadge() })
+// チャット一覧ナビの未読バッジ（2026-07-14・現場情報ナビの未読メンションバッジから移設・集約）
+onMounted(() => { refreshSiteChatListBadge() })
+
+// 下部固定ナビ（2026-07-16・ホーム/出退勤/チャット/残業申請/日報登録/予定管理の主要6項目・要件チケット指定）
+const bottomNavItems = computed(() => [
+  { path: '/',          icon: 'home',           label: t('nav.home'),           testId: 'home',     badge: 0 },
+  { path: '/checkin',   icon: 'how_to_reg',      label: t('nav.checkin'),        testId: 'checkin',  badge: 0 },
+  { path: '/chats',     icon: 'forum',           label: t('nav.chats'),          testId: 'chats',    badge: unreadChatCount.value },
+  { path: '/overtime',  icon: 'more_time',       label: t('nav.overtimeRequest'), testId: 'overtime', badge: 0 },
+  { path: '/report',    icon: 'edit_note',       label: t('nav.reportRegister'), testId: 'report',   badge: 0 },
+  { path: '/calendar',  icon: 'calendar_month',  label: t('nav.schedule'),       testId: 'calendar', badge: unreadScheduleCount.value },
+])
+// '/checkin/[[siteId]]'のような任意サブパスも「そのタブが選択中」として扱う(ホームだけは完全一致のみ)
+function isNavActive(path: string): boolean {
+  if (path === '/') return route.path === '/'
+  return route.path === path || route.path.startsWith(path + '/')
+}
 
 // 現在の画面を外部ブラウザで開く（LINEの⋮メニューに依存せず常に開けるようにする）
 async function openInBrowser() {
@@ -226,8 +294,8 @@ async function logout() {
 .app-nav {
   background: #fff;
   border-bottom: 1px solid #E0E0E0;
-  position: sticky;
-  top: 0;
+  position: fixed;
+  top: 0; left: 0; right: 0;
   z-index: 100;
   box-shadow: 0 1px 4px rgba(0,0,0,.06);
 }
@@ -235,21 +303,41 @@ async function logout() {
   max-width: 840px;
   margin: 0 auto;
   padding: 0 16px;
-  height: 52px;
+  min-height: 52px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
 }
-.app-brand { display: flex; align-items: baseline; gap: 8px; }
-.app-brand-name { font-size: 16px; font-weight: 900; letter-spacing: 5px; color: #06C755; }
-.app-brand-div  { color: #E0E0E0; }
-.app-brand-sub  { font-size: 12px; color: #888; letter-spacing: 2px; }
+/* position:fixed化した分、本文がヘッダー裏に隠れないよう実測高さ分のスペーサーを置く */
+.app-nav-spacer { width: 100%; }
+.app-back, .app-back-spacer {
+  width: 36px; height: 36px; flex-shrink: 0;
+}
+.app-back {
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; border: none; color: #333; cursor: pointer;
+  border-radius: 8px; transition: background .15s;
+}
+.app-back:hover { background: #f5f5f5; }
+.app-back .material-symbols-rounded { font-size: 22px; }
+.app-title-col {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; align-items: center;
+  overflow: hidden;
+}
+.app-title {
+  max-width: 100%; text-align: center; font-size: 15px; font-weight: 700; color: #111;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* テナント確認用の安全表示（タイトル直下・小さく）。liff.tenant-*.spec.tsが検証 */
+.app-brand-name { font-size: 10px; font-weight: 800; letter-spacing: 2px; color: #06C755; margin-top: 1px; }
 
 /* ハンバーガーボタン */
 .app-hamburger {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  flex-shrink: 0;
   gap: 5px;
   width: 36px;
   height: 36px;
@@ -509,6 +597,61 @@ button.drawer-item {
   flex-shrink: 0;
 }
 
+/* 下部固定ナビ（2026-07-16） */
+.app-bottom-nav {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 100;
+  display: flex;
+  background: #fff;
+  border-top: 1px solid #E0E0E0;
+  box-shadow: 0 -1px 4px rgba(0,0,0,.06);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.bottom-nav-item {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 7px 2px 6px;
+  text-decoration: none;
+  color: #888;
+}
+.bottom-nav-icon-wrap { position: relative; }
+.bottom-nav-icon {
+  font-size: 22px;
+  font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+}
+.bottom-nav-label {
+  font-size: 10px;
+  font-weight: 600;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bottom-nav-item.active { color: #06C755; }
+.bottom-nav-item.active .bottom-nav-icon {
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+.bottom-nav-badge {
+  position: absolute;
+  top: -4px; right: -8px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
 @media print {
   .no-print { display: none !important; }
 }

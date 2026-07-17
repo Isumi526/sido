@@ -1,5 +1,8 @@
 <template>
-  <div class="chat-panel">
+  <div class="chat-panel" :class="{ 'drag-active': dragActive }"
+       @dragover.prevent="dragActive = true" @dragenter.prevent="dragActive = true"
+       @dragleave.prevent="dragActive = false" @drop.prevent="onDrop">
+    <div v-if="dragActive" class="drop-overlay">ここにドロップして添付</div>
     <div v-if="loading" class="muted">読み込み中…</div>
     <template v-else>
       <div class="invite-row">
@@ -12,23 +15,31 @@
           <button type="button" class="btn-ghost-sm" @click="copyInviteUrl">{{ inviteCopied ? 'コピーしました' : 'コピー' }}</button>
         </div>
       </div>
-      <div ref="listRef" class="msg-list">
-        <p v-if="!messages.length" class="muted">まだメッセージはありません</p>
-        <div v-for="m in messages" :key="m.id" class="msg-row" :class="{ mine: m.sender_is_admin }">
-          <div class="msg-col">
-            <div class="msg-sender">{{ m.sender_name }}</div>
-            <div class="msg-bubble">
-              <a v-if="m.attachment_url && m.attachment_kind === 'image'" :href="m.attachment_url" target="_blank" rel="noopener">
-                <img :src="m.attachment_url" class="msg-attachment-img" :alt="m.attachment_name || ''" />
-              </a>
-              <a v-else-if="m.attachment_url" :href="m.attachment_url" target="_blank" rel="noopener" class="msg-attachment-file">
-                <span class="material-symbols-rounded">description</span>{{ m.attachment_name || 'ファイル' }}
-              </a>
-              <div v-if="m.body" class="msg-body">{{ m.body }}</div>
-              <div class="msg-time">{{ fmtTime(m.created_at) }}</div>
+      <div class="msg-list-wrap">
+        <div ref="listRef" class="msg-list" @scroll="onListScroll">
+          <p v-if="!messages.length" class="muted">まだメッセージはありません</p>
+          <div v-for="m in messages" :key="m.id" class="msg-row" :class="{ mine: m.sender_is_admin }">
+            <div class="msg-col">
+              <div class="msg-sender">{{ m.sender_name }}</div>
+              <div class="msg-bubble">
+                <a v-if="m.attachment_url && m.attachment_kind === 'image'" :href="m.attachment_url" target="_blank" rel="noopener">
+                  <img :src="m.attachment_url" class="msg-attachment-img" :alt="m.attachment_name || ''" />
+                </a>
+                <a v-else-if="m.attachment_url" :href="m.attachment_url" target="_blank" rel="noopener" class="msg-attachment-file">
+                  <span class="material-symbols-rounded">description</span>{{ m.attachment_name || 'ファイル' }}
+                </a>
+                <div v-if="m.body" class="msg-body"><template v-for="(seg, i) in splitMentionSegments(m.body, [...allWorkers.map(w => w.name), ALL_MENTION.name])" :key="i"><span v-if="seg.mention" class="msg-mention">{{ seg.text }}</span><template v-else>{{ seg.text }}</template></template></div>
+                <div class="msg-time">{{ fmtTime(m.created_at) }}</div>
+              </div>
             </div>
           </div>
         </div>
+        <button
+          v-if="showScrollBtn" type="button" class="scroll-bottom-btn"
+          aria-label="最下部へ" title="最下部へ" @click="scrollToBottom"
+        >
+          <span class="material-symbols-rounded">keyboard_double_arrow_down</span>
+        </button>
       </div>
       <div v-if="pendingFile" class="pending-file">
         <span class="material-symbols-rounded">attach_file</span>{{ pendingFile.name }}
@@ -37,7 +48,7 @@
         </button>
       </div>
       <ul v-if="mentionCandidates.length" class="mention-list" data-testid="mention-list">
-        <li v-for="w in mentionCandidates" :key="w.id" class="mention-item" data-testid="mention-item" @click="pickMention(w)">{{ w.name }}</li>
+        <li v-for="w in mentionCandidates" :key="w.id" class="mention-item" data-testid="mention-item" @click="pickMention(w)">{{ w.id === ALL_MENTION.id ? '@ALL（全員）' : w.name }}</li>
       </ul>
       <form class="msg-form" @submit.prevent="send">
         <label class="msg-attach-btn">
@@ -59,6 +70,8 @@ import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { currentUser, currentWorkerName } from '../lib/auth'
+import { splitMentionSegments } from '../lib/chatMentionSegments'
+import { compressImageIfNeeded, MAX_ATTACHMENT_BYTES, formatMB } from '../lib/chatAttachmentLimits'
 
 const props = defineProps<{ siteId: string }>()
 
@@ -74,7 +87,9 @@ const draft    = ref('')
 const draftRef = ref<HTMLTextAreaElement | null>(null)
 const sending  = ref(false)
 const listRef  = ref<HTMLElement | null>(null)
+const showScrollBtn = ref(false)
 const pendingFile = ref<File | null>(null)
+const dragActive  = ref(false)
 const mentionedIds = ref<Set<string>>(new Set())
 const mentionCandidates = ref<{ id: string; name: string }[]>([])
 const inviteBusy = ref(false)
@@ -103,13 +118,19 @@ async function copyInviteUrl() {
   } catch { /* クリップボード不可環境は選択コピーに任せる */ }
 }
 
+// @all(全員宛メンション・LINEの@全員相当)。現場に紐づくメンバー一覧の仕組みが無い(site_sharesはPart Aで
+// 未強制・そもそもworkerでなくuser向け)ため、既存のチャット閲覧と同じ範囲=account内の全アクティブworkerを対象にする。
+const ALL_MENTION = { id: '__all__', name: 'ALL' }
+
 // 入力末尾の「@検索語」を検出して候補を絞る（単純なchat実装の一般的な方式・カーソル位置は見ない）
 function onDraftInput() {
   autoResizeDraft()
   const m = draft.value.match(/@([^\s@]*)$/)
   if (!m) { mentionCandidates.value = []; return }
   const q = m[1].toLowerCase()
-  mentionCandidates.value = allWorkers.filter(w => w.name.toLowerCase().includes(q)).slice(0, 8)
+  const showAll = ALL_MENTION.name.toLowerCase().includes(q)
+  const nameMatches = allWorkers.filter(w => w.name.toLowerCase().includes(q)).slice(0, showAll ? 7 : 8)
+  mentionCandidates.value = showAll ? [ALL_MENTION, ...nameMatches] : nameMatches
 }
 // テキストエリアを内容量に合わせて自動リサイズ（LINE等の一般的なチャット入力欄と同様）
 function autoResizeDraft() {
@@ -120,7 +141,8 @@ function autoResizeDraft() {
 }
 function pickMention(w: { id: string; name: string }) {
   draft.value = draft.value.replace(/@([^\s@]*)$/, `@${w.name} `)
-  mentionedIds.value.add(w.id)
+  if (w.id === ALL_MENTION.id) { allWorkers.forEach((worker) => mentionedIds.value.add(worker.id)) }
+  else { mentionedIds.value.add(w.id) }
   mentionCandidates.value = []
 }
 
@@ -130,6 +152,13 @@ function fmtTime(iso: string): string {
 }
 function scrollToBottom() {
   nextTick(() => { if (listRef.value) listRef.value.scrollTop = listRef.value.scrollHeight })
+  showScrollBtn.value = false
+}
+// 上にスクロールして最下部から離れている時だけ「最下部へ」ボタンを出す（一般的なチャットUI）。
+function onListScroll() {
+  const el = listRef.value
+  if (!el) return
+  showScrollBtn.value = el.scrollHeight - el.scrollTop - el.clientHeight > 120
 }
 
 async function loadMessages() {
@@ -142,9 +171,26 @@ async function loadMessages() {
   if (wasAtBottom) scrollToBottom()
 }
 
+// 画像は容量が大きければ自動圧縮し、その上でedge側の実上限(MAX_ATTACHMENT_BYTES)を
+// クライアント側でも事前チェックする(無駄なアップロード＋汎用エラーを避ける)。
+async function setPendingFile(file: File | null) {
+  if (!file) { pendingFile.value = null; return }
+  const compressed = await compressImageIfNeeded(file)
+  if (compressed.size > MAX_ATTACHMENT_BYTES) {
+    alert(`ファイルサイズが大きすぎます(上限${formatMB(MAX_ATTACHMENT_BYTES)})`)
+    return
+  }
+  pendingFile.value = compressed
+}
 function onFilePick(ev: Event) {
   const file = (ev.target as HTMLInputElement).files?.[0]
-  pendingFile.value = file ?? null
+  setPendingFile(file ?? null)
+}
+// ドラッグ&ドロップ添付（既存のファイル選択(onFilePick)と同じpendingFileに載せる）
+function onDrop(e: DragEvent) {
+  dragActive.value = false
+  const file = e.dataTransfer?.files?.[0]
+  if (file) setPendingFile(file)
 }
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -217,6 +263,7 @@ onMounted(async () => {
     const { data: workersData } = await supabase.from('workers').select('id, name').eq('account_id', accountId).eq('active', true).order('name')
     allWorkers = (workersData ?? []) as { id: string; name: string }[]
     await loadMessages()
+    scrollToBottom()   // 初回表示は最下部（最新メッセージ）から
     pollTimer = setInterval(loadMessages, 8000)
     channel = supabase.channel(`site-chat-${props.siteId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'site_chat_messages', filter: `site_id=eq.${props.siteId}` }, () => loadMessages())
@@ -231,7 +278,12 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.chat-panel { display: flex; flex-direction: column; height: 480px; }
+.chat-panel { display: flex; flex-direction: column; height: 480px; position: relative; }
+.chat-panel.drag-active { outline: 2px dashed #06A050; outline-offset: -2px; }
+.drop-overlay {
+  position: absolute; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
+  background: rgba(6, 160, 80, .08); color: #06A050; font-weight: 700; font-size: 14px; pointer-events: none;
+}
 .invite-row { flex-shrink: 0; margin-bottom: 8px; }
 .btn-invite { display: inline-flex; align-items: center; gap: 4px; border: 1px solid #ddd; background: #fff; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 700; color: #333; cursor: pointer; }
 .btn-invite:disabled { opacity: .6; cursor: default; }
@@ -239,7 +291,16 @@ onUnmounted(() => {
 .invite-url-input { flex: 1; border: 1px solid #ddd; border-radius: 6px; padding: 6px 10px; font-size: 12px; color: #555; background: #f8fafc; }
 .btn-ghost-sm { flex-shrink: 0; border: 1px solid #ddd; background: #fff; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
 .muted { color: #94a3b8; padding: 16px 0; }
+.msg-list-wrap { position: relative; flex: 1; min-height: 0; display: flex; }
 .msg-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 4px 0; }
+.scroll-bottom-btn {
+  position: absolute; right: 12px; bottom: 12px; z-index: 5;
+  width: 36px; height: 36px; border-radius: 50%; border: 1px solid #e2e8f0;
+  background: #fff; color: #334155; box-shadow: 0 2px 8px rgba(0,0,0,.18);
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.scroll-bottom-btn:hover { background: #f1f5f9; }
+.scroll-bottom-btn .material-symbols-rounded { font-size: 22px; }
 .msg-row { display: flex; }
 .msg-row.mine { justify-content: flex-end; }
 .msg-col { max-width: 70%; display: flex; flex-direction: column; }
@@ -248,6 +309,7 @@ onUnmounted(() => {
 .msg-bubble { background: #f8fafc; border: 1px solid #eef2f4; border-radius: 10px; padding: 8px 12px; }
 .msg-row.mine .msg-bubble { background: #e8fff0; border-color: #b7ebcb; }
 .msg-body { font-size: 13px; white-space: pre-wrap; word-break: break-word; }
+.msg-mention { color: #06A050; font-weight: 700; }
 .msg-time { font-size: 10px; color: #aaa; text-align: right; margin-top: 3px; }
 .msg-form { flex-shrink: 0; display: flex; gap: 8px; padding-top: 10px; border-top: 1px solid #eee; align-items: flex-end; }
 .msg-input { flex: 1; border: 1px solid #ddd; border-radius: 8px; padding: 8px 12px; font-size: 13px; resize: none; overflow-y: auto; line-height: 1.4; max-height: 120px; font-family: inherit; }

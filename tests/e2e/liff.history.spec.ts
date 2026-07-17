@@ -37,12 +37,13 @@ test.beforeEach(async ({ page }) => {
 
 test('履歴に明細が常時表示される(Feature B)', async ({ page }) => {
   // タップ不要で現場・作業員・下請けが見える
-  await expect(page.getByText(`📍 ${SEED_SITE}`).first()).toBeVisible()
+  // (2026-07-15: 現場名の前の📍絵文字はMaterial Symbolsアイコン化・DOMテキストからは外れたため名前のみで検証)
+  await expect(page.getByText(SEED_SITE, { exact: false }).first()).toBeVisible()
   await expect(page.getByText(SEED_WORKER).first()).toBeVisible()
   await expect(page.getByText(SEED_SUB, { exact: false }).first()).toBeVisible()
 })
 
 test('履歴に元請けが表示される(Feature A)', async ({ page }) => {
-  await expect(page.getByText(`📍 ${FEAT_A_SITE}`).first()).toBeVisible()
-  await expect(page.getByText(`🏢 ${FEAT_A_CONTRACTOR}`).first()).toBeVisible()
+  await expect(page.getByText(FEAT_A_SITE, { exact: false }).first()).toBeVisible()
+  await expect(page.getByText(FEAT_A_CONTRACTOR, { exact: false }).first()).toBeVisible()
 })

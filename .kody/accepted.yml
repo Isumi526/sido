@@ -140,6 +140,14 @@ entries:
     reason: "上記と同じ紐付けマスタ。anon公開は他のマスタ表(sites/subcontractors/contractors等)と同じpre-RLSベースライン。LIFF日報がanonで読むマスタ系のため、トークン制御ではなく親エピックの一括RLS化で対応(account_idで論理分離済)。"
     ticket: "37b0ff81c56b8137827bd5d49f531777"
   - rule: rls-multitenant
+    target: site_shares
+    reason: "現場↔共有ユーザーの紐付け(2026-07-14新設・Part A)。site_subcontractors 等と同じ pre-RLS ベースライン(RLS無効×anon)。★本テーブルはアクセス制御データのため、閲覧の実強制(fail-closed)は Part B の edge function(service_role)が site_shares を突き合わせて行う設計。Part B 実装時に site_shares の書込制御(anon直書きでの自己付与防止=admin authz付きedge fn or RLS)も併せて閉じる。それまでは現状のanon運用ベースラインとして追跡。"
+    ticket: "3980ff81c56b80379a7af55a48577da1"
+  - rule: anon-access-token
+    target: site_shares
+    reason: "上記と同じ共有紐付けテーブル。anon公開は他のマスタ表と同じpre-RLSベースライン。読取のfail-closedはPart Bのedge functionで、書込制御もPart Bで併せて対応。"
+    ticket: "3980ff81c56b80379a7af55a48577da1"
+  - rule: rls-multitenant
     target: worker_family_members
     reason: "作業員の家族構成(2026-06-24新設)。親の workers が RLS無効×anon で開いている以上、子の家族情報だけRLS化しても無意味(worker_wage_history と同型)。マスタ層は親エピック「本番DBのRLS有効化」で一括RLS化(account_idで論理分離済)。"
     ticket: "37b0ff81c56b8137827bd5d49f531777"
@@ -246,6 +254,14 @@ entries:
     target: site-chat
     reason: "チャット送信(LIFF site-chat/[id].vue・admin SiteChatPanel.vue)にべき等ガード(一意リクエストID等)が無い指摘。UI側はsendingフラグで連打を防止済み。Supabase-jsクライアントはPOST/insertを自動リトライしない設計のため、ネットワーク再送による二重投稿の実際の発生率は低い(通信断なら単に送信失敗としてユーザーに見え、ユーザーが再送を判断する＝チャットの性質上、明らかな二重投稿は目視で気付ける)。一意制約による恒久対策は将来の要望(既読/削除機能等)と合わせて検討する。"
     ticket: "3980ff81c56b8057a369e89a2d048c2d"
+  - rule: rls-multitenant
+    target: site_chat_last_read
+    reason: "現場チャット一覧ページ(admin/LIFF・2026-07-14)の未読バッジ用テーブル。site_chat_messages/site_chat_mentionsと同型(anon運用=RLS無効・account_id+site_id+actor_keyで論理分離)。既読時刻メタデータのみで機微度は低い。本番RLS化は親エピック「本番DBのRLS有効化」で一括。"
+    ticket: "39c0ff81c56b81ba9772edec528417a6"
+  - rule: anon-access-token
+    target: site_chat_last_read
+    reason: "上記未読バッジ表の anon select/insert/update。LIFF(公開anonキー)・admin双方が既読時刻の取得/更新を行うため。site_chat_messages等と同じ pre-RLS ベースライン＝親エピックで一括RLS化。"
+    ticket: "39c0ff81c56b81ba9772edec528417a6"
   - rule: rls-multitenant
     target: site_chat_invites
     reason: "site_chat_invites作成マイグレーション(20260711050000)ではRLS無効のままauthenticatedにgrantしていた指摘＝『RLS有効化は同一マイグレーションファイル内で行うべき』。実際には同じコミット内の後続マイグレーション(20260711060000)でRLSを有効化し、current_account_id()ベースのポリシー(process_tasks/purchase_ordersと同型)を追加済み。2ファイルに分けて作業したが、devにマージされる時点・本番適用される時点のどちらでも『RLS無効×authenticated grant』の状態が単独で存在する瞬間は無い(常にセットで適用される)ため、実質的なリスクは無い。将来はテーブル作成と同一ファイルにまとめる運用を徹底する。"

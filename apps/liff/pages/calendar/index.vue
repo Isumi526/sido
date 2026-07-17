@@ -5,7 +5,7 @@
     <!-- 予定追加のお知らせ（未読・気づかないケース対策 #予定通知） -->
     <div v-if="notifs.length" class="notif-banner">
       <div class="notif-head">
-        <span>🔔 あなたに新しい予定が {{ notifs.length }} 件追加されました</span>
+        <span><span class="material-symbols-rounded notif-icon">notifications</span>あなたに新しい予定が {{ notifs.length }} 件追加されました</span>
         <button class="notif-dismiss" @click="dismissNotifs">既読にする</button>
       </div>
       <ul class="notif-list">
@@ -43,7 +43,7 @@
               :class="{ 'my-col': isMyWorker(w.id), 'pinned-col': isPinned(w.id) }"
               @click="togglePin(w.id)"
             >
-              <span class="pin-icon" v-if="isPinned(w.id)">📌</span>{{ w.name }}
+              <span class="material-symbols-rounded pin-icon" v-if="isPinned(w.id)">push_pin</span>{{ w.name }}
             </th>
           </tr>
         </thead>
@@ -117,6 +117,10 @@
         <button type="button" class="cal-tab" :class="{ active: personalViewMode === 'week' }" @click="personalViewMode = 'week'">{{ $t('calendar.viewWeek') }}</button>
         <button type="button" class="cal-tab" :class="{ active: personalViewMode === 'month' }" @click="personalViewMode = 'month'">{{ $t('calendar.viewMonth') }}</button>
         <button type="button" class="today-btn" @click="personalGoToday">{{ $t('calendar.today') }}</button>
+        <label class="deleted-toggle">
+          <input type="checkbox" v-model="showDeleted" />
+          {{ $t('calendar.deleted') }}
+        </label>
       </div>
 
       <!-- 週間（画面幅に応じて可変日数・時間軸メモリ表示で予定を開始時刻の位置に配置） -->
@@ -125,7 +129,6 @@
           <div class="week-head-corner"></div>
           <div v-for="date in personalWeekDates" :key="date" class="personal-day-head" :class="dateCellClass(date, todayStr)">
             <span>{{ formatDateLabel(date) }}</span>
-            <button type="button" class="cell-add-btn week-head-add-btn" @click="personalAddSchedule(date)">＋</button>
           </div>
         </div>
 
@@ -149,7 +152,10 @@
             <div class="week-hour-axis">
               <div v-for="h in 24" :key="h" class="week-hour-label" :style="{ top: (h - 1) * WEEK_HOUR_HEIGHT + 'px' }">{{ h - 1 }}:00</div>
             </div>
-            <div v-for="date in personalWeekDates" :key="date" class="week-day-timeline" :class="dateCellClass(date, todayStr)">
+            <div
+              v-for="date in personalWeekDates" :key="date" class="week-day-timeline" :class="dateCellClass(date, todayStr)"
+              data-testid="week-slot" @click="onWeekSlotTap(date, $event)"
+            >
               <div v-for="h in 24" :key="h" class="week-hour-line" :style="{ top: (h - 1) * WEEK_HOUR_HEIGHT + 'px' }"></div>
               <div
                 v-for="s in personalCellSchedules(date).filter(x => x.start_time)"
@@ -157,7 +163,7 @@
                 class="sched-chip week-timed-chip"
                 :class="{ 'night-shift': s.is_night_shift, 'deleted-chip': !!s.deleted_at }"
                 :style="[chipStyle(s), timedChipStyle(s)]"
-                @click="openDetail(s)"
+                @click.stop="openDetail(s)"
               >
                 <span class="chip-title">{{ s.title }}</span>
                 <span class="chip-time">{{ s.start_time?.slice(0, 5) }}{{ s.end_time ? '–' + s.end_time.slice(0, 5) : '' }}</span>
@@ -165,6 +171,9 @@
             </div>
           </div>
         </div>
+        <button type="button" class="personal-week-fab" data-testid="personal-week-fab" :aria-label="$t('calendar.addSchedule')" @click="personalFabAdd">
+          <span class="material-symbols-rounded">add</span>
+        </button>
       </div>
 
       <!-- 月間（複数月を縦に連結し無限スクロール。前後スクロールで月が継ぎ足され自動切替） -->
@@ -266,7 +275,7 @@
             </div>
             <div v-if="formModal.title === '__other__' && customSiteSimilar.length"
                  style="margin-top:6px;font-size:12px;color:#B45309;background:#FEF3C7;border:1px solid #FDE68A;border-radius:6px;padding:8px 10px;line-height:1.5">
-              ⚠️ {{ $t('calendar.similarSiteWarn') }}：<template v-for="(name, i) in customSiteSimilar" :key="name"><span
+              <span class="material-symbols-rounded warn-icon">warning</span>{{ $t('calendar.similarSiteWarn') }}：<template v-for="(name, i) in customSiteSimilar" :key="name"><span
                 class="similar-site-pick" role="button" tabindex="0" data-testid="similar-site-pick"
                 @click="(formModal as any)._customTitle = name"
                 @keydown.enter.prevent="(formModal as any)._customTitle = name"
@@ -288,7 +297,7 @@
           <div v-if="schedCats.length" class="form-row" style="margin-top:8px">
             <span class="form-row-label">カテゴリ</span>
             <!-- 現場管理者以上はカテゴリマスタを管理できる（ラベルの右に配置・一覧/色/名前編集/追加/削除） -->
-            <button v-if="canManageCat" type="button" class="cat-add-btn cat-manage-inline" @click="openCatManage">⚙ 管理</button>
+            <button v-if="canManageCat" type="button" class="cat-add-btn cat-manage-inline" @click="openCatManage"><span class="material-symbols-rounded btn-icon">settings</span>管理</button>
             <div class="cat-select-wrap cat-select-wrap--gap">
               <select v-model="formModal.category" class="site-select" data-testid="category-select">
                 <option v-for="c in schedCats.filter(x => x.active || x.key === formModal!.category)" :key="c.key" :value="c.key">{{ c.label }}</option>
@@ -334,7 +343,7 @@
           <div class="form-row">
             <span class="form-row-label">他のユーザーに共有</span>
             <label class="ios-toggle">
-              <input type="checkbox" v-model="formModal.is_public" />
+              <input type="checkbox" v-model="formModal.is_public" @change="isPublicTouched = true" />
               <span class="ios-toggle-track"></span>
             </label>
           </div>
@@ -375,19 +384,19 @@
     <!-- 詳細モーダル -->
     <div v-if="detailModal" class="modal-overlay" @click.self="closeDetail">
       <div class="modal">
-        <div v-if="detailModal.schedule.is_night_shift" class="detail-night-badge">🌙 {{ $t('calendar.nightShift') }}</div>
+        <div v-if="detailModal.schedule.is_night_shift" class="detail-night-badge"><span class="material-symbols-rounded meta-icon">bedtime</span>{{ $t('calendar.nightShift') }}</div>
         <h2 class="detail-title">{{ detailModal.schedule.title }}</h2>
-        <p class="detail-meta">👤 {{ detailModal.schedule.worker?.name }}</p>
+        <p class="detail-meta"><span class="material-symbols-rounded meta-icon">person</span>{{ detailModal.schedule.worker?.name }}</p>
         <p class="detail-meta">
-          📅 {{ detailModal.schedule.start_date }}
+          <span class="material-symbols-rounded meta-icon">calendar_month</span>{{ detailModal.schedule.start_date }}
           <template v-if="detailModal.schedule.end_date !== detailModal.schedule.start_date">〜 {{ detailModal.schedule.end_date }}</template>
         </p>
         <p v-if="detailModal.schedule.start_time" class="detail-meta">
-          🕐 {{ detailModal.schedule.start_time.slice(0, 5) }}〜{{ detailModal.schedule.end_time?.slice(0, 5) }}
+          <span class="material-symbols-rounded meta-icon">schedule</span>{{ detailModal.schedule.start_time.slice(0, 5) }}〜{{ detailModal.schedule.end_time?.slice(0, 5) }}
         </p>
         <p v-if="detailModal.schedule.description" class="detail-desc">{{ detailModal.schedule.description }}</p>
         <p v-if="detailModal.schedule.created_by_name" class="detail-created">{{ $t('calendar.createdBy') }}: {{ detailModal.schedule.created_by_name }}</p>
-        <p v-if="detailModal.schedule.deleted_at" class="detail-deleted">🗑 {{ $t('common.delete') }}: {{ detailModal.schedule.deleted_by_name }} ({{ fmtDateTime(detailModal.schedule.deleted_at) }})</p>
+        <p v-if="detailModal.schedule.deleted_at" class="detail-deleted"><span class="material-symbols-rounded meta-icon">delete</span>{{ $t('common.delete') }}: {{ detailModal.schedule.deleted_by_name }} ({{ fmtDateTime(detailModal.schedule.deleted_at) }})</p>
 
         <!-- 編集履歴 -->
         <details class="edit-history">
@@ -646,6 +655,15 @@ function onGroupBulkSelect(e: Event) {
   for (const m of g.members) s.add(m.worker_id)
   selectedWorkerIds.value = s
 }
+// 方針C: 新規予定で対象に「自分以外」が含まれるなら共有トグルを既定ON。
+// ユーザーが手動でトグルしたら（isPublicTouched）それ以降は尊重し自動更新しない。編集(id有)は対象外。
+const isPublicTouched = ref(false)
+watch(selectedWorkerIds, (ids) => {
+  const f = formModal.value
+  if (!f || f.id || isPublicTouched.value) return
+  const self = effectiveWorkerId.value
+  f.is_public = [...ids].some(id => id !== self)
+})
 const detailModal = ref<{ schedule: Schedule; edits: ScheduleEdit[] } | null>(null)
 const saving      = ref(false)
 const formError   = ref('')
@@ -657,6 +675,10 @@ let   loadedFrom    = ''
 let   loadedTo      = ''
 const navMonth      = ref(new Date())
 const isExtending = ref<'top' | 'bottom' | null>(null)   // 月継ぎ足し中のローディング表示用（#月切替ローディング）
+// 表示用isExtendingは短いディレイ後にセットする（素早く終わる読み込みでのチラつき防止・2026-07-15）。
+// 排他制御(二重発火防止)は即座に効かせる必要があるため、ディレイの影響を受けない別変数で持つ。
+let   extendingLock: 'top' | 'bottom' | null = null
+const EXTEND_LOADING_DELAY_MS = 250
 let   ioTop:    IntersectionObserver | null = null
 let   ioBottom: IntersectionObserver | null = null
 
@@ -683,7 +705,8 @@ function initCalendar() {
 }
 
 async function extendTop() {
-  if (isExtending.value) return; isExtending.value = 'top'
+  if (extendingLock) return; extendingLock = 'top'
+  const timer = setTimeout(() => { isExtending.value = 'top' }, EXTEND_LOADING_DELAY_MS)
   try {
     const base   = new Date(loadedFrom + 'T00:00:00')
     const target = shiftMonth(base, -1)
@@ -695,11 +718,12 @@ async function extendTop() {
     await nextTick()
     if (wrap) wrap.scrollTop = prevTop + newDates.length * ROW_HEIGHT
     await loadSchedules()
-  } finally { isExtending.value = null }
+  } finally { clearTimeout(timer); isExtending.value = null; extendingLock = null }
 }
 
 async function extendBottom() {
-  if (isExtending.value) return; isExtending.value = 'bottom'
+  if (extendingLock) return; extendingLock = 'bottom'
+  const timer = setTimeout(() => { isExtending.value = 'bottom' }, EXTEND_LOADING_DELAY_MS)
   try {
     const base     = new Date(loadedTo + 'T00:00:00')
     const target   = shiftMonth(base, +1)
@@ -707,7 +731,7 @@ async function extendBottom() {
     calendarDates.value = [...calendarDates.value, ...newDates]
     loadedTo = newDates[newDates.length - 1]
     await loadSchedules()
-  } finally { isExtending.value = null }
+  } finally { clearTimeout(timer); isExtending.value = null; extendingLock = null }
 }
 
 function setupIO() {
@@ -825,6 +849,35 @@ function personalCellSchedules(date: string): Schedule[] {
 function personalAddSchedule(date: string) {
   if (!effectiveWorkerId.value) return
   onCellTap(date, effectiveWorkerId.value)
+}
+// 週間タイムラインの時間区画タップでその日時に予定追加(区画内+ボタンはレイアウトを圧迫するため廃止・
+// タップ位置から30分刻みで時刻を推定し既定1時間の予定を用意する。ユーザーはモーダル内で時刻調整可能)。
+function onWeekSlotTap(date: string, ev: MouseEvent) {
+  if (!effectiveWorkerId.value) return
+  const target = ev.currentTarget as HTMLElement
+  const rect = target.getBoundingClientRect()
+  const offsetY = Math.max(0, ev.clientY - rect.top)
+  const rawMinutes = (offsetY / WEEK_HOUR_HEIGHT) * 60
+  const snapped = Math.min(24 * 60 - 30, Math.round(rawMinutes / 30) * 30)
+  const toHHMM = (min: number) => `${String(Math.floor(min / 60) % 24).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`
+
+  formModal.value = {
+    _worker_id: effectiveWorkerId.value,
+    title: '', description: '', category: 'work', site_id: '',
+    all_day: false, start_date: date, end_date: date,
+    start_time: toHHMM(snapped), end_time: toHHMM(Math.min(24 * 60, snapped + 60)),
+    is_night_shift: false,
+    is_public: false,
+    _contractor: '',
+  } as any
+  isPublicTouched.value = false
+  selectedWorkerIds.value = new Set([effectiveWorkerId.value])
+  formError.value = ''
+}
+// 右下固定の+ボタン：日時未指定でフォームを開き、モーダル内の日付/時刻欄で選択してもらう
+function personalFabAdd() {
+  if (!effectiveWorkerId.value) return
+  onCellTap(todayStr, effectiveWorkerId.value)
 }
 
 // ── 週間ビュー：時間軸メモリ表示（#週間時間軸） ──
@@ -1045,9 +1098,12 @@ function onCellTap(date: string, workerId: string) {
     all_day: true, start_date: date, end_date: date,
     start_time: '', end_time: '',
     is_night_shift: false,
-    is_public: false,   // 既定は非共有（A方針）・共有したい時だけトグルON
+    // 既定は非共有。ただし「自分以外のユーザーへ予定追加」時は既定ON（他者アサインは共有前提／方針C）。
+    // 自分の予定(personalAddSchedule→effectiveWorkerId)は従来どおり非共有。ユーザーは保存前にトグルで変更可。
+    is_public: workerId !== effectiveWorkerId.value,
     _contractor: '',
   } as any
+  isPublicTouched.value = false   // 新規追加のたびに手動フラグをリセット（既定ON判定を有効化）
   selectedWorkerIds.value = new Set([workerId])   // タップした作業員を初期選択
   formError.value = ''
 }
@@ -1061,7 +1117,7 @@ function openEdit(ev: Schedule) {
     start_date: ev.start_date, end_date: ev.end_date,
     start_time: ev.start_time ?? '', end_time: ev.end_time ?? '',
     is_night_shift: ev.is_night_shift,
-    is_public: ev.is_public,
+    is_public: ev.is_public,   // 編集は既存値を維持（watchは id 有で自動更新しない）
     _contractor: '',
     _original: {
       title: ev.title, description: ev.description ?? null,
@@ -1195,11 +1251,16 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.cal-page { display: flex; flex-direction: column; height: 100dvh; background: #fff; color: #111; overflow: hidden; }
+/* 下部固定ナビ(2026-07-16追加)の高さ分を差し引き、内部の可変領域が隠れないようにする */
+.cal-page { display: flex; flex-direction: column; height: calc(100dvh - var(--app-bottom-nav-h, 54px) - env(safe-area-inset-bottom, 0px)); background: #fff; color: #111; overflow: hidden; }
 .similar-site-pick { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .similar-site-pick:active { opacity: .6; }
 .notif-banner { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; margin: 8px 12px; padding: 10px 12px; flex-shrink: 0; }
 .notif-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 700; color: #b45309; }
+.notif-icon { font-size: 15px; vertical-align: -2px; margin-right: 3px; }
+.warn-icon { font-size: 14px; vertical-align: -2px; margin-right: 2px; }
+.btn-icon { font-size: 14px; vertical-align: -2px; margin-right: 2px; }
+.meta-icon { font-size: 14px; vertical-align: -2px; margin-right: 3px; }
 .notif-dismiss { background: #f59e0b; color: #fff; border: none; border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .notif-list { margin: 8px 0 0; padding-left: 18px; font-size: 12px; color: #78350f; line-height: 1.6; }
 
@@ -1271,10 +1332,15 @@ onMounted(async () => {
 .personal-day-head.date-sunday { color: #ef4444; }
 .personal-day-head.date-saturday { color: #3b82f6; }
 .personal-day-head.date-today { background: #ecfdf5; }
-.week-head-add-btn {
-  flex-shrink: 0; background: none; border: 1px dashed #ccc; border-radius: 6px;
-  color: #aaa; font-size: 12px; padding: 2px 6px; cursor: pointer; line-height: 1.4;
+.personal-week-fab {
+  /* 下部固定ナビ(2026-07-16追加)の高さ分だけ上にずらし、ナビと重ならないようにする */
+  position: fixed; right: 18px; bottom: calc(24px + var(--app-bottom-nav-h, 54px) + env(safe-area-inset-bottom, 0px)); z-index: 20;
+  width: 52px; height: 52px; border-radius: 50%; border: none;
+  background: #06C755; color: #fff; box-shadow: 0 3px 10px rgba(0,0,0,.25);
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
 }
+.personal-week-fab:active { background: #05a847; }
+.personal-week-fab .material-symbols-rounded { font-size: 26px; }
 
 /* 終日・時刻未設定の予定 */
 .personal-week-allday { display: grid; gap: 1px; background: #E0E0E0; border-bottom: 1px solid #E0E0E0; }
@@ -1285,7 +1351,7 @@ onMounted(async () => {
 .personal-week-timeline { display: grid; position: relative; }
 .week-hour-axis { position: relative; border-right: 1px solid #E0E0E0; }
 .week-hour-label { position: absolute; right: 4px; transform: translateY(-50%); font-size: 10px; color: #999; }
-.week-day-timeline { position: relative; border-left: 1px solid #f0f0f0; min-width: 0; }
+.week-day-timeline { position: relative; border-left: 1px solid #f0f0f0; min-width: 0; cursor: pointer; }
 .week-day-timeline.date-sunday { background: #fff8f8; }
 .week-day-timeline.date-saturday { background: #f8fafd; }
 .week-day-timeline.date-today { background: #ecfdf5; }

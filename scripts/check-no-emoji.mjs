@@ -17,7 +17,8 @@ function walk(dir, acc = []) {
   for (const name of readdirSync(dir)) {
     if (name.includes(' 2.')) continue          // macOS " 2" 複製は無視
     const p = join(dir, name)
-    const st = statSync(p)
+    let st
+    try { st = statSync(p) } catch { continue }  // 壊れたsymlink等(例: apps/liff/dist未buildで一時的にdangling)はスキップ
     if (st.isDirectory()) { if (name !== 'node_modules' && name !== '.output' && name !== 'dist') walk(p, acc) }
     else if (name.endsWith('.vue')) acc.push(p)
   }

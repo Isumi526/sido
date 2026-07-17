@@ -24,7 +24,8 @@ test.afterAll(async () => {
 test('似た現場候補をタップすると現場名入力欄にそのまま入る', async ({ page }) => {
   await page.goto('/calendar', { waitUntil: 'networkidle' })
   await page.locator('.cal-tab', { hasText: '個人' }).click()
-  await page.locator('.week-head-add-btn').first().click()
+  // 2026-07-15: 区画内+ボタン廃止→右下固定FABに変更
+  await page.locator('[data-testid="personal-week-fab"]').click()
 
   await page.locator('[data-testid="site-select"]').selectOption('__other__')
   // 末尾を落とした表記ゆれで似た現場として検知させる

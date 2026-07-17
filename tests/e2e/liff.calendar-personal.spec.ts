@@ -25,8 +25,8 @@ test.describe('予定管理 個人カレンダー', () => {
     await expect(page.locator('.personal-cal')).toBeVisible({ timeout: 10000 })
     await expect(page.locator('.personal-week')).toBeVisible()
 
-    // 週間ビュー（時間軸メモリ表示）から追加
-    await page.locator('.week-head-add-btn').first().click()
+    // 週間ビュー（時間軸メモリ表示）から追加（2026-07-15: 区画内+ボタン廃止→右下固定FABに変更）
+    await page.locator('[data-testid="personal-week-fab"]').click()
     await expect(page.locator('.worker-chips')).toBeVisible()
     await page.locator('.form-row').filter({ has: page.locator('.form-row-label', { hasText: '現場 *' }) })
       .locator('select.site-select').selectOption('__other__')

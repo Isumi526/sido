@@ -1,5 +1,7 @@
 <template>
-  <div class="checkin-page">
+  <div>
+    <AppNav :subtitle="$t('nav.checkin')" />
+    <div class="checkin-page">
 
     <!-- ローディング -->
     <div v-if="phase === 'loading'" class="center-box">
@@ -244,6 +246,7 @@
       </div>
     </div>
 
+    </div>
   </div>
 </template>
 
@@ -680,7 +683,9 @@ async function submit() {
 
 <style scoped>
 .checkin-page {
-  min-height: 100dvh;
+  /* AppNav追加(2026-07-16)に伴い、下部固定ナビの高さ分を差し引く(calendar/index.vueと同型)。
+     min-heightのままだと(スペーサー分+100dvh)でsubmit-areaが画面下に押し出され隠れるため height固定にする。 */
+  height: calc(100dvh - var(--app-header-h, 52px) - var(--app-bottom-nav-h, 54px) - env(safe-area-inset-bottom, 0px));
   background: #f2f2f7;
   display: flex;
   flex-direction: column;

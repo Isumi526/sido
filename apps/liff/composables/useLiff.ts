@@ -66,8 +66,16 @@ export const useLiff = () => {
     // 開発モードはLIFF初期化をスキップしてダミープロフィールを使用
     if (config.public.appEnv === 'development') {
       console.warn('[LIFF] 開発モードで動作中（LIFF未接続）')
+      // E2E/開発用: ?dev_line_uid=<line_user_id> で LINE userId を差し替え可能。
+      // マルチテナントの実行時解決（line_user_id→account）を別テナントの作業員で検証する用途。
+      // ★ development モード限定（本番の LIFF 経路 L82- には一切影響しない）。
+      let devUserId = 'dev-user-id'
+      try {
+        const q = new URL(window.location.href).searchParams.get('dev_line_uid')
+        if (q) devUserId = q
+      } catch { /* URL 解析失敗時は既定 */ }
       state.value.profile = {
-        userId: 'dev-user-id',
+        userId: devUserId,
         displayName: '開発テストユーザー',
         pictureUrl: '',
         statusMessage: '',

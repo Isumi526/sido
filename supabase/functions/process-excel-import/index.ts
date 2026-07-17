@@ -52,14 +52,26 @@ Deno.serve(async (req) => {
   const { data: userData, error: userErr } = await authClient.auth.getUser(token)
   if (userErr || !userData?.user) return json({ error: 'トークン不正' }, 401)
 
-  try {
-    const { text, siteName } = await req.json() as { text?: string; siteName?: string }
+    const { text, siteName, multiSite } = await req.json() as { text?: string; siteName?: string; multiSite?: boolean }
     if (!text || !text.trim()) return json({ error: 'text is required' }, 400)
 
     const truncated = text.length > MAX_TEXT_LEN ? text.slice(0, MAX_TEXT_LEN) : text
-    const siteHint = siteName ? `\n現場名: ${siteName}（この現場の工程表として読み取る）` : ''
+    // 複数現場モード: 1ファイルに複数現場が混在する工程表。各タスクの現場名(site_name)も抽出する。
+    // 単一現場モード(従来): siteName ヒントを与え、その現場の工程表として読む。
+    const siteHint = multiSite
+      ? '\nこのファイルには複数の現場が混在しています。各タスクがどの現場のものか(シート名・現場列・見出し等から判断)を site_name に必ず入れてください。'
+      : (siteName ? `\n現場名: ${siteName}（この現場の工程表として読み取る）` : '')
+    const siteField = multiSite
+      ? '      "site_name": "この工程が属する現場名（複数現場混在のため必須。判別できなければnull）",\n'
+      : ''
+    // AC4: 色塗りガントチャート形式(日付が列見出し・工程の稼働日はセルの色塗りで表現)の場合、
+    // クライアント側(excelToImportText)がexceljsで塗り色を検出し「■」マーカー版のテキストを追記する。
+    // 通常のCSVには開始日/終了日の値が無いため、マーカー版が付いている時だけ解釈方法を追加指示する。
+    const colorGanttHint = truncated.includes('の色塗り期間')
+      ? '\n\n「■ シート「〜」の色塗り期間」という追加情報がある場合、それは元のExcelで日付列がセルの色塗りで表現されていた工程(ガントチャート形式)について、行ラベルごとに開始日・終了日を計算済みのヒントです。「行「工程名」: 開始日=YYYY-MM-DD, 終了日=YYYY-MM-DD」の形式で、行ラベルが一致するタスクのstart_date/end_dateにそのままこの値を使ってください（自分で列を数え直す必要はありません）。'
+      : ''
 
-    const prompt = `これは工程表(スケジュール表)のExcelをCSV化したテキストです。内容から工程(タスク)の一覧をJSONのみで返してください（説明文・コードフェンス不要）。${siteHint}
+    const prompt = `これは工程表(スケジュール表)のExcelをCSV化したテキストです。内容から工程(タスク)の一覧をJSONのみで返してください（説明文・コードフェンス不要）。${siteHint}${colorGanttHint}
 
 各行を以下の形式のオブジェクトにしてください。読み取れない項目はnull。日付は"YYYY-MM-DD"。
 実際の工程行ではない行（見出し・空行・凡例・合計行など）は含めないこと。工程名(name)が読み取れない行は除外すること。
@@ -68,7 +80,7 @@ Deno.serve(async (req) => {
   "tasks": [
     {
       "name": "工程名（必須。例：内装ボード工事）",
-      "assignee": "担当者名（なければnull）",
+${siteField}      "assignee": "担当者名（なければnull）",
       "site_manager": "現場管理者名（なければnull）",
       "work_type": "日中" | "夜間" | "家具" | null,
       "contract_amount": 請負金額（数値。カンマ・円記号は除く。なければnull）,
@@ -116,6 +128,7 @@ ${truncated}`
           .filter((t: any) => typeof t?.name === 'string' && t.name.trim())
           .map((t: any) => ({
             name: String(t.name).trim(),
+            ...(multiSite ? { site_name: (typeof t.site_name === 'string' && t.site_name.trim()) ? t.site_name.trim() : null } : {}),
             assignee: t.assignee || null,
             site_manager: t.site_manager || null,
             work_type: WORK_TYPES.includes(t.work_type) ? t.work_type : null,

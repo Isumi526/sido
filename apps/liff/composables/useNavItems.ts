@@ -25,6 +25,7 @@ export function useNavItems(authMode: () => string | null | undefined) {
   const items = computed<NavItem[]>(() => {
     const list: NavItem[] = [
       { path: '/checkin',          icon: 'how_to_reg',        label: t('nav.checkin'),          section: 'daily' },
+      { path: '/chats',            icon: 'forum',             label: t('nav.chats'),            section: 'daily' },
       { path: '/report',           icon: 'edit_note',         label: t('nav.reportRegister'),   section: 'daily' },
       { path: '/history',          icon: 'history',           label: t('nav.reportHistory'),    section: 'daily' },
       { path: '/overtime',         icon: 'more_time',         label: t('nav.overtimeRequest'),  section: 'daily' },
