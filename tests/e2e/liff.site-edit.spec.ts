@@ -88,7 +88,7 @@ test('写真/書類の追加ボタンから正しいpayloadでedge(site-attachme
 
 test('現場責任者でない現場では編集ボタン・添付追加ボタンが表示されない', async ({ page }) => {
   await page.goto(`/sites/${otherSiteId}`, { waitUntil: 'networkidle' })
-  await expect(page.locator('h1.ttl')).toContainText(SITE_OTHER, { timeout: 10000 })
+  await expect(page.locator('.app-title')).toContainText(SITE_OTHER, { timeout: 10000 })
   await expect(page.locator('[data-testid="site-edit-toggle"]')).toHaveCount(0)
   await expect(page.locator('[data-testid="site-attach-photo"]')).toHaveCount(0)
   await expect(page.locator('[data-testid="site-attach-document"]')).toHaveCount(0)
