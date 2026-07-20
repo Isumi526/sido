@@ -1,5 +1,6 @@
 {
   "title": "Chat",
+  "accountRoomTitle": "Account-wide chat",
   "empty": "No messages yet",
   "placeholder": "Type a message",
   "unknownSender": "(Unknown)",

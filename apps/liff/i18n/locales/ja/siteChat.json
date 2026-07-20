@@ -1,5 +1,6 @@
 {
   "title": "チャット",
+  "accountRoomTitle": "全体チャット",
   "empty": "まだメッセージはありません",
   "placeholder": "メッセージを入力",
   "unknownSender": "（不明）",
