@@ -5,7 +5,18 @@
     <div v-if="dragActive" class="drop-overlay">ここにドロップして添付</div>
     <AppNav :subtitle="site?.name ? `${site.name} ${$t('siteChat.title')}` : $t('siteChat.title')" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
     <main class="wrap">
-      <NuxtLink :to="`/sites/${siteId}`" class="back-link">‹ {{ site?.name ?? $t('sitesView.title') }}</NuxtLink>
+      <div class="chat-topbar">
+        <NuxtLink :to="`/sites/${siteId}`" class="back-link">‹ {{ site?.name ?? $t('sitesView.title') }}</NuxtLink>
+        <button v-if="members.length" type="button" class="member-count-btn" data-testid="member-count-btn" @click="membersOpen = !membersOpen">
+          <span class="material-symbols-rounded">group</span>{{ members.length }}
+        </button>
+      </div>
+      <div v-if="membersOpen" class="member-thumb-bar" data-testid="member-thumb-bar">
+        <NuxtLink
+          v-for="m in members" :key="m.id" :to="`/sites/${siteId}`"
+          class="member-thumb" :style="{ background: avatarColor(m.name) }" :title="m.name"
+        >{{ initial(m.name) }}</NuxtLink>
+      </div>
 
       <div v-if="loading" class="state">{{ $t('common.loading') }}</div>
       <template v-else>
@@ -104,6 +115,8 @@ const pendingFile = ref<File | null>(null)
 const dragActive  = ref(false)
 const mentionedIds = ref<Set<string>>(new Set())
 const mentionCandidates = ref<{ id: string; name: string }[]>([])
+const members = ref<{ id: string; name: string }[]>([])
+const membersOpen = ref(false)
 
 let accountId = ''
 let allWorkers: { id: string; name: string }[] = []
@@ -262,6 +275,29 @@ async function send() {
   }
 }
 
+// この現場を閲覧できるメンバー一覧(site_shares共有登録 + 現場責任者)。
+// LINE風のメンバー数表示・サムネイルバー用(現場設定画面のメンバー管理と同じ集合)。
+async function loadMembers(accId: string, responsibleWorkerId: string | null) {
+  const supabase = useSupabase()
+  const [{ data: shares }, { data: responsibleUser }] = await Promise.all([
+    supabase.from('site_shares').select('user_id').eq('site_id', siteId),
+    responsibleWorkerId
+      ? supabase.from('users').select('id, real_name').eq('account_id', accId).eq('worker_id', responsibleWorkerId).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ])
+  const userIds = ((shares ?? []) as { user_id: string }[]).map((s) => s.user_id)
+  const { data: users } = userIds.length
+    ? await supabase.from('users').select('id, real_name').in('id', userIds)
+    : { data: [] as { id: string; real_name: string | null }[] }
+  const list = new Map<string, string>()
+  for (const u of (users ?? []) as { id: string; real_name: string | null }[]) {
+    if (u.real_name) list.set(u.id, u.real_name)
+  }
+  const ru = responsibleUser as { id: string; real_name: string | null } | null
+  if (ru?.real_name) list.set(ru.id, ru.real_name)
+  members.value = [...list.entries()].map(([id, name]) => ({ id, name }))
+}
+
 async function load() {
   loading.value = true
   const supabase = useSupabase()
@@ -275,8 +311,9 @@ async function load() {
   const mySiteIds = await resolveMySiteIds()
   if (!mySiteIds.includes(siteId)) { await navigateTo('/chats'); return }
 
-  const { data: siteData } = await supabase.from('sites').select('id, name').eq('account_id', accountId).eq('id', siteId).maybeSingle()
+  const { data: siteData } = await supabase.from('sites').select('id, name, responsible_worker_id').eq('account_id', accountId).eq('id', siteId).maybeSingle()
   site.value = (siteData ?? null) as { id: string; name: string } | null
+  await loadMembers(accountId, (siteData as any)?.responsible_worker_id ?? null)
 
   const { data: workersData } = await supabase.from('workers').select('id, name').eq('account_id', accountId).eq('active', true).order('name')
   allWorkers = (workersData ?? []) as { id: string; name: string }[]
@@ -314,7 +351,19 @@ onUnmounted(() => {
   background: rgba(6, 160, 80, .08); color: #06A050; font-weight: 700; font-size: 14px; pointer-events: none;
 }
 .wrap { max-width: 840px; width: 100%; margin: 0 auto; padding: 12px 16px; display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.back-link { display: inline-block; color: #1a56c4; text-decoration: none; font-size: 14px; font-weight: 700; margin-bottom: 8px; flex-shrink: 0; }
+.chat-topbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; flex-shrink: 0; }
+.back-link { display: inline-block; color: #1a56c4; text-decoration: none; font-size: 14px; font-weight: 700; flex-shrink: 0; }
+.member-count-btn {
+  display: inline-flex; align-items: center; gap: 3px; background: #f0fdf4; border: none;
+  border-radius: 12px; padding: 4px 10px; font-size: 12px; font-weight: 700; color: #06A050; cursor: pointer;
+}
+.member-count-btn .material-symbols-rounded { font-size: 15px; }
+.member-thumb-bar { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 4px; flex-shrink: 0; }
+.member-thumb {
+  width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 700; font-size: 13px; text-decoration: none;
+}
 .state { color: #888; text-align: center; padding: 32px; }
 .msg-list-wrap { position: relative; flex: 1; min-height: 0; display: flex; }
 .msg-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 8px 0; }
