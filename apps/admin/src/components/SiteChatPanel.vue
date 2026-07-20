@@ -22,9 +22,21 @@
             <div v-if="!m.sender_is_admin" class="msg-avatar" :style="{ background: avatarColor(m.sender_name) }">{{ initial(m.sender_name) }}</div>
             <div class="msg-col">
               <div class="msg-sender">{{ m.sender_name }}</div>
-              <div class="msg-bubble-row">
+              <div
+                class="msg-bubble-row"
+                :style="swipingId === m.id && swipeX ? { transform: `translateX(${swipeX}px)` } : {}"
+                :class="{ 'msg-bubble-row-swiping': swipingId === m.id }"
+                @pointerdown="onBubblePointerDown($event, m)"
+                @pointermove="onBubblePointerMove($event)"
+                @pointerup="onBubblePointerUp(m)"
+                @pointercancel="onBubblePointerUp(m)"
+              >
                 <span v-if="!m.sender_is_admin" class="msg-tail msg-tail-left"></span>
-                <div class="msg-bubble">
+                <div class="msg-bubble" data-testid="msg-bubble">
+                  <div v-if="m.reply_to_sender_name" class="reply-quote">
+                    <div class="reply-quote-sender">{{ m.reply_to_sender_name }}</div>
+                    <div class="reply-quote-text">{{ m.reply_to_body }}</div>
+                  </div>
                   <a v-if="m.attachment_url && m.attachment_kind === 'image'" :href="m.attachment_url" target="_blank" rel="noopener">
                     <img :src="m.attachment_url" class="msg-attachment-img" :alt="m.attachment_name || ''" />
                   </a>
@@ -46,6 +58,28 @@
           <span class="material-symbols-rounded">keyboard_double_arrow_down</span>
         </button>
       </div>
+
+      <div v-if="contextMenu" class="ctx-menu-backdrop" data-testid="ctx-menu-backdrop" @click="contextMenu = null"></div>
+      <div v-if="contextMenu" class="ctx-menu" data-testid="ctx-menu" :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }">
+        <button type="button" class="ctx-menu-item" data-testid="ctx-reply" @click="startReply(contextMenu.message); contextMenu = null">
+          <span class="material-symbols-rounded">reply</span>リプライ
+        </button>
+        <button type="button" class="ctx-menu-item" data-testid="ctx-copy" @click="copyMessage(contextMenu.message); contextMenu = null">
+          <span class="material-symbols-rounded">content_copy</span>コピー
+        </button>
+      </div>
+
+      <div v-if="replyTarget" class="reply-preview" data-testid="reply-preview">
+        <div class="reply-preview-bar"></div>
+        <div class="reply-preview-body">
+          <div class="reply-preview-sender">{{ replyTarget.sender_name }}</div>
+          <div class="reply-preview-text">{{ replyTarget.body }}</div>
+        </div>
+        <button type="button" class="reply-preview-clear" aria-label="返信をキャンセル" data-testid="reply-preview-clear" @click="replyTarget = null">
+          <span class="material-symbols-rounded">close</span>
+        </button>
+      </div>
+
       <div v-if="pendingFile" class="pending-file">
         <span class="material-symbols-rounded">attach_file</span>{{ pendingFile.name }}
         <button type="button" class="pending-file-clear" @click="pendingFile = null">
@@ -84,6 +118,7 @@ type ChatMessage = {
   id: string; sender_worker_id: string | null; sender_is_admin: boolean
   sender_name: string; body: string; created_at: string; deleted_at: string | null
   attachment_url: string | null; attachment_name: string | null; attachment_kind: string | null
+  reply_to_message_id: string | null; reply_to_sender_name: string | null; reply_to_body: string | null
 }
 
 const loading  = ref(true)
@@ -100,6 +135,19 @@ const mentionCandidates = ref<{ id: string; name: string }[]>([])
 const inviteBusy = ref(false)
 const inviteUrl  = ref('')
 const inviteCopied = ref(false)
+
+// リプライ(返信)機能: LINE同様スワイプ/長押しで開始。引用は送信時点のスナップショット(reply_to_*)を持つ。
+const replyTarget = ref<{ id: string; sender_name: string; body: string } | null>(null)
+const swipingId = ref<string | null>(null)
+const swipeX = ref(0)
+const contextMenu = ref<{ message: ChatMessage; x: number; y: number } | null>(null)
+const REPLY_SWIPE_THRESHOLD = -48
+const REPLY_SWIPE_MAX = -72
+const LONG_PRESS_MS = 500
+let pointerStartX = 0
+let pointerStartY = 0
+let longPressTimer: ReturnType<typeof setTimeout> | null = null
+let longPressFired = false
 
 let accountId = ''
 let allWorkers: { id: string; name: string }[] = []
@@ -163,6 +211,42 @@ function avatarColor(name: string): string {
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360
   return `hsl(${h}, 62%, 52%)`
 }
+// バルーン左スワイプ→リプライ開始、長押し→コンテキストメニュー(リプライ/コピーのみ・LINE準拠)。
+function onBubblePointerDown(e: PointerEvent, m: ChatMessage) {
+  pointerStartX = e.clientX
+  pointerStartY = e.clientY
+  swipingId.value = m.id
+  swipeX.value = 0
+  longPressFired = false
+  if (longPressTimer) clearTimeout(longPressTimer)
+  longPressTimer = setTimeout(() => {
+    longPressFired = true
+    contextMenu.value = { message: m, x: e.clientX, y: e.clientY }
+  }, LONG_PRESS_MS)
+}
+function onBubblePointerMove(e: PointerEvent) {
+  if (!swipingId.value) return
+  const dx = e.clientX - pointerStartX
+  const dy = e.clientY - pointerStartY
+  if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
+  }
+  if (Math.abs(dy) > Math.abs(dx)) return
+  swipeX.value = Math.max(REPLY_SWIPE_MAX, Math.min(0, dx))
+}
+function onBubblePointerUp(m: ChatMessage) {
+  if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
+  if (!longPressFired && swipeX.value <= REPLY_SWIPE_THRESHOLD) startReply(m)
+  swipingId.value = null
+  swipeX.value = 0
+}
+function startReply(m: ChatMessage) {
+  replyTarget.value = { id: m.id, sender_name: m.sender_name, body: m.body || (m.attachment_name ? `[${m.attachment_name}]` : '') }
+}
+function copyMessage(m: ChatMessage) {
+  navigator.clipboard?.writeText(m.body || '').catch(() => {})
+}
+
 function scrollToBottom() {
   nextTick(() => { if (listRef.value) listRef.value.scrollTop = listRef.value.scrollHeight })
   showScrollBtn.value = false
@@ -176,7 +260,7 @@ function onListScroll() {
 
 async function loadMessages() {
   const { data } = await supabase.from('site_chat_messages')
-    .select('id, sender_worker_id, sender_is_admin, sender_name, body, created_at, deleted_at, attachment_url, attachment_name, attachment_kind')
+    .select('id, sender_worker_id, sender_is_admin, sender_name, body, created_at, deleted_at, attachment_url, attachment_name, attachment_kind, reply_to_message_id, reply_to_sender_name, reply_to_body')
     .eq('account_id', accountId).eq('site_id', props.siteId).is('deleted_at', null)
     .order('created_at', { ascending: true }).limit(500)
   const wasAtBottom = !listRef.value || (listRef.value.scrollHeight - listRef.value.scrollTop - listRef.value.clientHeight < 40)
@@ -252,6 +336,9 @@ async function send() {
     body,
     attachment_url: attachment?.url ?? null, attachment_name: attachment?.name ?? null, attachment_kind: attachment?.kind ?? null,
     mentioned_worker_ids: mentionIds,
+    reply_to_message_id: replyTarget.value?.id ?? null,
+    reply_to_sender_name: replyTarget.value?.sender_name ?? null,
+    reply_to_body: replyTarget.value?.body ?? null,
   }).select('id').maybeSingle()
   if (!error && inserted?.id && mentionIds.length) {
     const { error: mentionError } = await supabase.from('site_chat_mentions').insert(
@@ -263,7 +350,7 @@ async function send() {
   }
   sending.value = false
   if (!error) {
-    draft.value = ''; pendingFile.value = null; mentionedIds.value = new Set(); mentionCandidates.value = []
+    draft.value = ''; pendingFile.value = null; mentionedIds.value = new Set(); mentionCandidates.value = []; replyTarget.value = null
     nextTick(autoResizeDraft)
     await loadMessages()
   }
@@ -326,7 +413,8 @@ onUnmounted(() => {
 .msg-sender { font-size: 11px; font-weight: 700; color: #888; margin-bottom: 2px; padding: 0 2px; }
 .msg-bubble { background: #f8fafc; border: 1px solid #eef2f4; border-radius: 14px; padding: 8px 12px; }
 .msg-row.mine .msg-bubble { background: #e8fff0; border-color: #b7ebcb; }
-.msg-bubble-row { display: flex; align-items: flex-end; }
+.msg-bubble-row { display: flex; align-items: flex-end; transition: transform .15s; touch-action: pan-y; }
+.msg-bubble-row-swiping { transition: none; }
 .msg-row.mine .msg-bubble-row { justify-content: flex-end; }
 .msg-tail { width: 0; height: 0; flex-shrink: 0; margin-bottom: 8px; position: relative; }
 .msg-tail-left {
@@ -361,4 +449,29 @@ onUnmounted(() => {
 .mention-item:hover { background: #f0f0f0; }
 .msg-attachment-img { max-width: 100%; max-height: 220px; border-radius: 8px; display: block; margin-bottom: 4px; }
 .msg-attachment-file { display: flex; align-items: center; gap: 4px; color: #1a56c4; text-decoration: none; font-size: 13px; margin-bottom: 4px; }
+
+.reply-quote {
+  border-left: 3px solid #06A050; background: rgba(6,160,80,.08); border-radius: 4px;
+  padding: 4px 8px; margin-bottom: 6px;
+}
+.reply-quote-sender { font-size: 11px; font-weight: 700; color: #06A050; }
+.reply-quote-text { font-size: 12px; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctx-menu-backdrop { position: fixed; inset: 0; z-index: 20; background: transparent; }
+.ctx-menu {
+  position: fixed; z-index: 21; transform: translate(-50%, -110%);
+  background: #fff; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,.2);
+  overflow: hidden; display: flex; flex-direction: column; min-width: 140px;
+}
+.ctx-menu-item {
+  display: flex; align-items: center; gap: 8px; padding: 10px 14px; border: none; background: none;
+  font-size: 14px; color: #333; cursor: pointer; text-align: left;
+}
+.ctx-menu-item:hover { background: #f5f5f5; }
+.ctx-menu-item .material-symbols-rounded { font-size: 18px; color: #888; }
+.reply-preview { display: flex; align-items: center; gap: 8px; background: #f5f8f5; border-radius: 8px; padding: 6px 10px; margin-top: 8px; }
+.reply-preview-bar { width: 3px; align-self: stretch; background: #06A050; border-radius: 2px; flex-shrink: 0; }
+.reply-preview-body { flex: 1; min-width: 0; }
+.reply-preview-sender { font-size: 11px; font-weight: 700; color: #06A050; }
+.reply-preview-text { font-size: 12px; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reply-preview-clear { flex-shrink: 0; border: none; background: none; color: #888; cursor: pointer; display: flex; }
 </style>
