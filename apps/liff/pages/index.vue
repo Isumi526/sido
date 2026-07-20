@@ -4,16 +4,6 @@
 
     <div class="home-body">
 
-      <!-- ユーザーカード -->
-      <div class="user-card">
-        <div class="user-avatar">{{ avatarChar }}</div>
-        <div class="user-info">
-          <div class="user-name">{{ currentUser?.real_name ?? t('home.loadingUser') }}</div>
-          <div class="user-role">{{ roleLabel }}</div>
-        </div>
-        <div class="user-date">{{ todayLabel }}</div>
-      </div>
-
       <!-- 未送信アラート -->
       <div v-if="unsubmittedCount > 0" class="alert-card" @click="navigateTo('/report')">
         <span class="material-symbols-rounded alert-icon">warning</span>
@@ -172,20 +162,6 @@ async function selectProxy(worker: import('~/composables/useProxyMode').ProxyWor
   await refreshUnsubmittedCount()
 }
 
-const avatarChar = computed(() =>
-  currentUser.value?.real_name?.charAt(0) ?? profile.value?.displayName?.charAt(0) ?? '?'
-)
-
-const roleLabel = computed(() => {
-  if (!currentUser.value?.worker_role) return ''
-  return currentUser.value.worker_role === 'factory' ? t('common.roleFactory') : t('common.roleSite')
-})
-
-const todayLabel = computed(() => {
-  const d = new Date()
-  return t('home.todayLabel', { month: d.getMonth() + 1, day: d.getDate() })
-})
-
 onMounted(async () => {
   // LIFFプロファイルが取得されるまで待機
   let tries = 0
@@ -292,23 +268,6 @@ async function refreshUnsubmittedCount() {
 .home-page { display: flex; flex-direction: column; min-height: 100dvh; background: #f2f2f7; overflow-x: hidden; }
 
 .home-body { flex: 1; padding: 16px; display: flex; flex-direction: column; gap: 14px; max-width: 480px; margin: 0 auto; width: 100%; box-sizing: border-box; }
-
-/* ユーザーカード */
-.user-card {
-  background: #06C755; border-radius: 16px;
-  padding: 18px 20px; display: flex; align-items: center; gap: 14px;
-  box-shadow: 0 2px 12px rgba(6,199,85,.25);
-}
-.user-avatar {
-  width: 48px; height: 48px; border-radius: 50%;
-  background: rgba(255,255,255,.25); color: #fff;
-  font-size: 20px; font-weight: 900;
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-}
-.user-info { flex: 1; }
-.user-name { font-size: 17px; font-weight: 700; color: #fff; }
-.user-role { font-size: 12px; color: rgba(255,255,255,.8); margin-top: 2px; }
-.user-date { font-size: 13px; color: rgba(255,255,255,.85); font-weight: 600; flex-shrink: 0; }
 
 /* 未送信アラート */
 .alert-card {
