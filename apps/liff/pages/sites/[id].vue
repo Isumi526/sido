@@ -81,12 +81,15 @@ let inviteAccountId = ''
 async function onToggleShare(userId: string, checked: boolean) {
   const supabase = useSupabase()
   const siteId = String(route.params.id)
+  // 楽観的に更新し、DB操作が失敗したら表示状態を元に戻す(不整合防止)
   if (checked) {
     sharedUserIds.value = [...sharedUserIds.value, userId]
-    await supabase.from('site_shares').insert({ site_id: siteId, user_id: userId, account_id: inviteAccountId })
+    const { error } = await supabase.from('site_shares').insert({ site_id: siteId, user_id: userId, account_id: inviteAccountId })
+    if (error) sharedUserIds.value = sharedUserIds.value.filter((id) => id !== userId)
   } else {
     sharedUserIds.value = sharedUserIds.value.filter((id) => id !== userId)
-    await supabase.from('site_shares').delete().eq('site_id', siteId).eq('user_id', userId)
+    const { error } = await supabase.from('site_shares').delete().eq('site_id', siteId).eq('user_id', userId)
+    if (error) sharedUserIds.value = [...sharedUserIds.value, userId]
   }
 }
 
