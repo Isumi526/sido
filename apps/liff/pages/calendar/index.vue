@@ -258,7 +258,14 @@
               <span class="form-row-label">{{ $t('calendar.site') }}</span>
               <select v-model="formModal.title" class="site-select" data-testid="site-select">
                 <option value="">{{ $t('calendar.pleaseSelect') }}</option>
-                <option v-for="s in filteredSiteNames((formModal as any)._contractor)" :key="s" :value="s">{{ s }}</option>
+                <template v-if="(formModal as any)._contractor">
+                  <option v-for="s in filteredSiteNames((formModal as any)._contractor)" :key="s" :value="s">{{ s }}</option>
+                </template>
+                <template v-else v-for="grp in master.siteGroupsByContractor.value" :key="grp.contractorName ?? '__unlinked__'">
+                  <optgroup :label="grp.contractorName ?? $t('calendar.siteGroupUnlinked')">
+                    <option v-for="s in grp.sites" :key="s" :value="s">{{ s }}</option>
+                  </optgroup>
+                </template>
                 <option value="__other__">{{ $t('calendar.registerNewSite') }}</option>
               </select>
             </div>
