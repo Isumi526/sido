@@ -98,16 +98,25 @@
         :placeholder="$t('checkin.siteSearchPlaceholder')"
       />
       <div class="target-list">
-        <button
-          v-for="s in filteredSiteOptions"
-          :key="s.id"
-          class="target-row"
-          @click="selectSite(s.id)"
-        >
-          <span class="material-symbols-rounded target-icon">location_on</span>
-          <span class="target-name">{{ s.name }}</span>
-          <span class="material-symbols-rounded chev">chevron_right</span>
-        </button>
+        <div v-for="s in filteredSiteOptions" :key="s.id" class="target-row-wrap">
+          <button
+            class="target-row"
+            :class="{ 'target-row-active': s.id === checkedInSiteId }"
+            @click="selectSite(s.id)"
+          >
+            <span class="material-symbols-rounded target-icon">location_on</span>
+            <span class="target-name">
+              {{ s.name }}<span v-if="s.id === checkedInSiteId" class="checkedin-tag">{{ $t('checkin.checkedInTag') }}</span>
+            </span>
+            <span class="material-symbols-rounded chev">chevron_right</span>
+          </button>
+          <NuxtLink
+            v-if="s.id === checkedInSiteId" :to="`/overtime?site=${encodeURIComponent(s.name)}`"
+            class="overtime-link" data-testid="checkin-overtime-link" @click.stop
+          >
+            <span class="material-symbols-rounded">more_time</span>{{ $t('nav.overtimeRequest') }}
+          </NuxtLink>
+        </div>
         <div v-if="!filteredSiteOptions.length" class="site-empty">{{ $t('checkin.siteSearchEmpty') }}</div>
       </div>
     </div>
@@ -279,14 +288,23 @@ const siteOptions    = ref<{ id: string; name: string; name_kana: string | null;
 const contractorOptions = ref<{ id: string; name: string }[]>([])  // 元請けプルダウン（紐づく現場がある分のみ）
 const siteQuery      = ref('')
 const selectedContractor = ref('')  // '' = すべて
+// 現在出勤中(未退勤)の現場のid。一覧の最上位に表示し、残業申請への導線を出す(退勤漏れ防止)。
+const checkedInSiteId = ref<string | null>(null)
 const filteredSiteOptions = computed(() => {
   const q = siteQuery.value.trim().toLowerCase()
   const c = selectedContractor.value
-  return siteOptions.value.filter(s => {
+  const list = siteOptions.value.filter(s => {
     if (c && s.contractor_id !== c) return false
     if (!q) return true
     return s.name.toLowerCase().includes(q) || (s.name_kana ?? '').toLowerCase().includes(q)
   })
+  if (!checkedInSiteId.value) return list
+  const idx = list.findIndex(s => s.id === checkedInSiteId.value)
+  if (idx <= 0) return list
+  const copy = [...list]
+  const [checkedIn] = copy.splice(idx, 1)
+  copy.unshift(checkedIn)
+  return copy
 })
 const rules          = ref<SiteRule[]>([])
 const checkedIds     = ref(new Set<string>())
@@ -481,6 +499,18 @@ async function loadSiteOptions() {
   // 元請けプルダウンは「紐づく現場が1件以上ある元請け」だけ出す
   const usedContractorIds = new Set(siteOptions.value.map(s => s.contractor_id).filter(Boolean) as string[])
   contractorOptions.value = ((contractors ?? []) as { id: string; name: string }[]).filter(c => usedContractorIds.has(c.id))
+
+  // 現在出勤中(未退勤)の現場を判定する(退勤漏れ防止・loadForTarget()の直近サイクル判定と同じ考え方)。
+  const me = await useCurrentUser().resolve()
+  if (me?.worker_id) {
+    const windowStart = new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString()
+    const { data: recentLogs } = await supabase.from('attendance_logs')
+      .select('site_id, type, checked_at').eq('worker_id', me.worker_id)
+      .gte('checked_at', windowStart).order('checked_at')
+    const lastTypeBySite = new Map<string, string>()
+    for (const l of (recentLogs ?? []) as { site_id: string; type: string; checked_at: string }[]) lastTypeBySite.set(l.site_id, l.type)
+    checkedInSiteId.value = [...lastTypeBySite.entries()].find(([, type]) => type === 'checkin')?.[0] ?? null
+  }
 }
 
 // ── 現場を選択（QRなし導線）→ 通常フローへ ──
@@ -801,26 +831,31 @@ async function submit() {
 
 /* ── 対象作業員の選択 ── */
 .select-wrap {
-  flex: 1; display: flex; flex-direction: column;
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
   max-width: 480px; width: 100%; margin: 0 auto;
 }
 .select-header {
-  padding: 28px 20px 20px; background: #06C755; color: #fff;
+  flex-shrink: 0; padding: 28px 20px 20px; background: #06C755; color: #fff;
 }
 .select-title { font-size: 20px; font-weight: 700; }
 
-.site-filter { width: 100%; box-sizing: border-box; margin: 12px 0 0; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 15px; background: #fff; }
-.site-search { width: 100%; box-sizing: border-box; margin: 8px 0 0; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 15px; }
+.site-filter { flex-shrink: 0; width: 100%; box-sizing: border-box; margin: 12px 0 0; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 15px; background: #fff; }
+.site-search { flex-shrink: 0; width: 100%; box-sizing: border-box; margin: 8px 0 0; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 15px; }
 .site-empty { padding: 24px 0; text-align: center; color: #94a3b8; font-size: 14px; }
-.target-list { padding: 12px 0; }
+/* 現場一覧だけを内部スクロールにし、ヘッダー/フィルタは固定表示のまま
+   (2026-07-20・一覧が画面より長いとページ自体がoverflow:visibleで
+   はみ出し背景が途切れて見えていた不具合の修正)。 */
+.target-list { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 0; }
+.target-row-wrap { display: flex; align-items: stretch; border-bottom: 1px solid #f0f0f0; }
 .target-row {
-  display: flex; align-items: center; gap: 14px; width: 100%;
+  display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0;
   padding: 18px 20px; background: #fff; border: none;
-  border-bottom: 1px solid #f0f0f0; cursor: pointer;
+  cursor: pointer;
   text-align: left; transition: background .12s;
   -webkit-tap-highlight-color: transparent;
 }
 .target-row:active { background: #e8f9ee; }
+.target-row-active { background: #f0fdf4; }
 .target-icon {
   font-size: 26px; color: #06C755; flex-shrink: 0;
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
@@ -833,6 +868,16 @@ async function submit() {
   background: #06C755; color: #fff; font-size: 11px; font-weight: 700;
   border-radius: 6px; padding: 2px 8px;
 }
+.checkedin-tag {
+  background: #06C755; color: #fff; font-size: 11px; font-weight: 700;
+  border-radius: 6px; padding: 2px 8px;
+}
+.overtime-link {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  flex-shrink: 0; width: 72px; background: #fffbeb; color: #b45309;
+  font-size: 11px; font-weight: 700; text-decoration: none;
+}
+.overtime-link .material-symbols-rounded { font-size: 20px; }
 .chev {
   font-size: 22px; color: #ccc; flex-shrink: 0;
   font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
