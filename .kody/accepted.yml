@@ -254,6 +254,10 @@ entries:
     target: site-chat
     reason: "チャット送信(LIFF site-chat/[id].vue・admin SiteChatPanel.vue)にべき等ガード(一意リクエストID等)が無い指摘。UI側はsendingフラグで連打を防止済み。Supabase-jsクライアントはPOST/insertを自動リトライしない設計のため、ネットワーク再送による二重投稿の実際の発生率は低い(通信断なら単に送信失敗としてユーザーに見え、ユーザーが再送を判断する＝チャットの性質上、明らかな二重投稿は目視で気付ける)。一意制約による恒久対策は将来の要望(既読/削除機能等)と合わせて検討する。"
     ticket: "3980ff81c56b8057a369e89a2d048c2d"
+  - rule: idempotency
+    target: account-chat.vue
+    reason: "リプライ機能追加(2026-07-20)のGemini指摘。既存のsite-chat/SiteChatPanel.vueのidempotency受容と同一理由([[site-chat]]参照): sendingフラグで連打防止済み・Supabase-jsは自動リトライしない・チャットの性質上二重投稿は目視で気付ける。アカウント全体チャット(apps/liff/pages/account-chat.vue・apps/admin/src/pages/account-chat.vue)にも同じ送信パターンが元々あり、今回のdiffで検出されただけで新規リスクではない。"
+    ticket: "3a30ff81c56b81a6aca1f857e75f8294"
   - rule: rls-multitenant
     target: site_chat_last_read
     reason: "現場チャット一覧ページ(admin/LIFF・2026-07-14)の未読バッジ用テーブル。site_chat_messages/site_chat_mentionsと同型(anon運用=RLS無効・account_id+site_id+actor_keyで論理分離)。既読時刻メタデータのみで機微度は低い。本番RLS化は親エピック「本番DBのRLS有効化」で一括。"
