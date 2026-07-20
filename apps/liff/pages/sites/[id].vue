@@ -2,14 +2,16 @@
   <div class="page">
     <AppNav :subtitle="site?.name ?? $t('sitesView.title')" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
     <main class="wrap">
-      <NuxtLink to="/sites" class="back-link">‹ {{ $t('sitesView.title') }}</NuxtLink>
+      <!-- チャット画面のヘッダー現場アイコンから遷移した時は、そこへ戻る導線が既にあるため
+           現場一覧/チャットへのナビは冗長=非表示にする(2026-07-20 IA刷新)。 -->
+      <NuxtLink v-if="!fromChat" to="/sites" class="back-link">‹ {{ $t('sitesView.title') }}</NuxtLink>
 
       <div v-if="loading" class="state">{{ $t('common.loading') }}</div>
       <div v-else-if="!site" class="state">{{ $t('sitesView.empty') }}</div>
       <template v-else>
         <h1 class="ttl">{{ site.name }}<span v-if="!site.active" class="badge-off">{{ $t('sitesView.inactive') }}</span></h1>
 
-        <NuxtLink :to="`/site-chat/${site.id}`" class="chat-link" data-testid="site-chat-link">
+        <NuxtLink v-if="!fromChat" :to="`/site-chat/${site.id}`" class="chat-link" data-testid="site-chat-link">
           <span class="material-symbols-rounded">chat</span>{{ $t('siteChat.title') }}
         </NuxtLink>
 
@@ -78,6 +80,7 @@ const { t } = useI18n()
 const proxy = useProxyMode()
 const { profile, getIdToken } = useLiff()
 const route = useRoute()
+const fromChat = computed(() => route.query.from === 'chat')
 
 type Site = { id: string; name: string; active: boolean; location: string | null; construction_type: string | null; construction_details: string | null; memo: string | null; responsible_worker_id: string | null }
 type Att = { id: string; site_id: string; kind: string; path: string; name: string | null; url?: string | null }

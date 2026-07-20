@@ -87,16 +87,14 @@ test('現場責任者でない現場では招待UIの代わりに読み取り専
   await expect(readonly.locator('input[type="checkbox"]')).toHaveCount(0)
 })
 
-test('現場チャットのヘッダーにメンバー数が表示され、タップでサムネイルバー→現場設定画面へ遷移できる(2026-07-20)', async ({ page }) => {
+test('現場チャットのヘッダータイトルに現場名(メンバー数)が表示され、現場アイコンタップで現場設定画面へ遷移できる(2026-07-20 IA刷新)', async ({ page }) => {
   await page.goto(`/site-chat/${managedSiteId}`, { waitUntil: 'networkidle' })
-  const countBtn = page.locator('[data-testid="member-count-btn"]')
-  await expect(countBtn).toBeVisible({ timeout: 10000 })
-  await expect(countBtn).toContainText('1')  // 現時点の責任者(自分)のみ共有登録は無いが、責任者自身がmembersに入る
+  // 現時点の責任者(自分)のみ共有登録は無いが、責任者自身がmembersに入るため(1)表示
+  await expect(page.locator('.app-title')).toContainText(`${SITE_MANAGED}(1)`, { timeout: 10000 })
 
-  await countBtn.click()
-  const bar = page.locator('[data-testid="member-thumb-bar"]')
-  await expect(bar).toBeVisible()
-  await expect(bar.locator('.member-thumb')).toHaveCount(1)
-  await bar.locator('.member-thumb').first().click()
-  await expect(page).toHaveURL(new RegExp(`/sites/${managedSiteId}$`), { timeout: 10000 })
+  await page.locator('[data-testid="site-icon-link"]').click()
+  await expect(page).toHaveURL(new RegExp(`/sites/${managedSiteId}\\?from=chat$`), { timeout: 10000 })
+  // チャット経由の遷移では現場一覧/チャットへの導線は冗長なので非表示になる
+  await expect(page.locator('.back-link')).toHaveCount(0)
+  await expect(page.locator('[data-testid="site-chat-link"]')).toHaveCount(0)
 })

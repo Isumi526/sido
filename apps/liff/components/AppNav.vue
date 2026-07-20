@@ -9,12 +9,14 @@
     <div ref="navInnerRef" class="app-nav-inner">
       <button v-if="showBack" class="app-back" :aria-label="$t('nav.back')" @click="router.back()">
         <span class="material-symbols-rounded">arrow_back</span>
+        <span v-if="unreadBadge" class="app-back-badge" data-testid="app-back-unread-badge">{{ unreadBadge }}</span>
       </button>
       <span v-else class="app-back-spacer" />
-      <span class="app-title-col">
+      <span class="app-title-col" :class="{ 'app-title-col-left': titleAlign === 'left' }">
         <span class="app-title">{{ subtitle }}</span>
         <span class="app-brand-name">{{ brandName }}</span>
       </span>
+      <slot name="actions" />
       <button class="app-hamburger" @click="open = true" :aria-label="$t('nav.openMenu')">
         <span class="app-bar" />
         <span class="app-bar" />
@@ -161,6 +163,8 @@ const props = defineProps<{
   subtitle:  string
   userName?: string
   userRole?: 'factory' | 'site'
+  unreadBadge?: number   // 戻るアイコンに表示する未読件数バッジ(現場チャット等・任意)
+  titleAlign?: 'center' | 'left'   // タイトルの寄せ(既定center・現場チャットのみLINE風に左詰め)
 }>()
 
 const { t } = useI18n()
@@ -328,17 +332,24 @@ async function logout() {
   width: 36px; height: 36px; flex-shrink: 0;
 }
 .app-back {
-  display: flex; align-items: center; justify-content: center;
+  display: flex; align-items: center; justify-content: center; position: relative;
   background: transparent; border: none; color: #333; cursor: pointer;
   border-radius: 8px; transition: background .15s;
 }
 .app-back:hover { background: #f5f5f5; }
 .app-back .material-symbols-rounded { font-size: 22px; }
+.app-back-badge {
+  position: absolute; top: 2px; right: 2px; background: #ef4444; color: #fff;
+  font-size: 10px; font-weight: 700; border-radius: 8px; min-width: 15px; height: 15px;
+  display: flex; align-items: center; justify-content: center; padding: 0 3px; line-height: 1;
+}
 .app-title-col {
   flex: 1; min-width: 0;
   display: flex; flex-direction: column; align-items: center;
   overflow: hidden;
 }
+.app-title-col-left { align-items: flex-start; }
+.app-title-col-left .app-title { text-align: left; }
 .app-title {
   max-width: 100%; text-align: center; font-size: 15px; font-weight: 700; color: #111;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
