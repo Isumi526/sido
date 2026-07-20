@@ -2,7 +2,7 @@
   <div class="chat-detail">
     <div class="detail-head">
       <button class="btn-back" @click="router.push('/chats')">← チャット一覧</button>
-      <h1 class="page-title">全体チャット</h1>
+      <h1 class="page-title">{{ accountName || '全体チャット' }}</h1>
     </div>
     <section class="card">
       <div v-if="loading" class="empty">読み込み中…</div>
@@ -47,6 +47,7 @@ const router = useRouter()
 type ChatMessage = { id: string; sender_worker_id: string | null; sender_is_admin: boolean; sender_name: string; body: string; created_at: string; deleted_at: string | null }
 
 const loading  = ref(true)
+const accountName = ref('')
 const messages = ref<ChatMessage[]>([])
 const draft    = ref('')
 const draftRef = ref<HTMLTextAreaElement | null>(null)
@@ -110,6 +111,8 @@ onMounted(async () => {
   loading.value = true
   accountId = (await getAccountId()) ?? ''
   if (accountId) {
+    const { data: acc } = await supabase.from('accounts').select('name').eq('id', accountId).maybeSingle()
+    accountName.value = (acc?.name as string) ?? ''
     await loadMessages()
     scrollToBottom()
     pollTimer = setInterval(loadMessages, 8000)

@@ -10,7 +10,7 @@
             <span class="material-symbols-rounded">groups</span>
           </div>
           <div class="row-main">
-            <div class="row-name">{{ $t('siteChat.accountRoomTitle') }}</div>
+            <div class="row-name">{{ accountName || $t('siteChat.accountRoomTitle') }}</div>
           </div>
         </li>
       </ul>
@@ -52,6 +52,7 @@ type Row = { site: Site; lastMessage: LastMessage | null; unreadCount: number }
 
 const loading = ref(true)
 const rows = ref<Row[]>([])
+const accountName = ref('')
 
 // 現場名から安定した色を作る（LINE/Chatwork的なUIに寄せるための丸アバター用・機微情報は含まない）。
 // company-schedule.vue の siteColor() と同一ロジック。
@@ -80,6 +81,8 @@ async function load() {
   const { resolveMySiteIds } = useMySiteIds()
   const accountId = await getAccountId()
   if (!accountId) { rows.value = []; loading.value = false; return }
+  const { data: acc } = await supabase.from('accounts').select('name').eq('id', accountId).maybeSingle()
+  accountName.value = (acc?.name as string) ?? ''
   const workerId = await resolveMyWorkerId()
 
   // 現場情報共有(site_shares・2026-07-17 Part B): 自分が共有登録されている現場のチャットだけに絞る。

@@ -1,6 +1,6 @@
 <template>
   <div class="page">
-    <AppNav :subtitle="$t('siteChat.accountRoomTitle')" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
+    <AppNav :subtitle="accountName || $t('siteChat.accountRoomTitle')" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
     <main class="wrap">
       <div v-if="loading" class="state">{{ $t('common.loading') }}</div>
       <template v-else>
@@ -69,6 +69,7 @@ const listRef   = ref<HTMLElement | null>(null)
 const showScrollBtn = ref(false)
 const myWorkerId = ref<string | null>(null)
 const myName      = ref('')
+const accountName = ref('')
 
 let accountId = ''
 let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -129,6 +130,9 @@ async function load() {
   const { getAccountId } = useAccount()
   accountId = (await getAccountId()) ?? ''
   if (!accountId) { loading.value = false; return }
+
+  const { data: acc } = await supabase.from('accounts').select('name').eq('id', accountId).maybeSingle()
+  accountName.value = (acc?.name as string) ?? ''
 
   myWorkerId.value = await resolveMyWorkerId()
   if (myWorkerId.value) {
