@@ -185,7 +185,11 @@
                   <option v-for="name in groupedSiteNames(site.contractorName).others" :key="name" :value="name">{{ name }}</option>
                 </optgroup>
               </template>
-              <option v-else v-for="name in groupedSiteNames(site.contractorName).others" :key="name" :value="name">{{ name }}</option>
+              <template v-else v-for="grp in master.siteGroupsByContractor.value" :key="grp.contractorName ?? '__unlinked__'">
+                <optgroup :label="grp.contractorName ?? $t('report.siteGroupUnlinked')">
+                  <option v-for="name in grp.sites" :key="name" :value="name">{{ name }}</option>
+                </optgroup>
+              </template>
               <option value="__other__">{{ $t('report.addNewSite') }}</option>
             </select>
             <div v-if="site.siteName === '__unset__'" class="unset-hint">
