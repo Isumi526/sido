@@ -13,7 +13,7 @@
             <div v-for="m in messages" :key="m.id" class="msg-row" :class="{ mine: m.sender_is_admin }">
               <div v-if="!m.sender_is_admin" class="msg-avatar" :style="{ background: avatarColor(m.sender_name) }">{{ initial(m.sender_name) }}</div>
               <div class="msg-col">
-                <div class="msg-sender">{{ m.sender_name }}</div>
+                <div v-if="!m.sender_is_admin" class="msg-sender">{{ m.sender_name }}</div>
                 <div
                   class="msg-bubble-row"
                   :style="swipingId === m.id && swipeX ? { transform: `translateX(${swipeX}px)` } : {}"
