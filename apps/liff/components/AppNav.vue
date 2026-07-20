@@ -179,9 +179,10 @@ const { authMode } = useLiff()
 const router = useRouter()
 const route = useRoute()
 const showBack = computed(() => route.path !== '/')
-// 現場チャットの個別スレッド(/site-chat/:id)は全画面表示のメッセージ入力欄と競合するため、
-// タブ遷移先である一覧画面(/chats)とは別に下部固定ナビを非表示にする(drill-in詳細画面の慣例)。
-const showBottomNav = computed(() => !route.path.startsWith('/site-chat/'))
+// 現場チャットの個別スレッド(/site-chat/:id)・アカウント全体チャット(/account-chat)は
+// 全画面表示のメッセージ入力欄と競合するため、タブ遷移先である一覧画面(/chats)とは別に
+// 下部固定ナビを非表示にする(drill-in詳細画面の慣例)。
+const showBottomNav = computed(() => !route.path.startsWith('/site-chat/') && route.path !== '/account-chat')
 
 const navInnerRef   = ref<HTMLElement | null>(null)
 const bottomNavRef  = ref<HTMLElement | null>(null)
