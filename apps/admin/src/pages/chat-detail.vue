@@ -3,6 +3,7 @@
     <div class="detail-head">
       <button class="btn-back" @click="router.push('/chats')">← チャット一覧</button>
       <h1 class="page-title">{{ site?.name || 'チャット' }}</h1>
+      <button v-if="site" class="btn-ghost sm" data-testid="chat-to-site-settings-link" @click="router.push(`/sites/${siteId}`)">現場設定へ</button>
     </div>
     <div v-if="loading" class="empty">読み込み中…</div>
     <div v-else-if="!site" class="empty">現場が見つかりません</div>
@@ -38,7 +39,9 @@ onMounted(async () => {
 <style scoped>
 .detail-head { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
 .btn-back { background: none; border: none; color: #06A050; font-size: 14px; font-weight: 700; cursor: pointer; padding: 0; }
-.page-title { font-size: 20px; font-weight: 700; }
+.page-title { font-size: 20px; font-weight: 700; flex: 1; }
+.btn-ghost { background: #f0f0f0; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; cursor: pointer; color: #333; display: inline-flex; align-items: center; gap: 4px; }
+.btn-ghost.sm { padding: 5px 10px; font-size: 12px; }
 .empty { color: #94a3b8; padding: 32px 0; text-align: center; }
 .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06); padding: 16px; }
 </style>
