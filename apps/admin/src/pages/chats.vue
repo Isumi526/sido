@@ -4,6 +4,17 @@
       <h1 class="page-title">チャット</h1>
     </div>
 
+    <ul class="list account-room-list">
+      <li class="row" data-testid="account-chat-row" @click="router.push('/chats/account')">
+        <div class="row-avatar account-room-avatar" data-testid="chat-avatar">
+          <span class="material-symbols-rounded">groups</span>
+        </div>
+        <div class="row-main">
+          <div class="row-name">全体チャット</div>
+        </div>
+      </li>
+    </ul>
+
     <div v-if="loading" class="empty">読み込み中…</div>
     <ul v-else-if="rows.length" class="list">
       <li v-for="r in rows" :key="r.site.id" class="row" data-testid="chat-list-row" @click="router.push(`/chats/${r.site.id}`)">
@@ -137,6 +148,8 @@ onUnmounted(() => {
   display: flex; align-items: center; justify-content: center;
   color: #fff; font-weight: 700; font-size: 17px;
 }
+.account-room-avatar { background: #06A050; }
+.account-room-list { margin-bottom: 16px; }
 .row-main { min-width: 0; flex: 1; }
 .row-name { font-weight: 700; font-size: 14px; color: #1e293b; }
 .row-sub { font-size: 12px; color: #94a3b8; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
