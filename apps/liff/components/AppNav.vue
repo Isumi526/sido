@@ -236,12 +236,12 @@ onMounted(() => { refreshScheduleNotifBadge() })
 // チャット一覧ナビの未読バッジ（2026-07-14・現場情報ナビの未読メンションバッジから移設・集約）
 onMounted(() => { refreshSiteChatListBadge() })
 
-// 下部固定ナビ（2026-07-16・ホーム/出退勤/チャット/残業申請/日報登録/予定管理の主要6項目・要件チケット指定）
+// 下部固定ナビ（2026-07-20整理: 残業申請は出退勤画面からの導線に一本化し除外、
+//  ホームを中央(デフォルト選択位置)に。出退勤/チャット/ホーム/日報登録/予定管理の5項目）
 const bottomNavItems = computed(() => [
-  { path: '/',          icon: 'home',           label: t('nav.home'),           testId: 'home',     badge: 0 },
   { path: '/checkin',   icon: 'how_to_reg',      label: t('nav.checkin'),        testId: 'checkin',  badge: 0 },
   { path: '/chats',     icon: 'forum',           label: t('nav.chats'),          testId: 'chats',    badge: unreadChatCount.value },
-  { path: '/overtime',  icon: 'more_time',       label: t('nav.overtimeRequest'), testId: 'overtime', badge: 0 },
+  { path: '/',          icon: 'home',           label: t('nav.home'),           testId: 'home',     badge: 0 },
   { path: '/report',    icon: 'edit_note',       label: t('nav.reportRegister'), testId: 'report',   badge: 0 },
   { path: '/calendar',  icon: 'calendar_month',  label: t('nav.schedule'),       testId: 'calendar', badge: unreadScheduleCount.value },
 ])
