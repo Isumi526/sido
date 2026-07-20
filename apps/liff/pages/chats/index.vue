@@ -156,7 +156,7 @@ onMounted(load)
 .account-room-avatar { background: #06A050; }
 .row-main { flex: 1; min-width: 0; }
 .row-name { font-weight: 700; }
-.row-member-count { font-weight: 400; color: #999; font-size: 12px; margin-left: 4px; }
+.row-member-count { font-weight: 700; margin-left: 4px; }
 .row-sub { font-size: 12px; color: #888; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-trail { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
 .row-time { font-size: 11px; color: #aaa; }

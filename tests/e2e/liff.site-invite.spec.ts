@@ -76,7 +76,7 @@ test('現場責任者には招待UIが表示され、ユーザーを選ぶとsit
 
 test('現場責任者でない現場では招待UIの代わりに読み取り専用メンバー一覧が表示される(2026-07-20)', async ({ page }) => {
   await page.goto(`/sites/${otherSiteId}`, { waitUntil: 'networkidle' })
-  await expect(page.locator('h1.ttl')).toContainText(SITE_OTHER, { timeout: 10000 })
+  await expect(page.locator('.app-title')).toContainText(SITE_OTHER, { timeout: 10000 })
   await expect(page.locator('[data-testid="site-invite-block"]')).toHaveCount(0)
 
   const readonly = page.locator('[data-testid="site-members-readonly"]')

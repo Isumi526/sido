@@ -1,24 +1,26 @@
 <template>
   <div class="page">
-    <AppNav :subtitle="site?.name ?? $t('sitesView.title')" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
+    <AppNav
+      :subtitle="site ? site.name + (site.active ? '' : ` (${$t('sitesView.inactive')})`) : $t('sitesView.title')"
+      :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName"
+    />
     <main class="wrap">
-      <!-- チャット画面のヘッダー現場アイコンから遷移した時は、そこへ戻る導線が既にあるため
-           現場一覧/チャットへのナビは冗長=非表示にする(2026-07-20 IA刷新)。 -->
-      <NuxtLink v-if="!fromChat" to="/sites" class="back-link">‹ {{ $t('sitesView.title') }}</NuxtLink>
-
       <div v-if="loading" class="state">{{ $t('common.loading') }}</div>
       <div v-else-if="!site" class="state">{{ $t('sitesView.empty') }}</div>
       <template v-else>
-        <h1 class="ttl">{{ site.name }}<span v-if="!site.active" class="badge-off">{{ $t('sitesView.inactive') }}</span></h1>
+        <!-- チャット画面のヘッダー現場アイコンから遷移した時は、そこへ戻る導線が既にあるため
+             チャットへのナビは冗長=非表示にする(2026-07-20 IA刷新)。現場一覧への戻りは
+             ヘッダーの戻るボタン(AppNav)で常に足りるため常時非表示にした(2026-07-20)。 -->
+        <div class="action-row">
+          <NuxtLink v-if="!fromChat" :to="`/site-chat/${site.id}`" class="action-btn" data-testid="site-chat-link">
+            <span class="material-symbols-rounded">chat</span>{{ $t('siteChat.title') }}
+          </NuxtLink>
 
-        <NuxtLink v-if="!fromChat" :to="`/site-chat/${site.id}`" class="chat-link" data-testid="site-chat-link">
-          <span class="material-symbols-rounded">chat</span>{{ $t('siteChat.title') }}
-        </NuxtLink>
-
-        <!-- 現場責任者だけに表示: 現場情報の編集(admin機能のLIFF移植・2026-07-20) -->
-        <button v-if="isResponsible && !editOpen" type="button" class="edit-toggle-btn" data-testid="site-edit-toggle" @click="openEdit">
-          <span class="material-symbols-rounded">edit</span>{{ $t('sitesView.editInfo') }}
-        </button>
+          <!-- 現場責任者だけに表示: 現場情報の編集(admin機能のLIFF移植・2026-07-20) -->
+          <button v-if="isResponsible && !editOpen" type="button" class="action-btn" data-testid="site-edit-toggle" @click="openEdit">
+            <span class="material-symbols-rounded">edit</span>{{ $t('sitesView.editInfo') }}
+          </button>
+        </div>
         <form v-if="isResponsible && editOpen" class="edit-form" data-testid="site-edit-form" @submit.prevent="saveEdit">
           <label class="edit-field">
             <span class="edit-label">{{ $t('sitesView.location') }}</span>
@@ -287,11 +289,14 @@ onMounted(load)
 
 <style scoped>
 .wrap { max-width: 840px; margin: 0 auto; padding: 16px; }
-.back-link { display: inline-block; color: #1a56c4; text-decoration: none; font-size: 14px; font-weight: 700; margin-bottom: 12px; }
-.ttl { font-size: 18px; font-weight: 800; margin: 4px 0 16px; }
-.badge-off { font-size: 10px; font-weight: 700; color: #888; background: #eee; border-radius: 4px; padding: 1px 6px; margin-left: 6px; }
-.chat-link { display: inline-flex; align-items: center; gap: 4px; color: #06A050; text-decoration: none; font-size: 13px; font-weight: 700; margin-bottom: 12px; }
-.chat-link .material-symbols-rounded { font-size: 18px; }
+.action-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.action-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: #f0fdf4; border: 1px solid #b7ebcb; color: #06A050;
+  border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 700; cursor: pointer;
+  text-decoration: none;
+}
+.action-btn .material-symbols-rounded { font-size: 16px; }
 .invite-block { margin-bottom: 12px; }
 .invite-toggle-btn {
   display: inline-flex; align-items: center; gap: 4px;
@@ -342,12 +347,6 @@ onMounted(load)
 .doc { display: block; color: #1a56c4; text-decoration: none; font-size: 14px; padding: 4px 0; }
 .doc-icon { font-size: 14px; vertical-align: -2px; margin-right: 2px; }
 
-.edit-toggle-btn {
-  display: inline-flex; align-items: center; gap: 4px;
-  background: #f0fdf4; border: 1px solid #b7ebcb; color: #06A050;
-  border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 700; cursor: pointer; margin-bottom: 12px;
-}
-.edit-toggle-btn .material-symbols-rounded { font-size: 16px; }
 .edit-form { display: flex; flex-direction: column; gap: 10px; background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
 .edit-field { display: flex; flex-direction: column; gap: 4px; }
 .edit-label { font-size: 12px; font-weight: 700; color: #888; }
