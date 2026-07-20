@@ -10,5 +10,7 @@
   "noDetail": "詳細情報はまだ登録されていません",
   "inactive": "無効",
   "enable": "有効化",
-  "disable": "無効化"
+  "disable": "無効化",
+  "inviteUsers": "現場へユーザーを招待",
+  "inviteNoCandidates": "招待できるユーザーがいません"
 }
