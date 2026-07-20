@@ -9,5 +9,7 @@
   "scrollToBottom": "最下部へ",
   "reply": "リプライ",
   "copy": "コピー",
-  "replyClear": "返信をキャンセル"
+  "replyClear": "返信をキャンセル",
+  "today": "今日",
+  "yesterday": "昨日"
 }

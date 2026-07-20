@@ -10,32 +10,36 @@
         <div class="msg-list-wrap">
           <div ref="listRef" class="msg-list" @scroll="onListScroll">
             <p v-if="!messages.length" class="muted">まだメッセージはありません</p>
-            <div v-for="m in messages" :key="m.id" class="msg-row" :class="{ mine: m.sender_is_admin }">
-              <div v-if="!m.sender_is_admin" class="msg-avatar" :style="{ background: avatarColor(m.sender_name) }">{{ initial(m.sender_name) }}</div>
-              <div class="msg-col">
-                <div v-if="!m.sender_is_admin" class="msg-sender">{{ m.sender_name }}</div>
-                <div
-                  class="msg-bubble-row"
-                  :style="swipingId === m.id && swipeX ? { transform: `translateX(${swipeX}px)` } : {}"
-                  :class="{ 'msg-bubble-row-swiping': swipingId === m.id }"
-                  @pointerdown="onBubblePointerDown($event, m)"
-                  @pointermove="onBubblePointerMove($event)"
-                  @pointerup="onBubblePointerUp(m)"
-                  @pointercancel="onBubblePointerUp(m)"
-                >
-                  <span v-if="!m.sender_is_admin" class="msg-tail msg-tail-left"></span>
-                  <div class="msg-bubble" data-testid="msg-bubble">
-                    <div v-if="m.reply_to_sender_name" class="reply-quote">
-                      <div class="reply-quote-sender">{{ m.reply_to_sender_name }}</div>
-                      <div class="reply-quote-text">{{ m.reply_to_body }}</div>
+            <template v-for="item in listItems" :key="item.id">
+              <div v-if="item.kind === 'sep'" class="day-sep"><span class="day-sep-label">{{ item.label }}</span></div>
+              <div v-else class="msg-row" :class="{ mine: item.data.sender_is_admin }">
+                <div v-if="!item.data.sender_is_admin" class="msg-avatar" :style="{ background: avatarColor(item.data.sender_name) }">{{ initial(item.data.sender_name) }}</div>
+                <div class="msg-col">
+                  <div v-if="!item.data.sender_is_admin" class="msg-sender">{{ item.data.sender_name }}</div>
+                  <div
+                    class="msg-bubble-row"
+                    :style="swipingId === item.data.id && swipeX ? { transform: `translateX(${swipeX}px)` } : {}"
+                    :class="{ 'msg-bubble-row-swiping': swipingId === item.data.id }"
+                    @pointerdown="onBubblePointerDown($event, item.data)"
+                    @pointermove="onBubblePointerMove($event)"
+                    @pointerup="onBubblePointerUp(item.data)"
+                    @pointercancel="onBubblePointerUp(item.data)"
+                  >
+                    <span v-if="!item.data.sender_is_admin" class="msg-tail msg-tail-left"></span>
+                    <span v-if="item.data.sender_is_admin" class="msg-time-outside">{{ fmtTimeOnly(item.data.created_at) }}</span>
+                    <div class="msg-bubble" data-testid="msg-bubble">
+                      <div v-if="item.data.reply_to_sender_name" class="reply-quote">
+                        <div class="reply-quote-sender">{{ item.data.reply_to_sender_name }}</div>
+                        <div class="reply-quote-text">{{ item.data.reply_to_body }}</div>
+                      </div>
+                      <div class="msg-body">{{ item.data.body }}</div>
                     </div>
-                    <div class="msg-body">{{ m.body }}</div>
-                    <div class="msg-time">{{ fmtTime(m.created_at) }}</div>
+                    <span v-if="!item.data.sender_is_admin" class="msg-time-outside">{{ fmtTimeOnly(item.data.created_at) }}</span>
+                    <span v-if="item.data.sender_is_admin" class="msg-tail msg-tail-right"></span>
                   </div>
-                  <span v-if="m.sender_is_admin" class="msg-tail msg-tail-right"></span>
                 </div>
               </div>
-            </div>
+            </template>
           </div>
           <button v-if="showScrollBtn" type="button" class="scroll-bottom-btn" aria-label="最下部へ" title="最下部へ" @click="scrollToBottom">
             <span class="material-symbols-rounded">keyboard_double_arrow_down</span>
@@ -73,7 +77,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
@@ -114,10 +118,40 @@ let accountId = ''
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let channel: ReturnType<typeof supabase.channel> | null = null
 
-function fmtTime(iso: string): string {
+// タイムスタンプはバルーン外に表示(LINE同様)。日付は区切りチップ側で示すため時刻のみでよい。
+function fmtTimeOnly(iso: string): string {
   const d = new Date(iso)
-  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
+
+// LINE風の日付区切りチップ("今日"/"昨日"/"7/17(金)")。メッセージ一覧に日付が変わる箇所へ挿入する。
+const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
+function dayLabel(iso: string): string {
+  const d = new Date(iso)
+  const now = new Date()
+  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
+  const diffDays = Math.round((startOf(now) - startOf(d)) / 86400000)
+  if (diffDays === 0) return '今日'
+  if (diffDays === 1) return '昨日'
+  return `${d.getMonth() + 1}/${d.getDate()}(${WEEKDAYS[d.getDay()]})`
+}
+
+type ListItem = { kind: 'sep'; id: string; label: string } | { kind: 'msg'; id: string; data: ChatMessage }
+const listItems = computed<ListItem[]>(() => {
+  const items: ListItem[] = []
+  let lastDayKey = ''
+  for (const m of messages.value) {
+    const d = new Date(m.created_at)
+    const dayKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+    if (dayKey !== lastDayKey) {
+      items.push({ kind: 'sep', id: `sep-${dayKey}`, label: dayLabel(m.created_at) })
+      lastDayKey = dayKey
+    }
+    items.push({ kind: 'msg', id: m.id, data: m })
+  }
+  return items
+})
+
 function initial(name: string): string {
   return (name || '').trim().slice(0, 1).toUpperCase() || '?'
 }
@@ -244,7 +278,7 @@ onUnmounted(() => {
   background: #fff; color: #334155; box-shadow: 0 2px 8px rgba(0,0,0,.18);
   display: flex; align-items: center; justify-content: center; cursor: pointer;
 }
-.msg-row { display: flex; gap: 8px; align-items: flex-end; }
+.msg-row { display: flex; gap: 8px; align-items: flex-start; }
 .msg-row.mine { justify-content: flex-end; }
 .msg-avatar {
   width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
@@ -277,7 +311,9 @@ onUnmounted(() => {
   border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 7px solid #e8fff0;
 }
 .msg-body { font-size: 13px; white-space: pre-wrap; word-break: break-word; }
-.msg-time { font-size: 10px; color: #aaa; text-align: right; margin-top: 3px; }
+.msg-time-outside { font-size: 10px; color: #888; flex-shrink: 0; align-self: flex-end; margin-bottom: 4px; }
+.day-sep { display: flex; justify-content: center; margin: 8px 0; }
+.day-sep-label { font-size: 11px; font-weight: 700; color: #fff; background: rgba(0,0,0,.28); border-radius: 10px; padding: 3px 12px; }
 .msg-form { flex-shrink: 0; display: flex; gap: 8px; padding-top: 10px; border-top: 1px solid #eee; align-items: flex-end; }
 .msg-input { flex: 1; border: 1px solid #ddd; border-radius: 8px; padding: 8px 12px; font-size: 13px; resize: none; overflow-y: auto; line-height: 1.4; max-height: 120px; font-family: inherit; }
 .msg-send { flex-shrink: 0; border: none; border-radius: 8px; padding: 0 16px; background: #06A050; color: #fff; font-weight: 700; cursor: pointer; }

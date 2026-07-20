@@ -9,5 +9,7 @@
   "scrollToBottom": "Scroll to bottom",
   "reply": "Reply",
   "copy": "Copy",
-  "replyClear": "Cancel reply"
+  "replyClear": "Cancel reply",
+  "today": "Today",
+  "yesterday": "Yesterday"
 }
