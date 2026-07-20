@@ -170,9 +170,23 @@ onUnmounted(() => {
 .msg-row.mine .msg-bubble { background: #e8fff0; border-color: #b7ebcb; }
 .msg-bubble-row { display: flex; align-items: flex-end; }
 .msg-row.mine .msg-bubble-row { justify-content: flex-end; }
-.msg-tail { width: 0; height: 0; flex-shrink: 0; margin-bottom: 8px; filter: drop-shadow(0 1px 1px rgba(0,0,0,.08)); }
-.msg-tail-left { border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-right: 7px solid #f8fafc; margin-right: -1px; }
-.msg-tail-right { border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 7px solid #e8fff0; margin-left: -1px; }
+.msg-tail { width: 0; height: 0; flex-shrink: 0; margin-bottom: 8px; position: relative; }
+.msg-tail-left {
+  border-top: 6px solid transparent; border-bottom: 6px solid transparent;
+  border-right: 8px solid #eef2f4; margin-right: -1px;
+}
+.msg-tail-left::after {
+  content: ''; position: absolute; top: -5px; left: 1px;
+  border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-right: 7px solid #f8fafc;
+}
+.msg-tail-right {
+  border-top: 6px solid transparent; border-bottom: 6px solid transparent;
+  border-left: 8px solid #b7ebcb; margin-left: -1px;
+}
+.msg-tail-right::after {
+  content: ''; position: absolute; top: -5px; right: 1px;
+  border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 7px solid #e8fff0;
+}
 .msg-body { font-size: 13px; white-space: pre-wrap; word-break: break-word; }
 .msg-time { font-size: 10px; color: #aaa; text-align: right; margin-top: 3px; }
 .msg-form { flex-shrink: 0; display: flex; gap: 8px; padding-top: 10px; border-top: 1px solid #eee; align-items: flex-end; }

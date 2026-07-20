@@ -3,21 +3,19 @@
        @dragover.prevent="dragActive = true" @dragenter.prevent="dragActive = true"
        @dragleave.prevent="dragActive = false" @drop.prevent="onDrop">
     <div v-if="dragActive" class="drop-overlay">ここにドロップして添付</div>
-    <AppNav :subtitle="site?.name ? `${site.name} ${$t('siteChat.title')}` : $t('siteChat.title')" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
+    <AppNav
+      :subtitle="site?.name ? (members.length ? `${site.name}(${members.length})` : site.name) : $t('siteChat.title')"
+      title-align="left"
+      :unread-badge="unreadChatCount"
+      :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName"
+    >
+      <template #actions>
+        <NuxtLink :to="{ path: `/sites/${siteId}`, query: { from: 'chat' } }" class="site-icon-link" data-testid="site-icon-link" :aria-label="site?.name ?? $t('sitesView.title')">
+          <span class="material-symbols-rounded">location_on</span>
+        </NuxtLink>
+      </template>
+    </AppNav>
     <main class="wrap">
-      <div class="chat-topbar">
-        <NuxtLink :to="`/sites/${siteId}`" class="back-link">‹ {{ site?.name ?? $t('sitesView.title') }}</NuxtLink>
-        <button v-if="members.length" type="button" class="member-count-btn" data-testid="member-count-btn" @click="membersOpen = !membersOpen">
-          <span class="material-symbols-rounded">group</span>{{ members.length }}
-        </button>
-      </div>
-      <div v-if="membersOpen" class="member-thumb-bar" data-testid="member-thumb-bar">
-        <NuxtLink
-          v-for="m in members" :key="m.id" :to="`/sites/${siteId}`"
-          class="member-thumb" :style="{ background: avatarColor(m.name) }" :title="m.name"
-        >{{ initial(m.name) }}</NuxtLink>
-      </div>
-
       <div v-if="loading" class="state">{{ $t('common.loading') }}</div>
       <template v-else>
         <div class="msg-list-wrap">
@@ -116,7 +114,6 @@ const dragActive  = ref(false)
 const mentionedIds = ref<Set<string>>(new Set())
 const mentionCandidates = ref<{ id: string; name: string }[]>([])
 const members = ref<{ id: string; name: string }[]>([])
-const membersOpen = ref(false)
 
 let accountId = ''
 let allWorkers: { id: string; name: string }[] = []
@@ -344,26 +341,19 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.page { display: flex; flex-direction: column; height: 100dvh; position: relative; }
+.page { display: flex; flex-direction: column; height: 100dvh; position: relative; background: #eef4ea; }
 .page.drag-active { outline: 2px dashed #06A050; outline-offset: -2px; }
 .drop-overlay {
   position: absolute; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
   background: rgba(6, 160, 80, .08); color: #06A050; font-weight: 700; font-size: 14px; pointer-events: none;
 }
 .wrap { max-width: 840px; width: 100%; margin: 0 auto; padding: 12px 16px; display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.chat-topbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; flex-shrink: 0; }
-.back-link { display: inline-block; color: #1a56c4; text-decoration: none; font-size: 14px; font-weight: 700; flex-shrink: 0; }
-.member-count-btn {
-  display: inline-flex; align-items: center; gap: 3px; background: #f0fdf4; border: none;
-  border-radius: 12px; padding: 4px 10px; font-size: 12px; font-weight: 700; color: #06A050; cursor: pointer;
+.site-icon-link {
+  display: flex; align-items: center; justify-content: center; width: 36px; height: 36px;
+  border-radius: 50%; color: #06A050; flex-shrink: 0; transition: background .15s;
 }
-.member-count-btn .material-symbols-rounded { font-size: 15px; }
-.member-thumb-bar { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 4px; flex-shrink: 0; }
-.member-thumb {
-  width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  color: #fff; font-weight: 700; font-size: 13px; text-decoration: none;
-}
+.site-icon-link:hover { background: #f0fdf4; }
+.site-icon-link .material-symbols-rounded { font-size: 22px; }
 .state { color: #888; text-align: center; padding: 32px; }
 .msg-list-wrap { position: relative; flex: 1; min-height: 0; display: flex; }
 .msg-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 8px 0; }
@@ -392,9 +382,23 @@ onUnmounted(() => {
    吹き出しの外にはみ出す擬似要素ではなく、flex内の通常サイズを持つ兄弟要素にする。 */
 .msg-bubble-row { display: flex; align-items: flex-end; }
 .msg-row.mine .msg-bubble-row { justify-content: flex-end; }
-.msg-tail { width: 0; height: 0; flex-shrink: 0; margin-bottom: 8px; filter: drop-shadow(0 1px 1px rgba(0,0,0,.08)); }
-.msg-tail-left { border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-right: 7px solid #fff; margin-right: -1px; }
-.msg-tail-right { border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 7px solid #e7f8ee; margin-left: -1px; }
+.msg-tail { width: 0; height: 0; flex-shrink: 0; margin-bottom: 8px; position: relative; }
+.msg-tail-left {
+  border-top: 6px solid transparent; border-bottom: 6px solid transparent;
+  border-right: 8px solid #eee; margin-right: -1px;
+}
+.msg-tail-left::after {
+  content: ''; position: absolute; top: -5px; left: 1px;
+  border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-right: 7px solid #fff;
+}
+.msg-tail-right {
+  border-top: 6px solid transparent; border-bottom: 6px solid transparent;
+  border-left: 8px solid #b7ebcb; margin-left: -1px;
+}
+.msg-tail-right::after {
+  content: ''; position: absolute; top: -5px; right: 1px;
+  border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 7px solid #e7f8ee;
+}
 .msg-body { font-size: 14px; white-space: pre-wrap; word-break: break-word; }
 .msg-mention { color: #06A050; font-weight: 700; }
 .msg-time { font-size: 10px; color: #aaa; text-align: right; margin-top: 3px; }

@@ -635,7 +635,7 @@ const sortedWorkers = computed(() => {
   const mine   = base.filter(w => w.id === myId)
   const pinned = pinnedWorkerIds.value
     .map(id => base.find(w => w.id === id))
-    .filter((w): w is { id: string; name: string } => !!w && w.id !== myId)
+    .filter((w): w is NonNullable<typeof w> => !!w && w.id !== myId)
   const rest   = base.filter(w => w.id !== myId && !isPinned(w.id))
   // 自分 → ピン留め → 残り50音順（DB側でname順取得済み）
   return [...mine, ...pinned, ...rest]
