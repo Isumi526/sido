@@ -10,7 +10,7 @@
           <span class="material-symbols-rounded">groups</span>
         </div>
         <div class="row-main">
-          <div class="row-name">全体チャット</div>
+          <div class="row-name">{{ accountName || '全体チャット' }}</div>
         </div>
       </li>
     </ul>
@@ -52,6 +52,7 @@ type Row = { site: Site; lastMessage: LastMessage | null; unreadCount: number }
 
 const loading = ref(true)
 const rows = ref<Row[]>([])
+const accountName = ref('')
 let channel: ReturnType<typeof supabase.channel> | null = null
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
@@ -79,6 +80,9 @@ async function load() {
   const accountId = await getAccountId()
   const actorKey = currentUser.value?.id
   if (!accountId) { rows.value = []; loading.value = false; return }
+
+  const { data: acc } = await supabase.from('accounts').select('name').eq('id', accountId).maybeSingle()
+  accountName.value = (acc?.name as string) ?? ''
 
   const { data: sites } = await supabase.from('sites')
     .select('id, name, name_kana').eq('account_id', accountId).eq('active', true)
