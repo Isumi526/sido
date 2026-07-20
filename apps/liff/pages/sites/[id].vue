@@ -21,13 +21,28 @@
           <div v-if="inviteOpen" class="invite-panel">
             <p v-if="!shareCandidates.length" class="state">{{ $t('sitesView.inviteNoCandidates') }}</p>
             <label v-for="u in shareCandidates" :key="u.id" class="invite-row" data-testid="site-invite-row">
+              <span class="invite-avatar" :style="{ background: avatarColor(u.name) }">{{ (u.name || '?').charAt(0) }}</span>
+              <span class="invite-name">{{ u.name }}</span>
               <input
-                type="checkbox" :checked="sharedUserIds.includes(u.id)"
+                type="checkbox" class="invite-checkbox-native" :checked="sharedUserIds.includes(u.id)"
                 @change="onToggleShare(u.id, ($event.target as HTMLInputElement).checked)"
               />
-              <span class="invite-avatar">{{ (u.name || '?').charAt(0) }}</span>
-              <span class="invite-name">{{ u.name }}</span>
+              <span class="invite-indicator" aria-hidden="true">
+                <span class="material-symbols-rounded invite-check-icon">check</span>
+              </span>
             </label>
+          </div>
+        </div>
+        <!-- 責任者以外: 読み取り専用のメンバー一覧(現場チャットのサムネイルバー/メンバー数タップの遷移先) -->
+        <div v-else-if="members.length" class="invite-block" data-testid="site-members-readonly">
+          <button type="button" class="invite-toggle-btn" @click="inviteOpen = !inviteOpen">
+            <span class="material-symbols-rounded">group</span>{{ $t('sitesView.membersTitle', { count: members.length }) }}
+          </button>
+          <div v-if="inviteOpen" class="invite-panel">
+            <div v-for="m in members" :key="m.id" class="invite-row invite-row-readonly">
+              <span class="invite-avatar" :style="{ background: avatarColor(m.name) }">{{ (m.name || '?').charAt(0) }}</span>
+              <span class="invite-name">{{ m.name }}</span>
+            </div>
           </div>
         </div>
 
@@ -76,7 +91,21 @@ const isResponsible   = ref(false)
 const inviteOpen      = ref(false)
 const shareCandidates = ref<{ id: string; name: string }[]>([])
 const sharedUserIds   = ref<string[]>([])
+const members         = ref<{ id: string; name: string }[]>([])
 let inviteAccountId = ''
+
+function initial(name: string): string {
+  return (name || '').trim().slice(0, 1).toUpperCase() || '?'
+}
+function avatarColor(name: string): string {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360
+  return `hsl(${h}, 62%, 52%)`
+}
+// 責任者の招待/解除操作にメンバー一覧(members)を追従させる(現場チャットのメンバー数表示と整合)
+watch(sharedUserIds, () => {
+  if (isResponsible.value) members.value = shareCandidates.value.filter((u) => sharedUserIds.value.includes(u.id))
+})
 
 async function onToggleShare(userId: string, checked: boolean) {
   const supabase = useSupabase()
@@ -135,13 +164,17 @@ async function load() {
       inviteAccountId = accountId
       const user = await useCurrentUser().resolve()
       isResponsible.value = !!(site.value.responsible_worker_id && user?.worker_id && user.worker_id === site.value.responsible_worker_id)
+      const { data: shares } = await supabase.from('site_shares').select('user_id').eq('site_id', siteId)
+      const sharedIds = ((shares ?? []) as any[]).map((s) => s.user_id as string)
       if (isResponsible.value) {
-        const [{ data: us }, { data: shares }] = await Promise.all([
-          supabase.from('users').select('id, real_name').eq('account_id', accountId).order('real_name'),
-          supabase.from('site_shares').select('user_id').eq('site_id', siteId),
-        ])
+        const { data: us } = await supabase.from('users').select('id, real_name').eq('account_id', accountId).order('real_name')
         shareCandidates.value = ((us ?? []) as any[]).filter((u) => u.real_name).map((u) => ({ id: u.id as string, name: u.real_name as string }))
-        sharedUserIds.value = ((shares ?? []) as any[]).map((s) => s.user_id as string)
+        sharedUserIds.value = sharedIds
+        members.value = shareCandidates.value.filter((u) => sharedIds.includes(u.id))
+      } else if (sharedIds.length) {
+        // 責任者以外は読み取り専用のメンバー一覧のみ表示(招待/編集はしない)
+        const { data: us } = await supabase.from('users').select('id, real_name').in('id', sharedIds)
+        members.value = ((us ?? []) as any[]).filter((u) => u.real_name).map((u) => ({ id: u.id as string, name: u.real_name as string }))
       }
     }
   }
@@ -166,11 +199,28 @@ onMounted(load)
 .invite-panel { margin-top: 8px; background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 4px; }
 .invite-row { display: flex; align-items: center; gap: 10px; padding: 10px 8px; cursor: pointer; }
 .invite-row:active { background: #f8fafc; }
+.invite-row-readonly { cursor: default; }
+.invite-row-readonly:active { background: none; }
 .invite-avatar {
-  width: 32px; height: 32px; border-radius: 50%; background: #e5e7eb; color: #555;
+  width: 32px; height: 32px; border-radius: 50%; background: #e5e7eb; color: #fff;
   font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
-.invite-name { font-size: 14px; }
+.invite-name { font-size: 14px; flex: 1; }
+/* LINE風: ネイティブcheckboxは非表示にしつつアクセシビリティは維持し、
+   右側に丸いチェックインジケータをCSSで描画する(:checked連動)。 */
+.invite-checkbox-native {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}
+.invite-indicator {
+  width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
+  border: 2px solid #ddd; display: flex; align-items: center; justify-content: center;
+  transition: background .12s, border-color .12s;
+}
+.invite-check-icon { font-size: 16px; color: #fff; opacity: 0; transition: opacity .12s; }
+.invite-checkbox-native:checked + .invite-indicator { background: #06A050; border-color: #06A050; }
+.invite-checkbox-native:checked + .invite-indicator .invite-check-icon { opacity: 1; }
+.invite-checkbox-native:focus-visible + .invite-indicator { outline: 2px solid #06A050; outline-offset: 2px; }
 .state { color: #888; text-align: center; padding: 32px; }
 .fields { display: grid; grid-template-columns: 88px 1fr; gap: 6px 12px; margin: 0; }
 .fields dt { font-size: 12px; font-weight: 700; color: #888; }
