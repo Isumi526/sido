@@ -13,11 +13,16 @@
               class="msg-row"
               :class="{ mine: m.sender_worker_id === myWorkerId && !m.sender_is_admin }"
             >
+              <div v-if="!(m.sender_worker_id === myWorkerId && !m.sender_is_admin)" class="msg-avatar" :style="{ background: avatarColor(m.sender_name) }">{{ initial(m.sender_name) }}</div>
               <div class="msg-col">
                 <div class="msg-sender">{{ m.sender_name }}</div>
-                <div class="msg-bubble">
-                  <div class="msg-body">{{ m.body }}</div>
-                  <div class="msg-time">{{ fmtTime(m.created_at) }}</div>
+                <div class="msg-bubble-row">
+                  <span v-if="!(m.sender_worker_id === myWorkerId && !m.sender_is_admin)" class="msg-tail msg-tail-left"></span>
+                  <div class="msg-bubble">
+                    <div class="msg-body">{{ m.body }}</div>
+                    <div class="msg-time">{{ fmtTime(m.created_at) }}</div>
+                  </div>
+                  <span v-if="m.sender_worker_id === myWorkerId && !m.sender_is_admin" class="msg-tail msg-tail-right"></span>
                 </div>
               </div>
             </div>
@@ -78,6 +83,14 @@ let channel: ReturnType<ReturnType<typeof useSupabase>['channel']> | null = null
 function fmtTime(iso: string): string {
   const d = new Date(iso)
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+function initial(name: string): string {
+  return (name || '').trim().slice(0, 1).toUpperCase() || '?'
+}
+function avatarColor(name: string): string {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360
+  return `hsl(${h}, 62%, 52%)`
 }
 function scrollToBottom() {
   nextTick(() => { if (listRef.value) listRef.value.scrollTop = listRef.value.scrollHeight })
@@ -169,13 +182,23 @@ onUnmounted(() => {
   background: #fff; color: #334155; box-shadow: 0 2px 8px rgba(0,0,0,.18);
   display: flex; align-items: center; justify-content: center;
 }
-.msg-row { display: flex; }
+.msg-row { display: flex; gap: 8px; align-items: flex-end; }
 .msg-row.mine { justify-content: flex-end; }
+.msg-avatar {
+  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 700; font-size: 12px;
+}
 .msg-col { max-width: 70%; display: flex; flex-direction: column; }
 .msg-row.mine .msg-col { align-items: flex-end; }
 .msg-sender { font-size: 11px; font-weight: 700; color: #888; margin-bottom: 2px; padding: 0 2px; }
-.msg-bubble { background: #f8fafc; border: 1px solid #eef2f4; border-radius: 10px; padding: 8px 12px; }
+.msg-bubble { background: #f8fafc; border: 1px solid #eef2f4; border-radius: 14px; padding: 8px 12px; }
 .msg-row.mine .msg-bubble { background: #e8fff0; border-color: #b7ebcb; }
+.msg-bubble-row { display: flex; align-items: flex-end; }
+.msg-row.mine .msg-bubble-row { justify-content: flex-end; }
+.msg-tail { width: 0; height: 0; flex-shrink: 0; margin-bottom: 8px; filter: drop-shadow(0 1px 1px rgba(0,0,0,.08)); }
+.msg-tail-left { border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-right: 7px solid #f8fafc; margin-right: -1px; }
+.msg-tail-right { border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 7px solid #e8fff0; margin-left: -1px; }
 .msg-body { font-size: 13px; white-space: pre-wrap; word-break: break-word; }
 .msg-time { font-size: 10px; color: #aaa; text-align: right; margin-top: 3px; }
 .msg-form { flex-shrink: 0; display: flex; gap: 8px; padding-top: 10px; border-top: 1px solid #eee; align-items: flex-end; }
