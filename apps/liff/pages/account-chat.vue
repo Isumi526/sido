@@ -15,7 +15,7 @@
             >
               <div v-if="!(m.sender_worker_id === myWorkerId && !m.sender_is_admin)" class="msg-avatar" :style="{ background: avatarColor(m.sender_name) }">{{ initial(m.sender_name) }}</div>
               <div class="msg-col">
-                <div class="msg-sender">{{ m.sender_name }}</div>
+                <div v-if="!(m.sender_worker_id === myWorkerId && !m.sender_is_admin)" class="msg-sender">{{ m.sender_name }}</div>
                 <div
                   class="msg-bubble-row"
                   :style="swipingId === m.id && swipeX ? { transform: `translateX(${swipeX}px)` } : {}"

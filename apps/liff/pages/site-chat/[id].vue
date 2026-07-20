@@ -29,7 +29,7 @@
             >
               <div v-if="!(m.sender_worker_id === myWorkerId && !m.sender_is_admin)" class="msg-avatar" :style="{ background: avatarColor(m.sender_name) }">{{ initial(m.sender_name) }}</div>
               <div class="msg-col">
-                <div class="msg-sender">{{ m.sender_name }}</div>
+                <div v-if="!(m.sender_worker_id === myWorkerId && !m.sender_is_admin)" class="msg-sender">{{ m.sender_name }}</div>
                 <div
                   class="msg-bubble-row"
                   :style="swipingId === m.id && swipeX ? { transform: `translateX(${swipeX}px)` } : {}"
@@ -435,7 +435,11 @@ onUnmounted(() => {
   position: absolute; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
   background: rgba(6, 160, 80, .08); color: #06A050; font-weight: 700; font-size: 14px; pointer-events: none;
 }
-.wrap { max-width: 840px; width: 100%; margin: 0 auto; padding: 12px 16px; display: flex; flex-direction: column; flex: 1; min-height: 0; }
+/* .page が display:flex のため、margin:auto だけだと align-items:stretch より
+   auto marginが優先されコンテンツ幅にshrinkして左右に余白が出る(flexbox仕様)。
+   box-sizing:border-box + 明示的なwidth:100%で幅を確定させ、狭い画面ではmargin:autoが
+   0に解決されて全幅に、840px超の広い画面ではmax-widthで中央寄せになるようにする。 */
+.wrap { box-sizing: border-box; max-width: 840px; width: 100%; margin: 0 auto; padding: 12px 16px; display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .site-icon-link {
   display: flex; align-items: center; justify-content: center; width: 36px; height: 36px;
   border-radius: 50%; color: #06A050; flex-shrink: 0; transition: background .15s;
