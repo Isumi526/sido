@@ -286,3 +286,7 @@ entries:
     target: SiteChatPanel.vue
     reason: "side-effect-integrity/site-chat(target: site-chat)と同一指摘のadmin側(SiteChatPanel.vue)。target導出の差で別entryが要るだけで理由は完全に同一：site_chat_messages insert成功後にsite_chat_mentions insertが失敗しても、ブラウザのSupabase-jsからは2テーブルをまたぐ真のトランザクションは組めない(RPC/edge化=このMVP規模には過大)ため、mention insertのerrorを検知し送信者本人に『メッセージは送信されましたが、メンション通知の送信に失敗しました』とalertする緩和策をadmin側(SiteChatPanel.vue:198付近)にも実装済み。メッセージ本体(主目的)の送信は失われず、通知欠落を本人が即座に把握できる。完全なトランザクション化は将来チケットで対応可。"
     ticket: "39a0ff81c56b81989087db446a25a2ce"
+  - rule: idempotency
+    target: sites/[id].vue
+    reason: "LIFF現場情報編集(2026-07-20)のonToggleShare(現場へのユーザー招待チェックボックス切替)にべき等ガードが無い指摘。site_shares は (site_id, user_id) の unique制約があるため、連打によるinsertの重複行は制約違反でエラーになりUI側が楽観更新を巻き戻す設計(データ破損なし)。deleteの二重実行は対象行が既に無ければ0件影響でno-op(エラーにならない)。チェックボックスの高速連打という低頻度シナリオであり、恒久対策(サーバー側デバウンス等)は利用実績を見てから検討する。"
+    ticket: "3a30ff81c56b81a99aa1db0fc4bc4cd4"

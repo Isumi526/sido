@@ -507,9 +507,16 @@ async function loadSiteOptions() {
     const { data: recentLogs } = await supabase.from('attendance_logs')
       .select('site_id, type, checked_at').eq('worker_id', me.worker_id)
       .gte('checked_at', windowStart).order('checked_at')
-    const lastTypeBySite = new Map<string, string>()
-    for (const l of (recentLogs ?? []) as { site_id: string; type: string; checked_at: string }[]) lastTypeBySite.set(l.site_id, l.type)
-    checkedInSiteId.value = [...lastTypeBySite.entries()].find(([, type]) => type === 'checkin')?.[0] ?? null
+    const lastBySite = new Map<string, { type: string; checked_at: string }>()
+    for (const l of (recentLogs ?? []) as { site_id: string; type: string; checked_at: string }[]) lastBySite.set(l.site_id, { type: l.type, checked_at: l.checked_at })
+    // 複数現場が同時に「出勤中(未退勤)」の状態でも、最も直近に出勤した現場を選ぶ
+    // (Map挿入順ではなくchecked_atで比較。取り忘れ現場が新しい現場より先に来て誤選択されるのを防ぐ)。
+    let latestCheckin: { siteId: string; checked_at: string } | null = null
+    for (const [siteId, { type, checked_at }] of lastBySite) {
+      if (type !== 'checkin') continue
+      if (!latestCheckin || checked_at > latestCheckin.checked_at) latestCheckin = { siteId, checked_at }
+    }
+    checkedInSiteId.value = latestCheckin?.siteId ?? null
   }
 }
 
