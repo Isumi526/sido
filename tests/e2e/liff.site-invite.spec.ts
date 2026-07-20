@@ -54,7 +54,11 @@ test('現場責任者には招待UIが表示され、ユーザーを選ぶとsit
   await page.locator('.invite-toggle-btn').click()
   const row = page.locator('[data-testid="site-invite-row"]', { hasText: CANDIDATE_NAME })
   await expect(row).toBeVisible({ timeout: 10000 })
-  await row.locator('input[type="checkbox"]').check()
+  // LINE風UI(2026-07-20〜): ネイティブcheckboxは視覚的に隠し、右の丸インジケータをクリックで
+  // トグルする(labelで包まれているためインジケータクリックでも下のinputが連動する)。
+  const checkbox = row.locator('input[type="checkbox"]')
+  await row.locator('.invite-indicator').click()
+  await expect(checkbox).toBeChecked()
 
   await expect.poll(async () => {
     const rows = await restSrv(`site_shares?site_id=eq.${managedSiteId}&user_id=eq.${candidateUserId}&select=id`)
@@ -62,15 +66,37 @@ test('現場責任者には招待UIが表示され、ユーザーを選ぶとsit
   }, { timeout: 10000 }).toBe(1)
 
   // チェックを外すとsite_sharesから削除される
-  await row.locator('input[type="checkbox"]').uncheck()
+  await row.locator('.invite-indicator').click()
+  await expect(checkbox).not.toBeChecked()
   await expect.poll(async () => {
     const rows = await restSrv(`site_shares?site_id=eq.${managedSiteId}&user_id=eq.${candidateUserId}&select=id`)
     return rows.length
   }, { timeout: 10000 }).toBe(0)
 })
 
-test('現場責任者でない現場では招待UIが表示されない', async ({ page }) => {
+test('現場責任者でない現場では招待UIの代わりに読み取り専用メンバー一覧が表示される(2026-07-20)', async ({ page }) => {
   await page.goto(`/sites/${otherSiteId}`, { waitUntil: 'networkidle' })
   await expect(page.locator('h1.ttl')).toContainText(SITE_OTHER, { timeout: 10000 })
   await expect(page.locator('[data-testid="site-invite-block"]')).toHaveCount(0)
+
+  const readonly = page.locator('[data-testid="site-members-readonly"]')
+  await expect(readonly).toBeVisible({ timeout: 10000 })
+  await readonly.locator('.invite-toggle-btn').click()
+  await expect(readonly.locator('.invite-row-readonly')).toHaveCount(1)
+  // 読み取り専用: チェックボックス(招待/解除操作)は無い
+  await expect(readonly.locator('input[type="checkbox"]')).toHaveCount(0)
+})
+
+test('現場チャットのヘッダーにメンバー数が表示され、タップでサムネイルバー→現場設定画面へ遷移できる(2026-07-20)', async ({ page }) => {
+  await page.goto(`/site-chat/${managedSiteId}`, { waitUntil: 'networkidle' })
+  const countBtn = page.locator('[data-testid="member-count-btn"]')
+  await expect(countBtn).toBeVisible({ timeout: 10000 })
+  await expect(countBtn).toContainText('1')  // 現時点の責任者(自分)のみ共有登録は無いが、責任者自身がmembersに入る
+
+  await countBtn.click()
+  const bar = page.locator('[data-testid="member-thumb-bar"]')
+  await expect(bar).toBeVisible()
+  await expect(bar.locator('.member-thumb')).toHaveCount(1)
+  await bar.locator('.member-thumb').first().click()
+  await expect(page).toHaveURL(new RegExp(`/sites/${managedSiteId}$`), { timeout: 10000 })
 })
