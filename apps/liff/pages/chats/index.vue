@@ -4,6 +4,17 @@
     <main class="wrap">
       <h1 class="ttl">{{ $t('chatsView.title') }}</h1>
 
+      <ul class="list">
+        <li class="row" data-testid="account-chat-row" @click="navigateTo('/account-chat')">
+          <div class="row-avatar account-room-avatar" data-testid="chat-avatar">
+            <span class="material-symbols-rounded">groups</span>
+          </div>
+          <div class="row-main">
+            <div class="row-name">{{ $t('siteChat.accountRoomTitle') }}</div>
+          </div>
+        </li>
+      </ul>
+
       <div v-if="loading" class="state">{{ $t('common.loading') }}</div>
       <div v-else-if="!rows.length" class="state">{{ $t('chatsView.empty') }}</div>
       <ul v-else class="list">
@@ -126,6 +137,7 @@ onMounted(load)
   display: flex; align-items: center; justify-content: center;
   color: #fff; font-weight: 700; font-size: 17px;
 }
+.account-room-avatar { background: #06A050; }
 .row-main { flex: 1; min-width: 0; }
 .row-name { font-weight: 700; }
 .row-sub { font-size: 12px; color: #888; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -47,6 +47,7 @@ export const router = createRouter({
     { path: '/sites',        component: Sites },
     { path: '/sites/:id',    component: () => import('../pages/site-detail.vue') },
     { path: '/chats',        component: () => import('../pages/chats.vue') },
+    { path: '/chats/account', component: () => import('../pages/account-chat.vue') },
     { path: '/chats/:id',    component: () => import('../pages/chat-detail.vue') },
     { path: '/contractors',  component: Contractors },
     { path: '/site-rules',   component: SiteRules },
