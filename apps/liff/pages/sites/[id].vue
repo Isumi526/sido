@@ -13,6 +13,24 @@
           <span class="material-symbols-rounded">chat</span>{{ $t('siteChat.title') }}
         </NuxtLink>
 
+        <!-- 現場責任者だけに表示: この現場へユーザーを招待(site_shares追加)する -->
+        <div v-if="isResponsible" class="invite-block" data-testid="site-invite-block">
+          <button type="button" class="invite-toggle-btn" @click="inviteOpen = !inviteOpen">
+            <span class="material-symbols-rounded">group_add</span>{{ $t('sitesView.inviteUsers') }}
+          </button>
+          <div v-if="inviteOpen" class="invite-panel">
+            <p v-if="!shareCandidates.length" class="state">{{ $t('sitesView.inviteNoCandidates') }}</p>
+            <label v-for="u in shareCandidates" :key="u.id" class="invite-row" data-testid="site-invite-row">
+              <input
+                type="checkbox" :checked="sharedUserIds.includes(u.id)"
+                @change="onToggleShare(u.id, ($event.target as HTMLInputElement).checked)"
+              />
+              <span class="invite-avatar">{{ (u.name || '?').charAt(0) }}</span>
+              <span class="invite-name">{{ u.name }}</span>
+            </label>
+          </div>
+        </div>
+
         <dl class="fields">
           <template v-if="site.location"><dt>{{ $t('sitesView.location') }}</dt><dd>{{ site.location }}</dd></template>
           <template v-if="site.construction_type"><dt>{{ $t('sitesView.type') }}</dt><dd>{{ site.construction_type }}</dd></template>
@@ -46,12 +64,31 @@ const proxy = useProxyMode()
 const { profile, getIdToken } = useLiff()
 const route = useRoute()
 
-type Site = { id: string; name: string; active: boolean; location: string | null; construction_type: string | null; construction_details: string | null; memo: string | null }
+type Site = { id: string; name: string; active: boolean; location: string | null; construction_type: string | null; construction_details: string | null; memo: string | null; responsible_worker_id: string | null }
 type Att = { id: string; site_id: string; kind: string; path: string; name: string | null; url?: string | null }
 
 const loading = ref(true)
 const site  = ref<Site | null>(null)
 const atts  = ref<Att[]>([])
+
+// 現場責任者による招待(site_shares追加)。responsible_worker_id===自分のworker_idの時だけ表示。
+const isResponsible   = ref(false)
+const inviteOpen      = ref(false)
+const shareCandidates = ref<{ id: string; name: string }[]>([])
+const sharedUserIds   = ref<string[]>([])
+let inviteAccountId = ''
+
+async function onToggleShare(userId: string, checked: boolean) {
+  const supabase = useSupabase()
+  const siteId = String(route.params.id)
+  if (checked) {
+    sharedUserIds.value = [...sharedUserIds.value, userId]
+    await supabase.from('site_shares').insert({ site_id: siteId, user_id: userId, account_id: inviteAccountId })
+  } else {
+    sharedUserIds.value = sharedUserIds.value.filter((id) => id !== userId)
+    await supabase.from('site_shares').delete().eq('site_id', siteId).eq('user_id', userId)
+  }
+}
 
 const photos = computed(() => atts.value.filter((a) => a.kind === 'photo'))
 const docs   = computed(() => atts.value.filter((a) => a.kind !== 'photo'))
@@ -81,7 +118,7 @@ async function load() {
   if (!mySiteIds.includes(siteId)) { await navigateTo('/sites'); return }
   // account_id で絞り込み、他テナントの現場IDを直打ちされても見えないようにする
   const { data } = await supabase.from('sites')
-    .select('id, name, active, location, construction_type, construction_details, memo')
+    .select('id, name, active, location, construction_type, construction_details, memo, responsible_worker_id')
     .eq('account_id', accountId).eq('id', siteId).maybeSingle()
   site.value = (data ?? null) as Site | null
   if (site.value) {
@@ -89,6 +126,21 @@ async function load() {
     const list = (attData ?? []) as Att[]
     await Promise.all(list.map(async (a) => { a.url = await signedUrl(a.id) }))
     atts.value = list
+
+    // 現場責任者(sites.responsible_worker_id)だけに招待UIを表示する
+    if (accountId) {
+      inviteAccountId = accountId
+      const user = await useCurrentUser().resolve()
+      isResponsible.value = !!(site.value.responsible_worker_id && user?.worker_id && user.worker_id === site.value.responsible_worker_id)
+      if (isResponsible.value) {
+        const [{ data: us }, { data: shares }] = await Promise.all([
+          supabase.from('users').select('id, real_name').eq('account_id', accountId).order('real_name'),
+          supabase.from('site_shares').select('user_id').eq('site_id', siteId),
+        ])
+        shareCandidates.value = ((us ?? []) as any[]).filter((u) => u.real_name).map((u) => ({ id: u.id as string, name: u.real_name as string }))
+        sharedUserIds.value = ((shares ?? []) as any[]).map((s) => s.user_id as string)
+      }
+    }
   }
   loading.value = false
 }
@@ -102,6 +154,20 @@ onMounted(load)
 .badge-off { font-size: 10px; font-weight: 700; color: #888; background: #eee; border-radius: 4px; padding: 1px 6px; margin-left: 6px; }
 .chat-link { display: inline-flex; align-items: center; gap: 4px; color: #06A050; text-decoration: none; font-size: 13px; font-weight: 700; margin-bottom: 12px; }
 .chat-link .material-symbols-rounded { font-size: 18px; }
+.invite-block { margin-bottom: 12px; }
+.invite-toggle-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: #f0fdf4; border: 1px solid #b7ebcb; color: #06A050;
+  border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.invite-panel { margin-top: 8px; background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 4px; }
+.invite-row { display: flex; align-items: center; gap: 10px; padding: 10px 8px; cursor: pointer; }
+.invite-row:active { background: #f8fafc; }
+.invite-avatar {
+  width: 32px; height: 32px; border-radius: 50%; background: #e5e7eb; color: #555;
+  font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.invite-name { font-size: 14px; }
 .state { color: #888; text-align: center; padding: 32px; }
 .fields { display: grid; grid-template-columns: 88px 1fr; gap: 6px 12px; margin: 0; }
 .fields dt { font-size: 12px; font-weight: 700; color: #888; }
