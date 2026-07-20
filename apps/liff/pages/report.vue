@@ -1946,6 +1946,7 @@ async function analyzeGasItem(gi: number) {
   if (result.yen) item.yen = result.yen
   if (result.storeName) item.payee = result.storeName
   if (result.invoiceNumber) item.registrationNumber = result.invoiceNumber
+  if (result.liters != null) item.liters = result.liters
   showReceiptToast('success', t('report.analyzeSuccess'))
 }
 
