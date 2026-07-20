@@ -239,8 +239,12 @@ export const useMaster = () => {
     siteWorkTimes:       computed(() => master.value.siteWorkTimes ?? {}),
     siteBreaks:          computed(() => master.value.siteBreaks ?? {}),
     contractorNames:     computed(() => (master.value.contractors ?? []).slice().sort((a, b) => a.localeCompare(b, 'ja'))),
-    // 現場プルダウンの2階層表示用: 元請け(五十音順)ごとに現場(name_kana順を保持)をグループ化。
+    // 現場プルダウンの2階層表示用: 元請け(五十音順)ごとに現場をグループ化。
     // 紐付けなしの現場は最後のグループ(contractorName=null)にまとめる。空グループは含めない。
+    // 注: グループ内の現場は再ソートしない。sites(L108/66行目のfetchクエリ)が既に
+    // name_kana昇順(nullは最後)→name昇順で取得済みのため、filter()はその順序を保持する。
+    // ここで localeCompare(name) 等により再ソートすると、name_kanaを持たないため
+    // 漢字の読み仮名を無視した並びになり、かえって五十音順が崩れる(再ソートしないことが正)。
     siteGroupsByContractor: computed<{ contractorName: string | null; sites: string[] }[]>(() => {
       const sites = master.value.sites.filter((n) => n !== '__unset__')
       const map = master.value.siteContractors ?? {}
