@@ -15,6 +15,33 @@
           <span class="material-symbols-rounded">chat</span>{{ $t('siteChat.title') }}
         </NuxtLink>
 
+        <!-- 現場責任者だけに表示: 現場情報の編集(admin機能のLIFF移植・2026-07-20) -->
+        <button v-if="isResponsible && !editOpen" type="button" class="edit-toggle-btn" data-testid="site-edit-toggle" @click="openEdit">
+          <span class="material-symbols-rounded">edit</span>{{ $t('sitesView.editInfo') }}
+        </button>
+        <form v-if="isResponsible && editOpen" class="edit-form" data-testid="site-edit-form" @submit.prevent="saveEdit">
+          <label class="edit-field">
+            <span class="edit-label">{{ $t('sitesView.location') }}</span>
+            <input v-model="editForm.location" type="text" class="edit-input" data-testid="site-edit-location" />
+          </label>
+          <label class="edit-field">
+            <span class="edit-label">{{ $t('sitesView.type') }}</span>
+            <input v-model="editForm.construction_type" type="text" class="edit-input" data-testid="site-edit-type" />
+          </label>
+          <label class="edit-field">
+            <span class="edit-label">{{ $t('sitesView.details') }}</span>
+            <textarea v-model="editForm.construction_details" class="edit-textarea" data-testid="site-edit-details" />
+          </label>
+          <label class="edit-field">
+            <span class="edit-label">{{ $t('sitesView.memo') }}</span>
+            <textarea v-model="editForm.memo" class="edit-textarea" data-testid="site-edit-memo" />
+          </label>
+          <div class="edit-actions">
+            <button type="button" class="btn-ghost" @click="editOpen = false">{{ $t('common.cancel') }}</button>
+            <button type="submit" class="btn-primary" :disabled="editSaving" data-testid="site-edit-save">{{ $t('common.save') }}</button>
+          </div>
+        </form>
+
         <!-- 現場責任者だけに表示: この現場へユーザーを招待(site_shares追加)する -->
         <div v-if="isResponsible" class="invite-block" data-testid="site-invite-block">
           <button type="button" class="invite-toggle-btn" @click="inviteOpen = !inviteOpen">
@@ -55,16 +82,28 @@
           <template v-if="site.memo"><dt>{{ $t('sitesView.memo') }}</dt><dd class="pre">{{ site.memo }}</dd></template>
         </dl>
 
-        <div v-if="photos.length" class="att-block">
-          <div class="att-ttl">{{ $t('sitesView.photos') }}</div>
-          <div class="photos">
+        <div class="att-block">
+          <div class="att-ttl-row">
+            <div class="att-ttl">{{ $t('sitesView.photos') }}</div>
+            <label v-if="isResponsible" class="att-add-btn" data-testid="site-attach-photo">
+              <span class="material-symbols-rounded">add_photo_alternate</span>
+              <input type="file" accept="image/*" hidden :disabled="uploading" @change="onAttachPick($event, 'photo')" />
+            </label>
+          </div>
+          <div v-if="photos.length" class="photos">
             <a v-for="a in photos" :key="a.id" v-show="a.url" :href="a.url || undefined" target="_blank" rel="noopener">
               <img v-if="a.url" :src="a.url" class="photo" :alt="a.name || ''" />
             </a>
           </div>
         </div>
-        <div v-if="docs.length" class="att-block">
-          <div class="att-ttl">{{ $t('sitesView.documents') }}</div>
+        <div class="att-block">
+          <div class="att-ttl-row">
+            <div class="att-ttl">{{ $t('sitesView.documents') }}</div>
+            <label v-if="isResponsible" class="att-add-btn" data-testid="site-attach-document">
+              <span class="material-symbols-rounded">note_add</span>
+              <input type="file" hidden :disabled="uploading" @change="onAttachPick($event, 'document')" />
+            </label>
+          </div>
           <a v-for="a in docs" :key="a.id" v-show="a.url" :href="a.url || undefined" target="_blank" rel="noopener" class="doc"><span class="material-symbols-rounded doc-icon">description</span>{{ a.name || a.path.split('/').pop() }}</a>
         </div>
         <p v-if="!photos.length && !docs.length && !site.location && !site.construction_type && !site.construction_details && !site.memo" class="state">{{ $t('sitesView.noDetail') }}</p>
@@ -127,6 +166,66 @@ async function onToggleShare(userId: string, checked: boolean) {
 
 const photos = computed(() => atts.value.filter((a) => a.kind === 'photo'))
 const docs   = computed(() => atts.value.filter((a) => a.kind !== 'photo'))
+
+// 現場情報の編集(admin機能のLIFF移植・現場責任者のみ)
+const editOpen = ref(false)
+const editSaving = ref(false)
+const editForm = ref({ location: '', construction_type: '', construction_details: '', memo: '' })
+function openEdit() {
+  if (!site.value) return
+  editForm.value = {
+    location: site.value.location ?? '', construction_type: site.value.construction_type ?? '',
+    construction_details: site.value.construction_details ?? '', memo: site.value.memo ?? '',
+  }
+  editOpen.value = true
+}
+async function saveEdit() {
+  if (!site.value || editSaving.value) return
+  editSaving.value = true
+  const supabase = useSupabase()
+  const patch = {
+    location: editForm.value.location.trim() || null,
+    construction_type: editForm.value.construction_type.trim() || null,
+    construction_details: editForm.value.construction_details.trim() || null,
+    memo: editForm.value.memo.trim() || null,
+  }
+  const { error } = await supabase.from('sites').update(patch).eq('id', site.value.id)
+  editSaving.value = false
+  if (!error) { Object.assign(site.value, patch); editOpen.value = false }
+  else alert(t('sitesView.saveFailed'))
+}
+
+// 添付ファイル追加(admin機能のLIFF移植)。非公開バケットのstorage RLSがauthenticated限定の
+// ためLINE作業員は直接storageへ書けず、edge(site-attachment-upload・service_role)経由にする。
+const uploading = ref(false)
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve((reader.result as string).slice((reader.result as string).indexOf(',') + 1))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
+async function onAttachPick(ev: Event, kind: 'photo' | 'document') {
+  const file = (ev.target as HTMLInputElement).files?.[0]
+  ;(ev.target as HTMLInputElement).value = ''
+  if (!file || !site.value) return
+  uploading.value = true
+  try {
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'bin'
+    const fileBase64 = await fileToBase64(file)
+    const idToken = await getIdToken()
+    const { data, error } = await useSupabase().functions.invoke('site-attachment-upload', {
+      body: { file_base64: fileBase64, ext, site_id: site.value.id, kind, name: file.name, mime: file.type, line_id_token: idToken ?? '' },
+    })
+    if (error || !data?.ok) { alert(t('sitesView.attachFailed')); return }
+    const newAtt: Att = { id: data.id as string, site_id: site.value.id, kind, path: data.path as string, name: file.name }
+    newAtt.url = await signedUrl(newAtt.id)
+    atts.value = [...atts.value, newAtt]
+  } finally {
+    uploading.value = false
+  }
+}
 
 // 非公開バケット → edge(site-attachment-url)で短TTL署名URLを取得（getPublicUrl廃止）。
 // email/pw はセッションJWT、LINE作業員は署名済み LINE ID token を渡して account 認可（改ざん不可）。
@@ -230,9 +329,32 @@ onMounted(load)
 .fields dd { margin: 0; font-size: 14px; }
 .pre { white-space: pre-wrap; }
 .att-block { margin-top: 16px; }
-.att-ttl { font-size: 12px; font-weight: 700; color: #888; margin-bottom: 6px; }
+.att-ttl-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.att-ttl { font-size: 12px; font-weight: 700; color: #888; }
+.att-add-btn {
+  display: flex; align-items: center; justify-content: center; width: 28px; height: 28px;
+  border-radius: 50%; color: #06A050; cursor: pointer;
+}
+.att-add-btn:active { background: #f0fdf4; }
+.att-add-btn .material-symbols-rounded { font-size: 20px; }
 .photos { display: flex; flex-wrap: wrap; gap: 8px; }
 .photo { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; border: 1px solid #eee; }
 .doc { display: block; color: #1a56c4; text-decoration: none; font-size: 14px; padding: 4px 0; }
 .doc-icon { font-size: 14px; vertical-align: -2px; margin-right: 2px; }
+
+.edit-toggle-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: #f0fdf4; border: 1px solid #b7ebcb; color: #06A050;
+  border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 700; cursor: pointer; margin-bottom: 12px;
+}
+.edit-toggle-btn .material-symbols-rounded { font-size: 16px; }
+.edit-form { display: flex; flex-direction: column; gap: 10px; background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+.edit-field { display: flex; flex-direction: column; gap: 4px; }
+.edit-label { font-size: 12px; font-weight: 700; color: #888; }
+.edit-input, .edit-textarea { border: 1px solid #ddd; border-radius: 8px; padding: 8px 10px; font-size: 14px; font-family: inherit; }
+.edit-textarea { resize: vertical; min-height: 60px; }
+.edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.btn-ghost { border: 1px solid #ddd; background: #fff; border-radius: 8px; padding: 8px 16px; font-size: 13px; cursor: pointer; }
+.btn-primary { border: none; background: #06A050; color: #fff; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.btn-primary:disabled { background: #ccc; cursor: default; }
 </style>
