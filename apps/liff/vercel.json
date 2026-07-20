@@ -6,6 +6,7 @@
   "installCommand": "npm install --no-package-lock",
   "framework": "nuxtjs",
   "rewrites": [
+    { "source": "/admin/:path*", "destination": "https://sido-admin-stism.vercel.app/:path*" },
     { "source": "/(.*)", "destination": "/" }
   ]
 }
