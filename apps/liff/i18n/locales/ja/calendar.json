@@ -22,6 +22,7 @@
   "noSiteToggle": "現場と紐付けない（タイトルを入力）",
   "pleaseSelect": "選択してください",
   "registerNewSite": "＋ 新しい現場を登録する",
+  "siteGroupUnlinked": "紐付けなし",
   "siteName": "現場名 *",
   "siteNamePlaceholder": "現場名を入力",
   "start": "開始",
