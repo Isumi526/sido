@@ -6,5 +6,8 @@
   "unknownSender": "(Unknown)",
   "uploadFailed": "Failed to send the file",
   "mentionNotifyFailed": "The message was sent, but the mention notification failed to send",
-  "scrollToBottom": "Scroll to bottom"
+  "scrollToBottom": "Scroll to bottom",
+  "reply": "Reply",
+  "copy": "Copy",
+  "replyClear": "Cancel reply"
 }
