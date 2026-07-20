@@ -339,9 +339,10 @@ async function logout() {
 .app-back:hover { background: #f5f5f5; }
 .app-back .material-symbols-rounded { font-size: 22px; }
 .app-back-badge {
-  position: absolute; top: 2px; right: 2px; background: #ef4444; color: #fff;
-  font-size: 10px; font-weight: 700; border-radius: 8px; min-width: 15px; height: 15px;
-  display: flex; align-items: center; justify-content: center; padding: 0 3px; line-height: 1;
+  position: absolute; top: -2px; right: -2px; background: #ef4444; color: #fff;
+  font-size: 11px; font-weight: 700; border-radius: 9px; min-width: 18px; height: 18px;
+  display: flex; align-items: center; justify-content: center; padding: 0 4px; line-height: 1;
+  border: 2px solid #fff;
 }
 .app-title-col {
   flex: 1; min-width: 0;
