@@ -8,6 +8,7 @@ export interface ReceiptResult {
   label:         string | null
   yen:           number | null
   invoiceNumber: string | null
+  liters:        number | null   // 給油量(リットル)。ガソリン以外の領収書は常にnull
 }
 
 export const useReceiptAnalysis = () => {

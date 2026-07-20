@@ -6,7 +6,7 @@
 //    { imageBase64: "data:image/jpeg;base64,...", category?: string }
 //
 //  Response:
-//    { label: string|null, yen: number|null, invoiceNumber: string|null }
+//    { label: string|null, yen: number|null, invoiceNumber: string|null, liters: number|null }
 // ============================================================
 
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') ?? ''
@@ -49,7 +49,8 @@ Deno.serve(async (req) => {
   "storeName": "支払い先＝発行元の店名・会社名・施設名（領収書を発行した事業者名。例: 東日本旅客鉄道株式会社、東日本高速道路、タイムズ24、〇〇損保。なければnull）",
   "label": "内容・品名・サービス名（電車・鉄道・乗車券なら乗車区間を『A〜B』の形式で／駐車なら『駐車料金』等の内容。発行元名ではなく“何の代金か”。なければnull）",
   "yen": 合計金額（数値、税込、円、不明ならnull）,
-  "invoiceNumber": "インボイス登録番号（T+13桁の数字形式、なければnull）"
+  "invoiceNumber": "インボイス登録番号（T+13桁の数字形式、なければnull）",
+  "liters": 給油量（ガソリン/軽油の領収書の場合のみ数値でリットル数。給油以外の領収書、または記載が無い/読み取れない場合はnull）
 }`
 
     const body = {
@@ -90,13 +91,14 @@ Deno.serve(async (req) => {
 
     // JSON部分を抽出（```json ... ``` が含まれる場合にも対応）
     const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) return json({ label: null, yen: null, invoiceNumber: null })
+    if (!jsonMatch) return json({ label: null, yen: null, invoiceNumber: null, liters: null })
 
     const result = JSON.parse(jsonMatch[0]) as {
       storeName: string | null
       label: string | null
       yen: number | null
       invoiceNumber: string | null
+      liters: number | null
     }
 
     return json({
@@ -104,6 +106,7 @@ Deno.serve(async (req) => {
       label:         result.label ?? null,
       yen:           result.yen != null ? Number(result.yen) : null,
       invoiceNumber: result.invoiceNumber ?? null,
+      liters:        result.liters != null ? Number(result.liters) : null,
     })
   } catch (e) {
     console.error('[analyze-receipt]', e)
