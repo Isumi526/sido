@@ -12,5 +12,6 @@
   "enable": "有効化",
   "disable": "無効化",
   "inviteUsers": "現場へユーザーを招待",
-  "inviteNoCandidates": "招待できるユーザーがいません"
+  "inviteNoCandidates": "招待できるユーザーがいません",
+  "membersTitle": "メンバー ({count}人)"
 }
