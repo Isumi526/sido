@@ -239,6 +239,21 @@ export const useMaster = () => {
     siteWorkTimes:       computed(() => master.value.siteWorkTimes ?? {}),
     siteBreaks:          computed(() => master.value.siteBreaks ?? {}),
     contractorNames:     computed(() => (master.value.contractors ?? []).slice().sort((a, b) => a.localeCompare(b, 'ja'))),
+    // 現場プルダウンの2階層表示用: 元請け(五十音順)ごとに現場(name_kana順を保持)をグループ化。
+    // 紐付けなしの現場は最後のグループ(contractorName=null)にまとめる。空グループは含めない。
+    siteGroupsByContractor: computed<{ contractorName: string | null; sites: string[] }[]>(() => {
+      const sites = master.value.sites.filter((n) => n !== '__unset__')
+      const map = master.value.siteContractors ?? {}
+      const orderedContractors = (master.value.contractors ?? []).slice().sort((a, b) => a.localeCompare(b, 'ja'))
+      const groups: { contractorName: string | null; sites: string[] }[] = []
+      for (const c of orderedContractors) {
+        const linked = sites.filter((n) => map[n] === c)
+        if (linked.length) groups.push({ contractorName: c, sites: linked })
+      }
+      const unlinked = sites.filter((n) => !map[n])
+      if (unlinked.length) groups.push({ contractorName: null, sites: unlinked })
+      return groups
+    }),
     workerNames:         computed(() => master.value.workers.map(w => w.name).slice().sort((a, b) => a.localeCompare(b, 'ja'))),
     factoryWorkerNames:  computed(() => { const ws = master.value.workers; const hasRole = ws.some(w => w.role); return ws.filter(w => !hasRole || w.role === 'factory').map(w => w.name).slice().sort((a, b) => a.localeCompare(b, 'ja')) }),
     siteWorkerNames:     computed(() => { const ws = master.value.workers; const hasRole = ws.some(w => w.role); return ws.filter(w => !hasRole || w.role === 'site').map(w => w.name).slice().sort((a, b) => a.localeCompare(b, 'ja')) }),
