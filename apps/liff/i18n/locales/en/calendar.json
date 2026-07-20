@@ -23,6 +23,8 @@
   "pleaseSelect": "Please select",
   "registerNewSite": "＋ Register new site",
   "siteGroupUnlinked": "Unlinked",
+  "siteGroupLinked": "Sites linked to this contractor",
+  "siteGroupOther": "Other sites",
   "siteName": "Site name *",
   "siteNamePlaceholder": "Enter site name",
   "start": "Start",
