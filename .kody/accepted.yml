@@ -258,6 +258,10 @@ entries:
     target: account-chat.vue
     reason: "リプライ機能追加(2026-07-20)のGemini指摘。既存のsite-chat/SiteChatPanel.vueのidempotency受容と同一理由([[site-chat]]参照): sendingフラグで連打防止済み・Supabase-jsは自動リトライしない・チャットの性質上二重投稿は目視で気付ける。アカウント全体チャット(apps/liff/pages/account-chat.vue・apps/admin/src/pages/account-chat.vue)にも同じ送信パターンが元々あり、今回のdiffで検出されただけで新規リスクではない。"
     ticket: "3a30ff81c56b81a6aca1f857e75f8294"
+  - rule: idempotency
+    target: site-attachment-upload
+    reason: "新規edge function(site-attachment-upload・2026-07-20)にべき等キーが無くネットワーク再送で重複ファイル/レコードが生じ得る指摘。既存のsite-chat-attachment-upload/SiteChatPanel.vueのidempotency受容と同一理由([[site-chat]]参照): クライアント側でuploading フラグにより連打を防止済み・低頻度・目視で気付ける規模の機能(現場添付ファイルの追加)であり、恒久対策(べき等キー)は利用実績を見てから検討する。"
+    ticket: "3a30ff81c56b81a99aa1db0fc4bc4cd4"
   - rule: rls-multitenant
     target: site_chat_last_read
     reason: "現場チャット一覧ページ(admin/LIFF・2026-07-14)の未読バッジ用テーブル。site_chat_messages/site_chat_mentionsと同型(anon運用=RLS無効・account_id+site_id+actor_keyで論理分離)。既読時刻メタデータのみで機微度は低い。本番RLS化は親エピック「本番DBのRLS有効化」で一括。"
