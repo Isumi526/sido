@@ -1,5 +1,8 @@
 <template>
-  <div class="chat-detail">
+  <div class="chat-detail" :class="{ 'drag-active': dragActive }"
+       @dragover.prevent="dragActive = true" @dragenter.prevent="dragActive = true"
+       @dragleave.prevent="dragActive = false" @drop.prevent="onDrop">
+    <div v-if="dragActive" class="drop-overlay">ここにドロップして添付</div>
     <div class="detail-head">
       <button class="btn-back" @click="router.push('/chats')">← チャット一覧</button>
       <h1 class="page-title">{{ accountName || '全体チャット' }}</h1>
@@ -32,7 +35,13 @@
                         <div class="reply-quote-sender">{{ item.data.reply_to_sender_name }}</div>
                         <div class="reply-quote-text">{{ item.data.reply_to_body }}</div>
                       </div>
-                      <div class="msg-body">{{ item.data.body }}</div>
+                      <a v-if="item.data.attachment_url && item.data.attachment_kind === 'image'" :href="item.data.attachment_url" target="_blank" rel="noopener">
+                        <img :src="item.data.attachment_url" class="msg-attachment-img" :alt="item.data.attachment_name || ''" />
+                      </a>
+                      <a v-else-if="item.data.attachment_url" :href="item.data.attachment_url" target="_blank" rel="noopener" class="msg-attachment-file">
+                        <span class="material-symbols-rounded">description</span>{{ item.data.attachment_name || 'ファイル' }}
+                      </a>
+                      <div v-if="item.data.body" class="msg-body">{{ item.data.body }}</div>
                     </div>
                     <span v-if="!item.data.sender_is_admin" class="msg-time-outside">{{ fmtTimeOnly(item.data.created_at) }}</span>
                     <span v-if="item.data.sender_is_admin" class="msg-tail msg-tail-right"></span>
@@ -67,9 +76,19 @@
           </button>
         </div>
 
+        <div v-if="pendingFile" class="pending-file">
+          <span class="material-symbols-rounded">attach_file</span>{{ pendingFile.name }}
+          <button type="button" class="pending-file-clear" @click="pendingFile = null">
+            <span class="material-symbols-rounded">close</span>
+          </button>
+        </div>
         <form class="msg-form" @submit.prevent="send">
+          <label class="msg-attach-btn">
+            <span class="material-symbols-rounded">attach_file</span>
+            <input type="file" accept="image/*,.pdf" hidden data-testid="chat-file-input" @change="onFilePick" />
+          </label>
           <textarea ref="draftRef" v-model="draft" rows="1" class="msg-input" placeholder="メッセージを入力" data-testid="chat-input" @input="autoResizeDraft" />
-          <button type="submit" class="msg-send" :disabled="!draft.trim() || sending" data-testid="chat-send">送信</button>
+          <button type="submit" class="msg-send" :disabled="(!draft.trim() && !pendingFile) || sending" data-testid="chat-send">送信</button>
         </form>
       </template>
     </section>
@@ -82,6 +101,7 @@ import { useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { currentUser, currentWorkerName } from '../lib/auth'
+import { compressImageIfNeeded, MAX_ATTACHMENT_BYTES, formatMB } from '../lib/chatAttachmentLimits'
 
 // アカウント全体のチャットルーム(現場に紐づかない・site_id=NULL)。
 // SiteChatPanel.vue(添付/メンション/招待リンク対応)のMVP版(テキストのみ)を踏襲。
@@ -90,6 +110,7 @@ const router = useRouter()
 type ChatMessage = {
   id: string; sender_worker_id: string | null; sender_is_admin: boolean; sender_name: string; body: string; created_at: string; deleted_at: string | null
   reply_to_message_id: string | null; reply_to_sender_name: string | null; reply_to_body: string | null
+  attachment_url: string | null; attachment_name: string | null; attachment_kind: string | null
 }
 
 const loading  = ref(true)
@@ -100,6 +121,8 @@ const draftRef = ref<HTMLTextAreaElement | null>(null)
 const sending  = ref(false)
 const listRef  = ref<HTMLElement | null>(null)
 const showScrollBtn = ref(false)
+const pendingFile = ref<File | null>(null)
+const dragActive  = ref(false)
 
 // リプライ(返信)機能: LINE同様スワイプ/長押しで開始。引用は送信時点のスナップショット(reply_to_*)を持つ。
 const replyTarget = ref<{ id: string; sender_name: string; body: string } | null>(null)
@@ -195,6 +218,53 @@ function copyMessage(m: ChatMessage) {
   navigator.clipboard?.writeText(m.body || '').catch(() => {})
 }
 
+// 画像は容量が大きければ自動圧縮し、その上でedge側の実上限(MAX_ATTACHMENT_BYTES)を
+// クライアント側でも事前チェックする(SiteChatPanel.vueと同じロジック)。
+async function setPendingFile(file: File | null) {
+  if (!file) { pendingFile.value = null; return }
+  const compressed = await compressImageIfNeeded(file)
+  if (compressed.size > MAX_ATTACHMENT_BYTES) {
+    alert(`ファイルサイズが大きすぎます(上限${formatMB(MAX_ATTACHMENT_BYTES)})`)
+    return
+  }
+  pendingFile.value = compressed
+}
+function onFilePick(ev: Event) {
+  const file = (ev.target as HTMLInputElement).files?.[0]
+  setPendingFile(file ?? null)
+}
+function onDrop(e: DragEvent) {
+  dragActive.value = false
+  const file = e.dataTransfer?.files?.[0]
+  if (file) setPendingFile(file)
+}
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve((reader.result as string).slice((reader.result as string).indexOf(',') + 1))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
+function normalizeStorageUrl(url: string, supabaseUrl: string): string {
+  try {
+    const base = new URL(supabaseUrl)
+    const u = new URL(url)
+    if (u.host !== base.host) { u.protocol = base.protocol; u.host = base.host }
+    return u.toString()
+  } catch { return url }
+}
+async function uploadAttachment(file: File): Promise<{ url: string; name: string; kind: string } | null> {
+  const ext = file.name.split('.').pop()?.toLowerCase() || 'bin'
+  const fileBase64 = await fileToBase64(file)
+  const { data, error } = await supabase.functions.invoke('site-chat-attachment-upload', {
+    body: { file_base64: fileBase64, ext, mime: file.type },
+  })
+  if (error || !data?.ok) return null
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
+  return { url: normalizeStorageUrl(data.url as string, supabaseUrl), name: file.name, kind: file.type.startsWith('image/') ? 'image' : 'file' }
+}
+
 function scrollToBottom() {
   nextTick(() => { if (listRef.value) listRef.value.scrollTop = listRef.value.scrollHeight })
   showScrollBtn.value = false
@@ -213,7 +283,7 @@ function autoResizeDraft() {
 
 async function loadMessages() {
   const { data } = await supabase.from('site_chat_messages')
-    .select('id, sender_worker_id, sender_is_admin, sender_name, body, created_at, deleted_at, reply_to_message_id, reply_to_sender_name, reply_to_body')
+    .select('id, sender_worker_id, sender_is_admin, sender_name, body, created_at, deleted_at, reply_to_message_id, reply_to_sender_name, reply_to_body, attachment_url, attachment_name, attachment_kind')
     .eq('account_id', accountId).is('site_id', null).is('deleted_at', null)
     .order('created_at', { ascending: true }).limit(500)
   const wasAtBottom = !listRef.value || (listRef.value.scrollHeight - listRef.value.scrollTop - listRef.value.clientHeight < 40)
@@ -223,20 +293,26 @@ async function loadMessages() {
 
 async function send() {
   const body = draft.value.trim()
-  if (!body || sending.value) return
+  if ((!body && !pendingFile.value) || sending.value) return
   sending.value = true
+  let attachment: { url: string; name: string; kind: string } | null = null
+  if (pendingFile.value) {
+    attachment = await uploadAttachment(pendingFile.value)
+    if (!attachment) { sending.value = false; alert('ファイルの送信に失敗しました'); return }
+  }
   const { error } = await supabase.from('site_chat_messages').insert({
     account_id: accountId, site_id: null,
     sender_worker_id: null, sender_is_admin: true,
     sender_name: currentWorkerName.value || currentUser.value?.email || '管理者',
     body,
+    attachment_url: attachment?.url ?? null, attachment_name: attachment?.name ?? null, attachment_kind: attachment?.kind ?? null,
     reply_to_message_id: replyTarget.value?.id ?? null,
     reply_to_sender_name: replyTarget.value?.sender_name ?? null,
     reply_to_body: replyTarget.value?.body ?? null,
   })
   sending.value = false
   if (!error) {
-    draft.value = ''; replyTarget.value = null
+    draft.value = ''; pendingFile.value = null; replyTarget.value = null
     nextTick(autoResizeDraft)
     await loadMessages()
   }
@@ -264,6 +340,12 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.chat-detail { position: relative; }
+.chat-detail.drag-active .card { outline: 2px dashed #06A050; outline-offset: -2px; }
+.drop-overlay {
+  position: absolute; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
+  background: rgba(6, 160, 80, .08); color: #06A050; font-weight: 700; font-size: 14px; pointer-events: none;
+}
 .detail-head { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
 .btn-back { background: none; border: none; color: #06A050; font-size: 14px; font-weight: 700; cursor: pointer; padding: 0; }
 .page-title { font-size: 20px; font-weight: 700; }
@@ -318,6 +400,12 @@ onUnmounted(() => {
 .msg-input { flex: 1; border: 1px solid #ddd; border-radius: 8px; padding: 8px 12px; font-size: 13px; resize: none; overflow-y: auto; line-height: 1.4; max-height: 120px; font-family: inherit; }
 .msg-send { flex-shrink: 0; border: none; border-radius: 8px; padding: 0 16px; background: #06A050; color: #fff; font-weight: 700; cursor: pointer; }
 .msg-send:disabled { background: #ccc; cursor: default; }
+.msg-attach-btn { flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #888; cursor: pointer; }
+.msg-attach-btn:hover { background: #f0f0f0; }
+.pending-file { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #555; background: #f5f5f5; border-radius: 8px; padding: 6px 10px; margin-top: 8px; }
+.pending-file-clear { margin-left: auto; border: none; background: none; color: #888; cursor: pointer; display: flex; }
+.msg-attachment-img { max-width: 100%; max-height: 220px; border-radius: 8px; display: block; margin-bottom: 4px; }
+.msg-attachment-file { display: flex; align-items: center; gap: 4px; color: #1a56c4; text-decoration: none; font-size: 13px; margin-bottom: 4px; }
 
 .reply-quote {
   border-left: 3px solid #06A050; background: rgba(6,160,80,.08); border-radius: 4px;
