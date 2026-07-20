@@ -4,6 +4,19 @@
 
     <div class="home-body">
 
+      <!-- PWA化(ホーム画面追加)の案内: Safari等ブラウザで直接開いている時だけ表示。
+           既にホーム画面追加済み(standalone表示)のユーザーには出さない。 -->
+      <div v-if="showPwaHint" class="pwa-hint-card">
+        <span class="material-symbols-rounded pwa-hint-icon">add_to_home_screen</span>
+        <div class="pwa-hint-body">
+          <div class="pwa-hint-title">{{ t('home.pwaHintTitle') }}</div>
+          <div class="pwa-hint-sub">{{ t('home.pwaHintSub') }}</div>
+        </div>
+        <button type="button" class="pwa-hint-close" :aria-label="t('common.close')" @click="dismissPwaHint">
+          <span class="material-symbols-rounded">close</span>
+        </button>
+      </div>
+
       <!-- 未送信アラート -->
       <div v-if="unsubmittedCount > 0" class="alert-card" @click="navigateTo('/report')">
         <span class="material-symbols-rounded alert-icon">warning</span>
@@ -125,6 +138,20 @@ const proxyModalOpen   = ref(false)
 const proxyLoading     = ref(false)
 const deadlineBanner   = ref<{ periodKey: string; label: string } | null>(null)
 
+// PWA化(ホーム画面追加)案内: Safari等ブラウザで直接開いている(standalone表示でない)
+// ユーザーにだけ表示する。一度閉じたら再表示しない(localStorageにdismiss状態を保持)。
+const PWA_HINT_DISMISSED_KEY = 'pwa_hint_dismissed'
+const showPwaHint = ref(false)
+function isStandaloneDisplay(): boolean {
+  if (import.meta.server) return true
+  const mql = window.matchMedia?.('(display-mode: standalone)')
+  return !!mql?.matches || (navigator as any).standalone === true
+}
+function dismissPwaHint() {
+  showPwaHint.value = false
+  try { localStorage.setItem(PWA_HINT_DISMISSED_KEY, '1') } catch { /* quota超過等は無視 */ }
+}
+
 /** period_key → '◯月前半/後半' */
 function periodShort(key: string): string {
   const [, month, half] = key.split('-')
@@ -161,6 +188,12 @@ async function selectProxy(worker: import('~/composables/useProxyMode').ProxyWor
   proxyModalOpen.value = false
   await refreshUnsubmittedCount()
 }
+
+onMounted(() => {
+  let dismissed = false
+  try { dismissed = localStorage.getItem(PWA_HINT_DISMISSED_KEY) === '1' } catch { /* ignore */ }
+  showPwaHint.value = !dismissed && !isStandaloneDisplay()
+})
 
 onMounted(async () => {
   // LIFFプロファイルが取得されるまで待機
@@ -268,6 +301,22 @@ async function refreshUnsubmittedCount() {
 .home-page { display: flex; flex-direction: column; min-height: 100dvh; background: #f2f2f7; overflow-x: hidden; }
 
 .home-body { flex: 1; padding: 16px; display: flex; flex-direction: column; gap: 14px; max-width: 480px; margin: 0 auto; width: 100%; box-sizing: border-box; }
+
+/* PWA化案内 */
+.pwa-hint-card {
+  background: #ecfdf5; border-radius: 12px;
+  padding: 12px 14px; display: flex; align-items: center; gap: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  border-left: 4px solid #06A050;
+}
+.pwa-hint-icon { color: #06A050; font-size: 24px; flex-shrink: 0; }
+.pwa-hint-body { flex: 1; }
+.pwa-hint-title { font-size: 13px; font-weight: 700; color: #111; }
+.pwa-hint-sub { font-size: 11px; color: #666; margin-top: 2px; }
+.pwa-hint-close {
+  background: none; border: none; color: #999; flex-shrink: 0; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; padding: 4px;
+}
 
 /* 未送信アラート */
 .alert-card {
