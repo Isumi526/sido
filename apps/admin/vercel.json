@@ -1,4 +1,10 @@
 {
   "git": { "deploymentEnabled": { "dev": false } },
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    { "source": "/admin/assets/(.*)", "destination": "/assets/$1" },
+    { "source": "/admin/manifest.json", "destination": "/manifest.json" },
+    { "source": "/admin/favicon.ico", "destination": "/favicon.ico" },
+    { "source": "/admin/apple-touch-icon.png", "destination": "/apple-touch-icon.png" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }
