@@ -254,6 +254,14 @@ entries:
     target: site-chat
     reason: "チャット送信(LIFF site-chat/[id].vue・admin SiteChatPanel.vue)にべき等ガード(一意リクエストID等)が無い指摘。UI側はsendingフラグで連打を防止済み。Supabase-jsクライアントはPOST/insertを自動リトライしない設計のため、ネットワーク再送による二重投稿の実際の発生率は低い(通信断なら単に送信失敗としてユーザーに見え、ユーザーが再送を判断する＝チャットの性質上、明らかな二重投稿は目視で気付ける)。一意制約による恒久対策は将来の要望(既読/削除機能等)と合わせて検討する。"
     ticket: "3980ff81c56b8057a369e89a2d048c2d"
+  - rule: idempotency
+    target: account-chat.vue
+    reason: "リプライ機能追加(2026-07-20)のGemini指摘。既存のsite-chat/SiteChatPanel.vueのidempotency受容と同一理由([[site-chat]]参照): sendingフラグで連打防止済み・Supabase-jsは自動リトライしない・チャットの性質上二重投稿は目視で気付ける。アカウント全体チャット(apps/liff/pages/account-chat.vue・apps/admin/src/pages/account-chat.vue)にも同じ送信パターンが元々あり、今回のdiffで検出されただけで新規リスクではない。"
+    ticket: "3a30ff81c56b81a6aca1f857e75f8294"
+  - rule: idempotency
+    target: site-attachment-upload
+    reason: "新規edge function(site-attachment-upload・2026-07-20)にべき等キーが無くネットワーク再送で重複ファイル/レコードが生じ得る指摘。既存のsite-chat-attachment-upload/SiteChatPanel.vueのidempotency受容と同一理由([[site-chat]]参照): クライアント側でuploading フラグにより連打を防止済み・低頻度・目視で気付ける規模の機能(現場添付ファイルの追加)であり、恒久対策(べき等キー)は利用実績を見てから検討する。"
+    ticket: "3a30ff81c56b81a99aa1db0fc4bc4cd4"
   - rule: rls-multitenant
     target: site_chat_last_read
     reason: "現場チャット一覧ページ(admin/LIFF・2026-07-14)の未読バッジ用テーブル。site_chat_messages/site_chat_mentionsと同型(anon運用=RLS無効・account_id+site_id+actor_keyで論理分離)。既読時刻メタデータのみで機微度は低い。本番RLS化は親エピック「本番DBのRLS有効化」で一括。"
@@ -278,3 +286,7 @@ entries:
     target: SiteChatPanel.vue
     reason: "side-effect-integrity/site-chat(target: site-chat)と同一指摘のadmin側(SiteChatPanel.vue)。target導出の差で別entryが要るだけで理由は完全に同一：site_chat_messages insert成功後にsite_chat_mentions insertが失敗しても、ブラウザのSupabase-jsからは2テーブルをまたぐ真のトランザクションは組めない(RPC/edge化=このMVP規模には過大)ため、mention insertのerrorを検知し送信者本人に『メッセージは送信されましたが、メンション通知の送信に失敗しました』とalertする緩和策をadmin側(SiteChatPanel.vue:198付近)にも実装済み。メッセージ本体(主目的)の送信は失われず、通知欠落を本人が即座に把握できる。完全なトランザクション化は将来チケットで対応可。"
     ticket: "39a0ff81c56b81989087db446a25a2ce"
+  - rule: idempotency
+    target: sites/[id].vue
+    reason: "LIFF現場情報編集(2026-07-20)のonToggleShare(現場へのユーザー招待チェックボックス切替)にべき等ガードが無い指摘。site_shares は (site_id, user_id) の unique制約があるため、連打によるinsertの重複行は制約違反でエラーになりUI側が楽観更新を巻き戻す設計(データ破損なし)。deleteの二重実行は対象行が既に無ければ0件影響でno-op(エラーにならない)。チェックボックスの高速連打という低頻度シナリオであり、恒久対策(サーバー側デバウンス等)は利用実績を見てから検討する。"
+    ticket: "3a30ff81c56b81a99aa1db0fc4bc4cd4"

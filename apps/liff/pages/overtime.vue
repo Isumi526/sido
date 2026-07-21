@@ -72,6 +72,7 @@ import { TIME_OPTIONS } from '~/utils/workerHours'
 const { t } = useI18n()
 const liff = useLiff()
 const overtime = useOvertimeRequest()
+const route = useRoute()
 
 const loading  = ref(true)
 const busy     = ref(false)
@@ -159,6 +160,13 @@ onMounted(async () => {
   selfUser.value = await useCurrentUser().resolve()
   if (!selfUser.value) { await navigateTo('/register'); return }
   await refresh()
+  // 出退勤画面(出勤中の現場行)からの導線で ?site=<現場名> が付いていれば自動選択する
+  // (ユーザーが現場を選び直す手間をなくす・2026-07-20)。
+  const presetSite = route.query.site
+  const presetName = typeof presetSite === 'string' ? presetSite : undefined
+  if (presetName && siteOptions.value.includes(presetName) && !selectedSites.value.includes(presetName)) {
+    selectedSites.value.push(presetName)
+  }
   loading.value = false
 })
 </script>

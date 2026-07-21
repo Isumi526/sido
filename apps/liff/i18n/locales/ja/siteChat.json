@@ -1,9 +1,15 @@
 {
   "title": "チャット",
+  "accountRoomTitle": "全体チャット",
   "empty": "まだメッセージはありません",
   "placeholder": "メッセージを入力",
   "unknownSender": "（不明）",
   "uploadFailed": "ファイルの送信に失敗しました",
   "mentionNotifyFailed": "メッセージは送信されましたが、メンション通知の送信に失敗しました",
-  "scrollToBottom": "最下部へ"
+  "scrollToBottom": "最下部へ",
+  "reply": "リプライ",
+  "copy": "コピー",
+  "replyClear": "返信をキャンセル",
+  "today": "今日",
+  "yesterday": "昨日"
 }

@@ -9,12 +9,14 @@
     <div ref="navInnerRef" class="app-nav-inner">
       <button v-if="showBack" class="app-back" :aria-label="$t('nav.back')" @click="router.back()">
         <span class="material-symbols-rounded">arrow_back</span>
+        <span v-if="unreadBadge" class="app-back-badge" data-testid="app-back-unread-badge">{{ unreadBadge }}</span>
       </button>
       <span v-else class="app-back-spacer" />
-      <span class="app-title-col">
+      <span class="app-title-col" :class="{ 'app-title-col-left': titleAlign === 'left' }">
         <span class="app-title">{{ subtitle }}</span>
         <span class="app-brand-name">{{ brandName }}</span>
       </span>
+      <slot name="actions" />
       <button class="app-hamburger" @click="open = true" :aria-label="$t('nav.openMenu')">
         <span class="app-bar" />
         <span class="app-bar" />
@@ -161,6 +163,8 @@ const props = defineProps<{
   subtitle:  string
   userName?: string
   userRole?: 'factory' | 'site'
+  unreadBadge?: number   // 戻るアイコンに表示する未読件数バッジ(現場チャット等・任意)
+  titleAlign?: 'center' | 'left'   // タイトルの寄せ(既定center・現場チャットのみLINE風に左詰め)
 }>()
 
 const { t } = useI18n()
@@ -179,9 +183,10 @@ const { authMode } = useLiff()
 const router = useRouter()
 const route = useRoute()
 const showBack = computed(() => route.path !== '/')
-// 現場チャットの個別スレッド(/site-chat/:id)は全画面表示のメッセージ入力欄と競合するため、
-// タブ遷移先である一覧画面(/chats)とは別に下部固定ナビを非表示にする(drill-in詳細画面の慣例)。
-const showBottomNav = computed(() => !route.path.startsWith('/site-chat/'))
+// 現場チャットの個別スレッド(/site-chat/:id)・アカウント全体チャット(/account-chat)は
+// 全画面表示のメッセージ入力欄と競合するため、タブ遷移先である一覧画面(/chats)とは別に
+// 下部固定ナビを非表示にする(drill-in詳細画面の慣例)。
+const showBottomNav = computed(() => !route.path.startsWith('/site-chat/') && route.path !== '/account-chat')
 
 const navInnerRef   = ref<HTMLElement | null>(null)
 const bottomNavRef  = ref<HTMLElement | null>(null)
@@ -231,12 +236,12 @@ onMounted(() => { refreshScheduleNotifBadge() })
 // チャット一覧ナビの未読バッジ（2026-07-14・現場情報ナビの未読メンションバッジから移設・集約）
 onMounted(() => { refreshSiteChatListBadge() })
 
-// 下部固定ナビ（2026-07-16・ホーム/出退勤/チャット/残業申請/日報登録/予定管理の主要6項目・要件チケット指定）
+// 下部固定ナビ（2026-07-20整理: 残業申請は出退勤画面からの導線に一本化し除外、
+//  ホームを中央(デフォルト選択位置)に。出退勤/チャット/ホーム/日報登録/予定管理の5項目）
 const bottomNavItems = computed(() => [
-  { path: '/',          icon: 'home',           label: t('nav.home'),           testId: 'home',     badge: 0 },
   { path: '/checkin',   icon: 'how_to_reg',      label: t('nav.checkin'),        testId: 'checkin',  badge: 0 },
   { path: '/chats',     icon: 'forum',           label: t('nav.chats'),          testId: 'chats',    badge: unreadChatCount.value },
-  { path: '/overtime',  icon: 'more_time',       label: t('nav.overtimeRequest'), testId: 'overtime', badge: 0 },
+  { path: '/',          icon: 'home',           label: t('nav.home'),           testId: 'home',     badge: 0 },
   { path: '/report',    icon: 'edit_note',       label: t('nav.reportRegister'), testId: 'report',   badge: 0 },
   { path: '/calendar',  icon: 'calendar_month',  label: t('nav.schedule'),       testId: 'calendar', badge: unreadScheduleCount.value },
 ])
@@ -327,17 +332,25 @@ async function logout() {
   width: 36px; height: 36px; flex-shrink: 0;
 }
 .app-back {
-  display: flex; align-items: center; justify-content: center;
+  display: flex; align-items: center; justify-content: center; position: relative;
   background: transparent; border: none; color: #333; cursor: pointer;
   border-radius: 8px; transition: background .15s;
 }
 .app-back:hover { background: #f5f5f5; }
 .app-back .material-symbols-rounded { font-size: 22px; }
+.app-back-badge {
+  position: absolute; top: -2px; right: -2px; background: #ef4444; color: #fff;
+  font-size: 11px; font-weight: 700; border-radius: 9px; min-width: 18px; height: 18px;
+  display: flex; align-items: center; justify-content: center; padding: 0 4px; line-height: 1;
+  border: 2px solid #fff;
+}
 .app-title-col {
   flex: 1; min-width: 0;
   display: flex; flex-direction: column; align-items: center;
   overflow: hidden;
 }
+.app-title-col-left { align-items: flex-start; }
+.app-title-col-left .app-title { text-align: left; }
 .app-title {
   max-width: 100%; text-align: center; font-size: 15px; font-weight: 700; color: #111;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

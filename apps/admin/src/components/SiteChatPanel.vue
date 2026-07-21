@@ -18,21 +18,42 @@
       <div class="msg-list-wrap">
         <div ref="listRef" class="msg-list" @scroll="onListScroll">
           <p v-if="!messages.length" class="muted">まだメッセージはありません</p>
-          <div v-for="m in messages" :key="m.id" class="msg-row" :class="{ mine: m.sender_is_admin }">
-            <div class="msg-col">
-              <div class="msg-sender">{{ m.sender_name }}</div>
-              <div class="msg-bubble">
-                <a v-if="m.attachment_url && m.attachment_kind === 'image'" :href="m.attachment_url" target="_blank" rel="noopener">
-                  <img :src="m.attachment_url" class="msg-attachment-img" :alt="m.attachment_name || ''" />
-                </a>
-                <a v-else-if="m.attachment_url" :href="m.attachment_url" target="_blank" rel="noopener" class="msg-attachment-file">
-                  <span class="material-symbols-rounded">description</span>{{ m.attachment_name || 'ファイル' }}
-                </a>
-                <div v-if="m.body" class="msg-body"><template v-for="(seg, i) in splitMentionSegments(m.body, [...allWorkers.map(w => w.name), ALL_MENTION.name])" :key="i"><span v-if="seg.mention" class="msg-mention">{{ seg.text }}</span><template v-else>{{ seg.text }}</template></template></div>
-                <div class="msg-time">{{ fmtTime(m.created_at) }}</div>
+          <template v-for="item in listItems" :key="item.id">
+            <div v-if="item.kind === 'sep'" class="day-sep"><span class="day-sep-label">{{ item.label }}</span></div>
+            <div v-else class="msg-row" :class="{ mine: item.data.sender_is_admin }">
+              <div v-if="!item.data.sender_is_admin" class="msg-avatar" :style="{ background: avatarColor(item.data.sender_name) }">{{ initial(item.data.sender_name) }}</div>
+              <div class="msg-col">
+                <div v-if="!item.data.sender_is_admin" class="msg-sender">{{ item.data.sender_name }}</div>
+                <div
+                  class="msg-bubble-row"
+                  :style="swipingId === item.data.id && swipeX ? { transform: `translateX(${swipeX}px)` } : {}"
+                  :class="{ 'msg-bubble-row-swiping': swipingId === item.data.id }"
+                  @pointerdown="onBubblePointerDown($event, item.data)"
+                  @pointermove="onBubblePointerMove($event)"
+                  @pointerup="onBubblePointerUp(item.data)"
+                  @pointercancel="onBubblePointerUp(item.data)"
+                >
+                  <span v-if="!item.data.sender_is_admin" class="msg-tail msg-tail-left"></span>
+                  <span v-if="item.data.sender_is_admin" class="msg-time-outside">{{ fmtTimeOnly(item.data.created_at) }}</span>
+                  <div class="msg-bubble" data-testid="msg-bubble">
+                    <div v-if="item.data.reply_to_sender_name" class="reply-quote">
+                      <div class="reply-quote-sender">{{ item.data.reply_to_sender_name }}</div>
+                      <div class="reply-quote-text">{{ item.data.reply_to_body }}</div>
+                    </div>
+                    <a v-if="item.data.attachment_url && item.data.attachment_kind === 'image'" :href="item.data.attachment_url" target="_blank" rel="noopener">
+                      <img :src="item.data.attachment_url" class="msg-attachment-img" :alt="item.data.attachment_name || ''" />
+                    </a>
+                    <a v-else-if="item.data.attachment_url" :href="item.data.attachment_url" target="_blank" rel="noopener" class="msg-attachment-file">
+                      <span class="material-symbols-rounded">description</span>{{ item.data.attachment_name || 'ファイル' }}
+                    </a>
+                    <div v-if="item.data.body" class="msg-body"><template v-for="(seg, i) in splitMentionSegments(item.data.body, [...allWorkers.map(w => w.name), ALL_MENTION.name])" :key="i"><span v-if="seg.mention" class="msg-mention">{{ seg.text }}</span><template v-else>{{ seg.text }}</template></template></div>
+                  </div>
+                  <span v-if="!item.data.sender_is_admin" class="msg-time-outside">{{ fmtTimeOnly(item.data.created_at) }}</span>
+                  <span v-if="item.data.sender_is_admin" class="msg-tail msg-tail-right"></span>
+                </div>
               </div>
             </div>
-          </div>
+          </template>
         </div>
         <button
           v-if="showScrollBtn" type="button" class="scroll-bottom-btn"
@@ -41,6 +62,28 @@
           <span class="material-symbols-rounded">keyboard_double_arrow_down</span>
         </button>
       </div>
+
+      <div v-if="contextMenu" class="ctx-menu-backdrop" data-testid="ctx-menu-backdrop" @click="contextMenu = null"></div>
+      <div v-if="contextMenu" class="ctx-menu" data-testid="ctx-menu" :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }">
+        <button type="button" class="ctx-menu-item" data-testid="ctx-reply" @click="startReply(contextMenu.message); contextMenu = null">
+          <span class="material-symbols-rounded">reply</span>リプライ
+        </button>
+        <button type="button" class="ctx-menu-item" data-testid="ctx-copy" @click="copyMessage(contextMenu.message); contextMenu = null">
+          <span class="material-symbols-rounded">content_copy</span>コピー
+        </button>
+      </div>
+
+      <div v-if="replyTarget" class="reply-preview" data-testid="reply-preview">
+        <div class="reply-preview-bar"></div>
+        <div class="reply-preview-body">
+          <div class="reply-preview-sender">{{ replyTarget.sender_name }}</div>
+          <div class="reply-preview-text">{{ replyTarget.body }}</div>
+        </div>
+        <button type="button" class="reply-preview-clear" aria-label="返信をキャンセル" data-testid="reply-preview-clear" @click="replyTarget = null">
+          <span class="material-symbols-rounded">close</span>
+        </button>
+      </div>
+
       <div v-if="pendingFile" class="pending-file">
         <span class="material-symbols-rounded">attach_file</span>{{ pendingFile.name }}
         <button type="button" class="pending-file-clear" @click="pendingFile = null">
@@ -66,7 +109,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { currentUser, currentWorkerName } from '../lib/auth'
@@ -79,6 +122,7 @@ type ChatMessage = {
   id: string; sender_worker_id: string | null; sender_is_admin: boolean
   sender_name: string; body: string; created_at: string; deleted_at: string | null
   attachment_url: string | null; attachment_name: string | null; attachment_kind: string | null
+  reply_to_message_id: string | null; reply_to_sender_name: string | null; reply_to_body: string | null
 }
 
 const loading  = ref(true)
@@ -95,6 +139,19 @@ const mentionCandidates = ref<{ id: string; name: string }[]>([])
 const inviteBusy = ref(false)
 const inviteUrl  = ref('')
 const inviteCopied = ref(false)
+
+// リプライ(返信)機能: LINE同様スワイプ/長押しで開始。引用は送信時点のスナップショット(reply_to_*)を持つ。
+const replyTarget = ref<{ id: string; sender_name: string; body: string } | null>(null)
+const swipingId = ref<string | null>(null)
+const swipeX = ref(0)
+const contextMenu = ref<{ message: ChatMessage; x: number; y: number } | null>(null)
+const REPLY_SWIPE_THRESHOLD = -48
+const REPLY_SWIPE_MAX = -72
+const LONG_PRESS_MS = 500
+let pointerStartX = 0
+let pointerStartY = 0
+let longPressTimer: ReturnType<typeof setTimeout> | null = null
+let longPressFired = false
 
 let accountId = ''
 let allWorkers: { id: string; name: string }[] = []
@@ -146,10 +203,84 @@ function pickMention(w: { id: string; name: string }) {
   mentionCandidates.value = []
 }
 
-function fmtTime(iso: string): string {
+// タイムスタンプはバルーン外に表示(LINE同様)。日付は区切りチップ側で示すため時刻のみでよい。
+function fmtTimeOnly(iso: string): string {
   const d = new Date(iso)
-  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
+
+// LINE風の日付区切りチップ("今日"/"昨日"/"7/17(金)")。メッセージ一覧に日付が変わる箇所へ挿入する。
+const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
+function dayLabel(iso: string): string {
+  const d = new Date(iso)
+  const now = new Date()
+  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
+  const diffDays = Math.round((startOf(now) - startOf(d)) / 86400000)
+  if (diffDays === 0) return '今日'
+  if (diffDays === 1) return '昨日'
+  return `${d.getMonth() + 1}/${d.getDate()}(${WEEKDAYS[d.getDay()]})`
+}
+
+type ListItem = { kind: 'sep'; id: string; label: string } | { kind: 'msg'; id: string; data: ChatMessage }
+const listItems = computed<ListItem[]>(() => {
+  const items: ListItem[] = []
+  let lastDayKey = ''
+  for (const m of messages.value) {
+    const d = new Date(m.created_at)
+    const dayKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+    if (dayKey !== lastDayKey) {
+      items.push({ kind: 'sep', id: `sep-${dayKey}`, label: dayLabel(m.created_at) })
+      lastDayKey = dayKey
+    }
+    items.push({ kind: 'msg', id: m.id, data: m })
+  }
+  return items
+})
+
+function initial(name: string): string {
+  return (name || '').trim().slice(0, 1).toUpperCase() || '?'
+}
+function avatarColor(name: string): string {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360
+  return `hsl(${h}, 62%, 52%)`
+}
+// バルーン左スワイプ→リプライ開始、長押し→コンテキストメニュー(リプライ/コピーのみ・LINE準拠)。
+function onBubblePointerDown(e: PointerEvent, m: ChatMessage) {
+  pointerStartX = e.clientX
+  pointerStartY = e.clientY
+  swipingId.value = m.id
+  swipeX.value = 0
+  longPressFired = false
+  if (longPressTimer) clearTimeout(longPressTimer)
+  longPressTimer = setTimeout(() => {
+    longPressFired = true
+    contextMenu.value = { message: m, x: e.clientX, y: e.clientY }
+  }, LONG_PRESS_MS)
+}
+function onBubblePointerMove(e: PointerEvent) {
+  if (!swipingId.value) return
+  const dx = e.clientX - pointerStartX
+  const dy = e.clientY - pointerStartY
+  if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
+  }
+  if (Math.abs(dy) > Math.abs(dx)) return
+  swipeX.value = Math.max(REPLY_SWIPE_MAX, Math.min(0, dx))
+}
+function onBubblePointerUp(m: ChatMessage) {
+  if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
+  if (!longPressFired && swipeX.value <= REPLY_SWIPE_THRESHOLD) startReply(m)
+  swipingId.value = null
+  swipeX.value = 0
+}
+function startReply(m: ChatMessage) {
+  replyTarget.value = { id: m.id, sender_name: m.sender_name, body: m.body || (m.attachment_name ? `[${m.attachment_name}]` : '') }
+}
+function copyMessage(m: ChatMessage) {
+  navigator.clipboard?.writeText(m.body || '').catch(() => {})
+}
+
 function scrollToBottom() {
   nextTick(() => { if (listRef.value) listRef.value.scrollTop = listRef.value.scrollHeight })
   showScrollBtn.value = false
@@ -163,7 +294,7 @@ function onListScroll() {
 
 async function loadMessages() {
   const { data } = await supabase.from('site_chat_messages')
-    .select('id, sender_worker_id, sender_is_admin, sender_name, body, created_at, deleted_at, attachment_url, attachment_name, attachment_kind')
+    .select('id, sender_worker_id, sender_is_admin, sender_name, body, created_at, deleted_at, attachment_url, attachment_name, attachment_kind, reply_to_message_id, reply_to_sender_name, reply_to_body')
     .eq('account_id', accountId).eq('site_id', props.siteId).is('deleted_at', null)
     .order('created_at', { ascending: true }).limit(500)
   const wasAtBottom = !listRef.value || (listRef.value.scrollHeight - listRef.value.scrollTop - listRef.value.clientHeight < 40)
@@ -239,6 +370,9 @@ async function send() {
     body,
     attachment_url: attachment?.url ?? null, attachment_name: attachment?.name ?? null, attachment_kind: attachment?.kind ?? null,
     mentioned_worker_ids: mentionIds,
+    reply_to_message_id: replyTarget.value?.id ?? null,
+    reply_to_sender_name: replyTarget.value?.sender_name ?? null,
+    reply_to_body: replyTarget.value?.body ?? null,
   }).select('id').maybeSingle()
   if (!error && inserted?.id && mentionIds.length) {
     const { error: mentionError } = await supabase.from('site_chat_mentions').insert(
@@ -250,7 +384,7 @@ async function send() {
   }
   sending.value = false
   if (!error) {
-    draft.value = ''; pendingFile.value = null; mentionedIds.value = new Set(); mentionCandidates.value = []
+    draft.value = ''; pendingFile.value = null; mentionedIds.value = new Set(); mentionCandidates.value = []; replyTarget.value = null
     nextTick(autoResizeDraft)
     await loadMessages()
   }
@@ -301,16 +435,43 @@ onUnmounted(() => {
 }
 .scroll-bottom-btn:hover { background: #f1f5f9; }
 .scroll-bottom-btn .material-symbols-rounded { font-size: 22px; }
-.msg-row { display: flex; }
+.msg-row { display: flex; gap: 8px; align-items: flex-start; }
 .msg-row.mine { justify-content: flex-end; }
+.msg-avatar {
+  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 700; font-size: 12px;
+}
 .msg-col { max-width: 70%; display: flex; flex-direction: column; }
 .msg-row.mine .msg-col { align-items: flex-end; }
 .msg-sender { font-size: 11px; font-weight: 700; color: #888; margin-bottom: 2px; padding: 0 2px; }
-.msg-bubble { background: #f8fafc; border: 1px solid #eef2f4; border-radius: 10px; padding: 8px 12px; }
+.msg-bubble { background: #f8fafc; border: 1px solid #eef2f4; border-radius: 14px; padding: 8px 12px; }
 .msg-row.mine .msg-bubble { background: #e8fff0; border-color: #b7ebcb; }
+.msg-bubble-row { display: flex; align-items: flex-end; transition: transform .15s; touch-action: pan-y; }
+.msg-bubble-row-swiping { transition: none; }
+.msg-row.mine .msg-bubble-row { justify-content: flex-end; }
+.msg-tail { width: 0; height: 0; flex-shrink: 0; margin-bottom: 8px; position: relative; }
+.msg-tail-left {
+  border-top: 6px solid transparent; border-bottom: 6px solid transparent;
+  border-right: 8px solid #eef2f4; margin-right: -1px;
+}
+.msg-tail-left::after {
+  content: ''; position: absolute; top: -5px; left: 1px;
+  border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-right: 7px solid #f8fafc;
+}
+.msg-tail-right {
+  border-top: 6px solid transparent; border-bottom: 6px solid transparent;
+  border-left: 8px solid #b7ebcb; margin-left: -1px;
+}
+.msg-tail-right::after {
+  content: ''; position: absolute; top: -5px; right: 1px;
+  border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 7px solid #e8fff0;
+}
 .msg-body { font-size: 13px; white-space: pre-wrap; word-break: break-word; }
 .msg-mention { color: #06A050; font-weight: 700; }
-.msg-time { font-size: 10px; color: #aaa; text-align: right; margin-top: 3px; }
+.msg-time-outside { font-size: 10px; color: #888; flex-shrink: 0; align-self: flex-end; margin-bottom: 4px; }
+.day-sep { display: flex; justify-content: center; margin: 8px 0; }
+.day-sep-label { font-size: 11px; font-weight: 700; color: #fff; background: rgba(0,0,0,.28); border-radius: 10px; padding: 3px 12px; }
 .msg-form { flex-shrink: 0; display: flex; gap: 8px; padding-top: 10px; border-top: 1px solid #eee; align-items: flex-end; }
 .msg-input { flex: 1; border: 1px solid #ddd; border-radius: 8px; padding: 8px 12px; font-size: 13px; resize: none; overflow-y: auto; line-height: 1.4; max-height: 120px; font-family: inherit; }
 .msg-send { flex-shrink: 0; border: none; border-radius: 8px; padding: 0 16px; background: #06A050; color: #fff; font-weight: 700; cursor: pointer; }
@@ -324,4 +485,29 @@ onUnmounted(() => {
 .mention-item:hover { background: #f0f0f0; }
 .msg-attachment-img { max-width: 100%; max-height: 220px; border-radius: 8px; display: block; margin-bottom: 4px; }
 .msg-attachment-file { display: flex; align-items: center; gap: 4px; color: #1a56c4; text-decoration: none; font-size: 13px; margin-bottom: 4px; }
+
+.reply-quote {
+  border-left: 3px solid #06A050; background: rgba(6,160,80,.08); border-radius: 4px;
+  padding: 4px 8px; margin-bottom: 6px;
+}
+.reply-quote-sender { font-size: 11px; font-weight: 700; color: #06A050; }
+.reply-quote-text { font-size: 12px; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctx-menu-backdrop { position: fixed; inset: 0; z-index: 20; background: transparent; }
+.ctx-menu {
+  position: fixed; z-index: 21; transform: translate(-50%, -110%);
+  background: #fff; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,.2);
+  overflow: hidden; display: flex; flex-direction: column; min-width: 140px;
+}
+.ctx-menu-item {
+  display: flex; align-items: center; gap: 8px; padding: 10px 14px; border: none; background: none;
+  font-size: 14px; color: #333; cursor: pointer; text-align: left;
+}
+.ctx-menu-item:hover { background: #f5f5f5; }
+.ctx-menu-item .material-symbols-rounded { font-size: 18px; color: #888; }
+.reply-preview { display: flex; align-items: center; gap: 8px; background: #f5f8f5; border-radius: 8px; padding: 6px 10px; margin-top: 8px; }
+.reply-preview-bar { width: 3px; align-self: stretch; background: #06A050; border-radius: 2px; flex-shrink: 0; }
+.reply-preview-body { flex: 1; min-width: 0; }
+.reply-preview-sender { font-size: 11px; font-weight: 700; color: #06A050; }
+.reply-preview-text { font-size: 12px; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reply-preview-clear { flex-shrink: 0; border: none; background: none; color: #888; cursor: pointer; display: flex; }
 </style>

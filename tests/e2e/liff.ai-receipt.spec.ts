@@ -70,6 +70,33 @@ test('駐車・高速・電車の領収書AI解析で金額（電車は区間も
   await expect(trCard.locator('input.expense-input')).toHaveValue('6600')
 })
 
+test('ガソリン領収書AI解析でリットル数(給油量)が自動入力される(2026-07-20)', async ({ page }) => {
+  await page.route('**/analyze-receipt', route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ label: null, yen: 4500, invoiceNumber: null, storeName: 'テスト給油所', liters: 32.5 }),
+    }),
+  )
+
+  try { await openExpenseForm(page) }
+  catch { test.skip(true, 'liff dev(3000) 未起動'); return }
+  if (await page.getByText('送信済みです').count()) { test.skip(true, '全日送信済みのためフォーム無し'); return }
+
+  // 給油あり → ガソリン明細カード表示
+  await page.locator('select.select.mt4').filter({ has: page.locator('option', { hasText: 'あり' }) }).selectOption('yes')
+  await page.waitForTimeout(300)
+
+  const gasCard = page.locator('.lineitem-card').filter({ has: page.locator('input[type="number"][step="0.01"]') }).first()
+  await gasCard.locator('input[type="file"]').setInputFiles(dummyFile)
+  await gasCard.getByRole('button', { name: '✨ 領収書から金額' }).click()
+
+  await expect(gasCard.locator('input[type="number"][step="0.01"]')).toHaveValue('32.5', { timeout: 10000 })
+  // 既存の金額/支払い先反映には影響しないことも合わせて確認
+  await expect(gasCard.locator('input.expense-input')).toHaveValue('4500')
+  await expect(gasCard.locator('input[placeholder]').first()).toHaveValue('テスト給油所')
+})
+
 test('電車(明細ごと)を入力して送信すると daily_reports.trains に保存される', async ({ page }) => {
   try { await openExpenseForm(page) }
   catch { test.skip(true, 'liff dev(3000) 未起動'); return }

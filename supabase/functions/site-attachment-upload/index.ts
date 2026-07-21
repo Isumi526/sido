@@ -1,19 +1,19 @@
 // ============================================================
-//  site-chat-attachment-upload
-//  現場チャット/アカウント全体チャットのファイル添付を、非公開バケット
-//  site-chat-attachments へ service_role で書き込む（expense-receipt-upload と同型）。
-//   - 入力: { file_base64, ext, site_id?, mime, line_id_token }
-//   - site_id は省略可（アカウント全体チャット=site_id無しのメッセージ用・2026-07-20）。
-//     省略時は保存パスを `${accountId}/account/...` にする(現場用パスと衝突しない)。
-//   - 認可（caller の account を解決）:
+//  site-attachment-upload
+//  現場詳細の添付ファイル(写真/書類)を、非公開バケット site-attachments へ
+//  service_role で書き込む（site-chat-attachment-upload と同型）。
+//   - storage.objects の site-attachments バケットは authenticated(admin/email-pw作業員)
+//     のみ書き込み可＝LINE作業員(anonキー)は直接アップロードできない(20260615010000で意図的に限定)。
+//     そのためLIFF(LINE作業員)からの添付追加はこのedge(service_role)経由に限る。
+//   - 入力: { file_base64, ext, site_id, kind, name, mime, line_id_token }
+//   - 認可（caller の account を解決・site-chat-attachment-upload と同じ二経路）:
 //       * Authorization JWT あり（admin / email-pw作業員）→ app_metadata.account_slug → account
 //       * JWT 無し（LINE作業員）→ body.line_id_token を LINE の JWKS で検証（署名・iss・aud）
 //         → 検証済 sub(LINE userId) → users.line_user_id → account（★改ざん不可）
 //       * 不一致/解決不可 → 401
-//   - site_id 指定時は resolveCallerAccount で解決した account 配下かをDBで確認してから使う
-//     （他テナントの site_id を騙って自分のパスに書けないようにする）。
-//   - アップロード直後に長期署名URL(10年)を発行して返す。site_chat_messages.attachment_url に
-//     そのまま格納する（expense-receipts-v2と同方針）。
+//   - site_id は resolveCallerAccount で解決した account 配下かをDBで確認してから使う。
+//   - アップロード成功後、site_attachments へ行を挿入(account_id/site_id/kind/path/name)して
+//     挿入結果(id)を返す。呼び出し側(LIFF)はこのidで即座に一覧へ反映できる。
 //  ※ verify_jwt=false（LINE作業員はSupabase JWTを持たないため）。関数内で厳密検証。
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -22,9 +22,8 @@ import { createRemoteJWKSet, jwtVerify } from 'https://esm.sh/jose@5'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
 const ANON_KEY     = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
-const BUCKET = 'site-chat-attachments'
-const SIGN_TTL_SECONDS = 60 * 60 * 24 * 365 * 10 // 10年
-const MAX_BYTES = 15 * 1024 * 1024 // 15MB
+const BUCKET = 'site-attachments'
+const MAX_BYTES = 15 * 1024 * 1024 // 15MB（site-chat-attachment-uploadと同上限）
 
 const LINE_CHANNEL_ID = Deno.env.get('LINE_LOGIN_CHANNEL_ID') ?? ''
 const LINE_ISSUER = 'https://access.line.me'
@@ -93,30 +92,32 @@ Deno.serve(async (req) => {
   const fileBase64  = (b.file_base64 ?? '').toString()
   const ext         = sanitize((b.ext ?? 'bin').toString().toLowerCase()) || 'bin'
   const siteId      = (b.site_id ?? '').toString().trim()
+  const kind        = (b.kind ?? '').toString() === 'document' ? 'document' : 'photo'
+  const name        = (b.name ?? '').toString().slice(0, 200) || null
   const mime        = (b.mime ?? '').toString().slice(0, 100)
   const lineIdToken = (b.line_id_token ?? '').toString().trim()
 
-  if (!fileBase64) return json({ ok: false, error: 'file_base64_required' }, 400)
+  if (!fileBase64 || !siteId) return json({ ok: false, error: 'file_base64_and_site_id_required' }, 400)
 
   const svc = createClient(SUPABASE_URL, SERVICE_KEY)
   const accountId = await resolveCallerAccount(svc, req.headers.get('Authorization') ?? '', lineIdToken)
   if (!accountId) return json({ ok: false, error: 'unauthorized' }, 401)
 
-  if (siteId) {
-    const { data: site } = await svc.from('sites').select('id').eq('id', siteId).eq('account_id', accountId).maybeSingle()
-    if (!site) return json({ ok: false, error: 'site_not_found' }, 404)
-  }
+  const { data: site } = await svc.from('sites').select('id').eq('id', siteId).eq('account_id', accountId).maybeSingle()
+  if (!site) return json({ ok: false, error: 'site_not_found' }, 404)
 
   let bytes: Uint8Array
   try { bytes = base64ToBytes(fileBase64) } catch { return json({ ok: false, error: 'invalid_base64' }, 400) }
   if (bytes.byteLength > MAX_BYTES) return json({ ok: false, error: 'file_too_large' }, 400)
 
-  const path = `${accountId}/${siteId || 'account'}/${crypto.randomUUID()}.${ext}`
+  const path = `${accountId}/${siteId}/${kind}-${crypto.randomUUID()}.${ext}`
   const { error: upErr } = await svc.storage.from(BUCKET).upload(path, bytes, { upsert: false, contentType: mime || undefined })
   if (upErr) return json({ ok: false, error: 'upload_failed', detail: upErr.message }, 400)
 
-  const { data: signed, error: signErr } = await svc.storage.from(BUCKET).createSignedUrl(path, SIGN_TTL_SECONDS)
-  if (signErr || !signed?.signedUrl) return json({ ok: false, error: 'sign_failed', detail: signErr?.message }, 400)
+  const { data: inserted, error: insErr } = await svc.from('site_attachments')
+    .insert({ account_id: accountId, site_id: siteId, kind, path, name })
+    .select('id').maybeSingle()
+  if (insErr || !inserted?.id) return json({ ok: false, error: 'insert_failed', detail: insErr?.message }, 400)
 
-  return json({ ok: true, url: signed.signedUrl, path })
+  return json({ ok: true, id: inserted.id, path })
 })

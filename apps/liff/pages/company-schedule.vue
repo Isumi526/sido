@@ -16,7 +16,7 @@
             <div class="gantt-axis" :style="{ width: trackWidth + 'px' }">
               <span
                 v-for="tk in ticks" :key="tk.day"
-                class="gantt-tick" :style="{ left: tk.px + 'px' }"
+                class="gantt-tick" :class="{ 'gantt-tick-first': tk.px === 0 }" :style="{ left: tk.px + 'px' }"
               >{{ tk.label }}</span>
             </div>
           </div>
@@ -209,6 +209,10 @@ onMounted(load)
   position: absolute; top: 0; transform: translateX(-2px);
   font-size: 10px; color: #999; white-space: nowrap;
 }
+/* 先頭ティック(左端px:0)だけはtranslateX(-2px)を適用しない。
+   sticky化されたgantt-corner(z-index高・不透明背景)の直後に位置するため、
+   左へずらすとその2px分がcornerの下に隠れて日付の先頭文字が欠けて見える(2026-07-20発覚)。 */
+.gantt-tick-first { transform: none; }
 .gantt-group { margin-top: 10px; width: max-content; min-width: 100%; }
 .gantt-group:first-of-type { margin-top: 0; }
 .gantt-site-row { display: flex; align-items: stretch; width: max-content; }

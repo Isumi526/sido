@@ -62,6 +62,26 @@ const headers = {
   'Content-Type': 'application/json',
 }
 
+// フロント(ブラウザ=JSTローカル時刻)基準の「今日」(YYYY-MM-DD)。
+// new Date().toISOString().slice(0,10) はUTC日付を返すため、深夜0-9時JSTは
+// フロントの「今日」と1日ズレる(2026-07-21未明のE2E実行で判明)。日付シードは必ずこちらを使う。
+export function todayJST(): string {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+// 「昨日の正午(JSTローカル)」のISO timestamp。固定オフセット(例:30時間前)で計算すると
+// 深夜0-6時JSTの実行時に「一昨日」になってしまう(2026-07-21未明のE2E実行で判明)ため、
+// 暦日ベースで昨日の日付を出してから正午に固定する。
+export function yesterdayNoonJST(): string {
+  const now = new Date()
+  const y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12, 0, 0)
+  return y.toISOString()
+}
+
 export async function rest(pathAndQuery: string, init: RequestInit = {}): Promise<any> {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${pathAndQuery}`, {
     ...init,
