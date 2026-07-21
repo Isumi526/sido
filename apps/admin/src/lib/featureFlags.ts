@@ -8,7 +8,7 @@
 //   ロールバックは false に戻すだけ（コード削除はしない＝可逆）。
 export const HIDE_LINE_SECTIONS = true
 
-// AIヘルプ/FAQナレッジ 一時保留（2026-07-08）: レビューで未検証の不具合が見つかったため、
-//   ナビ入口・常駐ウィジェットを非表示にする。ページ/コード/EFは保持（URL直打ちはガードしない）。
-//   ロールバックは false に戻すだけ（可逆）。
-export const HIDE_AI_HELP_SECTIONS = true
+// AIヘルプ 復活（2026-07-21）: 2026-07-08時点で送信クラッシュは修正済みだったが未検証のため
+//   保留にしていた。動作確認後に復活。FAQナレッジ注入(buildFaqBlock)は未使用のまま
+//   （faq_entries が空なら固定SYSTEMプロンプトのみで動作＝後方互換）。
+export const HIDE_AI_HELP_SECTIONS = false
