@@ -440,7 +440,7 @@ async function load() {
     const { data: w } = await supabase.from('workers').select('name').eq('id', myWorkerId.value).maybeSingle()
     myName.value = (w?.name as string) ?? ''
     await markSiteChatMentionsRead(accountId, myWorkerId.value, siteId)
-    await markSiteChatRead(accountId, myWorkerId.value, siteId)
+    await markSiteChatRead(accountId, myWorkerId.value, siteId, mySiteIds)
   }
 
   await loadMessages()
