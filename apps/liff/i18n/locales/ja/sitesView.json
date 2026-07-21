@@ -10,5 +10,11 @@
   "noDetail": "詳細情報はまだ登録されていません",
   "inactive": "無効",
   "enable": "有効化",
-  "disable": "無効化"
+  "disable": "無効化",
+  "inviteUsers": "現場へユーザーを招待",
+  "inviteNoCandidates": "招待できるユーザーがいません",
+  "membersTitle": "メンバー ({count}人)",
+  "editInfo": "現場情報を編集",
+  "saveFailed": "保存に失敗しました",
+  "attachFailed": "ファイルの追加に失敗しました"
 }

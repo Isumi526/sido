@@ -2,7 +2,16 @@
   <div class="page">
     <AppNav :subtitle="$t('chatsView.title')" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
     <main class="wrap">
-      <h1 class="ttl">{{ $t('chatsView.title') }}</h1>
+      <ul class="list">
+        <li class="row" data-testid="account-chat-row" @click="navigateTo('/account-chat')">
+          <div class="row-avatar account-room-avatar" data-testid="chat-avatar">
+            <span class="material-symbols-rounded">groups</span>
+          </div>
+          <div class="row-main">
+            <div class="row-name">{{ accountName || $t('siteChat.accountRoomTitle') }}</div>
+          </div>
+        </li>
+      </ul>
 
       <div v-if="loading" class="state">{{ $t('common.loading') }}</div>
       <div v-else-if="!rows.length" class="state">{{ $t('chatsView.empty') }}</div>
@@ -10,7 +19,7 @@
         <li v-for="r in rows" :key="r.site.id" class="row" data-testid="chat-list-row" @click="navigateTo(`/site-chat/${r.site.id}`)">
           <div class="row-avatar" :style="{ background: siteColor(r.site.name) }" data-testid="chat-avatar">{{ initial(r.site.name) }}</div>
           <div class="row-main">
-            <div class="row-name">{{ r.site.name }}</div>
+            <div class="row-name">{{ r.site.name }}<span v-if="r.memberCount" class="row-member-count">({{ r.memberCount }})</span></div>
             <div class="row-sub">
               <template v-if="r.lastMessage">
                 {{ r.lastMessage.sender_name }}:
@@ -37,10 +46,11 @@ const { resolveMyWorkerId } = useSchedules()
 
 type Site = { id: string; name: string }
 type LastMessage = { body: string; sender_name: string; created_at: string; hasAttachment: boolean }
-type Row = { site: Site; lastMessage: LastMessage | null; unreadCount: number }
+type Row = { site: Site; lastMessage: LastMessage | null; unreadCount: number; memberCount: number }
 
 const loading = ref(true)
 const rows = ref<Row[]>([])
+const accountName = ref('')
 
 // 現場名から安定した色を作る（LINE/Chatwork的なUIに寄せるための丸アバター用・機微情報は含まない）。
 // company-schedule.vue の siteColor() と同一ロジック。
@@ -69,25 +79,43 @@ async function load() {
   const { resolveMySiteIds } = useMySiteIds()
   const accountId = await getAccountId()
   if (!accountId) { rows.value = []; loading.value = false; return }
+  const { data: acc } = await supabase.from('accounts').select('name').eq('id', accountId).maybeSingle()
+  accountName.value = (acc?.name as string) ?? ''
   const workerId = await resolveMyWorkerId()
 
   // 現場情報共有(site_shares・2026-07-17 Part B): 自分が共有登録されている現場のチャットだけに絞る。
   const mySiteIds = await resolveMySiteIds()
   if (!mySiteIds.length) { rows.value = []; loading.value = false; return }
   const { data: sites } = await supabase.from('sites')
-    .select('id, name').eq('account_id', accountId).eq('active', true).in('id', mySiteIds)
-  const siteList = (sites ?? []) as Site[]
+    .select('id, name, responsible_worker_id').eq('account_id', accountId).eq('active', true).in('id', mySiteIds)
+  const siteList = (sites ?? []) as (Site & { responsible_worker_id: string | null })[]
   const siteIds = siteList.map((s) => s.id)
   if (!siteIds.length) { rows.value = []; loading.value = false; return }
 
-  const [{ data: msgs }, { data: lastReads }] = await Promise.all([
+  const responsibleWorkerIds = [...new Set(siteList.map((s) => s.responsible_worker_id).filter((v): v is string => !!v))]
+  const [{ data: msgs }, { data: lastReads }, { data: shares }, { data: responsibleUsers }] = await Promise.all([
     supabase.from('site_chat_messages')
       .select('site_id, body, sender_name, created_at, attachment_url').eq('account_id', accountId).is('deleted_at', null)
       .in('site_id', siteIds).order('created_at', { ascending: false }).limit(1000),
     workerId
       ? supabase.from('site_chat_last_read').select('site_id, last_read_at').eq('account_id', accountId).eq('actor_key', workerId)
       : Promise.resolve({ data: [] as { site_id: string; last_read_at: string }[] }),
+    supabase.from('site_shares').select('site_id, user_id').in('site_id', siteIds),
+    responsibleWorkerIds.length
+      ? supabase.from('users').select('id, worker_id').eq('account_id', accountId).in('worker_id', responsibleWorkerIds)
+      : Promise.resolve({ data: [] as { id: string; worker_id: string }[] }),
   ])
+  // メンバー数 = site_shares共有登録者 + 現場責任者(usersの対応行があれば重複排除して合算)
+  const responsibleUserBySiteWorker: Record<string, string> = {}
+  for (const u of (responsibleUsers ?? []) as { id: string; worker_id: string }[]) responsibleUserBySiteWorker[u.worker_id] = u.id
+  const memberIdsBySite: Record<string, Set<string>> = {}
+  for (const s of (shares ?? []) as { site_id: string; user_id: string }[]) {
+    (memberIdsBySite[s.site_id] ??= new Set()).add(s.user_id)
+  }
+  for (const site of siteList) {
+    const ruId = site.responsible_worker_id ? responsibleUserBySiteWorker[site.responsible_worker_id] : undefined
+    if (ruId) (memberIdsBySite[site.id] ??= new Set()).add(ruId)
+  }
 
   const lastReadBySite: Record<string, string> = {}
   for (const r of (lastReads ?? []) as { site_id: string; last_read_at: string }[]) lastReadBySite[r.site_id] = r.last_read_at
@@ -103,7 +131,7 @@ async function load() {
   }
 
   rows.value = siteList
-    .map((site) => ({ site, lastMessage: lastMessageBySite[site.id] ?? null, unreadCount: unreadCountBySite[site.id] ?? 0 }))
+    .map((site) => ({ site, lastMessage: lastMessageBySite[site.id] ?? null, unreadCount: unreadCountBySite[site.id] ?? 0, memberCount: memberIdsBySite[site.id]?.size ?? 0 }))
     .sort((a, b) => {
       if (a.lastMessage && b.lastMessage) return b.lastMessage.created_at.localeCompare(a.lastMessage.created_at)
       if (a.lastMessage) return -1
@@ -117,7 +145,6 @@ onMounted(load)
 
 <style scoped>
 .wrap { max-width: 840px; margin: 0 auto; padding: 16px; }
-.ttl { font-size: 18px; font-weight: 800; margin: 4px 0 16px; }
 .state { color: #888; text-align: center; padding: 32px; }
 .list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
 .row { background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 14px 16px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -126,8 +153,10 @@ onMounted(load)
   display: flex; align-items: center; justify-content: center;
   color: #fff; font-weight: 700; font-size: 17px;
 }
+.account-room-avatar { background: #06A050; }
 .row-main { flex: 1; min-width: 0; }
 .row-name { font-weight: 700; }
+.row-member-count { font-weight: 700; margin-left: 4px; }
 .row-sub { font-size: 12px; color: #888; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-trail { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
 .row-time { font-size: 11px; color: #aaa; }

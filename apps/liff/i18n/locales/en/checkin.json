@@ -14,6 +14,7 @@
   "filterContractorAll": "Contractor: All",
   "siteSearchPlaceholder": "Search by site name or reading",
   "siteSearchEmpty": "No matching site",
+  "checkedInTag": "Checked in",
   "checkinConfirmTitle": "Pre-check-in confirmation",
   "checkoutConfirmTitle": "Pre-check-out confirmation",
   "registerAs": "Registering as {name}",

@@ -10,5 +10,11 @@
   "noDetail": "No details registered yet",
   "inactive": "Inactive",
   "enable": "Enable",
-  "disable": "Disable"
+  "disable": "Disable",
+  "inviteUsers": "Invite users to this site",
+  "inviteNoCandidates": "No users available to invite",
+  "membersTitle": "Members ({count})",
+  "editInfo": "Edit site info",
+  "saveFailed": "Failed to save",
+  "attachFailed": "Failed to add the file"
 }

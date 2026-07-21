@@ -1,6 +1,7 @@
 {
   "subtitle": "ホーム",
-  "loadingUser": "読み込み中...",
+  "pwaHintTitle": "ホーム画面に追加して使う",
+  "pwaHintSub": "ブラウザのメニューから「ホーム画面に追加」するとアプリのように使えます",
   "unsubmittedTitle": "未送信の日報が {count} 件あります",
   "unsubmittedSub": "タップして入力する",
   "deadlineTitle": "{period}の経費申請の締切が近づいています",
@@ -12,6 +13,5 @@
   "proxyClear": "解除する",
   "proxyLoading": "読み込み中...",
   "periodFirstHalf": "{month}月前半",
-  "periodSecondHalf": "{month}月後半",
-  "todayLabel": "{month}月{day}日"
+  "periodSecondHalf": "{month}月後半"
 }

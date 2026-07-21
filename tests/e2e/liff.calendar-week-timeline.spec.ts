@@ -4,7 +4,7 @@
 //  縦位置に配置される（2026-07-11・[[project_sido]]）。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, getAccountId } from './helpers'
+import { rest, getAccountId, todayJST } from './helpers'
 
 const TS = Date.now()
 const TITLE_MORNING = `E2E週間時間軸朝_${TS}`
@@ -20,7 +20,7 @@ test.describe('個人カレンダー 週間ビューの時間軸', () => {
     const accountId = await getAccountId()
     const users = await rest('users?line_user_id=eq.dev-user-id&select=worker_id')
     const workerId = users[0].worker_id
-    const today = new Date().toISOString().slice(0, 10)
+    const today = todayJST()
 
     await rest('schedules', {
       method: 'POST', headers: { Prefer: 'return=minimal' },

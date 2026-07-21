@@ -258,7 +258,19 @@
               <span class="form-row-label">{{ $t('calendar.site') }}</span>
               <select v-model="formModal.title" class="site-select" data-testid="site-select">
                 <option value="">{{ $t('calendar.pleaseSelect') }}</option>
-                <option v-for="s in filteredSiteNames((formModal as any)._contractor)" :key="s" :value="s">{{ s }}</option>
+                <template v-if="(formModal as any)._contractor">
+                  <optgroup :label="$t('calendar.siteGroupLinked')">
+                    <option v-for="s in groupedSiteNames((formModal as any)._contractor).linked" :key="s" :value="s">{{ s }}</option>
+                  </optgroup>
+                  <optgroup :label="$t('calendar.siteGroupOther')">
+                    <option v-for="s in groupedSiteNames((formModal as any)._contractor).others" :key="s" :value="s">{{ s }}</option>
+                  </optgroup>
+                </template>
+                <template v-else v-for="grp in master.siteGroupsByContractor.value" :key="grp.contractorName ?? '__unlinked__'">
+                  <optgroup :label="grp.contractorName ?? $t('calendar.siteGroupUnlinked')">
+                    <option v-for="s in grp.sites" :key="s" :value="s">{{ s }}</option>
+                  </optgroup>
+                </template>
                 <option value="__other__">{{ $t('calendar.registerNewSite') }}</option>
               </select>
             </div>
@@ -453,15 +465,17 @@ const customSiteSimilar = computed(() =>
     : [],
 )
 
-// 現場プルダウン: 元請けが選択されていれば、その元請けに紐づく現場だけに絞り込む。
-//  紐づく現場が0件 or 元請け未選択 なら全現場を出す（後方互換）。report.vue と同一ロジック。
-function filteredSiteNames(contractorName?: string): string[] {
+// 現場プルダウン: 元請けが選択されていれば「紐づく現場」＋「その他の現場」の2グループで
+//  両方表示する(report.vue の groupedSiteNames() と同じ挙動に統一・2026-07-20)。
+//  紐づく現場が無い/元請け未選択なら linked=[] で全件が others に入る(後方互換)。
+function groupedSiteNames(contractorName?: string): { linked: string[]; others: string[] } {
   const all = master.siteNames.value
   const cn = (contractorName ?? '').trim()
-  if (!cn) return all
+  if (!cn) return { linked: [], others: all }
   const map = master.siteContractors.value
   const linked = all.filter((n) => map[n] === cn)
-  return linked.length ? linked : all
+  const others = all.filter((n) => map[n] !== cn)
+  return { linked, others }
 }
 
 // 「現場と紐付けない」トグル。内部状態は title==='__none__'（保存ロジックは従来どおり）。
@@ -621,7 +635,7 @@ const sortedWorkers = computed(() => {
   const mine   = base.filter(w => w.id === myId)
   const pinned = pinnedWorkerIds.value
     .map(id => base.find(w => w.id === id))
-    .filter((w): w is { id: string; name: string } => !!w && w.id !== myId)
+    .filter((w): w is NonNullable<typeof w> => !!w && w.id !== myId)
   const rest   = base.filter(w => w.id !== myId && !isPinned(w.id))
   // 自分 → ピン留め → 残り50音順（DB側でname順取得済み）
   return [...mine, ...pinned, ...rest]

@@ -1,6 +1,7 @@
 {
   "subtitle": "Home",
-  "loadingUser": "Loading...",
+  "pwaHintTitle": "Add to your home screen",
+  "pwaHintSub": "Use your browser's \"Add to Home Screen\" option for an app-like experience",
   "unsubmittedTitle": "You have {count} unsubmitted report(s)",
   "unsubmittedSub": "Tap to enter",
   "deadlineTitle": "The expense application deadline for {period} is approaching",
@@ -12,6 +13,5 @@
   "proxyClear": "Cancel",
   "proxyLoading": "Loading...",
   "periodFirstHalf": "First half of {month}",
-  "periodSecondHalf": "Second half of {month}",
-  "todayLabel": "{month}/{day}"
+  "periodSecondHalf": "Second half of {month}"
 }

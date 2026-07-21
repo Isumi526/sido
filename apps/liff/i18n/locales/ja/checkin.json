@@ -14,6 +14,7 @@
   "filterContractorAll": "元請け：すべて",
   "siteSearchPlaceholder": "現場名・読み仮名で検索",
   "siteSearchEmpty": "該当する現場がありません",
+  "checkedInTag": "出勤中",
   "checkinConfirmTitle": "出勤前の確認",
   "checkoutConfirmTitle": "退勤前の確認",
   "registerAs": "{name} として登録",
