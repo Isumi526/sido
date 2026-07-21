@@ -15,13 +15,19 @@ export async function refreshSiteChatListBadge(): Promise<void> {
   const supabase = useSupabase()
   const { getAccountId } = useAccount()
   const { resolveMyWorkerId } = useSchedules()
+  const { resolveMySiteIds } = useMySiteIds()
 
   const accountId = await getAccountId()
   if (!accountId) { unreadChatCount.value = 0; return }
   const workerId = await resolveMyWorkerId()
   if (!workerId) { unreadChatCount.value = 0; return }
 
-  const { data: sites } = await supabase.from('sites').select('id').eq('account_id', accountId).eq('active', true)
+  // 現場情報共有(site_shares・2026-07-17 Part B): チャット一覧(chats/index.vue)と同じく
+  // 自分が共有登録/責任者になっている現場だけに絞る（絞らないと参加してない現場の未読まで数えてしまう）。
+  const mySiteIds = await resolveMySiteIds()
+  if (!mySiteIds.length) { unreadChatCount.value = 0; return }
+
+  const { data: sites } = await supabase.from('sites').select('id').eq('account_id', accountId).eq('active', true).in('id', mySiteIds)
   const siteIds = ((sites ?? []) as { id: string }[]).map((s) => s.id)
   if (!siteIds.length) { unreadChatCount.value = 0; return }
 
@@ -43,16 +49,18 @@ export async function refreshSiteChatListBadge(): Promise<void> {
 }
 
 // チャット詳細(site-chat/[id].vue)を開いた時に既読化する。
-// accountId/workerIdは呼び出し元(ページのload())が既に解決済みの値をそのまま渡す
+// accountId/workerId/mySiteIdsは呼び出し元(ページのload())が既に解決済みの値をそのまま渡す
 // （refreshSiteChatListBadge()を再利用せず直接再取得するのも同じ理由＝深いasync文脈から
-//   useAccount()/useSchedules()を新規に呼ぶと壊れるため。useSiteChatMentionBadge.tsと同型）。
-export async function markSiteChatRead(accountId: string, workerId: string, siteId: string): Promise<void> {
+//   useAccount()/useSchedules()/useMySiteIds()を新規に呼ぶと壊れるため。useSiteChatMentionBadge.tsと同型）。
+export async function markSiteChatRead(accountId: string, workerId: string, siteId: string, mySiteIds: string[]): Promise<void> {
   if (!accountId || !workerId || !siteId) return
   const supabase = useSupabase()
   await supabase.from('site_chat_last_read')
     .upsert({ account_id: accountId, site_id: siteId, actor_key: workerId, last_read_at: new Date().toISOString() }, { onConflict: 'account_id,site_id,actor_key' })
 
-  const { data: sites } = await supabase.from('sites').select('id').eq('account_id', accountId).eq('active', true)
+  if (!mySiteIds.length) { unreadChatCount.value = 0; return }
+
+  const { data: sites } = await supabase.from('sites').select('id').eq('account_id', accountId).eq('active', true).in('id', mySiteIds)
   const siteIds = ((sites ?? []) as { id: string }[]).map((s) => s.id)
   if (!siteIds.length) { unreadChatCount.value = 0; return }
   const { data: lastReads } = await supabase.from('site_chat_last_read')
