@@ -1584,9 +1584,33 @@ function notifyErrorToLine(actionName: string, errorMsg: string) {
   }).catch(() => {})
 }
 
+/**
+ * 保存直前の保険: workers[].workerId が空なら報告者(本人 or 代理先)のIDで補完する。
+ * 各所の初期化(setSelfWorking/initWorkers/addSite)では workerId をセットしているが、
+ * 復元経路は form/workers を丸ごと持ち上げるため空文字が生き残る:
+ *   - 下書き復元 `report.form.value = d.form`（デプロイ前に保存された下書き）
+ *   - 編集モード復元 `workers: Array.isArray(site.workers) ? site.workers : [...]`（既存の空IDデータ）
+ * workerId が無いと現場別集計(site-reports.vue)が workerName の完全一致フォールバックに
+ * 依存し、マスタ名を変更した瞬間に人件費0円化する（#workerId未設定バグの再発経路）。
+ * 個々の復元経路ではなく保存直前で一括正規化する。
+ * ※ workers[] は UI に addWorker を露出していないため常に「報告者ちょうど1件」。
+ */
+function fillMissingWorkerIds() {
+  const t = proxy.proxyTarget.value
+  const selfId = t ? t.id : (currentUser.value?.worker_id ?? '')
+  if (!selfId) return
+  report.form.value.sites.forEach(site => {
+    if (!Array.isArray(site.workers)) return
+    site.workers.forEach((w, wi) => {
+      if (wi === 0 && !w.workerId) w.workerId = selfId
+    })
+  })
+}
+
 async function handleSubmit() {
   report.form.value.isWorking  = isWorkingStr.value === 'working' || isWorkingStr.value === 'paid_leave'
   report.form.value.leaveType  = isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null
+  fillMissingWorkerIds()
 
   // ── 過去3日ロック: ロック窓(3日以上前)かつ未承認なら 提出/編集を弾く（バックストップ）──
   {
