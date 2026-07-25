@@ -1029,6 +1029,7 @@ async function loadEditData(date: string) {
         ? site.workers
         : [{
             ...createWorker(currentUser.value?.worker_role ?? 'site'),
+            workerId:   currentUser.value?.worker_id ?? '',
             workerName: currentUser.value?.real_name ?? '',
             workerRole: currentUser.value?.worker_role ?? 'site',
           }],
@@ -1139,6 +1140,7 @@ function setSelfWorking(si: number, value: string) {
   } else {
     site.workers = [{
       ...createWorker(currentUser.value?.worker_role ?? 'site'),
+      workerId:   currentUser.value?.worker_id ?? '',
       workerName: currentUser.value?.real_name ?? '',
       workerRole: currentUser.value?.worker_role ?? 'site',
     }]
@@ -1151,6 +1153,7 @@ function initWorkers() {
   report.form.value.sites.forEach(site => {
     site.workers = [{
       ...createWorker(currentUser.value!.worker_role),
+      workerId:   currentUser.value!.worker_id ?? '',
       workerName: currentUser.value!.real_name,
       workerRole: currentUser.value!.worker_role,
     }]
@@ -1183,6 +1186,7 @@ function addSite() {
     const newSite = report.form.value.sites[report.form.value.sites.length - 1]
     newSite.workers = [{
       ...createWorker(currentUser.value.worker_role),
+      workerId:   currentUser.value.worker_id ?? '',
       workerName: currentUser.value.real_name,
       workerRole: currentUser.value.worker_role,
       // 2つ目以降: 開始=前現場の終了、終了=開始+4h
