@@ -491,9 +491,9 @@ onUnmounted(() => {
 .msg-row { display: flex; gap: 8px; align-items: flex-start; }
 .msg-row.mine { justify-content: flex-end; }
 .msg-avatar {
-  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+  width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
-  color: #fff; font-weight: 700; font-size: 12px;
+  color: #fff; font-weight: 700; font-size: 14px;
 }
 .msg-col { max-width: 78%; display: flex; flex-direction: column; }
 .msg-row.mine .msg-col { align-items: flex-end; }
@@ -526,7 +526,7 @@ onUnmounted(() => {
 }
 .msg-body { font-size: 14px; white-space: pre-wrap; word-break: break-word; }
 .msg-mention { color: #06A050; font-weight: 700; }
-.msg-time-outside { font-size: 10px; color: #888; flex-shrink: 0; align-self: flex-end; margin-bottom: 4px; }
+.msg-time-outside { font-size: 10px; color: #888; flex-shrink: 0; align-self: flex-end; margin: 0 6px 4px; }
 .day-sep { display: flex; justify-content: center; margin: 8px 0; }
 .day-sep-label { font-size: 11px; font-weight: 700; color: #fff; background: rgba(0,0,0,.28); border-radius: 10px; padding: 3px 12px; }
 .msg-form { flex-shrink: 0; display: flex; gap: 8px; padding: 10px 0; border-top: 1px solid #eee; align-items: flex-end; }

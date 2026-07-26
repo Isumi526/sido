@@ -80,6 +80,27 @@
       </div>
     </div>
 
+    <!-- 出勤中(未退勤)専用画面: 現場一覧を出さず「退勤」「残業申請」だけに絞る(退勤漏れ防止) -->
+    <div v-else-if="phase === 'checked-in-focus'" class="focus-wrap">
+      <span class="material-symbols-rounded focus-icon">location_on</span>
+      <div class="focus-site">{{ focusSiteName }}</div>
+      <div class="focus-tag">{{ $t('checkin.checkedInTag') }}</div>
+      <div class="focus-actions">
+        <button class="focus-checkout-btn" data-testid="focus-checkout" @click="selectSite(checkedInSiteId!)">
+          <span class="material-symbols-rounded">logout</span>{{ $t('checkin.submitCheckout') }}
+        </button>
+        <NuxtLink
+          :to="`/overtime?site=${encodeURIComponent(focusSiteName)}`"
+          class="focus-overtime-btn" data-testid="focus-overtime-link"
+        >
+          <span class="material-symbols-rounded">more_time</span>{{ $t('nav.overtimeRequest') }}
+        </NuxtLink>
+      </div>
+      <button class="focus-switch-link" data-testid="focus-switch-site" @click="phase = 'select-site'">
+        {{ $t('checkin.switchSiteLink') }}
+      </button>
+    </div>
+
     <!-- 対象作業員の選択（代理対象がいる場合のみ） -->
     <!-- 現場選択（QRなしのリンク導線）-->
     <div v-else-if="phase === 'select-site'" class="select-wrap">
@@ -260,7 +281,7 @@
 </template>
 
 <script setup lang="ts">
-type Phase = 'loading' | 'error' | 'select-site' | 'select-target' | 'checklist' | 'done' | 'already-done'
+type Phase = 'loading' | 'error' | 'select-site' | 'checked-in-focus' | 'select-target' | 'checklist' | 'done' | 'already-done'
 
 type SiteRule = { id: string; content: string; timing: string }
 type ConsentDoc = { id: string; name: string | null; path: string; url?: string | null }
@@ -306,6 +327,7 @@ const filteredSiteOptions = computed(() => {
   copy.unshift(checkedIn)
   return copy
 })
+const focusSiteName = computed(() => siteOptions.value.find(s => s.id === checkedInSiteId.value)?.name ?? '')
 const rules          = ref<SiteRule[]>([])
 const checkedIds     = ref(new Set<string>())
 const consentDocs    = ref<ConsentDoc[]>([])   // 送り出し資料（出退勤同意・チェックイン時）
@@ -480,7 +502,9 @@ onMounted(async () => {
       phase.value = 'error'
       return
     }
-    phase.value = 'select-site'
+    // 出勤中(未退勤)の現場があれば、現場一覧を出さず「退勤/残業申請」専用画面に直行する
+    // (2026-07-21要望: 一覧から探して選ぶ手間を無くし退勤漏れを防ぐ)。他現場を選びたい時だけ一覧へ逃がす。
+    phase.value = checkedInSiteId.value ? 'checked-in-focus' : 'select-site'
     return
   }
   await proceedWithSite(resolved)
@@ -834,6 +858,41 @@ async function submit() {
 .change-target .material-symbols-rounded {
   font-size: 15px;
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 16;
+}
+
+/* ── 出勤中(未退勤)専用画面 ── */
+.focus-wrap {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding: 32px 24px; text-align: center;
+}
+.focus-icon {
+  font-size: 48px; color: #06C755;
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 48;
+}
+.focus-site { font-size: 20px; font-weight: 700; color: #111; }
+.focus-tag {
+  background: #06C755; color: #fff; font-size: 12px; font-weight: 700;
+  border-radius: 6px; padding: 3px 10px;
+}
+.focus-actions {
+  width: 100%; max-width: 320px; margin-top: 24px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.focus-checkout-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; border: none; border-radius: 12px; padding: 16px;
+  font-size: 16px; font-weight: 700; cursor: pointer;
+  background: #f59e0b; color: #fff;
+}
+.focus-overtime-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; border-radius: 12px; padding: 14px;
+  font-size: 15px; font-weight: 700; text-decoration: none;
+  background: #fffbeb; color: #b45309; border: 1px solid #fde68a;
+}
+.focus-switch-link {
+  margin-top: 20px; background: none; border: none;
+  color: #888; font-size: 13px; text-decoration: underline; cursor: pointer;
 }
 
 /* ── 対象作業員の選択 ── */
