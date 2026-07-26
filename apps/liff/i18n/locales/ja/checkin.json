@@ -15,6 +15,7 @@
   "siteSearchPlaceholder": "現場名・読み仮名で検索",
   "siteSearchEmpty": "該当する現場がありません",
   "checkedInTag": "出勤中",
+  "switchSiteLink": "他の現場を選ぶ",
   "checkinConfirmTitle": "出勤前の確認",
   "checkoutConfirmTitle": "退勤前の確認",
   "registerAs": "{name} として登録",
