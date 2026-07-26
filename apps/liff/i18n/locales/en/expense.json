@@ -14,5 +14,6 @@
   },
   "userNotRegistered": "User is not registered",
   "accountIdFailed": "Failed to get accountId",
-  "proxyUserCreateFailed": "Failed to create proxy user: {message}"
+  "proxyUserCreateFailed": "Failed to create proxy user: {message}",
+  "crossTenantDenied": "Cannot save: the signed-in company does not match the report's worker. Please sign in again."
 }

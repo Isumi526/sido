@@ -32,15 +32,24 @@ export const useCurrentUser = () => {
       if (u) return u as User
       // users 行が無い email/pw 作業員 → users 行を作成（id付き＝日報/履歴が正しく保存される）。
       // 合成(id=null)だと daily_reports.user_id=null になり管理画面/履歴に出ないため必ず作る。
+      // ★ account_id でスコープ必須（クロステナント防止）。JWT の worker_id claim が現在のテナント
+      //   以外の workers 行を指した場合、スコープが無いと他テナントの worker を解決し、その
+      //   account_id で users 行を作ってしまう。結果 daily_reports が
+      //   「account_id=現テナント / user_id=別テナントのuser」というねじれた状態で保存される
+      //   （2026-06〜07 に本番で実害2件を確認）。ここで解決できない＝このテナントの作業員では
+      //   ないので null を返すのが正しい。
       const { data: w } = await supabase
-        .from('workers').select('id, name, role, account_id').eq('id', wid).maybeSingle()
+        .from('workers').select('id, name, role, account_id')
+        .eq('id', wid).eq('account_id', accountId).maybeSingle()
       if (!w) return null
       // upsert(onConflict=account_id,worker_id) で「同時解決による重複行」を構造的に防ぐ。
       // 一意 index users_account_worker_uniq（20260620000000）が衝突先。既存行があれば更新して返す。
+      // account_id は w.account_id ではなく現在テナントの accountId を使う（上のスコープで両者は
+      // 一致するが、他テナント値が混入しうる経路を型的に残さない）。
       const { data: created } = await supabase
         .from('users')
         .upsert(
-          { worker_id: w.id, account_id: w.account_id, real_name: w.name, worker_role: w.role, is_approved: true },
+          { worker_id: w.id, account_id: accountId, real_name: w.name, worker_role: w.role, is_approved: true },
           { onConflict: 'account_id,worker_id' },
         )
         .select('*').single()
