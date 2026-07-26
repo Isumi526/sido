@@ -2,6 +2,8 @@
 //  composables/useReport.ts
 //  日報フォームの状態管理と送信処理
 // ============================================================
+// 日報のdateはJSTローカル基準（UTC基準だと深夜0-9時JSTに前日が入る）
+import { todayStr } from '~/composables/schedule-core.gen'
 import { useI18n } from 'vue-i18n'
 import type { DailyReport, SiteReport, WorkerEntry, SubcontractorEntry, WorkerRole, VehicleExpense, LineItem, ExpenseFileLineItem, HighwayLineItem, GasolineItem } from '~/types'
 import type { RateBreakdown } from '~/utils/workerHours'
@@ -113,7 +115,7 @@ export const useReport = () => {
   const error      = ref<string | null>(null)
 
   const form = ref<DailyReport>({
-    date:      new Date().toISOString().split('T')[0],
+    date:      todayStr(),
     sender:    '',
     senderId:  '',
     isWorking: true,
@@ -154,7 +156,7 @@ export const useReport = () => {
     submitted.value = false
     error.value     = null
     form.value = {
-      date:      new Date().toISOString().split('T')[0],
+      date:      todayStr(),
       sender:    '',
       senderId:  '',
       isWorking: true,

@@ -11,6 +11,7 @@
 //  - 救済: 作業員が許可を依頼 → 管理者が admin で承認 → その worker×date のみ解除。
 //    キーは worker_id（ログイン方式跨ぎで安定）。
 // ============================================================
+import { todayStr } from '~/composables/schedule-core.gen'
 export const LOCK_AFTER_DAYS = 3
 
 // この日付（YYYY-MM-DD）以降の日報のみロック対象。これより前は常に編集可（移行前データを遡及ロックしない）。
@@ -18,7 +19,7 @@ export const LOCK_START_DATE = '2026-07-01'
 
 function diffDaysFromToday(date: string): number {
   const d = new Date(date + 'T00:00:00').getTime()
-  const today = new Date(new Date().toISOString().split('T')[0] + 'T00:00:00').getTime()
+  const today = new Date(todayStr() + 'T00:00:00').getTime()
   return Math.floor((today - d) / 86400000)
 }
 

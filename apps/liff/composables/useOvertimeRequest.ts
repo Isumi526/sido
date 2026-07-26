@@ -6,11 +6,11 @@
 //  - 締切は当日16:00固定（全現場一律・曜日/祝日例外なし・#80bd で15:00→16:00に変更）。
 //  - 金額/集計には触れない（保存済み時刻から workerHours が従来どおり料率算出）。
 // ============================================================
-export const OVERTIME_DEADLINE_HOUR = 16  // 当日この時刻まで申請可（16:00・#80bd で15:00→16:00）
+// todayStr は shared/schedule-core.ts の JSTローカル基準版を使う（UTC基準の
+// toISOString().split('T')[0] は深夜0-9時JSTに前日を返し、申請可否判定がズレる）。
+import { todayStr } from '~/composables/schedule-core.gen'
 
-function todayStr(): string {
-  return new Date().toISOString().split('T')[0]
-}
+export const OVERTIME_DEADLINE_HOUR = 16  // 当日この時刻まで申請可（16:00・#80bd で15:00→16:00）
 
 export function useOvertimeRequest() {
   const supabase = useSupabase()
