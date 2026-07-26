@@ -65,17 +65,13 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
-  # ── Vercel デプロイ（main のみ）─────────────────────────────────
-  deploy-vercel:
-    name: Deploy Vercel (production)
-    runs-on: ubuntu-latest
-    if: github.ref_name == 'main'
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Deploy to Vercel
-        working-directory: apps/liff
-        run: npx vercel --prod --token=${{ secrets.VERCEL_TOKEN }} --yes
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+  # ── Vercel デプロイは Git Integration が担う（この workflow では行わない）──────
+  # 旧 deploy-vercel job は削除した（2026-07-25）。理由:
+  #  1. 二重デプロイ: apps/liff は Vercel の Git Integration が main への push で自動デプロイしている。
+  #     裏付け = apps/liff/vercel.json の "git":{"deploymentEnabled":{"dev":false}}（dev のみ無効化＝main は有効）。
+  #     実測 = PR #71 のマージ 22:26 に対し本番 https://sido-liff.vercel.app のキャッシュ生成が 22:31。
+  #  2. 恒常的に失敗していた: apps/liff/.vercel/project.json の settings.rootDirectory="apps/liff" と
+  #     job 側の working-directory: apps/liff が二重に適用され、
+  #     "The provided path .../apps/liff/apps/liff does not exist" で 15 回以上連続 failure。
+  #     本番反映は Git Integration が担っていたため実害は無かったが、CI が常に赤いと本物の失敗に気づけない。
+  #  ※ apps/admin も同様に Git Integration 経由（この workflow に job は無い）。
