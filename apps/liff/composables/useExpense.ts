@@ -375,6 +375,16 @@ export const useExpense = () => {
       if (name && name !== '__other__') names.add(name)
     }
     if (names.size === 0) return
+    // ★ 現場の新規作成は権限者(admin/office/site_manager)のみ。
+    //   権限が無い場合はマスタ登録自体をスキップする。既存現場は ignoreDuplicates で
+    //   もともと no-op なので取りこぼしは無く、日報保存も妨げない（新規名は site_id 未解決の
+    //   まま保存され、admin「現場未設定の紐付け」で後から正せる）。
+    const perm = useWorkerPermission()
+    await perm.resolveRole()
+    if (!perm.canCreateSite.value) {
+      console.warn('[saveReportById] 現場作成権限が無いため現場マスタ登録をスキップ')
+      return
+    }
     const rows = [...names].map(name => ({ name, account_id: accountId }))
     const { error } = await supabase
       .from('sites')

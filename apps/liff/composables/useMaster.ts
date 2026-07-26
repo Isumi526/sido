@@ -144,6 +144,11 @@ export const useMaster = () => {
     const { getAccountId } = useAccount()
     const accountId = await getAccountId()
     if (!accountId) throw new Error('account not found')
+    // ★ 現場の新規作成は権限者(admin/office/site_manager)のみ。UIで選択肢を隠すだけでは
+    //   REST直叩き/古いバンドル/下書き復元で通り得るため、書き込み側でも弾く。
+    const perm = useWorkerPermission()
+    await perm.resolveRole()
+    if (!perm.canCreateSite.value) throw new Error('SITE_CREATE_FORBIDDEN')
     const { error } = await supabase
       .from('sites')
       .upsert({ name: name.trim(), account_id: accountId }, { onConflict: 'name,account_id' })
