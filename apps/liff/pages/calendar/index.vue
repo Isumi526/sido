@@ -453,6 +453,7 @@ import { findSimilarSiteNames } from '~/utils/siteSimilarity'
 import {
   shiftMonth, genMonthDates, isWeekend, weekdayIndex, dateCellClass, fmtDateTime,
   cellSchedules as coreCellSchedules, chipStyle as coreChipStyle, buildScheduleDiff, birthdayDatesByWorker,
+  todayStr as todayStrJST,
 } from '~/composables/schedule-core.gen'
 
 const { t } = useI18n()
@@ -644,7 +645,7 @@ interface ScheduleEdit {
 }
 
 const loading     = ref(false)
-const todayStr    = new Date().toISOString().split('T')[0]
+const todayStr    = todayStrJST()
 const gridWrapRef = ref<HTMLElement | null>(null)
 // テンプレート内の v-for ref は非リアクティブ変数で管理
 const _todayRow = { el: null as HTMLElement | null }

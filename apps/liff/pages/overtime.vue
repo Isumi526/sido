@@ -65,6 +65,7 @@
 </template>
 
 <script setup lang="ts">
+import { todayStr } from '~/composables/schedule-core.gen'
 import type { User } from '~/types'
 import { useI18n } from 'vue-i18n'
 import { TIME_OPTIONS } from '~/utils/workerHours'
@@ -79,7 +80,7 @@ const busy     = ref(false)
 const selfUser = ref<User | null>(null)
 const workerId = computed(() => selfUser.value?.worker_id ?? null)
 
-const today = new Date().toISOString().split('T')[0]
+const today = todayStr()
 const todayStatus = ref<'none' | 'pending' | 'approved' | 'rejected'>('none')
 const canRequestToday = ref(false)
 const recent = ref<any[]>([])
