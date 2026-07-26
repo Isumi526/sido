@@ -387,6 +387,18 @@ export const useExpense = () => {
     report: { date: string; isWorking: boolean; sites: unknown[]; note?: string; leaveType?: string | null; isBusinessTrip?: boolean; gasolineItems?: any[] }
   ): Promise<void> {
     const accountId = await getAccountId()
+
+    // ★ クロステナント書き込みガード（全ての日報保存はここを通る＝saveReport も本関数へ委譲）。
+    //   この関数は userId を引数で受け取る一方、account_id は独立に getAccountId() で解決するため、
+    //   両者がズレると「account_id=テナントA / user_id=テナントBのuser」というねじれた行が
+    //   出来てしまう（2026-06〜07 に本番で実害2件）。書き込み前に所属一致を検証する。
+    const { data: owner } = await supabase
+      .from('users').select('account_id').eq('id', userId).maybeSingle()
+    if (!owner || owner.account_id !== accountId) {
+      console.error('[saveReportById] クロステナント書き込みを拒否:', { userId, accountId, ownerAccountId: owner?.account_id ?? null })
+      throw new Error(t('expense.crossTenantDenied'))
+    }
+
     // 現場マスタを先に確実化 → その後 active 一覧を取得して各現場に site_id を解決する。
     //  （新規現場 __other__ も先に登録しておけば id を解決できる。best-effort・失敗時は name フォールバック）
     await registerNewSites(accountId, report.sites as any[])

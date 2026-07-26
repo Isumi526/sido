@@ -14,5 +14,6 @@
   },
   "userNotRegistered": "ユーザーが登録されていません",
   "accountIdFailed": "accountId取得失敗",
-  "proxyUserCreateFailed": "代理ユーザー作成失敗: {message}"
+  "proxyUserCreateFailed": "代理ユーザー作成失敗: {message}",
+  "crossTenantDenied": "ログイン中の会社と日報の対象者が一致しないため保存できません。ログインし直してください。"
 }

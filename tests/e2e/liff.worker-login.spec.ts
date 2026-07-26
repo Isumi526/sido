@@ -106,6 +106,63 @@ test('クエリパラメータでID/PASSが揃っていれば自動ログイン�
   await expect(page.locator('.home-page')).toBeVisible({ timeout: 20000 })
 })
 
+// ── 回帰: クロステナント（JWTのworker_id claimが別テナントのworkers行を指す）──
+//  useCurrentUser の email/pw 分岐が workers を account_id でスコープせず id だけで引いていたため、
+//  他テナントの worker が解決され、その account_id で users 行が作られていた。結果 daily_reports が
+//  「account_id=現テナント / user_id=別テナントのuser」というねじれた状態で保存される
+//  （2026-06〜07 に本番で実害2件＝シードの日報がdemo/hiromokkouのuserを指していた）。
+//  修正後は「このテナントの作業員ではない」＝解決不能(null)が正しい挙動。
+test('AC: JWTのworker_idが別テナントのworkerを指す場合、解決されず users 行も作られない', async ({ page }) => {
+  const accountId = await getAccountId()
+  const OTHER_SLUG = 'e2e-other-tenant'
+  const email = 'crosstenant.worker.e2e@example.com'
+  const pass  = 'crosstenant-1234'
+
+  // 別テナント（account）とその worker を用意（冪等）
+  execSync(
+    `psql "${DB_URL}" -v ON_ERROR_STOP=1 ` +
+    `-c "insert into accounts (name, slug) values ('E2E別テナント','${OTHER_SLUG}') on conflict (slug) do nothing" ` +
+    `-c "insert into workers (account_id, name, role, unit_price, active, sort_order) ` +
+    `select id, 'E2E別テナント作業員', 'site', 20000, true, 999 from accounts where slug='${OTHER_SLUG}' ` +
+    `and not exists (select 1 from workers w2 join accounts a2 on a2.id=w2.account_id ` +
+    `where a2.slug='${OTHER_SLUG}' and w2.name='E2E別テナント作業員')"`,
+    { stdio: 'ignore' },
+  )
+  const otherWorkerId = execSync(
+    `psql "${DB_URL}" -At -c "select w.id from workers w join accounts a on a.id=w.account_id ` +
+    `where a.slug='${OTHER_SLUG}' and w.name='E2E別テナント作業員' limit 1"`,
+  ).toString().trim()
+  expect(otherWorkerId, '別テナントのworkerが用意できていること').toBeTruthy()
+
+  // ★ ねじれの再現: account_slug は「今のテナント」、worker_id は「別テナントのworker」
+  await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
+    method: 'POST', headers: { apikey: ANON_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: pass }),
+  }).catch(() => {})
+  execSync(
+    `psql "${DB_URL}" -v ON_ERROR_STOP=1 ` +
+    `-c "update auth.users set raw_app_meta_data = coalesce(raw_app_meta_data,'{}'::jsonb) || ` +
+    `jsonb_build_object('account_slug','${ACCOUNT_SLUG}','worker_id','${otherWorkerId}','role','worker'), ` +
+    `email_confirmed_at=coalesce(email_confirmed_at,now()) where email='${email}'" ` +
+    `-c "delete from users where worker_id='${otherWorkerId}'"`,
+    { stdio: 'ignore' },
+  )
+
+  await page.goto('/login')
+  await page.getByTestId('login-email').fill(email)
+  await page.getByTestId('login-password').fill(pass)
+  await page.getByTestId('login-submit').click()
+  await page.waitForTimeout(6000)   // resolve() が走り切るのを待つ（作られるなら作られている頃）
+
+  // ★ 別テナントのworkerに対する users 行が作られていないこと（修正前はここで1行できていた）
+  const leaked = await restSrv(`users?worker_id=eq.${otherWorkerId}&select=id,account_id`)
+  expect(leaked?.length ?? 0, `別テナントworkerのusers行が作られてはいけない: ${JSON.stringify(leaked)}`).toBe(0)
+
+  // 現テナント側にも、この worker を名乗る行は無い
+  const inCurrent = await restSrv(`users?account_id=eq.${accountId}&worker_id=eq.${otherWorkerId}&select=id`)
+  expect(inCurrent?.length ?? 0).toBe(0)
+})
+
 test('誤ったパスワードはログイン失敗を表示する', async ({ page }) => {
   await page.goto('/login')
   await page.getByTestId('login-email').fill(EMAIL)
