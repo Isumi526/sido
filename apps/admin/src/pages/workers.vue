@@ -34,7 +34,7 @@
         </thead>
         <tbody>
           <tr v-for="w in filteredWorkers" :key="w.id">
-            <td class="name">{{ w.name }}</td>
+            <td class="name">{{ w.name }}<span v-if="w.name_kana" class="kana-sub">{{ w.name_kana }}</span></td>
             <td><span class="badge" :class="w.role">{{ w.role === 'factory' ? '工場/事務所' : '現場' }}</span></td>
             <td><span class="perm-badge" :class="w.permission_role ?? 'worker'">{{ permLabel(w.permission_role) }}</span></td>
             <td v-if="canViewWages" class="price">
@@ -77,6 +77,10 @@
         <div class="field">
           <label>名前</label>
           <input v-model="modal.name" class="input" placeholder="例：山田 太郎" />
+        </div>
+        <div class="field">
+          <label>ふりがな（50音順の並びに使用）</label>
+          <input v-model="modal.name_kana" class="input" placeholder="例：やまだ たろう" data-testid="worker-name-kana" />
         </div>
         <div class="field">
           <label>所属</label>
@@ -306,6 +310,7 @@ import { canViewWages, canViewHourlyWage, canManageUsers, canManageAuth, canView
 type Worker = {
   id: string
   name: string
+  name_kana?: string | null   // 読み仮名（50音順の並びに使用・手入力/nullable。sites.name_kana と同設計）
   role: 'factory' | 'site'
   permission_role?: 'admin' | 'office' | 'site_manager' | 'worker'
   daily_wage: number
@@ -532,7 +537,7 @@ function toggleProxyId(id: string) {
 async function load() {
   const accountId = await getAccountId()
   const [{ data: workersData }, { data: usersData }, { data: proxyData }] = await Promise.all([
-    supabase.from('workers').select('id, name, role, permission_role, daily_wage, hourly_wage, active, status, hire_date, birth_date, address, mobile_phone, notify_email, emergency_contact, employment_type, weekly_scheduled_days, company_info, invoice_number, insurance_info, labor_insurance_number, report_start_date, auth_user_id').eq('account_id', accountId).order('name'),
+    supabase.from('workers').select('id, name, name_kana, role, permission_role, daily_wage, hourly_wage, active, status, hire_date, birth_date, address, mobile_phone, notify_email, emergency_contact, employment_type, weekly_scheduled_days, company_info, invoice_number, insurance_info, labor_insurance_number, report_start_date, auth_user_id').eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
     supabase.from('users').select('worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
     supabase.from('worker_proxies').select('worker_id, proxy_operator_id').eq('account_id', accountId),
   ])
@@ -551,7 +556,7 @@ async function load() {
 onMounted(load)
 
 function openAdd() {
-  modal.value = { name: '', role: 'site', permission_role: 'worker', daily_wage: 20000, hourly_wage: 2000, hire_date: null, birth_date: null, address: null, mobile_phone: null, notify_email: null, emergency_contact: null, employment_type: 'fulltime', weekly_scheduled_days: null, company_info: null, invoice_number: null, insurance_info: null, labor_insurance_number: null, report_start_date: null }
+  modal.value = { name: '', name_kana: '', role: 'site', permission_role: 'worker', daily_wage: 20000, hourly_wage: 2000, hire_date: null, birth_date: null, address: null, mobile_phone: null, notify_email: null, emergency_contact: null, employment_type: 'fulltime', weekly_scheduled_days: null, company_info: null, invoice_number: null, insurance_info: null, labor_insurance_number: null, report_start_date: null }
   modalProxyIds.value = []
   familyMembers.value = []
   healthCheckups.value = []
@@ -629,6 +634,7 @@ async function save() {
 
     const workerPayload = {
       name:                  modal.value.name!.trim(),
+      name_kana:             modal.value.name_kana?.trim() || null,
       role:                  modal.value.role ?? 'site',
       permission_role:       modal.value.permission_role ?? 'worker',
       daily_wage:            modal.value.daily_wage ?? 0,
@@ -763,6 +769,7 @@ async function setStatus(w: Worker, status: WStatus) {
 .table td { padding: 14px 16px; border-top: 1px solid #f0f0f0; font-size: 14px; }
 /* タブで状態を分けるため行のグレーアウトは廃止（状態カラムのバッジで表現） */
 .name { font-weight: 600; }
+.kana-sub { color: #aaa; font-size: 11px; margin-left: 8px; font-weight: 400; }
 .price { font-variant-numeric: tabular-nums; }
 .price-unit { font-size: 11px; color: #888; }
 .price-hourly { font-size: 11px; color: #4338ca; }
