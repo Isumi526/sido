@@ -157,8 +157,13 @@
                   <td><input v-model="it.item_date" type="date" class="inp-sm inp-date" /></td>
                   <td>
                     <div v-if="it.site_id === '__new__'" class="new-site">
-                      <input v-model="it._newSiteName" class="inp-sm inp-site" placeholder="現場名" @keyup.enter="addSite(it)" />
-                      <button class="btn-new-site" :disabled="!it._newSiteName?.trim() || addingSite" @click="addSite(it)">追加</button>
+                      <!-- Enterでの即時確定はしない。日本語入力では変換確定にもEnterを使うため、
+                           「西尾張デポ」と打っている途中の変換確定Enterで「西尾張」が現場として
+                           登録されてしまっていた。確定は右の「追加」ボタンのみ。
+                           keydown.enter.prevent でフォーム送信/既定動作も止める。 -->
+                      <input v-model="it._newSiteName" class="inp-sm inp-site" placeholder="現場名"
+                             data-testid="new-site-name" @keydown.enter.prevent />
+                      <button class="btn-new-site" data-testid="new-site-add" :disabled="!it._newSiteName?.trim() || addingSite" @click="addSite(it)">追加</button>
                       <button class="btn-new-site-cancel" @click="it.site_id = null">×</button>
                     </div>
                     <select v-else v-model="it.site_id" class="inp-sm inp-site">
