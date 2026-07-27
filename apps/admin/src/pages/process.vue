@@ -208,18 +208,24 @@
     <div v-if="importModal" class="modal-overlay" @click.self="closeImportModal">
       <div class="modal import-modal">
         <h2>工程表インポート（複数現場）</h2>
-        <p class="hint">複数の現場が混在した工程表Excelを取り込み、AI解析で工程を現場ごとに振り分けます。各現場の取込先を確認してから実行してください。</p>
+        <p class="hint">複数の現場が混在した工程表（Excel / PDF）を取り込み、AI解析で工程を現場ごとに振り分けます。各現場の取込先を確認してから実行してください。</p>
 
         <div v-if="!importGroups.length" class="import-drop"
              :class="{ 'drag-active': importDragActive }"
              @dragover.prevent="importDragActive = true" @dragleave.prevent="importDragActive = false" @drop.prevent="onImportDrop">
-          <input ref="importInput" type="file" accept=".xlsx,.xls" hidden data-testid="import-file" @change="onImportFile" />
+          <input ref="importInput" type="file" accept=".xlsx,.xls,.pdf,application/pdf" hidden data-testid="import-file" @change="onImportFile" />
           <button type="button" class="btn-excel" :disabled="importBusy" @click="importInput?.click()">
-            {{ importBusy ? 'AI解析中…' : 'Excelを選択' }}
+            {{ importBusy ? (importProgress ? `AI解析中… ${importProgress}` : 'AI解析中…') : 'ファイルを選択（Excel / PDF）' }}
           </button>
-          <span class="excel-hint">{{ importDragActive ? 'ここにドロップ' : 'または工程表Excelをドラッグ&ドロップ' }}</span>
+          <span class="excel-hint">{{ importDragActive ? 'ここにドロップ' : 'または工程表(Excel/PDF)をドラッグ&ドロップ' }}</span>
         </div>
         <p v-if="importMsg" class="excel-msg" :class="{ ok: importOk }">{{ importMsg }}</p>
+        <!-- PDFはガントのバーを画像として読むため日付が1日ずれることがある。Excelは塗り色を
+             実データとして読むので正確。取込前に必ず日付を確認してもらう（自動確定はしない） -->
+        <p v-if="importWasPdf && importGroups.length" class="import-pdf-note" data-testid="import-pdf-note">
+          <span class="material-symbols-rounded banner-icon">warning</span>
+          PDFはガントチャートを画像として読み取るため、<strong>開始日・終了日が1日ずれることがあります</strong>。取込前に日付をご確認ください（Excelで取り込める場合はExcelの方が正確です）。
+        </p>
 
         <div v-if="importGroups.length" class="import-review" data-testid="import-review">
           <table class="import-table">
@@ -560,6 +566,8 @@ const importMsg = ref('')
 const importError = ref('')
 const importGroups = ref<ImportGroup[]>([])
 const existingCounts = ref<Record<string, number>>({})   // site_id → 既存工程数
+const importProgress = ref('')   // PDF複数ページ解析の進捗（"2/5ページ" 等）
+const importWasPdf = ref(false)  // 直近の取込元がPDFか（日付ズレ注意の案内表示に使う）
 
 function existingCount(sid: string): number { return existingCounts.value[sid] ?? 0 }
 const normName = (s: string) => (s ?? '').trim().replace(/\s+/g, '').toLowerCase()
@@ -573,6 +581,9 @@ function closeImportModal() {
   if (importBusy.value && !confirm('AI解析・取込処理中です。破棄して閉じますか？')) return
   importModal.value = false
 }
+const isPdfFile = (f: File) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name)
+const isExcelFile = (f: File) => /\.xlsx?$/i.test(f.name)
+
 function onImportFile(e: Event) {
   const f = (e.target as HTMLInputElement).files?.[0]
   if (f) importMultiSite(f)
@@ -580,28 +591,87 @@ function onImportFile(e: Event) {
 }
 function onImportDrop(e: DragEvent) {
   importDragActive.value = false
-  const f = Array.from(e.dataTransfer?.files ?? []).find((x) => /\.xlsx?$/i.test(x.name))
+  const files = Array.from(e.dataTransfer?.files ?? [])
+  const f = files.find((x) => isExcelFile(x) || isPdfFile(x))
   if (f) importMultiSite(f)
+  else if (files.length) { importOk.value = false; importMsg.value = 'Excel(.xlsx/.xls)またはPDFをドロップしてください' }
+}
+
+// Uint8Array → base64（drawing-materials.vue と同型。スタック溢れ回避のためchunk分割）
+function importBytesToB64(bytes: Uint8Array): string {
+  let bin = ''
+  const chunk = 0x8000
+  for (let i = 0; i < bytes.length; i += chunk) bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)))
+  return btoa(bin)
+}
+
+// PDF → ページ単位の1ページPDF(base64)。Gemini は application/pdf を inline_data で
+// そのまま読めるためラスタライズ不要（drawing-materials.vue の buildPages と同型）。
+async function importPdfPages(file: File): Promise<string[]> {
+  const buf = await file.arrayBuffer()
+  const { PDFDocument } = await import('pdf-lib')
+  const src = await PDFDocument.load(buf)
+  const out: string[] = []
+  for (let i = 0; i < src.getPageCount(); i++) {
+    const docp = await PDFDocument.create()
+    const [pg] = await docp.copyPages(src, [i])
+    docp.addPage(pg)
+    out.push(importBytesToB64(await docp.save()))
+  }
+  return out
 }
 
 async function importMultiSite(file: File) {
-  importBusy.value = true; importMsg.value = ''; importError.value = ''
+  importBusy.value = true; importMsg.value = ''; importError.value = ''; importProgress.value = ''
+  let partialNote = ''   // PDF一部ページ失敗の注記（成功メッセージに併記して消えないようにする）
+  importWasPdf.value = isPdfFile(file)
   try {
-    const buf = await file.arrayBuffer()
-    const csvText = await excelToImportText(buf)
-    if (!csvText.trim()) { importOk.value = false; importMsg.value = 'ファイルから読み取れるデータがありませんでした'; return }
+    if (!isExcelFile(file) && !isPdfFile(file)) {
+      importOk.value = false; importMsg.value = 'Excel(.xlsx/.xls)またはPDFを選択してください'; return
+    }
     const fnName = import.meta.env.DEV ? 'test-process-excel-import' : 'process-excel-import'
     const edgeUrl = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
     if (!edgeUrl) { importOk.value = false; importMsg.value = 'Edge Function URL未設定のため解析できません'; return }
     const { data: { session } } = await supabase.auth.getSession()
-    const res = await fetch(`${edgeUrl}/${fnName}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
-      body: JSON.stringify({ text: csvText, multiSite: true }),
-    })
-    const r = await res.json()
-    if (!res.ok || r.ok === false) { importOk.value = false; importMsg.value = r.error ?? 'AI解析に失敗しました'; return }
-    const extracted: ImportTask[] = Array.isArray(r.tasks) ? r.tasks : []
+    const callAnalyze = async (payload: Record<string, unknown>) => {
+      const res = await fetch(`${edgeUrl}/${fnName}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+        body: JSON.stringify({ ...payload, multiSite: true }),
+      })
+      return { res, r: await res.json() }
+    }
+
+    let extracted: ImportTask[] = []
+    if (isPdfFile(file)) {
+      // PDFは1ページずつ vision で解析して連結（複数ページの工程表に対応）。
+      // 1ページ失敗しても残りは活かす（best-effort・失敗ページ数を後で報せる）。
+      const pages = await importPdfPages(file)
+      if (!pages.length) { importOk.value = false; importMsg.value = 'PDFからページを読み取れませんでした'; return }
+      let failed = 0
+      for (let i = 0; i < pages.length; i++) {
+        importProgress.value = `${i + 1}/${pages.length}ページ`
+        try {
+          const { res, r } = await callAnalyze({ image_base64: pages[i], mime: 'application/pdf' })
+          if (!res.ok || r.ok === false) { failed++; continue }
+          if (Array.isArray(r.tasks)) extracted.push(...r.tasks)
+        } catch { failed++ }
+      }
+      importProgress.value = ''
+      if (!extracted.length) {
+        importOk.value = false
+        importMsg.value = failed ? `PDFの解析に失敗しました（${failed}/${pages.length}ページ）` : '工程を読み取れませんでした'
+        return
+      }
+      if (failed) partialNote = `（※ ${failed}/${pages.length}ページは解析できませんでした）`
+    } else {
+      const buf = await file.arrayBuffer()
+      const csvText = await excelToImportText(buf)
+      if (!csvText.trim()) { importOk.value = false; importMsg.value = 'ファイルから読み取れるデータがありませんでした'; return }
+      const { res, r } = await callAnalyze({ text: csvText })
+      if (!res.ok || r.ok === false) { importOk.value = false; importMsg.value = r.error ?? 'AI解析に失敗しました'; return }
+      extracted = Array.isArray(r.tasks) ? r.tasks : []
+    }
     if (!extracted.length) { importOk.value = false; importMsg.value = '工程を読み取れませんでした'; return }
 
     // 抽出された現場名でグルーピング
@@ -629,11 +699,12 @@ async function importMultiSite(file: File) {
       return { extractedName, tasks, target: match ? match.id : (extractedName ? '__new__' : '__skip__'), mode: 'append' as const, similarCandidates }
     })
     importOk.value = true
-    importMsg.value = `${extracted.length}件の工程を${importGroups.value.length}現場に振り分けました。取込先を確認してください。`
+    importMsg.value = `${extracted.length}件の工程を${importGroups.value.length}現場に振り分けました。取込先を確認してください。${partialNote}`
   } catch (err: any) {
     importOk.value = false; importMsg.value = err?.message ?? 'AI解析に失敗しました'
   } finally {
     importBusy.value = false
+    importProgress.value = ''
   }
 }
 
@@ -836,6 +907,9 @@ async function remove(t: Task) {
 .excel-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; padding: 10px; border: 1.5px dashed #cfd6e4; border-radius: 10px; transition: border-color .15s, background .15s; }
 .excel-row.drag-active { border-color: #1a56c4; background: #eef3fd; }
 .excel-row input[type="file"] { display: none; }
+.import-pdf-note { margin: 8px 0 0; font-size: 12px; line-height: 1.6; color: #B45309;
+  background: #FEF3C7; border: 1px solid #FDE68A; border-radius: 6px; padding: 8px 10px; }
+.import-pdf-note .banner-icon { font-size: 1em; vertical-align: middle; margin-right: 4px; }
 .excel-hint { font-size: 12px; color: #8a93a6; }
 .excel-row.drag-active .excel-hint { color: #1a56c4; font-weight: 700; }
 .btn-excel { background: #1a56c4; color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }

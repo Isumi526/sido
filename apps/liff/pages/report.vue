@@ -48,7 +48,7 @@
         <!-- 日付 -->
         <FormSection num="01" :title="$t('report.dateSection')">
           <div class="date-fixed">{{ dateWithWeekday }}</div>
-          <div v-if="!isEditMode && report.form.value.date < new Date().toISOString().split('T')[0]" class="past-date-notice">
+          <div v-if="!isEditMode && report.form.value.date < todayJst" class="past-date-notice">
             <span v-html="$t('report.pastDateNotice')" />
           </div>
           <div v-if="currentDateLocked" class="locked-notice">
@@ -190,7 +190,8 @@
                   <option v-for="name in grp.sites" :key="name" :value="name">{{ name }}</option>
                 </optgroup>
               </template>
-              <option value="__other__">{{ $t('report.addNewSite') }}</option>
+              <!-- 現場の新規作成は権限者(admin/office/site_manager)のみ。職人には選択肢自体を出さない -->
+              <option v-if="canCreateSite" value="__other__">{{ $t('report.addNewSite') }}</option>
             </select>
             <div v-if="site.siteName === '__unset__'" class="unset-hint">
               <HintIcon :text="$t('report.siteUnsetNote')" :label="$t('report.siteUnset')" />
@@ -680,6 +681,7 @@
 </template>
 
 <script setup lang="ts">
+import { todayStr } from '~/composables/schedule-core.gen'
 import { computeWorkerHours, getRateLines, calcBreakMinutes, effectiveBreakMinutes, effectiveBreakWindows, parseMin, TIME_OPTIONS } from '~/utils/workerHours'
 import type { RateBreakdown } from '~/utils/workerHours'
 import { computeDiff } from '~/utils/diffReport'
@@ -735,6 +737,11 @@ const report  = useReport()
 const expense  = useExpense()
 const receipt  = useReceiptAnalysis()
 const proxy   = useProxyMode()
+// 「過去日の日報です」表示に使う今日（JSTローカル基準。UTC基準だと深夜0-9時JSTに
+// 前日となり、当日の日報が過去日扱いで警告表示されてしまう）
+const todayJst = computed(() => todayStr())
+// 現場の新規作成は権限者(admin/office/site_manager)のみ。職人は既存現場から選ぶ
+const { resolveRole: resolveWorkerRole, canCreateSite } = useWorkerPermission()
 
 const selfUser = ref<User | null>(null)
 
@@ -1289,6 +1296,7 @@ onMounted(async () => {
   //  下請け業者などがプルダウンに確実に反映されるようにする（編集パスと統一）。
   const masterPromise = master.fetch(true)
   if (!liff.initialized.value) await liff.init()
+  await resolveWorkerRole()   // 現場作成の権限（canCreateSite）を解決
 
   // ユーザー登録チェック（キャッシュあれば即座。未登録でもフォームは使えるが経費PDFに名前が出ない）
   const userId = liff.profile.value?.userId

@@ -53,10 +53,20 @@ Deno.serve(async (req) => {
   if (userErr || !userData?.user) return json({ error: 'トークン不正' }, 401)
 
   try {
-    const { text, siteName, multiSite } = await req.json() as { text?: string; siteName?: string; multiSite?: boolean }
-    if (!text || !text.trim()) return json({ error: 'text is required' }, 400)
+    const { text, siteName, multiSite, image_base64, mime } = await req.json() as {
+      text?: string; siteName?: string; multiSite?: boolean; image_base64?: string; mime?: string
+    }
+    // 入力は「Excel由来のCSVテキスト」か「PDF/画像(vision)」のどちらか。
+    //  PDF は Gemini に inline_data でそのまま渡せる（ラスタライズ不要・drawing-material-extract と同方式）。
+    const isVision = !!image_base64 && !!mime
+    if (!isVision && (!text || !text.trim())) return json({ error: 'text または image_base64+mime が必要です' }, 400)
+    if (isVision && !/^(application\/pdf|image\/(png|jpeg|jpg|webp))$/.test(mime!)) {
+      return json({ error: `未対応のmime: ${mime}` }, 400)
+    }
 
-    const truncated = text.length > MAX_TEXT_LEN ? text.slice(0, MAX_TEXT_LEN) : text
+    const truncated = isVision ? '' : (text!.length > MAX_TEXT_LEN ? text!.slice(0, MAX_TEXT_LEN) : text!)
+    // 複数現場モード: 1ファイルに複数現場が混在する工程表。各タスクの現場名(site_name)も抽出する。
+    // 単一現場モード(従来): siteName ヒントを与え、その現場の工程表として読む。
     const siteHint = multiSite
       ? '\nこのファイルには複数の現場が混在しています。各タスクがどの現場のものか(シート名・現場列・見出し等から判断)を site_name に必ず入れてください。'
       : (siteName ? `\n現場名: ${siteName}（この現場の工程表として読み取る）` : '')
@@ -70,7 +80,36 @@ Deno.serve(async (req) => {
       ? '\n\n「■ シート「〜」の色塗り期間」という追加情報がある場合、それは元のExcelで日付列がセルの色塗りで表現されていた工程(ガントチャート形式)について、行ラベルごとに開始日・終了日を計算済みのヒントです。「行「工程名」: 開始日=YYYY-MM-DD, 終了日=YYYY-MM-DD」の形式で、行ラベルが一致するタスクのstart_date/end_dateにそのままこの値を使ってください（自分で列を数え直す必要はありません）。'
       : ''
 
-    const prompt = `これは工程表(スケジュール表)のExcelをCSV化したテキストです。内容から工程(タスク)の一覧をJSONのみで返してください（説明文・コードフェンス不要）。${siteHint}${colorGanttHint}
+    // vision(PDF/画像)の場合はガントチャートを目で読ませる。塗り/バーの左右端から日付軸を辿って
+    // 開始日・終了日を決めるよう明示する（Excel経路の「色塗り期間」ヒントに相当する指示）。
+    const visionHint = isVision
+      ? 'これは工程表(スケジュール表)のPDF/画像です。表とガントチャートを読み取り、工程(タスク)の一覧をJSONのみで返してください（説明文・コードフェンス不要）。' +
+        '\nガントチャート（横棒・帯・塗りつぶしで期間を表す形式）の場合は、日付軸（列見出し）と照らし合わせて各工程のバーの左端を開始日、右端を終了日として読み取ってください。' +
+        '\n★日付の読み取り手順（必ず守る）: ①まず日付軸の列見出しを左から順にすべて書き出す。②各工程について、色が付いている(塗られている)列が左から何番目かを数える。③その番号に対応する列見出しの日付を**そのまま**使う。' +
+        '\n★重要: 日付列は連続していないことがある（土日・祝日が飛ばされ、例えば 7 の次が 10 になる）。列の位置から日付を計算・推測してはいけない。必ず該当列の見出しに実際に書かれている日付を使うこと。' +
+        '\n年が明記されていない場合は表題や近傍の記載から補ってください。' +
+        `${siteHint}`
+      : ''
+
+    const prompt = isVision ? `${visionHint}
+
+各行を以下の形式のオブジェクトにしてください。読み取れない項目はnull。日付は"YYYY-MM-DD"。
+実際の工程行ではない行（見出し・空行・凡例・合計行など）は含めないこと。工程名(name)が読み取れない行は除外すること。
+
+{
+  "tasks": [
+    {
+      "name": "工程名（必須。例：内装ボード工事）",
+${siteField}      "assignee": "担当者名（なければnull）",
+      "site_manager": "現場管理者名（なければnull）",
+      "work_type": "日中" | "夜間" | "家具" | null,
+      "contract_amount": 請負金額（数値。カンマ・円記号は除く。なければnull）,
+      "start_date": "開始日（YYYY-MM-DD。なければnull）",
+      "end_date": "終了日（YYYY-MM-DD。なければnull）",
+      "memo": "備考（なければnull）"
+    }
+  ]
+}` : `これは工程表(スケジュール表)のExcelをCSV化したテキストです。内容から工程(タスク)の一覧をJSONのみで返してください（説明文・コードフェンス不要）。${siteHint}${colorGanttHint}
 
 各行を以下の形式のオブジェクトにしてください。読み取れない項目はnull。日付は"YYYY-MM-DD"。
 実際の工程行ではない行（見出し・空行・凡例・合計行など）は含めないこと。工程名(name)が読み取れない行は除外すること。
@@ -93,8 +132,11 @@ ${siteField}      "assignee": "担当者名（なければnull）",
 ■ CSVテキスト
 ${truncated}`
 
+    const parts: unknown[] = [{ text: prompt }]
+    if (isVision) parts.push({ inline_data: { mime_type: mime, data: image_base64 } })
+
     const body = {
-      contents: [{ parts: [{ text: prompt }] }],
+      contents: [{ parts }],
       generationConfig: {
         temperature: 0,
         maxOutputTokens: 32768,
