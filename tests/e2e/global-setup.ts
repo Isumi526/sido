@@ -45,7 +45,13 @@ async function checkFunctionsServed() {
       body: JSON.stringify({}),
       signal: ctrl.signal,
     }).finally(() => clearTimeout(timer))
-    // 到達さえしていればOK（account not found 等の4xxは「配信されている」証拠として十分）。
+    // 4xx（account not found 等）は「配信されている」証拠として十分＝通す。
+    // ただし 5xx は別。functions serve 未起動だと Kong が 503 を返すため、これを
+    // 「到達した＝OK」と判定してしまうと本来の目的（未配信を即・明示的に落とす）を
+    // 果たせない（2026-07-26 に工程系4specが落ちた原因の切り分けに1時間以上を要した）。
+    if (res.status >= 500) {
+      throw new Error(`Edge Functions が未配信の可能性（get-master → HTTP ${res.status}）`)
+    }
     console.log(`[e2e] EF疎通OK (get-master → HTTP ${res.status})`)
   } catch (e) {
     throw new Error(

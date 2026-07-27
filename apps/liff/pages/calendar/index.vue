@@ -271,7 +271,8 @@
                     <option v-for="s in grp.sites" :key="s" :value="s">{{ s }}</option>
                   </optgroup>
                 </template>
-                <option value="__other__">{{ $t('calendar.registerNewSite') }}</option>
+                <!-- 現場の新規作成は権限者(admin/office/site_manager)のみ。職人には選択肢自体を出さない -->
+                <option v-if="canCreateSite" value="__other__">{{ $t('calendar.registerNewSite') }}</option>
               </select>
             </div>
             <div v-if="formModal.title === '__other__'" class="form-row" style="margin-top:8px">
@@ -452,6 +453,7 @@ import { findSimilarSiteNames } from '~/utils/siteSimilarity'
 import {
   shiftMonth, genMonthDates, isWeekend, weekdayIndex, dateCellClass, fmtDateTime,
   cellSchedules as coreCellSchedules, chipStyle as coreChipStyle, buildScheduleDiff, birthdayDatesByWorker,
+  todayStr as todayStrJST,
 } from '~/composables/schedule-core.gen'
 
 const { t } = useI18n()
@@ -508,14 +510,11 @@ async function loadSchedCats() {
 }
 
 // 現場管理者以上か（カテゴリの表示/非表示を管理できる。色・名前は固定＝編集不可）
-const canManageCat = ref(false)
-async function resolveCanManageCat() {
-  const wid = schedules.myWorkerId.value
-  if (!wid) return
-  const { data } = await supabase.from('workers').select('permission_role').eq('id', wid).maybeSingle()
-  const role = (data as { permission_role?: string } | null)?.permission_role
-  canManageCat.value = role === 'admin' || role === 'office' || role === 'site_manager'
-}
+// 権限判定は useWorkerPermission に集約（判定が散在すると片方だけ直して穴が残る）。
+// カテゴリマスタ管理も現場作成も「マスタ操作＝admin/office/site_manager」で同じ境界。
+const { resolveRole: resolveWorkerRole, canEditMaster, canCreateSite } = useWorkerPermission()
+const canManageCat = canEditMaster
+async function resolveCanManageCat() { await resolveWorkerRole() }
 // カテゴリマスタ管理（現場管理者以上・アカウント単位・使わないカテゴリの表示/非表示のみ）
 const catManageOpen = ref(false)
 function openCatManage() { catManageOpen.value = true }
@@ -646,7 +645,7 @@ interface ScheduleEdit {
 }
 
 const loading     = ref(false)
-const todayStr    = new Date().toISOString().split('T')[0]
+const todayStr    = todayStrJST()
 const gridWrapRef = ref<HTMLElement | null>(null)
 // テンプレート内の v-for ref は非リアクティブ変数で管理
 const _todayRow = { el: null as HTMLElement | null }

@@ -18,6 +18,17 @@ export function toDateStr(dt: Date): string {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
 }
 
+/**
+ * 「今日」の 'YYYY-MM-DD'（ローカル＝JST基準）。
+ * ★ `new Date().toISOString().split('T')[0]` を使ってはいけない。あれはUTC基準なので
+ *   深夜0:00〜8:59 JST の間は前日を返し、画面(JSTで描画)と1日ズレる。日報の保存日付・
+ *   過去3日ロック判定・残業申請の対象日などがズレる実害がある（2026-07-21 未明のE2Eで発覚）。
+ *   日付を「その日の暦日」として扱う箇所は必ずこれを使う。
+ */
+export function todayStr(): string {
+  return toDateStr(new Date())
+}
+
 /** base の月初から n ヶ月ずらした Date（日は1日固定） */
 export function shiftMonth(base: Date, n: number): Date {
   const d = new Date(base)
