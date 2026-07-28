@@ -190,3 +190,45 @@ test('AC: 自由記述の工種でも工種別内訳に自動集計される（�
   await expect(bd).toBeVisible({ timeout: 10000 })
   await expect(bd).toContainText('5,000')   // 工種A = 2,000 + 3,000
 })
+
+// ── Q6: 法定福利費・端数調整・原価サマリ ──────────────────────
+// Notion: 3aa0ff81c56b81319df4d5cabd696ec4
+// Excelの「項目」シート下部と同じ: 請負 / 原価 / 差引 / 利率、法定福利費 = 小計×23%×15%
+test('AC(Q6): 原価サマリ（請負/原価/差引/利率）が社内用に表示される', async ({ page }) => {
+  await openNewProject(page)
+  await page.locator('[data-testid="add-row"]').click()
+  await page.locator('[data-testid="item-name-0"]').fill('壁面 外周LGS間仕切')
+  await page.locator('[data-testid="item-qty-0"]').fill('10')
+  await page.locator('[data-testid="item-cost-0"]').fill('2000')     // 原価 20,000
+  await expect(page.locator('[data-testid="item-price-0"]')).toHaveValue('2500')  // 客先 25,000
+
+  const cs = page.locator('[data-testid="cost-summary"]')
+  await expect(cs).toBeVisible()
+  await expect(page.locator('[data-testid="cs-revenue"]')).toContainText('25,000')
+  await expect(page.locator('[data-testid="cs-cost"]')).toContainText('20,000')
+  await expect(page.locator('[data-testid="cs-profit"]')).toContainText('5,000')
+  await expect(page.locator('[data-testid="cs-rate"]')).toContainText('20')   // 5000/25000 = 20%
+})
+
+test('AC(Q6): 法定福利費が 小計×23%×15% で算出され、端数調整を加えて合計になる', async ({ page }) => {
+  await openNewProject(page)
+  await page.locator('[data-testid="add-row"]').click()
+  await page.locator('[data-testid="item-name-0"]').fill('天井 下地組')
+  await page.locator('[data-testid="item-qty-0"]').fill('100')
+  await page.locator('[data-testid="item-price-0"]').fill('10000')   // 小計 1,000,000
+
+  // 法定福利費・端数調整・合計は「見積書プレビュー」タブ側にある
+  await page.locator('[data-testid="tab-preview"]').click()
+  await page.waitForTimeout(800)
+
+  // 法定福利費 = 1,000,000 × 23% × 15% = 34,500
+  await expect(page.locator('.welfare')).toContainText('34,500', { timeout: 10000 })
+
+  // 端数調整 +500 → 合計(税抜) = 1,000,000 + 34,500 + 500 = 1,035,000
+  // 端数調整欄は見積書プレビュー側にありページ下方なのでスクロールしてから操作する
+  const adj = page.locator('[data-testid="doc-adjustment"]')
+  await adj.scrollIntoViewIfNeeded()
+  await adj.fill('500')
+  await adj.dispatchEvent('change')
+  await expect(page.locator('[data-testid="pdf-grandtotal"]')).toContainText('1,035,000', { timeout: 10000 })
+})
