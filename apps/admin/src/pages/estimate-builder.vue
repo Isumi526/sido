@@ -75,6 +75,7 @@
     <template v-if="projectId">
       <div class="builder-tabs">
         <button class="btab" :class="{ active: builderTab === 'intake' }" data-testid="tab-intake" @click="builderTab = 'intake'">案件情報</button>
+        <button class="btab" :class="{ active: builderTab === 'quotes' }" data-testid="tab-quotes" @click="builderTab = 'quotes'">相見積</button>
         <button class="btab" :class="{ active: builderTab === 'items' }" data-testid="tab-items" @click="builderTab = 'items'">明細入力</button>
         <button class="btab" :class="{ active: builderTab === 'preview' }" data-testid="tab-preview" @click="builderTab = 'preview'">見積書プレビュー</button>
         <button class="btab" :class="{ active: builderTab === 'po' }" data-testid="tab-po" @click="builderTab = 'po'">商社へ発注</button>
@@ -124,6 +125,112 @@
             </li>
           </ul>
           <p v-else class="hint">まだ図面がありません。元請けから受け取った図面をここに置いておくと、見積作成時に参照できます。</p>
+        </section>
+      </div>
+
+      <!-- ── 相見積（Q3: 依頼→受領→比較・選定 / 受領登録の副作用で単価履歴が貯まる）── -->
+      <div v-show="builderTab === 'quotes'">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>下請への見積依頼</h2>
+            <button class="btn-add" data-testid="qr-add" @click="addQuoteRequest">＋ 依頼を追加</button>
+          </div>
+          <p class="hint">依頼した業者と回収状況を管理します。受領した単価は<strong>そのまま単価履歴になります</strong>（別途の入力は不要）。</p>
+          <table class="table">
+            <thead><tr><th>業者</th><th>工種</th><th>依頼日</th><th>回収期限</th><th>受領日</th><th>状況</th><th class="num">明細</th><th></th></tr></thead>
+            <tbody>
+              <tr v-for="(q, qi) in quoteRequests" :key="q.id" :data-testid="`qr-row-${qi}`">
+                <td>
+                  <select v-model="q.subcontractor_id" class="input sm" :data-testid="`qr-sub-${qi}`" @change="saveQuoteRequest(q)">
+                    <option :value="null">—</option>
+                    <option v-for="sc in subcontractorOptions" :key="sc.id" :value="sc.id">{{ sc.name }}</option>
+                  </select>
+                </td>
+                <td><input v-model="q.trade_name" class="input sm" :data-testid="`qr-trade-${qi}`" list="est-trades" placeholder="工種" @change="saveQuoteRequest(q)" /></td>
+                <td><input v-model="q.requested_at" type="date" class="input sm" :data-testid="`qr-req-${qi}`" @change="saveQuoteRequest(q)" /></td>
+                <td><input v-model="q.due_date" type="date" class="input sm" :data-testid="`qr-due-${qi}`" @change="saveQuoteRequest(q)" /></td>
+                <td><input v-model="q.received_at" type="date" class="input sm" :data-testid="`qr-recv-${qi}`" @change="saveQuoteRequest(q)" /></td>
+                <td><span class="qr-badge" :class="qrState(q).cls" :data-testid="`qr-state-${qi}`">{{ qrState(q).text }}</span></td>
+                <td class="num" :data-testid="`qr-count-${qi}`">{{ linesOf(q.id).length }}</td>
+                <td>
+                  <button class="btn-edit" :data-testid="`qr-open-${qi}`" @click="openQuoteLines(q)">明細</button>
+                  <button class="btn-del" :data-testid="`qr-del-${qi}`" @click="removeQuoteRequest(q)">×</button>
+                </td>
+              </tr>
+              <tr v-if="!quoteRequests.length"><td colspan="8" class="empty">「＋ 依頼を追加」で下請への見積依頼を記録します</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <!-- 受領明細の入力（この登録が単価履歴になる） -->
+        <section v-if="openedRequest" class="panel" data-testid="ql-panel">
+          <div class="panel-head">
+            <h2>{{ subName(openedRequest.subcontractor_id) }} からの見積</h2>
+            <div class="row-tools">
+              <button class="btn-add" data-testid="ql-add" @click="addQuoteLine">＋ 行追加</button>
+              <button class="btn-cancel" data-testid="ql-close" @click="openedRequest = null">閉じる</button>
+            </div>
+          </div>
+          <div class="items-scroll">
+            <table class="table est-items">
+              <thead><tr><th>項目</th><th>形状・詳細</th><th>単位</th><th>単価の区分</th><th class="num">数量</th><th class="num">単価</th><th></th></tr></thead>
+              <tbody>
+                <tr v-for="(l, li) in openedLines" :key="l._k">
+                  <td><input v-model="l.item_name" class="input" :data-testid="`ql-name-${li}`" list="est-materials" /></td>
+                  <td><input v-model="l.spec" class="input sm" :data-testid="`ql-spec-${li}`" /></td>
+                  <td><input v-model="l.unit" class="input sm" :data-testid="`ql-unit-${li}`" placeholder="㎡/m/式" /></td>
+                  <td>
+                    <!-- 単価の意味が業者ごとに違う（確認6）。揃えずに横並びすると誤選定するので必ず持つ -->
+                    <select v-model="l.price_kind" class="input sm" :data-testid="`ql-kind-${li}`">
+                      <option v-for="k in PRICE_KINDS" :key="k.key" :value="k.key">{{ k.label }}</option>
+                    </select>
+                  </td>
+                  <td class="num"><input v-model.number="l.quantity" type="number" step="0.01" class="input sm num" :data-testid="`ql-qty-${li}`" /></td>
+                  <td class="num"><input v-model.number="l.unit_price" type="number" class="input sm num" :data-testid="`ql-price-${li}`" /></td>
+                  <td><button class="btn-del" :data-testid="`ql-del-${li}`" @click="removeQuoteLine(li)">×</button></td>
+                </tr>
+                <tr v-if="!openedLines.length"><td colspan="7" class="empty">「＋ 行追加」で受領した見積の項目・単価を入れます</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="actions-row">
+            <button class="btn-primary" :disabled="qlSaving" data-testid="ql-save" @click="saveQuoteLines">{{ qlSaving ? '保存中…' : '保存（単価履歴に記録）' }}</button>
+            <span v-if="qlMsg" class="ok">{{ qlMsg }}</span>
+            <span v-if="qlErr" class="err">{{ qlErr }}</span>
+          </div>
+        </section>
+
+        <!-- 比較・選定 -->
+        <section class="panel" data-testid="compare-panel">
+          <div class="panel-head"><h2>比較・選定</h2></div>
+          <p v-if="!comparison.length" class="hint">見積を受領すると、同じ項目を業者ごとに横並びで比較できます。</p>
+          <div v-for="c in comparison" :key="c.itemName" class="cmp-block" :data-testid="`cmp-${c.itemName}`">
+            <div class="cmp-head">
+              <span class="cmp-title">{{ c.itemName }}</span>
+              <span v-if="c.mixedKind" class="cmp-warn" :data-testid="`cmp-warn-kind-${c.itemName}`">
+                <span class="material-symbols-rounded banner-icon">warning</span>単価の区分が業者間で異なります（材工共 / 労務のみ）。そのまま比べないでください
+              </span>
+              <span v-if="c.mixedQty" class="cmp-warn" :data-testid="`cmp-warn-qty-${c.itemName}`">
+                <span class="material-symbols-rounded banner-icon">warning</span>数量の認識が業者間で違います（{{ c.qtyList }}）
+              </span>
+            </div>
+            <div class="cmp-cards">
+              <button v-for="o in c.offers" :key="o.id" class="cmp-card"
+                      :class="{ selected: o.is_selected, cheapest: o.unit_price === c.min }"
+                      :data-testid="`cmp-pick-${c.itemName}-${o.subName}`"
+                      @click="selectOffer(c, o)">
+                <span class="cc-sub">{{ o.subName }}</span>
+                <span class="cc-price">{{ yen(o.unit_price) }}<small v-if="o.unit">/{{ o.unit }}</small></span>
+                <span class="cc-meta">{{ kindLabel(o.price_kind) }}<template v-if="o.quantity"> ・数量{{ o.quantity }}</template></span>
+                <span v-if="o.unit_price === c.min" class="cc-tag">最安</span>
+                <span v-if="o.is_selected" class="cc-tag sel">採用</span>
+              </button>
+            </div>
+          </div>
+          <div v-if="comparison.length" class="actions-row">
+            <button class="btn-primary" data-testid="cmp-apply" @click="applySelectionToItems">選定した単価を明細へ反映</button>
+            <span v-if="applyMsg" class="ok">{{ applyMsg }}</span>
+          </div>
         </section>
       </div>
 
@@ -201,6 +308,21 @@
                   </td>
                   <td class="num amount" :data-testid="`item-amount-${i}`">{{ yen(lineAmount(r)) }}</td>
                   <td><button class="btn-del" @click="removeRow(i)">×</button></td>
+                </tr>
+                <!-- Q4: この項目の過去の業者別単価（受領登録で貯まったもの）。クリックで原価に採用 -->
+                <tr v-if="r.row_type !== 'header' && historyFor(r.item_name).length" class="hist-row">
+                  <td colspan="8" class="hist-label">過去の単価</td>
+                  <td colspan="5">
+                    <div class="hist-cells">
+                      <button v-for="(h, hi) in historyFor(r.item_name).slice(0, 4)" :key="hi" class="hist-cell"
+                              :data-testid="`item-hist-${i}-${hi}`"
+                              :title="`${h.subcontractor_name}／${kindLabel(h.price_kind)}${h.project_name ? '／' + h.project_name : ''}`"
+                              @click="applyHistoryPrice(r, h)">
+                        <span class="hc-top">{{ h.subcontractor_name }} {{ yen(h.unit_price) }}</span>
+                        <span class="hc-sub">{{ kindLabel(h.price_kind) }}<template v-if="h.quoted_on"> ・{{ h.quoted_on }}</template><template v-if="h.project_name"> ・{{ h.project_name }}</template></span>
+                      </button>
+                    </div>
+                  </td>
                 </tr>
                 <!-- 粗利パターンの見比べ（Excelの5/10/15/20%横並び） -->
                 <tr v-if="r.row_type !== 'header' && (r.cost_unit_price ?? 0) > 0" class="margin-preview-row">
@@ -508,7 +630,212 @@ const PDF_BUCKET = 'admin-docs'          // 新規の見積/発注PDFは非公�
 const IS_DEV = import.meta.env.DEV
 const route  = useRoute()   // 一覧から ?project=<id> で開いた案件を初期選択する
 // #6 ビルダーのタブ（明細入力／見積書プレビュー／商社へ発注）
-const builderTab = ref<'intake' | 'items' | 'preview' | 'po'>('items')
+const builderTab = ref<'intake' | 'quotes' | 'items' | 'preview' | 'po'>('items')
+
+// ── Q3: 相見積（依頼→受領→比較・選定）────────────────────────
+// ★設計の肝: 単価履歴を「別途入力する台帳」にしない。受領登録の副作用で貯める。
+//   顧客Excelの相見積シートが120項目中1項目しか埋まらなかった原因が
+//   「明細入力とは別に台帳へ手入力する設計」だったため（確認15の回答）。
+const PRICE_KINDS = [
+  { key: 'material_labor', label: '材工共' },
+  { key: 'labor',          label: '労務のみ' },
+  { key: 'material',       label: '材料のみ' },
+] as const
+const kindLabel = (k: string) => PRICE_KINDS.find(x => x.key === k)?.label ?? k
+
+type QuoteRequest = {
+  id: string; subcontractor_id: string | null; trade_name: string
+  requested_at: string; due_date: string; received_at: string
+}
+type QuoteLine = {
+  id: string | null; _k: number; request_id: string; item_name: string; spec: string
+  unit: string; price_kind: string; quantity: number | null; unit_price: number; is_selected: boolean
+}
+const quoteRequests = ref<QuoteRequest[]>([])
+const quoteLines    = ref<QuoteLine[]>([])
+const openedRequest = ref<QuoteRequest | null>(null)
+const openedLines   = ref<QuoteLine[]>([])
+const removedLineIds = ref<string[]>([])
+const qlSaving = ref(false); const qlMsg = ref(''); const qlErr = ref('')
+const applyMsg = ref('')
+let qlKey = 0
+
+// 下請業者（商社は発注側なので除く）
+const subcontractorOptions = ref<{ id: string; name: string }[]>([])
+const subName = (id: string | null) => subcontractorOptions.value.find(s => s.id === id)?.name ?? '(業者未選択)'
+const linesOf = (requestId: string) => quoteLines.value.filter(l => l.request_id === requestId)
+
+/** 依頼の状況（未回収/期限超過/受領済み） */
+function qrState(q: QuoteRequest): { text: string; cls: string } {
+  if (q.received_at) return { text: '受領済み', cls: 'ok' }
+  if (q.due_date) {
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const due = new Date(`${q.due_date}T00:00:00`)
+    const days = Math.round((due.getTime() - today.getTime()) / 86400000)
+    if (days < 0)  return { text: `未回収（${-days}日超過）`, cls: 'over' }
+    if (days <= 2) return { text: `未回収（あと${days}日）`, cls: 'soon' }
+  }
+  return { text: '未回収', cls: 'wait' }
+}
+
+async function loadQuotes() {
+  if (!projectId.value) { quoteRequests.value = []; quoteLines.value = []; return }
+  const { data: qr } = await supabase.from('estimate_quote_requests')
+    .select('id, subcontractor_id, trade_name, requested_at, due_date, received_at')
+    .eq('project_id', projectId.value).order('created_at')
+  quoteRequests.value = (qr ?? []).map((r: any) => ({
+    id: r.id, subcontractor_id: r.subcontractor_id, trade_name: r.trade_name ?? '',
+    requested_at: r.requested_at ?? '', due_date: r.due_date ?? '', received_at: r.received_at ?? '',
+  }))
+  const ids = quoteRequests.value.map(r => r.id)
+  if (!ids.length) { quoteLines.value = []; return }
+  const { data: ql } = await supabase.from('estimate_quote_lines')
+    .select('id, request_id, item_name, spec, unit, price_kind, quantity, unit_price, is_selected')
+    .in('request_id', ids).order('created_at')
+  quoteLines.value = (ql ?? []).map((l: any) => ({
+    id: l.id, _k: ++qlKey, request_id: l.request_id, item_name: l.item_name, spec: l.spec ?? '',
+    unit: l.unit ?? '', price_kind: l.price_kind ?? 'material_labor',
+    quantity: l.quantity == null ? null : Number(l.quantity),
+    unit_price: Number(l.unit_price) || 0, is_selected: !!l.is_selected,
+  }))
+}
+async function loadSubcontractorOptions() {
+  const { data } = await supabase.from('subcontractors')
+    .select('id, name').eq('account_id', accountId).eq('category', '業者')
+    .eq('is_deleted', false).order('name')
+  subcontractorOptions.value = (data ?? []) as any
+}
+
+async function addQuoteRequest() {
+  if (!projectId.value) return
+  const today = new Date()
+  const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  const { data } = await supabase.from('estimate_quote_requests')
+    .insert({ account_id: accountId, project_id: projectId.value, requested_at: iso }).select('id').single()
+  if (data?.id) await loadQuotes()
+}
+async function saveQuoteRequest(q: QuoteRequest) {
+  await supabase.from('estimate_quote_requests').update({
+    subcontractor_id: q.subcontractor_id, trade_name: q.trade_name || null,
+    requested_at: q.requested_at || null, due_date: q.due_date || null, received_at: q.received_at || null,
+    updated_at: new Date().toISOString(),
+  }).eq('id', q.id)
+}
+async function removeQuoteRequest(q: QuoteRequest) {
+  if (!confirm(`${subName(q.subcontractor_id)} への依頼を削除しますか？（受領した単価も消えます）`)) return
+  await supabase.from('estimate_quote_requests').delete().eq('id', q.id)
+  if (openedRequest.value?.id === q.id) openedRequest.value = null
+  await loadQuotes()
+}
+
+function openQuoteLines(q: QuoteRequest) {
+  openedRequest.value = q
+  removedLineIds.value = []
+  openedLines.value = linesOf(q.id).map(l => ({ ...l }))
+  if (!openedLines.value.length) addQuoteLine()
+}
+function addQuoteLine() {
+  if (!openedRequest.value) return
+  openedLines.value.push({ id: null, _k: ++qlKey, request_id: openedRequest.value.id,
+    item_name: '', spec: '', unit: '', price_kind: 'material_labor', quantity: null, unit_price: 0, is_selected: false })
+}
+function removeQuoteLine(i: number) {
+  const l = openedLines.value[i]
+  if (l.id) removedLineIds.value.push(l.id)
+  openedLines.value.splice(i, 1)
+}
+async function saveQuoteLines() {
+  if (!openedRequest.value) return
+  qlSaving.value = true; qlErr.value = ''; qlMsg.value = ''
+  try {
+    for (const id of removedLineIds.value) await supabase.from('estimate_quote_lines').delete().eq('id', id)
+    removedLineIds.value = []
+    for (const l of openedLines.value) {
+      if (!l.item_name.trim()) continue
+      const payload = {
+        account_id: accountId, request_id: l.request_id, item_name: l.item_name.trim(),
+        spec: l.spec || null, unit: l.unit || null, price_kind: l.price_kind,
+        quantity: l.quantity ?? null, unit_price: Number(l.unit_price) || 0, is_selected: l.is_selected,
+      }
+      if (l.id) await supabase.from('estimate_quote_lines').update(payload).eq('id', l.id)
+      else {
+        const { data } = await supabase.from('estimate_quote_lines').insert(payload).select('id').single()
+        if (data?.id) l.id = data.id
+      }
+    }
+    // 受領日が未入力なら、明細を入れた時点で受領済みとみなす（入力の手間を減らす）
+    if (!openedRequest.value.received_at && openedLines.value.some(l => l.item_name.trim())) {
+      const today = new Date()
+      openedRequest.value.received_at = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+      await saveQuoteRequest(openedRequest.value)
+    }
+    await loadQuotes()
+    qlMsg.value = '保存しました（単価履歴に記録）'
+    setTimeout(() => (qlMsg.value = ''), 2500)
+  } catch (e: any) {
+    qlErr.value = e?.message ?? '保存に失敗しました'
+  } finally { qlSaving.value = false }
+}
+
+/** 同じ項目名で業者を横並びにした比較データ */
+const comparison = computed(() => {
+  const m = new Map<string, { itemName: string; offers: any[]; min: number; mixedKind: boolean; mixedQty: boolean; qtyList: string }>()
+  for (const l of quoteLines.value) {
+    if (!l.item_name) continue
+    const req = quoteRequests.value.find(r => r.id === l.request_id)
+    const cur = m.get(l.item_name) ?? { itemName: l.item_name, offers: [] as any[], min: Infinity, mixedKind: false, mixedQty: false, qtyList: '' }
+    cur.offers.push({ ...l, subName: subName(req?.subcontractor_id ?? null) })
+    m.set(l.item_name, cur)
+  }
+  for (const c of m.values()) {
+    c.min = Math.min(...c.offers.map(o => o.unit_price || Infinity))
+    // ★単価の区分が混ざっていたら警告（材工共 vs 労務のみ を並べて比べると誤選定する）
+    c.mixedKind = new Set(c.offers.map(o => o.price_kind)).size > 1
+    // ★数量の認識が業者間で違う場合も警告（確認3=C: 自社でも拾い下請の数量とも突き合わせる）
+    const qs = [...new Set(c.offers.map(o => o.quantity).filter(q => q != null))]
+    c.mixedQty = qs.length > 1
+    c.qtyList = qs.join(' / ')
+    c.offers.sort((a, b) => a.unit_price - b.unit_price)
+  }
+  return [...m.values()].sort((a, b) => a.itemName.localeCompare(b.itemName, 'ja'))
+})
+
+/** 業者を採用（同じ項目の他業者の採用は外す） */
+async function selectOffer(c: any, o: any) {
+  for (const other of c.offers) {
+    const want = other.id === o.id
+    if (other.is_selected === want) continue
+    other.is_selected = want
+    const line = quoteLines.value.find(l => l.id === other.id)
+    if (line) line.is_selected = want
+    if (other.id) await supabase.from('estimate_quote_lines').update({ is_selected: want }).eq('id', other.id)
+  }
+}
+
+/** 選定した単価を見積明細の「原価」に反映する（比較 → 見積 の橋渡し） */
+async function applySelectionToItems() {
+  let applied = 0
+  for (const c of comparison.value) {
+    const sel = c.offers.find((o: any) => o.is_selected)
+    if (!sel) continue
+    let row = rows.value.find(r => isItemRow(r) && r.item_name === c.itemName)
+    if (!row) {
+      row = blankRow()
+      row.item_name = c.itemName
+      row.spec = sel.spec ?? ''
+      row.unit = sel.unit ?? ''
+      row.quantity = Number(sel.quantity) || 0
+      rows.value.push(row)
+    }
+    row.cost_unit_price = Number(sel.unit_price) || 0
+    if (!row.unit) row.unit = sel.unit ?? ''
+    if (!row._priceTouched) row.unit_price = autoPrice(row)   // 客先単価は粗利率から生やす
+    applied++
+  }
+  applyMsg.value = applied ? `${applied}件を明細に反映しました（保存を押すと確定）` : '採用された見積がありません'
+  setTimeout(() => (applyMsg.value = ''), 4000)
+  if (applied) builderTab.value = 'items'
+}
 
 // ── Q5: 元請けからの案件受領登録・ステータス管理 ──────────────
 const DRAWING_BUCKET = 'estimate-drawings'
@@ -586,6 +913,7 @@ async function onIntakeFiles(e: Event) {
       if (insErr) throw insErr
     }
     await loadAttachments()
+  await loadQuotes()
   } catch (err: any) {
     attErr.value = err?.message ?? 'アップロードに失敗しました'
   } finally { attBusy.value = false }
@@ -1175,6 +1503,29 @@ async function loadSites() {
   sites.value = (data ?? []) as Site[]
 }
 // ④ 自社情報（settings）を読む
+// ── Q4: 過去の業者別単価（受領登録の副作用で貯まったもの）を候補として引く ──
+type PriceHist = { item_name: string; unit_price: number; unit: string | null; price_kind: string
+                   subcontractor_name: string; quoted_on: string | null; project_name: string | null }
+const priceHistory = ref<PriceHist[]>([])
+async function loadPriceHistory() {
+  const { data } = await supabase.from('estimate_price_history')
+    .select('item_name, unit_price, unit, price_kind, subcontractor_name, quoted_on, project_name')
+    .eq('account_id', accountId).order('quoted_on', { ascending: false }).limit(500)
+  priceHistory.value = (data ?? []) as PriceHist[]
+}
+/** その項目名の過去単価（安い順）。Excelの相見積シートと同じ 業者/単価/提示日/現場名 を返す */
+function historyFor(itemName: string): PriceHist[] {
+  const nm = (itemName ?? '').trim()
+  if (!nm) return []
+  return priceHistory.value.filter(h => h.item_name === nm).sort((a, b) => a.unit_price - b.unit_price)
+}
+/** 候補をクリックしたら原価に採用（客先単価は粗利率から生やす） */
+function applyHistoryPrice(r: Row, h: PriceHist) {
+  r.cost_unit_price = h.unit_price
+  if (!r.unit && h.unit) r.unit = h.unit
+  if (!r._priceTouched) r.unit_price = autoPrice(r)
+}
+
 async function loadCompany() {
   const { data } = await supabase.from('settings').select('key, value').eq('account_id', accountId).in('key', COMPANY_KEYS)
   company.value = Object.fromEntries((data ?? []).map((s: any) => [s.key, s.value]))
@@ -1182,6 +1533,8 @@ async function loadCompany() {
   const { data: acc } = await supabase.from('accounts').select('default_margin_rate').eq('id', accountId).maybeSingle()
   if (acc?.default_margin_rate != null) accountMarginRate.value = Number(acc.default_margin_rate)
   syncMarginPct()
+  await loadSubcontractorOptions()
+  await loadPriceHistory()
 }
 /** 表示用の % を「案件上書き → アカウント既定」の順で合わせる */
 function syncMarginPct() {
@@ -1246,6 +1599,11 @@ async function loadItems() {
   removedIds.value = []
   doc.value = { construction_location: '', period_text: '', valid_until: '', memo: '', adjustment: 0 }
   lastLoadedProjectId = projectId.value
+  // ★表示状態のリセットは await より前に。後ろでやると、読み込み中に人が押したタブが
+  //   読み込み完了時に弾き返される（案件作成直後にタブが勝手に戻る操作性バグ）。
+  builderTab.value = 'items'
+  currentPage.value = 0   // 案件を開いたら先頭ページへ
+  editingName.value = false
   if (!projectId.value) { markSaved(); return }
   const [{ data }, { data: pj }] = await Promise.all([
     supabase.from('estimate_items')
@@ -1276,9 +1634,6 @@ async function loadItems() {
     lost_reason:  pj?.lost_reason ?? '',
   }
   await loadAttachments()
-  currentPage.value = 0   // 案件を開いたら先頭ページへ
-  editingName.value = false
-  builderTab.value = 'items'
   markSaved()
   sendContactIds.value = []
   await Promise.all([loadSends(), loadProjectPOs()])
@@ -1680,4 +2035,37 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .att-list li { display: flex; align-items: center; gap: 6px; }
 .att-name { background: none; border: none; color: #06A050; cursor: pointer; text-decoration: underline;
   font-size: 13px; padding: 0; text-align: left; }
+/* ── Q3 相見積 ── */
+.qr-badge { font-size: 11px; font-weight: 700; border-radius: 10px; padding: 2px 8px; white-space: nowrap; }
+.qr-badge.ok   { background: #e8f9ef; color: #06A050; }
+.qr-badge.wait { background: #f3f4f6; color: #6b7280; }
+.qr-badge.soon { background: #FEF3C7; color: #B45309; }
+.qr-badge.over { background: #FEE2E2; color: #B91C1C; }
+.cmp-block { border-top: 1px solid #eee; padding: 10px 0; }
+.cmp-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.cmp-title { font-weight: 700; font-size: 13px; }
+.cmp-warn { font-size: 11px; color: #B45309; background: #FEF3C7; border: 1px solid #FDE68A;
+  border-radius: 6px; padding: 2px 8px; }
+.cmp-cards { display: flex; gap: 8px; flex-wrap: wrap; }
+.cmp-card { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; position: relative;
+  border: 1px solid #e0e0e0; border-radius: 8px; background: #fff; cursor: pointer; padding: 8px 12px; min-width: 150px; }
+.cmp-card:hover { border-color: #06A050; }
+.cmp-card.selected { border-color: #06A050; background: #e8f9ef; }
+.cmp-card.cheapest { box-shadow: 0 0 0 1px #06A05033 inset; }
+.cc-sub { font-size: 11px; color: #666; }
+.cc-price { font-size: 16px; font-weight: 700; color: #222; }
+.cc-price small { font-size: 11px; font-weight: 400; color: #888; }
+.cc-meta { font-size: 10px; color: #999; }
+.cc-tag { position: absolute; top: -7px; right: 6px; font-size: 10px; font-weight: 700;
+  background: #FEF3C7; color: #B45309; border-radius: 8px; padding: 1px 6px; }
+.cc-tag.sel { right: auto; left: 6px; background: #06A050; color: #fff; }
+/* Q4 過去単価の候補 */
+.hist-row td { border-top: none; padding-top: 0; }
+.hist-label { text-align: right; font-size: 11px; color: #999; padding-right: 8px; }
+.hist-cells { display: flex; gap: 4px; flex-wrap: wrap; }
+.hist-cell { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 0;
+  border: 1px solid #e0e0e0; border-radius: 5px; background: #fff; cursor: pointer; padding: 2px 8px; }
+.hist-cell:hover { border-color: #06A050; background: #f2fbf5; }
+.hc-top { font-size: 11px; font-weight: 700; color: #333; }
+.hc-sub { font-size: 10px; color: #999; }
 </style>

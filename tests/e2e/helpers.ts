@@ -176,3 +176,19 @@ export async function upsert(table: string, onConflict: string, body: unknown): 
     body: JSON.stringify(body),
   })
 }
+
+/**
+ * 見積ビルダーのタブを開く（案件を開いた直後のレースに耐える版）。
+ *
+ * estimate-builder の loadItems() は完走時に builderTab を 'items' へ戻す。
+ * 案件作成直後はこの読み込みがまだ飛んでいるため、早すぎるタブクリックが
+ * 後から打ち消されて「要素はあるのに見えない／not stable」になる。
+ * 目的のパネルが実際に見えるまでクリックし直す。
+ */
+export async function openBuilderTab(page: any, tab: string, probeSelector: string): Promise<void> {
+  const { expect } = await import('@playwright/test')
+  await expect(async () => {
+    await page.locator(`[data-testid="tab-${tab}"]`).click()
+    await expect(page.locator(probeSelector).first()).toBeVisible({ timeout: 1500 })
+  }).toPass({ timeout: 25000 })
+}
