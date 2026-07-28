@@ -52,7 +52,6 @@ test.describe('見積→元請け 送信先と離脱ガード', () => {
     }, { timeout: 10000 }).toBe(contractorId)
 
     // 明細を1行入れる（送信可能化の条件）→ 元請けの担当者を選ぶ → 送信ボタンが有効
-    await page.locator('[data-testid="add-row"]').click()
     await page.locator('[data-testid="item-name-0"]').fill('テスト材')
     await page.locator('[data-testid="item-qty-0"]').fill('1')
     await page.locator('[data-testid="item-price-0"]').fill('1000')
@@ -71,7 +70,6 @@ test.describe('見積→元請け 送信先と離脱ガード', () => {
     await page.waitForLoadState('networkidle')
 
     // 未保存の編集を作る → 「一覧へ戻る」で離脱しようとすると確認ダイアログ（ルート遷移ガード）
-    await page.locator('[data-testid="add-row"]').click()
     await page.locator('[data-testid="item-name-0"]').fill('未保存の明細')
 
     let dialogMsg = ''

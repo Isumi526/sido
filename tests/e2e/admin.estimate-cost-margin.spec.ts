@@ -6,6 +6,10 @@
 //  「本物の入力動線」を再現できているかを検証する:
 //    P列 単価原価（入力）→ I列 客先単価 = 原価 ÷ (1 − 粗利率)（自動）→ J列 金額
 //    ただし I列は手打ちで上書きされている行があった＝「既定は自動・必要なら手で殴れる」
+//  ★2026-07-28 の通しレビューで入力動線を見直した:
+//    ・「＋行追加」は廃止。Excelのように空行が常に用意されている（押させない）
+//    ・場所(大項目)/工種(中項目)は行ごとではなく**ブロック単位**で選ぶ
+//    ・行ごとの粗利5/10/15/20%プレビューは廃止（見積全体で1つあれば足りる）
 //  Notion: Q1 3aa0ff81c56b8156822bcf623b782ae4 / Q2 3aa0ff81c56b81e7b7cff7c4f1201c49
 // ============================================================
 import { test, expect } from '@playwright/test'
@@ -41,14 +45,15 @@ async function openNewProject(page: any) {
   await page.locator('[data-testid="new-project-name"]').fill(PROJ)
   await page.locator('[data-testid="add-project"]').click()
   await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ, { timeout: 15000 })
+  // 「＋行追加」は無い。案件を開いた時点で空行が用意されている（Excel感覚）
+  await expect(page.locator('[data-testid="item-name-0"]')).toBeVisible({ timeout: 10000 })
 }
 
 test('AC: 原価を入れると客先単価が「原価÷(1−粗利率)」で自動計算される', async ({ page }) => {
   await openNewProject(page)
-  await page.locator('[data-testid="add-row"]').click()
 
   await page.locator('[data-testid="item-name-0"]').fill('壁面 外周LGS間仕切')
-  await page.locator('[data-testid="item-trade-0"]').fill('軽鉄工事')
+  await page.locator('[data-testid="blk-trade-0"]').fill('軽鉄工事')
   await page.locator('[data-testid="item-qty-0"]').fill('197')
   // ★原価を入力 → 客先単価が生える（Excelの実データと同じ 2700 → 3375）
   await page.locator('[data-testid="item-cost-0"]').fill('2700')
@@ -62,7 +67,6 @@ test('AC: 原価を入れると客先単価が「原価÷(1−粗利率)」で�
 
 test('AC: 客先単価を手打ちで上書きでき、自動値に戻せる', async ({ page }) => {
   await openNewProject(page)
-  await page.locator('[data-testid="add-row"]').click()
   await page.locator('[data-testid="item-name-0"]').fill('壁面 PB貼')
   await page.locator('[data-testid="item-qty-0"]').fill('10')
   await page.locator('[data-testid="item-cost-0"]').fill('2700')
@@ -85,28 +89,8 @@ test('AC: 客先単価を手打ちで上書きでき、自動値に戻せる', a
   await expect(page.locator('[data-testid="item-price-revert-0"]')).toHaveCount(0)
 })
 
-test('AC: 粗利4パターンが横並びで出て、クリックでその率を採用できる', async ({ page }) => {
-  await openNewProject(page)
-  await page.locator('[data-testid="add-row"]').click()
-  await page.locator('[data-testid="item-name-0"]').fill('天井 下地組')
-  await page.locator('[data-testid="item-qty-0"]').fill('1')
-  await page.locator('[data-testid="item-cost-0"]').fill('2700')
-
-  // 5/10/15/20% が同じ行に横並びで出る（Excelの見比べ体験）
-  //   2700/0.95=2842, /0.90=3000, /0.85=3176, /0.80=3375
-  await expect(page.locator('[data-testid="item-margin-0-5"]')).toContainText('2,842')
-  await expect(page.locator('[data-testid="item-margin-0-10"]')).toContainText('3,000')
-  await expect(page.locator('[data-testid="item-margin-0-15"]')).toContainText('3,176')
-  await expect(page.locator('[data-testid="item-margin-0-20"]')).toContainText('3,375')
-
-  // 10%のセルをクリック → その単価を採用
-  await page.locator('[data-testid="item-margin-0-10"]').click()
-  await expect(page.locator('[data-testid="item-price-0"]')).toHaveValue('3000')
-})
-
 test('AC: 粗利率を案件ごとに上書きでき、既定に戻せる', async ({ page }) => {
   await openNewProject(page)
-  await page.locator('[data-testid="add-row"]').click()
   await page.locator('[data-testid="item-name-0"]').fill('床 塩ビタイル貼')
   await page.locator('[data-testid="item-qty-0"]').fill('1')
   await page.locator('[data-testid="item-cost-0"]').fill('2700')
@@ -118,7 +102,6 @@ test('AC: 粗利率を案件ごとに上書きでき、既定に戻せる', asyn
   await page.waitForTimeout(1500)
 
   // 新しい行では 2700 ÷ 0.70 = 3857 が自動で入る
-  await page.locator('[data-testid="add-row"]').click()
   await page.locator('[data-testid="item-name-1"]').fill('床 長尺シート貼')
   await page.locator('[data-testid="item-qty-1"]').fill('1')
   await page.locator('[data-testid="item-cost-1"]').fill('2700')
@@ -140,50 +123,63 @@ test('AC: 粗利率を案件ごとに上書きでき、既定に戻せる', asyn
   }, { timeout: 10000 }).toBe('NULL')
 })
 
-test('AC: 見出し行を明細に差し込め、金額集計から除外される', async ({ page }) => {
+test('AC★: 場所・工種はブロック単位で1回だけ選べば、配下の全行に効く', async ({ page }) => {
   await openNewProject(page)
-  // 見出し → 明細 の順に入れる（Excelの （壁面工事） / ■軽鉄工事 と同じ使い方）
-  await page.locator('[data-testid="add-header-row"]').click()
-  await page.locator('[data-testid="item-name-0"]').fill('（壁面工事）')
-  await page.locator('[data-testid="add-row"]').click()
-  await page.locator('[data-testid="item-name-1"]').fill('壁面 外周LGS間仕切')
-  await page.locator('[data-testid="item-trade-1"]').fill('軽鉄工事')
-  await page.locator('[data-testid="item-qty-1"]').fill('2')
-  await page.locator('[data-testid="item-cost-1"]').fill('1000')   // → 客先 1250
+  // 顧客のExcelは (壁面工事) → ■軽鉄工事 → 壁面外周LGS間仕切/壁面PB板/… という入れ子で、
+  // 同じ場所・工種が何行も続く。行ごとに選ばせないのがこのACの主旨。
+  await page.locator('[data-testid="blk-loc-0"]').fill('壁面工事')
+  await page.locator('[data-testid="blk-loc-0"]').dispatchEvent('change')
+  await page.locator('[data-testid="blk-trade-0"]').fill('軽鉄工事')
+  await page.locator('[data-testid="blk-trade-0"]').dispatchEvent('change')
 
-  // 見出し行には数量/単価の入力欄が無い＝金額を持たない
-  await expect(page.locator('[data-testid="item-qty-0"]')).toHaveCount(0)
-  // 合計は明細行のみ（2 × 1250 = 2,500）
-  await expect(page.locator('[data-testid="item-amount-1"]')).toContainText('2,500')
-
-  await page.locator('[data-testid="save-items"]').click()
-  await page.waitForTimeout(2500)
-
-  // DB: 見出し行は row_type='header' で保存され、明細は原価も保存される
-  const accountId = await getAccountId()
-  const pj = await restSrv(`estimate_projects?account_id=eq.${accountId}&name=eq.${encodeURIComponent(PROJ)}&select=id`)
-  const items = await restSrv(`estimate_items?project_id=eq.${pj[0].id}&select=item_name,row_type,cost_unit_price,unit_price,trade_name&order=sort_order`)
-  const header = items.find((x: any) => x.row_type === 'header')
-  const item   = items.find((x: any) => x.row_type === 'item')
-  expect(header?.item_name, '見出し行が header として保存される').toBe('（壁面工事）')
-  expect(item?.cost_unit_price, '原価単価が保存される').toBe(1000)
-  expect(item?.unit_price, '客先単価が保存される').toBe(1250)
-  expect(item?.trade_name, '自由記述の工種が保存される').toBe('軽鉄工事')
-})
-
-test('AC: 自由記述の工種でも工種別内訳に自動集計される（手コピペ撲滅）', async ({ page }) => {
-  await openNewProject(page)
-  const add = async (i: number, trade: string, name: string, qty: number, cost: number) => {
-    await page.locator('[data-testid="add-row"]').click()
-    await page.locator(`[data-testid="item-trade-${i}"]`).fill(trade)
+  // ブロック配下に3行打つ（各行で場所・工種を選ぶ操作は無い）
+  const fill = async (i: number, name: string, qty: number, cost: number) => {
     await page.locator(`[data-testid="item-name-${i}"]`).fill(name)
     await page.locator(`[data-testid="item-qty-${i}"]`).fill(String(qty))
     await page.locator(`[data-testid="item-cost-${i}"]`).fill(String(cost))
   }
-  // マスタに存在しない工種名を自由記述で入れる
-  await add(0, `E2E自由工種A_${TS}`, 'スタッド', 2, 800)   // 客先1000 → 2,000
-  await add(1, `E2E自由工種B_${TS}`, 'PB12.5', 1, 4000)   // 客先5000 → 5,000
-  await add(2, `E2E自由工種A_${TS}`, 'ランナー', 3, 800)   // 客先1000 → 3,000
+  await fill(0, '壁面 外周LGS間仕切', 2, 1000)
+  await fill(1, '壁面 PB板', 1, 2000)
+  await fill(2, '壁面 下地補強', 3, 500)
+  // 行ごとの場所/工種の入力欄は存在しない
+  await expect(page.locator('[data-testid="item-trade-0"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="item-loc-0"]')).toHaveCount(0)
+
+  await page.locator('[data-testid="save-items"]').click()
+  await page.waitForTimeout(2500)
+
+  // ★DB: 3行すべてにブロックの場所・工種が入っている（＝集計・帳票の互換を壊さない）
+  const accountId = await getAccountId()
+  const pj = await restSrv(`estimate_projects?account_id=eq.${accountId}&name=eq.${encodeURIComponent(PROJ)}&select=id`)
+  const items = await restSrv(`estimate_items?project_id=eq.${pj[0].id}&select=item_name,note,trade_name,cost_unit_price,unit_price&order=sort_order`)
+  expect(items.length, '空行は保存されない（末尾の予備行がゴミにならない）').toBe(3)
+  for (const it of items) {
+    expect(it.note, '場所がブロックから全行へ').toBe('壁面工事')
+    expect(it.trade_name, '工種がブロックから全行へ').toBe('軽鉄工事')
+  }
+  expect(items[0].cost_unit_price).toBe(1000)
+  expect(items[0].unit_price, '客先単価は原価÷(1−粗利20%)').toBe(1250)
+})
+
+test('AC: 自由記述の工種でも工種別内訳に自動集計される（手コピペ撲滅）', async ({ page }) => {
+  await openNewProject(page)
+  const fill = async (i: number, name: string, qty: number, cost: number) => {
+    await page.locator(`[data-testid="item-name-${i}"]`).fill(name)
+    await page.locator(`[data-testid="item-qty-${i}"]`).fill(String(qty))
+    await page.locator(`[data-testid="item-cost-${i}"]`).fill(String(cost))
+  }
+  // ブロック1: マスタに存在しない工種名を自由記述で入れる
+  await page.locator('[data-testid="blk-trade-0"]').fill(`E2E自由工種A_${TS}`)
+  await page.locator('[data-testid="blk-trade-0"]').dispatchEvent('change')
+  await fill(0, 'スタッド', 2, 800)   // 客先1000 → 2,000
+  await fill(1, 'ランナー', 3, 800)   // 客先1000 → 3,000
+
+  // ブロック2: 別の自由記述工種
+  await page.locator('[data-testid="blk-add"]').click()
+  await page.locator('[data-testid="blk-trade-1"]').fill(`E2E自由工種B_${TS}`)
+  await page.locator('[data-testid="blk-trade-1"]').dispatchEvent('change')
+  const idx = await page.locator('[data-testid^="item-name-"]').count()
+  await fill(idx - 5, 'PB12.5', 1, 4000)   // 客先5000 → 5,000
 
   // 工種別内訳（自動）に自由記述の工種名で集計される
   const bd = page.locator('.bd-table, table').filter({ hasText: `E2E自由工種A_${TS}` }).first()
@@ -196,7 +192,6 @@ test('AC: 自由記述の工種でも工種別内訳に自動集計される（�
 // Excelの「項目」シート下部と同じ: 請負 / 原価 / 差引 / 利率、法定福利費 = 小計×23%×15%
 test('AC(Q6): 原価サマリ（請負/原価/差引/利率）が社内用に表示される', async ({ page }) => {
   await openNewProject(page)
-  await page.locator('[data-testid="add-row"]').click()
   await page.locator('[data-testid="item-name-0"]').fill('壁面 外周LGS間仕切')
   await page.locator('[data-testid="item-qty-0"]').fill('10')
   await page.locator('[data-testid="item-cost-0"]').fill('2000')     // 原価 20,000
@@ -212,7 +207,6 @@ test('AC(Q6): 原価サマリ（請負/原価/差引/利率）が社内用に表
 
 test('AC(Q6): 法定福利費が 小計×23%×15% で算出され、端数調整を加えて合計になる', async ({ page }) => {
   await openNewProject(page)
-  await page.locator('[data-testid="add-row"]').click()
   await page.locator('[data-testid="item-name-0"]').fill('天井 下地組')
   await page.locator('[data-testid="item-qty-0"]').fill('100')
   await page.locator('[data-testid="item-price-0"]').fill('10000')   // 小計 1,000,000

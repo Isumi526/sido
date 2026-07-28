@@ -82,17 +82,21 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ)
 
     // 明細3行（軽鉄2000・ボード5000・軽鉄3000）
-    const addLine = async (i: number, trade: string, name: string, qty: number, price: number) => {
-      await page.locator('[data-testid="add-row"]').click()
-      // 工種は固定マスタのselectではなく自由記述+予測変換に変更（Q1）
-      await page.locator(`[data-testid="item-trade-${i}"]`).fill(trade)
+    // 工種はブロック単位（レビュー2026-07-28）。行追加ボタンは無く空行が用意されている。
+    const addLine = async (i: number, name: string, qty: number, price: number) => {
       await page.locator(`[data-testid="item-name-${i}"]`).fill(name)
       await page.locator(`[data-testid="item-qty-${i}"]`).fill(String(qty))
       await page.locator(`[data-testid="item-price-${i}"]`).fill(String(price))
     }
-    await addLine(0, TRADE_A, 'スタッド', 2, 1000)   // 2000
-    await addLine(1, TRADE_B, 'PB12.5', 1, 5000)     // 5000
-    await addLine(2, TRADE_A, 'ランナー', 3, 1000)   // 3000
+    await expect(page.locator('[data-testid="item-name-0"]')).toBeVisible({ timeout: 10000 })
+    await page.locator('[data-testid="blk-trade-0"]').fill(TRADE_A)
+    await addLine(0, 'スタッド', 2, 1000)   // 2000
+    await addLine(1, 'ランナー', 3, 1000)   // 3000
+    // 別の工種は別ブロック
+    await page.locator('[data-testid="blk-add"]').click()
+    await page.locator('[data-testid="blk-trade-1"]').fill(TRADE_B)
+    const nextIdx = await page.locator('[data-testid^="item-name-"]').count()
+    await addLine(nextIdx - 5, 'PB12.5', 1, 5000)     // 5000
 
     // 工種別内訳パネル（転記操作なしで集計）
     const panel = page.locator('section.panel', { hasText: '工種別 内訳' })
@@ -120,7 +124,6 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ2)
 
     // 新規材料名で1行入力 → 保存
-    await page.locator('[data-testid="add-row"]').click()
     await page.locator('[data-testid="item-name-0"]').fill(MAT)
     await page.locator('[data-testid="item-qty-0"]').fill('1')
     await page.locator('[data-testid="item-price-0"]').fill('800')
@@ -145,7 +148,6 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ3)
 
     // 1行目: 新規材料を単位付きで入力 → 保存（E5でmaterials化＝unit=m2 も捕捉）
-    await page.locator('[data-testid="add-row"]').click()
     await page.locator('[data-testid="item-name-0"]').fill(MAT6)
     await page.locator('[data-testid="item-unit-0"]').fill('m2')
     await page.locator('[data-testid="item-qty-0"]').fill('1')
@@ -154,7 +156,6 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await expect(page.getByText('保存しました')).toBeVisible({ timeout: 10000 })
 
     // 2行目: 同じ材料名を入力 → blur で resolveMaterial → 単位が自動補完
-    await page.locator('[data-testid="add-row"]').click()
     await page.locator('[data-testid="item-name-1"]').fill(MAT6)
     await page.locator('[data-testid="item-qty-1"]').click()   // blur で @blur 発火
     await expect(page.locator('[data-testid="item-unit-1"]')).toHaveValue('m2')
@@ -193,7 +194,6 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ4)
 
     // 行追加 → 既存材料 MAT7 を入力（resolveMaterialで material_id 紐付け）
-    await page.locator('[data-testid="add-row"]').click()
     await page.locator('[data-testid="item-name-0"]').fill(MAT7)
     await page.locator('[data-testid="item-qty-0"]').fill('2')   // blur で resolveMaterial 発火
 
