@@ -296,6 +296,28 @@
               </tbody>
             </table>
           </div>
+          <!-- ★R5: 受領した見積書そのもの（PDF等）を残す。
+               単価だけ持っていても、後から金額の妥当性を確認できない。 -->
+          <div class="panel-head" style="margin-top:14px"><h3 class="sub-h">受け取った見積書</h3></div>
+          <div class="att-row att-drop" :class="{ over: qfDragOver }" data-testid="qf-dropzone"
+               @dragover.prevent="qfDragOver = true" @dragleave="qfDragOver = false" @drop.prevent="onQuoteFileDrop">
+            <label class="btn-excel att-pick">
+              <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">upload_file</span>
+              見積書を添付
+              <input type="file" multiple accept=".pdf,image/*" hidden data-testid="qf-file" @change="onQuoteFiles" />
+            </label>
+            <span class="hint">ここにドラッグ&ドロップでも追加できます</span>
+            <span v-if="qfBusy" class="hint">アップロード中…</span>
+            <span v-if="qfErr" class="err" data-testid="qf-err">{{ qfErr }}</span>
+          </div>
+          <ul v-if="openedFiles.length" class="att-list" data-testid="qf-list">
+            <li v-for="f in openedFiles" :key="f.id">
+              <button class="att-name" :data-testid="`qf-open-${f.id}`" @click="openQuoteFile(f)">{{ f.name || f.path }}</button>
+              <button class="btn-del" :data-testid="`qf-del-${f.id}`" @click="removeQuoteFile(f)">×</button>
+            </li>
+          </ul>
+          <p v-else class="hint">業者から届いた見積書（PDF・写真）を置いておくと、あとで単価の根拠を確認できます。</p>
+
           <div class="actions-row">
             <button class="btn-primary" :disabled="qlSaving" data-testid="ql-save" @click="saveQuoteLines">{{ qlSaving ? '保存中…' : '保存（単価履歴に記録）' }}</button>
             <span v-if="qlMsg" class="ok">{{ qlMsg }}</span>
@@ -427,13 +449,20 @@
                   <td colspan="11">
                     <div class="hist-cells">
                       <span class="hist-label">過去の単価</span>
-                      <button v-for="(h, hi) in historyFor(rows[i].item_name).slice(0, 4)" :key="hi" class="hist-cell"
+                      <span v-for="(h, hi) in historyFor(rows[i].item_name).slice(0, 4)" :key="hi" class="hist-wrap">
+                      <button class="hist-cell"
                               :data-testid="`item-hist-${i}-${hi}`"
                               :title="`${h.subcontractor_name}／${kindLabel(h.price_kind)}${h.project_name ? '／' + h.project_name : ''}`"
                               @click="applyHistoryPrice(rows[i], h)">
                         <span class="hc-top">{{ h.subcontractor_name }} {{ yen(h.unit_price) }}</span>
                         <span class="hc-sub">{{ kindLabel(h.price_kind) }}<template v-if="h.quoted_on"> ・{{ h.quoted_on }}</template><template v-if="h.project_name"> ・{{ h.project_name }}</template></span>
                       </button>
+                      <!-- R5: その単価の根拠になった見積書を開く（単価だけでは妥当性を確認できない） -->
+                      <button v-if="hasQuoteFile(h.request_id)" class="hist-src" :data-testid="`item-hist-src-${i}-${hi}`"
+                              title="この単価の元になった見積書を開く" @click="openHistoryFile(h.request_id)">
+                        <span class="material-symbols-rounded" style="font-size:14px;vertical-align:middle">description</span>
+                      </button>
+                      </span>
                     </div>
                   </td>
                 </tr>
@@ -802,7 +831,82 @@ async function loadQuotes() {
     quantity: l.quantity == null ? null : Number(l.quantity),
     unit_price: Number(l.unit_price) || 0, is_selected: !!l.is_selected,
   }))
+  await loadQuoteFiles()
 }
+// ════════════════════════════════════════════════════════════
+//  R5: 受領した見積書ファイル（PDF等）を残す
+//  単価だけ持っていても「なぜこの金額か」を後から確認できない。
+//  受領登録に添付を足し、単価履歴の候補からその根拠を開けるようにする。
+// ════════════════════════════════════════════════════════════
+type QuoteFile = { id: string; request_id: string; path: string; name: string | null }
+const quoteFiles = ref<QuoteFile[]>([])
+const qfDragOver = ref(false)
+const qfBusy = ref(false)
+const qfErr  = ref('')
+const openedFiles = computed(() =>
+  quoteFiles.value.filter(f => f.request_id === openedRequest.value?.id))
+// ★単価履歴は案件を跨いで貯まるので、根拠ファイルの判定も案件を跨いで持つ必要がある。
+//   現在の案件のぶんだけ見ていると、別案件で貯めた単価に根拠アイコンが出ない（E2Eで検出）。
+const historyFiles = ref<QuoteFile[]>([])
+/** その単価の根拠ファイルがあるか（無いならアイコンを出さない＝あると誤解させない） */
+const hasQuoteFile = (requestId: string | null | undefined) =>
+  !!requestId && (quoteFiles.value.some(f => f.request_id === requestId)
+               || historyFiles.value.some(f => f.request_id === requestId))
+
+async function loadQuoteFiles() {
+  const ids = quoteRequests.value.map(q => q.id)
+  if (!ids.length) { quoteFiles.value = []; return }
+  const { data } = await supabase.from('estimate_quote_files')
+    .select('id, request_id, path, name').in('request_id', ids).order('created_at')
+  quoteFiles.value = (data ?? []) as QuoteFile[]
+}
+function onQuoteFiles(e: Event) {
+  const input = e.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  input.value = ''
+  return uploadQuoteFiles(files)
+}
+function onQuoteFileDrop(e: DragEvent) {
+  qfDragOver.value = false
+  return uploadQuoteFiles(Array.from(e.dataTransfer?.files ?? []))
+}
+async function uploadQuoteFiles(files: File[]) {
+  const req = openedRequest.value
+  if (!files.length || !req) return
+  qfBusy.value = true; qfErr.value = ''
+  try {
+    for (const f of files) {
+      const safe = f.name.replace(/[^\w.\-]/g, '_')
+      // 図面と同じバケットを使う（account_id 先頭のパス規約＝storageポリシーがそのまま効く）
+      const path = `${accountId}/quotes/${req.id}/${Date.now()}_${safe}`
+      const { error: upErr } = await supabase.storage.from(DRAWING_BUCKET).upload(path, f)
+      if (upErr) throw upErr
+      const { error: insErr } = await supabase.from('estimate_quote_files')
+        .insert({ account_id: accountId, request_id: req.id, path, name: f.name })
+      if (insErr) throw insErr
+    }
+    await loadQuoteFiles()
+  } catch (err: any) {
+    qfErr.value = err?.message ?? 'アップロードに失敗しました'
+  } finally { qfBusy.value = false }
+}
+async function openQuoteFile(f: QuoteFile) {
+  const { data } = await supabase.storage.from(DRAWING_BUCKET).createSignedUrl(f.path, 60 * 10)
+  if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+}
+async function removeQuoteFile(f: QuoteFile) {
+  if (!confirm(`「${f.name || f.path}」を削除しますか？`)) return
+  await supabase.storage.from(DRAWING_BUCKET).remove([f.path]).catch(() => {})
+  await supabase.from('estimate_quote_files').delete().eq('id', f.id)
+  await loadQuoteFiles()
+}
+/** 明細の「過去の単価」から、その単価の根拠になった見積書を開く */
+async function openHistoryFile(requestId: string | null | undefined) {
+  const f = quoteFiles.value.find(x => x.request_id === requestId)
+       ?? historyFiles.value.find(x => x.request_id === requestId)
+  if (f) await openQuoteFile(f)
+}
+
 /** R7: その依頼に対して実際に渡した図面ページ（例: 「E2E図面.pdf P.13-19」） */
 function sentPagesLabel(q: QuoteRequest): string {
   const h = drawingSends.value.find(d => d.id === q.drawing_send_id)
@@ -1836,13 +1940,20 @@ async function loadSites() {
 // ④ 自社情報（settings）を読む
 // ── Q4: 過去の業者別単価（受領登録の副作用で貯まったもの）を候補として引く ──
 type PriceHist = { item_name: string; unit_price: number; unit: string | null; price_kind: string
-                   subcontractor_name: string; quoted_on: string | null; project_name: string | null }
+                   subcontractor_name: string; quoted_on: string | null; project_name: string | null
+                   request_id: string | null }   // R5: この単価の根拠になった受領見積
 const priceHistory = ref<PriceHist[]>([])
 async function loadPriceHistory() {
   const { data } = await supabase.from('estimate_price_history')
-    .select('item_name, unit_price, unit, price_kind, subcontractor_name, quoted_on, project_name')
+    .select('item_name, unit_price, unit, price_kind, subcontractor_name, quoted_on, project_name, request_id')
     .eq('account_id', accountId).order('quoted_on', { ascending: false }).limit(500)
   priceHistory.value = (data ?? []) as PriceHist[]
+  // 履歴に出てくる受領見積の根拠ファイルをまとめて引く（案件横断）
+  const ids = [...new Set(priceHistory.value.map(h => h.request_id).filter(Boolean))] as string[]
+  if (!ids.length) { historyFiles.value = []; return }
+  const { data: files } = await supabase.from('estimate_quote_files')
+    .select('id, request_id, path, name').in('request_id', ids)
+  historyFiles.value = (files ?? []) as QuoteFile[]
 }
 /** その項目名の過去単価（安い順）。Excelの相見積シートと同じ 業者/単価/提示日/現場名 を返す */
 function historyFor(itemName: string): PriceHist[] {
@@ -2462,6 +2573,9 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .cs-note { margin-left: auto; font-size: 11px; color: #aaa; }
 .items-scroll { overflow-x: auto; }
 .qr-pages { font-size: 12px; color: #555; white-space: nowrap; }
+.hist-wrap { display: inline-flex; align-items: stretch; }
+.hist-src { border: 1px solid #D5DEE8; border-left: 0; border-radius: 0 6px 6px 0; background: #fff; cursor: pointer; padding: 0 6px; color: #4A7BC8; }
+.hist-src:hover { background: #EEF4FF; }
 
 /* ── R8: 図面のページ選択→送信 ── */
 .att-drop { border: 1px dashed #C7D2DE; border-radius: 8px; padding: 10px 12px; transition: background .12s, border-color .12s; }
