@@ -69,6 +69,7 @@ async function receiveQuote(page: any, rowIdx: number, subName: string, opts: {
   await page.locator('[data-testid="qr-add"]').click()
   await page.waitForTimeout(800)
   await page.locator(`[data-testid="qr-sub-${rowIdx}"]`).selectOption({ label: subName })
+  await page.waitForTimeout(300)
   await page.locator(`[data-testid="qr-open-${rowIdx}"]`).click()
   await expect(page.locator('[data-testid="ql-panel"]')).toBeVisible({ timeout: 10000 })
 
@@ -81,22 +82,21 @@ async function receiveQuote(page: any, rowIdx: number, subName: string, opts: {
   await page.waitForTimeout(2000)
 }
 
-test('AC1: 依頼を記録でき、回収状況（未回収/期限超過/受領済み）が分かる', async ({ page }) => {
+test('AC1(R7): 依頼を記録でき、回収状況（未回収/期限超過/受領済み）が分かる', async ({ page }) => {
   await openNewProject(page)
   await openBuilderTab(page, 'quotes', '[data-testid="qr-add"]')
   await page.locator('[data-testid="qr-add"]').click()
   await page.waitForTimeout(800)
-
   await page.locator('[data-testid="qr-sub-0"]').selectOption({ label: SUB_A })
-  await page.locator('[data-testid="qr-trade-0"]').fill('軽鉄工事')
-  await page.locator('[data-testid="qr-trade-0"]').dispatchEvent('change')
-
-  // 未回収
+  // ★R7で工種の手入力欄は廃止（依頼の粒度は「どのページを誰に送るか」で足りる）
+  await expect(page.locator('[data-testid="qr-trade-0"]')).toHaveCount(0)
+  // 依頼日は自動で入る（人に入れさせない）
+  await expect(page.locator('[data-testid="qr-req-0"]')).not.toHaveText('—')
   await expect(page.locator('[data-testid="qr-state-0"]')).toContainText('未回収')
 
-  // 期限を過去にすると超過警告
-  const y = new Date(); y.setDate(y.getDate() - 2)
-  const iso = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`
+  // 回収期限を過ぎると期限超過が分かる（任意入力・入れた時だけ効く）
+  const past = new Date(); past.setDate(past.getDate() - 2)
+  const iso = `${past.getFullYear()}-${String(past.getMonth() + 1).padStart(2, '0')}-${String(past.getDate()).padStart(2, '0')}`
   await page.locator('[data-testid="qr-due-0"]').fill(iso)
   await page.locator('[data-testid="qr-due-0"]').dispatchEvent('change')
   await expect(page.locator('[data-testid="qr-state-0"]')).toContainText('2日超過')

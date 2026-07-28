@@ -83,6 +83,7 @@ test.afterAll(async () => {
   const accountId = await getAccountId()
   const pj = await restSrv(`estimate_projects?account_id=eq.${accountId}&name=like.${encodeURIComponent('E2E図面送信_' + TS + '%')}&select=id`)
   for (const p of (pj ?? [])) {
+    await restSrv(`estimate_quote_requests?project_id=eq.${p.id}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`estimate_drawing_sends?project_id=eq.${p.id}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`estimate_project_attachments?project_id=eq.${p.id}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`estimate_items?project_id=eq.${p.id}`, { method: 'DELETE' }).catch(() => {})
@@ -224,4 +225,53 @@ test('AC5(R9): 図面をドラッグ&ドロップで追加できる', async ({ p
   await expect.poll(async () =>
     (await restSrv(`estimate_project_attachments?project_id=eq.${await projectId()}&select=id`)).length,
     { timeout: 10000 }).toBe(before + 1)
+})
+
+test('AC6★(R7): 図面を送ると、その業者への見積依頼が自動で立つ（依頼行を人に作らせない）', async ({ page }) => {
+  await openProjectWithDrawing(page, 6)
+  const pid = await projectId()
+  const att = await restSrv(`estimate_project_attachments?project_id=eq.${pid}&select=id`)
+
+  // 送信前は依頼ゼロ
+  expect((await restSrv(`estimate_quote_requests?project_id=eq.${pid}&select=id`)).length).toBe(0)
+
+  await page.locator(`[data-testid="dsend-open-${att[0].id}"]`).click()
+  await expect(page.locator('[data-testid="dsend-count"]')).toContainText('0 / 6', { timeout: 15000 })
+  await page.locator('[data-testid="dsend-range"]').fill('2-4')
+  await page.locator('[data-testid="dsend-range"]').dispatchEvent('change')
+  await page.locator('[data-testid="dsend-sub"]').selectOption({ label: SUB })
+  await page.locator(`[data-testid="dsend-contact-${contactId}"]`).check()
+  await page.locator('[data-testid="dsend-send"]').click()
+  await expect(page.locator('[data-testid="dsend-msg"]')).toBeVisible({ timeout: 30000 })
+
+  // ★依頼が1件自動で立ち、どの送信から生まれたかが辿れる
+  await expect.poll(async () =>
+    (await restSrv(`estimate_quote_requests?project_id=eq.${pid}&select=id`)).length,
+    { timeout: 10000 }).toBe(1)
+  const qr = await restSrv(`estimate_quote_requests?project_id=eq.${pid}&select=subcontractor_id,requested_at,drawing_send_id,received_at`)
+  expect(qr[0].subcontractor_id).toBe(subId)
+  expect(qr[0].requested_at, '依頼日は自動で入る').toBeTruthy()
+  expect(qr[0].drawing_send_id, 'どの図面送信から生まれた依頼か辿れる').toBeTruthy()
+  expect(qr[0].received_at, 'まだ受領していない').toBeNull()
+
+  // 相見積タブに「送った図面ページ」が出る
+  await openBuilderTab(page, 'quotes', '[data-testid="qr-add"]')
+  await expect(page.locator('[data-testid="qr-pages-0"]')).toContainText('P.2-4')
+  await expect(page.locator('[data-testid="qr-state-0"]')).toContainText('未回収')
+
+  // ★同じ業者へ追加の図面を送っても行は増えない（未回収の依頼を更新する）
+  await openBuilderTab(page, 'intake', '[data-testid="intake-dropzone"]')
+  await page.locator(`[data-testid="dsend-open-${att[0].id}"]`).click()
+  await expect(page.locator('[data-testid="dsend-count"]')).toContainText('/ 6', { timeout: 15000 })
+  await page.locator('[data-testid="dsend-range"]').fill('5-6')
+  await page.locator('[data-testid="dsend-range"]').dispatchEvent('change')
+  await page.locator('[data-testid="dsend-sub"]').selectOption({ label: SUB })
+  await page.locator(`[data-testid="dsend-contact-${contactId}"]`).check()
+  await page.locator('[data-testid="dsend-send"]').click()
+  await expect(page.locator('[data-testid="dsend-msg"]')).toBeVisible({ timeout: 30000 })
+
+  await page.waitForTimeout(1500)
+  const qr2 = await restSrv(`estimate_quote_requests?project_id=eq.${pid}&select=id,drawing_send_id`)
+  expect(qr2.length, '同じ業者への追加送信で依頼行は増えない').toBe(1)
+  expect(qr2[0].drawing_send_id, '最新の送信に更新される').not.toBe(qr[0].drawing_send_id)
 })
