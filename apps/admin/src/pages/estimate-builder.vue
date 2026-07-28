@@ -110,22 +110,116 @@
           </p>
 
           <div class="panel-head" style="margin-top:16px"><h3 class="sub-h">図面・資料</h3></div>
-          <div class="att-row">
+          <!-- R9: ドラッグ&ドロップ対応。ファイル添付は指定が無くてもD&Dできるのを既定にする -->
+          <div class="att-row att-drop" :class="{ over: attDragOver }" data-testid="intake-dropzone"
+               @dragover.prevent="attDragOver = true" @dragleave="attDragOver = false" @drop.prevent="onIntakeDrop">
             <label class="btn-excel att-pick">
               <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">upload_file</span>
               図面を追加
               <input type="file" multiple accept=".pdf,image/*" hidden data-testid="intake-file" @change="onIntakeFiles" />
             </label>
+            <span class="hint">ここにドラッグ&ドロップでも追加できます</span>
             <span v-if="attBusy" class="hint">アップロード中…</span>
             <span v-if="attErr" class="err">{{ attErr }}</span>
           </div>
           <ul v-if="attachments.length" class="att-list" data-testid="intake-att-list">
             <li v-for="a in attachments" :key="a.id">
               <button class="att-name" :data-testid="`intake-att-${a.id}`" @click="openAttachment(a)">{{ a.name || a.path }}</button>
+              <!-- R8: 図面はページごとに工種が分かれている。該当ページだけ業者へ送る -->
+              <button v-if="isPdf(a)" class="btn-edit" :data-testid="`dsend-open-${a.id}`" @click="openDrawingSend(a)">ページを選んで送る</button>
               <button class="btn-del" :data-testid="`intake-att-del-${a.id}`" @click="removeAttachment(a)">×</button>
             </li>
           </ul>
           <p v-else class="hint">まだ図面がありません。元請けから受け取った図面をここに置いておくと、見積作成時に参照できます。</p>
+        </section>
+
+        <!-- ── R8: 図面のページを選んで下請へ送る（Dropboxでやっていた作業の置き換え）── -->
+        <section v-if="dsend.att" class="panel" data-testid="dsend-panel">
+          <div class="panel-head">
+            <h2>図面を送る — {{ dsend.att.name || dsend.att.path }}</h2>
+            <button class="btn-cancel" data-testid="dsend-close" @click="closeDrawingSend">閉じる</button>
+          </div>
+          <p class="hint">
+            図面は工種ごとにページが分かれています。<strong>送るページだけ</strong>選んでください。
+            選んだページだけを抜き出したPDFを作って送ります（元の図面はそのまま残ります）。
+          </p>
+
+          <div v-if="dsend.loading" class="hint">図面を読み込み中…</div>
+          <template v-else>
+            <div class="dsend-tools">
+              <label class="dsend-range">ページ指定
+                <input v-model="dsend.rangeText" class="input sm" data-testid="dsend-range"
+                       placeholder="例: 13-19, 22" @change="applyPageRange" />
+              </label>
+              <button class="btn-link-sm" data-testid="dsend-all" @click="selectAllPages(true)">全選択</button>
+              <button class="btn-link-sm" data-testid="dsend-none" @click="selectAllPages(false)">全解除</button>
+              <span class="dsend-count" data-testid="dsend-count">{{ dsend.selected.length }} / {{ dsend.pageCount }} ページ</span>
+            </div>
+            <div class="dsend-pages">
+              <button v-for="p in dsend.pageCount" :key="p" class="pg-chip"
+                      :class="{ on: dsend.selected.includes(p), focus: dsend.preview === p }"
+                      :data-testid="`dsend-page-${p}`"
+                      @click="togglePage(p)" @dblclick="previewPage(p)">
+                {{ p }}
+              </button>
+            </div>
+            <p class="hint">クリックで選択／ダブルクリックでそのページを下に表示（中身を確かめてから選べます）。</p>
+            <div v-if="dsend.previewUrl" class="dsend-preview">
+              <div class="dsp-head">P.{{ dsend.preview }} のプレビュー</div>
+              <iframe :src="dsend.previewUrl" class="dsp-frame" title="図面プレビュー"></iframe>
+            </div>
+
+            <div class="panel-head" style="margin-top:14px"><h3 class="sub-h">送り先</h3></div>
+            <div class="ifields">
+              <label class="ifield"><span>業者</span>
+                <select v-model="dsend.subId" class="input" data-testid="dsend-sub" @change="dsend.contactIds = []">
+                  <option value="">—</option>
+                  <option v-for="sc in subcontractorOptions" :key="sc.id" :value="sc.id">{{ sc.name }}</option>
+                </select>
+              </label>
+              <label class="ifield wide"><span>担当者（複数選択可）</span>
+                <span class="dsend-contacts">
+                  <label v-for="c in contactsOfSub(dsend.subId)" :key="c.id" class="cc-check">
+                    <input type="checkbox" :value="c.id" v-model="dsend.contactIds" :data-testid="`dsend-contact-${c.id}`" />
+                    {{ c.name }}<small v-if="!c.email">（メール未登録）</small>
+                  </label>
+                  <span v-if="dsend.subId && !contactsOfSub(dsend.subId).length" class="err" data-testid="dsend-no-contact">
+                    この業者に担当者が登録されていません
+                  </span>
+                </span>
+              </label>
+              <label class="ifield wide"><span>件名</span>
+                <input v-model="dsend.subject" class="input" data-testid="dsend-subject" :placeholder="defaultDsendSubject" />
+              </label>
+              <label class="ifield wide"><span>本文（空なら既定の文面）</span>
+                <textarea v-model="dsend.body" class="input" rows="4" data-testid="dsend-body"></textarea>
+              </label>
+            </div>
+            <div class="actions-row">
+              <button class="btn-primary" :disabled="!canSendDrawing || dsend.sending" data-testid="dsend-send" @click="sendDrawing">
+                {{ dsend.sending ? '送信中…' : `選んだ ${dsend.selected.length} ページを送る` }}
+              </button>
+              <span v-if="dsend.msg" class="ok" data-testid="dsend-msg">{{ dsend.msg }}</span>
+              <span v-if="dsend.err" class="err" data-testid="dsend-err">{{ dsend.err }}</span>
+            </div>
+          </template>
+        </section>
+
+        <!-- 送信履歴: 「誰にどのページを渡したか」は後で必ず問題になるので必ず見えるようにする -->
+        <section v-if="drawingSends.length" class="panel" data-testid="dsend-history">
+          <div class="panel-head"><h3 class="sub-h">図面の送信履歴</h3></div>
+          <table class="table">
+            <thead><tr><th>送信日時</th><th>業者</th><th>ページ</th><th>元ファイル</th><th>宛先</th></tr></thead>
+            <tbody>
+              <tr v-for="h in drawingSends" :key="h.id">
+                <td>{{ h.sent_at ? new Date(h.sent_at).toLocaleString('ja-JP') : '未送信' }}</td>
+                <td>{{ subName(h.subcontractor_id) }}</td>
+                <td>P.{{ pageRangeLabel(h.pages ?? []) }}</td>
+                <td>{{ h.source_name || '—' }}</td>
+                <td class="dsend-to">{{ h.email_to }}</td>
+              </tr>
+            </tbody>
+          </table>
         </section>
       </div>
 
@@ -896,10 +990,19 @@ async function loadAttachments() {
     .select('id, path, name, kind').eq('project_id', projectId.value).order('created_at')
   attachments.value = (data ?? []) as Attachment[]
 }
-async function onIntakeFiles(e: Event) {
+const attDragOver = ref(false)
+function onIntakeFiles(e: Event) {
   const input = e.target as HTMLInputElement
   const files = Array.from(input.files ?? [])
   input.value = ''
+  return uploadAttachments(files)
+}
+/** R9: ドラッグ&ドロップ。ファイル添付は指定が無くてもD&Dできるのを既定にする */
+function onIntakeDrop(e: DragEvent) {
+  attDragOver.value = false
+  return uploadAttachments(Array.from(e.dataTransfer?.files ?? []))
+}
+async function uploadAttachments(files: File[]) {
   if (!files.length || !projectId.value) return
   attBusy.value = true; attErr.value = ''
   try {
@@ -929,6 +1032,178 @@ async function removeAttachment(a: Attachment) {
   await supabase.from('estimate_project_attachments').delete().eq('id', a.id)
   await loadAttachments()
 }
+// ════════════════════════════════════════════════════════════
+//  R8: 図面のページを選んで下請へ送る（Dropboxでやっていた作業の置き換え）
+//
+//  業務フロー（2026-07-28 レビュー）:
+//   元請けから来た図面をDropboxに保存 → 図面は工種ごとにページが分かれている
+//   → 塗装業者に投げるならそのページだけチェック → 共有 → メール
+//  ★「誰にどのページを渡したか」は後で必ず問題になる（見積が食い違った時に
+//    「その図面は渡していない」が起きる）ので、履歴に pages を必ず残す。
+//
+//  ページ抽出はブラウザ側(pdf-lib)で行い、抽出済みPDFをアップロードしてから
+//  EFに送信させる。EF側でPDFを弄らないのは pdf-lib を Deno に持ち込まないため。
+// ════════════════════════════════════════════════════════════
+type DrawingSend = {
+  id: string; subcontractor_id: string | null; pages: number[] | null
+  source_name: string | null; email_to: string | null; sent_at: string | null
+}
+const drawingSends = ref<DrawingSend[]>([])
+const dsend = ref<{
+  att: Attachment | null; loading: boolean; sending: boolean
+  bytes: Uint8Array | null; pageCount: number; selected: number[]
+  rangeText: string; preview: number | null; previewUrl: string
+  subId: string; contactIds: string[]; subject: string; body: string
+  msg: string; err: string
+}>({
+  att: null, loading: false, sending: false, bytes: null, pageCount: 0, selected: [],
+  rangeText: '', preview: null, previewUrl: '', subId: '', contactIds: '' as any,
+  subject: '', body: '', msg: '', err: '',
+})
+dsend.value.contactIds = []
+
+const isPdf = (a: Attachment) => /\.pdf$/i.test(a.name ?? '') || /\.pdf$/i.test(a.path ?? '')
+const contactsOfSub = (subId: string) =>
+  subContacts.value.filter(c => c.subcontractor_id === subId && c.email)
+const canSendDrawing = computed(() =>
+  !!dsend.value.selected.length && !!dsend.value.contactIds.length)
+
+/** 1,2,3,5,6 → "1-3, 5-6"（人が読む用。件名・履歴に出す） */
+function pageRangeLabel(pages: number[]): string {
+  const a = [...new Set(pages)].filter(n => Number.isFinite(n) && n > 0).sort((x, y) => x - y)
+  if (!a.length) return ''
+  const out: string[] = []
+  let start = a[0], prev = a[0]
+  for (let i = 1; i <= a.length; i++) {
+    const n = a[i]
+    if (n === prev + 1) { prev = n; continue }
+    out.push(start === prev ? `${start}` : `${start}-${prev}`)
+    start = n; prev = n
+  }
+  return out.join(', ')
+}
+const defaultDsendSubject = computed(() =>
+  `【図面送付】${currentProjectName.value}（P.${pageRangeLabel(dsend.value.selected)}）`)
+
+async function openDrawingSend(a: Attachment) {
+  const d = dsend.value
+  d.att = a; d.loading = true; d.err = ''; d.msg = ''
+  d.selected = []; d.rangeText = ''; d.preview = null; d.previewUrl = ''
+  d.contactIds = []; d.subject = ''; d.body = ''
+  try {
+    const { data, error } = await supabase.storage.from(DRAWING_BUCKET).download(a.path)
+    if (error || !data) throw error ?? new Error('図面を取得できませんでした')
+    d.bytes = new Uint8Array(await data.arrayBuffer())
+    const { PDFDocument } = await import('pdf-lib')
+    d.pageCount = (await PDFDocument.load(d.bytes)).getPageCount()
+  } catch (e: any) {
+    d.err = e?.message ?? '図面を読み込めませんでした'
+    d.pageCount = 0
+  } finally { d.loading = false }
+}
+function closeDrawingSend() {
+  if (dsend.value.previewUrl) URL.revokeObjectURL(dsend.value.previewUrl)
+  dsend.value.att = null; dsend.value.bytes = null; dsend.value.previewUrl = ''
+}
+function togglePage(p: number) {
+  const sel = dsend.value.selected
+  const i = sel.indexOf(p)
+  if (i >= 0) sel.splice(i, 1); else sel.push(p)
+  dsend.value.rangeText = pageRangeLabel(sel)
+}
+function selectAllPages(on: boolean) {
+  dsend.value.selected = on ? Array.from({ length: dsend.value.pageCount }, (_, i) => i + 1) : []
+  dsend.value.rangeText = pageRangeLabel(dsend.value.selected)
+}
+/** 「13-19, 22」のような指定でまとめて選ぶ。工種ごとに連番で分かれているので範囲指定が実務的 */
+function applyPageRange() {
+  const out = new Set<number>()
+  for (const part of dsend.value.rangeText.split(/[,、\s]+/)) {
+    const m = /^(\d+)\s*[-〜~]\s*(\d+)$/.exec(part.trim())
+    if (m) {
+      const [a, b] = [Number(m[1]), Number(m[2])].sort((x, y) => x - y)
+      for (let n = a; n <= b; n++) if (n >= 1 && n <= dsend.value.pageCount) out.add(n)
+    } else if (/^\d+$/.test(part.trim())) {
+      const n = Number(part.trim())
+      if (n >= 1 && n <= dsend.value.pageCount) out.add(n)
+    }
+  }
+  dsend.value.selected = [...out].sort((a, b) => a - b)
+}
+/** そのページだけのPDFを作ってプレビュー（中身を確かめてから選べるように） */
+async function previewPage(p: number) {
+  const d = dsend.value
+  if (!d.bytes) return
+  const { PDFDocument } = await import('pdf-lib')
+  const src = await PDFDocument.load(d.bytes)
+  const doc = await PDFDocument.create()
+  const [pg] = await doc.copyPages(src, [p - 1])
+  doc.addPage(pg)
+  const blob = new Blob([await doc.save()], { type: 'application/pdf' })
+  if (d.previewUrl) URL.revokeObjectURL(d.previewUrl)
+  d.previewUrl = URL.createObjectURL(blob)
+  d.preview = p
+}
+
+async function sendDrawing() {
+  const d = dsend.value
+  if (!canSendDrawing.value || !d.bytes || !projectId.value) return
+  d.sending = true; d.err = ''; d.msg = ''
+  try {
+    // 選んだページだけを抜き出したPDFを作る（元の図面はそのまま残す）
+    const { PDFDocument } = await import('pdf-lib')
+    const src = await PDFDocument.load(d.bytes)
+    const doc = await PDFDocument.create()
+    const pages = [...d.selected].sort((a, b) => a - b)
+    const copied = await doc.copyPages(src, pages.map(p => p - 1))
+    for (const pg of copied) doc.addPage(pg)
+    const out = await doc.save()
+
+    const path = `${accountId}/${projectId.value}/sent/${Date.now()}_P${pageRangeLabel(pages).replace(/[,\s]+/g, '_')}.pdf`
+    const { error: upErr } = await supabase.storage.from(DRAWING_BUCKET)
+      .upload(path, new Blob([out], { type: 'application/pdf' }))
+    if (upErr) throw upErr
+
+    const { data: sess } = await supabase.auth.getSession()
+    const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-drawing-pages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${sess?.session?.access_token ?? ''}`,
+        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({
+        project_id: projectId.value,
+        attachment_id: d.att?.id ?? null,
+        subcontractor_id: d.subId || null,
+        subcontractor_contact_ids: d.contactIds,
+        pages,
+        pdf_path: path,
+        source_name: d.att?.name ?? null,
+        subject: d.subject || null,
+        body: d.body || null,
+        project_name: currentProjectName.value,
+      }),
+    })
+    const json = await resp.json()
+    if (!resp.ok || json?.error) throw new Error(json?.error || `送信エラー(${resp.status})`)
+    d.msg = json?.skipped === 'no_api_key'
+      ? `${pages.length}ページを記録しました（メール未設定のため実送信はスキップ）`
+      : `${pages.length}ページを送信しました`
+    await loadDrawingSends()
+  } catch (e: any) {
+    d.err = e?.message ?? '送信に失敗しました'
+  } finally { d.sending = false }
+}
+
+async function loadDrawingSends() {
+  if (!projectId.value) { drawingSends.value = []; return }
+  const { data } = await supabase.from('estimate_drawing_sends')
+    .select('id, subcontractor_id, pages, source_name, email_to, sent_at')
+    .eq('project_id', projectId.value).order('created_at', { ascending: false })
+  drawingSends.value = (data ?? []) as DrawingSend[]
+}
+
 // #4 マスタ・自社情報の右ドロワー（閉じると明細の選択肢・見積書計算に即反映）
 const drawerOpen = ref(false)
 const drawerTab  = ref<'masters' | 'company'>('masters')
@@ -1645,7 +1920,7 @@ async function doLoadItems() {
   await loadAttachments()
   markSaved()
   sendContactIds.value = []
-  await Promise.all([loadSends(), loadProjectPOs()])
+  await Promise.all([loadSends(), loadProjectPOs(), loadDrawingSends()])
 }
 
 async function addProject() {
@@ -2117,6 +2392,23 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .cs-v { font-size: 14px; font-weight: 700; color: #333; }
 .cs-note { margin-left: auto; font-size: 11px; color: #aaa; }
 .items-scroll { overflow-x: auto; }
+
+/* ── R8: 図面のページ選択→送信 ── */
+.att-drop { border: 1px dashed #C7D2DE; border-radius: 8px; padding: 10px 12px; transition: background .12s, border-color .12s; }
+.att-drop.over { border-color: #4A7BC8; background: #EEF4FF; }
+.dsend-tools { display: flex; align-items: center; gap: 12px; margin: 8px 0; flex-wrap: wrap; }
+.dsend-range { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #555; }
+.dsend-count { font-size: 12px; color: #7A8AA0; margin-left: auto; }
+.dsend-pages { display: flex; flex-wrap: wrap; gap: 6px; max-height: 220px; overflow-y: auto; padding: 6px; background: #FAFBFC; border-radius: 6px; }
+.pg-chip { min-width: 40px; padding: 6px 8px; border: 1px solid #D5DEE8; border-radius: 6px; background: #fff; cursor: pointer; font-size: 12px; }
+.pg-chip.on { background: #2F6FD0; border-color: #2F6FD0; color: #fff; font-weight: 700; }
+.pg-chip.focus { outline: 2px solid #F0A500; }
+.dsend-preview { margin-top: 10px; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; }
+.dsp-head { padding: 6px 10px; background: #F5F7FA; font-size: 12px; color: #555; }
+.dsp-frame { width: 100%; height: 420px; border: 0; display: block; }
+.dsend-contacts { display: flex; flex-wrap: wrap; gap: 12px; }
+.cc-check { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
+.dsend-to { font-size: 12px; color: #7A8AA0; word-break: break-all; }
 
 /* ── 明細のブロック（場所×工種）── */
 .blk-row td { background: #EEF2F7; border-top: 2px solid #D5DEE8; padding: 6px 8px; }

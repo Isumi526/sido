@@ -192,3 +192,16 @@ export async function openBuilderTab(page: any, tab: string, probeSelector: stri
     await expect(page.locator(probeSelector).first()).toBeVisible({ timeout: 1500 })
   }).toPass({ timeout: 25000 })
 }
+
+/**
+ * 非公開バケットのファイルを service_role で落として latin1 文字列で返す。
+ * PDFの中身（非圧縮のコンテンツストリーム）を検査したい時に使う。
+ */
+export async function downloadStorage(bucket: string, path: string): Promise<{ data: string | null }> {
+  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}/${path}`, {
+    headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` },
+  })
+  if (!res.ok) return { data: null }
+  const buf = Buffer.from(await res.arrayBuffer())
+  return { data: buf.toString('latin1') }
+}
