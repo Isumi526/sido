@@ -227,12 +227,18 @@
       <div v-show="builderTab === 'quotes'">
         <section class="panel">
           <div class="panel-head">
-            <h2>下請への見積依頼</h2>
-            <button class="btn-add" data-testid="qr-add" @click="addQuoteRequest">＋ 依頼を追加</button>
+            <h2>依頼した業者と回収状況</h2>
+            <button class="btn-add" data-testid="qr-add" @click="addQuoteRequest">＋ 業者を手で追加</button>
           </div>
-          <p class="hint">依頼した業者と回収状況を管理します。受領した単価は<strong>そのまま単価履歴になります</strong>（別途の入力は不要）。</p>
+          <!-- ★R7: 依頼は「案件情報タブで図面のページを送る」と自動で立つ。
+               ここで工種・依頼日・回収期限を1件ずつ手入力させるのは実業務に対して過剰だった。
+               手追加は「システムを通さずメールで見積が来た業者」を登録するための逃げ道として残す。 -->
+          <p class="hint">
+            <strong>案件情報タブで図面のページを送ると、その業者の依頼がここに自動で並びます。</strong>
+            受領した単価はそのまま単価履歴になります（別途の入力は不要）。
+          </p>
           <table class="table">
-            <thead><tr><th>業者</th><th>工種</th><th>依頼日</th><th>回収期限</th><th>受領日</th><th>状況</th><th class="num">明細</th><th></th></tr></thead>
+            <thead><tr><th>業者</th><th>送った図面</th><th>依頼日</th><th>回収期限</th><th>受領日</th><th>状況</th><th class="num">明細</th><th></th></tr></thead>
             <tbody>
               <tr v-for="(q, qi) in quoteRequests" :key="q.id" :data-testid="`qr-row-${qi}`">
                 <td>
@@ -241,8 +247,9 @@
                     <option v-for="sc in subcontractorOptions" :key="sc.id" :value="sc.id">{{ sc.name }}</option>
                   </select>
                 </td>
-                <td><input v-model="q.trade_name" class="input sm" :data-testid="`qr-trade-${qi}`" list="est-trades" placeholder="工種" @change="saveQuoteRequest(q)" /></td>
-                <td><input v-model="q.requested_at" type="date" class="input sm" :data-testid="`qr-req-${qi}`" @change="saveQuoteRequest(q)" /></td>
+                <!-- どのページを渡して見積を待っているかが1行で分かる状態にする -->
+                <td class="qr-pages" :data-testid="`qr-pages-${qi}`">{{ sentPagesLabel(q) }}</td>
+                <td :data-testid="`qr-req-${qi}`">{{ q.requested_at || '—' }}</td>
                 <td><input v-model="q.due_date" type="date" class="input sm" :data-testid="`qr-due-${qi}`" @change="saveQuoteRequest(q)" /></td>
                 <td><input v-model="q.received_at" type="date" class="input sm" :data-testid="`qr-recv-${qi}`" @change="saveQuoteRequest(q)" /></td>
                 <td><span class="qr-badge" :class="qrState(q).cls" :data-testid="`qr-state-${qi}`">{{ qrState(q).text }}</span></td>
@@ -252,7 +259,7 @@
                   <button class="btn-del" :data-testid="`qr-del-${qi}`" @click="removeQuoteRequest(q)">×</button>
                 </td>
               </tr>
-              <tr v-if="!quoteRequests.length"><td colspan="8" class="empty">「＋ 依頼を追加」で下請への見積依頼を記録します</td></tr>
+              <tr v-if="!quoteRequests.length"><td colspan="8" class="empty">案件情報タブで図面のページを業者へ送ると、ここに依頼が並びます</td></tr>
             </tbody>
           </table>
         </section>
@@ -736,6 +743,7 @@ const kindLabel = (k: string) => PRICE_KINDS.find(x => x.key === k)?.label ?? k
 type QuoteRequest = {
   id: string; subcontractor_id: string | null; trade_name: string
   requested_at: string; due_date: string; received_at: string
+  drawing_send_id: string | null   // R7: どの図面送信から生まれた依頼か
 }
 type QuoteLine = {
   id: string | null; _k: number; request_id: string; item_name: string; spec: string
@@ -771,11 +779,12 @@ function qrState(q: QuoteRequest): { text: string; cls: string } {
 async function loadQuotes() {
   if (!projectId.value) { quoteRequests.value = []; quoteLines.value = []; return }
   const { data: qr } = await supabase.from('estimate_quote_requests')
-    .select('id, subcontractor_id, trade_name, requested_at, due_date, received_at')
+    .select('id, subcontractor_id, trade_name, requested_at, due_date, received_at, drawing_send_id')
     .eq('project_id', projectId.value).order('created_at')
   quoteRequests.value = (qr ?? []).map((r: any) => ({
     id: r.id, subcontractor_id: r.subcontractor_id, trade_name: r.trade_name ?? '',
     requested_at: r.requested_at ?? '', due_date: r.due_date ?? '', received_at: r.received_at ?? '',
+    drawing_send_id: r.drawing_send_id ?? null,
   }))
   const ids = quoteRequests.value.map(r => r.id)
   if (!ids.length) { quoteLines.value = []; return }
@@ -789,6 +798,14 @@ async function loadQuotes() {
     unit_price: Number(l.unit_price) || 0, is_selected: !!l.is_selected,
   }))
 }
+/** R7: その依頼に対して実際に渡した図面ページ（例: 「E2E図面.pdf P.13-19」） */
+function sentPagesLabel(q: QuoteRequest): string {
+  const h = drawingSends.value.find(d => d.id === q.drawing_send_id)
+  if (!h) return '—'
+  const range = pageRangeLabel(h.pages ?? [])
+  return `${h.source_name ? h.source_name + ' ' : ''}P.${range}`
+}
+
 async function loadSubcontractorOptions() {
   const { data } = await supabase.from('subcontractors')
     .select('id, name').eq('account_id', accountId).eq('category', '業者')
@@ -796,12 +813,16 @@ async function loadSubcontractorOptions() {
   subcontractorOptions.value = (data ?? []) as any
 }
 
+/** ローカル日付のYYYY-MM-DD（toISOString はUTCになって日付がズレる） */
+function todayIso(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+/** 手追加（システムを通さずメールで見積が来た業者を登録するための逃げ道） */
 async function addQuoteRequest() {
   if (!projectId.value) return
-  const today = new Date()
-  const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
   const { data } = await supabase.from('estimate_quote_requests')
-    .insert({ account_id: accountId, project_id: projectId.value, requested_at: iso }).select('id').single()
+    .insert({ account_id: accountId, project_id: projectId.value, requested_at: todayIso() }).select('id').single()
   if (data?.id) await loadQuotes()
 }
 async function saveQuoteRequest(q: QuoteRequest) {
@@ -855,8 +876,7 @@ async function saveQuoteLines() {
     }
     // 受領日が未入力なら、明細を入れた時点で受領済みとみなす（入力の手間を減らす）
     if (!openedRequest.value.received_at && openedLines.value.some(l => l.item_name.trim())) {
-      const today = new Date()
-      openedRequest.value.received_at = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+      openedRequest.value.received_at = todayIso()
       await saveQuoteRequest(openedRequest.value)
     }
     await loadQuotes()
@@ -1191,9 +1211,35 @@ async function sendDrawing() {
       ? `${pages.length}ページを記録しました（メール未設定のため実送信はスキップ）`
       : `${pages.length}ページを送信しました`
     await loadDrawingSends()
+    // ★R7: 図面を送った＝その業者に見積を依頼した、ということ。
+    //   依頼行を人に手で作らせない（実業務の依頼は「図面を投げるだけ」）。
+    if (d.subId) await ensureQuoteRequestFromSend(d.subId)
   } catch (e: any) {
     d.err = e?.message ?? '送信に失敗しました'
   } finally { d.sending = false }
+}
+
+/**
+ * R7: 図面送信から見積依頼を立てる。
+ * 同じ業者へ何度も図面を送ることがある（追加図面・差し替え）ので、
+ * まだ受領していない依頼が既にあればそれを最新の送信に更新し、行を増やさない。
+ */
+async function ensureQuoteRequestFromSend(subId: string) {
+  const latest = drawingSends.value.find(d => d.subcontractor_id === subId)
+  if (!latest || !projectId.value) return
+  const today = todayIso()
+  const open = quoteRequests.value.find(q => q.subcontractor_id === subId && !q.received_at)
+  if (open) {
+    await supabase.from('estimate_quote_requests')
+      .update({ drawing_send_id: latest.id, requested_at: open.requested_at || today })
+      .eq('id', open.id)
+  } else {
+    await supabase.from('estimate_quote_requests').insert({
+      account_id: accountId, project_id: projectId.value,
+      subcontractor_id: subId, requested_at: today, drawing_send_id: latest.id,
+    })
+  }
+  await loadQuotes()
 }
 
 async function loadDrawingSends() {
@@ -2392,6 +2438,7 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .cs-v { font-size: 14px; font-weight: 700; color: #333; }
 .cs-note { margin-left: auto; font-size: 11px; color: #aaa; }
 .items-scroll { overflow-x: auto; }
+.qr-pages { font-size: 12px; color: #555; white-space: nowrap; }
 
 /* ── R8: 図面のページ選択→送信 ── */
 .att-drop { border: 1px dashed #C7D2DE; border-radius: 8px; padding: 10px 12px; transition: background .12s, border-color .12s; }
