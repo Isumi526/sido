@@ -414,11 +414,27 @@
                 <tr :class="{ 'drag-over': dragOverIndex === i && dragIndex !== null && dragIndex !== i }"
                     @dragover.prevent="dragOverIndex = i" @drop="onDrop(i)" @dragleave="dragOverIndex = null">
                   <td class="drag-handle" draggable="true" title="ドラッグで並び替え" :data-testid="`item-drag-${i}`" @dragstart="onDragStart(i)" @dragend="onDragEnd">⠿</td>
-                  <td><input v-model="rows[i].item_name" class="input" :data-testid="`item-name-${i}`" list="est-materials" autocomplete="off" @change="resolveMaterial(rows[i])" @blur="resolveMaterial(rows[i])" /></td>
+                  <td>
+                    <input v-model="rows[i].item_name" class="input" :data-testid="`item-name-${i}`" list="est-materials"
+                           autocomplete="off" @input="computeDidYouMean(rows[i])"
+                           @change="onItemNameChange(rows[i])" @blur="onItemNameChange(rows[i])" />
+                    <!-- ★R6: 表記ゆれ・打ち間違い用の「もしかして」。予測変換(datalist)は
+                         前方一致しか効かないので、似ている既存名を別に出す。 -->
+                    <button v-if="needsLookup(rows[i])" class="pinfo-ask" :data-testid="`item-pinfo-ask-${i}`"
+                            title="この品名の商品情報（サイズ・仕様・画像）をネット検索で調べる"
+                            @click="lookupProductInfo(rows[i], true)">
+                      <span class="material-symbols-rounded" style="font-size:13px;vertical-align:middle">search</span> 商品情報を調べる
+                    </button>
+                    <span v-if="didYouMean(rows[i]).length" class="dym" :data-testid="`item-dym-${i}`">
+                      もしかして:
+                      <button v-for="(c, ci) in didYouMean(rows[i])" :key="c" class="dym-pick"
+                              :data-testid="`item-dym-${i}-${ci}`" @click="applyDidYouMean(rows[i], c)">{{ c }}</button>
+                    </span>
+                  </td>
                   <!-- ★R3: 品番は形状・詳細と別列。品番はメーカー特定・商品情報取得のキーになる -->
                   <td><input v-model="rows[i].product_code" class="input sm" :data-testid="`item-code-${i}`"
                              list="est-material-codes" autocomplete="off" placeholder="SLP314 等"
-                             @change="resolveByCode(rows[i])" @blur="resolveByCode(rows[i])" /></td>
+                             @change="onCodeChange(rows[i])" @blur="onCodeChange(rows[i])" /></td>
                   <td><input v-model="rows[i].spec" class="input sm" :data-testid="`item-spec-${i}`" placeholder="W65 @303 等" /></td>
                   <td><input v-model="rows[i].unit" class="input sm" :data-testid="`item-unit-${i}`" placeholder="m²/個 等" /></td>
                   <td class="num"><input v-model.number="rows[i].quantity" type="number" step="0.01" class="input sm num" :data-testid="`item-qty-${i}`" /></td>
@@ -442,6 +458,37 @@
                   </td>
                   <td class="num amount" :data-testid="`item-amount-${i}`">{{ yen(lineAmount(rows[i])) }}</td>
                   <td><button class="btn-del" :data-testid="`item-del-${i}`" @click="removeRow(i)">×</button></td>
+                </tr>
+                <!-- ★R6: 商品情報（サイズ展開・仕様・画像・出典）。
+                     今は毎回この品名でGoogle/ChatGPTを叩いているので、その手間を画面に持ってくる。 -->
+                <tr v-if="productInfoOf(rows[i])" class="pinfo-row" :data-testid="`item-pinfo-${i}`">
+                  <td></td>
+                  <td colspan="11">
+                    <div class="pinfo">
+                      <img v-if="productInfoOf(rows[i])!.image_url" :src="productInfoOf(rows[i])!.image_url!"
+                           class="pinfo-img" :data-testid="`item-pinfo-img-${i}`" alt="" @error="onPinfoImgError(rows[i])" />
+                      <div class="pinfo-body">
+                        <template v-if="productInfoOf(rows[i])!.not_found">
+                          <!-- 黙って空欄にしない。「調べたが見つからなかった」と分かるようにする -->
+                          <span class="pinfo-none" :data-testid="`item-pinfo-none-${i}`">商品情報は見つかりませんでした</span>
+                        </template>
+                        <template v-else>
+                          <span v-if="productInfoOf(rows[i])!.maker" class="pinfo-maker">{{ productInfoOf(rows[i])!.maker }}</span>
+                          <span v-if="productInfoOf(rows[i])!.sizes" class="pinfo-line" :data-testid="`item-pinfo-sizes-${i}`">サイズ: {{ productInfoOf(rows[i])!.sizes }}</span>
+                          <span v-if="productInfoOf(rows[i])!.spec" class="pinfo-line">仕様: {{ productInfoOf(rows[i])!.spec }}</span>
+                          <span class="pinfo-links">
+                            <a v-for="(u, ui) in (productInfoOf(rows[i])!.source_urls ?? []).slice(0, 3)" :key="ui"
+                               :href="u" target="_blank" rel="noopener" class="pinfo-link" :data-testid="`item-pinfo-src-${i}-${ui}`">出典{{ ui + 1 }}</a>
+                          </span>
+                        </template>
+                        <span class="pinfo-note">AIがWeb検索した内容です。発注前に必ず現物・カタログで確認してください。</span>
+                      </div>
+                      <button class="btn-link-sm" :data-testid="`item-pinfo-refresh-${i}`" @click="lookupProductInfo(rows[i], true)">調べ直す</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr v-else-if="pinfoBusyKey === productKeyOf(rows[i]) && productKeyOf(rows[i])" class="pinfo-row">
+                  <td></td><td colspan="11"><span class="hint" :data-testid="`item-pinfo-busy-${i}`">商品情報を調べています…</span></td>
                 </tr>
                 <!-- Q4: この項目の過去の業者別単価（受領登録で貯まったもの）。クリックで原価に採用 -->
                 <tr v-if="historyFor(rows[i].item_name).length" class="hist-row">
@@ -1395,6 +1442,7 @@ type Row = {
   unit_price: number        // 客先単価（Excel I列・既定は原価÷(1−粗利率)）
   _priceTouched?: boolean   // 客先単価を人が手打ちしたか（自動再計算を抑止）
   _newBlock?: boolean       // ここから新しいブロック（場所/工種が未入力でも前と混ざらないため）
+  _dym?: string[]           // 「もしかして」候補（入力時に1度だけ計算する。描画中に計算しない）
 }
 
 const projects       = ref<Project[]>([])
@@ -2021,6 +2069,161 @@ function onSupplierPick(r: Row) {
   if (p) r.unit_price = Number(p.unit_price)
 }
 // E6 品番予測変換: 明細名が既存材料に一致したら material_id を紐付け、単位を補完
+// ════════════════════════════════════════════════════════════
+//  R6: 品名の「もしかして」＋商品情報（サイズ展開・仕様・画像）の自動表示
+//
+//  ユーザー原文（2026-07-28 通しレビュー・音声）:
+//   「品名を選択したときに、商品の詳細画像とか、どんなサイズがあるかとかを
+//     ネット検索・AIで調べてぱっとUI上で表示したい。現状の業務フローだと、
+//     毎回その品名で Google 検索なり ChatGPT なりで調べて『あー、こんなんね』って認識してる」
+//  ＝人が毎回やっている検索を画面に持ってくるのが目的。
+// ════════════════════════════════════════════════════════════
+type ProductInfo = {
+  lookup_key: string; maker: string | null; sizes: string | null; spec: string | null
+  image_url: string | null; source_urls: string[]; not_found: boolean
+}
+const productInfos = ref<Record<string, ProductInfo>>({})
+const pinfoBusyKey = ref('')
+
+/** 検索キー: 品番があれば品番、無ければ品名。大小・全角空白を吸収する */
+function productKeyOf(r: Row): string {
+  const code = (r.product_code ?? '').trim()
+  const name = (r.item_name ?? '').trim()
+  const base = code || name
+  return base ? base.toLowerCase().replace(/[\s\u3000]+/g, ' ') : ''
+}
+const productInfoOf = (r: Row): ProductInfo | null => productInfos.value[productKeyOf(r)] ?? null
+
+/** 画像URLが死んでいた（403/404・ホットリンク禁止）ら、画像だけ落として情報は残す */
+function onPinfoImgError(r: Row) {
+  const info = productInfoOf(r)
+  if (info) info.image_url = null
+}
+
+// ── 「もしかして」（表記ゆれ・打ち間違い）──
+//  datalist の予測変換は前方一致しか効かない。「天井 下地組」と「天井下地組」のような
+//  ゆれは前方一致では拾えないので、正規化した編集距離で似ている既存名を出す。
+const normalizeName = (s: string) =>
+  (s ?? '').trim().toLowerCase().replace(/[\s\u3000・\-ー_]/g, '')
+function editDistance(a: string, b: string): number {
+  const m = a.length, n = b.length
+  if (!m || !n) return Math.max(m, n)
+  let prev = Array.from({ length: n + 1 }, (_, j) => j)
+  for (let i = 1; i <= m; i++) {
+    const cur = [i]
+    for (let j = 1; j <= n; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1))
+    }
+    prev = cur
+  }
+  return prev[n]
+}
+/**
+ * 「もしかして」候補を計算する。
+ * ★描画のたびに全行×全マスタで編集距離を回すと、マスタが育つほどUIが固まる
+ *   （E2Eで保存ボタンが反応しなくなる形で実際に踏んだ）。
+ *   入力が変わった時に1度だけ計算して行に持たせ、描画では読むだけにする。
+ */
+function computeDidYouMean(r: Row): void {
+  const raw = (r.item_name ?? '').trim()
+  if (raw.length < 2) { r._dym = []; return }
+  const nm = normalizeName(raw)
+  // 完全一致するマスタがあるなら、それが正解なので候補は出さない
+  if (materials.value.some(m => normalizeName(m.name) === nm)) { r._dym = []; return }
+  const limit = Math.max(1, Math.floor(nm.length * 0.3))
+  const out: { name: string; d: number }[] = []
+  for (const m of materials.value) {
+    const cand = normalizeName(m.name)
+    if (!cand || cand === nm) continue
+    // 長さが離れすぎているものは編集距離を計算するまでもない（重い処理を避ける足切り）
+    if (Math.abs(cand.length - nm.length) > limit) continue
+    const d = editDistance(nm, cand)
+    if (d <= Math.max(1, Math.floor(Math.max(nm.length, cand.length) * 0.3))) out.push({ name: m.name, d })
+    if (out.length >= 20) break
+  }
+  r._dym = out.sort((a, b) => a.d - b.d).slice(0, 3).map(x => x.name)
+}
+const didYouMean = (r: Row): string[] => r._dym ?? []
+
+function applyDidYouMean(r: Row, name: string) {
+  r.item_name = name          // クリックで上書きする（要望どおり）
+  r._dym = []
+  resolveMaterial(r)
+  void loadCachedProductInfo(r)
+}
+
+function onItemNameChange(r: Row) {
+  computeDidYouMean(r)
+  resolveMaterial(r)
+  void loadCachedProductInfo(r)   // ★AIは自動で叩かない（下の理由）
+}
+
+/** キャッシュ（estimate_product_info）にあれば表示する。DB読みだけなので即時・無料。 */
+async function loadCachedProductInfo(r: Row) {
+  const key = productKeyOf(r)
+  if (!key || productInfos.value[key]) return
+  const { data: cached } = await supabase.from('estimate_product_info')
+    .select('lookup_key, maker, sizes, spec, image_url, source_urls, not_found')
+    .eq('account_id', accountId).eq('lookup_key', key).maybeSingle()
+  if (!cached) return
+  productInfos.value = { ...productInfos.value, [key]: {
+    lookup_key: key, maker: cached.maker, sizes: cached.sizes, spec: cached.spec,
+    image_url: cached.image_url, source_urls: (cached.source_urls ?? []) as string[],
+    not_found: !!cached.not_found,
+  } }
+}
+/** まだ調べていない品名か（＝「調べる」ボタンを出すべきか） */
+function needsLookup(r: Row): boolean {
+  const key = productKeyOf(r)
+  return !!key && !productInfos.value[key] && pinfoBusyKey.value !== key
+}
+
+/**
+ * 商品情報をネット検索で調べる。
+ * ★人が押した時だけ叩く。品名を打つたびに自動で叩くと
+ *   ①生成AIの課金が入力のたびに発生し ②検索に十数秒かかる間ブラウザの接続を占有して
+ *   保存など他の操作が待たされる（E2Eで保存が終わらなくなる形で実際に踏んだ）。
+ *   ユーザーの要望も「品名を選択したときに表示したい」であって、
+ *   打鍵のたびに調べてほしいという話ではない。
+ * 同時に走らせないのも同じ理由（連打しても1件ずつ）。
+ */
+async function lookupProductInfo(r: Row, force = false) {
+  const key = productKeyOf(r)
+  if (!key) return
+  if (!force && productInfos.value[key]) return
+  if (pinfoBusyKey.value) return          // 1件ずつ
+  pinfoBusyKey.value = key
+  try {
+    const { data: sess } = await supabase.auth.getSession()
+    const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/product-info-lookup`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${sess?.session?.access_token ?? ''}`,
+        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ name: r.item_name, product_code: r.product_code, maker: null }),
+    })
+    const jsonRes = await resp.json().catch(() => null)
+    const info = jsonRes?.info
+    if (!resp.ok || !info) return
+    const rec: ProductInfo = {
+      lookup_key: key, maker: info.maker ?? null, sizes: info.sizes ?? null, spec: info.spec ?? null,
+      image_url: info.image_url ?? null, source_urls: info.source_urls ?? [], not_found: !!info.not_found,
+    }
+    productInfos.value = { ...productInfos.value, [key]: rec }
+    // ★見つからなかったことも保存する。しないと同じ品名で毎回AIを叩き直す。
+    await supabase.from('estimate_product_info').upsert({
+      account_id: accountId, lookup_key: key,
+      name: r.item_name || null, product_code: r.product_code || null,
+      maker: rec.maker, sizes: rec.sizes, spec: rec.spec, image_url: rec.image_url,
+      source_urls: rec.source_urls, not_found: rec.not_found, fetched_at: new Date().toISOString(),
+    }, { onConflict: 'account_id,lookup_key' })
+  } catch { /* 調べられなくても入力は止めない */ } finally {
+    if (pinfoBusyKey.value === key) pinfoBusyKey.value = ''
+  }
+}
+
 // R3: 品番の予測変換候補（マスタに貯まった code）
 const materialCodeOptions = computed(() =>
   [...new Set(materials.value.map(m => (m.code ?? '').trim()).filter(Boolean))].sort())
@@ -2037,6 +2240,10 @@ function resolveByCode(r: Row) {
   if (!r.spec.trim() && m.spec) r.spec = m.spec
 }
 
+function onCodeChange(r: Row) {
+  resolveByCode(r)
+  void loadCachedProductInfo(r)
+}
 function resolveMaterial(r: Row) {
   const nm = (r.item_name || '').trim().toLowerCase()
   if (!nm) { r.material_id = null; return }
@@ -2576,6 +2783,22 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .hist-wrap { display: inline-flex; align-items: stretch; }
 .hist-src { border: 1px solid #D5DEE8; border-left: 0; border-radius: 0 6px 6px 0; background: #fff; cursor: pointer; padding: 0 6px; color: #4A7BC8; }
 .hist-src:hover { background: #EEF4FF; }
+/* R6: もしかして候補・商品情報 */
+.dym { display: block; margin-top: 3px; font-size: 11px; color: #7A8AA0; }
+.dym-pick { margin-left: 4px; padding: 1px 6px; border: 1px solid #C7D2DE; border-radius: 10px; background: #fff; cursor: pointer; font-size: 11px; }
+.dym-pick:hover { background: #EEF4FF; border-color: #4A7BC8; }
+.pinfo-row td { background: #FBFCFD; }
+.pinfo { display: flex; gap: 10px; align-items: flex-start; padding: 4px 0; }
+.pinfo-img { width: 64px; height: 64px; object-fit: contain; border: 1px solid #E2E8F0; border-radius: 6px; background: #fff; }
+.pinfo-body { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.pinfo-maker { font-weight: 700; color: #333; }
+.pinfo-line { color: #555; }
+.pinfo-none { color: #999; }
+.pinfo-links { display: flex; gap: 8px; }
+.pinfo-link { font-size: 11px; color: #2F6FD0; }
+.pinfo-note { font-size: 10px; color: #A0AEC0; }
+.pinfo-ask { display: block; margin-top: 3px; padding: 1px 6px; border: 1px solid #D5DEE8; border-radius: 10px; background: #fff; cursor: pointer; font-size: 11px; color: #4A7BC8; }
+.pinfo-ask:hover { background: #EEF4FF; border-color: #4A7BC8; }
 
 /* ── R8: 図面のページ選択→送信 ── */
 .att-drop { border: 1px dashed #C7D2DE; border-radius: 8px; padding: 10px 12px; transition: background .12s, border-color .12s; }

@@ -453,6 +453,9 @@ verify_jwt = true
 [functions.send-drawing-pages]
 verify_jwt = true
 
+[functions.product-info-lookup]
+verify_jwt = true
+
 [functions.test-send-drawing-pages]
 verify_jwt = false
 [functions.test-send-estimate]
