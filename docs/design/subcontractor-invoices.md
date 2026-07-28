@@ -29,7 +29,7 @@ create table if not exists subcontractor_invoices (
   invoice_no       text,                                 -- 請求番号
   invoice_date     date,                                 -- 請求日
   due_date         date,                                 -- 支払い期限
-  total_amount     integer,                              -- 請求金額（請求書記載値・税込）
+  total_amount numeric,                              -- 請求金額（請求書記載値・税込）
   pdf_path         text,                                 -- expense-receipts 上のPDF
   note             text,
   created_at       timestamptz default now(),
@@ -46,8 +46,8 @@ create table if not exists subcontractor_invoice_items (
   description text,                                      -- 工事内容/品番/品名
   quantity    numeric,                                   -- 数量
   unit        text,                                      -- 単位
-  unit_price  integer,                                   -- 単価
-  amount      integer,                                   -- 金額(税抜)=数量×単価
+  unit_price  numeric,                                   -- 単価（★小数あり: ビス等の細物は @0.74円 のような単価が出る）
+  amount      numeric,                                   -- 金額(税抜)=数量×単価（表示は円に丸める）
   tax_rate    numeric not null default 10,               -- 税率%（既定10）
   note        text,
   sort_order  int default 0
@@ -69,7 +69,7 @@ alter table subcontractor_invoice_items disable row level security;
 { "vendor_name": str|null, "title": str|null, "invoice_no": str|null,
   "invoice_date": "YYYY-MM-DD"|null, "due_date": "YYYY-MM-DD"|null, "total_amount": int|null,
   "items": [{ "date": "YYYY-MM-DD"|null, "site_name": str|null, "description": str|null,
-              "quantity": num|null, "unit": str|null, "unit_price": int|null,
+              "quantity": num|null, "unit": str|null, "unit_price": num|null,   // ★小数あり（丸めない）
               "amount": int|null, "tax_rate": num|null, "note": str|null }] }
 ```
 - best-effort。失敗時は空 `{ items: [] }`。`GEMINI_API_KEY` を使用。`--no-verify-jwt`（既存方針）＋CORS。

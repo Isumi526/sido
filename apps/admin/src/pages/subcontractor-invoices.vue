@@ -173,11 +173,12 @@
                     </select>
                   </td>
                   <td><input v-model="it.description" class="inp-sm wide" /></td>
-                  <td><input v-model.number="it.quantity" type="number" class="inp-sm num" @input="recalc(it)" /></td>
+                  <td><input v-model.number="it.quantity" type="number" step="any" class="inp-sm num" data-testid="inv-qty" @input="recalc(it)" /></td>
                   <td><input v-model="it.unit" class="inp-sm unit" /></td>
-                  <td><input v-model.number="it.unit_price" type="number" class="inp-sm num" @input="recalc(it)" /></td>
-                  <td class="num">{{ yen(it.amount || 0) }}</td>
-                  <td><input v-model.number="it.tax_rate" type="number" class="inp-sm tax" /></td>
+                  <!-- 単価は小数がありうる（ビス・ワッシャー等の細物は @0.74円 のような単価が普通に出る） -->
+                  <td><input v-model.number="it.unit_price" type="number" step="any" class="inp-sm num" data-testid="inv-price" @input="recalc(it)" /></td>
+                  <td class="num" data-testid="inv-amount">{{ yen(it.amount || 0) }}</td>
+                  <td><input v-model.number="it.tax_rate" type="number" step="any" class="inp-sm tax" /></td>
                   <td><input v-model="it.note" class="inp-sm" /></td>
                   <td><button class="btn-row-del" @click="form.items.splice(i, 1)">×</button></td>
                 </tr>
@@ -301,6 +302,8 @@ const formError = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
 
 function yen(v: number | null) { return '¥' + Math.round(Number(v) || 0).toLocaleString() }
+// 金額は円単位に丸める（請求書の金額欄は円）。★単価そのものは丸めない。
+// 単価を整数に丸めると @0.74円 × 500個 = 370円 が 500円 になり、請求額がズレる。
 function recalc(it: Item) { it.amount = Math.round((Number(it.quantity) || 0) * (Number(it.unit_price) || 0)) }
 
 const subtotal = computed(() => (form.value?.items ?? []).reduce((s, it) => s + (Number(it.amount) || 0), 0))
