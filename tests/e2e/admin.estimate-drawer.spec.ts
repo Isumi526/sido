@@ -24,9 +24,8 @@ test('ドロワーで工種を追加→閉じると明細の工種選択に即�
     await expect(page.locator('[data-testid="trade-list"]')).toContainText(TRADE)
     // 閉じる → 明細の工種プルダウンに即反映（selectOption はオプション出現まで待つ）
     await page.locator('[data-testid="drawer-close"]').click()
-    await page.locator('[data-testid="add-row"]').click()
-    // 工種は自由記述+予測変換に変更（Q1）
-    await page.locator('[data-testid="item-trade-0"]').fill(TRADE)
+    // 工種は自由記述+予測変換、かつブロック単位で選ぶ（レビュー2026-07-28）
+    await page.locator('[data-testid="blk-trade-0"]').fill(TRADE)
     // 自社情報タブも開けること
     await page.locator('[data-testid="open-drawer"]').click()
     await page.locator('[data-testid="drawer-company"]').click()

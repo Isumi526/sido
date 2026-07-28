@@ -195,8 +195,7 @@ test('AC7(Q4): 明細入力で過去の業者別単価が候補に出て、ク�
   // ★別の案件で同じ項目を打つと、前の案件で受領した単価が候補として出る
   //   （履歴は案件を跨いで貯まる＝次の見積で使える、が本チケットの狙い）
   await openNewProject(page)
-  await openBuilderTab(page, 'items', '[data-testid="add-row"]')
-  await page.locator('[data-testid="add-row"]').click()
+  await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
   await page.locator('[data-testid="item-name-0"]').fill(histItem)
   await page.locator('[data-testid="item-name-0"]').dispatchEvent('change')
 

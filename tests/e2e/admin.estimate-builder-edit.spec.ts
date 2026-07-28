@@ -41,9 +41,7 @@ test('明細をドラッグで並び替えできる', async ({ page }) => {
   const ps = await restSrv(`estimate_projects?name=eq.${encodeURIComponent(RENAMED)}&select=id`)
   await page.goto(`/estimate-builder?project=${ps[0].id}`, { waitUntil: 'networkidle' })
 
-  await page.locator('[data-testid="add-row"]').click()
   await page.locator('[data-testid="item-name-0"]').fill('AAA')
-  await page.locator('[data-testid="add-row"]').click()
   await page.locator('[data-testid="item-name-1"]').fill('BBB')
 
   // 1行目(AAA)のハンドルを2行目(BBB)へドラッグ → 並びが [BBB, AAA] に
