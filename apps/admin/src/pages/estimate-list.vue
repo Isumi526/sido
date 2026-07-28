@@ -60,7 +60,11 @@ const loading = ref(true)
 const q       = ref('')
 
 const yen = (n: number) => '¥' + Math.round(n || 0).toLocaleString('ja-JP')
-const STATUS: Record<string, string> = { draft: '作成中', active: '受注', closed: 'クローズ' }
+// 業務フローに沿った状態（Q5・確認16で合意）。issued は見積書PDF発行時に自動セットされる。
+const STATUS: Record<string, string> = {
+  draft: '対応中', issued: '提出済み', active: '受注',
+  lost: '失注', declined: '辞退', closed: 'クローズ',
+}
 function statusLabel(s: string) { return STATUS[s] ?? s }
 function shortDate(iso: string) { try { return new Date(iso).toLocaleDateString('ja-JP', { year: '2-digit', month: 'numeric', day: 'numeric' }) } catch { return '' } }
 
@@ -133,4 +137,6 @@ function goNew()          { router.push({ path: '/estimate-builder' }) }
 .badge.partial { background: #fff7ed; color: #9a3412; }
 .badge.muted { background: #f5f5f5; color: #aaa; font-weight: 400; }
 .empty { text-align: center; color: #aaa; padding: 32px; }
+.status.lost, .status.declined { background: #f3f4f6; color: #6b7280; }
+.status.issued { background: #e0f2fe; color: #0369a1; }
 </style>
