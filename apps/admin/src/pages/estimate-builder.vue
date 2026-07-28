@@ -68,7 +68,8 @@
     </div>
 
     <!-- E5 マスタ蓄積: 入力済み材料を予測変換候補に（案件選択前から常時ロード） -->
-    <datalist id="est-materials">
+    <datalist id="est-material-codes"><option v-for="c in materialCodeOptions" :key="c" :value="c" /></datalist>
+          <datalist id="est-materials">
       <option v-for="m in materials" :key="m.id" :value="m.name" />
     </datalist>
 
@@ -358,7 +359,7 @@
           <table class="table est-items">
             <thead>
               <tr>
-                <th class="drag-col"></th><th>品名</th><th>形状・詳細</th>
+                <th class="drag-col"></th><th>品名</th><th>品番</th><th>形状・詳細</th>
                 <th>単位</th><th class="num">数量</th><th>商社</th>
                 <th class="num cost-col">単価原価</th><th class="num cost-col">金額原価</th>
                 <th class="num">単価</th><th class="num">金額</th><th></th>
@@ -372,7 +373,7 @@
               <template v-for="(b, bi) in blocks" :key="bi">
                 <tr class="blk-row" :data-testid="`blk-row-${bi}`">
                   <td class="drag-col"></td>
-                  <td colspan="10">
+                  <td colspan="11">
                     <span class="blk-fields">
                       <input :value="b.location" class="input sm blk-input" :data-testid="`blk-loc-${bi}`"
                              list="est-locations" autocomplete="off" placeholder="場所（例：壁面工事）"
@@ -392,6 +393,10 @@
                     @dragover.prevent="dragOverIndex = i" @drop="onDrop(i)" @dragleave="dragOverIndex = null">
                   <td class="drag-handle" draggable="true" title="ドラッグで並び替え" :data-testid="`item-drag-${i}`" @dragstart="onDragStart(i)" @dragend="onDragEnd">⠿</td>
                   <td><input v-model="rows[i].item_name" class="input" :data-testid="`item-name-${i}`" list="est-materials" autocomplete="off" @change="resolveMaterial(rows[i])" @blur="resolveMaterial(rows[i])" /></td>
+                  <!-- ★R3: 品番は形状・詳細と別列。品番はメーカー特定・商品情報取得のキーになる -->
+                  <td><input v-model="rows[i].product_code" class="input sm" :data-testid="`item-code-${i}`"
+                             list="est-material-codes" autocomplete="off" placeholder="SLP314 等"
+                             @change="resolveByCode(rows[i])" @blur="resolveByCode(rows[i])" /></td>
                   <td><input v-model="rows[i].spec" class="input sm" :data-testid="`item-spec-${i}`" placeholder="W65 @303 等" /></td>
                   <td><input v-model="rows[i].unit" class="input sm" :data-testid="`item-unit-${i}`" placeholder="m²/個 等" /></td>
                   <td class="num"><input v-model.number="rows[i].quantity" type="number" step="0.01" class="input sm num" :data-testid="`item-qty-${i}`" /></td>
@@ -419,7 +424,7 @@
                 <!-- Q4: この項目の過去の業者別単価（受領登録で貯まったもの）。クリックで原価に採用 -->
                 <tr v-if="historyFor(rows[i].item_name).length" class="hist-row">
                   <td></td>
-                  <td colspan="10">
+                  <td colspan="11">
                     <div class="hist-cells">
                       <span class="hist-label">過去の単価</span>
                       <button v-for="(h, hi) in historyFor(rows[i].item_name).slice(0, 4)" :key="hi" class="hist-cell"
@@ -435,7 +440,7 @@
                 </template>
               </template>
               <tr class="blk-add-row">
-                <td colspan="11"><button class="btn-add" data-testid="blk-add" @click="addBlock()">＋ 場所・工種のブロックを追加</button></td>
+                <td colspan="12"><button class="btn-add" data-testid="blk-add" @click="addBlock()">＋ 場所・工種のブロックを追加</button></td>
               </tr>
             </tbody>
           </table>
@@ -1263,7 +1268,7 @@ type Project  = { id: string; name: string; client_name: string | null; contract
 type Site     = { id: string; name: string }
 type Contractor = { id: string; name: string }
 type Trade    = { id: string; name: string }
-type Material = { id: string; name: string; unit: string | null; code: string | null }
+type Material = { id: string; name: string; unit: string | null; code: string | null; spec?: string | null }
 type Supplier = { id: string; name: string }
 type MatPrice = { id: string; material_id: string; supplier_id: string; unit_price: number; effective_date: string | null }
 type Contact  = { id: string; contractor_id: string; name: string | null; email: string | null }
@@ -1277,6 +1282,7 @@ type Row = {
   supplier_id: string | null
   item_name: string
   spec: string              // 形状・詳細（Excel C列）
+  product_code: string      // 品番（R3: 形状・詳細とは別枠。メーカー特定・商品情報取得のキー）
   trade_name: string        // 工種の自由記述（固定マスタ trade_id とは別に持つ）
   row_type: 'item' | 'header'   // header = 分類見出し行（金額集計から除外）
   unit: string
@@ -1799,7 +1805,7 @@ async function loadTrades() {
 }
 async function loadMaterials() {
   const { data } = await supabase.from('estimate_materials')
-    .select('id, name, unit, code').eq('account_id', accountId).order('name')
+    .select('id, name, unit, code, spec').eq('account_id', accountId).order('name')
   materials.value = (data ?? []) as Material[]
 }
 // 商社＝下請け業者マスタ(区分=商社)。新設せず既存 subcontractors を流用（subcontractors はRLS無効のため account_id で絞る）
@@ -1904,6 +1910,22 @@ function onSupplierPick(r: Row) {
   if (p) r.unit_price = Number(p.unit_price)
 }
 // E6 品番予測変換: 明細名が既存材料に一致したら material_id を紐付け、単位を補完
+// R3: 品番の予測変換候補（マスタに貯まった code）
+const materialCodeOptions = computed(() =>
+  [...new Set(materials.value.map(m => (m.code ?? '').trim()).filter(Boolean))].sort())
+
+/** 品番を打ったら品名・単位を引く（品番はメーカー特定のキーなので、こちらからも入れられる） */
+function resolveByCode(r: Row) {
+  const code = (r.product_code || '').trim().toLowerCase()
+  if (!code) return
+  const m = materials.value.find(x => (x.code ?? '').trim().toLowerCase() === code)
+  if (!m) return
+  r.material_id = m.id
+  if (!r.item_name.trim()) r.item_name = m.name
+  if (!r.unit && m.unit) r.unit = m.unit
+  if (!r.spec.trim() && m.spec) r.spec = m.spec
+}
+
 function resolveMaterial(r: Row) {
   const nm = (r.item_name || '').trim().toLowerCase()
   if (!nm) { r.material_id = null; return }
@@ -1911,6 +1933,7 @@ function resolveMaterial(r: Row) {
   if (m) {
     r.material_id = m.id
     if (!r.unit && m.unit) r.unit = m.unit
+    if (!r.product_code.trim() && m.code) r.product_code = m.code   // 逆方向: 品名→品番も埋める
   } else {
     r.material_id = null
   }
@@ -1937,7 +1960,7 @@ async function doLoadItems() {
   if (!projectId.value) { markSaved(); return }
   const [{ data }, { data: pj }] = await Promise.all([
     supabase.from('estimate_items')
-      .select('id, category_id, trade_id, trade_name, material_id, supplier_id, item_name, spec, row_type, unit, quantity, cost_unit_price, unit_price, note')
+      .select('id, category_id, trade_id, trade_name, material_id, supplier_id, item_name, spec, product_code, row_type, unit, quantity, cost_unit_price, unit_price, note')
       .eq('project_id', projectId.value).order('sort_order'),
     supabase.from('estimate_projects')
       .select('construction_location, period_text, valid_until, memo, adjustment, margin_rate, request_date, due_date, status, lost_reason').eq('id', projectId.value).single(),
@@ -1990,7 +2013,7 @@ async function addProject() {
 
 function blankRow(rowType: 'item' | 'header' = 'item'): Row {
   return { id: null, _k: ++rowKey, location: '', trade_id: null, trade_name: '', material_id: null,
-           supplier_id: null, item_name: '', spec: '', row_type: rowType, unit: '', quantity: 0,
+           supplier_id: null, item_name: '', spec: '', product_code: '', row_type: rowType, unit: '', quantity: 0,
            cost_unit_price: 0, unit_price: 0, _priceTouched: false }
 }
 function removeRow(i: number) {
@@ -2013,7 +2036,7 @@ const SPARE_ROWS = 5   // 各ブロックの末尾に常に確保しておく空
 
 /** 中身が空＝まだ何も打たれていない行。場所/工種はブロックから継承するので判定に含めない */
 function isBlankRow(r: Row): boolean {
-  return !(r.item_name || '').trim() && !(r.spec || '').trim() && !(r.unit || '').trim()
+  return !(r.item_name || '').trim() && !(r.spec || '').trim() && !(r.product_code || '').trim() && !(r.unit || '').trim()
     && !(Number(r.quantity) || 0) && !(Number(r.cost_unit_price) || 0) && !(Number(r.unit_price) || 0)
     && !r.material_id && !r.supplier_id
 }
@@ -2108,7 +2131,7 @@ async function save() {
       if (!r.material_id && created.has(key)) r.material_id = created.get(key)!
       if (!r.material_id) {
         const { data } = await supabase.from('estimate_materials')
-          .insert({ account_id: accountId, name: nm, unit: r.unit || null, trade_id: r.trade_id, source: 'manual' })
+          .insert({ account_id: accountId, name: nm, code: r.product_code || null, unit: r.unit || null, trade_id: r.trade_id, source: 'manual' })
           .select('id').single()
         if (data) { r.material_id = (data as any).id; created.set(key, r.material_id!) }
       }
@@ -2130,7 +2153,7 @@ async function save() {
         trade_id: r.trade_id, material_id: r.material_id, supplier_id: r.supplier_id, item_name: r.item_name || '(無題)',
         unit: r.unit || null, quantity: Number(r.quantity) || 0, unit_price: Number(r.unit_price) || 0,
         note: r.location || null, sort_order: order++,
-        trade_name: r.trade_name || null, spec: r.spec || null, row_type: r.row_type,
+        trade_name: r.trade_name || null, spec: r.spec || null, product_code: r.product_code || null, row_type: r.row_type,
         cost_unit_price: r.cost_unit_price || null,
       }
       if (r.id) await supabase.from('estimate_items').update(payload).eq('id', r.id)
@@ -2162,7 +2185,7 @@ function rowsSig(): string {
   // ★空行は署名に含めない。常に末尾へ空行を補充する仕様なので、含めると
   //   何も打っていないのに「未保存です」と警告が出てしまう。
   return JSON.stringify(rows.value.filter(r => !isBlankRow(r))
-    .map(r => [r.location, r.trade_name, r.material_id, r.supplier_id, r.item_name, r.spec, r.unit, r.quantity, r.cost_unit_price, r.unit_price]))
+    .map(r => [r.location, r.trade_name, r.material_id, r.supplier_id, r.item_name, r.product_code, r.spec, r.unit, r.quantity, r.cost_unit_price, r.unit_price]))
 }
 const savedSig = ref('[]')
 function markSaved() { savedSig.value = rowsSig() }   // 「今の明細＝保存済み」とみなす基準を更新
