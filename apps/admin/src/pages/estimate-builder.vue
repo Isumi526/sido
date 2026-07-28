@@ -99,6 +99,8 @@
               <button class="btn-add" data-testid="add-rows-10" @click="addRows(10)">＋10行</button>
             </div>
           </div>
+          <!-- 列が増えたため、パネル内で横スクロールさせる（ページ全体を横に伸ばさない） -->
+          <div class="items-scroll">
           <table class="table est-items">
             <thead>
               <tr>
@@ -171,8 +173,18 @@
               <tr v-if="rows.length === 0"><td colspan="13" class="empty">「＋ 行追加」で明細を入力</td></tr>
             </tbody>
           </table>
+          </div>
           <datalist id="est-trades"><option v-for="t in tradeNameOptions" :key="t" :value="t" /></datalist>
           <datalist id="est-locations"><option v-for="l in locationOptions" :key="l" :value="l" /></datalist>
+          <!-- 原価サマリ（社内用。Excelの「項目」シート下部の 請負/原価/差引/利率 と同じ）
+               ★帳票(PDF)には出さない。原価は元請けに見せる情報ではない -->
+          <div class="cost-summary" data-testid="cost-summary">
+            <span class="cs-item"><span class="cs-l">請負金額</span><span class="cs-v" data-testid="cs-revenue">{{ yen(subtotal) }}</span></span>
+            <span class="cs-item"><span class="cs-l">原価</span><span class="cs-v" data-testid="cs-cost">{{ yen(costTotal) }}</span></span>
+            <span class="cs-item"><span class="cs-l">差引金額</span><span class="cs-v" data-testid="cs-profit">{{ yen(profitTotal) }}</span></span>
+            <span class="cs-item"><span class="cs-l">利率</span><span class="cs-v" data-testid="cs-rate">{{ profitRatePct }}%</span></span>
+            <span class="cs-note">※社内用。見積書には出ません</span>
+          </div>
           <div class="actions-row">
             <button class="btn-primary" :disabled="saving" data-testid="save-items" @click="save">{{ saving ? '保存中…' : '保存' }}</button>
             <span v-if="saveError" class="err">{{ saveError }}</span>
@@ -630,6 +642,12 @@ const byTrade = computed(() => {
   return [...m.values()].sort((a, b) => a.tradeName.localeCompare(b.tradeName, 'ja'))
 })
 const grandTotal = computed(() => rows.value.reduce((s, r) => s + lineAmount(r), 0))
+// 原価サマリ（社内用）。Excelの「項目」シート下部と同じ:
+//   請負金額 / 原価 / 差引金額 = 請負 − 原価 / 利率 = 差引 ÷ 請負
+const costTotal   = computed(() => rows.value.reduce((s, r) => s + lineCostAmount(r), 0))
+const profitTotal = computed(() => grandTotal.value - costTotal.value)
+const profitRatePct = computed(() =>
+  grandTotal.value > 0 ? Math.round(profitTotal.value / grandTotal.value * 1000) / 10 : 0)
 
 // E2 帳票PDF: 工種別に明細をまとめた印刷プレビュー用データ
 const groupedDetailed = computed(() => {
@@ -1485,4 +1503,16 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .mp-cell.active { border-color: #06A050; background: #e8f9ef; }
 .mp-pct { font-size: 10px; color: #888; }
 .mp-val { font-size: 12px; font-weight: 700; color: #333; }
+.cost-summary { display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  background: #f7f8fa; border: 1px solid #e6e8eb; border-radius: 6px; padding: 8px 12px; margin: 10px 0 0; }
+.cs-item { display: inline-flex; align-items: baseline; gap: 6px; }
+.cs-l { font-size: 11px; color: #888; }
+.cs-v { font-size: 14px; font-weight: 700; color: #333; }
+.cs-note { margin-left: auto; font-size: 11px; color: #aaa; }
+.items-scroll { overflow-x: auto; }
+/* 列が多いので詰める。入力欄は列幅に追従させる */
+.est-items { min-width: 1180px; }
+.est-items th, .est-items td { padding: 5px 6px; font-size: 12px; }
+.est-items .input { padding: 5px 6px; font-size: 12px; }
+.est-items .input.sm { min-width: 0; }
 </style>
