@@ -84,7 +84,8 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     // 明細3行（軽鉄2000・ボード5000・軽鉄3000）
     const addLine = async (i: number, trade: string, name: string, qty: number, price: number) => {
       await page.locator('[data-testid="add-row"]').click()
-      await page.locator(`[data-testid="item-trade-${i}"]`).selectOption({ label: trade })
+      // 工種は固定マスタのselectではなく自由記述+予測変換に変更（Q1）
+      await page.locator(`[data-testid="item-trade-${i}"]`).fill(trade)
       await page.locator(`[data-testid="item-name-${i}"]`).fill(name)
       await page.locator(`[data-testid="item-qty-${i}"]`).fill(String(qty))
       await page.locator(`[data-testid="item-price-${i}"]`).fill(String(price))

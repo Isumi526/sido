@@ -86,40 +86,93 @@
         <section class="panel">
           <div class="panel-head">
             <h2>明細入力</h2>
-            <button class="btn-add" data-testid="add-row" @click="addRow">＋ 行追加</button>
+            <div class="row-tools">
+              <!-- 粗利率: アカウント既定＋この見積だけ上書き（Excelは数式にハードコードで変更不可だった） -->
+              <label class="margin-field">粗利
+                <input v-model.number="marginPct" type="number" min="0" max="99" step="1"
+                       class="input xs num" data-testid="margin-rate" @change="onMarginChange" />%
+                <span v-if="doc.margin_rate === null" class="margin-hint">（既定）</span>
+                <button v-else class="btn-link-sm" data-testid="margin-reset" @click="resetMargin">既定に戻す</button>
+              </label>
+              <button class="btn-add" data-testid="add-header-row" @click="addRow('header')">＋ 見出し</button>
+              <button class="btn-add" data-testid="add-row" @click="addRow()">＋ 行追加</button>
+              <button class="btn-add" data-testid="add-rows-10" @click="addRows(10)">＋10行</button>
+            </div>
           </div>
-          <table class="table">
+          <table class="table est-items">
             <thead>
-              <tr><th class="drag-col"></th><th>場所</th><th>工種</th><th>品名</th><th>単位</th><th class="num">数量</th><th>商社</th><th class="num">単価</th><th class="num">金額</th><th></th></tr>
+              <tr>
+                <th class="drag-col"></th><th>場所</th><th>工種</th><th>品名</th><th>形状・詳細</th>
+                <th>単位</th><th class="num">数量</th><th>商社</th>
+                <th class="num cost-col">単価原価</th><th class="num cost-col">金額原価</th>
+                <th class="num">単価</th><th class="num">金額</th><th></th>
+              </tr>
             </thead>
             <tbody>
-              <tr v-for="(r, i) in rows" :key="r._k"
-                  :class="{ 'drag-over': dragOverIndex === i && dragIndex !== null && dragIndex !== i }"
-                  @dragover.prevent="dragOverIndex = i" @drop="onDrop(i)" @dragleave="dragOverIndex = null">
-                <td class="drag-handle" draggable="true" title="ドラッグで並び替え" :data-testid="`item-drag-${i}`" @dragstart="onDragStart(i)" @dragend="onDragEnd">⠿</td>
-                <td><input v-model="r.location" class="input sm" :data-testid="`item-loc-${i}`" /></td>
-                <td>
-                  <select v-model="r.trade_id" class="input sm" :data-testid="`item-trade-${i}`">
-                    <option :value="null">—</option>
-                    <option v-for="t in trades" :key="t.id" :value="t.id">{{ t.name }}</option>
-                  </select>
-                </td>
-                <td><input v-model="r.item_name" class="input" :data-testid="`item-name-${i}`" list="est-materials" autocomplete="off" @change="resolveMaterial(r)" @blur="resolveMaterial(r)" /></td>
-                <td><input v-model="r.unit" class="input sm" :data-testid="`item-unit-${i}`" placeholder="m²/個 等" /></td>
-                <td class="num"><input v-model.number="r.quantity" type="number" step="0.01" class="input sm num" :data-testid="`item-qty-${i}`" /></td>
-                <td>
-                  <select v-model="r.supplier_id" class="input sm" :data-testid="`item-supplier-${i}`" @change="onSupplierPick(r)">
-                    <option :value="null">—</option>
-                    <option v-for="p in pricesForMaterial(r.material_id)" :key="p.supplier_id" :value="p.supplier_id">{{ p.supplierName }} ¥{{ p.unit_price.toLocaleString('ja-JP') }}</option>
-                  </select>
-                </td>
-                <td class="num"><input v-model.number="r.unit_price" type="number" class="input sm num" :data-testid="`item-price-${i}`" /></td>
-                <td class="num amount" :data-testid="`item-amount-${i}`">{{ yen(lineAmount(r)) }}</td>
-                <td><button class="btn-del" @click="removeRow(i)">×</button></td>
-              </tr>
-              <tr v-if="rows.length === 0"><td colspan="10" class="empty">「＋ 行追加」で明細を入力</td></tr>
+              <template v-for="(r, i) in rows" :key="r._k">
+                <!-- 分類見出し行（Excelの（壁面工事）/■軽鉄工事 相当・金額集計から除外） -->
+                <tr v-if="r.row_type === 'header'" class="hdr-row"
+                    :class="{ 'drag-over': dragOverIndex === i && dragIndex !== null && dragIndex !== i }"
+                    @dragover.prevent="dragOverIndex = i" @drop="onDrop(i)" @dragleave="dragOverIndex = null">
+                  <td class="drag-handle" draggable="true" title="ドラッグで並び替え" :data-testid="`item-drag-${i}`" @dragstart="onDragStart(i)" @dragend="onDragEnd">⠿</td>
+                  <td colspan="11">
+                    <input v-model="r.item_name" class="input hdr-input" :data-testid="`item-name-${i}`"
+                           placeholder="見出し（例：（壁面工事） / ■軽鉄工事）" />
+                  </td>
+                  <td><button class="btn-del" @click="removeRow(i)">×</button></td>
+                </tr>
+                <tr v-else
+                    :class="{ 'drag-over': dragOverIndex === i && dragIndex !== null && dragIndex !== i }"
+                    @dragover.prevent="dragOverIndex = i" @drop="onDrop(i)" @dragleave="dragOverIndex = null">
+                  <td class="drag-handle" draggable="true" title="ドラッグで並び替え" :data-testid="`item-drag-${i}`" @dragstart="onDragStart(i)" @dragend="onDragEnd">⠿</td>
+                  <td><input v-model="r.location" class="input sm" :data-testid="`item-loc-${i}`" list="est-locations" autocomplete="off" /></td>
+                  <!-- 工種は自由記述＋予測変換（固定マスタからの選択を強制しない） -->
+                  <td><input v-model="r.trade_name" class="input sm" :data-testid="`item-trade-${i}`" list="est-trades" autocomplete="off" placeholder="工種" /></td>
+                  <td><input v-model="r.item_name" class="input" :data-testid="`item-name-${i}`" list="est-materials" autocomplete="off" @change="resolveMaterial(r)" @blur="resolveMaterial(r)" /></td>
+                  <td><input v-model="r.spec" class="input sm" :data-testid="`item-spec-${i}`" placeholder="W65 @303 等" /></td>
+                  <td><input v-model="r.unit" class="input sm" :data-testid="`item-unit-${i}`" placeholder="m²/個 等" /></td>
+                  <td class="num"><input v-model.number="r.quantity" type="number" step="0.01" class="input sm num" :data-testid="`item-qty-${i}`" /></td>
+                  <td>
+                    <select v-model="r.supplier_id" class="input sm" :data-testid="`item-supplier-${i}`" @change="onSupplierPick(r)">
+                      <option :value="null">—</option>
+                      <option v-for="p in pricesForMaterial(r.material_id)" :key="p.supplier_id" :value="p.supplier_id">{{ p.supplierName }} ¥{{ p.unit_price.toLocaleString('ja-JP') }}</option>
+                    </select>
+                  </td>
+                  <!-- 原価側（入力の主動線。ここを入れると客先側が生える） -->
+                  <td class="num cost-col"><input v-model.number="r.cost_unit_price" type="number" class="input sm num" :data-testid="`item-cost-${i}`" @input="onCostInput(r)" /></td>
+                  <td class="num cost-col amount" :data-testid="`item-cost-amount-${i}`">{{ yen(lineCostAmount(r)) }}</td>
+                  <!-- 客先単価: 既定は原価÷(1−粗利率)。手打ちで上書きでき、上書き中は色で分かる -->
+                  <td class="num">
+                    <input v-model.number="r.unit_price" type="number" class="input sm num"
+                           :class="{ 'overridden': isPriceOverridden(r) }"
+                           :title="isPriceOverridden(r) ? `自動値 ${yen(autoPrice(r))} を手動で上書き中` : '原価と粗利率から自動計算'"
+                           :data-testid="`item-price-${i}`" @input="r._priceTouched = true" />
+                    <button v-if="isPriceOverridden(r)" class="btn-revert" :data-testid="`item-price-revert-${i}`"
+                            title="自動値に戻す" @click="revertPrice(r)">↺</button>
+                  </td>
+                  <td class="num amount" :data-testid="`item-amount-${i}`">{{ yen(lineAmount(r)) }}</td>
+                  <td><button class="btn-del" @click="removeRow(i)">×</button></td>
+                </tr>
+                <!-- 粗利パターンの見比べ（Excelの5/10/15/20%横並び） -->
+                <tr v-if="r.row_type !== 'header' && (r.cost_unit_price ?? 0) > 0" class="margin-preview-row">
+                  <td colspan="8" class="mp-label">粗利パターン</td>
+                  <td colspan="5" class="mp-cells">
+                    <button v-for="p in MARGIN_PRESETS" :key="p" class="mp-cell"
+                            :class="{ active: Math.round(marginPct) === Math.round(p * 100) }"
+                            :data-testid="`item-margin-${i}-${Math.round(p * 100)}`"
+                            :title="`粗利${Math.round(p * 100)}%を単価に採用`"
+                            @click="applyMarginToRow(r, p)">
+                      <span class="mp-pct">{{ Math.round(p * 100) }}%</span>
+                      <span class="mp-val">{{ yen(priceAtMargin(r, p)) }}</span>
+                    </button>
+                  </td>
+                </tr>
+              </template>
+              <tr v-if="rows.length === 0"><td colspan="13" class="empty">「＋ 行追加」で明細を入力</td></tr>
             </tbody>
           </table>
+          <datalist id="est-trades"><option v-for="t in tradeNameOptions" :key="t" :value="t" /></datalist>
+          <datalist id="est-locations"><option v-for="l in locationOptions" :key="l" :value="l" /></datalist>
           <div class="actions-row">
             <button class="btn-primary" :disabled="saving" data-testid="save-items" @click="save">{{ saving ? '保存中…' : '保存' }}</button>
             <span v-if="saveError" class="err">{{ saveError }}</span>
@@ -423,9 +476,14 @@ type Row = {
   material_id: string | null
   supplier_id: string | null
   item_name: string
+  spec: string              // 形状・詳細（Excel C列）
+  trade_name: string        // 工種の自由記述（固定マスタ trade_id とは別に持つ）
+  row_type: 'item' | 'header'   // header = 分類見出し行（金額集計から除外）
   unit: string
   quantity: number
-  unit_price: number
+  cost_unit_price: number   // 単価原価（Excel P列・入力の主動線）
+  unit_price: number        // 客先単価（Excel I列・既定は原価÷(1−粗利率)）
+  _priceTouched?: boolean   // 客先単価を人が手打ちしたか（自動再計算を抑止）
 }
 
 const projects       = ref<Project[]>([])
@@ -478,20 +536,94 @@ const poTarget      = ref<null | { supplierName: string; contactName: string; it
 // ④ 見積書フォーマット: 自社情報(settings) と 案件側の見積書項目
 const COMPANY_KEYS = ['company_name', 'company_rep', 'company_address', 'company_tel', 'company_fax', 'company_seal_path', 'welfare_rate_a', 'welfare_rate_b', 'tax_rate', 'estimate_valid_until', 'estimate_payment_terms', 'estimate_separate_note']
 const company = ref<Record<string, string>>({})
-const doc     = ref<{ construction_location: string; period_text: string; valid_until: string; memo: string; adjustment: number }>(
-  { construction_location: '', period_text: '', valid_until: '', memo: '', adjustment: 0 })
+const doc     = ref<{ construction_location: string; period_text: string; valid_until: string; memo: string; adjustment: number; margin_rate: number | null }>(
+  { construction_location: '', period_text: '', valid_until: '', memo: '', adjustment: 0, margin_rate: null })
 
 const yen = (n: number) => '¥' + Math.round(n || 0).toLocaleString('ja-JP')
-const lineAmount = (r: Row) => (Number(r.quantity) || 0) * (Number(r.unit_price) || 0)
+// 見出し行(row_type='header')は金額を持たない＝集計から除外する
+const isItemRow  = (r: Row) => r.row_type !== 'header'
+const lineAmount = (r: Row) => (isItemRow(r) ? (Number(r.quantity) || 0) * (Number(r.unit_price) || 0) : 0)
+const lineCostAmount = (r: Row) => (isItemRow(r) ? (Number(r.quantity) || 0) * (Number(r.cost_unit_price) || 0) : 0)
+
+// ── 粗利率（Q2）──────────────────────────────────────────────
+// 顧客Excelの計算式そのまま: 見積単価 = 原価 ÷ (1 − 粗利率)
+//  例) 原価2,700 ÷ 0.80 = 3,375（粗利20%）。※「原価 × (1+率)」ではない
+// Excelは率を数式にハードコード(=X3/0.8)しており変更できなかった。ここをDBで持つ。
+const MARGIN_PRESETS = [0.05, 0.10, 0.15, 0.20] as const
+const accountMarginRate = ref(0.20)   // accounts.default_margin_rate
+/** この見積に適用中の粗利率（案件上書きが無ければアカウント既定） */
+const marginRate = computed(() => doc.value.margin_rate ?? accountMarginRate.value)
+const marginPct  = ref(20)
+function onMarginChange() {
+  const p = Math.min(99, Math.max(0, Number(marginPct.value) || 0))
+  marginPct.value = p
+  doc.value.margin_rate = p / 100
+  saveDoc()
+}
+function resetMargin() {
+  doc.value.margin_rate = null
+  marginPct.value = Math.round(accountMarginRate.value * 100)
+  saveDoc()
+}
+/** 原価と粗利率から出る「自動の客先単価」 */
+function priceAtMargin(r: Row, rate: number): number {
+  const cost = Number(r.cost_unit_price) || 0
+  if (!cost || rate >= 1) return 0
+  return Math.round(cost / (1 - rate))
+}
+const autoPrice = (r: Row) => priceAtMargin(r, marginRate.value)
+/** 自動値と違う＝人が手で上書きしている（Excelでも切りの良い数字に手打ちしていた） */
+function isPriceOverridden(r: Row): boolean {
+  if (!isItemRow(r) || !(Number(r.cost_unit_price) || 0)) return false
+  return (Number(r.unit_price) || 0) !== autoPrice(r)
+}
+/** 原価を打つと客先単価が生える。ただし手で上書き済みの行は尊重して触らない */
+function onCostInput(r: Row) {
+  if (!r._priceTouched) r.unit_price = autoPrice(r)
+}
+function revertPrice(r: Row) { r.unit_price = autoPrice(r); r._priceTouched = false }
+/** 粗利パターンのセルをクリック＝その率の単価を採用（見比べて選ぶExcelの操作） */
+function applyMarginToRow(r: Row, rate: number) {
+  r.unit_price = priceAtMargin(r, rate)
+  r._priceTouched = priceAtMargin(r, rate) !== autoPrice(r)
+}
+
+// ── 入力候補（自由記述＋学習）────────────────────────────────
+// 固定マスタからの選択を強制せず、入力されたものを候補として出す（回答17）
+const tradeNameOptions = computed(() => {
+  const s = new Set<string>()
+  for (const t of trades.value) if (t.name) s.add(t.name)
+  for (const r of rows.value) if (r.trade_name) s.add(r.trade_name)
+  return [...s].sort((a, b) => a.localeCompare(b, 'ja'))
+})
+const locationOptions = computed(() => {
+  const s = new Set<string>()
+  for (const r of rows.value) if (r.location) s.add(r.location)
+  return [...s].sort((a, b) => a.localeCompare(b, 'ja'))
+})
 
 // 工種別の自動集計（明細を入れるだけで集計＝手コピペ撲滅）
+// 工種のグルーピングキー/表示名。
+//  自由記述(trade_name)を優先し、無ければ従来の固定マスタ(trade_id)を使う。
+//  ＝マスタ選択を強制せずに、打った工種名でそのまま自動集計される（回答17・手コピペ撲滅）。
+//  同じ工種名は表記が同一なら1つにまとまる（表記ゆれの名寄せは別チケット）。
+function tradeKeyOf(r: Row): string {
+  const nm = (r.trade_name ?? '').trim()
+  if (nm) return `n:${nm}`
+  return r.trade_id ? `t:${r.trade_id}` : 'none'
+}
+function tradeLabelOf(r: Row): string {
+  const nm = (r.trade_name ?? '').trim()
+  if (nm) return nm
+  if (r.trade_id) return trades.value.find(t => t.id === r.trade_id)?.name ?? '(不明)'
+  return '(工種未設定)'
+}
 const byTrade = computed(() => {
   const m = new Map<string, { tradeId: string | null; tradeName: string; total: number; key: string }>()
   for (const r of rows.value) {
-    const tid = r.trade_id ?? null
-    const name = tid ? (trades.value.find(t => t.id === tid)?.name ?? '(不明)') : '(工種未設定)'
-    const key = tid ?? 'none'
-    const cur = m.get(key) ?? { tradeId: tid, tradeName: name, total: 0, key }
+    if (!isItemRow(r)) continue          // 見出し行は集計対象外
+    const key = tradeKeyOf(r)
+    const cur = m.get(key) ?? { tradeId: r.trade_id ?? null, tradeName: tradeLabelOf(r), total: 0, key }
     cur.total += lineAmount(r)
     m.set(key, cur)
   }
@@ -503,10 +635,9 @@ const grandTotal = computed(() => rows.value.reduce((s, r) => s + lineAmount(r),
 const groupedDetailed = computed(() => {
   const m = new Map<string, { key: string; tradeName: string; total: number; items: Row[] }>()
   for (const r of rows.value) {
-    const tid = r.trade_id ?? null
-    const name = tid ? (trades.value.find(t => t.id === tid)?.name ?? '(不明)') : '(工種未設定)'
-    const key = tid ?? 'none'
-    const cur = m.get(key) ?? { key, tradeName: name, total: 0, items: [] as Row[] }
+    if (!isItemRow(r)) continue          // 見出し行はPDF明細に出さない
+    const key = tradeKeyOf(r)
+    const cur = m.get(key) ?? { key, tradeName: tradeLabelOf(r), total: 0, items: [] as Row[] }
     cur.items.push(r); cur.total += lineAmount(r); m.set(key, cur)
   }
   return [...m.values()].sort((a, b) => a.tradeName.localeCompare(b.tradeName, 'ja'))
@@ -648,6 +779,7 @@ async function saveDoc() {
   await supabase.from('estimate_projects').update({
     construction_location: doc.value.construction_location || null, period_text: doc.value.period_text || null,
     valid_until: doc.value.valid_until || null, memo: doc.value.memo || null, adjustment: Number(doc.value.adjustment) || 0,
+    margin_rate: doc.value.margin_rate,   // 粗利率の案件上書き（null = アカウント既定を使う）
   }).eq('id', projectId.value)
   docSavedMsg.value = '保存しました'
   setTimeout(() => (docSavedMsg.value = ''), 2000)
@@ -889,6 +1021,14 @@ async function loadSites() {
 async function loadCompany() {
   const { data } = await supabase.from('settings').select('key, value').eq('account_id', accountId).in('key', COMPANY_KEYS)
   company.value = Object.fromEntries((data ?? []).map((s: any) => [s.key, s.value]))
+  // アカウント既定の粗利率（案件で上書きが無ければこれを使う）
+  const { data: acc } = await supabase.from('accounts').select('default_margin_rate').eq('id', accountId).maybeSingle()
+  if (acc?.default_margin_rate != null) accountMarginRate.value = Number(acc.default_margin_rate)
+  syncMarginPct()
+}
+/** 表示用の % を「案件上書き → アカウント既定」の順で合わせる */
+function syncMarginPct() {
+  marginPct.value = Math.round((doc.value.margin_rate ?? accountMarginRate.value) * 100)
 }
 // F2 商社（下請け業者）の担当者＝発注書の送信先候補
 async function loadSubContacts() {
@@ -952,20 +1092,25 @@ async function loadItems() {
   if (!projectId.value) { markSaved(); return }
   const [{ data }, { data: pj }] = await Promise.all([
     supabase.from('estimate_items')
-      .select('id, category_id, trade_id, material_id, supplier_id, item_name, unit, quantity, unit_price, note')
+      .select('id, category_id, trade_id, trade_name, material_id, supplier_id, item_name, spec, row_type, unit, quantity, cost_unit_price, unit_price, note')
       .eq('project_id', projectId.value).order('sort_order'),
     supabase.from('estimate_projects')
-      .select('construction_location, period_text, valid_until, memo, adjustment').eq('id', projectId.value).single(),
+      .select('construction_location, period_text, valid_until, memo, adjustment, margin_rate').eq('id', projectId.value).single(),
   ])
   rows.value = (data ?? []).map((d: any) => ({
-    id: d.id, _k: ++rowKey, location: d.note ?? '', trade_id: d.trade_id, material_id: d.material_id ?? null,
+    id: d.id, _k: ++rowKey, location: d.note ?? '', trade_id: d.trade_id, trade_name: d.trade_name ?? '',
+    spec: d.spec ?? '', row_type: (d.row_type === 'header' ? 'header' : 'item'),
+    cost_unit_price: Number(d.cost_unit_price) || 0, _priceTouched: true,  // 既存値は人が決めた値として尊重
+    material_id: d.material_id ?? null,
     supplier_id: d.supplier_id ?? null, item_name: d.item_name, unit: d.unit ?? '',
     quantity: Number(d.quantity) || 0, unit_price: Number(d.unit_price) || 0,
   }))
   doc.value = {
     construction_location: pj?.construction_location ?? '', period_text: pj?.period_text ?? '',
+    margin_rate: pj?.margin_rate == null ? null : Number(pj.margin_rate),
     valid_until: pj?.valid_until ?? '', memo: pj?.memo ?? '', adjustment: Number(pj?.adjustment) || 0,
   }
+  syncMarginPct()   // 案件の上書き率を表示に反映
   currentPage.value = 0   // 案件を開いたら先頭ページへ
   editingName.value = false
   builderTab.value = 'items'
@@ -993,9 +1138,15 @@ async function addProject() {
   await loadItems()
 }
 
-function addRow() {
-  rows.value.push({ id: null, _k: ++rowKey, location: '', trade_id: null, material_id: null, supplier_id: null, item_name: '', unit: '', quantity: 0, unit_price: 0 })
+function blankRow(rowType: 'item' | 'header' = 'item'): Row {
+  return { id: null, _k: ++rowKey, location: '', trade_id: null, trade_name: '', material_id: null,
+           supplier_id: null, item_name: '', spec: '', row_type: rowType, unit: '', quantity: 0,
+           cost_unit_price: 0, unit_price: 0, _priceTouched: false }
 }
+function addRow(rowType: 'item' | 'header' = 'item') { rows.value.push(blankRow(rowType)) }
+// Excelは空行を大量に確保しており「行が足りない心配なくどこにでも打てる」のが前提。
+// 1行ずつ追加するUIは体感が違うため、まとめて足せるようにする。
+function addRows(n: number) { for (let i = 0; i < n; i++) rows.value.push(blankRow()) }
 function removeRow(i: number) {
   const r = rows.value[i]
   if (r.id) removedIds.value.push(r.id)
@@ -1036,6 +1187,8 @@ async function save() {
         trade_id: r.trade_id, material_id: r.material_id, supplier_id: r.supplier_id, item_name: r.item_name || '(無題)',
         unit: r.unit || null, quantity: Number(r.quantity) || 0, unit_price: Number(r.unit_price) || 0,
         note: r.location || null, sort_order: order++,
+        trade_name: r.trade_name || null, spec: r.spec || null, row_type: r.row_type,
+        cost_unit_price: r.cost_unit_price || null,
       }
       if (r.id) await supabase.from('estimate_items').update(payload).eq('id', r.id)
       else {
@@ -1047,6 +1200,7 @@ async function save() {
     // 見積書フィールド（工事場所/工期/有効期限/MEMO/端数調整）も保存
     await supabase.from('estimate_projects').update({
       construction_location: doc.value.construction_location || null, period_text: doc.value.period_text || null,
+      margin_rate: doc.value.margin_rate,
       valid_until: doc.value.valid_until || null, memo: doc.value.memo || null, adjustment: Number(doc.value.adjustment) || 0,
     }).eq('id', projectId.value)
     markSaved()   // 保存完了＝離脱ガードの基準を更新（以降は未保存扱いしない）
@@ -1309,4 +1463,26 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .pdf-link:hover { text-decoration: underline; }
 /* 発注書PDF生成用プレビュー: 画面外に置いて html2canvas で取り込む */
 .po-print { position: absolute; left: -10000px; top: 0; width: 760px; background: #fff; color: #111; padding: 24px; }
+
+/* ── 見積明細: 原価/客先の分離・粗利プレビュー（Excelの操作感に寄せる）── */
+.row-tools { display: flex; align-items: center; gap: 8px; }
+.margin-field { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #555; margin-right: 8px; }
+.input.xs { width: 52px; padding: 4px 6px; font-size: 12px; }
+.margin-hint { color: #aaa; font-size: 11px; }
+.btn-link-sm { background: none; border: none; color: #06A050; font-size: 11px; cursor: pointer; padding: 0; text-decoration: underline; }
+.est-items .cost-col { background: #f7f8fa; }          /* 原価側は地色を変えて客先側と区別 */
+.est-items thead .cost-col { background: #eceff3; }
+.est-items .overridden { border-color: #F59E0B; background: #FFFBEB; font-weight: 700; }  /* 手打ち上書き中 */
+.btn-revert { background: none; border: none; color: #B45309; cursor: pointer; font-size: 12px; padding: 0 2px; }
+.hdr-row td { background: #eef6f0; }
+.hdr-input { font-weight: 700; border: none; background: transparent; }
+.margin-preview-row td { border-top: none; padding-top: 0; }
+.margin-preview-row .mp-label { text-align: right; font-size: 11px; color: #999; padding-right: 8px; }
+.mp-cells { display: flex; gap: 4px; justify-content: flex-end; }
+.mp-cell { display: inline-flex; flex-direction: column; align-items: center; gap: 1px;
+  border: 1px solid #e0e0e0; border-radius: 5px; background: #fff; cursor: pointer; padding: 2px 8px; }
+.mp-cell:hover { border-color: #06A050; background: #f2fbf5; }
+.mp-cell.active { border-color: #06A050; background: #e8f9ef; }
+.mp-pct { font-size: 10px; color: #888; }
+.mp-val { font-size: 12px; font-weight: 700; color: #333; }
 </style>
