@@ -74,10 +74,57 @@
 
     <template v-if="projectId">
       <div class="builder-tabs">
+        <button class="btab" :class="{ active: builderTab === 'intake' }" data-testid="tab-intake" @click="builderTab = 'intake'">案件情報</button>
         <button class="btab" :class="{ active: builderTab === 'items' }" data-testid="tab-items" @click="builderTab = 'items'">明細入力</button>
         <button class="btab" :class="{ active: builderTab === 'preview' }" data-testid="tab-preview" @click="builderTab = 'preview'">見積書プレビュー</button>
         <button class="btab" :class="{ active: builderTab === 'po' }" data-testid="tab-po" @click="builderTab = 'po'">商社へ発注</button>
         <button class="btab ghost" data-testid="open-drawer" @click="openDrawer"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">settings</span> マスタ・自社情報</button>
+      </div>
+
+      <!-- ── 案件情報（Q5: 元請けからの受領登録・ステータス管理）── -->
+      <div v-show="builderTab === 'intake'">
+        <section class="panel intake-panel">
+          <div class="panel-head"><h2>案件情報</h2><span v-if="intakeSavedMsg" class="ok">{{ intakeSavedMsg }}</span></div>
+          <div class="intake-grid">
+            <label class="ifield"><span>元請けからの依頼日</span>
+              <input v-model="intake.request_date" type="date" class="input" data-testid="intake-request-date" @change="saveIntake" />
+            </label>
+            <label class="ifield"><span>元請けへの提出期限</span>
+              <input v-model="intake.due_date" type="date" class="input" data-testid="intake-due-date" @change="saveIntake" />
+              <span v-if="dueBadge" class="due-badge" :class="dueBadge.cls" data-testid="intake-due-badge">{{ dueBadge.text }}</span>
+            </label>
+            <label class="ifield"><span>状態</span>
+              <select v-model="intake.status" class="input" data-testid="intake-status" @change="saveIntake">
+                <option v-for="s in PROJECT_STATUSES" :key="s.key" :value="s.key">{{ s.label }}</option>
+              </select>
+            </label>
+            <label v-if="needsReason" class="ifield wide"><span>{{ intake.status === 'declined' ? '辞退' : '失注' }}の理由</span>
+              <input v-model="intake.lost_reason" class="input" data-testid="intake-lost-reason"
+                     placeholder="例：他社が安かった / 工期が合わなかった" @change="saveIntake" />
+            </label>
+          </div>
+          <p v-if="isArchivedStatus" class="intake-note" data-testid="intake-archive-note">
+            この案件は{{ intake.status === 'declined' ? '辞退' : '失注' }}扱いですが、<strong>削除せず残します</strong>。入力済みの単価は次回見積の参考データとして使えます。
+          </p>
+
+          <div class="panel-head" style="margin-top:16px"><h3 class="sub-h">図面・資料</h3></div>
+          <div class="att-row">
+            <label class="btn-excel att-pick">
+              <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">upload_file</span>
+              図面を追加
+              <input type="file" multiple accept=".pdf,image/*" hidden data-testid="intake-file" @change="onIntakeFiles" />
+            </label>
+            <span v-if="attBusy" class="hint">アップロード中…</span>
+            <span v-if="attErr" class="err">{{ attErr }}</span>
+          </div>
+          <ul v-if="attachments.length" class="att-list" data-testid="intake-att-list">
+            <li v-for="a in attachments" :key="a.id">
+              <button class="att-name" :data-testid="`intake-att-${a.id}`" @click="openAttachment(a)">{{ a.name || a.path }}</button>
+              <button class="btn-del" :data-testid="`intake-att-del-${a.id}`" @click="removeAttachment(a)">×</button>
+            </li>
+          </ul>
+          <p v-else class="hint">まだ図面がありません。元請けから受け取った図面をここに置いておくと、見積作成時に参照できます。</p>
+        </section>
       </div>
 
       <div v-show="builderTab === 'items'">
@@ -461,7 +508,99 @@ const PDF_BUCKET = 'admin-docs'          // 新規の見積/発注PDFは非公�
 const IS_DEV = import.meta.env.DEV
 const route  = useRoute()   // 一覧から ?project=<id> で開いた案件を初期選択する
 // #6 ビルダーのタブ（明細入力／見積書プレビュー／商社へ発注）
-const builderTab = ref<'items' | 'preview' | 'po'>('items')
+const builderTab = ref<'intake' | 'items' | 'preview' | 'po'>('items')
+
+// ── Q5: 元請けからの案件受領登録・ステータス管理 ──────────────
+const DRAWING_BUCKET = 'estimate-drawings'
+// 業務フローに沿った状態。確認16で合意（対応中/受注/失注/辞退）＋既存値との互換を保つ。
+//  draft   … 受領して見積作成中（既存の初期値）
+//  issued  … 元請けへ提出済み（見積書PDF発行時に自動でセットされる既存挙動）
+//  active  … 受注（現場化で自動セットされる既存挙動）
+//  lost    … 失注 / declined … 辞退（どちらも削除せず残す＝確認9）
+const PROJECT_STATUSES = [
+  { key: 'draft',    label: '対応中' },
+  { key: 'issued',   label: '提出済み' },
+  { key: 'active',   label: '受注' },
+  { key: 'lost',     label: '失注' },
+  { key: 'declined', label: '辞退' },
+] as const
+type Attachment = { id: string; path: string; name: string | null; kind: string | null }
+const intake = ref<{ request_date: string; due_date: string; status: string; lost_reason: string }>(
+  { request_date: '', due_date: '', status: 'draft', lost_reason: '' })
+const intakeSavedMsg = ref('')
+const attachments = ref<Attachment[]>([])
+const attBusy = ref(false)
+const attErr  = ref('')
+
+const needsReason      = computed(() => intake.value.status === 'lost' || intake.value.status === 'declined')
+const isArchivedStatus = computed(() => needsReason.value)
+/** 提出期限までの残り日数バッジ（受注/失注/辞退の後は出さない） */
+const dueBadge = computed(() => {
+  const d = intake.value.due_date
+  if (!d) return null
+  if (['active', 'lost', 'declined'].includes(intake.value.status)) return null
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const due = new Date(`${d}T00:00:00`)
+  const days = Math.round((due.getTime() - today.getTime()) / 86400000)
+  if (days < 0)  return { text: `期限を${-days}日超過`, cls: 'over' }
+  if (days === 0) return { text: '本日締切', cls: 'over' }
+  if (days <= 3) return { text: `あと${days}日`, cls: 'soon' }
+  return { text: `あと${days}日`, cls: 'ok' }
+})
+
+async function saveIntake() {
+  if (!projectId.value) return
+  await supabase.from('estimate_projects').update({
+    request_date: intake.value.request_date || null,
+    due_date:     intake.value.due_date || null,
+    status:       intake.value.status || 'draft',
+    // 失注/辞退でなくなったら理由は消す（状態と矛盾したデータを残さない）
+    lost_reason:  needsReason.value ? (intake.value.lost_reason || null) : null,
+  }).eq('id', projectId.value)
+  const p = projects.value.find(x => x.id === projectId.value)
+  if (p) p.status = intake.value.status
+  intakeSavedMsg.value = '保存しました'
+  setTimeout(() => (intakeSavedMsg.value = ''), 2000)
+}
+
+async function loadAttachments() {
+  if (!projectId.value) { attachments.value = []; return }
+  const { data } = await supabase.from('estimate_project_attachments')
+    .select('id, path, name, kind').eq('project_id', projectId.value).order('created_at')
+  attachments.value = (data ?? []) as Attachment[]
+}
+async function onIntakeFiles(e: Event) {
+  const input = e.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  input.value = ''
+  if (!files.length || !projectId.value) return
+  attBusy.value = true; attErr.value = ''
+  try {
+    for (const f of files) {
+      const safe = f.name.replace(/[^\w.\-]/g, '_')
+      const path = `${accountId}/${projectId.value}/${Date.now()}_${safe}`
+      const { error: upErr } = await supabase.storage.from(DRAWING_BUCKET).upload(path, f)
+      if (upErr) throw upErr
+      const { error: insErr } = await supabase.from('estimate_project_attachments')
+        .insert({ account_id: accountId, project_id: projectId.value, path, name: f.name, kind: 'drawing' })
+      if (insErr) throw insErr
+    }
+    await loadAttachments()
+  } catch (err: any) {
+    attErr.value = err?.message ?? 'アップロードに失敗しました'
+  } finally { attBusy.value = false }
+}
+async function openAttachment(a: Attachment) {
+  // 非公開バケットなので署名URLで開く
+  const { data } = await supabase.storage.from(DRAWING_BUCKET).createSignedUrl(a.path, 60 * 10)
+  if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+}
+async function removeAttachment(a: Attachment) {
+  if (!confirm(`「${a.name || a.path}」を削除しますか？`)) return
+  await supabase.storage.from(DRAWING_BUCKET).remove([a.path]).catch(() => {})
+  await supabase.from('estimate_project_attachments').delete().eq('id', a.id)
+  await loadAttachments()
+}
 // #4 マスタ・自社情報の右ドロワー（閉じると明細の選択肢・見積書計算に即反映）
 const drawerOpen = ref(false)
 const drawerTab  = ref<'masters' | 'company'>('masters')
@@ -1113,7 +1252,7 @@ async function loadItems() {
       .select('id, category_id, trade_id, trade_name, material_id, supplier_id, item_name, spec, row_type, unit, quantity, cost_unit_price, unit_price, note')
       .eq('project_id', projectId.value).order('sort_order'),
     supabase.from('estimate_projects')
-      .select('construction_location, period_text, valid_until, memo, adjustment, margin_rate').eq('id', projectId.value).single(),
+      .select('construction_location, period_text, valid_until, memo, adjustment, margin_rate, request_date, due_date, status, lost_reason').eq('id', projectId.value).single(),
   ])
   rows.value = (data ?? []).map((d: any) => ({
     id: d.id, _k: ++rowKey, location: d.note ?? '', trade_id: d.trade_id, trade_name: d.trade_name ?? '',
@@ -1129,6 +1268,14 @@ async function loadItems() {
     valid_until: pj?.valid_until ?? '', memo: pj?.memo ?? '', adjustment: Number(pj?.adjustment) || 0,
   }
   syncMarginPct()   // 案件の上書き率を表示に反映
+  // Q5: 受領情報（依頼日/提出期限/状態/失注理由）
+  intake.value = {
+    request_date: pj?.request_date ?? '',
+    due_date:     pj?.due_date ?? '',
+    status:       pj?.status ?? 'draft',
+    lost_reason:  pj?.lost_reason ?? '',
+  }
+  await loadAttachments()
   currentPage.value = 0   // 案件を開いたら先頭ページへ
   editingName.value = false
   builderTab.value = 'items'
@@ -1515,4 +1662,22 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .est-items th, .est-items td { padding: 5px 6px; font-size: 12px; }
 .est-items .input { padding: 5px 6px; font-size: 12px; }
 .est-items .input.sm { min-width: 0; }
+/* ── Q5 案件情報 ── */
+.intake-panel { max-width: 900px; }
+.intake-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.ifield { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #555; }
+.ifield.wide { grid-column: 1 / -1; }
+.sub-h { font-size: 13px; margin: 0; color: #555; }
+.due-badge { align-self: flex-start; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 2px 8px; margin-top: 2px; }
+.due-badge.ok   { background: #e8f9ef; color: #06A050; }
+.due-badge.soon { background: #FEF3C7; color: #B45309; }
+.due-badge.over { background: #FEE2E2; color: #B91C1C; }
+.intake-note { font-size: 12px; color: #B45309; background: #FEF3C7; border: 1px solid #FDE68A;
+  border-radius: 6px; padding: 8px 10px; margin: 12px 0 0; line-height: 1.6; }
+.att-row { display: flex; align-items: center; gap: 10px; }
+.att-pick { cursor: pointer; }
+.att-list { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-direction: column; gap: 4px; }
+.att-list li { display: flex; align-items: center; gap: 6px; }
+.att-name { background: none; border: none; color: #06A050; cursor: pointer; text-decoration: underline;
+  font-size: 13px; padding: 0; text-align: left; }
 </style>
