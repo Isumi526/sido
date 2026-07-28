@@ -9,6 +9,11 @@
 #   reason … なぜ未対応で許容しているか
 #   ticket … 追跡している Notion ページID（集約先）
 entries:
+  - rule: migration-safety
+    target: 20260728090000_invoice_decimal_unit_price.sql
+    reason: "unit_price/amount/total_amount を integer→numeric へ拡大変換。ルール上は『既存カラムの型変更』で非破壊ではないが、(1)整数→小数は無損失で既存値は変わらない (2)人の明示承認済み (3)本番適用後に件数と合計を適用前と突合し完全一致を確認済み（items=657/sum=174,794,597、invoices=138/sum=208,745,425）。単価に小数が入るのは実業務として正常（ビス等の細物は@0.74円）で、丸めで直すと請求額が水増しされるため型を広げる以外の選択肢が無い。"
+    ticket: "3ab0ff81c56b81e08247fc28b4de52a0"
+
   - rule: rls-multitenant
     target: site_attachments
     reason: "liff(anon)も read する liff/anon露出テーブル。purchase_orders方式のRLSを当てると作業員の現場閲覧が壊れる。liff認証導線(マルチテナント化B)確定後に全体RLS化でまとめて対応。"
