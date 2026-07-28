@@ -449,6 +449,12 @@ verify_jwt = false
 verify_jwt = false
 [functions.send-estimate]
 verify_jwt = true
+
+[functions.send-drawing-pages]
+verify_jwt = true
+
+[functions.test-send-drawing-pages]
+verify_jwt = false
 [functions.test-send-estimate]
 verify_jwt = false
 [functions.send-invoice-request]
