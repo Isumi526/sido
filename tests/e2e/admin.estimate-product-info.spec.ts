@@ -15,7 +15,9 @@
 //  ★2026-07-29(R14): 商品情報は「材料＝品番のある行」だけに出す仕様に変更。
 //    作業内容（下請への発注作業）はネット検索しても商品として見つからないため。
 //    よって本specでは品番を入れてから検証する。
-//  Notion: R6 3a50ff81c56b81638fc2e49ae3b750bb / R14 3ac0ff81c56b81c6a3dbd8dcb24021ce
+//  ★2026-07-29(R23): 表示は品番セルの虫眼鏡アイコン＋モーダルに変更。
+//    明細の下に出すと縦に伸びて入力欄が押し下げられるため。
+//  Notion: R6 3a50ff81c56b81638fc2e49ae3b750bb / R14 / R23
 // ============================================================
 import { test, expect } from '@playwright/test'
 import { getAccountId, restSrv } from './helpers'
@@ -100,15 +102,19 @@ test('AC3★/AC4: 商品情報（サイズ・仕様・出典）が明細のそ�
   await page.locator('[data-testid="item-code-0"]').fill(CODE)
   await page.locator('[data-testid="item-code-0"]').dispatchEvent('change')
 
-  const pinfo = page.locator('[data-testid="item-pinfo-0"]')
+  // ★虫眼鏡アイコンを押すとモーダルで出る
+  await page.locator('[data-testid="item-pinfo-ask-0"]').click()
+  const pinfo = page.locator('[data-testid="pinfo-modal"]')
   await expect(pinfo).toBeVisible({ timeout: 15000 })
-  await expect(page.locator('[data-testid="item-pinfo-sizes-0"]')).toContainText('910×1820 / 910×2420')
-  await expect(pinfo).toContainText('E2Eメーカー')
-  await expect(pinfo).toContainText('厚さ12.5mm 不燃')
+  await expect(page.locator('[data-testid="pinfo-sizes"]')).toContainText('910×1820 / 910×2420')
+  await expect(page.locator('[data-testid="pinfo-maker"]')).toContainText('E2Eメーカー')
+  await expect(page.locator('[data-testid="pinfo-spec"]')).toContainText('厚さ12.5mm 不燃')
   // 出典リンク（今までGoogleで開いていたページ）に飛べる
-  await expect(page.locator('[data-testid="item-pinfo-src-0-0"]')).toHaveAttribute('href', 'https://example.com/e2e-product')
+  await expect(page.locator('[data-testid="pinfo-src-0"]')).toHaveAttribute('href', 'https://example.com/e2e-product')
   // AIの結果である旨の注意書きを必ず出す（そのまま発注させない）
   await expect(pinfo).toContainText('発注前に必ず現物・カタログで確認')
+  await page.locator('[data-testid="pinfo-close"]').click()
+  await expect(pinfo).toBeHidden()
 })
 
 test('AC5★: 見つからなかった時は黙って空欄にせず「見つかりませんでした」と出す', async ({ page }) => {
@@ -117,8 +123,9 @@ test('AC5★: 見つからなかった時は黙って空欄にせず「見つか
   await page.locator('[data-testid="item-code-0"]').fill(`NF-${TS}`)
   await page.locator('[data-testid="item-code-0"]').dispatchEvent('change')
 
-  await expect(page.locator('[data-testid="item-pinfo-none-0"]')).toBeVisible({ timeout: 15000 })
-  await expect(page.locator('[data-testid="item-pinfo-none-0"]')).toContainText('見つかりませんでした')
+  await page.locator('[data-testid="item-pinfo-ask-0"]').click()
+  await expect(page.locator('[data-testid="pinfo-none"]')).toBeVisible({ timeout: 15000 })
+  await expect(page.locator('[data-testid="pinfo-none"]')).toContainText('見つかりませんでした')
 })
 
 test('AC6★: 未知の材料では自動でAIを叩かず、「商品情報を調べる」を出す', async ({ page }) => {
@@ -135,12 +142,15 @@ test('AC6★: 未知の材料では自動でAIを叩かず、「商品情報を�
 
   // ★打鍵のたびに生成AIを叩くと、課金が入力のたびに発生し、検索の十数秒が
   //   他の操作（保存など）を待たせる。人が押した時だけ調べる。
-  await expect(page.locator('[data-testid="item-pinfo-0"]')).toHaveCount(0)
+  // モーダルは勝手に開かない（自動でAIを叩かない）
+  await expect(page.locator('[data-testid="pinfo-modal"]')).toHaveCount(0)
   await expect(page.locator('[data-testid="item-pinfo-ask-0"]')).toBeVisible()
 
-  // キャッシュ済みの品番では、押さなくてもそのまま出る（無料・即時）
+  // キャッシュ済みの品番では、アイコンが「調べる」から「見る」に変わる（再取得しない）
   await page.locator('[data-testid="item-code-0"]').fill(CODE)
   await page.locator('[data-testid="item-code-0"]').dispatchEvent('change')
-  await expect(page.locator('[data-testid="item-pinfo-0"]')).toBeVisible({ timeout: 15000 })
-  await expect(page.locator('[data-testid="item-pinfo-ask-0"]')).toHaveCount(0)
+  const ico = page.locator('[data-testid="item-pinfo-ask-0"]')
+  await expect(ico).toHaveClass(/done/, { timeout: 15000 })
+  await ico.click()
+  await expect(page.locator('[data-testid="pinfo-sizes"]')).toContainText('910×1820')
 })

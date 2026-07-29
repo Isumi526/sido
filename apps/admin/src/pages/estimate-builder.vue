@@ -450,11 +450,6 @@
                            @change="onItemNameChange(rows[i])" @blur="onItemNameChange(rows[i])" />
                     <!-- ★R6: 表記ゆれ・打ち間違い用の「もしかして」。予測変換(datalist)は
                          前方一致しか効かないので、似ている既存名を別に出す。 -->
-                    <button v-if="needsLookup(rows[i])" class="pinfo-ask" :data-testid="`item-pinfo-ask-${i}`"
-                            title="この品名の商品情報（サイズ・仕様・画像）をネット検索で調べる"
-                            @click="lookupProductInfo(rows[i], true)">
-                      <span class="material-symbols-rounded" style="font-size:13px;vertical-align:middle">search</span> 商品情報を調べる
-                    </button>
                     <span v-if="didYouMean(rows[i]).length" class="dym" :data-testid="`item-dym-${i}`">
                       もしかして:
                       <button v-for="(c, ci) in didYouMean(rows[i])" :key="c" class="dym-pick"
@@ -462,9 +457,22 @@
                     </span>
                   </td>
                   <!-- ★R3: 品番は形状・詳細と別列。品番はメーカー特定・商品情報取得のキーになる -->
-                  <td><input v-model="rows[i].product_code" class="input sm" :data-testid="`item-code-${i}`"
-                             list="est-material-codes" autocomplete="off" placeholder="SLP314 等"
-                             @change="onCodeChange(rows[i])" @blur="onCodeChange(rows[i])" /></td>
+                  <td class="code-cell">
+                    <input v-model="rows[i].product_code" class="input sm code-in" :data-testid="`item-code-${i}`"
+                           list="est-material-codes" autocomplete="off" placeholder="SLP314 等"
+                           @change="onCodeChange(rows[i])" @blur="onCodeChange(rows[i])" />
+                    <!-- ★R23: 品番の横に虫眼鏡。押した時だけ調べ、結果はモーダルで出す
+                         （明細の下に出すと縦に伸びて入力欄が押し下げられる） -->
+                    <button v-if="isMaterialRow(rows[i])" class="pinfo-ico"
+                            :class="{ busy: pinfoBusyKey === productKeyOf(rows[i]), done: !!productInfoOf(rows[i]) }"
+                            :data-testid="`item-pinfo-ask-${i}`"
+                            :title="productInfoOf(rows[i]) ? '調べた商品情報を見る' : 'この品番の商品情報をネット検索で調べる'"
+                            @click="openProductInfo(rows[i])">
+                      <span class="material-symbols-rounded ico">
+                        {{ pinfoBusyKey === productKeyOf(rows[i]) ? 'hourglass_top' : (productInfoOf(rows[i]) ? 'info' : 'search') }}
+                      </span>
+                    </button>
+                  </td>
                   <td><input v-model="rows[i].spec" class="input sm" :data-testid="`item-spec-${i}`" placeholder="R下地 / 2重貼 等" /></td>
                   <!-- ★W/D/H は記録のみ。数量は自動計算しない（工種で数え方が違い、自動で決めると必ず外れる） -->
                   <td class="num"><input v-model.number="rows[i].dim_w" type="number" step="any" class="input xs num" :data-testid="`item-w-${i}`" /></td>
@@ -494,37 +502,6 @@
                   <td class="num cost-col"><input v-model.number="rows[i].cost_unit_price" type="number" step="any" class="input sm num" :data-testid="`item-cost-${i}`" @input="onCostInput(rows[i])" /></td>
                   <td class="num cost-col amount" :data-testid="`item-cost-amount-${i}`">{{ yen(lineCostAmount(rows[i])) }}</td>
                   <td><button class="btn-del" :data-testid="`item-del-${i}`" @click="removeRow(i)">×</button></td>
-                </tr>
-                <!-- ★R6: 商品情報（サイズ展開・仕様・画像・出典）。
-                     今は毎回この品名でGoogle/ChatGPTを叩いているので、その手間を画面に持ってくる。 -->
-                <tr v-if="isMaterialRow(rows[i]) && productInfoOf(rows[i])" class="pinfo-row" :data-testid="`item-pinfo-${i}`">
-                  <td></td>
-                  <td colspan="14">
-                    <div class="pinfo">
-                      <img v-if="productInfoOf(rows[i])!.image_url" :src="productInfoOf(rows[i])!.image_url!"
-                           class="pinfo-img" :data-testid="`item-pinfo-img-${i}`" alt="" @error="onPinfoImgError(rows[i])" />
-                      <div class="pinfo-body">
-                        <template v-if="productInfoOf(rows[i])!.not_found">
-                          <!-- 黙って空欄にしない。「調べたが見つからなかった」と分かるようにする -->
-                          <span class="pinfo-none" :data-testid="`item-pinfo-none-${i}`">商品情報は見つかりませんでした</span>
-                        </template>
-                        <template v-else>
-                          <span v-if="productInfoOf(rows[i])!.maker" class="pinfo-maker">{{ productInfoOf(rows[i])!.maker }}</span>
-                          <span v-if="productInfoOf(rows[i])!.sizes" class="pinfo-line" :data-testid="`item-pinfo-sizes-${i}`">サイズ: {{ productInfoOf(rows[i])!.sizes }}</span>
-                          <span v-if="productInfoOf(rows[i])!.spec" class="pinfo-line">仕様: {{ productInfoOf(rows[i])!.spec }}</span>
-                          <span class="pinfo-links">
-                            <a v-for="(u, ui) in (productInfoOf(rows[i])!.source_urls ?? []).slice(0, 3)" :key="ui"
-                               :href="u" target="_blank" rel="noopener" class="pinfo-link" :data-testid="`item-pinfo-src-${i}-${ui}`">出典{{ ui + 1 }}</a>
-                          </span>
-                        </template>
-                        <span class="pinfo-note">AIがWeb検索した内容です。発注前に必ず現物・カタログで確認してください。</span>
-                      </div>
-                      <button class="btn-link-sm" :data-testid="`item-pinfo-refresh-${i}`" @click="lookupProductInfo(rows[i], true)">調べ直す</button>
-                    </div>
-                  </td>
-                </tr>
-                <tr v-else-if="pinfoBusyKey === productKeyOf(rows[i]) && productKeyOf(rows[i])" class="pinfo-row">
-                  <td></td><td colspan="14"><span class="hint" :data-testid="`item-pinfo-busy-${i}`">商品情報を調べています…</span></td>
                 </tr>
                 <!-- ★R19: 粗利パターンの見比べ（ExcelのR〜Y列 = 5/10/15/20%）。
                      原価が入っている行だけ出す（原価が無いと比べる意味が無い）。 -->
@@ -616,6 +593,69 @@
 
       </div><!-- /tab 明細入力 -->
 
+      <!-- ★R23: 商品情報はモーダルで出す。明細の下に出すと縦に伸びて入力欄が押し下げられる -->
+      <div v-if="pinfoModal" class="modal-back" data-testid="pinfo-modal" @click.self="pinfoModal = null">
+        <div class="modal-card">
+          <div class="modal-head">
+            <h3>商品情報 — {{ pinfoModal.product_code || pinfoModal.item_name }}</h3>
+            <button class="btn-cancel" data-testid="pinfo-close" @click="pinfoModal = null">閉じる</button>
+          </div>
+          <div v-if="pinfoBusyKey" class="pinfo-loading" data-testid="pinfo-loading">
+            <span class="spin-dot"></span> ネット検索で調べています…
+          </div>
+          <template v-else-if="pinfoModalInfo">
+            <div v-if="pinfoModalInfo.not_found" class="pinfo-none" data-testid="pinfo-none">
+              商品情報は見つかりませんでした
+            </div>
+            <div v-else class="pinfo-body-modal">
+              <img v-if="pinfoModalInfo.image_url" :src="pinfoModalInfo.image_url" class="pinfo-img-lg"
+                   data-testid="pinfo-img" alt="" @error="pinfoModalInfo!.image_url = null" />
+              <dl class="pinfo-dl">
+                <template v-if="pinfoModalInfo.maker"><dt>メーカー</dt><dd data-testid="pinfo-maker">{{ pinfoModalInfo.maker }}</dd></template>
+                <template v-if="pinfoModalInfo.sizes"><dt>サイズ展開</dt><dd data-testid="pinfo-sizes">{{ pinfoModalInfo.sizes }}</dd></template>
+                <template v-if="pinfoModalInfo.spec"><dt>仕様</dt><dd data-testid="pinfo-spec">{{ pinfoModalInfo.spec }}</dd></template>
+                <template v-if="(pinfoModalInfo.source_urls ?? []).length"><dt>出典</dt><dd>
+                  <a v-for="(u, ui) in pinfoModalInfo.source_urls.slice(0, 3)" :key="ui" :href="u" target="_blank"
+                     rel="noopener" class="pinfo-link" :data-testid="`pinfo-src-${ui}`">リンク{{ ui + 1 }}</a>
+                </dd></template>
+              </dl>
+            </div>
+            <p class="pinfo-note">AIがWeb検索した内容です。発注前に必ず現物・カタログで確認してください。</p>
+          </template>
+          <div class="actions-row">
+            <button class="btn-ghost" :disabled="!!pinfoBusyKey" data-testid="pinfo-refresh" @click="lookupProductInfo(pinfoModal!, true)">調べ直す</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ★R26: 自社情報はページ遷移せずここで編集する（見積作成の途中で離脱させない） -->
+      <div v-if="companyModal" class="modal-back" data-testid="company-modal" @click.self="companyModal = false">
+        <div class="modal-card">
+          <div class="modal-head">
+            <h3>自社情報（見積書に出る発行元）</h3>
+            <button class="btn-cancel" data-testid="company-close" @click="companyModal = false">閉じる</button>
+          </div>
+          <div class="ifields">
+            <label class="ifield wide"><span>会社名</span>
+              <input v-model="companyForm.company_name" class="input" data-testid="cm-name" /></label>
+            <label class="ifield"><span>代表者</span>
+              <input v-model="companyForm.company_rep" class="input" data-testid="cm-rep" /></label>
+            <label class="ifield"><span>電話</span>
+              <input v-model="companyForm.company_tel" class="input" data-testid="cm-tel" /></label>
+            <label class="ifield wide"><span>住所</span>
+              <input v-model="companyForm.company_address" class="input" data-testid="cm-address" /></label>
+          </div>
+          <p class="hint">印影の登録や細かい設定は<RouterLink to="/company-profile">自社情報ページ</RouterLink>で行えます。</p>
+          <div class="actions-row">
+            <button class="btn-primary" :disabled="companySaving" data-testid="cm-save" @click="saveCompanyModal">
+              {{ companySaving ? '保存中…' : '保存' }}
+            </button>
+            <span v-if="companyMsg" class="ok" data-testid="cm-msg">{{ companyMsg }}</span>
+            <span v-if="companyErr" class="err" data-testid="cm-err">{{ companyErr }}</span>
+          </div>
+        </div>
+      </div>
+
       <div v-show="builderTab === 'preview'">
       <p v-if="!rows.length" class="hint">明細を入力すると見積書プレビューが表示されます。</p>
       <!-- E2 帳票PDF: 見積書（表紙＋内訳書）。サンプル様式に準拠 -->
@@ -627,7 +667,17 @@
             <button class="btn-primary" :disabled="pdfBusy" data-testid="export-pdf" @click="exportPdf">{{ pdfBusy ? '生成中…' : 'PDF出力' }}</button>
           </div>
         </div>
-        <p v-if="!company.company_name" class="muted">自社情報が未登録です。<RouterLink to="/company-profile">自社情報</RouterLink>で会社名・住所・印影等を登録すると見積書に反映されます。</p>
+        <!-- ★R26: 未登録でもページを離れずにその場で登録できる。
+             見積を作っている最中に別ページへ飛ばすと、書きかけの明細から離れることになる。 -->
+        <p v-if="!company.company_name" class="muted" data-testid="company-missing">
+          自社情報が未登録です。
+          <button class="btn-link-sm" data-testid="open-company-modal" @click="openCompanyModal">ここで登録する</button>
+          と、会社名・住所・印影が見積書に反映されます。
+        </p>
+        <p v-else class="muted company-line">
+          発行元: <b data-testid="company-name">{{ company.company_name }}</b>
+          <button class="btn-link-sm" data-testid="open-company-modal" @click="openCompanyModal">自社情報を編集</button>
+        </p>
         <!-- 見積書に出す案件情報（入力を離れた時点で自動保存） -->
         <div class="doc-form">
           <div class="doc-field"><label>工事場所</label><input v-model="doc.construction_location" class="input" data-testid="doc-location" @change="saveDoc" /></div>
@@ -1530,6 +1580,42 @@ async function loadDrawingSends() {
   drawingSends.value = (data ?? []) as DrawingSend[]
 }
 
+// ★R26: 自社情報をその場で登録・編集する（ページ遷移させない）
+//  label は自社情報ページ(company-profile.vue)と同じ表示名を使う（設定一覧での見え方を揃える）
+const COMPANY_LABELS: Record<string, string> = {
+  company_name: '会社名', company_rep: '代表者', company_address: '住所', company_tel: 'TEL',
+}
+const companyModal  = ref(false)
+const companySaving = ref(false)
+const companyMsg    = ref('')
+const companyErr    = ref('')
+const companyForm   = ref<Record<string, string>>({ company_name: '', company_rep: '', company_tel: '', company_address: '' })
+function openCompanyModal() {
+  companyForm.value = {
+    company_name: company.value.company_name ?? '',
+    company_rep: company.value.company_rep ?? '',
+    company_tel: company.value.company_tel ?? '',
+    company_address: company.value.company_address ?? '',
+  }
+  companyMsg.value = ''; companyErr.value = ''
+  companyModal.value = true
+}
+async function saveCompanyModal() {
+  companySaving.value = true; companyMsg.value = ''; companyErr.value = ''
+  try {
+    // settings は key-value。既存の自社情報ページと同じ入れ物に書く（保存先を分けない）。
+    // ★label は NOT NULL。自社情報ページと同じ表示名を入れないと 400 で落ちる。
+    const rows = Object.entries(companyForm.value)
+      .map(([key, value]) => ({ account_id: accountId, key, value: (value ?? '').trim(), label: COMPANY_LABELS[key] ?? key }))
+    // 一意制約は (key, account_id) の順（settings_pkey）。順序を合わせないと upsert が通らない
+    const { error } = await supabase.from('settings').upsert(rows, { onConflict: 'key,account_id' })
+    if (error) { companyErr.value = error.message; return }
+    await loadCompany()   // 保存したら即座に見積書へ反映する
+    companyMsg.value = '保存しました'
+    setTimeout(() => { companyMsg.value = ''; companyModal.value = false }, 1200)
+  } finally { companySaving.value = false }
+}
+
 // #4 マスタ・自社情報の右ドロワー（閉じると明細の選択肢・見積書計算に即反映）
 const drawerOpen = ref(false)
 const drawerTab  = ref<'masters' | 'company'>('masters')
@@ -2413,6 +2499,15 @@ async function loadCachedProductInfo(r: Row) {
     not_found: !!cached.not_found,
   } }
 }
+// ★R23: 商品情報はモーダルで見せる（明細の下に出すと縦に伸びて入力欄が押し下げられる）
+const pinfoModal = ref<Row | null>(null)
+const pinfoModalInfo = computed(() => pinfoModal.value ? productInfoOf(pinfoModal.value) : null)
+/** 虫眼鏡クリック: 未取得なら調べてから開く。取得済みなら即開く（無駄に叩かない） */
+async function openProductInfo(r: Row) {
+  pinfoModal.value = r
+  if (!productInfoOf(r)) await lookupProductInfo(r, true)
+}
+
 /** まだ調べていない品名か（＝「調べる」ボタンを出すべきか） */
 /**
  * ★R14: 明細には性質の違う2種類がある。判別は「品番の有無」で行う。
@@ -3149,6 +3244,25 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .hc-alt { display: block; font-size: 10px; color: #B45309; }
 .pinfo-ask { display: block; margin-top: 3px; padding: 1px 6px; border: 1px solid #D5DEE8; border-radius: 10px; background: #fff; cursor: pointer; font-size: 11px; color: #4A7BC8; }
 .pinfo-ask:hover { background: #EEF4FF; border-color: #4A7BC8; }
+/* R23: 品番セルの虫眼鏡 */
+.code-cell { white-space: nowrap; }
+.code-in { width: calc(100% - 26px); }
+.pinfo-ico { border: 0; background: transparent; cursor: pointer; color: #7A8AA0; padding: 0 2px; vertical-align: middle; }
+.pinfo-ico:hover { color: #2F6FD0; }
+.pinfo-ico.done { color: #2F6FD0; }
+.pinfo-ico.busy { color: #F0A500; }
+.pinfo-ico .ico { font-size: 16px; vertical-align: middle; }
+.modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 50; }
+.modal-card { background: #fff; border-radius: 10px; padding: 16px 18px; width: min(560px, 92vw); max-height: 86vh; overflow: auto; }
+.modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.pinfo-loading { display: flex; align-items: center; gap: 8px; color: #666; padding: 18px 0; }
+.spin-dot { width: 14px; height: 14px; border: 2px solid #D5DEE8; border-top-color: #2F6FD0; border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.pinfo-body-modal { display: flex; gap: 14px; align-items: flex-start; }
+.pinfo-img-lg { width: 160px; height: 160px; object-fit: contain; border: 1px solid #E2E8F0; border-radius: 6px; }
+.pinfo-dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; margin: 0; }
+.pinfo-dl dt { color: #7A8AA0; }
+.pinfo-dl dd { margin: 0; }
 
 /* ── R8: 図面のページ選択→送信 ── */
 /* R24: 落とせる範囲が狭いと狙いを外すので縦に広げる（レビュー2026-07-29） */
