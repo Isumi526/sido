@@ -12,13 +12,17 @@
 //    キャッシュ（estimate_product_info）を先に入れておき、
 //    「キャッシュがあればAIを叩かず即表示する」ことと表示内容を検証する。
 //
-//  Notion: R6 3a50ff81c56b81638fc2e49ae3b750bb
+//  ★2026-07-29(R14): 商品情報は「材料＝品番のある行」だけに出す仕様に変更。
+//    作業内容（下請への発注作業）はネット検索しても商品として見つからないため。
+//    よって本specでは品番を入れてから検証する。
+//  Notion: R6 3a50ff81c56b81638fc2e49ae3b750bb / R14 3ac0ff81c56b81c6a3dbd8dcb24021ce
 // ============================================================
 import { test, expect } from '@playwright/test'
 import { getAccountId, restSrv } from './helpers'
 
 const TS = Date.now()
 const MAT = `E2E不燃PB_${TS}`          // マスタに入れる正しい名前
+const CODE = `PB-${TS % 100000}`       // 材料＝品番のある行として扱わせる
 const TYPO = `E2E不燃PＢ_${TS}`        // 打ち間違い（全角B）
 let seq = 0
 const projName = () => `E2E商品情報_${TS}_${++seq}`
@@ -34,7 +38,7 @@ test.beforeAll(async () => {
   await restSrv('estimate_product_info', {
     method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
     body: JSON.stringify({
-      account_id: accountId, lookup_key: MAT.toLowerCase(), name: MAT,
+      account_id: accountId, lookup_key: CODE.toLowerCase(), name: MAT, product_code: CODE,
       maker: 'E2Eメーカー', sizes: '910×1820 / 910×2420', spec: '厚さ12.5mm 不燃',
       image_url: null, source_urls: ['https://example.com/e2e-product'], not_found: false,
     }),
@@ -43,8 +47,8 @@ test.beforeAll(async () => {
   await restSrv('estimate_product_info', {
     method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
     body: JSON.stringify({
-      account_id: accountId, lookup_key: `e2e該当なし_${TS}`.toLowerCase(),
-      name: `E2E該当なし_${TS}`, not_found: true, source_urls: [],
+      account_id: accountId, lookup_key: `nf-${TS}`.toLowerCase(),
+      name: `E2E該当なし_${TS}`, product_code: `NF-${TS}`, not_found: true, source_urls: [],
     }),
   })
 })
@@ -93,7 +97,8 @@ test('AC1: 完全一致するマスタ名を打った時は「もしかして」
 test('AC3★/AC4: 商品情報（サイズ・仕様・出典）が明細のそばに出る（キャッシュから／AIを叩かない）', async ({ page }) => {
   await openNewProject(page)
   await page.locator('[data-testid="item-name-0"]').fill(MAT)
-  await page.locator('[data-testid="item-name-0"]').dispatchEvent('change')
+  await page.locator('[data-testid="item-code-0"]').fill(CODE)
+  await page.locator('[data-testid="item-code-0"]').dispatchEvent('change')
 
   const pinfo = page.locator('[data-testid="item-pinfo-0"]')
   await expect(pinfo).toBeVisible({ timeout: 15000 })
@@ -109,16 +114,23 @@ test('AC3★/AC4: 商品情報（サイズ・仕様・出典）が明細のそ�
 test('AC5★: 見つからなかった時は黙って空欄にせず「見つかりませんでした」と出す', async ({ page }) => {
   await openNewProject(page)
   await page.locator('[data-testid="item-name-0"]').fill(`E2E該当なし_${TS}`)
-  await page.locator('[data-testid="item-name-0"]').dispatchEvent('change')
+  await page.locator('[data-testid="item-code-0"]').fill(`NF-${TS}`)
+  await page.locator('[data-testid="item-code-0"]').dispatchEvent('change')
 
   await expect(page.locator('[data-testid="item-pinfo-none-0"]')).toBeVisible({ timeout: 15000 })
   await expect(page.locator('[data-testid="item-pinfo-none-0"]')).toContainText('見つかりませんでした')
 })
 
-test('AC6★: 未知の品名では自動でAIを叩かず、「商品情報を調べる」を出す', async ({ page }) => {
+test('AC6★: 未知の材料では自動でAIを叩かず、「商品情報を調べる」を出す', async ({ page }) => {
   await openNewProject(page)
   await page.locator('[data-testid="item-name-0"]').fill(`E2E未知の材料_${TS}`)
+  // ★品番が無いうちは作業内容扱いなので、そもそも検索ボタンを出さない（R14）
   await page.locator('[data-testid="item-name-0"]').dispatchEvent('change')
+  await page.waitForTimeout(600)
+  await expect(page.locator('[data-testid="item-pinfo-ask-0"]')).toHaveCount(0)
+
+  await page.locator('[data-testid="item-code-0"]').fill(`UNK-${TS}`)
+  await page.locator('[data-testid="item-code-0"]').dispatchEvent('change')
   await page.waitForTimeout(1200)
 
   // ★打鍵のたびに生成AIを叩くと、課金が入力のたびに発生し、検索の十数秒が
@@ -126,9 +138,9 @@ test('AC6★: 未知の品名では自動でAIを叩かず、「商品情報を�
   await expect(page.locator('[data-testid="item-pinfo-0"]')).toHaveCount(0)
   await expect(page.locator('[data-testid="item-pinfo-ask-0"]')).toBeVisible()
 
-  // キャッシュ済みの品名では、押さなくてもそのまま出る（無料・即時）
-  await page.locator('[data-testid="item-name-0"]').fill(MAT)
-  await page.locator('[data-testid="item-name-0"]').dispatchEvent('change')
+  // キャッシュ済みの品番では、押さなくてもそのまま出る（無料・即時）
+  await page.locator('[data-testid="item-code-0"]').fill(CODE)
+  await page.locator('[data-testid="item-code-0"]').dispatchEvent('change')
   await expect(page.locator('[data-testid="item-pinfo-0"]')).toBeVisible({ timeout: 15000 })
   await expect(page.locator('[data-testid="item-pinfo-ask-0"]')).toHaveCount(0)
 })

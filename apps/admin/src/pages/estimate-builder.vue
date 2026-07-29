@@ -468,8 +468,10 @@
                   </td>
                   <td class="num amount" :data-testid="`item-amount-${i}`">{{ yen(lineAmount(rows[i])) }}</td>
                   <!-- ここから社内用（見積書には出さない）。商社は R16 でモーダル化予定 -->
+                  <!-- ★R14: 商社は材料（品番あり）だけ。作業内容の行に商社の概念は無い -->
                   <td class="cost-col">
-                    <select v-model="rows[i].supplier_id" class="input sm" :data-testid="`item-supplier-${i}`" @change="onSupplierPick(rows[i])">
+                    <span v-if="!hasSupplierChoice(rows[i])" class="na-cell" :data-testid="`item-supplier-na-${i}`">—</span>
+                    <select v-else v-model="rows[i].supplier_id" class="input sm" :data-testid="`item-supplier-${i}`" @change="onSupplierPick(rows[i])">
                       <option :value="null">—</option>
                       <option v-for="p in pricesForMaterial(rows[i].material_id)" :key="p.supplier_id" :value="p.supplier_id">{{ p.supplierName }} ¥{{ p.unit_price.toLocaleString('ja-JP') }}</option>
                     </select>
@@ -480,7 +482,7 @@
                 </tr>
                 <!-- ★R6: 商品情報（サイズ展開・仕様・画像・出典）。
                      今は毎回この品名でGoogle/ChatGPTを叩いているので、その手間を画面に持ってくる。 -->
-                <tr v-if="productInfoOf(rows[i])" class="pinfo-row" :data-testid="`item-pinfo-${i}`">
+                <tr v-if="isMaterialRow(rows[i]) && productInfoOf(rows[i])" class="pinfo-row" :data-testid="`item-pinfo-${i}`">
                   <td></td>
                   <td colspan="14">
                     <div class="pinfo">
@@ -514,7 +516,7 @@
                   <td></td>
                   <td colspan="14">
                     <div class="hist-cells">
-                      <span class="hist-label">過去の単価</span>
+                      <span class="hist-label">{{ isMaterialRow(rows[i]) ? '過去の単価' : '過去の下請実績' }}</span>
                       <span v-for="(h, hi) in historyFor(rows[i].item_name).slice(0, 4)" :key="hi" class="hist-wrap">
                       <button class="hist-cell"
                               :data-testid="`item-hist-${i}-${hi}`"
@@ -522,6 +524,8 @@
                               @click="applyHistoryPrice(rows[i], h)">
                         <span class="hc-top">{{ h.subcontractor_name }} {{ yen(h.unit_price) }}</span>
                         <span class="hc-sub">{{ kindLabel(h.price_kind) }}<template v-if="h.quoted_on"> ・{{ h.quoted_on }}</template><template v-if="h.project_name"> ・{{ h.project_name }}</template></span>
+                        <!-- 表記ゆれで拾った候補は、何にマッチしたのかを見せる（違うものを掴まないように） -->
+                        <span v-if="historyAltName(rows[i], h)" class="hc-alt" :data-testid="`item-hist-alt-${i}-${hi}`">≈ {{ historyAltName(rows[i], h) }}</span>
                       </button>
                       <!-- R5: その単価の根拠になった見積書を開く（単価だけでは妥当性を確認できない） -->
                       <button v-if="hasQuoteFile(h.request_id)" class="hist-src" :data-testid="`item-hist-src-${i}-${hi}`"
@@ -2028,10 +2032,42 @@ async function loadPriceHistory() {
   historyFiles.value = (files ?? []) as QuoteFile[]
 }
 /** その項目名の過去単価（安い順）。Excelの相見積シートと同じ 業者/単価/提示日/現場名 を返す */
+/**
+ * ★R15: 過去実績を「表記ゆれ込み」で拾う。
+ *  完全一致だけだと「壁面LGS間仕切」と「壁面 外周LGS間仕切り」が別物になり、
+ *  せっかく貯めた単価が出てこない。空白・記号・送り仮名の違いを吸収して比べる。
+ *  生成AIは使わない（2026-07-29 ユーザー回答）。打鍵のたびに走らせたいので、
+ *  無料・即時・件数無制限である手元の類似判定を採る。
+ */
+/**
+ * ★数字は同一性の核なので、違えば別物として扱う。
+ *  「PB t12.5」と「PB t9.5」、「LGS W65」と「W50」、「L2000」と「L2400」は
+ *  文字としては1〜2字違いだが、材料としては完全に別物。
+ *  文字数比だけで判定すると別物を掴んで単価を間違える。
+ */
+const digitsOf = (s: string) => (s.match(/\d+(?:\.\d+)?/g) ?? []).join(',')
+
 function historyFor(itemName: string): PriceHist[] {
-  const nm = (itemName ?? '').trim()
+  const raw = (itemName ?? '').trim()
+  if (!raw) return []
+  const nm = normalizeName(raw)
   if (!nm) return []
-  return priceHistory.value.filter(h => h.item_name === nm).sort((a, b) => a.unit_price - b.unit_price)
+  const nmDigits = digitsOf(nm)
+  const limit = Math.max(1, Math.floor(nm.length * 0.3))
+  const hit = priceHistory.value.filter(h => {
+    const cand = normalizeName(h.item_name)
+    if (!cand) return false
+    if (cand === nm) return true
+    if (digitsOf(cand) !== nmDigits) return false             // 数字が違う＝別物
+    if (cand.includes(nm) || nm.includes(cand)) return true   // 「壁面LGS」⊂「壁面 外周LGS間仕切り」
+    if (Math.abs(cand.length - nm.length) > limit) return false   // 長さが離れすぎ（重い計算を避ける）
+    return editDistance(nm, cand) <= limit
+  })
+  return hit.sort((a, b) => a.unit_price - b.unit_price)
+}
+/** 候補の項目名が打った名前と違う時だけ、何にマッチしたのかを見せる（誤採用を防ぐ） */
+function historyAltName(r: Row, h: PriceHist): string {
+  return normalizeName(h.item_name) === normalizeName(r.item_name) ? '' : h.item_name
 }
 /** 候補をクリックしたら原価に採用（客先単価は粗利率から生やす） */
 function applyHistoryPrice(r: Row, h: PriceHist) {
@@ -2159,6 +2195,7 @@ function computeDidYouMean(r: Row): void {
   for (const m of materials.value) {
     const cand = normalizeName(m.name)
     if (!cand || cand === nm) continue
+    if (digitsOf(cand) !== digitsOf(nm)) continue   // 数字が違えば別物（t12.5 と t9.5 等）
     // 長さが離れすぎているものは編集距離を計算するまでもない（重い処理を避ける足切り）
     if (Math.abs(cand.length - nm.length) > limit) continue
     const d = editDistance(nm, cand)
@@ -2197,7 +2234,25 @@ async function loadCachedProductInfo(r: Row) {
   } }
 }
 /** まだ調べていない品名か（＝「調べる」ボタンを出すべきか） */
+/**
+ * ★R14: 明細には性質の違う2種類がある。判別は「品番の有無」で行う。
+ *  (a) 作業内容（品番なし）… 例「壁面外周LGS間仕切り」。下請業者への発注作業。
+ *      商品としては存在しないのでネット検索しても見つからない。商社の概念も無い。
+ *      → 過去の下請業者実績（業者/日付/価格）を頼りにする。
+ *  (b) 材料（品番あり）… 例「ガラススリット受金物 GS-201」。商品情報が引けて、
+ *      商社ごとの単価がある。
+ *  種別を人に選ばせないのは、品番を打つかどうかで自明に決まるため。
+ */
+const isMaterialRow = (r: Row) => !!(r.product_code ?? '').trim()
+/**
+ * 商社を出してよい行か。
+ * 品番が無くても、マスタで商社別単価が登録されている材料（品名で選んだケース）は
+ * 材料として扱う。品番の有無だけで切ると、その動線で商社が選べなくなる。
+ */
+const hasSupplierChoice = (r: Row) => isMaterialRow(r) || pricesForMaterial(r.material_id).length > 0
+
 function needsLookup(r: Row): boolean {
+  if (!isMaterialRow(r)) return false   // 作業内容は調べても見つからないので出さない
   const key = productKeyOf(r)
   return !!key && !productInfos.value[key] && pinfoBusyKey.value !== key
 }
@@ -2884,6 +2939,8 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .pinfo-links { display: flex; gap: 8px; }
 .pinfo-link { font-size: 11px; color: #2F6FD0; }
 .pinfo-note { font-size: 10px; color: #A0AEC0; }
+.na-cell { color: #C0C8D2; font-size: 12px; padding-left: 6px; }
+.hc-alt { display: block; font-size: 10px; color: #B45309; }
 .pinfo-ask { display: block; margin-top: 3px; padding: 1px 6px; border: 1px solid #D5DEE8; border-radius: 10px; background: #fff; cursor: pointer; font-size: 11px; color: #4A7BC8; }
 .pinfo-ask:hover { background: #EEF4FF; border-color: #4A7BC8; }
 
