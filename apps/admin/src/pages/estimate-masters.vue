@@ -85,13 +85,13 @@
           <div class="add-methods">
             <div class="method">
               <div class="method-label">手入力で1件ずつ</div>
+              <!-- ★R28: 材料マスタから選ばせるのをやめ、単価表に直接入れる（管理する場所を1つにする） -->
               <div class="trade-add">
-                <select v-model="priceForm.material_id" class="input sm" data-testid="price-material">
-                  <option :value="null" disabled>材料</option>
-                  <option v-for="m in materials" :key="m.id" :value="m.id">{{ m.name }}</option>
-                </select>
+                <input v-model="priceForm.product_code" class="input sm" placeholder="品番" data-testid="price-code" />
+                <input v-model="priceForm.item_name" class="input sm" placeholder="品名" data-testid="price-name" />
+                <input v-model="priceForm.unit" class="input sm unit-in" placeholder="単位" data-testid="price-unit" />
                 <input v-model.number="priceForm.unit_price" type="number" class="input sm num" placeholder="単価" data-testid="price-value" />
-                <button class="btn-add" :disabled="!priceForm.material_id || !(priceForm.unit_price > 0)" data-testid="add-price" @click="addPrice">登録</button>
+                <button class="btn-add" :disabled="!(priceForm.product_code || priceForm.item_name) || !(priceForm.unit_price > 0)" data-testid="add-price" @click="addPrice">登録</button>
               </div>
             </div>
             <div class="method ocr-dropzone" :class="{ 'drag-over': ocrDragOver }"
@@ -118,19 +118,25 @@
           </div>
 
           <div v-if="revisionsFiltered.length" class="rev-section">
-            <div class="sub-h">取込の承認待ち（{{ revisionsFiltered.length }}件）</div>
-            <p class="muted">承認前に各項目を手修正できます。<b>紐付け先</b>で既存材料を選ぶと、商社ごとの品番/品名の揺れを吸収して同じ材料にまとめられます（次回の取込から自動一致）。</p>
+            <div class="sub-h rev-head">
+              <span>取込の承認待ち（{{ revisionsFiltered.length }}件）</span>
+              <!-- ★R28: 1ファイルで数十〜数百行になるので、1行ずつ承認するのは現実的でない -->
+              <button class="btn-primary sm" :disabled="revBusy" data-testid="approve-all" @click="approveAllRevisions">
+                {{ revBusy ? '承認中…' : `表示中の${revisionsFiltered.length}件をまとめて承認` }}
+              </button>
+              <span v-if="bulkMsg" class="ok" data-testid="bulk-msg">{{ bulkMsg }}</span>
+            </div>
+            <p class="muted">承認前に各項目を手修正できます。承認すると<b>そのまま単価表に入ります</b>（材料マスタは作りません）。</p>
             <table class="table">
-              <thead><tr><th>品番</th><th>品名</th><th>紐付け先</th><th class="num">現行</th><th class="num">新単価</th><th>有効日</th><th></th></tr></thead>
+              <thead><tr><th>品番</th><th>品名</th><th>既存の紐付け</th><th class="num">現行</th><th class="num">新単価</th><th>有効日</th><th></th></tr></thead>
               <tbody>
                 <tr v-for="r in revisionsFiltered" :key="r.id" :data-testid="`rev-${r.id}`">
                   <td><input v-model="r.code" class="input sm" :data-testid="`rev-code-${r.id}`" placeholder="品番" /></td>
                   <td><input v-model="r.name" class="input" :data-testid="`rev-name-${r.id}`" placeholder="品名" /></td>
-                  <td>
-                    <select v-model="r.material_id" class="input sm" :data-testid="`rev-material-${r.id}`">
-                      <option :value="null">＋ 新規材料として作成</option>
-                      <option v-for="m in materials" :key="m.id" :value="m.id">{{ m.name }}{{ m.code ? `（${m.code}）` : '' }}</option>
-                    </select>
+                  <!-- ★R28: 材料マスタを作らないので「紐付け先」の選択は不要になった。
+                       単価表が品番・品名・単位を自分で持つ。既存の紐付けがある行だけ表示する。 -->
+                  <td class="linked-cell" :data-testid="`rev-linked-${r.id}`">
+                    {{ r.material_id ? (materials.find(m => m.id === r.material_id)?.name ?? '既存に紐付け') : '—' }}
                   </td>
                   <td class="num">{{ r.old_price == null ? '—' : yen(r.old_price) }}</td>
                   <td class="num"><input v-model.number="r.new_price" type="number" class="input sm num" :data-testid="`rev-price-${r.id}`" /></td>
@@ -174,7 +180,7 @@ defineProps<{ embedded?: boolean }>()
 type Trade    = { id: string; name: string }
 type Material = { id: string; name: string; unit: string | null; code: string | null }
 type Supplier = { id: string; name: string }
-type MatPrice = { id: string; material_id: string; supplier_id: string; unit_price: number; effective_date: string | null }
+type MatPrice = { id: string; material_id: string | null; product_code: string | null; item_name: string | null; unit: string | null; supplier_id: string; unit_price: number; effective_date: string | null }
 type Revision = { id: string; material_id: string | null; supplier_id: string | null; code: string | null; name: string | null; unit: string | null; old_price: number | null; new_price: number | null; effective_date: string | null; status: string }
 
 const trades         = ref<Trade[]>([])
@@ -182,13 +188,14 @@ const materials      = ref<Material[]>([])
 const suppliers      = ref<Supplier[]>([])
 const matPrices      = ref<MatPrice[]>([])
 const revisions      = ref<Revision[]>([])
-const priceForm      = ref<{ material_id: string | null; unit_price: number | null }>({ material_id: null, unit_price: null })
+const priceForm      = ref<{ product_code: string; item_name: string; unit: string; unit_price: number | null }>({ product_code: '', item_name: '', unit: '', unit_price: null })
 const materialForm   = ref<{ code: string; name: string; unit: string }>({ code: '', name: '', unit: '' })
 const newTradeName   = ref('')
 const addingSupplier = ref(false)
 const newSupplierName = ref('')
 const masterErr      = ref('')
 const revBusy        = ref(false)
+const bulkMsg        = ref('')   // 一括承認の進捗（何件通ったかを見せる）
 const settingsTab    = ref<'price' | 'material' | 'trade'>('price')
 const activeSupplier = ref<string | null>(null)
 let accountId = ''
@@ -223,8 +230,11 @@ const activeSupplierName = computed(() => suppliers.value.find(s => s.id === act
 const priceList = computed(() =>
   matPrices.value.map(p => ({
     id: p.id, supplierId: p.supplier_id, unit_price: Number(p.unit_price), effective_date: p.effective_date,
-    materialName: materials.value.find(m => m.id === p.material_id)?.name ?? '(材料)',
-    materialCode: materials.value.find(m => m.id === p.material_id)?.code ?? null,
+    // ★R28: 単価表が品番・品名を自分で持つようになったので、まず自前の値を使う。
+    //   材料マスタは既存行の互換のためのフォールバックとしてだけ見る。
+    materialName: p.item_name ?? materials.value.find(m => m.id === p.material_id)?.name ?? '(材料)',
+    materialCode: p.product_code ?? materials.value.find(m => m.id === p.material_id)?.code ?? null,
+    unit: p.unit ?? materials.value.find(m => m.id === p.material_id)?.unit ?? null,
     supplierName: suppliers.value.find(s => s.id === p.supplier_id)?.name ?? '(商社)',
   })).sort((a, b) => a.materialName.localeCompare(b.materialName, 'ja') || a.supplierName.localeCompare(b.supplierName, 'ja'))
 )
@@ -244,7 +254,7 @@ async function loadSuppliers() {
   suppliers.value = (data ?? []) as Supplier[]
 }
 async function loadMaterialPrices() {
-  const { data } = await supabase.from('estimate_material_prices').select('id, material_id, supplier_id, unit_price, effective_date').eq('account_id', accountId).eq('is_current', true)
+  const { data } = await supabase.from('estimate_material_prices').select('id, material_id, product_code, item_name, unit, supplier_id, unit_price, effective_date').eq('account_id', accountId).eq('is_current', true)
   matPrices.value = (data ?? []) as MatPrice[]
 }
 async function loadRevisions() {
@@ -262,33 +272,74 @@ async function recordAlias(materialId: string, supplierId: string, code: string 
   if (n) await supabase.from('estimate_material_aliases').delete().eq('account_id', accountId).eq('supplier_id', supplierId).ilike('supplier_name', n)
   await supabase.from('estimate_material_aliases').insert({ account_id: accountId, material_id: materialId, supplier_id: supplierId, supplier_code: c || null, supplier_name: n || null })
 }
+/**
+ * 取込差分を承認して単価表に反映する。
+ * ★R28: 材料マスタを作らない。単価表が品番・品名・単位を自分で持つようになったので、
+ *   差分の内容をそのまま単価表へ書く（管理する場所を1つにする）。
+ *   既存の material_id が解決できている行はそのまま引き継ぐ（過去の紐付けを壊さない）。
+ */
+async function applyRevision(r: Revision): Promise<string | null> {
+  if (!r.supplier_id) return '商社が未解決です'
+  if (!(Number(r.new_price) > 0)) return '新単価は1円以上にしてください'
+  const code = (r.code || '').trim() || null
+  const name = (r.name || '').trim() || null
+  if (!code && !name) return '品番か品名のどちらかが必要です'
+
+  // 同じ商社の同じ品番（品番が無ければ品名）の現行単価を履歴に落とす
+  let q = supabase.from('estimate_material_prices').update({ is_current: false })
+    .eq('account_id', accountId).eq('supplier_id', r.supplier_id).eq('is_current', true)
+  q = code ? q.eq('product_code', code) : q.eq('item_name', name!)
+  await q
+  if (r.material_id) {
+    await supabase.from('estimate_material_prices').update({ is_current: false })
+      .eq('account_id', accountId).eq('supplier_id', r.supplier_id)
+      .eq('material_id', r.material_id).eq('is_current', true)
+  }
+
+  const { error } = await supabase.from('estimate_material_prices').insert({
+    account_id: accountId, material_id: r.material_id ?? null,
+    product_code: code, item_name: name, unit: r.unit || null,
+    supplier_id: r.supplier_id, unit_price: Number(r.new_price),
+    effective_date: r.effective_date, is_current: true,
+  })
+  if (error) return error.message
+  await supabase.from('estimate_price_revisions')
+    .update({ status: 'applied', applied_at: new Date().toISOString() }).eq('id', r.id)
+  if (r.material_id) await recordAlias(r.material_id, r.supplier_id, r.code, r.name)
+  return null
+}
+
 async function approveRevision(r: Revision) {
-  if (!r.supplier_id) { masterErr.value = '商社が未解決です'; return }
-  if (!(Number(r.new_price) > 0)) { masterErr.value = '新単価は1円以上にしてください'; return }
   revBusy.value = true; masterErr.value = ''
   try {
-    let materialId = r.material_id
-    if (!materialId) {
-      const nm = (r.name || '').trim()
-      const ex = materials.value.find(m => m.name.trim().toLowerCase() === nm.toLowerCase())
-      if (ex) materialId = ex.id
-      else {
-        const { data } = await supabase.from('estimate_materials')
-          .insert({ account_id: accountId, name: nm || '(新規材料)', code: r.code || null, unit: r.unit || null, source: 'ocr' }).select('id').single()
-        materialId = (data as any)?.id ?? null
-      }
-    }
-    if (!materialId) { masterErr.value = '材料が未解決です'; return }
-    await supabase.from('estimate_material_prices').update({ is_current: false })
-      .eq('account_id', accountId).eq('material_id', materialId).eq('supplier_id', r.supplier_id).eq('is_current', true)
-    await supabase.from('estimate_material_prices')
-      .insert({ account_id: accountId, material_id: materialId, supplier_id: r.supplier_id, unit_price: Number(r.new_price), effective_date: r.effective_date, is_current: true })
-    await supabase.from('estimate_price_revisions')
-      .update({ status: 'applied', applied_at: new Date().toISOString(), material_id: materialId }).eq('id', r.id)
-    await recordAlias(materialId, r.supplier_id, r.code, r.name)
-    await Promise.all([loadMaterials(), loadMaterialPrices(), loadRevisions()])
+    const err = await applyRevision(r)
+    if (err) { masterErr.value = err; return }
+    await Promise.all([loadRevisions(), loadPrices()])
   } finally { revBusy.value = false }
 }
+
+/**
+ * ★R28: 一括承認。取込は1ファイルで数十〜数百行になるため、1行ずつ承認するのは現実的でない。
+ *  1件でも失敗したら、そこで止めて何件通ったかを見せる（黙って一部だけ入る状態にしない）。
+ */
+async function approveAllRevisions() {
+  const targets = revisions.value.filter(r => r.status === 'pending')
+  if (!targets.length) return
+  if (!window.confirm(`${targets.length}件の単価をまとめて承認します。よろしいですか？`)) return
+  revBusy.value = true; masterErr.value = ''; bulkMsg.value = ''
+  let done = 0
+  try {
+    for (const r of targets) {
+      const err = await applyRevision(r)
+      if (err) { masterErr.value = `${done}件を承認しました。${done + 1}件目で停止: ${err}`; break }
+      done++
+      bulkMsg.value = `承認中… ${done}/${targets.length}`
+    }
+    if (done === targets.length) bulkMsg.value = `${done}件を承認しました`
+    await Promise.all([loadRevisions(), loadPrices()])
+  } finally { revBusy.value = false }
+}
+
 async function rejectRevision(r: Revision) {
   await supabase.from('estimate_price_revisions').update({ status: 'rejected' }).eq('id', r.id)
   await loadRevisions()
@@ -398,13 +449,21 @@ async function addSupplier() {
 async function addPrice() {
   const f = priceForm.value
   const supplierId = activeSupplier.value
-  if (!f.material_id || !supplierId || !(Number(f.unit_price) > 0)) return
-  await supabase.from('estimate_material_prices').update({ is_current: false }).eq('account_id', accountId)
-    .eq('material_id', f.material_id).eq('supplier_id', supplierId).eq('is_current', true)
-  const { error } = await supabase.from('estimate_material_prices')
-    .insert({ account_id: accountId, material_id: f.material_id, supplier_id: supplierId, unit_price: Number(f.unit_price), is_current: true })
+  const code = (f.product_code ?? '').trim() || null
+  const name = (f.item_name ?? '').trim() || null
+  if ((!code && !name) || !supplierId || !(Number(f.unit_price) > 0)) return
+  // 同じ商社の同じ品番（無ければ品名）の現行単価を履歴に落としてから入れる
+  let q = supabase.from('estimate_material_prices').update({ is_current: false })
+    .eq('account_id', accountId).eq('supplier_id', supplierId).eq('is_current', true)
+  q = code ? q.eq('product_code', code) : q.eq('item_name', name!)
+  await q
+  const { error } = await supabase.from('estimate_material_prices').insert({
+    account_id: accountId, supplier_id: supplierId,
+    product_code: code, item_name: name, unit: (f.unit ?? '').trim() || null,
+    unit_price: Number(f.unit_price), is_current: true,
+  })
   if (error) { masterErr.value = error.message; return }
-  priceForm.value = { material_id: null, unit_price: null }
+  priceForm.value = { product_code: '', item_name: '', unit: '', unit_price: null }
   await loadMaterialPrices()
 }
 async function addTrade() {
@@ -506,6 +565,9 @@ onMounted(async () => {
 .method-label { font-size: 12px; font-weight: 600; color: #555; }
 .ocr-dropzone { border: 1.5px dashed #cdd6e6; border-radius: 10px; padding: 12px; transition: border-color .15s, background .15s; }
 .ocr-dropzone.drag-over { border-color: #1a56c4; background: #eef4ff; }
+.rev-head { display: flex; align-items: center; gap: 10px; }
+.linked-cell { font-size: 12px; color: #7A8AA0; }
+.unit-in { width: 70px; }
 .ocr-dnd-hint { font-size: 11px; }
 .sub-h { font-size: 13px; font-weight: 700; color: #444; margin: 16px 0 6px; }
 .rev-section { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 8px 12px; margin-top: 12px; }
