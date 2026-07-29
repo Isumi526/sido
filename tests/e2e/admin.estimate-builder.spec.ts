@@ -106,7 +106,8 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await expect(page.locator('[data-testid="grand-total"]')).toHaveText('¥10,000')
 
     // 保存 → DB（生成列 amount 含む）
-    await page.locator('[data-testid="save-items"]').click()
+    await page.keyboard.press('Tab')   // セルを離れる＝保存のきっかけ
+    await expect(page.locator('[data-testid="autosave-state"]')).toContainText('保存しました', { timeout: 15000 })
     await expect.poll(async () => {
       const projs = await restSrv(`estimate_projects?name=eq.${encodeURIComponent(PROJ)}&select=id`)
       const pid = projs?.[0]?.id
@@ -130,7 +131,8 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await page.locator('[data-testid="item-name-0"]').fill(MAT)
     await page.locator('[data-testid="item-qty-0"]').fill('1')
     await page.locator('[data-testid="item-price-0"]').fill('800')
-    await page.locator('[data-testid="save-items"]').click()
+    await page.keyboard.press('Tab')   // セルを離れる＝保存のきっかけ
+    await expect(page.locator('[data-testid="autosave-state"]')).toContainText('保存しました', { timeout: 15000 })
 
     // DB: 明細として保存される（＝これが候補の元になる）
     await expect.poll(async () => {
@@ -161,9 +163,9 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await page.locator('[data-testid="item-unit-0"]').fill('m2')
     await page.locator('[data-testid="item-qty-0"]').fill('1')
     await page.locator('[data-testid="item-price-0"]').fill('100')
-    await page.locator('[data-testid="save-items"]').click()
-    await expect(page.getByText('保存しました')).toBeVisible({ timeout: 10000 })
-
+    await page.keyboard.press('Tab')   // セルを離れる＝保存のきっかけ
+    await expect(page.locator('[data-testid="autosave-state"]')).toContainText('保存しました', { timeout: 15000 })
+    
     // 2行目: 同じ名称を入力 → blur で resolveMaterial → 単位が自動補完
     await page.locator('[data-testid="item-name-1"]').fill(MAT6)
     await page.locator('[data-testid="item-qty-1"]').click()   // blur で @blur 発火
@@ -172,7 +174,8 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     // 保存 → DB: 両行とも単位が入っている（候補からの補完が保存まで通る）
     await page.locator('[data-testid="item-qty-1"]').fill('2')
     await page.locator('[data-testid="item-price-1"]').fill('100')
-    await page.locator('[data-testid="save-items"]').click()
+    await page.keyboard.press('Tab')   // セルを離れる＝保存のきっかけ
+    await expect(page.locator('[data-testid="autosave-state"]')).toContainText('保存しました', { timeout: 15000 })
     await expect.poll(async () => {
       const projs = await restSrv(`estimate_projects?name=eq.${encodeURIComponent(PROJ3)}&select=id`)
       const pid = projs?.[0]?.id
@@ -224,7 +227,8 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await expect(page.locator('[data-testid="item-amount-0"]')).toHaveText('¥250')
 
     // 保存 → DB: supplier_id 紐付き・unit_price=100・amount=200
-    await page.locator('[data-testid="save-items"]').click()
+    await page.keyboard.press('Tab')   // セルを離れる＝保存のきっかけ
+    await expect(page.locator('[data-testid="autosave-state"]')).toContainText('保存しました', { timeout: 15000 })
     await expect.poll(async () => {
       const projs = await restSrv(`estimate_projects?name=eq.${encodeURIComponent(PROJ4)}&select=id`)
       const pid = projs?.[0]?.id

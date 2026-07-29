@@ -145,7 +145,8 @@ test('AC★: 場所・工種はブロック単位で1回だけ選べば、配下
   await expect(page.locator('[data-testid="item-trade-0"]')).toHaveCount(0)
   await expect(page.locator('[data-testid="item-loc-0"]')).toHaveCount(0)
 
-  await page.locator('[data-testid="save-items"]').click()
+  await page.keyboard.press('Tab')   // セルを離れる＝保存のきっかけ
+  await expect(page.locator('[data-testid="autosave-state"]')).toContainText('保存しました', { timeout: 15000 })
   await page.waitForTimeout(2500)
 
   // ★DB: 3行すべてにブロックの場所・工種が入っている（＝集計・帳票の互換を壊さない）
