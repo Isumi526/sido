@@ -127,8 +127,8 @@ test('AC★: 場所・工種はブロック単位で1回だけ選べば、配下
   await openNewProject(page)
   // 顧客のExcelは (壁面工事) → ■軽鉄工事 → 壁面外周LGS間仕切/壁面PB板/… という入れ子で、
   // 同じ場所・工種が何行も続く。行ごとに選ばせないのがこのACの主旨。
-  await page.locator('[data-testid="blk-loc-0"]').fill('壁面工事')
-  await page.locator('[data-testid="blk-loc-0"]').dispatchEvent('change')
+  await page.locator('[data-testid="area-loc-0"]').fill('壁面工事')
+  await page.locator('[data-testid="area-loc-0"]').dispatchEvent('change')
   await page.locator('[data-testid="blk-trade-0"]').fill('軽鉄工事')
   await page.locator('[data-testid="blk-trade-0"]').dispatchEvent('change')
 
@@ -175,7 +175,7 @@ test('AC: 自由記述の工種でも工種別内訳に自動集計される（�
   await fill(1, 'ランナー', 3, 800)   // 客先1000 → 3,000
 
   // ブロック2: 別の自由記述工種
-  await page.locator('[data-testid="blk-add"]').click()
+  await page.locator('[data-testid="area-add-trade-0"]').click()   // ★同じ場所の中に工種を追加
   await page.locator('[data-testid="blk-trade-1"]').fill(`E2E自由工種B_${TS}`)
   await page.locator('[data-testid="blk-trade-1"]').dispatchEvent('change')
   const idx = await page.locator('[data-testid^="item-name-"]').count()

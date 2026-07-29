@@ -381,32 +381,47 @@
           <table class="table est-items">
             <thead>
               <tr>
-                <th class="drag-col"></th><th>品名</th><th>品番</th><th>形状・詳細</th>
-                <th>単位</th><th class="num">数量</th><th>商社</th>
-                <th class="num cost-col">単価原価</th><th class="num cost-col">金額原価</th>
-                <th class="num">単価</th><th class="num">金額</th><th></th>
+                <!-- 列順は顧客のExcelに合わせる（突き合わせできるようにするため・レビュー2026-07-29）:
+                     名称 → 品番 → 形状詳細 → W → D → H → 数量 → 単位 → 単価 → 金額
+                     原価・商社は客先に出さない社内用なので、金額の後ろにまとめる。 -->
+                <th class="drag-col"></th><th>名称</th><th>品番</th><th>形状・詳細</th>
+                <th class="num dim-col">W</th><th class="num dim-col">D</th><th class="num dim-col">H</th>
+                <th class="num">数量</th><th>単位</th>
+                <th class="num">単価</th><th class="num">金額</th>
+                <th class="cost-col">商社</th><th class="num cost-col">単価原価</th><th class="num cost-col">金額原価</th><th></th>
               </tr>
             </thead>
             <tbody>
-              <!-- ★場所（大項目）・工種（中項目）は「行ごと」ではなく「ブロックごと」に選ぶ。
-                   顧客のExcelが (壁面工事)→■軽鉄工事→壁面外周LGS/壁面PB板/… という
-                   入れ子構造で、同じ場所・工種が何行も続くため。行ごとに選ばせると
-                   同じ値を何度も入れることになる（レビュー2026-07-28）。 -->
-              <template v-for="(b, bi) in blocks" :key="bi">
-                <tr class="blk-row" :data-testid="`blk-row-${bi}`">
+              <!-- ★場所（大項目）> 工種（中項目）> 明細行 の2階層。
+                   Excelは「壁面工事」の下に「軽鉄工事」「塗装工事」…と複数の工種がぶら下がる。
+                   1場所1工種にすると、同じ場所を工種の数だけ書くことになる（レビュー2026-07-29）。 -->
+              <template v-for="(a, ai) in areas" :key="ai">
+                <tr class="area-row" :data-testid="`area-row-${ai}`">
                   <td class="drag-col"></td>
-                  <td colspan="11">
+                  <td colspan="14">
                     <span class="blk-fields">
-                      <input :value="b.location" class="input sm blk-input" :data-testid="`blk-loc-${bi}`"
-                             list="est-locations" autocomplete="off" placeholder="場所（例：壁面工事）"
-                             @input="onBlockField(b, 'location', ($event.target as HTMLInputElement).value)" />
-                      <span class="blk-sep">›</span>
+                      <span class="area-label">場所</span>
+                      <input :value="a.location" class="input sm area-input" :data-testid="`area-loc-${ai}`"
+                             list="est-locations" autocomplete="off" placeholder="例：壁面工事"
+                             @input="onAreaLocation(a, ($event.target as HTMLInputElement).value)" />
+                      <span class="blk-count">{{ a.blocks.length }}工種 / {{ a.filled }}件</span>
+                      <button class="btn-add area-add" :data-testid="`area-add-trade-${ai}`" @click="addTradeToArea(a)">＋ 工種を追加</button>
+                      <button class="btn-del blk-del" :data-testid="`area-del-${ai}`" title="この場所ごと削除" @click="removeArea(a)">×</button>
+                    </span>
+                  </td>
+                </tr>
+              <template v-for="b in a.blocks" :key="blocks.indexOf(b)">
+                <tr class="blk-row" :data-testid="`blk-row-${blocks.indexOf(b)}`">
+                  <td class="drag-col"></td>
+                  <td colspan="14">
+                    <span class="blk-fields blk-indent">
+                      <span class="blk-sep">└</span>
                       <!-- 工種は自由記述＋予測変換（固定マスタからの選択を強制しない） -->
-                      <input :value="b.trade_name" class="input sm blk-input" :data-testid="`blk-trade-${bi}`"
+                      <input :value="b.trade_name" class="input sm blk-input" :data-testid="`blk-trade-${blocks.indexOf(b)}`"
                              list="est-trades" autocomplete="off" placeholder="工種（例：軽鉄工事）"
                              @input="onBlockField(b, 'trade_name', ($event.target as HTMLInputElement).value)" />
                       <span class="blk-count">{{ b.filled }}件</span>
-                      <button class="btn-del blk-del" :data-testid="`blk-del-${bi}`" title="このブロックを削除" @click="removeBlock(b)">×</button>
+                      <button class="btn-del blk-del" :data-testid="`blk-del-${blocks.indexOf(b)}`" title="この工種を削除" @click="removeBlock(b)">×</button>
                     </span>
                   </td>
                 </tr>
@@ -435,21 +450,16 @@
                   <td><input v-model="rows[i].product_code" class="input sm" :data-testid="`item-code-${i}`"
                              list="est-material-codes" autocomplete="off" placeholder="SLP314 等"
                              @change="onCodeChange(rows[i])" @blur="onCodeChange(rows[i])" /></td>
-                  <td><input v-model="rows[i].spec" class="input sm" :data-testid="`item-spec-${i}`" placeholder="W65 @303 等" /></td>
+                  <td><input v-model="rows[i].spec" class="input sm" :data-testid="`item-spec-${i}`" placeholder="R下地 / 2重貼 等" /></td>
+                  <!-- ★W/D/H は記録のみ。数量は自動計算しない（工種で数え方が違い、自動で決めると必ず外れる） -->
+                  <td class="num"><input v-model.number="rows[i].dim_w" type="number" step="any" class="input xs num" :data-testid="`item-w-${i}`" /></td>
+                  <td class="num"><input v-model.number="rows[i].dim_d" type="number" step="any" class="input xs num" :data-testid="`item-d-${i}`" /></td>
+                  <td class="num"><input v-model.number="rows[i].dim_h" type="number" step="any" class="input xs num" :data-testid="`item-h-${i}`" /></td>
+                  <td class="num"><input v-model.number="rows[i].quantity" type="number" step="any" class="input sm num" :data-testid="`item-qty-${i}`" /></td>
                   <td><input v-model="rows[i].unit" class="input sm" :data-testid="`item-unit-${i}`" placeholder="m²/個 等" /></td>
-                  <td class="num"><input v-model.number="rows[i].quantity" type="number" step="0.01" class="input sm num" :data-testid="`item-qty-${i}`" /></td>
-                  <td>
-                    <select v-model="rows[i].supplier_id" class="input sm" :data-testid="`item-supplier-${i}`" @change="onSupplierPick(rows[i])">
-                      <option :value="null">—</option>
-                      <option v-for="p in pricesForMaterial(rows[i].material_id)" :key="p.supplier_id" :value="p.supplier_id">{{ p.supplierName }} ¥{{ p.unit_price.toLocaleString('ja-JP') }}</option>
-                    </select>
-                  </td>
-                  <!-- 原価側（入力の主動線。ここを入れると客先側が生える） -->
-                  <td class="num cost-col"><input v-model.number="rows[i].cost_unit_price" type="number" class="input sm num" :data-testid="`item-cost-${i}`" @input="onCostInput(rows[i])" /></td>
-                  <td class="num cost-col amount" :data-testid="`item-cost-amount-${i}`">{{ yen(lineCostAmount(rows[i])) }}</td>
                   <!-- 客先単価: 既定は原価÷(1−粗利率)。手打ちで上書きでき、上書き中は色で分かる -->
                   <td class="num">
-                    <input v-model.number="rows[i].unit_price" type="number" class="input sm num"
+                    <input v-model.number="rows[i].unit_price" type="number" step="any" class="input sm num"
                            :class="{ 'overridden': isPriceOverridden(rows[i]) }"
                            :title="isPriceOverridden(rows[i]) ? `自動値 ${yen(autoPrice(rows[i]))} を手動で上書き中` : '原価と粗利率から自動計算'"
                            :data-testid="`item-price-${i}`" @input="rows[i]._priceTouched = true" />
@@ -457,13 +467,22 @@
                             title="自動値に戻す" @click="revertPrice(rows[i])">↺</button>
                   </td>
                   <td class="num amount" :data-testid="`item-amount-${i}`">{{ yen(lineAmount(rows[i])) }}</td>
+                  <!-- ここから社内用（見積書には出さない）。商社は R16 でモーダル化予定 -->
+                  <td class="cost-col">
+                    <select v-model="rows[i].supplier_id" class="input sm" :data-testid="`item-supplier-${i}`" @change="onSupplierPick(rows[i])">
+                      <option :value="null">—</option>
+                      <option v-for="p in pricesForMaterial(rows[i].material_id)" :key="p.supplier_id" :value="p.supplier_id">{{ p.supplierName }} ¥{{ p.unit_price.toLocaleString('ja-JP') }}</option>
+                    </select>
+                  </td>
+                  <td class="num cost-col"><input v-model.number="rows[i].cost_unit_price" type="number" step="any" class="input sm num" :data-testid="`item-cost-${i}`" @input="onCostInput(rows[i])" /></td>
+                  <td class="num cost-col amount" :data-testid="`item-cost-amount-${i}`">{{ yen(lineCostAmount(rows[i])) }}</td>
                   <td><button class="btn-del" :data-testid="`item-del-${i}`" @click="removeRow(i)">×</button></td>
                 </tr>
                 <!-- ★R6: 商品情報（サイズ展開・仕様・画像・出典）。
                      今は毎回この品名でGoogle/ChatGPTを叩いているので、その手間を画面に持ってくる。 -->
                 <tr v-if="productInfoOf(rows[i])" class="pinfo-row" :data-testid="`item-pinfo-${i}`">
                   <td></td>
-                  <td colspan="11">
+                  <td colspan="14">
                     <div class="pinfo">
                       <img v-if="productInfoOf(rows[i])!.image_url" :src="productInfoOf(rows[i])!.image_url!"
                            class="pinfo-img" :data-testid="`item-pinfo-img-${i}`" alt="" @error="onPinfoImgError(rows[i])" />
@@ -488,12 +507,12 @@
                   </td>
                 </tr>
                 <tr v-else-if="pinfoBusyKey === productKeyOf(rows[i]) && productKeyOf(rows[i])" class="pinfo-row">
-                  <td></td><td colspan="11"><span class="hint" :data-testid="`item-pinfo-busy-${i}`">商品情報を調べています…</span></td>
+                  <td></td><td colspan="14"><span class="hint" :data-testid="`item-pinfo-busy-${i}`">商品情報を調べています…</span></td>
                 </tr>
                 <!-- Q4: この項目の過去の業者別単価（受領登録で貯まったもの）。クリックで原価に採用 -->
                 <tr v-if="historyFor(rows[i].item_name).length" class="hist-row">
                   <td></td>
-                  <td colspan="11">
+                  <td colspan="14">
                     <div class="hist-cells">
                       <span class="hist-label">過去の単価</span>
                       <span v-for="(h, hi) in historyFor(rows[i].item_name).slice(0, 4)" :key="hi" class="hist-wrap">
@@ -515,8 +534,9 @@
                 </tr>
                 </template>
               </template>
+              </template>
               <tr class="blk-add-row">
-                <td colspan="12"><button class="btn-add" data-testid="blk-add" @click="addBlock()">＋ 場所・工種のブロックを追加</button></td>
+                <td colspan="15"><button class="btn-add" data-testid="area-add" @click="addArea()">＋ 場所を追加</button></td>
               </tr>
             </tbody>
           </table>
@@ -1441,7 +1461,11 @@ type Row = {
   cost_unit_price: number   // 単価原価（Excel P列・入力の主動線）
   unit_price: number        // 客先単価（Excel I列・既定は原価÷(1−粗利率)）
   _priceTouched?: boolean   // 客先単価を人が手打ちしたか（自動再計算を抑止）
-  _newBlock?: boolean       // ここから新しいブロック（場所/工種が未入力でも前と混ざらないため）
+  _newBlock?: boolean       // ここから新しい工種ブロック（未入力でも前と混ざらないため）
+  _newArea?: boolean        // ここから新しい場所（同上）
+  dim_w: number | null      // W/D/H は記録のみ。数量は自動計算しない（レビュー2026-07-29）
+  dim_d: number | null
+  dim_h: number | null
   _dym?: string[]           // 「もしかして」候補（入力時に1度だけ計算する。描画中に計算しない）
 }
 
@@ -2244,6 +2268,21 @@ function onCodeChange(r: Row) {
   resolveByCode(r)
   void loadCachedProductInfo(r)
 }
+/**
+ * 品名から品番を自動入力した直後、その品番欄にフォーカスがあるなら中身を選択状態にする。
+ * ★これが無いと文字が連結する: 名前欄からTabで品番欄へ移った瞬間にblurで自動入力が走り、
+ *   人がそのまま打つとカーソル位置に追記されて「GS-201GS-201」になる（E2Eで検出）。
+ *   自動入力を選択状態にしておけば、次の入力で置き換わる（一般的なオートフィルの挙動）。
+ */
+function selectCodeFieldIfFocused(r: Row) {
+  nextTick(() => {
+    const el = document.activeElement as HTMLInputElement | null
+    const id = el?.getAttribute?.('data-testid') ?? ''
+    if (!id.startsWith('item-code-')) return
+    if (rows.value[Number(id.slice('item-code-'.length))] !== r) return
+    el?.select?.()
+  })
+}
 function resolveMaterial(r: Row) {
   const nm = (r.item_name || '').trim().toLowerCase()
   if (!nm) { r.material_id = null; return }
@@ -2251,7 +2290,10 @@ function resolveMaterial(r: Row) {
   if (m) {
     r.material_id = m.id
     if (!r.unit && m.unit) r.unit = m.unit
-    if (!r.product_code.trim() && m.code) r.product_code = m.code   // 逆方向: 品名→品番も埋める
+    // 逆方向: 品名→品番も埋める。ただし**その品番欄を人が今まさに打っている時は触らない**。
+    // 名前欄のblur（＝次の欄へ移った瞬間）に発火するので、移った先が品番欄だと
+    // 自動入力と人の入力が衝突して文字が連結する（GS-201GS-201）。人の入力を優先する。
+    if (!r.product_code.trim() && m.code) { r.product_code = m.code; selectCodeFieldIfFocused(r) }
   } else {
     r.material_id = null
   }
@@ -2278,7 +2320,7 @@ async function doLoadItems() {
   if (!projectId.value) { markSaved(); return }
   const [{ data }, { data: pj }] = await Promise.all([
     supabase.from('estimate_items')
-      .select('id, category_id, trade_id, trade_name, material_id, supplier_id, item_name, spec, product_code, row_type, unit, quantity, cost_unit_price, unit_price, note')
+      .select('id, category_id, trade_id, trade_name, material_id, supplier_id, item_name, spec, product_code, dim_w, dim_d, dim_h, row_type, unit, quantity, cost_unit_price, unit_price, note')
       .eq('project_id', projectId.value).order('sort_order'),
     supabase.from('estimate_projects')
       .select('construction_location, period_text, valid_until, memo, adjustment, margin_rate, request_date, due_date, status, lost_reason').eq('id', projectId.value).single(),
@@ -2332,6 +2374,7 @@ async function addProject() {
 function blankRow(rowType: 'item' | 'header' = 'item'): Row {
   return { id: null, _k: ++rowKey, location: '', trade_id: null, trade_name: '', material_id: null,
            supplier_id: null, item_name: '', spec: '', product_code: '', row_type: rowType, unit: '', quantity: 0,
+           dim_w: null, dim_d: null, dim_h: null,
            cost_unit_price: 0, unit_price: 0, _priceTouched: false }
 }
 function removeRow(i: number) {
@@ -2349,13 +2392,18 @@ function removeRow(i: number) {
 //  DBは従来どおり行ごとに location / trade_name を持つ（集計・帳票の互換を壊さない）。
 //  ブロック＝「連続する同じ (場所, 工種) の行のまとまり」として画面側で導出する。
 // ════════════════════════════════════════════════════════════
+// ★2階層: 場所（大項目）> 工種（中項目）> 明細行
+//  Excelは「壁面工事」の下に「軽鉄工事」「塗装工事」…と複数の工種がぶら下がる入れ子。
+//  1場所1工種にすると、同じ場所を工種の数だけ書くことになる（レビュー2026-07-29）。
 type Block = { _bk: string; location: string; trade_name: string; idxs: number[]; filled: number }
+type Area  = { _ak: string; location: string; blocks: Block[]; filled: number }
 const SPARE_ROWS = 5   // 各ブロックの末尾に常に確保しておく空行数（Excel感覚で打てるように）
 
 /** 中身が空＝まだ何も打たれていない行。場所/工種はブロックから継承するので判定に含めない */
 function isBlankRow(r: Row): boolean {
   return !(r.item_name || '').trim() && !(r.spec || '').trim() && !(r.product_code || '').trim() && !(r.unit || '').trim()
     && !(Number(r.quantity) || 0) && !(Number(r.cost_unit_price) || 0) && !(Number(r.unit_price) || 0)
+    && r.dim_w == null && r.dim_d == null && r.dim_h == null   // 寸法だけ入れた行を空扱いで消さない
     && !r.material_id && !r.supplier_id
 }
 const blockKeyOf = (r: Row) => `${r.location ?? ''} ${r.trade_name ?? ''}`
@@ -2374,21 +2422,58 @@ const blocks = computed<Block[]>(() => {
   return out
 })
 
-/** ブロックの場所/工種を変えたら、その中の全行に反映する（これがブロック化の実体） */
+/** 場所（大項目）でブロックをまとめる。連続する同じ location が1つの場所になる */
+const areas = computed<Area[]>(() => {
+  const out: Area[] = []
+  for (const b of blocks.value) {
+    const first = rows.value[b.idxs[0]]
+    const last = out[out.length - 1]
+    // 場所が未入力のエリアを2つ作ると混ざるので、「＋場所を追加」で作った先頭行に印を付ける
+    if (last && last.location === b.location && !first?._newArea) last.blocks.push(b)
+    else out.push({ _ak: `${out.length}:${b.location}`, location: b.location, blocks: [b], filled: 0 })
+  }
+  for (const a of out) a.filled = a.blocks.reduce((s, b) => s + b.filled, 0)
+  return out
+})
+
+/** ブロック（工種）の値を変えたら、その中の全行に反映する */
 function onBlockField(b: Block, field: 'location' | 'trade_name', value: string) {
   for (const i of b.idxs) rows.value[i][field] = value
 }
-function addBlock() {
+/** 場所を変えたら、その場所配下の**全工種の全行**に反映する（一対多の実体） */
+function onAreaLocation(a: Area, value: string) {
+  for (const b of a.blocks) for (const i of b.idxs) rows.value[i].location = value
+}
+
+function newBlockRows(location: string, trade: string, markArea = false): Row[] {
+  const out: Row[] = []
   for (let n = 0; n < SPARE_ROWS; n++) {
     const r = blankRow()
-    if (n === 0) r._newBlock = true
-    rows.value.push(r)
+    r.location = location; r.trade_name = trade
+    if (n === 0) { r._newBlock = true; if (markArea) r._newArea = true }
+    out.push(r)
   }
+  return out
+}
+/** 場所を1つ増やす（配下に空の工種が1つ付いてくる） */
+function addArea() { rows.value.push(...newBlockRows('', '', true)) }
+/** その場所の中に工種を1つ増やす（場所は引き継ぐ＝同じ場所を打ち直さない） */
+function addTradeToArea(a: Area) {
+  const lastIdx = Math.max(...a.blocks.flatMap(b => b.idxs))
+  rows.value.splice(lastIdx + 1, 0, ...newBlockRows(a.location, ''))
 }
 function removeBlock(b: Block) {
-  const filled = b.filled
-  if (filled && !window.confirm(`このブロックの入力済み ${filled} 行も一緒に削除します。よろしいですか？`)) return
+  if (b.filled && !window.confirm(`この工種の入力済み ${b.filled} 行も一緒に削除します。よろしいですか？`)) return
+  // 消す工種が場所の先頭だった場合、場所の開始位置を次の工種へ引き継ぐ
+  const first = rows.value[b.idxs[0]]
+  const nextIdx = b.idxs[b.idxs.length - 1] + 1
+  if (first?._newArea && rows.value[nextIdx]) rows.value[nextIdx]._newArea = true
   for (const i of [...b.idxs].sort((x, y) => y - x)) removeRow(i)   // 後ろから消す（indexズレ防止）
+}
+function removeArea(a: Area) {
+  if (a.filled && !window.confirm(`この場所の入力済み ${a.filled} 行も一緒に削除します。よろしいですか？`)) return
+  const idxs = a.blocks.flatMap(b => b.idxs).sort((x, y) => y - x)
+  for (const i of idxs) removeRow(i)
 }
 
 /**
@@ -2402,7 +2487,7 @@ function removeBlock(b: Block) {
 let loadingItems = false
 function ensureSpareRows() {
   if (loadingItems || !projectId.value) return
-  if (!rows.value.length) { addBlock(); return }
+  if (!rows.value.length) { addArea(); return }
   // ★blocks は rows から導出される computed。ループ中に rows を splice すると
   //   blocks が読み直されて添字がズレ、空行を行の**途中**に差し込んでしまう
   //   （並び替え直後に入力値が消えるバグとして実際に踏んだ）。
@@ -2472,6 +2557,7 @@ async function save() {
         unit: r.unit || null, quantity: Number(r.quantity) || 0, unit_price: Number(r.unit_price) || 0,
         note: r.location || null, sort_order: order++,
         trade_name: r.trade_name || null, spec: r.spec || null, product_code: r.product_code || null, row_type: r.row_type,
+        dim_w: r.dim_w ?? null, dim_d: r.dim_d ?? null, dim_h: r.dim_h ?? null,
         cost_unit_price: r.cost_unit_price || null,
       }
       if (r.id) await supabase.from('estimate_items').update(payload).eq('id', r.id)
@@ -2503,7 +2589,8 @@ function rowsSig(): string {
   // ★空行は署名に含めない。常に末尾へ空行を補充する仕様なので、含めると
   //   何も打っていないのに「未保存です」と警告が出てしまう。
   return JSON.stringify(rows.value.filter(r => !isBlankRow(r))
-    .map(r => [r.location, r.trade_name, r.material_id, r.supplier_id, r.item_name, r.product_code, r.spec, r.unit, r.quantity, r.cost_unit_price, r.unit_price]))
+    .map(r => [r.location, r.trade_name, r.material_id, r.supplier_id, r.item_name, r.product_code, r.spec,
+               r.dim_w, r.dim_d, r.dim_h, r.unit, r.quantity, r.cost_unit_price, r.unit_price]))
 }
 const savedSig = ref('[]')
 function markSaved() { savedSig.value = rowsSig() }   // 「今の明細＝保存済み」とみなす基準を更新
@@ -2824,6 +2911,13 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .blk-sep { color: #90A4B8; font-weight: 700; }
 .blk-count { font-size: 11px; color: #7A8AA0; }
 .blk-del { margin-left: auto; }
+.area-row td { background: #E3EAF3; border-top: 2px solid #C3D0E0; padding: 6px 8px; }
+.area-label { font-size: 11px; color: #5A6C82; font-weight: 700; }
+.area-input { min-width: 200px; font-weight: 700; background: #fff; }
+.area-add { margin-left: 4px; }
+.blk-indent { padding-left: 22px; }
+.dim-col { width: 62px; }
+.input.xs.num { width: 56px; }
 .blk-add-row td { padding: 10px 8px; background: #FAFBFC; }
 /* 列が多いので詰める。入力欄は列幅に追従させる */
 .est-items { min-width: 1180px; }

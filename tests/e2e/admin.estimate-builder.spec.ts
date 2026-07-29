@@ -93,7 +93,7 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await addLine(0, 'スタッド', 2, 1000)   // 2000
     await addLine(1, 'ランナー', 3, 1000)   // 3000
     // 別の工種は別ブロック
-    await page.locator('[data-testid="blk-add"]').click()
+    await page.locator('[data-testid="area-add-trade-0"]').click()
     await page.locator('[data-testid="blk-trade-1"]').fill(TRADE_B)
     const nextIdx = await page.locator('[data-testid^="item-name-"]').count()
     await addLine(nextIdx - 5, 'PB12.5', 1, 5000)     // 5000
