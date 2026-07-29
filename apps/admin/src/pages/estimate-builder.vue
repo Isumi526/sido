@@ -2455,6 +2455,12 @@ async function doLoadItems() {
   rows.value = (data ?? []).map((d: any) => ({
     id: d.id, _k: ++rowKey, location: d.note ?? '', trade_id: d.trade_id, trade_name: d.trade_name ?? '',
     spec: d.spec ?? '', row_type: (d.row_type === 'header' ? 'header' : 'item'),
+    // ★保存している列は必ずここでも読み戻すこと。読み戻し漏れは
+    //   「開く→保存」で列が消える形のデータ欠損になる（品番・寸法で実際に踏んだ）。
+    product_code: d.product_code ?? '',
+    dim_w: d.dim_w == null ? null : Number(d.dim_w),
+    dim_d: d.dim_d == null ? null : Number(d.dim_d),
+    dim_h: d.dim_h == null ? null : Number(d.dim_h),
     cost_unit_price: Number(d.cost_unit_price) || 0, _priceTouched: true,  // 既存値は人が決めた値として尊重
     material_id: d.material_id ?? null,
     supplier_id: d.supplier_id ?? null, item_name: d.item_name, unit: d.unit ?? '',
