@@ -488,7 +488,7 @@
                     <span v-if="!hasSupplierChoice(rows[i])" class="na-cell" :data-testid="`item-supplier-na-${i}`">—</span>
                     <select v-else v-model="rows[i].supplier_id" class="input sm" :data-testid="`item-supplier-${i}`" @change="onSupplierPick(rows[i])">
                       <option :value="null">—</option>
-                      <option v-for="p in pricesForMaterial(rows[i].material_id)" :key="p.supplier_id" :value="p.supplier_id">{{ p.supplierName }} ¥{{ p.unit_price.toLocaleString('ja-JP') }}</option>
+                      <option v-for="p in pricesForRow(rows[i].material_id, rows[i].product_code)" :key="p.supplier_id" :value="p.supplier_id">{{ p.supplierName }} ¥{{ p.unit_price.toLocaleString('ja-JP') }}</option>
                     </select>
                   </td>
                   <td class="num cost-col"><input v-model.number="rows[i].cost_unit_price" type="number" step="any" class="input sm num" :data-testid="`item-cost-${i}`" @input="onCostInput(rows[i])" /></td>
@@ -1536,9 +1536,9 @@ type Project  = { id: string; name: string; client_name: string | null; contract
 type Site     = { id: string; name: string }
 type Contractor = { id: string; name: string }
 type Trade    = { id: string; name: string }
-type Material = { id: string; name: string; unit: string | null; code: string | null; spec?: string | null }
+type Material = { id: string | null; name: string; unit: string | null; code: string | null; spec?: string | null }
 type Supplier = { id: string; name: string }
-type MatPrice = { id: string; material_id: string; supplier_id: string; unit_price: number; effective_date: string | null }
+type MatPrice = { id: string; material_id: string | null; product_code: string | null; supplier_id: string; unit_price: number; effective_date: string | null }
 type Contact  = { id: string; contractor_id: string; name: string | null; email: string | null }
 type EstimateSend = { id: string; email_to: string | null; subject: string | null; sent_at: string | null; created_at: string }
 type Row = {
@@ -2076,10 +2076,46 @@ async function loadTrades() {
     .select('id, name').eq('account_id', accountId).order('sort_order').order('name')
   trades.value = (data ?? []) as Trade[]
 }
+/**
+ * ★R28: 名称・品番の候補は「商社単価表」＋「過去の明細入力履歴」から作る。
+ *  材料マスタ(estimate_materials)は明細を保存するたびに自動登録される作りで、
+ *  作業内容（壁面外周LGS間仕切り等＝商品ではないもの）まで材料として溜まっていた。
+ *  一本化後は
+ *    材料（品番あり）→ 商社単価表から
+ *    作業内容（品番なし）→ 過去に打った明細から
+ *  を候補にする。既存の材料マスタは移行期間として読むだけ残す（新規登録はしない）。
+ */
 async function loadMaterials() {
-  const { data } = await supabase.from('estimate_materials')
-    .select('id, name, unit, code, spec').eq('account_id', accountId).order('name')
-  materials.value = (data ?? []) as Material[]
+  const [{ data: legacy }, { data: prices }, { data: past }] = await Promise.all([
+    supabase.from('estimate_materials')
+      .select('id, name, unit, code, spec').eq('account_id', accountId).order('name'),
+    supabase.from('estimate_material_prices')
+      .select('material_id, product_code, item_name, unit')
+      .eq('account_id', accountId).eq('is_current', true),
+    // 過去の明細入力履歴（作業内容の候補元）。件数が増えるので直近を上限付きで取る
+    supabase.from('estimate_items')
+      .select('item_name, product_code, unit')
+      .eq('account_id', accountId).order('created_at', { ascending: false }).limit(3000),
+  ])
+  const seen = new Map<string, Material>()
+  const put = (name: string, code: string | null, unit: string | null, id: string | null) => {
+    const nm = (name ?? '').trim()
+    if (!nm || nm === '(無題)') return
+    const key = nm.toLowerCase()
+    const cur = seen.get(key)
+    // ★id は必ず null か実UUID。空文字を入れると material_id に '' が渡って
+    //   uuid列のinsertが落ち、その行だけ黙って保存されない（E2Eで検出）。
+    if (!cur) seen.set(key, { id: id ?? null, name: nm, unit: unit ?? null, code: code ?? null })
+    else {   // 先に入った方を優先しつつ、欠けている情報だけ補う
+      if (!cur.code && code) cur.code = code
+      if (!cur.unit && unit) cur.unit = unit
+      if (!cur.id && id) cur.id = id
+    }
+  }
+  for (const m of (legacy ?? []) as any[]) put(m.name, m.code, m.unit, m.id)          // 移行期間: 既存マスタも候補に残す
+  for (const p of (prices ?? []) as any[]) put(p.item_name, p.product_code, p.unit, p.material_id)
+  for (const it of (past ?? []) as any[]) put(it.item_name, it.product_code, it.unit, null)
+  materials.value = [...seen.values()].sort((a, b) => a.name.localeCompare(b.name, 'ja'))
 }
 // 商社＝下請け業者マスタ(区分=商社)。新設せず既存 subcontractors を流用（subcontractors はRLS無効のため account_id で絞る）
 async function loadSuppliers() {
@@ -2089,7 +2125,7 @@ async function loadSuppliers() {
 }
 async function loadMaterialPrices() {
   const { data } = await supabase.from('estimate_material_prices')
-    .select('id, material_id, supplier_id, unit_price, effective_date').eq('account_id', accountId).eq('is_current', true)
+    .select('id, material_id, product_code, item_name, unit, supplier_id, unit_price, effective_date').eq('account_id', accountId).eq('is_current', true)
   matPrices.value = (data ?? []) as MatPrice[]
 }
 // ③ 元請けと担当者（見積書の送信先候補）。元請けマスタ(contractors)＋ contractor_contacts。
@@ -2208,18 +2244,38 @@ async function loadSends() {
   sends.value = (data ?? []) as EstimateSend[]
 }
 // E7 商社別単価: 行の材料に対する商社別単価リスト（単価差の表示元）
-function pricesForMaterial(materialId: string | null) {
-  if (!materialId) return [] as Array<{ supplier_id: string; supplierName: string; unit_price: number }>
+/**
+ * その材料の商社別単価。
+ * ★R28: material_id は新規では付かなくなるので、品番でも引けるようにする。
+ *  （品番は材料の同一性の核なので、マスタIDが無くても単価表と突き合わせられる）
+ */
+function pricesForRow(materialId: string | null, productCode?: string | null) {
+  const code = (productCode ?? '').trim().toLowerCase()
+  if (!materialId && !code) return [] as Array<{ supplier_id: string; supplierName: string; unit_price: number }>
   return matPrices.value
-    .filter(p => p.material_id === materialId)
+    .filter(p => (materialId && p.material_id === materialId)
+              || (!!code && (p.product_code ?? '').trim().toLowerCase() === code))
     .map(p => ({ supplier_id: p.supplier_id, supplierName: suppliers.value.find(s => s.id === p.supplier_id)?.name ?? '(商社)', unit_price: Number(p.unit_price) }))
     .sort((a, b) => a.unit_price - b.unit_price)
 }
+const pricesForMaterial = (materialId: string | null) => pricesForRow(materialId)
 // 商社を選ぶと、その商社×材料の単価を明細単価に反映（金額は生成列/computedで追従）
+/**
+ * 商社を選んだら、その商社の単価を**原価**に入れる。
+ * ★R28: material_id が無くても品番で引く。
+ * ★入れる先を unit_price（客先単価）から cost_unit_price（原価）に直した。
+ *   商社から買う値段は原価であって客先に出す値段ではない。原価に入れれば
+ *   粗利率から客先単価が生える（Q1/Q2で決めた主動線）。
+ */
 function onSupplierPick(r: Row) {
-  if (!r.material_id || !r.supplier_id) return
-  const p = matPrices.value.find(x => x.material_id === r.material_id && x.supplier_id === r.supplier_id)
-  if (p) r.unit_price = Number(p.unit_price)
+  if (!r.supplier_id) return
+  const code = (r.product_code ?? '').trim().toLowerCase()
+  const p = matPrices.value.find(x => x.supplier_id === r.supplier_id
+    && ((r.material_id && x.material_id === r.material_id)
+     || (!!code && (x.product_code ?? '').trim().toLowerCase() === code)))
+  if (!p) return
+  r.cost_unit_price = Number(p.unit_price)
+  if (!r._priceTouched) r.unit_price = autoPrice(r)
 }
 // E6 品番予測変換: 明細名が既存材料に一致したら material_id を紐付け、単位を補完
 // ════════════════════════════════════════════════════════════
@@ -2353,7 +2409,7 @@ const isMaterialRow = (r: Row) => !!(r.product_code ?? '').trim()
  * 品番が無くても、マスタで商社別単価が登録されている材料（品名で選んだケース）は
  * 材料として扱う。品番の有無だけで切ると、その動線で商社が選べなくなる。
  */
-const hasSupplierChoice = (r: Row) => isMaterialRow(r) || pricesForMaterial(r.material_id).length > 0
+const hasSupplierChoice = (r: Row) => isMaterialRow(r) || pricesForRow(r.material_id, r.product_code).length > 0
 
 function needsLookup(r: Row): boolean {
   if (!isMaterialRow(r)) return false   // 作業内容は調べても見つからないので出さない
@@ -2417,7 +2473,7 @@ function resolveByCode(r: Row) {
   if (!code) return
   const m = materials.value.find(x => (x.code ?? '').trim().toLowerCase() === code)
   if (!m) return
-  r.material_id = m.id
+  r.material_id = m.id ?? null
   if (!r.item_name.trim()) r.item_name = m.name
   if (!r.unit && m.unit) r.unit = m.unit
   if (!r.spec.trim() && m.spec) r.spec = m.spec
@@ -2447,7 +2503,7 @@ function resolveMaterial(r: Row) {
   if (!nm) { r.material_id = null; return }
   const m = materials.value.find(x => x.name.trim().toLowerCase() === nm)
   if (m) {
-    r.material_id = m.id
+    r.material_id = m.id ?? null
     if (!r.unit && m.unit) r.unit = m.unit
     // 逆方向: 品名→品番も埋める。ただし**その品番欄を人が今まさに打っている時は触らない**。
     // 名前欄のblur（＝次の欄へ移った瞬間）に発火するので、移った先が品番欄だと
@@ -2686,24 +2742,12 @@ async function save() {
       await supabase.from('estimate_items').delete().in('id', removedIds.value)
       removedIds.value = []
     }
-    // E5 マスタ蓄積（明細保存より前）: 初回入力の材料名を estimate_materials に捕捉し、
-    // 新規材料の material_id を行に紐付けてから保存する（E6: 単位も一緒に捕捉）。
-    const known = new Map(materials.value.map(m => [m.name.trim().toLowerCase(), m.id]))
-    const created = new Map<string, string>()
-    for (const r of rows.value) {
-      if (isBlankRow(r)) continue
-      const nm = (r.item_name || '').trim()
-      if (!nm || nm === '(無題)') continue
-      const key = nm.toLowerCase()
-      if (!r.material_id && known.has(key)) r.material_id = known.get(key)!
-      if (!r.material_id && created.has(key)) r.material_id = created.get(key)!
-      if (!r.material_id) {
-        const { data } = await supabase.from('estimate_materials')
-          .insert({ account_id: accountId, name: nm, code: r.product_code || null, unit: r.unit || null, trade_id: r.trade_id, source: 'manual' })
-          .select('id').single()
-        if (data) { r.material_id = (data as any).id; created.set(key, r.material_id!) }
-      }
-    }
+    // ★R28: 明細保存時の材料マスタ自動登録は廃止した。
+    //   作業内容（下請への発注作業）まで「材料」として溜まり、
+    //   商社単価表と材料マスタで管理場所が二重になっていたため。
+    //   名称・品番の候補は loadMaterials() が
+    //   「商社単価表 ＋ 過去の明細入力履歴」から作る（保存＝そのまま履歴になる）。
+    //   既存行の material_id は触らない（過去の紐付けと FK を壊さない）。
     // upsert（amount は生成列なので送らない）
     // ★空行は保存しない。末尾に常時5行の空きを用意する仕様なので、
     //   そのまま保存すると「(無題)」のゴミ行が毎回5行ずつ増える。
@@ -2718,7 +2762,8 @@ async function save() {
       if (isBlankRow(r)) continue
       const payload: any = {
         account_id: accountId, project_id: projectId.value,
-        trade_id: r.trade_id, material_id: r.material_id, supplier_id: r.supplier_id, item_name: r.item_name || '(無題)',
+        trade_id: r.trade_id || null, material_id: r.material_id || null, supplier_id: r.supplier_id || null,
+        item_name: r.item_name || '(無題)',
         unit: r.unit || null, quantity: Number(r.quantity) || 0, unit_price: Number(r.unit_price) || 0,
         note: r.location || null, sort_order: order++,
         trade_name: r.trade_name || null, spec: r.spec || null, product_code: r.product_code || null, row_type: r.row_type,
@@ -2731,7 +2776,7 @@ async function save() {
         if (data) r.id = (data as any).id
       }
     }
-    if (created.size) await loadMaterials()
+    await loadMaterials()   // 打った名称がそのまま次回の候補になる（材料マスタは介さない）
     // 見積書フィールド（工事場所/工期/有効期限/MEMO/端数調整）も保存
     await supabase.from('estimate_projects').update({
       construction_location: doc.value.construction_location || null, period_text: doc.value.period_text || null,

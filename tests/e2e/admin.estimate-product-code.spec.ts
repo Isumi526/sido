@@ -7,7 +7,9 @@
 //  キーになるので、形状記述（R下地 / ライトゲージ / 2重貼）とは別枠で持つ。
 //  ★【見積R6】（品名/品番から商品画像・サイズをネット検索して表示）の土台。
 //
-//  Notion: R3 3ab0ff81c56b81928604f0973d5071ac
+//  ★2026-07-29(R28): 材料マスタを廃止し商社単価表に一本化。品番→品名の引き元も
+//    商社単価表になった。作業内容（品番なし）の候補は過去の明細入力履歴から。
+//  Notion: R3 3ab0ff81c56b81928604f0973d5071ac / R28
 // ============================================================
 import { test, expect } from '@playwright/test'
 import { getAccountId, restSrv } from './helpers'
@@ -15,16 +17,23 @@ import { getAccountId, restSrv } from './helpers'
 const TS = Date.now()
 const CODE = `SLP${TS % 100000}`
 const MAT  = `E2E軽量スタッド_${TS}`
+const SUP  = `E2E品番商社_${TS}`
+let supId = ''
 let seq = 0
 const projName = () => `E2E品番_${TS}_${++seq}`
 let PROJ = ''
 
 test.beforeAll(async () => {
   const accountId = await getAccountId()
-  // マスタに「品番つきの材料」を1件用意する（品番→品名を引けることの検証用）
-  await restSrv('estimate_materials', {
+  // ★商社単価表に「品番つきの材料」を1件用意する（品番→品名を引けることの検証用）
+  const sup = await restSrv('subcontractors', {
+    method: 'POST', headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ account_id: accountId, name: SUP, category: '商社', active: true, is_deleted: false }),
+  })
+  supId = sup[0].id
+  await restSrv('estimate_material_prices', {
     method: 'POST', headers: { Prefer: 'return=minimal' },
-    body: JSON.stringify({ account_id: accountId, name: MAT, code: CODE, unit: 'm', spec: 'W65', source: 'manual' }),
+    body: JSON.stringify({ account_id: accountId, supplier_id: supId, product_code: CODE, item_name: MAT, unit: 'm', unit_price: 1200, is_current: true }),
   })
 })
 
@@ -35,6 +44,8 @@ test.afterAll(async () => {
     await restSrv(`estimate_items?project_id=eq.${p.id}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`estimate_projects?id=eq.${p.id}`, { method: 'DELETE' }).catch(() => {})
   }
+  await restSrv(`estimate_material_prices?supplier_id=eq.${supId}`, { method: 'DELETE' }).catch(() => {})
+  await restSrv(`subcontractors?id=eq.${supId}`, { method: 'DELETE' }).catch(() => {})
   await restSrv(`estimate_materials?account_id=eq.${accountId}&code=eq.${CODE}`, { method: 'DELETE' }).catch(() => {})
   await restSrv(`estimate_materials?account_id=eq.${accountId}&name=like.${encodeURIComponent('E2E新規品_' + TS + '%')}`, { method: 'DELETE' }).catch(() => {})
 })
@@ -70,24 +81,24 @@ test('AC1★: 品番と形状・詳細が別の列として保存される', asy
   expect(items[0].spec, '形状・詳細は品番に飲み込まれない').toBe('W65 @303 2重貼')
 })
 
-test('AC2: 品番を打つと、マスタから品名・単位・形状が引ける', async ({ page }) => {
+test('AC2: 品番を打つと、商社単価表から品名・単位が引ける', async ({ page }) => {
   await openNewProject(page)
   await page.locator('[data-testid="item-code-0"]').fill(CODE)
   await page.locator('[data-testid="item-code-0"]').dispatchEvent('change')
 
   await expect(page.locator('[data-testid="item-name-0"]')).toHaveValue(MAT)
   await expect(page.locator('[data-testid="item-unit-0"]')).toHaveValue('m')
-  await expect(page.locator('[data-testid="item-spec-0"]')).toHaveValue('W65')
+  // 形状・詳細は単価表が持たない情報なので引かない（無い情報を勝手に埋めない）
 })
 
-test('AC3: 品名を打つと、マスタにある品番が自動で入る（逆方向）', async ({ page }) => {
+test('AC3: 品名を打つと、単価表にある品番が自動で入る（逆方向）', async ({ page }) => {
   await openNewProject(page)
   await page.locator('[data-testid="item-name-0"]').fill(MAT)
   await page.locator('[data-testid="item-name-0"]').dispatchEvent('change')
   await expect(page.locator('[data-testid="item-code-0"]')).toHaveValue(CODE)
 })
 
-test('AC4: 新しい品番はマスタに貯まり、次回から候補に出る', async ({ page }) => {
+test('AC4: 新しい品番は明細を保存すると候補に貯まる（材料マスタは作らない）', async ({ page }) => {
   const NEW_NAME = `E2E新規品_${TS}`
   const NEW_CODE = `NC-${TS % 10000}`
   await openNewProject(page)
@@ -100,10 +111,13 @@ test('AC4: 新しい品番はマスタに貯まり、次回から候補に出る
   await page.waitForTimeout(2500)
 
   const accountId = await getAccountId()
+  // ★明細そのものが候補の元になる（材料マスタは作らない）
   await expect.poll(async () => {
-    const m = await restSrv(`estimate_materials?account_id=eq.${accountId}&name=eq.${encodeURIComponent(NEW_NAME)}&select=code`)
-    return m?.[0]?.code ?? null
+    const it = await restSrv(`estimate_items?account_id=eq.${accountId}&item_name=eq.${encodeURIComponent(NEW_NAME)}&select=product_code`)
+    return it?.[0]?.product_code ?? null
   }, { timeout: 10000 }).toBe(NEW_CODE)
+  const mats = await restSrv(`estimate_materials?account_id=eq.${accountId}&name=eq.${encodeURIComponent(NEW_NAME)}&select=id`)
+  expect(mats?.length ?? 0, '材料マスタには登録しない').toBe(0)
 
   // 別案件で品番の候補（datalist）に出る
   await openNewProject(page)
