@@ -275,3 +275,30 @@ test('AC6★(R7): 図面を送ると、その業者への見積依頼が自動�
   expect(qr2.length, '同じ業者への追加送信で依頼行は増えない').toBe(1)
   expect(qr2[0].drawing_send_id, '最新の送信に更新される').not.toBe(qr[0].drawing_send_id)
 })
+
+test('AC7★(R17): 各ページのサムネイルが出て、チェックボックスで選べる', async ({ page }) => {
+  await openProjectWithDrawing(page, 6)
+  const pid = await projectId()
+  const att = await restSrv(`estimate_project_attachments?project_id=eq.${pid}&select=id`)
+  await page.locator(`[data-testid="dsend-open-${att[0].id}"]`).click()
+  await expect(page.locator('[data-testid="dsend-count"]')).toContainText('0 / 6', { timeout: 15000 })
+
+  // ★中身が見える形で並ぶ（番号だけだと、どのページが何の工種か開いて確かめることになる）
+  await expect(page.locator('[data-testid="dsend-thumbs"]')).toBeVisible()
+  const thumb = page.locator('[data-testid="dsend-thumb-1"]')
+  await expect(thumb).toBeVisible({ timeout: 30000 })
+  // 実際に描画されている（プレースホルダのままではない）
+  const src = await thumb.getAttribute('src')
+  expect(src?.startsWith('data:image/png'), 'ページを描画した画像が入っている').toBe(true)
+
+  // チェックボックスで選べる
+  await page.locator('[data-testid="dsend-check-3"]').check()
+  await expect(page.locator('[data-testid="dsend-count"]')).toContainText('1 / 6')
+  await expect(page.locator('[data-testid="dsend-page-3"]')).toHaveClass(/on/)
+
+  // 範囲指定との併用も従来どおり効く（工種ごとに連番で分かれている案件はこちらが速い）
+  await page.locator('[data-testid="dsend-range"]').fill('2-4')
+  await page.locator('[data-testid="dsend-range"]').dispatchEvent('change')
+  await expect(page.locator('[data-testid="dsend-count"]')).toContainText('3 / 6')
+  await expect(page.locator('[data-testid="dsend-check-2"]')).toBeChecked()
+})
