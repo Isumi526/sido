@@ -3,8 +3,9 @@
 //  見積R26: 自社情報を見積書プレビュー内のモーダルで編集・登録する
 //
 //  ユーザー要望（2026-07-29 第3回レビュー）:
-//   「未登録時にページ内で直接編集・登録可能にする／ページ遷移ではなくモーダル表示で編集」
-//  ★見積を作っている最中に別ページへ飛ばすと、書きかけの明細から離れることになる。
+//   「未登録時にページ内で直接編集・登録可能にする」
+//  ★2026-07-29(第4回・R34): モーダルすらやめ、見積書PDFのページで直接編集する形にした。
+//    発行元が出る場所でそのまま直せるのが自然で、開く操作も要らない。
 //
 //  Notion: R26
 // ============================================================
@@ -38,7 +39,7 @@ test.afterAll(async () => {
   }
 })
 
-test('AC1★: 見積書プレビューから自社情報をその場で編集でき、すぐ帳票に反映される', async ({ page }) => {
+test('AC1★: 見積書ページで自社情報を直接編集でき、すぐ帳票に反映される', async ({ page }) => {
   const accountId = await getAccountId()
   const proj = (await restSrv('estimate_projects', {
     method: 'POST', headers: { Prefer: 'return=representation', 'Content-Type': 'application/json' },
@@ -52,15 +53,11 @@ test('AC1★: 見積書プレビューから自社情報をその場で編集で
   await page.goto(`/estimate-builder?project=${proj.id}`, { waitUntil: 'networkidle' })
   await page.locator('[data-testid="tab-preview"]').click()
 
-  // ★ページ遷移せずモーダルで開く
-  await page.locator('[data-testid="open-company-modal"]').click()
-  const modal = page.locator('[data-testid="company-modal"]')
-  await expect(modal).toBeVisible({ timeout: 10000 })
-
-  await page.locator('[data-testid="cm-name"]').fill(NAME)
-  await page.locator('[data-testid="cm-tel"]').fill('03-1234-5678')
-  await page.locator('[data-testid="cm-save"]').click()
-  await expect(page.locator('[data-testid="cm-msg"]')).toContainText('保存しました', { timeout: 10000 })
+  // ★モーダルを開かずその場の欄で直せる（R34）
+  await expect(page.locator('[data-testid="company-inline"]')).toBeVisible({ timeout: 15000 })
+  await page.locator('[data-testid="ci-name"]').fill(NAME)
+  await page.locator('[data-testid="ci-name"]').press('Tab')
+  await expect(page.locator('[data-testid="ci-msg"]')).toContainText('保存しました', { timeout: 15000 })
 
   // ★保存したら即座に見積書へ反映される（開き直さない）
   await expect(page.locator('[data-testid="company-name"]')).toContainText(NAME, { timeout: 10000 })

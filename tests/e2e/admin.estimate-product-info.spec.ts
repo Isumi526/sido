@@ -102,8 +102,10 @@ test('AC3★/AC4: 商品情報（サイズ・仕様・出典）が明細のそ�
   await page.locator('[data-testid="item-code-0"]').fill(CODE)
   await page.locator('[data-testid="item-code-0"]').dispatchEvent('change')
 
-  // ★虫眼鏡アイコンを押すとモーダルで出る
-  await page.locator('[data-testid="item-pinfo-ask-0"]').click()
+  // ★R31: 結果がある時はアイコンが青のi。押すとモーダルで出る
+  const askIco = page.locator('[data-testid="item-pinfo-ask-0"]')
+  await expect(askIco).toHaveClass(/done/, { timeout: 15000 })
+  await askIco.click()
   const pinfo = page.locator('[data-testid="pinfo-modal"]')
   await expect(pinfo).toBeVisible({ timeout: 15000 })
   await expect(page.locator('[data-testid="pinfo-sizes"]')).toContainText('910×1820 / 910×2420')
@@ -123,7 +125,10 @@ test('AC5★: 見つからなかった時は黙って空欄にせず「見つか
   await page.locator('[data-testid="item-code-0"]').fill(`NF-${TS}`)
   await page.locator('[data-testid="item-code-0"]').dispatchEvent('change')
 
-  await page.locator('[data-testid="item-pinfo-ask-0"]').click()
+  // ★R31: 結果が「見つからなかった」時はアイコンが赤バツになり、押すと詳細が出る
+  const ico = page.locator('[data-testid="item-pinfo-ask-0"]')
+  await expect(ico).toHaveClass(/none/, { timeout: 15000 })
+  await ico.click()
   await expect(page.locator('[data-testid="pinfo-none"]')).toBeVisible({ timeout: 15000 })
   await expect(page.locator('[data-testid="pinfo-none"]')).toContainText('見つかりませんでした')
 })
