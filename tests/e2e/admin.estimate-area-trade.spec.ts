@@ -163,7 +163,7 @@ test('AC5(R13): 列見出しがExcelの並び（名称→品番→形状詳細�
   const heads = await page.locator('.est-items thead th').allInnerTexts()
   const main = heads.map(h => h.trim()).filter(Boolean)
   // 先頭10列がExcelと同じ並びであること（以降は社内用＝商社/原価）
-  expect(main.slice(0, 10)).toEqual(['名称', '品番', '形状・詳細', 'W', 'D', 'H', '数量', '単位', '単価', '金額'])
+  expect(main.slice(0, 10)).toEqual(['名称', '品番', '形状・詳細', 'W(t)', 'D(＠)', 'H(L)', '数量', '単位', '単価', '金額'])
   expect(main, '「品名」ではなく「名称」').not.toContain('品名')
 })
 
