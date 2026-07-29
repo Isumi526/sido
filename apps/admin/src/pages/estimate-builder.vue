@@ -687,29 +687,36 @@
           <div v-for="(pg, pi) in breakdownPages" :key="'bd' + pi" class="est-bd" data-pdf-page v-show="exporting || currentPage === 1 + pi">
             <div class="bd-head"><span>内訳書<span v-if="breakdownPages.length > 1">（{{ pi + 1 }}/{{ breakdownPages.length }}）</span></span><span class="bd-date">{{ todayWareki }}</span></div>
             <table class="bd-table">
-              <thead><tr><th>名　称</th><th>形状・寸法</th><th class="num">数量</th><th>単位</th><th class="num">単価</th><th class="num">金　額</th></tr></thead>
+              <thead>
+                <tr>
+                  <th>名　称</th><th>形状・詳細</th>
+                  <th class="num">W(t)</th><th class="num">D(＠)</th><th class="num">H(L)</th>
+                  <th class="num">数量</th><th>単位</th><th class="num">単　価</th><th class="num">金　額</th>
+                </tr>
+              </thead>
               <tbody>
-                <tr v-for="g in pg" :key="g.key"><td>{{ g.tradeName }}</td><td></td><td></td><td></td><td></td><td class="num">{{ yen(g.total) }}</td></tr>
+                <template v-for="(ln, li) in pg" :key="li">
+                  <tr v-if="ln.kind === 'area'" class="bd-area"><td colspan="9">{{ ln.text }}</td></tr>
+                  <tr v-else-if="ln.kind === 'trade'" class="bd-trade"><td colspan="9">{{ ln.text }}</td></tr>
+                  <tr v-else>
+                    <td>{{ ln.row.item_name }}</td>
+                    <td>{{ ln.row.spec }}</td>
+                    <td class="num">{{ ln.row.dim_w ?? '' }}</td>
+                    <td class="num">{{ ln.row.dim_d ?? '' }}</td>
+                    <td class="num">{{ ln.row.dim_h ?? '' }}</td>
+                    <td class="num">{{ ln.row.quantity || '' }}</td>
+                    <td>{{ ln.row.unit }}</td>
+                    <td class="num">{{ ln.row.unit_price ? yen(ln.row.unit_price) : '' }}</td>
+                    <td class="num">{{ ln.row.unit_price ? yen(lineAmount(ln.row)) : '' }}</td>
+                  </tr>
+                </template>
               </tbody>
               <tfoot v-if="pi === breakdownPages.length - 1">
-                <tr><td colspan="5" class="r">小計</td><td class="num">{{ yen(subtotal) }}</td></tr>
-                <tr><td>法定福利費</td><td>請負金額 × {{ welfareA }}％ × {{ welfareB }}％</td><td colspan="3"></td><td class="num">{{ yen(welfare) }}</td></tr>
-                <tr v-if="adjustment"><td>端数調整</td><td colspan="4"></td><td class="num" :class="{ neg: adjustment < 0 }">{{ yen(adjustment) }}</td></tr>
-                <tr class="bd-grand"><td colspan="5" class="r">合計</td><td class="num">{{ yen(totalExclTax) }}</td></tr>
+                <tr><td colspan="8" class="r">小計</td><td class="num">{{ yen(subtotal) }}</td></tr>
+                <tr><td>法定福利費</td><td colspan="7">請負金額 × {{ welfareA }}％ × {{ welfareB }}％</td><td class="num">{{ yen(welfare) }}</td></tr>
+                <tr v-if="adjustment"><td>端数調整</td><td colspan="7"></td><td class="num" :class="{ neg: adjustment < 0 }">{{ yen(adjustment) }}</td></tr>
+                <tr class="bd-grand"><td colspan="8" class="r">合計</td><td class="num">{{ yen(totalExclTax) }}</td></tr>
               </tfoot>
-            </table>
-          </div>
-          <!-- ── 工種別 明細（3ページ目以降: 各工種ごと・行単位で改ページ） ── -->
-          <div v-for="(pg, pi) in detailPages" :key="'d' + pi" class="est-detail" data-pdf-page v-show="exporting || currentPage === detailBase + pi">
-            <div class="dh">{{ pg.tradeName }}<span v-if="pg.parts > 1">（{{ pg.part }}/{{ pg.parts }}）</span>　<span class="dsub">小計 {{ yen(pg.total) }}</span></div>
-            <table class="bd-table">
-              <thead><tr><th>場所</th><th>明細</th><th class="num">数量</th><th>単位</th><th class="num">単価</th><th class="num">金額</th></tr></thead>
-              <tbody>
-                <tr v-for="(it, idx) in pg.items" :key="idx">
-                  <td>{{ it.location }}</td><td>{{ it.item_name }}</td><td class="num">{{ it.quantity }}</td><td>{{ it.unit }}</td>
-                  <td class="num">{{ yen(it.unit_price) }}</td><td class="num">{{ yen(lineAmount(it)) }}</td>
-                </tr>
-              </tbody>
             </table>
           </div>
         </div>
@@ -1378,7 +1385,7 @@ async function renderThumb(p: number) {
   try {
     const page = await pdfDoc.getPage(p)
     const base = page.getViewport({ scale: 1 })
-    const scale = 190 / base.width          // サムネ幅190px相当。図面は横長なのでこれで十分読める
+    const scale = 420 / base.width          // 表示が大きくなったぶん解像度も上げる（粗いと図面が読めない）
     const viewport = page.getViewport({ scale })
     const canvas = document.createElement('canvas')
     canvas.width = Math.ceil(viewport.width)
@@ -1749,7 +1756,30 @@ function chunk<T>(arr: T[], n: number): T[][] {
   return out.length ? out : [[]]
 }
 // 内訳書ページ（工種集計を分割・合計欄は最終ページのみ）
-const breakdownPages = computed(() => chunk(groupedDetailed.value, BD_ROWS_PER_PAGE))
+/**
+ * ★R25: 内訳書はExcelの「全体見積」と同じ形にする。
+ *  （壁面工事）＝場所の見出し / ■軽鉄工事＝工種の見出し / その下に明細行、を行単位でそのまま出す。
+ *  2026-07-29 ユーザー回答で「内訳書の形」を選択。工種ごとの小計だけ並べる形は採らない。
+ *  ★空行は出さない（打ちかけの予備行が帳票に出ると体裁が崩れる）。
+ */
+type DocLine =
+  | { kind: 'area';  text: string }
+  | { kind: 'trade'; text: string }
+  | { kind: 'item';  row: Row }
+const docLines = computed<DocLine[]>(() => {
+  const out: DocLine[] = []
+  let loc = '\u0000', trade = '\u0000'
+  for (const r of rows.value) {
+    if (isBlankRow(r) || !isItemRow(r)) continue
+    const l = (r.location ?? '').trim()
+    const t = (r.trade_name ?? '').trim()
+    if (l !== loc) { if (l) out.push({ kind: 'area', text: `（${l}）` }); loc = l; trade = '\u0000' }
+    if (t !== trade) { if (t) out.push({ kind: 'trade', text: `■${t}` }); trade = t }
+    out.push({ kind: 'item', row: r })
+  }
+  return out
+})
+const breakdownPages = computed(() => chunk(docLines.value, BD_ROWS_PER_PAGE))
 // 工種明細ページ（各工種ごとに改ページ＋明細が多ければ続きページ）
 const detailPages = computed(() => {
   const pages: { key: string; tradeName: string; total: number; items: Row[]; part: number; parts: number }[] = []
@@ -1763,8 +1793,9 @@ const detailPages = computed(() => {
 // ページ並び順: 0=表紙 / 1〜=内訳書 / その後=工種明細。
 const currentPage  = ref(0)
 const exporting    = ref(false)   // PDF生成中だけ全ページをDOM表示（html2canvas用）
+// ★R25: 工種別の明細ページは内訳書に統合したので無くなった（同じ明細を2回出さない）
 const detailBase   = computed(() => 1 + breakdownPages.value.length)
-const totalPages   = computed(() => 1 + breakdownPages.value.length + detailPages.value.length)
+const totalPages   = computed(() => 1 + breakdownPages.value.length)
 function prevPage() { if (currentPage.value > 0) currentPage.value-- }
 function nextPage() { if (currentPage.value < totalPages.value - 1) currentPage.value++ }
 // 明細が減ってページ数が縮んだら範囲内に丸める
@@ -2916,8 +2947,9 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .est-head { display: grid; grid-template-columns: 1.3fr 1.4fr auto; gap: 14px; align-items: start; }
 .est-amounts { display: flex; flex-direction: column; gap: 4px; }
 .est-amounts .welfare { text-align: right; font-size: 11px; }
-.est-amounts .band { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; background: #ddd; padding: 6px 8px; }
-.est-amounts .band.sub { background: #eee; }
+/* ★R25: 白黒コピー対応。グレー地は潰れて金額が読めなくなるので枠線で見せる */
+.est-amounts .band { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; padding: 6px 8px; border: 2px solid #333; }
+.est-amounts .band.sub { border-width: 1px; }
 .est-amounts .band .big { text-align: center; font-size: 20px; font-weight: 700; }
 .est-amounts .band .big.sm { font-size: 14px; }
 .est-amounts .band .rgt { font-size: 11px; }
@@ -2938,20 +2970,24 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .bd-head { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
 .bd-table { width: 100%; border-collapse: collapse; }
 .bd-table th, .bd-table td { border: 1px solid #bbb; padding: 5px 6px; font-size: 11px; text-align: left; }
-.bd-table th { background: #ddd; text-align: center; }
+/* ★R25: 白黒コピー前提。色地は潰れて読めなくなるので使わない（枠線と太字で区切る） */
+.bd-table th { background: #fff; text-align: center; font-weight: 700; border-bottom: 2px solid #333; }
+/* 場所（大項目）・工種（中項目）の見出し行。Excelの （壁面工事） / ■軽鉄工事 と同じ */
+.bd-table .bd-area td { font-weight: 700; border-left: none; border-right: none; padding-top: 8px; }
+.bd-table .bd-trade td { font-weight: 700; padding-left: 14px; border-left: none; border-right: none; }
 .bd-table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .bd-table .r { text-align: right; font-weight: 700; }
 .bd-table .neg { color: #c00; }
 .bd-table tfoot .bd-grand td { font-weight: 700; border-top: 2px solid #333; }
 .est-detail { margin-top: 16px; }
-.est-detail .dh { font-weight: 700; background: #f0f4f1; padding: 4px 8px; border-left: 4px solid #06C755; }
+.est-detail .dh { font-weight: 700; padding: 4px 8px; border-left: 4px solid #333; }
 .est-detail .dsub { font-weight: 600; color: #444; font-size: 11px; }
 .pdf-title { text-align: center; font-size: 22px; letter-spacing: 4px; margin: 0 0 16px; }
 .pdf-meta { font-size: 13px; line-height: 1.7; margin-bottom: 10px; }
 .pdf-client { font-size: 15px; font-weight: 700; }
 .pdf-total { font-size: 16px; font-weight: 700; border: 2px solid #333; display: inline-block; padding: 6px 14px; margin: 8px 0 16px; }
 .pdf-group { margin-bottom: 14px; }
-.pdf-group-head { font-weight: 700; background: #f0f4f1; padding: 5px 8px; border-left: 4px solid #06C755; }
+.pdf-group-head { font-weight: 700; padding: 5px 8px; border-left: 4px solid #333; }
 .pdf-sub { font-weight: 600; color: #444; font-size: 13px; }
 .pdf-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
 .pdf-table th, .pdf-table td { border: 1px solid #ccc; padding: 4px 6px; font-size: 12px; text-align: left; }
@@ -3115,16 +3151,21 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .pinfo-ask:hover { background: #EEF4FF; border-color: #4A7BC8; }
 
 /* ── R8: 図面のページ選択→送信 ── */
-.att-drop { border: 1px dashed #C7D2DE; border-radius: 8px; padding: 10px 12px; transition: background .12s, border-color .12s; }
+/* R24: 落とせる範囲が狭いと狙いを外すので縦に広げる（レビュー2026-07-29） */
+.att-drop { border: 1px dashed #C7D2DE; border-radius: 8px; padding: 22px 12px; min-height: 88px;
+            display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+            transition: background .12s, border-color .12s; }
 .att-drop.over { border-color: #4A7BC8; background: #EEF4FF; }
 .dsend-tools { display: flex; align-items: center; gap: 12px; margin: 8px 0; flex-wrap: wrap; }
 .dsend-range { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #555; }
 .dsend-count { font-size: 12px; color: #7A8AA0; margin-left: auto; }
 .dsend-pages { display: flex; flex-wrap: wrap; gap: 6px; max-height: 220px; overflow-y: auto; padding: 6px; background: #FAFBFC; border-radius: 6px; }
-.dsend-thumbs { display: flex; flex-wrap: wrap; gap: 10px; max-height: 460px; overflow-y: auto; padding: 8px; background: #FAFBFC; border-radius: 6px; }
-.pg-card { width: 200px; border: 2px solid #D5DEE8; border-radius: 8px; background: #fff; cursor: pointer; overflow: hidden; }
+/* R24: 中身を見て選ぶので、3〜4カラムで大きく見せる（幅に応じて自動で列数が変わる） */
+.dsend-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px;
+                max-height: 620px; overflow-y: auto; padding: 10px; background: #FAFBFC; border-radius: 6px; }
+.pg-card { border: 2px solid #D5DEE8; border-radius: 8px; background: #fff; cursor: pointer; overflow: hidden; }
 .pg-card.on { border-color: #2F6FD0; box-shadow: 0 0 0 2px rgba(47,111,208,.18); }
-.pg-thumb { height: 150px; display: flex; align-items: center; justify-content: center; background: #F2F4F7; overflow: hidden; }
+.pg-thumb { height: 260px; display: flex; align-items: center; justify-content: center; background: #F2F4F7; overflow: hidden; }
 .pg-thumb img { width: 100%; height: 100%; object-fit: contain; }
 .pg-loading { color: #B9C2CD; font-size: 20px; }
 .pg-foot { display: flex; align-items: center; gap: 6px; padding: 5px 8px; font-size: 12px; border-top: 1px solid #EDF0F4; cursor: pointer; }

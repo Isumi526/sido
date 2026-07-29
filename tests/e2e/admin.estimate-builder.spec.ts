@@ -236,15 +236,18 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
   })
 
   // E2 帳票PDF: 見積書プレビュー（表紙＋工種別内訳＋合計）が出て、PDF出力でDLされる
-  test('E2: 見積書プレビューが工種別内訳・合計を表示し、PDF出力でダウンロードされる', async ({ page }) => {
+  // ★2026-07-29(R25): 内訳書はExcelの「全体見積」と同じ形＝場所/工種の見出し＋明細を行単位で出す。
+  //   工種ごとの小計だけを並べる形は廃止（同じ明細を2回出さない）。
+  test('E2: 見積書プレビューが内訳書（場所・工種の見出し＋明細行）を表示し、PDF出力でダウンロードされる', async ({ page }) => {
     const accountId = await getAccountId()
     const post = async (table: string, body: any) =>
       restSrv(table, { method: 'POST', headers: { Prefer: 'return=representation', 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     const proj = (await post('estimate_projects', { account_id: accountId, name: PROJ5, client_name: 'テスト客先' }))[0]
     const t1 = (await post('estimate_trades', { account_id: accountId, name: TR1 }))[0]
     const t2 = (await post('estimate_trades', { account_id: accountId, name: TR2 }))[0]
-    await post('estimate_items', { account_id: accountId, project_id: proj.id, trade_id: t1.id, item_name: 'スタッド', unit: 'm', quantity: 2, unit_price: 100, note: '1F', sort_order: 0 })
-    await post('estimate_items', { account_id: accountId, project_id: proj.id, trade_id: t2.id, item_name: 'PB12.5', unit: '枚', quantity: 1, unit_price: 500, sort_order: 1 })
+    // note=場所（大項目）、trade_name=工種（中項目）。内訳書の見出しになる
+    await post('estimate_items', { account_id: accountId, project_id: proj.id, trade_id: t1.id, trade_name: TR1, item_name: 'スタッド', spec: 'W65', dim_w: 65, unit: 'm', quantity: 2, unit_price: 100, note: '壁面工事', sort_order: 0 })
+    await post('estimate_items', { account_id: accountId, project_id: proj.id, trade_id: t2.id, trade_name: TR2, item_name: 'PB12.5', unit: '枚', quantity: 1, unit_price: 500, note: '壁面工事', sort_order: 1 })
 
     await page.goto(`/estimate-builder?project=${proj.id}`, { waitUntil: 'networkidle' })
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ5)
@@ -256,10 +259,14 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await expect(pv).toContainText('見積金額')
     await expect(pv).toContainText('内訳書')
     await expect(pv).toContainText('¥700')        // 小計(明細合計)=2×100 + 1×500
-    await expect(pv).toContainText(TR1)
-    await expect(pv).toContainText(TR2)
-    await expect(pv).toContainText('小計 ¥200')   // 軽鉄: 2×100
-    await expect(pv).toContainText('小計 ¥500')   // ボード: 1×500
+    // ★場所・工種の見出しがExcelと同じ表記で出る
+    await expect(pv).toContainText('（壁面工事）')
+    await expect(pv).toContainText(`■${TR1}`)
+    await expect(pv).toContainText(`■${TR2}`)
+    // ★明細が行単位で出る（名称・形状詳細・W・数量・単位・単価）
+    await expect(pv).toContainText('スタッド')
+    await expect(pv).toContainText('W65')
+    await expect(pv).toContainText('PB12.5')
 
     // PDF出力 → ダウンロードが発火し、ファイル名に「見積」を含む
     const [dl] = await Promise.all([
