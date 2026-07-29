@@ -98,8 +98,8 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     const nextIdx = await page.locator('[data-testid^="item-name-"]').count()
     await addLine(nextIdx - 5, 'PB12.5', 1, 5000)     // 5000
 
-    // 工種別内訳パネル（転記操作なしで集計）。★R18で既定非表示なので開く
-    await page.locator('[data-testid="toggle-breakdown"]').click()
+    // 工種別内訳パネル（転記操作なしで集計）。★R36で専用タブになった
+    await page.locator('[data-testid="tab-breakdown"]').click()   // R36: 専用タブになった
     const panel = page.locator('section.panel', { hasText: '工種別 内訳' })
     await expect(panel.locator('tr', { hasText: TRADE_A }).locator('.num')).toHaveText('¥5,000')
     await expect(panel.locator('tr', { hasText: TRADE_B }).locator('.num')).toHaveText('¥5,000')

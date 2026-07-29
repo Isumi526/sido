@@ -35,14 +35,16 @@ async function openNewProject(page: any) {
   await expect(page.locator('[data-testid="item-name-0"]')).toBeVisible({ timeout: 10000 })
 }
 
-test('AC1(R18): 工種別内訳は既定で畳まれ、トグルで出し入れできる', async ({ page }) => {
+// ★2026-07-29(R36): 表示/非表示トグルは廃止し、専用タブにした（トグルでもスペースを圧迫するため）
+test('AC1(R36): 工種別内訳は専用タブで、明細タブには出てこない', async ({ page }) => {
   await openNewProject(page)
   const panel = page.locator('section.panel', { hasText: '工種別 内訳（自動）' })
-  // 明細は列が多く、常時2カラムだと入力欄が狭い
   await expect(panel).toBeHidden()
-  await page.locator('[data-testid="toggle-breakdown"]').click()
-  await expect(panel).toBeVisible()
-  await page.locator('[data-testid="toggle-breakdown"]').click()
+  await expect(page.locator('[data-testid="toggle-breakdown"]')).toHaveCount(0)
+
+  await page.locator('[data-testid="tab-breakdown"]').click()
+  await expect(panel).toBeVisible({ timeout: 15000 })
+  await page.locator('[data-testid="tab-items"]').click()
   await expect(panel).toBeHidden()
 })
 
@@ -64,7 +66,8 @@ test('AC2★(R18): 明細をスクロールしてもヘッダーが見えたま�
   expect(box!.y, 'ヘッダーがスクロール領域の上端付近に留まっている').toBeLessThan(sbox!.y + 40)
 })
 
-test('AC3★(R19): 行ごとに5/10/15/20%の単価が並び、クリックでその単価を採用できる', async ({ page }) => {
+// ★2026-07-29(R32): 粗利パターンは名称の下ではなく行の右端の列に移した（縦を伸ばさないため）
+test('AC3★(R19/R32): 行の右端に5/10/15/20%の単価が並び、クリックで採用できる', async ({ page }) => {
   await openNewProject(page)
   await page.locator('[data-testid="item-name-0"]').fill('天井 下地組')
   await page.locator('[data-testid="item-qty-0"]').fill('1')

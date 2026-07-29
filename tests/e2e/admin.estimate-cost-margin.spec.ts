@@ -183,8 +183,8 @@ test('AC: 自由記述の工種でも工種別内訳に自動集計される（�
   await fill(idx - 5, 'PB12.5', 1, 4000)   // 客先5000 → 5,000
 
   // 工種別内訳（自動）に自由記述の工種名で集計される
-  // ★R18で既定非表示にしたので開いてから見る
-  await page.locator('[data-testid="toggle-breakdown"]').click()
+  // ★R36で専用タブになったので開いてから見る
+  await page.locator('[data-testid="tab-breakdown"]').click()   // R36: 専用タブになった
   const bd = page.locator('.bd-table, table').filter({ hasText: `E2E自由工種A_${TS}` }).first()
   await expect(bd).toBeVisible({ timeout: 10000 })
   await expect(bd).toContainText('5,000')   // 工種A = 2,000 + 3,000

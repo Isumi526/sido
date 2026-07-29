@@ -45,7 +45,7 @@ test('AC1★: 候補を一覧で見られて、打ち間違いを候補から外
   // 打ち間違いが候補（datalist）に出てしまっている
   await expect(page.locator(`#est-materials option[value="${TYPO}"]`)).toHaveCount(1)
 
-  await page.locator('[data-testid="open-cand-modal"]').click()
+  await page.locator('[data-testid="open-cand-name-modal"]').click()   // R35: 名称/品番でボタンを分けた
   await expect(page.locator('[data-testid="cand-modal"]')).toBeVisible()
   await page.locator('[data-testid="cand-filter"]').fill(TYPO)
   await expect(page.locator('[data-testid="cand-name-0"]')).toHaveValue(TYPO)

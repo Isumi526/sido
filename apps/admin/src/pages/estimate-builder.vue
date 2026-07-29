@@ -78,6 +78,8 @@
         <button class="btab" :class="{ active: builderTab === 'intake' }" data-testid="tab-intake" @click="builderTab = 'intake'">案件情報</button>
         <button class="btab" :class="{ active: builderTab === 'quotes' }" data-testid="tab-quotes" @click="builderTab = 'quotes'">相見積</button>
         <button class="btab" :class="{ active: builderTab === 'items' }" data-testid="tab-items" @click="builderTab = 'items'">明細入力</button>
+        <!-- ★R36: 表示/非表示トグルだと明細のスペースを圧迫するので独立タブにする -->
+        <button class="btab" :class="{ active: builderTab === 'breakdown' }" data-testid="tab-breakdown" @click="builderTab = 'breakdown'">工種別内訳</button>
         <button class="btab" :class="{ active: builderTab === 'preview' }" data-testid="tab-preview" @click="builderTab = 'preview'">見積書プレビュー</button>
         <!-- 発注は受注してからしか発生しない。受注前に出ていると紛らわしいので隠す（レビュー2026-07-28） -->
         <button v-if="isOrdered" class="btab" :class="{ active: builderTab === 'po' }" data-testid="tab-po" @click="builderTab = 'po'">商社へ発注</button>
@@ -148,18 +150,20 @@
           <div v-if="dsend.loading" class="hint">図面を読み込み中…</div>
           <template v-else>
             <div class="dsend-tools">
-              <label class="dsend-range">ページ指定
-                <input v-model="dsend.rangeText" class="input sm" data-testid="dsend-range"
-                       placeholder="例: 13-19, 22" @change="applyPageRange" />
-              </label>
+              <!-- ★R38: 「ページ指定」の入力欄は廃止。サムネイルで中身を見て選べるようになった今は
+                   同じことを2通りで指定でき、かえって混乱を招く（レビュー2026-07-29）。 -->
               <button class="btn-link-sm" data-testid="dsend-all" @click="selectAllPages(true)">全選択</button>
               <button class="btn-link-sm" data-testid="dsend-none" @click="selectAllPages(false)">全解除</button>
+              <!-- ★R37: 図面の見やすさは環境で変わるので、列数を人が変えられるようにする -->
+              <span class="dsend-cols">表示
+                <button v-for="n in [2, 3, 4, 5, 6]" :key="n" class="col-btn" :class="{ on: thumbCols === n }"
+                        :data-testid="`dsend-cols-${n}`" @click="thumbCols = n">{{ n }}</button>
+                列
+              </span>
               <span class="dsend-count" data-testid="dsend-count">{{ dsend.selected.length }} / {{ dsend.pageCount }} ページ</span>
             </div>
-            <!-- ★R17: どのページに何が描かれているかを見ながら選べるようにする。
-                 番号だけだと、工種ごとの範囲を選ぶのに毎回開いて確かめることになる。
-                 50ページ超の図面でも重くならないよう、画面に入ったページだけ描画する。 -->
-            <div class="dsend-thumbs" data-testid="dsend-thumbs">
+            <div class="dsend-thumbs" data-testid="dsend-thumbs"
+                 :style="{ gridTemplateColumns: `repeat(${thumbCols}, minmax(0, 1fr))` }">
               <div v-for="p in dsend.pageCount" :key="p" class="pg-card"
                    :class="{ on: dsend.selected.includes(p) }"
                    :data-testid="`dsend-page-${p}`" :data-page="p"
@@ -371,7 +375,7 @@
       </div>
 
       <div v-show="builderTab === 'items'">
-      <div class="grid" :class="{ 'grid-wide': !showBreakdown }">
+      <div class="grid grid-wide">
         <!-- 明細入力 -->
         <section class="panel">
           <div class="panel-head">
@@ -380,10 +384,8 @@
               <!-- 粗利率: アカウント既定 ＋ この見積だけ上書き。
                    行ごとの 5/10/15/20% プレビューは 2026-07-28 に一度撤去したが、
                    2026-07-29 の第3回レビューで復活の要望が出たため戻した（ExcelのR〜Y列と同じ形）。 -->
-              <button class="btn-link-sm" data-testid="open-cand-modal" @click="candModal = true">候補を編集</button>
-              <button class="btn-link-sm" data-testid="toggle-breakdown" @click="showBreakdown = !showBreakdown">
-                {{ showBreakdown ? '工種別内訳を隠す' : '工種別内訳を見る' }}
-              </button>
+              <button class="btn-link-sm" data-testid="open-cand-name-modal" @click="openCandModal('name')">名称の候補</button>
+              <button class="btn-link-sm" data-testid="open-cand-code-modal" @click="openCandModal('code')">品番の候補</button>
               <label class="margin-field">粗利
                 <input v-model.number="marginPct" type="number" min="0" max="99" step="1"
                        class="input xs num" data-testid="margin-rate" @change="onMarginChange" />%
@@ -404,7 +406,12 @@
                 <th class="num dim-col">W(t)</th><th class="num dim-col">D(＠)</th><th class="num dim-col">H(L)</th>
                 <th class="num">数量</th><th>単位</th>
                 <th class="num">単価</th><th class="num">金額</th>
-                <th class="cost-col">商社</th><th class="num cost-col">単価原価</th><th class="num cost-col">金額原価</th><th></th>
+                <th class="cost-col">商社</th><th class="num cost-col">単価原価</th><th class="num cost-col">金額原価</th>
+                <!-- ★R32: 粗利パターンはExcelのR〜Y列と同じく行の右端に置く。
+                     名称の下に1行使うと明細1行あたり表が2行分の高さになり、
+                     縦の情報量を上げたい他の要望（R29/R30）と噛み合わない。 -->
+                <th v-for="pct in MARGIN_PRESETS" :key="pct" class="num mp-col">{{ Math.round(pct * 100) }}%</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -412,9 +419,11 @@
                    Excelは「壁面工事」の下に「軽鉄工事」「塗装工事」…と複数の工種がぶら下がる。
                    1場所1工種にすると、同じ場所を工種の数だけ書くことになる（レビュー2026-07-29）。 -->
               <template v-for="(a, ai) in areas" :key="ai">
-                <tr class="area-row" :data-testid="`area-row-${ai}`">
+                <!-- ★R30: 場所の見出しを列見出しの直下に固定する。
+                     どの場所・工種を打っているのかがスクロール中も分かる。 -->
+                <tr class="area-row sticky-area" :data-testid="`area-row-${ai}`">
                   <td class="drag-col"></td>
-                  <td colspan="14">
+                  <td colspan="18">
                     <span class="blk-fields">
                       <span class="area-label">場所</span>
                       <input :value="a.location" class="input sm area-input" :data-testid="`area-loc-${ai}`"
@@ -427,9 +436,11 @@
                   </td>
                 </tr>
               <template v-for="b in a.blocks" :key="blocks.indexOf(b)">
-                <tr class="blk-row" :data-testid="`blk-row-${blocks.indexOf(b)}`">
+                <!-- ★R30: 工種の見出しは場所のさらに下に固定。
+                     次の工種が来たら押し上げられて入れ替わる（3段目）。 -->
+                <tr class="blk-row sticky-trade" :data-testid="`blk-row-${blocks.indexOf(b)}`">
                   <td class="drag-col"></td>
-                  <td colspan="14">
+                  <td colspan="18">
                     <span class="blk-fields blk-indent">
                       <span class="blk-sep">└</span>
                       <!-- 工種は自由記述＋予測変換（固定マスタからの選択を強制しない） -->
@@ -472,14 +483,12 @@
                            @change="onCodeChange(rows[i])" @blur="onCodeChange(rows[i])" />
                     <!-- ★R23: 品番の横に虫眼鏡。押した時だけ調べ、結果はモーダルで出す
                          （明細の下に出すと縦に伸びて入力欄が押し下げられる） -->
+                    <!-- ★R31: 押しても即モーダルを開かない（調べている間も入力を続けられる）。
+                         状態はアイコンで示す: 砂時計=検索中 / 赤バツ=見つからなかった / 青i=結果あり -->
                     <button v-if="isMaterialRow(rows[i])" class="pinfo-ico"
-                            :class="{ busy: pinfoBusyKey === productKeyOf(rows[i]), done: !!productInfoOf(rows[i]) }"
-                            :data-testid="`item-pinfo-ask-${i}`"
-                            :title="productInfoOf(rows[i]) ? '調べた商品情報を見る' : 'この品番の商品情報をネット検索で調べる'"
-                            @click="openProductInfo(rows[i])">
-                      <span class="material-symbols-rounded ico">
-                        {{ pinfoBusyKey === productKeyOf(rows[i]) ? 'hourglass_top' : (productInfoOf(rows[i]) ? 'info' : 'search') }}
-                      </span>
+                            :class="pinfoIcon(rows[i]).cls" :data-testid="`item-pinfo-ask-${i}`"
+                            :title="pinfoIcon(rows[i]).title" @click="onPinfoClick(rows[i])">
+                      <span class="material-symbols-rounded ico">{{ pinfoIcon(rows[i]).name }}</span>
                     </button>
                   </td>
                   <td><input v-model="rows[i].spec" class="input sm" :data-testid="`item-spec-${i}`" placeholder="R下地 / 2重貼 等" /></td>
@@ -510,28 +519,19 @@
                   </td>
                   <td class="num cost-col"><input v-model.number="rows[i].cost_unit_price" type="number" step="any" class="input sm num" :data-testid="`item-cost-${i}`" @input="onCostInput(rows[i])" /></td>
                   <td class="num cost-col amount" :data-testid="`item-cost-amount-${i}`">{{ yen(lineCostAmount(rows[i])) }}</td>
-                  <td><button class="btn-del" :data-testid="`item-del-${i}`" @click="removeRow(i)">×</button></td>
-                </tr>
-                <!-- ★R19: 粗利パターンの見比べ（ExcelのR〜Y列 = 5/10/15/20%）。
-                     原価が入っている行だけ出す（原価が無いと比べる意味が無い）。 -->
-                <tr v-if="(rows[i].cost_unit_price ?? 0) > 0" class="margin-preview-row">
-                  <td></td>
-                  <td colspan="14" class="mp-cells">
-                    <span class="mp-label">粗利パターン</span>
-                    <button v-for="pct in MARGIN_PRESETS" :key="pct" class="mp-cell"
+                  <td v-for="pct in MARGIN_PRESETS" :key="pct" class="num mp-col">
+                    <button v-if="(rows[i].cost_unit_price ?? 0) > 0" class="mp-cell"
                             :class="{ active: Math.round(marginPct) === Math.round(pct * 100) }"
                             :data-testid="`item-margin-${i}-${Math.round(pct * 100)}`"
                             :title="`粗利${Math.round(pct * 100)}%の単価を採用`"
-                            @click="applyMarginToRow(rows[i], pct)">
-                      <span class="mp-pct">{{ Math.round(pct * 100) }}%</span>
-                      <span class="mp-val">{{ yen(priceAtMargin(rows[i], pct)) }}</span>
-                    </button>
+                            @click="applyMarginToRow(rows[i], pct)">{{ yen(priceAtMargin(rows[i], pct)) }}</button>
                   </td>
+                  <td><button class="btn-del" :data-testid="`item-del-${i}`" @click="removeRow(i)">×</button></td>
                 </tr>
                 <!-- Q4: この項目の過去の業者別単価（受領登録で貯まったもの）。クリックで原価に採用 -->
                 <tr v-if="historyFor(rows[i].item_name).length" class="hist-row">
                   <td></td>
-                  <td colspan="14">
+                  <td colspan="18">
                     <div class="hist-cells">
                       <span class="hist-label">{{ isMaterialRow(rows[i]) ? '過去の単価' : '過去の下請実績' }}</span>
                       <span v-for="(h, hi) in historyFor(rows[i].item_name).slice(0, 4)" :key="hi" class="hist-wrap">
@@ -557,7 +557,7 @@
               </template>
               </template>
               <tr class="blk-add-row">
-                <td colspan="15"><button class="btn-add" data-testid="area-add" @click="addArea()">＋ 場所を追加</button></td>
+                <td colspan="19"><button class="btn-add" data-testid="area-add" @click="addArea()">＋ 場所を追加</button></td>
               </tr>
             </tbody>
           </table>
@@ -580,13 +580,25 @@
               {{ saving ? '保存中…' : (savedAt ? `保存しました ${savedAt}` : '入力すると自動で保存されます') }}
             </span>
             <span v-if="saveError" class="err">{{ saveError }}</span>
+            <!-- ★R33: 消したことに気づけるようにする＋取り消せるようにする -->
+            <span v-if="undoRow" class="undo-bar" data-testid="undo-bar">
+              「{{ undoRow.row.item_name || '(名称なし)' }}」を削除しました
+              <button class="btn-link-sm" data-testid="undo-remove" @click="undoRemoveRow">元に戻す</button>
+            </span>
 
           </div>
         </section>
 
+
+      </div>
+
+      </div><!-- /tab 明細入力 -->
+
+      <!-- ★R36: 工種別内訳は専用タブ。表示/非表示トグルだと明細のスペースを圧迫する -->
+      <div v-show="builderTab === 'breakdown'">
         <!-- 工種別 自動集計（転記操作なし）。★既定は畳んでおく。
              明細は列が多く、常時2カラムだと入力欄が狭くなる（レビュー2026-07-29）。 -->
-        <section v-show="showBreakdown" class="panel">
+        <section class="panel">
           <div class="panel-head"><h2>工種別 内訳（自動）</h2></div>
           <table class="table">
             <thead><tr><th>工種</th><th class="num">金額</th></tr></thead>
@@ -603,8 +615,6 @@
           </table>
         </section>
       </div>
-
-      </div><!-- /tab 明細入力 -->
 
       <!-- ★R23: 商品情報はモーダルで出す。明細の下に出すと縦に伸びて入力欄が押し下げられる -->
       <div v-if="pinfoModal" class="modal-back" data-testid="pinfo-modal" @click.self="pinfoModal = null">
@@ -674,7 +684,7 @@
       <div v-if="candModal" class="modal-back" data-testid="cand-modal" @click.self="candModal = false">
         <div class="modal-card wide">
           <div class="modal-head">
-            <h3>名称・品番の候補</h3>
+            <h3>{{ candKind === 'code' ? '品番の候補' : '名称の候補' }}</h3>
             <button class="btn-cancel" data-testid="cand-close" @click="candModal = false">閉じる</button>
           </div>
           <p class="hint">
@@ -684,8 +694,10 @@
           </p>
           <input v-model="candFilter" class="input" placeholder="絞り込み" data-testid="cand-filter" />
           <div class="cand-list">
-            <div v-for="(c, ci) in candidatesFiltered" :key="c.name" class="cand-row" :data-testid="`cand-row-${ci}`">
-              <input v-model="c.name" class="input sm" :data-testid="`cand-name-${ci}`" />
+            <div v-for="(c, ci) in candidatesFiltered" :key="c.name" class="cand-row"
+                 :class="{ 'code-first': candKind === 'code' }" :data-testid="`cand-row-${ci}`">
+              <!-- 開いた種類の欄を主役にして広く見せる（直したいものがすぐ見つかるように） -->
+              <input v-model="c.name" class="input sm" :data-testid="`cand-name-${ci}`" placeholder="名称" />
               <input v-model="c.code" class="input sm" placeholder="品番" :data-testid="`cand-code-${ci}`" />
               <input v-model="c.unit" class="input sm unit-in" placeholder="単位" :data-testid="`cand-unit-${ci}`" />
               <button class="btn-del" :data-testid="`cand-del-${ci}`" title="候補から外す" @click="removeCandidate(c)">×</button>
@@ -2609,13 +2621,18 @@ async function removeTrade(t: Trade) {
 //  ★消しても既存の見積の中身は変えない。候補に出なくなるだけ。
 //   過去の見積の名称を書き換えると、出した帳票と食い違うため。
 // ════════════════════════════════════════════════════════════
+// ★R35: 名称の候補と品番の候補は別物として扱う（直したい対象が違う）。
+//  ボタンもそれぞれの列の近くに置く。
 const candModal  = ref(false)
+const candKind   = ref<'name' | 'code'>('name')
+function openCandModal(kind: 'name' | 'code') { candKind.value = kind; candFilter.value = ''; candModal.value = true }
 const candFilter = ref('')
 const candMsg    = ref('')
 const candidatesFiltered = computed(() => {
   const q = candFilter.value.trim().toLowerCase()
-  const list = q ? materials.value.filter(m => m.name.toLowerCase().includes(q) || (m.code ?? '').toLowerCase().includes(q))
-                 : materials.value
+  // 品番の候補を開いている時は、品番を持つものだけ出す（名称だけの作業内容は対象外）
+  const base = candKind.value === 'code' ? materials.value.filter(m => (m.code ?? '').trim()) : materials.value
+  const list = q ? base.filter(m => m.name.toLowerCase().includes(q) || (m.code ?? '').toLowerCase().includes(q)) : base
   return list.slice(0, 200)   // 一度に出しすぎない（絞り込んで使う想定）
 })
 /** 候補から外す。単価表由来なら単価表側も消す必要があるので、その旨を伝える */
@@ -2634,12 +2651,31 @@ async function removeCandidate(c: Material) {
 }
 
 // ★R23: 商品情報はモーダルで見せる（明細の下に出すと縦に伸びて入力欄が押し下げられる）
+// ★R37: サムネイルの列数。図面の見やすさは画面幅と図面の内容で変わるので人が決められるようにする
+const thumbCols = ref(5)
 const pinfoModal = ref<Row | null>(null)
 const pinfoModalInfo = computed(() => pinfoModal.value ? productInfoOf(pinfoModal.value) : null)
-/** 虫眼鏡クリック: 未取得なら調べてから開く。取得済みなら即開く（無駄に叩かない） */
-async function openProductInfo(r: Row) {
-  pinfoModal.value = r
-  if (!productInfoOf(r)) await lookupProductInfo(r, true)
+/**
+ * ★R31: アイコンの見た目で状態を伝える。
+ *  未調査=虫眼鏡 / 調査中=砂時計 / 見つからなかった=赤バツ / 結果あり=青のi
+ */
+function pinfoIcon(r: Row): { name: string; cls: string; title: string } {
+  if (pinfoBusyKey.value === productKeyOf(r)) return { name: 'hourglass_top', cls: 'busy', title: '調べています…' }
+  const info = productInfoOf(r)
+  if (!info) return { name: 'search', cls: '', title: 'この品番の商品情報をネット検索で調べる' }
+  if (info.not_found) return { name: 'cancel', cls: 'none', title: '情報はありませんでした（押すと詳細）' }
+  return { name: 'info', cls: 'done', title: '調べた商品情報を見る' }
+}
+/**
+ * ★R31: 押した時にモーダルを強制的に開かない。
+ *  調べている間もそのまま他のセルを打てるようにする（調査は数十秒かかることがある）。
+ *  結果が出てからアイコンを押すとモーダルが開く。
+ */
+function onPinfoClick(r: Row) {
+  const info = productInfoOf(r)
+  if (info) { pinfoModal.value = r; return }        // 結果あり/なしが確定していれば見せる
+  if (pinfoBusyKey.value === productKeyOf(r)) return  // 調査中は何もしない（待たせない）
+  void lookupProductInfo(r, true)                   // まだなら調べるだけ。モーダルは開かない
 }
 
 /** まだ調べていない品名か（＝「調べる」ボタンを出すべきか） */
@@ -2858,10 +2894,32 @@ function blankRow(rowType: 'item' | 'header' = 'item'): Row {
            dim_w: null, dim_d: null, dim_h: null,
            cost_unit_price: 0, unit_price: 0, _priceTouched: false }
 }
+/**
+ * ★R33: 行を消したら「元に戻す」を出す。
+ *  R22でリアルタイム保存にしたため、削除は即DBに効く。
+ *  取り消しが無いと、誤操作で明細が消えたことに気づかないまま提出する事故が起きる。
+ *  戻す時は同じ内容で作り直す（元のidは復元しない＝並び順は sort_order で決まるので支障ない）。
+ */
+const undoRow = ref<{ row: Row; index: number } | null>(null)
+let undoTimer: ReturnType<typeof setTimeout> | null = null
 function removeRow(i: number) {
   const r = rows.value[i]
-  if (r.id) void supabase.from('estimate_items').delete().eq('id', r.id).then(() => markAutoSaved())   // R22: 即削除
+  if (r.id) void supabase.from('estimate_items').delete().eq('id', r.id).then(() => markAutoSaved())
   rows.value.splice(i, 1)
+  if (isBlankRow(r)) return          // 空行を消しただけなら知らせる意味が無い
+  undoRow.value = { row: { ...r, id: null }, index: i }
+  if (undoTimer) clearTimeout(undoTimer)
+  undoTimer = setTimeout(() => { undoRow.value = null }, 15000)   // 気づける長さは要る
+}
+async function undoRemoveRow() {
+  const u = undoRow.value
+  if (!u) return
+  undoRow.value = null
+  if (undoTimer) { clearTimeout(undoTimer); undoTimer = null }
+  const at = Math.min(u.index, rows.value.length)
+  const restored: Row = { ...u.row, _k: ++rowKey }
+  rows.value.splice(at, 0, restored)
+  await autoSaveRow(restored)
 }
 
 // ════════════════════════════════════════════════════════════
@@ -3406,14 +3464,25 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 /* R18: 内訳を畳んだら明細を全幅に */
 .grid.grid-wide { grid-template-columns: 1fr; }
 /* R18: ヘッダー固定＋内部スクロール（40行超の実案件でも見出しを見失わない） */
-.items-scroll { max-height: 62vh; overflow: auto; }
-.est-items thead th { position: sticky; top: 0; z-index: 2; background: #fff; box-shadow: 0 1px 0 #E2E8F0; }
+/* ★R29: 明細は画面の余白いっぱいまで使う（打つ行数が多いので縦が命） */
+.items-scroll { max-height: calc(100vh - 300px); min-height: 420px; overflow: auto; }
+/* ★R30: 三段のスティッキー。上から 列見出し → 場所 → 工種 の順に積む。
+   段の高さが変わると重なるので、実測に合わせた固定値で積んでいる。
+   スクロールすると、下の段（工種）から順に押し上げられて入れ替わる。 */
+.est-items thead th { position: sticky; top: 0; z-index: 30; background: #fff; box-shadow: 0 1px 0 #E2E8F0; }
+/* ★セルに sticky を付けても、セルは自分の行の高さに閉じ込められて動けない。
+   行(tr)そのものを sticky にする（border-collapse:separate が前提）。 */
+.est-items tr.sticky-area { position: sticky; top: 28px; z-index: 20; }
+.est-items tr.sticky-trade { position: sticky; top: 75px; z-index: 10; }
+/* 固定中に下の行が透けないよう、行にも地色を敷く */
+.est-items tr.sticky-area td, .est-items tr.sticky-trade td { background-clip: padding-box; }
 /* R19: 粗利パターン */
 .margin-preview-row td { background: #FBFCFD; }
 .mp-cells { padding: 3px 0; }
 .mp-label { font-size: 11px; color: #999; margin-right: 8px; }
-.mp-cell { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; margin-right: 6px;
-           padding: 2px 8px; border: 1px solid #D5DEE8; border-radius: 6px; background: #fff; cursor: pointer; }
+.mp-col { width: 84px; }
+.mp-cell { display: block; width: 100%; padding: 2px 4px; border: 1px solid #D5DEE8; border-radius: 5px;
+           background: #fff; cursor: pointer; font-size: 11px; font-variant-numeric: tabular-nums; }
 .mp-cell:hover { background: #EEF4FF; border-color: #4A7BC8; }
 .mp-cell.active { border-color: #2F6FD0; background: #EEF4FF; }
 .mp-pct { font-size: 10px; color: #7A8AA0; }
@@ -3428,6 +3497,7 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .pinfo-ico:hover { color: #2F6FD0; }
 .pinfo-ico.done { color: #2F6FD0; }
 .pinfo-ico.busy { color: #F0A500; }
+.pinfo-ico.none { color: #DC2626; }   /* 見つからなかった＝赤バツ（R31） */
 .pinfo-ico .ico { font-size: 16px; vertical-align: middle; }
 .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 50; }
 .modal-card.wide { width: min(760px, 94vw); }
@@ -3438,7 +3508,11 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .trade-list { list-style: none; margin: 0; padding: 0; max-height: 46vh; overflow-y: auto; }
 .trade-list li { display: flex; gap: 6px; align-items: center; margin-bottom: 5px; }
 .cand-list { max-height: 48vh; overflow-y: auto; margin-top: 8px; }
-.cand-row { display: grid; grid-template-columns: 1fr 160px 80px 32px; gap: 6px; margin-bottom: 5px; }
+.cand-row { display: grid; grid-template-columns: 1fr 180px 80px 32px; gap: 6px; margin-bottom: 5px; }
+.cand-row.code-first { grid-template-columns: 200px 1fr 80px 32px; }
+.dsend-cols { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: #7A8AA0; }
+.col-btn { min-width: 24px; padding: 1px 5px; border: 1px solid #D5DEE8; border-radius: 5px; background: #fff; cursor: pointer; font-size: 11px; }
+.col-btn.on { background: #2F6FD0; border-color: #2F6FD0; color: #fff; }
 .modal-card { background: #fff; border-radius: 10px; padding: 16px 18px; width: min(560px, 92vw); max-height: 86vh; overflow: auto; }
 .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .pinfo-loading { display: flex; align-items: center; gap: 8px; color: #666; padding: 18px 0; }
@@ -3479,20 +3553,23 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 /* ── 明細のブロック（場所×工種）── */
 .blk-row td { background: #EEF2F7; border-top: 2px solid #D5DEE8; padding: 6px 8px; }
 .blk-fields { display: flex; align-items: center; gap: 8px; }
-.blk-input { min-width: 180px; font-weight: 600; background: #fff; }
+.blk-input { min-width: 320px; font-weight: 600; background: #fff; }
 .blk-sep { color: #90A4B8; font-weight: 700; }
 .blk-count { font-size: 11px; color: #7A8AA0; }
 .blk-del { margin-left: auto; }
 .area-row td { background: #E3EAF3; border-top: 2px solid #C3D0E0; padding: 6px 8px; }
 .area-label { font-size: 11px; color: #5A6C82; font-weight: 700; }
-.area-input { min-width: 200px; font-weight: 700; background: #fff; }
+.area-input { min-width: 360px; font-weight: 700; background: #fff; }
 .area-add { margin-left: 4px; }
 .blk-indent { padding-left: 22px; }
 .dim-col { width: 62px; }
 .input.xs.num { width: 56px; }
 .blk-add-row td { padding: 10px 8px; background: #FAFBFC; }
 /* 列が多いので詰める。入力欄は列幅に追従させる */
-.est-items { min-width: 1180px; }
+/* ★R30: tbody のセルは border-collapse:collapse だと position:sticky が効かない（Chromeの制約）。
+   場所・工種の見出しを固定するために separate に切り替える。
+   罫線は行の border で描いているので見た目は変わらない。 */
+.est-items { min-width: 1180px; border-collapse: separate; border-spacing: 0; }
 .est-items th, .est-items td { padding: 5px 6px; font-size: 12px; }
 .est-items .input { padding: 5px 6px; font-size: 12px; }
 .est-items .input.sm { min-width: 0; }
