@@ -380,6 +380,7 @@
               <!-- 粗利率: アカウント既定 ＋ この見積だけ上書き。
                    行ごとの 5/10/15/20% プレビューは 2026-07-28 に一度撤去したが、
                    2026-07-29 の第3回レビューで復活の要望が出たため戻した（ExcelのR〜Y列と同じ形）。 -->
+              <button class="btn-link-sm" data-testid="open-cand-modal" @click="candModal = true">候補を編集</button>
               <button class="btn-link-sm" data-testid="toggle-breakdown" @click="showBreakdown = !showBreakdown">
                 {{ showBreakdown ? '工種別内訳を隠す' : '工種別内訳を見る' }}
               </button>
@@ -441,7 +442,10 @@
                   </td>
                 </tr>
                 <template v-for="i in b.idxs" :key="rows[i]._k">
+                <!-- ★R22: セルを離れた時点で保存する。native の change はバブルするので
+                     行に1つ付ければ配下の全セル（input/select）を拾える。 -->
                 <tr :class="{ 'drag-over': dragOverIndex === i && dragIndex !== null && dragIndex !== i }"
+                    @change="autoSaveRow(rows[i])"
                     @dragover.prevent="dragOverIndex = i" @drop="onDrop(i)" @dragleave="dragOverIndex = null">
                   <td class="drag-handle" draggable="true" title="ドラッグで並び替え" :data-testid="`item-drag-${i}`" @dragstart="onDragStart(i)" @dragend="onDragEnd">⠿</td>
                   <td>
@@ -565,9 +569,13 @@
             <span class="cs-note">※社内用。見積書には出ません</span>
           </div>
           <div class="actions-row">
-            <button class="btn-primary" :disabled="saving" data-testid="save-items" @click="save">{{ saving ? '保存中…' : '保存' }}</button>
+            <!-- ★R22: 保存ボタンは廃止（セルを離れた時点で保存済み）。
+                 いつ保存されたかだけ出す。 -->
+            <span class="autosave" data-testid="autosave-state">
+              {{ saving ? '保存中…' : (savedAt ? `保存しました ${savedAt}` : '入力すると自動で保存されます') }}
+            </span>
             <span v-if="saveError" class="err">{{ saveError }}</span>
-            <span v-if="savedMsg" class="ok">{{ savedMsg }}</span>
+
           </div>
         </section>
 
@@ -652,6 +660,35 @@
             </button>
             <span v-if="companyMsg" class="ok" data-testid="cm-msg">{{ companyMsg }}</span>
             <span v-if="companyErr" class="err" data-testid="cm-err">{{ companyErr }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ★R21: 名称・品番の候補を画面上で直せるようにする。
+           誤入力がそのまま候補に残り続けると、次から間違いを選んでしまう。 -->
+      <div v-if="candModal" class="modal-back" data-testid="cand-modal" @click.self="candModal = false">
+        <div class="modal-card wide">
+          <div class="modal-head">
+            <h3>名称・品番の候補</h3>
+            <button class="btn-cancel" data-testid="cand-close" @click="candModal = false">閉じる</button>
+          </div>
+          <p class="hint">
+            候補は<strong>商社単価表</strong>と<strong>過去に打った明細</strong>から作られます。
+            打ち間違いが残っている場合はここで直せます。<br>
+            ここで消しても、<strong>すでに作った見積の中身は変わりません</strong>（候補に出なくなるだけです）。
+          </p>
+          <input v-model="candFilter" class="input" placeholder="絞り込み" data-testid="cand-filter" />
+          <div class="cand-list">
+            <div v-for="(c, ci) in candidatesFiltered" :key="c.name" class="cand-row" :data-testid="`cand-row-${ci}`">
+              <input v-model="c.name" class="input sm" :data-testid="`cand-name-${ci}`" />
+              <input v-model="c.code" class="input sm" placeholder="品番" :data-testid="`cand-code-${ci}`" />
+              <input v-model="c.unit" class="input sm unit-in" placeholder="単位" :data-testid="`cand-unit-${ci}`" />
+              <button class="btn-del" :data-testid="`cand-del-${ci}`" title="候補から外す" @click="removeCandidate(c)">×</button>
+            </div>
+            <p v-if="!candidatesFiltered.length" class="hint">候補がありません</p>
+          </div>
+          <div class="actions-row">
+            <span v-if="candMsg" class="ok" data-testid="cand-msg">{{ candMsg }}</span>
           </div>
         </div>
       </div>
@@ -907,7 +944,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import { onBeforeRouteLeave, useRoute } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
 import { supabase } from '../lib/supabase'
@@ -1681,7 +1718,6 @@ const addingProject  = ref(false)
 const projectErr     = ref('')
 const saving         = ref(false)
 const saveError      = ref('')
-const savedMsg       = ref('')
 let accountId = ''
 // ③ 見積書PDFのメール送信（元請けの担当者宛）＋送信履歴
 const contractors       = ref<Contractor[]>([])
@@ -1925,6 +1961,7 @@ function onDrop(i: number) {
   arr.splice(from, 1)
   arr.splice(i, 0, moved)
   dragIndex.value = null
+  void save()   // R22: 並び順(sort_order)も即保存する
 }
 const currentProject   = computed(() => projects.value.find(p => p.id === projectId.value) ?? null)
 const currentContractorId = computed(() => currentProject.value?.contractor_id ?? null)
@@ -2499,6 +2536,36 @@ async function loadCachedProductInfo(r: Row) {
     not_found: !!cached.not_found,
   } }
 }
+// ════════════════════════════════════════════════════════════
+//  R21: 名称・品番の候補を画面上で編集・削除する
+//  候補は「商社単価表」＋「過去に打った明細」から作られる（R28）。
+//  ★消しても既存の見積の中身は変えない。候補に出なくなるだけ。
+//   過去の見積の名称を書き換えると、出した帳票と食い違うため。
+// ════════════════════════════════════════════════════════════
+const candModal  = ref(false)
+const candFilter = ref('')
+const candMsg    = ref('')
+const candidatesFiltered = computed(() => {
+  const q = candFilter.value.trim().toLowerCase()
+  const list = q ? materials.value.filter(m => m.name.toLowerCase().includes(q) || (m.code ?? '').toLowerCase().includes(q))
+                 : materials.value
+  return list.slice(0, 200)   // 一度に出しすぎない（絞り込んで使う想定）
+})
+/** 候補から外す。単価表由来なら単価表側も消す必要があるので、その旨を伝える */
+async function removeCandidate(c: Material) {
+  const fromPrice = matPrices.value.some(p =>
+    (p.item_name ?? '').trim().toLowerCase() === c.name.trim().toLowerCase())
+  const msg = fromPrice
+    ? `「${c.name}」を候補から外します。\n※この名称は商社単価表にも登録されています。単価表の行は残るため、単価表から消さないと再び候補に出ます。`
+    : `「${c.name}」を候補から外しますか？\n※すでに作った見積の中身は変わりません。`
+  if (!window.confirm(msg)) return
+  materials.value = materials.value.filter(m => m !== c)
+  // 材料マスタ由来（移行期間の既存データ）なら実体も消す
+  if (c.id) await supabase.from('estimate_materials').delete().eq('id', c.id)
+  candMsg.value = '候補から外しました'
+  setTimeout(() => { candMsg.value = '' }, 2000)
+}
+
 // ★R23: 商品情報はモーダルで見せる（明細の下に出すと縦に伸びて入力欄が押し下げられる）
 const pinfoModal = ref<Row | null>(null)
 const pinfoModalInfo = computed(() => pinfoModal.value ? productInfoOf(pinfoModal.value) : null)
@@ -2726,7 +2793,7 @@ function blankRow(rowType: 'item' | 'header' = 'item'): Row {
 }
 function removeRow(i: number) {
   const r = rows.value[i]
-  if (r.id) removedIds.value.push(r.id)
+  if (r.id) void supabase.from('estimate_items').delete().eq('id', r.id).then(() => markAutoSaved())   // R22: 即削除
   rows.value.splice(i, 1)
 }
 
@@ -2786,10 +2853,12 @@ const areas = computed<Area[]>(() => {
 /** ブロック（工種）の値を変えたら、その中の全行に反映する */
 function onBlockField(b: Block, field: 'location' | 'trade_name', value: string) {
   for (const i of b.idxs) rows.value[i][field] = value
+  void autoSaveRows(b.idxs.map(i => rows.value[i]))   // R22: まとめて変えた分も即保存
 }
 /** 場所を変えたら、その場所配下の**全工種の全行**に反映する（一対多の実体） */
 function onAreaLocation(a: Area, value: string) {
   for (const b of a.blocks) for (const i of b.idxs) rows.value[i].location = value
+  void autoSaveRows(a.blocks.flatMap(b => b.idxs.map(i => rows.value[i])))
 }
 
 function newBlockRows(location: string, trade: string, markArea = false): Row[] {
@@ -2859,86 +2928,127 @@ function ensureSpareRows() {
 // 打つたびに末尾の空きを補充する。補充後は条件を満たすので再帰しない。
 watch(rows, ensureSpareRows, { deep: true })
 
+// ════════════════════════════════════════════════════════════
+//  R22: 明細のリアルタイム保存（保存ボタン廃止）
+//
+//  2026-07-29 ユーザー回答:「完全自動・ボタン廃止」
+//  セルを離れたら即保存し、右上に「保存しました HH:MM」を出す。
+//  未保存警告（離脱ガード）も無くす＝そもそも未保存の状態が存在しない。
+//
+//  ★1行ずつ直列化して保存する理由
+//   同じ行を続けて編集すると、先に投げた古い値のリクエストが後着して
+//   新しい値を上書きする（last-write-wins）。実行時に最新stateを読む関数を
+//   鎖にすることで、順序保証と最新値への合流を同時に満たす。
+// ════════════════════════════════════════════════════════════
+const saveChains = new Map<string, Promise<unknown>>()
+function serializeSave(key: string, fn: () => Promise<unknown>): Promise<unknown> {
+  const next = (saveChains.get(key) ?? Promise.resolve()).catch(() => {}).then(fn)
+  saveChains.set(key, next)
+  return next
+}
+const savedAt = ref('')
+function markAutoSaved() {
+  const d = new Date()
+  savedAt.value = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+function itemPayload(r: Row, order: number) {
+  return {
+    account_id: accountId, project_id: projectId.value,
+    trade_id: r.trade_id || null, material_id: r.material_id || null, supplier_id: r.supplier_id || null,
+    item_name: r.item_name || '(無題)',
+    unit: r.unit || null, quantity: Number(r.quantity) || 0, unit_price: Number(r.unit_price) || 0,
+    note: r.location || null, sort_order: order,
+    trade_name: r.trade_name || null, spec: r.spec || null, product_code: r.product_code || null, row_type: r.row_type,
+    dim_w: r.dim_w ?? null, dim_d: r.dim_d ?? null, dim_h: r.dim_h ?? null,
+    cost_unit_price: r.cost_unit_price || null,
+  }
+}
+
+/** 1行を保存する。空になった行は削除する（人が消したのと同義） */
+async function doSaveRow(r: Row) {
+  if (!projectId.value || loadingItems) return
+  saveError.value = ''
+  const order = rows.value.indexOf(r)
+  if (isBlankRow(r)) {
+    if (r.id) { await supabase.from('estimate_items').delete().eq('id', r.id); r.id = null; markAutoSaved() }
+    return
+  }
+  const payload = itemPayload(r, order < 0 ? 0 : order)
+  if (r.id) {
+    const { error } = await supabase.from('estimate_items').update(payload).eq('id', r.id)
+    if (error) { saveError.value = error.message; return }
+  } else {
+    const { data, error } = await supabase.from('estimate_items').insert(payload).select('id').single()
+    if (error) { saveError.value = error.message; return }
+    if (data) r.id = (data as any).id
+  }
+  rememberAsCandidate(r)
+  markAutoSaved()
+}
+
+/**
+ * 打った名称をその場で候補に足す。
+ * ★保存のたびに候補を全件読み直す（loadMaterials）のは重いので、手元の一覧に足すだけにする。
+ *   これをやらないと「1行目に打った名前が2行目の予測変換に出ない」（自動保存にして実際に踏んだ）。
+ */
+function rememberAsCandidate(r: Row) {
+  const nm = (r.item_name ?? '').trim()
+  if (!nm || nm === '(無題)') return
+  const key = nm.toLowerCase()
+  const cur = materials.value.find(m => m.name.trim().toLowerCase() === key)
+  if (cur) {
+    if (!cur.unit && r.unit) cur.unit = r.unit
+    if (!cur.code && r.product_code) cur.code = r.product_code
+    return
+  }
+  materials.value = [...materials.value, {
+    id: r.material_id ?? null, name: nm, unit: r.unit || null, code: r.product_code || null,
+  }].sort((a, b) => a.name.localeCompare(b.name, 'ja'))
+}
+/** セルを離れた時に呼ぶ入口。行ごとに直列化する */
+function autoSaveRow(r: Row) { return serializeSave(`row:${r._k}`, () => doSaveRow(r)) }
+/** ブロック（工種）や場所をまとめて変えた時など、複数行を保存する */
+async function autoSaveRows(list: Row[]) { for (const r of list) await autoSaveRow(r) }
+
+/**
+ * 全行を保存する（並び替え後の sort_order 反映・比較選定からの流し込み等）。
+ * 保存ボタンは無いので、人が押す用途ではなくプログラムから呼ぶためのもの。
+ */
 async function save() {
   if (!projectId.value) return
-  saving.value = true; saveError.value = ''; savedMsg.value = ''
+  saving.value = true; saveError.value = ''
   try {
-    // 削除
     if (removedIds.value.length) {
       await supabase.from('estimate_items').delete().in('id', removedIds.value)
       removedIds.value = []
     }
-    // ★R28: 明細保存時の材料マスタ自動登録は廃止した。
-    //   作業内容（下請への発注作業）まで「材料」として溜まり、
-    //   商社単価表と材料マスタで管理場所が二重になっていたため。
-    //   名称・品番の候補は loadMaterials() が
-    //   「商社単価表 ＋ 過去の明細入力履歴」から作る（保存＝そのまま履歴になる）。
-    //   既存行の material_id は触らない（過去の紐付けと FK を壊さない）。
-    // upsert（amount は生成列なので送らない）
-    // ★空行は保存しない。末尾に常時5行の空きを用意する仕様なので、
-    //   そのまま保存すると「(無題)」のゴミ行が毎回5行ずつ増える。
-    //   一度保存した行が空になった場合は削除する（人が消したのと同義）。
-    const emptied = rows.value.filter(r => r.id && isBlankRow(r)).map(r => r.id!)
-    if (emptied.length) {
-      await supabase.from('estimate_items').delete().in('id', emptied)
-      for (const r of rows.value) if (r.id && isBlankRow(r)) r.id = null
-    }
-    let order = 0
-    for (const r of rows.value) {
-      if (isBlankRow(r)) continue
-      const payload: any = {
-        account_id: accountId, project_id: projectId.value,
-        trade_id: r.trade_id || null, material_id: r.material_id || null, supplier_id: r.supplier_id || null,
-        item_name: r.item_name || '(無題)',
-        unit: r.unit || null, quantity: Number(r.quantity) || 0, unit_price: Number(r.unit_price) || 0,
-        note: r.location || null, sort_order: order++,
-        trade_name: r.trade_name || null, spec: r.spec || null, product_code: r.product_code || null, row_type: r.row_type,
-        dim_w: r.dim_w ?? null, dim_d: r.dim_d ?? null, dim_h: r.dim_h ?? null,
-        cost_unit_price: r.cost_unit_price || null,
-      }
-      if (r.id) await supabase.from('estimate_items').update(payload).eq('id', r.id)
-      else {
-        const { data } = await supabase.from('estimate_items').insert(payload).select('id').single()
-        if (data) r.id = (data as any).id
-      }
-    }
+    for (const r of rows.value) await autoSaveRow(r)
     await loadMaterials()   // 打った名称がそのまま次回の候補になる（材料マスタは介さない）
-    // 見積書フィールド（工事場所/工期/有効期限/MEMO/端数調整）も保存
-    await supabase.from('estimate_projects').update({
-      construction_location: doc.value.construction_location || null, period_text: doc.value.period_text || null,
-      margin_rate: doc.value.margin_rate,
-      valid_until: doc.value.valid_until || null, memo: doc.value.memo || null, adjustment: Number(doc.value.adjustment) || 0,
-    }).eq('id', projectId.value)
-    markSaved()   // 保存完了＝離脱ガードの基準を更新（以降は未保存扱いしない）
-    savedMsg.value = '保存しました'
-    setTimeout(() => (savedMsg.value = ''), 2500)
+    await saveDocFields()
   } catch (e: any) {
     saveError.value = e?.message ?? '保存に失敗しました'
   } finally {
     saving.value = false
   }
 }
+/** 見積書フィールド（工事場所/工期/有効期限/MEMO/端数調整/粗利率） */
+async function saveDocFields() {
+  if (!projectId.value) return
+  await supabase.from('estimate_projects').update({
+    construction_location: doc.value.construction_location || null, period_text: doc.value.period_text || null,
+    margin_rate: doc.value.margin_rate,
+    valid_until: doc.value.valid_until || null, memo: doc.value.memo || null, adjustment: Number(doc.value.adjustment) || 0,
+  }).eq('id', projectId.value)
+  markAutoSaved()
+}
 
 // #3 編集中の離脱ガード: 未保存の明細がある状態で 遷移/タブ閉じ/案件切替 時に確認する
-function rowsSig(): string {
-  // doc項目は自動保存するため離脱ガードの対象外（明細だけ「保存」ボタン）
-  // ★空行は署名に含めない。常に末尾へ空行を補充する仕様なので、含めると
-  //   何も打っていないのに「未保存です」と警告が出てしまう。
-  return JSON.stringify(rows.value.filter(r => !isBlankRow(r))
-    .map(r => [r.location, r.trade_name, r.material_id, r.supplier_id, r.item_name, r.product_code, r.spec,
-               r.dim_w, r.dim_d, r.dim_h, r.unit, r.quantity, r.cost_unit_price, r.unit_price]))
-}
-const savedSig = ref('[]')
-function markSaved() { savedSig.value = rowsSig() }   // 「今の明細＝保存済み」とみなす基準を更新
-const isDirty = computed(() => !!projectId.value && (rowsSig() !== savedSig.value || removedIds.value.length > 0))
-const DIRTY_MSG = '保存していない明細があります。保存せずに移動しますか？'
-let lastLoadedProjectId: string | null = null
-// ルート遷移（一覧へ戻る・サイドメニュー等）のガード。案件切替は一覧経由＝遷移なのでこれで覆える。
-onBeforeRouteLeave(() => (isDirty.value ? window.confirm(DIRTY_MSG) : true))
-// タブ閉じ/リロードのガード（ブラウザのネイティブ確認）
-function beforeUnload(e: BeforeUnloadEvent) { if (isDirty.value) { e.preventDefault(); e.returnValue = '' } }
-onMounted(() => window.addEventListener('beforeunload', beforeUnload))
-onUnmounted(() => window.removeEventListener('beforeunload', beforeUnload))
+let lastLoadedProjectId: string | null = null   // 同じ案件の二重読み込みを避けるための記録
+// ★R22: リアルタイム保存にしたので「未保存」という状態が無くなった。
+//   保存ボタン・離脱ガード（ルート遷移確認 / beforeunload）はいずれも撤去。
+//   markSaved は読み込み完了時の互換のために残すが、何もしない。
+function markSaved() { /* no-op: 自動保存になったので基準の更新は不要 */ }
 
 onMounted(async () => {
   accountId = await getAccountId()
@@ -3253,6 +3363,9 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .pinfo-ico.busy { color: #F0A500; }
 .pinfo-ico .ico { font-size: 16px; vertical-align: middle; }
 .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 50; }
+.modal-card.wide { width: min(760px, 94vw); }
+.cand-list { max-height: 48vh; overflow-y: auto; margin-top: 8px; }
+.cand-row { display: grid; grid-template-columns: 1fr 160px 80px 32px; gap: 6px; margin-bottom: 5px; }
 .modal-card { background: #fff; border-radius: 10px; padding: 16px 18px; width: min(560px, 92vw); max-height: 86vh; overflow: auto; }
 .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .pinfo-loading { display: flex; align-items: center; gap: 8px; color: #666; padding: 18px 0; }

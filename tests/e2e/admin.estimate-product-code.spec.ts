@@ -72,7 +72,8 @@ test('AC1★: 品番と形状・詳細が別の列として保存される', asy
   await page.locator('[data-testid="item-spec-0"]').fill('W65 @303 2重貼')
   await page.locator('[data-testid="item-qty-0"]').fill('10')
   await page.locator('[data-testid="item-cost-0"]').fill('1000')
-  await page.locator('[data-testid="save-items"]').click()
+  await page.keyboard.press('Tab')   // セルを離れる＝保存のきっかけ
+  await expect(page.locator('[data-testid="autosave-state"]')).toContainText('保存しました', { timeout: 15000 })
   await page.waitForTimeout(2500)
 
   const items = await itemsOf('item_name,product_code,spec')
@@ -107,7 +108,8 @@ test('AC4: 新しい品番は明細を保存すると候補に貯まる（材料
   await page.locator('[data-testid="item-code-0"]').dispatchEvent('change')
   await page.locator('[data-testid="item-qty-0"]').fill('1')
   await page.locator('[data-testid="item-cost-0"]').fill('500')
-  await page.locator('[data-testid="save-items"]').click()
+  await page.keyboard.press('Tab')   // セルを離れる＝保存のきっかけ
+  await expect(page.locator('[data-testid="autosave-state"]')).toContainText('保存しました', { timeout: 15000 })
   await page.waitForTimeout(2500)
 
   const accountId = await getAccountId()

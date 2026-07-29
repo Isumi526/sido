@@ -67,7 +67,7 @@ test('AC1★(R12): 1つの場所に複数の工種をぶら下げられ、場所
   // 場所の欄は1つだけ（工種ごとに場所を打たされない）
   await expect(page.locator('[data-testid^="area-loc-"]')).toHaveCount(1)
 
-  await page.locator('[data-testid="save-items"]').click()
+  await expect(page.locator('[data-testid="autosave-state"]')).toContainText('保存しました', { timeout: 15000 })   // R22: 自動保存
   await page.waitForTimeout(2500)
 
   // ★DB: 2行とも同じ場所、工種は別々（集計・帳票の互換のため行ごとに持つ）
@@ -94,7 +94,7 @@ test('AC2(R12): 場所を後から直すと、その場所の全工種の全行�
 
   // 場所を打ち直す → 配下の全工種に伝播する
   await page.locator('[data-testid="area-loc-0"]').fill('天井工事（変更後）')
-  await page.locator('[data-testid="save-items"]').click()
+  await expect(page.locator('[data-testid="autosave-state"]')).toContainText('保存しました', { timeout: 15000 })   // R22: 自動保存
   await page.waitForTimeout(2500)
 
   const items = await itemsOf('note,trade_name')
@@ -122,7 +122,7 @@ test('AC3(R12): 場所を2つ作れて、混ざらない', async ({ page }) => {
 
   // 1つ目の場所を変えても2つ目には影響しない
   await page.locator('[data-testid="area-loc-0"]').fill('壁面工事X')
-  await page.locator('[data-testid="save-items"]').click()
+  await expect(page.locator('[data-testid="autosave-state"]')).toContainText('保存しました', { timeout: 15000 })   // R22: 自動保存
   await page.waitForTimeout(2500)
 
   const items = await itemsOf('item_name,note')
@@ -145,7 +145,7 @@ test('AC4★(R13): W/D/H を記録できる（数量は自動計算しない）'
   await page.locator('[data-testid="item-unit-0"]').fill('個')
   await page.locator('[data-testid="item-cost-0"]').fill('4000')
 
-  await page.locator('[data-testid="save-items"]').click()
+  await expect(page.locator('[data-testid="autosave-state"]')).toContainText('保存しました', { timeout: 15000 })   // R22: 自動保存
   await page.waitForTimeout(2500)
 
   const items = await itemsOf('item_name,product_code,spec,dim_w,dim_d,dim_h,quantity,unit')
@@ -170,7 +170,8 @@ test('AC5(R13): 列見出しがExcelの並び（名称→品番→形状詳細�
 test('AC6(R13): 寸法だけ入れた行が空行扱いで消えない', async ({ page }) => {
   await openNewProject(page)
   await page.locator('[data-testid="item-w-0"]').fill('1200')
-  await page.locator('[data-testid="save-items"]').click()
+  await page.locator('[data-testid="item-w-0"]').press('Tab')   // セルを離れる＝保存のきっかけ
+  await expect(page.locator('[data-testid="autosave-state"]')).toContainText('保存しました', { timeout: 15000 })
   await page.waitForTimeout(2500)
   const items = await itemsOf('dim_w')
   expect(items.length, '寸法だけの行も保存される').toBe(1)
@@ -188,7 +189,8 @@ test('AC7★(R13): 開き直して保存し直しても、品番・寸法が消�
   await page.locator('[data-testid="item-h-0"]').fill('30')
   await page.locator('[data-testid="item-qty-0"]').fill('4')
   await page.locator('[data-testid="item-cost-0"]').fill('4000')
-  await page.locator('[data-testid="save-items"]').click()
+  await page.locator('[data-testid="item-cost-0"]').press('Tab')
+  await expect(page.locator('[data-testid="autosave-state"]')).toContainText('保存しました', { timeout: 15000 })
   await page.waitForTimeout(2500)
 
   // 開き直す → 画面に復元されている
@@ -200,12 +202,17 @@ test('AC7★(R13): 開き直して保存し直しても、品番・寸法が消�
   await expect(page.locator('[data-testid="item-d-0"]')).toHaveValue('40')
   await expect(page.locator('[data-testid="item-h-0"]')).toHaveValue('30')
 
-  // そのまま保存し直しても消えない
-  await page.locator('[data-testid="save-items"]').click()
-  await page.waitForTimeout(2500)
-  const items = await itemsOf('product_code,dim_w,dim_d,dim_h')
+  // ★開き直したあとに別の欄をいじって保存が走っても、品番・寸法が消えない
+  //   （読み戻していない列があると、この保存で null に上書きされて消える）
+  await page.locator('[data-testid="item-qty-0"]').fill('5')
+  await page.locator('[data-testid="item-qty-0"]').press('Tab')
+  await expect(page.locator('[data-testid="autosave-state"]')).toContainText('保存しました', { timeout: 15000 })
+  await page.waitForTimeout(1500)
+
+  const items = await itemsOf('product_code,dim_w,dim_d,dim_h,quantity')
   expect(items.length).toBe(1)
   expect(items[0].product_code, '再保存で品番が消えない').toBe('GS-777')
   expect(Number(items[0].dim_w), '再保存で寸法が消えない').toBe(2000)
   expect(Number(items[0].dim_h)).toBe(30)
+  expect(Number(items[0].quantity), '編集した値は反映される').toBe(5)
 })
