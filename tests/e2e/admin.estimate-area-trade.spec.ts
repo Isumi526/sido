@@ -176,3 +176,36 @@ test('AC6(R13): 寸法だけ入れた行が空行扱いで消えない', async (
   expect(items.length, '寸法だけの行も保存される').toBe(1)
   expect(Number(items[0].dim_w)).toBe(1200)
 })
+
+test('AC7★(R13): 開き直して保存し直しても、品番・寸法が消えない', async ({ page }) => {
+  // ★保存した列を読み戻していないと「開く→保存」で列が消える（品番・寸法で実際に踏んだ）。
+  //   1セッション内で保存→DB確認だけでは検出できないので、必ず開き直して再保存する。
+  await openNewProject(page)
+  await page.locator('[data-testid="item-name-0"]').fill('ガラススリット受金物')
+  await page.locator('[data-testid="item-code-0"]').fill('GS-777')
+  await page.locator('[data-testid="item-w-0"]').fill('2000')
+  await page.locator('[data-testid="item-d-0"]').fill('40')
+  await page.locator('[data-testid="item-h-0"]').fill('30')
+  await page.locator('[data-testid="item-qty-0"]').fill('4')
+  await page.locator('[data-testid="item-cost-0"]').fill('4000')
+  await page.locator('[data-testid="save-items"]').click()
+  await page.waitForTimeout(2500)
+
+  // 開き直す → 画面に復元されている
+  const accountId = await getAccountId()
+  const pj = await restSrv(`estimate_projects?account_id=eq.${accountId}&name=eq.${encodeURIComponent(PROJ)}&select=id`)
+  await page.goto(`/estimate-builder?project=${pj[0].id}`, { waitUntil: 'networkidle' })
+  await expect(page.locator('[data-testid="item-code-0"]')).toHaveValue('GS-777', { timeout: 15000 })
+  await expect(page.locator('[data-testid="item-w-0"]')).toHaveValue('2000')
+  await expect(page.locator('[data-testid="item-d-0"]')).toHaveValue('40')
+  await expect(page.locator('[data-testid="item-h-0"]')).toHaveValue('30')
+
+  // そのまま保存し直しても消えない
+  await page.locator('[data-testid="save-items"]').click()
+  await page.waitForTimeout(2500)
+  const items = await itemsOf('product_code,dim_w,dim_d,dim_h')
+  expect(items.length).toBe(1)
+  expect(items[0].product_code, '再保存で品番が消えない').toBe('GS-777')
+  expect(Number(items[0].dim_w), '再保存で寸法が消えない').toBe(2000)
+  expect(Number(items[0].dim_h)).toBe(30)
+})
