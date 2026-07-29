@@ -371,14 +371,18 @@
       </div>
 
       <div v-show="builderTab === 'items'">
-      <div class="grid">
+      <div class="grid" :class="{ 'grid-wide': !showBreakdown }">
         <!-- 明細入力 -->
         <section class="panel">
           <div class="panel-head">
             <h2>明細入力</h2>
             <div class="row-tools">
-              <!-- 粗利率はこの見積ぜんぶに1つだけ。行ごとの設定はしない（レビュー2026-07-28）。
-                   アカウント既定 ＋ この見積だけ上書き、で足りる。 -->
+              <!-- 粗利率: アカウント既定 ＋ この見積だけ上書き。
+                   行ごとの 5/10/15/20% プレビューは 2026-07-28 に一度撤去したが、
+                   2026-07-29 の第3回レビューで復活の要望が出たため戻した（ExcelのR〜Y列と同じ形）。 -->
+              <button class="btn-link-sm" data-testid="toggle-breakdown" @click="showBreakdown = !showBreakdown">
+                {{ showBreakdown ? '工種別内訳を隠す' : '工種別内訳を見る' }}
+              </button>
               <label class="margin-field">粗利
                 <input v-model.number="marginPct" type="number" min="0" max="99" step="1"
                        class="input xs num" data-testid="margin-rate" @change="onMarginChange" />%
@@ -396,7 +400,7 @@
                      名称 → 品番 → 形状詳細 → W → D → H → 数量 → 単位 → 単価 → 金額
                      原価・商社は客先に出さない社内用なので、金額の後ろにまとめる。 -->
                 <th class="drag-col"></th><th>名称</th><th>品番</th><th>形状・詳細</th>
-                <th class="num dim-col">W</th><th class="num dim-col">D</th><th class="num dim-col">H</th>
+                <th class="num dim-col">W(t)</th><th class="num dim-col">D(＠)</th><th class="num dim-col">H(L)</th>
                 <th class="num">数量</th><th>単位</th>
                 <th class="num">単価</th><th class="num">金額</th>
                 <th class="cost-col">商社</th><th class="num cost-col">単価原価</th><th class="num cost-col">金額原価</th><th></th>
@@ -522,6 +526,22 @@
                 <tr v-else-if="pinfoBusyKey === productKeyOf(rows[i]) && productKeyOf(rows[i])" class="pinfo-row">
                   <td></td><td colspan="14"><span class="hint" :data-testid="`item-pinfo-busy-${i}`">商品情報を調べています…</span></td>
                 </tr>
+                <!-- ★R19: 粗利パターンの見比べ（ExcelのR〜Y列 = 5/10/15/20%）。
+                     原価が入っている行だけ出す（原価が無いと比べる意味が無い）。 -->
+                <tr v-if="(rows[i].cost_unit_price ?? 0) > 0" class="margin-preview-row">
+                  <td></td>
+                  <td colspan="14" class="mp-cells">
+                    <span class="mp-label">粗利パターン</span>
+                    <button v-for="pct in MARGIN_PRESETS" :key="pct" class="mp-cell"
+                            :class="{ active: Math.round(marginPct) === Math.round(pct * 100) }"
+                            :data-testid="`item-margin-${i}-${Math.round(pct * 100)}`"
+                            :title="`粗利${Math.round(pct * 100)}%の単価を採用`"
+                            @click="applyMarginToRow(rows[i], pct)">
+                      <span class="mp-pct">{{ Math.round(pct * 100) }}%</span>
+                      <span class="mp-val">{{ yen(priceAtMargin(rows[i], pct)) }}</span>
+                    </button>
+                  </td>
+                </tr>
                 <!-- Q4: この項目の過去の業者別単価（受領登録で貯まったもの）。クリックで原価に採用 -->
                 <tr v-if="historyFor(rows[i].item_name).length" class="hist-row">
                   <td></td>
@@ -574,8 +594,9 @@
           </div>
         </section>
 
-        <!-- 工種別 自動集計（転記操作なし） -->
-        <section class="panel">
+        <!-- 工種別 自動集計（転記操作なし）。★既定は畳んでおく。
+             明細は列が多く、常時2カラムだと入力欄が狭くなる（レビュー2026-07-29）。 -->
+        <section v-show="showBreakdown" class="panel">
           <div class="panel-head"><h2>工種別 内訳（自動）</h2></div>
           <table class="table">
             <thead><tr><th>工種</th><th class="num">金額</th></tr></thead>
@@ -2315,6 +2336,17 @@ async function loadCachedProductInfo(r: Row) {
  *      商社ごとの単価がある。
  *  種別を人に選ばせないのは、品番を打つかどうかで自明に決まるため。
  */
+// R19: Excel の R〜Y列（0.05/0.10/0.15/0.20 とそれぞれの見積単価）と同じ見比べ。
+//  ★2026-07-28 に一度撤去したが、第3回レビューで復活の要望が出たため戻した。
+//  計算は既存の priceAtMargin をそのまま使う（自動単価と同じ式でないと見比べにならない）。
+const MARGIN_PRESETS = [0.05, 0.10, 0.15, 0.20] as const
+/** その率の単価を採用する（＝手打ち扱い。以降は粗利率を変えても勝手に動かない） */
+function applyMarginToRow(r: Row, rate: number) {
+  r.unit_price = priceAtMargin(r, rate)
+  r._priceTouched = true
+}
+const showBreakdown = ref(false)
+
 const isMaterialRow = (r: Row) => !!(r.product_code ?? '').trim()
 /**
  * 商社を出してよい行か。
@@ -3018,6 +3050,21 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .pinfo-link { font-size: 11px; color: #2F6FD0; }
 .pinfo-note { font-size: 10px; color: #A0AEC0; }
 .na-cell { color: #C0C8D2; font-size: 12px; padding-left: 6px; }
+/* R18: 内訳を畳んだら明細を全幅に */
+.grid.grid-wide { grid-template-columns: 1fr; }
+/* R18: ヘッダー固定＋内部スクロール（40行超の実案件でも見出しを見失わない） */
+.items-scroll { max-height: 62vh; overflow: auto; }
+.est-items thead th { position: sticky; top: 0; z-index: 2; background: #fff; box-shadow: 0 1px 0 #E2E8F0; }
+/* R19: 粗利パターン */
+.margin-preview-row td { background: #FBFCFD; }
+.mp-cells { padding: 3px 0; }
+.mp-label { font-size: 11px; color: #999; margin-right: 8px; }
+.mp-cell { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; margin-right: 6px;
+           padding: 2px 8px; border: 1px solid #D5DEE8; border-radius: 6px; background: #fff; cursor: pointer; }
+.mp-cell:hover { background: #EEF4FF; border-color: #4A7BC8; }
+.mp-cell.active { border-color: #2F6FD0; background: #EEF4FF; }
+.mp-pct { font-size: 10px; color: #7A8AA0; }
+.mp-val { font-size: 12px; font-weight: 600; }
 .hc-alt { display: block; font-size: 10px; color: #B45309; }
 .pinfo-ask { display: block; margin-top: 3px; padding: 1px 6px; border: 1px solid #D5DEE8; border-radius: 10px; background: #fff; cursor: pointer; font-size: 11px; color: #4A7BC8; }
 .pinfo-ask:hover { background: #EEF4FF; border-color: #4A7BC8; }
