@@ -156,15 +156,26 @@
               <button class="btn-link-sm" data-testid="dsend-none" @click="selectAllPages(false)">全解除</button>
               <span class="dsend-count" data-testid="dsend-count">{{ dsend.selected.length }} / {{ dsend.pageCount }} ページ</span>
             </div>
-            <div class="dsend-pages">
-              <button v-for="p in dsend.pageCount" :key="p" class="pg-chip"
-                      :class="{ on: dsend.selected.includes(p), focus: dsend.preview === p }"
-                      :data-testid="`dsend-page-${p}`"
-                      @click="togglePage(p)" @dblclick="previewPage(p)">
-                {{ p }}
-              </button>
+            <!-- ★R17: どのページに何が描かれているかを見ながら選べるようにする。
+                 番号だけだと、工種ごとの範囲を選ぶのに毎回開いて確かめることになる。
+                 50ページ超の図面でも重くならないよう、画面に入ったページだけ描画する。 -->
+            <div class="dsend-thumbs" data-testid="dsend-thumbs">
+              <div v-for="p in dsend.pageCount" :key="p" class="pg-card"
+                   :class="{ on: dsend.selected.includes(p) }"
+                   :data-testid="`dsend-page-${p}`" :data-page="p"
+                   @click="togglePage(p)">
+                <div class="pg-thumb">
+                  <img v-if="dsend.thumbs[p]" :src="dsend.thumbs[p]" :alt="`P.${p}`" :data-testid="`dsend-thumb-${p}`" />
+                  <span v-else class="pg-loading">…</span>
+                </div>
+                <label class="pg-foot" @click.stop>
+                  <input type="checkbox" :checked="dsend.selected.includes(p)"
+                         :data-testid="`dsend-check-${p}`" @change="togglePage(p)" />
+                  <span>P.{{ p }}</span>
+                </label>
+              </div>
             </div>
-            <p class="hint">クリックで選択／ダブルクリックでそのページを下に表示（中身を確かめてから選べます）。</p>
+            <p class="hint">クリックで選択／拡大して見たいページは <button class="btn-link-sm" data-testid="dsend-preview-open" @click="previewPage(dsend.selected[0] ?? 1)">下に大きく表示</button> できます。</p>
             <div v-if="dsend.previewUrl" class="dsend-preview">
               <div class="dsp-head">P.{{ dsend.preview }} のプレビュー</div>
               <iframe :src="dsend.previewUrl" class="dsp-frame" title="図面プレビュー"></iframe>
@@ -1252,11 +1263,12 @@ const drawingSends = ref<DrawingSend[]>([])
 const dsend = ref<{
   att: Attachment | null; loading: boolean; sending: boolean
   bytes: Uint8Array | null; pageCount: number; selected: number[]
+  thumbs: Record<number, string>
   rangeText: string; preview: number | null; previewUrl: string
   subId: string; contactIds: string[]; subject: string; body: string
   msg: string; err: string
 }>({
-  att: null, loading: false, sending: false, bytes: null, pageCount: 0, selected: [],
+  att: null, loading: false, sending: false, bytes: null, pageCount: 0, selected: [], thumbs: {},
   rangeText: '', preview: null, previewUrl: '', subId: '', contactIds: '' as any,
   subject: '', body: '', msg: '', err: '',
 })
@@ -1289,6 +1301,7 @@ async function openDrawingSend(a: Attachment) {
   const d = dsend.value
   d.att = a; d.loading = true; d.err = ''; d.msg = ''
   d.selected = []; d.rangeText = ''; d.preview = null; d.previewUrl = ''
+  d.thumbs = {}; thumbObserver?.disconnect(); pdfDoc?.destroy?.(); pdfDoc = null
   d.contactIds = []; d.subject = ''; d.body = ''
   try {
     const { data, error } = await supabase.storage.from(DRAWING_BUCKET).download(a.path)
@@ -1296,14 +1309,73 @@ async function openDrawingSend(a: Attachment) {
     d.bytes = new Uint8Array(await data.arrayBuffer())
     const { PDFDocument } = await import('pdf-lib')
     d.pageCount = (await PDFDocument.load(d.bytes)).getPageCount()
+    void initThumbs()
   } catch (e: any) {
     d.err = e?.message ?? '図面を読み込めませんでした'
     d.pageCount = 0
   } finally { d.loading = false }
 }
+/**
+ * R17: ページのサムネイルを描く。
+ * ★50ページ超の図面が普通にあるので、開いた瞬間に全ページ描くと固まる。
+ *   画面に入ったページだけ描く（IntersectionObserver）。一度描いたら使い回す。
+ * pdfjs は重いので、図面を開いた時にだけ動的importする（初回表示を遅くしない）。
+ */
+let pdfDoc: any = null
+let thumbObserver: IntersectionObserver | null = null
+const renderingPages = new Set<number>()
+
+async function initThumbs() {
+  const d = dsend.value
+  if (!d.bytes) return
+  const pdfjs: any = await import('pdfjs-dist')
+  // ワーカーはバンドルから取る（CDNを見に行かせない＝オフライン/社内網でも動く）
+  const worker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url')
+  pdfjs.GlobalWorkerOptions.workerSrc = worker.default
+  // pdf-lib と同じ配列を渡すと片方が detach するので複製して渡す
+  pdfDoc = await pdfjs.getDocument({ data: d.bytes.slice() }).promise
+  await nextTick()
+  observeThumbs()
+}
+function observeThumbs() {
+  thumbObserver?.disconnect()
+  const root = document.querySelector('[data-testid="dsend-thumbs"]')
+  if (!root) return
+  thumbObserver = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue
+      const p = Number((e.target as HTMLElement).dataset.page)
+      if (p) void renderThumb(p)
+    }
+  }, { root, rootMargin: '200px' })
+  root.querySelectorAll('[data-page]').forEach(el => thumbObserver!.observe(el))
+}
+async function renderThumb(p: number) {
+  const d = dsend.value
+  if (!pdfDoc || d.thumbs[p] || renderingPages.has(p)) return
+  renderingPages.add(p)
+  try {
+    const page = await pdfDoc.getPage(p)
+    const base = page.getViewport({ scale: 1 })
+    const scale = 190 / base.width          // サムネ幅190px相当。図面は横長なのでこれで十分読める
+    const viewport = page.getViewport({ scale })
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.ceil(viewport.width)
+    canvas.height = Math.ceil(viewport.height)
+    const ctx = canvas.getContext('2d')!
+    await page.render({ canvasContext: ctx, viewport }).promise
+    d.thumbs = { ...d.thumbs, [p]: canvas.toDataURL('image/png') }
+  } catch { /* 1ページ描けなくても他のページの選択は続けられる */ } finally {
+    renderingPages.delete(p)
+  }
+}
+
 function closeDrawingSend() {
   if (dsend.value.previewUrl) URL.revokeObjectURL(dsend.value.previewUrl)
+  thumbObserver?.disconnect(); thumbObserver = null
+  pdfDoc?.destroy?.(); pdfDoc = null
   dsend.value.att = null; dsend.value.bytes = null; dsend.value.previewUrl = ''
+  dsend.value.thumbs = {}
 }
 function togglePage(p: number) {
   const sel = dsend.value.selected
@@ -2951,9 +3023,13 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .dsend-range { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #555; }
 .dsend-count { font-size: 12px; color: #7A8AA0; margin-left: auto; }
 .dsend-pages { display: flex; flex-wrap: wrap; gap: 6px; max-height: 220px; overflow-y: auto; padding: 6px; background: #FAFBFC; border-radius: 6px; }
-.pg-chip { min-width: 40px; padding: 6px 8px; border: 1px solid #D5DEE8; border-radius: 6px; background: #fff; cursor: pointer; font-size: 12px; }
-.pg-chip.on { background: #2F6FD0; border-color: #2F6FD0; color: #fff; font-weight: 700; }
-.pg-chip.focus { outline: 2px solid #F0A500; }
+.dsend-thumbs { display: flex; flex-wrap: wrap; gap: 10px; max-height: 460px; overflow-y: auto; padding: 8px; background: #FAFBFC; border-radius: 6px; }
+.pg-card { width: 200px; border: 2px solid #D5DEE8; border-radius: 8px; background: #fff; cursor: pointer; overflow: hidden; }
+.pg-card.on { border-color: #2F6FD0; box-shadow: 0 0 0 2px rgba(47,111,208,.18); }
+.pg-thumb { height: 150px; display: flex; align-items: center; justify-content: center; background: #F2F4F7; overflow: hidden; }
+.pg-thumb img { width: 100%; height: 100%; object-fit: contain; }
+.pg-loading { color: #B9C2CD; font-size: 20px; }
+.pg-foot { display: flex; align-items: center; gap: 6px; padding: 5px 8px; font-size: 12px; border-top: 1px solid #EDF0F4; cursor: pointer; }
 .dsend-preview { margin-top: 10px; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; }
 .dsp-head { padding: 6px 10px; background: #F5F7FA; font-size: 12px; color: #555; }
 .dsp-frame { width: 100%; height: 420px; border: 0; display: block; }
