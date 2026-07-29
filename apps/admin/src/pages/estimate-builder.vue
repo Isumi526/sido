@@ -421,8 +421,11 @@
               <template v-for="(a, ai) in areas" :key="ai">
                 <!-- ★R30: 場所の見出しを列見出しの直下に固定する。
                      どの場所・工種を打っているのかがスクロール中も分かる。 -->
-                <tr class="area-row sticky-area" :data-testid="`area-row-${ai}`">
-                  <td class="drag-col"></td>
+                <tr class="area-row sticky-area" :data-testid="`area-row-${ai}`"
+                    @dragover.prevent @drop="onDropArea(ai)">
+                  <!-- ★R39: 場所ごと掴んで並び替える（配下の工種・明細がまとまって動く） -->
+                  <td class="drag-col drag-handle" draggable="true" title="ドラッグで場所ごと並び替え"
+                      :data-testid="`area-drag-${ai}`" @dragstart="onDragArea(ai)" @dragend="onDragEnd">⠿</td>
                   <td colspan="18">
                     <span class="blk-fields">
                       <span class="area-label">場所</span>
@@ -438,8 +441,11 @@
               <template v-for="b in a.blocks" :key="blocks.indexOf(b)">
                 <!-- ★R30: 工種の見出しは場所のさらに下に固定。
                      次の工種が来たら押し上げられて入れ替わる（3段目）。 -->
-                <tr class="blk-row sticky-trade" :data-testid="`blk-row-${blocks.indexOf(b)}`">
-                  <td class="drag-col"></td>
+                <tr class="blk-row sticky-trade" :data-testid="`blk-row-${blocks.indexOf(b)}`"
+                    @dragover.prevent @drop="onDropBlock(blocks.indexOf(b))">
+                  <!-- ★R39: 工種ごと掴んで並び替える。別の場所へ落とせばその場所に移る -->
+                  <td class="drag-col drag-handle" draggable="true" title="ドラッグで工種ごと並び替え"
+                      :data-testid="`blk-drag-${blocks.indexOf(b)}`" @dragstart="onDragBlock(blocks.indexOf(b))" @dragend="onDragEnd">⠿</td>
                   <td colspan="18">
                     <span class="blk-fields blk-indent">
                       <span class="blk-sep">└</span>
@@ -753,10 +759,23 @@
           <button class="btn-link-sm" data-testid="open-company-modal" @click="openCompanyModal">ここで登録する</button>
           と、会社名・住所・印影が見積書に反映されます。
         </p>
-        <p v-else class="muted company-line">
-          発行元: <b data-testid="company-name">{{ company.company_name }}</b>
-          <button class="btn-link-sm" data-testid="open-company-modal" @click="openCompanyModal">自社情報を編集</button>
-        </p>
+        <!-- ★R34: 発行元（自社情報）は見積書のページで直接編集する。
+             モーダルを開かせず、出る場所でそのまま直せるようにする。 -->
+        <div v-else class="doc-form company-inline" data-testid="company-inline">
+          <div class="doc-field"><label>会社名</label>
+            <input v-model="companyForm.company_name" class="input" data-testid="ci-name" @change="saveCompanyInline" /></div>
+          <div class="doc-field"><label>代表者</label>
+            <input v-model="companyForm.company_rep" class="input" data-testid="ci-rep" @change="saveCompanyInline" /></div>
+          <div class="doc-field"><label>電話</label>
+            <input v-model="companyForm.company_tel" class="input" data-testid="ci-tel" @change="saveCompanyInline" /></div>
+          <div class="doc-field wide"><label>住所</label>
+            <input v-model="companyForm.company_address" class="input" data-testid="ci-address" @change="saveCompanyInline" /></div>
+          <span class="muted company-note">
+            発行元: <b data-testid="company-name">{{ company.company_name }}</b>
+            ／ 印影など細かい設定は<RouterLink to="/company-profile">自社情報ページ</RouterLink>
+            <span v-if="companyMsg" class="ok" data-testid="ci-msg">{{ companyMsg }}</span>
+          </span>
+        </div>
         <!-- 見積書に出す案件情報（入力を離れた時点で自動保存） -->
         <div class="doc-form">
           <div class="doc-field"><label>工事場所</label><input v-model="doc.construction_location" class="input" data-testid="doc-location" @change="saveDoc" /></div>
@@ -957,15 +976,16 @@
       <div v-if="drawerOpen" class="drawer-overlay" @click.self="closeDrawer">
         <div class="drawer">
           <div class="drawer-head">
+            <!-- ★R34: 自社情報のタブは廃止。見積書PDFのページで直接編集する形にした
+                 （発行元が出る場所で直せるのが自然で、探しに行かせない）。
+                 ここには商社ごとの資材価格表の読み取りだけを残す。 -->
             <div class="drawer-subtabs">
-              <button class="dtab" :class="{ active: drawerTab === 'masters' }" data-testid="drawer-masters" @click="drawerTab = 'masters'">マスタ・単価表</button>
-              <button class="dtab" :class="{ active: drawerTab === 'company' }" data-testid="drawer-company" @click="drawerTab = 'company'">自社情報</button>
+              <button class="dtab active" data-testid="drawer-masters">商社の資材価格表</button>
             </div>
             <button class="drawer-close" data-testid="drawer-close" @click="closeDrawer">閉じる ✕</button>
           </div>
           <div class="drawer-body">
-            <EstimateMasters v-if="drawerTab === 'masters'" embedded />
-            <CompanyProfile v-else embedded />
+            <EstimateMasters embedded />
           </div>
         </div>
       </div>
@@ -993,7 +1013,6 @@ import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { openDoc } from '../lib/docUrl'
 import EstimateMasters from './estimate-masters.vue'
-import CompanyProfile from './company-profile.vue'
 
 const BUCKET = 'expense-receipts'        // 印影など既存公開物の表示用（後方互換）
 const PDF_BUCKET = 'admin-docs'          // 新規の見積/発注PDFは非公開バケット（署名URL配信）
@@ -1679,6 +1698,10 @@ function openCompanyModal() {
   companyMsg.value = ''; companyErr.value = ''
   companyModal.value = true
 }
+/** ★R34: 見積書ページでその場で直した自社情報を保存する（明細と同じくセルを離れた時点で） */
+async function saveCompanyInline() {
+  await saveCompanyModal()
+}
 async function saveCompanyModal() {
   companySaving.value = true; companyMsg.value = ''; companyErr.value = ''
   try {
@@ -1697,7 +1720,6 @@ async function saveCompanyModal() {
 
 // #4 マスタ・自社情報の右ドロワー（閉じると明細の選択肢・見積書計算に即反映）
 const drawerOpen = ref(false)
-const drawerTab  = ref<'masters' | 'company'>('masters')
 function openDrawer() { drawerOpen.value = true }
 async function closeDrawer() {
   drawerOpen.value = false
@@ -1985,8 +2007,67 @@ async function commitRename() {
 let rowKey = 0   // 明細行の安定キー採番（並び替え用）
 const dragIndex = ref<number | null>(null)
 const dragOverIndex = ref<number | null>(null)
-function onDragStart(i: number) { dragIndex.value = i }
+function onDragStart(i: number) { dragKind.value = 'row'; dragIndex.value = i }
 function onDragEnd() { dragIndex.value = null; dragOverIndex.value = null }
+/**
+ * ★R39: 工種・場所の単位でドラッグ移動する。
+ *  行単位だけだと、工種をまるごと別の場所へ移すのに何十行も動かすことになる。
+ *  掴んだ塊の行をまとめて抜き、落とし先の直前に差し込む。
+ */
+const dragKind = ref<'row' | 'block' | 'area'>('row')
+const dragBlockIdx = ref<number | null>(null)
+const dragAreaIdx  = ref<number | null>(null)
+function onDragBlock(bi: number) { dragKind.value = 'block'; dragBlockIdx.value = bi }
+function onDragArea(ai: number)  { dragKind.value = 'area';  dragAreaIdx.value = ai }
+
+/** 塊(行indexの配列)を、落とし先の先頭行の位置へ移す */
+function moveChunk(fromIdxs: number[], targetFirstIdx: number) {
+  const arr = rows.value
+  const moved = fromIdxs.map(i => arr[i])
+  if (moved.includes(arr[targetFirstIdx])) return false   // 自分自身へは落とさない
+  const rest = arr.filter(r => !moved.includes(r))
+  const at = rest.indexOf(arr[targetFirstIdx])
+  if (at < 0) return false
+  rest.splice(at, 0, ...moved)
+  rows.value = rest
+  void save()   // 並び順(sort_order)を保存する
+  return true
+}
+function onDropBlock(targetBi: number) {
+  const target = blocks.value[targetBi]
+  if (!target) return
+  if (dragKind.value === 'block' && dragBlockIdx.value != null) {
+    const src = blocks.value[dragBlockIdx.value]
+    if (src && src !== target) {
+      // 別の場所へ落としたら、その場所を引き継ぐ（見た目どおりの挙動）
+      const loc = target.location
+      for (const i of src.idxs) rows.value[i].location = loc
+      moveChunk(src.idxs, target.idxs[0])
+    }
+  } else if (dragKind.value === 'area' && dragAreaIdx.value != null) {
+    const src = areas.value[dragAreaIdx.value]
+    if (src) moveChunk(src.blocks.flatMap(b => b.idxs), target.idxs[0])
+  }
+  dragKind.value = 'row'; dragBlockIdx.value = null; dragAreaIdx.value = null
+}
+function onDropArea(targetAi: number) {
+  const target = areas.value[targetAi]
+  if (!target) return
+  const firstIdx = target.blocks[0]?.idxs[0]
+  if (firstIdx == null) return
+  if (dragKind.value === 'area' && dragAreaIdx.value != null) {
+    const src = areas.value[dragAreaIdx.value]
+    if (src && src !== target) moveChunk(src.blocks.flatMap(b => b.idxs), firstIdx)
+  } else if (dragKind.value === 'block' && dragBlockIdx.value != null) {
+    const src = blocks.value[dragBlockIdx.value]
+    if (src) {
+      for (const i of src.idxs) rows.value[i].location = target.location   // その場所へ移す
+      moveChunk(src.idxs, firstIdx)
+    }
+  }
+  dragKind.value = 'row'; dragBlockIdx.value = null; dragAreaIdx.value = null
+}
+
 function onDrop(i: number) {
   const from = dragIndex.value
   dragOverIndex.value = null
@@ -2407,6 +2488,11 @@ async function loadCompany() {
   // アカウント既定の粗利率（案件で上書きが無ければこれを使う）
   const { data: acc } = await supabase.from('accounts').select('default_margin_rate').eq('id', accountId).maybeSingle()
   if (acc?.default_margin_rate != null) accountMarginRate.value = Number(acc.default_margin_rate)
+  // R34: 見積書ページの自社情報欄に現在値を入れる
+  companyForm.value = {
+    company_name: company.value.company_name ?? '', company_rep: company.value.company_rep ?? '',
+    company_tel: company.value.company_tel ?? '', company_address: company.value.company_address ?? '',
+  }
   syncMarginPct()
   await loadSubcontractorOptions()
   await loadPriceHistory()

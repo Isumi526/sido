@@ -17,7 +17,6 @@ test('ドロワーで工種を追加→閉じると明細の工種選択に即�
     await page.goto(`/estimate-builder?project=${proj.id}`, { waitUntil: 'networkidle' })
     // ドロワーを開く（マスタタブ）→ 工種を追加
     await page.locator('[data-testid="open-drawer"]').click()
-    await page.locator('[data-testid="drawer-masters"]').click()
     await page.locator('[data-testid="subtab-trade"]').click()
     await page.locator('[data-testid="new-trade-name"]').fill(TRADE)
     await page.locator('[data-testid="add-trade"]').click()
@@ -26,10 +25,10 @@ test('ドロワーで工種を追加→閉じると明細の工種選択に即�
     await page.locator('[data-testid="drawer-close"]').click()
     // 工種は自由記述+予測変換、かつブロック単位で選ぶ（レビュー2026-07-28）
     await page.locator('[data-testid="blk-trade-0"]').fill(TRADE)
-    // 自社情報タブも開けること
+    // ★R34: ドロワーは商社の資材価格表だけ。自社情報タブは廃止（見積書ページで直接編集する）
     await page.locator('[data-testid="open-drawer"]').click()
-    await page.locator('[data-testid="drawer-company"]').click()
-    await expect(page.locator('[data-testid="cp-name"]')).toBeVisible()
+    await expect(page.locator('[data-testid="drawer-company"]')).toHaveCount(0)
+    await expect(page.locator('[data-testid="drawer-masters"]')).toBeVisible()
   } finally {
     await restSrv(`estimate_items?project_id=eq.${proj.id}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`estimate_projects?id=eq.${proj.id}`, { method: 'DELETE' }).catch(() => {})

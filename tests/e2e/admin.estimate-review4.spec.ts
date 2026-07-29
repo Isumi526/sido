@@ -161,3 +161,56 @@ test('AC7★(R30): スクロール中も「場所」と「工種」の見出し�
   expect(ay, '場所は列見出しの下').toBeGreaterThan(hy)
   expect(ty, '工種は場所の下').toBeGreaterThan(ay)
 })
+
+test('AC8★(R34): 自社情報は見積書のページで直接編集でき、マスタ側のタブは無い', async ({ page }) => {
+  await openNewProject(page)
+  await page.locator('[data-testid="item-name-0"]').fill('明細')
+  await page.locator('[data-testid="item-qty-0"]').fill('1')
+  await page.locator('[data-testid="item-price-0"]').fill('1000')
+  await page.locator('[data-testid="item-price-0"]').press('Tab')
+
+  await page.locator('[data-testid="tab-preview"]').click()
+  // ★モーダルを開かず、その場の欄で直せる
+  const inline = page.locator('[data-testid="company-inline"]')
+  await expect(inline).toBeVisible({ timeout: 15000 })
+  const NAME = `E2E自社_${TS}`
+  await page.locator('[data-testid="ci-name"]').fill(NAME)
+  await page.locator('[data-testid="ci-name"]').press('Tab')
+  await expect(page.locator('[data-testid="ci-msg"]')).toContainText('保存しました', { timeout: 15000 })
+  // 帳票にすぐ反映
+  await expect(page.locator('[data-testid="pdf-preview"]')).toContainText(NAME)
+
+  // マスタ側（右ドロワー）に自社情報のタブは無い＝価格表だけ
+  await page.locator('[data-testid="open-drawer"]').click()
+  await expect(page.locator('[data-testid="drawer-company"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="drawer-masters"]')).toBeVisible()
+})
+
+test('AC9★(R39): 工種をまるごと別の場所へドラッグで移せる', async ({ page }) => {
+  await openNewProject(page)
+  // 壁面工事 > 軽鉄工事（2行）
+  await page.locator('[data-testid="area-loc-0"]').fill('壁面工事')
+  await page.locator('[data-testid="blk-trade-0"]').fill('軽鉄工事')
+  await page.locator('[data-testid="item-name-0"]').fill('壁面LGS')
+  await page.locator('[data-testid="item-name-1"]').fill('壁面PB')
+  // 天井工事 > 塗装工事（1行）
+  await page.locator('[data-testid="area-add"]').click()
+  await page.waitForTimeout(400)
+  await page.locator('[data-testid="area-loc-1"]').fill('天井工事')
+  await page.locator('[data-testid="blk-trade-1"]').fill('塗装工事')
+  const idx = await page.locator('[data-testid^="item-name-"]').count()
+  await page.locator(`[data-testid="item-name-${idx - 5}"]`).fill('天井塗装')
+  await page.locator(`[data-testid="item-name-${idx - 5}"]`).press('Tab')
+  await page.waitForTimeout(1500)
+
+  // ★軽鉄工事の塊を「天井工事」の場所行へ落とす → 配下2行ごと天井工事に移る
+  await page.locator('[data-testid="blk-drag-0"]').dragTo(page.locator('[data-testid="area-row-1"]'))
+  await page.waitForTimeout(2500)
+
+  const items = await itemsOf('item_name,note,trade_name')
+  const lgs = items.find((x: any) => x.item_name === '壁面LGS')
+  const pb  = items.find((x: any) => x.item_name === '壁面PB')
+  expect(lgs.note, '掴んだ工種の行が落とし先の場所になる').toBe('天井工事')
+  expect(pb.note, '配下の行がまとまって動く').toBe('天井工事')
+  expect(lgs.trade_name, '工種名は変わらない').toBe('軽鉄工事')
+})
