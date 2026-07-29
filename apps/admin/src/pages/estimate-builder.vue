@@ -436,6 +436,11 @@
                       <input :value="b.trade_name" class="input sm blk-input" :data-testid="`blk-trade-${blocks.indexOf(b)}`"
                              list="est-trades" autocomplete="off" placeholder="工種（例：軽鉄工事）"
                              @input="onBlockField(b, 'trade_name', ($event.target as HTMLInputElement).value)" />
+                      <!-- ★R27: マスタの編集ボタンは「使う場所の近く」に置く。
+                           設定画面まで探しに行かせない。 -->
+                      <button class="btn-icon" data-testid="open-trade-modal" title="工種の候補を編集" @click="openTradeModal">
+                        <span class="material-symbols-rounded ico">edit_note</span>
+                      </button>
                       <span class="blk-count">{{ b.filled }}件</span>
                       <button class="btn-del blk-del" :data-testid="`blk-del-${blocks.indexOf(b)}`" title="この工種を削除" @click="removeBlock(b)">×</button>
                     </span>
@@ -690,6 +695,31 @@
           <div class="actions-row">
             <span v-if="candMsg" class="ok" data-testid="cand-msg">{{ candMsg }}</span>
           </div>
+        </div>
+      </div>
+
+      <!-- ★R27: マスタはページ内のモーダルで編集し、追加した瞬間に候補へ反映する。
+           設定画面へ遷移させると、書きかけの見積から離れることになる。 -->
+      <div v-if="tradeModal" class="modal-back" data-testid="trade-modal" @click.self="tradeModal = false">
+        <div class="modal-card">
+          <div class="modal-head">
+            <h3>工種の候補</h3>
+            <button class="btn-cancel" data-testid="trade-close" @click="tradeModal = false">閉じる</button>
+          </div>
+          <p class="hint">ここで追加した工種は、<strong>閉じなくてもすぐ候補に出ます</strong>。</p>
+          <div class="trade-add">
+            <input v-model="newTradeName" class="input" placeholder="工種名（例：軽鉄工事）" data-testid="trade-new-name"
+                   @keyup.enter="addTradeInline" />
+            <button class="btn-add" :disabled="!newTradeName.trim()" data-testid="trade-add" @click="addTradeInline">追加</button>
+          </div>
+          <ul class="trade-list" data-testid="trade-list">
+            <li v-for="(t, ti) in trades" :key="t.id">
+              <input v-model="t.name" class="input sm" :data-testid="`trade-name-${ti}`" @change="renameTrade(t)" />
+              <button class="btn-del" :data-testid="`trade-del-${ti}`" @click="removeTrade(t)">×</button>
+            </li>
+            <li v-if="!trades.length" class="hint">まだ登録がありません</li>
+          </ul>
+          <span v-if="tradeErr" class="err" data-testid="trade-err">{{ tradeErr }}</span>
         </div>
       </div>
 
@@ -2537,6 +2567,43 @@ async function loadCachedProductInfo(r: Row) {
   } }
 }
 // ════════════════════════════════════════════════════════════
+//  R27: マスタ編集の共通ルール
+//   ・ページ遷移せず、その場のモーダルで編集する
+//   ・追加した瞬間に候補へ反映する（閉じるまで待たせない）
+//   ・編集ボタンは「そのマスタを使う場所の近く」に置く
+//  ここでは工種に適用。自社情報は R26 で見積書プレビュー内に置いた。
+// ════════════════════════════════════════════════════════════
+const tradeModal   = ref(false)
+const newTradeName = ref('')
+const tradeErr     = ref('')
+function openTradeModal() { tradeErr.value = ''; newTradeName.value = ''; tradeModal.value = true }
+async function addTradeInline() {
+  const name = newTradeName.value.trim()
+  if (!name) return
+  tradeErr.value = ''
+  if (trades.value.some(t => t.name.trim() === name)) { tradeErr.value = `「${name}」は既にあります`; return }
+  const { data, error } = await supabase.from('estimate_trades')
+    .insert({ account_id: accountId, name }).select('id, name').single()
+  if (error) { tradeErr.value = error.message; return }
+  newTradeName.value = ''
+  // ★閉じるのを待たずに候補へ反映する（追加してすぐ使えるのが要件）
+  trades.value = [...trades.value, data as Trade].sort((a, b) => a.name.localeCompare(b.name, 'ja'))
+}
+async function renameTrade(t: Trade) {
+  const name = t.name.trim()
+  if (!name) return
+  const { error } = await supabase.from('estimate_trades').update({ name }).eq('id', t.id)
+  if (error) tradeErr.value = error.message
+}
+async function removeTrade(t: Trade) {
+  // ★候補から消すだけ。既に打った明細の工種名（trade_name は自由記述）は変えない
+  if (!window.confirm(`「${t.name}」を工種の候補から外しますか？\n※すでに作った見積の工種名は変わりません。`)) return
+  const { error } = await supabase.from('estimate_trades').delete().eq('id', t.id)
+  if (error) { tradeErr.value = error.message; return }
+  trades.value = trades.value.filter(x => x.id !== t.id)
+}
+
+// ════════════════════════════════════════════════════════════
 //  R21: 名称・品番の候補を画面上で編集・削除する
 //  候補は「商社単価表」＋「過去に打った明細」から作られる（R28）。
 //  ★消しても既存の見積の中身は変えない。候補に出なくなるだけ。
@@ -3364,6 +3431,12 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .pinfo-ico .ico { font-size: 16px; vertical-align: middle; }
 .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 50; }
 .modal-card.wide { width: min(760px, 94vw); }
+.btn-icon { border: 0; background: transparent; cursor: pointer; color: #7A8AA0; padding: 0 2px; }
+.btn-icon:hover { color: #2F6FD0; }
+.btn-icon .ico { font-size: 18px; vertical-align: middle; }
+.trade-add { display: flex; gap: 6px; margin-bottom: 10px; }
+.trade-list { list-style: none; margin: 0; padding: 0; max-height: 46vh; overflow-y: auto; }
+.trade-list li { display: flex; gap: 6px; align-items: center; margin-bottom: 5px; }
 .cand-list { max-height: 48vh; overflow-y: auto; margin-top: 8px; }
 .cand-row { display: grid; grid-template-columns: 1fr 160px 80px 32px; gap: 6px; margin-bottom: 5px; }
 .modal-card { background: #fff; border-radius: 10px; padding: 16px 18px; width: min(560px, 92vw); max-height: 86vh; overflow: auto; }
