@@ -127,19 +127,17 @@ test('AC1: 図面のページ数が読み取られ、ページを個別に選べ
   await expect(page.locator('[data-testid="dsend-count"]')).toContainText('1 / 6')
 })
 
-test('AC2★: 「13-19, 22」のような範囲指定でまとめて選べる（工種ごとに連番で分かれているため）', async ({ page }) => {
+// ★2026-07-29(R38): 「ページ指定」の入力欄は廃止。サムネイルで中身を見て選べるようになった今は
+//   同じことを2通りで指定でき、かえって混乱を招くため。全選択/全解除は残す。
+test('AC2★: サムネイルのチェックで複数ページを選べ、全選択/全解除が効く', async ({ page }) => {
   await openProjectWithDrawing(page, 10)
   const att = await restSrv(`estimate_project_attachments?project_id=eq.${await projectId()}&select=id`)
   await page.locator(`[data-testid="dsend-open-${att[0].id}"]`).click()
   await expect(page.locator('[data-testid="dsend-count"]')).toContainText('0 / 10', { timeout: 15000 })
 
-  await page.locator('[data-testid="dsend-range"]').fill('2-5, 8')
-  await page.locator('[data-testid="dsend-range"]').dispatchEvent('change')
-  await expect(page.locator('[data-testid="dsend-count"]')).toContainText('5 / 10')   // 2,3,4,5,8
-
-  // ページ数を超える指定は無視される（10ページのPDFに 99 を入れても増えない）
-  await page.locator('[data-testid="dsend-range"]').fill('2-5, 8, 99')
-  await page.locator('[data-testid="dsend-range"]').dispatchEvent('change')
+  // ページ指定の入力欄は無い（サムネイルで選ぶ）
+  await expect(page.locator('[data-testid="dsend-range"]')).toHaveCount(0)
+  for (const p of [2, 3, 4, 5, 8]) await page.locator(`[data-testid="dsend-check-${p}"]`).check()
   await expect(page.locator('[data-testid="dsend-count"]')).toContainText('5 / 10')
 
   await page.locator('[data-testid="dsend-all"]').click()
@@ -171,8 +169,7 @@ test('AC4★: 選んだページだけを抽出して送り、「誰にどのペ
   await expect(page.locator('[data-testid="dsend-count"]')).toContainText('0 / 8', { timeout: 15000 })
 
   // 3〜5ページ（＝ある工種の範囲）だけ送る
-  await page.locator('[data-testid="dsend-range"]').fill('3-5')
-  await page.locator('[data-testid="dsend-range"]').dispatchEvent('change')
+  for (const p of [3, 4, 5]) await page.locator(`[data-testid="dsend-check-${p}"]`).check()
   await page.locator('[data-testid="dsend-sub"]').selectOption({ label: SUB })
   await page.locator(`[data-testid="dsend-contact-${contactId}"]`).check()
   await page.locator('[data-testid="dsend-send"]').click()
@@ -237,8 +234,7 @@ test('AC6★(R7): 図面を送ると、その業者への見積依頼が自動�
 
   await page.locator(`[data-testid="dsend-open-${att[0].id}"]`).click()
   await expect(page.locator('[data-testid="dsend-count"]')).toContainText('0 / 6', { timeout: 15000 })
-  await page.locator('[data-testid="dsend-range"]').fill('2-4')
-  await page.locator('[data-testid="dsend-range"]').dispatchEvent('change')
+  for (const p of [2, 3, 4]) await page.locator(`[data-testid="dsend-check-${p}"]`).check()
   await page.locator('[data-testid="dsend-sub"]').selectOption({ label: SUB })
   await page.locator(`[data-testid="dsend-contact-${contactId}"]`).check()
   await page.locator('[data-testid="dsend-send"]').click()
@@ -263,8 +259,7 @@ test('AC6★(R7): 図面を送ると、その業者への見積依頼が自動�
   await openBuilderTab(page, 'intake', '[data-testid="intake-dropzone"]')
   await page.locator(`[data-testid="dsend-open-${att[0].id}"]`).click()
   await expect(page.locator('[data-testid="dsend-count"]')).toContainText('/ 6', { timeout: 15000 })
-  await page.locator('[data-testid="dsend-range"]').fill('5-6')
-  await page.locator('[data-testid="dsend-range"]').dispatchEvent('change')
+  for (const p of [5, 6]) await page.locator(`[data-testid="dsend-check-${p}"]`).check()
   await page.locator('[data-testid="dsend-sub"]').selectOption({ label: SUB })
   await page.locator(`[data-testid="dsend-contact-${contactId}"]`).check()
   await page.locator('[data-testid="dsend-send"]').click()
@@ -296,9 +291,7 @@ test('AC7★(R17): 各ページのサムネイルが出て、チェックボッ�
   await expect(page.locator('[data-testid="dsend-count"]')).toContainText('1 / 6')
   await expect(page.locator('[data-testid="dsend-page-3"]')).toHaveClass(/on/)
 
-  // 範囲指定との併用も従来どおり効く（工種ごとに連番で分かれている案件はこちらが速い）
-  await page.locator('[data-testid="dsend-range"]').fill('2-4')
-  await page.locator('[data-testid="dsend-range"]').dispatchEvent('change')
-  await expect(page.locator('[data-testid="dsend-count"]')).toContainText('3 / 6')
-  await expect(page.locator('[data-testid="dsend-check-2"]')).toBeChecked()
+  // ★R37: 列数を人が変えられる
+  await page.locator('[data-testid="dsend-cols-3"]').click()
+  await expect(page.locator('[data-testid="dsend-cols-3"]')).toHaveClass(/on/)
 })
