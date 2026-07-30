@@ -13,7 +13,7 @@
 //  Notion: Q1 3aa0ff81c56b8156822bcf623b782ae4 / Q2 3aa0ff81c56b81e7b7cff7c4f1201c49
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { getAccountId, restSrv } from './helpers'
+import { getAccountId, restSrv, openBuilderTab } from './helpers'
 
 const TS = Date.now()
 // 同名案件は登録できない仕様のため、テストごとに別名を使う
@@ -46,7 +46,7 @@ async function openNewProject(page: any) {
   await page.locator('[data-testid="add-project"]').click()
   await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ, { timeout: 15000 })
   // 「＋行追加」は無い。案件を開いた時点で空行が用意されている（Excel感覚）
-  await expect(page.locator('[data-testid="item-name-0"]')).toBeVisible({ timeout: 10000 })
+  await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
 }
 
 test('AC: 原価を入れると客先単価が「原価÷(1−粗利率)」で自動計算される', async ({ page }) => {

@@ -58,7 +58,9 @@
         <li><RouterLink to="/paid-leave" class="nav-link"><span class="material-symbols-rounded nav-icon">beach_access</span>有給管理<span v-if="pendingGrantCount" class="nav-badge">{{ pendingGrantCount }}</span></RouterLink></li>
 
         <li class="nav-section">見積・発注</li>
-        <li><RouterLink to="/estimate-list" class="nav-link"><span class="material-symbols-rounded nav-icon">calculate</span>見積もり</RouterLink></li>
+        <!-- ★R53: 図面の材料抽出が終わったらここに件数を出す（解析中に他の画面へ移れるようにしたので、
+             終わったことに気づける場所が必要）。結果を見た時点で消える。 -->
+        <li><RouterLink to="/estimate-list" class="nav-link"><span class="material-symbols-rounded nav-icon">calculate</span>見積もり<span v-if="extractDoneCount" class="nav-badge" data-testid="nav-badge-extract">{{ extractDoneCount }}</span></RouterLink></li>
         <li><RouterLink to="/estimates" class="nav-link"><span class="material-symbols-rounded nav-icon">description</span>見積書（受領）</RouterLink></li>
         <li><RouterLink to="/purchase-orders" class="nav-link"><span class="material-symbols-rounded nav-icon">assignment</span>注文書発行</RouterLink></li>
         <li><RouterLink to="/drawing-materials" class="nav-link"><span class="material-symbols-rounded nav-icon">architecture</span>実施図面 材料抽出(AI)</RouterLink></li>
@@ -115,6 +117,7 @@ import { liffAppUrl } from './lib/links'
 import { getAccountName } from './lib/account'
 import { editApprovalCount, siteUnsetCount, overtimePendingCount, pendingGrantCount, refreshNavBadges } from './lib/navBadges'
 import { unreadChatCount, refreshChatBadge } from './lib/chatBadge'
+import { extractDoneCount, refreshExtractBadge } from './lib/extractJobs'
 import { HIDE_LINE_SECTIONS, HIDE_AI_HELP_SECTIONS } from './lib/featureFlags'
 import { migrationTargetUrl, REDIRECT_SECONDS } from './lib/domainMigration'
 import AiHelpWidget from './components/AiHelpWidget.vue'
@@ -159,6 +162,12 @@ onMounted(refreshNavBadges)
 watch(currentUser, refreshNavBadges)
 // 画面遷移のたびに再取得（許可/紐付け/残業を処理した後にバッジが減るように）
 watch(() => route.path, refreshNavBadges)
+
+// ── 材料抽出の完了バッジ（extractJobs.ts）。解析は画面遷移しても続くので、
+//    どの画面に居ても終わったことが分かるようにする（R53）──
+onMounted(refreshExtractBadge)
+watch(currentUser, refreshExtractBadge)
+watch(() => route.path, refreshExtractBadge)
 
 // ── チャット未読バッジ（chatBadge.ts）。チャット詳細を開いた時にも markSiteChatRead() から再取得される ──
 onMounted(refreshChatBadge)

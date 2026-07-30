@@ -10,7 +10,7 @@
 //  Notion: R25
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { getAccountId, restSrv } from './helpers'
+import { getAccountId, restSrv, openBuilderTab } from './helpers'
 
 /** プレビューを開いて内訳書のページまで送る（1ページ目は表紙なので v-show で隠れている） */
 async function openBreakdownPage(page: any) {
@@ -68,7 +68,7 @@ test('AC2★: 空行は帳票に出ない', async ({ page }) => {
   const accountId = await getAccountId()
   const pj = await restSrv(`estimate_projects?account_id=eq.${accountId}&name=eq.${encodeURIComponent(PROJ)}&select=id`)
   await page.goto(`/estimate-builder?project=${pj[0].id}`, { waitUntil: 'networkidle' })
-  await expect(page.locator('[data-testid="item-name-0"]')).toBeVisible({ timeout: 15000 })
+  await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
 
   // 明細画面には常に予備の空行がある（Excel感覚で打てるように）
   const inputRows = await page.locator('[data-testid^="item-name-"]').count()

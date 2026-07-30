@@ -12,7 +12,7 @@
 //  ★語義の注意: 既存の「掛け率」は粗利率（原価→客先の値付け）で、ここでの掛率は**仕入側**。別物。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { getAccountId, restSrv } from './helpers'
+import { getAccountId, restSrv, openBuilderTab } from './helpers'
 
 const TS = Date.now()
 const CODE = `LP-${TS % 100000}`
@@ -50,7 +50,7 @@ test.afterAll(async () => {
 
 test('AC1★(R41): 定価×掛率で商社ごとの仕入単価が出る（単価表に絶対額が無くても）', async ({ page }) => {
   await page.goto(`/estimate-builder?project=${projId}`, { waitUntil: 'networkidle' })
-  await expect(page.locator('[data-testid="item-name-0"]')).toBeVisible({ timeout: 15000 })
+  await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
   await page.locator('[data-testid="item-code-0"]').fill(CODE)
   await page.locator('[data-testid="item-code-0"]').dispatchEvent('change')
 
@@ -64,7 +64,7 @@ test('AC1★(R41): 定価×掛率で商社ごとの仕入単価が出る（単�
 
 test('AC2★(R42): 最安が一目で分かり、ワンクリックで採用できる（勝手に確定しない）', async ({ page }) => {
   await page.goto(`/estimate-builder?project=${projId}`, { waitUntil: 'networkidle' })
-  await expect(page.locator('[data-testid="item-name-0"]')).toBeVisible({ timeout: 15000 })
+  await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
   await page.locator('[data-testid="item-code-0"]').fill(CODE)
   await page.locator('[data-testid="item-code-0"]').dispatchEvent('change')
 
@@ -90,7 +90,7 @@ test('AC3★(R41): 単価表の絶対額があればそちらを優先する（O
     body: JSON.stringify({ account_id: accountId, supplier_id: supB, product_code: CODE, item_name: `E2E定価材_${TS}`, unit: '枚', unit_price: 3000, is_current: true }),
   })
   await page.goto(`/estimate-builder?project=${projId}`, { waitUntil: 'networkidle' })
-  await expect(page.locator('[data-testid="item-name-0"]')).toBeVisible({ timeout: 15000 })
+  await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
   await page.locator('[data-testid="item-code-0"]').fill(CODE)
   await page.locator('[data-testid="item-code-0"]').dispatchEvent('change')
 
@@ -125,7 +125,7 @@ test('AC4★(R43): 議事録の実例「天井下地」で「天井LGS下地組�
 
   try {
     await page.goto(`/estimate-builder?project=${projId}`, { waitUntil: 'networkidle' })
-    await expect(page.locator('[data-testid="item-name-0"]')).toBeVisible({ timeout: 15000 })
+    await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
     // 自社が使う表記で打つ
     await page.locator('[data-testid="item-name-0"]').fill('天井下地')
     await page.locator('[data-testid="item-name-0"]').dispatchEvent('change')

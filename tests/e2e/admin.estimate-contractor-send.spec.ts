@@ -6,7 +6,7 @@
 //   ※ 実メール送信(EF)はローカル未デプロイのため、ここでは「送信可能な状態」までを検証。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { restSrv, getAccountId } from './helpers'
+import { restSrv, getAccountId, openBuilderTab } from './helpers'
 
 const TS = Date.now()
 const CONTRACTOR = `元請けE2E_${TS}`
@@ -52,6 +52,7 @@ test.describe('見積→元請け 送信先と離脱ガード', () => {
     }, { timeout: 10000 }).toBe(contractorId)
 
     // 明細を1行入れる（送信可能化の条件）→ 元請けの担当者を選ぶ → 送信ボタンが有効
+    await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
     await page.locator('[data-testid="item-name-0"]').fill('テスト材')
     await page.locator('[data-testid="item-qty-0"]').fill('1')
     await page.locator('[data-testid="item-price-0"]').fill('1000')
@@ -71,6 +72,7 @@ test.describe('見積→元請け 送信先と離脱ガード', () => {
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ_GUARD)
     await page.waitForLoadState('networkidle')
 
+    await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
     await page.locator('[data-testid="item-name-0"]').fill('自動保存される明細')
     await page.locator('[data-testid="item-name-0"]').press('Tab')
     await expect(page.locator('[data-testid="autosave-state"]')).toContainText('保存しました', { timeout: 15000 })

@@ -11,7 +11,7 @@
 //  Notion: R27
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { getAccountId, restSrv } from './helpers'
+import { getAccountId, restSrv, openBuilderTab } from './helpers'
 
 const TS = Date.now()
 const TRADE = `E2E工種_${TS}`
@@ -31,7 +31,7 @@ test('AC1★: 工種を入力欄の隣からその場で追加でき、閉じる
   await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
   await page.locator('[data-testid="new-project-name"]').fill(PROJ)
   await page.locator('[data-testid="add-project"]').click()
-  await expect(page.locator('[data-testid="item-name-0"]')).toBeVisible({ timeout: 15000 })
+  await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
 
   // ★ボタンは工種の入力欄の隣にある（設定画面まで探しに行かせない）
   const openBtn = page.locator('[data-testid="open-trade-modal"]').first()
@@ -63,7 +63,7 @@ test('AC2: 同じ工種は二重に登録できない', async ({ page }) => {
   const accountId0 = await getAccountId()
   const pj0 = await restSrv(`estimate_projects?account_id=eq.${accountId0}&name=eq.${encodeURIComponent(PROJ)}&select=id`)
   await page.goto(`/estimate-builder?project=${pj0[0].id}`, { waitUntil: 'networkidle' })
-  await expect(page.locator('[data-testid="item-name-0"]')).toBeVisible({ timeout: 15000 })
+  await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
   await page.locator('[data-testid="open-trade-modal"]').first().click()
   await page.locator('[data-testid="trade-new-name"]').fill(TRADE)
   await page.locator('[data-testid="trade-add"]').click()
@@ -84,7 +84,7 @@ test('AC3★: 工種を候補から外しても、既に打った明細の工種
   })
 
   await page.goto(`/estimate-builder?project=${pj[0].id}`, { waitUntil: 'networkidle' })
-  await expect(page.locator('[data-testid="item-name-0"]')).toBeVisible({ timeout: 15000 })
+  await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
   await page.locator('[data-testid="open-trade-modal"]').first().click()
 
   const idx = await page.locator('[data-testid="trade-list"] input').evaluateAll(

@@ -10,7 +10,7 @@
 //  Notion: R18 / R19 / R20（2026-07-29 第3回レビュー）
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { getAccountId, restSrv } from './helpers'
+import { getAccountId, restSrv, openBuilderTab } from './helpers'
 
 const TS = Date.now()
 let seq = 0
@@ -32,7 +32,7 @@ async function openNewProject(page: any) {
   await page.locator('[data-testid="new-project-name"]').fill(PROJ)
   await page.locator('[data-testid="add-project"]').click()
   await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ, { timeout: 15000 })
-  await expect(page.locator('[data-testid="item-name-0"]')).toBeVisible({ timeout: 10000 })
+  await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
 }
 
 // ★2026-07-29(R36): 表示/非表示トグルは廃止し、専用タブにした（トグルでもスペースを圧迫するため）
