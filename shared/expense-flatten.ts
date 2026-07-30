@@ -130,6 +130,52 @@ export function flattenReportExpenses(date: string, sites: any[], rates: Expense
   return applyPayeeFallback(rows)
 }
 
+/**
+ * 「本日のガソリン代」(daily_reports.gasoline_items) を経費行に平坦化する。
+ *
+ * ★なぜ共有関数にするか（2026-07-30）:
+ *  gasoline_items は sites[] 配下ではなく日報直下なので flattenReportExpenses を通らず、
+ *  admin経費管理 / admin日毎集計 / liff経費PDF の3箇所で手組みされていた。
+ *  その結果、内容がバラバラになっていた:
+ *   - admin経費管理: liters を入れておらず note も空 → **ℓ列と内訳が常に空**（実害・本関数で解消）
+ *   - admin日毎集計: category が 'ガソリン代'（他2つは 'ガソリン代（本日）'）＝表記揺れ
+ *  1箇所に寄せて同じ行を作る。
+ *
+ * ★category は 'ガソリン代（本日）' を正とする（表示は expenseDisplayCategory で
+ *  距離按分ぶんと同じ「ガソリン代」に揃う）。日毎集計は flatten 側の
+ *  'ガソリン代'/'軽油代'（距離按分＝内部原価配賦）を除外してから本関数の行を足すため、
+ *  区別が付く名前のほうが安全。
+ *
+ * ★srcKey='gasolineItems' を付ける（日報直下なので srcSiteIndex は無し）。
+ *  liff の経費PDF画面の申請前インライン編集（patchExpenseItem）が書き戻し先を辿るのに使う。
+ *  admin 側は参照しないので付いていても無影響。
+ */
+export function flattenGasolineItems(date: string, gasolineItems: any[] | null | undefined): ExpenseRow[] {
+  const rows: ExpenseRow[] = []
+  const items = (gasolineItems ?? [])
+  for (let gi = 0; gi < items.length; gi++) {
+    const g = items[gi]
+    const amount = Math.round(Number(g?.yen) || 0)
+    if (amount <= 0) continue
+    rows.push({
+      date,
+      category: 'ガソリン代（本日）',
+      siteName: '—',                      // 日報レベルの実費＝現場に紐づかない
+      amount,
+      payee: g.payee || '',
+      // 燃料種別が入っていれば内訳に出す。無ければ手入力ラベルを使う
+      note: g.fuelType === 'diesel' ? 'ディーゼル' : (g.fuelType === 'regular' ? 'レギュラー' : (g.label || '')),
+      registrationNumber: g.registrationNumber || '',
+      liters: Number(g.liters) > 0 ? Number(g.liters) : undefined,
+      fileUrls: Array.isArray(g.fileUrls) ? g.fileUrls : [],
+      tategae: !!g.tategae,
+      srcKey: 'gasolineItems',
+      srcIndex: gi,
+    })
+  }
+  return rows
+}
+
 // 支払い先(payee)は 2026-07-03 に追加された新カラム。それ以前 or 未入力の既存データは payee が空で、
 // 会社名が 内容(note=label) 側にだけ入っている（PDF/adminの支払先列が空白＝ズレて見える）。
 // 対策: payee が空で、内容が「発行元(会社/店名)」であるカテゴリ(その他/雑経費/宿泊/電車)に限り、
