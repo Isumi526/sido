@@ -57,35 +57,39 @@
         <li><RouterLink to="/attendance" class="nav-link"><span class="material-symbols-rounded nav-icon">login</span>出退勤ログ</RouterLink></li>
         <li><RouterLink to="/paid-leave" class="nav-link"><span class="material-symbols-rounded nav-icon">beach_access</span>有給管理<span v-if="pendingGrantCount" class="nav-badge">{{ pendingGrantCount }}</span></RouterLink></li>
 
-        <li class="nav-section">見積・発注</li>
-        <li><RouterLink to="/estimate-list" class="nav-link"><span class="material-symbols-rounded nav-icon">calculate</span>見積もり</RouterLink></li>
-        <li><RouterLink to="/estimates" class="nav-link"><span class="material-symbols-rounded nav-icon">description</span>見積書（受領）</RouterLink></li>
-        <li><RouterLink to="/purchase-orders" class="nav-link"><span class="material-symbols-rounded nav-icon">assignment</span>注文書発行</RouterLink></li>
-        <li><RouterLink to="/drawing-materials" class="nav-link"><span class="material-symbols-rounded nav-icon">architecture</span>実施図面 材料抽出(AI)</RouterLink></li>
+        <template v-if="canViewManagementPages">
+          <li class="nav-section">見積・発注</li>
+          <li><RouterLink to="/estimate-list" class="nav-link"><span class="material-symbols-rounded nav-icon">calculate</span>見積もり</RouterLink></li>
+          <li><RouterLink to="/estimates" class="nav-link"><span class="material-symbols-rounded nav-icon">description</span>見積書（受領）</RouterLink></li>
+          <li><RouterLink to="/purchase-orders" class="nav-link"><span class="material-symbols-rounded nav-icon">assignment</span>注文書発行</RouterLink></li>
+          <li><RouterLink to="/drawing-materials" class="nav-link"><span class="material-symbols-rounded nav-icon">architecture</span>実施図面 材料抽出(AI)</RouterLink></li>
 
-        <li class="nav-section">経費・請求</li>
-        <li><RouterLink to="/expenses" class="nav-link"><span class="material-symbols-rounded nav-icon">receipt_long</span>経費管理</RouterLink></li>
-        <li><RouterLink to="/expenses-daily" class="nav-link"><span class="material-symbols-rounded nav-icon">calendar_view_day</span>経費 日毎集計</RouterLink></li>
-        <li><RouterLink to="/gasoline-allocation" class="nav-link"><span class="material-symbols-rounded nav-icon">local_gas_station</span>ガソリン按分</RouterLink></li>
-        <li><RouterLink to="/subcontractor-invoices" class="nav-link"><span class="material-symbols-rounded nav-icon">request_quote</span>協力業者請求</RouterLink></li>
+          <li class="nav-section">経費・請求</li>
+          <li><RouterLink to="/expenses" class="nav-link"><span class="material-symbols-rounded nav-icon">receipt_long</span>経費管理</RouterLink></li>
+          <li><RouterLink to="/expenses-daily" class="nav-link"><span class="material-symbols-rounded nav-icon">calendar_view_day</span>経費 日毎集計</RouterLink></li>
+          <li><RouterLink to="/gasoline-allocation" class="nav-link"><span class="material-symbols-rounded nav-icon">local_gas_station</span>ガソリン按分</RouterLink></li>
+          <li><RouterLink to="/subcontractor-invoices" class="nav-link"><span class="material-symbols-rounded nav-icon">request_quote</span>協力業者請求</RouterLink></li>
+        </template>
 
         <li class="nav-section">マスタ</li>
         <li><RouterLink to="/workers" class="nav-link"><span class="material-symbols-rounded nav-icon">engineering</span>作業員</RouterLink></li>
         <li><RouterLink to="/sites" class="nav-link"><span class="material-symbols-rounded nav-icon">location_on</span>現場</RouterLink></li>
-        <li><RouterLink to="/contractors" class="nav-link"><span class="material-symbols-rounded nav-icon">apartment</span>元請け業者</RouterLink></li>
+        <li v-if="canViewManagementPages"><RouterLink to="/contractors" class="nav-link"><span class="material-symbols-rounded nav-icon">apartment</span>元請け業者</RouterLink></li>
         <li><RouterLink to="/subcontractors" class="nav-link"><span class="material-symbols-rounded nav-icon">handshake</span>協力業者</RouterLink></li>
         <li><RouterLink to="/vehicles" class="nav-link"><span class="material-symbols-rounded nav-icon">directions_car</span>車両</RouterLink></li>
-        <li><RouterLink to="/estimate-masters" class="nav-link"><span class="material-symbols-rounded nav-icon">price_change</span>見積マスタ・単価表</RouterLink></li>
+        <li v-if="canViewManagementPages"><RouterLink to="/estimate-masters" class="nav-link"><span class="material-symbols-rounded nav-icon">price_change</span>見積マスタ・単価表</RouterLink></li>
 
-        <li class="nav-section">管理・設定</li>
-        <li v-if="!HIDE_AI_HELP_SECTIONS"><RouterLink to="/ai-help" class="nav-link"><span class="material-symbols-rounded nav-icon">support_agent</span>AIヘルプ</RouterLink></li>
-        <li v-if="!HIDE_AI_HELP_SECTIONS"><RouterLink to="/faq" class="nav-link"><span class="material-symbols-rounded nav-icon">quiz</span>FAQナレッジ</RouterLink></li>
-        <li><RouterLink to="/non-submitters" class="nav-link"><span class="material-symbols-rounded nav-icon">person_off</span>未送信者リスト</RouterLink></li>
-        <li v-if="!HIDE_LINE_SECTIONS"><RouterLink to="/reminder-history" class="nav-link"><span class="material-symbols-rounded nav-icon">history</span>リマインド履歴</RouterLink></li>
-        <li><RouterLink to="/operation-logs" class="nav-link"><span class="material-symbols-rounded nav-icon">receipt_long</span>操作ログ</RouterLink></li>
-        <li v-if="!HIDE_LINE_SECTIONS"><RouterLink to="/users" class="nav-link"><span class="material-symbols-rounded nav-icon">manage_accounts</span>ユーザー</RouterLink></li>
-        <li><RouterLink to="/company-profile" class="nav-link"><span class="material-symbols-rounded nav-icon">business</span>自社情報</RouterLink></li>
-        <li><RouterLink to="/settings" class="nav-link"><span class="material-symbols-rounded nav-icon">settings</span>設定</RouterLink></li>
+        <template v-if="canViewManagementPages">
+          <li class="nav-section">管理・設定</li>
+          <li v-if="!HIDE_AI_HELP_SECTIONS"><RouterLink to="/ai-help" class="nav-link"><span class="material-symbols-rounded nav-icon">support_agent</span>AIヘルプ</RouterLink></li>
+          <li v-if="!HIDE_AI_HELP_SECTIONS"><RouterLink to="/faq" class="nav-link"><span class="material-symbols-rounded nav-icon">quiz</span>FAQナレッジ</RouterLink></li>
+          <li><RouterLink to="/non-submitters" class="nav-link"><span class="material-symbols-rounded nav-icon">person_off</span>未送信者リスト</RouterLink></li>
+          <li v-if="!HIDE_LINE_SECTIONS"><RouterLink to="/reminder-history" class="nav-link"><span class="material-symbols-rounded nav-icon">history</span>リマインド履歴</RouterLink></li>
+          <li><RouterLink to="/operation-logs" class="nav-link"><span class="material-symbols-rounded nav-icon">receipt_long</span>操作ログ</RouterLink></li>
+          <li v-if="!HIDE_LINE_SECTIONS"><RouterLink to="/users" class="nav-link"><span class="material-symbols-rounded nav-icon">manage_accounts</span>ユーザー</RouterLink></li>
+          <li><RouterLink to="/company-profile" class="nav-link"><span class="material-symbols-rounded nav-icon">business</span>自社情報</RouterLink></li>
+          <li><RouterLink to="/settings" class="nav-link"><span class="material-symbols-rounded nav-icon">settings</span>設定</RouterLink></li>
+        </template>
       </ul>
       <div class="sidebar-account">
         <div class="sidebar-user" data-testid="sidebar-user">
@@ -99,8 +103,8 @@
       <RouterView />
     </main>
 
-    <!-- どのページでも右下に常駐するAIヘルプ（ログイン中のみ・遷移で消えない） -->
-    <AiHelpWidget v-if="!HIDE_AI_HELP_SECTIONS" />
+    <!-- どのページでも右下に常駐するAIヘルプ（ログイン中のみ・遷移で消えない）。AIヘルプ/FAQと同じ扱いで経営系＝site_manager非表示 -->
+    <AiHelpWidget v-if="!HIDE_AI_HELP_SECTIONS && canViewManagementPages" />
   </div>
 
   <!-- 未ログイン時はログイン画面のみ表示 -->
@@ -110,7 +114,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { currentUser, currentRole, currentWorkerName, signOut, isAdminAllowed, roleResolved, roleLabel } from './lib/auth'
+import { currentUser, currentRole, currentWorkerName, signOut, isAdminAllowed, roleResolved, roleLabel, canViewManagementPages } from './lib/auth'
 import { liffAppUrl } from './lib/links'
 import { getAccountName } from './lib/account'
 import { editApprovalCount, siteUnsetCount, overtimePendingCount, pendingGrantCount, refreshNavBadges } from './lib/navBadges'

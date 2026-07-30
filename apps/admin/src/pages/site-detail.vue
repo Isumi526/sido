@@ -172,6 +172,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { canViewManagementPages } from '../lib/auth'
 import { normalizeSiteName } from '../lib/siteSimilarity'
 import { siteStoredName } from '../lib/siteKey'
 
@@ -202,7 +203,8 @@ const tab = ref<'overview' | 'reports' | 'docs' | 'files'>('overview')
 const TABS = computed(() => [
   { key: 'overview', label: '概要', count: null as number | null },
   { key: 'reports',  label: '日報', count: stats.value.count },
-  { key: 'docs',     label: '見積・注文', count: estimates.value.length + orders.value.length },
+  // 見積・注文タブは経営系（見積/注文書の金額）のため site_manager には出さない
+  ...(canViewManagementPages.value ? [{ key: 'docs', label: '見積・注文', count: estimates.value.length + orders.value.length }] : []),
   { key: 'files',    label: '写真・資料', count: attachments.value.length },
 ])
 
