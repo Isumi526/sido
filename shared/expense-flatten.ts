@@ -53,10 +53,11 @@ export const EXPENSE_ACCOUNT_OPTIONS = ['旅費交通費', '車両費', '消耗�
 
 /**
  * 同行者名の記録が必須になる科目。
- * 税務上、接待交際費・会議費は「誰と行ったか」の記録が要る（2026-07-27 議事録）。
+ * 税務上「誰と行ったか」の記録が要るのは **接待交際費のみ**（2026-07-31 ユーザー確定）。
+ * ※会議費は対象外。
  * 入力フォームの必須バリデーションと、admin 側の未記入検出の両方でこれを正とする。
  */
-export const COMPANION_REQUIRED_ACCOUNTS = ['接待交際費', '会議費'] as const
+export const COMPANION_REQUIRED_ACCOUNTS = ['接待交際費'] as const
 
 /** その明細に同行者名の記録が要るか（科目は入力値優先・未入力なら導出値で判定） */
 export function requiresCompanions(row: { category: string; account?: string }): boolean {
@@ -257,7 +258,7 @@ export interface PersonalExpenseRecord {
  * ★siteName は空文字にする（'現場未設定' にはしない）。
  *  現場別集計で「不明な現場」として現場に紛れ込ませないため（#f4cc3db1 の波及範囲メモ）。
  * ★category は勘定科目をそのまま入れる。account にも同じ値を入れるので
- *  expenseAccountCategory / requiresCompanions / requiresPreApproval がそのまま効く。
+ *  expenseAccountCategory / requiresCompanions がそのまま効く。
  */
 export function flattenPersonalExpenses(
   records: PersonalExpenseRecord[] | null | undefined,

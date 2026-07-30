@@ -1,9 +1,10 @@
 // ============================================================
 //  liff.expense-companions.spec.ts
-//  接待交際費・会議費は税務上「誰と行ったか」の記録が必須（2026-07-27 議事録）:
-//   - 科目に 接待交際費/会議費 を選ぶと同行者名の入力欄が出る
+//  接待交際費は税務上「誰と行ったか」の記録が必須（2026-07-27 議事録）:
+//   - 科目に 接待交際費 を選ぶと同行者名の入力欄が出る
 //   - 未記入のまま送信しようとすると弾かれる（「書かんと通さない」）
-//   - 他の科目（消耗品費 等）では入力欄が出ない＝余計な入力を増やさない
+//   - 他の科目（会議費・消耗品費 等）では入力欄が出ない＝余計な入力を増やさない
+//   ★会議費は対象外（2026-07-31 ユーザー確定）。
 // ============================================================
 import { test, expect } from '@playwright/test'
 
@@ -28,7 +29,7 @@ async function openExpenseForm(page: import('@playwright/test').Page) {
 const accountCard = (page: import('@playwright/test').Page) =>
   page.locator('.lineitem-card').filter({ has: page.locator('select') }).first()
 
-test.describe('経費 同行者名の必須化（接待交際費・会議費）', () => {
+test.describe('経費 同行者名の必須化（接待交際費のみ）', () => {
   test('科目に応じて同行者名欄が出入りする', async ({ page }) => {
     await openExpenseForm(page)
     const card = accountCard(page)
@@ -42,10 +43,10 @@ test.describe('経費 同行者名の必須化（接待交際費・会議費）'
     await page.waitForTimeout(300)
     await expect(card.locator('input[placeholder*="同行者名"]'), '接待交際費で出る').toBeVisible()
 
-    // 会議費 → 出る
+    // 会議費 → ★出ない（2026-07-31 ユーザー確定：同行者名は接待交際費のみ）
     await sel.selectOption('会議費')
     await page.waitForTimeout(300)
-    await expect(card.locator('input[placeholder*="同行者名"]'), '会議費で出る').toBeVisible()
+    await expect(card.locator('input[placeholder*="同行者名"]'), '会議費では出ない').toHaveCount(0)
 
     // 旅費交通費 → 消える
     await sel.selectOption('旅費交通費')
