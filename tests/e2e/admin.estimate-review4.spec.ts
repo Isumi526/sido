@@ -16,8 +16,37 @@ let seq = 0
 const projName = () => `E2Eレビュー4_${TS}_${++seq}`
 let PROJ = ''
 
+// ★AC8 は「自社情報が登録済み」が前提（未登録だと company-missing が出て
+//  company-inline が描画されない）。前提を他のspecの実行順に頼らず自分で作る。
+//  admin.company-profile.spec.ts の後片付けが settings.company_name を行ごと
+//  削除するため、順序次第で落ちていた（2026-07-30 に踏んだ）。
+let prevCompanyName: string | null = null
+let seededCompanyName = false
+test.beforeAll(async () => {
+  const accountId = await getAccountId()
+  const cur = await restSrv(`settings?account_id=eq.${accountId}&key=eq.company_name&select=value`)
+  prevCompanyName = cur?.[0]?.value ?? null
+  if (prevCompanyName == null) {
+    seededCompanyName = true
+    await restSrv('settings?on_conflict=key,account_id', {
+      method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      // label は NOT NULL なので必ず付ける
+      body: JSON.stringify({ account_id: accountId, key: 'company_name', value: 'E2E自社情報の初期値', label: '会社名' }),
+    })
+  }
+})
+
 test.afterAll(async () => {
   const accountId = await getAccountId()
+  // 自社情報はアカウント共有なので、このspecが変えた分は必ず元に戻す
+  if (prevCompanyName != null) {
+    await restSrv('settings?on_conflict=key,account_id', {
+      method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ account_id: accountId, key: 'company_name', value: prevCompanyName, label: '会社名' }),
+    }).catch(() => {})
+  } else if (seededCompanyName) {
+    await restSrv(`settings?key=eq.company_name&account_id=eq.${accountId}`, { method: 'DELETE' }).catch(() => {})
+  }
   const pj = await restSrv(`estimate_projects?account_id=eq.${accountId}&name=like.${encodeURIComponent('E2Eレビュー4_' + TS + '%')}&select=id`)
   for (const p of (pj ?? [])) {
     await restSrv(`estimate_items?project_id=eq.${p.id}`, { method: 'DELETE' }).catch(() => {})
