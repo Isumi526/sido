@@ -130,6 +130,9 @@
               <button class="att-name" :data-testid="`intake-att-${a.id}`" @click="openAttachment(a)">{{ a.name || a.path }}</button>
               <!-- R8: 図面はページごとに工種が分かれている。該当ページだけ業者へ送る -->
               <button v-if="isPdf(a)" class="btn-edit" :data-testid="`dsend-open-${a.id}`" @click="openDrawingSend(a)">ページを選んで送る</button>
+              <!-- ★案件の図面からそのまま材料を抽出する。独立ページ(/drawing-materials)は
+                   案件に紐づかない用途（受注前の当たり付け等）で残す。 -->
+              <button v-if="isPdf(a)" class="btn-edit" :data-testid="`dext-open-${a.id}`" @click="openExtract(a)">材料を抽出</button>
               <button class="btn-del" :data-testid="`intake-att-del-${a.id}`" @click="removeAttachment(a)">×</button>
             </li>
           </ul>
@@ -601,6 +604,61 @@
       </div><!-- /tab 明細入力 -->
 
       <!-- ★R36: 工種別内訳は専用タブ。表示/非表示トグルだと明細のスペースを圧迫する -->
+      <!-- ★実施図面からの材料抽出。抽出結果を明細へ流し込む出口を作る。
+           これまでは独立ページでCSV書き出しまでで、明細には手で打ち直していた。 -->
+      <div v-if="dext.att" class="modal-back" data-testid="dext-modal" @click.self="closeExtract">
+        <div class="modal-card wide">
+          <div class="modal-head">
+            <h3>材料を抽出 — {{ dext.att.name || dext.att.path }}</h3>
+            <button class="btn-cancel" data-testid="dext-close" @click="closeExtract">閉じる</button>
+          </div>
+          <p class="hint">
+            図面に書かれたメーカー品番をAIが読み取ります。
+            <strong>チェックした行だけ</strong>を明細に入れます。<br>
+            ★図面には「(仮)」の品番や<strong>中止になったのに綴じられたままの詳細図</strong>が混ざります。
+            全部そのまま入れると中止項目まで計上してしまうので、必ず人が選んでください。
+          </p>
+          <div v-if="dext.busy" class="pinfo-loading" data-testid="dext-busy">
+            <span class="spin-dot"></span> 解析中… ページ {{ dext.done }}/{{ dext.total }}
+          </div>
+          <div v-else-if="!dext.rows.length" class="hint" data-testid="dext-empty">
+            {{ dext.ran ? '品番は見つかりませんでした' : '「解析する」で図面を読み取ります' }}
+          </div>
+          <div v-else class="items-scroll dext-list">
+            <table class="table">
+              <thead><tr><th></th><th>P</th><th>部位</th><th>メーカー</th><th>品番</th><th>規格サイズ</th><th>仕様</th><th>数量</th><th>備考</th></tr></thead>
+              <tbody>
+                <tr v-for="(r, ri) in dext.rows" :key="ri" :data-testid="`dext-row-${ri}`">
+                  <td><input type="checkbox" v-model="r._pick" :data-testid="`dext-pick-${ri}`" /></td>
+                  <td>{{ r.page }}</td>
+                  <td>{{ r.part }}</td>
+                  <td>{{ r.manufacturer }}</td>
+                  <td><input v-model="r.code" class="input sm" :data-testid="`dext-code-${ri}`" /></td>
+                  <td>{{ r.size }}</td>
+                  <td>{{ r.spec }}</td>
+                  <td>{{ r.quantity }}</td>
+                  <td class="dext-note">{{ r.note }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="actions-row">
+            <button v-if="!dext.rows.length" class="btn-primary" :disabled="dext.busy" data-testid="dext-run" @click="runExtract">
+              {{ dext.busy ? '解析中…' : '解析する' }}
+            </button>
+            <template v-else>
+              <button class="btn-link-sm" data-testid="dext-all" @click="dext.rows.forEach(r => r._pick = true)">全選択</button>
+              <button class="btn-link-sm" data-testid="dext-none" @click="dext.rows.forEach(r => r._pick = false)">全解除</button>
+              <button class="btn-primary" :disabled="!dextPicked.length" data-testid="dext-apply" @click="applyExtractToItems">
+                選んだ {{ dextPicked.length }} 件を明細に入れる
+              </button>
+            </template>
+            <span v-if="dext.msg" class="ok" data-testid="dext-msg">{{ dext.msg }}</span>
+            <span v-if="dext.err" class="err" data-testid="dext-err">{{ dext.err }}</span>
+          </div>
+        </div>
+      </div>
+
       <div v-show="builderTab === 'breakdown'">
         <!-- 工種別 自動集計（転記操作なし）。★既定は畳んでおく。
              明細は列が多く、常時2カラムだと入力欄が狭くなる（レビュー2026-07-29）。 -->
@@ -2702,6 +2760,108 @@ async function removeTrade(t: Trade) {
 }
 
 // ════════════════════════════════════════════════════════════
+//  実施図面からの材料抽出（案件情報の図面から直接）
+//
+//  これまでは独立ページ /drawing-materials でしか使えず、
+//  ・案件に紐づかない（アップロードするだけ）
+//  ・出口がCSV書き出しだけ（見積への反映は手動）
+//  だったため、抽出した品番を明細に手で打ち直していた。
+//  R3(品番列)・R14(品番で材料判定)・R28(品番から商社単価)が揃ったので、
+//  案件の図面から抽出して明細へ流し込めるようにする。
+//
+//  ★全件を自動投入しない。図面には「(仮)」の品番や、中止になったのに
+//   綴じられたままの詳細図が混ざる（実図面で確認済み）。機械的に入れると
+//   中止項目を過大計上するので、人が選んだ行だけを入れる。
+// ════════════════════════════════════════════════════════════
+type ExtractRow = {
+  page: number; part: string; manufacturer: string; code: string
+  size: string; spec: string; quantity: string; note: string; _pick: boolean
+}
+const dext = ref<{
+  att: Attachment | null; busy: boolean; ran: boolean
+  done: number; total: number; rows: ExtractRow[]; msg: string; err: string
+}>({ att: null, busy: false, ran: false, done: 0, total: 0, rows: [], msg: '', err: '' })
+const dextPicked = computed(() => dext.value.rows.filter(r => r._pick))
+
+function openExtract(a: Attachment) {
+  dext.value = { att: a, busy: false, ran: false, done: 0, total: 0, rows: [], msg: '', err: '' }
+}
+function closeExtract() { dext.value.att = null }
+
+async function runExtract() {
+  const d = dext.value
+  if (!d.att) return
+  d.busy = true; d.err = ''; d.msg = ''; d.rows = []; d.done = 0; d.total = 0
+  try {
+    const { data: file, error } = await supabase.storage.from(DRAWING_BUCKET).download(d.att.path)
+    if (error || !file) throw error ?? new Error('図面を取得できませんでした')
+    const buf = new Uint8Array(await file.arrayBuffer())
+    const { PDFDocument } = await import('pdf-lib')
+    const src = await PDFDocument.load(buf)
+    d.total = src.getPageCount()
+    const { data: sess } = await supabase.auth.getSession()
+    // ★1ページずつ送る（図面は1枚が重く、まとめて送ると解析精度も落ちる）
+    for (let i = 0; i < d.total; i++) {
+      const one = await PDFDocument.create()
+      const [pg] = await one.copyPages(src, [i])
+      one.addPage(pg)
+      const bytes = await one.save()
+      let bin = ''
+      const chunk = 0x8000
+      for (let k = 0; k < bytes.length; k += chunk) {
+        bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(k, k + chunk)) as any)
+      }
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/drawing-material-extract`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${sess?.session?.access_token ?? ''}`,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ image_base64: btoa(bin), mime: 'application/pdf', page: i + 1 }),
+      })
+      const json = await resp.json().catch(() => null)
+      d.done = i + 1
+      if (!resp.ok || json?.error) { d.err = json?.error || `解析エラー(${resp.status})`; break }
+      for (const r of (json?.rows ?? []) as any[]) {
+        d.rows.push({
+          page: i + 1, part: r.part ?? '', manufacturer: r.manufacturer ?? '', code: r.code ?? '',
+          size: r.size ?? '', spec: r.spec ?? '', quantity: r.quantity ?? '', note: r.note ?? '',
+          // ★既定はオフ。「(仮)」「要確認」等が混ざるので、選ぶのを人の判断にする
+          _pick: false,
+        })
+      }
+    }
+    d.ran = true
+  } catch (e: any) {
+    d.err = e?.message ?? '解析に失敗しました'
+  } finally { d.busy = false }
+}
+
+/** 選んだ抽出行を明細に入れる。空行があればそこを埋める（末尾に足すと見つけにくい） */
+async function applyExtractToItems() {
+  const picked = dextPicked.value
+  if (!picked.length) return
+  const added: Row[] = []
+  for (const x of picked) {
+    let row = rows.value.find(r => isItemRow(r) && isBlankRow(r) && !added.includes(r))
+    if (!row) { row = blankRow(); rows.value.push(row) }
+    row.item_name = [x.manufacturer, x.part].filter(Boolean).join(' ') || x.code || '(名称未設定)'
+    row.product_code = x.code || ''
+    // 規格サイズは形状・詳細に入れる（W/D/Hは人が読み替える。自動で分解すると外す）
+    row.spec = [x.size, x.spec].filter(Boolean).join(' / ')
+    const q = Number(String(x.quantity ?? '').replace(/[^0-9.]/g, ''))
+    if (Number.isFinite(q) && q > 0) row.quantity = q
+    added.push(row)
+  }
+  await autoSaveRows(added)
+  await loadMaterials()
+  dext.value.msg = `${picked.length}件を明細に入れました`
+  builderTab.value = 'items'
+  setTimeout(() => { dext.value.msg = ''; dext.value.att = null }, 1800)
+}
+
+// ════════════════════════════════════════════════════════════
 //  R21: 名称・品番の候補を画面上で編集・削除する
 //  候補は「商社単価表」＋「過去に打った明細」から作られる（R28）。
 //  ★消しても既存の見積の中身は変えない。候補に出なくなるだけ。
@@ -3634,6 +3794,8 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .dsp-frame { width: 100%; height: 420px; border: 0; display: block; }
 .dsend-contacts { display: flex; flex-wrap: wrap; gap: 12px; }
 .cc-check { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
+.dext-list { max-height: 46vh; }
+.dext-note { font-size: 11px; color: #B45309; max-width: 180px; }
 .dsend-to { font-size: 12px; color: #7A8AA0; word-break: break-all; }
 
 /* ── 明細のブロック（場所×工種）── */
