@@ -99,6 +99,8 @@
   "facilityNameHotelPlaceholder": "施設名（例: アパホテル）",
   "registrationNumberPlaceholder": "インボイス番号（ない場合はなしと記入）",
   "accountAuto": "科目：自動（{name}）",
+  "companionsPlaceholder": "同行者名（必須・例: 〇〇建設 田中様、自社 佐藤）",
+  "companionsRequired": "{account}は同行者名の入力が必須です（誰と行ったかの記録が税務上必要）。",
   "leopalace": "レオパレス等",
   "facilityNamePlaceholder": "施設名",
   "garbage": "ゴミ",

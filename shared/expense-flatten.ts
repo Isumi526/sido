@@ -36,6 +36,7 @@ export interface ExpenseRow {
   tategae?: boolean
   vehicle?: string      // 使用車（車両系経費のみ・現場の車両名。交通費/その他/宿泊は無し）
   account?: string      // 勘定科目（入力値）。others/entertainments のみ入力可・未入力/既存データは expenseAccountCategory で導出
+  companions?: string   // 同行者名（接待交際費・会議費のみ必須。税務上「誰と行ったか」の記録）
   // ── 出所（申請前インライン編集の書き戻し用・追加のみ／金額・集計には無影響）──
   //  新形式配列カテゴリ(parkings/highways/trains/hotels/others/entertainments)のみ付与。
   //  レガシースカラー・車両按分・旧車両配下(駐車/高速)は付けない＝編集対象外。
@@ -46,6 +47,18 @@ export interface ExpenseRow {
 
 /** 勘定科目の固定選択肢（2026-07-30 ユーザー確定・入力selectとバリデーションの正本） */
 export const EXPENSE_ACCOUNT_OPTIONS = ['旅費交通費', '車両費', '消耗品費', '材料費', '接待交際費', '会議費', '雑費'] as const
+
+/**
+ * 同行者名の記録が必須になる科目。
+ * 税務上、接待交際費・会議費は「誰と行ったか」の記録が要る（2026-07-27 議事録）。
+ * 入力フォームの必須バリデーションと、admin 側の未記入検出の両方でこれを正とする。
+ */
+export const COMPANION_REQUIRED_ACCOUNTS = ['接待交際費', '会議費'] as const
+
+/** その明細に同行者名の記録が要るか（科目は入力値優先・未入力なら導出値で判定） */
+export function requiresCompanions(row: { category: string; account?: string }): boolean {
+  return (COMPANION_REQUIRED_ACCOUNTS as readonly string[]).includes(expenseAccountCategory(row))
+}
 
 /**
  * 経費行の「科目」列（勘定科目）。入力値(account)があればそれ、無ければ生カテゴリから導出する。
@@ -142,11 +155,11 @@ export function flattenReportExpenses(date: string, sites: any[], rates: Expense
     if (exp.leopalaceYen && !hasHotelsArr) rows.push({ date, category: '宿泊費', siteName, amount: exp.leopalaceYen, note: exp.leopalaceName, payee: exp.leopalaceName, registrationNumber: exp.leopalaceRegistration, fileUrls: exp.leopalaceUrls?.length ? exp.leopalaceUrls : undefined, tategae: !!exp.leopalaceTategae })
     for (let i = 0; i < (exp.others || []).length; i++) {
       const ot = exp.others[i]
-      if (ot.yen) rows.push({ date, category: 'その他', siteName, amount: ot.yen, note: ot.label, payee: ot.payee, registrationNumber: ot.registrationNumber, account: ot.account || undefined, fileUrls: ot.fileUrls?.length ? ot.fileUrls : takeOtherUrls(), tategae: !!ot.tategae, srcSiteIndex: si, srcKey: 'others', srcIndex: i })
+      if (ot.yen) rows.push({ date, category: 'その他', siteName, amount: ot.yen, note: ot.label, payee: ot.payee, registrationNumber: ot.registrationNumber, account: ot.account || undefined, companions: ot.companions || undefined, fileUrls: ot.fileUrls?.length ? ot.fileUrls : takeOtherUrls(), tategae: !!ot.tategae, srcSiteIndex: si, srcKey: 'others', srcIndex: i })
     }
     for (let i = 0; i < (exp.entertainments || []).length; i++) {
       const ent = exp.entertainments[i]
-      if (ent.yen) rows.push({ date, category: 'その他雑経費', siteName, amount: ent.yen, note: ent.label, payee: ent.payee, registrationNumber: ent.registrationNumber, account: ent.account || undefined, fileUrls: ent.fileUrls?.length ? ent.fileUrls : undefined, tategae: !!ent.tategae, srcSiteIndex: si, srcKey: 'entertainments', srcIndex: i })
+      if (ent.yen) rows.push({ date, category: 'その他雑経費', siteName, amount: ent.yen, note: ent.label, payee: ent.payee, registrationNumber: ent.registrationNumber, account: ent.account || undefined, companions: ent.companions || undefined, fileUrls: ent.fileUrls?.length ? ent.fileUrls : undefined, tategae: !!ent.tategae, srcSiteIndex: si, srcKey: 'entertainments', srcIndex: i })
     }
     if (exp.entertainmentYen && !(exp.entertainments || []).some((e: any) => e.yen)) rows.push({ date, category: 'その他雑経費', siteName, amount: exp.entertainmentYen, note: exp.entertainmentLabel, payee: exp.entertainmentLabel, registrationNumber: exp.entertainmentRegistration, fileUrls: exp.entertainmentUrls?.length ? exp.entertainmentUrls : undefined, tategae: !!exp.entertainmentTategae })
   }
