@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { currentUser } from '../lib/auth'
+import { currentUser, canViewManagementPages, waitForRoleResolved } from '../lib/auth'
 import Dashboard      from '../pages/index.vue'
 import Workers        from '../pages/workers.vue'
 import Sites          from '../pages/sites.vue'
@@ -49,44 +49,49 @@ export const router = createRouter({
     { path: '/chats',        component: () => import('../pages/chats.vue') },
     { path: '/chats/account', component: () => import('../pages/account-chat.vue') },
     { path: '/chats/:id',    component: () => import('../pages/chat-detail.vue') },
-    { path: '/contractors',  component: Contractors },
+    { path: '/contractors',  component: Contractors,    meta: { management: true } },
     { path: '/site-rules',   component: SiteRules },
     { path: '/attendance',   component: Attendance },
     { path: '/subcontractors', component: Subcontractors },
     { path: '/vehicles',     component: Vehicles },
     { path: '/reports',      component: Reports },
     { path: '/site-reports', component: SiteReports },
-    { path: '/expenses',     component: Expenses },
-    { path: '/expenses-daily', component: ExpensesDaily },
-    { path: '/gasoline-allocation', component: () => import('../pages/gasoline-allocation.vue') },
-    { path: '/subcontractor-invoices', component: SubInvoices },
+    { path: '/expenses',     component: Expenses,       meta: { management: true } },
+    { path: '/expenses-daily', component: ExpensesDaily, meta: { management: true } },
+    { path: '/gasoline-allocation', component: () => import('../pages/gasoline-allocation.vue'), meta: { management: true } },
+    { path: '/subcontractor-invoices', component: SubInvoices, meta: { management: true } },
     { path: '/worker-reports', component: WorkerReports },
     { path: '/paid-leave',    component: PaidLeave },
-    { path: '/settings',       component: Settings },
-    { path: '/company-profile', component: CompanyProfile },
-    { path: '/users',        component: Users },
-    { path: '/reminder-history', component: ReminderHistory },
-    { path: '/operation-logs',   component: OperationLogs },
-    { path: '/non-submitters',   component: NonSubmitters },
+    { path: '/settings',       component: Settings,     meta: { management: true } },
+    { path: '/company-profile', component: CompanyProfile, meta: { management: true } },
+    { path: '/users',        component: Users,          meta: { management: true } },
+    { path: '/reminder-history', component: ReminderHistory, meta: { management: true } },
+    { path: '/operation-logs',   component: OperationLogs,   meta: { management: true } },
+    { path: '/non-submitters',   component: NonSubmitters,   meta: { management: true } },
     { path: '/report-edit-approvals', component: ReportEditApprovals },
     { path: '/report-site-relink',    component: ReportSiteRelink },
     { path: '/overtime-approvals',    component: OvertimeApprovals },
-    { path: '/ai-help',          component: AiHelp },
-    { path: '/faq',              component: Faq },
-    { path: '/estimates',        component: Estimates },
-    { path: '/estimate-list',   component: EstimatesList },
-    { path: '/estimate-masters', component: EstimateMasters },
-    { path: '/estimate-builder', component: EstimateBuilder },
-    { path: '/purchase-orders',  component: PurchaseOrders },
-    { path: '/drawing-materials', component: () => import('../pages/drawing-materials.vue') },
+    { path: '/ai-help',          component: AiHelp,     meta: { management: true } },
+    { path: '/faq',              component: Faq,        meta: { management: true } },
+    { path: '/estimates',        component: Estimates,  meta: { management: true } },
+    { path: '/estimate-list',   component: EstimatesList, meta: { management: true } },
+    { path: '/estimate-masters', component: EstimateMasters, meta: { management: true } },
+    { path: '/estimate-builder', component: EstimateBuilder, meta: { management: true } },
+    { path: '/purchase-orders',  component: PurchaseOrders,  meta: { management: true } },
+    { path: '/drawing-materials', component: () => import('../pages/drawing-materials.vue'), meta: { management: true } },
   ],
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const isPublic = to.meta.public === true
   if (!isPublic && !currentUser.value) return '/login'
   // ログイン済みで /login に来たらホームへ。ただしクエリにID/PASS等がある時は
   // 自動ログイン/アカウント切替の意図なので弾かず通す（デモURL用）。
   const hasLoginQuery = !!(to.query.email || to.query.id || to.query.pass || to.query.password)
   if (to.path === '/login' && currentUser.value && !hasLoginQuery) return '/'
+  // 経営系ページは site_manager 不可（メニュー非表示に加えURL直打ちも塞ぐ）
+  if (to.meta.management === true && currentUser.value) {
+    await waitForRoleResolved()
+    if (!canViewManagementPages.value) return '/'
+  }
 })
