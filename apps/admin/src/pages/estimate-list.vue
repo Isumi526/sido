@@ -4,12 +4,13 @@
       <h1 class="page-title">見積もり</h1>
       <div class="header-actions">
         <RouterLink to="/estimate-masters" class="btn-ghost" data-testid="to-masters">マスタ・単価表</RouterLink>
-        <button class="btn-add" data-testid="new-estimate" @click="goNew">＋ 新規見積</button>
+        <button class="btn-add" :disabled="creating" data-testid="new-estimate" @click="goNew">{{ creating ? '作成中…' : '＋ 新規見積' }}</button>
       </div>
     </div>
 
     <div class="filters">
       <input v-model="q" class="input filter-input" placeholder="案件名・元請けで検索" data-testid="estimate-search" />
+      <span v-if="createErr" class="err" data-testid="new-estimate-err">{{ createErr }}</span>
     </div>
 
     <div class="table-wrap">
@@ -17,12 +18,20 @@
         <thead>
           <tr>
             <th>案件名</th><th>元請け</th><th class="num">合計（税抜）</th><th>状態</th>
-            <th>見積送信</th><th>商社発注</th><th>更新</th>
+            <th>見積送信</th><th>商社発注</th><th>更新</th><th></th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="r in filtered" :key="r.id" class="row" :data-testid="`estimate-row-${r.id}`" @click="open(r.id)">
-            <td class="name">{{ r.name }}</td>
+            <!-- ★R52: 「＋新規見積」を押した時点で行を作るので、案件名がまだ無い下書きが並ぶ。
+                 生の仮名を出すと分かりにくいので、下書きは明示してから続きを促す。 -->
+            <td class="name">
+              <template v-if="r.is_draft">
+                <span class="badge draft" :data-testid="`estimate-draft-${r.id}`">下書き</span>
+                <span class="draft-name">案件名を入力していません（クリックで続ける）</span>
+              </template>
+              <template v-else>{{ r.name }}</template>
+            </td>
             <td>{{ r.contractorName || '—' }}</td>
             <td class="num">{{ yen(r.total) }}</td>
             <td><span class="status" :class="r.status">{{ statusLabel(r.status) }}</span></td>
@@ -35,8 +44,12 @@
               <span v-else class="badge muted">—</span>
             </td>
             <td class="date">{{ shortDate(r.updated_at) }}</td>
+            <!-- 下書きだけ消せるようにする。中身のある見積は誤って消せると困るのでここでは消させない -->
+            <td>
+              <button v-if="r.is_draft" class="btn-del" :data-testid="`estimate-del-${r.id}`" @click.stop="removeDraft(r)">×</button>
+            </td>
           </tr>
-          <tr v-if="!filtered.length"><td colspan="7" class="empty">{{ loading ? '読み込み中…' : '見積はまだありません。「＋ 新規見積」で作成できます。' }}</td></tr>
+          <tr v-if="!filtered.length"><td colspan="8" class="empty">{{ loading ? '読み込み中…' : '見積はまだありません。「＋ 新規見積」で作成できます。' }}</td></tr>
         </tbody>
       </table>
     </div>
@@ -52,12 +65,15 @@ import { getAccountId } from '../lib/account'
 type Row = {
   id: string; name: string; contractorName: string; status: string
   total: number; updated_at: string; sent: boolean; poCount: number; poSent: number
+  is_draft: boolean
 }
 
-const router  = useRouter()
-const rows    = ref<Row[]>([])
-const loading = ref(true)
-const q       = ref('')
+const router    = useRouter()
+const rows      = ref<Row[]>([])
+const loading   = ref(true)
+const q         = ref('')
+const creating  = ref(false)
+const createErr = ref('')
 
 const yen = (n: number) => '¥' + Math.round(n || 0).toLocaleString('ja-JP')
 // 業務フローに沿った状態（Q5・確認16で合意）。issued は見積書PDF発行時に自動セットされる。
@@ -78,7 +94,7 @@ async function load() {
   loading.value = true
   const accountId = await getAccountId()
   const [{ data: projects }, { data: contractors }, { data: items }, { data: sends }, { data: pos }] = await Promise.all([
-    supabase.from('estimate_projects').select('id, name, contractor_id, status, updated_at').eq('account_id', accountId).order('updated_at', { ascending: false }),
+    supabase.from('estimate_projects').select('id, name, contractor_id, status, updated_at, is_draft').eq('account_id', accountId).order('updated_at', { ascending: false }),
     supabase.from('contractors').select('id, name').eq('account_id', accountId),
     supabase.from('estimate_items').select('project_id, amount').eq('account_id', accountId),
     supabase.from('estimate_sends').select('project_id, sent_at').eq('account_id', accountId),
@@ -100,13 +116,58 @@ async function load() {
     total: totalByProj.get(p.id) ?? 0, updated_at: p.updated_at,
     sent: sentByProj.has(p.id),
     poCount: poByProj.get(p.id)?.count ?? 0, poSent: poByProj.get(p.id)?.sent ?? 0,
+    is_draft: !!p.is_draft,
   }))
   loading.value = false
 }
 onMounted(load)
 
 function open(id: string) { router.push({ path: '/estimate-builder', query: { project: id } }) }
-function goNew()          { router.push({ path: '/estimate-builder' }) }
+
+/**
+ * ★R52: 押した時点で案件を作り、URLにIDを載せてから遷移する。
+ *  これまでは案件名を入力して「作成」を押すまでDBに何も無かったため、
+ *  途中で担当者マスタを直しに行って戻ると入力が全部消えていた。
+ *  案件名は図面のファイル名から起こす（R51）ので、この時点では仮名を入れる。
+ *  (account_id, lower(name)) に一意indexがあるため、仮名は時刻入りで衝突を避ける。
+ */
+async function goNew() {
+  creating.value = true
+  createErr.value = ''
+  const accountId = await getAccountId()
+  let lastErr = ''
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const name = draftName(attempt)
+    const { data, error } = await supabase.from('estimate_projects')
+      .insert({ account_id: accountId, name, is_draft: true }).select('id').single()
+    if (!error) {
+      creating.value = false
+      // step=1 = 図面アップロードから始めるステップ式フロー（R51）
+      router.push({ path: '/estimate-builder', query: { project: (data as any).id, step: '1' } })
+      return
+    }
+    lastErr = error.message
+    if (!/duplicate|unique/i.test(error.message)) break   // 一意違反以外は再試行しても無駄
+  }
+  creating.value = false
+  createErr.value = `見積を作成できませんでした: ${lastErr}`
+}
+
+/** 仮の案件名。人が見て「まだ名前が無い」と分かる形にする（同時作成でも衝突しないよう時刻入り） */
+function draftName(attempt: number) {
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, '0')
+  const stamp = `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+  return attempt === 0 ? `（案件名未入力）${stamp}` : `（案件名未入力）${stamp}#${attempt + 1}`
+}
+
+/** 下書きは消せる（案件名すら入れずに離脱したものが溜まるため） */
+async function removeDraft(r: Row) {
+  if (!confirm('この下書きを削除します。よろしいですか？')) return
+  const { error } = await supabase.from('estimate_projects').delete().eq('id', r.id)
+  if (error) { createErr.value = error.message; return }
+  rows.value = rows.value.filter(x => x.id !== r.id)
+}
 </script>
 
 <style scoped>
@@ -116,7 +177,13 @@ function goNew()          { router.push({ path: '/estimate-builder' }) }
 .btn-ghost { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 9px 16px; font-size: 13px; cursor: pointer; text-decoration: none; color: #333; }
 .btn-ghost:hover { background: #f5f5f5; }
 .btn-add { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 700; cursor: pointer; }
-.filters { margin-bottom: 16px; }
+.filters { margin-bottom: 16px; display: flex; align-items: center; gap: 12px; }
+.err { color: #dc2626; font-size: 13px; }
+.badge.draft { background: #fff7ed; color: #9a3412; }
+.draft-name { color: #94a3b8; font-weight: 400; margin-left: 8px; }
+.btn-del { background: none; border: none; color: #cbd5e1; font-size: 16px; cursor: pointer; padding: 2px 6px; }
+.btn-del:hover { color: #dc2626; }
+.btn-add:disabled { opacity: .6; cursor: default; }
 .filter-input { min-width: 280px; }
 .input { padding: 8px 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 14px; }
 .table-wrap { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06);  max-height: 70vh; overflow: auto; }

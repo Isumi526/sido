@@ -20,7 +20,7 @@
 //  Notion: R6 3a50ff81c56b81638fc2e49ae3b750bb / R14 / R23
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { getAccountId, restSrv } from './helpers'
+import { getAccountId, restSrv, openBuilderTab } from './helpers'
 
 const TS = Date.now()
 const MAT = `E2E不燃PB_${TS}`          // マスタに入れる正しい名前
@@ -74,7 +74,7 @@ async function openNewProject(page: any) {
   await page.locator('[data-testid="new-project-name"]').fill(PROJ)
   await page.locator('[data-testid="add-project"]').click()
   await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ, { timeout: 15000 })
-  await expect(page.locator('[data-testid="item-name-0"]')).toBeVisible({ timeout: 10000 })
+  await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
 }
 
 test('AC2★: 打ち間違いに「もしかして」候補が出て、クリックで上書きされる', async ({ page }) => {

@@ -6,11 +6,15 @@
     </div>
 
     <!-- 案件を開いている時のバー（案件名の編集・元請け・別案件の新規作成） -->
-    <div v-if="projectId" class="bar">
+    <!-- ★R51: 新規のステップ式フロー中は出さない（順番に入れてもらう画面なので情報を足さない） -->
+    <div v-if="projectId && !wizard.on" class="bar">
       <div class="bar-group">
         <label>案件</label>
         <span v-if="!editingName" class="current-project" data-testid="project-select" title="クリックで名称変更" @click="startRename">{{ currentProjectName }} <span class="edit-ic">✎</span></span>
         <input v-else v-model="projectNameEdit" class="input proj-name" data-testid="project-name-input" @keyup.enter="commitRename" @blur="commitRename" />
+        <!-- ★R52: 案件名を入れずにステップを飛ばした案件は、仮名のまま帳票に出ると困る。
+             クリックで直せることをその場で伝える（一覧でも「下書き」と出る）。 -->
+        <span v-if="isDraftProject" class="draft-warn" data-testid="project-draft-warn">案件名が未入力です（クリックして入力）</span>
         <span v-if="projectErr" class="err" data-testid="project-err">{{ projectErr }}</span>
       </div>
 
@@ -22,7 +26,14 @@
           <option value="">（未設定）</option>
           <option v-for="c in contractors" :key="c.id" :value="c.id">{{ c.name }}</option>
         </select>
-        <RouterLink to="/contractors" class="muted-link">元請け担当者を管理</RouterLink>
+        <!-- ★R55: マスタ編集の共通ルール（docs/design/master-editing-rules.md）に従い、
+             元請け・担当者はこの画面から直せるようにする。設定画面へ飛ばすと
+             書きかけの見積から離れることになり、実際にブラウザバックで入力が消えていた。 -->
+        <button class="btn-edit" data-testid="con-add-open" @click="openContractorModal(null)">＋ 元請けを追加</button>
+        <button v-if="currentContractorId" class="btn-edit" data-testid="con-edit-open" @click="openContractorModal(currentContractorId)">
+          <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">edit</span> 担当者を編集
+        </button>
+        <RouterLink to="/contractors" class="muted-link">元請けマスタ全体</RouterLink>
       </div>
 
       <!-- 受注 → 現場化（受注確定で現場に紐付け。以降の日報/発注/経費を現場単位に） -->
@@ -67,13 +78,166 @@
       </div>
     </div>
 
+    <!-- ★R55: 元請け・担当者をこの画面から編集する（マスタ編集の共通ルール）。
+         追加した瞬間に選択肢へ反映する（閉じてから再読込では入力の流れが切れる）。
+         ★担当者を候補から消しても、既に送信済みの見積の宛先記録は書き換えない。 -->
+    <div v-if="conModal" class="modal-overlay" data-testid="con-modal" @click.self="conModal = null">
+      <div class="send-modal">
+        <h3>{{ conModal.id ? '元請けを編集' : '元請けを追加' }}</h3>
+        <div class="field">
+          <label>元請け業者名</label>
+          <input v-model="conModal.name" class="input" data-testid="con-name" placeholder="例: 〇〇建設" />
+        </div>
+        <div class="field">
+          <label>担当者（見積書の送信先候補）</label>
+          <div v-for="(c, ci) in conModal.contacts" :key="ci" class="con-contact-row">
+            <input v-model="c.name" class="input" :data-testid="`con-contact-name-${ci}`" placeholder="担当者名" />
+            <input v-model="c.email" class="input" :data-testid="`con-contact-email-${ci}`" placeholder="メールアドレス" />
+            <button class="btn-del" :data-testid="`con-contact-del-${ci}`" @click="conModal.contacts.splice(ci, 1)">×</button>
+          </div>
+          <button class="btn-link-sm" data-testid="con-contact-add" @click="conModal.contacts.push({ id: null, name: '', email: '' })">＋ 担当者を追加</button>
+          <p class="hint">担当者をここから消しても、<strong>既に送った見積の宛先記録は変わりません</strong>（候補に出なくなるだけ）。</p>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-primary" :disabled="conSaving || !conModal.name.trim()" data-testid="con-save" @click="saveContractorModal">
+            {{ conSaving ? '保存中…' : '保存してこの案件の元請けにする' }}
+          </button>
+          <button class="btn-cancel" @click="conModal = null">キャンセル</button>
+        </div>
+        <span v-if="conErr" class="err" data-testid="con-err">{{ conErr }}</span>
+      </div>
+    </div>
+
     <!-- E5 マスタ蓄積: 入力済み材料を予測変換候補に（案件選択前から常時ロード） -->
     <datalist id="est-material-codes"><option v-for="c in materialCodeOptions" :key="c" :value="c" /></datalist>
           <datalist id="est-materials">
       <option v-for="m in materials" :key="m.id" :value="m.name" />
     </datalist>
 
-    <template v-if="projectId">
+    <!-- ══════════════════════════════════════════════════════════
+         ★R51: 新規見積のステップ式フロー
+         実際の業務は「元請けから図面が来る」から始まる。案件名を先に打つ形は
+         手元にある物と順番が合っておらず、案件名を考えるところで止まっていた。
+         図面 → 案件名（ファイル名から自動）→ 依頼日・提出期限 → 元請け の順に置く。
+         どのステップも飛ばせる（図面が無い案件・元請けが未定の案件が実際にある）。
+         ══════════════════════════════════════════════════════════ -->
+    <template v-if="projectId && wizard.on">
+      <div class="wiz" data-testid="wizard">
+        <div class="wiz-steps">
+          <span v-for="s in WIZ_STEPS" :key="s.n" class="wiz-step"
+                :class="{ on: wizard.step === s.n, done: wizard.step > s.n }" :data-testid="`wiz-step-${s.n}`">
+            {{ s.n }}. {{ s.label }}
+          </span>
+          <button class="btn-link-sm wiz-exit" data-testid="wiz-exit" @click="finishWizard()">ステップ入力をやめて明細へ</button>
+        </div>
+
+        <!-- 1. 図面 -->
+        <section v-if="wizard.step === 1" class="panel" data-testid="wiz-panel-1">
+          <div class="panel-head"><h2>① 図面を追加</h2></div>
+          <p class="hint">
+            元請けから来た図面を先に置きます。<strong>案件名は図面のファイル名から自動で入ります</strong>（次のステップで直せます）。
+          </p>
+          <div class="att-row att-drop" :class="{ over: attDragOver }" data-testid="wiz-dropzone"
+               @dragover.prevent="attDragOver = true" @dragleave="attDragOver = false" @drop.prevent="onWizardDrop">
+            <label class="btn-excel att-pick">
+              <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">upload_file</span>
+              図面を選ぶ
+              <input type="file" multiple accept=".pdf,image/*" hidden data-testid="wiz-file" @change="onWizardFiles" />
+            </label>
+            <span class="hint">ここにドラッグ&ドロップでも追加できます</span>
+            <span v-if="attBusy" class="hint">アップロード中…</span>
+            <span v-if="attErr" class="err">{{ attErr }}</span>
+          </div>
+          <ul v-if="attachments.length" class="att-list" data-testid="wiz-att-list">
+            <li v-for="a in attachments" :key="a.id">
+              <button class="att-name" @click="openAttachment(a)">{{ a.name || a.path }}</button>
+              <button class="btn-del" @click="removeAttachment(a)">×</button>
+            </li>
+          </ul>
+          <div class="wiz-actions">
+            <button class="btn-primary" :disabled="!attachments.length" data-testid="wiz-next-1" @click="wizard.step = 2">次へ</button>
+            <button class="btn-cancel" data-testid="wiz-skip-1" @click="wizard.step = 2">図面は後で（スキップ）</button>
+          </div>
+        </section>
+
+        <!-- 2. 案件名（自動入力）＋ 材料抽出 -->
+        <section v-else-if="wizard.step === 2" class="panel" data-testid="wiz-panel-2">
+          <div class="panel-head"><h2>② 案件名の確認</h2></div>
+          <label class="ifield wide"><span>案件名（図面のファイル名から自動で入れました・直せます）</span>
+            <input v-model="wizard.name" class="input" data-testid="wiz-name" placeholder="例: 〇〇ビル改修" />
+          </label>
+          <span v-if="wizard.err" class="err" data-testid="wiz-err">{{ wizard.err }}</span>
+
+          <template v-if="pdfAttachments.length">
+            <div class="panel-head" style="margin-top:16px"><h3 class="sub-h">材料を抽出しますか？</h3></div>
+            <p class="hint">
+              図面に書かれた品番・数量をAIが読み取って明細の下地を作ります。
+              <strong>解析中も他の入力を続けられます</strong>（何ページ目まで進んだかはここと図面の一覧に出ます）。
+            </p>
+            <ul class="att-list" data-testid="wiz-ext-list">
+              <li v-for="a in pdfAttachments" :key="a.id">
+                <span class="att-name-static">{{ a.name || a.path }}</span>
+                <ExtractControl :att="a" @start="beginExtractFromWizard" @review="openExtractResult" />
+              </li>
+            </ul>
+          </template>
+
+          <div class="wiz-actions">
+            <button class="btn-primary" data-testid="wiz-next-2" @click="commitWizardName">次へ</button>
+            <button class="btn-cancel" data-testid="wiz-skip-2" @click="wizard.step = 3">スキップ</button>
+            <button class="btn-cancel" data-testid="wiz-back-2" @click="wizard.step = 1">戻る</button>
+          </div>
+        </section>
+
+        <!-- 3. 依頼日・提出期限 -->
+        <section v-else-if="wizard.step === 3" class="panel" data-testid="wiz-panel-3">
+          <div class="panel-head"><h2>③ 元請けからの依頼日・提出期限</h2></div>
+          <p class="hint">提出期限を入れておくと、残り日数が案件情報タブと一覧に出ます。</p>
+          <div class="intake-grid">
+            <label class="ifield"><span>元請けからの依頼日</span>
+              <input v-model="intake.request_date" type="date" class="input" data-testid="wiz-request-date" @change="saveIntake" />
+            </label>
+            <label class="ifield"><span>元請けへの提出期限</span>
+              <input v-model="intake.due_date" type="date" class="input" data-testid="wiz-due-date" @change="saveIntake" />
+            </label>
+          </div>
+          <div class="wiz-actions">
+            <button class="btn-primary" data-testid="wiz-next-3" @click="wizard.step = 4">次へ</button>
+            <button class="btn-cancel" data-testid="wiz-skip-3" @click="wizard.step = 4">まだ決まっていない（スキップ）</button>
+            <button class="btn-cancel" data-testid="wiz-back-3" @click="wizard.step = 2">戻る</button>
+          </div>
+        </section>
+
+        <!-- 4. 元請け情報 -->
+        <section v-else class="panel" data-testid="wiz-panel-4">
+          <div class="panel-head"><h2>④ 元請け情報</h2></div>
+          <p class="hint">見積書の送信先になります。<strong>登録が無ければここで追加できます</strong>（別の画面に移りません）。</p>
+          <div class="ifields">
+            <label class="ifield"><span>元請け</span>
+              <select :value="currentContractorId || ''" class="input" data-testid="wiz-contractor"
+                      @change="setProjectContractor(($event.target as HTMLSelectElement).value || null)">
+                <option value="">（未設定）</option>
+                <option v-for="c in contractors" :key="c.id" :value="c.id">{{ c.name }}</option>
+              </select>
+            </label>
+            <div class="ifield">
+              <span>&nbsp;</span>
+              <span class="wiz-con-btns">
+                <button class="btn-edit" data-testid="wiz-con-add" @click="openContractorModal(null)">＋ 元請けを追加</button>
+                <button v-if="currentContractorId" class="btn-edit" data-testid="wiz-con-edit" @click="openContractorModal(currentContractorId)">担当者を編集</button>
+              </span>
+            </div>
+          </div>
+          <div class="wiz-actions">
+            <button class="btn-primary" data-testid="wiz-finish" @click="finishWizard()">入力を終えて明細へ</button>
+            <button class="btn-cancel" data-testid="wiz-skip-4" @click="finishWizard()">元請けは後で（スキップ）</button>
+            <button class="btn-cancel" data-testid="wiz-back-4" @click="wizard.step = 3">戻る</button>
+          </div>
+        </section>
+      </div>
+    </template>
+
+    <template v-else-if="projectId">
       <div class="builder-tabs">
         <button class="btab" :class="{ active: builderTab === 'intake' }" data-testid="tab-intake" @click="builderTab = 'intake'">案件情報</button>
         <button class="btab" :class="{ active: builderTab === 'quotes' }" data-testid="tab-quotes" @click="builderTab = 'quotes'">相見積</button>
@@ -131,12 +295,70 @@
               <!-- R8: 図面はページごとに工種が分かれている。該当ページだけ業者へ送る -->
               <button v-if="isPdf(a)" class="btn-edit" :data-testid="`dsend-open-${a.id}`" @click="openDrawingSend(a)">ページを選んで送る</button>
               <!-- ★案件の図面からそのまま材料を抽出する。独立ページ(/drawing-materials)は
-                   案件に紐づかない用途（受注前の当たり付け等）で残す。 -->
-              <button v-if="isPdf(a)" class="btn-edit" :data-testid="`dext-open-${a.id}`" @click="openExtract(a)">材料を抽出</button>
+                   案件に紐づかない用途（受注前の当たり付け等）で残す。
+                   ★R53: 解析はモーダルで拘束せず、進捗だけ出して裏で進める。 -->
+              <template v-if="isPdf(a)">
+                <ExtractControl :att="a" @start="beginExtract" @review="openExtractResult" />
+              </template>
               <button class="btn-del" :data-testid="`intake-att-del-${a.id}`" @click="removeAttachment(a)">×</button>
             </li>
           </ul>
           <p v-else class="hint">まだ図面がありません。元請けから受け取った図面をここに置いておくと、見積作成時に参照できます。</p>
+        </section>
+
+        <!-- ★実施図面からの材料抽出。抽出結果を明細へ流し込む出口を作る。
+             これまでは独立ページでCSV書き出しまでで、明細には手で打ち直していた。
+             ★R53: モーダルではなくパネル。解析中も閉じても構わない（裏で進む）。 -->
+        <section v-if="dext.att" class="panel" data-testid="dext-panel">
+          <div class="panel-head">
+            <h2>材料の抽出結果 — {{ dext.att.name || dext.att.path }}</h2>
+            <button class="btn-cancel" data-testid="dext-close" @click="closeExtract">閉じる</button>
+          </div>
+          <p class="hint">
+            図面に書かれたメーカー品番をAIが読み取ります。
+            <strong>チェックした行だけ</strong>を明細に入れます。<br>
+            ★図面には「(仮)」の品番や<strong>中止になったのに綴じられたままの詳細図</strong>が混ざります。
+            全部そのまま入れると中止項目まで計上してしまうので、必ず人が選んでください。
+          </p>
+          <div v-if="dextJob?.status === 'running'" class="pinfo-loading" data-testid="dext-busy">
+            <span class="spin-dot"></span> 解析中… ページ {{ dextJob.done }}/{{ dextJob.total }}（この画面を閉じても続きます）
+          </div>
+          <div v-else-if="dextJob?.status === 'paused'" class="hint" data-testid="dext-paused">
+            {{ dextJob.done }}/{{ dextJob.total }}ページまで完了しています。
+            <button class="btn-primary sm" data-testid="dext-resume-panel" @click="beginExtract(dext.att)">残りを続ける</button>
+          </div>
+          <div v-if="!dext.rows.length && dextJob?.status !== 'running'" class="hint" data-testid="dext-empty">
+            {{ dextJob ? '品番は見つかりませんでした' : '「解析する」で図面を読み取ります' }}
+          </div>
+          <div v-if="dext.rows.length" class="items-scroll dext-list">
+            <table class="table">
+              <thead><tr><th></th><th>P</th><th>部位</th><th>メーカー</th><th>品番</th><th>規格サイズ</th><th>仕様</th><th>数量</th><th>備考</th></tr></thead>
+              <tbody>
+                <tr v-for="(r, ri) in dext.rows" :key="ri" :data-testid="`dext-row-${ri}`">
+                  <td><input type="checkbox" v-model="r._pick" :data-testid="`dext-pick-${ri}`" /></td>
+                  <td>{{ r.page }}</td>
+                  <td>{{ r.part }}</td>
+                  <td>{{ r.manufacturer }}</td>
+                  <td><input v-model="r.code" class="input sm" :data-testid="`dext-code-${ri}`" /></td>
+                  <td>{{ r.size }}</td>
+                  <td>{{ r.spec }}</td>
+                  <td>{{ r.quantity }}</td>
+                  <td class="dext-note">{{ r.note }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="actions-row">
+            <button v-if="!dextJob" class="btn-primary" data-testid="dext-run" @click="beginExtract(dext.att)">解析する</button>
+            <template v-if="dext.rows.length">
+              <button class="btn-link-sm" data-testid="dext-all" @click="dext.rows.forEach(r => r._pick = true)">全選択</button>
+              <button class="btn-link-sm" data-testid="dext-none" @click="dext.rows.forEach(r => r._pick = false)">全解除</button>
+              <button class="btn-primary" :disabled="!dextPicked.length" data-testid="dext-apply" @click="applyExtractToItems">
+                選んだ {{ dextPicked.length }} 件を明細に入れる
+              </button>
+            </template>
+            <span v-if="dextJob?.error" class="err" data-testid="dext-err">{{ dextJob.error }}</span>
+          </div>
         </section>
 
         <!-- ── R8: 図面のページを選んで下請へ送る（Dropboxでやっていた作業の置き換え）── -->
@@ -383,6 +605,9 @@
         <section class="panel">
           <div class="panel-head">
             <h2>明細入力</h2>
+            <!-- ★抽出結果を入れた直後はこのタブに移るので、結果の知らせもここに出す
+                 （案件情報タブに出すと、移った先で何も言われないまま行が増えて見える） -->
+            <span v-if="dext.msg" class="ok" data-testid="dext-msg">{{ dext.msg }}</span>
             <div class="row-tools">
               <!-- 粗利率: アカウント既定 ＋ この見積だけ上書き。
                    行ごとの 5/10/15/20% プレビューは 2026-07-28 に一度撤去したが、
@@ -615,62 +840,6 @@
       </div>
 
       </div><!-- /tab 明細入力 -->
-
-      <!-- ★R36: 工種別内訳は専用タブ。表示/非表示トグルだと明細のスペースを圧迫する -->
-      <!-- ★実施図面からの材料抽出。抽出結果を明細へ流し込む出口を作る。
-           これまでは独立ページでCSV書き出しまでで、明細には手で打ち直していた。 -->
-      <div v-if="dext.att" class="modal-back" data-testid="dext-modal" @click.self="closeExtract">
-        <div class="modal-card wide">
-          <div class="modal-head">
-            <h3>材料を抽出 — {{ dext.att.name || dext.att.path }}</h3>
-            <button class="btn-cancel" data-testid="dext-close" @click="closeExtract">閉じる</button>
-          </div>
-          <p class="hint">
-            図面に書かれたメーカー品番をAIが読み取ります。
-            <strong>チェックした行だけ</strong>を明細に入れます。<br>
-            ★図面には「(仮)」の品番や<strong>中止になったのに綴じられたままの詳細図</strong>が混ざります。
-            全部そのまま入れると中止項目まで計上してしまうので、必ず人が選んでください。
-          </p>
-          <div v-if="dext.busy" class="pinfo-loading" data-testid="dext-busy">
-            <span class="spin-dot"></span> 解析中… ページ {{ dext.done }}/{{ dext.total }}
-          </div>
-          <div v-else-if="!dext.rows.length" class="hint" data-testid="dext-empty">
-            {{ dext.ran ? '品番は見つかりませんでした' : '「解析する」で図面を読み取ります' }}
-          </div>
-          <div v-else class="items-scroll dext-list">
-            <table class="table">
-              <thead><tr><th></th><th>P</th><th>部位</th><th>メーカー</th><th>品番</th><th>規格サイズ</th><th>仕様</th><th>数量</th><th>備考</th></tr></thead>
-              <tbody>
-                <tr v-for="(r, ri) in dext.rows" :key="ri" :data-testid="`dext-row-${ri}`">
-                  <td><input type="checkbox" v-model="r._pick" :data-testid="`dext-pick-${ri}`" /></td>
-                  <td>{{ r.page }}</td>
-                  <td>{{ r.part }}</td>
-                  <td>{{ r.manufacturer }}</td>
-                  <td><input v-model="r.code" class="input sm" :data-testid="`dext-code-${ri}`" /></td>
-                  <td>{{ r.size }}</td>
-                  <td>{{ r.spec }}</td>
-                  <td>{{ r.quantity }}</td>
-                  <td class="dext-note">{{ r.note }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="actions-row">
-            <button v-if="!dext.rows.length" class="btn-primary" :disabled="dext.busy" data-testid="dext-run" @click="runExtract">
-              {{ dext.busy ? '解析中…' : '解析する' }}
-            </button>
-            <template v-else>
-              <button class="btn-link-sm" data-testid="dext-all" @click="dext.rows.forEach(r => r._pick = true)">全選択</button>
-              <button class="btn-link-sm" data-testid="dext-none" @click="dext.rows.forEach(r => r._pick = false)">全解除</button>
-              <button class="btn-primary" :disabled="!dextPicked.length" data-testid="dext-apply" @click="applyExtractToItems">
-                選んだ {{ dextPicked.length }} 件を明細に入れる
-              </button>
-            </template>
-            <span v-if="dext.msg" class="ok" data-testid="dext-msg">{{ dext.msg }}</span>
-            <span v-if="dext.err" class="err" data-testid="dext-err">{{ dext.err }}</span>
-          </div>
-        </div>
-      </div>
 
       <div v-show="builderTab === 'breakdown'">
         <!-- 工種別 自動集計（転記操作なし）。★既定は畳んでおく。
@@ -1077,20 +1246,29 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { openDoc } from '../lib/docUrl'
 import EstimateMasters from './estimate-masters.vue'
+import ExtractControl from '../components/ExtractControl.vue'
+// ★R53: 材料抽出の実行はこのコンポーネントの外（モジュールスコープ）で回す。
+//  画面遷移で解析が死なないようにするため。
+import { jobFor, startExtract, loadJobsForProject, ackJob, refreshExtractBadge, type ExtractRow } from '../lib/extractJobs'
 
 const BUCKET = 'expense-receipts'        // 印影など既存公開物の表示用（後方互換）
 const PDF_BUCKET = 'admin-docs'          // 新規の見積/発注PDFは非公開バケット（署名URL配信）
 const IS_DEV = import.meta.env.DEV
 const route  = useRoute()   // 一覧から ?project=<id> で開いた案件を初期選択する
+const router = useRouter()  // ステップ入力を終えた時に ?step= を落とす（R51）
 // #6 ビルダーのタブ（明細入力／見積書プレビュー／商社へ発注）
-const builderTab = ref<'intake' | 'quotes' | 'items' | 'preview' | 'po'>('items')
+// ★R54: 既定は案件情報。新規は「図面 → 依頼日/期限 → 元請け」の順に入れるので、
+//  開いた時に案件情報から始まるのが業務の流れと合う（既存案件でも例外を作らない）。
+const builderTab = ref<'intake' | 'quotes' | 'items' | 'preview' | 'po'>('intake')
+/** ★R52: 案件名がまだ決まっていない下書きか（「＋新規見積」を押した直後の状態） */
+const isDraftProject = ref(false)
 
 // ── Q3: 相見積（依頼→受領→比較・選定）────────────────────────
 // ★設計の肝: 単価履歴を「別途入力する台帳」にしない。受領登録の副作用で貯める。
@@ -1410,6 +1588,165 @@ const isOrdered = computed(() => intake.value.status === 'active')
 const attachments = ref<Attachment[]>([])
 const attBusy = ref(false)
 const attErr  = ref('')
+const pdfAttachments = computed(() => attachments.value.filter(isPdf))
+
+// ════════════════════════════════════════════════════════════
+//  ★R51: 新規見積のステップ式フロー（図面 → 案件名 → 依頼日/期限 → 元請け）
+//
+//  なぜこの順番か（2026-07-30 レビュー第5回）:
+//   実際の業務は「元請けから図面が来る」から始まる。最初に案件名を要求されると
+//   まだ決まっていない名前を考えるところで手が止まり、図面はその後で登録していた。
+//   案件名は図面のファイル名からほぼ確定できるので、自動で入れて直せるようにする。
+//  ★各ステップはスキップできる。図面が無い案件・元請けが未定の案件が実際にある。
+// ════════════════════════════════════════════════════════════
+const WIZ_STEPS = [
+  { n: 1, label: '図面' }, { n: 2, label: '案件名' },
+  { n: 3, label: '依頼日・期限' }, { n: 4, label: '元請け' },
+] as const
+const wizard = ref<{ on: boolean; step: number; name: string; err: string }>(
+  { on: false, step: 1, name: '', err: '' })
+
+/**
+ * 図面のファイル名から案件名を起こす。
+ * 実ファイル名は「0603　銀座リシャール見積もり.pdf」「20260730_〇〇ビル_実施図面.pdf」のような形。
+ * 先頭の日付／末尾の書類名を落として案件名だけ残す。外しても人が直せる前提で強く削る。
+ */
+function projectNameFromFile(fileName: string): string {
+  const base = fileName.replace(/\.[^.]+$/, '')
+  let s = base.normalize('NFKC').replace(/[_\-]+/g, ' ')
+  s = s.replace(/^\s*\d{4}[-/年]?\d{1,2}[-/月]?\d{1,2}日?\s*/, '')   // 20260730 / 2026-07-30 / 2026年7月30日
+  s = s.replace(/^\s*\d{3,4}\s+/, '')                                // 「0603 銀座…」の先頭日付
+  s = s.replace(/(見積(もり)?書?|図面|実施図|平面図|意匠図|展開図|一式|最終|改訂?\d*|rev\.?\d*|ver\.?\d*|\(\d+\)|コピー)/gi, ' ')
+  s = s.replace(/\s+/g, ' ').trim()
+  return s || base   // 全部削れてしまったら元のファイル名を使う（空にはしない）
+}
+
+function onWizardFiles(e: Event) {
+  const input = e.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  input.value = ''
+  return uploadWizardFiles(files)
+}
+function onWizardDrop(e: DragEvent) {
+  attDragOver.value = false
+  return uploadWizardFiles(Array.from(e.dataTransfer?.files ?? []))
+}
+async function uploadWizardFiles(files: File[]) {
+  if (!files.length) return
+  // ★案件名を図面のファイル名から起こす。既に何か入っていれば触らない
+  //   （人が直した値も、先に入れた図面から起こした値も上書きしない）
+  if (!wizard.value.name.trim()) wizard.value.name = projectNameFromFile(files[0].name)
+  await uploadAttachments(files)
+}
+
+/** 案件名を確定して下書きから外す。成功したら true */
+async function saveWizardName(): Promise<boolean> {
+  const name = wizard.value.name.trim()
+  wizard.value.err = ''
+  if (!name) { wizard.value.err = '案件名を入力してください（後から変えられます）'; return false }
+  if (projects.value.some(p => p.id !== projectId.value && p.name.trim().toLowerCase() === name.toLowerCase())) {
+    wizard.value.err = `案件「${name}」は既にあります`
+    return false
+  }
+  const { error } = await supabase.from('estimate_projects')
+    .update({ name, is_draft: false }).eq('id', projectId.value)
+  if (error) {
+    wizard.value.err = /duplicate|unique/i.test(error.message) ? `案件「${name}」は既にあります` : error.message
+    return false
+  }
+  const p = projects.value.find(x => x.id === projectId.value)
+  if (p) p.name = name
+  isDraftProject.value = false
+  return true
+}
+
+/** ステップ2の「次へ」 */
+async function commitWizardName() {
+  if (await saveWizardName()) wizard.value.step = 3
+}
+
+/**
+ * ステップ2からの抽出開始。★ステップは進めない。
+ * 押した直後に画面が切り替わると、始めたはずの進捗が見えなくなって不安になる。
+ * 案件名だけ先に確定させておく（このまま明細へ行っても下書きのまま残らないように）。
+ */
+function beginExtractFromWizard(a: Attachment) {
+  beginExtract(a)
+  if (isDraftProject.value && wizard.value.name.trim()) void saveWizardName()
+}
+
+/** ステップ入力を終える。以降は通常のタブ表示に戻す */
+function finishWizard() {
+  wizard.value.on = false
+  builderTab.value = 'intake'
+  // URLから step を落とす（リロードでステップ画面に戻らないように。案件IDは残す）
+  const q = { ...route.query } as Record<string, any>
+  delete q.step
+  void router.replace({ path: route.path, query: q })
+}
+
+// ════════════════════════════════════════════════════════════
+//  ★R55: 元請け・担当者をこの画面から編集する（マスタ編集の共通ルール）
+//   元請けが未登録だと見積書を送れないが、その登録のために画面を移ると
+//   書きかけの見積から離れ、ブラウザバックで入力が消えていた。
+// ════════════════════════════════════════════════════════════
+type ConContactEdit = { id: string | null; name: string; email: string }
+const conModal  = ref<{ id: string | null; name: string; contacts: ConContactEdit[] } | null>(null)
+const conSaving = ref(false)
+const conErr    = ref('')
+
+function openContractorModal(contractorId: string | null) {
+  conErr.value = ''
+  if (!contractorId) { conModal.value = { id: null, name: '', contacts: [{ id: null, name: '', email: '' }] }; return }
+  const c = contractors.value.find(x => x.id === contractorId)
+  const cs = contractorContacts.value.filter(x => x.contractor_id === contractorId)
+    .map(x => ({ id: x.id, name: x.name ?? '', email: x.email ?? '' }))
+  conModal.value = {
+    id: contractorId, name: c?.name ?? '',
+    contacts: cs.length ? cs : [{ id: null, name: '', email: '' }],
+  }
+}
+
+async function saveContractorModal() {
+  const m = conModal.value
+  if (!m || !m.name.trim()) return
+  conSaving.value = true; conErr.value = ''
+  try {
+    let id = m.id
+    if (id) {
+      const { error } = await supabase.from('contractors').update({ name: m.name.trim() }).eq('id', id)
+      if (error) throw error
+    } else {
+      const { data, error } = await supabase.from('contractors')
+        .insert({ account_id: accountId, name: m.name.trim(), active: true }).select('id').single()
+      if (error) throw error
+      id = (data as any).id
+    }
+    // 担当者: 名前がある行だけ残す。外れた既存行は削除（contractors.vue と同型）
+    const want = m.contacts.filter(c => c.name.trim())
+    const { data: have } = await supabase.from('contractor_contacts')
+      .select('id').eq('contractor_id', id).eq('is_deleted', false)
+    const haveIds = ((have ?? []) as { id: string }[]).map(h => h.id)
+    const keepIds = want.map(c => c.id).filter(Boolean) as string[]
+    for (const [i, c] of want.entries()) {
+      const row = {
+        contractor_id: id, account_id: accountId, name: c.name.trim(),
+        email: c.email.trim() || null, sort_order: i, updated_at: new Date().toISOString(),
+      }
+      if (c.id) { const { error } = await supabase.from('contractor_contacts').update(row).eq('id', c.id); if (error) throw error }
+      else      { const { error } = await supabase.from('contractor_contacts').insert(row); if (error) throw error }
+    }
+    const toDel = haveIds.filter(x => !keepIds.includes(x))
+    if (toDel.length) await supabase.from('contractor_contacts').delete().in('id', toDel)
+
+    // ★追加した瞬間に選択肢へ反映し、この案件の元請けにする（閉じてから探させない）
+    await loadContractors()
+    if (id && id !== currentContractorId.value) await setProjectContractor(id)
+    conModal.value = null
+  } catch (e: any) {
+    conErr.value = e?.message ?? '保存に失敗しました'
+  } finally { conSaving.value = false }
+}
 
 const needsReason      = computed(() => intake.value.status === 'lost' || intake.value.status === 'declined')
 const isArchivedStatus = computed(() => needsReason.value)
@@ -2070,9 +2407,12 @@ async function commitRename() {
   if (!p || !name || name === p.name) return
   if (projects.value.some(x => x.id !== p.id && x.name.trim().toLowerCase() === name.toLowerCase())) { projectErr.value = `案件「${name}」は既にあります`; return }
   projectErr.value = ''
-  const { error } = await supabase.from('estimate_projects').update({ name }).eq('id', p.id)
+  // ★R52: 名前を付けた時点で下書きではなくなる。
+  //  ここで外さないと仮名（「（案件名未入力）07/30 …」）のまま帳票に出る恐れがある。
+  const { error } = await supabase.from('estimate_projects').update({ name, is_draft: false }).eq('id', p.id)
   if (error) { projectErr.value = error.message; return }
   p.name = name
+  isDraftProject.value = false
 }
 // #5 明細のドラッグ並び替え（ハンドルで掴んで移動。順序は保存時 sort_order に反映）
 let rowKey = 0   // 明細行の安定キー採番（並び替え用）
@@ -2885,70 +3225,46 @@ async function removeTrade(t: Trade) {
 //   綴じられたままの詳細図が混ざる（実図面で確認済み）。機械的に入れると
 //   中止項目を過大計上するので、人が選んだ行だけを入れる。
 // ════════════════════════════════════════════════════════════
-type ExtractRow = {
-  page: number; part: string; manufacturer: string; code: string
-  size: string; spec: string; quantity: string; note: string; _pick: boolean
-}
-const dext = ref<{
-  att: Attachment | null; busy: boolean; ran: boolean
-  done: number; total: number; rows: ExtractRow[]; msg: string; err: string
-}>({ att: null, busy: false, ran: false, done: 0, total: 0, rows: [], msg: '', err: '' })
+//  ★R53（2026-07-30 レビュー第5回）: 解析はモーダルで人を拘束しない。
+//   実行そのものは lib/extractJobs.ts（画面の外）に置き、
+//   ・別のタブ／別の画面に移っても解析が止まらない
+//   ・1ページ終わるごとにDBへ保存するので、タブを閉じても続きから再開できる
+//   ここに残すのは「結果を見て、選んで明細に入れる」部分だけ。
+type PickRow = ExtractRow & { _pick: boolean }
+const dext = ref<{ att: Attachment | null; rows: PickRow[]; msg: string }>({ att: null, rows: [], msg: '' })
 const dextPicked = computed(() => dext.value.rows.filter(r => r._pick))
+/** 表示中の図面のジョブ（進捗・状態はストアが正）。 */
+const dextJob = computed(() => (dext.value.att ? jobFor(dext.value.att.id) : null))
 
-function openExtract(a: Attachment) {
-  dext.value = { att: a, busy: false, ran: false, done: 0, total: 0, rows: [], msg: '', err: '' }
+/** 解析を開始／中断したところから再開する。await しない＝押した直後から他の操作ができる */
+function beginExtract(a: Attachment | null) {
+  if (!a || !projectId.value) return
+  dext.value.msg = ''
+  void startExtract({ projectId: projectId.value, attachmentId: a.id, path: a.path, sourceName: a.name ?? '' })
 }
-function closeExtract() { dext.value.att = null }
+/** 結果を見る（解析中でも開ける。ここまでの結果が並ぶ） */
+async function openExtractResult(a: Attachment) {
+  dext.value = { att: a, rows: [], msg: '' }
+  syncDextRows()
+  const job = jobFor(a.id)
+  // 完了を見たらナビのバッジから落とす
+  if (job && job.status === 'done') await ackJob(job)
+}
+function closeExtract() { dext.value.att = null; dext.value.rows = [] }
 
-async function runExtract() {
-  const d = dext.value
-  if (!d.att) return
-  d.busy = true; d.err = ''; d.msg = ''; d.rows = []; d.done = 0; d.total = 0
-  try {
-    const { data: file, error } = await supabase.storage.from(DRAWING_BUCKET).download(d.att.path)
-    if (error || !file) throw error ?? new Error('図面を取得できませんでした')
-    const buf = new Uint8Array(await file.arrayBuffer())
-    const { PDFDocument } = await import('pdf-lib')
-    const src = await PDFDocument.load(buf)
-    d.total = src.getPageCount()
-    const { data: sess } = await supabase.auth.getSession()
-    // ★1ページずつ送る（図面は1枚が重く、まとめて送ると解析精度も落ちる）
-    for (let i = 0; i < d.total; i++) {
-      const one = await PDFDocument.create()
-      const [pg] = await one.copyPages(src, [i])
-      one.addPage(pg)
-      const bytes = await one.save()
-      let bin = ''
-      const chunk = 0x8000
-      for (let k = 0; k < bytes.length; k += chunk) {
-        bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(k, k + chunk)) as any)
-      }
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/drawing-material-extract`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${sess?.session?.access_token ?? ''}`,
-          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-        },
-        body: JSON.stringify({ image_base64: btoa(bin), mime: 'application/pdf', page: i + 1 }),
-      })
-      const json = await resp.json().catch(() => null)
-      d.done = i + 1
-      if (!resp.ok || json?.error) { d.err = json?.error || `解析エラー(${resp.status})`; break }
-      for (const r of (json?.rows ?? []) as any[]) {
-        d.rows.push({
-          page: i + 1, part: r.part ?? '', manufacturer: r.manufacturer ?? '', code: r.code ?? '',
-          size: r.size ?? '', spec: r.spec ?? '', quantity: r.quantity ?? '', note: r.note ?? '',
-          // ★既定はオフ。「(仮)」「要確認」等が混ざるので、選ぶのを人の判断にする
-          _pick: false,
-        })
-      }
-    }
-    d.ran = true
-  } catch (e: any) {
-    d.err = e?.message ?? '解析に失敗しました'
-  } finally { d.busy = false }
+/**
+ * ジョブの抽出結果を、チェックボックス付きの表示用行に写す。
+ * ★既存行のチェック状態は保つ（解析が進んで行が増えるたびに選び直させない）。
+ * ★既定はオフ。「(仮)」「要確認」等が混ざるので、選ぶのを人の判断にする。
+ */
+function syncDextRows() {
+  const job = dextJob.value
+  if (!job) { dext.value.rows = []; return }
+  const picked = new Set(dext.value.rows.filter(r => r._pick).map(r => `${r.page}|${r.code}|${r.part}`))
+  dext.value.rows = job.rows.map(r => ({ ...r, _pick: picked.has(`${r.page}|${r.code}|${r.part}`) }))
 }
+// 解析が進んだら表示も伸ばす（結果を開いたまま眺めていられるように）
+watch(() => dextJob.value?.rows.length ?? 0, () => { if (dext.value.att) syncDextRows() })
 
 /** 選んだ抽出行を明細に入れる。空行があればそこを埋める（末尾に足すと見つけにくい） */
 async function applyExtractToItems() {
@@ -3185,7 +3501,7 @@ async function doLoadItems() {
   lastLoadedProjectId = projectId.value
   // ★表示状態のリセットは await より前に。後ろでやると、読み込み中に人が押したタブが
   //   読み込み完了時に弾き返される（案件作成直後にタブが勝手に戻る操作性バグ）。
-  builderTab.value = 'items'
+  builderTab.value = 'intake'   // ★R54: 既定タブは案件情報
   currentPage.value = 0   // 案件を開いたら先頭ページへ
   editingName.value = false
   if (!projectId.value) { markSaved(); return }
@@ -3194,8 +3510,9 @@ async function doLoadItems() {
       .select('id, category_id, trade_id, trade_name, material_id, supplier_id, item_name, spec, product_code, dim_w, dim_d, dim_h, row_type, unit, quantity, cost_unit_price, unit_price, note')
       .eq('project_id', projectId.value).order('sort_order'),
     supabase.from('estimate_projects')
-      .select('construction_location, period_text, valid_until, memo, adjustment, margin_rate, request_date, due_date, status, lost_reason').eq('id', projectId.value).single(),
+      .select('construction_location, period_text, valid_until, memo, adjustment, margin_rate, request_date, due_date, status, lost_reason, is_draft').eq('id', projectId.value).single(),
   ])
+  isDraftProject.value = !!pj?.is_draft
   rows.value = (data ?? []).map((d: any) => ({
     id: d.id, _k: ++rowKey, location: d.note ?? '', trade_id: d.trade_id, trade_name: d.trade_name ?? '',
     spec: d.spec ?? '', row_type: (d.row_type === 'header' ? 'header' : 'item'),
@@ -3230,6 +3547,8 @@ async function doLoadItems() {
   await loadAttachments()
   markSaved()
   sendContactIds.value = []
+  // ★R53: 前回の材料抽出（中断・完了）を復元する。タブを閉じた分はここで「中断」として出る
+  await loadJobsForProject(projectId.value)
   await Promise.all([loadSends(), loadProjectPOs(), loadDrawingSends()])
 }
 
@@ -3309,7 +3628,7 @@ function isBlankRow(r: Row): boolean {
     && r.dim_w == null && r.dim_d == null && r.dim_h == null   // 寸法だけ入れた行を空扱いで消さない
     && !r.material_id && !r.supplier_id
 }
-const blockKeyOf = (r: Row) => `${r.location ?? ''} ${r.trade_name ?? ''}`
+const blockKeyOf = (r: Row) => `${r.location ?? ''}\u001f${r.trade_name ?? ''}`
 
 const blocks = computed<Block[]>(() => {
   const out: Block[] = []
@@ -3546,6 +3865,12 @@ onMounted(async () => {
   const qp = route.query.project
   const pid = Array.isArray(qp) ? qp[0] : qp
   if (pid && projects.value.some(p => p.id === pid)) { projectId.value = pid as string; await loadItems() }
+  // ★R51: 「＋新規見積」から来た（?step=1）／案件名が未確定の下書きなら、ステップ入力から始める
+  const stepQ = Array.isArray(route.query.step) ? route.query.step[0] : route.query.step
+  if (projectId.value && (stepQ || isDraftProject.value)) {
+    wizard.value = { on: true, step: Number(stepQ) || 1, name: '', err: '' }
+  }
+  await refreshExtractBadge()
 })
 </script>
 
@@ -3961,6 +4286,19 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .att-list li { display: flex; align-items: center; gap: 6px; }
 .att-name { background: none; border: none; color: #06A050; cursor: pointer; text-decoration: underline;
   font-size: 13px; padding: 0; text-align: left; }
+.att-name-static { font-size: 13px; color: #333; }
+.draft-warn { font-size: 11px; font-weight: 700; color: #B45309; background: #FEF3C7; border-radius: 10px; padding: 2px 8px; }
+/* ── R51 新規見積のステップ入力 ── */
+.wiz { max-width: 820px; }
+.wiz-steps { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.wiz-step { font-size: 12px; font-weight: 700; color: #94a3b8; background: #f1f5f9; border-radius: 14px; padding: 5px 12px; }
+.wiz-step.on   { color: #fff; background: #06A050; }
+.wiz-step.done { color: #06864a; background: #e8f9ef; }
+.wiz-exit { margin-left: auto; }
+.wiz-actions { display: flex; align-items: center; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+.wiz-con-btns { display: flex; gap: 8px; }
+/* ── R55 元請け・担当者のその場編集 ── */
+.con-contact-row { display: grid; grid-template-columns: 1fr 1.4fr auto; gap: 6px; margin-bottom: 6px; }
 /* ── Q3 相見積 ── */
 .qr-badge { font-size: 11px; font-weight: 700; border-radius: 10px; padding: 2px 8px; white-space: nowrap; }
 .qr-badge.ok   { background: #e8f9ef; color: #06A050; }

@@ -12,7 +12,7 @@
 //  Notion: R22
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { getAccountId, restSrv } from './helpers'
+import { getAccountId, restSrv, openBuilderTab } from './helpers'
 
 const TS = Date.now()
 let seq = 0
@@ -34,7 +34,7 @@ async function openNewProject(page: any) {
   await page.locator('[data-testid="new-project-name"]').fill(PROJ)
   await page.locator('[data-testid="add-project"]').click()
   await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ, { timeout: 15000 })
-  await expect(page.locator('[data-testid="item-name-0"]')).toBeVisible({ timeout: 10000 })
+  await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
 }
 const itemsOf = async (cols: string) => {
   const accountId = await getAccountId()
@@ -94,6 +94,7 @@ test('AC3★: 保存せず閉じても内容が残る（未保存警告が出な
   const accountId = await getAccountId()
   const pj = await restSrv(`estimate_projects?account_id=eq.${accountId}&name=eq.${encodeURIComponent(PROJ)}&select=id`)
   await page.goto(`/estimate-builder?project=${pj[0].id}`, { waitUntil: 'networkidle' })
+  await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
   await expect(page.locator('[data-testid="item-name-0"]')).toHaveValue('床 塩ビタイル貼', { timeout: 15000 })
   await expect(page.locator('[data-testid="item-qty-0"]')).toHaveValue('30')
 })

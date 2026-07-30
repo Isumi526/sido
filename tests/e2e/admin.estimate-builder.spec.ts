@@ -6,7 +6,7 @@
 //   ※ estimate_* は RLS 有効（admin authenticated のみ）。検証/cleanup は service_role(restSrv)。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { restSrv, getAccountId } from './helpers'
+import { restSrv, getAccountId, openBuilderTab } from './helpers'
 
 const TS = Date.now()
 const PROJ = `E2E見積_${TS}`
@@ -88,7 +88,7 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
       await page.locator(`[data-testid="item-qty-${i}"]`).fill(String(qty))
       await page.locator(`[data-testid="item-price-${i}"]`).fill(String(price))
     }
-    await expect(page.locator('[data-testid="item-name-0"]')).toBeVisible({ timeout: 10000 })
+    await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
     await page.locator('[data-testid="blk-trade-0"]').fill(TRADE_A)
     await addLine(0, 'スタッド', 2, 1000)   // 2000
     await addLine(1, 'ランナー', 3, 1000)   // 3000
@@ -128,6 +128,7 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ2)
 
     // 新規材料名で1行入力 → 保存
+    await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
     await page.locator('[data-testid="item-name-0"]').fill(MAT)
     await page.locator('[data-testid="item-qty-0"]').fill('1')
     await page.locator('[data-testid="item-price-0"]').fill('800')
@@ -159,6 +160,7 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ3)
 
     // 1行目: 新しい名称を単位付きで入力 → 保存（これが次回の候補になる）
+    await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
     await page.locator('[data-testid="item-name-0"]').fill(MAT6)
     await page.locator('[data-testid="item-unit-0"]').fill('m2')
     await page.locator('[data-testid="item-qty-0"]').fill('1')
@@ -210,6 +212,7 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ4)
 
     // 品番を入力 → 商社単価表と突き合わせ（材料マスタは介さない）
+    await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
     await page.locator('[data-testid="item-code-0"]').fill(code7)
     await page.locator('[data-testid="item-code-0"]').dispatchEvent('change')
     await page.locator('[data-testid="item-qty-0"]').fill('2')

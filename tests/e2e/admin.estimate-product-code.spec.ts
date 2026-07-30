@@ -12,7 +12,7 @@
 //  Notion: R3 3ab0ff81c56b81928604f0973d5071ac / R28
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { getAccountId, restSrv } from './helpers'
+import { getAccountId, restSrv, openBuilderTab } from './helpers'
 
 const TS = Date.now()
 const CODE = `SLP${TS % 100000}`
@@ -56,7 +56,7 @@ async function openNewProject(page: any) {
   await page.locator('[data-testid="new-project-name"]').fill(PROJ)
   await page.locator('[data-testid="add-project"]').click()
   await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ, { timeout: 15000 })
-  await expect(page.locator('[data-testid="item-name-0"]')).toBeVisible({ timeout: 10000 })
+  await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
 }
 const itemsOf = async (cols: string) => {
   const accountId = await getAccountId()

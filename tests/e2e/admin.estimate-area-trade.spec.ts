@@ -15,7 +15,7 @@
 //  Notion: R12 3ac0ff81c56b8170b172e26f562e2da9 / R13 3ac0ff81c56b8102ae74d9c0959cbe06
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { getAccountId, restSrv } from './helpers'
+import { getAccountId, restSrv, openBuilderTab } from './helpers'
 
 const TS = Date.now()
 let seq = 0
@@ -37,7 +37,7 @@ async function openNewProject(page: any) {
   await page.locator('[data-testid="new-project-name"]').fill(PROJ)
   await page.locator('[data-testid="add-project"]').click()
   await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ, { timeout: 15000 })
-  await expect(page.locator('[data-testid="item-name-0"]')).toBeVisible({ timeout: 10000 })
+  await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
 }
 const itemsOf = async (cols: string) => {
   const accountId = await getAccountId()
@@ -197,6 +197,7 @@ test('AC7★(R13): 開き直して保存し直しても、品番・寸法が消�
   const accountId = await getAccountId()
   const pj = await restSrv(`estimate_projects?account_id=eq.${accountId}&name=eq.${encodeURIComponent(PROJ)}&select=id`)
   await page.goto(`/estimate-builder?project=${pj[0].id}`, { waitUntil: 'networkidle' })
+  await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
   await expect(page.locator('[data-testid="item-code-0"]')).toHaveValue('GS-777', { timeout: 15000 })
   await expect(page.locator('[data-testid="item-w-0"]')).toHaveValue('2000')
   await expect(page.locator('[data-testid="item-d-0"]')).toHaveValue('40')
