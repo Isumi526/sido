@@ -2097,6 +2097,8 @@ async function analyzeReceipt(
       if (result.label) item.payee              = result.label
       if (result.yen)   item.yen                = result.yen
       item.registrationNumber = inv
+      // 勘定科目はAIの「候補」＝人が未選択のときだけ埋める（選び直した値を上書きしない）
+      if (result.account && !item.account) item.account = result.account
     }
     return
   }
@@ -2107,6 +2109,7 @@ async function analyzeReceipt(
       if (result.label) item.payee              = result.label
       if (result.yen)   item.yen                = result.yen
       item.registrationNumber = inv
+      if (result.account && !item.account) item.account = result.account
     }
     return
   }

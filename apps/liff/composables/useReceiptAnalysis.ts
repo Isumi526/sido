@@ -9,6 +9,7 @@ export interface ReceiptResult {
   yen:           number | null
   invoiceNumber: string | null
   liters:        number | null   // 給油量(リットル)。ガソリン以外の領収書は常にnull
+  account:       string | null   // 勘定科目の推定（7科目のいずれか / 判断不能はnull）。★候補であり人が上書きできる
 }
 
 export const useReceiptAnalysis = () => {
