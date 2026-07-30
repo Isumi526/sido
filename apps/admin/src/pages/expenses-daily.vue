@@ -76,7 +76,9 @@ const dateTo = computed(() => {
   const d = new Date(baseDate.value); d.setMonth(d.getMonth() + 1); d.setDate(0)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 })
-function shiftMonth(n: number) { const d = new Date(baseDate.value); d.setMonth(d.getMonth() + n); baseDate.value = d }
+// ★setDate(1) を先に入れる: 月末31日に開くと「8月31日の1ヶ月後＝9月31日」が存在せず
+//  10月1日へ繰り上がり、9月が丸ごと飛ばされる（他4画面は元から丸めている）。
+function shiftMonth(n: number) { const d = new Date(baseDate.value); d.setDate(1); d.setMonth(d.getMonth() + n); baseDate.value = d }
 
 function yen(n: number) { return '¥' + Math.round(n || 0).toLocaleString() }
 const WEEK = ['日', '月', '火', '水', '木', '金', '土']
