@@ -14,7 +14,7 @@
 //   （ブラウザを閉じてもサーバー側で完走させるのは R56。Edge Function の
 //     実行時間制限があり、定期実行ワーカーの新設が必要なため今回は採らない）
 // ============================================================
-import { ref, computed, reactive } from 'vue'
+import { ref, reactive } from 'vue'
 import { supabase } from './supabase'
 import { getAccountId } from './account'
 
@@ -113,13 +113,28 @@ export async function startExtract(opts: {
   projectId: string; attachmentId: string; path: string; sourceName: string
 }): Promise<void> {
   const { projectId, attachmentId, path, sourceName } = opts
-  if (running.has(attachmentId)) return          // 二重起動を防ぐ
+  // ★二重起動の防止は「最初のawaitより前」に置く。await の後だと、
+  //  ボタンを素早く2回押した時に両方が通り、同じページを2回解析して結果が二重になる。
+  if (running.has(attachmentId)) return
+  running.add(attachmentId)
+  rev.value++
+  try {
+    await runJob(projectId, attachmentId, path, sourceName)
+  } finally {
+    running.delete(attachmentId)
+    rev.value++
+  }
+}
+
+async function runJob(projectId: string, attachmentId: string, path: string, sourceName: string) {
   const accountId = await getAccountId()
   if (!accountId) return
 
   let job = jobs.get(attachmentId)
-  if (!job || job.status === 'done' || job.status === 'error') {
-    // やり直しは同じ行を使う（1図面1ジョブ）。done/error からの再実行は0ページ目から。
+  // ★done からの再実行は「やり直し」なので0ページ目から。
+  //  error は途中で落ちただけなので、済んだページを捨てずに続きから再開する
+  //  （54ページの途中で通信が切れた時に全部やり直すのは実用にならない）。
+  if (!job || job.status === 'done') {
     const fresh: ExtractJob = {
       id: job?.id ?? null, projectId, attachmentId, path, sourceName,
       total: 0, done: 0, status: 'running', rows: [], error: '',
@@ -139,25 +154,18 @@ export async function startExtract(opts: {
     const { data, error } = await supabase.from('estimate_drawing_extract_jobs')
       .upsert({
         account_id: accountId, project_id: projectId, attachment_id: attachmentId,
-        source_name: sourceName, status: 'running', total_pages: 0, done_pages: 0,
-        rows: [], error: null, acked_at: null,
+        source_name: sourceName, status: 'running', total_pages: job.total, done_pages: job.done,
+        rows: job.rows, error: null, acked_at: null,
       }, { onConflict: 'attachment_id' })
       .select('id').single()
     if (error) { job.status = 'error'; job.error = error.message; rev.value++; return }
     job.id = (data as any).id
   } else {
     await supabase.from('estimate_drawing_extract_jobs')
-      .update({ status: 'running', error: null, acked_at: null }).eq('id', job.id)
+      .update({ status: 'running', done_pages: job.done, rows: job.rows, error: null, acked_at: null })
+      .eq('id', job.id)
   }
-
-  running.add(attachmentId)
-  rev.value++
-  try {
-    await runPages(job)
-  } finally {
-    running.delete(attachmentId)
-    rev.value++
-  }
+  await runPages(job)
 }
 
 async function runPages(job: ExtractJob) {
@@ -225,16 +233,3 @@ async function runPages(job: ExtractJob) {
 
 /** 進捗の文言（「12/54ページ」）。UIで何度も組み立てないよう1箇所に置く */
 export const progressLabel = (j: ExtractJob) => `${j.done}/${j.total || '?'}ページ`
-
-/** この案件の進捗サマリ（見積ビルダーのヘッダーに常時出す用） */
-export function projectExtractSummary(projectId: string) {
-  return computed(() => {
-    void rev.value
-    const list = [...jobs.values()].filter(j => j.projectId === projectId)
-    return {
-      running: list.filter(j => j.status === 'running'),
-      paused:  list.filter(j => j.status === 'paused'),
-      done:    list.filter(j => j.status === 'done'),
-    }
-  })
-}

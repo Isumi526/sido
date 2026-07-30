@@ -247,6 +247,11 @@
         <button class="btab" :class="{ active: builderTab === 'preview' }" data-testid="tab-preview" @click="builderTab = 'preview'">見積書プレビュー</button>
         <!-- 発注は受注してからしか発生しない。受注前に出ていると紛らわしいので隠す（レビュー2026-07-28） -->
         <button v-if="isOrdered" class="btab" :class="{ active: builderTab === 'po' }" data-testid="tab-po" @click="builderTab = 'po'">商社へ発注</button>
+        <!-- ★R53: 解析中はどのタブに居ても進捗が見えるようにする。
+             案件情報タブの図面一覧にしか出さないと、明細を打っている間は進んでいるか分からない。 -->
+        <span v-for="j in runningExtracts" :key="j.attachmentId" class="ext-chip" data-testid="ext-progress-chip">
+          <span class="spin-dot"></span> 材料抽出中 {{ j.done }}/{{ j.total || '?' }}ページ
+        </span>
         <button class="btab ghost" data-testid="open-drawer" @click="openDrawer"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">settings</span> マスタ・自社情報</button>
       </div>
 
@@ -1256,7 +1261,7 @@ import EstimateMasters from './estimate-masters.vue'
 import ExtractControl from '../components/ExtractControl.vue'
 // ★R53: 材料抽出の実行はこのコンポーネントの外（モジュールスコープ）で回す。
 //  画面遷移で解析が死なないようにするため。
-import { jobFor, startExtract, loadJobsForProject, ackJob, refreshExtractBadge, type ExtractRow } from '../lib/extractJobs'
+import { jobFor, startExtract, loadJobsForProject, ackJob, refreshExtractBadge, runningJobsOf, type ExtractRow } from '../lib/extractJobs'
 
 const BUCKET = 'expense-receipts'        // 印影など既存公開物の表示用（後方互換）
 const PDF_BUCKET = 'admin-docs'          // 新規の見積/発注PDFは非公開バケット（署名URL配信）
@@ -3235,6 +3240,8 @@ const dext = ref<{ att: Attachment | null; rows: PickRow[]; msg: string }>({ att
 const dextPicked = computed(() => dext.value.rows.filter(r => r._pick))
 /** 表示中の図面のジョブ（進捗・状態はストアが正）。 */
 const dextJob = computed(() => (dext.value.att ? jobFor(dext.value.att.id) : null))
+/** この案件で走っている抽出（タブの横に進捗を出す） */
+const runningExtracts = computed(() => (projectId.value ? runningJobsOf(projectId.value) : []))
 
 /** 解析を開始／中断したところから再開する。await しない＝押した直後から他の操作ができる */
 function beginExtract(a: Attachment | null) {
@@ -4288,6 +4295,9 @@ tr.drag-over td { border-top: 2px solid #06C755; }
   font-size: 13px; padding: 0; text-align: left; }
 .att-name-static { font-size: 13px; color: #333; }
 .draft-warn { font-size: 11px; font-weight: 700; color: #B45309; background: #FEF3C7; border-radius: 10px; padding: 2px 8px; }
+/* R53 解析中の進捗（タブ列に常時表示） */
+.ext-chip { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; font-size: 12px;
+  font-weight: 700; color: #06864a; background: #e8f9ef; border-radius: 12px; padding: 4px 12px; white-space: nowrap; }
 /* ── R51 新規見積のステップ入力 ── */
 .wiz { max-width: 820px; }
 .wiz-steps { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }

@@ -315,3 +315,53 @@ test('AC9★(R53): タブを閉じて中断した抽出は「n/N まで完了。
   const codes = (job[0].rows as any[]).map(r => r.code)
   expect(codes, '中断前の結果が残り、続きが足される').toEqual(['RS-1', 'RS-2', 'RS-3'])
 })
+
+test('AC10★(R53): 途中で失敗しても済んだページは捨てず、続きから再試行できる', async ({ page }) => {
+  const accountId = await getAccountId()
+  const pj = await restSrv('estimate_projects', {
+    method: 'POST', headers: { Prefer: 'return=representation', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ account_id: accountId, name: `${NAME_PREFIX}_失敗再試行` }),
+  })
+  const projId = pj[0].id
+  created.push(projId)
+
+  // 2ページ目だけ1回失敗させる（通信が途中で切れた状況）
+  let failedOnce = false
+  await page.route('**/functions/v1/drawing-material-extract', async (route: any) => {
+    const body = JSON.parse(route.request().postData() || '{}')
+    if (body.page === 2 && !failedOnce) {
+      failedOnce = true
+      await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: '解析が中断されました' }) })
+      return
+    }
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ ok: true, page: body.page, rows: [
+        { part: `失敗${body.page}`, manufacturer: 'メーカー', code: `FL-${body.page}`, size: '', spec: '', quantity: '1' },
+      ] }),
+    })
+  })
+
+  await page.goto(`/estimate-builder?project=${projId}`, { waitUntil: 'networkidle' })
+  await openBuilderTab(page, 'intake', '[data-testid="intake-dropzone"]')
+  await page.locator('[data-testid="intake-file"]').setInputFiles({
+    name: `${NAME_PREFIX}_失敗図面.pdf`, mimeType: 'application/pdf', buffer: makePdf(3),
+  })
+  await expect(page.locator('[data-testid="intake-att-list"]')).toContainText('失敗図面.pdf', { timeout: 20000 })
+  const att = await restSrv(`estimate_project_attachments?project_id=eq.${projId}&select=id&order=created_at.desc`)
+  const attId = att[0].id
+
+  await page.locator(`[data-testid="dext-open-${attId}"]`).click()
+  // 1ページ目までは終わった状態で失敗する（そこまでの結果は残る）
+  const retry = page.locator(`[data-testid="dext-retry-${attId}"]`)
+  await expect(retry).toContainText('1/3ページまで完了', { timeout: 30000 })
+
+  await retry.click()
+  await expect.poll(async () => {
+    const j = await restSrv(`estimate_drawing_extract_jobs?attachment_id=eq.${attId}&select=status,done_pages`)
+    return `${j[0].status}:${j[0].done_pages}`
+  }, { timeout: 30000 }).toBe('done:3')
+  const job = await restSrv(`estimate_drawing_extract_jobs?attachment_id=eq.${attId}&select=rows`)
+  const codes = (job[0].rows as any[]).map(r => r.code)
+  expect(codes, '1ページ目をやり直さない（重複しない）').toEqual(['FL-1', 'FL-2', 'FL-3'])
+})
