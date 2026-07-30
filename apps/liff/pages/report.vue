@@ -531,6 +531,9 @@
                     <option value="">{{ $t('report.accountAuto', { name: '消耗品費' }) }}</option>
                     <option v-for="a in EXPENSE_ACCOUNT_OPTIONS" :key="a" :value="a">{{ a }}</option>
                   </select>
+                  <!-- 接待交際費/会議費は税務上「誰と行ったか」の記録が必須 -->
+                  <input v-if="needsCompanions(ot)" v-model="ot.companions" type="text" class="input mt6" :class="{ 'input-required': !ot.companions?.trim() }"
+                         :placeholder="$t('report.companionsPlaceholder')" @keydown.enter.prevent />
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addOther(si)">{{ $t('report.addOther') }}</button>
               </template>
@@ -565,6 +568,9 @@
                     <option value="">{{ $t('report.accountAuto', { name: '接待交際費' }) }}</option>
                     <option v-for="a in EXPENSE_ACCOUNT_OPTIONS" :key="a" :value="a">{{ a }}</option>
                   </select>
+                  <!-- 接待交際費/会議費は税務上「誰と行ったか」の記録が必須 -->
+                  <input v-if="needsCompanions(ent, 'その他雑経費')" v-model="ent.companions" type="text" class="input mt6" :class="{ 'input-required': !ent.companions?.trim() }"
+                         :placeholder="$t('report.companionsPlaceholder')" @keydown.enter.prevent />
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addEntertainment(si)">{{ $t('report.addMiscExpense') }}</button>
               </template>
@@ -1225,6 +1231,29 @@ function startTimeOptionsForSite(si: number): string[] {
 }
 
 // 送信バリデート: 同一作業員の複数現場の作業時間帯が重複していないか（重複していたらエラー文言を返す・無ければ null）
+// 接待交際費・会議費は税務上「誰と行ったか」の記録が要る（2026-07-27 議事録）。
+//  判定は shared/expense-flatten.ts の requiresCompanions が正（admin 側の未記入検出と同じ基準）。
+function needsCompanions(item: { account?: string }, category = 'その他'): boolean {
+  return requiresCompanions({ category, account: item.account })
+}
+
+// 同行者名が未記入の経費明細があればエラーメッセージを返す（送信を弾く＝「書かんと通さない」）
+function findMissingCompanions(): string | null {
+  for (const site of (report.form.value.sites ?? [])) {
+    const exp: any = site?.expenses ?? {}
+    for (const [key, cat] of [['others', 'その他'], ['entertainments', 'その他雑経費']] as const) {
+      for (const it of (exp[key] ?? [])) {
+        if (!it?.yen) continue                                  // 金額未入力の空行は対象外
+        if (!needsCompanions(it, cat)) continue
+        if (!String(it.companions ?? '').trim()) {
+          return t('report.companionsRequired', { account: expenseAccountCategory({ category: cat, account: it.account }) })
+        }
+      }
+    }
+  }
+  return null
+}
+
 function findWorkerTimeOverlap(): string | null {
   const segs: { name: string; start: number; end: number }[] = []
   for (const s of (report.form.value.sites ?? [])) {
@@ -1653,6 +1682,16 @@ async function handleSubmit() {
     }
   }
 
+  // ── 送信バリデート: 接待交際費/会議費の同行者名が未記入なら弾く（税務要件・2026-07-27 議事録）──
+  {
+    const companionMsg = findMissingCompanions()
+    if (companionMsg) {
+      if (isEditMode.value) editError.value = companionMsg
+      alert(companionMsg)
+      return
+    }
+  }
+
   // ── 編集モード: Supabase のみ更新（GAS には再送しない）──
   if (isEditMode.value) {
     if (editSubmitting.value) return
@@ -2058,6 +2097,8 @@ async function analyzeReceipt(
       if (result.label) item.payee              = result.label
       if (result.yen)   item.yen                = result.yen
       item.registrationNumber = inv
+      // 勘定科目はAIの「候補」＝人が未選択のときだけ埋める（選び直した値を上書きしない）
+      if (result.account && !item.account) item.account = result.account
     }
     return
   }
@@ -2068,6 +2109,7 @@ async function analyzeReceipt(
       if (result.label) item.payee              = result.label
       if (result.yen)   item.yen                = result.yen
       item.registrationNumber = inv
+      if (result.account && !item.account) item.account = result.account
     }
     return
   }
@@ -2290,6 +2332,8 @@ html, body {
   outline: none; border-color: var(--accent);
   background: #fff;
 }
+/* 未入力の必須欄（同行者名）。送信時に弾かれる前に気づけるようにする */
+.input-required { border-color: #e57373; background: #fff8f8; }
 .select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' fill='none' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;

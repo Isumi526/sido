@@ -99,6 +99,8 @@
   "facilityNameHotelPlaceholder": "Facility name (e.g. APA Hotel)",
   "registrationNumberPlaceholder": "Invoice number (write \"none\" if not available)",
   "accountAuto": "Account: auto ({name})",
+  "companionsPlaceholder": "Attendees (required, e.g. Mr. Tanaka of ABC Corp.)",
+  "companionsRequired": "{account} requires the names of attendees (required for tax records).",
   "leopalace": "Leopalace, etc.",
   "facilityNamePlaceholder": "Facility name",
   "garbage": "Waste",
