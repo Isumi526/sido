@@ -17,10 +17,11 @@ const TS = Date.now()
 const TOKEN = `E2E経費統一_${TS}`
 const VENDOR = `FB商店_${TS}`
 
-// 列: 1日付 2支払先 3インボイス番号 4科目 5品名 6ℓ 7現場名 8使用車 9金額（2026-07-30 科目列追加）
+// 列: 1日付 2支払先 3インボイス番号 4品名 5ℓ 6現場名 7使用車 8金額
+//  ※客先PDFは品名のみ（科目=勘定科目は社内画面だけ・2026-07-31 レビューで決定）
 const C_PAYEE = 'td:nth-child(2)'
-const C_CAT = 'td:nth-child(5)'
-const C_VEHICLE = 'td:nth-child(8)'
+const C_CAT = 'td:nth-child(4)'
+const C_VEHICLE = 'td:nth-child(7)'
 
 test.describe('経費 統一フォーマット(内容廃止/使用車/品名/支払先fallback)', () => {
   let uid = ''
@@ -60,6 +61,11 @@ test.describe('経費 統一フォーマット(内容廃止/使用車/品名/支
     // 内容列が無い（ヘッダに「内　容」が無い）
     await expect(page.locator('.expense-table thead')).not.toContainText('内　容')
     await expect(page.locator('.expense-table thead')).toContainText('使用車')
+    // 科目(勘定科目)は社内画面だけ＝客先PDFには出さない（2026-07-31 レビューで決定）
+    await expect(page.locator('.expense-table thead'), '科目列は無い').not.toContainText('科　目')
+    await expect(page.locator('.expense-table tbody'), '勘定科目名が出ない').not.toContainText('旅費交通費')
+    // インボイス番号ラベルへの統一は維持
+    await expect(page.locator('.expense-table thead')).toContainText('インボイス番号')
 
     // その他: 支払先に会社名が昇格・品名=その他
     const otherRow = page.locator('.expense-table tbody tr', { hasText: 'その他' }).first()

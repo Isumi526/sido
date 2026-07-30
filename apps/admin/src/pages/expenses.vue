@@ -119,7 +119,6 @@
                 <th>支払い先</th>
                 <th>インボイス番号</th>
                 <th>科目</th>
-                <th>品名</th>
                 <th class="num">ℓ</th>
                 <th>現場名</th>
                 <th>使用車</th>
@@ -135,7 +134,6 @@
                 <td class="muted">{{ d.payee || '—' }}</td>
                 <td class="muted">{{ d.registrationNumber || '—' }}</td>
                 <td>{{ expenseAccountCategory(d) }}</td>
-                <td>{{ expenseDisplayCategory(d.category) }}</td>
                 <td class="num muted">{{ d.liters ?? '' }}</td>
                 <td>{{ d.siteName || '—' }}</td>
                 <td class="muted">{{ d.vehicle || '' }}</td>
@@ -153,7 +151,7 @@
             </tbody>
             <tfoot>
               <tr class="detail-total-row">
-                <td colspan="8" class="right">{{ printMode === 'seikyu' ? '振込額（立替）' : '合計' }}</td>
+                <td colspan="7" class="right">{{ printMode === 'seikyu' ? '振込額（立替）' : '合計' }}</td>
                 <td class="num">{{ yen(printMode === 'seikyu' ? selected.tategaeTotal : selected.total) }}</td>
                 <td colspan="2" class="no-print"></td>
               </tr>
@@ -235,7 +233,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useYearMonthParam } from '../composables/useQueryParam'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug, getAccountName } from '../lib/account'
-import { flattenReportExpenses, flattenGasolineItems, ratesFromSettings, effectiveStatus, expenseDisplayCategory, expenseAccountCategory, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
+import { flattenReportExpenses, flattenGasolineItems, ratesFromSettings, effectiveStatus, expenseAccountCategory, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
 
 /** 申請PDF(明細/請求書)のStorage公開URL。パスは generateExpensePdf.uploadApplicationPdf と一致 */
 function pdfUrl(row: { userId: string; periodKey: string }, kind: 'meisai' | 'seikyu'): string {
