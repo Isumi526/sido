@@ -39,7 +39,7 @@
             <tbody>
               <tr v-for="(r, i) in grp.rows" :key="i">
                 <td>{{ r.workerName || '—' }}</td>
-                <td class="muted">{{ r.siteName || '—' }}</td>
+                <td class="muted">{{ r.siteName || '現場外（個人経費）' }}</td>
                 <td>{{ expenseAccountCategory(r) }}</td>
                 <td class="muted">{{ r.note || '—' }}</td>
                 <td class="muted">{{ r.payee || '—' }}</td>
@@ -61,7 +61,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useYearMonthParam } from '../composables/useQueryParam'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { flattenReportExpenses, flattenGasolineItems, ratesFromSettings, expenseDisplayCategory, expenseAccountCategory, type ExpenseRow } from '../lib/expenses'
+import { flattenReportExpenses, flattenGasolineItems, flattenPersonalExpenses, ratesFromSettings, expenseDisplayCategory, expenseAccountCategory, type ExpenseRow } from '../lib/expenses'
 
 type DailyRow = ExpenseRow & { workerName: string }
 
@@ -85,11 +85,17 @@ function fmtDate(s: string) { const d = new Date(s + 'T00:00:00'); return `${d.g
 async function load() {
   loading.value = true
   const accountId = await getAccountId()
-  const [{ data: cfg }, { data: reports }] = await Promise.all([
+  const [{ data: cfg }, { data: reports }, { data: personal }] = await Promise.all([
     supabase.from('settings').select('key, value').eq('account_id', accountId),
     supabase.from('daily_reports')
       .select('date, sites, gasoline_items, user_id, users(real_name, workers(name))')
       .eq('account_id', accountId).eq('is_working', true)
+      .gte('date', dateFrom.value).lte('date', dateTo.value)
+      .order('date', { ascending: true }).limit(5000),
+    // 現場に紐付かない個人経費（日報を出さない役員等の分。日報とは独立に引く）
+    supabase.from('personal_expenses')
+      .select('id, worker_id, date, account_category, amount, payee, registration_number, companions, note, file_urls, tategae, workers(name)')
+      .eq('account_id', accountId)
       .gte('date', dateFrom.value).lte('date', dateTo.value)
       .order('date', { ascending: true }).limit(5000),
   ])
@@ -106,6 +112,11 @@ async function load() {
     for (const row of flattenGasolineItems(rep.date, rep.gasoline_items)) {
       out.push({ ...row, workerName } as DailyRow)
     }
+  }
+  // 現場外の個人経費を同じ台帳に合流（siteName は空＝現場に紛れ込ませない）
+  for (const row of flattenPersonalExpenses(personal as any)) {
+    const rec = (personal as any[]).find((p) => p.id === row.personalExpenseId)
+    out.push({ ...row, workerName: rec?.workers?.name ?? '—' } as DailyRow)
   }
   allRows.value = out
   loading.value = false

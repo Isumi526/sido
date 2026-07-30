@@ -42,7 +42,10 @@ export interface ExpenseRow {
   //  レガシースカラー・車両按分・旧車両配下(駐車/高速)は付けない＝編集対象外。
   srcSiteIndex?: number  // sites[] のindex
   srcKey?: string        // expenses配下の配列キー（'parkings'|'highways'|'trains'|'hotels'|'others'|'entertainments'）
+                         //  ＋ 'gasolineItems'（日報直下）／'personalExpenses'（日報に依存しない独立テーブル）
   srcIndex?: number      // その配列内のindex
+  personalExpenseId?: string  // personal_expenses.id（現場に紐付かない個人経費のみ・編集/削除の戻り先）
+  workerName?: string    // 個人経費の申請者名（日報由来の行は日報側で作業員が決まるので使わない）
 }
 
 /** 勘定科目の固定選択肢（2026-07-30 ユーザー確定・入力selectとバリデーションの正本） */
@@ -227,4 +230,64 @@ function applyPayeeFallback(rows: ExpenseRow[]): ExpenseRow[] {
     }
   }
   return rows
+}
+
+// ── 現場に紐付かない個人経費（personal_expenses）─────────────────────
+//  日報に依存しない独立テーブル。役員・経営者のように日報を出さない人や、
+//  出勤しない日に発生した経費を拾うための入れ物（#f4cc3db1）。
+//  日報由来の行と同じ ExpenseRow に合流させ、出所は srcKey='personalExpenses' で区別する。
+
+/** personal_expenses の1行（DBのカラム名そのまま） */
+export interface PersonalExpenseRecord {
+  id: string
+  worker_id: string
+  date: string
+  account_category: string
+  amount: number | string
+  payee?: string | null
+  registration_number?: string | null
+  companions?: string | null
+  note?: string | null
+  file_urls?: string[] | null
+  tategae?: boolean | null
+}
+
+/**
+ * personal_expenses を ExpenseRow に変換する。
+ * ★siteName は空文字にする（'現場未設定' にはしない）。
+ *  現場別集計で「不明な現場」として現場に紛れ込ませないため（#f4cc3db1 の波及範囲メモ）。
+ * ★category は勘定科目をそのまま入れる。account にも同じ値を入れるので
+ *  expenseAccountCategory / requiresCompanions / requiresPreApproval がそのまま効く。
+ */
+export function flattenPersonalExpenses(
+  records: PersonalExpenseRecord[] | null | undefined,
+  workerNameById?: Record<string, string>,
+): ExpenseRow[] {
+  const rows: ExpenseRow[] = []
+  for (const r of (records ?? [])) {
+    const amount = Math.round(Number(r.amount) || 0)
+    if (amount <= 0) continue
+    rows.push({
+      date: r.date,
+      category: r.account_category,
+      account: r.account_category,
+      siteName: '',                                   // 現場に紐付かない＝空（集計側で現場外として扱う）
+      amount,
+      note: r.note || undefined,
+      payee: r.payee || undefined,
+      registrationNumber: r.registration_number || undefined,
+      companions: r.companions || undefined,
+      fileUrls: Array.isArray(r.file_urls) ? r.file_urls : [],
+      tategae: !!r.tategae,
+      srcKey: 'personalExpenses',
+      personalExpenseId: r.id,
+      workerName: workerNameById?.[r.worker_id],
+    })
+  }
+  return rows
+}
+
+/** その行が現場に紐付かない個人経費か（現場按分・現場別集計から除外する判定に使う） */
+export function isPersonalExpenseRow(row: { srcKey?: string }): boolean {
+  return row.srcKey === 'personalExpenses'
 }
