@@ -25,7 +25,9 @@ import { getAccountId, restSrv } from './helpers'
 const TS = Date.now()
 const MAT = `E2E不燃PB_${TS}`          // マスタに入れる正しい名前
 const CODE = `PB-${TS % 100000}`       // 材料＝品番のある行として扱わせる
-const TYPO = `E2E不燃PＢ_${TS}`        // 打ち間違い（全角B）
+// ★全角/半角の違いはNFKC正規化で自動的に同じ扱いになる（＝候補を出す必要が無い）。
+//   ここでは正規化では直らない打ち間違い（不燃→不然）を使う。
+const TYPO = `E2E不然PB_${TS}`        // 打ち間違い（燃→然）
 let seq = 0
 const projName = () => `E2E商品情報_${TS}_${++seq}`
 let PROJ = ''

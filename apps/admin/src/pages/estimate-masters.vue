@@ -171,7 +171,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug } from '../lib/account'
 
@@ -195,7 +195,62 @@ const addingSupplier = ref(false)
 const newSupplierName = ref('')
 const masterErr      = ref('')
 const revBusy        = ref(false)
-const bulkMsg        = ref('')   // 一括承認の進捗（何件通ったかを見せる）
+const bulkMsg        = ref('')
+// ★R41: 定価（品番ごと）と商社別掛率
+type ListPrice = { id: string; product_code: string; item_name: string | null; unit: string | null; list_price: number }
+const listPrices        = ref<ListPrice[]>([])
+const listForm          = ref<{ product_code: string; item_name: string; unit: string; list_price: number | null }>({ product_code: '', item_name: '', unit: '', list_price: null })
+const supplierRateInput = ref<number | null>(null)
+const rateMsg           = ref('')
+async function loadListPrices() {
+  const { data } = await supabase.from('estimate_list_prices')
+    .select('id, product_code, item_name, unit, list_price').eq('account_id', accountId).order('product_code')
+  listPrices.value = (data ?? []).map((x: any) => ({ ...x, list_price: Number(x.list_price) }))
+}
+async function addListPrice() {
+  const f = listForm.value
+  const code = f.product_code.trim()
+  if (!code || !(Number(f.list_price) > 0)) return
+  masterErr.value = ''
+  // 品番は定価の同一性の核。二重登録＝どちらが正か分からない状態を作らないので upsert する
+  const { error } = await supabase.from('estimate_list_prices').upsert({
+    account_id: accountId, product_code: code, item_name: f.item_name.trim() || null,
+    unit: f.unit.trim() || null, list_price: Number(f.list_price), updated_at: new Date().toISOString(),
+  }, { onConflict: 'account_id,product_code' })
+  if (error) { masterErr.value = error.message; return }
+  listForm.value = { product_code: '', item_name: '', unit: '', list_price: null }
+  await loadListPrices()
+}
+async function saveListPrice(l: ListPrice) {
+  if (!(Number(l.list_price) > 0)) return
+  const { error } = await supabase.from('estimate_list_prices')
+    .update({ list_price: Number(l.list_price), updated_at: new Date().toISOString() }).eq('id', l.id)
+  if (error) masterErr.value = error.message
+}
+async function deleteListPrice(l: ListPrice) {
+  if (!window.confirm(`品番「${l.product_code}」の定価を削除しますか？`)) return
+  await supabase.from('estimate_list_prices').delete().eq('id', l.id)
+  await loadListPrices()
+}
+async function loadSupplierRate() {
+  rateMsg.value = ''
+  supplierRateInput.value = null
+  if (!activeSupplier.value) return
+  const { data } = await supabase.from('estimate_supplier_rates')
+    .select('rate').eq('account_id', accountId).eq('supplier_id', activeSupplier.value).maybeSingle()
+  if (data) supplierRateInput.value = Number(data.rate)
+}
+async function saveSupplierRate() {
+  if (!activeSupplier.value || !(Number(supplierRateInput.value) > 0)) return
+  masterErr.value = ''
+  const { error } = await supabase.from('estimate_supplier_rates').upsert({
+    account_id: accountId, supplier_id: activeSupplier.value,
+    rate: Number(supplierRateInput.value), updated_at: new Date().toISOString(),
+  }, { onConflict: 'account_id,supplier_id' })
+  if (error) { masterErr.value = error.message; return }
+  rateMsg.value = '保存しました'
+  setTimeout(() => { rateMsg.value = '' }, 2000)
+}   // 一括承認の進捗（何件通ったかを見せる）
 const settingsTab    = ref<'price' | 'material' | 'trade'>('price')
 const activeSupplier = ref<string | null>(null)
 let accountId = ''
@@ -518,9 +573,11 @@ async function deleteMaterial(id: string) {
 
 onMounted(async () => {
   accountId = await getAccountId()
-  await Promise.all([loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices(), loadRevisions()])
+  await Promise.all([loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices(), loadRevisions(), loadListPrices()])
   if (!activeSupplier.value && suppliers.value[0]) activeSupplier.value = suppliers.value[0].id
 })
+// R41: 商社タブを切り替えたら、その商社の掛率を読む
+watch(activeSupplier, () => { void loadSupplierRate() }, { immediate: true })
 </script>
 
 <style scoped>
@@ -565,6 +622,7 @@ onMounted(async () => {
 .method-label { font-size: 12px; font-weight: 600; color: #555; }
 .ocr-dropzone { border: 1.5px dashed #cdd6e6; border-radius: 10px; padding: 12px; transition: border-color .15s, background .15s; }
 .ocr-dropzone.drag-over { border-color: #1a56c4; background: #eef4ff; }
+.list-price-head { display: flex; align-items: baseline; gap: 10px; }
 .rev-head { display: flex; align-items: center; gap: 10px; }
 .linked-cell { font-size: 12px; color: #7A8AA0; }
 .unit-in { width: 70px; }
