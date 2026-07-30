@@ -17,10 +17,10 @@ const TS = Date.now()
 const TOKEN = `E2E経費統一_${TS}`
 const VENDOR = `FB商店_${TS}`
 
-// 列: 1日付 2支払先 3登録番号 4品名 5ℓ 6現場名 7使用車 8金額
+// 列: 1日付 2支払先 3インボイス番号 4科目 5品名 6ℓ 7現場名 8使用車 9金額（2026-07-30 科目列追加）
 const C_PAYEE = 'td:nth-child(2)'
-const C_CAT = 'td:nth-child(4)'
-const C_VEHICLE = 'td:nth-child(7)'
+const C_CAT = 'td:nth-child(5)'
+const C_VEHICLE = 'td:nth-child(8)'
 
 test.describe('経費 統一フォーマット(内容廃止/使用車/品名/支払先fallback)', () => {
   let uid = ''

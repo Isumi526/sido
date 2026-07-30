@@ -37,6 +37,7 @@
             <th class="col-date">{{ t('expenseDoc.colDate') }}</th>
             <th class="col-payee">{{ t('expenseDoc.colPayee') }}</th>
             <th class="col-reg">{{ t('expenseDoc.colReg') }}</th>
+            <th class="col-account">{{ t('expenseDoc.colAccount') }}</th>
             <th class="col-cat">{{ t('expenseDoc.colCategory') }}</th>
             <th class="col-lit">{{ t('expenseDoc.colLiters') }}</th>
             <th class="col-site">{{ t('expenseDoc.colSite') }}</th>
@@ -49,6 +50,7 @@
             <td class="center">{{ fmtDate(row.date) }}</td>
             <td class="small">{{ row.payee || '' }}</td>
             <td class="small">{{ row.registrationNumber || '' }}</td>
+            <td class="center">{{ expenseAccountCategory(row) }}</td>
             <td class="center">{{ expenseDisplayCategory(row.category) }}</td>
             <td class="center">{{ row.liters ?? '' }}</td>
             <td class="small">{{ row.siteName }}</td>
@@ -58,7 +60,7 @@
         </tbody>
         <tfoot>
           <tr class="total-row">
-            <td colspan="7" class="right">{{ t('expenseDoc.totalLabel') }}</td>
+            <td colspan="8" class="right">{{ t('expenseDoc.totalLabel') }}</td>
             <td class="right">¥{{ total.toLocaleString() }}</td>
           </tr>
         </tfoot>
@@ -81,7 +83,7 @@
 import { useI18n } from 'vue-i18n'
 import type { ExpenseRow, User } from '~/types'
 import { periodLabel } from '~/composables/useExpense'
-import { expenseDisplayCategory } from '~/composables/expense-flatten.gen'
+import { expenseDisplayCategory, expenseAccountCategory } from '~/composables/expense-flatten.gen'
 
 const { t } = useI18n()
 
@@ -162,14 +164,15 @@ body { font-family: 'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic', sans-serif; ba
 .expense-table th, .expense-table td { border: 1px solid #333; padding: 5px 6px; }
 .expense-table thead th { background: #f0f0f0; font-weight: 700; text-align: center; font-size: 11px; }
 .col-date  { width: 62px; }
-.col-payee { min-width: 90px; }
+.col-payee { min-width: 80px; }
 .col-content { min-width: 90px; }
-.col-reg   { width: 110px; font-size: 10px; }
-.col-cat   { width: 72px; }
+.col-reg   { width: 84px; font-size: 10px; }
+.col-account { width: 80px; }
+.col-cat   { width: 64px; }
 .col-lit   { width: 28px; }
-.col-site  { width: 90px; font-size: 10px; }
+.col-site  { width: 82px; font-size: 10px; }
 .col-sep   { width: 18px; }
-.col-amt   { width: 82px; }
+.col-amt   { width: 78px; }
 .center { text-align: center; }
 .right  { text-align: right; }
 .small  { font-size: 10px; }

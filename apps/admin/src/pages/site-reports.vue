@@ -79,7 +79,7 @@
               <th class="num">燃料</th>
               <th class="num">高速</th>
               <th class="num">宿泊</th>
-              <th class="num">接待費</th>
+              <th class="num">接待交際費</th>
               <th class="num">ゴミ</th>
               <th class="num">交通費</th>
               <th class="num">ホーム</th>
@@ -272,11 +272,11 @@
           </table>
         </div>
 
-        <!-- 接待費 -->
+        <!-- 接待交際費 -->
         <div class="modal-section" v-if="selected.entertainCost">
-          <div class="section-label">接待費</div>
+          <div class="section-label">接待交際費</div>
           <div class="simple-row">
-            <span>{{ selected._exp?.entertainmentLabel || '接待費' }}</span>
+            <span>{{ selected._exp?.entertainmentLabel || '接待交際費' }}</span>
             <span class="num-text">{{ yen(selected.entertainCost) }}</span>
           </div>
         </div>
@@ -387,7 +387,7 @@ async function exportSite() {
     // 表示中の当月ならロード済みの siteMap を流用、それ以外は選択期間で再集計
     const map = (exportRange.value === 'month') ? siteMap.value : await computeSiteMap(from, to)
     const rows = (map[site] ?? []).filter((r: any) => !r._isInvoice)
-    const head = ['日付','作業員','商社','業者','社員','駐車場','燃料','高速','宿泊','接待費','ゴミ','交通費','ホーム','出張費','合計']
+    const head = ['日付','作業員','商社','業者','社員','駐車場','燃料','高速','宿泊','接待交際費','ゴミ','交通費','ホーム','出張費','合計']
     const csv = [head.join(',')].concat(rows.map((r: any) => [
       r.date, '"' + String(r.workerSummary ?? '').replace(/"/g, '""') + '"',
       r.shoshaCost||0, r.gyoshaCost||0, r.laborCost||0, r.parkingYen||0, r.fuelCost||0, r.highwayCost||0,
@@ -635,7 +635,7 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
         g._trainItems.push(t)
       for (const o of (site.expenses?.others ?? []).filter((o: any) => o.yen))
         g._otherItems.push(o)
-      // 最後のexpensesをモーダル用に保持（ホテル・接待費）
+      // 最後のexpensesをモーダル用に保持（ホテル・接待交際費）
       if (site.expenses) g._exp = site.expenses
     }
   }
