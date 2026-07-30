@@ -4,7 +4,8 @@
        ・未実行     → 材料を抽出
        ・解析中     → 何ページ中の何ページ（押すと結果を見る）
        ・中断       → n/N まで完了。残りを続ける（タブを閉じた場合）
-       ・完了/失敗  → 抽出結果を見る / やり直す -->
+       ・失敗       → 続きから再試行（済んだページは捨てない）
+       ・完了       → 抽出結果を見る -->
   <template v-if="!job">
     <button class="btn-edit" :data-testid="`dext-open-${att.id}`" @click="emit('start', att)">材料を抽出</button>
   </template>
@@ -19,7 +20,10 @@
     </button>
   </template>
   <template v-else-if="job.status === 'error'">
-    <button class="btn-edit err" :data-testid="`dext-retry-${att.id}`" @click="emit('start', att)">解析に失敗（もう一度試す）</button>
+    <!-- 失敗しても済んだページは捨てず、続きから再試行する -->
+    <button class="btn-edit err" :data-testid="`dext-retry-${att.id}`" @click="emit('start', att)">
+      解析に失敗<template v-if="job.done"> （{{ job.done }}/{{ job.total }}ページまで完了）</template>・続きから再試行
+    </button>
   </template>
   <template v-else>
     <button class="btn-edit done" :data-testid="`dext-result-${att.id}`" @click="emit('review', att)">
