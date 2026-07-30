@@ -5,7 +5,7 @@
 import type { User, ExpenseItem, ExpenseItemInput, ExpenseRow } from '~/types'
 import { useI18n } from 'vue-i18n'
 import { gt } from '~/utils/i18n-global'
-import { flattenReportExpenses, ratesFromSettings } from './expense-flatten.gen'
+import { flattenReportExpenses, flattenGasolineItems, ratesFromSettings } from './expense-flatten.gen'
 import { resolveActiveSiteId } from '~/utils/siteSimilarity'
 
 // ---------- 期間キーユーティリティ ----------
@@ -559,15 +559,9 @@ export const useExpense = () => {
       rows.push(...flattenReportExpenses(rep.date, rep.sites as any[], rates)
         .filter(r => r.category !== 'ガソリン代' && r.category !== '軽油代'))
       // 日報レベルの「本日のガソリン代」（複数給油・実費）も明細に含める（admin 経費精算と整合）
-      //  srcKey='gasolineItems'（report直下・srcSiteIndex無し）で書き戻し先を区別。srcIndexは元配列のindex。
-      const gitems = ((rep as any).gasoline_items ?? [])
-      for (let gi = 0; gi < gitems.length; gi++) {
-        const g = gitems[gi]
-        const gasYen = Math.round(Number(g?.yen) || 0)
-        if (gasYen <= 0) continue
-        const urls = Array.isArray(g.fileUrls) ? g.fileUrls : []
-        rows.push({ date: rep.date, category: 'ガソリン代（本日）', siteName: '—', payee: g.payee || '', amount: gasYen, note: g.fuelType === 'diesel' ? 'ディーゼル' : (g.fuelType === 'regular' ? 'レギュラー' : ''), registrationNumber: g.registrationNumber || '', liters: Number(g.liters) > 0 ? Number(g.liters) : undefined, fileUrls: urls, tategae: !!g.tategae, srcKey: 'gasolineItems', srcIndex: gi } as ExpenseRow)
-      }
+      //  ★共有関数を使う。srcKey='gasolineItems'（report直下・srcSiteIndex無し）で
+      //   書き戻し先を区別する（srcIndexは元配列のindex）のも共有側で付ける。
+      rows.push(...flattenGasolineItems(rep.date, (rep as any).gasoline_items) as ExpenseRow[])
     }
     return rows
   }

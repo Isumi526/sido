@@ -61,7 +61,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useYearMonthParam } from '../composables/useQueryParam'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { flattenReportExpenses, ratesFromSettings, expenseDisplayCategory, type ExpenseRow } from '../lib/expenses'
+import { flattenReportExpenses, flattenGasolineItems, ratesFromSettings, expenseDisplayCategory, type ExpenseRow } from '../lib/expenses'
 
 type DailyRow = ExpenseRow & { workerName: string }
 
@@ -102,16 +102,9 @@ async function load() {
       if (row.category === 'ガソリン代' || row.category === '軽油代') continue
       out.push({ ...row, workerName })
     }
-    // 本日のガソリン代（実費・複数給油）
-    for (const g of (rep.gasoline_items ?? [])) {
-      const gasYen = Math.round(Number(g?.yen) || 0)
-      if (gasYen <= 0) continue
-      out.push({
-        date: rep.date, category: 'ガソリン代', siteName: '—', payee: g.payee || '',
-        amount: gasYen, note: g.fuelType === 'diesel' ? 'ディーゼル' : (g.fuelType === 'regular' ? 'レギュラー' : (g.label || '')), registrationNumber: g.registrationNumber || '',
-        liters: Number(g.liters) || undefined, tategae: !!g.tategae, fileUrls: Array.isArray(g.fileUrls) ? g.fileUrls : [],
-        workerName,
-      } as DailyRow)
+    // 本日のガソリン代（実費・複数給油）★共有関数を使う（表記揺れ・入れ忘れの防止）
+    for (const row of flattenGasolineItems(rep.date, rep.gasoline_items)) {
+      out.push({ ...row, workerName } as DailyRow)
     }
   }
   allRows.value = out
