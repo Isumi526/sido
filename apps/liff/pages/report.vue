@@ -527,6 +527,10 @@
                   </div>
                   <input v-model="ot.payee" type="text" class="input mt6" placeholder="支払い先（店名/業者）" @keydown.enter.prevent />
                   <input v-model="ot.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
+                  <select v-model="ot.account" class="select mt6">
+                    <option value="">{{ $t('report.accountAuto', { name: '消耗品費' }) }}</option>
+                    <option v-for="a in EXPENSE_ACCOUNT_OPTIONS" :key="a" :value="a">{{ a }}</option>
+                  </select>
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addOther(si)">{{ $t('report.addOther') }}</button>
               </template>
@@ -557,6 +561,10 @@
                   </div>
                   <input v-model="ent.payee" type="text" class="input mt6" placeholder="支払い先（店名/業者）" @keydown.enter.prevent />
                   <input v-model="ent.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
+                  <select v-model="ent.account" class="select mt6">
+                    <option value="">{{ $t('report.accountAuto', { name: '接待交際費' }) }}</option>
+                    <option v-for="a in EXPENSE_ACCOUNT_OPTIONS" :key="a" :value="a">{{ a }}</option>
+                  </select>
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addEntertainment(si)">{{ $t('report.addMiscExpense') }}</button>
               </template>

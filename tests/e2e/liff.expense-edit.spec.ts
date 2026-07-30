@@ -46,8 +46,9 @@ test.describe('経費申請書 インライン編集(申請前)', () => {
     await page.getByRole('button', { name: PERIOD_LABEL, exact: true }).click()
     await page.waitForTimeout(800)
 
-    // 電車代の行を品名「交通費」(非編集セル=編集モードでも安定)で特定。編集前は支払先=旧支払先。
-    const row = page.locator('.expense-table tbody tr', { hasText: '交通費' })
+    // 電車代の行を現場名「テスト現場B」(このseed固有・非編集セル=編集モードでも安定)で特定。
+    // ※品名「交通費」は feature seed の電車行(テスト現場A)にも出るため一意にならない
+    const row = page.locator('.expense-table tbody tr', { hasText: 'テスト現場B' })
     await expect(row).toBeVisible({ timeout: 10000 })
     await expect(row).toContainText('旧支払先')  // 編集前の支払先表示
 
