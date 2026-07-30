@@ -32,10 +32,9 @@ test.describe('経費 勘定科目列', () => {
   })
 
   test('日毎集計: account入力値が優先され、未入力はカテゴリから導出される', async ({ page }) => {
-    await page.goto('/expenses-daily', { waitUntil: 'networkidle' })
-    while (!(await page.locator('.month-label').innerText()).includes('2026年9月')) {
-      await page.locator('.month-nav .btn-nav').nth(1).click()
-    }
+    // ?ym= で直接遷移（月送りクリックのループは月末31日に既知バグで月を飛ばすため使わない。
+    //  バグは expenses-daily.vue の shiftMonth 由来・別チケットで記録済み・本specの検証対象外）
+    await page.goto('/expenses-daily?ym=2026-09', { waitUntil: 'networkidle' })
     const rowOf = (payee: string) => page.locator('table tbody tr', { hasText: payee }).first()
     await expect(rowOf('E2E料亭')).toBeVisible({ timeout: 15000 })
     await expect(rowOf('E2E料亭'), '入力された科目を表示').toContainText('会議費')

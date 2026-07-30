@@ -39,8 +39,11 @@ test.describe('経費管理 一覧', () => {
     await page.locator('tr.data-row', { hasText: SEED_WORKER }).filter({ hasText: '前半' }).click()
     const modal = page.locator('.modal')
     await expect(modal).toBeVisible()
-    await expect(modal).toContainText('P代')      // 品名は客先ラベル表示(駐車代→P代)
-    await expect(modal).toContainText('高速代')
+    // 2026-07-31 レビューで品名列は社内画面から撤去（客先PDF側にのみ残す）。
+    // 駐車代/高速代とも科目=旅費交通費に導出される。金額(¥500/¥1,000)で両行の存在を確認
+    await expect(modal).toContainText('旅費交通費')
+    await expect(modal).toContainText('¥500')
+    await expect(modal).toContainText('¥1,000')
     // 振込額（立替）が主役表示され、立替分=¥500 が出る
     await expect(modal).toContainText('振込額')
     await expect(modal.locator('.settle-pay')).toContainText('¥500')
