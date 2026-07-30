@@ -1,15 +1,16 @@
 // ============================================================
 //  lib/expenses.ts
-//  daily_reports.sites[].expenses (JSONB) を経費行に平坦化する純関数。
-//  LIFF 側 composables/useExpense.ts の getExpenseRowsFromReports と
-//  同一ロジック（同じ単価キー・カテゴリ・tategae 判定）。
-//  ※ composable は admin から直接 import できないため移植。
-//    将来は packages/ への共通化を検討（残課題）。
+//  経費の平坦化ロジックへの入口（re-export シム）＋ 月次精算ステータス。
+//
+//  ★平坦化そのものは admin/liff 共有の単一ソース shared/expense-flatten.ts にある。
+//   ロジックを変える時は shared/ を編集し `npm run sync:shared` で
+//   expense-flatten.gen.ts（admin/liff 両方）を再生成すること。
+//   .gen.ts を直接編集しない。
 // ============================================================
 
 // 経費平坦化・単価・ExpenseRow は単一ソース shared/expense-flatten.ts（→ expense-flatten.gen.ts）から再エクスポート。
 // ロジック変更は shared/expense-flatten.ts を編集し `npm run sync:shared` で再生成すること。
-export { type ExpenseRow, type ExpenseRates, DEFAULT_RATES, ratesFromSettings, flattenReportExpenses, expenseDisplayCategory } from './expense-flatten.gen'
+export { type ExpenseRow, type ExpenseRates, DEFAULT_RATES, ratesFromSettings, flattenReportExpenses, flattenGasolineItems, expenseDisplayCategory } from './expense-flatten.gen'
 
 // ---------- 月次精算（申請/差し戻し）ステータス ----------
 // 正典: docs/spec/expense.md §2,§3

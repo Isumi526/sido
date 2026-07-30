@@ -233,7 +233,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useYearMonthParam } from '../composables/useQueryParam'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug, getAccountName } from '../lib/account'
-import { flattenReportExpenses, ratesFromSettings, effectiveStatus, expenseDisplayCategory, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
+import { flattenReportExpenses, flattenGasolineItems, ratesFromSettings, effectiveStatus, expenseDisplayCategory, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
 
 /** 申請PDF(明細/請求書)のStorage公開URL。パスは generateExpensePdf.uploadApplicationPdf と一致 */
 function pdfUrl(row: { userId: string; periodKey: string }, kind: 'meisai' | 'seikyu'): string {
@@ -361,16 +361,14 @@ async function load() {
       pr.details.push(row)
     }
     // 日報レベルの「本日のガソリン代」（複数給油）を立替明細として加算（按分は別・ここは作業員への精算分）
-    for (const g of (rep.gasoline_items ?? [])) {
-      const gasYen = Math.round(Number(g?.yen) || 0)
-      if (gasYen <= 0) continue
+    // ★共有関数を使う。以前はここで手組みしており liters と note を入れ忘れていたため、
+    //   経費管理と請求書PDFの ℓ列・内訳が常に空になっていた（2026-07-30 修正）。
+    for (const row of flattenGasolineItems(rep.date, rep.gasoline_items)) {
       const pr = ensure(userId, workerName, `${ym}-${halfOf(rep.date)}`)
-      const isTat = !!g.tategae
-      const urls = Array.isArray(g.fileUrls) ? g.fileUrls : []
       pr.count += 1
-      pr.total += gasYen
-      if (isTat) pr.tategaeTotal += gasYen
-      pr.details.push({ date: rep.date, category: 'ガソリン代（本日）', siteName: '—', payee: g.payee || '', amount: gasYen, note: '', registrationNumber: g.registrationNumber || '', fileUrls: urls, tategae: isTat })
+      pr.total += row.amount
+      if (row.tategae) pr.tategaeTotal += row.amount
+      pr.details.push(row)
     }
   }
 
