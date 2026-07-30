@@ -57,6 +57,33 @@ test.describe('site_manager は経営系メニュー非表示＋URL直打ち不�
     await page.goto('/', { waitUntil: 'networkidle' })
     await expect(page.locator('.section-title'), '月次集計セクションは無い').toHaveCount(0)
   })
+
+  // ★2026-07-31 レビュー指摘の回帰防止:
+  //  見積系の画面を隠しても、現場管理者が到達できる画面から見積書PDF・金額に
+  //  辿り着ける抜け道が3つ残っていた（現場別集計のZIP出力に見積書PDFを同梱／
+  //  現場マスタ編集モーダルの「この現場の見積書」／現場詳細の見積件数カード）。
+  test('現場管理者は到達できる画面から見積書に辿り着けない', async ({ page }) => {
+    await page.goto('/login', { waitUntil: 'networkidle' })
+    await page.getByTestId('login-id').fill(SM_EMAIL)
+    await page.locator('input[type="password"]').fill(SM_PASS)
+    await page.locator('button[type="submit"]').click()
+    await expect(page.locator('.nav-list')).toBeVisible({ timeout: 10000 })
+
+    // 1) 現場別集計の出力ボタンは「CSVを出力」＝見積書PDFを同梱しない
+    await page.goto('/site-reports', { waitUntil: 'networkidle' })
+    const exportBtn = page.getByTestId('export-site')
+    if (await exportBtn.count()) {
+      await expect(exportBtn, '見積書PDFは同梱しない').toHaveText(/CSVを出力/)
+      await expect(exportBtn).not.toHaveText(/見積書PDF/)
+    }
+
+    // 2) 現場マスタの編集モーダルに「この現場の見積書」を出さない
+    await page.goto('/sites', { waitUntil: 'networkidle' })
+    await expect(page.locator('table.table')).toBeVisible({ timeout: 10000 })
+    await page.locator('.btn-edit').first().click()
+    await expect(page.getByTestId('site-estimates'), '見積書セクションは無い').toHaveCount(0)
+    await expect(page.getByText('この現場の見積書'), '見積書の見出しも無い').toHaveCount(0)
+  })
 })
 
 test.describe('admin は従来どおり全メニュー表示', () => {

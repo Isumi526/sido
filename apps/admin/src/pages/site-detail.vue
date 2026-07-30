@@ -32,7 +32,7 @@
           <div class="sum-card"><div class="sum-label">日報（90日）</div><div class="sum-val">{{ stats.count }}</div></div>
           <div class="sum-card"><div class="sum-label">直近日報</div><div class="sum-val sm">{{ stats.lastDate || '—' }}</div></div>
           <div class="sum-card"><div class="sum-label">紐づく下請け</div><div class="sum-val">{{ linkedSubs.length }}</div></div>
-          <div class="sum-card"><div class="sum-label">見積/注文書</div><div class="sum-val sm">{{ estimates.length }} / {{ orders.length }}</div></div>
+          <div v-if="canViewManagementPages" class="sum-card"><div class="sum-label">見積/注文書</div><div class="sum-val sm">{{ estimates.length }} / {{ orders.length }}</div></div>
         </div>
 
         <section class="card">
@@ -335,10 +335,13 @@ async function load() {
     linkedSubs.value = (subs ?? []) as any[]
   }
 
-  const [{ data: est }, { data: po }] = await Promise.all([
-    supabase.from('estimates').select('id, estimate_number, estimate_date, total_amount, pdf_path').eq('site_id', siteId).eq('is_deleted', false).order('estimate_date', { ascending: false, nullsFirst: false }),
-    supabase.from('purchase_orders').select('id, order_number, vendor_name, total_amount, status').eq('site_id', siteId).eq('is_deleted', false).order('order_number', { ascending: false }),
-  ])
+  // 見積/注文書は経営系＝現場管理者には出さない（タブ・件数カードとも非表示）ので取得もしない
+  const [{ data: est }, { data: po }] = canViewManagementPages.value
+    ? await Promise.all([
+      supabase.from('estimates').select('id, estimate_number, estimate_date, total_amount, pdf_path').eq('site_id', siteId).eq('is_deleted', false).order('estimate_date', { ascending: false, nullsFirst: false }),
+      supabase.from('purchase_orders').select('id, order_number, vendor_name, total_amount, status').eq('site_id', siteId).eq('is_deleted', false).order('order_number', { ascending: false }),
+    ])
+    : [{ data: [] }, { data: [] }]
   estimates.value = (est ?? []) as any[]
   orders.value = (po ?? []) as any[]
   await loadAttachments()
