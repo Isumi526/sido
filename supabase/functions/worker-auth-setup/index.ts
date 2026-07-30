@@ -91,6 +91,33 @@ Deno.serve(async (req) => {
   // ★越境防止: 呼び出し元 admin の account と worker の account が一致しないと拒否
   if (acct.slug !== callerSlug) return json({ ok: false, error: 'forbidden_cross_account' }, 403)
 
+  // ★ロール検査（2026-07-31 追加・P0）: account 一致だけでは不十分だった。
+  //  これが無いと「同一アカウントの認証済みユーザーなら誰でも他人のパスワードを再設定できる」
+  //  ＝アカウント乗っ取りが成立する（LIFFのパスワード認証workerのJWTにも account_slug がある）。
+  //  UI 側は canManageAuth（オーナーのみ・workers.vue）で塞いでいたが EF 直叩きで迂回できた。
+  //  判定は apps/admin/src/lib/auth.ts の canManageAuth と同じ:
+  //   permission_role='admin' か、worker行を持たない「明示オーナー」(accounts.owner_auth_user_id 一致)のみ。
+  {
+    const { data: callerWorker } = await svc
+      .from('workers').select('permission_role').eq('auth_user_id', caller.id)
+      .eq('account_id', worker.account_id).limit(1)
+    const role = callerWorker?.[0]?.permission_role ?? null
+
+    let allowed = role === 'admin'
+    if (!allowed && !callerWorker?.length) {
+      // worker行が0件＝純粋オーナーの可能性。owner_auth_user_id 一致のときだけ許可。
+      //  0件を一律オーナー扱いにするとフェイルオープンになる（auth.ts resolveRole と同じ考え方）
+      const { data: owned } = await svc
+        .from('accounts').select('id').eq('id', worker.account_id)
+        .eq('owner_auth_user_id', caller.id).limit(1)
+      allowed = !!owned?.length
+    }
+    if (!allowed) {
+      console.warn('[worker-auth-setup] forbidden_role', { caller: caller.id, role, target: worker_id })
+      return json({ ok: false, error: 'forbidden_role', message: 'ログイン認証の設定はオーナーのみ行えます。' }, 403)
+    }
+  }
+
   // --- get モード：現在のログインメールを返すだけ（編集モーダルの表示用） ---
   if (mode === 'get') {
     let currentEmail: string | null = null
