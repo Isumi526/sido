@@ -36,7 +36,8 @@
       </ul>
     </div>
 
-    <!-- 月次集計 -->
+    <!-- 月次集計（会社全体の売上/原価のため現場管理者には出さない・2026-07-31） -->
+    <template v-if="canViewManagementPages">
     <div class="section-head">
       <h2 class="section-title">月次集計</h2>
       <select v-model="selectedMonth" class="month-select">
@@ -98,6 +99,7 @@
       </div>
       <div v-else class="empty-text">この月のデータがありません</div>
     </template>
+    </template>
 
     <!-- 項目明細モーダル -->
     <div v-if="detailModal" class="modal-overlay" @click.self="detailModal = null">
@@ -136,7 +138,7 @@ import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, wageForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
 import type { WageMode } from '../lib/workerHours'
-import { canViewWages, canViewHourlyWage } from '../lib/auth'
+import { canViewWages, canViewHourlyWage, canViewManagementPages } from '../lib/auth'
 import { resolveSiteRef, type SiteResolveCtx } from '../lib/siteKey'
 
 // ── 開発の更新履歴（全社共通・未確認/確認済みタブ）──────────

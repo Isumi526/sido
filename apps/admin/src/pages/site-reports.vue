@@ -32,7 +32,7 @@
       <!-- 出力（※表の表示月は上の ‹ 年月 › ナビで切替。出力ボタンを押すと出力期間を選ぶ） -->
       <div v-if="displaySite" class="export-bar">
         <div class="export-pop-wrap">
-          <button class="btn-export" data-testid="export-site" @click="exportPanelOpen = !exportPanelOpen"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">download</span> CSV＋見積書PDFを出力</button>
+          <button class="btn-export" data-testid="export-site" @click="exportPanelOpen = !exportPanelOpen"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">download</span> {{ canViewManagementPages ? 'CSV＋見積書PDFを出力' : 'CSVを出力' }}</button>
           <div v-if="exportPanelOpen" class="export-pop" data-testid="export-panel">
             <div class="export-pop-title">出力する期間を選んでください</div>
             <label class="export-range-lbl">出力範囲
@@ -350,7 +350,7 @@ import { resolveDocUrl } from '../lib/docUrl'
 import HelpButton from '../components/HelpButton.vue'
 import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, wageForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
 import type { WageMode } from '../lib/workerHours'
-import { canViewWages, canViewHourlyWage } from '../lib/auth'
+import { canViewWages, canViewHourlyWage, canViewManagementPages } from '../lib/auth'
 import { resolveSiteRef, type SiteResolveCtx } from '../lib/siteKey'
 import JSZip from 'jszip'
 
@@ -396,8 +396,13 @@ async function exportSite() {
     const zip = new JSZip()
     zip.file(`現場別集計_${site}_${label}.csv`, '﻿' + csv) // BOM付き=Excelで文字化けしない
     // 紐づく見積書PDF（estimates.site_id）を「見積書」フォルダに内包（期間に依らず当該現場の全見積）
+    //  ★現場管理者には同梱しない（2026-07-31 レビュー指摘）: 見積系の画面を非表示にしたのに
+    //   この出力から見積金額入りPDFを取得できてしまう抜け道になっていた。CSV（現場の原価集計）は
+    //   現場管理者にも見せる方針なのでそのまま出す。
     const accountId = await getAccountId()
-    const { data: siteRow } = await supabase.from('sites').select('id').eq('account_id', accountId).eq('name', site).maybeSingle()
+    const { data: siteRow } = canViewManagementPages.value
+      ? await supabase.from('sites').select('id').eq('account_id', accountId).eq('name', site).maybeSingle()
+      : { data: null }
     if (siteRow?.id) {
       const { data: ests } = await supabase.from('estimates')
         .select('estimate_number, pdf_path, pdf_bucket').eq('site_id', siteRow.id).eq('is_deleted', false)
