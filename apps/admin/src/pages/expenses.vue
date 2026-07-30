@@ -117,8 +117,8 @@
               <tr>
                 <th>日付</th>
                 <th>支払い先</th>
-                <th>登録番号</th>
-                <th>品名</th>
+                <th>インボイス番号</th>
+                <th>科目</th>
                 <th class="num">ℓ</th>
                 <th>現場名</th>
                 <th>使用車</th>
@@ -133,7 +133,7 @@
                 <td class="date-cell">{{ d.date.slice(5).replace('-', '/') }}</td>
                 <td class="muted">{{ d.payee || '—' }}</td>
                 <td class="muted">{{ d.registrationNumber || '—' }}</td>
-                <td>{{ expenseDisplayCategory(d.category) }}</td>
+                <td>{{ expenseAccountCategory(d) }}</td>
                 <td class="num muted">{{ d.liters ?? '' }}</td>
                 <td>{{ d.siteName || '—' }}</td>
                 <td class="muted">{{ d.vehicle || '' }}</td>
@@ -233,7 +233,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useYearMonthParam } from '../composables/useQueryParam'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug, getAccountName } from '../lib/account'
-import { flattenReportExpenses, flattenGasolineItems, ratesFromSettings, effectiveStatus, expenseDisplayCategory, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
+import { flattenReportExpenses, flattenGasolineItems, ratesFromSettings, effectiveStatus, expenseAccountCategory, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
 
 /** 申請PDF(明細/請求書)のStorage公開URL。パスは generateExpensePdf.uploadApplicationPdf と一致 */
 function pdfUrl(row: { userId: string; periodKey: string }, kind: 'meisai' | 'seikyu'): string {

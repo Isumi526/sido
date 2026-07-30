@@ -40,7 +40,7 @@
               <tr v-for="(r, i) in grp.rows" :key="i">
                 <td>{{ r.workerName || '—' }}</td>
                 <td class="muted">{{ r.siteName || '—' }}</td>
-                <td>{{ expenseDisplayCategory(r.category) }}</td>
+                <td>{{ expenseAccountCategory(r) }}</td>
                 <td class="muted">{{ r.note || '—' }}</td>
                 <td class="muted">{{ r.payee || '—' }}</td>
                 <td class="mono muted">{{ r.registrationNumber || '—' }}</td>
@@ -61,7 +61,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useYearMonthParam } from '../composables/useQueryParam'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { flattenReportExpenses, flattenGasolineItems, ratesFromSettings, expenseDisplayCategory, type ExpenseRow } from '../lib/expenses'
+import { flattenReportExpenses, flattenGasolineItems, ratesFromSettings, expenseDisplayCategory, expenseAccountCategory, type ExpenseRow } from '../lib/expenses'
 
 type DailyRow = ExpenseRow & { workerName: string }
 
@@ -120,6 +120,7 @@ const filteredRows = computed(() => {
     (r.workerName || '').toLowerCase().includes(kw) ||
     (r.siteName || '').toLowerCase().includes(kw) ||
     expenseDisplayCategory(r.category).toLowerCase().includes(kw) ||
+    expenseAccountCategory(r).toLowerCase().includes(kw) ||
     (r.payee || '').toLowerCase().includes(kw) ||
     (r.note || '').toLowerCase().includes(kw)
   )
