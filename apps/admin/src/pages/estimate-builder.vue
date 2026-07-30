@@ -521,10 +521,23 @@
                   <!-- ★R14: 商社は材料（品番あり）だけ。作業内容の行に商社の概念は無い -->
                   <td class="cost-col">
                     <span v-if="!hasSupplierChoice(rows[i])" class="na-cell" :data-testid="`item-supplier-na-${i}`">—</span>
-                    <select v-else v-model="rows[i].supplier_id" class="input sm" :data-testid="`item-supplier-${i}`" @change="onSupplierPick(rows[i])">
-                      <option :value="null">—</option>
-                      <option v-for="p in pricesForRow(rows[i].material_id, rows[i].product_code)" :key="p.supplier_id" :value="p.supplier_id">{{ p.supplierName }} ¥{{ p.unit_price.toLocaleString('ja-JP') }}</option>
-                    </select>
+                    <template v-else>
+                      <select v-model="rows[i].supplier_id" class="input sm" :data-testid="`item-supplier-${i}`" @change="onSupplierPick(rows[i])">
+                        <option :value="null">—</option>
+                        <!-- ★R41: 「単価表の絶対額」と「定価×掛率」を同じ土俵で並べる -->
+                        <option v-for="p in pricesForRow(rows[i].material_id, rows[i].product_code)" :key="p.supplier_id" :value="p.supplier_id">
+                          {{ p.supplierName }} ¥{{ p.unit_price.toLocaleString('ja-JP') }}（{{ p.from }}）
+                        </option>
+                      </select>
+                      <!-- ★R42: 最安が一目で分かり、ワンクリックで採用できる（勝手に確定しない） -->
+                      <button v-if="cheapestFor(rows[i]) && rows[i].supplier_id !== cheapestFor(rows[i])!.supplier_id"
+                              class="cheap-btn" :data-testid="`item-cheapest-${i}`"
+                              :title="`最安は ${cheapestFor(rows[i])!.supplierName} ¥${cheapestFor(rows[i])!.unit_price.toLocaleString('ja-JP')}（${cheapestFor(rows[i])!.from}）`"
+                              @click="applyCheapest(rows[i])">
+                        最安 {{ cheapestFor(rows[i])!.supplierName }} ¥{{ cheapestFor(rows[i])!.unit_price.toLocaleString('ja-JP') }}
+                      </button>
+                      <span v-else-if="cheapestFor(rows[i])" class="cheap-now" :data-testid="`item-cheapest-now-${i}`">最安</span>
+                    </template>
                   </td>
                   <td class="num cost-col"><input v-model.number="rows[i].cost_unit_price" type="number" step="any" class="input sm num" :data-testid="`item-cost-${i}`" @input="onCostInput(rows[i])" /></td>
                   <td class="num cost-col amount" :data-testid="`item-cost-amount-${i}`">{{ yen(lineCostAmount(rows[i])) }}</td>
@@ -2524,6 +2537,7 @@ function historyFor(itemName: string): PriceHist[] {
     if (cand === nm) return true
     if (digitsOf(cand) !== nmDigits) return false             // 数字が違う＝別物
     if (cand.includes(nm) || nm.includes(cand)) return true   // 「壁面LGS」⊂「壁面 外周LGS間仕切り」
+    if (looseMatch(nm, cand)) return true                     // 「天井下地」≒「天井LGS下地組」（議事録の実例）
     if (Math.abs(cand.length - nm.length) > limit) return false   // 長さが離れすぎ（重い計算を避ける）
     return editDistance(nm, cand) <= limit
   })
@@ -2554,6 +2568,7 @@ async function loadCompany() {
   syncMarginPct()
   await loadSubcontractorOptions()
   await loadPriceHistory()
+  await loadListPrices()   // R41: 定価と商社別掛率
 }
 /** 表示用の % を「案件上書き → アカウント既定」の順で合わせる */
 function syncMarginPct() {
@@ -2589,14 +2604,90 @@ async function loadSends() {
  * ★R28: material_id は新規では付かなくなるので、品番でも引けるようにする。
  *  （品番は材料の同一性の核なので、マスタIDが無くても単価表と突き合わせられる）
  */
+// ════════════════════════════════════════════════════════════
+//  R41: 定価 × 商社別掛率で仕入単価（原価）を出す
+//  議事録§2.3「定価は統一されているが仕入価格は商社により異なる／掛率は商社により0.4〜0.45掛け」
+//  ★既存の「掛け率」は粗利率（原価→客先の値付け）で、こちらは仕入側。別物。
+//  ★絶対額(unit_price)が入っていればそれを優先する。価格表OCRは絶対額しか取れないことがあり、
+//   既存データもすべて絶対額なので、両方が並存できる形にしておく。
+// ════════════════════════════════════════════════════════════
+type ListPrice = { product_code: string; item_name: string | null; unit: string | null; list_price: number }
+type SupplierRate = { supplier_id: string; rate: number }
+const listPrices    = ref<ListPrice[]>([])
+const supplierRates = ref<SupplierRate[]>([])
+async function loadListPrices() {
+  const [{ data: lp }, { data: sr }] = await Promise.all([
+    supabase.from('estimate_list_prices').select('product_code, item_name, unit, list_price').eq('account_id', accountId),
+    supabase.from('estimate_supplier_rates').select('supplier_id, rate').eq('account_id', accountId),
+  ])
+  listPrices.value = (lp ?? []).map((x: any) => ({ ...x, list_price: Number(x.list_price) }))
+  supplierRates.value = (sr ?? []).map((x: any) => ({ ...x, rate: Number(x.rate) }))
+}
+const listPriceOf = (code: string | null | undefined) => {
+  const c = (code ?? '').trim().toLowerCase()
+  if (!c) return null
+  return listPrices.value.find(l => l.product_code.trim().toLowerCase() === c) ?? null
+}
+const supplierRateOf = (supplierId: string) => supplierRates.value.find(r => r.supplier_id === supplierId)?.rate ?? null
+
+/**
+ * その商社から仕入れる時の単価。
+ * 優先順: ①単価表の絶対額 ②定価 × 掛率（品番×商社の上書き → 商社の既定）
+ */
+function purchaseUnitPrice(p: { supplier_id: string; unit_price: number; rate?: number | null; product_code?: string | null },
+                           code: string | null | undefined): { price: number; from: '単価表' | '定価×掛率' } | null {
+  if (Number(p.unit_price) > 0) return { price: Number(p.unit_price), from: '単価表' }
+  const lp = listPriceOf(code ?? p.product_code)
+  const rate = p.rate ?? supplierRateOf(p.supplier_id)
+  if (lp && rate != null && rate > 0) return { price: Math.round(lp.list_price * rate), from: '定価×掛率' }
+  return null
+}
+
 function pricesForRow(materialId: string | null, productCode?: string | null) {
   const code = (productCode ?? '').trim().toLowerCase()
   if (!materialId && !code) return [] as Array<{ supplier_id: string; supplierName: string; unit_price: number }>
-  return matPrices.value
+  const hit = matPrices.value
     .filter(p => (materialId && p.material_id === materialId)
               || (!!code && (p.product_code ?? '').trim().toLowerCase() === code))
-    .map(p => ({ supplier_id: p.supplier_id, supplierName: suppliers.value.find(s => s.id === p.supplier_id)?.name ?? '(商社)', unit_price: Number(p.unit_price) }))
-    .sort((a, b) => a.unit_price - b.unit_price)
+    .map(p => {
+      const calc = purchaseUnitPrice(p as any, productCode)
+      return {
+        supplier_id: p.supplier_id,
+        supplierName: suppliers.value.find(s => s.id === p.supplier_id)?.name ?? '(商社)',
+        unit_price: calc?.price ?? 0,
+        from: calc?.from ?? '—',
+      }
+    })
+    .filter(x => x.unit_price > 0)
+  // ★R41: 単価表に絶対額が無くても、定価×掛率が引ける商社は候補に出す
+  //   （その商社の行が単価表に無いケース。掛率だけ登録している運用がある）
+  const lp = listPriceOf(productCode)
+  if (lp) {
+    for (const r of supplierRates.value) {
+      if (hit.some(x => x.supplier_id === r.supplier_id)) continue
+      if (!(r.rate > 0)) continue
+      hit.push({
+        supplier_id: r.supplier_id,
+        supplierName: suppliers.value.find(s => s.id === r.supplier_id)?.name ?? '(商社)',
+        unit_price: Math.round(lp.list_price * r.rate), from: '定価×掛率',
+      })
+    }
+  }
+  return hit.sort((a, b) => a.unit_price - b.unit_price)
+}
+/** R42: その行で一番安い商社（比較の基準は仕入単価。定価×掛率と絶対額を同じ土俵で見る） */
+function cheapestFor(r: Row) {
+  const list = pricesForRow(r.material_id, r.product_code)
+  return list.length ? list[0] : null
+}
+/** R42: 最安の商社を採用する（勝手に確定せず、押した時だけ） */
+function applyCheapest(r: Row) {
+  const best = cheapestFor(r)
+  if (!best) return
+  r.supplier_id = best.supplier_id
+  r.cost_unit_price = best.unit_price
+  if (!r._priceTouched) r.unit_price = autoPrice(r)
+  void autoSaveRow(r)
 }
 const pricesForMaterial = (materialId: string | null) => pricesForRow(materialId)
 // 商社を選ぶと、その商社×材料の単価を明細単価に反映（金額は生成列/computedで追従）
@@ -2610,11 +2701,11 @@ const pricesForMaterial = (materialId: string | null) => pricesForRow(materialId
 function onSupplierPick(r: Row) {
   if (!r.supplier_id) return
   const code = (r.product_code ?? '').trim().toLowerCase()
-  const p = matPrices.value.find(x => x.supplier_id === r.supplier_id
-    && ((r.material_id && x.material_id === r.material_id)
-     || (!!code && (x.product_code ?? '').trim().toLowerCase() === code)))
-  if (!p) return
-  r.cost_unit_price = Number(p.unit_price)
+  // ★R41: 絶対額が無い商社でも、定価×掛率で仕入単価が出る
+  const picked = pricesForRow(r.material_id, r.product_code).find(x => x.supplier_id === r.supplier_id)
+  if (!picked) return
+  void code
+  r.cost_unit_price = picked.unit_price
   if (!r._priceTouched) r.unit_price = autoPrice(r)
 }
 // E6 品番予測変換: 明細名が既存材料に一致したら material_id を紐付け、単位を補完
@@ -2653,7 +2744,27 @@ function onPinfoImgError(r: Row) {
 //  datalist の予測変換は前方一致しか効かない。「天井 下地組」と「天井下地組」のような
 //  ゆれは前方一致では拾えないので、正規化した編集距離で似ている既存名を出す。
 const normalizeName = (s: string) =>
-  (s ?? '').trim().toLowerCase().replace(/[\s\u3000・\-ー_]/g, '')
+  (s ?? '').normalize('NFKC')          // 全角英数・半角カナを揃える（価格表OCR側と同じ扱いにする）
+    .trim().toLowerCase().replace(/[\s\u3000・\-ー_（）()]/g, '')
+
+/**
+ * 一方が他方の「部分列」になっているか（間に別の語が挟まっていてもよい）。
+ * ★議事録の実例「天井下地」と「天井LGS下地組」がこれ。
+ *   編集距離だと 4文字 vs 9文字で長さの足切りに引っかかり、判定にすら到達しなかった。
+ *   業者ごとに語を足し引きする表記ゆれ（下地→LGS下地組、間仕切→間仕切り工事）は
+ *   文字が順番に残るので、部分列で拾うのが実態に合う。
+ */
+function isSubsequence(short: string, long: string): boolean {
+  if (short.length < 2 || short.length > long.length) return false
+  let i = 0
+  for (const ch of long) { if (ch === short[i]) i++; if (i === short.length) return true }
+  return false
+}
+/** 短い方が2文字だと何にでも当たるので、実質的な長さを要求する */
+const looseMatch = (a: string, b: string) => {
+  const [sh, lg] = a.length <= b.length ? [a, b] : [b, a]
+  return sh.length >= 3 && isSubsequence(sh, lg)
+}
 function editDistance(a: string, b: string): number {
   const m = a.length, n = b.length
   if (!m || !n) return Math.max(m, n)
@@ -2685,6 +2796,7 @@ function computeDidYouMean(r: Row): void {
     const cand = normalizeName(m.name)
     if (!cand || cand === nm) continue
     if (digitsOf(cand) !== digitsOf(nm)) continue   // 数字が違えば別物（t12.5 と t9.5 等）
+    if (looseMatch(nm, cand)) { out.push({ name: m.name, d: 0 }); continue }   // 語の足し引きの表記ゆれ
     // 長さが離れすぎているものは編集距離を計算するまでもない（重い処理を避ける足切り）
     if (Math.abs(cand.length - nm.length) > limit) continue
     const d = editDistance(nm, cand)
@@ -3011,9 +3123,9 @@ const materialCodeOptions = computed(() =>
 
 /** 品番を打ったら品名・単位を引く（品番はメーカー特定のキーなので、こちらからも入れられる） */
 function resolveByCode(r: Row) {
-  const code = (r.product_code || '').trim().toLowerCase()
+  const code = normalizeName(r.product_code)
   if (!code) return
-  const m = materials.value.find(x => (x.code ?? '').trim().toLowerCase() === code)
+  const m = materials.value.find(x => normalizeName(x.code ?? '') === code)
   if (!m) return
   r.material_id = m.id ?? null
   if (!r.item_name.trim()) r.item_name = m.name
@@ -3041,9 +3153,11 @@ function selectCodeFieldIfFocused(r: Row) {
   })
 }
 function resolveMaterial(r: Row) {
-  const nm = (r.item_name || '').trim().toLowerCase()
+  // ★照合の正規化は「もしかして」と同じ関数を使う。別々だと
+  //   「もしかして側は一致と判断／解決側は不一致」で候補も自動補完も出ない穴ができる。
+  const nm = normalizeName(r.item_name)
   if (!nm) { r.material_id = null; return }
-  const m = materials.value.find(x => x.name.trim().toLowerCase() === nm)
+  const m = materials.value.find(x => normalizeName(x.name) === nm)
   if (m) {
     r.material_id = m.id ?? null
     if (!r.unit && m.unit) r.unit = m.unit
@@ -3091,7 +3205,11 @@ async function doLoadItems() {
     dim_w: d.dim_w == null ? null : Number(d.dim_w),
     dim_d: d.dim_d == null ? null : Number(d.dim_d),
     dim_h: d.dim_h == null ? null : Number(d.dim_h),
-    cost_unit_price: Number(d.cost_unit_price) || 0, _priceTouched: true,  // 既存値は人が決めた値として尊重
+    cost_unit_price: Number(d.cost_unit_price) || 0,
+    // ★客先単価が入っている行だけ「人が決めた値」として尊重する。
+    //   0 を手打ち扱いにすると、原価だけ入った行（最安採用・図面からの抽出など）を
+    //   開き直した後に客先単価が永久に生えなくなる。
+    _priceTouched: (Number(d.unit_price) || 0) > 0,
     material_id: d.material_id ?? null,
     supplier_id: d.supplier_id ?? null, item_name: d.item_name, unit: d.unit ?? '',
     quantity: Number(d.quantity) || 0, unit_price: Number(d.unit_price) || 0,
@@ -3706,6 +3824,10 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .pinfo-links { display: flex; gap: 8px; }
 .pinfo-link { font-size: 11px; color: #2F6FD0; }
 .pinfo-note { font-size: 10px; color: #A0AEC0; }
+.cheap-btn { display: block; margin-top: 3px; padding: 1px 6px; border: 1px solid #FDE68A; border-radius: 10px;
+             background: #FEF3C7; color: #B45309; cursor: pointer; font-size: 10px; white-space: nowrap; }
+.cheap-btn:hover { background: #FDE68A; }
+.cheap-now { display: block; margin-top: 3px; font-size: 10px; color: #059669; font-weight: 700; }
 .na-cell { color: #C0C8D2; font-size: 12px; padding-left: 6px; }
 /* R18: 内訳を畳んだら明細を全幅に */
 .grid.grid-wide { grid-template-columns: 1fr; }

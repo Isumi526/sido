@@ -217,11 +217,13 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     // 商社プルダウンに A/B の単価差が出る（—, A¥100, B¥120 ＝ 3択）
     await expect(page.locator('[data-testid="item-supplier-0"] option')).toHaveCount(3)
     // 商社B(¥120)へ切替 → ★原価=120。客先単価は粗利20%で 120/0.8=150
-    await page.locator('[data-testid="item-supplier-0"]').selectOption({ label: `${SUP_B} ¥120` })
+    // ★R41: 選択肢のラベルに出所（単価表／定価×掛率）が付くので前方一致で選ぶ
+// ★R41: 選択肢のラベルに出所（単価表／定価×掛率）が付くので、value(=商社ID)で選ぶ
+    await page.locator('[data-testid="item-supplier-0"]').selectOption(supB.id)
     await expect(page.locator('[data-testid="item-cost-0"]')).toHaveValue('120')
     await expect(page.locator('[data-testid="item-price-0"]')).toHaveValue('150')
     // 商社A(¥100)へ切替 → 原価=100・客先 100/0.8=125・金額 ¥250
-    await page.locator('[data-testid="item-supplier-0"]').selectOption({ label: `${SUP_A} ¥100` })
+    await page.locator('[data-testid="item-supplier-0"]').selectOption(supA.id)
     await expect(page.locator('[data-testid="item-cost-0"]')).toHaveValue('100')
     await expect(page.locator('[data-testid="item-price-0"]')).toHaveValue('125')
     await expect(page.locator('[data-testid="item-amount-0"]')).toHaveText('¥250')
