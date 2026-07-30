@@ -10,7 +10,7 @@
 
 // 経費平坦化・単価・ExpenseRow は単一ソース shared/expense-flatten.ts（→ expense-flatten.gen.ts）から再エクスポート。
 // ロジック変更は shared/expense-flatten.ts を編集し `npm run sync:shared` で再生成すること。
-export { type ExpenseRow, type ExpenseRates, DEFAULT_RATES, ratesFromSettings, flattenReportExpenses, flattenGasolineItems, expenseDisplayCategory, expenseAccountCategory, EXPENSE_ACCOUNT_OPTIONS } from './expense-flatten.gen'
+export { type ExpenseRow, type ExpenseRates, type PersonalExpenseRecord, DEFAULT_RATES, ratesFromSettings, flattenReportExpenses, flattenGasolineItems, flattenPersonalExpenses, isPersonalExpenseRow, expenseDisplayCategory, expenseAccountCategory, requiresCompanions, EXPENSE_ACCOUNT_OPTIONS } from './expense-flatten.gen'
 
 // ---------- 月次精算（申請/差し戻し）ステータス ----------
 // 正典: docs/spec/expense.md §2,§3

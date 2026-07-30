@@ -48,6 +48,16 @@
 - `npm run typecheck`（apps/liff）／admin は `any` 型のため型では落ちないので**目視必須**
 - 本番反映前に、admin月次集計・ダッシュボード・現場別の**金額合計**が新旧データで合うか確認
 
+## personal_expenses（現場に紐付かない個人経費）※日報に依存しない独立テーブル
+- **なぜ独立テーブルか（巻き戻し禁止）**: 現行の経費集計はすべて `is_working=true` の日報行に依存しており、**日報を出さない人（役員・経営者）や出勤しない日の経費は1円も集計されない**。日報JSONに相乗りさせる案ではこの穴が原理的に埋まらない。→ Notion #f4cc3db1（2026-07-30 確定）
+- 書き込み: （liff の個人経費入力画面 ※未実装）／admin から直接
+- 読み: `apps/admin/src/pages/expenses-daily.vue`（`flattenPersonalExpenses` で日報由来の行と合流）
+- **現場に紛れ込ませない**: `siteName` は空文字にする（`'現場未設定'` にしない）。日毎集計では「現場外（個人経費）」と表示。
+- **現場別集計・ガソリン按分は読まない**＝現場の原価を歪めない（`site-reports.vue` / `gasoline-allocation.vue` / `expenses.vue` / `index.vue` は `personal_expenses` を参照しない）。この不参照は意図的なので、追加する時は現場外行の除外を必ず入れる。
+- 権限: `workers.can_apply_personal_expense`（既定false）＝付与された人だけが申請できる（#2cbe3caa）
+- 月額上限（枠）は **#32e93d75 で設計未確定**（案A `workers.monthly_expense_limit` / 案B `worker_expense_budgets` 月別）
+- RLS: `account_id = current_account_id()` の4ポリシー（select/insert/update/delete）・anon revoke 済み
+
 ## gasoline_items（本日のガソリン代・実費）※flatten非経由・各ページで直接読む
 - 書き込み: report.vue ガソリンカード / createGasolineItem(useReport) / **saveReportById の gasItems whitelist（未知フィールドは落ちる＝新フィールド追加時は必ずここに追加）** / loadEditData 復元(report.vue)
 - 読み: useExpense.getExpenseRowsFromReportsById 手組み行 / expenses.vue / expenses-daily.vue / gasoline-allocation.vue(yenのみ) / index.vue(yenのみ)
