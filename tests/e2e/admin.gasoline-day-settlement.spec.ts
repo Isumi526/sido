@@ -62,9 +62,14 @@ test.describe('日報ガソリン代→経費精算', () => {
     await page.locator('tr.data-row', { hasText: workerName }).filter({ hasText: '前半' }).click()
     const gasRow = page.locator('.detail-table tbody tr', { hasText: 'ガソリン代' }).first()
     await expect(gasRow).toBeVisible()
-    // ℓ列（4列目=品名 の次）に給油量が出る。空だと立替の根拠が分からない
+    // ℓ列（品名の次）に給油量が出る。空だと立替の根拠が分からない
     await expect(gasRow, 'ℓが出る').toContainText('40.5')
     await expect(gasRow, '支払先が出る').toContainText('E2Eガソリンスタンド')
+    // 2026-07-30 列統一: 科目列（勘定科目・ガソリン系→車両費）とヘッダの統一ラベルが出る
+    await expect(gasRow, '科目が勘定科目で出る').toContainText('車両費')
+    await expect(page.locator('.detail-table thead'), 'インボイス番号ヘッダ').toContainText('インボイス番号')
+    await expect(page.locator('.detail-table thead'), '科目ヘッダ').toContainText('科目')
+    await expect(page.locator('.detail-table thead'), '品名ヘッダ').toContainText('品名')
   })
 
   test('日毎集計でも同じ行に ℓ と内訳が出る（3画面で内容が食い違わない）', async ({ page }) => {
@@ -72,8 +77,10 @@ test.describe('日報ガソリン代→経費精算', () => {
     while (!(await page.locator('.month-label').innerText()).includes('2026年9月')) {
       await page.locator('.month-nav .btn-nav').nth(1).click()
     }
-    const row = page.locator('table tbody tr', { hasText: 'ガソリン代' }).first()
+    // 科目列は勘定科目（ガソリン系→車両費）で出る（2026-07-30 列統一）
+    const row = page.locator('table tbody tr', { hasText: 'E2Eガソリンスタンド' }).first()
     await expect(row).toBeVisible({ timeout: 15000 })
+    await expect(row, '科目が勘定科目で出る').toContainText('車両費')
     await expect(row, 'ℓが出る').toContainText('40.5')
     await expect(row, '内訳に燃料種別が出る').toContainText('レギュラー')
   })

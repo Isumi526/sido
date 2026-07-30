@@ -15,18 +15,21 @@
 - [ ] `apps/liff/composables/useExpense.ts` — `saveReportById`/`sanitizeSitesForStorage`（保存前のFile除去）
 - [ ] `apps/liff/types/index.ts` — `Expenses`/`LineItem`等の型
 
-### 集計（flatten）★重複2本：両方直す
-- [ ] `apps/admin/src/lib/expenses.ts` `flattenReportExpenses` → admin月次経費（expenses.vue）が使用
-- [ ] `apps/liff/composables/useExpense.ts` `getExpenseRowsFromReportsById` → **経費PDF**（liff `expense/print.vue`・`expense/download.vue`）が使用
-  - ※この2つは**同一ロジックの手動コピー**。片方だけ直すとPDFと管理画面の金額がズレる。→ 恒久対策は一本化（バックログ「経費平坦化ロジックのLIFF/admin重複をpackagesへ共通化」）
+### 集計（flatten）★単一ソース：`shared/expense-flatten.ts` だけを編集
+- [ ] `shared/expense-flatten.ts` — `flattenReportExpenses`/`flattenGasolineItems`/`expenseDisplayCategory`（品名）/`expenseAccountCategory`（勘定科目）/`EXPENSE_ACCOUNT_OPTIONS` の正本
+- [ ] 編集後は **`npm run sync:shared`** で `apps/admin/src/lib/expense-flatten.gen.ts` と `apps/liff/composables/expense-flatten.gen.ts` を再生成する（**.gen.ts は直接編集禁止**・`scripts/sync-shared.mjs`）
+  - admin からは `apps/admin/src/lib/expenses.ts`（re-exportシム）経由、liff からは `~/composables/expense-flatten.gen` を直接 import
 
 ### 表示・集計（admin）
+- [ ] `apps/admin/src/pages/expenses.vue` — 月次経費（精算モーダル明細・印刷/PDF）
+- [ ] `apps/admin/src/pages/expenses-daily.vue` — 経費 日毎集計（科目=勘定科目・内訳あり）
 - [ ] `apps/admin/src/pages/reports.vue` — 日報一覧の経費明細・領収書リンク表示
 - [ ] `apps/admin/src/pages/index.vue` — ダッシュボードの経費合計（カテゴリ別 addExp）
 - [ ] `apps/admin/src/pages/site-reports.vue` — 現場別のコスト計算・明細表示
 
 ### 表示（LIFF）
 - [ ] `apps/liff/pages/history.vue` — 日報履歴の経費サマリ
+- [ ] `apps/liff/pages/expense/download.vue`・`expense/print.vue` — 経費PDF（申請書）。**download.vue は申請前インライン編集の書き戻しあり**（`saveRow` → `useExpense.patchExpenseItem` が `srcSiteIndex/srcKey/srcIndex` で明細を辿って保存）。列・編集対象フィールドを増やす時は `patchExpenseItem` の patch 対象も確認
 
 ### 通知・差分
 - [ ] `supabase/functions/_shared/notify.ts` — 日報送信のLINEメッセージ本文（`buildReportMessage`）。**Edge Function＝変更時は functions deploy 必須**

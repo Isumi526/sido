@@ -38,12 +38,35 @@ export interface ExpenseRow {
   fileUrls?: string[]   // 領収書・写真URL（Supabase Storage）
   tategae?: boolean
   vehicle?: string      // 使用車（車両系経費のみ・現場の車両名。交通費/その他/宿泊は無し）
+  account?: string      // 勘定科目（入力値）。others/entertainments のみ入力可・未入力/既存データは expenseAccountCategory で導出
   // ── 出所（申請前インライン編集の書き戻し用・追加のみ／金額・集計には無影響）──
   //  新形式配列カテゴリ(parkings/highways/trains/hotels/others/entertainments)のみ付与。
   //  レガシースカラー・車両按分・旧車両配下(駐車/高速)は付けない＝編集対象外。
   srcSiteIndex?: number  // sites[] のindex
   srcKey?: string        // expenses配下の配列キー（'parkings'|'highways'|'trains'|'hotels'|'others'|'entertainments'）
   srcIndex?: number      // その配列内のindex
+}
+
+/** 勘定科目の固定選択肢（2026-07-30 ユーザー確定・入力selectとバリデーションの正本） */
+export const EXPENSE_ACCOUNT_OPTIONS = ['旅費交通費', '車両費', '消耗品費', '材料費', '接待交際費', '会議費', '雑費'] as const
+
+/**
+ * 経費行の「科目」列（勘定科目）。入力値(account)があればそれ、無ければ生カテゴリから導出する。
+ * 導出マッピングは 2026-07-30 ユーザー確定回答:
+ *  電車/バス/タクシー/駐輪/駐車/高速/宿泊 → 旅費交通費、ガソリン/軽油 → 車両費、
+ *  その他(資材等) → 消耗品費、その他雑経費 → 接待交際費。
+ * ※「品名」列(expenseDisplayCategory)とは別物。品名=客先向け表示、科目=会計仕訳用。
+ */
+export function expenseAccountCategory(row: { category: string; account?: string }): string {
+  if (row.account) return row.account
+  switch (row.category) {
+    case '電車代': case 'バス代': case 'タクシー代': case '駐輪代':
+    case '駐車代': case '高速代': case '宿泊費':                     return '旅費交通費'
+    case 'ガソリン代': case 'ガソリン代（本日）': case '軽油代':      return '車両費'
+    case 'その他': case '材料費':                                    return '消耗品費'
+    case 'その他雑経費':                                            return '接待交際費'
+    default:                                                       return '雑費'
+  }
 }
 
 /**
@@ -122,11 +145,11 @@ export function flattenReportExpenses(date: string, sites: any[], rates: Expense
     if (exp.leopalaceYen && !hasHotelsArr) rows.push({ date, category: '宿泊費', siteName, amount: exp.leopalaceYen, note: exp.leopalaceName, payee: exp.leopalaceName, registrationNumber: exp.leopalaceRegistration, fileUrls: exp.leopalaceUrls?.length ? exp.leopalaceUrls : undefined, tategae: !!exp.leopalaceTategae })
     for (let i = 0; i < (exp.others || []).length; i++) {
       const ot = exp.others[i]
-      if (ot.yen) rows.push({ date, category: 'その他', siteName, amount: ot.yen, note: ot.label, payee: ot.payee, registrationNumber: ot.registrationNumber, fileUrls: ot.fileUrls?.length ? ot.fileUrls : takeOtherUrls(), tategae: !!ot.tategae, srcSiteIndex: si, srcKey: 'others', srcIndex: i })
+      if (ot.yen) rows.push({ date, category: 'その他', siteName, amount: ot.yen, note: ot.label, payee: ot.payee, registrationNumber: ot.registrationNumber, account: ot.account || undefined, fileUrls: ot.fileUrls?.length ? ot.fileUrls : takeOtherUrls(), tategae: !!ot.tategae, srcSiteIndex: si, srcKey: 'others', srcIndex: i })
     }
     for (let i = 0; i < (exp.entertainments || []).length; i++) {
       const ent = exp.entertainments[i]
-      if (ent.yen) rows.push({ date, category: 'その他雑経費', siteName, amount: ent.yen, note: ent.label, payee: ent.payee, registrationNumber: ent.registrationNumber, fileUrls: ent.fileUrls?.length ? ent.fileUrls : undefined, tategae: !!ent.tategae, srcSiteIndex: si, srcKey: 'entertainments', srcIndex: i })
+      if (ent.yen) rows.push({ date, category: 'その他雑経費', siteName, amount: ent.yen, note: ent.label, payee: ent.payee, registrationNumber: ent.registrationNumber, account: ent.account || undefined, fileUrls: ent.fileUrls?.length ? ent.fileUrls : undefined, tategae: !!ent.tategae, srcSiteIndex: si, srcKey: 'entertainments', srcIndex: i })
     }
     if (exp.entertainmentYen && !(exp.entertainments || []).some((e: any) => e.yen)) rows.push({ date, category: 'その他雑経費', siteName, amount: exp.entertainmentYen, note: exp.entertainmentLabel, payee: exp.entertainmentLabel, registrationNumber: exp.entertainmentRegistration, fileUrls: exp.entertainmentUrls?.length ? exp.entertainmentUrls : undefined, tategae: !!exp.entertainmentTategae })
   }
