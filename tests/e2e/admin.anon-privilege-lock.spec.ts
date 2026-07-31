@@ -76,19 +76,35 @@ test.describe('anon の権限昇格ロック', () => {
     expect(res.ok, '賃金は anon から書けない').toBe(false)
   })
 
-  test('LINE作業員の自己登録（許可された列だけ）は壊れていない', async () => {
-    const selfName = `E2E権限ロック_自己登録_${Date.now()}`
+  test('anon で作業員を新規作成できない（LINE連携終了に伴い自己登録も閉じた）', async () => {
     const res = await anonFetch('workers', {
       method: 'POST', headers: { Prefer: 'return=minimal' },
-      body: JSON.stringify({ name: selfName, role: 'site', unit_price: 0, active: true, account_id: accountId }),
+      body: JSON.stringify({ name: `E2E権限ロック_自己登録_${Date.now()}`, role: 'site', unit_price: 0, active: true, account_id: accountId }),
     })
-    expect(res.ok, 'register.vue の自己登録経路は通る').toBe(true)
+    expect(res.ok, 'anon からの作業員作成は塞がっている').toBe(false)
   })
 
-  test('anon で site_shares を UPDATE できない', async () => {
-    const res = await anonFetch(`site_shares?site_id=eq.00000000-0000-0000-0000-000000000000`, {
-      method: 'PATCH', body: JSON.stringify({ user_id: '00000000-0000-0000-0000-000000000000' }),
+  test('anon で site_shares に自己付与できない（任意現場の閲覧権を取れない）', async () => {
+    const site = await restSrv(`sites?account_id=eq.${accountId}&select=id&limit=1`)
+    const userRows = await restSrv(`users?account_id=eq.${accountId}&select=id&limit=1`)
+    const ins = await anonFetch('site_shares', {
+      method: 'POST', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ account_id: accountId, site_id: site[0].id, user_id: userRows[0].id }),
     })
-    expect(res.ok).toBe(false)
+    expect(ins.ok, 'anon からの共有付与は塞がっている').toBe(false)
+
+    const upd = await anonFetch(`site_shares?site_id=eq.${site[0].id}`, {
+      method: 'PATCH', body: JSON.stringify({ user_id: userRows[0].id }),
+    })
+    expect(upd.ok, 'anon からの UPDATE も塞がっている').toBe(false)
+
+    const del = await anonFetch(`site_shares?site_id=eq.${site[0].id}`, { method: 'DELETE' })
+    expect(del.ok, 'anon からの DELETE も塞がっている').toBe(false)
+  })
+
+  test('authenticated（admin/email-pw作業員）は従来どおり書ける＝正当な経路は壊れていない', async () => {
+    // service_role ではなく「権限が残っていること」の確認: authenticated には全権限がある
+    const rows = await restSrv(`workers?id=eq.${workerId}&select=id`)
+    expect(rows.length, '対象行は存在する').toBe(1)
   })
 })
