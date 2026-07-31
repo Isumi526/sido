@@ -189,9 +189,9 @@
                       <td>{{ w.endTime }}</td>
                       <template v-if="w.startTime && w.endTime">
                         <td>{{ effectiveBreakMinutes(w) / 60 }}</td>
-                        <td>{{ calcHours(w, selected.date).normal }}</td>
-                        <td>{{ calcHours(w, selected.date).ot }}</td>
-                        <td>{{ calcHours(w, selected.date).night }}</td>
+                        <td>{{ calcHours(w).normal }}</td>
+                        <td>{{ calcHours(w).ot }}</td>
+                        <td>{{ calcHours(w).night }}</td>
                       </template>
                       <template v-else>
                         <td>—</td><td>—</td><td>—</td><td>—</td>
@@ -203,7 +203,7 @@
               <div v-if="canViewWages && selected.users?.workers?.daily_wage" class="labor-cost">
                 人件費
                 <span class="labor-cost-amount">
-                  ¥{{ site.workers.reduce((sum: number, w: any) => sum + (w.startTime && w.endTime ? calcLaborCost(w, selected.date, selected.users.workers.daily_wage) : 0), 0).toLocaleString() }}
+                  ¥{{ site.workers.reduce((sum: number, w: any) => sum + (w.startTime && w.endTime ? calcLaborCost(w, selected.users.workers.daily_wage) : 0), 0).toLocaleString() }}
                 </span>
               </div>
               <!-- 出張費（別費目・人件費とは別表示／主たる現場に1回） -->
@@ -353,7 +353,7 @@ import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug } from '../lib/account'
 import { useQueryParam } from '../composables/useQueryParam'
 import { HIDE_LINE_SECTIONS } from '../lib/featureFlags'
-import { computeWorkerHours, calcBreakMinutes, effectiveBreakMinutes, effectiveBreakWindows, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
+import { effectiveBreakMinutes, laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE, type RateBreakdown } from '../lib/workerHours'
 import { canViewWages, currentUser } from '../lib/auth'
 
 const EDGE_URL  = import.meta.env.VITE_SUPABASE_EDGE_URL as string
@@ -533,12 +533,18 @@ async function deleteReport(r: any) {
   if (selected.value?.id === r.id) selected.value = null
 }
 
-function calcHours(w: any, date: string) {
-  const isSunday = new Date(date + 'T00:00:00').getDay() === 0
-  const role = w.workerRole || 'site'
-  const wins = effectiveBreakWindows(w)
-  const brk  = wins ? 0 : effectiveBreakMinutes(w)
-  const h    = computeWorkerHours(w.startTime, w.endTime, brk, isSunday, 0, wins)
+// 選択中の日報(=1人1日・全現場)の料率別時間。残業は「1日8時間超」で判定するため、
+//  現場ごとに独立計算せず現場跨ぎで累積する（出面勤怠・現場別集計と同じルール）。
+//  worker オブジェクトの参照で引く Map が返る。
+const selectedBreakdown = computed<Map<any, RateBreakdown>>(() => {
+  const r = selected.value
+  if (!r) return new Map()
+  const isSunday = new Date(r.date + 'T00:00:00').getDay() === 0
+  return laborBreakdownForReport(r.sites ?? [], isSunday)
+})
+
+function calcHours(w: any) {
+  const h = selectedBreakdown.value.get(w) ?? ZERO_BREAKDOWN
   return {
     normal: h.hoursNormal + h.hoursSunday,
     ot:     h.hoursOT + h.hoursOTNight + h.hoursSundayOT + h.hoursSundayOTNight,
@@ -555,23 +561,8 @@ function siteTripYen(site: any): number {
   return n * BUSINESS_TRIP_ALLOWANCE
 }
 // 日報詳細は既定の日当ベース（日当/8h × 稼働時間）で人件費を表示（現場管理者も閲覧OK）
-function calcLaborCost(w: any, date: string, dailyWage: number): number {
-  const isSunday = new Date(date + 'T00:00:00').getDay() === 0
-  const role = w.workerRole || 'site'
-  const wins = effectiveBreakWindows(w)
-  const brk  = wins ? 0 : effectiveBreakMinutes(w)
-  const h    = computeWorkerHours(w.startTime, w.endTime, brk, isSunday, 0, wins)
-  const rate = (dailyWage || 0) / 8
-  return Math.round(rate * (
-    h.hoursNormal        * 1.00 +
-    h.hoursOT            * 1.25 +
-    h.hoursNight         * 1.25 +
-    h.hoursOTNight       * 1.50 +
-    h.hoursSunday        * 1.35 +
-    h.hoursSundayOT      * 1.60 +
-    h.hoursSundayNight   * 1.60 +
-    h.hoursSundayOTNight * 1.85
-  ))
+function calcLaborCost(w: any, dailyWage: number): number {
+  return laborCostForBreakdown(selectedBreakdown.value.get(w) ?? ZERO_BREAKDOWN, dailyWage, 0, 'daily')
 }
 
 function resolveSiteName(site: any): string {
