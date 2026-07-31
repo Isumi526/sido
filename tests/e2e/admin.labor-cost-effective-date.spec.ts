@@ -3,11 +3,11 @@
 //  人件費が「日報日時点の単価」で計算される（昇給で過去の人件費が動かない）。
 //  worker: 現単価 25,000 / 昇給履歴 20,000→25,000 (発効日=当月15日)。
 //  日報: 当月12日(発効前→旧20,000)・当月22日(発効後→新25,000)。
-//  8h稼働(08:00-17:00/休憩60)＝通常8h → 人件費=単価そのもの。
+//  8h稼働(08:00-18:00・休憩は実勤務帯から再計算＝現場ロール120分)＝通常8h → 人件費=単価そのもの。
 //  発効前の日が ¥20,000 で出る＝effective-dated が効いている（現単価固定なら両方25,000）。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, getAccountId } from './helpers'
+import { rest, getAccountId, restSrv } from './helpers'
 
 const TS = Date.now()
 const TOKEN = `E2E発効日_${TS}`
@@ -32,7 +32,7 @@ test.beforeAll(async () => {
   accountId = await getAccountId()
   devUserId = (await rest(`users?account_id=eq.${accountId}&line_user_id=eq.dev-user-id&select=id`))[0].id
   // 新モデル: 現在の日当=25,000（daily_wage）。時給はこのテストでは不使用。
-  workerId = (await rest('workers', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ account_id: accountId, name: WORKER, role: 'site', daily_wage: 25000, hourly_wage: 3125, active: true, sort_order: 900 }) }))[0].id
+  workerId = (await restSrv('workers', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ account_id: accountId, name: WORKER, role: 'site', daily_wage: 25000, hourly_wage: 3125, active: true, sort_order: 900 }) }))[0].id
   // 昇給履歴: 日当 20,000 → 25,000（発効日=15日）。日当履歴は old/new_daily_wage で記録。
   await rest('worker_wage_history', { method: 'POST', body: JSON.stringify({ worker_id: workerId, account_id: accountId, old_unit_price: 20000, new_unit_price: 25000, old_daily_wage: 20000, new_daily_wage: 25000, effective_date: EFFECTIVE, reason: 'E2E昇給' }) })
   // 日報2件（発効前/発効後）。8h稼働。
@@ -41,7 +41,7 @@ test.beforeAll(async () => {
       method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
       body: JSON.stringify({
         account_id: accountId, user_id: devUserId, date, is_working: true, note: `${TOKEN}_${date}`,
-        sites: [{ siteName: SITE, workers: [{ workerId, workerName: WORKER, workerRole: 'site', startTime: '08:00', endTime: '17:00', breakMinutes: 60 }], expenses: { vehicles: [], trains: [], others: [] }, subcontractors: [] }],
+        sites: [{ siteName: SITE, workers: [{ workerId, workerName: WORKER, workerRole: 'site', startTime: '08:00', endTime: '18:00', breakMinutes: 60 }], expenses: { vehicles: [], trains: [], others: [] }, subcontractors: [] }],
       }),
     })
   }
@@ -50,7 +50,7 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   await rest(`daily_reports?note=like.${encodeURIComponent(TOKEN)}*`, { method: 'DELETE' }).catch(() => {})
   await rest(`worker_wage_history?worker_id=eq.${workerId}`, { method: 'DELETE' }).catch(() => {})
-  await rest(`workers?id=eq.${workerId}`, { method: 'DELETE' }).catch(() => {})
+  await restSrv(`workers?id=eq.${workerId}`, { method: 'DELETE' }).catch(() => {})
 })
 
 test('昇給発効日より前の日報は旧単価、以降は新単価で人件費が計算される', async ({ page }) => {

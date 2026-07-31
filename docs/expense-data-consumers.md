@@ -50,8 +50,13 @@
 
 ## personal_expenses（現場に紐付かない個人経費）※日報に依存しない独立テーブル
 - **なぜ独立テーブルか（巻き戻し禁止）**: 現行の経費集計はすべて `is_working=true` の日報行に依存しており、**日報を出さない人（役員・経営者）や出勤しない日の経費は1円も集計されない**。日報JSONに相乗りさせる案ではこの穴が原理的に埋まらない。→ Notion #f4cc3db1（2026-07-30 確定）
-- 書き込み: `apps/liff/pages/expense/personal.vue`（→ `composables/usePersonalExpense.ts`）／admin から直接
-- 読み: `apps/admin/src/pages/expenses-daily.vue`（`flattenPersonalExpenses` で日報由来の行と合流。枠の消費パネルも同ページ）
+- 書き込み: `apps/liff/pages/expense/personal.vue`（→ `composables/usePersonalExpense.ts` → edge function `personal-expense-submit`。領収書AI解析は `useReceiptAnalysis`）／admin から直接
+- 読み（★経費構造を変えたら全部見る）:
+  - `apps/admin/src/pages/expenses-daily.vue`（日毎集計・枠の消費パネル）
+  - `apps/admin/src/pages/expenses.vue`（**経費管理＝精算・明細PDF/請求書PDF**。worker_id→users.id の対応表で精算行に合流。users行が無い作業員は合流できないので console.warn を出す）
+  - `apps/liff/composables/useExpense.ts` `getExpenseRowsFromReportsById`（**経費申請書PDF**の唯一の組み立て口。`expense/download.vue`・`expense/print.vue` はここを通る）
+- **精算に載せる理由（巻き戻し禁止）**: 個人経費は `tategae`（個人立替）を持つ。申請書・精算に出さないと会社が本人へ振り込む対象から漏れる。日報を出さない役員等は `daily_reports` が無いので、`personal_expenses` を読まない限り1円も出ない。
+- **読めない時に黙らせない**: `personal_expenses` は RLS(authenticated)＋anon revoke。LIFF は email/password ログイン＝authenticated 前提。読み取りに失敗したら金額が申請書から消えるため `console.error` を出す（silent-drop 禁止）。
 - **現場に紛れ込ませない**: `siteName` は空文字にする（`'現場未設定'` にしない）。日毎集計では「現場外（個人経費）」と表示。
 - **現場別集計・ガソリン按分は読まない**＝現場の原価を歪めない（`site-reports.vue` / `gasoline-allocation.vue` / `expenses.vue` / `index.vue` は `personal_expenses` を参照しない）。この不参照は意図的なので、追加する時は現場外行の除外を必ず入れる。
 - 権限: `workers.can_apply_personal_expense`（既定false）＝付与された人だけが申請できる（#2cbe3caa）
