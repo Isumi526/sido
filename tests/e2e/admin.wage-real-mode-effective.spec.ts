@@ -3,7 +3,8 @@
 //  実質賃金(時給)モードでも、人件費は「日報日時点の時給」で計算される
 //  （昇給で過去の実質賃金が動かない＝wageForDate の hourly 発効日解決の回帰防止）。
 //  worker: 現 日当25,000 / 時給3,000。昇給履歴: 日当20,000→25,000・時給2,000→3,000(発効=当月15日)。
-//  日報: 当月12日(発効前)・当月22日(発効後)。8h稼働(08:00-17:00/休憩60)=通常8h。
+//  日報: 当月12日(発効前)・当月22日(発効後)。8h稼働(08:00-18:00・休憩は実勤務帯から
+//   再計算＝現場ロール120分)=通常8h。
 //  現場別集計で office 以上の「実質賃金」トグルON:
 //    発効前(12日) = 8h × 旧時給2,000 = ¥16,000
 //    発効後(22日) = 8h × 新時給3,000 = ¥24,000
@@ -42,7 +43,7 @@ test.beforeAll(async () => {
       method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
       body: JSON.stringify({
         account_id: accountId, user_id: devUserId, date, is_working: true, note: `${TOKEN}_${date}`,
-        sites: [{ siteName: SITE, workers: [{ workerId, workerName: WORKER, workerRole: 'site', startTime: '08:00', endTime: '17:00', breakMinutes: 60 }], expenses: { vehicles: [], trains: [], others: [] }, subcontractors: [] }],
+        sites: [{ siteName: SITE, workers: [{ workerId, workerName: WORKER, workerRole: 'site', startTime: '08:00', endTime: '18:00', breakMinutes: 60 }], expenses: { vehicles: [], trains: [], others: [] }, subcontractors: [] }],
       }),
     })
   }

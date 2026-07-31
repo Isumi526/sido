@@ -370,12 +370,15 @@ export function laborBreakdownForReport(
     segs.sort((a, b) => a.start - b.start)  // 早い現場から累積
     let acc = 0
     for (const { w } of segs) {
-      const role = (w.workerRole === 'factory' ? 'factory' : 'site') as 'factory' | 'site'
       const start = w.startTime || '08:00'
       const end   = w.endTime   || '17:30'
       // 現場休憩スナップショット(breakSnapshot+breaks[])なら時間帯skip・レガシーは従来の単一ブロック
       const wins  = effectiveBreakWindows(w)
-      const brk   = wins ? 0 : ((w.breakMinutes != null) ? w.breakMinutes : calcBreakMinutes(role, start, end))
+      // 保存済み breakMinutes は LIFF が入力欄生成時に置く固定の既定値（工場90分/現場120分・
+      // 08:00-17:30 想定）で、実際の開始/終了を変えても再計算されない。これをそのまま引くと
+      // 1日に複数現場を回った時に同じ休憩が現場の数だけ引かれる（夕方の短いセグメントからも90分引く）。
+      // 日報一覧・出面勤怠・LIFF と同じく effectiveBreakMinutes で実勤務帯に重なる分だけを引く。
+      const brk   = wins ? 0 : effectiveBreakMinutes(w)
       const h = computeWorkerHours(start, end, brk, isSunday, acc, wins)
       acc += h.workedMin
       const { workedMin: _wm, ...breakdown } = h
@@ -399,10 +402,11 @@ export function businessTripMainEntries(sites: any[]): Set<any> {
   for (const site of sites ?? []) {
     for (const w of (site?.workers ?? [])) {
       if (!w?.workerName) continue
-      const role  = (w.workerRole === 'factory' ? 'factory' : 'site') as 'factory' | 'site'
       const start = w.startTime || '08:00'
       const end   = w.endTime   || '17:30'
-      const brk   = (w.breakMinutes != null) ? w.breakMinutes : calcBreakMinutes(role, start, end)
+      // 主たる現場の判定も laborBreakdownForReport と同じ実効休憩で比較する（固定既定値の
+      // breakMinutes を各現場から引くと短いセグメントが 0 分に潰れて最長現場がずれる）
+      const brk   = effectiveBreakMinutes(w)
       const mins  = Math.max(0, parseMin(end) - parseMin(start) - brk)
       const key   = String(w.workerId ?? w.workerName)
       ;(byWorker[key] ??= []).push({ w, mins })
