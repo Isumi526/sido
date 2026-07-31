@@ -2,7 +2,8 @@
 //  admin.wage-type-hourly.spec.ts
 //  新モデル: 作業員は日当・時給を両方持つ。現場別集計の社員(人件費)は
 //   既定=日当/8h×稼働。office以上の「実質賃金」トグルON=時給×稼働 に切り替わる。
-//  ケース: 日当¥20,000・時給¥2,000 の作業員が 08:00-17:00 休憩60分 = 8h
+//  ケース: 日当¥20,000・時給¥2,000 の作業員が 08:00-18:00 = 8h
+//   （休憩は実勤務帯から再計算＝現場ロールの10時30分＋昼60分＋15時30分＝120分）
 //    既定(日当ベース)   = 8 × (20,000/8) = ¥20,000
 //    実質賃金(時給ベース)= 8 × 2,000      = ¥16,000
 // ============================================================
@@ -33,7 +34,7 @@ test.describe('社員人件費 日当↔実質賃金トグル', () => {
       method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify({
         account_id: accountId, user_id: devUserId, date: DATE, is_working: true, note: 'E2E賃金' + TS,
-        sites: [{ siteName: SITE, workers: [{ workerName: WORKER, workerRole: 'site', startTime: '08:00', endTime: '17:00', breakMinutes: 60 }], expenses: { vehicles: [], trains: [], others: [] }, subcontractors: [] }],
+        sites: [{ siteName: SITE, workers: [{ workerName: WORKER, workerRole: 'site', startTime: '08:00', endTime: '18:00', breakMinutes: 60 }], expenses: { vehicles: [], trains: [], others: [] }, subcontractors: [] }],
       }),
     })
 

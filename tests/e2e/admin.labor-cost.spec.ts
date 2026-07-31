@@ -3,9 +3,12 @@
 //  現場別集計の人件費が「実勤務時間ベース」で計算される（バグ修正の回帰防止）
 //   バグ: 日報に無い w.hoursNormal を参照し、全員「通常×8h固定」で計算されていた。
 //   修正: startTime/endTime/breakMinutes から computeWorkerHours で再計算。
-//  ケース: Worker 03（日当 22,000 → 時給 2,750）が 08:00-19:00 / 休憩60分で稼働
-//          → 通常8h + 残業2h ⇒ 8×2750 + 2×2750×1.25 = ¥28,875
+//  ケース: Worker 03（日当 22,000 → 時給 2,750）が 08:00-20:00 で稼働
+//          休憩は実勤務帯から再計算（現場ロール 10時30分＋昼60分＋15時30分＝120分）
+//          → 実働10h＝通常8h + 残業2h ⇒ 8×2750 + 2×2750×1.25 = ¥28,875
 //          （旧バグなら ¥22,000、残業未計上なら ¥27,500 になる＝28,875 で一意に正解）
+//  seed の breakMinutes:60 は LIFF が置く固定既定値の代役。集計がこの保存値をそのまま
+//  引くと実働11h＝¥32,312 になる＝「保存値を信じる」退行をこの期待値で検出する。
 // ============================================================
 import { test, expect } from '@playwright/test'
 import { rest, getAccountId } from './helpers'
@@ -30,7 +33,7 @@ test.beforeAll(async () => {
   accountId = await getAccountId()
   const u = await rest(`users?account_id=eq.${accountId}&line_user_id=eq.dev-user-id&select=id`)
   devUserId = u[0].id
-  // 残業が出る勤務（08:00-19:00・休憩60分）の日報を1件投入
+  // 残業が出る勤務（08:00-20:00）の日報を1件投入
   await rest('daily_reports?on_conflict=user_id,date', {
     method: 'POST',
     headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
@@ -38,7 +41,7 @@ test.beforeAll(async () => {
       account_id: accountId, user_id: devUserId, date: DATE, is_working: true, note: TOKEN,
       sites: [{
         siteName: SITE,
-        workers: [{ workerName: WORKER, workerRole: 'site', startTime: '08:00', endTime: '19:00', breakMinutes: 60 }],
+        workers: [{ workerName: WORKER, workerRole: 'site', startTime: '08:00', endTime: '20:00', breakMinutes: 60 }],
         expenses: { vehicles: [], trains: [], others: [] }, subcontractors: [],
       }],
     }),
