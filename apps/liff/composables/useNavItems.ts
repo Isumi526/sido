@@ -18,8 +18,15 @@ export interface NavItem {
   testId?:   string
 }
 
-/** authMode==='password' の時だけ「パスワード変更」を出す（メール/ID認証作業員向け） */
-export function useNavItems(authMode: () => string | null | undefined) {
+/**
+ * authMode==='password' の時だけ「パスワード変更」を出す（メール/ID認証作業員向け）。
+ * canApplyPersonalExpense が true の作業員にだけ「個人経費」を出す（#2cbe3caa）。
+ * 未解決＝false 扱い＝出さない（フェイルセーフ。入口を開けたままにしない）。
+ */
+export function useNavItems(
+  authMode: () => string | null | undefined,
+  canApplyPersonalExpense?: () => boolean,
+) {
   const { t } = useI18n()
 
   const items = computed<NavItem[]>(() => {
@@ -37,6 +44,9 @@ export function useNavItems(authMode: () => string | null | undefined) {
       { path: '/expense/download', icon: 'picture_as_pdf',    label: t('nav.expensePdf'),       section: 'info' },
       { path: '/rules',            icon: 'menu_book',         label: t('nav.rulebook'),         section: 'info' },
     ]
+    if (canApplyPersonalExpense?.()) {
+      list.splice(5, 0, { path: '/expense/personal', icon: 'account_balance_wallet', label: '個人経費', section: 'daily', testId: 'menu-personal-expense' })
+    }
     if (authMode() === 'password') {
       list.push({ path: '/password', icon: 'lock_reset', label: t('nav.passwordChange'), section: 'info', testId: 'menu-password' })
     }

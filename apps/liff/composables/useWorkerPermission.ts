@@ -21,6 +21,7 @@ export const useWorkerPermission = () => {
   // ページ跨ぎで共有（同一セッションで何度も workers を引かない）
   const role = useState<string | null>('worker_permission_role', () => null)
   const resolved = useState<boolean>('worker_permission_resolved', () => false)
+  const canApplyPE = useState<boolean>('worker_can_apply_personal_expense', () => false)
 
   /** 現在の作業員の permission_role を解決（冪等・1セッション1回） */
   async function resolveRole(): Promise<string | null> {
@@ -34,10 +35,13 @@ export const useWorkerPermission = () => {
       }
       if (!wid) { resolved.value = true; role.value = null; return null }
       const { data } = await supabase
-        .from('workers').select('permission_role').eq('id', wid).maybeSingle()
-      role.value = (data as { permission_role?: string } | null)?.permission_role ?? null
+        .from('workers').select('permission_role, can_apply_personal_expense').eq('id', wid).maybeSingle()
+      const w = data as { permission_role?: string; can_apply_personal_expense?: boolean } | null
+      role.value = w?.permission_role ?? null
+      canApplyPE.value = !!w?.can_apply_personal_expense
     } catch {
       role.value = null   // 失敗時は権限なし扱い（フェイルセーフ）
+      canApplyPE.value = false
     } finally {
       resolved.value = true
     }
@@ -51,5 +55,12 @@ export const useWorkerPermission = () => {
   /** 現場の新規作成ができるか（現状は canEditMaster と同一。将来分けられるよう別名で公開） */
   const canCreateSite = canEditMaster
 
-  return { resolveRole, role, canEditMaster, canCreateSite }
+  /**
+   * 個人経費（現場に紐付かない経費）の入口を出すか（#2cbe3caa）。
+   * ここは「そもそも許された人か」だけを見る。実際に提出できるか（枠の金額が要る）は
+   * 画面側が shared の canSubmitPersonalExpense で判定し、足りない理由を出す。
+   */
+  const canApplyPersonalExpense = computed(() => canApplyPE.value)
+
+  return { resolveRole, role, canEditMaster, canCreateSite, canApplyPersonalExpense }
 }
