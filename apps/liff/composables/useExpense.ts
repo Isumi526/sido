@@ -5,7 +5,7 @@
 import type { User, ExpenseItem, ExpenseItemInput, ExpenseRow } from '~/types'
 import { useI18n } from 'vue-i18n'
 import { gt } from '~/utils/i18n-global'
-import { flattenReportExpenses, flattenGasolineItems, ratesFromSettings } from './expense-flatten.gen'
+import { flattenReportExpenses, flattenGasolineItems, ratesFromSettings, mergeOtherExpenses, splitOtherExpenses } from './expense-flatten.gen'
 import { resolveActiveSiteId } from '~/utils/siteSimilarity'
 
 // ---------- 期間キーユーティリティ ----------
@@ -351,6 +351,14 @@ export const useExpense = () => {
       if (exp.trains)   exp.trains   = stripItemFiles(exp.trains)
       if (exp.others)   exp.others   = stripItemFiles(exp.others)
       if (exp.entertainments) exp.entertainments = stripItemFiles(exp.entertainments)
+      // 入力は「その他」1本に統合済み（2026-07-31）。保存時にここで科目=接待交際費だけを
+      // entertainments へ戻す。現場別集計は entertainments を接待交際費列・others をホーム列に
+      // 集計しているため、この振り分けをやめると金額が別の列へ移動する（集計は触らない方針）。
+      if (exp.others || exp.entertainments) {
+        const split = splitOtherExpenses(mergeOtherExpenses(exp.others, exp.entertainments))
+        exp.others = split.others
+        exp.entertainments = split.entertainments
+      }
       if (exp.hotels)         exp.hotels         = stripItemFiles(exp.hotels)
       // 現場マスタ(active)へ正規化名一致で site_id を解決して刻む（集計をid基準にする根本対策）。
       //  解決できなければ既存の site_id を保持（＝マージ/非アクティブ化後の安定性）、それも無ければ null。
