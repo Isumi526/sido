@@ -74,6 +74,11 @@
           <label class="pe-label">領収書</label>
           <input type="file" accept="image/*,application/pdf" multiple class="pe-file" data-testid="pe-files" @change="onPickFiles" />
           <p v-if="files.length" class="pe-hint">{{ files.length }}件を添付します</p>
+          <!-- 領収書から金額・支払い先・インボイス番号・科目を自動入力（日報フォームと同じ analyze-receipt） -->
+          <button v-if="files.length" type="button" class="pe-ai" :disabled="analyzing" data-testid="pe-analyze" @click="onAnalyze">
+            {{ analyzing ? '解析中…' : '領収書から入力' }}
+          </button>
+          <p v-if="aiMsg" class="pe-hint" data-testid="pe-ai-msg">{{ aiMsg }}</p>
 
           <button class="pe-submit" :disabled="busy" data-testid="pe-submit" @click="onSubmit">
             {{ busy ? '登録中…' : '登録する' }}
@@ -109,6 +114,7 @@ import { todayStr } from '~/composables/schedule-core.gen'
 const liff = useLiff()
 const config = useRuntimeConfig()
 const pe = usePersonalExpense()
+const receipt = useReceiptAnalysis()
 const { resolve } = useCurrentUser()
 
 const loading = ref(true)
@@ -121,6 +127,8 @@ const usage = ref(computeBudgetUsage([], '', null))
 const items = ref<any[]>([])
 const files = ref<File[]>([])
 const submitToken = ref('')
+const analyzing = ref(false)
+const aiMsg = ref('')
 
 const month = ref(todayStr().slice(0, 7))
 
@@ -153,6 +161,34 @@ function shiftMonth(n: number) {
 
 function onPickFiles(e: Event) {
   files.value = Array.from((e.target as HTMLInputElement).files ?? [])
+}
+
+/**
+ * 添付した領収書1枚目をAI解析して各欄を埋める。
+ * ★上書きは「空の欄だけ」。人が入れた値をAIが勝手に消さない（日報フォームと同じ考え方）。
+ *  科目だけは推定が当たると入力の手間が大きく減るので、既定(旅費交通費)のままなら上書きする。
+ */
+async function onAnalyze() {
+  const f = files.value[0]
+  if (!f) return
+  analyzing.value = true
+  aiMsg.value = ''
+  try {
+    const r = await receipt.analyze(f, 'personal')
+    if (!r) { aiMsg.value = '解析できませんでした。手入力してください'; return }
+    if (r.yen != null && !(Number(form.value.amount) > 0)) form.value.amount = r.yen
+    if (r.storeName && !form.value.payee.trim()) form.value.payee = r.storeName
+    if (r.invoiceNumber && !form.value.registration_number.trim()) form.value.registration_number = r.invoiceNumber
+    if (r.label && !form.value.note.trim()) form.value.note = r.label
+    if (r.account && (EXPENSE_ACCOUNT_OPTIONS as readonly string[]).includes(r.account)) {
+      form.value.account_category = r.account
+    }
+    aiMsg.value = '領収書から入力しました。内容を確認してください'
+  } catch (e: any) {
+    aiMsg.value = e?.message ?? '解析に失敗しました'
+  } finally {
+    analyzing.value = false
+  }
 }
 
 async function refresh() {
@@ -203,6 +239,7 @@ async function onSubmit() {
     form.value = { date: todayStr(), account_category: '旅費交通費', amount: 0, payee: '', companions: '', registration_number: '', note: '', tategae: false }
     files.value = []
     submitToken.value = ''   // 次の登録は別の経費＝新しい token を発行する
+    aiMsg.value = ''
     await refresh()
     msg.value = usage.value.isOver ? '登録しました（上限を超えています）' : '登録しました'
     msgOk.value = true
@@ -259,6 +296,8 @@ onMounted(async () => {
 .pe-input { width: 100%; border: 1px solid #d1d5db; border-radius: 8px; padding: 9px 10px; font-size: 14px; box-sizing: border-box; }
 .pe-file { width: 100%; font-size: 12px; margin-top: 4px; }
 .pe-check { display: flex; align-items: center; gap: 6px; font-size: 13px; margin-top: 10px; }
+.pe-ai { width: 100%; margin-top: 8px; background: #fff; color: #2563eb; border: 1px solid #2563eb; border-radius: 8px; padding: 9px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.pe-ai:disabled { opacity: 0.6; }
 .pe-submit { width: 100%; margin-top: 14px; background: #2563eb; color: #fff; border: none; border-radius: 8px; padding: 11px; font-size: 15px; font-weight: 700; cursor: pointer; }
 .pe-submit:disabled { opacity: 0.6; }
 .pe-msg { font-size: 13px; margin-top: 8px; color: #b91c1c; }
