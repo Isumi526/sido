@@ -203,6 +203,14 @@ Deno.serve(async (req) => {
           { onConflict: 'worker_id,month', ignoreDuplicates: true })
     }
 
+    // 二重登録の防止: 同じ token の行が既にあればそれを返す（＝再送しても増えない）。
+    const clientToken = String(input.client_token ?? '').slice(0, 64) || null
+    if (clientToken) {
+      const { data: dup } = await svc.from('personal_expenses').select('id')
+        .eq('client_token', clientToken).eq('account_id', accountId).maybeSingle()
+      if ((dup as any)?.id) return json({ ok: true, id: (dup as any).id, deduped: true })
+    }
+
     const { data, error } = await svc.from('personal_expenses').insert({
       account_id: accountId,
       worker_id: workerId,                       // ★検証済みの身元。body の worker_id は使わない
@@ -215,8 +223,17 @@ Deno.serve(async (req) => {
       note: String(input.note ?? '').trim() || null,
       file_urls: Array.isArray(input.file_urls) ? input.file_urls : [],
       tategae: !!input.tategae,
+      client_token: clientToken,
     }).select('id').single()
-    if (error) return json({ ok: false, error: 'insert_failed', message: error.message }, 500)
+    if (error) {
+      // 一意index衝突＝同時再送。既存行を引いて成功として返す。
+      if ((error as any).code === '23505' && clientToken) {
+        const { data: existed } = await svc.from('personal_expenses').select('id')
+          .eq('client_token', clientToken).eq('account_id', accountId).maybeSingle()
+        if ((existed as any)?.id) return json({ ok: true, id: (existed as any).id, deduped: true })
+      }
+      return json({ ok: false, error: 'insert_failed', message: error.message }, 500)
+    }
     return json({ ok: true, id: (data as any).id })
   }
 

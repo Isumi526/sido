@@ -22,6 +22,7 @@ export interface PersonalExpenseInput {
   note?: string | null
   file_urls?: string[]
   tategae?: boolean
+  client_token?: string   // 1登録につき1つ。再送を1行にまとめる（二重計上の防止）
 }
 
 const EDGE_FN = 'personal-expense-submit'
