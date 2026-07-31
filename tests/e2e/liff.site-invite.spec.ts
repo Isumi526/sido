@@ -25,7 +25,7 @@ test.beforeAll(async () => {
   }) }))[0].id
   // 招待候補となるユーザー(このaccountの他ユーザー)。この候補workerをotherSiteの責任者にする
   // ことで「自分は責任者でない現場」を作る(自分がresponsible_worker_idに一致しない状態)。
-  const candidateWorker = (await rest('workers', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
+  const candidateWorker = (await restSrv('workers', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
     account_id: accountId, name: CANDIDATE_NAME, role: 'site', active: true,
   }) }))[0]
   candidateUserId = (await rest('users', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
@@ -42,7 +42,7 @@ test.afterAll(async () => {
   await restSrv(`site_shares?site_id=eq.${otherSiteId}`, { method: 'DELETE' }).catch(() => {})
   await rest(`users?id=eq.${candidateUserId}`, { method: 'DELETE' }).catch(() => {})
   const candidateWorker = await rest(`workers?name=eq.${encodeURIComponent(CANDIDATE_NAME)}&select=id`)
-  if (candidateWorker?.[0]?.id) await rest(`workers?id=eq.${candidateWorker[0].id}`, { method: 'DELETE' }).catch(() => {})
+  if (candidateWorker?.[0]?.id) await restSrv(`workers?id=eq.${candidateWorker[0].id}`, { method: 'DELETE' }).catch(() => {})
   await rest(`sites?id=eq.${managedSiteId}`, { method: 'DELETE' }).catch(() => {})
   await rest(`sites?id=eq.${otherSiteId}`, { method: 'DELETE' }).catch(() => {})
 })
