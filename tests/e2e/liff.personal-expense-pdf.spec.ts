@@ -27,6 +27,18 @@ async function loginAsWorker(page: import('@playwright/test').Page) {
 
 const TS = Date.now()
 const PAYEE = `E2E個人PDF_${TS}`
+// 対象期のチップ名（例 '2026-08-second' → '8月後半'）。既定選択は日付で変わるので必ず明示的に選ぶ。
+const PERIOD_CHIP = (() => {
+  const [, m, half] = FEAT_EXP_PERIOD.split('-')
+  return `${parseInt(m, 10)}月${half === 'first' ? '前半' : '後半'}`
+})()
+
+async function selectTargetPeriod(page: import('@playwright/test').Page) {
+  const chip = page.locator('button, .period-chip, [data-testid="period-chip"]').filter({ hasText: PERIOD_CHIP }).first()
+  await expect(chip, `期チップ「${PERIOD_CHIP}」がある`).toBeVisible({ timeout: 15000 })
+  await chip.click()
+  await page.waitForTimeout(1200)
+}
 
 let accountId = ''
 let workerId = ''
@@ -63,13 +75,20 @@ test.describe('個人経費が経費申請書に載る', () => {
     await restSrv(`personal_expenses?payee=eq.${encodeURIComponent(PAYEE)}`, { method: 'DELETE' }).catch(() => {})
   })
 
-  test('★経費申請書のプレビューに個人経費が出る（立替が精算対象になる）', async ({ page }) => {
+  test('★LINE経路(anon)でも経費申請書に個人経費が出る（ここが本番の主経路）', async ({ page }) => {
+    // LIFF の開発モード＝LINE経路の再現＝anon。personal_expenses は anon revoke なので
+    // テーブル直読みだと0件になる。EF 経由にしたことで anon でも出ることを固定する。
+    // ★本番にはLINEでしか入れない作業員が残っている（2026-08-01 実測）ので、この経路が本番の主経路。
+    await page.goto('/expense/download', { waitUntil: 'networkidle' })
+    await selectTargetPeriod(page)
+    await expect(page.locator('body'), 'anon(LINE)でも個人経費が申請書に出る').toContainText(PAYEE, { timeout: 15000 })
+    await expect(page.locator('body')).toContainText('7,700')
+  })
+
+  test('email/password ログイン(authenticated)でも同じく出る', async ({ page }) => {
     await loginAsWorker(page)
     await page.goto('/expense/download', { waitUntil: 'networkidle' })
-    await page.waitForTimeout(1500)
-    // 対象期を選ぶ（既定が別の期のことがあるため明示的に選択）
-    const chip = page.locator('.period-chip, [data-testid="period-chip"]').filter({ hasText: /前半|後半/ })
-    if (await chip.count()) await chip.first().click().catch(() => {})
+    await selectTargetPeriod(page)
     await expect(page.locator('body'), '個人経費の支払い先が申請書に出る').toContainText(PAYEE, { timeout: 15000 })
     await expect(page.locator('body'), '金額も出る').toContainText('7,700')
   })

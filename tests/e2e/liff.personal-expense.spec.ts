@@ -72,7 +72,9 @@ test.describe('個人経費の申請（liff）', () => {
     await expect(page.getByTestId('pe-list')).toContainText('12,000')
 
     // 案Bの肝: 最初の経費が発生した時点でその月の枠が凍結される（後で既定を変えても遡らない）
-    const month = new Date().toISOString().slice(0, 7)
+    // ★JST基準。アプリは todayStr()(JST) で月を決めるので、UTCの toISOString をそのまま使うと
+    //  JST 00:00〜09:00 の間だけ前月を見てしまう。
+    const month = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 7)
     const frozen = await restSrv(`worker_expense_budgets?worker_id=eq.${workerId}&month=eq.${month}&select=limit_amount`)
     expect(Number(frozen[0]?.limit_amount), 'その月の枠が凍結される').toBe(50000)
   })

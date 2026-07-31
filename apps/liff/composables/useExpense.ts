@@ -569,20 +569,10 @@ export const useExpense = () => {
     //   そもそも daily_reports が無いので、ここで拾わないと1円も出ない。
     //  ※ personal_expenses は RLS(account_id) ＋ anon revoke。LIFF は email/password
     //   ログイン＝authenticated なので直接 select できる（書き込みだけ EF 経由）。
-    const { data: me } = await supabase.from('users').select('worker_id').eq('id', userId).maybeSingle()
-    const workerId = (me as { worker_id?: string } | null)?.worker_id
-    if (workerId) {
-      const { data: personal, error: peErr } = await supabase
-        .from('personal_expenses')
-        .select('id, worker_id, date, account_category, amount, payee, registration_number, companions, note, file_urls, tategae')
-        .eq('worker_id', workerId).eq('account_id', aid)
-        .gte('date', dateFrom).lte('date', dateTo)
-        .order('date', { ascending: true })
-      // 黙って空にしない: 読めなかったら金額が申請書から消えるので必ずログに出す
-      // （RLSは authenticated 向け。LINE経路=anon は運用終了済みだが、万一その状態だとここで気づける）
-      if (peErr) console.error('[useExpense] personal_expenses が読めませんでした（申請書から個人経費が欠落します）:', peErr)
-      rows.push(...flattenPersonalExpenses(personal as any))
-    }
+    // ★必ず EF 経由で読む（直読み禁止）。personal_expenses は anon revoke ＋ RLS authenticated で、
+    //  LIFF を LINE アプリ内で開くと anon になるため、直読みだと黙って0件＝個人立替が
+    //  申請書から消える（2026-08-01 ship前に本番で LINE 利用者の残存を確認して判明）。
+    rows.push(...flattenPersonalExpenses(await usePersonalExpense().listByRange(dateFrom, dateTo, userId) as any))
     return rows
   }
 
