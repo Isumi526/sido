@@ -36,7 +36,7 @@
                         <div class="reply-quote-text">{{ item.data.reply_to_body }}</div>
                       </div>
                       <a v-if="item.data.attachment_url && item.data.attachment_kind === 'image'" :href="item.data.attachment_url" target="_blank" rel="noopener">
-                        <img :src="item.data.attachment_url" class="msg-attachment-img" :alt="item.data.attachment_name || ''" />
+                        <img :src="item.data.attachment_url" class="msg-attachment-img" :alt="item.data.attachment_name || ''" @load="onAttachmentLoaded" @error="onAttachmentLoaded" />
                       </a>
                       <a v-else-if="item.data.attachment_url" :href="item.data.attachment_url" target="_blank" rel="noopener" class="msg-attachment-file">
                         <span class="material-symbols-rounded">description</span>{{ item.data.attachment_name || 'ファイル' }}
@@ -265,14 +265,23 @@ async function uploadAttachment(file: File): Promise<{ url: string; name: string
   return { url: normalizeStorageUrl(data.url as string, supabaseUrl), name: file.name, kind: file.type.startsWith('image/') ? 'image' : 'file' }
 }
 
+// 添付画像は初回スクロールの時点ではまだ高さ0で、ロード後に本文の高さが伸びる。
+// 追従し直さないと最新メッセージが画面外に残り、以後 wasAtBottom が false 固定になって
+// 新着も自動スクロールされなくなるため、ユーザーが自分で上へスクロールしていない間は
+// 画像のロード完了ごとに最下部へ寄せ直す。
+const pinnedToBottom = ref(true)
+function onAttachmentLoaded() { if (pinnedToBottom.value) scrollToBottom() }
 function scrollToBottom() {
   nextTick(() => { if (listRef.value) listRef.value.scrollTop = listRef.value.scrollHeight })
   showScrollBtn.value = false
+  pinnedToBottom.value = true
 }
 function onListScroll() {
   const el = listRef.value
   if (!el) return
-  showScrollBtn.value = el.scrollHeight - el.scrollTop - el.clientHeight > 120
+  const fromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+  showScrollBtn.value = fromBottom > 120
+  pinnedToBottom.value = fromBottom < 40
 }
 function autoResizeDraft() {
   const el = draftRef.value
