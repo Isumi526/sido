@@ -3,11 +3,27 @@
     <h1 class="page-title">日報一覧</h1>
 
     <div class="filters">
-      <!-- 作業員プルダウン -->
-      <select v-model="selectedWorker" class="input select-worker" @change="load">
-        <option value="">全作業員</option>
-        <option v-for="w in workerOptions" :key="w" :value="w">{{ w }}</option>
-      </select>
+      <!-- 作業員フィルタ（複数選択可。2人以上で人ごとの列に分けた比較ビューに切り替わる） -->
+      <div class="worker-filter">
+        <button class="input worker-filter-btn" data-testid="worker-filter" @click.stop="workerMenuOpen = !workerMenuOpen">
+          <span v-if="!selectedWorkers.length" class="worker-filter-placeholder">全作業員</span>
+          <span v-else class="chips">
+            <span v-for="w in selectedWorkers" :key="w" class="chip">
+              {{ w }}
+              <span class="material-symbols-rounded chip-remove" :title="`${w} を外す`" @click.stop="toggleWorker(w)">close</span>
+            </span>
+          </span>
+          <span class="material-symbols-rounded caret">{{ workerMenuOpen ? 'expand_less' : 'expand_more' }}</span>
+        </button>
+        <div v-if="workerMenuOpen" class="worker-menu" data-testid="worker-menu" @click.stop>
+          <label v-for="w in workerOptions" :key="w" class="worker-menu-item">
+            <input type="checkbox" :checked="selectedWorkers.includes(w)" @change="toggleWorker(w)">
+            <span>{{ w }}</span>
+          </label>
+          <div v-if="!workerOptions.length" class="worker-menu-empty">この月の日報がありません</div>
+          <button v-if="selectedWorkers.length" class="worker-menu-clear" @click="clearWorkers">すべて解除</button>
+        </div>
+      </div>
 
       <!-- 月ナビ -->
       <div class="month-nav">
@@ -19,6 +35,58 @@
 
     <div v-if="loading" class="empty">読み込み中...</div>
     <div v-else-if="reports.length === 0" class="empty">日報が見つかりません</div>
+
+    <!-- 比較ビュー: 行=日付・列=選択した作業員。同じ日に誰が何をしていたかを横一列で突き合わせる -->
+    <div v-else-if="compareMode" class="compare-wrap" data-testid="compare-view">
+      <table class="compare-table">
+        <thead>
+          <tr>
+            <th class="compare-date-col">日付</th>
+            <th v-for="w in selectedWorkers" :key="w">{{ w }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="d in compareDates" :key="d">
+            <td class="compare-date-col">{{ d.slice(5).replace('-', '/') }}</td>
+            <td v-for="w in selectedWorkers" :key="w" class="compare-cell">
+              <template v-if="reportsFor(d, w).length">
+                <div v-for="r in reportsFor(d, w)" :key="r.id" class="compare-entry">
+                  <div class="compare-entry-head" @click="selected = r">
+                    <span class="badge" :class="r.leave_type === 'paid_leave' ? 'paid-leave' : r.is_working ? 'working' : 'off'">{{ r.leave_type === 'paid_leave' ? '有給' : r.is_working ? '稼働' : '休み' }}</span>
+                    <span class="detail-hint">詳細 →</span>
+                  </div>
+                  <div v-if="r.is_working && r.sites?.length" class="compare-sites" @click="selected = r">
+                    <div v-for="(site, i) in r.sites" :key="i" class="compare-site-row">
+                      <span class="site-name">{{ resolveSiteName(site) }}</span>
+                      <span v-if="site.workers?.[0]?.startTime && site.workers?.[0]?.endTime" class="work-time">
+                        <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">schedule</span> {{ site.workers[0].startTime }}〜{{ site.workers[0].endTime }}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="compare-actions">
+                    <button
+                      v-if="r.users?.worker_id"
+                      class="icon-btn"
+                      :disabled="granting === r.id"
+                      :title="grantedIds.has(r.id) ? '編集許可済み' : 'この日を申請なしで編集可にする'"
+                      @click.stop="issueEditGrant(r)"
+                    ><span class="material-symbols-rounded">{{ grantedIds.has(r.id) ? 'check' : 'edit' }}</span></button>
+                    <button
+                      v-if="!HIDE_LINE_SECTIONS && !r.line_notified_at"
+                      class="icon-btn"
+                      :disabled="notifying === r.id"
+                      title="LINE通知を送る"
+                      @click.stop="sendNotification(r)"
+                    ><span class="material-symbols-rounded">send</span></button>
+                  </div>
+                </div>
+              </template>
+              <span v-else class="compare-none">日報なし</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
     <div v-else class="report-list">
       <div v-for="r in reports" :key="r.id" class="report-card">
@@ -280,7 +348,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug } from '../lib/account'
 import { useQueryParam } from '../composables/useQueryParam'
@@ -294,9 +362,27 @@ const ANON_KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 // 下請けマスタ（name → {unit_price, category}）
 const subMaster = ref<Record<string, { unit_price: number | null; category: string | null }>>({})
 
-// 作業員フィルター
-const selectedWorker = useQueryParam('worker', '')   // URL ?worker= に同期（ページ跨ぎで復元）
+// 作業員フィルター（複数選択）。URL ?worker=A,B に同期（リロード/共有で復元・単一指定の旧リンクもそのまま動く）
+const workerParam    = useQueryParam('worker', '')
 const workerOptions  = ref<string[]>([])
+const workerMenuOpen = ref(false)
+
+const selectedWorkers = computed<string[]>(() =>
+  workerParam.value ? workerParam.value.split(',').map(s => s.trim()).filter(Boolean) : [])
+
+/** 2人以上選んだら「行=日付・列=作業員」の比較ビューに切り替える（0/1人は従来のカード一覧） */
+const compareMode = computed(() => selectedWorkers.value.length >= 2)
+
+function toggleWorker(name: string) {
+  const next = new Set(selectedWorkers.value)
+  if (next.has(name)) next.delete(name); else next.add(name)
+  // 列の並びをプルダウンの並び（五十音順）に揃える＝選んだ順で列が入れ替わらない
+  workerParam.value = workerOptions.value.filter(w => next.has(w)).join(',')
+}
+function clearWorkers() {
+  workerParam.value = ''
+  workerMenuOpen.value = false
+}
 
 // 月ナビ
 const now      = new Date()
@@ -322,8 +408,19 @@ function nextMonth() {
 const loading  = ref(false)
 const deleting = ref(false)
 const notifying = ref<string | null>(null)
-const reports  = ref<any[]>([])
+// 取得した当月の全日報。作業員の絞り込みはここからクライアント側で行う（切り替えで再フェッチしない）
+const allReports = ref<any[]>([])
+const reports = computed<any[]>(() => selectedWorkers.value.length
+  ? allReports.value.filter((r: any) => selectedWorkers.value.includes(r.worker_name))
+  : allReports.value)
 const selected = ref<any | null>(null)
+
+// 比較ビュー: 行=日付（降順・一覧の並びと同じ）／セル=その作業員のその日の日報（重複ユーザー行があれば複数）
+const compareDates = computed<string[]>(() =>
+  [...new Set(reports.value.map((r: any) => r.date))].sort((a, b) => b.localeCompare(a)))
+function reportsFor(date: string, worker: string): any[] {
+  return reports.value.filter((r: any) => r.date === date && r.worker_name === worker)
+}
 
 // 管理者から編集許可を発行：この日報の worker×date に approved grant を作成し、申請なしで編集可にする。
 //  （日報の間違いを見ながらその場で許可を出せる。作業員側は既存の realtime/ポーリングで自動反映）
@@ -432,7 +529,7 @@ async function deleteReport(r: any) {
   const { error } = await supabase.from('daily_reports').delete().eq('id', r.id)
   deleting.value = false
   if (error) { alert('削除に失敗しました: ' + error.message); return }
-  reports.value = reports.value.filter(rep => rep.id !== r.id)
+  allReports.value = allReports.value.filter(rep => rep.id !== r.id)
   if (selected.value?.id === r.id) selected.value = null
 }
 
@@ -576,20 +673,56 @@ async function load() {
   const names = [...new Set(mapped.map((r: any) => r.worker_name).filter((n: string) => n && n !== '—'))]
   workerOptions.value = names.sort((a: string, b: string) => a.localeCompare(b, 'ja'))
 
-  reports.value = selectedWorker.value
-    ? mapped.filter((r: any) => r.worker_name === selectedWorker.value)
-    : mapped
+  allReports.value = mapped
   loading.value = false
 }
 
 onMounted(load)
+
+// 作業員メニューは外側クリックで閉じる（ボタン/メニュー内は @click.stop で伝播を止めている）
+function closeWorkerMenu() { workerMenuOpen.value = false }
+onMounted(() => document.addEventListener('click', closeWorkerMenu))
+onUnmounted(() => document.removeEventListener('click', closeWorkerMenu))
 </script>
 
 <style scoped>
 .page-title { font-size: 22px; font-weight: 700; margin-bottom: 24px; }
 .filters { display: flex; gap: 16px; align-items: center; margin-bottom: 24px; flex-wrap: wrap; }
 .input { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 9px 14px; font-size: 14px; }
-.select-worker { min-width: 160px; cursor: pointer; }
+/* 作業員フィルタ（複数選択） */
+.worker-filter { position: relative; }
+.worker-filter-btn { min-width: 200px; max-width: 620px; cursor: pointer; display: flex; align-items: center; gap: 8px; text-align: left; }
+.worker-filter-placeholder { color: #888; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
+.chip { display: inline-flex; align-items: center; gap: 4px; background: #e8f9ef; color: #067a3a; border-radius: 999px; padding: 2px 6px 2px 10px; font-size: 13px; }
+.chip-remove { font-size: 15px; cursor: pointer; color: #4b9c72; }
+.chip-remove:hover { color: #b91c1c; }
+.caret { margin-left: auto; color: #888; font-size: 20px; }
+.worker-menu { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; min-width: 240px; max-height: 320px; overflow-y: auto; background: #fff; border: 1px solid #e0e0e0; border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.12); padding: 6px; }
+.worker-menu-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; font-size: 14px; cursor: pointer; }
+.worker-menu-item:hover { background: #f5f5f5; }
+.worker-menu-empty { padding: 12px 10px; color: #888; font-size: 13px; }
+.worker-menu-clear { width: 100%; margin-top: 4px; background: none; border: none; border-top: 1px solid #eee; color: #888; font-size: 13px; padding: 8px; cursor: pointer; }
+.worker-menu-clear:hover { color: #b91c1c; }
+
+/* 比較ビュー（行=日付・列=作業員） */
+.compare-wrap { overflow-x: auto; background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.compare-table { border-collapse: collapse; width: 100%; }
+.compare-table th, .compare-table td { border-bottom: 1px solid #eee; border-right: 1px solid #eee; padding: 10px 14px; vertical-align: top; text-align: left; }
+.compare-table th { background: #fafafa; font-size: 13px; font-weight: 700; position: sticky; top: 0; z-index: 1; }
+.compare-table th:last-child, .compare-table td:last-child { border-right: none; }
+.compare-date-col { width: 72px; white-space: nowrap; font-size: 13px; font-weight: 700; color: #555; background: #fafafa; }
+.compare-cell { min-width: 220px; }
+.compare-entry + .compare-entry { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e0e0e0; }
+.compare-entry-head { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.compare-sites { margin-top: 6px; cursor: pointer; }
+.compare-site-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; padding: 2px 0; font-size: 13px; }
+.compare-actions { display: flex; gap: 4px; margin-top: 6px; }
+.compare-none { color: #bbb; font-size: 13px; }
+.icon-btn { background: none; border: 1px solid #e0e0e0; border-radius: 6px; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; color: #666; }
+.icon-btn:hover:not(:disabled) { background: #f5f5f5; border-color: #06C755; color: #06C755; }
+.icon-btn:disabled { opacity: .5; cursor: default; }
+.icon-btn .material-symbols-rounded { font-size: 16px; }
 .month-nav { display: flex; align-items: center; gap: 12px; background: #f5f5f5; border-radius: 10px; padding: 6px 12px; }
 .month-btn { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; width: 32px; height: 32px; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #333; transition: background .15s; }
 .month-btn:hover { background: #e8f9ef; border-color: #06C755; }
