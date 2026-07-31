@@ -117,9 +117,18 @@ export async function initAuth(): Promise<void> {
   currentUser.value = session?.user ?? null
   await resolveRole(currentUser.value)
 
-  supabase.auth.onAuthStateChange((_event, session) => {
-    currentUser.value = session?.user ?? null
-    void resolveRole(currentUser.value)
+  supabase.auth.onAuthStateChange((event, session) => {
+    const user = session?.user ?? null
+    // supabase-js はタブが hidden→visible に戻るたびに同一セッションで SIGNED_IN /
+    // TOKEN_REFRESHED を再発火する。そのたびに resolveRole を回すと roleResolved が
+    // 一瞬 false に倒れ、App.vue のゲート分岐で RouterView ごと再マウント＝全ページが
+    // データを読み直してしまう。ユーザーが変わった時だけ再解決する。
+    if (user?.id === currentUser.value?.id) {
+      if (event === 'USER_UPDATED' && user) currentUser.value = user
+      return
+    }
+    currentUser.value = user
+    void resolveRole(user)
   })
 }
 
