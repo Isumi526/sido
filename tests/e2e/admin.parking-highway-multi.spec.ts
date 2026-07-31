@@ -58,15 +58,13 @@ test.describe('駐車場代・高速代 複数登録（admin集計）', () => {
     await expect(modal).toContainText('¥333')
     await expect(modal).toContainText('¥444')
     await expect(modal).toContainText('¥555')
-    // 明細が別々の行に展開されていること（1行にまとめられていない）。
-    // ★f5f4bd9/498dbf0 で社内画面の列は「品名(P代/高速代)」から「科目」に変わったため、
-    //  行の識別は科目セルではなく金額で行う（駐車も高速も科目は同じ旅費交通費になる）。
-    for (const yen of ['¥333', '¥444', '¥555']) {
-      await expect(modal.locator('tr', { hasText: yen }), `${yen} が独立した行で出る`).toHaveCount(1)
-    }
-    // 科目列は3明細とも旅費交通費（駐車/高速/宿泊は旅費交通費に寄る）
-    expect(await modal.locator('td', { hasText: /^旅費交通費$/ }).count()).toBeGreaterThanOrEqual(3)
-    // 明細ごとの領収書リンク（📎）が出る
-    await expect(modal.locator('.receipt-link').first()).toBeVisible()
+    // 498dbf0(科目は社内画面だけに出す)で admin 経費管理の「品名」列は撤去され、
+    // 駐車代・高速代はいずれも科目「旅費交通費」に寄る。よって品名ではなく
+    // 「明細が何行に展開されたか」＋金額＋領収書リンクで複数明細化を検証する。
+    const rows = modal.locator('tbody tr').filter({ hasText: SEED_SITE })
+    await expect(rows).toHaveCount(3)                                    // 駐車代×2 ＋ 高速代×1
+    await expect(rows.filter({ hasText: '旅費交通費' })).toHaveCount(3)   // 科目の自動導出
+    // 明細ごとに領収書リンクが紐づく（3明細＝3リンク）
+    await expect(rows.locator('.receipt-link')).toHaveCount(3)
   })
 })
