@@ -76,12 +76,28 @@ test.describe('anon の権限昇格ロック', () => {
     expect(res.ok, '賃金は anon から書けない').toBe(false)
   })
 
-  test('anon で作業員を新規作成できない（LINE連携終了に伴い自己登録も閉じた）', async () => {
+  test('★LINE作業員の自己登録は壊れていない（許可した列だけで作成できる）', async () => {
+    // 本番にはLINEでしか入れない作業員が残っている（2026-08-01 実測）。ここを塞ぐと
+    // register.vue の新規登録が不能になり新規オンボーディングが止まる。
+    const name = `E2E権限ロック_自己登録_${Date.now()}`
     const res = await anonFetch('workers', {
       method: 'POST', headers: { Prefer: 'return=minimal' },
-      body: JSON.stringify({ name: `E2E権限ロック_自己登録_${Date.now()}`, role: 'site', unit_price: 0, active: true, account_id: accountId }),
+      body: JSON.stringify({ name, role: 'site', unit_price: 0, active: true, account_id: accountId }),
     })
-    expect(res.ok, 'anon からの作業員作成は塞がっている').toBe(false)
+    expect(res.ok, 'register.vue の自己登録経路は通る').toBe(true)
+    await restSrv(`workers?name=eq.${encodeURIComponent(name)}`, { method: 'DELETE' }).catch(() => {})
+  })
+
+  test('許可していない列は anon から書けない（列単位の fail-closed）', async () => {
+    // 許可列以外を混ぜた INSERT は拒否される＝将来カラムが増えても自動的に閉じている
+    const res = await anonFetch('workers', {
+      method: 'POST', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        name: `E2E権限ロック_混入_${Date.now()}`, role: 'site', unit_price: 0, active: true,
+        account_id: accountId, permission_role: 'admin',
+      }),
+    })
+    expect(res.ok, 'permission_role を混ぜた作成は拒否される').toBe(false)
   })
 
   test('anon で site_shares に自己付与できない（任意現場の閲覧権を取れない）', async () => {

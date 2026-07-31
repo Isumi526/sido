@@ -11,22 +11,27 @@
 --   など積み上げてきた権限制御はすべて無効。
 --   site_shares も同条件で、任意現場の閲覧権を自己付与できる。
 --
---  ★anon の書き込みを「全部」剥がす（2026-07-31 ユーザー確定）:
---   当初案は、LIFF の LINE 作業員（Supabase JWT を持たず anon で動く）の自己登録を
---   壊さないよう **列単位** で name/role/unit_price/active/account_id だけ許すものだった。
---   しかし **LINE 連携は運用を終了済み**（作業員は email/password ログイン＝authenticated）と
---   確認できたため、carve-out を残す理由が無くなった。中途半端に列を開けておくと
---   「なぜこの列だけ書けるのか」が後から分からなくなるので一律で閉じる。
+--  ★workers は「列単位」で閉じる（2026-08-01 本番データで裏取りして確定）:
+--   一時は「LINE連携は終了済み」という前提で anon の書き込みを全部剥がす案にしたが、
+--   **本番を読むと LINE はまだ現役だった**（直近30日に日報を出した39人中25人が LINE 紐付。
+--   うち2人は email/pw ログインを持たずLINEでしか入れない。稼働中の作業員では9人）。
+--   決定的なのは useLiff.init() の作りで、**LINEアプリ内で開くと authMode='line'＝anon**
+--   になる点。email/pw を持っている人でもLINEから開けば anon で動く。
+--   一律 revoke すると useExpense.registerUser の workers upsert（作業員の自己登録）が
+--   壊れて新規オンボーディングが止まるため、**自己登録に要る列だけ**を許す。
+--   テーブル単位の権限を落としてから列単位で grant し直すので、
+--   **今後カラムが増えても anon からは書けない（fail-closed）**。
 --
 --  これで閉じるもの:
 --   - permission_role の書き換え（権限昇格）
 --   - auth_user_id / login_id の書き換え（他人のログインへの割り込み）
---   - 単価・賃金・個人経費枠など全カラム
+--   - 賃金（daily_wage/hourly_wage）・個人経費枠など、以後追加される全カラム
+--   - workers の削除
 --   - site_shares への自己付与（任意現場の閲覧権を自分に与える）
 --
 --  影響しないもの（確認済み）:
+--   - LIFF の LINE 作業員の自己登録（name/role/unit_price/active/account_id は許可）
 --   - admin（email/password ログイン＝authenticated）の作業員マスタ・有休管理の書き込み
---   - LIFF の email/password 作業員（同じく authenticated）
 --   - worker-auth-setup 等の edge function（service_role）
 --   - apps/gas（GET のみ・書き込みヘルパー自体が無い）
 --   ＝ authenticated / service_role の権限は一切変えていない（両ロールとも全権限を保持）。
@@ -39,9 +44,18 @@
 --  SELECT は残す（LIFF が作業員名の一覧等を読むため）。
 revoke insert, update, delete on workers from anon;
 
+-- 自己登録（LINE作業員が自分の作業員行を作る）に必要な列だけ許す。
+-- useExpense.registerUser の upsert が入れるのは name/role/unit_price/active/account_id。
+grant insert (name, role, unit_price, active, account_id) on workers to anon;
+
+-- upsert が衝突した時の更新分。permission_role / auth_user_id / login_id / 賃金 /
+-- 個人経費枠は**含めない**＝権限昇格もログイン乗っ取りも賃金改ざんもできない。
+grant update (name, role, unit_price, active) on workers to anon;
+
 -- ── site_shares ───────────────────────────────────────────
---  共有トグル（apps/liff/pages/sites/[id].vue）は email/password 作業員＝authenticated で
---  動くため、anon を閉じても機能は残る。
+--  現場の閲覧権を自己付与できる穴。共有トグル（apps/liff/pages/sites/[id].vue）は
+--  現場責任者だけに出るUIで、**本番の現場責任者は全員 email/password を持つ
+--  （email/pw を持たない責任者は0人）**ことを確認済みなので、anon を閉じても実利用は壊れない。
 revoke insert, update, delete on site_shares from anon;
 
 -- ── ロールバック手順（本番で問題が出た時はこれを流す）────────────────
