@@ -198,7 +198,7 @@ test('画像/ファイル添付付きメッセージがチャットに正しく�
 test('@入力で作業員候補が出て選択でき、送信するとメンション通知(site_chat_mentions)が作られる', async ({ page }) => {
   const accountId = await getAccountId()
   const mentionTargetName = `E2Eメンション対象_${TS}`
-  const target = (await rest('workers', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
+  const target = (await restSrv('workers', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
     account_id: accountId, name: mentionTargetName, role: 'site', active: true,
   }) }))[0]
   try {
@@ -217,7 +217,7 @@ test('@入力で作業員候補が出て選択でき、送信するとメンシ�
     expect(mentions[0].read_at).toBeNull()
   } finally {
     await restSrv(`site_chat_mentions?worker_id=eq.${target.id}`, { method: 'DELETE' }).catch(() => {})
-    await rest(`workers?id=eq.${target.id}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`workers?id=eq.${target.id}`, { method: 'DELETE' }).catch(() => {})
   }
 })
 

@@ -5,7 +5,7 @@
 //  （2026-07-11・[[project_sido]]）
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, getAccountId } from './helpers'
+import { rest, getAccountId, restSrv } from './helpers'
 
 const TS = Date.now()
 const BIRTHDAY_WORKER = `E2E誕生日作業員admin_${TS}`
@@ -21,16 +21,16 @@ function todayMonthDay(): { mm: string; dd: string } {
 test.beforeAll(async () => {
   const accountId = await getAccountId()
   const { mm, dd } = todayMonthDay()
-  birthdayWorkerId = (await rest('workers', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
+  birthdayWorkerId = (await restSrv('workers', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
     account_id: accountId, name: BIRTHDAY_WORKER, role: 'site', active: true, birth_date: `1990-${mm}-${dd}`,
   }) }))[0].id
-  otherWorkerId = (await rest('workers', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
+  otherWorkerId = (await restSrv('workers', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
     account_id: accountId, name: OTHER_WORKER, role: 'site', active: true, birth_date: '1990-01-01',
   }) }))[0].id
 })
 test.afterAll(async () => {
-  await rest(`workers?id=eq.${birthdayWorkerId}`, { method: 'DELETE' }).catch(() => {})
-  await rest(`workers?id=eq.${otherWorkerId}`, { method: 'DELETE' }).catch(() => {})
+  await restSrv(`workers?id=eq.${birthdayWorkerId}`, { method: 'DELETE' }).catch(() => {})
+  await restSrv(`workers?id=eq.${otherWorkerId}`, { method: 'DELETE' }).catch(() => {})
 })
 
 test('今日が誕生日の作業員には予定管理カレンダーに誕生日バッジが出て、それ以外の作業員には出ない', async ({ page }) => {
