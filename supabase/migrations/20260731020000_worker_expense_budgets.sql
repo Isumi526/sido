@@ -57,3 +57,12 @@ revoke all on worker_expense_budgets from anon;
 -- ── 作業員ごとの既定枠（指定が無い月はこの金額が毎月自動で効く）──────────
 --  null = 未設定。テナント既定にフォールバックし、それも無ければ枠なし＝申請不可。
 alter table workers add column if not exists default_monthly_expense_limit numeric;
+
+-- ── 個人経費の二重登録を構造的に防ぐ ────────────────────────────────
+--  連打・ネットワーク再送で同じ経費が2行入ると、そのまま月枠の消費と経費合計が
+--  二重計上される（金額データなのでUI側の disabled だけに頼らない）。
+--  クライアントが1回の登録につき1つ発行する token で一意化する。
+--  既存行は token を持たないため部分indexにする（null 同士は衝突しない）。
+alter table personal_expenses add column if not exists client_token text;
+create unique index if not exists personal_expenses_client_token_uniq
+  on personal_expenses(client_token) where client_token is not null;

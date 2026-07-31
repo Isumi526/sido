@@ -120,6 +120,7 @@ const canSubmit = ref(false)
 const usage = ref(computeBudgetUsage([], '', null))
 const items = ref<any[]>([])
 const files = ref<File[]>([])
+const submitToken = ref('')
 
 const month = ref(todayStr().slice(0, 7))
 
@@ -170,6 +171,8 @@ async function onSubmit() {
   }
   busy.value = true
   try {
+    // 1回の登録につき1つ。再送しても EF 側で同一 token は1行にまとまる（二重計上の防止）。
+    if (!submitToken.value) submitToken.value = crypto.randomUUID()
     let fileUrls: string[] = []
     if (files.value.length) {
       const slug = await useAccount().effectiveSlug()
@@ -195,9 +198,11 @@ async function onSubmit() {
       note: form.value.note,
       file_urls: fileUrls,
       tategae: form.value.tategae,
+      client_token: submitToken.value,
     })
     form.value = { date: todayStr(), account_category: '旅費交通費', amount: 0, payee: '', companions: '', registration_number: '', note: '', tategae: false }
     files.value = []
+    submitToken.value = ''   // 次の登録は別の経費＝新しい token を発行する
     await refresh()
     msg.value = usage.value.isOver ? '登録しました（上限を超えています）' : '登録しました'
     msgOk.value = true
