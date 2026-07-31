@@ -50,12 +50,16 @@
 
 ## personal_expenses（現場に紐付かない個人経費）※日報に依存しない独立テーブル
 - **なぜ独立テーブルか（巻き戻し禁止）**: 現行の経費集計はすべて `is_working=true` の日報行に依存しており、**日報を出さない人（役員・経営者）や出勤しない日の経費は1円も集計されない**。日報JSONに相乗りさせる案ではこの穴が原理的に埋まらない。→ Notion #f4cc3db1（2026-07-30 確定）
-- 書き込み: （liff の個人経費入力画面 ※未実装）／admin から直接
-- 読み: `apps/admin/src/pages/expenses-daily.vue`（`flattenPersonalExpenses` で日報由来の行と合流）
+- 書き込み: `apps/liff/pages/expense/personal.vue`（→ `composables/usePersonalExpense.ts`）／admin から直接
+- 読み: `apps/admin/src/pages/expenses-daily.vue`（`flattenPersonalExpenses` で日報由来の行と合流。枠の消費パネルも同ページ）
 - **現場に紛れ込ませない**: `siteName` は空文字にする（`'現場未設定'` にしない）。日毎集計では「現場外（個人経費）」と表示。
 - **現場別集計・ガソリン按分は読まない**＝現場の原価を歪めない（`site-reports.vue` / `gasoline-allocation.vue` / `expenses.vue` / `index.vue` は `personal_expenses` を参照しない）。この不参照は意図的なので、追加する時は現場外行の除外を必ず入れる。
 - 権限: `workers.can_apply_personal_expense`（既定false）＝付与された人だけが申請できる（#2cbe3caa）
-- 月額上限（枠）は **#32e93d75 で設計未確定**（案A `workers.monthly_expense_limit` / 案B `worker_expense_budgets` 月別）
+- 月額上限（枠）＝ **案B確定（#32e93d75・2026-07-31）**: `worker_expense_budgets(worker_id, month, limit_amount)` で月別・履歴あり
+  - 解決順: 月別上書き → `workers.default_monthly_expense_limit` → `settings['personal_expense_monthly_limit']` → 枠なし（＝申請不可）
+  - 判定の正本は `shared/expense-flatten.ts`（`resolveMonthlyLimit` / `canSubmitPersonalExpense` / `computeBudgetUsage`）。画面ごとに書かない
+  - 月の寄せは経費の `date` 基準（申請の `period_key` 基準ではない）。母数は**月合計**で、未承認分も引当する
+  - **超過は警告のみ・ブロックしない**（目的は検知）。最初の経費登録時にその月の枠を凍結し、既定を後から変えても過去月が遡って変わらない
 - RLS: `account_id = current_account_id()` の4ポリシー（select/insert/update/delete）・anon revoke 済み
 
 ## gasoline_items（本日のガソリン代・実費）※flatten非経由・各ページで直接読む
