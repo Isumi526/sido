@@ -158,9 +158,41 @@ Deno.serve(async (req) => {
   const { accountId, workerId } = caller
 
   const action = body.action as string
+  // 未指定時のフォールバックは **JST基準**（クライアントは todayStr()(JST) で月を決めるため、
+  //  UTCで求めると JST 00:00〜09:00 の間だけ前月になり枠がズレる）
   const month = typeof body.month === 'string' && /^\d{4}-\d{2}$/.test(body.month)
     ? body.month
-    : new Date().toISOString().slice(0, 7)
+    : new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 7)
+
+  // 経費申請書PDF用: 期間で明細を返す。★EF経由にする理由（巻き戻し禁止）:
+  //  personal_expenses は RLS が `to authenticated` ＋ anon revoke。LIFF を LINE アプリ内で
+  //  開くと authMode='line'＝anon で動くため、クライアントから直接 select すると **黙って0件**
+  //  になり、個人立替が申請書から消える＝精算されない（2026-08-01 ship前に本番で LINE 利用者の
+  //  残存を確認して判明）。EF なら LINE ID token で身元を検証して service_role で読めるので、
+  //  LINE でも email/pw でも同じ結果になる。スコープは呼び出し元の account 内。
+  if (action === 'list') {
+    const from = String(body.from ?? '')
+    const to = String(body.to ?? '')
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+      return json({ ok: false, error: 'invalid_range' }, 400)
+    }
+    // 代理操作（他人の申請書を開く）にも対応。users.id → worker_id を同一account内で解決する。
+    let targetWorkerId = workerId
+    const asUserId = String(body.user_id ?? '')
+    if (asUserId) {
+      const { data: tu } = await svc.from('users').select('worker_id')
+        .eq('id', asUserId).eq('account_id', accountId).maybeSingle()
+      const tw = (tu as any)?.worker_id
+      if (!tw) return json({ ok: true, items: [] })   // 別テナント/未紐付は空で返す
+      targetWorkerId = tw
+    }
+    const { data: items, error } = await svc.from('personal_expenses').select('*')
+      .eq('worker_id', targetWorkerId).eq('account_id', accountId)
+      .gte('date', from).lte('date', to)
+      .order('date', { ascending: true })
+    if (error) return json({ ok: false, error: 'list_failed', message: error.message }, 500)
+    return json({ ok: true, items: items ?? [] })
+  }
 
   if (action === 'state') {
     const { limit, canApply } = await resolveLimit(svc, accountId, workerId, month)

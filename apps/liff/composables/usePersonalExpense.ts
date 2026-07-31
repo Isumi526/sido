@@ -55,6 +55,22 @@ export const usePersonalExpense = () => {
     return json
   }
 
+  /**
+   * 期間（経費申請書の期＝半月）の明細を取得する。
+   * ★EF経由。LINEアプリ内で開くと anon になり、テーブル直読みでは黙って0件になるため。
+   * userId を渡すと代理操作（他人の申請書）にも対応（EF側で同一account内に限定して解決）。
+   */
+  async function listByRange(from: string, to: string, userId?: string): Promise<any[]> {
+    try {
+      const r = await call('list', { from, to, ...(userId ? { user_id: userId } : {}) })
+      return (r.items ?? []) as any[]
+    } catch (e) {
+      // 黙って空にしない: 読めないと個人立替が申請書から消える
+      console.error('[usePersonalExpense] 個人経費を取得できませんでした（申請書から欠落します）:', e)
+      return []
+    }
+  }
+
   /** その月の申請可否・枠・明細をまとめて取得 */
   async function loadState(month: string): Promise<{ canSubmit: boolean; usage: BudgetUsage; items: any[] }> {
     try {
@@ -79,5 +95,5 @@ export const usePersonalExpense = () => {
     return await call('delete', { id })
   }
 
-  return { loadState, create, remove, expenseMonthKey }
+  return { loadState, listByRange, create, remove, expenseMonthKey }
 }
