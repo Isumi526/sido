@@ -21,7 +21,7 @@ test.beforeAll(async () => {
   userId = (await restSrv('users', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ account_id: accountId, real_name: USER, worker_role: 'site', is_approved: true, line_user_id: `e2e-share-${TS}` }) }))[0].id
 })
 test.afterAll(async () => {
-  await rest(`site_shares?site_id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})
+  await restSrv(`site_shares?site_id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})
   await rest(`sites?id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})
   await restSrv(`users?id=eq.${userId}`, { method: 'DELETE' }).catch(() => {})
 })
