@@ -7,7 +7,12 @@
       </div>
       <div v-for="(m, i) in messages" :key="i" class="msg" :class="m.role">
         <div class="msg-col">
-          <div class="bubble">{{ m.text }}</div>
+          <div class="bubble">
+            <div v-if="m.images && m.images.length" class="bubble-images">
+              <img v-for="(u, k) in m.images" :key="k" :src="u" class="bubble-img" alt="添付画像" />
+            </div>
+            <span v-if="m.text">{{ m.text }}</span>
+          </div>
           <div v-if="m.options && m.options.length && i === messages.length - 1" class="quick-replies">
             <button v-for="(op, k) in m.options" :key="k" class="qr-btn" :disabled="thinking" @click="send(op)">{{ op }}</button>
           </div>
@@ -23,9 +28,26 @@
       <button class="btn-dismiss" @click="bugSuggestion = null">閉じる</button>
     </div>
 
-    <div class="composer">
-      <textarea v-model="draft" class="composer-input" rows="2" placeholder="質問を入力…（Enterで改行 / ⌘・Ctrl+Enterで送信）" :disabled="thinking" @keydown.enter.meta.prevent="send()" @keydown.enter.ctrl.prevent="send()"></textarea>
-      <button class="btn-send" :disabled="thinking || !draft.trim()" @click="send()">送信</button>
+    <!-- 添付プレビュー（送信前に外せる） -->
+    <div v-if="attachments.length" class="attach-strip" data-testid="ai-attach-strip">
+      <div v-for="(a, i) in attachments" :key="i" class="attach-item">
+        <img :src="a.url" :alt="a.name" class="attach-thumb" />
+        <button type="button" class="attach-remove" :title="`${a.name} を外す`" @click="removeAttachment(i)">
+          <span class="material-symbols-rounded">close</span>
+        </button>
+      </div>
+    </div>
+    <p v-if="attachError" class="attach-error" data-testid="ai-attach-error">{{ attachError }}</p>
+
+    <div class="composer" :class="{ dragging }"
+         @dragover.prevent="dragging = true" @dragleave.prevent="dragging = false" @drop.prevent="onDrop">
+      <label class="btn-attach" :class="{ disabled: thinking }" title="画像を添付（複数可・ドラッグ&ドロップ / 貼り付けも可）">
+        <span class="material-symbols-rounded">add_photo_alternate</span>
+        <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden
+               data-testid="ai-attach-input" :disabled="thinking" @change="onPickFiles" />
+      </label>
+      <textarea v-model="draft" class="composer-input" rows="2" placeholder="質問を入力…（画像も添付できます / ⌘・Ctrl+Enterで送信）" :disabled="thinking" @paste="onPaste" @keydown.enter.meta.prevent="send()" @keydown.enter.ctrl.prevent="send()"></textarea>
+      <button class="btn-send" :disabled="thinking || (!draft.trim() && !attachments.length)" data-testid="ai-send" @click="send()">送信</button>
     </div>
     <div class="composer-actions">
       <button class="btn-bug-manual" @click="openBug()">不具合を手動で報告</button>
@@ -52,16 +74,30 @@
 <script setup lang="ts">
 import { ref, nextTick } from 'vue'
 import { supabase } from '../lib/supabase'
+import { compressImageIfNeeded, formatMB } from '../lib/chatAttachmentLimits'
 
 const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
 const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 
-type Msg = { role: 'user' | 'ai'; text: string; options?: string[] }
+type Msg = { role: 'user' | 'ai'; text: string; options?: string[]; images?: string[] }
+type Attachment = { name: string; mimeType: string; data: string; url: string; bytes: number }
 const messages = ref<Msg[]>([])
 const draft = ref('')
 const thinking = ref(false)
 const chatEl = ref<HTMLElement | null>(null)
 const lastTicketUrl = ref('')
+
+// 画像添付（複数可・D&D・貼り付け）。EF側の受け入れ条件と数値を揃えること。
+//  ★上限を小さめに置く理由: base64 は元の約1.34倍に膨らみ、EFのリクエストボディを直に食う。
+//   ローカル検証で 6MB の base64 を投げたら edge runtime がタイムアウトした（受け取る前に死ぬ）。
+//   そこで「送る前に圧縮」＋「1枚1.5MB・合計4MBまで」に抑える。
+const ALLOWED_MIME = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
+const MAX_IMAGES = 4
+const MAX_BYTES = 1.5 * 1024 * 1024          // 圧縮後の1枚あたり
+const MAX_TOTAL_BYTES = 4 * 1024 * 1024      // 全添付の合計（EFが受け取れる範囲）
+const attachments = ref<Attachment[]>([])
+const attachError = ref('')
+const dragging = ref(false)
 
 const bug = ref<{ title: string; body: string } | null>(null)
 const bugBusy = ref(false)
@@ -78,18 +114,71 @@ async function callEF(fn: string, payload: any) {
     return await res.json().catch(() => ({ ok: false, error: `エラー (${res.status})` }))
   } catch { return { ok: false, error: '接続できませんでした' } }
 }
+/** 受け入れ可能な画像だけを添付に足す。弾いた理由は必ず画面に出す（黙って落とさない） */
+async function addFiles(files: File[]) {
+  attachError.value = ''
+  const rejected: string[] = []
+  for (const raw of files) {
+    if (attachments.value.length >= MAX_IMAGES) { rejected.push(`${raw.name}（上限${MAX_IMAGES}枚）`); continue }
+    if (!ALLOWED_MIME.includes(raw.type)) { rejected.push(`${raw.name}（画像以外）`); continue }
+    // 大きいスクショはそのままだとEFが受け取れないので、送る前に縮める（現場チャットと同じ処理）
+    const f = await compressImageIfNeeded(raw)
+    if (f.size > MAX_BYTES) { rejected.push(`${raw.name}（圧縮しても${formatMB(f.size)}で大きすぎる）`); continue }
+    const total = attachments.value.reduce((n, a) => n + a.bytes, 0)
+    if (total + f.size > MAX_TOTAL_BYTES) { rejected.push(`${raw.name}（合計${formatMB(MAX_TOTAL_BYTES)}を超える）`); continue }
+    const data = await toBase64(f)
+    attachments.value.push({ name: raw.name, mimeType: f.type, data, url: URL.createObjectURL(f), bytes: f.size })
+  }
+  if (rejected.length) attachError.value = `添付できなかったファイル: ${rejected.join(' / ')}`
+}
+function toBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => { const s = r.result as string; resolve(s.slice(s.indexOf(',') + 1)) }
+    r.onerror = () => reject(r.error)
+    r.readAsDataURL(file)
+  })
+}
+function onPickFiles(e: Event) {
+  const el = e.target as HTMLInputElement
+  void addFiles(Array.from(el.files ?? [])).then(() => { el.value = '' })   // 同じファイルを続けて選べるようにクリア
+}
+function onDrop(e: DragEvent) {
+  dragging.value = false
+  if (thinking.value) return
+  void addFiles(Array.from(e.dataTransfer?.files ?? []))
+}
+/** スクショの貼り付け（⌘V）。現場からの問い合わせで一番使われる導線 */
+function onPaste(e: ClipboardEvent) {
+  const files = Array.from(e.clipboardData?.items ?? [])
+    .filter(it => it.kind === 'file')
+    .map(it => it.getAsFile())
+    .filter((f): f is File => !!f)
+  if (files.length) { e.preventDefault(); void addFiles(files) }
+}
+function removeAttachment(i: number) {
+  URL.revokeObjectURL(attachments.value[i].url)
+  attachments.value.splice(i, 1)
+  attachError.value = ''
+}
+
 async function scrollDown() { await nextTick(); if (chatEl.value) chatEl.value.scrollTop = chatEl.value.scrollHeight }
 
 async function send(optionText?: string) {
   const msg = (optionText ?? draft.value).trim()
-  if (!msg || thinking.value) return
+  // 画像だけの送信も許す（スクショを貼って「これ何？」と聞く使い方）
+  if ((!msg && !attachments.value.length) || thinking.value) return
+  const sending = optionText ? [] : attachments.value.slice()
   // 直前のAIが聞き返し(選択肢付き)なら、次は聞き返さず即答させる（聞き返しは1回まで＝ループ防止）
   const last = messages.value[messages.value.length - 1]
   const allowClarify = !(last?.role === 'ai' && !!last.options?.length)
-  messages.value.push({ role: 'user', text: msg })
-  if (!optionText) draft.value = ''
+  messages.value.push({ role: 'user', text: msg, images: sending.map(a => a.url) })
+  if (!optionText) { draft.value = ''; attachments.value = []; attachError.value = '' }
   thinking.value = true; await scrollDown()
-  const r = await callEF('ai-chat', { message: msg, history: messages.value.slice(-9, -1), allowClarify })
+  const r = await callEF('ai-chat', {
+    message: msg, history: messages.value.slice(-9, -1), allowClarify,
+    images: sending.map(a => ({ mimeType: a.mimeType, data: a.data })),
+  })
   thinking.value = false
   if (r?.ok) {
     const opts = r.needClarify && Array.isArray(r.options) && r.options.length ? r.options as string[] : undefined
@@ -141,6 +230,17 @@ async function submitBug() {
 .msg.ai .bubble { background: #fff; color: #222; border: 1px solid #e8ebee; border-bottom-left-radius: 4px; }
 .bubble.thinking { color: #999; }
 .composer { display: flex; gap: 8px; margin-top: 12px; }
+.attach-strip { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 0 0; }
+.attach-item { position: relative; }
+.attach-thumb { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; border: 1px solid #ddd; display: block; }
+.attach-remove { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%; border: none; background: #444; color: #fff; cursor: pointer; display: grid; place-items: center; padding: 0; }
+.attach-remove .material-symbols-rounded { font-size: 14px; }
+.attach-error { color: #b91c1c; font-size: 12px; margin: 6px 0 0; }
+.composer.dragging { outline: 2px dashed #2563eb; outline-offset: 4px; border-radius: 10px; }
+.btn-attach { display: grid; place-items: center; width: 40px; border: 1px solid #ddd; border-radius: 10px; cursor: pointer; color: #555; background: #fff; }
+.btn-attach.disabled { opacity: .5; pointer-events: none; }
+.bubble-images { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.bubble-img { max-width: 180px; max-height: 180px; border-radius: 8px; display: block; }
 .composer-input { flex: 1; border: 1px solid #ddd; border-radius: 10px; padding: 11px 14px; font-size: 14px; font-family: inherit; resize: vertical; line-height: 1.5; }
 .btn-send { background: #06C755; color: #fff; border: none; border-radius: 10px; padding: 11px 22px; font-size: 14px; font-weight: 700; cursor: pointer; align-self: stretch; }
 .btn-send:disabled { opacity: .5; }
