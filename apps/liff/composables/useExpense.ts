@@ -5,7 +5,7 @@
 import type { User, ExpenseItem, ExpenseItemInput, ExpenseRow } from '~/types'
 import { useI18n } from 'vue-i18n'
 import { gt } from '~/utils/i18n-global'
-import { flattenReportExpenses, flattenGasolineItems, ratesFromSettings, mergeOtherExpenses, splitOtherExpenses } from './expense-flatten.gen'
+import { flattenReportExpenses, flattenGasolineItems, flattenPersonalExpenses, ratesFromSettings, mergeOtherExpenses, splitOtherExpenses } from './expense-flatten.gen'
 import { resolveActiveSiteId } from '~/utils/siteSimilarity'
 
 // ---------- 期間キーユーティリティ ----------
@@ -571,6 +571,14 @@ export const useExpense = () => {
       //   書き戻し先を区別する（srcIndexは元配列のindex）のも共有側で付ける。
       rows.push(...flattenGasolineItems(rep.date, (rep as any).gasoline_items) as ExpenseRow[])
     }
+
+    // 現場に紐付かない個人経費も精算書に載せる（#f4cc3db1 / #32e93d75）。
+    //  ★載せないと個人立替(tategae)が精算されない。日報を出さない役員等は
+    //   そもそも daily_reports が無いので、ここで拾わないと1円も出ない。
+    // ★必ず EF 経由で読む（直読み禁止）。personal_expenses は anon revoke ＋ RLS authenticated で、
+    //  LIFF を LINE アプリ内で開くと anon になるため、直読みだと黙って0件＝個人立替が
+    //  申請書から消える（2026-08-01 ship前に本番で LINE 利用者の残存を確認して判明）。
+    rows.push(...flattenPersonalExpenses(await usePersonalExpense().listByRange(dateFrom, dateTo, userId) as any))
     return rows
   }
 
