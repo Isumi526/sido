@@ -11,6 +11,8 @@
 // 経費平坦化・単価・ExpenseRow は単一ソース shared/expense-flatten.ts（→ expense-flatten.gen.ts）から再エクスポート。
 // ロジック変更は shared/expense-flatten.ts を編集し `npm run sync:shared` で再生成すること。
 export { type ExpenseRow, type ExpenseRates, type PersonalExpenseRecord, DEFAULT_RATES, ratesFromSettings, flattenReportExpenses, flattenGasolineItems, flattenPersonalExpenses, isPersonalExpenseRow, expenseDisplayCategory, expenseAccountCategory, requiresCompanions, EXPENSE_ACCOUNT_OPTIONS } from './expense-flatten.gen'
+// 個人経費の月額枠（#32e93d75）。枠の解決順・超過判定も shared/expense-flatten.ts が正本。
+export { type BudgetUsage, type MonthlyLimitSources, PERSONAL_EXPENSE_LIMIT_SETTING_KEY, expenseMonthKey, personalExpenseLimitFromSettings, resolveMonthlyLimit, canSubmitPersonalExpense, sumMonthlyPersonalExpenses, computeBudgetUsage } from './expense-flatten.gen'
 
 // ---------- 月次精算（申請/差し戻し）ステータス ----------
 // 正典: docs/spec/expense.md §2,§3
