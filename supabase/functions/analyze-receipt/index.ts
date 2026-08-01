@@ -50,7 +50,8 @@ Deno.serve(async (req) => {
   "label": "内容・品名・サービス名（電車・鉄道・乗車券なら乗車区間を『A〜B』の形式で／駐車なら『駐車料金』等の内容。発行元名ではなく“何の代金か”。なければnull）",
   "yen": 合計金額（数値、税込、円、不明ならnull）,
   "invoiceNumber": "インボイス登録番号（T+13桁の数字形式、なければnull）",
-  "liters": 給油量（ガソリン/軽油の領収書の場合のみ数値でリットル数。給油以外の領収書、または記載が無い/読み取れない場合はnull）
+  "liters": 給油量（ガソリン/軽油の領収書の場合のみ数値でリットル数。給油以外の領収書、または記載が無い/読み取れない場合はnull）,
+  "account": "勘定科目。次の7つのいずれか厳密に1つだけを返す: 旅費交通費 / 車両費 / 消耗品費 / 材料費 / 接待交際費 / 会議費 / 雑費。判断できない場合は必ずnull（勝手に別の名称を作らない）。目安: 飲食店・居酒屋・料亭=接待交際費、カフェ・喫茶・貸会議室=会議費、ホームセンター・工具・建築資材=材料費、文具・日用品=消耗品費、鉄道・バス・タクシー・駐車・高速・宿泊=旅費交通費、給油・洗車・車検=車両費"
 }`
 
     const body = {
@@ -99,7 +100,16 @@ Deno.serve(async (req) => {
       yen: number | null
       invoiceNumber: string | null
       liters: number | null
+      account: string | null
     }
+
+    // 勘定科目は7つの固定値以外を通さない（表記揺れが入ると科目でフィルタ/集計できなくなる）。
+    //  一覧の正本は shared/expense-flatten.ts の EXPENSE_ACCOUNT_OPTIONS。
+    //  ※EFはDenoで shared/ を import しないため、ここだけは値を写している（増減時は両方直す）。
+    const ACCOUNTS = ['旅費交通費', '車両費', '消耗品費', '材料費', '接待交際費', '会議費', '雑費']
+    const account = typeof result.account === 'string' && ACCOUNTS.includes(result.account.trim())
+      ? result.account.trim()
+      : null
 
     return json({
       storeName:     result.storeName ?? null,
@@ -107,6 +117,7 @@ Deno.serve(async (req) => {
       yen:           result.yen != null ? Number(result.yen) : null,
       invoiceNumber: result.invoiceNumber ?? null,
       liters:        result.liters != null ? Number(result.liters) : null,
+      account,
     })
   } catch (e) {
     console.error('[analyze-receipt]', e)

@@ -6,7 +6,7 @@
 //  ※ マスタ(Worker 01 等)・dev-user-id・通常日報は seed.sql が投入済み
 // ============================================================
 import { execSync } from 'node:child_process'
-import { SUPABASE_URL, ANON_KEY, ACCOUNT_SLUG, ADMIN_LOGIN_EMAIL, ADMIN_LOGIN_PASS, DB_URL, getAccountId, rest, upsert } from './helpers'
+import { SUPABASE_URL, ANON_KEY, ACCOUNT_SLUG, ADMIN_LOGIN_EMAIL, ADMIN_LOGIN_PASS, DB_URL, getAccountId, rest, restSrv, upsert } from './helpers'
 
 export const DEV_LINE_ID = 'dev-user-id'
 // seed.sql と一致
@@ -121,7 +121,8 @@ async function ensureRecentReportStartDate(accountId: string) {
   const start = new Date(today); start.setDate(start.getDate() - 2)
   const startStr = fmt(start)
   try {
-    await rest(`workers?account_id=eq.${accountId}&name=eq.${encodeURIComponent(SEED_WORKER)}`, {
+    // ★anon は workers の限られた列しか書けない（P0の権限ロック）。シードは service_role で行う。
+    await restSrv(`workers?account_id=eq.${accountId}&name=eq.${encodeURIComponent(SEED_WORKER)}`, {
       method: 'PATCH', headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({ report_start_date: startStr }),
     })

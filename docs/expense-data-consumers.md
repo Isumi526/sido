@@ -15,18 +15,21 @@
 - [ ] `apps/liff/composables/useExpense.ts` — `saveReportById`/`sanitizeSitesForStorage`（保存前のFile除去）
 - [ ] `apps/liff/types/index.ts` — `Expenses`/`LineItem`等の型
 
-### 集計（flatten）★重複2本：両方直す
-- [ ] `apps/admin/src/lib/expenses.ts` `flattenReportExpenses` → admin月次経費（expenses.vue）が使用
-- [ ] `apps/liff/composables/useExpense.ts` `getExpenseRowsFromReportsById` → **経費PDF**（liff `expense/print.vue`・`expense/download.vue`）が使用
-  - ※この2つは**同一ロジックの手動コピー**。片方だけ直すとPDFと管理画面の金額がズレる。→ 恒久対策は一本化（バックログ「経費平坦化ロジックのLIFF/admin重複をpackagesへ共通化」）
+### 集計（flatten）★単一ソース：`shared/expense-flatten.ts` だけを編集
+- [ ] `shared/expense-flatten.ts` — `flattenReportExpenses`/`flattenGasolineItems`/`expenseDisplayCategory`（品名）/`expenseAccountCategory`（勘定科目）/`EXPENSE_ACCOUNT_OPTIONS` の正本
+- [ ] 編集後は **`npm run sync:shared`** で `apps/admin/src/lib/expense-flatten.gen.ts` と `apps/liff/composables/expense-flatten.gen.ts` を再生成する（**.gen.ts は直接編集禁止**・`scripts/sync-shared.mjs`）
+  - admin からは `apps/admin/src/lib/expenses.ts`（re-exportシム）経由、liff からは `~/composables/expense-flatten.gen` を直接 import
 
 ### 表示・集計（admin）
+- [ ] `apps/admin/src/pages/expenses.vue` — 月次経費（精算モーダル明細・印刷/PDF）
+- [ ] `apps/admin/src/pages/expenses-daily.vue` — 経費 日毎集計（科目=勘定科目・内訳あり）
 - [ ] `apps/admin/src/pages/reports.vue` — 日報一覧の経費明細・領収書リンク表示
 - [ ] `apps/admin/src/pages/index.vue` — ダッシュボードの経費合計（カテゴリ別 addExp）
 - [ ] `apps/admin/src/pages/site-reports.vue` — 現場別のコスト計算・明細表示
 
 ### 表示（LIFF）
 - [ ] `apps/liff/pages/history.vue` — 日報履歴の経費サマリ
+- [ ] `apps/liff/pages/expense/download.vue`・`expense/print.vue` — 経費PDF（申請書）。**download.vue は申請前インライン編集の書き戻しあり**（`saveRow` → `useExpense.patchExpenseItem` が `srcSiteIndex/srcKey/srcIndex` で明細を辿って保存）。列・編集対象フィールドを増やす時は `patchExpenseItem` の patch 対象も確認
 
 ### 通知・差分
 - [ ] `supabase/functions/_shared/notify.ts` — 日報送信のLINEメッセージ本文（`buildReportMessage`）。**Edge Function＝変更時は functions deploy 必須**
@@ -44,6 +47,25 @@
 ## 検証
 - `npm run typecheck`（apps/liff）／admin は `any` 型のため型では落ちないので**目視必須**
 - 本番反映前に、admin月次集計・ダッシュボード・現場別の**金額合計**が新旧データで合うか確認
+
+## personal_expenses（現場に紐付かない個人経費）※日報に依存しない独立テーブル
+- **なぜ独立テーブルか（巻き戻し禁止）**: 現行の経費集計はすべて `is_working=true` の日報行に依存しており、**日報を出さない人（役員・経営者）や出勤しない日の経費は1円も集計されない**。日報JSONに相乗りさせる案ではこの穴が原理的に埋まらない。→ Notion #f4cc3db1（2026-07-30 確定）
+- 書き込み: `apps/liff/pages/expense/personal.vue`（→ `composables/usePersonalExpense.ts` → edge function `personal-expense-submit`。領収書AI解析は `useReceiptAnalysis`）／admin から直接
+- 読み（★経費構造を変えたら全部見る）:
+  - `apps/admin/src/pages/expenses-daily.vue`（日毎集計・枠の消費パネル）
+  - `apps/admin/src/pages/expenses.vue`（**経費管理＝精算・明細PDF/請求書PDF**。worker_id→users.id の対応表で精算行に合流。users行が無い作業員は合流できないので console.warn を出す）
+  - `apps/liff/composables/useExpense.ts` `getExpenseRowsFromReportsById`（**経費申請書PDF**の唯一の組み立て口。`expense/download.vue`・`expense/print.vue` はここを通る）
+- **精算に載せる理由（巻き戻し禁止）**: 個人経費は `tategae`（個人立替）を持つ。申請書・精算に出さないと会社が本人へ振り込む対象から漏れる。日報を出さない役員等は `daily_reports` が無いので、`personal_expenses` を読まない限り1円も出ない。
+- **読めない時に黙らせない**: `personal_expenses` は RLS(authenticated)＋anon revoke。LIFF は email/password ログイン＝authenticated 前提。読み取りに失敗したら金額が申請書から消えるため `console.error` を出す（silent-drop 禁止）。
+- **現場に紛れ込ませない**: `siteName` は空文字にする（`'現場未設定'` にしない）。日毎集計では「現場外（個人経費）」と表示。
+- **現場別集計・ガソリン按分は読まない**＝現場の原価を歪めない（`site-reports.vue` / `gasoline-allocation.vue` / `expenses.vue` / `index.vue` は `personal_expenses` を参照しない）。この不参照は意図的なので、追加する時は現場外行の除外を必ず入れる。
+- 権限: `workers.can_apply_personal_expense`（既定false）＝付与された人だけが申請できる（#2cbe3caa）
+- 月額上限（枠）＝ **案B確定（#32e93d75・2026-07-31）**: `worker_expense_budgets(worker_id, month, limit_amount)` で月別・履歴あり
+  - 解決順: 月別上書き → `workers.default_monthly_expense_limit` → `settings['personal_expense_monthly_limit']` → 枠なし（＝申請不可）
+  - 判定の正本は `shared/expense-flatten.ts`（`resolveMonthlyLimit` / `canSubmitPersonalExpense` / `computeBudgetUsage`）。画面ごとに書かない
+  - 月の寄せは経費の `date` 基準（申請の `period_key` 基準ではない）。母数は**月合計**で、未承認分も引当する
+  - **超過は警告のみ・ブロックしない**（目的は検知）。最初の経費登録時にその月の枠を凍結し、既定を後から変えても過去月が遡って変わらない
+- RLS: `account_id = current_account_id()` の4ポリシー（select/insert/update/delete）・anon revoke 済み
 
 ## gasoline_items（本日のガソリン代・実費）※flatten非経由・各ページで直接読む
 - 書き込み: report.vue ガソリンカード / createGasolineItem(useReport) / **saveReportById の gasItems whitelist（未知フィールドは落ちる＝新フィールド追加時は必ずここに追加）** / loadEditData 復元(report.vue)
