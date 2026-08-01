@@ -296,6 +296,58 @@ export function isPersonalExpenseRow(row: { srcKey?: string }): boolean {
   return row.srcKey === 'personalExpenses'
 }
 
+// ── 「その他」と「その他雑経費」の入力統合 ────────────────────────────
+//  日報フォームの2セクションは入力欄が完全に同じで、違いは導出される科目だけだった。
+//  科目を入力項目にしたことで分ける理由が無くなったので入力は1つに畳む。
+//  ★ただし保存先の配列は分けたまま（2026-07-31 ユーザー確定・案B）。
+//   現場別集計は entertainments を「接待交際費」列、others を「ホーム」列に集計しており、
+//   単純に others へ寄せると**過去と比べられなくなる**（金額が別の列へ移動する）。
+//   入力は1本・保存は科目で振り分け、にすることで集計ロジックに一切触らない。
+
+/** その明細が「接待交際費」扱いか（科目の入力値が無ければ生カテゴリから導出） */
+function isEntertainmentAccount(item: { account?: string }, fallbackCategory: string): boolean {
+  return expenseAccountCategory({ category: fallbackCategory, account: item.account }) === '接待交際費'
+}
+
+/**
+ * 編集ロード時に entertainments を others に畳んで1本のリストにする。
+ * ★科目を明示的に埋めるのが肝: 空のままだと others 側の導出（消耗品費）に化けて、
+ *  再保存で entertainments から others へ移動＝現場別集計の列が黙って変わってしまう。
+ */
+export function mergeOtherExpenses<T extends { account?: string }>(
+  others: T[] | null | undefined,
+  entertainments: T[] | null | undefined,
+): T[] {
+  const merged: T[] = [...(others ?? [])].map((o) => ({
+    ...o,
+    account: o.account || expenseAccountCategory({ category: 'その他', account: o.account }),
+  }))
+  for (const e of (entertainments ?? [])) {
+    merged.push({
+      ...e,
+      account: e.account || expenseAccountCategory({ category: 'その他雑経費', account: e.account }),
+    })
+  }
+  return merged
+}
+
+/**
+ * 保存時に1本のリストを others / entertainments へ振り分ける。
+ * 科目=接待交際費 のものだけ entertainments に入れ、それ以外は others。
+ * これで現場別集計の「接待交際費」列・「ホーム」列は今までと同じ値になる。
+ */
+export function splitOtherExpenses<T extends { account?: string }>(
+  items: T[] | null | undefined,
+): { others: T[]; entertainments: T[] } {
+  const others: T[] = []
+  const entertainments: T[] = []
+  for (const it of (items ?? [])) {
+    if (isEntertainmentAccount(it, 'その他')) entertainments.push(it)
+    else others.push(it)
+  }
+  return { others, entertainments }
+}
+
 // ── 個人経費の月額上限（枠）─────────────────────────────────────
 //  #32e93d75（2026-07-31 ユーザー確定回答）。admin の枠設定UI・liff の申請画面・
 //  管理側の超過検知が全部ここを通る（判定ロジックを画面ごとに書かない）。
