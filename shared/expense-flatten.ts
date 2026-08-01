@@ -292,3 +292,111 @@ export function flattenPersonalExpenses(
 export function isPersonalExpenseRow(row: { srcKey?: string }): boolean {
   return row.srcKey === 'personalExpenses'
 }
+
+// ── 個人経費の月額上限（枠）─────────────────────────────────────
+//  #32e93d75（2026-07-31 ユーザー確定回答）。admin の枠設定UI・liff の申請画面・
+//  管理側の超過検知が全部ここを通る（判定ロジックを画面ごとに書かない）。
+
+/** テナント既定の月額上限を置く settings のキー（gasoline_rate_per_km と同じ流儀） */
+export const PERSONAL_EXPENSE_LIMIT_SETTING_KEY = 'personal_expense_monthly_limit'
+
+/**
+ * 経費を寄せる月キー 'YYYY-MM'。
+ * ★申請の period_key（半月）ではなく経費の date 基準（2026-07-31 ユーザー確定 2-4）。
+ *  月末の領収書を翌月前半に申請しても正しい月の枠を食う。
+ */
+export function expenseMonthKey(date: string | null | undefined): string {
+  return (date ?? '').slice(0, 7)
+}
+
+/** 数値として意味のある枠値なら返す。null/undefined/空文字/非数値は「未設定」＝null */
+function toLimit(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+/** settings 行配列からテナント既定の月額上限を解決（未設定なら null＝テナント既定なし） */
+export function personalExpenseLimitFromSettings(
+  rows: Array<{ key: string; value: any }> | null | undefined,
+): number | null {
+  const hit = (rows ?? []).find((s) => s.key === PERSONAL_EXPENSE_LIMIT_SETTING_KEY)
+  return hit ? toLimit(hit.value) : null
+}
+
+export interface MonthlyLimitSources {
+  monthOverride?: unknown  // worker_expense_budgets(worker_id, month).limit_amount ＝その月だけの上書き
+  workerDefault?: unknown  // workers.default_monthly_expense_limit ＝指定が無い月に毎月効く既定
+  tenantDefault?: unknown  // settings['personal_expense_monthly_limit'] ＝テナント既定
+}
+
+/**
+ * その作業員のその月の枠を解決する。上から順に最初に見つかった値を採用し、
+ * どれも未設定なら null＝**枠なし**（＝申請不可。0円の枠とは区別する）。
+ */
+export function resolveMonthlyLimit(sources: MonthlyLimitSources): number | null {
+  return toLimit(sources.monthOverride)
+    ?? toLimit(sources.workerDefault)
+    ?? toLimit(sources.tenantDefault)
+}
+
+/**
+ * 個人経費を申請できるか。
+ * **権限フラグON かつ 枠が1円以上**（2026-07-31 ユーザー確定「金額が設定されている作業員のみ提出可能」）。
+ * フラグ＝「そもそも許すか」、枠＝「いくらまで」の2層。どちらが欠けても入口を出さない。
+ */
+export function canSubmitPersonalExpense(
+  worker: { can_apply_personal_expense?: boolean | null } | null | undefined,
+  limit: number | null,
+): boolean {
+  return !!worker?.can_apply_personal_expense && limit !== null && limit > 0
+}
+
+/**
+ * その月の消費額。
+ * ★承認状態で絞らない＝**未承認・差し戻し中の金額も引当**（2026-07-31 ユーザー確定 2-2）。
+ *  承認済みだけを消費とみなすと、前半未承認のうちに後半で満額使えてしまう。
+ * ★母数は月合計（half-month の first/second をまたいで累計・同 2-1）。
+ */
+export function sumMonthlyPersonalExpenses(
+  records: Array<{ date: string; amount: number | string }> | null | undefined,
+  month: string,
+): number {
+  let total = 0
+  for (const r of (records ?? [])) {
+    if (expenseMonthKey(r.date) !== month) continue
+    total += Math.round(Number(r.amount) || 0)
+  }
+  return total
+}
+
+export interface BudgetUsage {
+  month: string
+  limit: number | null   // null＝枠なし
+  used: number
+  remaining: number      // 枠なしなら 0
+  isOver: boolean        // 超過しているか（★警告用。ブロックはしない）
+  hasBudget: boolean
+}
+
+/**
+ * 枠の消費状況。
+ * ★超過は **警告のみでブロックしない**（2026-07-31 ユーザー確定 2-3）。
+ *  目的は「なんで超えてんの？」を検知することで、立替の実費登録を止めることではない。
+ */
+export function computeBudgetUsage(
+  records: Array<{ date: string; amount: number | string }> | null | undefined,
+  month: string,
+  limit: number | null,
+): BudgetUsage {
+  const used = sumMonthlyPersonalExpenses(records, month)
+  const hasBudget = limit !== null
+  return {
+    month,
+    limit,
+    used,
+    remaining: hasBudget ? Math.max(0, (limit as number) - used) : 0,
+    isOver: hasBudget && used > (limit as number),
+    hasBudget,
+  }
+}
