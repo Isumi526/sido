@@ -58,14 +58,13 @@ test.describe('駐車場代・高速代 複数登録（admin集計）', () => {
     await expect(modal).toContainText('¥333')
     await expect(modal).toContainText('¥444')
     await expect(modal).toContainText('¥555')
-    // 駐車代の明細セルが2つ以上（本シード分）
-    // 4e3e3ad(客先フォーマット統一)で品名列の表示は expenseDisplayCategory() により「P代」に短縮済み
-    // （生カテゴリ'駐車代'自体は変えず、表示のみ変換。集計・フィルタは引き続き'駐車代'キーを使う）。
-    const parkingCells = modal.locator('td', { hasText: /^P代$/ })
-    expect(await parkingCells.count()).toBeGreaterThanOrEqual(2)
-    // 高速代も1行以上
-    await expect(modal.locator('td', { hasText: /^高速代$/ }).first()).toBeVisible()
-    // 明細ごとの領収書リンク（📎）が出る
-    await expect(modal.locator('.receipt-link').first()).toBeVisible()
+    // 498dbf0(科目は社内画面だけに出す)で admin 経費管理の「品名」列は撤去され、
+    // 駐車代・高速代はいずれも科目「旅費交通費」に寄る。よって品名ではなく
+    // 「明細が何行に展開されたか」＋金額＋領収書リンクで複数明細化を検証する。
+    const rows = modal.locator('tbody tr').filter({ hasText: SEED_SITE })
+    await expect(rows).toHaveCount(3)                                    // 駐車代×2 ＋ 高速代×1
+    await expect(rows.filter({ hasText: '旅費交通費' })).toHaveCount(3)   // 科目の自動導出
+    // 明細ごとに領収書リンクが紐づく（3明細＝3リンク）
+    await expect(rows.locator('.receipt-link')).toHaveCount(3)
   })
 })

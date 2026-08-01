@@ -207,7 +207,8 @@
           <p v-if="!modal.id" class="hint">新規はここで選ぶと「保存時にアップロード」されます。出退勤同意の設定は作成後に「ルール・QR設定」で行えます。</p>
         </div>
 
-        <div v-if="modal.id" class="field">
+        <!-- 見積書（金額入り）は経営系＝現場管理者には出さない（2026-07-31 レビュー指摘） -->
+        <div v-if="modal.id && canViewManagementPages" class="field">
           <label>この現場の見積書</label>
           <div v-if="siteEstimates.length" class="att-list" data-testid="site-estimates">
             <div v-for="e in siteEstimates" :key="e.id" class="att-item">
@@ -251,7 +252,7 @@ import { useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { useQueryParam } from '../composables/useQueryParam'
-import { currentUser } from '../lib/auth'
+import { currentUser, canViewManagementPages } from '../lib/auth'
 import { findSimilarSiteNames } from '../lib/siteSimilarity'
 
 const router = useRouter()
@@ -479,7 +480,8 @@ async function openEdit(s: Site) {
   if (modal.value) modal.value.shareUsers = ((shares ?? []) as any[]).map(l => l.user_id)
   siteEstimates.value = []
   clearPendingAtts()
-  await Promise.all([loadAttachments(s.id), loadSiteEstimates(s.id)])
+  // 見積書は表示しないロールでは取得もしない（非表示なのに読むと無駄＋漏洩面が広がる）
+  await Promise.all([loadAttachments(s.id), canViewManagementPages.value ? loadSiteEstimates(s.id) : Promise.resolve()])
   markFormOpened()   // 非同期ロード後に dirty 監視を開始（ロード自体を編集と誤認しない）
 }
 

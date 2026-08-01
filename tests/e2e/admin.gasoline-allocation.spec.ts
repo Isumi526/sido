@@ -39,11 +39,21 @@ test.describe('ガソリン按分', () => {
     if (acc) await restSrv(`gasoline_actuals?account_id=eq.${acc}&year_month=eq.2026-07`, { method: 'DELETE' }).catch(() => {})
   })
 
+  // 2026年7月へ移動する。★固定月なので「現在月より前か後か」で進む向きを変える必要がある
+  //  （2026-08 以降は既定表示が7月より後になり、次月(›)方向に進むと永久に届かない＝2026-08-01に発現）。
+  //  URLの ?ym= で直接指定できるならそれが最短だが、無い場合に備えて往復のフォールバックも持つ。
   async function gotoJuly(page: any) {
-    await page.goto('/gasoline-allocation', { waitUntil: 'networkidle' })
-    while (!(await page.locator('.month-label').innerText()).includes('2026年7月')) {
-      await page.locator('.btn-nav').nth(1).click()
+    await page.goto('/gasoline-allocation?ym=2026-07', { waitUntil: 'networkidle' })
+    for (let i = 0; i < 36; i++) {
+      const label = await page.locator('.month-label').innerText()
+      if (label.includes('2026年7月')) return
+      const m = label.match(/(\d+)年(\d+)月/)
+      const cur = m ? Number(m[1]) * 12 + Number(m[2]) : 0
+      const target = 2026 * 12 + 7
+      await page.locator('.btn-nav').nth(cur > target ? 0 : 1).click()   // 0=‹前月 / 1=›次月
+      await page.waitForTimeout(200)
     }
+    throw new Error('2026年7月へ移動できませんでした')
   }
 
   test('日報のガソリン代を自動集計し、距離比で実費を配賦する', async ({ page }) => {

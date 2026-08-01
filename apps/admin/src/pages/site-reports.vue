@@ -32,7 +32,7 @@
       <!-- 出力（※表の表示月は上の ‹ 年月 › ナビで切替。出力ボタンを押すと出力期間を選ぶ） -->
       <div v-if="displaySite" class="export-bar">
         <div class="export-pop-wrap">
-          <button class="btn-export" data-testid="export-site" @click="exportPanelOpen = !exportPanelOpen"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">download</span> CSV＋見積書PDFを出力</button>
+          <button class="btn-export" data-testid="export-site" @click="exportPanelOpen = !exportPanelOpen"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">download</span> {{ canViewManagementPages ? 'CSV＋見積書PDFを出力' : 'CSVを出力' }}</button>
           <div v-if="exportPanelOpen" class="export-pop" data-testid="export-panel">
             <div class="export-pop-title">出力する期間を選んでください</div>
             <label class="export-range-lbl">出力範囲
@@ -79,7 +79,7 @@
               <th class="num">燃料</th>
               <th class="num">高速</th>
               <th class="num">宿泊</th>
-              <th class="num">接待費</th>
+              <th class="num">接待交際費</th>
               <th class="num">ゴミ</th>
               <th class="num">交通費</th>
               <th class="num">ホーム</th>
@@ -272,11 +272,11 @@
           </table>
         </div>
 
-        <!-- 接待費 -->
+        <!-- 接待交際費 -->
         <div class="modal-section" v-if="selected.entertainCost">
-          <div class="section-label">接待費</div>
+          <div class="section-label">接待交際費</div>
           <div class="simple-row">
-            <span>{{ selected._exp?.entertainmentLabel || '接待費' }}</span>
+            <span>{{ selected._exp?.entertainmentLabel || '接待交際費' }}</span>
             <span class="num-text">{{ yen(selected.entertainCost) }}</span>
           </div>
         </div>
@@ -350,7 +350,7 @@ import { resolveDocUrl } from '../lib/docUrl'
 import HelpButton from '../components/HelpButton.vue'
 import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, wageForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
 import type { WageMode } from '../lib/workerHours'
-import { canViewWages, canViewHourlyWage } from '../lib/auth'
+import { canViewWages, canViewHourlyWage, canViewManagementPages } from '../lib/auth'
 import { resolveSiteRef, type SiteResolveCtx } from '../lib/siteKey'
 import JSZip from 'jszip'
 
@@ -387,7 +387,7 @@ async function exportSite() {
     // 表示中の当月ならロード済みの siteMap を流用、それ以外は選択期間で再集計
     const map = (exportRange.value === 'month') ? siteMap.value : await computeSiteMap(from, to)
     const rows = (map[site] ?? []).filter((r: any) => !r._isInvoice)
-    const head = ['日付','作業員','商社','業者','社員','駐車場','燃料','高速','宿泊','接待費','ゴミ','交通費','ホーム','出張費','合計']
+    const head = ['日付','作業員','商社','業者','社員','駐車場','燃料','高速','宿泊','接待交際費','ゴミ','交通費','ホーム','出張費','合計']
     const csv = [head.join(',')].concat(rows.map((r: any) => [
       r.date, '"' + String(r.workerSummary ?? '').replace(/"/g, '""') + '"',
       r.shoshaCost||0, r.gyoshaCost||0, r.laborCost||0, r.parkingYen||0, r.fuelCost||0, r.highwayCost||0,
@@ -396,8 +396,13 @@ async function exportSite() {
     const zip = new JSZip()
     zip.file(`現場別集計_${site}_${label}.csv`, '﻿' + csv) // BOM付き=Excelで文字化けしない
     // 紐づく見積書PDF（estimates.site_id）を「見積書」フォルダに内包（期間に依らず当該現場の全見積）
+    //  ★現場管理者には同梱しない（2026-07-31 レビュー指摘）: 見積系の画面を非表示にしたのに
+    //   この出力から見積金額入りPDFを取得できてしまう抜け道になっていた。CSV（現場の原価集計）は
+    //   現場管理者にも見せる方針なのでそのまま出す。
     const accountId = await getAccountId()
-    const { data: siteRow } = await supabase.from('sites').select('id').eq('account_id', accountId).eq('name', site).maybeSingle()
+    const { data: siteRow } = canViewManagementPages.value
+      ? await supabase.from('sites').select('id').eq('account_id', accountId).eq('name', site).maybeSingle()
+      : { data: null }
     if (siteRow?.id) {
       const { data: ests } = await supabase.from('estimates')
         .select('estimate_number, pdf_path, pdf_bucket').eq('site_id', siteRow.id).eq('is_deleted', false)
@@ -635,7 +640,7 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
         g._trainItems.push(t)
       for (const o of (site.expenses?.others ?? []).filter((o: any) => o.yen))
         g._otherItems.push(o)
-      // 最後のexpensesをモーダル用に保持（ホテル・接待費）
+      // 最後のexpensesをモーダル用に保持（ホテル・接待交際費）
       if (site.expenses) g._exp = site.expenses
     }
   }
