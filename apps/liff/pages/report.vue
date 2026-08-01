@@ -502,7 +502,7 @@
               </template>
             </Field>
 
-            <!-- その他（資材等） -->
+            <!-- その他（資材等・雑経費を統合。仕分けは科目に任せる） -->
             <Field :label="$t('report.other')">
               <select :value="siteUsage[si].other" class="select select--usage" @change="(e) => setUsage(si, 'other', (e.target as HTMLSelectElement).value)">
                 <option value="なし">{{ $t('report.optNone') }}</option>
@@ -539,42 +539,6 @@
               </template>
             </Field>
 
-            <!-- その他雑経費 -->
-            <Field :label="$t('report.miscExpense')">
-              <select :value="siteUsage[si].entertainment" class="select select--usage" @change="(e) => setUsage(si, 'entertainment', (e.target as HTMLSelectElement).value)">
-                <option value="なし">{{ $t('report.optNone') }}</option>
-                <option value="あり">{{ $t('report.optYes') }}</option>
-              </select>
-              <template v-if="siteUsage[si].entertainment === 'あり'">
-                <div v-for="(ent, ei) in (site.expenses.entertainments ?? [])" :key="ei" class="lineitem-card mt6">
-                  <div>
-                    <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
-                    <AttachedFilesBadge :files="ent.files" :urls="ent.fileUrls" @remove-file="(p) => removeItemFile(ent, p)" />
-                    <input type="file" accept="image/*,.pdf" multiple class="input mt4" @change="(e) => handleEntertainmentFile(si, ei, e)" />
-                    <div v-if="ent.files?.length" class="photo-preview">
-                      <button type="button" class="btn-ai" :disabled="receipt.loading.value === `${si}-entertainment-${ei}`" @click="analyzeReceipt(si, 'entertainment', ei)">
-                        {{ receipt.loading.value === `${si}-entertainment-${ei}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
-                      </button>
-                    </div>
-                  </div>
-                  <div class="lineitems-row mt6">
-                    <input v-model="ent.label" type="text" class="input" :placeholder="$t('report.contentPlaceholder')" @keydown.enter.prevent />
-                    <ExpenseField v-model="ent.yen" v-model:tategae="ent.tategae" with-tategae :label="$t('report.amount')" />
-                    <button v-if="(site.expenses.entertainments?.length ?? 0) > 1" type="button" class="btn-icon-sm" @click="report.removeEntertainment(si, ei)">✕</button>
-                  </div>
-                  <input v-model="ent.payee" type="text" class="input mt6" placeholder="支払い先（店名/業者）" @keydown.enter.prevent />
-                  <input v-model="ent.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
-                  <select v-model="ent.account" class="select mt6">
-                    <option value="">{{ $t('report.accountAuto', { name: '接待交際費' }) }}</option>
-                    <option v-for="a in EXPENSE_ACCOUNT_OPTIONS" :key="a" :value="a">{{ a }}</option>
-                  </select>
-                  <!-- 接待交際費/会議費は税務上「誰と行ったか」の記録が必須 -->
-                  <input v-if="needsCompanions(ent, 'その他雑経費')" v-model="ent.companions" type="text" class="input mt6" :class="{ 'input-required': !ent.companions?.trim() }"
-                         :placeholder="$t('report.companionsPlaceholder')" @keydown.enter.prevent />
-                </div>
-                <button type="button" class="btn-ghost-sm" @click="report.addEntertainment(si)">{{ $t('report.addMiscExpense') }}</button>
-              </template>
-            </Field>
           </div>
 
           <!-- 現場備考 -->
@@ -992,8 +956,10 @@ function reconstructExpenseUsage(exp: any): UsageState {
   // 宿泊費: 新形式 hotels[] か旧スカラー(hotel/leopalace)のどちらかに金額があれば あり
   if ((exp.hotels ?? []).some((h: any) => h.yen || h.label) || exp.hotelYen || exp.leopalaceYen) usage.hotel = 'あり'
   if (exp.garbageFactoryM3 || exp.garbageSiteM3)  usage.garbage = 'あり'
-  if ((exp.others ?? []).some((o: any) => o.yen || o.label)) usage.other = 'あり'
-  if (exp.entertainmentYen || (exp.entertainments ?? []).some((e: any) => e.yen || e.label)) usage.entertainment = 'あり'
+  // その他雑経費は「その他」に統合済み（2026-07-31）。旧データ（entertainments / 旧スカラー）が
+  // あっても「その他=あり」で復元する＝セクションが消えて編集できなくなるのを防ぐ。
+  if ((exp.others ?? []).some((o: any) => o.yen || o.label) ||
+      exp.entertainmentYen || (exp.entertainments ?? []).some((e: any) => e.yen || e.label)) usage.other = 'あり'
   // いずれかの経費があれば expense = あり
   if (usage.vehicle !== 'なし' || usage.train !== 'なし' || usage.hotel !== 'なし' ||
       usage.leopalace !== 'なし' || usage.garbage !== 'なし' ||
@@ -1081,6 +1047,11 @@ async function loadEditData(date: string) {
         e.hotelName = undefined; e.hotelYen = undefined; e.hotelRegistration = undefined; e.hotelTategae = undefined; e.hotelFiles = undefined; e.hotelUrls = undefined
         e.leopalaceName = undefined; e.leopalaceYen = undefined; e.leopalaceRegistration = undefined; e.leopalaceTategae = undefined; e.leopalaceFiles = undefined; e.leopalaceUrls = undefined
       }
+      // 入力は「その他」1本に統合（2026-07-31）。既存の entertainments を others に畳んで
+      // 1つのリストとして編集させる。科目は mergeOtherExpenses が明示的に埋めるので、
+      // 保存時の振り分けで元の配列に戻る＝現場別集計の列は変わらない。
+      e.others = mergeOtherExpenses(e.others, e.entertainments)
+      e.entertainments = []
     })
     siteUsage.value = report.form.value.sites.map((site: any) => {
       const usage = reconstructExpenseUsage(site.expenses)
@@ -2185,12 +2156,11 @@ function fillTestData() {
     site0.expenses.garbageFactoryM3 = 3
     site0.expenses.garbageSiteM3    = 5
     siteUsage.value[0].other = 'あり'
-    site0.expenses.others = [{ label: '養生テープ', yen: 1500, registrationNumber: 'なし', tategae: true }]
-    siteUsage.value[0].entertainment = 'あり'
-    site0.expenses.entertainmentLabel = '懇親会'
-    site0.expenses.entertainmentYen   = 10000
-    site0.expenses.entertainmentTategae = false
-    site0.expenses.entertainmentRegistration = 'T1111222233334'
+    // その他は1セクションに統合済み。科目で仕分ける（接待交際費もここに入れる）。
+    site0.expenses.others = [
+      { label: '養生テープ', yen: 1500, registrationNumber: 'なし', tategae: true, account: '消耗品費' },
+      { label: '懇親会', yen: 10000, registrationNumber: 'T1111222233334', tategae: false, account: '接待交際費', companions: '元請け 山田様' },
+    ]
 
     // ── 現場2（新規現場「その他」） ── を追加
     addSite()
@@ -2218,12 +2188,10 @@ function fillTestData() {
   siteN.expenses.garbageFactoryM3 = 2
   siteN.expenses.garbageSiteM3    = 4
   siteUsage.value[newIdx].other = 'あり'
-  siteN.expenses.others = [{ label: 'ビニールシート', yen: 800, registrationNumber: 'なし', tategae: false }]
-  siteUsage.value[newIdx].entertainment = 'あり'
-  siteN.expenses.entertainmentLabel = '昼食代'
-  siteN.expenses.entertainmentYen   = 5000
-  siteN.expenses.entertainmentTategae = true
-  siteN.expenses.entertainmentRegistration = 'なし'
+  siteN.expenses.others = [
+    { label: 'ビニールシート', yen: 800, registrationNumber: 'なし', tategae: false, account: '消耗品費' },
+    { label: '昼食代', yen: 5000, registrationNumber: 'なし', tategae: true, account: '会議費' },
+  ]
 }
 </script>
 

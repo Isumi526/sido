@@ -5,7 +5,7 @@
 import type { User, ExpenseItem, ExpenseItemInput, ExpenseRow } from '~/types'
 import { useI18n } from 'vue-i18n'
 import { gt } from '~/utils/i18n-global'
-import { flattenReportExpenses, flattenGasolineItems, flattenPersonalExpenses, ratesFromSettings } from './expense-flatten.gen'
+import { flattenReportExpenses, flattenGasolineItems, flattenPersonalExpenses, ratesFromSettings, mergeOtherExpenses, splitOtherExpenses } from './expense-flatten.gen'
 import { resolveActiveSiteId } from '~/utils/siteSimilarity'
 
 // ---------- 期間キーユーティリティ ----------
@@ -351,6 +351,14 @@ export const useExpense = () => {
       if (exp.trains)   exp.trains   = stripItemFiles(exp.trains)
       if (exp.others)   exp.others   = stripItemFiles(exp.others)
       if (exp.entertainments) exp.entertainments = stripItemFiles(exp.entertainments)
+      // 入力は「その他」1本に統合済み（2026-07-31）。保存時にここで科目=接待交際費だけを
+      // entertainments へ戻す。現場別集計は entertainments を接待交際費列・others をホーム列に
+      // 集計しているため、この振り分けをやめると金額が別の列へ移動する（集計は触らない方針）。
+      if (exp.others || exp.entertainments) {
+        const split = splitOtherExpenses(mergeOtherExpenses(exp.others, exp.entertainments))
+        exp.others = split.others
+        exp.entertainments = split.entertainments
+      }
       if (exp.hotels)         exp.hotels         = stripItemFiles(exp.hotels)
       // 現場マスタ(active)へ正規化名一致で site_id を解決して刻む（集計をid基準にする根本対策）。
       //  解決できなければ既存の site_id を保持（＝マージ/非アクティブ化後の安定性）、それも無ければ null。
@@ -567,8 +575,6 @@ export const useExpense = () => {
     // 現場に紐付かない個人経費も精算書に載せる（#f4cc3db1 / #32e93d75）。
     //  ★載せないと個人立替(tategae)が精算されない。日報を出さない役員等は
     //   そもそも daily_reports が無いので、ここで拾わないと1円も出ない。
-    //  ※ personal_expenses は RLS(account_id) ＋ anon revoke。LIFF は email/password
-    //   ログイン＝authenticated なので直接 select できる（書き込みだけ EF 経由）。
     // ★必ず EF 経由で読む（直読み禁止）。personal_expenses は anon revoke ＋ RLS authenticated で、
     //  LIFF を LINE アプリ内で開くと anon になるため、直読みだと黙って0件＝個人立替が
     //  申請書から消える（2026-08-01 ship前に本番で LINE 利用者の残存を確認して判明）。
