@@ -37,7 +37,7 @@ test.beforeAll(async () => {
   // 現在: 日当25,000・時給3,000
   workerId = (await restSrv('workers', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ account_id: accountId, name: WORKER, role: 'site', daily_wage: 25000, hourly_wage: 3000, active: true, sort_order: 901 }) }))[0].id
   // 昇給履歴: 日当20,000→25,000・時給2,000→3,000（発効=15日）
-  await rest('worker_wage_history', { method: 'POST', body: JSON.stringify({ worker_id: workerId, account_id: accountId, old_unit_price: 20000, new_unit_price: 25000, old_daily_wage: 20000, new_daily_wage: 25000, old_hourly_wage: 2000, new_hourly_wage: 3000, effective_date: EFFECTIVE, reason: 'E2E昇給' }) })
+  await restSrv('worker_wage_history', { method: 'POST', body: JSON.stringify({ worker_id: workerId, account_id: accountId, old_unit_price: 20000, new_unit_price: 25000, old_daily_wage: 20000, new_daily_wage: 25000, old_hourly_wage: 2000, new_hourly_wage: 3000, effective_date: EFFECTIVE, reason: 'E2E昇給' }) })
   for (const date of [DATE_BEFORE, DATE_AFTER]) {
     await rest('daily_reports?on_conflict=user_id,date', {
       method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
@@ -51,7 +51,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await rest(`daily_reports?note=like.${encodeURIComponent(TOKEN)}*`, { method: 'DELETE' }).catch(() => {})
-  await rest(`worker_wage_history?worker_id=eq.${workerId}`, { method: 'DELETE' }).catch(() => {})
+  await restSrv(`worker_wage_history?worker_id=eq.${workerId}`, { method: 'DELETE' }).catch(() => {})
   await restSrv(`workers?id=eq.${workerId}`, { method: 'DELETE' }).catch(() => {})
 })
 
