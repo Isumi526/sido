@@ -137,7 +137,7 @@ export async function ensureResponsibleWorkerId(accountId: string): Promise<stri
   if (_respWorkerId) return _respWorkerId
   const existing = await rest(`workers?account_id=eq.${accountId}&active=eq.true&permission_role=in.(admin,office,site_manager)&select=id&limit=1`)
   if (existing?.[0]?.id) { _respWorkerId = existing[0].id; return _respWorkerId! }
-  const created = await rest('workers', {
+  const created = await restSrv('workers', {
     method: 'POST', headers: { Prefer: 'return=representation' },
     body: JSON.stringify({ account_id: accountId, name: 'E2E責任者候補(共通)', role: 'site', permission_role: 'site_manager', unit_price: 20000, active: true, sort_order: 997 }),
   })
@@ -162,7 +162,7 @@ export async function grantSiteShare(siteId: string): Promise<void> {
   const accountId = await getAccountId()
   const userId = await getDevUserId()
   if (!userId) { console.warn('[e2e] grantSiteShare: dev-user-id の users行が見つかりません'); return }
-  await rest('site_shares', {
+  await restSrv('site_shares', {
     method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
     body: JSON.stringify({ account_id: accountId, site_id: siteId, user_id: userId }),
   })
