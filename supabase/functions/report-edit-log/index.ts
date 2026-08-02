@@ -108,6 +108,78 @@ async function resolveCaller(
   return null
 }
 
+/** 保留に入れる編集後の日報。daily_reports の列だけを受け取る（余計なキーは捨てる） */
+function sanitizePayload(p: any): Record<string, unknown> | null {
+  if (!p || typeof p !== 'object') return null
+  if (!Array.isArray(p.sites)) return null
+  return {
+    is_working:      !!p.is_working,
+    leave_type:      p.leave_type === 'paid_leave' ? 'paid_leave' : null,
+    is_business_trip: !!p.is_business_trip,
+    sites:           p.sites,
+    note:            typeof p.note === 'string' ? p.note : null,
+    gasoline_items:  Array.isArray(p.gasoline_items) ? p.gasoline_items : [],
+  }
+}
+
+/**
+ * 承認・差戻し。★Supabase JWT を持つ管理画面からのみ。
+ * LINE経路(anon)や LINE ID token では通さない＝作業員が自分の編集を自分で承認できない。
+ */
+async function handleReview(svc: any, body: any, authHeader: string): Promise<Response> {
+  if (!authHeader || authHeader.endsWith(ANON_KEY)) return json({ ok: false, error: 'unauthorized' }, 401)
+  const cli = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: authHeader } } })
+  const { data: au } = await cli.auth.getUser()
+  const slug = ((au?.user?.app_metadata ?? {}) as Record<string, unknown>).account_slug as string | undefined
+  if (!slug) return json({ ok: false, error: 'unauthorized' }, 401)
+  const { data: acct } = await svc.from('accounts').select('id').eq('slug', slug).maybeSingle()
+  const accountId = acct?.id
+  if (!accountId) return json({ ok: false, error: 'unauthorized' }, 401)
+
+  const id = typeof body.pendingId === 'string' ? body.pendingId : ''
+  if (!id) return json({ ok: false, error: 'pending_id_required' }, 400)
+
+  // 自テナントの pending だけが対象（他テナントのIDを渡しても引けない）
+  const { data: pend } = await svc.from('daily_report_pending_edits')
+    .select('id, report_id, payload, status')
+    .eq('id', id).eq('account_id', accountId).maybeSingle()
+  if (!pend) return json({ ok: false, error: 'pending_not_found' }, 404)
+  if (pend.status !== 'pending') return json({ ok: false, error: 'already_reviewed' }, 409)
+
+  const reviewer = au?.user?.email ?? null
+  const now = new Date().toISOString()
+
+  if (body.action === 'reject') {
+    await svc.from('daily_report_pending_edits').update({
+      status: 'rejected', reviewed_by_name: reviewer, reviewed_at: now,
+      reject_reason: typeof body.rejectReason === 'string' ? body.rejectReason.trim() || null : null,
+      updated_at: now,
+    }).eq('id', id)
+    return json({ ok: true, status: 'rejected' })
+  }
+
+  // 承認: ここで初めて daily_reports に反映する＝集計に出る
+  const p = pend.payload as Record<string, unknown>
+  const { error: upErr } = await svc.from('daily_reports').update({
+    is_working:       p.is_working,
+    leave_type:       p.leave_type,
+    is_business_trip: p.is_business_trip,
+    sites:            p.sites,
+    note:             p.note,
+    gasoline_items:   p.gasoline_items,
+    updated_at:       now,
+  }).eq('id', pend.report_id).eq('account_id', accountId)
+  if (upErr) {
+    console.error('[report-edit-log] apply failed:', upErr)
+    return json({ ok: false, error: 'apply_failed' }, 500)
+  }
+  // ★日報への反映が成功してから承認済みにする。逆順だと「承認済みなのに未反映」が残る
+  await svc.from('daily_report_pending_edits').update({
+    status: 'approved', reviewed_by_name: reviewer, reviewed_at: now, updated_at: now,
+  }).eq('id', id)
+  return json({ ok: true, status: 'approved' })
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders() })
   if (req.method !== 'POST') return json({ ok: false, error: 'method_not_allowed' }, 405)
@@ -116,6 +188,12 @@ Deno.serve(async (req) => {
   try { body = await req.json() } catch { return json({ ok: false, error: 'bad_json' }, 400) }
 
   const svc = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
+
+  // 承認・差戻しは管理画面（Supabase JWT）専用の別経路
+  if (body.action === 'approve' || body.action === 'reject') {
+    return await handleReview(svc, body, req.headers.get('Authorization') ?? '')
+  }
+
   const caller = await resolveCaller(
     svc,
     req.headers.get('Authorization') ?? '',
@@ -123,6 +201,15 @@ Deno.serve(async (req) => {
     typeof body.dev_line_user_id === 'string' ? body.dev_line_user_id : '',
   )
   if (!caller) return json({ ok: false, error: 'unauthorized' }, 401)
+
+  // 作業員側に「承認待ちかどうか」だけ返す。保留の中身は返さない（anon経路から読めるため）
+  if (body.action === 'pending-status') {
+    const rid = typeof body.reportId === 'string' ? body.reportId : ''
+    if (!rid) return json({ ok: true, pending: false })
+    const { data } = await svc.from('daily_report_pending_edits')
+      .select('id').eq('report_id', rid).eq('account_id', caller.accountId).eq('status', 'pending').maybeSingle()
+    return json({ ok: true, pending: !!data?.id })
+  }
 
   const reason = typeof body.reason === 'string' ? body.reason.trim() : ''
   const reportDate = typeof body.reportDate === 'string' ? body.reportDate : ''
@@ -171,5 +258,32 @@ Deno.serve(async (req) => {
     console.error('[report-edit-log] insert failed:', error)
     return json({ ok: false, error: 'insert_failed' }, 500)
   }
-  return json({ ok: true, id: data?.id ?? null })
+
+  // ★編集内容の保留（承認制）。payload が来た時だけ。
+  //  daily_reports はここでは一切書き換えない＝承認されるまで集計に出ない。
+  let pendingId: string | null = null
+  const payload = sanitizePayload(body.payload)
+  if (payload) {
+    if (!reportId) return json({ ok: false, error: 'report_id_required_for_pending' }, 400)
+    // 承認待ちの日報をさらに編集したら、最新の内容で上書きする（保留は1日報につき1件）
+    const { data: cur } = await svc.from('daily_report_pending_edits')
+      .select('id').eq('report_id', reportId).eq('status', 'pending').maybeSingle()
+    const row = {
+      account_id: caller.accountId, report_id: reportId, report_user_id: reportUserId,
+      report_date: reportDate, payload, reason, diffs: diffs.length ? diffs : null,
+      submitted_by_user_id: caller.userId, submitted_by_name: caller.name,
+      submitted_at: new Date().toISOString(), status: 'pending',
+      updated_at: new Date().toISOString(),
+    }
+    const res = cur?.id
+      ? await svc.from('daily_report_pending_edits').update(row).eq('id', cur.id).select('id').maybeSingle()
+      : await svc.from('daily_report_pending_edits').insert(row).select('id').maybeSingle()
+    if (res.error) {
+      console.error('[report-edit-log] pending upsert failed:', res.error)
+      return json({ ok: false, error: 'pending_failed' }, 500)
+    }
+    pendingId = res.data?.id ?? null
+  }
+
+  return json({ ok: true, id: data?.id ?? null, pendingId })
 })

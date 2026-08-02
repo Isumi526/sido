@@ -24,6 +24,7 @@ import ReminderHistory from '../pages/reminder-history.vue'
 import OperationLogs   from '../pages/operation-logs.vue'
 import NonSubmitters   from '../pages/non-submitters.vue'
 import ReportEditApprovals from '../pages/report-edit-approvals.vue'
+import ReportEditReview from '../pages/report-edit-review.vue'
 import ReportSiteRelink   from '../pages/report-site-relink.vue'
 import OvertimeApprovals from '../pages/overtime-approvals.vue'
 import Estimates       from '../pages/estimates.vue'
@@ -69,6 +70,7 @@ export const router = createRouter({
     { path: '/operation-logs',   component: OperationLogs,   meta: { management: true } },
     { path: '/non-submitters',   component: NonSubmitters,   meta: { management: true } },
     { path: '/report-edit-approvals', component: ReportEditApprovals },
+    { path: '/report-edit-review', component: ReportEditReview },
     { path: '/report-site-relink',    component: ReportSiteRelink },
     { path: '/overtime-approvals',    component: OvertimeApprovals },
     { path: '/ai-help',          component: AiHelp,     meta: { management: true } },
