@@ -625,6 +625,21 @@
           <p v-if="previewData.note" class="preview-note preview-note-main">{{ previewData.note }}</p>
         </div>
 
+        <!-- 編集理由（編集時のみ必須）。1編集=1行で daily_report_edit_logs に残す。
+             ★経費申請書(PDF画面)のインライン修正はこの経路を通らないので対象外（回答=B）。 -->
+        <div v-if="isEditMode" class="edit-reason">
+          <label class="edit-reason-label" for="edit-reason">{{ $t('report.editReasonLabel') }}</label>
+          <textarea
+            id="edit-reason"
+            v-model="editReason"
+            class="edit-reason-input"
+            rows="2"
+            data-testid="edit-reason"
+            :placeholder="$t('report.editReasonPlaceholder')"
+          />
+          <p class="edit-reason-hint">{{ $t('report.editReasonHint') }}</p>
+        </div>
+
         <!-- 送信前の記入忘れ確認（新規送信時のみ・習慣化のため必須） -->
         <label v-if="!isEditMode" class="submit-confirm">
           <input type="checkbox" v-model="omissionConfirmed" />
@@ -636,7 +651,7 @@
         <button v-if="isDev" type="button" class="btn-dev" :class="{ 'btn-dev--error': forceErrorOnSubmit }" @click="fillErrorTestData">
           {{ forceErrorOnSubmit ? $t('report.cancelErrorTest') : $t('report.fillErrorTestData') }}
         </button>
-        <button type="submit" class="btn-submit" :disabled="currentDateLocked || (isEditMode ? editSubmitting : (report.submitting.value || !omissionConfirmed))">
+        <button type="submit" class="btn-submit" data-testid="report-submit" :disabled="currentDateLocked || (isEditMode ? (editSubmitting || !editReason.trim()) : (report.submitting.value || !omissionConfirmed))">
           <span v-if="isEditMode ? editSubmitting : report.submitting.value" class="submitting">
             <span class="dot-spin" />{{ isEditMode ? $t('report.updating') : $t('report.submitting') }}
           </span>
@@ -759,6 +774,32 @@ const unlockReason     = ref('')
 const unlockRequesting = ref(false)
 function openUnlockModal()  { unlockReason.value = ''; unlockModalOpen.value = true }
 function closeUnlockModal() { unlockModalOpen.value = false; unlockReason.value = '' }
+/**
+ * 編集理由を daily_report_edit_logs に1行追記する。
+ * ★daily_reports は unique(user_id,date) の upsert で上書きされるため、理由を日報の
+ *   1列に持つと2回目の編集で前回の理由が消える。だから1編集=1行の履歴にする。
+ * ★この表は追記専用（anonはINSERTのみ・UPDATE/DELETEは誰にも許可しない）。
+ *   insert 後に .select() を付けると anon には SELECT 権限が無いためエラーになるので付けない。
+ */
+async function saveEditReasonLog(reportUserId: string | null, diffs: any[]): Promise<void> {
+  try {
+    const accountId = await useAccount().getAccountId()
+    if (!accountId) { console.error('[Edit] 編集理由の保存: account_id を解決できませんでした'); return }
+    const { error } = await useSupabase().from('daily_report_edit_logs').insert({
+      account_id:        accountId,
+      report_id:         originalReport.value?.id ?? null,
+      report_user_id:    reportUserId,
+      report_date:       report.form.value.date,
+      edited_by_user_id: selfUser.value?.id ?? null,
+      edited_by_name:    currentUser.value?.real_name || null,
+      reason:            editReason.value.trim(),
+      diffs:             diffs.length ? diffs : null,
+    })
+    if (error) console.error('[Edit] 編集理由の保存に失敗:', error)
+  } catch (e) {
+    console.error('[Edit] 編集理由の保存に失敗:', e)
+  }
+}
 async function submitUnlockRequest() {
   const d = report.form.value.date
   const wid = currentUser.value?.worker_id ?? null
@@ -843,6 +884,9 @@ const originalReport  = ref<any>(null)  // 編集前のSupabaseデータ（差�
 const editSubmitting  = ref(false)
 const editSubmitted   = ref(false)
 const editError       = ref<string | null>(null)
+// 編集理由（必須）。daily_reports は upsert で上書きされるので、理由は 1編集=1行の
+// 履歴テーブル daily_report_edit_logs に残す（1列だと2回目の編集で前回の理由が消える）
+const editReason      = ref('')
 
 // AI解析トースト
 const receiptToast = ref<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -1666,6 +1710,11 @@ async function handleSubmit() {
   // ── 編集モード: Supabase のみ更新（GAS には再送しない）──
   if (isEditMode.value) {
     if (editSubmitting.value) return
+    // ★編集理由は必須。ボタンも disabled にしているが、Enter送信等で素通りしうるのでここでも止める
+    if (!editReason.value.trim()) {
+      editError.value = t('report.editReasonRequired')
+      return
+    }
     editSubmitting.value = true
     editError.value = null
     try {
@@ -1679,8 +1728,10 @@ async function handleSubmit() {
 
       // 代理モード時は代理先のユーザーIDで保存
       const editProxyT = proxy.proxyTarget.value
+      let editedReportUserId: string | null = null
       if (editProxyT) {
         const editTargetId = await expense.findOrCreateProxyUser(editProxyT.id, editProxyT.name, editProxyT.worker_role)
+        editedReportUserId = editTargetId
         await expense.saveReportById(editTargetId, {
           date:      report.form.value.date,
           isWorking:  report.form.value.isWorking,
@@ -1691,6 +1742,7 @@ async function handleSubmit() {
           gasolineItems:   isWorkingStr.value === 'working' ? (report.form.value.gasolineItems ?? []) : [],
         })
       } else {
+        editedReportUserId = selfUser.value?.id ?? null
         await expense.saveReport(uid, {
           date:      report.form.value.date,
           isWorking:  report.form.value.isWorking,
@@ -1702,15 +1754,23 @@ async function handleSubmit() {
         })
       }
 
-      // 差分を計算してLINEグループに通知
+      // 何を変えたか（LINE通知と編集理由ログの両方で使う）
+      const diffs = originalReport.value
+        ? computeDiff(originalReport.value, {
+            isWorking:  report.form.value.isWorking,
+            leaveType:  isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null,
+            sites:      report.form.value.sites,
+            note:       report.form.value.note,
+          })
+        : []
+
+      // ★編集理由を履歴に残す。保存自体は成功しているので、ここで失敗しても
+      //   編集をエラーにはしない（理由が残らないことはログで気づけるようにする）。
+      await saveEditReasonLog(editedReportUserId, diffs)
+
+      // 差分をLINEグループに通知
       const efUrl = config.public.edgeFunctionUrl
       if (originalReport.value && efUrl) {
-        const diffs = computeDiff(originalReport.value, {
-          isWorking:  report.form.value.isWorking,
-          leaveType:  isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null,
-          sites:      report.form.value.sites,
-          note:       report.form.value.note,
-        })
         if (diffs.length > 0) {
           const now = new Date()
           const editedAt = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
@@ -2631,6 +2691,29 @@ html, body {
   color: var(--text);
   letter-spacing: 1px;
 }
+
+/* ── 編集理由（編集時のみ・必須） ── */
+.edit-reason {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #fff8e1;
+  border: 1px solid #f0c030;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.edit-reason-label { font-size: 13px; font-weight: 700; color: #7a6000; }
+.edit-reason-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 16px;   /* iOS で入力時にズームされないよう16px以上を保つ */
+  font-family: inherit;
+  resize: vertical;
+}
+.edit-reason-hint { font-size: 11px; color: #8a7a4a; margin: 0; }
 
 /* ── 編集モードバナー ── */
 .edit-banner {
