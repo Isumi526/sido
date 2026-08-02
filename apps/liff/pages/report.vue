@@ -25,8 +25,6 @@
         <div class="success-mark">✓</div>
         <h2 class="state-title">{{ editSubmitted ? $t('report.updatedTitle') : $t('report.submittedTitle') }}</h2>
         <p class="state-text">{{ editSubmitted ? $t('report.updatedText') : $t('report.submittedText') }}</p>
-        <!-- 日報は更新できたが編集理由の記録に失敗した場合。黙って不整合にしない -->
-        <p v-if="editReasonWarn" class="state-warn" data-testid="edit-reason-warn">{{ editReasonWarn }}</p>
         <button v-if="!editSubmitted && nextUnsubmittedDate" class="btn-primary" @click="goToNextReport">
           {{ $t('report.enterNextReport', { date: nextDateLabel }) }}
         </button>
@@ -39,6 +37,10 @@
         <!-- 編集モードバナー -->
         <div v-if="isEditMode" class="edit-banner">
           {{ $t('report.editModeBanner') }}
+        </div>
+        <!-- 既に承認待ちの編集がある日報。今見えているのは「編集前（承認済み）」の内容 -->
+        <div v-if="isEditMode && hasPendingEdit" class="pending-banner" data-testid="edit-pending-banner">
+          {{ $t('report.editPendingBanner') }}
         </div>
 
         <!-- 下書き復元バナー（新規入力中・自動保存を復元した時のみ）-->
@@ -777,52 +779,74 @@ const unlockRequesting = ref(false)
 function openUnlockModal()  { unlockReason.value = ''; unlockModalOpen.value = true }
 function closeUnlockModal() { unlockModalOpen.value = false; unlockReason.value = '' }
 /**
- * 編集理由を daily_report_edit_logs に1行追記する。
- * ★daily_reports は unique(user_id,date) の upsert で上書きされるため、理由を日報の
- *   1列に持つと2回目の編集で前回の理由が消える。だから1編集=1行の履歴にする。
+ * 編集を「承認待ち」として申請する（保留方式）。
+ * ★daily_reports はここでは書き換えない。編集後の内容・理由・差分を EF に渡して保留に入れ、
+ *   管理者が承認して初めて日報に適用される＝集計・PDF・請求に出る。
  * ★書き込みは EF(report-edit-log・service_role) 経由。テーブルは anon revoke してある。
- *   クライアントから直接 insert できると account_id や編集者名を自称できてしまい、
- *   他テナントの監査ログに偽の行を注入できる（独立レビューの critical 指摘）。
- *   誰が・どのテナントかは EF が検証済みの身元から決めるので、ここでは名乗らない。
- * @returns 記録できたら true。失敗しても日報の更新自体は成功しているので例外は投げない。
+ *   クライアントから直接書けると account_id や承認状態を自称できてしまう。
+ * @returns 申請できたら true。false なら編集は成立していない（呼び出し側でエラーにする）。
  */
-async function saveEditReasonLog(diffs: string[]): Promise<boolean> {
+/** report-edit-log EF を叩く（身元は EF 側で検証済みのものを使う） */
+async function callEditEf(payload: Record<string, unknown>): Promise<any | null> {
+  const efUrl = config.public.edgeFunctionUrl
+  if (!efUrl) { console.error('[Edit] EF URL 未設定'); return null }
+  const anonKey = config.public.supabaseAnonKey as string
+  const { data: { session } } = await useSupabase().auth.getSession()
+  const lineIdToken = (await liff.getIdToken().catch(() => null)) ?? ''
+  // 開発モードは LINE ID token が発行されない。EF 側はローカルSupabase接続時しか受け付けない
+  const devLineUserId = config.public.appEnv === 'development' ? (liff.profile.value?.userId ?? '') : ''
+  const res = await fetch(`${efUrl}/report-edit-log`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: anonKey,
+      Authorization: session ? `Bearer ${session.access_token}` : `Bearer ${anonKey}`,
+    },
+    body: JSON.stringify({ line_id_token: lineIdToken, dev_line_user_id: devLineUserId, ...payload }),
+  })
+  const json = await res.json().catch(() => null)
+  if (!res.ok || !json?.ok) { console.error('[Edit] EF失敗:', json?.error ?? res.status); return null }
+  return json
+}
+
+/** この日報に承認待ちの編集が既にあるか（作業員に「まだ反映されていない」ことを伝える） */
+async function refreshPendingState(): Promise<void> {
+  hasPendingEdit.value = false
+  const rid = originalReport.value?.id
+  if (!rid) return
+  const j = await callEditEf({ action: 'pending-status', reportId: rid })
+  hasPendingEdit.value = !!j?.pending
+}
+
+async function submitEditForApproval(diffs: string[]): Promise<boolean> {
   try {
-    const efUrl = config.public.edgeFunctionUrl
-    if (!efUrl) { console.error('[Edit] 編集理由の保存: EF URL 未設定'); return false }
-    const anonKey = config.public.supabaseAnonKey as string
-    const { data: { session } } = await useSupabase().auth.getSession()
-    const lineIdToken = (await liff.getIdToken().catch(() => null)) ?? ''
-    // 開発モードは LINE ID token が発行されない。EF 側はローカルSupabase接続時しか受け付けない
-    const devLineUserId = config.public.appEnv === 'development' ? (liff.profile.value?.userId ?? '') : ''
-    const res = await fetch(`${efUrl}/report-edit-log`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: anonKey,
-        Authorization: session ? `Bearer ${session.access_token}` : `Bearer ${anonKey}`,
-      },
-      body: JSON.stringify({
-        line_id_token: lineIdToken,
-        dev_line_user_id: devLineUserId,
-        reportId:   originalReport.value?.id ?? null,
-        reportDate: report.form.value.date,
-        reason:     editReason.value.trim(),
-        diffs,
-        clientToken: editLogToken.value,   // 再送しても1行にまとめる
-      }),
+    const working = isWorkingStr.value === 'working'
+    // ★保存経路と同じ正規化を通す（現場のsite_id解決・その他/接待交際費の振り分け・
+    //   ガソリン明細の整形）。素のフォーム値を保留に入れると、承認した瞬間に
+    //   集計の列が入れ替わる（実際にE2Eで踏んだ）。
+    const payload = await expense.buildReportPayload({
+      isWorking:      report.form.value.isWorking,
+      leaveType:      isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null,
+      isBusinessTrip: working ? !!report.form.value.isBusinessTrip : false,
+      sites:          report.form.value.sites,
+      note:           report.form.value.note,
+      gasolineItems:  working ? (report.form.value.gasolineItems ?? []) : [],
     })
-    const json = await res.json().catch(() => null)
-    if (!res.ok || !json?.ok) {
-      console.error('[Edit] 編集理由の保存に失敗:', json?.error ?? res.status)
-      return false
-    }
-    return true
+    const j = await callEditEf({
+      reportId:   originalReport.value?.id ?? null,
+      reportDate: report.form.value.date,
+      reason:     editReason.value.trim(),
+      diffs,
+      clientToken: editLogToken.value,   // 再送しても監査ログを二重にしない
+      payload,   // 承認されたらそのまま daily_reports に入る中身
+    })
+    return !!j?.pendingId
   } catch (e) {
-    console.error('[Edit] 編集理由の保存に失敗:', e)
+    console.error('[Edit] 申請に失敗:', e)
     return false
   }
 }
+
 async function submitUnlockRequest() {
   const d = report.form.value.date
   const wid = currentUser.value?.worker_id ?? null
@@ -912,8 +936,8 @@ const editError       = ref<string | null>(null)
 const editReason      = ref('')
 // 1回の更新につき1つ。再送しても監査ログが二重にならないようにする冪等キー
 const editLogToken    = ref('')
-// 日報は更新できたが理由の記録に失敗した時に出す警告（黙って不整合にしない）
-const editReasonWarn  = ref<string | null>(null)
+// この日報に承認待ちの編集があるか（作業員に「まだ反映されていない」ことを伝える）
+const hasPendingEdit  = ref(false)
 
 // AI解析トースト
 const receiptToast = ref<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -1059,6 +1083,7 @@ async function loadEditData(date: string) {
   if (!saved) return
 
   originalReport.value = saved  // 差分計算のために保存
+  void refreshPendingState()   // 既に承認待ちなら、今見えているのは編集前の内容だと伝える
 
   report.form.value.date = saved.date
   isWorkingStr.value = saved.leave_type === 'paid_leave' ? 'paid_leave' : saved.is_working ? 'working' : 'off'
@@ -1744,7 +1769,6 @@ async function handleSubmit() {
     }
     editSubmitting.value = true
     editError.value = null
-    editReasonWarn.value = null
     // 送信のたびに新しくはせず、この編集操作に1つ割り当てる（再送で二重記録しない）
     if (!editLogToken.value) editLogToken.value = crypto.randomUUID()
     try {
@@ -1756,32 +1780,12 @@ async function handleSubmit() {
         throw new Error('[テスト] Supabase保存エラー: connection timeout')
       }
 
-      // 代理モード時は代理先のユーザーIDで保存
-      const editProxyT = proxy.proxyTarget.value
-      if (editProxyT) {
-        const editTargetId = await expense.findOrCreateProxyUser(editProxyT.id, editProxyT.name, editProxyT.worker_role)
-        await expense.saveReportById(editTargetId, {
-          date:      report.form.value.date,
-          isWorking:  report.form.value.isWorking,
-          leaveType:  isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null,
-          isBusinessTrip: isWorkingStr.value === 'working' ? !!report.form.value.isBusinessTrip : false,
-          sites:      report.form.value.sites,
-          note:       report.form.value.note,
-          gasolineItems:   isWorkingStr.value === 'working' ? (report.form.value.gasolineItems ?? []) : [],
-        })
-      } else {
-        await expense.saveReport(uid, {
-          date:      report.form.value.date,
-          isWorking:  report.form.value.isWorking,
-          leaveType:  isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null,
-          isBusinessTrip: isWorkingStr.value === 'working' ? !!report.form.value.isBusinessTrip : false,
-          sites:      report.form.value.sites,
-          note:       report.form.value.note,
-          gasolineItems:   isWorkingStr.value === 'working' ? (report.form.value.gasolineItems ?? []) : [],
-        })
-      }
+      // ★承認制（保留方式）: ここでは daily_reports を書き換えない。
+      //   編集内容は保留に入れ、管理者が承認して初めて日報・現場別集計に反映される。
+      //   これにより「daily_reports に入っている＝承認済み」という不変条件が保てる
+      //   （集計・PDF・請求など10以上の消費箇所を一切触らずに済む）。
 
-      // 何を変えたか（LINE通知と編集理由ログの両方で使う）
+      // 何を変えたか（保留に添えて管理画面で照合できるようにする）
       const diffs = originalReport.value
         ? computeDiff(originalReport.value, {
             isWorking:  report.form.value.isWorking,
@@ -1791,11 +1795,10 @@ async function handleSubmit() {
           })
         : []
 
-      // ★編集理由を履歴に残す。日報の更新はもう成功しているので、ここで失敗しても
-      //   「更新できなかった」とは言わない。ただし黙って不整合にはせず警告を出す
-      //   （日報だけ変わって監査ログが無い状態に人が気づけるようにする）。
-      if (!await saveEditReasonLog(diffs)) {
-        editReasonWarn.value = t('report.editReasonSaveFailed')
+      // ★申請が通らなければ編集は成立していない。ここは黙って続けず失敗として扱う
+      //   （日報も変わらず保留も無い＝何も起きていない状態なので、そう伝えるのが正しい）。
+      if (!await submitEditForApproval(diffs)) {
+        throw new Error(t('report.editApprovalSubmitFailed'))
       }
 
       // 差分をLINEグループに通知
@@ -2747,6 +2750,15 @@ html, body {
 .state-warn { font-size: 13px; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 12px; margin: 8px 0 0; }
 
 /* ── 編集モードバナー ── */
+.pending-banner {
+  background: #eef6ff;
+  border: 1px solid #7ea8dd;
+  color: #1e4f8a;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 600;
+}
 .edit-banner {
   background: #fff8e1;
   border: 1px solid #f0c030;

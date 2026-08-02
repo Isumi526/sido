@@ -339,6 +339,49 @@ export const useExpense = () => {
    */
   // 保存前に File[] を除去（JSONB に File をそのまま入れると [{}] のゴミになるため）。
   //  *Files トップレベルキーと、明細ごとに files を持つ parkings/highways の files を落とす。*Urls は残す。
+  /**
+   * 保存する形（daily_reports の列そのまま）を組み立てる。DBには書かない。
+   * ★日報の編集は承認制になり、編集時は保存せず保留に入れる。その保留の中身は
+   *   「承認したらそのまま daily_reports へ入る形」でなければならない。
+   *   保存経路(saveReportById)を通らないからといって素のフォーム値を保留に入れると、
+   *   保存時の正規化（現場のsite_id解決・その他/接待交際費の振り分け・ガソリン明細の整形）が
+   *   丸ごと抜け落ちる。実際それで「承認したら集計の接待交際費列が空になる」バグを踏んだ。
+   */
+  async function buildReportPayload(
+    report: { isWorking: boolean; sites: unknown[]; note?: string; leaveType?: string | null; isBusinessTrip?: boolean; gasolineItems?: any[] }
+  ): Promise<Record<string, unknown>> {
+    const accountId = await getAccountId()
+    await registerNewSites(accountId, report.sites as any[])
+    const { data: activeSitesRaw } = await supabase
+      .from('sites').select('id, name')
+      .eq('account_id', accountId).eq('active', true)
+      .order('created_at', { ascending: true })
+    const activeSites = (activeSitesRaw ?? []) as Array<{ id: string; name: string }>
+    return {
+      is_working:       report.isWorking,
+      leave_type:       report.leaveType ?? null,
+      is_business_trip: report.isBusinessTrip ?? false,
+      sites:            sanitizeSitesForStorage(report.sites as any[], activeSites),
+      note:             report.note ?? null,
+      gasoline_items:   normalizeGasolineItems(report.gasolineItems),
+    }
+  }
+
+  /** 本日のガソリン代（明細リスト）：金額のある明細だけ・_id は除去 */
+  function normalizeGasolineItems(items: any[] | undefined): any[] {
+    return (items ?? [])
+      .filter((it: any) => Number(it?.yen) > 0)
+      .map((it: any) => ({
+        yen: Math.round(Number(it.yen) || 0),
+        payee: it.payee?.trim() || null,
+        registrationNumber: it.registrationNumber?.trim() || null,
+        liters: Number(it.liters) > 0 ? Number(it.liters) : null,
+        fuelType: it.fuelType === 'diesel' ? 'diesel' : (it.fuelType === 'regular' ? 'regular' : null),
+        tategae: !!it.tategae,
+        fileUrls: Array.isArray(it.fileUrls) ? it.fileUrls : [],
+      }))
+  }
+
   function sanitizeSitesForStorage(sites: any[], activeSites: Array<{ id: string; name: string }> = []): any[] {
     const FILE_KEYS = ['vehicleFiles','trainFiles','hotelFiles','leopalaceFiles','otherFiles','entertainmentFiles','garbagePhotos']
     return (sites ?? []).map((site: any) => {
@@ -428,17 +471,7 @@ export const useExpense = () => {
       .order('created_at', { ascending: true }) // 同名重複時は最古を正とする
     const activeSites = (activeSitesRaw ?? []) as Array<{ id: string; name: string }>
     // 本日のガソリン代（明細リスト）：金額のある明細だけを保存（_id は除去）
-    const gasItems = (report.gasolineItems ?? [])
-      .filter((it: any) => Number(it?.yen) > 0)
-      .map((it: any) => ({
-        yen: Math.round(Number(it.yen) || 0),
-        payee: it.payee?.trim() || null,
-        registrationNumber: it.registrationNumber?.trim() || null,
-        liters: Number(it.liters) > 0 ? Number(it.liters) : null,
-        fuelType: it.fuelType === 'diesel' ? 'diesel' : (it.fuelType === 'regular' ? 'regular' : null),
-        tategae: !!it.tategae,
-        fileUrls: Array.isArray(it.fileUrls) ? it.fileUrls : [],
-      }))
+    const gasItems = normalizeGasolineItems(report.gasolineItems)
     const { error } = await supabase
       .from('daily_reports')
       .upsert(
@@ -810,5 +843,5 @@ export const useExpense = () => {
     return data
   }
 
-  return { getUser, registerUser, addItem, getItems, deleteItem, saveReport, saveReportById, patchExpenseItem, findOrCreateProxyUser, getExpenseRowsFromReports, getExpenseRowsFromReportsById, getReports, getReportsById, getReport, getReportByUserId, getNextUnsubmittedDate, getNextUnsubmittedDateById, clearUserCache, getSettlement, getSettlements, applySettlement }
+  return { buildReportPayload, getUser, registerUser, addItem, getItems, deleteItem, saveReport, saveReportById, patchExpenseItem, findOrCreateProxyUser, getExpenseRowsFromReports, getExpenseRowsFromReportsById, getReports, getReportsById, getReport, getReportByUserId, getNextUnsubmittedDate, getNextUnsubmittedDateById, clearUserCache, getSettlement, getSettlements, applySettlement }
 }
