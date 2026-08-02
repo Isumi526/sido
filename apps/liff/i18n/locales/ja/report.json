@@ -158,5 +158,10 @@
   "addGasoline": "＋ 給油を追加",
   "fuelRegular": "レギュラー",
   "fuelDiesel": "ディーゼル（軽油）",
-  "litersPlaceholder": "給油量（ℓ・任意）"
+  "litersPlaceholder": "給油量（ℓ・任意）",
+  "editReasonLabel": "編集理由（必須）",
+  "editReasonPlaceholder": "例: 現場を間違えて登録したため修正",
+  "editReasonRequired": "編集理由を入力してください",
+  "editReasonHint": "何を直したかが後から分かるように、理由を残してください",
+  "editReasonSaveFailed": "日報は更新しましたが、編集理由の記録に失敗しました。管理者にお伝えください。"
 }

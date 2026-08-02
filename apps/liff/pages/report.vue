@@ -25,6 +25,8 @@
         <div class="success-mark">✓</div>
         <h2 class="state-title">{{ editSubmitted ? $t('report.updatedTitle') : $t('report.submittedTitle') }}</h2>
         <p class="state-text">{{ editSubmitted ? $t('report.updatedText') : $t('report.submittedText') }}</p>
+        <!-- 日報は更新できたが編集理由の記録に失敗した場合。黙って不整合にしない -->
+        <p v-if="editReasonWarn" class="state-warn" data-testid="edit-reason-warn">{{ editReasonWarn }}</p>
         <button v-if="!editSubmitted && nextUnsubmittedDate" class="btn-primary" @click="goToNextReport">
           {{ $t('report.enterNextReport', { date: nextDateLabel }) }}
         </button>
@@ -625,6 +627,21 @@
           <p v-if="previewData.note" class="preview-note preview-note-main">{{ previewData.note }}</p>
         </div>
 
+        <!-- 編集理由（編集時のみ必須）。1編集=1行で daily_report_edit_logs に残す。
+             ★経費申請書(PDF画面)のインライン修正はこの経路を通らないので対象外（回答=B）。 -->
+        <div v-if="isEditMode" class="edit-reason">
+          <label class="edit-reason-label" for="edit-reason">{{ $t('report.editReasonLabel') }}</label>
+          <textarea
+            id="edit-reason"
+            v-model="editReason"
+            class="edit-reason-input"
+            rows="2"
+            data-testid="edit-reason"
+            :placeholder="$t('report.editReasonPlaceholder')"
+          />
+          <p class="edit-reason-hint">{{ $t('report.editReasonHint') }}</p>
+        </div>
+
         <!-- 送信前の記入忘れ確認（新規送信時のみ・習慣化のため必須） -->
         <label v-if="!isEditMode" class="submit-confirm">
           <input type="checkbox" v-model="omissionConfirmed" />
@@ -636,7 +653,7 @@
         <button v-if="isDev" type="button" class="btn-dev" :class="{ 'btn-dev--error': forceErrorOnSubmit }" @click="fillErrorTestData">
           {{ forceErrorOnSubmit ? $t('report.cancelErrorTest') : $t('report.fillErrorTestData') }}
         </button>
-        <button type="submit" class="btn-submit" :disabled="currentDateLocked || (isEditMode ? editSubmitting : (report.submitting.value || !omissionConfirmed))">
+        <button type="submit" class="btn-submit" data-testid="report-submit" :disabled="currentDateLocked || (isEditMode ? (editSubmitting || !editReason.trim()) : (report.submitting.value || !omissionConfirmed))">
           <span v-if="isEditMode ? editSubmitting : report.submitting.value" class="submitting">
             <span class="dot-spin" />{{ isEditMode ? $t('report.updating') : $t('report.submitting') }}
           </span>
@@ -759,6 +776,53 @@ const unlockReason     = ref('')
 const unlockRequesting = ref(false)
 function openUnlockModal()  { unlockReason.value = ''; unlockModalOpen.value = true }
 function closeUnlockModal() { unlockModalOpen.value = false; unlockReason.value = '' }
+/**
+ * 編集理由を daily_report_edit_logs に1行追記する。
+ * ★daily_reports は unique(user_id,date) の upsert で上書きされるため、理由を日報の
+ *   1列に持つと2回目の編集で前回の理由が消える。だから1編集=1行の履歴にする。
+ * ★書き込みは EF(report-edit-log・service_role) 経由。テーブルは anon revoke してある。
+ *   クライアントから直接 insert できると account_id や編集者名を自称できてしまい、
+ *   他テナントの監査ログに偽の行を注入できる（独立レビューの critical 指摘）。
+ *   誰が・どのテナントかは EF が検証済みの身元から決めるので、ここでは名乗らない。
+ * @returns 記録できたら true。失敗しても日報の更新自体は成功しているので例外は投げない。
+ */
+async function saveEditReasonLog(diffs: string[]): Promise<boolean> {
+  try {
+    const efUrl = config.public.edgeFunctionUrl
+    if (!efUrl) { console.error('[Edit] 編集理由の保存: EF URL 未設定'); return false }
+    const anonKey = config.public.supabaseAnonKey as string
+    const { data: { session } } = await useSupabase().auth.getSession()
+    const lineIdToken = (await liff.getIdToken().catch(() => null)) ?? ''
+    // 開発モードは LINE ID token が発行されない。EF 側はローカルSupabase接続時しか受け付けない
+    const devLineUserId = config.public.appEnv === 'development' ? (liff.profile.value?.userId ?? '') : ''
+    const res = await fetch(`${efUrl}/report-edit-log`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: anonKey,
+        Authorization: session ? `Bearer ${session.access_token}` : `Bearer ${anonKey}`,
+      },
+      body: JSON.stringify({
+        line_id_token: lineIdToken,
+        dev_line_user_id: devLineUserId,
+        reportId:   originalReport.value?.id ?? null,
+        reportDate: report.form.value.date,
+        reason:     editReason.value.trim(),
+        diffs,
+        clientToken: editLogToken.value,   // 再送しても1行にまとめる
+      }),
+    })
+    const json = await res.json().catch(() => null)
+    if (!res.ok || !json?.ok) {
+      console.error('[Edit] 編集理由の保存に失敗:', json?.error ?? res.status)
+      return false
+    }
+    return true
+  } catch (e) {
+    console.error('[Edit] 編集理由の保存に失敗:', e)
+    return false
+  }
+}
 async function submitUnlockRequest() {
   const d = report.form.value.date
   const wid = currentUser.value?.worker_id ?? null
@@ -843,6 +907,13 @@ const originalReport  = ref<any>(null)  // 編集前のSupabaseデータ（差�
 const editSubmitting  = ref(false)
 const editSubmitted   = ref(false)
 const editError       = ref<string | null>(null)
+// 編集理由（必須）。daily_reports は upsert で上書きされるので、理由は 1編集=1行の
+// 履歴テーブル daily_report_edit_logs に残す（1列だと2回目の編集で前回の理由が消える）
+const editReason      = ref('')
+// 1回の更新につき1つ。再送しても監査ログが二重にならないようにする冪等キー
+const editLogToken    = ref('')
+// 日報は更新できたが理由の記録に失敗した時に出す警告（黙って不整合にしない）
+const editReasonWarn  = ref<string | null>(null)
 
 // AI解析トースト
 const receiptToast = ref<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -1666,8 +1737,16 @@ async function handleSubmit() {
   // ── 編集モード: Supabase のみ更新（GAS には再送しない）──
   if (isEditMode.value) {
     if (editSubmitting.value) return
+    // ★編集理由は必須。ボタンも disabled にしているが、Enter送信等で素通りしうるのでここでも止める
+    if (!editReason.value.trim()) {
+      editError.value = t('report.editReasonRequired')
+      return
+    }
     editSubmitting.value = true
     editError.value = null
+    editReasonWarn.value = null
+    // 送信のたびに新しくはせず、この編集操作に1つ割り当てる（再送で二重記録しない）
+    if (!editLogToken.value) editLogToken.value = crypto.randomUUID()
     try {
       const uid = liff.profile.value?.userId
       if (!uid) throw new Error(t('report.errorNoLogin'))
@@ -1702,15 +1781,26 @@ async function handleSubmit() {
         })
       }
 
-      // 差分を計算してLINEグループに通知
+      // 何を変えたか（LINE通知と編集理由ログの両方で使う）
+      const diffs = originalReport.value
+        ? computeDiff(originalReport.value, {
+            isWorking:  report.form.value.isWorking,
+            leaveType:  isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null,
+            sites:      report.form.value.sites,
+            note:       report.form.value.note,
+          })
+        : []
+
+      // ★編集理由を履歴に残す。日報の更新はもう成功しているので、ここで失敗しても
+      //   「更新できなかった」とは言わない。ただし黙って不整合にはせず警告を出す
+      //   （日報だけ変わって監査ログが無い状態に人が気づけるようにする）。
+      if (!await saveEditReasonLog(diffs)) {
+        editReasonWarn.value = t('report.editReasonSaveFailed')
+      }
+
+      // 差分をLINEグループに通知
       const efUrl = config.public.edgeFunctionUrl
       if (originalReport.value && efUrl) {
-        const diffs = computeDiff(originalReport.value, {
-          isWorking:  report.form.value.isWorking,
-          leaveType:  isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null,
-          sites:      report.form.value.sites,
-          note:       report.form.value.note,
-        })
         if (diffs.length > 0) {
           const now = new Date()
           const editedAt = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
@@ -2631,6 +2721,30 @@ html, body {
   color: var(--text);
   letter-spacing: 1px;
 }
+
+/* ── 編集理由（編集時のみ・必須） ── */
+.edit-reason {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #fff8e1;
+  border: 1px solid #f0c030;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.edit-reason-label { font-size: 13px; font-weight: 700; color: #7a6000; }
+.edit-reason-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 16px;   /* iOS で入力時にズームされないよう16px以上を保つ */
+  font-family: inherit;
+  resize: vertical;
+}
+.edit-reason-hint { font-size: 11px; color: #8a7a4a; margin: 0; }
+.state-warn { font-size: 13px; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 12px; margin: 8px 0 0; }
 
 /* ── 編集モードバナー ── */
 .edit-banner {
