@@ -737,7 +737,7 @@ export const useExpense = () => {
     if (!user) return null
     const { data, error } = await supabase
       .from('daily_reports')
-      .select('date, is_working, leave_type, is_business_trip, sites, note, gasoline_items')
+      .select('id, date, is_working, leave_type, is_business_trip, sites, note, gasoline_items')
       .eq('user_id', user.id)
       .eq('date', date)
       .maybeSingle()
@@ -749,7 +749,7 @@ export const useExpense = () => {
   async function getReportByUserId(userId: string, date: string): Promise<any | null> {
     const { data, error } = await supabase
       .from('daily_reports')
-      .select('date, is_working, leave_type, is_business_trip, sites, note, gasoline_items')
+      .select('id, date, is_working, leave_type, is_business_trip, sites, note, gasoline_items')
       .eq('user_id', userId)
       .eq('date', date)
       .maybeSingle()
