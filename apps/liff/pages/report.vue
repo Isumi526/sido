@@ -21,14 +21,14 @@
       </div>
 
       <!-- 送信完了 / 更新完了 -->
-      <div v-else-if="report.submitted.value || editSubmitted" class="state-screen">
+      <div v-else-if="report.submitted.value || editSubmitted || lateSubmitted" class="state-screen">
         <div class="success-mark">✓</div>
-        <h2 class="state-title">{{ editSubmitted ? $t('report.updatedTitle') : $t('report.submittedTitle') }}</h2>
-        <p class="state-text">{{ editSubmitted ? $t('report.updatedText') : $t('report.submittedText') }}</p>
-        <button v-if="!editSubmitted && nextUnsubmittedDate" class="btn-primary" @click="goToNextReport">
+        <h2 class="state-title">{{ editSubmitted ? $t('report.updatedTitle') : lateSubmitted ? $t('report.lateSubmittedTitle') : $t('report.submittedTitle') }}</h2>
+        <p class="state-text">{{ editSubmitted ? $t('report.updatedText') : lateSubmitted ? $t('report.lateSubmittedText') : $t('report.submittedText') }}</p>
+        <button v-if="!editSubmitted && !lateSubmitted && nextUnsubmittedDate" class="btn-primary" @click="goToNextReport">
           {{ $t('report.enterNextReport', { date: nextDateLabel }) }}
         </button>
-        <button class="btn-history" @click="navigateTo('/history')">{{ editSubmitted ? $t('report.backToHistory') : $t('report.viewHistory') }}</button>
+        <button class="btn-history" @click="navigateTo('/history')">{{ (editSubmitted || lateSubmitted) ? $t('report.backToHistory') : $t('report.viewHistory') }}</button>
       </div>
 
       <!-- フォーム -->
@@ -629,6 +629,16 @@
           <p v-if="previewData.note" class="preview-note preview-note-main">{{ previewData.note }}</p>
         </div>
 
+        <!-- ★期限切れ（3日より前）の新規提出。承認制になることを送信前に伝える -->
+        <div v-if="!isEditMode && isLateDate" class="pending-banner" data-testid="late-notice">
+          {{ $t('report.lateNoticeBanner') }}
+        </div>
+        <div v-if="!isEditMode && isLateDate" class="edit-reason">
+          <label class="edit-reason-label" for="late-reason">{{ $t('report.lateReasonLabel') }}</label>
+          <textarea id="late-reason" v-model="lateReason" class="edit-reason-input" rows="2"
+                    data-testid="late-reason" :placeholder="$t('report.lateReasonPlaceholder')" />
+        </div>
+
         <!-- 編集理由（編集時のみ必須）。1編集=1行で daily_report_edit_logs に残す。
              ★経費申請書(PDF画面)のインライン修正はこの経路を通らないので対象外（回答=B）。 -->
         <div v-if="isEditMode" class="edit-reason">
@@ -818,6 +828,41 @@ async function refreshPendingState(): Promise<void> {
   hasPendingEdit.value = !!j?.pending
 }
 
+/**
+ * 期限切れ（3日より前）の新規提出を「承認待ち」として申請する。
+ * ★daily_reports には書かない。承認されて初めて日報・現場別集計・経費PDFに出る。
+ * ★理由は「なぜ遅れたか」。編集と同じ欄を使い回さず、提出時に入力させる。
+ */
+async function submitLateNewForApproval(targetUserId: string): Promise<boolean> {
+  try {
+    const working = isWorkingStr.value === 'working'
+    // 保存経路と同じ正規化を通す（site_id解決・その他/接待交際費の振り分け・ガソリン明細の整形）
+    const payload = await expense.buildReportPayload({
+      isWorking:      report.form.value.isWorking,
+      leaveType:      report.form.value.leaveType ?? null,
+      isBusinessTrip: working ? !!report.form.value.isBusinessTrip : false,
+      sites:          report.form.value.sites,
+      note:           report.form.value.note,
+      gasolineItems:  working ? (report.form.value.gasolineItems ?? []) : [],
+    })
+    if (!editLogToken.value) editLogToken.value = crypto.randomUUID()
+    const j = await callEditEf({
+      kind: 'late_new',
+      targetUserId,
+      reportId: null,
+      reportDate: report.form.value.date,
+      reason: lateReason.value.trim() || t('report.lateDefaultReason'),
+      diffs: [],
+      clientToken: editLogToken.value,
+      payload,
+    })
+    return !!j?.pendingId
+  } catch (e) {
+    console.error('[Report] 期限切れ提出の申請に失敗:', e)
+    return false
+  }
+}
+
 async function submitEditForApproval(diffs: string[]): Promise<boolean> {
   try {
     const working = isWorkingStr.value === 'working'
@@ -938,6 +983,11 @@ const editReason      = ref('')
 const editLogToken    = ref('')
 // この日報に承認待ちの編集があるか（作業員に「まだ反映されていない」ことを伝える）
 const hasPendingEdit  = ref(false)
+// 期限切れ（3日より前）の新規提出。承認待ちとして申請したら true
+const lateSubmitted   = ref(false)
+const lateReason      = ref('')
+// 送信対象日が提出期限（過去3日）を過ぎているか。過ぎていれば承認制になる
+const isLateDate = computed(() => !isEditMode.value && lock.isPastLockWindow(report.form.value.date))
 
 // AI解析トースト
 const receiptToast = ref<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -1865,7 +1915,12 @@ async function handleSubmit() {
     targetUserId = selfUser.value?.id ?? null
   }
 
-  if (targetUserId) {
+  // ★期限切れ（3日より前）の新規提出は内容の承認制にする。
+  //   既存の「過去3日ロック＋許可申請」は"出す許可"の承認で、中身（金額）は見ていない。
+  //   遅れて出てくる日報こそ内容を確認したいので、承認されるまで daily_reports に書かない。
+  const isLateSubmission = lock.isPastLockWindow(report.form.value.date)
+
+  if (targetUserId && !isLateSubmission) {
     try {
       await expense.saveReportById(targetUserId, {
         date:      report.form.value.date,
@@ -1892,6 +1947,18 @@ async function handleSubmit() {
 
   // ② GASに送信（LINE通知・keepalive: true でページ閉じても通信継続）
   await report.submit()
+
+  // ③-a 期限切れの新規提出: ここで初めて保留に入れる。
+  //     ★report.submit() の後に置くのは、その中で領収書がアップロードされて *Urls が
+  //       セットされるため。先に保留へ入れると領収書の無い内容が承認対象になる。
+  if (isLateSubmission && targetUserId) {
+    if (!await submitLateNewForApproval(targetUserId)) {
+      editError.value = t('report.editApprovalSubmitFailed')
+      return
+    }
+    lateSubmitted.value = true
+    return
+  }
 
   // ③ ファイルアップロード後に *Urls を含めて Supabase を再保存（URLを反映するため）
   if (!report.error.value && targetUserId) {

@@ -4,7 +4,7 @@
       <h1 class="page-title">日報編集の承認</h1>
     </div>
     <p class="hint">
-      作業員が日報を編集すると、内容はここに保留されます。
+      作業員が日報を編集した時と、提出期限（過去3日）を過ぎて新規に提出された時、内容はここに保留されます。
       <b>承認して初めて日報・現場別集計・経費PDF に反映されます</b>（承認するまでは編集前の内容のままです）。
     </p>
 
@@ -16,6 +16,10 @@
           <div>
             <span class="date">{{ p.report_date }}</span>
             <span class="who">{{ p.submitted_by_name || '—' }}</span>
+            <!-- 編集と「遅れて出てきた新規」は承認の意味が違う（前者は差分・後者は全部が新規） -->
+            <span class="kind" :class="p.kind === 'late_new' ? 'late' : 'edit'" data-testid="pending-kind">
+              {{ p.kind === 'late_new' ? '期限切れの新規提出' : '編集' }}
+            </span>
           </div>
           <span class="muted">{{ fmtDateTime(p.submitted_at) }}</span>
         </div>
@@ -30,6 +34,9 @@
           <div class="section-label">変更内容</div>
           <div v-if="p.diffs?.length" class="diffs" data-testid="pending-diffs">
             <span v-for="(d, di) in p.diffs" :key="di" class="diff">{{ d }}</span>
+          </div>
+          <div v-else-if="p.kind === 'late_new'" class="muted" data-testid="pending-nodiff">
+            期限を過ぎて新規に提出された日報です（差分ではなく全体が新規のため、日報の内容そのものを確認してください）
           </div>
           <div v-else class="muted" data-testid="pending-nodiff">
             表示できる差分がありません（本文の変更が検出されなかった編集です）
@@ -83,7 +90,7 @@ async function load() {
     const accountId = await getAccountId()
     const { data, error } = await supabase
       .from('daily_report_pending_edits')
-      .select('id, report_id, report_date, reason, diffs, submitted_by_name, submitted_at')
+      .select('id, report_id, report_date, reason, diffs, kind, submitted_by_name, submitted_at')
       .eq('account_id', accountId)
       .eq('status', 'pending')
       .order('submitted_at', { ascending: true })
@@ -144,6 +151,9 @@ onMounted(load)
 .card-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
 .date { font-size: 18px; font-weight: 800; margin-right: 10px; }
 .who { font-size: 14px; color: #555; }
+.kind { margin-left: 10px; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 9px; }
+.kind.edit { background: #eef2ff; color: #3730a3; }
+.kind.late { background: #fef3c7; color: #92400e; }
 .muted { font-size: 12px; color: #999; }
 .section { margin-bottom: 12px; }
 .section-label { font-size: 12px; font-weight: 700; color: #666; margin-bottom: 4px; }

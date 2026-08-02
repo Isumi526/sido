@@ -164,5 +164,11 @@
   "editReasonRequired": "編集理由を入力してください",
   "editReasonHint": "何を直したかが後から分かるように、理由を残してください",
   "editApprovalSubmitFailed": "編集の申請に失敗しました。通信環境を確認してもう一度お試しください",
-  "editPendingBanner": "この日報は承認待ちです。承認されるまで元の内容のままです"
+  "editPendingBanner": "この日報は承認待ちです。承認されるまで元の内容のままです",
+  "lateReasonLabel": "提出が遅れた理由（任意）",
+  "lateReasonPlaceholder": "例: 現場が続いて入力できていなかった",
+  "lateNoticeBanner": "この日付は提出期限を過ぎています。送信すると管理者の承認待ちになり、承認されてから日報に反映されます",
+  "lateDefaultReason": "期限を過ぎた日報の提出",
+  "lateSubmittedTitle": "申請しました！",
+  "lateSubmittedText": "提出期限を過ぎているため、管理者が承認すると日報に反映されます"
 }

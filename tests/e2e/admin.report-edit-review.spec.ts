@@ -127,6 +127,43 @@ test.describe('日報編集の承認（admin）', () => {
       '承認待ちから消える').toHaveCount(0)
   })
 
+  test('★期限切れの新規提出は、承認すると日報が新しく作られる（editはupdate/late_newはupsert）', async ({ page }) => {
+    const LATE = '2026-09-15'
+    await restSrv(`daily_report_pending_edits?report_user_id=eq.${userId}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`daily_reports?user_id=eq.${userId}&date=eq.${LATE}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv('daily_report_pending_edits', {
+      method: 'POST', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        account_id: accountId, report_id: null, report_user_id: userId, report_date: LATE,
+        kind: 'late_new', status: 'pending', reason: `E2E遅延_${TS}`,
+        payload: {
+          is_working: true, leave_type: null, is_business_trip: false, note: 'E2E期限切れ',
+          sites: [{ siteName: 'テスト現場B', workers: [], subcontractors: [], expenses: {
+            vehicles: [], parkings: [], highways: [], trains: [], hotels: [],
+            others: [{ label: `E2E資材_${TS}`, yen: NEW_YEN, tategae: false, fileUrls: [] }], entertainments: [] } }],
+          gasoline_items: [],
+        },
+      }),
+    })
+    page.on('dialog', (d) => d.accept().catch(() => {}))
+    await page.goto('/report-edit-review', { waitUntil: 'networkidle' })
+
+    const card = page.locator('[data-testid="pending-card"]', { hasText: `E2E遅延_${TS}` })
+    await expect(card).toBeVisible({ timeout: 15000 })
+    await expect(card.getByTestId('pending-kind'), '編集と区別して出る').toContainText('期限切れの新規提出')
+
+    expect((await restSrv(`daily_reports?user_id=eq.${userId}&date=eq.${LATE}&select=id`)).length,
+      '承認前は日報が存在しない').toBe(0)
+
+    await card.getByTestId('pending-approve').click()
+    await expect(page.getByTestId('review-msg')).toContainText('承認しました', { timeout: 30000 })
+
+    const reps = await restSrv(`daily_reports?user_id=eq.${userId}&date=eq.${LATE}&select=sites,note`)
+    expect(reps.length, '★承認で日報が新しく作られる').toBe(1)
+    expect(Number(reps[0].sites?.[0]?.expenses?.others?.[0]?.yen)).toBe(NEW_YEN)
+    await restSrv(`daily_reports?user_id=eq.${userId}&date=eq.${LATE}`, { method: 'DELETE' }).catch(() => {})
+  })
+
   test('承認済みのものは二重に承認できない（金額が二度適用されない）', async ({ page }) => {
     const pendingId = await seed()
     // 1度承認しておく
