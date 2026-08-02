@@ -141,7 +141,7 @@ async function handleReview(svc: any, body: any, authHeader: string): Promise<Re
 
   // 自テナントの pending だけが対象（他テナントのIDを渡しても引けない）
   const { data: pend } = await svc.from('daily_report_pending_edits')
-    .select('id, report_id, payload, status')
+    .select('id, report_id, report_user_id, report_date, payload, status, kind')
     .eq('id', id).eq('account_id', accountId).maybeSingle()
   if (!pend) return json({ ok: false, error: 'pending_not_found' }, 404)
   if (pend.status !== 'pending') return json({ ok: false, error: 'already_reviewed' }, 409)
@@ -160,7 +160,7 @@ async function handleReview(svc: any, body: any, authHeader: string): Promise<Re
 
   // 承認: ここで初めて daily_reports に反映する＝集計に出る
   const p = pend.payload as Record<string, unknown>
-  const { error: upErr } = await svc.from('daily_reports').update({
+  const cols = {
     is_working:       p.is_working,
     leave_type:       p.leave_type,
     is_business_trip: p.is_business_trip,
@@ -168,7 +168,16 @@ async function handleReview(svc: any, body: any, authHeader: string): Promise<Re
     note:             p.note,
     gasoline_items:   p.gasoline_items,
     updated_at:       now,
-  }).eq('id', pend.report_id).eq('account_id', accountId)
+  }
+  // 編集は既存行を更新／期限切れの新規提出はまだ行が無いので upsert する。
+  // late_new でも upsert にするのは、承認までの間に同じ日付が別経路で作られていた場合に
+  // 重複行を作らないため（daily_reports は unique(user_id,date)）。
+  const { error: upErr } = pend.kind === 'late_new'
+    ? await svc.from('daily_reports').upsert(
+        { ...cols, account_id: accountId, user_id: pend.report_user_id, date: pend.report_date },
+        { onConflict: 'user_id,date' })
+    : await svc.from('daily_reports').update(cols)
+        .eq('id', pend.report_id).eq('account_id', accountId)
   if (upErr) {
     console.error('[report-edit-log] apply failed:', upErr)
     return json({ ok: false, error: 'apply_failed' }, 500)
@@ -259,18 +268,51 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: 'insert_failed' }, 500)
   }
 
-  // ★編集内容の保留（承認制）。payload が来た時だけ。
+  // ★内容の保留（承認制）。payload が来た時だけ。
   //  daily_reports はここでは一切書き換えない＝承認されるまで集計に出ない。
+  //   kind='edit'     … 送信済み日報の編集（report_id あり・承認で update）
+  //   kind='late_new' … 期限切れ(3日より前)の新規提出（まだ日報の行が無い・承認で upsert）
   let pendingId: string | null = null
   const payload = sanitizePayload(body.payload)
   if (payload) {
-    if (!reportId) return json({ ok: false, error: 'report_id_required_for_pending' }, 400)
-    // 承認待ちの日報をさらに編集したら、最新の内容で上書きする（保留は1日報につき1件）
-    const { data: cur } = await svc.from('daily_report_pending_edits')
-      .select('id').eq('report_id', reportId).eq('status', 'pending').maybeSingle()
+    const kind = body.kind === 'late_new' ? 'late_new' : 'edit'
+
+    if (kind === 'edit') {
+      if (!reportId) return json({ ok: false, error: 'report_id_required_for_pending' }, 400)
+    } else {
+      // 新規は「誰の日報か」をクライアントが名乗るので、必ず検証する。
+      // 自分自身か、代理入力が許可された相手（worker_proxies）だけを認める。
+      const target = typeof body.targetUserId === 'string' ? body.targetUserId : ''
+      if (!target) return json({ ok: false, error: 'target_user_required' }, 400)
+      const { data: tu } = await svc.from('users')
+        .select('id, account_id, worker_id').eq('id', target).maybeSingle()
+      if (!tu || tu.account_id !== caller.accountId) {
+        return json({ ok: false, error: 'target_user_not_found' }, 404)
+      }
+      if (target !== caller.userId) {
+        const { data: me } = await svc.from('users').select('worker_id').eq('id', caller.userId).maybeSingle()
+        const { data: px } = me?.worker_id && tu.worker_id
+          ? await svc.from('worker_proxies').select('id')
+              .eq('account_id', caller.accountId)
+              .eq('worker_id', tu.worker_id).eq('proxy_operator_id', me.worker_id).maybeSingle()
+          : { data: null }
+        if (!px?.id) return json({ ok: false, error: 'proxy_not_allowed' }, 403)
+      }
+      reportUserId = target
+    }
+
+    // 承認待ちのものをさらに出し直したら最新の内容で上書きする（保留は1件に保つ）。
+    // edit は日報単位、late_new はまだ日報が無いので 作業員×日付 で引く。
+    const q = svc.from('daily_report_pending_edits').select('id')
+      .eq('account_id', caller.accountId).eq('status', 'pending').eq('kind', kind)
+    const { data: cur } = kind === 'edit'
+      ? await q.eq('report_id', reportId).maybeSingle()
+      : await q.eq('report_user_id', reportUserId).eq('report_date', reportDate).maybeSingle()
+
     const row = {
       account_id: caller.accountId, report_id: reportId, report_user_id: reportUserId,
       report_date: reportDate, payload, reason, diffs: diffs.length ? diffs : null,
+      kind,
       submitted_by_user_id: caller.userId, submitted_by_name: caller.name,
       submitted_at: new Date().toISOString(), status: 'pending',
       updated_at: new Date().toISOString(),
