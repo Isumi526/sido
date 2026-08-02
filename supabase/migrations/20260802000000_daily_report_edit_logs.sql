@@ -18,11 +18,15 @@
 --   RLS無効＋anon全権で、.kody/accepted.yml に pre-RLS ベースラインとして追跡されている。
 --   だが本表は「監査ログ」なので、同じ作りにすると anon から改竄・削除・他テナント閲覧が
 --   できてしまい、存在意義そのものが薄れる。そこで:
---     anon          … INSERT のみ（LINE経路の liff はJWTを持たないため account スコープを
---                      検証できない。書き込みだけ許し、読めない・消せない・直せない）
---     authenticated … 自テナントの SELECT / INSERT（admin が理由を閲覧する）
+--     anon          … 一切許可しない（書き込みは EF report-edit-log 経由＝service_role）
+--     authenticated … 自テナントの SELECT のみ（admin が理由を閲覧する）
 --     UPDATE/DELETE … 誰にも許可しない＝追記専用（append-only）
---   これで rls-audit は 🟢ok（RLS有効・ポリシーあり）となり allowlist を増やさずに済む。
+--
+--   ★当初は anon に INSERT だけ許す案だったが、独立レビューで critical 指摘を受けて改めた:
+--     anon キーは公開バンドルに入っているため、クライアントが account_id や編集者名を
+--     自称して**他テナントの監査ログに偽の行を注入**できてしまう。監査ログは
+--     「改竄されないこと」が存在意義なので、書き込みは身元をサーバ側で検証する
+--     EF（personal-expense-submit と同じ方式）に寄せた。
 --
 --  追加のみDDL（CREATE TABLE / CREATE INDEX / policy）。既存データへの変更なし。
 -- ============================================================
@@ -40,34 +44,34 @@ create table if not exists daily_report_edit_logs (
   reason            text not null,
   -- 何を変えたか（LINE通知に出しているのと同じ差分。理由だけでは妥当性を判断できないため）
   diffs             jsonb,
+  -- 再送で同じ編集が二重に記録されると監査ログが濁るので、1編集につき1つ発行するトークンで弾く
+  client_token      text,
   created_at        timestamptz not null default now(),
   constraint daily_report_edit_logs_reason_not_blank check (btrim(reason) <> '')
 );
 
+-- 既に作成済みの環境でも列が入るように（初回適用時は上の create で入る）
+alter table daily_report_edit_logs add column if not exists client_token text;
+
 create index if not exists dre_log_report_idx on daily_report_edit_logs(report_id);
 create index if not exists dre_log_lookup_idx on daily_report_edit_logs(account_id, report_date, report_user_id);
+-- token を送らない呼び出しもあるので部分一意索引にする
+create unique index if not exists dre_log_token_uidx
+  on daily_report_edit_logs(account_id, client_token) where client_token is not null;
 
 alter table daily_report_edit_logs enable row level security;
 
--- 追記専用にするため update/delete は誰にも grant しない
+-- 書き込みは EF(report-edit-log・service_role) だけ。update/delete は誰にも grant しない＝追記専用。
 revoke all on daily_report_edit_logs from anon;
-grant insert on daily_report_edit_logs to anon;
-grant select, insert on daily_report_edit_logs to authenticated;
+revoke all on daily_report_edit_logs from authenticated;
+grant select on daily_report_edit_logs to authenticated;
 
--- anon（LINEアプリ内の liff）は書くだけ。JWTが無く account_slug を名乗れないので
--- account スコープの検証はできない＝ with check (true)。読めない・消せない・直せないので
--- 混入されても既存データは壊れず、他テナントの理由も見えない。
 drop policy if exists dre_log_ins_anon on daily_report_edit_logs;
-create policy dre_log_ins_anon on daily_report_edit_logs for insert to anon
-  with check (true);
+drop policy if exists dre_log_ins on daily_report_edit_logs;
 
 drop policy if exists dre_log_sel on daily_report_edit_logs;
 create policy dre_log_sel on daily_report_edit_logs for select to authenticated
   using (account_id = (select public.current_account_id()));
-
-drop policy if exists dre_log_ins on daily_report_edit_logs;
-create policy dre_log_ins on daily_report_edit_logs for insert to authenticated
-  with check (account_id = (select public.current_account_id()));
 
 comment on table daily_report_edit_logs is
   '日報を編集した理由の履歴（1編集=1行・追記専用）。report_edit_grants.reason（ロック解除の依頼理由）とは別物。';
