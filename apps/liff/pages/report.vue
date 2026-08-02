@@ -25,6 +25,8 @@
         <div class="success-mark">✓</div>
         <h2 class="state-title">{{ editSubmitted ? $t('report.updatedTitle') : $t('report.submittedTitle') }}</h2>
         <p class="state-text">{{ editSubmitted ? $t('report.updatedText') : $t('report.submittedText') }}</p>
+        <!-- 日報は更新できたが編集理由の記録に失敗した場合。黙って不整合にしない -->
+        <p v-if="editReasonWarn" class="state-warn" data-testid="edit-reason-warn">{{ editReasonWarn }}</p>
         <button v-if="!editSubmitted && nextUnsubmittedDate" class="btn-primary" @click="goToNextReport">
           {{ $t('report.enterNextReport', { date: nextDateLabel }) }}
         </button>
@@ -778,26 +780,47 @@ function closeUnlockModal() { unlockModalOpen.value = false; unlockReason.value 
  * 編集理由を daily_report_edit_logs に1行追記する。
  * ★daily_reports は unique(user_id,date) の upsert で上書きされるため、理由を日報の
  *   1列に持つと2回目の編集で前回の理由が消える。だから1編集=1行の履歴にする。
- * ★この表は追記専用（anonはINSERTのみ・UPDATE/DELETEは誰にも許可しない）。
- *   insert 後に .select() を付けると anon には SELECT 権限が無いためエラーになるので付けない。
+ * ★書き込みは EF(report-edit-log・service_role) 経由。テーブルは anon revoke してある。
+ *   クライアントから直接 insert できると account_id や編集者名を自称できてしまい、
+ *   他テナントの監査ログに偽の行を注入できる（独立レビューの critical 指摘）。
+ *   誰が・どのテナントかは EF が検証済みの身元から決めるので、ここでは名乗らない。
+ * @returns 記録できたら true。失敗しても日報の更新自体は成功しているので例外は投げない。
  */
-async function saveEditReasonLog(reportUserId: string | null, diffs: any[]): Promise<void> {
+async function saveEditReasonLog(diffs: string[]): Promise<boolean> {
   try {
-    const accountId = await useAccount().getAccountId()
-    if (!accountId) { console.error('[Edit] 編集理由の保存: account_id を解決できませんでした'); return }
-    const { error } = await useSupabase().from('daily_report_edit_logs').insert({
-      account_id:        accountId,
-      report_id:         originalReport.value?.id ?? null,
-      report_user_id:    reportUserId,
-      report_date:       report.form.value.date,
-      edited_by_user_id: selfUser.value?.id ?? null,
-      edited_by_name:    currentUser.value?.real_name || null,
-      reason:            editReason.value.trim(),
-      diffs:             diffs.length ? diffs : null,
+    const efUrl = config.public.edgeFunctionUrl
+    if (!efUrl) { console.error('[Edit] 編集理由の保存: EF URL 未設定'); return false }
+    const anonKey = config.public.supabaseAnonKey as string
+    const { data: { session } } = await useSupabase().auth.getSession()
+    const lineIdToken = (await liff.getIdToken().catch(() => null)) ?? ''
+    // 開発モードは LINE ID token が発行されない。EF 側はローカルSupabase接続時しか受け付けない
+    const devLineUserId = config.public.appEnv === 'development' ? (liff.profile.value?.userId ?? '') : ''
+    const res = await fetch(`${efUrl}/report-edit-log`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: anonKey,
+        Authorization: session ? `Bearer ${session.access_token}` : `Bearer ${anonKey}`,
+      },
+      body: JSON.stringify({
+        line_id_token: lineIdToken,
+        dev_line_user_id: devLineUserId,
+        reportId:   originalReport.value?.id ?? null,
+        reportDate: report.form.value.date,
+        reason:     editReason.value.trim(),
+        diffs,
+        clientToken: editLogToken.value,   // 再送しても1行にまとめる
+      }),
     })
-    if (error) console.error('[Edit] 編集理由の保存に失敗:', error)
+    const json = await res.json().catch(() => null)
+    if (!res.ok || !json?.ok) {
+      console.error('[Edit] 編集理由の保存に失敗:', json?.error ?? res.status)
+      return false
+    }
+    return true
   } catch (e) {
     console.error('[Edit] 編集理由の保存に失敗:', e)
+    return false
   }
 }
 async function submitUnlockRequest() {
@@ -887,6 +910,10 @@ const editError       = ref<string | null>(null)
 // 編集理由（必須）。daily_reports は upsert で上書きされるので、理由は 1編集=1行の
 // 履歴テーブル daily_report_edit_logs に残す（1列だと2回目の編集で前回の理由が消える）
 const editReason      = ref('')
+// 1回の更新につき1つ。再送しても監査ログが二重にならないようにする冪等キー
+const editLogToken    = ref('')
+// 日報は更新できたが理由の記録に失敗した時に出す警告（黙って不整合にしない）
+const editReasonWarn  = ref<string | null>(null)
 
 // AI解析トースト
 const receiptToast = ref<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -1717,6 +1744,9 @@ async function handleSubmit() {
     }
     editSubmitting.value = true
     editError.value = null
+    editReasonWarn.value = null
+    // 送信のたびに新しくはせず、この編集操作に1つ割り当てる（再送で二重記録しない）
+    if (!editLogToken.value) editLogToken.value = crypto.randomUUID()
     try {
       const uid = liff.profile.value?.userId
       if (!uid) throw new Error(t('report.errorNoLogin'))
@@ -1728,10 +1758,8 @@ async function handleSubmit() {
 
       // 代理モード時は代理先のユーザーIDで保存
       const editProxyT = proxy.proxyTarget.value
-      let editedReportUserId: string | null = null
       if (editProxyT) {
         const editTargetId = await expense.findOrCreateProxyUser(editProxyT.id, editProxyT.name, editProxyT.worker_role)
-        editedReportUserId = editTargetId
         await expense.saveReportById(editTargetId, {
           date:      report.form.value.date,
           isWorking:  report.form.value.isWorking,
@@ -1742,7 +1770,6 @@ async function handleSubmit() {
           gasolineItems:   isWorkingStr.value === 'working' ? (report.form.value.gasolineItems ?? []) : [],
         })
       } else {
-        editedReportUserId = selfUser.value?.id ?? null
         await expense.saveReport(uid, {
           date:      report.form.value.date,
           isWorking:  report.form.value.isWorking,
@@ -1764,9 +1791,12 @@ async function handleSubmit() {
           })
         : []
 
-      // ★編集理由を履歴に残す。保存自体は成功しているので、ここで失敗しても
-      //   編集をエラーにはしない（理由が残らないことはログで気づけるようにする）。
-      await saveEditReasonLog(editedReportUserId, diffs)
+      // ★編集理由を履歴に残す。日報の更新はもう成功しているので、ここで失敗しても
+      //   「更新できなかった」とは言わない。ただし黙って不整合にはせず警告を出す
+      //   （日報だけ変わって監査ログが無い状態に人が気づけるようにする）。
+      if (!await saveEditReasonLog(diffs)) {
+        editReasonWarn.value = t('report.editReasonSaveFailed')
+      }
 
       // 差分をLINEグループに通知
       const efUrl = config.public.edgeFunctionUrl
@@ -2714,6 +2744,7 @@ html, body {
   resize: vertical;
 }
 .edit-reason-hint { font-size: 11px; color: #8a7a4a; margin: 0; }
+.state-warn { font-size: 13px; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 12px; margin: 8px 0 0; }
 
 /* ── 編集モードバナー ── */
 .edit-banner {

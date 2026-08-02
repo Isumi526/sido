@@ -162,5 +162,6 @@
   "editReasonLabel": "Reason for editing (required)",
   "editReasonPlaceholder": "e.g. Corrected the wrong site",
   "editReasonRequired": "Please enter a reason for editing",
-  "editReasonHint": "Leave a reason so the change can be traced later"
+  "editReasonHint": "Leave a reason so the change can be traced later",
+  "editReasonSaveFailed": "The report was updated, but the reason could not be recorded. Please notify an administrator."
 }
