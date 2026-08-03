@@ -6,9 +6,9 @@
   "allSubmittedText": "All daily reports up to today have been submitted",
   "viewHistory": "View report history",
   "viewSchedule": "View schedule",
-  "updatedTitle": "Updated!",
+  "updatedTitle": "Submitted!",
   "submittedTitle": "Submitted!",
-  "updatedText": "The daily report has been updated",
+  "updatedText": "Your edit was submitted. It will be applied once an administrator approves it",
   "submittedText": "Notified the LINE group",
   "enterNextReport": "Enter the report for {date} →",
   "backToHistory": "Back to history",
@@ -163,5 +163,12 @@
   "editReasonPlaceholder": "e.g. Corrected the wrong site",
   "editReasonRequired": "Please enter a reason for editing",
   "editReasonHint": "Leave a reason so the change can be traced later",
-  "editReasonSaveFailed": "The report was updated, but the reason could not be recorded. Please notify an administrator."
+  "editApprovalSubmitFailed": "Failed to submit the edit. Check your connection and try again",
+  "editPendingBanner": "This report is awaiting approval. The original content stays until it is approved",
+  "lateReasonLabel": "Reason for the late submission (required)",
+  "lateReasonPlaceholder": "e.g. Could not enter it while on site",
+  "lateNoticeBanner": "This date is past the submission deadline. It will await an administrator approval before it appears in reports",
+  "lateDefaultReason": "Late submission of a past report",
+  "lateSubmittedTitle": "Submitted!",
+  "lateSubmittedText": "Because it is past the deadline, it will appear once an administrator approves it"
 }

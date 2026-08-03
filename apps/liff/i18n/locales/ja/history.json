@@ -53,5 +53,7 @@
   "expMiscDefault": "雑経費",
   "expGarbageWood": "木材のみ {m3}m³",
   "expGarbageMixed": "混載 {m3}m³",
-  "expGarbage": "ゴミ {detail}"
+  "expGarbage": "ゴミ {detail}",
+  "pendingApproval": "承認待ち",
+  "pendingOnlyNote": "提出済み（管理者の承認待ち）。承認されると日報に反映されます"
 }

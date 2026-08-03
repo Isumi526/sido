@@ -20,7 +20,9 @@ const MANAGEMENT_LINKS = [
   // 2026-07-31 追加分（勤怠・作業員・車両）
   '/worker-reports', '/attendance', '/paid-leave', '/workers', '/vehicles',
 ]
-const SITE_OPS_LINKS   = ['/reports', '/report-edit-approvals', '/overtime-approvals', '/site-reports', '/calendar', '/process', '/sites', '/subcontractors']
+// ★/report-edit-approvals（解錠の許可申請）はメニューから撤去した（2026-08-03・承認の一本化）。
+//   代わりに /report-edit-review（内容の承認）が現場運営系に入る。
+const SITE_OPS_LINKS   = ['/reports', '/report-edit-review', '/overtime-approvals', '/site-reports', '/calendar', '/process', '/sites', '/subcontractors']
 
 test.describe('site_manager は経営系メニュー非表示＋URL直打ち不可', () => {
   // 作業員アカウントでログインするため、保存済みadmin認証は使わない
