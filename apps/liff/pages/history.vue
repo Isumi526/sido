@@ -23,14 +23,13 @@
           <div class="month-label">{{ ym }}</div>
           <template v-for="rep in group" :key="rep.date">
           <!-- ★まだ日報が無い（期限切れで提出し承認待ちの）日。日付順の位置に出す。
-               Vue3 は同一要素だと v-if が v-for より先に評価されるので template で包む。 -->
-          <div v-if="rep._pendingOnly" class="pending-only-card" data-testid="history-pending-only">
-            <div class="pending-only-date">{{ formatDate(rep.date) }}</div>
-            <p class="pending-only-note">{{ $t('history.pendingOnlyNote') }}</p>
-          </div>
+               Vue3 は同一要素だと v-if が v-for より先に評価されるので template で包む。
+               ★カードの中身は普通の日報と同じ描画を流用する（日付と一文だけでは
+               「何を送ったのか」が分からなかった）。承認待ちであることは枠と注記で示す。 -->
           <div
-            v-else
             class="report-card"
+            :class="{ 'pending-only': rep._pendingOnly }"
+            :data-testid="rep._pendingOnly ? 'history-pending-only' : undefined"
           >
             <div class="report-card-top">
               <div class="report-date">{{ formatDate(rep.date) }}</div>
@@ -38,10 +37,19 @@
                 {{ rep.leave_type === 'paid_leave' ? $t('history.badgePaidLeave') : rep.is_working ? $t('history.badgeWorking') : $t('history.badgeOff') }}
               </span>
               <!-- ★編集を申請済み。表示中の内容は承認前（＝今有効な値）であることを示す -->
-              <span v-if="pendingDates.has(rep.date)" class="status-badge badge-pending" data-testid="history-pending">
+              <span v-if="rep._pendingOnly || pendingDates.has(rep.date)" class="status-badge badge-pending" data-testid="history-pending">
                 {{ $t('history.pendingApproval') }}
               </span>
             </div>
+
+            <!-- 承認待ちの説明。編集の承認待ち（日報が既にある）と、まだ日報が無い新規提出とで
+                 「今出ている内容が何なのか」が違うので、文言を分ける（取り違え防止）。 -->
+            <p v-if="rep._pendingOnly" class="pending-note" data-testid="history-pending-note-new">
+              {{ $t('history.pendingOnlyNote') }}
+            </p>
+            <p v-else-if="pendingDates.has(rep.date)" class="pending-note" data-testid="history-pending-note-edit">
+              {{ $t('history.pendingEditNote') }}
+            </p>
 
             <p v-if="rep.note" class="report-note full">{{ rep.note }}</p>
 
@@ -81,7 +89,9 @@
             </div>
 
             <div class="report-card-footer">
-              <span class="updated-at">{{ $t('history.updatedAt', { time: formatUpdatedAt(rep.updated_at) }) }}</span>
+              <!-- 承認待ちの新規提出はまだ日報が無く updated_at を持たないので出さない -->
+              <span v-if="!rep._pendingOnly" class="updated-at">{{ $t('history.updatedAt', { time: formatUpdatedAt(rep.updated_at) }) }}</span>
+              <span v-else class="updated-at"></span>
               <!-- ★解錠の許可申請は廃止（2026-08-03）。過去日もそのまま編集でき、
                    理由必須＋内容の承認待ちになる。二段承認をやめたため常に編集導線を出す。 -->
               <NuxtLink :to="`/report?edit=${rep.date}`" class="btn-edit">{{ $t('history.editReport') }}</NuxtLink>
@@ -110,7 +120,9 @@ const reports     = ref<any[]>([])
 // ★承認待ちの日。保留テーブルは anon から読めないので EF から日付だけ受け取る。
 //   出さないと「申請したのに履歴に無く、何日を出したのか分からない」状態になる。
 const pendingDates = ref<Set<string>>(new Set())
-const pendingOnlyDates = ref<string[]>([])   // まだ日報が無い＝期限切れの新規提出
+// まだ日報が無い＝期限切れの新規提出。★payload（送信内容）も持つ。
+// 日付と一文だけだと「何を送ったのか」が分からず、普通の日報カードと情報量が違いすぎた。
+const pendingOnly = ref<{ date: string; payload: any }[]>([])
 async function loadPendingDates() {
   try {
     const cfg = useRuntimeConfig()
@@ -129,7 +141,11 @@ async function loadPendingDates() {
     const j = await res.json().catch(() => null)
     if (!j?.ok) return
     pendingDates.value = new Set((j.dates ?? []).map((d: any) => d.date))
-    pendingOnlyDates.value = (j.dates ?? []).filter((d: any) => d.kind === 'late_new').map((d: any) => d.date)
+    pendingOnly.value = (j.dates ?? [])
+      .filter((d: any) => d.kind === 'late_new')
+      .map((d: any) => ({ date: d.date, payload: d.payload ?? null }))
+    // 承認待ちの分も明細を組み立て直す（取得が日報本体より後に返ることがあるため）
+    rebuildDetails()
   } catch (e) { console.error('[history] 承認待ちの取得に失敗:', e) }
 }
 const selfUser    = ref<User | null>(null)
@@ -140,6 +156,9 @@ const detailMap = ref<Record<string, SiteDetail[]>>({})
 function rebuildDetails() {
   const map: Record<string, SiteDetail[]> = {}
   for (const rep of reports.value) map[rep.date] = buildDetail(rep)
+  // ★承認待ち（まだ日報が無い）分も同じ組み立てを通す。payload は daily_reports と
+  //   同じ構造（承認時にそのまま入る）なので、日報カードの描画をそのまま流用できる。
+  for (const p of pendingOnly.value) if (p.payload) map[p.date] = buildDetail(p.payload)
   detailMap.value = map
 }
 
@@ -248,7 +267,8 @@ const grouped = computed(() => {
   //   日付順に並んでいること自体が「何日を申請したか分かる」という目的そのもの。
   const merged = [
     ...reports.value,
-    ...pendingOnlyDates.value.map((d) => ({ date: d, _pendingOnly: true })),
+    // payload を展開して日報と同じ形にする＝カードの描画をそのまま流用できる
+    ...pendingOnly.value.map((p) => ({ ...(p.payload ?? {}), date: p.date, _pendingOnly: true })),
   ].sort((a: any, b: any) => b.date.localeCompare(a.date))
   for (const rep of merged) {
     const [year, month] = rep.date.split('-')
@@ -443,9 +463,9 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--font)
 .report-date { font-size: 16px; font-weight: 700; color: var(--text); }
 
 .badge-pending { background: #dbeafe; color: #1e40af; }
-.pending-only-card { border: 1px dashed #7ea8dd; background: #f5f9ff; border-radius: 12px; padding: 14px; }
-.pending-only-date { font-weight: 800; }
-.pending-only-note { font-size: 12px; color: #1e4f8a; margin: 4px 0 0; }
+/* 承認待ち（まだ日報が無い新規提出）。中身は通常の日報カードと同じ描画で、枠だけ変えて区別する */
+.report-card.pending-only { border: 1px dashed #7ea8dd; background: #f5f9ff; }
+.pending-note { font-size: 12px; color: #1e4f8a; margin: 6px 0 0; line-height: 1.6; }
 .status-badge {
   font-size: 11px; font-weight: 700; border-radius: 20px; padding: 3px 10px;
 }
