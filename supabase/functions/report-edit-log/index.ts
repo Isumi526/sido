@@ -126,6 +126,22 @@ function sanitizePayload(p: any): Record<string, unknown> | null {
  * 承認・差戻し。★Supabase JWT を持つ管理画面からのみ。
  * LINE経路(anon)や LINE ID token では通さない＝作業員が自分の編集を自分で承認できない。
  */
+/**
+ * 承認者の表示名を解決する。workers.auth_user_id → workers.name（admin のロール解決と同じ引き方）。
+ * 見つからなければ email に倒す（氏名が無いより email の方がまだ辿れる）。
+ * ★ここで名前を確定して保存する。表示時に引き直す方式にすると、退職で worker 行が消えた時に
+ *   過去の承認履歴から承認者が消えてしまう＝監査として使えなくなる。
+ */
+async function resolveReviewerName(svc: any, authUserId: string | null, email: string | null): Promise<string | null> {
+  if (authUserId) {
+    const { data: w } = await svc.from('workers')
+      .select('name').eq('auth_user_id', authUserId).limit(1).maybeSingle()
+    const name = typeof w?.name === 'string' ? w.name.trim() : ''
+    if (name) return name
+  }
+  return email
+}
+
 async function handleReview(svc: any, body: any, authHeader: string): Promise<Response> {
   if (!authHeader || authHeader.endsWith(ANON_KEY)) return json({ ok: false, error: 'unauthorized' }, 401)
   const cli = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: authHeader } } })
@@ -146,7 +162,12 @@ async function handleReview(svc: any, body: any, authHeader: string): Promise<Re
   if (!pend) return json({ ok: false, error: 'pending_not_found' }, 404)
   if (pend.status !== 'pending') return json({ ok: false, error: 'already_reviewed' }, 409)
 
-  const reviewer = au?.user?.email ?? null
+  // ★承認者は「人が読める名前」で残す。
+  //  以前は au.user.email をそのまま入れていたが、履歴に出るのが
+  //  ログインemailだと「誰が承認したか」が伝わらない（承認履歴の存在意義に直結）。
+  //  admin のロール解決と同じく workers.auth_user_id から氏名を引き、
+  //  worker行が無いアカウント（純粋オーナー等）だけ email に倒す。
+  const reviewer = await resolveReviewerName(svc, au?.user?.id ?? null, au?.user?.email ?? null)
   const now = new Date().toISOString()
 
   if (body.action === 'reject') {
