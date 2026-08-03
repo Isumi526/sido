@@ -52,8 +52,12 @@ test.afterAll(async () => {
   await restSrv(`estimate_projects?id=eq.${projId}`, { method: 'DELETE' }).catch(() => {})
 })
 
-/** 図面を1件添付し、抽出モーダルを開く。EFの応答は差し替える */
-async function openExtractModal(page: any) {
+/**
+ * 図面を1件添付して抽出を走らせ、結果パネルを開く。EFの応答は差し替える。
+ * ★R53（2026-07-30）以降、抽出はモーダルではなく裏で走るジョブになった。
+ *  「材料を抽出」＝その場で開始 → 終わると「抽出結果を見る」に変わる、という流れ。
+ */
+async function openExtractModal(page: any, label: string) {
   // 1ページ目=正規の品番2件（1件は「(仮)」）／2ページ目=中止の詳細図／3ページ目=なし
   const byPage: Record<number, any[]> = {
     1: [
@@ -71,24 +75,32 @@ async function openExtractModal(page: any) {
 
   await page.goto(`/estimate-builder?project=${projId}`, { waitUntil: 'networkidle' })
   await openBuilderTab(page, 'intake', '[data-testid="intake-dropzone"]')
+  // ★ファイル名はテストごとに変える。同名だと前のテストで上げた行で
+  //  toContainText が即通ってしまい、まだ登録されていない添付のIDを掴む（実際に踏んだ）。
+  const fileName = `E2E実施図面_${label}.pdf`
   await page.locator('[data-testid="intake-file"]').setInputFiles({
-    name: 'E2E実施図面.pdf', mimeType: 'application/pdf', buffer: makePdf(3),
+    name: fileName, mimeType: 'application/pdf', buffer: makePdf(3),
   })
-  await expect(page.locator('[data-testid="intake-att-list"]')).toContainText('E2E実施図面.pdf', { timeout: 20000 })
-  const att = await restSrv(`estimate_project_attachments?project_id=eq.${projId}&select=id&order=created_at.desc`)
-  await page.locator(`[data-testid="dext-open-${att[0].id}"]`).click()
-  await expect(page.locator('[data-testid="dext-modal"]')).toBeVisible()
+  await expect(page.locator('[data-testid="intake-att-list"]')).toContainText(fileName, { timeout: 20000 })
+  const att = await restSrv(`estimate_project_attachments?project_id=eq.${projId}&name=eq.${encodeURIComponent(fileName)}&select=id`)
+  const attId = att[0].id
+  // 押した時点で解析が始まる（モーダルで操作を奪わない）
+  await page.locator(`[data-testid="dext-open-${attId}"]`).click()
+  // 完了すると「抽出結果を見る」に変わる → 開く
+  const result = page.locator(`[data-testid="dext-result-${attId}"]`)
+  await expect(result).toBeVisible({ timeout: 40000 })
+  await result.click()
+  await expect(page.locator('[data-testid="dext-panel"]')).toBeVisible()
 }
 
 test('AC1★: 案件の図面から材料を抽出でき、既定ではどれも選択されていない', async ({ page }) => {
-  await openExtractModal(page)
-  await page.locator('[data-testid="dext-run"]').click()
+  await openExtractModal(page, 'ac1')
 
   // 3ページ分を1ページずつ解析して結果が並ぶ（1ページ目2件＋2ページ目1件）
   await expect(page.locator('[data-testid="dext-row-2"]')).toBeVisible({ timeout: 30000 })
   // 品番は誤読を直せる入力欄なので値で見る
   await expect(page.locator('[data-testid="dext-code-0"]')).toHaveValue('GS-201')
-  await expect(page.locator('[data-testid="dext-modal"]')).toContainText('中止')   // 備考は素のテキスト
+  await expect(page.locator('[data-testid="dext-panel"]')).toContainText('中止')   // 備考は素のテキスト
 
   // ★既定はどれもオフ（中止項目や「(仮)」を勢いで入れさせない）
   for (const i of [0, 1, 2]) await expect(page.locator(`[data-testid="dext-pick-${i}"]`)).not.toBeChecked()
@@ -96,8 +108,7 @@ test('AC1★: 案件の図面から材料を抽出でき、既定ではどれも
 })
 
 test('AC2★: 選んだ行だけが明細に入る（中止項目は入らない）', async ({ page }) => {
-  await openExtractModal(page)
-  await page.locator('[data-testid="dext-run"]').click()
+  await openExtractModal(page, 'ac2')
   await expect(page.locator('[data-testid="dext-row-2"]')).toBeVisible({ timeout: 30000 })
 
   // 1件目（正規）だけ選ぶ。2件目=「(仮)」、3件目=中止 は選ばない
@@ -123,7 +134,7 @@ test('AC2★: 選んだ行だけが明細に入る（中止項目は入らない
 
 test('AC3: 明細に入れた行は材料として扱われる（品番があるので商社と商品情報が出る）', async ({ page }) => {
   await page.goto(`/estimate-builder?project=${projId}`, { waitUntil: 'networkidle' })
-  await expect(page.locator('[data-testid="item-name-0"]')).toBeVisible({ timeout: 15000 })
+  await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
   // AC2で入れた行が1行目にある
   await expect(page.locator('[data-testid="item-code-0"]')).toHaveValue('GS-201', { timeout: 15000 })
   await expect(page.locator('[data-testid="item-pinfo-ask-0"]')).toBeVisible()

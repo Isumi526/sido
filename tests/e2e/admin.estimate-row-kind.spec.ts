@@ -13,7 +13,7 @@
 //  Notion: R14 3ac0ff81c56b81c6a3dbd8dcb24021ce / R15 3ac0ff81c56b81178e96e629e9389af3
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { getAccountId, restSrv } from './helpers'
+import { getAccountId, restSrv, openBuilderTab } from './helpers'
 
 const TS = Date.now()
 const SUB = `E2E種別業者_${TS}`
@@ -65,7 +65,7 @@ async function openNewProject(page: any) {
   await page.locator('[data-testid="new-project-name"]').fill(PROJ)
   await page.locator('[data-testid="add-project"]').click()
   await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ, { timeout: 15000 })
-  await expect(page.locator('[data-testid="item-name-0"]')).toBeVisible({ timeout: 10000 })
+  await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
 }
 
 test('AC1★(R14): 品番なし＝作業内容。商品情報の検索も商社も出さない', async ({ page }) => {

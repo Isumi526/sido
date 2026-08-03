@@ -12,7 +12,7 @@
 //  Notion: R21
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { getAccountId, restSrv } from './helpers'
+import { getAccountId, restSrv, openBuilderTab } from './helpers'
 
 const TS = Date.now()
 const TYPO = `E2E誤入力_てんじよう下地_${TS}`
@@ -40,7 +40,7 @@ test.afterAll(async () => {
 
 test('AC1★: 候補を一覧で見られて、打ち間違いを候補から外せる', async ({ page }) => {
   await page.goto(`/estimate-builder?project=${projId}`, { waitUntil: 'networkidle' })
-  await expect(page.locator('[data-testid="item-name-0"]')).toBeVisible({ timeout: 15000 })
+  await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
 
   // 打ち間違いが候補（datalist）に出てしまっている
   await expect(page.locator(`#est-materials option[value="${TYPO}"]`)).toHaveCount(1)
@@ -65,5 +65,6 @@ test('AC2★: 候補から外しても、すでに作った見積の中身は変
   expect(items?.[0]?.item_name, '過去の見積の名称は書き換えない').toBe(TYPO)
 
   await page.goto(`/estimate-builder?project=${projId}`, { waitUntil: 'networkidle' })
+  await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
   await expect(page.locator('[data-testid="item-name-0"]')).toHaveValue(TYPO, { timeout: 15000 })
 })

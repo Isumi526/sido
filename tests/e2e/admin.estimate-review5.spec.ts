@@ -1,0 +1,367 @@
+// ============================================================
+//  admin.estimate-review5.spec.ts
+//  2026-07-30 ユーザー通しレビュー（第5回）で出た5点
+//   R51 新規見積の入口をステップ式に（図面が最初・案件名はファイル名から自動）
+//   R52 押した時点でDBに保存しURLにIDを持たせる（ブラウザバックで入力が消える）
+//   R53 材料抽出を並行処理に（進捗・バッジ通知・中断からの再開）
+//   R54 明細入力ページの既定タブを案件情報に
+//   R55 元請け（担当者含む）のマスタを見積の画面内で編集
+//
+//  ★解析AI(Gemini)は非決定・課金されるので呼ばない。EFの応答を差し替えて
+//   「進捗が出る／画面を移っても続く／中断から再開できる」を決定的に検証する。
+// ============================================================
+import { test, expect } from '@playwright/test'
+import { getAccountId, restSrv, openBuilderTab } from './helpers'
+
+const TS = Date.now()
+const NAME_PREFIX = `E2Eレビュー5_${TS}`
+
+/** ページ番号入りの最小PDF */
+function makePdf(pages: number): Buffer {
+  const objs: string[] = []
+  const kids = Array.from({ length: pages }, (_, i) => `${i + 3} 0 R`).join(' ')
+  objs.push(`<< /Type /Catalog /Pages 2 0 R >>`)
+  objs.push(`<< /Type /Pages /Kids [${kids}] /Count ${pages} >>`)
+  for (let i = 0; i < pages; i++) objs.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] >>`)
+  let body = '%PDF-1.4\n'
+  const offsets: number[] = []
+  objs.forEach((o, i) => { offsets.push(body.length); body += `${i + 1} 0 obj\n${o}\nendobj\n` })
+  const xrefAt = body.length
+  const size = objs.length + 1
+  let xref = `xref\n0 ${size}\n0000000000 65535 f \n`
+  for (const off of offsets) xref += `${String(off).padStart(10, '0')} 00000 n \n`
+  return Buffer.from(body + xref + `trailer\n<< /Size ${size} /Root 1 0 R >>\nstartxref\n${xrefAt}\n%%EOF\n`, 'latin1')
+}
+
+/** このテストが作った案件（下書きの仮名も含む）を消す */
+async function cleanupProjects(ids: string[]) {
+  for (const id of ids) {
+    await restSrv(`estimate_drawing_extract_jobs?project_id=eq.${id}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`estimate_items?project_id=eq.${id}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`estimate_project_attachments?project_id=eq.${id}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`estimate_projects?id=eq.${id}`, { method: 'DELETE' }).catch(() => {})
+  }
+}
+const created: string[] = []
+test.afterAll(async () => {
+  await cleanupProjects(created)
+  const accountId = await getAccountId()
+  // 名前を確定させたもの／確定させずに残った下書きの後片付け
+  for (const like of [`${NAME_PREFIX}%`, '（案件名未入力）%']) {
+    const pj = await restSrv(`estimate_projects?account_id=eq.${accountId}&name=like.${encodeURIComponent(like)}&select=id`).catch(() => [])
+    await cleanupProjects((pj ?? []).map((p: any) => p.id))
+  }
+  const cs = await restSrv(`contractors?account_id=eq.${accountId}&name=like.${encodeURIComponent(NAME_PREFIX + '%')}&select=id`).catch(() => [])
+  for (const c of (cs ?? [])) {
+    await restSrv(`contractor_contacts?contractor_id=eq.${c.id}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`contractors?id=eq.${c.id}`, { method: 'DELETE' }).catch(() => {})
+  }
+})
+
+/** 一覧から「＋新規見積」を押す。押した時点で案件が作られ、URLにIDが入るのが仕様（R52） */
+async function pressNewEstimate(page: any): Promise<string> {
+  await page.goto('/estimate-list', { waitUntil: 'networkidle' })
+  await page.locator('[data-testid="new-estimate"]').click()
+  await expect(page.locator('[data-testid="wizard"]')).toBeVisible({ timeout: 20000 })
+  const url = new URL(page.url())
+  const id = url.searchParams.get('project') ?? ''
+  expect(id, '★押した時点でURLに案件IDが入る（これが無いと戻った時に入力が消える）').toMatch(/^[0-9a-f-]{36}$/)
+  created.push(id)
+  return id
+}
+
+// ── R52: 押した時点でDBに保存し、URLにIDを持たせる ──────────────
+test('AC1★(R52): 「＋新規見積」を押した時点でDBに行ができ、URLにIDが入る', async ({ page }) => {
+  const id = await pressNewEstimate(page)
+  const pj = await restSrv(`estimate_projects?id=eq.${id}&select=id,name,is_draft`)
+  expect(pj.length, 'DBに案件が1件できている').toBe(1)
+  expect(pj[0].is_draft, '案件名が未確定なので下書き').toBe(true)
+  expect(pj[0].name, '仮名は人が見て未入力と分かる形').toContain('案件名未入力')
+})
+
+test('AC2★(R52): 図面を入れてから別画面に移り、ブラウザバックで戻っても図面が消えない', async ({ page }) => {
+  const id = await pressNewEstimate(page)
+  // ステップ1で図面を入れる（＝この時点で案件に紐づいて保存される）
+  await page.locator('[data-testid="wiz-file"]').setInputFiles({
+    name: `${NAME_PREFIX}_実施図面.pdf`, mimeType: 'application/pdf', buffer: makePdf(2),
+  })
+  await expect(page.locator('[data-testid="wiz-att-list"]')).toContainText('実施図面.pdf', { timeout: 20000 })
+
+  // 担当者マスタを直しに行って戻る、という実際の操作（これで入力が消えていた）。
+  // ナビのリンク＝アプリ内遷移 → ブラウザバック、が報告された操作そのもの。
+  await page.locator('a[href="/contractors"]').first().click()
+  await expect(page.locator('h1')).toContainText('元請け', { timeout: 15000 })
+  await page.goBack()
+
+  expect(new URL(page.url()).searchParams.get('project'), '戻ってもURLに案件IDが残る').toBe(id)
+  await expect(page.locator('[data-testid="wiz-att-list"]')).toContainText('実施図面.pdf', { timeout: 20000 })
+})
+
+test('AC3(R52): 下書きは一覧で「下書き」と分かり、削除できる', async ({ page }) => {
+  const id = await pressNewEstimate(page)
+  await page.goto('/estimate-list', { waitUntil: 'networkidle' })
+  await expect(page.locator(`[data-testid="estimate-draft-${id}"]`)).toBeVisible({ timeout: 15000 })
+  page.once('dialog', (d: any) => d.accept())
+  await page.locator(`[data-testid="estimate-del-${id}"]`).click()
+  await expect.poll(async () => (await restSrv(`estimate_projects?id=eq.${id}&select=id`)).length,
+    { timeout: 15000 }).toBe(0)
+})
+
+// ── R51: ステップ式の入口 ─────────────────────────────────
+test('AC4★(R51): 最初のステップが図面で、案件名が図面のファイル名から自動で入る', async ({ page }) => {
+  const id = await pressNewEstimate(page)
+  // ステップ1＝図面（案件名を先に要求しない）
+  await expect(page.locator('[data-testid="wiz-panel-1"]')).toBeVisible()
+  await expect(page.locator('[data-testid="wiz-step-1"]')).toHaveClass(/on/)
+
+  // 実ファイル名の形（先頭に日付・末尾に書類名）を投げる
+  await page.locator('[data-testid="wiz-file"]').setInputFiles({
+    name: `0603　${NAME_PREFIX}銀座リシャール見積もり.pdf`, mimeType: 'application/pdf', buffer: makePdf(2),
+  })
+  await expect(page.locator('[data-testid="wiz-att-list"]')).toContainText('銀座リシャール', { timeout: 20000 })
+  await page.locator('[data-testid="wiz-next-1"]').click()
+
+  // ★案件名が自動で入っている（先頭の日付と末尾の「見積もり」は落ち、案件名だけ残る）
+  const nameBox = page.locator('[data-testid="wiz-name"]')
+  await expect(nameBox).toHaveValue(/銀座リシャール$/)
+  const auto = await nameBox.inputValue()
+  expect(auto, '先頭の日付は落ちる').not.toContain('0603')
+  expect(auto, '書類名は落ちる').not.toContain('見積')
+
+  // 後から直せる
+  const fixed = `${auto}改`
+  await nameBox.fill(fixed)
+  await page.locator('[data-testid="wiz-next-2"]').click()
+  await expect(page.locator('[data-testid="wiz-panel-3"]')).toBeVisible({ timeout: 15000 })
+  await expect.poll(async () => {
+    const pj = await restSrv(`estimate_projects?id=eq.${id}&select=name,is_draft`)
+    return `${pj[0].name}/${pj[0].is_draft}`
+  }, { timeout: 15000 }).toBe(`${fixed}/false`)
+})
+
+test('AC5(R51): 各ステップをスキップでき、終えると案件情報タブが開く', async ({ page }) => {
+  await pressNewEstimate(page)
+  await page.locator('[data-testid="wiz-skip-1"]').click()   // 図面は後で
+  await expect(page.locator('[data-testid="wiz-panel-2"]')).toBeVisible()
+  await page.locator('[data-testid="wiz-skip-2"]').click()   // 案件名も後で
+  await expect(page.locator('[data-testid="wiz-panel-3"]')).toBeVisible()
+  await page.locator('[data-testid="wiz-skip-3"]').click()   // 期限は未定
+  await expect(page.locator('[data-testid="wiz-panel-4"]')).toBeVisible()
+  await page.locator('[data-testid="wiz-skip-4"]').click()   // 元請けも後で
+
+  // ステップ入力が終わると通常のタブ表示に戻り、案件情報タブが開いている（R54）
+  await expect(page.locator('[data-testid="wizard"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="intake-request-date"]')).toBeVisible({ timeout: 15000 })
+  expect(new URL(page.url()).searchParams.get('step'), 'URLからstepが落ちる').toBeNull()
+})
+
+// ── R54: 既定タブ ──────────────────────────────────────
+test('AC6(R54): 既存の案件を開いた時も既定タブは案件情報', async ({ page }) => {
+  const accountId = await getAccountId()
+  const pj = await restSrv('estimate_projects', {
+    method: 'POST', headers: { Prefer: 'return=representation', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ account_id: accountId, name: `${NAME_PREFIX}_既定タブ` }),
+  })
+  created.push(pj[0].id)
+  await page.goto(`/estimate-builder?project=${pj[0].id}`, { waitUntil: 'networkidle' })
+  await expect(page.locator('[data-testid="tab-intake"]')).toHaveClass(/active/, { timeout: 15000 })
+  await expect(page.locator('[data-testid="intake-request-date"]')).toBeVisible()
+})
+
+// ── R55: 元請け・担当者をこの画面で編集 ────────────────────────
+test('AC7★(R55): 元請けが無くても画面内で追加でき、その場で案件に紐づく', async ({ page }) => {
+  const accountId = await getAccountId()
+  const pj = await restSrv('estimate_projects', {
+    method: 'POST', headers: { Prefer: 'return=representation', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ account_id: accountId, name: `${NAME_PREFIX}_元請け追加` }),
+  })
+  created.push(pj[0].id)
+  await page.goto(`/estimate-builder?project=${pj[0].id}`, { waitUntil: 'networkidle' })
+
+  const CON = `${NAME_PREFIX}元請け`
+  await page.locator('[data-testid="con-add-open"]').click()
+  await expect(page.locator('[data-testid="con-modal"]')).toBeVisible()
+  await page.locator('[data-testid="con-name"]').fill(CON)
+  await page.locator('[data-testid="con-contact-name-0"]').fill('現場 太郎')
+  await page.locator('[data-testid="con-contact-email-0"]').fill('taro@example.com')
+  await page.locator('[data-testid="con-save"]').click()
+
+  // ★画面遷移しない（見積の画面に居たまま）／追加した瞬間に選択肢へ入り、この案件の元請けになる
+  await expect(page.locator('[data-testid="con-modal"]')).toHaveCount(0, { timeout: 20000 })
+  expect(page.url(), '別の画面に飛ばされていない').toContain('/estimate-builder')
+  await expect(page.locator('[data-testid="project-contractor"]')).toHaveValue(/[0-9a-f-]{36}/, { timeout: 15000 })
+  await expect.poll(async () => {
+    const p = await restSrv(`estimate_projects?id=eq.${pj[0].id}&select=contractor_id`)
+    return p[0].contractor_id ? 'linked' : 'none'
+  }, { timeout: 15000 }).toBe('linked')
+
+  // 担当者も同じ画面から編集できる（追加した担当者が入っている）
+  await page.locator('[data-testid="con-edit-open"]').click()
+  await expect(page.locator('[data-testid="con-contact-name-0"]')).toHaveValue('現場 太郎')
+})
+
+// ── R53: 材料抽出の並行処理・進捗・再開・バッジ ────────────────
+test('AC8★(R53): 抽出中もモーダルに拘束されず、進捗が出て、別画面に移っても続く', async ({ page }) => {
+  const accountId = await getAccountId()
+  const pj = await restSrv('estimate_projects', {
+    method: 'POST', headers: { Prefer: 'return=representation', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ account_id: accountId, name: `${NAME_PREFIX}_抽出` }),
+  })
+  const projId = pj[0].id
+  created.push(projId)
+
+  // 1ページあたり少し待たせる（進捗が見える状態を作るため）
+  await page.route('**/functions/v1/drawing-material-extract', async (route: any) => {
+    const body = JSON.parse(route.request().postData() || '{}')
+    await new Promise(r => setTimeout(r, 700))
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ ok: true, page: body.page, rows: [
+        { part: `部位${body.page}`, manufacturer: '杉田エース', code: `GS-${body.page}00`, size: 'L2000', spec: '上下', quantity: '2' },
+      ] }),
+    })
+  })
+
+  await page.goto(`/estimate-builder?project=${projId}`, { waitUntil: 'networkidle' })
+  await openBuilderTab(page, 'intake', '[data-testid="intake-dropzone"]')
+  await page.locator('[data-testid="intake-file"]').setInputFiles({
+    name: `${NAME_PREFIX}_抽出図面.pdf`, mimeType: 'application/pdf', buffer: makePdf(3),
+  })
+  await expect(page.locator('[data-testid="intake-att-list"]')).toContainText('抽出図面.pdf', { timeout: 20000 })
+  const att = await restSrv(`estimate_project_attachments?project_id=eq.${projId}&select=id&order=created_at.desc`)
+  const attId = att[0].id
+
+  await page.locator(`[data-testid="dext-open-${attId}"]`).click()
+  // ★モーダルが開いて操作を奪わない。進捗が「何ページ中の何ページ」で出る
+  await expect(page.locator(`[data-testid="dext-prog-${attId}"]`)).toContainText('/3ページ', { timeout: 15000 })
+  await expect(page.locator('.modal-overlay')).toHaveCount(0)
+  // 解析中でも他のタブへ行ける（拘束されていない）
+  await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
+
+  // ★アプリ内で別の画面に移っても解析は止まらない → 終わるとナビにバッジが出る
+  await page.locator('a[href="/sites"]').first().click()
+  await expect(page.locator('[data-testid="nav-badge-extract"]')).toBeVisible({ timeout: 30000 })
+  await expect.poll(async () => {
+    const j = await restSrv(`estimate_drawing_extract_jobs?attachment_id=eq.${attId}&select=status,done_pages,total_pages`)
+    return j.length ? `${j[0].status}:${j[0].done_pages}/${j[0].total_pages}` : 'none'
+  }, { timeout: 30000 }).toBe('done:3/3')
+
+  // 戻って結果を確認 → 選んだ行だけ明細に入る／バッジは消える
+  await page.goto(`/estimate-builder?project=${projId}`, { waitUntil: 'networkidle' })
+  await openBuilderTab(page, 'intake', '[data-testid="intake-dropzone"]')
+  await page.locator(`[data-testid="dext-result-${attId}"]`).click()
+  await expect(page.locator('[data-testid="dext-panel"]')).toBeVisible()
+  await expect(page.locator('[data-testid="dext-row-2"]')).toBeVisible({ timeout: 15000 })
+  for (const i of [0, 1, 2]) await expect(page.locator(`[data-testid="dext-pick-${i}"]`)).not.toBeChecked()
+  await page.locator('[data-testid="dext-pick-0"]').check()
+  await page.locator('[data-testid="dext-apply"]').click()
+  await expect.poll(async () => (await restSrv(`estimate_items?project_id=eq.${projId}&select=product_code`)).length,
+    { timeout: 20000 }).toBe(1)
+  await expect(page.locator('[data-testid="nav-badge-extract"]')).toHaveCount(0, { timeout: 20000 })
+})
+
+test('AC9★(R53): タブを閉じて中断した抽出は「n/N まで完了。残りを続ける」から再開できる', async ({ page }) => {
+  const accountId = await getAccountId()
+  const pj = await restSrv('estimate_projects', {
+    method: 'POST', headers: { Prefer: 'return=representation', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ account_id: accountId, name: `${NAME_PREFIX}_再開` }),
+  })
+  const projId = pj[0].id
+  created.push(projId)
+
+  await page.route('**/functions/v1/drawing-material-extract', async (route: any) => {
+    const body = JSON.parse(route.request().postData() || '{}')
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ ok: true, page: body.page, rows: [
+        { part: `再開${body.page}`, manufacturer: 'メーカー', code: `RS-${body.page}`, size: '', spec: '', quantity: '1' },
+      ] }),
+    })
+  })
+
+  await page.goto(`/estimate-builder?project=${projId}`, { waitUntil: 'networkidle' })
+  await openBuilderTab(page, 'intake', '[data-testid="intake-dropzone"]')
+  await page.locator('[data-testid="intake-file"]').setInputFiles({
+    name: `${NAME_PREFIX}_再開図面.pdf`, mimeType: 'application/pdf', buffer: makePdf(3),
+  })
+  await expect(page.locator('[data-testid="intake-att-list"]')).toContainText('再開図面.pdf', { timeout: 20000 })
+  const att = await restSrv(`estimate_project_attachments?project_id=eq.${projId}&select=id&order=created_at.desc`)
+  const attId = att[0].id
+
+  // ★タブを閉じた状態を作る: running のまま1ページだけ終わったジョブを残す
+  //  （実装は「1ページ終わるごとにDBへ保存」なので、これが実際に残る形）
+  await restSrv('estimate_drawing_extract_jobs', {
+    method: 'POST', headers: { Prefer: 'return=representation', 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      account_id: accountId, project_id: projId, attachment_id: attId,
+      source_name: `${NAME_PREFIX}_再開図面.pdf`, total_pages: 3, done_pages: 1, status: 'running',
+      rows: [{ page: 1, part: '再開1', manufacturer: 'メーカー', code: 'RS-1', size: '', spec: '', quantity: '1', note: '' }],
+    }),
+  })
+
+  // 開き直すと「中断」として出る（走っていないのに解析中と見せない）
+  await page.reload({ waitUntil: 'networkidle' })
+  await openBuilderTab(page, 'intake', '[data-testid="intake-dropzone"]')
+  const resume = page.locator(`[data-testid="dext-resume-${attId}"]`)
+  await expect(resume).toContainText('1/3ページまで完了', { timeout: 20000 })
+
+  // 残りを続ける → 3/3 まで進む。★1ページ目をやり直さない（続きから）
+  await resume.click()
+  await expect.poll(async () => {
+    const j = await restSrv(`estimate_drawing_extract_jobs?attachment_id=eq.${attId}&select=status,done_pages`)
+    return `${j[0].status}:${j[0].done_pages}`
+  }, { timeout: 30000 }).toBe('done:3')
+  const job = await restSrv(`estimate_drawing_extract_jobs?attachment_id=eq.${attId}&select=rows`)
+  const codes = (job[0].rows as any[]).map(r => r.code)
+  expect(codes, '中断前の結果が残り、続きが足される').toEqual(['RS-1', 'RS-2', 'RS-3'])
+})
+
+test('AC10★(R53): 途中で失敗しても済んだページは捨てず、続きから再試行できる', async ({ page }) => {
+  const accountId = await getAccountId()
+  const pj = await restSrv('estimate_projects', {
+    method: 'POST', headers: { Prefer: 'return=representation', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ account_id: accountId, name: `${NAME_PREFIX}_失敗再試行` }),
+  })
+  const projId = pj[0].id
+  created.push(projId)
+
+  // 2ページ目だけ1回失敗させる（通信が途中で切れた状況）
+  let failedOnce = false
+  await page.route('**/functions/v1/drawing-material-extract', async (route: any) => {
+    const body = JSON.parse(route.request().postData() || '{}')
+    if (body.page === 2 && !failedOnce) {
+      failedOnce = true
+      await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: '解析が中断されました' }) })
+      return
+    }
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ ok: true, page: body.page, rows: [
+        { part: `失敗${body.page}`, manufacturer: 'メーカー', code: `FL-${body.page}`, size: '', spec: '', quantity: '1' },
+      ] }),
+    })
+  })
+
+  await page.goto(`/estimate-builder?project=${projId}`, { waitUntil: 'networkidle' })
+  await openBuilderTab(page, 'intake', '[data-testid="intake-dropzone"]')
+  await page.locator('[data-testid="intake-file"]').setInputFiles({
+    name: `${NAME_PREFIX}_失敗図面.pdf`, mimeType: 'application/pdf', buffer: makePdf(3),
+  })
+  await expect(page.locator('[data-testid="intake-att-list"]')).toContainText('失敗図面.pdf', { timeout: 20000 })
+  const att = await restSrv(`estimate_project_attachments?project_id=eq.${projId}&select=id&order=created_at.desc`)
+  const attId = att[0].id
+
+  await page.locator(`[data-testid="dext-open-${attId}"]`).click()
+  // 1ページ目までは終わった状態で失敗する（そこまでの結果は残る）
+  const retry = page.locator(`[data-testid="dext-retry-${attId}"]`)
+  await expect(retry).toContainText('1/3ページまで完了', { timeout: 30000 })
+
+  await retry.click()
+  await expect.poll(async () => {
+    const j = await restSrv(`estimate_drawing_extract_jobs?attachment_id=eq.${attId}&select=status,done_pages`)
+    return `${j[0].status}:${j[0].done_pages}`
+  }, { timeout: 30000 }).toBe('done:3')
+  const job = await restSrv(`estimate_drawing_extract_jobs?attachment_id=eq.${attId}&select=rows`)
+  const codes = (job[0].rows as any[]).map(r => r.code)
+  expect(codes, '1ページ目をやり直さない（重複しない）').toEqual(['FL-1', 'FL-2', 'FL-3'])
+})
