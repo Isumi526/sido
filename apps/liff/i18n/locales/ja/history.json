@@ -55,5 +55,6 @@
   "expGarbageMixed": "混載 {m3}m³",
   "expGarbage": "ゴミ {detail}",
   "pendingApproval": "承認待ち",
-  "pendingOnlyNote": "提出済み（管理者の承認待ち）。承認されると日報に反映されます"
+  "pendingOnlyNote": "提出済み（管理者の承認待ち）。承認されると日報に反映されます",
+  "pendingEditNote": "承認待ちです。ここに出ているのは承認前の内容（今有効な値）です"
 }

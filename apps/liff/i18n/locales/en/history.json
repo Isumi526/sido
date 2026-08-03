@@ -55,5 +55,6 @@
   "expGarbageMixed": "Mixed {m3}m³",
   "expGarbage": "Garbage {detail}",
   "pendingApproval": "Awaiting approval",
-  "pendingOnlyNote": "Submitted and awaiting approval. It will appear once approved"
+  "pendingOnlyNote": "Submitted and awaiting approval. It will appear once approved",
+  "pendingEditNote": "Awaiting approval. What you see here is the current value before approval"
 }
