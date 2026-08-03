@@ -3,7 +3,7 @@
 //  【見積ビルダー #4】右ドロワーでマスタを編集→閉じると明細の選択肢へ即反映。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { restSrv, getAccountId } from './helpers'
+import { restSrv, getAccountId, openBuilderTab } from './helpers'
 
 const TS = Date.now()
 const PROJ = `ドロワー案件_${TS}`
@@ -24,6 +24,7 @@ test('ドロワーで工種を追加→閉じると明細の工種選択に即�
     // 閉じる → 明細の工種プルダウンに即反映（selectOption はオプション出現まで待つ）
     await page.locator('[data-testid="drawer-close"]').click()
     // 工種は自由記述+予測変換、かつブロック単位で選ぶ（レビュー2026-07-28）
+    await openBuilderTab(page, 'items', '[data-testid="blk-trade-0"]')
     await page.locator('[data-testid="blk-trade-0"]').fill(TRADE)
     // ★R34: ドロワーは商社の資材価格表だけ。自社情報タブは廃止（見積書ページで直接編集する）
     await page.locator('[data-testid="open-drawer"]').click()

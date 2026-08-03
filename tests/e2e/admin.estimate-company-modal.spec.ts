@@ -16,11 +16,24 @@ const TS = Date.now()
 const PROJ = `E2E自社情報_${TS}`
 const NAME = `E2E内装工業_${TS}`
 let prevName: string | null = null
+let seededName = false      // このspecが自社情報の行を作ったか（後片付けの分岐用）
 
+// ★このspecは「自社情報が登録済み」が前提（未登録だと company-missing が出て
+//  company-inline が描画されない）。前提を他のspecの実行順に頼らず自分で作る。
+//  実際に admin.company-profile.spec.ts の後片付けが settings.company_name を
+//  行ごと削除するため、順序次第で落ちていた（2026-07-30 に踏んだ）。
 test.beforeAll(async () => {
   const accountId = await getAccountId()
   const cur = await restSrv(`settings?account_id=eq.${accountId}&key=eq.company_name&select=value`)
   prevName = cur?.[0]?.value ?? null
+  if (prevName == null) {
+    seededName = true
+    await restSrv('settings?on_conflict=key,account_id', {
+      method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      // label は NOT NULL なので必ず付ける
+      body: JSON.stringify({ account_id: accountId, key: 'company_name', value: 'E2E自社情報の初期値', label: '会社名' }),
+    })
+  }
 })
 
 test.afterAll(async () => {
@@ -29,8 +42,11 @@ test.afterAll(async () => {
   if (prevName != null) {
     await restSrv('settings?on_conflict=key,account_id', {
       method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify({ account_id: accountId, key: 'company_name', value: prevName }),
+      body: JSON.stringify({ account_id: accountId, key: 'company_name', value: prevName, label: '会社名' }),
     }).catch(() => {})
+  } else if (seededName) {
+    // 元は未登録だったので、作った行は消して元の状態に戻す
+    await restSrv(`settings?key=eq.company_name&account_id=eq.${accountId}`, { method: 'DELETE' }).catch(() => {})
   }
   const pj = await restSrv(`estimate_projects?account_id=eq.${accountId}&name=eq.${encodeURIComponent(PROJ)}&select=id`)
   for (const p of (pj ?? [])) {
