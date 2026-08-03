@@ -181,6 +181,96 @@ test.describe('日報編集の承認（admin）', () => {
     await restSrv(`daily_reports?user_id=eq.${userId}&date=eq.${LATE}`, { method: 'DELETE' }).catch(() => {})
   })
 
+  // ────────────────────────────────────────────
+  //  承認履歴（誰がいつ承認/差戻ししたか）
+  //  ★承認/差戻しの記録自体は前から保存されていたが、画面が status=pending しか
+  //    出しておらず後から確認する手段が無かった。履歴として見えることを固定する。
+  // ────────────────────────────────────────────
+  test('★承認すると承認履歴に「承認」と承認者・日時が残る', async ({ page }) => {
+    await seed()
+    page.on('dialog', (d) => d.accept().catch(() => {}))
+    await page.goto('/report-edit-review', { waitUntil: 'networkidle' })
+
+    await page.locator('[data-testid="pending-card"]', { hasText: `E2E理由_${TS}` })
+      .getByTestId('pending-approve').click()
+    await expect(page.getByTestId('review-msg')).toContainText('承認しました', { timeout: 30000 })
+
+    await page.getByTestId('history-toggle').click()
+    const row = page.locator('[data-testid="history-row"]', { hasText: `E2E理由_${TS}` }).first()
+    await expect(row, '★承認したものが履歴に出る').toBeVisible({ timeout: 15000 })
+    await expect(row.getByTestId('history-status'), '結果が承認と分かる').toContainText('承認')
+    await expect(row, '対象日が出る').toContainText(DATE)
+    await expect(row, '申請者が出る').toContainText(WORKER)
+    await expect(row, '変更内容も履歴から追える').toContainText('¥1,100 → ¥7,700')
+
+    const saved = await restSrv(`daily_report_pending_edits?report_id=eq.${reportId}&select=reviewed_by_name,reviewed_at`)
+    expect(saved[0].reviewed_at, '承認日時が残る').toBeTruthy()
+    expect(saved[0].reviewed_by_name, '承認者が記録される').toBeTruthy()
+    await expect(row.getByTestId('history-reviewer'), '画面にも承認者が出る')
+      .toContainText(String(saved[0].reviewed_by_name))
+    // ★「承認者が email ではなく氏名で出る」(AC2) はここでは固定できない:
+    //   E2Eのadminログイン(e2e@email.com)は accounts.owner_auth_user_id で
+    //   オーナー扱いにしている合成ユーザーで、workers 行を持たない（持たせると
+    //   permission_role の解決が変わり他specの権限前提が崩れる）。
+    //   worker行が無い承認者は仕様どおり email に倒れるため、氏名表示の確認は
+    //   実アカウント（worker行あり）での人力チェックに回す。
+    //   ここでは「承認者が必ず記録され、画面に出る」ことまでを固定する。
+  })
+
+  test('★差し戻すと履歴に「差し戻し」と差戻し理由が出る', async ({ page }) => {
+    await seed()
+    const REJECT = `E2E差戻理由_${TS}`
+    // 差戻しは window.prompt で理由を取るので、prompt に理由を入れて返す
+    await page.addInitScript((r) => { window.prompt = () => r }, REJECT)
+    page.on('dialog', (d) => d.accept().catch(() => {}))
+    await page.goto('/report-edit-review', { waitUntil: 'networkidle' })
+
+    await page.locator('[data-testid="pending-card"]', { hasText: `E2E理由_${TS}` })
+      .getByTestId('pending-reject').click()
+    await expect(page.getByTestId('review-msg')).toContainText('差し戻しました', { timeout: 30000 })
+
+    await page.getByTestId('history-toggle').click()
+    const row = page.locator('[data-testid="history-row"]', { hasText: `E2E理由_${TS}` }).first()
+    await expect(row, '差し戻したものが履歴に出る').toBeVisible({ timeout: 15000 })
+    await expect(row.getByTestId('history-status')).toContainText('差し戻し')
+    await expect(row.getByTestId('history-reject-reason'), '★差戻し理由が履歴に出る').toContainText(REJECT)
+
+    expect(await savedYen(), '差戻しでは daily_reports は変わらない').toBe(ORIG_YEN)
+  })
+
+  test('★日報詳細から、その日報の承認履歴だけに絞って辿れる', async ({ page }) => {
+    await seed()
+    page.on('dialog', (d) => d.accept().catch(() => {}))
+    await page.goto('/report-edit-review', { waitUntil: 'networkidle' })
+    await page.locator('[data-testid="pending-card"]', { hasText: `E2E理由_${TS}` })
+      .getByTestId('pending-approve').click()
+    await expect(page.getByTestId('review-msg')).toContainText('承認しました', { timeout: 30000 })
+
+    // 日報詳細を開く → 承認履歴への導線が出る。
+    // 日報一覧は「今月」で開くので、seedした対象月まで月ナビを進めてから探す。
+    await page.goto('/reports', { waitUntil: 'networkidle' })
+    const [y, m] = DATE.split('-')
+    const wantLabel = `${Number(y)}年${Number(m)}月`
+    for (let i = 0; i < 24 && !(await page.locator('.month-label').innerText()).includes(wantLabel); i++) {
+      await page.locator('.month-nav .month-btn').last().click()
+      await page.waitForTimeout(150)
+    }
+    await expect(page.locator('.month-label')).toContainText(wantLabel)
+    const card = page.locator('.report-card', { hasText: WORKER }).first()
+    await expect(card, '対象月に seed した日報が出る').toBeVisible({ timeout: 15000 })
+    await card.locator('.report-header').click()
+    const link = page.getByTestId('review-history-link')
+    await expect(link, '★日報詳細から承認履歴へ辿れる').toBeVisible({ timeout: 15000 })
+    await link.click()
+
+    // 絞り込み状態で開き、その日報の履歴だけが出る
+    await expect(page).toHaveURL(new RegExp(`reportId=${reportId}`))
+    await expect(page.getByTestId('history-filter-note'), 'この日報に絞っていると分かる').toBeVisible()
+    const rows = page.locator('[data-testid="history-row"]')
+    await expect(rows, 'この日報の履歴だけ').toHaveCount(1)
+    await expect(rows.first()).toContainText(DATE)
+  })
+
   test('承認済みのものは二重に承認できない（金額が二度適用されない）', async ({ page }) => {
     const pendingId = await seed()
     // 1度承認しておく

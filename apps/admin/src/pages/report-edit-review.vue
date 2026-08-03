@@ -55,6 +55,60 @@
     </template>
 
     <p v-if="msg" class="msg" :class="{ err: !msgOk }" data-testid="review-msg">{{ msg }}</p>
+
+    <!-- ★承認履歴。承認/差戻しの記録は前から保存されていたが、画面が pending しか出しておらず
+         「誰がいつ承認したか」を後から確認する手段が無かった。 -->
+    <section class="history">
+      <div class="history-head">
+        <h2 class="history-title">承認履歴</h2>
+        <button class="btn-toggle" data-testid="history-toggle" @click="historyOpen = !historyOpen">
+          {{ historyOpen ? '閉じる' : '開く' }}
+        </button>
+      </div>
+      <template v-if="historyOpen">
+        <p v-if="filterReportId" class="filter-note" data-testid="history-filter-note">
+          この日報の履歴だけを表示しています。
+          <a href="#" @click.prevent="clearFilter">すべての履歴を見る</a>
+        </p>
+        <div v-if="historyLoading" class="empty">読み込み中…</div>
+        <div v-else-if="!history.length" class="empty" data-testid="history-empty">
+          {{ filterReportId ? 'この日報の承認履歴はまだありません。' : '承認・差戻しの履歴はまだありません。' }}
+        </div>
+        <div v-else class="table-wrap">
+          <table class="table" data-testid="history-table">
+            <thead>
+              <tr>
+                <th>対象日</th><th>種別</th><th>申請者</th><th>理由</th>
+                <th>変更内容</th><th>結果</th><th>承認者</th><th>日時</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="h in history" :key="h.id" data-testid="history-row">
+                <td class="nowrap">{{ h.report_date }}</td>
+                <td class="nowrap">{{ h.kind === 'late_new' ? '期限切れの新規提出' : '編集' }}</td>
+                <td>{{ h.submitted_by_name || '—' }}</td>
+                <td class="cell-wrap">{{ h.reason || '—' }}</td>
+                <td class="cell-wrap">
+                  <span v-if="h.diffs?.length">{{ h.diffs.join(' / ') }}</span>
+                  <span v-else class="muted">—</span>
+                </td>
+                <td class="nowrap">
+                  <span class="badge" :class="h.status" data-testid="history-status">
+                    {{ h.status === 'approved' ? '承認' : '差し戻し' }}
+                  </span>
+                  <!-- 差し戻しは理由が本体。結果だけ出すと作業員に何を直させたか分からない -->
+                  <div v-if="h.status === 'rejected' && h.reject_reason" class="reject-reason" data-testid="history-reject-reason">
+                    {{ h.reject_reason }}
+                  </div>
+                </td>
+                <td class="nowrap" data-testid="history-reviewer">{{ h.reviewed_by_name || '—' }}</td>
+                <td class="nowrap muted">{{ fmtDateTime(h.reviewed_at) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
+    </section>
   </div>
 </template>
 
@@ -67,16 +121,26 @@
 //    この画面から直接 daily_reports を書き換えると、承認を通さない書き込み経路が
 //    増えて「daily_reports に入っている＝承認済み」の不変条件が崩れる。
 // ============================================================
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { refreshNavBadges } from '../lib/navBadges'
+
+const route = useRoute()
+const router = useRouter()
 
 const loading = ref(true)
 const busy = ref<string | null>(null)
 const pending = ref<any[]>([])
 const msg = ref('')
 const msgOk = ref(false)
+
+// 承認履歴。日報詳細から ?reportId=... で来た時はその日報の分だけに絞って開く（AC4）
+const history = ref<any[]>([])
+const historyLoading = ref(false)
+const filterReportId = ref<string>(typeof route.query.reportId === 'string' ? route.query.reportId : '')
+const historyOpen = ref(!!filterReportId.value)
 
 function fmtDateTime(v: string | null): string {
   if (!v) return '—'
@@ -103,6 +167,34 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+/** 承認/差戻し済み（=処理が終わったもの）を新しい順に。pending はこの上のカードに出ているので除く。 */
+async function loadHistory() {
+  historyLoading.value = true
+  try {
+    const accountId = await getAccountId()
+    let q = supabase
+      .from('daily_report_pending_edits')
+      .select('id, report_id, report_date, reason, diffs, kind, submitted_by_name, submitted_at, status, reviewed_by_name, reviewed_at, reject_reason')
+      .eq('account_id', accountId)
+      .in('status', ['approved', 'rejected'])
+    if (filterReportId.value) q = q.eq('report_id', filterReportId.value)
+    const { data, error } = await q.order('reviewed_at', { ascending: false }).limit(200)
+    if (error) throw error
+    history.value = data ?? []
+  } catch (e: any) {
+    msg.value = e?.message ?? '承認履歴の読み込みに失敗しました'
+    msgOk.value = false
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+function clearFilter() {
+  filterReportId.value = ''
+  router.replace({ query: {} })
+  void loadHistory()
 }
 
 async function decide(p: any, action: 'approve' | 'reject') {
@@ -132,6 +224,8 @@ async function decide(p: any, action: 'approve' | 'reject') {
     msg.value = action === 'approve' ? '承認しました。日報に反映されました' : '差し戻しました'
     msgOk.value = true
     await load()
+    // 処理した分がそのまま履歴に積まれるので、履歴も開いていれば追従させる
+    if (historyOpen.value) await loadHistory()
     // ★左メニューのバッジも更新する。ここを呼ばないと承認済みなのに件数が残り、
     //   管理者が「まだ承認待ちがある」と誤解する（承認機能の信頼性に直結）。
     await refreshNavBadges()
@@ -143,7 +237,14 @@ async function decide(p: any, action: 'approve' | 'reject') {
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  // 日報詳細から履歴を見に来たケース（?reportId=...）は最初から開いて出す
+  if (historyOpen.value) await loadHistory()
+})
+
+// 「開く」を押した時点で初めて履歴を取りに行く（既定は承認待ちの処理が主目的の画面なので）
+watch(historyOpen, (open) => { if (open && !history.value.length) void loadHistory() })
 </script>
 
 <style scoped>
@@ -170,4 +271,21 @@ onMounted(load)
 .btn-approve:disabled, .btn-reject:disabled { opacity: .5; cursor: default; }
 .msg { margin-top: 12px; font-size: 14px; color: #16a34a; }
 .msg.err { color: #b91c1c; }
+
+/* 承認履歴 */
+.history { margin-top: 28px; border-top: 1px solid #e5e7eb; padding-top: 16px; }
+.history-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.history-title { font-size: 16px; font-weight: 800; }
+.btn-toggle { background: #fff; color: #374151; border: 1px solid #d1d5db; border-radius: 8px; padding: 5px 14px; font-weight: 700; cursor: pointer; font-size: 13px; }
+.filter-note { font-size: 13px; color: #555; margin-bottom: 10px; }
+.table-wrap { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.table th, .table td { border-bottom: 1px solid #eef0f3; padding: 8px 10px; text-align: left; vertical-align: top; }
+.table th { font-size: 12px; color: #666; font-weight: 700; white-space: nowrap; background: #fafafa; }
+.nowrap { white-space: nowrap; }
+.cell-wrap { max-width: 260px; white-space: pre-wrap; word-break: break-word; }
+.badge { font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 9px; }
+.badge.approved { background: #dcfce7; color: #166534; }
+.badge.rejected { background: #fee2e2; color: #991b1b; }
+.reject-reason { margin-top: 4px; font-size: 12px; color: #991b1b; white-space: pre-wrap; max-width: 240px; }
 </style>
