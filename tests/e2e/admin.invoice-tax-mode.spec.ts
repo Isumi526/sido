@@ -78,6 +78,31 @@ test.describe('請求書の内税/外税', () => {
     await expect(page.getByTestId('net-total'), '税抜計も割り戻し').toContainText('100,000')
   })
 
+  // ★一覧の「請求金額(税込)」。前回のレビューNGはここだけ tax_mode を無視して
+  //   モーダル110,000／一覧121,000と食い違っていた。モーダルしか見ていない
+  //   assertでは全緑のまま素通りしたので、一覧の列を独立して固定する。
+  test('★一覧の請求金額(税込)も内税なら110,000（モーダルと食い違わない）', async ({ page }) => {
+    await clearInvoices()
+    await seedInvoice('inclusive')
+
+    await page.goto('/subcontractor-invoices', { waitUntil: 'networkidle' })
+    const row = page.locator('tr', { hasText: TITLE }).first()
+    await expect(row, '内税なら一覧も明細合計がそのまま税込').toContainText('110,000')
+    await expect(row, '一覧で税を二重計上しない').not.toContainText('121,000')
+
+    // 同じ請求書をモーダルで開いた時と一致していること（画面内で数字が割れない）
+    await row.click()
+    await expect(page.getByTestId('gross-total')).toContainText('110,000')
+  })
+
+  test('★外税の請求書は一覧でも従来どおり121,000（既存の見え方を変えない）', async ({ page }) => {
+    await clearInvoices()
+    await seedInvoice('exclusive')
+
+    await page.goto('/subcontractor-invoices', { waitUntil: 'networkidle' })
+    await expect(page.locator('tr', { hasText: TITLE }).first(), '外税は税を足した額').toContainText('121,000')
+  })
+
   test('★内税で保存された請求書は開き直しても内税のまま（意味が化けない）', async ({ page }) => {
     await clearInvoices()
     await seedInvoice('inclusive')
