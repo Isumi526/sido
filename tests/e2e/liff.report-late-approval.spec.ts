@@ -122,6 +122,43 @@ test.describe('期限切れの新規日報の承認制（liff）', () => {
     await expect(card).toContainText('承認待ち')
   })
 
+  // ★日付と一文だけでは「何を送ったのか」が分からなかった。普通の日報カードと同じ
+  //   情報量（現場・作業員・時間・経費）が出ることを固定する。
+  test('★承認待ちカードに送信内容（現場・作業員・時間・経費）が出る', async ({ page }) => {
+    const SITE = `E2E承認待ち現場_${TS}`
+    await restSrv('daily_report_pending_edits', {
+      method: 'POST', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        account_id: accountId, report_id: null, report_user_id: uid, report_date: LATE_DATE,
+        kind: 'late_new', status: 'pending', reason: 'E2E内容表示',
+        payload: {
+          is_working: true, leave_type: null, is_business_trip: false, note: 'E2E備考メモ',
+          gasoline_items: [],
+          sites: [{
+            siteName: SITE, subcontractors: [],
+            workers: [{ workerName: 'E2E作業員', startTime: '08:00', endTime: '17:00' }],
+            expenses: {
+              vehicles: [], parkings: [{ yen: 800, fileUrls: [] }], highways: [], trains: [],
+              hotels: [], others: [], entertainments: [],
+            },
+          }],
+        },
+      }),
+    })
+    await page.goto('/history', { waitUntil: 'networkidle' })
+    const card = page.getByTestId('history-pending-only')
+    await expect(card, '承認待ちカードが出る').toHaveCount(1, { timeout: 25000 })
+
+    await expect(card, '★現場名が出る').toContainText(SITE)
+    await expect(card, '★作業員が出る').toContainText('E2E作業員')
+    await expect(card, '★時間が出る').toContainText('08:00')
+    await expect(card, '★経費が出る').toContainText('800')
+    await expect(card, '備考も出る').toContainText('E2E備考メモ')
+    // AC2: 承認待ちであることは引き続き分かる
+    await expect(card, '承認待ちのままと分かる').toContainText('承認待ち')
+    await expect(card.getByTestId('history-pending-note-new'), '承認待ちの説明が出る').toBeVisible()
+  })
+
   test('期限内（当日）の送信は今までどおり即座に日報になる（回帰なし）', async ({ page }) => {
     const today = todayJST()
     await rest(`daily_reports?user_id=eq.${uid}&date=eq.${today}`, { method: 'DELETE' }).catch(() => {})

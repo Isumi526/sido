@@ -241,11 +241,18 @@ Deno.serve(async (req) => {
   //  ★次の未送信日の判定と、履歴の承認待ち表示に使う。これが無いと
   //    承認待ちの日を飛ばせず同じ日付が出続け、まとめて提出できない。
   if (body.action === 'pending-dates') {
+    // ★payload も返す。履歴の「承認待ち」カードに送信内容（現場・作業員・時間・経費）を
+    //  出すために要る。返すのは caller 本人（EFで身元検証済み）の申請だけで、
+    //  report_user_id = caller.userId で絞っている＝他人の申請内容は返らない。
+    //  この絞り込み条件は緩めないこと。
     const { data } = await svc.from('daily_report_pending_edits')
-      .select('report_date, kind')
+      .select('report_date, kind, payload')
       .eq('account_id', caller.accountId).eq('status', 'pending')
       .eq('report_user_id', caller.userId)
-    return json({ ok: true, dates: (data ?? []).map((r: any) => ({ date: r.report_date, kind: r.kind })) })
+    return json({
+      ok: true,
+      dates: (data ?? []).map((r: any) => ({ date: r.report_date, kind: r.kind, payload: r.payload ?? null })),
+    })
   }
 
   // 作業員側に「承認待ちかどうか」だけ返す。保留の中身は返さない（anon経路から読めるため）
