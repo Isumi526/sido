@@ -103,10 +103,16 @@ test('AC2: 出来高（一部）請求が通り、請求が起票される。二
   expect(r.body.ok).toBe(true)
   expect(r.body.amount).toBe(30000)
   // 請求＋明細が起票される（source=portal・PO紐付け）
-  const invs = await restSrv(`subcontractor_invoices?purchase_order_id=eq.${poAcc}&select=id,total_amount,source`)
+  const invs = await restSrv(`subcontractor_invoices?purchase_order_id=eq.${poAcc}&select=id,total_amount,source,tax_mode`)
   expect(invs.length).toBe(1)
   expect(Number(invs[0].total_amount)).toBe(30000)
   expect(invs[0].source).toBe('portal')
+  // ★注文書金額は税込で業者に提示している。その額をそのまま明細 amount に入れるので
+  //  内税として保存しないと、管理画面がもう一度10%を足して約10%多く見える（二重計上）。
+  expect(invs[0].tax_mode, '★ポータル請求は内税（税込金額を税抜扱いにしない）').toBe('inclusive')
+  // 明細側も税込前提の金額がそのまま入っていること
+  const items = await restSrv(`subcontractor_invoice_items?invoice_id=eq.${invs[0].id}&select=amount,tax_rate`)
+  expect(Number(items[0].amount)).toBe(30000)
   // 同じトークンの二重送信は使用済みで弾く
   const dup = await call(tok, { action: 'invoice_submit', invoice_mode: 'partial', invoice_amount: 10000 })
   expect(dup.status).toBe(409)
