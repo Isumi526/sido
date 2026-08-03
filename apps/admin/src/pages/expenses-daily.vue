@@ -23,6 +23,19 @@
         <div class="sum-card"><span class="sum-label">件数</span><span class="sum-val">{{ filteredRows.length }} 件</span></div>
       </div>
 
+      <!-- 個人経費の月額枠と超過検知（#32e93d75）。枠を持つ作業員だけ出す。 -->
+      <div v-if="budgets.length" class="budget-panel" data-testid="pe-budget-panel">
+        <div class="budget-head">個人経費の月額枠（{{ yearMonth }}）</div>
+        <div class="budget-list">
+          <div v-for="b in budgets" :key="b.workerId" class="budget-row" :class="{ over: b.usage.isOver }" :data-testid="`pe-budget-${b.workerId}`">
+            <span class="budget-name">{{ b.workerName }}</span>
+            <span class="budget-figure">{{ yen(b.usage.used) }} / {{ yen(b.usage.limit ?? 0) }}</span>
+            <span v-if="b.usage.isOver" class="budget-over" data-testid="pe-budget-over">超過 {{ yen(b.usage.used - (b.usage.limit ?? 0)) }}</span>
+            <span v-else class="budget-remain">残り {{ yen(b.usage.remaining) }}</span>
+          </div>
+        </div>
+      </div>
+
       <div v-if="!byDate.length" class="empty">この月の経費はありません</div>
       <div v-for="grp in byDate" :key="grp.date" class="date-group">
         <div class="date-head">
@@ -39,8 +52,8 @@
             <tbody>
               <tr v-for="(r, i) in grp.rows" :key="i">
                 <td>{{ r.workerName || '—' }}</td>
-                <td class="muted">{{ r.siteName || '—' }}</td>
-                <td>{{ expenseDisplayCategory(r.category) }}</td>
+                <td class="muted">{{ r.siteName || '現場外（個人経費）' }}</td>
+                <td>{{ expenseAccountCategory(r) }}</td>
                 <td class="muted">{{ r.note || '—' }}</td>
                 <td class="muted">{{ r.payee || '—' }}</td>
                 <td class="mono muted">{{ r.registrationNumber || '—' }}</td>
@@ -61,9 +74,11 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useYearMonthParam } from '../composables/useQueryParam'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { flattenReportExpenses, ratesFromSettings, expenseDisplayCategory, type ExpenseRow } from '../lib/expenses'
+import { flattenReportExpenses, flattenGasolineItems, flattenPersonalExpenses, ratesFromSettings, expenseDisplayCategory, expenseAccountCategory, resolveMonthlyLimit, personalExpenseLimitFromSettings, computeBudgetUsage, type ExpenseRow, type BudgetUsage } from '../lib/expenses'
 
 type DailyRow = ExpenseRow & { workerName: string }
+type WorkerBudget = { workerId: string; workerName: string; usage: BudgetUsage }
+const budgets = ref<WorkerBudget[]>([])
 
 const loading = ref(true)
 const q = ref('')
@@ -76,7 +91,9 @@ const dateTo = computed(() => {
   const d = new Date(baseDate.value); d.setMonth(d.getMonth() + 1); d.setDate(0)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 })
-function shiftMonth(n: number) { const d = new Date(baseDate.value); d.setMonth(d.getMonth() + n); baseDate.value = d }
+// ★setDate(1) を先に入れる: 月末31日に開くと「8月31日の1ヶ月後＝9月31日」が存在せず
+//  10月1日へ繰り上がり、9月が丸ごと飛ばされる（他4画面は元から丸めている）。
+function shiftMonth(n: number) { const d = new Date(baseDate.value); d.setDate(1); d.setMonth(d.getMonth() + n); baseDate.value = d }
 
 function yen(n: number) { return '¥' + Math.round(n || 0).toLocaleString() }
 const WEEK = ['日', '月', '火', '水', '木', '金', '土']
@@ -85,13 +102,26 @@ function fmtDate(s: string) { const d = new Date(s + 'T00:00:00'); return `${d.g
 async function load() {
   loading.value = true
   const accountId = await getAccountId()
-  const [{ data: cfg }, { data: reports }] = await Promise.all([
+  const monthKey = `${baseDate.value.getFullYear()}-${String(baseDate.value.getMonth() + 1).padStart(2, '0')}`
+  const [{ data: cfg }, { data: reports }, { data: personal }, { data: peWorkers }, { data: peBudgets }] = await Promise.all([
     supabase.from('settings').select('key, value').eq('account_id', accountId),
     supabase.from('daily_reports')
       .select('date, sites, gasoline_items, user_id, users(real_name, workers(name))')
       .eq('account_id', accountId).eq('is_working', true)
       .gte('date', dateFrom.value).lte('date', dateTo.value)
       .order('date', { ascending: true }).limit(5000),
+    // 現場に紐付かない個人経費（日報を出さない役員等の分。日報とは独立に引く）
+    supabase.from('personal_expenses')
+      .select('id, worker_id, date, account_category, amount, payee, registration_number, companions, note, file_urls, tategae, workers(name)')
+      .eq('account_id', accountId)
+      .gte('date', dateFrom.value).lte('date', dateTo.value)
+      .order('date', { ascending: true }).limit(5000),
+    // 枠を持ちうる作業員（許可フラグON）と、その月の月別上書き
+    supabase.from('workers')
+      .select('id, name, can_apply_personal_expense, default_monthly_expense_limit')
+      .eq('account_id', accountId).eq('can_apply_personal_expense', true),
+    supabase.from('worker_expense_budgets')
+      .select('worker_id, limit_amount').eq('account_id', accountId).eq('month', monthKey),
   ])
   const rates = ratesFromSettings(cfg)
   const out: DailyRow[] = []
@@ -102,19 +132,34 @@ async function load() {
       if (row.category === 'ガソリン代' || row.category === '軽油代') continue
       out.push({ ...row, workerName })
     }
-    // 本日のガソリン代（実費・複数給油）
-    for (const g of (rep.gasoline_items ?? [])) {
-      const gasYen = Math.round(Number(g?.yen) || 0)
-      if (gasYen <= 0) continue
-      out.push({
-        date: rep.date, category: 'ガソリン代', siteName: '—', payee: g.payee || '',
-        amount: gasYen, note: g.fuelType === 'diesel' ? 'ディーゼル' : (g.fuelType === 'regular' ? 'レギュラー' : (g.label || '')), registrationNumber: g.registrationNumber || '',
-        liters: Number(g.liters) || undefined, tategae: !!g.tategae, fileUrls: Array.isArray(g.fileUrls) ? g.fileUrls : [],
-        workerName,
-      } as DailyRow)
+    // 本日のガソリン代（実費・複数給油）★共有関数を使う（表記揺れ・入れ忘れの防止）
+    for (const row of flattenGasolineItems(rep.date, rep.gasoline_items)) {
+      out.push({ ...row, workerName } as DailyRow)
     }
   }
+  // 現場外の個人経費を同じ台帳に合流（siteName は空＝現場に紛れ込ませない）
+  for (const row of flattenPersonalExpenses(personal as any)) {
+    const rec = (personal as any[]).find((p) => p.id === row.personalExpenseId)
+    out.push({ ...row, workerName: rec?.workers?.name ?? '—' } as DailyRow)
+  }
   allRows.value = out
+
+  // 個人経費の枠と消費（枠が解決できる作業員だけ並べる＝枠なしは超過の概念が無い）
+  const tenantDefault = personalExpenseLimitFromSettings(cfg as any)
+  const overrideByWorker = new Map((peBudgets ?? []).map((b: any) => [b.worker_id, b.limit_amount]))
+  budgets.value = ((peWorkers ?? []) as any[])
+    .map((w) => {
+      const limit = resolveMonthlyLimit({
+        monthOverride: overrideByWorker.get(w.id),
+        workerDefault: w.default_monthly_expense_limit,
+        tenantDefault,
+      })
+      const mine = ((personal ?? []) as any[]).filter((p) => p.worker_id === w.id)
+      return { workerId: w.id, workerName: w.name, usage: computeBudgetUsage(mine, monthKey, limit) }
+    })
+    .filter((b) => b.usage.hasBudget)
+    .sort((a, b) => Number(b.usage.isOver) - Number(a.usage.isOver) || b.usage.used - a.usage.used)
+
   loading.value = false
 }
 onMounted(load)
@@ -127,6 +172,7 @@ const filteredRows = computed(() => {
     (r.workerName || '').toLowerCase().includes(kw) ||
     (r.siteName || '').toLowerCase().includes(kw) ||
     expenseDisplayCategory(r.category).toLowerCase().includes(kw) ||
+    expenseAccountCategory(r).toLowerCase().includes(kw) ||
     (r.payee || '').toLowerCase().includes(kw) ||
     (r.note || '').toLowerCase().includes(kw)
   )
@@ -154,6 +200,15 @@ const byDate = computed(() => {
 .search { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px 12px; font-size: 13px; width: 240px; box-sizing: border-box; }
 .summary-bar { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
 .sum-card { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.06); padding: 12px 20px; display: flex; flex-direction: column; gap: 2px; }
+.budget-panel { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.06); padding: 12px 16px; margin-bottom: 16px; }
+.budget-head { font-weight: 700; font-size: 13px; margin-bottom: 8px; }
+.budget-list { display: flex; flex-direction: column; gap: 4px; }
+.budget-row { display: flex; align-items: center; gap: 12px; font-size: 13px; padding: 4px 0; border-bottom: 1px solid #f3f4f6; }
+.budget-row.over { color: #b91c1c; font-weight: 600; }
+.budget-name { min-width: 8em; }
+.budget-figure { font-variant-numeric: tabular-nums; }
+.budget-remain { color: #6b7280; font-size: 12px; margin-left: auto; }
+.budget-over { color: #b91c1c; font-size: 12px; margin-left: auto; font-weight: 700; }
 .sum-label { font-size: 11px; color: #888; }
 .sum-val { font-size: 18px; font-weight: 700; color: #06843c; }
 .date-group { margin-bottom: 18px; }

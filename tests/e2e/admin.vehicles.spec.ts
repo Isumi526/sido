@@ -6,7 +6,7 @@
 //   AC3(EF): 車検が近い車両が dry-run の due に出る／遠い車両は出ない（マルチテナント）
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, getAccountId, SUPABASE_URL, ANON_KEY } from './helpers'
+import { rest, getAccountId, SUPABASE_URL, ANON_KEY, restSrv } from './helpers'
 
 const TS = Date.now()
 const VNAME = `E2E車両_${TS}`
@@ -18,7 +18,7 @@ test.describe('車両マスタ CRUD', () => {
   test.afterAll(async () => {
     const rows = await rest(`vehicles?name=eq.${encodeURIComponent(VNAME)}&select=id`)
     for (const r of rows ?? []) {
-      await rest(`vehicle_repair_logs?vehicle_id=eq.${r.id}`, { method: 'DELETE' }).catch(() => {})
+      await restSrv(`vehicle_repair_logs?vehicle_id=eq.${r.id}`, { method: 'DELETE' }).catch(() => {})
     }
     await rest(`vehicles?name=eq.${encodeURIComponent(VNAME)}`, { method: 'DELETE' }).catch(() => {})
   })
@@ -63,7 +63,7 @@ test.describe('車両マスタ CRUD', () => {
       const vr = await rest(`vehicles?name=eq.${encodeURIComponent(VNAME)}&select=id`)
       const vid = vr?.[0]?.id
       if (!vid) return null
-      const logs = await rest(`vehicle_repair_logs?vehicle_id=eq.${vid}&select=repair_date,description,cost`)
+      const logs = await restSrv(`vehicle_repair_logs?vehicle_id=eq.${vid}&select=repair_date,description,cost`)
       const l = logs?.[0]
       return l ? `${l.repair_date}|${l.description}|${l.cost}` : null
     }, { timeout: 10000 }).toBe('2026-06-01|オイル交換|8000')

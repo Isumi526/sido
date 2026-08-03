@@ -162,7 +162,7 @@ body { font-family: 'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic', sans-serif; ba
 .expense-table th, .expense-table td { border: 1px solid #333; padding: 5px 6px; }
 .expense-table thead th { background: #f0f0f0; font-weight: 700; text-align: center; font-size: 11px; }
 .col-date  { width: 62px; }
-.col-payee { min-width: 90px; }
+.col-payee { min-width: 80px; }
 .col-content { min-width: 90px; }
 .col-reg   { width: 110px; font-size: 10px; }
 .col-cat   { width: 72px; }

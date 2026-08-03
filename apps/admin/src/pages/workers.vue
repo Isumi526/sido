@@ -99,6 +99,17 @@
           </div>
           <p class="role-hint">権限階層: オーナー &gt; 役員・経理 &gt; 現場管理者 &gt; 作業員。画面/操作の制御は今後のフェーズで適用されます。</p>
         </div>
+        <div class="field" v-if="canManageUsers">
+          <label>個人経費（現場に紐付かない経費）の申請</label>
+          <div class="toggle">
+            <button type="button" :class="{ active: !modal.can_apply_personal_expense }" data-testid="pe-off" @click="modal.can_apply_personal_expense = false">許可しない</button>
+            <button type="button" :class="{ active: !!modal.can_apply_personal_expense }" data-testid="pe-on" @click="modal.can_apply_personal_expense = true">許可する</button>
+          </div>
+          <template v-if="modal.can_apply_personal_expense">
+            <input v-model.number="modal.default_monthly_expense_limit" type="number" class="input" placeholder="50000" data-testid="pe-limit" />
+            <p class="hint-sm">既定の月額上限（円）。指定の無い月は毎月この金額が自動で枠になります。<strong>金額を入れないと申請できません</strong>（許可＝そもそも許すか／金額＝いくらまで の2段階）。月ごとに変えたい場合は経費管理から月別に上書きできます。超過は警告のみで、登録はブロックしません。</p>
+          </template>
+        </div>
         <template v-if="canViewWages">
         <div class="field">
           <label>日当単価（円/日・原価設定）</label>
@@ -331,6 +342,8 @@ type Worker = {
   labor_insurance_number: string | null
   report_start_date: string | null
   auth_user_id: string | null
+  can_apply_personal_expense?: boolean | null      // 個人経費（現場に紐付かない経費）の申請を許すか
+  default_monthly_expense_limit?: number | null    // 個人経費の既定月額枠。指定の無い月は毎月これが効く
 }
 
 const workers         = ref<Worker[]>([])
@@ -537,7 +550,7 @@ function toggleProxyId(id: string) {
 async function load() {
   const accountId = await getAccountId()
   const [{ data: workersData }, { data: usersData }, { data: proxyData }] = await Promise.all([
-    supabase.from('workers').select('id, name, name_kana, role, permission_role, daily_wage, hourly_wage, active, status, hire_date, birth_date, address, mobile_phone, notify_email, emergency_contact, employment_type, weekly_scheduled_days, company_info, invoice_number, insurance_info, labor_insurance_number, report_start_date, auth_user_id').eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
+    supabase.from('workers').select('id, name, name_kana, role, permission_role, daily_wage, hourly_wage, active, status, hire_date, birth_date, address, mobile_phone, notify_email, emergency_contact, employment_type, weekly_scheduled_days, company_info, invoice_number, insurance_info, labor_insurance_number, report_start_date, auth_user_id, can_apply_personal_expense, default_monthly_expense_limit').eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
     supabase.from('users').select('worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
     supabase.from('worker_proxies').select('worker_id, proxy_operator_id').eq('account_id', accountId),
   ])
@@ -556,7 +569,7 @@ async function load() {
 onMounted(load)
 
 function openAdd() {
-  modal.value = { name: '', name_kana: '', role: 'site', permission_role: 'worker', daily_wage: 20000, hourly_wage: 2000, hire_date: null, birth_date: null, address: null, mobile_phone: null, notify_email: null, emergency_contact: null, employment_type: 'fulltime', weekly_scheduled_days: null, company_info: null, invoice_number: null, insurance_info: null, labor_insurance_number: null, report_start_date: null }
+  modal.value = { name: '', name_kana: '', role: 'site', permission_role: 'worker', daily_wage: 20000, hourly_wage: 2000, hire_date: null, birth_date: null, address: null, mobile_phone: null, notify_email: null, emergency_contact: null, employment_type: 'fulltime', weekly_scheduled_days: null, company_info: null, invoice_number: null, insurance_info: null, labor_insurance_number: null, report_start_date: null, can_apply_personal_expense: false, default_monthly_expense_limit: null }
   modalProxyIds.value = []
   familyMembers.value = []
   healthCheckups.value = []
@@ -653,6 +666,12 @@ async function save() {
       // 労災保険番号は区分=業務委託のときのみ保持（他区分では常にnull）
       labor_insurance_number: modal.value.employment_type === 'contractor' ? (modal.value.labor_insurance_number?.trim() || null) : null,
       report_start_date:      modal.value.report_start_date || null,
+      can_apply_personal_expense: !!modal.value.can_apply_personal_expense,
+      // 許可を落としたら枠も消す（許可OFFのまま金額だけ残ると、再度ONにした瞬間に
+      // 意図しない枠が復活する）
+      default_monthly_expense_limit: modal.value.can_apply_personal_expense
+        ? (modal.value.default_monthly_expense_limit ?? null)
+        : null,
     }
 
     if (workerId) {

@@ -117,8 +117,8 @@
               <tr>
                 <th>日付</th>
                 <th>支払い先</th>
-                <th>登録番号</th>
-                <th>品名</th>
+                <th>インボイス番号</th>
+                <th>科目</th>
                 <th class="num">ℓ</th>
                 <th>現場名</th>
                 <th>使用車</th>
@@ -133,9 +133,9 @@
                 <td class="date-cell">{{ d.date.slice(5).replace('-', '/') }}</td>
                 <td class="muted">{{ d.payee || '—' }}</td>
                 <td class="muted">{{ d.registrationNumber || '—' }}</td>
-                <td>{{ expenseDisplayCategory(d.category) }}</td>
+                <td>{{ expenseAccountCategory(d) }}</td>
                 <td class="num muted">{{ d.liters ?? '' }}</td>
-                <td>{{ d.siteName || '—' }}</td>
+                <td>{{ isPersonalExpenseRow(d) ? '現場外' : (d.siteName || '—') }}</td>
                 <td class="muted">{{ d.vehicle || '' }}</td>
                 <td class="num">{{ yen(d.amount) }}</td>
                 <td class="no-print">{{ d.tategae ? '○' : '' }}</td>
@@ -233,7 +233,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useYearMonthParam } from '../composables/useQueryParam'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug, getAccountName } from '../lib/account'
-import { flattenReportExpenses, ratesFromSettings, effectiveStatus, expenseDisplayCategory, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
+import { flattenReportExpenses, flattenGasolineItems, flattenPersonalExpenses, isPersonalExpenseRow, ratesFromSettings, effectiveStatus, expenseAccountCategory, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
 
 /** 申請PDF(明細/請求書)のStorage公開URL。パスは generateExpensePdf.uploadApplicationPdf と一致 */
 function pdfUrl(row: { userId: string; periodKey: string }, kind: 'meisai' | 'seikyu'): string {
@@ -317,7 +317,7 @@ async function load() {
   const ym = dateFrom.value.slice(0, 7)            // YYYY-MM
   const periodKeys = [`${ym}-first`, `${ym}-second`]
 
-  const [{ data: cfg }, { data: reports }, { data: settles }] = await Promise.all([
+  const [{ data: cfg }, { data: reports }, { data: settles }, { data: personal }, { data: userRows }] = await Promise.all([
     supabase.from('settings').select('key, value').eq('account_id', accountId),
     supabase
       .from('daily_reports')
@@ -329,6 +329,14 @@ async function load() {
       .order('date', { ascending: true })
       .limit(5000), // 1ヶ月×全作業員で1000件超→一部の日が溢れて欠落するため余裕を持たせる
     supabase.from('expense_settlements').select('*').eq('account_id', accountId).in('period_key', periodKeys),
+    // 現場に紐付かない個人経費（日報を出さない役員等の分）。個人立替を精算するのでここにも合流させる。
+    supabase.from('personal_expenses')
+      .select('id, worker_id, date, account_category, amount, payee, registration_number, companions, note, file_urls, tategae, workers(name)')
+      .eq('account_id', accountId)
+      .gte('date', dateFrom.value).lte('date', dateTo.value)
+      .order('date', { ascending: true }).limit(5000),
+    // 個人経費は worker_id 基準・精算行は users.id 基準なので対応表を引く
+    supabase.from('users').select('id, worker_id').eq('account_id', accountId),
   ])
 
   const rates = ratesFromSettings(cfg)
@@ -361,17 +369,35 @@ async function load() {
       pr.details.push(row)
     }
     // 日報レベルの「本日のガソリン代」（複数給油）を立替明細として加算（按分は別・ここは作業員への精算分）
-    for (const g of (rep.gasoline_items ?? [])) {
-      const gasYen = Math.round(Number(g?.yen) || 0)
-      if (gasYen <= 0) continue
+    // ★共有関数を使う。以前はここで手組みしており liters と note を入れ忘れていたため、
+    //   経費管理と請求書PDFの ℓ列・内訳が常に空になっていた（2026-07-30 修正）。
+    for (const row of flattenGasolineItems(rep.date, rep.gasoline_items)) {
       const pr = ensure(userId, workerName, `${ym}-${halfOf(rep.date)}`)
-      const isTat = !!g.tategae
-      const urls = Array.isArray(g.fileUrls) ? g.fileUrls : []
       pr.count += 1
-      pr.total += gasYen
-      if (isTat) pr.tategaeTotal += gasYen
-      pr.details.push({ date: rep.date, category: 'ガソリン代（本日）', siteName: '—', payee: g.payee || '', amount: gasYen, note: '', registrationNumber: g.registrationNumber || '', fileUrls: urls, tategae: isTat })
+      pr.total += row.amount
+      if (row.tategae) pr.tategaeTotal += row.amount
+      pr.details.push(row)
     }
+  }
+
+  // 現場に紐付かない個人経費を同じ精算行に合流（日報が無い作業員でも精算対象になる）
+  const userIdByWorker = new Map<string, string>()
+  for (const u of ((userRows ?? []) as any[])) if (u.worker_id) userIdByWorker.set(u.worker_id, u.id)
+  const orphanWorkers = new Set<string>()
+  for (const row of flattenPersonalExpenses(personal as any)) {
+    const rec = ((personal ?? []) as any[]).find((p) => p.id === row.personalExpenseId)
+    const workerId = rec?.worker_id
+    const userId = workerId ? userIdByWorker.get(workerId) : undefined
+    if (!userId) { if (workerId) orphanWorkers.add(rec?.workers?.name ?? workerId); continue }
+    const pr = ensure(userId, rec?.workers?.name ?? '—', `${ym}-${halfOf(row.date)}`)
+    pr.count += 1
+    pr.total += row.amount
+    if (row.tategae) pr.tategaeTotal += row.amount
+    pr.details.push(row)
+  }
+  // users 行が無い作業員の個人経費は精算行に紐付けられない（黙って落とさず気づけるようにする）
+  if (orphanWorkers.size) {
+    console.warn('[expenses] users行が無いため精算に合流できない個人経費の作業員:', [...orphanWorkers].join(', '))
   }
 
   // 経費が無くても settlement がある期は行を作る（差し戻し等の追跡）

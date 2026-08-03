@@ -2,7 +2,7 @@
 //  lib/auth.ts
 //  Supabase Auth 認証状態管理 ＋ 権限(permission_role)解決
 // ============================================================
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { supabase } from './supabase'
 import type { User } from '@supabase/supabase-js'
 
@@ -47,6 +47,20 @@ export const canViewHourlyWage = computed(() =>
 //  詳細情報トグル＋セクション全体を丸ごと非表示にする広いガードとして新設（2026-07-11・議事録起点の緊急対応）。
 export const canViewWorkerDetails = computed(() =>
   !currentRole.value || currentRole.value === 'admin' || currentRole.value === 'office')
+
+// 経営系ページ（見積・発注 / 経費・請求 / 元請け業者 / 見積マスタ・単価表 / 管理・設定）の閲覧可否:
+//  admin/office/純admin(role=null) のみ。site_manager は現場運営系（日次・勤怠・現場系マスタ）だけに制限する
+//  （2026-07-30 ユーザー確定回答。メニュー非表示＋ルートガードの両方で塞ぐ）。
+export const canViewManagementPages = computed(() =>
+  !currentRole.value || currentRole.value === 'admin' || currentRole.value === 'office')
+
+// roleResolved になるまで待つ（ログイン直後など解決前にルートガードが判定して素通ししないため）
+export function waitForRoleResolved(): Promise<void> {
+  if (roleResolved.value) return Promise.resolve()
+  return new Promise((resolve) => {
+    const stop = watch(roleResolved, (v) => { if (v) { stop(); resolve() } })
+  })
+}
 
 // 作業員の permission_role（権限ロール）変更・ユーザー管理系の破壊的操作の可否: admin/office/純admin のみ。
 //  site_manager がisAdminAllowedを満たすだけで他作業員のロールをオーナーへ昇格できてしまう穴を塞ぐ（2026-07-09）。
@@ -103,9 +117,18 @@ export async function initAuth(): Promise<void> {
   currentUser.value = session?.user ?? null
   await resolveRole(currentUser.value)
 
-  supabase.auth.onAuthStateChange((_event, session) => {
-    currentUser.value = session?.user ?? null
-    void resolveRole(currentUser.value)
+  supabase.auth.onAuthStateChange((event, session) => {
+    const user = session?.user ?? null
+    // supabase-js はタブが hidden→visible に戻るたびに同一セッションで SIGNED_IN /
+    // TOKEN_REFRESHED を再発火する。そのたびに resolveRole を回すと roleResolved が
+    // 一瞬 false に倒れ、App.vue のゲート分岐で RouterView ごと再マウント＝全ページが
+    // データを読み直してしまう。ユーザーが変わった時だけ再解決する。
+    if (user?.id === currentUser.value?.id) {
+      if (event === 'USER_UPDATED' && user) currentUser.value = user
+      return
+    }
+    currentUser.value = user
+    void resolveRole(user)
   })
 }
 

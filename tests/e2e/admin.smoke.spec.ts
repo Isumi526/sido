@@ -32,8 +32,9 @@ for (const [path, h] of PAGES) {
 
 test('日報一覧にseed日報が表示される', async ({ page }) => {
   await page.goto('/reports', { waitUntil: 'networkidle' })
-  // 作業員フィルタがあれば Worker 01 を選択
-  const sel = page.locator('select').first()
-  if (await sel.count()) { await sel.selectOption({ label: 'Worker 01' }).catch(() => {}); await page.waitForTimeout(800) }
+  // 作業員フィルタ（複数選択）で Worker 01 を選ぶ。1人だけならカード一覧のまま。
+  await page.locator('[data-testid="worker-filter"] .caret').click()
+  await page.locator('.worker-menu-item', { hasText: 'Worker 01' }).locator('input[type="checkbox"]').check()
+  await page.locator('.page-title').click()
   await expect(page.locator('.report-card').first()).toBeVisible()
 })
