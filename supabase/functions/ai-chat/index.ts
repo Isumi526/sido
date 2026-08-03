@@ -74,18 +74,46 @@ const CLARIFY_RULE = `
 function cors(){return{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization, x-client-info, apikey, content-type','Access-Control-Allow-Methods':'POST, OPTIONS'}}
 function json(b:unknown,s=200){return new Response(JSON.stringify(b),{status:s,headers:{...cors(),'Content-Type':'application/json'}})}
 
+// 画像添付の受け入れ条件（AIチャットの画像対応）
+const ALLOWED_IMAGE_MIME=['image/png','image/jpeg','image/webp','image/gif']
+const MAX_IMAGES=4                       // 1メッセージあたりの枚数
+const MAX_IMAGE_B64_LEN=2_200_000        // base641枚あたり約1.6MB相当（クライアントは圧縮後1.5MBで送る）
+const MAX_TOTAL_B64_LEN=5_600_000        // 全画像の合計（これを超えるとEFが受け取る前にタイムアウトする）
+
 Deno.serve(async(req)=>{
   if(req.method==='OPTIONS')return new Response('ok',{headers:cors()})
   if(req.method!=='POST')return json({ok:false,error:'method'},405)
   const auth=await getUser(req)
   if(!auth.ok)return json({ok:false,error:'unauthorized'},401)
   if(!API_KEY)return json({ok:false,error:'ai_unconfigured'},503)
-  let message='';let history:any[]=[];let allowClarify=true
-  try{const b=await req.json();message=(b.message??'').toString().slice(0,2000);history=Array.isArray(b.history)?b.history.slice(-8):[];allowClarify=b.allowClarify!==false}catch{}
-  if(!message.trim())return json({ok:false,error:'empty'},400)
+  let message='';let history:any[]=[];let allowClarify=true;let images:{mimeType:string;data:string}[]=[]
+  try{
+    const b=await req.json()
+    message=(b.message??'').toString().slice(0,2000)
+    history=Array.isArray(b.history)?b.history.slice(-8):[]
+    allowClarify=b.allowClarify!==false
+    // 画像添付（複数可）。Gemini の inlineData にそのまま渡す。
+    //  ★制限を入れる理由: base64 は EF のリクエスト上限と Gemini のトークンを直に食う。
+    //   枚数・1枚あたりのサイズ・MIMEを弾いておかないと 502 になって原因が分かりにくい。
+    if(Array.isArray(b.images)){
+      images=b.images
+        .filter((im:any)=>im&&typeof im.data==='string'&&ALLOWED_IMAGE_MIME.includes(String(im.mimeType)))
+        .slice(0,MAX_IMAGES)
+        .map((im:any)=>({mimeType:String(im.mimeType),data:String(im.data)}))
+        .filter((im:{data:string})=>im.data.length<=MAX_IMAGE_B64_LEN)
+      // 合計サイズでも切る（1枚ずつは小さくても4枚合計で溢れることがある）
+      let acc=0
+      images=images.filter(im=>{acc+=im.data.length;return acc<=MAX_TOTAL_B64_LEN})
+    }
+  }catch{}
+  // 画像だけ送られた場合も通す（「これ何？」と画像だけ投げる使い方があるため）
+  if(!message.trim()&&images.length===0)return json({ok:false,error:'empty'},400)
   const faqBlock=await buildFaqBlock(auth.accountSlug)
   const system=SYSTEM+faqBlock+(allowClarify?CLARIFY_RULE:'')
-  const contents=[...history.filter((h:any)=>h&&h.text).map((h:any)=>({role:h.role==='ai'?'model':'user',parts:[{text:String(h.text).slice(0,2000)}]})),{role:'user',parts:[{text:message}]}]
+  // 最新の user turn にだけ画像を載せる（履歴に画像を積むとトークンが膨らむ）
+  const userParts:any[]=[...images.map(im=>({inlineData:{mimeType:im.mimeType,data:im.data}}))]
+  userParts.push({text:message.trim()||'この画像について教えてください。'})
+  const contents=[...history.filter((h:any)=>h&&h.text).map((h:any)=>({role:h.role==='ai'?'model':'user',parts:[{text:String(h.text).slice(0,2000)}]})),{role:'user',parts:userParts}]
   try{
     const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,{
       method:'POST',headers:{'x-goog-api-key':API_KEY,'Content-Type':'application/json'},

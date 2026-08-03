@@ -187,11 +187,23 @@
             </table>
           </div>
 
+          <!-- 明細金額の税の扱い（業者によって内税/外税が違う。AI判定＋人が上書き可） -->
+          <div class="tax-mode-row">
+            <span class="tax-mode-label">明細の金額</span>
+            <div class="tax-mode-toggle" data-testid="tax-mode-toggle">
+              <button type="button" :class="{ active: form.tax_mode !== 'inclusive' }" data-testid="tax-mode-exclusive"
+                      @click="form.tax_mode = 'exclusive'; taxModeFromAi = false">税抜（消費税を加算）</button>
+              <button type="button" :class="{ active: form.tax_mode === 'inclusive' }" data-testid="tax-mode-inclusive"
+                      @click="form.tax_mode = 'inclusive'; taxModeFromAi = false">税込（内税）</button>
+            </div>
+            <span v-if="taxModeFromAi" class="tax-mode-ai" data-testid="tax-mode-ai">AIが判定しました。違っていたら切り替えてください</span>
+          </div>
+
           <!-- 合計 -->
           <div class="totals">
-            <span>税抜計 {{ yen(subtotal) }}</span>
-            <span>消費税 {{ yen(taxTotal) }}</span>
-            <span class="grand">税込 {{ yen(subtotal + taxTotal) }}</span>
+            <span>税抜計 <span data-testid="net-total">{{ yen(netTotal) }}</span></span>
+            <span>消費税 <span data-testid="tax-total">{{ yen(taxTotal) }}</span></span>
+            <span class="grand">税込 <span data-testid="gross-total">{{ yen(grossTotal) }}</span></span>
           </div>
 
           <p v-if="formError" class="error">{{ formError }}</p>
@@ -252,7 +264,7 @@ interface Form {
   id?: string; vendor_name: string; subcontractor_id: string | null; registration_number: string | null
   purchase_order_id: string | null
   title: string | null; invoice_no: string | null; invoice_date: string | null; due_date: string | null
-  transfer_date: string | null; paid: boolean; total_amount: number | null; pdf_path: string | null; note: string | null; items: Item[]
+  transfer_date: string | null; paid: boolean; total_amount: number | null; pdf_path: string | null; note: string | null; tax_mode: 'exclusive' | 'inclusive'; items: Item[]
 }
 
 const todayStr = new Date().toISOString().slice(0, 10)
@@ -307,7 +319,26 @@ function yen(v: number | null) { return '¥' + Math.round(Number(v) || 0).toLoca
 function recalc(it: Item) { it.amount = Math.round((Number(it.quantity) || 0) * (Number(it.unit_price) || 0)) }
 
 const subtotal = computed(() => (form.value?.items ?? []).reduce((s, it) => s + (Number(it.amount) || 0), 0))
-const taxTotal = computed(() => Math.round((form.value?.items ?? []).reduce((s, it) => s + (Number(it.amount) || 0) * (Number(it.tax_rate) || 0) / 100, 0)))
+// ★内税(inclusive)なら amount に消費税が含まれているので、足すのではなく割り戻す。
+//  これを分けないと内税の請求書で税を二重計上し、毎回手で金額を直すことになる。
+const taxTotal = computed(() => {
+  const items = form.value?.items ?? []
+  if (form.value?.tax_mode === 'inclusive') {
+    return Math.round(items.reduce((s, it) => {
+      const amt = Number(it.amount) || 0
+      const rate = (Number(it.tax_rate) || 0) / 100
+      return s + (rate > 0 ? amt - amt / (1 + rate) : 0)
+    }, 0))
+  }
+  return Math.round(items.reduce((s, it) => s + (Number(it.amount) || 0) * (Number(it.tax_rate) || 0) / 100, 0))
+})
+/** 税抜計。内税なら amount から税を割り戻した額、外税なら amount の合計そのもの */
+const netTotal = computed(() =>
+  form.value?.tax_mode === 'inclusive' ? subtotal.value - taxTotal.value : subtotal.value)
+/** 税込計。内税なら amount の合計がそのまま税込 */
+const grossTotal = computed(() =>
+  form.value?.tax_mode === 'inclusive' ? subtotal.value : subtotal.value + taxTotal.value)
+const taxModeFromAi = ref(false)
 
 const unpaidList  = computed(() => invoices.value.filter(v => !v.paid))
 const paidList    = computed(() => invoices.value.filter(v => v.paid))
@@ -368,7 +399,7 @@ async function load() {
 
 function blankForm(): Form {
   const today = new Date().toISOString().slice(0, 10)
-  return { vendor_name: '', subcontractor_id: null, purchase_order_id: null, registration_number: null, title: null, invoice_no: null, invoice_date: today, due_date: null, transfer_date: null, paid: false, total_amount: null, pdf_path: null, note: null, items: [] }
+  return { vendor_name: '', subcontractor_id: null, purchase_order_id: null, registration_number: null, title: null, invoice_no: null, invoice_date: today, due_date: null, transfer_date: null, paid: false, total_amount: null, pdf_path: null, note: null, tax_mode: 'exclusive', items: [] }
 }
 // 開いた時点の内容スナップショット（変更有無の判定用）
 const formSnapshot = ref('')
@@ -397,6 +428,7 @@ async function openEdit(inv: any) {
     registration_number: inv.registration_number, title: inv.title, invoice_no: inv.invoice_no,
     invoice_date: inv.invoice_date, due_date: inv.due_date, transfer_date: inv.transfer_date, paid: !!inv.paid,
     total_amount: inv.total_amount, pdf_path: inv.pdf_path, note: inv.note,
+    tax_mode: (inv as any).tax_mode === 'inclusive' ? 'inclusive' : 'exclusive',
     items: (items ?? []).map((it: any) => ({ ...it })),
   }
   snapshot()
@@ -572,6 +604,12 @@ async function analyze() {
       if (r.invoice_date && !headerSet.has('inv_date')) { headerSet.add('inv_date'); f.invoice_date = r.invoice_date }
       if (r.due_date && !headerSet.has('due')) { headerSet.add('due'); f.due_date = r.due_date }
       if (r.total_amount != null && !headerSet.has('total')) { headerSet.add('total'); f.total_amount = r.total_amount }
+      // 内税/外税の判定。誤判定はUIのトグルで人が直せる（AC2）
+      if (r.tax_mode && !headerSet.has('tax_mode')) {
+        headerSet.add('tax_mode')
+        f.tax_mode = r.tax_mode === 'inclusive' ? 'inclusive' : 'exclusive'
+        taxModeFromAi.value = true
+      }
       // ── 明細を「累積」（既存明細・他ページの明細を消さず追加）。現場名はマスタと名寄せ──
       for (const it of (r.items ?? [])) {
         const siteId = matchSiteId(it.site_name)
@@ -627,6 +665,7 @@ async function save() {
       title: f.title || null, invoice_no: f.invoice_no || null, invoice_date: f.invoice_date || null,
       due_date: f.due_date || null, transfer_date: f.transfer_date || null, paid: !!f.paid,
       total_amount: f.total_amount ?? null, pdf_path: f.pdf_path ?? null, note: f.note || null,
+      tax_mode: f.tax_mode ?? 'exclusive',
       updated_at: new Date().toISOString(),
     }
     let invoiceId = f.id
@@ -791,6 +830,12 @@ onMounted(load)
 .items-table th, .items-table td { white-space: nowrap; }
 .btn-row-del { background: none; border: none; color: #c0392b; font-size: 16px; cursor: pointer; }
 
+.tax-mode-row { display: flex; align-items: center; gap: 10px; margin: 10px 0 0; flex-wrap: wrap; }
+.tax-mode-label { font-size: 12px; color: #6b7280; }
+.tax-mode-toggle { display: inline-flex; border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; }
+.tax-mode-toggle button { border: none; background: #fff; padding: 6px 12px; font-size: 13px; cursor: pointer; color: #374151; }
+.tax-mode-toggle button.active { background: #2563eb; color: #fff; }
+.tax-mode-ai { font-size: 12px; color: #b45309; }
 .totals { display: flex; gap: 18px; justify-content: flex-end; margin: 14px 0; font-size: 14px; color: #555; }
 .totals .grand { font-weight: 800; color: #111; }
 .error { color: #c0392b; font-size: 13px; }

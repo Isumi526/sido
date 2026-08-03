@@ -4,8 +4,10 @@
 //  1回だけ計上され、社員(人件費)には混ぜず、複数現場を跨ぐ出張日でも二重計上されない（🔴高・edge）。
 //
 //  ケース: Worker 03（日当22,000→時給2,750）が同じ出張日に2現場稼働:
-//    現場A 08:00-17:00 休憩60分 = 8h（主たる現場）→ 社員 ¥22,000 ＋ 出張費 ¥3,000（別費目）
-//    現場B 18:00-20:00 休憩0    = 2h（現場跨ぎ残業）→ 社員 ¥6,875 ／ 出張費なし
+//   （休憩は実勤務帯から再計算。現場Aは10時30分＋昼60分＋15時30分＝120分、
+//     現場Bは18時以降＝夜勤扱いで22時前に終わるため0分）
+//    現場A 08:00-18:00 = 8h（主たる現場）→ 社員 ¥22,000 ＋ 出張費 ¥3,000（別費目）
+//    現場B 18:00-20:00 = 2h（現場跨ぎ残業）→ 社員 ¥6,875 ／ 出張費なし
 //  期待: A=社員¥22,000＋出張費¥3,000 / B=社員¥6,875・出張費なし（Bに出張費が出たら二重計上＝NG）
 //        ＝出張費は人件費に混ざらず・主現場に1回のみ。
 // ============================================================
@@ -38,7 +40,7 @@ test.beforeAll(async () => {
     body: JSON.stringify({
       account_id: accountId, user_id: devUserId, date: DATE, is_working: true, is_business_trip: true, note: TOKEN,
       sites: [
-        { siteName: SITE_A, workers: [{ workerName: WORKER, workerRole: 'site', startTime: '08:00', endTime: '17:00', breakMinutes: 60 }], expenses: { vehicles: [], trains: [], others: [] }, subcontractors: [] },
+        { siteName: SITE_A, workers: [{ workerName: WORKER, workerRole: 'site', startTime: '08:00', endTime: '18:00', breakMinutes: 60 }], expenses: { vehicles: [], trains: [], others: [] }, subcontractors: [] },
         { siteName: SITE_B, workers: [{ workerName: WORKER, workerRole: 'site', startTime: '18:00', endTime: '20:00', breakMinutes: 0 }],  expenses: { vehicles: [], trains: [], others: [] }, subcontractors: [] },
       ],
     }),

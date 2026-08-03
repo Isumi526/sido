@@ -7,7 +7,7 @@
 //  対象: 紐付けユーザーの無い active worker が全期間未送信に出る
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, getAccountId } from './helpers'
+import { rest, getAccountId, restSrv } from './helpers'
 
 const WORKER = `E2E未送信_${Date.now()}`
 const WORKER_NEW = `E2E新規W_${Date.now()}`   // 本日登録＝登録前の未送信を出さない検証用
@@ -17,20 +17,20 @@ test.describe.configure({ mode: 'serial' })
 test.beforeAll(async () => {
   const accountId = await getAccountId()
   // created_at を過去日に固定＝service_start_date より前から在籍する worker（登録日起点で全期間出る）
-  await rest('workers', {
+  await restSrv('workers', {
     method: 'POST', headers: { Prefer: 'return=minimal' },
     body: JSON.stringify({ account_id: accountId, name: WORKER, role: 'site', active: true, created_at: '2024-01-01T00:00:00Z' }),
   })
   // created_at=now＝本日登録の未紐付け worker。登録日起点なので過去（service_start_date〜昨日）の未送信は出ない。
-  await rest('workers', {
+  await restSrv('workers', {
     method: 'POST', headers: { Prefer: 'return=minimal' },
     body: JSON.stringify({ account_id: accountId, name: WORKER_NEW, role: 'site', active: true, created_at: new Date().toISOString() }),
   })
 })
 
 test.afterAll(async () => {
-  await rest(`workers?name=eq.${encodeURIComponent(WORKER)}`, { method: 'DELETE' }).catch(() => {})
-  await rest(`workers?name=eq.${encodeURIComponent(WORKER_NEW)}`, { method: 'DELETE' }).catch(() => {})
+  await restSrv(`workers?name=eq.${encodeURIComponent(WORKER)}`, { method: 'DELETE' }).catch(() => {})
+  await restSrv(`workers?name=eq.${encodeURIComponent(WORKER_NEW)}`, { method: 'DELETE' }).catch(() => {})
 })
 
 test('AC1/AC2: 一覧に未送信者が出て、リマインドと同じ整形プレビューが表示される', async ({ page }) => {
