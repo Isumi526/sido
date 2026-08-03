@@ -7,7 +7,7 @@
 //     ＝現場別集計の「接待交際費」列と「ホーム」列の金額が入れ替わらない
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, getDevUserId, getAccountId } from './helpers'
+import { rest, restSrv, getDevUserId, getAccountId } from './helpers'
 
 const EDIT_DATE = '2026-10-14'
 
@@ -35,6 +35,8 @@ test.describe('その他/その他雑経費の入力統合（liff）', () => {
   })
 
   test.afterEach(async () => {
+    await restSrv(`daily_report_pending_edits?report_user_id=eq.${uid}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`daily_report_edit_logs?report_user_id=eq.${uid}`, { method: 'DELETE' }).catch(() => {})
     await rest(`daily_reports?user_id=eq.${uid}&date=eq.${EDIT_DATE}`, { method: 'DELETE' }).catch(() => {})
   })
 
@@ -60,11 +62,18 @@ test.describe('その他/その他雑経費の入力統合（liff）', () => {
 
     page.on('dialog', (d) => d.accept().catch(() => {}))
     await page.locator('input[type="checkbox"]').last().check().catch(() => {})
+    // 編集モードは編集理由が必須になった（daily_report_edit_logs）。入れないと更新できない
+    await page.getByTestId('edit-reason').fill('E2E: 再保存の回帰確認')
     await page.locator('button[type="submit"].btn-submit').click()
     await page.waitForTimeout(4000)
 
-    const rows = await rest(`daily_reports?user_id=eq.${uid}&date=eq.${EDIT_DATE}&select=sites`)
-    const exp = rows?.[0]?.sites?.[0]?.expenses ?? {}
+    // ★日報の編集は承認制になったので daily_reports はまだ変わらない。
+    //   保存時の振り分け（others / entertainments）を検証したいので保留の payload を見る。
+    //   ここを daily_reports のまま見ていると、シードした値を検証するだけの
+    //   「通るけど何も確かめていないテスト」になる。
+    const pend = await restSrv(`daily_report_pending_edits?report_user_id=eq.${uid}&status=eq.pending&select=payload`)
+    expect(pend.length, '編集は保留に入る').toBe(1)
+    const exp = pend[0]?.payload?.sites?.[0]?.expenses ?? {}
     const ents = (exp.entertainments ?? []) as any[]
     const others = (exp.others ?? []) as any[]
 

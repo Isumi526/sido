@@ -13,10 +13,11 @@ export const editApprovalCount    = ref(0)  // 日報編集の許可申請(pendi
 export const siteUnsetCount       = ref(0)  // 現場未設定の日報(直近90日)
 export const overtimePendingCount = ref(0)  // 残業申請(pending)
 export const pendingGrantCount    = ref(0)  // 有給の付与待ち(未付与の基準日がある作業員数)
+export const editReviewCount      = ref(0)  // 日報編集の承認待ち(保留中の編集)
 
 export async function refreshNavBadges() {
   const accountId = await getAccountId()
-  if (!accountId) { editApprovalCount.value = 0; siteUnsetCount.value = 0; overtimePendingCount.value = 0; pendingGrantCount.value = 0; return }
+  if (!accountId) { editApprovalCount.value = 0; siteUnsetCount.value = 0; overtimePendingCount.value = 0; pendingGrantCount.value = 0; editReviewCount.value = 0; return }
   // 許可申請: pending件数（DBカウント）
   const { count } = await supabase.from('report_edit_grants')
     .select('id', { count: 'exact', head: true })
@@ -27,6 +28,11 @@ export async function refreshNavBadges() {
     .select('id', { count: 'exact', head: true })
     .eq('account_id', accountId).eq('status', 'pending')
   overtimePendingCount.value = otCount ?? 0
+  // 日報編集の承認待ち: pending件数（承認するまで日報に反映されないので、溜めない運用のために出す）
+  const { count: revCount } = await supabase.from('daily_report_pending_edits')
+    .select('id', { count: 'exact', head: true })
+    .eq('account_id', accountId).eq('status', 'pending')
+  editReviewCount.value = revCount ?? 0
   // 現場未設定: 直近90日の日報の sites JSON に siteName='__unset__' が含まれる数（relink画面と同窓）
   const since = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0]
   const { data: reps } = await supabase.from('daily_reports')

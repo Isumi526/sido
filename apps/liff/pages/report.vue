@@ -21,14 +21,14 @@
       </div>
 
       <!-- 送信完了 / 更新完了 -->
-      <div v-else-if="report.submitted.value || editSubmitted" class="state-screen">
+      <div v-else-if="report.submitted.value || editSubmitted || lateSubmitted" class="state-screen">
         <div class="success-mark">✓</div>
-        <h2 class="state-title">{{ editSubmitted ? $t('report.updatedTitle') : $t('report.submittedTitle') }}</h2>
-        <p class="state-text">{{ editSubmitted ? $t('report.updatedText') : $t('report.submittedText') }}</p>
-        <button v-if="!editSubmitted && nextUnsubmittedDate" class="btn-primary" @click="goToNextReport">
+        <h2 class="state-title">{{ editSubmitted ? $t('report.updatedTitle') : lateSubmitted ? $t('report.lateSubmittedTitle') : $t('report.submittedTitle') }}</h2>
+        <p class="state-text">{{ editSubmitted ? $t('report.updatedText') : lateSubmitted ? $t('report.lateSubmittedText') : $t('report.submittedText') }}</p>
+        <button v-if="!editSubmitted && !lateSubmitted && nextUnsubmittedDate" class="btn-primary" @click="goToNextReport">
           {{ $t('report.enterNextReport', { date: nextDateLabel }) }}
         </button>
-        <button class="btn-history" @click="navigateTo('/history')">{{ editSubmitted ? $t('report.backToHistory') : $t('report.viewHistory') }}</button>
+        <button class="btn-history" @click="navigateTo('/history')">{{ (editSubmitted || lateSubmitted) ? $t('report.backToHistory') : $t('report.viewHistory') }}</button>
       </div>
 
       <!-- フォーム -->
@@ -37,6 +37,10 @@
         <!-- 編集モードバナー -->
         <div v-if="isEditMode" class="edit-banner">
           {{ $t('report.editModeBanner') }}
+        </div>
+        <!-- 既に承認待ちの編集がある日報。今見えているのは「編集前（承認済み）」の内容 -->
+        <div v-if="isEditMode && hasPendingEdit" class="pending-banner" data-testid="edit-pending-banner">
+          {{ $t('report.editPendingBanner') }}
         </div>
 
         <!-- 下書き復元バナー（新規入力中・自動保存を復元した時のみ）-->
@@ -48,35 +52,15 @@
         <!-- 日付 -->
         <FormSection num="01" :title="$t('report.dateSection')">
           <div class="date-fixed">{{ dateWithWeekday }}</div>
-          <div v-if="!isEditMode && report.form.value.date < todayJst" class="past-date-notice">
+          <!-- ★過去日の案内は日付のすぐ下に1つだけ出す。期限切れ(承認制)の時は
+               「過去の未送信日報です」と重ねず、承認制の説明に置き換える（同じ話を2回言わない）。 -->
+          <div v-if="isLateDate" class="pending-banner" data-testid="late-notice">
+            <span v-html="$t('report.lateNoticeBanner')" />
+          </div>
+          <div v-else-if="!isEditMode && report.form.value.date < todayJst" class="past-date-notice">
             <span v-html="$t('report.pastDateNotice')" />
           </div>
-          <div v-if="currentDateLocked" class="locked-notice">
-            <span class="material-symbols-rounded banner-icon">lock</span>{{ $t('report.lockedBanner') }}
-            <div class="locked-actions">
-              <template v-if="lockGrantStatus === 'pending'">
-                <span class="locked-pending"><span class="material-symbols-rounded banner-icon">schedule</span>{{ $t('report.unlockPending') }}</span>
-                <button type="button" class="btn-unlock-cancel" :disabled="unlockRequesting" @click="cancelUnlockRequest">{{ $t('report.unlockPendingCancel') }}</button>
-              </template>
-              <button v-else type="button" class="btn-unlock" @click="openUnlockModal"><span class="material-symbols-rounded banner-icon">lock</span>{{ $t('report.unlockRequest') }}</button>
-            </div>
-          </div>
         </FormSection>
-
-        <!-- 編集許可の依頼モーダル（未送信×期限切れもこの画面から依頼） -->
-        <div v-if="unlockModalOpen" class="req-overlay" @click.self="closeUnlockModal">
-          <div class="req-modal">
-            <h2 class="req-title">{{ $t('report.unlockRequest') }}</h2>
-            <p class="req-sub">{{ $t('report.unlockReasonLabel') }}</p>
-            <textarea v-model="unlockReason" class="req-textarea" rows="3" :placeholder="$t('report.unlockReasonPlaceholder')"></textarea>
-            <div class="req-actions">
-              <button type="button" class="req-cancel" @click="closeUnlockModal">{{ $t('report.unlockReasonCancel') }}</button>
-              <button type="button" class="req-submit" :disabled="unlockRequesting" @click="submitUnlockRequest">
-                {{ unlockRequesting ? $t('report.unlockRequesting') : $t('report.unlockReasonSubmit') }}
-              </button>
-            </div>
-          </div>
-        </div>
 
         <!-- 稼働有無 -->
         <FormSection num="02" :title="$t('report.workStatusSection')" required>
@@ -625,6 +609,28 @@
           <p v-if="previewData.note" class="preview-note preview-note-main">{{ previewData.note }}</p>
         </div>
 
+        <!-- 遅れた理由（期限切れの提出時のみ必須）。編集理由と同じ扱いに揃える -->
+        <div v-if="isLateDate" class="edit-reason">
+          <label class="edit-reason-label" for="late-reason">{{ $t('report.lateReasonLabel') }}</label>
+          <textarea id="late-reason" v-model="lateReason" class="edit-reason-input" rows="2"
+                    data-testid="late-reason" :placeholder="$t('report.lateReasonPlaceholder')" />
+        </div>
+
+        <!-- 編集理由（編集時のみ必須）。1編集=1行で daily_report_edit_logs に残す。
+             ★経費申請書(PDF画面)のインライン修正はこの経路を通らないので対象外（回答=B）。 -->
+        <div v-if="isEditMode" class="edit-reason">
+          <label class="edit-reason-label" for="edit-reason">{{ $t('report.editReasonLabel') }}</label>
+          <textarea
+            id="edit-reason"
+            v-model="editReason"
+            class="edit-reason-input"
+            rows="2"
+            data-testid="edit-reason"
+            :placeholder="$t('report.editReasonPlaceholder')"
+          />
+          <p class="edit-reason-hint">{{ $t('report.editReasonHint') }}</p>
+        </div>
+
         <!-- 送信前の記入忘れ確認（新規送信時のみ・習慣化のため必須） -->
         <label v-if="!isEditMode" class="submit-confirm">
           <input type="checkbox" v-model="omissionConfirmed" />
@@ -636,7 +642,7 @@
         <button v-if="isDev" type="button" class="btn-dev" :class="{ 'btn-dev--error': forceErrorOnSubmit }" @click="fillErrorTestData">
           {{ forceErrorOnSubmit ? $t('report.cancelErrorTest') : $t('report.fillErrorTestData') }}
         </button>
-        <button type="submit" class="btn-submit" :disabled="currentDateLocked || (isEditMode ? editSubmitting : (report.submitting.value || !omissionConfirmed))">
+        <button type="submit" class="btn-submit" data-testid="report-submit" :disabled="(isEditMode ? (editSubmitting || !editReason.trim()) : (report.submitting.value || !omissionConfirmed || (isLateDate && !lateReason.trim())))">
           <span v-if="isEditMode ? editSubmitting : report.submitting.value" class="submitting">
             <span class="dot-spin" />{{ isEditMode ? $t('report.updating') : $t('report.submitting') }}
           </span>
@@ -742,14 +748,17 @@ const isDev = computed(() => config.public.appEnv === 'development' || liff.isTe
 
 // ── 過去3日編集ロック（提出/編集の期限ガード）──
 const lock = useReportLock()
+// ★ロックによる提出ブロックは廃止（2026-08-03）。過去日はそのまま出せて、
+//   理由必須＋内容の承認待ちになる。二段承認（解錠の許可→内容の承認）をやめた。
 const currentDateLocked = ref(false)
 const lockGrantStatus = ref<'none' | 'pending' | 'approved' | 'rejected'>('none')
 async function refreshLock() {
   const d = report.form.value.date
   const wid = currentUser.value?.worker_id ?? null
-  if (!wid || !lock.isPastLockWindow(d)) { currentDateLocked.value = false; lockGrantStatus.value = 'none'; return }
-  lockGrantStatus.value = await lock.grantStatus(wid, d)
-  currentDateLocked.value = lockGrantStatus.value !== 'approved'
+  // 解錠の概念を廃止したので常に false。isLateDate（期限切れ）は別途 承認待ちの案内に使う。
+  void wid; void d
+  currentDateLocked.value = false
+  lockGrantStatus.value = 'none'
 }
 watch([() => report.form.value.date, () => currentUser.value?.worker_id], refreshLock, { immediate: true })
 
@@ -759,6 +768,139 @@ const unlockReason     = ref('')
 const unlockRequesting = ref(false)
 function openUnlockModal()  { unlockReason.value = ''; unlockModalOpen.value = true }
 function closeUnlockModal() { unlockModalOpen.value = false; unlockReason.value = '' }
+/**
+ * 編集を「承認待ち」として申請する（保留方式）。
+ * ★daily_reports はここでは書き換えない。編集後の内容・理由・差分を EF に渡して保留に入れ、
+ *   管理者が承認して初めて日報に適用される＝集計・PDF・請求に出る。
+ * ★書き込みは EF(report-edit-log・service_role) 経由。テーブルは anon revoke してある。
+ *   クライアントから直接書けると account_id や承認状態を自称できてしまう。
+ * @returns 申請できたら true。false なら編集は成立していない（呼び出し側でエラーにする）。
+ */
+/** report-edit-log EF を叩く（身元は EF 側で検証済みのものを使う） */
+async function callEditEf(payload: Record<string, unknown>): Promise<any | null> {
+  const efUrl = config.public.edgeFunctionUrl
+  if (!efUrl) { console.error('[Edit] EF URL 未設定'); return null }
+  const anonKey = config.public.supabaseAnonKey as string
+  const { data: { session } } = await useSupabase().auth.getSession()
+  const lineIdToken = (await liff.getIdToken().catch(() => null)) ?? ''
+  // 開発モードは LINE ID token が発行されない。EF 側はローカルSupabase接続時しか受け付けない
+  const devLineUserId = config.public.appEnv === 'development' ? (liff.profile.value?.userId ?? '') : ''
+  const res = await fetch(`${efUrl}/report-edit-log`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: anonKey,
+      Authorization: session ? `Bearer ${session.access_token}` : `Bearer ${anonKey}`,
+    },
+    body: JSON.stringify({ line_id_token: lineIdToken, dev_line_user_id: devLineUserId, ...payload }),
+  })
+  const json = await res.json().catch(() => null)
+  if (!res.ok || !json?.ok) { console.error('[Edit] EF失敗:', json?.error ?? res.status); return null }
+  return json
+}
+
+/**
+ * 自分が承認待ちにしている日付を取得し、今開いている日付がそれなら次の日へ進める。
+ * ★初期化フローの中では呼ばない。以前ここを await で挟んだら画面が「読み込み中…」から
+ *   進まなくなった。描画が終わってから後追いで直す（取れなければ何もしないだけ）。
+ */
+async function skipPendingDatesAfterInit(): Promise<void> {
+  try {
+    if (isEditMode.value) return
+    const j = await callEditEf({ action: 'pending-dates' })
+    const dates: string[] = (j?.dates ?? []).map((d: any) => d.date as string)
+    if (!dates.length || !dates.includes(report.form.value.date)) return
+    // 承認待ちの日は「出し済み」として飛ばす（承認を待たずに次の日を出せるように）
+    const uid = liff.profile.value?.userId
+    const proxyT = proxy.proxyTarget.value
+    let next: string | null = null
+    if (proxyT) {
+      const { data: pu } = await useSupabase().from('users').select('id').eq('worker_id', proxyT.id).maybeSingle()
+      next = await expense.getNextUnsubmittedDateById(
+        (pu as any)?.id ?? '00000000-0000-0000-0000-000000000000', dates)
+    } else if (uid) {
+      next = await expense.getNextUnsubmittedDate(uid, dates)
+    }
+    if (next && next !== 'NOT_CONFIGURED') report.form.value.date = next
+    else if (next === null) allSubmitted.value = true
+  } catch (e) {
+    console.error('[Report] 承認待ちの日付スキップに失敗:', e)
+  }
+}
+
+/** この日報に承認待ちの編集が既にあるか（作業員に「まだ反映されていない」ことを伝える） */
+async function refreshPendingState(): Promise<void> {
+  hasPendingEdit.value = false
+  const rid = originalReport.value?.id
+  if (!rid) return
+  const j = await callEditEf({ action: 'pending-status', reportId: rid })
+  hasPendingEdit.value = !!j?.pending
+}
+
+/**
+ * 期限切れ（3日より前）の新規提出を「承認待ち」として申請する。
+ * ★daily_reports には書かない。承認されて初めて日報・現場別集計・経費PDFに出る。
+ * ★理由は「なぜ遅れたか」。編集と同じ欄を使い回さず、提出時に入力させる。
+ */
+async function submitLateNewForApproval(targetUserId: string): Promise<boolean> {
+  try {
+    const working = isWorkingStr.value === 'working'
+    // 保存経路と同じ正規化を通す（site_id解決・その他/接待交際費の振り分け・ガソリン明細の整形）
+    const payload = await expense.buildReportPayload({
+      isWorking:      report.form.value.isWorking,
+      leaveType:      report.form.value.leaveType ?? null,
+      isBusinessTrip: working ? !!report.form.value.isBusinessTrip : false,
+      sites:          report.form.value.sites,
+      note:           report.form.value.note,
+      gasolineItems:  working ? (report.form.value.gasolineItems ?? []) : [],
+    })
+    if (!editLogToken.value) editLogToken.value = crypto.randomUUID()
+    const j = await callEditEf({
+      kind: 'late_new',
+      targetUserId,
+      reportId: null,
+      reportDate: report.form.value.date,
+      reason: lateReason.value.trim(),
+      diffs: [],
+      clientToken: editLogToken.value,
+      payload,
+    })
+    return !!j?.pendingId
+  } catch (e) {
+    console.error('[Report] 期限切れ提出の申請に失敗:', e)
+    return false
+  }
+}
+
+async function submitEditForApproval(diffs: string[]): Promise<boolean> {
+  try {
+    const working = isWorkingStr.value === 'working'
+    // ★保存経路と同じ正規化を通す（現場のsite_id解決・その他/接待交際費の振り分け・
+    //   ガソリン明細の整形）。素のフォーム値を保留に入れると、承認した瞬間に
+    //   集計の列が入れ替わる（実際にE2Eで踏んだ）。
+    const payload = await expense.buildReportPayload({
+      isWorking:      report.form.value.isWorking,
+      leaveType:      isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null,
+      isBusinessTrip: working ? !!report.form.value.isBusinessTrip : false,
+      sites:          report.form.value.sites,
+      note:           report.form.value.note,
+      gasolineItems:  working ? (report.form.value.gasolineItems ?? []) : [],
+    })
+    const j = await callEditEf({
+      reportId:   originalReport.value?.id ?? null,
+      reportDate: report.form.value.date,
+      reason:     editReason.value.trim(),
+      diffs,
+      clientToken: editLogToken.value,   // 再送しても監査ログを二重にしない
+      payload,   // 承認されたらそのまま daily_reports に入る中身
+    })
+    return !!j?.pendingId
+  } catch (e) {
+    console.error('[Edit] 申請に失敗:', e)
+    return false
+  }
+}
+
 async function submitUnlockRequest() {
   const d = report.form.value.date
   const wid = currentUser.value?.worker_id ?? null
@@ -843,6 +985,18 @@ const originalReport  = ref<any>(null)  // 編集前のSupabaseデータ（差�
 const editSubmitting  = ref(false)
 const editSubmitted   = ref(false)
 const editError       = ref<string | null>(null)
+// 編集理由（必須）。daily_reports は upsert で上書きされるので、理由は 1編集=1行の
+// 履歴テーブル daily_report_edit_logs に残す（1列だと2回目の編集で前回の理由が消える）
+const editReason      = ref('')
+// 1回の更新につき1つ。再送しても監査ログが二重にならないようにする冪等キー
+const editLogToken    = ref('')
+// この日報に承認待ちの編集があるか（作業員に「まだ反映されていない」ことを伝える）
+const hasPendingEdit  = ref(false)
+// 期限切れ（3日より前）の新規提出。承認待ちとして申請したら true
+const lateSubmitted   = ref(false)
+const lateReason      = ref('')
+// 送信対象日が提出期限（過去3日）を過ぎているか。過ぎていれば承認制になる
+const isLateDate = computed(() => !isEditMode.value && lock.isPastLockWindow(report.form.value.date))
 
 // AI解析トースト
 const receiptToast = ref<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -988,6 +1142,7 @@ async function loadEditData(date: string) {
   if (!saved) return
 
   originalReport.value = saved  // 差分計算のために保存
+  void refreshPendingState()   // 既に承認待ちなら、今見えているのは編集前の内容だと伝える
 
   report.form.value.date = saved.date
   isWorkingStr.value = saved.leave_type === 'paid_leave' ? 'paid_leave' : saved.is_working ? 'working' : 'off'
@@ -1371,6 +1526,8 @@ onMounted(async () => {
   }
 
   initializing.value = false
+  // ★描画を終えてから後追いで承認待ちの日を飛ばす（初期化は待たせない）
+  void skipPendingDatesAfterInit()
 })
 
 // ── 下書き自動保存（新規入力中・800ms デバウンス・送信ロジックには触れない）──
@@ -1628,21 +1785,6 @@ async function handleSubmit() {
   report.form.value.leaveType  = isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null
   fillMissingWorkerIds()
 
-  // ── 過去3日ロック: ロック窓(3日以上前)かつ未承認なら 提出/編集を弾く（バックストップ）──
-  {
-    const lockDate = report.form.value.date
-    if (lock.isPastLockWindow(lockDate)) {
-      const wid = currentUser.value?.worker_id ?? null
-      if (await lock.isLocked(wid, lockDate)) {
-        currentDateLocked.value = true
-        const msg = t('report.lockedSubmit')
-        if (isEditMode.value) editError.value = msg
-        alert(msg)
-        return
-      }
-    }
-  }
-
   // ── 送信バリデート: 稼働ありで複数現場の作業時間帯が重複していたら弾く（80c2・開始時刻の制限撤廃に伴う安全網）──
   if (report.form.value.isWorking) {
     const overlapMsg = findWorkerTimeOverlap()
@@ -1666,8 +1808,15 @@ async function handleSubmit() {
   // ── 編集モード: Supabase のみ更新（GAS には再送しない）──
   if (isEditMode.value) {
     if (editSubmitting.value) return
+    // ★編集理由は必須。ボタンも disabled にしているが、Enter送信等で素通りしうるのでここでも止める
+    if (!editReason.value.trim()) {
+      editError.value = t('report.editReasonRequired')
+      return
+    }
     editSubmitting.value = true
     editError.value = null
+    // 送信のたびに新しくはせず、この編集操作に1つ割り当てる（再送で二重記録しない）
+    if (!editLogToken.value) editLogToken.value = crypto.randomUUID()
     try {
       const uid = liff.profile.value?.userId
       if (!uid) throw new Error(t('report.errorNoLogin'))
@@ -1677,40 +1826,30 @@ async function handleSubmit() {
         throw new Error('[テスト] Supabase保存エラー: connection timeout')
       }
 
-      // 代理モード時は代理先のユーザーIDで保存
-      const editProxyT = proxy.proxyTarget.value
-      if (editProxyT) {
-        const editTargetId = await expense.findOrCreateProxyUser(editProxyT.id, editProxyT.name, editProxyT.worker_role)
-        await expense.saveReportById(editTargetId, {
-          date:      report.form.value.date,
-          isWorking:  report.form.value.isWorking,
-          leaveType:  isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null,
-          isBusinessTrip: isWorkingStr.value === 'working' ? !!report.form.value.isBusinessTrip : false,
-          sites:      report.form.value.sites,
-          note:       report.form.value.note,
-          gasolineItems:   isWorkingStr.value === 'working' ? (report.form.value.gasolineItems ?? []) : [],
-        })
-      } else {
-        await expense.saveReport(uid, {
-          date:      report.form.value.date,
-          isWorking:  report.form.value.isWorking,
-          leaveType:  isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null,
-          isBusinessTrip: isWorkingStr.value === 'working' ? !!report.form.value.isBusinessTrip : false,
-          sites:      report.form.value.sites,
-          note:       report.form.value.note,
-          gasolineItems:   isWorkingStr.value === 'working' ? (report.form.value.gasolineItems ?? []) : [],
-        })
+      // ★承認制（保留方式）: ここでは daily_reports を書き換えない。
+      //   編集内容は保留に入れ、管理者が承認して初めて日報・現場別集計に反映される。
+      //   これにより「daily_reports に入っている＝承認済み」という不変条件が保てる
+      //   （集計・PDF・請求など10以上の消費箇所を一切触らずに済む）。
+
+      // 何を変えたか（保留に添えて管理画面で照合できるようにする）
+      const diffs = originalReport.value
+        ? computeDiff(originalReport.value, {
+            isWorking:  report.form.value.isWorking,
+            leaveType:  isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null,
+            sites:      report.form.value.sites,
+            note:       report.form.value.note,
+          })
+        : []
+
+      // ★申請が通らなければ編集は成立していない。ここは黙って続けず失敗として扱う
+      //   （日報も変わらず保留も無い＝何も起きていない状態なので、そう伝えるのが正しい）。
+      if (!await submitEditForApproval(diffs)) {
+        throw new Error(t('report.editApprovalSubmitFailed'))
       }
 
-      // 差分を計算してLINEグループに通知
+      // 差分をLINEグループに通知
       const efUrl = config.public.edgeFunctionUrl
       if (originalReport.value && efUrl) {
-        const diffs = computeDiff(originalReport.value, {
-          isWorking:  report.form.value.isWorking,
-          leaveType:  isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null,
-          sites:      report.form.value.sites,
-          note:       report.form.value.note,
-        })
         if (diffs.length > 0) {
           const now = new Date()
           const editedAt = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
@@ -1772,7 +1911,12 @@ async function handleSubmit() {
     targetUserId = selfUser.value?.id ?? null
   }
 
-  if (targetUserId) {
+  // ★期限切れ（3日より前）の新規提出は内容の承認制にする。
+  //   既存の「過去3日ロック＋許可申請」は"出す許可"の承認で、中身（金額）は見ていない。
+  //   遅れて出てくる日報こそ内容を確認したいので、承認されるまで daily_reports に書かない。
+  const isLateSubmission = lock.isPastLockWindow(report.form.value.date)
+
+  if (targetUserId && !isLateSubmission) {
     try {
       await expense.saveReportById(targetUserId, {
         date:      report.form.value.date,
@@ -1799,6 +1943,18 @@ async function handleSubmit() {
 
   // ② GASに送信（LINE通知・keepalive: true でページ閉じても通信継続）
   await report.submit()
+
+  // ③-a 期限切れの新規提出: ここで初めて保留に入れる。
+  //     ★report.submit() の後に置くのは、その中で領収書がアップロードされて *Urls が
+  //       セットされるため。先に保留へ入れると領収書の無い内容が承認対象になる。
+  if (isLateSubmission && targetUserId) {
+    if (!await submitLateNewForApproval(targetUserId)) {
+      editError.value = t('report.editApprovalSubmitFailed')
+      return
+    }
+    lateSubmitted.value = true
+    return
+  }
 
   // ③ ファイルアップロード後に *Urls を含めて Supabase を再保存（URLを反映するため）
   if (!report.error.value && targetUserId) {
@@ -2632,7 +2788,40 @@ html, body {
   letter-spacing: 1px;
 }
 
+/* ── 編集理由（編集時のみ・必須） ── */
+.edit-reason {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #fff8e1;
+  border: 1px solid #f0c030;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.edit-reason-label { font-size: 13px; font-weight: 700; color: #7a6000; }
+.edit-reason-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 16px;   /* iOS で入力時にズームされないよう16px以上を保つ */
+  font-family: inherit;
+  resize: vertical;
+}
+.edit-reason-hint { font-size: 11px; color: #8a7a4a; margin: 0; }
+.state-warn { font-size: 13px; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 12px; margin: 8px 0 0; }
+
 /* ── 編集モードバナー ── */
+.pending-banner {
+  background: #eef6ff;
+  border: 1px solid #7ea8dd;
+  color: #1e4f8a;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 600;
+}
 .edit-banner {
   background: #fff8e1;
   border: 1px solid #f0c030;

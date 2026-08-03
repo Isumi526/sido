@@ -342,6 +342,23 @@
             <div class="note-text">{{ selected.note }}</div>
           </div>
         </div>
+
+        <!-- 編集理由の履歴（稼働/休みに関わらず出す）。1編集=1行で追記される -->
+        <div v-if="editLogs.length" class="section edit-log-section" data-testid="edit-log-section">
+          <div class="section-label">編集理由</div>
+          <div v-for="lg in editLogs" :key="lg.id" class="edit-log" data-testid="edit-log-row">
+            <div class="edit-log-head">
+              <span class="edit-log-when">{{ formatEditedAt(lg.created_at) }}</span>
+              <span v-if="lg.edited_by_name" class="edit-log-who">{{ lg.edited_by_name }}</span>
+            </div>
+            <div class="edit-log-reason">{{ lg.reason }}</div>
+            <!-- 理由だけでは妥当性を判断できないので、何を変えたかも一緒に出す
+                 （liff の computeDiff が返す差分テキストをそのまま保存している） -->
+            <div v-if="lg.diffs?.length" class="edit-log-diffs">
+              <span v-for="(d, di) in lg.diffs" :key="di" class="edit-log-diff">{{ d }}</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -414,6 +431,32 @@ const reports = computed<any[]>(() => selectedWorkers.value.length
   ? allReports.value.filter((r: any) => selectedWorkers.value.includes(r.worker_name))
   : allReports.value)
 const selected = ref<any | null>(null)
+
+// ── 編集理由の履歴（daily_report_edit_logs）──
+//  liff で日報を編集した時に 1編集=1行 で追記される。日報を開いた時だけ読む
+//  （一覧で全件JOINすると大半の日報にログが無く無駄が大きいため）。
+const editLogs = ref<any[]>([])
+watch(selected, async (r) => {
+  editLogs.value = []
+  if (!r?.id) return
+  const { data, error } = await supabase
+    .from('daily_report_edit_logs')
+    .select('id, reason, diffs, edited_by_name, created_at')
+    .eq('account_id', await getAccountId())
+    .eq('report_id', r.id)
+    .order('created_at', { ascending: false })
+  if (error) { console.error('[reports] 編集理由の取得に失敗:', error); return }
+  // 開き直しの競合で古い日報のログが残らないように、取得後に対象が変わっていないか確認する
+  if (selected.value?.id === r.id) editLogs.value = data ?? []
+})
+
+/** 編集日時。日付をまたいだ編集が分かるよう日付ごと出す */
+function formatEditedAt(iso: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
 
 // 比較ビュー: 行=日付（降順・一覧の並びと同じ）／セル=その作業員のその日の日報（重複ユーザー行があれば複数）
 const compareDates = computed<string[]>(() =>
@@ -792,6 +835,16 @@ onUnmounted(() => document.removeEventListener('click', closeWorkerMenu))
 .muted { color: #888; font-size: 12px; }
 .note-section { background: #fafafa; }
 .note-text { font-size: 14px; color: #333; white-space: pre-wrap; }
+
+/* 編集理由の履歴 */
+.edit-log-section { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 12px 14px; }
+.edit-log { padding: 8px 0; border-top: 1px solid #fde68a; }
+.edit-log:first-of-type { border-top: none; padding-top: 0; }
+.edit-log-head { display: flex; gap: 10px; align-items: baseline; font-size: 12px; color: #92400e; }
+.edit-log-who { font-weight: 700; }
+.edit-log-reason { font-size: 14px; color: #333; white-space: pre-wrap; margin-top: 2px; }
+.edit-log-diffs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.edit-log-diff { font-size: 12px; color: #555; background: #fff; border: 1px solid #e5e7eb; border-radius: 999px; padding: 2px 8px; }
 .receipt-urls { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0 8px; }
 .receipt-link { font-size: 11px; color: #06C755; text-decoration: none; background: #e8fff0; padding: 2px 8px; border-radius: 4px; }
 .receipt-link:hover { text-decoration: underline; }
