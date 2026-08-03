@@ -132,10 +132,15 @@ function sanitizePayload(p: any): Record<string, unknown> | null {
  * ★ここで名前を確定して保存する。表示時に引き直す方式にすると、退職で worker 行が消えた時に
  *   過去の承認履歴から承認者が消えてしまう＝監査として使えなくなる。
  */
-async function resolveReviewerName(svc: any, authUserId: string | null, email: string | null): Promise<string | null> {
+async function resolveReviewerName(
+  svc: any, accountId: string, authUserId: string | null, email: string | null,
+): Promise<string | null> {
   if (authUserId) {
+    // ★account_id でも絞る。auth_user_id は auth ユーザー単位で一意だが、同じ人が
+    //  複数テナントの worker として登録されている場合に別テナント側の氏名を拾いうる。
+    //  service_role のクエリは常にテナントで閉じる（独立レビュー指摘）。
     const { data: w } = await svc.from('workers')
-      .select('name').eq('auth_user_id', authUserId).limit(1).maybeSingle()
+      .select('name').eq('auth_user_id', authUserId).eq('account_id', accountId).limit(1).maybeSingle()
     const name = typeof w?.name === 'string' ? w.name.trim() : ''
     if (name) return name
   }
@@ -167,7 +172,7 @@ async function handleReview(svc: any, body: any, authHeader: string): Promise<Re
   //  ログインemailだと「誰が承認したか」が伝わらない（承認履歴の存在意義に直結）。
   //  admin のロール解決と同じく workers.auth_user_id から氏名を引き、
   //  worker行が無いアカウント（純粋オーナー等）だけ email に倒す。
-  const reviewer = await resolveReviewerName(svc, au?.user?.id ?? null, au?.user?.email ?? null)
+  const reviewer = await resolveReviewerName(svc, accountId, au?.user?.id ?? null, au?.user?.email ?? null)
   const now = new Date().toISOString()
 
   if (body.action === 'reject') {
