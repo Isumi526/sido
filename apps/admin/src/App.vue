@@ -44,7 +44,6 @@
         <li class="nav-section">日次</li>
         <li><RouterLink to="/" class="nav-link"><span class="material-symbols-rounded nav-icon">dashboard</span>ダッシュボード</RouterLink></li>
         <li><RouterLink to="/reports" class="nav-link"><span class="material-symbols-rounded nav-icon">list_alt</span>日報一覧</RouterLink></li>
-        <li><RouterLink to="/report-edit-approvals" class="nav-link"><span class="material-symbols-rounded nav-icon">lock_open</span>日報編集の許可申請<span v-if="editApprovalCount" class="nav-badge">{{ editApprovalCount }}</span></RouterLink></li>
         <li><RouterLink to="/report-edit-review" class="nav-link"><span class="material-symbols-rounded nav-icon">fact_check</span>日報編集の承認<span v-if="editReviewCount" class="nav-badge">{{ editReviewCount }}</span></RouterLink></li>
         <li><RouterLink to="/report-site-relink" class="nav-link"><span class="material-symbols-rounded nav-icon">link</span>現場未設定の紐付け<span v-if="siteUnsetCount" class="nav-badge">{{ siteUnsetCount }}</span></RouterLink></li>
         <li><RouterLink to="/overtime-approvals" class="nav-link"><span class="material-symbols-rounded nav-icon">more_time</span>残業申請の承認<span v-if="overtimePendingCount" class="nav-badge">{{ overtimePendingCount }}</span></RouterLink></li>
@@ -120,7 +119,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { currentUser, currentRole, currentWorkerName, signOut, isAdminAllowed, roleResolved, roleLabel, canViewManagementPages } from './lib/auth'
 import { liffAppUrl } from './lib/links'
 import { getAccountName } from './lib/account'
-import { editApprovalCount, editReviewCount, siteUnsetCount, overtimePendingCount, pendingGrantCount, refreshNavBadges } from './lib/navBadges'
+import { editReviewCount, siteUnsetCount, overtimePendingCount, pendingGrantCount, refreshNavBadges } from './lib/navBadges'
 import { unreadChatCount, refreshChatBadge } from './lib/chatBadge'
 import { HIDE_LINE_SECTIONS, HIDE_AI_HELP_SECTIONS } from './lib/featureFlags'
 import { migrationTargetUrl, REDIRECT_SECONDS } from './lib/domainMigration'

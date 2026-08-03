@@ -52,35 +52,15 @@
         <!-- 日付 -->
         <FormSection num="01" :title="$t('report.dateSection')">
           <div class="date-fixed">{{ dateWithWeekday }}</div>
-          <div v-if="!isEditMode && report.form.value.date < todayJst" class="past-date-notice">
+          <!-- ★過去日の案内は日付のすぐ下に1つだけ出す。期限切れ(承認制)の時は
+               「過去の未送信日報です」と重ねず、承認制の説明に置き換える（同じ話を2回言わない）。 -->
+          <div v-if="isLateDate" class="pending-banner" data-testid="late-notice">
+            <span v-html="$t('report.lateNoticeBanner')" />
+          </div>
+          <div v-else-if="!isEditMode && report.form.value.date < todayJst" class="past-date-notice">
             <span v-html="$t('report.pastDateNotice')" />
           </div>
-          <div v-if="currentDateLocked" class="locked-notice">
-            <span class="material-symbols-rounded banner-icon">lock</span>{{ $t('report.lockedBanner') }}
-            <div class="locked-actions">
-              <template v-if="lockGrantStatus === 'pending'">
-                <span class="locked-pending"><span class="material-symbols-rounded banner-icon">schedule</span>{{ $t('report.unlockPending') }}</span>
-                <button type="button" class="btn-unlock-cancel" :disabled="unlockRequesting" @click="cancelUnlockRequest">{{ $t('report.unlockPendingCancel') }}</button>
-              </template>
-              <button v-else type="button" class="btn-unlock" @click="openUnlockModal"><span class="material-symbols-rounded banner-icon">lock</span>{{ $t('report.unlockRequest') }}</button>
-            </div>
-          </div>
         </FormSection>
-
-        <!-- 編集許可の依頼モーダル（未送信×期限切れもこの画面から依頼） -->
-        <div v-if="unlockModalOpen" class="req-overlay" @click.self="closeUnlockModal">
-          <div class="req-modal">
-            <h2 class="req-title">{{ $t('report.unlockRequest') }}</h2>
-            <p class="req-sub">{{ $t('report.unlockReasonLabel') }}</p>
-            <textarea v-model="unlockReason" class="req-textarea" rows="3" :placeholder="$t('report.unlockReasonPlaceholder')"></textarea>
-            <div class="req-actions">
-              <button type="button" class="req-cancel" @click="closeUnlockModal">{{ $t('report.unlockReasonCancel') }}</button>
-              <button type="button" class="req-submit" :disabled="unlockRequesting" @click="submitUnlockRequest">
-                {{ unlockRequesting ? $t('report.unlockRequesting') : $t('report.unlockReasonSubmit') }}
-              </button>
-            </div>
-          </div>
-        </div>
 
         <!-- 稼働有無 -->
         <FormSection num="02" :title="$t('report.workStatusSection')" required>
@@ -629,11 +609,8 @@
           <p v-if="previewData.note" class="preview-note preview-note-main">{{ previewData.note }}</p>
         </div>
 
-        <!-- ★期限切れ（3日より前）の新規提出。承認制になることを送信前に伝える -->
-        <div v-if="!isEditMode && isLateDate" class="pending-banner" data-testid="late-notice">
-          {{ $t('report.lateNoticeBanner') }}
-        </div>
-        <div v-if="!isEditMode && isLateDate" class="edit-reason">
+        <!-- 遅れた理由（期限切れの提出時のみ必須）。編集理由と同じ扱いに揃える -->
+        <div v-if="isLateDate" class="edit-reason">
           <label class="edit-reason-label" for="late-reason">{{ $t('report.lateReasonLabel') }}</label>
           <textarea id="late-reason" v-model="lateReason" class="edit-reason-input" rows="2"
                     data-testid="late-reason" :placeholder="$t('report.lateReasonPlaceholder')" />
@@ -665,7 +642,7 @@
         <button v-if="isDev" type="button" class="btn-dev" :class="{ 'btn-dev--error': forceErrorOnSubmit }" @click="fillErrorTestData">
           {{ forceErrorOnSubmit ? $t('report.cancelErrorTest') : $t('report.fillErrorTestData') }}
         </button>
-        <button type="submit" class="btn-submit" data-testid="report-submit" :disabled="currentDateLocked || (isEditMode ? (editSubmitting || !editReason.trim()) : (report.submitting.value || !omissionConfirmed))">
+        <button type="submit" class="btn-submit" data-testid="report-submit" :disabled="(isEditMode ? (editSubmitting || !editReason.trim()) : (report.submitting.value || !omissionConfirmed || (isLateDate && !lateReason.trim())))">
           <span v-if="isEditMode ? editSubmitting : report.submitting.value" class="submitting">
             <span class="dot-spin" />{{ isEditMode ? $t('report.updating') : $t('report.submitting') }}
           </span>
@@ -771,14 +748,17 @@ const isDev = computed(() => config.public.appEnv === 'development' || liff.isTe
 
 // ── 過去3日編集ロック（提出/編集の期限ガード）──
 const lock = useReportLock()
+// ★ロックによる提出ブロックは廃止（2026-08-03）。過去日はそのまま出せて、
+//   理由必須＋内容の承認待ちになる。二段承認（解錠の許可→内容の承認）をやめた。
 const currentDateLocked = ref(false)
 const lockGrantStatus = ref<'none' | 'pending' | 'approved' | 'rejected'>('none')
 async function refreshLock() {
   const d = report.form.value.date
   const wid = currentUser.value?.worker_id ?? null
-  if (!wid || !lock.isPastLockWindow(d)) { currentDateLocked.value = false; lockGrantStatus.value = 'none'; return }
-  lockGrantStatus.value = await lock.grantStatus(wid, d)
-  currentDateLocked.value = lockGrantStatus.value !== 'approved'
+  // 解錠の概念を廃止したので常に false。isLateDate（期限切れ）は別途 承認待ちの案内に使う。
+  void wid; void d
+  currentDateLocked.value = false
+  lockGrantStatus.value = 'none'
 }
 watch([() => report.form.value.date, () => currentUser.value?.worker_id], refreshLock, { immediate: true })
 
@@ -851,7 +831,7 @@ async function submitLateNewForApproval(targetUserId: string): Promise<boolean> 
       targetUserId,
       reportId: null,
       reportDate: report.form.value.date,
-      reason: lateReason.value.trim() || t('report.lateDefaultReason'),
+      reason: lateReason.value.trim(),
       diffs: [],
       clientToken: editLogToken.value,
       payload,
@@ -1773,21 +1753,6 @@ async function handleSubmit() {
   report.form.value.isWorking  = isWorkingStr.value === 'working' || isWorkingStr.value === 'paid_leave'
   report.form.value.leaveType  = isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null
   fillMissingWorkerIds()
-
-  // ── 過去3日ロック: ロック窓(3日以上前)かつ未承認なら 提出/編集を弾く（バックストップ）──
-  {
-    const lockDate = report.form.value.date
-    if (lock.isPastLockWindow(lockDate)) {
-      const wid = currentUser.value?.worker_id ?? null
-      if (await lock.isLocked(wid, lockDate)) {
-        currentDateLocked.value = true
-        const msg = t('report.lockedSubmit')
-        if (isEditMode.value) editError.value = msg
-        alert(msg)
-        return
-      }
-    }
-  }
 
   // ── 送信バリデート: 稼働ありで複数現場の作業時間帯が重複していたら弾く（80c2・開始時刻の制限撤廃に伴う安全網）──
   if (report.form.value.isWorking) {

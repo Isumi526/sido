@@ -71,34 +71,14 @@
 
             <div class="report-card-footer">
               <span class="updated-at">{{ $t('history.updatedAt', { time: formatUpdatedAt(rep.updated_at) }) }}</span>
-              <NuxtLink v-if="rowLockState(rep.date) === 'open' || rowLockState(rep.date) === 'approved'"
-                        :to="`/report?edit=${rep.date}`" class="btn-edit">{{ $t('history.editReport') }}</NuxtLink>
-              <button v-else-if="rowLockState(rep.date) === 'pending'" type="button" class="btn-cancel-unlock" :disabled="requesting === rep.date" @click="cancelUnlock(rep.date)">
-                <span class="material-symbols-rounded btn-icon">schedule</span>{{ requesting === rep.date ? $t('history.unlockRequesting') : $t('history.unlockPendingCancel') }}
-              </button>
-              <button v-else type="button" class="btn-unlock" @click="openRequestModal(rep.date)">
-                <span class="material-symbols-rounded btn-icon">lock</span>{{ $t('history.unlockRequest') }}
-              </button>
+              <!-- ★解錠の許可申請は廃止（2026-08-03）。過去日もそのまま編集でき、
+                   理由必須＋内容の承認待ちになる。二段承認をやめたため常に編集導線を出す。 -->
+              <NuxtLink :to="`/report?edit=${rep.date}`" class="btn-edit">{{ $t('history.editReport') }}</NuxtLink>
             </div>
           </div>
         </template>
       </div>
     </main>
-
-    <!-- 編集許可の依頼モーダル（理由コメントを添える） -->
-    <div v-if="requestModalDate" class="req-overlay" @click.self="closeRequestModal">
-      <div class="req-modal">
-        <h2 class="req-title">{{ $t('history.unlockRequest') }}</h2>
-        <p class="req-sub">{{ $t('history.unlockReasonLabel') }}</p>
-        <textarea v-model="requestReason" class="req-textarea" rows="3" :placeholder="$t('history.unlockReasonPlaceholder')"></textarea>
-        <div class="req-actions">
-          <button type="button" class="req-cancel" @click="closeRequestModal">{{ $t('history.unlockReasonCancel') }}</button>
-          <button type="button" class="req-submit" :disabled="requesting === requestModalDate" @click="submitUnlockRequest">
-            {{ requesting === requestModalDate ? $t('history.unlockRequesting') : $t('history.unlockReasonSubmit') }}
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
