@@ -18,17 +18,18 @@
 
       <!-- 一覧 -->
       <div v-else class="report-list">
-        <!-- ★まだ日報になっていない（期限切れで提出し承認待ちの）日。ここに出さないと
-             作業員は「何日を申請したのか」を確認できない。 -->
-        <div v-for="d in pendingOnlyDates" :key="'p-' + d" class="pending-only-card" data-testid="history-pending-only">
-          <div class="pending-only-date">{{ formatDate(d) }}</div>
-          <p class="pending-only-note">{{ $t('history.pendingOnlyNote') }}</p>
-        </div>
+
         <template v-for="(group, ym) in grouped" :key="ym">
           <div class="month-label">{{ ym }}</div>
+          <template v-for="rep in group" :key="rep.date">
+          <!-- ★まだ日報が無い（期限切れで提出し承認待ちの）日。日付順の位置に出す。
+               Vue3 は同一要素だと v-if が v-for より先に評価されるので template で包む。 -->
+          <div v-if="rep._pendingOnly" class="pending-only-card" data-testid="history-pending-only">
+            <div class="pending-only-date">{{ formatDate(rep.date) }}</div>
+            <p class="pending-only-note">{{ $t('history.pendingOnlyNote') }}</p>
+          </div>
           <div
-            v-for="rep in group"
-            :key="rep.date"
+            v-else
             class="report-card"
           >
             <div class="report-card-top">
@@ -86,6 +87,7 @@
               <NuxtLink :to="`/report?edit=${rep.date}`" class="btn-edit">{{ $t('history.editReport') }}</NuxtLink>
             </div>
           </div>
+          </template>
         </template>
       </div>
     </main>
@@ -241,7 +243,14 @@ watch(() => proxy.proxyTarget.value, async () => {
 // 月ごとにグループ化
 const grouped = computed(() => {
   const map: Record<string, any[]> = {}
-  for (const rep of reports.value) {
+  // ★まだ日報になっていない（期限切れで提出し承認待ちの）日も、日付順の位置に混ぜる。
+  //   先頭固定にすると件数が増えた時に「いつの分か」を探しづらく、
+  //   日付順に並んでいること自体が「何日を申請したか分かる」という目的そのもの。
+  const merged = [
+    ...reports.value,
+    ...pendingOnlyDates.value.map((d) => ({ date: d, _pendingOnly: true })),
+  ].sort((a: any, b: any) => b.date.localeCompare(a.date))
+  for (const rep of merged) {
     const [year, month] = rep.date.split('-')
     const key = t('history.monthLabel', { year, month: parseInt(month, 10) })
     if (!map[key]) map[key] = []
