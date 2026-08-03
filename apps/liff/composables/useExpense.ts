@@ -620,7 +620,7 @@ export const useExpense = () => {
    * 全日送信済みなら null を返す。
    * service_start_date が未設定なら null を返す。
    */
-  async function getNextUnsubmittedDate(lineUserId: string): Promise<string | null> {
+  async function getNextUnsubmittedDate(lineUserId: string, excludeDates: string[] = []): Promise<string | null> {
     const accountId = await getAccountId()
 
     // service_start_date を settings から取得（複数行対応で limit(1) を使用）
@@ -668,7 +668,9 @@ export const useExpense = () => {
 
     console.log('[getNextUnsubmittedDate] today=', today, 'effStart=', effStart, 'submittedCount=', reports?.length, 'error=', reportsError?.message)
 
-    const submittedDates = new Set((reports ?? []).map((r: any) => r.date as string))
+    // ★承認待ちの日も「出し済み」として飛ばす。除外しないと承認されるまで同じ日付が
+    //   出続けて次に進めず、まとめて（例: 忘れていた5日分）提出できない。
+    const submittedDates = new Set([...(reports ?? []).map((r: any) => r.date as string), ...excludeDates])
 
     // 起点から順に走査（純粋な文字列加算でタイムゾーン問題を回避）
     let cursor = effStart
@@ -690,7 +692,7 @@ export const useExpense = () => {
    * DBユーザーIDで直接未送信日を検索（代理入力用）
    * getNextUnsubmittedDate の userID版
    */
-  async function getNextUnsubmittedDateById(userId: string): Promise<string | null> {
+  async function getNextUnsubmittedDateById(userId: string, excludeDates: string[] = []): Promise<string | null> {
     const accountId = await getAccountId()
 
     const { data: settingRows } = await supabase
@@ -733,7 +735,9 @@ export const useExpense = () => {
       .gte('date', effStart)
       .lte('date', today)
 
-    const submittedDates = new Set((reports ?? []).map((r: any) => r.date as string))
+    // ★承認待ちの日も「出し済み」として飛ばす。除外しないと承認されるまで同じ日付が
+    //   出続けて次に進めず、まとめて（例: 忘れていた5日分）提出できない。
+    const submittedDates = new Set([...(reports ?? []).map((r: any) => r.date as string), ...excludeDates])
 
     let cursor = effStart
     while (cursor <= today) {

@@ -90,6 +90,38 @@ test.describe('期限切れの新規日報の承認制（liff）', () => {
     expect(pend[0].reason).toContain('E2E遅延理由')
   })
 
+  test('★申請済みの日は飛ばして次の日が開く（承認を待たずにまとめて出せる）', async ({ page }) => {
+    const NEXT = '2026-07-16'
+    await rest(`daily_reports?user_id=eq.${uid}&date=eq.${NEXT}`, { method: 'DELETE' }).catch(() => {})
+    // 2026-07-15 を申請済み（承認待ち）にしておく
+    await restSrv('daily_report_pending_edits', {
+      method: 'POST', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        account_id: accountId, report_id: null, report_user_id: uid, report_date: LATE_DATE,
+        kind: 'late_new', status: 'pending', reason: 'E2E申請済み',
+        payload: { is_working: false, leave_type: null, is_business_trip: false, sites: [], note: null, gasoline_items: [] },
+      }),
+    })
+    await page.goto('/report', { waitUntil: 'networkidle' })
+    // ★承認を待たずに翌日へ進む（承認待ちの日は「出し済み」として飛ばす）
+    await expect(page.locator('.date-fixed'), '申請済みの日は飛ばす').toContainText(NEXT, { timeout: 25000 })
+  })
+
+  test('★申請済みの日が日報履歴に出る（何日を申請したか分かる）', async ({ page }) => {
+    await restSrv('daily_report_pending_edits', {
+      method: 'POST', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        account_id: accountId, report_id: null, report_user_id: uid, report_date: LATE_DATE,
+        kind: 'late_new', status: 'pending', reason: 'E2E申請済み',
+        payload: { is_working: false, leave_type: null, is_business_trip: false, sites: [], note: null, gasoline_items: [] },
+      }),
+    })
+    await page.goto('/history', { waitUntil: 'networkidle' })
+    const card = page.getByTestId('history-pending-only')
+    await expect(card, 'まだ日報が無くても履歴に出る').toHaveCount(1, { timeout: 25000 })
+    await expect(card).toContainText('承認待ち')
+  })
+
   test('期限内（当日）の送信は今までどおり即座に日報になる（回帰なし）', async ({ page }) => {
     const today = todayJST()
     await rest(`daily_reports?user_id=eq.${uid}&date=eq.${today}`, { method: 'DELETE' }).catch(() => {})
