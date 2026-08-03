@@ -149,7 +149,8 @@
               <thead>
                 <tr>
                   <th>日付</th><th>現場</th><th>工事内容/品名</th><th class="num">数量</th><th>単位</th>
-                  <th class="num">単価</th><th class="num">金額(税抜)</th><th class="num">税率%</th><th>備考</th><th></th>
+                  <!-- ★金額欄の意味は tax_mode で変わる（内税なら税込額が入っている）ので見出しも追従させる -->
+                  <th class="num">単価</th><th class="num">{{ formTaxMode === 'inclusive' ? '金額(税込)' : '金額(税抜)' }}</th><th class="num">税率%</th><th>備考</th><th></th>
                 </tr>
               </thead>
               <tbody>
@@ -250,6 +251,7 @@ import { getAccountId } from '../lib/account'
 import HelpButton from '../components/HelpButton.vue'
 import { logOperation } from '../lib/operationLog'
 import { openDoc } from '../lib/docUrl'
+import { normalizeTaxMode, sumAmount, taxTotalOf, netTotalOf, grossTotalOf } from '../lib/invoiceTax'
 
 const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
 const IS_DEV   = import.meta.env.DEV
@@ -293,10 +295,12 @@ const poResidual = computed(() => {
   const po = selectedPo.value; if (!po) return null
   return (Number(po.total_amount) || 0) - poBilledOthers.value
 })
-// 残額判定に使う実効請求額: 請求金額(記載)が入っていればそれ、無ければ明細小計(税抜)
+// 残額判定に使う実効請求額: 請求金額(記載)が入っていればそれ、無ければ明細から出した税込計。
+// ★注文書の金額(total_amount)が税込なので、比べる側も税込に揃える。
+//   ここで税抜の subtotal を使うと外税の請求書で請求額を過小に見積もり、残額超過の警告が出ない。
 const effectiveBilled = computed(() => {
   const t = Number(form.value?.total_amount) || 0
-  return t > 0 ? t : subtotal.value
+  return t > 0 ? t : grossTotal.value
 })
 const poOverResidual = computed(() => {
   if (poResidual.value == null) return false
@@ -318,26 +322,13 @@ function yen(v: number | null) { return '¥' + Math.round(Number(v) || 0).toLoca
 // 単価を整数に丸めると @0.74円 × 500個 = 370円 が 500円 になり、請求額がズレる。
 function recalc(it: Item) { it.amount = Math.round((Number(it.quantity) || 0) * (Number(it.unit_price) || 0)) }
 
-const subtotal = computed(() => (form.value?.items ?? []).reduce((s, it) => s + (Number(it.amount) || 0), 0))
 // ★内税(inclusive)なら amount に消費税が含まれているので、足すのではなく割り戻す。
-//  これを分けないと内税の請求書で税を二重計上し、毎回手で金額を直すことになる。
-const taxTotal = computed(() => {
-  const items = form.value?.items ?? []
-  if (form.value?.tax_mode === 'inclusive') {
-    return Math.round(items.reduce((s, it) => {
-      const amt = Number(it.amount) || 0
-      const rate = (Number(it.tax_rate) || 0) / 100
-      return s + (rate > 0 ? amt - amt / (1 + rate) : 0)
-    }, 0))
-  }
-  return Math.round(items.reduce((s, it) => s + (Number(it.amount) || 0) * (Number(it.tax_rate) || 0) / 100, 0))
-})
-/** 税抜計。内税なら amount から税を割り戻した額、外税なら amount の合計そのもの */
-const netTotal = computed(() =>
-  form.value?.tax_mode === 'inclusive' ? subtotal.value - taxTotal.value : subtotal.value)
-/** 税込計。内税なら amount の合計がそのまま税込 */
-const grossTotal = computed(() =>
-  form.value?.tax_mode === 'inclusive' ? subtotal.value : subtotal.value + taxTotal.value)
+//  規則は lib/invoiceTax.ts に集約する（一覧側と別々に書いて食い違った経緯があるため）。
+const formTaxMode = computed(() => normalizeTaxMode(form.value?.tax_mode))
+const subtotal  = computed(() => sumAmount(form.value?.items))
+const taxTotal  = computed(() => taxTotalOf(form.value?.items, formTaxMode.value))
+const netTotal  = computed(() => netTotalOf(form.value?.items, formTaxMode.value))
+const grossTotal = computed(() => grossTotalOf(form.value?.items, formTaxMode.value))
 const taxModeFromAi = ref(false)
 
 const unpaidList  = computed(() => invoices.value.filter(v => !v.paid))
@@ -387,9 +378,10 @@ async function load() {
   ])
   invoices.value = (inv ?? []).map((v: any) => {
     const items = v.subcontractor_invoice_items ?? []
-    const sub = items.reduce((s: number, it: any) => s + (Number(it.amount) || 0), 0)
-    const tax = Math.round(items.reduce((s: number, it: any) => s + (Number(it.amount) || 0) * (Number(it.tax_rate) || 0) / 100, 0))
-    return { ...v, item_count: items.length, grand_total: sub + tax, _overdue: !v.paid && !!v.due_date && v.due_date < todayStr }
+    // ★一覧の「請求金額(税込)」もモーダルと同じ規則を通す。内税の請求書に税を足すと
+    //  同じ画面でモーダル110,000／一覧121,000と食い違う（2026-08-01 レビューNGの再発防止）。
+    const grand = grossTotalOf(items, normalizeTaxMode(v.tax_mode))
+    return { ...v, item_count: items.length, grand_total: grand, _overdue: !v.paid && !!v.due_date && v.due_date < todayStr }
   })
   sites.value = si ?? []
   subs.value  = su ?? []
