@@ -33,13 +33,8 @@ test.describe('期限切れの新規日報の承認制（liff）', () => {
         method: 'PATCH', headers: { Prefer: 'return=minimal' },
         body: JSON.stringify({ report_start_date: LATE_DATE }),
       })
-      // 過去3日ロックの許可（解錠）は済んでいる前提。検証したいのは「解錠の先」なので
-      // ロックUIで止まらないよう承認済みの許可を入れておく。
+      // ★解錠の許可申請は廃止（2026-08-03）。許可を一切入れずに出せることを検証する。
       await restSrv(`report_edit_grants?worker_id=eq.${workerId}&date=eq.${LATE_DATE}`, { method: 'DELETE' }).catch(() => {})
-      await restSrv('report_edit_grants', {
-        method: 'POST', headers: { Prefer: 'return=minimal' },
-        body: JSON.stringify({ account_id: accountId, worker_id: workerId, date: LATE_DATE, status: 'approved', reason: 'E2E' }),
-      }).catch(() => {})
     }
   })
 
@@ -63,13 +58,23 @@ test.describe('期限切れの新規日報の承認制（liff）', () => {
     await page.goto('/report', { waitUntil: 'networkidle' })
     await expect(page.locator('.date-fixed'), '最も古い未送信日が開く').toContainText('2026-07-15', { timeout: 20000 })
 
-    // 期限切れであることが送信前に伝わる
+    // 期限切れであることが送信前に伝わる（案内は日付のすぐ下に1つだけ）
     await expect(page.getByTestId('late-notice'), '承認制になると事前に分かる').toBeVisible({ timeout: 15000 })
-    await page.getByTestId('late-reason').fill(`E2E遅延理由_${TS}`)
+    await expect(page.getByTestId('late-notice'), '同じ話を2回言わない').toHaveCount(1)
+    await expect(page.locator('.past-date-notice'), '「過去の未送信日報です」と重ねない').toHaveCount(0)
+    // ★解錠の許可申請は廃止＝ロック案内も依頼ボタンも出ない（許可なしでそのまま出せる）
+    await expect(page.locator('.locked-notice'), 'ロック案内は出さない').toHaveCount(0)
+    await expect(page.getByText('編集の許可を依頼'), '許可依頼の導線は無い').toHaveCount(0)
 
-    // 稼働なしで最小構成の日報を送る（現場入力を要求されないため）
+    // ★遅れた理由は必須。空のままでは送信できない
     await page.locator('select').first().selectOption({ index: 1 }).catch(() => {})
     await page.locator('input[type="checkbox"]').last().check().catch(() => {})
+    await expect(page.locator('button[type="submit"].btn-submit'), '理由が空なら押せない').toBeDisabled()
+    await page.getByTestId('late-reason').fill('   ')
+    await expect(page.locator('button[type="submit"].btn-submit'), '空白だけでも押せない').toBeDisabled()
+    await page.getByTestId('late-reason').fill(`E2E遅延理由_${TS}`)
+    await expect(page.locator('button[type="submit"].btn-submit'), '理由を入れれば押せる').toBeEnabled()
+
     await page.locator('button[type="submit"].btn-submit').click()
     await page.waitForTimeout(6000)
 

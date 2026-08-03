@@ -165,7 +165,7 @@
   "editReasonHint": "Leave a reason so the change can be traced later",
   "editApprovalSubmitFailed": "Failed to submit the edit. Check your connection and try again",
   "editPendingBanner": "This report is awaiting approval. The original content stays until it is approved",
-  "lateReasonLabel": "Reason for the late submission (optional)",
+  "lateReasonLabel": "Reason for the late submission (required)",
   "lateReasonPlaceholder": "e.g. Could not enter it while on site",
   "lateNoticeBanner": "This date is past the submission deadline. It will await an administrator approval before it appears in reports",
   "lateDefaultReason": "Late submission of a past report",
