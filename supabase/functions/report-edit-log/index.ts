@@ -211,6 +211,17 @@ Deno.serve(async (req) => {
   )
   if (!caller) return json({ ok: false, error: 'unauthorized' }, 401)
 
+  // 作業員側に「自分が承認待ちにしている日付」だけ返す（中身は返さない）。
+  //  ★次の未送信日の判定と、履歴の承認待ち表示に使う。これが無いと
+  //    承認待ちの日を飛ばせず同じ日付が出続け、まとめて提出できない。
+  if (body.action === 'pending-dates') {
+    const { data } = await svc.from('daily_report_pending_edits')
+      .select('report_date, kind')
+      .eq('account_id', caller.accountId).eq('status', 'pending')
+      .eq('report_user_id', caller.userId)
+    return json({ ok: true, dates: (data ?? []).map((r: any) => ({ date: r.report_date, kind: r.kind })) })
+  }
+
   // 作業員側に「承認待ちかどうか」だけ返す。保留の中身は返さない（anon経路から読めるため）
   if (body.action === 'pending-status') {
     const rid = typeof body.reportId === 'string' ? body.reportId : ''

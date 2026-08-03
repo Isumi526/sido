@@ -799,6 +799,35 @@ async function callEditEf(payload: Record<string, unknown>): Promise<any | null>
   return json
 }
 
+/**
+ * 自分が承認待ちにしている日付を取得し、今開いている日付がそれなら次の日へ進める。
+ * ★初期化フローの中では呼ばない。以前ここを await で挟んだら画面が「読み込み中…」から
+ *   進まなくなった。描画が終わってから後追いで直す（取れなければ何もしないだけ）。
+ */
+async function skipPendingDatesAfterInit(): Promise<void> {
+  try {
+    if (isEditMode.value) return
+    const j = await callEditEf({ action: 'pending-dates' })
+    const dates: string[] = (j?.dates ?? []).map((d: any) => d.date as string)
+    if (!dates.length || !dates.includes(report.form.value.date)) return
+    // 承認待ちの日は「出し済み」として飛ばす（承認を待たずに次の日を出せるように）
+    const uid = liff.profile.value?.userId
+    const proxyT = proxy.proxyTarget.value
+    let next: string | null = null
+    if (proxyT) {
+      const { data: pu } = await useSupabase().from('users').select('id').eq('worker_id', proxyT.id).maybeSingle()
+      next = await expense.getNextUnsubmittedDateById(
+        (pu as any)?.id ?? '00000000-0000-0000-0000-000000000000', dates)
+    } else if (uid) {
+      next = await expense.getNextUnsubmittedDate(uid, dates)
+    }
+    if (next && next !== 'NOT_CONFIGURED') report.form.value.date = next
+    else if (next === null) allSubmitted.value = true
+  } catch (e) {
+    console.error('[Report] 承認待ちの日付スキップに失敗:', e)
+  }
+}
+
 /** この日報に承認待ちの編集が既にあるか（作業員に「まだ反映されていない」ことを伝える） */
 async function refreshPendingState(): Promise<void> {
   hasPendingEdit.value = false
@@ -1497,6 +1526,8 @@ onMounted(async () => {
   }
 
   initializing.value = false
+  // ★描画を終えてから後追いで承認待ちの日を飛ばす（初期化は待たせない）
+  void skipPendingDatesAfterInit()
 })
 
 // ── 下書き自動保存（新規入力中・800ms デバウンス・送信ロジックには触れない）──

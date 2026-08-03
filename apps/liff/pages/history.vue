@@ -18,6 +18,12 @@
 
       <!-- 一覧 -->
       <div v-else class="report-list">
+        <!-- ★まだ日報になっていない（期限切れで提出し承認待ちの）日。ここに出さないと
+             作業員は「何日を申請したのか」を確認できない。 -->
+        <div v-for="d in pendingOnlyDates" :key="'p-' + d" class="pending-only-card" data-testid="history-pending-only">
+          <div class="pending-only-date">{{ formatDate(d) }}</div>
+          <p class="pending-only-note">{{ $t('history.pendingOnlyNote') }}</p>
+        </div>
         <template v-for="(group, ym) in grouped" :key="ym">
           <div class="month-label">{{ ym }}</div>
           <div
@@ -29,6 +35,10 @@
               <div class="report-date">{{ formatDate(rep.date) }}</div>
               <span :class="['status-badge', rep.leave_type === 'paid_leave' ? 'badge-paid-leave' : rep.is_working ? 'badge-working' : 'badge-off']">
                 {{ rep.leave_type === 'paid_leave' ? $t('history.badgePaidLeave') : rep.is_working ? $t('history.badgeWorking') : $t('history.badgeOff') }}
+              </span>
+              <!-- ★編集を申請済み。表示中の内容は承認前（＝今有効な値）であることを示す -->
+              <span v-if="pendingDates.has(rep.date)" class="status-badge badge-pending" data-testid="history-pending">
+                {{ $t('history.pendingApproval') }}
               </span>
             </div>
 
@@ -95,6 +105,31 @@ const proxy   = useProxyMode()
 
 const loading     = ref(true)
 const reports     = ref<any[]>([])
+// ★承認待ちの日。保留テーブルは anon から読めないので EF から日付だけ受け取る。
+//   出さないと「申請したのに履歴に無く、何日を出したのか分からない」状態になる。
+const pendingDates = ref<Set<string>>(new Set())
+const pendingOnlyDates = ref<string[]>([])   // まだ日報が無い＝期限切れの新規提出
+async function loadPendingDates() {
+  try {
+    const cfg = useRuntimeConfig()
+    const efUrl = cfg.public.edgeFunctionUrl
+    if (!efUrl) return
+    const anonKey = cfg.public.supabaseAnonKey as string
+    const { data: { session } } = await useSupabase().auth.getSession()
+    const lineIdToken = (await liff.getIdToken().catch(() => null)) ?? ''
+    const devLineUserId = cfg.public.appEnv === 'development' ? (liff.profile.value?.userId ?? '') : ''
+    const res = await fetch(`${efUrl}/report-edit-log`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: anonKey,
+                 Authorization: session ? `Bearer ${session.access_token}` : `Bearer ${anonKey}` },
+      body: JSON.stringify({ action: 'pending-dates', line_id_token: lineIdToken, dev_line_user_id: devLineUserId }),
+    })
+    const j = await res.json().catch(() => null)
+    if (!j?.ok) return
+    pendingDates.value = new Set((j.dates ?? []).map((d: any) => d.date))
+    pendingOnlyDates.value = (j.dates ?? []).filter((d: any) => d.kind === 'late_new').map((d: any) => d.date)
+  } catch (e) { console.error('[history] 承認待ちの取得に失敗:', e) }
+}
 const selfUser    = ref<User | null>(null)
 
 // 各日報の明細（常時表示用・読み込み時に一括で組み立て）
@@ -190,6 +225,7 @@ onMounted(async () => {
     if (!selfUser.value) { await navigateTo('/register'); return }
     await loadReports()
     await loadGrants()
+    void loadPendingDates()   // 描画は待たせない
   }
   loading.value = false
 })
@@ -397,6 +433,10 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--font)
 }
 .report-date { font-size: 16px; font-weight: 700; color: var(--text); }
 
+.badge-pending { background: #dbeafe; color: #1e40af; }
+.pending-only-card { border: 1px dashed #7ea8dd; background: #f5f9ff; border-radius: 12px; padding: 14px; }
+.pending-only-date { font-weight: 800; }
+.pending-only-note { font-size: 12px; color: #1e4f8a; margin: 4px 0 0; }
 .status-badge {
   font-size: 11px; font-weight: 700; border-radius: 20px; padding: 3px 10px;
 }

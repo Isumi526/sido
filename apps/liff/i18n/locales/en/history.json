@@ -53,5 +53,7 @@
   "expMiscDefault": "Misc",
   "expGarbageWood": "Wood only {m3}m³",
   "expGarbageMixed": "Mixed {m3}m³",
-  "expGarbage": "Garbage {detail}"
+  "expGarbage": "Garbage {detail}",
+  "pendingApproval": "Awaiting approval",
+  "pendingOnlyNote": "Submitted and awaiting approval. It will appear once approved"
 }
