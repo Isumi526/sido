@@ -108,6 +108,23 @@ test.describe('日報編集の承認（admin）', () => {
     expect(pend[0].status).toBe('approved')
   })
 
+  test('承認すると左メニューのバッジも消える（承認済みなのに件数が残らない）', async ({ page }) => {
+    await seed()
+    page.on('dialog', (d) => d.accept().catch(() => {}))
+    await page.goto('/report-edit-review', { waitUntil: 'networkidle' })
+
+    const badge = page.locator('a[href="#/report-edit-review"] .nav-badge, .nav-link .nav-badge').first()
+    const card = page.locator('[data-testid="pending-card"]', { hasText: `E2E理由_${TS}` })
+    await expect(card).toBeVisible({ timeout: 15000 })
+
+    await card.getByTestId('pending-approve').click()
+    await expect(page.getByTestId('review-msg')).toContainText('承認しました', { timeout: 30000 })
+    // ★リロードせずにバッジが消えること（load() だけでは消えなかった＝レビュー指摘）
+    await expect(page.locator('.nav-link', { hasText: '日報編集の承認' }).locator('.nav-badge'),
+      'バッジが残らない').toHaveCount(0, { timeout: 15000 })
+    void badge
+  })
+
   test('★差し戻すと daily_reports は変わらない', async ({ page }) => {
     await seed()
     page.on('dialog', (d) => d.accept().catch(() => {}))

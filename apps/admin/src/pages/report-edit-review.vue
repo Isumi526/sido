@@ -70,6 +70,7 @@
 import { ref, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { refreshNavBadges } from '../lib/navBadges'
 
 const loading = ref(true)
 const busy = ref<string | null>(null)
@@ -131,6 +132,9 @@ async function decide(p: any, action: 'approve' | 'reject') {
     msg.value = action === 'approve' ? '承認しました。日報に反映されました' : '差し戻しました'
     msgOk.value = true
     await load()
+    // ★左メニューのバッジも更新する。ここを呼ばないと承認済みなのに件数が残り、
+    //   管理者が「まだ承認待ちがある」と誤解する（承認機能の信頼性に直結）。
+    await refreshNavBadges()
   } catch (e: any) {
     msg.value = e?.message ?? '処理に失敗しました'
     msgOk.value = false
