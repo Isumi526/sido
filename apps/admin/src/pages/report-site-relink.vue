@@ -17,6 +17,10 @@
             <tr>
               <th>日付</th>
               <th>作業員</th>
+              <!-- ★どの現場の日報かを推定する手がかり。日付と作業員だけだと、
+                   同じ日に複数現場が動いている時に決められない -->
+              <th>元請け</th>
+              <th>出退勤</th>
               <th>メモ / 内容</th>
               <th>紐付け先の現場</th>
               <th class="actions-col">操作</th>
@@ -26,6 +30,8 @@
             <tr v-for="r in rows" :key="r.key">
               <td>{{ fmtDate(r.date) }}</td>
               <td class="name">{{ r.workers || '—' }}</td>
+              <td class="name" data-testid="relink-contractor">{{ r.contractor || '—' }}</td>
+              <td class="hours" data-testid="relink-hours">{{ r.hours || '—' }}</td>
               <td class="memo">{{ r.memo || '—' }}</td>
               <td>
                 <select v-model="r.pick" class="site-pick">
@@ -58,8 +64,31 @@ type Row = {
   siteIndex: number
   date: string
   workers: string
+  contractor: string
+  hours: string
   memo: string
   pick: string
+}
+
+/**
+ * 元請け名。現場未設定＝現場マスタ側が無いので、日報JSONの入力値を見る。
+ * 「その他」で手入力された場合は customContractorName に入る。
+ */
+function contractorOf(site: any): string {
+  const n = site?.contractorName
+  if (n === '__other__') return (site?.customContractorName ?? '').trim()
+  return (n ?? '').trim()
+}
+
+/**
+ * 出退勤。作業員が複数いれば人ごとに並べる（同じ時間なら1つにまとめる）。
+ * attendance_logs ではなく日報の申告値でよい＝紐付けの判断材料としてはこれで足りる。
+ */
+function hoursOf(site: any): string {
+  const spans = (site?.workers ?? [])
+    .map((w: any) => (w?.startTime && w?.endTime) ? `${w.startTime}〜${w.endTime}` : '')
+    .filter(Boolean)
+  return [...new Set(spans)].join(' / ')
 }
 
 const loading = ref(true)
@@ -97,7 +126,8 @@ async function load() {
       const workers = (site.workers ?? []).map((w: any) => w.workerName).filter(Boolean).join('、')
       out.push({
         key: `${rep.id}#${i}`, reportId: rep.id, siteIndex: i, date: rep.date,
-        workers, memo: (site.note ?? '').trim(), pick: '',
+        workers, contractor: contractorOf(site), hours: hoursOf(site),
+        memo: (site.note ?? '').trim(), pick: '',
       })
     })
   }
@@ -136,6 +166,8 @@ onMounted(load)
 .table th { background: #f8fafc; color: #475569; font-weight: 700; position: sticky; top: 0; z-index: 2;}
 .name { font-weight: 700; color: #0f172a; }
 .memo { max-width: 260px; white-space: pre-wrap; color: #475569; }
+/* 列が2つ増えるので、メモに幅を残すため時刻は詰めて出す */
+.hours { white-space: nowrap; color: #475569; font-variant-numeric: tabular-nums; }
 .site-pick { padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-width: 160px; }
 .actions-col { white-space: nowrap; }
 .btn-link { font-size: 13px; font-weight: 700; color: #1d4ed8; background: #eff6ff; border: 1px solid #93c5fd; border-radius: 6px; padding: 6px 14px; cursor: pointer; }
