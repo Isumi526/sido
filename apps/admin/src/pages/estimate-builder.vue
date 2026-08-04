@@ -1816,7 +1816,11 @@ async function applySelectionToItems() {
 const DRAWING_BUCKET = 'estimate-drawings'
 // 業務フローに沿った状態。確認16で合意（対応中/受注/失注/辞退）＋既存値との互換を保つ。
 //  draft   … 受領して見積作成中（既存の初期値）
-//  issued  … 元請けへ提出済み（見積書PDF発行時に自動でセットされる既存挙動）
+//  issued  … 元請けへ提出済み。
+//            ★R49: 「PDF発行時に自動セット」と書いてあったが、実際に書くコードは無く手動だけだった。
+//            見積書を**メール送信した時**に draft からだけ自動で進めるようにした（下記 markIssuedAfterSend）。
+//            ローカルへのPDFダウンロード(exportPdf)では進めない＝社内確認のために落としただけで
+//            「提出済み」になってしまうと、出していないのに出したことになる。
 //  active  … 受注（現場化で自動セットされる既存挙動）
 //  lost    … 失注 / declined … 辞退（どちらも削除せず残す＝確認9）
 const PROJECT_STATUSES = [
@@ -2913,12 +2917,33 @@ async function sendPdf() {
     const to = Array.isArray(r.sent_to) ? r.sent_to.join('、') : (r.sent_to ?? '')
     sendMsg.value = r.test ? `送信履歴を記録しました（dev: 実メール送信なし）／宛先 ${to}` : `${to} へ送信しました`
     sendDialogOpen.value = false
+    await markIssuedAfterSend()
     await loadSends()
   } catch (e: any) {
     sendErr.value = e?.message ?? '送信に失敗しました'
   } finally {
     sending.value = false
   }
+}
+
+/**
+ * ★R49: 見積書を元請けへ送ったら「提出済み」へ進める。
+ *
+ * ★draft の時だけ進める。理由:
+ *  - 既に人が手で「提出済み」にしていたら触る必要がない
+ *  - 受注(active)・失注(lost)・辞退(declined) まで進んだ案件で**差し替えの再送**をした時に、
+ *    ステータスが「提出済み」へ巻き戻ると業務の進捗が壊れる（ACの「不自然に動かない」）
+ * 送信自体は成立しているので、ここが失敗しても送信をエラーにはしない。
+ */
+async function markIssuedAfterSend() {
+  if (!projectId.value) return
+  if (intake.value.status !== 'draft') return
+  const { error } = await supabase.from('estimate_projects')
+    .update({ status: 'issued' })
+    .eq('id', projectId.value)
+    .eq('status', 'draft')   // 競合しても draft のものだけ（他タブで進めていたら触らない）
+  if (error) { console.warn('[estimate] 提出済みへの更新に失敗:', error.message); return }
+  intake.value.status = 'issued'
 }
 
 // F2 発注書番号採番（PO-<年>-<4桁・account×年ごと連番。purchase-orders ページと同方式）
