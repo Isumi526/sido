@@ -337,37 +337,41 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     }, { timeout: 10000 }).toBe(1)
   })
 
-  // 工種一覧＋材料マスタ（品番/品名 別管理）の表示・追加・削除
-  test('工種一覧と材料マスタ（品番/品名別管理）の追加・一覧・削除', async ({ page }) => {
+  // 工種一覧＋材料マスタ（★R50で廃止＝閲覧のみ）
+  test('工種は追加できる／材料マスタは閲覧のみで追加・削除できない（R50）', async ({ page }) => {
+    const accountId = await getAccountId()
+    // 「過去に登録された材料」を用意する。廃止後も既存見積が参照するので消えてはいけない
+    await restSrv('estimate_materials', {
+      method: 'POST', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ account_id: accountId, code: MCODE_M, name: MNAME_M, unit: '枚', source: 'manual' }),
+    })
+
     await page.goto('/estimate-masters', { waitUntil: 'networkidle' })
     await page.locator('[data-testid="subtab-trade"]').click()
 
-    // 工種を追加 → 一覧に出る
+    // 工種は今までどおり追加できる（廃止したのは材料マスタだけ）
     await page.locator('[data-testid="new-trade-name"]').fill(TRADE_M)
     await page.locator('[data-testid="add-trade"]').click()
     await expect(page.locator('[data-testid="trade-list"]')).toContainText(TRADE_M)
 
-    // 材料タブへ → 材料を 品番＋品名＋単位 で追加 → 一覧に品番/品名が別列で出る
     await page.locator('[data-testid="subtab-material"]').click()
-    await page.locator('[data-testid="mat-code"]').fill(MCODE_M)
-    await page.locator('[data-testid="mat-name"]').fill(MNAME_M)
-    await page.locator('[data-testid="mat-unit"]').fill('枚')
-    await page.locator('[data-testid="mat-add"]').click()
+
+    // ★追加の導線が無い（開いていると単価の正本がまた二重化する）
+    await expect(page.locator('[data-testid="mat-add"]'), '追加ボタンが無い').toHaveCount(0)
+    await expect(page.locator('[data-testid="mat-name"]'), '入力欄が無い').toHaveCount(0)
+    await expect(page.locator('[data-testid="mat-code"]')).toHaveCount(0)
+    // ★削除の導線も無い（消すのは単価表側の判断・破壊的操作はここから行わせない）
+    await expect(page.locator('[data-testid^="mat-del-"]'), '削除ボタンが無い').toHaveCount(0)
+
+    // 廃止した旨と、どこで管理するかが画面に出ている
+    await expect(page.getByTestId('material-deprecated')).toContainText('商社単価表')
+
+    // ★既存データは消さずに読める（過去見積の名称・単位の解決に使っている）
     const ml = page.locator('[data-testid="material-list"]')
     await expect(ml).toContainText(MCODE_M)
     await expect(ml).toContainText(MNAME_M)
-    // DB: code(品番) と name(品名) が別フィールドで保存
-    await expect.poll(async () => {
-      const m = await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MNAME_M)}&select=code`)
-      return m?.[0]?.code ?? null
-    }, { timeout: 10000 }).toBe(MCODE_M)
-
-    // 材料を削除 → 一覧/DBから消える
-    await ml.locator('tr', { hasText: MNAME_M }).locator('[data-testid^="mat-del-"]').click()
-    await expect.poll(async () => {
-      const m = await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MNAME_M)}&select=id`)
-      return (m ?? []).length
-    }, { timeout: 10000 }).toBe(0)
+    const rows = await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MNAME_M)}&select=id`)
+    expect((rows ?? []).length, 'DBの行も残っている').toBe(1)
   })
 
   // 同名の案件は作れない（重複防止）
