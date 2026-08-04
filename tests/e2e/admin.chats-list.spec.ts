@@ -56,3 +56,35 @@ test('チャット一覧に最終メッセージプレビュー・未読バッ�
   const rowAfterRead = page.locator('[data-testid="chat-list-row"]', { hasText: SITE_WITH_MSG })
   await expect(rowAfterRead.locator('[data-testid="chat-unread-badge"]')).toHaveCount(0)
 })
+
+// ★回帰ガード（2026-08-01 の回帰の真因）:
+//  以前は現場IDを全部並べて .in('site_id', [...]) で絞っていたため、現場が増えると
+//  クエリURLが肥大し 341現場＝約12.6KB で HTTP 414 URI Too Long になり、
+//  最終メッセージの取得が丸ごと失敗していた。しかもエラーを握り潰していたので
+//  全行が「まだメッセージはありません」に見えるだけで原因が分からなかった。
+//  現場が何件あってもプレビューが出ること＋失敗を黙らせないことを固定する。
+test('★現場が大量にあってもプレビューが出る（クエリURL肥大で414にならない）', async ({ page }) => {
+  const accountId = await getAccountId()
+  const before = await restSrv(`sites?account_id=eq.${accountId}&active=is.true&select=id`)
+  // 実データで既に300件超あるが、環境差で少ない場合に備えて最低200件は用意する
+  const need = Math.max(0, 200 - (before?.length ?? 0))
+  const made: string[] = []
+  for (let i = 0; i < need; i += 50) {
+    const chunk = Array.from({ length: Math.min(50, need - i) }, (_, k) => ({
+      account_id: accountId, name: `E2E大量現場_${TS}_${i + k}`, active: true,
+    }))
+    const rows = await restSrv('sites', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(chunk) })
+    for (const r of (rows ?? [])) made.push(r.id)
+  }
+  try {
+    await page.goto('/chats', { waitUntil: 'networkidle' })
+    // 取得エラーを黙らせない（出ていたら失敗させる）
+    await expect(page.getByTestId('chats-load-err'), '最終メッセージの取得に失敗していない').toHaveCount(0)
+    const row = page.locator('[data-testid="chat-list-row"]', { hasText: SITE_WITH_MSG })
+    await expect(row, '★現場が大量でもプレビューが出る').toContainText(MSG_BODY, { timeout: 15000 })
+  } finally {
+    for (let i = 0; i < made.length; i += 50) {
+      await restSrv(`sites?id=in.(${made.slice(i, i + 50).join(',')})`, { method: 'DELETE' }).catch(() => {})
+    }
+  }
+})
