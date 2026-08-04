@@ -499,6 +499,14 @@
                   </span>
                 </span>
               </label>
+              <!-- ★R48: 依頼行の工種名が空のまま作られていたので、送信時に入れておく。
+                   任意（後から相見積タブでも直せる）。 -->
+              <label class="ifield"><span>工種（見積依頼に記録・任意）</span>
+                <input v-model="dsend.trade" class="input" list="dsend-trade-options" data-testid="dsend-trade" placeholder="例: 軽鉄工事" />
+                <datalist id="dsend-trade-options">
+                  <option v-for="t in trades" :key="t.id" :value="t.name" />
+                </datalist>
+              </label>
               <label class="ifield wide"><span>件名</span>
                 <input v-model="dsend.subject" class="input" data-testid="dsend-subject" :placeholder="defaultDsendSubject" />
               </label>
@@ -1920,12 +1928,12 @@ const dsend = ref<{
   bytes: Uint8Array | null; pageCount: number; selected: number[]
   thumbs: Record<number, string>
   rangeText: string; preview: number | null; previewUrl: string
-  subId: string; contactIds: string[]; subject: string; body: string
+  subId: string; contactIds: string[]; subject: string; body: string; trade: string
   msg: string; err: string
 }>({
   att: null, loading: false, sending: false, bytes: null, pageCount: 0, selected: [], thumbs: {},
   rangeText: '', preview: null, previewUrl: '', subId: '', contactIds: '' as any,
-  subject: '', body: '', msg: '', err: '',
+  subject: '', body: '', msg: '', err: '', trade: '',
 })
 dsend.value.contactIds = []
 
@@ -2110,6 +2118,7 @@ async function sendDrawing() {
         subject: d.subject || null,
         body: d.body || null,
         project_name: currentProjectName.value,
+        trade_name: d.trade || null,   // ★R48: 依頼行の工種名をEF側で埋めるため送る
       }),
     })
     const json = await resp.json()
@@ -2117,37 +2126,23 @@ async function sendDrawing() {
     d.msg = json?.skipped === 'no_api_key'
       ? `${pages.length}ページを記録しました（メール未設定のため実送信はスキップ）`
       : `${pages.length}ページを送信しました`
+    // ★R48: 見積依頼行の作成は Edge Function 側へ移した（送信と一体で成立させる）。
+    //   以前はここ（fetch後のブラウザ処理）で作っていたため、送信成功後にタブが閉じる/
+    //   リロードされると「メールは届いているのに依頼行が無い」状態になり、
+    //   回収期限の管理から黙って漏れていた。
+    //   EFが作れなかった場合だけ警告を出す（無音にしない）。
+    if (json?.quote_request_warning) d.err = json.quote_request_warning
     await loadDrawingSends()
-    // ★R7: 図面を送った＝その業者に見積を依頼した、ということ。
-    //   依頼行を人に手で作らせない（実業務の依頼は「図面を投げるだけ」）。
-    if (d.subId) await ensureQuoteRequestFromSend(d.subId)
+    await loadQuotes()
   } catch (e: any) {
     d.err = e?.message ?? '送信に失敗しました'
   } finally { d.sending = false }
 }
 
-/**
- * R7: 図面送信から見積依頼を立てる。
- * 同じ業者へ何度も図面を送ることがある（追加図面・差し替え）ので、
- * まだ受領していない依頼が既にあればそれを最新の送信に更新し、行を増やさない。
- */
-async function ensureQuoteRequestFromSend(subId: string) {
-  const latest = drawingSends.value.find(d => d.subcontractor_id === subId)
-  if (!latest || !projectId.value) return
-  const today = todayIso()
-  const open = quoteRequests.value.find(q => q.subcontractor_id === subId && !q.received_at)
-  if (open) {
-    await supabase.from('estimate_quote_requests')
-      .update({ drawing_send_id: latest.id, requested_at: open.requested_at || today })
-      .eq('id', open.id)
-  } else {
-    await supabase.from('estimate_quote_requests').insert({
-      account_id: accountId, project_id: projectId.value,
-      subcontractor_id: subId, requested_at: today, drawing_send_id: latest.id,
-    })
-  }
-  await loadQuotes()
-}
+// ★R48: ここにあった ensureQuoteRequestFromSend（ブラウザ側での依頼行作成）は撤去した。
+//  送信成功後の後処理だったため、タブが閉じる/リロードで依頼行だけ生まれず
+//  「メールは届いているのに依頼が無い」状態を作っていた。
+//  現在は Edge Function（_shared/drawing-mail.ts）が送信履歴と同じ流れで作る。
 
 async function loadDrawingSends() {
   if (!projectId.value) { drawingSends.value = []; return }
