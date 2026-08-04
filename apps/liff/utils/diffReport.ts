@@ -10,6 +10,10 @@ interface OldReport {
   leave_type?: string | null
   sites: any[]
   note?: string | null
+  // ★出張手当(+¥3,000/日)と本日のガソリン代はどちらも金額に効くのに
+  //   比較対象から漏れており、書き換えても「何も変えていない」ように見えていた
+  is_business_trip?: boolean | null
+  gasoline_items?: any[] | null
 }
 
 /** LIFF フォーム形式の新データ */
@@ -18,6 +22,8 @@ interface NewReport {
   leaveType?: string | null
   sites: any[]
   note?: string
+  isBusinessTrip?: boolean
+  gasolineItems?: any[] | null
 }
 
 /** 稼働状態を3区分（稼働あり / 有給 / 休み）のラベルにする */
@@ -87,6 +93,20 @@ export function computeDiff(oldData: OldReport, newData: NewReport): string[] {
       lines.push(gt('diff.siteHeader', { name: displayName }))
       lines.push(...siteLines)
     }
+  }
+
+  // ── 出張（手当が付くので金額に効く）──
+  const oTrip = !!oldData.is_business_trip
+  const nTrip = !!newData.isBusinessTrip
+  if (oTrip !== nTrip) {
+    lines.push(gt(nTrip ? 'diff.businessTripOn' : 'diff.businessTripOff'))
+  }
+
+  // ── 本日のガソリン代（日報直下の配列。経費と同じくサマリ文字列で比較して粒度を揃える）──
+  const oGas = gasSummary(oldData.gasoline_items)
+  const nGas = gasSummary(newData.gasolineItems)
+  if (oGas !== nGas) {
+    lines.push(gt('diff.gasoline', { from: oGas || gt('diff.none'), to: nGas || gt('diff.none') }))
   }
 
   // ── 備考 ──
@@ -172,6 +192,22 @@ function vehSummary(exp: any): string {
     if (v.etcCard)     p.push(v.etcCard)
     return p.join(' ')
   }).join(' / ')
+}
+
+/**
+ * 本日のガソリン代のサマリ。給油1回ぶんを「支払い先¥金額 ℓ」で並べる。
+ * 金額の無い行は保存時に落とされる（normalizeGasolineItems）ので、ここでも同じく無視する
+ * ＝入力途中の空行が「変更あり」として差分に出ないようにする。
+ */
+function gasSummary(items: any[] | null | undefined): string {
+  return (items ?? [])
+    .filter((g: any) => Number(g?.yen) > 0)
+    .map((g: any) => {
+      const p = [gt('diff.labeledYen', { label: g.payee || gt('diff.gasolineLabel'), amount: Number(g.yen).toLocaleString() })]
+      if (Number(g.liters) > 0) p.push(gt('diff.gasLiters', { liters: g.liters }))
+      return p.join(' ')
+    })
+    .join(' / ')
 }
 
 function listSummary(arr: any[], fmt: (item: any) => string): string {
