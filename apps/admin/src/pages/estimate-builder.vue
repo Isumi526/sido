@@ -631,9 +631,53 @@
           <ul v-if="openedFiles.length" class="att-list" data-testid="qf-list">
             <li v-for="f in openedFiles" :key="f.id">
               <button class="att-name" :data-testid="`qf-open-${f.id}`" @click="openQuoteFile(f)">{{ f.name || f.path }}</button>
+              <!-- ★R44: 添付した見積書から項目・単位・単価を読み取って下書きにする。
+                   これまでは添付を残すだけで単価は手打ちだった。 -->
+              <button class="btn-edit" :disabled="qocr.busy" :data-testid="`qf-ocr-${f.id}`" @click="readQuoteFile(f)">
+                {{ qocr.busy && qocr.fileId === f.id ? `読み取り中… ${qocr.done}/${qocr.total}` : '見積書を読み取る' }}
+              </button>
               <button class="btn-del" :data-testid="`qf-del-${f.id}`" @click="removeQuoteFile(f)">×</button>
             </li>
           </ul>
+
+          <!-- ★読み取り結果は「下書き」。人が選んで初めて受領明細に入る（勝手に確定しない） -->
+          <div v-if="qocr.rows.length || qocr.err" class="qocr-panel" data-testid="qocr-panel">
+            <div class="panel-head" style="margin-top:12px">
+              <h3 class="sub-h">読み取り結果（下書き・チェックした行だけ明細に入ります）</h3>
+              <button class="btn-cancel" data-testid="qocr-close" @click="qocr.rows = []; qocr.err = ''">閉じる</button>
+            </div>
+            <p v-if="qocr.err" class="err" data-testid="qocr-err">{{ qocr.err }}</p>
+            <p v-else class="hint">
+              合計・値引き・消費税の行は取り込みません。<strong>単価の区分が読めなかった行は空</strong>のままなので、
+              明細に入れてから選んでください（区分が違う業者を横並びにすると誤選定します）。
+            </p>
+            <div v-if="qocr.rows.length" class="items-scroll">
+              <table class="table est-items">
+                <thead><tr><th></th><th>P</th><th>項目</th><th>形状・詳細</th><th>単位</th><th class="num">数量</th><th class="num">単価</th><th>区分</th><th>備考</th></tr></thead>
+                <tbody>
+                  <tr v-for="(r, ri) in qocr.rows" :key="ri" :data-testid="`qocr-row-${ri}`">
+                    <td><input type="checkbox" v-model="r._pick" :data-testid="`qocr-pick-${ri}`" /></td>
+                    <td>{{ r.page }}</td>
+                    <td>{{ r.item_name }}</td>
+                    <td>{{ r.spec || '—' }}</td>
+                    <td>{{ r.unit || '—' }}</td>
+                    <td class="num">{{ r.quantity ?? '—' }}</td>
+                    <td class="num">{{ r.unit_price != null ? yen(r.unit_price) : '—' }}</td>
+                    <td>{{ r.price_kind ? kindLabel(r.price_kind) : '—' }}</td>
+                    <td>{{ r.note || '' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div v-if="qocr.rows.length" class="actions-row">
+              <button class="btn-link-sm" data-testid="qocr-all" @click="qocr.rows.forEach(r => r._pick = true)">全選択</button>
+              <button class="btn-link-sm" data-testid="qocr-none" @click="qocr.rows.forEach(r => r._pick = false)">全解除</button>
+              <button class="btn-primary" :disabled="!qocrPicked.length" data-testid="qocr-apply" @click="applyQuoteOcr">
+                選んだ {{ qocrPicked.length }} 件を明細に入れる
+              </button>
+              <span v-if="qocr.msg" class="ok-msg" data-testid="qocr-msg">{{ qocr.msg }}</span>
+            </div>
+          </div>
           <p v-else class="hint">業者から届いた見積書（PDF・写真）を置いておくと、あとで単価の根拠を確認できます。</p>
 
           <div class="actions-row">
@@ -1540,6 +1584,98 @@ function openQuoteLines(q: QuoteRequest) {
   openedLines.value = linesOf(q.id).map(l => ({ ...l }))
   if (!openedLines.value.length) addQuoteLine()
 }
+// ── ★R44: 受領した見積書PDFを読み取って受領明細の下書きにする ──
+//  R5で見積書は添付保存できるようになったが、単価は今も手打ちだった。
+//  ★DBには書かない。読み取り結果は下書きで、人がチェックした行だけ明細に入る
+//   （価格表OCRと同じ「承認した分だけ反映」の原則。確定は既存の「保存」ボタン）。
+type QocrRow = {
+  page: number; item_name: string; spec: string | null; unit: string | null
+  quantity: number | null; unit_price: number | null; price_kind: string | null; note: string | null; _pick: boolean
+}
+const qocr = ref<{ fileId: string; busy: boolean; done: number; total: number; rows: QocrRow[]; err: string; msg: string }>(
+  { fileId: '', busy: false, done: 0, total: 0, rows: [], err: '', msg: '' })
+const qocrPicked = computed(() => qocr.value.rows.filter(r => r._pick))
+
+async function readQuoteFile(f: QuoteFile) {
+  if (qocr.value.busy) return
+  qocr.value = { fileId: f.id, busy: true, done: 0, total: 0, rows: [], err: '', msg: '' }
+  try {
+    const { data: file, error } = await supabase.storage.from(DRAWING_BUCKET).download(f.path)
+    if (error || !file) throw error ?? new Error('見積書を取得できませんでした')
+    const isPdf = /\.pdf$/i.test(f.name || f.path)
+    const pages: { b64: string; mime: string }[] = []
+    const toB64 = (bytes: Uint8Array) => {
+      let bin = ''
+      const chunk = 0x8000
+      for (let k = 0; k < bytes.length; k += chunk) bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(k, k + chunk)) as any)
+      return btoa(bin)
+    }
+    if (isPdf) {
+      // PDFは1ページずつ送る（複数ページの見積書に対応・1枚が重いとまとめて送れない）
+      const { PDFDocument } = await import('pdf-lib')
+      const src = await PDFDocument.load(new Uint8Array(await file.arrayBuffer()))
+      for (let i = 0; i < src.getPageCount(); i++) {
+        const one = await PDFDocument.create()
+        const [pg] = await one.copyPages(src, [i])
+        one.addPage(pg)
+        pages.push({ b64: toB64(await one.save()), mime: 'application/pdf' })
+      }
+    } else {
+      pages.push({ b64: toB64(new Uint8Array(await file.arrayBuffer())), mime: file.type || 'image/jpeg' })
+    }
+    qocr.value.total = pages.length
+    const { data: sess } = await supabase.auth.getSession()
+    for (let i = 0; i < pages.length; i++) {
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/estimate-quote-ocr`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${sess?.session?.access_token ?? ''}`,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ image_base64: pages[i].b64, mime: pages[i].mime, page: i + 1 }),
+      })
+      const j = await resp.json().catch(() => null)
+      if (!resp.ok || j?.error) { qocr.value.err = j?.error || `読み取りエラー(${resp.status})`; break }
+      for (const l of (j?.lines ?? [])) {
+        qocr.value.rows.push({
+          page: i + 1, item_name: l.item_name, spec: l.spec ?? null, unit: l.unit ?? null,
+          quantity: l.quantity ?? null, unit_price: l.unit_price ?? null,
+          price_kind: l.price_kind ?? null, note: l.note ?? null, _pick: true,
+        })
+      }
+      qocr.value.done = i + 1
+    }
+    if (!qocr.value.rows.length && !qocr.value.err) qocr.value.err = '明細を読み取れませんでした。手入力で追加してください。'
+  } catch (e: any) {
+    qocr.value.err = e?.message ?? '見積書の読み取りに失敗しました'
+  } finally { qocr.value.busy = false }
+}
+
+/** 選んだ下書き行を受領明細に入れる（★保存はしない。既存の「保存」ボタンで確定する） */
+const qocrApplying = ref(false)
+function applyQuoteOcr() {
+  if (qocrApplying.value || !openedRequest.value) return
+  const picked = qocrPicked.value
+  if (!picked.length) return
+  qocrApplying.value = true
+  try {
+    for (const r of picked) {
+      openedLines.value.push({
+        id: null, _k: ++qlKey, request_id: openedRequest.value.id,
+        item_name: r.item_name, spec: r.spec ?? '', unit: r.unit ?? '',
+        // ★区分が読めなかった行は既定に倒さず空にする。材工共と労務のみを取り違えると
+        //  比較で誤選定するため、人に必ず選ばせる。
+        price_kind: r.price_kind ?? '',
+        quantity: r.quantity, unit_price: r.unit_price ?? 0, is_selected: false,
+      } as any)
+    }
+    qocr.value.rows = qocr.value.rows.filter(r => !r._pick)
+    qocr.value.msg = `${picked.length}件を明細に入れました（内容を確認して「保存」で確定してください）`
+    setTimeout(() => { qocr.value.msg = '' }, 2500)
+  } finally { qocrApplying.value = false }
+}
+
 function addQuoteLine() {
   if (!openedRequest.value) return
   openedLines.value.push({ id: null, _k: ++qlKey, request_id: openedRequest.value.id,
@@ -4502,4 +4638,6 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .hist-cell:hover { border-color: #06A050; background: #f2fbf5; }
 .hc-top { font-size: 11px; font-weight: 700; color: #333; }
 .hc-sub { font-size: 10px; color: #999; }
+.qocr-panel { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; margin-top: 12px; background: #fafafa; }
+.sub-h { font-size: 14px; font-weight: 700; }
 </style>
