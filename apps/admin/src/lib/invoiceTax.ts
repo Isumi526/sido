@@ -45,6 +45,20 @@ export function netTotalOf(items: readonly TaxableItem[] | null | undefined, mod
   return mode === 'inclusive' ? sub - taxTotalOf(items, mode) : sub
 }
 
+/**
+ * 明細1行を「原価」として積む時の額（＝税抜）。
+ *
+ * 集計は請求書をまたいで行ごとに合算するため、内税と外税の行が1つの合計に混ざる。
+ * netTotalOf は「1枚ぶんの明細＋その1枚のmode」しか表せないので、行単位のこれを使う。
+ * 原価は税抜で揃える（消費税は原価ではなく預り/仮払）。
+ */
+export function netAmountOf(item: TaxableItem, mode: TaxMode): number {
+  const amt = Number(item.amount) || 0
+  if (mode !== 'inclusive') return amt
+  const rate = (Number(item.tax_rate) || 0) / 100
+  return rate > 0 ? amt / (1 + rate) : amt
+}
+
 /** 税込計。inclusive は amount の合計がそのまま税込。一覧の「請求金額(税込)」もこれ。 */
 export function grossTotalOf(items: readonly TaxableItem[] | null | undefined, mode: TaxMode): number {
   const sub = sumAmount(items)
