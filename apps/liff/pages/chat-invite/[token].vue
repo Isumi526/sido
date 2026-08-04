@@ -41,6 +41,7 @@
 <script setup lang="ts">
 const route = useRoute()
 const token = String(route.params.token)
+const push = useSiteChatPush()
 
 type GuestMessage = {
   id: string; sender_worker_id: string | null; sender_is_admin: boolean
@@ -87,6 +88,9 @@ function setGuestName() {
   if (!name) return
   guestName.value = name
   try { localStorage.setItem(STORAGE_KEY, name) } catch { /* localStorage不可環境は毎回入力でも致命的ではない */ }
+  // ★参加した時に新着通知を購読する（対応環境のみ・非対応なら静かに諦める）。
+  //  名前を入れる操作＝ユーザー操作の文脈なので、許可ダイアログを出せるのはここ。
+  void push.subscribe({ accountId, siteId, label: name, senderName: name })
   startChat()
 }
 
@@ -111,7 +115,11 @@ async function send() {
     sender_worker_id: null, sender_is_admin: false, sender_name: guestName.value, body,
   })
   sending.value = false
-  if (!error) { draft.value = ''; nextTick(autoResizeDraft); await loadMessages() }
+  if (!error) {
+    draft.value = ''; nextTick(autoResizeDraft); await loadMessages()
+    // 開いていない購読者へ新着を知らせる（best-effort・失敗しても投稿は成立済み）
+    push.notifyNewMessage({ siteId, senderName: guestName.value, body, inviteToken: token })
+  }
 }
 
 async function loadWorkers() {
