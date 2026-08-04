@@ -170,5 +170,8 @@
   "lateNoticeBanner": "この日付は提出期限を過ぎています。送信すると管理者の承認待ちになり、承認されてから日報に反映されます",
   "lateDefaultReason": "期限を過ぎた日報の提出",
   "lateSubmittedTitle": "申請しました！",
-  "lateSubmittedText": "提出期限を過ぎているため、管理者が承認すると日報に反映されます"
+  "lateSubmittedText": "提出期限を過ぎているため、管理者が承認すると日報に反映されます",
+  "payerLabel": "支払元",
+  "payerCompany": "会社のカードで支払った",
+  "payerPersonal": "個人で立替えた"
 }
