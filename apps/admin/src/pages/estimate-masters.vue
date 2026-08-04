@@ -45,26 +45,26 @@
 
       <!-- 材料マスタ（品番・品名を別管理） -->
       <div class="setting-block" v-show="settingsTab === 'material'">
-        <h3>材料マスタ（品番・品名）</h3>
-        <p class="muted">品番と品名は別管理です。見積の明細入力での品名捕捉（予測変換）でも自動で増えます。</p>
-        <div class="trade-add">
-          <input v-model="materialForm.code" class="input sm" placeholder="品番（任意）" data-testid="mat-code" />
-          <input v-model="materialForm.name" class="input" placeholder="品名" data-testid="mat-name" />
-          <input v-model="materialForm.unit" class="input sm" placeholder="単位" data-testid="mat-unit" />
-          <button class="btn-add" :disabled="!materialForm.name.trim()" data-testid="mat-add" @click="addMaterial">材料を追加</button>
-        </div>
+        <h3>材料マスタ（廃止・閲覧のみ）</h3>
+        <!-- ★R50: R28で材料マスタは廃止したが、この画面から追加・削除できる状態が残っていた。
+             経路が開いていると単価の正本が再び二重化する（どちらを直せばいいか分からなくなる）。
+             既存データと material_id の参照は生きているので、消さずに**閲覧のみ**にする。 -->
+        <p class="notice-deprecated" data-testid="material-deprecated">
+          材料マスタは廃止しました。品番・品名・単位・単価は<b>商社単価表</b>で管理します。
+          ここに出ているのは過去に登録された分で、<b>閲覧のみ</b>です（新規追加はできません）。
+          過去の見積が参照しているため残してあります。
+        </p>
         <table v-if="materials.length" class="table" data-testid="material-list">
-          <thead><tr><th>品番</th><th>品名</th><th>単位</th><th></th></tr></thead>
+          <thead><tr><th>品番</th><th>品名</th><th>単位</th></tr></thead>
           <tbody>
             <tr v-for="m in materials" :key="m.id" :data-testid="`mat-row-${m.id}`">
               <td>{{ m.code || '—' }}</td>
               <td>{{ m.name }}</td>
               <td>{{ m.unit || '—' }}</td>
-              <td><button class="btn-del" :data-testid="`mat-del-${m.id}`" @click="deleteMaterial(m.id)">削除</button></td>
             </tr>
           </tbody>
         </table>
-        <p v-else class="muted">材料はまだありません。</p>
+        <p v-else class="muted">過去に登録された材料はありません。</p>
       </div>
 
       <!-- ★R45: 単価の横断検索。名称/品番で引いて、業者・商社ごとの単価と時期を横並びで見る。
@@ -253,7 +253,6 @@ const suppliers      = ref<Supplier[]>([])
 const matPrices      = ref<MatPrice[]>([])
 const revisions      = ref<Revision[]>([])
 const priceForm      = ref<{ product_code: string; item_name: string; unit: string; unit_price: number | null }>({ product_code: '', item_name: '', unit: '', unit_price: null })
-const materialForm   = ref<{ code: string; name: string; unit: string }>({ code: '', name: '', unit: '' })
 const newTradeName   = ref('')
 const addingSupplier = ref(false)
 const newSupplierName = ref('')
@@ -705,22 +704,8 @@ async function onTradeDrop(i: number) {
   await Promise.all(trades.value.map((t, idx) =>
     supabase.from('estimate_trades').update({ sort_order: idx }).eq('id', t.id).eq('account_id', accountId)))
 }
-async function addMaterial() {
-  const f = materialForm.value
-  if (!f.name.trim()) return
-  masterErr.value = ''
-  const { error } = await supabase.from('estimate_materials')
-    .insert({ account_id: accountId, code: f.code.trim() || null, name: f.name.trim(), unit: f.unit.trim() || null, source: 'manual' })
-  if (error) { masterErr.value = error.message; return }
-  materialForm.value = { code: '', name: '', unit: '' }
-  await loadMaterials()
-}
-async function deleteMaterial(id: string) {
-  masterErr.value = ''
-  const { error } = await supabase.from('estimate_materials').delete().eq('id', id)
-  if (error) { masterErr.value = '使用中の材料は削除できません（明細で使われています）'; return }
-  await Promise.all([loadMaterials(), loadMaterialPrices()])
-}
+// ★R50: addMaterial / deleteMaterial は撤去（材料マスタは廃止・閲覧のみ）。
+//  読み取り(loadMaterials)は既存見積の名称・単位の解決に使うので残す。
 
 onMounted(async () => {
   accountId = await getAccountId()
@@ -806,4 +791,8 @@ watch(activeSupplier, () => { void loadSupplierRate() }, { immediate: true })
 @keyframes spin { to { transform: rotate(360deg); } }
 .code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #555; white-space: nowrap; }
 .actions { white-space: nowrap; }
+
+/* R50: 廃止済みマスタの説明。閲覧のみと分かるよう他の説明文と見た目を変える */
+.notice-deprecated { font-size: 12px; line-height: 1.7; color: #92400e; background: #fffbeb;
+  border: 1px solid #fde68a; border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; }
 </style>
