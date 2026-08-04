@@ -32,9 +32,22 @@
       <!-- 現場タブ（五十音順） -->
       <div class="tabs-wrap">
         <div class="tabs">
-          <button v-for="name in siteNames" :key="name" class="tab"
-            :class="{ active: displaySite === name }" @click="activeSite = name">
-            {{ name }}
+          <!-- ★よく見る現場を前に持ってこられる。並び順はユーザーごとに保存される。 -->
+          <span v-for="(name, si) in siteNames" :key="name" class="tab-wrap">
+            <button v-if="reordering" class="tab-move" :disabled="si === 0"
+                    :data-testid="`site-move-left-${si}`" title="左へ" @click="moveSite(name, -1)">‹</button>
+            <button class="tab" :class="{ active: displaySite === name }"
+                    :data-testid="`site-tab-${si}`" @click="activeSite = name">{{ name }}</button>
+            <button v-if="reordering" class="tab-move" :disabled="si === siteNames.length - 1"
+                    :data-testid="`site-move-right-${si}`" title="右へ" @click="moveSite(name, 1)">›</button>
+          </span>
+        </div>
+        <div class="tabs-tools">
+          <button class="btn-reorder" data-testid="site-reorder-toggle" @click="reordering = !reordering">
+            {{ reordering ? '並び替えを終える' : '並び替え' }}
+          </button>
+          <button v-if="reordering" class="btn-reorder" data-testid="site-reorder-reset" @click="resetSiteOrder">
+            五十音順に戻す
           </button>
         </div>
       </div>
@@ -441,6 +454,7 @@ import type { WageMode } from '../lib/workerHours'
 import { canViewWages, canViewHourlyWage, canViewManagementPages } from '../lib/auth'
 import { resolveSiteRef, type SiteResolveCtx } from '../lib/siteKey'
 import { netAmountOf, normalizeTaxMode } from '../lib/invoiceTax'
+import { loadListOrder, saveListOrder, applyListOrder, moveItem } from '../lib/listOrder'
 import JSZip from 'jszip'
 
 const exporting = ref(false)
@@ -569,7 +583,27 @@ function toggleWageMode() {
   if (!canViewHourlyWage.value) return
   wageMode.value = wageMode.value === 'daily' ? 'real' : 'daily'
 }
-const siteNames  = computed(() => Object.keys(siteMap.value).sort((a, b) => a.localeCompare(b, 'ja')))
+// ★並び順のユーザー個人設定。既定は五十音順で、保存があればそれを被せる。
+//   保存に無い現場は五十音順のまま後ろに続く＝新しい現場が消えない（applyListOrder 参照）。
+const SITE_LIST_KEY = 'site-reports.sites'
+const siteOrder   = ref<string[]>([])
+const reordering  = ref(false)
+const siteNamesBase = computed(() => Object.keys(siteMap.value).sort((a, b) => a.localeCompare(b, 'ja')))
+const siteNames  = computed(() => applyListOrder(siteNamesBase.value, siteOrder.value))
+
+/** タブを1つ左/右へ動かして保存する（横並びのタブなのでドラッグより誤操作が少ない） */
+async function moveSite(name: string, delta: number) {
+  const cur = siteNames.value
+  const next = moveItem(cur, cur.indexOf(name), delta)
+  if (next === cur) return
+  siteOrder.value = next
+  await saveListOrder(SITE_LIST_KEY, next)
+}
+/** 並び順を捨てて五十音順に戻す */
+async function resetSiteOrder() {
+  siteOrder.value = []
+  await saveListOrder(SITE_LIST_KEY, [])
+}
 // 表示用に選択現場を解決：今月に存在すればそれを使い、無ければ先頭にフォールバック（activeSite自体は書き換えない＝月を戻せば復元される）
 const displaySite = computed(() => siteNames.value.includes(activeSite.value) ? activeSite.value : (siteNames.value[0] ?? ''))
 
@@ -871,7 +905,11 @@ async function load() {
   loading.value = false
 }
 
-onMounted(load)
+onMounted(async () => {
+  // 並び順は表より先に読む（読み込み後に順序が入れ替わるとちらつく）
+  siteOrder.value = await loadListOrder(SITE_LIST_KEY)
+  await load()
+})
 // 期間指定では終了月だけを変えることもあるので dateTo も見る（見ないと再集計されない）
 watch([dateFrom, dateTo], load)
 watch(wageMode, load)   // 日当-実質賃金の切替で社員人件費を再集計
@@ -890,6 +928,11 @@ watch(wageMode, load)   // 日当-実質賃金の切替で社員人件費を再�
 .wage-toggle-btn.on { background: #4338ca; color: #fff; border-color: #4338ca; }
 
 .tabs-wrap { overflow-x: auto; margin-bottom: 16px; }
+.tabs-tools { display: flex; gap: 8px; padding: 6px 0 0; }
+.btn-reorder { background: #fff; color: #374151; border: 1px solid #d1d5db; border-radius: 6px; padding: 3px 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.tab-wrap { display: inline-flex; align-items: center; }
+.tab-move { background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 4px; color: #374151; cursor: pointer; font-size: 12px; line-height: 1; padding: 4px 5px; margin: 0 1px; }
+.tab-move:disabled { opacity: .35; cursor: default; }
 .export-bar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin: 10px 0 0; flex-wrap: wrap; }
 .export-pop-wrap { position: relative; }
 .export-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; background: #fff; border: 1px solid #e0e0e0; border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.12); padding: 16px; width: 300px; display: flex; flex-direction: column; gap: 12px; }
