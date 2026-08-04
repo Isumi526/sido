@@ -84,14 +84,14 @@
         <FormSection num="03" :title="$t('report.gasolineSection')">
           <!-- 給油有無（大半の日は給油なし。あり の時だけ金額・領収書を表示） -->
           <label class="hours-label">{{ $t('report.gasolineFueledLabel') }}</label>
-          <select :value="gasFueled ? 'yes' : 'no'" class="select mt4" @change="setGasFueled(($event.target as HTMLSelectElement).value === 'yes')">
+          <select :value="gasFueled ? 'yes' : 'no'" class="select mt4" data-testid="gas-fueled" @change="setGasFueled(($event.target as HTMLSelectElement).value === 'yes')">
             <option value="no">{{ $t('report.gasolineFueledNo') }}</option>
             <option value="yes">{{ $t('report.gasolineFueledYes') }}</option>
           </select>
 
           <template v-if="gasFueled">
             <!-- 給油1回ぶん＝1明細。複数給油はカードを追加 -->
-            <div v-for="(g, gi) in report.form.value.gasolineItems" :key="g._id ?? gi" class="lineitem-card mt8">
+            <div v-for="(g, gi) in report.form.value.gasolineItems" :key="g._id ?? gi" class="lineitem-card mt8" :data-testid="`gas-item-${gi}`">
               <!-- ① 領収書＋AI解析（手入力より上） -->
               <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
               <AttachedFilesBadge :files="gasFilesById[g._id ?? -1] ?? []" :urls="g.fileUrls" @remove-file="(p) => removeGasFile(g, p)" />
@@ -104,7 +104,7 @@
               </div>
               <!-- ② 手入力（支払い先・金額・登録番号） -->
               <div class="lineitems-row mt6">
-                <input v-model="g.payee" type="text" class="input" :placeholder="$t('report.gasPayeePlaceholder')" @keydown.enter.prevent />
+                <input v-model="g.payee" type="text" class="input" :data-testid="`gas-payee-${gi}`" :placeholder="$t('report.gasPayeePlaceholder')" @keydown.enter.prevent />
                 <ExpenseField v-model="g.yen" v-model:tategae="g.tategae" with-tategae :label="$t('report.gasolineCost')" />
                 <button v-if="(report.form.value.gasolineItems?.length ?? 0) > 1" type="button" class="btn-icon-sm" @click="report.removeGasolineItem(gi)">✕</button>
               </div>
@@ -553,6 +553,7 @@
           <textarea
             v-model="report.form.value.note"
             class="textarea"
+            data-testid="report-note"
             :placeholder="$t('report.notePlaceholder')"
             rows="3"
           />
@@ -1838,6 +1839,10 @@ async function handleSubmit() {
             leaveType:  isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null,
             sites:      report.form.value.sites,
             note:       report.form.value.note,
+            // ★どちらも金額に効く（出張手当 +¥3,000/日・本日のガソリン代）。
+            //   渡し漏れると書き換えても編集履歴が空になり、承認の監査が成立しない
+            isBusinessTrip: report.form.value.isBusinessTrip,
+            gasolineItems:  report.form.value.gasolineItems,
           })
         : []
 
