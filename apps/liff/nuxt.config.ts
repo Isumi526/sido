@@ -51,6 +51,9 @@ export default defineNuxtConfig({
       //   'true' を明示した時のみ通知する。submit-report EF が全社共通グループへ送る
       //   クロステナント漏洩バグがあるため、EF側を per-tenant 化して修正するまでは絶対に有効化しない。
       reportLineNotify: process.env.NUXT_PUBLIC_REPORT_LINE_NOTIFY === 'true',
+      // 現場チャット新着の web push。未設定なら購読も配信もしない（no-op）＝
+      // 鍵を配るまでは今までどおり realtime/ポーリングだけで動く。
+      vapidPublicKey: process.env.NUXT_PUBLIC_VAPID_PUBLIC_KEY || '',
     },
   },
 
