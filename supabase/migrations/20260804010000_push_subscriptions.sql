@@ -39,17 +39,16 @@ create index if not exists push_subs_site_idx
 
 alter table push_subscriptions enable row level security;
 
--- ★購読の登録はゲスト（anon）が行うので insert は anon に開ける。
---   ただし読み出し・削除は開けない＝他人の購読先（endpoint）を列挙・削除できない。
---   配信は EF(send-site-chat-push・service_role) が RLS を跨いで読む。
+-- ★anon には一切開けない（独立レビュー2026-08-04のcritical指摘）。
+--   当初は「ゲストが登録するので insert だけ anon に開ける」設計にしていたが、
+--   `with check (true)` だと **誰でも任意の account_id / site_id に購読を登録できる**。
+--   購読できるということは、その現場のチャットの新着プレビュー（送信者名＋本文の先頭）が
+--   自分の端末に push で届くということ＝**他テナントのチャット内容が漏れる**。
+--   → 登録も EF(send-site-chat-push の action=subscribe・service_role) 経由に統一し、
+--     EF側で「招待トークンが実在する / 身元がその現場のアカウントに属する」を確認してから入れる。
 revoke all on push_subscriptions from anon;
 revoke all on push_subscriptions from authenticated;
-grant insert on push_subscriptions to anon, authenticated;
 grant select on push_subscriptions to authenticated;
-
-drop policy if exists push_subs_ins on push_subscriptions;
-create policy push_subs_ins on push_subscriptions for insert to anon, authenticated
-  with check (true);
 
 -- 管理画面が「この現場に何件購読があるか」を見るための SELECT のみ（自テナント限定）
 drop policy if exists push_subs_sel on push_subscriptions;
@@ -57,7 +56,7 @@ create policy push_subs_sel on push_subscriptions for select to authenticated
   using (account_id = (select public.current_account_id()));
 
 comment on table push_subscriptions is
-  '現場チャット新着の web push 購読先。anon(ゲスト)は insert のみ可・select/delete 不可（他人の購読先を列挙させない）。配信は EF send-site-chat-push が service_role で読む。';
+  '現場チャット新着の web push 購読先。anon は一切触れない（登録も EF send-site-chat-push の action=subscribe 経由＝招待トークン/身元を検証してから入れる）。任意の site_id に購読できると他テナントのチャット内容がpushで漏れるため。';
 
 -- ── ロールバック手順 ────────────────────────────────
 --   drop table if exists push_subscriptions;

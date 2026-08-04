@@ -59,16 +59,18 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders() })
   if (req.method !== 'POST')    return json({ error: 'Method not allowed' }, 405)
 
-  // 鍵が無い＝push を運用していない。呼び出し側を壊さないよう 200 で静かに終わる。
-  if (!VAPID_PUBLIC || !VAPID_PRIVATE) return json({ ok: true, skipped: 'no_vapid_keys' })
-
   try {
     const body = await req.json().catch(() => ({} as any))
+    const action     = body.action === 'subscribe' ? 'subscribe' : 'notify'
     const siteId     = typeof body.site_id === 'string' ? body.site_id : ''
     const senderName = typeof body.sender_name === 'string' ? body.sender_name : ''
     const preview    = typeof body.body === 'string' ? body.body : ''
     const inviteToken = typeof body.invite_token === 'string' ? body.invite_token : ''
     if (!siteId) return json({ error: 'site_id が必要です' }, 400)
+
+    // 鍵が無い＝push を運用していない。配信は静かに終わる。
+    // ★purchase: subscribe も鍵が無ければ意味が無いので同じく no-op。
+    if (!VAPID_PUBLIC || !VAPID_PRIVATE) return json({ ok: true, skipped: 'no_vapid_keys' })
 
     // ── 認可: 身元 or 招待トークンのどちらかで、その現場に関われることを示す ──
     let accountId: string | null = null
@@ -89,6 +91,29 @@ Deno.serve(async (req) => {
       if (inv && inv.siteId === siteId) accountId = inv.accountId
     }
     if (!accountId) return json({ error: 'unauthorized' }, 401)
+
+    // ── 購読の登録（★anonに直接テーブルを開けない。ここで身元を確認してから入れる）──
+    if (action === 'subscribe') {
+      const sub = body.subscription ?? {}
+      const endpoint = typeof sub.endpoint === 'string' ? sub.endpoint : ''
+      const p256dh   = typeof sub?.keys?.p256dh === 'string' ? sub.keys.p256dh : ''
+      const auth     = typeof sub?.keys?.auth === 'string' ? sub.keys.auth : ''
+      if (!endpoint || !p256dh || !auth) return json({ error: 'subscription が不正です' }, 400)
+
+      // account_id はクライアント申告ではなく、上で確認した accountId を使う
+      const { error } = await svc.from('push_subscriptions').upsert({
+        account_id: accountId,
+        site_id: siteId,
+        endpoint, p256dh, auth,
+        label: typeof body.label === 'string' ? body.label.slice(0, 100) : null,
+        sender_name: typeof body.sender_name === 'string' ? body.sender_name.slice(0, 100) : null,
+      }, { onConflict: 'endpoint,site_id' })
+      if (error) {
+        console.error('[send-site-chat-push] subscribe 失敗:', error.message)
+        return json({ error: 'subscribe failed' }, 500)
+      }
+      return json({ ok: true, subscribed: true })
+    }
 
     // ── 配信先 ──
     const { data: subs } = await svc.from('push_subscriptions')

@@ -13,7 +13,7 @@
 //   認可だけは自動テストで固めておく。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { restSrv, rest, getAccountId, ANON_KEY, SUPABASE_URL } from './helpers'
+import { restSrv, getAccountId, ANON_KEY, SUPABASE_URL } from './helpers'
 
 const TS = Date.now()
 const SITE = `E2Epush現場_${TS}`
@@ -93,7 +93,12 @@ test('★購読テーブル: anon は購読を削除できない（他人の通�
   expect(still?.length, '購読が消されていない').toBe(1)
 })
 
-test('★購読の登録はゲスト(anon)でもできる（招待リンクの導線を塞がない）', async () => {
+// ★独立レビュー(2026-08-04)のcritical指摘で設計を変えた箇所。
+//  当初は「ゲストが登録するので anon に insert を開ける」としていたが、
+//  `with check (true)` だと **誰でも任意の site_id を購読できる**＝その現場の
+//  チャット新着プレビュー（送信者名＋本文の先頭）が攻撃者の端末に push で届く
+//  ＝他テナントのチャット内容が漏れる。登録も EF 経由に統一した。
+test('★購読テーブル: anon は購読を登録できない（任意の現場を購読して内容を盗めない）', async () => {
   const endpoint = `https://push.example.test/e2e-anon-${TS}`
   const res = await fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions`, {
     method: 'POST',
@@ -106,7 +111,23 @@ test('★購読の登録はゲスト(anon)でもできる（招待リンクの�
       endpoint, p256dh: 'x', auth: 'y', label: 'anonゲスト',
     }),
   })
-  expect([200, 201, 204], `anonでも購読登録はできる（実際: ${res.status}）`).toContain(res.status)
-  await rest(`push_subscriptions?endpoint=eq.${encodeURIComponent(endpoint)}`, { method: 'DELETE' }).catch(() => {})
-  await restSrv(`push_subscriptions?endpoint=eq.${encodeURIComponent(endpoint)}`, { method: 'DELETE' }).catch(() => {})
+  expect([401, 403, 404], `anonの直接insertは拒否される（実際: ${res.status}）`).toContain(res.status)
+  // 実際に入っていないことまで確認する
+  const rows = await restSrv(`push_subscriptions?endpoint=eq.${encodeURIComponent(endpoint)}&select=id`)
+  expect(rows?.length ?? 0, '行が作られていない').toBe(0)
+})
+
+test('★購読の登録は EF 経由（現場と無関係なら通らない）', async () => {
+  // 招待トークンも身元も無い状態で subscribe を要求しても通らないこと。
+  // ＝ゲストの導線は招待トークン経由でのみ開く。
+  const { status, body } = await callFn({
+    action: 'subscribe', site_id: siteId,
+    subscription: { endpoint: `https://push.example.test/e2e-ef-${TS}`, keys: { p256dh: 'x', auth: 'y' } },
+  })
+  // 鍵未設定の環境では no-op が先に返る（その場合も登録はされない）
+  if (body?.skipped === 'no_vapid_keys') expect(status).toBe(200)
+  else expect([401, 403]).toContain(status)
+
+  const rows = await restSrv(`push_subscriptions?endpoint=eq.${encodeURIComponent(`https://push.example.test/e2e-ef-${TS}`)}&select=id`)
+  expect(rows?.length ?? 0, '無関係な要求で購読が作られない').toBe(0)
 })
