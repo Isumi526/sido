@@ -17,13 +17,13 @@
     <div class="filter-bar">
       <button class="filter-btn" :class="{ active: filter === 'all' }" @click="filter = 'all'">すべて</button>
       <button class="filter-btn" :class="{ active: filter === 'todo' }" @click="filter = 'todo'">
-        要対応（申請中）<span v-if="todoCount" class="filter-badge">{{ todoCount }}</span>
+        要対応（承認待ち）<span v-if="todoCount" class="filter-badge">{{ todoCount }}</span>
       </button>
     </div>
 
     <div v-if="loading" class="empty">読み込み中...</div>
     <div v-else-if="visibleRows.length === 0" class="empty">
-      {{ filter === 'todo' ? '申請中の精算はありません' : 'この月の経費がありません' }}
+      {{ filter === 'todo' ? '承認待ちの精算はありません' : 'この月の経費がありません' }}
     </div>
 
     <div v-else class="table-wrap">
@@ -288,9 +288,11 @@ const selected  = ref<PeriodRow | null>(null)
 const filter    = ref<'all' | 'todo'>('all')
 
 const visibleRows = computed(() => filter.value === 'todo'
-  ? rows.value.filter(r => r.status === '申請中')
+  // ★一次承認済みも「まだ人の操作が要る」状態。ここを申請中だけにすると
+  //  オーナーの最終承認待ちが要対応から消えて放置される。
+  ? rows.value.filter(r => r.status === '申請中' || r.status === '一次承認済み')
   : rows.value)
-const todoCount = computed(() => rows.value.filter(r => r.status === '申請中').length)
+const todoCount = computed(() => rows.value.filter(r => r.status === '申請中' || r.status === '一次承認済み').length)
 
 const grandCount   = computed(() => visibleRows.value.reduce((s, r) => s + r.count, 0))
 const grandTotal   = computed(() => visibleRows.value.reduce((s, r) => s + r.total, 0))
