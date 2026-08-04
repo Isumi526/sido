@@ -148,7 +148,9 @@
 
         <!-- 修理ログ（編集時のみ。新規は保存後に編集で追加） -->
         <div v-if="modal.id" class="field repair-field">
-          <label>修理ログ</label>
+          <!-- ★修理ログは「追加」を押した時点でDBに入る（下の保存とは別）。
+               保存ボタンが2つ見えて意味が違うため、どちらの扱いか画面から分かるようにする。 -->
+          <label>修理ログ<span class="repair-hint">追加・削除するとすぐ保存されます（下の「車両情報を保存」とは別です）</span></label>
           <div class="repair-list">
             <div v-for="r in repairLogs" :key="r.id" class="repair-item">
               <span class="repair-date">{{ r.repair_date }}</span>
@@ -162,13 +164,15 @@
             <input v-model="newRepair.repair_date" type="date" class="input repair-in" />
             <input v-model="newRepair.description" class="input repair-in" placeholder="内容（例：オイル交換）" />
             <input v-model.number="newRepair.cost" type="number" class="input repair-in repair-cost-in" placeholder="費用" />
-            <button class="btn-repair-add" :disabled="repairSaving" @click="addRepair">追加</button>
+            <button class="btn-repair-add" :disabled="repairSaving" data-testid="repair-add" @click="addRepair">追加</button>
           </div>
+          <!-- 押した結果が見えないと「保存されたのか」が分からない。追加/削除のたびに出す -->
+          <p v-if="repairMsg" class="repair-saved" data-testid="repair-saved">{{ repairMsg }}</p>
         </div>
 
         <div class="modal-actions">
           <button class="btn-cancel" @click="modal = null">キャンセル</button>
-          <button class="btn-save" :disabled="saving" data-testid="vehicle-save" @click="save">{{ saving ? '保存中...' : '保存' }}</button>
+          <button class="btn-save" :disabled="saving" data-testid="vehicle-save" @click="save">{{ saving ? '保存中...' : '車両情報を保存' }}</button>
         </div>
         <p v-if="saveError" class="error">{{ saveError }}</p>
       </div>
@@ -207,6 +211,14 @@ const saveError   = ref('')
 const repairLogs  = ref<RepairLog[]>([])
 const newRepair   = ref<{ repair_date: string | null; description: string; cost: number | null }>({ repair_date: null, description: '', cost: null })
 const repairSaving = ref(false)
+// 修理ログは即時保存。押した結果を短く出して「保存済み」と分かるようにする（AC1）
+const repairMsg    = ref('')
+let repairMsgTimer: ReturnType<typeof setTimeout> | null = null
+function flashRepairMsg(m: string) {
+  repairMsg.value = m
+  if (repairMsgTimer) clearTimeout(repairMsgTimer)
+  repairMsgTimer = setTimeout(() => { repairMsg.value = '' }, 2500)
+}
 
 // 車両添付（#8 写真＋名称 / #10 車検証PDF）・非公開バケット vehicle-attachments・署名URLで表示
 type VehiclePhoto = { id: string; vehicle_id: string; kind: string; name: string | null; path: string; url?: string | null }
@@ -508,6 +520,7 @@ async function openEdit(v: Vehicle) {
   modal.value = { ...v }
   saveError.value = ''
   newRepair.value = { repair_date: null, description: '', cost: null }
+  repairMsg.value = ''
   newPhotoName.value = ''
   photos.value = []
   shakenDocs.value = []
@@ -547,6 +560,7 @@ async function addRepair() {
     })
     newRepair.value = { repair_date: null, description: '', cost: null }
     await loadRepairs(modal.value.id)
+    flashRepairMsg('修理ログを保存しました')
   } catch (e: any) {
     saveError.value = e.message ?? '修理ログの追加に失敗しました'
   } finally {
@@ -557,6 +571,7 @@ async function addRepair() {
 async function deleteRepair(r: RepairLog) {
   await supabase.from('vehicle_repair_logs').delete().eq('id', r.id)
   if (modal.value?.id) await loadRepairs(modal.value.id)
+  flashRepairMsg('修理ログを削除しました')
 }
 
 async function save() {
@@ -694,4 +709,8 @@ async function toggleActive(v: Vehicle) {
 .btn-save:disabled { opacity: .5; }
 .btn-cancel { flex: 1; background: #f5f5f5; color: #888; border: none; border-radius: 8px; padding: 12px; cursor: pointer; }
 .error { color: #E53935; font-size: 13px; }
+
+/* 修理ログが即時保存であることを見せる（保存ボタンが2つ見える混乱の解消） */
+.repair-hint { margin-left: 8px; font-size: 11px; font-weight: 400; color: #6b7280; }
+.repair-saved { margin-top: 6px; font-size: 12px; color: #16a34a; }
 </style>
