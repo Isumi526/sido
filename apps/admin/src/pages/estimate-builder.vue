@@ -3922,7 +3922,11 @@ async function undoRemoveRow() {
 //  1場所1工種にすると、同じ場所を工種の数だけ書くことになる（レビュー2026-07-29）。
 type Block = { _bk: string; location: string; trade_name: string; idxs: number[]; filled: number }
 type Area  = { _ak: string; location: string; blocks: Block[]; filled: number }
-const SPARE_ROWS = 5   // 各ブロックの末尾に常に確保しておく空行数（Excel感覚で打てるように）
+// 各ブロックの末尾に常に確保しておく空行数。
+// ★5→1（2026-08-04 ユーザー要望）: 工種ごとに空行を5本置くと明細が縦に伸びて
+//  全体を見渡せなかった。1本でも「打つと下に1本補充される」ので打ち続けられ、
+//  Excel感覚（行が足りない心配をしない）は維持される。
+const SPARE_ROWS = 1
 
 /** 中身が空＝まだ何も打たれていない行。場所/工種はブロックから継承するので判定に含めない */
 function isBlankRow(r: Row): boolean {
