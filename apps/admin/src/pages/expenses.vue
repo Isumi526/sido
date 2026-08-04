@@ -96,11 +96,31 @@
             <span class="settle-amt">経費合計 {{ yen(selected.total) }}（{{ selected.count }}件）</span>
             <span v-if="selected.settlement?.reject_reason && selected.status === '差し戻し'" class="settle-reason">理由: {{ selected.settlement.reject_reason }}</span>
             <span v-if="selected.status === '支払い済み' && selected.settlement?.paid_on" class="settle-paid-info">支払日 {{ selected.settlement.paid_on }}</span>
+            <!-- ★ダブル承認: 申請中→(一次承認)→一次承認済み→(最終承認=支払い確定)→支払い済み -->
             <template v-if="selected.status === '申請中'">
-              <button class="btn-reject" @click="openReject(selected)">差し戻し</button>
-              <button class="btn-pay" @click="openPay(selected)">支払い済みにする</button>
+              <button class="btn-reject" data-testid="exp-reject" @click="openReject(selected)">差し戻し</button>
+              <button v-if="!approveBlockReason(selected, 'first')" class="btn-pay" :disabled="firstApproving"
+                      data-testid="exp-first-approve" @click="doFirstApprove(selected)">
+                {{ firstApproving ? '処理中…' : '一次承認する' }}
+              </button>
+              <!-- 押せない時は理由を出す。ボタンが消えるだけだと「壊れている」と誤解される -->
+              <span v-else class="approve-blocked" data-testid="exp-first-blocked">{{ approveBlockReason(selected, 'first') }}</span>
             </template>
-            <button v-else-if="selected.status === '支払い済み'" class="btn-status-link" @click="undoPaid(selected)">申請中に戻す</button>
+            <template v-else-if="selected.status === '一次承認済み'">
+              <span class="settle-approver" data-testid="exp-first-approver">
+                一次承認: {{ selected.settlement?.first_approved_name || '—' }}
+              </span>
+              <button class="btn-reject" data-testid="exp-reject" @click="openReject(selected)">差し戻し</button>
+              <button v-if="!approveBlockReason(selected, 'final')" class="btn-pay"
+                      data-testid="exp-final-approve" @click="openPay(selected)">支払い済みにする</button>
+              <span v-else class="approve-blocked" data-testid="exp-final-blocked">{{ approveBlockReason(selected, 'final') }}</span>
+            </template>
+            <template v-else-if="selected.status === '支払い済み'">
+              <span v-if="selected.settlement?.first_approved_name" class="settle-approver">
+                一次承認: {{ selected.settlement.first_approved_name }} ／ 最終承認: {{ selected.settlement?.final_approved_name || '—' }}
+              </span>
+              <button class="btn-status-link" @click="undoPaid(selected)">申請中に戻す</button>
+            </template>
             <button v-else-if="selected.status === '期限超過'" class="btn-rescue" @click="rescueOverdue(selected)">未申請に戻す（救済）</button>
           </div>
           <p class="settle-hint no-print">※ 会社が作業員へ振り込むのは「立替（個人建て替え）」分のみです。経費合計は参考値です。</p>
@@ -233,6 +253,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useYearMonthParam } from '../composables/useQueryParam'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug, getAccountName } from '../lib/account'
+import { currentRole, currentWorkerId, currentWorkerName, currentUser } from '../lib/auth'
 import { flattenReportExpenses, flattenGasolineItems, flattenPersonalExpenses, isPersonalExpenseRow, ratesFromSettings, effectiveStatus, expenseAccountCategory, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
 
 /** 申請PDF(明細/請求書)のStorage公開URL。パスは generateExpensePdf.uploadApplicationPdf と一致 */
@@ -252,6 +273,7 @@ interface PeriodRow {
   total: number
   tategaeTotal: number
   details: ExpenseRow[]
+  workerId: string | null     // 自己承認の判定に使う（申請者本人かどうか）
   settlement: any | null
   status: SettlementStatus
   statusLabel: string
@@ -291,7 +313,8 @@ async function printExpenseDoc(mode: 'meisai' | 'seikyu') {
 }
 
 const STATUS_CLASS: Record<SettlementStatus, string> = {
-  '未申請': 'todo', '申請中': 'applied', '差し戻し': 'rejected', '期限超過': 'expired', '支払い済み': 'paid',
+  '未申請': 'todo', '申請中': 'applied', '一次承認済み': 'first-approved',
+  '差し戻し': 'rejected', '期限超過': 'expired', '支払い済み': 'paid',
 }
 function halfOf(date: string): 'first' | 'second' { return Number(date.slice(8, 10)) <= 15 ? 'first' : 'second' }
 
@@ -348,7 +371,7 @@ async function load() {
   const ensure = (userId: string, workerName: string, periodKey: string): PeriodRow => {
     const key = `${userId}|${periodKey}`
     return byKey[key] ??= {
-      key, userId, workerName, periodKey,
+      key, userId, workerName, periodKey, workerId: null,
       shortLabel: periodKey.endsWith('first') ? '前半' : '後半',
       count: 0, total: 0, tategaeTotal: 0, details: [],
       settlement: null, status: '未申請', statusLabel: '未申請', statusClass: 'todo',
@@ -408,6 +431,11 @@ async function load() {
   // settlement と実効ステータスを付与（作業員名は settlement だけの行用に補完）
   const now = new Date()
   const nameById: Record<string, string> = {}
+  // 自己承認の判定に使うため、精算行に worker_id を持たせる（users.worker_id 経由）
+  const workerIdByUser = new Map<string, string>()
+  for (const u of ((userRows ?? []) as any[])) if (u.worker_id) workerIdByUser.set(u.id, u.worker_id)
+  for (const r of Object.values(byKey)) r.workerId = workerIdByUser.get(r.userId) ?? null
+
   for (const r of Object.values(byKey)) nameById[r.userId] = r.workerName
   if (Object.values(byKey).some(r => r.workerName === '—')) {
     const ids = [...new Set(Object.values(byKey).map(r => r.userId))]
@@ -429,6 +457,68 @@ async function load() {
     .filter(r => r.count > 0 || r.settlement)
     .sort((a, b) => a.workerName.localeCompare(b.workerName, 'ja') || a.periodKey.localeCompare(b.periodKey))
   loading.value = false
+}
+
+
+// ── ★ダブル承認（議事録2026-07-27・回答A）──────────────────────
+//  申請中 →(一次承認: 役員・経理 office 以上)→ 一次承認済み →(最終承認: オーナー admin)→ 支払い済み
+//  狙いは「自分で登録して自分で通せてしまう」を塞ぐこと。段を分けるだけでは足りず、
+//  **申請者本人は承認できない**ようにして初めて目的を果たす。
+//  ※currentRole が null = 純オーナー（accounts.owner_auth_user_id 一致）＝全権限。
+
+/** 一次承認できる人か（役員・経理 以上） */
+const canFirstApprove = computed(() =>
+  !currentRole.value || currentRole.value === 'admin' || currentRole.value === 'office')
+/** 最終承認（＝支払い確定）できる人か。オーナーのみ */
+const canFinalApprove = computed(() =>
+  !currentRole.value || currentRole.value === 'admin')
+
+/** その精算の申請者が自分か（自己承認の禁止） */
+function isOwnSettlement(r: PeriodRow | null): boolean {
+  return !!(r?.workerId && currentWorkerId.value && r.workerId === currentWorkerId.value)
+}
+/** 承認ボタンを出さない理由。出せない時だけ文言を返す（なぜ押せないかを画面で説明する） */
+function approveBlockReason(r: PeriodRow | null, stage: 'first' | 'final'): string {
+  if (!r) return ''
+  if (isOwnSettlement(r)) return '自分の精算は承認できません'
+  if (stage === 'first' && !canFirstApprove.value) return '一次承認は役員・経理以上の権限が必要です'
+  if (stage === 'final' && !canFinalApprove.value) return '最終承認（支払い確定）はオーナーのみです'
+  return ''
+}
+
+/**
+ * 承認者の表示名。
+ * ★純オーナー（accounts.owner_auth_user_id 一致）は workers 行を持たないため
+ *  currentWorkerName が null になる。そのまま保存すると承認者が空欄の履歴になり監査にならないので
+ *  email に倒す（report-edit-log の承認者名解決と同じ考え方）。
+ */
+function approverName(): string | null {
+  return currentWorkerName.value || currentUser.value?.email || null
+}
+
+const firstApproving = ref(false)
+/** 一次承認する */
+async function doFirstApprove(r: PeriodRow) {
+  if (approveBlockReason(r, 'first')) return
+  firstApproving.value = true
+  try {
+    const accountId = await getAccountId()
+    const now = new Date().toISOString()
+    const { error } = await supabase
+      .from('expense_settlements')
+      .update({
+        status: '一次承認済み', first_approved_at: now,
+        first_approved_by: currentWorkerId.value, first_approved_name: approverName(),
+        updated_at: now,
+      })
+      .eq('account_id', accountId).eq('user_id', r.userId).eq('period_key', r.periodKey)
+      .eq('status', '申請中')   // 競合しても申請中のものだけ（二重に進めない）
+    if (error) throw error
+    selected.value = null
+    await load()
+  } finally {
+    firstApproving.value = false
+  }
 }
 
 // ---------- 差し戻し ----------
@@ -495,10 +585,16 @@ async function doPay() {
     const now = new Date().toISOString()
     const { error } = await supabase
       .from('expense_settlements')
-      .update({ status: '支払い済み', payment_method: payMethod.value, paid_on: payDate.value, updated_at: now })
+      .update({
+        status: '支払い済み', payment_method: payMethod.value, paid_on: payDate.value,
+        final_approved_by: currentWorkerId.value, final_approved_name: approverName(),
+        updated_at: now,
+      })
       .eq('account_id', accountId)
       .eq('user_id', t.userId)
       .eq('period_key', t.periodKey)
+      // ★一次承認を飛ばして支払い確定できないようにする（段を飛ばせたら二段にした意味がない）
+      .eq('status', '一次承認済み')
     if (error) throw error
     payTarget.value = null
     selected.value = null
@@ -525,7 +621,12 @@ async function doUndoPaid() {
     const now = new Date().toISOString()
     const { error } = await supabase
       .from('expense_settlements')
-      .update({ status: '申請中', payment_method: null, paid_on: null, updated_at: now })
+      // 申請中へ戻すなら一次承認も取り消す（承認記録だけ残ると「承認済みなのに申請中」になる）
+      .update({
+        status: '申請中', payment_method: null, paid_on: null,
+        first_approved_at: null, first_approved_by: null, first_approved_name: null,
+        final_approved_by: null, final_approved_name: null, updated_at: now,
+      })
       .eq('account_id', accountId)
       .eq('user_id', t.userId)
       .eq('period_key', t.periodKey)
@@ -693,4 +794,9 @@ watch(dateFrom, load)
   .detail-table th, .detail-table td { padding: 4px 6px !important; }
   .receipt-link { text-decoration: none; }
 }
+
+/* ダブル承認 */
+.badge.st-first-approved { background: #e0e7ff; color: #3730a3; }
+.approve-blocked { font-size: 12px; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 3px 8px; }
+.settle-approver { font-size: 12px; color: #555; }
 </style>
