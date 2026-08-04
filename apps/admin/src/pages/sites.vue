@@ -62,7 +62,7 @@
         <!-- ① 識別情報（名前・かな・住所） -->
         <div class="field">
           <label>現場名</label>
-          <input v-model="modal.name" class="input" placeholder="例：BLH名古屋" />
+          <input v-model="modal.name" class="input" placeholder="例：○○ビル 内装工事" />
           <div v-if="similarSites.length" class="dup-warn">
             <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">warning</span> 似た現場が既にあります（重複登録に注意）：
             <button
@@ -74,7 +74,7 @@
         </div>
         <div class="field">
           <label>読み仮名（50音順の並びに使用）</label>
-          <input v-model="modal.name_kana" class="input" placeholder="例：びーえるえいちなごや" />
+          <input v-model="modal.name_kana" class="input" placeholder="例：まるまるびる ないそうこうじ" />
         </div>
         <div class="field">
           <label>場所 / 住所</label>
