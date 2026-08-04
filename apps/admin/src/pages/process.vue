@@ -227,9 +227,33 @@
           PDFはガントチャートを画像として読み取るため、<strong>開始日・終了日が1日ずれることがあります</strong>。取込前に日付をご確認ください（Excelで取り込める場合はExcelの方が正確です）。
         </p>
 
+        <!-- ★読み取れなかった項目の一覧。AI解析は読めない項目を空で返すので、
+             「取り込んだ後に日付の無い工程が黙って混ざる」のを取込前に気づけるようにする。 -->
+        <p v-if="importGroups.length && importIssueSummary.has" class="import-missing-note" data-testid="import-missing-note">
+          <span class="material-symbols-rounded banner-icon">error</span>
+          <span>
+            <strong>読み取れなかった項目があります。</strong>
+            <template v-if="importIssueSummary.affected">
+              {{ importIssueSummary.affected }}件の工程で不足（{{ Object.entries(importIssueSummary.byLabel).map(([k, n]) => `${k} ${n}件`).join('・') }}）。
+            </template>
+            <template v-if="importIssueSummary.noSiteName">
+              現場名を読み取れなかった工程が {{ importIssueSummary.noSiteName }}件（取込先を選んでください）。
+            </template>
+            <br>
+            <template v-if="importIssueSummary.blocked">
+              <!-- 工程名が空の行は DB の NOT NULL 制約で弾かれ、放置すると取込全体が失敗する -->
+              <strong class="blocked-text" data-testid="import-blocked-note">
+                うち {{ importIssueSummary.blocked }}件は工程名が空のため取り込めません（その行だけ除外して取り込みます）。
+              </strong>
+              <br>
+            </template>
+            日付が空でも取込自体は可能です。取り込んだ後に工程表の画面で修正できます。
+          </span>
+        </p>
+
         <div v-if="importGroups.length" class="import-review" data-testid="import-review">
           <table class="import-table">
-            <thead><tr><th>抽出された現場名</th><th>工程数</th><th>取込先の現場</th><th>既存工程</th></tr></thead>
+            <thead><tr><th>抽出された現場名</th><th>工程数</th><th>取込先の現場</th><th>既存工程</th><th>情報不足</th></tr></thead>
             <tbody>
               <tr v-for="(g, gi) in importGroups" :key="gi">
                 <td>{{ g.extractedName || '（現場名なし）' }}</td>
@@ -255,6 +279,22 @@
                       <option value="append">追加（既存を残す）</option>
                       <option value="replace">上書き（既存を置換）</option>
                     </select>
+                  </template>
+                  <span v-else class="hint">—</span>
+                </td>
+                <!-- どの現場のどの項目が読めなかったかを行単位で出す（全体バナーだけだと探せない） -->
+                <td class="issue-cell" :data-testid="`import-issue-${gi}`">
+                  <template v-if="groupIssueLines(g).length">
+                    <span class="issue-chip" v-for="line in groupIssueLines(g)" :key="line">{{ line }}</span>
+                    <details class="issue-details">
+                      <summary>該当の工程を見る</summary>
+                      <ul class="issue-list">
+                        <li v-for="(t, ti) in g.tasks.filter((x) => taskIssues(x).length)" :key="ti">
+                          <span class="issue-task-name">{{ t.name || '（工程名なし）' }}</span>
+                          <span class="issue-task-miss">{{ taskIssues(t).map((i) => i.label).join('・') }}</span>
+                        </li>
+                      </ul>
+                    </details>
                   </template>
                   <span v-else class="hint">—</span>
                 </td>
@@ -557,6 +597,45 @@ async function importExcelFile(file: File) {
 // ── 複数現場インポート（1ファイルに複数現場が混在した工程表を一括取込） ──
 type ImportTask = { name: string; site_name?: string | null; assignee: string | null; site_manager: string | null; work_type: string | null; contract_amount: number | null; start_date: string | null; end_date: string | null; memo: string | null }
 type ImportGroup = { extractedName: string; tasks: ImportTask[]; target: string; mode: 'append' | 'replace'; similarCandidates: { id: string; name: string }[] }
+
+// ── 取り込み結果の情報不足検知 ──
+//  AI解析は読めなかった項目を null で返すため、そのまま取り込むと「日付の無い工程」が
+//  黙って混ざる。どこが読めなかったかを取込前に見せる（自動確定はしないの延長）。
+//  ★工程名だけは別格: process_tasks.name が NOT NULL なので、空のまま insert すると
+//    DB制約で弾かれ「取込全体」が失敗する。事前に検知して当該行だけ除外する。
+type TaskIssue = { label: string; blocking: boolean }
+function taskIssues(t: ImportTask): TaskIssue[] {
+  const out: TaskIssue[] = []
+  if (!String(t.name ?? '').trim()) out.push({ label: '工程名', blocking: true })
+  if (!t.start_date) out.push({ label: '開始日', blocking: false })
+  if (!t.end_date) out.push({ label: '終了日', blocking: false })
+  return out
+}
+/** 取り込む対象（スキップ以外）のうち、情報が欠けている工程の内訳 */
+const importIssueSummary = computed(() => {
+  const byLabel: Record<string, number> = {}
+  let affected = 0
+  let blocked = 0
+  let noSiteName = 0
+  for (const g of importGroups.value) {
+    if (g.target === '__skip__') continue
+    if (!g.extractedName) noSiteName += g.tasks.length
+    for (const t of g.tasks) {
+      const issues = taskIssues(t)
+      if (!issues.length) continue
+      affected++
+      if (issues.some((i) => i.blocking)) blocked++
+      for (const i of issues) byLabel[i.label] = (byLabel[i.label] ?? 0) + 1
+    }
+  }
+  return { byLabel, affected, blocked, noSiteName, has: affected > 0 || noSiteName > 0 }
+})
+/** グループ内の情報不足サマリ（表の行に出す） */
+function groupIssueLines(g: ImportGroup): string[] {
+  const byLabel: Record<string, number> = {}
+  for (const t of g.tasks) for (const i of taskIssues(t)) byLabel[i.label] = (byLabel[i.label] ?? 0) + 1
+  return Object.entries(byLabel).map(([k, n]) => `${k} ${n}件`)
+}
 const importModal = ref(false)
 const importInput = ref<HTMLInputElement | null>(null)
 const importDragActive = ref(false)
@@ -714,6 +793,7 @@ async function runImport() {
   try {
     const accountId = await getAccountId()
     let imported = 0
+    let skipped = 0    // 工程名が空で取り込めなかった行数
     for (const g of importGroups.value) {
       if (g.target === '__skip__') continue
       let targetId = g.target
@@ -728,7 +808,12 @@ async function runImport() {
       if (g.mode === 'replace' && existingCount(targetId) > 0) {
         await supabase.from('process_tasks').delete().eq('account_id', accountId).eq('site_id', targetId)
       }
-      const inserts = g.tasks.map((t, i) => ({
+      // ★工程名が空の行は除外する。process_tasks.name は NOT NULL なので、そのまま insert すると
+      //   DB制約で弾かれて「取込全体」が失敗する（情報不足で全部が入らないのは避ける＝AC2）。
+      //   除外したことは画面のバナーで事前に予告し、完了時にも件数を出す（黙って捨てない）。
+      const usable = g.tasks.filter((t) => String(t.name ?? '').trim())
+      skipped += g.tasks.length - usable.length
+      const inserts = usable.map((t, i) => ({
         account_id: accountId, site_id: targetId, name: t.name, assignee: t.assignee || null, site_manager: t.site_manager || null,
         work_type: t.work_type || null, contract_amount: amt(t.contract_amount), start_date: t.start_date || null, end_date: t.end_date || null,
         progress: 0, memo: t.memo || null, sort_order: i,
@@ -743,7 +828,9 @@ async function runImport() {
     await loadSites()   // 新規作成した現場をガントの現場名解決(siteName)に反映させる
     await load()
     excelMsg.value = ''
-    alert(`${imported}件の工程を取り込みました`)
+    alert(skipped
+      ? `${imported}件の工程を取り込みました（工程名が読み取れなかった ${skipped}件は取り込めませんでした）`
+      : `${imported}件の工程を取り込みました`)
   } catch (err: any) {
     importError.value = err?.message ?? '取込に失敗しました'
   } finally {
@@ -910,6 +997,21 @@ async function remove(t: Task) {
 .import-pdf-note { margin: 8px 0 0; font-size: 12px; line-height: 1.6; color: #B45309;
   background: #FEF3C7; border: 1px solid #FDE68A; border-radius: 6px; padding: 8px 10px; }
 .import-pdf-note .banner-icon { font-size: 1em; vertical-align: middle; margin-right: 4px; }
+/* 読み取れなかった項目の告知。PDF注意より一段強い色（取込結果の欠損＝データの話のため） */
+.import-missing-note { margin: 8px 0 0; font-size: 12px; line-height: 1.7; color: #9A3412;
+  background: #FFF7ED; border: 1px solid #FDBA74; border-radius: 6px; padding: 8px 10px;
+  display: flex; gap: 6px; align-items: flex-start; }
+.import-missing-note .banner-icon { font-size: 1.1em; line-height: 1.4; }
+.import-missing-note .blocked-text { color: #9f1239; }
+.issue-cell { min-width: 150px; }
+.issue-chip { display: inline-block; font-size: 11px; color: #9A3412; background: #FFF7ED;
+  border: 1px solid #FDBA74; border-radius: 999px; padding: 2px 8px; margin: 0 4px 4px 0; }
+.issue-details { font-size: 11px; }
+.issue-details > summary { cursor: pointer; color: #2563eb; }
+.issue-list { margin: 4px 0 0; padding-left: 14px; }
+.issue-list li { margin-bottom: 2px; }
+.issue-task-name { font-weight: 700; }
+.issue-task-miss { color: #9A3412; margin-left: 6px; }
 .excel-hint { font-size: 12px; color: #8a93a6; }
 .excel-row.drag-active .excel-hint { color: #1a56c4; font-weight: 700; }
 .btn-excel { background: #1a56c4; color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
