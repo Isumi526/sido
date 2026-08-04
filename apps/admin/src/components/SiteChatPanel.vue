@@ -115,6 +115,7 @@ import { getAccountId } from '../lib/account'
 import { currentUser, currentWorkerName } from '../lib/auth'
 import { splitMentionSegments } from '../lib/chatMentionSegments'
 import { compressImageIfNeeded, MAX_ATTACHMENT_BYTES, formatMB } from '../lib/chatAttachmentLimits'
+import { notifySiteChatPush } from '../lib/siteChatPush'
 
 const props = defineProps<{ siteId: string }>()
 
@@ -396,6 +397,12 @@ async function send() {
     draft.value = ''; pendingFile.value = null; mentionedIds.value = new Set(); mentionCandidates.value = []; replyTarget.value = null
     nextTick(autoResizeDraft)
     await loadMessages()
+    // 開いていない購読者（招待リンクのゲスト等）へ新着を知らせる。best-effort。
+    notifySiteChatPush({
+      siteId: props.siteId,
+      senderName: currentWorkerName.value || currentUser.value?.email || '管理者',
+      body,
+    })
   }
 }
 
