@@ -493,7 +493,7 @@
                 <option value="あり">{{ $t('report.optYes') }}</option>
               </select>
               <template v-if="siteUsage[si].other === 'あり'">
-                <div v-for="(ot, oi) in site.expenses.others" :key="oi" class="lineitem-card mt6">
+                <div v-for="(ot, oi) in site.expenses.others" :key="oi" class="lineitem-card mt6" :data-testid="`other-item-${si}-${oi}`">
                   <div>
                     <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
                     <AttachedFilesBadge :files="ot.files" :urls="ot.fileUrls" @remove-file="(p) => removeItemFile(ot, p)" />
