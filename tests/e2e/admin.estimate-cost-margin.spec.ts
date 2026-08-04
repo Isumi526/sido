@@ -13,7 +13,7 @@
 //  Notion: Q1 3aa0ff81c56b8156822bcf623b782ae4 / Q2 3aa0ff81c56b81e7b7cff7c4f1201c49
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { getAccountId, restSrv, openBuilderTab } from './helpers'
+import { getAccountId, restSrv, openBuilderTab, newBlockFirstRow } from './helpers'
 
 const TS = Date.now()
 // 同名案件は登録できない仕様のため、テストごとに別名を使う
@@ -179,8 +179,8 @@ test('AC: 自由記述の工種でも工種別内訳に自動集計される（�
   await page.locator('[data-testid="area-add-trade-0"]').click()   // ★同じ場所の中に工種を追加
   await page.locator('[data-testid="blk-trade-1"]').fill(`E2E自由工種B_${TS}`)
   await page.locator('[data-testid="blk-trade-1"]').dispatchEvent('change')
-  const idx = await page.locator('[data-testid^="item-name-"]').count()
-  await fill(idx - 5, 'PB12.5', 1, 4000)   // 客先5000 → 5,000
+  const idx = await newBlockFirstRow(page)
+  await fill(idx, 'PB12.5', 1, 4000)   // 客先5000 → 5,000
 
   // 工種別内訳（自動）に自由記述の工種名で集計される
   // ★R36で専用タブになったので開いてから見る
