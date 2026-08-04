@@ -423,7 +423,7 @@
             <template v-if="dqty.rows.length">
               <button class="btn-link-sm" data-testid="dqty-all" @click="dqty.rows.forEach(r => r._pick = true)">全選択</button>
               <button class="btn-link-sm" data-testid="dqty-none" @click="dqty.rows.forEach(r => r._pick = false)">全解除</button>
-              <button class="btn-primary" :disabled="!dqtyPicked.length" data-testid="dqty-apply" @click="applyQuantityToItems">
+              <button class="btn-primary" :disabled="!dqtyPicked.length || dqtyApplying" data-testid="dqty-apply" @click="applyQuantityToItems">
                 選んだ {{ dqtyPicked.length }} 件を明細に入れる
               </button>
             </template>
@@ -3413,9 +3413,15 @@ async function beginQuantityExtract(att: any) {
 }
 
 /** 選んだ数量を明細の初期値として入れる（★確定ではない。単価・ロス率は人が入れる） */
+const dqtyApplying = ref(false)
 async function applyQuantityToItems() {
+  // ★連打ガード（独立レビュー指摘）。disabled属性だけだと押下〜再描画の隙間で
+  //  2回目が通り、同じ数量が二重に明細へ入る。
+  if (dqtyApplying.value) return
   const picked = dqtyPicked.value
   if (!picked.length) return
+  dqtyApplying.value = true
+  try {
   const added: Row[] = []
   for (const x of picked) {
     let row = rows.value.find(r => isItemRow(r) && isBlankRow(r) && !added.includes(r))
@@ -3430,6 +3436,7 @@ async function applyQuantityToItems() {
   dqty.value.msg = `${picked.length}件を明細に入れました（単価とロス率は人が入れてください）`
   builderTab.value = 'items'
   setTimeout(() => { dqty.value.msg = ''; dqty.value.att = null }, 2200)
+  } finally { dqtyApplying.value = false }
 }
 
 async function applyExtractToItems() {
