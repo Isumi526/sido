@@ -64,6 +64,7 @@ export async function sendDrawingPages(
     subject?: string | null
     body?: string | null
     project_name?: string | null
+    trade_name?: string | null            // ★R48: 見積依頼行の工種名（空のまま作られていた）
     send: boolean
     callerAuth?: string | null
   },
@@ -151,23 +152,69 @@ export async function sendDrawingPages(
     }
 
     // 送信履歴（メール未設定・test時も必ず残す。sent_at で実送信の有無を区別する）
-    const { error: insErr } = await svc.from('estimate_drawing_sends').insert({
+    const subId = opts.subcontractor_id ?? recipients[0]?.subcontractor_id ?? null
+    const { data: sendRow, error: insErr } = await svc.from('estimate_drawing_sends').insert({
       account_id:       accountId,
       project_id:       project.id,
       attachment_id:    opts.attachment_id ?? null,
       source_name:      opts.source_name ?? null,
-      subcontractor_id: opts.subcontractor_id ?? recipients[0]?.subcontractor_id ?? null,
+      subcontractor_id: subId,
       email_to:         emails.join(', '),
       subject,
       pages,
       pdf_path:         opts.pdf_path ?? null,
       sent_at:          actuallySent ? nowIso : null,   // 実送信できた時だけ＝失敗を成功に見せない
-    })
+    }).select('id').maybeSingle()
     if (insErr) console.error('[drawing-mail] history insert failed:', insErr.message)
+
+    // ★R48: 見積依頼行もここで作る（送信と一体で成立させる）。
+    //  以前はブラウザ側の fetch 後の後処理で作っていたため、送信成功後にタブが閉じる/
+    //  リロードされると「メールは届いているのに依頼行が無い」状態になり、回収期限の
+    //  管理から黙って漏れていた。EF側で作れば送信できた＝依頼が立つ、が保証される。
+    let quoteRequestId: string | null = null
+    if (subId && sendRow?.id) {
+      try {
+        // 同じ業者へ追加図面・差し替えを何度も送るので、未受領の依頼があれば
+        // それを最新の送信に更新して行を増やさない（二重作成の防止）。
+        const { data: open } = await svc.from('estimate_quote_requests')
+          .select('id, requested_at, trade_name')
+          .eq('account_id', accountId).eq('project_id', project.id)
+          .eq('subcontractor_id', subId).is('received_at', null)
+          .order('created_at', { ascending: true }).limit(1)
+        const today = nowIso.slice(0, 10)
+        // ★工種名は送信内容から埋める（空のまま作られるケースがあった）。
+        //  件名は「<案件名> 見積依頼（<工種>）」等で作られるため、まず明示指定を優先する。
+        const trade = (opts.trade_name ?? '').toString().trim() || null
+        if (open && open.length) {
+          quoteRequestId = open[0].id
+          await svc.from('estimate_quote_requests').update({
+            drawing_send_id: sendRow.id,
+            requested_at: open[0].requested_at || today,
+            ...(trade && !open[0].trade_name ? { trade_name: trade } : {}),
+          }).eq('id', open[0].id)
+        } else {
+          const { data: created } = await svc.from('estimate_quote_requests').insert({
+            account_id: accountId, project_id: project.id, subcontractor_id: subId,
+            requested_at: today, drawing_send_id: sendRow.id,
+            ...(trade ? { trade_name: trade } : {}),
+          }).select('id').maybeSingle()
+          quoteRequestId = created?.id ?? null
+        }
+      } catch (e) {
+        // 依頼行が作れなくてもメールは既に出ているので、送信自体は成功として返す。
+        // ただし黙らせない（呼び出し側が警告を出せるよう body に載せる）。
+        console.error('[drawing-mail] quote request upsert failed:', e instanceof Error ? e.message : String(e))
+      }
+    }
 
     return {
       status: 200,
-      body: { success: true, sent_to: emails.map(maskEmail), pages, test: !opts.send, ...(skipped ? { skipped } : {}) },
+      body: {
+        success: true, sent_to: emails.map(maskEmail), pages, test: !opts.send,
+        quote_request_id: quoteRequestId,
+        ...(subId && !quoteRequestId ? { quote_request_warning: '見積依頼の作成に失敗しました。相見積タブで手動で追加してください。' } : {}),
+        ...(skipped ? { skipped } : {}),
+      },
     }
   } catch (e) {
     console.error('[drawing-mail] error:', e instanceof Error ? e.message : String(e))
