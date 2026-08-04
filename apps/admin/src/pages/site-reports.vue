@@ -135,6 +135,84 @@
           </tfoot>
         </table>
       </div>
+
+      <!-- ★業者別内訳。合計だけだと検算できず、どこかの業者が漏れていても気づけない。
+           内訳は月計と同じ行から作っているので、合計が必ず一致する。 -->
+      <section class="vendor-breakdown" data-testid="vendor-breakdown">
+        <div class="vb-head">
+          <h3 class="vb-title">業者別内訳</h3>
+          <span class="vb-check" data-testid="vendor-check">
+            内訳合計 <b>{{ yen(vendorBreakdown.countedTotal) }}</b> ／ 月計（商社+業者） <b>{{ yen(vendorGrandTotal) }}</b>
+            <span v-if="vendorBreakdown.countedTotal === vendorGrandTotal" class="vb-ok" data-testid="vendor-check-ok">一致</span>
+            <span v-else class="vb-ng" data-testid="vendor-check-ng">不一致</span>
+          </span>
+        </div>
+
+        <div v-if="!vendorBreakdown.counted.length && !vendorBreakdown.uncategorized.length" class="vb-empty">
+          この現場に業者の原価はありません。
+        </div>
+
+        <table v-else class="table vb-table">
+          <thead>
+            <tr><th>業者名</th><th>区分</th><th class="num">商社</th><th class="num">業者</th><th class="num">合計</th><th></th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="v in vendorBreakdown.counted" :key="v.name" data-testid="vendor-row">
+              <td class="vb-name">{{ v.name }}</td>
+              <td>{{ v.category ?? '—' }}</td>
+              <td class="num">{{ v.shosha ? yen(v.shosha) : '—' }}</td>
+              <td class="num">{{ v.gyosha ? yen(v.gyosha) : '—' }}</td>
+              <td class="num vb-total">{{ yen(v.total) }}</td>
+              <td>
+                <!-- AC3: 特定業者だけの明細（「とらやだけのリストほしい」） -->
+                <button class="vb-detail-btn" :data-testid="`vendor-detail-${v.name}`"
+                        @click="vendorFilter = vendorFilter === v.name ? '' : v.name">
+                  {{ vendorFilter === v.name ? '閉じる' : '明細' }}
+                </button>
+              </td>
+            </tr>
+            <tr v-if="vendorFilter" class="vb-detail-row" data-testid="vendor-detail-panel">
+              <td colspan="6">
+                <div class="vb-detail-title">{{ vendorFilter }} の明細</div>
+                <table class="vb-detail-table">
+                  <thead><tr><th>日付</th><th>内容</th><th class="num">金額</th></tr></thead>
+                  <tbody>
+                    <tr v-for="(it, i) in (vendorBreakdown.counted.find(v => v.name === vendorFilter)?.items
+                                        ?? vendorBreakdown.uncategorized.find(v => v.name === vendorFilter)?.items ?? [])" :key="i">
+                      <td>{{ it.date }}</td>
+                      <td>{{ it.note }}</td>
+                      <td class="num">{{ yen(it.amount) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr class="total-row">
+              <td colspan="4">内訳合計</td>
+              <td class="num total-col" data-testid="vendor-breakdown-total">{{ yen(vendorBreakdown.countedTotal) }}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <!-- ★区分(商社/業者)が未設定の協力業者は、月計の商社にも業者にも計上されていない。
+             これこそ「漏れていても分からない」状態なので、原価未計上として明示する。 -->
+        <div v-if="vendorBreakdown.uncategorized.length" class="vb-warn" data-testid="vendor-uncategorized">
+          <span class="material-symbols-rounded vb-warn-icon">error</span>
+          <div>
+            <strong>区分（商社/業者）が未設定のため、原価に計上されていない協力業者があります。</strong>
+            <ul class="vb-warn-list">
+              <li v-for="v in vendorBreakdown.uncategorized" :key="v.name">
+                {{ v.name }} … <b>{{ yen(v.unpriced) }}</b>（未計上）
+              </li>
+            </ul>
+            合計 <b>{{ yen(vendorBreakdown.uncategorizedTotal) }}</b> が上の月計に含まれていません。
+            協力業者マスタで区分を設定すると計上されます。
+          </div>
+        </div>
+      </section>
     </template>
 
     <!-- 詳細モーダル -->
@@ -468,6 +546,67 @@ function fmt(v: any) {
 function sumF(rows: any[], field: string) {
   return rows?.reduce((s, r) => s + (Number(r[field]) || 0), 0) ?? 0
 }
+
+// ── 業者別内訳 ──
+//  合計だけ出ていて内訳が見えないと「金額が合っているか検算できず、どこかの業者が
+//  漏れていても気づけない」（2026-08-03 ユーザー指摘）。
+//  ★内訳は必ず「月計と同じ行(siteMap[displaySite])」から作る。別クエリで作り直すと
+//   合計と内訳がズレる（下請け請求の税区分で一覧とモーダルが食い違った前例がある）。
+type VendorItem = { date: string; amount: number; note: string; isInvoice: boolean }
+type VendorAgg = { name: string; category: string | null; shosha: number; gyosha: number; unpriced: number; total: number; items: VendorItem[] }
+
+const vendorBreakdown = computed<{ counted: VendorAgg[]; uncategorized: VendorAgg[]; countedTotal: number; uncategorizedTotal: number }>(() => {
+  const rows = siteMap.value[displaySite.value] ?? []
+  const byVendor = new Map<string, VendorAgg>()
+  const get = (name: string, category: string | null): VendorAgg => {
+    let v = byVendor.get(name)
+    if (!v) { v = { name, category, shosha: 0, gyosha: 0, unpriced: 0, total: 0, items: [] }; byVendor.set(name, v) }
+    if (v.category == null && category != null) v.category = category
+    return v
+  }
+
+  for (const r of rows) {
+    if (r._isInvoice) {
+      // 請求行: 行に載っている金額をそのまま業者へ寄せる（区分未設定は業者列に入る既存仕様）
+      const v = get(r._vendor || '（業者名なし）', r._vendorCategory ?? null)
+      v.shosha += Number(r.shoshaCost) || 0
+      v.gyosha += Number(r.gyoshaCost) || 0
+      const amt = (Number(r.shoshaCost) || 0) + (Number(r.gyoshaCost) || 0)
+      v.items.push({ date: r.date, amount: amt, note: '請求', isInvoice: true })
+      continue
+    }
+    // 日報行: subs(協力業者)を業者ごとに分解。金額の出し方は月計と同じ count × 単価
+    for (const s of (r.subs ?? [])) {
+      const amt = (Number(s.count) || 0) * (Number(s.unitPrice) || 0)
+      const v = get(s.name || '（業者名なし）', s.category ?? null)
+      // ★区分(商社/業者)が未設定の協力業者は、既存の月計では商社にも業者にも計上されない。
+      //   ＝原価に乗っていない。まさに「どこかの業者が漏れていても分からない」状態なので
+      //   合計には混ぜず、別枠で「原価未計上」として見せる。
+      if (s.category === '商社') v.shosha += amt
+      else if (s.category === '業者') v.gyosha += amt
+      else v.unpriced += amt
+      v.items.push({ date: r.date, amount: amt, note: `${s.count}人 × ${yen(s.unitPrice || 0)}`, isInvoice: false })
+    }
+  }
+
+  const all = [...byVendor.values()]
+  for (const v of all) v.total = v.shosha + v.gyosha
+  const counted = all.filter((v) => v.total > 0).sort((a, b) => b.total - a.total)
+  const uncategorized = all.filter((v) => v.unpriced > 0).sort((a, b) => b.unpriced - a.unpriced)
+  return {
+    counted,
+    uncategorized,
+    countedTotal: counted.reduce((s, v) => s + v.total, 0),
+    uncategorizedTotal: uncategorized.reduce((s, v) => s + v.unpriced, 0),
+  }
+})
+
+/** 月計の商社+業者。内訳の合計とこれが一致することが検算の要（AC2） */
+const vendorGrandTotal = computed(() => {
+  const rows = siteMap.value[displaySite.value] ?? []
+  return sumF(rows, 'shoshaCost') + sumF(rows, 'gyoshaCost')
+})
+const vendorFilter = ref<string>('')   // 特定業者だけの明細を見る（AC3）
 // スプレッドシートの列に対応した経費列を抽出
 function extractExpenseCols(exp: any) {
   let parkingYen = 0, fuelCost = 0, highwayCost = 0
@@ -538,6 +677,9 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
       rows.push({
         _key: `inv-${name}-${r.item_date}-${rows.length}`, _isInvoice: true, siteName: name,
         date: r.item_date || dateFrom.value, _isSunday: false,
+        // 業者別内訳を出すために業者名を行に持たせる（workerSummary の文字列から
+        // 業者名を切り出すのは表記が変わると壊れるため、構造化して持つ）
+        _vendor: vendor || '（業者名なし）', _vendorCategory: cat,
         workerSummary: `【請求】${vendor}${r.description ? '・' + r.description : ''}`,
         workers: [], subs: [],
         // 区分=商社 のみ商社列、それ以外（業者/未区分）は業者列（index.vue 月次集計と統一）
@@ -737,6 +879,28 @@ watch(wageMode, load)   // 日当-実質賃金の切替で社員人件費を再�
 .worker-cell { font-size: 12px; max-width: 180px; }
 .sub-cell { font-size: 12px; color: #555; white-space: nowrap; }
 .total-col { color: #06C755; font-weight: 700; }
+
+/* 業者別内訳 */
+.vendor-breakdown { margin-top: 24px; }
+.vb-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.vb-title { font-size: 15px; font-weight: 800; }
+.vb-check { font-size: 12px; color: #555; }
+.vb-ok { margin-left: 8px; font-weight: 700; color: #0a8a3a; background: #e8fff0; border-radius: 999px; padding: 2px 8px; }
+.vb-ng { margin-left: 8px; font-weight: 700; color: #b91c1c; background: #fee2e2; border-radius: 999px; padding: 2px 8px; }
+.vb-empty { font-size: 13px; color: #888; padding: 12px 0; }
+.vb-table { width: 100%; }
+.vb-name { font-weight: 700; }
+.vb-total { font-weight: 700; }
+.vb-detail-btn { background: #fff; border: 1px solid #d1d5db; border-radius: 6px; padding: 3px 10px; font-size: 12px; cursor: pointer; color: #374151; }
+.vb-detail-row > td { background: #f9fafb; }
+.vb-detail-title { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+.vb-detail-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.vb-detail-table th, .vb-detail-table td { border-bottom: 1px solid #eef0f3; padding: 4px 8px; text-align: left; }
+.vb-detail-table th { color: #666; font-weight: 700; }
+.vb-warn { margin-top: 12px; display: flex; gap: 8px; align-items: flex-start; font-size: 12px; line-height: 1.7;
+  color: #9A3412; background: #FFF7ED; border: 1px solid #FDBA74; border-radius: 6px; padding: 10px 12px; }
+.vb-warn-icon { font-size: 1.1em; line-height: 1.4; }
+.vb-warn-list { margin: 4px 0; padding-left: 16px; }
 .hint { font-size: 11px; color: #bbb; white-space: nowrap; }
 .muted { color: #bbb; }
 
