@@ -12,6 +12,7 @@
 
     <section class="panel">
       <div class="subtabs">
+        <button class="subtab" :class="{ active: settingsTab === 'search' }" data-testid="subtab-search" @click="openPriceSearch">単価を横断検索</button>
         <button class="subtab" :class="{ active: settingsTab === 'price' }" data-testid="subtab-price" @click="settingsTab = 'price'">商社別単価</button>
         <button class="subtab" :class="{ active: settingsTab === 'material' }" data-testid="subtab-material" @click="settingsTab = 'material'">材料マスタ</button>
         <button class="subtab" :class="{ active: settingsTab === 'trade' }" data-testid="subtab-trade" @click="settingsTab = 'trade'">工種</button>
@@ -64,6 +65,69 @@
           </tbody>
         </table>
         <p v-else class="muted">材料はまだありません。</p>
+      </div>
+
+      <!-- ★R45: 単価の横断検索。名称/品番で引いて、業者・商社ごとの単価と時期を横並びで見る。
+           これまで表示は明細行の候補チップだけで「業者で絞って一覧を見る」ができず、
+           estimate_material_prices の履歴行(is_current=false)は書くだけで誰も読んでいなかった。 -->
+      <div class="setting-block" v-show="settingsTab === 'search'" data-testid="price-search-block">
+        <h3>単価を横断検索</h3>
+        <p class="muted">
+          名称・品番で検索して、<b>業者・商社ごとの単価</b>を横並びで見比べられます。
+          過去の<b>改定履歴（いつ幾らから幾らへ）</b>も辿れます。
+          ※最安値の自動採用は行いません（明細側の機能）。
+        </p>
+
+        <div class="search-bar">
+          <input v-model="psKw" class="input" placeholder="名称・品番で検索（例: 天井下地、PW-2323）" data-testid="ps-kw" />
+          <select v-model="psSupplier" class="input" data-testid="ps-supplier">
+            <option value="">すべての業者・商社</option>
+            <option v-for="s in psSuppliers" :key="s.id" :value="s.id">{{ s.name }}{{ s.category ? `（${s.category}）` : '' }}</option>
+          </select>
+          <button v-if="psKw || psSupplier" class="btn-cancel sm" data-testid="ps-clear" @click="psKw = ''; psSupplier = ''">条件をクリア</button>
+        </div>
+
+        <p v-if="psLoading" class="muted" data-testid="ps-loading">読み込み中…</p>
+        <p v-else-if="!psGroups.length" class="muted" data-testid="ps-empty">
+          {{ psAll.length ? '条件に一致する単価がありません。' : 'まだ単価が登録されていません。「商社別単価」タブから登録・取込できます。' }}
+        </p>
+
+        <div v-else class="ps-groups">
+          <div v-for="g in psGroups" :key="g.key" class="ps-group" data-testid="ps-group">
+            <div class="ps-group-head">
+              <span class="ps-name">{{ g.itemName || '(名称なし)' }}</span>
+              <span v-if="g.productCode" class="ps-code">{{ g.productCode }}</span>
+              <span v-if="g.unit" class="ps-unit">/ {{ g.unit }}</span>
+              <span class="ps-count">{{ g.suppliers.length }}社</span>
+            </div>
+            <table class="table ps-table">
+              <thead><tr><th>業者・商社</th><th>区分</th><th class="num">現在の単価</th><th>適用日</th><th>改定履歴</th><th></th></tr></thead>
+              <tbody>
+                <tr v-for="s in g.suppliers" :key="s.supplierId" :data-testid="`ps-row-${s.supplierId}`">
+                  <td class="ps-supplier">{{ s.supplierName }}</td>
+                  <td>{{ s.category || '—' }}</td>
+                  <td class="num ps-price">{{ s.current ? yen(s.current.unit_price) : '—' }}</td>
+                  <td>{{ s.current?.effective_date || '—' }}</td>
+                  <td>
+                    <!-- ★is_current=false の履歴行をここで初めて読む（溜めるだけだった） -->
+                    <details v-if="s.history.length" class="ps-hist" :data-testid="`ps-hist-${s.supplierId}`">
+                      <summary>{{ s.history.length }}件の改定</summary>
+                      <ul class="ps-hist-list">
+                        <li v-for="(h, hi) in s.history" :key="hi">
+                          {{ h.effective_date || '日付なし' }}: {{ yen(h.from) }} → <b>{{ yen(h.to) }}</b>
+                        </li>
+                      </ul>
+                    </details>
+                    <span v-else class="muted">—</span>
+                  </td>
+                  <td>
+                    <button v-if="s.current" class="btn-del" :data-testid="`ps-del-${s.supplierId}`" @click="deletePriceEntry(s.current.id)">削除</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       <!-- 商社別単価（手入力 と 価格表OCR取込） -->
@@ -251,7 +315,94 @@ async function saveSupplierRate() {
   rateMsg.value = '保存しました'
   setTimeout(() => { rateMsg.value = '' }, 2000)
 }   // 一括承認の進捗（何件通ったかを見せる）
-const settingsTab    = ref<'price' | 'material' | 'trade'>('price')
+const settingsTab    = ref<'search' | 'price' | 'material' | 'trade'>('price')
+
+// ── ★R45: 単価の横断検索 ──
+//  現在価格(is_current=true)だけでなく履歴(false)も読む。履歴は書き込むだけで
+//  参照経路がゼロだった＝「いつ幾らから幾らへ改定したか」を誰も見られなかった。
+type PsPrice = { id: string; product_code: string | null; item_name: string | null; unit: string | null; supplier_id: string; unit_price: number; effective_date: string | null; is_current: boolean }
+const psKw        = ref('')
+const psSupplier  = ref('')
+const psAll       = ref<PsPrice[]>([])
+const psSuppliers = ref<{ id: string; name: string; category: string | null }[]>([])
+const psLoading   = ref(false)
+
+async function openPriceSearch() {
+  settingsTab.value = 'search'
+  if (psAll.value.length || psLoading.value) return
+  psLoading.value = true
+  try {
+    // ★業者・商社の両方を対象にする（既存の loadSuppliers は 商社 だけに絞っているため別に読む）
+    const [{ data: subs }, { data: prices }] = await Promise.all([
+      supabase.from('subcontractors').select('id, name, category').eq('account_id', accountId).order('name'),
+      supabase.from('estimate_material_prices')
+        .select('id, product_code, item_name, unit, supplier_id, unit_price, effective_date, is_current')
+        .eq('account_id', accountId)
+        .order('effective_date', { ascending: true, nullsFirst: true }),
+    ])
+    psSuppliers.value = (subs ?? []) as any[]
+    psAll.value = (prices ?? []) as PsPrice[]
+  } catch (e: any) {
+    masterErr.value = e?.message ?? '単価の読み込みに失敗しました'
+  } finally { psLoading.value = false }
+}
+
+/** 品番＋名称で1つの「品目」にまとめ、その中を業者・商社ごとに並べる */
+const psGroups = computed(() => {
+  const kw = psKw.value.trim().toLowerCase()
+  const nameOf = (id: string) => psSuppliers.value.find(s => s.id === id)?.name ?? '(不明な業者)'
+  const catOf  = (id: string) => psSuppliers.value.find(s => s.id === id)?.category ?? null
+
+  const rows = psAll.value.filter((p) => {
+    if (psSupplier.value && p.supplier_id !== psSupplier.value) return false
+    if (!kw) return true
+    return [p.item_name, p.product_code].filter(Boolean).join(' ').toLowerCase().includes(kw)
+  })
+
+  // 品目キー: 品番があれば品番、無ければ名称（表記ゆれは別品目として出す＝勝手に寄せない）
+  const byItem = new Map<string, { key: string; productCode: string; itemName: string; unit: string; bySupplier: Map<string, PsPrice[]> }>()
+  for (const p of rows) {
+    const key = (p.product_code || '').trim() || (p.item_name || '').trim() || '(不明)'
+    let g = byItem.get(key)
+    if (!g) {
+      g = { key, productCode: p.product_code ?? '', itemName: p.item_name ?? '', unit: p.unit ?? '', bySupplier: new Map() }
+      byItem.set(key, g)
+    }
+    if (!g.itemName && p.item_name) g.itemName = p.item_name
+    if (!g.unit && p.unit) g.unit = p.unit
+    const arr = g.bySupplier.get(p.supplier_id) ?? []
+    arr.push(p)
+    g.bySupplier.set(p.supplier_id, arr)
+  }
+
+  return [...byItem.values()].map((g) => ({
+    key: g.key, productCode: g.productCode, itemName: g.itemName, unit: g.unit,
+    suppliers: [...g.bySupplier.entries()].map(([supplierId, list]) => {
+      // effective_date 昇順で来ているので、末尾が新しい。現在価格は is_current を優先。
+      const sorted = [...list].sort((a, b) => String(a.effective_date ?? '').localeCompare(String(b.effective_date ?? '')))
+      const current = sorted.find(p => p.is_current) ?? sorted[sorted.length - 1] ?? null
+      // 改定履歴＝「幾らから幾らへ」。連続する2点の差分として組み立てる
+      const history: { effective_date: string | null; from: number; to: number }[] = []
+      for (let i = 1; i < sorted.length; i++) {
+        if (sorted[i].unit_price === sorted[i - 1].unit_price) continue
+        history.push({ effective_date: sorted[i].effective_date, from: sorted[i - 1].unit_price, to: sorted[i].unit_price })
+      }
+      return { supplierId, supplierName: nameOf(supplierId), category: catOf(supplierId), current, history: history.reverse() }
+    }).sort((a, b) => (a.current?.unit_price ?? Infinity) - (b.current?.unit_price ?? Infinity)),
+  })).sort((a, b) => (a.itemName || a.productCode).localeCompare(b.itemName || b.productCode, 'ja'))
+})
+
+/** 不要になった単価エントリを消す（統合元ACの「不要エントリは削除できる」） */
+async function deletePriceEntry(id: string) {
+  const target = psAll.value.find(p => p.id === id)
+  if (!target) return
+  const label = [target.item_name, target.product_code].filter(Boolean).join(' ') || 'この単価'
+  if (!window.confirm(`${label} の単価を削除しますか？\n（履歴行は残ります。現在価格だけを消します）`)) return
+  const { error } = await supabase.from('estimate_material_prices').delete().eq('id', id).eq('account_id', accountId)
+  if (error) { masterErr.value = `削除に失敗しました: ${error.message}`; return }
+  psAll.value = psAll.value.filter(p => p.id !== id)
+  await loadMaterialPrices()
+}
 const activeSupplier = ref<string | null>(null)
 let accountId = ''
 
@@ -587,6 +738,23 @@ watch(activeSupplier, () => { void loadSupplierRate() }, { immediate: true })
 .back-link:hover { text-decoration: underline; }
 .hint { color: #777; font-size: 13px; margin-bottom: 14px; }
 .panel { background: #fff; border: 1px solid #e5e5e5; border-radius: 10px; padding: 16px; }
+/* ★R45: 単価の横断検索 */
+.search-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 10px 0 12px; }
+.search-bar .input { max-width: 280px; }
+.btn-cancel.sm { padding: 6px 12px; font-size: 12px; }
+.ps-groups { display: flex; flex-direction: column; gap: 16px; }
+.ps-group { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; background: #fff; }
+.ps-group-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.ps-name { font-weight: 800; font-size: 14px; }
+.ps-code { font-size: 12px; color: #2563eb; background: #eef2ff; border-radius: 999px; padding: 2px 8px; }
+.ps-unit { font-size: 12px; color: #888; }
+.ps-count { margin-left: auto; font-size: 12px; color: #888; }
+.ps-table { width: 100%; font-size: 13px; }
+.ps-supplier { font-weight: 700; }
+.ps-price { font-weight: 700; }
+.ps-hist { font-size: 12px; }
+.ps-hist > summary { cursor: pointer; color: #2563eb; }
+.ps-hist-list { margin: 4px 0 0; padding-left: 16px; }
 .subtabs { display: inline-flex; gap: 2px; background: #eef0ee; border-radius: 8px; padding: 3px; margin-bottom: 10px; }
 .subtab { border: none; background: transparent; color: #555; border-radius: 6px; padding: 6px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .subtab:hover { color: #222; }
