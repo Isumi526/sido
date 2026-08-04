@@ -128,7 +128,7 @@
 
         <div class="field">
           <label>タイトル *</label>
-          <input v-model="formModal.title" class="input" placeholder="例：アルペン現場" />
+          <input v-model="formModal.title" class="input" data-testid="cal-title" placeholder="例：○○ビル 内装工事" />
         </div>
         <div class="field">
           <label>カテゴリ</label>
