@@ -304,6 +304,11 @@
                    ★R53: 解析はモーダルで拘束せず、進捗だけ出して裏で進める。 -->
               <template v-if="isPdf(a)">
                 <ExtractControl :att="a" @start="beginExtract" @review="openExtractResult" />
+                <!-- ★Q7: 材料(品番)とは別に「凡例に書かれた確定数量」を取る。
+                     床/置床/天井の面積・建具/器具の台数は設計者が凡例に明記しているので拾い直さない。 -->
+                <button class="btn-edit" :disabled="dqty.busy" :data-testid="`dqty-open-${a.id}`" @click="beginQuantityExtract(a)">
+                  {{ dqty.busy && dqty.att?.id === a.id ? `数量抽出中… ${dqty.done}/${dqty.total}` : '数量を抽出' }}
+                </button>
               </template>
               <button class="btn-del" :data-testid="`intake-att-del-${a.id}`" @click="removeAttachment(a)">×</button>
             </li>
@@ -363,6 +368,66 @@
               </button>
             </template>
             <span v-if="dextJob?.error" class="err" data-testid="dext-err">{{ dextJob.error }}</span>
+          </div>
+        </section>
+
+        <!-- ★Q7: 凡例の確定数量の抽出結果。材料(品番)の抽出とは別パネル。 -->
+        <section v-if="dqty.att" class="panel" data-testid="dqty-panel">
+          <div class="panel-head">
+            <h2>数量の抽出結果 — {{ dqty.att.name || dqty.att.path }}</h2>
+            <button class="btn-cancel" data-testid="dqty-close" @click="dqty.att = null">閉じる</button>
+          </div>
+          <p class="hint">
+            図面の<strong>凡例に書かれている数量</strong>（床・置床・天井の面積／建具・器具の台数／紙管の本数）をそのまま読み取ります。
+            面積を図面から計算するのではなく、<strong>設計者が明記した確定値</strong>を転記します。<br>
+            ★<strong>壁は対象外</strong>です（壁は面積が図面に無いため）。
+            ★図面に「平面図数量の為、ロスは見込んでください」とある通り、<strong>ロス率は人が付けてください</strong>。
+          </p>
+
+          <div v-if="dqty.busy" class="pinfo-loading" data-testid="dqty-busy">
+            <span class="spin-dot"></span> 解析中… ページ {{ dqty.done }}/{{ dqty.total }}
+          </div>
+          <p v-if="dqty.error" class="err" data-testid="dqty-err">{{ dqty.error }}</p>
+
+          <!-- ★検算: 天井合計 ≒ 通り芯面積。抽出漏れ・二重計上を機械で拾う -->
+          <p v-if="dqty.check && !dqty.busy"
+             :class="['dqty-check', dqty.check.warn ? 'dqty-check-warn' : (dqty.check.available ? 'dqty-check-ok' : 'dqty-check-na')]"
+             :data-testid="dqty.check.warn ? 'dqty-check-warn' : 'dqty-check'">
+            <span class="material-symbols-rounded dqty-check-icon">{{ dqty.check.warn ? 'error' : (dqty.check.available ? 'check_circle' : 'help') }}</span>
+            {{ dqty.check.message }}
+          </p>
+
+          <div v-if="!dqty.rows.length && !dqty.busy" class="hint" data-testid="dqty-empty">
+            凡例から数量を読み取れませんでした。図面に数量表が無い場合はこの機能では取れません（壁と同じく人が拾う必要があります）。
+          </div>
+
+          <div v-if="dqty.rows.length" class="items-scroll dext-list">
+            <table class="table">
+              <thead><tr><th></th><th>P</th><th>部位</th><th>コード</th><th>仕様</th><th class="num">数量</th><th>単位</th><th>備考</th></tr></thead>
+              <tbody>
+                <tr v-for="(r, ri) in dqty.rows" :key="ri" :data-testid="`dqty-row-${ri}`">
+                  <td><input type="checkbox" v-model="r._pick" :data-testid="`dqty-pick-${ri}`" /></td>
+                  <td>{{ r.page }}</td>
+                  <td>{{ r.part }}</td>
+                  <td>{{ r.code }}</td>
+                  <td>{{ r.spec || '—' }}</td>
+                  <td class="num">{{ r.value }}</td>
+                  <td>{{ r.unit }}</td>
+                  <td>{{ r.note || '' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="panel-actions">
+            <template v-if="dqty.rows.length">
+              <button class="btn-link-sm" data-testid="dqty-all" @click="dqty.rows.forEach(r => r._pick = true)">全選択</button>
+              <button class="btn-link-sm" data-testid="dqty-none" @click="dqty.rows.forEach(r => r._pick = false)">全解除</button>
+              <button class="btn-primary" :disabled="!dqtyPicked.length" data-testid="dqty-apply" @click="applyQuantityToItems">
+                選んだ {{ dqtyPicked.length }} 件を明細に入れる
+              </button>
+            </template>
+            <span v-if="dqty.msg" class="ok-msg" data-testid="dqty-msg">{{ dqty.msg }}</span>
           </div>
         </section>
 
@@ -1259,6 +1324,7 @@ import { getAccountId } from '../lib/account'
 import { openDoc } from '../lib/docUrl'
 import EstimateMasters from './estimate-masters.vue'
 import ExtractControl from '../components/ExtractControl.vue'
+import { crossCheckCeiling, type CrossCheck, type QuantityPart } from '../lib/drawingQuantity'
 // ★R53: 材料抽出の実行はこのコンポーネントの外（モジュールスコープ）で回す。
 //  画面遷移で解析が死なないようにするため。
 import { jobFor, startExtract, loadJobsForProject, ackJob, refreshExtractBadge, runningJobsOf, type ExtractRow } from '../lib/extractJobs'
@@ -3274,6 +3340,98 @@ function syncDextRows() {
 watch(() => dextJob.value?.rows.length ?? 0, () => { if (dext.value.att) syncDextRows() })
 
 /** 選んだ抽出行を明細に入れる。空行があればそこを埋める（末尾に足すと見つけにくい） */
+// ── Q7: 図面凡例からの確定数量の抽出 ──
+//  材料(品番)の抽出とは別物。凡例に「書いてある」数量を転記するだけで、面積の拾い出しはしない。
+//  ★材料抽出(R53)はジョブ化して裏で走らせるが、数量抽出は対象ページが凡例のある数枚で
+//   終わるため、その場で回してパネルに出す（ジョブ表を増やさない）。
+type QtyRow = { page: number; part: QuantityPart; code: string; spec: string | null; value: number; unit: string; note: string | null; _pick: boolean }
+const dqty = ref<{
+  att: any | null; busy: boolean; done: number; total: number
+  rows: QtyRow[]; check: CrossCheck | null; error: string; msg: string
+}>({ att: null, busy: false, done: 0, total: 0, rows: [], check: null, error: '', msg: '' })
+const dqtyPicked = computed(() => dqty.value.rows.filter(r => r._pick))
+
+async function beginQuantityExtract(att: any) {
+  if (dqty.value.busy) return
+  dqty.value = { att, busy: true, done: 0, total: 0, rows: [], check: null, error: '', msg: '' }
+  try {
+    const { data: file, error } = await supabase.storage.from('estimate-drawings').download(att.path)
+    if (error || !file) throw error ?? new Error('図面を取得できませんでした')
+    const buf = new Uint8Array(await file.arrayBuffer())
+    const { PDFDocument } = await import('pdf-lib')
+    const src = await PDFDocument.load(buf)
+    dqty.value.total = src.getPageCount()
+    const { data: sess } = await supabase.auth.getSession()
+
+    // 全ページを見て回る（凡例がどのページにあるかは図面ごとに違うため）。
+    // 数量表が無いページは空で返るので、そのまま次へ進む。
+    const merged: { part: QuantityPart; rows: any[] }[] = []
+    let gridX: number | null = null, gridY: number | null = null
+    for (let i = 0; i < dqty.value.total; i++) {
+      const one = await PDFDocument.create()
+      const [pg] = await one.copyPages(src, [i])
+      one.addPage(pg)
+      const bytes = await one.save()
+      let bin = ''
+      const chunk = 0x8000
+      for (let k = 0; k < bytes.length; k += chunk) {
+        bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(k, k + chunk)) as any)
+      }
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/drawing-quantity-extract`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${sess?.session?.access_token ?? ''}`,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ image_base64: btoa(bin), mime: 'application/pdf', page: i + 1 }),
+      })
+      const j = await resp.json().catch(() => null)
+      if (!resp.ok || j?.error) { dqty.value.error = j?.error || `解析エラー(${resp.status})`; break }
+      for (const g of (j?.parts ?? [])) {
+        for (const r of (g.rows ?? [])) {
+          dqty.value.rows.push({
+            page: i + 1, part: g.part, code: r.code ?? '', spec: r.spec ?? null,
+            value: Number(r.value) || 0, unit: r.unit || '㎡', note: r.note ?? null, _pick: true,
+          })
+        }
+        const slot = merged.find(m => m.part === g.part) ?? (merged.push({ part: g.part, rows: [] }), merged[merged.length - 1])
+        slot.rows.push(...(g.rows ?? []))
+      }
+      // 通り芯は最初に読めたページの値を採用（複数ページに同じ通り芯が載るため）
+      if (gridX == null && Number(j?.gridSpanX) > 0) gridX = Number(j.gridSpanX)
+      if (gridY == null && Number(j?.gridSpanY) > 0) gridY = Number(j.gridSpanY)
+      dqty.value.done = i + 1
+    }
+    // ★検算: 天井合計 ≒ 通り芯面積。抽出漏れ・二重計上をここで拾う
+    dqty.value.check = crossCheckCeiling({ parts: merged as any, gridSpanX: gridX, gridSpanY: gridY })
+  } catch (e: any) {
+    dqty.value.error = e?.message ?? '数量の抽出に失敗しました'
+  } finally {
+    dqty.value.busy = false
+  }
+}
+
+/** 選んだ数量を明細の初期値として入れる（★確定ではない。単価・ロス率は人が入れる） */
+async function applyQuantityToItems() {
+  const picked = dqtyPicked.value
+  if (!picked.length) return
+  const added: Row[] = []
+  for (const x of picked) {
+    let row = rows.value.find(r => isItemRow(r) && isBlankRow(r) && !added.includes(r))
+    if (!row) { row = blankRow(); rows.value.push(row) }
+    row.item_name = [x.part, x.code].filter(Boolean).join(' ') || '(名称未設定)'
+    row.spec = x.spec ?? ''
+    row.quantity = x.value
+    row.unit = x.unit
+    added.push(row)
+  }
+  await autoSaveRows(added)
+  dqty.value.msg = `${picked.length}件を明細に入れました（単価とロス率は人が入れてください）`
+  builderTab.value = 'items'
+  setTimeout(() => { dqty.value.msg = ''; dqty.value.att = null }, 2200)
+}
+
 async function applyExtractToItems() {
   const picked = dextPicked.value
   if (!picked.length) return
