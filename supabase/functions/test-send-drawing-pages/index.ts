@@ -2,9 +2,17 @@
 //  test-send-drawing-pages
 //  元請けから来た図面の「選んだページだけ」を下請業者の担当者へ送る「テスト」入口（実送信しない）。
 //  - 中核ロジックは _shared/drawing-mail.ts に集約（test版と単一ソース）。
-//  - verify_jwt=true（config.toml）＝admin等の認証JWT必須。呼び出し元JWTで
-//    estimate_projects を RLSスコープ read し「呼び出し元account == project account」
-//    を構造的に強制（越境拒否）。特権write（送信履歴 insert）のみ service_role。
+//  ★認可は verify_jwt ではなく in-code で効かせている（2026-08-04 訂正）:
+//    ここには以前「verify_jwt=true」と書かれていたが、config.toml の実際の値は
+//    **false**（ローカル用）で、しかも**本番はCIが全関数を --no-verify-jwt でデプロイ**
+//    するため、そもそも verify_jwt には依存できない。
+//    実際の防御は「呼び出し元JWTで estimate_projects を RLSスコープ read し、
+//    読めなければ 403(forbidden_or_not_found)」＝未認証・越境を構造的に拒否する点。
+//    特権write（送信履歴 insert・見積依頼 upsert）のみ service_role。
+//  ★この関数は本番にデプロイしない（CIが test-* を除外）。
+//    「未認証で拒否されること」と「CIの除外が消えていないこと」は
+//    tests/e2e/admin.test-functions-not-deployed.spec.ts で固定している
+//    （除外ルールだけに頼らず、in-code認可と二重にしてある）。
 // ============================================================
 import { sendDrawingPages } from '../_shared/drawing-mail.ts'
 
