@@ -37,6 +37,7 @@ Deno.serve(async (req) => {
     subject:                   body.subject ?? null,
     body:                      body.body ?? null,
     project_name:              body.project_name ?? null,
+    trade_name:                body.trade_name ?? null,
     send:                      false,   // ★実送信しない（履歴は sent_at=null で残る）
     callerAuth,
   })
