@@ -14,8 +14,9 @@
 
     <!-- 有効 / 無効化済み タブ -->
     <div class="status-tabs">
-      <button class="status-tab" :class="{ active: statusFilter === 'active' }" @click="statusFilter = 'active'">有効 <span class="tab-count">{{ sites.filter(s => s.active).length }}</span></button>
-      <button class="status-tab" :class="{ active: statusFilter === 'inactive' }" @click="statusFilter = 'inactive'">無効化済み <span class="tab-count">{{ sites.filter(s => !s.active).length }}</span></button>
+      <!-- 件数も一覧と同じ母集団（システム用バケットを除く）で数える。ズレると不審に見える -->
+      <button class="status-tab" :class="{ active: statusFilter === 'active' }" @click="statusFilter = 'active'">有効 <span class="tab-count">{{ listableSites.filter(s => s.active).length }}</span></button>
+      <button class="status-tab" :class="{ active: statusFilter === 'inactive' }" @click="statusFilter = 'inactive'">無効化済み <span class="tab-count">{{ listableSites.filter(s => !s.active).length }}</span></button>
     </div>
 
     <!-- AC3: 検索・並び替え -->
@@ -254,6 +255,7 @@ import { getAccountId } from '../lib/account'
 import { useQueryParam } from '../composables/useQueryParam'
 import { currentUser, canViewManagementPages } from '../lib/auth'
 import { findSimilarSiteNames } from '../lib/siteSimilarity'
+import { logOperation } from '../lib/operationLog'
 
 const router = useRouter()
 
@@ -431,9 +433,15 @@ const q          = useQueryParam('q', '')                                  // UR
 // 既定は『有効のみ』表示（無効現場はデフォルト非表示・フィルタで切替可）
 const statusFilter = useQueryParam<'active' | 'inactive'>('status', 'active')   // ?status= 有効/無効化済みタブ
 const sortBy     = useQueryParam<'kana' | 'recent'>('sort', 'kana')             // ?sort= 並び順
+// ★システム用のバケット行は現場マスタに出さない。
+//   「現場未設定」の日報を受けるための内部行で、人が編集・無効化するものではない。
+//   実際に `__unset__` という見慣れない名前がゴミデータに見えて誤って無効化された
+//   （2026-08-03・他の画面では siteKey.ts が「現場未設定」に変換して扱っている）。
+const listableSites = computed(() => sites.value.filter((s) => s.name !== '__unset__'))
+
 const filtered = computed(() => {
   const kw = q.value.trim().toLowerCase()
-  let list = sites.value.filter((s) => {
+  let list = listableSites.value.filter((s) => {
     if (statusFilter.value === 'active' && !s.active) return false
     if (statusFilter.value === 'inactive' && s.active) return false
     if (!kw) return true
@@ -630,8 +638,27 @@ async function removeAttachment(a: Att) {
   if (modal.value?.id) await loadAttachments(modal.value.id)
 }
 
+// 現場の有効/無効を切り替える。
+// ★無効化だけ確認を挟む（2026-08-03 に誤って現場を1つ無効化し、どれを消したのか
+//   本人も分からなくなった事故が発生）。有効化は元に戻す方向なので確認しない。
+// ★切替は operation_logs に必ず残す。当時 sites に updated_at も操作ログも無く、
+//   特定にトランザクションID(xmin)を見るしかなかった＝後から追えない状態だった。
 async function toggleActive(s: Site) {
-  await supabase.from('sites').update({ active: !s.active }).eq('id', s.id)
+  if (s.active) {
+    const ok = window.confirm(
+      `現場「${s.name}」を無効にしますか？\n\n`
+      + '・日報や予定の現場プルダウンに出なくなります\n'
+      + '・過去の日報・集計はそのまま残ります\n'
+      + '・「無効化済み」タブからいつでも有効に戻せます',
+    )
+    if (!ok) return
+  }
+  const next = !s.active
+  const { error } = await supabase.from('sites').update({ active: next }).eq('id', s.id)
+  if (error) { alert(`現場の${next ? '有効化' : '無効化'}に失敗しました: ${error.message}`); return }
+  await logOperation(next ? '現場を有効化' : '現場を無効化', {
+    targetType: 'site', targetId: s.id, summary: s.name,
+  })
   await load()
 }
 
