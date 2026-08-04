@@ -90,7 +90,7 @@ function setGuestName() {
   try { localStorage.setItem(STORAGE_KEY, name) } catch { /* localStorage不可環境は毎回入力でも致命的ではない */ }
   // ★参加した時に新着通知を購読する（対応環境のみ・非対応なら静かに諦める）。
   //  名前を入れる操作＝ユーザー操作の文脈なので、許可ダイアログを出せるのはここ。
-  void push.subscribe({ accountId, siteId, label: name, senderName: name })
+  void push.subscribe({ accountId, siteId, label: name, senderName: name, inviteToken: token })
   startChat()
 }
 

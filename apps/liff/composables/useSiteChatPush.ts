@@ -35,6 +35,31 @@ export const useSiteChatPush = () => {
       && 'Notification' in window
   }
 
+  /** 配信EFを叩く共通処理。身元（JWT / LINE ID token / ローカル検証用）を必ず添える */
+  async function callPushFn(payload: Record<string, unknown>): Promise<any | null> {
+    const efUrl = config.public.edgeFunctionUrl as string
+    if (!efUrl) return null
+    const anonKey = config.public.supabaseAnonKey as string
+    const fnPrefix = config.public.appEnv === 'development' ? 'test-' : ''
+    const { data: { session } } = await supabase.auth.getSession()
+    const liff = useLiff()
+    const lineIdToken = (await liff.getIdToken().catch(() => null)) ?? ''
+    const devLineUserId = config.public.appEnv === 'development'
+      ? (liff.profile.value?.userId ?? '')
+      : ''
+    const res = await fetch(`${efUrl}/${fnPrefix}send-site-chat-push`, {
+      method: 'POST',
+      keepalive: true,
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: anonKey,
+        Authorization: session ? `Bearer ${session.access_token}` : `Bearer ${anonKey}`,
+      },
+      body: JSON.stringify({ ...payload, line_id_token: lineIdToken, dev_line_user_id: devLineUserId }),
+    })
+    return await res.json().catch(() => null)
+  }
+
   /**
    * 現場チャットの新着通知を購読する。best-effort。
    * @returns 購読できたら true。非対応・未許可・鍵未設定なら false（エラーにしない）
@@ -44,6 +69,8 @@ export const useSiteChatPush = () => {
     siteId: string
     label?: string | null
     senderName?: string | null
+    /** ゲスト（招待リンク）はこれで現場との関係を示す */
+    inviteToken?: string | null
   }): Promise<boolean> {
     const vapidKey = config.public.vapidPublicKey as string | undefined
     // 鍵が配られていない環境（＝push を運用していない）では何もしない
@@ -70,18 +97,18 @@ export const useSiteChatPush = () => {
       const json = sub.toJSON() as { endpoint?: string; keys?: { p256dh?: string; auth?: string } }
       if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) return false
 
-      // 同じ端末×現場は一意（endpoint, site_id）。再訪しても行が増えない。
-      const { error } = await supabase.from('push_subscriptions').upsert({
-        account_id: opts.accountId,
+      // ★テーブルへ直接 insert しない（独立レビューのcritical指摘）。
+      //  anon に開けると誰でも任意の現場を購読でき＝他テナントのチャット内容が
+      //  push で漏れる。EF側で招待トークン/身元を確認してから入れてもらう。
+      const res = await callPushFn({
+        action: 'subscribe',
         site_id: opts.siteId,
-        endpoint: json.endpoint,
-        p256dh: json.keys.p256dh,
-        auth: json.keys.auth,
         label: opts.label ?? null,
         sender_name: opts.senderName ?? null,
-      }, { onConflict: 'endpoint,site_id' })
-      if (error) { console.warn('[push] 購読の保存に失敗:', error.message); return false }
-      return true
+        invite_token: opts.inviteToken ?? '',
+        subscription: json,
+      })
+      return !!res?.ok
     } catch (e) {
       // 通知が使えないこと自体は障害ではない。チャットの利用を妨げない。
       console.warn('[push] 購読をスキップしました:', e)
@@ -100,34 +127,15 @@ export const useSiteChatPush = () => {
     body: string
     inviteToken?: string | null
   }): void {
-    const efUrl = config.public.edgeFunctionUrl as string
-    if (!efUrl || !opts.siteId) return
-    const anonKey = config.public.supabaseAnonKey as string
-    const fnPrefix = config.public.appEnv === 'development' ? 'test-' : ''
+    if (!opts.siteId) return
     void (async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession()
-        const liff = useLiff()
-        const lineIdToken = (await liff.getIdToken().catch(() => null)) ?? ''
-        const devLineUserId = config.public.appEnv === 'development'
-          ? (liff.profile.value?.userId ?? '')
-          : ''
-        await fetch(`${efUrl}/${fnPrefix}send-site-chat-push`, {
-          method: 'POST',
-          keepalive: true,
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: anonKey,
-            Authorization: session ? `Bearer ${session.access_token}` : `Bearer ${anonKey}`,
-          },
-          body: JSON.stringify({
-            site_id: opts.siteId,
-            sender_name: opts.senderName,
-            body: opts.body,
-            invite_token: opts.inviteToken ?? '',
-            line_id_token: lineIdToken,
-            dev_line_user_id: devLineUserId,
-          }),
+        await callPushFn({
+          action: 'notify',
+          site_id: opts.siteId,
+          sender_name: opts.senderName,
+          body: opts.body,
+          invite_token: opts.inviteToken ?? '',
         })
       } catch (e) {
         console.warn('[push] 新着通知の送信をスキップ:', e)
