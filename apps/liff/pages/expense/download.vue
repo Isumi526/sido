@@ -388,22 +388,38 @@ async function handleApply() {
   }
 }
 
-/** 申請PDFメール送信 function 呼び出し（fire-and-forget） */
-function triggerApplicationEmail(userId: string, periodKey: string, accountSlug: string) {
+/**
+ * 申請PDFメール送信 function 呼び出し（fire-and-forget）
+ *
+ * ★EF側が身元検証するようになったので（2026-08-04）、身元を必ず添える。
+ *  添えないと 401 で弾かれてメールが飛ばない。account_id / user_id は
+ *  EF が検証済みの身元から引き直すので、こちらの申告は当てにされない。
+ */
+async function triggerApplicationEmail(userId: string, periodKey: string, accountSlug: string) {
   const efUrl = config.public.edgeFunctionUrl
   if (!efUrl) return
   const fnPrefix = config.public.appEnv === 'development' ? 'test-' : ''
+  const anonKey = config.public.supabaseAnonKey as string
+  const { data: { session } } = await supabase.auth.getSession()
+  const lineIdToken = (await liff.getIdToken().catch(() => null)) ?? ''
+  // 開発モードは LINE ID token が発行されない。EF はローカルSupabase接続時のみ受け付ける。
+  const devLineUserId = config.public.appEnv === 'development'
+    ? (liff.profile.value?.userId ?? '')
+    : ''
   fetch(`${efUrl}/${fnPrefix}send-expense-application`, {
     method: 'POST',
     keepalive: true,
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.public.supabaseAnonKey}`,
+      apikey: anonKey,
+      'Authorization': session ? `Bearer ${session.access_token}` : `Bearer ${anonKey}`,
     },
     body: JSON.stringify({
       accountSlug,
       user_id: userId,
       period_key: periodKey,
+      line_id_token: lineIdToken,
+      dev_line_user_id: devLineUserId,
     }),
   }).catch(e => console.error('[expense apply] メール送信呼び出し失敗:', e))
 }
