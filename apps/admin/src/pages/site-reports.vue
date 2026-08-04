@@ -430,6 +430,7 @@ import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWa
 import type { WageMode } from '../lib/workerHours'
 import { canViewWages, canViewHourlyWage, canViewManagementPages } from '../lib/auth'
 import { resolveSiteRef, type SiteResolveCtx } from '../lib/siteKey'
+import { netAmountOf, normalizeTaxMode } from '../lib/invoiceTax'
 import JSZip from 'jszip'
 
 const exporting = ref(false)
@@ -661,7 +662,7 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
   {
     const { data: sii } = await supabase
       .from('subcontractor_invoice_items')
-      .select('site_name, item_date, amount, tax_rate, description, subcontractor_invoices(vendor_name, subcontractors(category))')
+      .select('site_name, item_date, amount, tax_rate, description, subcontractor_invoices(vendor_name, tax_mode, subcontractors(category))')
       .eq('account_id', accountId)
       .gte('item_date', fromDate)
       .lte('item_date', toDate)
@@ -670,7 +671,9 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
       // 請求の現場名も同じ解決を通し、日報側と同じ正式名バケットに合流させる（表記ゆれ吸収）
       const name = resolveSiteRef({ siteName: r.site_name }, siteCtx).name || r.site_name
       invoiceSites.add(name)
-      const amt = Number(r.amount) || 0
+      // ★原価は税抜で揃える。内税の請求書は amount が税込なので割り戻す
+      //   （揃えないと内税の請求だけ約10%多く原価に乗る）
+      const amt = Math.round(netAmountOf(r, normalizeTaxMode(r.subcontractor_invoices?.tax_mode)))
       const cat = r.subcontractor_invoices?.subcontractors?.category ?? null
       const vendor = r.subcontractor_invoices?.vendor_name ?? ''
       const rows = (invoiceRowsBySite[name] ??= [])
