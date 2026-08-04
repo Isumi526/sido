@@ -22,10 +22,30 @@
       <span v-if="overdueCount" class="overdue-note"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">warning</span> 支払期限超過 {{ overdueCount }} 件</span>
     </div>
 
+    <!-- 現場×業者で絞り込み → まとめてダウンロード -->
+    <div v-if="!loading && invoices.length" class="filter-bar" data-testid="invoice-filter-bar">
+      <select v-model="filterSiteId" class="inp filter-sel" data-testid="filter-site">
+        <option value="">すべての現場</option>
+        <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.name }}</option>
+      </select>
+      <select v-model="filterVendor" class="inp filter-sel" data-testid="filter-vendor">
+        <option value="">すべての業者</option>
+        <option v-for="v in vendorOptions" :key="v" :value="v">{{ v }}</option>
+      </select>
+      <button class="btn-bulk" :disabled="bulkBusy" data-testid="bulk-download" @click="bulkDownload">
+        {{ bulkBusy ? '準備中…' : `まとめてダウンロード（${bulkTargets.length}件）` }}
+      </button>
+      <button v-if="filterSiteId || filterVendor" class="btn-clear-filter" data-testid="filter-clear"
+              @click="filterSiteId = ''; filterVendor = ''; bulkMsg = ''">絞り込みを解除</button>
+      <span v-if="bulkMsg" class="bulk-msg" data-testid="bulk-msg">{{ bulkMsg }}</span>
+    </div>
+
     <!-- 一覧 -->
     <div v-if="loading" class="empty">読み込み中...</div>
     <div v-else-if="invoices.length === 0" class="empty">登録された請求はありません</div>
-    <div v-else-if="visibleList.length === 0" class="empty">{{ tab === 'paid' ? '支払い済みの請求はありません' : '未払いの請求はありません' }}</div>
+    <div v-else-if="visibleList.length === 0" class="empty" data-testid="list-empty">
+      {{ filterSiteId || filterVendor ? '絞り込み条件に一致する請求はありません' : (tab === 'paid' ? '支払い済みの請求はありません' : '未払いの請求はありません') }}
+    </div>
     <div v-else class="table-wrap">
       <table class="table">
         <thead>
@@ -252,6 +272,8 @@ import HelpButton from '../components/HelpButton.vue'
 import { logOperation } from '../lib/operationLog'
 import { openDoc } from '../lib/docUrl'
 import { normalizeTaxMode, sumAmount, taxTotalOf, netTotalOf, grossTotalOf } from '../lib/invoiceTax'
+import { resolveDocUrl } from '../lib/docUrl'
+import JSZip from 'jszip'
 
 const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
 const IS_DEV   = import.meta.env.DEV
@@ -331,9 +353,80 @@ const netTotal  = computed(() => netTotalOf(form.value?.items, formTaxMode.value
 const grossTotal = computed(() => grossTotalOf(form.value?.items, formTaxMode.value))
 const taxModeFromAi = ref(false)
 
-const unpaidList  = computed(() => invoices.value.filter(v => !v.paid))
-const paidList    = computed(() => invoices.value.filter(v => v.paid))
+// ── 現場×業者の絞り込み＋まとめてダウンロード ──
+//  同じ現場・同じ業者の請求書をまとめて落としたい（尾崎さん要望）。
+//  現場は明細側に付くので「その請求書のいずれかの明細がその現場」なら該当とする
+//  （1枚の請求書に複数現場が混在しうるため）。
+const filterSiteId = ref<string>('')
+const filterVendor = ref<string>('')
+const bulkBusy = ref(false)
+const bulkMsg  = ref('')
+
+function invoiceSiteIds(v: any): string[] {
+  return (v.subcontractor_invoice_items ?? []).map((it: any) => it.site_id).filter(Boolean)
+}
+/** 絞り込みに使える業者名（実際に請求がある業者だけ出す） */
+const vendorOptions = computed(() =>
+  [...new Set(invoices.value.map(v => v.vendor_name).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'ja')))
+
+function matchesFilter(v: any): boolean {
+  if (filterVendor.value && v.vendor_name !== filterVendor.value) return false
+  if (filterSiteId.value && !invoiceSiteIds(v).includes(filterSiteId.value)) return false
+  return true
+}
+
+const unpaidList  = computed(() => invoices.value.filter(v => !v.paid && matchesFilter(v)))
+const paidList    = computed(() => invoices.value.filter(v => v.paid && matchesFilter(v)))
 const visibleList = computed(() => (tab.value === 'paid' ? paidList.value : unpaidList.value))
+
+/** まとめてDLの対象＝絞り込み結果のうち PDF があるもの（未払い/支払い済みの両タブを跨いで対象にする） */
+const bulkTargets = computed(() => invoices.value.filter(v => matchesFilter(v) && v.pdf_path))
+
+async function bulkDownload() {
+  if (bulkBusy.value) return
+  bulkMsg.value = ''
+  const targets = bulkTargets.value
+  // AC3: 0件は理由が分かる形で伝える（黙って何も起きないのが一番困る）
+  if (!targets.length) {
+    const anyMatch = invoices.value.some(matchesFilter)
+    bulkMsg.value = anyMatch
+      ? '該当する請求書はありますが、PDFが添付されているものがありません。'
+      : '条件に一致する請求書がありません。現場・業者の絞り込みを見直してください。'
+    return
+  }
+  bulkBusy.value = true
+  try {
+    const zip = new JSZip()
+    const used = new Set<string>()
+    let failed = 0
+    for (const v of targets) {
+      try {
+        const url = await resolveDocUrl(v.pdf_path)
+        if (!url) { failed++; continue }
+        const resp = await fetch(url)
+        if (!resp.ok) { failed++; continue }
+        // ファイル名は「日付_業者名_件名」。重複したら連番を付ける（zip内で上書きされないように）
+        const base = [v.invoice_date ?? '日付なし', v.vendor_name ?? '業者なし', v.title ?? '']
+          .filter(Boolean).join('_').replace(/[\\/:*?"<>|]/g, '_')
+        let name = `${base}.pdf`
+        for (let i = 2; used.has(name); i++) name = `${base}_${i}.pdf`
+        used.add(name)
+        zip.file(name, await resp.blob())
+      } catch { failed++ }   // 1件失敗しても残りは落とす
+    }
+    const siteLabel = filterSiteId.value ? (sites.value.find(s => s.id === filterSiteId.value)?.name ?? '現場') : '全現場'
+    const vendorLabel = filterVendor.value || '全業者'
+    const blob = await zip.generateAsync({ type: 'blob' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `請求書_${siteLabel}_${vendorLabel}.zip`.replace(/[\\/:*?"<>|]/g, '_')
+    a.click()
+    URL.revokeObjectURL(a.href)
+    bulkMsg.value = failed
+      ? `${targets.length - failed}件をダウンロードしました（${failed}件は取得できませんでした）`
+      : `${targets.length}件をダウンロードしました`
+  } finally { bulkBusy.value = false }
+}
 const overdueCount = computed(() => unpaidList.value.filter(v => v._overdue).length)
 
 // 日本語ボタンの確認ダイアログ（native confirm の英語Cancel回避）
@@ -369,7 +462,8 @@ async function load() {
   const accountId = await getAccountId()
   const [{ data: inv }, { data: si }, { data: su }, { data: po }] = await Promise.all([
     supabase.from('subcontractor_invoices')
-      .select('*, subcontractor_invoice_items(amount, tax_rate)')
+      // 現場は明細(items)側に付くので、現場での絞り込み用に site_id/site_name も一緒に読む
+      .select('*, subcontractor_invoice_items(amount, tax_rate, site_id, site_name)')
       .eq('account_id', accountId).order('invoice_date', { ascending: false }).order('created_at', { ascending: false }),
     supabase.from('sites').select('id, name').eq('account_id', accountId).eq('active', true).order('name_kana', { nullsFirst: false }).order('name'),
     supabase.from('subcontractors').select('id, name, category').eq('account_id', accountId).eq('active', true).order('name'),
@@ -747,6 +841,13 @@ onMounted(load)
 .tab.active { background: #06C755; border-color: #06C755; color: #fff; }
 .tab-count { font-size: 12px; opacity: .85; margin-left: 2px; }
 .overdue-note { margin-left: auto; font-size: 12px; font-weight: 700; color: #c0392b; }
+/* 現場×業者の絞り込み＋まとめてDL */
+.filter-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.filter-sel { max-width: 220px; }
+.btn-bulk { background: #1a56c4; color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-weight: 700; font-size: 13px; cursor: pointer; }
+.btn-bulk:disabled { opacity: .5; cursor: default; }
+.btn-clear-filter { background: #fff; color: #374151; border: 1px solid #d1d5db; border-radius: 8px; padding: 7px 12px; font-size: 12px; cursor: pointer; }
+.bulk-msg { font-size: 12px; color: #555; }
 
 .badge { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
 .badge.paid { background: #e6f7ec; color: #0a8a3f; }
