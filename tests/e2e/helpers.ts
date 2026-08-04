@@ -194,6 +194,18 @@ export async function openBuilderTab(page: any, tab: string, probeSelector: stri
 }
 
 /**
+ * estimate-builder が各工種ブロックの末尾に常時確保する空行数。
+ * apps/admin/src/pages/estimate-builder.vue の SPARE_ROWS と必ず一致させる
+ * （ズレると「工種を足した直後の先頭行」を掴む spec が全部 index を外す）。
+ */
+export const EST_SPARE_ROWS = 1
+
+/** 工種ブロックを追加した直後、その新ブロック先頭行の index を返す */
+export async function newBlockFirstRow(page: any): Promise<number> {
+  return (await page.locator('[data-testid^="item-name-"]').count()) - EST_SPARE_ROWS
+}
+
+/**
  * 非公開バケットのファイルを service_role で落として latin1 文字列で返す。
  * PDFの中身（非圧縮のコンテンツストリーム）を検査したい時に使う。
  */

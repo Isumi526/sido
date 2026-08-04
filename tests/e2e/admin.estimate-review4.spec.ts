@@ -9,7 +9,7 @@
 //   R37/R38: 図面のカラム数切替・ページ指定欄の廃止
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { getAccountId, restSrv, openBuilderTab } from './helpers'
+import { getAccountId, restSrv, openBuilderTab, newBlockFirstRow } from './helpers'
 
 const TS = Date.now()
 let seq = 0
@@ -128,7 +128,7 @@ test('AC3★(R33): 行を消すと「元に戻す」が出て、押すと復活�
 
 test('AC4(R33): 空行を消した時は「元に戻す」を出さない', async ({ page }) => {
   await openNewProject(page)
-  await page.locator('[data-testid="item-del-1"]').click()
+  await page.locator('[data-testid="item-del-0"]').click()   // 新規案件の行は全部空行
   await page.waitForTimeout(500)
   await expect(page.locator('[data-testid="undo-bar"]')).toHaveCount(0)
 })
@@ -227,9 +227,9 @@ test('AC9★(R39): 工種をまるごと別の場所へドラッグで移せる'
   await page.waitForTimeout(400)
   await page.locator('[data-testid="area-loc-1"]').fill('天井工事')
   await page.locator('[data-testid="blk-trade-1"]').fill('塗装工事')
-  const idx = await page.locator('[data-testid^="item-name-"]').count()
-  await page.locator(`[data-testid="item-name-${idx - 5}"]`).fill('天井塗装')
-  await page.locator(`[data-testid="item-name-${idx - 5}"]`).press('Tab')
+  const idx = await newBlockFirstRow(page)
+  await page.locator(`[data-testid="item-name-${idx}"]`).fill('天井塗装')
+  await page.locator(`[data-testid="item-name-${idx}"]`).press('Tab')
   await page.waitForTimeout(1500)
 
   // ★軽鉄工事の塊を「天井工事」の場所行へ落とす → 配下2行ごと天井工事に移る
