@@ -603,8 +603,18 @@
                   <td>
                     <!-- 単価の意味が業者ごとに違う（確認6）。揃えずに横並びすると誤選定するので必ず持つ -->
                     <select v-model="l.price_kind" class="input sm" :data-testid="`ql-kind-${li}`">
+                      <option value=""></option>
                       <option v-for="k in PRICE_KINDS" :key="k.key" :value="k.key">{{ k.label }}</option>
                     </select>
+                    <!-- ★R46: 区分が未選択の行にだけ推定を出す。押すまで確定しない。
+                         根拠（人工の有無・定価比）を併記しないと人が判断できない。 -->
+                    <button v-if="kindGuessOf(l)" type="button" class="kind-guess"
+                            :data-testid="`ql-kind-guess-${li}`"
+                            :title="`${kindLabel(kindGuessOf(l)!.kind)} と推定：${kindGuessOf(l)!.reason}（押すと採用）`"
+                            @click="applyKindGuess(l)">
+                      推定: {{ kindLabel(kindGuessOf(l)!.kind) }}
+                      <span class="kind-guess-why">{{ kindGuessOf(l)!.reason }}</span>
+                    </button>
                   </td>
                   <td class="num"><input v-model.number="l.quantity" type="number" step="0.01" class="input sm num" :data-testid="`ql-qty-${li}`" /></td>
                   <td class="num"><input v-model.number="l.unit_price" type="number" class="input sm num" :data-testid="`ql-price-${li}`" /></td>
@@ -1372,6 +1382,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
 import { supabase } from '../lib/supabase'
+// ★このファイルには別ルールの normalizeName が既にあり、<script setup> 内では
+//  ローカル定義が import を隠す。推定側と定価引き側で正規化が食い違うと永久に一致しないので、
+//  別名で入れて「推定に使う正規化はこちら」と明示する。
+import { guessPriceKind, normalizeName as normalizeGuessName, type Guess } from '../lib/priceKindGuess'
 import { getAccountId } from '../lib/account'
 import { openDoc } from '../lib/docUrl'
 import EstimateMasters from './estimate-masters.vue'
@@ -1403,6 +1417,24 @@ const PRICE_KINDS = [
   { key: 'material',       label: '材料のみ' },
 ] as const
 const kindLabel = (k: string) => PRICE_KINDS.find(x => x.key === k)?.label ?? k
+
+/**
+ * R46: 受領見積の行が材工一体か材料のみかを推定する。
+ * 定価（R41）と、同じ見積に労務行があるか（Q3の price_kind）を材料に使う。
+ * ★区分が既に入っている行では null＝人の選択を上書きしない。
+ */
+function kindGuessOf(l: QuoteLine): Guess | null {
+  return guessPriceKind(
+    { item_name: l.item_name, unit_price: l.unit_price, price_kind: l.price_kind },
+    openedLines.value.map(x => ({ item_name: x.item_name, unit_price: x.unit_price, price_kind: x.price_kind })),
+    listPriceByName,
+  )
+}
+/** 推定を採用する（人が押した時だけ入る＝勝手に確定しない） */
+function applyKindGuess(l: QuoteLine) {
+  const g = kindGuessOf(l)
+  if (g) l.price_kind = g.kind
+}
 
 type QuoteRequest = {
   id: string; subcontractor_id: string | null; trade_name: string
@@ -3173,6 +3205,17 @@ const listPriceOf = (code: string | null | undefined) => {
 const supplierRateOf = (supplierId: string) => supplierRates.value.find(r => r.supplier_id === supplierId)?.rate ?? null
 
 /**
+ * 名称から定価を引く（R46の推定用）。品番ではなく名称で引くのは、
+ * 受領見積の明細に品番が無いことが多いため。表記ゆれは normalizeGuessName で吸収する
+ * （★このファイル内の normalizeName とは別ルール。推定側と必ず同じ関数を使うこと）。
+ */
+function listPriceByName(normName: string): number | null {
+  if (!normName) return null
+  const hit = listPrices.value.find(l => normalizeGuessName(l.item_name) === normName)
+  return hit ? hit.list_price : null
+}
+
+/**
  * その商社から仕入れる時の単価。
  * 優先順: ①単価表の絶対額 ②定価 × 掛率（品番×商社の上書き → 商社の既定）
  */
@@ -4644,4 +4687,11 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .hc-sub { font-size: 10px; color: #999; }
 .qocr-panel { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; margin-top: 12px; background: #fafafa; }
 .sub-h { font-size: 14px; font-weight: 700; }
+
+/* R46: 単価区分の推定チップ。押すまで確定しないので、確定済みの選択と見た目を分ける */
+.kind-guess { display: block; margin-top: 3px; width: 100%; text-align: left; cursor: pointer;
+  background: #fffbeb; border: 1px dashed #fbbf24; color: #92400e; border-radius: 6px;
+  padding: 2px 6px; font-size: 10px; line-height: 1.3; }
+.kind-guess:hover { background: #fef3c7; }
+.kind-guess-why { display: block; opacity: .85; }
 </style>
