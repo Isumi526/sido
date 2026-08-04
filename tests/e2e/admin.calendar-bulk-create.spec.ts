@@ -30,7 +30,8 @@ test.describe('予定管理(admin) 複数作業員に一括追加', () => {
       if (!cls.includes('on')) await chip.click()
     }
 
-    await page.getByPlaceholder('例：アルペン現場').fill(TITLE)
+    // プレースホルダー文言で掴むと文言を直すたびに落ちるので testid にした
+    await page.getByTestId('cal-title').fill(TITLE)
 
     await page.locator('.btn-save').click()
     await expect(page.locator('.worker-chips')).toHaveCount(0, { timeout: 15000 }) // モーダル閉じる

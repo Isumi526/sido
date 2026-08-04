@@ -52,7 +52,7 @@
         <h2>{{ modal.id ? '車両を編集' : '車両を追加' }}</h2>
         <div class="field">
           <label>車両名</label>
-          <input v-model="modal.name" class="input" placeholder="例：ハイエース1号車" data-testid="vehicle-name" />
+          <input v-model="modal.name" class="input" placeholder="例：営業車1号" data-testid="vehicle-name" />
         </div>
 
         <!-- ▼ アップロード→自動入力（新規でも可・保存時に添付確定）: 写真＋車検証を上部に配置 -->
