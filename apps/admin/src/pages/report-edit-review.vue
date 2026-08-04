@@ -43,6 +43,35 @@
           </div>
         </div>
 
+        <!-- ★領収書。金額だけでは妥当か判断できないので、承認画面で現物を開けるようにする。
+             データは元から保留 payload に入っており（fileUrls）、出していなかっただけ。 -->
+        <div v-if="p.receipts && (p.receipts.added.length || p.receipts.removed.length || p.receipts.kept.length)"
+             class="section" data-testid="pending-receipts">
+          <div class="section-label">領収書</div>
+
+          <div v-if="p.receipts.added.length" class="receipt-group" data-testid="receipts-added">
+            <span class="receipt-tag added">追加・差し替え後</span>
+            <a v-for="(r, ri) in p.receipts.added" :key="'a'+ri" :href="r.url" target="_blank" rel="noopener" class="receipt-link">
+              <span class="material-symbols-rounded ico">attach_file</span>{{ r.label }}
+            </a>
+          </div>
+
+          <!-- 差し替え前を出さないと「何を消したか」が承認者に見えない -->
+          <div v-if="p.receipts.removed.length" class="receipt-group" data-testid="receipts-removed">
+            <span class="receipt-tag removed">削除・差し替え前</span>
+            <a v-for="(r, ri) in p.receipts.removed" :key="'r'+ri" :href="r.url" target="_blank" rel="noopener" class="receipt-link old">
+              <span class="material-symbols-rounded ico">attach_file</span>{{ r.label }}
+            </a>
+          </div>
+
+          <div v-if="p.receipts.kept.length" class="receipt-group" data-testid="receipts-kept">
+            <span class="receipt-tag kept">変更なし</span>
+            <a v-for="(r, ri) in p.receipts.kept" :key="'k'+ri" :href="r.url" target="_blank" rel="noopener" class="receipt-link">
+              <span class="material-symbols-rounded ico">attach_file</span>{{ r.label }}
+            </a>
+          </div>
+        </div>
+
         <div class="actions">
           <button class="btn-approve" :disabled="busy === p.id" data-testid="pending-approve" @click="decide(p, 'approve')">
             {{ busy === p.id ? '処理中…' : '承認して日報に反映' }}
@@ -126,6 +155,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { refreshNavBadges } from '../lib/navBadges'
+import { diffReceipts } from '../lib/reportReceipts'
 
 const route = useRoute()
 const router = useRouter()
@@ -149,18 +179,36 @@ function fmtDateTime(v: string | null): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
+/**
+ * 保留1件ごとに「編集前(daily_reports) と 編集後(payload) の領収書の差」を付ける。
+ * 編集前が要るのは、差し替え・削除を承認者に見せるため（新しい方だけ出すと消えた分が消える）。
+ */
+async function withReceipts(rows: any[], accountId: string): Promise<any[]> {
+  const ids = [...new Set(rows.map(r => r.report_id).filter(Boolean))]
+  const before = new Map<string, any>()
+  if (ids.length) {
+    const { data } = await supabase
+      .from('daily_reports')
+      .select('id, sites, gasoline_items')
+      .eq('account_id', accountId)
+      .in('id', ids)
+    for (const r of (data ?? [])) before.set(r.id, r)
+  }
+  return rows.map(r => ({ ...r, receipts: diffReceipts(before.get(r.report_id) ?? {}, r.payload ?? {}) }))
+}
+
 async function load() {
   loading.value = true
   try {
     const accountId = await getAccountId()
     const { data, error } = await supabase
       .from('daily_report_pending_edits')
-      .select('id, report_id, report_date, reason, diffs, kind, submitted_by_name, submitted_at')
+      .select('id, report_id, report_date, reason, diffs, kind, payload, submitted_by_name, submitted_at')
       .eq('account_id', accountId)
       .eq('status', 'pending')
       .order('submitted_at', { ascending: true })
     if (error) throw error
-    pending.value = data ?? []
+    pending.value = await withReceipts(data ?? [], accountId)
   } catch (e: any) {
     msg.value = e?.message ?? '読み込みに失敗しました'
     msgOk.value = false
@@ -265,6 +313,17 @@ watch(historyOpen, (open) => { if (open && !history.value.length) void loadHisto
 .reason { font-size: 14px; white-space: pre-wrap; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 8px 10px; }
 .diffs { display: flex; flex-wrap: wrap; gap: 6px; }
 .diff { font-size: 12px; color: #444; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 999px; padding: 3px 10px; }
+/* 領収書（日報詳細 reports.vue の receipt-link と同じ見え方に寄せる） */
+.receipt-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; }
+.receipt-tag { font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 9px; }
+.receipt-tag.added { background: #dcfce7; color: #166534; }
+.receipt-tag.removed { background: #fee2e2; color: #991b1b; }
+.receipt-tag.kept { background: #f3f4f6; color: #6b7280; }
+.receipt-link { font-size: 11px; color: #06C755; text-decoration: none; background: #e8fff0; padding: 2px 8px; border-radius: 4px; }
+.receipt-link:hover { text-decoration: underline; }
+.receipt-link.old { color: #991b1b; background: #fef2f2; text-decoration: line-through; }
+.receipt-link .ico { font-size: 16px; vertical-align: middle; line-height: 1; }
+
 .actions { display: flex; gap: 10px; }
 .btn-approve { background: #16a34a; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-weight: 700; cursor: pointer; }
 .btn-reject { background: #fff; color: #b91c1c; border: 1px solid #fca5a5; border-radius: 8px; padding: 9px 16px; font-weight: 700; cursor: pointer; }
