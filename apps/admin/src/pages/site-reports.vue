@@ -4,19 +4,29 @@
       <h1 class="page-title">現場別集計
         <HelpButton title="現場別集計の使い方" :items="[
           '現場ごとに日報の稼働（人工）と経費を集計して表示します。',
-          '上部の月ナビで対象月を切り替えられます。',
+          '上部の月ナビで対象月を切り替えられます。「期間で見る」で複数月をまたいだ合計も出せます。',
           '行を開くと、日報単位の内訳（作業員・経費）を確認できます。',
         ]" />
       </h1>
+      <!-- ★既定は従来の単月ナビ。複数月にまたがる工事を通しで見たい時だけ期間指定に切り替える -->
       <div class="month-nav">
-        <button class="btn-nav" @click="shiftMonth(-1)">‹</button>
-        <span class="month-label">{{ yearMonth }}</span>
-        <button class="btn-nav" @click="shiftMonth(1)">›</button>
+        <template v-if="!isRange">
+          <button class="btn-nav" @click="shiftMonth(-1)">‹</button>
+          <span class="month-label">{{ yearMonth }}</span>
+          <button class="btn-nav" @click="shiftMonth(1)">›</button>
+          <button class="btn-range" data-testid="range-open" @click="openRange">期間で見る</button>
+        </template>
+        <template v-else>
+          <input type="month" v-model="rangeFromYM" class="range-ym" data-testid="range-from" />
+          <span>〜</span>
+          <input type="month" v-model="rangeToYM" class="range-ym" data-testid="range-to" />
+          <button class="btn-range" data-testid="range-close" @click="closeRange">単月に戻す</button>
+        </template>
       </div>
     </div>
 
     <div v-if="loading" class="empty">読み込み中...</div>
-    <div v-else-if="siteNames.length === 0" class="empty">この月の日報がありません</div>
+    <div v-else-if="siteNames.length === 0" class="empty">{{ isRange ? 'この期間の日報がありません' : 'この月の日報がありません' }}</div>
 
     <template v-else>
       <!-- 現場タブ（五十音順） -->
@@ -37,7 +47,7 @@
             <div class="export-pop-title">出力する期間を選んでください</div>
             <label class="export-range-lbl">出力範囲
               <select v-model="exportRange" class="export-range" data-testid="export-range">
-                <option value="month">表示中の月（{{ yearMonth }}）</option>
+                <option value="month">表示中の期間（{{ periodLabel }}）</option>
                 <option value="range">年月範囲を指定</option>
                 <option value="all">全期間</option>
               </select>
@@ -116,7 +126,7 @@
           </tbody>
           <tfoot>
             <tr class="total-row">
-              <td colspan="2">月計</td>
+              <td colspan="2" data-testid="period-total-label">{{ isRange ? '期間計' : '月計' }}</td>
               <td class="num">{{ yen(sumF(siteMap[displaySite], 'shoshaCost'))    }}</td>
               <td class="num">{{ yen(sumF(siteMap[displaySite], 'gyoshaCost'))    }}</td>
               <td v-if="canViewWages" class="num">{{ yen(sumF(siteMap[displaySite], 'laborCost'))     }}</td>
@@ -142,7 +152,7 @@
         <div class="vb-head">
           <h3 class="vb-title">業者別内訳</h3>
           <span class="vb-check" data-testid="vendor-check">
-            内訳合計 <b>{{ yen(vendorBreakdown.countedTotal) }}</b> ／ 月計（商社+業者） <b>{{ yen(vendorGrandTotal) }}</b>
+            内訳合計 <b>{{ yen(vendorBreakdown.countedTotal) }}</b> ／ {{ isRange ? '期間計' : '月計' }}（商社+業者） <b>{{ yen(vendorGrandTotal) }}</b>
             <span v-if="vendorBreakdown.countedTotal === vendorGrandTotal" class="vb-ok" data-testid="vendor-check-ok">一致</span>
             <span v-else class="vb-ng" data-testid="vendor-check-ng">不一致</span>
           </span>
@@ -512,14 +522,43 @@ function shiftMonth(delta: number) {
   const d = new Date(baseDate.value)
   d.setDate(1); d.setMonth(d.getMonth() + delta); baseDate.value = d
 }
+// ★表示期間。既定は従来どおり単月（開いた時の見え方を変えない＝AC3）。
+//   複数月にまたがる工事の原価を通しで見るために、期間指定に切り替えられる。
+//   URLに載せるのは「期間で見ている状態」を共有・再読込しても保てるようにするため。
+const rangeMode   = useQueryParam('range', '')       // '' = 単月 / 'ym' = 年月範囲
+const rangeFromYM = useQueryParam('from', '')        // 'YYYY-MM'
+const rangeToYM   = useQueryParam('to', '')
+const isRange = computed(() => rangeMode.value === 'ym' && !!rangeFromYM.value && !!rangeToYM.value)
+
+/** 期間指定は開始・終了を逆に入れても成立させる（入れ違いで0件になると壊れて見える） */
+const rangeYMs = computed(() => {
+  const a = rangeFromYM.value, b = rangeToYM.value
+  return a <= b ? [a, b] : [b, a]
+})
+
 const dateFrom = computed(() => {
+  if (isRange.value) return ymToFrom(rangeYMs.value[0])
   const d = baseDate.value
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
 })
 const dateTo = computed(() => {
+  if (isRange.value) return ymToTo(rangeYMs.value[1])
   const d = new Date(baseDate.value); d.setMonth(d.getMonth() + 1); d.setDate(0)
   return d.toISOString().split('T')[0]
 })
+
+/** 画面に出す期間の見出し。単月は従来表記のまま */
+const periodLabel = computed(() => isRange.value ? `${rangeYMs.value[0]} 〜 ${rangeYMs.value[1]}` : yearMonth.value)
+
+/** 期間指定に切り替える。初期値は今見ている月（いきなり別の期間に飛ばさない） */
+function openRange() {
+  const d = baseDate.value
+  const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  if (!rangeFromYM.value) rangeFromYM.value = ym
+  if (!rangeToYM.value)   rangeToYM.value = ym
+  rangeMode.value = 'ym'
+}
+function closeRange() { rangeMode.value = '' }
 
 const loading    = ref(false)
 const siteMap    = ref<Record<string, any[]>>({})
@@ -833,7 +872,8 @@ async function load() {
 }
 
 onMounted(load)
-watch(dateFrom, load)
+// 期間指定では終了月だけを変えることもあるので dateTo も見る（見ないと再集計されない）
+watch([dateFrom, dateTo], load)
 watch(wageMode, load)   // 日当-実質賃金の切替で社員人件費を再集計
 </script>
 
@@ -842,6 +882,8 @@ watch(wageMode, load)   // 日当-実質賃金の切替で社員人件費を再�
 .page-title { font-size: 22px; font-weight: 700; }
 .month-nav { display: flex; align-items: center; gap: 12px; }
 .month-label { font-size: 16px; font-weight: 700; min-width: 100px; text-align: center; }
+.btn-range { background: #fff; color: #374151; border: 1px solid #d1d5db; border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.range-ym { border: 1px solid #ccc; border-radius: 6px; padding: 4px 8px; font-size: 13px; }
 .btn-nav { background: #f0f0f0; border: none; border-radius: 8px; padding: 6px 14px; font-size: 18px; cursor: pointer; }
 .empty { color: #888; padding: 60px; text-align: center; }
 .wage-toggle-btn { display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 700; border: 1px solid #c7d2fe; background: #eef2ff; color: #4338ca; border-radius: 999px; padding: 1px 8px; cursor: pointer; white-space: nowrap; }
