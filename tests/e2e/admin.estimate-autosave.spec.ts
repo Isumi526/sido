@@ -12,7 +12,7 @@
 //  Notion: R22
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { getAccountId, restSrv, openBuilderTab } from './helpers'
+import { getAccountId, restSrv, openBuilderTab, EST_SPARE_ROWS } from './helpers'
 
 const TS = Date.now()
 let seq = 0
@@ -111,8 +111,8 @@ test('AC4: 行を消すと即座にDBからも消える', async ({ page }) => {
 
 test('AC5★: 予備の空行は保存されない（ゴミ行が増えない）', async ({ page }) => {
   await openNewProject(page)
-  // 画面には常に予備の空行がある
-  expect(await page.locator('[data-testid^="item-name-"]').count()).toBeGreaterThan(3)
+  // 画面には常に予備の空行がある（本数は EST_SPARE_ROWS ＝画面側 SPARE_ROWS と同数）
+  expect(await page.locator('[data-testid^="item-name-"]').count()).toBe(EST_SPARE_ROWS)
   await page.locator('[data-testid="item-name-0"]').fill('1行だけ打つ')
   await page.locator('[data-testid="item-name-0"]').press('Tab')
   await page.waitForTimeout(2000)

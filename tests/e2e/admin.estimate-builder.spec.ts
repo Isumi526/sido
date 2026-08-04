@@ -6,7 +6,7 @@
 //   ※ estimate_* は RLS 有効（admin authenticated のみ）。検証/cleanup は service_role(restSrv)。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { restSrv, getAccountId, openBuilderTab } from './helpers'
+import { restSrv, getAccountId, openBuilderTab, newBlockFirstRow } from './helpers'
 
 const TS = Date.now()
 const PROJ = `E2E見積_${TS}`
@@ -95,8 +95,8 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     // 別の工種は別ブロック
     await page.locator('[data-testid="area-add-trade-0"]').click()
     await page.locator('[data-testid="blk-trade-1"]').fill(TRADE_B)
-    const nextIdx = await page.locator('[data-testid^="item-name-"]').count()
-    await addLine(nextIdx - 5, 'PB12.5', 1, 5000)     // 5000
+    const nextIdx = await newBlockFirstRow(page)
+    await addLine(nextIdx, 'PB12.5', 1, 5000)     // 5000
 
     // 工種別内訳パネル（転記操作なしで集計）。★R36で専用タブになった
     await page.locator('[data-testid="tab-breakdown"]').click()   // R36: 専用タブになった

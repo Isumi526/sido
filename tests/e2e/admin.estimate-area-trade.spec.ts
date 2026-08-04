@@ -15,7 +15,7 @@
 //  Notion: R12 3ac0ff81c56b8170b172e26f562e2da9 / R13 3ac0ff81c56b8102ae74d9c0959cbe06
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { getAccountId, restSrv, openBuilderTab } from './helpers'
+import { getAccountId, restSrv, openBuilderTab, newBlockFirstRow } from './helpers'
 
 const TS = Date.now()
 let seq = 0
@@ -59,10 +59,10 @@ test('AC1★(R12): 1つの場所に複数の工種をぶら下げられ、場所
   await page.waitForTimeout(300)
   await expect(page.locator('[data-testid="area-row-0"]')).toContainText('2工種')
   await page.locator('[data-testid="blk-trade-1"]').fill('塗装工事')
-  const idx = await page.locator('[data-testid^="item-name-"]').count()
-  await page.locator(`[data-testid="item-name-${idx - 5}"]`).fill('壁面 塗装')
-  await page.locator(`[data-testid="item-qty-${idx - 5}"]`).fill('3')
-  await page.locator(`[data-testid="item-cost-${idx - 5}"]`).fill('500')
+  const idx = await newBlockFirstRow(page)
+  await page.locator(`[data-testid="item-name-${idx}"]`).fill('壁面 塗装')
+  await page.locator(`[data-testid="item-qty-${idx}"]`).fill('3')
+  await page.locator(`[data-testid="item-cost-${idx}"]`).fill('500')
 
   // 場所の欄は1つだけ（工種ごとに場所を打たされない）
   await expect(page.locator('[data-testid^="area-loc-"]')).toHaveCount(1)
@@ -87,10 +87,10 @@ test('AC2(R12): 場所を後から直すと、その場所の全工種の全行�
   await page.locator('[data-testid="area-add-trade-0"]').click()
   await page.waitForTimeout(300)
   await page.locator('[data-testid="blk-trade-1"]').fill('塗装工事')
-  const idx = await page.locator('[data-testid^="item-name-"]').count()
-  await page.locator(`[data-testid="item-name-${idx - 5}"]`).fill('天井 塗装')
-  await page.locator(`[data-testid="item-qty-${idx - 5}"]`).fill('1')
-  await page.locator(`[data-testid="item-cost-${idx - 5}"]`).fill('600')
+  const idx = await newBlockFirstRow(page)
+  await page.locator(`[data-testid="item-name-${idx}"]`).fill('天井 塗装')
+  await page.locator(`[data-testid="item-qty-${idx}"]`).fill('1')
+  await page.locator(`[data-testid="item-cost-${idx}"]`).fill('600')
 
   // 場所を打ち直す → 配下の全工種に伝播する
   await page.locator('[data-testid="area-loc-0"]').fill('天井工事（変更後）')
@@ -115,10 +115,10 @@ test('AC3(R12): 場所を2つ作れて、混ざらない', async ({ page }) => {
   await expect(page.locator('[data-testid^="area-loc-"]')).toHaveCount(2)
   await page.locator('[data-testid="area-loc-1"]').fill('床工事')
   await page.locator('[data-testid="blk-trade-1"]').fill('内装工事')
-  const idx = await page.locator('[data-testid^="item-name-"]').count()
-  await page.locator(`[data-testid="item-name-${idx - 5}"]`).fill('床 塩ビタイル')
-  await page.locator(`[data-testid="item-qty-${idx - 5}"]`).fill('1')
-  await page.locator(`[data-testid="item-cost-${idx - 5}"]`).fill('200')
+  const idx = await newBlockFirstRow(page)
+  await page.locator(`[data-testid="item-name-${idx}"]`).fill('床 塩ビタイル')
+  await page.locator(`[data-testid="item-qty-${idx}"]`).fill('1')
+  await page.locator(`[data-testid="item-cost-${idx}"]`).fill('200')
 
   // 1つ目の場所を変えても2つ目には影響しない
   await page.locator('[data-testid="area-loc-0"]').fill('壁面工事X')
