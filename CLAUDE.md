@@ -105,6 +105,13 @@ git push origin main --force
 - 外部送信媒体＝**LINE（liff・GAS webhook 経由）・メール**（実送信は自分宛・隔離）。
 - 本番: DEPLOY_TRIGGER=`auto-on-merge`（Vercel）。**Supabase edge functions 使用＝ship 手順7 で本番ref へ deploy 該当**。`NOTIFY_PREFIX=[sido]`。スモークの認可ガード対象＝GAS/edge webhook・公開リンク等。
 
+### CONSUMERS_DOCS（/run が参照・§3 影響範囲マップの手順4）
+`run.md` が言う「`docs/*-consumers.md` があれば使う／無ければ作る」の**この案件での実体は以下3本**。
+新しいエンティティで同型の文書を作る時のひな型でもある。
+- `docs/expense-data-consumers.md` — 経費データ（`daily_reports.sites[].expenses`）。JSON構造・明細ごと領収書・スカラー⇔配列を変える時。
+- `docs/site-reference-consumers.md` — 日報の現場参照（`site_id` 権威キー＋`siteName` 表示スナップショット）。集計のグループ化キーに触れる時。
+- `docs/subcontractor-invoice-consumers.md` — 下請け請求（`subcontractor_invoices` / `_items`）。`amount` の意味が請求書ごとに変わるため。
+
 ## 自走ポリシー（被害範囲で判断）
 判断軸：可逆 & dev内 = 自走。不可逆 / 本番 / 業務意図 = 人。
 
