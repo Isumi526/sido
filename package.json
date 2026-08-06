@@ -14,7 +14,7 @@
     "notify:check": "node scripts/check-notify.mjs",
     "notify:off": "node scripts/check-notify.mjs test --set off",
     "notify:on": "node scripts/check-notify.mjs test --set on",
-    "test:e2e": "playwright test",
+    "test:e2e": "playwright test --project=admin --project=liff",
     "test:e2e:admin": "playwright test --project=admin",
     "test:e2e:liff": "playwright test --project=liff",
     "test:e2e:ui": "playwright test --ui",
