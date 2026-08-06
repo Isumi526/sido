@@ -19,8 +19,8 @@
             </td>
             <td><span class="status" :class="c.active ? 'active' : 'off'">{{ c.active ? '有効' : '無効' }}</span></td>
             <td class="actions">
-              <button class="btn-edit" @click="openEdit(c)">編集</button>
-              <button class="btn-toggle" @click="toggleActive(c)">{{ c.active ? '無効化' : '有効化' }}</button>
+              <button class="btn-edit" data-testid="contractor-edit" @click="openEdit(c)">編集</button>
+              <button v-if="canManageContractors" class="btn-toggle" data-testid="contractor-toggle" @click="toggleActive(c)">{{ c.active ? '無効化' : '有効化' }}</button>
             </td>
           </tr>
         </tbody>
@@ -43,7 +43,7 @@
           <div class="field"><label>住所</label><input v-model="modal.address" class="input" /></div>
         </div>
         <div class="field"><label>備考</label><textarea v-model="modal.note" class="input" rows="2" placeholder="この元請けに関するメモ"></textarea></div>
-        <details class="bank">
+        <details v-if="canManageContractors" class="bank" data-testid="contractor-bank">
           <summary>振込口座（任意）</summary>
           <div class="grid2">
             <div class="field"><label>銀行名</label><input v-model="modal.bank_name" class="input" /></div>
@@ -81,19 +81,25 @@
 import { ref, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { canManageContractors } from '../lib/auth'
 
 type Contact = { id?: string; name: string; email: string | null; phone: string | null }
 type Contractor = {
   id: string; name: string; active: boolean
   representative_name: string | null; mobile_phone: string | null; office_phone: string | null
   email: string | null; address: string | null; registration_number: string | null; note: string | null
-  bank_name: string | null; bank_branch: string | null; bank_account_type: string | null
-  bank_account_number: string | null; bank_account_holder: string | null
+  // 振込口座は canManageContractors の時だけ SELECT する＝site_manager では欠落する（optional）
+  bank_name?: string | null; bank_branch?: string | null; bank_account_type?: string | null
+  bank_account_number?: string | null; bank_account_holder?: string | null
   contacts: Contact[]
 }
 type ModalState = Partial<Contractor> & { contacts: Contact[] }
 
-const CON_COLS = 'id, name, active, representative_name, mobile_phone, office_phone, email, address, registration_number, note, bank_name, bank_branch, bank_account_type, bank_account_number, bank_account_holder'
+// 振込口座は機微情報のため site_manager には取得もさせない（canManageContractors・2026-08-06）。
+//  ★UI で隠すだけにすると、取得した値をそのまま update で送り返す実装（save の fields）と噛み合わず、
+//   隠れているのに保存で書き戻る/消える事故になりうる。列ごと分けて「読まない・書かない」を揃える。
+const CON_COLS_BASE = 'id, name, active, representative_name, mobile_phone, office_phone, email, address, registration_number, note'
+const CON_COLS_BANK = 'bank_name, bank_branch, bank_account_type, bank_account_number, bank_account_holder'
 
 const contractors = ref<Contractor[]>([])
 const modal       = ref<ModalState | null>(null)
@@ -103,7 +109,9 @@ const saveError   = ref('')
 async function load() {
   const accountId = await getAccountId()
   const [{ data: rows }, { data: contactRows }] = await Promise.all([
-    supabase.from('contractors').select(CON_COLS).eq('account_id', accountId).order('name'),
+    supabase.from('contractors')
+      .select(canManageContractors.value ? `${CON_COLS_BASE}, ${CON_COLS_BANK}` : CON_COLS_BASE)
+      .eq('account_id', accountId).order('name'),
     supabase.from('contractor_contacts').select('id, contractor_id, name, email, phone, sort_order')
       .eq('account_id', accountId).eq('is_deleted', false).order('sort_order'),
   ])
@@ -137,11 +145,15 @@ async function save() {
       address: m.address?.trim() || null,
       registration_number: m.registration_number?.trim() || null,
       note: m.note?.trim() || null,
-      bank_name: m.bank_name?.trim() || null,
-      bank_branch: m.bank_branch?.trim() || null,
-      bank_account_type: m.bank_account_type?.trim() || null,
-      bank_account_number: m.bank_account_number?.trim() || null,
-      bank_account_holder: m.bank_account_holder?.trim() || null,
+      // 振込口座は canManageContractors のみ。site_manager の保存では payload に入れない
+      //  ＝ DB の既存の口座情報に触れない（隠したフィールドを null で上書きしてしまう事故を防ぐ）。
+      ...(canManageContractors.value ? {
+        bank_name: m.bank_name?.trim() || null,
+        bank_branch: m.bank_branch?.trim() || null,
+        bank_account_type: m.bank_account_type?.trim() || null,
+        bank_account_number: m.bank_account_number?.trim() || null,
+        bank_account_holder: m.bank_account_holder?.trim() || null,
+      } : {}),
     }
     if (id) {
       await supabase.from('contractors').update(fields).eq('id', id)
@@ -172,6 +184,7 @@ async function syncContacts(contractorId: string, accountId: string, want: Conta
 }
 
 async function toggleActive(c: Contractor) {
+  if (!canManageContractors.value) return  // ボタンは非表示だが、関数側でも閉じておく
   await supabase.from('contractors').update({ active: !c.active }).eq('id', c.id)
   await load()
 }
