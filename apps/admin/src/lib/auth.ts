@@ -61,11 +61,11 @@ export const canViewManagementPages = computed(() =>
 //  ★他の経営系ページ（見積・発注/経費・請求/見積マスタ/管理・設定）は塞がれたまま。
 export const canViewContractors = computed(() => isAdminAllowed.value)
 
-// 元請け業者の「無効化/有効化」と「振込口座」の可否: admin/office/純admin(role=null) のみ。site_manager は不可。
-//  ・無効化は一覧から実質消す操作＝削除に最も近いため閲覧編集とは分けて閉じる。
-//  ・振込口座（銀行名/支店/種別/口座番号/名義）は機微情報のため、作業員マスタの詳細情報を
-//    site_manager から隠した canViewWorkerDetails（2026-07-11）と同じ扱いにする。
+// 元請け業者の「無効化/有効化」の可否: admin/office/純admin(role=null) のみ。site_manager は不可。
+//  無効化は一覧から実質消す操作＝削除に最も近いため、閲覧・編集（canViewContractors）とは分けて閉じる。
 //  （2026-08-06 ユーザー確定回答）
+//  ※振込口座は当初ここに含めて site_manager から隠していたが、隠す必要なしとの判断で
+//   全ロールに開いた（2026-08-07 レビューでの判断変更）。口座はこのフラグの対象外。
 export const canManageContractors = computed(() =>
   !currentRole.value || currentRole.value === 'admin' || currentRole.value === 'office')
 
