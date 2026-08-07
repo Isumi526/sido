@@ -43,7 +43,7 @@
           <div class="field"><label>住所</label><input v-model="modal.address" class="input" /></div>
         </div>
         <div class="field"><label>備考</label><textarea v-model="modal.note" class="input" rows="2" placeholder="この元請けに関するメモ"></textarea></div>
-        <details v-if="canManageContractors" class="bank" data-testid="contractor-bank">
+        <details class="bank" data-testid="contractor-bank">
           <summary>振込口座（任意）</summary>
           <div class="grid2">
             <div class="field"><label>銀行名</label><input v-model="modal.bank_name" class="input" /></div>
@@ -88,18 +88,15 @@ type Contractor = {
   id: string; name: string; active: boolean
   representative_name: string | null; mobile_phone: string | null; office_phone: string | null
   email: string | null; address: string | null; registration_number: string | null; note: string | null
-  // 振込口座は canManageContractors の時だけ SELECT する＝site_manager では欠落する（optional）
-  bank_name?: string | null; bank_branch?: string | null; bank_account_type?: string | null
-  bank_account_number?: string | null; bank_account_holder?: string | null
+  bank_name: string | null; bank_branch: string | null; bank_account_type: string | null
+  bank_account_number: string | null; bank_account_holder: string | null
   contacts: Contact[]
 }
 type ModalState = Partial<Contractor> & { contacts: Contact[] }
 
-// 振込口座は機微情報のため site_manager には取得もさせない（canManageContractors・2026-08-06）。
-//  ★UI で隠すだけにすると、取得した値をそのまま update で送り返す実装（save の fields）と噛み合わず、
-//   隠れているのに保存で書き戻る/消える事故になりうる。列ごと分けて「読まない・書かない」を揃える。
-const CON_COLS_BASE = 'id, name, active, representative_name, mobile_phone, office_phone, email, address, registration_number, note'
-const CON_COLS_BANK = 'bank_name, bank_branch, bank_account_type, bank_account_number, bank_account_holder'
+// 振込口座は全ロール（site_manager 含む）が閲覧・編集する（2026-08-07 レビューでユーザー判断変更）。
+//  当初は site_manager に隠す実装（列ごと分離）だったが、隠す必要なしとの判断で全員に開いた。
+const CON_COLS = 'id, name, active, representative_name, mobile_phone, office_phone, email, address, registration_number, note, bank_name, bank_branch, bank_account_type, bank_account_number, bank_account_holder'
 
 const contractors = ref<Contractor[]>([])
 const modal       = ref<ModalState | null>(null)
@@ -109,9 +106,7 @@ const saveError   = ref('')
 async function load() {
   const accountId = await getAccountId()
   const [{ data: rows }, { data: contactRows }] = await Promise.all([
-    supabase.from('contractors')
-      .select(canManageContractors.value ? `${CON_COLS_BASE}, ${CON_COLS_BANK}` : CON_COLS_BASE)
-      .eq('account_id', accountId).order('name'),
+    supabase.from('contractors').select(CON_COLS).eq('account_id', accountId).order('name'),
     supabase.from('contractor_contacts').select('id, contractor_id, name, email, phone, sort_order')
       .eq('account_id', accountId).eq('is_deleted', false).order('sort_order'),
   ])
@@ -145,15 +140,11 @@ async function save() {
       address: m.address?.trim() || null,
       registration_number: m.registration_number?.trim() || null,
       note: m.note?.trim() || null,
-      // 振込口座は canManageContractors のみ。site_manager の保存では payload に入れない
-      //  ＝ DB の既存の口座情報に触れない（隠したフィールドを null で上書きしてしまう事故を防ぐ）。
-      ...(canManageContractors.value ? {
-        bank_name: m.bank_name?.trim() || null,
-        bank_branch: m.bank_branch?.trim() || null,
-        bank_account_type: m.bank_account_type?.trim() || null,
-        bank_account_number: m.bank_account_number?.trim() || null,
-        bank_account_holder: m.bank_account_holder?.trim() || null,
-      } : {}),
+      bank_name: m.bank_name?.trim() || null,
+      bank_branch: m.bank_branch?.trim() || null,
+      bank_account_type: m.bank_account_type?.trim() || null,
+      bank_account_number: m.bank_account_number?.trim() || null,
+      bank_account_holder: m.bank_account_holder?.trim() || null,
     }
     if (id) {
       await supabase.from('contractors').update(fields).eq('id', id)

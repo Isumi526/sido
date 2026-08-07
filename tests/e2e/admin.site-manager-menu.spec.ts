@@ -6,8 +6,8 @@
 //     非表示＝見積・発注 / 経費・請求 / 見積マスタ・単価表 / 管理・設定 に加えて、
 //     勤怠3画面(出面勤怠・出退勤ログ・有給管理) / 作業員マスタ / 車両、ダッシュボードの月次集計。
 //     ★元請け業者(/contractors)は 2026-08-06 に現場運営系へ移した（現場管理者が担当現場の元請けを
-//       自分で登録できないと現場が止まるため）。無効化トグル・振込口座だけは引き続き admin/office 限定＝
-//       admin.contractors-role.spec.ts が担保する。
+//       自分で登録できないと現場が止まるため）。無効化トグルだけは引き続き admin/office 限定＝
+//       admin.contractors-role.spec.ts が担保する（振込口座は 2026-08-07 に現場管理者へも開いた）。
 //   - URL直打ちも router guard (meta.management) で / へリダイレクト。
 //   - admin/office は従来どおり全メニュー表示（挙動不変）。
 // ============================================================
@@ -59,14 +59,15 @@ test.describe('site_manager は経営系メニュー非表示＋URL直打ち不�
       await expect(page, `${path} は / へ戻されるべき`).toHaveURL(/\/\/[^/]+\/$/)
     }
 
-    // ★元請け業者だけは開ける（2026-08-06 開放）。ただし無効化トグルと振込口座は出さない。
+    // ★元請け業者だけは開ける（2026-08-06 開放）。ただし無効化トグルは出さない。
+    //   振込口座は 2026-08-07 の判断変更で現場管理者にも開いた（隠さない）。
     await page.goto('/contractors', { waitUntil: 'networkidle' })
     await expect(page, '/contractors は現場管理者も開ける').toHaveURL(/\/contractors$/)
     await expect(page.locator('h1')).toContainText('元請け業者マスタ')
     await expect(page.locator('[data-testid="contractor-toggle"]'), '無効化トグルは出さない').toHaveCount(0)
     if (await page.locator('[data-testid="contractor-edit"]').count()) {
       await page.locator('[data-testid="contractor-edit"]').first().click()
-      await expect(page.locator('[data-testid="contractor-bank"]'), '振込口座は出さない').toHaveCount(0)
+      await expect(page.locator('[data-testid="contractor-bank"]'), '振込口座は現場管理者にも出す').toBeVisible()
       await page.locator('.btn-cancel').click()
     }
 

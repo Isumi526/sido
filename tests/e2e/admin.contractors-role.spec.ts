@@ -1,8 +1,9 @@
 // ============================================================
 //  admin.contractors-role.spec.ts
 //  【権限】現場管理者(site_manager)に元請け業者マスタを開放する（2026-08-06 ユーザー確定回答）
-//    ・閲覧/追加/編集は site_manager も可
-//    ・無効化トグル と 振込口座 は admin/office/純オーナーのみ
+//    ・閲覧/追加/編集は site_manager も可（振込口座もオーナーと同じく閲覧・編集できる
+//      ＝2026-08-07 レビューでユーザー判断変更。当初は隠す実装だった）
+//    ・無効化トグルだけ admin/office/純オーナーのみ
 //    ・元請け以外の経営系ページは site_manager から塞がれたまま（回帰防止）
 //
 //  ロールは apps/admin/src/lib/auth.ts resolveRole が workers.permission_role を
@@ -87,16 +88,19 @@ test.describe('site_manager（現場管理者）', () => {
     await expect(page.locator('table').getByText(TARGET, { exact: true })).toBeVisible()
   })
 
-  test('無効化トグルと振込口座は出ない', async ({ page }) => {
+  test('無効化トグルは出ない／振込口座は出る（2026-08-07 判断変更）', async ({ page }) => {
     await page.goto('/contractors', { waitUntil: 'networkidle' })
     const row = page.locator('table tr', { hasText: TARGET })
     await expect(row.locator('[data-testid="contractor-toggle"]')).toHaveCount(0)
     await row.locator('[data-testid="contractor-edit"]').click()
     await expect(page.locator('[data-testid="contractor-name"]')).toBeVisible()
-    await expect(page.locator('[data-testid="contractor-bank"]')).toHaveCount(0)
+    await expect(page.locator('[data-testid="contractor-bank"]')).toBeVisible()
+    await page.locator('[data-testid="contractor-bank"] summary').click()
+    await expect(page.locator('.modal label', { hasText: '銀行名' }).locator('xpath=following-sibling::input'))
+      .toHaveValue(BANK.bank_name)
   })
 
-  test('編集して保存できる／保存しても既存の振込口座は消えない', async ({ page }) => {
+  test('編集して保存できる／既存の振込口座が保存で消えない', async ({ page }) => {
     await page.goto('/contractors', { waitUntil: 'networkidle' })
     await page.locator('table tr', { hasText: TARGET }).locator('[data-testid="contractor-edit"]').click()
     await page.locator('.modal label', { hasText: '代表者名' }).locator('xpath=following-sibling::input').fill('現場管理者が入力')
@@ -105,8 +109,19 @@ test.describe('site_manager（現場管理者）', () => {
 
     const [row] = await restSrv(`contractors?id=eq.${contractorId}&select=representative_name,${Object.keys(BANK).join(',')}`)
     expect(row.representative_name).toBe('現場管理者が入力')
-    // ★ここが本丸: 画面に出していない口座列を null で上書きしていないこと
+    // 口座欄に触れずに保存しても、既存の口座が消えない（当初は列分離で担保していた箇所）
     for (const [k, v] of Object.entries(BANK)) expect(row[k]).toBe(v)
+  })
+
+  test('振込口座を編集して保存できる', async ({ page }) => {
+    await page.goto('/contractors', { waitUntil: 'networkidle' })
+    await page.locator('table tr', { hasText: TARGET }).locator('[data-testid="contractor-edit"]').click()
+    await page.locator('[data-testid="contractor-bank"] summary').click()
+    await page.locator('.modal label', { hasText: '口座番号' }).locator('xpath=following-sibling::input').fill('7654321')
+    await page.locator('.btn-save').click()
+    await expect(page.locator('.modal')).toHaveCount(0)
+    const [row] = await restSrv(`contractors?id=eq.${contractorId}&select=bank_account_number`)
+    expect(row.bank_account_number).toBe('7654321')
   })
 
   test('新規追加できる', async ({ page }) => {
