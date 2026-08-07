@@ -126,6 +126,15 @@ function removeContact(i: number){ modal.value!.contacts.splice(i, 1) }
 
 async function save() {
   if (!modal.value?.name?.trim()) { saveError.value = '元請け業者名を入力してください'; return }
+  // ★担当者名が空の行は syncContacts が黙って捨てる（=名前を入れ忘れると、メール/電話を入れていても
+  //  エラーも出ずに行ごと消える）。捨てる前に止めて、どこが悪いか人に見せる（2026-08-07 レビュー指摘）。
+  //  行は「＋ 担当者を追加」を押した時しか生まれないので、空行が残っているのは入力途中＝止めてよい。
+  //  不要になった行は × で消す。
+  const namelessRow = modal.value.contacts.findIndex((c) => !c.name?.trim())
+  if (namelessRow >= 0) {
+    saveError.value = `担当者${namelessRow + 1}件目の氏名を入力してください（不要な行は × で削除してください）`
+    return
+  }
   saving.value = true; saveError.value = ''
   try {
     const accountId = await getAccountId()
