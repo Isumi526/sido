@@ -133,6 +133,32 @@ test.describe('site_manager（現場管理者）', () => {
     await expect(page.locator('table').getByText(name, { exact: true })).toBeVisible()
   })
 
+  // 2026-08-07 レビュー指摘: 担当者名が空の行は syncContacts が黙って捨てるため、
+  //  メール/電話を入れていてもエラーなく行ごと消えていた。保存を止めてエラーを出す。
+  test('担当者名が空のまま保存できない（黙って捨てない）', async ({ page }) => {
+    const name = `${PREFIX}担当者空`
+    await page.goto('/contractors', { waitUntil: 'networkidle' })
+    await page.locator('.btn-add').click()
+    await page.locator('[data-testid="contractor-name"]').fill(name)
+    await page.locator('.btn-add-contact').click()
+    await page.locator('.contact-row input[placeholder="メール"]').fill('dare@example.com')
+    await page.locator('.btn-save').click()
+
+    await expect(page.locator('.modal .error')).toContainText('氏名を入力してください')
+    await expect(page.locator('.modal'), 'モーダルは閉じない').toBeVisible()
+    expect((await restSrv(`contractors?name=eq.${encodeURIComponent(name)}&select=id`))?.length ?? 0).toBe(0)
+
+    // 氏名を入れれば保存でき、担当者も落ちない
+    await page.locator('.contact-row input[placeholder="担当者名 *"]').fill('鈴木')
+    await page.locator('.btn-save').click()
+    await expect(page.locator('table').getByText(name, { exact: true })).toBeVisible()
+    const [saved] = await restSrv(`contractors?name=eq.${encodeURIComponent(name)}&select=id`)
+    const contacts = await restSrv(`contractor_contacts?contractor_id=eq.${saved.id}&select=name,email`)
+    expect(contacts).toHaveLength(1)
+    expect(contacts[0].name).toBe('鈴木')
+    expect(contacts[0].email).toBe('dare@example.com')
+  })
+
   test('元請け以外の経営系ページは塞がれたまま（回帰防止）', async ({ page }) => {
     for (const path of ['/estimate-masters', '/expenses', '/settings', '/workers']) {
       await page.goto(path, { waitUntil: 'networkidle' })
