@@ -95,7 +95,6 @@
                     <th class="col-payee">{{ t('expenseDoc.colPayee') }}</th>
                     <th class="col-reg">{{ t('expenseDoc.colReg') }}</th>
                     <th class="col-cat">{{ t('expenseDoc.colCategory') }}</th>
-                    <th class="col-acct">{{ t('expenseDoc.colAccount') }}</th>
                     <th class="col-lit">{{ t('expenseDoc.colLiters') }}</th>
                     <th class="col-site">{{ t('expenseDoc.colSite') }}</th>
                     <th class="col-vehicle">{{ t('expenseDoc.colVehicle') }}</th>
@@ -116,10 +115,7 @@
                       <input v-if="editMode && row.srcKey" v-model="row.registrationNumber" class="cell-edit" :placeholder="t('expenseDoc.colReg')" @input="row._dirty = true" />
                       <template v-else>{{ row.registrationNumber || '' }}</template>
                     </td>
-                    <!-- 品名: note（飲食代/区間名など実際の品名）を優先。無ければ従来の表示カテゴリ。
-                         個人経費は category に勘定科目が入るため、note を出さないと品名列に科目が並ぶ（2026-08-08 本番報告） -->
-                    <td class="small">{{ row.note || expenseDisplayCategory(row.category) }}</td>
-                    <td class="center">{{ expenseAccountCategory(row) }}</td>
+                    <td class="center">{{ expenseDisplayCategory(row.category) }}</td>
                     <td class="center">{{ row.liters ?? '' }}</td>
                     <td class="small">{{ row.siteName }}</td>
                     <td class="center">{{ row.vehicle || '' }}</td>
@@ -144,7 +140,7 @@
                 </tbody>
                 <tfoot>
                   <tr class="total-row">
-                    <td colspan="8" class="right">{{ t('expenseDoc.totalLabel') }}</td>
+                    <td colspan="7" class="right">{{ t('expenseDoc.totalLabel') }}</td>
                     <td class="right">¥{{ total.toLocaleString() }}</td>
                     <td class="no-print"></td>
                   </tr>
@@ -187,7 +183,7 @@
 import { useI18n } from 'vue-i18n'
 import type { User, ExpenseRow } from '~/types'
 import { getCurrentPeriodKey, recentPeriodKeys, deadlineLabel, effectiveStatus, periodLabel } from '~/composables/useExpense'
-import { expenseDisplayCategory, expenseAccountCategory } from '~/composables/expense-flatten.gen'
+import { expenseDisplayCategory } from '~/composables/expense-flatten.gen'
 import { elementToPdfBlob, uploadApplicationPdf } from '~/utils/generateExpensePdf'
 
 const { t } = useI18n()
@@ -510,7 +506,7 @@ html,body { background:var(--bg);color:var(--text);font-family:var(--font);min-h
 .expense-table { width:100%;border-collapse:collapse;font-size:12px; }
 .expense-table th,.expense-table td { border:1px solid #333;padding:5px 6px; }
 .expense-table thead th { background:#f0f0f0;font-weight:700;text-align:center;font-size:11px; }
-.col-date{width:62px}.col-payee{min-width:90px}.col-content{min-width:90px}.col-reg{width:110px}.col-cat{min-width:84px}.col-acct{width:72px}.col-lit{width:28px}.col-site{width:90px}.col-sep{width:18px}.col-amt{width:82px}.col-receipt{width:60px}
+.col-date{width:62px}.col-payee{min-width:90px}.col-content{min-width:90px}.col-reg{width:110px}.col-cat{width:72px}.col-lit{width:28px}.col-site{width:90px}.col-sep{width:18px}.col-amt{width:82px}.col-receipt{width:60px}
 .center{text-align:center}.right{text-align:right}.small{font-size:10px}
 .receipt-cell{text-align:center;white-space:nowrap}
 .receipt-link{display:inline-block;font-size:11px;color:var(--accent);text-decoration:none;margin:1px 2px}
