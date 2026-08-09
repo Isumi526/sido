@@ -209,7 +209,7 @@
         </div>
 
         <!-- 見積書（金額入り）は経営系＝現場管理者には出さない（2026-07-31 レビュー指摘） -->
-        <div v-if="modal.id && canViewManagementPages" class="field">
+        <div v-if="modal.id && canViewEstimates" class="field">
           <label>この現場の見積書</label>
           <div v-if="siteEstimates.length" class="att-list" data-testid="site-estimates">
             <div v-for="e in siteEstimates" :key="e.id" class="att-item">
@@ -254,6 +254,7 @@ import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { useQueryParam } from '../composables/useQueryParam'
 import { currentUser, canViewManagementPages } from '../lib/auth'
+import { canViewEstimates } from '../lib/features'
 import { findSimilarSiteNames } from '../lib/siteSimilarity'
 import { logOperation } from '../lib/operationLog'
 
@@ -489,7 +490,7 @@ async function openEdit(s: Site) {
   siteEstimates.value = []
   clearPendingAtts()
   // 見積書は表示しないロールでは取得もしない（非表示なのに読むと無駄＋漏洩面が広がる）
-  await Promise.all([loadAttachments(s.id), canViewManagementPages.value ? loadSiteEstimates(s.id) : Promise.resolve()])
+  await Promise.all([loadAttachments(s.id), canViewEstimates.value ? loadSiteEstimates(s.id) : Promise.resolve()])
   markFormOpened()   // 非同期ロード後に dirty 監視を開始（ロード自体を編集と誤認しない）
 }
 

@@ -59,7 +59,8 @@
           <li><RouterLink to="/paid-leave" class="nav-link"><span class="material-symbols-rounded nav-icon">beach_access</span>有給管理<span v-if="pendingGrantCount" class="nav-badge">{{ pendingGrantCount }}</span></RouterLink></li>
         </template>
 
-        <template v-if="canViewManagementPages">
+        <!-- 見積もりは機能フラグで開閉（8/19 の通しテストまで本番では隠す・2026-08-09） -->
+        <template v-if="canViewEstimates">
           <li class="nav-section">見積・発注</li>
           <!-- ★R53: 図面の材料抽出が終わったらここに件数を出す（解析中に他の画面へ移れるようにしたので、
                終わったことに気づける場所が必要）。結果を見た時点で消える。 -->
@@ -81,7 +82,7 @@
         <li v-if="canViewManagementPages"><RouterLink to="/contractors" class="nav-link"><span class="material-symbols-rounded nav-icon">apartment</span>元請け業者</RouterLink></li>
         <li><RouterLink to="/subcontractors" class="nav-link"><span class="material-symbols-rounded nav-icon">handshake</span>協力業者</RouterLink></li>
         <li v-if="canViewManagementPages"><RouterLink to="/vehicles" class="nav-link"><span class="material-symbols-rounded nav-icon">directions_car</span>車両</RouterLink></li>
-        <li v-if="canViewManagementPages"><RouterLink to="/estimate-masters" class="nav-link"><span class="material-symbols-rounded nav-icon">price_change</span>見積マスタ・単価表</RouterLink></li>
+        <li v-if="canViewEstimates"><RouterLink to="/estimate-masters" class="nav-link"><span class="material-symbols-rounded nav-icon">price_change</span>見積マスタ・単価表</RouterLink></li>
 
         <template v-if="canViewManagementPages">
           <li class="nav-section">管理・設定</li>
@@ -119,6 +120,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { currentUser, currentRole, currentWorkerName, signOut, isAdminAllowed, roleResolved, roleLabel, canViewManagementPages } from './lib/auth'
+import { canViewEstimates } from './lib/features'
 import { liffAppUrl } from './lib/links'
 import { getAccountName } from './lib/account'
 import { editReviewCount, siteUnsetCount, overtimePendingCount, pendingGrantCount, refreshNavBadges } from './lib/navBadges'
