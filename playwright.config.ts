@@ -59,36 +59,5 @@ export default defineConfig({
         },
       },
     },
-    {
-      // 駆動（/review 用・2026-08-06）: 合否 assert を持たず、到達してスクショを撮るだけ。
-      //   cc-pipeline plans/20260806-review-drive.md。判定は人が行う。
-      //   ★既定スイートに入れない（package.json の test:e2e は --project で admin/liff だけ指定）。
-      //   ★/run の着地ゲートにも含めない（CLAUDE.md の PLAYWRIGHT_PROJECTS 参照）。
-      name: 'review-drive-admin',
-      testMatch: /\.drive\.admin\.ts$/,
-      dependencies: ['admin-setup'],
-      use: {
-        ...devices['Desktop Chrome'],
-        baseURL: ADMIN_URL,
-        storageState: 'tests/e2e/.auth/admin-local.json',
-        screenshot: 'off',            // 駆動が明示的に page.screenshot() する
-        video: 'retain-on-failure',   // 失敗時の原因追跡（次の /run が使う）
-      },
-    },
-    {
-      name: 'review-drive-liff',
-      testMatch: /\.drive\.liff\.ts$/,
-      use: {
-        ...devices['Pixel 5'],
-        baseURL: LIFF_URL,
-        screenshot: 'off',
-        video: 'retain-on-failure',
-        // admin と同じ storageState は使えない（liff は別 origin・オーバーレイ回避が要る）
-        storageState: {
-          cookies: [],
-          origins: [{ origin: LIFF_URL, localStorage: [{ name: 'sido_report_onboarded_v1', value: '1' }] }],
-        },
-      },
-    },
   ],
 })
