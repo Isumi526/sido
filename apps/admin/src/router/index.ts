@@ -51,7 +51,8 @@ export const router = createRouter({
     { path: '/chats',        component: () => import('../pages/chats.vue') },
     { path: '/chats/account', component: () => import('../pages/account-chat.vue') },
     { path: '/chats/:id',    component: () => import('../pages/chat-detail.vue') },
-    { path: '/contractors',  component: Contractors,    meta: { management: true } },
+    // 元請け業者は site_manager も可（2026-08-06）。management から外す＝isAdminAllowed(worker弾き)だけが効く。
+    { path: '/contractors',  component: Contractors },
     { path: '/site-rules',   component: SiteRules },
     { path: '/attendance',   component: Attendance,     meta: { management: true } },
     { path: '/subcontractors', component: Subcontractors },

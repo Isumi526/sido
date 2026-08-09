@@ -48,10 +48,25 @@ export const canViewHourlyWage = computed(() =>
 export const canViewWorkerDetails = computed(() =>
   !currentRole.value || currentRole.value === 'admin' || currentRole.value === 'office')
 
-// 経営系ページ（見積・発注 / 経費・請求 / 元請け業者 / 見積マスタ・単価表 / 管理・設定）の閲覧可否:
+// 経営系ページ（見積・発注 / 経費・請求 / 見積マスタ・単価表 / 管理・設定）の閲覧可否:
 //  admin/office/純admin(role=null) のみ。site_manager は現場運営系（日次・勤怠・現場系マスタ）だけに制限する
 //  （2026-07-30 ユーザー確定回答。メニュー非表示＋ルートガードの両方で塞ぐ）。
+//  ※元請け業者マスタは 2026-08-06 にこの括りから外した（下の canViewContractors）。
 export const canViewManagementPages = computed(() =>
+  !currentRole.value || currentRole.value === 'admin' || currentRole.value === 'office')
+
+// 元請け業者マスタ（/contractors）の閲覧・追加・編集の可否: admin を使える全ロール＝site_manager も可。
+//  現場管理者が担当現場の元請け・担当者を自分で登録できないと現場が止まるため、経営系一括の
+//  canViewManagementPages から元請けだけを切り出す（2026-08-06 ユーザー確定回答）。
+//  ★他の経営系ページ（見積・発注/経費・請求/見積マスタ/管理・設定）は塞がれたまま。
+export const canViewContractors = computed(() => isAdminAllowed.value)
+
+// 元請け業者の「無効化/有効化」の可否: admin/office/純admin(role=null) のみ。site_manager は不可。
+//  無効化は一覧から実質消す操作＝削除に最も近いため、閲覧・編集（canViewContractors）とは分けて閉じる。
+//  （2026-08-06 ユーザー確定回答）
+//  ※振込口座は当初ここに含めて site_manager から隠していたが、隠す必要なしとの判断で
+//   全ロールに開いた（2026-08-07 レビューでの判断変更）。口座はこのフラグの対象外。
+export const canManageContractors = computed(() =>
   !currentRole.value || currentRole.value === 'admin' || currentRole.value === 'office')
 
 // roleResolved になるまで待つ（ログイン直後など解決前にルートガードが判定して素通ししないため）
