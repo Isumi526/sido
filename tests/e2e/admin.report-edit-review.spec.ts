@@ -269,6 +269,8 @@ test.describe('日報編集の承認（admin）', () => {
     const rows = page.locator('[data-testid="history-row"]')
     await expect(rows, 'この日報の履歴だけ').toHaveCount(1)
     await expect(rows.first()).toContainText(DATE)
+  })
+
   // ★2026-08-07 レビューで発見: 差戻しの理由入力(prompt)でキャンセルを押しても差し戻されていた。
   //  window.prompt の null を「理由なし」として続行していたため（承認側の confirm は正しく中断する）。
   //  誤クリック→キャンセルで作業員の編集が差し戻される事故になる。
