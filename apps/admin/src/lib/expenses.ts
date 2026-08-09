@@ -17,7 +17,10 @@ export { type BudgetUsage, type MonthlyLimitSources, PERSONAL_EXPENSE_LIMIT_SETT
 // ---------- 月次精算（申請/差し戻し）ステータス ----------
 // 正典: docs/spec/expense.md §2,§3
 
-export type SettlementStatus = '未申請' | '申請中' | '差し戻し' | '支払い済み' | '期限超過'
+// ★ダブル承認（議事録2026-07-27・自己承認できてしまう問題への対応）:
+//   申請中 →(一次承認: 役員・経理)→ 一次承認済み →(最終承認: オーナー)→ 支払い済み
+//   status は CHECK 制約の無い text なので値の追加で既存行に影響しない。
+export type SettlementStatus = '未申請' | '申請中' | '一次承認済み' | '差し戻し' | '支払い済み' | '期限超過'
 
 /** 期(period_key)の締切(JST)を返す。first=当月18日10:00 / second=翌月3日10:00 */
 export function deadlineForPeriod(periodKey: string): Date {
