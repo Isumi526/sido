@@ -1,9 +1,13 @@
 // ============================================================
 //  admin.site-manager-menu.spec.ts
-//  現場管理者(site_manager)のメニュー制限（2026-07-30 確定 → 2026-07-31 レビューで範囲拡大）:
-//   - サイドバーは現場運営系（日次 ＋ 現場/協力業者マスタ）のみ表示。
-//     非表示＝見積・発注 / 経費・請求 / 元請け業者 / 見積マスタ・単価表 / 管理・設定 に加えて、
+//  現場管理者(site_manager)のメニュー制限（2026-07-30 確定 → 2026-07-31 レビューで範囲拡大
+//   → 2026-08-06 元請け業者だけ開放）:
+//   - サイドバーは現場運営系（日次 ＋ 現場/協力業者/元請け業者マスタ）のみ表示。
+//     非表示＝見積・発注 / 経費・請求 / 見積マスタ・単価表 / 管理・設定 に加えて、
 //     勤怠3画面(出面勤怠・出退勤ログ・有給管理) / 作業員マスタ / 車両、ダッシュボードの月次集計。
+//     ★元請け業者(/contractors)は 2026-08-06 に現場運営系へ移した（現場管理者が担当現場の元請けを
+//       自分で登録できないと現場が止まるため）。無効化トグルだけは引き続き admin/office 限定＝
+//       admin.contractors-role.spec.ts が担保する（振込口座は 2026-08-07 に現場管理者へも開いた）。
 //   - URL直打ちも router guard (meta.management) で / へリダイレクト。
 //   - admin/office は従来どおり全メニュー表示（挙動不変）。
 // ============================================================
@@ -16,13 +20,13 @@ const SM_PASS  = 'worker-login-1234'
 // 経営系メニューの代表（href で特定。「設定」等のテキストは他メニューと部分一致するため使わない）
 const MANAGEMENT_LINKS = [
   '/estimate-list', '/purchase-orders', '/expenses', '/subcontractor-invoices',
-  '/contractors', '/estimate-masters', '/operation-logs', '/settings', '/company-profile',
+  '/estimate-masters', '/operation-logs', '/settings', '/company-profile',
   // 2026-07-31 追加分（勤怠・作業員・車両）
   '/worker-reports', '/attendance', '/paid-leave', '/workers', '/vehicles',
 ]
 // ★/report-edit-approvals（解錠の許可申請）はメニューから撤去した（2026-08-03・承認の一本化）。
 //   代わりに /report-edit-review（内容の承認）が現場運営系に入る。
-const SITE_OPS_LINKS   = ['/reports', '/report-edit-review', '/overtime-approvals', '/site-reports', '/calendar', '/process', '/sites', '/subcontractors']
+const SITE_OPS_LINKS   = ['/reports', '/report-edit-review', '/overtime-approvals', '/site-reports', '/calendar', '/process', '/sites', '/subcontractors', '/contractors']
 
 test.describe('site_manager は経営系メニュー非表示＋URL直打ち不可', () => {
   // 作業員アカウントでログインするため、保存済みadmin認証は使わない
@@ -53,6 +57,18 @@ test.describe('site_manager は経営系メニュー非表示＋URL直打ち不�
     for (const path of ['/expenses', '/estimate-list', '/settings', '/workers', '/worker-reports', '/attendance', '/paid-leave', '/vehicles']) {
       await page.goto(path, { waitUntil: 'networkidle' })
       await expect(page, `${path} は / へ戻されるべき`).toHaveURL(/\/\/[^/]+\/$/)
+    }
+
+    // ★元請け業者だけは開ける（2026-08-06 開放）。ただし無効化トグルは出さない。
+    //   振込口座は 2026-08-07 の判断変更で現場管理者にも開いた（隠さない）。
+    await page.goto('/contractors', { waitUntil: 'networkidle' })
+    await expect(page, '/contractors は現場管理者も開ける').toHaveURL(/\/contractors$/)
+    await expect(page.locator('h1')).toContainText('元請け業者マスタ')
+    await expect(page.locator('[data-testid="contractor-toggle"]'), '無効化トグルは出さない').toHaveCount(0)
+    if (await page.locator('[data-testid="contractor-edit"]').count()) {
+      await page.locator('[data-testid="contractor-edit"]').first().click()
+      await expect(page.locator('[data-testid="contractor-bank"]'), '振込口座は現場管理者にも出す').toBeVisible()
+      await page.locator('.btn-cancel').click()
     }
 
     // ダッシュボードの月次集計（会社全体の売上/原価）は出さない
