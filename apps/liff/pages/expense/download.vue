@@ -115,7 +115,11 @@
                       <input v-if="editMode && row.srcKey" v-model="row.registrationNumber" class="cell-edit" :placeholder="t('expenseDoc.colReg')" @input="row._dirty = true" />
                       <template v-else>{{ row.registrationNumber || '' }}</template>
                     </td>
-                    <td class="center">{{ expenseDisplayCategory(row.category) }}</td>
+                    <!-- 品名: 日報由来は従来のマッピング（駐車代→P代／電車代→交通費・2026-07-31 レビュー決定）。
+                         個人経費だけは category に勘定科目が入るため、そのまま出すと品名欄に「会議費」等の
+                         科目が並ぶ（2026-08-08 本番報告）。note（実際の品名）を出し、無ければ空欄にする。
+                         ★客先帳票に科目列は出さない（2026-07-31 レビュー決定）ので列は増やさない。 -->
+                    <td class="center">{{ itemName(row) }}</td>
                     <td class="center">{{ row.liters ?? '' }}</td>
                     <td class="small">{{ row.siteName }}</td>
                     <td class="center">{{ row.vehicle || '' }}</td>
@@ -183,7 +187,13 @@
 import { useI18n } from 'vue-i18n'
 import type { User, ExpenseRow } from '~/types'
 import { getCurrentPeriodKey, recentPeriodKeys, deadlineLabel, effectiveStatus, periodLabel } from '~/composables/useExpense'
-import { expenseDisplayCategory } from '~/composables/expense-flatten.gen'
+import { expenseDisplayCategory, isPersonalExpenseRow } from '~/composables/expense-flatten.gen'
+
+/** 品名欄の表示。個人経費は category＝勘定科目なので出さず、note（実際の品名）だけを出す。 */
+function itemName(row: ExpenseRow): string {
+  if (isPersonalExpenseRow(row)) return row.note || ''
+  return expenseDisplayCategory(row.category)
+}
 import { elementToPdfBlob, uploadApplicationPdf } from '~/utils/generateExpensePdf'
 
 const { t } = useI18n()

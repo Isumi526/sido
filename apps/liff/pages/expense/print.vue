@@ -49,7 +49,8 @@
             <td class="center">{{ fmtDate(row.date) }}</td>
             <td class="small">{{ row.payee || '' }}</td>
             <td class="small">{{ row.registrationNumber || '' }}</td>
-            <td class="center">{{ expenseDisplayCategory(row.category) }}</td>
+            <!-- 品名の規則は download.vue と同一（個人経費は note・無ければ空欄／科目列は出さない） -->
+            <td class="center">{{ itemName(row) }}</td>
             <td class="center">{{ row.liters ?? '' }}</td>
             <td class="small">{{ row.siteName }}</td>
             <td class="center">{{ row.vehicle || '' }}</td>
@@ -81,7 +82,13 @@
 import { useI18n } from 'vue-i18n'
 import type { ExpenseRow, User } from '~/types'
 import { periodLabel } from '~/composables/useExpense'
-import { expenseDisplayCategory } from '~/composables/expense-flatten.gen'
+import { expenseDisplayCategory, isPersonalExpenseRow } from '~/composables/expense-flatten.gen'
+
+/** 品名欄の表示。個人経費は category＝勘定科目なので出さず、note（実際の品名）だけを出す。 */
+function itemName(row: ExpenseRow): string {
+  if (isPersonalExpenseRow(row)) return row.note || ''
+  return expenseDisplayCategory(row.category)
+}
 
 const { t } = useI18n()
 
