@@ -38,6 +38,7 @@
             <th class="col-payee">{{ t('expenseDoc.colPayee') }}</th>
             <th class="col-reg">{{ t('expenseDoc.colReg') }}</th>
             <th class="col-cat">{{ t('expenseDoc.colCategory') }}</th>
+            <th class="col-acct">{{ t('expenseDoc.colAccount') }}</th>
             <th class="col-lit">{{ t('expenseDoc.colLiters') }}</th>
             <th class="col-site">{{ t('expenseDoc.colSite') }}</th>
             <th class="col-vehicle">{{ t('expenseDoc.colVehicle') }}</th>
@@ -49,7 +50,9 @@
             <td class="center">{{ fmtDate(row.date) }}</td>
             <td class="small">{{ row.payee || '' }}</td>
             <td class="small">{{ row.registrationNumber || '' }}</td>
-            <td class="center">{{ expenseDisplayCategory(row.category) }}</td>
+            <!-- 品名は note（実際の品名）優先。個人経費は category に科目が入るため（download.vue と同一規則） -->
+            <td class="small">{{ row.note || expenseDisplayCategory(row.category) }}</td>
+            <td class="center">{{ expenseAccountCategory(row) }}</td>
             <td class="center">{{ row.liters ?? '' }}</td>
             <td class="small">{{ row.siteName }}</td>
             <td class="center">{{ row.vehicle || '' }}</td>
@@ -58,7 +61,7 @@
         </tbody>
         <tfoot>
           <tr class="total-row">
-            <td colspan="7" class="right">{{ t('expenseDoc.totalLabel') }}</td>
+            <td colspan="8" class="right">{{ t('expenseDoc.totalLabel') }}</td>
             <td class="right">¥{{ total.toLocaleString() }}</td>
           </tr>
         </tfoot>
@@ -81,7 +84,7 @@
 import { useI18n } from 'vue-i18n'
 import type { ExpenseRow, User } from '~/types'
 import { periodLabel } from '~/composables/useExpense'
-import { expenseDisplayCategory } from '~/composables/expense-flatten.gen'
+import { expenseDisplayCategory, expenseAccountCategory } from '~/composables/expense-flatten.gen'
 
 const { t } = useI18n()
 
@@ -165,7 +168,8 @@ body { font-family: 'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic', sans-serif; ba
 .col-payee { min-width: 80px; }
 .col-content { min-width: 90px; }
 .col-reg   { width: 110px; font-size: 10px; }
-.col-cat   { width: 72px; }
+.col-cat   { min-width: 84px; }
+.col-acct  { width: 72px; }
 .col-lit   { width: 28px; }
 .col-site  { width: 90px; font-size: 10px; }
 .col-sep   { width: 18px; }
