@@ -30,6 +30,33 @@
     </div>
     <p v-if="saveError" class="error">{{ saveError }}</p>
 
+  <!-- 見積もり機能の公開スイッチ（2026-08-09）。
+       非見積の変更を先に本番へ出すため、見積もりの入口を既定OFFで隠している。
+       8/19 の通しテストでここをONにする＝再デプロイ不要。 -->
+  <div class="reminder-box">
+    <div class="reminder-title">見積もり機能</div>
+    <div class="reminder-config">
+      <div class="config-row">
+        <span class="config-label">見積・発注メニューを表示</span>
+        <button
+          class="toggle"
+          :class="{ on: estimateFeatureEnabled }"
+          :disabled="estimateFeatureSaving"
+          data-testid="toggle-estimate-feature"
+          @click="setEstimateFeatureEnabled(!estimateFeatureEnabled)"
+        >
+          <span class="toggle-knob" />
+          <span class="toggle-text">{{ estimateFeatureEnabled ? 'ON' : 'OFF' }}</span>
+        </button>
+      </div>
+      <div class="reminder-desc">
+        ONにすると「見積・発注」「見積マスタ・単価表」のメニューと、現場まわりの見積書の表示が有効になります。
+        OFFの間は見積もり関連の画面に入れません（データは消えません）。切り替えたあとは画面を再読み込みしてください。
+      </div>
+      <p v-if="estimateFeatureError" class="error" data-testid="estimate-feature-error">{{ estimateFeatureError }}</p>
+    </div>
+  </div>
+
   <!-- 日報通知 ON/OFF（脱LINE段階移行で非表示・EFは継続） -->
   <div v-if="!HIDE_LINE_SECTIONS" class="reminder-box">
     <div class="reminder-title">日報通知（LINE）</div>
@@ -130,6 +157,7 @@ import { ref, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug } from '../lib/account'
 import { HIDE_LINE_SECTIONS } from '../lib/featureFlags'
+import { FEATURE_KEY_ESTIMATE, estimateEnabled } from '../lib/features'
 
 // 脱LINE段階移行で非表示にする汎用設定キー（LINE固有）。データは保持・行のみ隠す。
 const LINE_SETTING_KEYS = new Set(['notify_group_id'])
@@ -146,6 +174,35 @@ function setReportNotifyEnabled(val: boolean) {
   reportNotifySaving.value = true
   upsertSetting('notify_report_enabled', String(val), '日報通知（送信・編集）')
     .finally(() => { reportNotifySaving.value = false })
+}
+
+// ── 見積もり機能の公開スイッチ ────────────────────────────
+//  8/19 の通しテストまで見積もりの入口を隠すためのフラグ（lib/features.ts が読む）。
+//  ここをONにすると再デプロイなしでメニュー・ルート・現場まわりの見積表示が開く。
+const estimateFeatureEnabled = ref(false)
+const estimateFeatureSaving  = ref(false)
+const estimateFeatureError   = ref('')
+
+/** ★保存が成功してから表示を変える（楽観更新にしない）。
+ *  他のトグルは先に見た目を変えてから保存しているが、このスイッチは 8/19 の解禁操作そのもので、
+ *  「ONに見えるのに保存できていない」と大塚さんが見積もりに入れない。失敗は必ず画面に出す。 */
+async function setEstimateFeatureEnabled(val: boolean) {
+  estimateFeatureSaving.value = true
+  estimateFeatureError.value = ''
+  try {
+    const accountId = await getAccountId()
+    const { error } = await supabase.from('settings').upsert(
+      { key: FEATURE_KEY_ESTIMATE, value: String(val), label: '見積もり機能の表示', account_id: accountId, updated_at: new Date().toISOString() },
+      { onConflict: 'key,account_id' },
+    )
+    if (error) throw error
+    estimateFeatureEnabled.value = val
+    estimateEnabled.value = val   // 同じ画面のメニューにも即反映
+  } catch (e: unknown) {
+    estimateFeatureError.value = `保存に失敗しました: ${(e as { message?: string })?.message ?? '不明なエラー'}`
+  } finally {
+    estimateFeatureSaving.value = false
+  }
 }
 
 // ── 経費申請の通知先メール ───────────────────────────────
@@ -198,11 +255,13 @@ async function loadReminderConfig() {
   const accountId = await getAccountId()
   const { data } = await supabase.from('settings').select('key, value')
     .eq('account_id', accountId)
-    .in('key', ['reminder_enabled', 'reminder_time', 'notify_report_enabled'])
+    .in('key', ['reminder_enabled', 'reminder_time', 'notify_report_enabled', FEATURE_KEY_ESTIMATE])
   const m = Object.fromEntries((data ?? []).map(s => [s.key, s.value]))
   reminderEnabled.value     = (m['reminder_enabled'] ?? 'true') === 'true'
   reminderTime.value        = m['reminder_time'] ?? '08:00'
   reportNotifyEnabled.value = (m['notify_report_enabled'] ?? 'true') === 'true'
+  // 見積もり機能は未設定＝OFF（fail-closed。lib/features.ts の既定と揃える）
+  estimateFeatureEnabled.value = m[FEATURE_KEY_ESTIMATE] === 'true'
 }
 
 async function upsertSetting(key: string, value: string, label: string) {
