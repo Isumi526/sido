@@ -249,7 +249,13 @@ async function decide(p: any, action: 'approve' | 'reject') {
   if (busy.value) return
   let rejectReason: string | null = null
   if (action === 'reject') {
-    rejectReason = window.prompt('差し戻す理由（任意・作業員に伝えたい内容）') ?? null
+    // ★キャンセル(null)は「理由なしで差し戻す」ではなく「差し戻さない」。
+    //  以前は ?? null で理由なし扱いのまま続行しており、誤クリック→キャンセルでも
+    //  作業員の編集が差し戻されていた（承認側の confirm は正しく中断するのに非対称だった）。
+    //  理由が任意なのは仕様どおりなので、空文字でOKを押した場合は従来どおり理由なしで差し戻す。
+    const input = window.prompt('差し戻す理由（任意・作業員に伝えたい内容）')
+    if (input === null) return
+    rejectReason = input.trim() || null
   } else if (!window.confirm(`${p.report_date} の編集を承認して日報に反映しますか？`)) {
     return
   }

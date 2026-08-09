@@ -269,6 +269,43 @@ test.describe('日報編集の承認（admin）', () => {
     const rows = page.locator('[data-testid="history-row"]')
     await expect(rows, 'この日報の履歴だけ').toHaveCount(1)
     await expect(rows.first()).toContainText(DATE)
+  // ★2026-08-07 レビューで発見: 差戻しの理由入力(prompt)でキャンセルを押しても差し戻されていた。
+  //  window.prompt の null を「理由なし」として続行していたため（承認側の confirm は正しく中断する）。
+  //  誤クリック→キャンセルで作業員の編集が差し戻される事故になる。
+  test('★差戻しの理由入力でキャンセルすると、差し戻されない', async ({ page }) => {
+    await seed()
+    page.on('dialog', (d) => d.dismiss().catch(() => {}))  // ＝ prompt のキャンセル
+
+    // ★「差し戻しました が出ない」を not.toBeVisible で見てはいけない。初回ポーリングで即成立し、
+    //  EFの応答を待たずに通ってしまう＝修正前のコードでも通る空振りテストになる（2026-08-07 に実際に踏んだ）。
+    //  EF を1回も叩いていないことをリクエストで直接見る。
+    const efCalls: string[] = []
+    page.on('request', (r) => { if (r.url().includes('report-edit-log')) efCalls.push(r.method()) })
+
+    await page.goto('/report-edit-review', { waitUntil: 'networkidle' })
+    const card = page.locator('[data-testid="pending-card"]', { hasText: `E2E理由_${TS}` })
+    await expect(card).toBeVisible({ timeout: 15000 })
+    await card.getByTestId('pending-reject').click()
+    await page.waitForTimeout(2000)  // 叩くならこの間に飛ぶ
+
+    expect(efCalls, '★report-edit-log を1回も叩かない').toHaveLength(0)
+    const pend = await restSrv(`daily_report_pending_edits?report_id=eq.${reportId}&select=status`)
+    expect(pend[0].status, 'pending のまま').toBe('pending')
+    await expect(card, '承認待ちに残ったまま').toBeVisible()
+    expect(await savedYen(), '日報も変わらない').toBe(ORIG_YEN)
+  })
+
+  test('理由を空欄のままOKなら、従来どおり理由なしで差し戻せる（任意の仕様は変えない）', async ({ page }) => {
+    await seed()
+    page.on('dialog', (d) => d.accept('').catch(() => {}))  // 空欄でOK
+    await page.goto('/report-edit-review', { waitUntil: 'networkidle' })
+
+    const card = page.locator('[data-testid="pending-card"]', { hasText: `E2E理由_${TS}` })
+    await expect(card).toBeVisible({ timeout: 15000 })
+    await card.getByTestId('pending-reject').click()
+    await expect(page.getByTestId('review-msg')).toContainText('差し戻しました', { timeout: 30000 })
+    const pend = await restSrv(`daily_report_pending_edits?report_id=eq.${reportId}&select=status`)
+    expect(pend[0].status).toBe('rejected')
   })
 
   test('承認済みのものは二重に承認できない（金額が二度適用されない）', async ({ page }) => {
