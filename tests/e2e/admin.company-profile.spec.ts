@@ -3,7 +3,12 @@
 //  【自社情報】会社名等を登録すると settings に保存され、見積書PDFの発行元に反映される。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { restSrv, getAccountId } from './helpers'
+import { restSrv, getAccountId, enableEstimateFeature, resetEstimateFeature } from './helpers'
+
+// 主題は自社情報だが、確認先が見積書プレビュー＝見積もり機能フラグ（既定OFF）の配下。
+// 本来の意図（自社情報が見積書に反映される）を保つため、このspecの間だけONにする。
+test.beforeAll(enableEstimateFeature)
+test.afterAll(resetEstimateFeature)
 
 const TS = Date.now()
 const CNAME = `自社E2E_${TS}`

@@ -123,6 +123,30 @@ export async function getAccountId(): Promise<string> {
   return rows[0].id
 }
 
+/**
+ * 見積もり機能のフィーチャーフラグ（settings.estimate_feature_enabled・2026-08-09 新設）。
+ * 既定はOFFで、見積もりの画面・見積書PDF・現場まわりの見積導線がすべて隠れる。
+ *
+ * ★見積もり以外を主題にしつつ見積画面に到達するspec（自社情報→見積書プレビュー、
+ *  現場別集計のzipに見積書PDFを内包 等）は、本来の意図を保つためフラグをONにしてから回す。
+ *  使い終わったら必ず reset して既定(未設定=OFF)へ戻すこと——行が残ると
+ *  「フラグOFFで隠れる」を検証している admin.estimate-feature-flag.spec.ts が壊れる。
+ */
+export const FEATURE_KEY_ESTIMATE = 'estimate_feature_enabled'
+
+export async function enableEstimateFeature(): Promise<void> {
+  const accountId = await getAccountId()
+  await restSrv('settings', {
+    method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({ account_id: accountId, key: FEATURE_KEY_ESTIMATE, value: 'true', label: '見積もり機能の表示' }),
+  })
+}
+
+export async function resetEstimateFeature(): Promise<void> {
+  const accountId = await getAccountId()
+  await restSrv(`settings?account_id=eq.${accountId}&key=eq.${FEATURE_KEY_ESTIMATE}`, { method: 'DELETE' })
+}
+
 // 現場マスタの責任者候補（現場管理者以上=admin/office/site_manager）のキャッシュ。
 // 複数specがそれぞれ専用ワーカーを作ると無駄に増えるため、プロセス内で使い回す。
 let _respWorkerId: string | null | undefined
