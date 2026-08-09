@@ -55,7 +55,7 @@
       <!-- 出力（※表の表示月は上の ‹ 年月 › ナビで切替。出力ボタンを押すと出力期間を選ぶ） -->
       <div v-if="displaySite" class="export-bar">
         <div class="export-pop-wrap">
-          <button class="btn-export" data-testid="export-site" @click="exportPanelOpen = !exportPanelOpen"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">download</span> {{ canViewManagementPages ? 'CSV＋見積書PDFを出力' : 'CSVを出力' }}</button>
+          <button class="btn-export" data-testid="export-site" @click="exportPanelOpen = !exportPanelOpen"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">download</span> {{ canViewEstimates ? 'CSV＋見積書PDFを出力' : 'CSVを出力' }}</button>
           <div v-if="exportPanelOpen" class="export-pop" data-testid="export-panel">
             <div class="export-pop-title">出力する期間を選んでください</div>
             <label class="export-range-lbl">出力範囲
@@ -452,6 +452,7 @@ import HelpButton from '../components/HelpButton.vue'
 import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, wageForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
 import type { WageMode } from '../lib/workerHours'
 import { canViewWages, canViewHourlyWage, canViewManagementPages } from '../lib/auth'
+import { canViewEstimates } from '../lib/features'
 import { resolveSiteRef, type SiteResolveCtx } from '../lib/siteKey'
 import { netAmountOf, normalizeTaxMode } from '../lib/invoiceTax'
 import { loadListOrder, saveListOrder, applyListOrder, moveItem } from '../lib/listOrder'
@@ -503,7 +504,7 @@ async function exportSite() {
     //   この出力から見積金額入りPDFを取得できてしまう抜け道になっていた。CSV（現場の原価集計）は
     //   現場管理者にも見せる方針なのでそのまま出す。
     const accountId = await getAccountId()
-    const { data: siteRow } = canViewManagementPages.value
+    const { data: siteRow } = canViewEstimates.value
       ? await supabase.from('sites').select('id').eq('account_id', accountId).eq('name', site).maybeSingle()
       : { data: null }
     if (siteRow?.id) {
