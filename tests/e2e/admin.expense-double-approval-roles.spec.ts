@@ -1,30 +1,30 @@
 // ============================================================
-//  375c8efd.drive.admin.ts — /review の「到達」用 駆動スクリプト
-//  チケット: [AI候補] 日報・経費の承認をダブル承認（管理者→経営陣の二段）にする #375c8efd
+//  admin.expense-double-approval-roles.spec.ts
+//  ダブル承認の【ロール別の見え方】— 誰が一次承認でき、誰が支払い確定できるか
+//   申請中 →(一次承認: office以上)→ 一次承認済み →(最終承認: admin)→ 支払い済み
 //
-//  ★これは spec ではない。**合否 assert を書かない**（判定は人）。
-//    各ステップの状態まで到達し、目印要素を waitFor してからスクショを撮るだけ。
-//    設計: cc-pipeline plans/20260806-review-drive.md / run.md §駆動スクリプト
+//  ★2026-08-06 の駆動スクリプト 375c8efd.drive.admin.ts を assert つき spec に昇格させたもの
+//   （cc-pipeline plans/20260807-test-and-contact-split.md「到達できるなら spec にする」）。
+//   駆動は到達だけして人がスクショを見る形だったが、スクショは検証としてE2Eに劣るため廃止。
+//   到達コード（ロール差し替え）はそのまま活きるので、待つだけだった箇所を assert に変えた。
 //
-//  ★ロール別の見え方も駆動する。
-//    admin.expense-double-approval.spec.ts は「ロードごとの見え方はE2Eのログイン主体を
-//    替えられないため人力チェックに回す」としているが、実際には**シードの問題**だった。
-//    apps/admin/src/lib/auth.ts:82 resolveRole は workers.permission_role を
-//    auth_user_id 紐付けで**ページ読み込み時に**解決する。よって e2e ログインユーザーに
-//    worker 行を作り permission_role を差し替えて reload すれば、各ロールの画面に到達できる。
-//    （到達するだけ。「一次承認はできるが支払い確定はできない」の判定は人が見て言う）
+//  ★「ロールごとの見え方はE2Eのログイン主体を替えられないから人力」は誤りだった。
+//   apps/admin/src/lib/auth.ts resolveRole は workers.permission_role を auth_user_id 紐付けで
+//   ページ読み込み時に解決するので、e2eユーザーに worker 行を作って role を差し替え reload すれば到達できる。
+//   ＝これは原理的制約ではなく**シードの問題**だった。
 //
-//  データは接頭辞 drive-375c8efd- を持たせ、冒頭で残骸を回収してから始める（冪等）。
+//  ★ただし spec にできることと、人が見なくてよいことは別。認可は第9条で人も見る（🔴 認証・権限・RLS）。
+//
+//  データは接頭辞 role-dbl- を持たせ、冒頭で残骸を回収してから始める（冪等・共有DB）。
 // ============================================================
-import { test } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import { restSrv, getAccountId, ADMIN_LOGIN_EMAIL, DB_URL } from './helpers'
 import { execSync } from 'node:child_process'
 
-const PREFIX = 'drive-375c8efd-'
+const PREFIX = 'role-dbl-'
 const WORKER = `${PREFIX}申請者`
 const APPROVER = `${PREFIX}承認者`
 const PERIOD = '2026-05-first'
-const SHOT = (n: string) => ({ path: `tests/e2e/.artifacts/${PREFIX}${n}.png`, fullPage: true })
 
 let accountId = ''
 let workerId = ''
@@ -143,60 +143,53 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => { await purge() })
 
-test('#375c8efd ダブル承認 — 👁ステップの到達', async ({ page }) => {
-  // ── 1. オーナー(admin): 申請中では「一次承認する」だけが出る
-  await setApproverRole('admin')
-  await setStatus('申請中')
-  await test.step('1. オーナーで申請中の精算を開く', async () => {
+test.describe('ダブル承認のロール別の見え方', () => {
+  test('★オーナー(admin): 申請中では一次承認だけが出て、支払い確定は出ない', async ({ page }) => {
+    await setApproverRole('admin')
+    await setStatus('申請中')
     await open(page)
-    await page.getByTestId('exp-first-approve').waitFor({ state: 'visible', timeout: 15000 })
-    await page.screenshot(SHOT('01-owner-shinseichu'))
+    await expect(page.getByTestId('exp-first-approve'), '一次承認は出る').toBeVisible({ timeout: 15000 })
+    await expect(page.getByTestId('exp-final-approve'), '★段を飛ばす導線は出ない').toHaveCount(0)
   })
 
-  // ── 2. 一次承認する → 一次承認済みになり、要対応から消えない
-  await test.step('2. 一次承認する', async () => {
+  test('★オーナー(admin): 一次承認すると承認者が記録され、続けて支払い確定できる', async ({ page }) => {
+    await setApproverRole('admin')
+    await setStatus('申請中')
+    await open(page)
     await page.getByTestId('exp-first-approve').click()
     await waitStatus(userId, '一次承認済み')
-    await open(page)   // モーダルは自動更新されないので開き直す（spec と同じ作法）
-    await page.getByTestId('exp-first-approver').waitFor({ state: 'visible', timeout: 15000 })
-    await page.screenshot(SHOT('02-after-first-approve'))
+    await open(page)
+    await expect(page.getByTestId('exp-first-approver'), '誰が通したかが残る').toBeVisible({ timeout: 15000 })
+    await expect(page.getByTestId('exp-first-approver'), '承認者名が空でない').not.toHaveText(/^\s*$/)
+    await expect(page.getByTestId('exp-final-approve'), '一次承認済みで初めて支払い確定が出る').toBeVisible()
   })
 
-  // ── 3. 続けて「支払い済みにする」が出る
-  await test.step('3. 最終承認の導線が出る', async () => {
-    await page.getByTestId('exp-final-approve').waitFor({ state: 'visible', timeout: 15000 })
-    await page.screenshot(SHOT('03-final-approve-available'))
-  })
-
-  // ── 4. 役員・経理(office): 一次承認はできる／支払い確定はできず理由が出る
-  await test.step('4. 役員・経理(office) の見え方', async () => {
+  test('★役員・経理(office): 一次承認はできるが、支払い確定はできず理由が出る', async ({ page }) => {
     await setApproverRole('office')
     await setStatus('申請中')
     await open(page)
-    await page.getByTestId('exp-first-approve').waitFor({ state: 'visible', timeout: 15000 })
-    await page.screenshot(SHOT('04a-office-first-ok'))
-    // 一次承認まで進めてから、最終承認がブロックされることを見せる
+    await expect(page.getByTestId('exp-first-approve'), 'office は一次承認できる').toBeVisible({ timeout: 15000 })
+
     await page.getByTestId('exp-first-approve').click()
     await waitStatus(userId, '一次承認済み')
     await open(page)
-    await page.getByTestId('exp-final-blocked').waitFor({ state: 'visible', timeout: 15000 })
-    await page.screenshot(SHOT('04b-office-final-blocked'))
+    await expect(page.getByTestId('exp-final-approve'), '★office に支払い確定はさせない').toHaveCount(0)
+    const blocked = page.getByTestId('exp-final-blocked')
+    await expect(blocked, '理由が出る').toBeVisible({ timeout: 15000 })
+    await expect(blocked, '理由が空文字でない').not.toHaveText(/^\s*$/)
   })
 
-  // ── 5. 現場管理者(site_manager): どちらもできず理由が出る
-  await test.step('5. 現場管理者(site_manager) の見え方', async () => {
+  test('★現場管理者(site_manager): 経費画面そのものに入れない（ルートガード）', async ({ page }) => {
     await setApproverRole('site_manager')
     await setStatus('申請中')
-    // ★site_manager は経費画面そのものがルートガードで弾かれる（2026-08-06 駆動で判明）。
-    //   🧪手順は「どちらもできず理由が出る」と書いているが、実際はもっと手前で止まる。
-    //   行を探しに行くと必ずタイムアウトするので、画面を開いた状態をそのまま撮って人に見せる。
+    // 🧪手順は「どちらもできず理由が出る」と書いていたが、実際はもっと手前で止まる
+    //  ＝経費は経営系ページなので site_manager はルートガードで弾かれる（2026-08-06 駆動で判明）。
     await page.goto('/expenses?ym=2026-05', { waitUntil: 'networkidle' })
-    await page.locator('.sidebar').waitFor({ state: 'visible', timeout: 15000 })
-    await page.screenshot(SHOT('05-site-manager-blocked'))
+    await expect(page, '★ダッシュボードへ戻される').toHaveURL(/\/\/[^/]+\/$/)
+    await expect(page.locator('.settle-row'), '精算行に到達できない').toHaveCount(0)
   })
 
-  // ── 6. 承認者本人が申請者のケース: 承認ボタンが出ない
-  await test.step('6. 自分の精算は承認できない', async () => {
+  test('★自分の精算は承認できない（承認者本人が申請者のケース）', async ({ page }) => {
     await setApproverRole('admin')
     // 承認者自身の精算を作る
     const su = await restSrv('users', {
@@ -218,15 +211,9 @@ test('#375c8efd ダブル承認 — 👁ステップの到達', async ({ page })
       }),
     })
     await open(page, APPROVER)
-    await page.getByTestId('exp-first-blocked').waitFor({ state: 'visible', timeout: 15000 })
-    await page.screenshot(SHOT('06-self-approval-blocked'))
-  })
-
-  // ── 7. 金額の目視（段を足しただけで金額計算は変えていない）
-  await test.step('7. 金額の目視', async () => {
-    await setStatus('申請中')
-    await open(page)
-    await page.locator('.settle-row').first().waitFor({ state: 'visible', timeout: 15000 })
-    await page.screenshot(SHOT('07-amounts'))
+    await expect(page.getByTestId('exp-first-approve'), '★自分の精算に承認ボタンを出さない').toHaveCount(0)
+    const blocked = page.getByTestId('exp-first-blocked')
+    await expect(blocked, '理由が出る').toBeVisible({ timeout: 15000 })
+    await expect(blocked, '理由が空文字でない').not.toHaveText(/^\s*$/)
   })
 })
