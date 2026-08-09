@@ -2,6 +2,7 @@ import { createApp } from 'vue'
 import App from './App.vue'
 import { router } from './router'
 import { initAuth } from './lib/auth'
+import { loadFeatures } from './lib/features'
 import './style.css'
 
 // 接続中の Supabase ホストを起動時に1行表示する保険（localhost:54321=LOCAL / *.supabase.co=CLOUD）。
@@ -19,6 +20,7 @@ import './style.css'
 
 async function main() {
   await initAuth()           // セッション復元 → currentUser をセット
+  await loadFeatures()       // 機能フラグ（見積もりの開閉）。mount前に解決してメニューのちらつきを防ぐ
   createApp(App).use(router).mount('#app')
 }
 
