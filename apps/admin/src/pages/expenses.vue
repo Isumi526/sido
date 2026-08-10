@@ -119,6 +119,7 @@
                 <th>支払い先</th>
                 <th>インボイス番号</th>
                 <th>科目</th>
+                <th>品名</th>
                 <th class="num">ℓ</th>
                 <th>現場名</th>
                 <th>使用車</th>
@@ -134,6 +135,10 @@
                 <td class="muted">{{ d.payee || '—' }}</td>
                 <td class="muted">{{ d.registrationNumber || '—' }}</td>
                 <td>{{ expenseAccountCategory(d) }}</td>
+                <!-- ★品名は科目とは別物（科目=会計仕訳用／品名=何を買ったか）。
+                     個人経費は category に勘定科目が入るので note（実際の品名）を出す。
+                     導出は expenseDisplayCategory / note の1経路だけ（帳票と同じ規則）。 -->
+                <td class="muted">{{ itemName(d) }}</td>
                 <td class="num muted">{{ d.liters ?? '' }}</td>
                 <td>{{ isPersonalExpenseRow(d) ? '現場外' : (d.siteName || '—') }}</td>
                 <td class="muted">{{ d.vehicle || '' }}</td>
@@ -233,7 +238,13 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useYearMonthParam } from '../composables/useQueryParam'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug, getAccountName } from '../lib/account'
-import { flattenReportExpenses, flattenGasolineItems, flattenPersonalExpenses, isPersonalExpenseRow, ratesFromSettings, effectiveStatus, expenseAccountCategory, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
+import { flattenReportExpenses, flattenGasolineItems, flattenPersonalExpenses, isPersonalExpenseRow, ratesFromSettings, effectiveStatus, expenseAccountCategory, expenseDisplayCategory, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
+
+/** 品名欄。個人経費は category＝勘定科目なので note（実際の品名）を出す（liff の帳票と同一規則）。 */
+function itemName(row: ExpenseRow): string {
+  if (isPersonalExpenseRow(row)) return row.note || ''
+  return expenseDisplayCategory(row.category)
+}
 
 /** 申請PDF(明細/請求書)のStorage公開URL。パスは generateExpensePdf.uploadApplicationPdf と一致 */
 function pdfUrl(row: { userId: string; periodKey: string }, kind: 'meisai' | 'seikyu'): string {

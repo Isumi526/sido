@@ -8,9 +8,11 @@
 //      ソートしていなかったため途中で日付が戻り、「立て替えた分が明細に無い」と誤認された。
 //      → date 昇順に並べる。
 //
-//  ★2026-07-31 レビュー決定の維持も同時に固定する（一度これを崩す実装を書いて気づいた）:
-//    ・客先帳票に「科目」列は出さない（科目は社内画面だけ）
-//    ・日報由来の品名は従来のマッピング（駐車代→P代 / 電車代→交通費）
+//  ★科目列の扱いは 2026-08-10 に反転している:
+//    ・2026-07-31 レビュー「客先帳票に科目列は出さない（科目は社内画面だけ）」
+//    ・2026-08-10 運用者の電話「科目と品名を両方表示する」→ 客先帳票にも科目を出す
+//    ここで固定するのは「科目と品名が別々の列で、それぞれ正しい値が出る」こと。
+//    ・日報由来の品名は従来のマッピング（駐車代→P代 / 電車代→交通費）は維持
 //    詳細な回帰は liff.expense-payee-fallback.spec.ts が担保する。ここでは崩していないことだけ見る。
 //
 //  ★シードは接頭辞 E2E帳票_ を持たせ、テスト後に必ず消す（共有DB）。
@@ -33,7 +35,8 @@ const PAYEE_NONOTE = `${PREFIX}品名なし`
 const ITEM_NAME    = `${PREFIX}飲食代`
 
 // 列: 1月日 2支払先 3インボイス番号 4品名 5ℓ 6現場名 7使用車 8金額 9領収書
-const C_ITEM = 'td:nth-child(4)'
+const C_ACCT = 'td:nth-child(4)'   // 科目（2026-08-10 に追加。以降 品名は5列目）
+const C_ITEM = 'td:nth-child(5)'
 
 let accountId = ''
 let workerId = ''
@@ -77,7 +80,7 @@ test.describe('経費申請書の明細（品名/並び順）', () => {
 
   test.afterAll(async () => { await purge() })
 
-  test('★個人経費の品名欄には note（実際の品名）が出る。科目は出さない', async ({ page }) => {
+  test('★個人経費は、科目と品名がそれぞれ別の列に出る（品名欄に科目が出ない）', async ({ page }) => {
     await page.goto('/expense/download', { waitUntil: 'networkidle' })
     await selectTargetPeriod(page)
 
@@ -85,6 +88,8 @@ test.describe('経費申請書の明細（品名/並び順）', () => {
     await expect(row).toBeVisible({ timeout: 15000 })
     await expect(row.locator(C_ITEM), '品名欄は note').toHaveText(ITEM_NAME)
     await expect(row.locator(C_ITEM), '★品名欄に科目が出ない（元の不具合）').not.toHaveText('会議費')
+    // ★科目は科目列に出る（2026-08-10 追加）。品名と混ざらず、両方読めることを見る。
+    await expect(row.locator(C_ACCT), '科目列に勘定科目が出る').toHaveText('会議費')
   })
 
   test('★品名(note)が未入力の個人経費は、品名欄が空になる（科目で埋めない）', async ({ page }) => {
@@ -120,14 +125,16 @@ test.describe('経費申請書の明細（品名/並び順）', () => {
     expect(idxEarly, '★18日が28日より上（登録順ではなく日付順）').toBeLessThan(idxLate)
   })
 
-  test('客先帳票に科目列を生やしていない（2026-07-31 レビュー決定の維持）', async ({ page }) => {
+  test('★客先帳票に科目列が有り、合計行の colspan もそれに合っている', async ({ page }) => {
+    // 2026-07-31「科目列は出さない」→ 2026-08-10 運用者判断で反転。
+    // ★列を増やしたのに tfoot の colspan を直し忘れると合計の位置だけずれる。
+    //  見た目しか壊れないので気づきにくい。列と colspan が揃っていることまで見る。
     await page.goto('/expense/download', { waitUntil: 'networkidle' })
     await selectTargetPeriod(page)
     const thead = page.locator('.expense-table thead')
     await expect(thead).toBeVisible({ timeout: 15000 })
-    await expect(thead, '科目列は無い').not.toContainText('科　目')
-    await expect(page.locator('.expense-table tbody'), '勘定科目名が出ない').not.toContainText('旅費交通費')
-    // 合計行の colspan は元のまま（列を増やしていない証拠）
-    await expect(page.locator('.expense-table tfoot tr.total-row td').first()).toHaveAttribute('colspan', '7')
+    await expect(thead, '科目列が有る').toContainText('科　目')
+    await expect(thead, '品名列も残っている').toContainText('品　名')
+    await expect(page.locator('.expense-table tfoot tr.total-row td').first()).toHaveAttribute('colspan', '8')
   })
 })
