@@ -175,9 +175,18 @@ test.describe('日報編集の承認（admin）', () => {
     await card.getByTestId('pending-approve').click()
     await expect(page.getByTestId('review-msg')).toContainText('承認しました', { timeout: 30000 })
 
-    const reps = await restSrv(`daily_reports?user_id=eq.${userId}&date=eq.${LATE}&select=sites,note`)
+    const reps = await restSrv(`daily_reports?user_id=eq.${userId}&date=eq.${LATE}&select=id,sites,note`)
     expect(reps.length, '★承認で日報が新しく作られる').toBe(1)
     expect(Number(reps[0].sites?.[0]?.expenses?.others?.[0]?.yen)).toBe(NEW_YEN)
+
+    // ★2026-08-10 レビューで発見: late_new は承認時に日報が生まれるのに、その id を
+    //  pending.report_id へ書き戻していなかった。report_id が NULL のままだと
+    //  日報詳細の「この日報の承認履歴を見る」（report_id で数える）が永久に0件になり、
+    //  後出しで出てきた日報だけ履歴から切り離される。
+    const pend = await restSrv(`daily_report_pending_edits?report_user_id=eq.${userId}&report_date=eq.${LATE}&select=report_id,status`)
+    expect(pend[0].status).toBe('approved')
+    expect(pend[0].report_id, '★作られた日報と紐づく（履歴から辿れる）').toBe(reps[0].id)
+
     await restSrv(`daily_reports?user_id=eq.${userId}&date=eq.${LATE}`, { method: 'DELETE' }).catch(() => {})
   })
 
