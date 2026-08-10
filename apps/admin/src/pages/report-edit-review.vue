@@ -205,24 +205,30 @@ async function withReceipts(rows: any[], accountId: string): Promise<any[]> {
 }
 
 /** ログイン中の管理者に対応する users.id。自己承認の判定に使う（submitted_by_user_id は users.id）。 */
-const myUserId = ref<string | null>(null)
+const myUserIds = ref<string[]>([])
 
-/** auth ユーザー → workers(auth_user_id) → users(worker_id) で自分の users.id を引く。
+/** auth ユーザー → workers(auth_user_id) → users(worker_id) で「自分でありうる users.id」を全部引く。
  *  ★これが無いと「自分が出した編集を自分で承認する」を止められない。
- *   議事録(2026-07-27)「管理者で登録されたら自分で修正できちゃう／誰も見られることもなく」への対応。 */
-async function resolveMyUserId() {
-  myUserId.value = null
+ *   議事録(2026-07-27)「管理者で登録されたら自分で修正できちゃう／誰も見られることもなく」への対応。
+ *  ★単数で引かない（maybeSingle 禁止）。1つのログインに workers が複数ぶら下がると
+ *   maybeSingle は複数行を null に潰し、myUserId=null → isMine が常に false になって
+ *   自己承認ブロックが無言で外れる（fail-open）。2026-08-10 の本番障害と同じ穴。
+ *   候補を全部集めて「どれかに一致したら自分」とすることで fail-closed に倒す。 */
+async function resolveMyUserIds() {
+  myUserIds.value = []
   const authId = currentUser.value?.id
   if (!authId) return
-  const { data: w } = await supabase.from('workers').select('id').eq('auth_user_id', authId).maybeSingle()
-  if (!w?.id) return
-  const { data: u } = await supabase.from('users').select('id').eq('worker_id', w.id).maybeSingle()
-  myUserId.value = u?.id ?? null
+  const { data: ws } = await supabase.from('workers').select('id').eq('auth_user_id', authId)
+  const workerIds = (ws ?? []).map((w: any) => w.id).filter(Boolean)
+  if (!workerIds.length) return
+  const { data: us } = await supabase.from('users').select('id').in('worker_id', workerIds)
+  myUserIds.value = (us ?? []).map((u: any) => u.id).filter(Boolean)
 }
 
 /** その保留編集を出したのが自分か（＝自己承認になるか） */
 function isMine(p: any): boolean {
-  return !!myUserId.value && p?.submitted_by_user_id === myUserId.value
+  const id = p?.submitted_by_user_id
+  return !!id && myUserIds.value.includes(id)
 }
 
 async function load() {
@@ -326,7 +332,7 @@ async function decide(p: any, action: 'approve' | 'reject') {
 }
 
 onMounted(async () => {
-  await resolveMyUserId()
+  await resolveMyUserIds()
   await load()
   // 日報詳細から履歴を見に来たケース（?reportId=...）は最初から開いて出す
   if (historyOpen.value) await loadHistory()
