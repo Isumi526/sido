@@ -128,6 +128,39 @@ test('★一次承認を飛ばした支払い確定はDB側で弾かれる（UI�
   expect((await settlement())?.status, '段を飛ばせない').toBe('申請中')
 })
 
+// ★2026-08-10 レビューで発見: 差し戻しは status だけ変えて一次承認の記録を消しておらず、
+//  作業員が LIFF で再申請（applySettlement は status を '申請中' に戻すが first_approved_* に触らない）
+//  すると「申請中なのに一次承認済みの記録がある」状態が残った。
+//  「支払い済み→申請中に戻す」経路では消していたのに、差し戻し経路だけ素通りしていた。
+test('★差し戻すと一次承認の記録も消える（再申請で「申請中なのに承認済み」を作らない）', async ({ page }) => {
+  await setStatus('申請中')
+  await open(page)
+  await page.getByTestId('exp-first-approve').click()
+  await expect.poll(async () => (await settlement())?.status, { timeout: 15000 }).toBe('一次承認済み')
+  expect((await settlement())?.first_approved_at, '前提: 承認記録が入っている').not.toBeNull()
+
+  // 差し戻す（理由必須）
+  await open(page)
+  await page.getByTestId('exp-reject').click()
+  await page.locator('.reject-textarea').fill('E2E: 領収書の添付漏れ')
+  await page.locator('.btn-reject-confirm').click()
+  await expect.poll(async () => (await settlement())?.status, { timeout: 15000 }).toBe('差し戻し')
+
+  const s = await settlement()
+  expect(s.first_approved_at, '★一次承認の記録が消える').toBeNull()
+  expect(s.first_approved_by, '★承認者も消える').toBeNull()
+  expect(s.first_approved_name, '★承認者名も消える').toBeNull()
+
+  // 作業員の再申請を再現（LIFF applySettlement 相当）→ 申請中に戻っても承認記録は無いまま
+  await restSrv(`expense_settlements?user_id=eq.${userId}&period_key=eq.${PERIOD}`, {
+    method: 'PATCH', headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({ status: '申請中', reject_reason: null, rejected_at: null }),
+  })
+  const re = await settlement()
+  expect(re.status).toBe('申請中')
+  expect(re.first_approved_at, '★再申請後も「申請中なのに承認済み」にならない').toBeNull()
+})
+
 test('★申請中に戻すと一次承認の記録も消える（承認済みなのに申請中を作らない）', async ({ page }) => {
   await setStatus('申請中')
   await open(page)
