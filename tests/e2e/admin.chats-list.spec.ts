@@ -82,9 +82,29 @@ test('★現場が大量にあってもプレビューが出る（クエリURL�
     await expect(page.getByTestId('chats-load-err'), '最終メッセージの取得に失敗していない').toHaveCount(0)
     const row = page.locator('[data-testid="chat-list-row"]', { hasText: SITE_WITH_MSG })
     await expect(row, '★現場が大量でもプレビューが出る').toContainText(MSG_BODY, { timeout: 15000 })
+
+    // ★ナビの未読バッジも同じ414を踏んでいた（chats.vue だけ直して chatBadge.ts が漏れていた）。
+    //  こちらも error を握り潰していたため、失敗するとバッジが黙って0になり
+    //  「未読が無い」と見分けが付かなかった（2026-08-10 レビュー指摘）。
+    const chatNav = page.locator('.nav-link', { hasText: 'チャット' }).first()
+    await expect(chatNav.locator('.nav-badge'), '★現場が大量でもナビの未読バッジが出る').toBeVisible({ timeout: 15000 })
   } finally {
     for (let i = 0; i < made.length; i += 50) {
       await restSrv(`sites?id=in.(${made.slice(i, i + 50).join(',')})`, { method: 'DELETE' }).catch(() => {})
     }
   }
+})
+
+// ★__unset__（現場未設定の内部行）はチャット相手として並べない。
+//  現場マスタでは一覧から除外済み（sites.vue の listableSites）なのに、
+//  チャット一覧にだけ残っていた＝同じ規則の取りこぼし（2026-08-10 レビュー指摘）。
+test('★__unset__ はチャット一覧に出さない', async ({ page }) => {
+  const acc = await getAccountId()
+  const rows = await restSrv(`sites?account_id=eq.${acc}&name=eq.__unset__&select=id,active`)
+  test.skip(!rows?.length || !rows[0].active, '__unset__ が無い/無効な環境ではスキップ')
+
+  await page.goto('/chats', { waitUntil: 'networkidle' })
+  await expect(page.locator('[data-testid="chat-list-row"]').first()).toBeVisible({ timeout: 15000 })
+  await expect(page.locator('[data-testid="chat-list-row"]', { hasText: '__unset__' }),
+    '__unset__ の行が並ばない').toHaveCount(0)
 })
