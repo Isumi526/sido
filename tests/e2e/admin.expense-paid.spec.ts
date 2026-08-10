@@ -31,13 +31,8 @@ test.describe('経費 支払い済み(B)', () => {
     await expect(todoRow).toBeVisible()
     await todoRow.click()
 
-    // ★ダブル承認: まず一次承認（これを経ないと支払い確定に進めない）
-    await page.getByTestId('exp-first-approve').click()
-    await page.getByRole('button', { name: /要対応/ }).click()
-    await page.locator('tr.data-row', { hasText: SEED_WORKER }).first().click()
-
     // 支払い済みにする → 区分=手渡し・支払日入力 → 確定
-    await page.getByTestId('exp-final-approve').click()
+    await page.locator('.btn-pay').first().click()
     await expect(page.locator('select.pay-input')).toBeVisible()
     await page.locator('select.pay-input').selectOption('手渡し')
     // 支払日は既定（今日）が入っている前提。明示的にも入れて堅くする
@@ -59,10 +54,7 @@ test.describe('経費 支払い済み(B)', () => {
     await page.goto('/expenses', { waitUntil: 'networkidle' })
     await page.getByRole('button', { name: /要対応/ }).click()
     await page.locator('tr.data-row', { hasText: SEED_WORKER }).first().click()
-    await page.getByTestId('exp-first-approve').click()          // 一次承認を通す
-    await page.getByRole('button', { name: /要対応/ }).click()
-    await page.locator('tr.data-row', { hasText: SEED_WORKER }).first().click()
-    await page.getByTestId('exp-final-approve').click()
+    await page.locator('.btn-pay').first().click()
     // 区分未選択なら確定ボタンは disabled
     await expect(page.locator('.btn-confirm-ok')).toBeDisabled()
   })
