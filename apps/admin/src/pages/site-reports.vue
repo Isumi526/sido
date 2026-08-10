@@ -26,11 +26,33 @@
     </div>
 
     <div v-if="loading" class="empty">読み込み中...</div>
-    <div v-else-if="siteNames.length === 0" class="empty">{{ isRange ? 'この期間の日報がありません' : 'この月の日報がありません' }}</div>
+    <div v-else-if="siteNamesAll.length === 0" class="empty">{{ isRange ? 'この期間の日報がありません' : 'この月の日報がありません' }}</div>
 
     <template v-else>
+      <!-- 絞り込み。現場が300件を超えるとタブから目的の1件を目視で探せない（2026-08-10 運用者要望）。
+           ★表示を絞るだけ。各現場の集計値・出力対象には触れない。 -->
+      <div class="site-filter">
+        <label class="sf-field">
+          <span class="material-symbols-rounded sf-icon">search</span>
+          <input v-model="filterText" type="search" class="sf-input" placeholder="現場名で絞り込み"
+            data-testid="site-filter-text" />
+        </label>
+        <select v-model="filterContractor" class="sf-select" data-testid="site-filter-contractor">
+          <option value="">元請け（すべて）</option>
+          <option v-for="c in contractorOptions" :key="c" :value="c">{{ c }}</option>
+        </select>
+        <template v-if="isFiltering">
+          <span class="sf-count" data-testid="site-filter-count">{{ siteNames.length }} / {{ siteNamesAll.length }} 件</span>
+          <button class="sf-clear" data-testid="site-filter-clear" @click="clearFilter">クリア</button>
+        </template>
+      </div>
+
+      <div v-if="siteNames.length === 0" class="empty" data-testid="site-filter-empty">
+        絞り込みに一致する現場がありません（{{ siteNamesAll.length }}件中0件）
+      </div>
+
       <!-- 現場タブ（五十音順） -->
-      <div class="tabs-wrap">
+      <div v-if="siteNames.length" class="tabs-wrap">
         <div class="tabs">
           <button v-for="name in siteNames" :key="name" class="tab"
             :class="{ active: displaySite === name }" @click="activeSite = name">
@@ -148,7 +170,7 @@
 
       <!-- ★業者別内訳。合計だけだと検算できず、どこかの業者が漏れていても気づけない。
            内訳は月計と同じ行から作っているので、合計が必ず一致する。 -->
-      <section class="vendor-breakdown" data-testid="vendor-breakdown">
+      <section v-if="displaySite" class="vendor-breakdown" data-testid="vendor-breakdown">
         <div class="vb-head">
           <h3 class="vb-title">業者別内訳</h3>
           <span class="vb-check" data-testid="vendor-check">
@@ -441,6 +463,7 @@ import type { WageMode } from '../lib/workerHours'
 import { canViewWages, canViewHourlyWage, canViewManagementPages } from '../lib/auth'
 import { canViewEstimates } from '../lib/features'
 import { resolveSiteRef, type SiteResolveCtx } from '../lib/siteKey'
+import { normalizeSiteName } from '../lib/siteSimilarity'
 import { netAmountOf, normalizeTaxMode } from '../lib/invoiceTax'
 import JSZip from 'jszip'
 
@@ -570,7 +593,44 @@ function toggleWageMode() {
   if (!canViewHourlyWage.value) return
   wageMode.value = wageMode.value === 'daily' ? 'real' : 'daily'
 }
-const siteNames  = computed(() => Object.keys(siteMap.value).sort((a, b) => a.localeCompare(b, 'ja')))
+const siteNamesAll = computed(() => Object.keys(siteMap.value).sort((a, b) => a.localeCompare(b, 'ja')))
+
+// ── 絞り込み（現場名 部分一致 × 元請け）──
+//  現場が300件を超えるとタブから目的の1件を目視で探せない、という運用者要望（2026-08-10）。
+//  ★これは「表示するタブを減らす」だけの機能。siteMap（=集計の中身）も出力対象も触らない。
+//  現場名の照合は normalizeSiteName（NFKC＝全角/半角・カナ/かな・記号除去・小文字化）を通す。
+//   日報の現場名は手入力なので「ﾙﾙﾚﾓﾝ」「ルルレモン」「lululemon」の揺れが実在する。
+const filterText       = ref('')
+const filterContractor = ref('')
+// 現場名 → 元請け名。現場マスタに載っていない現場（手入力の表記ゆれ等）はここに現れないので、
+// 元請けで絞ると出てこない＝「元請けが分からない現場」を混ぜない（絞った結果が信用できる方を採る）。
+const contractorBySite = ref<Record<string, string>>({})
+
+const contractorOptions = computed(() => {
+  const present = new Set<string>()
+  for (const name of siteNamesAll.value) {
+    const c = contractorBySite.value[name]
+    if (c) present.add(c)
+  }
+  return [...present].sort((a, b) => a.localeCompare(b, 'ja'))
+})
+
+const isFiltering = computed(() => !!filterText.value.trim() || !!filterContractor.value)
+function clearFilter() { filterText.value = ''; filterContractor.value = '' }
+
+const siteNames = computed(() => {
+  if (!isFiltering.value) return siteNamesAll.value
+  const q = normalizeSiteName(filterText.value.trim())
+  return siteNamesAll.value.filter((name) => {
+    if (q && !normalizeSiteName(name).includes(q)) return false
+    if (filterContractor.value && contractorBySite.value[name] !== filterContractor.value) return false
+    return true
+  })
+})
+
+// 月を変えて対象現場が入れ替わったとき、絞り込みが残っていると「0件」に見えて事故る…
+// ということはない（0件は明示表示する＝AC4）ので絞り込みは保持する。ユーザーが打った条件を
+// 勝手に消す方が驚く。
 // 表示用に選択現場を解決：今月に存在すればそれを使い、無ければ先頭にフォールバック（activeSite自体は書き換えない＝月を戻せば復元される）
 const displaySite = computed(() => siteNames.value.includes(activeSite.value) ? activeSite.value : (siteNames.value[0] ?? ''))
 
@@ -681,8 +741,14 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
     supabase.from('subcontractors').select('name, category, unit_price').eq('account_id', accountId),
     supabase.from('settings').select('key, value').eq('account_id', accountId),
     supabase.from('worker_wage_history').select('worker_id, effective_date, changed_at, old_unit_price, new_unit_price, wage_type, old_wage_type, old_daily_wage, new_daily_wage, old_hourly_wage, new_hourly_wage').eq('account_id', accountId),
-    supabase.from('sites').select('id, name, active, created_at').eq('account_id', accountId).order('created_at', { ascending: true }),
+    supabase.from('sites').select('id, name, active, created_at, contractors(name)').eq('account_id', accountId).order('created_at', { ascending: true }),
   ])
+  // 絞り込み用の 現場名→元請け名。集計には使わない（表示するタブを減らすためだけ）。
+  contractorBySite.value = Object.fromEntries(
+    (siteRows ?? [])
+      .map((s: any) => [s.name, s.contractors?.name ?? ''])
+      .filter(([, c]: any[]) => !!c),
+  )
   // 現場参照の解決コンテキスト: site_id 優先＋active名一致で表記ゆれ/マージ孤児を1バケットへ統合（根本対策）
   const siteCtx: SiteResolveCtx = {
     activeSites: (siteRows ?? []).filter((s: any) => s.active).map((s: any) => ({ id: s.id, name: s.name })),
@@ -889,6 +955,17 @@ watch(wageMode, load)   // 日当-実質賃金の切替で社員人件費を再�
 .empty { color: #888; padding: 60px; text-align: center; }
 .wage-toggle-btn { display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 700; border: 1px solid #c7d2fe; background: #eef2ff; color: #4338ca; border-radius: 999px; padding: 1px 8px; cursor: pointer; white-space: nowrap; }
 .wage-toggle-btn.on { background: #4338ca; color: #fff; border-color: #4338ca; }
+
+/* 現場の絞り込みバー（現場名 × 元請け） */
+.site-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+.sf-field { display: flex; align-items: center; gap: 6px; border: 1px solid #d0d0d0; border-radius: 6px; padding: 0 10px; background: #fff; }
+.sf-field:focus-within { border-color: #06C755; }
+.sf-icon { font-size: 18px; color: #888; }
+.sf-input { border: none; outline: none; padding: 7px 0; font-size: 13px; width: 200px; background: transparent; }
+.sf-select { border: 1px solid #d0d0d0; border-radius: 6px; padding: 7px 10px; font-size: 13px; background: #fff; max-width: 220px; }
+.sf-count { font-size: 12px; color: #888; font-variant-numeric: tabular-nums; }
+.sf-clear { border: 1px solid #d0d0d0; background: #fff; border-radius: 6px; padding: 6px 12px; font-size: 12px; color: #555; cursor: pointer; }
+.sf-clear:hover { background: #f5f5f5; }
 
 .tabs-wrap { overflow-x: auto; margin-bottom: 16px; }
 .export-bar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin: 10px 0 0; flex-wrap: wrap; }
