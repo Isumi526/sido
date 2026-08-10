@@ -127,6 +127,22 @@
           <button type="button" class="btn-ghost" style="padding:4px 10px;font-size:13px" data-testid="add-break" @click="addBreak">＋ 休憩を追加</button>
           <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">設定すると<b>新規</b>日報でこの現場を選んだ時に休憩がこの時間帯になり、稼働時間・人件費に反映されます（開始時刻が深夜/残業帯なら割増分が減る）。未設定＝役割×勤務時間の自動計算のまま。過去の日報は変わりません。</p>
         </div>
+        <!-- ④'' 実働時間の自動計算。設定しながら「結局何時間勤務になるのか」が分からないという要望（2026-08-10）。
+             ★数字は日報・人件費と同じ computeWorkerHours から出す（自前計算にしない）。 -->
+        <div v-if="hoursPreview" class="hours-preview" data-testid="hours-preview">
+          <div class="hp-main">
+            実働 <b data-testid="hours-preview-worked">{{ hoursPreview.workedH }}</b> 時間
+            <span class="hp-sub">（拘束 {{ hoursPreview.spanH }}h − 休憩 {{ hoursPreview.breakH }}h）</span>
+          </div>
+          <div v-if="hoursPreview.otH || hoursPreview.nightH || hoursPreview.overnight" class="hp-tags">
+            <span v-if="hoursPreview.otH" class="hp-tag" data-testid="hours-preview-ot">うち残業 {{ hoursPreview.otH }}h</span>
+            <span v-if="hoursPreview.nightH" class="hp-tag">うち深夜 {{ hoursPreview.nightH }}h</span>
+            <span v-if="hoursPreview.overnight" class="hp-tag">日をまたぐ勤務として計算</span>
+          </div>
+          <div v-if="hoursPreview.ignored" class="hp-warn" data-testid="hours-preview-ignored">
+            休憩{{ hoursPreview.ignored }}件が勤務時間の外にあります。実働からは引かれません。
+          </div>
+        </div>
         <!-- ⑤ メモ -->
         <div class="field">
           <label>メモ</label>
@@ -256,6 +272,7 @@ import { useQueryParam } from '../composables/useQueryParam'
 import { currentUser, canViewManagementPages } from '../lib/auth'
 import { canViewEstimates } from '../lib/features'
 import { findSimilarSiteNames } from '../lib/siteSimilarity'
+import { computeWorkerHours, parseMin } from '../lib/workerHours'
 import { logOperation } from '../lib/operationLog'
 
 const router = useRouter()
@@ -460,6 +477,52 @@ const filtered = computed(() => {
 function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', default_breaks: [], responsible_worker_id: myWorkerId.value ?? null, linkedSubs: [], shareUsers: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = ''; modalRules.value = []; clearPendingAtts(); markFormOpened(); fetchRuleHistory() }
 function addBreak()    { if (!modal.value) return; (modal.value.default_breaks ??= []).push({ start: '12:00', minutes: 60 }) }
 function removeBreak(i: number) { modal.value?.default_breaks?.splice(i, 1) }
+
+/**
+ * 設定中の固定勤務時刻＋既定休憩から「この現場は何時間勤務になるか」を出す（2026-08-10 運用者要望）。
+ * ★必ず computeWorkerHours を通す。ここで span-休憩 を自前で引き算すると、
+ *  日報・人件費が使う実際の計算（15分刻み・勤務外休憩の無視・日跨ぎ）とズレて、
+ *  「設定画面では8時間なのに集計は7.75時間」という説明できない食い違いになる。
+ */
+const hoursPreview = computed(() => {
+  const m = modal.value
+  if (!m) return null
+  const s = (m.default_start_time || '').slice(0, 5)
+  const e = (m.default_end_time || '').slice(0, 5)
+  if (!/^\d{2}:\d{2}$/.test(s) || !/^\d{2}:\d{2}$/.test(e)) return null
+
+  const breaks = (m.default_breaks ?? [])
+    .filter((b: any) => b?.start && Number(b.minutes) > 0)
+    .map((b: any) => ({ start: String(b.start).slice(0, 5), minutes: Number(b.minutes) }))
+
+  const startMin = parseMin(s)
+  let endMin = parseMin(e)
+  const overnight = endMin <= startMin
+  if (overnight) endMin += 1440
+  const spanMin = endMin - startMin
+  if (spanMin <= 0) return null
+
+  // ★勤務時間の外に置いた休憩は computeWorkerHours が無視する＝実働から引かれない。
+  //  黙って数字が合わないと「設定したのに反映されない」と見えるので、件数を出して気づかせる。
+  const ignored = breaks.filter((b) => {
+    let bs = parseMin(b.start)
+    if (bs < startMin) bs += 1440
+    return bs + b.minutes <= startMin || bs >= endMin
+  }).length
+
+  const r = computeWorkerHours(s, e, 0, false, 0, breaks.length ? breaks : null)
+  const otH = r.hoursOT + r.hoursOTNight
+  const h = (min: number) => (min / 60).toFixed(2).replace(/\.?0+$/, '')
+  return {
+    workedH:  h(r.workedMin),
+    spanH:    h(spanMin),
+    breakH:   h(Math.max(0, spanMin - r.workedMin)),
+    otH:      otH > 0 ? String(otH) : '',
+    nightH:   r.hoursNight + r.hoursOTNight > 0 ? String(r.hoursNight + r.hoursOTNight) : '',
+    overnight,
+    ignored,
+  }
+})
 
 // アカウント内の既存現場ルールを重複排除して候補化（新規現場のルール設定を素早くするため・site-rules.vue と同方針）
 async function fetchRuleHistory() {
@@ -764,6 +827,15 @@ async function doMerge() {
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .modal { background: #fff; border-radius: 12px; padding: 32px; width: min(560px, 92vw); display: flex; flex-direction: column; gap: 20px; max-height: 90vh; overflow-y: auto; }
 .modal h2 { font-size: 18px; font-weight: 700; }
+/* 実働時間の自動計算（固定勤務時刻＋既定休憩の結果） */
+.hours-preview { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid #d7e6dc; border-left: 3px solid #06C755; border-radius: 6px; background: #f5faf7; }
+.hp-main { font-size: 14px; color: #1f2937; font-variant-numeric: tabular-nums; }
+.hp-main b { font-size: 18px; }
+.hp-sub { font-size: 12px; color: #64748b; margin-left: 4px; }
+.hp-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.hp-tag { font-size: 11px; font-weight: 700; color: #4338ca; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+.hp-warn { font-size: 12px; color: #b45309; }
+
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label { font-size: 12px; font-weight: 700; color: #888; }
 .sub-link-list { display: flex; flex-direction: column; gap: 4px; max-height: 160px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; padding: 8px 10px; background: #fafafa; }
