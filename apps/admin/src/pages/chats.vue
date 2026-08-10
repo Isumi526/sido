@@ -88,7 +88,11 @@ async function load() {
 
   const { data: sites } = await supabase.from('sites')
     .select('id, name, name_kana').eq('account_id', accountId).eq('active', true)
-  const siteList = (sites ?? []) as Site[]
+  // ★__unset__（現場未設定の内部行）はチャット相手として並べない。
+  //  現場マスタでは既に一覧から除外している（sites.vue の listableSites）のに
+  //  チャット一覧にだけ残っていた＝同じ規則の取りこぼし（2026-08-10 レビュー指摘）。
+  //  ここに送ると、どの現場のやり取りでもない宙に浮いた会話ができる。
+  const siteList = ((sites ?? []) as Site[]).filter((s) => s.name !== '__unset__')
   const siteIds = siteList.map((s) => s.id)
   if (!siteIds.length) { rows.value = []; loading.value = false; return }
 
