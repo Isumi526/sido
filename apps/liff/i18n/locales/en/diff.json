@@ -41,5 +41,7 @@
   "subSummary": "{name} x{count}",
   "garbWood": "Wood {m3}m³",
   "garbMixed": "Mixed {m3}m³",
-  "labeledYen": "{label}¥{amount}"
+  "labeledYen": "{label}¥{amount}",
+  "labelParking": "Parking",
+  "labelHighway": "Tolls"
 }

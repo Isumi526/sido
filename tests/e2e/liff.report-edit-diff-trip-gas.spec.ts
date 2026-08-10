@@ -21,7 +21,7 @@ let uid = ''
 let accountId = ''
 
 /** 指定の出張フラグ・ガソリン明細で当日の日報を作り直す */
-async function seedReport(opts: { trip: boolean; gasoline: any[] }) {
+async function seedReport(opts: { trip: boolean; gasoline: any[]; expenses?: any }) {
   await restSrv(`daily_report_edit_logs?report_user_id=eq.${uid}&report_date=eq.${EDIT_DATE}`, { method: 'DELETE' }).catch(() => {})
   await rest('daily_reports?on_conflict=user_id,date', {
     method: 'POST',
@@ -35,7 +35,7 @@ async function seedReport(opts: { trip: boolean; gasoline: any[] }) {
       gasoline_items: opts.gasoline,
       sites: [{
         siteName: 'テスト現場B', workers: [], subcontractors: [],
-        expenses: { vehicles: [], parkings: [], highways: [], trains: [], hotels: [], others: [], entertainments: [] },
+        expenses: opts.expenses ?? { vehicles: [], parkings: [], highways: [], trains: [], hotels: [], others: [], entertainments: [] },
       }],
     }),
   })

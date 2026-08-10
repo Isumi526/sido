@@ -153,6 +153,21 @@ function pushExpenseDiffs(lines: string[], o: any, n: any): void {
   const nTrain = listSummary(n.trains, (t: any) => t.yen ? gt('diff.labeledYen', { label: t.label || gt('diff.trainLabel'), amount: Number(t.yen).toLocaleString() }) : '')
   if (oTrain !== nTrain) lines.push(gt('diff.train', { from: oTrain || gt('diff.none'), to: nTrain || gt('diff.none') }))
 
+  // 駐車場代・高速代（新形式 parkings[]/highways[] 合計、無ければ旧スカラー vehicles[].parkingYen/highwayYen）
+  // ★2026-08-10 レビューで発見: 新形式の配列を1行も見ておらず、駐車場代を 800→1,800 に変えても
+  //  「表示できる差分がありません」になっていた。承認者が何が変わったか分からないまま承認することになる。
+  //  旧形式は vehSummary が拾っていたが、そちらからは金額を外してここに一本化した（二重に出さないため）。
+  const parkingTotal = (e: any) => {
+    const s = (e.parkings || []).reduce((a: number, p: any) => a + (Number(p.yen) || 0), 0)
+    return s > 0 ? s : (e.vehicles || []).reduce((a: number, v: any) => a + (Number(v.parkingYen) || 0), 0)
+  }
+  const highwayTotal = (e: any) => {
+    const s = (e.highways || []).reduce((a: number, h: any) => a + (Number(h.yen) || 0), 0)
+    return s > 0 ? s : (e.vehicles || []).reduce((a: number, v: any) => a + (Number(v.highwayYen) || 0), 0)
+  }
+  diffYen(lines, gt('diff.labelParking'), parkingTotal(o), parkingTotal(n))
+  diffYen(lines, gt('diff.labelHighway'), highwayTotal(o), highwayTotal(n))
+
   // 宿泊費（新形式 hotels[] 合計、無ければ旧スカラー hotel+leopalace ＝二重計上を防ぐ後方互換）
   const hotelTotal = (e: any) => {
     const s = (e.hotels || []).reduce((a: number, h: any) => a + (Number(h.yen) || 0), 0)
@@ -187,8 +202,8 @@ function vehSummary(exp: any): string {
     if (v.vehicleName) p.push(v.vehicleName)
     if (v.distanceKm)  p.push(gt('diff.vehDistance', { km: v.distanceKm }))
     if (v.dieselKm)    p.push(gt('diff.vehDiesel', { km: v.dieselKm }))
-    if (v.parkingYen)  p.push(gt('diff.vehParking', { amount: Number(v.parkingYen).toLocaleString() }))
-    if (v.highwayYen)  p.push(gt('diff.vehHighway', { amount: Number(v.highwayYen).toLocaleString() }))
+    // ★駐車/高速の金額は pushExpenseDiffs の parkingTotal/highwayTotal で新旧まとめて出すので、
+    //  ここでは出さない（両方に出すと同じ変更が2行になる）。
     if (v.etcCard)     p.push(v.etcCard)
     return p.join(' ')
   }).join(' / ')
