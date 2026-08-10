@@ -157,14 +157,17 @@ function pushExpenseDiffs(lines: string[], o: any, n: any): void {
   // ★2026-08-10 レビューで発見: 新形式の配列を1行も見ておらず、駐車場代を 800→1,800 に変えても
   //  「表示できる差分がありません」になっていた。承認者が何が変わったか分からないまま承認することになる。
   //  旧形式は vehSummary が拾っていたが、そちらからは金額を外してここに一本化した（二重に出さないため）。
-  const parkingTotal = (e: any) => {
-    const s = (e.parkings || []).reduce((a: number, p: any) => a + (Number(p.yen) || 0), 0)
-    return s > 0 ? s : (e.vehicles || []).reduce((a: number, v: any) => a + (Number(v.parkingYen) || 0), 0)
-  }
-  const highwayTotal = (e: any) => {
-    const s = (e.highways || []).reduce((a: number, h: any) => a + (Number(h.yen) || 0), 0)
-    return s > 0 ? s : (e.vehicles || []).reduce((a: number, v: any) => a + (Number(v.highwayYen) || 0), 0)
-  }
+  // ★旧形式(vehicles[].parkingYen/highwayYen)と新形式(parkings[]/highways[])は「どちらか」ではなく
+  //  **両方とも集計される**（shared/expense-flatten.ts:134 と :140 が別々に行を出す）。
+  //  宿泊費(hasHotelsArr)の「新があれば旧を無視」を真似ると、旧が残ったまま新を足した編集で
+  //  差分の金額が旧スカラー分だけ少なくなる（2026-08-10 レビューで実データを見て判明）。
+  //  監査に使う値なので、集計と同じく単純合計にする。
+  const parkingTotal = (e: any) =>
+    (e.parkings || []).reduce((a: number, p: any) => a + (Number(p.yen) || 0), 0)
+    + (e.vehicles || []).reduce((a: number, v: any) => a + (Number(v.parkingYen) || 0), 0)
+  const highwayTotal = (e: any) =>
+    (e.highways || []).reduce((a: number, h: any) => a + (Number(h.yen) || 0), 0)
+    + (e.vehicles || []).reduce((a: number, v: any) => a + (Number(v.highwayYen) || 0), 0)
   diffYen(lines, gt('diff.labelParking'), parkingTotal(o), parkingTotal(n))
   diffYen(lines, gt('diff.labelHighway'), highwayTotal(o), highwayTotal(n))
 

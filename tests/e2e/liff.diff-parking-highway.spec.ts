@@ -55,6 +55,20 @@ test('★旧形式(vehicles[].parkingYen)から新形式へ移行した編集で
   expect(diffs.join(' / '), '合計 800 → 1,800 が分かる').toMatch(/1,800/)
 })
 
+// ★旧形式と新形式は「どちらか」ではなく両方とも集計される（expense-flatten.ts:134 と :140）。
+//  宿泊費の「新があれば旧を無視」を真似ると、旧スカラーを残したまま新形式を足した編集で
+//  差分の金額が旧の分だけ少なくなる。実データ（旧800 + 新1,000/2,000）で踏んで判明した。
+test('★旧スカラーを残したまま新形式を足したら、合計は両方を足した額になる', async ({ page }) => {
+  const diffs = await diffOf(page,
+    { ...empty, vehicles: [{ vehicleName: '軽トラ2号', parkingYen: 800, parkingTategae: true }] },
+    { ...empty,
+      vehicles: [{ vehicleName: '軽トラ2号', parkingYen: 800, parkingTategae: true }],
+      parkings: [{ yen: 1000, tategae: false }, { yen: 2000, tategae: true }] })
+  const line = diffs.join(' / ')
+  expect(line, '★800 + 3,000 = 3,800（3,000 だと旧スカラーを落としている）').toMatch(/3,800/)
+  expect(line, '3,000 で止まっていない').not.toMatch(/→\s*¥?3,000/)
+})
+
 test('駐車場代を変えていなければ差分に出ない（既存の粒度を変えない）', async ({ page }) => {
   const diffs = await diffOf(page,
     { ...empty, parkings: [{ yen: 800, tategae: false }] },
