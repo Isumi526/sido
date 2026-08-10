@@ -8,6 +8,7 @@
   "doneTitle": "{type}登録が完了しました",
   "doneMessageCheckin": "今日も一日ご安全にお願いします。",
   "doneMessageCheckout": "今日も一日お疲れ様でした。",
+  "writeReport": "この日の日報を書く",
   "selectTargetTitle": "誰の出退勤を登録しますか？",
   "selectSiteTitle": "出退勤する現場を選んでください",
   "noRulesNote": "この現場には確認事項がありません。下のボタンから出勤／退勤を登録してください。",
