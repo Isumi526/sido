@@ -66,6 +66,16 @@ async function verifyLineIdToken(idToken: string): Promise<string | null> {
 
 interface Caller { accountId: string; userId: string | null; name: string | null }
 
+/**
+ * 1つのログインに workers が複数ぶら下がっている状態。
+ * ★2026-08-10 の本番障害の真因。maybeSingle() は複数行で PGRST116 を返して data=null になり、
+ *  error を見ていないと「身元不明」と区別がつかない。身元不明を黙って進めると、
+ *  下流の「target !== caller.userId(null) ＝ 代理入力だ」という判定に化けて自分の申請が403で消える。
+ *  ここで明示的に区別し、呼び出し側で専用エラーを返す。
+ */
+const AMBIGUOUS = Symbol('ambiguous-identity')
+type CallerResult = Caller | null | typeof AMBIGUOUS
+
 async function callerFromLineUserId(svc: any, lineUserId: string): Promise<Caller | null> {
   const { data: u } = await svc.from('users')
     .select('id, account_id, real_name').eq('line_user_id', lineUserId).maybeSingle()
@@ -75,7 +85,7 @@ async function callerFromLineUserId(svc: any, lineUserId: string): Promise<Calle
 /** 検証済みの身元から account_id と「編集した人」を解決する（クライアント申告は使わない） */
 async function resolveCaller(
   svc: any, authHeader: string, lineIdToken: string, devLineUserId: string,
-): Promise<Caller | null> {
+): Promise<CallerResult> {
   // (1) Supabase JWT（admin / email-pw 作業員）
   if (authHeader && !authHeader.endsWith(ANON_KEY)) {
     const cli = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: authHeader } } })
@@ -87,13 +97,18 @@ async function resolveCaller(
       const { data: acct } = await svc.from('accounts').select('id').eq('slug', slug).maybeSingle()
       const accountId = acct?.id
       if (accountId) {
-        // 表示名は users 行から引く。無くてもログ自体は残す（account だけは必ず確定させる）
-        const { data: w } = await svc.from('workers').select('id, name')
-          .eq('auth_user_id', authUserId).eq('account_id', accountId).maybeSingle()
-        const { data: u } = w?.id
+        // ★maybeSingle() を使わない。複数行を「0行」と同じ null に潰してしまうため
+        //  （それが 2026-08-10 の障害）。件数を自分で見て、曖昧なら曖昧と言う。
+        const { data: ws } = await svc.from('workers').select('id, name')
+          .eq('auth_user_id', authUserId).eq('account_id', accountId).limit(2)
+        if ((ws?.length ?? 0) > 1) return AMBIGUOUS
+        const w = ws?.[0] ?? null
+        const { data: us } = w?.id
           ? await svc.from('users').select('id, real_name')
-              .eq('worker_id', w.id).eq('account_id', accountId).maybeSingle()
+              .eq('worker_id', w.id).eq('account_id', accountId).limit(2)
           : { data: null }
+        if ((us?.length ?? 0) > 1) return AMBIGUOUS
+        const u = us?.[0] ?? null
         return { accountId, userId: u?.id ?? null, name: u?.real_name ?? w?.name ?? null }
       }
     }
@@ -249,7 +264,20 @@ Deno.serve(async (req) => {
     typeof body.line_id_token === 'string' ? body.line_id_token : '',
     typeof body.dev_line_user_id === 'string' ? body.dev_line_user_id : '',
   )
+  // ★曖昧（1ログインに作業員が複数）は「未認証」とは別物として返す。401 に混ぜると
+  //  「ログインし直してください」と案内されて永久に直らない（本人にはどうにもできない）。
+  if (caller === AMBIGUOUS) {
+    console.error('[report-edit-log] ambiguous identity: 1つのログインに workers/users が複数紐づいています')
+    return json({ ok: false, error: 'ambiguous_identity' }, 409)
+  }
   if (!caller) return json({ ok: false, error: 'unauthorized' }, 401)
+  // ★身元（userId）が確定しないまま先へ進めない。以前はここを素通りさせていたため、
+  //  監査ログだけ申請者NULLで残り、下流で「代理入力」と誤判定されて403で申請が消えた
+  //  （2026-08-10 本番障害・6回分の申請が承認画面に出なかった）。
+  if (!caller.userId) {
+    console.error('[report-edit-log] caller.userId 未確定（users行が無い）: account=', caller.accountId)
+    return json({ ok: false, error: 'user_not_registered' }, 409)
+  }
 
   // 作業員側に「自分が承認待ちにしている日付」だけ返す（中身は返さない）。
   //  ★次の未送信日の判定と、履歴の承認待ち表示に使う。これが無いと

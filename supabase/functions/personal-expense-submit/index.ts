@@ -67,13 +67,21 @@ async function verifyLineIdToken(idToken: string): Promise<string | null> {
   }
 }
 
+/**
+ * 1つのログインに workers が複数ぶら下がっている状態。
+ * ★report-edit-log と同じ穴（2026-08-10 本番障害）。maybeSingle() は複数行でも data=null を返すので、
+ *  そのままだと「該当なし」と区別がつかず、正規の作業員が 401 unauthorized で弾かれる。
+ *  本人には直しようがないエラーになるので、専用の応答に分ける。
+ */
+const AMBIGUOUS = Symbol('ambiguous-identity')
+
 /** 検証済みの身元から account_id と worker_id を解決する（クライアント申告は一切使わない） */
 async function resolveCaller(
   svc: ReturnType<typeof createClient>,
   authHeader: string,
   lineIdToken: string,
   devLineUserId: string,
-): Promise<{ accountId: string; workerId: string } | null> {
+): Promise<{ accountId: string; workerId: string } | null | typeof AMBIGUOUS> {
   // (1) Supabase JWT（admin / email-pw 作業員）
   if (authHeader && !authHeader.endsWith(ANON_KEY)) {
     const cli = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: authHeader } } })
@@ -86,9 +94,12 @@ async function resolveCaller(
       const accountId = (acct as any)?.id
       if (accountId) {
         // worker は auth_user_id から引く（JWT の worker_id claim も同テナントに限定して照合）
-        const { data: w } = await svc.from('workers').select('id')
-          .eq('auth_user_id', authUserId).eq('account_id', accountId).maybeSingle()
-        if ((w as any)?.id) return { accountId, workerId: (w as any).id }
+        // ★maybeSingle() を使わない。複数行を「0行」と同じ null に潰すため（2026-08-10 障害の型）。
+        const { data: ws } = await svc.from('workers').select('id')
+          .eq('auth_user_id', authUserId).eq('account_id', accountId).limit(2)
+        if (((ws as any)?.length ?? 0) > 1) return AMBIGUOUS
+        const w = (ws as any)?.[0] ?? null
+        if (w?.id) return { accountId, workerId: w.id }
       }
     }
   }
@@ -154,6 +165,10 @@ Deno.serve(async (req) => {
   const svc = createClient(SUPABASE_URL, SERVICE_KEY)
   const body = await req.json().catch(() => ({})) as Record<string, any>
   const caller = await resolveCaller(svc, req.headers.get('Authorization') ?? '', body.line_id_token ?? '', body.dev_line_user_id ?? '')
+  if (caller === AMBIGUOUS) {
+    console.error('[personal-expense-submit] ambiguous identity: 1つのログインに workers が複数紐づいています')
+    return json({ ok: false, error: 'ambiguous_identity' }, 409)
+  }
   if (!caller) return json({ ok: false, error: 'unauthorized' }, 401)
   const { accountId, workerId } = caller
 
