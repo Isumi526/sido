@@ -565,7 +565,8 @@ onMounted(async () => {
 /* 支払元の二択。縦積みでタップしやすくする（機種によっては1行に収まらないため） */
 .pe-payer { display: flex; flex-direction: column; gap: 2px; }
 .pe-payer .pe-check { margin-top: 6px; }
-.pe-payer input { width: 18px; height: 18px; accent-color: var(--accent); }
+/* 支払元の二択は白黒（2026-08-10 レビュー指摘）。ExpenseField.vue と揃える。 */
+.pe-payer input { width: 18px; height: 18px; accent-color: var(--text); }
 .pe-ai { width: 100%; margin-top: 8px; background: #fff; color: #2563eb; border: 1px solid #2563eb; border-radius: 8px; padding: 9px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .pe-ai:disabled { opacity: 0.6; }
 .pe-submit { width: 100%; margin-top: 14px; background: #2563eb; color: #fff; border: none; border-radius: 8px; padding: 11px; font-size: 15px; font-weight: 700; cursor: pointer; }

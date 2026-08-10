@@ -89,7 +89,9 @@ function onInput(e: Event) {
 .expense-label { font-size: 12px; color: var(--text2); font-weight: 500; }
 /* タップしやすい余白付き・左詰め。チェックボックス自体も大きめに */
 .tategae-check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text2); cursor: pointer; user-select: none; padding: 6px 4px; min-height: 36px; }
-.tategae-check input { width: 20px; height: 20px; accent-color: var(--accent); cursor: pointer; }
+/* 支払元の二択は白黒にする（2026-08-10 レビュー指摘）。緑(--accent)だと主張が強く、
+   金額入力より先に目に入っていた。選択中=黒丸・未選択=白丸で十分伝わる。 */
+.tategae-check input { width: 20px; height: 20px; accent-color: var(--text); cursor: pointer; }
 /* 支払元の二択。どちらを選んだか一目で分かるよう横並びにする */
 .payer-choice { gap: 14px; flex-wrap: wrap; }
 .payer-opt { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
