@@ -41,5 +41,7 @@
   "subSummary": "{name}{count}人",
   "garbWood": "木材{m3}m³",
   "garbMixed": "混載{m3}m³",
-  "labeledYen": "{label}¥{amount}"
+  "labeledYen": "{label}¥{amount}",
+  "labelParking": "駐車場代",
+  "labelHighway": "高速代"
 }
