@@ -198,19 +198,33 @@ async function handleReview(svc: any, body: any, authHeader: string): Promise<Re
   // 編集は既存行を更新／期限切れの新規提出はまだ行が無いので upsert する。
   // late_new でも upsert にするのは、承認までの間に同じ日付が別経路で作られていた場合に
   // 重複行を作らないため（daily_reports は unique(user_id,date)）。
-  const { error: upErr } = pend.kind === 'late_new'
-    ? await svc.from('daily_reports').upsert(
-        { ...cols, account_id: accountId, user_id: pend.report_user_id, date: pend.report_date },
-        { onConflict: 'user_id,date' })
-    : await svc.from('daily_reports').update(cols)
-        .eq('id', pend.report_id).eq('account_id', accountId)
-  if (upErr) {
-    console.error('[report-edit-log] apply failed:', upErr)
-    return json({ ok: false, error: 'apply_failed' }, 500)
+  // ★late_new は承認時に日報が生まれるので、作られた行の id を受け取って
+  //  pending.report_id に書き戻す。これをしないと report_id が NULL のままになり、
+  //  日報詳細の「この日報の承認履歴を見る」（report_id で数えている）が永久に0件になる。
+  //  ＝後出しで出てきた日報こそ誰が承認したか追いたいのに、そこだけ履歴から切れていた（2026-08-10 レビューで発見）。
+  let appliedReportId: string | null = pend.report_id ?? null
+  if (pend.kind === 'late_new') {
+    const { data: up, error: upErr } = await svc.from('daily_reports').upsert(
+      { ...cols, account_id: accountId, user_id: pend.report_user_id, date: pend.report_date },
+      { onConflict: 'user_id,date' })
+      .select('id').maybeSingle()
+    if (upErr) {
+      console.error('[report-edit-log] apply failed:', upErr)
+      return json({ ok: false, error: 'apply_failed' }, 500)
+    }
+    appliedReportId = up?.id ?? null
+  } else {
+    const { error: upErr } = await svc.from('daily_reports').update(cols)
+      .eq('id', pend.report_id).eq('account_id', accountId)
+    if (upErr) {
+      console.error('[report-edit-log] apply failed:', upErr)
+      return json({ ok: false, error: 'apply_failed' }, 500)
+    }
   }
   // ★日報への反映が成功してから承認済みにする。逆順だと「承認済みなのに未反映」が残る
   await svc.from('daily_report_pending_edits').update({
     status: 'approved', reviewed_by_name: reviewer, reviewed_at: now, updated_at: now,
+    ...(appliedReportId ? { report_id: appliedReportId } : {}),
   }).eq('id', id)
   return json({ ok: true, status: 'approved' })
 }
