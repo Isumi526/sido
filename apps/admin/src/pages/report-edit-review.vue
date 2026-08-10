@@ -73,7 +73,13 @@
         </div>
 
         <div class="actions">
-          <button class="btn-approve" :disabled="busy === p.id" data-testid="pending-approve" @click="decide(p, 'approve')">
+          <!-- ★自分が出した編集は自分で承認できない（議事録 2026-07-27:
+               「管理者で登録されたら自分で修正できちゃう／誰も見られることもなく」）。
+               差し戻しは自分の申請を取り下げる用途なので残す。 -->
+          <span v-if="isMine(p)" class="self-approve-blocked" data-testid="pending-self-blocked">
+            自分が出した編集は承認できません（他の承認者に依頼してください）
+          </span>
+          <button v-else class="btn-approve" :disabled="busy === p.id" data-testid="pending-approve" @click="decide(p, 'approve')">
             {{ busy === p.id ? '処理中…' : '承認して日報に反映' }}
           </button>
           <button class="btn-reject" :disabled="busy === p.id" data-testid="pending-reject" @click="decide(p, 'reject')">
@@ -156,6 +162,7 @@ import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { refreshNavBadges } from '../lib/navBadges'
 import { diffReceipts } from '../lib/reportReceipts'
+import { currentUser } from '../lib/auth'
 
 const route = useRoute()
 const router = useRouter()
@@ -197,13 +204,34 @@ async function withReceipts(rows: any[], accountId: string): Promise<any[]> {
   return rows.map(r => ({ ...r, receipts: diffReceipts(before.get(r.report_id) ?? {}, r.payload ?? {}) }))
 }
 
+/** ログイン中の管理者に対応する users.id。自己承認の判定に使う（submitted_by_user_id は users.id）。 */
+const myUserId = ref<string | null>(null)
+
+/** auth ユーザー → workers(auth_user_id) → users(worker_id) で自分の users.id を引く。
+ *  ★これが無いと「自分が出した編集を自分で承認する」を止められない。
+ *   議事録(2026-07-27)「管理者で登録されたら自分で修正できちゃう／誰も見られることもなく」への対応。 */
+async function resolveMyUserId() {
+  myUserId.value = null
+  const authId = currentUser.value?.id
+  if (!authId) return
+  const { data: w } = await supabase.from('workers').select('id').eq('auth_user_id', authId).maybeSingle()
+  if (!w?.id) return
+  const { data: u } = await supabase.from('users').select('id').eq('worker_id', w.id).maybeSingle()
+  myUserId.value = u?.id ?? null
+}
+
+/** その保留編集を出したのが自分か（＝自己承認になるか） */
+function isMine(p: any): boolean {
+  return !!myUserId.value && p?.submitted_by_user_id === myUserId.value
+}
+
 async function load() {
   loading.value = true
   try {
     const accountId = await getAccountId()
     const { data, error } = await supabase
       .from('daily_report_pending_edits')
-      .select('id, report_id, report_date, reason, diffs, kind, payload, submitted_by_name, submitted_at')
+      .select('id, report_id, report_date, reason, diffs, kind, payload, submitted_by_user_id, submitted_by_name, submitted_at')
       .eq('account_id', accountId)
       .eq('status', 'pending')
       .order('submitted_at', { ascending: true })
@@ -247,6 +275,12 @@ function clearFilter() {
 
 async function decide(p: any, action: 'approve' | 'reject') {
   if (busy.value) return
+  // ボタンは出していないが、関数側でも塞ぐ（UIを迂回されても自己承認させない）
+  if (action === 'approve' && isMine(p)) {
+    msg.value = '自分が出した編集は承認できません'
+    msgOk.value = false
+    return
+  }
   let rejectReason: string | null = null
   if (action === 'reject') {
     // ★キャンセル(null)は「理由なしで差し戻す」ではなく「差し戻さない」。
@@ -292,6 +326,7 @@ async function decide(p: any, action: 'approve' | 'reject') {
 }
 
 onMounted(async () => {
+  await resolveMyUserId()
   await load()
   // 日報詳細から履歴を見に来たケース（?reportId=...）は最初から開いて出す
   if (historyOpen.value) await loadHistory()
@@ -353,4 +388,5 @@ watch(historyOpen, (open) => { if (open && !history.value.length) void loadHisto
 .badge.approved { background: #dcfce7; color: #166534; }
 .badge.rejected { background: #fee2e2; color: #991b1b; }
 .reject-reason { margin-top: 4px; font-size: 12px; color: #991b1b; white-space: pre-wrap; max-width: 240px; }
+.self-approve-blocked { font-size: 13px; color: #b45309; background: #fdf3e3; border: 1px solid #f0d9a8; border-radius: 8px; padding: 9px 14px; }
 </style>
