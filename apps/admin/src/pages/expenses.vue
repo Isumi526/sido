@@ -546,7 +546,16 @@ async function doReject() {
     const now = new Date().toISOString()
     const { error } = await supabase
       .from('expense_settlements')
-      .update({ status: '差し戻し', reject_reason: rejectReason.value.trim(), rejected_at: now, updated_at: now })
+      // ★差し戻したら一次承認の記録も消す（2026-08-10 レビュー指摘）。
+      //  消さないと、作業員が LIFF で再申請した時（useExpense.applySettlement は status を
+      //  '申請中' に戻すが first_approved_* に触らない）に「申請中なのに一次承認済みの記録がある」
+      //  状態が残り、画面に前回の承認者が出たまま再承認待ちになる＝監査の記録が1回ずれる。
+      //  「支払い済み→申請中に戻す」経路(:629)では既に消しているので、そちらと揃える。
+      .update({
+        status: '差し戻し', reject_reason: rejectReason.value.trim(), rejected_at: now, updated_at: now,
+        first_approved_at: null, first_approved_by: null, first_approved_name: null,
+        final_approved_by: null, final_approved_name: null,
+      })
       .eq('account_id', accountId)
       .eq('user_id', t.userId)
       .eq('period_key', t.periodKey)
