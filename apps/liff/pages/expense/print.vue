@@ -37,6 +37,7 @@
             <th class="col-date">{{ t('expenseDoc.colDate') }}</th>
             <th class="col-payee">{{ t('expenseDoc.colPayee') }}</th>
             <th class="col-reg">{{ t('expenseDoc.colReg') }}</th>
+            <th class="col-acct">{{ t('expenseDoc.colAccount') }}</th>
             <th class="col-cat">{{ t('expenseDoc.colCategory') }}</th>
             <th class="col-lit">{{ t('expenseDoc.colLiters') }}</th>
             <th class="col-site">{{ t('expenseDoc.colSite') }}</th>
@@ -49,7 +50,8 @@
             <td class="center">{{ fmtDate(row.date) }}</td>
             <td class="small">{{ row.payee || '' }}</td>
             <td class="small">{{ row.registrationNumber || '' }}</td>
-            <!-- 品名の規則は download.vue と同一（個人経費は note・無ければ空欄／科目列は出さない） -->
+            <!-- 科目・品名とも規則は download.vue と同一（同じ経費が画面で違う科目になると困る） -->
+            <td class="center">{{ acctCategory(row) }}</td>
             <td class="center">{{ itemName(row) }}</td>
             <td class="center">{{ row.liters ?? '' }}</td>
             <td class="small">{{ row.siteName }}</td>
@@ -59,7 +61,7 @@
         </tbody>
         <tfoot>
           <tr class="total-row">
-            <td colspan="7" class="right">{{ t('expenseDoc.totalLabel') }}</td>
+            <td colspan="8" class="right">{{ t('expenseDoc.totalLabel') }}</td>
             <td class="right">¥{{ total.toLocaleString() }}</td>
           </tr>
         </tfoot>
@@ -82,12 +84,17 @@
 import { useI18n } from 'vue-i18n'
 import type { ExpenseRow, User } from '~/types'
 import { periodLabel } from '~/composables/useExpense'
-import { expenseDisplayCategory, isPersonalExpenseRow } from '~/composables/expense-flatten.gen'
+import { expenseDisplayCategory, expenseAccountCategory, isPersonalExpenseRow } from '~/composables/expense-flatten.gen'
 
 /** 品名欄の表示。個人経費は category＝勘定科目なので出さず、note（実際の品名）だけを出す。 */
 function itemName(row: ExpenseRow): string {
   if (isPersonalExpenseRow(row)) return row.note || ''
   return expenseDisplayCategory(row.category)
+}
+
+/** 科目（勘定科目）欄。導出は expenseAccountCategory だけを使う（download.vue と同一）。 */
+function acctCategory(row: ExpenseRow): string {
+  return expenseAccountCategory(row)
 }
 
 const { t } = useI18n()

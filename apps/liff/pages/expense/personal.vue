@@ -162,6 +162,9 @@
             <li v-for="r in items" :key="r.id" class="pe-item">
               <span class="pe-date">{{ r.date }}</span>
               <span class="pe-acct">{{ r.account_category }}</span>
+              <!-- ★科目（会計仕訳用）と品名（何に使ったか）は別物。運用者から
+                   「科目と品名を両方表示する」（2026-08-10 電話）。note が実際の品名。 -->
+              <span v-if="r.note" class="pe-item-name">{{ r.note }}</span>
               <span class="pe-amount">¥{{ Number(r.amount).toLocaleString() }}</span>
               <span v-if="r.payee" class="pe-payee">{{ r.payee }}</span>
               <button type="button" class="pe-del" @click="onDelete(r.id)"><span class="material-symbols-rounded">delete</span></button>
@@ -579,6 +582,8 @@ onMounted(async () => {
 .pe-item { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #f3f4f6; font-size: 13px; }
 .pe-date { color: #6b7280; }
 .pe-acct { background: #eff6ff; color: #1d4ed8; border-radius: 999px; padding: 1px 8px; font-size: 11px; }
+/* 品名（何に使ったか）。科目バッジの隣に地の文で置く＝科目と混ざらないように色を分ける */
+.pe-item-name { color: #334155; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pe-amount { font-weight: 700; margin-left: auto; }
 .pe-payee { color: #6b7280; font-size: 12px; }
 .pe-del { background: none; border: none; color: #9ca3af; cursor: pointer; display: grid; place-items: center; }
