@@ -99,6 +99,35 @@ git push origin main --force
 | **PROD_URL** | admin=`https://sido-admin-stism.vercel.app/` ／ liff=`https://sido-liff.vercel.app/` | ship 手順8スモークで使用 |
 | **REVIEW_LOGIN** | admin: ID=`e2e`（`ADMIN_LOGIN_ID`）／PASS=`e2e-pass-1234`（`ADMIN_LOGIN_PASS`）。自動ログインURL＝`{{DEV_URL}}/login?id=e2e&pass=e2e-pass-1234` | `/review` が admin のログイン必須画面をナビする時に使う（`apps/admin/src/pages/login.vue` の `?id=&pass=` クエリ自動ログイン対応）。liff は dev モードでLIFF認証スキップのため通常不要。 |
 
+### STAGING（スマホでレビューするための環境・2026-08-11 新設）
+`/review` の人力チェックをPCの前でなくスマホからやりたい、という要望で作った。**ローカル確認を置き換えるものではなく、追加の手段**（機械のゲートは従来どおりローカルで回す）。
+
+| キー | 実値 |
+|---|---|
+| **STAGING_URL** | admin=`https://sido-admin-staging.vercel.app/` ／ liff=`https://sido-liff-staging.vercel.app/` |
+| **STAGING_LOGIN** | `staging@email.com` / `sido-stg-2026!`（demoテナント・permission_role=admin） |
+| **Vercelプロジェクト** | `sido-admin-staging`(prj_661fhc4I…) ／ `sido-liff-staging`(prj_D3RF34IN…)。**本番プロジェクトとは別物で、git連携していない**＝dev に push しても自動デプロイされない |
+| **DB** | ★**本番Supabase**（`nrzzesbtvswoiouhldvi`）を見る。分離DBではない |
+| **テナント** | `demo`（`ACCOUNT_SLUG=demo`）。既存の demo データ（4現場・36日報・デモ太郎〜五郎）を使う |
+
+**★安全のうえで一番大事なこと: 本番DBに書く。** レビューは必ず上記 `staging@email.com`（demoテナント）で行う。本番テナントのアカウントでログインすると実データを書き換える。
+
+デプロイ手順（CCが実行する。`vercel` CLI 認証済み前提）:
+```bash
+# ★apps/*/.vercel/project.json は本番を指しているので、退避 → staging に差し替え → 必ず復元 する
+cp apps/liff/.vercel/project.json /tmp/liff.bak          # 退避
+echo '{"projectId":"prj_D3RF34INTlF3tHIyYtlR7oJh288w","orgId":"team_2x7BAJnlx3fLVXSeRgeNJWPr","projectName":"sido-liff-staging"}' > apps/liff/.vercel/project.json
+npx vercel deploy --prod --yes --cwd apps/liff
+cp /tmp/liff.bak apps/liff/.vercel/project.json          # ★復元を忘れない（忘れると次に本番へ出す時に事故る）
+```
+admin も同様（projectId=`prj_661fhc4InxxnuezMLPi2cBLXEntl`）。
+
+ハマりどころ（実際に踏んだ）:
+- **`vercel env pull` は暗号化された値を復号しない**。空文字のenvファイルが落ちてくるので、それをそのまま `env add` すると全部空になる。値は `apps/liff/.env` / `apps/admin/.env`（本番値を持っている）から取る。
+- **`.vercelignore` が無いのでローカルの `.env` がアップロードされ、ビルドに使われる**。だから `NUXT_PUBLIC_GAS_URL` 等は staging プロジェクトに設定していなくても効いている。GAS は `?action=getMaster` の GET だけ（書き込み無し）なので実害は無いが、外向き送信を足す時はここを思い出すこと。`NUXT_PUBLIC_REPORT_LINE_NOTIFY` は false のままなので LINE 通知は飛ばない。
+- **`NUXT_PUBLIC_APP_ENV` に `development` を入れてはいけない**。LIFF認証をスキップして全員 `dev-user-id` になり、本番DBに対して身元不明で書き込む状態になる。
+- 手で `auth.users` を INSERT する時は `confirmation_token` 等のtoken列を **NULL でなく `''`** にする。NULL だとログインが `Database error querying schema`(500) で落ちる。
+
 ### APP_LAYOUT_NOTES（/review が参照）
 - 構成: `apps/admin`(管理画面・ブラウザ {{DEV_URL}}) ＋ `apps/liff`(Nuxt・LINEミニアプリ)。UI/ロジックは原則ブラウザ。**LINEアプリ内固有（友だち追加・トーク内 LIFF 起動・Flex体裁）は `⚠実機確認`**。
 - 画面パス例（admin）: 下請け管理／現場／日報／月次集計 ※実パスは apps ルーティングに合わせる。
