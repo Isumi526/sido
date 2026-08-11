@@ -112,6 +112,26 @@
             <a :href="pdfUrl(selected, 'seikyu')" target="_blank" rel="noopener" class="pdf-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> 請求書</a>
           </div>
 
+          <!-- 科目の絞り込み（2026-08-10 運用者要望）。逐語:「旅費交通費だけとかさ、
+               旅費交通費だけでもPDFが出せたりとか、雑費だけの経費が出せたりとか、その選びたい」 -->
+          <div v-if="availableAccounts.length > 1" class="acct-filter no-print" data-testid="acct-filter">
+            <span class="af-label">科目で絞る</span>
+            <button
+              v-for="a in availableAccounts" :key="a"
+              class="af-chip" :class="{ on: acctFilter.has(a) }"
+              :data-testid="`acct-chip-${a}`"
+              @click="toggleAcct(a)"
+            >{{ a }}</button>
+            <button v-if="acctFilter.size" class="af-clear" data-testid="acct-clear" @click="acctFilter = new Set()">クリア</button>
+            <span v-if="acctFilter.size" class="af-count" data-testid="acct-count">
+              {{ filteredDetails.length }} / {{ selected.details.length }} 件 ・ {{ yen(filteredTotal) }}
+            </span>
+          </div>
+          <!-- ★絞り込み中はPDFにもその旨を出す。出力だけ見た人が「全部の経費」と誤解しないように。 -->
+          <p v-if="acctFilter.size" class="acct-filter-note print-only" data-testid="acct-print-note">
+            ※ 科目「{{ [...acctFilter].join('・') }}」のみを抽出した明細です。
+          </p>
+
           <table class="table detail-table">
             <thead>
               <tr>
@@ -130,7 +150,7 @@
             </thead>
             <tbody>
               <!-- 請求書(立替のみ)印刷時は 立替でない行を隠す（画面表示は常に全件） -->
-              <tr v-for="(d, i) in selected.details" :key="i" :class="{ 'pdf-hide-row': printMode === 'seikyu' && !d.tategae }">
+              <tr v-for="(d, i) in filteredDetails" :key="i" :class="{ 'pdf-hide-row': printMode === 'seikyu' && !d.tategae }">
                 <td class="date-cell">{{ d.date.slice(5).replace('-', '/') }}</td>
                 <td class="muted">{{ d.payee || '—' }}</td>
                 <td class="muted">{{ d.registrationNumber || '—' }}</td>
@@ -156,8 +176,12 @@
             </tbody>
             <tfoot>
               <tr class="detail-total-row">
-                <td colspan="7" class="right">{{ printMode === 'seikyu' ? '振込額（立替）' : '合計' }}</td>
-                <td class="num">{{ yen(printMode === 'seikyu' ? selected.tategaeTotal : selected.total) }}</td>
+                <!-- ★列数と合わせる（日付/支払い先/インボイス/科目/品名/ℓ/現場/使用車 = 8）。
+                     2026-08-10 に品名列を足した時にここを直し忘れ、合計の位置が1列ずれていた。 -->
+                <td colspan="8" class="right">{{ printMode === 'seikyu' ? '振込額（立替）' : '合計' }}</td>
+                <!-- ★合計は必ず「いま表に出ている行」から出す。絞り込んだPDFに全体の合計が
+                     残ると、渡された側は絞り込みに気づかず金額だけ信じてしまう。 -->
+                <td class="num">{{ yen(printMode === 'seikyu' ? filteredTategaeTotal : filteredTotal) }}</td>
                 <td colspan="2" class="no-print"></td>
               </tr>
             </tfoot>
@@ -238,7 +262,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useYearMonthParam } from '../composables/useQueryParam'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug, getAccountName } from '../lib/account'
-import { flattenReportExpenses, flattenGasolineItems, flattenPersonalExpenses, isPersonalExpenseRow, ratesFromSettings, effectiveStatus, expenseAccountCategory, expenseDisplayCategory, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
+import { flattenReportExpenses, flattenGasolineItems, flattenPersonalExpenses, isPersonalExpenseRow, ratesFromSettings, effectiveStatus, expenseAccountCategory, expenseDisplayCategory, EXPENSE_ACCOUNT_OPTIONS, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
 
 /** 品名欄。個人経費は category＝勘定科目なので note（実際の品名）を出す（liff の帳票と同一規則）。 */
 function itemName(row: ExpenseRow): string {
@@ -292,9 +316,34 @@ const printIssueDate = (() => { const d = new Date(); return `${d.getFullYear()}
 // 宛先（請求先＝アカウント名 御中）
 const accountName = ref<string | null>(null)
 // PDF出力モード: 明細(全経費) / 請求書(個人立替のみ)。liff の全経費/立替分と同じ2モード。
+// ── 科目での絞り込み（2026-08-10 運用者要望）──
+//  ★表示だけでなく合計とPDFの中身も必ず追随させる。ここがズレると
+//   「旅費交通費だけのPDF」に全体の合計が乗って、受け取った側が金額を誤認する。
+const acctFilter = ref<Set<string>>(new Set())
+function toggleAcct(a: string) {
+  const next = new Set(acctFilter.value)
+  next.has(a) ? next.delete(a) : next.add(a)
+  acctFilter.value = next
+}
+/** その作業員×期に実在する科目だけを選択肢に出す（EXPENSE_ACCOUNT_OPTIONS の順に並べる） */
+const availableAccounts = computed<string[]>(() => {
+  const present = new Set((selected.value?.details ?? []).map((d) => expenseAccountCategory(d)))
+  const ordered = (EXPENSE_ACCOUNT_OPTIONS as readonly string[]).filter((a) => present.has(a))
+  // 選択肢に無い科目（将来 account を自由入力した等）も落とさない
+  const rest = [...present].filter((a) => !ordered.includes(a)).sort((x, y) => x.localeCompare(y, 'ja'))
+  return [...ordered, ...rest]
+})
+const filteredDetails = computed<ExpenseRow[]>(() => {
+  const rows = selected.value?.details ?? []
+  if (!acctFilter.value.size) return rows          // 絞り込み無し＝従来どおり全件
+  return rows.filter((d) => acctFilter.value.has(expenseAccountCategory(d)))
+})
+const filteredTotal        = computed(() => filteredDetails.value.reduce((s, d) => s + (Number(d.amount) || 0), 0))
+const filteredTategaeTotal = computed(() => filteredDetails.value.filter((d) => d.tategae).reduce((s, d) => s + (Number(d.amount) || 0), 0))
+
 const printMode = ref<'meisai' | 'seikyu'>('meisai')
 // モーダルを開き直すたびに明細モードへリセット（前回の請求書モードを持ち越さない）
-watch(selected, () => { printMode.value = 'meisai' })
+watch(selected, () => { printMode.value = 'meisai'; acctFilter.value = new Set() })
 async function printExpenseDoc(mode: 'meisai' | 'seikyu') {
   printMode.value = mode
   await nextTick()
@@ -670,6 +719,16 @@ watch(dateFrom, load)
 .btn-confirm-ok { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 8px 20px; font-weight: 700; cursor: pointer; }
 .btn-confirm-ok.danger { background: #c0392b; }
 .btn-confirm-ok:disabled { opacity: .6; cursor: default; }
+
+/* 科目の絞り込み */
+.acct-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0 8px; }
+.af-label { font-size: 12px; font-weight: 700; color: #888; margin-right: 2px; }
+.af-chip { font-size: 12px; border: 1px solid #d0d0d0; background: #fff; color: #475569; border-radius: 999px; padding: 3px 12px; cursor: pointer; }
+.af-chip:hover { background: #f5f5f5; }
+.af-chip.on { background: #06C755; border-color: #06C755; color: #fff; font-weight: 700; }
+.af-clear { font-size: 12px; border: 1px solid #d0d0d0; background: #fff; color: #555; border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+.af-count { font-size: 12px; color: #888; font-variant-numeric: tabular-nums; }
+.acct-filter-note { font-size: 11px; color: #444; margin: 0 0 6px; }
 
 /* PDF出力ボタン・詳細合計 */
 .modal-head-actions { display: flex; align-items: center; gap: 8px; }
