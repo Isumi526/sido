@@ -107,6 +107,11 @@
               <template v-if="attendanceFor(r, site)?.checkin || attendanceFor(r, site)?.checkout"><span class="material-symbols-rounded" style="font-size:12px;vertical-align:middle;line-height:1;color:#16a34a">circle</span> 出勤 {{ attendanceFor(r, site)?.checkin ?? '—' }} / 退勤 {{ attendanceFor(r, site)?.checkout ?? '—' }}</template>
               <span v-else class="no-punch">打刻なし</span>
             </span>
+            <!-- ★実打刻と作業時刻（＝人件費の根拠）のズレ。2026-08-10 の電話で
+                 「実際打った時間と、管理者が決めた8時半・6時と…それが出てくればそれでいい」。
+                 実打刻と作業時刻は既に上に出ているので、足りなかった『差』だけをここに出す。 -->
+            <span v-for="d in punchDiffs(r, site)" :key="d.key" class="punch-diff"
+              :class="{ big: d.big }" :data-testid="`punch-diff-${d.key}`">{{ d.label }}</span>
           </div>
         </div>
         <div class="card-actions">
@@ -383,6 +388,7 @@ import { useQueryParam } from '../composables/useQueryParam'
 import { HIDE_LINE_SECTIONS } from '../lib/featureFlags'
 import { effectiveBreakMinutes, laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE, type RateBreakdown } from '../lib/workerHours'
 import { canViewWages, currentUser } from '../lib/auth'
+import { punchDiffLabel, isPunchDiffBig } from '../lib/attendanceDiff'
 
 const EDGE_URL  = import.meta.env.VITE_SUPABASE_EDGE_URL as string
 const ANON_KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY as string
@@ -635,6 +641,26 @@ function calcLaborCost(w: any, dailyWage: number): number {
   return laborCostForBreakdown(selectedBreakdown.value.get(w) ?? ZERO_BREAKDOWN, dailyWage, 0, 'daily')
 }
 
+/**
+ * その現場行に出す「ズレ」チップ。出勤/退勤それぞれ、実打刻と作業時刻の両方が揃った時だけ出す。
+ * ★片方しか無い時に 0 や — を出さない（無いものを在るように見せない）。
+ */
+function punchDiffs(r: any, site: any): { key: string; label: string; big: boolean }[] {
+  const att = attendanceFor(r, site)
+  const w = site?.workers?.[0]
+  if (!att || !w) return []
+  const out: { key: string; label: string; big: boolean }[] = []
+  for (const [key, actual, planned, jp] of [
+    ['in', att.checkin, w.startTime, '出勤'],
+    ['out', att.checkout, w.endTime, '退勤'],
+  ] as const) {
+    const label = punchDiffLabel(actual, planned)
+    if (!label || label === '±0') continue   // ズレていない時は黙る（画面を賑やかにしない）
+    out.push({ key, label: `${jp} ${label}`, big: isPunchDiffBig(actual, planned) })
+  }
+  return out
+}
+
 function resolveSiteName(site: any): string {
   const n = site.siteName ?? ''
   return n === '__other__' ? (site.customSiteName?.trim() || '新規現場') : (n || '(現場名なし)')
@@ -827,6 +853,9 @@ onUnmounted(() => document.removeEventListener('click', closeWorkerMenu))
 .attendance-tag { font-size: 12px; font-weight: 600; color: #0a8a3a; margin-left: 8px; font-variant-numeric: tabular-nums; }
 .work-time { color: #1a7abf; font-weight: 600; font-variant-numeric: tabular-nums; }
 .attendance { color: #0a8a3a; font-weight: 600; font-variant-numeric: tabular-nums; }
+/* 実打刻と作業時刻のズレ。30分以上は色を変えて気づけるようにする */
+.punch-diff { margin-left: 6px; font-size: 11px; font-weight: 700; color: #475569; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 999px; padding: 1px 8px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.punch-diff.big { color: #b45309; background: #fef3c7; border-color: #fde68a; }
 .no-punch { color: #94a3b8; font-weight: 500; }
 .worker-count { color: #888; }
 

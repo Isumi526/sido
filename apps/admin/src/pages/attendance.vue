@@ -59,9 +59,7 @@
       <table class="table">
         <thead>
           <tr>
-            <th>打刻（実時刻）</th>
-            <th>管理者設定</th>
-            <th>差</th>
+            <th>日時</th>
             <th>区分</th>
             <th>現場</th>
             <th>作業員</th>
@@ -73,14 +71,6 @@
         <tbody>
           <tr v-for="log in logs" :key="log.id">
             <td class="date">{{ fmtDateTime(log.checked_at) }}</td>
-            <!-- ★管理者が設定した勤務時刻（現場の固定勤務時刻）。人件費はこちらを根拠にしており、
-                 打刻の実時刻は照合用。未設定の現場は空欄にする（0:00 等の嘘を出さない）。 -->
-            <td class="fixed-time">{{ fixedTimeLabel(log) || '—' }}</td>
-            <td class="diff">
-              <span v-if="diffLabel(log)" class="diff-badge" :class="{ big: isBigDiff(log) }"
-                data-testid="attendance-diff">{{ diffLabel(log) }}</span>
-              <span v-else class="no-location">—</span>
-            </td>
             <td>
               <span class="type-badge" :class="log.type">
                 {{ log.type === 'checkin' ? '出勤' : '退勤' }}
@@ -152,7 +142,7 @@ type Log = {
   location_lat: number | null
   location_lng: number | null
   agreed_rule_texts: string[] | null
-  sites:   { name: string; default_start_time: string | null; default_end_time: string | null } | null
+  sites:   { name: string } | null
   workers: { name: string } | null
   proxy:   { name: string } | null
 }
@@ -179,11 +169,6 @@ function fmtDateTime(iso: string) {
   return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-// ── 打刻の実時刻 vs 管理者が設定した勤務時刻（2026-08-10 運用者要望）──
-//  ★人件費の根拠は「管理者が設定した時間」のまま。ここは照合して気づくための表示で、
-//   計算には一切使わない。逐語:「人件費の計算は管理者が決めた時間ベースで、今までと変わらず」
-const hhmm = (t: string | null | undefined) => (t ?? '').slice(0, 5)
-
 // ── 日付(YYYY-MM-DD) → その日のローカル時刻での開始/終了を UTC の ISO で返す ──
 //  ★'2026-09-24T00:00:00' のようなタイムゾーン無しの文字列をそのまま渡すと、
 //   Postgres は UTC として解釈する。JST の朝6:02 の打刻は UTC では前日21:02 なので、
@@ -192,49 +177,6 @@ const hhmm = (t: string | null | undefined) => (t ?? '').slice(0, 5)
 //   Date に日付＋時刻だけ渡すとローカル時刻として解釈されるので、それを ISO(UTC) に直して渡す。
 const dayStartIso = (d: string) => new Date(`${d}T00:00:00`).toISOString()
 const dayEndIso   = (d: string) => new Date(`${d}T23:59:59.999`).toISOString()
-
-/** その現場の固定勤務時刻「08:30〜18:00」。未設定なら空文字（＝表示は —） */
-function fixedTimeLabel(log: Log): string {
-  const s = hhmm(log.sites?.default_start_time)
-  const e = hhmm(log.sites?.default_end_time)
-  if (!s && !e) return ''
-  return `${s || '—'}〜${e || '—'}`
-}
-
-/** この打刻と突き合わせるべき設定時刻。出勤は開始、退勤は終了。 */
-function fixedFor(log: Log): string {
-  return hhmm(log.type === 'checkin' ? log.sites?.default_start_time : log.sites?.default_end_time)
-}
-
-/** 打刻 − 設定（分）。設定が無ければ null。 */
-function diffMinutes(log: Log): number | null {
-  const fixed = fixedFor(log)
-  if (!fixed) return null
-  const [fh, fm] = fixed.split(':').map(Number)
-  const d = new Date(log.checked_at)
-  let diff = (d.getHours() * 60 + d.getMinutes()) - (fh * 60 + fm)
-  // 日跨ぎ: 深夜1時の退勤を「17時間早い」と読ませない（夜勤・残業で普通に起きる）
-  if (diff < -12 * 60) diff += 24 * 60
-  else if (diff > 12 * 60) diff -= 24 * 60
-  return diff
-}
-
-function diffLabel(log: Log): string {
-  const m = diffMinutes(log)
-  if (m === null) return ''
-  if (m === 0) return '±0'
-  const sign = m > 0 ? '+' : '−'
-  const abs = Math.abs(m)
-  const h = Math.floor(abs / 60)
-  const mm = abs % 60
-  return `${sign}${h ? `${h}時間` : ''}${mm ? `${mm}分` : (h ? '' : '0分')}`
-}
-
-/** 30分以上ズレているものは目立たせる（申請漏れに気づくため） */
-function isBigDiff(log: Log): boolean {
-  const m = diffMinutes(log)
-  return m !== null && Math.abs(m) >= 30
-}
 
 async function loadMasters() {
   const accountId = await getAccountId()
@@ -263,7 +205,7 @@ async function load() {
       location_lat,
       location_lng,
       agreed_rule_texts,
-      sites(name, default_start_time, default_end_time),
+      sites(name),
       workers!attendance_logs_worker_id_fkey(name),
       proxy:workers!attendance_logs_proxy_worker_id_fkey(name)
     `)
@@ -354,11 +296,6 @@ onMounted(async () => {
 .mp-count { font-weight: 700; margin-right: 8px; font-variant-numeric: tabular-nums; }
 .mp-names { color: #374151; }
 .mp-note { font-size: 11px; color: #92400e; margin-top: 4px; }
-
-/* 打刻と設定時刻の差 */
-.fixed-time { white-space: nowrap; color: #475569; font-variant-numeric: tabular-nums; }
-.diff-badge { display: inline-block; font-size: 11px; font-weight: 700; color: #475569; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 999px; padding: 1px 8px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.diff-badge.big { color: #b45309; background: #fef3c7; border-color: #fde68a; }
 
 .filter-bar {
   display: flex;
