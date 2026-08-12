@@ -39,7 +39,10 @@ cd apps/admin && npm run dev
 
 ### ブランチ運用（A+運用：main一本デプロイ + dev はPC間同期用）
 
-- **テストはローカル**（`npm run dev`）で行う。Preview URL は使わない。
+- **テストはローカル**（`npm run dev`）で行う。Vercel の Preview URL（git連携の自動プレビュー）は使わない。
+  - ただし**人がPCの前に居ない時にスマホで見るための STAGING は別途ある**（下記「STAGING」節）。
+    これは git 連携ではなく `scripts/deploy-staging.mjs` で明示的に出す専用プロジェクトで、
+    dev に push しても勝手にデプロイされない＝この方針とは衝突しない。
 - **`main` に push したときだけ** Vercel 本番デプロイが走る。
 - **`dev` は「PC跨ぎの作業途中を同期する場所」**。Vercel のデプロイは無効化済み
   （各アプリの `vercel.json` に `git.deploymentEnabled.dev = false`）なので、
@@ -112,15 +115,18 @@ git push origin main --force
 
 **★安全のうえで一番大事なこと: 本番DBに書く。** レビューは必ず上記 `staging@email.com`（demoテナント）で行う。本番テナントのアカウントでログインすると実データを書き換える。
 
-デプロイ手順（CCが実行する。`vercel` CLI 認証済み前提）:
+**使い方（人が「ステージングで」と言ったら `/review` が §0-S でこれを実行する）:**
 ```bash
-# ★apps/*/.vercel/project.json は本番を指しているので、退避 → staging に差し替え → 必ず復元 する
-cp apps/liff/.vercel/project.json /tmp/liff.bak          # 退避
-echo '{"projectId":"prj_D3RF34INTlF3tHIyYtlR7oJh288w","orgId":"team_2x7BAJnlx3fLVXSeRgeNJWPr","projectName":"sido-liff-staging"}' > apps/liff/.vercel/project.json
-npx vercel deploy --prod --yes --cwd apps/liff
-cp /tmp/liff.bak apps/liff/.vercel/project.json          # ★復元を忘れない（忘れると次に本番へ出す時に事故る）
+node --env-file=.env scripts/seed-staging-demo.mjs   # レビュー用データを作る（確認用* 接頭辞・何度でも再実行可）
+node scripts/deploy-staging.mjs                      # 作業ツリーを staging へ出す＋接続先を検証
+node scripts/deploy-staging.mjs --check              # デプロイせず今の接続先だけ確認
+node scripts/deploy-staging.mjs liff                 # 片方だけ
+node --env-file=.env scripts/seed-staging-demo.mjs --clean   # 片付け
 ```
-admin も同様（projectId=`prj_661fhc4InxxnuezMLPi2cBLXEntl`）。
+`deploy-staging.mjs` が **本番リンクの退避→差し替え→復元→復元されたことのassert**、および
+**配信物を実際に取得して「本番Supabaseを向いているか／テナントがdemoか／APP_ENVがdevelopmentでないか」**
+までやる。検証に失敗すると exit 1 する＝**その状態のURLを人に渡さない**。
+★`apps/*/.vercel/project.json` を手で書き換えないこと（戻し忘れると次の本番デプロイが事故る）。
 
 ハマりどころ（実際に踏んだ）:
 - **`vercel env pull` は暗号化された値を復号しない**。空文字のenvファイルが落ちてくるので、それをそのまま `env add` すると全部空になる。値は `apps/liff/.env` / `apps/admin/.env`（本番値を持っている）から取る。
