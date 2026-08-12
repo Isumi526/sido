@@ -170,5 +170,8 @@
   "lateNoticeBanner": "This date is past the submission deadline. It will await an administrator approval before it appears in reports",
   "lateDefaultReason": "Late submission of a past report",
   "lateSubmittedTitle": "Submitted!",
-  "lateSubmittedText": "Because it is past the deadline, it will appear once an administrator approves it"
+  "lateSubmittedText": "Because it is past the deadline, it will appear once an administrator approves it",
+  "payerLabel": "Paid by",
+  "payerCompany": "Company card",
+  "payerPersonal": "Paid out of pocket"
 }

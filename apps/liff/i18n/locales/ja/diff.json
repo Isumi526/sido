@@ -22,6 +22,11 @@
   "garbage": "  ▸ ゴミ: {from} → {to}",
   "other": "  ▸ その他: {from} → {to}",
   "entertainment": "  ▸ 雑経費: {from} → {to}",
+  "businessTripOn": "▸ 出張: なし → あり",
+  "businessTripOff": "▸ 出張: あり → なし",
+  "gasoline": "▸ 本日のガソリン代: {from} → {to}",
+  "gasolineLabel": "給油",
+  "gasLiters": "{liters}ℓ",
   "yenAdded": "  ▸ {label}: ¥{amount} を追加",
   "yenRemoved": "  ▸ {label}: 削除",
   "yenChanged": "  ▸ {label}: ¥{from} → ¥{to}",
@@ -36,5 +41,7 @@
   "subSummary": "{name}{count}人",
   "garbWood": "木材{m3}m³",
   "garbMixed": "混載{m3}m³",
-  "labeledYen": "{label}¥{amount}"
+  "labeledYen": "{label}¥{amount}",
+  "labelParking": "駐車場代",
+  "labelHighway": "高速代"
 }

@@ -39,7 +39,10 @@ cd apps/admin && npm run dev
 
 ### ブランチ運用（A+運用：main一本デプロイ + dev はPC間同期用）
 
-- **テストはローカル**（`npm run dev`）で行う。Preview URL は使わない。
+- **テストはローカル**（`npm run dev`）で行う。Vercel の Preview URL（git連携の自動プレビュー）は使わない。
+  - ただし**人がPCの前に居ない時にスマホで見るための STAGING は別途ある**（下記「STAGING」節）。
+    これは git 連携ではなく `scripts/deploy-staging.mjs` で明示的に出す専用プロジェクトで、
+    dev に push しても勝手にデプロイされない＝この方針とは衝突しない。
 - **`main` に push したときだけ** Vercel 本番デプロイが走る。
 - **`dev` は「PC跨ぎの作業途中を同期する場所」**。Vercel のデプロイは無効化済み
   （各アプリの `vercel.json` に `git.deploymentEnabled.dev = false`）なので、
@@ -87,7 +90,7 @@ git push origin main --force
 | **TYPECHECK** | `npm run typecheck`（=`--workspaces --if-present`） | |
 | **BUILD** | `npm run build --workspaces --if-present` | admin=`vite build` / liff=`nuxt build` |
 | **TEST** | `npm run test:e2e`（Playwright） | |
-| **PLAYWRIGHT_PROJECTS** | `admin` / `liff` | `playwright.config.ts`（root） |
+| **PLAYWRIGHT_PROJECTS** | `admin` / `liff` | `playwright.config.ts`（root）。**`review-drive-admin` / `review-drive-liff` は含めない**——/review が対象チケットの分だけ指名して走らせる駆動用で、合否 assert を持たずローカルDBを書き換えるため着地ゲートに混ぜない（2026-08-06） |
 | **LOCAL_STACK** | supabase（**56321番台に固定**＝API 56321 / DB 56322 / Studio 56323。他プロジェクトと同一マシンで共存のため標準54321番台ではない） | `supabase start`。**`.env` に `LOCAL_DB_URL=postgresql://postgres:postgres@127.0.0.1:56322/postgres` が必須**（未設定だと `scripts/rls-audit.mjs` 等が既定54322＝別プロジェクトのDBを誤って監査してしまう。2026-07-11発見・`.env`はgitignore対象のため新規cloneや別マシンでは都度設定要） |
 | **MIGRATIONS_DIR** | `supabase/migrations` | RLS は `account_id` 論理分離。anon公開キー前提の pre-RLS ベースラインあり（`.kody/accepted.yml` で追跡） |
 | **MINUTES_DS_ID** | `b5a34ae0-d5cd-4448-87a4-6a5035358e91`（`.env`） | 議事録テーブル（会議/電話で複数タスク発生源＝②パターン）。**3リポ共有**・案件relationで絞る。`/intake` が `処理状態=未処理`×自案件を分解し**未整理**を生成→議事録に出所リンク（実装はしない＝/runへ）。単発依頼（①）は従来どおり未整理へ直接。 |
@@ -99,11 +102,50 @@ git push origin main --force
 | **PROD_URL** | admin=`https://sido-admin-stism.vercel.app/` ／ liff=`https://sido-liff.vercel.app/` | ship 手順8スモークで使用 |
 | **REVIEW_LOGIN** | admin: ID=`e2e`（`ADMIN_LOGIN_ID`）／PASS=`e2e-pass-1234`（`ADMIN_LOGIN_PASS`）。自動ログインURL＝`{{DEV_URL}}/login?id=e2e&pass=e2e-pass-1234` | `/review` が admin のログイン必須画面をナビする時に使う（`apps/admin/src/pages/login.vue` の `?id=&pass=` クエリ自動ログイン対応）。liff は dev モードでLIFF認証スキップのため通常不要。 |
 
+### STAGING（スマホでレビューするための環境・2026-08-11 新設）
+`/review` の人力チェックをPCの前でなくスマホからやりたい、という要望で作った。**ローカル確認を置き換えるものではなく、追加の手段**（機械のゲートは従来どおりローカルで回す）。
+
+| キー | 実値 |
+|---|---|
+| **STAGING_URL** | admin=`https://sido-admin-staging.vercel.app/` ／ liff=`https://sido-liff-staging.vercel.app/` |
+| **STAGING_LOGIN** | `staging@email.com` / `sido-stg-2026!`（demoテナント・permission_role=admin） |
+| **Vercelプロジェクト** | `sido-admin-staging`(prj_661fhc4I…) ／ `sido-liff-staging`(prj_D3RF34IN…)。**本番プロジェクトとは別物で、git連携していない**＝dev に push しても自動デプロイされない |
+| **DB** | ★**本番Supabase**（`nrzzesbtvswoiouhldvi`）を見る。分離DBではない |
+| **テナント** | `demo`（`ACCOUNT_SLUG=demo`）。既存の demo データ（4現場・36日報・デモ太郎〜五郎）を使う |
+
+**★安全のうえで一番大事なこと: 本番DBに書く。** レビューは必ず上記 `staging@email.com`（demoテナント）で行う。本番テナントのアカウントでログインすると実データを書き換える。
+
+**使い方（人が「ステージングで」と言ったら `/review` が §0-S でこれを実行する）:**
+```bash
+node --env-file=.env scripts/seed-staging-demo.mjs   # レビュー用データを作る（確認用* 接頭辞・何度でも再実行可）
+node scripts/deploy-staging.mjs                      # 作業ツリーを staging へ出す＋接続先を検証
+node scripts/deploy-staging.mjs --check              # デプロイせず今の接続先だけ確認
+node scripts/deploy-staging.mjs liff                 # 片方だけ
+node --env-file=.env scripts/seed-staging-demo.mjs --clean   # 片付け
+```
+`deploy-staging.mjs` が **本番リンクの退避→差し替え→復元→復元されたことのassert**、および
+**配信物を実際に取得して「本番Supabaseを向いているか／テナントがdemoか／APP_ENVがdevelopmentでないか」**
+までやる。検証に失敗すると exit 1 する＝**その状態のURLを人に渡さない**。
+★`apps/*/.vercel/project.json` を手で書き換えないこと（戻し忘れると次の本番デプロイが事故る）。
+
+ハマりどころ（実際に踏んだ）:
+- **`vercel env pull` は暗号化された値を復号しない**。空文字のenvファイルが落ちてくるので、それをそのまま `env add` すると全部空になる。値は `apps/liff/.env` / `apps/admin/.env`（本番値を持っている）から取る。
+- **`.vercelignore` が無いのでローカルの `.env` がアップロードされ、ビルドに使われる**。だから `NUXT_PUBLIC_GAS_URL` 等は staging プロジェクトに設定していなくても効いている。GAS は `?action=getMaster` の GET だけ（書き込み無し）なので実害は無いが、外向き送信を足す時はここを思い出すこと。`NUXT_PUBLIC_REPORT_LINE_NOTIFY` は false のままなので LINE 通知は飛ばない。
+- **`NUXT_PUBLIC_APP_ENV` に `development` を入れてはいけない**。LIFF認証をスキップして全員 `dev-user-id` になり、本番DBに対して身元不明で書き込む状態になる。
+- 手で `auth.users` を INSERT する時は `confirmation_token` 等のtoken列を **NULL でなく `''`** にする。NULL だとログインが `Database error querying schema`(500) で落ちる。
+
 ### APP_LAYOUT_NOTES（/review が参照）
 - 構成: `apps/admin`(管理画面・ブラウザ {{DEV_URL}}) ＋ `apps/liff`(Nuxt・LINEミニアプリ)。UI/ロジックは原則ブラウザ。**LINEアプリ内固有（友だち追加・トーク内 LIFF 起動・Flex体裁）は `⚠実機確認`**。
 - 画面パス例（admin）: 下請け管理／現場／日報／月次集計 ※実パスは apps ルーティングに合わせる。
 - 外部送信媒体＝**LINE（liff・GAS webhook 経由）・メール**（実送信は自分宛・隔離）。
 - 本番: DEPLOY_TRIGGER=`auto-on-merge`（Vercel）。**Supabase edge functions 使用＝ship 手順7 で本番ref へ deploy 該当**。`NOTIFY_PREFIX=[sido]`。スモークの認可ガード対象＝GAS/edge webhook・公開リンク等。
+
+### CONSUMERS_DOCS（/run が参照・§3 影響範囲マップの手順4）
+`run.md` が言う「`docs/*-consumers.md` があれば使う／無ければ作る」の**この案件での実体は以下3本**。
+新しいエンティティで同型の文書を作る時のひな型でもある。
+- `docs/expense-data-consumers.md` — 経費データ（`daily_reports.sites[].expenses`）。JSON構造・明細ごと領収書・スカラー⇔配列を変える時。
+- `docs/site-reference-consumers.md` — 日報の現場参照（`site_id` 権威キー＋`siteName` 表示スナップショット）。集計のグループ化キーに触れる時。
+- `docs/subcontractor-invoice-consumers.md` — 下請け請求（`subcontractor_invoices` / `_items`）。`amount` の意味が請求書ごとに変わるため。
 
 ## 自走ポリシー（被害範囲で判断）
 判断軸：可逆 & dev内 = 自走。不可逆 / 本番 / 業務意図 = 人。

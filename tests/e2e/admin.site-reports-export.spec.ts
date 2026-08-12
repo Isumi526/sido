@@ -5,6 +5,12 @@
 //  （2026-07-05 UI変更: 出力ボタン直下のパネルで期間を指定する形に）
 // ============================================================
 import { test, expect } from '@playwright/test'
+import { enableEstimateFeature, resetEstimateFeature } from './helpers'
+
+// zip に見積書PDFフォルダを内包する＝見積もり機能フラグ（既定OFF）の配下。
+// エクスポート自体の検証が主題なので、このspecの間だけONにする。
+test.beforeAll(enableEstimateFeature)
+test.afterAll(resetEstimateFeature)
 
 test('現場別集計をエクスポートすると zip がダウンロードされる', async ({ page }) => {
   await page.goto('/site-reports', { waitUntil: 'networkidle' })

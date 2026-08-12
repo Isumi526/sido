@@ -59,9 +59,12 @@
           <li><RouterLink to="/paid-leave" class="nav-link"><span class="material-symbols-rounded nav-icon">beach_access</span>有給管理<span v-if="pendingGrantCount" class="nav-badge">{{ pendingGrantCount }}</span></RouterLink></li>
         </template>
 
-        <template v-if="canViewManagementPages">
+        <!-- 見積もりは機能フラグで開閉（8/19 の通しテストまで本番では隠す・2026-08-09） -->
+        <template v-if="canViewEstimates">
           <li class="nav-section">見積・発注</li>
-          <li><RouterLink to="/estimate-list" class="nav-link"><span class="material-symbols-rounded nav-icon">calculate</span>見積もり</RouterLink></li>
+          <!-- ★R53: 図面の材料抽出が終わったらここに件数を出す（解析中に他の画面へ移れるようにしたので、
+               終わったことに気づける場所が必要）。結果を見た時点で消える。 -->
+          <li><RouterLink to="/estimate-list" class="nav-link"><span class="material-symbols-rounded nav-icon">calculate</span>見積もり<span v-if="extractDoneCount" class="nav-badge" data-testid="nav-badge-extract">{{ extractDoneCount }}</span></RouterLink></li>
           <li><RouterLink to="/estimates" class="nav-link"><span class="material-symbols-rounded nav-icon">description</span>見積書（受領）</RouterLink></li>
           <li><RouterLink to="/purchase-orders" class="nav-link"><span class="material-symbols-rounded nav-icon">assignment</span>注文書発行</RouterLink></li>
           <li><RouterLink to="/drawing-materials" class="nav-link"><span class="material-symbols-rounded nav-icon">architecture</span>実施図面 材料抽出(AI)</RouterLink></li>
@@ -76,10 +79,10 @@
         <li class="nav-section">マスタ</li>
         <li v-if="canViewManagementPages"><RouterLink to="/workers" class="nav-link"><span class="material-symbols-rounded nav-icon">engineering</span>作業員</RouterLink></li>
         <li><RouterLink to="/sites" class="nav-link"><span class="material-symbols-rounded nav-icon">location_on</span>現場</RouterLink></li>
-        <li v-if="canViewManagementPages"><RouterLink to="/contractors" class="nav-link"><span class="material-symbols-rounded nav-icon">apartment</span>元請け業者</RouterLink></li>
+        <li v-if="canViewContractors"><RouterLink to="/contractors" class="nav-link"><span class="material-symbols-rounded nav-icon">apartment</span>元請け業者</RouterLink></li>
         <li><RouterLink to="/subcontractors" class="nav-link"><span class="material-symbols-rounded nav-icon">handshake</span>協力業者</RouterLink></li>
         <li v-if="canViewManagementPages"><RouterLink to="/vehicles" class="nav-link"><span class="material-symbols-rounded nav-icon">directions_car</span>車両</RouterLink></li>
-        <li v-if="canViewManagementPages"><RouterLink to="/estimate-masters" class="nav-link"><span class="material-symbols-rounded nav-icon">price_change</span>見積マスタ・単価表</RouterLink></li>
+        <li v-if="canViewEstimates"><RouterLink to="/estimate-masters" class="nav-link"><span class="material-symbols-rounded nav-icon">price_change</span>見積マスタ・単価表</RouterLink></li>
 
         <template v-if="canViewManagementPages">
           <li class="nav-section">管理・設定</li>
@@ -116,11 +119,13 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { currentUser, currentRole, currentWorkerName, signOut, isAdminAllowed, roleResolved, roleLabel, canViewManagementPages } from './lib/auth'
+import { currentUser, currentRole, currentWorkerName, signOut, isAdminAllowed, roleResolved, roleLabel, canViewManagementPages, canViewContractors } from './lib/auth'
+import { canViewEstimates } from './lib/features'
 import { liffAppUrl } from './lib/links'
 import { getAccountName } from './lib/account'
 import { editReviewCount, siteUnsetCount, overtimePendingCount, pendingGrantCount, refreshNavBadges } from './lib/navBadges'
 import { unreadChatCount, refreshChatBadge } from './lib/chatBadge'
+import { extractDoneCount, refreshExtractBadge } from './lib/extractJobs'
 import { HIDE_LINE_SECTIONS, HIDE_AI_HELP_SECTIONS } from './lib/featureFlags'
 import { migrationTargetUrl, REDIRECT_SECONDS } from './lib/domainMigration'
 import AiHelpWidget from './components/AiHelpWidget.vue'
@@ -165,6 +170,12 @@ onMounted(refreshNavBadges)
 watch(currentUser, refreshNavBadges)
 // 画面遷移のたびに再取得（許可/紐付け/残業を処理した後にバッジが減るように）
 watch(() => route.path, refreshNavBadges)
+
+// ── 材料抽出の完了バッジ（extractJobs.ts）。解析は画面遷移しても続くので、
+//    どの画面に居ても終わったことが分かるようにする（R53）──
+onMounted(refreshExtractBadge)
+watch(currentUser, refreshExtractBadge)
+watch(() => route.path, refreshExtractBadge)
 
 // ── チャット未読バッジ（chatBadge.ts）。チャット詳細を開いた時にも markSiteChatRead() から再取得される ──
 onMounted(refreshChatBadge)

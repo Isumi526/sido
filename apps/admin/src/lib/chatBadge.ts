@@ -26,12 +26,20 @@ export async function refreshChatBadge() {
   const lastReadBySite: Record<string, string> = {}
   for (const r of (lastReads ?? []) as { site_id: string; last_read_at: string }[]) lastReadBySite[r.site_id] = r.last_read_at
 
-  const { data: msgs } = await supabase.from('site_chat_messages')
+  // ★現場IDを列挙して .in() で絞ってはいけない。chats.vue と同じ 414 URI Too Long を踏む
+  //  （341現場でUUIDの羅列が約12.6KB）。しかも error を捨てていたため、失敗すると
+  //  バッジが黙って0になり「未読が無い」と見分けが付かなかった（2026-08-10 レビュー指摘）。
+  //  chats.vue は直っていたが、こちらが影響範囲から漏れていた。
+  //  account_id で絞れば十分。site_id IS NULL（全体チャット）は現場の未読に数えない。
+  const { data: msgs, error: msgErr } = await supabase.from('site_chat_messages')
     .select('site_id, created_at').eq('account_id', accountId).is('deleted_at', null)
-    .in('site_id', siteIds).order('created_at', { ascending: false }).limit(1000)
+    .not('site_id', 'is', null).order('created_at', { ascending: false }).limit(1000)
+  if (msgErr) { console.error('[chatBadge] 未読の取得に失敗:', msgErr); return }
 
   let unread = 0
+  const activeSet = new Set(siteIds)
   for (const m of (msgs ?? []) as { site_id: string; created_at: string }[]) {
+    if (!activeSet.has(m.site_id)) continue   // 無効化された現場は数えない（従来の .in() と同じ範囲）
     const lastRead = lastReadBySite[m.site_id]
     if (!lastRead || m.created_at > lastRead) unread++
   }

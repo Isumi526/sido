@@ -23,7 +23,8 @@ test('見積明細を商社ごとに分割→担当者がいる商社は発注�
   const supA = (await post('subcontractors', { account_id: accountId, name: SUP_A, category: '商社', active: true }))[0]
   const supB = (await post('subcontractors', { account_id: accountId, name: SUP_B, category: '商社', active: true }))[0]
   await post('subcontractor_contacts', { account_id: accountId, subcontractor_id: supA.id, name: '担当A', email: 'a@example.com' })
-  const proj = (await post('estimate_projects', { account_id: accountId, name: PROJ }))[0]
+  // ★発注タブは「受注」になってから出る（受注前の発注はありえない・レビュー2026-07-28）
+  const proj = (await post('estimate_projects', { account_id: accountId, name: PROJ, status: 'active' }))[0]
   // 商社A: 2行=2000+3000=5000 / 商社B: 1行=5000
   await post('estimate_items', { account_id: accountId, project_id: proj.id, item_name: '材A1', quantity: 2, unit_price: 1000, supplier_id: supA.id })
   await post('estimate_items', { account_id: accountId, project_id: proj.id, item_name: '材A2', quantity: 3, unit_price: 1000, supplier_id: supA.id })

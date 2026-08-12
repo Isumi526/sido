@@ -4,23 +4,55 @@
       <h1 class="page-title">現場別集計
         <HelpButton title="現場別集計の使い方" :items="[
           '現場ごとに日報の稼働（人工）と経費を集計して表示します。',
-          '上部の月ナビで対象月を切り替えられます。',
+          '上部の月ナビで対象月を切り替えられます。「期間で見る」で複数月をまたいだ合計も出せます。',
           '行を開くと、日報単位の内訳（作業員・経費）を確認できます。',
         ]" />
       </h1>
+      <!-- ★既定は従来の単月ナビ。複数月にまたがる工事を通しで見たい時だけ期間指定に切り替える -->
       <div class="month-nav">
-        <button class="btn-nav" @click="shiftMonth(-1)">‹</button>
-        <span class="month-label">{{ yearMonth }}</span>
-        <button class="btn-nav" @click="shiftMonth(1)">›</button>
+        <template v-if="!isRange">
+          <button class="btn-nav" @click="shiftMonth(-1)">‹</button>
+          <span class="month-label">{{ yearMonth }}</span>
+          <button class="btn-nav" @click="shiftMonth(1)">›</button>
+          <button class="btn-range" data-testid="range-open" @click="openRange">期間で見る</button>
+        </template>
+        <template v-else>
+          <input type="month" v-model="rangeFromYM" class="range-ym" data-testid="range-from" />
+          <span>〜</span>
+          <input type="month" v-model="rangeToYM" class="range-ym" data-testid="range-to" />
+          <button class="btn-range" data-testid="range-close" @click="closeRange">単月に戻す</button>
+        </template>
       </div>
     </div>
 
     <div v-if="loading" class="empty">読み込み中...</div>
-    <div v-else-if="siteNames.length === 0" class="empty">この月の日報がありません</div>
+    <div v-else-if="siteNamesAll.length === 0" class="empty">{{ isRange ? 'この期間の日報がありません' : 'この月の日報がありません' }}</div>
 
     <template v-else>
+      <!-- 絞り込み。現場が300件を超えるとタブから目的の1件を目視で探せない（2026-08-10 運用者要望）。
+           ★表示を絞るだけ。各現場の集計値・出力対象には触れない。 -->
+      <div class="site-filter">
+        <label class="sf-field">
+          <span class="material-symbols-rounded sf-icon">search</span>
+          <input v-model="filterText" type="search" class="sf-input" placeholder="現場名で絞り込み"
+            data-testid="site-filter-text" />
+        </label>
+        <select v-model="filterContractor" class="sf-select" data-testid="site-filter-contractor">
+          <option value="">元請け（すべて）</option>
+          <option v-for="c in contractorOptions" :key="c" :value="c">{{ c }}</option>
+        </select>
+        <template v-if="isFiltering">
+          <span class="sf-count" data-testid="site-filter-count">{{ siteNames.length }} / {{ siteNamesAll.length }} 件</span>
+          <button class="sf-clear" data-testid="site-filter-clear" @click="clearFilter">クリア</button>
+        </template>
+      </div>
+
+      <div v-if="siteNames.length === 0" class="empty" data-testid="site-filter-empty">
+        絞り込みに一致する現場がありません（{{ siteNamesAll.length }}件中0件）
+      </div>
+
       <!-- 現場タブ（五十音順） -->
-      <div class="tabs-wrap">
+      <div v-if="siteNames.length" class="tabs-wrap">
         <div class="tabs">
           <button v-for="name in siteNames" :key="name" class="tab"
             :class="{ active: displaySite === name }" @click="activeSite = name">
@@ -32,12 +64,12 @@
       <!-- 出力（※表の表示月は上の ‹ 年月 › ナビで切替。出力ボタンを押すと出力期間を選ぶ） -->
       <div v-if="displaySite" class="export-bar">
         <div class="export-pop-wrap">
-          <button class="btn-export" data-testid="export-site" @click="exportPanelOpen = !exportPanelOpen"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">download</span> {{ canViewManagementPages ? 'CSV＋見積書PDFを出力' : 'CSVを出力' }}</button>
+          <button class="btn-export" data-testid="export-site" @click="exportPanelOpen = !exportPanelOpen"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">download</span> {{ canViewEstimates ? 'CSV＋見積書PDFを出力' : 'CSVを出力' }}</button>
           <div v-if="exportPanelOpen" class="export-pop" data-testid="export-panel">
             <div class="export-pop-title">出力する期間を選んでください</div>
             <label class="export-range-lbl">出力範囲
               <select v-model="exportRange" class="export-range" data-testid="export-range">
-                <option value="month">表示中の月（{{ yearMonth }}）</option>
+                <option value="month">表示中の期間（{{ periodLabel }}）</option>
                 <option value="range">年月範囲を指定</option>
                 <option value="all">全期間</option>
               </select>
@@ -116,7 +148,7 @@
           </tbody>
           <tfoot>
             <tr class="total-row">
-              <td colspan="2">月計</td>
+              <td colspan="2" data-testid="period-total-label">{{ isRange ? '期間計' : '月計' }}</td>
               <td class="num">{{ yen(sumF(siteMap[displaySite], 'shoshaCost'))    }}</td>
               <td class="num">{{ yen(sumF(siteMap[displaySite], 'gyoshaCost'))    }}</td>
               <td v-if="canViewWages" class="num">{{ yen(sumF(siteMap[displaySite], 'laborCost'))     }}</td>
@@ -135,6 +167,84 @@
           </tfoot>
         </table>
       </div>
+
+      <!-- ★業者別内訳。合計だけだと検算できず、どこかの業者が漏れていても気づけない。
+           内訳は月計と同じ行から作っているので、合計が必ず一致する。 -->
+      <section v-if="displaySite" class="vendor-breakdown" data-testid="vendor-breakdown">
+        <div class="vb-head">
+          <h3 class="vb-title">業者別内訳</h3>
+          <span class="vb-check" data-testid="vendor-check">
+            内訳合計 <b>{{ yen(vendorBreakdown.countedTotal) }}</b> ／ {{ isRange ? '期間計' : '月計' }}（商社+業者） <b>{{ yen(vendorGrandTotal) }}</b>
+            <span v-if="vendorBreakdown.countedTotal === vendorGrandTotal" class="vb-ok" data-testid="vendor-check-ok">一致</span>
+            <span v-else class="vb-ng" data-testid="vendor-check-ng">不一致</span>
+          </span>
+        </div>
+
+        <div v-if="!vendorBreakdown.counted.length && !vendorBreakdown.uncategorized.length" class="vb-empty">
+          この現場に業者の原価はありません。
+        </div>
+
+        <table v-else class="table vb-table">
+          <thead>
+            <tr><th>業者名</th><th>区分</th><th class="num">商社</th><th class="num">業者</th><th class="num">合計</th><th></th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="v in vendorBreakdown.counted" :key="v.name" data-testid="vendor-row">
+              <td class="vb-name">{{ v.name }}</td>
+              <td>{{ v.category ?? '—' }}</td>
+              <td class="num">{{ v.shosha ? yen(v.shosha) : '—' }}</td>
+              <td class="num">{{ v.gyosha ? yen(v.gyosha) : '—' }}</td>
+              <td class="num vb-total">{{ yen(v.total) }}</td>
+              <td>
+                <!-- AC3: 特定業者だけの明細（「とらやだけのリストほしい」） -->
+                <button class="vb-detail-btn" :data-testid="`vendor-detail-${v.name}`"
+                        @click="vendorFilter = vendorFilter === v.name ? '' : v.name">
+                  {{ vendorFilter === v.name ? '閉じる' : '明細' }}
+                </button>
+              </td>
+            </tr>
+            <tr v-if="vendorFilter" class="vb-detail-row" data-testid="vendor-detail-panel">
+              <td colspan="6">
+                <div class="vb-detail-title">{{ vendorFilter }} の明細</div>
+                <table class="vb-detail-table">
+                  <thead><tr><th>日付</th><th>内容</th><th class="num">金額</th></tr></thead>
+                  <tbody>
+                    <tr v-for="(it, i) in (vendorBreakdown.counted.find(v => v.name === vendorFilter)?.items
+                                        ?? vendorBreakdown.uncategorized.find(v => v.name === vendorFilter)?.items ?? [])" :key="i">
+                      <td>{{ it.date }}</td>
+                      <td>{{ it.note }}</td>
+                      <td class="num">{{ yen(it.amount) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr class="total-row">
+              <td colspan="4">内訳合計</td>
+              <td class="num total-col" data-testid="vendor-breakdown-total">{{ yen(vendorBreakdown.countedTotal) }}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <!-- ★区分(商社/業者)が未設定の協力業者は、月計の商社にも業者にも計上されていない。
+             これこそ「漏れていても分からない」状態なので、原価未計上として明示する。 -->
+        <div v-if="vendorBreakdown.uncategorized.length" class="vb-warn" data-testid="vendor-uncategorized">
+          <span class="material-symbols-rounded vb-warn-icon">error</span>
+          <div>
+            <strong>区分（商社/業者）が未設定のため、原価に計上されていない協力業者があります。</strong>
+            <ul class="vb-warn-list">
+              <li v-for="v in vendorBreakdown.uncategorized" :key="v.name">
+                {{ v.name }} … <b>{{ yen(v.unpriced) }}</b>（未計上）
+              </li>
+            </ul>
+            合計 <b>{{ yen(vendorBreakdown.uncategorizedTotal) }}</b> が上の月計に含まれていません。
+            協力業者マスタで区分を設定すると計上されます。
+          </div>
+        </div>
+      </section>
     </template>
 
     <!-- 詳細モーダル -->
@@ -351,7 +461,10 @@ import HelpButton from '../components/HelpButton.vue'
 import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, wageForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
 import type { WageMode } from '../lib/workerHours'
 import { canViewWages, canViewHourlyWage, canViewManagementPages } from '../lib/auth'
+import { canViewEstimates } from '../lib/features'
 import { resolveSiteRef, type SiteResolveCtx } from '../lib/siteKey'
+import { normalizeSiteName } from '../lib/siteSimilarity'
+import { netAmountOf, normalizeTaxMode } from '../lib/invoiceTax'
 import JSZip from 'jszip'
 
 const exporting = ref(false)
@@ -400,7 +513,7 @@ async function exportSite() {
     //   この出力から見積金額入りPDFを取得できてしまう抜け道になっていた。CSV（現場の原価集計）は
     //   現場管理者にも見せる方針なのでそのまま出す。
     const accountId = await getAccountId()
-    const { data: siteRow } = canViewManagementPages.value
+    const { data: siteRow } = canViewEstimates.value
       ? await supabase.from('sites').select('id').eq('account_id', accountId).eq('name', site).maybeSingle()
       : { data: null }
     if (siteRow?.id) {
@@ -433,14 +546,43 @@ function shiftMonth(delta: number) {
   const d = new Date(baseDate.value)
   d.setDate(1); d.setMonth(d.getMonth() + delta); baseDate.value = d
 }
+// ★表示期間。既定は従来どおり単月（開いた時の見え方を変えない＝AC3）。
+//   複数月にまたがる工事の原価を通しで見るために、期間指定に切り替えられる。
+//   URLに載せるのは「期間で見ている状態」を共有・再読込しても保てるようにするため。
+const rangeMode   = useQueryParam('range', '')       // '' = 単月 / 'ym' = 年月範囲
+const rangeFromYM = useQueryParam('from', '')        // 'YYYY-MM'
+const rangeToYM   = useQueryParam('to', '')
+const isRange = computed(() => rangeMode.value === 'ym' && !!rangeFromYM.value && !!rangeToYM.value)
+
+/** 期間指定は開始・終了を逆に入れても成立させる（入れ違いで0件になると壊れて見える） */
+const rangeYMs = computed(() => {
+  const a = rangeFromYM.value, b = rangeToYM.value
+  return a <= b ? [a, b] : [b, a]
+})
+
 const dateFrom = computed(() => {
+  if (isRange.value) return ymToFrom(rangeYMs.value[0])
   const d = baseDate.value
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
 })
 const dateTo = computed(() => {
+  if (isRange.value) return ymToTo(rangeYMs.value[1])
   const d = new Date(baseDate.value); d.setMonth(d.getMonth() + 1); d.setDate(0)
   return d.toISOString().split('T')[0]
 })
+
+/** 画面に出す期間の見出し。単月は従来表記のまま */
+const periodLabel = computed(() => isRange.value ? `${rangeYMs.value[0]} 〜 ${rangeYMs.value[1]}` : yearMonth.value)
+
+/** 期間指定に切り替える。初期値は今見ている月（いきなり別の期間に飛ばさない） */
+function openRange() {
+  const d = baseDate.value
+  const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  if (!rangeFromYM.value) rangeFromYM.value = ym
+  if (!rangeToYM.value)   rangeToYM.value = ym
+  rangeMode.value = 'ym'
+}
+function closeRange() { rangeMode.value = '' }
 
 const loading    = ref(false)
 const siteMap    = ref<Record<string, any[]>>({})
@@ -451,7 +593,44 @@ function toggleWageMode() {
   if (!canViewHourlyWage.value) return
   wageMode.value = wageMode.value === 'daily' ? 'real' : 'daily'
 }
-const siteNames  = computed(() => Object.keys(siteMap.value).sort((a, b) => a.localeCompare(b, 'ja')))
+const siteNamesAll = computed(() => Object.keys(siteMap.value).sort((a, b) => a.localeCompare(b, 'ja')))
+
+// ── 絞り込み（現場名 部分一致 × 元請け）──
+//  現場が300件を超えるとタブから目的の1件を目視で探せない、という運用者要望（2026-08-10）。
+//  ★これは「表示するタブを減らす」だけの機能。siteMap（=集計の中身）も出力対象も触らない。
+//  現場名の照合は normalizeSiteName（NFKC＝全角/半角・カナ/かな・記号除去・小文字化）を通す。
+//   日報の現場名は手入力なので「ﾙﾙﾚﾓﾝ」「ルルレモン」「lululemon」の揺れが実在する。
+const filterText       = ref('')
+const filterContractor = ref('')
+// 現場名 → 元請け名。現場マスタに載っていない現場（手入力の表記ゆれ等）はここに現れないので、
+// 元請けで絞ると出てこない＝「元請けが分からない現場」を混ぜない（絞った結果が信用できる方を採る）。
+const contractorBySite = ref<Record<string, string>>({})
+
+const contractorOptions = computed(() => {
+  const present = new Set<string>()
+  for (const name of siteNamesAll.value) {
+    const c = contractorBySite.value[name]
+    if (c) present.add(c)
+  }
+  return [...present].sort((a, b) => a.localeCompare(b, 'ja'))
+})
+
+const isFiltering = computed(() => !!filterText.value.trim() || !!filterContractor.value)
+function clearFilter() { filterText.value = ''; filterContractor.value = '' }
+
+const siteNames = computed(() => {
+  if (!isFiltering.value) return siteNamesAll.value
+  const q = normalizeSiteName(filterText.value.trim())
+  return siteNamesAll.value.filter((name) => {
+    if (q && !normalizeSiteName(name).includes(q)) return false
+    if (filterContractor.value && contractorBySite.value[name] !== filterContractor.value) return false
+    return true
+  })
+})
+
+// 月を変えて対象現場が入れ替わったとき、絞り込みが残っていると「0件」に見えて事故る…
+// ということはない（0件は明示表示する＝AC4）ので絞り込みは保持する。ユーザーが打った条件を
+// 勝手に消す方が驚く。
 // 表示用に選択現場を解決：今月に存在すればそれを使い、無ければ先頭にフォールバック（activeSite自体は書き換えない＝月を戻せば復元される）
 const displaySite = computed(() => siteNames.value.includes(activeSite.value) ? activeSite.value : (siteNames.value[0] ?? ''))
 
@@ -468,6 +647,67 @@ function fmt(v: any) {
 function sumF(rows: any[], field: string) {
   return rows?.reduce((s, r) => s + (Number(r[field]) || 0), 0) ?? 0
 }
+
+// ── 業者別内訳 ──
+//  合計だけ出ていて内訳が見えないと「金額が合っているか検算できず、どこかの業者が
+//  漏れていても気づけない」（2026-08-03 ユーザー指摘）。
+//  ★内訳は必ず「月計と同じ行(siteMap[displaySite])」から作る。別クエリで作り直すと
+//   合計と内訳がズレる（下請け請求の税区分で一覧とモーダルが食い違った前例がある）。
+type VendorItem = { date: string; amount: number; note: string; isInvoice: boolean }
+type VendorAgg = { name: string; category: string | null; shosha: number; gyosha: number; unpriced: number; total: number; items: VendorItem[] }
+
+const vendorBreakdown = computed<{ counted: VendorAgg[]; uncategorized: VendorAgg[]; countedTotal: number; uncategorizedTotal: number }>(() => {
+  const rows = siteMap.value[displaySite.value] ?? []
+  const byVendor = new Map<string, VendorAgg>()
+  const get = (name: string, category: string | null): VendorAgg => {
+    let v = byVendor.get(name)
+    if (!v) { v = { name, category, shosha: 0, gyosha: 0, unpriced: 0, total: 0, items: [] }; byVendor.set(name, v) }
+    if (v.category == null && category != null) v.category = category
+    return v
+  }
+
+  for (const r of rows) {
+    if (r._isInvoice) {
+      // 請求行: 行に載っている金額をそのまま業者へ寄せる（区分未設定は業者列に入る既存仕様）
+      const v = get(r._vendor || '（業者名なし）', r._vendorCategory ?? null)
+      v.shosha += Number(r.shoshaCost) || 0
+      v.gyosha += Number(r.gyoshaCost) || 0
+      const amt = (Number(r.shoshaCost) || 0) + (Number(r.gyoshaCost) || 0)
+      v.items.push({ date: r.date, amount: amt, note: '請求', isInvoice: true })
+      continue
+    }
+    // 日報行: subs(協力業者)を業者ごとに分解。金額の出し方は月計と同じ count × 単価
+    for (const s of (r.subs ?? [])) {
+      const amt = (Number(s.count) || 0) * (Number(s.unitPrice) || 0)
+      const v = get(s.name || '（業者名なし）', s.category ?? null)
+      // ★区分(商社/業者)が未設定の協力業者は、既存の月計では商社にも業者にも計上されない。
+      //   ＝原価に乗っていない。まさに「どこかの業者が漏れていても分からない」状態なので
+      //   合計には混ぜず、別枠で「原価未計上」として見せる。
+      if (s.category === '商社') v.shosha += amt
+      else if (s.category === '業者') v.gyosha += amt
+      else v.unpriced += amt
+      v.items.push({ date: r.date, amount: amt, note: `${s.count}人 × ${yen(s.unitPrice || 0)}`, isInvoice: false })
+    }
+  }
+
+  const all = [...byVendor.values()]
+  for (const v of all) v.total = v.shosha + v.gyosha
+  const counted = all.filter((v) => v.total > 0).sort((a, b) => b.total - a.total)
+  const uncategorized = all.filter((v) => v.unpriced > 0).sort((a, b) => b.unpriced - a.unpriced)
+  return {
+    counted,
+    uncategorized,
+    countedTotal: counted.reduce((s, v) => s + v.total, 0),
+    uncategorizedTotal: uncategorized.reduce((s, v) => s + v.unpriced, 0),
+  }
+})
+
+/** 月計の商社+業者。内訳の合計とこれが一致することが検算の要（AC2） */
+const vendorGrandTotal = computed(() => {
+  const rows = siteMap.value[displaySite.value] ?? []
+  return sumF(rows, 'shoshaCost') + sumF(rows, 'gyoshaCost')
+})
+const vendorFilter = ref<string>('')   // 特定業者だけの明細を見る（AC3）
 // スプレッドシートの列に対応した経費列を抽出
 function extractExpenseCols(exp: any) {
   let parkingYen = 0, fuelCost = 0, highwayCost = 0
@@ -501,8 +741,14 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
     supabase.from('subcontractors').select('name, category, unit_price').eq('account_id', accountId),
     supabase.from('settings').select('key, value').eq('account_id', accountId),
     supabase.from('worker_wage_history').select('worker_id, effective_date, changed_at, old_unit_price, new_unit_price, wage_type, old_wage_type, old_daily_wage, new_daily_wage, old_hourly_wage, new_hourly_wage').eq('account_id', accountId),
-    supabase.from('sites').select('id, name, active, created_at').eq('account_id', accountId).order('created_at', { ascending: true }),
+    supabase.from('sites').select('id, name, active, created_at, contractors(name)').eq('account_id', accountId).order('created_at', { ascending: true }),
   ])
+  // 絞り込み用の 現場名→元請け名。集計には使わない（表示するタブを減らすためだけ）。
+  contractorBySite.value = Object.fromEntries(
+    (siteRows ?? [])
+      .map((s: any) => [s.name, s.contractors?.name ?? ''])
+      .filter(([, c]: any[]) => !!c),
+  )
   // 現場参照の解決コンテキスト: site_id 優先＋active名一致で表記ゆれ/マージ孤児を1バケットへ統合（根本対策）
   const siteCtx: SiteResolveCtx = {
     activeSites: (siteRows ?? []).filter((s: any) => s.active).map((s: any) => ({ id: s.id, name: s.name })),
@@ -522,7 +768,7 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
   {
     const { data: sii } = await supabase
       .from('subcontractor_invoice_items')
-      .select('site_name, item_date, amount, tax_rate, description, subcontractor_invoices(vendor_name, subcontractors(category))')
+      .select('site_name, item_date, amount, tax_rate, description, subcontractor_invoices(vendor_name, tax_mode, subcontractors(category))')
       .eq('account_id', accountId)
       .gte('item_date', fromDate)
       .lte('item_date', toDate)
@@ -531,13 +777,18 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
       // 請求の現場名も同じ解決を通し、日報側と同じ正式名バケットに合流させる（表記ゆれ吸収）
       const name = resolveSiteRef({ siteName: r.site_name }, siteCtx).name || r.site_name
       invoiceSites.add(name)
-      const amt = Number(r.amount) || 0
+      // ★原価は税抜で揃える。内税の請求書は amount が税込なので割り戻す
+      //   （揃えないと内税の請求だけ約10%多く原価に乗る）
+      const amt = Math.round(netAmountOf(r, normalizeTaxMode(r.subcontractor_invoices?.tax_mode)))
       const cat = r.subcontractor_invoices?.subcontractors?.category ?? null
       const vendor = r.subcontractor_invoices?.vendor_name ?? ''
       const rows = (invoiceRowsBySite[name] ??= [])
       rows.push({
         _key: `inv-${name}-${r.item_date}-${rows.length}`, _isInvoice: true, siteName: name,
         date: r.item_date || dateFrom.value, _isSunday: false,
+        // 業者別内訳を出すために業者名を行に持たせる（workerSummary の文字列から
+        // 業者名を切り出すのは表記が変わると壊れるため、構造化して持つ）
+        _vendor: vendor || '（業者名なし）', _vendorCategory: cat,
         workerSummary: `【請求】${vendor}${r.description ? '・' + r.description : ''}`,
         workers: [], subs: [],
         // 区分=商社 のみ商社列、それ以外（業者/未区分）は業者列（index.vue 月次集計と統一）
@@ -688,7 +939,8 @@ async function load() {
 }
 
 onMounted(load)
-watch(dateFrom, load)
+// 期間指定では終了月だけを変えることもあるので dateTo も見る（見ないと再集計されない）
+watch([dateFrom, dateTo], load)
 watch(wageMode, load)   // 日当-実質賃金の切替で社員人件費を再集計
 </script>
 
@@ -697,10 +949,23 @@ watch(wageMode, load)   // 日当-実質賃金の切替で社員人件費を再�
 .page-title { font-size: 22px; font-weight: 700; }
 .month-nav { display: flex; align-items: center; gap: 12px; }
 .month-label { font-size: 16px; font-weight: 700; min-width: 100px; text-align: center; }
+.btn-range { background: #fff; color: #374151; border: 1px solid #d1d5db; border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.range-ym { border: 1px solid #ccc; border-radius: 6px; padding: 4px 8px; font-size: 13px; }
 .btn-nav { background: #f0f0f0; border: none; border-radius: 8px; padding: 6px 14px; font-size: 18px; cursor: pointer; }
 .empty { color: #888; padding: 60px; text-align: center; }
 .wage-toggle-btn { display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 700; border: 1px solid #c7d2fe; background: #eef2ff; color: #4338ca; border-radius: 999px; padding: 1px 8px; cursor: pointer; white-space: nowrap; }
 .wage-toggle-btn.on { background: #4338ca; color: #fff; border-color: #4338ca; }
+
+/* 現場の絞り込みバー（現場名 × 元請け） */
+.site-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+.sf-field { display: flex; align-items: center; gap: 6px; border: 1px solid #d0d0d0; border-radius: 6px; padding: 0 10px; background: #fff; }
+.sf-field:focus-within { border-color: #06C755; }
+.sf-icon { font-size: 18px; color: #888; }
+.sf-input { border: none; outline: none; padding: 7px 0; font-size: 13px; width: 200px; background: transparent; }
+.sf-select { border: 1px solid #d0d0d0; border-radius: 6px; padding: 7px 10px; font-size: 13px; background: #fff; max-width: 220px; }
+.sf-count { font-size: 12px; color: #888; font-variant-numeric: tabular-nums; }
+.sf-clear { border: 1px solid #d0d0d0; background: #fff; border-radius: 6px; padding: 6px 12px; font-size: 12px; color: #555; cursor: pointer; }
+.sf-clear:hover { background: #f5f5f5; }
 
 .tabs-wrap { overflow-x: auto; margin-bottom: 16px; }
 .export-bar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin: 10px 0 0; flex-wrap: wrap; }
@@ -737,6 +1002,28 @@ watch(wageMode, load)   // 日当-実質賃金の切替で社員人件費を再�
 .worker-cell { font-size: 12px; max-width: 180px; }
 .sub-cell { font-size: 12px; color: #555; white-space: nowrap; }
 .total-col { color: #06C755; font-weight: 700; }
+
+/* 業者別内訳 */
+.vendor-breakdown { margin-top: 24px; }
+.vb-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.vb-title { font-size: 15px; font-weight: 800; }
+.vb-check { font-size: 12px; color: #555; }
+.vb-ok { margin-left: 8px; font-weight: 700; color: #0a8a3a; background: #e8fff0; border-radius: 999px; padding: 2px 8px; }
+.vb-ng { margin-left: 8px; font-weight: 700; color: #b91c1c; background: #fee2e2; border-radius: 999px; padding: 2px 8px; }
+.vb-empty { font-size: 13px; color: #888; padding: 12px 0; }
+.vb-table { width: 100%; }
+.vb-name { font-weight: 700; }
+.vb-total { font-weight: 700; }
+.vb-detail-btn { background: #fff; border: 1px solid #d1d5db; border-radius: 6px; padding: 3px 10px; font-size: 12px; cursor: pointer; color: #374151; }
+.vb-detail-row > td { background: #f9fafb; }
+.vb-detail-title { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+.vb-detail-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.vb-detail-table th, .vb-detail-table td { border-bottom: 1px solid #eef0f3; padding: 4px 8px; text-align: left; }
+.vb-detail-table th { color: #666; font-weight: 700; }
+.vb-warn { margin-top: 12px; display: flex; gap: 8px; align-items: flex-start; font-size: 12px; line-height: 1.7;
+  color: #9A3412; background: #FFF7ED; border: 1px solid #FDBA74; border-radius: 6px; padding: 10px 12px; }
+.vb-warn-icon { font-size: 1.1em; line-height: 1.4; }
+.vb-warn-list { margin: 4px 0; padding-left: 16px; }
 .hint { font-size: 11px; color: #bbb; white-space: nowrap; }
 .muted { color: #bbb; }
 

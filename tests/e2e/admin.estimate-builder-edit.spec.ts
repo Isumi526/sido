@@ -3,7 +3,7 @@
 //  【見積ビルダー】案件名のインライン編集 ／ 明細のドラッグ並び替え
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { restSrv, getAccountId } from './helpers'
+import { restSrv, getAccountId, openBuilderTab } from './helpers'
 
 const TS = Date.now()
 const PROJ = `編集案件_${TS}`
@@ -41,9 +41,8 @@ test('明細をドラッグで並び替えできる', async ({ page }) => {
   const ps = await restSrv(`estimate_projects?name=eq.${encodeURIComponent(RENAMED)}&select=id`)
   await page.goto(`/estimate-builder?project=${ps[0].id}`, { waitUntil: 'networkidle' })
 
-  await page.locator('[data-testid="add-row"]').click()
+  await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
   await page.locator('[data-testid="item-name-0"]').fill('AAA')
-  await page.locator('[data-testid="add-row"]').click()
   await page.locator('[data-testid="item-name-1"]').fill('BBB')
 
   // 1行目(AAA)のハンドルを2行目(BBB)へドラッグ → 並びが [BBB, AAA] に

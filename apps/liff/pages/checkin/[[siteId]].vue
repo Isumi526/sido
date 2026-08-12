@@ -61,6 +61,13 @@
         {{ attendanceType === 'checkin' ? $t('checkin.doneMessageCheckin') : $t('checkin.doneMessageCheckout') }}
       </p>
 
+      <!-- ★退勤したらそのまま日報へ。打刻と日報の二度手間をなくし、退勤を押す癖をつけるため
+           （2026-08-10 運用者要望）。出勤打刻・代理打刻・その日の日報が既にある時は出さない。 -->
+      <NuxtLink v-if="reportLink" :to="reportLink" class="report-cta" data-testid="checkout-report-link">
+        <span class="material-symbols-rounded">edit_note</span>
+        {{ $t('checkin.writeReport') }}
+      </NuxtLink>
+
       <div v-if="otherTargets.length" class="next-targets">
         <p class="next-label">{{ $t('checkin.continueOthers') }}</p>
         <button
@@ -288,6 +295,7 @@ type ConsentDoc = { id: string; name: string | null; path: string; url?: string 
 type Target   = { id: string; name: string; isSelf: boolean }
 
 import { useI18n } from 'vue-i18n'
+import { todayStr } from '~/composables/schedule-core.gen'
 
 const { t }    = useI18n()
 const route    = useRoute()
@@ -334,6 +342,8 @@ const consentDocs    = ref<ConsentDoc[]>([])   // 送り出し資料（出退勤
 const consentedIds   = ref(new Set<string>())
 const submitting     = ref(false)
 const checkedAtLabel = ref('')
+// 退勤打刻の完了画面に出す「日報を書く」リンク。空なら出さない（resolveReportLink 参照）
+const reportLink     = ref('')
 const checkinTime    = ref('')
 const checkoutTime   = ref('')
 
@@ -739,6 +749,35 @@ async function submit() {
   })
   phase.value = 'done'
   submitting.value = false
+  await resolveReportLink(target)
+}
+
+/**
+ * 退勤打刻のあと「日報を書く」導線を出すか決める（2026-08-10 運用者要望）。
+ * 狙いは打刻と日報の二度手間をなくすことと、退勤を押す癖をつけること。
+ *
+ * 出さない条件:
+ *  ・出勤打刻（まだ日報は書けない）
+ *  ・代理打刻（他人の日報を書かせない）
+ *  ・その日の日報を既に出している（二重送信を誘発しない）
+ */
+async function resolveReportLink(target: Target | null) {
+  reportLink.value = ''
+  if (attendanceType.value !== 'checkout') return
+  if (target && !target.isSelf) return
+
+  const date = todayStr()
+  try {
+    const { data: u } = await supabase.from('users')
+      .select('id').eq('worker_id', myWorkerId.value).maybeSingle()
+    if (!u?.id) return
+    const { data: rep } = await supabase.from('daily_reports')
+      .select('id').eq('user_id', u.id).eq('date', date).maybeSingle()
+    if (rep?.id) return   // 既にその日の日報を出している
+  } catch {
+    return   // ★判定できない時は出さない（出して二重送信させるより、出さない方が安全）
+  }
+  reportLink.value = `/report?date=${date}&site=${encodeURIComponent(siteName.value)}`
 }
 </script>
 
@@ -816,6 +855,14 @@ async function submit() {
 .done-title { font-size: 20px; font-weight: 700; color: #111; }
 .done-sub   { font-size: 13px; color: #888; }
 .done-message { font-size: 15px; font-weight: 600; color: #06C755; margin-top: 8px; }
+/* 退勤後にそのまま日報へ（完了画面で一番押してほしいので主ボタン扱い） */
+.report-cta {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  margin-top: 20px; padding: 15px 20px; width: 100%;
+  background: #06C755; color: #fff; border-radius: 10px;
+  font-size: 16px; font-weight: 700; text-decoration: none;
+}
+.report-cta:active { background: #05a648; }
 
 /* ── チェックリスト ── */
 .checklist-wrap {

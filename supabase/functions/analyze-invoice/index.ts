@@ -26,7 +26,30 @@ function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', ...corsHeaders() } })
 }
 
-const EMPTY = { vendor_name: null, registration_number: null, title: null, invoice_no: null, invoice_date: null, due_date: null, total_amount: null, items: [] as unknown[] }
+/**
+ * 内税(inclusive)か外税(exclusive)かを数値で判定する。
+ * ★AIの自己申告(r.tax_mode)は参考にしつつ、明細合計と請求合計の突き合わせを優先する。
+ *  - 合計 ≒ 明細合計            → inclusive（明細に税が入っている）
+ *  - 合計 ≒ 明細合計×(1+税率)   → exclusive（税は別途）
+ *  どちらとも言えなければ従来どおり exclusive に倒す（既存挙動を変えない）。
+ */
+function decideTaxMode(r: any, items: any[]): 'exclusive' | 'inclusive' {
+  const declared = r?.tax_mode === 'inclusive' ? 'inclusive' : r?.tax_mode === 'exclusive' ? 'exclusive' : null
+  const total = Number(r?.total_amount)
+  const sum = items.reduce((s: number, it: any) => s + (Number(it.amount) || 0), 0)
+  if (!Number.isFinite(total) || total <= 0 || sum <= 0) return declared ?? 'exclusive'
+
+  const rate = (Number(items[0]?.tax_rate) || 10) / 100
+  const near = (a: number, b: number) => Math.abs(a - b) <= Math.max(2, b * 0.005)  // 端数丸め分の許容
+  if (near(total, sum)) return 'inclusive'
+  if (near(total, sum * (1 + rate))) return 'exclusive'
+  // 消費税行が明示されていて 合計＝小計+消費税 なら外税
+  const tax = Number(r?.tax_amount), sub = Number(r?.subtotal_amount)
+  if (Number.isFinite(tax) && Number.isFinite(sub) && tax > 0 && near(total, sub + tax)) return 'exclusive'
+  return declared ?? 'exclusive'
+}
+
+const EMPTY = { vendor_name: null, registration_number: null, title: null, invoice_no: null, invoice_date: null, due_date: null, total_amount: null, subtotal_amount: null, tax_amount: null, tax_mode: 'exclusive', items: [] as unknown[] }
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders() })
@@ -56,6 +79,9 @@ Deno.serve(async (req) => {
   "invoice_date": "請求日",
   "due_date": "支払い期限",
   "total_amount": 請求金額の合計（税込、数値）,
+  "subtotal_amount": 小計（税抜の合計。請求書に「小計」の記載があればその値。無ければnull）,
+  "tax_amount": 消費税額（「消費税」行の金額。無ければnull）,
+  "tax_mode": "明細のamountが税抜なら exclusive / 明細のamountに消費税が含まれているなら inclusive",
   "items": [
     {
       "date": "明細の日付",
@@ -64,12 +90,18 @@ Deno.serve(async (req) => {
       "quantity": 数量,
       "unit": "単位（式・個・人 等）",
       "unit_price": 単価,
-      "amount": 金額（税抜＝数量×単価）,
+      "amount": 金額（数量×単価。税抜か税込かは tax_mode に従う。請求書に書かれている数字をそのまま入れる）,
       "tax_rate": 税率（パーセント数値。不明なら10）,
       "note": "備考（なければnull）"
     }
   ]
-}${siteHint}`
+}
+
+【消費税の判定（tax_mode）】
+- 「消費税」「内税」「税込」等の行や表記から判断する。
+- 「小計」「消費税」「合計」が分かれて書かれていて 合計 ≒ 小計 + 消費税 なら exclusive。
+- 消費税行が無く、明細の合計 ≒ 請求金額の合計（税込）なら inclusive（明細に税が含まれている）。
+- 判断できなければ exclusive にする（従来の扱い）。${siteHint}`
 
     const body = {
       contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Data } }] }],
@@ -120,6 +152,11 @@ Deno.serve(async (req) => {
       invoice_date: r.invoice_date ?? null,
       due_date: r.due_date ?? null,
       total_amount: num(r.total_amount),
+      subtotal_amount: num(r.subtotal_amount),
+      tax_amount: num(r.tax_amount),
+      // ★AIの申告を数値で検算して上書きする（プロンプトだけに委ねない）。
+      //  明細合計と請求金額の合計を突き合わせれば、内税/外税は機械的に判定できる。
+      tax_mode: decideTaxMode(r, items),
       items,
     })
   } catch (e) {

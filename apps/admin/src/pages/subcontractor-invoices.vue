@@ -22,10 +22,30 @@
       <span v-if="overdueCount" class="overdue-note"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">warning</span> 支払期限超過 {{ overdueCount }} 件</span>
     </div>
 
+    <!-- 現場×業者で絞り込み → まとめてダウンロード -->
+    <div v-if="!loading && invoices.length" class="filter-bar" data-testid="invoice-filter-bar">
+      <select v-model="filterSiteId" class="inp filter-sel" data-testid="filter-site">
+        <option value="">すべての現場</option>
+        <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.name }}</option>
+      </select>
+      <select v-model="filterVendor" class="inp filter-sel" data-testid="filter-vendor">
+        <option value="">すべての業者</option>
+        <option v-for="v in vendorOptions" :key="v" :value="v">{{ v }}</option>
+      </select>
+      <button class="btn-bulk" :disabled="bulkBusy" data-testid="bulk-download" @click="bulkDownload">
+        {{ bulkBusy ? '準備中…' : `まとめてダウンロード（${bulkTargets.length}件）` }}
+      </button>
+      <button v-if="filterSiteId || filterVendor" class="btn-clear-filter" data-testid="filter-clear"
+              @click="filterSiteId = ''; filterVendor = ''; bulkMsg = ''">絞り込みを解除</button>
+      <span v-if="bulkMsg" class="bulk-msg" data-testid="bulk-msg">{{ bulkMsg }}</span>
+    </div>
+
     <!-- 一覧 -->
     <div v-if="loading" class="empty">読み込み中...</div>
     <div v-else-if="invoices.length === 0" class="empty">登録された請求はありません</div>
-    <div v-else-if="visibleList.length === 0" class="empty">{{ tab === 'paid' ? '支払い済みの請求はありません' : '未払いの請求はありません' }}</div>
+    <div v-else-if="visibleList.length === 0" class="empty" data-testid="list-empty">
+      {{ filterSiteId || filterVendor ? '絞り込み条件に一致する請求はありません' : (tab === 'paid' ? '支払い済みの請求はありません' : '未払いの請求はありません') }}
+    </div>
     <div v-else class="table-wrap">
       <table class="table">
         <thead>
@@ -149,7 +169,8 @@
               <thead>
                 <tr>
                   <th>日付</th><th>現場</th><th>工事内容/品名</th><th class="num">数量</th><th>単位</th>
-                  <th class="num">単価</th><th class="num">金額(税抜)</th><th class="num">税率%</th><th>備考</th><th></th>
+                  <!-- ★金額欄の意味は tax_mode で変わる（内税なら税込額が入っている）ので見出しも追従させる -->
+                  <th class="num">単価</th><th class="num">{{ formTaxMode === 'inclusive' ? '金額(税込)' : '金額(税抜)' }}</th><th class="num">税率%</th><th>備考</th><th></th>
                 </tr>
               </thead>
               <tbody>
@@ -187,11 +208,23 @@
             </table>
           </div>
 
+          <!-- 明細金額の税の扱い（業者によって内税/外税が違う。AI判定＋人が上書き可） -->
+          <div class="tax-mode-row">
+            <span class="tax-mode-label">明細の金額</span>
+            <div class="tax-mode-toggle" data-testid="tax-mode-toggle">
+              <button type="button" :class="{ active: form.tax_mode !== 'inclusive' }" data-testid="tax-mode-exclusive"
+                      @click="form.tax_mode = 'exclusive'; taxModeFromAi = false">税抜（消費税を加算）</button>
+              <button type="button" :class="{ active: form.tax_mode === 'inclusive' }" data-testid="tax-mode-inclusive"
+                      @click="form.tax_mode = 'inclusive'; taxModeFromAi = false">税込（内税）</button>
+            </div>
+            <span v-if="taxModeFromAi" class="tax-mode-ai" data-testid="tax-mode-ai">AIが判定しました。違っていたら切り替えてください</span>
+          </div>
+
           <!-- 合計 -->
           <div class="totals">
-            <span>税抜計 {{ yen(subtotal) }}</span>
-            <span>消費税 {{ yen(taxTotal) }}</span>
-            <span class="grand">税込 {{ yen(subtotal + taxTotal) }}</span>
+            <span>税抜計 <span data-testid="net-total">{{ yen(netTotal) }}</span></span>
+            <span>消費税 <span data-testid="tax-total">{{ yen(taxTotal) }}</span></span>
+            <span class="grand">税込 <span data-testid="gross-total">{{ yen(grossTotal) }}</span></span>
           </div>
 
           <p v-if="formError" class="error">{{ formError }}</p>
@@ -238,6 +271,9 @@ import { getAccountId } from '../lib/account'
 import HelpButton from '../components/HelpButton.vue'
 import { logOperation } from '../lib/operationLog'
 import { openDoc } from '../lib/docUrl'
+import { normalizeTaxMode, sumAmount, taxTotalOf, netTotalOf, grossTotalOf } from '../lib/invoiceTax'
+import { resolveDocUrl } from '../lib/docUrl'
+import JSZip from 'jszip'
 
 const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
 const IS_DEV   = import.meta.env.DEV
@@ -252,7 +288,7 @@ interface Form {
   id?: string; vendor_name: string; subcontractor_id: string | null; registration_number: string | null
   purchase_order_id: string | null
   title: string | null; invoice_no: string | null; invoice_date: string | null; due_date: string | null
-  transfer_date: string | null; paid: boolean; total_amount: number | null; pdf_path: string | null; note: string | null; items: Item[]
+  transfer_date: string | null; paid: boolean; total_amount: number | null; pdf_path: string | null; note: string | null; tax_mode: 'exclusive' | 'inclusive'; items: Item[]
 }
 
 const todayStr = new Date().toISOString().slice(0, 10)
@@ -281,10 +317,12 @@ const poResidual = computed(() => {
   const po = selectedPo.value; if (!po) return null
   return (Number(po.total_amount) || 0) - poBilledOthers.value
 })
-// 残額判定に使う実効請求額: 請求金額(記載)が入っていればそれ、無ければ明細小計(税抜)
+// 残額判定に使う実効請求額: 請求金額(記載)が入っていればそれ、無ければ明細から出した税込計。
+// ★注文書の金額(total_amount)が税込なので、比べる側も税込に揃える。
+//   ここで税抜の subtotal を使うと外税の請求書で請求額を過小に見積もり、残額超過の警告が出ない。
 const effectiveBilled = computed(() => {
   const t = Number(form.value?.total_amount) || 0
-  return t > 0 ? t : subtotal.value
+  return t > 0 ? t : grossTotal.value
 })
 const poOverResidual = computed(() => {
   if (poResidual.value == null) return false
@@ -306,12 +344,89 @@ function yen(v: number | null) { return '¥' + Math.round(Number(v) || 0).toLoca
 // 単価を整数に丸めると @0.74円 × 500個 = 370円 が 500円 になり、請求額がズレる。
 function recalc(it: Item) { it.amount = Math.round((Number(it.quantity) || 0) * (Number(it.unit_price) || 0)) }
 
-const subtotal = computed(() => (form.value?.items ?? []).reduce((s, it) => s + (Number(it.amount) || 0), 0))
-const taxTotal = computed(() => Math.round((form.value?.items ?? []).reduce((s, it) => s + (Number(it.amount) || 0) * (Number(it.tax_rate) || 0) / 100, 0)))
+// ★内税(inclusive)なら amount に消費税が含まれているので、足すのではなく割り戻す。
+//  規則は lib/invoiceTax.ts に集約する（一覧側と別々に書いて食い違った経緯があるため）。
+const formTaxMode = computed(() => normalizeTaxMode(form.value?.tax_mode))
+const subtotal  = computed(() => sumAmount(form.value?.items))
+const taxTotal  = computed(() => taxTotalOf(form.value?.items, formTaxMode.value))
+const netTotal  = computed(() => netTotalOf(form.value?.items, formTaxMode.value))
+const grossTotal = computed(() => grossTotalOf(form.value?.items, formTaxMode.value))
+const taxModeFromAi = ref(false)
 
-const unpaidList  = computed(() => invoices.value.filter(v => !v.paid))
-const paidList    = computed(() => invoices.value.filter(v => v.paid))
+// ── 現場×業者の絞り込み＋まとめてダウンロード ──
+//  同じ現場・同じ業者の請求書をまとめて落としたい（尾崎さん要望）。
+//  現場は明細側に付くので「その請求書のいずれかの明細がその現場」なら該当とする
+//  （1枚の請求書に複数現場が混在しうるため）。
+const filterSiteId = ref<string>('')
+const filterVendor = ref<string>('')
+const bulkBusy = ref(false)
+const bulkMsg  = ref('')
+
+function invoiceSiteIds(v: any): string[] {
+  return (v.subcontractor_invoice_items ?? []).map((it: any) => it.site_id).filter(Boolean)
+}
+/** 絞り込みに使える業者名（実際に請求がある業者だけ出す） */
+const vendorOptions = computed(() =>
+  [...new Set(invoices.value.map(v => v.vendor_name).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'ja')))
+
+function matchesFilter(v: any): boolean {
+  if (filterVendor.value && v.vendor_name !== filterVendor.value) return false
+  if (filterSiteId.value && !invoiceSiteIds(v).includes(filterSiteId.value)) return false
+  return true
+}
+
+const unpaidList  = computed(() => invoices.value.filter(v => !v.paid && matchesFilter(v)))
+const paidList    = computed(() => invoices.value.filter(v => v.paid && matchesFilter(v)))
 const visibleList = computed(() => (tab.value === 'paid' ? paidList.value : unpaidList.value))
+
+/** まとめてDLの対象＝絞り込み結果のうち PDF があるもの（未払い/支払い済みの両タブを跨いで対象にする） */
+const bulkTargets = computed(() => invoices.value.filter(v => matchesFilter(v) && v.pdf_path))
+
+async function bulkDownload() {
+  if (bulkBusy.value) return
+  bulkMsg.value = ''
+  const targets = bulkTargets.value
+  // AC3: 0件は理由が分かる形で伝える（黙って何も起きないのが一番困る）
+  if (!targets.length) {
+    const anyMatch = invoices.value.some(matchesFilter)
+    bulkMsg.value = anyMatch
+      ? '該当する請求書はありますが、PDFが添付されているものがありません。'
+      : '条件に一致する請求書がありません。現場・業者の絞り込みを見直してください。'
+    return
+  }
+  bulkBusy.value = true
+  try {
+    const zip = new JSZip()
+    const used = new Set<string>()
+    let failed = 0
+    for (const v of targets) {
+      try {
+        const url = await resolveDocUrl(v.pdf_path)
+        if (!url) { failed++; continue }
+        const resp = await fetch(url)
+        if (!resp.ok) { failed++; continue }
+        // ファイル名は「日付_業者名_件名」。重複したら連番を付ける（zip内で上書きされないように）
+        const base = [v.invoice_date ?? '日付なし', v.vendor_name ?? '業者なし', v.title ?? '']
+          .filter(Boolean).join('_').replace(/[\\/:*?"<>|]/g, '_')
+        let name = `${base}.pdf`
+        for (let i = 2; used.has(name); i++) name = `${base}_${i}.pdf`
+        used.add(name)
+        zip.file(name, await resp.blob())
+      } catch { failed++ }   // 1件失敗しても残りは落とす
+    }
+    const siteLabel = filterSiteId.value ? (sites.value.find(s => s.id === filterSiteId.value)?.name ?? '現場') : '全現場'
+    const vendorLabel = filterVendor.value || '全業者'
+    const blob = await zip.generateAsync({ type: 'blob' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `請求書_${siteLabel}_${vendorLabel}.zip`.replace(/[\\/:*?"<>|]/g, '_')
+    a.click()
+    URL.revokeObjectURL(a.href)
+    bulkMsg.value = failed
+      ? `${targets.length - failed}件をダウンロードしました（${failed}件は取得できませんでした）`
+      : `${targets.length}件をダウンロードしました`
+  } finally { bulkBusy.value = false }
+}
 const overdueCount = computed(() => unpaidList.value.filter(v => v._overdue).length)
 
 // 日本語ボタンの確認ダイアログ（native confirm の英語Cancel回避）
@@ -347,7 +462,8 @@ async function load() {
   const accountId = await getAccountId()
   const [{ data: inv }, { data: si }, { data: su }, { data: po }] = await Promise.all([
     supabase.from('subcontractor_invoices')
-      .select('*, subcontractor_invoice_items(amount, tax_rate)')
+      // 現場は明細(items)側に付くので、現場での絞り込み用に site_id/site_name も一緒に読む
+      .select('*, subcontractor_invoice_items(amount, tax_rate, site_id, site_name)')
       .eq('account_id', accountId).order('invoice_date', { ascending: false }).order('created_at', { ascending: false }),
     supabase.from('sites').select('id, name').eq('account_id', accountId).eq('active', true).order('name_kana', { nullsFirst: false }).order('name'),
     supabase.from('subcontractors').select('id, name, category').eq('account_id', accountId).eq('active', true).order('name'),
@@ -356,9 +472,10 @@ async function load() {
   ])
   invoices.value = (inv ?? []).map((v: any) => {
     const items = v.subcontractor_invoice_items ?? []
-    const sub = items.reduce((s: number, it: any) => s + (Number(it.amount) || 0), 0)
-    const tax = Math.round(items.reduce((s: number, it: any) => s + (Number(it.amount) || 0) * (Number(it.tax_rate) || 0) / 100, 0))
-    return { ...v, item_count: items.length, grand_total: sub + tax, _overdue: !v.paid && !!v.due_date && v.due_date < todayStr }
+    // ★一覧の「請求金額(税込)」もモーダルと同じ規則を通す。内税の請求書に税を足すと
+    //  同じ画面でモーダル110,000／一覧121,000と食い違う（2026-08-01 レビューNGの再発防止）。
+    const grand = grossTotalOf(items, normalizeTaxMode(v.tax_mode))
+    return { ...v, item_count: items.length, grand_total: grand, _overdue: !v.paid && !!v.due_date && v.due_date < todayStr }
   })
   sites.value = si ?? []
   subs.value  = su ?? []
@@ -368,7 +485,7 @@ async function load() {
 
 function blankForm(): Form {
   const today = new Date().toISOString().slice(0, 10)
-  return { vendor_name: '', subcontractor_id: null, purchase_order_id: null, registration_number: null, title: null, invoice_no: null, invoice_date: today, due_date: null, transfer_date: null, paid: false, total_amount: null, pdf_path: null, note: null, items: [] }
+  return { vendor_name: '', subcontractor_id: null, purchase_order_id: null, registration_number: null, title: null, invoice_no: null, invoice_date: today, due_date: null, transfer_date: null, paid: false, total_amount: null, pdf_path: null, note: null, tax_mode: 'exclusive', items: [] }
 }
 // 開いた時点の内容スナップショット（変更有無の判定用）
 const formSnapshot = ref('')
@@ -397,6 +514,7 @@ async function openEdit(inv: any) {
     registration_number: inv.registration_number, title: inv.title, invoice_no: inv.invoice_no,
     invoice_date: inv.invoice_date, due_date: inv.due_date, transfer_date: inv.transfer_date, paid: !!inv.paid,
     total_amount: inv.total_amount, pdf_path: inv.pdf_path, note: inv.note,
+    tax_mode: (inv as any).tax_mode === 'inclusive' ? 'inclusive' : 'exclusive',
     items: (items ?? []).map((it: any) => ({ ...it })),
   }
   snapshot()
@@ -572,6 +690,12 @@ async function analyze() {
       if (r.invoice_date && !headerSet.has('inv_date')) { headerSet.add('inv_date'); f.invoice_date = r.invoice_date }
       if (r.due_date && !headerSet.has('due')) { headerSet.add('due'); f.due_date = r.due_date }
       if (r.total_amount != null && !headerSet.has('total')) { headerSet.add('total'); f.total_amount = r.total_amount }
+      // 内税/外税の判定。誤判定はUIのトグルで人が直せる（AC2）
+      if (r.tax_mode && !headerSet.has('tax_mode')) {
+        headerSet.add('tax_mode')
+        f.tax_mode = r.tax_mode === 'inclusive' ? 'inclusive' : 'exclusive'
+        taxModeFromAi.value = true
+      }
       // ── 明細を「累積」（既存明細・他ページの明細を消さず追加）。現場名はマスタと名寄せ──
       for (const it of (r.items ?? [])) {
         const siteId = matchSiteId(it.site_name)
@@ -627,6 +751,7 @@ async function save() {
       title: f.title || null, invoice_no: f.invoice_no || null, invoice_date: f.invoice_date || null,
       due_date: f.due_date || null, transfer_date: f.transfer_date || null, paid: !!f.paid,
       total_amount: f.total_amount ?? null, pdf_path: f.pdf_path ?? null, note: f.note || null,
+      tax_mode: f.tax_mode ?? 'exclusive',
       updated_at: new Date().toISOString(),
     }
     let invoiceId = f.id
@@ -716,6 +841,13 @@ onMounted(load)
 .tab.active { background: #06C755; border-color: #06C755; color: #fff; }
 .tab-count { font-size: 12px; opacity: .85; margin-left: 2px; }
 .overdue-note { margin-left: auto; font-size: 12px; font-weight: 700; color: #c0392b; }
+/* 現場×業者の絞り込み＋まとめてDL */
+.filter-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.filter-sel { max-width: 220px; }
+.btn-bulk { background: #1a56c4; color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-weight: 700; font-size: 13px; cursor: pointer; }
+.btn-bulk:disabled { opacity: .5; cursor: default; }
+.btn-clear-filter { background: #fff; color: #374151; border: 1px solid #d1d5db; border-radius: 8px; padding: 7px 12px; font-size: 12px; cursor: pointer; }
+.bulk-msg { font-size: 12px; color: #555; }
 
 .badge { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
 .badge.paid { background: #e6f7ec; color: #0a8a3f; }
@@ -791,6 +923,12 @@ onMounted(load)
 .items-table th, .items-table td { white-space: nowrap; }
 .btn-row-del { background: none; border: none; color: #c0392b; font-size: 16px; cursor: pointer; }
 
+.tax-mode-row { display: flex; align-items: center; gap: 10px; margin: 10px 0 0; flex-wrap: wrap; }
+.tax-mode-label { font-size: 12px; color: #6b7280; }
+.tax-mode-toggle { display: inline-flex; border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; }
+.tax-mode-toggle button { border: none; background: #fff; padding: 6px 12px; font-size: 13px; cursor: pointer; color: #374151; }
+.tax-mode-toggle button.active { background: #2563eb; color: #fff; }
+.tax-mode-ai { font-size: 12px; color: #b45309; }
 .totals { display: flex; gap: 18px; justify-content: flex-end; margin: 14px 0; font-size: 14px; color: #555; }
 .totals .grand { font-weight: 800; color: #111; }
 .error { color: #c0392b; font-size: 13px; }

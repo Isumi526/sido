@@ -88,7 +88,11 @@ alter table subcontractor_invoice_items disable row level security;
 - PDF は `expense-receipts/subcontractor-invoices/{account}/{invoiceId}.pdf` に保存。
 
 ## 6. 現場別集計への反映（`apps/admin/src/pages/site-reports.vue`）
-- 当月の `subcontractor_invoice_items` を `account_id` ＋ 当月(item_date) で取得し、**現場(site_id/site_name)ごとに amount を合算**。
+- 当月の `subcontractor_invoice_items` を `account_id` ＋ 当月(item_date) で取得し、**現場(site_id/site_name)ごとに合算**。
+- ★**原価は税抜で揃える**。`items.amount` の意味は請求書ヘッダの `tax_mode` で変わる（exclusive=税抜 / inclusive=税込）ため、
+  合算前に必ず `lib/invoiceTax.ts` の `netAmountOf(item, mode)` を通す。生の `amount` を積むと内税の請求書だけ約10%多く原価に乗る。
+  `tax_mode` は**ヘッダ側にしか無い**ので、items を単独で読むクエリでは `subcontractor_invoices(tax_mode)` を必ず join する。
+  同じ規則がダッシュボード月次集計（`apps/admin/src/pages/index.vue`）にも要る＝**消費箇所は下記チェックリストを見る**。
 - 現場タブの表示に「下請け請求(当月)」の合計を追加（現場ごとの月サマリとして表示）。明細は折りたたみ/モーダルで一覧可。
 - 既存の集計（日報内 subcontractors 人数×単価）とは別軸の「実請求額」として併記（混同しないようラベル分け）。
 
