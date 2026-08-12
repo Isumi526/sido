@@ -5,8 +5,13 @@
 //  運用者の逐語（電話）:「実際打った打刻時間と、管理者が打った8時半・6時っていうのと、
 //   本人たちが実際（打った時間）／それが出てくればそれでいいじゃないの」
 //
+//  ★2026-08-12 修正: 当初この機能を出退勤ログpage に作ったが、電話の逐語に戻ると
+//   「（出退勤の画面と日報の画面が）別じゃなくて一緒でいい」＝日報一覧で見る、が要望だった。
+//   日報一覧には既に 実打刻 と 作業時刻 の両方が出ていたので、足りない『差』だけをそこへ移した。
+//   出退勤ログpage に入れた 設定/差 の列は差し戻し、このページでは「出勤打刻なし」だけを見る。
+//
 //  ★このテストが守る一番大事なこと:
-//   人件費の根拠は「管理者が設定した時間」のままで、打刻の実時刻は照合用にすぎない。
+//   人件費の根拠は「作業時刻」のままで、打刻の実時刻は照合用にすぎない。
 //   同じ電話で「人件費の計算は管理者が決めた時間ベースで、今までと変わらず／作業員は時間を触れない」
 //   と明言されている。ここを取り違えて実打刻を計算に流すと、給与が静かに変わる。
 //   なので「実打刻が設定と大きくズレていても、日報側の稼働時間は動かない」を固定する。
@@ -97,48 +102,6 @@ test.describe('出退勤ログ: 実打刻と管理者設定の突き合わせ', 
     await page.getByRole('button', { name: '検索' }).click()
     await expect(page.locator('tbody tr')).toHaveCount(1, { timeout: 15000 })
   }
-
-  test('★打刻の実時刻と管理者設定の勤務時刻が並んで見える', async ({ page }) => {
-    await openFiltered(page)
-    const row = page.locator('tbody tr').first()
-    await expect(row, '打刻の実時刻').toContainText('06:02')
-    await expect(row, '管理者が設定した勤務時刻').toContainText('08:30〜18:00')
-  })
-
-  test('★ズレが分かる（設定8:30に対し6:02＝2時間28分早い）', async ({ page }) => {
-    await openFiltered(page)
-    const diff = page.getByTestId('attendance-diff').first()
-    await expect(diff).toBeVisible()
-    // 早い側なので負符号。2時間28分。
-    await expect(diff).toHaveText('−2時間28分')
-    await expect(diff, '30分以上のズレは目立たせる').toHaveClass(/big/)
-  })
-
-  test('固定勤務時刻が未設定の現場では設定欄を空にする（0:00等の嘘を出さない）', async ({ page }) => {
-    const s2 = (await restSrv('sites', {
-      method: 'POST', headers: { Prefer: 'return=representation' },
-      body: JSON.stringify({ account_id: accountId, name: `${PREFIX}時刻なし${TS}`, active: true }),
-    }))[0].id
-    await restSrv('attendance_logs', {
-      method: 'POST', headers: { Prefer: 'return=minimal' },
-      body: JSON.stringify({
-        site_id: s2, worker_id: wid[W_NONE], type: 'checkin',
-        checked_at: `${DATE}T09:00:00+09:00`, agreed_rule_texts: [],
-      }),
-    })
-    try {
-      await page.goto('/attendance', { waitUntil: 'networkidle' })
-      await page.locator('.filter-select').nth(1).selectOption({ label: W_NONE })
-      await page.getByRole('button', { name: '検索' }).click()
-      const row = page.locator('tbody tr').first()
-      await expect(row).toBeVisible({ timeout: 15000 })
-      await expect(row.locator('.fixed-time'), '設定が無いので空欄').toHaveText('—')
-      await expect(row.getByTestId('attendance-diff'), '差も出さない').toHaveCount(0)
-    } finally {
-      await restSrv(`attendance_logs?site_id=eq.${s2}`, { method: 'DELETE' }).catch(() => {})
-      await restSrv(`sites?id=eq.${s2}`, { method: 'DELETE' }).catch(() => {})
-    }
-  })
 
   test('★出勤打刻が無い作業員が分かる。休みを出している人は含めない', async ({ page }) => {
     await page.goto('/attendance', { waitUntil: 'networkidle' })
