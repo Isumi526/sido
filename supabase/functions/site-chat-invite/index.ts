@@ -51,22 +51,17 @@ Deno.serve(async (req) => {
     const { error } = await svc.from('site_chat_invites').insert({ account_id: accountId, site_id: siteId, token_hash: tokenHash })
     if (error) return json({ ok: false, error: 'insert_failed', detail: error.message }, 500)
 
-    // ★相対パスは絶対に返さない。
-    //  コピーして配ると file:///chat-invite/... として開かれ必ず失敗するのに、
-    //  「リンクは発行できた」ように見えるので気づけない（2026-08-12 レビューで発見）。
-    //  LIFF_URL が本命。無ければ呼び出し元のオリジンで代替する（ローカル開発・E2E がここ）。
-    //  どちらも取れない時だけ、黙って壊れたリンクを渡すより失敗させる。
-    const origin = (() => {
-      const o = req.headers.get('origin') ?? ''
-      if (o) return o
-      try { return new URL(req.headers.get('referer') ?? '').origin } catch { return '' }
-    })()
-    const base = (LIFF_URL || origin).replace(/\/+$/, '')
-    if (!base) {
-      console.error('[site-chat-invite] LIFF_URL もオリジンも取れない: 招待リンクを発行できない')
+    // ★招待URLの土台は LIFF_URL しかありえない。フォールバックを作らない。
+    //  ・相対パス → コピーして配ると file:///chat-invite/... になり必ず開けない
+    //  ・呼び出し元の Origin → 呼ぶのは admin(3001) だが招待ページは liff(3000) にある。
+    //    本番でも admin のURLを指した「それっぽく見えて必ず開けないリンク」ができる。
+    //  どちらも「発行できたように見えて実は死んでいる」ので、未設定はその場で失敗させる。
+    //  （2026-08-12 レビューで相対パス版を発見 → Origin版に直して同じ穴を踏み、これで確定）
+    if (!LIFF_URL) {
+      console.error('[site-chat-invite] LIFF_URL 未設定: 招待リンクを発行できない')
       return json({ ok: false, error: 'invite_url_not_configured' }, 500)
     }
-    const url = `${base}/chat-invite/${token}`
+    const url = `${LIFF_URL.replace(/\/+$/, '')}/chat-invite/${token}`
     return json({ ok: true, url, site_name: site.name })
   }
 
