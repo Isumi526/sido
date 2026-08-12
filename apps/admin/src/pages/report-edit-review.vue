@@ -35,11 +35,21 @@
           <div v-if="p.diffs?.length" class="diffs" data-testid="pending-diffs">
             <span v-for="(d, di) in p.diffs" :key="di" class="diff">{{ d }}</span>
           </div>
+          <!-- ★保存された差分が空でも、payload と現在の日報を比べれば中身は分かる。
+               「表示できる差分がありません」としか出さないと、経費が増えている編集まで
+               中身不明のまま承認させることになる（2026-08-12 本番で発生）。 -->
+          <div v-else-if="p.computedDiff?.length" class="diffs" data-testid="pending-computed-diff">
+            <span v-for="(d, di) in p.computedDiff" :key="di" class="diff computed">{{ d }}</span>
+            <p class="computed-note">※ 申請時の差分が記録されていなかったため、いま照合して出しています</p>
+          </div>
           <div v-else-if="p.kind === 'late_new'" class="muted" data-testid="pending-nodiff">
             期限を過ぎて新規に提出された日報です（差分ではなく全体が新規のため、日報の内容そのものを確認してください）
           </div>
+          <div v-else-if="p.computedDiff" class="muted" data-testid="pending-nodiff">
+            金額・出張・領収書・稼働に変更はありません（立替の区分など、金額に影響しない項目の修正です）
+          </div>
           <div v-else class="muted" data-testid="pending-nodiff">
-            表示できる差分がありません（本文の変更が検出されなかった編集です）
+            表示できる差分がありません（元の日報と照合できませんでした）
           </div>
         </div>
 
@@ -160,6 +170,7 @@ import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { summarizePendingEdit } from '../lib/pendingEditDiff'
 import { refreshNavBadges } from '../lib/navBadges'
 import { diffReceipts } from '../lib/reportReceipts'
 import { currentUser } from '../lib/auth'
@@ -231,6 +242,30 @@ function isMine(p: any): boolean {
   return !!id && myUserIds.value.includes(id)
 }
 
+/**
+ * ★保存された差分(diffs)が空の編集について、payload と現在の日報をその場で比べて概要を出す。
+ *  差分は申請時に確定して保存する設計だったが、本番のコードが出張フラグとガソリン代を
+ *  computeDiff に渡しておらず、空のまま保存された申請が実際に12件あった（2026-08-12）。
+ *  「表示できる差分がありません」としか出ず、経費が 0→15,098円 増えているものまで
+ *  中身が分からないまま承認を迫る状態だった。payload は残っているので表示時に救う。
+ */
+async function withComputedDiff(rows: any[], accountId: string): Promise<any[]> {
+  const ids = [...new Set(rows.filter(r => !r.diffs?.length && r.kind === 'edit' && r.report_id).map(r => r.report_id))]
+  if (!ids.length) return rows
+  const { data: reports } = await supabase
+    .from('daily_reports')
+    .select('id, is_working, leave_type, is_business_trip, note, sites, gasoline_items')
+    .eq('account_id', accountId).in('id', ids)
+  const byId = new Map((reports ?? []).map((r: any) => [r.id, r]))
+  return rows.map((r) => {
+    if (r.diffs?.length || r.kind !== 'edit' || !r.report_id) return r
+    const before = byId.get(r.report_id)
+    // ★取れなかった時は「変更なし」と言わない。computedDiff を付けずに従来の文言に任せる。
+    if (!before) return r
+    return { ...r, computedDiff: summarizePendingEdit(before, r.payload) }
+  })
+}
+
 async function load() {
   loading.value = true
   try {
@@ -242,7 +277,7 @@ async function load() {
       .eq('status', 'pending')
       .order('submitted_at', { ascending: true })
     if (error) throw error
-    pending.value = await withReceipts(data ?? [], accountId)
+    pending.value = await withComputedDiff(await withReceipts(data ?? [], accountId), accountId)
   } catch (e: any) {
     msg.value = e?.message ?? '読み込みに失敗しました'
     msgOk.value = false
@@ -359,6 +394,8 @@ watch(historyOpen, (open) => { if (open && !history.value.length) void loadHisto
 .section-label { font-size: 12px; font-weight: 700; color: #666; margin-bottom: 4px; }
 .reason { font-size: 14px; white-space: pre-wrap; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 8px 10px; }
 .diffs { display: flex; flex-wrap: wrap; gap: 6px; }
+.diff.computed { background: #fef3c7; border-color: #fde68a; color: #92400e; }
+.computed-note { width: 100%; font-size: 11px; color: #92400e; margin: 4px 0 0; }
 .diff { font-size: 12px; color: #444; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 999px; padding: 3px 10px; }
 /* 領収書（日報詳細 reports.vue の receipt-link と同じ見え方に寄せる） */
 .receipt-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; }
