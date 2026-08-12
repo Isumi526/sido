@@ -52,7 +52,7 @@ export async function uploadExpenseFiles(
   accountSlug: string,
   period:      string,   // 'first' | 'second'
   lineIdToken: string,
-  runtimeEnv:  { edgeFunctionUrl: string; supabaseUrl: string; supabaseAnonKey: string },
+  runtimeEnv:  { edgeFunctionUrl: string; supabaseUrl: string; supabaseAnonKey: string; devLineUserId?: string },
 ): Promise<string[]> {
   const edgeUrl = `${runtimeEnv.edgeFunctionUrl}/${EDGE_FN}`
   const anonKey = runtimeEnv.supabaseAnonKey
@@ -84,6 +84,9 @@ export async function uploadExpenseFiles(
         index: i + 1,
         period,
         line_id_token: lineIdToken ?? '',
+        // ★ローカル検証用。開発モードはLINE IDトークンが出ないので身元が渡らず401になる。
+        //  EF側は IS_LOCAL の時しか見ない（本番では無視される）。
+        dev_line_user_id: runtimeEnv.devLineUserId ?? '',
       }),
     })
     const json = await res.json().catch(() => null)
