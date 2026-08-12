@@ -48,6 +48,17 @@ export function punchDiffLabel(actual: string | null | undefined, planned: strin
   return `${sign}${h ? `${h}時間` : ''}${mm || !h ? `${mm}分` : ''}`
 }
 
+/**
+ * 表示するほどのズレか（15分以上）。
+ * ★実運用ではほぼ全員が数分ズレる。数分のチップが全行に並ぶと、本当に見るべき
+ *  「2時間半のズレ」がその中に埋もれる（2026-08-12 実データを見て運用者が判断）。
+ *  「丸めて同じ」と見なせる範囲は黙る。
+ */
+export function isPunchDiffWorthShowing(actual: string | null | undefined, planned: string | null | undefined): boolean {
+  const d = punchDiffMinutes(actual, planned)
+  return d !== null && Math.abs(d) >= 15
+}
+
 /** 30分以上ズレているか（申請漏れに気づくための強調しきい値） */
 export function isPunchDiffBig(actual: string | null | undefined, planned: string | null | undefined): boolean {
   const d = punchDiffMinutes(actual, planned)

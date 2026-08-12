@@ -102,8 +102,8 @@ test.describe('日報一覧: 実打刻と作業時刻のズレ', () => {
 
     await punch(W_GAP, 'checkin', '06:02')     // 作業 08:30 に対し 2時間28分 早い
     await punch(W_GAP, 'checkout', '19:53')    // 作業 18:00 に対し 1時間53分 遅い
-    await punch(W_SAME, 'checkin', '08:30')    // ぴったり
-    await punch(W_SAME, 'checkout', '18:00')
+    await punch(W_SAME, 'checkin', '08:34')    // 4分ズレ＝表示しない範囲
+    await punch(W_SAME, 'checkout', '17:56')
   })
 
   test.afterAll(async () => { await purge() })
@@ -131,11 +131,12 @@ test.describe('日報一覧: 実打刻と作業時刻のズレ', () => {
     await expect(cardOf(page, W_GAP).getByTestId('punch-diff-in')).toHaveClass(/big/)
   })
 
-  test('ズレていない日は黙る（画面を賑やかにしない）', async ({ page }) => {
+  test('★数分のズレは出さない（全行にチップが並ぶと大きなズレが埋もれる）', async ({ page }) => {
+    // 4分ズレ。実運用ではほぼ全員がこの程度ズレるので、出すと画面が埋まる。
     await open(page)
     const card = cardOf(page, W_SAME)
-    await expect(card, '打刻は出る').toContainText('08:30')
-    await expect(card.getByTestId('punch-diff-in'), '±0 のチップは出さない').toHaveCount(0)
+    await expect(card, '打刻自体は出る').toContainText('08:34')
+    await expect(card.getByTestId('punch-diff-in'), '15分未満は黙る').toHaveCount(0)
     await expect(card.getByTestId('punch-diff-out')).toHaveCount(0)
   })
 
