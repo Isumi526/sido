@@ -52,10 +52,14 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders(), 'Content-Type': 'application/json' } })
 }
 
+// ローカルSupabaseに繋がっている時だけ開く検証用の経路（本番のURLは 127.0.0.1 ではない）
+const IS_LOCAL = /(^|\/\/)(127\.0\.0\.1|localhost|kong)(:|\/|$)/.test(SUPABASE_URL)
+
 async function resolveCallerAccount(
   svc: ReturnType<typeof createClient>,
   authHeader: string,
   lineIdToken: string,
+  devLineUserId = '',
 ): Promise<{ id: string; slug: string } | null> {
   if (authHeader && !authHeader.endsWith(ANON_KEY)) {
     const cli = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: authHeader } } })
@@ -74,6 +78,16 @@ async function resolveCallerAccount(
       const slug = (u as any)?.accounts?.slug
       if (accountId && slug) return { id: accountId as string, slug: slug as string }
     }
+  }
+  // ★ローカル検証用。LIFFは開発モードでLINE IDトークンを発行しないため、これが無いと
+  //  領収書アップロードをE2Eで一度も通せない。実際そのせいで「編集モードでアップロードが
+  //  走っていない」バグが400本以上のテストをすり抜けて本番に出た（2026-08-12）。
+  //  本番の SUPABASE_URL は 127.0.0.1 ではないのでこの経路は開かない。
+  if (IS_LOCAL && devLineUserId) {
+    const { data: u } = await svc.from('users').select('account_id, accounts(slug)').eq('line_user_id', devLineUserId).maybeSingle()
+    const accountId = (u as any)?.account_id
+    const slug = (u as any)?.accounts?.slug
+    if (accountId && slug) return { id: accountId as string, slug: slug as string }
   }
   return null
 }
@@ -110,7 +124,8 @@ Deno.serve(async (req) => {
   if (!fileBase64 || !date) return json({ ok: false, error: 'file_base64_and_date_required' }, 400)
 
   const svc = createClient(SUPABASE_URL, SERVICE_KEY)
-  const account = await resolveCallerAccount(svc, req.headers.get('Authorization') ?? '', lineIdToken)
+  const devLineUserId = (b.dev_line_user_id ?? '').toString().trim()
+  const account = await resolveCallerAccount(svc, req.headers.get('Authorization') ?? '', lineIdToken, devLineUserId)
   if (!account) return json({ ok: false, error: 'unauthorized' }, 401)
 
   const yearMonth = date.slice(0, 7)

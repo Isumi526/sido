@@ -1853,6 +1853,19 @@ async function handleSubmit() {
       //   これにより「daily_reports に入っている＝承認済み」という不変条件が保てる
       //   （集計・PDF・請求など10以上の消費箇所を一切触らずに済む）。
 
+      // ★保留に入れる前に領収書をアップロードする。
+      //  これが無いと、作業員が画像を選んでも fileUrls が空のまま保留に入り、
+      //  「添付忘れを直した」という理由の申請に領収書が1枚も付かない。
+      //  本番で9件・約59,000円が証憑なしで承認待ちになっていた（2026-08-12 発見）。
+      //  画面はプレビューが出て送信も成功するので、作業員も承認者も気づけなかった。
+      const uploadErrors = await report.uploadPendingExpenseFiles()
+      if (uploadErrors.length) {
+        // ★黙って続けない。ここで通すと「添付したのに付いていない」を再生産する。
+        editError.value = t('report2.uploadFailed', { errors: uploadErrors.join('\n') })
+        editSubmitting.value = false
+        return
+      }
+
       // 何を変えたか（保留に添えて管理画面で照合できるようにする）
       const diffs = originalReport.value
         ? computeDiff(originalReport.value, {
@@ -2159,6 +2172,7 @@ async function onGasItemFile(gi: number, e: Event) {
       edgeFunctionUrl: config.public.edgeFunctionUrl as string,
       supabaseUrl: config.public.supabaseUrl as string,
       supabaseAnonKey: config.public.supabaseAnonKey as string,
+      devLineUserId: config.public.appEnv === 'development' ? (liff.profile.value?.userId ?? '') : '',
     })
     item.fileUrls = urls
   } catch (err) {
