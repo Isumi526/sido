@@ -12,6 +12,7 @@
 
     <section class="panel">
       <div class="subtabs">
+        <button class="subtab" :class="{ active: settingsTab === 'search' }" data-testid="subtab-search" @click="openPriceSearch">単価を横断検索</button>
         <button class="subtab" :class="{ active: settingsTab === 'price' }" data-testid="subtab-price" @click="settingsTab = 'price'">商社別単価</button>
         <button class="subtab" :class="{ active: settingsTab === 'material' }" data-testid="subtab-material" @click="settingsTab = 'material'">材料マスタ</button>
         <button class="subtab" :class="{ active: settingsTab === 'trade' }" data-testid="subtab-trade" @click="settingsTab = 'trade'">工種</button>
@@ -44,26 +45,89 @@
 
       <!-- 材料マスタ（品番・品名を別管理） -->
       <div class="setting-block" v-show="settingsTab === 'material'">
-        <h3>材料マスタ（品番・品名）</h3>
-        <p class="muted">品番と品名は別管理です。見積の明細入力での品名捕捉（予測変換）でも自動で増えます。</p>
-        <div class="trade-add">
-          <input v-model="materialForm.code" class="input sm" placeholder="品番（任意）" data-testid="mat-code" />
-          <input v-model="materialForm.name" class="input" placeholder="品名" data-testid="mat-name" />
-          <input v-model="materialForm.unit" class="input sm" placeholder="単位" data-testid="mat-unit" />
-          <button class="btn-add" :disabled="!materialForm.name.trim()" data-testid="mat-add" @click="addMaterial">材料を追加</button>
-        </div>
+        <h3>材料マスタ（廃止・閲覧のみ）</h3>
+        <!-- ★R50: R28で材料マスタは廃止したが、この画面から追加・削除できる状態が残っていた。
+             経路が開いていると単価の正本が再び二重化する（どちらを直せばいいか分からなくなる）。
+             既存データと material_id の参照は生きているので、消さずに**閲覧のみ**にする。 -->
+        <p class="notice-deprecated" data-testid="material-deprecated">
+          材料マスタは廃止しました。品番・品名・単位・単価は<b>商社単価表</b>で管理します。
+          ここに出ているのは過去に登録された分で、<b>閲覧のみ</b>です（新規追加はできません）。
+          過去の見積が参照しているため残してあります。
+        </p>
         <table v-if="materials.length" class="table" data-testid="material-list">
-          <thead><tr><th>品番</th><th>品名</th><th>単位</th><th></th></tr></thead>
+          <thead><tr><th>品番</th><th>品名</th><th>単位</th></tr></thead>
           <tbody>
             <tr v-for="m in materials" :key="m.id" :data-testid="`mat-row-${m.id}`">
               <td>{{ m.code || '—' }}</td>
               <td>{{ m.name }}</td>
               <td>{{ m.unit || '—' }}</td>
-              <td><button class="btn-del" :data-testid="`mat-del-${m.id}`" @click="deleteMaterial(m.id)">削除</button></td>
             </tr>
           </tbody>
         </table>
-        <p v-else class="muted">材料はまだありません。</p>
+        <p v-else class="muted">過去に登録された材料はありません。</p>
+      </div>
+
+      <!-- ★R45: 単価の横断検索。名称/品番で引いて、業者・商社ごとの単価と時期を横並びで見る。
+           これまで表示は明細行の候補チップだけで「業者で絞って一覧を見る」ができず、
+           estimate_material_prices の履歴行(is_current=false)は書くだけで誰も読んでいなかった。 -->
+      <div class="setting-block" v-show="settingsTab === 'search'" data-testid="price-search-block">
+        <h3>単価を横断検索</h3>
+        <p class="muted">
+          名称・品番で検索して、<b>業者・商社ごとの単価</b>を横並びで見比べられます。
+          過去の<b>改定履歴（いつ幾らから幾らへ）</b>も辿れます。
+          ※最安値の自動採用は行いません（明細側の機能）。
+        </p>
+
+        <div class="search-bar">
+          <input v-model="psKw" class="input" placeholder="名称・品番で検索（例: 天井下地、PW-2323）" data-testid="ps-kw" />
+          <select v-model="psSupplier" class="input" data-testid="ps-supplier">
+            <option value="">すべての業者・商社</option>
+            <option v-for="s in psSuppliers" :key="s.id" :value="s.id">{{ s.name }}{{ s.category ? `（${s.category}）` : '' }}</option>
+          </select>
+          <button v-if="psKw || psSupplier" class="btn-cancel sm" data-testid="ps-clear" @click="psKw = ''; psSupplier = ''">条件をクリア</button>
+        </div>
+
+        <p v-if="psLoading" class="muted" data-testid="ps-loading">読み込み中…</p>
+        <p v-else-if="!psGroups.length" class="muted" data-testid="ps-empty">
+          {{ psAll.length ? '条件に一致する単価がありません。' : 'まだ単価が登録されていません。「商社別単価」タブから登録・取込できます。' }}
+        </p>
+
+        <div v-else class="ps-groups">
+          <div v-for="g in psGroups" :key="g.key" class="ps-group" data-testid="ps-group">
+            <div class="ps-group-head">
+              <span class="ps-name">{{ g.itemName || '(名称なし)' }}</span>
+              <span v-if="g.productCode" class="ps-code">{{ g.productCode }}</span>
+              <span v-if="g.unit" class="ps-unit">/ {{ g.unit }}</span>
+              <span class="ps-count">{{ g.suppliers.length }}社</span>
+            </div>
+            <table class="table ps-table">
+              <thead><tr><th>業者・商社</th><th>区分</th><th class="num">現在の単価</th><th>適用日</th><th>改定履歴</th><th></th></tr></thead>
+              <tbody>
+                <tr v-for="s in g.suppliers" :key="s.supplierId" :data-testid="`ps-row-${s.supplierId}`">
+                  <td class="ps-supplier">{{ s.supplierName }}</td>
+                  <td>{{ s.category || '—' }}</td>
+                  <td class="num ps-price">{{ s.current ? yen(s.current.unit_price) : '—' }}</td>
+                  <td>{{ s.current?.effective_date || '—' }}</td>
+                  <td>
+                    <!-- ★is_current=false の履歴行をここで初めて読む（溜めるだけだった） -->
+                    <details v-if="s.history.length" class="ps-hist" :data-testid="`ps-hist-${s.supplierId}`">
+                      <summary>{{ s.history.length }}件の改定</summary>
+                      <ul class="ps-hist-list">
+                        <li v-for="(h, hi) in s.history" :key="hi">
+                          {{ h.effective_date || '日付なし' }}: {{ yen(h.from) }} → <b>{{ yen(h.to) }}</b>
+                        </li>
+                      </ul>
+                    </details>
+                    <span v-else class="muted">—</span>
+                  </td>
+                  <td>
+                    <button v-if="s.current" class="btn-del" :data-testid="`ps-del-${s.supplierId}`" @click="deletePriceEntry(s.current.id)">削除</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       <!-- 商社別単価（手入力 と 価格表OCR取込） -->
@@ -85,13 +149,13 @@
           <div class="add-methods">
             <div class="method">
               <div class="method-label">手入力で1件ずつ</div>
+              <!-- ★R28: 材料マスタから選ばせるのをやめ、単価表に直接入れる（管理する場所を1つにする） -->
               <div class="trade-add">
-                <select v-model="priceForm.material_id" class="input sm" data-testid="price-material">
-                  <option :value="null" disabled>材料</option>
-                  <option v-for="m in materials" :key="m.id" :value="m.id">{{ m.name }}</option>
-                </select>
+                <input v-model="priceForm.product_code" class="input sm" placeholder="品番" data-testid="price-code" />
+                <input v-model="priceForm.item_name" class="input sm" placeholder="品名" data-testid="price-name" />
+                <input v-model="priceForm.unit" class="input sm unit-in" placeholder="単位" data-testid="price-unit" />
                 <input v-model.number="priceForm.unit_price" type="number" class="input sm num" placeholder="単価" data-testid="price-value" />
-                <button class="btn-add" :disabled="!priceForm.material_id || !(priceForm.unit_price > 0)" data-testid="add-price" @click="addPrice">登録</button>
+                <button class="btn-add" :disabled="!(priceForm.product_code || priceForm.item_name) || !(priceForm.unit_price > 0)" data-testid="add-price" @click="addPrice">登録</button>
               </div>
             </div>
             <div class="method ocr-dropzone" :class="{ 'drag-over': ocrDragOver }"
@@ -118,19 +182,25 @@
           </div>
 
           <div v-if="revisionsFiltered.length" class="rev-section">
-            <div class="sub-h">取込の承認待ち（{{ revisionsFiltered.length }}件）</div>
-            <p class="muted">承認前に各項目を手修正できます。<b>紐付け先</b>で既存材料を選ぶと、商社ごとの品番/品名の揺れを吸収して同じ材料にまとめられます（次回の取込から自動一致）。</p>
+            <div class="sub-h rev-head">
+              <span>取込の承認待ち（{{ revisionsFiltered.length }}件）</span>
+              <!-- ★R28: 1ファイルで数十〜数百行になるので、1行ずつ承認するのは現実的でない -->
+              <button class="btn-primary sm" :disabled="revBusy" data-testid="approve-all" @click="approveAllRevisions">
+                {{ revBusy ? '承認中…' : `表示中の${revisionsFiltered.length}件をまとめて承認` }}
+              </button>
+              <span v-if="bulkMsg" class="ok" data-testid="bulk-msg">{{ bulkMsg }}</span>
+            </div>
+            <p class="muted">承認前に各項目を手修正できます。承認すると<b>そのまま単価表に入ります</b>（材料マスタは作りません）。</p>
             <table class="table">
-              <thead><tr><th>品番</th><th>品名</th><th>紐付け先</th><th class="num">現行</th><th class="num">新単価</th><th>有効日</th><th></th></tr></thead>
+              <thead><tr><th>品番</th><th>品名</th><th>既存の紐付け</th><th class="num">現行</th><th class="num">新単価</th><th>有効日</th><th></th></tr></thead>
               <tbody>
                 <tr v-for="r in revisionsFiltered" :key="r.id" :data-testid="`rev-${r.id}`">
                   <td><input v-model="r.code" class="input sm" :data-testid="`rev-code-${r.id}`" placeholder="品番" /></td>
                   <td><input v-model="r.name" class="input" :data-testid="`rev-name-${r.id}`" placeholder="品名" /></td>
-                  <td>
-                    <select v-model="r.material_id" class="input sm" :data-testid="`rev-material-${r.id}`">
-                      <option :value="null">＋ 新規材料として作成</option>
-                      <option v-for="m in materials" :key="m.id" :value="m.id">{{ m.name }}{{ m.code ? `（${m.code}）` : '' }}</option>
-                    </select>
+                  <!-- ★R28: 材料マスタを作らないので「紐付け先」の選択は不要になった。
+                       単価表が品番・品名・単位を自分で持つ。既存の紐付けがある行だけ表示する。 -->
+                  <td class="linked-cell" :data-testid="`rev-linked-${r.id}`">
+                    {{ r.material_id ? (materials.find(m => m.id === r.material_id)?.name ?? '既存に紐付け') : '—' }}
                   </td>
                   <td class="num">{{ r.old_price == null ? '—' : yen(r.old_price) }}</td>
                   <td class="num"><input v-model.number="r.new_price" type="number" class="input sm num" :data-testid="`rev-price-${r.id}`" /></td>
@@ -165,7 +235,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug } from '../lib/account'
 
@@ -174,7 +244,7 @@ defineProps<{ embedded?: boolean }>()
 type Trade    = { id: string; name: string }
 type Material = { id: string; name: string; unit: string | null; code: string | null }
 type Supplier = { id: string; name: string }
-type MatPrice = { id: string; material_id: string; supplier_id: string; unit_price: number; effective_date: string | null }
+type MatPrice = { id: string; material_id: string | null; product_code: string | null; item_name: string | null; unit: string | null; supplier_id: string; unit_price: number; effective_date: string | null }
 type Revision = { id: string; material_id: string | null; supplier_id: string | null; code: string | null; name: string | null; unit: string | null; old_price: number | null; new_price: number | null; effective_date: string | null; status: string }
 
 const trades         = ref<Trade[]>([])
@@ -182,14 +252,156 @@ const materials      = ref<Material[]>([])
 const suppliers      = ref<Supplier[]>([])
 const matPrices      = ref<MatPrice[]>([])
 const revisions      = ref<Revision[]>([])
-const priceForm      = ref<{ material_id: string | null; unit_price: number | null }>({ material_id: null, unit_price: null })
-const materialForm   = ref<{ code: string; name: string; unit: string }>({ code: '', name: '', unit: '' })
+const priceForm      = ref<{ product_code: string; item_name: string; unit: string; unit_price: number | null }>({ product_code: '', item_name: '', unit: '', unit_price: null })
 const newTradeName   = ref('')
 const addingSupplier = ref(false)
 const newSupplierName = ref('')
 const masterErr      = ref('')
 const revBusy        = ref(false)
-const settingsTab    = ref<'price' | 'material' | 'trade'>('price')
+const bulkMsg        = ref('')
+// ★R41: 定価（品番ごと）と商社別掛率
+type ListPrice = { id: string; product_code: string; item_name: string | null; unit: string | null; list_price: number }
+const listPrices        = ref<ListPrice[]>([])
+const listForm          = ref<{ product_code: string; item_name: string; unit: string; list_price: number | null }>({ product_code: '', item_name: '', unit: '', list_price: null })
+const supplierRateInput = ref<number | null>(null)
+const rateMsg           = ref('')
+async function loadListPrices() {
+  const { data } = await supabase.from('estimate_list_prices')
+    .select('id, product_code, item_name, unit, list_price').eq('account_id', accountId).order('product_code')
+  listPrices.value = (data ?? []).map((x: any) => ({ ...x, list_price: Number(x.list_price) }))
+}
+async function addListPrice() {
+  const f = listForm.value
+  const code = f.product_code.trim()
+  if (!code || !(Number(f.list_price) > 0)) return
+  masterErr.value = ''
+  // 品番は定価の同一性の核。二重登録＝どちらが正か分からない状態を作らないので upsert する
+  const { error } = await supabase.from('estimate_list_prices').upsert({
+    account_id: accountId, product_code: code, item_name: f.item_name.trim() || null,
+    unit: f.unit.trim() || null, list_price: Number(f.list_price), updated_at: new Date().toISOString(),
+  }, { onConflict: 'account_id,product_code' })
+  if (error) { masterErr.value = error.message; return }
+  listForm.value = { product_code: '', item_name: '', unit: '', list_price: null }
+  await loadListPrices()
+}
+async function saveListPrice(l: ListPrice) {
+  if (!(Number(l.list_price) > 0)) return
+  const { error } = await supabase.from('estimate_list_prices')
+    .update({ list_price: Number(l.list_price), updated_at: new Date().toISOString() }).eq('id', l.id)
+  if (error) masterErr.value = error.message
+}
+async function deleteListPrice(l: ListPrice) {
+  if (!window.confirm(`品番「${l.product_code}」の定価を削除しますか？`)) return
+  await supabase.from('estimate_list_prices').delete().eq('id', l.id)
+  await loadListPrices()
+}
+async function loadSupplierRate() {
+  rateMsg.value = ''
+  supplierRateInput.value = null
+  if (!activeSupplier.value) return
+  const { data } = await supabase.from('estimate_supplier_rates')
+    .select('rate').eq('account_id', accountId).eq('supplier_id', activeSupplier.value).maybeSingle()
+  if (data) supplierRateInput.value = Number(data.rate)
+}
+async function saveSupplierRate() {
+  if (!activeSupplier.value || !(Number(supplierRateInput.value) > 0)) return
+  masterErr.value = ''
+  const { error } = await supabase.from('estimate_supplier_rates').upsert({
+    account_id: accountId, supplier_id: activeSupplier.value,
+    rate: Number(supplierRateInput.value), updated_at: new Date().toISOString(),
+  }, { onConflict: 'account_id,supplier_id' })
+  if (error) { masterErr.value = error.message; return }
+  rateMsg.value = '保存しました'
+  setTimeout(() => { rateMsg.value = '' }, 2000)
+}   // 一括承認の進捗（何件通ったかを見せる）
+const settingsTab    = ref<'search' | 'price' | 'material' | 'trade'>('price')
+
+// ── ★R45: 単価の横断検索 ──
+//  現在価格(is_current=true)だけでなく履歴(false)も読む。履歴は書き込むだけで
+//  参照経路がゼロだった＝「いつ幾らから幾らへ改定したか」を誰も見られなかった。
+type PsPrice = { id: string; product_code: string | null; item_name: string | null; unit: string | null; supplier_id: string; unit_price: number; effective_date: string | null; is_current: boolean }
+const psKw        = ref('')
+const psSupplier  = ref('')
+const psAll       = ref<PsPrice[]>([])
+const psSuppliers = ref<{ id: string; name: string; category: string | null }[]>([])
+const psLoading   = ref(false)
+
+async function openPriceSearch() {
+  settingsTab.value = 'search'
+  if (psAll.value.length || psLoading.value) return
+  psLoading.value = true
+  try {
+    // ★業者・商社の両方を対象にする（既存の loadSuppliers は 商社 だけに絞っているため別に読む）
+    const [{ data: subs }, { data: prices }] = await Promise.all([
+      supabase.from('subcontractors').select('id, name, category').eq('account_id', accountId).order('name'),
+      supabase.from('estimate_material_prices')
+        .select('id, product_code, item_name, unit, supplier_id, unit_price, effective_date, is_current')
+        .eq('account_id', accountId)
+        .order('effective_date', { ascending: true, nullsFirst: true }),
+    ])
+    psSuppliers.value = (subs ?? []) as any[]
+    psAll.value = (prices ?? []) as PsPrice[]
+  } catch (e: any) {
+    masterErr.value = e?.message ?? '単価の読み込みに失敗しました'
+  } finally { psLoading.value = false }
+}
+
+/** 品番＋名称で1つの「品目」にまとめ、その中を業者・商社ごとに並べる */
+const psGroups = computed(() => {
+  const kw = psKw.value.trim().toLowerCase()
+  const nameOf = (id: string) => psSuppliers.value.find(s => s.id === id)?.name ?? '(不明な業者)'
+  const catOf  = (id: string) => psSuppliers.value.find(s => s.id === id)?.category ?? null
+
+  const rows = psAll.value.filter((p) => {
+    if (psSupplier.value && p.supplier_id !== psSupplier.value) return false
+    if (!kw) return true
+    return [p.item_name, p.product_code].filter(Boolean).join(' ').toLowerCase().includes(kw)
+  })
+
+  // 品目キー: 品番があれば品番、無ければ名称（表記ゆれは別品目として出す＝勝手に寄せない）
+  const byItem = new Map<string, { key: string; productCode: string; itemName: string; unit: string; bySupplier: Map<string, PsPrice[]> }>()
+  for (const p of rows) {
+    const key = (p.product_code || '').trim() || (p.item_name || '').trim() || '(不明)'
+    let g = byItem.get(key)
+    if (!g) {
+      g = { key, productCode: p.product_code ?? '', itemName: p.item_name ?? '', unit: p.unit ?? '', bySupplier: new Map() }
+      byItem.set(key, g)
+    }
+    if (!g.itemName && p.item_name) g.itemName = p.item_name
+    if (!g.unit && p.unit) g.unit = p.unit
+    const arr = g.bySupplier.get(p.supplier_id) ?? []
+    arr.push(p)
+    g.bySupplier.set(p.supplier_id, arr)
+  }
+
+  return [...byItem.values()].map((g) => ({
+    key: g.key, productCode: g.productCode, itemName: g.itemName, unit: g.unit,
+    suppliers: [...g.bySupplier.entries()].map(([supplierId, list]) => {
+      // effective_date 昇順で来ているので、末尾が新しい。現在価格は is_current を優先。
+      const sorted = [...list].sort((a, b) => String(a.effective_date ?? '').localeCompare(String(b.effective_date ?? '')))
+      const current = sorted.find(p => p.is_current) ?? sorted[sorted.length - 1] ?? null
+      // 改定履歴＝「幾らから幾らへ」。連続する2点の差分として組み立てる
+      const history: { effective_date: string | null; from: number; to: number }[] = []
+      for (let i = 1; i < sorted.length; i++) {
+        if (sorted[i].unit_price === sorted[i - 1].unit_price) continue
+        history.push({ effective_date: sorted[i].effective_date, from: sorted[i - 1].unit_price, to: sorted[i].unit_price })
+      }
+      return { supplierId, supplierName: nameOf(supplierId), category: catOf(supplierId), current, history: history.reverse() }
+    }).sort((a, b) => (a.current?.unit_price ?? Infinity) - (b.current?.unit_price ?? Infinity)),
+  })).sort((a, b) => (a.itemName || a.productCode).localeCompare(b.itemName || b.productCode, 'ja'))
+})
+
+/** 不要になった単価エントリを消す（統合元ACの「不要エントリは削除できる」） */
+async function deletePriceEntry(id: string) {
+  const target = psAll.value.find(p => p.id === id)
+  if (!target) return
+  const label = [target.item_name, target.product_code].filter(Boolean).join(' ') || 'この単価'
+  if (!window.confirm(`${label} の単価を削除しますか？\n（履歴行は残ります。現在価格だけを消します）`)) return
+  const { error } = await supabase.from('estimate_material_prices').delete().eq('id', id).eq('account_id', accountId)
+  if (error) { masterErr.value = `削除に失敗しました: ${error.message}`; return }
+  psAll.value = psAll.value.filter(p => p.id !== id)
+  await loadMaterialPrices()
+}
 const activeSupplier = ref<string | null>(null)
 let accountId = ''
 
@@ -223,8 +435,11 @@ const activeSupplierName = computed(() => suppliers.value.find(s => s.id === act
 const priceList = computed(() =>
   matPrices.value.map(p => ({
     id: p.id, supplierId: p.supplier_id, unit_price: Number(p.unit_price), effective_date: p.effective_date,
-    materialName: materials.value.find(m => m.id === p.material_id)?.name ?? '(材料)',
-    materialCode: materials.value.find(m => m.id === p.material_id)?.code ?? null,
+    // ★R28: 単価表が品番・品名を自分で持つようになったので、まず自前の値を使う。
+    //   材料マスタは既存行の互換のためのフォールバックとしてだけ見る。
+    materialName: p.item_name ?? materials.value.find(m => m.id === p.material_id)?.name ?? '(材料)',
+    materialCode: p.product_code ?? materials.value.find(m => m.id === p.material_id)?.code ?? null,
+    unit: p.unit ?? materials.value.find(m => m.id === p.material_id)?.unit ?? null,
     supplierName: suppliers.value.find(s => s.id === p.supplier_id)?.name ?? '(商社)',
   })).sort((a, b) => a.materialName.localeCompare(b.materialName, 'ja') || a.supplierName.localeCompare(b.supplierName, 'ja'))
 )
@@ -244,7 +459,7 @@ async function loadSuppliers() {
   suppliers.value = (data ?? []) as Supplier[]
 }
 async function loadMaterialPrices() {
-  const { data } = await supabase.from('estimate_material_prices').select('id, material_id, supplier_id, unit_price, effective_date').eq('account_id', accountId).eq('is_current', true)
+  const { data } = await supabase.from('estimate_material_prices').select('id, material_id, product_code, item_name, unit, supplier_id, unit_price, effective_date').eq('account_id', accountId).eq('is_current', true)
   matPrices.value = (data ?? []) as MatPrice[]
 }
 async function loadRevisions() {
@@ -262,33 +477,74 @@ async function recordAlias(materialId: string, supplierId: string, code: string 
   if (n) await supabase.from('estimate_material_aliases').delete().eq('account_id', accountId).eq('supplier_id', supplierId).ilike('supplier_name', n)
   await supabase.from('estimate_material_aliases').insert({ account_id: accountId, material_id: materialId, supplier_id: supplierId, supplier_code: c || null, supplier_name: n || null })
 }
+/**
+ * 取込差分を承認して単価表に反映する。
+ * ★R28: 材料マスタを作らない。単価表が品番・品名・単位を自分で持つようになったので、
+ *   差分の内容をそのまま単価表へ書く（管理する場所を1つにする）。
+ *   既存の material_id が解決できている行はそのまま引き継ぐ（過去の紐付けを壊さない）。
+ */
+async function applyRevision(r: Revision): Promise<string | null> {
+  if (!r.supplier_id) return '商社が未解決です'
+  if (!(Number(r.new_price) > 0)) return '新単価は1円以上にしてください'
+  const code = (r.code || '').trim() || null
+  const name = (r.name || '').trim() || null
+  if (!code && !name) return '品番か品名のどちらかが必要です'
+
+  // 同じ商社の同じ品番（品番が無ければ品名）の現行単価を履歴に落とす
+  let q = supabase.from('estimate_material_prices').update({ is_current: false })
+    .eq('account_id', accountId).eq('supplier_id', r.supplier_id).eq('is_current', true)
+  q = code ? q.eq('product_code', code) : q.eq('item_name', name!)
+  await q
+  if (r.material_id) {
+    await supabase.from('estimate_material_prices').update({ is_current: false })
+      .eq('account_id', accountId).eq('supplier_id', r.supplier_id)
+      .eq('material_id', r.material_id).eq('is_current', true)
+  }
+
+  const { error } = await supabase.from('estimate_material_prices').insert({
+    account_id: accountId, material_id: r.material_id ?? null,
+    product_code: code, item_name: name, unit: r.unit || null,
+    supplier_id: r.supplier_id, unit_price: Number(r.new_price),
+    effective_date: r.effective_date, is_current: true,
+  })
+  if (error) return error.message
+  await supabase.from('estimate_price_revisions')
+    .update({ status: 'applied', applied_at: new Date().toISOString() }).eq('id', r.id)
+  if (r.material_id) await recordAlias(r.material_id, r.supplier_id, r.code, r.name)
+  return null
+}
+
 async function approveRevision(r: Revision) {
-  if (!r.supplier_id) { masterErr.value = '商社が未解決です'; return }
-  if (!(Number(r.new_price) > 0)) { masterErr.value = '新単価は1円以上にしてください'; return }
   revBusy.value = true; masterErr.value = ''
   try {
-    let materialId = r.material_id
-    if (!materialId) {
-      const nm = (r.name || '').trim()
-      const ex = materials.value.find(m => m.name.trim().toLowerCase() === nm.toLowerCase())
-      if (ex) materialId = ex.id
-      else {
-        const { data } = await supabase.from('estimate_materials')
-          .insert({ account_id: accountId, name: nm || '(新規材料)', code: r.code || null, unit: r.unit || null, source: 'ocr' }).select('id').single()
-        materialId = (data as any)?.id ?? null
-      }
-    }
-    if (!materialId) { masterErr.value = '材料が未解決です'; return }
-    await supabase.from('estimate_material_prices').update({ is_current: false })
-      .eq('account_id', accountId).eq('material_id', materialId).eq('supplier_id', r.supplier_id).eq('is_current', true)
-    await supabase.from('estimate_material_prices')
-      .insert({ account_id: accountId, material_id: materialId, supplier_id: r.supplier_id, unit_price: Number(r.new_price), effective_date: r.effective_date, is_current: true })
-    await supabase.from('estimate_price_revisions')
-      .update({ status: 'applied', applied_at: new Date().toISOString(), material_id: materialId }).eq('id', r.id)
-    await recordAlias(materialId, r.supplier_id, r.code, r.name)
-    await Promise.all([loadMaterials(), loadMaterialPrices(), loadRevisions()])
+    const err = await applyRevision(r)
+    if (err) { masterErr.value = err; return }
+    await Promise.all([loadRevisions(), loadPrices()])
   } finally { revBusy.value = false }
 }
+
+/**
+ * ★R28: 一括承認。取込は1ファイルで数十〜数百行になるため、1行ずつ承認するのは現実的でない。
+ *  1件でも失敗したら、そこで止めて何件通ったかを見せる（黙って一部だけ入る状態にしない）。
+ */
+async function approveAllRevisions() {
+  const targets = revisions.value.filter(r => r.status === 'pending')
+  if (!targets.length) return
+  if (!window.confirm(`${targets.length}件の単価をまとめて承認します。よろしいですか？`)) return
+  revBusy.value = true; masterErr.value = ''; bulkMsg.value = ''
+  let done = 0
+  try {
+    for (const r of targets) {
+      const err = await applyRevision(r)
+      if (err) { masterErr.value = `${done}件を承認しました。${done + 1}件目で停止: ${err}`; break }
+      done++
+      bulkMsg.value = `承認中… ${done}/${targets.length}`
+    }
+    if (done === targets.length) bulkMsg.value = `${done}件を承認しました`
+    await Promise.all([loadRevisions(), loadPrices()])
+  } finally { revBusy.value = false }
+}
+
 async function rejectRevision(r: Revision) {
   await supabase.from('estimate_price_revisions').update({ status: 'rejected' }).eq('id', r.id)
   await loadRevisions()
@@ -398,13 +654,21 @@ async function addSupplier() {
 async function addPrice() {
   const f = priceForm.value
   const supplierId = activeSupplier.value
-  if (!f.material_id || !supplierId || !(Number(f.unit_price) > 0)) return
-  await supabase.from('estimate_material_prices').update({ is_current: false }).eq('account_id', accountId)
-    .eq('material_id', f.material_id).eq('supplier_id', supplierId).eq('is_current', true)
-  const { error } = await supabase.from('estimate_material_prices')
-    .insert({ account_id: accountId, material_id: f.material_id, supplier_id: supplierId, unit_price: Number(f.unit_price), is_current: true })
+  const code = (f.product_code ?? '').trim() || null
+  const name = (f.item_name ?? '').trim() || null
+  if ((!code && !name) || !supplierId || !(Number(f.unit_price) > 0)) return
+  // 同じ商社の同じ品番（無ければ品名）の現行単価を履歴に落としてから入れる
+  let q = supabase.from('estimate_material_prices').update({ is_current: false })
+    .eq('account_id', accountId).eq('supplier_id', supplierId).eq('is_current', true)
+  q = code ? q.eq('product_code', code) : q.eq('item_name', name!)
+  await q
+  const { error } = await supabase.from('estimate_material_prices').insert({
+    account_id: accountId, supplier_id: supplierId,
+    product_code: code, item_name: name, unit: (f.unit ?? '').trim() || null,
+    unit_price: Number(f.unit_price), is_current: true,
+  })
   if (error) { masterErr.value = error.message; return }
-  priceForm.value = { material_id: null, unit_price: null }
+  priceForm.value = { product_code: '', item_name: '', unit: '', unit_price: null }
   await loadMaterialPrices()
 }
 async function addTrade() {
@@ -440,28 +704,16 @@ async function onTradeDrop(i: number) {
   await Promise.all(trades.value.map((t, idx) =>
     supabase.from('estimate_trades').update({ sort_order: idx }).eq('id', t.id).eq('account_id', accountId)))
 }
-async function addMaterial() {
-  const f = materialForm.value
-  if (!f.name.trim()) return
-  masterErr.value = ''
-  const { error } = await supabase.from('estimate_materials')
-    .insert({ account_id: accountId, code: f.code.trim() || null, name: f.name.trim(), unit: f.unit.trim() || null, source: 'manual' })
-  if (error) { masterErr.value = error.message; return }
-  materialForm.value = { code: '', name: '', unit: '' }
-  await loadMaterials()
-}
-async function deleteMaterial(id: string) {
-  masterErr.value = ''
-  const { error } = await supabase.from('estimate_materials').delete().eq('id', id)
-  if (error) { masterErr.value = '使用中の材料は削除できません（明細で使われています）'; return }
-  await Promise.all([loadMaterials(), loadMaterialPrices()])
-}
+// ★R50: addMaterial / deleteMaterial は撤去（材料マスタは廃止・閲覧のみ）。
+//  読み取り(loadMaterials)は既存見積の名称・単位の解決に使うので残す。
 
 onMounted(async () => {
   accountId = await getAccountId()
-  await Promise.all([loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices(), loadRevisions()])
+  await Promise.all([loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices(), loadRevisions(), loadListPrices()])
   if (!activeSupplier.value && suppliers.value[0]) activeSupplier.value = suppliers.value[0].id
 })
+// R41: 商社タブを切り替えたら、その商社の掛率を読む
+watch(activeSupplier, () => { void loadSupplierRate() }, { immediate: true })
 </script>
 
 <style scoped>
@@ -471,6 +723,23 @@ onMounted(async () => {
 .back-link:hover { text-decoration: underline; }
 .hint { color: #777; font-size: 13px; margin-bottom: 14px; }
 .panel { background: #fff; border: 1px solid #e5e5e5; border-radius: 10px; padding: 16px; }
+/* ★R45: 単価の横断検索 */
+.search-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 10px 0 12px; }
+.search-bar .input { max-width: 280px; }
+.btn-cancel.sm { padding: 6px 12px; font-size: 12px; }
+.ps-groups { display: flex; flex-direction: column; gap: 16px; }
+.ps-group { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; background: #fff; }
+.ps-group-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.ps-name { font-weight: 800; font-size: 14px; }
+.ps-code { font-size: 12px; color: #2563eb; background: #eef2ff; border-radius: 999px; padding: 2px 8px; }
+.ps-unit { font-size: 12px; color: #888; }
+.ps-count { margin-left: auto; font-size: 12px; color: #888; }
+.ps-table { width: 100%; font-size: 13px; }
+.ps-supplier { font-weight: 700; }
+.ps-price { font-weight: 700; }
+.ps-hist { font-size: 12px; }
+.ps-hist > summary { cursor: pointer; color: #2563eb; }
+.ps-hist-list { margin: 4px 0 0; padding-left: 16px; }
 .subtabs { display: inline-flex; gap: 2px; background: #eef0ee; border-radius: 8px; padding: 3px; margin-bottom: 10px; }
 .subtab { border: none; background: transparent; color: #555; border-radius: 6px; padding: 6px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .subtab:hover { color: #222; }
@@ -506,6 +775,10 @@ onMounted(async () => {
 .method-label { font-size: 12px; font-weight: 600; color: #555; }
 .ocr-dropzone { border: 1.5px dashed #cdd6e6; border-radius: 10px; padding: 12px; transition: border-color .15s, background .15s; }
 .ocr-dropzone.drag-over { border-color: #1a56c4; background: #eef4ff; }
+.list-price-head { display: flex; align-items: baseline; gap: 10px; }
+.rev-head { display: flex; align-items: center; gap: 10px; }
+.linked-cell { font-size: 12px; color: #7A8AA0; }
+.unit-in { width: 70px; }
 .ocr-dnd-hint { font-size: 11px; }
 .sub-h { font-size: 13px; font-weight: 700; color: #444; margin: 16px 0 6px; }
 .rev-section { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 8px 12px; margin-top: 12px; }
@@ -518,4 +791,8 @@ onMounted(async () => {
 @keyframes spin { to { transform: rotate(360deg); } }
 .code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #555; white-space: nowrap; }
 .actions { white-space: nowrap; }
+
+/* R50: 廃止済みマスタの説明。閲覧のみと分かるよう他の説明文と見た目を変える */
+.notice-deprecated { font-size: 12px; line-height: 1.7; color: #92400e; background: #fffbeb;
+  border: 1px solid #fde68a; border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; }
 </style>

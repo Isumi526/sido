@@ -19,8 +19,8 @@
             </td>
             <td><span class="status" :class="c.active ? 'active' : 'off'">{{ c.active ? '有効' : '無効' }}</span></td>
             <td class="actions">
-              <button class="btn-edit" @click="openEdit(c)">編集</button>
-              <button class="btn-toggle" @click="toggleActive(c)">{{ c.active ? '無効化' : '有効化' }}</button>
+              <button class="btn-edit" data-testid="contractor-edit" @click="openEdit(c)">編集</button>
+              <button v-if="canManageContractors" class="btn-toggle" data-testid="contractor-toggle" @click="toggleActive(c)">{{ c.active ? '無効化' : '有効化' }}</button>
             </td>
           </tr>
         </tbody>
@@ -43,7 +43,7 @@
           <div class="field"><label>住所</label><input v-model="modal.address" class="input" /></div>
         </div>
         <div class="field"><label>備考</label><textarea v-model="modal.note" class="input" rows="2" placeholder="この元請けに関するメモ"></textarea></div>
-        <details class="bank">
+        <details class="bank" data-testid="contractor-bank">
           <summary>振込口座（任意）</summary>
           <div class="grid2">
             <div class="field"><label>銀行名</label><input v-model="modal.bank_name" class="input" /></div>
@@ -81,6 +81,7 @@
 import { ref, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { canManageContractors } from '../lib/auth'
 
 type Contact = { id?: string; name: string; email: string | null; phone: string | null }
 type Contractor = {
@@ -93,6 +94,8 @@ type Contractor = {
 }
 type ModalState = Partial<Contractor> & { contacts: Contact[] }
 
+// 振込口座は全ロール（site_manager 含む）が閲覧・編集する（2026-08-07 レビューでユーザー判断変更）。
+//  当初は site_manager に隠す実装（列ごと分離）だったが、隠す必要なしとの判断で全員に開いた。
 const CON_COLS = 'id, name, active, representative_name, mobile_phone, office_phone, email, address, registration_number, note, bank_name, bank_branch, bank_account_type, bank_account_number, bank_account_holder'
 
 const contractors = ref<Contractor[]>([])
@@ -123,6 +126,15 @@ function removeContact(i: number){ modal.value!.contacts.splice(i, 1) }
 
 async function save() {
   if (!modal.value?.name?.trim()) { saveError.value = '元請け業者名を入力してください'; return }
+  // ★担当者名が空の行は syncContacts が黙って捨てる（=名前を入れ忘れると、メール/電話を入れていても
+  //  エラーも出ずに行ごと消える）。捨てる前に止めて、どこが悪いか人に見せる（2026-08-07 レビュー指摘）。
+  //  行は「＋ 担当者を追加」を押した時しか生まれないので、空行が残っているのは入力途中＝止めてよい。
+  //  不要になった行は × で消す。
+  const namelessRow = modal.value.contacts.findIndex((c) => !c.name?.trim())
+  if (namelessRow >= 0) {
+    saveError.value = `担当者${namelessRow + 1}件目の氏名を入力してください（不要な行は × で削除してください）`
+    return
+  }
   saving.value = true; saveError.value = ''
   try {
     const accountId = await getAccountId()
@@ -172,6 +184,7 @@ async function syncContacts(contractorId: string, accountId: string, want: Conta
 }
 
 async function toggleActive(c: Contractor) {
+  if (!canManageContractors.value) return  // ボタンは非表示だが、関数側でも閉じておく
   await supabase.from('contractors').update({ active: !c.active }).eq('id', c.id)
   await load()
 }

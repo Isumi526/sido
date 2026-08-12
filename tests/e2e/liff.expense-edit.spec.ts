@@ -46,18 +46,30 @@ test.describe('経費申請書 インライン編集(申請前)', () => {
     await page.getByRole('button', { name: PERIOD_LABEL, exact: true }).click()
     await page.waitForTimeout(800)
 
-    // 電車代の行を現場名「テスト現場B」(このseed固有・非編集セル=編集モードでも安定)で特定。
-    // ※品名「交通費」は feature seed の電車行(テスト現場A)にも出るため一意にならない
-    const row = page.locator('.expense-table tbody tr', { hasText: 'テスト現場B' })
-    await expect(row).toBeVisible({ timeout: 10000 })
-    await expect(row).toContainText('旧支払先')  // 編集前の支払先表示
+    // 電車代の行を seed 固有の登録番号で特定して「行インデックス」を控える。
+    //  ・品名「交通費」で絞ると、同じ期間に他specがseedした電車代の行も一致して複数行になる
+    //    （ローカルDBにテストデータが蓄積するため）。登録番号はこのseedだけが持つので一意。
+    //  ・ただし編集モードに入ると登録番号セルは <input> に変わりテキストとして消えるため、
+    //    テキスト一致の locator は編集後に0件になる。編集前にindexを取って以後はnth()で追う。
+    const allRows = page.locator('.expense-table tbody tr')
+    const targetRow = allRows.filter({ hasText: 'T1234567890123' })
+    await expect(targetRow).toHaveCount(1, { timeout: 10000 })
+    await expect(targetRow).toContainText('旧支払先')  // 編集前の支払先表示
+
+    const texts = await allRows.allInnerTexts()
+    const rowIndex = texts.findIndex(t => t.includes('T1234567890123'))
+    expect(rowIndex, 'seedした電車代の行が見つかる').toBeGreaterThanOrEqual(0)
 
     // 編集モードON（申請前のみ表示される「修正する」）
     await page.getByRole('button', { name: '修正する' }).click()
+    const row = allRows.nth(rowIndex)
 
-    // 支払い先(1つ目のcell-edit入力)を修正
+    // 支払い先(1つ目のcell-edit入力)を修正。
+    //  明細表はページ下方にあり、モバイルviewport(Pixel 5)では画面外になるため
+    //  スクロールしてから可視判定する。
     const payeeInput = row.locator('input.cell-edit').first()
-    await expect(payeeInput).toBeVisible()
+    await payeeInput.scrollIntoViewIfNeeded()
+    await expect(payeeInput).toBeVisible({ timeout: 10000 })
     await payeeInput.fill(NEW_PAYEE)
 
     // 行の保存ボタン（dirtyで出現）

@@ -94,6 +94,7 @@
                     <th class="col-date">{{ t('expenseDoc.colDate') }}</th>
                     <th class="col-payee">{{ t('expenseDoc.colPayee') }}</th>
                     <th class="col-reg">{{ t('expenseDoc.colReg') }}</th>
+                    <th class="col-acct">{{ t('expenseDoc.colAccount') }}</th>
                     <th class="col-cat">{{ t('expenseDoc.colCategory') }}</th>
                     <th class="col-lit">{{ t('expenseDoc.colLiters') }}</th>
                     <th class="col-site">{{ t('expenseDoc.colSite') }}</th>
@@ -115,7 +116,14 @@
                       <input v-if="editMode && row.srcKey" v-model="row.registrationNumber" class="cell-edit" :placeholder="t('expenseDoc.colReg')" @input="row._dirty = true" />
                       <template v-else>{{ row.registrationNumber || '' }}</template>
                     </td>
-                    <td class="center">{{ expenseDisplayCategory(row.category) }}</td>
+                    <!-- 科目（勘定科目）: expenseAccountCategory が唯一の出どころ。
+                         ★2026-07-31 は「客先帳票に科目は出さない」と決めていたが、2026-08-10 に
+                          運用者判断で上書き（科目と品名を両方出す）。会計仕訳に使う言葉を帳票にも載せる。 -->
+                    <td class="center">{{ acctCategory(row) }}</td>
+                    <!-- 品名: 日報由来は従来のマッピング（駐車代→P代／電車代→交通費・2026-07-31 決定）。
+                         個人経費だけは category に勘定科目が入るため、そのまま出すと品名欄に「会議費」等の
+                         科目が並ぶ（2026-08-08 本番報告）。note（実際の品名）を出し、無ければ空欄にする。 -->
+                    <td class="center">{{ itemName(row) }}</td>
                     <td class="center">{{ row.liters ?? '' }}</td>
                     <td class="small">{{ row.siteName }}</td>
                     <td class="center">{{ row.vehicle || '' }}</td>
@@ -140,7 +148,7 @@
                 </tbody>
                 <tfoot>
                   <tr class="total-row">
-                    <td colspan="7" class="right">{{ t('expenseDoc.totalLabel') }}</td>
+                    <td colspan="8" class="right">{{ t('expenseDoc.totalLabel') }}</td>
                     <td class="right">¥{{ total.toLocaleString() }}</td>
                     <td class="no-print"></td>
                   </tr>
@@ -183,7 +191,19 @@
 import { useI18n } from 'vue-i18n'
 import type { User, ExpenseRow } from '~/types'
 import { getCurrentPeriodKey, recentPeriodKeys, deadlineLabel, effectiveStatus, periodLabel } from '~/composables/useExpense'
-import { expenseDisplayCategory } from '~/composables/expense-flatten.gen'
+import { expenseDisplayCategory, expenseAccountCategory, isPersonalExpenseRow } from '~/composables/expense-flatten.gen'
+
+/** 品名欄の表示。個人経費は category＝勘定科目なので出さず、note（実際の品名）だけを出す。 */
+function itemName(row: ExpenseRow): string {
+  if (isPersonalExpenseRow(row)) return row.note || ''
+  return expenseDisplayCategory(row.category)
+}
+
+/** 科目（勘定科目）欄。★導出は expenseAccountCategory だけを使う。
+ *  画面ごとに別のマッピングを書くと、同じ経費が管理画面と帳票で違う科目になる。 */
+function acctCategory(row: ExpenseRow): string {
+  return expenseAccountCategory(row)
+}
 import { elementToPdfBlob, uploadApplicationPdf } from '~/utils/generateExpensePdf'
 
 const { t } = useI18n()
@@ -388,22 +408,38 @@ async function handleApply() {
   }
 }
 
-/** 申請PDFメール送信 function 呼び出し（fire-and-forget） */
-function triggerApplicationEmail(userId: string, periodKey: string, accountSlug: string) {
+/**
+ * 申請PDFメール送信 function 呼び出し（fire-and-forget）
+ *
+ * ★EF側が身元検証するようになったので（2026-08-04）、身元を必ず添える。
+ *  添えないと 401 で弾かれてメールが飛ばない。account_id / user_id は
+ *  EF が検証済みの身元から引き直すので、こちらの申告は当てにされない。
+ */
+async function triggerApplicationEmail(userId: string, periodKey: string, accountSlug: string) {
   const efUrl = config.public.edgeFunctionUrl
   if (!efUrl) return
   const fnPrefix = config.public.appEnv === 'development' ? 'test-' : ''
+  const anonKey = config.public.supabaseAnonKey as string
+  const { data: { session } } = await supabase.auth.getSession()
+  const lineIdToken = (await liff.getIdToken().catch(() => null)) ?? ''
+  // 開発モードは LINE ID token が発行されない。EF はローカルSupabase接続時のみ受け付ける。
+  const devLineUserId = config.public.appEnv === 'development'
+    ? (liff.profile.value?.userId ?? '')
+    : ''
   fetch(`${efUrl}/${fnPrefix}send-expense-application`, {
     method: 'POST',
     keepalive: true,
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.public.supabaseAnonKey}`,
+      apikey: anonKey,
+      'Authorization': session ? `Bearer ${session.access_token}` : `Bearer ${anonKey}`,
     },
     body: JSON.stringify({
       accountSlug,
       user_id: userId,
       period_key: periodKey,
+      line_id_token: lineIdToken,
+      dev_line_user_id: devLineUserId,
     }),
   }).catch(e => console.error('[expense apply] メール送信呼び出し失敗:', e))
 }
@@ -506,7 +542,7 @@ html,body { background:var(--bg);color:var(--text);font-family:var(--font);min-h
 .expense-table { width:100%;border-collapse:collapse;font-size:12px; }
 .expense-table th,.expense-table td { border:1px solid #333;padding:5px 6px; }
 .expense-table thead th { background:#f0f0f0;font-weight:700;text-align:center;font-size:11px; }
-.col-date{width:62px}.col-payee{min-width:90px}.col-content{min-width:90px}.col-reg{width:110px}.col-cat{width:72px}.col-lit{width:28px}.col-site{width:90px}.col-sep{width:18px}.col-amt{width:82px}.col-receipt{width:60px}
+.col-date{width:62px}.col-payee{min-width:90px}.col-content{min-width:90px}.col-reg{width:110px}.col-acct{width:78px}.col-cat{width:72px}.col-lit{width:28px}.col-site{width:90px}.col-sep{width:18px}.col-amt{width:82px}.col-receipt{width:60px}
 .center{text-align:center}.right{text-align:right}.small{font-size:10px}
 .receipt-cell{text-align:center;white-space:nowrap}
 .receipt-link{display:inline-block;font-size:11px;color:var(--accent);text-decoration:none;margin:1px 2px}

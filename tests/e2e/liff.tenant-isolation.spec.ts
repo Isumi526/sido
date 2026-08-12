@@ -23,6 +23,13 @@ test.beforeAll(async () => {
     `psql "${DB_URL}" -c "update auth.users set raw_app_meta_data = coalesce(raw_app_meta_data,'{}'::jsonb) || jsonb_build_object('account_slug','sample-construction','worker_id','${worker}','role','worker'), email_confirmed_at = coalesce(email_confirmed_at, now()) where email='${EMAIL}'"`,
     { stdio: 'ignore' },
   )
+  // ★先に「前回このspecが束ねた作業員」を外す。上の workers?limit=1 は order 無しで
+  //  実行のたびに違う作業員を返すので、外さずに付けるとログイン1つに作業員が積み上がる。
+  //  それは 2026-08-10 の本番障害と同じ壊れた状態で、workers_account_auth_user_unique にも触れる。
+  execSync(
+    `psql "${DB_URL}" -c "update workers set auth_user_id = null where auth_user_id = (select id from auth.users where email='${EMAIL}') and id <> '${worker}'"`,
+    { stdio: 'ignore' },
+  )
   execSync(
     `psql "${DB_URL}" -c "update workers set auth_user_id = (select id from auth.users where email='${EMAIL}') where id='${worker}'"`,
     { stdio: 'ignore' },

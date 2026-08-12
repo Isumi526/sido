@@ -17,11 +17,14 @@ const TS = Date.now()
 const TOKEN = `E2E経費統一_${TS}`
 const VENDOR = `FB商店_${TS}`
 
-// 列: 1日付 2支払先 3インボイス番号 4品名 5ℓ 6現場名 7使用車 8金額
-//  ※客先PDFは品名のみ（科目=勘定科目は社内画面だけ・2026-07-31 レビューで決定）
+// 列: 1日付 2支払先 3インボイス番号 4科目 5品名 6ℓ 7現場名 8使用車 9金額
+//  ★2026-07-31 は「客先PDFは品名のみ・科目は社内画面だけ」と決めていたが、
+//   2026-08-10 に運用者判断で上書き（科目と品名を両方出す）。列が1つ増えたので index がずれている。
+//   逐語:「科目と品名を両方表示する、管理画面にしてもスマホ画面にしても」
 const C_PAYEE = 'td:nth-child(2)'
-const C_CAT = 'td:nth-child(4)'
-const C_VEHICLE = 'td:nth-child(7)'
+const C_ACCT = 'td:nth-child(4)'
+const C_CAT = 'td:nth-child(5)'
+const C_VEHICLE = 'td:nth-child(8)'
 
 test.describe('経費 統一フォーマット(内容廃止/使用車/品名/支払先fallback)', () => {
   let uid = ''
@@ -61,9 +64,9 @@ test.describe('経費 統一フォーマット(内容廃止/使用車/品名/支
     // 内容列が無い（ヘッダに「内　容」が無い）
     await expect(page.locator('.expense-table thead')).not.toContainText('内　容')
     await expect(page.locator('.expense-table thead')).toContainText('使用車')
-    // 科目(勘定科目)は社内画面だけ＝客先PDFには出さない（2026-07-31 レビューで決定）
-    await expect(page.locator('.expense-table thead'), '科目列は無い').not.toContainText('科　目')
-    await expect(page.locator('.expense-table tbody'), '勘定科目名が出ない').not.toContainText('旅費交通費')
+    // ★科目列を出す（2026-07-31「出さない」→ 2026-08-10 運用者判断で上書き）。
+    //  会計仕訳に使う言葉（旅費交通費/車両費）を帳票にも載せる、という判断。
+    await expect(page.locator('.expense-table thead'), '科目列が有る').toContainText('科　目')
     // インボイス番号ラベルへの統一は維持
     await expect(page.locator('.expense-table thead')).toContainText('インボイス番号')
 

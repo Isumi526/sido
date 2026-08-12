@@ -84,14 +84,14 @@
         <FormSection num="03" :title="$t('report.gasolineSection')">
           <!-- 給油有無（大半の日は給油なし。あり の時だけ金額・領収書を表示） -->
           <label class="hours-label">{{ $t('report.gasolineFueledLabel') }}</label>
-          <select :value="gasFueled ? 'yes' : 'no'" class="select mt4" @change="setGasFueled(($event.target as HTMLSelectElement).value === 'yes')">
+          <select :value="gasFueled ? 'yes' : 'no'" class="select mt4" data-testid="gas-fueled" @change="setGasFueled(($event.target as HTMLSelectElement).value === 'yes')">
             <option value="no">{{ $t('report.gasolineFueledNo') }}</option>
             <option value="yes">{{ $t('report.gasolineFueledYes') }}</option>
           </select>
 
           <template v-if="gasFueled">
             <!-- 給油1回ぶん＝1明細。複数給油はカードを追加 -->
-            <div v-for="(g, gi) in report.form.value.gasolineItems" :key="g._id ?? gi" class="lineitem-card mt8">
+            <div v-for="(g, gi) in report.form.value.gasolineItems" :key="g._id ?? gi" class="lineitem-card mt8" :data-testid="`gas-item-${gi}`">
               <!-- ① 領収書＋AI解析（手入力より上） -->
               <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
               <AttachedFilesBadge :files="gasFilesById[g._id ?? -1] ?? []" :urls="g.fileUrls" @remove-file="(p) => removeGasFile(g, p)" />
@@ -104,7 +104,7 @@
               </div>
               <!-- ② 手入力（支払い先・金額・登録番号） -->
               <div class="lineitems-row mt6">
-                <input v-model="g.payee" type="text" class="input" :placeholder="$t('report.gasPayeePlaceholder')" @keydown.enter.prevent />
+                <input v-model="g.payee" type="text" class="input" :data-testid="`gas-payee-${gi}`" :placeholder="$t('report.gasPayeePlaceholder')" @keydown.enter.prevent />
                 <ExpenseField v-model="g.yen" v-model:tategae="g.tategae" with-tategae :label="$t('report.gasolineCost')" />
                 <button v-if="(report.form.value.gasolineItems?.length ?? 0) > 1" type="button" class="btn-icon-sm" @click="report.removeGasolineItem(gi)">✕</button>
               </div>
@@ -493,7 +493,7 @@
                 <option value="あり">{{ $t('report.optYes') }}</option>
               </select>
               <template v-if="siteUsage[si].other === 'あり'">
-                <div v-for="(ot, oi) in site.expenses.others" :key="oi" class="lineitem-card mt6">
+                <div v-for="(ot, oi) in site.expenses.others" :key="oi" class="lineitem-card mt6" :data-testid="`other-item-${si}-${oi}`">
                   <div>
                     <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
                     <AttachedFilesBadge :files="ot.files" :urls="ot.fileUrls" @remove-file="(p) => removeItemFile(ot, p)" />
@@ -553,6 +553,7 @@
           <textarea
             v-model="report.form.value.note"
             class="textarea"
+            data-testid="report-note"
             :placeholder="$t('report.notePlaceholder')"
             rows="3"
           />
@@ -724,6 +725,13 @@ const proxy   = useProxyMode()
 // 「過去日の日報です」表示に使う今日（JSTローカル基準。UTC基準だと深夜0-9時JSTに
 // 前日となり、当日の日報が過去日扱いで警告表示されてしまう）
 const todayJst = computed(() => todayStr())
+// 退勤打刻の完了画面から引き継ぐ日付・現場（?date=YYYY-MM-DD&site=<現場名>）。
+//  日付の形式が違うものは無視する（不正な値で date を壊さない）。
+const prefillDate = computed(() => {
+  const d = route.query.date as string | undefined
+  return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : ''
+})
+const prefillSite = computed(() => (route.query.site as string | undefined) ?? '')
 // 現場の新規作成は権限者(admin/office/site_manager)のみ。職人は既存現場から選ぶ
 const { resolveRole: resolveWorkerRole, canCreateSite } = useWorkerPermission()
 
@@ -1479,6 +1487,20 @@ onMounted(async () => {
   if (editDate) {
     isEditMode.value = true
     await loadEditData(editDate)
+  } else if (prefillDate.value) {
+    // ★退勤打刻からの遷移: ?date=YYYY-MM-DD&site=<現場名>
+    //  打刻した日と現場をそのまま引き継ぐ（また選び直させない）。
+    //  ここで未送信日の自動セットをしないのが肝——打刻したのは「今日」なのに、
+    //  もっと古い未送信日が残っていると、そちらへ飛ばされて別の日の日報を書かせてしまう。
+    report.form.value.date = prefillDate.value
+    const name = prefillSite.value
+    const s0 = report.form.value.sites[0]
+    // 現場名はマスタに在るものだけ入れる。無い名前を入れると select が候補に無くて空表示になり、
+    // 「現場が入っているように見えて実は未選択」という一番たちの悪い状態になる。
+    if (name && s0 && !s0.siteName && master.siteWorkTimes.value[name] !== undefined) {
+      s0.siteName = name
+      onSiteChange(0)   // 固定勤務時刻・既定休憩を、通常の現場選択とまったく同じ経路で適用する
+    }
   } else if (userId) {
     // 新規モード: 最初の未送信日を自動セット（代理モード時は代理先を確認）
     let nextDate: string | null
@@ -1838,6 +1860,10 @@ async function handleSubmit() {
             leaveType:  isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null,
             sites:      report.form.value.sites,
             note:       report.form.value.note,
+            // ★どちらも金額に効く（出張手当 +¥3,000/日・本日のガソリン代）。
+            //   渡し漏れると書き換えても編集履歴が空になり、承認の監査が成立しない
+            isBusinessTrip: report.form.value.isBusinessTrip,
+            gasolineItems:  report.form.value.gasolineItems,
           })
         : []
 

@@ -247,6 +247,11 @@ Deno.serve(async (req) => {
         total_amount:      amount,
         invoice_date:      nowIso.slice(0, 10),
         source:            'portal',
+        // ★注文書の合計金額は「税込」として業者に提示している（purchase-orders.vue の注文書表示）。
+        //  その金額をそのまま明細 amount に入れるので、この請求は内税＝tax_mode='inclusive'。
+        //  既定の 'exclusive' のままだと管理画面が amount にもう一度10%を足し、
+        //  業者が請求した額より約10%多く見える（＝消費税の二重計上）。
+        tax_mode:          'inclusive',
         note:              invoiceMode === 'full' ? '全額請求（業者ポータル）' : '出来高請求（業者ポータル）',
       }).select('id').single()
       if (invErr || !inv) return json({ ok: false, error: 'invoice_insert_failed' }, 500)

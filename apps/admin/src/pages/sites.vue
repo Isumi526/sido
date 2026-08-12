@@ -14,8 +14,9 @@
 
     <!-- 有効 / 無効化済み タブ -->
     <div class="status-tabs">
-      <button class="status-tab" :class="{ active: statusFilter === 'active' }" @click="statusFilter = 'active'">有効 <span class="tab-count">{{ sites.filter(s => s.active).length }}</span></button>
-      <button class="status-tab" :class="{ active: statusFilter === 'inactive' }" @click="statusFilter = 'inactive'">無効化済み <span class="tab-count">{{ sites.filter(s => !s.active).length }}</span></button>
+      <!-- 件数も一覧と同じ母集団（システム用バケットを除く）で数える。ズレると不審に見える -->
+      <button class="status-tab" :class="{ active: statusFilter === 'active' }" @click="statusFilter = 'active'">有効 <span class="tab-count">{{ listableSites.filter(s => s.active).length }}</span></button>
+      <button class="status-tab" :class="{ active: statusFilter === 'inactive' }" @click="statusFilter = 'inactive'">無効化済み <span class="tab-count">{{ listableSites.filter(s => !s.active).length }}</span></button>
     </div>
 
     <!-- AC3: 検索・並び替え -->
@@ -61,7 +62,7 @@
         <!-- ① 識別情報（名前・かな・住所） -->
         <div class="field">
           <label>現場名</label>
-          <input v-model="modal.name" class="input" placeholder="例：BLH名古屋" />
+          <input v-model="modal.name" class="input" placeholder="例：○○ビル 内装工事" />
           <div v-if="similarSites.length" class="dup-warn">
             <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">warning</span> 似た現場が既にあります（重複登録に注意）：
             <button
@@ -73,7 +74,7 @@
         </div>
         <div class="field">
           <label>読み仮名（50音順の並びに使用）</label>
-          <input v-model="modal.name_kana" class="input" placeholder="例：びーえるえいちなごや" />
+          <input v-model="modal.name_kana" class="input" placeholder="例：まるまるびる ないそうこうじ" />
         </div>
         <div class="field">
           <label>場所 / 住所</label>
@@ -125,6 +126,22 @@
           </div>
           <button type="button" class="btn-ghost" style="padding:4px 10px;font-size:13px" data-testid="add-break" @click="addBreak">＋ 休憩を追加</button>
           <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">設定すると<b>新規</b>日報でこの現場を選んだ時に休憩がこの時間帯になり、稼働時間・人件費に反映されます（開始時刻が深夜/残業帯なら割増分が減る）。未設定＝役割×勤務時間の自動計算のまま。過去の日報は変わりません。</p>
+        </div>
+        <!-- ④'' 実働時間の自動計算。設定しながら「結局何時間勤務になるのか」が分からないという要望（2026-08-10）。
+             ★数字は日報・人件費と同じ computeWorkerHours から出す（自前計算にしない）。 -->
+        <div v-if="hoursPreview" class="hours-preview" data-testid="hours-preview">
+          <div class="hp-main">
+            実働 <b data-testid="hours-preview-worked">{{ hoursPreview.workedH }}</b> 時間
+            <span class="hp-sub">（拘束 {{ hoursPreview.spanH }}h − 休憩 {{ hoursPreview.breakH }}h）</span>
+          </div>
+          <div v-if="hoursPreview.otH || hoursPreview.nightH || hoursPreview.overnight" class="hp-tags">
+            <span v-if="hoursPreview.otH" class="hp-tag" data-testid="hours-preview-ot">うち残業 {{ hoursPreview.otH }}h</span>
+            <span v-if="hoursPreview.nightH" class="hp-tag">うち深夜 {{ hoursPreview.nightH }}h</span>
+            <span v-if="hoursPreview.overnight" class="hp-tag">日をまたぐ勤務として計算</span>
+          </div>
+          <div v-if="hoursPreview.ignored" class="hp-warn" data-testid="hours-preview-ignored">
+            休憩{{ hoursPreview.ignored }}件が勤務時間の外にあります。実働からは引かれません。
+          </div>
         </div>
         <!-- ⑤ メモ -->
         <div class="field">
@@ -208,7 +225,7 @@
         </div>
 
         <!-- 見積書（金額入り）は経営系＝現場管理者には出さない（2026-07-31 レビュー指摘） -->
-        <div v-if="modal.id && canViewManagementPages" class="field">
+        <div v-if="modal.id && canViewEstimates" class="field">
           <label>この現場の見積書</label>
           <div v-if="siteEstimates.length" class="att-list" data-testid="site-estimates">
             <div v-for="e in siteEstimates" :key="e.id" class="att-item">
@@ -253,7 +270,10 @@ import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { useQueryParam } from '../composables/useQueryParam'
 import { currentUser, canViewManagementPages } from '../lib/auth'
+import { canViewEstimates } from '../lib/features'
 import { findSimilarSiteNames } from '../lib/siteSimilarity'
+import { computeWorkerHours, parseMin } from '../lib/workerHours'
+import { logOperation } from '../lib/operationLog'
 
 const router = useRouter()
 
@@ -431,9 +451,15 @@ const q          = useQueryParam('q', '')                                  // UR
 // 既定は『有効のみ』表示（無効現場はデフォルト非表示・フィルタで切替可）
 const statusFilter = useQueryParam<'active' | 'inactive'>('status', 'active')   // ?status= 有効/無効化済みタブ
 const sortBy     = useQueryParam<'kana' | 'recent'>('sort', 'kana')             // ?sort= 並び順
+// ★システム用のバケット行は現場マスタに出さない。
+//   「現場未設定」の日報を受けるための内部行で、人が編集・無効化するものではない。
+//   実際に `__unset__` という見慣れない名前がゴミデータに見えて誤って無効化された
+//   （2026-08-03・他の画面では siteKey.ts が「現場未設定」に変換して扱っている）。
+const listableSites = computed(() => sites.value.filter((s) => s.name !== '__unset__'))
+
 const filtered = computed(() => {
   const kw = q.value.trim().toLowerCase()
-  let list = sites.value.filter((s) => {
+  let list = listableSites.value.filter((s) => {
     if (statusFilter.value === 'active' && !s.active) return false
     if (statusFilter.value === 'inactive' && s.active) return false
     if (!kw) return true
@@ -451,6 +477,52 @@ const filtered = computed(() => {
 function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', default_breaks: [], responsible_worker_id: myWorkerId.value ?? null, linkedSubs: [], shareUsers: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = ''; modalRules.value = []; clearPendingAtts(); markFormOpened(); fetchRuleHistory() }
 function addBreak()    { if (!modal.value) return; (modal.value.default_breaks ??= []).push({ start: '12:00', minutes: 60 }) }
 function removeBreak(i: number) { modal.value?.default_breaks?.splice(i, 1) }
+
+/**
+ * 設定中の固定勤務時刻＋既定休憩から「この現場は何時間勤務になるか」を出す（2026-08-10 運用者要望）。
+ * ★必ず computeWorkerHours を通す。ここで span-休憩 を自前で引き算すると、
+ *  日報・人件費が使う実際の計算（15分刻み・勤務外休憩の無視・日跨ぎ）とズレて、
+ *  「設定画面では8時間なのに集計は7.75時間」という説明できない食い違いになる。
+ */
+const hoursPreview = computed(() => {
+  const m = modal.value
+  if (!m) return null
+  const s = (m.default_start_time || '').slice(0, 5)
+  const e = (m.default_end_time || '').slice(0, 5)
+  if (!/^\d{2}:\d{2}$/.test(s) || !/^\d{2}:\d{2}$/.test(e)) return null
+
+  const breaks = (m.default_breaks ?? [])
+    .filter((b: any) => b?.start && Number(b.minutes) > 0)
+    .map((b: any) => ({ start: String(b.start).slice(0, 5), minutes: Number(b.minutes) }))
+
+  const startMin = parseMin(s)
+  let endMin = parseMin(e)
+  const overnight = endMin <= startMin
+  if (overnight) endMin += 1440
+  const spanMin = endMin - startMin
+  if (spanMin <= 0) return null
+
+  // ★勤務時間の外に置いた休憩は computeWorkerHours が無視する＝実働から引かれない。
+  //  黙って数字が合わないと「設定したのに反映されない」と見えるので、件数を出して気づかせる。
+  const ignored = breaks.filter((b) => {
+    let bs = parseMin(b.start)
+    if (bs < startMin) bs += 1440
+    return bs + b.minutes <= startMin || bs >= endMin
+  }).length
+
+  const r = computeWorkerHours(s, e, 0, false, 0, breaks.length ? breaks : null)
+  const otH = r.hoursOT + r.hoursOTNight
+  const h = (min: number) => (min / 60).toFixed(2).replace(/\.?0+$/, '')
+  return {
+    workedH:  h(r.workedMin),
+    spanH:    h(spanMin),
+    breakH:   h(Math.max(0, spanMin - r.workedMin)),
+    otH:      otH > 0 ? String(otH) : '',
+    nightH:   r.hoursNight + r.hoursOTNight > 0 ? String(r.hoursNight + r.hoursOTNight) : '',
+    overnight,
+    ignored,
+  }
+})
 
 // アカウント内の既存現場ルールを重複排除して候補化（新規現場のルール設定を素早くするため・site-rules.vue と同方針）
 async function fetchRuleHistory() {
@@ -481,7 +553,7 @@ async function openEdit(s: Site) {
   siteEstimates.value = []
   clearPendingAtts()
   // 見積書は表示しないロールでは取得もしない（非表示なのに読むと無駄＋漏洩面が広がる）
-  await Promise.all([loadAttachments(s.id), canViewManagementPages.value ? loadSiteEstimates(s.id) : Promise.resolve()])
+  await Promise.all([loadAttachments(s.id), canViewEstimates.value ? loadSiteEstimates(s.id) : Promise.resolve()])
   markFormOpened()   // 非同期ロード後に dirty 監視を開始（ロード自体を編集と誤認しない）
 }
 
@@ -630,8 +702,27 @@ async function removeAttachment(a: Att) {
   if (modal.value?.id) await loadAttachments(modal.value.id)
 }
 
+// 現場の有効/無効を切り替える。
+// ★無効化だけ確認を挟む（2026-08-03 に誤って現場を1つ無効化し、どれを消したのか
+//   本人も分からなくなった事故が発生）。有効化は元に戻す方向なので確認しない。
+// ★切替は operation_logs に必ず残す。当時 sites に updated_at も操作ログも無く、
+//   特定にトランザクションID(xmin)を見るしかなかった＝後から追えない状態だった。
 async function toggleActive(s: Site) {
-  await supabase.from('sites').update({ active: !s.active }).eq('id', s.id)
+  if (s.active) {
+    const ok = window.confirm(
+      `現場「${s.name}」を無効にしますか？\n\n`
+      + '・日報や予定の現場プルダウンに出なくなります\n'
+      + '・過去の日報・集計はそのまま残ります\n'
+      + '・「無効化済み」タブからいつでも有効に戻せます',
+    )
+    if (!ok) return
+  }
+  const next = !s.active
+  const { error } = await supabase.from('sites').update({ active: next }).eq('id', s.id)
+  if (error) { alert(`現場の${next ? '有効化' : '無効化'}に失敗しました: ${error.message}`); return }
+  await logOperation(next ? '現場を有効化' : '現場を無効化', {
+    targetType: 'site', targetId: s.id, summary: s.name,
+  })
   await load()
 }
 
@@ -736,6 +827,15 @@ async function doMerge() {
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .modal { background: #fff; border-radius: 12px; padding: 32px; width: min(560px, 92vw); display: flex; flex-direction: column; gap: 20px; max-height: 90vh; overflow-y: auto; }
 .modal h2 { font-size: 18px; font-weight: 700; }
+/* 実働時間の自動計算（固定勤務時刻＋既定休憩の結果） */
+.hours-preview { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid #d7e6dc; border-left: 3px solid #06C755; border-radius: 6px; background: #f5faf7; }
+.hp-main { font-size: 14px; color: #1f2937; font-variant-numeric: tabular-nums; }
+.hp-main b { font-size: 18px; }
+.hp-sub { font-size: 12px; color: #64748b; margin-left: 4px; }
+.hp-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.hp-tag { font-size: 11px; font-weight: 700; color: #4338ca; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+.hp-warn { font-size: 12px; color: #b45309; }
+
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label { font-size: 12px; font-weight: 700; color: #888; }
 .sub-link-list { display: flex; flex-direction: column; gap: 4px; max-height: 160px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; padding: 8px 10px; background: #fafafa; }

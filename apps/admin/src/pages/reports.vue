@@ -107,6 +107,11 @@
               <template v-if="attendanceFor(r, site)?.checkin || attendanceFor(r, site)?.checkout"><span class="material-symbols-rounded" style="font-size:12px;vertical-align:middle;line-height:1;color:#16a34a">circle</span> 出勤 {{ attendanceFor(r, site)?.checkin ?? '—' }} / 退勤 {{ attendanceFor(r, site)?.checkout ?? '—' }}</template>
               <span v-else class="no-punch">打刻なし</span>
             </span>
+            <!-- ★実打刻と作業時刻（＝人件費の根拠）のズレ。2026-08-10 の電話で
+                 「実際打った時間と、管理者が決めた8時半・6時と…それが出てくればそれでいい」。
+                 実打刻と作業時刻は既に上に出ているので、足りなかった『差』だけをここに出す。 -->
+            <span v-for="d in punchDiffs(r, site)" :key="d.key" class="punch-diff"
+              :class="{ big: d.big }" :data-testid="`punch-diff-${d.key}`">{{ d.label }}</span>
           </div>
         </div>
         <div class="card-actions">
@@ -359,6 +364,17 @@
             </div>
           </div>
         </div>
+
+        <!-- ★この日報の承認履歴（誰がいつ承認/差戻ししたか）への導線。
+             編集理由は「何を直したか」、承認履歴は「それが通ったか」で別物なので分けて出す。 -->
+        <div v-if="reviewHistoryCount" class="section" data-testid="review-history-link-section">
+          <div class="section-label">承認履歴</div>
+          <RouterLink
+            class="review-history-link"
+            data-testid="review-history-link"
+            :to="{ path: '/report-edit-review', query: { reportId: selected.id } }"
+          >この日報の承認履歴を見る（{{ reviewHistoryCount }}件） →</RouterLink>
+        </div>
       </div>
     </div>
   </div>
@@ -372,6 +388,7 @@ import { useQueryParam } from '../composables/useQueryParam'
 import { HIDE_LINE_SECTIONS } from '../lib/featureFlags'
 import { effectiveBreakMinutes, laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE, type RateBreakdown } from '../lib/workerHours'
 import { canViewWages, currentUser } from '../lib/auth'
+import { punchDiffLabel, isPunchDiffBig, isPunchDiffWorthShowing } from '../lib/attendanceDiff'
 
 const EDGE_URL  = import.meta.env.VITE_SUPABASE_EDGE_URL as string
 const ANON_KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY as string
@@ -436,18 +453,34 @@ const selected = ref<any | null>(null)
 //  liff で日報を編集した時に 1編集=1行 で追記される。日報を開いた時だけ読む
 //  （一覧で全件JOINすると大半の日報にログが無く無駄が大きいため）。
 const editLogs = ref<any[]>([])
+// この日報に承認/差戻しの履歴が何件あるか。0件なら導線を出さない
+// （出すと「履歴はまだありません」に飛ばすだけの空リンクになる）。
+const reviewHistoryCount = ref(0)
 watch(selected, async (r) => {
   editLogs.value = []
+  reviewHistoryCount.value = 0
   if (!r?.id) return
-  const { data, error } = await supabase
-    .from('daily_report_edit_logs')
-    .select('id, reason, diffs, edited_by_name, created_at')
-    .eq('account_id', await getAccountId())
-    .eq('report_id', r.id)
-    .order('created_at', { ascending: false })
+  const accountId = await getAccountId()
+  const [{ data, error }, { count }] = await Promise.all([
+    supabase
+      .from('daily_report_edit_logs')
+      .select('id, reason, diffs, edited_by_name, created_at')
+      .eq('account_id', accountId)
+      .eq('report_id', r.id)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('daily_report_pending_edits')
+      .select('id', { count: 'exact', head: true })
+      .eq('account_id', accountId)
+      .eq('report_id', r.id)
+      .in('status', ['approved', 'rejected']),
+  ])
   if (error) { console.error('[reports] 編集理由の取得に失敗:', error); return }
   // 開き直しの競合で古い日報のログが残らないように、取得後に対象が変わっていないか確認する
-  if (selected.value?.id === r.id) editLogs.value = data ?? []
+  if (selected.value?.id === r.id) {
+    editLogs.value = data ?? []
+    reviewHistoryCount.value = count ?? 0
+  }
 })
 
 /** 編集日時。日付をまたいだ編集が分かるよう日付ごと出す */
@@ -606,6 +639,28 @@ function siteTripYen(site: any): number {
 // 日報詳細は既定の日当ベース（日当/8h × 稼働時間）で人件費を表示（現場管理者も閲覧OK）
 function calcLaborCost(w: any, dailyWage: number): number {
   return laborCostForBreakdown(selectedBreakdown.value.get(w) ?? ZERO_BREAKDOWN, dailyWage, 0, 'daily')
+}
+
+/**
+ * その現場行に出す「ズレ」チップ。出勤/退勤それぞれ、実打刻と作業時刻の両方が揃った時だけ出す。
+ * ★片方しか無い時に 0 や — を出さない（無いものを在るように見せない）。
+ */
+function punchDiffs(r: any, site: any): { key: string; label: string; big: boolean }[] {
+  const att = attendanceFor(r, site)
+  const w = site?.workers?.[0]
+  if (!att || !w) return []
+  const out: { key: string; label: string; big: boolean }[] = []
+  for (const [key, actual, planned, jp] of [
+    ['in', att.checkin, w.startTime, '出勤'],
+    ['out', att.checkout, w.endTime, '退勤'],
+  ] as const) {
+    // ★15分未満は出さない。実運用では全員が数分ズレるので、出すと大きなズレが埋もれる。
+    if (!isPunchDiffWorthShowing(actual, planned)) continue
+    const label = punchDiffLabel(actual, planned)
+    if (!label) continue
+    out.push({ key, label: `${jp} ${label}`, big: isPunchDiffBig(actual, planned) })
+  }
+  return out
 }
 
 function resolveSiteName(site: any): string {
@@ -800,6 +855,9 @@ onUnmounted(() => document.removeEventListener('click', closeWorkerMenu))
 .attendance-tag { font-size: 12px; font-weight: 600; color: #0a8a3a; margin-left: 8px; font-variant-numeric: tabular-nums; }
 .work-time { color: #1a7abf; font-weight: 600; font-variant-numeric: tabular-nums; }
 .attendance { color: #0a8a3a; font-weight: 600; font-variant-numeric: tabular-nums; }
+/* 実打刻と作業時刻のズレ。30分以上は色を変えて気づけるようにする */
+.punch-diff { margin-left: 6px; font-size: 11px; font-weight: 700; color: #475569; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 999px; padding: 1px 8px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.punch-diff.big { color: #b45309; background: #fef3c7; border-color: #fde68a; }
 .no-punch { color: #94a3b8; font-weight: 500; }
 .worker-count { color: #888; }
 
@@ -845,6 +903,8 @@ onUnmounted(() => document.removeEventListener('click', closeWorkerMenu))
 .edit-log-reason { font-size: 14px; color: #333; white-space: pre-wrap; margin-top: 2px; }
 .edit-log-diffs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .edit-log-diff { font-size: 12px; color: #555; background: #fff; border: 1px solid #e5e7eb; border-radius: 999px; padding: 2px 8px; }
+.review-history-link { font-size: 13px; color: #2563eb; text-decoration: none; font-weight: 700; }
+.review-history-link:hover { text-decoration: underline; }
 .receipt-urls { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0 8px; }
 .receipt-link { font-size: 11px; color: #06C755; text-decoration: none; background: #e8fff0; padding: 2px 8px; border-radius: 4px; }
 .receipt-link:hover { text-decoration: underline; }

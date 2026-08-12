@@ -29,6 +29,29 @@
       <button class="btn-search" @click="load">検索</button>
     </div>
 
+    <!-- ★出勤打刻の抜けに気づくためのパネル（2026-08-10）。
+         朝の出勤打刻を必須運用にするが、システムでブロックはしない方針
+         （逐語:「そこの制限は、そこまで厳しくできない」）ので、ここで見えるようにするだけ。 -->
+    <div class="missing-panel" data-testid="missing-checkin-panel">
+      <div class="mp-head">
+        <span class="material-symbols-rounded mp-icon">event_busy</span>
+        <span class="mp-title">出勤打刻なし</span>
+        <input v-model="missingDate" type="date" class="filter-input" data-testid="missing-date" />
+      </div>
+      <div v-if="missingLoading" class="mp-body">確認中…</div>
+      <div v-else-if="missingError" class="mp-body mp-err" data-testid="missing-error">
+        確認できませんでした（0件ではありません）。再読み込みしてください。
+      </div>
+      <div v-else-if="!missingWorkers.length" class="mp-body mp-ok" data-testid="missing-none">
+        この日の出勤打刻は全員そろっています
+      </div>
+      <div v-else class="mp-body">
+        <span class="mp-count" data-testid="missing-count">{{ missingWorkers.length }}名</span>
+        <span class="mp-names">{{ missingWorkers.join(' / ') }}</span>
+        <p class="mp-note">※ 日報で「稼働なし（休み・有給）」を出している人は除いています。まだ日報が無い人は含まれます。</p>
+      </div>
+    </div>
+
     <div v-if="loading" class="empty">読み込み中...</div>
     <div v-else-if="logs.length === 0" class="empty">該当するログがありません</div>
 
@@ -106,7 +129,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 
@@ -146,6 +169,15 @@ function fmtDateTime(iso: string) {
   return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
+// ── 日付(YYYY-MM-DD) → その日のローカル時刻での開始/終了を UTC の ISO で返す ──
+//  ★'2026-09-24T00:00:00' のようなタイムゾーン無しの文字列をそのまま渡すと、
+//   Postgres は UTC として解釈する。JST の朝6:02 の打刻は UTC では前日21:02 なので、
+//   「その日」の範囲から落ちて存在しないことになる＝早朝出勤がまるごと消える。
+//   （2026-08-10 に E2E で検知。早朝搬入は実際にある運用。逐語:「朝6時からやってくださいみたいなこと言う」）
+//   Date に日付＋時刻だけ渡すとローカル時刻として解釈されるので、それを ISO(UTC) に直して渡す。
+const dayStartIso = (d: string) => new Date(`${d}T00:00:00`).toISOString()
+const dayEndIso   = (d: string) => new Date(`${d}T23:59:59.999`).toISOString()
+
 async function loadMasters() {
   const accountId = await getAccountId()
   const [{ data: siteData }, { data: workerData }] = await Promise.all([
@@ -184,23 +216,86 @@ async function load() {
   if (filterSiteId.value)   query = query.eq('site_id', filterSiteId.value)
   if (filterWorkerId.value) query = query.eq('worker_id', filterWorkerId.value)
   if (filterType.value)     query = query.eq('type', filterType.value)
-  if (filterFrom.value)     query = query.gte('checked_at', filterFrom.value)
-  if (filterTo.value)       query = query.lte('checked_at', filterTo.value + 'T23:59:59')
+  if (filterFrom.value)     query = query.gte('checked_at', dayStartIso(filterFrom.value))
+  if (filterTo.value)       query = query.lte('checked_at', dayEndIso(filterTo.value))
 
   const { data } = await query
   logs.value    = (data ?? []) as unknown as Log[]
   loading.value = false
 }
 
+// ── 出勤打刻なしの作業員（AC6）──
+//  ★「打刻が無い」は行が存在しないことなので、ログ一覧を眺めても絶対に気づけない。
+//   だから在籍者との差分をこちらから出す。
+const todayLocal = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+const missingDate    = ref(todayLocal())
+const missingWorkers = ref<string[]>([])
+const missingLoading = ref(true)
+const missingError   = ref(false)
+
+async function loadMissing() {
+  missingLoading.value = true
+  missingError.value = false
+  try {
+    const accountId = await getAccountId()
+    const from = dayStartIso(missingDate.value)
+    const to   = dayEndIso(missingDate.value)
+
+    const { data: actives } = await supabase.from('workers')
+      .select('id, name').eq('account_id', accountId).eq('active', true)
+    const list = (actives ?? []) as Worker[]
+    if (!list.length) { missingWorkers.value = []; return }
+    const ids = list.map((w) => w.id)
+
+    const [{ data: punched }, { data: offUsers }] = await Promise.all([
+      supabase.from('attendance_logs').select('worker_id')
+        .eq('type', 'checkin').gte('checked_at', from).lte('checked_at', to).in('worker_id', ids),
+      // 休み/有給を出している人は「打刻忘れ」ではない。毎日全員が並ぶと誰も見なくなるので除く。
+      supabase.from('daily_reports').select('user_id, users(worker_id)')
+        .eq('account_id', accountId).eq('date', missingDate.value).eq('is_working', false),
+    ])
+    const punchedSet = new Set((punched ?? []).map((r: any) => r.worker_id))
+    const offSet     = new Set((offUsers ?? []).map((r: any) => r.users?.worker_id).filter(Boolean))
+
+    missingWorkers.value = list
+      .filter((w) => !punchedSet.has(w.id) && !offSet.has(w.id))
+      .map((w) => w.name)
+      .sort((a, b) => a.localeCompare(b, 'ja'))
+  } catch {
+    // ★取れなかった時に「全員そろっています」と出すのが一番まずい（安心して見逃される）。
+    //  0件と「測れなかった」を混同しない。
+    missingWorkers.value = []
+    missingError.value = true
+  } finally {
+    missingLoading.value = false
+  }
+}
+watch(missingDate, () => { loadMissing() })
+
 onMounted(async () => {
   await loadMasters()
-  await load()
+  await Promise.all([load(), loadMissing()])
 })
 </script>
 
 <style scoped>
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .page-title  { font-size: 22px; font-weight: 700; }
+
+/* 出勤打刻なしパネル */
+.missing-panel { border: 1px solid #e5e7eb; border-left: 3px solid #f59e0b; border-radius: 6px; background: #fffbeb; padding: 10px 14px; margin-bottom: 16px; }
+.mp-head { display: flex; align-items: center; gap: 8px; }
+.mp-icon { font-size: 18px; color: #b45309; }
+.mp-title { font-size: 13px; font-weight: 700; color: #92400e; }
+.mp-body { margin-top: 6px; font-size: 13px; color: #1f2937; }
+.mp-ok { color: #15803d; }
+.mp-err { color: #b91c1c; font-weight: 700; }
+.mp-count { font-weight: 700; margin-right: 8px; font-variant-numeric: tabular-nums; }
+.mp-names { color: #374151; }
+.mp-note { font-size: 11px; color: #92400e; margin-top: 4px; }
 
 .filter-bar {
   display: flex;

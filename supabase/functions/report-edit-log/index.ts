@@ -66,6 +66,16 @@ async function verifyLineIdToken(idToken: string): Promise<string | null> {
 
 interface Caller { accountId: string; userId: string | null; name: string | null }
 
+/**
+ * 1つのログインに workers が複数ぶら下がっている状態。
+ * ★2026-08-10 の本番障害の真因。maybeSingle() は複数行で PGRST116 を返して data=null になり、
+ *  error を見ていないと「身元不明」と区別がつかない。身元不明を黙って進めると、
+ *  下流の「target !== caller.userId(null) ＝ 代理入力だ」という判定に化けて自分の申請が403で消える。
+ *  ここで明示的に区別し、呼び出し側で専用エラーを返す。
+ */
+const AMBIGUOUS = Symbol('ambiguous-identity')
+type CallerResult = Caller | null | typeof AMBIGUOUS
+
 async function callerFromLineUserId(svc: any, lineUserId: string): Promise<Caller | null> {
   const { data: u } = await svc.from('users')
     .select('id, account_id, real_name').eq('line_user_id', lineUserId).maybeSingle()
@@ -75,7 +85,7 @@ async function callerFromLineUserId(svc: any, lineUserId: string): Promise<Calle
 /** 検証済みの身元から account_id と「編集した人」を解決する（クライアント申告は使わない） */
 async function resolveCaller(
   svc: any, authHeader: string, lineIdToken: string, devLineUserId: string,
-): Promise<Caller | null> {
+): Promise<CallerResult> {
   // (1) Supabase JWT（admin / email-pw 作業員）
   if (authHeader && !authHeader.endsWith(ANON_KEY)) {
     const cli = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: authHeader } } })
@@ -87,13 +97,18 @@ async function resolveCaller(
       const { data: acct } = await svc.from('accounts').select('id').eq('slug', slug).maybeSingle()
       const accountId = acct?.id
       if (accountId) {
-        // 表示名は users 行から引く。無くてもログ自体は残す（account だけは必ず確定させる）
-        const { data: w } = await svc.from('workers').select('id, name')
-          .eq('auth_user_id', authUserId).eq('account_id', accountId).maybeSingle()
-        const { data: u } = w?.id
+        // ★maybeSingle() を使わない。複数行を「0行」と同じ null に潰してしまうため
+        //  （それが 2026-08-10 の障害）。件数を自分で見て、曖昧なら曖昧と言う。
+        const { data: ws } = await svc.from('workers').select('id, name')
+          .eq('auth_user_id', authUserId).eq('account_id', accountId).limit(2)
+        if ((ws?.length ?? 0) > 1) return AMBIGUOUS
+        const w = ws?.[0] ?? null
+        const { data: us } = w?.id
           ? await svc.from('users').select('id, real_name')
-              .eq('worker_id', w.id).eq('account_id', accountId).maybeSingle()
+              .eq('worker_id', w.id).eq('account_id', accountId).limit(2)
           : { data: null }
+        if ((us?.length ?? 0) > 1) return AMBIGUOUS
+        const u = us?.[0] ?? null
         return { accountId, userId: u?.id ?? null, name: u?.real_name ?? w?.name ?? null }
       }
     }
@@ -126,6 +141,27 @@ function sanitizePayload(p: any): Record<string, unknown> | null {
  * 承認・差戻し。★Supabase JWT を持つ管理画面からのみ。
  * LINE経路(anon)や LINE ID token では通さない＝作業員が自分の編集を自分で承認できない。
  */
+/**
+ * 承認者の表示名を解決する。workers.auth_user_id → workers.name（admin のロール解決と同じ引き方）。
+ * 見つからなければ email に倒す（氏名が無いより email の方がまだ辿れる）。
+ * ★ここで名前を確定して保存する。表示時に引き直す方式にすると、退職で worker 行が消えた時に
+ *   過去の承認履歴から承認者が消えてしまう＝監査として使えなくなる。
+ */
+async function resolveReviewerName(
+  svc: any, accountId: string, authUserId: string | null, email: string | null,
+): Promise<string | null> {
+  if (authUserId) {
+    // ★account_id でも絞る。auth_user_id は auth ユーザー単位で一意だが、同じ人が
+    //  複数テナントの worker として登録されている場合に別テナント側の氏名を拾いうる。
+    //  service_role のクエリは常にテナントで閉じる（独立レビュー指摘）。
+    const { data: w } = await svc.from('workers')
+      .select('name').eq('auth_user_id', authUserId).eq('account_id', accountId).limit(1).maybeSingle()
+    const name = typeof w?.name === 'string' ? w.name.trim() : ''
+    if (name) return name
+  }
+  return email
+}
+
 async function handleReview(svc: any, body: any, authHeader: string): Promise<Response> {
   if (!authHeader || authHeader.endsWith(ANON_KEY)) return json({ ok: false, error: 'unauthorized' }, 401)
   const cli = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: authHeader } } })
@@ -146,7 +182,12 @@ async function handleReview(svc: any, body: any, authHeader: string): Promise<Re
   if (!pend) return json({ ok: false, error: 'pending_not_found' }, 404)
   if (pend.status !== 'pending') return json({ ok: false, error: 'already_reviewed' }, 409)
 
-  const reviewer = au?.user?.email ?? null
+  // ★承認者は「人が読める名前」で残す。
+  //  以前は au.user.email をそのまま入れていたが、履歴に出るのが
+  //  ログインemailだと「誰が承認したか」が伝わらない（承認履歴の存在意義に直結）。
+  //  admin のロール解決と同じく workers.auth_user_id から氏名を引き、
+  //  worker行が無いアカウント（純粋オーナー等）だけ email に倒す。
+  const reviewer = await resolveReviewerName(svc, accountId, au?.user?.id ?? null, au?.user?.email ?? null)
   const now = new Date().toISOString()
 
   if (body.action === 'reject') {
@@ -172,19 +213,33 @@ async function handleReview(svc: any, body: any, authHeader: string): Promise<Re
   // 編集は既存行を更新／期限切れの新規提出はまだ行が無いので upsert する。
   // late_new でも upsert にするのは、承認までの間に同じ日付が別経路で作られていた場合に
   // 重複行を作らないため（daily_reports は unique(user_id,date)）。
-  const { error: upErr } = pend.kind === 'late_new'
-    ? await svc.from('daily_reports').upsert(
-        { ...cols, account_id: accountId, user_id: pend.report_user_id, date: pend.report_date },
-        { onConflict: 'user_id,date' })
-    : await svc.from('daily_reports').update(cols)
-        .eq('id', pend.report_id).eq('account_id', accountId)
-  if (upErr) {
-    console.error('[report-edit-log] apply failed:', upErr)
-    return json({ ok: false, error: 'apply_failed' }, 500)
+  // ★late_new は承認時に日報が生まれるので、作られた行の id を受け取って
+  //  pending.report_id に書き戻す。これをしないと report_id が NULL のままになり、
+  //  日報詳細の「この日報の承認履歴を見る」（report_id で数えている）が永久に0件になる。
+  //  ＝後出しで出てきた日報こそ誰が承認したか追いたいのに、そこだけ履歴から切れていた（2026-08-10 レビューで発見）。
+  let appliedReportId: string | null = pend.report_id ?? null
+  if (pend.kind === 'late_new') {
+    const { data: up, error: upErr } = await svc.from('daily_reports').upsert(
+      { ...cols, account_id: accountId, user_id: pend.report_user_id, date: pend.report_date },
+      { onConflict: 'user_id,date' })
+      .select('id').maybeSingle()
+    if (upErr) {
+      console.error('[report-edit-log] apply failed:', upErr)
+      return json({ ok: false, error: 'apply_failed' }, 500)
+    }
+    appliedReportId = up?.id ?? null
+  } else {
+    const { error: upErr } = await svc.from('daily_reports').update(cols)
+      .eq('id', pend.report_id).eq('account_id', accountId)
+    if (upErr) {
+      console.error('[report-edit-log] apply failed:', upErr)
+      return json({ ok: false, error: 'apply_failed' }, 500)
+    }
   }
   // ★日報への反映が成功してから承認済みにする。逆順だと「承認済みなのに未反映」が残る
   await svc.from('daily_report_pending_edits').update({
     status: 'approved', reviewed_by_name: reviewer, reviewed_at: now, updated_at: now,
+    ...(appliedReportId ? { report_id: appliedReportId } : {}),
   }).eq('id', id)
   return json({ ok: true, status: 'approved' })
 }
@@ -209,17 +264,37 @@ Deno.serve(async (req) => {
     typeof body.line_id_token === 'string' ? body.line_id_token : '',
     typeof body.dev_line_user_id === 'string' ? body.dev_line_user_id : '',
   )
+  // ★曖昧（1ログインに作業員が複数）は「未認証」とは別物として返す。401 に混ぜると
+  //  「ログインし直してください」と案内されて永久に直らない（本人にはどうにもできない）。
+  if (caller === AMBIGUOUS) {
+    console.error('[report-edit-log] ambiguous identity: 1つのログインに workers/users が複数紐づいています')
+    return json({ ok: false, error: 'ambiguous_identity' }, 409)
+  }
   if (!caller) return json({ ok: false, error: 'unauthorized' }, 401)
+  // ★身元（userId）が確定しないまま先へ進めない。以前はここを素通りさせていたため、
+  //  監査ログだけ申請者NULLで残り、下流で「代理入力」と誤判定されて403で申請が消えた
+  //  （2026-08-10 本番障害・6回分の申請が承認画面に出なかった）。
+  if (!caller.userId) {
+    console.error('[report-edit-log] caller.userId 未確定（users行が無い）: account=', caller.accountId)
+    return json({ ok: false, error: 'user_not_registered' }, 409)
+  }
 
   // 作業員側に「自分が承認待ちにしている日付」だけ返す（中身は返さない）。
   //  ★次の未送信日の判定と、履歴の承認待ち表示に使う。これが無いと
   //    承認待ちの日を飛ばせず同じ日付が出続け、まとめて提出できない。
   if (body.action === 'pending-dates') {
+    // ★payload も返す。履歴の「承認待ち」カードに送信内容（現場・作業員・時間・経費）を
+    //  出すために要る。返すのは caller 本人（EFで身元検証済み）の申請だけで、
+    //  report_user_id = caller.userId で絞っている＝他人の申請内容は返らない。
+    //  この絞り込み条件は緩めないこと。
     const { data } = await svc.from('daily_report_pending_edits')
-      .select('report_date, kind')
+      .select('report_date, kind, payload')
       .eq('account_id', caller.accountId).eq('status', 'pending')
       .eq('report_user_id', caller.userId)
-    return json({ ok: true, dates: (data ?? []).map((r: any) => ({ date: r.report_date, kind: r.kind })) })
+    return json({
+      ok: true,
+      dates: (data ?? []).map((r: any) => ({ date: r.report_date, kind: r.kind, payload: r.payload ?? null })),
+    })
   }
 
   // 作業員側に「承認待ちかどうか」だけ返す。保留の中身は返さない（anon経路から読めるため）

@@ -15,6 +15,7 @@
       </li>
     </ul>
 
+    <p v-if="loadErr" class="load-err" data-testid="chats-load-err">{{ loadErr }}</p>
     <div v-if="loading" class="empty">読み込み中…</div>
     <ul v-else-if="rows.length" class="list">
       <li v-for="r in rows" :key="r.site.id" class="row" data-testid="chat-list-row" @click="router.push(`/chats/${r.site.id}`)">
@@ -51,6 +52,7 @@ type LastMessage = { body: string; sender_name: string; created_at: string; hasA
 type Row = { site: Site; lastMessage: LastMessage | null; unreadCount: number }
 
 const loading = ref(true)
+const loadErr = ref('')
 const rows = ref<Row[]>([])
 const accountName = ref('')
 let channel: ReturnType<typeof supabase.channel> | null = null
@@ -86,18 +88,33 @@ async function load() {
 
   const { data: sites } = await supabase.from('sites')
     .select('id, name, name_kana').eq('account_id', accountId).eq('active', true)
-  const siteList = (sites ?? []) as Site[]
+  // ★__unset__（現場未設定の内部行）はチャット相手として並べない。
+  //  現場マスタでは既に一覧から除外している（sites.vue の listableSites）のに
+  //  チャット一覧にだけ残っていた＝同じ規則の取りこぼし（2026-08-10 レビュー指摘）。
+  //  ここに送ると、どの現場のやり取りでもない宙に浮いた会話ができる。
+  const siteList = ((sites ?? []) as Site[]).filter((s) => s.name !== '__unset__')
   const siteIds = siteList.map((s) => s.id)
   if (!siteIds.length) { rows.value = []; loading.value = false; return }
 
-  const [{ data: msgs }, { data: lastReads }] = await Promise.all([
+  // ★現場IDを列挙して .in() で絞ってはいけない。
+  //  現場が増えるとUUIDの羅列でクエリURLが肥大し、341現場＝約12.6KBで
+  //  **HTTP 414 URI Too Long** になって取得が丸ごと失敗していた（2026-08-01 回帰）。
+  //  しかもエラーを握りつぶしていたため、全行が「まだメッセージはありません」と
+  //  表示され、未読バッジも消えるだけで原因が見えなかった。
+  //  account_id で絞れば十分（他アカウントの現場は混ざらない）。
+  //  site_id が null の行は全体チャットなので、現場一覧のプレビューからは除く。
+  const [{ data: msgs, error: msgErr }, { data: lastReads }] = await Promise.all([
     supabase.from('site_chat_messages')
       .select('site_id, body, sender_name, created_at, attachment_url').eq('account_id', accountId).is('deleted_at', null)
-      .in('site_id', siteIds).order('created_at', { ascending: false }).limit(1000),
+      .not('site_id', 'is', null).order('created_at', { ascending: false }).limit(1000),
     actorKey
       ? supabase.from('site_chat_last_read').select('site_id, last_read_at').eq('account_id', accountId).eq('actor_key', actorKey)
       : Promise.resolve({ data: [] as { site_id: string; last_read_at: string }[] }),
   ])
+
+  // ★取得に失敗したら黙らない。失敗すると全行が「まだメッセージはありません」に
+  //  見えるだけで、正常時と区別が付かない（今回それで回帰に気付けなかった）。
+  loadErr.value = msgErr ? `最終メッセージの取得に失敗しました: ${msgErr.message}` : ''
 
   const lastReadBySite: Record<string, string> = {}
   for (const r of (lastReads ?? []) as { site_id: string; last_read_at: string }[]) lastReadBySite[r.site_id] = r.last_read_at
@@ -160,4 +177,5 @@ onUnmounted(() => {
 .row-trail { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
 .row-time { font-size: 11px; color: #94a3b8; }
 .row-badge { background: #ef4444; color: #fff; font-size: 11px; font-weight: 700; border-radius: 9px; min-width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; padding: 0 5px; }
+.load-err { margin: 8px 0; font-size: 13px; color: #b91c1c; background: #fee2e2; border: 1px solid #fca5a5; border-radius: 6px; padding: 8px 10px; }
 </style>

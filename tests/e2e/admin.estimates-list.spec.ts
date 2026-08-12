@@ -25,7 +25,8 @@ test('一覧に案件が出て、行クリックでビルダーがその案件�
     await expect(row).toContainText(PROJ)
     await expect(row).toContainText(CONTRACTOR)
     await expect(row).toContainText('¥3,000')
-    await expect(row).toContainText('作成中')
+    // Q5でステータス表記を業務フローに合わせて変更（draft: 作成中 → 対応中）
+    await expect(row).toContainText('対応中')
 
     // 行クリック → ビルダーが ?project= で開き、その案件が初期選択される
     await row.click()

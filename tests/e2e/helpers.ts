@@ -123,6 +123,30 @@ export async function getAccountId(): Promise<string> {
   return rows[0].id
 }
 
+/**
+ * 見積もり機能のフィーチャーフラグ（settings.estimate_feature_enabled・2026-08-09 新設）。
+ * 既定はOFFで、見積もりの画面・見積書PDF・現場まわりの見積導線がすべて隠れる。
+ *
+ * ★見積もり以外を主題にしつつ見積画面に到達するspec（自社情報→見積書プレビュー、
+ *  現場別集計のzipに見積書PDFを内包 等）は、本来の意図を保つためフラグをONにしてから回す。
+ *  使い終わったら必ず reset して既定(未設定=OFF)へ戻すこと——行が残ると
+ *  「フラグOFFで隠れる」を検証している admin.estimate-feature-flag.spec.ts が壊れる。
+ */
+export const FEATURE_KEY_ESTIMATE = 'estimate_feature_enabled'
+
+export async function enableEstimateFeature(): Promise<void> {
+  const accountId = await getAccountId()
+  await restSrv('settings', {
+    method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({ account_id: accountId, key: FEATURE_KEY_ESTIMATE, value: 'true', label: '見積もり機能の表示' }),
+  })
+}
+
+export async function resetEstimateFeature(): Promise<void> {
+  const accountId = await getAccountId()
+  await restSrv(`settings?account_id=eq.${accountId}&key=eq.${FEATURE_KEY_ESTIMATE}`, { method: 'DELETE' })
+}
+
 // 現場マスタの責任者候補（現場管理者以上=admin/office/site_manager）のキャッシュ。
 // 複数specがそれぞれ専用ワーカーを作ると無駄に増えるため、プロセス内で使い回す。
 let _respWorkerId: string | null | undefined
@@ -175,4 +199,45 @@ export async function upsert(table: string, onConflict: string, body: unknown): 
     headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
     body: JSON.stringify(body),
   })
+}
+
+/**
+ * 見積ビルダーのタブを開く（案件を開いた直後のレースに耐える版）。
+ *
+ * estimate-builder の loadItems() は完走時に builderTab を 'items' へ戻す。
+ * 案件作成直後はこの読み込みがまだ飛んでいるため、早すぎるタブクリックが
+ * 後から打ち消されて「要素はあるのに見えない／not stable」になる。
+ * 目的のパネルが実際に見えるまでクリックし直す。
+ */
+export async function openBuilderTab(page: any, tab: string, probeSelector: string): Promise<void> {
+  const { expect } = await import('@playwright/test')
+  await expect(async () => {
+    await page.locator(`[data-testid="tab-${tab}"]`).click()
+    await expect(page.locator(probeSelector).first()).toBeVisible({ timeout: 1500 })
+  }).toPass({ timeout: 25000 })
+}
+
+/**
+ * estimate-builder が各工種ブロックの末尾に常時確保する空行数。
+ * apps/admin/src/pages/estimate-builder.vue の SPARE_ROWS と必ず一致させる
+ * （ズレると「工種を足した直後の先頭行」を掴む spec が全部 index を外す）。
+ */
+export const EST_SPARE_ROWS = 1
+
+/** 工種ブロックを追加した直後、その新ブロック先頭行の index を返す */
+export async function newBlockFirstRow(page: any): Promise<number> {
+  return (await page.locator('[data-testid^="item-name-"]').count()) - EST_SPARE_ROWS
+}
+
+/**
+ * 非公開バケットのファイルを service_role で落として latin1 文字列で返す。
+ * PDFの中身（非圧縮のコンテンツストリーム）を検査したい時に使う。
+ */
+export async function downloadStorage(bucket: string, path: string): Promise<{ data: string | null }> {
+  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}/${path}`, {
+    headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` },
+  })
+  if (!res.ok) return { data: null }
+  const buf = Buffer.from(await res.arrayBuffer())
+  return { data: buf.toString('latin1') }
 }

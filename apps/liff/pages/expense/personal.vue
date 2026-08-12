@@ -83,7 +83,17 @@
             <!-- 現場経費と同じ税務要件。一括登録でも素通りさせない -->
             <input v-if="requiresCompanions({ category: d.account_category, account: d.account_category })"
                    v-model="d.companions" class="pe-input" placeholder="同行者名（必須）" data-testid="pe-draft-companions" />
-            <label class="pe-check"><input v-model="d.tategae" type="checkbox" data-testid="pe-draft-tategae" /> 個人立替</label>
+            <!-- ★支払元は二択。チェック1つだと「未チェック＝会社払い」が暗黙で分かりづらかった -->
+            <div class="pe-payer" role="radiogroup" aria-label="支払元">
+              <label class="pe-check">
+                <input type="radio" :name="`pe-draft-payer-${di}`" :checked="!d.tategae" data-testid="pe-draft-payer-company" @change="d.tategae = false" />
+                会社のカードで支払った
+              </label>
+              <label class="pe-check">
+                <input type="radio" :name="`pe-draft-payer-${di}`" :checked="!!d.tategae" data-testid="pe-draft-payer-personal" @change="d.tategae = true" />
+                個人で立替えた
+              </label>
+            </div>
           </div>
 
           <button class="pe-submit" :disabled="batchSaving" data-testid="pe-submit-batch" @click="onSubmitBatch">
@@ -125,7 +135,17 @@
           <label class="pe-label">内訳・メモ</label>
           <textarea v-model="form.note" class="pe-input" rows="2" placeholder="用途・内訳" data-testid="pe-note" />
 
-          <label class="pe-check"><input v-model="form.tategae" type="checkbox" data-testid="pe-tategae" /> 個人立替（会社から本人へ振込）</label>
+          <label class="pe-label">支払元</label>
+          <div class="pe-payer" role="radiogroup" aria-label="支払元">
+            <label class="pe-check">
+              <input type="radio" name="pe-payer" :checked="!form.tategae" data-testid="pe-payer-company" @change="form.tategae = false" />
+              会社のカードで支払った
+            </label>
+            <label class="pe-check">
+              <input type="radio" name="pe-payer" :checked="!!form.tategae" data-testid="pe-payer-personal" @change="form.tategae = true" />
+              個人で立替えた（会社から本人へ振込）
+            </label>
+          </div>
 
           <button class="pe-submit" :disabled="busy" data-testid="pe-submit" @click="onSubmit">
             {{ busy ? '登録中…' : '登録する' }}
@@ -142,6 +162,9 @@
             <li v-for="r in items" :key="r.id" class="pe-item">
               <span class="pe-date">{{ r.date }}</span>
               <span class="pe-acct">{{ r.account_category }}</span>
+              <!-- ★科目（会計仕訳用）と品名（何に使ったか）は別物。運用者から
+                   「科目と品名を両方表示する」（2026-08-10 電話）。note が実際の品名。 -->
+              <span v-if="r.note" class="pe-item-name">{{ r.note }}</span>
               <span class="pe-amount">¥{{ Number(r.amount).toLocaleString() }}</span>
               <span v-if="r.payee" class="pe-payee">{{ r.payee }}</span>
               <button type="button" class="pe-del" @click="onDelete(r.id)"><span class="material-symbols-rounded">delete</span></button>
@@ -542,6 +565,11 @@ onMounted(async () => {
 .pe-input { width: 100%; border: 1px solid #d1d5db; border-radius: 8px; padding: 9px 10px; font-size: 14px; box-sizing: border-box; }
 .pe-file { width: 100%; font-size: 12px; margin-top: 4px; }
 .pe-check { display: flex; align-items: center; gap: 6px; font-size: 13px; margin-top: 10px; }
+/* 支払元の二択。縦積みでタップしやすくする（機種によっては1行に収まらないため） */
+.pe-payer { display: flex; flex-direction: column; gap: 2px; }
+.pe-payer .pe-check { margin-top: 6px; }
+/* 支払元の二択は白黒（2026-08-10 レビュー指摘）。ExpenseField.vue と揃える。 */
+.pe-payer input { width: 18px; height: 18px; accent-color: var(--text); }
 .pe-ai { width: 100%; margin-top: 8px; background: #fff; color: #2563eb; border: 1px solid #2563eb; border-radius: 8px; padding: 9px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .pe-ai:disabled { opacity: 0.6; }
 .pe-submit { width: 100%; margin-top: 14px; background: #2563eb; color: #fff; border: none; border-radius: 8px; padding: 11px; font-size: 15px; font-weight: 700; cursor: pointer; }
@@ -554,6 +582,8 @@ onMounted(async () => {
 .pe-item { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #f3f4f6; font-size: 13px; }
 .pe-date { color: #6b7280; }
 .pe-acct { background: #eff6ff; color: #1d4ed8; border-radius: 999px; padding: 1px 8px; font-size: 11px; }
+/* 品名（何に使ったか）。科目バッジの隣に地の文で置く＝科目と混ざらないように色を分ける */
+.pe-item-name { color: #334155; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pe-amount { font-weight: 700; margin-left: auto; }
 .pe-payee { color: #6b7280; font-size: 12px; }
 .pe-del { background: none; border: none; color: #9ca3af; cursor: pointer; display: grid; place-items: center; }

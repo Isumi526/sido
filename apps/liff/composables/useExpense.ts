@@ -612,6 +612,12 @@ export const useExpense = () => {
     //  LIFF を LINE アプリ内で開くと anon になるため、直読みだと黙って0件＝個人立替が
     //  申請書から消える（2026-08-01 ship前に本番で LINE 利用者の残存を確認して判明）。
     rows.push(...flattenPersonalExpenses(await usePersonalExpense().listByRange(dateFrom, dateTo, userId) as any))
+
+    // ★日付順に並べ替える。ソートしないと「日報由来を全部 → 個人経費を全部」の順になり、
+    //  明細の途中で日付が 8/8 → 8/3 と戻る。本番ユーザーが「立て替えた分が明細に無い」と
+    //  報告した原因がこれで、行は存在するのに離れた位置にあって見つけられなかった（2026-08-08）。
+    //  同日内は元の順（日報由来 → 個人経費）を保つ＝安定ソート（Array#sort は ES2019 で安定）。
+    rows.sort((a, b) => a.date.localeCompare(b.date))
     return rows
   }
 

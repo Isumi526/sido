@@ -3,7 +3,7 @@
 //  【見積ビルダー #4】右ドロワーでマスタを編集→閉じると明細の選択肢へ即反映。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { restSrv, getAccountId } from './helpers'
+import { restSrv, getAccountId, openBuilderTab } from './helpers'
 
 const TS = Date.now()
 const PROJ = `ドロワー案件_${TS}`
@@ -17,19 +17,19 @@ test('ドロワーで工種を追加→閉じると明細の工種選択に即�
     await page.goto(`/estimate-builder?project=${proj.id}`, { waitUntil: 'networkidle' })
     // ドロワーを開く（マスタタブ）→ 工種を追加
     await page.locator('[data-testid="open-drawer"]').click()
-    await page.locator('[data-testid="drawer-masters"]').click()
     await page.locator('[data-testid="subtab-trade"]').click()
     await page.locator('[data-testid="new-trade-name"]').fill(TRADE)
     await page.locator('[data-testid="add-trade"]').click()
     await expect(page.locator('[data-testid="trade-list"]')).toContainText(TRADE)
     // 閉じる → 明細の工種プルダウンに即反映（selectOption はオプション出現まで待つ）
     await page.locator('[data-testid="drawer-close"]').click()
-    await page.locator('[data-testid="add-row"]').click()
-    await page.locator('[data-testid="item-trade-0"]').selectOption({ label: TRADE })
-    // 自社情報タブも開けること
+    // 工種は自由記述+予測変換、かつブロック単位で選ぶ（レビュー2026-07-28）
+    await openBuilderTab(page, 'items', '[data-testid="blk-trade-0"]')
+    await page.locator('[data-testid="blk-trade-0"]').fill(TRADE)
+    // ★R34: ドロワーは商社の資材価格表だけ。自社情報タブは廃止（見積書ページで直接編集する）
     await page.locator('[data-testid="open-drawer"]').click()
-    await page.locator('[data-testid="drawer-company"]').click()
-    await expect(page.locator('[data-testid="cp-name"]')).toBeVisible()
+    await expect(page.locator('[data-testid="drawer-company"]')).toHaveCount(0)
+    await expect(page.locator('[data-testid="drawer-masters"]')).toBeVisible()
   } finally {
     await restSrv(`estimate_items?project_id=eq.${proj.id}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`estimate_projects?id=eq.${proj.id}`, { method: 'DELETE' }).catch(() => {})

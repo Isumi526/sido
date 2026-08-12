@@ -76,7 +76,8 @@ test('駐車場代・高速代を入力して送信すると daily_reports に�
   const parkingSection = page.locator('.veh-subexpense').nth(0)
   await parkingSection.locator('.lineitem-card').nth(0).locator('input.expense-input').fill('333')
   await parkingSection.locator('.lineitem-card').nth(1).locator('input.expense-input').fill('444')
-  await parkingSection.locator('.lineitem-card').nth(1).locator('.tategae-check input[type="checkbox"]').check()
+  // 支払元はチェックボックス1つから二択ラジオになった（2026-08-04）
+  await parkingSection.locator('.lineitem-card').nth(1).getByTestId('payer-personal').check()
 
   // 高速代を1行（555 / ETCカード①）
   await page.getByRole('button', { name: /高速代を追加/ }).click()

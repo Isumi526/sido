@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { currentUser, canViewManagementPages, waitForRoleResolved } from '../lib/auth'
+import { estimateEnabled, waitForFeaturesResolved } from '../lib/features'
 import Dashboard      from '../pages/index.vue'
 import Workers        from '../pages/workers.vue'
 import Sites          from '../pages/sites.vue'
@@ -50,7 +51,8 @@ export const router = createRouter({
     { path: '/chats',        component: () => import('../pages/chats.vue') },
     { path: '/chats/account', component: () => import('../pages/account-chat.vue') },
     { path: '/chats/:id',    component: () => import('../pages/chat-detail.vue') },
-    { path: '/contractors',  component: Contractors,    meta: { management: true } },
+    // 元請け業者は site_manager も可（2026-08-06）。management から外す＝isAdminAllowed(worker弾き)だけが効く。
+    { path: '/contractors',  component: Contractors },
     { path: '/site-rules',   component: SiteRules },
     { path: '/attendance',   component: Attendance,     meta: { management: true } },
     { path: '/subcontractors', component: Subcontractors },
@@ -75,12 +77,12 @@ export const router = createRouter({
     { path: '/overtime-approvals',    component: OvertimeApprovals },
     { path: '/ai-help',          component: AiHelp,     meta: { management: true } },
     { path: '/faq',              component: Faq,        meta: { management: true } },
-    { path: '/estimates',        component: Estimates,  meta: { management: true } },
-    { path: '/estimate-list',   component: EstimatesList, meta: { management: true } },
-    { path: '/estimate-masters', component: EstimateMasters, meta: { management: true } },
-    { path: '/estimate-builder', component: EstimateBuilder, meta: { management: true } },
-    { path: '/purchase-orders',  component: PurchaseOrders,  meta: { management: true } },
-    { path: '/drawing-materials', component: () => import('../pages/drawing-materials.vue'), meta: { management: true } },
+    { path: '/estimates',        component: Estimates,  meta: { management: true, estimate: true } },
+    { path: '/estimate-list',   component: EstimatesList, meta: { management: true, estimate: true } },
+    { path: '/estimate-masters', component: EstimateMasters, meta: { management: true, estimate: true } },
+    { path: '/estimate-builder', component: EstimateBuilder, meta: { management: true, estimate: true } },
+    { path: '/purchase-orders',  component: PurchaseOrders,  meta: { management: true, estimate: true } },
+    { path: '/drawing-materials', component: () => import('../pages/drawing-materials.vue'), meta: { management: true, estimate: true } },
   ],
 })
 
@@ -95,5 +97,11 @@ router.beforeEach(async (to) => {
   if (to.meta.management === true && currentUser.value) {
     await waitForRoleResolved()
     if (!canViewManagementPages.value) return '/'
+  }
+  // 見積もり機能はフラグOFFの間そもそも入れない（メニュー非表示に加えURL直打ちも塞ぐ）。
+  //  8/19 の通しテストまで本番に露出させないための開閉（settings.estimate_feature_enabled）。
+  if (to.meta.estimate === true && currentUser.value) {
+    await waitForFeaturesResolved()
+    if (!estimateEnabled.value) return '/'
   }
 })

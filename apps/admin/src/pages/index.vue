@@ -140,6 +140,7 @@ import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWa
 import type { WageMode } from '../lib/workerHours'
 import { canViewWages, canViewHourlyWage, canViewManagementPages } from '../lib/auth'
 import { resolveSiteRef, type SiteResolveCtx } from '../lib/siteKey'
+import { netAmountOf, normalizeTaxMode } from '../lib/invoiceTax'
 
 // ── 開発の更新履歴（全社共通・未確認/確認済みタブ）──────────
 interface DevUpdate { id: string; title: string; link: string | null; created_at: string }
@@ -270,7 +271,7 @@ async function load() {
     // 下請け請求（当月）も商社/業者に加算
     supabase
       .from('subcontractor_invoice_items')
-      .select('amount, item_date, subcontractor_invoices(subcontractors(name, category))')
+      .select('amount, tax_rate, item_date, subcontractor_invoices(tax_mode, subcontractors(name, category))')
       .eq('account_id', accountId)
       .gte('item_date', `${ym}-01`)
       .lt('item_date', nextMonthFirst),
@@ -281,8 +282,9 @@ async function load() {
   const details = new Map<string, Detail[]>()
 
   // 下請け請求（税抜）。区分=商社のみ商社、それ以外（業者/未区分）は業者
+  // ★内税の請求書は amount が税込なので割り戻してから積む（現場別集計と同基準）
   for (const it of (invItems ?? []) as any[]) {
-    const amt = Number(it.amount) || 0
+    const amt = Math.round(netAmountOf(it, normalizeTaxMode(it.subcontractor_invoices?.tax_mode)))
     const sub = it.subcontractor_invoices?.subcontractors
     const isShosha = sub?.category === '商社'
     if (isShosha) shosha += amt
