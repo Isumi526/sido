@@ -388,7 +388,7 @@ import { useQueryParam } from '../composables/useQueryParam'
 import { HIDE_LINE_SECTIONS } from '../lib/featureFlags'
 import { effectiveBreakMinutes, laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE, type RateBreakdown } from '../lib/workerHours'
 import { canViewWages, currentUser } from '../lib/auth'
-import { punchDiffLabel, isPunchDiffBig } from '../lib/attendanceDiff'
+import { punchDiffLabel, isPunchDiffBig, isPunchDiffWorthShowing } from '../lib/attendanceDiff'
 
 const EDGE_URL  = import.meta.env.VITE_SUPABASE_EDGE_URL as string
 const ANON_KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY as string
@@ -654,8 +654,10 @@ function punchDiffs(r: any, site: any): { key: string; label: string; big: boole
     ['in', att.checkin, w.startTime, '出勤'],
     ['out', att.checkout, w.endTime, '退勤'],
   ] as const) {
+    // ★15分未満は出さない。実運用では全員が数分ズレるので、出すと大きなズレが埋もれる。
+    if (!isPunchDiffWorthShowing(actual, planned)) continue
     const label = punchDiffLabel(actual, planned)
-    if (!label || label === '±0') continue   // ズレていない時は黙る（画面を賑やかにしない）
+    if (!label) continue
     out.push({ key, label: `${jp} ${label}`, big: isPunchDiffBig(actual, planned) })
   }
   return out
