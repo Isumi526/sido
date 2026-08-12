@@ -481,6 +481,14 @@ const isMobile = computed(() => {
    なる不具合）。非scopedの style に置いて html に確実に適用する。 */
 :root { --bg:#EFEFEF;--surface:#fff;--border:#E0E0E0;--accent:#06C755;--text:#111;--text2:#888;--font:'Noto Sans JP',-apple-system,sans-serif;--radius:12px; }
 html,body { background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh; }
+
+/* ★印刷時は min-height:100vh を解除する。これが残ると明細が4行でも必ず1ページ分の
+   高さが確保され、ほぼ空の2ページ目が出る（2026-08-12 レビューで発見・客先に渡す書類）。
+   ★ここ（非scoped）に書く必要がある。scoped 側に書いても html/body にはスコープ属性が
+   付かないため一切効かない（実際そう書いて効かず、印刷メディアで実測して気づいた）。 */
+@media print {
+  html, body { min-height:0 !important; height:auto !important; }
+}
 </style>
 
 <style scoped>
@@ -563,7 +571,10 @@ html,body { background:var(--bg);color:var(--text);font-family:var(--font);min-h
 .pc-only { display: none; }
 @media (min-width: 768px) { .pc-only { display: block; } }
 @media print {
+  /* print.vue と同じ用紙設定に揃える（片方だけ余白が違うと同じ書類が2種類の体裁で出る） */
+  @page { size: A4 portrait; margin: 12mm 10mm; }
   .no-print { display:none !important; }
+  .app { min-height:0 !important; height:auto !important; }
   .main { padding:0 !important; }
   .print-area { box-shadow:none !important;border-radius:0 !important;padding:10px !important; }
   .expense-table th,.expense-table td { font-size:10px !important;padding:4px 5px !important; }
