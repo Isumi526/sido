@@ -166,19 +166,14 @@ export const useReport = () => {
     }
   }
 
-  async function submit() {
-    if (submitting.value) return
-    submitting.value = true
-    error.value      = null
-
-    // プロフィール情報をセット（sender は呼び元で本名を設定済みの場合は上書きしない）
+  /**
+   * 経費明細に選択されている File を Storage へ上げ、fileUrls に詰める。
+   * ★新規送信と編集の両方から呼ぶ。片方にしか無いと「添付したのに付いていない」が起きる。
+   */
+  async function uploadPendingExpenseFiles(): Promise<string[]> {
+    // ★送信者名は storage のパスに入る。新規送信では submit() の冒頭で入るが、
+    //  編集モードはそこを通らないので、ここで自分で埋める（空だとパスが壊れる）。
     if (!form.value.sender) form.value.sender = profile.value?.displayName || 'unknown'
-    form.value.senderId = profile.value?.userId || 'unknown'
-
-    // 送信日が日曜か判定
-    const isSunday = new Date(form.value.date + 'T00:00:00').getDay() === 0
-
-    // ── ① ファイルを Supabase Storage にアップロードして *Urls にセット ──
     const senderName  = form.value.sender
     // 身元優先のスラッグ（email/pwは自テナント・LINEは env）。env固定だと別テナントのstorageパスに保存される。
     const accountSlug = (await useAccount().effectiveSlug()) || 'default'
@@ -191,6 +186,8 @@ export const useReport = () => {
       edgeFunctionUrl: config.public.edgeFunctionUrl as string,
       supabaseUrl: config.public.supabaseUrl as string,
       supabaseAnonKey: config.public.supabaseAnonKey as string,
+      // ローカル検証用（EF側は IS_LOCAL の時しか見ない）。開発モードはLINE IDトークンが出ない。
+      devLineUserId: config.public.appEnv === 'development' ? (profile.value?.userId ?? '') : '',
     }
 
     for (const site of form.value.sites) {
@@ -241,6 +238,27 @@ export const useReport = () => {
       }
     }
 
+    return uploadErrors
+  }
+
+  async function submit() {
+    if (submitting.value) return
+    submitting.value = true
+    error.value      = null
+
+    // プロフィール情報をセット（sender は呼び元で本名を設定済みの場合は上書きしない）
+    if (!form.value.sender) form.value.sender = profile.value?.displayName || 'unknown'
+    form.value.senderId = profile.value?.userId || 'unknown'
+
+    // 送信日が日曜か判定
+    const isSunday = new Date(form.value.date + 'T00:00:00').getDay() === 0
+
+    // ── ① ファイルを Supabase Storage にアップロードして *Urls にセット ──
+    //  ★関数に切り出してある。編集モードも同じものを呼ぶ（report.vue）。
+    //   2026-08-12: 編集ではこの処理が一度も走っておらず、作業員が領収書を選んでも
+    //   fileUrls が空のまま保留に入っていた。本番で9件・約59,000円が証憑なしで
+    //   承認待ちになっていた（画面はプレビューが出て送信も成功するので気づけない）。
+    const uploadErrors = await uploadPendingExpenseFiles()
     if (uploadErrors.length > 0) {
       error.value = t('report2.uploadFailed', { errors: uploadErrors.join('\n') })
       submitting.value = false
@@ -365,6 +383,9 @@ export const useReport = () => {
 
   return {
     form,
+    // ★編集モードからも呼ぶ（保留に入れる前にアップロードする）。
+    //  新規送信にしか無かったため、編集で選んだ領収書が保存されていなかった（2026-08-12）。
+    uploadPendingExpenseFiles,
     submitting: readonly(submitting),
     submitted:  readonly(submitted),
     error:      readonly(error),
