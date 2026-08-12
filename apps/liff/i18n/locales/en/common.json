@@ -16,7 +16,7 @@
   "loading": "Loading...",
   "saving": "Saving...",
   "sending": "Sending...",
-  "required": "Required",
+  "required": "* Required",
   "optional": "Optional",
   "yes": "Yes",
   "no": "No",

@@ -612,7 +612,7 @@
 
         <!-- 遅れた理由（期限切れの提出時のみ必須）。編集理由と同じ扱いに揃える -->
         <div v-if="isLateDate" class="edit-reason">
-          <label class="edit-reason-label" for="late-reason">{{ $t('report.lateReasonLabel') }}</label>
+          <label class="edit-reason-label" for="late-reason">{{ $t('report.lateReasonLabel') }}<span class="required">{{ $t('common.required') }}</span></label>
           <textarea id="late-reason" v-model="lateReason" class="edit-reason-input" rows="2"
                     data-testid="late-reason" :placeholder="$t('report.lateReasonPlaceholder')" />
         </div>
@@ -620,7 +620,7 @@
         <!-- 編集理由（編集時のみ必須）。1編集=1行で daily_report_edit_logs に残す。
              ★経費申請書(PDF画面)のインライン修正はこの経路を通らないので対象外（回答=B）。 -->
         <div v-if="isEditMode" class="edit-reason">
-          <label class="edit-reason-label" for="edit-reason">{{ $t('report.editReasonLabel') }}</label>
+          <label class="edit-reason-label" for="edit-reason">{{ $t('report.editReasonLabel') }}<span class="required">{{ $t('common.required') }}</span></label>
           <textarea
             id="edit-reason"
             v-model="editReason"
@@ -2838,6 +2838,8 @@ html, body {
   border-radius: 8px;
   padding: 12px 14px;
 }
+/* 必須表示は全画面で「※付き赤文字」に統一（Field.vue / FormSection.vue と同じ） */
+.edit-reason-label .required { color: var(--danger); font-size: 11px; font-weight: 700; margin-left: 6px; }
 .edit-reason-label { font-size: 13px; font-weight: 700; color: #7a6000; }
 .edit-reason-input {
   width: 100%;
