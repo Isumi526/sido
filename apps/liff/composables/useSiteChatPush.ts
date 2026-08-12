@@ -39,6 +39,12 @@ export const useSiteChatPush = () => {
   async function callPushFn(payload: Record<string, unknown>): Promise<any | null> {
     const efUrl = config.public.edgeFunctionUrl as string
     if (!efUrl) return null
+    // ★鍵が配られていない環境では「完全に no-op」であること。
+    //  購読側(subscribe)だけ vapidKey を見ていて送信側を見ていなかったため、
+    //  鍵が無くてもメッセージ送信のたびに EF を叩き、未デプロイ環境では毎回 404 を
+    //  コンソールに出していた（2026-08-12 レビューで発見）。
+    //  実害は best-effort なので軽微だが「鍵が無い間は no-op」という設計の主張と食い違う。
+    if (!config.public.vapidPublicKey) return null
     const anonKey = config.public.supabaseAnonKey as string
     const fnPrefix = config.public.appEnv === 'development' ? 'test-' : ''
     const { data: { session } } = await supabase.auth.getSession()
