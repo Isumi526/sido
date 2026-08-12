@@ -33,7 +33,10 @@ test('招待リンクの発行→ゲストが名前入力してチャットに�
   })
   const { access_token } = await authRes.json()
   const inviteRes = await fetch(`${SUPABASE_URL}/functions/v1/site-chat-invite`, {
-    method: 'POST', headers: { apikey: ANON_KEY, 'Content-Type': 'application/json', Authorization: `Bearer ${access_token}` },
+    method: 'POST', // ★Origin を付ける。実際の呼び出し元はブラウザ(admin)で必ず Origin が付く。
+    //  EF は 招待URLの土台を LIFF_URL → Origin の順で決め、どちらも無ければ失敗する
+    //  （相対パスを返すと file:///chat-invite/... になり必ず開けないため・2026-08-12）。
+    headers: { apikey: ANON_KEY, 'Content-Type': 'application/json', Authorization: `Bearer ${access_token}`, Origin: 'http://localhost:3000' },
     body: JSON.stringify({ action: 'create', site_id: siteId }),
   })
   const inviteBody = await inviteRes.json()
