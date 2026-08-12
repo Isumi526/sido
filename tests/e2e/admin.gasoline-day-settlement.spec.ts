@@ -66,11 +66,14 @@ test.describe('日報ガソリン代→経費精算', () => {
     // ℓ列（科目の次）に給油量が出る。空だと立替の根拠が分からない
     await expect(gasRow, 'ℓが出る').toContainText('40.5')
     await expect(gasRow, '支払先が出る').toContainText('E2Eガソリンスタンド')
-    // 2026-07-31 列整理: admin経費管理は科目1本（品名列は廃止＝客先PDF側にのみ残す）
+    // ★2026-07-31 は「admin経費管理は科目1本・品名列は廃止」と決めていたが、
+    //  2026-08-10 の電話で「科目と品名を両方表示する、管理画面にしてもスマホ画面にしても」
+    //  となり反転した（運用者判断）。品名列が有ることを固定する。
     await expect(gasRow, '科目が勘定科目で出る').toContainText('車両費')
+    await expect(gasRow, '品名も出る').toContainText('ガソリン代')
     await expect(page.locator('.detail-table thead'), 'インボイス番号ヘッダ').toContainText('インボイス番号')
     await expect(page.locator('.detail-table thead'), '科目ヘッダ').toContainText('科目')
-    await expect(page.locator('.detail-table thead'), '品名ヘッダは無い').not.toContainText('品名')
+    await expect(page.locator('.detail-table thead'), '★品名ヘッダも有る（2026-08-10 反転）').toContainText('品名')
   })
 
   test('日毎集計でも同じ行に ℓ と内訳が出る（3画面で内容が食い違わない）', async ({ page }) => {
