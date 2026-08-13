@@ -108,8 +108,8 @@
           <!-- 申請PDF（作業員申請時にStorageへ保存された 明細/請求書 を閲覧・DL） -->
           <div v-if="selected.settlement?.applied_at" class="pdf-row no-print">
             <span class="pdf-label">申請PDF：</span>
-            <a :href="pdfUrl(selected, 'meisai')" target="_blank" rel="noopener" class="pdf-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> 明細</a>
-            <a :href="pdfUrl(selected, 'seikyu')" target="_blank" rel="noopener" class="pdf-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> 請求書</a>
+            <a href="#" @click.prevent="openApplicationPdf(selected, 'meisai')" class="pdf-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> 明細</a>
+            <a href="#" @click.prevent="openApplicationPdf(selected, 'seikyu')" class="pdf-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> 請求書</a>
           </div>
 
           <!-- 科目の絞り込み（2026-08-10 運用者要望）。逐語:「旅費交通費だけとかさ、
@@ -262,6 +262,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useYearMonthParam } from '../composables/useQueryParam'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug, getAccountName } from '../lib/account'
+import { openConventionDoc } from '../lib/docUrl'
 import { flattenReportExpenses, flattenGasolineItems, flattenPersonalExpenses, isPersonalExpenseRow, ratesFromSettings, effectiveStatus, expenseAccountCategory, expenseDisplayCategory, EXPENSE_ACCOUNT_OPTIONS, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
 
 /** 品名欄。個人経費は category＝勘定科目なので note（実際の品名）を出す（liff の帳票と同一規則）。 */
@@ -270,10 +271,12 @@ function itemName(row: ExpenseRow): string {
   return expenseDisplayCategory(row.category)
 }
 
-/** 申請PDF(明細/請求書)のStorage公開URL。パスは generateExpensePdf.uploadApplicationPdf と一致 */
-function pdfUrl(row: { userId: string; periodKey: string }, kind: 'meisai' | 'seikyu'): string {
+/** 申請PDF(明細/請求書)を開く。パスは generateExpensePdf.uploadApplicationPdf と一致。
+ *  ★公開URLを直接 href に入れるのをやめた。新規分は非公開バケットに入るので
+ *   署名URLの取得（非同期）が要る。既存分は dual-read で公開URLに落ちる。 */
+async function openApplicationPdf(row: { userId: string; periodKey: string }, kind: 'meisai' | 'seikyu'): Promise<void> {
   const path = `expense-applications/${getAccountSlug()}/${row.userId}/${row.periodKey}_${kind}.pdf`
-  return supabase.storage.from('expense-receipts').getPublicUrl(path).data.publicUrl
+  await openConventionDoc(path)
 }
 
 // 1行 = 作業員 × 期(period)
