@@ -5,6 +5,12 @@
 #
 #  ★必要な secrets（未設定なら実行せずスキップする＝毎朝の赤色通知を作らない）
 #    SUPABASE_PROD_DB_URL   … 本番DB接続URL。read-only セッションで使う
+#      ★必ず pooler 経由にすること:
+#        postgresql://postgres.<ref>:<pw>@aws-1-ap-northeast-2.pooler.supabase.com:6543/postgres
+#       db.<ref>.supabase.co への直接接続は IPv6 でしか引けず、GitHub Actions の
+#       ランナーは IPv6 を持たないため "Network is unreachable" で全チェックが
+#       測定不能になる（2026-08-13 に実際に踏んだ）。手元の .env は直接接続のままでよい。
+#       ★リージョンは ap-northeast-2・接頭辞は aws-1（ap-northeast-1/aws-0 では tenant not found）。
 #    HUMANBALL_WEBHOOK_URL  … LINE通知の入口（任意・未設定なら通知だけ飛ばない）
 #    HUMANBALL_WEBHOOK_SECRET … 同上
 # ============================================================
