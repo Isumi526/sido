@@ -12,12 +12,16 @@
 //  必要な env: NUXT_PUBLIC_VAPID_PUBLIC_KEY（未設定なら購読しない＝no-op）
 // ============================================================
 
-/** VAPID 公開鍵(base64url) を PushManager が要求する Uint8Array に変換する */
-function urlBase64ToUint8Array(base64String: string): Uint8Array {
+/** VAPID 公開鍵(base64url) を PushManager が要求する Uint8Array に変換する
+ *  ★戻り値は Uint8Array<ArrayBuffer> に固定する。素の new Uint8Array(n) は
+ *   Uint8Array<ArrayBufferLike>（SharedArrayBuffer を含みうる）と推論され、
+ *   pushManager.subscribe の applicationServerKey(BufferSource) に渡せない（TS5.7以降の型変更）。
+ *   ArrayBuffer を明示的に確保して包むことで、型を絞りつつ実体は今までと同じにする。 */
+function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
   const raw = atob(base64)
-  const out = new Uint8Array(raw.length)
+  const out = new Uint8Array(new ArrayBuffer(raw.length))
   for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i)
   return out
 }

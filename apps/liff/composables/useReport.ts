@@ -265,6 +265,12 @@ export const useReport = () => {
       return
     }
 
+    // ★submit-report に渡すテナント識別子。uploadPendingExpenseFiles を切り出した時に
+    //  この定義ごと向こうへ移ってしまい、下の mainPayload から参照できなくなっていた
+    //  （2026-08-13 に typecheck を直して発覚。LINE通知が既定オフのため表に出ていなかったが、
+    //   通知をONにしたテナントでは日報送信が ReferenceError で落ちる状態だった）。
+    const accountSlug = (await useAccount().effectiveSlug()) || 'default'
+
     // 現場跨ぎ残業対応: 作業者ごとに startTime 順で累積稼働分を引き継いで計算
     const workerAccum: Record<string, number> = {}
 
