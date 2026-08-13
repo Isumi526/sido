@@ -20,6 +20,12 @@
             <span class="kind" :class="p.kind === 'late_new' ? 'late' : 'edit'" data-testid="pending-kind">
               {{ p.kind === 'late_new' ? '期限切れの新規提出' : '編集' }}
             </span>
+            <!-- ★どこの現場の修正かが分からないと承認の判断ができない
+                 （2026-08-13 大塚さん「どこの現場の修正かわからんね」）。
+                 現場名は元から payload に入っていて、出していなかっただけ。 -->
+            <span v-if="siteNamesOf(p)" class="site" data-testid="pending-sites">
+              <span class="material-symbols-rounded ico">location_on</span>{{ siteNamesOf(p) }}
+            </span>
           </div>
           <span class="muted">{{ fmtDateTime(p.submitted_at) }}</span>
         </div>
@@ -27,6 +33,19 @@
         <div class="section">
           <div class="section-label">編集理由</div>
           <div class="reason" data-testid="pending-reason">{{ p.reason }}</div>
+        </div>
+
+        <!-- ★理由が「領収書の添付忘れ」なのに1枚も付いていない状態を、承認者に明示する。
+             2026-08-13 大塚さん「写真添付忘れで編集してんのに写真ないのはなんで？」。
+             原因は LIFF の編集経路がアップロードを呼んでいなかったこと（e39511f で修正済み）だが、
+             それ以前の申請はデータとして残るし、今後も撮り忘れは起きる。
+             承認＝金額の確定なので、証憑が無いことを黙って通さない。 -->
+        <div v-if="receiptGap(p)" class="receipt-gap" data-testid="pending-receipt-gap">
+          <span class="material-symbols-rounded ico">warning</span>
+          <span>
+            編集理由は領収書の添付ですが、<b>この申請には領収書が1枚も付いていません</b>。
+            承認しても証憑は増えません（申請者に写真を送ってもらってください）。
+          </span>
         </div>
 
         <!-- 理由だけでは妥当性を判断できないので、何を変えたかも必ず出す -->
@@ -170,7 +189,7 @@ import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { summarizePendingEdit } from '../lib/pendingEditDiff'
+import { summarizePendingEdit, receiptCount } from '../lib/pendingEditDiff'
 import { refreshNavBadges } from '../lib/navBadges'
 import { diffReceipts } from '../lib/reportReceipts'
 import { currentUser } from '../lib/auth'
@@ -213,6 +232,24 @@ async function withReceipts(rows: any[], accountId: string): Promise<any[]> {
     for (const r of (data ?? [])) before.set(r.id, r)
   }
   return rows.map(r => ({ ...r, receipts: diffReceipts(before.get(r.report_id) ?? {}, r.payload ?? {}) }))
+}
+
+/** 申請対象の現場名。payload の sites から拾って重複を畳む。
+ *  ★「どこの現場か」は承認の判断に要る情報なのに出していなかった（2026-08-13 指摘）。 */
+function siteNamesOf(p: any): string {
+  const names = (p?.payload?.sites ?? [])
+    .map((s: any) => (s?.siteName ?? '').toString().trim())
+    .filter(Boolean)
+  return [...new Set<string>(names)].join(' / ')
+}
+
+/** 「領収書を付ける」と言っている申請なのに1枚も無い状態。
+ *  ★理由の文言だけで判定する（payload の意図までは分からないため）。
+ *   語を増やしすぎると無関係な申請にも警告が出て狼少年になるので、実際に使われている語に絞る。 */
+function receiptGap(p: any): boolean {
+  if (!p?.reason) return false
+  if (!/領収|レシート|添付|写真/.test(p.reason)) return false
+  return receiptCount(p.payload ?? {}) === 0
 }
 
 /** ログイン中の管理者に対応する users.id。自己承認の判定に使う（submitted_by_user_id は users.id）。 */
@@ -389,6 +426,16 @@ watch(historyOpen, (open) => { if (open && !history.value.length) void loadHisto
 .kind { margin-left: 10px; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 9px; }
 .kind.edit { background: #eef2ff; color: #3730a3; }
 .kind.late { background: #fef3c7; color: #92400e; }
+/* 現場名。日付・氏名と同じ行に置き、狭い画面では折り返す（スマホで承認することがある） */
+.site { display: inline-flex; align-items: center; gap: 2px; margin-left: 10px; font-size: 13px; font-weight: 700; color: #166534; }
+.site .ico { font-size: 16px; }
+/* ★証憑が無いことの警告。承認ボタンより上に置いて、押す前に目に入るようにする */
+.receipt-gap {
+  display: flex; align-items: flex-start; gap: 6px; margin-bottom: 12px;
+  font-size: 13px; line-height: 1.5; color: #9a3412;
+  background: #fff7ed; border: 1px solid #fdba74; border-radius: 8px; padding: 8px 10px;
+}
+.receipt-gap .ico { font-size: 18px; flex: none; }
 .muted { font-size: 12px; color: #999; }
 .section { margin-bottom: 12px; }
 .section-label { font-size: 12px; font-weight: 700; color: #666; margin-bottom: 4px; }
