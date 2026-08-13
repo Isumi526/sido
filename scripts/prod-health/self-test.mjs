@@ -65,6 +65,22 @@ const accountId = sql(`select id from accounts where slug='test' limit 1`)
 const userId = sql(`select id from users where account_id='${accountId}' limit 1`)
 if (!accountId || !userId) { console.error('✗ テスト用の account / user がローカルに無い'); process.exit(2) }
 
+/**
+ * ★このテストが作るデータには必ず SELFTEST 印を付け、開始時と終了時に印で一括掃除する。
+ *  理由: 最初の実装は「作った行の id を覚えて finally で消す」だけだった。ところが
+ *  cleanup 自体が例外を投げた時に1行が残り、ローカルDBは他の spec と共有なので
+ *  admin.report-edit-review の「承認待ちバッジが0になる」が落ちるようになった
+ *  （2026-08-13 に実際に踏んだ）。後片付けは「正常終了したら消す」ではなく
+ *  「印を付けて毎回まとめて消す」形にしないと、落ちた時に必ず漏れる。
+ */
+const MARK = 'SELFTEST'
+function purgeMarked() {
+  sql(`delete from daily_report_pending_edits where submitted_by_name='${MARK}' or reason like '${MARK}%'`)
+  sql(`delete from daily_reports where sites::text like '%${MARK}%'`)
+}
+purgeMarked()                                    // 前回の落ち残りを引き継がない
+process.on('exit', () => { try { purgeMarked() } catch { /* 終了処理なので握る */ } })
+
 let pass = 0, fail = 0
 const ok = (m) => { console.log(`  ✓ ${m}`); pass++ }
 const ng = (m) => { console.log(`  ✗ ${m}`); fail++ }
