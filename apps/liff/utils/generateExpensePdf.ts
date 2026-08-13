@@ -5,7 +5,16 @@
 //  jspdf / html2canvas は重いので動的 import（クライアント専用）。
 // ============================================================
 
-const BUCKET = 'expense-receipts'
+// ★新規アップロードは非公開バケットへ。旧 'expense-receipts' は public=true で、
+//  キーを一切付けない curl でも中身が落ちる（2026-08-13 実測）。経費申請PDFは
+//  2026-08-02 まで書き込みが続いていた＝出血が止まっていなかった。
+//  ★このPDFは DB に列を持たず「規約パス」で読まれる（承認画面・申請メールEF）。
+//   そのため読む側は「まず非公開を見て、無ければ公開を見る」dual-read にしてある。
+//   既存分を移送しなくても壊れないのはそのため。
+const BUCKET = 'admin-docs'
+/** 移行前に書かれた分の置き場（読み取り専用の後方互換） */
+export const LEGACY_APPLICATION_BUCKET = 'expense-receipts'
+export const APPLICATION_BUCKET = BUCKET
 
 /** PDF化時の基準幅(px)。A4縦の印刷幅に合わせて表全体が収まるようにする */
 const RENDER_WIDTH = 780
