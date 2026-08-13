@@ -59,7 +59,7 @@
             <td class="num">{{ inv.item_count }}</td>
             <td class="num">{{ yen(inv.grand_total) }}</td>
             <td @click.stop>
-              <a v-if="inv.pdf_path" href="#" @click.prevent="openDoc(inv.pdf_path)" class="pdf-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> PDF</a>
+              <a v-if="inv.pdf_path" href="#" @click.prevent="openDoc(inv.pdf_path, inv.pdf_bucket)" class="pdf-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> PDF</a>
               <span v-else class="muted">—</span>
             </td>
             <td class="status-cell" @click.stop>
@@ -91,7 +91,7 @@
         </div>
         <div class="modal-body">
           <p v-if="form.pdf_path" class="existing-pdf-link">
-            <a href="#" @click.prevent="openDoc(form.pdf_path)"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> アップロード済みのPDFを見る</a>
+            <a href="#" @click.prevent="openDoc(form.pdf_path, form.pdf_bucket)"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> アップロード済みのPDFを見る</a>
           </p>
           <!-- PDF→AI解析（ドラッグ&ドロップ対応） -->
           <div class="ai-row" :class="{ 'drag-active': dragActive }"
@@ -278,6 +278,11 @@ import JSZip from 'jszip'
 const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
 const IS_DEV   = import.meta.env.DEV
 
+// ★新規アップロードは必ず非公開バケットへ。旧 'expense-receipts' は public=true で、
+//  キーを一切付けない curl でも請求書PDFが落ちる（2026-08-13 実測）。
+//  既存194件は pdf_bucket 既定値の 'expense-receipts' のまま＝resolveDocUrl が公開URLで開く（後方互換）。
+const UPLOAD_BUCKET = 'admin-docs'
+
 interface Item {
   id?: string; item_date: string | null; site_id: string | null; site_name?: string | null
   description: string | null; quantity: number | null; unit: string | null
@@ -401,7 +406,7 @@ async function bulkDownload() {
     let failed = 0
     for (const v of targets) {
       try {
-        const url = await resolveDocUrl(v.pdf_path)
+        const url = await resolveDocUrl(v.pdf_path, v.pdf_bucket)
         if (!url) { failed++; continue }
         const resp = await fetch(url)
         if (!resp.ok) { failed++; continue }
@@ -485,7 +490,7 @@ async function load() {
 
 function blankForm(): Form {
   const today = new Date().toISOString().slice(0, 10)
-  return { vendor_name: '', subcontractor_id: null, purchase_order_id: null, registration_number: null, title: null, invoice_no: null, invoice_date: today, due_date: null, transfer_date: null, paid: false, total_amount: null, pdf_path: null, note: null, tax_mode: 'exclusive', items: [] }
+  return { vendor_name: '', subcontractor_id: null, purchase_order_id: null, registration_number: null, title: null, invoice_no: null, invoice_date: today, due_date: null, transfer_date: null, paid: false, total_amount: null, pdf_path: null, pdf_bucket: null, note: null, tax_mode: 'exclusive', items: [] }
 }
 // 開いた時点の内容スナップショット（変更有無の判定用）
 const formSnapshot = ref('')
@@ -513,7 +518,7 @@ async function openEdit(inv: any) {
     purchase_order_id: inv.purchase_order_id ?? null,
     registration_number: inv.registration_number, title: inv.title, invoice_no: inv.invoice_no,
     invoice_date: inv.invoice_date, due_date: inv.due_date, transfer_date: inv.transfer_date, paid: !!inv.paid,
-    total_amount: inv.total_amount, pdf_path: inv.pdf_path, note: inv.note,
+    total_amount: inv.total_amount, pdf_path: inv.pdf_path, pdf_bucket: inv.pdf_bucket ?? null, note: inv.note,
     tax_mode: (inv as any).tax_mode === 'inclusive' ? 'inclusive' : 'exclusive',
     items: (items ?? []).map((it: any) => ({ ...it })),
   }
@@ -771,14 +776,17 @@ async function save() {
     //   「ドラッグしてもアップされない」の実体。失敗時はエラーを表示しpdf_path更新もスキップする。
     if (files.value.length) {
       const ext = (f: File) => (f.name.split('.').pop() || 'pdf').toLowerCase()
-      const primaryPath = `subcontractor-invoices/${accountId}/${invoiceId}.pdf`
-      const { error: primaryUpErr } = await supabase.storage.from('expense-receipts')
+      // ★admin-docs のRLSは path 先頭=account_id を要求する（purchase-orders/estimates と同じ規約）。
+      //  ここを間違えるとアップロードが弾かれ、pdf_path が更新されないまま
+      //  「保存はできたのにPDFが付かない」になる（実際に踏んだ）。
+      const primaryPath = `${accountId}/subcontractor-invoices/${invoiceId}.pdf`
+      const { error: primaryUpErr } = await supabase.storage.from(UPLOAD_BUCKET)
         .upload(primaryPath, files.value[0], { upsert: true, contentType: files.value[0].type || 'application/pdf' })
       const uploadErrors: string[] = []
       if (primaryUpErr) uploadErrors.push(primaryUpErr.message)
       for (let n = 1; n < files.value.length; n++) {
-        const extraPath = `subcontractor-invoices/${accountId}/${invoiceId}-${n + 1}.${ext(files.value[n])}`
-        const { error: extraUpErr } = await supabase.storage.from('expense-receipts')
+        const extraPath = `${accountId}/subcontractor-invoices/${invoiceId}-${n + 1}.${ext(files.value[n])}`
+        const { error: extraUpErr } = await supabase.storage.from(UPLOAD_BUCKET)
           .upload(extraPath, files.value[n], { upsert: true, contentType: files.value[n].type || 'application/pdf' })
         if (extraUpErr) uploadErrors.push(extraUpErr.message)
       }
@@ -786,7 +794,10 @@ async function save() {
         formError.value = `請求データは保存しましたが、ファイルのアップロードに失敗しました: ${uploadErrors[0]}`
       }
       if (!primaryUpErr) {
-        await supabase.from('subcontractor_invoices').update({ pdf_path: primaryPath }).eq('id', invoiceId)
+        // ★pdf_bucket も必ず一緒に更新する。パスだけ更新すると、読む側が既定の
+        //  公開バケットを見にいって「アップロードしたのに開けない」になる。
+        await supabase.from('subcontractor_invoices')
+          .update({ pdf_path: primaryPath, pdf_bucket: UPLOAD_BUCKET }).eq('id', invoiceId)
       }
     }
     // 明細insert
