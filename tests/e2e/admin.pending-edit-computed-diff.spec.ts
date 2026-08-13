@@ -162,4 +162,62 @@ test.describe('承認画面: 保存された差分が空でも中身が分かる
     await expect(c).toContainText('駐車場代 ¥0 → ¥800')
     await expect(c.getByTestId('pending-computed-diff'), 'その場計算は出さない').toHaveCount(0)
   })
+
+  // ============================================================
+  //  追記（2026-08-13）: 大塚さんからの2つの指摘への対応を固定する。
+  //   ①「どこの現場の修正かわからんね」→ 現場名を出す
+  //   ②「写真添付忘れで編集してんのに写真ないのはなんで？」
+  //      → 証憑ゼロを承認前に警告する
+  //  ★どちらも承認＝金額確定の判断材料。出していなかっただけで、データは元からあった。
+  //  ★同じ describe に置く（別 describe にすると afterAll の後始末で日報が消えて
+  //   report_id の外部キーが落ちる。実際に踏んだ）。
+  // ============================================================
+
+  test('★どこの現場の修正か分かる', async ({ page }) => {
+    const reason = `E2E現場名表示_${TS}`
+    await seedPending(reason, { is_working: true, is_business_trip: false, sites: baseSites(), gasoline_items: [] })
+
+    await page.goto('/report-edit-review', { waitUntil: 'networkidle' })
+    const c = card(page, reason)
+    await expect(c).toBeVisible({ timeout: 20000 })
+    await expect(c.getByTestId('pending-sites'), '現場名が出る').toContainText(SITE)
+  })
+
+  test('★「領収書の添付忘れ」なのに0枚なら、承認前に警告する', async ({ page }) => {
+    const reason = `E2E領収書添付忘れ_${TS}`
+    const sites = baseSites()
+    // 金額はあるが fileUrls は空＝本番で8件起きていた状態そのもの
+    ;(sites[0].expenses as any).parkings = [{ yen: 400, payee: 'E2Eパーク', tategae: true, fileUrls: [] }]
+    await seedPending(reason, { is_working: true, is_business_trip: false, sites, gasoline_items: [] })
+
+    await page.goto('/report-edit-review', { waitUntil: 'networkidle' })
+    const c = card(page, reason)
+    await expect(c).toBeVisible({ timeout: 20000 })
+    await expect(c.getByTestId('pending-receipt-gap'), '★証憑ゼロの警告が出る').toBeVisible()
+    await expect(c).toContainText('領収書が1枚も付いていません')
+  })
+
+  test('領収書が付いている申請には警告を出さない（狼少年にしない）', async ({ page }) => {
+    const reason = `E2E領収書あり添付_${TS}`
+    const sites = baseSites()
+    ;(sites[0].expenses as any).parkings = [
+      { yen: 400, payee: 'E2Eパーク', tategae: true, fileUrls: ['https://example.test/r.jpg'] },
+    ]
+    await seedPending(reason, { is_working: true, is_business_trip: false, sites, gasoline_items: [] })
+
+    await page.goto('/report-edit-review', { waitUntil: 'networkidle' })
+    const c = card(page, reason)
+    await expect(c).toBeVisible({ timeout: 20000 })
+    await expect(c.getByTestId('pending-receipt-gap'), '警告は出ない').toHaveCount(0)
+  })
+
+  test('領収書と無関係な理由の申請には警告を出さない', async ({ page }) => {
+    const reason = `E2E出張チェックのみ_${TS}`   // 「領収書」等の語を含まない
+    await seedPending(reason, { is_working: true, is_business_trip: true, sites: baseSites(), gasoline_items: [] })
+
+    await page.goto('/report-edit-review', { waitUntil: 'networkidle' })
+    const c = card(page, reason)
+    await expect(c).toBeVisible({ timeout: 20000 })
+    await expect(c.getByTestId('pending-receipt-gap'), '無関係な申請では鳴らさない').toHaveCount(0)
+  })
 })
