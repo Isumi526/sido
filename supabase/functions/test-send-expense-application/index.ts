@@ -119,7 +119,15 @@ Deno.serve(async (req) => {
     const base = `expense-applications/${slug}/${targetUserId}/${period_key}`
     const attachments: { filename: string; content: string }[] = []
     for (const [label, kind] of [['明細', 'meisai'], ['請求書', 'seikyu']] as const) {
-      const { data: file } = await supabase.storage.from('expense-receipts').download(`${base}_${kind}.pdf`)
+      // ★dual-read: 新規分は非公開の admin-docs、それ以前は旧公開バケットに在る。
+      //  2026-08-13 に書き込み先を切り替えたが既存分は移送していないので、両方見ないと
+      //  過去の期の申請メールに「PDFが付かない」まま送られる（添付が無いことは
+      //  エラーにならないので、黙って欠けるのが一番まずい）。
+      let file: Blob | null = null
+      for (const bucket of ['admin-docs', 'expense-receipts']) {
+        const { data } = await supabase.storage.from(bucket).download(`${base}_${kind}.pdf`)
+        if (data) { file = data; break }
+      }
       if (file) {
         const buf = new Uint8Array(await file.arrayBuffer())
         attachments.push({ filename: `${label}_${workerName}_${period_key}.pdf`, content: base64(buf) })
