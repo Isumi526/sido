@@ -1,0 +1,55 @@
+# ============================================================
+#  本番ヘルスチェック（毎朝）
+#  「壊れたまま成功したように見える」不具合を、人が気づく前に拾う。
+#  実体は scripts/prod-health.mjs（SELECT のみ・read-only 接続）。
+#
+#  ★必要な secrets（未設定なら実行せずスキップする＝毎朝の赤色通知を作らない）
+#    SUPABASE_PROD_DB_URL   … 本番DB接続URL。read-only セッションで使う
+#    HUMANBALL_WEBHOOK_URL  … LINE通知の入口（任意・未設定なら通知だけ飛ばない）
+#    HUMANBALL_WEBHOOK_SECRET … 同上
+# ============================================================
+name: prod-health
+
+on:
+  schedule:
+    # 毎日 07:00 JST（UTC 22:00）。朝いちで前日分の異常が分かる時刻。
+    - cron: '0 22 * * *'
+  workflow_dispatch:      # 手で回せるようにする（調査時に使う）
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: psql を入れる
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      # ★接続情報が無い状態で走らせると毎朝失敗通知が出るだけになる。
+      #  「設定されていないから測っていない」ことを明示して正常終了する。
+      - name: 接続情報の有無を確認
+        id: guard
+        env:
+          DB_URL: ${{ secrets.SUPABASE_PROD_DB_URL }}
+        run: |
+          if [ -z "$DB_URL" ]; then
+            echo "runnable=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::SUPABASE_PROD_DB_URL が未設定のため本番ヘルスチェックを実行していません"
+          else
+            echo "runnable=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: ヘルスチェック実行
+        if: steps.guard.outputs.runnable == 'true'
+        env:
+          SUPABASE_PROD_DB_URL: ${{ secrets.SUPABASE_PROD_DB_URL }}
+          HUMANBALL_WEBHOOK_URL: ${{ secrets.HUMANBALL_WEBHOOK_URL }}
+          HUMANBALL_WEBHOOK_SECRET: ${{ secrets.HUMANBALL_WEBHOOK_SECRET }}
+          NOTIFY_PREFIX: '[sido]'
+        # 接続URLは env から直接読ませる（--db-url だと argv に載るため使わない）。
+        # --assert で新規の critical 違反があれば赤くする＝GitHub 上でも気づける。
+        run: node scripts/prod-health.mjs --prod-readonly --assert --notify

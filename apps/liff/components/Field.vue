@@ -25,5 +25,6 @@ defineProps<{
 <style scoped>
 .field { display: flex; flex-direction: column; gap: 6px; }
 .label { display: inline-flex; align-items: center; font-size: 12px; color: var(--text2); letter-spacing: 0.5px; font-weight: 600; }
-.required { color: var(--danger); margin-left: 4px; }
+/* FormSection.vue の .required-badge と同じ見た目に揃える（※付き赤文字） */
+.required { color: var(--danger); font-size: 11px; font-weight: 700; margin-left: 6px; }
 </style>
