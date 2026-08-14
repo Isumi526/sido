@@ -176,5 +176,8 @@
   "payerLabel": "Paid by",
   "payerCompany": "Company card",
   "payerPersonal": "Paid out of pocket",
-  "retiredOption": "{name} (finished)"
+  "retiredOption": "{name} (finished)",
+  "punchLabel": "Actual punch",
+  "punchGapStart": "in",
+  "punchGapEnd": "out"
 }

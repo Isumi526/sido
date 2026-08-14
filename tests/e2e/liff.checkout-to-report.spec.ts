@@ -123,6 +123,24 @@ test('★現場が入っていて、作業時刻は現場の固定勤務時刻�
   await expect(body).toContainText('18:00')
 })
 
+// ★2026-08-14 発見: 現場の在庫判定に siteWorkTimes（固定勤務時刻を設定した現場だけ）を
+//  使っていたため、勤務時刻を設定していない現場では引き継ぎが効かなかった。
+//  本番の有効な現場128件中122件が該当＝打刻から飛んでも結局選び直しで、機能がほぼ死んでいた。
+test('★固定勤務時刻を設定していない現場でも、現場は引き継がれる', async ({ page }) => {
+  const PLAIN = `E2E退勤導線_時刻なし_${TS}`
+  const id = (await rest('sites', {
+    method: 'POST', headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ account_id: accountId, name: PLAIN, active: true }),   // 勤務時刻を入れない
+  }))[0].id
+  try {
+    await page.goto(`/report?date=${TODAY}&site=${encodeURIComponent(PLAIN)}`, { waitUntil: 'networkidle' })
+    const sel = page.locator('select').filter({ has: page.locator(`option[value="${PLAIN}"]`) }).first()
+    await expect(sel, '★勤務時刻が未設定でも現場が入る').toHaveValue(PLAIN, { timeout: 20000 })
+  } finally {
+    await restSrv(`sites?id=eq.${id}`, { method: 'DELETE' }).catch(() => {})
+  }
+})
+
 test('マスタに無い現場名を渡されても、入っているフリをしない（空のまま）', async ({ page }) => {
   await page.goto(`/report?date=${TODAY}&site=${encodeURIComponent('存在しない現場' + TS)}`, { waitUntil: 'networkidle' })
   const siteSelect = siteSelectOf(page)
