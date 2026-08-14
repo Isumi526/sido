@@ -151,6 +151,11 @@
           <Field :label="$t('report.contractor')">
             <select v-model="site.contractorName" class="select">
               <option value="">{{ $t('report.selectOptional') }}</option>
+              <!-- ★無効化済みの元請け。理由は下の現場selectのコメントと同じ -->
+              <option v-if="isRetiredOption(site.contractorName, master.contractorNames.value)"
+                      :value="site.contractorName" :data-testid="`retired-contractor-${si}`">
+                {{ $t('report.retiredOption', { name: site.contractorName }) }}
+              </option>
               <option v-for="name in master.contractorNames.value" :key="name" :value="name">{{ name }}</option>
               <option value="__other__">{{ $t('report.addNewContractor') }}</option>
             </select>
@@ -169,6 +174,17 @@
             <select v-model="site.siteName" class="select" required @change="onSiteChange(si)">
               <option value="">{{ $t('common.select') }}</option>
               <option value="__unset__">{{ $t('report.siteUnset') }}</option>
+              <!-- ★終わって無効化された現場の日報を編集で開いた時の受け皿。
+                   マスタは有効な現場しか返さないので、選択中の名前が候補に無いと
+                   select が空表示になり、必須チェックで保存できない＝過去の日報を
+                   二度と直せなくなる（本番で192件が該当・2026-08-14 実測）。
+                   経費の領収書を後から付ける運用がまさにこれで詰まる。
+                   ★新規入力では出ない（そこでは siteName が空なので条件が偽）。
+                   「終わった現場をプルダウンから消す」という無効化の目的は損なわない。 -->
+              <option v-if="isRetiredOption(site.siteName, master.siteNames.value)"
+                      :value="site.siteName" :data-testid="`retired-site-${si}`">
+                {{ $t('report.retiredOption', { name: site.siteName }) }}
+              </option>
               <template v-if="groupedSiteNames(site.contractorName).linked.length">
                 <optgroup :label="$t('report.siteGroupLinked')">
                   <option v-for="name in groupedSiteNames(site.contractorName).linked" :key="name" :value="name">{{ name }}</option>
@@ -726,6 +742,18 @@ function pickSimilarSite(si: number, name: string) {
 // 現場プルダウン: 元請けが選択されていれば、その元請けに紐づく現場を優先表示。
 //  紐づけ忘れで現場が選べない不便を防ぐため、紐づいていない現場も「その他の現場」として
 //  下部に残す（元請け未選択/その他の時は linked=[] で全件が others に入る＝後方互換）。
+/**
+ * いま選ばれている値がマスタの候補に無いか（＝無効化された現場・元請けを指している）。
+ * ★true の時だけ専用の option を出して選択を保持する。出さないと select が空表示になり、
+ *  現場は required なのでその日報を保存できなくなる（過去の日報が直せない）。
+ * 特殊値（未選択 / 現場未設定 / 新規追加）は対象外。
+ */
+function isRetiredOption(current: string | undefined, options: string[]): boolean {
+  const v = (current ?? '').trim()
+  if (!v || v === '__unset__' || v === '__other__') return false
+  return !options.includes(v)
+}
+
 function groupedSiteNames(contractorName?: string): { linked: string[]; others: string[] } {
   // '__unset__' という名前の現場行は「現場未設定」用の特殊値で、専用optionを別途出すため除外
   const all = master.siteNames.value.filter((n) => n !== '__unset__')
