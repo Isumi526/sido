@@ -13,5 +13,7 @@
   "proxyClear": "解除する",
   "proxyLoading": "読み込み中...",
   "periodFirstHalf": "{month}月前半",
-  "periodSecondHalf": "{month}月後半"
+  "periodSecondHalf": "{month}月後半",
+  "notifTitle": "未読のお知らせが{count}件あります",
+  "notifSub": "タップして内容を確認"
 }

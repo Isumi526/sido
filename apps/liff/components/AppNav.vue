@@ -17,6 +17,13 @@
         <span class="app-brand-name">{{ brandName }}</span>
       </span>
       <slot name="actions" />
+      <!-- ★お知らせのベル。全画面のヘッダーに常時出す。
+           LINE連携は基本しない／メールも見られない前提なので、アプリを開けば
+           必ず目に入る場所が1つ要る（2026-08-14 ユーザー指示）。 -->
+      <NuxtLink class="app-bell" to="/notifications" :aria-label="$t('nav.notifications')" data-testid="nav-bell">
+        <span class="material-symbols-rounded">notifications</span>
+        <span v-if="unreadNotifCount > 0" class="app-bell-badge" data-testid="nav-bell-badge">{{ unreadNotifCount }}</span>
+      </NuxtLink>
       <button class="app-hamburger" @click="open = true" :aria-label="$t('nav.openMenu')">
         <span class="app-bar" />
         <span class="app-bar" />
@@ -77,6 +84,7 @@
               <span class="drawer-item-icon material-symbols-rounded">{{ item.icon }}</span>
               <span>{{ item.label }}</span>
               <span v-if="item.path === '/calendar' && unreadScheduleCount > 0" class="drawer-item-badge" data-testid="drawer-schedule-badge">{{ unreadScheduleCount }}</span>
+              <span v-if="item.path === '/notifications' && unreadNotifCount > 0" class="drawer-item-badge" data-testid="drawer-notif-badge">{{ unreadNotifCount }}</span>
             </NuxtLink>
           </template>
 
@@ -225,7 +233,7 @@ const open = ref(false)
 // ※ @click ハンドラ内で直接呼ぶと useSchedules() 内の useI18n() が「setup外」判定で例外になり
 //   サイレントに失敗する(コンポーネントinstance文脈が無いDOMイベントハンドラのため)。
 //   watchはVueのeffectスコープ内で実行されinstance文脈が保持されるためここに書く。
-watch(open, (isOpen) => { if (isOpen) refreshScheduleNotifBadge() })
+watch(open, (isOpen) => { if (isOpen) refreshNotifBadge() })
 
 // ホーム画面(pages/index.vue)と共通のナビ項目定義（composables/useNavItems.ts）。
 // 表記・並び・表示条件(パスワード変更等)のズレを防ぐ（2026-07-10）。
@@ -234,7 +242,7 @@ onMounted(() => { void resolveRole() })
 const { bySection } = useNavItems(() => authMode.value, () => canApplyPersonalExpense.value)
 
 // 予定管理ナビの未読バッジ（#予定通知バッジ・2026-07-11）
-onMounted(() => { refreshScheduleNotifBadge() })
+onMounted(() => { refreshNotifBadge() })
 // チャット一覧ナビの未読バッジ（2026-07-14・現場情報ナビの未読メンションバッジから移設・集約）
 onMounted(() => { refreshSiteChatListBadge() })
 
@@ -361,6 +369,20 @@ async function logout() {
 .app-brand-name { font-size: 10px; font-weight: 800; letter-spacing: 2px; color: #06C755; margin-top: 1px; }
 
 /* ハンバーガーボタン */
+.app-bell {
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 36px; height: 36px;
+  color: inherit; text-decoration: none;
+}
+.app-bell .material-symbols-rounded { font-size: 24px; }
+.app-bell-badge {
+  position: absolute; top: 2px; right: 0;
+  min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 8px; background: #e53935; color: #fff;
+  font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
+}
+
 .app-hamburger {
   display: flex;
   flex-direction: column;
