@@ -1,0 +1,215 @@
+<template>
+  <div class="late-wrap">
+    <!-- ★打刻を忘れた日をあとから入れる（2026-08-10 大塚さん「4日前まできればいいんじゃない？」）。
+         打刻は「あとから直せない記録」なので既存行は書き換えず、遡り分を新しい1件として
+         追記する（backdated=true）。管理画面ではその場で押した打刻と区別して見える。 -->
+    <button v-if="!open" class="late-open" data-testid="late-open" @click="openPanel()">
+      <span class="material-symbols-rounded">history</span>{{ $t('checkin.lateOpen') }}
+    </button>
+
+    <div v-else class="late-panel" data-testid="late-panel">
+      <div class="late-title">{{ $t('checkin.lateTitle') }}</div>
+      <p class="late-note">{{ $t('checkin.lateNote', { days: LATE_MAX_DAYS }) }}</p>
+
+      <label class="late-label">{{ $t('checkin.lateDate') }}</label>
+      <select v-model="date" class="late-input" data-testid="late-date">
+        <option v-for="d in dateOptions" :key="d.value" :value="d.value">{{ d.label }}</option>
+      </select>
+
+      <label class="late-label">{{ $t('checkin.lateSite') }}</label>
+      <select v-model="siteId" class="late-input" data-testid="late-site">
+        <option value="">{{ $t('checkin.lateSitePlaceholder') }}</option>
+        <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.name }}</option>
+      </select>
+
+      <div class="late-times">
+        <div class="late-time-field">
+          <label class="late-label">{{ $t('checkin.lateCheckin') }}</label>
+          <select v-model="checkin" class="late-input" data-testid="late-checkin">
+            <option value="">—</option>
+            <option v-for="tm in LATE_TIME_OPTIONS" :key="tm" :value="tm">{{ tm }}</option>
+          </select>
+        </div>
+        <div class="late-time-field">
+          <label class="late-label">{{ $t('checkin.lateCheckout') }}</label>
+          <select v-model="checkout" class="late-input" data-testid="late-checkout">
+            <option value="">—</option>
+            <option v-for="tm in LATE_TIME_OPTIONS" :key="tm" :value="tm">{{ tm }}</option>
+          </select>
+        </div>
+      </div>
+
+      <p v-if="error" class="late-error" data-testid="late-error">{{ error }}</p>
+      <p v-if="done" class="late-ok" data-testid="late-done">{{ $t('checkin.lateDone') }}</p>
+
+      <div class="late-actions">
+        <button class="late-submit" :disabled="busy" data-testid="late-submit" @click="submit()">
+          {{ busy ? $t('checkin.lateSubmitting') : $t('checkin.lateSubmit') }}
+        </button>
+        <button class="late-cancel" data-testid="late-cancel" @click="open = false">{{ $t('checkin.lateCancel') }}</button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+// ============================================================
+//  LatePunchPanel — 打刻を忘れた日をあとから入力する
+//
+//  出所: 大塚さんとの電話 2026-08-10
+//   「次の日でも別に今までと同じような感じで、4日前まできればいいんじゃない？3日前か」
+//   「出勤するのを忘れたとしても…18時だとしても、出勤するよってすぐ〔打刻〕して、
+//     実際に時間を打ち込む」
+//
+//  ★UPDATE ではなく INSERT。attendance_logs は RLS で UPDATE/DELETE を全面禁止していて
+//   「あとから直せない記録」であることが存在意義（同意したルール文面のスナップショットを
+//   法的証拠として持っている）。遡り分も1件のログとして積む。
+//
+//  ★代理では入れない。自分の分だけ（他人の勤怠を後付けで作れる導線を開けない）。
+//
+//  ★コンポーネントにしている理由: 現場選択の画面と「出勤中」専用画面の両方に置く必要がある。
+//   出勤中は現場一覧を出さない画面に入るので、現場選択の中だけに置くと
+//   「いま出勤中の人が前日の打刻を直せない」という一番ありそうな場面で届かない。
+//   かつ、どちらの画面も高さ固定で一覧が内部スクロールする作りなので、
+//   ページ直下ではなく各画面の中（縮まないフッター）に置く必要がある。
+// ============================================================
+import { useI18n } from 'vue-i18n'
+
+const props = defineProps<{
+  sites: { id: string; name: string }[]
+  workerId: string | null
+}>()
+const emit = defineEmits<{ (e: 'recorded'): void }>()
+
+const { t } = useI18n()
+const supabase = useSupabase()
+
+const LATE_MAX_DAYS = 4
+// 5分刻み（2026-07-27 打ち合わせで時間の刻みは5分と確定。実際に働いた時刻を入れる欄なので
+//  30分刻みだと「実際の時間を打ち込む」という目的に足りない）
+const LATE_TIME_OPTIONS = Array.from({ length: 24 * 12 }, (_, i) =>
+  `${String(Math.floor(i / 12)).padStart(2, '0')}:${String((i % 12) * 5).padStart(2, '0')}`)
+
+const open     = ref(false)
+const date     = ref('')
+const siteId   = ref('')
+const checkin  = ref('')
+const checkout = ref('')
+const busy     = ref(false)
+const error    = ref('')
+const done     = ref(false)
+
+/** JSTの YYYY-MM-DD（端末のタイムゾーンに引きずられない） */
+function jstDay(offsetDays = 0): string {
+  const d = new Date(Date.now() - offsetDays * 24 * 60 * 60 * 1000)
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo' }).format(d)
+}
+
+/** 今日〜LATE_MAX_DAYS日前。これより前は選べない＝際限なく後付けできないようにする */
+const dateOptions = computed(() =>
+  Array.from({ length: LATE_MAX_DAYS + 1 }, (_, i) => {
+    const value = jstDay(i)
+    const [, m, d] = value.split('-')
+    return { value, label: i === 0 ? `${Number(m)}/${Number(d)}（今日）` : `${Number(m)}/${Number(d)}` }
+  }))
+
+function openPanel() {
+  open.value = true
+  error.value = ''
+  done.value = false
+  if (!date.value) date.value = jstDay(1)   // 既定は「昨日」（打刻忘れに気づくのは翌日が普通）
+}
+
+async function submit() {
+  error.value = ''
+  done.value = false
+
+  // 現場を選ぶ前でも押せる画面なので、worker_id はここでも取り直す
+  const workerId = props.workerId ?? (await useCurrentUser().resolve())?.worker_id ?? null
+  if (!workerId) { error.value = t('checkin.lateErrNoWorker'); return }
+  if (!siteId.value) { error.value = t('checkin.lateErrNoSite'); return }
+  if (!checkin.value && !checkout.value) { error.value = t('checkin.lateErrNoTime'); return }
+  if (!dateOptions.value.some(o => o.value === date.value)) { error.value = t('checkin.lateErrOutOfRange'); return }
+  if (checkin.value && checkout.value && checkin.value >= checkout.value) {
+    error.value = t('checkin.lateErrOrder'); return
+  }
+
+  busy.value = true
+  try {
+    // 同じ日・同じ現場に既に同じ種別の打刻があるなら足さない（二重計上の防止）
+    const lo = new Date(`${date.value}T00:00:00+09:00`).toISOString()
+    const hi = new Date(`${date.value}T23:59:59+09:00`).toISOString()
+    const { data: exists } = await supabase.from('attendance_logs')
+      .select('type').eq('worker_id', workerId).eq('site_id', siteId.value)
+      .gte('checked_at', lo).lte('checked_at', hi)
+    const already = new Set(((exists ?? []) as { type: string }[]).map(r => r.type))
+
+    const rows: Record<string, unknown>[] = []
+    const push = (type: 'checkin' | 'checkout', hhmm: string) => {
+      if (!hhmm || already.has(type)) return
+      rows.push({
+        site_id: siteId.value, worker_id: workerId, type,
+        checked_at: new Date(`${date.value}T${hhmm}:00+09:00`).toISOString(),
+        // ★あとから入力した分は現場ルールの同意を取っていない。
+        //  取っていないものを取ったことにしない（同意文面は法的証拠として使う）。
+        agreed_rule_texts: [],
+        backdated: true,
+      })
+    }
+    push('checkin', checkin.value)
+    push('checkout', checkout.value)
+
+    if (!rows.length) { error.value = t('checkin.lateErrDuplicate'); return }
+    const { error: insErr } = await supabase.from('attendance_logs').insert(rows)
+    if (insErr) throw insErr
+
+    done.value = true
+    checkin.value = ''
+    checkout.value = ''
+    emit('recorded')
+  } catch (e: any) {
+    console.error('[LatePunchPanel] 遡り打刻に失敗:', e)
+    error.value = t('checkin.lateErrFailed')
+  } finally {
+    busy.value = false
+  }
+}
+</script>
+
+<style scoped>
+/* ★flex-shrink:0。親（現場選択・出勤中画面）は高さ固定で一覧が内部スクロールする作りなので、
+   ここが伸びるとページ全体がはみ出す（liff.checkin-select-site の不変条件）。 */
+.late-wrap { flex-shrink: 0; width: 100%; max-width: 480px; margin: 0 auto; box-sizing: border-box; padding: 0 16px 12px; }
+
+.late-open {
+  margin: 10px auto 0; display: flex; align-items: center; gap: 6px;
+  background: none; border: none; color: #475569; font-size: 13px;
+  text-decoration: underline; cursor: pointer;
+}
+.late-panel {
+  margin: 10px 0 0; padding: 14px; background: #fff;
+  border: 1px solid #cbd5e1; border-radius: 12px; text-align: left;
+  max-height: 60vh; overflow-y: auto;
+}
+.late-title { font-size: 14px; font-weight: 700; color: #0f172a; }
+.late-note  { margin: 4px 0 10px; font-size: 12px; color: #64748b; line-height: 1.6; }
+.late-label { display: block; margin: 8px 0 4px; font-size: 12px; color: #64748b; }
+.late-input {
+  width: 100%; box-sizing: border-box; padding: 12px 14px;
+  border: 1px solid #cbd5e1; border-radius: 10px; font-size: 15px; background: #fff;
+}
+.late-times { display: flex; gap: 10px; }
+.late-time-field { flex: 1; min-width: 0; }
+.late-error { margin: 10px 0 0; font-size: 13px; color: #b91c1c; line-height: 1.6; }
+.late-ok    { margin: 10px 0 0; font-size: 13px; color: #047857; line-height: 1.6; }
+.late-actions { display: flex; gap: 8px; margin-top: 12px; }
+.late-submit {
+  flex: 1; background: #06C755; color: #fff; border: none; border-radius: 8px;
+  padding: 12px; font-size: 14px; font-weight: 700; cursor: pointer;
+}
+.late-submit:disabled { opacity: .5; }
+.late-cancel {
+  background: #fff; color: #64748b; border: 1px solid #ddd; border-radius: 8px;
+  padding: 12px 16px; font-size: 14px; cursor: pointer;
+}
+</style>
