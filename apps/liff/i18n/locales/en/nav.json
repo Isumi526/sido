@@ -22,5 +22,6 @@
   "proxyInput": "Proxy Input",
   "sites": "Sites",
   "passwordChange": "Change Password",
-  "logout": "Log out"
+  "logout": "Log out",
+  "notifications": "Notifications"
 }
