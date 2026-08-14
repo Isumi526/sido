@@ -85,6 +85,13 @@
                 <div v-for="(s, i) in detailMap[rep.date]" :key="i" class="detail-site">
                   <div class="detail-site-name"><span class="material-symbols-rounded detail-icon">location_on</span>{{ s.name }}</div>
                   <div v-if="s.contractor" class="detail-contractor"><span class="material-symbols-rounded detail-icon">apartment</span>{{ s.contractor }}</div>
+                  <!-- ★その日その現場の実打刻。表示専用（人件費は日報の作業時刻がマスタ）。
+                       打刻が無ければ行ごと出さない＝0:00 のように見せない。 -->
+                  <div v-if="punchOf(rep.date, s.name)" class="detail-punch" data-testid="history-punch">
+                    <span class="material-symbols-rounded detail-icon">how_to_reg</span>
+                    {{ $t('history.punchLabel') }}
+                    {{ punchOf(rep.date, s.name)?.checkin ?? '—' }} 〜 {{ punchOf(rep.date, s.name)?.checkout ?? '—' }}
+                  </div>
 
                   <ul v-if="s.workers.length" class="detail-list">
                     <li v-for="(w, wi) in s.workers" :key="wi">
@@ -292,6 +299,7 @@ onMounted(async () => {
     await loadReports()
     await loadGrants()
     void loadPendingDates()   // 描画は待たせない
+    void loadPunches()        // 実打刻も後追い（取れなくても履歴は読める）
   }
   loading.value = false
 })
@@ -302,7 +310,25 @@ watch(() => proxy.proxyTarget.value, async () => {
   await loadReports()
   await loadGrants()
   loading.value = false
+  void loadPunches()
 })
+
+// ── 実打刻（2026-08-10 大塚さん「日報の中に実際打った打刻時間も出てくればいい」）──
+//  ★表示専用。人件費は日報の作業時刻がマスタのまま。
+const punches = usePunches()
+async function loadPunches() {
+  const list = reports.value
+  if (!list.length) return
+  // 代理中は代理先の打刻を見る（その人の日報を見ているため）
+  const workerId = proxy.proxyTarget.value?.id ?? selfUser.value?.worker_id ?? null
+  const dates = list.map((r: any) => r.date).sort()
+  await punches.loadRange(workerId, dates[0], dates[dates.length - 1])
+  punchWorkerId.value = workerId
+}
+const punchWorkerId = ref<string | null>(null)
+function punchOf(date: string, siteName: string) {
+  return punches.punchFor(punchWorkerId.value, date, siteName)
+}
 
 // 月ごとにグループ化
 const grouped = computed(() => {
@@ -511,6 +537,7 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--font)
 /* 承認待ち（まだ日報が無い新規提出）。中身は通常の日報カードと同じ描画で、枠だけ変えて区別する */
 .report-card.pending-only { border: 1px dashed #7ea8dd; background: #f5f9ff; }
 .pending-note { font-size: 12px; color: #1e4f8a; margin: 6px 0 0; line-height: 1.6; }
+.detail-punch { font-size: 12px; color: #475569; margin-top: 2px; }
 
 /* 差し戻し。承認待ち（青）とは別物なので赤系で、一覧の先頭に出す */
 .rejected-card {
