@@ -102,6 +102,14 @@
                   {{ gasAnalyzingId === g._id ? $t('report.analyzing') : $t('report.aiAnalyzeGas') }}
                 </button>
               </div>
+              <!-- ★判定は fileUrls だけを見る（選択時に即アップロードされる）。
+                   ローカルの File を「添付あり」に数えると、アップロードに失敗した時に
+                   入力欄が出ないまま送信だけ弾かれて直せなくなる。 -->
+              <input v-if="needsReceiptReason(g, 'ガソリン代（本日）')"
+                     v-model="g.noReceiptReason" type="text"
+                     class="input mt6" :class="{ 'input-required': !g.noReceiptReason?.trim() }"
+                     :data-testid="`no-receipt-reason-gas-${gi}`"
+                     :placeholder="$t('report.noReceiptReasonPlaceholder')" @keydown.enter.prevent />
               <!-- ② 手入力（支払い先・金額・登録番号） -->
               <div class="lineitems-row mt6">
                 <input v-model="g.payee" type="text" class="input" :data-testid="`gas-payee-${gi}`" :placeholder="$t('report.gasPayeePlaceholder')" @keydown.enter.prevent />
@@ -350,6 +358,10 @@
                           {{ receipt.loading.value === `${si}-parking-${pi}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                         </button>
                       </div>
+                      <input v-if="needsReceiptReason(pk, '駐車代')" v-model="pk.noReceiptReason" type="text"
+                             class="input mt6" :class="{ 'input-required': !pk.noReceiptReason?.trim() }"
+                             :data-testid="`no-receipt-reason-parking-${si}-${pi}`"
+                             :placeholder="$t('report.noReceiptReasonPlaceholder')" @keydown.enter.prevent />
                     </div>
                     <div class="lineitems-row mt6">
                       <ExpenseField v-model="pk.yen" v-model:tategae="pk.tategae" with-tategae :label="$t('report.amountYen')" />
@@ -374,6 +386,11 @@
                           {{ receipt.loading.value === `${si}-highway-${hi}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                         </button>
                       </div>
+                      <!-- ETCカードを選ぶとこの欄は消える（利用明細で後日精算＝その場で領収書が出ない） -->
+                      <input v-if="needsReceiptReason(hw, '高速代')" v-model="hw.noReceiptReason" type="text"
+                             class="input mt6" :class="{ 'input-required': !hw.noReceiptReason?.trim() }"
+                             :data-testid="`no-receipt-reason-highway-${si}-${hi}`"
+                             :placeholder="$t('report.noReceiptReasonPlaceholder')" @keydown.enter.prevent />
                     </div>
                     <div class="lineitems-row mt6">
                       <ExpenseField v-model="hw.yen" v-model:tategae="hw.tategae" with-tategae :label="$t('report.amountYen')" />
@@ -413,6 +430,10 @@
                         {{ receipt.loading.value === `${si}-train-${ti}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                       </button>
                     </div>
+                    <input v-if="needsReceiptReason(tr, '電車代')" v-model="tr.noReceiptReason" type="text"
+                           class="input mt6" :class="{ 'input-required': !tr.noReceiptReason?.trim() }"
+                           :data-testid="`no-receipt-reason-train-${si}-${ti}`"
+                           :placeholder="$t('report.noReceiptReasonPlaceholder')" @keydown.enter.prevent />
                   </div>
                   <div class="lineitems-row mt6">
                     <input v-model="tr.label" type="text" class="input" :placeholder="$t('report.trainRoutePlaceholder')" @keydown.enter.prevent />
@@ -449,6 +470,10 @@
                         {{ receipt.loading.value === `${si}-hotel-${hi}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                       </button>
                     </div>
+                    <input v-if="needsReceiptReason(ho, '宿泊費')" v-model="ho.noReceiptReason" type="text"
+                           class="input mt6" :class="{ 'input-required': !ho.noReceiptReason?.trim() }"
+                           :data-testid="`no-receipt-reason-hotel-${si}-${hi}`"
+                           :placeholder="$t('report.noReceiptReasonPlaceholder')" @keydown.enter.prevent />
                   </div>
                   <div class="lineitems-row mt6">
                     <input v-model="ho.label" type="text" class="input" :placeholder="$t('report.facilityNameHotelPlaceholder')" @keydown.enter.prevent />
@@ -503,6 +528,10 @@
                         {{ receipt.loading.value === `${si}-other-${oi}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                       </button>
                     </div>
+                    <input v-if="needsReceiptReason(ot, 'その他')" v-model="ot.noReceiptReason" type="text"
+                           class="input mt6" :class="{ 'input-required': !ot.noReceiptReason?.trim() }"
+                           :data-testid="`no-receipt-reason-other-${si}-${oi}`"
+                           :placeholder="$t('report.noReceiptReasonPlaceholder')" @keydown.enter.prevent />
                   </div>
                   <div class="lineitems-row mt6">
                     <input v-model="ot.label" type="text" class="input" :placeholder="$t('report.contentPlaceholder')" @keydown.enter.prevent />
@@ -1388,6 +1417,55 @@ function findMissingCompanions(): string | null {
   return null
 }
 
+// ────────────────────────────────────────────
+//  領収書の添付必須（2026-08-14 ユーザー確定）
+//  「領収書かレシートは99%もらえるものだから写真添付必須にして、ごく稀に
+//   もらえない場合は理由をコメントしてアップさせればいい」。
+//  ＝ 添付を必須にするが、理由を書けば通す。黙って0枚で通さないのが目的。
+//  それまでは添付のバリデーションが1件も無く、本番で9件・約59,000円が
+//  証憑なしで承認待ちになっていた（2026-08-12 発見）。
+// ────────────────────────────────────────────
+/** 経費配列のキー → 画面の呼び名。エラー文言と入力欄の出し分けに使う */
+const RECEIPT_GROUPS = [
+  ['parkings',       '駐車代',       'report.parking'],
+  ['highways',       '高速代',       'report.highway'],
+  ['trains',         '電車代',       'report.train'],
+  ['hotels',         '宿泊費',       'report.hotel'],
+  ['others',         'その他',       'report.other'],
+  // entertainments は入力UIが無い（2026-07-31 に「その他」へ統合し、編集ロード時に
+  // others へ畳んでいる）。理由を書く欄が出せない以上、ここで弾くと直せない詰みになる。
+] as const
+
+function hasReceipt(item: any): boolean {
+  return !!(item?.fileUrls?.length || item?.files?.length)
+}
+
+/** その明細に「領収書が無い理由」の記入を求めるか（＝金額があるのに領収書0枚） */
+function needsReceiptReason(item: any, category: string): boolean {
+  if (!(Number(item?.yen) > 0)) return false          // 金額未入力の空行は対象外
+  if (hasReceipt(item)) return false
+  return !receiptExempt({ category, etcCard: item?.etcCard })
+}
+
+/** 領収書も理由も無い明細があればエラーメッセージを返す（送信を弾く） */
+function findMissingReceipts(): string | null {
+  const complain = (labelKey: string) => t('report.receiptRequired', { name: t(labelKey) })
+  for (const site of (report.form.value.sites ?? [])) {
+    const exp: any = site?.expenses ?? {}
+    for (const [key, category, labelKey] of RECEIPT_GROUPS) {
+      for (const it of (exp[key] ?? [])) {
+        if (!needsReceiptReason(it, category)) continue
+        if (!String(it.noReceiptReason ?? '').trim()) return complain(labelKey)
+      }
+    }
+  }
+  for (const g of (report.form.value.gasolineItems ?? [])) {
+    if (!needsReceiptReason(g, 'ガソリン代（本日）')) continue
+    if (!String(g.noReceiptReason ?? '').trim()) return complain('report.gasolineSection')
+  }
+  return null
+}
+
 function findWorkerTimeOverlap(): string | null {
   const segs: { name: string; start: number; end: number }[] = []
   for (const s of (report.form.value.sites ?? [])) {
@@ -1823,6 +1901,17 @@ async function handleSubmit() {
     if (companionMsg) {
       if (isEditMode.value) editError.value = companionMsg
       alert(companionMsg)
+      return
+    }
+  }
+
+  // ── 送信バリデート: 領収書も「無い理由」も無い経費は弾く（2026-08-14 ユーザー確定）──
+  //  ★新規・編集の両方に効かせたいので、モード分岐より手前に置く。
+  {
+    const receiptMsg = findMissingReceipts()
+    if (receiptMsg) {
+      if (isEditMode.value) editError.value = receiptMsg
+      alert(receiptMsg)
       return
     }
   }

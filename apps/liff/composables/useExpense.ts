@@ -379,6 +379,8 @@ export const useExpense = () => {
         fuelType: it.fuelType === 'diesel' ? 'diesel' : (it.fuelType === 'regular' ? 'regular' : null),
         tategae: !!it.tategae,
         fileUrls: Array.isArray(it.fileUrls) ? it.fileUrls : [],
+        // ★ここはホワイトリスト。列挙し忘れたフィールドは黙って消える。
+        noReceiptReason: it.noReceiptReason?.trim() || null,
       }))
   }
 

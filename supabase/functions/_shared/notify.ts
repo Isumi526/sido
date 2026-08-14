@@ -108,7 +108,10 @@ export function buildReportMessage(body: {
 
     // 領収書フォルダ URL
     const urlKeys = ['vehicleUrls','trainUrls','hotelUrls','leopalaceUrls','otherUrls','entertainmentUrls','garbagePhotoUrls']
-    const hasItemFiles = [...(exp.parkings || []), ...(exp.highways || []), ...(exp.trains || [])].some((it: any) => it?.fileUrls?.length > 0)
+    // ★キー名を並べずに全配列を舐める。以前は parkings/highways/trains だけを見ており、
+    //  宿泊費・その他にだけ領収書を付けた日報では「📁 領収書」行が出なかった。
+    const hasItemFiles = Object.values(exp).some(
+      (v: any) => Array.isArray(v) && v.some((it: any) => it?.fileUrls?.length > 0))
     const hasFiles = urlKeys.some(k => exp[k]?.length > 0) || hasItemFiles
     if (hasFiles && liffUrl) {
       const day    = parseInt(date.split('-')[2], 10)
