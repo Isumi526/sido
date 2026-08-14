@@ -241,3 +241,23 @@ export async function downloadStorage(bucket: string, path: string): Promise<{ d
   const buf = Buffer.from(await res.arrayBuffer())
   return { data: buf.toString('latin1') }
 }
+
+/**
+ * 「領収書が無い理由」の欄をまとめて埋める。
+ *
+ * ★2026-08-14 に経費の領収書添付が必須になった（無い場合は理由の記入が要る）。
+ *  それ以前から在る spec は「金額だけ入れて送信する」形なので、そのままだと
+ *  送信が弾かれる。領収書そのものが主題でない spec は、送信の直前にこれを呼んで
+ *  必須条件を満たしてから本来の検証に進む。
+ *  ※ 領収書必須化そのものの検証は liff.expense-receipt-required.spec.ts。
+ */
+export async function fillNoReceiptReasons(page: any, reason = 'E2E: 領収書なし'): Promise<number> {
+  const inputs = page.locator('input[placeholder*="領収書が無い理由"]')
+  const n = await inputs.count()
+  for (let i = 0; i < n; i++) {
+    const el = inputs.nth(i)
+    if (await el.inputValue()) continue
+    await el.fill(reason)
+  }
+  return n
+}

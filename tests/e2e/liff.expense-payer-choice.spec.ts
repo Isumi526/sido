@@ -11,7 +11,7 @@
 //   （列を増やす/意味を変えると16ファイルの消費箇所と過去データに波及するため）。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, restSrv, getDevUserId, getAccountId } from './helpers'
+import { rest, restSrv, getDevUserId, getAccountId, fillNoReceiptReasons } from './helpers'
 
 const TS = Date.now()
 const DATE = '2026-10-24'
@@ -100,6 +100,7 @@ test('AC3★: 選び直すと保存され、保存形式は tategae(boolean) の
 
   await card.getByTestId('payer-personal').check()
   await page.getByTestId('edit-reason').fill(`E2E支払元変更_${TS}`)
+  await fillNoReceiptReasons(page)
   await page.getByTestId('report-submit').click()
 
   // ★編集は承認制なので daily_reports はまだ変わらない。保留の payload で確認する

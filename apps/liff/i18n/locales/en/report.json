@@ -101,6 +101,8 @@
   "accountAuto": "Account: auto ({name})",
   "companionsPlaceholder": "Attendees (required, e.g. Mr. Tanaka of ABC Corp.)",
   "companionsRequired": "{account} requires the names of attendees (required for tax records).",
+  "noReceiptReasonPlaceholder": "Reason there is no receipt (required, e.g. the register was broken)",
+  "receiptRequired": "{name} needs a photo of the receipt. Attach one, or write why there is none.",
   "leopalace": "Leopalace, etc.",
   "facilityNamePlaceholder": "Facility name",
   "garbage": "Waste",

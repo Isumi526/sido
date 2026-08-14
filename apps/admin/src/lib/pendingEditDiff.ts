@@ -46,6 +46,33 @@ export function totalExpenseYen(r: ReportRow | null | undefined): number {
   return sum
 }
 
+/** 経費配列キー → 承認画面で使う呼び名 */
+const EXPENSE_KEY_LABELS: Record<string, string> = {
+  parkings: '駐車場代', highways: '高速代', trains: '電車', hotels: '宿泊費',
+  others: 'その他', entertainments: 'その他雑経費',
+}
+
+/**
+ * 「領収書が無い理由」が申告された明細（例: 「駐車場代: レジ故障でレシートが出なかった」）。
+ * ★承認者がこれを読めないと、証憑なしを通してよいか判断できない。
+ *  作業員に書かせておいて承認画面に出さないなら、書かせる意味が無い。
+ */
+export function noReceiptReasons(r: ReportRow | null | undefined): string[] {
+  const out: string[] = []
+  const push = (label: string, item: any) => {
+    const reason = String(item?.noReceiptReason ?? '').trim()
+    if (reason) out.push(`${label}: ${reason}`)
+  }
+  for (const site of (r?.sites ?? [])) {
+    for (const [key, v] of Object.entries(site?.expenses ?? {})) {
+      if (!Array.isArray(v)) continue
+      for (const item of v) push(EXPENSE_KEY_LABELS[key] ?? key, item)
+    }
+  }
+  for (const g of (r?.gasoline_items ?? [])) push('ガソリン代', g)
+  return out
+}
+
 /** 領収書の枚数（fileUrls の総数） */
 export function receiptCount(r: ReportRow | null | undefined): number {
   let n = 0

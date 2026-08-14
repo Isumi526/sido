@@ -55,6 +55,7 @@ export interface LineItem {
   registrationNumber?: string  // 登録番号（その他資材等）
   account?:            string  // 勘定科目（その他/雑経費のみ入力。空=カテゴリから自動導出）
   companions?:         string  // 同行者名（科目=接待交際費/会議費の時だけ必須。税務上「誰と行ったか」）
+  noReceiptReason?:    string  // 領収書が無い理由（領収書0枚の時だけ必須。書けば送れる）
   tategae?:            boolean  // 個人建て替えフラグ
   files?:              File[]   // 明細ごとの送信前領収書（JSONには載せない）
   fileUrls?:           string[] // Supabase Storage URL（保存・編集ロード・集計で使用）
@@ -66,6 +67,7 @@ export interface ExpenseFileLineItem {
   yen?:                number
   payee?:              string  // 支払い先（店名/業者）
   registrationNumber?: string  // 登録番号（インボイス・AI解析で出ない時は手入力）
+  noReceiptReason?:    string  // 領収書が無い理由（領収書0枚の時だけ必須。書けば送れる）
   tategae?:            boolean  // 個人建て替えフラグ
   files?:              File[]   // 送信前のローカルファイル（JSONには載せない）
   fileUrls?:           string[] // Supabase Storage URL（保存・編集ロード・集計で使用）
@@ -151,6 +153,7 @@ export interface GasolineItem {
   fuelType?: 'regular' | 'diesel'  // 燃料種別（レギュラー/ディーゼル）
   tategae?: boolean            // 個人立替（会社が精算する分）
   fileUrls?: string[]          // 領収書URL（選択時に即アップロード）
+  noReceiptReason?: string     // 領収書が無い理由（領収書0枚の時だけ必須。書けば送れる）
 }
 
 export interface MasterData {
