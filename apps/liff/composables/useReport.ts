@@ -48,12 +48,12 @@ export const createVehicle = (): VehicleExpense => ({
 })
 
 let gasItemSeq = 0
-export const createGasolineItem = (): GasolineItem => ({ _id: ++gasItemSeq, payee: '', yen: undefined, registrationNumber: '', liters: undefined, fuelType: 'regular', tategae: false, fileUrls: [] })
+export const createGasolineItem = (): GasolineItem => ({ _id: ++gasItemSeq, payee: '', yen: undefined, registrationNumber: '', liters: undefined, fuelType: 'regular', tategae: false, fileUrls: [], noReceiptReason: '' })
 
-export const createLineItem = (): LineItem => ({ label: '', yen: undefined, payee: '', account: '', companions: '', tategae: false })
-export const createParking = (): ExpenseFileLineItem => ({ yen: undefined, payee: '', tategae: false, files: [] })
-export const createHighway = (): HighwayLineItem => ({ yen: undefined, payee: '', tategae: false, etcCard: '', files: [] })
-export const createTrain = (): ExpenseFileLineItem => ({ label: '', yen: undefined, payee: '', tategae: false, files: [] })
+export const createLineItem = (): LineItem => ({ label: '', yen: undefined, payee: '', account: '', companions: '', noReceiptReason: '', tategae: false })
+export const createParking = (): ExpenseFileLineItem => ({ yen: undefined, payee: '', noReceiptReason: '', tategae: false, files: [] })
+export const createHighway = (): HighwayLineItem => ({ yen: undefined, payee: '', noReceiptReason: '', tategae: false, etcCard: '', files: [] })
+export const createTrain = (): ExpenseFileLineItem => ({ label: '', yen: undefined, payee: '', noReceiptReason: '', tategae: false, files: [] })
 
 export const createSite = (): SiteReport => ({
   siteName:       '',

@@ -4,7 +4,7 @@
 //  ＋ 送信 → daily_reports へ正しいJSONで保存 → 編集で往復復元（コアデータ保存）
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, getDevUserId } from './helpers'
+import { rest, getDevUserId, fillNoReceiptReasons } from './helpers'
 
 test('駐車場代を2行・高速代を1行 追加でき、削除もできる', async ({ page }) => {
   try { await page.goto('/report', { waitUntil: 'networkidle', timeout: 8000 }) }
@@ -88,6 +88,7 @@ test('駐車場代・高速代を入力して送信すると daily_reports に�
   // 記入忘れ確認チェック（新規送信は必須＝送信ボタンを有効化）
   await page.locator('.submit-confirm input[type="checkbox"]').check()
   // 送信 → 完了
+  await fillNoReceiptReasons(page)
   await page.locator('button[type="submit"].btn-submit').click()
   await expect(page.getByText(/送信完了|更新しました/)).toBeVisible({ timeout: 20000 })
 

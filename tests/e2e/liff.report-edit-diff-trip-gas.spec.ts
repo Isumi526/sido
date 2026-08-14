@@ -12,7 +12,7 @@
 //  （画面の見た目ではなく、監査に残る実データを見る）。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, restSrv, getDevUserId, getAccountId } from './helpers'
+import { rest, restSrv, getDevUserId, getAccountId, fillNoReceiptReasons } from './helpers'
 
 const EDIT_DATE = '2026-10-17'
 const TS = Date.now()
@@ -59,6 +59,8 @@ async function openEdit(page: import('@playwright/test').Page) {
 /** 理由を入れて更新し、記録された差分行を返す */
 async function submitAndReadDiffs(page: import('@playwright/test').Page, reason: string): Promise<string[]> {
   await page.getByTestId('edit-reason').fill(reason)
+  // 領収書必須化（2026-08-14）。この spec の主題は差分の中身なので理由を書いて進む
+  await fillNoReceiptReasons(page)
   await page.getByTestId('report-submit').click()
   await expect.poll(async () => {
     const logs = await restSrv(`daily_report_edit_logs?report_user_id=eq.${uid}&report_date=eq.${EDIT_DATE}&select=diffs`)

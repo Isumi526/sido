@@ -6,7 +6,7 @@
 //  - 電車(明細ごと)を送信 → daily_reports.trains に正しく保存（型変更の保存検証）
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, getDevUserId } from './helpers'
+import { rest, getDevUserId, fillNoReceiptReasons } from './helpers'
 
 // 1x1 PNG（ダミー領収書）
 const PNG_1x1 = Buffer.from(
@@ -115,6 +115,8 @@ test('電車(明細ごと)を入力して送信すると daily_reports.trains �
 
   // 記入忘れ確認チェック（新規送信は必須＝送信ボタンを有効化）
   await page.locator('.submit-confirm input[type="checkbox"]').check()
+  // 領収書必須化（2026-08-14）。この spec の主題は trains の保存形式なので理由を書いて進む
+  await fillNoReceiptReasons(page)
   await page.locator('button[type="submit"].btn-submit').click()
   await expect(page.getByText(/送信完了|更新しました/)).toBeVisible({ timeout: 20000 })
 

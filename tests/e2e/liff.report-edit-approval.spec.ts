@@ -8,7 +8,7 @@
 //  ★この spec の主眼は「承認前に集計へ漏れない」こと。金額が動かないことを数値で固定する。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, restSrv, getDevUserId, getAccountId } from './helpers'
+import { rest, restSrv, getDevUserId, getAccountId, fillNoReceiptReasons } from './helpers'
 
 const EDIT_DATE = '2026-10-20'
 const TS = Date.now()
@@ -58,6 +58,7 @@ test.describe('日報編集の承認制（liff）', () => {
     await expect(amount).toBeVisible({ timeout: 15000 })
     await amount.fill(String(yen))
     await page.getByTestId('edit-reason').fill(reason)
+    await fillNoReceiptReasons(page)
     await page.getByTestId('report-submit').click()
   }
 
@@ -99,6 +100,7 @@ test.describe('日報編集の承認制（liff）', () => {
     const amount = page.locator('.lineitem-card input[type="number"]').first()
     await amount.fill('9900')
     await page.getByTestId('edit-reason').fill(`E2E二回目_${TS}`)
+    await fillNoReceiptReasons(page)
     await page.getByTestId('report-submit').click()
     await page.waitForTimeout(4000)
 
