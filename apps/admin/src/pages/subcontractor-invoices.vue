@@ -26,7 +26,7 @@
     <div v-if="!loading && invoices.length" class="filter-bar" data-testid="invoice-filter-bar">
       <select v-model="filterSiteId" class="inp filter-sel" data-testid="filter-site">
         <option value="">すべての現場</option>
-        <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.name }}</option>
+        <option v-for="s in filterSiteOptions" :key="s.id" :value="s.id">{{ s.label }}</option>
       </select>
       <select v-model="filterVendor" class="inp filter-sel" data-testid="filter-vendor">
         <option value="">すべての業者</option>
@@ -187,9 +187,12 @@
                       <button class="btn-new-site" data-testid="new-site-add" :disabled="!it._newSiteName?.trim() || addingSite" @click="addSite(it)">追加</button>
                       <button class="btn-new-site-cancel" @click="it.site_id = null">×</button>
                     </div>
+                    <!-- ★選択肢は有効な現場＋この請求が既に参照している無効な現場（「（終了）」付き）。
+                         無効現場を候補から外すと、開いただけで空欄に見えて選び直しを誘発し、
+                         保存時に site_name が消えて原価が現場別集計から落ちる。 -->
                     <select v-else v-model="it.site_id" class="inp-sm inp-site">
                       <option :value="null">—</option>
-                      <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.name }}</option>
+                      <option v-for="s in formSiteOptions" :key="s.id" :value="s.id">{{ s.label }}</option>
                       <option value="__new__">＋ 新規現場…</option>
                     </select>
                   </td>
@@ -300,7 +303,45 @@ const todayStr = new Date().toISOString().slice(0, 10)
 const tab      = ref<'unpaid' | 'paid'>('unpaid')
 const loading  = ref(false)
 const invoices = ref<any[]>([])
+// 選べる現場＝有効なものだけ。新規入力の候補・AI照合・重複チェックは全部これを見る
+// （終わった現場を新しい請求で選べてしまうと「無効化＝隠す」の意味が無くなる）。
 const sites    = ref<{ id: string; name: string }[]>([])
+// ★全現場の id→名前。無効化された現場の名前を引くためだけに持つ。
+//  これが無いと、無効現場を参照する明細を保存し直した時に site_name が null になり、
+//  現場別集計が「site_name が空の行は読み飛ばす」ため、その請求の原価が丸ごと消える
+//  （本番で該当明細170行・請求書31件・2026-08-14 実測）。
+const siteNameById = ref<Record<string, string>>({})
+/** その現場は無効化済みか（選択肢に「（終了）」と出すため） */
+function isRetiredSite(id: string | null | undefined): boolean {
+  return !!id && !!siteNameById.value[id] && !sites.value.some(s => s.id === id)
+}
+/** 現場の表示名。無効化されていても名前は出す（空欄にすると何の請求か分からなくなる） */
+function siteLabelOf(id: string | null | undefined): string {
+  if (!id) return ''
+  const name = siteNameById.value[id] ?? ''
+  return isRetiredSite(id) ? `${name}（終了）` : name
+}
+/**
+ * 現場selectの選択肢。有効な現場＋「すでに参照されている無効な現場」。
+ * 参照中のものを混ぜないと、開いただけで選択が空に見え、選び直しを誘発する。
+ */
+function siteOptionsFor(referencedIds: (string | null | undefined)[]): { id: string; label: string }[] {
+  const opts = sites.value.map(s => ({ id: s.id, label: s.name }))
+  const seen = new Set(opts.map(o => o.id))
+  for (const id of referencedIds) {
+    if (!id || seen.has(id) || !siteNameById.value[id]) continue
+    seen.add(id)
+    opts.push({ id, label: siteLabelOf(id) })
+  }
+  return opts
+}
+/** 明細select用（この請求が参照している無効現場だけを足す） */
+const formSiteOptions = computed(() =>
+  siteOptionsFor((form.value?.items ?? []).map(it => it.site_id)))
+/** 一覧の絞り込み用（過去の請求が参照している無効現場も選べるようにする＝終わった現場の請求をまとめてDLできる） */
+const filterSiteOptions = computed(() =>
+  siteOptionsFor(invoices.value.flatMap((v: any) =>
+    (v.subcontractor_invoice_items ?? []).map((it: any) => it.site_id))))
 const subs     = ref<{ id: string; name: string; category: string | null }[]>([])
 type PO = { id: string; order_number: string | null; total_amount: number | null; subcontractor_id: string | null; vendor_name: string | null }
 const pos      = ref<PO[]>([])
@@ -419,7 +460,7 @@ async function bulkDownload() {
         zip.file(name, await resp.blob())
       } catch { failed++ }   // 1件失敗しても残りは落とす
     }
-    const siteLabel = filterSiteId.value ? (sites.value.find(s => s.id === filterSiteId.value)?.name ?? '現場') : '全現場'
+    const siteLabel = filterSiteId.value ? (siteNameById.value[filterSiteId.value] ?? '現場') : '全現場'
     const vendorLabel = filterVendor.value || '全業者'
     const blob = await zip.generateAsync({ type: 'blob' })
     const a = document.createElement('a')
@@ -470,7 +511,7 @@ async function load() {
       // 現場は明細(items)側に付くので、現場での絞り込み用に site_id/site_name も一緒に読む
       .select('*, subcontractor_invoice_items(amount, tax_rate, site_id, site_name)')
       .eq('account_id', accountId).order('invoice_date', { ascending: false }).order('created_at', { ascending: false }),
-    supabase.from('sites').select('id, name').eq('account_id', accountId).eq('active', true).order('name_kana', { nullsFirst: false }).order('name'),
+    supabase.from('sites').select('id, name, active').eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
     supabase.from('subcontractors').select('id, name, category').eq('account_id', accountId).eq('active', true).order('name'),
     supabase.from('purchase_orders').select('id, order_number, total_amount, subcontractor_id, vendor_name')
       .eq('account_id', accountId).neq('is_deleted', true).order('order_date', { ascending: false }),
@@ -482,7 +523,9 @@ async function load() {
     const grand = grossTotalOf(items, normalizeTaxMode(v.tax_mode))
     return { ...v, item_count: items.length, grand_total: grand, _overdue: !v.paid && !!v.due_date && v.due_date < todayStr }
   })
-  sites.value = si ?? []
+  // 選択肢は有効な現場だけ。名前の解決だけは無効な現場も引けるようにする（site_name を消さないため）
+  sites.value = (si ?? []).filter((x: any) => x.active).map((x: any) => ({ id: x.id, name: x.name }))
+  siteNameById.value = Object.fromEntries((si ?? []).map((x: any) => [x.id, x.name]))
   subs.value  = su ?? []
   pos.value   = (po ?? []) as PO[]
   loading.value = false
@@ -569,15 +612,20 @@ async function addSite(it: Item) {
   addingSite.value = true
   try {
     const accountId = await getAccountId()
-    // 同名の現場が既にあれば再利用
-    const existing = sites.value.find(s => s.name === name)
-    if (existing) { it.site_id = existing.id; it._newSiteName = ''; return }
+    // 同名の現場が既にあれば再利用。★無効化済みも含めて探す。
+    //  有効なものだけ見ていると、終わった現場と同じ名前を足そうとして現場名の
+    //  一意制約に当たり、原因の分からないエラーで止まる。
+    const existingId = Object.keys(siteNameById.value).find(id => siteNameById.value[id] === name)
+    if (existingId) { it.site_id = existingId; it._newSiteName = ''; return }
     const { data, error } = await supabase.from('sites')
       .insert({ name, account_id: accountId, active: true })
       .select('id, name').single()
     if (error) throw error
     sites.value.push(data as any)
     sites.value.sort((a, b) => a.name.localeCompare(b.name, 'ja'))
+    // ★名前マップにも入れる。入れ忘れると、足した直後に保存した時だけ site_name が
+    //  引けず null になり、塞いだはずの穴が別経路で再発する。
+    siteNameById.value = { ...siteNameById.value, [data.id]: data.name }
     it.site_id = data.id
     it._newSiteName = ''
   } catch (e: any) {
@@ -803,7 +851,11 @@ async function save() {
     // 明細insert
     const rows = f.items.map((it, i) => ({
       invoice_id: invoiceId, account_id: accountId, item_date: it.item_date || null,
-      site_id: it.site_id || null, site_name: it.site_id ? (sites.value.find(s => s.id === it.site_id)?.name ?? null) : (it.site_name ?? null),
+      // ★名前は全現場マップから引き、それでも取れなければ既存値を残す。
+      //  有効な現場一覧からだけ引いていたため、無効化された現場の明細を保存し直すと
+      //  null になり、現場別集計（site_name が空の行を読み飛ばす）から原価が消えていた。
+      site_id: it.site_id || null,
+      site_name: (it.site_id ? siteNameById.value[it.site_id] : null) ?? it.site_name ?? null,
       description: it.description || null, quantity: it.quantity ?? null, unit: it.unit || null,
       unit_price: it.unit_price ?? null, amount: it.amount ?? Math.round((Number(it.quantity) || 0) * (Number(it.unit_price) || 0)),
       tax_rate: it.tax_rate ?? 10, note: it.note || null, sort_order: i,
