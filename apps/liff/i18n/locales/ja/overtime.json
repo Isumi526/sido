@@ -19,5 +19,10 @@
   "errorDeadline": "締切（当日16:00）を過ぎているため申請できません。",
   "errorGeneric": "申請に失敗しました。",
   "recentTitle": "最近の申請",
-  "empty": "申請履歴はありません。"
+  "empty": "申請履歴はありません。",
+  "startTimeLabel": "早朝入りの開始時刻（任意）",
+  "startTimeNone": "申請しない（通常どおり）",
+  "breakLabel": "実際に取った休憩（任意）",
+  "breakNone": "申請しない（現場の設定どおり）",
+  "breakZero": "休憩なし"
 }

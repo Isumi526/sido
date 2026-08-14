@@ -269,7 +269,12 @@
                     </span>
                   </div>
                   <div v-if="siteFixedEnd(site.siteName)" class="fixed-time-note">
-                    <template v-if="overtimeApprovedForDate"><span class="material-symbols-rounded banner-icon">check_circle</span>{{ $t('report.overtimeApprovedNote') }}</template>
+                    <template v-if="overtimeApprovedForDate">
+                      <span class="material-symbols-rounded banner-icon">check_circle</span>{{ $t('report.overtimeApprovedNote') }}
+                      <span v-if="approvedAdjust?.startTime" class="approved-extra" data-testid="approved-early-start">
+                        {{ $t('report.earlyStartApproved', { time: approvedAdjust.startTime }) }}
+                      </span>
+                    </template>
                     <template v-else>
                       <span class="material-symbols-rounded banner-icon">timer</span>{{ $t('report.fixedTimeNote', { end: siteFixedEnd(site.siteName) }) }}
                       <NuxtLink to="/overtime" class="overtime-link">{{ $t('report.overtimeApplyLink') }}</NuxtLink>
@@ -279,7 +284,11 @@
                     <div class="time-field">
                       <label class="hours-label">{{ $t('report.break') }}</label>
                       <span class="break-auto">
-                        <template v-if="effectiveBreakMinutes(site.workers[0]) === 0">{{ $t('report.breakNone') }}</template>
+                        <!-- ★休憩なし/短縮が承認された日は、その分数を使う（管理者が承認した内容がその日の正） -->
+                        <template v-if="approvedAdjust?.breakMinutes !== null && approvedAdjust?.breakMinutes !== undefined">
+                          <span data-testid="approved-break">{{ approvedAdjust.breakMinutes === 0 ? $t('report.breakNone') : `${approvedAdjust.breakMinutes}分` }}（{{ $t('report.breakApproved') }}）</span>
+                        </template>
+                        <template v-else-if="effectiveBreakMinutes(site.workers[0]) === 0">{{ $t('report.breakNone') }}</template>
                         <template v-else-if="site.workers[0].breakSnapshot">{{ effectiveBreakMinutes(site.workers[0]) }}分（現場設定）</template>
                         <template v-else>{{ $t('report.breakMinutesAuto', { min: effectiveBreakMinutes(site.workers[0]) }) }}</template>
                       </span>
@@ -1081,10 +1090,16 @@ onUnmounted(() => {
 // ── 残業申請（架空残業対策）: 承認済みの worker×date は固定終了の上限を解放 ──
 const overtime = useOvertimeRequest()
 const overtimeApprovedForDate = ref(false)
+// ★承認された申請の中身（早朝入り／実際に取った休憩）。2026-08-10 大塚さん
+//  「6時からやってますとかあった時は、あらかじめ残業申請の方でやる…早朝出勤というのもいる」
+//  「10時休憩せずにぶっ通しでやりました…申請を出せば、じゃあいいよ、って修正させてあげたい」
+//  承認されていない限り null＝従来どおり固定開始より前・既定より短い休憩は入れられない。
+const approvedAdjust = ref<{ startTime: string | null; endTime: string | null; breakMinutes: number | null } | null>(null)
 async function refreshOvertime() {
   const d = report.form.value.date
   const wid = currentUser.value?.worker_id ?? null
   overtimeApprovedForDate.value = (wid && d) ? await overtime.isApproved(wid, d) : false
+  approvedAdjust.value = (wid && d) ? await overtime.approvedAdjustment(wid, d) : null
 }
 watch([() => report.form.value.date, () => currentUser.value?.worker_id], refreshOvertime, { immediate: true })
 
@@ -1472,7 +1487,13 @@ function startTimeOptionsForSite(si: number): string[] {
   // ※ 前現場終了以降の制限は撤廃（前現場終了より前でも設定可＝80c2）。重複は送信時にバリデートする。
   // 現場の固定開始以降のみ維持（固定開始より前=早出は不可・遅刻=後ろ倒しは可）
   const fStart = siteFixedStart(s?.siteName)
-  if (fStart) floorMin = Math.max(floorMin, parseMin(fStart))
+  // ★早朝入りが承認されていれば、その時刻まで下限を下げる。
+  //  承認が無ければ従来どおり固定開始が下限（勝手に早出をつけられないため）。
+  const approvedStart = approvedAdjust.value?.startTime ?? null
+  if (fStart) {
+    const floor = approvedStart ? Math.min(parseMin(fStart), parseMin(approvedStart)) : parseMin(fStart)
+    floorMin = Math.max(floorMin, floor)
+  }
   if (floorMin < 0) return TIME_OPTIONS
   // 編集で開いた古い下限割れ値は snap させないため、現在値は必ず含める。
   return TIME_OPTIONS.filter(t => parseMin(t) >= floorMin || t === cur)
@@ -2785,6 +2806,7 @@ html, body {
 .unset-hint { margin-top: 6px; }
 .fixed-time-note { margin-top: 4px; font-size: 12px; color: #1d4ed8; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 6px 10px; line-height: 1.5; }
 .overtime-link { display: inline-block; margin-top: 2px; color: #b45309; font-weight: 700; text-decoration: underline; }
+.approved-extra { display: block; margin-top: 2px; font-weight: 700; }
 /* 実打刻（表示専用・作業時刻とは別物と分かる見た目にする） */
 .punch-row {
   margin-top: 4px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px;

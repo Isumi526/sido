@@ -19,5 +19,10 @@
   "errorDeadline": "Past the deadline (16:00 same day); cannot request.",
   "errorGeneric": "Request failed.",
   "recentTitle": "Recent requests",
-  "empty": "No request history."
+  "empty": "No request history.",
+  "startTimeLabel": "Early start time (optional)",
+  "startTimeNone": "Not requesting (as usual)",
+  "breakLabel": "Break actually taken (optional)",
+  "breakNone": "Not requesting (site default)",
+  "breakZero": "No break"
 }

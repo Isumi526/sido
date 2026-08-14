@@ -179,5 +179,7 @@
   "retiredOption": "{name} (finished)",
   "punchLabel": "Actual punch",
   "punchGapStart": "in",
-  "punchGapEnd": "out"
+  "punchGapEnd": "out",
+  "breakApproved": "approved",
+  "earlyStartApproved": "Early start {time} is also approved"
 }
