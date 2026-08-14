@@ -1,0 +1,9 @@
+{
+  "subtitle": "Notifications",
+  "empty": "No notifications yet",
+  "unreadCount": "{n} unread",
+  "allRead": "All caught up",
+  "readAll": "Mark all as read",
+  "untitled": "Notification",
+  "reportRejectTitle": "Your daily report was sent back"
+}
