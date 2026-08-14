@@ -175,15 +175,37 @@ function siteNamesOf(payload: any): string[] {
 }
 
 /**
+ * アプリ内通知（お知らせ）を1件積む。
+ * ★これが通知の本命。LINE連携は基本しない方針で、メールも見られない前提なので、
+ *  LINE/メールだけだと事実上どこにも届かない（2026-08-14 ユーザー指示）。
+ *  アプリを開けば必ず気づける場所として schedule_notifications に残す。
+ *  ※テーブル名は予定通知時代のまま。中身は汎用（kind / link_path で使い分ける）。
+ */
+async function pushAppNotification(
+  svc: any, accountId: string, workerId: string,
+  kind: string, title: string, body: string, linkPath: string | null,
+): Promise<boolean> {
+  const { error } = await svc.from('schedule_notifications').insert({
+    account_id: accountId, worker_id: workerId,
+    kind, title, body, link_path: linkPath,
+  })
+  if (error) { console.error('[report-edit-log] app notification insert failed:', error); return false }
+  return true
+}
+
+/**
  * 差し戻しを申請者本人に届ける。
  * ★これが無かったのが 2026-08-14 の発覚点。差し戻しても作業員側は
  *  「承認待ちバッジが黙って消える」だけで、承認との区別すらつかなかった＝
  *  「コメントを入れて差し戻す」という運用がそもそも成立していなかった。
  *
- * 送り先は LINE 連携済みなら個人LINE、そうでなければ認証用メール。
+ * 届け先は3つ。★アプリ内通知が本命で、LINE/メールは「開く前に気づける」ための上乗せ。
+ *  1. アプリ内のお知らせ（必ず積む）
+ *  2. 個人LINE（連携済みの人だけ。連携は必須にしない方針）
+ *  3. 認証用メール（LINE未連携で、ダミーでないメールを持つ人）
  * ★通知は best-effort。ここで失敗しても差し戻し自体は成立しているので
  *  例外を投げない（通知の失敗で承認画面が「失敗しました」になる方が有害）。
- *  代わりに送れたかどうかを戻り値で返し、レスポンスに載せる。
+ *  代わりにどこへ送れたかを戻り値で返し、レスポンスに載せる。
  */
 async function notifyRejected(
   svc: any, accountId: string, pend: any, reason: string, reviewer: string | null,
@@ -201,10 +223,26 @@ async function notifyRejected(
     const sites = siteNamesOf(pend.payload)
     const where = sites.length ? `（${sites.join('、')}）` : ''
     const kindLabel = pend.kind === 'late_new' ? '日報の提出' : '日報の修正'
+    const subject = `【差し戻し】${pend.report_date} の${kindLabel}が差し戻されました`
+    const sent: string[] = []
+
+    if (u.worker_id) {
+      const body = [
+        `${pend.report_date}${where} の${kindLabel}が差し戻されました。`,
+        `理由: ${reason}`,
+        reviewer ? `差し戻した人: ${reviewer}` : '',
+        'タップして内容を直し、出し直してください。',
+      ].filter(Boolean).join('\n')
+      if (await pushAppNotification(
+        svc, accountId, u.worker_id as string, 'report_reject',
+        `${pend.report_date} の${kindLabel}が差し戻されました`, body,
+        `/report?edit=${pend.report_date}`,
+      )) sent.push('app')
+    }
 
     if (u.line_user_id && LINE_TOKEN) {
       const text = [
-        `【差し戻し】${pend.report_date} の${kindLabel}が差し戻されました`,
+        subject,
         '',
         `対象日: ${pend.report_date}${where}`,
         `理由: ${reason}`,
@@ -213,26 +251,24 @@ async function notifyRejected(
         '内容を直して出し直してください。',
         `${LIFF_URL}/report?edit=${pend.report_date}`,
       ].filter((l) => l !== '').join('\n')
-      const ok = await pushLineText(u.line_user_id as string, text, LINE_TOKEN)
-      return ok ? 'line' : 'line_failed'
+      if (await pushLineText(u.line_user_id as string, text, LINE_TOKEN)) sent.push('line')
+    } else if (u.worker_id) {
+      const email = await resolveWorkerNotifyEmail(svc, accountId, u.worker_id as string)
+      if (email) {
+        const esc = (s: string) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!))
+        const html = `
+          <p>${esc((u.real_name as string) ?? '')} 様</p>
+          <p>${esc(pend.report_date)}${where ? esc(where) : ''} の${kindLabel}は<b>差し戻されました</b>。</p>
+          <p><b>理由:</b> ${esc(reason)}</p>
+          ${reviewer ? `<p>差し戻した人: ${esc(reviewer)}</p>` : ''}
+          <p>内容を直して出し直してください。</p>
+        `.trim()
+        const r = await sendResend(svc, accountId, email, subject, html)
+        if (r.status === 200) sent.push('email')
+      }
     }
 
-    if (u.worker_id) {
-      const email = await resolveWorkerNotifyEmail(svc, accountId, u.worker_id as string)
-      if (!email) return 'no_channel'
-      const esc = (s: string) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!))
-      const html = `
-        <p>${esc((u.real_name as string) ?? '')} 様</p>
-        <p>${esc(pend.report_date)}${where ? esc(where) : ''} の${kindLabel}は<b>差し戻されました</b>。</p>
-        <p><b>理由:</b> ${esc(reason)}</p>
-        ${reviewer ? `<p>差し戻した人: ${esc(reviewer)}</p>` : ''}
-        <p>内容を直して出し直してください。</p>
-      `.trim()
-      const r = await sendResend(svc, accountId, email,
-        `【差し戻し】${pend.report_date} の${kindLabel}が差し戻されました`, html)
-      return r.status === 200 ? 'email' : 'email_failed'
-    }
-    return 'no_channel'
+    return sent.length ? sent.join('+') : 'no_channel'
   } catch (e) {
     console.error('[report-edit-log] reject notify failed:', e)
     return 'error'

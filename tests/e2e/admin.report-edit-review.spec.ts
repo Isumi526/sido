@@ -346,6 +346,36 @@ test.describe('日報編集の承認（admin）', () => {
     expect(rej[0].acknowledged_at, '★未確認＝作業員にまだ出す').toBeNull()
   })
 
+  // ★アプリ内通知が本命の届け先。LINE連携は基本しない方針で、メールも見られない
+  //  前提なので、ここが積まれないと差し戻しは事実上どこにも届かない（2026-08-14）。
+  test('★差し戻すと作業員のお知らせに積まれる（アプリを開けば気づける）', async ({ page }) => {
+    await seed()
+    const workers = await restSrv(`users?id=eq.${userId}&select=worker_id`)
+    const workerId = workers[0].worker_id
+    await restSrv(`schedule_notifications?worker_id=eq.${workerId}&kind=eq.report_reject`,
+      { method: 'DELETE' }).catch(() => {})
+
+    page.on('dialog', (d) => d.accept(`E2E差戻_${TS}`).catch(() => {}))
+    await page.goto('/report-edit-review', { waitUntil: 'networkidle' })
+    await page.locator('[data-testid="pending-card"]', { hasText: `E2E理由_${TS}` })
+      .getByTestId('pending-reject').click()
+    await expect(page.getByTestId('review-msg')).toContainText('差し戻しました', { timeout: 30000 })
+
+    await expect.poll(async () => (await restSrv(
+      `schedule_notifications?worker_id=eq.${workerId}&kind=eq.report_reject&select=title,body,link_path,read_at`)).length,
+      { message: 'お知らせが1件積まれる', timeout: 20000 }).toBe(1)
+
+    const n = (await restSrv(
+      `schedule_notifications?worker_id=eq.${workerId}&kind=eq.report_reject&select=title,body,link_path,read_at`))[0]
+    expect(n.title, '何が起きたか分かる').toContain(DATE)
+    expect(n.body, '★理由がお知らせから読める').toContain(`E2E差戻_${TS}`)
+    expect(n.link_path, '★タップでその日の編集画面へ飛べる').toBe(`/report?edit=${DATE}`)
+    expect(n.read_at, '未読で積まれる').toBeNull()
+
+    await restSrv(`schedule_notifications?worker_id=eq.${workerId}&kind=eq.report_reject`,
+      { method: 'DELETE' }).catch(() => {})
+  })
+
   test('承認済みのものは二重に承認できない（金額が二度適用されない）', async ({ page }) => {
     const pendingId = await seed()
     // 1度承認しておく
