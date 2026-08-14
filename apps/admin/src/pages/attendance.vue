@@ -75,6 +75,9 @@
               <span class="type-badge" :class="log.type">
                 {{ log.type === 'checkin' ? '出勤' : '退勤' }}
               </span>
+              <!-- ★その場で押した打刻か、あとから思い出して入れた分かを区別する。
+                   混ぜると勤怠の証跡として使えない（後付けは現場ルールの同意も取っていない）。 -->
+              <span v-if="log.backdated" class="backdated-badge" data-testid="log-backdated">後から入力</span>
             </td>
             <td>{{ log.sites?.name ?? '—' }}</td>
             <td>{{ log.workers?.name ?? '—' }}</td>
@@ -142,6 +145,7 @@ type Log = {
   location_lat: number | null
   location_lng: number | null
   agreed_rule_texts: string[] | null
+  backdated: boolean | null
   sites:   { name: string } | null
   workers: { name: string } | null
   proxy:   { name: string } | null
@@ -205,6 +209,7 @@ async function load() {
       location_lat,
       location_lng,
       agreed_rule_texts,
+      backdated,
       sites(name),
       workers!attendance_logs_worker_id_fkey(name),
       proxy:workers!attendance_logs_proxy_worker_id_fkey(name)
@@ -284,6 +289,11 @@ onMounted(async () => {
 <style scoped>
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .page-title  { font-size: 22px; font-weight: 700; }
+
+.backdated-badge {
+  display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; color: #92400e; background: #fef3c7;
+}
 
 /* 出勤打刻なしパネル */
 .missing-panel { border: 1px solid #e5e7eb; border-left: 3px solid #f59e0b; border-radius: 6px; background: #fffbeb; padding: 10px 14px; margin-bottom: 16px; }
