@@ -56,5 +56,11 @@
   "expGarbage": "Garbage {detail}",
   "pendingApproval": "Awaiting approval",
   "pendingOnlyNote": "Submitted and awaiting approval. It will appear once approved",
-  "pendingEditNote": "Awaiting approval. What you see here is the current value before approval"
+  "pendingEditNote": "Awaiting approval. What you see here is the current value before approval",
+  "rejectedTitle": "Sent back",
+  "rejectedLead": "Please fix it and submit again.",
+  "rejectedReasonLabel": "Reason",
+  "rejectedReviewedBy": "Sent back by: {name}",
+  "rejectedFix": "Fix and resubmit",
+  "rejectedAck": "Got it"
 }
