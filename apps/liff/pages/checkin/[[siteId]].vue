@@ -106,6 +106,9 @@
       <button class="focus-switch-link" data-testid="focus-switch-site" @click="phase = 'select-site'">
         {{ $t('checkin.switchSiteLink') }}
       </button>
+      <!-- 出勤中でも前日の打刻し忘れを入れられるようにする（ここに無いと現場一覧を
+           出さないこの画面から辿れない） -->
+      <LatePunchPanel :sites="siteOptions" :worker-id="myWorkerId" @recorded="loadSiteOptions()" />
     </div>
 
     <!-- 対象作業員の選択（代理対象がいる場合のみ） -->
@@ -147,6 +150,9 @@
         </div>
         <div v-if="!filteredSiteOptions.length" class="site-empty">{{ $t('checkin.siteSearchEmpty') }}</div>
       </div>
+      <!-- ★一覧（内部スクロール）の外に置く。中に入れると現場が多い時に埋もれる。
+           ページ全体をはみ出させないため、コンポーネント側で flex-shrink:0 にしている。 -->
+      <LatePunchPanel :sites="siteOptions" :worker-id="myWorkerId" @recorded="loadSiteOptions()" />
     </div>
 
     <div v-else-if="phase === 'select-target'" class="select-wrap">
@@ -284,6 +290,7 @@
     </div>
 
     </div>
+
   </div>
 </template>
 
@@ -349,6 +356,8 @@ const checkoutTime   = ref('')
 
 // 対象作業員（自分＋代理対象）
 const myWorkerId = ref<string | null>(null)
+
+
 const targets    = ref<Target[]>([])
 const selectedId = ref<string | null>(null)
 
@@ -536,6 +545,10 @@ async function loadSiteOptions() {
 
   // 現在出勤中(未退勤)の現場を判定する(退勤漏れ防止・loadForTarget()の直近サイクル判定と同じ考え方)。
   const me = await useCurrentUser().resolve()
+  // ★現場を選ぶ前でも自分の worker_id を確定させておく。
+  //  以前はここで入れておらず、現場を選ばないと myWorkerId が null のままだったため
+  //  「打刻を忘れた日の入力」が常に『作業員が特定できませんでした』で弾かれていた。
+  if (me?.worker_id) myWorkerId.value = me.worker_id
   if (me?.worker_id) {
     const windowStart = new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString()
     const { data: recentLogs } = await supabase.from('attendance_logs')
@@ -782,6 +795,7 @@ async function resolveReportLink(target: Target | null) {
 </script>
 
 <style scoped>
+
 .checkin-page {
   /* AppNav追加(2026-07-16)に伴い、下部固定ナビの高さ分を差し引く(calendar/index.vueと同型)。
      min-heightのままだと(スペーサー分+100dvh)でsubmit-areaが画面下に押し出され隠れるため height固定にする。 */
