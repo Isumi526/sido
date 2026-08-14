@@ -36,6 +36,20 @@
                 <p v-if="!siteOptions.length" class="ot-sites-empty">現場がありません</p>
                 <p v-else-if="!filteredSiteOptions.length" class="ot-sites-empty">「{{ siteQuery }}」に一致する現場がありません</p>
               </div>
+              <!-- ★早朝入り・休憩の申告（2026-08-10 大塚さん）。どちらも任意。
+                   承認されて初めて日報の入力制限が緩む＝申請しただけでは時間は広がらない。 -->
+              <label class="ot-label">{{ $t('overtime.startTimeLabel') }}</label>
+              <select v-model="startTime" class="ot-input" data-testid="ot-start-time">
+                <option value="">{{ $t('overtime.startTimeNone') }}</option>
+                <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
+              </select>
+              <label class="ot-label">{{ $t('overtime.breakLabel') }}</label>
+              <select v-model="breakMinutes" class="ot-input" data-testid="ot-break">
+                <option value="">{{ $t('overtime.breakNone') }}</option>
+                <option value="0">{{ $t('overtime.breakZero') }}</option>
+                <option v-for="m in [15, 30, 45, 60, 90]" :key="m" :value="String(m)">{{ m }}分</option>
+              </select>
+
               <label class="ot-label">{{ $t('overtime.reasonLabel') }}</label>
               <textarea v-model="reason" class="ot-input" rows="2" :placeholder="$t('overtime.reasonPlaceholder')" />
               <button class="ot-submit" :disabled="busy" @click="onSubmit">{{ busy ? $t('overtime.submitting') : $t('overtime.submit') }}</button>
@@ -53,7 +67,11 @@
           <ul v-else class="ot-list">
             <li v-for="r in recent" :key="r.id" class="ot-item">
               <span class="ot-date">{{ r.date }}</span>
+              <span v-if="r.requested_start_time" class="ot-end" data-testid="ot-recent-start">{{ (r.requested_start_time || '').slice(0,5) }}〜</span>
               <span v-if="r.requested_end_time" class="ot-end">〜{{ (r.requested_end_time || '').slice(0,5) }}</span>
+              <span v-if="r.requested_break_minutes !== null && r.requested_break_minutes !== undefined" class="ot-end" data-testid="ot-recent-break">
+                {{ r.requested_break_minutes === 0 ? $t('overtime.breakZero') : `休憩${r.requested_break_minutes}分` }}
+              </span>
               <span class="ot-badge" :class="r.status">{{ statusLabel(r.status) }}</span>
               <span v-if="r.reason" class="ot-reason">{{ r.reason }}</span>
             </li>
@@ -86,6 +104,8 @@ const canRequestToday = ref(false)
 const recent = ref<any[]>([])
 
 const endTime = ref('18:00')
+const startTime    = ref('')   // 早朝入り（空=申請しない）
+const breakMinutes = ref('')   // 実際に取った休憩（空=申請しない / '0'=休憩なし）
 const reason  = ref('')
 const msg     = ref('')
 const msgOk   = ref(false)
@@ -124,7 +144,12 @@ async function onSubmit() {
   if (!workerId.value) { msg.value = t('overtime.errorNoLogin'); msgOk.value = false; return }
   busy.value = true; msg.value = ''
   const sites = [...selectedSites.value]
-  const res = await overtime.requestOvertime(workerId.value, today, endTime.value, reason.value, sites)
+  const res = await overtime.requestOvertime(
+    workerId.value, today, endTime.value, reason.value, sites,
+    startTime.value || null,
+    // ★空文字は「申請なし」、'0' は「休憩なしで通した」。潰さないこと
+    breakMinutes.value === '' ? null : Number(breakMinutes.value),
+  )
   busy.value = false
   if (!res.ok) {
     msg.value = res.error === 'deadline-passed' ? t('overtime.errorDeadline') : t('overtime.errorGeneric')
