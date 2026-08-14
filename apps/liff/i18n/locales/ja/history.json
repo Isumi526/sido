@@ -62,5 +62,6 @@
   "rejectedReasonLabel": "理由",
   "rejectedReviewedBy": "差し戻した人: {name}",
   "rejectedFix": "直して出し直す",
-  "rejectedAck": "確認しました"
+  "rejectedAck": "確認しました",
+  "punchLabel": "実際の打刻"
 }

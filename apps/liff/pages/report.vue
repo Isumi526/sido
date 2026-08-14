@@ -257,6 +257,17 @@
                       </select>
                     </div>
                   </div>
+                  <!-- ★その日の実打刻。表示だけで、作業時刻には入れない
+                       （人件費は管理者が決めた時間がマスタ・2026-08-10 大塚さん）。
+                       打刻が無い日は行ごと出さない（0:00 のように見せない）。 -->
+                  <div v-if="punchOf(si)" class="punch-row" :data-testid="`punch-row-${si}`">
+                    <span class="material-symbols-rounded punch-icon">how_to_reg</span>
+                    <span class="punch-label">{{ $t('report.punchLabel') }}</span>
+                    <span class="punch-time">{{ punchOf(si)?.checkin ?? '—' }} 〜 {{ punchOf(si)?.checkout ?? '—' }}</span>
+                    <span v-if="punchGap(si)" class="punch-gap" :class="{ big: punchGapBig(si) }" :data-testid="`punch-gap-${si}`">
+                      {{ punchGap(si) }}
+                    </span>
+                  </div>
                   <div v-if="siteFixedEnd(site.siteName)" class="fixed-time-note">
                     <template v-if="overtimeApprovedForDate"><span class="material-symbols-rounded banner-icon">check_circle</span>{{ $t('report.overtimeApprovedNote') }}</template>
                     <template v-else>
@@ -712,6 +723,7 @@
 
 <script setup lang="ts">
 import { todayStr } from '~/composables/schedule-core.gen'
+import { punchDiffLabel, isPunchDiffBig, isPunchDiffWorthShowing } from '~/composables/attendance-punch.gen'
 import { computeWorkerHours, getRateLines, calcBreakMinutes, effectiveBreakMinutes, effectiveBreakWindows, parseMin, TIME_OPTIONS } from '~/utils/workerHours'
 import type { RateBreakdown } from '~/utils/workerHours'
 import { computeDiff } from '~/utils/diffReport'
@@ -748,6 +760,7 @@ function pickSimilarSite(si: number, name: string) {
  *  現場は required なのでその日報を保存できなくなる（過去の日報が直せない）。
  * 特殊値（未選択 / 現場未設定 / 新規追加）は対象外。
  */
+
 function isRetiredOption(current: string | undefined, options: string[]): boolean {
   const v = (current ?? '').trim()
   if (!v || v === '__unset__' || v === '__other__') return false
@@ -779,6 +792,50 @@ const report  = useReport()
 const expense  = useExpense()
 const receipt  = useReceiptAnalysis()
 const proxy   = useProxyMode()
+
+// ────────────────────────────────────────────
+//  実打刻の表示（2026-08-10 大塚さん「日報の中に実際打った打刻時間と、
+//  管理者が決めた8時半〜18時の両方が出てくればそれでいい」）
+//  ★表示専用。ここで読んだ値を form の作業時刻へ書き戻さないこと。
+//   書き戻した瞬間に人件費の根拠が「管理者が決めた時間」から実打刻に入れ替わる。
+// ────────────────────────────────────────────
+const punches = usePunches()
+const myWorkerIdForPunch = ref<string | null>(null)
+
+/** その現場のその日の打刻（無ければ null＝行を出さない） */
+function punchOf(si: number): { checkin?: string; checkout?: string } | null {
+  const s = report.form.value.sites?.[si]
+  return punches.punchFor(myWorkerIdForPunch.value, report.form.value.date, s?.siteName)
+}
+
+/** 打刻と申告した作業時刻のズレ（15分未満は出さない＝全行に数分のチップが並ぶのを防ぐ） */
+function punchGap(si: number): string {
+  const p = punchOf(si)
+  const w = report.form.value.sites?.[si]?.workers?.[0]
+  if (!p || !w) return ''
+  const parts: string[] = []
+  if (isPunchDiffWorthShowing(p.checkin, w.startTime)) parts.push(`${t('report.punchGapStart')} ${punchDiffLabel(p.checkin, w.startTime)}`)
+  if (isPunchDiffWorthShowing(p.checkout, w.endTime)) parts.push(`${t('report.punchGapEnd')} ${punchDiffLabel(p.checkout, w.endTime)}`)
+  return parts.join(' / ')
+}
+
+function punchGapBig(si: number): boolean {
+  const p = punchOf(si)
+  const w = report.form.value.sites?.[si]?.workers?.[0]
+  if (!p || !w) return false
+  return isPunchDiffBig(p.checkin, w.startTime) || isPunchDiffBig(p.checkout, w.endTime)
+}
+
+/** 打刻を読み直す。日付が変わったら読み直す（編集で別の日を開いた時など） */
+async function reloadPunches() {
+  if (!myWorkerIdForPunch.value) {
+    const { resolve } = useCurrentUser()
+    // 代理入力中は代理先の打刻を見る（その人の日報を書いているため）
+    myWorkerIdForPunch.value = proxy.proxyTarget.value?.id ?? (await resolve())?.worker_id ?? null
+  }
+  await punches.load(myWorkerIdForPunch.value, report.form.value.date)
+}
+watch(() => report.form.value.date, () => { void reloadPunches() })
 // 「過去日の日報です」表示に使う今日（JSTローカル基準。UTC基準だと深夜0-9時JSTに
 // 前日となり、当日の日報が過去日扱いで警告表示されてしまう）
 const todayJst = computed(() => todayStr())
@@ -1603,7 +1660,10 @@ onMounted(async () => {
     const s0 = report.form.value.sites[0]
     // 現場名はマスタに在るものだけ入れる。無い名前を入れると select が候補に無くて空表示になり、
     // 「現場が入っているように見えて実は未選択」という一番たちの悪い状態になる。
-    if (name && s0 && !s0.siteName && master.siteWorkTimes.value[name] !== undefined) {
+    // ★在庫判定は siteIds（全現場）で見る。以前は siteWorkTimes を見ていたが、そちらは
+    //  固定勤務時刻を設定した現場しか収録しないため、本番の有効な現場128件中122件で
+    //  現場が引き継がれず、打刻から飛んでも結局選び直しになっていた（2026-08-14 発見）。
+    if (name && s0 && !s0.siteName && master.siteIds.value[name] !== undefined) {
       s0.siteName = name
       onSiteChange(0)   // 固定勤務時刻・既定休憩を、通常の現場選択とまったく同じ経路で適用する
     }
@@ -1656,6 +1716,8 @@ onMounted(async () => {
   initializing.value = false
   // ★描画を終えてから後追いで承認待ちの日を飛ばす（初期化は待たせない）
   void skipPendingDatesAfterInit()
+  // 実打刻も後追いで読む（取れなくても日報の入力は続けられるべきなので待たせない）
+  void reloadPunches()
 })
 
 // ── 下書き自動保存（新規入力中・800ms デバウンス・送信ロジックには触れない）──
@@ -2723,6 +2785,17 @@ html, body {
 .unset-hint { margin-top: 6px; }
 .fixed-time-note { margin-top: 4px; font-size: 12px; color: #1d4ed8; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 6px 10px; line-height: 1.5; }
 .overtime-link { display: inline-block; margin-top: 2px; color: #b45309; font-weight: 700; text-decoration: underline; }
+/* 実打刻（表示専用・作業時刻とは別物と分かる見た目にする） */
+.punch-row {
+  margin-top: 4px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  font-size: 12px; color: #334155; background: #f8fafc;
+  border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 10px; line-height: 1.5;
+}
+.punch-icon { font-size: 16px; color: #64748b; }
+.punch-label { color: #64748b; }
+.punch-time { font-weight: 700; font-variant-numeric: tabular-nums; }
+.punch-gap { margin-left: auto; color: #92400e; background: #fef3c7; border-radius: 999px; padding: 1px 8px; }
+.punch-gap.big { color: #991b1b; background: #fee2e2; font-weight: 700; }
 .mt8  { margin-top: 8px; }
 
 /* ── 車両ブロック ── */

@@ -23,6 +23,13 @@ const SHARES = [
     ],
   },
   {
+    src: 'shared/attendance-punch.ts',
+    dests: [
+      'apps/admin/src/lib/attendance-punch.gen.ts',
+      'apps/liff/composables/attendance-punch.gen.ts',
+    ],
+  },
+  {
     src: 'shared/schedule-core.ts',
     dests: [
       'apps/admin/src/lib/schedule-core.gen.ts',
