@@ -175,5 +175,6 @@
   "lateSubmittedText": "Because it is past the deadline, it will appear once an administrator approves it",
   "payerLabel": "Paid by",
   "payerCompany": "Company card",
-  "payerPersonal": "Paid out of pocket"
+  "payerPersonal": "Paid out of pocket",
+  "retiredOption": "{name} (finished)"
 }

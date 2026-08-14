@@ -175,5 +175,6 @@
   "lateSubmittedText": "提出期限を過ぎているため、管理者が承認すると日報に反映されます",
   "payerLabel": "支払元",
   "payerCompany": "会社のカードで支払った",
-  "payerPersonal": "個人で立替えた"
+  "payerPersonal": "個人で立替えた",
+  "retiredOption": "{name}（終了）"
 }
