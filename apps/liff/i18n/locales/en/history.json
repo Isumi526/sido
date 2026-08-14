@@ -62,5 +62,6 @@
   "rejectedReasonLabel": "Reason",
   "rejectedReviewedBy": "Sent back by: {name}",
   "rejectedFix": "Fix and resubmit",
-  "rejectedAck": "Got it"
+  "rejectedAck": "Got it",
+  "punchLabel": "Actual punch"
 }

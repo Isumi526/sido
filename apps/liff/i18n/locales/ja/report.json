@@ -176,5 +176,8 @@
   "payerLabel": "支払元",
   "payerCompany": "会社のカードで支払った",
   "payerPersonal": "個人で立替えた",
-  "retiredOption": "{name}（終了）"
+  "retiredOption": "{name}（終了）",
+  "punchLabel": "実際の打刻",
+  "punchGapStart": "出勤",
+  "punchGapEnd": "退勤"
 }
