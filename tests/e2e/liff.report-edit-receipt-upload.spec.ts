@@ -15,7 +15,7 @@
 //  接頭辞/日付固定のデータはテスト後に必ず消す（共有DB）。
 // ============================================================
 import { test, expect, type Page } from '@playwright/test'
-import { rest, restSrv, getDevUserId, getAccountId } from './helpers'
+import { rest, restSrv, getDevUserId, getAccountId, fillNoReceiptReasons } from './helpers'
 
 const EDIT_DATE = '2026-10-24'
 const PNG = Buffer.from(
@@ -101,6 +101,9 @@ test.describe('編集モードの領収書アップロード', () => {
   test('★添付しなかった編集では、URLを勝手に作らない（付いたように見せない）', async ({ page }) => {
     await openEdit(page)
     await page.getByTestId('edit-reason').fill('金額だけ直す')
+    // 領収書必須化（2026-08-14）: 添付しないなら理由が要る。この spec の主題は
+    // 「理由だけ書いた編集で URL を捏造しないこと」なので、理由を書いて先へ進む。
+    await fillNoReceiptReasons(page)
     await page.getByTestId('report-submit').click()
 
     await expect.poll(async () => {

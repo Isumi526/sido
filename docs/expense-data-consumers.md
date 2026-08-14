@@ -44,6 +44,14 @@
 - **編集ロード時に旧スカラー→配列へ移行＋スカラーをクリア**（`report.vue loadEditData`）→ 再保存での二重化を防ぐ
 - 集計系（admin index/site-reports/flatten×2・notify・history・diff）は**全部**この後方互換を入れる
 
+## 領収書の添付は必須（2026-08-14〜）
+金額のある経費明細は**領収書の写真が必須**。無い場合は明細ごとの `noReceiptReason`（領収書が無い理由）を書けば送れる。
+- 判定の正本: `shared/expense-flatten.ts` の `receiptExempt()`（**ETCの高速代だけ免除**＝その場で領収書が出ず後日の利用明細で精算するため）
+- 入力側のゲート: `apps/liff/pages/report.vue` の `findMissingReceipts()`（`handleSubmit` 冒頭。**新規・編集の両方**に効く）
+- 承認側の表示: `apps/admin/src/lib/pendingEditDiff.ts` の `noReceiptReasons()` → 承認画面に「領収書なしの申告理由」として出す
+- **E2E で経費のある日報を送る spec は `fillNoReceiptReasons(page)` を送信前に呼ぶこと**（`tests/e2e/helpers.ts`）。呼ばないと送信が弾かれる
+- 個人経費（`personal_expenses`）は対象外（交通系ICなど領収書が出ない経費の受け皿として意図的に任意のまま）
+
 ## 検証
 - `npm run typecheck`（apps/liff）／admin は `any` 型のため型では落ちないので**目視必須**
 - 本番反映前に、admin月次集計・ダッシュボード・現場別の**金額合計**が新旧データで合うか確認
