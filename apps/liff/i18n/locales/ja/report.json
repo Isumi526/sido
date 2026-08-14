@@ -179,5 +179,7 @@
   "retiredOption": "{name}（終了）",
   "punchLabel": "実際の打刻",
   "punchGapStart": "出勤",
-  "punchGapEnd": "退勤"
+  "punchGapEnd": "退勤",
+  "breakApproved": "承認済み",
+  "earlyStartApproved": "早朝入り {time} も承認されています"
 }
