@@ -56,5 +56,11 @@
   "expGarbage": "ゴミ {detail}",
   "pendingApproval": "承認待ち",
   "pendingOnlyNote": "提出済み（管理者の承認待ち）。承認されると日報に反映されます",
-  "pendingEditNote": "承認待ちです。ここに出ているのは承認前の内容（今有効な値）です"
+  "pendingEditNote": "承認待ちです。ここに出ているのは承認前の内容（今有効な値）です",
+  "rejectedTitle": "差し戻されました",
+  "rejectedLead": "内容を直して出し直してください。",
+  "rejectedReasonLabel": "理由",
+  "rejectedReviewedBy": "差し戻した人: {name}",
+  "rejectedFix": "直して出し直す",
+  "rejectedAck": "確認しました"
 }
