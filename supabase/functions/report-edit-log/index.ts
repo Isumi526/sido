@@ -25,10 +25,14 @@
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { createRemoteJWKSet, jwtVerify } from 'https://esm.sh/jose@5'
+import { pushLineText } from '../_shared/line.ts'
+import { resolveWorkerNotifyEmail, sendResend } from '../_shared/doc-mail.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
 const ANON_KEY     = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+const LINE_TOKEN   = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? ''
+const LIFF_URL     = Deno.env.get('LIFF_APP_URL') ?? 'https://sido-liff.vercel.app'
 
 const LINE_CHANNEL_ID = Deno.env.get('LINE_LOGIN_CHANNEL_ID') ?? ''
 const LINE_ISSUER = 'https://access.line.me'
@@ -162,6 +166,79 @@ async function resolveReviewerName(
   return email
 }
 
+/** 保留の payload から現場名を拾う（通知本文に「どこの現場か」を出すため） */
+function siteNamesOf(payload: any): string[] {
+  const sites = Array.isArray(payload?.sites) ? payload.sites : []
+  return sites
+    .map((s: any) => (typeof s?.siteName === 'string' ? s.siteName.trim() : ''))
+    .filter((n: string) => !!n)
+}
+
+/**
+ * 差し戻しを申請者本人に届ける。
+ * ★これが無かったのが 2026-08-14 の発覚点。差し戻しても作業員側は
+ *  「承認待ちバッジが黙って消える」だけで、承認との区別すらつかなかった＝
+ *  「コメントを入れて差し戻す」という運用がそもそも成立していなかった。
+ *
+ * 送り先は LINE 連携済みなら個人LINE、そうでなければ認証用メール。
+ * ★通知は best-effort。ここで失敗しても差し戻し自体は成立しているので
+ *  例外を投げない（通知の失敗で承認画面が「失敗しました」になる方が有害）。
+ *  代わりに送れたかどうかを戻り値で返し、レスポンスに載せる。
+ */
+async function notifyRejected(
+  svc: any, accountId: string, pend: any, reason: string, reviewer: string | null,
+): Promise<string> {
+  try {
+    const targetUserId = pend.submitted_by_user_id ?? pend.report_user_id ?? null
+    if (!targetUserId) return 'no_target_user'
+
+    // ★account_id でも絞る。service_role のクエリは常にテナントで閉じる。
+    const { data: u } = await svc.from('users')
+      .select('id, real_name, line_user_id, worker_id')
+      .eq('id', targetUserId).eq('account_id', accountId).maybeSingle()
+    if (!u) return 'user_not_found'
+
+    const sites = siteNamesOf(pend.payload)
+    const where = sites.length ? `（${sites.join('、')}）` : ''
+    const kindLabel = pend.kind === 'late_new' ? '日報の提出' : '日報の修正'
+
+    if (u.line_user_id && LINE_TOKEN) {
+      const text = [
+        `【差し戻し】${pend.report_date} の${kindLabel}が差し戻されました`,
+        '',
+        `対象日: ${pend.report_date}${where}`,
+        `理由: ${reason}`,
+        reviewer ? `差し戻した人: ${reviewer}` : '',
+        '',
+        '内容を直して出し直してください。',
+        `${LIFF_URL}/report?edit=${pend.report_date}`,
+      ].filter((l) => l !== '').join('\n')
+      const ok = await pushLineText(u.line_user_id as string, text, LINE_TOKEN)
+      return ok ? 'line' : 'line_failed'
+    }
+
+    if (u.worker_id) {
+      const email = await resolveWorkerNotifyEmail(svc, accountId, u.worker_id as string)
+      if (!email) return 'no_channel'
+      const esc = (s: string) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!))
+      const html = `
+        <p>${esc((u.real_name as string) ?? '')} 様</p>
+        <p>${esc(pend.report_date)}${where ? esc(where) : ''} の${kindLabel}は<b>差し戻されました</b>。</p>
+        <p><b>理由:</b> ${esc(reason)}</p>
+        ${reviewer ? `<p>差し戻した人: ${esc(reviewer)}</p>` : ''}
+        <p>内容を直して出し直してください。</p>
+      `.trim()
+      const r = await sendResend(svc, accountId, email,
+        `【差し戻し】${pend.report_date} の${kindLabel}が差し戻されました`, html)
+      return r.status === 200 ? 'email' : 'email_failed'
+    }
+    return 'no_channel'
+  } catch (e) {
+    console.error('[report-edit-log] reject notify failed:', e)
+    return 'error'
+  }
+}
+
 async function handleReview(svc: any, body: any, authHeader: string): Promise<Response> {
   if (!authHeader || authHeader.endsWith(ANON_KEY)) return json({ ok: false, error: 'unauthorized' }, 401)
   const cli = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: authHeader } } })
@@ -177,7 +254,7 @@ async function handleReview(svc: any, body: any, authHeader: string): Promise<Re
 
   // 自テナントの pending だけが対象（他テナントのIDを渡しても引けない）
   const { data: pend } = await svc.from('daily_report_pending_edits')
-    .select('id, report_id, report_user_id, report_date, payload, status, kind')
+    .select('id, report_id, report_user_id, report_date, payload, status, kind, submitted_by_user_id')
     .eq('id', id).eq('account_id', accountId).maybeSingle()
   if (!pend) return json({ ok: false, error: 'pending_not_found' }, 404)
   if (pend.status !== 'pending') return json({ ok: false, error: 'already_reviewed' }, 409)
@@ -191,12 +268,24 @@ async function handleReview(svc: any, body: any, authHeader: string): Promise<Re
   const now = new Date().toISOString()
 
   if (body.action === 'reject') {
-    await svc.from('daily_report_pending_edits').update({
+    // ★理由は必須。以前は任意（空欄OK）だったが、作業員に届くようになった今、
+    //  理由の無い差し戻しは「直せと言われたが何を直すのか分からない」通知になる。
+    //  差し戻しは理由が本体。
+    const reason = typeof body.rejectReason === 'string' ? body.rejectReason.trim() : ''
+    if (!reason) return json({ ok: false, error: 'reject_reason_required' }, 400)
+    if (reason.length > MAX_REASON_LEN) return json({ ok: false, error: 'reason_too_long' }, 400)
+
+    const { error: rejErr } = await svc.from('daily_report_pending_edits').update({
       status: 'rejected', reviewed_by_name: reviewer, reviewed_at: now,
-      reject_reason: typeof body.rejectReason === 'string' ? body.rejectReason.trim() || null : null,
-      updated_at: now,
+      reject_reason: reason, updated_at: now,
     }).eq('id', id)
-    return json({ ok: true, status: 'rejected' })
+    if (rejErr) {
+      console.error('[report-edit-log] reject failed:', rejErr)
+      return json({ ok: false, error: 'reject_failed' }, 500)
+    }
+    // ★差し戻しが確定してから通知する。逆順だと「通知は届いたのに差し戻されていない」が起きる。
+    const notified = await notifyRejected(svc, accountId, pend, reason, reviewer)
+    return json({ ok: true, status: 'rejected', notified })
   }
 
   // 承認: ここで初めて daily_reports に反映する＝集計に出る
@@ -291,10 +380,41 @@ Deno.serve(async (req) => {
       .select('report_date, kind, payload')
       .eq('account_id', caller.accountId).eq('status', 'pending')
       .eq('report_user_id', caller.userId)
+
+    // ★未確認の差し戻しも一緒に返す。これが無いと作業員は差し戻されたことに
+    //  気づけない（バッジが黙って消えるだけで承認と区別がつかなかった）。
+    //  申請者本人の分だけ（report_user_id = caller.userId）。この絞りは緩めないこと。
+    const { data: rej } = await svc.from('daily_report_pending_edits')
+      .select('id, report_date, kind, reject_reason, reviewed_by_name, reviewed_at')
+      .eq('account_id', caller.accountId).eq('status', 'rejected')
+      .eq('report_user_id', caller.userId).is('acknowledged_at', null)
+      .order('reviewed_at', { ascending: false }).limit(20)
+
     return json({
       ok: true,
       dates: (data ?? []).map((r: any) => ({ date: r.report_date, kind: r.kind, payload: r.payload ?? null })),
+      rejected: (rej ?? []).map((r: any) => ({
+        id: r.id, date: r.report_date, kind: r.kind,
+        reason: r.reject_reason ?? null,
+        reviewedBy: r.reviewed_by_name ?? null,
+        reviewedAt: r.reviewed_at ?? null,
+      })),
     })
+  }
+
+  // 差し戻しの「確認しました」。本人の分だけ既読にできる。
+  if (body.action === 'ack-rejected') {
+    const pid = typeof body.pendingId === 'string' ? body.pendingId : ''
+    if (!pid) return json({ ok: false, error: 'pending_id_required' }, 400)
+    const { error } = await svc.from('daily_report_pending_edits')
+      .update({ acknowledged_at: new Date().toISOString() })
+      .eq('id', pid).eq('account_id', caller.accountId)
+      .eq('report_user_id', caller.userId).eq('status', 'rejected')
+    if (error) {
+      console.error('[report-edit-log] ack failed:', error)
+      return json({ ok: false, error: 'ack_failed' }, 500)
+    }
+    return json({ ok: true })
   }
 
   // 作業員側に「承認待ちかどうか」だけ返す。保留の中身は返さない（anon経路から読めるため）
@@ -411,6 +531,16 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: 'pending_failed' }, 500)
     }
     pendingId = res.data?.id ?? null
+
+    // 出し直した＝差し戻しに対応した、とみなして未確認の差し戻しを畳む。
+    // これが無いと「直して出し直したのに『差し戻されました』が出たまま」になる。
+    const ack = svc.from('daily_report_pending_edits')
+      .update({ acknowledged_at: new Date().toISOString() })
+      .eq('account_id', caller.accountId).eq('status', 'rejected')
+      .eq('report_user_id', reportUserId).eq('report_date', reportDate)
+      .is('acknowledged_at', null)
+    const { error: ackErr } = await ack
+    if (ackErr) console.error('[report-edit-log] auto-ack failed:', ackErr)
   }
 
   return json({ ok: true, id: data?.id ?? null, pendingId })
