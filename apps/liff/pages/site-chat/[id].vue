@@ -393,6 +393,18 @@ async function send() {
     // メッセージ本体は既に送信済み(取り消さない)。通知だけ失敗した場合は本人に知らせる
     // （側で気づけないまま「メンションしたのに届いていない」不整合を防ぐ）。
     if (mentionError) { console.error('[site-chat] mention insert failed', mentionError); alert(t('siteChat.mentionNotifyFailed')) }
+    // ★お知らせ一覧にも積む。site_chat_mentions は read_at 付きで溜まり続けていたのに
+    //  バッジがどこにも表示されておらず、完全に死んだ通知になっていた（2026-08-14 調査）。
+    //  ★メンション行と同じ経路・同じ権限で入れる（ここだけEF化しても、隣で
+    //   メンション行を直接 insert している以上、守りの強さは変わらない）。
+    const body = draft.value.slice(0, 120)
+    await supabase.from('schedule_notifications').insert(
+      mentionIds.map(workerId => ({
+        account_id: accountId, worker_id: workerId, kind: 'chat_mention',
+        title: '現場チャットで呼ばれています', body,
+        link_path: `/site-chat/${siteId}`,
+      })),
+    ).then(({ error: e }) => { if (e) console.error('[site-chat] app notification failed', e) })
   }
   sending.value = false
   if (!error) {

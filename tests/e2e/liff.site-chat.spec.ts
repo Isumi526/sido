@@ -215,7 +215,18 @@ test('@入力で作業員候補が出て選択でき、送信するとメンシ�
     const mentions = await restSrv(`site_chat_mentions?worker_id=eq.${target.id}&select=id,read_at`)
     expect(mentions.length).toBeGreaterThan(0)
     expect(mentions[0].read_at).toBeNull()
+
+    // ★お知らせ一覧にも積まれる（2026-08-15）。site_chat_mentions は read_at 付きで
+    //  溜まり続けていたのにバッジがどこにも表示されておらず、完全に死んだ通知だった。
+    await expect.poll(async () => (await restSrv(
+      `schedule_notifications?worker_id=eq.${target.id}&kind=eq.chat_mention&select=id,link_path,read_at`)).length,
+      { message: '★呼ばれたことがアプリを開けば分かる', timeout: 15000 }).toBeGreaterThan(0)
+    const notif = (await restSrv(
+      `schedule_notifications?worker_id=eq.${target.id}&kind=eq.chat_mention&select=link_path,read_at`))[0]
+    expect(notif.link_path, 'タップでそのチャットへ飛べる').toBe(`/site-chat/${siteAId}`)
+    expect(notif.read_at, '未読で積まれる').toBeNull()
   } finally {
+    await restSrv(`schedule_notifications?worker_id=eq.${target.id}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`site_chat_mentions?worker_id=eq.${target.id}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`workers?id=eq.${target.id}`, { method: 'DELETE' }).catch(() => {})
   }
