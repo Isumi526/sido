@@ -222,5 +222,83 @@ Deno.serve(async (req) => {
     return json({ ok: true, inserted: rows.length })
   }
 
+  // ── 残業申請（早朝入り・休憩の申告も同じ申請に乗る）──
+  //  ★同じ「勤怠」ドメインなので出退勤と同じEFに置く。関数を分けると
+  //   身元解決・代理判定のコードが二重化し、片方だけ緩む事故につながる。
+  if (body.action === 'overtime-status') {
+    const date = isDate(body.date) ? body.date : ''
+    if (!date) return json({ ok: false, error: 'bad_date' }, 400)
+    const { data } = await svc.from('overtime_requests')
+      .select('status, requested_start_time, requested_end_time, requested_break_minutes, requested_at')
+      .eq('account_id', caller.accountId).eq('worker_id', caller.workerId).eq('date', date)
+      .order('requested_at', { ascending: false }).limit(1)
+    const r = (data ?? [])[0] as any
+    const hhmm = (v: string | null) => (v ? String(v).slice(0, 5) : null)
+    return json({
+      ok: true,
+      status: r?.status ?? 'none',
+      adjustment: r?.status === 'approved'
+        ? {
+            startTime: hhmm(r.requested_start_time ?? null),
+            endTime: hhmm(r.requested_end_time ?? null),
+            breakMinutes: r.requested_break_minutes ?? null,
+          }
+        : null,
+    })
+  }
+
+  // 自分の直近の申請一覧（履歴表示用）
+  if (body.action === 'overtime-recent') {
+    const limit = Number(body.limit) > 0 ? Math.min(Number(body.limit), 100) : 20
+    const { data } = await svc.from('overtime_requests')
+      .select('id, date, requested_start_time, requested_end_time, requested_break_minutes, reason, status, requested_at')
+      .eq('account_id', caller.accountId).eq('worker_id', caller.workerId)
+      .order('requested_at', { ascending: false }).limit(limit)
+    return json({ ok: true, items: data ?? [] })
+  }
+
+  // 申請を作る。★worker_id はクライアントから受け取らず caller 本人で固定する
+  if (body.action === 'overtime-request') {
+    const date = isDate(body.date) ? body.date : ''
+    if (!date) return json({ ok: false, error: 'bad_date' }, 400)
+    const { data: existing } = await svc.from('overtime_requests').select('id')
+      .eq('account_id', caller.accountId).eq('worker_id', caller.workerId).eq('date', date)
+      .in('status', ['pending', 'approved']).limit(1)
+    if (existing && existing.length) return json({ ok: true, deduped: true })
+
+    const bm = body.requestedBreakMinutes
+    const { error } = await svc.from('overtime_requests').insert({
+      account_id: caller.accountId, worker_id: caller.workerId, date,
+      requested_end_time: isTime(body.requestedEndTime) ? body.requestedEndTime : null,
+      requested_start_time: isTime(body.requestedStartTime) ? body.requestedStartTime : null,
+      // ★0（休憩なし）と null（申請なし）を潰さない
+      requested_break_minutes: (typeof bm === 'number' && bm >= 0 && bm <= 480) ? bm : null,
+      reason: typeof body.reason === 'string' && body.reason.trim() ? body.reason.trim() : null,
+      site_names: Array.isArray(body.siteNames) && body.siteNames.length ? body.siteNames.map(String) : null,
+      status: 'pending',
+    })
+    // 競合で同時insertされた場合、部分一意indexが弾く＝既に有効申請あり＝成功扱い
+    if (error) {
+      if ((error as any).code === '23505') return json({ ok: true, deduped: true })
+      console.error('[attendance-log] overtime insert failed:', error)
+      return json({ ok: false, error: 'insert_failed' }, 500)
+    }
+    return json({ ok: true })
+  }
+
+  // 誤った申請の取り消し（pending のみ・本人の分だけ）
+  if (body.action === 'overtime-cancel') {
+    const date = isDate(body.date) ? body.date : ''
+    if (!date) return json({ ok: false, error: 'bad_date' }, 400)
+    const { error } = await svc.from('overtime_requests').delete()
+      .eq('account_id', caller.accountId).eq('worker_id', caller.workerId)
+      .eq('date', date).eq('status', 'pending')
+    if (error) {
+      console.error('[attendance-log] overtime cancel failed:', error)
+      return json({ ok: false, error: 'delete_failed' }, 500)
+    }
+    return json({ ok: true })
+  }
+
   return json({ ok: false, error: 'unknown_action' }, 400)
 })

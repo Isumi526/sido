@@ -228,48 +228,16 @@ const currentUser = computed(() => {
 })
 
 // ── 過去3日編集ロック ──
-const lock = useReportLock()
-const grantMap = ref<Record<string, 'pending' | 'approved' | 'rejected'>>({})
-const requesting = ref<string | null>(null)
-// 許可依頼モーダル（理由コメントを添えて申請）
-const requestModalDate = ref<string | null>(null)
-const requestReason = ref('')
-function openRequestModal(date: string) { requestModalDate.value = date; requestReason.value = '' }
-function closeRequestModal() { requestModalDate.value = null; requestReason.value = '' }
+//  ★「解錠の許可申請」は廃止済み（2026-08-03）。過去日もそのまま編集でき、
+//   理由必須＋内容の承認待ちになる二段構えに置き換わった。
+//   申請まわりの状態・関数はテンプレートから一度も参照されない死にコードになっていたため
+//   2026-08-15 に削除（report_edit_grants を公開キーから締め出すのに合わせて）。
 // ロック判定に使う作業員: 代理中は代理先、通常は自分（worker_id基準）
 const effectiveWorkerId = computed<string | null>(() => {
   const t = proxy.proxyTarget.value
   if (t) return (t as any).id ?? null
   return (selfUser.value as any)?.worker_id ?? null
 })
-async function loadGrants() {
-  grantMap.value = await lock.grantsByDate(effectiveWorkerId.value)
-}
-// open=編集可 / approved=許可で解除 / pending=申請中 / locked=ロック(要申請)
-function rowLockState(date: string): 'open' | 'approved' | 'pending' | 'locked' {
-  if (!lock.isPastLockWindow(date)) return 'open'
-  const s = grantMap.value[date]
-  if (s === 'approved') return 'approved'
-  if (s === 'pending') return 'pending'
-  return 'locked'
-}
-async function submitUnlockRequest() {
-  const date = requestModalDate.value
-  if (!date || requesting.value) return
-  requesting.value = date
-  const r = await lock.requestGrant(effectiveWorkerId.value, date, requestReason.value.trim())
-  requesting.value = null
-  if (r.ok) { grantMap.value = { ...grantMap.value, [date]: 'pending' }; closeRequestModal() }
-  else alert(t('history.unlockRequestFailed'))
-}
-async function cancelUnlock(date: string) {
-  if (requesting.value) return
-  requesting.value = date
-  const r = await lock.cancelRequest(effectiveWorkerId.value, date)
-  requesting.value = null
-  if (r.ok) { const m = { ...grantMap.value }; delete m[date]; grantMap.value = m }
-  else alert(t('history.unlockRequestFailed'))
-}
 
 async function loadReports() {
   const uid = liff.profile.value?.userId
@@ -297,7 +265,6 @@ onMounted(async () => {
     selfUser.value = await expense.getUser(uid)
     if (!selfUser.value) { await navigateTo('/register'); return }
     await loadReports()
-    await loadGrants()
     void loadPendingDates()   // 描画は待たせない
     void loadPunches()        // 実打刻も後追い（取れなくても履歴は読める）
   }
@@ -308,7 +275,6 @@ watch(() => proxy.proxyTarget.value, async () => {
   if (!selfUser.value) return
   loading.value = true
   await loadReports()
-  await loadGrants()
   loading.value = false
   void loadPunches()
 })
