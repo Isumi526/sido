@@ -101,6 +101,8 @@
   "accountAuto": "Account: auto ({name})",
   "companionsPlaceholder": "Attendees (required, e.g. Mr. Tanaka of ABC Corp.)",
   "companionsRequired": "{account} requires the names of attendees (required for tax records).",
+  "noReceiptReasonPlaceholder": "Reason there is no receipt (required, e.g. the register was broken)",
+  "receiptRequired": "{name} needs a photo of the receipt. Attach one, or write why there is none.",
   "leopalace": "Leopalace, etc.",
   "facilityNamePlaceholder": "Facility name",
   "garbage": "Waste",
@@ -173,5 +175,11 @@
   "lateSubmittedText": "Because it is past the deadline, it will appear once an administrator approves it",
   "payerLabel": "Paid by",
   "payerCompany": "Company card",
-  "payerPersonal": "Paid out of pocket"
+  "payerPersonal": "Paid out of pocket",
+  "retiredOption": "{name} (finished)",
+  "punchLabel": "Actual punch",
+  "punchGapStart": "in",
+  "punchGapEnd": "out",
+  "breakApproved": "approved",
+  "earlyStartApproved": "Early start {time} is also approved"
 }

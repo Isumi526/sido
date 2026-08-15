@@ -102,6 +102,14 @@
                   {{ gasAnalyzingId === g._id ? $t('report.analyzing') : $t('report.aiAnalyzeGas') }}
                 </button>
               </div>
+              <!-- ★判定は fileUrls だけを見る（選択時に即アップロードされる）。
+                   ローカルの File を「添付あり」に数えると、アップロードに失敗した時に
+                   入力欄が出ないまま送信だけ弾かれて直せなくなる。 -->
+              <input v-if="needsReceiptReason(g, 'ガソリン代（本日）')"
+                     v-model="g.noReceiptReason" type="text"
+                     class="input mt6" :class="{ 'input-required': !g.noReceiptReason?.trim() }"
+                     :data-testid="`no-receipt-reason-gas-${gi}`"
+                     :placeholder="$t('report.noReceiptReasonPlaceholder')" @keydown.enter.prevent />
               <!-- ② 手入力（支払い先・金額・登録番号） -->
               <div class="lineitems-row mt6">
                 <input v-model="g.payee" type="text" class="input" :data-testid="`gas-payee-${gi}`" :placeholder="$t('report.gasPayeePlaceholder')" @keydown.enter.prevent />
@@ -143,6 +151,11 @@
           <Field :label="$t('report.contractor')">
             <select v-model="site.contractorName" class="select">
               <option value="">{{ $t('report.selectOptional') }}</option>
+              <!-- ★無効化済みの元請け。理由は下の現場selectのコメントと同じ -->
+              <option v-if="isRetiredOption(site.contractorName, master.contractorNames.value)"
+                      :value="site.contractorName" :data-testid="`retired-contractor-${si}`">
+                {{ $t('report.retiredOption', { name: site.contractorName }) }}
+              </option>
               <option v-for="name in master.contractorNames.value" :key="name" :value="name">{{ name }}</option>
               <option value="__other__">{{ $t('report.addNewContractor') }}</option>
             </select>
@@ -161,6 +174,17 @@
             <select v-model="site.siteName" class="select" required @change="onSiteChange(si)">
               <option value="">{{ $t('common.select') }}</option>
               <option value="__unset__">{{ $t('report.siteUnset') }}</option>
+              <!-- ★終わって無効化された現場の日報を編集で開いた時の受け皿。
+                   マスタは有効な現場しか返さないので、選択中の名前が候補に無いと
+                   select が空表示になり、必須チェックで保存できない＝過去の日報を
+                   二度と直せなくなる（本番で192件が該当・2026-08-14 実測）。
+                   経費の領収書を後から付ける運用がまさにこれで詰まる。
+                   ★新規入力では出ない（そこでは siteName が空なので条件が偽）。
+                   「終わった現場をプルダウンから消す」という無効化の目的は損なわない。 -->
+              <option v-if="isRetiredOption(site.siteName, master.siteNames.value)"
+                      :value="site.siteName" :data-testid="`retired-site-${si}`">
+                {{ $t('report.retiredOption', { name: site.siteName }) }}
+              </option>
               <template v-if="groupedSiteNames(site.contractorName).linked.length">
                 <optgroup :label="$t('report.siteGroupLinked')">
                   <option v-for="name in groupedSiteNames(site.contractorName).linked" :key="name" :value="name">{{ name }}</option>
@@ -233,8 +257,24 @@
                       </select>
                     </div>
                   </div>
+                  <!-- ★その日の実打刻。表示だけで、作業時刻には入れない
+                       （人件費は管理者が決めた時間がマスタ・2026-08-10 大塚さん）。
+                       打刻が無い日は行ごと出さない（0:00 のように見せない）。 -->
+                  <div v-if="punchOf(si)" class="punch-row" :data-testid="`punch-row-${si}`">
+                    <span class="material-symbols-rounded punch-icon">how_to_reg</span>
+                    <span class="punch-label">{{ $t('report.punchLabel') }}</span>
+                    <span class="punch-time">{{ punchOf(si)?.checkin ?? '—' }} 〜 {{ punchOf(si)?.checkout ?? '—' }}</span>
+                    <span v-if="punchGap(si)" class="punch-gap" :class="{ big: punchGapBig(si) }" :data-testid="`punch-gap-${si}`">
+                      {{ punchGap(si) }}
+                    </span>
+                  </div>
                   <div v-if="siteFixedEnd(site.siteName)" class="fixed-time-note">
-                    <template v-if="overtimeApprovedForDate"><span class="material-symbols-rounded banner-icon">check_circle</span>{{ $t('report.overtimeApprovedNote') }}</template>
+                    <template v-if="overtimeApprovedForDate">
+                      <span class="material-symbols-rounded banner-icon">check_circle</span>{{ $t('report.overtimeApprovedNote') }}
+                      <span v-if="approvedAdjust?.startTime" class="approved-extra" data-testid="approved-early-start">
+                        {{ $t('report.earlyStartApproved', { time: approvedAdjust.startTime }) }}
+                      </span>
+                    </template>
                     <template v-else>
                       <span class="material-symbols-rounded banner-icon">timer</span>{{ $t('report.fixedTimeNote', { end: siteFixedEnd(site.siteName) }) }}
                       <NuxtLink to="/overtime" class="overtime-link">{{ $t('report.overtimeApplyLink') }}</NuxtLink>
@@ -244,7 +284,11 @@
                     <div class="time-field">
                       <label class="hours-label">{{ $t('report.break') }}</label>
                       <span class="break-auto">
-                        <template v-if="effectiveBreakMinutes(site.workers[0]) === 0">{{ $t('report.breakNone') }}</template>
+                        <!-- ★休憩なし/短縮が承認された日は、その分数を使う（管理者が承認した内容がその日の正） -->
+                        <template v-if="approvedAdjust?.breakMinutes !== null && approvedAdjust?.breakMinutes !== undefined">
+                          <span data-testid="approved-break">{{ approvedAdjust.breakMinutes === 0 ? $t('report.breakNone') : `${approvedAdjust.breakMinutes}分` }}（{{ $t('report.breakApproved') }}）</span>
+                        </template>
+                        <template v-else-if="effectiveBreakMinutes(site.workers[0]) === 0">{{ $t('report.breakNone') }}</template>
                         <template v-else-if="site.workers[0].breakSnapshot">{{ effectiveBreakMinutes(site.workers[0]) }}分（現場設定）</template>
                         <template v-else>{{ $t('report.breakMinutesAuto', { min: effectiveBreakMinutes(site.workers[0]) }) }}</template>
                       </span>
@@ -350,6 +394,10 @@
                           {{ receipt.loading.value === `${si}-parking-${pi}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                         </button>
                       </div>
+                      <input v-if="needsReceiptReason(pk, '駐車代')" v-model="pk.noReceiptReason" type="text"
+                             class="input mt6" :class="{ 'input-required': !pk.noReceiptReason?.trim() }"
+                             :data-testid="`no-receipt-reason-parking-${si}-${pi}`"
+                             :placeholder="$t('report.noReceiptReasonPlaceholder')" @keydown.enter.prevent />
                     </div>
                     <div class="lineitems-row mt6">
                       <ExpenseField v-model="pk.yen" v-model:tategae="pk.tategae" with-tategae :label="$t('report.amountYen')" />
@@ -374,6 +422,11 @@
                           {{ receipt.loading.value === `${si}-highway-${hi}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                         </button>
                       </div>
+                      <!-- ETCカードを選ぶとこの欄は消える（利用明細で後日精算＝その場で領収書が出ない） -->
+                      <input v-if="needsReceiptReason(hw, '高速代')" v-model="hw.noReceiptReason" type="text"
+                             class="input mt6" :class="{ 'input-required': !hw.noReceiptReason?.trim() }"
+                             :data-testid="`no-receipt-reason-highway-${si}-${hi}`"
+                             :placeholder="$t('report.noReceiptReasonPlaceholder')" @keydown.enter.prevent />
                     </div>
                     <div class="lineitems-row mt6">
                       <ExpenseField v-model="hw.yen" v-model:tategae="hw.tategae" with-tategae :label="$t('report.amountYen')" />
@@ -413,6 +466,10 @@
                         {{ receipt.loading.value === `${si}-train-${ti}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                       </button>
                     </div>
+                    <input v-if="needsReceiptReason(tr, '電車代')" v-model="tr.noReceiptReason" type="text"
+                           class="input mt6" :class="{ 'input-required': !tr.noReceiptReason?.trim() }"
+                           :data-testid="`no-receipt-reason-train-${si}-${ti}`"
+                           :placeholder="$t('report.noReceiptReasonPlaceholder')" @keydown.enter.prevent />
                   </div>
                   <div class="lineitems-row mt6">
                     <input v-model="tr.label" type="text" class="input" :placeholder="$t('report.trainRoutePlaceholder')" @keydown.enter.prevent />
@@ -449,6 +506,10 @@
                         {{ receipt.loading.value === `${si}-hotel-${hi}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                       </button>
                     </div>
+                    <input v-if="needsReceiptReason(ho, '宿泊費')" v-model="ho.noReceiptReason" type="text"
+                           class="input mt6" :class="{ 'input-required': !ho.noReceiptReason?.trim() }"
+                           :data-testid="`no-receipt-reason-hotel-${si}-${hi}`"
+                           :placeholder="$t('report.noReceiptReasonPlaceholder')" @keydown.enter.prevent />
                   </div>
                   <div class="lineitems-row mt6">
                     <input v-model="ho.label" type="text" class="input" :placeholder="$t('report.facilityNameHotelPlaceholder')" @keydown.enter.prevent />
@@ -503,6 +564,10 @@
                         {{ receipt.loading.value === `${si}-other-${oi}` ? $t('report.analyzing') : $t('report.aiAnalyze') }}
                       </button>
                     </div>
+                    <input v-if="needsReceiptReason(ot, 'その他')" v-model="ot.noReceiptReason" type="text"
+                           class="input mt6" :class="{ 'input-required': !ot.noReceiptReason?.trim() }"
+                           :data-testid="`no-receipt-reason-other-${si}-${oi}`"
+                           :placeholder="$t('report.noReceiptReasonPlaceholder')" @keydown.enter.prevent />
                   </div>
                   <div class="lineitems-row mt6">
                     <input v-model="ot.label" type="text" class="input" :placeholder="$t('report.contentPlaceholder')" @keydown.enter.prevent />
@@ -667,6 +732,7 @@
 
 <script setup lang="ts">
 import { todayStr } from '~/composables/schedule-core.gen'
+import { punchDiffLabel, isPunchDiffBig, isPunchDiffWorthShowing } from '~/composables/attendance-punch.gen'
 import { computeWorkerHours, getRateLines, calcBreakMinutes, effectiveBreakMinutes, effectiveBreakWindows, parseMin, TIME_OPTIONS } from '~/utils/workerHours'
 import type { RateBreakdown } from '~/utils/workerHours'
 import { computeDiff } from '~/utils/diffReport'
@@ -697,6 +763,19 @@ function pickSimilarSite(si: number, name: string) {
 // 現場プルダウン: 元請けが選択されていれば、その元請けに紐づく現場を優先表示。
 //  紐づけ忘れで現場が選べない不便を防ぐため、紐づいていない現場も「その他の現場」として
 //  下部に残す（元請け未選択/その他の時は linked=[] で全件が others に入る＝後方互換）。
+/**
+ * いま選ばれている値がマスタの候補に無いか（＝無効化された現場・元請けを指している）。
+ * ★true の時だけ専用の option を出して選択を保持する。出さないと select が空表示になり、
+ *  現場は required なのでその日報を保存できなくなる（過去の日報が直せない）。
+ * 特殊値（未選択 / 現場未設定 / 新規追加）は対象外。
+ */
+
+function isRetiredOption(current: string | undefined, options: string[]): boolean {
+  const v = (current ?? '').trim()
+  if (!v || v === '__unset__' || v === '__other__') return false
+  return !options.includes(v)
+}
+
 function groupedSiteNames(contractorName?: string): { linked: string[]; others: string[] } {
   // '__unset__' という名前の現場行は「現場未設定」用の特殊値で、専用optionを別途出すため除外
   const all = master.siteNames.value.filter((n) => n !== '__unset__')
@@ -722,6 +801,50 @@ const report  = useReport()
 const expense  = useExpense()
 const receipt  = useReceiptAnalysis()
 const proxy   = useProxyMode()
+
+// ────────────────────────────────────────────
+//  実打刻の表示（2026-08-10 大塚さん「日報の中に実際打った打刻時間と、
+//  管理者が決めた8時半〜18時の両方が出てくればそれでいい」）
+//  ★表示専用。ここで読んだ値を form の作業時刻へ書き戻さないこと。
+//   書き戻した瞬間に人件費の根拠が「管理者が決めた時間」から実打刻に入れ替わる。
+// ────────────────────────────────────────────
+const punches = usePunches()
+const myWorkerIdForPunch = ref<string | null>(null)
+
+/** その現場のその日の打刻（無ければ null＝行を出さない） */
+function punchOf(si: number): { checkin?: string; checkout?: string } | null {
+  const s = report.form.value.sites?.[si]
+  return punches.punchFor(myWorkerIdForPunch.value, report.form.value.date, s?.siteName)
+}
+
+/** 打刻と申告した作業時刻のズレ（15分未満は出さない＝全行に数分のチップが並ぶのを防ぐ） */
+function punchGap(si: number): string {
+  const p = punchOf(si)
+  const w = report.form.value.sites?.[si]?.workers?.[0]
+  if (!p || !w) return ''
+  const parts: string[] = []
+  if (isPunchDiffWorthShowing(p.checkin, w.startTime)) parts.push(`${t('report.punchGapStart')} ${punchDiffLabel(p.checkin, w.startTime)}`)
+  if (isPunchDiffWorthShowing(p.checkout, w.endTime)) parts.push(`${t('report.punchGapEnd')} ${punchDiffLabel(p.checkout, w.endTime)}`)
+  return parts.join(' / ')
+}
+
+function punchGapBig(si: number): boolean {
+  const p = punchOf(si)
+  const w = report.form.value.sites?.[si]?.workers?.[0]
+  if (!p || !w) return false
+  return isPunchDiffBig(p.checkin, w.startTime) || isPunchDiffBig(p.checkout, w.endTime)
+}
+
+/** 打刻を読み直す。日付が変わったら読み直す（編集で別の日を開いた時など） */
+async function reloadPunches() {
+  if (!myWorkerIdForPunch.value) {
+    const { resolve } = useCurrentUser()
+    // 代理入力中は代理先の打刻を見る（その人の日報を書いているため）
+    myWorkerIdForPunch.value = proxy.proxyTarget.value?.id ?? (await resolve())?.worker_id ?? null
+  }
+  await punches.load(myWorkerIdForPunch.value, report.form.value.date)
+}
+watch(() => report.form.value.date, () => { void reloadPunches() })
 // 「過去日の日報です」表示に使う今日（JSTローカル基準。UTC基準だと深夜0-9時JSTに
 // 前日となり、当日の日報が過去日扱いで警告表示されてしまう）
 const todayJst = computed(() => todayStr())
@@ -967,10 +1090,16 @@ onUnmounted(() => {
 // ── 残業申請（架空残業対策）: 承認済みの worker×date は固定終了の上限を解放 ──
 const overtime = useOvertimeRequest()
 const overtimeApprovedForDate = ref(false)
+// ★承認された申請の中身（早朝入り／実際に取った休憩）。2026-08-10 大塚さん
+//  「6時からやってますとかあった時は、あらかじめ残業申請の方でやる…早朝出勤というのもいる」
+//  「10時休憩せずにぶっ通しでやりました…申請を出せば、じゃあいいよ、って修正させてあげたい」
+//  承認されていない限り null＝従来どおり固定開始より前・既定より短い休憩は入れられない。
+const approvedAdjust = ref<{ startTime: string | null; endTime: string | null; breakMinutes: number | null } | null>(null)
 async function refreshOvertime() {
   const d = report.form.value.date
   const wid = currentUser.value?.worker_id ?? null
   overtimeApprovedForDate.value = (wid && d) ? await overtime.isApproved(wid, d) : false
+  approvedAdjust.value = (wid && d) ? await overtime.approvedAdjustment(wid, d) : null
 }
 watch([() => report.form.value.date, () => currentUser.value?.worker_id], refreshOvertime, { immediate: true })
 
@@ -1358,7 +1487,13 @@ function startTimeOptionsForSite(si: number): string[] {
   // ※ 前現場終了以降の制限は撤廃（前現場終了より前でも設定可＝80c2）。重複は送信時にバリデートする。
   // 現場の固定開始以降のみ維持（固定開始より前=早出は不可・遅刻=後ろ倒しは可）
   const fStart = siteFixedStart(s?.siteName)
-  if (fStart) floorMin = Math.max(floorMin, parseMin(fStart))
+  // ★早朝入りが承認されていれば、その時刻まで下限を下げる。
+  //  承認が無ければ従来どおり固定開始が下限（勝手に早出をつけられないため）。
+  const approvedStart = approvedAdjust.value?.startTime ?? null
+  if (fStart) {
+    const floor = approvedStart ? Math.min(parseMin(fStart), parseMin(approvedStart)) : parseMin(fStart)
+    floorMin = Math.max(floorMin, floor)
+  }
   if (floorMin < 0) return TIME_OPTIONS
   // 編集で開いた古い下限割れ値は snap させないため、現在値は必ず含める。
   return TIME_OPTIONS.filter(t => parseMin(t) >= floorMin || t === cur)
@@ -1384,6 +1519,55 @@ function findMissingCompanions(): string | null {
         }
       }
     }
+  }
+  return null
+}
+
+// ────────────────────────────────────────────
+//  領収書の添付必須（2026-08-14 ユーザー確定）
+//  「領収書かレシートは99%もらえるものだから写真添付必須にして、ごく稀に
+//   もらえない場合は理由をコメントしてアップさせればいい」。
+//  ＝ 添付を必須にするが、理由を書けば通す。黙って0枚で通さないのが目的。
+//  それまでは添付のバリデーションが1件も無く、本番で9件・約59,000円が
+//  証憑なしで承認待ちになっていた（2026-08-12 発見）。
+// ────────────────────────────────────────────
+/** 経費配列のキー → 画面の呼び名。エラー文言と入力欄の出し分けに使う */
+const RECEIPT_GROUPS = [
+  ['parkings',       '駐車代',       'report.parking'],
+  ['highways',       '高速代',       'report.highway'],
+  ['trains',         '電車代',       'report.train'],
+  ['hotels',         '宿泊費',       'report.hotel'],
+  ['others',         'その他',       'report.other'],
+  // entertainments は入力UIが無い（2026-07-31 に「その他」へ統合し、編集ロード時に
+  // others へ畳んでいる）。理由を書く欄が出せない以上、ここで弾くと直せない詰みになる。
+] as const
+
+function hasReceipt(item: any): boolean {
+  return !!(item?.fileUrls?.length || item?.files?.length)
+}
+
+/** その明細に「領収書が無い理由」の記入を求めるか（＝金額があるのに領収書0枚） */
+function needsReceiptReason(item: any, category: string): boolean {
+  if (!(Number(item?.yen) > 0)) return false          // 金額未入力の空行は対象外
+  if (hasReceipt(item)) return false
+  return !receiptExempt({ category, etcCard: item?.etcCard })
+}
+
+/** 領収書も理由も無い明細があればエラーメッセージを返す（送信を弾く） */
+function findMissingReceipts(): string | null {
+  const complain = (labelKey: string) => t('report.receiptRequired', { name: t(labelKey) })
+  for (const site of (report.form.value.sites ?? [])) {
+    const exp: any = site?.expenses ?? {}
+    for (const [key, category, labelKey] of RECEIPT_GROUPS) {
+      for (const it of (exp[key] ?? [])) {
+        if (!needsReceiptReason(it, category)) continue
+        if (!String(it.noReceiptReason ?? '').trim()) return complain(labelKey)
+      }
+    }
+  }
+  for (const g of (report.form.value.gasolineItems ?? [])) {
+    if (!needsReceiptReason(g, 'ガソリン代（本日）')) continue
+    if (!String(g.noReceiptReason ?? '').trim()) return complain('report.gasolineSection')
   }
   return null
 }
@@ -1497,7 +1681,10 @@ onMounted(async () => {
     const s0 = report.form.value.sites[0]
     // 現場名はマスタに在るものだけ入れる。無い名前を入れると select が候補に無くて空表示になり、
     // 「現場が入っているように見えて実は未選択」という一番たちの悪い状態になる。
-    if (name && s0 && !s0.siteName && master.siteWorkTimes.value[name] !== undefined) {
+    // ★在庫判定は siteIds（全現場）で見る。以前は siteWorkTimes を見ていたが、そちらは
+    //  固定勤務時刻を設定した現場しか収録しないため、本番の有効な現場128件中122件で
+    //  現場が引き継がれず、打刻から飛んでも結局選び直しになっていた（2026-08-14 発見）。
+    if (name && s0 && !s0.siteName && master.siteIds.value[name] !== undefined) {
       s0.siteName = name
       onSiteChange(0)   // 固定勤務時刻・既定休憩を、通常の現場選択とまったく同じ経路で適用する
     }
@@ -1550,6 +1737,8 @@ onMounted(async () => {
   initializing.value = false
   // ★描画を終えてから後追いで承認待ちの日を飛ばす（初期化は待たせない）
   void skipPendingDatesAfterInit()
+  // 実打刻も後追いで読む（取れなくても日報の入力は続けられるべきなので待たせない）
+  void reloadPunches()
 })
 
 // ── 下書き自動保存（新規入力中・800ms デバウンス・送信ロジックには触れない）──
@@ -1823,6 +2012,17 @@ async function handleSubmit() {
     if (companionMsg) {
       if (isEditMode.value) editError.value = companionMsg
       alert(companionMsg)
+      return
+    }
+  }
+
+  // ── 送信バリデート: 領収書も「無い理由」も無い経費は弾く（2026-08-14 ユーザー確定）──
+  //  ★新規・編集の両方に効かせたいので、モード分岐より手前に置く。
+  {
+    const receiptMsg = findMissingReceipts()
+    if (receiptMsg) {
+      if (isEditMode.value) editError.value = receiptMsg
+      alert(receiptMsg)
       return
     }
   }
@@ -2606,6 +2806,18 @@ html, body {
 .unset-hint { margin-top: 6px; }
 .fixed-time-note { margin-top: 4px; font-size: 12px; color: #1d4ed8; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 6px 10px; line-height: 1.5; }
 .overtime-link { display: inline-block; margin-top: 2px; color: #b45309; font-weight: 700; text-decoration: underline; }
+.approved-extra { display: block; margin-top: 2px; font-weight: 700; }
+/* 実打刻（表示専用・作業時刻とは別物と分かる見た目にする） */
+.punch-row {
+  margin-top: 4px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  font-size: 12px; color: #334155; background: #f8fafc;
+  border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 10px; line-height: 1.5;
+}
+.punch-icon { font-size: 16px; color: #64748b; }
+.punch-label { color: #64748b; }
+.punch-time { font-weight: 700; font-variant-numeric: tabular-nums; }
+.punch-gap { margin-left: auto; color: #92400e; background: #fef3c7; border-radius: 999px; padding: 1px 8px; }
+.punch-gap.big { color: #991b1b; background: #fee2e2; font-weight: 700; }
 .mt8  { margin-top: 8px; }
 
 /* ── 車両ブロック ── */

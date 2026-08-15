@@ -48,6 +48,16 @@
           </span>
         </div>
 
+        <!-- ★作業員が申告した「領収書が無い理由」。証憑なしを通してよいかの判断材料。
+             書かせておいて承認画面に出さないなら書かせる意味が無い。 -->
+        <div v-if="noReceiptReasons(p.payload).length" class="no-receipt-reasons" data-testid="pending-no-receipt-reasons">
+          <span class="material-symbols-rounded ico">receipt_long</span>
+          <div>
+            <div class="nrr-title">領収書なしの申告理由</div>
+            <div v-for="(r, ri) in noReceiptReasons(p.payload)" :key="ri" class="nrr-item">{{ r }}</div>
+          </div>
+        </div>
+
         <!-- 理由だけでは妥当性を判断できないので、何を変えたかも必ず出す -->
         <div class="section">
           <div class="section-label">変更内容</div>
@@ -189,7 +199,7 @@ import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { summarizePendingEdit, receiptCount } from '../lib/pendingEditDiff'
+import { summarizePendingEdit, receiptCount, noReceiptReasons } from '../lib/pendingEditDiff'
 import { refreshNavBadges } from '../lib/navBadges'
 import { diffReceipts } from '../lib/reportReceipts'
 import { currentUser } from '../lib/auth'
@@ -364,10 +374,16 @@ async function decide(p: any, action: 'approve' | 'reject') {
     // ★キャンセル(null)は「理由なしで差し戻す」ではなく「差し戻さない」。
     //  以前は ?? null で理由なし扱いのまま続行しており、誤クリック→キャンセルでも
     //  作業員の編集が差し戻されていた（承認側の confirm は正しく中断するのに非対称だった）。
-    //  理由が任意なのは仕様どおりなので、空文字でOKを押した場合は従来どおり理由なしで差し戻す。
-    const input = window.prompt('差し戻す理由（任意・作業員に伝えたい内容）')
+    // ★理由は必須（2026-08-14）。差し戻しは作業員に通知として届くようになったので、
+    //  理由が無いと「直せと言われたが何を直すのか分からない」通知になる。
+    const input = window.prompt('差し戻す理由（作業員に通知されます）')
     if (input === null) return
-    rejectReason = input.trim() || null
+    rejectReason = input.trim()
+    if (!rejectReason) {
+      msg.value = '差し戻す理由を入力してください（作業員に通知されます）'
+      msgOk.value = false
+      return
+    }
   } else if (!window.confirm(`${p.report_date} の編集を承認して日報に反映しますか？`)) {
     return
   }
@@ -436,6 +452,15 @@ watch(historyOpen, (open) => { if (open && !history.value.length) void loadHisto
   background: #fff7ed; border: 1px solid #fdba74; border-radius: 8px; padding: 8px 10px;
 }
 .receipt-gap .ico { font-size: 18px; flex: none; }
+/* 警告(receipt-gap)ではなく申告なので、色を落として「読む材料」に見せる */
+.no-receipt-reasons {
+  display: flex; align-items: flex-start; gap: 6px; margin-bottom: 12px;
+  font-size: 13px; line-height: 1.5; color: #334155;
+  background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 10px;
+}
+.no-receipt-reasons .ico { font-size: 18px; flex: none; }
+.nrr-title { font-size: 12px; font-weight: 700; color: #64748b; margin-bottom: 2px; }
+.nrr-item { white-space: pre-wrap; }
 .muted { font-size: 12px; color: #999; }
 .section { margin-bottom: 12px; }
 .section-label { font-size: 12px; font-weight: 700; color: #666; margin-bottom: 4px; }

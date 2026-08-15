@@ -42,6 +42,37 @@ export function useOvertimeRequest() {
     return (await status(workerId, date)) === 'approved'
   }
 
+  /**
+   * 承認済みの申請内容（その日だけ日報の入力制限を緩める材料）。
+   *  - startTime    … 早朝入り。現場の固定開始より前を選べるようになる
+   *  - endTime      … 従来の残業（固定終了より後を選べる）
+   *  - breakMinutes … 実際に取った休憩。0 なら休憩なしで通した
+   * ★承認されていない申請は返さない。申請しただけで時間を広げられるなら
+   *  「管理者が決めた時間がマスタ」という原則が崩れる。
+   */
+  async function approvedAdjustment(
+    workerId: string | null | undefined, date: string,
+  ): Promise<{ startTime: string | null; endTime: string | null; breakMinutes: number | null } | null> {
+    if (!workerId || !date) return null
+    const accountId = await getAccountId()
+    if (!accountId) return null
+    const { data } = await supabase
+      .from('overtime_requests')
+      .select('requested_start_time, requested_end_time, requested_break_minutes, status, requested_at')
+      .eq('account_id', accountId).eq('worker_id', workerId).eq('date', date)
+      .eq('status', 'approved')
+      .order('requested_at', { ascending: false })
+      .limit(1)
+    const r = (data ?? [])[0] as any
+    if (!r) return null
+    const hhmm = (v: string | null) => (v ? String(v).slice(0, 5) : null)
+    return {
+      startTime: hhmm(r.requested_start_time ?? null),
+      endTime: hhmm(r.requested_end_time ?? null),
+      breakMinutes: r.requested_break_minutes ?? null,
+    }
+  }
+
   // その作業員の「承認済み」残業日付の集合（履歴表示用）。
   async function approvedDates(workerId: string | null | undefined): Promise<Set<string>> {
     const set = new Set<string>()
@@ -63,7 +94,7 @@ export function useOvertimeRequest() {
     if (!accountId) return []
     const { data } = await supabase
       .from('overtime_requests')
-      .select('id, date, requested_end_time, reason, status, requested_at')
+      .select('id, date, requested_start_time, requested_end_time, requested_break_minutes, reason, status, requested_at')
       .eq('account_id', accountId).eq('worker_id', workerId)
       .order('requested_at', { ascending: false })
       .limit(limit)
@@ -74,6 +105,10 @@ export function useOvertimeRequest() {
   async function requestOvertime(
     workerId: string | null | undefined, date: string, requestedEndTime: string | null, reason: string,
     siteNames: string[] = [],   // 対象現場（複数可・その責任者へメール通知する #5）
+    // 早朝入り／実際に取った休憩（2026-08-10 大塚さん）。どちらも任意で、
+    // 承認されて初めて日報の入力制限が緩む。
+    requestedStartTime: string | null = null,
+    requestedBreakMinutes: number | null = null,
   ): Promise<{ ok: boolean; error?: string }> {
     if (!workerId || !date) return { ok: false, error: 'no-worker-or-date' }
     if (!canRequest(date)) return { ok: false, error: 'deadline-passed' }  // 当日15:00超 or 当日以外
@@ -87,6 +122,9 @@ export function useOvertimeRequest() {
     const { error } = await supabase.from('overtime_requests').insert({
       account_id: accountId, worker_id: workerId, date,
       requested_end_time: requestedEndTime || null, reason: reason || null, status: 'pending',
+      requested_start_time: requestedStartTime || null,
+      // ★0（休憩なし）と null（申請なし）を潰さない。|| だと 0 が null になる
+      requested_break_minutes: requestedBreakMinutes ?? null,
       site_names: siteNames.length ? siteNames : null,
     })
     // 競合で同時insertされた場合、部分一意index(active_uidx)が弾く＝既に有効申請あり＝成功扱い。
@@ -108,5 +146,5 @@ export function useOvertimeRequest() {
     return { ok: true }
   }
 
-  return { canRequest, status, isApproved, approvedDates, myRecent, requestOvertime, cancelRequest }
+  return { canRequest, status, isApproved, approvedAdjustment, approvedDates, myRecent, requestOvertime, cancelRequest }
 }

@@ -65,6 +65,19 @@ export function requiresCompanions(row: { category: string; account?: string }):
 }
 
 /**
+ * 領収書の添付が構造的に要らない経費。
+ *
+ * 領収書・レシートは 99% もらえるので添付を必須にする、というのが方針
+ * （2026-08-14 ユーザー確定）。ただし ETC の高速代だけは、その場で領収書が出ず
+ * 後日の利用明細でまとめて精算する別の話になるため、最初から対象外にする。
+ * 「レジ故障でもらえなかった」のような例外は免除ではなく **理由を書けば通す**
+ * （noReceiptReason）で扱う＝もらえるはずのものを黙って素通りさせない。
+ */
+export function receiptExempt(row: { category: string; etcCard?: string }): boolean {
+  return row.category === '高速代' && !!String(row.etcCard ?? '').trim()
+}
+
+/**
  * 経費行の「科目」列（勘定科目）。入力値(account)があればそれ、無ければ生カテゴリから導出する。
  * 導出マッピングは 2026-07-30 ユーザー確定回答:
  *  電車/バス/タクシー/駐輪/駐車/高速/宿泊 → 旅費交通費、ガソリン/軽油 → 車両費、
