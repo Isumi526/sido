@@ -246,27 +246,20 @@
           </label>
 
           <template v-if="!noSiteMode">
-            <!-- 元請け業者（任意）: 選ぶと現場プルダウンをその元請けに紐づく現場へ絞り込む -->
-            <div v-if="master.contractorNames.value.length" class="form-row" style="margin-bottom:8px">
-              <span class="form-row-label">{{ $t('calendar.contractor') }}</span>
-              <select v-model="(formModal as any)._contractor" class="site-select" data-testid="contractor-select">
-                <option value="">{{ $t('calendar.contractorAll') }}</option>
-                <option v-for="name in master.contractorNames.value" :key="name" :value="name">{{ name }}</option>
-              </select>
-            </div>
+            <!-- ★元請けの絞り込みプルダウンは廃止した（2026-08-15）。
+                 現場プルダウンは元々 optgroup で元請けごとに分かれており、絞り込みは
+                 その2階層構造の上に重ねた重複UIだった。しかも本番の現場80件のうち
+                 54件(68%)が元請け未紐付けで、絞り込んでも大半が1グループに固まり効かない。
+                 代わりに「最近使った現場」を先頭に出す。人が探しているのは大抵
+                 「今動いている数件」で、こちらは未紐付けの現場にも効く。 -->
             <div class="form-row">
               <span class="form-row-label">{{ $t('calendar.site') }}</span>
               <select v-model="formModal.title" class="site-select" data-testid="site-select">
                 <option value="">{{ $t('calendar.pleaseSelect') }}</option>
-                <template v-if="(formModal as any)._contractor">
-                  <optgroup :label="$t('calendar.siteGroupLinked')">
-                    <option v-for="s in groupedSiteNames((formModal as any)._contractor).linked" :key="s" :value="s">{{ s }}</option>
-                  </optgroup>
-                  <optgroup :label="$t('calendar.siteGroupOther')">
-                    <option v-for="s in groupedSiteNames((formModal as any)._contractor).others" :key="s" :value="s">{{ s }}</option>
-                  </optgroup>
-                </template>
-                <template v-else v-for="grp in master.siteGroupsByContractor.value" :key="grp.contractorName ?? '__unlinked__'">
+                <optgroup v-if="recentSiteOptions.length" :label="$t('calendar.siteGroupRecent')" data-testid="site-group-recent">
+                  <option v-for="s in recentSiteOptions" :key="`recent-${s}`" :value="s">{{ s }}</option>
+                </optgroup>
+                <template v-for="grp in master.siteGroupsByContractor.value" :key="grp.contractorName ?? '__unlinked__'">
                   <optgroup :label="grp.contractorName ?? $t('calendar.siteGroupUnlinked')">
                     <option v-for="s in grp.sites" :key="s" :value="s">{{ s }}</option>
                   </optgroup>
@@ -467,18 +460,41 @@ const customSiteSimilar = computed(() =>
     : [],
 )
 
-// 現場プルダウン: 元請けが選択されていれば「紐づく現場」＋「その他の現場」の2グループで
-//  両方表示する(report.vue の groupedSiteNames() と同じ挙動に統一・2026-07-20)。
-//  紐づく現場が無い/元請け未選択なら linked=[] で全件が others に入る(後方互換)。
-function groupedSiteNames(contractorName?: string): { linked: string[]; others: string[] } {
-  const all = master.siteNames.value
-  const cn = (contractorName ?? '').trim()
-  if (!cn) return { linked: [], others: all }
-  const map = master.siteContractors.value
-  const linked = all.filter((n) => map[n] === cn)
-  const others = all.filter((n) => map[n] !== cn)
-  return { linked, others }
+/**
+ * 最近この端末で予定に使った現場名（新しい順・最大5件）。
+ *
+ * ★なぜ必要か（2026-08-15 実測）:
+ *  本番の有効な現場は80件あるが、そのうち**54件（68%）が元請け未紐付け**。
+ *  元請けごとの optgroup でグループ化しても、大半が「未紐付け」の1グループに
+ *  固まるだけで絞り込みにならない。一方で人が探しているのは大抵「今動いている数件」。
+ *  スケジュールは同じ現場を繰り返し登録するので、直近に使った順を先頭に出すと
+ *  ほとんどの場合スクロールせずに選べる。
+ *
+ * ★端末ローカルに持つ（DBに問い合わせない）。予定の登録は連続で行うことが多く、
+ *  そのたびに取りに行くと目に見えて遅くなる。多少ズレても実害が無い性質の情報。
+ */
+const RECENT_SITES_KEY = 'sido_recent_schedule_sites_v1'
+const RECENT_SITES_MAX = 5
+const recentSiteNames = ref<string[]>([])
+
+function loadRecentSites() {
+  if (!import.meta.client) return
+  try {
+    const raw = localStorage.getItem(RECENT_SITES_KEY)
+    recentSiteNames.value = raw ? (JSON.parse(raw) as string[]).filter(n => typeof n === 'string') : []
+  } catch { recentSiteNames.value = [] }
 }
+
+function rememberRecentSite(name: string) {
+  if (!import.meta.client || !name) return
+  const next = [name, ...recentSiteNames.value.filter(n => n !== name)].slice(0, RECENT_SITES_MAX)
+  recentSiteNames.value = next
+  try { localStorage.setItem(RECENT_SITES_KEY, JSON.stringify(next)) } catch { /* 容量超過等は無視 */ }
+}
+
+/** 「最近使った」に出す分。現場マスタから消えた/無効化された名前は出さない */
+const recentSiteOptions = computed(() =>
+  recentSiteNames.value.filter(n => master.siteNames.value.includes(n)))
 
 // 「現場と紐付けない」トグル。内部状態は title==='__none__'（保存ロジックは従来どおり）。
 //  ON で現場プルダウンを隠してタイトル入力に切替、OFF で現場選択に戻す。
@@ -881,7 +897,6 @@ function onWeekSlotTap(date: string, ev: MouseEvent) {
     start_time: toHHMM(snapped), end_time: toHHMM(Math.min(24 * 60, snapped + 60)),
     is_night_shift: false,
     is_public: false,
-    _contractor: '',
   } as any
   isPublicTouched.value = false
   selectedWorkerIds.value = new Set([effectiveWorkerId.value])
@@ -1114,7 +1129,6 @@ function onCellTap(date: string, workerId: string) {
     // 既定は非共有。ただし「自分以外のユーザーへ予定追加」時は既定ON（他者アサインは共有前提／方針C）。
     // 自分の予定(personalAddSchedule→effectiveWorkerId)は従来どおり非共有。ユーザーは保存前にトグルで変更可。
     is_public: workerId !== effectiveWorkerId.value,
-    _contractor: '',
   } as any
   isPublicTouched.value = false   // 新規追加のたびに手動フラグをリセット（既定ON判定を有効化）
   selectedWorkerIds.value = new Set([workerId])   // タップした作業員を初期選択
@@ -1131,7 +1145,6 @@ function openEdit(ev: Schedule) {
     start_time: ev.start_time ?? '', end_time: ev.end_time ?? '',
     is_night_shift: ev.is_night_shift,
     is_public: ev.is_public,   // 編集は既存値を維持（watchは id 有で自動更新しない）
-    _contractor: '',
     _original: {
       title: ev.title, description: ev.description ?? null,
       start_date: ev.start_date, end_date: ev.end_date,
@@ -1161,6 +1174,8 @@ async function saveSchedule() {
     const custom = ((formModal.value as any)._customTitle ?? '').trim()
     if (!custom) { formError.value = t('calendar.errors.enterSiteName'); return }
     formModal.value.title = custom
+    // ★作った現場の id をその場で受け取る。マスタの取り直しを待つと、この回の保存が
+    //  site_id 無しになる（saveSite 側で siteIds にも入れている）
     await master.saveSite(custom)
   } else if (formModal.value.title === '__none__') {
     // 現場なし: 自由タイトルを title に確定（現場マスタには保存しない＝プライベート/非現場の予定）
@@ -1179,6 +1194,22 @@ async function saveSchedule() {
     // 時刻が両方入力されていれば時刻あり、なければ終日
     const hasTime = !!(formModal.value.start_time && formModal.value.end_time)
     formModal.value.all_day = !hasTime
+
+    // ★選んだ現場を site_id として確定する（2026-08-15 のバグ修正）。
+    //  現場の <select> は v-model が title（＝現場「名」の文字列）で、site_id を入れる箇所が
+    //  どこにも無かった。そのため本番 144件すべてで site_id が NULL になっていた
+    //  ＝「現場を選んでいるのに紐づいていない」。
+    //  日報側は 2026-07 に site_id を権威キーにする対応を済ませており、スケジュールだけ
+    //  取り残されていた。現場名の文字列で扱うと表記ゆれ・現場マージで孤児になる。
+    //  ★v-model は title のまま触らない。新規登録(__other__)・元請け絞り込み・
+    //   類似現場の警告・編集時の復元が全部 title 前提で組まれており、
+    //   バインドを変えると影響範囲が広がる。ここで名前→idを引くだけで足りる。
+    formModal.value.site_id = noSiteMode.value
+      ? ''
+      : (master.siteIds.value[formModal.value.title ?? ''] ?? '')
+    // 次回この端末で選びやすいよう「最近使った現場」に覚える（現場を選んだ時だけ）
+    if (!noSiteMode.value && formModal.value.site_id) rememberRecentSite(formModal.value.title ?? '')
+
     const form = formModal.value as ScheduleForm
     const workerName = proxy.proxyTarget.value?.name ?? profile.value?.displayName ?? undefined
     if (formModal.value.id) {
@@ -1237,6 +1268,7 @@ async function restore(ev: Schedule) {
 onMounted(async () => {
   loading.value = true
   initCalendar()
+  loadRecentSites()   // 端末ローカル・同期処理なので await 不要
   try {
     await master.fetch()
     await schedules.resolveMyWorkerId()
