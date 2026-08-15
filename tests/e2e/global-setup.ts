@@ -211,14 +211,16 @@ async function seedFeatureReports() {
   if (workerId && siteId) {
     const dayLo = new Date(`${FEAT_ATT_DATE}T00:00:00+09:00`).toISOString()
     const dayHi = new Date(`${FEAT_ATT_DATE}T23:59:59+09:00`).toISOString()
-    const existing = await rest(`attendance_logs?worker_id=eq.${workerId}&site_id=eq.${siteId}&checked_at=gte.${dayLo}&checked_at=lte.${dayHi}&select=id`)
+    // ★service_role で読む。anon は attendance_logs に触れない（2026-08-15 に締め出した）。
+    //  ここを rest(anon) のままにすると 401 でシードが黙って落ち、打刻系のテストが前提を失う。
+    const existing = await restSrv(`attendance_logs?worker_id=eq.${workerId}&site_id=eq.${siteId}&checked_at=gte.${dayLo}&checked_at=lte.${dayHi}&select=id`)
     if (!existing?.length) {
       const mk = (type: string, hm: string) => ({
         site_id: siteId, worker_id: workerId, type,
         checked_at: new Date(`${FEAT_ATT_DATE}T${hm}:00+09:00`).toISOString(),
         agreed_rule_texts: [],
       })
-      await rest('attendance_logs', {
+      await restSrv('attendance_logs', {
         method: 'POST', headers: { Prefer: 'return=minimal' },
         body: JSON.stringify([mk('checkin', '08:02'), mk('checkin', '08:10'), mk('checkout', '17:35')]),
       })
