@@ -127,7 +127,8 @@ test.describe('日報編集の承認（admin）', () => {
 
   test('★差し戻すと daily_reports は変わらない', async ({ page }) => {
     await seed()
-    page.on('dialog', (d) => d.accept().catch(() => {}))
+    // 差戻しは prompt で理由を取る。理由は必須なので accept() の既定（空文字）では通らない。
+    page.on('dialog', (d) => d.accept(`E2E差戻_${TS}`).catch(() => {}))
     await page.goto('/report-edit-review', { waitUntil: 'networkidle' })
 
     const card = page.locator('[data-testid="pending-card"]', { hasText: `E2E理由_${TS}` })
@@ -306,17 +307,73 @@ test.describe('日報編集の承認（admin）', () => {
     expect(await savedYen(), '日報も変わらない').toBe(ORIG_YEN)
   })
 
-  test('理由を空欄のままOKなら、従来どおり理由なしで差し戻せる（任意の仕様は変えない）', async ({ page }) => {
+  // ★2026-08-14: 差戻しは作業員へ通知として届くようになった。理由なしで差し戻すと
+  //  「直せと言われたが何を直すのか分からない」通知になるため、理由を必須にした。
+  //  （それまでは空欄OKで理由なし差し戻しが成立していた）
+  test('★理由が空欄のままOKでは差し戻せない（理由は必須）', async ({ page }) => {
     await seed()
     page.on('dialog', (d) => d.accept('').catch(() => {}))  // 空欄でOK
-    await page.goto('/report-edit-review', { waitUntil: 'networkidle' })
+    const efCalls: string[] = []
+    page.on('request', (r) => { if (r.url().includes('report-edit-log')) efCalls.push(r.method()) })
 
+    await page.goto('/report-edit-review', { waitUntil: 'networkidle' })
     const card = page.locator('[data-testid="pending-card"]', { hasText: `E2E理由_${TS}` })
     await expect(card).toBeVisible({ timeout: 15000 })
     await card.getByTestId('pending-reject').click()
-    await expect(page.getByTestId('review-msg')).toContainText('差し戻しました', { timeout: 30000 })
+
+    await expect(page.getByTestId('review-msg'), '理由を入れろと分かる')
+      .toContainText('差し戻す理由を入力してください', { timeout: 15000 })
+    expect(efCalls, '★EF を叩かずに手前で止める').toHaveLength(0)
     const pend = await restSrv(`daily_report_pending_edits?report_id=eq.${reportId}&select=status`)
-    expect(pend[0].status).toBe('rejected')
+    expect(pend[0].status, 'pending のまま').toBe('pending')
+    expect(await savedYen(), '日報も変わらない').toBe(ORIG_YEN)
+  })
+
+  // ★差し戻しが作業員に届くことの土台。差し戻した記録が「未確認」で残らないと
+  //  LIFF に何も出せない＝差し戻しが無音だった 2026-08-14 の状態に戻る。
+  //  作業員側に実際に出ることは liff.report-edit-rejected.spec.ts で固定する。
+  test('★差し戻しは理由付きで「未確認」として記録される', async ({ page }) => {
+    await seed()
+    page.on('dialog', (d) => d.accept(`E2E差戻_${TS}`).catch(() => {}))
+    await page.goto('/report-edit-review', { waitUntil: 'networkidle' })
+    await page.locator('[data-testid="pending-card"]', { hasText: `E2E理由_${TS}` })
+      .getByTestId('pending-reject').click()
+    await expect(page.getByTestId('review-msg')).toContainText('差し戻しました', { timeout: 30000 })
+
+    const rej = await restSrv(
+      `daily_report_pending_edits?report_id=eq.${reportId}&status=eq.rejected&select=reject_reason,acknowledged_at`)
+    expect(rej[0].reject_reason, '理由が保存される').toContain(`E2E差戻_${TS}`)
+    expect(rej[0].acknowledged_at, '★未確認＝作業員にまだ出す').toBeNull()
+  })
+
+  // ★アプリ内通知が本命の届け先。LINE連携は基本しない方針で、メールも見られない
+  //  前提なので、ここが積まれないと差し戻しは事実上どこにも届かない（2026-08-14）。
+  test('★差し戻すと作業員のお知らせに積まれる（アプリを開けば気づける）', async ({ page }) => {
+    await seed()
+    const workers = await restSrv(`users?id=eq.${userId}&select=worker_id`)
+    const workerId = workers[0].worker_id
+    await restSrv(`schedule_notifications?worker_id=eq.${workerId}&kind=eq.report_reject`,
+      { method: 'DELETE' }).catch(() => {})
+
+    page.on('dialog', (d) => d.accept(`E2E差戻_${TS}`).catch(() => {}))
+    await page.goto('/report-edit-review', { waitUntil: 'networkidle' })
+    await page.locator('[data-testid="pending-card"]', { hasText: `E2E理由_${TS}` })
+      .getByTestId('pending-reject').click()
+    await expect(page.getByTestId('review-msg')).toContainText('差し戻しました', { timeout: 30000 })
+
+    await expect.poll(async () => (await restSrv(
+      `schedule_notifications?worker_id=eq.${workerId}&kind=eq.report_reject&select=title,body,link_path,read_at`)).length,
+      { message: 'お知らせが1件積まれる', timeout: 20000 }).toBe(1)
+
+    const n = (await restSrv(
+      `schedule_notifications?worker_id=eq.${workerId}&kind=eq.report_reject&select=title,body,link_path,read_at`))[0]
+    expect(n.title, '何が起きたか分かる').toContain(DATE)
+    expect(n.body, '★理由がお知らせから読める').toContain(`E2E差戻_${TS}`)
+    expect(n.link_path, '★タップでその日の編集画面へ飛べる').toBe(`/report?edit=${DATE}`)
+    expect(n.read_at, '未読で積まれる').toBeNull()
+
+    await restSrv(`schedule_notifications?worker_id=eq.${workerId}&kind=eq.report_reject`,
+      { method: 'DELETE' }).catch(() => {})
   })
 
   test('承認済みのものは二重に承認できない（金額が二度適用されない）', async ({ page }) => {

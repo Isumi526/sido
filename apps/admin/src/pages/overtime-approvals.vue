@@ -29,7 +29,18 @@
               <td class="name">{{ workerName(g.worker_id) }}</td>
               <td>{{ fmtDate(g.date) }}</td>
               <td class="sites">{{ (g.site_names && g.site_names.length) ? g.site_names.join('、') : '—' }}</td>
-              <td>{{ (g.requested_end_time || '').slice(0, 5) || '—' }}</td>
+              <td>
+                {{ (g.requested_end_time || '').slice(0, 5) || '—' }}
+                <!-- ★早朝入り・休憩なしも同じ申請に乗る（2026-08-10）。
+                     承認するとその日だけ日報の入力制限が緩むので、何を承認するのか出す。 -->
+                <div v-if="g.requested_start_time" class="ot-extra" data-testid="ot-approval-start">
+                  早朝入り {{ (g.requested_start_time || '').slice(0, 5) }}〜
+                </div>
+                <div v-if="g.requested_break_minutes !== null && g.requested_break_minutes !== undefined"
+                     class="ot-extra" data-testid="ot-approval-break">
+                  {{ g.requested_break_minutes === 0 ? '休憩なしで通し' : `休憩 ${g.requested_break_minutes}分` }}
+                </div>
+              </td>
               <td class="reason">{{ g.reason || '—' }}</td>
               <td class="muted">{{ fmtDateTime(g.requested_at) }}</td>
               <td class="actions-col">
@@ -56,6 +67,8 @@ type OvertimeReq = {
   worker_id: string | null
   date: string
   requested_end_time: string | null
+  requested_start_time: string | null
+  requested_break_minutes: number | null
   reason: string | null
   site_names: string[] | null
   status: string
@@ -88,7 +101,7 @@ async function load() {
   if (!accountId) { loading.value = false; return }
   const [{ data: reqs }, { data: ws }] = await Promise.all([
     supabase.from('overtime_requests')
-      .select('id, worker_id, date, requested_end_time, reason, site_names, status, requested_at')
+      .select('id, worker_id, date, requested_end_time, requested_start_time, requested_break_minutes, reason, site_names, status, requested_at')
       .eq('account_id', accountId).eq('status', 'pending')
       .order('requested_at', { ascending: true }),
     supabase.from('workers').select('id, name').eq('account_id', accountId),
@@ -140,4 +153,5 @@ onMounted(load)
 .btn-approve { color: #047857; background: #ecfdf5; border-color: #6ee7b7; }
 .btn-reject  { color: #b91c1c; background: #fef2f2; border-color: #fca5a5; }
 .btn-approve:disabled, .btn-reject:disabled { opacity: .6; cursor: default; }
+.ot-extra { margin-top: 2px; font-size: 12px; color: #92400e; font-weight: 700; }
 </style>

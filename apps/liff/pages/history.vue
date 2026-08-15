@@ -3,6 +3,30 @@
     <AppNav :subtitle="$t('history.subtitle')" :user-name="currentUser?.real_name" :user-role="currentUser?.worker_role" />
 
     <main class="main">
+      <!-- ★差し戻し。日報一覧より前・空状態でも出す。
+           これが無かった頃は差し戻しても作業員側は「承認待ちバッジが黙って消える」だけで、
+           承認との区別すらつかなかった（＝差し戻し運用が成立していなかった）。 -->
+      <div v-for="r in rejected" :key="r.id" class="rejected-card" data-testid="history-rejected">
+        <div class="rejected-head">
+          <span class="material-symbols-rounded rejected-icon">undo</span>
+          <span class="rejected-title">{{ $t('history.rejectedTitle') }}</span>
+          <span class="rejected-date">{{ formatDate(r.date) }}</span>
+        </div>
+        <p v-if="r.reason" class="rejected-reason" data-testid="history-rejected-reason">
+          <span class="rejected-reason-label">{{ $t('history.rejectedReasonLabel') }}</span>{{ r.reason }}
+        </p>
+        <p class="rejected-lead">{{ $t('history.rejectedLead') }}</p>
+        <p v-if="r.reviewedBy" class="rejected-by">{{ $t('history.rejectedReviewedBy', { name: r.reviewedBy }) }}</p>
+        <div class="rejected-actions">
+          <NuxtLink :to="`/report?edit=${r.date}`" class="btn-rejected-fix" data-testid="history-rejected-fix">
+            {{ $t('history.rejectedFix') }}
+          </NuxtLink>
+          <button class="btn-rejected-ack" data-testid="history-rejected-ack" @click="ackRejected(r.id)">
+            {{ $t('history.rejectedAck') }}
+          </button>
+        </div>
+      </div>
+
       <!-- ローディング -->
       <div v-if="loading" class="state-screen">
         <div class="spinner" />
@@ -61,6 +85,13 @@
                 <div v-for="(s, i) in detailMap[rep.date]" :key="i" class="detail-site">
                   <div class="detail-site-name"><span class="material-symbols-rounded detail-icon">location_on</span>{{ s.name }}</div>
                   <div v-if="s.contractor" class="detail-contractor"><span class="material-symbols-rounded detail-icon">apartment</span>{{ s.contractor }}</div>
+                  <!-- ★その日その現場の実打刻。表示専用（人件費は日報の作業時刻がマスタ）。
+                       打刻が無ければ行ごと出さない＝0:00 のように見せない。 -->
+                  <div v-if="punchOf(rep.date, s.name)" class="detail-punch" data-testid="history-punch">
+                    <span class="material-symbols-rounded detail-icon">how_to_reg</span>
+                    {{ $t('history.punchLabel') }}
+                    {{ punchOf(rep.date, s.name)?.checkin ?? '—' }} 〜 {{ punchOf(rep.date, s.name)?.checkout ?? '—' }}
+                  </div>
 
                   <ul v-if="s.workers.length" class="detail-list">
                     <li v-for="(w, wi) in s.workers" :key="wi">
@@ -123,30 +154,51 @@ const pendingDates = ref<Set<string>>(new Set())
 // まだ日報が無い＝期限切れの新規提出。★payload（送信内容）も持つ。
 // 日付と一文だけだと「何を送ったのか」が分からず、普通の日報カードと情報量が違いすぎた。
 const pendingOnly = ref<{ date: string; payload: any }[]>([])
+// ★未確認の差し戻し。保留テーブルは anon から読めないので EF 経由で本人の分だけ受け取る。
+type RejectedNotice = { id: string; date: string; reason: string | null; reviewedBy: string | null }
+const rejected = ref<RejectedNotice[]>([])
+
+/** report-edit-log を呼ぶ（身元は EF 側で検証される。ここでは名乗らない） */
+async function callEditLog(payload: Record<string, unknown>): Promise<any | null> {
+  const cfg = useRuntimeConfig()
+  const efUrl = cfg.public.edgeFunctionUrl
+  if (!efUrl) return null
+  const anonKey = cfg.public.supabaseAnonKey as string
+  const { data: { session } } = await useSupabase().auth.getSession()
+  const lineIdToken = (await liff.getIdToken().catch(() => null)) ?? ''
+  const devLineUserId = cfg.public.appEnv === 'development' ? (liff.profile.value?.userId ?? '') : ''
+  const res = await fetch(`${efUrl}/report-edit-log`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: anonKey,
+               Authorization: session ? `Bearer ${session.access_token}` : `Bearer ${anonKey}` },
+    body: JSON.stringify({ ...payload, line_id_token: lineIdToken, dev_line_user_id: devLineUserId }),
+  })
+  return await res.json().catch(() => null)
+}
+
 async function loadPendingDates() {
   try {
-    const cfg = useRuntimeConfig()
-    const efUrl = cfg.public.edgeFunctionUrl
-    if (!efUrl) return
-    const anonKey = cfg.public.supabaseAnonKey as string
-    const { data: { session } } = await useSupabase().auth.getSession()
-    const lineIdToken = (await liff.getIdToken().catch(() => null)) ?? ''
-    const devLineUserId = cfg.public.appEnv === 'development' ? (liff.profile.value?.userId ?? '') : ''
-    const res = await fetch(`${efUrl}/report-edit-log`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: anonKey,
-                 Authorization: session ? `Bearer ${session.access_token}` : `Bearer ${anonKey}` },
-      body: JSON.stringify({ action: 'pending-dates', line_id_token: lineIdToken, dev_line_user_id: devLineUserId }),
-    })
-    const j = await res.json().catch(() => null)
+    const j = await callEditLog({ action: 'pending-dates' })
     if (!j?.ok) return
     pendingDates.value = new Set((j.dates ?? []).map((d: any) => d.date))
     pendingOnly.value = (j.dates ?? [])
       .filter((d: any) => d.kind === 'late_new')
       .map((d: any) => ({ date: d.date, payload: d.payload ?? null }))
+    rejected.value = (j.rejected ?? []).map((r: any) => ({
+      id: r.id, date: r.date, reason: r.reason ?? null, reviewedBy: r.reviewedBy ?? null,
+    }))
     // 承認待ちの分も明細を組み立て直す（取得が日報本体より後に返ることがあるため）
     rebuildDetails()
   } catch (e) { console.error('[history] 承認待ちの取得に失敗:', e) }
+}
+
+/** 差し戻しを既読にする。★先に画面から消してから送る（押した手応えを待たせない）。
+ *  失敗したら戻す＝「消えたのにまた出る」より「消えない」方が実害が小さい。 */
+async function ackRejected(id: string) {
+  const before = rejected.value
+  rejected.value = before.filter((r) => r.id !== id)
+  const j = await callEditLog({ action: 'ack-rejected', pendingId: id }).catch(() => null)
+  if (!j?.ok) rejected.value = before
 }
 const selfUser    = ref<User | null>(null)
 
@@ -247,6 +299,7 @@ onMounted(async () => {
     await loadReports()
     await loadGrants()
     void loadPendingDates()   // 描画は待たせない
+    void loadPunches()        // 実打刻も後追い（取れなくても履歴は読める）
   }
   loading.value = false
 })
@@ -257,7 +310,25 @@ watch(() => proxy.proxyTarget.value, async () => {
   await loadReports()
   await loadGrants()
   loading.value = false
+  void loadPunches()
 })
+
+// ── 実打刻（2026-08-10 大塚さん「日報の中に実際打った打刻時間も出てくればいい」）──
+//  ★表示専用。人件費は日報の作業時刻がマスタのまま。
+const punches = usePunches()
+async function loadPunches() {
+  const list = reports.value
+  if (!list.length) return
+  // 代理中は代理先の打刻を見る（その人の日報を見ているため）
+  const workerId = proxy.proxyTarget.value?.id ?? selfUser.value?.worker_id ?? null
+  const dates = list.map((r: any) => r.date).sort()
+  await punches.loadRange(workerId, dates[0], dates[dates.length - 1])
+  punchWorkerId.value = workerId
+}
+const punchWorkerId = ref<string | null>(null)
+function punchOf(date: string, siteName: string) {
+  return punches.punchFor(punchWorkerId.value, date, siteName)
+}
 
 // 月ごとにグループ化
 const grouped = computed(() => {
@@ -466,6 +537,38 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--font)
 /* 承認待ち（まだ日報が無い新規提出）。中身は通常の日報カードと同じ描画で、枠だけ変えて区別する */
 .report-card.pending-only { border: 1px dashed #7ea8dd; background: #f5f9ff; }
 .pending-note { font-size: 12px; color: #1e4f8a; margin: 6px 0 0; line-height: 1.6; }
+.detail-punch { font-size: 12px; color: #475569; margin-top: 2px; }
+
+/* 差し戻し。承認待ち（青）とは別物なので赤系で、一覧の先頭に出す */
+.rejected-card {
+  background: #fff5f5; border: 1px solid #f0a3a3; border-radius: var(--radius);
+  padding: 14px 16px; margin-bottom: 12px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.rejected-head { display: flex; align-items: center; gap: 6px; }
+.rejected-icon { font-size: 20px; color: #c0392b; }
+.rejected-title { font-size: 14px; font-weight: 700; color: #c0392b; }
+.rejected-date { margin-left: auto; font-size: 13px; font-weight: 700; color: var(--text); }
+.rejected-reason {
+  margin: 2px 0 0; font-size: 14px; line-height: 1.6; color: var(--text);
+  background: #fff; border-radius: 8px; padding: 8px 10px;
+}
+.rejected-reason-label {
+  display: inline-block; font-size: 11px; font-weight: 700; color: #c0392b;
+  margin-right: 6px;
+}
+.rejected-lead { margin: 0; font-size: 12px; color: var(--text2); line-height: 1.6; }
+.rejected-by { margin: 0; font-size: 11px; color: var(--text2); }
+.rejected-actions { display: flex; gap: 8px; margin-top: 4px; }
+.btn-rejected-fix {
+  flex: 1; text-align: center; text-decoration: none;
+  background: #c0392b; color: #fff; font-size: 13px; font-weight: 700;
+  border-radius: 8px; padding: 10px 12px;
+}
+.btn-rejected-ack {
+  background: #fff; color: var(--text2); border: 1px solid #ddd;
+  font-size: 13px; border-radius: 8px; padding: 10px 14px; cursor: pointer;
+}
 .status-badge {
   font-size: 11px; font-weight: 700; border-radius: 20px; padding: 3px 10px;
 }

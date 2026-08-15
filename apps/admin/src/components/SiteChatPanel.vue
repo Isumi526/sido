@@ -111,6 +111,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { supabase } from '../lib/supabase'
+import { notifyWorker } from '../lib/appNotify'
 import { getAccountId } from '../lib/account'
 import { currentUser, currentWorkerName } from '../lib/auth'
 import { splitMentionSegments } from '../lib/chatMentionSegments'
@@ -391,6 +392,14 @@ async function send() {
     // メッセージ本体は既に送信済み(取り消さない)。通知だけ失敗した場合は本人に知らせる
     // （気づけないまま「メンションしたのに届いていない」不整合を防ぐ）。
     if (mentionError) { console.error('[site-chat] mention insert failed', mentionError); alert('メッセージは送信されましたが、メンション通知の送信に失敗しました') }
+    // ★お知らせ一覧にも積む。site_chat_mentions は read_at 付きで溜まり続けていたのに
+    //  バッジがどこにも表示されておらず、完全に死んだ通知になっていた（2026-08-14 調査）。
+    await Promise.all(mentionIds.map(workerId => notifyWorker({
+      accountId, workerId, kind: 'chat_mention',
+      title: '現場チャットで呼ばれています',
+      body: draft.value.slice(0, 120),
+      linkPath: `/chats/${props.siteId}`,
+    })))
   }
   sending.value = false
   if (!error) {

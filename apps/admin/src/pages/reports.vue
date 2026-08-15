@@ -388,7 +388,7 @@ import { useQueryParam } from '../composables/useQueryParam'
 import { HIDE_LINE_SECTIONS } from '../lib/featureFlags'
 import { effectiveBreakMinutes, laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE, type RateBreakdown } from '../lib/workerHours'
 import { canViewWages, currentUser } from '../lib/auth'
-import { punchDiffLabel, isPunchDiffBig, isPunchDiffWorthShowing } from '../lib/attendanceDiff'
+import { punchDiffLabel, isPunchDiffBig, isPunchDiffWorthShowing } from '../lib/attendance-punch.gen'
 
 const EDGE_URL  = import.meta.env.VITE_SUPABASE_EDGE_URL as string
 const ANON_KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY as string

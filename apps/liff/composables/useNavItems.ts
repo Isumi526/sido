@@ -36,6 +36,7 @@ export function useNavItems(
       { path: '/report',           icon: 'edit_note',         label: t('nav.reportRegister'),   section: 'daily' },
       { path: '/history',          icon: 'history',           label: t('nav.reportHistory'),    section: 'daily' },
       { path: '/overtime',         icon: 'more_time',         label: t('nav.overtimeRequest'),  section: 'daily' },
+      { path: '/notifications',    icon: 'notifications',     label: t('nav.notifications'),    section: 'plan', testId: 'menu-notifications' },
       { path: '/calendar',         icon: 'calendar_month',    label: t('nav.schedule'),         section: 'plan' },
       { path: '/company-schedule', icon: 'apartment',         label: t('nav.companySchedule'),  section: 'plan' },
       { path: '/groups',           icon: 'group',             label: t('nav.groups'),           section: 'plan' },

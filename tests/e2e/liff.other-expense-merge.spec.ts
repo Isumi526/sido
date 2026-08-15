@@ -7,7 +7,7 @@
 //     ＝現場別集計の「接待交際費」列と「ホーム」列の金額が入れ替わらない
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, restSrv, getDevUserId, getAccountId } from './helpers'
+import { rest, restSrv, getDevUserId, getAccountId, fillNoReceiptReasons } from './helpers'
 
 const EDIT_DATE = '2026-10-14'
 
@@ -64,6 +64,7 @@ test.describe('その他/その他雑経費の入力統合（liff）', () => {
     await page.locator('input[type="checkbox"]').last().check().catch(() => {})
     // 編集モードは編集理由が必須になった（daily_report_edit_logs）。入れないと更新できない
     await page.getByTestId('edit-reason').fill('E2E: 再保存の回帰確認')
+    await fillNoReceiptReasons(page)
     await page.locator('button[type="submit"].btn-submit').click()
     await page.waitForTimeout(4000)
 

@@ -106,6 +106,9 @@
       <button class="focus-switch-link" data-testid="focus-switch-site" @click="phase = 'select-site'">
         {{ $t('checkin.switchSiteLink') }}
       </button>
+      <!-- 出勤中でも前日の打刻し忘れを入れられるようにする（ここに無いと現場一覧を
+           出さないこの画面から辿れない） -->
+      <LatePunchPanel :sites="siteOptions" :worker-id="myWorkerId" @recorded="loadSiteOptions()" />
     </div>
 
     <!-- 対象作業員の選択（代理対象がいる場合のみ） -->
@@ -147,6 +150,9 @@
         </div>
         <div v-if="!filteredSiteOptions.length" class="site-empty">{{ $t('checkin.siteSearchEmpty') }}</div>
       </div>
+      <!-- ★一覧（内部スクロール）の外に置く。中に入れると現場が多い時に埋もれる。
+           ページ全体をはみ出させないため、コンポーネント側で flex-shrink:0 にしている。 -->
+      <LatePunchPanel :sites="siteOptions" :worker-id="myWorkerId" @recorded="loadSiteOptions()" />
     </div>
 
     <div v-else-if="phase === 'select-target'" class="select-wrap">
@@ -284,6 +290,7 @@
     </div>
 
     </div>
+
   </div>
 </template>
 
@@ -348,7 +355,10 @@ const checkinTime    = ref('')
 const checkoutTime   = ref('')
 
 // 対象作業員（自分＋代理対象）
+const attendanceLog = useAttendanceLog()
 const myWorkerId = ref<string | null>(null)
+
+
 const targets    = ref<Target[]>([])
 const selectedId = ref<string | null>(null)
 
@@ -536,13 +546,16 @@ async function loadSiteOptions() {
 
   // 現在出勤中(未退勤)の現場を判定する(退勤漏れ防止・loadForTarget()の直近サイクル判定と同じ考え方)。
   const me = await useCurrentUser().resolve()
+  // ★現場を選ぶ前でも自分の worker_id を確定させておく。
+  //  以前はここで入れておらず、現場を選ばないと myWorkerId が null のままだったため
+  //  「打刻を忘れた日の入力」が常に『作業員が特定できませんでした』で弾かれていた。
+  if (me?.worker_id) myWorkerId.value = me.worker_id
   if (me?.worker_id) {
-    const windowStart = new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString()
-    const { data: recentLogs } = await supabase.from('attendance_logs')
-      .select('site_id, type, checked_at').eq('worker_id', me.worker_id)
-      .gte('checked_at', windowStart).order('checked_at')
+    // ★EF経由（テーブル直読みをやめた・2026-08-15）。anonキーだけで全テナントの
+    //  打刻が読めていたため、attendance_logs への直アクセスは残さない。
+    const recentLogs = await attendanceLog.recent(20)
     const lastBySite = new Map<string, { type: string; checked_at: string }>()
-    for (const l of (recentLogs ?? []) as { site_id: string; type: string; checked_at: string }[]) lastBySite.set(l.site_id, { type: l.type, checked_at: l.checked_at })
+    for (const l of recentLogs) lastBySite.set(l.site_id, { type: l.type, checked_at: l.checked_at })
     // 複数現場が同時に「出勤中(未退勤)」の状態でも、最も直近に出勤した現場を選ぶ
     // (Map挿入順ではなくchecked_atで比較。取り忘れ現場が新しい現場より先に来て誤選択されるのを防ぐ)。
     let latestCheckin: { siteId: string; checked_at: string } | null = null
@@ -627,16 +640,9 @@ async function loadForTarget(workerId: string) {
   // 自動判定: この現場×この作業員の「直近サイクル」で判定する。
   //  ★夜勤の日跨ぎ対応: 当日(カレンダー日)固定だと、前日夜の出勤が拾えず翌朝の退勤ができなかった。
   //   直近20時間のログを見て「未退勤の出勤が残っていれば退勤」＝日を跨いでも退勤できる。
-  const windowStart = new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString()
-  const { data: recentLogs } = await supabase
-    .from('attendance_logs')
-    .select('type, checked_at')
-    .eq('site_id', siteId.value)
-    .eq('worker_id', workerId)
-    .gte('checked_at', windowStart)
-    .order('checked_at')
-
-  const logs = (recentLogs ?? []) as { type: string; checked_at: string }[]
+  //  ★EF経由。代理対象の分もEF側で代理許可を確認したうえで返る。
+  const all = await attendanceLog.recent(20, workerId)
+  const logs = all.filter(l => l.site_id === siteId.value) as { type: string; checked_at: string }[]
   const last = logs[logs.length - 1]
 
   if (last?.type === 'checkin') {
@@ -722,21 +728,21 @@ async function submit() {
     return
   }
 
-  const { error } = await supabase
-    .from('attendance_logs')
-    .insert({
-      site_id:           siteId.value,
-      worker_id:         workerIdToLog,
-      type:                  attendanceType.value,
-      agreed_rule_texts:     rules.value.map(r => r.content),
-      agreed_document_names: consentDocs.value.length ? consentDocs.value.map(d => d.name ?? '') : null,
-      location_lat:          locationLat.value,
-      location_lng:      locationLng.value,
-      proxy_worker_id:   proxyOperatorId,
-    })
+  // ★EF経由。打刻の時刻はサーバが決める（クライアントに決めさせると過去日時を送って
+  //  勤怠の証跡を偽造できる）。代理かどうかもEF側で worker_proxies を見て判定する。
+  void proxyOperatorId
+  const res = await attendanceLog.punch({
+    siteId: siteId.value,
+    type: attendanceType.value as 'checkin' | 'checkout',
+    targetWorkerId: workerIdToLog,
+    agreedRuleTexts: rules.value.map(r => r.content),
+    agreedDocumentNames: consentDocs.value.length ? consentDocs.value.map(d => d.name ?? '') : null,
+    lat: locationLat.value,
+    lng: locationLng.value,
+  })
 
-  if (error) {
-    errorMsg.value = t('checkin.errInsertFailed', { message: error.message })
+  if (!res.ok) {
+    errorMsg.value = t('checkin.errInsertFailed', { message: res.error ?? '' })
     phase.value = 'error'
     return
   }
@@ -782,6 +788,7 @@ async function resolveReportLink(target: Target | null) {
 </script>
 
 <style scoped>
+
 .checkin-page {
   /* AppNav追加(2026-07-16)に伴い、下部固定ナビの高さ分を差し引く(calendar/index.vueと同型)。
      min-heightのままだと(スペーサー分+100dvh)でsubmit-areaが画面下に押し出され隠れるため height固定にする。 */

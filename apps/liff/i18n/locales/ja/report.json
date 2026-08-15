@@ -101,6 +101,8 @@
   "accountAuto": "科目：自動（{name}）",
   "companionsPlaceholder": "同行者名（必須・例: 〇〇建設 田中様、自社 佐藤）",
   "companionsRequired": "{account}は同行者名の入力が必須です（誰と行ったかの記録が税務上必要）。",
+  "noReceiptReasonPlaceholder": "領収書が無い理由（必須・例: レジ故障でレシートが出なかった）",
+  "receiptRequired": "{name}は領収書の写真が必要です。写真を添付するか、無い場合は理由を書いてください。",
   "leopalace": "レオパレス等",
   "facilityNamePlaceholder": "施設名",
   "garbage": "ゴミ",
@@ -173,5 +175,11 @@
   "lateSubmittedText": "提出期限を過ぎているため、管理者が承認すると日報に反映されます",
   "payerLabel": "支払元",
   "payerCompany": "会社のカードで支払った",
-  "payerPersonal": "個人で立替えた"
+  "payerPersonal": "個人で立替えた",
+  "retiredOption": "{name}（終了）",
+  "punchLabel": "実際の打刻",
+  "punchGapStart": "出勤",
+  "punchGapEnd": "退勤",
+  "breakApproved": "承認済み",
+  "earlyStartApproved": "早朝入り {time} も承認されています"
 }
