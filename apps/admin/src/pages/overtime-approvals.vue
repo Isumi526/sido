@@ -44,8 +44,15 @@
               <td class="reason">{{ g.reason || '—' }}</td>
               <td class="muted">{{ fmtDateTime(g.requested_at) }}</td>
               <td class="actions-col">
-                <button class="btn-approve" :disabled="busy === g.id" @click="decide(g, 'approved')">承認</button>
-                <button class="btn-reject" :disabled="busy === g.id" @click="decide(g, 'rejected')">却下</button>
+                <!-- ★自分が出した申請は自分で決裁させない。EF 側でも同じ判定で塞いでいる
+                     （画面だけだと REST/EF 直叩きで迂回できるため）。日報編集の承認画面と同じ扱い。 -->
+                <span v-if="isMine(g)" class="self-approve-blocked" data-testid="ot-self-blocked">
+                  自分の申請は承認できません
+                </span>
+                <template v-else>
+                  <button class="btn-approve" :disabled="busy === g.id" @click="decide(g, 'approved')">承認</button>
+                  <button class="btn-reject" :disabled="busy === g.id" @click="decide(g, 'rejected')">却下</button>
+                </template>
               </td>
             </tr>
           </tbody>
@@ -59,7 +66,7 @@
 import { ref, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { currentUser } from '../lib/auth'
+import { currentWorkerId } from '../lib/auth'
 import { refreshNavBadges } from '../lib/navBadges'
 
 type OvertimeReq = {
@@ -113,19 +120,44 @@ async function load() {
   loading.value = false
 }
 
+/** その申請を出したのが自分か（＝自己承認になるか）。worker行を持たない純オーナーは常に false */
+function isMine(g: OvertimeReq): boolean {
+  return !!currentWorkerId.value && g.worker_id === currentWorkerId.value
+}
+
+const DECIDE_ERRORS: Record<string, string> = {
+  APPROVE_FORBIDDEN: '承認する権限がありません。',
+  SELF_APPROVAL_FORBIDDEN: '自分が出した申請は自分では承認できません。別の承認者に依頼してください。',
+  not_found: '対象の申請が見つかりません（取り消された可能性があります）。',
+  unauthorized: 'ログインし直してください。',
+}
+
+/**
+ * 承認/却下。
+ * ★テーブルを直接 UPDATE しない（2026-08-15 に EF 経由へ移した）。
+ *  overtime_requests は RLS 無効かつ authenticated に UPDATE 全開だったため、
+ *  ログインできる人なら誰でもコンソールから自分の申請を approved にでき、
+ *  **他テナントの申請まで**書き換えられた（別テナントのJWTでPATCHが204で通ることを実測）。
+ *  同日の migration で RLS を入れて authenticated の書込を落としたので、
+ *  正規の経路は EF だけになっている。
+ *  権限検査・自己承認の禁止・承認者名の確定は、すべて EF 側で行う。
+ */
 async function decide(g: OvertimeReq, status: 'approved' | 'rejected') {
   if (busy.value) return
   busy.value = g.id
-  // .eq('status','pending') により、既に決裁済みの二重実行(連打/再試行)ではdataが空になり通知も送らない
-  const { data, error } = await supabase.from('overtime_requests')
-    .update({ status, approved_by: currentUser.value?.email ?? null, decided_at: new Date().toISOString() })
-    .eq('id', g.id).eq('status', 'pending')
-    .select('id')
+  const { data, error } = await supabase.functions.invoke('attendance-log', {
+    body: { action: 'overtime-decide', id: g.id, status },
+  })
   busy.value = null
-  if (error) { alert('更新に失敗しました: ' + error.message); return }
+  if (error || !data?.ok) {
+    const code = (data as any)?.error ?? ''
+    alert(DECIDE_ERRORS[code] ?? `更新に失敗しました${code ? `: ${code}` : ''}`)
+    return
+  }
   pending.value = pending.value.filter(x => x.id !== g.id)
   await refreshNavBadges()  // ナビバッジを即時更新（リロード不要）
-  if (data && data.length) {
+  // changed=0 は「既に誰かが決裁済み」＝二重通知しない
+  if (data.changed) {
     supabase.functions.invoke('notify-overtime-decision', { body: { request_id: g.id } })
       .catch((e) => console.error('[notify-overtime-decision]', e))
   }

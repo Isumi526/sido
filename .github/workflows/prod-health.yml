@@ -59,3 +59,15 @@ jobs:
         # 接続URLは env から直接読ませる（--db-url だと argv に載るため使わない）。
         # --assert で新規の critical 違反があれば赤くする＝GitHub 上でも気づける。
         run: node scripts/prod-health.mjs --prod-readonly --assert --notify
+
+      # ★RLS/権限のラチェット。ベースライン(.kody/accepted.yml)に載っていない
+      #  「RLS無効 × anon到達可」「RLS無効 × authenticated書込可」が本番に増えたら赤くする。
+      #  これまで rls-audit は /ship と /run の中でしか回っておらず、CI では一度も走っていなかった。
+      #  誰も実行しないラチェットは効かないので、毎朝の本番監査に載せる（2026-08-15）。
+      #  ★ヘルスチェックが落ちても必ず実行する（if: always()）。片方の失敗でもう片方が
+      #   測定されないと「静かに監視が止まる」ので、両方の結果を毎朝出す。
+      - name: RLS/権限のラチェット（本番・読み取りのみ）
+        if: always() && steps.guard.outputs.runnable == 'true'
+        env:
+          SUPABASE_PROD_DB_URL: ${{ secrets.SUPABASE_PROD_DB_URL }}
+        run: node scripts/rls-audit.mjs --prod-readonly --assert
