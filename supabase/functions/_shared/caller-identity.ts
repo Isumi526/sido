@@ -104,3 +104,61 @@ export async function resolveCaller(
   if (IS_LOCAL && devLineUserId) return await callerFromLineUserId(svc, devLineUserId)
   return null
 }
+
+/** 承認を行える権限。apps/admin/src/lib/auth.ts の ADMIN_ALLOWED_ROLES と揃える。 */
+export const APPROVER_ROLES = ['owner', 'admin', 'office', 'site_manager']
+
+export type Approver = {
+  accountId: string
+  authUserId: string
+  /** workers.id。worker行を持たない純オーナーは null */
+  workerId: string | null
+  /** 'owner' | 'admin' | 'office' | 'site_manager' | 'worker' */
+  role: string
+}
+
+/**
+ * 「承認する人」の身元と権限を、Supabase JWT からサーバ側で解決する。
+ *
+ * ★なぜ resolveCaller と別関数なのか:
+ *  承認は **管理画面（Supabase JWT）専用**の操作で、LINE ID token 経路や
+ *  ローカル用の dev_line_user_id で通してはいけない。resolveCaller は3経路を
+ *  受け付けるので、そのまま承認に使うと LINE 作業員が承認できてしまう。
+ *
+ * ★権限の判定は apps/admin/src/lib/auth.ts の resolveRole と同じ規則にする:
+ *   - workers 行あり → その permission_role（未設定なら 'worker'）
+ *   - workers 行なし → accounts.owner_auth_user_id が一致する時だけ 'owner'、それ以外は 'worker'
+ *   - 取得に失敗したら 'worker'（フェイルセーフ。フェイルオープンでオーナーにしない）
+ *  「worker行が無い＝オーナー」と倒す実装は過去に本番でフェイルオープンの事故を
+ *  起こしているので、owner_auth_user_id の明示一致だけをオーナーとみなす。
+ *
+ * ★画面側にガードがあっても EF 側で必ず検査する。
+ *  画面のガードは URL 直打ちや REST 直叩きで迂回できる＝ガードではない。
+ */
+export async function resolveApprover(svc: any, authHeader: string): Promise<Approver | null> {
+  // anon キーそのものは「認証済み」ではない。JWT 経路以外はここで落とす。
+  if (!authHeader || !ANON_KEY || authHeader.endsWith(ANON_KEY)) return null
+
+  const cli = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: authHeader } } })
+  const { data } = await cli.auth.getUser()
+  const authUserId = data?.user?.id
+  const slug = ((data?.user?.app_metadata ?? {}) as Record<string, unknown>).account_slug as string | undefined
+  if (!authUserId || !slug) return null
+
+  const { data: acct } = await svc.from('accounts').select('id, owner_auth_user_id').eq('slug', slug).maybeSingle()
+  if (!acct?.id) return null
+
+  try {
+    // ★account_id でも絞る。同じ人が複数テナントの worker として居る場合に別テナント側を拾わない
+    const { data: w, error } = await svc.from('workers')
+      .select('id, permission_role').eq('auth_user_id', authUserId).eq('account_id', acct.id).maybeSingle()
+    if (error) throw error
+    if (w?.id) {
+      return { accountId: acct.id, authUserId, workerId: w.id, role: (w.permission_role as string) ?? 'worker' }
+    }
+    const isOwner = !!acct.owner_auth_user_id && acct.owner_auth_user_id === authUserId
+    return { accountId: acct.id, authUserId, workerId: null, role: isOwner ? 'owner' : 'worker' }
+  } catch {
+    return { accountId: acct.id, authUserId, workerId: null, role: 'worker' }
+  }
+}
