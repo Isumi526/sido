@@ -35,6 +35,13 @@ test.beforeAll(async () => {
   requesterUserId = uRows[0].id
   requesterWorkerId = uRows[0].worker_id
 
+  // ★同じ(account, worker, 当日)の申請が残っていると一意制約(overtime_requests_active_uidx)で
+  //  409 になる。残業申請は「1人1日1件」なので、他のspec（liffの残業まわり）が当日分を
+  //  残していると、このspecが道連れで落ちる。自分の前提を先に整えてから入れる。
+  await restSrv(`overtime_requests?account_id=eq.${accountId}&worker_id=eq.${requesterWorkerId}&date=eq.${DATE}`, {
+    method: 'DELETE',
+  }).catch(() => {})
+
   const otRows = await restSrv('overtime_requests', {
     method: 'POST', headers: { Prefer: 'return=representation' },
     body: JSON.stringify({

@@ -6,7 +6,7 @@
 //  ※ マスタ(Worker 01 等)・dev-user-id・通常日報は seed.sql が投入済み
 // ============================================================
 import { execSync } from 'node:child_process'
-import { SUPABASE_URL, ANON_KEY, ACCOUNT_SLUG, ADMIN_LOGIN_EMAIL, ADMIN_LOGIN_PASS, DB_URL, getAccountId, rest, restSrv, upsert } from './helpers'
+import { SUPABASE_URL, ANON_KEY, ACCOUNT_SLUG, ADMIN_LOGIN_EMAIL, ADMIN_LOGIN_PASS, DB_URL, getAccountId, rest, restSrv, upsert, enableEstimateFeature } from './helpers'
 
 export const DEV_LINE_ID = 'dev-user-id'
 // seed.sql と一致
@@ -28,6 +28,38 @@ export const FEAT_EXP_PERIOD = `${YM}-second`
 export const FEAT_ATT_DATE = `${YM}-10`
 export const FEAT_ATT_SITE = 'テスト現場D'    // 打刻あり（この日報のみが使う専用現場）
 export const FEAT_ATT_NO_SITE = 'テスト現場B' // 打刻なし（— 表示の検証用・同一カード内）
+
+/**
+ * ★接続先がローカルスタックであることを確かめる。ローカル以外なら即座に落とす。
+ *
+ * ★これが無くて実際に本番を汚した（2026-08-13）:
+ *  helpers.ts は apps/admin/.env（**本番の値が入っている**）を読んでから
+ *  apps/admin/.env.local（ローカル向き）で上書きする。.env.local は gitignore 対象なので、
+ *  新しい clone・別マシン・リポジトリの移動直後には**存在しない**。
+ *  その状態で E2E を回すと、フォールバックで**本番Supabaseに向かって全スペックが走る**。
+ *  実際にリポジトリを ~/dev/sido へ移した日、本番の dev_updates に
+ *  「E2E更新テスト項目」が書き込まれ、全テナントのダッシュボードに表示されていた。
+ *
+ *  E2E はシードだけでなく afterAll で DELETE も撒く。本番に向いたまま気づかないのが
+ *  一番まずいので、疎通確認より前・何かを書く前にここで止める。
+ *
+ *  どうしてもローカル以外へ向けたい時だけ E2E_ALLOW_REMOTE=1 を明示すること。
+ */
+function assertLocalStack() {
+  if (process.env.E2E_ALLOW_REMOTE === '1') {
+    console.warn(`[e2e] ★E2E_ALLOW_REMOTE=1 のためローカル判定を飛ばします (${SUPABASE_URL})`)
+    return
+  }
+  let host = ''
+  try { host = new URL(SUPABASE_URL).hostname } catch { /* 後段で落とす */ }
+  if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return
+  throw new Error(
+    `[e2e] 接続先がローカルスタックではありません: ${SUPABASE_URL}\n` +
+    '  E2E は本番に向けて実行してはいけません（シードと DELETE を撒きます）。\n' +
+    '  apps/admin/.env.local に VITE_SUPABASE_URL=http://127.0.0.1:56321 を設定してください\n' +
+    '  （.env.local は gitignore 対象なので、clone 直後や別マシンでは毎回必要）。',
+  )
+}
 
 // EF(Edge Functions)未配信の事前検査。
 //  `supabase start` だけでは functions serve が別プロセスのため EF は配信されない。
@@ -279,10 +311,15 @@ async function seedDevUpdate() {
 }
 
 export default async function globalSetup() {
+  assertLocalStack()             // ★何かを書く前に。本番へ向いていたら即・明示エラーで落とす
   await checkFunctionsServed()   // 未配信なら即・明示エラーで落とす（catchしない＝個別spec大量timeoutを防ぐ）
   await ensureAdminUser().catch(e => console.warn('[e2e] admin user 作成失敗:', String(e)))
   await ensureRecentReportStartDate(await getAccountId()).catch(e => console.warn('[e2e] report_start_date 更新失敗:', String(e)))
   await seedFeatureReports().catch(e => console.warn('[e2e] feature seed 失敗:', String(e)))
   await seedScheduleGroup().catch(e => console.warn('[e2e] schedule group seed 失敗:', String(e)))
   await seedDevUpdate().catch(e => console.warn('[e2e] dev_update seed 失敗:', String(e)))
+  // ★見積フラグはONを既定にする。見積画面に到達する spec が40本近くある一方、
+  //  OFFを主題にするのは admin.estimate-feature-flag.spec.ts の1本だけ。
+  //  前回の実行が途中で落ちてOFFのまま残っていても、ここで必ずONへ戻る。
+  await enableEstimateFeature().catch(e => console.warn('[e2e] 見積フラグ seed 失敗:', String(e)))
 }

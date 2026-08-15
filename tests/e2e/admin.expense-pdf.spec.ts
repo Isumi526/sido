@@ -65,6 +65,12 @@ test.describe('経費管理：申請PDFの閲覧/DL', () => {
   })
 
   test('AC1/AC2: 申請済み(後半)明細にPDFリンクが出て、開ける', async ({ page }) => {
+    // ★PDFは別タブで開く＝popupを待つとPDFのDL扱いで遷移が観測できないことがある。
+    //  window.open を差し替えて「アプリがどのURLを開こうとしたか」を直接見る。
+    await page.addInitScript(() => {
+      ;(window as any).__openedUrls = []
+      window.open = ((u?: string | URL) => { (window as any).__openedUrls.push(String(u ?? '')); return null }) as typeof window.open
+    })
     await page.goto('/expenses', { waitUntil: 'networkidle' })
     await expect(page.locator('h1')).toContainText('経費管理')
 
@@ -80,12 +86,18 @@ test.describe('経費管理：申請PDFの閲覧/DL', () => {
     await expect(meisai).toBeVisible()
     await expect(seikyu).toBeVisible()
 
-    // href が規約パスの public URL
-    const href = await meisai.getAttribute('href')
-    expect(href).toBe(PUB(`${basePath}_meisai.pdf`))
+    // ★href は "#" 固定。署名URLの取得が非同期なので、クリック時に解決して別タブで開く
+    //  （2026-08-14 の「公開バケットへの新規書き込みを止める」対応でこの形になった。
+    //   以前は href に公開URLが直接入っていた）。だから href ではなく実際に開かせて確かめる。
+    await meisai.click()
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__openedUrls ?? []), { timeout: 10000 })
+      .not.toHaveLength(0)
+    const opened = (await page.evaluate(() => (window as any).__openedUrls as string[]))[0]
+    expect(opened, '規約パスのPDFを開こうとする').toContain(`${basePath}_meisai.pdf`)
 
     // 実在し開ける（200）
-    const got = await fetch(href!)
+    const got = await fetch(opened)
     expect(got.status).toBe(200)
   })
 
