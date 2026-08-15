@@ -271,7 +271,7 @@ import { getAccountId } from '../lib/account'
 import { useQueryParam } from '../composables/useQueryParam'
 import { currentUser, canViewManagementPages } from '../lib/auth'
 import { canViewEstimates } from '../lib/features'
-import { findSimilarSiteNames } from '../lib/siteSimilarity'
+import { findSimilarSiteNames } from '../lib/site-similarity.gen'
 import { computeWorkerHours, parseMin } from '../lib/workerHours'
 import { logOperation } from '../lib/operationLog'
 

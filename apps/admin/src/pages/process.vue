@@ -320,7 +320,7 @@ import { ref, computed, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import HelpButton from '../components/HelpButton.vue'
-import { findSimilarSiteNames } from '../lib/siteSimilarity'
+import { findSimilarSiteNames } from '../lib/site-similarity.gen'
 
 type Task = { id: string; site_id: string; name: string; assignee: string | null; start_date: string | null; end_date: string | null; progress: number; sort_order: number; work_type: string | null; contract_amount: number | null; site_manager: string | null; memo: string | null }
 type Day = { ym: string; label: string; dom: number; wd: string; weekend: boolean; key: string; ms: number }

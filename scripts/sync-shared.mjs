@@ -23,6 +23,15 @@ const SHARES = [
     ],
   },
   {
+    // 現場名の正規化・site_id 解決。保存時(LIFF)・集計時(admin)・バックフィルで
+    // 同じ結果にならないと同じ現場が別物として集計される（ルルレモン型バグ）
+    src: 'shared/site-similarity.ts',
+    dests: [
+      'apps/admin/src/lib/site-similarity.gen.ts',
+      'apps/liff/utils/site-similarity.gen.ts',
+    ],
+  },
+  {
     src: 'shared/attendance-punch.ts',
     dests: [
       'apps/admin/src/lib/attendance-punch.gen.ts',
