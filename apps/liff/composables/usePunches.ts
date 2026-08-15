@@ -13,10 +13,12 @@
 //   （site_id は権威キーとして別に持つが、打刻側は sites(name) を引いて名前で照合する）。
 //   自由入力の新規現場（__other__）はマスタに無いので打刻とは紐づかない＝出ない。
 // ============================================================
-import { foldPunches, jstRangeToUtc, punchKey, type Punch } from '~/composables/attendance-punch.gen'
+import { foldPunches, punchKey, type Punch } from '~/composables/attendance-punch.gen'
 
 export function usePunches() {
-  const supabase = useSupabase()
+  // ★テーブル直読みをやめて EF 経由にした（2026-08-15）。anon キーだけで全テナントの
+  //  打刻が読めていた穴を塞ぐため、attendance_logs への直アクセスは残さない。
+  const attendance = useAttendanceLog()
 
   // key = `${workerId}|${date}|${siteName}`
   const punches = ref<Record<string, Punch>>({})
@@ -34,19 +36,7 @@ export function usePunches() {
     const ok = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d)
     if (!workerId || !ok(from) || !ok(to)) return
     try {
-      const { lo, hi } = jstRangeToUtc(from, to)
-      const { data } = await supabase
-        .from('attendance_logs')
-        .select('worker_id, type, checked_at, sites(name)')
-        .eq('worker_id', workerId)
-        .gte('checked_at', lo)
-        .lte('checked_at', hi)
-        .order('checked_at', { ascending: true })
-        .limit(5000)   // 1ヶ月×出退勤で既定1000を超えて欠落するのを防ぐ（admin側と同じ余裕）
-      punches.value = foldPunches((data ?? []).map((r: any) => ({
-        worker_id: r.worker_id, type: r.type, checked_at: r.checked_at,
-        siteName: r.sites?.name ?? null,
-      })))
+      punches.value = foldPunches(await attendance.forReport(from, to, workerId))
       loaded.value = true
     } catch (e) {
       // ★打刻が読めなくても日報の入力は続けられないといけない（表示の付加情報でしかない）
