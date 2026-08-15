@@ -20,12 +20,13 @@
 //   for-report{ from, to, workerId? }             → 日報に出す実打刻（現場名つき）
 //   punch     { siteId, type, targetWorkerId?, agreedRuleTexts?, agreedDocumentNames?, lat?, lng? }
 //   backdate  { siteId, date, checkin?, checkout? } → 打刻し忘れた日の後追い入力（本人のみ）
+//   overtime-decide { id, status }                 → ★管理画面からの残業承認/却下（JWT専用）
 //
 //  ※ verify_jwt=false で deploy すること（LINE作業員はSupabase JWTを持たないため）。
 //    関数内で身元を厳密検証している。
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { resolveCaller, type Caller } from '../_shared/caller-identity.ts'
+import { resolveCaller, resolveApprover, APPROVER_ROLES, type Caller } from '../_shared/caller-identity.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
@@ -92,6 +93,65 @@ Deno.serve(async (req) => {
   try { body = await req.json() } catch { return json({ ok: false, error: 'bad_json' }, 400) }
 
   const svc = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
+
+  // ── 管理画面からの残業の承認/却下 ────────────────────────
+  //  ★他のアクションより先に処理する。承認者には worker 行を持たない純オーナーが居るので、
+  //   下の resolveCaller → worker_not_registered(409) に落ちてしまう。
+  //
+  //  ★なぜ EF に移したか（2026-08-15）:
+  //   overtime_requests は RLS 無効かつ authenticated に UPDATE 全開で、管理画面が
+  //   直接テーブルを UPDATE していた。つまりログインできる人なら誰でも、
+  //   ブラウザのコンソールから自分の申請を approved に書き換えられたし、
+  //   **他テナントの申請まで**書き換えられた（別テナントのJWTでPATCHが204で通ることを実測）。
+  //   同じ migration で RLS を入れて authenticated の書込を落とすので、
+  //   正規の承認経路をここに1本化する。
+  if (body.action === 'overtime-decide') {
+    const approver = await resolveApprover(svc, req.headers.get('Authorization') ?? '')
+    // LINE ID token 経路・anon・dev 抜け道では承認させない（resolveApprover が JWT 専用）
+    if (!approver) return json({ ok: false, error: 'unauthorized' }, 401)
+    if (!APPROVER_ROLES.includes(approver.role)) {
+      return json({ ok: false, error: 'APPROVE_FORBIDDEN' }, 403)
+    }
+
+    const id = typeof body.id === 'string' ? body.id : ''
+    const status = body.status === 'approved' || body.status === 'rejected' ? body.status : ''
+    if (!id) return json({ ok: false, error: 'id_required' }, 400)
+    if (!status) return json({ ok: false, error: 'bad_status' }, 400)
+
+    // ★account_id で必ず絞る。他テナントのIDを渡されても触れない
+    const { data: reqRow } = await svc.from('overtime_requests')
+      .select('id, worker_id, status').eq('id', id).eq('account_id', approver.accountId).maybeSingle()
+    if (!reqRow) return json({ ok: false, error: 'not_found' }, 404)
+
+    // ★自己承認の禁止。画面側だけの判定は REST/EF 直叩きで迂回できるのでサーバで塞ぐ
+    if (approver.workerId && reqRow.worker_id === approver.workerId) {
+      return json({ ok: false, error: 'SELF_APPROVAL_FORBIDDEN' }, 403)
+    }
+
+    // ★承認者名はクライアントから受け取らない。検証済みの身元から引き直す。
+    //  ここを body から取ると「誰が承認したか」を呼び出し側が詐称できる＝証跡にならない。
+    let approvedBy: string | null = null
+    if (approver.workerId) {
+      const { data: w } = await svc.from('workers').select('name').eq('id', approver.workerId).maybeSingle()
+      approvedBy = (w?.name as string) ?? null
+    }
+    if (!approvedBy) {
+      const { data: au } = await svc.auth.admin.getUserById(approver.authUserId)
+      approvedBy = au?.user?.email ?? null
+    }
+
+    // .eq('status','pending') で二重決裁（連打・再送）を弾く。0件更新なら通知も送らない
+    const { data: updated, error } = await svc.from('overtime_requests')
+      .update({ status, approved_by: approvedBy, decided_at: new Date().toISOString() })
+      .eq('id', id).eq('account_id', approver.accountId).eq('status', 'pending')
+      .select('id')
+    if (error) {
+      console.error('[attendance-log] overtime-decide failed:', error)
+      return json({ ok: false, error: 'update_failed' }, 500)
+    }
+    return json({ ok: true, changed: (updated ?? []).length })
+  }
+
   const caller = await resolveCaller(
     svc,
     req.headers.get('Authorization') ?? '',
