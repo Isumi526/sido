@@ -34,9 +34,43 @@ function saveCache(data: MasterData) {
   } catch { /* quota超過等は無視 */ }
 }
 
+const EDGE_FN = 'master-data'
+
 export const useMaster = () => {
   const config = useRuntimeConfig()
   const cached = loadCache()
+
+  /**
+   * マスタの読み書きは Edge Function 経由（2026-08-15）。
+   * ★sites / contractors / workers / subcontractors / vehicles / site_subcontractors は
+   *  公開キー(anon)だけで全テナント分が読める状態だった。anon キーは LIFF の JS に
+   *  埋め込まれて配信されるため、サイトを開けば誰でも入手できる。
+   *  anon には身元が無くRLSの行フィルタでは絞れないので、身元をサーバ側で検証して
+   *  service_role で読む形に寄せた。
+   * ★ここに supabase.from('sites') 等を書き足さないこと。1箇所でも直叩きが残ると
+   *  anon の権限を落とせず、穴が塞がらない。
+   */
+  async function callEf(action: string, payload: Record<string, unknown> = {}): Promise<any> {
+    const supabase = useSupabase()
+    const liff = useLiff()
+    const anonKey = config.public.supabaseAnonKey as string
+    const { data: { session } } = await supabase.auth.getSession()
+    const lineIdToken = (await liff.getIdToken().catch(() => null)) ?? ''
+    const devLineUserId = config.public.appEnv === 'development'
+      ? (liff.profile.value?.userId ?? '')
+      : ''
+    const res = await $fetch<any>(`${config.public.edgeFunctionUrl}/${EDGE_FN}`, {
+      method: 'POST',
+      headers: {
+        apikey: anonKey,
+        Authorization: session ? `Bearer ${session.access_token}` : `Bearer ${anonKey}`,
+      },
+      body: { action, line_id_token: lineIdToken, dev_line_user_id: devLineUserId, ...payload },
+    })
+    if (!res?.ok) throw new Error(res?.error ?? 'master-data failed')
+    return res
+  }
+
   const master = useState<MasterData>('master', () => cached ?? FALLBACK)
   const loading = useState<boolean>('master-loading', () => false)
 
@@ -57,59 +91,45 @@ export const useMaster = () => {
   }
 
   async function _fetchFromSupabase() {
-    const supabase  = useSupabase()
-    const { getAccountId } = useAccount()
-    const accountId = await getAccountId()
-    if (!accountId) throw new Error('account not found')
-
-    const [sitesRes, contractorsRes, workersRes, subsRes, vehiclesRes, siteSubsRes] = await Promise.all([
-      supabase.from('sites').select('id, name, contractor_id, default_start_time, default_end_time, default_breaks').eq('active', true).eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
-      supabase.from('contractors').select('id, name').eq('active', true).eq('account_id', accountId).order('sort_order'),
-      supabase.from('workers').select('id, name, role').eq('active', true).eq('account_id', accountId).order('sort_order'),  // unit_price は取得しない（anon公開キーで他人の時給がliffに降りないように・#4）
-      supabase.from('subcontractors').select('id, name').eq('active', true).eq('account_id', accountId).order('sort_order'),
-      supabase.from('vehicles').select('name').eq('active', true).eq('account_id', accountId).order('sort_order'),
-      supabase.from('site_subcontractors').select('site_id, subcontractor_id').eq('account_id', accountId),
-    ])
-
-    if (workersRes.error) throw workersRes.error
+    const r = await callEf('fetch')
 
     // 現場名 → 元請け名 のマップ（紐付け済みの現場のみ）。日報の現場絞り込みに使う。
-    const contractorById = Object.fromEntries((contractorsRes.data ?? []).map((c: any) => [c.id, c.name]))
+    const contractorById = Object.fromEntries((r.contractors ?? []).map((c: any) => [c.id, c.name]))
     const siteContractors: Record<string, string> = {}
     const siteIds: Record<string, string> = {}
     const siteNameById: Record<string, string> = {}
     const siteWorkTimes: Record<string, { start: string | null; end: string | null }> = {}
     const siteBreaks: Record<string, { start: string; minutes: number }[]> = {}   // 現場名 → 既定休憩[{start,minutes}]。設定ある現場のみ収録。
-    for (const s of (sitesRes.data ?? []) as any[]) {
-      if (s.contractor_id && contractorById[s.contractor_id]) siteContractors[s.name] = contractorById[s.contractor_id]
-      siteIds[s.name] = s.id
-      siteNameById[s.id] = s.name
-      if (s.default_start_time || s.default_end_time) {
-        siteWorkTimes[s.name] = { start: (s.default_start_time ?? null)?.slice(0, 5) ?? null, end: (s.default_end_time ?? null)?.slice(0, 5) ?? null }
+    for (const site of (r.sites ?? []) as any[]) {
+      if (site.contractor_id && contractorById[site.contractor_id]) siteContractors[site.name] = contractorById[site.contractor_id]
+      siteIds[site.name] = site.id
+      siteNameById[site.id] = site.name
+      if (site.default_start_time || site.default_end_time) {
+        siteWorkTimes[site.name] = { start: (site.default_start_time ?? null)?.slice(0, 5) ?? null, end: (site.default_end_time ?? null)?.slice(0, 5) ?? null }
       }
       // default_breaks(jsonb) → [{start,minutes}] に正規化（start必須・minutes>0のみ収録）
-      if (Array.isArray(s.default_breaks) && s.default_breaks.length) {
-        const wins = (s.default_breaks as any[])
+      if (Array.isArray(site.default_breaks) && site.default_breaks.length) {
+        const wins = (site.default_breaks as any[])
           .filter(b => b && b.start && (Number(b.minutes) || 0) > 0)
           .map(b => ({ start: String(b.start).slice(0, 5), minutes: Number(b.minutes) || 0 }))
-        if (wins.length) siteBreaks[s.name] = wins
+        if (wins.length) siteBreaks[site.name] = wins
       }
     }
-    // 現場名 → 紐づく下請け業者名[]（site_subcontractors join）。未紐付け現場は未収録＝全件にフォールバック。
-    const subNameById = Object.fromEntries(((subsRes.data ?? []) as any[]).map(r => [r.id, r.name]))
+    // 現場名 → 紐づく下請け業者名[]。未紐付け現場は未収録＝全件にフォールバック。
+    const subNameById = Object.fromEntries(((r.subcontractors ?? []) as any[]).map((x: any) => [x.id, x.name]))
     const siteSubcontractors: Record<string, string[]> = {}
-    for (const link of (siteSubsRes.data ?? []) as any[]) {
+    for (const link of (r.siteSubcontractors ?? []) as any[]) {
       const sName = siteNameById[link.site_id]; const subName = subNameById[link.subcontractor_id]
       if (!sName || !subName) continue
       ;(siteSubcontractors[sName] ??= []).push(subName)
     }
 
     const data: MasterData = {
-      sites:          (sitesRes.data       ?? []).map(r => r.name),
-      contractors:    (contractorsRes.data ?? []).map(r => r.name),
-      workers:        (workersRes.data     ?? []).map(r => ({ id: r.id, name: r.name, role: r.role as 'factory' | 'site' })),
-      subcontractors: (subsRes.data        ?? []).map(r => r.name),
-      vehicles:       (vehiclesRes.data    ?? []).map(r => r.name),
+      sites:          (r.sites ?? []).map((x: any) => x.name),
+      contractors:    (r.contractors ?? []).map((x: any) => x.name),
+      workers:        (r.workers ?? []).map((x: any) => ({ id: x.id, name: x.name, role: x.role as 'factory' | 'site' })),
+      subcontractors: (r.subcontractors ?? []).map((x: any) => x.name),
+      vehicles:       r.vehicles ?? [],
       siteContractors,
       siteSubcontractors,
       siteIds,
@@ -119,7 +139,7 @@ export const useMaster = () => {
 
     master.value = data
     saveCache(data)
-    console.log('[Master] Supabaseから取得:', data.sites.length, '現場', data.workers.length, '作業員')
+    console.log('[Master] EF経由で取得:', data.sites.length, '現場', data.workers.length, '作業員')
   }
 
   async function _fetchFromGas() {
@@ -137,22 +157,16 @@ export const useMaster = () => {
 
   // 新規マスタ保存は呼び出し側（useReport）で完了を await し失敗を検知するため、
   //  エラーは握りつぶさず throw する。ローカル state/cache への反映は upsert 成功後のみ。
-  /** 現場名を Supabase に保存（新規 or 既存は upsert で吸収） */
+  /** 現場名を保存（新規 or 既存は upsert で吸収）。EF経由。 */
   async function saveSite(name: string) {
     if (!name.trim()) return
-    const supabase  = useSupabase()
-    const { getAccountId } = useAccount()
-    const accountId = await getAccountId()
-    if (!accountId) throw new Error('account not found')
-    // ★ 現場の新規作成は権限者(admin/office/site_manager)のみ。UIで選択肢を隠すだけでは
-    //   REST直叩き/古いバンドル/下書き復元で通り得るため、書き込み側でも弾く。
+    // ★現場の新規作成は権限者(admin/office/site_manager)のみ。
+    //  画面で選択肢を隠すだけでは REST直叩き/古いバンドル/下書き復元で通り得るため、
+    //  EF 側（サーバ）でも permission_role を確認している。ここは早期に弾くためのUXガード。
     const perm = useWorkerPermission()
     await perm.resolveRole()
     if (!perm.canCreateSite.value) throw new Error('SITE_CREATE_FORBIDDEN')
-    const { error } = await supabase
-      .from('sites')
-      .upsert({ name: name.trim(), account_id: accountId }, { onConflict: 'name,account_id' })
-    if (error) throw error
+    await callEf('save-site', { name: name.trim() })
     if (!master.value.sites.includes(name.trim())) {
       // 読み仮名は未知のため末尾に追加（並びは次回fetchでname_kana順に再構成される）
       master.value = { ...master.value, sites: [...master.value.sites, name.trim()] }
@@ -160,59 +174,33 @@ export const useMaster = () => {
     }
   }
 
-  /** 元請け業者名を Supabase に保存（新規 or 既存は upsert で吸収） */
+  /** 元請け業者名を保存（新規 or 既存は upsert で吸収）。EF経由。 */
   async function saveContractor(name: string) {
     if (!name.trim()) return
-    const supabase  = useSupabase()
-    const { getAccountId } = useAccount()
-    const accountId = await getAccountId()
-    if (!accountId) throw new Error('account not found')
-    const { error } = await supabase
-      .from('contractors')
-      .upsert({ name: name.trim(), account_id: accountId }, { onConflict: 'name,account_id' })
-    if (error) throw error
+    await callEf('save-contractor', { name: name.trim() })
     if (!master.value.contractors.includes(name.trim())) {
       master.value = { ...master.value, contractors: [...master.value.contractors, name.trim()].sort((a, b) => a.localeCompare(b, 'ja')) }
       saveCache(master.value)
     }
   }
 
-  /** 下請け業者名を Supabase に保存。siteName を渡すとその現場へ自動で紐付ける（日報からの新規作成時）。 */
+  /** 下請け業者名を保存。siteName を渡すとその現場へ自動で紐付ける（日報からの新規作成時）。EF経由。 */
   async function saveSub(name: string, siteName?: string) {
     if (!name.trim()) return
-    const supabase  = useSupabase()
-    const { getAccountId } = useAccount()
-    const accountId = await getAccountId()
-    if (!accountId) throw new Error('account not found')
-    const { error } = await supabase
-      .from('subcontractors')
-      .upsert({ name: name.trim(), account_id: accountId }, { onConflict: 'name,account_id' })
-    if (error) throw error
+    // 紐付けは EF 側で best-effort（失敗しても業者の作成は成立する）
+    const r = await callEf('save-sub', { name: name.trim(), ...(siteName?.trim() ? { siteName: siteName.trim() } : {}) })
     if (!master.value.subcontractors.includes(name.trim())) {
       master.value = { ...master.value, subcontractors: [...master.value.subcontractors, name.trim()].sort((a, b) => a.localeCompare(b, 'ja')) }
       saveCache(master.value)
     }
-    // 現場への自動紐付け（best-effort：失敗しても業者作成は成立させる）
-    if (siteName?.trim()) {
-      try {
-        const sName = siteName.trim()
-        const [{ data: subRow }, { data: siteRow }] = await Promise.all([
-          supabase.from('subcontractors').select('id').eq('name', name.trim()).eq('account_id', accountId).maybeSingle(),
-          supabase.from('sites').select('id').eq('name', sName).eq('account_id', accountId).maybeSingle(),
-        ])
-        if (subRow?.id && siteRow?.id) {
-          await supabase.from('site_subcontractors').upsert(
-            { site_id: siteRow.id, subcontractor_id: subRow.id, account_id: accountId },
-            { onConflict: 'site_id,subcontractor_id' },
-          )
-          const cur = master.value.siteSubcontractors ?? {}
-          const list = cur[sName] ?? []
-          if (!list.includes(name.trim())) {
-            master.value = { ...master.value, siteSubcontractors: { ...cur, [sName]: [...list, name.trim()] } }
-            saveCache(master.value)
-          }
-        }
-      } catch { /* 紐付け失敗は無視（業者は作成済み） */ }
+    if (r?.linked && siteName?.trim()) {
+      const sName = siteName.trim()
+      const cur = master.value.siteSubcontractors ?? {}
+      const list = cur[sName] ?? []
+      if (!list.includes(name.trim())) {
+        master.value = { ...master.value, siteSubcontractors: { ...cur, [sName]: [...list, name.trim()] } }
+        saveCache(master.value)
+      }
     }
   }
 
