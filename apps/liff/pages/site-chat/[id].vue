@@ -452,9 +452,10 @@ async function load() {
   const mySiteIds = await resolveMySiteIds()
   if (!mySiteIds.includes(siteId)) { await navigateTo('/chats'); return }
 
-  const { data: siteData } = await supabase.from('sites').select('id, name, responsible_worker_id').eq('account_id', accountId).eq('id', siteId).maybeSingle()
-  site.value = (siteData ?? null) as { id: string; name: string } | null
-  await loadMembers(accountId, (siteData as any)?.responsible_worker_id ?? null)
+  // ★EF経由（sites は公開キーから読めないようにしたため）
+  const siteData = await useSitesApi().one(siteId)
+  site.value = siteData ? { id: siteData.id, name: siteData.name } : null
+  await loadMembers(accountId, siteData?.responsible_worker_id ?? null)
 
   const { data: workersData } = await supabase.from('workers').select('id, name').eq('account_id', accountId).eq('active', true).order('name')
   allWorkers = (workersData ?? []) as { id: string; name: string }[]

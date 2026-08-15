@@ -86,9 +86,8 @@ async function load() {
   // 現場情報共有(site_shares・2026-07-17 Part B): 自分が共有登録されている現場のチャットだけに絞る。
   const mySiteIds = await resolveMySiteIds()
   if (!mySiteIds.length) { rows.value = []; loading.value = false; return }
-  const { data: sites } = await supabase.from('sites')
-    .select('id, name, responsible_worker_id').eq('account_id', accountId).eq('active', true).in('id', mySiteIds)
-  const siteList = (sites ?? []) as (Site & { responsible_worker_id: string | null })[]
+  // ★EF経由（sites は公開キーから読めないようにしたため）
+  const siteList = (await useSitesApi().listSafe({ ids: mySiteIds })) as unknown as (Site & { responsible_worker_id: string | null })[]
   const siteIds = siteList.map((s) => s.id)
   if (!siteIds.length) { rows.value = []; loading.value = false; return }
 

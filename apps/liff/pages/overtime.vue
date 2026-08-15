@@ -135,8 +135,8 @@ async function refresh() {
   recent.value        = wid ? await overtime.myRecent(wid) : []
   const accountId = await getAccountId()
   if (accountId && !siteOptions.value.length) {
-    const { data } = await supabase.from('sites').select('name').eq('active', true).eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name')
-    siteOptions.value = ((data ?? []) as any[]).map(r => r.name)
+    // ★EF経由（sites は公開キーから読めないようにしたため）。並びはEF側でname_kana順。
+    siteOptions.value = (await useSitesApi().listSafe()).map(s => s.name)
   }
 }
 
