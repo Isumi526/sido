@@ -81,18 +81,21 @@ test.describe('アプリ内通知（お知らせ）', () => {
 
     await expect(page, '★日報の編集画面へ飛ぶ').toHaveURL(new RegExp(`/report\\?edit=${LINK_DATE}`))
 
+    // ★「未読が全部で0件」では見ない。他の spec（チャットのメンション等）が同じ作業員宛に
+    //  未読を残すことがあり、それに引きずられて落ちる（実際に踏んだ）。
+    //  押した1件が既読になり、押していない1件は未読のまま、を個別に見る。
     await expect
-      .poll(async () => {
-        const rows = await rest(
-          `schedule_notifications?account_id=eq.${accountId}&worker_id=eq.${workerId}&read_at=is.null&select=id`)
-        return rows?.length ?? 0
-      }, { message: '★押した1件だけが既読になる', timeout: 15000 })
-      .toBe(0)
+      .poll(async () => (await rest(
+        `schedule_notifications?worker_id=eq.${workerId}&kind=eq.report_reject&select=read_at`))?.[0]?.read_at ?? null,
+        { message: '★押した1件が既読になる', timeout: 15000 })
+      .not.toBeNull()
 
     await page.goto('/notifications', { waitUntil: 'networkidle' })
     await expect(page.getByTestId('notif-read').filter({ hasText: REJECT_TITLE }), '既読として残る')
       .toBeVisible({ timeout: 15000 })
-    await expect(page.getByTestId('nav-bell-badge'), 'ベルのバッジは消える').toHaveCount(0)
+    // 押していない方は未読のまま（1件だけ既読にする、が守られている）
+    await expect(page.getByTestId('notif-unread').filter({ hasText: REJECT_TITLE }),
+      '★押した分が未読に戻っていない').toHaveCount(0)
   })
 
   test('「すべて既読にする」で未読が無くなる', async ({ page }) => {

@@ -262,6 +262,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useYearMonthParam } from '../composables/useQueryParam'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug, getAccountName } from '../lib/account'
+import { notifyWorker, workerIdOfUser } from '../lib/appNotify'
 import { openConventionDoc } from '../lib/docUrl'
 import { flattenReportExpenses, flattenGasolineItems, flattenPersonalExpenses, isPersonalExpenseRow, ratesFromSettings, effectiveStatus, expenseAccountCategory, expenseDisplayCategory, EXPENSE_ACCOUNT_OPTIONS, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
 
@@ -522,6 +523,20 @@ async function doReject() {
       .eq('user_id', t.userId)
       .eq('period_key', t.periodKey)
     if (error) throw error
+
+    // ★差し戻したことを本人に届ける。これが無いと、作業員は経費PDFの画面を
+    //  自分で開いて該当期を選ばない限り気づけない（締切アラート期間を過ぎると
+    //  ホームにも出ない）。通知の失敗で差し戻し自体を巻き戻さない。
+    const wid = await workerIdOfUser(accountId, t.userId)
+    if (wid) {
+      await notifyWorker({
+        accountId, workerId: wid, kind: 'expense_reject',
+        title: `${t.periodKey} の経費申請が差し戻されました`,
+        body: `理由: ${rejectReason.value.trim()}\n内容を直して再申請してください。`,
+        linkPath: '/expense/download',
+      })
+    }
+
     rejectTarget.value = null
     selected.value = null
     await load()
