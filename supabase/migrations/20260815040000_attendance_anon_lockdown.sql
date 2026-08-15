@@ -28,6 +28,28 @@
 -- ============================================================
 
 -- anon は一切触れない。読み取りも登録も EF 経由に一本化する。
+--
+-- ★★ REVOKE ALL ON <table> は「列単位の付与」を消さない ★★
+--  20260815030000 で被害を狭めるために
+--    grant select (id, worker_id, site_id, type, checked_at) on attendance_logs to anon
+--  と列を指定して付けている。テーブル単位の revoke だけでは、この列ACLが生き残り、
+--  公開キーで打刻が読めたままになる（2026-08-15 に本番で実際にそうなった）。
+--  列を1つずつ剥がす。将来カラムが増えても取りこぼさないよう動的に回す。
+do $$
+declare c record;
+begin
+  for c in
+    select a.attname
+    from pg_attribute a
+    join pg_class t on t.oid = a.attrelid
+    join pg_namespace n on n.oid = t.relnamespace
+    where n.nspname = 'public' and t.relname = 'attendance_logs'
+      and a.attnum > 0 and not a.attisdropped
+  loop
+    execute format('revoke all (%I) on public.attendance_logs from anon', c.attname);
+  end loop;
+end $$;
+
 revoke all on attendance_logs from anon;
 
 drop policy if exists attendance_select_anon on attendance_logs;

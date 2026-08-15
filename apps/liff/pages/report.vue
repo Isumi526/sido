@@ -877,28 +877,14 @@ const currentUser = computed(() => {
 
 const isDev = computed(() => config.public.appEnv === 'development' || liff.isTester.value)
 
-// ── 過去3日編集ロック（提出/編集の期限ガード）──
-const lock = useReportLock()
-// ★ロックによる提出ブロックは廃止（2026-08-03）。過去日はそのまま出せて、
+// ── 過去3日の期限判定 ──
+//  ★「解錠の許可申請」は廃止済み（2026-08-03）。過去日はそのまま出せて、
 //   理由必須＋内容の承認待ちになる。二段承認（解錠の許可→内容の承認）をやめた。
-const currentDateLocked = ref(false)
-const lockGrantStatus = ref<'none' | 'pending' | 'approved' | 'rejected'>('none')
-async function refreshLock() {
-  const d = report.form.value.date
-  const wid = currentUser.value?.worker_id ?? null
-  // 解錠の概念を廃止したので常に false。isLateDate（期限切れ）は別途 承認待ちの案内に使う。
-  void wid; void d
-  currentDateLocked.value = false
-  lockGrantStatus.value = 'none'
-}
-watch([() => report.form.value.date, () => currentUser.value?.worker_id], refreshLock, { immediate: true })
+//   それに伴い残っていた申請モーダル・状態・report_edit_grants の購読は
+//   テンプレートから一度も参照されない死にコードだったため 2026-08-15 に削除。
+//   期限切れかどうかの判定（isPastLockWindow）だけを使う。
+const lock = useReportLock()
 
-// ── ロック日の「編集の許可を依頼」（未送信×期限切れもこの画面から依頼できる）──
-const unlockModalOpen  = ref(false)
-const unlockReason     = ref('')
-const unlockRequesting = ref(false)
-function openUnlockModal()  { unlockReason.value = ''; unlockModalOpen.value = true }
-function closeUnlockModal() { unlockModalOpen.value = false; unlockReason.value = '' }
 /**
  * 編集を「承認待ち」として申請する（保留方式）。
  * ★daily_reports はここでは書き換えない。編集後の内容・理由・差分を EF に渡して保留に入れ、
@@ -1032,30 +1018,11 @@ async function submitEditForApproval(diffs: string[]): Promise<boolean> {
   }
 }
 
-async function submitUnlockRequest() {
-  const d = report.form.value.date
-  const wid = currentUser.value?.worker_id ?? null
-  if (!d || !wid || unlockRequesting.value) return
-  unlockRequesting.value = true
-  const r = await lock.requestGrant(wid, d, unlockReason.value.trim())
-  unlockRequesting.value = false
-  if (r.ok) { lockGrantStatus.value = 'pending'; closeUnlockModal() }
-  else alert(t('report.unlockRequestFailed'))
-}
-async function cancelUnlockRequest() {
-  const d = report.form.value.date
-  const wid = currentUser.value?.worker_id ?? null
-  if (!d || !wid || unlockRequesting.value) return
-  unlockRequesting.value = true
-  const r = await lock.cancelRequest(wid, d)
-  unlockRequesting.value = false
-  if (r.ok) lockGrantStatus.value = 'none'
-}
-
 // 管理画面で承認したら日報画面へ自動反映（リロード不要・ブラウザ開きっぱなしでも反映）。
 //  ① Realtime: 承認の瞬間に push 受信（即時）。② ポーリング: webview等でwebsocketが切れても確実に追従。
 //  ③ タブ復帰: フォーカス時にも再取得。
-function refreshGates() { refreshLock(); refreshOvertime() }
+// 解錠の許可は廃止したので、見るゲートは残業申請の承認だけ
+function refreshGates() { refreshOvertime() }
 function onVisible() { if (typeof document !== 'undefined' && document.visibilityState === 'visible') refreshGates() }
 let gatePoll: ReturnType<typeof setInterval> | null = null
 function stopGatePoll() { if (gatePoll) { clearInterval(gatePoll); gatePoll = null } }
@@ -1070,13 +1037,10 @@ function startRealtime() {
   if (!wid) return
   gateChannel = useSupabase()
     .channel(`report-gates-${wid}`)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'report_edit_grants', filter: `worker_id=eq.${wid}` }, () => refreshGates())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'overtime_requests',  filter: `worker_id=eq.${wid}` }, () => refreshGates())
     .subscribe()
 }
 
-// 申請中(pending)の間だけポーリング（承認/却下で止まる）。Realtimeは常時。
-watch(lockGrantStatus, (s) => { if (s === 'pending') startGatePoll(); else stopGatePoll() }, { immediate: true })
 watch(() => currentUser.value?.worker_id, () => startRealtime())
 onMounted(() => {
   if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible)
@@ -1095,11 +1059,28 @@ const overtimeApprovedForDate = ref(false)
 //  「10時休憩せずにぶっ通しでやりました…申請を出せば、じゃあいいよ、って修正させてあげたい」
 //  承認されていない限り null＝従来どおり固定開始より前・既定より短い休憩は入れられない。
 const approvedAdjust = ref<{ startTime: string | null; endTime: string | null; breakMinutes: number | null } | null>(null)
+// ★世代番号で古い応答を捨てる。日付と worker_id の両方を watch していて、
+//  初期化中は「worker_id 未解決」→「解決済み」で2回走る。EF経由にして1回が
+//  数百ms かかるようになったため、先に投げた（worker_id が無い）方が後から
+//  返って承認状態を null で上書きし、承認済みなのに早出が選べない、という
+//  取り違えが起きた（2026-08-15・E2Eが1回おきに落ちて発覚）。
+//  実機の遅い回線ほど起きやすい。
+let overtimeSeq = 0
 async function refreshOvertime() {
+  const seq = ++overtimeSeq
   const d = report.form.value.date
   const wid = currentUser.value?.worker_id ?? null
-  overtimeApprovedForDate.value = (wid && d) ? await overtime.isApproved(wid, d) : false
-  approvedAdjust.value = (wid && d) ? await overtime.approvedAdjustment(wid, d) : null
+  if (!wid || !d) {
+    // 未解決の時は「まだ分からない」だけ。既に取れている承認状態を消さない。
+    return
+  }
+  const [approved, adjust] = await Promise.all([
+    overtime.isApproved(wid, d),
+    overtime.approvedAdjustment(wid, d),
+  ])
+  if (seq !== overtimeSeq) return   // 追い越された＝この結果はもう古い
+  overtimeApprovedForDate.value = approved
+  approvedAdjust.value = adjust
 }
 watch([() => report.form.value.date, () => currentUser.value?.worker_id], refreshOvertime, { immediate: true })
 
