@@ -2,9 +2,16 @@
 //  useOvertimeRequest — 残業申請（架空残業対策）
 //  - 当日16:00までに「固定終了を超える終了時刻」で残業を申請。管理者が admin で承認。
 //    承認された worker×date のみ 日報の終了時刻を固定終了超で入力できる（report.vue が参照）。
-//  - キーは worker_id（report_edit_grants/useReportLock と同様・ログイン方式跨ぎで安定）。
+//  - 早朝入り・実際に取った休憩も同じ申請に乗る（2026-08-10 大塚さん）。
 //  - 締切は当日16:00固定（全現場一律・曜日/祝日例外なし・#80bd で15:00→16:00に変更）。
 //  - 金額/集計には触れない（保存済み時刻から workerHours が従来どおり料率算出）。
+//
+//  ★2026-08-15: テーブル直叩きをやめて Edge Function 経由にした。
+//   overtime_requests は公開キー(anon)だけで全テナント分が読め、
+//   任意の worker_id で申請を作れる状態だった（誰がいつ残業を申請したかが漏れ、
+//   他人名義の申請も作れた）。anon には身元が無いのでRLSでは絞れない。
+//   ★ここに supabase.from('overtime_requests') を書き足さないこと。
+//    1箇所でも直叩きが残ると anon の権限を落とせず、穴が塞がらない。
 // ============================================================
 // todayStr は shared/schedule-core.ts の JSTローカル基準版を使う（UTC基準の
 // toISOString().split('T')[0] は深夜0-9時JSTに前日を返し、申請可否判定がズレる）。
@@ -12,11 +19,35 @@ import { todayStr } from '~/composables/schedule-core.gen'
 
 export const OVERTIME_DEADLINE_HOUR = 16  // 当日この時刻まで申請可（16:00・#80bd で15:00→16:00）
 
-export function useOvertimeRequest() {
-  const supabase = useSupabase()
-  const { getAccountId } = useAccount()
+const EDGE_FN = 'attendance-log'
 
-  // 申請可能か: 対象日付が「今日」かつ 現在時刻が 15:00 より前。
+export function useOvertimeRequest() {
+  const config = useRuntimeConfig()
+  const supabase = useSupabase()
+  const liff = useLiff()
+
+  async function call(action: string, payload: Record<string, unknown> = {}): Promise<any> {
+    const anonKey = config.public.supabaseAnonKey as string
+    const { data: { session } } = await supabase.auth.getSession()
+    const lineIdToken = (await liff.getIdToken().catch(() => null)) ?? ''
+    const devLineUserId = config.public.appEnv === 'development'
+      ? (liff.profile.value?.userId ?? '')
+      : ''
+    const res = await fetch(`${config.public.edgeFunctionUrl}/${EDGE_FN}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: anonKey,
+        Authorization: session ? `Bearer ${session.access_token}` : `Bearer ${anonKey}`,
+      },
+      body: JSON.stringify({ action, line_id_token: lineIdToken, dev_line_user_id: devLineUserId, ...payload }),
+    })
+    const json = await res.json().catch(() => null)
+    if (!res.ok || !json?.ok) throw new Error(json?.error ?? `失敗しました(${res.status})`)
+    return json
+  }
+
+  // 申請可能か: 対象日付が「今日」かつ 現在時刻が締切より前。
   function canRequest(date: string | null | undefined): boolean {
     if (!date) return false
     if (date !== todayStr()) return false
@@ -24,17 +55,16 @@ export function useOvertimeRequest() {
   }
 
   // worker×date の残業申請ステータス（none/pending/approved/rejected・最新1件）。
-  async function status(workerId: string | null | undefined, date: string): Promise<'none' | 'pending' | 'approved' | 'rejected'> {
-    if (!workerId || !date) return 'none'
-    const accountId = await getAccountId()
-    if (!accountId) return 'none'
-    const { data } = await supabase
-      .from('overtime_requests')
-      .select('status, requested_at')
-      .eq('account_id', accountId).eq('worker_id', workerId).eq('date', date)
-      .order('requested_at', { ascending: false })
-      .limit(1)
-    return ((data && data[0]?.status) as any) ?? 'none'
+  async function status(_workerId: string | null | undefined, date: string): Promise<'none' | 'pending' | 'approved' | 'rejected'> {
+    if (!date) return 'none'
+    try {
+      return (await call('overtime-status', { date })).status ?? 'none'
+    } catch (e) {
+      // ★黙って 'approved' に倒さない。読めない時は「承認されていない」側に倒す＝
+      //  架空残業の入力を許さない方向（fail-closed）。
+      console.error('[overtime] 状況を取得できませんでした:', e)
+      return 'none'
+    }
   }
 
   // 残業が承認済みか（report.vue の終了時刻上限解放に使う）。
@@ -47,104 +77,64 @@ export function useOvertimeRequest() {
    *  - startTime    … 早朝入り。現場の固定開始より前を選べるようになる
    *  - endTime      … 従来の残業（固定終了より後を選べる）
    *  - breakMinutes … 実際に取った休憩。0 なら休憩なしで通した
-   * ★承認されていない申請は返さない。申請しただけで時間を広げられるなら
-   *  「管理者が決めた時間がマスタ」という原則が崩れる。
+   * ★承認されていない申請は返さない（EF側でも status='approved' に絞っている）。
    */
   async function approvedAdjustment(
-    workerId: string | null | undefined, date: string,
+    _workerId: string | null | undefined, date: string,
   ): Promise<{ startTime: string | null; endTime: string | null; breakMinutes: number | null } | null> {
-    if (!workerId || !date) return null
-    const accountId = await getAccountId()
-    if (!accountId) return null
-    const { data } = await supabase
-      .from('overtime_requests')
-      .select('requested_start_time, requested_end_time, requested_break_minutes, status, requested_at')
-      .eq('account_id', accountId).eq('worker_id', workerId).eq('date', date)
-      .eq('status', 'approved')
-      .order('requested_at', { ascending: false })
-      .limit(1)
-    const r = (data ?? [])[0] as any
-    if (!r) return null
-    const hhmm = (v: string | null) => (v ? String(v).slice(0, 5) : null)
-    return {
-      startTime: hhmm(r.requested_start_time ?? null),
-      endTime: hhmm(r.requested_end_time ?? null),
-      breakMinutes: r.requested_break_minutes ?? null,
+    if (!date) return null
+    try {
+      return (await call('overtime-status', { date })).adjustment ?? null
+    } catch (e) {
+      console.error('[overtime] 承認内容を取得できませんでした:', e)
+      return null
     }
-  }
-
-  // その作業員の「承認済み」残業日付の集合（履歴表示用）。
-  async function approvedDates(workerId: string | null | undefined): Promise<Set<string>> {
-    const set = new Set<string>()
-    if (!workerId) return set
-    const accountId = await getAccountId()
-    if (!accountId) return set
-    const { data } = await supabase
-      .from('overtime_requests')
-      .select('date')
-      .eq('account_id', accountId).eq('worker_id', workerId).eq('status', 'approved')
-    for (const r of data ?? []) if ((r as any).date) set.add((r as any).date)
-    return set
   }
 
   // 直近の自分の申請一覧（履歴表示用・新しい順）。
-  async function myRecent(workerId: string | null | undefined, limit = 20): Promise<any[]> {
-    if (!workerId) return []
-    const accountId = await getAccountId()
-    if (!accountId) return []
-    const { data } = await supabase
-      .from('overtime_requests')
-      .select('id, date, requested_start_time, requested_end_time, requested_break_minutes, reason, status, requested_at')
-      .eq('account_id', accountId).eq('worker_id', workerId)
-      .order('requested_at', { ascending: false })
-      .limit(limit)
-    return (data ?? []) as any[]
+  async function myRecent(_workerId: string | null | undefined, limit = 20): Promise<any[]> {
+    try {
+      return (await call('overtime-recent', { limit })).items ?? []
+    } catch (e) {
+      console.error('[overtime] 履歴を取得できませんでした:', e)
+      return []
+    }
   }
 
-  // 残業を申請（pending を作成）。当日15:00まで・既に pending/approved があれば二重作成しない。
+  /**
+   * 残業を申請（pending を作成）。締切前・既に pending/approved があれば二重作成しない。
+   * ★worker_id は渡さない。EF が検証済みの身元から決める（他人名義の申請を作れない）。
+   */
   async function requestOvertime(
-    workerId: string | null | undefined, date: string, requestedEndTime: string | null, reason: string,
-    siteNames: string[] = [],   // 対象現場（複数可・その責任者へメール通知する #5）
-    // 早朝入り／実際に取った休憩（2026-08-10 大塚さん）。どちらも任意で、
-    // 承認されて初めて日報の入力制限が緩む。
+    _workerId: string | null | undefined, date: string, requestedEndTime: string | null, reason: string,
+    siteNames: string[] = [],
     requestedStartTime: string | null = null,
     requestedBreakMinutes: number | null = null,
   ): Promise<{ ok: boolean; error?: string }> {
-    if (!workerId || !date) return { ok: false, error: 'no-worker-or-date' }
-    if (!canRequest(date)) return { ok: false, error: 'deadline-passed' }  // 当日15:00超 or 当日以外
-    const accountId = await getAccountId()
-    if (!accountId) return { ok: false, error: 'no-account' }
-    const { data: existing } = await supabase
-      .from('overtime_requests').select('id, status')
-      .eq('account_id', accountId).eq('worker_id', workerId).eq('date', date)
-      .in('status', ['pending', 'approved']).limit(1)
-    if (existing && existing.length) return { ok: true }
-    const { error } = await supabase.from('overtime_requests').insert({
-      account_id: accountId, worker_id: workerId, date,
-      requested_end_time: requestedEndTime || null, reason: reason || null, status: 'pending',
-      requested_start_time: requestedStartTime || null,
-      // ★0（休憩なし）と null（申請なし）を潰さない。|| だと 0 が null になる
-      requested_break_minutes: requestedBreakMinutes ?? null,
-      site_names: siteNames.length ? siteNames : null,
-    })
-    // 競合で同時insertされた場合、部分一意index(active_uidx)が弾く＝既に有効申請あり＝成功扱い。
-    if (error) {
-      if ((error as any).code === '23505') return { ok: true }
-      return { ok: false, error: error.message }
+    if (!date) return { ok: false, error: 'no-worker-or-date' }
+    if (!canRequest(date)) return { ok: false, error: 'deadline-passed' }
+    try {
+      await call('overtime-request', {
+        date, requestedEndTime, requestedStartTime,
+        ...(requestedBreakMinutes === null ? {} : { requestedBreakMinutes }),
+        reason, siteNames,
+      })
+      return { ok: true }
+    } catch (e: any) {
+      return { ok: false, error: e?.message ?? 'failed' }
     }
-    return { ok: true }
   }
 
   // 誤った申請の取り消し（pending のみ削除＝承認済みは消さない）。
-  async function cancelRequest(workerId: string | null | undefined, date: string): Promise<{ ok: boolean; error?: string }> {
-    if (!workerId || !date) return { ok: false, error: 'no-worker-or-date' }
-    const accountId = await getAccountId()
-    if (!accountId) return { ok: false, error: 'no-account' }
-    const { error } = await supabase.from('overtime_requests').delete()
-      .eq('account_id', accountId).eq('worker_id', workerId).eq('date', date).eq('status', 'pending')
-    if (error) return { ok: false, error: error.message }
-    return { ok: true }
+  async function cancelRequest(_workerId: string | null | undefined, date: string): Promise<{ ok: boolean; error?: string }> {
+    if (!date) return { ok: false, error: 'no-worker-or-date' }
+    try {
+      await call('overtime-cancel', { date })
+      return { ok: true }
+    } catch (e: any) {
+      return { ok: false, error: e?.message ?? 'failed' }
+    }
   }
 
-  return { canRequest, status, isApproved, approvedAdjustment, approvedDates, myRecent, requestOvertime, cancelRequest }
+  return { canRequest, status, isApproved, approvedAdjustment, myRecent, requestOvertime, cancelRequest }
 }
