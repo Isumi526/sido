@@ -9,10 +9,14 @@
 //    ③ 現場詳細の「見積/注文書」カード
 //   ここを塞ぎ忘れると、メニューを隠しても見積データに届いてしまう。
 //
-//  ★フラグはアカウント単位の settings 行。テスト後は必ず削除して既定(OFF)に戻す。
+//  ★フラグはアカウント単位の settings 行＝**spec をまたいで共有される**。
+//   playwright は workers:1 の直列実行なので、OFFのまま抜けると
+//   アルファベット順でこの後に来る見積系 spec が全部落ちる。
+//   2026-08-15 に実際に起きた（admin.estimate-intake 〜 admin.trade-dnd の15本）。
+//   だから後片付けは「行を消す」ではなく **スイートの既定であるONへ戻す**。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { restSrv, getAccountId } from './helpers'
+import { restSrv, getAccountId, restoreEstimateFeature } from './helpers'
 
 const KEY = 'estimate_feature_enabled'
 const EST_ROUTES = ['/estimate-list', '/estimates', '/estimate-masters', '/estimate-builder', '/purchase-orders', '/drawing-materials']
@@ -34,8 +38,8 @@ async function setFlag(enabled: boolean | null) {
 }
 
 test.beforeAll(async () => { accountId = await getAccountId() })
-// 既定（未設定＝OFF）に戻す。行を残すと他の spec が見積ありの前提で動いてしまう
-test.afterAll(async () => { await setFlag(null) })
+// ★スイートの既定（ON）へ戻す。OFFのまま抜けると後続の見積系 spec が全部落ちる
+test.afterAll(restoreEstimateFeature)
 
 test.describe('フラグOFF（既定・未設定）', () => {
   test.beforeEach(async () => { await setFlag(null) })
