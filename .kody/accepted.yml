@@ -295,3 +295,135 @@ entries:
     target: sites/[id].vue
     reason: "LIFF現場情報編集(2026-07-20)のonToggleShare(現場へのユーザー招待チェックボックス切替)にべき等ガードが無い指摘。site_shares は (site_id, user_id) の unique制約があるため、連打によるinsertの重複行は制約違反でエラーになりUI側が楽観更新を巻き戻す設計(データ破損なし)。deleteの二重実行は対象行が既に無ければ0件影響でno-op(エラーにならない)。チェックボックスの高速連打という低頻度シナリオであり、恒久対策(サーバー側デバウンス等)は利用実績を見てから検討する。"
     ticket: "3a30ff81c56b81a99aa1db0fc4bc4cd4"
+
+  # --- ベースライン: RLS無効 × authenticated に書込権限（＝ログイン中の他テナント利用者が書換・削除できる）。
+  #     2026-08-15 に監査へ authenticated 次元を足して判明した32表。ratchet基準＝ここに無い新規表だけ違反計上。
+  #     1件ずつRLS化して、このブロックが空になるのがゴール。 ---
+  - rule: rls-authenticated-crosstenant
+    target: accounts
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: contractors
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: daily_reports
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: dev_updates
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: expense_items
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: expense_settlements
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: faq_entries
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: overtime_requests
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: report_edit_grants
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: schedule_categories
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: schedule_edits
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: schedule_group_members
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: schedule_groups
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: schedule_notifications
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: schedules
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: settings
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: site_attachments
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: site_chat_last_read
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: site_chat_mentions
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: site_chat_messages
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: site_rules
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: site_shares
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: site_subcontractors
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: sites
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: subcontractor_comments
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: subcontractor_trade_types
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: subcontractors
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: trade_type_presets
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: users
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: vehicles
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: worker_proxies
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: rls-authenticated-crosstenant
+    target: workers
+    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
+    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
