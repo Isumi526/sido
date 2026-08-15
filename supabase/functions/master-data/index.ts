@@ -151,10 +151,15 @@ Deno.serve(async (req) => {
     if (!SITE_CREATE_ROLES.includes((w?.permission_role as string) ?? '')) {
       return json({ ok: false, error: 'SITE_CREATE_FORBIDDEN' }, 403)
     }
-    const { error } = await svc.from('sites')
+    // ★作った現場の id を返す。呼び出し側が「今作った現場」を site_id として
+    //  すぐ紐付けられるようにするため（スケジュール登録で新規現場を作る導線）。
+    //  id を返さないと、呼び出し側はマスタを取り直すまで id を知れず、
+    //  その回の登録が site_id 無しで保存されてしまう。
+    const { data: saved, error } = await svc.from('sites')
       .upsert({ name, account_id: accountId }, { onConflict: 'name,account_id' })
+      .select('id').maybeSingle()
     if (error) { console.error('[master-data] save-site failed:', error); return json({ ok: false, error: 'save_failed' }, 500) }
-    return json({ ok: true })
+    return json({ ok: true, id: saved?.id ?? null })
   }
 
   // ── 元請けを作る ────────────────────────────────

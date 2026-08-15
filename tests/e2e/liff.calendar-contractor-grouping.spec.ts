@@ -1,8 +1,17 @@
 // ============================================================
 //  liff.calendar-contractor-grouping.spec.ts
-//  予定管理の予定追加モーダルで元請けを選択した時、report.vueと同じく
-//  「この元請けに紐づく現場」＋「その他の現場」の2グループが両方表示される
-//  ことを検証する(2026-07-20・従来は紐づく現場が1件以上あるとその他が消えていた)。
+//  予定追加モーダルの現場プルダウンが、元請けごとに optgroup で分かれ、
+//  かつ**どの現場も消えない**ことを検証する。
+//
+//  ★元の意図（2026-07-20）: 元請けを選ぶと「その他の現場」が消えてしまい、
+//   別の元請けの現場を選べなくなる不具合があった。その回帰防止。
+//
+//  ★2026-08-15 に元請けの絞り込みプルダウン自体を廃止した。
+//   現場プルダウンは元々 optgroup で元請けごとに分かれており、絞り込みは
+//   その2階層構造の上に重ねた重複UIだった。しかも本番の現場80件のうち
+//   54件(68%)が元請け未紐付けで、絞り込んでも大半が1グループに固まり効かない。
+//   ＝「どの現場も消えない」という元の保証は、絞り込みが無くなったことで
+//   より強く満たされる。テストはその新しい形に合わせて書き直した。
 // ============================================================
 import { test, expect } from '@playwright/test'
 import { rest, getAccountId } from './helpers'
@@ -33,14 +42,25 @@ test.afterAll(async () => {
   await rest(`contractors?id=eq.${contractorId}`, { method: 'DELETE' }).catch(() => {})
 })
 
-test('元請けを選択すると「紐づく現場」と「その他の現場」の両方が現場プルダウンに出る', async ({ page }) => {
+test('現場プルダウンは元請けごとに分かれ、紐付きも未紐付けも両方選べる', async ({ page }) => {
   await page.goto('/calendar', { waitUntil: 'networkidle' })
   await page.locator('.cal-tab', { hasText: '個人' }).click()
   await page.locator('[data-testid="personal-week-fab"]').click()
 
-  await page.locator('[data-testid="contractor-select"]').selectOption(CONTRACTOR)
   const siteSelect = page.locator('[data-testid="site-select"]')
+  await expect(siteSelect).toBeVisible()
+
+  // ★どちらの現場も消えない（元の回帰防止の本体）
   const options = await siteSelect.locator('option').allTextContents()
-  expect(options).toContain(SITE_LINKED)
-  expect(options).toContain(SITE_OTHER)
+  expect(options, '元請けに紐づく現場が出る').toContain(SITE_LINKED)
+  expect(options, '元請けに紐づかない現場も出る').toContain(SITE_OTHER)
+
+  // 2階層: 元請け名の optgroup と「紐付けなし」の optgroup が両方ある
+  const groups = await siteSelect.locator('optgroup').evaluateAll(
+    els => els.map(e => (e as HTMLOptGroupElement).label))
+  expect(groups, '元請け名でグループ化されている').toContain(CONTRACTOR)
+  expect(groups, '未紐付けのグループもある').toContain('紐付けなし')
+
+  // 廃止した絞り込みプルダウンが残っていない（重複UIを戻さないための固定）
+  await expect(page.locator('[data-testid="contractor-select"]'), '元請け絞り込みは廃止済み').toHaveCount(0)
 })
