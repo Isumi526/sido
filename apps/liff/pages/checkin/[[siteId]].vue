@@ -534,12 +534,12 @@ onMounted(async () => {
 async function loadSiteOptions() {
   const accountId = await useAccount().getAccountId()
   if (!accountId) return
-  const [{ data }, { data: contractors }] = await Promise.all([
-    supabase.from('sites').select('id, name, name_kana, contractor_id').eq('account_id', accountId).eq('active', true)
-      .order('name_kana', { nullsFirst: false }).order('name'),
-    supabase.from('contractors').select('id, name').eq('account_id', accountId).eq('active', true).order('sort_order').order('name'),
+  // ★EF経由（sites / contractors は公開キーから読めないようにしたため）
+  const [siteRows, contractors] = await Promise.all([
+    useSitesApi().listSafe(),
+    useMaster().fetchContractors(),
   ])
-  siteOptions.value = (data ?? []) as { id: string; name: string; name_kana: string | null; contractor_id: string | null }[]
+  siteOptions.value = siteRows as unknown as { id: string; name: string; name_kana: string | null; contractor_id: string | null }[]
   // 元請けプルダウンは「紐づく現場が1件以上ある元請け」だけ出す
   const usedContractorIds = new Set(siteOptions.value.map(s => s.contractor_id).filter(Boolean) as string[])
   contractorOptions.value = ((contractors ?? []) as { id: string; name: string }[]).filter(c => usedContractorIds.has(c.id))
@@ -583,8 +583,8 @@ async function proceedWithSite(resolved: string) {
   siteId.value = resolved
 
   // 現場名取得
-  const { data: siteData } = await supabase
-    .from('sites').select('name').eq('id', siteId.value).single()
+  // ★EF経由（sites は公開キーから読めないようにしたため）
+  const siteData = await useSitesApi().one(siteId.value)
   if (!siteData) {
     errorMsg.value = t('checkin.errNoSite')
     phase.value = 'error'

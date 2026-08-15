@@ -27,8 +27,8 @@ export async function refreshSiteChatListBadge(): Promise<void> {
   const mySiteIds = await resolveMySiteIds()
   if (!mySiteIds.length) { unreadChatCount.value = 0; return }
 
-  const { data: sites } = await supabase.from('sites').select('id').eq('account_id', accountId).eq('active', true).in('id', mySiteIds)
-  const siteIds = ((sites ?? []) as { id: string }[]).map((s) => s.id)
+  // ★現場は EF 経由（sites は公開キーから読めないようにしたため）
+  const siteIds = (await useSitesApi().listSafe({ ids: mySiteIds })).map((s) => s.id)
   if (!siteIds.length) { unreadChatCount.value = 0; return }
 
   const { data: lastReads } = await supabase.from('site_chat_last_read')
@@ -60,8 +60,8 @@ export async function markSiteChatRead(accountId: string, workerId: string, site
 
   if (!mySiteIds.length) { unreadChatCount.value = 0; return }
 
-  const { data: sites } = await supabase.from('sites').select('id').eq('account_id', accountId).eq('active', true).in('id', mySiteIds)
-  const siteIds = ((sites ?? []) as { id: string }[]).map((s) => s.id)
+  // ★現場は EF 経由（sites は公開キーから読めないようにしたため）
+  const siteIds = (await useSitesApi().listSafe({ ids: mySiteIds })).map((s) => s.id)
   if (!siteIds.length) { unreadChatCount.value = 0; return }
   const { data: lastReads } = await supabase.from('site_chat_last_read')
     .select('site_id, last_read_at').eq('account_id', accountId).eq('actor_key', workerId)
