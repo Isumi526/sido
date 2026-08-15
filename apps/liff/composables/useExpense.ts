@@ -6,7 +6,7 @@ import type { User, ExpenseItem, ExpenseItemInput, ExpenseRow } from '~/types'
 import { useI18n } from 'vue-i18n'
 import { gt } from '~/utils/i18n-global'
 import { flattenReportExpenses, flattenGasolineItems, flattenPersonalExpenses, ratesFromSettings, mergeOtherExpenses, splitOtherExpenses } from './expense-flatten.gen'
-import { resolveActiveSiteId } from '~/utils/siteSimilarity'
+import { resolveActiveSiteId } from '~/utils/site-similarity.gen'
 
 // ---------- 期間キーユーティリティ ----------
 

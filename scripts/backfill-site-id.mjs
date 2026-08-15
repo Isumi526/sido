@@ -40,7 +40,8 @@ const DB_URL = DB === 'prod'
   : 'postgresql://postgres:postgres@127.0.0.1:54322/postgres'
 if (DB === 'prod' && !DB_URL) { console.error('SUPABASE_PROD_DB_URL が .env にありません'); process.exit(1) }
 
-// ---- 現場名の正規化（apps/*/siteSimilarity.ts と同一ロジック）----
+// ---- 現場名の正規化（正典: shared/site-similarity.ts と同一ロジック）----
+//  ★.mjs から .ts を import できないため写している。shared 側を変えたらここも直す。
 function normalizeSiteName(s) {
   return (s || '')
     .normalize('NFKC')

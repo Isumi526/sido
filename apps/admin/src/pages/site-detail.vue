@@ -174,7 +174,7 @@ import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { canViewManagementPages } from '../lib/auth'
 import { canViewEstimates } from '../lib/features'
-import { normalizeSiteName } from '../lib/siteSimilarity'
+import { normalizeSiteName } from '../lib/site-similarity.gen'
 import { siteStoredName } from '../lib/siteKey'
 
 const route = useRoute()
