@@ -363,7 +363,8 @@ export const useReport = () => {
       // ── ③ 新規現場・新規下請けを Supabase に保存（送信完了表示の前に確実化）──
       //  fire-and-forget だと「送信完了」直後にLIFFを閉じた際に upsert が中断され、
       //  登録した下請が次回プルダウンに出ない事象が起きていた。await して確実に永続化する。
-      const masterSaves: Promise<void>[] = []
+      // saveSite は作った現場の id を返すが、ここでは永続化を待つだけで値は使わない
+      const masterSaves: Promise<unknown>[] = []
       for (const site of payload.sites) {
         if (site.siteName) masterSaves.push(master.saveSite(site.siteName))
         if (site.contractorName) masterSaves.push(master.saveContractor(site.contractorName))

@@ -167,21 +167,34 @@ export const useMaster = () => {
     }
   }
 
-  /** 現場名を保存（新規 or 既存は upsert で吸収）。EF経由。 */
-  async function saveSite(name: string) {
-    if (!name.trim()) return
+  /**
+   * 現場名を保存（新規 or 既存は upsert で吸収）。EF経由。作った現場の id を返す。
+   *
+   * ★id を返し、siteIds にも入れること。ここを更新しないと呼び出し側が
+   *  「今作った現場」の id を引けず、その回の保存が site_id 無しになる。
+   *  スケジュール登録で実際にこれを踏み、本番144件が全部 site_id=NULL だった（2026-08-15）。
+   */
+  async function saveSite(name: string): Promise<string | undefined> {
+    const nm = name.trim()
+    if (!nm) return undefined
     // ★現場の新規作成は権限者(admin/office/site_manager)のみ。
     //  画面で選択肢を隠すだけでは REST直叩き/古いバンドル/下書き復元で通り得るため、
     //  EF 側（サーバ）でも permission_role を確認している。ここは早期に弾くためのUXガード。
     const perm = useWorkerPermission()
     await perm.resolveRole()
     if (!perm.canCreateSite.value) throw new Error('SITE_CREATE_FORBIDDEN')
-    await callEf('save-site', { name: name.trim() })
-    if (!master.value.sites.includes(name.trim())) {
+    const res = await callEf('save-site', { name: nm })
+    const id = (res?.id as string | undefined) ?? undefined
+    const nextIds = id ? { ...(master.value.siteIds ?? {}), [nm]: id } : master.value.siteIds
+    if (!master.value.sites.includes(nm)) {
       // 読み仮名は未知のため末尾に追加（並びは次回fetchでname_kana順に再構成される）
-      master.value = { ...master.value, sites: [...master.value.sites, name.trim()] }
+      master.value = { ...master.value, sites: [...master.value.sites, nm], siteIds: nextIds }
+      saveCache(master.value)
+    } else if (nextIds !== master.value.siteIds) {
+      master.value = { ...master.value, siteIds: nextIds }
       saveCache(master.value)
     }
+    return id
   }
 
   /** 元請け業者名を保存（新規 or 既存は upsert で吸収）。EF経由。 */
