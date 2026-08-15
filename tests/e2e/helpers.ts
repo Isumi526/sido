@@ -141,12 +141,19 @@ export async function getAccountId(): Promise<string> {
 
 /**
  * 見積もり機能のフィーチャーフラグ（settings.estimate_feature_enabled・2026-08-09 新設）。
- * 既定はOFFで、見積もりの画面・見積書PDF・現場まわりの見積導線がすべて隠れる。
+ * アカウント単位の settings 行で、本番は 8/19 の解禁までOFF。
  *
- * ★見積もり以外を主題にしつつ見積画面に到達するspec（自社情報→見積書プレビュー、
- *  現場別集計のzipに見積書PDFを内包 等）は、本来の意図を保つためフラグをONにしてから回す。
- *  使い終わったら必ず reset して既定(未設定=OFF)へ戻すこと——行が残ると
- *  「フラグOFFで隠れる」を検証している admin.estimate-feature-flag.spec.ts が壊れる。
+ * ★E2E では「ONが既定」。global-setup が毎回ONで用意する。
+ *  見積画面に到達する spec が40本近くある一方、OFFを主題にするのは
+ *  admin.estimate-feature-flag.spec.ts の1本だけなので、多数派を既定に置く。
+ *
+ * ★★このフラグは spec をまたいで共有される（アカウント単位・playwright は workers:1 の直列）。
+ *  OFFにしたまま test を抜けると、**アルファベット順でその後に来る見積系 spec が全部落ちる**。
+ *  2026-08-15 に実際に起きた: feature-flag spec の afterAll が行を消していたため、
+ *  admin.estimate-intake 以降〜admin.trade-dnd まで15本が「見積画面がダッシュボードへ
+ *  リダイレクトされる」で失敗し、着地ゲートの合否が読めなくなっていた。
+ *  一過性のフレークに見えるが、順序で決まる再現性100%の壊れ方をする。
+ *  OFFにする spec は必ず restoreEstimateFeature() でONへ戻すこと。
  */
 export const FEATURE_KEY_ESTIMATE = 'estimate_feature_enabled'
 
@@ -158,7 +165,13 @@ export async function enableEstimateFeature(): Promise<void> {
   })
 }
 
-export async function resetEstimateFeature(): Promise<void> {
+/** スイートの既定（ON）へ戻す。行を消すのではなくONにするのが「戻す」の意味。 */
+export async function restoreEstimateFeature(): Promise<void> {
+  await enableEstimateFeature()
+}
+
+/** ★OFFを主題にする spec 専用。使ったら必ず restoreEstimateFeature() で戻すこと。 */
+export async function disableEstimateFeature(): Promise<void> {
   const accountId = await getAccountId()
   await restSrv(`settings?account_id=eq.${accountId}&key=eq.${FEATURE_KEY_ESTIMATE}`, { method: 'DELETE' })
 }

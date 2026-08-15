@@ -94,9 +94,15 @@ test('AC3★(R41): 単価表の絶対額があればそちらを優先する（O
   await page.locator('[data-testid="item-code-0"]').fill(CODE)
   await page.locator('[data-testid="item-code-0"]').dispatchEvent('change')
 
-  const opts = (await page.locator('[data-testid="item-supplier-0"] option').allInnerTexts()).join(' | ')
+  const optTexts = await page.locator('[data-testid="item-supplier-0"] option').allInnerTexts()
+  const opts = optTexts.join(' | ')
   expect(opts, `候補: ${opts}`).toContain('3,000')
-  expect(opts, '絶対額がある商社は定価×掛率の4,500を出さない').not.toContain('4,500')
+  // ★「4,500がどこにも出ない」ではなく「絶対額を持つこの商社(SUP_B)の候補に出ない」を見る。
+  //  候補一覧には他spec や /review 駆動が作った商社も混ざる。それらは絶対額を持たないので
+  //  定価×掛率で 4,500 を出すのが正しく、一覧全体で弾くと無関係な残骸で落ちる（2026-08-15）。
+  const optB = optTexts.find(t => t.includes(SUP_B)) ?? ''
+  expect(optB, `SUP_B の候補が見つからない: ${opts}`).not.toBe('')
+  expect(optB, '絶対額がある商社は定価×掛率の4,500を出さない').not.toContain('4,500')
   // ★最安が商社Bに入れ替わる
   await expect(page.locator('[data-testid="item-cheapest-0"]')).toContainText(SUP_B)
   await expect(page.locator('[data-testid="item-cheapest-0"]')).toContainText('3,000')

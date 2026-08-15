@@ -12,7 +12,7 @@
 //   - admin/office は従来どおり全メニュー表示（挙動不変）。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { SUPABASE_URL, ANON_KEY, enableEstimateFeature, resetEstimateFeature } from './helpers'
+import { SUPABASE_URL, ANON_KEY, enableEstimateFeature, restoreEstimateFeature } from './helpers'
 
 // ★このspecの目的は「ロールによる出し分け」。見積もり系メニューは 2026-08-09 に機能フラグ
 //  （settings.estimate_feature_enabled・既定OFF）でも隠れるようになったため、フラグOFFのままだと
@@ -20,7 +20,7 @@ import { SUPABASE_URL, ANON_KEY, enableEstimateFeature, resetEstimateFeature } f
 //  このspecの間だけフラグをONにして、終わったら既定(未設定=OFF)へ戻す。
 //  フラグ自体の開閉は admin.estimate-feature-flag.spec.ts が担保する。
 test.beforeAll(enableEstimateFeature)
-test.afterAll(resetEstimateFeature)
+test.afterAll(restoreEstimateFeature)
 
 const SM_EMAIL = 'worker01.login.e2e@example.com'  // site_manager の作業員（liff.worker-loginで用意）
 const SM_PASS  = 'worker-login-1234'
