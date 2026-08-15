@@ -86,6 +86,59 @@ Deno.serve(async (req) => {
     })
   }
 
+  // ── 現場の一覧／単体（LIFFの各画面が使う形をこれ1本で賄う）──
+  //  ★返す列は LIFF が実際に使うものだけ。責任者ID・工事内容・備考までは業務上必要
+  //   （現場情報ページ・チャットの責任者判定）。それ以外は返さない。
+  if (body.action === 'sites') {
+    let q = svc.from('sites')
+      .select('id, name, name_kana, active, location, construction_type, construction_details, memo, responsible_worker_id, contractor_id, created_at')
+      .eq('account_id', accountId)
+    // includeInactive: 現場情報ページは無効な現場も「無効」バッジ付きで出す仕様
+    if (!body.includeInactive) q = q.eq('active', true)
+    if (Array.isArray(body.ids) && body.ids.length) q = q.in('id', body.ids.map(String).slice(0, 1000))
+    const { data, error } = await q.order('active', { ascending: false })
+      .order('name_kana', { nullsFirst: false }).order('name')
+    if (error) { console.error('[master-data] sites failed:', error); return json({ ok: false, error: 'fetch_failed' }, 500) }
+    return json({ ok: true, sites: data ?? [] })
+  }
+
+  // ── 現場情報の編集（LIFFの現場詳細から）──
+  //  ★書ける項目を固定する。patch をそのまま通すと active / account_id /
+  //   responsible_worker_id まで書き換えられる（他人の現場を奪える）。
+  if (body.action === 'site-update') {
+    const id = typeof body.id === 'string' ? body.id : ''
+    if (!id) return json({ ok: false, error: 'id_required' }, 400)
+    const src = (body.patch ?? {}) as Record<string, unknown>
+    const patch: Record<string, unknown> = {}
+    for (const k of ['location', 'construction_type', 'construction_details', 'memo']) {
+      if (k in src) patch[k] = typeof src[k] === 'string' && String(src[k]).trim() ? String(src[k]).trim() : null
+    }
+    if (!Object.keys(patch).length) return json({ ok: false, error: 'nothing_to_update' }, 400)
+    // ★account_id でも絞る。他テナントの現場IDを渡されても書けない
+    const { error } = await svc.from('sites').update(patch).eq('id', id).eq('account_id', accountId)
+    if (error) { console.error('[master-data] site-update failed:', error); return json({ ok: false, error: 'save_failed' }, 500) }
+    return json({ ok: true })
+  }
+
+  // ── 日報送信時の現場マスタ登録（新しい現場名をまとめて作る）──
+  if (body.action === 'sites-ensure') {
+    const names = Array.isArray(body.names)
+      ? [...new Set(body.names.map((n: unknown) => String(n ?? '').trim()).filter(Boolean))].slice(0, 50)
+      : []
+    if (!names.length) return json({ ok: true, created: 0 })
+    // ★現場の新規作成は権限者のみ。ここもサーバで確認する
+    const { data: w } = await svc.from('workers').select('permission_role')
+      .eq('id', caller.workerId).eq('account_id', accountId).maybeSingle()
+    if (!SITE_CREATE_ROLES.includes((w?.permission_role as string) ?? '')) {
+      return json({ ok: false, error: 'SITE_CREATE_FORBIDDEN' }, 403)
+    }
+    const { error } = await svc.from('sites')
+      .upsert(names.map((n: string) => ({ name: n, account_id: accountId })),
+        { onConflict: 'name,account_id', ignoreDuplicates: true })
+    if (error) { console.error('[master-data] sites-ensure failed:', error); return json({ ok: false, error: 'save_failed' }, 500) }
+    return json({ ok: true, created: names.length })
+  }
+
   const name = typeof body.name === 'string' ? body.name.trim() : ''
   if (!name) return json({ ok: false, error: 'name_required' }, 400)
 
