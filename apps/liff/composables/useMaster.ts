@@ -157,6 +157,16 @@ export const useMaster = () => {
 
   // 新規マスタ保存は呼び出し側（useReport）で完了を await し失敗を検知するため、
   //  エラーは握りつぶさず throw する。ローカル state/cache への反映は upsert 成功後のみ。
+  /** 元請け一覧（id付き）。出退勤の現場選択で「紐づく現場がある元請け」を出すのに使う。 */
+  async function fetchContractors(): Promise<{ id: string; name: string }[]> {
+    try {
+      return ((await callEf('fetch')).contractors ?? []) as { id: string; name: string }[]
+    } catch (e) {
+      console.error('[Master] 元請けの取得に失敗:', e)
+      return []
+    }
+  }
+
   /** 現場名を保存（新規 or 既存は upsert で吸収）。EF経由。 */
   async function saveSite(name: string) {
     if (!name.trim()) return
@@ -217,6 +227,7 @@ export const useMaster = () => {
   }
 
   return {
+    fetchContractors,
     master:          readonly(master),
     loading:         readonly(loading),
     fetch,

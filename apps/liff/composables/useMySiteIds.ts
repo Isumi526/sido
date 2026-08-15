@@ -17,16 +17,15 @@ export const useMySiteIds = () => {
     const me = await resolve()
     if (!me?.id) return []
 
-    const [{ data: shares }, { data: managed }] = await Promise.all([
+    // ★現場は EF 経由（sites は公開キーから読めないようにしたため）
+    const [{ data: shares }, allSites] = await Promise.all([
       supabase.from('site_shares').select('site_id').eq('account_id', accountId).eq('user_id', me.id),
-      me.worker_id
-        ? supabase.from('sites').select('id').eq('account_id', accountId).eq('responsible_worker_id', me.worker_id)
-        : Promise.resolve({ data: [] as { id: string }[] }),
+      me.worker_id ? useSitesApi().listSafe() : Promise.resolve([]),
     ])
 
     const ids = new Set<string>()
     for (const r of (shares ?? []) as { site_id: string }[]) ids.add(r.site_id)
-    for (const s of (managed ?? []) as { id: string }[]) ids.add(s.id)
+    for (const s of allSites) if (s.responsible_worker_id === me.worker_id) ids.add(s.id)
     return [...ids]
   }
 

@@ -191,9 +191,10 @@ async function saveEdit() {
     construction_details: editForm.value.construction_details.trim() || null,
     memo: editForm.value.memo.trim() || null,
   }
-  const { error } = await supabase.from('sites').update(patch).eq('id', site.value.id)
+  // ★EF経由。書ける項目は EF 側で固定している（active や責任者は変えられない）
+  const r = await useSitesApi().update(site.value.id, patch)
   editSaving.value = false
-  if (!error) { Object.assign(site.value, patch); editOpen.value = false }
+  if (r.ok) { Object.assign(site.value, patch); editOpen.value = false }
   else alert(t('sitesView.saveFailed'))
 }
 
@@ -253,10 +254,8 @@ async function load() {
   const mySiteIds = await resolveMySiteIds()
   if (!mySiteIds.includes(siteId)) { await navigateTo('/sites'); return }
   // account_id で絞り込み、他テナントの現場IDを直打ちされても見えないようにする
-  const { data } = await supabase.from('sites')
-    .select('id, name, active, location, construction_type, construction_details, memo, responsible_worker_id')
-    .eq('account_id', accountId).eq('id', siteId).maybeSingle()
-  site.value = (data ?? null) as Site | null
+  // ★EF経由。account_id の絞り込みは EF 側で行う（他テナントのIDを直打ちされても見えない）
+  site.value = (await useSitesApi().one(siteId)) as unknown as Site | null
   if (site.value) {
     const { data: attData } = await supabase.from('site_attachments').select('id, site_id, kind, path, name').eq('site_id', site.value.id).order('created_at')
     const list = (attData ?? []) as Att[]

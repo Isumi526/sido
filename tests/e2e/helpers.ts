@@ -82,10 +82,26 @@ export function yesterdayNoonJST(): string {
   return y.toISOString()
 }
 
+/**
+ * 公開キー(anon)から権限を全部剥がした表。シードは service_role で行う。
+ *
+ * ★ここに足すのは「本番で anon を締め出した」時だけ。テストが 401 で落ちたから
+ *  逃がす場所ではない。アプリ側は Edge Function 経由に移した前提で、
+ *  テストハーネスだけが直接 REST を使う。
+ * ★「anon で読めない/書けない」こと自体を検証する spec は、この rest() ではなく
+ *  各 spec 内の anonFetch を使うこと（ここを通すと service_role に化けて素通りする）。
+ */
+const ANON_LOCKED_TABLES = new Set([
+  'attendance_logs', 'overtime_requests', 'report_edit_grants',
+  'sites', 'contractors', 'site_subcontractors',
+])
+
 export async function rest(pathAndQuery: string, init: RequestInit = {}): Promise<any> {
+  const table = pathAndQuery.split('?')[0].split('/')[0]
+  const base = ANON_LOCKED_TABLES.has(table) ? srvHeaders : headers
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${pathAndQuery}`, {
     ...init,
-    headers: { ...headers, ...(init.headers || {}) },
+    headers: { ...base, ...(init.headers || {}) },
   })
   const text = await res.text()
   if (!res.ok) throw new Error(`REST ${res.status} ${pathAndQuery}: ${text}`)

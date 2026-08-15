@@ -352,11 +352,11 @@ export const useExpense = () => {
   ): Promise<Record<string, unknown>> {
     const accountId = await getAccountId()
     await registerNewSites(accountId, report.sites as any[])
-    const { data: activeSitesRaw } = await supabase
-      .from('sites').select('id, name')
-      .eq('account_id', accountId).eq('active', true)
-      .order('created_at', { ascending: true })
-    const activeSites = (activeSitesRaw ?? []) as Array<{ id: string; name: string }>
+    // ★EF経由（sites は公開キーから読めないようにしたため）。
+    //  同名重複時は最古を正とするので created_at 昇順に並べ直す。
+    const activeSites = (await useSitesApi().listSafe())
+      .slice().sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))
+      .map(s => ({ id: s.id, name: s.name }))
     return {
       is_working:       report.isWorking,
       leave_type:       report.leaveType ?? null,
@@ -438,11 +438,9 @@ export const useExpense = () => {
       console.warn('[saveReportById] 現場作成権限が無いため現場マスタ登録をスキップ')
       return
     }
-    const rows = [...names].map(name => ({ name, account_id: accountId }))
-    const { error } = await supabase
-      .from('sites')
-      .upsert(rows, { onConflict: 'name,account_id', ignoreDuplicates: true })
-    if (error) console.error('[saveReportById] 現場マスタ登録に失敗:', error.message)
+    // ★EF経由。権限は EF 側でも確認する（画面で隠すだけでは REST直叩きで通る）
+    const r = await useSitesApi().ensure([...names])
+    if (!r.ok) console.error('[saveReportById] 現場マスタ登録に失敗:', r.error)
   }
 
   async function saveReportById(
@@ -465,13 +463,10 @@ export const useExpense = () => {
     // 現場マスタを先に確実化 → その後 active 一覧を取得して各現場に site_id を解決する。
     //  （新規現場 __other__ も先に登録しておけば id を解決できる。best-effort・失敗時は name フォールバック）
     await registerNewSites(accountId, report.sites as any[])
-    const { data: activeSitesRaw } = await supabase
-      .from('sites')
-      .select('id, name')
-      .eq('account_id', accountId)
-      .eq('active', true)
-      .order('created_at', { ascending: true }) // 同名重複時は最古を正とする
-    const activeSites = (activeSitesRaw ?? []) as Array<{ id: string; name: string }>
+    // ★EF経由。同名重複時は最古を正とするので created_at 昇順に並べ直す。
+    const activeSites = (await useSitesApi().listSafe())
+      .slice().sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))
+      .map(s => ({ id: s.id, name: s.name }))
     // 本日のガソリン代（明細リスト）：金額のある明細だけを保存（_id は除去）
     const gasItems = normalizeGasolineItems(report.gasolineItems)
     const { error } = await supabase
