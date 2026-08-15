@@ -82,7 +82,9 @@ const props = defineProps<{
 const emit = defineEmits<{ (e: 'recorded'): void }>()
 
 const { t } = useI18n()
-const supabase = useSupabase()
+// ★テーブル直叩きはしない。本番の INSERT ポリシーは checked_at を now()±10分に
+//  縛っており（打刻の捏造対策）、過去日時の追記は service_role でしか通らない。
+const attendance = useAttendanceLog()
 
 const LATE_MAX_DAYS = 4
 // 5分刻み（2026-07-27 打ち合わせで時間の刻みは5分と確定。実際に働いた時刻を入れる欄なので
@@ -136,33 +138,20 @@ async function submit() {
 
   busy.value = true
   try {
-    // 同じ日・同じ現場に既に同じ種別の打刻があるなら足さない（二重計上の防止）
-    const lo = new Date(`${date.value}T00:00:00+09:00`).toISOString()
-    const hi = new Date(`${date.value}T23:59:59+09:00`).toISOString()
-    const { data: exists } = await supabase.from('attendance_logs')
-      .select('type').eq('worker_id', workerId).eq('site_id', siteId.value)
-      .gte('checked_at', lo).lte('checked_at', hi)
-    const already = new Set(((exists ?? []) as { type: string }[]).map(r => r.type))
-
-    const rows: Record<string, unknown>[] = []
-    const push = (type: 'checkin' | 'checkout', hhmm: string) => {
-      if (!hhmm || already.has(type)) return
-      rows.push({
-        site_id: siteId.value, worker_id: workerId, type,
-        checked_at: new Date(`${date.value}T${hhmm}:00+09:00`).toISOString(),
-        // ★あとから入力した分は現場ルールの同意を取っていない。
-        //  取っていないものを取ったことにしない（同意文面は法的証拠として使う）。
-        agreed_rule_texts: [],
-        backdated: true,
-      })
+    // 範囲・重複・本人確認は EF 側でも検証する（画面のバリデーションは通信を減らすためのもので、
+    // それだけを頼りにしない）。
+    const res = await attendance.backdate({
+      siteId: siteId.value, date: date.value,
+      ...(checkin.value ? { checkin: checkin.value } : {}),
+      ...(checkout.value ? { checkout: checkout.value } : {}),
+    })
+    if (!res.ok) {
+      error.value = res.error === 'duplicate' ? t('checkin.lateErrDuplicate')
+        : res.error === 'out_of_range' ? t('checkin.lateErrOutOfRange')
+        : res.error === 'bad_time_order' ? t('checkin.lateErrOrder')
+        : t('checkin.lateErrFailed')
+      return
     }
-    push('checkin', checkin.value)
-    push('checkout', checkout.value)
-
-    if (!rows.length) { error.value = t('checkin.lateErrDuplicate'); return }
-    const { error: insErr } = await supabase.from('attendance_logs').insert(rows)
-    if (insErr) throw insErr
-
     done.value = true
     checkin.value = ''
     checkout.value = ''
