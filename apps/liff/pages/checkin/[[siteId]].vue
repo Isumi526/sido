@@ -777,8 +777,8 @@ async function resolveReportLink(target: Target | null) {
     const { data: u } = await supabase.from('users')
       .select('id').eq('worker_id', myWorkerId.value).maybeSingle()
     if (!u?.id) return
-    const { data: rep } = await supabase.from('daily_reports')
-      .select('id').eq('user_id', u.id).eq('date', date).maybeSingle()
+    // ★EF経由（直読みは他テナント分まで読めるため塞いだ・2026-08-15）
+    const rep = await useDailyReportsApi().one(date, u.id)
     if (rep?.id) return   // 既にその日の日報を出している
   } catch {
     return   // ★判定できない時は出さない（出して二重送信させるより、出さない方が安全）

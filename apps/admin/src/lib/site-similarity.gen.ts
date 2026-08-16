@@ -1,5 +1,16 @@
+// ⚠️ AUTO-GENERATED from shared/site-similarity.ts — DO NOT EDIT.
+// 共有ロジックの正本は shared/site-similarity.ts。編集したら `npm run sync:shared` で本ファイルを再生成すること。
+
 // ============================================================
-//  lib/siteSimilarity.ts
+//  shared/site-similarity.ts
+//  現場名の正規化・重複検知・site_id 解決。
+//
+//  ★正典。LIFF / admin / Edge Function がすべてここを使う（scripts/sync-shared.mjs で配布）。
+//   2026-08-15 まで apps/liff/utils と apps/admin/src/lib に同じ実装が2本あり、
+//   backfill スクリプトでも3本目を書きかけた。保存時・集計時・バックフィルで
+//   解決結果がズレると、同じ現場が別物として集計される（ルルレモン型バグ）。
+//   ズレようがない形にするため1本に寄せた。
+//
 //  現場名の重複検知ヘルパー。新規現場を追加する際、既存に「似た」名前が
 //  あれば気づかせて重複登録（集計の分離）を防ぐ。
 //  正規化: NFKC（全角→半角）→ 記号/空白除去 → カタカナ→ひらがな → 小文字。
@@ -15,9 +26,11 @@ export function normalizeSiteName(s: string): string {
 
 /**
  * 日報の現場オブジェクトを、現場マスタ(active)へ「正規化名一致」で解決して site_id を返す。
- * LIFF側 utils/siteSimilarity.ts の同名関数と同一ロジック（保存時とバックフィルと集計read時で一致させる）。
  *  ・完全一致が1件以上ならその先頭（activeSites は作成日昇順で渡す前提＝最古を正）。
- *  ・完全一致が無ければ正規化一致が1件ならそれ。0件 or 複数（曖昧）は null。
+ *  ・完全一致が無ければ正規化一致（全角スペース/記号ゆれ吸収）が1件ならそれ。
+ *  ・正規化一致が0件 or 複数（別現場が同名正規化＝曖昧）は null（＝名前フォールバック／誤配賦回避）。
+ *  ・__unset__ / 空 / __other__(customSiteName空) は null。
+ * 保存時（LIFF）と既存データのバックフィルで同一ロジックを使う（表記ゆれ再発の根本対策）。
  */
 export function resolveActiveSiteId(
   site: { siteName?: string; customSiteName?: string } | any,

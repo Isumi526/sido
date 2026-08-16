@@ -6,7 +6,7 @@ import type { User, ExpenseItem, ExpenseItemInput, ExpenseRow } from '~/types'
 import { useI18n } from 'vue-i18n'
 import { gt } from '~/utils/i18n-global'
 import { flattenReportExpenses, flattenGasolineItems, flattenPersonalExpenses, ratesFromSettings, mergeOtherExpenses, splitOtherExpenses } from './expense-flatten.gen'
-import { resolveActiveSiteId } from '~/utils/siteSimilarity'
+import { resolveActiveSiteId } from '~/utils/site-similarity.gen'
 
 // ---------- 期間キーユーティリティ ----------
 
@@ -572,16 +572,12 @@ export const useExpense = () => {
     const lastDay  = new Date(parseInt(year), parseInt(month), 0).getDate()
     const dateTo   = half === 'first' ? `${year}-${month}-15` : `${year}-${month}-${String(lastDay).padStart(2, '0')}`
 
-    const { data, error } = await supabase
-      .from('daily_reports')
-      .select('date, sites, gasoline_items')
-      .eq('user_id', userId)
-      .eq('is_working', true)
-      .gte('date', dateFrom)
-      .lte('date', dateTo)
-      .order('date', { ascending: true })
-
-    if (error) { console.error('[useExpense] getExpenseRowsFromReports:', error); return [] }
+    // ★EF経由。daily_reports の直読みは他テナント分まで読めるため塞いだ（2026-08-15）
+    let data: any[] = []
+    try {
+      data = await useDailyReportsApi().forExpense(dateFrom, dateTo, userId)
+      data.sort((a, b) => String(a.date).localeCompare(String(b.date)))
+    } catch (e) { console.error('[useExpense] getExpenseRowsFromReports:', e); return [] }
 
     // 燃料単価をsettingsから解決（単一ソース ratesFromSettings）
     const { getAccountId: getAid } = useAccount()
@@ -662,14 +658,16 @@ export const useExpense = () => {
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 
     // 起点〜今日の送信済み日付を一括取得
-    const { data: reports, error: reportsError } = await supabase
-      .from('daily_reports')
-      .select('date')
-      .eq('user_id', user.id)
-      .gte('date', effStart)
-      .lte('date', today)
+    // ★EF経由（直読みは他テナント分まで読めるため塞いだ・2026-08-15）
+    //  ここは「未提出日の算出」なので、取得に失敗した時に空配列へ倒すと
+    //  全部未提出に見えてしまう。失敗はそのまま投げて呼び出し側に判断させる。
+    let reports: { date: string }[] = []
+    let reportsError: unknown = null
+    try {
+      reports = (await useDailyReportsApi().submittedDates(effStart, today, user.id)).map(d => ({ date: d }))
+    } catch (e) { reportsError = e; throw e }
 
-    console.log('[getNextUnsubmittedDate] today=', today, 'effStart=', effStart, 'submittedCount=', reports?.length, 'error=', reportsError?.message)
+    console.log('[getNextUnsubmittedDate] today=', today, 'effStart=', effStart, 'submittedCount=', reports?.length, 'error=', reportsError)
 
     // ★承認待ちの日も「出し済み」として飛ばす。除外しないと承認されるまで同じ日付が
     //   出続けて次に進めず、まとめて（例: 忘れていた5日分）提出できない。
@@ -731,12 +729,8 @@ export const useExpense = () => {
     const now   = new Date()
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 
-    const { data: reports } = await supabase
-      .from('daily_reports')
-      .select('date')
-      .eq('user_id', userId)
-      .gte('date', effStart)
-      .lte('date', today)
+    // ★EF経由。未提出日の算出なので失敗を空に倒さない（全部未提出に見えてしまう）
+    const reports = (await useDailyReportsApi().submittedDates(effStart, today, userId)).map(d => ({ date: d }))
 
     // ★承認待ちの日も「出し済み」として飛ばす。除外しないと承認されるまで同じ日付が
     //   出続けて次に進めず、まとめて（例: 忘れていた5日分）提出できない。
@@ -761,40 +755,21 @@ export const useExpense = () => {
 
   /** 日報一覧をDBユーザーIDで取得（代理入力用） */
   async function getReportsById(userId: string, limit = 60): Promise<any[]> {
-    const { data, error } = await supabase
-      .from('daily_reports')
-      .select('date, is_working, leave_type, is_business_trip, sites, note, updated_at')
-      .eq('user_id', userId)
-      .order('date', { ascending: false })
-      .limit(limit)
-    if (error) { console.error('[useExpense] getReportsById:', error); return [] }
+    // ★EF経由。一覧は取れなくても操作は続けられるので失敗は空配列
+    const data = await useDailyReportsApi().list(limit, userId)
     return data ?? []
   }
 
-  /** 特定日の日報を1件取得 */
+  /** 特定日の日報を1件取得。★EF経由（直読みは他テナント分まで読めるため塞いだ・2026-08-15） */
   async function getReport(lineUserId: string, date: string): Promise<any | null> {
     const user = await getUser(lineUserId)
     if (!user) return null
-    const { data, error } = await supabase
-      .from('daily_reports')
-      .select('id, date, is_working, leave_type, is_business_trip, sites, note, gasoline_items')
-      .eq('user_id', user.id)
-      .eq('date', date)
-      .maybeSingle()
-    if (error) { console.error('[useExpense] getReport:', error); return null }
-    return data
+    return await useDailyReportsApi().one(date, user.id)
   }
 
-  /** 特定日の日報をDBユーザーIDで取得（代理入力用） */
+  /** 特定日の日報をDBユーザーIDで取得（代理入力用）。代理の可否は EF 側で確認する */
   async function getReportByUserId(userId: string, date: string): Promise<any | null> {
-    const { data, error } = await supabase
-      .from('daily_reports')
-      .select('id, date, is_working, leave_type, is_business_trip, sites, note, gasoline_items')
-      .eq('user_id', userId)
-      .eq('date', date)
-      .maybeSingle()
-    if (error) { console.error('[useExpense] getReportByUserId:', error); return null }
-    return data
+    return await useDailyReportsApi().one(date, userId)
   }
 
   // ---------- 月次精算（申請/差し戻し） ----------

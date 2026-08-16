@@ -736,7 +736,7 @@ import { punchDiffLabel, isPunchDiffBig, isPunchDiffWorthShowing } from '~/compo
 import { computeWorkerHours, getRateLines, calcBreakMinutes, effectiveBreakMinutes, effectiveBreakWindows, parseMin, TIME_OPTIONS } from '~/utils/workerHours'
 import type { RateBreakdown } from '~/utils/workerHours'
 import { computeDiff } from '~/utils/diffReport'
-import { findSimilarSiteNames } from '~/utils/siteSimilarity'
+import { findSimilarSiteNames } from '~/utils/site-similarity.gen'
 import { uploadExpenseFiles } from '~/utils/uploadExpenseFiles'
 import { createGasolineItem } from '~/composables/useReport'
 import { useI18n } from 'vue-i18n'
