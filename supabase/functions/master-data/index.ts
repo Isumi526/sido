@@ -35,6 +35,9 @@ const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('
 /** 現場を新規作成できる権限。UIで選択肢を隠すだけでは REST 直叩きで通るのでサーバでも弾く。 */
 const SITE_CREATE_ROLES = ['admin', 'office', 'site_manager']
 
+/** 作業区分マスタを管理できる権限。会社全体の設定を触る操作なので現場管理者は含めない */
+const CATEGORY_MANAGE_ROLES = ['admin', 'office']
+
 function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',
@@ -138,6 +141,94 @@ Deno.serve(async (req) => {
     if (error) { console.error('[master-data] sites-ensure failed:', error); return json({ ok: false, error: 'save_failed' }, 500) }
     return json({ ok: true, created: names.length })
   }
+
+  // ── 作業区分マスタ ──────────────────────────────
+  //  ★work_categories は RLS 有効・authenticated の書き込みを剥がしてあるので、
+  //   読みも書きもここを通す（テーブル直叩きは通らない）。
+  if (body.action === 'categories') {
+    const { data, error } = await svc.from('work_categories')
+      .select('id, name, scope, sort_order, active, is_default')
+      .eq('account_id', accountId).order('sort_order').order('name')
+    if (error) { console.error('[master-data] categories failed:', error); return json({ ok: false, error: 'fetch_failed' }, 500) }
+    return json({ ok: true, categories: data ?? [] })
+  }
+
+  if (body.action === 'category-save' || body.action === 'category-delete' || body.action === 'category-move') {
+    // ★権限はサーバで確認する。画面でボタンを隠すだけでは REST/EF 直叩きで通る
+    const { data: w } = await svc.from('workers').select('permission_role')
+      .eq('id', caller.workerId).eq('account_id', accountId).maybeSingle()
+    // worker 行が無い＝純オーナー。accounts.owner_auth_user_id で確認するのが厳密だが、
+    // ここは resolveCaller が既にテナントを確定しているので role 無し＝オーナー扱いで通す
+    const role = (w?.permission_role as string) ?? null
+    if (role !== null && !CATEGORY_MANAGE_ROLES.includes(role)) {
+      return json({ ok: false, error: 'CATEGORY_FORBIDDEN' }, 403)
+    }
+
+    if (body.action === 'category-save') {
+      const nm = typeof body.name === 'string' ? body.name.trim() : ''
+      if (!nm) return json({ ok: false, error: 'name_required' }, 400)
+      const scope = ['site', 'office', 'event'].includes(body.scope) ? body.scope : null
+      if (typeof body.id === 'string' && body.id) {
+        // ★account_id でも絞る＝他テナントのIDを渡されても触れない。
+        //  そのとき0件更新になるが、ok:true を返すと「成功したのに変わらない」になる。
+        //  何も起きなかったことを呼び出し側が判別できるよう select して件数で見る。
+        const { data: updated, error } = await svc.from('work_categories')
+          .update({ name: nm, scope, active: body.active !== false, updated_at: new Date().toISOString() })
+          .eq('id', body.id).eq('account_id', accountId)
+          .select('id')
+        if (error) { console.error('[master-data] category-save failed:', error); return json({ ok: false, error: 'save_failed' }, 500) }
+        if (!updated || updated.length === 0) return json({ ok: false, error: 'not_found' }, 404)
+        return json({ ok: true })
+      }
+      const { data: maxRow } = await svc.from('work_categories')
+        .select('sort_order').eq('account_id', accountId).order('sort_order', { ascending: false }).limit(1).maybeSingle()
+      const { error } = await svc.from('work_categories')
+        .insert({ account_id: accountId, name: nm, scope, sort_order: ((maxRow?.sort_order as number) ?? 0) + 10 })
+      if (error) {
+        // 同名は一意制約で弾かれる。何が起きたか分かるメッセージを返す
+        const dup = String(error.message ?? '').includes('work_categories_name_uniq')
+        console.error('[master-data] category-insert failed:', error)
+        return json({ ok: false, error: dup ? 'DUPLICATE_NAME' : 'save_failed' }, dup ? 409 : 500)
+      }
+      return json({ ok: true })
+    }
+
+    if (body.action === 'category-delete') {
+      const id = typeof body.id === 'string' ? body.id : ''
+      if (!id) return json({ ok: false, error: 'id_required' }, 400)
+      // ★使われている区分は消さない。消すと日報/予定の参照が切れる
+      const [{ count: schedCount }, { count: hoursCount }] = await Promise.all([
+        svc.from('schedules').select('id', { count: 'exact', head: true })
+          .eq('account_id', accountId).eq('category_id', id),
+        svc.from('site_category_hours').select('id', { count: 'exact', head: true })
+          .eq('account_id', accountId).eq('category_id', id),
+      ])
+      if ((schedCount ?? 0) > 0 || (hoursCount ?? 0) > 0) {
+        return json({ ok: false, error: 'IN_USE', schedules: schedCount ?? 0, hours: hoursCount ?? 0 }, 409)
+      }
+      // ★0件削除を成功と返さない（他テナントのIDを渡された時に「消えた」と誤解させない）
+      const { data: deleted, error } = await svc.from('work_categories')
+        .delete().eq('id', id).eq('account_id', accountId).select('id')
+      if (error) { console.error('[master-data] category-delete failed:', error); return json({ ok: false, error: 'delete_failed' }, 500) }
+      if (!deleted || deleted.length === 0) return json({ ok: false, error: 'not_found' }, 404)
+      return json({ ok: true })
+    }
+
+    // category-move: 並び替え（2件の sort_order を入れ替える）
+    const a = typeof body.id === 'string' ? body.id : ''
+    const b = typeof body.otherId === 'string' ? body.otherId : ''
+    if (!a || !b) return json({ ok: false, error: 'ids_required' }, 400)
+    const { data: rows } = await svc.from('work_categories')
+      .select('id, sort_order').eq('account_id', accountId).in('id', [a, b])
+    if (!rows || rows.length !== 2) return json({ ok: false, error: 'not_found' }, 404)
+    const ra = rows.find((r: any) => r.id === a)!, rb = rows.find((r: any) => r.id === b)!
+    await Promise.all([
+      svc.from('work_categories').update({ sort_order: rb.sort_order }).eq('id', ra.id).eq('account_id', accountId),
+      svc.from('work_categories').update({ sort_order: ra.sort_order }).eq('id', rb.id).eq('account_id', accountId),
+    ])
+    return json({ ok: true })
+  }
+
 
   const name = typeof body.name === 'string' ? body.name.trim() : ''
   if (!name) return json({ ok: false, error: 'name_required' }, 400)
