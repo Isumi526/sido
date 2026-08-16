@@ -93,7 +93,7 @@ test.describe('作業区分マスタ', () => {
       method: 'POST', headers: { Prefer: 'return=representation' },
       body: JSON.stringify({
         account_id: accountId, worker_id: worker[0].id, title: `E2E区分使用_${TS}`,
-        start_date: '2026-02-01', end_date: '2026-02-01', all_day: true, category_id: cat.id,
+        start_date: '2026-02-01', end_date: '2026-02-01', all_day: true, work_category_id: cat.id,
       }),
     })
     try {
