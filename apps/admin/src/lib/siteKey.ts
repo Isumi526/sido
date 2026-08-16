@@ -9,7 +9,7 @@
 //    read時に id へ解決してキーに使う（バックフィル前でも統合・split しない）。
 //  ・どこにも一致しなければ現場名そのものでグループ化（従来互換）。
 // ============================================================
-import { resolveActiveSiteId } from './siteSimilarity'
+import { resolveActiveSiteId } from './site-similarity.gen'
 
 export type SiteMaster = { id: string; name: string }
 export type SiteResolveCtx = {

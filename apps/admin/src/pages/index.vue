@@ -262,7 +262,9 @@ async function load() {
   const [{ data: reports }, { data: invItems }] = await Promise.all([
     supabase
       .from('daily_reports')
-      .select('date, sites, is_business_trip, gasoline_items, user_id, users(real_name, workers(name))')
+      // ★leave_type を取る: 有給の日は現場を選ばずに送信できる＝sites の siteName が空になる。
+      //  これを見ないと明細が「（現場名なし）」としか出せない（2026-08-15 大塚さん指摘）。
+      .select('date, sites, is_business_trip, gasoline_items, leave_type, user_id, users(real_name, workers(name))')
       .eq('account_id', accountId)
       .eq('is_working', true)
       .gte('date', `${ym}-01`)
@@ -303,7 +305,12 @@ async function load() {
     // 社員費のworkerNameのような「現場で稼働した人」とは別概念のため個別に解決する）。
     const submitterName = (rep as any).users?.workers?.name ?? (rep as any).users?.real_name ?? '—'
     for (const site of (rep.sites as any[])) {
-      const siteName = resolveSiteRef(site, siteCtx).name || '（現場名なし）'
+      // ★有給の日は現場を選ばずに送信できるので siteName が空になる。
+      //  そのまま「（現場名なし）」と出すと、金額だけ入った正体不明の行に見える
+      //  （2026-08-15 大塚さん「上の2人現場名なしで金額入ってるからなんかなーと思ったら有給だった」）。
+      //  日報一覧・承認画面は既に leave_type で「有給」と出しているので、ここも揃える。
+      const siteName = resolveSiteRef(site, siteCtx).name
+        || ((rep as any).leave_type === 'paid_leave' ? '有給' : '（現場名なし）')
       // 社員費
       for (const w of (site.workers ?? []).filter((w: any) => w.workerName)) {
         const curDaily  = dailyById[w.workerId]  ?? dailyByName[w.workerName]  ?? 0

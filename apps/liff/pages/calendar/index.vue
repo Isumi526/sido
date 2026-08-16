@@ -442,7 +442,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSchedules, type Schedule, type ScheduleForm } from '~/composables/useSchedules'
-import { findSimilarSiteNames } from '~/utils/siteSimilarity'
+import { findSimilarSiteNames } from '~/utils/site-similarity.gen'
 import {
   shiftMonth, genMonthDates, isWeekend, weekdayIndex, dateCellClass, fmtDateTime,
   cellSchedules as coreCellSchedules, chipStyle as coreChipStyle, buildScheduleDiff, birthdayDatesByWorker,

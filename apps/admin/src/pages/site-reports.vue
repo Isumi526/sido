@@ -463,7 +463,7 @@ import type { WageMode } from '../lib/workerHours'
 import { canViewWages, canViewHourlyWage, canViewManagementPages } from '../lib/auth'
 import { canViewEstimates } from '../lib/features'
 import { resolveSiteRef, type SiteResolveCtx } from '../lib/siteKey'
-import { normalizeSiteName } from '../lib/siteSimilarity'
+import { normalizeSiteName } from '../lib/site-similarity.gen'
 import { netAmountOf, normalizeTaxMode } from '../lib/invoiceTax'
 import JSZip from 'jszip'
 

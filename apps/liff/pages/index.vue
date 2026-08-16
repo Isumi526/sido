@@ -291,13 +291,15 @@ async function refreshUnsubmittedCount() {
     if (rsd && rsd > fromStr) fromStr = rsd
   }
 
-  const { data: reports } = await supabase
-    .from('daily_reports')
-    .select('date')
-    .eq('user_id', targetUserId)
-    .gte('date', fromStr)
-    .lte('date', today)
-  const submittedDates = new Set((reports ?? []).map((r: any) => r.date as string))
+  // ★EF経由。daily_reports の直読みは他テナント分まで読めるため塞いだ（2026-08-15）
+  //  ★取得に失敗した時に空へ倒すと「全部未提出」と表示されるので、失敗は数えない
+  let submittedDates: Set<string>
+  try {
+    submittedDates = new Set(await useDailyReportsApi().submittedDates(fromStr, today, targetUserId))
+  } catch (e) {
+    console.error('[home] 未送信件数の算出に失敗:', e)
+    return 0
+  }
 
   let count = 0
   let cursor = fromStr
