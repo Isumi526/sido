@@ -13,8 +13,9 @@ export interface Schedule {
   worker_id:       string
   title:           string
   description:     string | null
-  category:        ScheduleCategory
+  category:        ScheduleCategory   // 予定カテゴリ（カレンダーの色分け）。★作業区分とは別物
   site_id:         string | null
+  work_category_id: string | null     // 作業区分（work_categories）
   color:           string | null
   is_public:       boolean
   all_day:         boolean
@@ -42,8 +43,9 @@ export interface ScheduleForm {
   }
   title:           string
   description:     string
-  category:        ScheduleCategory
+  category:        ScheduleCategory   // 予定カテゴリ（色分け）。★作業区分とは別物
   site_id:         string
+  work_category_id: string            // 作業区分。既定は「現場作業」
   all_day:         boolean
   start_date:      string
   end_date:        string
@@ -279,6 +281,8 @@ function buildPayload(form: ScheduleForm, workerId: string) {
     description:     form.description || null,
     category:        form.category,
     site_id:         form.site_id || null,
+    // 作業区分（現場作業/見積/事務…）。既定は「現場作業」を入れてある
+    work_category_id: form.work_category_id || null,
     all_day:         form.all_day,
     start_date:      form.start_date,
     end_date:        form.end_date,
