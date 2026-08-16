@@ -58,6 +58,8 @@ export const createTrain = (): ExpenseFileLineItem => ({ label: '', yen: undefin
 export const createSite = (): SiteReport => ({
   siteName:       '',
   contractorName: '',
+  // ★ここでは空。区分マスタは非同期で読むので、画面側(report.vue)で既定「現場作業」を当てる
+  workCategoryId: null,
   workers:        [createWorker()],
   expenses:       { vehicles: [createVehicle()], parkings: [], highways: [], trains: [createTrain()], others: [createLineItem()], entertainments: [createLineItem()], hotels: [createLineItem()] },
   subcontractors: [],

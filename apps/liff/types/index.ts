@@ -121,6 +121,7 @@ export interface SiteReport {
   siteName: string
   site_id?: string | null  // 現場マスタ(sites)への正規化名一致で解決した権威キー。集計はこれ優先（表記ゆれ/マージ漏れ耐性）。旧データ/フリーテキストは null で siteName フォールバック
   customSiteName?: string  // 「その他（新規現場）」選択時の自由記入現場名
+  workCategoryId?: string | null  // 作業区分（work_categories）。1日に複数現場を回ると現場ごとに作業が変わるため現場ブロック単位で持つ。既定は「現場作業」
   contractorName?: string        // 元請け業者名（任意）
   customContractorName?: string  // 「＋新しい元請け業者」選択時の自由記入名
   workers: WorkerEntry[]
