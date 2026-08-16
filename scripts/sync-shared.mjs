@@ -50,6 +50,15 @@ const SHARES = [
     ],
   },
   {
+    // 稼働時間の料率別計算・人件費。★getRateLines は共有しない（ラベルの出し方が
+    // liff=i18n / admin=直書きで違う）ので、各アプリ側に残してある
+    src: 'shared/worker-hours.ts',
+    dests: [
+      'apps/admin/src/lib/worker-hours.gen.ts',
+      'apps/liff/utils/worker-hours.gen.ts',
+    ],
+  },
+  {
     src: 'shared/attendance-punch.ts',
     dests: [
       'apps/admin/src/lib/attendance-punch.gen.ts',
