@@ -268,6 +268,15 @@
                 <option v-if="canCreateSite" value="__other__">{{ $t('calendar.registerNewSite') }}</option>
               </select>
             </div>
+            <!-- 作業区分（現場作業/見積/事務…）。既定で「現場作業」が入っている。
+                 ★1つの現場に複数の作業があり、定時が違う（見積・事務は現場の定時の外）。
+                  区分が1つも無い会社では出さない（選ばせる意味がない）。 -->
+            <div v-if="workCategoryOptions.length > 1" class="form-row" style="margin-top:8px">
+              <span class="form-row-label">{{ $t('calendar.workCategory') }}</span>
+              <select v-model="formModal.work_category_id" class="site-select" data-testid="work-category-select">
+                <option v-for="c in workCategoryOptions" :key="c.id" :value="c.id">{{ c.name }}</option>
+              </select>
+            </div>
             <div v-if="formModal.title === '__other__'" class="form-row" style="margin-top:8px">
               <span class="form-row-label">{{ $t('calendar.siteName') }}</span>
               <input
@@ -288,6 +297,14 @@
               >{{ name }}</span>{{ i < customSiteSimilar.length - 1 ? '、' : '' }}</template>
             </div>
           </template>
+
+          <!-- 現場なしでも区分は選べる（社内行事・事務など） -->
+          <div v-if="noSiteMode && workCategoryOptions.length > 1" class="form-row" style="margin-top:8px">
+            <span class="form-row-label">{{ $t('calendar.workCategory') }}</span>
+            <select v-model="formModal.work_category_id" class="site-select" data-testid="work-category-select-nosite">
+              <option v-for="c in workCategoryOptions" :key="c.id" :value="c.id">{{ c.name }}</option>
+            </select>
+          </div>
 
           <!-- 現場と紐付けない 場合のタイトル入力 -->
           <div v-if="noSiteMode" class="form-row" style="margin-top:8px">
@@ -495,6 +512,28 @@ function rememberRecentSite(name: string) {
 /** 「最近使った」に出す分。現場マスタから消えた/無効化された名前は出さない */
 const recentSiteOptions = computed(() =>
   recentSiteNames.value.filter(n => master.siteNames.value.includes(n)))
+
+/**
+ * その台帳（現場 or 現場なし）で選べる作業区分。
+ * ★scope で絞る。全区分をどこでも出すと、慰安旅行が現場の選択肢に出てきて鬱陶しい。
+ *  scope=null は「どこでも」。
+ */
+const workCategoryOptions = computed(() => {
+  const all = master.workCategories.value
+  return noSiteMode.value
+    ? all.filter(c => c.scope === null || c.scope !== 'site')
+    : all.filter(c => c.scope === null || c.scope === 'site')
+})
+
+/**
+ * 既定の作業区分＝「現場作業」。
+ * ★入力項目がいきなり増えるとパニックになる人が出るので、最初から選択済みにする（2026-08-16 人）。
+ *  「現場作業」が消されていたら先頭の区分、それも無ければ空。
+ */
+function defaultWorkCategoryId(): string {
+  const all = master.workCategories.value
+  return all.find(c => c.name === '現場作業')?.id ?? all[0]?.id ?? ''
+}
 
 // 「現場と紐付けない」トグル。内部状態は title==='__none__'（保存ロジックは従来どおり）。
 //  ON で現場プルダウンを隠してタイトル入力に切替、OFF で現場選択に戻す。
@@ -892,7 +931,7 @@ function onWeekSlotTap(date: string, ev: MouseEvent) {
 
   formModal.value = {
     _worker_id: effectiveWorkerId.value,
-    title: '', description: '', category: 'work', site_id: '',
+    title: '', description: '', category: 'work', site_id: '', work_category_id: defaultWorkCategoryId(),
     all_day: false, start_date: date, end_date: date,
     start_time: toHHMM(snapped), end_time: toHHMM(Math.min(24 * 60, snapped + 60)),
     is_night_shift: false,
@@ -1122,7 +1161,7 @@ watch(() => proxy.proxyTarget.value, loadSchedules)
 function onCellTap(date: string, workerId: string) {
   formModal.value = {
     _worker_id: workerId,
-    title: '', description: '', category: 'work', site_id: '',
+    title: '', description: '', category: 'work', site_id: '', work_category_id: defaultWorkCategoryId(),
     all_day: true, start_date: date, end_date: date,
     start_time: '', end_time: '',
     is_night_shift: false,
@@ -1140,7 +1179,10 @@ function openEdit(ev: Schedule) {
   formModal.value = {
     id: ev.id, _worker_id: ev.worker_id,
     title: ev.title, description: ev.description ?? '',
-    category: ev.category, site_id: ev.site_id ?? '', all_day: ev.all_day,
+    category: ev.category, site_id: ev.site_id ?? '',
+    // ★既存の予定には区分が入っていない（後から足した列）。空だと保存時に消えるので既定を当てる
+    work_category_id: ev.work_category_id ?? defaultWorkCategoryId(),
+    all_day: ev.all_day,
     start_date: ev.start_date, end_date: ev.end_date,
     start_time: ev.start_time ?? '', end_time: ev.end_time ?? '',
     is_night_shift: ev.is_night_shift,
