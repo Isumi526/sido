@@ -308,10 +308,6 @@ entries:
     reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
     ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
   - rule: rls-authenticated-crosstenant
-    target: daily_reports
-    reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
-    ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
-  - rule: rls-authenticated-crosstenant
     target: dev_updates
     reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
     ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
