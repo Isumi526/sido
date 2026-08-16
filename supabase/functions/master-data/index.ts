@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
 
   // ── マスタ一式 ──────────────────────────────────
   if (!body.action || body.action === 'fetch') {
-    const [sites, contractors, workers, subs, vehicles, siteSubs] = await Promise.all([
+    const [sites, contractors, workers, subs, vehicles, siteSubs, categories, catHours] = await Promise.all([
       svc.from('sites').select('id, name, contractor_id, default_start_time, default_end_time, default_breaks')
         .eq('active', true).eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
       svc.from('contractors').select('id, name').eq('active', true).eq('account_id', accountId).order('sort_order'),
@@ -77,6 +77,13 @@ Deno.serve(async (req) => {
       svc.from('subcontractors').select('id, name').eq('active', true).eq('account_id', accountId).order('sort_order'),
       svc.from('vehicles').select('name').eq('active', true).eq('account_id', accountId).order('sort_order'),
       svc.from('site_subcontractors').select('site_id, subcontractor_id').eq('account_id', accountId),
+      // 作業区分（現場作業/見積/事務…）。日報・予定で「どの作業か」を選ばせる
+      svc.from('work_categories').select('id, name, scope, sort_order')
+        .eq('active', true).eq('account_id', accountId).order('sort_order').order('name'),
+      // 現場×区分ごとの定時。行が無い組は「定時なし」
+      svc.from('site_category_hours')
+        .select('site_id, category_id, default_start_time, default_end_time, default_break_minutes, default_breaks')
+        .eq('account_id', accountId),
     ])
     return json({
       ok: true,
@@ -86,6 +93,8 @@ Deno.serve(async (req) => {
       subcontractors: subs.data ?? [],
       vehicles: (vehicles.data ?? []).map((v: any) => v.name),
       siteSubcontractors: siteSubs.data ?? [],
+      workCategories: categories.data ?? [],
+      siteCategoryHours: catHours.data ?? [],
     })
   }
 
@@ -199,7 +208,7 @@ Deno.serve(async (req) => {
       // ★使われている区分は消さない。消すと日報/予定の参照が切れる
       const [{ count: schedCount }, { count: hoursCount }] = await Promise.all([
         svc.from('schedules').select('id', { count: 'exact', head: true })
-          .eq('account_id', accountId).eq('category_id', id),
+          .eq('account_id', accountId).eq('work_category_id', id),
         svc.from('site_category_hours').select('id', { count: 'exact', head: true })
           .eq('account_id', accountId).eq('category_id', id),
       ])

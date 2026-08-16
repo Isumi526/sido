@@ -172,6 +172,12 @@ export interface MasterData {
   siteWorkTimes?: Record<string, { start: string | null; end: string | null }>
   // 現場名 → 既定休憩[{start,minutes}]（未設定は未収録）。新規日報で現場選択時に休憩をこの値でスナップショット。
   siteBreaks?: Record<string, { start: string; minutes: number }[]>
+  // 作業区分（現場作業/見積/事務…）。会社ごとのマスタ。日報・予定で「どの作業か」を選ぶ。
+  //  scope: どの台帳で使えるか（site/office/event・null=どこでも）
+  workCategories?: { id: string; name: string; scope: string | null }[]
+  // ★「現場id|区分id」→ 定時。定時は現場だけでも区分だけでも決まらないので組で持つ
+  //  （事務は拠点で 08:30/08:00 と違う）。未収録＝その組に定時なし。
+  categoryHours?: Record<string, { start: string | null; end: string | null; breaks: { start: string; minutes: number }[] | null }>
 }
 
 export interface ApiResponse<T = void> {

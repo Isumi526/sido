@@ -93,4 +93,30 @@ test.describe('予定の現場紐付け（site_id）', () => {
     await expect(recent, '最近使った現場グループが出る').toHaveCount(1)
     await expect(recent.locator('option').first()).toHaveText(SITE)
   })
+
+  test('★予定に作業区分が入る（既定は「現場作業」で最初から選択済み）', async ({ page }) => {
+    // ★入力項目がいきなり増えるとパニックになる人が出るので、既定を入れておく（2026-08-16 人）。
+    //  「選べる」だけでなく「何も触らなくても正しい値が入る」ことを固定する。
+    await page.goto('/calendar', { waitUntil: 'networkidle' })
+    await page.waitForSelector('table.matrix-table', { timeout: 15000 })
+
+    await page.locator('.cell-add-btn').first().click()
+    await expect(page.locator('.worker-chips')).toBeVisible()
+
+    const sel = page.locator('[data-testid="work-category-select"]')
+    await expect(sel, '区分の選択が出る').toHaveCount(1)
+    await expect(sel.locator('option:checked'), '既定で「現場作業」が選ばれている').toHaveText('現場作業')
+
+    // 何も触らずに保存 → 既定の区分が入る
+    await page.locator('[data-testid="site-select"]').selectOption(SITE)
+    await page.locator('.btn-save').click()
+    await expect(page.locator('.worker-chips')).toHaveCount(0, { timeout: 15000 })
+
+    const rows = await restSrv(`schedules?site_id=eq.${siteId}&select=work_category_id`)
+    expect(rows.length).toBeGreaterThanOrEqual(1)
+    expect(rows[0].work_category_id, '★既定の区分が保存される').toBeTruthy()
+
+    const cat = await restSrv(`work_categories?id=eq.${rows[0].work_category_id}&select=name`)
+    expect(cat[0].name, '入っているのは「現場作業」').toBe('現場作業')
+  })
 })
