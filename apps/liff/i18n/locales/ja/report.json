@@ -40,6 +40,7 @@
   "addNewContractor": "＋ 新しい元請け業者を登録する",
   "contractorPlaceholder": "元請け業者名を入力（例: 〇〇建設）",
   "siteName": "現場名",
+  "workCategory": "作業区分",
   "siteGroupLinked": "この元請けに紐づく現場",
   "siteGroupOther": "その他の現場",
   "siteGroupUnlinked": "紐付けなし",
