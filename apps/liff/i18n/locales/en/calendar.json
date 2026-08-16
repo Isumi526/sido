@@ -17,6 +17,7 @@
   "targetWorkers": "Workers * ({count})",
   "bulkSelectFromGroup": "Select all from group…",
   "site": "Site *",
+  "workCategory": "Work category",
   "contractor": "Primary contractor",
   "contractorAll": "All contractors",
   "noSiteToggle": "No site (enter a title)",
