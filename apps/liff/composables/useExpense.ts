@@ -6,6 +6,9 @@ import type { User, ExpenseItem, ExpenseItemInput, ExpenseRow } from '~/types'
 import { useI18n } from 'vue-i18n'
 import { gt } from '~/utils/i18n-global'
 import { flattenReportExpenses, flattenGasolineItems, flattenPersonalExpenses, ratesFromSettings, mergeOtherExpenses, splitOtherExpenses } from './expense-flatten.gen'
+// ★保存形への整形は EF と共有する（正典: shared/report-storage.ts）。
+//  ここに写経を戻さないこと——LIFFとEFで整形規則がズレると、保存された形と読む側の期待が食い違う。
+import { sanitizeSitesForStorage, normalizeGasolineItems } from './report-storage.gen'
 import { resolveActiveSiteId } from '~/utils/site-similarity.gen'
 
 // ---------- 期間キーユーティリティ ----------
@@ -367,52 +370,6 @@ export const useExpense = () => {
     }
   }
 
-  /** 本日のガソリン代（明細リスト）：金額のある明細だけ・_id は除去 */
-  function normalizeGasolineItems(items: any[] | undefined): any[] {
-    return (items ?? [])
-      .filter((it: any) => Number(it?.yen) > 0)
-      .map((it: any) => ({
-        yen: Math.round(Number(it.yen) || 0),
-        payee: it.payee?.trim() || null,
-        registrationNumber: it.registrationNumber?.trim() || null,
-        liters: Number(it.liters) > 0 ? Number(it.liters) : null,
-        fuelType: it.fuelType === 'diesel' ? 'diesel' : (it.fuelType === 'regular' ? 'regular' : null),
-        tategae: !!it.tategae,
-        fileUrls: Array.isArray(it.fileUrls) ? it.fileUrls : [],
-        // ★ここはホワイトリスト。列挙し忘れたフィールドは黙って消える。
-        noReceiptReason: it.noReceiptReason?.trim() || null,
-      }))
-  }
-
-  function sanitizeSitesForStorage(sites: any[], activeSites: Array<{ id: string; name: string }> = []): any[] {
-    const FILE_KEYS = ['vehicleFiles','trainFiles','hotelFiles','leopalaceFiles','otherFiles','entertainmentFiles','garbagePhotos']
-    return (sites ?? []).map((site: any) => {
-      const exp = { ...(site?.expenses ?? {}) }
-      for (const k of FILE_KEYS) delete exp[k]
-      const stripItemFiles = (items: any[] | undefined) =>
-        Array.isArray(items) ? items.map(({ files, ...rest }: any) => rest) : items
-      if (exp.parkings) exp.parkings = stripItemFiles(exp.parkings)
-      if (exp.highways) exp.highways = stripItemFiles(exp.highways)
-      if (exp.trains)   exp.trains   = stripItemFiles(exp.trains)
-      if (exp.others)   exp.others   = stripItemFiles(exp.others)
-      if (exp.entertainments) exp.entertainments = stripItemFiles(exp.entertainments)
-      // 入力は「その他」1本に統合済み（2026-07-31）。保存時にここで科目=接待交際費だけを
-      // entertainments へ戻す。現場別集計は entertainments を接待交際費列・others をホーム列に
-      // 集計しているため、この振り分けをやめると金額が別の列へ移動する（集計は触らない方針）。
-      if (exp.others || exp.entertainments) {
-        const split = splitOtherExpenses(mergeOtherExpenses(exp.others, exp.entertainments))
-        exp.others = split.others
-        exp.entertainments = split.entertainments
-      }
-      if (exp.hotels)         exp.hotels         = stripItemFiles(exp.hotels)
-      // 現場マスタ(active)へ正規化名一致で site_id を解決して刻む（集計をid基準にする根本対策）。
-      //  解決できなければ既存の site_id を保持（＝マージ/非アクティブ化後の安定性）、それも無ければ null。
-      const resolved = resolveActiveSiteId(site, activeSites)
-      const site_id = resolved ?? (site?.site_id ?? null)
-      return { ...site, expenses: exp, site_id }
-    })
-  }
-
   // 日報の現場名を現場マスタ(sites)へ確実に登録する。
   //  「その他/新規現場」は __other__ なので customSiteName を採用。trim・空・__other__ は除外。
   //  既存現場は onConflict + ignoreDuplicates で no-op（active/name_kana/sort_order を壊さない）。
@@ -443,55 +400,51 @@ export const useExpense = () => {
     if (!r.ok) console.error('[saveReportById] 現場マスタ登録に失敗:', r.error)
   }
 
+  /**
+   * 日報の保存EFを呼ぶ。身元は EF 側で検証されるので、ここでは名乗らない
+   * （dev_line_user_id はローカル検証用の経路。本番の SUPABASE_URL では EF 側が受け付けない）。
+   */
+  async function callSaveReportEf(
+    userId: string,
+    report: { date: string; isWorking: boolean; sites: unknown[]; note?: string; leaveType?: string | null; isBusinessTrip?: boolean; gasolineItems?: any[] },
+  ): Promise<{ ok: boolean; error?: string }> {
+    const config = useRuntimeConfig()
+    const liff = useLiff()
+    const anonKey = config.public.supabaseAnonKey as string
+    const { data: { session } } = await supabase.auth.getSession()
+    const lineIdToken = (await liff.getIdToken().catch(() => null)) ?? ''
+    const devLineUserId = config.public.appEnv === 'development'
+      ? (liff.profile.value?.userId ?? '')
+      : ''
+    try {
+      const res = await $fetch<any>(`${config.public.edgeFunctionUrl}/save-daily-report`, {
+        method: 'POST',
+        headers: {
+          apikey: anonKey,
+          Authorization: session ? `Bearer ${session.access_token}` : `Bearer ${anonKey}`,
+        },
+        body: { userId, report, line_id_token: lineIdToken, dev_line_user_id: devLineUserId },
+      })
+      return res?.ok ? { ok: true } : { ok: false, error: res?.error ?? 'save_failed' }
+    } catch (e: any) {
+      // ★保存の失敗を握りつぶさない。送信できていないのに完了に見えるのが一番まずい
+      return { ok: false, error: e?.data?.error ?? e?.message ?? 'save_failed' }
+    }
+  }
+
   async function saveReportById(
     userId: string,
     report: { date: string; isWorking: boolean; sites: unknown[]; note?: string; leaveType?: string | null; isBusinessTrip?: boolean; gasolineItems?: any[] }
   ): Promise<void> {
-    const accountId = await getAccountId()
-
-    // ★ クロステナント書き込みガード（全ての日報保存はここを通る＝saveReport も本関数へ委譲）。
-    //   この関数は userId を引数で受け取る一方、account_id は独立に getAccountId() で解決するため、
-    //   両者がズレると「account_id=テナントA / user_id=テナントBのuser」というねじれた行が
-    //   出来てしまう（2026-06〜07 に本番で実害2件）。書き込み前に所属一致を検証する。
-    const { data: owner } = await supabase
-      .from('users').select('account_id').eq('id', userId).maybeSingle()
-    if (!owner || owner.account_id !== accountId) {
-      console.error('[saveReportById] クロステナント書き込みを拒否:', { userId, accountId, ownerAccountId: owner?.account_id ?? null })
-      throw new Error(t('expense.crossTenantDenied'))
+    // ★EF経由。daily_reports への直書きは他テナントの行まで書き換え・削除できるため塞いだ（2026-08-16）。
+    //  身元の検証・クロステナントの拒否・現場マスタ登録・site_id 解決・整形は全部 EF 側で行う。
+    //  以前はクロステナントのガードをここ（クライアント）でやっていたが、迂回できるので
+    //  ガードになっていなかった（2026-06〜07 にねじれた行が本番で2件できている）。
+    const res = await callSaveReportEf(userId, report)
+    if (!res.ok) {
+      console.error('[saveReportById] 保存に失敗:', res.error)
+      throw new Error(res.error === 'WRITE_FORBIDDEN' ? t('expense.crossTenantDenied') : (res.error ?? 'save_failed'))
     }
-
-    // 現場マスタを先に確実化 → その後 active 一覧を取得して各現場に site_id を解決する。
-    //  （新規現場 __other__ も先に登録しておけば id を解決できる。best-effort・失敗時は name フォールバック）
-    await registerNewSites(accountId, report.sites as any[])
-    // ★EF経由。同名重複時は最古を正とするので created_at 昇順に並べ直す。
-    const activeSites = (await useSitesApi().listSafe())
-      .slice().sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))
-      .map(s => ({ id: s.id, name: s.name }))
-    // 本日のガソリン代（明細リスト）：金額のある明細だけを保存（_id は除去）
-    const gasItems = normalizeGasolineItems(report.gasolineItems)
-    const { error } = await supabase
-      .from('daily_reports')
-      .upsert(
-        {
-          user_id:    userId,
-          date:       report.date,
-          is_working: report.isWorking,
-          sites:      sanitizeSitesForStorage(report.sites as any[], activeSites),
-          note:       report.note ?? null,
-          leave_type: report.leaveType ?? null,
-          is_business_trip: report.isBusinessTrip ?? false,
-          // 日報レベルの「本日のガソリン代」（実費・複数給油対応）。現場に紐づかないため report 直下に持つ。
-          gasoline_items: gasItems,
-          account_id: accountId,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,date' }
-      )
-    if (error) {
-      console.error('[saveReportById] upsertエラー:', error.message)
-      throw error
-    }
-    // ※ 現場マスタ登録(registerNewSites)は upsert 前に実施済み（site_id 解決のため前倒し）。
   }
 
   // 内容(note)を label キーに書き戻せるカテゴリ（それ以外は payee/登録番号のみ編集）

@@ -94,6 +94,7 @@ export function yesterdayNoonJST(): string {
 const ANON_LOCKED_TABLES = new Set([
   'attendance_logs', 'overtime_requests', 'report_edit_grants',
   'sites', 'contractors', 'site_subcontractors',
+  'daily_reports',   // 2026-08-16 RLS化。読み書きは daily-reports-read / save-daily-report EF 経由
 ])
 
 export async function rest(pathAndQuery: string, init: RequestInit = {}): Promise<any> {
