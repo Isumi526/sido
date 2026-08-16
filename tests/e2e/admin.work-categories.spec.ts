@@ -171,7 +171,14 @@ test.describe('作業区分マスタ', () => {
       const rows = await restSrv(`work_categories?account_id=eq.${newAccountId}&select=name&order=sort_order`)
       const names = rows.map((r: any) => r.name)
       expect(names, '標準3区分が自動で入る').toEqual(['現場作業', '見積', 'その他事務'])
+
+      // ★同じ穴が工種プリセットにもあった（2026-08-16 発見）。
+      //  20260530000001 が当時の2社にしか入れておらず、以後の3社は0件で
+      //  協力業者マスタの工種選択が空だった。こちらもトリガーで塞いだので併せて固定する。
+      const trades = await restSrv(`trade_type_presets?account_id=eq.${newAccountId}&select=name`)
+      expect(trades.length, '工種プリセット11件も自動で入る').toBe(11)
     } finally {
+      await restSrv(`trade_type_presets?account_id=eq.${newAccountId}`, { method: 'DELETE' }).catch(() => {})
       await restSrv(`work_categories?account_id=eq.${newAccountId}`, { method: 'DELETE' }).catch(() => {})
       await restSrv(`accounts?id=eq.${newAccountId}`, { method: 'DELETE' }).catch(() => {})
     }
