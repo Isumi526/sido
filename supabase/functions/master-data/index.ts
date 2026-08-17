@@ -71,11 +71,19 @@ Deno.serve(async (req) => {
     const [sites, contractors, workers, subs, vehicles, siteSubs, categories, catHours] = await Promise.all([
       svc.from('sites').select('id, name, contractor_id, default_start_time, default_end_time, default_breaks')
         .eq('active', true).eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
-      svc.from('contractors').select('id, name').eq('active', true).eq('account_id', accountId).order('sort_order'),
+      // ★sort_order だけだと同値が並んだ時に順序が不定になり、開くたびに並びが変わる。
+      //  名前でタイブレークして必ず同じ順にする（2026-08-17）。
+      svc.from('contractors').select('id, name').eq('active', true).eq('account_id', accountId)
+        .order('sort_order').order('name'),
       // ★unit_price は返さない（他人の給与を端末に降ろさない）
-      svc.from('workers').select('id, name, role').eq('active', true).eq('account_id', accountId).order('sort_order'),
-      svc.from('subcontractors').select('id, name').eq('active', true).eq('account_id', accountId).order('sort_order'),
-      svc.from('vehicles').select('name').eq('active', true).eq('account_id', accountId).order('sort_order'),
+      // ★name_kana を返す。漢字の name を localeCompare('ja') で並べても読みは無視されるので
+      //  五十音にならない（「一之瀬」が「いちのせ」の位置に来ない）。読み仮名で並べる。
+      svc.from('workers').select('id, name, name_kana, role').eq('active', true).eq('account_id', accountId)
+        .order('name_kana', { nullsFirst: false }).order('name'),
+      svc.from('subcontractors').select('id, name').eq('active', true).eq('account_id', accountId)
+        .order('sort_order').order('name'),
+      svc.from('vehicles').select('name').eq('active', true).eq('account_id', accountId)
+        .order('sort_order').order('name'),
       svc.from('site_subcontractors').select('site_id, subcontractor_id').eq('account_id', accountId),
       // 作業区分（現場作業/見積/事務…）。日報・予定で「どの作業か」を選ばせる
       svc.from('work_categories').select('id, name, scope, sort_order')

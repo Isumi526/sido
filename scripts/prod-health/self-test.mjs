@@ -118,6 +118,30 @@ probe('pending-edit-empty-diff', '差分が空の編集申請', () => {
   return `delete from daily_report_pending_edits where id='${id}'`
 })
 
+/**
+ * ★逆向きの確認: late_new（期限切れの新規提出）は差分が無くて当たり前なので鳴ってはいけない。
+ *  これが無いと「kind を見る」修正が将来また戻された時に気づけない。
+ *  鳴りっぱなしの警報は本物の異常を隠すので、誤検知は検知漏れと同じくらい悪い。
+ */
+;(() => {
+  const label = 'late_new は差分が空でも鳴らない'
+  const before = freshCount('pending-edit-empty-diff')
+  let id
+  try {
+    id = sql(`insert into daily_report_pending_edits
+      (account_id, report_user_id, report_date, kind, status, reason, diffs, submitted_by_name, submitted_at, payload)
+      values ('${accountId}','${userId}','2026-09-04','late_new','pending','SELFTEST 後追い提出', null, 'SELFTEST', now(), '{}'::jsonb)
+      returning id`)
+    const during = freshCount('pending-edit-empty-diff')
+    if (during === before) ok(`${label} — 正しく鳴らない (${before})`)
+    else ng(`${label} — ★誤検知 (${before}→${during})`)
+  } catch (e) {
+    ng(`${label} — 種まきに失敗: ${(e.stderr || e.message).toString().split('\n')[0]}`)
+  } finally {
+    if (id) sql(`delete from daily_report_pending_edits where id='${id}'`)
+  }
+})()
+
 probe('edit-claims-receipt-but-none', '「領収書添付」なのに0枚', () => {
   const payload = JSON.stringify({ sites: [{ expenses: { hotels: [{ yen: 15098, tategae: true, fileUrls: [] }] } }] })
   const id = sql(`insert into daily_report_pending_edits

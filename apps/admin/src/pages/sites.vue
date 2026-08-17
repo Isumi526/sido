@@ -25,6 +25,7 @@
       <select v-model="sortBy" class="input filter-input">
         <option value="kana">並び替え：五十音</option>
         <option value="recent">並び替え：直近日報が新しい順</option>
+        <option value="contractor">並び替え：元請け順</option>
       </select>
       <span class="result-count">{{ filtered.length }} 件</span>
     </div>
@@ -403,7 +404,7 @@ async function load() {
   ])
   sites.value = (data ?? []) as Site[]
   contractors.value = (cons ?? []) as { id: string; name: string }[]
-  const { data: subs } = await supabase.from('subcontractors').select('id, name').eq('account_id', accountId).eq('active', true).order('name')
+  const { data: subs } = await supabase.from('subcontractors').select('id, name').eq('account_id', accountId).eq('active', true).order('sort_order').order('name')
   subcontractors.value = (subs ?? []) as { id: string; name: string }[]
   // 共有先ユーザー候補（この account の登録ユーザー＝LIFFで現場情報を見る人）
   const { data: us } = await supabase.from('users').select('id, real_name').eq('account_id', accountId).order('real_name')
@@ -450,7 +451,7 @@ function fixedTimeLabel(s: Site): string {
 const q          = useQueryParam('q', '')                                  // URL ?q= 検索
 // 既定は『有効のみ』表示（無効現場はデフォルト非表示・フィルタで切替可）
 const statusFilter = useQueryParam<'active' | 'inactive'>('status', 'active')   // ?status= 有効/無効化済みタブ
-const sortBy     = useQueryParam<'kana' | 'recent'>('sort', 'kana')             // ?sort= 並び順
+const sortBy     = useQueryParam<'kana' | 'recent' | 'contractor'>('sort', 'kana')   // ?sort= 並び順
 // ★システム用のバケット行は現場マスタに出さない。
 //   「現場未設定」の日報を受けるための内部行で、人が編集・無効化するものではない。
 //   実際に `__unset__` という見慣れない名前がゴミデータに見えて誤って無効化された
@@ -466,10 +467,24 @@ const filtered = computed(() => {
     const hay = [s.name, s.name_kana, s.location, contractorName(s.contractor_id)].filter(Boolean).join(' ').toLowerCase()
     return hay.includes(kw)
   })
+  const byKana = (a: any, b: any) => (a.name_kana ?? a.name).localeCompare(b.name_kana ?? b.name, 'ja')
   if (sortBy.value === 'recent') {
     list = [...list].sort((a, b) => (siteStats.value[b.name]?.lastDate ?? '').localeCompare(siteStats.value[a.name]?.lastDate ?? ''))
+  } else if (sortBy.value === 'contractor') {
+    // 元請け順。★同じ元請けの現場がひとかたまりで見たい、という運用要望（2026-08-17）。
+    //  元請けが未設定の現場は末尾へまとめる（間に挟まると「設定漏れ」に気づけない）。
+    //  元請けが同じもの同士は五十音で並べる＝毎回同じ順になり、目で追える。
+    list = [...list].sort((a, b) => {
+      const ca = a.contractor_id ? contractorName(a.contractor_id) : ''
+      const cb = b.contractor_id ? contractorName(b.contractor_id) : ''
+      if (!ca && !cb) return byKana(a, b)
+      if (!ca) return 1
+      if (!cb) return -1
+      const c = ca.localeCompare(cb, 'ja')
+      return c !== 0 ? c : byKana(a, b)
+    })
   } else {
-    list = [...list].sort((a, b) => (a.name_kana ?? a.name).localeCompare(b.name_kana ?? b.name, 'ja'))
+    list = [...list].sort(byKana)
   }
   return list
 })
