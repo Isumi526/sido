@@ -1,0 +1,30 @@
+# ============================================================
+#  .vercelignore
+#  Vercel CLI で手動デプロイする時に、アップロードしてはいけないものを外す。
+#
+#  ★なぜ要るか（2026-08-17）:
+#   普段の本番反映は Vercel の Git Integration（＝git の中身だけを見る）なので問題にならないが、
+#   CLI（vercel --prod）は**ローカルの作業ツリーをそのまま上げる**。
+#   このリポジトリのルート .env には本番DBの接続文字列やAPIキーが入っており、
+#   それをビルドコンテナへ送ることになる。gitignore されていても CLI は送る。
+#
+#  ★.env を外してもビルドは通る。本番の VITE_* は Vercel プロジェクトの環境変数に
+#   設定されており、Git Integration のビルドは元々ローカル .env 無しで成功している。
+#   つまりこれを外すことで、CLI ビルドが Git Integration と同じ条件になる。
+# ============================================================
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# 本番データのスナップショット・巻き戻しSQL（顧客データそのもの）
+.backfill-*
+
+# ローカル作業物
+node_modules
+.git
+tests/e2e/.artifacts
+playwright-report
+docs/reports/shots
