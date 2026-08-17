@@ -404,7 +404,7 @@ async function load() {
   ])
   sites.value = (data ?? []) as Site[]
   contractors.value = (cons ?? []) as { id: string; name: string }[]
-  const { data: subs } = await supabase.from('subcontractors').select('id, name').eq('account_id', accountId).eq('active', true).order('name')
+  const { data: subs } = await supabase.from('subcontractors').select('id, name').eq('account_id', accountId).eq('active', true).order('sort_order').order('name')
   subcontractors.value = (subs ?? []) as { id: string; name: string }[]
   // 共有先ユーザー候補（この account の登録ユーザー＝LIFFで現場情報を見る人）
   const { data: us } = await supabase.from('users').select('id, real_name').eq('account_id', accountId).order('real_name')

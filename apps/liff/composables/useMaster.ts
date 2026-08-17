@@ -146,7 +146,7 @@ export const useMaster = () => {
     const data: MasterData = {
       sites:          (r.sites ?? []).map((x: any) => x.name),
       contractors:    (r.contractors ?? []).map((x: any) => x.name),
-      workers:        (r.workers ?? []).map((x: any) => ({ id: x.id, name: x.name, role: x.role as 'factory' | 'site' })),
+      workers:        (r.workers ?? []).map((x: any) => ({ id: x.id, name: x.name, name_kana: x.name_kana ?? null, role: x.role as 'factory' | 'site' })),
       subcontractors: (r.subcontractors ?? []).map((x: any) => x.name),
       vehicles:       r.vehicles ?? [],
       siteContractors,
@@ -251,7 +251,8 @@ export const useMaster = () => {
   /** 指定現場に紐づく下請け業者名[]。紐付けゼロの現場は全件にフォールバック（後方互換）。
    *  include に現在選択中の業者名を渡すと、紐付け外でも選択肢に残す（編集モードで消えない）。 */
   function subNamesForSite(siteName: string | null | undefined, include?: string | null): string[] {
-    const all = master.value.subcontractors.slice().sort((a, b) => a.localeCompare(b, 'ja'))
+    // ★再ソートしない。EF が sort_order→name で返した順を保持する（上の subcontractorNames と同じ理由）
+    const all = master.value.subcontractors.slice()
     const links = siteName ? master.value.siteSubcontractors?.[siteName] : null
     if (!links || links.length === 0) return all
     const set = new Set(links)
@@ -278,7 +279,10 @@ export const useMaster = () => {
     siteContractors:     computed(() => master.value.siteContractors ?? {}),
     siteWorkTimes:       computed(() => master.value.siteWorkTimes ?? {}),
     siteBreaks:          computed(() => master.value.siteBreaks ?? {}),
-    contractorNames:     computed(() => (master.value.contractors ?? []).slice().sort((a, b) => a.localeCompare(b, 'ja'))),
+    // ★元請け・協力業者には読み仮名の列が無い。EF が sort_order→name で返すのでその順を使う。
+    //  localeCompare(name,'ja') で再ソートすると漢字が読み無視で並び、かつ
+    //  運用側で決めた sort_order を無視することになる（2026-08-17 修正）。
+    contractorNames:     computed(() => (master.value.contractors ?? []).slice()),
     // 現場プルダウンの2階層表示用: 元請け(五十音順)ごとに現場をグループ化。
     // 紐付けなしの現場は最後のグループ(contractorName=null)にまとめる。空グループは含めない。
     // 注: グループ内の現場は再ソートしない。sites(L108/66行目のfetchクエリ)が既に
@@ -298,10 +302,16 @@ export const useMaster = () => {
       if (unlinked.length) groups.push({ contractorName: null, sites: unlinked })
       return groups
     }),
-    workerNames:         computed(() => master.value.workers.map(w => w.name).slice().sort((a, b) => a.localeCompare(b, 'ja'))),
-    factoryWorkerNames:  computed(() => { const ws = master.value.workers; const hasRole = ws.some(w => w.role); return ws.filter(w => !hasRole || w.role === 'factory').map(w => w.name).slice().sort((a, b) => a.localeCompare(b, 'ja')) }),
-    siteWorkerNames:     computed(() => { const ws = master.value.workers; const hasRole = ws.some(w => w.role); return ws.filter(w => !hasRole || w.role === 'site').map(w => w.name).slice().sort((a, b) => a.localeCompare(b, 'ja')) }),
-    subcontractorNames:  computed(() => master.value.subcontractors.slice().sort((a, b) => a.localeCompare(b, 'ja'))),
+    // ★作業員は EF が name_kana 昇順(null最後)→name で取得済み。その順序を保持する。
+    //  ここで localeCompare(name,'ja') で再ソートしてはいけない。ICU の ja 照合は漢字を
+    //  部首・画数で並べるので読みを無視する＝「一之瀬」が「い」の位置に来ない。
+    //  sites と同じ理屈（上の siteGroupsByContractor のコメント参照）。2026-08-17 修正。
+    workerNames:         computed(() => master.value.workers.map(w => w.name)),
+    factoryWorkerNames:  computed(() => { const ws = master.value.workers; const hasRole = ws.some(w => w.role); return ws.filter(w => !hasRole || w.role === 'factory').map(w => w.name) }),
+    siteWorkerNames:     computed(() => { const ws = master.value.workers; const hasRole = ws.some(w => w.role); return ws.filter(w => !hasRole || w.role === 'site').map(w => w.name) }),
+    // 名前だけでなく id/読み仮名も要る画面（作業員の選択チップ等）向け。並びは上と同じ
+    workerList:          computed(() => master.value.workers.slice()),
+    subcontractorNames:  computed(() => master.value.subcontractors.slice()),
     vehicleNames:        computed(() => master.value.vehicles),
   }
 }

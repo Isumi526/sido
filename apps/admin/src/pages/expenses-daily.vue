@@ -118,8 +118,8 @@ async function load() {
       .order('date', { ascending: true }).limit(5000),
     // 枠を持ちうる作業員（許可フラグON）と、その月の月別上書き
     supabase.from('workers')
-      .select('id, name, can_apply_personal_expense, default_monthly_expense_limit')
-      .eq('account_id', accountId).eq('can_apply_personal_expense', true),
+      .select('id, name, name_kana, can_apply_personal_expense, default_monthly_expense_limit')
+      .eq('account_id', accountId).eq('can_apply_personal_expense', true).order('name_kana', { nullsFirst: false }).order('name'),
     supabase.from('worker_expense_budgets')
       .select('worker_id, limit_amount').eq('account_id', accountId).eq('month', monthKey),
   ])

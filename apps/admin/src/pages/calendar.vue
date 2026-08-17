@@ -659,9 +659,10 @@ function formatDateLabel(date: string): string {
 async function loadWorkers() {
   const { data } = await supabase
     .from('workers')
-    .select('id, name, birth_date')
+    .select('id, name, name_kana, birth_date')
     .eq('account_id', accountId)
     .eq('active', true)
+    .order('name_kana', { nullsFirst: false })
     .order('name')
   workers.value = data ?? []
 }

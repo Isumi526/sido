@@ -186,7 +186,7 @@ async function loadMasters() {
   const accountId = await getAccountId()
   const [{ data: siteData }, { data: workerData }] = await Promise.all([
     supabase.from('sites').select('id, name').eq('account_id', accountId).eq('active', true).order('name_kana', { nullsFirst: false }).order('name'),
-    supabase.from('workers').select('id, name').eq('account_id', accountId).eq('active', true).order('name'),
+    supabase.from('workers').select('id, name, name_kana').eq('account_id', accountId).eq('active', true).order('name_kana', { nullsFirst: false }).order('name'),
   ])
   sites.value   = (siteData   ?? []) as Site[]
   workers.value = (workerData ?? []) as Worker[]

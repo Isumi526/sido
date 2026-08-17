@@ -433,7 +433,7 @@ async function loadSites() {
 async function loadWorkers() {
   const accountId = await getAccountId()
   // 作業員マスタ（account絞り込み・有効のみ）— [[project_node_modules_workspaces]] 同様にaccount漏れ厳禁
-  const { data } = await supabase.from('workers').select('id, name').eq('account_id', accountId).eq('active', true).order('name')
+  const { data } = await supabase.from('workers').select('id, name, name_kana').eq('account_id', accountId).eq('active', true).order('name_kana', { nullsFirst: false }).order('name')
   workers.value = (data ?? []) as any[]
 }
 async function load() {

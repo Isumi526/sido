@@ -469,7 +469,7 @@ async function load() {
   const accountId = await getAccountId()
 
   const [{ data: workersData }, { data: grantsData }, { data: usersData }, leaveData] = await Promise.all([
-    supabase.from('workers').select('id, name, active, hire_date, employment_type, weekly_scheduled_days, initial_used_leave_days, excluded_grant_dates').eq('account_id', accountId).order('name'),
+    supabase.from('workers').select('id, name, name_kana, active, hire_date, employment_type, weekly_scheduled_days, initial_used_leave_days, excluded_grant_dates').eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
     supabase.from('paid_leave_grants').select('id, worker_id, granted_at, expires_at, days, note').eq('account_id', accountId),
     supabase.from('users').select('id, worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
     fetchAllPaidLeaveReports(accountId),

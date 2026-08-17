@@ -615,7 +615,11 @@ function toggleWageMode() {
   if (!canViewHourlyWage.value) return
   wageMode.value = wageMode.value === 'daily' ? 'real' : 'daily'
 }
-const siteNamesAll = computed(() => Object.keys(siteMap.value).sort((a, b) => a.localeCompare(b, 'ja')))
+// 現場名 → 読み仮名。★漢字の name を localeCompare('ja') しても読みは無視されるので五十音にならない
+//  （ICU の ja 照合は漢字を部首・画数で並べる）。300件超のタブを目で追うので読み仮名で並べる（2026-08-17）。
+const kanaBySite = ref<Record<string, string>>({})
+const siteNamesAll = computed(() => Object.keys(siteMap.value)
+  .sort((a, b) => (kanaBySite.value[a] || a).localeCompare(kanaBySite.value[b] || b, 'ja')))
 
 /**
  * 表示中の現場を「区分ごと」に足した小計。
@@ -790,13 +794,16 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
     supabase.from('subcontractors').select('name, category, unit_price').eq('account_id', accountId),
     supabase.from('settings').select('key, value').eq('account_id', accountId),
     supabase.from('worker_wage_history').select('worker_id, effective_date, changed_at, old_unit_price, new_unit_price, wage_type, old_wage_type, old_daily_wage, new_daily_wage, old_hourly_wage, new_hourly_wage').eq('account_id', accountId),
-    supabase.from('sites').select('id, name, active, created_at, contractors(name)').eq('account_id', accountId).order('created_at', { ascending: true }),
+    supabase.from('sites').select('id, name, name_kana, active, created_at, contractors(name)').eq('account_id', accountId).order('created_at', { ascending: true }),
     supabase.from('work_categories').select('id, name, sort_order').eq('account_id', accountId).order('sort_order', { ascending: true }),
   ])
   // 作業区分（現場作業/見積/その他事務…）。日報の各現場ブロックが持つ workCategoryId を名前に直す。
   // ★1つの現場に複数の作業があり、原価の意味が違う（受注前の見積を施工の原価に混ぜたくない）。
   categoryNames.value = (catRows ?? []).map((c: any) => c.name)
   const catNameById: Record<string, string> = Object.fromEntries((catRows ?? []).map((c: any) => [c.id, c.name]))
+  // タブを五十音で並べるための 現場名→読み仮名
+  kanaBySite.value = Object.fromEntries(
+    (siteRows ?? []).filter((s: any) => s.name_kana).map((s: any) => [s.name, s.name_kana]))
   // 絞り込み用の 現場名→元請け名。集計には使わない（表示するタブを減らすためだけ）。
   contractorBySite.value = Object.fromEntries(
     (siteRows ?? [])
