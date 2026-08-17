@@ -457,7 +457,7 @@ async function load() {
   site.value = siteData ? { id: siteData.id, name: siteData.name } : null
   await loadMembers(accountId, siteData?.responsible_worker_id ?? null)
 
-  const { data: workersData } = await supabase.from('workers').select('id, name').eq('account_id', accountId).eq('active', true).order('name')
+  const { data: workersData } = await supabase.from('workers').select('id, name, name_kana').eq('account_id', accountId).eq('active', true).order('name_kana', { nullsFirst: false }).order('name')
   allWorkers = (workersData ?? []) as { id: string; name: string }[]
 
   myWorkerId.value = await resolveMyWorkerId()

@@ -131,11 +131,14 @@ const newWorkerName = ref('')
 const workerRole    = ref<'factory' | 'site'>('site')
 
 // テスターの場合、"テストユーザー" は __tester__ オプションで出すので一覧から除外
+// ★再ソートしない。マスタは読み仮名(name_kana)昇順・null最後で取得済み。
+//  ここで name.localeCompare(name,'ja') を掛けると、ICU の ja 照合が漢字を
+//  部首・画数で並べる＝読みを無視するので五十音でなくなる（2026-08-17 修正）。
+//  全社員が最初に通る画面で、自分の名前を読みで探せないと詰まる。
 const sortedWorkers = computed(() =>
   master.master.value.workers
     .filter(w => !liff.isTester.value || w.name !== 'テストユーザー')
     .slice()
-    .sort((a, b) => a.name.localeCompare(b.name, 'ja'))
 )
 
 const selectedWorker = computed(() =>

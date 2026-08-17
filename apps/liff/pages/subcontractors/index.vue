@@ -279,7 +279,7 @@ async function load() {
     accountId.value = aid
 
     const [{ data: subRows }, { data: presetRows }, { data: ttRows }, { data: workerRows }] = await Promise.all([
-      supabase.from('subcontractors').select(SUB_COLS).eq('account_id', aid).eq('is_deleted', false).order('sort_order'),
+      supabase.from('subcontractors').select(SUB_COLS).eq('account_id', aid).eq('is_deleted', false).order('sort_order').order('name'),
       supabase.from('trade_type_presets').select('id, name, category, sort_order').eq('account_id', aid).order('sort_order'),
       supabase.from('subcontractor_trade_types').select('subcontractor_id, trade_type').eq('account_id', aid),
       supabase.from('workers').select('id, name').eq('account_id', aid),
