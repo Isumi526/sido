@@ -410,6 +410,11 @@
         <div v-if="detailModal.schedule.is_night_shift" class="detail-night-badge"><span class="material-symbols-rounded meta-icon">bedtime</span>{{ $t('calendar.nightShift') }}</div>
         <h2 class="detail-title">{{ detailModal.schedule.title }}</h2>
         <p class="detail-meta"><span class="material-symbols-rounded meta-icon">person</span>{{ detailModal.schedule.worker?.name }}</p>
+        <!-- ★元請け。「今あの人はどこの元請けの仕事をしているか」を他の作業員が把握したい、
+             という要望への答え。入力させるのではなく現場マスタから逆算して出す（2026-08-17） -->
+        <p v-if="scheduleContractor(detailModal.schedule)" class="detail-meta">
+          <span class="material-symbols-rounded meta-icon">apartment</span>{{ scheduleContractor(detailModal.schedule) }}
+        </p>
         <p class="detail-meta">
           <span class="material-symbols-rounded meta-icon">calendar_month</span>{{ detailModal.schedule.start_date }}
           <template v-if="detailModal.schedule.end_date !== detailModal.schedule.start_date">〜 {{ detailModal.schedule.end_date }}</template>
@@ -615,6 +620,22 @@ async function dismissNotifs() {
 const effectiveWorkerId = computed(() =>
   proxy.proxyTarget.value?.id ?? schedules.myWorkerId.value
 )
+
+/**
+ * その予定の元請け。予定に元請けは持たせず、現場マスタから逆算する。
+ * ★site_id が権威。名前で引くと表記ゆれ・現場マージで拾えない。
+ *  site_id が無い（自由入力の予定）ものはタイトルで引いてみて、駄目なら出さない。
+ */
+function scheduleContractor(sc: any): string {
+  const ids = master.siteIds.value
+  let name = ''
+  if (sc?.work_site_id ?? sc?.site_id) {
+    const sid = sc.site_id ?? sc.work_site_id
+    name = Object.keys(ids).find(n => ids[n] === sid) ?? ''
+  }
+  if (!name) name = sc?.title ?? ''
+  return master.siteContractors.value[name] ?? ''
+}
 
 function isMyWorker(workerId: string): boolean {
   return workerId === effectiveWorkerId.value

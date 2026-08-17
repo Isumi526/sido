@@ -58,11 +58,19 @@ test.describe('日報の作業区分', () => {
     await restSrv(`sites?id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})
   })
 
-  test('★何も触らなくても既定「現場作業」が入っている', async ({ page }) => {
+  test('★現場を選ぶまで区分は出ない／選んだ瞬間に既定「現場作業」が入る', async ({ page }) => {
     await page.goto('/report', { waitUntil: 'networkidle' })
-    const sel = page.locator('[data-testid="work-category-0"]')
-    await expect(sel, '区分の選択が出る').toBeVisible({ timeout: 15000 })
-    await expect(sel.locator('option:checked'), '既定は現場作業').toHaveText('現場作業')
+    const siteSel = page.locator('[data-testid="site-select-0"]')
+    await expect(siteSel).toBeVisible({ timeout: 15000 })
+
+    // ★現場が未選択のうちは出さない。空欄の区分だけ先に見えていると
+    //  「何を選べばいいのか分からない欄」になる（2026-08-17 本番で指摘）
+    const cat = page.locator('[data-testid="work-category-0"]')
+    await expect(cat, '現場未選択では区分を出さない').toHaveCount(0)
+
+    await siteSel.selectOption(SITE)
+    await expect(cat, '現場を選ぶと区分が出る').toBeVisible({ timeout: 10000 })
+    await expect(cat.locator('option:checked'), '★既定が空でなく現場作業').toHaveText('現場作業')
   })
 
   test('★区分を変えると、その組の定時が作業時刻の既定に効く', async ({ page }) => {
