@@ -147,27 +147,13 @@
             >{{ $t('report.removeBtn') }}</button>
           </template>
 
-          <!-- 元請け業者（任意） -->
-          <Field :label="$t('report.contractor')">
-            <select v-model="site.contractorName" class="select">
-              <option value="">{{ $t('report.selectOptional') }}</option>
-              <!-- ★無効化済みの元請け。理由は下の現場selectのコメントと同じ -->
-              <option v-if="isRetiredOption(site.contractorName, master.contractorNames.value)"
-                      :value="site.contractorName" :data-testid="`retired-contractor-${si}`">
-                {{ $t('report.retiredOption', { name: site.contractorName }) }}
-              </option>
-              <option v-for="name in master.contractorNames.value" :key="name" :value="name">{{ name }}</option>
-              <option value="__other__">{{ $t('report.addNewContractor') }}</option>
-            </select>
-            <input
-              v-if="site.contractorName === '__other__'"
-              v-model="site.customContractorName"
-              type="text"
-              class="input mt6"
-              :placeholder="$t('report.contractorPlaceholder')"
-              @keydown.enter.prevent
-            />
-          </Field>
+          <!-- ★元請け業者は入力させない（2026-08-17）。
+               現場名のプルダウンが元請けごとに区切られているので、現場を選べば元請けは決まる。
+               二度同じことを聞いていた＝入力が1つ無駄で、しかも食い違う余地があった。
+               現場マスタから逆算して site.contractorName に入れる（onSiteChange）。
+               ★保存し続ける理由: 「あの人は今どこの元請けの仕事をしているか」を
+                把握したいという要望があるため。ただし日報の入力画面は本人しか見ないので
+                ここには出さない。見せるのは管理画面側。 -->
 
           <!-- 現場名 -->
           <Field :label="$t('report.siteName')" required>
@@ -185,15 +171,8 @@
                       :value="site.siteName" :data-testid="`retired-site-${si}`">
                 {{ $t('report.retiredOption', { name: site.siteName }) }}
               </option>
-              <template v-if="groupedSiteNames(site.contractorName).linked.length">
-                <optgroup :label="$t('report.siteGroupLinked')">
-                  <option v-for="name in groupedSiteNames(site.contractorName).linked" :key="name" :value="name">{{ name }}</option>
-                </optgroup>
-                <optgroup :label="$t('report.siteGroupOther')">
-                  <option v-for="name in groupedSiteNames(site.contractorName).others" :key="name" :value="name">{{ name }}</option>
-                </optgroup>
-              </template>
-              <template v-else v-for="grp in master.siteGroupsByContractor.value" :key="grp.contractorName ?? '__unlinked__'">
+              <!-- ★常に元請けごとに区切る。元請けを別に選ばせるのをやめたので分岐も要らない -->
+              <template v-for="grp in master.siteGroupsByContractor.value" :key="grp.contractorName ?? '__unlinked__'">
                 <optgroup :label="grp.contractorName ?? $t('report.siteGroupUnlinked')">
                   <option v-for="name in grp.sites" :key="name" :value="name">{{ name }}</option>
                 </optgroup>
@@ -221,14 +200,26 @@
                 @keydown.enter.prevent="pickSimilarSite(si, name)"
               >{{ name }}</span>{{ i < siteSimilar(site.customSiteName).length - 1 ? '、' : '' }}</template>
             </div>
+            <!-- 新規現場は逆算できないので、その時だけ元請けを選ばせる -->
+            <select
+              v-if="site.siteName === '__other__'"
+              v-model="site.contractorName"
+              class="select mt6"
+              :data-testid="`new-site-contractor-${si}`"
+            >
+              <option value="">{{ $t('report.contractor') }}{{ $t('report.selectOptional') }}</option>
+              <option v-for="name in master.contractorNames.value" :key="name" :value="name">{{ name }}</option>
+            </select>
           </Field>
 
           <!-- 作業区分（現場作業/見積/事務…）。既定で「現場作業」が入っている。
                ★1つの現場に複数の作業があり、定時が違う（見積・事務は現場の定時の外）。
                 区分を選ぶと siteFixedTimes が「現場×区分」の定時を優先して引き、
                 作業時刻の既定・終了の上限・残業判定まで連動する。
-                区分が1つ以下の会社では出さない（選ばせる意味がない）。 -->
-          <Field v-if="workCategoryOptions.length > 1" :label="$t('report.workCategory')">
+                区分が1つ以下の会社では出さない（選ばせる意味がない）。
+               ★現場を選ぶまで出さない。先に空の区分だけ見えていると
+                「何を選べばいいのか分からない空欄」になる（2026-08-17 本番で指摘）。 -->
+          <Field v-if="workCategoryOptions.length > 1 && isSiteChosen(site)" :label="$t('report.workCategory')">
             <select v-model="site.workCategoryId" class="select" :data-testid="`work-category-${si}`" @change="onSiteChange(si)">
               <option v-for="c in workCategoryOptions" :key="c.id" :value="c.id">{{ c.name }}</option>
             </select>
@@ -751,7 +742,7 @@ import { findSimilarSiteNames } from '~/utils/site-similarity.gen'
 import { uploadExpenseFiles } from '~/utils/uploadExpenseFiles'
 import { createGasolineItem } from '~/composables/useReport'
 import { useI18n } from 'vue-i18n'
-import type { User } from '~/types'
+import type { User, SiteReport } from '~/types'
 
 const { t } = useI18n()
 
@@ -1599,24 +1590,35 @@ function defaultWorkCategoryId(): string | null {
   return all.find(c => c.name === '現場作業')?.id ?? all[0]?.id ?? null
 }
 
+/** 現場が選ばれているか。区分の欄はこれが真になるまで出さない。 */
+function isSiteChosen(s: SiteReport): boolean {
+  const n = s?.siteName
+  if (!n) return false
+  if (n === '__other__') return !!s.customSiteName?.trim()
+  return true
+}
+
 /**
- * 区分が空の現場ブロックに既定を当てる。
+ * 区分が空の現場ブロックに既定を当てる。★現場が選ばれているものだけ。
  * ★マスタは非同期で読むので、createSite の時点では区分が決められない。
- *  読み込み後・現場を足した後・編集で復元した後に呼ぶ。
  * ★既に入っている値は上書きしない（編集で開いた過去の区分を消さない）。
  */
 function fillDefaultWorkCategories() {
   const def = defaultWorkCategoryId()
   if (!def) return
   for (const s of report.form.value.sites) {
-    if (!s.workCategoryId) s.workCategoryId = def
+    if (!s.workCategoryId && isSiteChosen(s)) s.workCategoryId = def
   }
 }
 
-// マスタが読めたら既定を当てる（fetch は onMounted で走る）
-watch(() => master.workCategories.value.length, (n) => { if (n) fillDefaultWorkCategories() })
-// 現場ブロックを足した時も（createSite は null で作る）
-watch(() => report.form.value.sites.length, () => fillDefaultWorkCategories())
+// ★immediate が要る。マスタは localStorage にキャッシュされていて、
+//  画面が出来た時点で既に読み込み済みのことがある。その場合 length は変化しないので
+//  watch が一度も発火せず、区分が空のままになる（2026-08-17 本番で発生）。
+watch(
+  () => [master.workCategories.value.length, report.form.value.sites.length] as const,
+  () => fillDefaultWorkCategories(),
+  { immediate: true },
+)
 
 // ── 固定勤務時刻。★区分ごとの定時 → 現場の定時 → 無し の順に引く ──
 //  定時は「現場だけ」でも「区分だけ」でも決まらない（事務は拠点で 08:30/08:00 と違う）。
@@ -1659,6 +1661,14 @@ function siteFixedBreaks(siteName: string | undefined, si?: number): { start: st
 function onSiteChange(si: number) {
   if (isEditMode.value) return
   const s = report.form.value.sites[si]
+  if (!s) return
+  // 現場を選んだ時点で区分の既定（現場作業）を入れる。★区分の欄は現場選択後に現れるので、
+  //  ここで入れておかないと「現れた瞬間は空欄」になる
+  if (isSiteChosen(s) && !s.workCategoryId) s.workCategoryId = defaultWorkCategoryId()
+  // 元請けは現場マスタから逆算して持つ（入力させない）
+  if (s.siteName && s.siteName !== '__other__' && s.siteName !== '__unset__') {
+    s.contractorName = master.siteContractors.value[s.siteName] ?? ''
+  }
   const w = s?.workers?.[0]
   if (!w) return
   const ft = siteFixedTimes(s?.siteName, si)
