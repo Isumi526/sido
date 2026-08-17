@@ -28,12 +28,18 @@ const SITE_LEVEL_KEYS: Array<[string, string]> = [
   ['garbagePhotoUrls', 'ゴミ写真'],
 ]
 
-/** 明細配列ごとにぶら下がる fileUrls のキー → 表示名 */
-const ITEM_LEVEL_KEYS: Array<[string, string]> = [
-  ['hotels', '宿泊'],
-  ['others', 'その他'],
-  ['entertainments', '雑経費'],
-]
+/** 明細配列のキー → 表示名。★ここに無いキーも拾う（下の collectReceipts 参照）。
+ *  この表は「日本語で何と出すか」を決めるためだけのもので、拾う対象を絞るものではない。 */
+const ITEM_LABELS: Record<string, string> = {
+  hotels: '宿泊',
+  others: 'その他',
+  entertainments: '雑経費',
+  parkings: '駐車場',
+  highways: '高速',
+  trains: '電車',
+  vehicles: '車両',
+  garbagePhotos: 'ゴミ写真',
+}
 
 function push(out: Receipt[], urls: unknown, label: string) {
   if (!Array.isArray(urls)) return
@@ -55,10 +61,17 @@ export function collectReceipts(report: any): Receipt[] {
 
     for (const [key, name] of SITE_LEVEL_KEYS) push(out, exp[key], `${siteName}／${name}`)
 
-    for (const [key, name] of ITEM_LEVEL_KEYS) {
-      const list = Array.isArray(exp[key]) ? exp[key] : []
-      for (const item of list) {
-        push(out, item?.fileUrls, `${siteName}／${item?.label || name}`)
+    // ★キーを決め打ちで列挙しない。経費のカテゴリは増えるし、実際に取りこぼしていた。
+    //  本番で「領収書: 0枚 → 1枚」と出ているのに現物が出せない状態だった
+    //  （駐車場 parkings に付いた領収書。列挙リストに parkings が無かった・2026-08-17）。
+    //  枚数を数える receiptCount は全キーを走査しており、こちらだけ3キーに絞っていたのが原因。
+    //  ★取りこぼす＝承認者が中身を見ないまま金額を確定させることになる。安全側に倒し、fileUrls を持つ配列は全部拾う。
+    for (const [key, val] of Object.entries(exp)) {
+      if (!Array.isArray(val)) continue
+      if (SITE_LEVEL_KEYS.some(([k]) => k === key)) continue   // 上で処理済み（URLの配列）
+      const name = ITEM_LABELS[key] ?? key
+      for (const item of val) {
+        push(out, (item as any)?.fileUrls, `${siteName}／${(item as any)?.label || name}`)
       }
     }
   })
