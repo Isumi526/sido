@@ -27,6 +27,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { createRemoteJWKSet, jwtVerify } from 'https://esm.sh/jose@5'
 import { pushLineText } from '../_shared/line.ts'
 import { resolveWorkerNotifyEmail, sendResend } from '../_shared/doc-mail.ts'
+import { resolveApprover } from '../_shared/caller-identity.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
@@ -275,6 +276,47 @@ async function notifyRejected(
   }
 }
 
+/**
+ * 日報の「お金の合計」をざっくり出す。★二重承認が要るかの判定にだけ使う。
+ * ★形に依存しないよう、sites の中の数値 `yen` を全部足す。経費の構造は
+ *  カテゴリごとに違い、今後も増えるので、列挙すると必ず取りこぼす（取りこぼすと
+ *  「金額が増えたのに1人で通る」＝この機能の目的が抜ける）。
+ *  多めに拾う分には「余計に二重承認になる」だけで安全側。
+ */
+function totalYenOf(sites: unknown): number {
+  let sum = 0
+  const walk = (v: unknown) => {
+    if (Array.isArray(v)) { for (const x of v) walk(x); return }
+    if (v && typeof v === 'object') {
+      for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+        if (k === 'yen' && typeof x === 'number' && Number.isFinite(x)) sum += x
+        else walk(x)
+      }
+    }
+  }
+  walk(sites)
+  return sum
+}
+
+/**
+ * この申請に二重承認（現場責任者＋オーナー）が要るか。
+ * ★2026-08-17 の運用判断（B）:
+ *   - 期限を過ぎてからの新規提出（late_new）… 要る
+ *   - 経費の合計が増える編集             … 要る
+ *   - それ以外の編集（金額が変わらない訂正）… 今までどおり1人でよい
+ *  全部に掛けると承認が回らない（sido の admin は1名）。抑止が要るのは
+ *  「ルールを守らなかった」か「お金が増える」時だけ、という整理。
+ */
+async function needsDualApproval(
+  svc: any, kind: string, reportId: string | null, payload: Record<string, unknown>,
+): Promise<boolean> {
+  if (kind === 'late_new') return true
+  if (!reportId) return false
+  const { data: cur } = await svc.from('daily_reports').select('sites').eq('id', reportId).maybeSingle()
+  if (!cur) return false
+  return totalYenOf(payload?.sites) > totalYenOf(cur.sites)
+}
+
 async function handleReview(svc: any, body: any, authHeader: string): Promise<Response> {
   if (!authHeader || authHeader.endsWith(ANON_KEY)) return json({ ok: false, error: 'unauthorized' }, 401)
   const cli = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: authHeader } } })
@@ -290,10 +332,29 @@ async function handleReview(svc: any, body: any, authHeader: string): Promise<Re
 
   // 自テナントの pending だけが対象（他テナントのIDを渡しても引けない）
   const { data: pend } = await svc.from('daily_report_pending_edits')
-    .select('id, report_id, report_user_id, report_date, payload, status, kind, submitted_by_user_id')
+    .select('id, report_id, report_user_id, report_date, payload, status, kind, submitted_by_user_id, requires_dual, approvals')
     .eq('id', id).eq('account_id', accountId).maybeSingle()
   if (!pend) return json({ ok: false, error: 'pending_not_found' }, 404)
   if (pend.status !== 'pending') return json({ ok: false, error: 'already_reviewed' }, 409)
+
+  // ★承認できる人かをサーバで判定する（2026-08-17）。
+  //  ここまで役割の判定が一切無く、テナントの認証済みユーザーなら誰でも承認できた。
+  //  自己承認の禁止も画面側にしか無く、UIを迂回すれば自分の申請を自分で通せた。
+  //  二重承認を作る前に、まずここを塞ぐ（土台）。
+  const approver = await resolveApprover(svc, authHeader)
+  if (!approver || approver.accountId !== accountId) return json({ ok: false, error: 'unauthorized' }, 401)
+  if (approver.role === 'worker') return json({ ok: false, error: 'not_an_approver' }, 403)
+  // ★申請者は users.id で入っている。承認者は workers 側で解決されるので worker_id で突き合わせる
+  //  （users に auth_user_id は無い）。worker 行を持たない純オーナーは申請者になり得ないので対象外。
+  let myUserId: string | null = null
+  if (approver.workerId) {
+    const { data: me } = await svc.from('users').select('id')
+      .eq('account_id', accountId).eq('worker_id', approver.workerId).maybeSingle()
+    myUserId = me?.id ?? null
+  }
+  if (myUserId && pend.submitted_by_user_id && myUserId === pend.submitted_by_user_id) {
+    return json({ ok: false, error: 'self_approval_forbidden' }, 403)
+  }
 
   // ★承認者は「人が読める名前」で残す。
   //  以前は au.user.email をそのまま入れていたが、履歴に出るのが
@@ -322,6 +383,60 @@ async function handleReview(svc: any, body: any, authHeader: string): Promise<Re
     // ★差し戻しが確定してから通知する。逆順だと「通知は届いたのに差し戻されていない」が起きる。
     const notified = await notifyRejected(svc, accountId, pend, reason, reviewer)
     return json({ ok: true, status: 'rejected', notified })
+  }
+
+  // ────────────────────────────────────────────────
+  //  二重承認（現場責任者＋オーナー）
+  //  ★2つ揃えば成立。順番は問わない。
+  //   順を固定すると「オーナーが責任者を後から設定した1件」が一次へ戻り、
+  //   責任者を埋めるほどオーナーの手間が増える構造になるため（2026-08-15 の判断）。
+  // ────────────────────────────────────────────────
+  if (pend.requires_dual) {
+    // この申請の現場に責任者が設定されているか。未設定ならオーナー1人で成立させる
+    //  （本番 sido は責任者が半分しか埋まっておらず、止めると翌日から現場が動かない）。
+    const siteIds = Array.isArray((pend.payload as any)?.sites)
+      ? ((pend.payload as any).sites as any[]).map((x) => x?.site_id).filter((v) => typeof v === 'string')
+      : []
+    let responsibleWorkerIds: string[] = []
+    if (siteIds.length) {
+      const { data: sites } = await svc.from('sites')
+        .select('responsible_worker_id').in('id', siteIds).eq('account_id', accountId)
+      responsibleWorkerIds = (sites ?? []).map((x: any) => x.responsible_worker_id).filter(Boolean)
+    }
+    const hasResponsible = responsibleWorkerIds.length > 0
+
+    // 承認者の枠を決める。オーナー枠＝admin/owner、責任者枠＝その現場の責任者本人
+    const isOwnerSlot = approver.role === 'admin' || approver.role === 'owner'
+    const isManagerSlot = !!approver.workerId && responsibleWorkerIds.includes(approver.workerId)
+    const slot = isOwnerSlot ? 'owner' : (isManagerSlot ? 'site_manager' : null)
+    if (!slot) return json({ ok: false, error: 'not_an_approver_for_this' }, 403)
+
+    const prev = Array.isArray(pend.approvals) ? (pend.approvals as any[]) : []
+    // ★同じ人は1つとしか数えない。申請者が自分の現場の責任者、オーナーが責任者を兼ねる、は
+    //  本番で普通に起きる。2役を1人で満たせると自己承認禁止が骨抜きになる。
+    const already = prev.some((a) => a?.auth_user_id === approver.authUserId)
+    const approvals = already ? prev : [...prev, {
+      auth_user_id: approver.authUserId, worker_id: approver.workerId,
+      name: reviewer, role: slot, at: now,
+    }]
+
+    const slots = new Set(approvals.map((a: any) => a?.role))
+    const satisfied = hasResponsible
+      ? (slots.has('owner') && slots.has('site_manager'))
+      : slots.has('owner')
+
+    if (!satisfied) {
+      const { error: upErr } = await svc.from('daily_report_pending_edits')
+        .update({ approvals, updated_at: now }).eq('id', id)
+      if (upErr) {
+        console.error('[report-edit-log] partial approve failed:', upErr)
+        return json({ ok: false, error: 'approve_failed' }, 500)
+      }
+      const need = hasResponsible && !slots.has('site_manager') ? 'site_manager' : 'owner'
+      return json({ ok: true, status: 'partially_approved', approvals, need })
+    }
+    // 揃ったので下の通常の承認処理へ進む。集まった承認は記録として残す
+    await svc.from('daily_report_pending_edits').update({ approvals }).eq('id', id)
   }
 
   // 承認: ここで初めて daily_reports に反映する＝集計に出る
@@ -551,10 +666,14 @@ Deno.serve(async (req) => {
       ? await q.eq('report_id', reportId).maybeSingle()
       : await q.eq('report_user_id', reportUserId).eq('report_date', reportDate).maybeSingle()
 
+    // ★二重承認が要るかは「申請した時点」で決める。承認する時に計算し直すと、
+    //  その間に元の日報が変わって判定がひっくり返る（同じ申請が見るたび別の顔になる）。
+    const requiresDual = await needsDualApproval(svc, kind, reportId, payload as Record<string, unknown>)
+
     const row = {
       account_id: caller.accountId, report_id: reportId, report_user_id: reportUserId,
       report_date: reportDate, payload, reason, diffs: diffs.length ? diffs : null,
-      kind,
+      kind, requires_dual: requiresDual, approvals: [],
       submitted_by_user_id: caller.userId, submitted_by_name: caller.name,
       submitted_at: new Date().toISOString(), status: 'pending',
       updated_at: new Date().toISOString(),
