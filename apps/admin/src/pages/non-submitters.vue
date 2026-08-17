@@ -156,7 +156,7 @@ async function load() {
       supabase.from('users')
         .select('id, real_name, worker_id, reminder_exempt, created_at, workers(name)')
         .eq('account_id', accountId),
-      supabase.from('workers').select('id, name, created_at, report_start_date').eq('account_id', accountId).eq('active', true),
+      supabase.from('workers').select('id, name, name_kana, created_at, report_start_date').eq('account_id', accountId).eq('active', true).order('name_kana', { nullsFirst: false }).order('name'),
       fetchAllReports(accountId, start, yest),
       supabase.from('worker_proxies').select('worker_id, proxy_operator_id').eq('account_id', accountId),
     ])

@@ -322,10 +322,10 @@ async function load() {
   site.value = (s as Site) ?? null
   if (!site.value) { loading.value = false; return }
 
-  const { data: cons } = await supabase.from('contractors').select('id, name').eq('account_id', accountId).eq('active', true).order('name')
+  const { data: cons } = await supabase.from('contractors').select('id, name').eq('account_id', accountId).eq('active', true).order('sort_order').order('name')
   contractors.value = (cons ?? []) as any[]
   contractorName.value = contractors.value.find(c => c.id === site.value!.contractor_id)?.name ?? ''
-  const { data: subsAll } = await supabase.from('subcontractors').select('id, name').eq('account_id', accountId).eq('active', true).order('name')
+  const { data: subsAll } = await supabase.from('subcontractors').select('id, name').eq('account_id', accountId).eq('active', true).order('sort_order').order('name')
   allSubs.value = (subsAll ?? []) as any[]
 
   const { data: links } = await supabase.from('site_subcontractors').select('subcontractor_id').eq('site_id', siteId)

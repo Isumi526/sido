@@ -48,12 +48,18 @@ export const CHECKS = [
     title: '編集申請の差分が空（何の修正か承認者に分からない）',
     impact: '承認は金額を確定させる操作なのに、中身が見えないまま承認ボタンを押させることになる',
     origin: '2026-08-12 大塚さんから「なんの、修正か こちら側がわからん」。computeDiff が出張フラグとガソリン代を受け取っていなかった',
+    // ★kind='edit' だけを見る（2026-08-17 修正）。
+    //  late_new（期限を過ぎた新規提出）は比べる元の日報がそもそも無いので、差分が空なのは正常。
+    //  承認画面もそれを分かっていて「日報の内容そのものを確認してください」と出している。
+    //  区別せずに数えていたため 08/12 以降ずっと critical で鳴り続け、5日間毎朝この監査が
+    //  失敗し続けていた。鳴りっぱなしの警報は無視されるので、本物の異常を隠す＝無いより悪い。
     sql: `
       select p.id::text as key,
              to_char(p.submitted_at,'MM/DD') || ' ' || coalesce(p.submitted_by_name,'?')
                || '「' || coalesce(left(p.reason,24),'(理由なし)') || '」' as detail
       from daily_report_pending_edits p
       where p.status = 'pending'
+        and p.kind = 'edit'
         and (p.diffs is null or jsonb_array_length(p.diffs) = 0)`,
   },
   {

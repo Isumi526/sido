@@ -163,7 +163,7 @@ async function load() {
   const accountId = await getAccountId()
   const [{ data: estRows }, { data: su }, { data: si }] = await Promise.all([
     supabase.from('estimates').select(EST_COLS).eq('account_id', accountId).eq('is_deleted', false).order('estimate_number', { ascending: false }),
-    supabase.from('subcontractors').select('id, name, category').eq('account_id', accountId).eq('active', true).order('name'),
+    supabase.from('subcontractors').select('id, name, category').eq('account_id', accountId).eq('active', true).order('sort_order').order('name'),
     supabase.from('sites').select('id, name').eq('account_id', accountId).eq('active', true).order('name_kana', { nullsFirst: false }).order('name'),
   ])
   rows.value  = (estRows ?? []) as Estimate[]

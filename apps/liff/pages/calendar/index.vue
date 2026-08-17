@@ -1165,9 +1165,11 @@ async function loadWorkers() {
   if (!accId) return
   const { data } = await supabase
     .from('workers')
-    .select('id, name, birth_date')
+    .select('id, name, name_kana, birth_date')
     .eq('account_id', accId)
     .eq('active', true)
+    // ★読み仮名順。name だけで並べると漢字が読み無視で並び、人が探せない
+    .order('name_kana', { nullsFirst: false })
     .order('name')
   workers.value = data ?? []
 }

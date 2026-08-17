@@ -61,6 +61,17 @@
         </div>
       </div>
 
+      <!-- 区分別の小計。★「現場作業と見積を分けて見たい」への答え（2026-08-17）。
+           1つの現場に複数の作業があり、原価の意味が違う（受注前の見積を施工の原価に混ぜたくない）。
+           ★ここの合計は必ず下の表の月計と一致する。区分は行の分け方を変えるだけで金額に触らない。 -->
+      <div v-if="displaySite && showCategory" class="cat-strip" data-testid="category-totals">
+        <span v-for="c in categoryTotals" :key="c.name" class="cat-chip" :data-testid="`cat-${c.name}`">
+          <span class="cat-name">{{ c.name }}</span>
+          <span class="cat-count">{{ c.count }}件</span>
+          <span class="cat-total">{{ yen(c.total) }}</span>
+        </span>
+      </div>
+
       <!-- 出力（※表の表示月は上の ‹ 年月 › ナビで切替。出力ボタンを押すと出力期間を選ぶ） -->
       <div v-if="displaySite" class="export-bar">
         <div class="export-pop-wrap">
@@ -93,6 +104,7 @@
           <thead>
             <tr>
               <th>日付</th>
+              <th v-if="showCategory">区分</th>
               <th>作業員</th>
               <th class="num">商社</th>
               <th class="num">業者</th>
@@ -126,6 +138,11 @@
                 {{ row.date.slice(5).replace('-', '/') }}
                 <span v-if="row._isSunday" class="sun">日</span>
               </td>
+              <td v-if="showCategory" class="cat-cell">
+                <span v-if="row._isInvoice" class="muted">請求</span>
+                <span v-else-if="row.categoryName" class="cat-badge">{{ row.categoryName }}</span>
+                <span v-else class="muted">—</span>
+              </td>
               <td class="worker-cell">
                 <span v-if="row.workerSummary">{{ row.workerSummary }}</span>
                 <span v-else class="muted">—</span>
@@ -148,7 +165,7 @@
           </tbody>
           <tfoot>
             <tr class="total-row">
-              <td colspan="2" data-testid="period-total-label">{{ isRange ? '期間計' : '月計' }}</td>
+              <td :colspan="showCategory ? 3 : 2" data-testid="period-total-label">{{ isRange ? '期間計' : '月計' }}</td>
               <td class="num">{{ yen(sumF(siteMap[displaySite], 'shoshaCost'))    }}</td>
               <td class="num">{{ yen(sumF(siteMap[displaySite], 'gyoshaCost'))    }}</td>
               <td v-if="canViewWages" class="num">{{ yen(sumF(siteMap[displaySite], 'laborCost'))     }}</td>
@@ -500,9 +517,12 @@ async function exportSite() {
     // 表示中の当月ならロード済みの siteMap を流用、それ以外は選択期間で再集計
     const map = (exportRange.value === 'month') ? siteMap.value : await computeSiteMap(from, to)
     const rows = (map[site] ?? []).filter((r: any) => !r._isInvoice)
-    const head = ['日付','作業員','商社','業者','社員','駐車場','燃料','高速','宿泊','接待交際費','ゴミ','交通費','ホーム','出張費','合計']
+    // ★区分の列も出す。画面で分けて見えるのに CSV で潰れていたら、結局 Excel で集計し直すことになる
+    const head = ['日付','区分','作業員','商社','業者','社員','駐車場','燃料','高速','宿泊','接待交際費','ゴミ','交通費','ホーム','出張費','合計']
     const csv = [head.join(',')].concat(rows.map((r: any) => [
-      r.date, '"' + String(r.workerSummary ?? '').replace(/"/g, '""') + '"',
+      r.date,
+      '"' + String(r.categoryName ?? '').replace(/"/g, '""') + '"',
+      '"' + String(r.workerSummary ?? '').replace(/"/g, '""') + '"',
       r.shoshaCost||0, r.gyoshaCost||0, r.laborCost||0, r.parkingYen||0, r.fuelCost||0, r.highwayCost||0,
       r.hotelCost||0, r.entertainCost||0, r.garbageCost||0, r.trainCost||0, r.homeCost||0, r.tripCost||0, r.total||0,
     ].join(','))).join('\r\n')
@@ -586,6 +606,8 @@ function closeRange() { rangeMode.value = '' }
 
 const loading    = ref(false)
 const siteMap    = ref<Record<string, any[]>>({})
+// この会社に登録されている作業区分（表示の出し分けに使う。1つ以下なら列も小計も出さない）
+const categoryNames = ref<string[]>([])
 const activeSite = useQueryParam('site', '')   // URL ?site= に同期（ユーザーが選んだ現場そのもの・月を跨いでも書き換えない）
 // 賃金モード（office以上のみ切替可）。既定=日当/8×稼働（現場管理者も閲覧OK）／real=実質賃金(時給×稼働)
 const wageMode = ref<WageMode>('daily')
@@ -593,7 +615,38 @@ function toggleWageMode() {
   if (!canViewHourlyWage.value) return
   wageMode.value = wageMode.value === 'daily' ? 'real' : 'daily'
 }
-const siteNamesAll = computed(() => Object.keys(siteMap.value).sort((a, b) => a.localeCompare(b, 'ja')))
+// 現場名 → 読み仮名。★漢字の name を localeCompare('ja') しても読みは無視されるので五十音にならない
+//  （ICU の ja 照合は漢字を部首・画数で並べる）。300件超のタブを目で追うので読み仮名で並べる（2026-08-17）。
+const kanaBySite = ref<Record<string, string>>({})
+const siteNamesAll = computed(() => Object.keys(siteMap.value)
+  .sort((a, b) => (kanaBySite.value[a] || a).localeCompare(kanaBySite.value[b] || b, 'ja')))
+
+/**
+ * 表示中の現場を「区分ごと」に足した小計。
+ * ★大塚さんの「一枚で見たい」への答え。現場を開いたまま、
+ *  現場作業/見積/事務 がそれぞれいくらなのかを1行で見せる。
+ * ★合計は必ず表の月計と一致する（区分は行の分け方を変えるだけで、金額を触らない）。
+ */
+const categoryTotals = computed<{ name: string; count: number; total: number }[]>(() => {
+  const rows = displaySite.value ? (siteMap.value[displaySite.value] ?? []) : []
+  if (!rows.length) return []
+  const by = new Map<string, { name: string; count: number; total: number }>()
+  for (const r of rows) {
+    // 下請け請求の行は日報ではないので区分を持たない。「請求」として別に見せる
+    const name = r._isInvoice ? '請求' : (r.categoryName || '（区分なし）')
+    const cur = by.get(name) ?? { name, count: 0, total: 0 }
+    cur.count += 1
+    cur.total += Number(r.total) || 0
+    by.set(name, cur)
+  }
+  // 区分マスタの並び順に合わせる。マスタに無いもの（区分なし・請求）は末尾
+  const order = new Map(categoryNames.value.map((n, i) => [n, i]))
+  return [...by.values()].sort((a, b) =>
+    (order.get(a.name) ?? 900) - (order.get(b.name) ?? 900) || a.name.localeCompare(b.name, 'ja'))
+})
+
+// 区分の列・小計を出すか。区分が1つ以下の会社では意味が無いので出さない
+const showCategory = computed(() => categoryTotals.value.length > 1)
 
 // ── 絞り込み（現場名 部分一致 × 元請け）──
 //  現場が300件を超えるとタブから目的の1件を目視で探せない、という運用者要望（2026-08-10）。
@@ -736,13 +789,21 @@ function extractExpenseCols(exp: any) {
 
 async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<string, any[]>> {
   const accountId = await getAccountId()
-  const [{ data: wm }, { data: sm }, { data: cfg }, { data: wh }, { data: siteRows }] = await Promise.all([
+  const [{ data: wm }, { data: sm }, { data: cfg }, { data: wh }, { data: siteRows }, { data: catRows }] = await Promise.all([
     supabase.from('workers').select('id, name, daily_wage, hourly_wage').eq('account_id', accountId),
     supabase.from('subcontractors').select('name, category, unit_price').eq('account_id', accountId),
     supabase.from('settings').select('key, value').eq('account_id', accountId),
     supabase.from('worker_wage_history').select('worker_id, effective_date, changed_at, old_unit_price, new_unit_price, wage_type, old_wage_type, old_daily_wage, new_daily_wage, old_hourly_wage, new_hourly_wage').eq('account_id', accountId),
-    supabase.from('sites').select('id, name, active, created_at, contractors(name)').eq('account_id', accountId).order('created_at', { ascending: true }),
+    supabase.from('sites').select('id, name, name_kana, active, created_at, contractors(name)').eq('account_id', accountId).order('created_at', { ascending: true }),
+    supabase.from('work_categories').select('id, name, sort_order').eq('account_id', accountId).order('sort_order', { ascending: true }),
   ])
+  // 作業区分（現場作業/見積/その他事務…）。日報の各現場ブロックが持つ workCategoryId を名前に直す。
+  // ★1つの現場に複数の作業があり、原価の意味が違う（受注前の見積を施工の原価に混ぜたくない）。
+  categoryNames.value = (catRows ?? []).map((c: any) => c.name)
+  const catNameById: Record<string, string> = Object.fromEntries((catRows ?? []).map((c: any) => [c.id, c.name]))
+  // タブを五十音で並べるための 現場名→読み仮名
+  kanaBySite.value = Object.fromEntries(
+    (siteRows ?? []).filter((s: any) => s.name_kana).map((s: any) => [s.name, s.name_kana]))
   // 絞り込み用の 現場名→元請け名。集計には使わない（表示するタブを減らすためだけ）。
   contractorBySite.value = Object.fromEntries(
     (siteRows ?? [])
@@ -833,11 +894,15 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
       const siteName = resolveSiteRef(site, siteCtx).name?.trim()
         || (rawName === '__other__' ? '新規現場' : '(不明)')
       const date  = (report as any).date
-      const gKey  = `${siteName}__${date}`
+      // ★区分（作業の種類）でも分ける。同じ現場・同じ日でも「現場作業」と「見積」は
+      //  原価の意味が違うので、1行に混ぜると分けて数えられない（2026-08-17）。
+      //  区分が無い過去の日報は「（区分なし）」の1バケットに集まる＝今までと同じ見え方。
+      const catName = catNameById[site.workCategoryId] ?? ''
+      const gKey  = `${siteName}__${date}__${catName}`
 
       if (!grouped[gKey]) {
         grouped[gKey] = {
-          _key: gKey, siteName, date, _isSunday: isSunday,
+          _key: gKey, siteName, date, _isSunday: isSunday, categoryName: catName,
           workers: [], subs: [],
           vehicleItems: [],
           _trainItems: [], _otherItems: [],
@@ -945,6 +1010,22 @@ watch(wageMode, load)   // 日当-実質賃金の切替で社員人件費を再�
 </script>
 
 <style scoped>
+/* 区分別の小計。現場を開いたまま「現場作業/見積/事務がそれぞれいくらか」を1行で見せる */
+.cat-strip { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
+.cat-chip {
+  display: inline-flex; align-items: baseline; gap: 8px;
+  padding: 5px 10px; border: 1px solid #E5E7EB; border-radius: 999px; background: #F8FAFC;
+  font-size: 12px;
+}
+.cat-name  { font-weight: 700; color: #1F2937; }
+.cat-count { color: #6B7280; }
+.cat-total { font-variant-numeric: tabular-nums; font-weight: 700; color: #047857; }
+.cat-cell  { white-space: nowrap; }
+.cat-badge {
+  display: inline-block; padding: 1px 7px; border-radius: 999px;
+  background: #ECFDF5; color: #047857; font-size: 11px; font-weight: 700;
+}
+
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
 .page-title { font-size: 22px; font-weight: 700; }
 .month-nav { display: flex; align-items: center; gap: 12px; }

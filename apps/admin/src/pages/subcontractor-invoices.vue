@@ -512,7 +512,7 @@ async function load() {
       .select('*, subcontractor_invoice_items(amount, tax_rate, site_id, site_name)')
       .eq('account_id', accountId).order('invoice_date', { ascending: false }).order('created_at', { ascending: false }),
     supabase.from('sites').select('id, name, active').eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
-    supabase.from('subcontractors').select('id, name, category').eq('account_id', accountId).eq('active', true).order('name'),
+    supabase.from('subcontractors').select('id, name, category').eq('account_id', accountId).eq('active', true).order('sort_order').order('name'),
     supabase.from('purchase_orders').select('id, order_number, total_amount, subcontractor_id, vendor_name')
       .eq('account_id', accountId).neq('is_deleted', true).order('order_date', { ascending: false }),
   ])
@@ -594,7 +594,7 @@ async function addVendor() {
       .select('id, name, category').single()
     if (error) throw error
     subs.value.push(data as any)
-    subs.value.sort((a, b) => a.name.localeCompare(b.name, 'ja'))
+    // ★同上。取得時の並び（sort_order→name）を壊さないよう再ソートしない
     form.value!.subcontractor_id = data.id
     form.value!.vendor_name = data.name
     newVendor.value = { name: '', category: '' }
@@ -621,8 +621,9 @@ async function addSite(it: Item) {
       .insert({ name, account_id: accountId, active: true })
       .select('id, name').single()
     if (error) throw error
+    // ★末尾に足すだけ。ここで全体を name で並べ直すと、せっかく name_kana 順で
+    //  取ってきた並びを漢字の読み無視の順に壊してしまう（2026-08-17）。
     sites.value.push(data as any)
-    sites.value.sort((a, b) => a.name.localeCompare(b.name, 'ja'))
     // ★名前マップにも入れる。入れ忘れると、足した直後に保存した時だけ site_name が
     //  引けず null になり、塞いだはずの穴が別経路で再発する。
     siteNameById.value = { ...siteNameById.value, [data.id]: data.name }

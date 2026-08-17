@@ -87,7 +87,7 @@ async function load() {
   const mySiteIds = await resolveMySiteIds()
   if (!mySiteIds.length) { rows.value = []; loading.value = false; return }
   // ★EF経由（sites は公開キーから読めないようにしたため）
-  const siteList = (await useSitesApi().listSafe({ ids: mySiteIds })) as unknown as (Site & { responsible_worker_id: string | null })[]
+  const siteList = (await useSitesApi().listSafe({ ids: mySiteIds })) as unknown as (Site & { responsible_worker_id: string | null; name_kana: string | null })[]
   const siteIds = siteList.map((s) => s.id)
   if (!siteIds.length) { rows.value = []; loading.value = false; return }
 
@@ -135,7 +135,9 @@ async function load() {
       if (a.lastMessage && b.lastMessage) return b.lastMessage.created_at.localeCompare(a.lastMessage.created_at)
       if (a.lastMessage) return -1
       if (b.lastMessage) return 1
-      return a.site.name.localeCompare(b.site.name, 'ja')
+      // ★admin(chats.vue) と同じく読み仮名で並べる。name だけだと漢字が読み無視で並び、
+      //  同じ現場一覧なのに admin と LIFF で順序が違って見える（2026-08-17）
+      return (a.site.name_kana || a.site.name).localeCompare(b.site.name_kana || b.site.name, 'ja')
     })
   loading.value = false
 }

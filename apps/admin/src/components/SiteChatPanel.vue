@@ -419,7 +419,7 @@ onMounted(async () => {
   loading.value = true
   accountId = (await getAccountId()) ?? ''
   if (accountId) {
-    const { data: workersData } = await supabase.from('workers').select('id, name').eq('account_id', accountId).eq('active', true).order('name')
+    const { data: workersData } = await supabase.from('workers').select('id, name, name_kana').eq('account_id', accountId).eq('active', true).order('name_kana', { nullsFirst: false }).order('name')
     allWorkers = (workersData ?? []) as { id: string; name: string }[]
     await loadMessages()
     scrollToBottom()   // 初回表示は最下部（最新メッセージ）から

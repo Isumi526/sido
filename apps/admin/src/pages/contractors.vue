@@ -106,7 +106,7 @@ const saveError   = ref('')
 async function load() {
   const accountId = await getAccountId()
   const [{ data: rows }, { data: contactRows }] = await Promise.all([
-    supabase.from('contractors').select(CON_COLS).eq('account_id', accountId).order('name'),
+    supabase.from('contractors').select(CON_COLS).eq('account_id', accountId).order('sort_order').order('name'),
     supabase.from('contractor_contacts').select('id, contractor_id, name, email, phone, sort_order')
       .eq('account_id', accountId).eq('is_deleted', false).order('sort_order'),
   ])

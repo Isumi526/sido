@@ -157,7 +157,7 @@ test.describe('作業区分マスタ', () => {
     await expect(page.locator('table.table'), '削除すると一覧から消える').not.toContainText(UI_CAT)
   })
 
-  test('★新しく作った会社にも標準3区分が自動で入る', async () => {
+  test('★新しく作った会社にも標準の区分が自動で入る', async () => {
     // 20260816020000 は「実行時点の既存アカウント」に入れただけで、
     // その後に作られた会社は区分ゼロになる漏れがあった（2026-08-16）。
     // DBトリガーで塞いだので、実際にアカウントを作って確かめる。
@@ -170,7 +170,9 @@ test.describe('作業区分マスタ', () => {
     try {
       const rows = await restSrv(`work_categories?account_id=eq.${newAccountId}&select=name&order=sort_order`)
       const names = rows.map((r: any) => r.name)
-      expect(names, '標準3区分が自動で入る').toEqual(['現場作業', '見積', 'その他事務'])
+      // 2026-08-17 に「講習」「移動」を標準へ足した（既存データの移行で、現場マスタに
+      // “現場ではないもの” として登録されていた安全衛生講習・研修・移動の受け皿が要ると分かったため）。
+      expect(names, '標準の区分が自動で入る').toEqual(['現場作業', '見積', 'その他事務', '講習', '移動'])
 
       // ★同じ穴が工種プリセットにもあった（2026-08-16 発見）。
       //  20260530000001 が当時の2社にしか入れておらず、以後の3社は0件で

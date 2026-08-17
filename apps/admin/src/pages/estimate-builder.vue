@@ -1580,7 +1580,7 @@ function sentPagesLabel(q: QuoteRequest): string {
 async function loadSubcontractorOptions() {
   const { data } = await supabase.from('subcontractors')
     .select('id, name').eq('account_id', accountId).eq('category', '業者')
-    .eq('is_deleted', false).order('name')
+    .eq('is_deleted', false).order('sort_order').order('name')
   subcontractorOptions.value = (data ?? []) as any
 }
 
@@ -3067,7 +3067,7 @@ async function loadMaterials() {
 // 商社＝下請け業者マスタ(区分=商社)。新設せず既存 subcontractors を流用（subcontractors はRLS無効のため account_id で絞る）
 async function loadSuppliers() {
   const { data } = await supabase.from('subcontractors')
-    .select('id, name').eq('account_id', accountId).eq('category', '商社').order('name')
+    .select('id, name').eq('account_id', accountId).eq('category', '商社').order('sort_order').order('name')
   suppliers.value = (data ?? []) as Supplier[]
 }
 async function loadMaterialPrices() {
@@ -3078,7 +3078,7 @@ async function loadMaterialPrices() {
 // ③ 元請けと担当者（見積書の送信先候補）。元請けマスタ(contractors)＋ contractor_contacts。
 async function loadContractors() {
   const [{ data: cs }, { data: ccs }] = await Promise.all([
-    supabase.from('contractors').select('id, name').eq('account_id', accountId).eq('active', true).order('name'),
+    supabase.from('contractors').select('id, name').eq('account_id', accountId).eq('active', true).order('sort_order').order('name'),
     supabase.from('contractor_contacts').select('id, contractor_id, name, email').eq('account_id', accountId).eq('is_deleted', false).order('sort_order'),
   ])
   contractors.value = (cs ?? []) as Contractor[]
@@ -3086,7 +3086,7 @@ async function loadContractors() {
 }
 // 現場一覧（受注時の紐付け先・現場名表示用）
 async function loadSites() {
-  const { data } = await supabase.from('sites').select('id, name').eq('account_id', accountId).eq('active', true).order('name')
+  const { data } = await supabase.from('sites').select('id, name, name_kana').eq('account_id', accountId).eq('active', true).order('name_kana', { nullsFirst: false }).order('name')
   sites.value = (data ?? []) as Site[]
 }
 // ④ 自社情報（settings）を読む
