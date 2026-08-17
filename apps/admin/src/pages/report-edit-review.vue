@@ -26,6 +26,15 @@
             <span v-if="siteNamesOf(p)" class="site" data-testid="pending-sites">
               <span class="material-symbols-rounded ico">location_on</span>{{ siteNamesOf(p) }}
             </span>
+            <!-- ★二重承認（現場責任者＋オーナー）。順番は問わないので、
+                 「あと誰の承認が要るか」を出さないと押した人が止まったのか進んだのか分からない。 -->
+            <span v-if="p.requires_dual" class="dual" data-testid="pending-dual">
+              <span class="material-symbols-rounded ico">how_to_reg</span>二重承認
+              <template v-if="approvedRoles(p).length">
+                （{{ approvedRoles(p).join('・') }} 済 / あと {{ remainingRole(p) }}）
+              </template>
+              <template v-else>（現場責任者とオーナーの2名）</template>
+            </span>
           </div>
           <span class="muted">{{ fmtDateTime(p.submitted_at) }}</span>
         </div>
@@ -283,6 +292,16 @@ async function resolveMyUserIds() {
   myUserIds.value = (us ?? []).map((u: any) => u.id).filter(Boolean)
 }
 
+/** 二重承認: もう入っている承認の役割名（日本語） */
+function approvedRoles(p: any): string[] {
+  const a = Array.isArray(p?.approvals) ? p.approvals : []
+  return a.map((x: any) => x?.role === 'owner' ? 'オーナー' : '現場責任者')
+}
+/** 二重承認: あと誰の承認が要るか */
+function remainingRole(p: any): string {
+  return approvedRoles(p).includes('オーナー') ? '現場責任者' : 'オーナー'
+}
+
 /** その保留編集を出したのが自分か（＝自己承認になるか） */
 function isMine(p: any): boolean {
   const id = p?.submitted_by_user_id
@@ -319,7 +338,7 @@ async function load() {
     const accountId = await getAccountId()
     const { data, error } = await supabase
       .from('daily_report_pending_edits')
-      .select('id, report_id, report_date, reason, diffs, kind, payload, submitted_by_user_id, submitted_by_name, submitted_at')
+      .select('id, report_id, report_date, reason, diffs, kind, payload, submitted_by_user_id, submitted_by_name, submitted_at, requires_dual, approvals')
       .eq('account_id', accountId)
       .eq('status', 'pending')
       .order('submitted_at', { ascending: true })
@@ -384,6 +403,8 @@ async function decide(p: any, action: 'approve' | 'reject') {
       msgOk.value = false
       return
     }
+  } else if (p.requires_dual && !(p.approvals ?? []).length) {
+    if (!window.confirm(`${p.report_date} の編集を承認しますか？\n\nこの申請は金額が増えるか期限切れのため、現場責任者とオーナーの2名の承認が要ります。あなたの承認だけでは日報に反映されません。`)) return
   } else if (!window.confirm(`${p.report_date} の編集を承認して日報に反映しますか？`)) {
     return
   }
@@ -403,7 +424,13 @@ async function decide(p: any, action: 'approve' | 'reject') {
     })
     const json = await res.json().catch(() => null)
     if (!res.ok || !json?.ok) throw new Error(json?.error ?? `失敗しました(${res.status})`)
-    msg.value = action === 'approve' ? '承認しました。日報に反映されました' : '差し戻しました'
+    // ★二重承認の1つ目では日報に反映されていない。ここで「反映されました」と出すと、
+    //  押した人は終わったつもりで帰る＝もう1人が来ないまま止まる。
+    msg.value = action === 'reject'
+      ? '差し戻しました'
+      : (json.status === 'partially_approved'
+          ? `承認しました。反映にはあと ${json.need === 'owner' ? 'オーナー' : '現場責任者'} の承認が必要です`
+          : '承認しました。日報に反映されました')
     msgOk.value = true
     await load()
     // 処理した分がそのまま履歴に積まれるので、履歴も開いていれば追従させる
@@ -481,6 +508,9 @@ watch(historyOpen, (open) => { if (open && !history.value.length) void loadHisto
 .receipt-link .ico { font-size: 16px; vertical-align: middle; line-height: 1; }
 
 .actions { display: flex; gap: 10px; }
+.dual { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; padding: 1px 8px;
+  border-radius: 999px; background: #FEF3C7; color: #92400E; font-size: 11px; font-weight: 700; }
+.dual .ico { font-size: 13px; }
 .btn-approve { background: #16a34a; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-weight: 700; cursor: pointer; }
 .btn-reject { background: #fff; color: #b91c1c; border: 1px solid #fca5a5; border-radius: 8px; padding: 9px 16px; font-weight: 700; cursor: pointer; }
 .btn-approve:disabled, .btn-reject:disabled { opacity: .5; cursor: default; }
