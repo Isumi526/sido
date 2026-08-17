@@ -171,7 +171,7 @@
 
           <!-- 現場名 -->
           <Field :label="$t('report.siteName')" required>
-            <select v-model="site.siteName" class="select" required @change="onSiteChange(si)">
+            <select v-model="site.siteName" class="select" required :data-testid="`site-select-${si}`" @change="onSiteChange(si)">
               <option value="">{{ $t('common.select') }}</option>
               <option value="__unset__">{{ $t('report.siteUnset') }}</option>
               <!-- ★終わって無効化された現場の日報を編集で開いた時の受け皿。
@@ -223,6 +223,17 @@
             </div>
           </Field>
 
+          <!-- 作業区分（現場作業/見積/事務…）。既定で「現場作業」が入っている。
+               ★1つの現場に複数の作業があり、定時が違う（見積・事務は現場の定時の外）。
+                区分を選ぶと siteFixedTimes が「現場×区分」の定時を優先して引き、
+                作業時刻の既定・終了の上限・残業判定まで連動する。
+                区分が1つ以下の会社では出さない（選ばせる意味がない）。 -->
+          <Field v-if="workCategoryOptions.length > 1" :label="$t('report.workCategory')">
+            <select v-model="site.workCategoryId" class="select" :data-testid="`work-category-${si}`" @change="onSiteChange(si)">
+              <option v-for="c in workCategoryOptions" :key="c.id" :value="c.id">{{ c.name }}</option>
+            </select>
+          </Field>
+
           <!-- ── 稼働（現場選択後に表示） ── -->
           <template v-if="site.siteName && site.siteName !== '__other__' || site.siteName === '__other__' && site.customSiteName">
           <div class="sub-section">
@@ -245,14 +256,14 @@
                   <div class="worker-time-row">
                     <div class="time-field">
                       <label class="hours-label">{{ $t('report.startTime') }}</label>
-                      <select v-model="site.workers[0].startTime" class="select">
+                      <select v-model="site.workers[0].startTime" class="select" :data-testid="`start-time-${si}`">
                         <option v-for="t in startTimeOptionsForSite(si)" :key="t" :value="t">{{ t }}</option>
                       </select>
                     </div>
                     <span class="time-sep">〜</span>
                     <div class="time-field">
                       <label class="hours-label">{{ $t('report.endTime') }}</label>
-                      <select v-model="site.workers[0].endTime" class="select">
+                      <select v-model="site.workers[0].endTime" class="select" :data-testid="`end-time-${si}`">
                         <option v-for="t in endTimeOptionsForSite(si)" :key="t" :value="t">{{ t }}</option>
                       </select>
                     </div>
@@ -268,7 +279,7 @@
                       {{ punchGap(si) }}
                     </span>
                   </div>
-                  <div v-if="siteFixedEnd(site.siteName)" class="fixed-time-note">
+                  <div v-if="siteFixedEnd(site.siteName, si)" class="fixed-time-note">
                     <template v-if="overtimeApprovedForDate">
                       <span class="material-symbols-rounded banner-icon">check_circle</span>{{ $t('report.overtimeApprovedNote') }}
                       <span v-if="approvedAdjust?.startTime" class="approved-extra" data-testid="approved-early-start">
@@ -276,7 +287,7 @@
                       </span>
                     </template>
                     <template v-else>
-                      <span class="material-symbols-rounded banner-icon">timer</span>{{ $t('report.fixedTimeNote', { end: siteFixedEnd(site.siteName) }) }}
+                      <span class="material-symbols-rounded banner-icon">timer</span>{{ $t('report.fixedTimeNote', { end: siteFixedEnd(site.siteName, si) }) }}
                       <NuxtLink to="/overtime" class="overtime-link">{{ $t('report.overtimeApplyLink') }}</NuxtLink>
                     </template>
                   </div>
@@ -1467,7 +1478,7 @@ function startTimeOptionsForSite(si: number): string[] {
   let floorMin = -1   // この値「以上」のみ選択可（複数の下限の最大を採る）
   // ※ 前現場終了以降の制限は撤廃（前現場終了より前でも設定可＝80c2）。重複は送信時にバリデートする。
   // 現場の固定開始以降のみ維持（固定開始より前=早出は不可・遅刻=後ろ倒しは可）
-  const fStart = siteFixedStart(s?.siteName)
+  const fStart = siteFixedStart(s?.siteName, si)
   // ★早朝入りが承認されていれば、その時刻まで下限を下げる。
   //  承認が無ければ従来どおり固定開始が下限（勝手に早出をつけられないため）。
   const approvedStart = approvedAdjust.value?.startTime ?? null
@@ -1573,20 +1584,74 @@ function findWorkerTimeOverlap(): string | null {
   return null
 }
 
-// ── 現場の固定勤務時刻（master・name keyed）。__other__/__unset__/未設定は null ──
-function siteFixedTimes(siteName: string | undefined): { start: string | null; end: string | null } | null {
+/**
+ * その台帳（現場）で選べる作業区分。★scope で絞る（慰安旅行を現場の選択肢に出さない）。
+ */
+const workCategoryOptions = computed(() =>
+  master.workCategories.value.filter(c => c.scope === null || c.scope === 'site'))
+
+/**
+ * 既定の作業区分＝「現場作業」。
+ * ★入力項目がいきなり増えるとパニックになる人が出るので最初から選択済みにする（2026-08-16 人）。
+ */
+function defaultWorkCategoryId(): string | null {
+  const all = master.workCategories.value
+  return all.find(c => c.name === '現場作業')?.id ?? all[0]?.id ?? null
+}
+
+/**
+ * 区分が空の現場ブロックに既定を当てる。
+ * ★マスタは非同期で読むので、createSite の時点では区分が決められない。
+ *  読み込み後・現場を足した後・編集で復元した後に呼ぶ。
+ * ★既に入っている値は上書きしない（編集で開いた過去の区分を消さない）。
+ */
+function fillDefaultWorkCategories() {
+  const def = defaultWorkCategoryId()
+  if (!def) return
+  for (const s of report.form.value.sites) {
+    if (!s.workCategoryId) s.workCategoryId = def
+  }
+}
+
+// マスタが読めたら既定を当てる（fetch は onMounted で走る）
+watch(() => master.workCategories.value.length, (n) => { if (n) fillDefaultWorkCategories() })
+// 現場ブロックを足した時も（createSite は null で作る）
+watch(() => report.form.value.sites.length, () => fillDefaultWorkCategories())
+
+// ── 固定勤務時刻。★区分ごとの定時 → 現場の定時 → 無し の順に引く ──
+//  定時は「現場だけ」でも「区分だけ」でも決まらない（事務は拠点で 08:30/08:00 と違う）。
+//  現場×区分に設定があればそれを最優先。無ければ従来どおり現場の定時へ落ちる
+//  ＝移行が済んでいない現場でも今までどおり動く。
+function siteFixedTimes(siteName: string | undefined, si?: number): { start: string | null; end: string | null } | null {
   if (!siteName || siteName === '__other__' || siteName === '__unset__') return null
+  if (si !== undefined) {
+    const siteId = master.siteIds.value[siteName]
+    const catId  = report.form.value.sites[si]?.workCategoryId
+    if (siteId && catId) {
+      const h = master.categoryHours.value[`${siteId}|${catId}`]
+      if (h && (h.start || h.end)) return { start: h.start, end: h.end }
+    }
+  }
   return master.siteWorkTimes.value[siteName] ?? null
 }
-function siteFixedEnd(siteName: string | undefined): string {
-  return siteFixedTimes(siteName)?.end || ''
+function siteFixedEnd(siteName: string | undefined, si?: number): string {
+  return siteFixedTimes(siteName, si)?.end || ''
 }
-function siteFixedStart(siteName: string | undefined): string {
-  return siteFixedTimes(siteName)?.start || ''
+function siteFixedStart(siteName: string | undefined, si?: number): string {
+  return siteFixedTimes(siteName, si)?.start || ''
 }
 // 現場の既定休憩[{start,minutes}]。設定ある現場のみ返す。
-function siteFixedBreaks(siteName: string | undefined): { start: string; minutes: number }[] | null {
+function siteFixedBreaks(siteName: string | undefined, si?: number): { start: string; minutes: number }[] | null {
   if (!siteName || siteName === '__other__' || siteName === '__unset__') return null
+  // ★定時と同じ順序。現場×区分 → 現場 の順に引く
+  if (si !== undefined) {
+    const siteId = master.siteIds.value[siteName]
+    const catId  = report.form.value.sites[si]?.workCategoryId
+    if (siteId && catId) {
+      const h = master.categoryHours.value[`${siteId}|${catId}`]
+      if (h?.breaks?.length) return h.breaks
+    }
+  }
   const v = master.siteBreaks.value[siteName]
   return (Array.isArray(v) && v.length) ? v : null
 }
@@ -1596,12 +1661,12 @@ function onSiteChange(si: number) {
   const s = report.form.value.sites[si]
   const w = s?.workers?.[0]
   if (!w) return
-  const ft = siteFixedTimes(s?.siteName)
+  const ft = siteFixedTimes(s?.siteName, si)
   if (ft?.start) w.startTime = ft.start
   if (ft?.end) w.endTime = ft.end
   // 現場に既定休憩があれば、その複数時間帯をスナップショット（breakSnapshot=trueで人件費計算が保存値を尊重）。
   //  設定が無ければ従来どおり自動計算のまま（breakSnapshotは付けない＝レガシー挙動）。
-  const brks = siteFixedBreaks(s?.siteName)
+  const brks = siteFixedBreaks(s?.siteName, si)
   if (brks) {
     w.breaks = brks.map(b => ({ start: b.start, minutes: b.minutes }))
     w.breakMinutes = brks.reduce((sum, b) => sum + (Number(b.minutes) || 0), 0)  // 表示/後方互換用の合計
@@ -1614,7 +1679,7 @@ function onSiteChange(si: number) {
 //  編集で開いた古い超過値は snap させないため、現在値は必ず含める。
 function endTimeOptionsForSite(si: number): string[] {
   const s = report.form.value.sites[si]
-  const endCap = siteFixedEnd(s?.siteName)
+  const endCap = siteFixedEnd(s?.siteName, si)
   if (!endCap) return TIME_OPTIONS
   // 残業申請が承認済みの日付は固定終了の上限を解放（架空残業対策の例外）。
   if (overtimeApprovedForDate.value) return TIME_OPTIONS

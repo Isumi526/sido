@@ -40,6 +40,7 @@
   "addNewContractor": "＋ Register a new main contractor",
   "contractorPlaceholder": "Enter contractor name (e.g. ABC Construction)",
   "siteName": "Site name",
+  "workCategory": "Work category",
   "siteGroupLinked": "Sites linked to this contractor",
   "siteGroupOther": "Other sites",
   "siteGroupUnlinked": "Unlinked",
