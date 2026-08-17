@@ -33,3 +33,6 @@ backups/
 scripts/.dispatcher-state.json
 scripts/.dispatcher.lock
 scheduled_tasks.lock
+
+# 本番データのスナップショット・巻き戻しSQL（顧客データそのものなので絶対にコミットしない）
+.backfill-*
