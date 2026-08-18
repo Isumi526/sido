@@ -24,7 +24,10 @@
       <div v-else-if="report.submitted.value || editSubmitted || lateSubmitted" class="state-screen">
         <div class="success-mark">✓</div>
         <h2 class="state-title">{{ editSubmitted ? $t('report.updatedTitle') : lateSubmitted ? $t('report.lateSubmittedTitle') : $t('report.submittedTitle') }}</h2>
-        <p class="state-text">{{ editSubmitted ? $t('report.updatedText') : lateSubmitted ? $t('report.lateSubmittedText') : $t('report.submittedText') }}</p>
+        <!-- ★「LINEグループに通知しました」は実際に飛んだ時だけ出す。
+             通知はクロステナント漏洩の対策で全テナントOFFにしてあり、無条件に出していたので
+             画面が嘘をついていた（2026-08-18 大塚さん「LINEグループに通知してんの？」）。 -->
+        <p class="state-text">{{ editSubmitted ? $t('report.updatedText') : lateSubmitted ? $t('report.lateSubmittedText') : (report.lineNotified.value ? $t('report.submittedText') : $t('report.submittedTextPlain')) }}</p>
         <button v-if="!editSubmitted && !lateSubmitted && nextUnsubmittedDate" class="btn-primary" @click="goToNextReport">
           {{ $t('report.enterNextReport', { date: nextDateLabel }) }}
         </button>

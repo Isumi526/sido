@@ -113,6 +113,11 @@ export const useReport = () => {
   const supabase = useSupabase()
 
   const submitting = ref(false)
+  /** ★実際にLINEグループへ通知が飛んだか。完了画面の文言をこれで出し分ける。
+   *  以前は無条件に「LINEグループに通知しました」と出していたが、通知は
+   *  クロステナント漏洩の対策で全テナントOFFにしてあり、**画面が嘘をついていた**
+   *  （2026-08-18 大塚さん「LINEグループに通知してんの？」）。 */
+  const lineNotified = ref(false)
   const submitted  = ref(false)
   const error      = ref<string | null>(null)
 
@@ -339,6 +344,7 @@ export const useReport = () => {
         //   submit-report EF は全社共通グループ(NOTIFY_GROUP_IDS)へ送るクロステナント漏洩バグがあるため、
         //   per-tenant 化して修正するまで LIFF からは絶対に呼ばない。
         console.log('[Report] 日報LINE通知はオフ（脱LINE）: submit-report をスキップ')
+        lineNotified.value = false
       } else {
         // dev環境またはテスターはtest-プレフィックスの関数を呼び出す
         const fnPrefix = config.public.appEnv === 'development' ? 'test-' : ''
@@ -352,7 +358,7 @@ export const useReport = () => {
             expenses: stripFiles(site.expenses),
           })),
         }
-        await fetch(`${efUrl}/${fnPrefix}submit-report`, {
+        const notifyRes = await fetch(`${efUrl}/${fnPrefix}submit-report`, {
           method:    'POST',
           keepalive: true,
           headers:   {
@@ -361,6 +367,10 @@ export const useReport = () => {
           },
           body:      JSON.stringify(stripEmpty(mainPayload)),
         })
+        // ★EF は通知しなかった時に skipped（notify_disabled / no_group_configured）を返す。
+        //  「呼んだ＝飛んだ」ではないので、返り値まで見て判断する。
+        const notifyJson = await notifyRes.json().catch(() => ({} as any))
+        lineNotified.value = notifyRes.ok && !notifyJson?.skipped
       }
       // ── ③ 新規現場・新規下請けを Supabase に保存（送信完了表示の前に確実化）──
       //  fire-and-forget だと「送信完了」直後にLIFFを閉じた際に upsert が中断され、
@@ -397,6 +407,7 @@ export const useReport = () => {
     uploadPendingExpenseFiles,
     submitting: readonly(submitting),
     submitted:  readonly(submitted),
+    lineNotified: readonly(lineNotified),
     error:      readonly(error),
     addSite, removeSite,
     addWorker, removeWorker,
