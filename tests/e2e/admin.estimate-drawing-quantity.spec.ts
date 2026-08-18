@@ -164,3 +164,103 @@ test('AC★: 選んだ数量が明細の初期値として入る（確定はし�
   // 選ばなかった天井は入っていない
   expect(items.some((r: any) => String(r.item_name ?? '').includes('C-01')), '選ばなかった行は入らない').toBe(false)
 })
+
+test('★1ページが504で落ちても他のページは取れ、そのページだけ再試行できる', async ({ page }) => {
+  // 2026-08-18 通しレビュー: 実図面で 504 が出た。当時は1ページ失敗で break していたため、
+  // 以降のページが丸ごと未処理のまま終わっていた（画面には途中までの結果だけが残る）。
+  // ★「途中で落ちても残りは取れる」「落ちたページだけやり直せる」を固定する。
+  let firstPageCalls = 0
+  await page.route('**/functions/v1/drawing-quantity-extract', async (route: any) => {
+    const body = JSON.parse(route.request().postData() || '{}')
+    if (body.page === 1) {
+      firstPageCalls++
+      // 1回目だけ落とす（再試行で回復することを見るため）
+      if (firstPageCalls === 1) {
+        await route.fulfill({ status: 504, contentType: 'application/json', body: JSON.stringify({ error: '解析エラー(504)' }) })
+        return
+      }
+      await route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ ok: true, page: 1, gridSpanX: 10.2, gridSpanY: 6.95, ceilingHeights: [],
+          parts: [{ part: '天井', rows: [{ code: 'C-01', spec: '再試行で取れた', value: 71.0, unit: '㎡' }] }] }),
+      })
+      return
+    }
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ ok: true, page: body.page, gridSpanX: null, gridSpanY: null, ceilingHeights: [],
+        parts: [{ part: '床', rows: [{ code: 'F-01', spec: '2ページ目は取れる', value: 21.3, unit: '㎡' }] }] }),
+    })
+  })
+
+  await page.goto(`/estimate-builder?project=${projId}`, { waitUntil: 'networkidle' })
+  await openBuilderTab(page, 'intake', '[data-testid="intake-dropzone"]')
+  const fileName = `E2E数量図面_retry_${TS}.pdf`
+  await page.locator('[data-testid="intake-file"]').setInputFiles({
+    name: fileName, mimeType: 'application/pdf', buffer: makePdf(2),
+  })
+  await expect(page.locator('[data-testid="intake-att-list"]')).toContainText(fileName, { timeout: 20000 })
+  const att = await restSrv(`estimate_project_attachments?project_id=eq.${projId}&name=eq.${encodeURIComponent(fileName)}&select=id`)
+  await page.locator(`[data-testid="dqty-open-${att[0].id}"]`).click()
+  await expect(page.locator('[data-testid="dqty-panel"]')).toBeVisible({ timeout: 20000 })
+  await expect(page.locator('[data-testid="dqty-busy"]')).toHaveCount(0, { timeout: 40000 })
+
+  // ★2ページ目は取れている（1ページ目の失敗で全体が止まっていない）
+  await expect(page.locator('[data-testid="dqty-panel"]'), '★落ちたページ以外は取れる').toContainText('2ページ目は取れる')
+  // 失敗ページが提示されている
+  const failed = page.locator('[data-testid="dqty-failed-pages"]')
+  await expect(failed, '★失敗ページが分かる').toBeVisible()
+  await expect(failed).toContainText('P.1')
+
+  // 再試行するとそのページだけ取り直せて、失敗一覧から消える
+  await page.locator('[data-testid="dqty-retry-page"]').click()
+  await expect(page.locator('[data-testid="dqty-panel"]'), '★再試行で取れる').toContainText('再試行で取れた', { timeout: 20000 })
+  await expect(failed, '★直ったら失敗一覧から消える').toHaveCount(0, { timeout: 10000 })
+})
+
+test('★解析中は他のタブに移っても進捗が見え、離脱しようとすると確認が出る', async ({ page }) => {
+  // 2026-08-18 通しレビュー:
+  //  - タブを移ると進捗が見えなくなり、進んでいるのか分からなかった
+  //  - 解析中にブラウザバックしたら解析がリセットされた（やり直しになった）
+  // ★数量抽出はブラウザの中で走るので、離れると本当に消える。だから確認を出す。
+
+  // 1ページ目の応答を保留して「解析中」を作る
+  let release: (() => void) | null = null
+  const held = new Promise<void>(r => { release = r })
+  await page.route('**/functions/v1/drawing-quantity-extract', async (route: any) => {
+    const body = JSON.parse(route.request().postData() || '{}')
+    if (body.page === 1) await held
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ ok: true, page: body.page, gridSpanX: null, gridSpanY: null, ceilingHeights: [], parts: [] }),
+    })
+  })
+
+  await page.goto(`/estimate-builder?project=${projId}`, { waitUntil: 'networkidle' })
+  await openBuilderTab(page, 'intake', '[data-testid="intake-dropzone"]')
+  const fileName = `E2E数量図面_guard_${TS}.pdf`
+  await page.locator('[data-testid="intake-file"]').setInputFiles({
+    name: fileName, mimeType: 'application/pdf', buffer: makePdf(2),
+  })
+  await expect(page.locator('[data-testid="intake-att-list"]')).toContainText(fileName, { timeout: 20000 })
+  const att = await restSrv(`estimate_project_attachments?project_id=eq.${projId}&name=eq.${encodeURIComponent(fileName)}&select=id`)
+  await page.locator(`[data-testid="dqty-open-${att[0].id}"]`).click()
+
+  // ★他のタブへ移っても進捗が見える
+  await page.locator('[data-testid="tab-items"]').click()
+  await expect(page.locator('[data-testid="dqty-progress-chip"]'),
+    '★どのタブに居ても解析中だと分かる').toBeVisible({ timeout: 20000 })
+
+  // ★離脱しようとすると確認が出る（キャンセルすれば留まる）
+  // ★画面内のリンクで試す。page.goto はページ全体の再読み込みになり、
+  //  ルーターの離脱ガードを通らない（＝何も検証できない）。
+  let asked = ''
+  page.once('dialog', d => { asked = d.message(); d.dismiss() })
+  await page.locator('[data-testid="back-to-list"]').click()
+  await page.waitForTimeout(800)
+  expect(asked, '★解析が消えることを伝えてから移動させる').toMatch(/中断/)
+  await expect(page, '★キャンセルしたら留まる').toHaveURL(/estimate-builder/)
+
+  release?.()
+})
+

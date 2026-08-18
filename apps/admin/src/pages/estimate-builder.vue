@@ -150,6 +150,10 @@
           </div>
           <ul v-if="attachments.length" class="att-list" data-testid="wiz-att-list">
             <li v-for="a in attachments" :key="a.id">
+              <!-- 図面の表紙。押すと別タブで開く（クリック領域を名前と揃える） -->
+              <button v-if="attThumbs[a.id]" class="att-thumb" :data-testid="`wiz-att-thumb-${a.id}`" @click="openAttachment(a)">
+                <img :src="attThumbs[a.id]" :alt="a.name || a.path" />
+              </button>
               <button class="att-name" @click="openAttachment(a)">{{ a.name || a.path }}</button>
               <button class="btn-del" @click="removeAttachment(a)">×</button>
             </li>
@@ -252,6 +256,11 @@
         <span v-for="j in runningExtracts" :key="j.attachmentId" class="ext-chip" data-testid="ext-progress-chip">
           <span class="spin-dot"></span> 材料抽出中 {{ j.done }}/{{ j.total || '?' }}ページ
         </span>
+        <!-- ★数量抽出はブラウザの中で走るので、タブを移ると進捗が見えなくなっていた
+             （2026-08-18 通しレビュー）。材料抽出と同じくここに出す。 -->
+        <span v-if="dqty.busy" class="ext-chip" data-testid="dqty-progress-chip">
+          <span class="spin-dot"></span> 数量抽出中 {{ dqty.done }}/{{ dqty.total || '?' }}ページ
+        </span>
         <button class="btab ghost" data-testid="open-drawer" @click="openDrawer"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">settings</span> マスタ・自社情報</button>
       </div>
 
@@ -296,6 +305,9 @@
           </div>
           <ul v-if="attachments.length" class="att-list" data-testid="intake-att-list">
             <li v-for="a in attachments" :key="a.id">
+              <button v-if="attThumbs[a.id]" class="att-thumb" :data-testid="`intake-att-thumb-${a.id}`" @click="openAttachment(a)">
+                <img :src="attThumbs[a.id]" :alt="a.name || a.path" />
+              </button>
               <button class="att-name" :data-testid="`intake-att-${a.id}`" @click="openAttachment(a)">{{ a.name || a.path }}</button>
               <!-- R8: 図面はページごとに工種が分かれている。該当ページだけ業者へ送る -->
               <button v-if="isPdf(a)" class="btn-edit" :data-testid="`dsend-open-${a.id}`" @click="openDrawingSend(a)">ページを選んで送る</button>
@@ -388,6 +400,16 @@
             <span class="spin-dot"></span> 解析中… ページ {{ dqty.done }}/{{ dqty.total }}
           </div>
           <p v-if="dqty.error" class="err" data-testid="dqty-err">{{ dqty.error }}</p>
+          <!-- ★失敗したページだけやり直せるようにする。以前は1ページの504で全体が止まり、
+               残りのページが丸ごと未処理のまま終わっていた（2026-08-18 通しレビューで発生）。 -->
+          <ul v-if="dqty.failed.length" class="dqty-failed" data-testid="dqty-failed-pages">
+            <li v-for="fp in dqty.failed" :key="fp.pageNo">
+              <span>P.{{ fp.pageNo }} — {{ fp.errorMsg }}</span>
+              <button class="btn-retry-sm" :disabled="fp.retrying" data-testid="dqty-retry-page" @click="retryQuantityPage(fp)">
+                {{ fp.retrying ? '再試行中…' : '再試行' }}
+              </button>
+            </li>
+          </ul>
 
           <!-- ★検算: 天井合計 ≒ 通り芯面積。抽出漏れ・二重計上を機械で拾う -->
           <p v-if="dqty.check && !dqty.busy"
@@ -1378,7 +1400,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
 import { supabase } from '../lib/supabase'
@@ -2144,6 +2166,45 @@ function pageRangeLabel(pages: number[]): string {
 }
 const defaultDsendSubject = computed(() =>
   `【図面送付】${currentProjectName.value}（P.${pageRangeLabel(dsend.value.selected)}）`)
+
+/**
+ * 添付図面の1ページ目のサムネイル（attachment.id → dataURL）。
+ * ★なぜ1ページ目だけか: 図面は50ページ超が普通にあり、全ページ描くと固まる。
+ *  一覧で要るのは「どの図面か見分けが付くこと」なので表紙だけで足りる。
+ *  全ページ見たい時は既存の「ページを選んで送る」で拡大できる。
+ * ★pdfjs は重いので、実際に図面がある時だけ動的importする。
+ * （2026-08-18 通しレビュー: 図面を入れた直後に何も見えず、入ったのか分からなかった）
+ */
+const attThumbs = ref<Record<string, string>>({})
+const attThumbBusy = new Set<string>()
+
+async function buildAttThumb(a: Attachment) {
+  if (!a?.id || attThumbs.value[a.id] || attThumbBusy.has(a.id) || !isPdf(a)) return
+  attThumbBusy.add(a.id)
+  try {
+    const { data, error } = await supabase.storage.from(DRAWING_BUCKET).download(a.path)
+    if (error || !data) return
+    const bytes = new Uint8Array(await data.arrayBuffer())
+    const pdfjs: any = await import('pdfjs-dist')
+    const worker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url')
+    pdfjs.GlobalWorkerOptions.workerSrc = worker.default
+    const doc = await pdfjs.getDocument({ data: bytes }).promise
+    const page = await doc.getPage(1)
+    const base = page.getViewport({ scale: 1 })
+    const viewport = page.getViewport({ scale: 220 / base.width })
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.ceil(viewport.width)
+    canvas.height = Math.ceil(viewport.height)
+    await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise
+    attThumbs.value = { ...attThumbs.value, [a.id]: canvas.toDataURL('image/png') }
+    doc.destroy?.()
+  } catch { /* 描けなくてもファイル名は出ているので操作は続けられる */ } finally {
+    attThumbBusy.delete(a.id)
+  }
+}
+
+// 添付が変わったら表紙を描く（既に描いたものは使い回す）
+watch(attachments, (list) => { for (const a of list ?? []) void buildAttThumb(a) }, { deep: true })
 
 async function openDrawingSend(a: Attachment) {
   const d = dsend.value
@@ -3557,15 +3618,72 @@ watch(() => dextJob.value?.rows.length ?? 0, () => { if (dext.value.att) syncDex
 //  ★材料抽出(R53)はジョブ化して裏で走らせるが、数量抽出は対象ページが凡例のある数枚で
 //   終わるため、その場で回してパネルに出す（ジョブ表を増やさない）。
 type QtyRow = { page: number; part: QuantityPart; code: string; spec: string | null; value: number; unit: string; note: string | null; _pick: boolean }
+/** 失敗したページ。★1ページの失敗で全体を止めず、そのページだけやり直せるようにする */
+type QtyFailedPage = { pageNo: number; b64: string; errorMsg: string; retrying: boolean }
 const dqty = ref<{
   att: any | null; busy: boolean; done: number; total: number
   rows: QtyRow[]; check: CrossCheck | null; error: string; msg: string
-}>({ att: null, busy: false, done: 0, total: 0, rows: [], check: null, error: '', msg: '' })
+  failed: QtyFailedPage[]
+  gridX: number | null; gridY: number | null
+  merged: { part: QuantityPart; rows: any[] }[]
+}>({ att: null, busy: false, done: 0, total: 0, rows: [], check: null, error: '', msg: '',
+     failed: [], gridX: null, gridY: null, merged: [] })
 const dqtyPicked = computed(() => dqty.value.rows.filter(r => r._pick))
+
+/**
+ * 1ページぶんの数量抽出。失敗は投げる（呼び出し側が失敗ページとして記録する）。
+ */
+async function callQuantityExtract(b64: string, pageNo: number, token: string): Promise<any> {
+  const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/drawing-quantity-extract`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify({ image_base64: b64, mime: 'application/pdf', page: pageNo }),
+  })
+  const j = await resp.json().catch(() => null)
+  if (!resp.ok || j?.error) throw new Error(j?.error || `解析エラー(${resp.status})`)
+  return j
+}
+
+/** 抽出結果を画面の行と検算用の集計に取り込む */
+function absorbQuantityResult(j: any, pageNo: number) {
+  const d = dqty.value
+  for (const g of (j?.parts ?? [])) {
+    for (const r of (g.rows ?? [])) {
+      d.rows.push({
+        page: pageNo, part: g.part, code: r.code ?? '', spec: r.spec ?? null,
+        value: Number(r.value) || 0, unit: r.unit || '㎡', note: r.note ?? null, _pick: true,
+      })
+    }
+    const slot = d.merged.find(m => m.part === g.part)
+      ?? (d.merged.push({ part: g.part, rows: [] }), d.merged[d.merged.length - 1])
+    slot.rows.push(...(g.rows ?? []))
+  }
+  // 通り芯は最初に読めたページの値を採用（複数ページに同じ通り芯が載るため）
+  if (d.gridX == null && Number(j?.gridSpanX) > 0) d.gridX = Number(j.gridSpanX)
+  if (d.gridY == null && Number(j?.gridSpanY) > 0) d.gridY = Number(j.gridSpanY)
+}
+
+/** 検算をやり直す（再試行でページが増えた後にも呼ぶ） */
+function recheckQuantity() {
+  const d = dqty.value
+  d.check = crossCheckCeiling({ parts: d.merged as any, gridSpanX: d.gridX, gridSpanY: d.gridY })
+}
+
+/**
+ * ★同時に投げる本数。図面は50ページ超が普通にあり、1ページずつ直列だと
+ *  1ページ数秒でも数分かかる（2026-08-18 通しレビューで実際に遅く、かつ 504 に当たった）。
+ *  増やしすぎるとAI側のレート制限と Edge Function の同時実行に当たるので控えめにする。
+ */
+const QTY_CONCURRENCY = 4
 
 async function beginQuantityExtract(att: any) {
   if (dqty.value.busy) return
-  dqty.value = { att, busy: true, done: 0, total: 0, rows: [], check: null, error: '', msg: '' }
+  dqty.value = { att, busy: true, done: 0, total: 0, rows: [], check: null, error: '', msg: '',
+                 failed: [], gridX: null, gridY: null, merged: [] }
   try {
     const { data: file, error } = await supabase.storage.from('estimate-drawings').download(att.path)
     if (error || !file) throw error ?? new Error('図面を取得できませんでした')
@@ -3574,11 +3692,10 @@ async function beginQuantityExtract(att: any) {
     const src = await PDFDocument.load(buf)
     dqty.value.total = src.getPageCount()
     const { data: sess } = await supabase.auth.getSession()
+    const token = sess?.session?.access_token ?? ''
 
-    // 全ページを見て回る（凡例がどのページにあるかは図面ごとに違うため）。
-    // 数量表が無いページは空で返るので、そのまま次へ進む。
-    const merged: { part: QuantityPart; rows: any[] }[] = []
-    let gridX: number | null = null, gridY: number | null = null
+    // 先に全ページを1枚ずつのPDFへ切り出す（AIへ渡す形にする）
+    const pages: string[] = []
     for (let i = 0; i < dqty.value.total; i++) {
       const one = await PDFDocument.create()
       const [pg] = await one.copyPages(src, [i])
@@ -3589,38 +3706,52 @@ async function beginQuantityExtract(att: any) {
       for (let k = 0; k < bytes.length; k += chunk) {
         bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(k, k + chunk)) as any)
       }
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/drawing-quantity-extract`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${sess?.session?.access_token ?? ''}`,
-          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-        },
-        body: JSON.stringify({ image_base64: btoa(bin), mime: 'application/pdf', page: i + 1 }),
-      })
-      const j = await resp.json().catch(() => null)
-      if (!resp.ok || j?.error) { dqty.value.error = j?.error || `解析エラー(${resp.status})`; break }
-      for (const g of (j?.parts ?? [])) {
-        for (const r of (g.rows ?? [])) {
-          dqty.value.rows.push({
-            page: i + 1, part: g.part, code: r.code ?? '', spec: r.spec ?? null,
-            value: Number(r.value) || 0, unit: r.unit || '㎡', note: r.note ?? null, _pick: true,
-          })
-        }
-        const slot = merged.find(m => m.part === g.part) ?? (merged.push({ part: g.part, rows: [] }), merged[merged.length - 1])
-        slot.rows.push(...(g.rows ?? []))
-      }
-      // 通り芯は最初に読めたページの値を採用（複数ページに同じ通り芯が載るため）
-      if (gridX == null && Number(j?.gridSpanX) > 0) gridX = Number(j.gridSpanX)
-      if (gridY == null && Number(j?.gridSpanY) > 0) gridY = Number(j.gridSpanY)
-      dqty.value.done = i + 1
+      pages.push(btoa(bin))
     }
+
+    // ★数ページずつ同時に投げる。★1ページの失敗（504等）で全体を止めない。
+    //  以前は break していたため、途中で 504 が出ると残りが丸ごと未処理のまま終わっていた。
+    let cursor = 0
+    const worker = async () => {
+      for (;;) {
+        const i = cursor++
+        if (i >= pages.length) return
+        const pageNo = i + 1
+        try {
+          absorbQuantityResult(await callQuantityExtract(pages[i], pageNo, token), pageNo)
+        } catch (e: any) {
+          dqty.value.failed.push({ pageNo, b64: pages[i], errorMsg: e?.message ?? '解析に失敗しました', retrying: false })
+        }
+        dqty.value.done++
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(QTY_CONCURRENCY, pages.length) }, worker))
+
     // ★検算: 天井合計 ≒ 通り芯面積。抽出漏れ・二重計上をここで拾う
-    dqty.value.check = crossCheckCeiling({ parts: merged as any, gridSpanX: gridX, gridSpanY: gridY })
+    recheckQuantity()
+    if (dqty.value.failed.length) {
+      dqty.value.error = `${dqty.value.failed.length}ページで解析エラーが出ました。下の「再試行」でそのページだけやり直せます。`
+    }
   } catch (e: any) {
     dqty.value.error = e?.message ?? '数量の抽出に失敗しました'
   } finally {
     dqty.value.busy = false
+  }
+}
+
+/** 失敗したページだけやり直す */
+async function retryQuantityPage(fp: QtyFailedPage) {
+  if (fp.retrying) return   // 連打で二重に取り込まないためのガード
+  fp.retrying = true
+  try {
+    const { data: sess } = await supabase.auth.getSession()
+    absorbQuantityResult(await callQuantityExtract(fp.b64, fp.pageNo, sess?.session?.access_token ?? ''), fp.pageNo)
+    dqty.value.failed = dqty.value.failed.filter(p => p !== fp)
+    if (!dqty.value.failed.length) dqty.value.error = ''
+    recheckQuantity()
+  } catch (e: any) {
+    fp.errorMsg = e?.message ?? '解析に失敗しました'
+    fp.retrying = false
   }
 }
 
@@ -4239,6 +4370,26 @@ async function saveDocFields() {
   markAutoSaved()
 }
 
+/**
+ * ★解析中だけの離脱ガード（2026-08-18 通しレビュー）。
+ *  数量抽出はブラウザの中で走るので、ブラウザバックやタブを閉じると途中で消える。
+ *  実際にレビュー中に戻ってしまい、解析がやり直しになった。
+ *  ★「未保存の編集」に対するガードは R22 で意図的に撤去されている（自動保存にしたため）。
+ *   ここで復活させるのはその話ではなく、**走っている処理が消える**時だけに限る。
+ *   材料抽出はサーバ側のジョブとして残るので対象外。
+ */
+onBeforeRouteLeave((_to, _from, next) => {
+  if (!dqty.value.busy) return next()
+  next(window.confirm('数量の抽出が進行中です。このページを離れると解析は中断されます。移動しますか？'))
+})
+function guardUnloadWhileExtracting(e: BeforeUnloadEvent) {
+  if (!dqty.value.busy) return
+  e.preventDefault()
+  e.returnValue = ''
+}
+onMounted(() => window.addEventListener('beforeunload', guardUnloadWhileExtracting))
+onUnmounted(() => window.removeEventListener('beforeunload', guardUnloadWhileExtracting))
+
 // #3 編集中の離脱ガード: 未保存の明細がある状態で 遷移/タブ閉じ/案件切替 時に確認する
 let lastLoadedProjectId: string | null = null   // 同じ案件の二重読み込みを避けるための記録
 // ★R22: リアルタイム保存にしたので「未保存」という状態が無くなった。
@@ -4616,6 +4767,13 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .dsend-count { font-size: 12px; color: #7A8AA0; margin-left: auto; }
 .dsend-pages { display: flex; flex-wrap: wrap; gap: 6px; max-height: 220px; overflow-y: auto; padding: 6px; background: #FAFBFC; border-radius: 6px; }
 /* R24: 中身を見て選ぶので、3〜4カラムで大きく見せる（幅に応じて自動で列数が変わる） */
+.dqty-failed { margin: 8px 0 0; padding: 8px 10px; list-style: none; background: #FEF2F2; border: 1px solid #FECACA; border-radius: 6px; }
+.dqty-failed li { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #991B1B; padding: 2px 0; }
+.btn-retry-sm { padding: 2px 10px; border: 1px solid #DC2626; border-radius: 999px; background: #fff; color: #DC2626; font-size: 11px; font-weight: 700; cursor: pointer; }
+.btn-retry-sm:disabled { opacity: .5; cursor: default; }
+.att-list li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.att-thumb { padding: 0; border: 1px solid #d1d5db; border-radius: 4px; background: #fff; cursor: pointer; line-height: 0; }
+.att-thumb img { display: block; width: 96px; height: auto; border-radius: 3px; }
 .dsend-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px;
                 max-height: 620px; overflow-y: auto; padding: 10px; background: #FAFBFC; border-radius: 6px; }
 .pg-card { border: 2px solid #D5DEE8; border-radius: 8px; background: #fff; cursor: pointer; overflow: hidden; }
