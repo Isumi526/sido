@@ -150,6 +150,10 @@
           </div>
           <ul v-if="attachments.length" class="att-list" data-testid="wiz-att-list">
             <li v-for="a in attachments" :key="a.id">
+              <!-- 図面の表紙。押すと別タブで開く（クリック領域を名前と揃える） -->
+              <button v-if="attThumbs[a.id]" class="att-thumb" :data-testid="`wiz-att-thumb-${a.id}`" @click="openAttachment(a)">
+                <img :src="attThumbs[a.id]" :alt="a.name || a.path" />
+              </button>
               <button class="att-name" @click="openAttachment(a)">{{ a.name || a.path }}</button>
               <button class="btn-del" @click="removeAttachment(a)">×</button>
             </li>
@@ -296,6 +300,9 @@
           </div>
           <ul v-if="attachments.length" class="att-list" data-testid="intake-att-list">
             <li v-for="a in attachments" :key="a.id">
+              <button v-if="attThumbs[a.id]" class="att-thumb" :data-testid="`intake-att-thumb-${a.id}`" @click="openAttachment(a)">
+                <img :src="attThumbs[a.id]" :alt="a.name || a.path" />
+              </button>
               <button class="att-name" :data-testid="`intake-att-${a.id}`" @click="openAttachment(a)">{{ a.name || a.path }}</button>
               <!-- R8: 図面はページごとに工種が分かれている。該当ページだけ業者へ送る -->
               <button v-if="isPdf(a)" class="btn-edit" :data-testid="`dsend-open-${a.id}`" @click="openDrawingSend(a)">ページを選んで送る</button>
@@ -2144,6 +2151,45 @@ function pageRangeLabel(pages: number[]): string {
 }
 const defaultDsendSubject = computed(() =>
   `【図面送付】${currentProjectName.value}（P.${pageRangeLabel(dsend.value.selected)}）`)
+
+/**
+ * 添付図面の1ページ目のサムネイル（attachment.id → dataURL）。
+ * ★なぜ1ページ目だけか: 図面は50ページ超が普通にあり、全ページ描くと固まる。
+ *  一覧で要るのは「どの図面か見分けが付くこと」なので表紙だけで足りる。
+ *  全ページ見たい時は既存の「ページを選んで送る」で拡大できる。
+ * ★pdfjs は重いので、実際に図面がある時だけ動的importする。
+ * （2026-08-18 通しレビュー: 図面を入れた直後に何も見えず、入ったのか分からなかった）
+ */
+const attThumbs = ref<Record<string, string>>({})
+const attThumbBusy = new Set<string>()
+
+async function buildAttThumb(a: Attachment) {
+  if (!a?.id || attThumbs.value[a.id] || attThumbBusy.has(a.id) || !isPdf(a)) return
+  attThumbBusy.add(a.id)
+  try {
+    const { data, error } = await supabase.storage.from(DRAWING_BUCKET).download(a.path)
+    if (error || !data) return
+    const bytes = new Uint8Array(await data.arrayBuffer())
+    const pdfjs: any = await import('pdfjs-dist')
+    const worker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url')
+    pdfjs.GlobalWorkerOptions.workerSrc = worker.default
+    const doc = await pdfjs.getDocument({ data: bytes }).promise
+    const page = await doc.getPage(1)
+    const base = page.getViewport({ scale: 1 })
+    const viewport = page.getViewport({ scale: 220 / base.width })
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.ceil(viewport.width)
+    canvas.height = Math.ceil(viewport.height)
+    await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise
+    attThumbs.value = { ...attThumbs.value, [a.id]: canvas.toDataURL('image/png') }
+    doc.destroy?.()
+  } catch { /* 描けなくてもファイル名は出ているので操作は続けられる */ } finally {
+    attThumbBusy.delete(a.id)
+  }
+}
+
+// 添付が変わったら表紙を描く（既に描いたものは使い回す）
+watch(attachments, (list) => { for (const a of list ?? []) void buildAttThumb(a) }, { deep: true })
 
 async function openDrawingSend(a: Attachment) {
   const d = dsend.value
@@ -4616,6 +4662,9 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .dsend-count { font-size: 12px; color: #7A8AA0; margin-left: auto; }
 .dsend-pages { display: flex; flex-wrap: wrap; gap: 6px; max-height: 220px; overflow-y: auto; padding: 6px; background: #FAFBFC; border-radius: 6px; }
 /* R24: 中身を見て選ぶので、3〜4カラムで大きく見せる（幅に応じて自動で列数が変わる） */
+.att-list li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.att-thumb { padding: 0; border: 1px solid #d1d5db; border-radius: 4px; background: #fff; cursor: pointer; line-height: 0; }
+.att-thumb img { display: block; width: 96px; height: auto; border-radius: 3px; }
 .dsend-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px;
                 max-height: 620px; overflow-y: auto; padding: 10px; background: #FAFBFC; border-radius: 6px; }
 .pg-card { border: 2px solid #D5DEE8; border-radius: 8px; background: #fff; cursor: pointer; overflow: hidden; }
