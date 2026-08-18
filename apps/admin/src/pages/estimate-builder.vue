@@ -2015,7 +2015,20 @@ const dueBadge = computed(() => {
   return { text: `あと${days}日`, cls: 'ok' }
 })
 
-async function saveIntake() {
+/** ★保存を直列化するための鎖。
+ *  依頼日→提出期限と続けて入力すると、1回目の保存が飛んでいる最中に2回目が走り、
+ *  遅れて着いた1回目（提出期限がまだ空）が null で上書きして**入力が消えていた**。
+ *  最後に投げたものが最後に着くとは限らないので、前の保存を待ってから次を投げる。
+ *  （2026-08-18 admin.estimate-intake AC1 の失敗として表面化） */
+let intakeSaveChain: Promise<unknown> = Promise.resolve()
+/** ★遅延は入れない。250ms のデバウンスを挟んだら、入力直後に画面を離れると
+ *  タイマーが発火せず保存が消える別の穴ができた。投げるのは即時、順番だけ守る。 */
+function saveIntake(): Promise<unknown> {
+  intakeSaveChain = intakeSaveChain.then(() => saveIntakeNow()).catch(() => {})
+  return intakeSaveChain
+}
+
+async function saveIntakeNow() {
   if (!projectId.value) return
   await supabase.from('estimate_projects').update({
     request_date: intake.value.request_date || null,
