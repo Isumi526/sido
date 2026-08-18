@@ -151,3 +151,48 @@ test('AC6: 見積一覧に新しい状態ラベルが表示される', async ({ 
   await expect(row).toBeVisible({ timeout: 15000 })
   await expect(row).toContainText('失注')
 })
+
+
+/** pdfjs が実際に描画できる最小の1ページPDFを作る（サムネイルの検証用） */
+function minimalPdf(): Buffer {
+  const objs = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R >>',
+    '<< /Length 44 >>\nstream\n1 0 0 RG 10 w 20 20 m 180 180 l S\nendstream',
+  ]
+  let out = '%PDF-1.4\n'
+  const offsets: number[] = []
+  objs.forEach((body, i) => {
+    offsets.push(out.length)
+    out += `${i + 1} 0 obj\n${body}\nendobj\n`
+  })
+  const xref = out.length
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`
+  for (const o of offsets) out += `${String(o).padStart(10, '0')} 00000 n \n`
+  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`
+  return Buffer.from(out, 'latin1')
+}
+
+test('★図面を入れたら表紙のサムネイルが出る（入ったことが目で分かる）', async ({ page }) => {
+  // 2026-08-18 通しレビュー: 図面を入れた直後にファイル名しか出ず、
+  // 本当に入ったのか・どの図面なのかが分からなかった。
+  // ★中身のあるPDFで確かめる。他のテストが使っている偽PDF（%PDF- だけの文字列）では
+  //  pdfjs が描画できず、サムネイルが出ないのが正しい挙動になってしまう。
+  // ★pdf-lib は apps/admin 配下にしか無くテストからは解決できないので、
+  //  最小の1ページPDFを直接組み立てる（xref のオフセットも計算して正しい形にする）。
+  const bytes = minimalPdf()
+
+  await openNewProject(page)
+  await page.locator('[data-testid="intake-file"]').setInputFiles({
+    name: 'E2E表紙.pdf', mimeType: 'application/pdf', buffer: bytes,
+  })
+  await expect(page.locator('[data-testid="intake-att-list"]')).toContainText('E2E表紙.pdf', { timeout: 20000 })
+
+  const p = await fetchProject('id')
+  const att = await restSrv(`estimate_project_attachments?project_id=eq.${p.id}&select=id`)
+  const thumb = page.locator(`[data-testid="intake-att-thumb-${att[0].id}"] img`)
+  await expect(thumb, '★表紙のサムネイルが出る').toBeVisible({ timeout: 25000 })
+  // 実際に描画された画像であること（空のsrcで「見えている」ことにしない）
+  await expect(thumb).toHaveAttribute('src', /^data:image\/png;base64,/)
+})
