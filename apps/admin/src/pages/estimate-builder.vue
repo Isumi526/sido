@@ -318,8 +318,13 @@
                 <ExtractControl :att="a" @start="beginExtract" @review="openExtractResult" />
                 <!-- ★Q7: 材料(品番)とは別に「凡例に書かれた確定数量」を取る。
                      床/置床/天井の面積・建具/器具の台数は設計者が凡例に明記しているので拾い直さない。 -->
+                <!-- ★前に解析した図面かどうかがボタンで分かるようにする。
+                     結果は保存されているのに、押すまで何も見えないと「消えた」としか見えない
+                     （2026-08-19 通しレビューでの指摘）。 -->
                 <button class="btn-edit" :disabled="dqty.busy" :data-testid="`dqty-open-${a.id}`" @click="openQuantityExtract(a)">
-                  {{ dqty.busy && dqty.att?.id === a.id ? `数量抽出中… ${dqty.done}/${dqty.total}` : '数量を抽出' }}
+                  <template v-if="dqty.busy && dqty.att?.id === a.id">数量抽出中… {{ dqty.done }}/{{ dqty.total }}</template>
+                  <template v-else-if="qtySavedCount[a.id]">数量を見る（前回 {{ qtySavedCount[a.id] }}件）</template>
+                  <template v-else>数量を抽出</template>
                 </button>
               </template>
               <button class="btn-del" :data-testid="`intake-att-del-${a.id}`" @click="removeAttachment(a)">×</button>
@@ -3687,6 +3692,29 @@ function recheckQuantity() {
 const QTY_CONCURRENCY = 4
 
 /**
+ * 添付ごとの「保存済みの数量抽出の件数」（attachment_id → 件数）。
+ * ★ボタンの文言に使う。押す前に前回の結果があると分かるようにするため。
+ */
+const qtySavedCount = ref<Record<string, number>>({})
+
+async function loadQtySavedCounts() {
+  qtySavedCount.value = {}
+  if (!projectId.value || !accountId) return
+  const { data } = await supabase.from('estimate_drawing_extract_jobs')
+    .select('attachment_id, rows')
+    .eq('account_id', accountId).eq('project_id', projectId.value).eq('kind', 'quantity')
+  const m: Record<string, number> = {}
+  for (const j of (data ?? []) as any[]) {
+    const n = Array.isArray(j?.rows?.rows) ? j.rows.rows.length : 0
+    if (n > 0) m[j.attachment_id] = n
+  }
+  qtySavedCount.value = m
+}
+
+// 案件を切り替えたら読み直す（添付の一覧と同じタイミング）
+watch(() => projectId.value, () => { void loadQtySavedCounts() })
+
+/**
  * 数量抽出の結果を保存する。
  * ★以前はブラウザのメモリだけで、明細タブへ移って戻るだけで消えていた
  *  （2026-08-18 本番の通しレビュー）。解析はAIを呼ぶので時間も費用もかかる。それを毎回捨てていた。
@@ -3703,6 +3731,8 @@ async function saveQuantityJob(att: any, status: 'running' | 'done' | 'error') {
     rows: { rows: d.rows, gridX: d.gridX, gridY: d.gridY, merged: d.merged },
     error: d.error || null, updated_at: new Date().toISOString(),
   }, { onConflict: 'attachment_id,kind' })
+  // ボタンの文言に出す件数もその場で更新する（次に開き直すまで古いままにしない）
+  if (d.rows.length) qtySavedCount.value = { ...qtySavedCount.value, [att.id]: d.rows.length }
 }
 
 /** 保存済みの数量抽出があれば手元に戻す。無ければ false */
