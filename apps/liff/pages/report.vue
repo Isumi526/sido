@@ -940,6 +940,13 @@ async function skipPendingDatesAfterInit(): Promise<void> {
       const { data: pu } = await useSupabase().from('users').select('id').eq('worker_id', proxyT.id).maybeSingle()
       next = await expense.getNextUnsubmittedDateById(
         (pu as any)?.id ?? '00000000-0000-0000-0000-000000000000', dates)
+    } else if (selfUser.value?.id) {
+      // ★LINEのユーザーIDではなくDBのユーザーIDで引く。
+      //  以前は liff.profile の userId が要る形だったため、**メール/パスワードで
+      //  ログインしている人（オーナー・事務など）はこの分岐に入らず、承認待ちの
+      //  スキップが丸ごと効かなかった**。承認されるまで同じ日が出続ける
+      //  （2026-08-18 大塚さん「なんか、15日が一生でてくる」）。
+      next = await expense.getNextUnsubmittedDateById(selfUser.value.id, dates)
     } else if (uid) {
       next = await expense.getNextUnsubmittedDate(uid, dates)
     }
