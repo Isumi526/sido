@@ -624,7 +624,17 @@ export const useExpense = () => {
 
     // ★承認待ちの日も「出し済み」として飛ばす。除外しないと承認されるまで同じ日付が
     //   出続けて次に進めず、まとめて（例: 忘れていた5日分）提出できない。
-    const submittedDates = new Set([...(reports ?? []).map((r: any) => r.date as string), ...excludeDates])
+    // ★ここで自分から取りに行く。以前は呼び出し側が excludeDates に入れる形だったが、
+    //  4箇所ある呼び出しのうち1箇所しか渡しておらず、送信直後・初回表示・代理切替では
+    //  承認待ちが素通りしていた。結果、提出しても同じ日が出続けた
+    //  （2026-08-18 大塚さん「なんか、15日が一生でてくる」）。
+    //  呼び出し側に頼ると必ずまた漏れるので、判定する側で完結させる。
+    const pending = await useReportEditApi().pendingDates().catch(() => [] as string[])
+    const submittedDates = new Set([
+      ...(reports ?? []).map((r: any) => r.date as string),
+      ...excludeDates,
+      ...pending,
+    ])
 
     // 起点から順に走査（純粋な文字列加算でタイムゾーン問題を回避）
     let cursor = effStart
