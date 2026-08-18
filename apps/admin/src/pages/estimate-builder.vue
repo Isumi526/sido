@@ -256,6 +256,11 @@
         <span v-for="j in runningExtracts" :key="j.attachmentId" class="ext-chip" data-testid="ext-progress-chip">
           <span class="spin-dot"></span> 材料抽出中 {{ j.done }}/{{ j.total || '?' }}ページ
         </span>
+        <!-- ★数量抽出はブラウザの中で走るので、タブを移ると進捗が見えなくなっていた
+             （2026-08-18 通しレビュー）。材料抽出と同じくここに出す。 -->
+        <span v-if="dqty.busy" class="ext-chip" data-testid="dqty-progress-chip">
+          <span class="spin-dot"></span> 数量抽出中 {{ dqty.done }}/{{ dqty.total || '?' }}ページ
+        </span>
         <button class="btab ghost" data-testid="open-drawer" @click="openDrawer"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">settings</span> マスタ・自社情報</button>
       </div>
 
@@ -1395,7 +1400,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
 import { supabase } from '../lib/supabase'
@@ -4364,6 +4369,26 @@ async function saveDocFields() {
   }).eq('id', projectId.value)
   markAutoSaved()
 }
+
+/**
+ * ★解析中だけの離脱ガード（2026-08-18 通しレビュー）。
+ *  数量抽出はブラウザの中で走るので、ブラウザバックやタブを閉じると途中で消える。
+ *  実際にレビュー中に戻ってしまい、解析がやり直しになった。
+ *  ★「未保存の編集」に対するガードは R22 で意図的に撤去されている（自動保存にしたため）。
+ *   ここで復活させるのはその話ではなく、**走っている処理が消える**時だけに限る。
+ *   材料抽出はサーバ側のジョブとして残るので対象外。
+ */
+onBeforeRouteLeave((_to, _from, next) => {
+  if (!dqty.value.busy) return next()
+  next(window.confirm('数量の抽出が進行中です。このページを離れると解析は中断されます。移動しますか？'))
+})
+function guardUnloadWhileExtracting(e: BeforeUnloadEvent) {
+  if (!dqty.value.busy) return
+  e.preventDefault()
+  e.returnValue = ''
+}
+onMounted(() => window.addEventListener('beforeunload', guardUnloadWhileExtracting))
+onUnmounted(() => window.removeEventListener('beforeunload', guardUnloadWhileExtracting))
 
 // #3 編集中の離脱ガード: 未保存の明細がある状態で 遷移/タブ閉じ/案件切替 時に確認する
 let lastLoadedProjectId: string | null = null   // 同じ案件の二重読み込みを避けるための記録
