@@ -218,3 +218,49 @@ test('★1ページが504で落ちても他のページは取れ、そのペー�
   await expect(failed, '★直ったら失敗一覧から消える').toHaveCount(0, { timeout: 10000 })
 })
 
+test('★解析中は他のタブに移っても進捗が見え、離脱しようとすると確認が出る', async ({ page }) => {
+  // 2026-08-18 通しレビュー:
+  //  - タブを移ると進捗が見えなくなり、進んでいるのか分からなかった
+  //  - 解析中にブラウザバックしたら解析がリセットされた（やり直しになった）
+  // ★数量抽出はブラウザの中で走るので、離れると本当に消える。だから確認を出す。
+
+  // 1ページ目の応答を保留して「解析中」を作る
+  let release: (() => void) | null = null
+  const held = new Promise<void>(r => { release = r })
+  await page.route('**/functions/v1/drawing-quantity-extract', async (route: any) => {
+    const body = JSON.parse(route.request().postData() || '{}')
+    if (body.page === 1) await held
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ ok: true, page: body.page, gridSpanX: null, gridSpanY: null, ceilingHeights: [], parts: [] }),
+    })
+  })
+
+  await page.goto(`/estimate-builder?project=${projId}`, { waitUntil: 'networkidle' })
+  await openBuilderTab(page, 'intake', '[data-testid="intake-dropzone"]')
+  const fileName = `E2E数量図面_guard_${TS}.pdf`
+  await page.locator('[data-testid="intake-file"]').setInputFiles({
+    name: fileName, mimeType: 'application/pdf', buffer: makePdf(2),
+  })
+  await expect(page.locator('[data-testid="intake-att-list"]')).toContainText(fileName, { timeout: 20000 })
+  const att = await restSrv(`estimate_project_attachments?project_id=eq.${projId}&name=eq.${encodeURIComponent(fileName)}&select=id`)
+  await page.locator(`[data-testid="dqty-open-${att[0].id}"]`).click()
+
+  // ★他のタブへ移っても進捗が見える
+  await page.locator('[data-testid="tab-items"]').click()
+  await expect(page.locator('[data-testid="dqty-progress-chip"]'),
+    '★どのタブに居ても解析中だと分かる').toBeVisible({ timeout: 20000 })
+
+  // ★離脱しようとすると確認が出る（キャンセルすれば留まる）
+  // ★画面内のリンクで試す。page.goto はページ全体の再読み込みになり、
+  //  ルーターの離脱ガードを通らない（＝何も検証できない）。
+  let asked = ''
+  page.once('dialog', d => { asked = d.message(); d.dismiss() })
+  await page.locator('[data-testid="back-to-list"]').click()
+  await page.waitForTimeout(800)
+  expect(asked, '★解析が消えることを伝えてから移動させる').toMatch(/中断/)
+  await expect(page, '★キャンセルしたら留まる').toHaveURL(/estimate-builder/)
+
+  release?.()
+})
+
