@@ -10,6 +10,7 @@
   "submittedTitle": "Submitted!",
   "updatedText": "Your edit was submitted. It will be applied once an administrator approves it",
   "submittedText": "Notified the LINE group",
+  "submittedTextPlain": "Your daily report has been submitted",
   "enterNextReport": "Enter the report for {date} →",
   "backToHistory": "Back to history",
   "editModeBanner": "✏️ Editing a past report",

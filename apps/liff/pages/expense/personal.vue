@@ -87,7 +87,7 @@
             <div class="pe-payer" role="radiogroup" aria-label="支払元">
               <label class="pe-check">
                 <input type="radio" :name="`pe-draft-payer-${di}`" :checked="!d.tategae" data-testid="pe-draft-payer-company" @change="d.tategae = false" />
-                会社のカードで支払った
+                会社からの預金、又はカードでの支払い
               </label>
               <label class="pe-check">
                 <input type="radio" :name="`pe-draft-payer-${di}`" :checked="!!d.tategae" data-testid="pe-draft-payer-personal" @change="d.tategae = true" />
@@ -139,7 +139,7 @@
           <div class="pe-payer" role="radiogroup" aria-label="支払元">
             <label class="pe-check">
               <input type="radio" name="pe-payer" :checked="!form.tategae" data-testid="pe-payer-company" @change="form.tategae = false" />
-              会社のカードで支払った
+              会社からの預金、又はカードでの支払い
             </label>
             <label class="pe-check">
               <input type="radio" name="pe-payer" :checked="!!form.tategae" data-testid="pe-payer-personal" @change="form.tategae = true" />
