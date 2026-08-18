@@ -318,7 +318,7 @@
                 <ExtractControl :att="a" @start="beginExtract" @review="openExtractResult" />
                 <!-- ★Q7: 材料(品番)とは別に「凡例に書かれた確定数量」を取る。
                      床/置床/天井の面積・建具/器具の台数は設計者が凡例に明記しているので拾い直さない。 -->
-                <button class="btn-edit" :disabled="dqty.busy" :data-testid="`dqty-open-${a.id}`" @click="beginQuantityExtract(a)">
+                <button class="btn-edit" :disabled="dqty.busy" :data-testid="`dqty-open-${a.id}`" @click="openQuantityExtract(a)">
                   {{ dqty.busy && dqty.att?.id === a.id ? `数量抽出中… ${dqty.done}/${dqty.total}` : '数量を抽出' }}
                 </button>
               </template>
@@ -400,6 +400,12 @@
             <span class="spin-dot"></span> 解析中… ページ {{ dqty.done }}/{{ dqty.total }}
           </div>
           <p v-if="dqty.error" class="err" data-testid="dqty-err">{{ dqty.error }}</p>
+          <!-- ★前回の結果を出している時は、解析し直すかを人が決められるようにする。
+               毎回AIを呼ぶと待たされるうえ費用もかかる（2026-08-19）。 -->
+          <p v-if="!dqty.busy && dqty.rows.length" class="hint" data-testid="dqty-saved-note">
+            前回の抽出結果を表示しています。
+            <button class="btn-link-sm" data-testid="dqty-rerun" @click="beginQuantityExtract(dqty.att)">もう一度解析する</button>
+          </p>
           <!-- ★失敗したページだけやり直せるようにする。以前は1ページの504で全体が止まり、
                残りのページが丸ごと未処理のまま終わっていた（2026-08-18 通しレビューで発生）。 -->
           <ul v-if="dqty.failed.length" class="dqty-failed" data-testid="dqty-failed-pages">
@@ -3680,6 +3686,53 @@ function recheckQuantity() {
  */
 const QTY_CONCURRENCY = 4
 
+/**
+ * 数量抽出の結果を保存する。
+ * ★以前はブラウザのメモリだけで、明細タブへ移って戻るだけで消えていた
+ *  （2026-08-18 本番の通しレビュー）。解析はAIを呼ぶので時間も費用もかかる。それを毎回捨てていた。
+ * ★保存先は材料抽出と同じ estimate_drawing_extract_jobs（kind='quantity'）。
+ *  似たテーブルを2つ作ると「どちらを見るか」を毎回考えることになる。
+ */
+async function saveQuantityJob(att: any, status: 'running' | 'done' | 'error') {
+  if (!att?.id || !projectId.value || !accountId) return
+  const d = dqty.value
+  await supabase.from('estimate_drawing_extract_jobs').upsert({
+    account_id: accountId, project_id: projectId.value, attachment_id: att.id, kind: 'quantity',
+    source_name: att.name ?? att.path ?? '', status,
+    total_pages: d.total, done_pages: d.done,
+    rows: { rows: d.rows, gridX: d.gridX, gridY: d.gridY, merged: d.merged },
+    error: d.error || null, updated_at: new Date().toISOString(),
+  }, { onConflict: 'attachment_id,kind' })
+}
+
+/** 保存済みの数量抽出があれば手元に戻す。無ければ false */
+async function restoreQuantityJob(att: any): Promise<boolean> {
+  if (!att?.id || !accountId) return false
+  const { data } = await supabase.from('estimate_drawing_extract_jobs')
+    .select('total_pages, done_pages, rows, error')
+    .eq('account_id', accountId).eq('attachment_id', att.id).eq('kind', 'quantity').maybeSingle()
+  const saved = (data as any)?.rows
+  if (!saved?.rows?.length) return false
+  dqty.value = {
+    att, busy: false, done: (data as any).done_pages ?? 0, total: (data as any).total_pages ?? 0,
+    rows: saved.rows, check: null, error: '', msg: '',
+    failed: [], gridX: saved.gridX ?? null, gridY: saved.gridY ?? null, merged: saved.merged ?? [],
+  }
+  recheckQuantity()
+  return true
+}
+
+/**
+ * 「数量を抽出」を押した時の入口。
+ * ★前回の結果があれば、まずそれを出す。解析し直すかは人が決める
+ *  （毎回AIを呼ぶと待たされるうえ費用もかかる）。
+ */
+async function openQuantityExtract(att: any) {
+  if (dqty.value.busy) return
+  if (await restoreQuantityJob(att)) return
+  await beginQuantityExtract(att)
+}
+
 async function beginQuantityExtract(att: any) {
   if (dqty.value.busy) return
   dqty.value = { att, busy: true, done: 0, total: 0, rows: [], check: null, error: '', msg: '',
@@ -3732,6 +3785,8 @@ async function beginQuantityExtract(att: any) {
     if (dqty.value.failed.length) {
       dqty.value.error = `${dqty.value.failed.length}ページで解析エラーが出ました。下の「再試行」でそのページだけやり直せます。`
     }
+    // ★ここで残す。残さないとページを移った瞬間に消え、また解析からやり直しになる
+    await saveQuantityJob(att, dqty.value.failed.length ? 'error' : 'done')
   } catch (e: any) {
     dqty.value.error = e?.message ?? '数量の抽出に失敗しました'
   } finally {
@@ -3749,6 +3804,7 @@ async function retryQuantityPage(fp: QtyFailedPage) {
     dqty.value.failed = dqty.value.failed.filter(p => p !== fp)
     if (!dqty.value.failed.length) dqty.value.error = ''
     recheckQuantity()
+    await saveQuantityJob(dqty.value.att, dqty.value.failed.length ? 'error' : 'done')
   } catch (e: any) {
     fp.errorMsg = e?.message ?? '解析に失敗しました'
     fp.retrying = false

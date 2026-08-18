@@ -264,3 +264,49 @@ test('★解析中は他のタブに移っても進捗が見え、離脱しよ�
   release?.()
 })
 
+test('★抽出結果はページを移っても残り、AIを呼び直さずに戻ってくる', async ({ page }) => {
+  // 2026-08-18 本番の通しレビュー: 数量抽出の結果はブラウザのメモリだけで、
+  // 明細タブへ移って戻るだけで消え、また解析からやり直しになっていた。
+  // 解析はAIを呼ぶので時間も費用もかかる。それを毎回捨てていた。
+  let calls = 0
+  await page.route('**/functions/v1/drawing-quantity-extract', async (route: any) => {
+    calls++
+    const body = JSON.parse(route.request().postData() || '{}')
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ ok: true, page: body.page, gridSpanX: 10.2, gridSpanY: 6.95, ceilingHeights: [],
+        parts: [{ part: '天井', rows: [{ code: `SAVE-${body.page}`, spec: '保存確認', value: 35.5, unit: '㎡' }] }] }),
+    })
+  })
+
+  await page.goto(`/estimate-builder?project=${projId}`, { waitUntil: 'networkidle' })
+  await openBuilderTab(page, 'intake', '[data-testid="intake-dropzone"]')
+  const fileName = `E2E数量図面_save_${TS}.pdf`
+  await page.locator('[data-testid="intake-file"]').setInputFiles({
+    name: fileName, mimeType: 'application/pdf', buffer: makePdf(2),
+  })
+  await expect(page.locator('[data-testid="intake-att-list"]')).toContainText(fileName, { timeout: 20000 })
+  const att = await restSrv(`estimate_project_attachments?project_id=eq.${projId}&name=eq.${encodeURIComponent(fileName)}&select=id`)
+
+  await page.locator(`[data-testid="dqty-open-${att[0].id}"]`).click()
+  await expect(page.locator('[data-testid="dqty-busy"]')).toHaveCount(0, { timeout: 40000 })
+  await expect(page.locator('[data-testid="dqty-panel"]')).toContainText('SAVE-1')
+  const callsAfterFirst = calls
+  expect(callsAfterFirst, '1回目は解析している').toBeGreaterThan(0)
+
+  // ★DBに残っていること（画面の状態だけで判断しない）
+  const saved = await restSrv(`estimate_drawing_extract_jobs?attachment_id=eq.${att[0].id}&kind=eq.quantity&select=status,rows`)
+  expect(saved.length, '★抽出結果がDBに保存される').toBe(1)
+  expect(JSON.stringify(saved[0].rows), '中身も入っている').toContain('SAVE-1')
+
+  // ページを完全に離れて戻る
+  await page.goto('/estimate-list', { waitUntil: 'networkidle' })
+  await page.goto(`/estimate-builder?project=${projId}`, { waitUntil: 'networkidle' })
+  await openBuilderTab(page, 'intake', '[data-testid="intake-dropzone"]')
+  await page.locator(`[data-testid="dqty-open-${att[0].id}"]`).click()
+
+  await expect(page.locator('[data-testid="dqty-panel"]'), '★前回の結果が出る').toContainText('SAVE-1', { timeout: 20000 })
+  await expect(page.locator('[data-testid="dqty-saved-note"]'), '前回分だと分かる').toBeVisible()
+  expect(calls, '★AIを呼び直していない（時間も費用もかけ直さない）').toBe(callsAfterFirst)
+})
+

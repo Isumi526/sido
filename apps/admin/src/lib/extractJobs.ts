@@ -66,7 +66,8 @@ export async function refreshExtractBadge() {
   if (!accountId) { extractDoneCount.value = 0; return }
   const { count } = await supabase.from('estimate_drawing_extract_jobs')
     .select('id', { count: 'exact', head: true })
-    .eq('account_id', accountId).eq('status', 'done').is('acked_at', null)
+    // ★材料抽出のバッジ。数量抽出は同じテーブルだがバッジの対象外なので kind で絞る
+    .eq('account_id', accountId).eq('kind', 'material').eq('status', 'done').is('acked_at', null)
   extractDoneCount.value = count ?? 0
 }
 /** 結果を人が見た（＝バッジから落とす） */
@@ -82,7 +83,9 @@ export async function loadJobsForProject(projectId: string) {
   if (!accountId) return
   const { data } = await supabase.from('estimate_drawing_extract_jobs')
     .select('id, project_id, attachment_id, source_name, total_pages, done_pages, status, rows, error')
-    .eq('account_id', accountId).eq('project_id', projectId)
+    // ★kind で絞る。同じテーブルに数量抽出の結果も入るようになったため（2026-08-19）。
+    //  絞らないと数量抽出の行が材料抽出のジョブとして復元され、画面に別物が出る。
+    .eq('account_id', accountId).eq('project_id', projectId).eq('kind', 'material')
   for (const j of (data ?? []) as any[]) {
     // 走っている最中のジョブは手元の状態のほうが新しいので上書きしない
     if (running.has(j.attachment_id)) continue
@@ -155,8 +158,8 @@ async function runJob(projectId: string, attachmentId: string, path: string, sou
       .upsert({
         account_id: accountId, project_id: projectId, attachment_id: attachmentId,
         source_name: sourceName, status: 'running', total_pages: job.total, done_pages: job.done,
-        rows: job.rows, error: null, acked_at: null,
-      }, { onConflict: 'attachment_id' })
+        rows: job.rows, error: null, acked_at: null, kind: 'material',
+      }, { onConflict: 'attachment_id,kind' })
       .select('id').single()
     if (error) { job.status = 'error'; job.error = error.message; rev.value++; return }
     job.id = (data as any).id
