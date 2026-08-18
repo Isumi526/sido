@@ -303,8 +303,13 @@ test('★抽出結果はページを移っても残り、AIを呼び直さずに
   await page.goto('/estimate-list', { waitUntil: 'networkidle' })
   await page.goto(`/estimate-builder?project=${projId}`, { waitUntil: 'networkidle' })
   await openBuilderTab(page, 'intake', '[data-testid="intake-dropzone"]')
-  await page.locator(`[data-testid="dqty-open-${att[0].id}"]`).click()
 
+  // ★押す前に「前回の結果がある」と分かること。結果は保存されているのに押すまで
+  //  何も見えないと「消えた」としか見えない（2026-08-19 通しレビューでの指摘）。
+  await expect(page.locator(`[data-testid="dqty-open-${att[0].id}"]`), '★保存済みだとボタンで分かる')
+    .toContainText('前回', { timeout: 20000 })
+
+  await page.locator(`[data-testid="dqty-open-${att[0].id}"]`).click()
   await expect(page.locator('[data-testid="dqty-panel"]'), '★前回の結果が出る').toContainText('SAVE-1', { timeout: 20000 })
   await expect(page.locator('[data-testid="dqty-saved-note"]'), '前回分だと分かる').toBeVisible()
   expect(calls, '★AIを呼び直していない（時間も費用もかけ直さない）').toBe(callsAfterFirst)
