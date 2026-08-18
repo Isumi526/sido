@@ -380,8 +380,9 @@
             <template v-if="dext.rows.length">
               <button class="btn-link-sm" data-testid="dext-all" @click="dext.rows.forEach(r => r._pick = true)">全選択</button>
               <button class="btn-link-sm" data-testid="dext-none" @click="dext.rows.forEach(r => r._pick = false)">全解除</button>
-              <button class="btn-primary" :disabled="!dextPicked.length" data-testid="dext-apply" @click="applyExtractToItems">
-                選んだ {{ dextPicked.length }} 件を明細に入れる
+              <button class="btn-primary" :disabled="!dextPicked.length || dextApplying" data-testid="dext-apply" @click="applyExtractToItems">
+                <template v-if="dextApplying"><span class="spin-dot"></span> 明細に入れています…</template>
+                <template v-else>選んだ {{ dextPicked.length }} 件を明細に入れる</template>
               </button>
             </template>
             <span v-if="dextJob?.error" class="err" data-testid="dext-err">{{ dextJob.error }}</span>
@@ -457,7 +458,10 @@
               <button class="btn-link-sm" data-testid="dqty-all" @click="dqty.rows.forEach(r => r._pick = true)">全選択</button>
               <button class="btn-link-sm" data-testid="dqty-none" @click="dqty.rows.forEach(r => r._pick = false)">全解除</button>
               <button class="btn-primary" :disabled="!dqtyPicked.length || dqtyApplying" data-testid="dqty-apply" @click="applyQuantityToItems">
-                選んだ {{ dqtyPicked.length }} 件を明細に入れる
+                <!-- ★件数が多いと数秒かかる。何も出ないと押せていないと思って連打される
+                     （2026-08-19 通しレビューでの指摘）。 -->
+                <template v-if="dqtyApplying"><span class="spin-dot"></span> 明細に入れています…</template>
+                <template v-else>選んだ {{ dqtyPicked.length }} 件を明細に入れる</template>
               </button>
             </template>
             <span v-if="dqty.msg" class="ok-msg" data-testid="dqty-msg">{{ dqty.msg }}</span>
@@ -3855,7 +3859,11 @@ async function applyQuantityToItems() {
   for (const x of picked) {
     let row = rows.value.find(r => isItemRow(r) && isBlankRow(r) && !added.includes(r))
     if (!row) { row = blankRow(); rows.value.push(row) }
-    row.item_name = [x.part, x.code].filter(Boolean).join(' ') || '(名称未設定)'
+    // ★符号（AD-1 / WD-1 / C-01）は品番の列に入れる。
+    //  以前は名称に結合していたため「建具 AD-1」となり、品番の列は空のままだった
+    //  （2026-08-19 通しレビューでの指摘）。名称・品番・仕様は別の情報なので混ぜない。
+    row.item_name = x.part || '(名称未設定)'
+    row.product_code = x.code ?? ''
     row.spec = x.spec ?? ''
     row.quantity = x.value
     row.unit = x.unit
@@ -3868,9 +3876,15 @@ async function applyQuantityToItems() {
   } finally { dqtyApplying.value = false }
 }
 
+const dextApplying = ref(false)
 async function applyExtractToItems() {
+  // ★連打ガード＋ローディング。件数が多いと数秒かかり、何も出ないと押せていないと
+  //  思って連打され、同じ材料が二重に入る（数量側と同じ理由・2026-08-19）。
+  if (dextApplying.value) return
   const picked = dextPicked.value
   if (!picked.length) return
+  dextApplying.value = true
+  try {
   const added: Row[] = []
   for (const x of picked) {
     let row = rows.value.find(r => isItemRow(r) && isBlankRow(r) && !added.includes(r))
@@ -3888,6 +3902,7 @@ async function applyExtractToItems() {
   dext.value.msg = `${picked.length}件を明細に入れました`
   builderTab.value = 'items'
   setTimeout(() => { dext.value.msg = ''; dext.value.att = null }, 1800)
+  } finally { dextApplying.value = false }
 }
 
 // ════════════════════════════════════════════════════════════

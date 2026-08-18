@@ -151,18 +151,24 @@ test('AC★: 選んだ数量が明細の初期値として入る（確定はし�
   await expect(page.getByTestId('dqty-msg'), '単価とロスは人が入れると案内').toContainText('ロス率は人が入れて')
 
   // 明細に数量が入る（★単価は入れない＝確定しない）
+  const COLS = 'item_name,product_code,quantity,unit,unit_price'
   await expect.poll(async () => {
-    const items = await restSrv(`estimate_items?project_id=eq.${projId}&select=item_name,quantity,unit,unit_price`)
-    return (items ?? []).filter((r: any) => String(r.item_name ?? '').includes('F-01')).length
+    const items = await restSrv(`estimate_items?project_id=eq.${projId}&select=${COLS}`)
+    return (items ?? []).filter((r: any) => String(r.product_code ?? '') === 'F-01').length
   }, { timeout: 20000 }).toBe(1)
 
-  const items = await restSrv(`estimate_items?project_id=eq.${projId}&select=item_name,quantity,unit,unit_price`)
-  const floor = items.find((r: any) => String(r.item_name ?? '').includes('F-01'))
+  const items = await restSrv(`estimate_items?project_id=eq.${projId}&select=${COLS}`)
+  const floor = items.find((r: any) => String(r.product_code ?? '') === 'F-01')
+  // ★符号（F-01 / AD-1 / C-01）は品番の列に入れる。以前は名称に結合していたため
+  //  「床 F-01」となり品番の列が空だった（2026-08-19 通しレビューでの指摘）。
+  //  名称・品番・仕様は別の情報なので混ぜない。
+  expect(floor.product_code, '★符号は品番の列に入る').toBe('F-01')
+  expect(floor.item_name, '★名称は部位だけ（符号を混ぜない）').toBe('床')
   expect(Number(floor.quantity), '凡例の面積がそのまま入る').toBe(21.3)
   expect(floor.unit).toBe('㎡')
   expect(Number(floor.unit_price) || 0, '★単価は入れない（確定しない）').toBe(0)
   // 選ばなかった天井は入っていない
-  expect(items.some((r: any) => String(r.item_name ?? '').includes('C-01')), '選ばなかった行は入らない').toBe(false)
+  expect(items.some((r: any) => String(r.product_code ?? '') === 'C-01'), '選ばなかった行は入らない').toBe(false)
 })
 
 test('★1ページが504で落ちても他のページは取れ、そのページだけ再試行できる', async ({ page }) => {
