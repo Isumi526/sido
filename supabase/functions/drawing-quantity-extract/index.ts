@@ -47,7 +47,7 @@ const PROMPT = `あなたは建築の実施図面を読み取る専門家です�
 {
   "parts": [
     { "part": "床|置床|天井|建具|器具|その他",
-      "rows": [ { "code": "F-01 等の仕上げコード", "spec": "仕様(タイルカーペット等)", "value": 21.3, "unit": "㎡|台|本|箇所", "note": "不確実なら要確認と記載" } ] }
+      "rows": [ { "code": "F-01 等の仕上げコード", "maker_code": "SX-FXCS-LED 等のメーカー品番。無ければ空", "spec": "仕様(タイルカーペット等)", "value": 21.3, "unit": "㎡|台|本|箇所", "note": "不確実なら要確認と記載" } ] }
   ],
   "gridSpanX": 通り芯の一方向の全長(m。例 10.2。読めなければ null),
   "gridSpanY": 通り芯のもう一方向の全長(m。例 6.95。読めなければ null),
@@ -55,13 +55,19 @@ const PROMPT = `あなたは建築の実施図面を読み取る専門家です�
 }
 
 注意:
+- ★**符号とメーカー品番は別物**。混ぜずにそれぞれの項目へ入れる。
+  - code       … 設計者がこの図面の中だけで使う符号（F-01 / C-01 / AD-1 / WD-2）。図面が変われば意味が変わる
+  - maker_code … メーカーが付けている品番（SX-FXCS-LED / DC-42-SIR-N / ModuleX 80 / SLP314）。どの図面でも同じものを指す
+  見積では maker_code から定価・掛率を引くので、これを spec の文章に埋め込んだままにしないこと。
+  凡例に品番が書かれていなければ maker_code は空にする（推測で書かない）。
+- spec には maker_code を除いた仕様だけを入れる（材質・仕上げ・寸法・色など）。
 - 面積は㎡、建具・器具は台、紙管など棒状のものは本を unit に入れる。図面の表記をそのまま使う。
 - 合計行(「計」「合計」)は行として入れない。個別の行だけを入れる（合計はこちらで足す）。
 - **壁の仕上げは対象外**。壁は面積が書かれていないので拾わない。
 - 通り芯寸法は mm 表記(8900等)なら m に直して入れる(8.9)。全長が複数スパンに分かれている場合は合計する。
 - このページに数量表が無ければ {"parts": [], "gridSpanX": null, "gridSpanY": null, "ceilingHeights": []} を返す。`
 
-type QuantityRow = { code?: string; spec?: string | null; value?: number; unit?: string; note?: string | null }
+type QuantityRow = { code?: string; maker_code?: string | null; spec?: string | null; value?: number; unit?: string; note?: string | null }
 type PartGroup = { part?: string; rows?: QuantityRow[] }
 type Extracted = { parts?: PartGroup[]; gridSpanX?: number | null; gridSpanY?: number | null; ceilingHeights?: string[] | null }
 
@@ -100,6 +106,9 @@ function normalize(x: Extracted): Extracted {
         .filter((r) => Number(r?.value) > 0)
         .map((r) => ({
           code: String(r.code ?? '').trim(),
+          // ★空文字は null に寄せる。「無い」を1通りで表せないと、
+          //  呼び出し側が '' と null の両方を毎回気にすることになる。
+          maker_code: String(r.maker_code ?? '').trim() || null,
           spec: r.spec ? String(r.spec).trim() : null,
           value: Number(r.value),
           unit: String(r.unit ?? '㎡').trim() || '㎡',

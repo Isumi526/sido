@@ -17,6 +17,10 @@
 /** 凡例1行ぶん（床/置床/天井は面積、建具/器具/紙管は台数・本数） */
 export type QuantityRow = {
   code: string            // 仕上げコード（F-01 / C-03 / AD-1 / C-05 など）
+  // ★code とは別物。code はこの図面の中だけで通じる符号、maker_code は
+  //  メーカーが付けた品番（SX-FXCS-LED / SLP314）で、定価・掛率を引く鍵になる。
+  //  混ぜると単価が一生引けない（2026-08-19 本番レビューで実際にそうなっていた）。
+  maker_code?: string | null
   spec?: string | null    // 仕様（タイルカーペット、岩綿吸音板 など）
   value: number           // 数値（面積㎡ または 台数/本数）
   unit: string            // '㎡' | '台' | '本' | '箇所' など図面の表記どおり
