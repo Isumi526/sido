@@ -58,18 +58,32 @@ quantity(数量)の判定ルール:
 - 図面内に表(凡例・仕上表)がある場合はそこを優先して読む。
 - メーカー品番が1件も見つからなければ空配列[]を返す。`
 
-async function geminiExtract(imageB64: string, mime: string): Promise<ExtractedRow[]> {
+async function geminiExtract(imageB64: string, mime: string, deadline: number): Promise<ExtractedRow[]> {
   if (!GEMINI_KEY) throw new Error('GEMINI_API_KEY 未設定')
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`
   const body = JSON.stringify({
     contents: [{ parts: [{ text: PROMPT }, { inline_data: { mime_type: mime, data: imageB64 } }] }],
-    generationConfig: { temperature: 0, response_mime_type: 'application/json' },
+    generationConfig: {
+      temperature: 0,
+      response_mime_type: 'application/json',
+      // ★思考を切る（2026-08-19 実測）。図面1枚の読み取りは temperature 0 の転記作業で、
+      //  考えさせる余地がほとんど無い。にもかかわらず既定では思考が走り、
+      //  p23 11.5秒→5.2秒 / p39 21.3秒→5.7秒 と3〜4倍遅くなっていた。
+      //  しかも p39 は思考なしの方が取れた件数が多い（7件→9件）。遅い上に得もしていない。
+      thinkingConfig: { thinkingBudget: 0 },
+    },
   })
   let res: Response | null = null
-  for (let i = 0; i < 4; i++) {
+  // ★リトライは「締め切りの内側」でしか行わない。
+  //  以前は503で最大4回・合計18秒眠っていた。54ページを連続で回すと Gemini が混み始め、
+  //  1回の呼び出しが100秒級になってゲートウェイに504で切られていた（2026-08-19 本番）。
+  //  ゲートウェイに切られると原因が何も残らない。自分で見切って理由の分かるエラーを返す。
+  for (let i = 0; i < 3; i++) {
     res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_KEY }, body })
     if (res.status !== 503) break
-    await new Promise((r) => setTimeout(r, 3000 * (i + 1)))
+    const wait = 1500 * (i + 1)
+    if (Date.now() + wait > deadline) break
+    await new Promise((r) => setTimeout(r, wait))
   }
   if (!res || !res.ok) {
     const st = res?.status
@@ -142,12 +156,13 @@ async function geminiLookupSizeInner(manufacturer: string, code: string, signal:
  *   - 1件ごとにも打ち切る（geminiLookupSize 側）
  *  補完できなかった品番は「不明」のまま出る。人が見て直せるので実害は小さい。
  */
-const LOOKUP_TIMEOUT_MS   = 12_000   // 1件あたり
-const LOOKUP_DEADLINE_MS  = 25_000   // ページ全体の補完に使ってよい時間
+/** 1リクエスト全体で使ってよい時間。ゲートウェイに切られる前に自分で見切るための値 */
+const REQUEST_BUDGET_MS   = 60_000
+const LOOKUP_TIMEOUT_MS   = 10_000   // 1件あたり
 const LOOKUP_MAX          = 8        // 1ページで調べる品番の上限
 const LOOKUP_CONCURRENCY  = 4
 
-async function fillUnknownSizes(rows: ExtractedRow[]): Promise<void> {
+async function fillUnknownSizes(rows: ExtractedRow[], deadline: number): Promise<void> {
   const targets = new Map<string, ExtractedRow[]>()
   for (const r of rows) {
     const sizeUnknown = !r.size?.trim() || /不明/.test(r.size)
@@ -158,10 +173,10 @@ async function fillUnknownSizes(rows: ExtractedRow[]): Promise<void> {
     else targets.set(key, [r])
   }
   const keys = [...targets.keys()].slice(0, LOOKUP_MAX)
-  const deadline = Date.now() + LOOKUP_DEADLINE_MS
 
   for (let i = 0; i < keys.length; i += LOOKUP_CONCURRENCY) {
-    if (Date.now() >= deadline) break
+    // ★1バッチぶんの余裕が無ければ、そこでやめる。中途半端に始めて締め切りを踏み越えない
+    if (Date.now() + LOOKUP_TIMEOUT_MS > deadline) break
     const batch = keys.slice(i, i + LOOKUP_CONCURRENCY)
     await Promise.all(batch.map(async (key) => {
       const [manufacturer, code] = key.split('|')
@@ -193,9 +208,15 @@ Deno.serve(async (req) => {
   const slug = (userData?.user?.app_metadata as Record<string, unknown> | undefined)?.account_slug as string | undefined
   if (!slug) return json({ error: 'unauthorized' }, 401)
 
+  // ★1リクエストに使ってよい時間の上限を自分で持つ。
+  //  超えそうなら自分で切り上げて、理由の分かるエラー（か、補完なしの結果）を返す。
+  //  ゲートウェイに504で切られると、何が遅かったのかログにも画面にも残らない。
+  const deadline = Date.now() + REQUEST_BUDGET_MS
   try {
-    const rows = await geminiExtract(image_base64, mime)
-    await fillUnknownSizes(rows)
+    const rows = await geminiExtract(image_base64, mime, deadline)
+    // ★補完は残り時間の範囲でだけやる。時間が無ければ「不明」のまま返す。
+    //  抽出は済んでいるのに、おまけのために丸ごと捨てるのが一番もったいない。
+    await fillUnknownSizes(rows, deadline)
     return json({ ok: true, page: page ?? null, rows })
   } catch (e) {
     return json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500)
