@@ -88,6 +88,15 @@ async function geminiExtract(imageB64: string, mime: string): Promise<ExtractedR
 // 見つからない/エラー時はnullを返す(呼び出し側で「不明」のまま扱う＝致命的エラーにしない)。
 async function geminiLookupSize(manufacturer: string, code: string): Promise<{ size: string; sourceUrl: string } | null> {
   if (!GEMINI_KEY) return null
+  // ★1件が返らないまま関数全体を道連れにしないよう、個別に打ち切る
+  const ac = new AbortController()
+  const kill = setTimeout(() => ac.abort(), LOOKUP_TIMEOUT_MS)
+  try {
+    return await geminiLookupSizeInner(manufacturer, code, ac.signal)
+  } catch { return null } finally { clearTimeout(kill) }
+}
+
+async function geminiLookupSizeInner(manufacturer: string, code: string, signal: AbortSignal): Promise<{ size: string; sourceUrl: string } | null> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`
   const prompt = `建材製品「メーカー: ${manufacturer} / 品番: ${code}」の規格サイズ(寸法)をWeb検索で調べてください。
 見つかった場合は次の2行のみを出力してください（他の説明文は不要）:
@@ -101,7 +110,7 @@ async function geminiLookupSize(manufacturer: string, code: string): Promise<{ s
   })
   let res: Response
   try {
-    res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_KEY }, body })
+    res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_KEY }, body, signal })
   } catch { return null }
   if (!res.ok) return null
   const data = await res.json()
@@ -117,22 +126,53 @@ async function geminiLookupSize(manufacturer: string, code: string): Promise<{ s
   return { size: sizeMatch[1].trim(), sourceUrl }
 }
 
-// rows中「規格サイズ不明」な品番についてgeminiLookupSizeで補完する(同一メーカー+品番はページ内で1回のみ検索)。
+/**
+ * rows中「規格サイズ不明」な品番を Web検索で補完する（同一メーカー+品番はページ内で1回のみ）。
+ *
+ * ★これは「あれば嬉しい」補完であって、抽出そのものではない。
+ *  にもかかわらず、以前は**品番の数だけ直列に**Web検索していたため、
+ *  品番が多いページでは補完だけで何十秒もかかり、**本体の抽出結果ごと 504 で捨てられていた**。
+ *  （2026-08-19 本番レビュー: NOWHERE北新宿の造作家具図・39ページ目で2回連続 504。
+ *    37〜53ページが造作家具図で、品番が多くサイズは図にほぼ書かれていない）
+ *
+ * ★方針: 補完のために本体を落とさない。
+ *   - 全体に締め切りを設ける（超えたら残りは「不明」のまま返す）
+ *   - 直列をやめて同時に走らせる
+ *   - 1ページあたりの件数に上限を設ける
+ *   - 1件ごとにも打ち切る（geminiLookupSize 側）
+ *  補完できなかった品番は「不明」のまま出る。人が見て直せるので実害は小さい。
+ */
+const LOOKUP_TIMEOUT_MS   = 12_000   // 1件あたり
+const LOOKUP_DEADLINE_MS  = 25_000   // ページ全体の補完に使ってよい時間
+const LOOKUP_MAX          = 8        // 1ページで調べる品番の上限
+const LOOKUP_CONCURRENCY  = 4
+
 async function fillUnknownSizes(rows: ExtractedRow[]): Promise<void> {
-  const cache = new Map<string, { size: string; sourceUrl: string } | null>()
+  const targets = new Map<string, ExtractedRow[]>()
   for (const r of rows) {
     const sizeUnknown = !r.size?.trim() || /不明/.test(r.size)
     if (!sizeUnknown || !r.manufacturer?.trim() || !r.code?.trim()) continue
     const key = `${r.manufacturer.trim()}|${r.code.trim()}`
-    if (!cache.has(key)) {
-      try { cache.set(key, await geminiLookupSize(r.manufacturer, r.code)) } catch { cache.set(key, null) }
-    }
-    const found = cache.get(key)
-    if (found) {
-      r.size = found.size
-      r.sizeSourceUrl = found.sourceUrl || null
-      r.note = r.note ? `${r.note} / AI Web調査による規格サイズ` : 'AI Web調査による規格サイズ'
-    }
+    const arr = targets.get(key)
+    if (arr) arr.push(r)
+    else targets.set(key, [r])
+  }
+  const keys = [...targets.keys()].slice(0, LOOKUP_MAX)
+  const deadline = Date.now() + LOOKUP_DEADLINE_MS
+
+  for (let i = 0; i < keys.length; i += LOOKUP_CONCURRENCY) {
+    if (Date.now() >= deadline) break
+    const batch = keys.slice(i, i + LOOKUP_CONCURRENCY)
+    await Promise.all(batch.map(async (key) => {
+      const [manufacturer, code] = key.split('|')
+      const found = await geminiLookupSize(manufacturer, code)
+      if (!found) return
+      for (const r of targets.get(key) ?? []) {
+        r.size = found.size
+        r.sizeSourceUrl = found.sourceUrl || null
+        r.note = r.note ? `${r.note} / AI Web調査による規格サイズ` : 'AI Web調査による規格サイズ'
+      }
+    }))
   }
 }
 
