@@ -70,8 +70,10 @@ async function runQuantityExtract(page: any, label: string, gridY: number) {
     },
     2: {
       parts: [
-        { part: '床', rows: [{ code: 'F-01', spec: 'タイルカーペット', value: 21.3, unit: '㎡' }] },
-        { part: '建具', rows: [{ code: 'AD-1', spec: '片開き', value: 1, unit: '台' }] },
+        // ★符号(code)とメーカー品番(maker_code)は別物。単価を引く鍵は maker_code の方。
+        { part: '床', rows: [{ code: 'F-01', maker_code: 'NT-31', spec: 'タイルカーペット', value: 21.3, unit: '㎡' }] },
+        // 図面に品番が書かれていない行もある（建具は符号だけのことが多い）
+        { part: '建具', rows: [{ code: 'AD-1', maker_code: null, spec: '片開き', value: 1, unit: '台' }] },
       ],
       gridSpanX: null, gridSpanY: null, ceilingHeights: [],
     },
@@ -151,18 +153,55 @@ test('AC★: 選んだ数量が明細の初期値として入る（確定はし�
   await expect(page.getByTestId('dqty-msg'), '単価とロスは人が入れると案内').toContainText('ロス率は人が入れて')
 
   // 明細に数量が入る（★単価は入れない＝確定しない）
+  const COLS = 'item_name,product_code,quantity,unit,unit_price'
   await expect.poll(async () => {
-    const items = await restSrv(`estimate_items?project_id=eq.${projId}&select=item_name,quantity,unit,unit_price`)
+    const items = await restSrv(`estimate_items?project_id=eq.${projId}&select=${COLS}`)
     return (items ?? []).filter((r: any) => String(r.item_name ?? '').includes('F-01')).length
   }, { timeout: 20000 }).toBe(1)
 
-  const items = await restSrv(`estimate_items?project_id=eq.${projId}&select=item_name,quantity,unit,unit_price`)
+  const items = await restSrv(`estimate_items?project_id=eq.${projId}&select=${COLS}`)
   const floor = items.find((r: any) => String(r.item_name ?? '').includes('F-01'))
+  // ★品番の列に入るのは**メーカー品番**であって符号ではない。
+  //  符号（F-01 / AD-1）はこの図面の中だけの記号なので、品番の列に入れても
+  //  価格表・定価とは永久に当たらず、単価が一生埋まらない。
+  //  （2026-08-19 本番レビュー: 実図面63件すべて単価0。メーカー品番が仕様の
+  //    文章に埋もれ、品番の列が空だったのが原因）
+  expect(floor.product_code, '★品番の列にはメーカー品番が入る').toBe('NT-31')
+  expect(floor.item_name, '★符号は名称側に残す（どの図面のどれかを追えなくなるため）').toBe('床 F-01')
   expect(Number(floor.quantity), '凡例の面積がそのまま入る').toBe(21.3)
   expect(floor.unit).toBe('㎡')
   expect(Number(floor.unit_price) || 0, '★単価は入れない（確定しない）').toBe(0)
   // 選ばなかった天井は入っていない
   expect(items.some((r: any) => String(r.item_name ?? '').includes('C-01')), '選ばなかった行は入らない').toBe(false)
+})
+
+test('★図面に品番が無い行は、品番の列を符号で埋めない', async ({ page }) => {
+  // ★これが無いと「符号を品番の列に入れる」実装に戻しても全テストが通ってしまう。
+  //  実際 2026-08-19 に一度その向きで直してコミットしており、価格表と永久に
+  //  当たらない値で品番の列を埋めるところだった。建具は図面に品番が無いことが多い。
+  await runQuantityExtract(page, 'no-code', 6.95)
+
+  await page.getByTestId('dqty-none').click()
+  const rows = page.locator('[data-testid^="dqty-row-"]')
+  const n = await rows.count()
+  let idx = -1
+  for (let i = 0; i < n; i++) {
+    if ((await rows.nth(i).innerText()).includes('AD-1')) { idx = i; break }
+  }
+  expect(idx, '建具の行が見つかる').toBeGreaterThanOrEqual(0)
+  await page.getByTestId(`dqty-pick-${idx}`).check()
+  await page.getByTestId('dqty-apply').click()
+
+  const COLS = 'item_name,product_code'
+  await expect.poll(async () => {
+    const items = await restSrv(`estimate_items?project_id=eq.${projId}&select=${COLS}`)
+    return (items ?? []).filter((r: any) => String(r.item_name ?? '').includes('AD-1')).length
+  }, { timeout: 20000 }).toBeGreaterThanOrEqual(1)
+
+  const items = await restSrv(`estimate_items?project_id=eq.${projId}&select=${COLS}`)
+  const door = items.find((r: any) => String(r.item_name ?? '').includes('AD-1'))
+  expect(door.item_name, '符号は名称に残る').toBe('建具 AD-1')
+  expect(String(door.product_code ?? ''), '★品番が無いなら空のまま（符号で埋めない）').toBe('')
 })
 
 test('★1ページが504で落ちても他のページは取れ、そのページだけ再試行できる', async ({ page }) => {
