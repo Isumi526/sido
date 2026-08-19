@@ -124,10 +124,13 @@
     <template v-if="projectId && wizard.on">
       <div class="wiz" data-testid="wizard">
         <div class="wiz-steps">
-          <span v-for="s in WIZ_STEPS" :key="s.n" class="wiz-step"
-                :class="{ on: wizard.step === s.n, done: wizard.step > s.n }" :data-testid="`wiz-step-${s.n}`">
+          <!-- ★タブを押して行き来できる（2026-08-19）。どのステップも元から飛ばせる作りなので、
+               進むしかできないのは不自然だった。戻って直す時に「戻る」を何度も押さずに済む。 -->
+          <button v-for="s in WIZ_STEPS" :key="s.n" type="button" class="wiz-step"
+                  :class="{ on: wizard.step === s.n, done: wizard.step > s.n }"
+                  :data-testid="`wiz-step-${s.n}`" @click="goStep(s.n)">
             {{ s.n }}. {{ s.label }}
-          </span>
+          </button>
           <button class="btn-link-sm wiz-exit" data-testid="wiz-exit" @click="finishWizard()">ステップ入力をやめて明細へ</button>
         </div>
 
@@ -172,18 +175,29 @@
           </label>
           <span v-if="wizard.err" class="err" data-testid="wiz-err">{{ wizard.err }}</span>
 
+          <!-- ★図面ごとに小さなボタンが名前の横に並ぶだけで、何を押せばいいのか分からなかった
+               （2026-08-19 大塚さん向け通しレビュー）。図面1件を1枚のカードにして、
+               表紙・ファイル名・ボタンを縦に揃える。ボタンはこのステップの主役なので大きく出す。 -->
           <template v-if="pdfAttachments.length">
-            <div class="panel-head" style="margin-top:16px"><h3 class="sub-h">材料を抽出しますか？</h3></div>
-            <p class="hint">
-              図面に書かれた品番・数量をAIが読み取って明細の下地を作ります。
-              <strong>解析中も他の入力を続けられます</strong>（何ページ目まで進んだかはここと図面の一覧に出ます）。
-            </p>
-            <ul class="att-list" data-testid="wiz-ext-list">
-              <li v-for="a in pdfAttachments" :key="a.id">
-                <span class="att-name-static">{{ a.name || a.path }}</span>
-                <ExtractControl :att="a" @start="beginExtractFromWizard" @review="openExtractResult" />
-              </li>
-            </ul>
+            <div class="ext-offer" data-testid="wiz-ext-offer">
+              <h3 class="sub-h">図面から材料と数量を読み取る（任意）</h3>
+              <p class="hint">
+                図面に書かれた品番・数量をAIが読み取って、明細の下地を作ります。
+                <strong>始めたあとは他の入力を続けて構いません</strong>（進み具合はこのボタンに出ます）。
+              </p>
+              <ul class="ext-cards" data-testid="wiz-ext-list">
+                <li v-for="a in pdfAttachments" :key="a.id" class="ext-card">
+                  <button v-if="attThumbs[a.id]" class="ext-thumb" @click="openAttachment(a)">
+                    <img :src="attThumbs[a.id]" :alt="a.name || a.path" />
+                  </button>
+                  <div v-else class="ext-thumb ext-thumb-empty">
+                    <span class="material-symbols-rounded">description</span>
+                  </div>
+                  <span class="ext-name" :title="a.name || a.path">{{ a.name || a.path }}</span>
+                  <ExtractControl :att="a" @start="beginExtractFromWizard" @review="openExtractResult" />
+                </li>
+              </ul>
+            </div>
           </template>
 
           <div class="wiz-actions">
@@ -1926,6 +1940,17 @@ async function saveWizardName(): Promise<boolean> {
 /** ステップ2の「次へ」 */
 async function commitWizardName() {
   if (await saveWizardName()) wizard.value.step = 3
+}
+/**
+ * ステップタブから直接移動する。
+ * ★ステップ2から離れる時は先に案件名を保存する。タブで飛べるようにした以上、
+ *  「次へ」を押した時だけ保存では、打った名前が黙って消える。
+ *  保存できない場合（同名など）は移動せず、その場でエラーを見せる。
+ */
+async function goStep(n: number) {
+  if (n === wizard.value.step) return
+  if (wizard.value.step === 2 && !(await saveWizardName())) return
+  wizard.value.step = n
 }
 
 /**
@@ -4907,12 +4932,37 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .ext-chip { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; font-size: 12px;
   font-weight: 700; color: #06864a; background: #e8f9ef; border-radius: 12px; padding: 4px 12px; white-space: nowrap; }
 /* ── R51 新規見積のステップ入力 ── */
-.wiz { max-width: 820px; }
+/* ★820pxだと画面の大半が余白だった（2026-08-19）。図面のサムネイルや抽出の一覧は
+   横を使ったほうが見やすい。ただし無制限に伸ばすと入力欄が間延びするので上限は残す。 */
+.wiz { max-width: 1180px; }
 .wiz-steps { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
-.wiz-step { font-size: 12px; font-weight: 700; color: #94a3b8; background: #f1f5f9; border-radius: 14px; padding: 5px 12px; }
+/* ★押せるようになったので、押せると分かる見た目にする（カーソル・ホバー） */
+.wiz-step {
+  font-size: 12px; font-weight: 700; color: #94a3b8; background: #f1f5f9;
+  border: 1px solid transparent; border-radius: 14px; padding: 5px 12px;
+  cursor: pointer; font-family: inherit;
+}
+.wiz-step:hover { border-color: #cbd5e1; background: #e2e8f0; }
 .wiz-step.on   { color: #fff; background: #06A050; }
+.wiz-step.on:hover { background: #05904a; border-color: transparent; }
 .wiz-step.done { color: #06864a; background: #e8f9ef; }
+.wiz-step.done:hover { background: #d7f3e3; border-color: #a7e3c4; }
 .wiz-exit { margin-left: auto; }
+/* ステップ2「図面から材料と数量を読み取る」。任意の操作だと分かるよう囲って区切る */
+.ext-offer { margin-top: 18px; padding: 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; }
+.ext-offer .sub-h { margin: 0 0 4px; font-size: 14px; }
+.ext-offer .hint { margin: 0 0 12px; }
+.ext-cards { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 12px; }
+.ext-card {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  width: 190px; padding: 10px; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
+}
+.ext-thumb { width: 100%; height: 110px; padding: 0; border: 1px solid #e5e7eb; border-radius: 6px; background: #fff; cursor: pointer; overflow: hidden; }
+.ext-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.ext-thumb-empty { display: flex; align-items: center; justify-content: center; cursor: default; color: #cbd5e1; }
+.ext-thumb-empty .material-symbols-rounded { font-size: 40px; }
+/* ファイル名は長いので1行に丸める。全文は title 属性で出す */
+.ext-name { font-size: 12px; color: #475569; width: 100%; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wiz-actions { display: flex; align-items: center; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
 .wiz-con-btns { display: flex; gap: 8px; }
 /* ── R55 元請け・担当者のその場編集 ── */
