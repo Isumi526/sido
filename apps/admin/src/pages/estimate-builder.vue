@@ -902,9 +902,14 @@
                     <span class="blk-fields blk-indent">
                       <span class="blk-sep">└</span>
                       <!-- 工種は自由記述＋予測変換（固定マスタからの選択を強制しない） -->
-                      <input :value="b.trade_name" class="input sm blk-input" :data-testid="`blk-trade-${blocks.indexOf(b)}`"
+                      <input :value="b.trade_name" class="input sm blk-input" :class="{ unset: !b.trade_name }"
+                             :data-testid="`blk-trade-${blocks.indexOf(b)}`"
                              list="est-trades" autocomplete="off" placeholder="工種（例：軽鉄工事）"
                              @input="onBlockField(b, 'trade_name', ($event.target as HTMLInputElement).value)" />
+                      <!-- ★工種が空だと工種別内訳で「(工種未設定)」に入るが、明細側からは
+                           それが分からなかった（2026-08-19 指摘）。入れていないことをここで見せる。 -->
+                      <span v-if="!b.trade_name" class="blk-unset" :data-testid="`blk-trade-unset-${blocks.indexOf(b)}`"
+                            title="工種を入れないと、工種別内訳では「(工種未設定)」にまとまります">工種 未入力</span>
                       <!-- ★R27: マスタの編集ボタンは「使う場所の近く」に置く。
                            設定画面まで探しに行かせない。 -->
                       <button class="btn-icon" data-testid="open-trade-modal" title="工種の候補を編集" @click="openTradeModal">
@@ -4994,13 +4999,18 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 /* ── 明細のブロック（場所×工種）── */
 .blk-row td { background: #EEF2F7; border-top: 2px solid #D5DEE8; padding: 6px 8px; }
 .blk-fields { display: flex; align-items: center; gap: 8px; }
-.blk-input { min-width: 320px; font-weight: 600; background: #fff; }
+.blk-input { font-weight: 600; background: #fff; }
+.blk-input.unset { border-color: #f0b47a; background: #fffaf3; }
+.blk-unset {
+  font-size: 11px; font-weight: 700; color: #b45309;
+  background: #fff7ed; border: 1px solid #fdba74; border-radius: 10px; padding: 2px 8px; white-space: nowrap;
+}
 .blk-sep { color: #90A4B8; font-weight: 700; }
 .blk-count { font-size: 11px; color: #7A8AA0; }
 .blk-del { margin-left: auto; }
 .area-row td { background: #E3EAF3; border-top: 2px solid #C3D0E0; padding: 6px 8px; }
 .area-label { font-size: 11px; color: #5A6C82; font-weight: 700; }
-.area-input { min-width: 360px; font-weight: 700; background: #fff; }
+.area-input { font-weight: 700; background: #fff; }
 .area-add { margin-left: 4px; }
 .blk-indent { padding-left: 22px; }
 .dim-col { width: 62px; }
@@ -5014,6 +5024,13 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .est-items th, .est-items td { padding: 5px 6px; font-size: 12px; }
 .est-items .input { padding: 5px 6px; font-size: 12px; }
 .est-items .input.sm { min-width: 0; }
+/* ★場所・工種の入力だけは幅を確保する（2026-08-19）。
+   すぐ上の「.est-items .input.sm { min-width: 0 }」が効いていて、
+   .blk-input 側の min-width が打ち消され、.input.sm の width:90px まで潰れていた。
+   結果、プレースホルダー「工種（例：軽鉄工事）」が途中で切れて何の欄か分からなかった。
+   同じ強さで後から上書きしても崩れやすいので、クラスを重ねて確実に勝たせる。 */
+.est-items .input.sm.blk-input  { width: 340px; min-width: 340px; flex: 0 0 auto; }
+.est-items .input.sm.area-input { width: 360px; min-width: 360px; flex: 0 0 auto; }
 /* ── Q5 案件情報 ── */
 .intake-panel { max-width: 900px; }
 .intake-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
