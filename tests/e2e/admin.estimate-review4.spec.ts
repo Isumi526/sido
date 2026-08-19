@@ -75,6 +75,11 @@ test('AC1★(R32): 粗利パターンが行の右端の列にあり、明細1行
   await page.locator('[data-testid="item-cost-0"]').fill('2700')
   await page.locator('[data-testid="item-cost-0"]').press('Tab')
 
+  // ★粗利%の列は既定で畳んである（2026-08-19: 13インチで18列が入りきらないため）。
+  //  R32 が決めたのは「行の右端の列に置く／明細1行を2行にしない」であって、
+  //  常に出しっぱなしにすることではないので、出してから確かめる。
+  await page.locator('[data-testid="col-margin"]').check()
+
   // ★列見出しに 5/10/15/20% が並ぶ（Excelの R〜Y列と同じ）
   const heads = (await page.locator('.est-items thead th').allInnerTexts()).map(h => h.trim()).filter(Boolean)
   expect(heads.slice(-4)).toEqual(['5%', '10%', '15%', '20%'])
