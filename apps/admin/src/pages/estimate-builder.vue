@@ -3887,10 +3887,8 @@ async function applyQuantityToItems() {
   if (!picked.length) return
   dqtyApplying.value = true
   try {
-  const added: Row[] = []
-  for (const x of picked) {
-    let row = rows.value.find(r => isItemRow(r) && isBlankRow(r) && !added.includes(r))
-    if (!row) { row = blankRow(); rows.value.push(row) }
+  // ★部位ごとの場所に振り分ける（全部1つにまとめない）
+  const added = placeGroupedByPart(picked, (x, row) => {
     // ★品番の列には**メーカー品番**を入れる（符号ではない）。
     //  符号（AD-1 / C-01）はこの図面の中だけの記号なので、品番の列に入れても
     //  価格表・定価とは永久に当たらない。単価を引く鍵になるのはメーカー品番の方。
@@ -3901,8 +3899,7 @@ async function applyQuantityToItems() {
     row.spec = x.spec ?? ''
     row.quantity = x.value
     row.unit = x.unit
-    added.push(row)
-  }
+  })
   await autoSaveRows(added)
   dqty.value.msg = `${picked.length}件を明細に入れました（単価とロス率は人が入れてください）`
   builderTab.value = 'items'
@@ -3919,18 +3916,18 @@ async function applyExtractToItems() {
   if (!picked.length) return
   dextApplying.value = true
   try {
-  const added: Row[] = []
-  for (const x of picked) {
-    let row = rows.value.find(r => isItemRow(r) && isBlankRow(r) && !added.includes(r))
-    if (!row) { row = blankRow(); rows.value.push(row) }
+  // ★部位ごとの場所に振り分ける（全部1つにまとめない）
+  const added = placeGroupedByPart(picked, (x, row) => {
+    // ★名称の作り方は変えていない。部位が「場所」にも入るので重複して見えるが、
+    //  材料抽出は品名を返しておらず（部位・メーカー・品番・規格・仕様のみ）、
+    //  裏取り無しに名称の意味を変えると外す。大塚さんに確認してから触る。
     row.item_name = [x.manufacturer, x.part].filter(Boolean).join(' ') || x.code || '(名称未設定)'
     row.product_code = x.code || ''
     // 規格サイズは形状・詳細に入れる（W/D/Hは人が読み替える。自動で分解すると外す）
     row.spec = [x.size, x.spec].filter(Boolean).join(' / ')
     const q = Number(String(x.quantity ?? '').replace(/[^0-9.]/g, ''))
     if (Number.isFinite(q) && q > 0) row.quantity = q
-    added.push(row)
-  }
+  })
   await autoSaveRows(added)
   await loadMaterials()
   dext.value.msg = `${picked.length}件を明細に入れました`
@@ -4237,6 +4234,47 @@ async function addProject() {
   projectId.value = (data as Project).id
   addingProject.value = false
   await loadItems()
+}
+
+/**
+ * 抽出結果を「部位ごと」にまとめて明細へ入れる。
+ *
+ * ★なぜ（2026-08-19 本番の通しレビュー）:
+ *  それまでは空行を拾って順に詰めるだけだったので、実図面63件が
+ *  **全部1つの場所・1つの工種**に入っていた。
+ *  大塚さんの拾い方は 部位(天井 → 壁 → 床) → 工種 → 明細 で、1つにまとめるのは実務と合わない。
+ *  打ち合わせ②の逐語で確認済み:
+ *   「天井工事の解体工事…天井の中の軽鉄工事…とりあえず天井は全体的に拾ったなと。
+ *     そしたら今度、順番的に壁の工事を全体的に…で、今度は床工事って言って」
+ *  抽出結果は元から部位を持っているので、振り分けるだけで済む。
+ *
+ * ★工種はまだ分けられない。抽出が工種を返していないため（部位・メーカー・品番・規格・仕様のみ）。
+ *  大塚さん自身が「それが解体工事なのか軽鉄工事なのか多分わからんと思うから、AI」と
+ *  言っており、AIに判定させる方向。それは別途。
+ */
+function placeGroupedByPart<T extends { part?: string }>(picked: T[], fill: (x: T, row: Row) => void): Row[] {
+  // 部位ごとにまとめる。同じ部位の中では選ばれた順を保つ
+  const groups = new Map<string, T[]>()
+  for (const x of picked) {
+    const key = (x.part ?? '').trim() || 'その他'
+    const arr = groups.get(key)
+    if (arr) arr.push(x); else groups.set(key, [x])
+  }
+  // ★まだ何も入力していない（初期の空行だけ）なら、その空行は捨てる。
+  //  残すと先頭に名前の無い場所ブロックができ、実質「全部1つ」の見た目に戻る。
+  if (rows.value.length && rows.value.every(r => isItemRow(r) && isBlankRow(r))) rows.value = []
+  const added: Row[] = []
+  for (const [part, items] of groups) {
+    items.forEach((x, n) => {
+      const row = blankRow()
+      row.location = part
+      if (n === 0) { row._newArea = true; row._newBlock = true }
+      fill(x, row)
+      rows.value.push(row)
+      added.push(row)
+    })
+  }
+  return added
 }
 
 function blankRow(rowType: 'item' | 'header' = 'item'): Row {
