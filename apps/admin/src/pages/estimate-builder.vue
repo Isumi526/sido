@@ -33,7 +33,11 @@
         <button v-if="currentContractorId" class="btn-edit" data-testid="con-edit-open" @click="openContractorModal(currentContractorId)">
           <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">edit</span> 担当者を編集
         </button>
-        <RouterLink to="/contractors" class="muted-link">元請けマスタ全体</RouterLink>
+        <!-- ★「元請けマスタ全体」へのリンクは外した（2026-08-19）。
+             すぐ上のコメントのとおり、設定画面へ飛ばすと書きかけの見積から離れて
+             入力が消えるので、この場で直せるようにしたのが R55。
+             その隣に「直す前の経路」を残しておく理由が無い。
+             一覧を見たい時はサイドバーの マスタ > 元請け業者 から行ける。 -->
       </div>
 
       <!-- 受注 → 現場化（受注確定で現場に紐付け。以降の日報/発注/経費を現場単位に） -->
@@ -264,7 +268,10 @@
     <template v-else-if="projectId">
       <div class="builder-tabs">
         <button class="btab" :class="{ active: builderTab === 'intake' }" data-testid="tab-intake" @click="builderTab = 'intake'">案件情報</button>
-        <button class="btab" :class="{ active: builderTab === 'quotes' }" data-testid="tab-quotes" @click="builderTab = 'quotes'">相見積</button>
+        <!-- ★「相見積」→「見積依頼・回収」（2026-08-19）。まだ何も依頼していない時に
+             「相見積」を開くと、空であることが異常に見えていた。依頼→回収の過程を表す名前なら
+             「まだ依頼していない」状態が自然に読める。 -->
+        <button class="btab" :class="{ active: builderTab === 'quotes' }" data-testid="tab-quotes" @click="builderTab = 'quotes'">見積依頼・回収</button>
         <button class="btab" :class="{ active: builderTab === 'items' }" data-testid="tab-items" @click="builderTab = 'items'">明細入力</button>
         <!-- ★R36: 表示/非表示トグルだと明細のスペースを圧迫するので独立タブにする -->
         <button class="btab" :class="{ active: builderTab === 'breakdown' }" data-testid="tab-breakdown" @click="builderTab = 'breakdown'">工種別内訳</button>
@@ -601,7 +608,7 @@
       <div v-show="builderTab === 'quotes'">
         <section class="panel">
           <div class="panel-head">
-            <h2>依頼した業者と回収状況</h2>
+            <h2>業者への依頼と回収状況</h2>
             <button class="btn-add" data-testid="qr-add" @click="addQuoteRequest">＋ 業者を手で追加</button>
           </div>
           <!-- ★R7: 依頼は「案件情報タブで図面のページを送る」と自動で立つ。
@@ -633,7 +640,30 @@
                   <button class="btn-del" :data-testid="`qr-del-${qi}`" @click="removeQuoteRequest(q)">×</button>
                 </td>
               </tr>
-              <tr v-if="!quoteRequests.length"><td colspan="8" class="empty">案件情報タブで図面のページを業者へ送ると、ここに依頼が並びます</td></tr>
+              <!-- ★空の時に「別のタブへ行け」と書くだけだった（2026-08-19 通しレビュー）。
+                   操作を**説明している**だけで、ここから始められない＝行き止まりに見えていた。
+                   実際に押せるものを置く。押すのは案件情報タブと同じページ選択モーダル。 -->
+              <tr v-if="!quoteRequests.length">
+                <td colspan="8" class="empty qr-empty" data-testid="qr-empty">
+                  <p class="qr-empty-lead">まだ業者へ依頼していません。</p>
+                  <template v-if="pdfAttachments.length">
+                    <p class="hint">図面から必要なページだけ抜き出して送ると、その業者の依頼がここに並びます。</p>
+                    <div class="qr-empty-acts">
+                      <button v-for="a in pdfAttachments" :key="a.id" class="btn-primary"
+                              :data-testid="`qr-empty-send-${a.id}`" @click="openDrawingSend(a)">
+                        <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">forward_to_inbox</span>
+                        ページを選んで送る<template v-if="pdfAttachments.length > 1">（{{ a.name || a.path }}）</template>
+                      </button>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <p class="hint">先に図面を入れてください。図面のページを選んで業者へ送ると、ここに依頼が並びます。</p>
+                    <div class="qr-empty-acts">
+                      <button class="btn-primary" data-testid="qr-empty-goto-intake" @click="builderTab = 'intake'">図面を入れる</button>
+                    </div>
+                  </template>
+                </td>
+              </tr>
             </tbody>
           </table>
         </section>
@@ -4576,6 +4606,11 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .pdf-preview { background: #fff; color: #111; padding: 24px; border: 1px solid #ddd; max-width: 760px; }
 /* 見積書情報の入力フォーム */
 .doc-form { display: flex; flex-wrap: wrap; gap: 12px; margin: 8px 0 16px; }
+/* 依頼がまだ無い時。行き止まりに見せず、ここから始められるようにする */
+.qr-empty { padding: 22px 12px; text-align: center; }
+.qr-empty-lead { margin: 0 0 4px; font-weight: 700; color: #475569; }
+.qr-empty .hint { margin: 0 0 12px; }
+.qr-empty-acts { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
 /* 未登録の注意書き。muted（薄いグレー）のままだと見落とすので色だけ起こす */
 .warn-inline { color: #b45309; margin: 0 0 6px; }
 .doc-field { display: flex; flex-direction: column; gap: 4px; }

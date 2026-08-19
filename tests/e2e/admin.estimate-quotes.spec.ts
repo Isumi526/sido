@@ -10,7 +10,7 @@
 //  Notion: Q3 3aa0ff81c56b81e28792f1b78a98cea0 / Q4 3aa0ff81c56b81e788d6daa09cd1a8e1
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { getAccountId, restSrv, openBuilderTab } from './helpers'
+import { getAccountId, restSrv, openBuilderTab, makePdf } from './helpers'
 
 const TS = Date.now()
 const SUB_A = `E2E下請A_${TS}`
@@ -207,4 +207,42 @@ test('AC7(Q4): 明細入力で過去の業者別単価が候補に出て、ク�
   // クリックで原価に採用される
   await hist.click()
   await expect(page.locator('[data-testid="item-cost-0"]')).toHaveValue('1350')
+})
+
+// ── 空の時に行き止まりにしない（2026-08-19 通しレビュー）──────────────
+// ★指摘: 「相見積タブを開いた時に何もデータがなくて、登録する動線もない」。
+//  実際には案内文と「＋業者を手で追加」はあったが、**やるべき操作（図面のページを送る）が
+//  別のタブにある**ため、説明を読んでも次の一歩が踏み出せなかった。
+//  ここでは「空の時に、この場から始められるボタンがある」ことを固定する。
+test('★依頼が0件でも、この場から業者へ送り始められる', async ({ page }) => {
+  const accountId = await getAccountId()
+  const PROJ = projName()
+  const pj = await restSrv('estimate_projects', {
+    method: 'POST', headers: { Prefer: 'return=representation', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ account_id: accountId, name: PROJ }),
+  })
+  const projId = pj[0].id
+
+  await page.goto(`/estimate-builder?project=${projId}`, { waitUntil: 'networkidle' })
+  await openBuilderTab(page, 'quotes', '[data-testid="qr-add"]')
+
+  const empty = page.locator('[data-testid="qr-empty"]')
+  await expect(empty, '依頼0件の案内が出る').toBeVisible({ timeout: 15000 })
+
+  // 図面がまだ無い状態＝図面を入れる導線が出る（「別のタブへ行け」で終わらせない）
+  await expect(page.locator('[data-testid="qr-empty-goto-intake"]'),
+    '★図面が無い時は、ここから図面を入れに行ける').toBeVisible()
+  await page.locator('[data-testid="qr-empty-goto-intake"]').click()
+  await expect(page.locator('[data-testid="intake-dropzone"]'), '案件情報タブへ移る').toBeVisible({ timeout: 10000 })
+
+  // 図面を入れると、今度は「ページを選んで送る」がこの場に出る
+  await page.locator('[data-testid="intake-file"]').setInputFiles({
+    name: `${PROJ}_図面.pdf`, mimeType: 'application/pdf', buffer: makePdf(2),
+  })
+  await expect(page.locator('[data-testid="intake-att-list"]')).toContainText('図面.pdf', { timeout: 20000 })
+  const att = await restSrv(`estimate_project_attachments?project_id=eq.${projId}&select=id&order=created_at.desc`)
+
+  await openBuilderTab(page, 'quotes', '[data-testid="qr-empty"]')
+  await expect(page.locator(`[data-testid="qr-empty-send-${att[0].id}"]`),
+    '★図面があれば、この場から送り始められる').toBeVisible({ timeout: 15000 })
 })
