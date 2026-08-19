@@ -829,6 +829,13 @@
               <!-- 粗利率: アカウント既定 ＋ この見積だけ上書き。
                    行ごとの 5/10/15/20% プレビューは 2026-07-28 に一度撤去したが、
                    2026-07-29 の第3回レビューで復活の要望が出たため戻した（ExcelのR〜Y列と同じ形）。 -->
+              <!-- ★13インチだと18列が画面に収まらず、横スクロールできること自体が気づかれない
+                   （2026-08-19 通しレビュー）。使わない列を畳めるようにする。選択は端末ごとに覚える。 -->
+              <span class="col-toggles" data-testid="col-toggles">
+                <label><input type="checkbox" v-model="colShow.dims" data-testid="col-dims" /> 寸法</label>
+                <label><input type="checkbox" v-model="colShow.cost" data-testid="col-cost" /> 原価</label>
+                <label><input type="checkbox" v-model="colShow.margin" data-testid="col-margin" /> 粗利%</label>
+              </span>
               <button class="btn-link-sm" data-testid="open-cand-name-modal" @click="openCandModal('name')">名称の候補</button>
               <button class="btn-link-sm" data-testid="open-cand-code-modal" @click="openCandModal('code')">品番の候補</button>
               <label class="margin-field">粗利
@@ -848,14 +855,14 @@
                      名称 → 品番 → 形状詳細 → W → D → H → 数量 → 単位 → 単価 → 金額
                      原価・商社は客先に出さない社内用なので、金額の後ろにまとめる。 -->
                 <th class="drag-col"></th><th>名称</th><th>品番</th><th>形状・詳細</th>
-                <th class="num dim-col">W(t)</th><th class="num dim-col">D(＠)</th><th class="num dim-col">H(L)</th>
+                <template v-if="colShow.dims"><th class="num dim-col">W(t)</th><th class="num dim-col">D(＠)</th><th class="num dim-col">H(L)</th></template>
                 <th class="num">数量</th><th>単位</th>
                 <th class="num">単価</th><th class="num">金額</th>
-                <th class="cost-col">商社</th><th class="num cost-col">単価原価</th><th class="num cost-col">金額原価</th>
+                <template v-if="colShow.cost"><th class="cost-col">商社</th><th class="num cost-col">単価原価</th><th class="num cost-col">金額原価</th></template>
                 <!-- ★R32: 粗利パターンはExcelのR〜Y列と同じく行の右端に置く。
                      名称の下に1行使うと明細1行あたり表が2行分の高さになり、
                      縦の情報量を上げたい他の要望（R29/R30）と噛み合わない。 -->
-                <th v-for="pct in MARGIN_PRESETS" :key="pct" class="num mp-col">{{ Math.round(pct * 100) }}%</th>
+                <th v-for="pct in (colShow.margin ? MARGIN_PRESETS : [])" :key="pct" class="num mp-col">{{ Math.round(pct * 100) }}%</th>
                 <th></th>
               </tr>
             </thead>
@@ -871,7 +878,7 @@
                   <!-- ★R39: 場所ごと掴んで並び替える（配下の工種・明細がまとまって動く） -->
                   <td class="drag-col drag-handle" draggable="true" title="ドラッグで場所ごと並び替え"
                       :data-testid="`area-drag-${ai}`" @dragstart="onDragArea(ai)" @dragend="onDragEnd">⠿</td>
-                  <td colspan="18">
+                  <td :colspan="itemCols - 1">
                     <span class="blk-fields">
                       <span class="area-label">場所</span>
                       <input :value="a.location" class="input sm area-input" :data-testid="`area-loc-${ai}`"
@@ -891,7 +898,7 @@
                   <!-- ★R39: 工種ごと掴んで並び替える。別の場所へ落とせばその場所に移る -->
                   <td class="drag-col drag-handle" draggable="true" title="ドラッグで工種ごと並び替え"
                       :data-testid="`blk-drag-${blocks.indexOf(b)}`" @dragstart="onDragBlock(blocks.indexOf(b))" @dragend="onDragEnd">⠿</td>
-                  <td colspan="18">
+                  <td :colspan="itemCols - 1">
                     <span class="blk-fields blk-indent">
                       <span class="blk-sep">└</span>
                       <!-- 工種は自由記述＋予測変換（固定マスタからの選択を強制しない） -->
@@ -944,9 +951,11 @@
                   </td>
                   <td><input v-model="rows[i].spec" class="input sm" :data-testid="`item-spec-${i}`" placeholder="R下地 / 2重貼 等" /></td>
                   <!-- ★W/D/H は記録のみ。数量は自動計算しない（工種で数え方が違い、自動で決めると必ず外れる） -->
+                  <template v-if="colShow.dims">
                   <td class="num"><input v-model.number="rows[i].dim_w" type="number" step="any" class="input xs num" :data-testid="`item-w-${i}`" /></td>
                   <td class="num"><input v-model.number="rows[i].dim_d" type="number" step="any" class="input xs num" :data-testid="`item-d-${i}`" /></td>
                   <td class="num"><input v-model.number="rows[i].dim_h" type="number" step="any" class="input xs num" :data-testid="`item-h-${i}`" /></td>
+                  </template>
                   <td class="num"><input v-model.number="rows[i].quantity" type="number" step="any" class="input sm num" :data-testid="`item-qty-${i}`" /></td>
                   <td><input v-model="rows[i].unit" class="input sm" :data-testid="`item-unit-${i}`" placeholder="m²/個 等" /></td>
                   <!-- 客先単価: 既定は原価÷(1−粗利率)。手打ちで上書きでき、上書き中は色で分かる -->
@@ -961,6 +970,7 @@
                   <td class="num amount" :data-testid="`item-amount-${i}`">{{ yen(lineAmount(rows[i])) }}</td>
                   <!-- ここから社内用（見積書には出さない）。商社は R16 でモーダル化予定 -->
                   <!-- ★R14: 商社は材料（品番あり）だけ。作業内容の行に商社の概念は無い -->
+                  <template v-if="colShow.cost">
                   <td class="cost-col">
                     <span v-if="!hasSupplierChoice(rows[i])" class="na-cell" :data-testid="`item-supplier-na-${i}`">—</span>
                     <template v-else>
@@ -983,7 +993,8 @@
                   </td>
                   <td class="num cost-col"><input v-model.number="rows[i].cost_unit_price" type="number" step="any" class="input sm num" :data-testid="`item-cost-${i}`" @input="onCostInput(rows[i])" /></td>
                   <td class="num cost-col amount" :data-testid="`item-cost-amount-${i}`">{{ yen(lineCostAmount(rows[i])) }}</td>
-                  <td v-for="pct in MARGIN_PRESETS" :key="pct" class="num mp-col">
+                  </template>
+                  <td v-for="pct in (colShow.margin ? MARGIN_PRESETS : [])" :key="pct" class="num mp-col">
                     <button v-if="(rows[i].cost_unit_price ?? 0) > 0" class="mp-cell"
                             :class="{ active: Math.round(marginPct) === Math.round(pct * 100) }"
                             :data-testid="`item-margin-${i}-${Math.round(pct * 100)}`"
@@ -995,7 +1006,7 @@
                 <!-- Q4: この項目の過去の業者別単価（受領登録で貯まったもの）。クリックで原価に採用 -->
                 <tr v-if="historyFor(rows[i].item_name).length" class="hist-row">
                   <td></td>
-                  <td colspan="18">
+                  <td :colspan="itemCols - 1">
                     <div class="hist-cells">
                       <span class="hist-label">{{ isMaterialRow(rows[i]) ? '過去の単価' : '過去の下請実績' }}</span>
                       <span v-for="(h, hi) in historyFor(rows[i].item_name).slice(0, 4)" :key="hi" class="hist-wrap">
@@ -1021,7 +1032,7 @@
               </template>
               </template>
               <tr class="blk-add-row">
-                <td colspan="19"><button class="btn-add" data-testid="area-add" @click="addArea()">＋ 場所を追加</button></td>
+                <td :colspan="itemCols"><button class="btn-add" data-testid="area-add" @click="addArea()">＋ 場所を追加</button></td>
               </tr>
             </tbody>
           </table>
@@ -4005,6 +4016,24 @@ function onPinfoClick(r: Row) {
 //  ★2026-07-28 に一度撤去したが、第3回レビューで復活の要望が出たため戻した。
 //  計算は既存の priceAtMargin をそのまま使う（自動単価と同じ式でないと見比べにならない）。
 const MARGIN_PRESETS = [0.05, 0.10, 0.15, 0.20] as const
+
+/**
+ * 明細の列の表示切り替え。
+ * ★13インチだと18列が入りきらず、3分の1〜半分が画面外に出ていた（2026-08-19 指摘）。
+ *  横スクロールはできるが、できること自体が見て分からない。
+ * ★既定で粗利%だけ畳む。寸法は什器・家具で要り、原価は単価を生やす入力なので既定は出す。
+ *  「よく分からないから全部出しておく」にすると元の木阿弥なので、既定を決める。
+ * ★端末ごとに覚える。13インチと外部モニタで欲しい列が違う。
+ */
+const COL_SHOW_KEY = 'estimate.itemCols.v1'
+const colShow = ref<{ dims: boolean; cost: boolean; margin: boolean }>({ dims: true, cost: true, margin: false })
+try { Object.assign(colShow.value, JSON.parse(localStorage.getItem(COL_SHOW_KEY) || '{}')) } catch { /* 壊れていたら既定のまま */ }
+watch(colShow, v => { try { localStorage.setItem(COL_SHOW_KEY, JSON.stringify(v)) } catch { /* 保存できなくても動く */ } }, { deep: true })
+/** 場所・工種の行が横いっぱいに伸びるための列数（畳んだ分を引く） */
+const itemCols = computed(() => 19
+  - (colShow.value.dims ? 0 : 3)
+  - (colShow.value.cost ? 0 : 3)
+  - (colShow.value.margin ? 0 : MARGIN_PRESETS.length))
 /** その率の単価を採用する（＝手打ち扱い。以降は粗利率を変えても勝手に動かない） */
 function applyMarginToRow(r: Row, rate: number) {
   r.unit_price = priceAtMargin(r, rate)
@@ -4844,6 +4873,8 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .mp-cells { padding: 3px 0; }
 .mp-label { font-size: 11px; color: #999; margin-right: 8px; }
 .mp-col { width: 84px; }
+.col-toggles { display: inline-flex; gap: 12px; margin-right: 14px; font-size: 12px; color: #555; }
+.col-toggles label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
 .mp-cell { display: block; width: 100%; padding: 2px 4px; border: 1px solid #D5DEE8; border-radius: 5px;
            background: #fff; cursor: pointer; font-size: 11px; font-variant-numeric: tabular-nums; }
 .mp-cell:hover { background: #EEF4FF; border-color: #4A7BC8; }

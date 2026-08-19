@@ -171,6 +171,15 @@ async function runJob(projectId: string, attachmentId: string, path: string, sou
   await runPages(job)
 }
 
+/**
+ * ★同時に走らせる本数（2026-08-19）。
+ *  それまで1ページずつ順番に待っており、54ページで18分かかっていた。
+ *  数量抽出は元から4並列（estimate-builder.vue の QTY_CONCURRENCY）だったのに、
+ *  材料抽出だけ直列のまま取り残されていた。同じ値に揃える。
+ *  上げすぎると Gemini 側が 503 を返し始めて逆に遅くなるので、むやみに増やさない。
+ */
+const PAGE_CONCURRENCY = 4
+
 async function runPages(job: ExtractJob) {
   try {
     const { data: file, error } = await supabase.storage.from(DRAWING_BUCKET).download(job.path)
@@ -182,59 +191,92 @@ async function runPages(job: ExtractJob) {
     rev.value++
     const { data: sess } = await supabase.auth.getSession()
 
-    // ★1ページずつ送る（図面は1枚が重く、まとめて送ると解析精度も落ちる）
+    // ★1ページずつ送るのは変えない（図面は1枚が重く、まとめて送ると解析精度も落ちる）。
+    //  変えたのは「順番に待つ」のをやめたところ。
     //  中断から再開する場合は done_pages の次のページから始める。
-    for (let i = job.done; i < job.total; i++) {
-      const one = await PDFDocument.create()
-      const [pg] = await one.copyPages(src, [i])
-      one.addPage(pg)
-      const bytes = await one.save()
-      let bin = ''
-      const chunk = 0x8000
-      for (let k = 0; k < bytes.length; k += chunk) {
-        bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(k, k + chunk)) as any)
+    const pages: number[] = []
+    for (let i = job.done; i < job.total; i++) pages.push(i)
+
+    // ★done は「先頭から連続して終わったページ数」に保つ。
+    //  並列にすると終わる順がばらばらになるが、ここを単なる完了数にすると
+    //  中断→再開で穴の空いたページを飛ばしてしまう。連続した分だけ進める。
+    const doneSet = new Set<number>()
+    const rowsByPage = new Map<number, ExtractRow[]>()
+    let failed: string | null = null
+    let cursor = 0
+
+    const advance = () => {
+      while (doneSet.has(job.done)) {
+        // 保存する行はページ順に並べ直す（並列で戻る順に依存させない）
+        for (const r of rowsByPage.get(job.done) ?? []) job.rows.push(r)
+        rowsByPage.delete(job.done)
+        job.done++
       }
-      // ★重いページは時間切れ(504)になることがある。そこで人にボタンを押させず、
-      //  そのページだけ数回やり直す（2026-08-19 本番: 造作家具図の39ページ目で
-      //  2回連続504。押し直せば通る＝待てば通るものを、毎回人が押していた）。
-      //  待っても直らない種類（400/401 など）は即やめる。粘っても無駄で、
-      //  原因が見えなくなるだけ。
-      let json: any = null
-      let lastErr = ''
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/drawing-material-extract`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${sess?.session?.access_token ?? ''}`,
-            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-          },
-          body: JSON.stringify({ image_base64: btoa(bin), mime: 'application/pdf', page: i + 1 }),
-        })
-        const j = await resp.json().catch(() => null)
-        if (resp.ok && !j?.error) { json = j; break }
-        lastErr = j?.error || `解析エラー(${resp.status})`
-        if (resp.status < 500) break
-        await new Promise(r => setTimeout(r, 2000 * (attempt + 1)))
-      }
-      if (!json) {
-        job.status = 'error'
-        // ★何ページ目で止まったかを出す。54ページもあると「どこで落ちたか」が分からない
-        job.error = `${lastErr}（${i + 1}ページ目）`
-        rev.value++
-        await persist(job)
-        return
-      }
-      for (const r of (json?.rows ?? []) as any[]) {
-        job.rows.push({
+    }
+
+    async function worker() {
+      while (!failed) {
+        const idx = cursor++
+        if (idx >= pages.length) return
+        const i = pages[idx]
+        const one = await PDFDocument.create()
+        const [pg] = await one.copyPages(src, [i])
+        one.addPage(pg)
+        const bytes = await one.save()
+        let bin = ''
+        const chunk = 0x8000
+        for (let k = 0; k < bytes.length; k += chunk) {
+          bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(k, k + chunk)) as any)
+        }
+        // ★重いページは時間切れ(504)になることがある。そこで人にボタンを押させず、
+        //  そのページだけ数回やり直す（2026-08-19 本番: 造作家具図で2回連続504。
+        //  押し直せば通る＝待てば通るものを、毎回人が押していた）。
+        //  待っても直らない種類（400/401 など）は即やめる。粘っても原因が見えなくなるだけ。
+        let json: any = null
+        let lastErr = ''
+        for (let attempt = 0; attempt < 3; attempt++) {
+          if (failed) return
+          const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/drawing-material-extract`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${sess?.session?.access_token ?? ''}`,
+              apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+            },
+            body: JSON.stringify({ image_base64: btoa(bin), mime: 'application/pdf', page: i + 1 }),
+          })
+          const j = await resp.json().catch(() => null)
+          if (resp.ok && !j?.error) { json = j; break }
+          lastErr = j?.error || `解析エラー(${resp.status})`
+          if (resp.status < 500) break
+          await new Promise(r => setTimeout(r, 2000 * (attempt + 1)))
+        }
+        if (!json) {
+          // ★何ページ目で止まったかを出す。54ページもあると「どこで落ちたか」が分からない
+          failed = `${lastErr}（${i + 1}ページ目）`
+          return
+        }
+        rowsByPage.set(i, ((json?.rows ?? []) as any[]).map(r => ({
           page: i + 1, part: r.part ?? '', manufacturer: r.manufacturer ?? '', code: r.code ?? '',
           size: r.size ?? '', spec: r.spec ?? '', quantity: r.quantity ?? '', note: r.note ?? '',
-        })
+        })))
+        doneSet.add(i)
+        advance()
+        rev.value++
+        // ★連続した分が進んだ時だけ保存する。タブを閉じられてもそこまでの結果は残る。
+        //  穴が空いたまま保存すると、再開時にその穴を飛ばしてしまう。
+        await persist(job)
       }
-      job.done = i + 1
+    }
+
+    await Promise.all(Array.from({ length: Math.min(PAGE_CONCURRENCY, pages.length) }, worker))
+
+    if (failed) {
+      job.status = 'error'
+      job.error = failed
       rev.value++
-      // ★1ページごとに保存する。タブを閉じられてもここまでの結果は残る。
       await persist(job)
+      return
     }
     job.status = 'done'
     rev.value++
