@@ -292,3 +292,25 @@ export async function fillNoReceiptReasons(page: any, reason = 'E2E: 領収書�
   }
   return n
 }
+
+/**
+ * 中身の無い最小PDFを作る（ページ数だけ持つ）。
+ * ★pdf-lib は apps/admin にしか無く、テストから解決できないので手で組む。
+ * ★2026-08-19: 同じものが admin.estimate-drawing-{extract,send,quantity}.spec.ts に
+ *  3つコピーされている。新しく書く分はここを使う（既存分は触ると壊しうるので据え置き）。
+ */
+export function makePdf(pages: number): Buffer {
+  const objs: string[] = []
+  const kids = Array.from({ length: pages }, (_, i) => `${i + 3} 0 R`).join(' ')
+  objs.push(`<< /Type /Catalog /Pages 2 0 R >>`)
+  objs.push(`<< /Type /Pages /Kids [${kids}] /Count ${pages} >>`)
+  for (let i = 0; i < pages; i++) objs.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] >>`)
+  let body = '%PDF-1.4\n'
+  const offsets: number[] = []
+  objs.forEach((o, i) => { offsets.push(body.length); body += `${i + 1} 0 obj\n${o}\nendobj\n` })
+  const xrefAt = body.length
+  const size = objs.length + 1
+  let xref = `xref\n0 ${size}\n0000000000 65535 f \n`
+  for (const off of offsets) xref += `${String(off).padStart(10, '0')} 00000 n \n`
+  return Buffer.from(body + xref + `trailer\n<< /Size ${size} /Root 1 0 R >>\nstartxref\n${xrefAt}\n%%EOF\n`, 'latin1')
+}
