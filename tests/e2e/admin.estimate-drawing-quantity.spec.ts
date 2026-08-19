@@ -204,6 +204,30 @@ test('★図面に品番が無い行は、品番の列を符号で埋めない',
   expect(String(door.product_code ?? ''), '★品番が無いなら空のまま（符号で埋めない）').toBe('')
 })
 
+test('★部位ごとに場所を分けて明細へ入れる（全部1つにまとめない）', async ({ page }) => {
+  // 2026-08-19 本番レビュー: 実図面63件が全部1つの場所・1つの工種に入っていた。
+  // 大塚さんの拾い方は 部位(天井→壁→床) → 工種 → 明細（打ち合わせ②の逐語）。
+  // ★この1本が無いと「全部1つに詰める」実装に戻しても全テストが通ってしまう。
+  await runQuantityExtract(page, 'grouped', 6.95)
+
+  // 床(F-01) と 建具(AD-1) の2部位を選ぶ
+  const rows = page.locator('[data-testid^="dqty-row-"]')
+  const n = await rows.count()
+  for (let i = 0; i < n; i++) {
+    const t = await rows.nth(i).innerText()
+    if (!t.includes('F-01') && !t.includes('AD-1')) await page.getByTestId(`dqty-pick-${i}`).uncheck()
+  }
+  await page.getByTestId('dqty-apply').click()
+
+  await expect.poll(async () => {
+    // ★画面上の「場所」は DB では note 列に入っている（estimate_items.note）
+    const items = await restSrv(`estimate_items?project_id=eq.${projId}&select=item_name,note`)
+    const f = (items ?? []).find((r: any) => String(r.item_name ?? '').includes('F-01'))
+    const a = (items ?? []).find((r: any) => String(r.item_name ?? '').includes('AD-1'))
+    return f && a ? `${f.note}/${a.note}` : ''
+  }, { timeout: 20000 }).toBe('床/建具')
+})
+
 test('★1ページが504で落ちても他のページは取れ、そのページだけ再試行できる', async ({ page }) => {
   // 2026-08-18 通しレビュー: 実図面で 504 が出た。当時は1ページ失敗で break していたため、
   // 以降のページが丸ごと未処理のまま終わっていた（画面には途中までの結果だけが残る）。
