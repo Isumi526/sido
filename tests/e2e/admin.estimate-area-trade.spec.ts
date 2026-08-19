@@ -217,3 +217,31 @@ test('AC7★(R13): 開き直して保存し直しても、品番・寸法が消�
   expect(Number(items[0].dim_h)).toBe(30)
   expect(Number(items[0].quantity), '編集した値は反映される').toBe(5)
 })
+
+// ── 工種が未入力だと分かるようにする（2026-08-19 通しレビュー）──────────
+// ★指摘: 「工種別内訳に行った時に(工種未設定)に入るが、明細入力画面で工種が
+//  入っていないことが分かりづらい。入力欄も横幅が足らず潰れてプレースホルダーが
+//  途中までしか見えない」
+test('★工種が未入力だと明細側で分かり、入力欄が潰れていない', async ({ page }) => {
+  await openNewProject(page)
+
+  const trade = page.locator('[data-testid="blk-trade-0"]')
+  await expect(trade).toBeVisible({ timeout: 15000 })
+
+  // ★未入力だと明細側で分かる（内訳へ行かないと気づけない状態にしない）
+  await expect(page.locator('[data-testid="blk-trade-unset-0"]'),
+    '★工種が空なら「未入力」と出す').toBeVisible()
+
+  // ★プレースホルダーが切れない幅がある。.input.sm の width:90px に負けて潰れていた
+  const w = (await trade.boundingBox())?.width ?? 0
+  expect(w, '★工種の入力欄がプレースホルダーを収められる幅がある').toBeGreaterThan(300)
+
+  // ★場所の入力欄も同じ原因で潰れていた（.est-items .input.sm { min-width: 0 } に負けていた）
+  const areaW = (await page.locator('[data-testid="area-loc-0"]').boundingBox())?.width ?? 0
+  expect(areaW, '★場所の入力欄も見切れない幅がある').toBeGreaterThan(320)
+
+  // 入れれば消える
+  await trade.fill('軽鉄工事')
+  await expect(page.locator('[data-testid="blk-trade-unset-0"]'),
+    '入れたら「未入力」は消える').toHaveCount(0)
+})
