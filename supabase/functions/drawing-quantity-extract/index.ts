@@ -76,13 +76,20 @@ async function geminiExtract(imageB64: string, mime: string): Promise<Extracted>
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`
   const body = JSON.stringify({
     contents: [{ parts: [{ text: PROMPT }, { inline_data: { mime_type: mime, data: imageB64 } }] }],
-    generationConfig: { temperature: 0, response_mime_type: 'application/json' },
+    generationConfig: {
+      temperature: 0,
+      response_mime_type: 'application/json',
+      // ★思考を切る（材料抽出側と同じ理由・2026-08-19 実測で3〜4倍速く、取れる件数はむしろ増えた）。
+      //  凡例の数量表を転記する作業なので、考えさせる余地がほとんど無い。
+      thinkingConfig: { thinkingBudget: 0 },
+    },
   })
   let res: Response | null = null
-  for (let i = 0; i < 4; i++) {
+  // ★503のリトライは短く3回まで。長く眠るとゲートウェイに504で切られ、原因が何も残らない
+  for (let i = 0; i < 3; i++) {
     res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_KEY }, body })
     if (res.status !== 503) break
-    await new Promise((r) => setTimeout(r, 3000 * (i + 1)))
+    await new Promise((r) => setTimeout(r, 1500 * (i + 1)))
   }
   if (!res || !res.ok) {
     const st = res?.status
