@@ -343,6 +343,58 @@ test('AC9★(R53): タブを閉じて中断した抽出は「n/N まで完了。
   expect(codes, '中断前の結果が残り、続きが足される').toEqual(['RS-1', 'RS-2', 'RS-3'])
 })
 
+test('★重いページが時間切れ(504)になっても、人が押し直さずに勝手に回復する', async ({ page }) => {
+  // 2026-08-19 本番レビュー: NOWHERE北新宿の造作家具図・39ページ目で2回連続 504。
+  // 押し直せば通る＝待てば通るものを、54ページの途中で毎回人に押させていた。
+  const accountId = await getAccountId()
+  const pj = await restSrv('estimate_projects', {
+    method: 'POST', headers: { Prefer: 'return=representation', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ account_id: accountId, name: `${NAME_PREFIX}_504自動回復` }),
+  })
+  const projId = pj[0].id
+  created.push(projId)
+
+  // 2ページ目が1回だけ 504（重いページがたまたま時間切れになった状況）
+  let timedOut = false
+  await page.route('**/functions/v1/drawing-material-extract', async (route: any) => {
+    const body = JSON.parse(route.request().postData() || '{}')
+    if (body.page === 2 && !timedOut) {
+      timedOut = true
+      await route.fulfill({ status: 504, contentType: 'text/plain', body: 'upstream timeout' })
+      return
+    }
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ ok: true, page: body.page, rows: [
+        { part: `P${body.page}`, manufacturer: 'メーカー', code: `TO-${body.page}`, size: '', spec: '', quantity: '1' },
+      ] }),
+    })
+  })
+
+  await page.goto(`/estimate-builder?project=${projId}`, { waitUntil: 'networkidle' })
+  await openBuilderTab(page, 'intake', '[data-testid="intake-dropzone"]')
+  await page.locator('[data-testid="intake-file"]').setInputFiles({
+    name: `${NAME_PREFIX}_504図面.pdf`, mimeType: 'application/pdf', buffer: makePdf(3),
+  })
+  await expect(page.locator('[data-testid="intake-att-list"]')).toContainText('504図面.pdf', { timeout: 20000 })
+  const att = await restSrv(`estimate_project_attachments?project_id=eq.${projId}&select=id&order=created_at.desc`)
+  const attId = att[0].id
+
+  await page.locator(`[data-testid="dext-open-${attId}"]`).click()
+
+  // ★人は何も押さない。それでも最後まで通る
+  await expect.poll(async () => {
+    const j = await restSrv(`estimate_drawing_extract_jobs?attachment_id=eq.${attId}&select=status,done_pages`)
+    return `${j[0]?.status}:${j[0]?.done_pages}`
+  }, { timeout: 40000 }).toBe('done:3')
+
+  const job = await restSrv(`estimate_drawing_extract_jobs?attachment_id=eq.${attId}&select=rows`)
+  expect((job[0].rows as any[]).map(r => r.code),
+    '504になったページも重複せず1回だけ入る').toEqual(['TO-1', 'TO-2', 'TO-3'])
+  await expect(page.locator(`[data-testid="dext-retry-${attId}"]`),
+    '人に再試行を押させない').toHaveCount(0)
+})
+
 test('AC10★(R53): 途中で失敗しても済んだページは捨てず、続きから再試行できる', async ({ page }) => {
   const accountId = await getAccountId()
   const pj = await restSrv('estimate_projects', {
@@ -352,12 +404,15 @@ test('AC10★(R53): 途中で失敗しても済んだページは捨てず、続
   const projId = pj[0].id
   created.push(projId)
 
-  // 2ページ目だけ1回失敗させる（通信が途中で切れた状況）
-  let failedOnce = false
+  // 2ページ目を「自動リトライを使い切るまで」失敗させる（＝人が押し直すしかない状況）。
+  // ★2026-08-19 に 5xx の自動リトライ(3回)を入れたので、1回だけの失敗では
+  //  自動で回復してしまい、このspecが見たい「人が続きから再開する」経路を通らない。
+  //  ここで見たいのは自動回復ではなく、済んだページを捨てないことの方。
+  let fails = 0
   await page.route('**/functions/v1/drawing-material-extract', async (route: any) => {
     const body = JSON.parse(route.request().postData() || '{}')
-    if (body.page === 2 && !failedOnce) {
-      failedOnce = true
+    if (body.page === 2 && fails < 3) {
+      fails++
       await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: '解析が中断されました' }) })
       return
     }
