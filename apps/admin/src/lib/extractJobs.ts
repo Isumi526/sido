@@ -194,19 +194,33 @@ async function runPages(job: ExtractJob) {
       for (let k = 0; k < bytes.length; k += chunk) {
         bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(k, k + chunk)) as any)
       }
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/drawing-material-extract`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${sess?.session?.access_token ?? ''}`,
-          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-        },
-        body: JSON.stringify({ image_base64: btoa(bin), mime: 'application/pdf', page: i + 1 }),
-      })
-      const json = await resp.json().catch(() => null)
-      if (!resp.ok || json?.error) {
+      // ★重いページは時間切れ(504)になることがある。そこで人にボタンを押させず、
+      //  そのページだけ数回やり直す（2026-08-19 本番: 造作家具図の39ページ目で
+      //  2回連続504。押し直せば通る＝待てば通るものを、毎回人が押していた）。
+      //  待っても直らない種類（400/401 など）は即やめる。粘っても無駄で、
+      //  原因が見えなくなるだけ。
+      let json: any = null
+      let lastErr = ''
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/drawing-material-extract`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${sess?.session?.access_token ?? ''}`,
+            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({ image_base64: btoa(bin), mime: 'application/pdf', page: i + 1 }),
+        })
+        const j = await resp.json().catch(() => null)
+        if (resp.ok && !j?.error) { json = j; break }
+        lastErr = j?.error || `解析エラー(${resp.status})`
+        if (resp.status < 500) break
+        await new Promise(r => setTimeout(r, 2000 * (attempt + 1)))
+      }
+      if (!json) {
         job.status = 'error'
-        job.error = json?.error || `解析エラー(${resp.status})`
+        // ★何ページ目で止まったかを出す。54ページもあると「どこで落ちたか」が分からない
+        job.error = `${lastErr}（${i + 1}ページ目）`
         rev.value++
         await persist(job)
         return

@@ -131,6 +131,10 @@
                   :data-testid="`wiz-step-${s.n}`" @click="goStep(s.n)">
             {{ s.n }}. {{ s.label }}
           </button>
+          <!-- ★ステップの中から解析を始めた時も進捗が見えるようにする（2026-08-19）。
+               ここに無いと、一番押される「材料を抽出」から始めた時だけ何も出なかった。 -->
+          <ExtractProgressChips :project-id="projectId" :quantity-busy="dqty.busy"
+                                :quantity-done="dqty.done" :quantity-total="dqty.total" />
           <button class="btn-link-sm wiz-exit" data-testid="wiz-exit" @click="finishWizard()">ステップ入力をやめて明細へ</button>
         </div>
 
@@ -161,9 +165,11 @@
               <button class="btn-del" @click="removeAttachment(a)">×</button>
             </li>
           </ul>
+          <!-- ★並びは全ステップ共通で 戻る → スキップ → 次へ（2026-08-19）。
+               進む向きに左から右へ並べる。1つ目は戻り先が無いので戻るは出さない。 -->
           <div class="wiz-actions">
-            <button class="btn-primary" :disabled="!attachments.length" data-testid="wiz-next-1" @click="wizard.step = 2">次へ</button>
             <button class="btn-cancel" data-testid="wiz-skip-1" @click="wizard.step = 2">図面は後で（スキップ）</button>
+            <button class="btn-primary" :disabled="!attachments.length" data-testid="wiz-next-1" @click="wizard.step = 2">次へ</button>
           </div>
         </section>
 
@@ -201,9 +207,9 @@
           </template>
 
           <div class="wiz-actions">
-            <button class="btn-primary" data-testid="wiz-next-2" @click="commitWizardName">次へ</button>
-            <button class="btn-cancel" data-testid="wiz-skip-2" @click="wizard.step = 3">スキップ</button>
             <button class="btn-cancel" data-testid="wiz-back-2" @click="wizard.step = 1">戻る</button>
+            <button class="btn-cancel" data-testid="wiz-skip-2" @click="wizard.step = 3">スキップ</button>
+            <button class="btn-primary" data-testid="wiz-next-2" @click="commitWizardName">次へ</button>
           </div>
         </section>
 
@@ -220,9 +226,9 @@
             </label>
           </div>
           <div class="wiz-actions">
-            <button class="btn-primary" data-testid="wiz-next-3" @click="wizard.step = 4">次へ</button>
-            <button class="btn-cancel" data-testid="wiz-skip-3" @click="wizard.step = 4">まだ決まっていない（スキップ）</button>
             <button class="btn-cancel" data-testid="wiz-back-3" @click="wizard.step = 2">戻る</button>
+            <button class="btn-cancel" data-testid="wiz-skip-3" @click="wizard.step = 4">まだ決まっていない（スキップ）</button>
+            <button class="btn-primary" data-testid="wiz-next-3" @click="wizard.step = 4">次へ</button>
           </div>
         </section>
 
@@ -247,9 +253,9 @@
             </div>
           </div>
           <div class="wiz-actions">
-            <button class="btn-primary" data-testid="wiz-finish" @click="finishWizard()">入力を終えて明細へ</button>
-            <button class="btn-cancel" data-testid="wiz-skip-4" @click="finishWizard()">元請けは後で（スキップ）</button>
             <button class="btn-cancel" data-testid="wiz-back-4" @click="wizard.step = 3">戻る</button>
+            <button class="btn-cancel" data-testid="wiz-skip-4" @click="finishWizard()">元請けは後で（スキップ）</button>
+            <button class="btn-primary" data-testid="wiz-finish" @click="finishWizard()">入力を終えて明細へ</button>
           </div>
         </section>
       </div>
@@ -266,15 +272,10 @@
         <!-- 発注は受注してからしか発生しない。受注前に出ていると紛らわしいので隠す（レビュー2026-07-28） -->
         <button v-if="isOrdered" class="btab" :class="{ active: builderTab === 'po' }" data-testid="tab-po" @click="builderTab = 'po'">商社へ発注</button>
         <!-- ★R53: 解析中はどのタブに居ても進捗が見えるようにする。
-             案件情報タブの図面一覧にしか出さないと、明細を打っている間は進んでいるか分からない。 -->
-        <span v-for="j in runningExtracts" :key="j.attachmentId" class="ext-chip" data-testid="ext-progress-chip">
-          <span class="spin-dot"></span> 材料抽出中 {{ j.done }}/{{ j.total || '?' }}ページ
-        </span>
-        <!-- ★数量抽出はブラウザの中で走るので、タブを移ると進捗が見えなくなっていた
-             （2026-08-18 通しレビュー）。材料抽出と同じくここに出す。 -->
-        <span v-if="dqty.busy" class="ext-chip" data-testid="dqty-progress-chip">
-          <span class="spin-dot"></span> 数量抽出中 {{ dqty.done }}/{{ dqty.total || '?' }}ページ
-        </span>
+             案件情報タブの図面一覧にしか出さないと、明細を打っている間は進んでいるか分からない。
+             ★同じものをステップ式の画面にも出す（部品側のコメント参照・2026-08-19） -->
+        <ExtractProgressChips :project-id="projectId" :quantity-busy="dqty.busy"
+                              :quantity-done="dqty.done" :quantity-total="dqty.total" />
         <button class="btab ghost" data-testid="open-drawer" @click="openDrawer"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">settings</span> マスタ・自社情報</button>
       </div>
 
@@ -1416,6 +1417,7 @@ import { getAccountId } from '../lib/account'
 import { openDoc } from '../lib/docUrl'
 import EstimateMasters from './estimate-masters.vue'
 import ExtractControl from '../components/ExtractControl.vue'
+import ExtractProgressChips from '../components/ExtractProgressChips.vue'
 import { crossCheckCeiling, type CrossCheck, type QuantityPart } from '../lib/drawingQuantity'
 // ★R53: 材料抽出の実行はこのコンポーネントの外（モジュールスコープ）で回す。
 //  画面遷移で解析が死なないようにするため。
