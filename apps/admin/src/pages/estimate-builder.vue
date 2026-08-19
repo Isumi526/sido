@@ -33,7 +33,11 @@
         <button v-if="currentContractorId" class="btn-edit" data-testid="con-edit-open" @click="openContractorModal(currentContractorId)">
           <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">edit</span> 担当者を編集
         </button>
-        <RouterLink to="/contractors" class="muted-link">元請けマスタ全体</RouterLink>
+        <!-- ★「元請けマスタ全体」へのリンクは外した（2026-08-19）。
+             すぐ上のコメントのとおり、設定画面へ飛ばすと書きかけの見積から離れて
+             入力が消えるので、この場で直せるようにしたのが R55。
+             その隣に「直す前の経路」を残しておく理由が無い。
+             一覧を見たい時はサイドバーの マスタ > 元請け業者 から行ける。 -->
       </div>
 
       <!-- 受注 → 現場化（受注確定で現場に紐付け。以降の日報/発注/経費を現場単位に） -->
@@ -264,7 +268,10 @@
     <template v-else-if="projectId">
       <div class="builder-tabs">
         <button class="btab" :class="{ active: builderTab === 'intake' }" data-testid="tab-intake" @click="builderTab = 'intake'">案件情報</button>
-        <button class="btab" :class="{ active: builderTab === 'quotes' }" data-testid="tab-quotes" @click="builderTab = 'quotes'">相見積</button>
+        <!-- ★「相見積」→「見積依頼・回収」（2026-08-19）。まだ何も依頼していない時に
+             「相見積」を開くと、空であることが異常に見えていた。依頼→回収の過程を表す名前なら
+             「まだ依頼していない」状態が自然に読める。 -->
+        <button class="btab" :class="{ active: builderTab === 'quotes' }" data-testid="tab-quotes" @click="builderTab = 'quotes'">見積依頼・回収</button>
         <button class="btab" :class="{ active: builderTab === 'items' }" data-testid="tab-items" @click="builderTab = 'items'">明細入力</button>
         <!-- ★R36: 表示/非表示トグルだと明細のスペースを圧迫するので独立タブにする -->
         <button class="btab" :class="{ active: builderTab === 'breakdown' }" data-testid="tab-breakdown" @click="builderTab = 'breakdown'">工種別内訳</button>
@@ -601,7 +608,7 @@
       <div v-show="builderTab === 'quotes'">
         <section class="panel">
           <div class="panel-head">
-            <h2>依頼した業者と回収状況</h2>
+            <h2>業者への依頼と回収状況</h2>
             <button class="btn-add" data-testid="qr-add" @click="addQuoteRequest">＋ 業者を手で追加</button>
           </div>
           <!-- ★R7: 依頼は「案件情報タブで図面のページを送る」と自動で立つ。
@@ -633,7 +640,30 @@
                   <button class="btn-del" :data-testid="`qr-del-${qi}`" @click="removeQuoteRequest(q)">×</button>
                 </td>
               </tr>
-              <tr v-if="!quoteRequests.length"><td colspan="8" class="empty">案件情報タブで図面のページを業者へ送ると、ここに依頼が並びます</td></tr>
+              <!-- ★空の時に「別のタブへ行け」と書くだけだった（2026-08-19 通しレビュー）。
+                   操作を**説明している**だけで、ここから始められない＝行き止まりに見えていた。
+                   実際に押せるものを置く。押すのは案件情報タブと同じページ選択モーダル。 -->
+              <tr v-if="!quoteRequests.length">
+                <td colspan="8" class="empty qr-empty" data-testid="qr-empty">
+                  <p class="qr-empty-lead">まだ業者へ依頼していません。</p>
+                  <template v-if="pdfAttachments.length">
+                    <p class="hint">図面から必要なページだけ抜き出して送ると、その業者の依頼がここに並びます。</p>
+                    <div class="qr-empty-acts">
+                      <button v-for="a in pdfAttachments" :key="a.id" class="btn-primary"
+                              :data-testid="`qr-empty-send-${a.id}`" @click="openDrawingSend(a)">
+                        <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">forward_to_inbox</span>
+                        ページを選んで送る<template v-if="pdfAttachments.length > 1">（{{ a.name || a.path }}）</template>
+                      </button>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <p class="hint">先に図面を入れてください。図面のページを選んで業者へ送ると、ここに依頼が並びます。</p>
+                    <div class="qr-empty-acts">
+                      <button class="btn-primary" data-testid="qr-empty-goto-intake" @click="builderTab = 'intake'">図面を入れる</button>
+                    </div>
+                  </template>
+                </td>
+              </tr>
             </tbody>
           </table>
         </section>
@@ -799,6 +829,13 @@
               <!-- 粗利率: アカウント既定 ＋ この見積だけ上書き。
                    行ごとの 5/10/15/20% プレビューは 2026-07-28 に一度撤去したが、
                    2026-07-29 の第3回レビューで復活の要望が出たため戻した（ExcelのR〜Y列と同じ形）。 -->
+              <!-- ★13インチだと18列が画面に収まらず、横スクロールできること自体が気づかれない
+                   （2026-08-19 通しレビュー）。使わない列を畳めるようにする。選択は端末ごとに覚える。 -->
+              <span class="col-toggles" data-testid="col-toggles">
+                <label><input type="checkbox" v-model="colShow.dims" data-testid="col-dims" /> 寸法</label>
+                <label><input type="checkbox" v-model="colShow.cost" data-testid="col-cost" /> 原価</label>
+                <label><input type="checkbox" v-model="colShow.margin" data-testid="col-margin" /> 粗利%</label>
+              </span>
               <button class="btn-link-sm" data-testid="open-cand-name-modal" @click="openCandModal('name')">名称の候補</button>
               <button class="btn-link-sm" data-testid="open-cand-code-modal" @click="openCandModal('code')">品番の候補</button>
               <label class="margin-field">粗利
@@ -818,14 +855,14 @@
                      名称 → 品番 → 形状詳細 → W → D → H → 数量 → 単位 → 単価 → 金額
                      原価・商社は客先に出さない社内用なので、金額の後ろにまとめる。 -->
                 <th class="drag-col"></th><th>名称</th><th>品番</th><th>形状・詳細</th>
-                <th class="num dim-col">W(t)</th><th class="num dim-col">D(＠)</th><th class="num dim-col">H(L)</th>
+                <template v-if="colShow.dims"><th class="num dim-col">W(t)</th><th class="num dim-col">D(＠)</th><th class="num dim-col">H(L)</th></template>
                 <th class="num">数量</th><th>単位</th>
                 <th class="num">単価</th><th class="num">金額</th>
-                <th class="cost-col">商社</th><th class="num cost-col">単価原価</th><th class="num cost-col">金額原価</th>
+                <template v-if="colShow.cost"><th class="cost-col">商社</th><th class="num cost-col">単価原価</th><th class="num cost-col">金額原価</th></template>
                 <!-- ★R32: 粗利パターンはExcelのR〜Y列と同じく行の右端に置く。
                      名称の下に1行使うと明細1行あたり表が2行分の高さになり、
                      縦の情報量を上げたい他の要望（R29/R30）と噛み合わない。 -->
-                <th v-for="pct in MARGIN_PRESETS" :key="pct" class="num mp-col">{{ Math.round(pct * 100) }}%</th>
+                <th v-for="pct in (colShow.margin ? MARGIN_PRESETS : [])" :key="pct" class="num mp-col">{{ Math.round(pct * 100) }}%</th>
                 <th></th>
               </tr>
             </thead>
@@ -841,7 +878,7 @@
                   <!-- ★R39: 場所ごと掴んで並び替える（配下の工種・明細がまとまって動く） -->
                   <td class="drag-col drag-handle" draggable="true" title="ドラッグで場所ごと並び替え"
                       :data-testid="`area-drag-${ai}`" @dragstart="onDragArea(ai)" @dragend="onDragEnd">⠿</td>
-                  <td colspan="18">
+                  <td :colspan="itemCols - 1">
                     <span class="blk-fields">
                       <span class="area-label">場所</span>
                       <input :value="a.location" class="input sm area-input" :data-testid="`area-loc-${ai}`"
@@ -861,7 +898,7 @@
                   <!-- ★R39: 工種ごと掴んで並び替える。別の場所へ落とせばその場所に移る -->
                   <td class="drag-col drag-handle" draggable="true" title="ドラッグで工種ごと並び替え"
                       :data-testid="`blk-drag-${blocks.indexOf(b)}`" @dragstart="onDragBlock(blocks.indexOf(b))" @dragend="onDragEnd">⠿</td>
-                  <td colspan="18">
+                  <td :colspan="itemCols - 1">
                     <span class="blk-fields blk-indent">
                       <span class="blk-sep">└</span>
                       <!-- 工種は自由記述＋予測変換（固定マスタからの選択を強制しない） -->
@@ -914,9 +951,11 @@
                   </td>
                   <td><input v-model="rows[i].spec" class="input sm" :data-testid="`item-spec-${i}`" placeholder="R下地 / 2重貼 等" /></td>
                   <!-- ★W/D/H は記録のみ。数量は自動計算しない（工種で数え方が違い、自動で決めると必ず外れる） -->
+                  <template v-if="colShow.dims">
                   <td class="num"><input v-model.number="rows[i].dim_w" type="number" step="any" class="input xs num" :data-testid="`item-w-${i}`" /></td>
                   <td class="num"><input v-model.number="rows[i].dim_d" type="number" step="any" class="input xs num" :data-testid="`item-d-${i}`" /></td>
                   <td class="num"><input v-model.number="rows[i].dim_h" type="number" step="any" class="input xs num" :data-testid="`item-h-${i}`" /></td>
+                  </template>
                   <td class="num"><input v-model.number="rows[i].quantity" type="number" step="any" class="input sm num" :data-testid="`item-qty-${i}`" /></td>
                   <td><input v-model="rows[i].unit" class="input sm" :data-testid="`item-unit-${i}`" placeholder="m²/個 等" /></td>
                   <!-- 客先単価: 既定は原価÷(1−粗利率)。手打ちで上書きでき、上書き中は色で分かる -->
@@ -931,6 +970,7 @@
                   <td class="num amount" :data-testid="`item-amount-${i}`">{{ yen(lineAmount(rows[i])) }}</td>
                   <!-- ここから社内用（見積書には出さない）。商社は R16 でモーダル化予定 -->
                   <!-- ★R14: 商社は材料（品番あり）だけ。作業内容の行に商社の概念は無い -->
+                  <template v-if="colShow.cost">
                   <td class="cost-col">
                     <span v-if="!hasSupplierChoice(rows[i])" class="na-cell" :data-testid="`item-supplier-na-${i}`">—</span>
                     <template v-else>
@@ -953,7 +993,8 @@
                   </td>
                   <td class="num cost-col"><input v-model.number="rows[i].cost_unit_price" type="number" step="any" class="input sm num" :data-testid="`item-cost-${i}`" @input="onCostInput(rows[i])" /></td>
                   <td class="num cost-col amount" :data-testid="`item-cost-amount-${i}`">{{ yen(lineCostAmount(rows[i])) }}</td>
-                  <td v-for="pct in MARGIN_PRESETS" :key="pct" class="num mp-col">
+                  </template>
+                  <td v-for="pct in (colShow.margin ? MARGIN_PRESETS : [])" :key="pct" class="num mp-col">
                     <button v-if="(rows[i].cost_unit_price ?? 0) > 0" class="mp-cell"
                             :class="{ active: Math.round(marginPct) === Math.round(pct * 100) }"
                             :data-testid="`item-margin-${i}-${Math.round(pct * 100)}`"
@@ -965,7 +1006,7 @@
                 <!-- Q4: この項目の過去の業者別単価（受領登録で貯まったもの）。クリックで原価に採用 -->
                 <tr v-if="historyFor(rows[i].item_name).length" class="hist-row">
                   <td></td>
-                  <td colspan="18">
+                  <td :colspan="itemCols - 1">
                     <div class="hist-cells">
                       <span class="hist-label">{{ isMaterialRow(rows[i]) ? '過去の単価' : '過去の下請実績' }}</span>
                       <span v-for="(h, hi) in historyFor(rows[i].item_name).slice(0, 4)" :key="hi" class="hist-wrap">
@@ -991,7 +1032,7 @@
               </template>
               </template>
               <tr class="blk-add-row">
-                <td colspan="19"><button class="btn-add" data-testid="area-add" @click="addArea()">＋ 場所を追加</button></td>
+                <td :colspan="itemCols"><button class="btn-add" data-testid="area-add" @click="addArea()">＋ 場所を追加</button></td>
               </tr>
             </tbody>
           </table>
@@ -3975,6 +4016,24 @@ function onPinfoClick(r: Row) {
 //  ★2026-07-28 に一度撤去したが、第3回レビューで復活の要望が出たため戻した。
 //  計算は既存の priceAtMargin をそのまま使う（自動単価と同じ式でないと見比べにならない）。
 const MARGIN_PRESETS = [0.05, 0.10, 0.15, 0.20] as const
+
+/**
+ * 明細の列の表示切り替え。
+ * ★13インチだと18列が入りきらず、3分の1〜半分が画面外に出ていた（2026-08-19 指摘）。
+ *  横スクロールはできるが、できること自体が見て分からない。
+ * ★既定で粗利%だけ畳む。寸法は什器・家具で要り、原価は単価を生やす入力なので既定は出す。
+ *  「よく分からないから全部出しておく」にすると元の木阿弥なので、既定を決める。
+ * ★端末ごとに覚える。13インチと外部モニタで欲しい列が違う。
+ */
+const COL_SHOW_KEY = 'estimate.itemCols.v1'
+const colShow = ref<{ dims: boolean; cost: boolean; margin: boolean }>({ dims: true, cost: true, margin: false })
+try { Object.assign(colShow.value, JSON.parse(localStorage.getItem(COL_SHOW_KEY) || '{}')) } catch { /* 壊れていたら既定のまま */ }
+watch(colShow, v => { try { localStorage.setItem(COL_SHOW_KEY, JSON.stringify(v)) } catch { /* 保存できなくても動く */ } }, { deep: true })
+/** 場所・工種の行が横いっぱいに伸びるための列数（畳んだ分を引く） */
+const itemCols = computed(() => 19
+  - (colShow.value.dims ? 0 : 3)
+  - (colShow.value.cost ? 0 : 3)
+  - (colShow.value.margin ? 0 : MARGIN_PRESETS.length))
 /** その率の単価を採用する（＝手打ち扱い。以降は粗利率を変えても勝手に動かない） */
 function applyMarginToRow(r: Row, rate: number) {
   r.unit_price = priceAtMargin(r, rate)
@@ -4576,6 +4635,11 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .pdf-preview { background: #fff; color: #111; padding: 24px; border: 1px solid #ddd; max-width: 760px; }
 /* 見積書情報の入力フォーム */
 .doc-form { display: flex; flex-wrap: wrap; gap: 12px; margin: 8px 0 16px; }
+/* 依頼がまだ無い時。行き止まりに見せず、ここから始められるようにする */
+.qr-empty { padding: 22px 12px; text-align: center; }
+.qr-empty-lead { margin: 0 0 4px; font-weight: 700; color: #475569; }
+.qr-empty .hint { margin: 0 0 12px; }
+.qr-empty-acts { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
 /* 未登録の注意書き。muted（薄いグレー）のままだと見落とすので色だけ起こす */
 .warn-inline { color: #b45309; margin: 0 0 6px; }
 .doc-field { display: flex; flex-direction: column; gap: 4px; }
@@ -4809,6 +4873,8 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .mp-cells { padding: 3px 0; }
 .mp-label { font-size: 11px; color: #999; margin-right: 8px; }
 .mp-col { width: 84px; }
+.col-toggles { display: inline-flex; gap: 12px; margin-right: 14px; font-size: 12px; color: #555; }
+.col-toggles label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
 .mp-cell { display: block; width: 100%; padding: 2px 4px; border: 1px solid #D5DEE8; border-radius: 5px;
            background: #fff; cursor: pointer; font-size: 11px; font-variant-numeric: tabular-nums; }
 .mp-cell:hover { background: #EEF4FF; border-color: #4A7BC8; }
