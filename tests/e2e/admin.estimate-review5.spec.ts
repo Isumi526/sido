@@ -139,6 +139,33 @@ test('AC4★(R51): 最初のステップが図面で、案件名が図面のフ�
   }, { timeout: 15000 }).toBe(`${fixed}/false`)
 })
 
+test('★ステップタブを押して行き来でき、2から離れても打った案件名が消えない', async ({ page }) => {
+  // 2026-08-19 大塚さん向け通しレビュー: 「ステップタブをクリックで各ステップに移動できてもいい」
+  // ★危ないのは案件名。以前は「次へ」を押した時だけ保存していたので、
+  //  タブで飛べるようにすると打った名前が黙って消える。それを起こさないことを固定する。
+  const id = await pressNewEstimate(page)
+  await page.locator('[data-testid="wiz-skip-1"]').click()
+  await expect(page.locator('[data-testid="wiz-panel-2"]')).toBeVisible()
+
+  const NAME = `${NAME_PREFIX}タブ移動テスト`
+  await page.locator('[data-testid="wiz-name"]').fill(NAME)
+
+  // ステップ2 → 4 へタブで直接飛ぶ（「次へ」を押さない）
+  await page.locator('[data-testid="wiz-step-4"]').click()
+  await expect(page.locator('[data-testid="wiz-panel-4"]')).toBeVisible()
+
+  // ★離れる時に保存されている
+  await expect.poll(async () => {
+    const pj = await restSrv(`estimate_projects?id=eq.${id}&select=name`)
+    return pj[0]?.name
+  }, { timeout: 15000 }).toBe(NAME)
+
+  // 戻るのもタブでできる。入力値も残っている
+  await page.locator('[data-testid="wiz-step-2"]').click()
+  await expect(page.locator('[data-testid="wiz-panel-2"]')).toBeVisible()
+  await expect(page.locator('[data-testid="wiz-name"]')).toHaveValue(NAME)
+})
+
 test('AC5(R51): 各ステップをスキップでき、終えると案件情報タブが開く', async ({ page }) => {
   await pressNewEstimate(page)
   await page.locator('[data-testid="wiz-skip-1"]').click()   // 図面は後で
