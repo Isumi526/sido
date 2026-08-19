@@ -437,13 +437,16 @@
 
           <div v-if="dqty.rows.length" class="items-scroll dext-list">
             <table class="table">
-              <thead><tr><th></th><th>P</th><th>部位</th><th>コード</th><th>仕様</th><th class="num">数量</th><th>単位</th><th>備考</th></tr></thead>
+              <!-- ★符号と品番は別の列で見せる。同じ列にまとめると、明細へ入れた後で
+                   どちらが単価を引く鍵なのか分からなくなる（2026-08-19） -->
+              <thead><tr><th></th><th>P</th><th>部位</th><th>符号</th><th>品番</th><th>仕様</th><th class="num">数量</th><th>単位</th><th>備考</th></tr></thead>
               <tbody>
                 <tr v-for="(r, ri) in dqty.rows" :key="ri" :data-testid="`dqty-row-${ri}`">
                   <td><input type="checkbox" v-model="r._pick" :data-testid="`dqty-pick-${ri}`" /></td>
                   <td>{{ r.page }}</td>
                   <td>{{ r.part }}</td>
                   <td>{{ r.code }}</td>
+                  <td><input v-model="r.maker_code" class="input sm" placeholder="—" :data-testid="`dqty-maker-${ri}`" /></td>
                   <td>{{ r.spec || '—' }}</td>
                   <td class="num">{{ r.value }}</td>
                   <td>{{ r.unit }}</td>
@@ -1066,34 +1069,6 @@
         </div>
       </div>
 
-      <!-- ★R26: 自社情報はページ遷移せずここで編集する（見積作成の途中で離脱させない） -->
-      <div v-if="companyModal" class="modal-back" data-testid="company-modal" @click.self="companyModal = false">
-        <div class="modal-card">
-          <div class="modal-head">
-            <h3>自社情報（見積書に出る発行元）</h3>
-            <button class="btn-cancel" data-testid="company-close" @click="companyModal = false">閉じる</button>
-          </div>
-          <div class="ifields">
-            <label class="ifield wide"><span>会社名</span>
-              <input v-model="companyForm.company_name" class="input" data-testid="cm-name" /></label>
-            <label class="ifield"><span>代表者</span>
-              <input v-model="companyForm.company_rep" class="input" data-testid="cm-rep" /></label>
-            <label class="ifield"><span>電話</span>
-              <input v-model="companyForm.company_tel" class="input" data-testid="cm-tel" /></label>
-            <label class="ifield wide"><span>住所</span>
-              <input v-model="companyForm.company_address" class="input" data-testid="cm-address" /></label>
-          </div>
-          <p class="hint">印影の登録や細かい設定は<RouterLink to="/company-profile">自社情報ページ</RouterLink>で行えます。</p>
-          <div class="actions-row">
-            <button class="btn-primary" :disabled="companySaving" data-testid="cm-save" @click="saveCompanyModal">
-              {{ companySaving ? '保存中…' : '保存' }}
-            </button>
-            <span v-if="companyMsg" class="ok" data-testid="cm-msg">{{ companyMsg }}</span>
-            <span v-if="companyErr" class="err" data-testid="cm-err">{{ companyErr }}</span>
-          </div>
-        </div>
-      </div>
-
       <!-- ★R21: 名称・品番の候補を画面上で直せるようにする。
            誤入力がそのまま候補に残り続けると、次から間違いを選んでしまう。 -->
       <div v-if="candModal" class="modal-back" data-testid="cand-modal" @click.self="candModal = false">
@@ -1161,16 +1136,16 @@
             <button class="btn-primary" :disabled="pdfBusy" data-testid="export-pdf" @click="exportPdf">{{ pdfBusy ? '生成中…' : 'PDF出力' }}</button>
           </div>
         </div>
-        <!-- ★R26: 未登録でもページを離れずにその場で登録できる。
-             見積を作っている最中に別ページへ飛ばすと、書きかけの明細から離れることになる。 -->
-        <p v-if="!company.company_name" class="muted" data-testid="company-missing">
-          自社情報が未登録です。
-          <button class="btn-link-sm" data-testid="open-company-modal" @click="openCompanyModal">ここで登録する</button>
-          と、会社名・住所・印影が見積書に反映されます。
+        <!-- ★未登録でもここで直接埋める（2026-08-19）。
+             以前は未登録の時だけモーダルへ飛ばしていたが、**まさに登録したい時にだけ
+             別UIになる**という逆の作りだった。マスタは、それが出る場所のすぐ隣で
+             直せるのが一番早い。登録済み/未登録で見た目を変えず、注意書きだけ足す。 -->
+        <p v-if="!company.company_name" class="muted warn-inline" data-testid="company-missing">
+          自社情報が未登録です。下に入れると、そのまま見積書の発行元になります。
         </p>
         <!-- ★R34: 発行元（自社情報）は見積書のページで直接編集する。
              モーダルを開かせず、出る場所でそのまま直せるようにする。 -->
-        <div v-else class="doc-form company-inline" data-testid="company-inline">
+        <div class="doc-form company-inline" data-testid="company-inline">
           <div class="doc-field"><label>会社名</label>
             <input v-model="companyForm.company_name" class="input" data-testid="ci-name" @change="saveCompanyInline" /></div>
           <div class="doc-field"><label>代表者</label>
@@ -1180,8 +1155,8 @@
           <div class="doc-field wide"><label>住所</label>
             <input v-model="companyForm.company_address" class="input" data-testid="ci-address" @change="saveCompanyInline" /></div>
           <span class="muted company-note">
-            発行元: <b data-testid="company-name">{{ company.company_name }}</b>
-            ／ 印影など細かい設定は<RouterLink to="/company-profile">自社情報ページ</RouterLink>
+            <template v-if="company.company_name">発行元: <b data-testid="company-name">{{ company.company_name }}</b> ／ </template>
+            印影など細かい設定は<RouterLink to="/company-profile">自社情報ページ</RouterLink>
             <span v-if="companyMsg" class="ok" data-testid="ci-msg">{{ companyMsg }}</span>
           </span>
         </div>
@@ -2418,26 +2393,15 @@ async function loadDrawingSends() {
 const COMPANY_LABELS: Record<string, string> = {
   company_name: '会社名', company_rep: '代表者', company_address: '住所', company_tel: 'TEL',
 }
-const companyModal  = ref(false)
 const companySaving = ref(false)
 const companyMsg    = ref('')
 const companyErr    = ref('')
 const companyForm   = ref<Record<string, string>>({ company_name: '', company_rep: '', company_tel: '', company_address: '' })
-function openCompanyModal() {
-  companyForm.value = {
-    company_name: company.value.company_name ?? '',
-    company_rep: company.value.company_rep ?? '',
-    company_tel: company.value.company_tel ?? '',
-    company_address: company.value.company_address ?? '',
-  }
-  companyMsg.value = ''; companyErr.value = ''
-  companyModal.value = true
-}
 /** ★R34: 見積書ページでその場で直した自社情報を保存する（明細と同じくセルを離れた時点で） */
 async function saveCompanyInline() {
-  await saveCompanyModal()
+  await saveCompanyInlineNow()
 }
-async function saveCompanyModal() {
+async function saveCompanyInlineNow() {
   companySaving.value = true; companyMsg.value = ''; companyErr.value = ''
   try {
     // settings は key-value。既存の自社情報ページと同じ入れ物に書く（保存先を分けない）。
@@ -2449,7 +2413,7 @@ async function saveCompanyModal() {
     if (error) { companyErr.value = error.message; return }
     await loadCompany()   // 保存したら即座に見積書へ反映する
     companyMsg.value = '保存しました'
-    setTimeout(() => { companyMsg.value = ''; companyModal.value = false }, 1200)
+    setTimeout(() => { companyMsg.value = '' }, 1200)
   } finally { companySaving.value = false }
 }
 
@@ -3632,7 +3596,7 @@ watch(() => dextJob.value?.rows.length ?? 0, () => { if (dext.value.att) syncDex
 //  材料(品番)の抽出とは別物。凡例に「書いてある」数量を転記するだけで、面積の拾い出しはしない。
 //  ★材料抽出(R53)はジョブ化して裏で走らせるが、数量抽出は対象ページが凡例のある数枚で
 //   終わるため、その場で回してパネルに出す（ジョブ表を増やさない）。
-type QtyRow = { page: number; part: QuantityPart; code: string; spec: string | null; value: number; unit: string; note: string | null; _pick: boolean }
+type QtyRow = { page: number; part: QuantityPart; code: string; maker_code: string | null; spec: string | null; value: number; unit: string; note: string | null; _pick: boolean }
 /** 失敗したページ。★1ページの失敗で全体を止めず、そのページだけやり直せるようにする */
 type QtyFailedPage = { pageNo: number; b64: string; errorMsg: string; retrying: boolean }
 const dqty = ref<{
@@ -3669,7 +3633,7 @@ function absorbQuantityResult(j: any, pageNo: number) {
   for (const g of (j?.parts ?? [])) {
     for (const r of (g.rows ?? [])) {
       d.rows.push({
-        page: pageNo, part: g.part, code: r.code ?? '', spec: r.spec ?? null,
+        page: pageNo, part: g.part, code: r.code ?? '', maker_code: r.maker_code ?? null, spec: r.spec ?? null,
         value: Number(r.value) || 0, unit: r.unit || '㎡', note: r.note ?? null, _pick: true,
       })
     }
@@ -3859,11 +3823,13 @@ async function applyQuantityToItems() {
   for (const x of picked) {
     let row = rows.value.find(r => isItemRow(r) && isBlankRow(r) && !added.includes(r))
     if (!row) { row = blankRow(); rows.value.push(row) }
-    // ★符号（AD-1 / WD-1 / C-01）は品番の列に入れる。
-    //  以前は名称に結合していたため「建具 AD-1」となり、品番の列は空のままだった
-    //  （2026-08-19 通しレビューでの指摘）。名称・品番・仕様は別の情報なので混ぜない。
-    row.item_name = x.part || '(名称未設定)'
-    row.product_code = x.code ?? ''
+    // ★品番の列には**メーカー品番**を入れる（符号ではない）。
+    //  符号（AD-1 / C-01）はこの図面の中だけの記号なので、品番の列に入れても
+    //  価格表・定価とは永久に当たらない。単価を引く鍵になるのはメーカー品番の方。
+    //  （2026-08-19 本番レビュー: 63件すべて単価0。メーカー品番が仕様の文章に
+    //    埋もれて品番の列が空だったのが原因。抽出側で分けるように直した）
+    row.item_name = [x.part, x.code].filter(Boolean).join(' ') || '(名称未設定)'
+    row.product_code = x.maker_code ?? ''
     row.spec = x.spec ?? ''
     row.quantity = x.value
     row.unit = x.unit
@@ -4583,6 +4549,8 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .pdf-preview { background: #fff; color: #111; padding: 24px; border: 1px solid #ddd; max-width: 760px; }
 /* 見積書情報の入力フォーム */
 .doc-form { display: flex; flex-wrap: wrap; gap: 12px; margin: 8px 0 16px; }
+/* 未登録の注意書き。muted（薄いグレー）のままだと見落とすので色だけ起こす */
+.warn-inline { color: #b45309; margin: 0 0 6px; }
 .doc-field { display: flex; flex-direction: column; gap: 4px; }
 .doc-field label { font-size: 11px; font-weight: 700; color: #888; }
 .doc-field .input { width: 200px; }
