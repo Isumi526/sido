@@ -18,7 +18,8 @@
           <div v-if="todayStatus === 'approved'" class="ot-status approved"><span class="material-symbols-rounded ot-icon">check_circle</span>{{ $t('overtime.statusApproved') }}</div>
           <div v-else-if="todayStatus === 'pending'" class="ot-status pending">
             <span class="material-symbols-rounded ot-icon">pending</span>{{ $t('overtime.statusPending') }}
-            <button class="ot-cancel" :disabled="busy" @click="onCancel">{{ $t('overtime.cancel') }}</button>
+            <button v-if="canRequestToday" class="ot-cancel" :disabled="busy" @click="onCancel">{{ $t('overtime.cancel') }}</button>
+            <span v-else class="ot-cancel-closed">{{ $t('overtime.cancelClosed') }}</span>
           </div>
           <div v-else-if="todayStatus === 'rejected'" class="ot-status rejected"><span class="material-symbols-rounded ot-icon">block</span>{{ $t('overtime.statusRejected') }}</div>
 
@@ -152,7 +153,9 @@ async function onSubmit() {
   )
   busy.value = false
   if (!res.ok) {
-    msg.value = res.error === 'deadline-passed' ? t('overtime.errorDeadline') : t('overtime.errorGeneric')
+    msg.value = res.error === 'deadline-passed' ? t('overtime.errorDeadline')
+      : res.error === 'already-requested' ? t('overtime.errorAlreadyRequested')
+      : t('overtime.errorGeneric')
     msgOk.value = false
     await refresh()
     return
@@ -178,6 +181,7 @@ async function onCancel() {
   const res = await overtime.cancelRequest(workerId.value, today)
   busy.value = false
   if (res.ok) { msg.value = t('overtime.canceled'); msgOk.value = true }
+  else { msg.value = res.error === 'deadline-passed' ? t('overtime.errorDeadline') : t('overtime.errorGeneric'); msgOk.value = false }
   await refresh()
 }
 
@@ -223,6 +227,7 @@ onMounted(async () => {
 .ot-submit { width: 100%; margin-top: 14px; background: #06C755; color: #fff; border: none; border-radius: 10px; padding: 13px; font-size: 15px; font-weight: 700; }
 .ot-submit:disabled { background: #94d8ad; }
 .ot-cancel { background: #fff; border: 1px solid #fca5a5; color: #b91c1c; border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 700; }
+.ot-cancel-closed { font-size: 12px; font-weight: 400; color: #b45309; }
 .ot-msg { margin-top: 10px; font-size: 13px; color: #b91c1c; }
 .ot-msg.ok { color: #047857; }
 .ot-empty { color: #94a3b8; font-size: 13px; }

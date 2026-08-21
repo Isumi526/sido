@@ -114,11 +114,16 @@ export function useOvertimeRequest() {
     if (!date) return { ok: false, error: 'no-worker-or-date' }
     if (!canRequest(date)) return { ok: false, error: 'deadline-passed' }
     try {
-      await call('overtime-request', {
+      const res = await call('overtime-request', {
         date, requestedEndTime, requestedStartTime,
         ...(requestedBreakMinutes === null ? {} : { requestedBreakMinutes }),
         reason, siteNames,
       })
+      // ★EFは既存申請(pending/approved)がある時 deduped:true を返す。以前はここで
+      //  握りつぶして常に ok:true を返していたため、内容を直して出し直しても
+      //  「成功したように見えて中身は一切更新されない」バグになっていた（#3b20ff81）。
+      //  再送は許さず、既に申請済みであることを明示する。
+      if (res?.deduped) return { ok: false, error: 'already-requested' }
       return { ok: true }
     } catch (e: any) {
       return { ok: false, error: e?.message ?? 'failed' }
@@ -126,8 +131,11 @@ export function useOvertimeRequest() {
   }
 
   // 誤った申請の取り消し（pending のみ削除＝承認済みは消さない）。
+  // ★締切（16:00）後は取消不可（2026-08-15 運用者回答A）。締切後に取り消すと
+  //  requestOvertime も締切ガードで弾かれ、二度と出せなくなる「取消の罠」だった。
   async function cancelRequest(_workerId: string | null | undefined, date: string): Promise<{ ok: boolean; error?: string }> {
     if (!date) return { ok: false, error: 'no-worker-or-date' }
+    if (!canRequest(date)) return { ok: false, error: 'deadline-passed' }
     try {
       await call('overtime-cancel', { date })
       return { ok: true }

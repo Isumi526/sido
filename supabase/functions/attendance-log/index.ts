@@ -56,6 +56,19 @@ function jstDay(offsetDays: number): string {
     .format(new Date(Date.now() - offsetDays * 24 * 60 * 60 * 1000))
 }
 
+/** JSTの現在時（0-23）。残業申請の締切判定に使う。 */
+function jstHour(): number {
+  return Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Tokyo', hour: 'numeric', hour12: false }).format(new Date()))
+}
+
+/** 残業申請の締切（当日16:00・#80bd で15:00→16:00）。apps/liff の OVERTIME_DEADLINE_HOUR と値を揃えること。 */
+const OVERTIME_DEADLINE_HOUR = 16
+
+/** 残業申請/取消が可能か: 対象日が「今日」かつ 現在時刻が締切より前。 */
+function canRequestOvertime(date: string): boolean {
+  return date === jstDay(0) && jstHour() < OVERTIME_DEADLINE_HOUR
+}
+
 /** その worker が caller と同じアカウントに属しているか（他テナントの worker_id を弾く） */
 async function workerInAccount(svc: any, accountId: string, workerId: string): Promise<boolean> {
   const { data } = await svc.from('workers').select('id')
@@ -350,6 +363,10 @@ Deno.serve(async (req) => {
   if (body.action === 'overtime-cancel') {
     const date = isDate(body.date) ? body.date : ''
     if (!date) return json({ ok: false, error: 'bad_date' }, 400)
+    // ★締切（16:00）後は取消不可（2026-08-15 運用者回答A）。締切後に取り消すと
+    //  requestOvertime 側も締切ガードで再申請できず、詰む「取消の罠」になっていた。
+    //  クライアント(canRequest)にも同じ判定があるが、直叩き対策でサーバ側でも検証する。
+    if (!canRequestOvertime(date)) return json({ ok: false, error: 'deadline_passed' }, 400)
     const { error } = await svc.from('overtime_requests').delete()
       .eq('account_id', caller.accountId).eq('worker_id', caller.workerId)
       .eq('date', date).eq('status', 'pending')
