@@ -647,6 +647,7 @@
               </span>
               <button class="btn-link-sm" data-testid="open-cand-name-modal" @click="openCandModal('name')">名称の候補</button>
               <button class="btn-link-sm" data-testid="open-cand-code-modal" @click="openCandModal('code')">品番の候補</button>
+              <button class="btn-link-sm" data-testid="open-work-import" @click="wiiOpen = !wiiOpen">Excel取込</button>
               <label class="margin-field">粗利
                 <input v-model.number="marginPct" type="number" min="0" max="99" step="1"
                        class="input xs num" data-testid="margin-rate" @change="onMarginChange" />%
@@ -654,6 +655,10 @@
                 <button v-else class="btn-link-sm" data-testid="margin-reset" @click="resetMargin">既定に戻す</button>
               </label>
             </div>
+          </div>
+          <!-- 作業項目Excel/CSVの取込（見積②）。既存Excelを作り直させず取り込む入口 -->
+          <div v-if="wiiOpen" class="work-import-panel" data-testid="work-import-panel">
+            <WorkItemImport @import="onWorkItemsImport" @close="wiiOpen = false" />
           </div>
           <!-- 列が増えたため、パネル内で横スクロールさせる（ページ全体を横に伸ばさない） -->
           <div class="items-scroll">
@@ -1271,6 +1276,7 @@ import { guessPriceKind, normalizeName as normalizeGuessName, type Guess } from 
 import { getAccountId } from '../lib/account'
 import { openDoc } from '../lib/docUrl'
 import EstimateMasters from './estimate-masters.vue'
+import WorkItemImport from '../components/WorkItemImport.vue'
 
 const BUCKET = 'expense-receipts'        // 印影など既存公開物の表示用（後方互換）
 const PDF_BUCKET = 'admin-docs'          // 新規の見積/発注PDFは非公開バケット（署名URL配信）
@@ -1329,6 +1335,7 @@ const openedLines   = ref<QuoteLine[]>([])
 const removedLineIds = ref<string[]>([])
 const qlSaving = ref(false); const qlMsg = ref(''); const qlErr = ref('')
 const applyMsg = ref('')
+const wiiOpen = ref(false)   // 作業項目Excel/CSV取込パネルの開閉（見積②）
 let qlKey = 0
 
 // 下請業者（商社は発注側なので除く）
@@ -1687,6 +1694,43 @@ async function applySelectionToItems() {
   applyMsg.value = applied ? `${applied}件を明細に反映しました（保存を押すと確定）` : '採用された見積がありません'
   setTimeout(() => (applyMsg.value = ''), 4000)
   if (applied) builderTab.value = 'items'
+}
+
+/**
+ * 作業項目Excel/CSVの取込（見積②）。WorkItemImport で列マッピング済みのレコードを Row 化して明細に流す。
+ * 場所は itemPayload で note 列へ、工種は trade_name へ入る（DB列マッピングは itemPayload が唯一の真実）。
+ * 「追記」は今の明細の後ろに足し、「置き換え」は人が明示的に選んだ時だけ既存明細を消す（黙って消さない＝AC）。
+ */
+async function onWorkItemsImport(payload: {
+  records: { item_name: string; trade_name: string; location: string; quantity: number; unit: string }[]
+  mode: 'append' | 'replace'
+}) {
+  if (!projectId.value) return
+  const { records, mode } = payload
+  wiiOpen.value = false
+  if (mode === 'replace') {
+    const ids = rows.value.filter(r => r.id).map(r => r.id as string)
+    if (ids.length) {
+      const { error } = await supabase.from('estimate_items').delete().in('id', ids)
+      if (error) { saveError.value = error.message; return }
+    }
+    rows.value = []
+  }
+  const added: Row[] = []
+  for (const rec of records) {
+    const row = blankRow()
+    row.item_name  = rec.item_name || '(無題)'
+    row.trade_name = rec.trade_name || ''
+    row.location   = rec.location || ''
+    row.unit       = rec.unit || ''
+    row.quantity   = Number(rec.quantity) || 0
+    rows.value.push(row)
+    added.push(row)
+  }
+  builderTab.value = 'items'
+  await autoSaveRows(added)
+  applyMsg.value = `${added.length}件を取り込みました`
+  setTimeout(() => (applyMsg.value = ''), 4000)
 }
 
 // ── Q5: 元請けからの案件受領登録・ステータス管理 ──────────────
