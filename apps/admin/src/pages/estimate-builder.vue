@@ -648,6 +648,7 @@
               <button class="btn-link-sm" data-testid="open-cand-name-modal" @click="openCandModal('name')">名称の候補</button>
               <button class="btn-link-sm" data-testid="open-cand-code-modal" @click="openCandModal('code')">品番の候補</button>
               <button class="btn-link-sm" data-testid="open-work-import" @click="wiiOpen = !wiiOpen">Excel取込</button>
+              <button class="btn-link-sm" data-testid="open-bulk-price" @click="bulkPriceOpen = !bulkPriceOpen">単価候補を一括</button>
               <label class="margin-field">粗利
                 <input v-model.number="marginPct" type="number" min="0" max="99" step="1"
                        class="input xs num" data-testid="margin-rate" @change="onMarginChange" />%
@@ -659,6 +660,38 @@
           <!-- 作業項目Excel/CSVの取込（見積②）。既存Excelを作り直させず取り込む入口 -->
           <div v-if="wiiOpen" class="work-import-panel" data-testid="work-import-panel">
             <WorkItemImport @import="onWorkItemsImport" @close="wiiOpen = false" />
+          </div>
+          <!-- 見積③: 全明細行に過去単価候補を一括で当てるレビュー画面 -->
+          <div v-if="bulkPriceOpen" class="bulk-price-panel" data-testid="bulk-price-panel">
+            <div class="bp-head">
+              <span class="bp-summary">候補あり <strong>{{ bulkWithCandCount }}</strong>行／候補なし <strong>{{ bulkNoCandCount }}</strong>行（=業者に見積依頼すべき行）</span>
+              <button class="btn" data-testid="bulk-apply-cheapest" @click="bulkApplyCheapest">未設定行に最安を一括</button>
+              <button class="btn-link-sm" @click="bulkPriceOpen = false">閉じる</button>
+            </div>
+            <div class="bp-scroll">
+            <table class="table bp-table" data-testid="bulk-price-table">
+              <thead><tr><th>工種</th><th>名称</th><th class="num">原価</th><th>候補（安い順・クリックで採用）</th></tr></thead>
+              <tbody>
+                <tr v-for="(x, i) in bulkPriceRows" :key="x.r._k" :class="{ 'bp-nocand': !x.cands.length }">
+                  <td>{{ x.r.trade_name }}</td>
+                  <td>{{ x.r.item_name }}</td>
+                  <td class="num">{{ x.r.cost_unit_price ? yen(x.r.cost_unit_price) : '—' }}</td>
+                  <td>
+                    <template v-if="x.cands.length">
+                      <button v-for="(h, hi) in x.cands.slice(0, 4)" :key="hi" class="bp-cand"
+                              :data-testid="`bulk-cand-${i}-${hi}`" @click="pickBulkCand(x.r, h)"
+                              :title="`${h.subcontractor_name}／${h.project_name ?? ''}／${h.quoted_on ?? ''}`">
+                        <span class="bp-sub">{{ h.subcontractor_name }}</span> {{ yen(h.unit_price) }}
+                        <span v-if="historyAltName(x.r, h)" class="bp-alt">≈{{ historyAltName(x.r, h) }}</span>
+                        <span v-if="h.project_name" class="bp-src">{{ h.project_name }}</span>
+                      </button>
+                    </template>
+                    <span v-else class="bp-none" :data-testid="`bulk-none-${i}`">候補なし — 業者に見積依頼</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            </div>
           </div>
           <!-- 列が増えたため、パネル内で横スクロールさせる（ページ全体を横に伸ばさない） -->
           <div class="items-scroll">
@@ -1336,6 +1369,7 @@ const removedLineIds = ref<string[]>([])
 const qlSaving = ref(false); const qlMsg = ref(''); const qlErr = ref('')
 const applyMsg = ref('')
 const wiiOpen = ref(false)   // 作業項目Excel/CSV取込パネルの開閉（見積②）
+const bulkPriceOpen = ref(false)   // 一括単価候補パネルの開閉（見積③）
 let qlKey = 0
 
 // 下請業者（商社は発注側なので除く）
@@ -3116,6 +3150,34 @@ function applyHistoryPrice(r: Row, h: PriceHist) {
   if (!r._priceTouched) r.unit_price = autoPrice(r)
 }
 
+// ── 見積③: 取込項目への一括単価候補当て（業者見積突合の自動化）──────────────
+// 1行ずつの Q4 履歴表示を、全明細行を横断する「レビュー画面」に拡張する。
+// 大塚さん「打ったら前回どの現場でどの業者がいくらで出したかが浮かべば十分」。
+// 突合エンジンは既存の historyFor（R15の表記ゆれ込み一致）をそのまま使う。
+type BulkCandRow = { r: Row; cands: PriceHist[] }
+const bulkPriceRows = computed<BulkCandRow[]>(() =>
+  rows.value.filter(r => isItemRow(r) && !isBlankRow(r)).map(r => ({ r, cands: historyFor(r.item_name) })))
+const bulkNoCandCount = computed(() => bulkPriceRows.value.filter(x => x.cands.length === 0).length)
+const bulkWithCandCount = computed(() => bulkPriceRows.value.filter(x => x.cands.length > 0).length)
+
+/** 候補を1つ採用（既存の applyHistoryPrice を通す＝原価反映＋客先単価は粗利率から）。 */
+async function pickBulkCand(r: Row, h: PriceHist) {
+  applyHistoryPrice(r, h)
+  await autoSaveRow(r)
+}
+/** 候補があるのに原価未設定の行（手打ちでない）へ、最安候補を一括で当てる。既設定行は触らない。 */
+async function bulkApplyCheapest() {
+  const changed: Row[] = []
+  for (const { r, cands } of bulkPriceRows.value) {
+    if (!cands.length || r._priceTouched || (r.cost_unit_price || 0) > 0) continue
+    applyHistoryPrice(r, cands[0])
+    changed.push(r)
+  }
+  if (changed.length) await autoSaveRows(changed)
+  applyMsg.value = changed.length ? `${changed.length}行に最安候補を当てました（保存済み）` : '当てられる未設定行はありませんでした'
+  setTimeout(() => (applyMsg.value = ''), 4000)
+}
+
 async function loadCompany() {
   const { data } = await supabase.from('settings').select('key, value').eq('account_id', accountId).in('key', COMPANY_KEYS)
   company.value = Object.fromEntries((data ?? []).map((s: any) => [s.key, s.value]))
@@ -4249,6 +4311,18 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .send-to { font-weight: 700; color: #333; }
 .muted-link { font-size: 12px; color: #06864a; }
 .send-history { margin-top: 12px; }
+/* 見積③: 一括単価候補パネル */
+.bulk-price-panel { border: 1px solid var(--line, #e2e2e2); border-radius: 8px; padding: 10px; margin-bottom: 10px; background: var(--panel-2, #fafafa); }
+.bp-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; font-size: 13px; }
+.bp-scroll { max-height: 340px; overflow: auto; }
+.bp-table td, .bp-table th { font-size: 12px; vertical-align: top; }
+.bp-nocand { background: rgba(192, 57, 43, 0.06); }
+.bp-cand { display: inline-flex; align-items: baseline; gap: 4px; margin: 2px 4px 2px 0; padding: 2px 8px; border: 1px solid var(--line, #ccc); border-radius: 999px; background: #fff; cursor: pointer; font-size: 12px; }
+.bp-cand:hover { border-color: var(--accent, #2d7a4f); }
+.bp-sub { font-weight: 600; }
+.bp-alt, .bp-src { color: var(--muted, #888); }
+.bp-src { font-size: 11px; }
+.bp-none { color: var(--danger, #c0392b); font-size: 12px; }
 .head-actions { display: flex; gap: 10px; align-items: center; }
 .btn-ghost { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 8px 16px; font-size: 13px; cursor: pointer; }
 .btn-ghost:hover { background: #f5f5f5; }
