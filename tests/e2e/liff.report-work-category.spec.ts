@@ -103,4 +103,26 @@ test.describe('日報の作業区分', () => {
     const site = await restSrv(`sites?id=eq.${siteId}&select=default_start_time`)
     expect(site[0].default_start_time, '現場側の定時は残っている').toBe('08:00:00')
   })
+
+  // ★残業・早出・打刻ズレの判定は「現場の定時」ではなく「組（現場×区分）の定時」を見る、
+  //  という受け入れ条件（report.vue の endTimeOptionsForSite / siteFixedEnd）をUIで固定する。
+  //  区分ごとに終了時刻の選択肢の上限（＝残業申請なしで入力できる範囲）が切り替わることを確認する。
+  test('★終了時刻の選択肢の上限が区分ごとに切り替わる（残業申請なしで入力できる範囲＝組の定時）', async ({ page }) => {
+    await page.goto('/report', { waitUntil: 'networkidle' })
+    const siteSel = page.locator('[data-testid="site-select-0"]')
+    await expect(siteSel).toBeVisible({ timeout: 15000 })
+    await siteSel.selectOption(SITE)
+
+    const endSel = page.locator('[data-testid="end-time-0"]')
+    await expect(endSel, '現場作業（組の定時なし→現場の定時 17:30 が上限）').toHaveValue('17:30', { timeout: 10000 })
+    let endOpts = await endSel.locator('option').evaluateAll(els => els.map(e => (e as HTMLOptionElement).value))
+    expect(endOpts, '★現場の定時 17:30 を超える時刻は残業申請なしで選べない').not.toContain('18:00')
+
+    // 事務（この組は 10:00〜19:00）へ切り替えると上限も 19:00 に変わる
+    await page.locator('[data-testid="work-category-0"]').selectOption(jimuCatId)
+    await expect(endSel, '組の定時 19:00 が既定').toHaveValue('19:00', { timeout: 10000 })
+    endOpts = await endSel.locator('option').evaluateAll(els => els.map(e => (e as HTMLOptionElement).value))
+    expect(endOpts, '★組の定時 19:00 までは選べる').toContain('18:30')
+    expect(endOpts, '★組の定時 19:00 を超える時刻は残業申請なしで選べない（現場の17:30ではなく組の19:00が効いている証拠）').not.toContain('19:30')
+  })
 })
