@@ -128,6 +128,26 @@
           <button type="button" class="btn-ghost" style="padding:4px 10px;font-size:13px" data-testid="add-break" @click="addBreak">＋ 休憩を追加</button>
           <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">設定すると<b>新規</b>日報でこの現場を選んだ時に休憩がこの時間帯になり、稼働時間・人件費に反映されます（開始時刻が深夜/残業帯なら割増分が減る）。未設定＝役割×勤務時間の自動計算のまま。過去の日報は変わりません。</p>
         </div>
+        <!-- ④''' 区分ごとの定時（現場×区分）。見積・事務など「現場作業以外」だけ現場と別の定時を上書き -->
+        <div v-if="siteCats.length" class="field" data-testid="cat-hours-section">
+          <label>区分ごとの定時（この現場・任意）</label>
+          <p class="hint-sm" style="font-size:12px;color:#64748b;margin:2px 0 8px">見積・事務など「現場作業以外」の定時がこの現場と違う場合だけ設定します。空欄ならこの現場の固定勤務時刻に従います。日報でその区分を選ぶと反映され、実働・人件費もこの定時で計算します。</p>
+          <div v-for="c in siteCats" :key="c.id" class="cat-hours" :data-testid="`cat-hours-${c.id}`">
+            <div class="cat-hours-name">{{ c.name }}</div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <input v-model="catHoursDraft[c.id].start" type="time" class="input" style="width:auto" :data-testid="`cat-start-${c.id}`" />
+              <span>〜</span>
+              <input v-model="catHoursDraft[c.id].end" type="time" class="input" style="width:auto" :data-testid="`cat-end-${c.id}`" />
+              <button type="button" class="btn-ghost" style="padding:2px 10px;font-size:12px" @click="catHoursDraft[c.id].breaks.push({ start: '12:00', minutes: 60 })">＋ 休憩</button>
+            </div>
+            <div v-for="(brk, bi) in catHoursDraft[c.id].breaks" :key="bi" style="display:flex;align-items:center;gap:8px;margin-top:6px">
+              <input v-model="brk.start" type="time" class="input" style="width:auto" />
+              <input v-model.number="brk.minutes" type="number" min="0" step="15" class="input" style="width:90px" placeholder="60" />
+              <span style="font-size:13px;color:#64748b">分</span>
+              <button type="button" class="btn-ghost" style="padding:2px 8px" @click="catHoursDraft[c.id].breaks.splice(bi, 1)">×</button>
+            </div>
+          </div>
+        </div>
         <!-- ④'' 実働時間の自動計算。設定しながら「結局何時間勤務になるのか」が分からないという要望（2026-08-10）。
              ★数字は日報・人件費と同じ computeWorkerHours から出す（自前計算にしない）。 -->
         <div v-if="hoursPreview" class="hours-preview" data-testid="hours-preview">
@@ -295,6 +315,36 @@ const subcontractors = ref<{ id: string; name: string }[]>([]) // 下請け業�
 const shareUsers = ref<{ id: string; name: string }[]>([])      // 共有先ユーザー候補（この現場情報を閲覧させるユーザー）
 // 現場責任者の候補＝現場管理者以上(permission_role in admin/office/site_manager)のworker。myWorkerId=ログイン中ユーザーのworker(新規現場の既定)。
 const responsibleCandidates = ref<{ id: string; name: string }[]>([])
+
+// ── 区分ごとの定時（現場×区分）。見積・事務など「現場作業以外」だけ現場と別の定時を上書きできる。
+//  書き込みは EF(master-data) 経由（site_category_hours は authenticated 書込不可）。読みは直SELECT可。
+type CatHour = { start: string; end: string; breaks: { start: string; minutes: number }[] }
+const siteCats = ref<{ id: string; name: string }[]>([])
+const catHoursDraft = ref<Record<string, CatHour>>({})
+async function callMasterEf(body: Record<string, unknown>): Promise<any> {
+  const { data, error } = await supabase.functions.invoke('master-data', { body })
+  if (error) return { ok: false, error: 'network' }
+  return data ?? { ok: false }
+}
+async function loadSiteCats() {
+  const r = await callMasterEf({ action: 'categories' })
+  const list = (r?.categories ?? []) as { id: string; name: string; scope: string | null; active: boolean; is_default: boolean }[]
+  // 「現場作業」は現場そのものの固定勤務時刻を使うので除外（標準区分は全て is_default=true のため
+  //  名前で特定する＝report.vue の既定区分判定 name==='現場作業' と揃える）。現場で使える区分だけ上書き対象。
+  siteCats.value = list.filter(c => c.active && c.name !== '現場作業' && (c.scope === null || c.scope === 'site')).map(c => ({ id: c.id, name: c.name }))
+}
+function buildCatHoursDraft(rows: { category_id: string; default_start_time: string | null; default_end_time: string | null; default_breaks: { start: string; minutes: number }[] | null }[]) {
+  const draft: Record<string, CatHour> = {}
+  for (const c of siteCats.value) {
+    const row = rows.find(r => r.category_id === c.id)
+    draft[c.id] = {
+      start: (row?.default_start_time ?? '').slice(0, 5),
+      end: (row?.default_end_time ?? '').slice(0, 5),
+      breaks: Array.isArray(row?.default_breaks) ? row!.default_breaks!.map(b => ({ start: String(b.start ?? '').slice(0, 5), minutes: Number(b.minutes) || 0 })) : [],
+    }
+  }
+  catHoursDraft.value = draft
+}
 const workerNames = ref<Record<string, string>>({})   // 全作業員 id→名前（表示用）
 const myWorkerId = ref<string | null>(null)
 // 責任者名の表示: 実名を出し、候補条件(現場管理者以上・有効)を満たさない人には「要再設定」を添える。
@@ -436,7 +486,7 @@ async function load() {
   }
   siteStats.value = stats
 }
-onMounted(load)
+onMounted(() => { void load(); void loadSiteCats() })
 
 const siteStats = ref<Record<string, { count: number; lastDate: string }>>({})
 const contractorName = (id: string | null | undefined) => contractors.value.find((c) => c.id === id)?.name ?? '—'
@@ -489,7 +539,7 @@ const filtered = computed(() => {
   return list
 })
 
-function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', default_breaks: [], responsible_worker_id: myWorkerId.value ?? null, linkedSubs: [], shareUsers: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = ''; modalRules.value = []; clearPendingAtts(); markFormOpened(); fetchRuleHistory() }
+function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', default_breaks: [], responsible_worker_id: myWorkerId.value ?? null, linkedSubs: [], shareUsers: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = ''; modalRules.value = []; clearPendingAtts(); buildCatHoursDraft([]); markFormOpened(); fetchRuleHistory() }
 function addBreak()    { if (!modal.value) return; (modal.value.default_breaks ??= []).push({ start: '12:00', minutes: 60 }) }
 function removeBreak(i: number) { modal.value?.default_breaks?.splice(i, 1) }
 
@@ -569,6 +619,10 @@ async function openEdit(s: Site) {
   clearPendingAtts()
   // 見積書は表示しないロールでは取得もしない（非表示なのに読むと無駄＋漏洩面が広がる）
   await Promise.all([loadAttachments(s.id), canViewEstimates.value ? loadSiteEstimates(s.id) : Promise.resolve()])
+  // 区分ごとの定時（現場×区分）を読み込んで下書きに展開（SELECTはauthenticatedに許可されている）
+  const { data: chRows } = await supabase.from('site_category_hours')
+    .select('category_id, default_start_time, default_end_time, default_breaks').eq('site_id', s.id)
+  buildCatHoursDraft((chRows ?? []) as any)
   markFormOpened()   // 非同期ロード後に dirty 監視を開始（ロード自体を編集と誤認しない）
 }
 
@@ -617,6 +671,13 @@ async function save() {
   const nb = normalizeBreaks(modal.value.default_breaks)
   if (!nb.ok) { saveError.value = nb.error; return }
   modal.value.default_breaks = nb.breaks   // 画面の並びもソート済みに反映
+  // 区分ごとの定時の休憩も同様にソート＋重なり検証（重なりがあれば保存を止める）
+  for (const c of siteCats.value) {
+    const h = catHoursDraft.value[c.id]; if (!h) continue
+    const nbc = normalizeBreaks(h.breaks)
+    if (!nbc.ok) { saveError.value = `「${c.name}」の${nbc.error}`; return }
+    h.breaks = nbc.breaks
+  }
   saving.value = true; saveError.value = ''
   try {
     const m = modal.value
@@ -654,6 +715,14 @@ async function save() {
     }
     if (siteId) await syncSiteSubcontractors(siteId, accountId, m.linkedSubs ?? [])
     if (siteId) await syncSiteShares(siteId, accountId, m.shareUsers ?? [])
+    // 区分ごとの定時（現場×区分）を保存。EF経由（空欄の組は自動で行削除＝定時なし）。
+    if (siteId) {
+      for (const c of siteCats.value) {
+        const h = catHoursDraft.value[c.id]; if (!h) continue
+        const r = await callMasterEf({ action: 'site-category-hours-save', siteId, categoryId: c.id, start: h.start || null, end: h.end || null, breaks: h.breaks })
+        if (!r?.ok) { saveError.value = `区分「${c.name}」の定時保存に失敗しました（${r?.error ?? ''}）`; saving.value = false; return }
+      }
+    }
     formDirty.value = false; modal.value = null; await load()
   } catch (e: any) {
     saveError.value = e.message ?? '保存に失敗しました'
