@@ -170,7 +170,8 @@ Deno.serve(async (req) => {
     return json({ ok: true, categories: data ?? [] })
   }
 
-  if (body.action === 'category-save' || body.action === 'category-delete' || body.action === 'category-move') {
+  if (body.action === 'category-save' || body.action === 'category-delete' || body.action === 'category-move'
+    || body.action === 'category-hours-save' || body.action === 'category-hours-delete') {
     // ★権限はサーバで確認する。画面でボタンを隠すだけでは REST/EF 直叩きで通る
     const { data: w } = await svc.from('workers').select('permission_role')
       .eq('id', caller.workerId).eq('account_id', accountId).maybeSingle()
@@ -228,6 +229,49 @@ Deno.serve(async (req) => {
         .delete().eq('id', id).eq('account_id', accountId).select('id')
       if (error) { console.error('[master-data] category-delete failed:', error); return json({ ok: false, error: 'delete_failed' }, 500) }
       if (!deleted || deleted.length === 0) return json({ ok: false, error: 'not_found' }, 404)
+      return json({ ok: true })
+    }
+
+    // ── 現場×区分ごとの定時・休憩 ──────────────────────
+    //  ★site_category_hours は RLS 有効・authenticated の書き込みを剥がしてあるので、
+    //   ここを通す。role gate は上の CATEGORY_MANAGE_ROLES を共用する
+    //   （会社全体の作業区分設定を触る操作という点は category-save と同じ重さ）。
+    if (body.action === 'category-hours-save') {
+      const siteId = typeof body.site_id === 'string' ? body.site_id : ''
+      const categoryId = typeof body.category_id === 'string' ? body.category_id : ''
+      if (!siteId || !categoryId) return json({ ok: false, error: 'ids_required' }, 400)
+      // ★site_id / category_id が自テナントの行かを確認する。
+      //  FK は「実在するか」しか見ず「同じテナントか」は見ないため、
+      //  他テナントの site_id を渡されると他社の現場に定時を書けてしまう。
+      const [{ data: siteRow }, { data: catRow }] = await Promise.all([
+        svc.from('sites').select('id').eq('id', siteId).eq('account_id', accountId).maybeSingle(),
+        svc.from('work_categories').select('id').eq('id', categoryId).eq('account_id', accountId).maybeSingle(),
+      ])
+      if (!siteRow || !catRow) return json({ ok: false, error: 'not_found' }, 404)
+
+      const patch: Record<string, unknown> = {
+        account_id: accountId, site_id: siteId, category_id: categoryId, updated_at: new Date().toISOString(),
+      }
+      if ('default_start_time' in body) patch.default_start_time = typeof body.default_start_time === 'string' && body.default_start_time ? body.default_start_time : null
+      if ('default_end_time' in body) patch.default_end_time = typeof body.default_end_time === 'string' && body.default_end_time ? body.default_end_time : null
+      if ('default_break_minutes' in body) patch.default_break_minutes = typeof body.default_break_minutes === 'number' ? body.default_break_minutes : null
+      if ('default_breaks' in body) patch.default_breaks = Array.isArray(body.default_breaks) ? body.default_breaks : null
+
+      const { error } = await svc.from('site_category_hours')
+        .upsert(patch, { onConflict: 'site_id,category_id' })
+      if (error) { console.error('[master-data] category-hours-save failed:', error); return json({ ok: false, error: 'save_failed' }, 500) }
+      return json({ ok: true })
+    }
+
+    if (body.action === 'category-hours-delete') {
+      const siteId = typeof body.site_id === 'string' ? body.site_id : ''
+      const categoryId = typeof body.category_id === 'string' ? body.category_id : ''
+      if (!siteId || !categoryId) return json({ ok: false, error: 'ids_required' }, 400)
+      // ★行が無い＝定時なし、なので削除は「定時なしに戻す」操作。0件削除でもエラーにはしない
+      //  （既に無い状態への delete は冪等に成功扱いでよい＝クリアボタンの二度押しで壊れない）。
+      const { error } = await svc.from('site_category_hours')
+        .delete().eq('site_id', siteId).eq('category_id', categoryId).eq('account_id', accountId)
+      if (error) { console.error('[master-data] category-hours-delete failed:', error); return json({ ok: false, error: 'delete_failed' }, 500) }
       return json({ ok: true })
     }
 
