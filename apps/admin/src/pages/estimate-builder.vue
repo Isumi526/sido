@@ -649,6 +649,8 @@
               <button class="btn-link-sm" data-testid="open-cand-code-modal" @click="openCandModal('code')">品番の候補</button>
               <button class="btn-link-sm" data-testid="open-work-import" @click="wiiOpen = !wiiOpen">Excel取込</button>
               <button class="btn-link-sm" data-testid="open-bulk-price" @click="bulkPriceOpen = !bulkPriceOpen">単価候補を一括</button>
+              <button class="btn-link-sm" data-testid="export-items-csv" @click="exportItemsCsv">CSV書き出し</button>
+              <button class="btn-link-sm" data-testid="export-items-xlsx" @click="exportItemsXlsx">Excel書き出し</button>
               <label class="margin-field">粗利
                 <input v-model.number="marginPct" type="number" min="0" max="99" step="1"
                        class="input xs num" data-testid="margin-rate" @change="onMarginChange" />%
@@ -3176,6 +3178,48 @@ async function bulkApplyCheapest() {
   if (changed.length) await autoSaveRows(changed)
   applyMsg.value = changed.length ? `${changed.length}行に最安候補を当てました（保存済み）` : '当てられる未設定行はありませんでした'
   setTimeout(() => (applyMsg.value = ''), 4000)
+}
+
+// ── 見積④: 明細のCSV/Excel書き出し（確定単価をExcelへ戻す主経路）──────────────
+// 元請け宛の最終出口は「CSV往復を主経路」（2026-08-20決定）。アプリ内PDF(exportPdf)は副次で温存。
+function csvCell(v: string): string {
+  return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
+}
+const EXPORT_HEADER = ['場所', '工種', '項目名', '品番', '形状・詳細', '数量', '単位', '原価単価', '客先単価', '金額'] as const
+function exportRowsData(): (string | number)[][] {
+  const out: (string | number)[][] = []
+  for (const r of rows.value) {
+    if (!isItemRow(r) || isBlankRow(r)) continue
+    const amount = Math.round((Number(r.quantity) || 0) * (Number(r.unit_price) || 0))
+    out.push([r.location, r.trade_name, r.item_name, r.product_code, r.spec,
+              Number(r.quantity) || 0, r.unit, Number(r.cost_unit_price) || 0, Number(r.unit_price) || 0, amount])
+  }
+  return out
+}
+function exportBaseName(): string {
+  const p = projects.value.find(x => x.id === projectId.value)
+  const d = new Date()
+  const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
+  return `見積明細_${(p?.name ?? '見積').replace(/[\\/:*?"<>|]/g, '_')}_${ymd}`
+}
+/** 明細をCSV(UTF-8 BOM付き)で書き出す。往復してExcel側で仕上げる主経路。 */
+function exportItemsCsv() {
+  const lines = [EXPORT_HEADER.join(',')]
+  for (const row of exportRowsData()) lines.push(row.map(v => csvCell(String(v))).join(','))
+  const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = `${exportBaseName()}.csv`; a.click()
+  URL.revokeObjectURL(url)
+}
+/** 明細を .xlsx で書き出す（xlsxは重いので動的import）。 */
+async function exportItemsXlsx() {
+  const XLSX = await import('xlsx')
+  const aoa = [EXPORT_HEADER as unknown as string[], ...exportRowsData()]
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '見積明細')
+  XLSX.writeFile(wb, `${exportBaseName()}.xlsx`)
 }
 
 async function loadCompany() {
