@@ -15,6 +15,7 @@
           <button class="tab-btn" data-testid="drawing-history-tab" :class="{ active: viewMode === 'history' }" @click="openHistory">履歴</button>
         </div>
         <button v-if="viewMode === 'extract'" class="btn-ghost" :disabled="!rows.length" @click="exportCsv(rows, '実施図面_材料抽出.csv')">CSV書き出し</button>
+        <button v-if="viewMode === 'extract'" class="btn-ghost" :disabled="!rows.length || busy" data-testid="drawing-clear" @click="clearWork">新規解析（表をクリア）</button>
       </div>
     </div>
 
@@ -167,6 +168,16 @@ const priceMap = computed(() => {
 function priceForCode(code: string) { const c = normCode(code); return c ? (priceMap.value.get(c) ?? null) : null }
 function fmtYen(n: number): string { return '¥' + Math.round(n || 0).toLocaleString('ja-JP') }
 function priceLabel(code: string): string { const p = priceForCode(code); return p ? `${p.supplier_name} ${fmtYen(p.unit_price)}` : '' }
+
+// 連続して別の図面を解析する時に、前の図面の抽出行を残したまま追記されて混ざるのを防ぐ。
+// 抽出結果は解析完了時に自動で履歴へ保存済みなので、ここでは作業テーブルを空にするだけ（履歴タブから再表示可）。
+function clearWork() {
+  if (!confirm('現在の抽出結果を表からクリアして、次の図面を解析できる状態にします。\n（抽出結果は自動で履歴に保存されているため、履歴タブから再表示できます）')) return
+  rows.value = []
+  failedPages.value = []
+  errorMsg.value = ''
+  successMsg.value = ''
+}
 
 const viewMode      = ref<'extract' | 'history'>('extract')
 const historyList   = ref<HistoryEntry[]>([])

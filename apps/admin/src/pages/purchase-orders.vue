@@ -557,7 +557,12 @@ async function callInvoiceFn(orderId: string): Promise<{ ok: boolean; msg: strin
 
 async function requestInvoice(o: PO) {
   if (!isAccepted(o)) { alert('業者が承諾していないため請求依頼を送れません。'); return }
-  if (o.invoice_requested_at && !confirm(`注文書「${o.order_number}」の請求依頼を再送しますか？`)) return
+  // 初回・再送のいずれも送信前に確認を挟む（誤送信防止・2026-08-22）。業者/現場/注文番号を提示する。
+  const detail = `注文書番号: ${o.order_number}\n業者: ${o.vendor_name || '—'}\n現場: ${o.site_name || '—'}`
+  const confirmMsg = o.invoice_requested_at
+    ? `この注文書の請求依頼を再送します。よろしいですか？\n\n${detail}`
+    : `この注文書の請求依頼を送信します。よろしいですか？\n\n${detail}`
+  if (!confirm(confirmMsg)) return
   busyId.value = o.id
   try {
     const sent = await callInvoiceFn(o.id)
