@@ -27,7 +27,11 @@
     <div v-if="!loading && invoices.length" class="filter-bar" data-testid="invoice-filter-bar">
       <select v-model="filterSiteId" class="inp filter-sel" data-testid="filter-site">
         <option value="">すべての現場</option>
-        <option v-for="s in filterSiteOptions" :key="s.id" :value="s.id">{{ s.label }}</option>
+        <template v-for="grp in filterSiteGroups" :key="grp.contractorName ?? '__unlinked__'">
+          <optgroup :label="grp.contractorName ?? '紐付けなし'">
+            <option v-for="s in grp.sites" :key="s.id" :value="s.id">{{ s.label }}</option>
+          </optgroup>
+        </template>
       </select>
       <select v-model="filterVendor" class="inp filter-sel" data-testid="filter-vendor">
         <option value="">すべての業者</option>
@@ -234,7 +238,11 @@
                          保存時に site_name が消えて原価が現場別集計から落ちる。 -->
                     <select v-else v-model="it.site_id" class="inp-sm inp-site">
                       <option :value="null">—</option>
-                      <option v-for="s in formSiteOptions" :key="s.id" :value="s.id">{{ s.label }}</option>
+                      <template v-for="grp in formSiteGroups" :key="grp.contractorName ?? '__unlinked__'">
+                        <optgroup :label="grp.contractorName ?? '紐付けなし'">
+                          <option v-for="s in grp.sites" :key="s.id" :value="s.id">{{ s.label }}</option>
+                        </optgroup>
+                      </template>
                       <option value="__new__">＋ 新規現場…</option>
                     </select>
                   </td>
@@ -353,6 +361,8 @@ const sites    = ref<{ id: string; name: string }[]>([])
 //  現場別集計が「site_name が空の行は読み飛ばす」ため、その請求の原価が丸ごと消える
 //  （本番で該当明細170行・請求書31件・2026-08-14 実測）。
 const siteNameById = ref<Record<string, string>>({})
+// 現場id→元請け名（全現場・無効含む）。現場プルダウンを「元請け→現場」の2段階(optgroup)で出すためのキー(#36c0b9b4)。紐付け無しは末尾グループ。
+const siteContractorById = ref<Record<string, string>>({})
 /** その現場は無効化済みか（選択肢に「（終了）」と出すため） */
 function isRetiredSite(id: string | null | undefined): boolean {
   return !!id && !!siteNameById.value[id] && !sites.value.some(s => s.id === id)
@@ -384,6 +394,22 @@ const formSiteOptions = computed(() =>
 const filterSiteOptions = computed(() =>
   siteOptionsFor(invoices.value.flatMap((v: any) =>
     (v.subcontractor_invoice_items ?? []).map((it: any) => it.site_id))))
+// 現場の選択肢を元請けごとにグループ化（report.vue と同じ2段階optgroup・#36c0b9b4）。元請けは五十音順、未設定は末尾。
+function groupSiteOptions(opts: { id: string; label: string }[]): { contractorName: string | null; sites: { id: string; label: string }[] }[] {
+  const byC = new Map<string, { id: string; label: string }[]>()
+  const unlinked: { id: string; label: string }[] = []
+  for (const o of opts) {
+    const c = siteContractorById.value[o.id]
+    if (!c) { unlinked.push(o); continue }
+    if (!byC.has(c)) byC.set(c, [])
+    byC.get(c)!.push(o)
+  }
+  const groups = [...byC.keys()].sort((a, b) => a.localeCompare(b, 'ja')).map(c => ({ contractorName: c as string | null, sites: byC.get(c)! }))
+  if (unlinked.length) groups.push({ contractorName: null, sites: unlinked })
+  return groups
+}
+const formSiteGroups = computed(() => groupSiteOptions(formSiteOptions.value))
+const filterSiteGroups = computed(() => groupSiteOptions(filterSiteOptions.value))
 const subs     = ref<{ id: string; name: string; category: string | null }[]>([])
 type PO = { id: string; order_number: string | null; total_amount: number | null; subcontractor_id: string | null; vendor_name: string | null }
 const pos      = ref<PO[]>([])
@@ -575,7 +601,7 @@ async function load() {
       // 現場は明細(items)側に付くので、現場での絞り込み用に site_id/site_name も一緒に読む
       .select('*, subcontractor_invoice_items(amount, tax_rate, site_id, site_name)')
       .eq('account_id', accountId).order('invoice_date', { ascending: false }).order('created_at', { ascending: false }),
-    supabase.from('sites').select('id, name, active').eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
+    supabase.from('sites').select('id, name, active, contractor_id, contractors(name)').eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
     supabase.from('subcontractors').select('id, name, category').eq('account_id', accountId).eq('active', true).order('sort_order').order('name'),
     supabase.from('purchase_orders').select('id, order_number, total_amount, subcontractor_id, vendor_name')
       .eq('account_id', accountId).neq('is_deleted', true).order('order_date', { ascending: false }),
@@ -590,6 +616,7 @@ async function load() {
   // 選択肢は有効な現場だけ。名前の解決だけは無効な現場も引けるようにする（site_name を消さないため）
   sites.value = (si ?? []).filter((x: any) => x.active).map((x: any) => ({ id: x.id, name: x.name }))
   siteNameById.value = Object.fromEntries((si ?? []).map((x: any) => [x.id, x.name]))
+  siteContractorById.value = Object.fromEntries((si ?? []).filter((x: any) => x.contractors?.name).map((x: any) => [x.id, x.contractors.name as string]))
   subs.value  = su ?? []
   pos.value   = (po ?? []) as PO[]
   loading.value = false
