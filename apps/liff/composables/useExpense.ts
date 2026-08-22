@@ -771,7 +771,7 @@ export const useExpense = () => {
    * 経費申請: status を 申請中 にし、PDFパスを記録する。
    * 再申請（差し戻し後）でも notified_at を null クリアして1回だけ再送できるようにする。
    */
-  async function applySettlement(userId: string, periodKey: string, pdfPath: string | null): Promise<any> {
+  async function applySettlement(userId: string, periodKey: string, pdfPath: string | null, comment: string | null = null): Promise<any> {
     const accountId = await getAccountId()
     const now = new Date().toISOString()
     const { data, error } = await supabase
@@ -779,7 +779,7 @@ export const useExpense = () => {
       .upsert(
         {
           account_id: accountId, user_id: userId, period_key: periodKey,
-          status: '申請中', applied_at: now, pdf_path: pdfPath,
+          status: '申請中', applied_at: now, pdf_path: pdfPath, apply_comment: comment,
           reject_reason: null, rejected_at: null, notified_at: null, updated_at: now,
         },
         { onConflict: 'account_id,user_id,period_key' }
