@@ -247,6 +247,47 @@ Deno.serve(async (req) => {
   }
 
 
+  // ── 現場×区分ごとの定時・休憩を保存/削除（設定UIは現場モーダル）──────
+  //  site_category_hours は authenticated の書込権限を剥がしてあるため EF(service_role)経由で書く。
+  //  ★name を取らないので、下の name 必須ゲートより前で処理する。中身が全部空＝行を消す（＝定時なし）。
+  if (body.action === 'site-category-hours-save') {
+    const { data: w } = await svc.from('workers').select('permission_role')
+      .eq('id', caller.workerId).eq('account_id', accountId).maybeSingle()
+    const role = (w?.permission_role as string) ?? null   // role 無し＝純オーナーは通す
+    if (role !== null && !SITE_CREATE_ROLES.includes(role)) {
+      return json({ ok: false, error: 'SITE_CREATE_FORBIDDEN' }, 403)
+    }
+    const siteId = typeof body.siteId === 'string' ? body.siteId : ''
+    const categoryId = typeof body.categoryId === 'string' ? body.categoryId : ''
+    if (!siteId || !categoryId) return json({ ok: false, error: 'site_or_category_required' }, 400)
+    // 自テナントの現場・区分だけ（他テナントIDを渡されても触れない）
+    const [{ data: site }, { data: cat }] = await Promise.all([
+      svc.from('sites').select('id').eq('id', siteId).eq('account_id', accountId).maybeSingle(),
+      svc.from('work_categories').select('id').eq('id', categoryId).eq('account_id', accountId).maybeSingle(),
+    ])
+    if (!site || !cat) return json({ ok: false, error: 'not_found' }, 404)
+    const start = typeof body.start === 'string' && body.start ? body.start : null
+    const end = typeof body.end === 'string' && body.end ? body.end : null
+    const breaks = Array.isArray(body.breaks)
+      ? (body.breaks as any[])
+          .filter((b) => b && typeof b.start === 'string' && b.start && (Number(b.minutes) || 0) > 0)
+          .map((b) => ({ start: String(b.start).slice(0, 5), minutes: Number(b.minutes) || 0 }))
+      : []
+    if (!start && !end && breaks.length === 0) {
+      await svc.from('site_category_hours').delete()
+        .eq('site_id', siteId).eq('category_id', categoryId).eq('account_id', accountId)
+      return json({ ok: true, cleared: true })
+    }
+    const { error } = await svc.from('site_category_hours').upsert({
+      account_id: accountId, site_id: siteId, category_id: categoryId,
+      default_start_time: start, default_end_time: end,
+      default_break_minutes: null, default_breaks: breaks.length ? breaks : null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'site_id,category_id' })
+    if (error) { console.error('[master-data] site-category-hours-save failed:', error); return json({ ok: false, error: 'save_failed' }, 500) }
+    return json({ ok: true })
+  }
+
   const name = typeof body.name === 'string' ? body.name.trim() : ''
   if (!name) return json({ ok: false, error: 'name_required' }, 400)
 
