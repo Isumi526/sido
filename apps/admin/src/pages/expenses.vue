@@ -123,13 +123,27 @@
               @click="toggleAcct(a)"
             >{{ a }}</button>
             <button v-if="acctFilter.size" class="af-clear" data-testid="acct-clear" @click="acctFilter = new Set()">クリア</button>
-            <span v-if="acctFilter.size" class="af-count" data-testid="acct-count">
-              {{ filteredDetails.length }} / {{ selected.details.length }} 件 ・ {{ yen(filteredTotal) }}
-            </span>
           </div>
+          <!-- 支払先の絞り込み（科目とAND・2026-08-22）。科目とは独立に選べ、両方選ぶと両条件を満たす明細だけになる。 -->
+          <div v-if="availablePayees.length > 1" class="acct-filter no-print" data-testid="payee-filter">
+            <span class="af-label">支払先で絞る</span>
+            <button
+              v-for="p in availablePayees" :key="p"
+              class="af-chip" :class="{ on: payeeFilter.has(p) }"
+              :data-testid="`payee-chip-${p}`"
+              @click="togglePayee(p)"
+            >{{ p }}</button>
+            <button v-if="payeeFilter.size" class="af-clear" data-testid="payee-clear" @click="payeeFilter = new Set()">クリア</button>
+          </div>
+          <span v-if="acctFilter.size || payeeFilter.size" class="af-count no-print" data-testid="filter-count">
+            {{ filteredDetails.length }} / {{ selected.details.length }} 件 ・ {{ yen(filteredTotal) }}
+          </span>
           <!-- ★絞り込み中はPDFにもその旨を出す。出力だけ見た人が「全部の経費」と誤解しないように。 -->
           <p v-if="acctFilter.size" class="acct-filter-note print-only" data-testid="acct-print-note">
             ※ 科目「{{ [...acctFilter].join('・') }}」のみを抽出した明細です。
+          </p>
+          <p v-if="payeeFilter.size" class="acct-filter-note print-only" data-testid="payee-print-note">
+            ※ 支払先「{{ [...payeeFilter].join('・') }}」のみを抽出した明細です。
           </p>
 
           <table class="table detail-table">
@@ -346,17 +360,32 @@ const availableAccounts = computed<string[]>(() => {
   const rest = [...present].filter((a) => !ordered.includes(a)).sort((x, y) => x.localeCompare(y, 'ja'))
   return [...ordered, ...rest]
 })
+const PAYEE_NONE = '（支払先なし）'
+const payeeFilter = ref<Set<string>>(new Set())
+function togglePayee(p: string) {
+  const next = new Set(payeeFilter.value)
+  next.has(p) ? next.delete(p) : next.add(p)
+  payeeFilter.value = next
+}
+const availablePayees = computed<string[]>(() => {
+  const set = new Set<string>()
+  for (const d of (selected.value?.details ?? [])) set.add(d.payee || PAYEE_NONE)
+  return [...set].sort((a, b) => a.localeCompare(b, 'ja'))
+})
 const filteredDetails = computed<ExpenseRow[]>(() => {
   const rows = selected.value?.details ?? []
-  if (!acctFilter.value.size) return rows          // 絞り込み無し＝従来どおり全件
-  return rows.filter((d) => acctFilter.value.has(expenseAccountCategory(d)))
+  // 科目・支払先は独立フィルタで AND 条件（どちらも未選択なら従来どおり全件）
+  return rows.filter((d) =>
+    (!acctFilter.value.size || acctFilter.value.has(expenseAccountCategory(d))) &&
+    (!payeeFilter.value.size || payeeFilter.value.has(d.payee || PAYEE_NONE)),
+  )
 })
 const filteredTotal        = computed(() => filteredDetails.value.reduce((s, d) => s + (Number(d.amount) || 0), 0))
 const filteredTategaeTotal = computed(() => filteredDetails.value.filter((d) => d.tategae).reduce((s, d) => s + (Number(d.amount) || 0), 0))
 
 const printMode = ref<'meisai' | 'seikyu'>('meisai')
 // モーダルを開き直すたびに明細モードへリセット（前回の請求書モードを持ち越さない）
-watch(selected, () => { printMode.value = 'meisai'; acctFilter.value = new Set() })
+watch(selected, () => { printMode.value = 'meisai'; acctFilter.value = new Set(); payeeFilter.value = new Set() })
 async function printExpenseDoc(mode: 'meisai' | 'seikyu') {
   printMode.value = mode
   await nextTick()
