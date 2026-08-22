@@ -114,6 +114,16 @@
             <textarea v-model="modal.special_notes" class="inp" rows="2" placeholder="任意"></textarea>
           </label>
 
+          <!-- #46 送付メールの件名・本文（任意編集。空なら業者名入りの既定で送る） -->
+          <label class="fld"><span>メール件名（任意）</span>
+            <input v-model="mailSubject" class="inp" data-testid="po-mail-subject"
+              :placeholder="`${modal.vendor_name ? modal.vendor_name + ' 御中 ' : ''}【注文書 (発行時に採番)】ご確認・ご承諾のお願い`" />
+          </label>
+          <label class="fld"><span>メール本文メッセージ（任意）</span>
+            <textarea v-model="mailMessage" class="inp" rows="3" data-testid="po-mail-message"
+              placeholder="未入力なら『いつもお世話になっております。下記の注文書につきまして、ご確認のうえご承諾をお願いいたします。』で送ります"></textarea>
+          </label>
+
           <!-- 注文書プレビュー（PDF生成元） -->
           <div class="preview-label">プレビュー（このままPDFになります）</div>
           <div class="preview-scroll">
@@ -291,6 +301,8 @@ const accountName = ref('')
 
 const modal     = ref<Record<string, any> | null>(null)
 const issuing   = ref(false)
+const mailSubject = ref('')   // #46 メール件名の編集(任意・空ならEF側で業者名入り既定)
+const mailMessage = ref('')   // #46 メール本文メッセージの編集(任意・空ならEF側で既定文)
 const issueMsg  = ref('')
 const issueOk   = ref(false)
 const busyId    = ref<string | null>(null)
@@ -404,6 +416,8 @@ function tryCloseIssue() {
 
 function openIssue() {
   issueMsg.value = ''
+  mailSubject.value = ''
+  mailMessage.value = ''
   modal.value = {
     estimate_id: null, subcontractor_id: null, subcontractor_contact_id: null, site_id: null,
     order_number: '', order_date: today(), total_amount: null,
@@ -465,16 +479,20 @@ async function generateAndUploadPdf(orderId: string, accountId: string) {
   return path
 }
 
-async function callSendFn(orderId: string): Promise<{ ok: boolean; msg: string }> {
+async function callSendFn(orderId: string, subject?: string, message?: string): Promise<{ ok: boolean; msg: string }> {
   if (!EDGE_URL) return { ok: false, msg: 'Edge Function URL未設定のためメール送信できません' }
   const fnName = IS_DEV ? 'test-send-purchase-order' : 'send-purchase-order'
   // 認証JWT（ログイン中のadmin）を渡す。EF側が呼び出し元JWTで注文書をRLSスコープ readし越境を拒否。
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return { ok: false, msg: 'ログインセッションがありません（再ログインしてください）' }
+  // #46 件名・本文は任意編集。空なら送らずEF側の既定(業者名入り件名/既定文)を使う。
+  const payload: Record<string, unknown> = { order_id: orderId }
+  if (subject && subject.trim()) payload.subject = subject.trim()
+  if (message && message.trim()) payload.message = message.trim()
   const res = await fetch(`${EDGE_URL}/${fnName}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: ANON_KEY, Authorization: `Bearer ${session.access_token}` },
-    body: JSON.stringify({ order_id: orderId }),
+    body: JSON.stringify(payload),
   })
   const r = await res.json().catch(() => ({}))
   if (!res.ok) return { ok: false, msg: r.error ?? `送信失敗 (${res.status})` }
@@ -508,7 +526,7 @@ async function issue() {
     try { await generateAndUploadPdf(orderId, accountId) }
     catch (e: any) { console.error('[purchase-orders] PDF生成失敗:', e) }
 
-    const sent = await callSendFn(orderId)
+    const sent = await callSendFn(orderId, mailSubject.value, mailMessage.value)
     issueOk.value = sent.ok
     issueMsg.value = sent.ok ? `注文書 ${order_number} を発行しました。${sent.msg}` : `注文書 ${order_number} を発行しました（メール: ${sent.msg}）`
     await load()

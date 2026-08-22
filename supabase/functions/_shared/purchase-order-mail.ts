@@ -55,7 +55,7 @@ function yen(n: number | null | undefined): string {
 }
 
 export async function sendPurchaseOrder(
-  opts: { accountSlug?: string | null; order_id: string; send: boolean; callerAuth?: string | null },
+  opts: { accountSlug?: string | null; order_id: string; send: boolean; callerAuth?: string | null; subject?: string | null; message?: string | null },
 ): Promise<{ status: number; body: any }> {
   try {
     if (!opts.order_id) return { status: 400, body: { error: 'order_id が必要です' } }
@@ -126,9 +126,15 @@ export async function sendPurchaseOrder(
         ? `${order.vendor_contact_name} 様`
         : (order.vendor_name ? `${order.vendor_name} 御中` : 'ご担当者様')
 
+      // 本文の挨拶文: 送信側が編集した文面(opts.message)があればそれを使う。無ければ既定文。#46
+      //  改行はHTMLの<br>に変換。承諾リンク・注文書番号・法的文言など固定部は編集対象にしない。
+      const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      const introMsg = (opts.message && opts.message.trim())
+        ? escHtml(opts.message.trim()).replace(/\n/g, '<br>')
+        : 'いつもお世話になっております。下記の注文書につきまして、ご確認のうえご承諾をお願いいたします。'
       const html =
         `<p>${greetName}</p>`
-        + `<p>いつもお世話になっております。下記の注文書につきまして、ご確認のうえご承諾をお願いいたします。</p>`
+        + `<p>${introMsg}</p>`
         + `<p>注文書番号: ${order.order_number}<br>`
         + `合計金額: ${yen(order.total_amount)}</p>`
         + `<p><a href="${url}" style="display:inline-block;padding:12px 24px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;">注文書を確認して承諾する</a></p>`
@@ -151,7 +157,10 @@ export async function sendPurchaseOrder(
         body: JSON.stringify({
           from,
           to:      [email],
-          subject: `【注文書】${order.order_number} のご確認・ご承諾のお願い`,
+          // 件名: 送信側が編集した件名(opts.subject)があればそれを使う。無ければ業者名入りの既定。#46
+          subject: (opts.subject && opts.subject.trim())
+            ? opts.subject.trim()
+            : `${order.vendor_name ? `${order.vendor_name} 御中 ` : ''}【注文書 ${order.order_number}】ご確認・ご承諾のお願い`,
           html,
           attachments,
         }),
