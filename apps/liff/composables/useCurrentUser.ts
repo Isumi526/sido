@@ -24,9 +24,22 @@ export const useCurrentUser = () => {
     const accountId = await getAccountId()
     if (!accountId) return null
 
-    const wid = passwordWorkerId()
-    if (wid) {
-      // email/pw: worker_id で users を引く。
+    // email/pw セッション: worker_id は JWT(app_metadata) 優先。無ければ auth_user_id から worker を引く。
+    // ★JWT に worker_id が無くても LINE 経路へ落とさない（DBに workers.auth_user_id の紐付けがあれば救済）。
+    //   発行時の付け忘れ・旧発行でも日報画面に入れる（#email/pw worker_id未付与バグ・2026-08-22）。
+    if (authMode.value === 'password') {
+      let wid = workerId.value ?? null
+      if (!wid) {
+        const { data: au } = await supabase.auth.getUser()
+        const authId = au?.user?.id ?? null
+        if (authId) {
+          const { data: byAuth } = await supabase
+            .from('workers').select('id').eq('auth_user_id', authId).eq('account_id', accountId).maybeSingle()
+          wid = byAuth?.id ?? null
+        }
+      }
+      if (!wid) return null   // このテナントに紐づく worker が無い email/pw ＝解決不能（呼び出し側でエラー表示）
+      // worker_id で users を引く。
       const { data: u } = await supabase
         .from('users').select('*').eq('worker_id', wid).eq('account_id', accountId).maybeSingle()
       if (u) return u as User

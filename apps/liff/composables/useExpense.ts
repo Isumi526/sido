@@ -165,8 +165,10 @@ export const useExpense = () => {
   async function getUser(lineUserId: string): Promise<User | null> {
     // email/pw（Supabase認証）セッションは line_user_id を持たない → 単一ソース useCurrentUser で解決。
     // （users 行が無ければ作成して id 付きで返す＝日報/履歴が正しく保存される。line_user_id 検索はしない）
-    const { authMode, workerId } = useLiff()
-    if (authMode.value === 'password' && workerId.value) {
+    const { authMode } = useLiff()
+    // ★email/pw は worker_id が JWT に無くても resolve() が auth_user_id から解決する。
+    //  ここで workerId を条件にすると、付け忘れ時に LINE キャッシュ経路へ落ちて /register へ飛ぶ（本バグ）。
+    if (authMode.value === 'password') {
       return await useCurrentUser().resolve()
     }
 
