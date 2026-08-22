@@ -9,6 +9,7 @@
 //  ※ 平文トークン・メール本文はログに出さない。
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { resolveAccountName } from './mail-from.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 // service role があれば使う。無ければ anon（ローカル等）にフォールバック
@@ -142,7 +143,7 @@ export async function sendPurchaseOrder(
       // 送信元: env のアドレス＋自社情報(settings.company_name)を表示名に（"会社名 <addr>"）
       const { data: cn } = await svc.from('settings').select('value').eq('account_id', account.id).eq('key', 'company_name').maybeSingle()
       const fromAddr = (PO_MAIL_FROM.match(/<([^>]+)>/)?.[1] || PO_MAIL_FROM).trim()
-      const fromName = (cn?.value || '').trim()
+      const fromName = (cn?.value || '').trim() || await resolveAccountName(svc, account.id)
       const from = fromName ? `${fromName} <${fromAddr}>` : PO_MAIL_FROM
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
