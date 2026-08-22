@@ -1712,6 +1712,37 @@ function removeSite(i: number) {
   siteUsage.value.splice(i, 1)
 }
 
+/**
+ * 新規モードで、その日のスケジュールに現場が1件だけ登録されていれば site.siteName へ既定値として入れる。
+ *  ★人が上書きできる（固定にしない・onSiteChange経由の通常選択と同じ経路を通すだけ）。
+ *  ★予定が無い日・複数現場の予定がある日は従来どおり手で選ばせる
+ *   （1日複数現場をどの現場に割り振るかは自明でないため。まず単一現場の日だけ対応する決定・理由:
+ *    要件チケットの「先に確かめること」が未実施＝本番のスケジュール充足率・複数現場day比率が
+ *    分かっていないので、安全側＝単一現場だけを既定化する最小実装にする）。
+ */
+async function prefillSiteFromSchedule(date: string) {
+  const wid = currentUser.value?.worker_id
+  const s0 = report.form.value.sites[0]
+  if (!wid || !s0 || s0.siteName) return
+  const { data } = await useSupabase()
+    .from('schedules')
+    .select('site_id, sites(name)')
+    .eq('worker_id', wid)
+    .lte('start_date', date)
+    .gte('end_date', date)
+    .not('site_id', 'is', null)
+  const rows = (data ?? []) as unknown as { site_id: string; sites: { name: string } | { name: string }[] | null }[]
+  const siteIds = Array.from(new Set(rows.map(r => r.site_id).filter(Boolean)))
+  if (siteIds.length !== 1) return   // 予定なし／複数現場は従来どおり手で選ぶ
+  const sitesField = rows[0]?.sites
+  const name = Array.isArray(sitesField) ? sitesField[0]?.name : sitesField?.name
+  // 現場名はマスタに在るものだけ入れる（無効化された現場は入れない＝選び直しで空になる事故を防ぐ）
+  if (name && master.siteIds.value[name] !== undefined) {
+    s0.siteName = name
+    onSiteChange(0)
+  }
+}
+
 onMounted(async () => {
   // フォームを開くたびに Supabase から最新マスタを取得し、直近に登録した
   //  下請け業者などがプルダウンに確実に反映されるようにする（編集パスと統一）。
@@ -1777,6 +1808,8 @@ onMounted(async () => {
       report.form.value.date = nextDate
     }
     // 'NOT_CONFIGURED' の場合はデフォルト（今日）のまま
+    // ★スケジュールに現場が入っていれば既定で入れる（二度手間をなくす・人が上書き可）
+    if (!allSubmitted.value) await prefillSiteFromSchedule(report.form.value.date)
   }
 
   // 新規モードのみ: 同じ日付の下書きがあれば復元（編集/代理は対象外）。
