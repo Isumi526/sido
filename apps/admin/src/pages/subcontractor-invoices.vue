@@ -83,6 +83,34 @@
       </table>
     </div>
 
+    <!-- 業者別の小計（請求書との突き合わせ用。現在のタブ・絞り込みに連動）-->
+    <div v-if="!loading && visibleList.length" class="vendor-summary" data-testid="vendor-summary">
+      <button class="vendor-summary-head" data-testid="vendor-summary-toggle" @click="showVendorSummary = !showVendorSummary">
+        <span class="material-symbols-rounded vs-caret">{{ showVendorSummary ? 'expand_more' : 'chevron_right' }}</span>
+        業者別の合計（{{ tab === 'paid' ? '支払い済み' : '未払い' }}{{ filterSiteId || filterVendor ? '・絞り込み中' : '' }}／{{ vendorSummary.length }}社）
+        <span class="vs-grand">総合計 {{ yen(visibleTotal) }}</span>
+      </button>
+      <div v-if="showVendorSummary" class="vendor-summary-body">
+        <table class="table vendor-summary-table">
+          <thead>
+            <tr><th>業者</th><th class="num">件数</th><th class="num">合計(税込)</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in vendorSummary" :key="row.vendor" class="vs-row"
+                :class="{ active: filterVendor === row.vendor }"
+                data-testid="vendor-summary-row" @click="toggleVendorFilter(row.vendor)">
+              <td class="bold">{{ row.vendor }}</td>
+              <td class="num">{{ row.count }}</td>
+              <td class="num">{{ yen(row.total) }}</td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr class="vs-total-row"><td class="bold">合計</td><td class="num">{{ visibleList.length }}</td><td class="num bold" data-testid="vendor-summary-grand">{{ yen(visibleTotal) }}</td></tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
     <!-- 入力モーダル -->
     <div v-if="form" class="modal-overlay" @click.self="closeForm">
       <div class="modal">
@@ -488,6 +516,28 @@ async function bulkDownload() {
   } finally { bulkBusy.value = false }
 }
 const overdueCount = computed(() => unpaidList.value.filter(v => v._overdue).length)
+
+// ── 業者別の小計（請求書との突き合わせ用）──
+//  現在表示中の一覧（タブ＝未払い/支払い済み＋現場・業者の絞り込み）に連動させ、
+//  画面の数字と小計が食い違わないようにする。金額は一覧と同じ grand_total（税込・内税は割り戻し済み）を業者ごとに合算。
+const showVendorSummary = ref(true)
+const visibleTotal = computed(() => visibleList.value.reduce((s, v) => s + (Number(v.grand_total) || 0), 0))
+const vendorSummary = computed(() => {
+  const map = new Map<string, { vendor: string; count: number; total: number }>()
+  for (const v of visibleList.value) {
+    const name = v.vendor_name || '（業者未設定）'
+    const cur = map.get(name) ?? { vendor: name, count: 0, total: 0 }
+    cur.count += 1
+    cur.total += Number(v.grand_total) || 0
+    map.set(name, cur)
+  }
+  // 金額の大きい順（突き合わせで気になるのは金額の大きい業者から）
+  return [...map.values()].sort((a, b) => b.total - a.total)
+})
+function toggleVendorFilter(vendor: string) {
+  filterVendor.value = filterVendor.value === vendor ? '' : vendor
+  bulkMsg.value = ''
+}
 
 // 日本語ボタンの確認ダイアログ（native confirm の英語Cancel回避）
 const confirmState = ref<{ message: string; okLabel: string; danger?: boolean; onOk: () => void } | null>(null)
@@ -1049,4 +1099,17 @@ onMounted(load)
 .confirm-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .btn-confirm-ok { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 8px 20px; font-weight: 700; cursor: pointer; }
 .btn-confirm-ok.danger { background: #c0392b; }
+
+/* 業者別の小計 */
+.vendor-summary { margin-top: 14px; background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08); overflow: hidden; }
+.vendor-summary-head { display: flex; align-items: center; gap: 8px; width: 100%; background: #fafafa; border: none; border-bottom: 1px solid #eee; padding: 10px 14px; font-size: 13px; font-weight: 700; color: #444; cursor: pointer; text-align: left; }
+.vs-caret { font-size: 18px; line-height: 1; color: #888; }
+.vs-grand { margin-left: auto; font-weight: 800; color: #111; }
+.vendor-summary-body { max-height: 50vh; overflow: auto; }
+.vendor-summary-table { width: 100%; }
+.vs-row { cursor: pointer; }
+.vs-row:hover { background: #f7f7f7; }
+.vs-row.active { background: #eef3fd; }
+.vs-total-row td { border-top: 2px solid #e2e2e2; background: #fafafa; }
+.vendor-summary-table tfoot td { position: sticky; bottom: 0; }
 </style>
