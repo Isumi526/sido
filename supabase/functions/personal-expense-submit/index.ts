@@ -240,6 +240,17 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: 'companions_required', message: '接待交際費は同行者名の入力が必須です。' }, 400)
     }
 
+    // 紐付ける現場（任意）。site_id は自テナントに実在する時だけ採用し、表示名はマスタで補完する。
+    // クロステナントの site_id を渡されても account_id で弾く（採用しない）。
+    let siteId: string | null = null
+    let siteName: string | null = String(input.site_name ?? '').trim() || null
+    const reqSiteId = String(input.site_id ?? '').trim()
+    if (reqSiteId) {
+      const { data: st } = await svc.from('sites').select('id, name')
+        .eq('id', reqSiteId).eq('account_id', accountId).maybeSingle()
+      if (st) { siteId = (st as any).id; siteName = siteName || (st as any).name }
+    }
+
     // ★案Bの肝: その月の枠をまだ持っていなければ、いま解決した枠で凍結する。
     //   既定値を後から変えても過去月の超過判定が遡って変わらない。行があれば触らない。
     const { data: existing } = await svc.from('worker_expense_budgets').select('id')
@@ -270,6 +281,8 @@ Deno.serve(async (req) => {
       note: String(input.note ?? '').trim() || null,
       file_urls: Array.isArray(input.file_urls) ? input.file_urls : [],
       tategae: !!input.tategae,
+      site_id: siteId,
+      site_name: siteName,
       client_token: clientToken,
     }).select('id').single()
     if (error) {
