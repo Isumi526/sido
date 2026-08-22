@@ -131,6 +131,18 @@
           <input v-model="formModal.title" class="input" data-testid="cal-title" placeholder="例：○○ビル 内装工事" />
         </div>
         <div class="field">
+          <label>現場</label>
+          <select v-model="formModal.site_id" class="input" data-testid="site-select">
+            <option value="">現場を選択しない</option>
+            <optgroup v-if="recentSiteOptions.length" label="最近使った現場" data-testid="site-group-recent">
+              <option v-for="s in recentSiteOptions" :key="`recent-${s.id}`" :value="s.id">{{ s.name }}</option>
+            </optgroup>
+            <optgroup v-for="grp in siteGroupsByContractor" :key="grp.contractorName ?? '__unlinked__'" :label="grp.contractorName ?? '元請け未設定'">
+              <option v-for="s in grp.sites" :key="s.id" :value="s.id">{{ s.name }}</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="field">
           <label>カテゴリ</label>
           <select v-model="formModal.category" class="input">
             <option v-for="c in scheduleCategories.filter(x => x.active || x.key === formModal!.category)" :key="c.key" :value="c.key">{{ c.label }}</option>
@@ -338,11 +350,14 @@ interface Schedule {
   end_time:        string | null
   is_night_shift:  boolean
   is_public:       boolean
+  site_id:         string | null
   created_by_name: string | null
   deleted_at:      string | null
   deleted_by_name: string | null
   worker?:         { id: string; name: string }
 }
+
+interface SiteOption { id: string; name: string; contractor_id: string | null }
 
 interface ScheduleEdit {
   id:             string
@@ -363,6 +378,7 @@ interface FormData {
   is_night_shift: boolean
   category:       string
   is_public:      boolean
+  site_id:        string
   _original?:     Partial<Schedule>
 }
 
@@ -379,6 +395,65 @@ const ROW_HEIGHT = 36   // extendTop 時のスクロール位置補正の目安�
 // ──── 状態 ─────────────────────────────────────────────────
 const allSchedules  = ref<Schedule[]>([])
 const workers       = ref<{ id: string; name: string; birth_date: string | null }[]>([])
+// 予定の現場選択（#管理画面の予定登録に現場を選ぶ欄が無い・2026-08-22）。
+// LIFF側(pages/calendar/index.vue)は元請けごとのoptgroup＋最近使った現場を持つが、
+// 元請け未紐付けの現場が大半（本番実測で68%）という事情はadminでも同じなので同じ構成にする。
+// admin は元々タイトルが自由入力欄として独立しているため、LIFFのように「site選択=title」に
+// せず、site_idを別枠の選択として追加する（タイトル欄の既存動作は変えない）。
+const sites         = ref<SiteOption[]>([])
+const contractors    = ref<{ id: string; name: string }[]>([])
+const contractorNameById = computed(() => {
+  const m: Record<string, string> = {}
+  for (const c of contractors.value) m[c.id] = c.name
+  return m
+})
+// 元請け(五十音順)ごとに現場をグループ化。紐付けなしは最後のグループへ。空グループは含めない。
+// グループ内の現場は再ソートしない（sites取得クエリがname_kana→name順で返す想定・liffのuseMasterと同じ理屈）。
+const siteGroupsByContractor = computed<{ contractorName: string | null; sites: SiteOption[] }[]>(() => {
+  const orderedContractors = contractors.value.map(c => c.name).sort((a, b) => a.localeCompare(b, 'ja'))
+  const groups: { contractorName: string | null; sites: SiteOption[] }[] = []
+  for (const cName of orderedContractors) {
+    const linked = sites.value.filter(s => s.contractor_id && contractorNameById.value[s.contractor_id] === cName)
+    if (linked.length) groups.push({ contractorName: cName, sites: linked })
+  }
+  const unlinked = sites.value.filter(s => !s.contractor_id || !contractorNameById.value[s.contractor_id])
+  if (unlinked.length) groups.push({ contractorName: null, sites: unlinked })
+  return groups
+})
+const siteNameById = computed(() => {
+  const m: Record<string, string> = {}
+  for (const s of sites.value) m[s.id] = s.name
+  return m
+})
+async function loadSites() {
+  const [{ data: siteRows }, { data: contractorRows }] = await Promise.all([
+    supabase.from('sites').select('id, name, name_kana, contractor_id')
+      .eq('account_id', accountId).eq('active', true)
+      .order('name_kana', { nullsFirst: false }).order('name'),
+    supabase.from('contractors').select('id, name').eq('account_id', accountId),
+  ])
+  sites.value = (siteRows ?? []) as SiteOption[]
+  contractors.value = (contractorRows ?? []) as { id: string; name: string }[]
+}
+// 「最近使った現場」（この端末・account単位でid列を最大5件保持。予定は同じ現場を繰り返し登録するため）。
+const RECENT_SITES_MAX = 5
+const recentSiteIds = ref<string[]>([])
+let   RECENT_SITES_KEY = 'sido_recent_schedule_sites_admin'
+function loadRecentSites() {
+  try {
+    const raw = localStorage.getItem(RECENT_SITES_KEY)
+    recentSiteIds.value = raw ? (JSON.parse(raw) as string[]).filter(id => typeof id === 'string') : []
+  } catch { recentSiteIds.value = [] }
+}
+function rememberRecentSite(id: string) {
+  if (!id) return
+  const next = [id, ...recentSiteIds.value.filter(x => x !== id)].slice(0, RECENT_SITES_MAX)
+  recentSiteIds.value = next
+  try { localStorage.setItem(RECENT_SITES_KEY, JSON.stringify(next)) } catch { /* 容量超過等は無視 */ }
+}
+const recentSiteOptions = computed(() => recentSiteIds.value
+  .filter(id => siteNameById.value[id])
+  .map(id => ({ id, name: siteNameById.value[id] })))
 // 予定カテゴリマスタ（#A・色分け）。key→color の早見表つき。
 const scheduleCategories = ref<ScheduleCategory[]>([])
 const categoryColor = computed(() => {
@@ -702,6 +777,7 @@ function openAddBlank() {
     is_night_shift: false,
     category: defaultCategoryKey(),
     is_public: false,   // 既定は非共有（A方針）・共有したい時だけON（対象選択で自分以外なら watch が既定ON）
+    site_id: '',
   }
   isPublicTouched.value = false
   selectedWorkerIds.value = new Set()
@@ -718,6 +794,7 @@ function openAddForCell(date: string, workerId: string) {
     // 「自分以外のユーザーへ予定追加」時は既定ON（他者アサインは共有前提／方針C）。
     // 自分の予定（自分のworker=currentWorkerId）は非共有。純粋admin(currentWorkerId=null)は常に他者宛=ON。
     is_public: workerId !== currentWorkerId.value,
+    site_id: '',
   }
   isPublicTouched.value = false
   selectedWorkerIds.value = new Set([workerId])   // タップした作業員を初期選択
@@ -750,6 +827,7 @@ function openEditFromDetail() {
     is_night_shift: s.is_night_shift,
     category:       s.category ?? 'work',
     is_public:      s.is_public,
+    site_id:        s.site_id ?? '',   // 既存の予定は後から現場を紐付けられる（未設定なら空のまま）
     _original: {
       worker_id:      s.worker_id,
       title:          s.title,
@@ -761,6 +839,7 @@ function openEditFromDetail() {
       is_night_shift: s.is_night_shift,
       category:       s.category,
       is_public:      s.is_public,
+      site_id:        s.site_id,
     },
   }
   selectedWorkerIds.value = new Set([s.worker_id])   // 編集対象の作業員（担当変更・追加可）
@@ -816,8 +895,11 @@ async function saveSchedule() {
       end_time:       hasTime ? formModal.value.end_time   : null,
       is_night_shift: formModal.value.is_night_shift,
       is_public:      formModal.value.is_public ?? false,   // 既定は非共有（A方針）
+      site_id:        formModal.value.site_id || null,
       updated_at:     now,
     }
+    // 次回選びやすいよう「最近使った現場」に覚える（現場を選んだ時だけ）
+    if (basePayload.site_id) rememberRecentSite(basePayload.site_id)
 
     if (formModal.value.id) {
       // 編集: 先頭の対象者に更新（担当変更を含む）・変更差分を記録。追加で選ばれた作業員には新規作成。
@@ -825,7 +907,7 @@ async function saveSchedule() {
       const orig = formModal.value._original ?? {}
       const diffKeys = [
         'worker_id', 'title', 'description', 'start_date', 'end_date',
-        'start_time', 'end_time', 'is_night_shift', 'category', 'is_public',
+        'start_time', 'end_time', 'is_night_shift', 'category', 'is_public', 'site_id',
       ] as const
       const changes = buildScheduleDiff(orig as Record<string, unknown>, payload as Record<string, unknown>, diffKeys)
 
@@ -937,6 +1019,8 @@ async function moveCat(c: ScheduleCategory, dir: -1 | 1) {
 onMounted(async () => {
   accountId = await getAccountId()
   GROUP_KEY = `calendar_group_filter_admin_${accountId}`
+  RECENT_SITES_KEY = `sido_recent_schedule_sites_admin_${accountId}`
+  loadRecentSites()
   const { data: { session } } = await supabase.auth.getSession()
   currentUserName = session?.user?.email ?? '管理者'
 
@@ -944,6 +1028,7 @@ onMounted(async () => {
   initCalendar()
   try {
     await loadWorkers()
+    await loadSites()
     scheduleCategories.value = await loadScheduleCategories(accountId)
     await loadGroups()
     await loadNotifs()
