@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
 
   // ── マスタ一式 ──────────────────────────────────
   if (!body.action || body.action === 'fetch') {
-    const [sites, contractors, workers, subs, vehicles, siteSubs, categories, catHours] = await Promise.all([
+    const [sites, contractors, workers, subs, vehicles, siteSubs, categories, catHours, assets] = await Promise.all([
       svc.from('sites').select('id, name, contractor_id, default_start_time, default_end_time, default_breaks')
         .eq('active', true).eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
       // ★sort_order だけだと同値が並んだ時に順序が不定になり、開くたびに並びが変わる。
@@ -92,6 +92,11 @@ Deno.serve(async (req) => {
       svc.from('site_category_hours')
         .select('site_id, category_id, default_start_time, default_end_time, default_break_minutes, default_breaks')
         .eq('account_id', accountId),
+      // 物品マスタ（ETCカード等の固定カテゴリ）。日報の高速代でETCカードを選ぶのに使う。
+      //  ★空なら LIFF 側（report.vue）は従来の固定カード（カード①〜⑦）にフォールバックする。
+      svc.from('assets').select('name')
+        .eq('active', true).eq('account_id', accountId).eq('category', 'etc_card')
+        .order('sort_order').order('name'),
     ])
     return json({
       ok: true,
@@ -103,6 +108,8 @@ Deno.serve(async (req) => {
       siteSubcontractors: siteSubs.data ?? [],
       workCategories: categories.data ?? [],
       siteCategoryHours: catHours.data ?? [],
+      // ETCカード等の物品名（今は etc_card のみ）。日報の高速代の選択肢に使う
+      etcCards: (assets.data ?? []).map((a: any) => a.name),
     })
   }
 
@@ -242,6 +249,116 @@ Deno.serve(async (req) => {
     await Promise.all([
       svc.from('work_categories').update({ sort_order: rb.sort_order }).eq('id', ra.id).eq('account_id', accountId),
       svc.from('work_categories').update({ sort_order: ra.sort_order }).eq('id', rb.id).eq('account_id', accountId),
+    ])
+    return json({ ok: true })
+  }
+
+  // ── 物品マスタ（ETCカード等）──────────────────────────────
+  //  ★assets は RLS 有効・authenticated の書き込みを剥がしてあるので、読みも書きもここを通す。
+  //   カテゴリは今は 'etc_card'（ETCカード）のみ。日報の高速代のETCカード選択がこれを参照する。
+  if (body.action === 'assets') {
+    const category = typeof body.category === 'string' && body.category ? body.category : 'etc_card'
+    const { data, error } = await svc.from('assets')
+      .select('id, category, name, sort_order, active')
+      .eq('account_id', accountId).eq('category', category)
+      .order('sort_order').order('name')
+    if (error) { console.error('[master-data] assets failed:', error); return json({ ok: false, error: 'fetch_failed' }, 500) }
+    return json({ ok: true, assets: data ?? [] })
+  }
+
+  if (body.action === 'asset-save' || body.action === 'asset-delete'
+      || body.action === 'asset-move' || body.action === 'asset-generate') {
+    // ★権限はサーバで確認する（会社全体の物品設定＝経営系。現場管理者は含めない）
+    const { data: w } = await svc.from('workers').select('permission_role')
+      .eq('id', caller.workerId).eq('account_id', accountId).maybeSingle()
+    const role = (w?.permission_role as string) ?? null   // role 無し＝純オーナーは通す
+    if (role !== null && !CATEGORY_MANAGE_ROLES.includes(role)) {
+      return json({ ok: false, error: 'ASSET_FORBIDDEN' }, 403)
+    }
+    const category = typeof body.category === 'string' && body.category ? body.category : 'etc_card'
+
+    // ── 枚数を指定して連番デフォルト名で一括作成（丸一1, 丸一2 …）──
+    //  ★既存の「丸一<数字>」の最大値の続きから採番する（編集で欠番/改名があっても衝突しない）。
+    if (body.action === 'asset-generate') {
+      const count = Math.max(1, Math.min(100, Math.floor(Number(body.count) || 0)))
+      if (!count) return json({ ok: false, error: 'count_required' }, 400)
+      const PREFIX = typeof body.prefix === 'string' && body.prefix.trim() ? body.prefix.trim() : '丸一'
+      const { data: existing } = await svc.from('assets')
+        .select('name, sort_order').eq('account_id', accountId).eq('category', category)
+      const esc = PREFIX.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const re = new RegExp('^' + esc + '(\\d+)$')
+      let maxNum = 0, maxSort = 0
+      for (const r of (existing ?? []) as any[]) {
+        const m = String(r.name ?? '').match(re)
+        if (m) maxNum = Math.max(maxNum, Number(m[1]))
+        maxSort = Math.max(maxSort, Number(r.sort_order) || 0)
+      }
+      const rows = Array.from({ length: count }, (_, i) => ({
+        account_id: accountId, category,
+        name: `${PREFIX}${maxNum + i + 1}`,
+        sort_order: maxSort + (i + 1) * 10,
+      }))
+      const { error } = await svc.from('assets').insert(rows)
+      if (error) {
+        const dup = String(error.message ?? '').includes('assets_name_uniq')
+        console.error('[master-data] asset-generate failed:', error)
+        return json({ ok: false, error: dup ? 'DUPLICATE_NAME' : 'save_failed' }, dup ? 409 : 500)
+      }
+      return json({ ok: true, created: rows.length })
+    }
+
+    if (body.action === 'asset-save') {
+      const nm = typeof body.name === 'string' ? body.name.trim() : ''
+      if (!nm) return json({ ok: false, error: 'name_required' }, 400)
+      if (typeof body.id === 'string' && body.id) {
+        // ★account_id でも絞る＝他テナントのIDを渡されても触れない。0件更新は not_found を返す。
+        const { data: updated, error } = await svc.from('assets')
+          .update({ name: nm, active: body.active !== false, updated_at: new Date().toISOString() })
+          .eq('id', body.id).eq('account_id', accountId).select('id')
+        if (error) {
+          const dup = String(error.message ?? '').includes('assets_name_uniq')
+          console.error('[master-data] asset-save failed:', error)
+          return json({ ok: false, error: dup ? 'DUPLICATE_NAME' : 'save_failed' }, dup ? 409 : 500)
+        }
+        if (!updated || updated.length === 0) return json({ ok: false, error: 'not_found' }, 404)
+        return json({ ok: true })
+      }
+      const { data: maxRow } = await svc.from('assets')
+        .select('sort_order').eq('account_id', accountId).eq('category', category)
+        .order('sort_order', { ascending: false }).limit(1).maybeSingle()
+      const { error } = await svc.from('assets')
+        .insert({ account_id: accountId, category, name: nm, sort_order: ((maxRow?.sort_order as number) ?? 0) + 10 })
+      if (error) {
+        const dup = String(error.message ?? '').includes('assets_name_uniq')
+        console.error('[master-data] asset-insert failed:', error)
+        return json({ ok: false, error: dup ? 'DUPLICATE_NAME' : 'save_failed' }, dup ? 409 : 500)
+      }
+      return json({ ok: true })
+    }
+
+    if (body.action === 'asset-delete') {
+      const id = typeof body.id === 'string' ? body.id : ''
+      if (!id) return json({ ok: false, error: 'id_required' }, 400)
+      // ★物品名は日報 JSON の中に文字列スナップショットで残る（FK ではない）ので、
+      //  削除しても過去日報の表示は壊れない。使用中チェックは不要。
+      const { data: deleted, error } = await svc.from('assets')
+        .delete().eq('id', id).eq('account_id', accountId).select('id')
+      if (error) { console.error('[master-data] asset-delete failed:', error); return json({ ok: false, error: 'delete_failed' }, 500) }
+      if (!deleted || deleted.length === 0) return json({ ok: false, error: 'not_found' }, 404)
+      return json({ ok: true })
+    }
+
+    // asset-move: 並び替え（2件の sort_order を入れ替える）
+    const a = typeof body.id === 'string' ? body.id : ''
+    const b = typeof body.otherId === 'string' ? body.otherId : ''
+    if (!a || !b) return json({ ok: false, error: 'ids_required' }, 400)
+    const { data: rows } = await svc.from('assets')
+      .select('id, sort_order').eq('account_id', accountId).in('id', [a, b])
+    if (!rows || rows.length !== 2) return json({ ok: false, error: 'not_found' }, 404)
+    const ra = rows.find((r: any) => r.id === a)!, rb = rows.find((r: any) => r.id === b)!
+    await Promise.all([
+      svc.from('assets').update({ sort_order: rb.sort_order }).eq('id', ra.id).eq('account_id', accountId),
+      svc.from('assets').update({ sort_order: ra.sort_order }).eq('id', rb.id).eq('account_id', accountId),
     ])
     return json({ ok: true })
   }

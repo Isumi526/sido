@@ -50,6 +50,8 @@ export const router = createRouter({
     { path: '/sites/:id',    component: () => import('../pages/site-detail.vue') },
     // 作業区分は会社全体の設定＝経営系。現場管理者には触らせない（EF 側でも同じ判定をしている）
     { path: '/work-categories', component: () => import('../pages/work-categories.vue'), meta: { management: true } },
+    // 物品マスタ（ETCカード等）。会社全体の設定＝経営系（EF 側でも同じ判定をしている）
+    { path: '/assets', component: () => import('../pages/assets.vue'), meta: { management: true } },
     { path: '/chats',        component: () => import('../pages/chats.vue') },
     { path: '/chats/account', component: () => import('../pages/account-chat.vue') },
     { path: '/chats/:id',    component: () => import('../pages/chat-detail.vue') },

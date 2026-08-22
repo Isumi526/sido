@@ -156,6 +156,7 @@ export const useMaster = () => {
       siteBreaks,
       workCategories,
       categoryHours,
+      etcCards:       (r.etcCards ?? []) as string[],
     }
 
     master.value = data
@@ -276,6 +277,8 @@ export const useMaster = () => {
     siteNames:           computed(() => master.value.sites.slice()),
     workCategories:      computed(() => master.value.workCategories ?? []),
     categoryHours:       computed(() => master.value.categoryHours ?? {}),
+    // 物品マスタ（ETCカード）の名前一覧。空なら report 側は従来の固定カードにフォールバックする
+    etcCardNames:        computed(() => master.value.etcCards ?? []),
     siteContractors:     computed(() => master.value.siteContractors ?? {}),
     siteWorkTimes:       computed(() => master.value.siteWorkTimes ?? {}),
     siteBreaks:          computed(() => master.value.siteBreaks ?? {}),
