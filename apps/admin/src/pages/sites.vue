@@ -99,10 +99,6 @@
         </div>
         <!-- ③ 工事内容 -->
         <div class="field">
-          <label>工事種類</label>
-          <input v-model="modal.construction_type" class="input" placeholder="例：内装・改修" />
-        </div>
-        <div class="field">
           <label>工事内容</label>
           <textarea v-model="modal.construction_details" class="input" rows="2" placeholder="例：1F内装ボード・クロス工事 一式"></textarea>
         </div>
@@ -163,11 +159,6 @@
           <div v-if="hoursPreview.ignored" class="hp-warn" data-testid="hours-preview-ignored">
             休憩{{ hoursPreview.ignored }}件が勤務時間の外にあります。実働からは引かれません。
           </div>
-        </div>
-        <!-- ⑤ メモ -->
-        <div class="field">
-          <label>メモ</label>
-          <textarea v-model="modal.memo" class="input" rows="2" placeholder="任意"></textarea>
         </div>
         <!-- ⑥ 絞り込み（協力業者・長いリストは添付の直前＝最下部へ） -->
         <div class="field">
