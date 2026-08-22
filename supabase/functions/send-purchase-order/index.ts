@@ -24,13 +24,17 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST')    return json({ error: 'Method not allowed' }, 405)
 
   let order_id = ''
+  let subject: string | null = null
+  let message: string | null = null
   try {
     const body = await req.json()
     order_id   = (body.order_id ?? '').toString()
+    subject    = body.subject != null ? String(body.subject) : null   // #46 件名の編集(任意)
+    message    = body.message != null ? String(body.message) : null   // #46 本文メッセージの編集(任意)
   } catch { /* 空/不正body */ }
 
   // 呼び出し元JWT（admin）を _shared に渡し、認可read（RLSスコープ）に使う
   const callerAuth = req.headers.get('Authorization')
-  const { status, body } = await sendPurchaseOrder({ order_id, send: true, callerAuth })
+  const { status, body } = await sendPurchaseOrder({ order_id, send: true, callerAuth, subject, message })
   return json(body, status)
 })
