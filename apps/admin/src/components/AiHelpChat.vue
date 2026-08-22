@@ -46,6 +46,10 @@
         <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden
                data-testid="ai-attach-input" :disabled="thinking" @change="onPickFiles" />
       </label>
+      <button v-if="speechSupported" type="button" class="btn-mic" :class="{ listening }" :disabled="thinking"
+              :title="listening ? '音声入力を止める' : '音声で入力'" data-testid="ai-mic" @click="toggleMic">
+        <span class="material-symbols-rounded">{{ listening ? 'stop_circle' : 'mic' }}</span>
+      </button>
       <textarea v-model="draft" class="composer-input" rows="2" placeholder="質問を入力…（画像も添付できます / ⌘・Ctrl+Enterで送信）" :disabled="thinking" @paste="onPaste" @keydown.enter.meta.prevent="send()" @keydown.enter.ctrl.prevent="send()"></textarea>
       <button class="btn-send" :disabled="thinking || (!draft.trim() && !attachments.length)" data-testid="ai-send" @click="send()">送信</button>
     </div>
@@ -75,6 +79,9 @@
 import { ref, nextTick } from 'vue'
 import { supabase } from '../lib/supabase'
 import { compressImageIfNeeded, formatMB } from '../lib/chatAttachmentLimits'
+
+// 画面文脈（FABの「これ何？」やウィジェットから渡される今いる画面）。省略時は文脈なしで従来どおり動く。
+const props = defineProps<{ screenContext?: { path: string; name: string } | null }>()
 
 const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
 const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
@@ -178,6 +185,7 @@ async function send(optionText?: string) {
   const r = await callEF('ai-chat', {
     message: msg, history: messages.value.slice(-9, -1), allowClarify,
     images: sending.map(a => ({ mimeType: a.mimeType, data: a.data })),
+    screenContext: props.screenContext ?? null,
   })
   thinking.value = false
   if (r?.ok) {
@@ -209,6 +217,48 @@ async function submitBug() {
   if (r?.ok) { lastTicketUrl.value = r.url ?? ''; bug.value = null }
   else bugError.value = '起票に失敗しました: ' + (r?.error || '時間をおいて再度お試しください。')
 }
+
+// ── 音声入力（Web Speech API）。未対応ブラウザではボタン自体を出さない（押しても無反応を作らない）──
+const SpeechRecognitionCtor: any =
+  typeof window !== 'undefined' ? ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition) : null
+const speechSupported = !!SpeechRecognitionCtor
+const listening = ref(false)
+let recognition: any = null
+let draftBeforeVoice = ''
+
+function toggleMic() {
+  if (!speechSupported || thinking.value) return
+  if (listening.value) { stopMic(); return }
+  try {
+    recognition = new SpeechRecognitionCtor()
+    recognition.lang = 'ja-JP'
+    recognition.interimResults = true
+    recognition.continuous = false
+    // 既存の入力に追記する（音声で全消しにしない）
+    draftBeforeVoice = draft.value ? draft.value.replace(/\s*$/, '') + ' ' : ''
+    recognition.onresult = (e: any) => {
+      let transcript = ''
+      for (let i = 0; i < e.results.length; i++) transcript += e.results[i][0].transcript
+      draft.value = draftBeforeVoice + transcript
+    }
+    recognition.onerror = () => { listening.value = false }
+    recognition.onend = () => { listening.value = false; recognition = null }
+    recognition.start()
+    listening.value = true
+  } catch { listening.value = false; recognition = null }
+}
+function stopMic() {
+  try { recognition?.stop() } catch { /* 停止済みでも無視 */ }
+  listening.value = false
+}
+
+// FAB横の「これ何？」から呼ばれる。今いる画面名を文脈にして最初の質問を送る。
+function askAboutScreen(ctx?: { path: string; name: string } | null) {
+  if (thinking.value) return
+  const name = ctx?.name || props.screenContext?.name || 'この画面'
+  void send(`「${name}」画面について教えてください。ここで何ができますか？`)
+}
+defineExpose({ askAboutScreen })
 </script>
 
 <style scoped>
@@ -239,6 +289,10 @@ async function submitBug() {
 .composer.dragging { outline: 2px dashed #2563eb; outline-offset: 4px; border-radius: 10px; }
 .btn-attach { display: grid; place-items: center; width: 40px; border: 1px solid #ddd; border-radius: 10px; cursor: pointer; color: #555; background: #fff; }
 .btn-attach.disabled { opacity: .5; pointer-events: none; }
+.btn-mic { display: grid; place-items: center; width: 40px; border: 1px solid #ddd; border-radius: 10px; cursor: pointer; color: #555; background: #fff; flex-shrink: 0; }
+.btn-mic:disabled { opacity: .5; cursor: default; }
+.btn-mic.listening { color: #fff; background: #E53935; border-color: #E53935; animation: mic-pulse 1s ease-in-out infinite; }
+@keyframes mic-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(229,57,53,.5); } 50% { box-shadow: 0 0 0 6px rgba(229,57,53,0); } }
 .bubble-images { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
 .bubble-img { max-width: 180px; max-height: 180px; border-radius: 8px; display: block; }
 .composer-input { flex: 1; border: 1px solid #ddd; border-radius: 10px; padding: 11px 14px; font-size: 14px; font-family: inherit; resize: vertical; line-height: 1.5; }
