@@ -82,6 +82,10 @@
             <input v-model="modal.name" class="input" placeholder="例：○○工務店" />
           </div>
           <div class="field">
+            <label>読み仮名</label>
+            <input v-model="modal.name_kana" class="input" placeholder="例：まるまるこうむてん" />
+          </div>
+          <div class="field">
             <label>区分 <span class="req">*</span></label>
             <select v-model="modal.category" class="input">
               <option value="" disabled>選択してください</option>
@@ -206,7 +210,7 @@ import { getAccountId } from '../lib/account'
 
 type Contact = { id?: string; name: string; email: string | null; phone: string | null }
 type Sub = {
-  id: string; name: string; active: boolean; category: string | null; unit_price: number | null
+  id: string; name: string; name_kana: string | null; active: boolean; category: string | null; unit_price: number | null
   representative_name: string | null; mobile_phone: string | null; office_phone: string | null
   email: string | null; service_areas: string[]; is_deleted: boolean
   trade_types: string[]
@@ -241,7 +245,7 @@ const mergePick   = ref<string[]>([])
 const mergeModal  = ref<{ subs: Sub[] } | null>(null)
 const mergeTarget = ref('')
 
-const SUB_COLS = 'id, name, active, category, unit_price, representative_name, mobile_phone, office_phone, email, service_areas, is_deleted, address, bank_name, bank_branch, bank_account_type, bank_account_number, bank_account_holder, registration_status, registration_submitted_at'
+const SUB_COLS = 'id, name, name_kana, active, category, unit_price, representative_name, mobile_phone, office_phone, email, service_areas, is_deleted, address, bank_name, bank_branch, bank_account_type, bank_account_number, bank_account_holder, registration_status, registration_submitted_at'
 
 const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
 const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
@@ -341,8 +345,8 @@ const filtered = computed(() => {
     if (filterTrade.value && !s.trade_types.includes(filterTrade.value)) return false
     if (area && !s.service_areas.some((a) => a.includes(area))) return false
     return true
-  // 五十音順（日本語ロケール照合）で表示。読み仮名カラムは持たないため name を ja で比較。
-  }).sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '', 'ja'))
+  // 五十音順（日本語ロケール照合）。読み仮名があれば優先し、無ければ name にフォールバック（#37）。
+  }).sort((a, b) => (a.name_kana || a.name || '').localeCompare(b.name_kana || b.name || '', 'ja'))
 })
 
 // 編集モーダルの工種を「プリセット選択分」と「自由追加分」に分けて扱う
@@ -392,6 +396,7 @@ async function save() {
     const accountId = await getAccountId()
     const payload = {
       name:                modal.value.name.trim(),
+      name_kana:           modal.value.name_kana?.trim() || null,
       category:            modal.value.category,
       unit_price:          modal.value.unit_price || null,
       representative_name: modal.value.representative_name?.trim() || null,
