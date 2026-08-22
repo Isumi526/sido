@@ -136,6 +136,7 @@
             <span class="settle-pay">振込額（立替）<strong>{{ yen(selected.tategaeTotal) }}</strong></span>
             <span class="settle-amt">経費合計 {{ yen(selected.total) }}（{{ selected.count }}件）</span>
             <span v-if="selected.settlement?.reject_reason && selected.status === '差し戻し'" class="settle-reason">理由: {{ selected.settlement.reject_reason }}</span>
+            <span v-if="selected.settlement?.apply_comment" class="settle-comment">申請コメント: {{ selected.settlement.apply_comment }}</span>
             <span v-if="selected.status === '支払い済み' && selected.settlement?.paid_on" class="settle-paid-info">支払日 {{ selected.settlement.paid_on }}</span>
             <template v-if="selected.status === '申請中'">
               <button class="btn-reject" @click="openReject(selected)">差し戻し</button>
@@ -878,6 +879,7 @@ watch(dateFrom, load)
 .settle-pay strong { font-size: 17px; font-weight: 800; margin-left: 4px; }
 .settle-amt { font-size: 12px; color: #888; }
 .settle-reason { font-size: 12px; color: #c0392b; flex-basis: 100%; }
+.settle-comment { font-size: 12px; color: #475569; flex-basis: 100%; white-space: pre-wrap; }
 .settle-hint { font-size: 11px; color: #999; margin: 0 0 16px; }
 .pdf-row { display: flex; align-items: center; gap: 10px; margin: 0 0 16px; flex-wrap: wrap; }
 .pdf-label { font-size: 12px; color: #888; font-weight: 700; }
