@@ -786,8 +786,11 @@ watch(dateFrom, load)
   .no-print { display: none !important; }
   .print-only { display: block !important; }
   .pdf-hide-row { display: none !important; }   /* 請求書(立替のみ)で非立替行を隠す */
-  .detail-table { font-size: 11px; }
-  .detail-table th, .detail-table td { padding: 4px 6px !important; }
+  .detail-table { font-size: 10px; }
+  /* 行の縦幅のバラつき対策（2026-08-22）：上揃えで基準を合わせ、折返しの無い列（日付・数量・金額）は
+     nowrap で1行に固定して不要な改行を防ぐ。品名・支払先など長文列は可読性のため折返しは許容する。 */
+  .detail-table th, .detail-table td { padding: 4px 6px !important; vertical-align: top; }
+  .detail-table td.date-cell, .detail-table td.num { white-space: nowrap; }
   .receipt-link { text-decoration: none; }
 }
 </style>
