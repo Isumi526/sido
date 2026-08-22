@@ -86,12 +86,14 @@ Deno.serve(async(req)=>{
   const auth=await getUser(req)
   if(!auth.ok)return json({ok:false,error:'unauthorized'},401)
   if(!API_KEY)return json({ok:false,error:'ai_unconfigured'},503)
-  let message='';let history:any[]=[];let allowClarify=true;let images:{mimeType:string;data:string}[]=[]
+  let message='';let history:any[]=[];let allowClarify=true;let images:{mimeType:string;data:string}[]=[];let screenContext:{path?:string;name?:string}|null=null
   try{
     const b=await req.json()
     message=(b.message??'').toString().slice(0,2000)
     history=Array.isArray(b.history)?b.history.slice(-8):[]
     allowClarify=b.allowClarify!==false
+    // 画面文脈（管理画面のどのページから聞いているか）。曖昧な質問をこの画面の話として解決するヒント。
+    if(b.screenContext&&typeof b.screenContext==='object')screenContext={path:String(b.screenContext.path??'').slice(0,120),name:String(b.screenContext.name??'').slice(0,60)}
     // 画像添付（複数可）。Gemini の inlineData にそのまま渡す。
     //  ★制限を入れる理由: base64 は EF のリクエスト上限と Gemini のトークンを直に食う。
     //   枚数・1枚あたりのサイズ・MIMEを弾いておかないと 502 になって原因が分かりにくい。
@@ -109,7 +111,8 @@ Deno.serve(async(req)=>{
   // 画像だけ送られた場合も通す（「これ何？」と画像だけ投げる使い方があるため）
   if(!message.trim()&&images.length===0)return json({ok:false,error:'empty'},400)
   const faqBlock=await buildFaqBlock(auth.accountSlug)
-  const system=SYSTEM+faqBlock+(allowClarify?CLARIFY_RULE:'')
+  const screenBlock=screenContext&&screenContext.name?`\n\n【ユーザーが今いる画面】「${screenContext.name}」（パス: ${screenContext.path}）。ユーザーの質問はこの画面に関する可能性が高い。文脈が曖昧な時はこの画面の機能・操作として答える。`:''
+  const system=SYSTEM+screenBlock+faqBlock+(allowClarify?CLARIFY_RULE:'')
   // 最新の user turn にだけ画像を載せる（履歴に画像を積むとトークンが膨らむ）
   const userParts:any[]=[...images.map(im=>({inlineData:{mimeType:im.mimeType,data:im.data}}))]
   userParts.push({text:message.trim()||'この画像について教えてください。'})
