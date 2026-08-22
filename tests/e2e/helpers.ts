@@ -142,6 +142,20 @@ export async function getAccountId(): Promise<string> {
 }
 
 /**
+ * 見積の案件(estimate_projects)をDBに直接作り id を返す（#40）。
+ * 見積の入口を「見積一覧の＋新規見積」に一本化し、/estimate-builder 直打ちの新規カードを廃止したため、
+ * E2E は案件をDBで用意して `/estimate-builder?project=<id>` へ直接遷移する。
+ */
+export async function createEstimateProject(name: string): Promise<string> {
+  const accountId = await getAccountId()
+  const rows = await restSrv('estimate_projects', {
+    method: 'POST', headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ account_id: accountId, name }),
+  })
+  return rows[0].id
+}
+
+/**
  * 見積もり機能のフィーチャーフラグ（settings.estimate_feature_enabled・2026-08-09 新設）。
  * アカウント単位の settings 行で、本番は 8/19 の解禁までOFF。
  *

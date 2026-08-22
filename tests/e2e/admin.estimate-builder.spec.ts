@@ -6,7 +6,7 @@
 //   ※ estimate_* は RLS 有効（admin authenticated のみ）。検証/cleanup は service_role(restSrv)。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { restSrv, getAccountId, openBuilderTab, newBlockFirstRow } from './helpers'
+import { restSrv, getAccountId, openBuilderTab, newBlockFirstRow, createEstimateProject } from './helpers'
 
 const TS = Date.now()
 const PROJ = `E2E見積_${TS}`
@@ -73,12 +73,9 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await post('estimate_trades', { account_id: accountId, name: TRADE_A })
     await post('estimate_trades', { account_id: accountId, name: TRADE_B })
 
-    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-    await expect(page.locator('h1')).toContainText('見積もり')
-
-    // 案件を追加
-    await page.locator('[data-testid="new-project-name"]').fill(PROJ)
-    await page.locator('[data-testid="add-project"]').click()
+    // 見積入口一本化(#40): 案件はDBで作り ?project= で開く（直打ちの新規カードは廃止）
+    const __pidA = await createEstimateProject(PROJ)
+    await page.goto(`/estimate-builder?project=${__pidA}`, { waitUntil: 'networkidle' })
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ)
 
     // 明細3行（軽鉄2000・ボード5000・軽鉄3000）
@@ -122,9 +119,8 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
   // ★2026-07-29(R28): 材料マスタを廃止したので、候補の出所は
   //   「商社単価表 ＋ 過去の明細入力履歴」。保存した明細がそのまま候補になる。
   test('E5: 初回入力した名称が、再訪時に予測変換候補に出る（材料マスタは作らない）', async ({ page }) => {
-    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-    await page.locator('[data-testid="new-project-name"]').fill(PROJ2)
-    await page.locator('[data-testid="add-project"]').click()
+    const __pid1 = await createEstimateProject(PROJ2)
+    await page.goto(`/estimate-builder?project=${__pid1}`, { waitUntil: 'networkidle' })
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ2)
 
     // 新規材料名で1行入力 → 保存
@@ -154,9 +150,8 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
   // ★2026-07-29(R28): 材料マスタを廃止したので material_id は新規では付かない。
   //   候補と単位補完は「過去の明細入力履歴」から効く（保存＝そのまま履歴）。
   test('E6: 過去に打った名称を選ぶと単位が自動補完される', async ({ page }) => {
-    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-    await page.locator('[data-testid="new-project-name"]').fill(PROJ3)
-    await page.locator('[data-testid="add-project"]').click()
+    const __pid2 = await createEstimateProject(PROJ3)
+    await page.goto(`/estimate-builder?project=${__pid2}`, { waitUntil: 'networkidle' })
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ3)
 
     // 1行目: 新しい名称を単位付きで入力 → 保存（これが次回の候補になる）
@@ -379,9 +374,8 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     const accountId = await getAccountId()
     await restSrv('estimate_projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ account_id: accountId, name: DUP_PROJ }) })
 
-    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-    await page.locator('[data-testid="new-project-name"]').fill(DUP_PROJ)
-    await page.locator('[data-testid="add-project"]').click()
+    const __pid3 = await createEstimateProject(DUP_PROJ)
+    await page.goto(`/estimate-builder?project=${__pid3}`, { waitUntil: 'networkidle' })
 
     // エラー表示・DBは1件のまま（増えない）
     await expect(page.locator('[data-testid="project-err"]')).toContainText('既にあります')
