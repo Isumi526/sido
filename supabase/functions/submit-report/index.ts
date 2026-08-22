@@ -96,6 +96,11 @@ Deno.serve(async (req) => {
     const results = await Promise.allSettled(targets.map(id => pushLineText(id, text, LINE_TOKEN)))
     console.log('[submit-report] LINE push results:', JSON.stringify(results))
 
+    // 各現場の責任者へも個別に通知する（#f55254d4）。per-tenant 厳格（全クエリ account_id スコープ）・
+    //  自分が責任者なら二重送信しない・best-effort（失敗しても日報通知は妨げない）。
+    notifyResponsibles(sites, accountSlug, `【担当現場に日報が提出されました】\n\n${text}`, senderId).catch(e =>
+      console.error('[submit-report] responsible notify failed:', e))
+
     if (results.some(r => r.status === 'fulfilled' && r.value === true)) {
       markNotified(senderId, date, accountSlug).catch(e =>
         console.error('[submit-report] line_notified_at update failed:', e)
@@ -108,6 +113,44 @@ Deno.serve(async (req) => {
     return json({ error: String(e) }, 500)
   }
 })
+
+// 各現場の現場責任者(responsible_worker_id)の個人LINEへ日報提出を通知する（#f55254d4）。
+// ★per-tenant厳格: accountSlug→accountId を引き、sites/workers/users の全クエリを account_id で絞る
+//   （他テナントの現場・責任者・LINE IDに触れない）。senderLineId(=提出者)には送らない。
+async function notifyResponsibles(
+  sites: any[], accountSlug: string | undefined, text: string, senderLineId: string | undefined,
+) {
+  if (!accountSlug || !LINE_TOKEN) return
+  const { data: account } = await supabase.from('accounts').select('id').eq('slug', accountSlug).maybeSingle()
+  if (!account) return
+  const accountId = account.id
+
+  // 対象現場のsite_idを集める（payloadにsite_idがあれば優先・無ければ現場名で自テナント内解決）。
+  const siteIds = new Set<string>()
+  const namesNoId: string[] = []
+  for (const s of (sites ?? [])) {
+    if (s?.site_id) siteIds.add(String(s.site_id))
+    else if (s?.siteName && s.siteName !== '__unset__') namesNoId.push(String(s.siteName))
+  }
+  if (namesNoId.length) {
+    const { data: byName } = await supabase.from('sites').select('id').eq('account_id', accountId).in('name', namesNoId)
+    for (const r of (byName ?? [])) siteIds.add(String((r as any).id))
+  }
+  if (!siteIds.size) return
+
+  const { data: siteRows } = await supabase.from('sites')
+    .select('responsible_worker_id').eq('account_id', accountId).in('id', [...siteIds])
+  const workerIds = [...new Set((siteRows ?? []).map((r: any) => r.responsible_worker_id).filter(Boolean))]
+  if (!workerIds.length) return
+
+  const { data: us } = await supabase.from('users')
+    .select('line_user_id').eq('account_id', accountId).in('worker_id', workerIds)
+  const lineIds = [...new Set((us ?? []).map((u: any) => u.line_user_id).filter(Boolean))]
+    .filter((id) => id && id !== senderLineId)  // 提出者本人には二重送信しない
+  if (!lineIds.length) return
+
+  await Promise.allSettled(lineIds.map((id) => pushLineText(id as string, text, LINE_TOKEN)))
+}
 
 async function markNotified(lineUserId: string | undefined, date: string, accountSlug: string | undefined) {
   if (!lineUserId || !date || !accountSlug) return

@@ -9,6 +9,9 @@
   "scrollToBottom": "最下部へ",
   "reply": "リプライ",
   "copy": "コピー",
+  "invite": "招待リンクを発行",
+  "inviteCopied": "招待リンクをコピーしました。LINE等で共有してください。",
+  "inviteFailed": "招待リンクの発行に失敗しました",
   "replyClear": "返信をキャンセル",
   "today": "今日",
   "yesterday": "昨日"

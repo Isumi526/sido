@@ -71,7 +71,7 @@
             </div>
             <p v-if="d.error" class="pe-draft-err" data-testid="pe-draft-err">{{ d.error }}</p>
             <div class="pe-draft-grid">
-              <input v-model="d.date" type="date" class="pe-input" data-testid="pe-draft-date" />
+              <input v-model="d.date" type="date" class="pe-input" data-testid="pe-draft-date" @change="ensureWorkedSites(d.date)" />
               <select v-model="d.account_category" class="pe-input" data-testid="pe-draft-account">
                 <option v-for="o in EXPENSE_ACCOUNT_OPTIONS" :key="o" :value="o">{{ o }}</option>
               </select>
@@ -80,6 +80,18 @@
               <input v-model="d.registration_number" class="pe-input" placeholder="登録番号(T...)" data-testid="pe-draft-regno" />
               <input v-model="d.note" class="pe-input" placeholder="用途・内訳" data-testid="pe-draft-note" />
             </div>
+            <!-- ★その領収書の日付にその作業員が出勤していた現場を上に出す（無ければ全現場）。任意。 -->
+            <select class="pe-input" data-testid="pe-draft-site"
+                    :value="siteChoiceValue(d)"
+                    @change="applySiteChoice(d, ($event.target as HTMLSelectElement).value, d.date)">
+              <option value="">現場を選ぶ（任意）</option>
+              <optgroup v-if="siteOptions(d.date).worked.length" label="この日に出勤した現場">
+                <option v-for="o in siteOptions(d.date).worked" :key="`dw-${d.id}-${o.value}`" :value="o.value">{{ o.name }}</option>
+              </optgroup>
+              <optgroup label="すべての現場">
+                <option v-for="o in siteOptions(d.date).all" :key="`da-${d.id}-${o.value}`" :value="o.value">{{ o.name }}</option>
+              </optgroup>
+            </select>
             <!-- 現場経費と同じ税務要件。一括登録でも素通りさせない -->
             <input v-if="requiresCompanions({ category: d.account_category, account: d.account_category })"
                    v-model="d.companions" class="pe-input" placeholder="同行者名（必須）" data-testid="pe-draft-companions" />
@@ -110,7 +122,20 @@
           <div class="pe-card-title">経費を登録（領収書なしでもOK）</div>
 
           <label class="pe-label">日付</label>
-          <input v-model="form.date" type="date" class="pe-input" data-testid="pe-date" />
+          <input v-model="form.date" type="date" class="pe-input" data-testid="pe-date" @change="ensureWorkedSites(form.date)" />
+
+          <label class="pe-label">現場（任意）</label>
+          <select class="pe-input" data-testid="pe-site"
+                  :value="siteChoiceValue(form)"
+                  @change="applySiteChoice(form, ($event.target as HTMLSelectElement).value, form.date)">
+            <option value="">現場を選ばない</option>
+            <optgroup v-if="siteOptions(form.date).worked.length" label="この日に出勤した現場">
+              <option v-for="o in siteOptions(form.date).worked" :key="`fw-${o.value}`" :value="o.value">{{ o.name }}</option>
+            </optgroup>
+            <optgroup label="すべての現場">
+              <option v-for="o in siteOptions(form.date).all" :key="`fa-${o.value}`" :value="o.value">{{ o.name }}</option>
+            </optgroup>
+          </select>
 
           <label class="pe-label">科目</label>
           <select v-model="form.account_category" class="pe-input" data-testid="pe-account">
@@ -186,6 +211,8 @@ const liff = useLiff()
 const config = useRuntimeConfig()
 const pe = usePersonalExpense()
 const receipt = useReceiptAnalysis()
+const dailyReports = useDailyReportsApi()
+const sitesApi = useSitesApi()
 const { resolve } = useCurrentUser()
 
 const loading = ref(true)
@@ -217,6 +244,8 @@ interface Draft {
   registration_number: string
   note: string
   tategae: boolean
+  site_id: string        // 紐付けた現場（任意・空は未選択）
+  site_name: string      // 表示用スナップショット
   token: string          // 1件につき1つ。再送/連打でも EF 側で1行にまとまる
 }
 const drafts = ref<Draft[]>([])
@@ -226,6 +255,71 @@ const batchMsg = ref('')
 const batchMsgOk = ref(false)
 const analyzedCount = ref(0)
 const savedCount = ref(0)
+
+// ── 領収書を「その日出勤していた現場」から選んで紐付ける（任意）──
+//  現場の候補は日報(daily_reports.sites[])から引く＝その日その作業員が出勤していた現場。
+//  打刻(attendance_logs)は運用に乗っていないので使わない。候補が無ければ全現場から選べる。
+type SiteOption = { id: string; name: string }
+const allSites = ref<SiteOption[]>([])                            // 全現場（フォールバック）
+const workedSitesByDate = ref<Record<string, SiteOption[]>>({})  // 日付→その日出勤した現場（キャッシュ）
+
+/** 保存済み日報の現場オブジェクトから表示名を作る（__unset__/空は除外・__other__はcustom名） */
+function siteLabel(s: any): string {
+  const raw = s?.siteName
+  if (!raw || raw === '__unset__') return ''
+  return raw === '__other__' ? (s?.customSiteName || '') : raw
+}
+
+/** その日その作業員が出勤していた現場を日報から引いてキャッシュする（1日1回） */
+async function ensureWorkedSites(date: string): Promise<void> {
+  if (!date || workedSitesByDate.value[date]) return
+  // 予約して二重取得を防ぐ（失敗しても [] のまま＝全現場フォールバック）
+  workedSitesByDate.value = { ...workedSitesByDate.value, [date]: [] }
+  try {
+    const rep = await dailyReports.one(date)
+    const out: SiteOption[] = []
+    const seen = new Set<string>()
+    for (const s of (rep?.sites ?? []) as any[]) {
+      const name = siteLabel(s)
+      if (!name) continue
+      const id = (s?.site_id as string) || ''
+      const key = id || name
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push({ id, name })
+    }
+    workedSitesByDate.value = { ...workedSitesByDate.value, [date]: out }
+  } catch { /* 取れなくても全現場から選べる */ }
+}
+
+/** select 用の選択肢。site_id が無い（新規現場で未解決）候補は名前で紐付ける（value=name:...） */
+function siteOptions(date: string): { worked: { value: string; name: string }[]; all: { value: string; name: string }[] } {
+  const worked = workedSitesByDate.value[date] ?? []
+  const workedIds = new Set(worked.map((s) => s.id).filter(Boolean))
+  const workedNames = new Set(worked.map((s) => s.name))
+  return {
+    worked: worked.map((s) => ({ value: s.id || `name:${s.name}`, name: s.name })),
+    all: allSites.value
+      .filter((s) => !workedIds.has(s.id) && !workedNames.has(s.name))
+      .map((s) => ({ value: s.id, name: s.name })),
+  }
+}
+
+/** 現在の紐付けを select の value に変換する */
+function siteChoiceValue(t: { site_id: string; site_name: string }): string {
+  if (t.site_id) return t.site_id
+  if (t.site_name) return `name:${t.site_name}`
+  return ''
+}
+
+/** select の選択結果を site_id / site_name に反映する */
+function applySiteChoice(t: { site_id: string; site_name: string }, value: string, date: string): void {
+  if (!value) { t.site_id = ''; t.site_name = ''; return }
+  if (value.startsWith('name:')) { t.site_id = ''; t.site_name = value.slice(5); return }
+  t.site_id = value
+  const pools = [...(workedSitesByDate.value[date] ?? []), ...allSites.value]
+  t.site_name = pools.find((s) => s.id === value)?.name ?? ''
+}
 
 // AI解析も登録も外部（Gemini / EF / Storage）を叩く。無制限に同時実行すると
 // レート制限や端末のメモリで逆に遅くなり失敗が増えるので上限を設ける。
@@ -258,6 +352,8 @@ const form = ref({
   registration_number: '',
   note: '',
   tategae: false,
+  site_id: '',
+  site_name: '',
 })
 
 const needsCompanions = computed(() =>
@@ -332,6 +428,7 @@ async function onAnalyzeBatch() {
         id: crypto.randomUUID(), file: f, status: 'ready', error: '',
         date: todayStr(), account_category: '旅費交通費', amount: 0,
         payee: '', companions: '', registration_number: '', note: '', tategae: false,
+        site_id: '', site_name: '',
         token: crypto.randomUUID(),
       }
       try {
@@ -358,6 +455,8 @@ async function onAnalyzeBatch() {
     })
     drafts.value = [...drafts.value, ...made]
     files.value = []
+    // 現場候補（その日出勤していた現場）を下書きの日付ぶん先読みする
+    await Promise.all([...new Set(made.map((d) => d.date))].map((dt) => ensureWorkedSites(dt)))
     const ng = made.filter((d) => d.status === 'failed').length
     aiMsg.value = ng
       ? `${made.length}件を読み込みました（うち${ng}件は要入力）。内容を確認してください`
@@ -424,6 +523,8 @@ async function onSubmitBatch() {
           registration_number: d.registration_number,
           companions: d.companions,
           note: d.note,
+          site_id: d.site_id || null,
+          site_name: d.site_name || null,
           file_urls: fileUrls,
           tategae: d.tategae,
           client_token: d.token,   // 連打・再実行しても二重計上しない（AC7）
@@ -486,11 +587,13 @@ async function onSubmit() {
       registration_number: form.value.registration_number,
       companions: form.value.companions,
       note: form.value.note,
+      site_id: form.value.site_id || null,
+      site_name: form.value.site_name || null,
       file_urls: fileUrls,
       tategae: form.value.tategae,
       client_token: submitToken.value,
     })
-    form.value = { date: todayStr(), account_category: '旅費交通費', amount: 0, payee: '', companions: '', registration_number: '', note: '', tategae: false }
+    form.value = { date: todayStr(), account_category: '旅費交通費', amount: 0, payee: '', companions: '', registration_number: '', note: '', tategae: false, site_id: '', site_name: '' }
     files.value = []
     submitToken.value = ''   // 次の登録は別の経費＝新しい token を発行する
     aiMsg.value = ''
@@ -514,6 +617,8 @@ onMounted(async () => {
   try {
     selfUser.value = await resolve()
     await refresh()
+    allSites.value = (await sitesApi.listSafe()).map((s) => ({ id: s.id, name: s.name }))
+    await ensureWorkedSites(form.value.date)
   } finally {
     loading.value = false
   }

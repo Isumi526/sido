@@ -31,12 +31,16 @@ Deno.serve(async (req) => {
   if (isProd())                 return json({ error: 'test function disabled in production' }, 403)
 
   let order_id = ''
+  let subject: string | null = null
+  let message: string | null = null
   try {
     const body = await req.json()
     order_id   = (body.order_id ?? '').toString()
+    subject    = body.subject != null ? String(body.subject) : null
+    message    = body.message != null ? String(body.message) : null
   } catch { /* 空/不正body */ }
 
   const callerAuth = req.headers.get('Authorization')
-  const { status, body } = await sendPurchaseOrder({ order_id, send: false, callerAuth })
+  const { status, body } = await sendPurchaseOrder({ order_id, send: false, callerAuth, subject, message })
   return json(body, status)
 })

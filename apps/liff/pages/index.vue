@@ -28,16 +28,6 @@
         <span class="material-symbols-rounded alert-arrow">chevron_right</span>
       </NuxtLink>
 
-      <!-- 未送信アラート -->
-      <div v-if="unsubmittedCount > 0" class="alert-card" @click="navigateTo('/report')">
-        <span class="material-symbols-rounded alert-icon">warning</span>
-        <div class="alert-body">
-          <div class="alert-title">{{ t('home.unsubmittedTitle', { count: unsubmittedCount }) }}</div>
-          <div class="alert-sub">{{ t('home.unsubmittedSub') }}</div>
-        </div>
-        <span class="material-symbols-rounded alert-arrow">chevron_right</span>
-      </div>
-
       <!-- 経費申請 締切案内 -->
       <NuxtLink v-if="deadlineBanner" class="deadline-card" to="/expense/download">
         <span class="material-symbols-rounded deadline-icon">schedule</span>
@@ -146,7 +136,6 @@ const NAV_ICON_COLORS: Record<string, string> = {
 function navIconColor(path: string): string { return NAV_ICON_COLORS[path] ?? '#64748b' }
 
 const currentUser      = ref<User | null>(null)
-const unsubmittedCount = ref(0)
 const accountId        = ref<string | null>(null)
 const proxyModalOpen   = ref(false)
 const proxyLoading     = ref(false)
@@ -200,7 +189,6 @@ async function openProxyModal() {
 async function selectProxy(worker: import('~/composables/useProxyMode').ProxyWorker) {
   proxy.setProxy(worker)
   proxyModalOpen.value = false
-  await refreshUnsubmittedCount()
 }
 
 onMounted(() => {
@@ -231,9 +219,6 @@ onMounted(async () => {
     if (user.worker_id) await proxy.fetchProxyTargets(user.worker_id)
     await refreshDeadlineBanner()
   }
-
-  // 未送信日報カウント（代理モード時はproxy対象、それ以外は自分）
-  await refreshUnsubmittedCount()
 })
 
 // 予定管理ナビの未読バッジ（#予定通知バッジ・2026-07-11）
@@ -241,76 +226,6 @@ onMounted(() => { refreshNotifBadge() })
 // チャット一覧ナビの未読バッジ（2026-07-14・現場情報ナビの未読メンションバッジから移設・集約）
 onMounted(() => { refreshSiteChatListBadge() })
 
-async function refreshUnsubmittedCount() {
-  // 代理モード時: proxy targetのuser_idを取得（なければ作成）
-  let targetUserId: string | null = null
-  const proxyT = proxy.proxyTarget.value
-  if (proxyT) {
-    const { data } = await supabase
-      .from('users')
-      .select('id')
-      .eq('worker_id', proxyT.id)
-      .maybeSingle()
-    if (data) {
-      targetUserId = data.id
-    } else {
-      // まだ日報がない場合は未送信カウント0（作成はreport送信時に行う）
-      unsubmittedCount.value = 0
-      return
-    }
-  } else {
-    targetUserId = currentUser.value?.id ?? null
-  }
-
-  if (!targetUserId) return
-
-  // JST で今日の日付を取得
-  const now   = new Date()
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-
-  // service_start_date を取得（未設定なら 30日前にフォールバック）
-  let fromStr = (() => {
-    const d = new Date(now); d.setDate(d.getDate() - 30)
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  })()
-  if (accountId.value) {
-    const { data: settingRows } = await supabase
-      .from('settings')
-      .select('value')
-      .eq('account_id', accountId.value)
-      .eq('key', 'service_start_date')
-      .limit(1)
-    if (settingRows?.[0]?.value) fromStr = settingRows[0].value
-  }
-
-  // 日報提出開始日(workers.report_start_date)があれば、それ以降のみ未送信対象にする（提出開始日より前はカウントしない）。
-  const { data: urow } = await supabase.from('users').select('worker_id').eq('id', targetUserId).maybeSingle()
-  if ((urow as any)?.worker_id) {
-    const { data: w } = await supabase.from('workers').select('report_start_date').eq('id', (urow as any).worker_id).maybeSingle()
-    const rsd = (w as any)?.report_start_date
-    if (rsd && rsd > fromStr) fromStr = rsd
-  }
-
-  // ★EF経由。daily_reports の直読みは他テナント分まで読めるため塞いだ（2026-08-15）
-  //  ★取得に失敗した時に空へ倒すと「全部未提出」と表示されるので、失敗は数えない
-  let submittedDates: Set<string>
-  try {
-    submittedDates = new Set(await useDailyReportsApi().submittedDates(fromStr, today, targetUserId))
-  } catch (e) {
-    console.error('[home] 未送信件数の算出に失敗:', e)
-    return 0
-  }
-
-  let count = 0
-  let cursor = fromStr
-  while (cursor <= today) {
-    if (!submittedDates.has(cursor)) count++
-    const d = new Date(cursor + 'T12:00:00')
-    d.setDate(d.getDate() + 1)
-    cursor = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  }
-  unsubmittedCount.value = count
-}
 </script>
 
 <style scoped>
@@ -334,19 +249,7 @@ async function refreshUnsubmittedCount() {
   display: flex; align-items: center; justify-content: center; padding: 4px;
 }
 
-/* 未送信アラート */
-.alert-card {
-  background: #fff; border-radius: 12px;
-  padding: 14px 16px; display: flex; align-items: center; gap: 12px;
-  box-shadow: 0 1px 4px rgba(0,0,0,.06);
-  border-left: 4px solid #f59e0b; cursor: pointer;
-}
-.alert-card:active { background: #fffbeb; }
-.alert-icon { color: #f59e0b; font-size: 26px; flex-shrink: 0;
-  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
-.alert-body { flex: 1; }
-.alert-title { font-size: 14px; font-weight: 700; color: #111; }
-.alert-sub   { font-size: 12px; color: #888; margin-top: 2px; }
+/* お知らせ/締切カード共通の矢印（未送信アラートは廃止したが .alert-arrow は notif/deadline で継続利用） */
 .alert-arrow { color: #ccc; font-size: 22px; flex-shrink: 0; }
 .deadline-card {
   background: #fff; border-radius: 12px;

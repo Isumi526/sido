@@ -5,6 +5,7 @@
         <HelpButton title="協力業者請求の使い方" :items="[
           '協力業者からの請求（支払）を登録・管理します。',
           '「＋ 新規請求」から、業者・対象・金額を入力して登録します。',
+          '協力業者以外の仕入先の請求書も、請求元区分を「その他仕入先」に切り替えて仕入先名を直接入力すれば登録できます。',
           '登録済みの請求は一覧から編集・確認できます。',
         ]" />
       </h1>
@@ -26,7 +27,11 @@
     <div v-if="!loading && invoices.length" class="filter-bar" data-testid="invoice-filter-bar">
       <select v-model="filterSiteId" class="inp filter-sel" data-testid="filter-site">
         <option value="">すべての現場</option>
-        <option v-for="s in filterSiteOptions" :key="s.id" :value="s.id">{{ s.label }}</option>
+        <template v-for="grp in filterSiteGroups" :key="grp.contractorName ?? '__unlinked__'">
+          <optgroup :label="grp.contractorName ?? '紐付けなし'">
+            <option v-for="s in grp.sites" :key="s.id" :value="s.id">{{ s.label }}</option>
+          </optgroup>
+        </template>
       </select>
       <select v-model="filterVendor" class="inp filter-sel" data-testid="filter-vendor">
         <option value="">すべての業者</option>
@@ -82,6 +87,34 @@
       </table>
     </div>
 
+    <!-- 業者別の小計（請求書との突き合わせ用。現在のタブ・絞り込みに連動）-->
+    <div v-if="!loading && visibleList.length" class="vendor-summary" data-testid="vendor-summary">
+      <button class="vendor-summary-head" data-testid="vendor-summary-toggle" @click="showVendorSummary = !showVendorSummary">
+        <span class="material-symbols-rounded vs-caret">{{ showVendorSummary ? 'expand_more' : 'chevron_right' }}</span>
+        業者別の合計（{{ tab === 'paid' ? '支払い済み' : '未払い' }}{{ filterSiteId || filterVendor ? '・絞り込み中' : '' }}／{{ vendorSummary.length }}社）
+        <span class="vs-grand">総合計 {{ yen(visibleTotal) }}</span>
+      </button>
+      <div v-if="showVendorSummary" class="vendor-summary-body">
+        <table class="table vendor-summary-table">
+          <thead>
+            <tr><th>業者</th><th class="num">件数</th><th class="num">合計(税込)</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in vendorSummary" :key="row.vendor" class="vs-row"
+                :class="{ active: filterVendor === row.vendor }"
+                data-testid="vendor-summary-row" @click="toggleVendorFilter(row.vendor)">
+              <td class="bold">{{ row.vendor }}</td>
+              <td class="num">{{ row.count }}</td>
+              <td class="num">{{ yen(row.total) }}</td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr class="vs-total-row"><td class="bold">合計</td><td class="num">{{ visibleList.length }}</td><td class="num bold" data-testid="vendor-summary-grand">{{ yen(visibleTotal) }}</td></tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
     <!-- 入力モーダル -->
     <div v-if="form" class="modal-overlay" @click.self="closeForm">
       <div class="modal">
@@ -108,14 +141,27 @@
           <p v-if="files.length" class="selected-files">選択中: {{ files.map(f => f.name).join('、') }}</p>
           <p v-if="aiMsg" class="ai-msg">{{ aiMsg }}</p>
 
+          <!-- 請求元区分（協力業者 / その他仕入先）。その他は仕入先名を自由入力できる＝登録口の間口を広げる -->
+          <div class="kind-row">
+            <span class="kind-label">請求元区分</span>
+            <div class="kind-toggle" data-testid="vendor-kind-toggle">
+              <button type="button" :class="{ active: form.vendor_kind !== 'other' }" data-testid="vendor-kind-subcontractor"
+                      @click="setVendorKind('subcontractor')">協力業者</button>
+              <button type="button" :class="{ active: form.vendor_kind === 'other' }" data-testid="vendor-kind-other"
+                      @click="setVendorKind('other')">その他仕入先</button>
+            </div>
+          </div>
           <!-- ヘッダ -->
           <div class="hd-grid">
-            <label class="fld"><span>協力業者 *</span>
+            <label v-if="form.vendor_kind !== 'other'" class="fld"><span>協力業者 *</span>
               <select v-model="form.subcontractor_id" class="inp" @change="onVendorSelect">
                 <option :value="null" disabled>選択してください</option>
                 <option v-for="s in subs" :key="s.id" :value="s.id">{{ s.name }}{{ s.category ? `（${s.category}）` : '' }}</option>
                 <option value="__new__">＋ 新規業者を登録…</option>
               </select>
+            </label>
+            <label v-else class="fld"><span>請求元（仕入先名）*</span>
+              <input v-model="form.vendor_name" class="inp" data-testid="vendor-name-free" placeholder="例：○○商店、△△リース" />
             </label>
             <label v-if="posForVendor.length" class="fld"><span>注文書（出来高請求の紐付け）</span>
               <select v-model="form.purchase_order_id" class="inp" data-testid="po-select">
@@ -145,7 +191,7 @@
             </label>
           </div>
           <!-- 新規業者の登録 -->
-          <div v-if="form.subcontractor_id === '__new__'" class="new-vendor">
+          <div v-if="form.subcontractor_id === '__new__' && form.vendor_kind !== 'other'" class="new-vendor">
             <input v-model="newVendor.name" class="inp" placeholder="業者名" />
             <select v-model="newVendor.category" class="inp">
               <option value="" disabled>区分を選択 *</option>
@@ -192,7 +238,11 @@
                          保存時に site_name が消えて原価が現場別集計から落ちる。 -->
                     <select v-else v-model="it.site_id" class="inp-sm inp-site">
                       <option :value="null">—</option>
-                      <option v-for="s in formSiteOptions" :key="s.id" :value="s.id">{{ s.label }}</option>
+                      <template v-for="grp in formSiteGroups" :key="grp.contractorName ?? '__unlinked__'">
+                        <optgroup :label="grp.contractorName ?? '紐付けなし'">
+                          <option v-for="s in grp.sites" :key="s.id" :value="s.id">{{ s.label }}</option>
+                        </optgroup>
+                      </template>
                       <option value="__new__">＋ 新規現場…</option>
                     </select>
                   </td>
@@ -293,7 +343,7 @@ interface Item {
   _newSiteName?: string
 }
 interface Form {
-  id?: string; vendor_name: string; subcontractor_id: string | null; registration_number: string | null
+  id?: string; vendor_kind: 'subcontractor' | 'other'; vendor_name: string; subcontractor_id: string | null; registration_number: string | null
   purchase_order_id: string | null
   title: string | null; invoice_no: string | null; invoice_date: string | null; due_date: string | null
   transfer_date: string | null; paid: boolean; total_amount: number | null; pdf_path: string | null; note: string | null; tax_mode: 'exclusive' | 'inclusive'; items: Item[]
@@ -311,6 +361,8 @@ const sites    = ref<{ id: string; name: string }[]>([])
 //  現場別集計が「site_name が空の行は読み飛ばす」ため、その請求の原価が丸ごと消える
 //  （本番で該当明細170行・請求書31件・2026-08-14 実測）。
 const siteNameById = ref<Record<string, string>>({})
+// 現場id→元請け名（全現場・無効含む）。現場プルダウンを「元請け→現場」の2段階(optgroup)で出すためのキー(#36c0b9b4)。紐付け無しは末尾グループ。
+const siteContractorById = ref<Record<string, string>>({})
 /** その現場は無効化済みか（選択肢に「（終了）」と出すため） */
 function isRetiredSite(id: string | null | undefined): boolean {
   return !!id && !!siteNameById.value[id] && !sites.value.some(s => s.id === id)
@@ -342,6 +394,22 @@ const formSiteOptions = computed(() =>
 const filterSiteOptions = computed(() =>
   siteOptionsFor(invoices.value.flatMap((v: any) =>
     (v.subcontractor_invoice_items ?? []).map((it: any) => it.site_id))))
+// 現場の選択肢を元請けごとにグループ化（report.vue と同じ2段階optgroup・#36c0b9b4）。元請けは五十音順、未設定は末尾。
+function groupSiteOptions(opts: { id: string; label: string }[]): { contractorName: string | null; sites: { id: string; label: string }[] }[] {
+  const byC = new Map<string, { id: string; label: string }[]>()
+  const unlinked: { id: string; label: string }[] = []
+  for (const o of opts) {
+    const c = siteContractorById.value[o.id]
+    if (!c) { unlinked.push(o); continue }
+    if (!byC.has(c)) byC.set(c, [])
+    byC.get(c)!.push(o)
+  }
+  const groups = [...byC.keys()].sort((a, b) => a.localeCompare(b, 'ja')).map(c => ({ contractorName: c as string | null, sites: byC.get(c)! }))
+  if (unlinked.length) groups.push({ contractorName: null, sites: unlinked })
+  return groups
+}
+const formSiteGroups = computed(() => groupSiteOptions(formSiteOptions.value))
+const filterSiteGroups = computed(() => groupSiteOptions(filterSiteOptions.value))
 const subs     = ref<{ id: string; name: string; category: string | null }[]>([])
 type PO = { id: string; order_number: string | null; total_amount: number | null; subcontractor_id: string | null; vendor_name: string | null }
 const pos      = ref<PO[]>([])
@@ -475,6 +543,28 @@ async function bulkDownload() {
 }
 const overdueCount = computed(() => unpaidList.value.filter(v => v._overdue).length)
 
+// ── 業者別の小計（請求書との突き合わせ用）──
+//  現在表示中の一覧（タブ＝未払い/支払い済み＋現場・業者の絞り込み）に連動させ、
+//  画面の数字と小計が食い違わないようにする。金額は一覧と同じ grand_total（税込・内税は割り戻し済み）を業者ごとに合算。
+const showVendorSummary = ref(true)
+const visibleTotal = computed(() => visibleList.value.reduce((s, v) => s + (Number(v.grand_total) || 0), 0))
+const vendorSummary = computed(() => {
+  const map = new Map<string, { vendor: string; count: number; total: number }>()
+  for (const v of visibleList.value) {
+    const name = v.vendor_name || '（業者未設定）'
+    const cur = map.get(name) ?? { vendor: name, count: 0, total: 0 }
+    cur.count += 1
+    cur.total += Number(v.grand_total) || 0
+    map.set(name, cur)
+  }
+  // 金額の大きい順（突き合わせで気になるのは金額の大きい業者から）
+  return [...map.values()].sort((a, b) => b.total - a.total)
+})
+function toggleVendorFilter(vendor: string) {
+  filterVendor.value = filterVendor.value === vendor ? '' : vendor
+  bulkMsg.value = ''
+}
+
 // 日本語ボタンの確認ダイアログ（native confirm の英語Cancel回避）
 const confirmState = ref<{ message: string; okLabel: string; danger?: boolean; onOk: () => void } | null>(null)
 function askConfirm(message: string, okLabel: string, onOk: () => void, danger = false) {
@@ -511,7 +601,7 @@ async function load() {
       // 現場は明細(items)側に付くので、現場での絞り込み用に site_id/site_name も一緒に読む
       .select('*, subcontractor_invoice_items(amount, tax_rate, site_id, site_name)')
       .eq('account_id', accountId).order('invoice_date', { ascending: false }).order('created_at', { ascending: false }),
-    supabase.from('sites').select('id, name, active').eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
+    supabase.from('sites').select('id, name, active, contractor_id, contractors(name)').eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
     supabase.from('subcontractors').select('id, name, category').eq('account_id', accountId).eq('active', true).order('sort_order').order('name'),
     supabase.from('purchase_orders').select('id, order_number, total_amount, subcontractor_id, vendor_name')
       .eq('account_id', accountId).neq('is_deleted', true).order('order_date', { ascending: false }),
@@ -526,6 +616,7 @@ async function load() {
   // 選択肢は有効な現場だけ。名前の解決だけは無効な現場も引けるようにする（site_name を消さないため）
   sites.value = (si ?? []).filter((x: any) => x.active).map((x: any) => ({ id: x.id, name: x.name }))
   siteNameById.value = Object.fromEntries((si ?? []).map((x: any) => [x.id, x.name]))
+  siteContractorById.value = Object.fromEntries((si ?? []).filter((x: any) => x.contractors?.name).map((x: any) => [x.id, x.contractors.name as string]))
   subs.value  = su ?? []
   pos.value   = (po ?? []) as PO[]
   loading.value = false
@@ -533,7 +624,7 @@ async function load() {
 
 function blankForm(): Form {
   const today = new Date().toISOString().slice(0, 10)
-  return { vendor_name: '', subcontractor_id: null, purchase_order_id: null, registration_number: null, title: null, invoice_no: null, invoice_date: today, due_date: null, transfer_date: null, paid: false, total_amount: null, pdf_path: null, pdf_bucket: null, note: null, tax_mode: 'exclusive', items: [] }
+  return { vendor_kind: 'subcontractor', vendor_name: '', subcontractor_id: null, purchase_order_id: null, registration_number: null, title: null, invoice_no: null, invoice_date: today, due_date: null, transfer_date: null, paid: false, total_amount: null, pdf_path: null, pdf_bucket: null, note: null, tax_mode: 'exclusive', items: [] }
 }
 // 開いた時点の内容スナップショット（変更有無の判定用）
 const formSnapshot = ref('')
@@ -557,7 +648,7 @@ async function openEdit(inv: any) {
   const { data: items } = await supabase.from('subcontractor_invoice_items')
     .select('*').eq('invoice_id', inv.id).order('sort_order').order('item_date')
   form.value = {
-    id: inv.id, vendor_name: inv.vendor_name, subcontractor_id: inv.subcontractor_id,
+    id: inv.id, vendor_kind: (inv as any).vendor_kind === 'other' ? 'other' : 'subcontractor', vendor_name: inv.vendor_name, subcontractor_id: inv.subcontractor_id,
     purchase_order_id: inv.purchase_order_id ?? null,
     registration_number: inv.registration_number, title: inv.title, invoice_no: inv.invoice_no,
     invoice_date: inv.invoice_date, due_date: inv.due_date, transfer_date: inv.transfer_date, paid: !!inv.paid,
@@ -578,6 +669,20 @@ function onVendorSelect() {
   if (f.subcontractor_id === '__new__') { newVendor.value = { name: '', category: '' }; return }
   const s = subs.value.find(x => x.id === f.subcontractor_id)
   if (s) f.vendor_name = s.name
+}
+
+// 請求元区分の切替。その他仕入先は協力業者マスタ/注文書の紐付けを持たない（間口を広げる）ので解除する。
+function setVendorKind(kind: 'subcontractor' | 'other') {
+  const f = form.value; if (!f) return
+  f.vendor_kind = kind
+  if (kind === 'other') {
+    // マスタ/注文書の紐付けはその他仕入先には無い。vendor_name は自由入力欄として残す（AI解析結果も活かせる）
+    f.subcontractor_id = null
+    f.purchase_order_id = null
+  } else {
+    // マスタ選択に戻す（選択で vendor_name が上書きされる）
+    f.subcontractor_id = null
+  }
 }
 
 // 新規業者をマスタに登録して選択
@@ -784,8 +889,11 @@ async function analyze() {
 
 async function save() {
   const f = form.value!
+  const isOther = f.vendor_kind === 'other'
   const sub = subs.value.find(s => s.id === f.subcontractor_id)
-  if (!sub) { formError.value = '協力業者を選択してください（新規は「業者を登録」で追加）'; return }
+  // 請求元区分で必須が変わる：協力業者=マスタ選択必須／その他仕入先=仕入先名の自由入力必須
+  if (!isOther && !sub) { formError.value = '協力業者を選択してください（新規は「業者を登録」で追加）'; return }
+  if (isOther && !f.vendor_name.trim()) { formError.value = '請求元（仕入先名）を入力してください'; return }
   if (f.items.length === 0) { formError.value = '明細を1行以上入力してください'; return }
   // 現場は必須（未確定の新規入力中も不可）
   if (f.items.some(it => !it.site_id || it.site_id === '__new__')) { formError.value = 'すべての明細で現場を選択してください（新規は「追加」で確定）'; return }
@@ -798,8 +906,13 @@ async function save() {
   saving.value = true; formError.value = ''
   try {
     const accountId = await getAccountId()
+    // その他仕入先はマスタ非紐付け（subcontractor_id=null）＋自由入力名。協力業者は従来どおりマスタ名で保存。
+    const vendorName = isOther ? f.vendor_name.trim() : sub!.name
     const header = {
-      account_id: accountId, subcontractor_id: sub.id, vendor_name: sub.name,
+      account_id: accountId,
+      vendor_kind: isOther ? 'other' : 'subcontractor',
+      subcontractor_id: isOther ? null : sub!.id,
+      vendor_name: vendorName,
       purchase_order_id: f.purchase_order_id || null,
       registration_number: f.registration_number || null,
       title: f.title || null, invoice_no: f.invoice_no || null, invoice_date: f.invoice_date || null,
@@ -865,7 +978,7 @@ async function save() {
       const { error } = await supabase.from('subcontractor_invoice_items').insert(rows)
       if (error) throw error
     }
-    await logOperation(f.id ? '請求更新' : '請求登録', { targetType: 'subcontractor_invoice', targetId: invoiceId, summary: `${sub.name} ${yen(f.total_amount)}` })
+    await logOperation(f.id ? '請求更新' : '請求登録', { targetType: 'subcontractor_invoice', targetId: invoiceId, summary: `${vendorName} ${yen(f.total_amount)}` })
     form.value = null
     await load()
   } catch (e: any) {
@@ -954,6 +1067,11 @@ onMounted(load)
 .btn-ai:disabled { opacity: .5; cursor: default; }
 .ai-msg { font-size: 12px; color: #1a56c4; margin: 0 0 12px; }
 
+.kind-row { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; flex-wrap: wrap; }
+.kind-label { font-size: 12px; color: #6b7280; }
+.kind-toggle { display: inline-flex; border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; }
+.kind-toggle button { border: none; background: #fff; padding: 6px 14px; font-size: 13px; cursor: pointer; color: #374151; }
+.kind-toggle button.active { background: #06C755; color: #fff; }
 .hd-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 14px; margin-bottom: 16px; }
 .fld { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: #666; }
 .inp { border: 1px solid #ddd; border-radius: 8px; padding: 8px 10px; font-size: 14px; }
@@ -1008,4 +1126,17 @@ onMounted(load)
 .confirm-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .btn-confirm-ok { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 8px 20px; font-weight: 700; cursor: pointer; }
 .btn-confirm-ok.danger { background: #c0392b; }
+
+/* 業者別の小計 */
+.vendor-summary { margin-top: 14px; background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08); overflow: hidden; }
+.vendor-summary-head { display: flex; align-items: center; gap: 8px; width: 100%; background: #fafafa; border: none; border-bottom: 1px solid #eee; padding: 10px 14px; font-size: 13px; font-weight: 700; color: #444; cursor: pointer; text-align: left; }
+.vs-caret { font-size: 18px; line-height: 1; color: #888; }
+.vs-grand { margin-left: auto; font-weight: 800; color: #111; }
+.vendor-summary-body { max-height: 50vh; overflow: auto; }
+.vendor-summary-table { width: 100%; }
+.vs-row { cursor: pointer; }
+.vs-row:hover { background: #f7f7f7; }
+.vs-row.active { background: #eef3fd; }
+.vs-total-row td { border-top: 2px solid #e2e2e2; background: #fafafa; }
+.vendor-summary-table tfoot td { position: sticky; bottom: 0; }
 </style>

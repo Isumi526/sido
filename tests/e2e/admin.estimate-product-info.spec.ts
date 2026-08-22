@@ -20,7 +20,7 @@
 //  Notion: R6 3a50ff81c56b81638fc2e49ae3b750bb / R14 / R23
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { getAccountId, restSrv, openBuilderTab } from './helpers'
+import { getAccountId, restSrv, openBuilderTab, createEstimateProject } from './helpers'
 
 const TS = Date.now()
 const MAT = `E2E不燃PB_${TS}`          // マスタに入れる正しい名前
@@ -70,9 +70,8 @@ test.afterAll(async () => {
 
 async function openNewProject(page: any) {
   PROJ = projName()
-  await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-  await page.locator('[data-testid="new-project-name"]').fill(PROJ)
-  await page.locator('[data-testid="add-project"]').click()
+  const __pid1 = await createEstimateProject(PROJ)
+  await page.goto(`/estimate-builder?project=${__pid1}`, { waitUntil: 'networkidle' })
   await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ, { timeout: 15000 })
   await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
 }

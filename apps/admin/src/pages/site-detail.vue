@@ -53,9 +53,7 @@
               <template v-if="site.location">{{ site.location }} <a :href="mapUrl" target="_blank" rel="noopener" class="map-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">map</span> 地図で開く</a></template>
               <template v-else>—</template>
             </dd></div>
-            <div class="kv-row"><dt>工種</dt><dd>{{ site.construction_type || '—' }}</dd></div>
             <div class="kv-row"><dt>工事内容</dt><dd class="pre">{{ site.construction_details || '—' }}</dd></div>
-            <div class="kv-row"><dt>メモ</dt><dd class="pre">{{ site.memo || '—' }}</dd></div>
           </dl>
           <!-- 編集 -->
           <div v-else class="edit-form">
@@ -68,7 +66,6 @@
                 <option v-for="c in contractors" :key="c.id" :value="c.id">{{ c.name }}</option>
               </select>
             </label>
-            <label class="fld"><span>工種</span><input v-model="form.construction_type" class="input" placeholder="例：内装・改修" /></label>
             <label class="fld"><span>工事内容</span><textarea v-model="form.construction_details" class="input" rows="2" /></label>
             <div class="fld"><span>固定勤務時刻</span>
               <div style="display:flex;align-items:center;gap:8px">
@@ -78,7 +75,6 @@
               </div>
             </div>
             <p class="hint" style="font-size:12px;color:#94a3b8;margin:-4px 0 0">日報入力時の作業時刻の既定。終了時刻はこの値を超えて入力できません（残業申請が無い限り）。未設定なら従来どおり。</p>
-            <label class="fld"><span>メモ</span><textarea v-model="form.memo" class="input" rows="2" /></label>
             <div class="fld"><span>紐づく協力業者</span>
               <div class="sub-pick">
                 <label v-for="s in allSubs" :key="s.id" class="sub-chip" :class="{ on: form.linkedSubs.includes(s.id) }">

@@ -10,7 +10,7 @@
 //  Notion: Q3 3aa0ff81c56b81e28792f1b78a98cea0 / Q4 3aa0ff81c56b81e788d6daa09cd1a8e1
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { getAccountId, restSrv, openBuilderTab, makePdf } from './helpers'
+import { getAccountId, restSrv, openBuilderTab, makePdf, createEstimateProject } from './helpers'
 
 const TS = Date.now()
 const SUB_A = `E2E下請A_${TS}`
@@ -51,9 +51,8 @@ test.afterAll(async () => {
 async function openNewProject(page: any) {
   PROJ = projName()
   ITEM = newItem()
-  await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-  await page.locator('[data-testid="new-project-name"]').fill(PROJ)
-  await page.locator('[data-testid="add-project"]').click()
+  const __pid1 = await createEstimateProject(PROJ)
+  await page.goto(`/estimate-builder?project=${__pid1}`, { waitUntil: 'networkidle' })
   await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ, { timeout: 15000 })
 }
 

@@ -15,7 +15,7 @@
 //  Notion: R12 3ac0ff81c56b8170b172e26f562e2da9 / R13 3ac0ff81c56b8102ae74d9c0959cbe06
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { getAccountId, restSrv, openBuilderTab, newBlockFirstRow } from './helpers'
+import { getAccountId, restSrv, openBuilderTab, newBlockFirstRow, createEstimateProject } from './helpers'
 
 const TS = Date.now()
 let seq = 0
@@ -33,9 +33,8 @@ test.afterAll(async () => {
 
 async function openNewProject(page: any) {
   PROJ = projName()
-  await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-  await page.locator('[data-testid="new-project-name"]').fill(PROJ)
-  await page.locator('[data-testid="add-project"]').click()
+  const __pid1 = await createEstimateProject(PROJ)
+  await page.goto(`/estimate-builder?project=${__pid1}`, { waitUntil: 'networkidle' })
   await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ, { timeout: 15000 })
   await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
 }

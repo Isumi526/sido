@@ -150,6 +150,7 @@ Deno.serve(async (req) => {
         html: `<p>${workerName} さんから経費申請がありました。</p>`
             + `<p>対象期間: ${periodLabel(period_key)}</p>`
             + `<p>申請日時: ${settlement.applied_at ?? ''}</p>`
+            + (settlement.apply_comment ? `<p>申請コメント: ${escapeHtml(String(settlement.apply_comment))}</p>` : '')
             + (attachments.length ? `<p>PDF（${attachments.map(a => a.filename.split('_')[0]).join('・')}）を添付しています。</p>` : '<p>（PDF添付なし）</p>'),
         attachments,
       }),
@@ -171,6 +172,11 @@ Deno.serve(async (req) => {
     return json({ error: String(e) }, 500)
   }
 })
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
 
 function base64(bytes: Uint8Array): string {
   let bin = ''

@@ -56,9 +56,19 @@
           <div class="confirm-modal">
             <p class="confirm-title">{{ effStatus === '差し戻し' ? t('expenseDoc.confirmReapplyTitle') : t('expenseDoc.confirmApplyTitle') }}</p>
             <p class="confirm-text" v-html="t('expenseDoc.confirmText')"></p>
+            <label class="confirm-comment-label" for="apply-comment">{{ t('expenseDoc.applyCommentLabel') }}<span class="confirm-comment-req">{{ t('common.required') }}</span></label>
+            <textarea
+              id="apply-comment"
+              v-model="applyComment"
+              class="confirm-comment-input"
+              rows="3"
+              data-testid="apply-comment"
+              :placeholder="t('expenseDoc.applyCommentPlaceholder')"
+              :disabled="applying"
+            ></textarea>
             <div class="confirm-actions">
               <button class="confirm-cancel" :disabled="applying" @click="showApplyConfirm = false">{{ t('common.cancel') }}</button>
-              <button class="confirm-ok" :disabled="applying" @click="confirmApply">{{ applying ? t('expenseDoc.applying') : t('expenseDoc.applyAction') }}</button>
+              <button class="confirm-ok" :disabled="applying || !applyComment.trim()" @click="confirmApply">{{ applying ? t('expenseDoc.applying') : t('expenseDoc.applyAction') }}</button>
             </div>
           </div>
         </div>
@@ -228,6 +238,8 @@ const settlement  = ref<any | null>(null)
 const applying    = ref(false)
 const applyError  = ref('')
 const showApplyConfirm = ref(false)
+// 申請（承認依頼）時の一言コメント（お詫び・依頼文）。ボタンだけでなく一言添えてもらう（必須）
+const applyComment = ref('')
 
 // ── インライン編集（申請前のみ・支払い先/登録番号。統一フォーマットで内容列は廃止のため note は編集しない）──
 const editMode   = ref(false)
@@ -355,8 +367,10 @@ async function selectPeriod(key: string) {
 
 /** 確認ダイアログから申請を実行。成功時はダイアログを閉じる */
 async function confirmApply() {
+  // 一言コメントは必須（ボタンでもガードしているが二重で担保）
+  if (!applyComment.value.trim()) { applyError.value = t('expenseDoc.applyCommentRequired'); return }
   await handleApply()
-  if (!applyError.value) showApplyConfirm.value = false
+  if (!applyError.value) { showApplyConfirm.value = false; applyComment.value = '' }
 }
 
 /** 経費申請（未申請/差し戻し → 申請中）。PDF生成・メールは best-effort */
@@ -396,7 +410,7 @@ async function handleApply() {
     }
 
     // 2. 精算ステータスを 申請中 に（pdf_path は記録用にカンマ連結）
-    settlement.value = await expense.applySettlement(applyUserId.value, selectedPeriod.value, paths.join(',') || null)
+    settlement.value = await expense.applySettlement(applyUserId.value, selectedPeriod.value, paths.join(',') || null, applyComment.value.trim())
 
     // 3. PDFメール送信 function を呼ぶ（best-effort）。身元優先スラッグを渡す（slug未定義参照のバグ修正）
     triggerApplicationEmail(applyUserId.value, selectedPeriod.value, slug)
@@ -530,6 +544,10 @@ html,body { background:var(--bg);color:var(--text);font-family:var(--font);min-h
 .confirm-cancel { flex:1;background:#f0f0f0;border:none;border-radius:10px;padding:13px;font-size:15px;font-family:var(--font);color:#555;cursor:pointer; }
 .confirm-ok { flex:1;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:13px;font-size:15px;font-weight:700;font-family:var(--font);cursor:pointer; }
 .confirm-ok:disabled,.confirm-cancel:disabled { opacity:.6;cursor:default; }
+.confirm-comment-label { display:block;text-align:left;font-size:13px;font-weight:700;color:#333;margin:4px 0 6px; }
+.confirm-comment-req { color:var(--danger,#c0392b);font-size:11px;font-weight:700;margin-left:6px; }
+.confirm-comment-input { width:100%;box-sizing:border-box;border:1px solid #d0d0d0;border-radius:10px;padding:10px 12px;font-size:14px;font-family:var(--font);line-height:1.6;resize:vertical;margin-bottom:18px; }
+.confirm-comment-input:disabled { opacity:.6; }
 .mode-bar { display:flex;gap:8px; }
 .mode-btn { flex:1;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;font-size:13px;font-family:var(--font);color:var(--text2);font-weight:700;cursor:pointer; }
 .mode-btn.active { background:var(--accent);color:#fff;border-color:var(--accent); }

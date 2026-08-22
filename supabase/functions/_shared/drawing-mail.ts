@@ -15,6 +15,7 @@
 //  ※ 平文メール本文はログに出さない。戻り値のメールアドレスはマスクする。
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { resolveAccountName } from './mail-from.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
@@ -135,7 +136,7 @@ export async function sendDrawingPages(
         const { data: cn } = await svc.from('settings').select('value')
           .eq('account_id', accountId).eq('key', 'company_name').maybeSingle()
         const fromAddr = (MAIL_FROM.match(/<([^>]+)>/)?.[1] || MAIL_FROM).trim()
-        const fromName = (cn?.value || '').trim()
+        const fromName = (cn?.value || '').trim() || await resolveAccountName(svc, accountId)
         const from = fromName ? `${fromName} <${fromAddr}>` : MAIL_FROM
         const res = await fetch('https://api.resend.com/emails', {
           method: 'POST',

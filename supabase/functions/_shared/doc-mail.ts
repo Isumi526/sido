@@ -13,6 +13,7 @@
 //    モーダルを開いただけのオーファントークンを残さない）。
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { resolveAccountName } from './mail-from.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
@@ -175,7 +176,7 @@ export async function sendResend(
   if (!RESEND_API_KEY) return { status: 200, body: { success: true, skipped: 'no_api_key', sent_to: maskedList } }
   const { data: cn } = await svc.from('settings').select('value').eq('account_id', accountId).eq('key', 'company_name').maybeSingle()
   const fromAddr = (PO_MAIL_FROM.match(/<([^>]+)>/)?.[1] || PO_MAIL_FROM).trim()
-  const fromName = (cn?.value || '').trim()
+  const fromName = (cn?.value || '').trim() || await resolveAccountName(svc, accountId)
   const from = fromName ? `${fromName} <${fromAddr}>` : PO_MAIL_FROM
   const payload: Record<string, unknown> = { from, to: toList, subject, html }
   if (attachments?.length) payload.attachments = attachments
