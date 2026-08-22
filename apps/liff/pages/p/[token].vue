@@ -190,6 +190,17 @@
             <input v-model.number="invoiceAmount" type="number" inputmode="numeric" class="inp" :placeholder="t('token.invoice.amountPlaceholder')" min="1" :max="invoiceResidual" />
           </label>
 
+          <label class="fld"><span>{{ t('token.invoice.attachLabel') }}</span>
+            <input type="file" accept="application/pdf,image/jpeg,image/png" class="inp file-inp" @change="onInvoiceFile" />
+          </label>
+          <p class="muted small">{{ t('token.invoice.attachHint') }}</p>
+          <div v-if="invoiceFileName" class="file-chip">
+            <span class="material-symbols-rounded file-chip-icon">description</span>
+            <span class="file-chip-name">{{ invoiceFileName }}</span>
+            <button type="button" class="file-chip-remove" @click="clearInvoiceFile">{{ t('token.invoice.attachRemove') }}</button>
+          </div>
+          <p v-if="invoiceFileError" class="err">{{ invoiceFileError }}</p>
+
           <p v-if="invoiceError" class="err">{{ invoiceError }}</p>
 
           <button type="button" class="btn-accept" :disabled="invoiceSubmitting || !invoiceAccepted" @click="submitInvoice">
@@ -426,6 +437,45 @@ async function submitChangeAccept() {
   }
 }
 
+// ── 請求書ファイル添付（任意・PDF/JPG/PNG・10MB上限・#49）──
+const invoiceFile      = ref<File | null>(null)
+const invoiceFileName  = ref('')
+const invoiceFileError = ref('')
+const INVOICE_MAX_BYTES = 10 * 1024 * 1024
+const INVOICE_ALLOWED  = ['application/pdf', 'image/jpeg', 'image/png']
+
+function onInvoiceFile(e: Event) {
+  invoiceFileError.value = ''
+  const input = e.target as HTMLInputElement
+  const f = input.files?.[0] ?? null
+  if (!f) { clearInvoiceFile(); return }
+  if (!INVOICE_ALLOWED.includes(f.type)) {
+    invoiceFileError.value = t('token.invoice.attachErrorType')
+    input.value = ''; invoiceFile.value = null; invoiceFileName.value = ''
+    return
+  }
+  if (f.size > INVOICE_MAX_BYTES) {
+    invoiceFileError.value = t('token.invoice.attachErrorSize')
+    input.value = ''; invoiceFile.value = null; invoiceFileName.value = ''
+    return
+  }
+  invoiceFile.value = f
+  invoiceFileName.value = f.name
+}
+function clearInvoiceFile() {
+  invoiceFile.value = null
+  invoiceFileName.value = ''
+  invoiceFileError.value = ''
+}
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(String(r.result))
+    r.onerror = () => reject(r.error)
+    r.readAsDataURL(file)
+  })
+}
+
 async function submitInvoice() {
   invoiceError.value = ''
   if (!invoiceAccepted.value) { invoiceError.value = t('token.invoice.errorNotAccepted'); return }
@@ -434,7 +484,13 @@ async function submitInvoice() {
   if (amount > invoiceResidual.value) { invoiceError.value = t('token.invoice.errorOver', { residual: yen(invoiceResidual.value) }); return }
   invoiceSubmitting.value = true
   try {
-    const r = await callPortal({ action: 'invoice_submit', invoice_mode: invoiceMode.value, invoice_amount: amount })
+    let attachment = ''
+    let attachmentMime = ''
+    if (invoiceFile.value) {
+      attachment = await readFileAsDataUrl(invoiceFile.value)
+      attachmentMime = invoiceFile.value.type
+    }
+    const r = await callPortal({ action: 'invoice_submit', invoice_mode: invoiceMode.value, invoice_amount: amount, attachment, attachment_mime: attachmentMime })
     if (r?.ok) {
       invoiceDone.value = true
       invoiceDoneAmount.value = r.amount ?? amount
@@ -445,6 +501,12 @@ async function submitInvoice() {
       invoiceError.value = t('token.invoice.errorNotAccepted')
     } else if (r?.error === 'already_submitted') {
       invoiceError.value = t('token.invoice.errorAlready')
+    } else if (r?.error === 'attachment_bad_type') {
+      invoiceError.value = t('token.invoice.attachErrorType')
+    } else if (r?.error === 'attachment_too_large') {
+      invoiceError.value = t('token.invoice.attachErrorSize')
+    } else if (r?.error === 'attachment_upload_failed') {
+      invoiceError.value = t('token.invoice.attachErrorUpload')
     } else {
       invoiceError.value = t('token.invoice.errorFailed')
     }
@@ -547,4 +609,9 @@ onMounted(async () => {
 .err { color: #E53935; font-size: 13px; margin: 8px 0 0; }
 .btn-accept { margin-top: 14px; width: 100%; background: #06C755; color: #fff; border: none; border-radius: 10px; padding: 14px; font-size: 15px; font-weight: 800; cursor: pointer; }
 .btn-accept:disabled { opacity: .5; cursor: not-allowed; }
+.file-inp { padding: 8px 10px; }
+.file-chip { display: flex; align-items: center; gap: 8px; margin-top: 8px; background: #f5f7f9; border: 1px solid #e3e8ec; border-radius: 8px; padding: 8px 10px; }
+.file-chip-icon { font-size: 18px; color: #06A050; }
+.file-chip-name { flex: 1; font-size: 13px; color: #222; word-break: break-all; }
+.file-chip-remove { background: none; border: none; color: #E53935; font-size: 12px; cursor: pointer; }
 </style>
