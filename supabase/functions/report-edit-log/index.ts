@@ -324,17 +324,17 @@ async function needsDualApproval(
  * （2026-08-21 株式会社シードの実障害）。完全ワンオペ（他に居ない）時だけ自己承認を許すための判定。
  */
 async function hasOtherActiveOwner(
-  svc: any, accountId: string, myWorkerId: string | null, myAuthUserId: string | null,
+  svc: any, accountId: string, myWorkerId: string | null,
 ): Promise<boolean> {
+  // 実効的にオーナー枠を埋められる承認者＝active な admin/owner の worker（ログイン可）だけで判定する。
+  // ★worker行の無い休眠オーナー（accounts.owner_auth_user_id 例:sido@email.com）は数えない。
+  //  数えると、唯一の active admin worker（＝申請者本人）がワンオペと認められず永久ロックする
+  //  （2026-08-22 シード実障害。前回 owner_auth を数えていて修正が効かなかった）。
   const { data: ws } = await svc.from('workers').select('id')
     .eq('account_id', accountId).eq('active', true)
     .in('permission_role', ['admin', 'owner'])
     .not('auth_user_id', 'is', null)
-  if ((ws ?? []).some((w: any) => w.id !== myWorkerId)) return true
-  // workers 行を持たない純オーナー（accounts.owner_auth_user_id）が自分以外に居るか
-  const { data: acct } = await svc.from('accounts').select('owner_auth_user_id').eq('id', accountId).maybeSingle()
-  const ownerAuth = acct?.owner_auth_user_id ?? null
-  return !!(ownerAuth && ownerAuth !== myAuthUserId)
+  return (ws ?? []).some((w: any) => w.id !== myWorkerId)
 }
 
 async function handleReview(svc: any, body: any, authHeader: string): Promise<Response> {
@@ -377,7 +377,7 @@ async function handleReview(svc: any, body: any, authHeader: string): Promise<Re
     // 自己承認は原則禁止。ただしオーナーが完全ワンオペ（自分以外にオーナー枠が1人も居ない）時だけは、
     // 放置すると承認が永久に回らないためオーナー本人の承認を許す。オーナー以外(worker/site_manager)は常に禁止。
     const isOwnerSlot = approver.role === 'admin' || approver.role === 'owner'
-    const soloOwner = isOwnerSlot && !(await hasOtherActiveOwner(svc, accountId, approver.workerId, approver.authUserId))
+    const soloOwner = isOwnerSlot && !(await hasOtherActiveOwner(svc, accountId, approver.workerId))
     if (!soloOwner) {
       return json({ ok: false, error: 'self_approval_forbidden' }, 403)
     }

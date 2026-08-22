@@ -124,7 +124,7 @@
           <!-- ★自分が出した編集は自分で承認できない（議事録 2026-07-27:
                「管理者で登録されたら自分で修正できちゃう／誰も見られることもなく」）。
                差し戻しは自分の申請を取り下げる用途なので残す。 -->
-          <span v-if="isMine(p)" class="self-approve-blocked" data-testid="pending-self-blocked">
+          <span v-if="isMine(p) && !canSelfApprove" class="self-approve-blocked" data-testid="pending-self-blocked">
             自分が出した編集は承認できません（他の承認者に依頼してください）
           </span>
           <button v-else class="btn-approve" :disabled="busy === p.id" data-testid="pending-approve" @click="decide(p, 'approve')">
@@ -292,6 +292,28 @@ async function resolveMyUserIds() {
   myUserIds.value = (us ?? []).map((u: any) => u.id).filter(Boolean)
 }
 
+/**
+ * 完全ワンオペのオーナーか（自分が admin/owner で、他に active な admin/owner の worker が居ない）。
+ * これに該当する時だけ、自分が出した申請でも承認できる（＝承認が永久に回らない詰まりを防ぐ）。
+ * ★EF report-edit-log の hasOtherActiveOwner と同じ規則にする（UIだけ許可してEFで弾かれる、を防ぐ）。
+ * ★worker行の無い休眠オーナー(owner_auth)は数えない＝実効的な承認者(active admin/owner worker)だけで判定。
+ */
+const canSelfApprove = ref(false)
+async function resolveCanSelfApprove() {
+  canSelfApprove.value = false
+  const authId = currentUser.value?.id
+  if (!authId) return
+  const accountId = await getAccountId()
+  const { data: mine } = await supabase.from('workers').select('id, permission_role')
+    .eq('auth_user_id', authId).eq('account_id', accountId)
+  const myWorkerIds = (mine ?? []).map((w: any) => w.id)
+  const iAmOwner = (mine ?? []).some((w: any) => w.permission_role === 'admin' || w.permission_role === 'owner')
+  if (!iAmOwner) return
+  const { data: others } = await supabase.from('workers').select('id')
+    .eq('account_id', accountId).eq('active', true).in('permission_role', ['admin', 'owner']).not('auth_user_id', 'is', null)
+  canSelfApprove.value = !(others ?? []).some((w: any) => !myWorkerIds.includes(w.id))
+}
+
 /** 二重承認: もう入っている承認の役割名（日本語） */
 function approvedRoles(p: any): string[] {
   const a = Array.isArray(p?.approvals) ? p.approvals : []
@@ -383,7 +405,7 @@ function clearFilter() {
 async function decide(p: any, action: 'approve' | 'reject') {
   if (busy.value) return
   // ボタンは出していないが、関数側でも塞ぐ（UIを迂回されても自己承認させない）
-  if (action === 'approve' && isMine(p)) {
+  if (action === 'approve' && isMine(p) && !canSelfApprove.value) {
     msg.value = '自分が出した編集は承認できません'
     msgOk.value = false
     return
@@ -448,6 +470,7 @@ async function decide(p: any, action: 'approve' | 'reject') {
 
 onMounted(async () => {
   await resolveMyUserIds()
+  await resolveCanSelfApprove()
   await load()
   // 日報詳細から履歴を見に来たケース（?reportId=...）は最初から開いて出す
   if (historyOpen.value) await loadHistory()
