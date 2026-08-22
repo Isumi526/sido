@@ -37,6 +37,8 @@
   "siteNumbered": "Site {n}",
   "removeBtn": "✕ Remove",
   "contractor": "Main contractor",
+  "contractorFilter": "Filter by main contractor",
+  "contractorFilterAll": "All",
   "selectOptional": "Please select (optional)",
   "addNewContractor": "＋ Register a new main contractor",
   "contractorPlaceholder": "Enter contractor name (e.g. ABC Construction)",

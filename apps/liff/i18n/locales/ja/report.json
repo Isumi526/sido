@@ -37,6 +37,8 @@
   "siteNumbered": "現場 {n}",
   "removeBtn": "✕ 削除",
   "contractor": "元請け業者",
+  "contractorFilter": "元請けで絞り込み",
+  "contractorFilterAll": "すべて",
   "selectOptional": "選択してください（任意）",
   "addNewContractor": "＋ 新しい元請け業者を登録する",
   "contractorPlaceholder": "元請け業者名を入力（例: 〇〇建設）",

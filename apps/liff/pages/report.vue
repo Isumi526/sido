@@ -158,6 +158,17 @@
                 把握したいという要望があるため。ただし日報の入力画面は本人しか見ないので
                 ここには出さない。見せるのは管理画面側。 -->
 
+          <!-- ★元請け絞り込み（2026-08-22 復活）。上のとおり値そのものは保存しない
+               （保存される site.contractorName は現場から逆算・onSiteChange）。
+               これは下の現場プルダウンを絞り込むためだけの表示用フィルタ。
+               既存の「元請けごと optgroup 表示」はそのまま残し、選ぶと該当グループだけに絞る。 -->
+          <Field :label="$t('report.contractorFilter')">
+            <select v-model="contractorFilter[si]" class="select" :data-testid="`contractor-filter-${si}`">
+              <option value="">{{ $t('report.contractorFilterAll') }}</option>
+              <option v-for="name in master.contractorNames.value" :key="name" :value="name">{{ name }}</option>
+            </select>
+          </Field>
+
           <!-- 現場名 -->
           <Field :label="$t('report.siteName')" required>
             <select v-model="site.siteName" class="select" required :data-testid="`site-select-${si}`" @change="onSiteChange(si)">
@@ -174,8 +185,8 @@
                       :value="site.siteName" :data-testid="`retired-site-${si}`">
                 {{ $t('report.retiredOption', { name: site.siteName }) }}
               </option>
-              <!-- ★常に元請けごとに区切る。元請けを別に選ばせるのをやめたので分岐も要らない -->
-              <template v-for="grp in master.siteGroupsByContractor.value" :key="grp.contractorName ?? '__unlinked__'">
+              <!-- ★常に元請けごとに区切る。上の絞り込みが選ばれていればそのグループだけに絞る。 -->
+              <template v-for="grp in filteredSiteGroups(si)" :key="grp.contractorName ?? '__unlinked__'">
                 <optgroup :label="grp.contractorName ?? $t('report.siteGroupUnlinked')">
                   <option v-for="name in grp.sites" :key="name" :value="name">{{ name }}</option>
                 </optgroup>
@@ -790,6 +801,20 @@ function groupedSiteNames(contractorName?: string): { linked: string[]; others: 
   const linked = all.filter((n) => map[n] === cn)
   const others = all.filter((n) => map[n] !== cn)
   return { linked, others }
+}
+
+/** 元請け絞り込み（現場ブロックごと・表示専用）。site には保存しない。
+ *  保存される site.contractorName は従来どおり現場から逆算する（onSiteChange）ので、
+ *  これはあくまで下の現場プルダウンを絞り込むための一時的なUI状態。 */
+const contractorFilter = ref<Record<number, string>>({})
+
+/** 現場プルダウンに出す元請けグループ。絞り込みが選ばれていればそのグループだけに絞る。
+ *  未選択なら従来どおり全グループ（＝元請けごと optgroup 表示）を返す。 */
+function filteredSiteGroups(si: number): { contractorName: string | null; sites: string[] }[] {
+  const groups = master.siteGroupsByContractor.value
+  const cn = (contractorFilter.value[si] ?? '').trim()
+  if (!cn) return groups
+  return groups.filter((g) => g.contractorName === cn)
 }
 
 // クエリ（?edit=YYYY-MM-DD）が変わったらページを再マウントさせ、編集/新規の
