@@ -62,6 +62,47 @@
       </table>
     </div>
 
+    <!-- 科目別 月次集計（科目×月クロス集計・直近12ヶ月）#6bba03b2 -->
+    <section class="crosstab">
+      <button class="crosstab-toggle" data-testid="crosstab-toggle" @click="toggleCrossTab">
+        <span class="material-symbols-rounded ct-ico">table_chart</span>
+        科目別 月次集計（直近12ヶ月）
+        <span class="material-symbols-rounded ct-caret">{{ showCrossTab ? 'expand_less' : 'expand_more' }}</span>
+      </button>
+      <div v-if="showCrossTab" class="crosstab-body">
+        <p class="note">
+          現場経費（日報の経費）と個人経費を、科目ごと・月ごとに合計しています。車両の距離按分（内部原価の配賦分）は含みません。金額は税込です。
+        </p>
+        <div v-if="crossLoading" class="empty">読み込み中...</div>
+        <div v-else-if="crossRows.length === 0" class="empty">この期間の経費がありません</div>
+        <div v-else class="table-wrap crosstab-wrap">
+          <table class="table crosstab-table" data-testid="crosstab-table">
+            <thead>
+              <tr>
+                <th class="ct-acct">科目</th>
+                <th v-for="m in crossMonths" :key="m" class="num" :class="{ 'ct-cur': m === currentMonthKey }">{{ monthShort(m) }}</th>
+                <th class="num ct-total">年計</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="r in crossRows" :key="r.account" class="data-row">
+                <td class="ct-acct">{{ r.account }}</td>
+                <td v-for="m in crossMonths" :key="m" class="num" :class="{ 'ct-cur': m === currentMonthKey }">{{ r.byMonth[m] ? yen(r.byMonth[m]) : '—' }}</td>
+                <td class="num ct-total">{{ yen(r.total) }}</td>
+              </tr>
+            </tbody>
+            <tfoot>
+              <tr class="total-row">
+                <td class="ct-acct">合計</td>
+                <td v-for="m in crossMonths" :key="m" class="num" :class="{ 'ct-cur': m === currentMonthKey }">{{ crossColTotals[m] ? yen(crossColTotals[m]) : '—' }}</td>
+                <td class="num ct-total">{{ yen(crossGrandTotal) }}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <!-- 明細モーダル（1期分） -->
     <div v-if="selected" class="modal-overlay" @click.self="selected = null">
       <div class="modal">
@@ -278,7 +319,7 @@ import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug, getAccountName } from '../lib/account'
 import { notifyWorker, workerIdOfUser } from '../lib/appNotify'
 import { openConventionDoc } from '../lib/docUrl'
-import { flattenReportExpenses, flattenGasolineItems, flattenPersonalExpenses, isPersonalExpenseRow, ratesFromSettings, effectiveStatus, expenseAccountCategory, expenseDisplayCategory, EXPENSE_ACCOUNT_OPTIONS, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
+import { flattenReportExpenses, flattenGasolineItems, flattenPersonalExpenses, isPersonalExpenseRow, ratesFromSettings, effectiveStatus, expenseAccountCategory, expenseDisplayCategory, EXPENSE_ACCOUNT_OPTIONS, expenseMonthKey, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
 
 /** 品名欄。個人経費は category＝勘定科目なので note（実際の品名）を出す（liff の帳票と同一規則）。 */
 function itemName(row: ExpenseRow): string {
@@ -686,6 +727,111 @@ async function doRescue() {
   }
 }
 
+// ── 科目別 月次集計（科目×月のクロス集計・直近12ヶ月）#6bba03b2 ──
+//  会計向けの俯瞰ビュー。行=科目 / 列=直近12ヶ月 / セル=月合計 / 行末=年計（表示12ヶ月の合計）。
+//  集計元は現場経費（日報の sites[].expenses と本日のガソリン代）＋個人経費を科目別に合算。
+//  ★車両の距離按分（category='ガソリン代'/'軽油代'＝内部原価の配賦）は実費でないため除外。
+//   これは作業員精算(load)が精算対象から外しているのと同じ扱い。
+//  表示のみ・DBへの書込みは無い。重いので開いた時だけ遅延ロードする。
+const showCrossTab = ref(false)
+const crossLoading = ref(false)
+const crossData    = ref<Record<string, Record<string, number>>>({})
+
+// 対象月を末尾に置いた直近12ヶ月の 'YYYY-MM' 配列（古い→新しい）
+const crossMonths = computed<string[]>(() => {
+  const out: string[] = []
+  const base = new Date(baseDate.value); base.setDate(1)
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(base); d.setMonth(d.getMonth() - i)
+    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
+  return out
+})
+const currentMonthKey = computed(() => dateFrom.value.slice(0, 7))
+function monthShort(ym: string): string {
+  const [y, m] = ym.split('-')
+  return `${y.slice(2)}/${Number(m)}`
+}
+
+async function loadCrossTab() {
+  crossLoading.value = true
+  try {
+    const accountId = await getAccountId()
+    const months = crossMonths.value
+    const from = `${months[0]}-01`
+    const [ly, lm] = months[months.length - 1].split('-').map(Number)
+    const lastDay = new Date(ly, lm, 0).getDate()          // 末月の末日
+    const to = `${ly}-${String(lm).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+
+    const [{ data: cfg }, { data: reports }, { data: personal }] = await Promise.all([
+      supabase.from('settings').select('key, value').eq('account_id', accountId),
+      supabase.from('daily_reports')
+        .select('date, sites, gasoline_items')
+        .eq('account_id', accountId)
+        .eq('is_working', true)
+        .gte('date', from).lte('date', to)
+        .order('date', { ascending: true })
+        .limit(20000),
+      supabase.from('personal_expenses')
+        .select('id, worker_id, date, account_category, amount, payee, registration_number, companions, note, file_urls, tategae')
+        .eq('account_id', accountId)
+        .gte('date', from).lte('date', to)
+        .limit(20000),
+    ])
+
+    const rates = ratesFromSettings(cfg)
+    const acc: Record<string, Record<string, number>> = {}
+    const add = (account: string, ym: string, amount: number) => {
+      const byMonth = (acc[account] ??= {})
+      byMonth[ym] = (byMonth[ym] || 0) + amount
+    }
+    for (const rep of (reports ?? []) as any[]) {
+      for (const row of flattenReportExpenses(rep.date, rep.sites ?? [], rates)) {
+        if (row.category === 'ガソリン代' || row.category === '軽油代') continue  // 距離按分(内部原価)は除外
+        add(expenseAccountCategory(row), expenseMonthKey(row.date), row.amount)
+      }
+      for (const row of flattenGasolineItems(rep.date, rep.gasoline_items)) {
+        add(expenseAccountCategory(row), expenseMonthKey(row.date), row.amount)
+      }
+    }
+    for (const row of flattenPersonalExpenses(personal as any)) {
+      add(expenseAccountCategory(row), expenseMonthKey(row.date), row.amount)
+    }
+    crossData.value = acc
+  } finally {
+    crossLoading.value = false
+  }
+}
+
+// 行=科目（EXPENSE_ACCOUNT_OPTIONS 順・未知科目は後ろ）。年計>0 の科目だけ出す。
+const crossRows = computed(() => {
+  const acc = crossData.value
+  const present = Object.keys(acc)
+  const ordered = (EXPENSE_ACCOUNT_OPTIONS as readonly string[]).filter((a) => present.includes(a))
+  const rest = present.filter((a) => !ordered.includes(a)).sort((x, y) => x.localeCompare(y, 'ja'))
+  const months = crossMonths.value
+  return [...ordered, ...rest]
+    .map((account) => {
+      const byMonth = acc[account] || {}
+      const total = months.reduce((s, m) => s + (byMonth[m] || 0), 0)
+      return { account, byMonth, total }
+    })
+    .filter((r) => r.total > 0)
+})
+const crossColTotals = computed<Record<string, number>>(() => {
+  const out: Record<string, number> = {}
+  for (const m of crossMonths.value) out[m] = crossRows.value.reduce((s, r) => s + (r.byMonth[m] || 0), 0)
+  return out
+})
+const crossGrandTotal = computed(() => crossRows.value.reduce((s, r) => s + r.total, 0))
+
+function toggleCrossTab() {
+  showCrossTab.value = !showCrossTab.value
+  if (showCrossTab.value) loadCrossTab()
+}
+// 対象月を動かしたら（開いていれば）12ヶ月窓もその月末基準で引き直す
+watch(dateFrom, () => { if (showCrossTab.value) loadCrossTab() })
+
 onMounted(load)
 watch(dateFrom, load)
 </script>
@@ -822,4 +968,20 @@ watch(dateFrom, load)
   .detail-table td.date-cell, .detail-table td.num { white-space: nowrap; }
   .receipt-link { text-decoration: none; }
 }
+
+/* 科目別 月次集計（クロス集計）#6bba03b2 */
+.crosstab { margin-top: 20px; }
+.crosstab-toggle { display: inline-flex; align-items: center; gap: 6px; background: #f5f7fa; border: 1px solid #e2e6ec; border-radius: 10px; padding: 9px 16px; font-size: 14px; font-weight: 700; color: #334; cursor: pointer; }
+.crosstab-toggle:hover { background: #eef1f5; }
+.ct-ico { font-size: 18px; line-height: 1; }
+.ct-caret { font-size: 18px; line-height: 1; color: #889; }
+.crosstab-body { margin-top: 12px; }
+.crosstab-wrap { max-height: none; }
+.crosstab-table { font-size: 13px; white-space: nowrap; }
+.crosstab-table .ct-acct { font-weight: 600; position: sticky; left: 0; background: #fff; z-index: 1; }
+.crosstab-table thead .ct-acct { z-index: 3; background: #fafafa; }
+.crosstab-table .ct-total { font-weight: 700; background: #fafafa; }
+.crosstab-table .ct-cur { background: #f0f6ff; }
+.crosstab-table .total-row td { font-weight: 700; background: #fafafa; border-top: 2px solid #ddd; }
+.crosstab-table .total-row .ct-acct { background: #fafafa; }
 </style>
