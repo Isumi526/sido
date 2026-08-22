@@ -66,7 +66,7 @@
                終わったことに気づける場所が必要）。結果を見た時点で消える。 -->
           <li><RouterLink to="/estimate-list" class="nav-link"><span class="material-symbols-rounded nav-icon">calculate</span>見積もり<span v-if="extractDoneCount" class="nav-badge" data-testid="nav-badge-extract">{{ extractDoneCount }}</span></RouterLink></li>
           <li><RouterLink to="/estimates" class="nav-link"><span class="material-symbols-rounded nav-icon">description</span>見積書（受領）</RouterLink></li>
-          <li><RouterLink to="/purchase-orders" class="nav-link"><span class="material-symbols-rounded nav-icon">assignment</span>注文書発行</RouterLink></li>
+          <li><RouterLink to="/purchase-orders" class="nav-link"><span class="material-symbols-rounded nav-icon">assignment</span>注文書発行<span v-if="poAcceptedPendingCount" class="nav-badge" data-testid="nav-badge-po-accepted">{{ poAcceptedPendingCount }}</span></RouterLink></li>
           <li><RouterLink to="/drawing-materials" class="nav-link"><span class="material-symbols-rounded nav-icon">architecture</span>実施図面 材料抽出(AI)</RouterLink></li>
 
           <li class="nav-section">経費・請求</li>
@@ -124,7 +124,7 @@ import { currentUser, currentRole, currentWorkerName, signOut, isAdminAllowed, r
 import { canViewEstimates } from './lib/features'
 import { liffAppUrl } from './lib/links'
 import { getAccountName } from './lib/account'
-import { editReviewCount, siteUnsetCount, overtimePendingCount, pendingGrantCount, refreshNavBadges } from './lib/navBadges'
+import { editReviewCount, siteUnsetCount, overtimePendingCount, pendingGrantCount, poAcceptedPendingCount, refreshNavBadges } from './lib/navBadges'
 import { unreadChatCount, refreshChatBadge } from './lib/chatBadge'
 import { extractDoneCount, refreshExtractBadge } from './lib/extractJobs'
 import { HIDE_LINE_SECTIONS, HIDE_AI_HELP_SECTIONS } from './lib/featureFlags'

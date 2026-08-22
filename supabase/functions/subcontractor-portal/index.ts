@@ -14,7 +14,10 @@
 //  ※ 平文トークンはログに出さない。
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { pushLineText } from '../_shared/line.ts'
+import { resolveGroupIds } from '../_shared/resolveGroupId.ts'
 
+const LINE_TOKEN = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 // service role があれば使う。無ければ anon（ローカル等）にフォールバック
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
@@ -542,6 +545,22 @@ Deno.serve(async (req) => {
       const { error: tokUpdErr } = await supabase
         .from('document_access_tokens').update({ used_at: nowIso }).eq('id', tok.id)
       if (tokUpdErr) console.warn('[subcontractor-portal] token used_at update failed (non-fatal):', tokUpdErr.message)
+
+      // 管理側へ per-tenant LINE 通知（注文書が承諾された・#47）。
+      // ★fallback=[] でクロステナント配信を防ぐ＝通知グループ未設定テナントには送らない。
+      //   通知は best-effort。失敗しても承諾処理は妨げない。
+      try {
+        if (LINE_TOKEN) {
+          const { data: acct } = await supabase.from('accounts').select('slug').eq('id', order.account_id).maybeSingle()
+          const groups = await resolveGroupIds(acct?.slug ?? null, [])
+          if (groups.length) {
+            const msg = `✅ 注文書が承諾されました\n注文書番号: ${order.order_number ?? ''}\n受注者: ${order.vendor_name ?? ''}\n現場: ${order.site_name ?? '―'}\n署名: ${signerName || '―'}`
+            await Promise.all(groups.map((id: string) => pushLineText(id, msg, LINE_TOKEN)))
+          }
+        }
+      } catch (e) {
+        console.warn('[subcontractor-portal] accept notify failed (non-fatal):', (e as Error)?.message)
+      }
 
       return json({ ok: true, accepted: true, accepted_at: nowIso })
     }
