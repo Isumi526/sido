@@ -443,9 +443,17 @@
                       <label class="hours-label">{{ $t('report.etcCard') }}</label>
                       <select v-model="hw.etcCard" class="select mt4">
                         <option value="">{{ $t('report.optNone') }}</option>
-                        <option v-for="n in 7" :key="n" :value="`カード${['①','②','③','④','⑤','⑥','⑦'][n-1]}`">
-                          {{ $t('report.cardLabel', { mark: ['①','②','③','④','⑤','⑥','⑦'][n-1] }) }}
-                        </option>
+                        <!-- 物品マスタ（ETCカード）があればそれを出す。無ければ従来の固定カードにフォールバック（壊さない） -->
+                        <template v-if="master.etcCardNames.value.length">
+                          <option v-for="nm in master.etcCardNames.value" :key="nm" :value="nm">{{ nm }}</option>
+                          <!-- 既に選択済みの値が候補に無くても消えないよう残す（マスタ変更/旧データ対策） -->
+                          <option v-if="hw.etcCard && !master.etcCardNames.value.includes(hw.etcCard)" :value="hw.etcCard">{{ hw.etcCard }}</option>
+                        </template>
+                        <template v-else>
+                          <option v-for="n in 7" :key="n" :value="`カード${['①','②','③','④','⑤','⑥','⑦'][n-1]}`">
+                            {{ $t('report.cardLabel', { mark: ['①','②','③','④','⑤','⑥','⑦'][n-1] }) }}
+                          </option>
+                        </template>
                       </select>
                     </div>
                   </div>
