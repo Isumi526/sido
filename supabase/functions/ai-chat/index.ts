@@ -6,6 +6,9 @@
 //  ※ ユーザー入力はそのまま回答用。チケット起票は別EF(ai-create-ticket)で管理者の明示操作のみ。
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+// 画面カタログ（apps/admin のルート/画面名/HelpButton から自動生成＝手書きの二重管理を作らない）。
+// scripts/build-screen-catalog.mjs が生成。画面を足したら再生成する（CIは --check でズレを検知）。
+import { SCREEN_CATALOG } from './screen-catalog.gen.ts'
 
 const API_KEY = Deno.env.get('GEMINI_REVIEW_API_KEY') ?? ''
 const MODEL   = Deno.env.get('GEMINI_REVIEW_MODEL') ?? 'gemini-3.5-flash'
@@ -56,7 +59,7 @@ async function buildFaqBlock(accountSlug: string): Promise<string> {
 const SYSTEM = `あなたは内装施工会社向け業務システム「sido」の操作ヘルプAIです。日本語で簡潔に、手順は箇条書きで答えてください。
 主な機能:
 - LIFF日報: 作業員がLINEから日報を入力。稼働区分→現場→経費(交通/宿泊(ホテル・レオパレス等は複数登録可)/ガソリン/ゴミ/その他)→送信。途中離脱しても自動保存。領収書はAI解析で自動入力可。
-- 管理画面(admin): ダッシュボード/日報一覧/現場別集計/予定管理/工程管理/出面/有給/見積書/注文書/協力業者請求/経費/作業員/現場(詳細ページ・現場責任者設定)/車両/元請け/操作ログ/ガソリン按分。
+- 管理画面(admin)の画面一覧・各画面の表示条件(権限/機能フラグ)・概要は、systemInstruction 末尾の【画面カタログ】を唯一の根拠にする(そこに無い画面名やパスは案内しない)。
 - 見積→注文書→請求の流れ: 見積書を業者・現場に紐付け(業者選択で紐付く現場に絞込)。注文書は業者がトークンURLで承諾(署名)。変更注文書は再承諾で金額更新。承諾済み注文書に請求依頼→業者がフォームで請求(注文書残額照合・超過弾き)。見積書は業者がポータルからアップロードも可。
 - 工程管理: 現場ごとの工程(タスク)を開始/終了/担当/進捗でガント表示。
 - ガソリン按分: 月次実費を現場の走行距離比で実績配賦(見込み/実績/差異)。
@@ -64,6 +67,22 @@ const SYSTEM = `あなたは内装施工会社向け業務システム「sido」
 - リマインド: 日報未送信や車検期限の通知。
 
 【バグ検知】ユーザーのメッセージが「操作の質問・使い方」ではなく「不具合・想定外の挙動・エラー・データがおかしい等の報告」だと判断したら isBug=true とし、bugTitle(短い要約・60字以内)と bugSummary(どの画面で/何をしたら/どうなったか・期待との差 を簡潔に)を埋めてください。単なる使い方の質問なら isBug=false で bugTitle/bugSummary は空。answer には常にユーザー向けの回答を入れ、isBug=true のときは末尾に「不具合の可能性があるのでバックログに記録できます」と添えてください。`
+
+// 画面カタログ(自動生成)を systemInstruction 用テキストにする。
+// 表示条件(権限/機能フラグ)を必ず併記する＝「注文書はどこ？」に対し、見積もり機能フラグが
+// OFFなら開けないことまで含めて正しく案内できるようにする（このEFが生まれた元の不具合）。
+const SCREEN_CATALOG_BLOCK = (() => {
+  if (!SCREEN_CATALOG.length) return ''
+  const lines = SCREEN_CATALOG.map((s) => {
+    const cond: string[] = []
+    if (s.requiresEstimate) cond.push('見積もり機能ONのときのみ')
+    if (s.requiresManagement) cond.push('管理者のみ')
+    const condText = cond.length ? `〔${cond.join('・')}〕` : ''
+    const desc = (s.help && s.help.length ? s.help[0] : s.title) || ''
+    return `- ${s.name}（${s.path}）${condText}${desc ? ` … ${desc}` : ''}`
+  }).join('\n')
+  return `\n\n【管理画面(admin) 画面カタログ（自動生成・これだけを根拠にする。ここに無い画面名/パスは案内しない）】\n各画面の表示条件（権限・機能フラグ）を満たさないユーザーには表示されず、URL直打ちもホームへ戻される。案内時は条件を必ず添えること。\n${lines}`
+})()
 
 // 聞き返し（曖昧な質問の絞り込み）。質問者に頑張らせず、AIが1回だけ選択肢を出して絞る。
 // allowClarify=false（直前が聞き返し＝2回目以降）のときはこのルールを付けない＝必ず即答させる（ループ防止）。
@@ -112,7 +131,7 @@ Deno.serve(async(req)=>{
   if(!message.trim()&&images.length===0)return json({ok:false,error:'empty'},400)
   const faqBlock=await buildFaqBlock(auth.accountSlug)
   const screenBlock=screenContext&&screenContext.name?`\n\n【ユーザーが今いる画面】「${screenContext.name}」（パス: ${screenContext.path}）。ユーザーの質問はこの画面に関する可能性が高い。文脈が曖昧な時はこの画面の機能・操作として答える。`:''
-  const system=SYSTEM+screenBlock+faqBlock+(allowClarify?CLARIFY_RULE:'')
+  const system=SYSTEM+SCREEN_CATALOG_BLOCK+screenBlock+faqBlock+(allowClarify?CLARIFY_RULE:'')
   // 最新の user turn にだけ画像を載せる（履歴に画像を積むとトークンが膨らむ）
   const userParts:any[]=[...images.map(im=>({inlineData:{mimeType:im.mimeType,data:im.data}}))]
   userParts.push({text:message.trim()||'この画像について教えてください。'})
