@@ -311,7 +311,7 @@ Deno.serve(async (req) => {
   if (body.action === 'overtime-recent') {
     const limit = Number(body.limit) > 0 ? Math.min(Number(body.limit), 100) : 20
     const { data } = await svc.from('overtime_requests')
-      .select('id, date, requested_start_time, requested_end_time, requested_break_minutes, reason, status, requested_at')
+      .select('id, date, requested_start_time, requested_end_time, requested_break_minutes, reason, status, is_late, requested_at')
       .eq('account_id', caller.accountId).eq('worker_id', caller.workerId)
       .order('requested_at', { ascending: false }).limit(limit)
     return json({ ok: true, items: data ?? [] })
@@ -344,6 +344,69 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: 'insert_failed' }, 500)
     }
     return json({ ok: true })
+  }
+
+  // ── 締切後の実績修正の申請（late）──
+  //  16:00締切ルールは通常申請(overtime-request)にそのまま残す。締切を過ぎた後で
+  //  「実際に働いた残業実績」を後追い申告して修正する導線。承認は通常申請と同じく必須。
+  //  既存の有効申請(pending/approved)があればその行を上書きし、再承認のため pending に戻す
+  //  （同じ行なので overtime_requests_active_uidx に抵触しない）。無ければ is_late 付きで新規。
+  //  ★worker_id は caller 本人で固定（他人名義の申請を作れない）。
+  if (body.action === 'overtime-late-request') {
+    const date = isDate(body.date) ? body.date : ''
+    if (!date) return json({ ok: false, error: 'bad_date' }, 400)
+    // 未来日は不可（実績の後追い申告なので今日以前のみ）
+    if (date > jstDay(0)) return json({ ok: false, error: 'future_date' }, 400)
+    const reason = typeof body.reason === 'string' && body.reason.trim() ? body.reason.trim() : ''
+    if (!reason) return json({ ok: false, error: 'reason_required' }, 400)
+
+    const bm = body.requestedBreakMinutes
+    const fields = {
+      requested_end_time: isTime(body.requestedEndTime) ? body.requestedEndTime : null,
+      requested_start_time: isTime(body.requestedStartTime) ? body.requestedStartTime : null,
+      // ★0（休憩なし）と null（申請なし）を潰さない
+      requested_break_minutes: (typeof bm === 'number' && bm >= 0 && bm <= 480) ? bm : null,
+      reason,
+      site_names: Array.isArray(body.siteNames) && body.siteNames.length ? body.siteNames.map(String) : null,
+    }
+    const overwrite = {
+      ...fields, is_late: true, status: 'pending',
+      approved_by: null, decided_at: null, requested_at: new Date().toISOString(),
+    }
+
+    // 既存の有効申請（pending/approved）があれば上書き＝実績で修正し、再承認のため pending に戻す
+    const { data: active } = await svc.from('overtime_requests').select('id')
+      .eq('account_id', caller.accountId).eq('worker_id', caller.workerId).eq('date', date)
+      .in('status', ['pending', 'approved']).limit(1)
+    if (active && active.length) {
+      const { error } = await svc.from('overtime_requests').update(overwrite).eq('id', active[0].id)
+      if (error) {
+        console.error('[attendance-log] overtime-late update failed:', error)
+        return json({ ok: false, error: 'update_failed' }, 500)
+      }
+      return json({ ok: true, updated: true })
+    }
+
+    // 無ければ late 付きで新規 pending を作る
+    const { error } = await svc.from('overtime_requests').insert({
+      account_id: caller.accountId, worker_id: caller.workerId, date,
+      ...fields, is_late: true, status: 'pending',
+    })
+    if (error) {
+      // 競合で同時に有効申請が作られた→それを上書きし直す
+      if ((error as any).code === '23505') {
+        const { data: a2 } = await svc.from('overtime_requests').select('id')
+          .eq('account_id', caller.accountId).eq('worker_id', caller.workerId).eq('date', date)
+          .in('status', ['pending', 'approved']).limit(1)
+        if (a2 && a2.length) {
+          await svc.from('overtime_requests').update(overwrite).eq('id', a2[0].id)
+          return json({ ok: true, updated: true })
+        }
+      }
+      console.error('[attendance-log] overtime-late insert failed:', error)
+      return json({ ok: false, error: 'insert_failed' }, 500)
+    }
+    return json({ ok: true, updated: false })
   }
 
   // 誤った申請の取り消し（pending のみ・本人の分だけ）

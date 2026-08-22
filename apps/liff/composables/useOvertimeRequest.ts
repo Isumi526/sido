@@ -125,6 +125,33 @@ export function useOvertimeRequest() {
     }
   }
 
+  /**
+   * 締切後の「実績修正の申請」(late)。16:00締切は通常申請(requestOvertime)に残したまま、
+   * 締切を過ぎた後で実際の残業実績を申告して修正する導線。必ず承認が要る。
+   * 既存の有効申請があればEFがその行を上書き（再承認のため pending に戻す）、無ければ late 新規。
+   * ★canRequest の締切ガードは通さない（この関数は締切後に使う）。理由は必須。
+   * ★worker_id は渡さない。EF が検証済みの身元から決める。
+   */
+  async function requestLateCorrection(
+    _workerId: string | null | undefined, date: string, requestedEndTime: string | null, reason: string,
+    siteNames: string[] = [],
+    requestedStartTime: string | null = null,
+    requestedBreakMinutes: number | null = null,
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (!date) return { ok: false, error: 'no-worker-or-date' }
+    if (!reason || !reason.trim()) return { ok: false, error: 'reason-required' }
+    try {
+      await call('overtime-late-request', {
+        date, requestedEndTime, requestedStartTime,
+        ...(requestedBreakMinutes === null ? {} : { requestedBreakMinutes }),
+        reason, siteNames,
+      })
+      return { ok: true }
+    } catch (e: any) {
+      return { ok: false, error: e?.message ?? 'failed' }
+    }
+  }
+
   // 誤った申請の取り消し（pending のみ削除＝承認済みは消さない）。
   async function cancelRequest(_workerId: string | null | undefined, date: string): Promise<{ ok: boolean; error?: string }> {
     if (!date) return { ok: false, error: 'no-worker-or-date' }
@@ -136,5 +163,5 @@ export function useOvertimeRequest() {
     }
   }
 
-  return { canRequest, status, isApproved, approvedAdjustment, myRecent, requestOvertime, cancelRequest }
+  return { canRequest, status, isApproved, approvedAdjustment, myRecent, requestOvertime, requestLateCorrection, cancelRequest }
 }

@@ -24,5 +24,12 @@
   "startTimeNone": "Not requesting (as usual)",
   "breakLabel": "Break actually taken (optional)",
   "breakNone": "Not requesting (site default)",
-  "breakZero": "No break"
+  "breakZero": "No break",
+  "lateNote": "The 16:00 deadline has passed, but you can still report your actual overtime afterward. What you submit takes effect after admin approval.",
+  "lateReasonLabel": "Reason for correction (required)",
+  "lateReasonPlaceholder": "e.g. work ran late after the deadline / reporting actual end time",
+  "lateSubmit": "Submit actual correction",
+  "lateSubmitted": "Correction submitted. Awaiting admin approval.",
+  "lateReasonRequired": "Please enter a reason for the correction.",
+  "lateBadge": "Late correction"
 }
