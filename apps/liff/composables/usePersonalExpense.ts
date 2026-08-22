@@ -22,6 +22,8 @@ export interface PersonalExpenseInput {
   note?: string | null
   file_urls?: string[]
   tategae?: boolean
+  site_id?: string | null      // 紐付けた現場（任意）。未選択は null
+  site_name?: string | null    // 表示用スナップショット
   client_token?: string   // 1登録につき1つ。再送を1行にまとめる（二重計上の防止）
 }
 
