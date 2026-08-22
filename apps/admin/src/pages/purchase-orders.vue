@@ -234,6 +234,7 @@ import html2canvas from 'html2canvas'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountName } from '../lib/account'
 import { openDoc } from '../lib/docUrl'
+import { refreshNavBadges } from '../lib/navBadges'
 
 const BUCKET     = 'expense-receipts'     // 署名画像など既存公開物の表示用（後方互換）
 const PDF_BUCKET = 'admin-docs'           // 新規発行の注文書PDFは非公開バケットへ（署名URL配信）
@@ -568,6 +569,7 @@ async function requestInvoice(o: PO) {
     const sent = await callInvoiceFn(o.id)
     alert(sent.ok ? sent.msg : `請求依頼の送信に失敗しました: ${sent.msg}`)
     await load()
+    refreshNavBadges()   // 請求依頼を打つと「承諾済・未請求」バッジが減る(#47)
   } finally { busyId.value = null }
 }
 

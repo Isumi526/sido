@@ -14,10 +14,26 @@ export const siteUnsetCount       = ref(0)  // 現場未設定の日報(直近90
 export const overtimePendingCount = ref(0)  // 残業申請(pending)
 export const pendingGrantCount    = ref(0)  // 有給の付与待ち(未付与の基準日がある作業員数)
 export const editReviewCount      = ref(0)  // 日報編集の承認待ち(保留中の編集)
+export const poAcceptedPendingCount = ref(0) // 業者が承諾済みだが、まだ請求依頼していない注文書(=管理者の要対応・#47)
 
 export async function refreshNavBadges() {
   const accountId = await getAccountId()
-  if (!accountId) { editApprovalCount.value = 0; siteUnsetCount.value = 0; overtimePendingCount.value = 0; pendingGrantCount.value = 0; editReviewCount.value = 0; return }
+  if (!accountId) { editApprovalCount.value = 0; siteUnsetCount.value = 0; overtimePendingCount.value = 0; pendingGrantCount.value = 0; editReviewCount.value = 0; poAcceptedPendingCount.value = 0; return }
+  // 注文書の承諾バッジ(#47): 承諾済み(status='accepted' or 承諾証跡あり)で、まだ請求依頼していない注文書の数。
+  // 「確認して次アクション(請求依頼)を打つ」とバッジが減る＝要対応の可視化。承諾はEF側でLINE通知も出る。
+  {
+    const { data: pos } = await supabase.from('purchase_orders')
+      .select('id, status').eq('account_id', accountId).eq('is_deleted', false).is('invoice_requested_at', null)
+    const pending = (pos ?? []) as { id: string; status: string | null }[]
+    if (pending.length) {
+      const { data: accs } = await supabase.from('purchase_order_acceptances')
+        .select('purchase_order_id').in('purchase_order_id', pending.map(p => p.id))
+      const accSet = new Set(((accs ?? []) as { purchase_order_id: string }[]).map(a => a.purchase_order_id))
+      poAcceptedPendingCount.value = pending.filter(p => p.status === 'accepted' || accSet.has(p.id)).length
+    } else {
+      poAcceptedPendingCount.value = 0
+    }
+  }
   // 許可申請: pending件数（DBカウント）
   const { count } = await supabase.from('report_edit_grants')
     .select('id', { count: 'exact', head: true })
