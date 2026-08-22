@@ -5,6 +5,7 @@
         <HelpButton title="協力業者請求の使い方" :items="[
           '協力業者からの請求（支払）を登録・管理します。',
           '「＋ 新規請求」から、業者・対象・金額を入力して登録します。',
+          '協力業者以外の仕入先の請求書も、請求元区分を「その他仕入先」に切り替えて仕入先名を直接入力すれば登録できます。',
           '登録済みの請求は一覧から編集・確認できます。',
         ]" />
       </h1>
@@ -108,14 +109,27 @@
           <p v-if="files.length" class="selected-files">選択中: {{ files.map(f => f.name).join('、') }}</p>
           <p v-if="aiMsg" class="ai-msg">{{ aiMsg }}</p>
 
+          <!-- 請求元区分（協力業者 / その他仕入先）。その他は仕入先名を自由入力できる＝登録口の間口を広げる -->
+          <div class="kind-row">
+            <span class="kind-label">請求元区分</span>
+            <div class="kind-toggle" data-testid="vendor-kind-toggle">
+              <button type="button" :class="{ active: form.vendor_kind !== 'other' }" data-testid="vendor-kind-subcontractor"
+                      @click="setVendorKind('subcontractor')">協力業者</button>
+              <button type="button" :class="{ active: form.vendor_kind === 'other' }" data-testid="vendor-kind-other"
+                      @click="setVendorKind('other')">その他仕入先</button>
+            </div>
+          </div>
           <!-- ヘッダ -->
           <div class="hd-grid">
-            <label class="fld"><span>協力業者 *</span>
+            <label v-if="form.vendor_kind !== 'other'" class="fld"><span>協力業者 *</span>
               <select v-model="form.subcontractor_id" class="inp" @change="onVendorSelect">
                 <option :value="null" disabled>選択してください</option>
                 <option v-for="s in subs" :key="s.id" :value="s.id">{{ s.name }}{{ s.category ? `（${s.category}）` : '' }}</option>
                 <option value="__new__">＋ 新規業者を登録…</option>
               </select>
+            </label>
+            <label v-else class="fld"><span>請求元（仕入先名）*</span>
+              <input v-model="form.vendor_name" class="inp" data-testid="vendor-name-free" placeholder="例：○○商店、△△リース" />
             </label>
             <label v-if="posForVendor.length" class="fld"><span>注文書（出来高請求の紐付け）</span>
               <select v-model="form.purchase_order_id" class="inp" data-testid="po-select">
@@ -145,7 +159,7 @@
             </label>
           </div>
           <!-- 新規業者の登録 -->
-          <div v-if="form.subcontractor_id === '__new__'" class="new-vendor">
+          <div v-if="form.subcontractor_id === '__new__' && form.vendor_kind !== 'other'" class="new-vendor">
             <input v-model="newVendor.name" class="inp" placeholder="業者名" />
             <select v-model="newVendor.category" class="inp">
               <option value="" disabled>区分を選択 *</option>
@@ -293,7 +307,7 @@ interface Item {
   _newSiteName?: string
 }
 interface Form {
-  id?: string; vendor_name: string; subcontractor_id: string | null; registration_number: string | null
+  id?: string; vendor_kind: 'subcontractor' | 'other'; vendor_name: string; subcontractor_id: string | null; registration_number: string | null
   purchase_order_id: string | null
   title: string | null; invoice_no: string | null; invoice_date: string | null; due_date: string | null
   transfer_date: string | null; paid: boolean; total_amount: number | null; pdf_path: string | null; note: string | null; tax_mode: 'exclusive' | 'inclusive'; items: Item[]
@@ -533,7 +547,7 @@ async function load() {
 
 function blankForm(): Form {
   const today = new Date().toISOString().slice(0, 10)
-  return { vendor_name: '', subcontractor_id: null, purchase_order_id: null, registration_number: null, title: null, invoice_no: null, invoice_date: today, due_date: null, transfer_date: null, paid: false, total_amount: null, pdf_path: null, pdf_bucket: null, note: null, tax_mode: 'exclusive', items: [] }
+  return { vendor_kind: 'subcontractor', vendor_name: '', subcontractor_id: null, purchase_order_id: null, registration_number: null, title: null, invoice_no: null, invoice_date: today, due_date: null, transfer_date: null, paid: false, total_amount: null, pdf_path: null, pdf_bucket: null, note: null, tax_mode: 'exclusive', items: [] }
 }
 // 開いた時点の内容スナップショット（変更有無の判定用）
 const formSnapshot = ref('')
@@ -557,7 +571,7 @@ async function openEdit(inv: any) {
   const { data: items } = await supabase.from('subcontractor_invoice_items')
     .select('*').eq('invoice_id', inv.id).order('sort_order').order('item_date')
   form.value = {
-    id: inv.id, vendor_name: inv.vendor_name, subcontractor_id: inv.subcontractor_id,
+    id: inv.id, vendor_kind: (inv as any).vendor_kind === 'other' ? 'other' : 'subcontractor', vendor_name: inv.vendor_name, subcontractor_id: inv.subcontractor_id,
     purchase_order_id: inv.purchase_order_id ?? null,
     registration_number: inv.registration_number, title: inv.title, invoice_no: inv.invoice_no,
     invoice_date: inv.invoice_date, due_date: inv.due_date, transfer_date: inv.transfer_date, paid: !!inv.paid,
@@ -578,6 +592,20 @@ function onVendorSelect() {
   if (f.subcontractor_id === '__new__') { newVendor.value = { name: '', category: '' }; return }
   const s = subs.value.find(x => x.id === f.subcontractor_id)
   if (s) f.vendor_name = s.name
+}
+
+// 請求元区分の切替。その他仕入先は協力業者マスタ/注文書の紐付けを持たない（間口を広げる）ので解除する。
+function setVendorKind(kind: 'subcontractor' | 'other') {
+  const f = form.value; if (!f) return
+  f.vendor_kind = kind
+  if (kind === 'other') {
+    // マスタ/注文書の紐付けはその他仕入先には無い。vendor_name は自由入力欄として残す（AI解析結果も活かせる）
+    f.subcontractor_id = null
+    f.purchase_order_id = null
+  } else {
+    // マスタ選択に戻す（選択で vendor_name が上書きされる）
+    f.subcontractor_id = null
+  }
 }
 
 // 新規業者をマスタに登録して選択
@@ -784,8 +812,11 @@ async function analyze() {
 
 async function save() {
   const f = form.value!
+  const isOther = f.vendor_kind === 'other'
   const sub = subs.value.find(s => s.id === f.subcontractor_id)
-  if (!sub) { formError.value = '協力業者を選択してください（新規は「業者を登録」で追加）'; return }
+  // 請求元区分で必須が変わる：協力業者=マスタ選択必須／その他仕入先=仕入先名の自由入力必須
+  if (!isOther && !sub) { formError.value = '協力業者を選択してください（新規は「業者を登録」で追加）'; return }
+  if (isOther && !f.vendor_name.trim()) { formError.value = '請求元（仕入先名）を入力してください'; return }
   if (f.items.length === 0) { formError.value = '明細を1行以上入力してください'; return }
   // 現場は必須（未確定の新規入力中も不可）
   if (f.items.some(it => !it.site_id || it.site_id === '__new__')) { formError.value = 'すべての明細で現場を選択してください（新規は「追加」で確定）'; return }
@@ -798,8 +829,13 @@ async function save() {
   saving.value = true; formError.value = ''
   try {
     const accountId = await getAccountId()
+    // その他仕入先はマスタ非紐付け（subcontractor_id=null）＋自由入力名。協力業者は従来どおりマスタ名で保存。
+    const vendorName = isOther ? f.vendor_name.trim() : sub!.name
     const header = {
-      account_id: accountId, subcontractor_id: sub.id, vendor_name: sub.name,
+      account_id: accountId,
+      vendor_kind: isOther ? 'other' : 'subcontractor',
+      subcontractor_id: isOther ? null : sub!.id,
+      vendor_name: vendorName,
       purchase_order_id: f.purchase_order_id || null,
       registration_number: f.registration_number || null,
       title: f.title || null, invoice_no: f.invoice_no || null, invoice_date: f.invoice_date || null,
@@ -865,7 +901,7 @@ async function save() {
       const { error } = await supabase.from('subcontractor_invoice_items').insert(rows)
       if (error) throw error
     }
-    await logOperation(f.id ? '請求更新' : '請求登録', { targetType: 'subcontractor_invoice', targetId: invoiceId, summary: `${sub.name} ${yen(f.total_amount)}` })
+    await logOperation(f.id ? '請求更新' : '請求登録', { targetType: 'subcontractor_invoice', targetId: invoiceId, summary: `${vendorName} ${yen(f.total_amount)}` })
     form.value = null
     await load()
   } catch (e: any) {
@@ -954,6 +990,11 @@ onMounted(load)
 .btn-ai:disabled { opacity: .5; cursor: default; }
 .ai-msg { font-size: 12px; color: #1a56c4; margin: 0 0 12px; }
 
+.kind-row { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; flex-wrap: wrap; }
+.kind-label { font-size: 12px; color: #6b7280; }
+.kind-toggle { display: inline-flex; border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; }
+.kind-toggle button { border: none; background: #fff; padding: 6px 14px; font-size: 13px; cursor: pointer; color: #374151; }
+.kind-toggle button.active { background: #06C755; color: #fff; }
 .hd-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 14px; margin-bottom: 16px; }
 .fld { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: #666; }
 .inp { border: 1px solid #ddd; border-radius: 8px; padding: 8px 10px; font-size: 14px; }
