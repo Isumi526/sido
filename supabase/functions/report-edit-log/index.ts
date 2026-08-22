@@ -317,6 +317,26 @@ async function needsDualApproval(
   return totalYenOf(payload?.sites) > totalYenOf(cur.sites)
 }
 
+/**
+ * 自分のほかに「オーナー枠（admin/owner・active・ログイン可）」を埋められる人が居るか。
+ * late_new は常に二重承認、かつオーナー枠は admin/owner のみが埋められる。オーナーが1名の会社で
+ * そのオーナー自身が申請すると、自己承認禁止により誰もオーナー枠を埋められず永久ロックする
+ * （2026-08-21 株式会社シードの実障害）。完全ワンオペ（他に居ない）時だけ自己承認を許すための判定。
+ */
+async function hasOtherActiveOwner(
+  svc: any, accountId: string, myWorkerId: string | null,
+): Promise<boolean> {
+  // 実効的にオーナー枠を埋められる承認者＝active な admin/owner の worker（ログイン可）だけで判定する。
+  // ★worker行の無い休眠オーナー（accounts.owner_auth_user_id 例:sido@email.com）は数えない。
+  //  数えると、唯一の active admin worker（＝申請者本人）がワンオペと認められず永久ロックする
+  //  （2026-08-22 シード実障害。前回 owner_auth を数えていて修正が効かなかった）。
+  const { data: ws } = await svc.from('workers').select('id')
+    .eq('account_id', accountId).eq('active', true)
+    .in('permission_role', ['admin', 'owner'])
+    .not('auth_user_id', 'is', null)
+  return (ws ?? []).some((w: any) => w.id !== myWorkerId)
+}
+
 async function handleReview(svc: any, body: any, authHeader: string): Promise<Response> {
   if (!authHeader || authHeader.endsWith(ANON_KEY)) return json({ ok: false, error: 'unauthorized' }, 401)
   const cli = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: authHeader } } })
@@ -352,8 +372,15 @@ async function handleReview(svc: any, body: any, authHeader: string): Promise<Re
       .eq('account_id', accountId).eq('worker_id', approver.workerId).maybeSingle()
     myUserId = me?.id ?? null
   }
-  if (myUserId && pend.submitted_by_user_id && myUserId === pend.submitted_by_user_id) {
-    return json({ ok: false, error: 'self_approval_forbidden' }, 403)
+  const isSubmitter = !!(myUserId && pend.submitted_by_user_id && myUserId === pend.submitted_by_user_id)
+  if (isSubmitter) {
+    // 自己承認は原則禁止。ただしオーナーが完全ワンオペ（自分以外にオーナー枠が1人も居ない）時だけは、
+    // 放置すると承認が永久に回らないためオーナー本人の承認を許す。オーナー以外(worker/site_manager)は常に禁止。
+    const isOwnerSlot = approver.role === 'admin' || approver.role === 'owner'
+    const soloOwner = isOwnerSlot && !(await hasOtherActiveOwner(svc, accountId, approver.workerId))
+    if (!soloOwner) {
+      return json({ ok: false, error: 'self_approval_forbidden' }, 403)
+    }
   }
 
   // ★承認者は「人が読める名前」で残す。

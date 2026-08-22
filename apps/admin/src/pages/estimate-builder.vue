@@ -135,10 +135,6 @@
                   :data-testid="`wiz-step-${s.n}`" @click="goStep(s.n)">
             {{ s.n }}. {{ s.label }}
           </button>
-          <!-- ★ステップの中から解析を始めた時も進捗が見えるようにする（2026-08-19）。
-               ここに無いと、一番押される「材料を抽出」から始めた時だけ何も出なかった。 -->
-          <ExtractProgressChips :project-id="projectId" :quantity-busy="dqty.busy"
-                                :quantity-done="dqty.done" :quantity-total="dqty.total" />
           <button class="btn-link-sm wiz-exit" data-testid="wiz-exit" @click="finishWizard()">ステップ入力をやめて明細へ</button>
         </div>
 
@@ -177,38 +173,13 @@
           </div>
         </section>
 
-        <!-- 2. 案件名（自動入力）＋ 材料抽出 -->
+        <!-- 2. 案件名（自動入力） -->
         <section v-else-if="wizard.step === 2" class="panel" data-testid="wiz-panel-2">
           <div class="panel-head"><h2>② 案件名の確認</h2></div>
           <label class="ifield wide"><span>案件名（図面のファイル名から自動で入れました・直せます）</span>
             <input v-model="wizard.name" class="input" data-testid="wiz-name" placeholder="例: 〇〇ビル改修" />
           </label>
           <span v-if="wizard.err" class="err" data-testid="wiz-err">{{ wizard.err }}</span>
-
-          <!-- ★図面ごとに小さなボタンが名前の横に並ぶだけで、何を押せばいいのか分からなかった
-               （2026-08-19 大塚さん向け通しレビュー）。図面1件を1枚のカードにして、
-               表紙・ファイル名・ボタンを縦に揃える。ボタンはこのステップの主役なので大きく出す。 -->
-          <template v-if="pdfAttachments.length">
-            <div class="ext-offer" data-testid="wiz-ext-offer">
-              <h3 class="sub-h">図面から材料と数量を読み取る（任意）</h3>
-              <p class="hint">
-                図面に書かれた品番・数量をAIが読み取って、明細の下地を作ります。
-                <strong>始めたあとは他の入力を続けて構いません</strong>（進み具合はこのボタンに出ます）。
-              </p>
-              <ul class="ext-cards" data-testid="wiz-ext-list">
-                <li v-for="a in pdfAttachments" :key="a.id" class="ext-card">
-                  <button v-if="attThumbs[a.id]" class="ext-thumb" @click="openAttachment(a)">
-                    <img :src="attThumbs[a.id]" :alt="a.name || a.path" />
-                  </button>
-                  <div v-else class="ext-thumb ext-thumb-empty">
-                    <span class="material-symbols-rounded">description</span>
-                  </div>
-                  <span class="ext-name" :title="a.name || a.path">{{ a.name || a.path }}</span>
-                  <ExtractControl :att="a" @start="beginExtractFromWizard" @review="openExtractResult" />
-                </li>
-              </ul>
-            </div>
-          </template>
 
           <div class="wiz-actions">
             <button class="btn-cancel" data-testid="wiz-back-2" @click="wizard.step = 1">戻る</button>
@@ -278,11 +249,6 @@
         <button class="btab" :class="{ active: builderTab === 'preview' }" data-testid="tab-preview" @click="builderTab = 'preview'">見積書プレビュー</button>
         <!-- 発注は受注してからしか発生しない。受注前に出ていると紛らわしいので隠す（レビュー2026-07-28） -->
         <button v-if="isOrdered" class="btab" :class="{ active: builderTab === 'po' }" data-testid="tab-po" @click="builderTab = 'po'">商社へ発注</button>
-        <!-- ★R53: 解析中はどのタブに居ても進捗が見えるようにする。
-             案件情報タブの図面一覧にしか出さないと、明細を打っている間は進んでいるか分からない。
-             ★同じものをステップ式の画面にも出す（部品側のコメント参照・2026-08-19） -->
-        <ExtractProgressChips :project-id="projectId" :quantity-busy="dqty.busy"
-                              :quantity-done="dqty.done" :quantity-total="dqty.total" />
         <button class="btab ghost" data-testid="open-drawer" @click="openDrawer"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">settings</span> マスタ・自社情報</button>
       </div>
 
@@ -333,164 +299,10 @@
               <button class="att-name" :data-testid="`intake-att-${a.id}`" @click="openAttachment(a)">{{ a.name || a.path }}</button>
               <!-- R8: 図面はページごとに工種が分かれている。該当ページだけ業者へ送る -->
               <button v-if="isPdf(a)" class="btn-edit" :data-testid="`dsend-open-${a.id}`" @click="openDrawingSend(a)">ページを選んで送る</button>
-              <!-- ★案件の図面からそのまま材料を抽出する。独立ページ(/drawing-materials)は
-                   案件に紐づかない用途（受注前の当たり付け等）で残す。
-                   ★R53: 解析はモーダルで拘束せず、進捗だけ出して裏で進める。 -->
-              <template v-if="isPdf(a)">
-                <ExtractControl :att="a" @start="beginExtract" @review="openExtractResult" />
-                <!-- ★Q7: 材料(品番)とは別に「凡例に書かれた確定数量」を取る。
-                     床/置床/天井の面積・建具/器具の台数は設計者が凡例に明記しているので拾い直さない。 -->
-                <!-- ★前に解析した図面かどうかがボタンで分かるようにする。
-                     結果は保存されているのに、押すまで何も見えないと「消えた」としか見えない
-                     （2026-08-19 通しレビューでの指摘）。 -->
-                <button class="btn-edit" :disabled="dqty.busy" :data-testid="`dqty-open-${a.id}`" @click="openQuantityExtract(a)">
-                  <template v-if="dqty.busy && dqty.att?.id === a.id">数量抽出中… {{ dqty.done }}/{{ dqty.total }}</template>
-                  <template v-else-if="qtySavedCount[a.id]">数量を見る（前回 {{ qtySavedCount[a.id] }}件）</template>
-                  <template v-else>数量を抽出</template>
-                </button>
-              </template>
               <button class="btn-del" :data-testid="`intake-att-del-${a.id}`" @click="removeAttachment(a)">×</button>
             </li>
           </ul>
           <p v-else class="hint">まだ図面がありません。元請けから受け取った図面をここに置いておくと、見積作成時に参照できます。</p>
-        </section>
-
-        <!-- ★実施図面からの材料抽出。抽出結果を明細へ流し込む出口を作る。
-             これまでは独立ページでCSV書き出しまでで、明細には手で打ち直していた。
-             ★R53: モーダルではなくパネル。解析中も閉じても構わない（裏で進む）。 -->
-        <section v-if="dext.att" class="panel" data-testid="dext-panel">
-          <div class="panel-head">
-            <h2>材料の抽出結果 — {{ dext.att.name || dext.att.path }}</h2>
-            <button class="btn-cancel" data-testid="dext-close" @click="closeExtract">閉じる</button>
-          </div>
-          <p class="hint">
-            図面に書かれたメーカー品番をAIが読み取ります。
-            <strong>チェックした行だけ</strong>を明細に入れます。<br>
-            ★図面には「(仮)」の品番や<strong>中止になったのに綴じられたままの詳細図</strong>が混ざります。
-            全部そのまま入れると中止項目まで計上してしまうので、必ず人が選んでください。
-          </p>
-          <div v-if="dextJob?.status === 'running'" class="pinfo-loading" data-testid="dext-busy">
-            <span class="spin-dot"></span> 解析中… ページ {{ dextJob.done }}/{{ dextJob.total }}（この画面を閉じても続きます）
-          </div>
-          <div v-else-if="dextJob?.status === 'paused'" class="hint" data-testid="dext-paused">
-            {{ dextJob.done }}/{{ dextJob.total }}ページまで完了しています。
-            <button class="btn-primary sm" data-testid="dext-resume-panel" @click="beginExtract(dext.att)">残りを続ける</button>
-          </div>
-          <div v-if="!dext.rows.length && dextJob?.status !== 'running'" class="hint" data-testid="dext-empty">
-            {{ dextJob ? '品番は見つかりませんでした' : '「解析する」で図面を読み取ります' }}
-          </div>
-          <div v-if="dext.rows.length" class="items-scroll dext-list">
-            <table class="table">
-              <thead><tr><th></th><th>P</th><th>部位</th><th>メーカー</th><th>品番</th><th>規格サイズ</th><th>仕様</th><th>数量</th><th>備考</th></tr></thead>
-              <tbody>
-                <tr v-for="(r, ri) in dext.rows" :key="ri" :data-testid="`dext-row-${ri}`">
-                  <td><input type="checkbox" v-model="r._pick" :data-testid="`dext-pick-${ri}`" /></td>
-                  <td>{{ r.page }}</td>
-                  <td>{{ r.part }}</td>
-                  <td>{{ r.manufacturer }}</td>
-                  <td><input v-model="r.code" class="input sm" :data-testid="`dext-code-${ri}`" /></td>
-                  <td>{{ r.size }}</td>
-                  <td>{{ r.spec }}</td>
-                  <td>{{ r.quantity }}</td>
-                  <td class="dext-note">{{ r.note }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="actions-row">
-            <button v-if="!dextJob" class="btn-primary" data-testid="dext-run" @click="beginExtract(dext.att)">解析する</button>
-            <template v-if="dext.rows.length">
-              <button class="btn-link-sm" data-testid="dext-all" @click="dext.rows.forEach(r => r._pick = true)">全選択</button>
-              <button class="btn-link-sm" data-testid="dext-none" @click="dext.rows.forEach(r => r._pick = false)">全解除</button>
-              <button class="btn-primary" :disabled="!dextPicked.length || dextApplying" data-testid="dext-apply" @click="applyExtractToItems">
-                <template v-if="dextApplying"><span class="spin-dot"></span> 明細に入れています…</template>
-                <template v-else>選んだ {{ dextPicked.length }} 件を明細に入れる</template>
-              </button>
-            </template>
-            <span v-if="dextJob?.error" class="err" data-testid="dext-err">{{ dextJob.error }}</span>
-          </div>
-        </section>
-
-        <!-- ★Q7: 凡例の確定数量の抽出結果。材料(品番)の抽出とは別パネル。 -->
-        <section v-if="dqty.att" class="panel" data-testid="dqty-panel">
-          <div class="panel-head">
-            <h2>数量の抽出結果 — {{ dqty.att.name || dqty.att.path }}</h2>
-            <button class="btn-cancel" data-testid="dqty-close" @click="dqty.att = null">閉じる</button>
-          </div>
-          <p class="hint">
-            図面の<strong>凡例に書かれている数量</strong>（床・置床・天井の面積／建具・器具の台数／紙管の本数）をそのまま読み取ります。
-            面積を図面から計算するのではなく、<strong>設計者が明記した確定値</strong>を転記します。<br>
-            ★<strong>壁は対象外</strong>です（壁は面積が図面に無いため）。
-            ★図面に「平面図数量の為、ロスは見込んでください」とある通り、<strong>ロス率は人が付けてください</strong>。
-          </p>
-
-          <div v-if="dqty.busy" class="pinfo-loading" data-testid="dqty-busy">
-            <span class="spin-dot"></span> 解析中… ページ {{ dqty.done }}/{{ dqty.total }}
-          </div>
-          <p v-if="dqty.error" class="err" data-testid="dqty-err">{{ dqty.error }}</p>
-          <!-- ★前回の結果を出している時は、解析し直すかを人が決められるようにする。
-               毎回AIを呼ぶと待たされるうえ費用もかかる（2026-08-19）。 -->
-          <p v-if="!dqty.busy && dqty.rows.length" class="hint" data-testid="dqty-saved-note">
-            前回の抽出結果を表示しています。
-            <button class="btn-link-sm" data-testid="dqty-rerun" @click="beginQuantityExtract(dqty.att)">もう一度解析する</button>
-          </p>
-          <!-- ★失敗したページだけやり直せるようにする。以前は1ページの504で全体が止まり、
-               残りのページが丸ごと未処理のまま終わっていた（2026-08-18 通しレビューで発生）。 -->
-          <ul v-if="dqty.failed.length" class="dqty-failed" data-testid="dqty-failed-pages">
-            <li v-for="fp in dqty.failed" :key="fp.pageNo">
-              <span>P.{{ fp.pageNo }} — {{ fp.errorMsg }}</span>
-              <button class="btn-retry-sm" :disabled="fp.retrying" data-testid="dqty-retry-page" @click="retryQuantityPage(fp)">
-                {{ fp.retrying ? '再試行中…' : '再試行' }}
-              </button>
-            </li>
-          </ul>
-
-          <!-- ★検算: 天井合計 ≒ 通り芯面積。抽出漏れ・二重計上を機械で拾う -->
-          <p v-if="dqty.check && !dqty.busy"
-             :class="['dqty-check', dqty.check.warn ? 'dqty-check-warn' : (dqty.check.available ? 'dqty-check-ok' : 'dqty-check-na')]"
-             :data-testid="dqty.check.warn ? 'dqty-check-warn' : 'dqty-check'">
-            <span class="material-symbols-rounded dqty-check-icon">{{ dqty.check.warn ? 'error' : (dqty.check.available ? 'check_circle' : 'help') }}</span>
-            {{ dqty.check.message }}
-          </p>
-
-          <div v-if="!dqty.rows.length && !dqty.busy" class="hint" data-testid="dqty-empty">
-            凡例から数量を読み取れませんでした。図面に数量表が無い場合はこの機能では取れません（壁と同じく人が拾う必要があります）。
-          </div>
-
-          <div v-if="dqty.rows.length" class="items-scroll dext-list">
-            <table class="table">
-              <!-- ★符号と品番は別の列で見せる。同じ列にまとめると、明細へ入れた後で
-                   どちらが単価を引く鍵なのか分からなくなる（2026-08-19） -->
-              <thead><tr><th></th><th>P</th><th>部位</th><th>符号</th><th>品番</th><th>仕様</th><th class="num">数量</th><th>単位</th><th>備考</th></tr></thead>
-              <tbody>
-                <tr v-for="(r, ri) in dqty.rows" :key="ri" :data-testid="`dqty-row-${ri}`">
-                  <td><input type="checkbox" v-model="r._pick" :data-testid="`dqty-pick-${ri}`" /></td>
-                  <td>{{ r.page }}</td>
-                  <td>{{ r.part }}</td>
-                  <td>{{ r.code }}</td>
-                  <td><input v-model="r.maker_code" class="input sm" placeholder="—" :data-testid="`dqty-maker-${ri}`" /></td>
-                  <td>{{ r.spec || '—' }}</td>
-                  <td class="num">{{ r.value }}</td>
-                  <td>{{ r.unit }}</td>
-                  <td>{{ r.note || '' }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div class="panel-actions">
-            <template v-if="dqty.rows.length">
-              <button class="btn-link-sm" data-testid="dqty-all" @click="dqty.rows.forEach(r => r._pick = true)">全選択</button>
-              <button class="btn-link-sm" data-testid="dqty-none" @click="dqty.rows.forEach(r => r._pick = false)">全解除</button>
-              <button class="btn-primary" :disabled="!dqtyPicked.length || dqtyApplying" data-testid="dqty-apply" @click="applyQuantityToItems">
-                <!-- ★件数が多いと数秒かかる。何も出ないと押せていないと思って連打される
-                     （2026-08-19 通しレビューでの指摘）。 -->
-                <template v-if="dqtyApplying"><span class="spin-dot"></span> 明細に入れています…</template>
-                <template v-else>選んだ {{ dqtyPicked.length }} 件を明細に入れる</template>
-              </button>
-            </template>
-            <span v-if="dqty.msg" class="ok-msg" data-testid="dqty-msg">{{ dqty.msg }}</span>
-          </div>
         </section>
 
         <!-- ── R8: 図面のページを選んで下請へ送る（Dropboxでやっていた作業の置き換え）── -->
@@ -822,9 +634,6 @@
         <section class="panel">
           <div class="panel-head">
             <h2>明細入力</h2>
-            <!-- ★抽出結果を入れた直後はこのタブに移るので、結果の知らせもここに出す
-                 （案件情報タブに出すと、移った先で何も言われないまま行が増えて見える） -->
-            <span v-if="dext.msg" class="ok" data-testid="dext-msg">{{ dext.msg }}</span>
             <div class="row-tools">
               <!-- 粗利率: アカウント既定 ＋ この見積だけ上書き。
                    行ごとの 5/10/15/20% プレビューは 2026-07-28 に一度撤去したが、
@@ -838,12 +647,52 @@
               </span>
               <button class="btn-link-sm" data-testid="open-cand-name-modal" @click="openCandModal('name')">名称の候補</button>
               <button class="btn-link-sm" data-testid="open-cand-code-modal" @click="openCandModal('code')">品番の候補</button>
+              <button class="btn-link-sm" data-testid="open-work-import" @click="wiiOpen = !wiiOpen">Excel取込</button>
+              <button class="btn-link-sm" data-testid="open-bulk-price" @click="bulkPriceOpen = !bulkPriceOpen">単価候補を一括</button>
+              <button class="btn-link-sm" data-testid="export-items-csv" @click="exportItemsCsv">CSV書き出し</button>
+              <button class="btn-link-sm" data-testid="export-items-xlsx" @click="exportItemsXlsx">Excel書き出し</button>
               <label class="margin-field">粗利
                 <input v-model.number="marginPct" type="number" min="0" max="99" step="1"
                        class="input xs num" data-testid="margin-rate" @change="onMarginChange" />%
                 <span v-if="doc.margin_rate === null" class="margin-hint">（既定）</span>
                 <button v-else class="btn-link-sm" data-testid="margin-reset" @click="resetMargin">既定に戻す</button>
               </label>
+            </div>
+          </div>
+          <!-- 作業項目Excel/CSVの取込（見積②）。既存Excelを作り直させず取り込む入口 -->
+          <div v-if="wiiOpen" class="work-import-panel" data-testid="work-import-panel">
+            <WorkItemImport @import="onWorkItemsImport" @close="wiiOpen = false" />
+          </div>
+          <!-- 見積③: 全明細行に過去単価候補を一括で当てるレビュー画面 -->
+          <div v-if="bulkPriceOpen" class="bulk-price-panel" data-testid="bulk-price-panel">
+            <div class="bp-head">
+              <span class="bp-summary">候補あり <strong>{{ bulkWithCandCount }}</strong>行／候補なし <strong>{{ bulkNoCandCount }}</strong>行（=業者に見積依頼すべき行）</span>
+              <button class="btn" data-testid="bulk-apply-cheapest" @click="bulkApplyCheapest">未設定行に最安を一括</button>
+              <button class="btn-link-sm" @click="bulkPriceOpen = false">閉じる</button>
+            </div>
+            <div class="bp-scroll">
+            <table class="table bp-table" data-testid="bulk-price-table">
+              <thead><tr><th>工種</th><th>名称</th><th class="num">原価</th><th>候補（安い順・クリックで採用）</th></tr></thead>
+              <tbody>
+                <tr v-for="(x, i) in bulkPriceRows" :key="x.r._k" :class="{ 'bp-nocand': !x.cands.length }">
+                  <td>{{ x.r.trade_name }}</td>
+                  <td>{{ x.r.item_name }}</td>
+                  <td class="num">{{ x.r.cost_unit_price ? yen(x.r.cost_unit_price) : '—' }}</td>
+                  <td>
+                    <template v-if="x.cands.length">
+                      <button v-for="(h, hi) in x.cands.slice(0, 4)" :key="hi" class="bp-cand"
+                              :data-testid="`bulk-cand-${i}-${hi}`" @click="pickBulkCand(x.r, h)"
+                              :title="`${h.subcontractor_name}／${h.project_name ?? ''}／${h.quoted_on ?? ''}`">
+                        <span class="bp-sub">{{ h.subcontractor_name }}</span> {{ yen(h.unit_price) }}
+                        <span v-if="historyAltName(x.r, h)" class="bp-alt">≈{{ historyAltName(x.r, h) }}</span>
+                        <span v-if="h.project_name" class="bp-src">{{ h.project_name }}</span>
+                      </button>
+                    </template>
+                    <span v-else class="bp-none" :data-testid="`bulk-none-${i}`">候補なし — 業者に見積依頼</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
             </div>
           </div>
           <!-- 列が増えたため、パネル内で横スクロールさせる（ページ全体を横に伸ばさない） -->
@@ -1450,8 +1299,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
 import { supabase } from '../lib/supabase'
@@ -1462,12 +1311,7 @@ import { guessPriceKind, normalizeName as normalizeGuessName, type Guess } from 
 import { getAccountId } from '../lib/account'
 import { openDoc } from '../lib/docUrl'
 import EstimateMasters from './estimate-masters.vue'
-import ExtractControl from '../components/ExtractControl.vue'
-import ExtractProgressChips from '../components/ExtractProgressChips.vue'
-import { crossCheckCeiling, type CrossCheck, type QuantityPart } from '../lib/drawingQuantity'
-// ★R53: 材料抽出の実行はこのコンポーネントの外（モジュールスコープ）で回す。
-//  画面遷移で解析が死なないようにするため。
-import { jobFor, startExtract, loadJobsForProject, ackJob, refreshExtractBadge, runningJobsOf, type ExtractRow } from '../lib/extractJobs'
+import WorkItemImport from '../components/WorkItemImport.vue'
 
 const BUCKET = 'expense-receipts'        // 印影など既存公開物の表示用（後方互換）
 const PDF_BUCKET = 'admin-docs'          // 新規の見積/発注PDFは非公開バケット（署名URL配信）
@@ -1526,6 +1370,8 @@ const openedLines   = ref<QuoteLine[]>([])
 const removedLineIds = ref<string[]>([])
 const qlSaving = ref(false); const qlMsg = ref(''); const qlErr = ref('')
 const applyMsg = ref('')
+const wiiOpen = ref(false)   // 作業項目Excel/CSV取込パネルの開閉（見積②）
+const bulkPriceOpen = ref(false)   // 一括単価候補パネルの開閉（見積③）
 let qlKey = 0
 
 // 下請業者（商社は発注側なので除く）
@@ -1886,6 +1732,43 @@ async function applySelectionToItems() {
   if (applied) builderTab.value = 'items'
 }
 
+/**
+ * 作業項目Excel/CSVの取込（見積②）。WorkItemImport で列マッピング済みのレコードを Row 化して明細に流す。
+ * 場所は itemPayload で note 列へ、工種は trade_name へ入る（DB列マッピングは itemPayload が唯一の真実）。
+ * 「追記」は今の明細の後ろに足し、「置き換え」は人が明示的に選んだ時だけ既存明細を消す（黙って消さない＝AC）。
+ */
+async function onWorkItemsImport(payload: {
+  records: { item_name: string; trade_name: string; location: string; quantity: number; unit: string }[]
+  mode: 'append' | 'replace'
+}) {
+  if (!projectId.value) return
+  const { records, mode } = payload
+  wiiOpen.value = false
+  if (mode === 'replace') {
+    const ids = rows.value.filter(r => r.id).map(r => r.id as string)
+    if (ids.length) {
+      const { error } = await supabase.from('estimate_items').delete().in('id', ids)
+      if (error) { saveError.value = error.message; return }
+    }
+    rows.value = []
+  }
+  const added: Row[] = []
+  for (const rec of records) {
+    const row = blankRow()
+    row.item_name  = rec.item_name || '(無題)'
+    row.trade_name = rec.trade_name || ''
+    row.location   = rec.location || ''
+    row.unit       = rec.unit || ''
+    row.quantity   = Number(rec.quantity) || 0
+    rows.value.push(row)
+    added.push(row)
+  }
+  builderTab.value = 'items'
+  await autoSaveRows(added)
+  applyMsg.value = `${added.length}件を取り込みました`
+  setTimeout(() => (applyMsg.value = ''), 4000)
+}
+
 // ── Q5: 元請けからの案件受領登録・ステータス管理 ──────────────
 const DRAWING_BUCKET = 'estimate-drawings'
 // 業務フローに沿った状態。確認16で合意（対応中/受注/失注/辞退）＋既存値との互換を保つ。
@@ -1999,16 +1882,6 @@ async function goStep(n: number) {
   if (n === wizard.value.step) return
   if (wizard.value.step === 2 && !(await saveWizardName())) return
   wizard.value.step = n
-}
-
-/**
- * ステップ2からの抽出開始。★ステップは進めない。
- * 押した直後に画面が切り替わると、始めたはずの進捗が見えなくなって不安になる。
- * 案件名だけ先に確定させておく（このまま明細へ行っても下書きのまま残らないように）。
- */
-function beginExtractFromWizard(a: Attachment) {
-  beginExtract(a)
-  if (isDraftProject.value && wizard.value.name.trim()) void saveWizardName()
 }
 
 /** ステップ入力を終える。以降は通常のタブ表示に戻す */
@@ -3279,6 +3152,76 @@ function applyHistoryPrice(r: Row, h: PriceHist) {
   if (!r._priceTouched) r.unit_price = autoPrice(r)
 }
 
+// ── 見積③: 取込項目への一括単価候補当て（業者見積突合の自動化）──────────────
+// 1行ずつの Q4 履歴表示を、全明細行を横断する「レビュー画面」に拡張する。
+// 大塚さん「打ったら前回どの現場でどの業者がいくらで出したかが浮かべば十分」。
+// 突合エンジンは既存の historyFor（R15の表記ゆれ込み一致）をそのまま使う。
+type BulkCandRow = { r: Row; cands: PriceHist[] }
+const bulkPriceRows = computed<BulkCandRow[]>(() =>
+  rows.value.filter(r => isItemRow(r) && !isBlankRow(r)).map(r => ({ r, cands: historyFor(r.item_name) })))
+const bulkNoCandCount = computed(() => bulkPriceRows.value.filter(x => x.cands.length === 0).length)
+const bulkWithCandCount = computed(() => bulkPriceRows.value.filter(x => x.cands.length > 0).length)
+
+/** 候補を1つ採用（既存の applyHistoryPrice を通す＝原価反映＋客先単価は粗利率から）。 */
+async function pickBulkCand(r: Row, h: PriceHist) {
+  applyHistoryPrice(r, h)
+  await autoSaveRow(r)
+}
+/** 候補があるのに原価未設定の行（手打ちでない）へ、最安候補を一括で当てる。既設定行は触らない。 */
+async function bulkApplyCheapest() {
+  const changed: Row[] = []
+  for (const { r, cands } of bulkPriceRows.value) {
+    if (!cands.length || r._priceTouched || (r.cost_unit_price || 0) > 0) continue
+    applyHistoryPrice(r, cands[0])
+    changed.push(r)
+  }
+  if (changed.length) await autoSaveRows(changed)
+  applyMsg.value = changed.length ? `${changed.length}行に最安候補を当てました（保存済み）` : '当てられる未設定行はありませんでした'
+  setTimeout(() => (applyMsg.value = ''), 4000)
+}
+
+// ── 見積④: 明細のCSV/Excel書き出し（確定単価をExcelへ戻す主経路）──────────────
+// 元請け宛の最終出口は「CSV往復を主経路」（2026-08-20決定）。アプリ内PDF(exportPdf)は副次で温存。
+function csvCell(v: string): string {
+  return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
+}
+const EXPORT_HEADER = ['場所', '工種', '項目名', '品番', '形状・詳細', '数量', '単位', '原価単価', '客先単価', '金額'] as const
+function exportRowsData(): (string | number)[][] {
+  const out: (string | number)[][] = []
+  for (const r of rows.value) {
+    if (!isItemRow(r) || isBlankRow(r)) continue
+    const amount = Math.round((Number(r.quantity) || 0) * (Number(r.unit_price) || 0))
+    out.push([r.location, r.trade_name, r.item_name, r.product_code, r.spec,
+              Number(r.quantity) || 0, r.unit, Number(r.cost_unit_price) || 0, Number(r.unit_price) || 0, amount])
+  }
+  return out
+}
+function exportBaseName(): string {
+  const p = projects.value.find(x => x.id === projectId.value)
+  const d = new Date()
+  const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
+  return `見積明細_${(p?.name ?? '見積').replace(/[\\/:*?"<>|]/g, '_')}_${ymd}`
+}
+/** 明細をCSV(UTF-8 BOM付き)で書き出す。往復してExcel側で仕上げる主経路。 */
+function exportItemsCsv() {
+  const lines = [EXPORT_HEADER.join(',')]
+  for (const row of exportRowsData()) lines.push(row.map(v => csvCell(String(v))).join(','))
+  const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = `${exportBaseName()}.csv`; a.click()
+  URL.revokeObjectURL(url)
+}
+/** 明細を .xlsx で書き出す（xlsxは重いので動的import）。 */
+async function exportItemsXlsx() {
+  const XLSX = await import('xlsx')
+  const aoa = [EXPORT_HEADER as unknown as string[], ...exportRowsData()]
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '見積明細')
+  XLSX.writeFile(wb, `${exportBaseName()}.xlsx`)
+}
+
 async function loadCompany() {
   const { data } = await supabase.from('settings').select('key, value').eq('account_id', accountId).in('key', COMPANY_KEYS)
   company.value = Object.fromEntries((data ?? []).map((s: any) => [s.key, s.value]))
@@ -3608,340 +3551,6 @@ async function removeTrade(t: Trade) {
 }
 
 // ════════════════════════════════════════════════════════════
-//  実施図面からの材料抽出（案件情報の図面から直接）
-//
-//  これまでは独立ページ /drawing-materials でしか使えず、
-//  ・案件に紐づかない（アップロードするだけ）
-//  ・出口がCSV書き出しだけ（見積への反映は手動）
-//  だったため、抽出した品番を明細に手で打ち直していた。
-//  R3(品番列)・R14(品番で材料判定)・R28(品番から商社単価)が揃ったので、
-//  案件の図面から抽出して明細へ流し込めるようにする。
-//
-//  ★全件を自動投入しない。図面には「(仮)」の品番や、中止になったのに
-//   綴じられたままの詳細図が混ざる（実図面で確認済み）。機械的に入れると
-//   中止項目を過大計上するので、人が選んだ行だけを入れる。
-// ════════════════════════════════════════════════════════════
-//  ★R53（2026-07-30 レビュー第5回）: 解析はモーダルで人を拘束しない。
-//   実行そのものは lib/extractJobs.ts（画面の外）に置き、
-//   ・別のタブ／別の画面に移っても解析が止まらない
-//   ・1ページ終わるごとにDBへ保存するので、タブを閉じても続きから再開できる
-//   ここに残すのは「結果を見て、選んで明細に入れる」部分だけ。
-type PickRow = ExtractRow & { _pick: boolean }
-const dext = ref<{ att: Attachment | null; rows: PickRow[]; msg: string }>({ att: null, rows: [], msg: '' })
-const dextPicked = computed(() => dext.value.rows.filter(r => r._pick))
-/** 表示中の図面のジョブ（進捗・状態はストアが正）。 */
-const dextJob = computed(() => (dext.value.att ? jobFor(dext.value.att.id) : null))
-/** この案件で走っている抽出（タブの横に進捗を出す） */
-const runningExtracts = computed(() => (projectId.value ? runningJobsOf(projectId.value) : []))
-
-/** 解析を開始／中断したところから再開する。await しない＝押した直後から他の操作ができる */
-function beginExtract(a: Attachment | null) {
-  if (!a || !projectId.value) return
-  dext.value.msg = ''
-  void startExtract({ projectId: projectId.value, attachmentId: a.id, path: a.path, sourceName: a.name ?? '' })
-}
-/** 結果を見る（解析中でも開ける。ここまでの結果が並ぶ） */
-async function openExtractResult(a: Attachment) {
-  dext.value = { att: a, rows: [], msg: '' }
-  syncDextRows()
-  const job = jobFor(a.id)
-  // 完了を見たらナビのバッジから落とす
-  if (job && job.status === 'done') await ackJob(job)
-}
-function closeExtract() { dext.value.att = null; dext.value.rows = [] }
-
-/**
- * ジョブの抽出結果を、チェックボックス付きの表示用行に写す。
- * ★既存行のチェック状態は保つ（解析が進んで行が増えるたびに選び直させない）。
- * ★既定はオフ。「(仮)」「要確認」等が混ざるので、選ぶのを人の判断にする。
- */
-function syncDextRows() {
-  const job = dextJob.value
-  if (!job) { dext.value.rows = []; return }
-  const picked = new Set(dext.value.rows.filter(r => r._pick).map(r => `${r.page}|${r.code}|${r.part}`))
-  dext.value.rows = job.rows.map(r => ({ ...r, _pick: picked.has(`${r.page}|${r.code}|${r.part}`) }))
-}
-// 解析が進んだら表示も伸ばす（結果を開いたまま眺めていられるように）
-watch(() => dextJob.value?.rows.length ?? 0, () => { if (dext.value.att) syncDextRows() })
-
-/** 選んだ抽出行を明細に入れる。空行があればそこを埋める（末尾に足すと見つけにくい） */
-// ── Q7: 図面凡例からの確定数量の抽出 ──
-//  材料(品番)の抽出とは別物。凡例に「書いてある」数量を転記するだけで、面積の拾い出しはしない。
-//  ★材料抽出(R53)はジョブ化して裏で走らせるが、数量抽出は対象ページが凡例のある数枚で
-//   終わるため、その場で回してパネルに出す（ジョブ表を増やさない）。
-type QtyRow = { page: number; part: QuantityPart; code: string; maker_code: string | null; spec: string | null; value: number; unit: string; note: string | null; _pick: boolean }
-/** 失敗したページ。★1ページの失敗で全体を止めず、そのページだけやり直せるようにする */
-type QtyFailedPage = { pageNo: number; b64: string; errorMsg: string; retrying: boolean }
-const dqty = ref<{
-  att: any | null; busy: boolean; done: number; total: number
-  rows: QtyRow[]; check: CrossCheck | null; error: string; msg: string
-  failed: QtyFailedPage[]
-  gridX: number | null; gridY: number | null
-  merged: { part: QuantityPart; rows: any[] }[]
-}>({ att: null, busy: false, done: 0, total: 0, rows: [], check: null, error: '', msg: '',
-     failed: [], gridX: null, gridY: null, merged: [] })
-const dqtyPicked = computed(() => dqty.value.rows.filter(r => r._pick))
-
-/**
- * 1ページぶんの数量抽出。失敗は投げる（呼び出し側が失敗ページとして記録する）。
- */
-async function callQuantityExtract(b64: string, pageNo: number, token: string): Promise<any> {
-  const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/drawing-quantity-extract`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-    },
-    body: JSON.stringify({ image_base64: b64, mime: 'application/pdf', page: pageNo }),
-  })
-  const j = await resp.json().catch(() => null)
-  if (!resp.ok || j?.error) throw new Error(j?.error || `解析エラー(${resp.status})`)
-  return j
-}
-
-/** 抽出結果を画面の行と検算用の集計に取り込む */
-function absorbQuantityResult(j: any, pageNo: number) {
-  const d = dqty.value
-  for (const g of (j?.parts ?? [])) {
-    for (const r of (g.rows ?? [])) {
-      d.rows.push({
-        page: pageNo, part: g.part, code: r.code ?? '', maker_code: r.maker_code ?? null, spec: r.spec ?? null,
-        value: Number(r.value) || 0, unit: r.unit || '㎡', note: r.note ?? null, _pick: true,
-      })
-    }
-    const slot = d.merged.find(m => m.part === g.part)
-      ?? (d.merged.push({ part: g.part, rows: [] }), d.merged[d.merged.length - 1])
-    slot.rows.push(...(g.rows ?? []))
-  }
-  // 通り芯は最初に読めたページの値を採用（複数ページに同じ通り芯が載るため）
-  if (d.gridX == null && Number(j?.gridSpanX) > 0) d.gridX = Number(j.gridSpanX)
-  if (d.gridY == null && Number(j?.gridSpanY) > 0) d.gridY = Number(j.gridSpanY)
-}
-
-/** 検算をやり直す（再試行でページが増えた後にも呼ぶ） */
-function recheckQuantity() {
-  const d = dqty.value
-  d.check = crossCheckCeiling({ parts: d.merged as any, gridSpanX: d.gridX, gridSpanY: d.gridY })
-}
-
-/**
- * ★同時に投げる本数。図面は50ページ超が普通にあり、1ページずつ直列だと
- *  1ページ数秒でも数分かかる（2026-08-18 通しレビューで実際に遅く、かつ 504 に当たった）。
- *  増やしすぎるとAI側のレート制限と Edge Function の同時実行に当たるので控えめにする。
- */
-const QTY_CONCURRENCY = 4
-
-/**
- * 添付ごとの「保存済みの数量抽出の件数」（attachment_id → 件数）。
- * ★ボタンの文言に使う。押す前に前回の結果があると分かるようにするため。
- */
-const qtySavedCount = ref<Record<string, number>>({})
-
-async function loadQtySavedCounts() {
-  qtySavedCount.value = {}
-  if (!projectId.value || !accountId) return
-  const { data } = await supabase.from('estimate_drawing_extract_jobs')
-    .select('attachment_id, rows')
-    .eq('account_id', accountId).eq('project_id', projectId.value).eq('kind', 'quantity')
-  const m: Record<string, number> = {}
-  for (const j of (data ?? []) as any[]) {
-    const n = Array.isArray(j?.rows?.rows) ? j.rows.rows.length : 0
-    if (n > 0) m[j.attachment_id] = n
-  }
-  qtySavedCount.value = m
-}
-
-// 案件を切り替えたら読み直す（添付の一覧と同じタイミング）
-watch(() => projectId.value, () => { void loadQtySavedCounts() })
-
-/**
- * 数量抽出の結果を保存する。
- * ★以前はブラウザのメモリだけで、明細タブへ移って戻るだけで消えていた
- *  （2026-08-18 本番の通しレビュー）。解析はAIを呼ぶので時間も費用もかかる。それを毎回捨てていた。
- * ★保存先は材料抽出と同じ estimate_drawing_extract_jobs（kind='quantity'）。
- *  似たテーブルを2つ作ると「どちらを見るか」を毎回考えることになる。
- */
-async function saveQuantityJob(att: any, status: 'running' | 'done' | 'error') {
-  if (!att?.id || !projectId.value || !accountId) return
-  const d = dqty.value
-  await supabase.from('estimate_drawing_extract_jobs').upsert({
-    account_id: accountId, project_id: projectId.value, attachment_id: att.id, kind: 'quantity',
-    source_name: att.name ?? att.path ?? '', status,
-    total_pages: d.total, done_pages: d.done,
-    rows: { rows: d.rows, gridX: d.gridX, gridY: d.gridY, merged: d.merged },
-    error: d.error || null, updated_at: new Date().toISOString(),
-  }, { onConflict: 'attachment_id,kind' })
-  // ボタンの文言に出す件数もその場で更新する（次に開き直すまで古いままにしない）
-  if (d.rows.length) qtySavedCount.value = { ...qtySavedCount.value, [att.id]: d.rows.length }
-}
-
-/** 保存済みの数量抽出があれば手元に戻す。無ければ false */
-async function restoreQuantityJob(att: any): Promise<boolean> {
-  if (!att?.id || !accountId) return false
-  const { data } = await supabase.from('estimate_drawing_extract_jobs')
-    .select('total_pages, done_pages, rows, error')
-    .eq('account_id', accountId).eq('attachment_id', att.id).eq('kind', 'quantity').maybeSingle()
-  const saved = (data as any)?.rows
-  if (!saved?.rows?.length) return false
-  dqty.value = {
-    att, busy: false, done: (data as any).done_pages ?? 0, total: (data as any).total_pages ?? 0,
-    rows: saved.rows, check: null, error: '', msg: '',
-    failed: [], gridX: saved.gridX ?? null, gridY: saved.gridY ?? null, merged: saved.merged ?? [],
-  }
-  recheckQuantity()
-  return true
-}
-
-/**
- * 「数量を抽出」を押した時の入口。
- * ★前回の結果があれば、まずそれを出す。解析し直すかは人が決める
- *  （毎回AIを呼ぶと待たされるうえ費用もかかる）。
- */
-async function openQuantityExtract(att: any) {
-  if (dqty.value.busy) return
-  if (await restoreQuantityJob(att)) return
-  await beginQuantityExtract(att)
-}
-
-async function beginQuantityExtract(att: any) {
-  if (dqty.value.busy) return
-  dqty.value = { att, busy: true, done: 0, total: 0, rows: [], check: null, error: '', msg: '',
-                 failed: [], gridX: null, gridY: null, merged: [] }
-  try {
-    const { data: file, error } = await supabase.storage.from('estimate-drawings').download(att.path)
-    if (error || !file) throw error ?? new Error('図面を取得できませんでした')
-    const buf = new Uint8Array(await file.arrayBuffer())
-    const { PDFDocument } = await import('pdf-lib')
-    const src = await PDFDocument.load(buf)
-    dqty.value.total = src.getPageCount()
-    const { data: sess } = await supabase.auth.getSession()
-    const token = sess?.session?.access_token ?? ''
-
-    // 先に全ページを1枚ずつのPDFへ切り出す（AIへ渡す形にする）
-    const pages: string[] = []
-    for (let i = 0; i < dqty.value.total; i++) {
-      const one = await PDFDocument.create()
-      const [pg] = await one.copyPages(src, [i])
-      one.addPage(pg)
-      const bytes = await one.save()
-      let bin = ''
-      const chunk = 0x8000
-      for (let k = 0; k < bytes.length; k += chunk) {
-        bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(k, k + chunk)) as any)
-      }
-      pages.push(btoa(bin))
-    }
-
-    // ★数ページずつ同時に投げる。★1ページの失敗（504等）で全体を止めない。
-    //  以前は break していたため、途中で 504 が出ると残りが丸ごと未処理のまま終わっていた。
-    let cursor = 0
-    const worker = async () => {
-      for (;;) {
-        const i = cursor++
-        if (i >= pages.length) return
-        const pageNo = i + 1
-        try {
-          absorbQuantityResult(await callQuantityExtract(pages[i], pageNo, token), pageNo)
-        } catch (e: any) {
-          dqty.value.failed.push({ pageNo, b64: pages[i], errorMsg: e?.message ?? '解析に失敗しました', retrying: false })
-        }
-        dqty.value.done++
-      }
-    }
-    await Promise.all(Array.from({ length: Math.min(QTY_CONCURRENCY, pages.length) }, worker))
-
-    // ★検算: 天井合計 ≒ 通り芯面積。抽出漏れ・二重計上をここで拾う
-    recheckQuantity()
-    if (dqty.value.failed.length) {
-      dqty.value.error = `${dqty.value.failed.length}ページで解析エラーが出ました。下の「再試行」でそのページだけやり直せます。`
-    }
-    // ★ここで残す。残さないとページを移った瞬間に消え、また解析からやり直しになる
-    await saveQuantityJob(att, dqty.value.failed.length ? 'error' : 'done')
-  } catch (e: any) {
-    dqty.value.error = e?.message ?? '数量の抽出に失敗しました'
-  } finally {
-    dqty.value.busy = false
-  }
-}
-
-/** 失敗したページだけやり直す */
-async function retryQuantityPage(fp: QtyFailedPage) {
-  if (fp.retrying) return   // 連打で二重に取り込まないためのガード
-  fp.retrying = true
-  try {
-    const { data: sess } = await supabase.auth.getSession()
-    absorbQuantityResult(await callQuantityExtract(fp.b64, fp.pageNo, sess?.session?.access_token ?? ''), fp.pageNo)
-    dqty.value.failed = dqty.value.failed.filter(p => p !== fp)
-    if (!dqty.value.failed.length) dqty.value.error = ''
-    recheckQuantity()
-    await saveQuantityJob(dqty.value.att, dqty.value.failed.length ? 'error' : 'done')
-  } catch (e: any) {
-    fp.errorMsg = e?.message ?? '解析に失敗しました'
-    fp.retrying = false
-  }
-}
-
-/** 選んだ数量を明細の初期値として入れる（★確定ではない。単価・ロス率は人が入れる） */
-const dqtyApplying = ref(false)
-async function applyQuantityToItems() {
-  // ★連打ガード（独立レビュー指摘）。disabled属性だけだと押下〜再描画の隙間で
-  //  2回目が通り、同じ数量が二重に明細へ入る。
-  if (dqtyApplying.value) return
-  const picked = dqtyPicked.value
-  if (!picked.length) return
-  dqtyApplying.value = true
-  try {
-  // ★部位ごとの場所に振り分ける（全部1つにまとめない）
-  const added = placeGroupedByPart(picked, (x, row) => {
-    // ★品番の列には**メーカー品番**を入れる（符号ではない）。
-    //  符号（AD-1 / C-01）はこの図面の中だけの記号なので、品番の列に入れても
-    //  価格表・定価とは永久に当たらない。単価を引く鍵になるのはメーカー品番の方。
-    //  （2026-08-19 本番レビュー: 63件すべて単価0。メーカー品番が仕様の文章に
-    //    埋もれて品番の列が空だったのが原因。抽出側で分けるように直した）
-    row.item_name = [x.part, x.code].filter(Boolean).join(' ') || '(名称未設定)'
-    row.product_code = x.maker_code ?? ''
-    row.spec = x.spec ?? ''
-    row.quantity = x.value
-    row.unit = x.unit
-  })
-  await autoSaveRows(added)
-  dqty.value.msg = `${picked.length}件を明細に入れました（単価とロス率は人が入れてください）`
-  builderTab.value = 'items'
-  setTimeout(() => { dqty.value.msg = ''; dqty.value.att = null }, 2200)
-  } finally { dqtyApplying.value = false }
-}
-
-const dextApplying = ref(false)
-async function applyExtractToItems() {
-  // ★連打ガード＋ローディング。件数が多いと数秒かかり、何も出ないと押せていないと
-  //  思って連打され、同じ材料が二重に入る（数量側と同じ理由・2026-08-19）。
-  if (dextApplying.value) return
-  const picked = dextPicked.value
-  if (!picked.length) return
-  dextApplying.value = true
-  try {
-  // ★部位ごとの場所に振り分ける（全部1つにまとめない）
-  const added = placeGroupedByPart(picked, (x, row) => {
-    // ★名称の作り方は変えていない。部位が「場所」にも入るので重複して見えるが、
-    //  材料抽出は品名を返しておらず（部位・メーカー・品番・規格・仕様のみ）、
-    //  裏取り無しに名称の意味を変えると外す。大塚さんに確認してから触る。
-    row.item_name = [x.manufacturer, x.part].filter(Boolean).join(' ') || x.code || '(名称未設定)'
-    row.product_code = x.code || ''
-    // 規格サイズは形状・詳細に入れる（W/D/Hは人が読み替える。自動で分解すると外す）
-    row.spec = [x.size, x.spec].filter(Boolean).join(' / ')
-    const q = Number(String(x.quantity ?? '').replace(/[^0-9.]/g, ''))
-    if (Number.isFinite(q) && q > 0) row.quantity = q
-  })
-  await autoSaveRows(added)
-  await loadMaterials()
-  dext.value.msg = `${picked.length}件を明細に入れました`
-  builderTab.value = 'items'
-  setTimeout(() => { dext.value.msg = ''; dext.value.att = null }, 1800)
-  } finally { dextApplying.value = false }
-}
-
-// ════════════════════════════════════════════════════════════
 //  R21: 名称・品番の候補を画面上で編集・削除する
 //  候補は「商社単価表」＋「過去に打った明細」から作られる（R28）。
 //  ★消しても既存の見積の中身は変えない。候補に出なくなるだけ。
@@ -4217,8 +3826,6 @@ async function doLoadItems() {
   await loadAttachments()
   markSaved()
   sendContactIds.value = []
-  // ★R53: 前回の材料抽出（中断・完了）を復元する。タブを閉じた分はここで「中断」として出る
-  await loadJobsForProject(projectId.value)
   await Promise.all([loadSends(), loadProjectPOs(), loadDrawingSends()])
 }
 
@@ -4239,47 +3846,6 @@ async function addProject() {
   projectId.value = (data as Project).id
   addingProject.value = false
   await loadItems()
-}
-
-/**
- * 抽出結果を「部位ごと」にまとめて明細へ入れる。
- *
- * ★なぜ（2026-08-19 本番の通しレビュー）:
- *  それまでは空行を拾って順に詰めるだけだったので、実図面63件が
- *  **全部1つの場所・1つの工種**に入っていた。
- *  大塚さんの拾い方は 部位(天井 → 壁 → 床) → 工種 → 明細 で、1つにまとめるのは実務と合わない。
- *  打ち合わせ②の逐語で確認済み:
- *   「天井工事の解体工事…天井の中の軽鉄工事…とりあえず天井は全体的に拾ったなと。
- *     そしたら今度、順番的に壁の工事を全体的に…で、今度は床工事って言って」
- *  抽出結果は元から部位を持っているので、振り分けるだけで済む。
- *
- * ★工種はまだ分けられない。抽出が工種を返していないため（部位・メーカー・品番・規格・仕様のみ）。
- *  大塚さん自身が「それが解体工事なのか軽鉄工事なのか多分わからんと思うから、AI」と
- *  言っており、AIに判定させる方向。それは別途。
- */
-function placeGroupedByPart<T extends { part?: string }>(picked: T[], fill: (x: T, row: Row) => void): Row[] {
-  // 部位ごとにまとめる。同じ部位の中では選ばれた順を保つ
-  const groups = new Map<string, T[]>()
-  for (const x of picked) {
-    const key = (x.part ?? '').trim() || 'その他'
-    const arr = groups.get(key)
-    if (arr) arr.push(x); else groups.set(key, [x])
-  }
-  // ★まだ何も入力していない（初期の空行だけ）なら、その空行は捨てる。
-  //  残すと先頭に名前の無い場所ブロックができ、実質「全部1つ」の見た目に戻る。
-  if (rows.value.length && rows.value.every(r => isItemRow(r) && isBlankRow(r))) rows.value = []
-  const added: Row[] = []
-  for (const [part, items] of groups) {
-    items.forEach((x, n) => {
-      const row = blankRow()
-      row.location = part
-      if (n === 0) { row._newArea = true; row._newBlock = true }
-      fill(x, row)
-      rows.value.push(row)
-      added.push(row)
-    })
-  }
-  return added
 }
 
 function blankRow(rowType: 'item' | 'header' = 'item'): Row {
@@ -4566,26 +4132,6 @@ async function saveDocFields() {
   markAutoSaved()
 }
 
-/**
- * ★解析中だけの離脱ガード（2026-08-18 通しレビュー）。
- *  数量抽出はブラウザの中で走るので、ブラウザバックやタブを閉じると途中で消える。
- *  実際にレビュー中に戻ってしまい、解析がやり直しになった。
- *  ★「未保存の編集」に対するガードは R22 で意図的に撤去されている（自動保存にしたため）。
- *   ここで復活させるのはその話ではなく、**走っている処理が消える**時だけに限る。
- *   材料抽出はサーバ側のジョブとして残るので対象外。
- */
-onBeforeRouteLeave((_to, _from, next) => {
-  if (!dqty.value.busy) return next()
-  next(window.confirm('数量の抽出が進行中です。このページを離れると解析は中断されます。移動しますか？'))
-})
-function guardUnloadWhileExtracting(e: BeforeUnloadEvent) {
-  if (!dqty.value.busy) return
-  e.preventDefault()
-  e.returnValue = ''
-}
-onMounted(() => window.addEventListener('beforeunload', guardUnloadWhileExtracting))
-onUnmounted(() => window.removeEventListener('beforeunload', guardUnloadWhileExtracting))
-
 // #3 編集中の離脱ガード: 未保存の明細がある状態で 遷移/タブ閉じ/案件切替 時に確認する
 let lastLoadedProjectId: string | null = null   // 同じ案件の二重読み込みを避けるための記録
 // ★R22: リアルタイム保存にしたので「未保存」という状態が無くなった。
@@ -4605,7 +4151,6 @@ onMounted(async () => {
   if (projectId.value && (stepQ || isDraftProject.value)) {
     wizard.value = { on: true, step: Number(stepQ) || 1, name: '', err: '' }
   }
-  await refreshExtractBadge()
 })
 </script>
 
@@ -4810,6 +4355,18 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .send-to { font-weight: 700; color: #333; }
 .muted-link { font-size: 12px; color: #06864a; }
 .send-history { margin-top: 12px; }
+/* 見積③: 一括単価候補パネル */
+.bulk-price-panel { border: 1px solid var(--line, #e2e2e2); border-radius: 8px; padding: 10px; margin-bottom: 10px; background: var(--panel-2, #fafafa); }
+.bp-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; font-size: 13px; }
+.bp-scroll { max-height: 340px; overflow: auto; }
+.bp-table td, .bp-table th { font-size: 12px; vertical-align: top; }
+.bp-nocand { background: rgba(192, 57, 43, 0.06); }
+.bp-cand { display: inline-flex; align-items: baseline; gap: 4px; margin: 2px 4px 2px 0; padding: 2px 8px; border: 1px solid var(--line, #ccc); border-radius: 999px; background: #fff; cursor: pointer; font-size: 12px; }
+.bp-cand:hover { border-color: var(--accent, #2d7a4f); }
+.bp-sub { font-weight: 600; }
+.bp-alt, .bp-src { color: var(--muted, #888); }
+.bp-src { font-size: 11px; }
+.bp-none { color: var(--danger, #c0392b); font-size: 12px; }
 .head-actions { display: flex; gap: 10px; align-items: center; }
 .btn-ghost { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 8px 16px; font-size: 13px; cursor: pointer; }
 .btn-ghost:hover { background: #f5f5f5; }
@@ -4972,10 +4529,6 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .dsend-count { font-size: 12px; color: #7A8AA0; margin-left: auto; }
 .dsend-pages { display: flex; flex-wrap: wrap; gap: 6px; max-height: 220px; overflow-y: auto; padding: 6px; background: #FAFBFC; border-radius: 6px; }
 /* R24: 中身を見て選ぶので、3〜4カラムで大きく見せる（幅に応じて自動で列数が変わる） */
-.dqty-failed { margin: 8px 0 0; padding: 8px 10px; list-style: none; background: #FEF2F2; border: 1px solid #FECACA; border-radius: 6px; }
-.dqty-failed li { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #991B1B; padding: 2px 0; }
-.btn-retry-sm { padding: 2px 10px; border: 1px solid #DC2626; border-radius: 999px; background: #fff; color: #DC2626; font-size: 11px; font-weight: 700; cursor: pointer; }
-.btn-retry-sm:disabled { opacity: .5; cursor: default; }
 .att-list li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .att-thumb { padding: 0; border: 1px solid #d1d5db; border-radius: 4px; background: #fff; cursor: pointer; line-height: 0; }
 .att-thumb img { display: block; width: 96px; height: auto; border-radius: 3px; }
@@ -4992,8 +4545,6 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .dsp-frame { width: 100%; height: 420px; border: 0; display: block; }
 .dsend-contacts { display: flex; flex-wrap: wrap; gap: 12px; }
 .cc-check { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
-.dext-list { max-height: 46vh; }
-.dext-note { font-size: 11px; color: #B45309; max-width: 180px; }
 .dsend-to { font-size: 12px; color: #7A8AA0; word-break: break-all; }
 
 /* ── 明細のブロック（場所×工種）── */
@@ -5071,21 +4622,6 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .wiz-step.done { color: #06864a; background: #e8f9ef; }
 .wiz-step.done:hover { background: #d7f3e3; border-color: #a7e3c4; }
 .wiz-exit { margin-left: auto; }
-/* ステップ2「図面から材料と数量を読み取る」。任意の操作だと分かるよう囲って区切る */
-.ext-offer { margin-top: 18px; padding: 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; }
-.ext-offer .sub-h { margin: 0 0 4px; font-size: 14px; }
-.ext-offer .hint { margin: 0 0 12px; }
-.ext-cards { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 12px; }
-.ext-card {
-  display: flex; flex-direction: column; align-items: center; gap: 8px;
-  width: 190px; padding: 10px; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
-}
-.ext-thumb { width: 100%; height: 110px; padding: 0; border: 1px solid #e5e7eb; border-radius: 6px; background: #fff; cursor: pointer; overflow: hidden; }
-.ext-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
-.ext-thumb-empty { display: flex; align-items: center; justify-content: center; cursor: default; color: #cbd5e1; }
-.ext-thumb-empty .material-symbols-rounded { font-size: 40px; }
-/* ファイル名は長いので1行に丸める。全文は title 属性で出す */
-.ext-name { font-size: 12px; color: #475569; width: 100%; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wiz-actions { display: flex; align-items: center; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
 .wiz-con-btns { display: flex; gap: 8px; }
 /* ── R55 元請け・担当者のその場編集 ── */

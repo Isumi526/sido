@@ -42,7 +42,7 @@
         <table class="table">
           <thead>
             <tr>
-              <th>ページ</th><th>部位</th><th>メーカー名</th><th>品番</th><th>規格サイズ</th><th>出典</th><th>仕様</th><th>数量</th><th>備考</th><th></th>
+              <th>ページ</th><th>部位</th><th>メーカー名</th><th>品番</th><th>規格サイズ</th><th>出典</th><th>仕様</th><th>数量</th><th>備考</th><th>商社単価</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -58,6 +58,7 @@
               <td><input v-model="r.spec" class="cell-input" /></td>
               <td><input v-model="r.quantity" class="cell-input" /></td>
               <td><input v-model="r.note" class="cell-input" :class="{ warn: r.note }" /></td>
+              <td class="sup-price" :data-testid="`sup-price-${i}`">{{ priceLabel(r.code) }}</td>
               <td><button class="row-del" @click="rows.splice(i, 1)">削除</button></td>
             </tr>
           </tbody>
@@ -113,7 +114,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
@@ -135,6 +136,37 @@ const total    = ref(0)
 const done     = ref(0)
 const SOURCE_PDF_BUCKET = 'drawing-source-pdfs'
 const EXTRACTIONS_TABLE = 'drawing_material_extractions'
+
+// ── 見積⑤: 抽出した品番に商社単価表(estimate_material_prices)を照合して表示 ──
+// 大塚さん「材料抽出は見積に関連付けなくていい、品番リストが出れば十分。商社との紐付けも込みで」。
+type SupPrice = { code: string; supplier_name: string; unit_price: number }
+const supplierPrices = ref<SupPrice[]>([])
+function normCode(s: string): string { return (s ?? '').toLowerCase().replace(/[\s\-‐-―ー]/g, '') }
+async function loadSupplierPrices() {
+  try {
+    const accountId = await getAccountId()
+    const { data } = await supabase.from('estimate_material_prices')
+      .select('product_code, unit_price, subcontractors(name)')
+      .eq('account_id', accountId).eq('is_current', true).not('product_code', 'is', null)
+    supplierPrices.value = ((data ?? []) as any[])
+      .filter((r) => (r.product_code ?? '').trim())
+      .map((r) => ({ code: normCode(r.product_code), supplier_name: r.subcontractors?.name ?? '(商社)', unit_price: Number(r.unit_price) || 0 }))
+  } catch {
+    // 商社単価が読めなくても抽出結果（品番リスト）の表示は妨げない
+  }
+}
+// 品番→最安の商社単価（複数商社なら安い方）。一致しなければ null。
+const priceMap = computed(() => {
+  const m = new Map<string, { supplier_name: string; unit_price: number }>()
+  for (const p of supplierPrices.value) {
+    const cur = m.get(p.code)
+    if (!cur || p.unit_price < cur.unit_price) m.set(p.code, { supplier_name: p.supplier_name, unit_price: p.unit_price })
+  }
+  return m
+})
+function priceForCode(code: string) { const c = normCode(code); return c ? (priceMap.value.get(c) ?? null) : null }
+function fmtYen(n: number): string { return '¥' + Math.round(n || 0).toLocaleString('ja-JP') }
+function priceLabel(code: string): string { const p = priceForCode(code); return p ? `${p.supplier_name} ${fmtYen(p.unit_price)}` : '' }
 
 const viewMode      = ref<'extract' | 'history'>('extract')
 const historyList   = ref<HistoryEntry[]>([])
@@ -200,7 +232,7 @@ async function backupSourcePdf(file: File) {
 const LEAVE_MSG = '解析中です。移動すると解析が中断され、抽出結果が失われます。移動しますか？'
 onBeforeRouteLeave(() => (busy.value ? window.confirm(LEAVE_MSG) : true))
 function beforeUnload(e: BeforeUnloadEvent) { if (busy.value) { e.preventDefault(); e.returnValue = '' } }
-onMounted(() => window.addEventListener('beforeunload', beforeUnload))
+onMounted(() => { window.addEventListener('beforeunload', beforeUnload); void loadSupplierPrices() })
 onUnmounted(() => window.removeEventListener('beforeunload', beforeUnload))
 
 function bytesToB64(bytes: Uint8Array): string {
@@ -313,10 +345,12 @@ function csvEscape(v: string): string {
   return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
 }
 function exportCsv(target: Row[], fileName: string) {
-  const header = ['ページ', '部位', 'メーカー名', '品番', '規格サイズ', '規格サイズ出典URL', '仕様', '数量', '備考']
+  const header = ['ページ', '部位', 'メーカー名', '品番', '規格サイズ', '規格サイズ出典URL', '仕様', '数量', '備考', '商社', '商社単価']
   const lines = [header.join(',')]
   for (const r of target) {
-    lines.push([String(r.page), r.part, r.manufacturer, r.code, r.size, r.sizeSourceUrl, r.spec, r.quantity, r.note].map(csvEscape).join(','))
+    const sp = priceForCode(r.code)
+    lines.push([String(r.page), r.part, r.manufacturer, r.code, r.size, r.sizeSourceUrl, r.spec, r.quantity, r.note,
+                sp?.supplier_name ?? '', sp ? String(sp.unit_price) : ''].map(csvEscape).join(','))
   }
   const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
