@@ -13,7 +13,11 @@
         <select v-model="siteId" class="input site-select" @change="load">
           <option :value="''" disabled>現場を選択</option>
           <option value="__all__">▤ 全現場（横断ビュー）</option>
-          <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.name }}</option>
+          <template v-for="grp in siteGroups" :key="grp.contractorName ?? '__u'">
+            <optgroup :label="grp.contractorName ?? '紐付けなし'">
+              <option v-for="s in grp.sites" :key="s.id" :value="s.id">{{ s.name }}</option>
+            </optgroup>
+          </template>
         </select>
         <select v-model="sortMode" class="input" title="縦の並び順">
           <option value="site">並び順: 現場別</option>
@@ -97,7 +101,11 @@
         <label class="fld ed-site"><span>現場 <em>*</em></span>
           <select class="input" :value="editor.siteId" @change="editorPickSite(($event.target as HTMLSelectElement).value)">
             <option value="" disabled>現場を選択</option>
-            <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.name }}</option>
+            <template v-for="grp in siteGroups" :key="grp.contractorName ?? '__u'">
+              <optgroup :label="grp.contractorName ?? '紐付けなし'">
+                <option v-for="s in grp.sites" :key="s.id" :value="s.id">{{ s.name }}</option>
+              </optgroup>
+            </template>
           </select>
         </label>
 
@@ -262,7 +270,11 @@
                   <select v-model="g.target" class="input" :data-testid="`import-target-${gi}`">
                     <option value="__skip__">スキップ（取り込まない）</option>
                     <option value="__new__">新規作成：{{ g.extractedName || '（名称未設定）' }}</option>
-                    <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.name }}</option>
+                    <template v-for="grp in siteGroups" :key="grp.contractorName ?? '__u'">
+                      <optgroup :label="grp.contractorName ?? '紐付けなし'">
+                        <option v-for="s in grp.sites" :key="s.id" :value="s.id">{{ s.name }}</option>
+                      </optgroup>
+                    </template>
                   </select>
                   <p v-if="g.target === '__new__' && g.similarCandidates.length" class="import-similar-hint">
                     似ている現場:
@@ -339,7 +351,21 @@ const DAY_W = 28      // 1日の横幅(px)
 const LABEL_W = 240   // 左ラベル列の幅(px)
 const WD = ['日', '月', '火', '水', '木', '金', '土']
 
-const sites   = ref<{ id: string; name: string }[]>([])
+const sites   = ref<{ id: string; name: string; contractor_name?: string | null }[]>([])
+// 現場プルダウンを「元請け→現場」の2段階(optgroup)で出すためのグルーピング(#36c0b9b4)。元請け五十音順・未設定は末尾。
+const siteGroups = computed(() => {
+  const byC = new Map<string, { id: string; name: string }[]>()
+  const unlinked: { id: string; name: string }[] = []
+  for (const s of sites.value) {
+    const c = s.contractor_name
+    if (!c) { unlinked.push(s); continue }
+    if (!byC.has(c)) byC.set(c, [])
+    byC.get(c)!.push(s)
+  }
+  const groups = [...byC.keys()].sort((a, b) => a.localeCompare(b, 'ja')).map(c => ({ contractorName: c as string | null, sites: byC.get(c)! }))
+  if (unlinked.length) groups.push({ contractorName: null, sites: unlinked })
+  return groups
+})
 const workers = ref<{ id: string; name: string }[]>([])
 const siteId  = ref('')
 const tasks   = ref<Task[]>([])
@@ -427,8 +453,8 @@ const groupedTasks = computed<Group[]>(() => {
 
 async function loadSites() {
   const accountId = await getAccountId()
-  const { data } = await supabase.from('sites').select('id, name').eq('account_id', accountId).eq('active', true).order('name_kana', { nullsFirst: false }).order('name')
-  sites.value = (data ?? []) as any[]
+  const { data } = await supabase.from('sites').select('id, name, contractors(name)').eq('account_id', accountId).eq('active', true).order('name_kana', { nullsFirst: false }).order('name')
+  sites.value = (data ?? []).map((s: any) => ({ id: s.id, name: s.name, contractor_name: s.contractors?.name ?? null }))
 }
 async function loadWorkers() {
   const accountId = await getAccountId()
