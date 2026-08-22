@@ -151,7 +151,7 @@
             <tbody>
               <!-- 請求書(立替のみ)印刷時は 立替でない行を隠す（画面表示は常に全件） -->
               <tr v-for="(d, i) in filteredDetails" :key="i" :class="{ 'pdf-hide-row': printMode === 'seikyu' && !d.tategae }">
-                <td class="date-cell">{{ d.date.slice(5).replace('-', '/') }}</td>
+                <td class="date-cell">{{ mdW(d.date) }}</td>
                 <td class="muted">{{ d.payee || '—' }}</td>
                 <td class="muted">{{ d.registrationNumber || '—' }}</td>
                 <td>{{ expenseAccountCategory(d) }}</td>
@@ -314,6 +314,15 @@ const grandTotal   = computed(() => visibleRows.value.reduce((s, r) => s + r.tot
 const grandTategae = computed(() => visibleRows.value.reduce((s, r) => s + r.tategaeTotal, 0))
 
 function yen(v: number) { return '¥' + Math.round(v).toLocaleString() }
+// 明細の日付を「MM/DD(曜)」で表示（経費PDFに曜日を出す・2026-08-22）。不正な日付は従来の月日表記にフォールバック。
+const WEEKDAY_JA = ['日', '月', '火', '水', '木', '金', '土']
+function mdW(dateStr: string): string {
+  const s = String(dateStr || '')
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (!m) return s.slice(5).replace('-', '/')
+  const wd = WEEKDAY_JA[new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getDay()]
+  return `${m[2]}/${m[3]}(${wd})`
+}
 
 // PDF出力（印刷CSS方式＝liff /expense/print と同方式。ブラウザの印刷→PDF保存で明細を出力）
 const printIssueDate = (() => { const d = new Date(); return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}` })()
