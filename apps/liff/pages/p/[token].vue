@@ -181,6 +181,7 @@
         <div class="accept-box">
           <div class="accept-title">{{ t('token.invoice.heading') }}</div>
           <p class="muted small">{{ t('token.invoice.intro') }}</p>
+          <p class="notice small">{{ t('token.invoice.notice') }}</p>
 
           <label class="radio-row"><input type="radio" value="full" v-model="invoiceMode" /> {{ t('token.invoice.modeFull') }}（{{ yen(invoiceResidual) }}）</label>
           <label class="radio-row"><input type="radio" value="partial" v-model="invoiceMode" /> {{ t('token.invoice.modePartial') }}</label>
