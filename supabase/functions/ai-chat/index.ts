@@ -56,6 +56,32 @@ async function buildFaqBlock(accountSlug: string): Promise<string> {
   } catch { return '' }
 }
 
+// テナントの現在の利用状態（機能フラグ）を取得し systemInstruction に注入する。
+// これが無いと「注文書どこ？」に対し、御社で見積もり機能が未開放でも画面を案内してしまう
+// （このEFが生まれた元の不具合）。★account.id で厳格にスコープ＝他テナントの状態は混ぜない。
+// 読み取り専用（settings を読むだけ・書き込みは一切しない）。取得失敗/未設定なら空文字で後方互換。
+async function buildTenantStateBlock(accountSlug: string): Promise<string> {
+  if (!accountSlug) return ''
+  try {
+    const sb = createClient(SUPABASE_URL, ANON_KEY)
+    const { data: account } = await sb.from('accounts').select('id').eq('slug', accountSlug).maybeSingle()
+    if (!account?.id) return ''
+    const { data: rows } = await sb
+      .from('settings').select('key, value')
+      .eq('account_id', account.id)
+      .in('key', ['estimate_feature_enabled'])
+    const map: Record<string, string> = Object.fromEntries((rows ?? []).map((r: any) => [r.key, String(r.value)]))
+    // 既定は未開放（フラグ行が無い＝OFF・estimate-feature-flag の既定と一致）
+    const estimateOn = map['estimate_feature_enabled'] === 'true'
+    const lines = [
+      `- 見積・注文書・請求（見積もり機能）: ${estimateOn
+        ? '開放済み（該当画面を案内してよい）'
+        : '未開放（見積/注文書/請求などの画面リンクは出さず、「御社ではまだこの機能が開放されていません」と理由を伝える）'}`,
+    ]
+    return `\n\n【御社（このテナント）の現在の利用状態（最優先で考慮する。未開放の機能は画面リンクを出さず理由を伝える）】\n${lines.join('\n')}`
+  } catch { return '' }
+}
+
 const SYSTEM = `あなたは内装施工会社向け業務システム「sido」の操作ヘルプAIです。日本語で簡潔に、手順は箇条書きで答えてください。
 主な機能:
 - LIFF日報: 作業員がLINEから日報を入力。稼働区分→現場→経費(交通/宿泊(ホテル・レオパレス等は複数登録可)/ガソリン/ゴミ/その他)→送信。途中離脱しても自動保存。領収書はAI解析で自動入力可。
@@ -130,8 +156,9 @@ Deno.serve(async(req)=>{
   // 画像だけ送られた場合も通す（「これ何？」と画像だけ投げる使い方があるため）
   if(!message.trim()&&images.length===0)return json({ok:false,error:'empty'},400)
   const faqBlock=await buildFaqBlock(auth.accountSlug)
+  const stateBlock=await buildTenantStateBlock(auth.accountSlug)   // 御社の現在の利用状態（機能フラグ）
   const screenBlock=screenContext&&screenContext.name?`\n\n【ユーザーが今いる画面】「${screenContext.name}」（パス: ${screenContext.path}）。ユーザーの質問はこの画面に関する可能性が高い。文脈が曖昧な時はこの画面の機能・操作として答える。`:''
-  const system=SYSTEM+SCREEN_CATALOG_BLOCK+screenBlock+faqBlock+(allowClarify?CLARIFY_RULE:'')
+  const system=SYSTEM+SCREEN_CATALOG_BLOCK+stateBlock+screenBlock+faqBlock+(allowClarify?CLARIFY_RULE:'')
   // 最新の user turn にだけ画像を載せる（履歴に画像を積むとトークンが膨らむ）
   const userParts:any[]=[...images.map(im=>({inlineData:{mimeType:im.mimeType,data:im.data}}))]
   userParts.push({text:message.trim()||'この画像について教えてください。'})
