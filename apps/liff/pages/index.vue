@@ -28,6 +28,16 @@
         <span class="material-symbols-rounded alert-arrow">chevron_right</span>
       </NuxtLink>
 
+      <!-- 打刻を促す（今日の勤務予定の開始/終了が来ているのに未打刻の時だけ）。LINE/メール不達でも気づけるよう常駐ホームに出す。 -->
+      <NuxtLink v-if="punchPrompt" class="punch-card" to="/checkin" data-testid="home-punch-card">
+        <span class="material-symbols-rounded punch-card-icon">{{ punchPrompt.kind === 'checkin' ? 'login' : 'logout' }}</span>
+        <div class="punch-card-body">
+          <div class="punch-card-title">{{ punchPrompt.kind === 'checkin' ? t('home.punchCheckinTitle') : t('home.punchCheckoutTitle') }}</div>
+          <div class="punch-card-sub">{{ t('home.punchSub', { title: punchPrompt.title }) }}</div>
+        </div>
+        <span class="material-symbols-rounded alert-arrow">chevron_right</span>
+      </NuxtLink>
+
       <!-- 経費申請 締切案内 -->
       <NuxtLink v-if="deadlineBanner" class="deadline-card" to="/expense/download">
         <span class="material-symbols-rounded deadline-icon">schedule</span>
@@ -116,6 +126,9 @@
 import { useI18n } from 'vue-i18n'
 import type { User } from '~/types'
 import { recentPeriodKeys, deadlineForPeriod, deadlineLabel, effectiveStatus, isInDeadlineAlertWindow } from '~/composables/useExpense'
+// ★明示import: 自動importだと jstDateOf が useExpense 版(戻り string|null)に解決され型が合わないため、
+//  文字列を返す attendance-punch.gen 版を明示的に使う。
+import { jstDateOf, jstTimeOf, toMinutes } from '~/composables/attendance-punch.gen'
 
 const { t }       = useI18n()
 const { profile, authMode } = useLiff()
@@ -123,6 +136,9 @@ const supabase    = useSupabase()
 const config      = useRuntimeConfig()
 const proxy       = useProxyMode()
 const expense     = useExpense()
+// ★コンポーザブルは setup 同期文脈で取得する（onMounted の await 後に呼ぶと注入が効かず例外になる）
+const schedulesApi   = useSchedules()
+const attendanceApi  = useAttendanceLog()
 
 // ハンバーガーメニュー(AppNav.vue)と共通のナビ項目定義（2026-07-10）
 const { resolveRole: resolveWorkerPerm, canApplyPersonalExpense } = useWorkerPermission()
@@ -140,6 +156,8 @@ const accountId        = ref<string | null>(null)
 const proxyModalOpen   = ref(false)
 const proxyLoading     = ref(false)
 const deadlineBanner   = ref<{ periodKey: string; label: string } | null>(null)
+// 打刻を促すプロンプト（今日の勤務予定の開始/終了時刻が来ているのに未打刻なら出す）
+const punchPrompt      = ref<{ kind: 'checkin' | 'checkout'; title: string } | null>(null)
 
 // PWA化(ホーム画面追加)案内: Safari等ブラウザで直接開いている(standalone表示でない)
 // ユーザーにだけ表示する。一度閉じたら再表示しない(localStorageにdismiss状態を保持)。
@@ -181,6 +199,43 @@ async function refreshDeadlineBanner() {
     : null
 }
 
+/** 今日の自分の勤務予定で、開始時刻を過ぎたのに出勤打刻が無い（or 終了時刻を過ぎたのに退勤が無い）なら
+ *  ホームで打刻を促す。LINE/メールは当てにできないので「ホームを開いた時に見える」ことを狙う（cron・外部送信なし）。
+ *  開始の30分前から出す。判定は現場(site_id)単位。 */
+async function refreshPunchPrompt(workerId: string) {
+  punchPrompt.value = null
+  try {
+    const nowIso = new Date().toISOString()
+    const today  = jstDateOf(nowIso)
+    const nowMin = toMinutes(jstTimeOf(nowIso)) ?? 0
+    await schedulesApi.fetchSchedules(today, today, undefined, workerId)
+    // 今日・自分の勤務予定（現場と開始時刻があるもの）
+    const mine = schedulesApi.schedules.value.filter(s =>
+      s.worker_id === workerId && s.category === 'work' && s.start_date === today && s.site_id && s.start_time)
+    if (!mine.length) return
+    // DBの time 値は "HH:MM:SS" のことがあるので HH:MM に丸めてから分に変換する
+    const hhmm = (t: string | null | undefined) => toMinutes((t ?? '').slice(0, 5))
+    // 打刻の取得は失敗しても促しは止めない（取れなければ「未打刻」とみなして安全側に促す）
+    let punches: { site_id: string; type: string }[] = []
+    try { punches = await attendanceApi.recent(24, workerId) } catch { punches = [] }
+    const hasCheckin  = (siteId: string) => punches.some(p => p.site_id === siteId && p.type === 'checkin')
+    const hasCheckout = (siteId: string) => punches.some(p => p.site_id === siteId && p.type === 'checkout')
+    // 出勤の促し（開始30分前〜）を優先。無ければ退勤の促し（終了時刻〜）。
+    for (const s of mine) {
+      const startMin = hhmm(s.start_time)
+      if (startMin != null && nowMin >= startMin - 30 && !hasCheckin(s.site_id as string)) {
+        punchPrompt.value = { kind: 'checkin', title: s.title || '現場' }; return
+      }
+    }
+    for (const s of mine) {
+      const endMin = hhmm(s.end_time)
+      if (endMin != null && nowMin >= endMin && hasCheckin(s.site_id as string) && !hasCheckout(s.site_id as string)) {
+        punchPrompt.value = { kind: 'checkout', title: s.title || '現場' }; return
+      }
+    }
+  } catch { /* 促しは best-effort。失敗してもホームは出す */ }
+}
+
 async function openProxyModal() {
   proxyModalOpen.value = true
   proxyLoading.value = false
@@ -218,6 +273,7 @@ onMounted(async () => {
     currentUser.value = user as User
     if (user.worker_id) await proxy.fetchProxyTargets(user.worker_id)
     await refreshDeadlineBanner()
+    if (user.worker_id) await refreshPunchPrompt(user.worker_id)
   }
 })
 
@@ -276,6 +332,20 @@ onMounted(() => { refreshSiteChatListBadge() })
 .notif-card-body { flex: 1; }
 .notif-card-title { font-size: 14px; font-weight: 700; color: #111; }
 .notif-card-sub   { font-size: 12px; color: #e11d48; margin-top: 2px; font-weight: 600; }
+
+/* 打刻を促すカード（出勤/退勤）。緑=出勤系の色に合わせる */
+.punch-card {
+  background: #fff; border-radius: 12px;
+  padding: 14px 16px; display: flex; align-items: center; gap: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  border-left: 4px solid #10b981; cursor: pointer; text-decoration: none;
+}
+.punch-card:active { background: #ecfdf5; }
+.punch-card-icon { color: #10b981; font-size: 26px; flex-shrink: 0;
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+.punch-card-body { flex: 1; }
+.punch-card-title { font-size: 14px; font-weight: 700; color: #111; }
+.punch-card-sub   { font-size: 12px; color: #059669; margin-top: 2px; font-weight: 600; }
 
 /* メニューグリッド */
 .menu-section {

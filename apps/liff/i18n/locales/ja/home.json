@@ -15,5 +15,8 @@
   "periodFirstHalf": "{month}月前半",
   "periodSecondHalf": "{month}月後半",
   "notifTitle": "未読のお知らせが{count}件あります",
-  "notifSub": "タップして内容を確認"
+  "notifSub": "タップして内容を確認",
+  "punchCheckinTitle": "出勤の打刻がまだです",
+  "punchCheckoutTitle": "退勤の打刻がまだです",
+  "punchSub": "{title} の時間です。タップして打刻しましょう"
 }
