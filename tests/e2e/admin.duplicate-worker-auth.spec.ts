@@ -18,6 +18,7 @@
 // ============================================================
 import { test, expect } from '@playwright/test'
 import { execSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { restSrv, getAccountId, ADMIN_LOGIN_EMAIL, DB_URL } from './helpers'
 
 const TS = Date.now()
@@ -25,15 +26,19 @@ const PREFIX = 'dup-auth-'
 const ME = `${PREFIX}本人${TS}`
 const SHADOW = `${PREFIX}相乗り${TS}`   // 同じログインにぶら下がるもう1人（牛田さんに対する日下部さん）
 const OWNER = `${PREFIX}日報主${TS}`
+// もう1人の実効オーナー（別ログイン）。これが居ないと「完全ワンオペ」扱いになり
+// ソロオーナー例外(canSelfApprove)で自己承認が許可され、fail-closed の検証が成り立たない（#soloOwner・2026-08-22）。
+const OTHER_OWNER = `${PREFIX}別オーナー${TS}`
 const DATE = '2026-11-21'
 
 let accountId = ''
 let authUserId = ''
 let myUserId = ''
 let ownerUserId = ''
+const OTHER_OWNER_EMAIL = `dup-auth-other-${TS}@example.com`
 
 async function purge() {
-  for (const n of [ME, SHADOW, OWNER]) {
+  for (const n of [ME, SHADOW, OWNER, OTHER_OWNER]) {
     for (const u of (await restSrv(`users?real_name=eq.${encodeURIComponent(n)}&select=id`)) ?? []) {
       await restSrv(`daily_report_pending_edits?submitted_by_user_id=eq.${u.id}`, { method: 'DELETE' }).catch(() => {})
       await restSrv(`daily_report_pending_edits?report_user_id=eq.${u.id}`, { method: 'DELETE' }).catch(() => {})
@@ -44,6 +49,8 @@ async function purge() {
   await restSrv(`workers?name=like.${PREFIX}*`, { method: 'DELETE' }).catch(() => {})
   const left = (await restSrv(`workers?name=like.${PREFIX}*&select=id`))?.length ?? 0
   if (left) throw new Error(`cleanup 未完了: workers ${left}件 残っている（接頭辞 ${PREFIX}）`)
+  // workers を消してから、第2オーナー用に作った auth.users を掃除（FK順序: 参照する workers を先に消す）
+  execSync(`psql "${DB_URL}" -c "delete from auth.users where email like 'dup-auth-other-%@example.com'"`, { stdio: 'ignore' })
 }
 
 test.describe('1ログインに作業員が複数ぶら下がった時', () => {
@@ -76,6 +83,22 @@ test.describe('1ログインに作業員が複数ぶら下がった時', () => {
       body: JSON.stringify({ account_id: accountId, real_name: OWNER, worker_id: ow[0].id }),
     })
     ownerUserId = ou[0].id
+
+    // もう1人の実効オーナー（別ログイン）を置く。これで口座は「完全ワンオペ」でなくなり、
+    // 自己承認はソロオーナー例外(canSelfApprove)の対象外＝従来どおり禁止される。
+    // この土台があって初めて「重複時に自己承認ブロックが外れないか(fail-closed)」を検証できる。
+    // ★workers.auth_user_id は auth.users への FK。実在する auth ユーザーを1つ作って紐づける
+    //  （token列は NULL 不可のため '' を入れる＝ローカル auth の既知の落とし穴）。
+    const otherAuthId = randomUUID()
+    execSync(
+      `psql "${DB_URL}" -c "insert into auth.users (id, instance_id, aud, role, email, confirmation_token, recovery_token, email_change_token_new, email_change) ` +
+      `values ('${otherAuthId}', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', '${OTHER_OWNER_EMAIL}', '', '', '', '')"`,
+      { stdio: 'ignore' },
+    )
+    await restSrv('workers', {
+      method: 'POST', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ account_id: accountId, name: OTHER_OWNER, role: 'site', active: true, auth_user_id: otherAuthId, permission_role: 'admin' }),
+    })
   })
 
   test.afterAll(async () => { await purge() })

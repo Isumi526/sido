@@ -19,7 +19,9 @@ import { test, expect } from '@playwright/test'
 import { restSrv, getAccountId, restoreEstimateFeature } from './helpers'
 
 const KEY = 'estimate_feature_enabled'
-const EST_ROUTES = ['/estimate-list', '/estimates', '/estimate-masters', '/estimate-builder', '/purchase-orders', '/drawing-materials']
+// ★#40(見積入口一本化): 素の /estimate-builder は案件未指定だと /estimate-list へリダイレクトする設計に変わった。
+//  直接入れる導線ではなくなったので「入れるルート」の検証対象からは外す（入口は estimate-list 経由）。
+const EST_ROUTES = ['/estimate-list', '/estimates', '/estimate-masters', '/purchase-orders', '/drawing-materials']
 const EST_MENU   = ['/estimate-list', '/estimates', '/purchase-orders', '/drawing-materials', '/estimate-masters']
 
 let accountId = ''
