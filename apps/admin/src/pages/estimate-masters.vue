@@ -181,6 +181,25 @@
             </div>
           </div>
 
+          <!-- ★掛率（定価×掛率で仕入単価を出す）。商社一律＋材料区分(工種)ごと。区分別が優先される。 -->
+          <div class="rate-section" data-testid="rate-section">
+            <div class="sub-h">掛率（定価×掛率で仕入単価を計算）<span v-if="rateMsg" class="ok" data-testid="rate-msg">{{ rateMsg }}</span></div>
+            <div class="rate-row">
+              <label class="rate-label">商社一律</label>
+              <input v-model.number="supplierRateInput" type="number" step="0.01" min="0" max="1" class="input sm num" placeholder="例 0.42" data-testid="supplier-rate" />
+              <button class="btn-primary sm" data-testid="save-supplier-rate" @click="saveSupplierRate">保存</button>
+              <span class="muted">0.42 = 定価の42%で仕入れ。区分別が未設定の工種はこの値を使う。</span>
+            </div>
+            <div class="rate-grid">
+              <div v-for="t in trades" :key="t.id" class="rate-row" :data-testid="`trade-rate-row-${t.id}`">
+                <label class="rate-label">{{ t.name }}</label>
+                <input v-model.number="supplierTradeRateInputs[t.id]" type="number" step="0.01" min="0" max="1" class="input sm num" placeholder="（一律）" :data-testid="`trade-rate-${t.id}`" />
+                <button class="btn-add sm" :data-testid="`save-trade-rate-${t.id}`" @click="saveSupplierTradeRate(t.id)">保存</button>
+              </div>
+            </div>
+            <p class="muted" v-if="!trades.length">工種（材料区分）が未登録です。「工種」タブで追加すると区分別の掛率を設定できます。</p>
+          </div>
+
           <div v-if="revisionsFiltered.length" class="rev-section">
             <div class="sub-h rev-head">
               <span>取込の承認待ち（{{ revisionsFiltered.length }}件）</span>
@@ -310,6 +329,37 @@ async function saveSupplierRate() {
     account_id: accountId, supplier_id: activeSupplier.value,
     rate: Number(supplierRateInput.value), updated_at: new Date().toISOString(),
   }, { onConflict: 'account_id,supplier_id' })
+  if (error) { masterErr.value = error.message; return }
+  rateMsg.value = '保存しました'
+  setTimeout(() => { rateMsg.value = '' }, 2000)
+}
+// ★商社×工種(材料区分)の掛率。区分別に持てると床材0.42/クロス0.40 のような差を計算に効かせられる。
+//  空/0 で保存すると区分の掛率を外す＝商社一律へフォールバック。
+const supplierTradeRateInputs = ref<Record<string, number | null>>({})
+async function loadSupplierTradeRates() {
+  supplierTradeRateInputs.value = {}
+  if (!activeSupplier.value) return
+  const { data } = await supabase.from('estimate_supplier_trade_rates')
+    .select('trade_id, rate').eq('account_id', accountId).eq('supplier_id', activeSupplier.value)
+  const m: Record<string, number | null> = {}
+  for (const r of (data ?? []) as any[]) m[r.trade_id] = Number(r.rate)
+  supplierTradeRateInputs.value = m
+}
+async function saveSupplierTradeRate(tradeId: string) {
+  if (!activeSupplier.value) return
+  masterErr.value = ''
+  const v = supplierTradeRateInputs.value[tradeId]
+  if (v == null || !(Number(v) > 0)) {
+    await supabase.from('estimate_supplier_trade_rates').delete()
+      .eq('account_id', accountId).eq('supplier_id', activeSupplier.value).eq('trade_id', tradeId)
+    rateMsg.value = '区分の掛率を外しました（商社一律を使用）'
+    setTimeout(() => { rateMsg.value = '' }, 2000)
+    return
+  }
+  const { error } = await supabase.from('estimate_supplier_trade_rates').upsert({
+    account_id: accountId, supplier_id: activeSupplier.value, trade_id: tradeId,
+    rate: Number(v), updated_at: new Date().toISOString(),
+  }, { onConflict: 'account_id,supplier_id,trade_id' })
   if (error) { masterErr.value = error.message; return }
   rateMsg.value = '保存しました'
   setTimeout(() => { rateMsg.value = '' }, 2000)
@@ -712,8 +762,8 @@ onMounted(async () => {
   await Promise.all([loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices(), loadRevisions(), loadListPrices()])
   if (!activeSupplier.value && suppliers.value[0]) activeSupplier.value = suppliers.value[0].id
 })
-// R41: 商社タブを切り替えたら、その商社の掛率を読む
-watch(activeSupplier, () => { void loadSupplierRate() }, { immediate: true })
+// R41: 商社タブを切り替えたら、その商社の掛率を読む（商社一律＋商社×工種）
+watch(activeSupplier, () => { void loadSupplierRate(); void loadSupplierTradeRates() }, { immediate: true })
 </script>
 
 <style scoped>
@@ -795,4 +845,10 @@ watch(activeSupplier, () => { void loadSupplierRate() }, { immediate: true })
 /* R50: 廃止済みマスタの説明。閲覧のみと分かるよう他の説明文と見た目を変える */
 .notice-deprecated { font-size: 12px; line-height: 1.7; color: #92400e; background: #fffbeb;
   border: 1px solid #fde68a; border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; }
+
+/* 掛率（商社一律＋材料区分ごと） */
+.rate-section { margin: 14px 0; padding: 12px; border: 1px solid #e8ebee; border-radius: 10px; background: #fafbfc; }
+.rate-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.rate-label { min-width: 8em; font-size: 13px; color: #333; }
+.rate-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 4px 16px; margin-top: 6px; }
 </style>

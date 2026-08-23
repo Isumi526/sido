@@ -831,7 +831,7 @@
                       <select v-model="rows[i].supplier_id" class="input sm" :data-testid="`item-supplier-${i}`" @change="onSupplierPick(rows[i])">
                         <option :value="null">—</option>
                         <!-- ★R41: 「単価表の絶対額」と「定価×掛率」を同じ土俵で並べる -->
-                        <option v-for="p in pricesForRow(rows[i].material_id, rows[i].product_code)" :key="p.supplier_id" :value="p.supplier_id">
+                        <option v-for="p in pricesForRow(rows[i].material_id, rows[i].product_code, rowTradeId(rows[i]))" :key="p.supplier_id" :value="p.supplier_id">
                           {{ p.supplierName }} ¥{{ p.unit_price.toLocaleString('ja-JP') }}（{{ p.from }}）
                         </option>
                       </select>
@@ -3276,15 +3276,19 @@ async function loadSends() {
 // ════════════════════════════════════════════════════════════
 type ListPrice = { product_code: string; item_name: string | null; unit: string | null; list_price: number }
 type SupplierRate = { supplier_id: string; rate: number }
+type SupplierTradeRate = { supplier_id: string; trade_id: string; rate: number }
 const listPrices    = ref<ListPrice[]>([])
 const supplierRates = ref<SupplierRate[]>([])
+const supplierTradeRates = ref<SupplierTradeRate[]>([])   // 商社×工種(材料区分)の掛率（商社一律より優先）
 async function loadListPrices() {
-  const [{ data: lp }, { data: sr }] = await Promise.all([
+  const [{ data: lp }, { data: sr }, { data: str }] = await Promise.all([
     supabase.from('estimate_list_prices').select('product_code, item_name, unit, list_price').eq('account_id', accountId),
     supabase.from('estimate_supplier_rates').select('supplier_id, rate').eq('account_id', accountId),
+    supabase.from('estimate_supplier_trade_rates').select('supplier_id, trade_id, rate').eq('account_id', accountId),
   ])
   listPrices.value = (lp ?? []).map((x: any) => ({ ...x, list_price: Number(x.list_price) }))
   supplierRates.value = (sr ?? []).map((x: any) => ({ ...x, rate: Number(x.rate) }))
+  supplierTradeRates.value = (str ?? []).map((x: any) => ({ ...x, rate: Number(x.rate) }))
 }
 const listPriceOf = (code: string | null | undefined) => {
   const c = (code ?? '').trim().toLowerCase()
@@ -3292,6 +3296,9 @@ const listPriceOf = (code: string | null | undefined) => {
   return listPrices.value.find(l => l.product_code.trim().toLowerCase() === c) ?? null
 }
 const supplierRateOf = (supplierId: string) => supplierRates.value.find(r => r.supplier_id === supplierId)?.rate ?? null
+// 商社×工種(材料区分)の掛率。無ければ null（呼び出し側が商社一律へフォールバック）。
+const supplierTradeRateOf = (supplierId: string, tradeId: string | null | undefined) =>
+  tradeId ? (supplierTradeRates.value.find(r => r.supplier_id === supplierId && r.trade_id === tradeId)?.rate ?? null) : null
 
 /**
  * 名称から定価を引く（R46の推定用）。品番ではなく名称で引くのは、
@@ -3306,25 +3313,36 @@ function listPriceByName(normName: string): number | null {
 
 /**
  * その商社から仕入れる時の単価。
- * 優先順: ①単価表の絶対額 ②定価 × 掛率（品番×商社の上書き → 商社の既定）
+ * 優先順: ①単価表の絶対額 ②定価 × 掛率（品番×商社の上書き → 商社×工種 → 商社の既定）
+ *  ★tradeId は明細の材料区分(＝工種)。商社×工種の掛率があればそれを使い、無ければ商社一律へ落ちる。
  */
 function purchaseUnitPrice(p: { supplier_id: string; unit_price: number; rate?: number | null; product_code?: string | null },
-                           code: string | null | undefined): { price: number; from: '単価表' | '定価×掛率' } | null {
+                           code: string | null | undefined,
+                           tradeId?: string | null): { price: number; from: '単価表' | '定価×掛率' } | null {
   if (Number(p.unit_price) > 0) return { price: Number(p.unit_price), from: '単価表' }
   const lp = listPriceOf(code ?? p.product_code)
-  const rate = p.rate ?? supplierRateOf(p.supplier_id)
+  const rate = p.rate ?? supplierTradeRateOf(p.supplier_id, tradeId) ?? supplierRateOf(p.supplier_id)
   if (lp && rate != null && rate > 0) return { price: Math.round(lp.list_price * rate), from: '定価×掛率' }
   return null
 }
 
-function pricesForRow(materialId: string | null, productCode?: string | null) {
+// 明細行の材料区分(工種)を trade_id に解決する。行が固定マスタの trade_id を持てばそれ、
+// 無ければ自由記述の trade_name を工種マスタ名と突き合わせて引く（掛率は工種マスタ単位で登録するため）。
+const rowTradeId = (r: { trade_id?: string | null; trade_name?: string | null }): string | null => {
+  if (r.trade_id) return r.trade_id
+  const nm = (r.trade_name ?? '').trim()
+  if (!nm) return null
+  return trades.value.find(t => t.name === nm)?.id ?? null
+}
+
+function pricesForRow(materialId: string | null, productCode?: string | null, tradeId?: string | null) {
   const code = (productCode ?? '').trim().toLowerCase()
   if (!materialId && !code) return [] as Array<{ supplier_id: string; supplierName: string; unit_price: number }>
   const hit = matPrices.value
     .filter(p => (materialId && p.material_id === materialId)
               || (!!code && (p.product_code ?? '').trim().toLowerCase() === code))
     .map(p => {
-      const calc = purchaseUnitPrice(p as any, productCode)
+      const calc = purchaseUnitPrice(p as any, productCode, tradeId)
       return {
         supplier_id: p.supplier_id,
         supplierName: suppliers.value.find(s => s.id === p.supplier_id)?.name ?? '(商社)',
@@ -3335,15 +3353,21 @@ function pricesForRow(materialId: string | null, productCode?: string | null) {
     .filter(x => x.unit_price > 0)
   // ★R41: 単価表に絶対額が無くても、定価×掛率が引ける商社は候補に出す
   //   （その商社の行が単価表に無いケース。掛率だけ登録している運用がある）
+  //   掛率は「商社×工種」を優先し、無ければ商社一律。どちらか持つ商社をすべて候補にする。
   const lp = listPriceOf(productCode)
   if (lp) {
-    for (const r of supplierRates.value) {
-      if (hit.some(x => x.supplier_id === r.supplier_id)) continue
-      if (!(r.rate > 0)) continue
+    const supIds = new Set<string>([
+      ...supplierRates.value.map(r => r.supplier_id),
+      ...supplierTradeRates.value.filter(r => !tradeId || r.trade_id === tradeId).map(r => r.supplier_id),
+    ])
+    for (const supplierId of supIds) {
+      if (hit.some(x => x.supplier_id === supplierId)) continue
+      const rate = supplierTradeRateOf(supplierId, tradeId) ?? supplierRateOf(supplierId)
+      if (!(rate != null && rate > 0)) continue
       hit.push({
-        supplier_id: r.supplier_id,
-        supplierName: suppliers.value.find(s => s.id === r.supplier_id)?.name ?? '(商社)',
-        unit_price: Math.round(lp.list_price * r.rate), from: '定価×掛率',
+        supplier_id: supplierId,
+        supplierName: suppliers.value.find(s => s.id === supplierId)?.name ?? '(商社)',
+        unit_price: Math.round(lp.list_price * rate), from: '定価×掛率',
       })
     }
   }
@@ -3351,7 +3375,7 @@ function pricesForRow(materialId: string | null, productCode?: string | null) {
 }
 /** R42: その行で一番安い商社（比較の基準は仕入単価。定価×掛率と絶対額を同じ土俵で見る） */
 function cheapestFor(r: Row) {
-  const list = pricesForRow(r.material_id, r.product_code)
+  const list = pricesForRow(r.material_id, r.product_code, rowTradeId(r))
   return list.length ? list[0] : null
 }
 /** R42: 最安の商社を採用する（勝手に確定せず、押した時だけ） */
@@ -3376,7 +3400,7 @@ function onSupplierPick(r: Row) {
   if (!r.supplier_id) return
   const code = (r.product_code ?? '').trim().toLowerCase()
   // ★R41: 絶対額が無い商社でも、定価×掛率で仕入単価が出る
-  const picked = pricesForRow(r.material_id, r.product_code).find(x => x.supplier_id === r.supplier_id)
+  const picked = pricesForRow(r.material_id, r.product_code, rowTradeId(r)).find(x => x.supplier_id === r.supplier_id)
   if (!picked) return
   void code
   r.cost_unit_price = picked.unit_price
@@ -3653,7 +3677,7 @@ const isMaterialRow = (r: Row) => !!(r.product_code ?? '').trim()
  * 品番が無くても、マスタで商社別単価が登録されている材料（品名で選んだケース）は
  * 材料として扱う。品番の有無だけで切ると、その動線で商社が選べなくなる。
  */
-const hasSupplierChoice = (r: Row) => isMaterialRow(r) || pricesForRow(r.material_id, r.product_code).length > 0
+const hasSupplierChoice = (r: Row) => isMaterialRow(r) || pricesForRow(r.material_id, r.product_code, rowTradeId(r)).length > 0
 
 function needsLookup(r: Row): boolean {
   if (!isMaterialRow(r)) return false   // 作業内容は調べても見つからないので出さない
