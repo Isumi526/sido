@@ -180,6 +180,9 @@ export interface MasterData {
   // ★「現場id|区分id」→ 定時。定時は現場だけでも区分だけでも決まらないので組で持つ
   //  （事務は拠点で 08:30/08:00 と違う）。未収録＝その組に定時なし。
   categoryHours?: Record<string, { start: string | null; end: string | null; breaks: { start: string; minutes: number }[] | null }>
+  // 物品マスタ（ETCカード等の固定カテゴリ）の名前一覧。日報の高速代でETCカードを選ぶのに使う。
+  //  空なら report 側は従来の固定カード（カード①〜⑦）にフォールバックする。
+  etcCards?: string[]
 }
 
 export interface ApiResponse<T = void> {

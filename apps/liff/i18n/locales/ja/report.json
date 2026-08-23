@@ -1,5 +1,6 @@
 {
   "subtitle": "日報",
+  "simpleModeBanner": "簡易入力モードです。経費の入力欄は省略し、現場・稼働・主要項目だけ表示しています。",
   "draftRestored": "入力途中の下書きを復元しました（添付画像も含む）",
   "draftDiscard": "破棄して新規入力",
   "allSubmittedTitle": "送信済みです",

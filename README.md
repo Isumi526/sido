@@ -84,6 +84,23 @@ Set the following in Script Properties (not in code):
 | `SUPABASE_ANON_KEY` | Supabase anon key |
 | `ACCOUNT_SLUG` | Account identifier slug |
 
+## Screen catalog (AI chat grounding)
+
+The in-app AI help (`supabase/functions/ai-chat`) is grounded in an auto-generated
+catalog of admin screens, so it never invents screens/paths and never forgets a
+screen's visibility conditions (permission / feature flag). The catalog is built
+from `apps/admin/src/router/index.ts`, `apps/admin/src/lib/screenNames.ts` and each
+page's `<HelpButton>` — no hand-maintained list to rot.
+
+```bash
+# Regenerate after adding or changing an admin screen (route / screen name / HelpButton)
+npm run build:screen-catalog     # writes apps/admin/src/generated/screen-catalog.json
+                                 #  and supabase/functions/ai-chat/screen-catalog.gen.ts (commit both)
+
+# CI guard: fails if the committed catalog is stale (screen added without regenerating)
+npm run check:screen-catalog
+```
+
 ## Deploy
 
 ```bash

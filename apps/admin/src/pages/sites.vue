@@ -99,10 +99,6 @@
         </div>
         <!-- ③ 工事内容 -->
         <div class="field">
-          <label>工事種類</label>
-          <input v-model="modal.construction_type" class="input" placeholder="例：内装・改修" />
-        </div>
-        <div class="field">
           <label>工事内容</label>
           <textarea v-model="modal.construction_details" class="input" rows="2" placeholder="例：1F内装ボード・クロス工事 一式"></textarea>
         </div>
@@ -110,9 +106,9 @@
         <div class="field">
           <label>固定勤務時刻（日報の既定＆終了上限・任意）</label>
           <div style="display:flex;align-items:center;gap:8px">
-            <input v-model="modal.default_start_time" type="time" class="input" style="width:auto" @focus="modal.default_start_time || (modal.default_start_time = '08:30')" />
+            <input v-model="modal.default_start_time" type="time" step="300" class="input" style="width:auto" @focus="modal.default_start_time || (modal.default_start_time = '08:30')" />
             <span>〜</span>
-            <input v-model="modal.default_end_time" type="time" class="input" style="width:auto" @focus="modal.default_end_time || (modal.default_end_time = '17:30')" />
+            <input v-model="modal.default_end_time" type="time" step="300" class="input" style="width:auto" @focus="modal.default_end_time || (modal.default_end_time = '17:30')" />
           </div>
           <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">設定すると日報でこの現場を選んだ時に作業時刻の既定値になり、終了は固定終了を超えて報告できません（早退で下回るのは可）。</p>
         </div>
@@ -120,7 +116,7 @@
         <div class="field">
           <label>既定休憩（開始時刻＋休憩時間・任意・複数可）</label>
           <div v-for="(brk, bi) in (modal.default_breaks || [])" :key="bi" style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-            <input v-model="brk.start" type="time" class="input" style="width:auto" data-testid="break-start" />
+            <input v-model="brk.start" type="time" step="300" class="input" style="width:auto" data-testid="break-start" />
             <input v-model.number="brk.minutes" type="number" min="0" step="15" class="input" style="width:90px" placeholder="60" data-testid="break-minutes" />
             <span style="font-size:13px;color:#64748b">分</span>
             <button type="button" class="btn-ghost" style="padding:2px 8px" @click="removeBreak(bi)">×</button>
@@ -135,13 +131,13 @@
           <div v-for="c in siteCats" :key="c.id" class="cat-hours" :data-testid="`cat-hours-${c.id}`">
             <div class="cat-hours-name">{{ c.name }}</div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              <input v-model="catHoursDraft[c.id].start" type="time" class="input" style="width:auto" :data-testid="`cat-start-${c.id}`" />
+              <input v-model="catHoursDraft[c.id].start" type="time" step="300" class="input" style="width:auto" :data-testid="`cat-start-${c.id}`" />
               <span>〜</span>
-              <input v-model="catHoursDraft[c.id].end" type="time" class="input" style="width:auto" :data-testid="`cat-end-${c.id}`" />
+              <input v-model="catHoursDraft[c.id].end" type="time" step="300" class="input" style="width:auto" :data-testid="`cat-end-${c.id}`" />
               <button type="button" class="btn-ghost" style="padding:2px 10px;font-size:12px" @click="catHoursDraft[c.id].breaks.push({ start: '12:00', minutes: 60 })">＋ 休憩</button>
             </div>
             <div v-for="(brk, bi) in catHoursDraft[c.id].breaks" :key="bi" style="display:flex;align-items:center;gap:8px;margin-top:6px">
-              <input v-model="brk.start" type="time" class="input" style="width:auto" />
+              <input v-model="brk.start" type="time" step="300" class="input" style="width:auto" />
               <input v-model.number="brk.minutes" type="number" min="0" step="15" class="input" style="width:90px" placeholder="60" />
               <span style="font-size:13px;color:#64748b">分</span>
               <button type="button" class="btn-ghost" style="padding:2px 8px" @click="catHoursDraft[c.id].breaks.splice(bi, 1)">×</button>
@@ -163,11 +159,6 @@
           <div v-if="hoursPreview.ignored" class="hp-warn" data-testid="hours-preview-ignored">
             休憩{{ hoursPreview.ignored }}件が勤務時間の外にあります。実働からは引かれません。
           </div>
-        </div>
-        <!-- ⑤ メモ -->
-        <div class="field">
-          <label>メモ</label>
-          <textarea v-model="modal.memo" class="input" rows="2" placeholder="任意"></textarea>
         </div>
         <!-- ⑥ 絞り込み（協力業者・長いリストは添付の直前＝最下部へ） -->
         <div class="field">

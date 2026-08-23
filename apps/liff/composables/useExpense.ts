@@ -165,8 +165,10 @@ export const useExpense = () => {
   async function getUser(lineUserId: string): Promise<User | null> {
     // email/pw（Supabase認証）セッションは line_user_id を持たない → 単一ソース useCurrentUser で解決。
     // （users 行が無ければ作成して id 付きで返す＝日報/履歴が正しく保存される。line_user_id 検索はしない）
-    const { authMode, workerId } = useLiff()
-    if (authMode.value === 'password' && workerId.value) {
+    const { authMode } = useLiff()
+    // ★email/pw は worker_id が JWT に無くても resolve() が auth_user_id から解決する。
+    //  ここで workerId を条件にすると、付け忘れ時に LINE キャッシュ経路へ落ちて /register へ飛ぶ（本バグ）。
+    if (authMode.value === 'password') {
       return await useCurrentUser().resolve()
     }
 
@@ -769,7 +771,7 @@ export const useExpense = () => {
    * 経費申請: status を 申請中 にし、PDFパスを記録する。
    * 再申請（差し戻し後）でも notified_at を null クリアして1回だけ再送できるようにする。
    */
-  async function applySettlement(userId: string, periodKey: string, pdfPath: string | null): Promise<any> {
+  async function applySettlement(userId: string, periodKey: string, pdfPath: string | null, comment: string | null = null): Promise<any> {
     const accountId = await getAccountId()
     const now = new Date().toISOString()
     const { data, error } = await supabase
@@ -777,7 +779,7 @@ export const useExpense = () => {
       .upsert(
         {
           account_id: accountId, user_id: userId, period_key: periodKey,
-          status: '申請中', applied_at: now, pdf_path: pdfPath,
+          status: '申請中', applied_at: now, pdf_path: pdfPath, apply_comment: comment,
           reject_reason: null, rejected_at: null, notified_at: null, updated_at: now,
         },
         { onConflict: 'account_id,user_id,period_key' }

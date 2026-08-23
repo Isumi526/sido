@@ -1284,15 +1284,10 @@
         </div>
       </div>
     </template>
-    <!-- 新規作成（一覧の＋新規見積、または案件未選択で開いた時） -->
+    <!-- 案件未選択(直打ち)は onMounted で見積一覧へ自動遷移。入口を「見積一覧の＋新規見積」に一本化（#40）。 -->
     <div v-else class="new-estimate">
-      <h2>新規見積を作成</h2>
-      <p class="muted">案件名を入力して作成、または<RouterLink to="/estimate-list">見積一覧</RouterLink>から選んでください。</p>
-      <div class="new-row">
-        <input v-model="newProjectName" class="input" placeholder="案件名（例: 〇〇ビル改修）" data-testid="new-project-name" @keyup.enter="addProject" />
-        <button class="btn-primary" :disabled="!newProjectName.trim()" data-testid="add-project" @click="addProject">作成</button>
-      </div>
-      <span v-if="projectErr" class="err" data-testid="project-err">{{ projectErr }}</span>
+      <h2>見積一覧へ移動します…</h2>
+      <p class="muted">新規見積は<RouterLink to="/estimate-list">見積一覧</RouterLink>の「＋新規見積」から作成してください。</p>
     </div>
 
   </div>
@@ -4146,6 +4141,7 @@ onMounted(async () => {
   const qp = route.query.project
   const pid = Array.isArray(qp) ? qp[0] : qp
   if (pid && projects.value.some(p => p.id === pid)) { projectId.value = pid as string; await loadItems() }
+  else { router.replace('/estimate-list'); return }   // #40 入口を一本化: 直打ち(project無し/不正)は見積一覧へ
   // ★R51: 「＋新規見積」から来た（?step=1）／案件名が未確定の下書きなら、ステップ入力から始める
   const stepQ = Array.isArray(route.query.step) ? route.query.step[0] : route.query.step
   if (projectId.value && (stepQ || isDraftProject.value)) {

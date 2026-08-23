@@ -62,6 +62,47 @@
       </table>
     </div>
 
+    <!-- 科目別 月次集計（科目×月クロス集計・直近12ヶ月）#6bba03b2 -->
+    <section class="crosstab">
+      <button class="crosstab-toggle" data-testid="crosstab-toggle" @click="toggleCrossTab">
+        <span class="material-symbols-rounded ct-ico">table_chart</span>
+        科目別 月次集計（直近12ヶ月）
+        <span class="material-symbols-rounded ct-caret">{{ showCrossTab ? 'expand_less' : 'expand_more' }}</span>
+      </button>
+      <div v-if="showCrossTab" class="crosstab-body">
+        <p class="note">
+          現場経費（日報の経費）と個人経費を、科目ごと・月ごとに合計しています。車両の距離按分（内部原価の配賦分）は含みません。金額は税込です。
+        </p>
+        <div v-if="crossLoading" class="empty">読み込み中...</div>
+        <div v-else-if="crossRows.length === 0" class="empty">この期間の経費がありません</div>
+        <div v-else class="table-wrap crosstab-wrap">
+          <table class="table crosstab-table" data-testid="crosstab-table">
+            <thead>
+              <tr>
+                <th class="ct-acct">科目</th>
+                <th v-for="m in crossMonths" :key="m" class="num" :class="{ 'ct-cur': m === currentMonthKey }">{{ monthShort(m) }}</th>
+                <th class="num ct-total">年計</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="r in crossRows" :key="r.account" class="data-row">
+                <td class="ct-acct">{{ r.account }}</td>
+                <td v-for="m in crossMonths" :key="m" class="num" :class="{ 'ct-cur': m === currentMonthKey }">{{ r.byMonth[m] ? yen(r.byMonth[m]) : '—' }}</td>
+                <td class="num ct-total">{{ yen(r.total) }}</td>
+              </tr>
+            </tbody>
+            <tfoot>
+              <tr class="total-row">
+                <td class="ct-acct">合計</td>
+                <td v-for="m in crossMonths" :key="m" class="num" :class="{ 'ct-cur': m === currentMonthKey }">{{ crossColTotals[m] ? yen(crossColTotals[m]) : '—' }}</td>
+                <td class="num ct-total">{{ yen(crossGrandTotal) }}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <!-- 明細モーダル（1期分） -->
     <div v-if="selected" class="modal-overlay" @click.self="selected = null">
       <div class="modal">
@@ -95,6 +136,7 @@
             <span class="settle-pay">振込額（立替）<strong>{{ yen(selected.tategaeTotal) }}</strong></span>
             <span class="settle-amt">経費合計 {{ yen(selected.total) }}（{{ selected.count }}件）</span>
             <span v-if="selected.settlement?.reject_reason && selected.status === '差し戻し'" class="settle-reason">理由: {{ selected.settlement.reject_reason }}</span>
+            <span v-if="selected.settlement?.apply_comment" class="settle-comment">申請コメント: {{ selected.settlement.apply_comment }}</span>
             <span v-if="selected.status === '支払い済み' && selected.settlement?.paid_on" class="settle-paid-info">支払日 {{ selected.settlement.paid_on }}</span>
             <template v-if="selected.status === '申請中'">
               <button class="btn-reject" @click="openReject(selected)">差し戻し</button>
@@ -123,13 +165,27 @@
               @click="toggleAcct(a)"
             >{{ a }}</button>
             <button v-if="acctFilter.size" class="af-clear" data-testid="acct-clear" @click="acctFilter = new Set()">クリア</button>
-            <span v-if="acctFilter.size" class="af-count" data-testid="acct-count">
-              {{ filteredDetails.length }} / {{ selected.details.length }} 件 ・ {{ yen(filteredTotal) }}
-            </span>
           </div>
+          <!-- 支払先の絞り込み（科目とAND・2026-08-22）。科目とは独立に選べ、両方選ぶと両条件を満たす明細だけになる。 -->
+          <div v-if="availablePayees.length > 1" class="acct-filter no-print" data-testid="payee-filter">
+            <span class="af-label">支払先で絞る</span>
+            <button
+              v-for="p in availablePayees" :key="p"
+              class="af-chip" :class="{ on: payeeFilter.has(p) }"
+              :data-testid="`payee-chip-${p}`"
+              @click="togglePayee(p)"
+            >{{ p }}</button>
+            <button v-if="payeeFilter.size" class="af-clear" data-testid="payee-clear" @click="payeeFilter = new Set()">クリア</button>
+          </div>
+          <span v-if="acctFilter.size || payeeFilter.size" class="af-count no-print" data-testid="filter-count">
+            {{ filteredDetails.length }} / {{ selected.details.length }} 件 ・ {{ yen(filteredTotal) }}
+          </span>
           <!-- ★絞り込み中はPDFにもその旨を出す。出力だけ見た人が「全部の経費」と誤解しないように。 -->
           <p v-if="acctFilter.size" class="acct-filter-note print-only" data-testid="acct-print-note">
             ※ 科目「{{ [...acctFilter].join('・') }}」のみを抽出した明細です。
+          </p>
+          <p v-if="payeeFilter.size" class="acct-filter-note print-only" data-testid="payee-print-note">
+            ※ 支払先「{{ [...payeeFilter].join('・') }}」のみを抽出した明細です。
           </p>
 
           <table class="table detail-table">
@@ -151,7 +207,7 @@
             <tbody>
               <!-- 請求書(立替のみ)印刷時は 立替でない行を隠す（画面表示は常に全件） -->
               <tr v-for="(d, i) in filteredDetails" :key="i" :class="{ 'pdf-hide-row': printMode === 'seikyu' && !d.tategae }">
-                <td class="date-cell">{{ d.date.slice(5).replace('-', '/') }}</td>
+                <td class="date-cell">{{ mdW(d.date) }}</td>
                 <td class="muted">{{ d.payee || '—' }}</td>
                 <td class="muted">{{ d.registrationNumber || '—' }}</td>
                 <td>{{ expenseAccountCategory(d) }}</td>
@@ -264,7 +320,7 @@ import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug, getAccountName } from '../lib/account'
 import { notifyWorker, workerIdOfUser } from '../lib/appNotify'
 import { openConventionDoc } from '../lib/docUrl'
-import { flattenReportExpenses, flattenGasolineItems, flattenPersonalExpenses, isPersonalExpenseRow, ratesFromSettings, effectiveStatus, expenseAccountCategory, expenseDisplayCategory, EXPENSE_ACCOUNT_OPTIONS, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
+import { flattenReportExpenses, flattenGasolineItems, flattenPersonalExpenses, isPersonalExpenseRow, ratesFromSettings, effectiveStatus, expenseAccountCategory, expenseDisplayCategory, EXPENSE_ACCOUNT_OPTIONS, expenseMonthKey, type ExpenseRow, type SettlementStatus } from '../lib/expenses'
 
 /** 品名欄。個人経費は category＝勘定科目なので note（実際の品名）を出す（liff の帳票と同一規則）。 */
 function itemName(row: ExpenseRow): string {
@@ -314,6 +370,15 @@ const grandTotal   = computed(() => visibleRows.value.reduce((s, r) => s + r.tot
 const grandTategae = computed(() => visibleRows.value.reduce((s, r) => s + r.tategaeTotal, 0))
 
 function yen(v: number) { return '¥' + Math.round(v).toLocaleString() }
+// 明細の日付を「MM/DD(曜)」で表示（経費PDFに曜日を出す・2026-08-22）。不正な日付は従来の月日表記にフォールバック。
+const WEEKDAY_JA = ['日', '月', '火', '水', '木', '金', '土']
+function mdW(dateStr: string): string {
+  const s = String(dateStr || '')
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (!m) return s.slice(5).replace('-', '/')
+  const wd = WEEKDAY_JA[new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getDay()]
+  return `${m[2]}/${m[3]}(${wd})`
+}
 
 // PDF出力（印刷CSS方式＝liff /expense/print と同方式。ブラウザの印刷→PDF保存で明細を出力）
 const printIssueDate = (() => { const d = new Date(); return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}` })()
@@ -337,17 +402,32 @@ const availableAccounts = computed<string[]>(() => {
   const rest = [...present].filter((a) => !ordered.includes(a)).sort((x, y) => x.localeCompare(y, 'ja'))
   return [...ordered, ...rest]
 })
+const PAYEE_NONE = '（支払先なし）'
+const payeeFilter = ref<Set<string>>(new Set())
+function togglePayee(p: string) {
+  const next = new Set(payeeFilter.value)
+  next.has(p) ? next.delete(p) : next.add(p)
+  payeeFilter.value = next
+}
+const availablePayees = computed<string[]>(() => {
+  const set = new Set<string>()
+  for (const d of (selected.value?.details ?? [])) set.add(d.payee || PAYEE_NONE)
+  return [...set].sort((a, b) => a.localeCompare(b, 'ja'))
+})
 const filteredDetails = computed<ExpenseRow[]>(() => {
   const rows = selected.value?.details ?? []
-  if (!acctFilter.value.size) return rows          // 絞り込み無し＝従来どおり全件
-  return rows.filter((d) => acctFilter.value.has(expenseAccountCategory(d)))
+  // 科目・支払先は独立フィルタで AND 条件（どちらも未選択なら従来どおり全件）
+  return rows.filter((d) =>
+    (!acctFilter.value.size || acctFilter.value.has(expenseAccountCategory(d))) &&
+    (!payeeFilter.value.size || payeeFilter.value.has(d.payee || PAYEE_NONE)),
+  )
 })
 const filteredTotal        = computed(() => filteredDetails.value.reduce((s, d) => s + (Number(d.amount) || 0), 0))
 const filteredTategaeTotal = computed(() => filteredDetails.value.filter((d) => d.tategae).reduce((s, d) => s + (Number(d.amount) || 0), 0))
 
 const printMode = ref<'meisai' | 'seikyu'>('meisai')
 // モーダルを開き直すたびに明細モードへリセット（前回の請求書モードを持ち越さない）
-watch(selected, () => { printMode.value = 'meisai'; acctFilter.value = new Set() })
+watch(selected, () => { printMode.value = 'meisai'; acctFilter.value = new Set(); payeeFilter.value = new Set() })
 async function printExpenseDoc(mode: 'meisai' | 'seikyu') {
   printMode.value = mode
   await nextTick()
@@ -648,6 +728,111 @@ async function doRescue() {
   }
 }
 
+// ── 科目別 月次集計（科目×月のクロス集計・直近12ヶ月）#6bba03b2 ──
+//  会計向けの俯瞰ビュー。行=科目 / 列=直近12ヶ月 / セル=月合計 / 行末=年計（表示12ヶ月の合計）。
+//  集計元は現場経費（日報の sites[].expenses と本日のガソリン代）＋個人経費を科目別に合算。
+//  ★車両の距離按分（category='ガソリン代'/'軽油代'＝内部原価の配賦）は実費でないため除外。
+//   これは作業員精算(load)が精算対象から外しているのと同じ扱い。
+//  表示のみ・DBへの書込みは無い。重いので開いた時だけ遅延ロードする。
+const showCrossTab = ref(false)
+const crossLoading = ref(false)
+const crossData    = ref<Record<string, Record<string, number>>>({})
+
+// 対象月を末尾に置いた直近12ヶ月の 'YYYY-MM' 配列（古い→新しい）
+const crossMonths = computed<string[]>(() => {
+  const out: string[] = []
+  const base = new Date(baseDate.value); base.setDate(1)
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(base); d.setMonth(d.getMonth() - i)
+    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
+  return out
+})
+const currentMonthKey = computed(() => dateFrom.value.slice(0, 7))
+function monthShort(ym: string): string {
+  const [y, m] = ym.split('-')
+  return `${y.slice(2)}/${Number(m)}`
+}
+
+async function loadCrossTab() {
+  crossLoading.value = true
+  try {
+    const accountId = await getAccountId()
+    const months = crossMonths.value
+    const from = `${months[0]}-01`
+    const [ly, lm] = months[months.length - 1].split('-').map(Number)
+    const lastDay = new Date(ly, lm, 0).getDate()          // 末月の末日
+    const to = `${ly}-${String(lm).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+
+    const [{ data: cfg }, { data: reports }, { data: personal }] = await Promise.all([
+      supabase.from('settings').select('key, value').eq('account_id', accountId),
+      supabase.from('daily_reports')
+        .select('date, sites, gasoline_items')
+        .eq('account_id', accountId)
+        .eq('is_working', true)
+        .gte('date', from).lte('date', to)
+        .order('date', { ascending: true })
+        .limit(20000),
+      supabase.from('personal_expenses')
+        .select('id, worker_id, date, account_category, amount, payee, registration_number, companions, note, file_urls, tategae')
+        .eq('account_id', accountId)
+        .gte('date', from).lte('date', to)
+        .limit(20000),
+    ])
+
+    const rates = ratesFromSettings(cfg)
+    const acc: Record<string, Record<string, number>> = {}
+    const add = (account: string, ym: string, amount: number) => {
+      const byMonth = (acc[account] ??= {})
+      byMonth[ym] = (byMonth[ym] || 0) + amount
+    }
+    for (const rep of (reports ?? []) as any[]) {
+      for (const row of flattenReportExpenses(rep.date, rep.sites ?? [], rates)) {
+        if (row.category === 'ガソリン代' || row.category === '軽油代') continue  // 距離按分(内部原価)は除外
+        add(expenseAccountCategory(row), expenseMonthKey(row.date), row.amount)
+      }
+      for (const row of flattenGasolineItems(rep.date, rep.gasoline_items)) {
+        add(expenseAccountCategory(row), expenseMonthKey(row.date), row.amount)
+      }
+    }
+    for (const row of flattenPersonalExpenses(personal as any)) {
+      add(expenseAccountCategory(row), expenseMonthKey(row.date), row.amount)
+    }
+    crossData.value = acc
+  } finally {
+    crossLoading.value = false
+  }
+}
+
+// 行=科目（EXPENSE_ACCOUNT_OPTIONS 順・未知科目は後ろ）。年計>0 の科目だけ出す。
+const crossRows = computed(() => {
+  const acc = crossData.value
+  const present = Object.keys(acc)
+  const ordered = (EXPENSE_ACCOUNT_OPTIONS as readonly string[]).filter((a) => present.includes(a))
+  const rest = present.filter((a) => !ordered.includes(a)).sort((x, y) => x.localeCompare(y, 'ja'))
+  const months = crossMonths.value
+  return [...ordered, ...rest]
+    .map((account) => {
+      const byMonth = acc[account] || {}
+      const total = months.reduce((s, m) => s + (byMonth[m] || 0), 0)
+      return { account, byMonth, total }
+    })
+    .filter((r) => r.total > 0)
+})
+const crossColTotals = computed<Record<string, number>>(() => {
+  const out: Record<string, number> = {}
+  for (const m of crossMonths.value) out[m] = crossRows.value.reduce((s, r) => s + (r.byMonth[m] || 0), 0)
+  return out
+})
+const crossGrandTotal = computed(() => crossRows.value.reduce((s, r) => s + r.total, 0))
+
+function toggleCrossTab() {
+  showCrossTab.value = !showCrossTab.value
+  if (showCrossTab.value) loadCrossTab()
+}
+// 対象月を動かしたら（開いていれば）12ヶ月窓もその月末基準で引き直す
+watch(dateFrom, () => { if (showCrossTab.value) loadCrossTab() })
+
 onMounted(load)
 watch(dateFrom, load)
 </script>
@@ -694,6 +879,7 @@ watch(dateFrom, load)
 .settle-pay strong { font-size: 17px; font-weight: 800; margin-left: 4px; }
 .settle-amt { font-size: 12px; color: #888; }
 .settle-reason { font-size: 12px; color: #c0392b; flex-basis: 100%; }
+.settle-comment { font-size: 12px; color: #475569; flex-basis: 100%; white-space: pre-wrap; }
 .settle-hint { font-size: 11px; color: #999; margin: 0 0 16px; }
 .pdf-row { display: flex; align-items: center; gap: 10px; margin: 0 0 16px; flex-wrap: wrap; }
 .pdf-label { font-size: 12px; color: #888; font-weight: 700; }
@@ -777,8 +963,27 @@ watch(dateFrom, load)
   .no-print { display: none !important; }
   .print-only { display: block !important; }
   .pdf-hide-row { display: none !important; }   /* 請求書(立替のみ)で非立替行を隠す */
-  .detail-table { font-size: 11px; }
-  .detail-table th, .detail-table td { padding: 4px 6px !important; }
+  .detail-table { font-size: 10px; }
+  /* 行の縦幅のバラつき対策（2026-08-22）：上揃えで基準を合わせ、折返しの無い列（日付・数量・金額）は
+     nowrap で1行に固定して不要な改行を防ぐ。品名・支払先など長文列は可読性のため折返しは許容する。 */
+  .detail-table th, .detail-table td { padding: 4px 6px !important; vertical-align: top; }
+  .detail-table td.date-cell, .detail-table td.num { white-space: nowrap; }
   .receipt-link { text-decoration: none; }
 }
+
+/* 科目別 月次集計（クロス集計）#6bba03b2 */
+.crosstab { margin-top: 20px; }
+.crosstab-toggle { display: inline-flex; align-items: center; gap: 6px; background: #f5f7fa; border: 1px solid #e2e6ec; border-radius: 10px; padding: 9px 16px; font-size: 14px; font-weight: 700; color: #334; cursor: pointer; }
+.crosstab-toggle:hover { background: #eef1f5; }
+.ct-ico { font-size: 18px; line-height: 1; }
+.ct-caret { font-size: 18px; line-height: 1; color: #889; }
+.crosstab-body { margin-top: 12px; }
+.crosstab-wrap { max-height: none; }
+.crosstab-table { font-size: 13px; white-space: nowrap; }
+.crosstab-table .ct-acct { font-weight: 600; position: sticky; left: 0; background: #fff; z-index: 1; }
+.crosstab-table thead .ct-acct { z-index: 3; background: #fafafa; }
+.crosstab-table .ct-total { font-weight: 700; background: #fafafa; }
+.crosstab-table .ct-cur { background: #f0f6ff; }
+.crosstab-table .total-row td { font-weight: 700; background: #fafafa; border-top: 2px solid #ddd; }
+.crosstab-table .total-row .ct-acct { background: #fafafa; }
 </style>

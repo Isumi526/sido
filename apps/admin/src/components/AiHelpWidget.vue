@@ -12,9 +12,15 @@
       </div>
       <div class="ai-panel-body">
         <!-- 一度開いたらマウントしたままにして会話を保持（v-show で表示だけ切替） -->
-        <AiHelpChat v-if="mounted" />
+        <AiHelpChat v-if="mounted" ref="chatRef" :screen-context="screenContext" />
       </div>
     </div>
+
+    <!-- 画面文脈つきの入口: 今いる画面についてワンタップで聞ける（開いている時は隠す） -->
+    <button v-if="!open" class="ai-whatis" data-testid="ai-whatis" :title="`「${screenContext.name}」について聞く`" @click="askAboutCurrentScreen">
+      <span class="material-symbols-rounded ai-whatis-icon">help</span>
+      これ何？
+    </button>
 
     <!-- 起動ボタン（FAB） -->
     <button class="ai-fab" :class="{ active: open }" :aria-label="open ? 'AIヘルプを閉じる' : 'AIヘルプを開く'" data-testid="ai-help-fab" @click="toggle">
@@ -25,16 +31,32 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import AiHelpChat from './AiHelpChat.vue'
+import { resolveScreenContext } from '../lib/screenNames'
+
+const route = useRoute()
+// 今いる画面（パス→日本語画面名）。チャットの初期文脈として渡す。
+const screenContext = computed(() => resolveScreenContext(route.path))
 
 const open = ref(false)
 // 初回オープン後はアンマウントしない＝会話履歴を保持
 const mounted = ref(false)
+const chatRef = ref<InstanceType<typeof AiHelpChat> | null>(null)
 
 function toggle() {
   open.value = !open.value
   if (open.value) mounted.value = true
+}
+
+// 「これ何？」: 今いる画面を文脈にしてチャットを開き、最初の質問を投げる
+async function askAboutCurrentScreen() {
+  const ctx = screenContext.value
+  open.value = true
+  mounted.value = true
+  await nextTick()
+  chatRef.value?.askAboutScreen(ctx)
 }
 </script>
 
@@ -51,6 +73,19 @@ function toggle() {
 .ai-fab:hover { transform: translateY(-2px); }
 .ai-fab.active { background: #1a1a1a; box-shadow: 0 4px 16px rgba(0,0,0,.3); }
 .ai-fab-icon { font-size: 24px; line-height: 1; }
+
+/* 既定は隠す（常時表示だと右下に居座り各ページの送信ボタン等を覆ってクリックを奪う）。
+   FABにホバー／フォーカスした時だけ出す＝アイドル時のfootprintはFABのみ。 */
+.ai-whatis {
+  display: none; align-items: center; gap: 6px;
+  background: #fff; color: #06843c; border: 1px solid #9fd8b6;
+  border-radius: 20px; padding: 8px 14px; font-size: 13px; font-weight: 700;
+  cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.12);
+}
+.ai-widget:hover .ai-whatis,
+.ai-widget:focus-within .ai-whatis { display: inline-flex; }
+.ai-whatis:hover { background: #eafbf1; }
+.ai-whatis-icon { font-size: 18px; }
 
 .ai-panel {
   width: 380px; max-width: calc(100vw - 32px);

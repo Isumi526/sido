@@ -15,7 +15,7 @@
 //   ステータス遷移は送信成功後に走るので、この経路で検証できる。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { restSrv, getAccountId, openBuilderTab } from './helpers'
+import { restSrv, getAccountId, openBuilderTab, createEstimateProject } from './helpers'
 
 const TS = Date.now()
 const CONTRACTOR = `R49元請け_${TS}`
@@ -57,9 +57,8 @@ async function statusOf(name: string): Promise<string | null> {
 
 /** 案件を作って明細を1行入れ、元請けを紐付けて送信できる状態にする */
 async function prepare(page: import('@playwright/test').Page, name: string) {
-  await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-  await page.locator('[data-testid="new-project-name"]').fill(name)
-  await page.locator('[data-testid="add-project"]').click()
+  const __pid1 = await createEstimateProject(name)
+  await page.goto(`/estimate-builder?project=${__pid1}`, { waitUntil: 'networkidle' })
   await expect(page.locator('[data-testid="project-select"]')).toContainText(name, { timeout: 15000 })
   await page.locator('[data-testid="project-contractor"]').selectOption({ label: CONTRACTOR })
 

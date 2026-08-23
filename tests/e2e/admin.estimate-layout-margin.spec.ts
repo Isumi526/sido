@@ -10,7 +10,7 @@
 //  Notion: R18 / R19 / R20（2026-07-29 第3回レビュー）
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { getAccountId, restSrv, openBuilderTab } from './helpers'
+import { getAccountId, restSrv, openBuilderTab, createEstimateProject } from './helpers'
 
 const TS = Date.now()
 let seq = 0
@@ -28,9 +28,8 @@ test.afterAll(async () => {
 
 async function openNewProject(page: any) {
   PROJ = projName()
-  await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-  await page.locator('[data-testid="new-project-name"]').fill(PROJ)
-  await page.locator('[data-testid="add-project"]').click()
+  const __pid1 = await createEstimateProject(PROJ)
+  await page.goto(`/estimate-builder?project=${__pid1}`, { waitUntil: 'networkidle' })
   await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ, { timeout: 15000 })
   await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
 }
@@ -69,6 +68,9 @@ test('AC2★(R18): 明細をスクロールしてもヘッダーが見えたま�
 // ★2026-07-29(R32): 粗利パターンは名称の下ではなく行の右端の列に移した（縦を伸ばさないため）
 test('AC3★(R19/R32): 行の右端に5/10/15/20%の単価が並び、クリックで採用できる', async ({ page }) => {
   await openNewProject(page)
+  // ★粗利%列は既定で畳まれている（2026-08-19「列を畳める」対応で margin=false 既定）。
+  //  パターン単価を見るには列を出す必要があるので、先にトグルをONにする。
+  await page.locator('[data-testid="col-margin"]').check()
   await page.locator('[data-testid="item-name-0"]').fill('天井 下地組')
   await page.locator('[data-testid="item-qty-0"]').fill('1')
   await page.locator('[data-testid="item-cost-0"]').fill('2700')
@@ -88,6 +90,7 @@ test('AC3★(R19/R32): 行の右端に5/10/15/20%の単価が並び、クリッ�
 
 test('AC4(R19): 原価が入っていない行には粗利パターンを出さない', async ({ page }) => {
   await openNewProject(page)
+  await page.locator('[data-testid="col-margin"]').check()   // 粗利列を出したうえで（列が無いと自明に0件になり検証にならない）
   await page.locator('[data-testid="item-name-0"]').fill('検討中の項目')
   await page.waitForTimeout(400)
   // 原価が無いと比べる意味が無い

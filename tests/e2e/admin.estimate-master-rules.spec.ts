@@ -11,7 +11,7 @@
 //  Notion: R27
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { getAccountId, restSrv, openBuilderTab } from './helpers'
+import { getAccountId, restSrv, openBuilderTab, createEstimateProject } from './helpers'
 
 const TS = Date.now()
 const TRADE = `E2E工種_${TS}`
@@ -28,9 +28,8 @@ test.afterAll(async () => {
 })
 
 test('AC1★: 工種を入力欄の隣からその場で追加でき、閉じる前に候補へ出る', async ({ page }) => {
-  await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-  await page.locator('[data-testid="new-project-name"]').fill(PROJ)
-  await page.locator('[data-testid="add-project"]').click()
+  const __pid1 = await createEstimateProject(PROJ)
+  await page.goto(`/estimate-builder?project=${__pid1}`, { waitUntil: 'networkidle' })
   await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
 
   // ★ボタンは工種の入力欄の隣にある（設定画面まで探しに行かせない）

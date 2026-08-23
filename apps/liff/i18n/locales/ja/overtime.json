@@ -24,5 +24,12 @@
   "startTimeNone": "申請しない（通常どおり）",
   "breakLabel": "実際に取った休憩（任意）",
   "breakNone": "申請しない（現場の設定どおり）",
-  "breakZero": "休憩なし"
+  "breakZero": "休憩なし",
+  "lateNote": "16:00の締切は過ぎていますが、実際に働いた残業実績を後から申告して修正できます。申告した内容は管理者の承認後に反映されます。",
+  "lateReasonLabel": "修正の理由（必須）",
+  "lateReasonPlaceholder": "例：締切後に作業が延びたため／実際の終了時刻を申告",
+  "lateSubmit": "実績を修正して申請する",
+  "lateSubmitted": "実績修正を申請しました。管理者の承認をお待ちください。",
+  "lateReasonRequired": "修正の理由を入力してください。",
+  "lateBadge": "実績修正"
 }

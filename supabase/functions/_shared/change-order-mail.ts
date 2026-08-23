@@ -8,6 +8,7 @@
 //  ※ 平文トークン・メール本文はログに出さない。
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { resolveAccountName } from './mail-from.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
@@ -90,7 +91,7 @@ export async function sendChangeOrder(
       }
       const { data: cn } = await svc.from('settings').select('value').eq('account_id', accountId).eq('key', 'company_name').maybeSingle()
       const fromAddr = (PO_MAIL_FROM.match(/<([^>]+)>/)?.[1] || PO_MAIL_FROM).trim()
-      const fromName = (cn?.value || '').trim()
+      const fromName = (cn?.value || '').trim() || await resolveAccountName(svc, accountId)
       const from = fromName ? `${fromName} <${fromAddr}>` : PO_MAIL_FROM
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',

@@ -399,7 +399,13 @@ async function save() {
     }
     let subId = modal.value.id
     if (subId) {
-      await supabase.from('subcontractors').update(payload).eq('id', subId)
+      // ★編集の書込エラー/0行更新を握り潰さない（従来はerror無視で「編集しても反映されない」の直因・#a8831174）。
+      //  account_id でも明示スコープ。エラーだけでなく「0行更新」（tenant不一致・権限不足で対象に当たらない）も
+      //  .select() の件数で検知して throw する（無言で反映されない状態を無くす）。
+      const { data: upd, error: updErr } = await supabase.from('subcontractors')
+        .update(payload).eq('id', subId).eq('account_id', aid).select('id')
+      if (updErr) throw updErr
+      if (!upd || !upd.length) throw new Error(t('subcontractors.errorSaveFailed'))
       await logEdit(subId, 'update', payload)
     } else {
       const { data, error } = await supabase.from('subcontractors')
@@ -429,9 +435,11 @@ async function syncTradeTypes(subId: string, aid: string, want: string[]) {
 
 async function softDelete(s: Sub) {
   if (!confirm(t('subcontractors.confirmDelete', { name: s.name }))) return
-  await supabase.from('subcontractors').update({
+  // 削除の書込エラーも握り潰さない（#a8831174）。失敗は alert で見せる。
+  const { error: delErr } = await supabase.from('subcontractors').update({
     is_deleted: true, active: false, deleted_by: myWorkerId.value, deleted_at: new Date().toISOString(),
   }).eq('id', s.id)
+  if (delErr) { alert(t('subcontractors.errorSaveFailed')); return }
   await logEdit(s.id, 'delete', { name: s.name })
   closeDetail()
   await load()

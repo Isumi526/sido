@@ -54,7 +54,11 @@
           <label class="fld"><span>現場<span v-if="siteFilterActive" class="filter-note">（選択業者に紐づく現場のみ）</span></span>
             <select v-model="modal.site_id" class="inp">
               <option :value="null">—</option>
-              <option v-for="s in filteredSites" :key="s.id" :value="s.id">{{ s.name }}</option>
+              <template v-for="grp in filteredSiteGroups" :key="grp.contractorName ?? '__u'">
+                <optgroup :label="grp.contractorName ?? '紐付けなし'">
+                  <option v-for="s in grp.sites" :key="s.id" :value="s.id">{{ s.name }}</option>
+                </optgroup>
+              </template>
             </select>
             <span v-if="modal.subcontractor_id && linkedSiteIds.size === 0" class="hint">この業者に紐づく現場がないため全現場を表示しています（現場マスタで紐付け可）。</span>
           </label>
@@ -121,7 +125,7 @@ type Estimate = {
   construction_details: string | null; pdf_path: string | null; pdf_bucket: string | null; note: string | null
   uploaded_via_portal?: boolean
 }
-type Opt = { id: string; name: string; category?: string | null }
+type Opt = { id: string; name: string; category?: string | null; contractor_name?: string | null }
 
 const PDF_BUCKET = 'admin-docs'          // 新規アップロードの見積PDFは非公開バケット（署名URL配信）
 const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
@@ -153,6 +157,20 @@ const filteredSites = computed(() => {
   return sites.value.filter(s => linkedSiteIds.value.has(s.id))
 })
 const siteFilterActive = computed(() => !!modal.value?.subcontractor_id && linkedSiteIds.value.size > 0)
+// 現場プルダウンを「元請け→現場」の2段階(optgroup)に(#36c0b9b4)。元請け五十音順・未設定は末尾。
+const filteredSiteGroups = computed(() => {
+  const byC = new Map<string, Opt[]>()
+  const unlinked: Opt[] = []
+  for (const s of filteredSites.value) {
+    const c = s.contractor_name
+    if (!c) { unlinked.push(s); continue }
+    if (!byC.has(c)) byC.set(c, [])
+    byC.get(c)!.push(s)
+  }
+  const groups = [...byC.keys()].sort((a, b) => a.localeCompare(b, 'ja')).map(c => ({ contractorName: c as string | null, sites: byC.get(c)! }))
+  if (unlinked.length) groups.push({ contractorName: null, sites: unlinked })
+  return groups
+})
 // 業者を変えたら、選択中の現場が絞り込み外になる場合はクリア
 function onSelectSub() {
   if (modal.value?.site_id && siteFilterActive.value && !linkedSiteIds.value.has(modal.value.site_id)) modal.value.site_id = null
@@ -164,11 +182,11 @@ async function load() {
   const [{ data: estRows }, { data: su }, { data: si }] = await Promise.all([
     supabase.from('estimates').select(EST_COLS).eq('account_id', accountId).eq('is_deleted', false).order('estimate_number', { ascending: false }),
     supabase.from('subcontractors').select('id, name, category').eq('account_id', accountId).eq('active', true).order('sort_order').order('name'),
-    supabase.from('sites').select('id, name').eq('account_id', accountId).eq('active', true).order('name_kana', { nullsFirst: false }).order('name'),
+    supabase.from('sites').select('id, name, contractors(name)').eq('account_id', accountId).eq('active', true).order('name_kana', { nullsFirst: false }).order('name'),
   ])
   rows.value  = (estRows ?? []) as Estimate[]
   subs.value  = (su ?? []) as Opt[]
-  sites.value = (si ?? []) as Opt[]
+  sites.value = (si ?? []).map((s: any) => ({ id: s.id, name: s.name, contractor_name: s.contractors?.name ?? null })) as Opt[]
   const { data: links } = await supabase.from('site_subcontractors').select('site_id, subcontractor_id').eq('account_id', accountId)
   siteLinks.value = (links ?? []) as { site_id: string; subcontractor_id: string }[]
   loading.value = false

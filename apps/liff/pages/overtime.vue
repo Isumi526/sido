@@ -22,39 +22,45 @@
           </div>
           <div v-else-if="todayStatus === 'rejected'" class="ot-status rejected"><span class="material-symbols-rounded ot-icon">block</span>{{ $t('overtime.statusRejected') }}</div>
 
-          <!-- 申請フォーム（未申請 かつ 締切前） -->
-          <template v-else>
-            <template v-if="canRequestToday">
-              <label class="ot-label">{{ $t('overtime.endTimeLabel') }}</label>
-              <select v-model="endTime" class="ot-input">
-                <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
-              </select>
-              <label class="ot-label">対象現場（複数選択可・責任者へ通知）<span v-if="selectedSites.length" class="ot-sel-count">選択 {{ selectedSites.length }}件</span></label>
-              <input v-if="siteOptions.length > 6" v-model="siteQuery" type="text" class="ot-input ot-site-search" placeholder="現場名で絞り込み" />
-              <div class="ot-sites">
-                <label v-for="s in filteredSiteOptions" :key="s" class="ot-site"><input type="checkbox" :value="s" v-model="selectedSites" /> {{ s }}</label>
-                <p v-if="!siteOptions.length" class="ot-sites-empty">現場がありません</p>
-                <p v-else-if="!filteredSiteOptions.length" class="ot-sites-empty">「{{ siteQuery }}」に一致する現場がありません</p>
-              </div>
-              <!-- ★早朝入り・休憩の申告（2026-08-10 大塚さん）。どちらも任意。
-                   承認されて初めて日報の入力制限が緩む＝申請しただけでは時間は広がらない。 -->
-              <label class="ot-label">{{ $t('overtime.startTimeLabel') }}</label>
-              <select v-model="startTime" class="ot-input" data-testid="ot-start-time">
-                <option value="">{{ $t('overtime.startTimeNone') }}</option>
-                <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
-              </select>
-              <label class="ot-label">{{ $t('overtime.breakLabel') }}</label>
-              <select v-model="breakMinutes" class="ot-input" data-testid="ot-break">
-                <option value="">{{ $t('overtime.breakNone') }}</option>
-                <option value="0">{{ $t('overtime.breakZero') }}</option>
-                <option v-for="m in [15, 30, 45, 60, 90]" :key="m" :value="String(m)">{{ m }}分</option>
-              </select>
-
-              <label class="ot-label">{{ $t('overtime.reasonLabel') }}</label>
-              <textarea v-model="reason" class="ot-input" rows="2" :placeholder="$t('overtime.reasonPlaceholder')" />
-              <button class="ot-submit" :disabled="busy" @click="onSubmit">{{ busy ? $t('overtime.submitting') : $t('overtime.submit') }}</button>
+          <!-- 申請フォーム。
+               ・締切前かつ未申請 → 通常の残業申請。
+               ・締切後（16:00以降）→ 16:00締切ルールは残したまま「実績修正の申請(late)」を出す導線。
+                 実際に働いた残業実績を後から申告し、承認を得て反映する（既存申請があればEFが上書き）。 -->
+          <template v-if="(todayStatus === 'none' && canRequestToday) || !canRequestToday">
+            <template v-if="isLateMode">
+              <div class="ot-status closed"><span class="material-symbols-rounded ot-icon">lock</span>{{ $t('overtime.deadlinePassed') }}</div>
+              <p class="ot-late-note">{{ $t('overtime.lateNote') }}</p>
             </template>
-            <div v-else class="ot-status closed"><span class="material-symbols-rounded ot-icon">lock</span>{{ $t('overtime.deadlinePassed') }}</div>
+
+            <label class="ot-label">{{ $t('overtime.endTimeLabel') }}</label>
+            <select v-model="endTime" class="ot-input">
+              <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
+            </select>
+            <label class="ot-label">対象現場（複数選択可・責任者へ通知）<span v-if="selectedSites.length" class="ot-sel-count">選択 {{ selectedSites.length }}件</span></label>
+            <input v-if="siteOptions.length > 6" v-model="siteQuery" type="text" class="ot-input ot-site-search" placeholder="現場名で絞り込み" />
+            <div class="ot-sites">
+              <label v-for="s in filteredSiteOptions" :key="s" class="ot-site"><input type="checkbox" :value="s" v-model="selectedSites" /> {{ s }}</label>
+              <p v-if="!siteOptions.length" class="ot-sites-empty">現場がありません</p>
+              <p v-else-if="!filteredSiteOptions.length" class="ot-sites-empty">「{{ siteQuery }}」に一致する現場がありません</p>
+            </div>
+            <!-- ★早朝入り・休憩の申告（2026-08-10 大塚さん）。どちらも任意。
+                 承認されて初めて日報の入力制限が緩む＝申請しただけでは時間は広がらない。 -->
+            <label class="ot-label">{{ $t('overtime.startTimeLabel') }}</label>
+            <select v-model="startTime" class="ot-input" data-testid="ot-start-time">
+              <option value="">{{ $t('overtime.startTimeNone') }}</option>
+              <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
+            </select>
+            <label class="ot-label">{{ $t('overtime.breakLabel') }}</label>
+            <select v-model="breakMinutes" class="ot-input" data-testid="ot-break">
+              <option value="">{{ $t('overtime.breakNone') }}</option>
+              <option value="0">{{ $t('overtime.breakZero') }}</option>
+              <option v-for="m in [15, 30, 45, 60, 90]" :key="m" :value="String(m)">{{ m }}分</option>
+            </select>
+
+            <label class="ot-label">{{ isLateMode ? $t('overtime.lateReasonLabel') : $t('overtime.reasonLabel') }}</label>
+            <textarea v-model="reason" class="ot-input" rows="2" :placeholder="isLateMode ? $t('overtime.lateReasonPlaceholder') : $t('overtime.reasonPlaceholder')" />
+            <button v-if="isLateMode" class="ot-submit" :disabled="busy" data-testid="ot-late-submit" @click="onSubmitLate">{{ busy ? $t('overtime.submitting') : $t('overtime.lateSubmit') }}</button>
+            <button v-else class="ot-submit" :disabled="busy" @click="onSubmit">{{ busy ? $t('overtime.submitting') : $t('overtime.submit') }}</button>
           </template>
 
           <p v-if="msg" class="ot-msg" :class="{ ok: msgOk }">{{ msg }}</p>
@@ -73,6 +79,7 @@
                 {{ r.requested_break_minutes === 0 ? $t('overtime.breakZero') : `休憩${r.requested_break_minutes}分` }}
               </span>
               <span class="ot-badge" :class="r.status">{{ statusLabel(r.status) }}</span>
+              <span v-if="r.is_late" class="ot-badge late" data-testid="ot-recent-late">{{ $t('overtime.lateBadge') }}</span>
               <span v-if="r.reason" class="ot-reason">{{ r.reason }}</span>
             </li>
           </ul>
@@ -101,6 +108,8 @@ const workerId = computed(() => selfUser.value?.worker_id ?? null)
 const today = todayStr()
 const todayStatus = ref<'none' | 'pending' | 'approved' | 'rejected'>('none')
 const canRequestToday = ref(false)
+// 締切後（16:00以降・当日）は「実績修正の申請(late)」モードに切り替える。締切ルール自体は残す。
+const isLateMode = computed(() => !canRequestToday.value)
 const recent = ref<any[]>([])
 
 const endTime = ref('18:00')
@@ -172,6 +181,39 @@ async function onSubmit() {
   await refresh()
 }
 
+// 締切後の実績修正の申請。理由は必須。既存申請があればEFが上書き（再承認のためpendingに戻る）。
+async function onSubmitLate() {
+  if (!workerId.value) { msg.value = t('overtime.errorNoLogin'); msgOk.value = false; return }
+  if (!reason.value.trim()) { msg.value = t('overtime.lateReasonRequired'); msgOk.value = false; return }
+  busy.value = true; msg.value = ''
+  const sites = [...selectedSites.value]
+  const res = await overtime.requestLateCorrection(
+    workerId.value, today, endTime.value, reason.value, sites,
+    startTime.value || null,
+    // ★空文字は「申請なし」、'0' は「休憩なしで通した」。潰さないこと
+    breakMinutes.value === '' ? null : Number(breakMinutes.value),
+  )
+  busy.value = false
+  if (!res.ok) {
+    msg.value = res.error === 'reason-required' ? t('overtime.lateReasonRequired') : t('overtime.errorGeneric')
+    msgOk.value = false
+    await refresh()
+    return
+  }
+  msg.value = t('overtime.lateSubmitted'); msgOk.value = true
+  // 選択現場の責任者へメール通知（best-effort・通常申請と同じ経路）
+  const efUrl = (config.public as any).edgeFunctionUrl
+  if (efUrl && sites.length) {
+    const slug = await effectiveSlug()
+    fetch(`${efUrl}/notify-overtime`, {
+      method: 'POST', keepalive: true,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${(config.public as any).supabaseAnonKey}` },
+      body: JSON.stringify({ accountSlug: slug, worker_id: workerId.value, date: today }),
+    }).catch(() => {})
+  }
+  await refresh()
+}
+
 async function onCancel() {
   if (!workerId.value) return
   busy.value = true; msg.value = ''
@@ -205,6 +247,7 @@ onMounted(async () => {
 @keyframes spin { to { transform: rotate(360deg); } }
 .state-text { color: #888; }
 .ot-note { font-size: 13px; line-height: 1.7; color: #475569; background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 12px 14px; }
+.ot-late-note { font-size: 13px; line-height: 1.7; color: #9a3412; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 10px 12px; margin: 10px 0 0; }
 .ot-card { background: #fff; border-radius: 14px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
 .ot-card-title { font-size: 14px; font-weight: 700; color: #1e293b; margin-bottom: 12px; }
 .ot-status { font-size: 14px; font-weight: 700; padding: 10px 12px; border-radius: 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -234,5 +277,6 @@ onMounted(async () => {
 .ot-badge.approved { background: #ecfdf5; color: #047857; }
 .ot-badge.pending  { background: #fffbeb; color: #b45309; }
 .ot-badge.rejected { background: #fef2f2; color: #b91c1c; }
+.ot-badge.late     { background: #ffedd5; color: #9a3412; }
 .ot-reason { color: #94a3b8; font-size: 12px; flex-basis: 100%; }
 </style>

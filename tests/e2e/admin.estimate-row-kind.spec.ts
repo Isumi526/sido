@@ -13,7 +13,7 @@
 //  Notion: R14 3ac0ff81c56b81c6a3dbd8dcb24021ce / R15 3ac0ff81c56b81178e96e629e9389af3
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { getAccountId, restSrv, openBuilderTab } from './helpers'
+import { getAccountId, restSrv, openBuilderTab, createEstimateProject } from './helpers'
 
 const TS = Date.now()
 const SUB = `E2E種別業者_${TS}`
@@ -61,9 +61,8 @@ test.afterAll(async () => {
 
 async function openNewProject(page: any) {
   PROJ = projName()
-  await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-  await page.locator('[data-testid="new-project-name"]').fill(PROJ)
-  await page.locator('[data-testid="add-project"]').click()
+  const __pid1 = await createEstimateProject(PROJ)
+  await page.goto(`/estimate-builder?project=${__pid1}`, { waitUntil: 'networkidle' })
   await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ, { timeout: 15000 })
   await openBuilderTab(page, 'items', '[data-testid="item-name-0"]')
 }
