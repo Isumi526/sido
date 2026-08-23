@@ -84,6 +84,14 @@ export const SCREEN_CATALOG: ScreenCatalogEntry[] = [
     "help": []
   },
   {
+    "path": "/inventory",
+    "name": "在庫管理",
+    "title": "",
+    "requiresManagement": true,
+    "requiresEstimate": false,
+    "help": []
+  },
+  {
     "path": "/chats",
     "name": "チャット",
     "title": "チャット",
