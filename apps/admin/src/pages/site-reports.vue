@@ -8,6 +8,9 @@
           '行を開くと、日報単位の内訳（作業員・経費）を確認できます。',
         ]" />
       </h1>
+      <button class="btn-reload" :disabled="loading" title="再読み込み" data-testid="reload-btn" @click="load">
+        <span class="material-symbols-rounded" :class="{ spinning: loading }">refresh</span>
+      </button>
       <!-- ★既定は従来の単月ナビ。複数月にまたがる工事を通しで見たい時だけ期間指定に切り替える -->
       <div class="month-nav">
         <template v-if="!isRange">
@@ -1142,4 +1145,9 @@ watch(wageMode, load)   // 日当-実質賃金の切替で社員人件費を再�
 .flex-rows { display: flex; flex-direction: column; gap: 4px; }
 .modal-total { display: flex; justify-content: space-between; align-items: center; border-top: 2px solid #e0e0e0; padding-top: 16px; font-size: 16px; font-weight: 700; }
 .modal-total span:last-child { font-size: 20px; color: #06C755; }
+.btn-reload { background: #fff; border: 1px solid #d0d5dd; border-radius: 8px; padding: 5px 9px; cursor: pointer; color: #475569; display: inline-flex; align-items: center; }
+.btn-reload:hover { background: #f1f5f9; }
+.btn-reload:disabled { opacity: .5; cursor: default; }
+.btn-reload .spinning { animation: reload-spin 0.8s linear infinite; }
+@keyframes reload-spin { to { transform: rotate(360deg); } }
 </style>

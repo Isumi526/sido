@@ -9,6 +9,9 @@
     <!-- ヘッダー -->
     <div class="page-header">
       <h1 class="page-title">出面・勤怠管理</h1>
+      <button class="btn-reload" :disabled="loading" title="再読み込み" data-testid="reload-btn" @click="load">
+        <span class="material-symbols-rounded" :class="{ spinning: loading }">refresh</span>
+      </button>
       <div class="header-right">
         <div class="month-nav">
           <button class="btn-nav" @click="shiftMonth(-1)">‹</button>
@@ -717,4 +720,9 @@ function printPdf() {
 
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+.btn-reload { background: #fff; border: 1px solid #d0d5dd; border-radius: 8px; padding: 5px 9px; cursor: pointer; color: #475569; display: inline-flex; align-items: center; }
+.btn-reload:hover { background: #f1f5f9; }
+.btn-reload:disabled { opacity: .5; cursor: default; }
+.btn-reload .spinning { animation: reload-spin 0.8s linear infinite; }
+@keyframes reload-spin { to { transform: rotate(360deg); } }
 </style>
