@@ -68,6 +68,9 @@ test('AC2★(R18): 明細をスクロールしてもヘッダーが見えたま�
 // ★2026-07-29(R32): 粗利パターンは名称の下ではなく行の右端の列に移した（縦を伸ばさないため）
 test('AC3★(R19/R32): 行の右端に5/10/15/20%の単価が並び、クリックで採用できる', async ({ page }) => {
   await openNewProject(page)
+  // ★粗利%列は既定で畳まれている（2026-08-19「列を畳める」対応で margin=false 既定）。
+  //  パターン単価を見るには列を出す必要があるので、先にトグルをONにする。
+  await page.locator('[data-testid="col-margin"]').check()
   await page.locator('[data-testid="item-name-0"]').fill('天井 下地組')
   await page.locator('[data-testid="item-qty-0"]').fill('1')
   await page.locator('[data-testid="item-cost-0"]').fill('2700')
@@ -87,6 +90,7 @@ test('AC3★(R19/R32): 行の右端に5/10/15/20%の単価が並び、クリッ�
 
 test('AC4(R19): 原価が入っていない行には粗利パターンを出さない', async ({ page }) => {
   await openNewProject(page)
+  await page.locator('[data-testid="col-margin"]').check()   // 粗利列を出したうえで（列が無いと自明に0件になり検証にならない）
   await page.locator('[data-testid="item-name-0"]').fill('検討中の項目')
   await page.waitForTimeout(400)
   // 原価が無いと比べる意味が無い

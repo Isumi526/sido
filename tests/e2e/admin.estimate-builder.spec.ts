@@ -370,18 +370,25 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
   })
 
   // 同名の案件は作れない（重複防止）
-  test('同名の案件は登録できない（重複防止）', async ({ page }) => {
+  test('同名の案件は登録できない（DB一意制約で重複防止）', async () => {
+    // ★#40(見積入口一本化): ビルダー内の「名前を打って新規作成」導線は廃止した。
+    //  入口は estimate-list の「＋新規」＝自動命名＋衝突時は自動リネームでリトライする設計。
+    //  重複防止の実体は DB の一意制約 est_projects_name_uniq(account_id, lower(name)) で、
+    //  estimate-list のリトライはこの制約が効いていることに依存する。ここでは制約の生存を固定する。
     const accountId = await getAccountId()
     await restSrv('estimate_projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ account_id: accountId, name: DUP_PROJ }) })
 
-    const __pid3 = await createEstimateProject(DUP_PROJ)
-    await page.goto(`/estimate-builder?project=${__pid3}`, { waitUntil: 'networkidle' })
+    // 2件目（同名）は一意制約で拒否される（createEstimateProject は 409 を投げる）
+    let rejected = false
+    try {
+      await createEstimateProject(DUP_PROJ)
+    } catch (e: any) {
+      rejected = /23505|duplicate|unique/i.test(String(e?.message ?? e))
+    }
+    expect(rejected, '同名の2件目は一意制約で弾かれる').toBe(true)
 
-    // エラー表示・DBは1件のまま（増えない）
-    await expect(page.locator('[data-testid="project-err"]')).toContainText('既にあります')
-    await expect.poll(async () => {
-      const p = await restSrv(`estimate_projects?name=eq.${encodeURIComponent(DUP_PROJ)}&select=id`)
-      return (p ?? []).length
-    }, { timeout: 8000 }).toBe(1)
+    // DBは1件のまま（増えない）
+    const p = await restSrv(`estimate_projects?name=eq.${encodeURIComponent(DUP_PROJ)}&select=id`)
+    expect((p ?? []).length, 'DBは1件のまま').toBe(1)
   })
 })
