@@ -15,5 +15,8 @@
   "periodFirstHalf": "First half of {month}",
   "periodSecondHalf": "Second half of {month}",
   "notifTitle": "{count} unread notification(s)",
-  "notifSub": "Tap to see what happened"
+  "notifSub": "Tap to see what happened",
+  "punchCheckinTitle": "You haven't clocked in yet",
+  "punchCheckoutTitle": "You haven't clocked out yet",
+  "punchSub": "It's time for {title}. Tap to record your attendance."
 }
