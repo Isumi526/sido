@@ -74,12 +74,16 @@ async function askAboutCurrentScreen() {
 .ai-fab.active { background: #1a1a1a; box-shadow: 0 4px 16px rgba(0,0,0,.3); }
 .ai-fab-icon { font-size: 24px; line-height: 1; }
 
+/* 既定は隠す（常時表示だと右下に居座り各ページの送信ボタン等を覆ってクリックを奪う）。
+   FABにホバー／フォーカスした時だけ出す＝アイドル時のfootprintはFABのみ。 */
 .ai-whatis {
-  display: inline-flex; align-items: center; gap: 6px;
+  display: none; align-items: center; gap: 6px;
   background: #fff; color: #06843c; border: 1px solid #9fd8b6;
   border-radius: 20px; padding: 8px 14px; font-size: 13px; font-weight: 700;
   cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.12);
 }
+.ai-widget:hover .ai-whatis,
+.ai-widget:focus-within .ai-whatis { display: inline-flex; }
 .ai-whatis:hover { background: #eafbf1; }
 .ai-whatis-icon { font-size: 18px; }
 
