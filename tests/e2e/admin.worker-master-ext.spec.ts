@@ -27,9 +27,9 @@ test.describe('作業員マスタ拡張', () => {
     await page.locator('[data-testid="invoice-number"]').fill('T1234567890123')
     await page.locator('[data-testid="insurance-info"]').fill('労働保険')
     await page.locator('[data-testid="labor-insurance-number"]').fill('12-3-45-678901-0')
-    // 健診1件
+    // 健診1件（受診日のみ・要配慮個人情報は保存しない）
     await page.locator('[data-testid="add-checkup"]').click()
-    await page.locator('[data-testid="checkup-row"]').first().locator('input[placeholder="結果（例：異常なし）"]').fill('異常なし')
+    await page.locator('[data-testid="checkup-row"]').first().locator('input[type="date"]').fill('2026-04-01')
     await page.locator('.btn-save').click()
 
     const listRow = page.locator('tr', { hasText: name })
@@ -41,7 +41,7 @@ test.describe('作業員マスタ拡張', () => {
     await expect(page.locator('[data-testid="invoice-number"]')).toHaveValue('T1234567890123')
     await expect(page.locator('[data-testid="insurance-info"]')).toHaveValue('労働保険')
     await expect(page.locator('[data-testid="labor-insurance-number"]')).toHaveValue('12-3-45-678901-0')
-    await expect(page.locator('[data-testid="checkup-row"]').first().locator('input[placeholder="結果（例：異常なし）"]')).toHaveValue('異常なし')
+    await expect(page.locator('[data-testid="checkup-row"]').first().locator('input[type="date"]')).toHaveValue('2026-04-01')
   })
 
   test('区分=正社員（デフォルト）のとき労災保険番号欄は出ない', async ({ page }) => {

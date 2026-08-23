@@ -6,7 +6,7 @@
 //   ※ 実メール送信(EF)はローカル未デプロイのため、ここでは「送信可能な状態」までを検証。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { restSrv, getAccountId, openBuilderTab } from './helpers'
+import { restSrv, getAccountId, openBuilderTab, createEstimateProject } from './helpers'
 
 const TS = Date.now()
 const CONTRACTOR = `元請けE2E_${TS}`
@@ -38,10 +38,9 @@ test.describe('見積→元請け 送信先と離脱ガード', () => {
     contractorId = c.id
     await post('contractor_contacts', { account_id: accountId, contractor_id: contractorId, name: CONTACT, email: 'moto@example.com' })
 
-    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-    // 案件を追加（自動選択される）
-    await page.locator('[data-testid="new-project-name"]').fill(PROJ_A)
-    await page.locator('[data-testid="add-project"]').click()
+    // 見積入口一本化(#40): 案件はDBで作り ?project= で開く
+    const __pidA = await createEstimateProject(PROJ_A)
+    await page.goto(`/estimate-builder?project=${__pidA}`, { waitUntil: 'networkidle' })
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ_A)
 
     // 案件に元請けを紐付け → estimate_projects.contractor_id が保存される
@@ -66,9 +65,8 @@ test.describe('見積→元請け 送信先と離脱ガード', () => {
   //   離脱ガード（確認ダイアログ）は撤去済み。ここでは
   //   「ダイアログを出さずに離脱でき、内容が残っている」ことを見る。
   test('編集内容は自動保存され、確認ダイアログ無しで離脱できる', async ({ page }) => {
-    await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-    await page.locator('[data-testid="new-project-name"]').fill(PROJ_GUARD)
-    await page.locator('[data-testid="add-project"]').click()
+    const __pid1 = await createEstimateProject(PROJ_GUARD)
+    await page.goto(`/estimate-builder?project=${__pid1}`, { waitUntil: 'networkidle' })
     await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ_GUARD)
     await page.waitForLoadState('networkidle')
 

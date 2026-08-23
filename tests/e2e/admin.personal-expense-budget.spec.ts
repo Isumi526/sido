@@ -75,19 +75,32 @@ test.describe('個人経費の月額枠', () => {
 
   test('枠の消費が日毎集計に出る（未超過）', async ({ page }) => {
     await restSrv(`personal_expenses?worker_id=eq.${workerId}`, { method: 'DELETE' }).catch(() => {})
+    // ★#32(c98faece): 個人の月額枠を消費するのは「個人立替（tategae=true）」だけ。
+    //  会社支払い（tategae=false）は本人が使った額ではないので枠に入れない。
     await restSrv('personal_expenses', {
       method: 'POST', headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({
         account_id: accountId, worker_id: workerId, date: `${YM}-05`,
-        account_category: '消耗品費', amount: 20000, payee: PAYEE, note: 'E2E枠内',
+        account_category: '消耗品費', amount: 20000, payee: PAYEE, note: 'E2E枠内', tategae: true,
+      }),
+    })
+    // 会社支払い（tategae=false）は枠を消費しない＝下の合計には効かない
+    await restSrv('personal_expenses', {
+      method: 'POST', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        account_id: accountId, worker_id: workerId, date: `${YM}-06`,
+        account_category: '消耗品費', amount: 99000, payee: PAYEE, note: 'E2E会社支払い', tategae: false,
       }),
     })
     await page.goto(`/expenses-daily?ym=${YM}`, { waitUntil: 'networkidle' })
     const row = page.getByTestId(`pe-budget-${workerId}`)
     await expect(row).toBeVisible({ timeout: 15000 })
-    await expect(row, '消費/上限が出る').toContainText('¥20,000 / ¥50,000')
+    await expect(row, '消費/上限が出る（会社支払い99000は含めない）').toContainText('¥20,000 / ¥50,000')
     await expect(row, '残額が出る').toContainText('残り ¥30,000')
     await expect(row, '未超過なので超過表示は出ない').not.toContainText('超過')
+    // 会社支払い行は検証が済んだら消す（後続テストは [20000, 45000] の2件前提で累積するため、
+    // この行を残すと件数・合計がズレる）。#32の除外検証はこのテスト内で完結させる。
+    await restSrv(`personal_expenses?worker_id=eq.${workerId}&note=eq.${encodeURIComponent('E2E会社支払い')}`, { method: 'DELETE' }).catch(() => {})
   })
 
   test('上限を超えると超過が出る（登録はブロックされない＝警告のみ）', async ({ page }) => {
@@ -96,7 +109,7 @@ test.describe('個人経費の月額枠', () => {
       method: 'POST', headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({
         account_id: accountId, worker_id: workerId, date: `${YM}-22`,
-        account_category: '消耗品費', amount: 45000, payee: PAYEE, note: 'E2E超過分',
+        account_category: '消耗品費', amount: 45000, payee: PAYEE, note: 'E2E超過分', tategae: true,
       }),
     })
     await page.goto(`/expenses-daily?ym=${YM}`, { waitUntil: 'networkidle' })

@@ -11,7 +11,7 @@
 //  Notion: R5 3ab0ff81c56b81579c23ee7bd160b062
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { getAccountId, restSrv, openBuilderTab } from './helpers'
+import { getAccountId, restSrv, openBuilderTab, createEstimateProject } from './helpers'
 
 const TS = Date.now()
 const SUB = `E2E見積書業者_${TS}`
@@ -43,9 +43,8 @@ test.afterAll(async () => {
 
 async function openNewProject(page: any) {
   PROJ = projName()
-  await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-  await page.locator('[data-testid="new-project-name"]').fill(PROJ)
-  await page.locator('[data-testid="add-project"]').click()
+  const __pid1 = await createEstimateProject(PROJ)
+  await page.goto(`/estimate-builder?project=${__pid1}`, { waitUntil: 'networkidle' })
   await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ, { timeout: 15000 })
 }
 /** 受領登録（＝単価履歴が貯まる操作）を1件つくり、見積書ファイルも添付する */

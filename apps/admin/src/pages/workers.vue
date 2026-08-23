@@ -233,10 +233,9 @@
           <input v-model="modal.labor_insurance_number" class="input" placeholder="例：12-3-45-678901-0" data-testid="labor-insurance-number" />
         </div>
         <div class="field">
-          <label>健康診断履歴（受診日・結果）</label>
+          <label>健康診断履歴（受診日のみ）<span class="hint-sm" style="font-weight:400"> ※現場入場要件の確認用。持病・診断結果などの要配慮個人情報は保存しません</span></label>
           <div v-for="(hc, i) in healthCheckups" :key="i" class="checkup-row" data-testid="checkup-row">
             <input v-model="hc.checkup_date" type="date" class="input" />
-            <input v-model="hc.result" class="input" placeholder="結果（例：異常なし）" />
             <button type="button" class="family-del" @click="removeCheckup(i)">×</button>
           </div>
           <button type="button" class="btn-add-family" data-testid="add-checkup" @click="addCheckup">＋ 健診を追加</button>
@@ -419,14 +418,14 @@ async function syncFamily(workerId: string, accountId: string, want: FamilyMembe
   if (toDel.length) await supabase.from('worker_family_members').delete().in('id', toDel)
 }
 // 健康診断履歴（1作業員に複数）
-type HealthCheckup = { id?: string; checkup_date: string | null; result: string | null }
+type HealthCheckup = { id?: string; checkup_date: string | null }
 const healthCheckups = ref<HealthCheckup[]>([])
-function addCheckup()            { healthCheckups.value.push({ checkup_date: null, result: null }) }
+function addCheckup()            { healthCheckups.value.push({ checkup_date: null }) }
 function removeCheckup(i: number){ healthCheckups.value.splice(i, 1) }
 async function loadCheckups(workerId: string) {
   const { data } = await supabase.from('worker_health_checkups')
-    .select('id, checkup_date, result').eq('worker_id', workerId).order('sort_order')
-  healthCheckups.value = ((data ?? []) as any[]).map(r => ({ id: r.id, checkup_date: r.checkup_date, result: r.result }))
+    .select('id, checkup_date').eq('worker_id', workerId).order('sort_order')
+  healthCheckups.value = ((data ?? []) as any[]).map(r => ({ id: r.id, checkup_date: r.checkup_date }))
 }
 
 // 履歴書・書類の添付（非公開バケット worker-attachments・権限者=office以上のみ・署名URL閲覧）
@@ -495,13 +494,14 @@ async function deleteResume(r: WorkerResume) {
   if (modal.value?.id) await loadResumes(modal.value.id)
 }
 async function syncCheckups(workerId: string, accountId: string, want: HealthCheckup[]) {
-  const valid = want.filter(r => r.checkup_date || r.result?.trim())
+  const valid = want.filter(r => r.checkup_date)
   const { data } = await supabase.from('worker_health_checkups').select('id').eq('worker_id', workerId)
   const haveIds = ((data ?? []) as { id: string }[]).map(h => h.id)
   const keepIds = valid.map(r => r.id).filter(Boolean) as string[]
   const toDel = haveIds.filter(id => !keepIds.includes(id))
   for (const [i, r] of valid.entries()) {
-    const row = { worker_id: workerId, account_id: accountId, checkup_date: r.checkup_date || null, result: r.result?.trim() || null, sort_order: i, updated_at: new Date().toISOString() }
+    // 受診日のみ保存。result/note(要配慮個人情報)は書かず、既存値も保存のたびにnullで掃除する。
+    const row = { worker_id: workerId, account_id: accountId, checkup_date: r.checkup_date || null, result: null, note: null, sort_order: i, updated_at: new Date().toISOString() }
     if (r.id) await supabase.from('worker_health_checkups').update(row).eq('id', r.id)
     else      await supabase.from('worker_health_checkups').insert(row)
   }
@@ -852,7 +852,7 @@ async function setStatus(w: Worker, status: WStatus) {
 .wage-hist .wage-from { color: #aaa; font-size: 11px; }
 .hint-sm { font-size: 11px; color: #999; margin: 2px 0 0; }
 .family-row { display: grid; grid-template-columns: 1.2fr 1fr 1fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
-.checkup-row { display: grid; grid-template-columns: 1fr 1.6fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
+.checkup-row { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
 .checkup-row .input { padding: 8px 10px; font-size: 13px; }
 .family-row .input { padding: 8px 10px; font-size: 13px; }
 .family-del { background: none; border: 1px solid #f0caca; color: #c0392b; border-radius: 6px; width: 30px; height: 32px; cursor: pointer; font-size: 14px; }

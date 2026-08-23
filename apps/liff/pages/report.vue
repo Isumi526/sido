@@ -37,6 +37,11 @@
       <!-- フォーム -->
       <form v-else @submit.prevent="handleSubmit" class="form">
 
+        <!-- 簡易入力モード（?mode=simple）: 経費欄を畳んで現場・稼働・主要項目だけ表示 -->
+        <div v-if="simpleMode" class="pending-banner" data-testid="simple-mode-banner">
+          <span class="material-symbols-rounded banner-icon">bolt</span>{{ $t('report.simpleModeBanner') }}
+        </div>
+
         <!-- 編集モードバナー -->
         <div v-if="isEditMode" class="edit-banner">
           {{ $t('report.editModeBanner') }}
@@ -84,7 +89,7 @@
         </label>
 
         <!-- 本日のガソリン代（日報レベル・現場に紐づかない実費。按分で各現場へ距離比配賦） -->
-        <FormSection num="03" :title="$t('report.gasolineSection')">
+        <FormSection v-if="!simpleMode" num="03" :title="$t('report.gasolineSection')">
           <!-- 給油有無（大半の日は給油なし。あり の時だけ金額・領収書を表示） -->
           <label class="hours-label">{{ $t('report.gasolineFueledLabel') }}</label>
           <select :value="gasFueled ? 'yes' : 'no'" class="select mt4" data-testid="gas-fueled" @change="setGasFueled(($event.target as HTMLSelectElement).value === 'yes')">
@@ -137,7 +142,7 @@
         <FormSection
           v-for="(site, si) in report.form.value.sites"
           :key="si"
-          :num="String(si + 4).padStart(2, '0')"
+          :num="String(si + (simpleMode ? 3 : 4)).padStart(2, '0')"
           :title="report.form.value.sites.length > 1 ? $t('report.siteNumbered', { n: si + 1 }) : $t('report.site')"
           accent
         >
@@ -343,8 +348,8 @@
             </Field>
           </div>
 
-          <!-- 経費有無 -->
-          <Field :label="$t('report.expense')">
+          <!-- 経費有無（簡易モードでは経費入力を丈ごと畳む） -->
+          <Field v-if="!simpleMode" :label="$t('report.expense')">
             <select :value="siteUsage[si].expense" class="select select--usage" @change="(e) => setUsage(si, 'expense', (e.target as HTMLSelectElement).value)">
               <option value="なし">{{ $t('report.optNone') }}</option>
               <option value="あり">{{ $t('report.optYes') }}</option>
@@ -352,7 +357,7 @@
           </Field>
 
           <!-- ── 交通経費 ── -->
-          <div v-if="siteUsage[si].expense === 'あり'" class="sub-section">
+          <div v-if="!simpleMode && siteUsage[si].expense === 'あり'" class="sub-section">
             <div class="sub-section-title">{{ $t('report.transportExpense') }}</div>
 
             <!-- 車両 -->
@@ -443,9 +448,17 @@
                       <label class="hours-label">{{ $t('report.etcCard') }}</label>
                       <select v-model="hw.etcCard" class="select mt4">
                         <option value="">{{ $t('report.optNone') }}</option>
-                        <option v-for="n in 7" :key="n" :value="`カード${['①','②','③','④','⑤','⑥','⑦'][n-1]}`">
-                          {{ $t('report.cardLabel', { mark: ['①','②','③','④','⑤','⑥','⑦'][n-1] }) }}
-                        </option>
+                        <!-- 物品マスタ（ETCカード）があればそれを出す。無ければ従来の固定カードにフォールバック（壊さない） -->
+                        <template v-if="master.etcCardNames.value.length">
+                          <option v-for="nm in master.etcCardNames.value" :key="nm" :value="nm">{{ nm }}</option>
+                          <!-- 既に選択済みの値が候補に無くても消えないよう残す（マスタ変更/旧データ対策） -->
+                          <option v-if="hw.etcCard && !master.etcCardNames.value.includes(hw.etcCard)" :value="hw.etcCard">{{ hw.etcCard }}</option>
+                        </template>
+                        <template v-else>
+                          <option v-for="n in 7" :key="n" :value="`カード${['①','②','③','④','⑤','⑥','⑦'][n-1]}`">
+                            {{ $t('report.cardLabel', { mark: ['①','②','③','④','⑤','⑥','⑦'][n-1] }) }}
+                          </option>
+                        </template>
                       </select>
                     </div>
                   </div>
@@ -490,7 +503,7 @@
           </div>
 
           <!-- ── 現場経費 ── -->
-          <div v-if="siteUsage[si].expense === 'あり'" class="sub-section">
+          <div v-if="!simpleMode && siteUsage[si].expense === 'あり'" class="sub-section">
             <div class="sub-section-title">{{ $t('report.siteExpense') }}</div>
 
             <!-- 宿泊費（ホテル・レオパレス等／複数登録可） -->
@@ -860,6 +873,12 @@ const prefillDate = computed(() => {
   return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : ''
 })
 const prefillSite = computed(() => (route.query.site as string | undefined) ?? '')
+// ── 簡易入力モード（?mode=simple）──
+//  経費項目が細かく分かれていて煩わしい、という要望への対応。URL に ?mode=simple を
+//  付けた時だけ、ガソリン代・交通経費・現場経費などの経費入力欄を非表示にし、
+//  「現場・稼働・主要項目だけ」の簡易UIにする。通常URLは従来どおり全項目を出す。
+//  ★表示の出し分けだけ。入力・保存経路（saveReportById 等）は一切変えない。
+const simpleMode = computed(() => route.query.mode === 'simple')
 // 現場の新規作成は権限者(admin/office/site_manager)のみ。職人は既存現場から選ぶ
 const { resolveRole: resolveWorkerRole, canCreateSite } = useWorkerPermission()
 

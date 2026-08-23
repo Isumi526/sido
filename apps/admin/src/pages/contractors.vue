@@ -34,6 +34,9 @@
           <label>元請け業者名 *</label>
           <input v-model="modal.name" class="input" placeholder="例：〇〇建設" data-testid="contractor-name" />
         </div>
+        <div class="field"><label>読み仮名</label>
+          <input v-model="modal.name_kana" class="input" placeholder="例：まるまるけんせつ" data-testid="contractor-name-kana" />
+        </div>
         <div class="grid2">
           <div class="field"><label>代表者名</label><input v-model="modal.representative_name" class="input" /></div>
           <div class="field"><label>登録番号（インボイス）</label><input v-model="modal.registration_number" class="input" placeholder="例：T1234567890123" /></div>
@@ -85,7 +88,7 @@ import { canManageContractors } from '../lib/auth'
 
 type Contact = { id?: string; name: string; email: string | null; phone: string | null }
 type Contractor = {
-  id: string; name: string; active: boolean
+  id: string; name: string; name_kana: string | null; active: boolean
   representative_name: string | null; mobile_phone: string | null; office_phone: string | null
   email: string | null; address: string | null; registration_number: string | null; note: string | null
   bank_name: string | null; bank_branch: string | null; bank_account_type: string | null
@@ -96,7 +99,7 @@ type ModalState = Partial<Contractor> & { contacts: Contact[] }
 
 // 振込口座は全ロール（site_manager 含む）が閲覧・編集する（2026-08-07 レビューでユーザー判断変更）。
 //  当初は site_manager に隠す実装（列ごと分離）だったが、隠す必要なしとの判断で全員に開いた。
-const CON_COLS = 'id, name, active, representative_name, mobile_phone, office_phone, email, address, registration_number, note, bank_name, bank_branch, bank_account_type, bank_account_number, bank_account_holder'
+const CON_COLS = 'id, name, name_kana, active, representative_name, mobile_phone, office_phone, email, address, registration_number, note, bank_name, bank_branch, bank_account_type, bank_account_number, bank_account_holder'
 
 const contractors = ref<Contractor[]>([])
 const modal       = ref<ModalState | null>(null)
@@ -106,7 +109,7 @@ const saveError   = ref('')
 async function load() {
   const accountId = await getAccountId()
   const [{ data: rows }, { data: contactRows }] = await Promise.all([
-    supabase.from('contractors').select(CON_COLS).eq('account_id', accountId).order('sort_order').order('name'),
+    supabase.from('contractors').select(CON_COLS).eq('account_id', accountId).order('sort_order').order('name_kana', { nullsFirst: false }).order('name'),
     supabase.from('contractor_contacts').select('id, contractor_id, name, email, phone, sort_order')
       .eq('account_id', accountId).eq('is_deleted', false).order('sort_order'),
   ])
@@ -142,6 +145,7 @@ async function save() {
     const m = modal.value
     const fields = {
       name: m.name!.trim(),
+      name_kana: m.name_kana?.trim() || null,
       representative_name: m.representative_name?.trim() || null,
       mobile_phone: m.mobile_phone?.trim() || null,
       office_phone: m.office_phone?.trim() || null,

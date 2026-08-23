@@ -372,15 +372,14 @@ async function handleReview(svc: any, body: any, authHeader: string): Promise<Re
       .eq('account_id', accountId).eq('worker_id', approver.workerId).maybeSingle()
     myUserId = me?.id ?? null
   }
+  // オーナー枠(admin/owner)で、かつ自分のほかに active な admin/owner の worker が居ない＝完全ワンオペのオーナー。
+  //  この時は (1)自己承認を許し (2)二重承認も owner 1つで成立させる（独立した第2承認者が存在しえないため。
+  //  現場責任者＝オーナー本人のような「2役が1人に潰れる」ケースでも詰まらせない。2026-08-22 シード事務所(名古屋)実障害）。
+  const isOwnerSlot = approver.role === 'admin' || approver.role === 'owner'
+  const soloOwner = isOwnerSlot && !(await hasOtherActiveOwner(svc, accountId, approver.workerId))
   const isSubmitter = !!(myUserId && pend.submitted_by_user_id && myUserId === pend.submitted_by_user_id)
-  if (isSubmitter) {
-    // 自己承認は原則禁止。ただしオーナーが完全ワンオペ（自分以外にオーナー枠が1人も居ない）時だけは、
-    // 放置すると承認が永久に回らないためオーナー本人の承認を許す。オーナー以外(worker/site_manager)は常に禁止。
-    const isOwnerSlot = approver.role === 'admin' || approver.role === 'owner'
-    const soloOwner = isOwnerSlot && !(await hasOtherActiveOwner(svc, accountId, approver.workerId))
-    if (!soloOwner) {
-      return json({ ok: false, error: 'self_approval_forbidden' }, 403)
-    }
+  if (isSubmitter && !soloOwner) {
+    return json({ ok: false, error: 'self_approval_forbidden' }, 403)
   }
 
   // ★承認者は「人が読める名前」で残す。
@@ -448,9 +447,11 @@ async function handleReview(svc: any, body: any, authHeader: string): Promise<Re
     }]
 
     const slots = new Set(approvals.map((a: any) => a?.role))
-    const satisfied = hasResponsible
-      ? (slots.has('owner') && slots.has('site_manager'))
-      : slots.has('owner')
+    // 完全ワンオペのオーナーは owner 1つで成立させる（独立した第2承認者＝現場責任者が存在しえないため）。
+    // それ以外は従来どおり：責任者が居れば owner＋責任者、居なければ owner 1つ。
+    const satisfied = soloOwner
+      ? slots.has('owner')
+      : (hasResponsible ? (slots.has('owner') && slots.has('site_manager')) : slots.has('owner'))
 
     if (!satisfied) {
       const { error: upErr } = await svc.from('daily_report_pending_edits')

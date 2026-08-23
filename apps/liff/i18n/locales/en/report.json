@@ -1,5 +1,6 @@
 {
   "subtitle": "Daily Report",
+  "simpleModeBanner": "Simple entry mode. Expense fields are hidden — showing site, work status, and main items only.",
   "draftRestored": "Restored your in-progress draft (including attached images)",
   "draftDiscard": "Discard and start new",
   "allSubmittedTitle": "All Submitted",

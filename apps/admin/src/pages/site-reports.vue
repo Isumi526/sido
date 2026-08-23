@@ -55,8 +55,8 @@
       <div v-if="siteNames.length" class="tabs-wrap">
         <div class="tabs">
           <button v-for="name in siteNames" :key="name" class="tab"
-            :class="{ active: displaySite === name }" @click="activeSite = name">
-            {{ name }}
+            :class="{ active: displaySite === name }" @click="activeSite = name" :title="siteLabel(name)">
+            {{ siteLabel(name) }}
           </button>
         </div>
       </div>
@@ -655,15 +655,23 @@ const showCategory = computed(() => categoryTotals.value.length > 1)
 //   日報の現場名は手入力なので「ﾙﾙﾚﾓﾝ」「ルルレモン」「lululemon」の揺れが実在する。
 const filterText       = ref('')
 const filterContractor = ref('')
-// 現場名 → 元請け名。現場マスタに載っていない現場（手入力の表記ゆれ等）はここに現れないので、
-// 元請けで絞ると出てこない＝「元請けが分からない現場」を混ぜない（絞った結果が信用できる方を採る）。
-const contractorBySite = ref<Record<string, string>>({})
+// 現場名 → その名前を持つ現場マスタに紐づく元請け名（重複排除・五十音）。
+// ★同名の現場が複数の元請けに跨ることが実在する（＝どちらの元請けの案件か判別できない問題）。
+//   集計は表示名でグループ化しているので同名は1タブに合算される。合算はそのままに、
+//   跨る元請けを全部保持し、タブ/見出しへ併記して判別できるようにする（表示のみ・可逆）。
+//   現場マスタに載っていない現場（手入力の表記ゆれ等）はここに現れない＝元請けで絞ると出てこない。
+const contractorsBySite = ref<Record<string, string[]>>({})
+
+// タブ/見出し用ラベル。同名が複数元請けに跨るときだけ元請け名を括弧書きで併記する。
+function siteLabel(name: string): string {
+  const cs = contractorsBySite.value[name] ?? []
+  return cs.length > 1 ? `${name}（${cs.join('・')}）` : name
+}
 
 const contractorOptions = computed(() => {
   const present = new Set<string>()
   for (const name of siteNamesAll.value) {
-    const c = contractorBySite.value[name]
-    if (c) present.add(c)
+    for (const c of (contractorsBySite.value[name] ?? [])) present.add(c)
   }
   return [...present].sort((a, b) => a.localeCompare(b, 'ja'))
 })
@@ -676,7 +684,7 @@ const siteNames = computed(() => {
   const q = normalizeSiteName(filterText.value.trim())
   return siteNamesAll.value.filter((name) => {
     if (q && !normalizeSiteName(name).includes(q)) return false
-    if (filterContractor.value && contractorBySite.value[name] !== filterContractor.value) return false
+    if (filterContractor.value && !(contractorsBySite.value[name] ?? []).includes(filterContractor.value)) return false
     return true
   })
 })
@@ -804,11 +812,16 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
   // タブを五十音で並べるための 現場名→読み仮名
   kanaBySite.value = Object.fromEntries(
     (siteRows ?? []).filter((s: any) => s.name_kana).map((s: any) => [s.name, s.name_kana]))
-  // 絞り込み用の 現場名→元請け名。集計には使わない（表示するタブを減らすためだけ）。
-  contractorBySite.value = Object.fromEntries(
-    (siteRows ?? [])
-      .map((s: any) => [s.name, s.contractors?.name ?? ''])
-      .filter(([, c]: any[]) => !!c),
+  // 絞り込み・判別表示用の 現場名→元請け名（複数）。集計には使わない（タブを減らす／判別のためだけ）。
+  // ★同名の現場が別々の元請けに紐づくことがあるので、名前ごとに元請けを集合で集める（最後勝ちで潰さない）。
+  const contractorSetBySite: Record<string, Set<string>> = {}
+  for (const s of (siteRows ?? [])) {
+    const c = s.contractors?.name ?? ''
+    if (!c) continue
+    ;(contractorSetBySite[s.name] ??= new Set<string>()).add(c)
+  }
+  contractorsBySite.value = Object.fromEntries(
+    Object.entries(contractorSetBySite).map(([n, set]) => [n, [...set].sort((a, b) => a.localeCompare(b, 'ja'))]),
   )
   // 現場参照の解決コンテキスト: site_id 優先＋active名一致で表記ゆれ/マージ孤児を1バケットへ統合（根本対策）
   const siteCtx: SiteResolveCtx = {

@@ -427,12 +427,15 @@ export function canSubmitPersonalExpense(
  * ★母数は月合計（half-month の first/second をまたいで累計・同 2-1）。
  */
 export function sumMonthlyPersonalExpenses(
-  records: Array<{ date: string; amount: number | string }> | null | undefined,
+  records: Array<{ date: string; amount: number | string; tategae?: boolean }> | null | undefined,
   month: string,
 ): number {
   let total = 0
   for (const r of (records ?? [])) {
     if (expenseMonthKey(r.date) !== month) continue
+    // 会社支払い（個人立替ではない＝tategae===false）は「個人の使用額」に入れない（#32）。
+    // 個人使用額＝個人が立て替えた分。tategae 未指定(null/undefined)は従来どおり計上（明示的な会社支払いのみ除外）。
+    if (r.tategae === false) continue
     total += Math.round(Number(r.amount) || 0)
   }
   return total
@@ -453,7 +456,7 @@ export interface BudgetUsage {
  *  目的は「なんで超えてんの？」を検知することで、立替の実費登録を止めることではない。
  */
 export function computeBudgetUsage(
-  records: Array<{ date: string; amount: number | string }> | null | undefined,
+  records: Array<{ date: string; amount: number | string; tategae?: boolean }> | null | undefined,
   month: string,
   limit: number | null,
 ): BudgetUsage {

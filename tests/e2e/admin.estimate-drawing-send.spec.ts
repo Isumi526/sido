@@ -12,7 +12,7 @@
 //  Notion: R8 3ab0ff81c56b81369617fedc1a1ab7fe / R9 3ab0ff81c56b81f08044d489c268b691
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { getAccountId, restSrv, openBuilderTab, downloadStorage } from './helpers'
+import { getAccountId, restSrv, openBuilderTab, downloadStorage, createEstimateProject } from './helpers'
 
 const TS = Date.now()
 const SUB = `E2E図面業者_${TS}`
@@ -95,9 +95,8 @@ test.afterAll(async () => {
 
 async function openProjectWithDrawing(page: any, pages = 6) {
   PROJ = projName()
-  await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
-  await page.locator('[data-testid="new-project-name"]').fill(PROJ)
-  await page.locator('[data-testid="add-project"]').click()
+  const __pid1 = await createEstimateProject(PROJ)
+  await page.goto(`/estimate-builder?project=${__pid1}`, { waitUntil: 'networkidle' })
   await expect(page.locator('[data-testid="project-select"]')).toContainText(PROJ, { timeout: 15000 })
   await openBuilderTab(page, 'intake', '[data-testid="intake-dropzone"]')
   await page.locator('[data-testid="intake-file"]').setInputFiles({

@@ -14,7 +14,10 @@
 //  ※ 平文トークンはログに出さない。
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { pushLineText } from '../_shared/line.ts'
+import { resolveGroupIds } from '../_shared/resolveGroupId.ts'
 
+const LINE_TOKEN = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 // service role があれば使う。無ければ anon（ローカル等）にフォールバック
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
@@ -101,6 +104,8 @@ Deno.serve(async (req) => {
   let regFields: Record<string, unknown> = {}
   let pdf = ''               // 見積書アップロード（inline data URL）
   let paths: string[] = []   // 見積書アップロード（直アップロード済みのstorage path群）
+  let attachment = ''        // 請求書添付（inline data URL・PDF/JPG/PNG・#49）
+  let attachmentMime = ''    // 請求書添付のMIME種別（種別チェック用）
   try {
     const body = await req.json()
     token       = (body.token ?? '').toString()
@@ -112,6 +117,8 @@ Deno.serve(async (req) => {
     regFields   = (body.fields && typeof body.fields === 'object') ? body.fields : {}
     pdf         = (body.pdf ?? '').toString()
     paths       = Array.isArray(body.paths) ? body.paths.map((p: unknown) => String(p)) : []
+    attachment     = (body.attachment ?? '').toString()
+    attachmentMime = (body.attachment_mime ?? '').toString()
   } catch { /* 空/不正body */ }
 
   if (!token) return json({ ok: false })
@@ -232,6 +239,29 @@ Deno.serve(async (req) => {
         return json({ ok: false, error: 'over_residual', residual: ctx.residual }, 400)
       }
 
+      // 業者が自作の請求書（自由書式・PDF/JPG/PNG）を添付した場合はStorageへ保存（任意・#49）。
+      //  ★セキュリティ既定値：種別=PDF/JPG/PNGのみ／上限10MB／保存先は非公開バケット admin-docs
+      //   （管理側は resolveDocUrl の署名URLで配信＝公開URL露出なし）。path先頭=account_id は
+      //   admin-docs のRLS規約（purchase-orders/estimates と同型）で、同一アカウントの管理者だけが読める。
+      //   ★トークン消費より前に検証・アップロードする＝不正/失敗時はトークンを消費させず再送可能にする。
+      let attachmentPath: string | null = null
+      if (attachment) {
+        const EXT_BY_MIME: Record<string, string> = {
+          'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png',
+        }
+        const mime = attachmentMime.toLowerCase()
+        const ext = EXT_BY_MIME[mime]
+        if (!ext) return json({ ok: false, error: 'attachment_bad_type' }, 400)
+        const bytes = decodeImageDataUrl(attachment)
+        if (!bytes || bytes.length === 0) return json({ ok: false, error: 'attachment_bad_type' }, 400)
+        if (bytes.length > 10 * 1024 * 1024) return json({ ok: false, error: 'attachment_too_large' }, 400)
+        attachmentPath = `${order.account_id}/subcontractor-invoices/portal-${crypto.randomUUID()}.${ext}`
+        const contentType = mime === 'image/jpg' ? 'image/jpeg' : mime
+        const { error: attUpErr } = await supabase.storage.from('admin-docs')
+          .upload(attachmentPath, bytes, { upsert: false, contentType })
+        if (attUpErr) return json({ ok: false, error: 'attachment_upload_failed' }, 500)
+      }
+
       // 二重請求防止：トークンを「used_at IS NULL の時だけ」原子的に使用済みへ更新。
       // 同時送信は1つだけが claim に成功し、残りは 409（金額検証を通った後に claim＝検証エラーでは消費しない）。
       const { data: claimed } = await supabase.from('document_access_tokens')
@@ -253,6 +283,9 @@ Deno.serve(async (req) => {
         //  業者が請求した額より約10%多く見える（＝消費税の二重計上）。
         tax_mode:          'inclusive',
         note:              invoiceMode === 'full' ? '全額請求（業者ポータル）' : '出来高請求（業者ポータル）',
+        // 業者が添付した自作請求書PDF/画像（任意・#49）。非公開 admin-docs に置き pdf_bucket も一緒に記録。
+        pdf_path:          attachmentPath,
+        pdf_bucket:        attachmentPath ? 'admin-docs' : 'expense-receipts',
       }).select('id').single()
       if (invErr || !inv) return json({ ok: false, error: 'invoice_insert_failed' }, 500)
 
@@ -542,6 +575,22 @@ Deno.serve(async (req) => {
       const { error: tokUpdErr } = await supabase
         .from('document_access_tokens').update({ used_at: nowIso }).eq('id', tok.id)
       if (tokUpdErr) console.warn('[subcontractor-portal] token used_at update failed (non-fatal):', tokUpdErr.message)
+
+      // 管理側へ per-tenant LINE 通知（注文書が承諾された・#47）。
+      // ★fallback=[] でクロステナント配信を防ぐ＝通知グループ未設定テナントには送らない。
+      //   通知は best-effort。失敗しても承諾処理は妨げない。
+      try {
+        if (LINE_TOKEN) {
+          const { data: acct } = await supabase.from('accounts').select('slug').eq('id', order.account_id).maybeSingle()
+          const groups = await resolveGroupIds(acct?.slug ?? null, [])
+          if (groups.length) {
+            const msg = `✅ 注文書が承諾されました\n注文書番号: ${order.order_number ?? ''}\n受注者: ${order.vendor_name ?? ''}\n現場: ${order.site_name ?? '―'}\n署名: ${signerName || '―'}`
+            await Promise.all(groups.map((id: string) => pushLineText(id, msg, LINE_TOKEN)))
+          }
+        }
+      } catch (e) {
+        console.warn('[subcontractor-portal] accept notify failed (non-fatal):', (e as Error)?.message)
+      }
 
       return json({ ok: true, accepted: true, accepted_at: nowIso })
     }

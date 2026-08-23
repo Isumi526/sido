@@ -10,6 +10,9 @@
       :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName"
     >
       <template #actions>
+        <button v-if="canInvite" type="button" class="site-icon-link" data-testid="liff-invite-btn" :disabled="inviteBusy" :aria-label="$t('siteChat.invite')" @click="createInvite">
+          <span class="material-symbols-rounded">group_add</span>
+        </button>
         <NuxtLink :to="{ path: `/sites/${siteId}`, query: { from: 'chat' } }" class="site-icon-link" data-testid="site-icon-link" :aria-label="site?.name ?? $t('sitesView.title')">
           <span class="material-symbols-rounded">location_on</span>
         </NuxtLink>
@@ -147,6 +150,28 @@ const sending   = ref(false)
 const listRef   = ref<HTMLElement | null>(null)
 const showScrollBtn = ref(false)
 const myWorkerId = ref<string | null>(null)
+// 現場責任者だけが招待リンクを発行できる（管理画面と同じ EF site-chat-invite を再利用・#11 2026-08-22）
+const responsibleWorkerId = ref<string | null>(null)
+const inviteBusy = ref(false)
+const canInvite = computed(() => !!myWorkerId.value && myWorkerId.value === responsibleWorkerId.value)
+async function createInvite() {
+  if (inviteBusy.value) return
+  inviteBusy.value = true
+  try {
+    const { data, error } = await useSupabase().functions.invoke('site-chat-invite', {
+      body: { action: 'create', site_id: siteId },
+    })
+    if (error || !(data as any)?.ok) { alert(t('siteChat.inviteFailed')); return }
+    const url = (data as any).url as string
+    try {
+      await navigator.clipboard.writeText(url)
+      alert(t('siteChat.inviteCopied'))
+    } catch {
+      // クリップボード不可環境では URL をそのまま提示（手動コピー）
+      window.prompt(t('siteChat.invite'), url)
+    }
+  } finally { inviteBusy.value = false }
+}
 const myName      = ref('')
 const pendingFile = ref<File | null>(null)
 const dragActive  = ref(false)
@@ -455,6 +480,7 @@ async function load() {
   // ★EF経由（sites は公開キーから読めないようにしたため）
   const siteData = await useSitesApi().one(siteId)
   site.value = siteData ? { id: siteData.id, name: siteData.name } : null
+  responsibleWorkerId.value = siteData?.responsible_worker_id ?? null
   await loadMembers(accountId, siteData?.responsible_worker_id ?? null)
 
   const { data: workersData } = await supabase.from('workers').select('id, name, name_kana').eq('account_id', accountId).eq('active', true).order('name_kana', { nullsFirst: false }).order('name')

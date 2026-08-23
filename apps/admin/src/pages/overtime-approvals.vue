@@ -27,7 +27,10 @@
           <tbody>
             <tr v-for="g in pending" :key="g.id">
               <td class="name">{{ workerName(g.worker_id) }}</td>
-              <td>{{ fmtDate(g.date) }}</td>
+              <td>
+                {{ fmtDate(g.date) }}
+                <span v-if="g.is_late" class="late-badge" data-testid="ot-approval-late">実績修正（締切後）</span>
+              </td>
               <td class="sites">{{ (g.site_names && g.site_names.length) ? g.site_names.join('、') : '—' }}</td>
               <td>
                 {{ (g.requested_end_time || '').slice(0, 5) || '—' }}
@@ -79,6 +82,7 @@ type OvertimeReq = {
   reason: string | null
   site_names: string[] | null
   status: string
+  is_late: boolean | null
   requested_at: string
 }
 
@@ -108,7 +112,7 @@ async function load() {
   if (!accountId) { loading.value = false; return }
   const [{ data: reqs }, { data: ws }] = await Promise.all([
     supabase.from('overtime_requests')
-      .select('id, worker_id, date, requested_end_time, requested_start_time, requested_break_minutes, reason, site_names, status, requested_at')
+      .select('id, worker_id, date, requested_end_time, requested_start_time, requested_break_minutes, reason, site_names, status, is_late, requested_at')
       .eq('account_id', accountId).eq('status', 'pending')
       .order('requested_at', { ascending: true }),
     supabase.from('workers').select('id, name').eq('account_id', accountId),
@@ -186,4 +190,5 @@ onMounted(load)
 .btn-reject  { color: #b91c1c; background: #fef2f2; border-color: #fca5a5; }
 .btn-approve:disabled, .btn-reject:disabled { opacity: .6; cursor: default; }
 .ot-extra { margin-top: 2px; font-size: 12px; color: #92400e; font-weight: 700; }
+.late-badge { display: inline-block; margin-left: 6px; font-size: 11px; font-weight: 700; color: #9a3412; background: #ffedd5; border-radius: 4px; padding: 1px 6px; }
 </style>

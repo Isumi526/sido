@@ -9,6 +9,7 @@
 //  ※ 平文トークン・メール本文はログに出さない。
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { resolveAccountName } from './mail-from.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
@@ -101,6 +102,7 @@ export async function sendInvoiceRequest(
         + `<p>注文書番号: ${order.order_number}<br>`
         + `注文金額: ${yen(order.total_amount)}</p>`
         + `<p>下記より請求金額（全額または出来高）をご入力ください。</p>`
+        + `<p style="font-size:13px;color:#555;">※ ご請求は注文書の金額どおりにお願いします。現場が分かれる場合は、現場ごとに分けてご請求ください。</p>`
         + `<p><a href="${url}" style="display:inline-block;padding:12px 24px;background:#06C755;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;">請求フォームを開く</a></p>`
         + `<p>上記ボタンが開けない場合は、次のURLをブラウザに貼り付けてください:<br>${url}</p>`
         + `<p>（このリンクの有効期限は発行から30日間です）</p>`
@@ -110,7 +112,7 @@ export async function sendInvoiceRequest(
       }
       const { data: cn } = await svc.from('settings').select('value').eq('account_id', account.id).eq('key', 'company_name').maybeSingle()
       const fromAddr = (PO_MAIL_FROM.match(/<([^>]+)>/)?.[1] || PO_MAIL_FROM).trim()
-      const fromName = (cn?.value || '').trim()
+      const fromName = (cn?.value || '').trim() || await resolveAccountName(svc, account.id)
       const from = fromName ? `${fromName} <${fromAddr}>` : PO_MAIL_FROM
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
