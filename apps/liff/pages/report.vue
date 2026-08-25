@@ -77,6 +77,10 @@
             <option value="paid_leave">{{ $t('report.paidLeave') }}</option>
             <option value="off">{{ $t('report.off') }}</option>
           </select>
+          <!-- 有給残が不足している時: 二重承認が要る旨を先に伝える（送信は可能・承認待ちになる） -->
+          <div v-if="needsPaidLeaveApproval" class="pending-banner" data-testid="paid-leave-over-notice">
+            {{ $t('report.paidLeaveOverNotice') }}
+          </div>
         </FormSection>
 
         <!-- 現場ブロック（稼働ありの場合のみ表示） -->
@@ -717,7 +721,7 @@
 
         <!-- 送信前の記入忘れ確認（新規送信時のみ・習慣化のため必須） -->
         <label v-if="!isEditMode" class="submit-confirm">
-          <input type="checkbox" v-model="omissionConfirmed" />
+          <input type="checkbox" v-model="omissionConfirmed" data-testid="omission-confirm" />
           <span>{{ $t('report.omissionConfirm') }}</span>
         </label>
 
@@ -1020,6 +1024,39 @@ async function submitLateNewForApproval(targetUserId: string): Promise<boolean> 
   }
 }
 
+/**
+ * 有給残が不足しているのに有給を選んだ新規提出を「承認待ち（二重承認）」として申請する。
+ * ★late_new と同じ保留方式: daily_reports には書かず、承認されて初めて日報に反映＝有給が消化される。
+ *   未送信スキャンは承認待ちの日付を「出し済み」として飛ばすので、翌日以降の入力に進める。
+ */
+async function submitPaidLeaveOverForApproval(targetUserId: string): Promise<boolean> {
+  try {
+    const payload = await expense.buildReportPayload({
+      isWorking:      false,
+      leaveType:      'paid_leave',
+      isBusinessTrip: false,
+      sites:          report.form.value.sites,
+      note:           report.form.value.note,
+      gasolineItems:  [],
+    })
+    if (!editLogToken.value) editLogToken.value = crypto.randomUUID()
+    const j = await callEditEf({
+      kind: 'paid_leave_over',
+      targetUserId,
+      reportId: null,
+      reportDate: report.form.value.date,
+      reason: t('report.paidLeaveOverReason'),
+      diffs: [],
+      clientToken: editLogToken.value,
+      payload,
+    })
+    return !!j?.pendingId
+  } catch (e) {
+    console.error('[Report] 有給残不足の申請に失敗:', e)
+    return false
+  }
+}
+
 async function submitEditForApproval(diffs: string[]): Promise<boolean> {
   try {
     const working = isWorkingStr.value === 'working'
@@ -1171,6 +1208,22 @@ const nextDateLabel = computed(() => {
 
 // 稼働有無
 const isWorkingStr = ref<'working' | 'paid_leave' | 'off'>('working')
+
+// ── 有給残の判定（有給を選んだ時、残が足りなければ日報を二重承認制にする）──
+//  自分の分のみ判定する（代理入力は本人の残が取れないため対象外＝従来どおり保存。将来対応）。
+const paidLeaveRemaining = ref<number | null>(null)
+async function refreshPaidLeaveRemaining() {
+  if (proxy.isProxyMode.value) { paidLeaveRemaining.value = null; return }
+  try { paidLeaveRemaining.value = (await usePaidLeave().status()).remaining }
+  catch { paidLeaveRemaining.value = null }   // 取れない時は判定に使わない（承認制に倒さない）
+}
+// 有給を選んでいて、残が0以下（新規・自分・期限内）＝この有給が残不足 → 承認必要
+const needsPaidLeaveApproval = computed(() =>
+  !isEditMode.value && !isLateDate.value && !proxy.isProxyMode.value
+  && isWorkingStr.value === 'paid_leave'
+  && paidLeaveRemaining.value !== null && paidLeaveRemaining.value < 1)
+// 有給を選んだ瞬間に残を引く（初回だけ・自分の分）
+watch(isWorkingStr, (v) => { if (v === 'paid_leave' && paidLeaveRemaining.value === null) void refreshPaidLeaveRemaining() })
 
 // 送信日が日曜かどうか（料率計算に使用）
 const isSunday = computed(() =>
@@ -2239,8 +2292,10 @@ async function handleSubmit() {
   //   既存の「過去3日ロック＋許可申請」は"出す許可"の承認で、中身（金額）は見ていない。
   //   遅れて出てくる日報こそ内容を確認したいので、承認されるまで daily_reports に書かない。
   const isLateSubmission = lock.isPastLockWindow(report.form.value.date)
+  // 有給残不足で有給を選んだ新規提出も、承認されるまで daily_reports に書かない（二重承認制）。
+  const isPaidLeaveOver = needsPaidLeaveApproval.value
 
-  if (targetUserId && !isLateSubmission) {
+  if (targetUserId && !isLateSubmission && !isPaidLeaveOver) {
     try {
       await expense.saveReportById(targetUserId, {
         date:      report.form.value.date,
@@ -2277,6 +2332,16 @@ async function handleSubmit() {
       return
     }
     lateSubmitted.value = true
+    return
+  }
+
+  // ③-b 有給残不足の新規提出: 二重承認の保留に入れる（daily_reports にはまだ書かない）。
+  if (isPaidLeaveOver && targetUserId) {
+    if (!await submitPaidLeaveOverForApproval(targetUserId)) {
+      editError.value = t('report.editApprovalSubmitFailed')
+      return
+    }
+    lateSubmitted.value = true   // 「承認待ちで送信済み」の完了画面を出す（未送信トラップに落とさない）
     return
   }
 
