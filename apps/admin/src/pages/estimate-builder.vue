@@ -29,7 +29,7 @@
         <!-- ★R55: マスタ編集の共通ルール（docs/design/master-editing-rules.md）に従い、
              元請け・担当者はこの画面から直せるようにする。設定画面へ飛ばすと
              書きかけの見積から離れることになり、実際にブラウザバックで入力が消えていた。 -->
-        <button class="btn-edit" data-testid="con-add-open" @click="openContractorModal(null)">＋ 元請けを追加</button>
+        <button class="btn-edit" data-testid="con-add-open" @click="openContractorModal(null)"><span class="material-symbols-rounded">add</span>元請けを追加</button>
         <button v-if="currentContractorId" class="btn-edit" data-testid="con-edit-open" @click="openContractorModal(currentContractorId)">
           <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">edit</span> 担当者を編集
         </button>
@@ -222,7 +222,7 @@
             <div class="ifield">
               <span>&nbsp;</span>
               <span class="wiz-con-btns">
-                <button class="btn-edit" data-testid="wiz-con-add" @click="openContractorModal(null)">＋ 元請けを追加</button>
+                <button class="btn-edit" data-testid="wiz-con-add" @click="openContractorModal(null)"><span class="material-symbols-rounded">add</span>元請けを追加</button>
                 <button v-if="currentContractorId" class="btn-edit" data-testid="wiz-con-edit" @click="openContractorModal(currentContractorId)">担当者を編集</button>
               </span>
             </div>
@@ -4228,11 +4228,35 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .input.num { text-align: right; }
 .amount { font-variant-numeric: tabular-nums; }
 .actions-row { display: flex; gap: 12px; align-items: center; margin-top: 12px; }
+/* ─────────────────────────────────────────────────────────
+   ★ボタンの種類と使い分け（R? トンマナ統一・2026-08-19 亥角さん指摘）
+   見た目を1つずつ合わせるのではなく「役割」で分けてから見た目を当てる。
+   同じ役割のボタンは必ず同じ見た目にする（色を場当たりで足さない）。
+
+   1. 主操作（その画面で押してほしい1つ）… 塗りつぶし緑
+        → .btn-primary（保存・送信・確定など）
+   2. 副操作（あっても良い・任意の遷移/編集）… 白背景＋枠線
+        → .btn-edit（元請け追加・担当者編集・ページを選んで送る・明細・読み取る 等）
+        以前は .btn-edit の実体が無く“ブラウザ素のボタン”で描画されていた。ここで定義した。
+   3. 状態表示を兼ねるもの（解析中 n/N 等）… ボタンとは別の見た目（枠を消し文字だけ）
+        → .btn-edit:disabled（処理中は押せず、進捗テキストを表示する用途）
+   4. 破壊的（削除の ×）… 赤系。押し間違い/見落とし防止に当たり判定を広げる
+        → .btn-del
+   ※ 装飾は Material Symbols を使う（絵文字は使わない＝既存方針）。
+   ───────────────────────────────────────────────────────── */
 .btn-primary { background: #06C755; color: #fff; border: none; border-radius: 6px; padding: 8px 18px; font-weight: 600; cursor: pointer; }
 .btn-primary:disabled { opacity: .6; cursor: default; }
 .btn-add { background: #eef7f0; color: #06864a; border: 1px solid #bfe3cd; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
 .btn-add:disabled { opacity: .4; cursor: not-allowed; background: #f3f4f6; color: #9ca3af; border-color: #e5e7eb; }
-.btn-del { background: none; border: none; color: #c00; font-size: 16px; cursor: pointer; }
+/* 副操作：白背景＋枠線。以前は未定義で素のボタンだった */
+.btn-edit { display: inline-flex; align-items: center; gap: 4px; background: #fff; color: #374151; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 12px; font-size: 13px; line-height: 1.4; cursor: pointer; }
+.btn-edit:hover { background: #f8fafc; border-color: #94a3b8; }
+/* 処理中は「状態表示」に化ける：枠を消して進捗テキストだけ見せる */
+.btn-edit:disabled { cursor: default; background: none; border-color: transparent; color: #6b7280; }
+.btn-edit .material-symbols-rounded { font-size: 16px; }
+/* 破壊的（削除）：赤・当たり判定を広げて誤押し/見落としを減らす */
+.btn-del { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; background: none; border: none; border-radius: 6px; color: #c00; font-size: 18px; line-height: 1; cursor: pointer; }
+.btn-del:hover { background: #fdecec; }
 .trade-add { display: flex; gap: 8px; align-items: center; margin-top: 14px; padding-top: 12px; border-top: 1px dashed #ddd; }
 .grand td { font-weight: 700; border-top: 2px solid #333; }
 .empty { color: #999; text-align: center; padding: 14px; }
