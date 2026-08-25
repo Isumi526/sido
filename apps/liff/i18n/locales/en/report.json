@@ -186,5 +186,13 @@
   "breakApproved": "approved",
   "earlyStartApproved": "Early start {time} is also approved",
   "paidLeaveOverNotice": "Your remaining paid leave is insufficient. This report needs approval by the site manager and owner (you can submit now; it applies once approved).",
-  "paidLeaveOverReason": "Paid leave over balance — approval requested"
+  "paidLeaveOverReason": "Paid leave over balance — approval requested",
+  "voiceStart": "Voice input",
+  "voiceListening": "Listening… (tap again to stop)",
+  "voiceParsing": "Reading your input…",
+  "voiceConfirmTitle": "Apply this content?",
+  "voiceNoChange": "No change",
+  "voiceCancel": "Cancel",
+  "voiceApply": "Apply this",
+  "voiceFailed": "Could not read that. Please try again."
 }

@@ -86,6 +86,63 @@
         <!-- 現場ブロック（稼働ありの場合のみ表示） -->
         <template v-if="isWorkingStr === 'working'">
 
+        <!-- 音声入力（8/19会議）: 話す→AIが項目に展開→必ず確認してから反映。
+             非対応環境（voice.isSupported=false）ではボタンを出さず従来入力のまま。 -->
+        <div v-if="voice.isSupported.value" class="voice-row">
+          <button type="button" class="voice-btn" :class="{ listening: voice.listening.value }"
+                  data-testid="voice-input-btn" :disabled="voiceBusy" @click="onVoiceClick">
+            <span class="material-symbols-rounded">{{ voice.listening.value ? 'graphic_eq' : 'mic' }}</span>
+            {{ voice.listening.value ? $t('report.voiceListening') : (voiceBusy ? $t('report.voiceParsing') : $t('report.voiceStart')) }}
+          </button>
+          <span v-if="voiceError" class="voice-error" data-testid="voice-error">{{ voiceError }}</span>
+        </div>
+
+        <!-- 確認モーダル: 反映前に「この内容で反映していいですか」（会議合意）。修正してから確定 -->
+        <div v-if="voiceConfirm" class="voice-modal-back" data-testid="voice-confirm">
+          <div class="voice-modal">
+            <h3>{{ $t('report.voiceConfirmTitle') }}</h3>
+            <p class="voice-heard"><span class="material-symbols-rounded">hearing</span>{{ voiceDraft.raw }}</p>
+            <label class="voice-field">
+              <span>{{ $t('report.site') }}</span>
+              <select v-model="voiceDraft.siteName" class="select" data-testid="voice-site">
+                <option value="">{{ $t('report.voiceNoChange') }}</option>
+                <option v-for="n in voiceSiteChoices" :key="n" :value="n">{{ n }}</option>
+              </select>
+            </label>
+            <label class="voice-field">
+              <span>{{ $t('report.workCategory') }}</span>
+              <select v-model="voiceDraft.workCategoryId" class="select" data-testid="voice-workcat">
+                <option value="">{{ $t('report.voiceNoChange') }}</option>
+                <option v-for="c in workCategoryOptions" :key="c.id" :value="c.id">{{ c.name }}</option>
+              </select>
+            </label>
+            <div class="voice-field-row">
+              <label class="voice-field">
+                <span>{{ $t('report.startTime') }}</span>
+                <select v-model="voiceDraft.startTime" class="select" data-testid="voice-start">
+                  <option value="">--</option>
+                  <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
+                </select>
+              </label>
+              <label class="voice-field">
+                <span>{{ $t('report.endTime') }}</span>
+                <select v-model="voiceDraft.endTime" class="select" data-testid="voice-end">
+                  <option value="">--</option>
+                  <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
+                </select>
+              </label>
+            </div>
+            <label class="voice-field">
+              <span>{{ $t('report.noteSection') }}</span>
+              <textarea v-model="voiceDraft.note" class="input" rows="2" data-testid="voice-note" />
+            </label>
+            <div class="voice-modal-btns">
+              <button type="button" class="btn-cancel" data-testid="voice-cancel" @click="voiceConfirm = false">{{ $t('report.voiceCancel') }}</button>
+              <button type="button" class="btn-apply" data-testid="voice-apply" @click="applyVoiceDraft">{{ $t('report.voiceApply') }}</button>
+            </div>
+          </div>
+        </div>
+
         <!-- 出張区分（稼働ありの日のみ・出張手当 +¥3,000/日を集計に計上） -->
         <label class="trip-toggle" data-testid="business-trip-toggle">
           <input type="checkbox" v-model="report.form.value.isBusinessTrip" />
@@ -1663,6 +1720,86 @@ function findWorkerTimeOverlap(): string | null {
 const workCategoryOptions = computed(() =>
   master.workCategories.value.filter(c => c.scope === null || c.scope === 'site'))
 
+// ── 音声入力（8/19会議）: 話す→report-voice-parse EFで解釈→確認して反映 ──
+const voice = useVoiceInput()
+const voiceBusy = ref(false)
+const voiceError = ref<string | null>(null)
+const voiceConfirm = ref(false)
+const voiceDraft = reactive({
+  siteName: '' as string,
+  workCategoryId: '' as string,
+  startTime: '' as string,
+  endTime: '' as string,
+  note: '' as string,
+  raw: '' as string,
+})
+// 現場の選択肢（現場名。__unset__ は除く）
+const voiceSiteChoices = computed(() => master.siteNames.value.filter((n: string) => n !== '__unset__'))
+// EFが返した "HH:MM" を実在する TIME_OPTIONS の一番近い値に寄せる（無ければ空）
+function snapTime(t: string | null): string {
+  if (!t) return ''
+  if (TIME_OPTIONS.includes(t)) return t
+  const target = parseMin(t)
+  if (target < 0) return ''
+  let best = '', diff = Infinity
+  for (const o of TIME_OPTIONS) {
+    const d = Math.abs(parseMin(o) - target)
+    if (d < diff) { diff = d; best = o }
+  }
+  return best
+}
+function onVoiceClick() {
+  voiceError.value = null
+  if (voice.listening.value) { voice.stop(); return }
+  voice.start(async (text: string) => {
+    voiceBusy.value = true
+    try {
+      const efUrl = config.public.edgeFunctionUrl
+      const anonKey = config.public.supabaseAnonKey as string
+      const res = await $fetch<any>(`${efUrl}/report-voice-parse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: anonKey, Authorization: `Bearer ${anonKey}` },
+        body: {
+          transcript: text,
+          sites: voiceSiteChoices.value,
+          workCategories: workCategoryOptions.value.map((c: any) => ({ id: c.id, name: c.name })),
+        },
+      })
+      if (res?.error) throw new Error(res.error)
+      voiceDraft.siteName = voiceSiteChoices.value.includes(res.siteName) ? res.siteName : ''
+      voiceDraft.workCategoryId = res.workCategoryId ?? ''
+      voiceDraft.startTime = snapTime(res.startTime)
+      voiceDraft.endTime = snapTime(res.endTime)
+      voiceDraft.note = res.note ?? ''
+      voiceDraft.raw = res.raw ?? text
+      voiceConfirm.value = true
+    } catch (e: any) {
+      voiceError.value = t('report.voiceFailed')
+      console.error('[voice-parse]', e)
+    } finally {
+      voiceBusy.value = false
+    }
+  })
+}
+// 確認画面で「反映」: 先頭の現場ブロック＋備考へ入れる（空欄の項目は触らない）
+function applyVoiceDraft() {
+  const site0 = report.form.value.sites?.[0]
+  if (site0) {
+    if (voiceDraft.siteName) { site0.siteName = voiceDraft.siteName; onSiteChange(0) }
+    if (voiceDraft.workCategoryId) site0.workCategoryId = voiceDraft.workCategoryId
+    const w0 = site0.workers?.[0]
+    if (w0) {
+      if (voiceDraft.startTime) w0.startTime = voiceDraft.startTime
+      if (voiceDraft.endTime) w0.endTime = voiceDraft.endTime
+    }
+  }
+  if (voiceDraft.note) {
+    const cur = report.form.value.note ?? ''
+    report.form.value.note = cur ? `${cur}\n${voiceDraft.note}` : voiceDraft.note
+  }
+  voiceConfirm.value = false
+}
+
 /**
  * 既定の作業区分＝「現場作業」。
  * ★入力項目がいきなり増えるとパニックになる人が出るので最初から選択済みにする（2026-08-16 人）。
@@ -3022,6 +3159,48 @@ html, body {
   transition: opacity 0.15s;
 }
 .btn-primary:hover { opacity: 0.85; }
+
+/* ── 音声入力 ── */
+.voice-row { display: flex; align-items: center; gap: 10px; margin: 4px 0 14px; flex-wrap: wrap; }
+.voice-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: #fff; color: var(--accent);
+  border: 1.5px solid var(--accent); border-radius: 999px;
+  padding: 9px 18px; font-size: 14px; font-weight: 700;
+  font-family: var(--font); cursor: pointer;
+}
+.voice-btn:disabled { opacity: .5; cursor: default; }
+.voice-btn.listening { background: var(--accent); color: #fff; animation: voice-pulse 1s ease-in-out infinite; }
+@keyframes voice-pulse { 0%,100% { opacity: 1; } 50% { opacity: .6; } }
+.voice-error { color: #c0392b; font-size: 13px; }
+.voice-modal-back {
+  position: fixed; inset: 0; background: rgba(0,0,0,.45);
+  display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px;
+}
+.voice-modal {
+  background: #fff; border-radius: 14px; padding: 20px;
+  width: 100%; max-width: 420px; max-height: 88vh; overflow-y: auto;
+}
+.voice-modal h3 { margin: 0 0 12px; font-size: 17px; }
+.voice-heard {
+  display: flex; align-items: flex-start; gap: 6px;
+  background: #f4f6f8; border-radius: 8px; padding: 10px 12px;
+  font-size: 13px; color: #444; margin-bottom: 14px;
+}
+.voice-heard .material-symbols-rounded { font-size: 18px; color: #888; }
+.voice-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; font-size: 13px; font-weight: 700; color: #555; }
+.voice-field-row { display: flex; gap: 12px; }
+.voice-field-row .voice-field { flex: 1; }
+.voice-modal-btns { display: flex; gap: 10px; margin-top: 8px; }
+.voice-modal-btns button { flex: 1; }
+.btn-cancel {
+  background: #f0f0f0; color: #555; border: none; border-radius: 8px;
+  padding: 12px; font-size: 14px; font-weight: 700; font-family: var(--font); cursor: pointer;
+}
+.btn-apply {
+  background: var(--accent); color: #fff; border: none; border-radius: 8px;
+  padding: 12px; font-size: 14px; font-weight: 700; font-family: var(--font); cursor: pointer;
+}
 
 .btn-history {
   background: transparent; color: var(--text2);
