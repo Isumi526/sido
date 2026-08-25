@@ -72,6 +72,14 @@ const SHARES = [
       'apps/liff/composables/schedule-core.gen.ts',
     ],
   },
+  {
+    src: 'shared/paid-leave.ts',
+    dests: [
+      'apps/admin/src/lib/paid-leave.gen.ts',
+      'apps/liff/composables/paid-leave.gen.ts',
+      'supabase/functions/_shared/paid-leave.gen.ts',
+    ],
+  },
 ]
 
 const HEADER = (srcRel) =>

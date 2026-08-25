@@ -1,0 +1,20 @@
+{
+  "navSubtitle": "有給休暇",
+  "title": "有給休暇",
+  "remaining": "残り日数",
+  "days": "日",
+  "readonlyNote": "確認のみのページです。付与・調整は会社(管理側)が行います。",
+  "grantSection": "付与履歴",
+  "grantedAt": "付与日",
+  "grantDays": "付与",
+  "leftover": "残",
+  "used": "使用",
+  "expires": "失効",
+  "expired": "失効済み",
+  "usageSection": "使用履歴",
+  "usageDate": "取得日",
+  "noGrants": "付与の記録はありません",
+  "noUsage": "使用の記録はありません",
+  "contractorNote": "業務委託のため年次有給休暇の付与対象外です。",
+  "loadError": "有給状況を取得できませんでした。時間をおいて再度お試しください。"
+}
