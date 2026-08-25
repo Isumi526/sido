@@ -1,0 +1,20 @@
+{
+  "navSubtitle": "Paid leave",
+  "title": "Paid leave",
+  "remaining": "Remaining",
+  "days": "days",
+  "readonlyNote": "View only. Grants and adjustments are managed by the company.",
+  "grantSection": "Grant history",
+  "grantedAt": "Granted",
+  "grantDays": "Granted",
+  "leftover": "Left",
+  "used": "Used",
+  "expires": "Expires",
+  "expired": "Expired",
+  "usageSection": "Usage history",
+  "usageDate": "Date",
+  "noGrants": "No grants recorded",
+  "noUsage": "No usage recorded",
+  "contractorNote": "Contractors are not eligible for annual paid leave.",
+  "loadError": "Could not load paid-leave status. Please try again later."
+}
