@@ -184,5 +184,7 @@
   "punchGapStart": "in",
   "punchGapEnd": "out",
   "breakApproved": "approved",
-  "earlyStartApproved": "Early start {time} is also approved"
+  "earlyStartApproved": "Early start {time} is also approved",
+  "paidLeaveOverNotice": "Your remaining paid leave is insufficient. This report needs approval by the site manager and owner (you can submit now; it applies once approved).",
+  "paidLeaveOverReason": "Paid leave over balance — approval requested"
 }

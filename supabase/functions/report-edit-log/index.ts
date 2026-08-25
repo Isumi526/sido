@@ -311,6 +311,7 @@ async function needsDualApproval(
   svc: any, kind: string, reportId: string | null, payload: Record<string, unknown>,
 ): Promise<boolean> {
   if (kind === 'late_new') return true
+  if (kind === 'paid_leave_over') return true   // 有給残不足の申請は現場責任者＋オーナーの二重承認
   if (!reportId) return false
   const { data: cur } = await svc.from('daily_reports').select('sites').eq('id', reportId).maybeSingle()
   if (!cur) return false
@@ -486,7 +487,7 @@ async function handleReview(svc: any, body: any, authHeader: string): Promise<Re
   //  日報詳細の「この日報の承認履歴を見る」（report_id で数えている）が永久に0件になる。
   //  ＝後出しで出てきた日報こそ誰が承認したか追いたいのに、そこだけ履歴から切れていた（2026-08-10 レビューで発見）。
   let appliedReportId: string | null = pend.report_id ?? null
-  if (pend.kind === 'late_new') {
+  if (pend.kind === 'late_new' || pend.kind === 'paid_leave_over') {   // 新規提出は承認時に日報を生成(upsert)
     const { data: up, error: upErr } = await svc.from('daily_reports').upsert(
       { ...cols, account_id: accountId, user_id: pend.report_user_id, date: pend.report_date },
       { onConflict: 'user_id,date' })
@@ -655,12 +656,13 @@ Deno.serve(async (req) => {
 
   // ★内容の保留（承認制）。payload が来た時だけ。
   //  daily_reports はここでは一切書き換えない＝承認されるまで集計に出ない。
-  //   kind='edit'     … 送信済み日報の編集（report_id あり・承認で update）
-  //   kind='late_new' … 期限切れ(3日より前)の新規提出（まだ日報の行が無い・承認で upsert）
+  //   kind='edit'            … 送信済み日報の編集（report_id あり・承認で update）
+  //   kind='late_new'        … 期限切れ(3日より前)の新規提出（まだ日報の行が無い・承認で upsert）
+  //   kind='paid_leave_over' … 有給残不足で有給を選んだ新規提出（同上・二重承認で upsert）
   let pendingId: string | null = null
   const payload = sanitizePayload(body.payload)
   if (payload) {
-    const kind = body.kind === 'late_new' ? 'late_new' : 'edit'
+    const kind = body.kind === 'late_new' ? 'late_new' : body.kind === 'paid_leave_over' ? 'paid_leave_over' : 'edit'
 
     if (kind === 'edit') {
       if (!reportId) return json({ ok: false, error: 'report_id_required_for_pending' }, 400)

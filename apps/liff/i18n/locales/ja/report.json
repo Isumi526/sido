@@ -184,5 +184,7 @@
   "punchGapStart": "出勤",
   "punchGapEnd": "退勤",
   "breakApproved": "承認済み",
-  "earlyStartApproved": "早朝入り {time} も承認されています"
+  "earlyStartApproved": "早朝入り {time} も承認されています",
+  "paidLeaveOverNotice": "有給の残日数が不足しています。この日報は現場責任者とオーナーの承認が必要です（送信は今できます。承認されると反映されます）。",
+  "paidLeaveOverReason": "有給残不足のため承認申請"
 }
