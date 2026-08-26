@@ -4,6 +4,7 @@
 // ============================================================
 import { useI18n } from 'vue-i18n'
 import { gt } from '~/utils/i18n-global'
+import { scheduleNotifBody } from '~/composables/schedule-core.gen'
 
 export type ScheduleCategory = 'work' | 'off' | 'training' | 'meeting' | 'other'
 
@@ -200,7 +201,15 @@ export const useSchedules = () => {
         await supabase.from('schedule_notifications').insert({
           account_id: accountId, worker_id: wid, schedule_id: schedule.id,
           title: '新しい予定が追加されました',
-          body: `${schedule.title}（${schedule.start_date}${schedule.end_date !== schedule.start_date ? '〜' + schedule.end_date : ''}）`,
+          body: scheduleNotifBody({
+            creatorName: schedule.created_by_name,
+            title: schedule.title,
+            startDate: schedule.start_date,
+            endDate: schedule.end_date,
+            startTime: schedule.start_time,
+            endTime: schedule.end_time,
+          }),
+          link_path: '/calendar',
         })
       }
     } catch { /* 通知失敗は無視 */ }
