@@ -155,6 +155,33 @@ export function chipStyle(
   return { borderLeftColor: col, borderLeftWidth: '6px', background: col + '26' }   // 26≒15%
 }
 
+// ──────────────────── 通知本文（schedule_notifications） ────────────────────
+
+/**
+ * 予定追加通知の本文を組み立てる。「誰が・何を・いつ」を1行で分かるようにする
+ * （2026-08-26・作成者名/時刻が抜けていた実装を拡充）。
+ * creatorName が無い時は「予定」を主語にする（線UIの都合等で名前が取れないケースの保険）。
+ */
+export function scheduleNotifBody(input: {
+  creatorName: string | null
+  title: string
+  startDate: string   // 'YYYY-MM-DD'
+  endDate: string      // 'YYYY-MM-DD'
+  startTime?: string | null  // 'HH:MM'
+  endTime?: string | null
+}): string {
+  const who = input.creatorName ? `${input.creatorName}さんが` : ''
+  const [, sm, sd] = input.startDate.split('-')
+  const dateLabel = input.endDate !== input.startDate
+    ? (() => { const [, em, ed] = input.endDate.split('-'); return `${Number(sm)}/${Number(sd)}〜${Number(em)}/${Number(ed)}` })()
+    : `${Number(sm)}/${Number(sd)}`
+  const timeLabel = input.startTime
+    ? `${input.startTime}${input.endTime ? `〜${input.endTime}` : ''}`
+    : ''
+  const when = timeLabel ? `${dateLabel} ${timeLabel}` : dateLabel
+  return `${who}「${input.title}」を追加（${when}）`
+}
+
 // ──────────────────── 編集差分ビルダー（schedule_edits 監査ログ） ────────────────────
 
 /**
