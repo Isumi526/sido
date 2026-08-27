@@ -98,6 +98,29 @@
             </a>
           </div>
         </div>
+        <!-- 送り出し資料の承認（2026-08-27 出退勤モデル変更で打刻から切り離した）。
+             現場に参加している作業員が内容を確認して承認する。誰がいつ承認したかを残す。 -->
+        <div v-if="consentDocs.length" class="att-block" data-testid="site-consent-block">
+          <div class="att-ttl-row">
+            <div class="att-ttl">{{ $t('sitesView.consentTitle') }}</div>
+          </div>
+          <p class="consent-hint">{{ $t('sitesView.consentHint') }}</p>
+          <div v-for="d in consentDocs" :key="d.id" class="consent-row" :data-testid="`consent-row-${d.id}`">
+            <a v-if="d.url" :href="d.url" target="_blank" rel="noopener" class="doc consent-doc">
+              <span class="material-symbols-rounded doc-icon">description</span>{{ d.name || $t('sitesView.documentFallback') }}
+            </a>
+            <span v-else class="doc consent-doc"><span class="material-symbols-rounded doc-icon">description</span>{{ d.name || $t('sitesView.documentFallback') }}</span>
+            <span v-if="d.consentedAt" class="consent-done" :data-testid="`consent-done-${d.id}`">
+              <span class="material-symbols-rounded">check_circle</span>{{ $t('sitesView.consentDone') }}
+            </span>
+            <button
+              v-else type="button" class="consent-btn" :disabled="consentBusy === d.id"
+              :data-testid="`consent-btn-${d.id}`" @click="approveDoc(d)"
+            >{{ consentBusy === d.id ? $t('common.saving') : $t('sitesView.consentApprove') }}</button>
+          </div>
+          <p v-if="consentError" class="consent-error" data-testid="consent-error">{{ consentError }}</p>
+        </div>
+
         <div class="att-block">
           <div class="att-ttl-row">
             <div class="att-ttl">{{ $t('sitesView.documents') }}</div>
@@ -168,6 +191,59 @@ async function onToggleShare(userId: string, checked: boolean) {
 
 const photos = computed(() => atts.value.filter((a) => a.kind === 'photo'))
 const docs   = computed(() => atts.value.filter((a) => a.kind !== 'photo'))
+
+// ── 送り出し資料の承認（2026-08-27 出退勤モデル変更・打刻から切り離した）──
+// ★読み書きは EF 経由。anon には site_document_consents の権限を渡していない
+//  （身元の無い anon では「本人が同意した」ことを担保できないため）。
+type ConsentDoc = { id: string; name: string | null; consentedAt: string | null; url?: string | null }
+const consentDocs  = ref<ConsentDoc[]>([])
+const consentBusy  = ref<string | null>(null)
+const consentError = ref('')
+
+async function callConsentFn(payload: Record<string, unknown>): Promise<any> {
+  const idToken = await getIdToken().catch(() => null)
+  const config = useRuntimeConfig()
+  const devLineUserId = config.public.appEnv === 'development' ? (profile.value?.userId ?? '') : ''
+  const { data, error } = await useSupabase().functions.invoke('site-document-consent', {
+    body: { ...payload, ...(idToken ? { line_id_token: idToken } : {}), dev_line_user_id: devLineUserId },
+  })
+  if (error) throw error
+  return data
+}
+
+async function loadConsentDocs(siteId: string) {
+  try {
+    const res = await callConsentFn({ action: 'list', siteId })
+    if (!res?.ok) { consentDocs.value = []; return }
+    const list = (res.documents ?? []) as ConsentDoc[]
+    // 資料を開けるように署名URLを付ける（承認の前に中身を読ませる）
+    await Promise.all(list.map(async (d) => { d.url = await signedUrl(d.id) }))
+    consentDocs.value = list
+  } catch (e) {
+    console.error('[site-consent] 取得に失敗:', e)
+    consentDocs.value = []
+  }
+}
+
+async function approveDoc(d: ConsentDoc) {
+  consentError.value = ''
+  consentBusy.value = d.id
+  try {
+    const res = await callConsentFn({ action: 'consent', attachmentId: d.id })
+    if (!res?.ok) {
+      consentError.value = res?.error === 'not_participant'
+        ? t('sitesView.consentNotParticipant')
+        : t('sitesView.consentFailed')
+      return
+    }
+    d.consentedAt = new Date().toISOString()
+  } catch (e) {
+    console.error('[site-consent] 承認に失敗:', e)
+    consentError.value = t('sitesView.consentFailed')
+  } finally {
+    consentBusy.value = null
+  }
+}
 
 // 現場情報の編集(admin機能のLIFF移植・現場責任者のみ)
 const editOpen = ref(false)
@@ -261,6 +337,7 @@ async function load() {
     const list = (attData ?? []) as Att[]
     await Promise.all(list.map(async (a) => { a.url = await signedUrl(a.id) }))
     atts.value = list
+    await loadConsentDocs(siteId)
 
     // 現場責任者(sites.responsible_worker_id)だけに招待UIを表示する
     if (accountId) {
@@ -345,6 +422,26 @@ onMounted(load)
 .photo { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; border: 1px solid #eee; }
 .doc { display: block; color: #1a56c4; text-decoration: none; font-size: 14px; padding: 4px 0; }
 .doc-icon { font-size: 14px; vertical-align: -2px; margin-right: 2px; }
+
+/* ── 送り出し資料の承認 ── */
+.consent-hint { margin: 0 0 8px; font-size: 12px; color: #64748b; line-height: 1.6; }
+.consent-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 0; border-bottom: 1px solid #f1f5f9;
+}
+.consent-row:last-of-type { border-bottom: none; }
+.consent-doc { flex: 1; min-width: 0; }
+.consent-btn {
+  flex: none; background: #06C755; color: #fff; border: none; border-radius: 8px;
+  padding: 8px 14px; font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.consent-btn:disabled { opacity: .5; cursor: default; }
+.consent-done {
+  flex: none; display: inline-flex; align-items: center; gap: 4px;
+  color: #047857; font-size: 13px; font-weight: 700;
+}
+.consent-done .material-symbols-rounded { font-size: 18px; }
+.consent-error { margin: 8px 0 0; font-size: 13px; color: #b91c1c; }
 
 .edit-form { display: flex; flex-direction: column; gap: 10px; background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
 .edit-field { display: flex; flex-direction: column; gap: 4px; }

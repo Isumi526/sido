@@ -16,5 +16,12 @@
   "membersTitle": "メンバー ({count}人)",
   "editInfo": "現場情報を編集",
   "saveFailed": "保存に失敗しました",
-  "attachFailed": "ファイルの追加に失敗しました"
+  "attachFailed": "ファイルの追加に失敗しました",
+  "consentTitle": "確認が必要な資料",
+  "consentHint": "資料を開いて内容を確認してから、承認を押してください。",
+  "consentApprove": "確認しました",
+  "consentDone": "承認済み",
+  "consentFailed": "承認を記録できませんでした。時間をおいて試してください。",
+  "consentNotParticipant": "この現場のメンバーではないため承認できません。",
+  "documentFallback": "資料"
 }
