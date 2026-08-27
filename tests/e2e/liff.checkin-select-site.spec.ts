@@ -1,92 +1,69 @@
 // ============================================================
 //  liff.checkin-select-site.spec.ts
-//  出退勤画面(QRなしの現場選択導線・/checkin)。
-//   - 一覧が画面より長くなっても内部スクロールになり、ページ全体が
-//     はみ出して背景が途切れることが無い(2026-07-20)。
-//   - 出勤中(未退勤)の時は現場一覧を出さず、「退勤」「残業申請」だけの
-//     専用画面(checked-in-focus)に直行する(2026-07-21・退勤漏れ防止)。
-//     一覧はそこから「他の現場を選ぶ」で escape した時だけ表示される。
+//  出退勤画面(/checkin)。
+//
+//  ★2026-08-27 出退勤モデル変更（大塚さん・2026-08-19 打合せ）:
+//   現場ごとの打刻をやめ、1日「最初の出勤」「最後の退勤」の2回のみにした。
+//   これに伴い「現場選択」画面と「出勤中の現場フォーカス」画面は廃止し、
+//   /checkin を開いたら直接 確認画面（checklist）に入る。
+//   ここで守るのは:
+//    - 現場を選ばされないこと（打刻が現場に紐づかない）
+//    - 出勤中なら退勤の確認画面になること（出勤/退勤の自動判定が現場を跨いで効く）
+//    - 現場に貼ってある旧QR（/checkin/<site_id>）を開いても壊れないこと
 // ============================================================
 import { test, expect } from '@playwright/test'
 import { rest, restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()
-const CHECKEDIN_SITE = `E2E出勤中現場_${TS}`
-const OTHER_SITES = Array.from({ length: 12 }, (_, i) => `E2E出退勤一覧現場${i}_${TS}`)
-let checkedInSiteId = ''
-let otherSiteIds: string[] = []
+const SITE = `E2E旧QR現場_${TS}`
+let siteId = ''
 let workerId = ''
 
 test.beforeAll(async () => {
   const accountId = await getAccountId()
-  checkedInSiteId = (await rest('sites', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
-    account_id: accountId, name: CHECKEDIN_SITE, active: true,
+  siteId = (await rest('sites', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
+    account_id: accountId, name: SITE, active: true,
   }) }))[0].id
-  otherSiteIds = []
-  for (const name of OTHER_SITES) {
-    const id = (await rest('sites', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
-      account_id: accountId, name, active: true,
-    }) }))[0].id
-    otherSiteIds.push(id)
-  }
-  const users = await rest('users?line_user_id=eq.dev-user-id&select=worker_id')
-  workerId = users[0].worker_id
-  await restSrv('attendance_logs', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
-    site_id: checkedInSiteId, worker_id: workerId, type: 'checkin', agreed_rule_texts: [],
-  }) })
+  workerId = (await rest('users?line_user_id=eq.dev-user-id&select=worker_id'))[0].worker_id
 })
 test.afterAll(async () => {
-  await restSrv(`attendance_logs?worker_id=eq.${workerId}&site_id=eq.${checkedInSiteId}`, { method: 'DELETE' }).catch(() => {})
-  await rest(`sites?id=eq.${checkedInSiteId}`, { method: 'DELETE' }).catch(() => {})
-  for (const id of otherSiteIds) await rest(`sites?id=eq.${id}`, { method: 'DELETE' }).catch(() => {})
+  // ★全期間を消さない。global-setup が積んだ当月のFEAT_ATT打刻まで巻き込み、
+  //  admin.attendance-on-card 等が一括実行時だけ落ちる（2026-08-27 に踏んだ）。
+  await restSrv(`attendance_logs?worker_id=eq.${workerId}&checked_at=gte.${encodeURIComponent(
+    new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString())}`, { method: 'DELETE' }).catch(() => {})
+  await rest(`sites?id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})
 })
 
-test('出勤中(未退勤)の時は現場一覧を出さず、退勤/残業申請だけの専用画面が出る', async ({ page }) => {
+/** このワーカーの直近の打刻を消す（前の test の状態を持ち越さない） */
+async function clearRecentPunches() {
+  const since = new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString()
+  await restSrv(`attendance_logs?worker_id=eq.${workerId}&checked_at=gte.${encodeURIComponent(since)}`,
+    { method: 'DELETE' }).catch(() => {})
+}
+
+test('未打刻なら /checkin を開いた時点で「出勤前の確認」に入る（現場を選ばされない）', async ({ page }) => {
+  await clearRecentPunches()
   await page.goto('/checkin', { waitUntil: 'networkidle' })
-  await expect(page.getByTestId('focus-checkout')).toBeVisible({ timeout: 10000 })
-  await expect(page.locator('.focus-site')).toContainText(CHECKEDIN_SITE)
-  await expect(page.locator('.focus-tag')).toBeVisible()
-  // 一覧(target-list)はこの画面には出ない
+  await expect(page.locator('.checklist-header.checkin')).toBeVisible({ timeout: 15000 })
+  // 現場一覧・現場フォーカス画面はもう出ない
   await expect(page.locator('.target-list')).toHaveCount(0)
+  await expect(page.getByTestId('focus-checkout')).toHaveCount(0)
 })
 
-test('専用画面の残業申請ボタンから現場名をクエリに付けて/overtimeへ遷移する', async ({ page }) => {
+test('出勤中(未退勤)なら「退勤前の確認」に入る（現場を跨いで判定する）', async ({ page }) => {
+  await clearRecentPunches()
+  // 現場に紐づかない出勤打刻を入れる
+  await restSrv('attendance_logs', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({
+    worker_id: workerId, type: 'checkin', agreed_rule_texts: [],
+  }) })
   await page.goto('/checkin', { waitUntil: 'networkidle' })
-  await page.getByTestId('focus-overtime-link').click()
-  await expect(page).toHaveURL(new RegExp(`/overtime\\?site=${encodeURIComponent(CHECKEDIN_SITE)}`), { timeout: 10000 })
-  // ?site=<現場名>から現場を自動チェックする側のロジック(overtime.vue)は当日16:00締切後は
-  // フォーム自体が非表示になり検証できない(既存の時刻依存の仕様・本チケットの変更対象外)。
-  // 締切前ならチェック状態まで検証する。
-  const checkbox = page.getByRole('checkbox', { name: CHECKEDIN_SITE, exact: true })
-  if (await checkbox.count()) await expect(checkbox).toBeChecked()
+  await expect(page.locator('.checklist-header.checkout')).toBeVisible({ timeout: 15000 })
 })
 
-test('専用画面の退勤ボタンから退勤確認(チェックリスト)画面に進む', async ({ page }) => {
-  await page.goto('/checkin', { waitUntil: 'networkidle' })
-  await page.getByTestId('focus-checkout').click()
-  await expect(page.locator('.checklist-header.checkout')).toBeVisible({ timeout: 10000 })
-  await expect(page.locator('.site-label')).toContainText(CHECKEDIN_SITE)
-})
-
-test('専用画面から「他の現場を選ぶ」で現場一覧に逃がせ、一覧は内部スクロールになりページ全体ははみ出さない', async ({ page }) => {
-  await page.goto('/checkin', { waitUntil: 'networkidle' })
-  await page.getByTestId('focus-switch-site').click()
-  await expect(page.locator('.target-list')).toBeVisible({ timeout: 10000 })
-
-  const info = await page.evaluate(() => {
-    const list = document.querySelector('.target-list')!
-    const de = document.documentElement
-    return {
-      listScrollsInternally: list.scrollHeight > list.clientHeight,
-      pageOverflow: de.scrollHeight - de.clientHeight,
-    }
-  })
-  expect(info.listScrollsInternally).toBe(true)
-  // ページ全体のはみ出しは無い(safe-area等の数px誤差は許容)
-  expect(info.pageOverflow).toBeLessThan(30)
-
-  // 逃がした一覧内でも出勤中の現場は最上位+残業申請導線が引き続き出る
-  const rows = page.locator('.target-row-wrap')
-  await expect(rows.first()).toContainText(CHECKEDIN_SITE)
-  await expect(rows.first().locator('.checkedin-tag')).toBeVisible()
+test('現場に貼ってある旧QR(/checkin/<site_id>)を開いても壊れず、通常の打刻画面になる', async ({ page }) => {
+  await clearRecentPunches()
+  await page.goto(`/checkin/${siteId}`, { waitUntil: 'networkidle' })
+  await expect(page.locator('.checklist-header.checkin')).toBeVisible({ timeout: 15000 })
+  // 現場名は出さない（打刻に現場は関係しなくなった）
+  await expect(page.locator('.site-label')).toHaveCount(0)
 })

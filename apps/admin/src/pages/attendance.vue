@@ -6,12 +6,9 @@
 
     <!-- 絞り込み -->
     <div class="filter-bar">
-      <select v-model="filterSiteId" class="filter-select">
-        <option value="">すべての現場</option>
-        <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.name }}</option>
-      </select>
-
-      <select v-model="filterWorkerId" class="filter-select">
+      <!-- ★現場の絞り込みは廃止（2026-08-27 出退勤モデル変更）。打刻が現場に紐づかなくなり
+           （1日＝最初の出勤・最後の退勤の2回）、絞り込む対象が無い。 -->
+      <select v-model="filterWorkerId" class="filter-select" data-testid="filter-worker">
         <option value="">すべての作業員</option>
         <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.name }}</option>
       </select>
@@ -61,7 +58,6 @@
           <tr>
             <th>日時</th>
             <th>区分</th>
-            <th>現場</th>
             <th>作業員</th>
             <th>代理者</th>
             <th>確認ルール</th>
@@ -79,7 +75,6 @@
                    混ぜると勤怠の証跡として使えない（後付けは現場ルールの同意も取っていない）。 -->
               <span v-if="log.backdated" class="backdated-badge" data-testid="log-backdated">後から入力</span>
             </td>
-            <td>{{ log.sites?.name ?? '—' }}</td>
             <td>{{ log.workers?.name ?? '—' }}</td>
             <td class="proxy">{{ log.proxy?.name ?? '—' }}</td>
             <td class="rules">
@@ -115,7 +110,7 @@
           <div>
             <div class="modal-title">確認したルール</div>
             <div class="modal-sub">
-              {{ rulesModal.sites?.name ?? '—' }} ／ {{ rulesModal.workers?.name ?? '—' }}
+              {{ rulesModal.workers?.name ?? '—' }}
               ／ {{ rulesModal.type === 'checkin' ? '出勤' : '退勤' }}
               ／ {{ fmtDateTime(rulesModal.checked_at) }}
             </div>
@@ -146,20 +141,16 @@ type Log = {
   location_lng: number | null
   agreed_rule_texts: string[] | null
   backdated: boolean | null
-  sites:   { name: string } | null
   workers: { name: string } | null
   proxy:   { name: string } | null
 }
 
-type Site   = { id: string; name: string }
 type Worker = { id: string; name: string }
 
 const logs    = ref<Log[]>([])
-const sites   = ref<Site[]>([])
 const workers = ref<Worker[]>([])
 const loading = ref(true)
 
-const filterSiteId   = ref('')
 const filterWorkerId = ref('')
 const filterType     = ref('')
 const filterFrom     = ref('')
@@ -184,11 +175,9 @@ const dayEndIso   = (d: string) => new Date(`${d}T23:59:59.999`).toISOString()
 
 async function loadMasters() {
   const accountId = await getAccountId()
-  const [{ data: siteData }, { data: workerData }] = await Promise.all([
-    supabase.from('sites').select('id, name').eq('account_id', accountId).eq('active', true).order('name_kana', { nullsFirst: false }).order('name'),
-    supabase.from('workers').select('id, name, name_kana').eq('account_id', accountId).eq('active', true).order('name_kana', { nullsFirst: false }).order('name'),
-  ])
-  sites.value   = (siteData   ?? []) as Site[]
+  const { data: workerData } = await supabase
+    .from('workers').select('id, name, name_kana').eq('account_id', accountId).eq('active', true)
+    .order('name_kana', { nullsFirst: false }).order('name')
   workers.value = (workerData ?? []) as Worker[]
 }
 
@@ -210,7 +199,6 @@ async function load() {
       location_lng,
       agreed_rule_texts,
       backdated,
-      sites(name),
       workers!attendance_logs_worker_id_fkey(name),
       proxy:workers!attendance_logs_proxy_worker_id_fkey(name)
     `)
@@ -218,7 +206,6 @@ async function load() {
     .order('checked_at', { ascending: false })
     .limit(LIMIT)
 
-  if (filterSiteId.value)   query = query.eq('site_id', filterSiteId.value)
   if (filterWorkerId.value) query = query.eq('worker_id', filterWorkerId.value)
   if (filterType.value)     query = query.eq('type', filterType.value)
   if (filterFrom.value)     query = query.gte('checked_at', dayStartIso(filterFrom.value))

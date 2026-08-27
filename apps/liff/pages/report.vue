@@ -890,10 +890,13 @@ const proxy   = useProxyMode()
 const punches = usePunches()
 const myWorkerIdForPunch = ref<string | null>(null)
 
-/** その現場のその日の打刻（無ければ null＝行を出さない） */
-function punchOf(si: number): { checkin?: string; checkout?: string } | null {
-  const s = report.form.value.sites?.[si]
-  return punches.punchFor(myWorkerIdForPunch.value, report.form.value.date, s?.siteName)
+/**
+ * その日の打刻（無ければ null＝行を出さない）。
+ * ★2026-08-27 出退勤モデル変更で現場ごとの打刻は無くなった。1日の外枠（最早の出勤・
+ *  最遅の退勤）を各現場行に同じものとして出す（si は行の識別にのみ残す）。
+ */
+function punchOf(_si: number): { checkin?: string; checkout?: string } | null {
+  return punches.punchFor(myWorkerIdForPunch.value, report.form.value.date)
 }
 
 /** 打刻と申告した作業時刻のズレ（15分未満は出さない＝全行に数分のチップが並ぶのを防ぐ） */

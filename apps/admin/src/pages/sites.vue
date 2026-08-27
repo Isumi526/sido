@@ -49,7 +49,9 @@
             <td class="actions">
               <button class="btn-edit" @click="openEdit(s)">編集</button>
               <button class="btn-toggle" @click="toggleActive(s)">{{ s.active ? '無効化' : '有効化' }}</button>
-              <button class="btn-rules" @click="router.push(`/site-rules?site_id=${s.id}`)">ルール・QR設定</button>
+              <!-- ★「ルール・QR設定」は廃止（2026-08-27 出退勤モデル変更）。確認ルールは
+                   アカウント共通になり左メニューの「出退勤の確認ルール」へ集約。現場QRは
+                   打刻が現場に紐づかなくなったため発行自体をやめた。 -->
             </td>
           </tr>
           <tr v-if="!filtered.length"><td :colspan="mergeMode ? 6 : 5" class="empty">該当する現場がありません</td></tr>

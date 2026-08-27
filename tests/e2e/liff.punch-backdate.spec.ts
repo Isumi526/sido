@@ -12,6 +12,9 @@
 //     打刻は UPDATE/DELETE を禁止した追記専用の記録で、その場で押したものと
 //     後付けを混同すると勤怠の証跡として使えなくなる。
 //   ・際限なく後付けできないこと（4日より前は選べない）。
+//
+//  ★2026-08-27 出退勤モデル変更: 打刻が現場に紐づかなくなった（1日＝最初の出勤・
+//   最後の退勤の2回）。現場の選択欄は無くなり、重複判定も「日付×種別」になった。
 // ============================================================
 import { test, expect } from '@playwright/test'
 import { rest, restSrv, getAccountId } from './helpers'
@@ -33,7 +36,7 @@ async function punchesOf(date: string) {
   const lo = new Date(`${date}T00:00:00+09:00`).toISOString()
   const hi = new Date(`${date}T23:59:59+09:00`).toISOString()
   return await restSrv(
-    `attendance_logs?worker_id=eq.${workerId}&site_id=eq.${siteId}` +
+    `attendance_logs?worker_id=eq.${workerId}` +
     `&checked_at=gte.${encodeURIComponent(lo)}&checked_at=lte.${encodeURIComponent(hi)}` +
     `&select=type,checked_at,backdated,agreed_rule_texts&order=checked_at`)
 }
@@ -54,11 +57,17 @@ test.describe('打刻を忘れた日の遡り入力', () => {
     const since = new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString()
     await restSrv(`attendance_logs?worker_id=eq.${workerId}&checked_at=gte.${encodeURIComponent(since)}`,
       { method: 'DELETE' }).catch(() => {})
-    await restSrv(`attendance_logs?site_id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})
+    // 遡り対象日（今日〜4日前）も消す。現場で絞れなくなったので日付範囲で消す。
+    const lo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
+    await restSrv(`attendance_logs?worker_id=eq.${workerId}&checked_at=gte.${encodeURIComponent(lo)}`,
+      { method: 'DELETE' }).catch(() => {})
   })
 
   test.afterAll(async () => {
-    await restSrv(`attendance_logs?site_id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})
+    // ★全期間を消さない。global-setup が積んだ当月のFEAT_ATT打刻まで巻き込み、
+  //  admin.attendance-on-card 等が一括実行時だけ落ちる（2026-08-27 に踏んだ）。
+  await restSrv(`attendance_logs?worker_id=eq.${workerId}&checked_at=gte.${encodeURIComponent(
+    new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString())}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`sites?id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})
   })
 
@@ -72,7 +81,6 @@ test.describe('打刻を忘れた日の遡り入力', () => {
     const DAY = jstDay(2)
     await openLatePanel(page)
     await page.getByTestId('late-date').selectOption(DAY)
-    await page.getByTestId('late-site').selectOption(siteId)
     await page.getByTestId('late-checkin').selectOption('07:35')
     await page.getByTestId('late-checkout').selectOption('18:45')
     await page.getByTestId('late-submit').click()
@@ -102,41 +110,36 @@ test.describe('打刻を忘れた日の遡り入力', () => {
     expect(opts.length, '今日〜4日前の5日分').toBe(5)
   })
 
-  test('現場を選ばずに記録しようとすると弾かれる', async ({ page }) => {
+  test('★現場の選択欄は無い（打刻は現場に紐づかない）', async ({ page }) => {
     await openLatePanel(page)
-    await page.getByTestId('late-checkin').selectOption('08:00')
-    await page.getByTestId('late-submit').click()
-    await expect(page.getByTestId('late-error')).toContainText('現場を選んで', { timeout: 15000 })
+    await expect(page.getByTestId('late-site')).toHaveCount(0)
   })
 
   test('出勤・退勤のどちらも空なら弾かれる', async ({ page }) => {
     await openLatePanel(page)
-    await page.getByTestId('late-site').selectOption(siteId)
     await page.getByTestId('late-submit').click()
     await expect(page.getByTestId('late-error')).toContainText('どちらかは入力', { timeout: 15000 })
   })
 
   test('退勤が出勤より前だと弾かれる', async ({ page }) => {
     await openLatePanel(page)
-    await page.getByTestId('late-site').selectOption(siteId)
     await page.getByTestId('late-checkin').selectOption('18:00')
     await page.getByTestId('late-checkout').selectOption('08:00')
     await page.getByTestId('late-submit').click()
     await expect(page.getByTestId('late-error')).toContainText('後の時刻', { timeout: 15000 })
   })
 
-  test('★同じ日・同じ現場にすでに打刻があれば二重に足さない', async ({ page }) => {
+  test('★同じ日にすでに打刻があれば二重に足さない', async ({ page }) => {
     const DAY = jstDay(1)
     await restSrv('attendance_logs', {
       method: 'POST', headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({
-        site_id: siteId, worker_id: workerId, type: 'checkin',
+        worker_id: workerId, type: 'checkin',
         checked_at: `${DAY}T08:02:00+09:00`, agreed_rule_texts: [],
       }),
     })
     await openLatePanel(page)
     await page.getByTestId('late-date').selectOption(DAY)
-    await page.getByTestId('late-site').selectOption(siteId)
     await page.getByTestId('late-checkin').selectOption('07:00')
     await page.getByTestId('late-submit').click()
     await expect(page.getByTestId('late-error')).toContainText('すでにあります', { timeout: 15000 })

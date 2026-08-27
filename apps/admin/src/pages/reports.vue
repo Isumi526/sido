@@ -677,10 +677,12 @@ function jstDate(iso: string): string {
 function jstTime(iso: string): string {
   return new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }).format(new Date(iso))
 }
-function attendanceFor(r: any, site: any): { checkin?: string; checkout?: string } | null {
+// ★現場は使わない（2026-08-27 出退勤モデル変更で打刻が現場に紐づかなくなった）。
+//  引数の site は呼び出し側の行単位の都合で残してある。
+function attendanceFor(r: any, _site: any): { checkin?: string; checkout?: string } | null {
   const wid = r.users?.worker_id
   if (!wid) return null
-  return attendanceMap.value[`${wid}|${r.date}|${resolveSiteName(site)}`] ?? null
+  return attendanceMap.value[`${wid}|${r.date}`] ?? null
 }
 
 function resolveContractorName(site: any): string {
@@ -740,16 +742,16 @@ async function load() {
     const hiUtc = new Date(`${dateTo.value}T23:59:59+09:00`).toISOString()
     const { data: logs } = await supabase
       .from('attendance_logs')
-      .select('worker_id, type, checked_at, sites(name)')
+      .select('worker_id, type, checked_at')
       .in('worker_id', workerIds)
       .gte('checked_at', loUtc)
       .lte('checked_at', hiUtc)
       .order('checked_at', { ascending: true })
       .limit(5000) // 1ヶ月×全作業員(出退勤で1日2件以上)で上限(既定1000)超による欠落防止（daily_reportsクエリと同じ余裕）
+    // ★2026-08-27 出退勤モデル変更: 打刻が現場に紐づかなくなったのでキーから現場名を外す
+    //  （作業員×日付）。1日に複数現場ある日報でも、その日の外枠を各行に同じものとして出す。
     for (const log of (logs ?? []) as any[]) {
-      const siteName = log.sites?.name
-      if (!siteName) continue
-      const key = `${log.worker_id}|${jstDate(log.checked_at)}|${siteName}`
+      const key = `${log.worker_id}|${jstDate(log.checked_at)}`
       const entry = map[key] ?? (map[key] = {})
       // order asc のため checkin は最早を保持（上書きしない）、checkout は最遅を保持（上書き）
       if (log.type === 'checkin') { if (!entry.checkin) entry.checkin = jstTime(log.checked_at) }

@@ -35,7 +35,7 @@ const SCREEN_NAMES: Record<string, string> = {
   '/vehicles': '車両',
   '/assets': '物品マスタ',
   '/inventory': '在庫管理',
-  '/site-rules': '現場ルール',
+  '/site-rules': '出退勤の確認ルール',
   '/ai-help': 'AIヘルプ',
   '/faq': 'FAQナレッジ',
   '/non-submitters': '未送信者リスト',
