@@ -378,7 +378,12 @@ export const useReport = () => {
       // saveSite は作った現場の id を返すが、ここでは永続化を待つだけで値は使わない
       const masterSaves: Promise<unknown>[] = []
       for (const site of payload.sites) {
-        if (site.siteName) masterSaves.push(master.saveSite(site.siteName))
+        // ★'__unset__'（現場未設定・あとで紐付け）は現場名ではなく印なので、マスタに作らない。
+        //  弾いていなかったため、権限のある人が「現場未設定」を選ぶと sites に
+        //  『__unset__』という名前の現場が実際に作られていた（admin 側で「見慣れない名前が
+        //  ゴミデータに見えて誤って無効化された」実績あり）。保存本体(report-storage)は
+        //  元から除外しており、ここだけ漏れていた。
+        if (site.siteName && site.siteName !== '__unset__') masterSaves.push(master.saveSite(site.siteName))
         if (site.contractorName) masterSaves.push(master.saveContractor(site.contractorName))
         for (const sub of site.subcontractors) {
           // 新規作成(__other__)の業者だけ、その現場へ自動紐付け(AC4)。既存業者の紐付けは変えない。

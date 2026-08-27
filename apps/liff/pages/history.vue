@@ -341,6 +341,8 @@ interface SiteDetail { name: string; contractor: string; workers: WorkerLine[]; 
 function yen(n: number): string { return Number(n).toLocaleString() }
 
 function siteDisplayName(site: any): string {
+  // ★'__unset__'（現場未設定）は内部値。そのまま出すと履歴に「__unset__」と並ぶ（2026-08-27 発覚）
+  if (site.siteName === '__unset__') return t('report.siteUnset')
   return site.siteName === '__other__' ? (site.customSiteName || t('history.newSite')) : (site.siteName || '')
 }
 

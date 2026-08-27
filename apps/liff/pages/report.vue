@@ -252,6 +252,20 @@
             <div v-if="site.siteName === '__unset__'" class="unset-hint">
               <HintIcon :text="$t('report.siteUnsetNote')" :label="$t('report.siteUnset')" />
             </div>
+            <!-- ★現場名を文字で残せるようにする（2026-08-27）。
+                 これが無いと「現場未設定」を選んだ時点で “どの現場だったか” がシステム上
+                 どこにも残らず、後から管理者が記憶を頼りに紐付けるしかなかった。
+                 職人は現場を新規作成できない（__other__ が出ない）ので、未登録現場で働いた日は
+                 必ずここに落ちる。任意入力・マスタには登録しない（紐付けの手がかり専用）。 -->
+            <input
+              v-if="site.siteName === '__unset__'"
+              v-model="site.customSiteName"
+              type="text"
+              class="input mt6"
+              :data-testid="`unset-site-memo-${si}`"
+              :placeholder="$t('report.siteUnsetNamePlaceholder')"
+              @keydown.enter.prevent
+            />
             <input
               v-if="site.siteName === '__other__'"
               v-model="site.customSiteName"
@@ -1697,6 +1711,17 @@ function findMissingReceipts(): string | null {
   return null
 }
 
+/**
+ * 画面に出す現場名。'__unset__'/'__other__' は内部値なので、そのまま見せない。
+ * ★admin 側（lib/siteKey.ts の siteStoredName）に同じ変換があるのに LIFF に無く、
+ *  確認画面や履歴に「__unset__」が生で出ていた（2026-08-27 に発覚）。
+ */
+function siteDisplayName(siteName: string | null | undefined, customSiteName?: string | null): string {
+  if (siteName === '__unset__') return t('report.siteUnset')
+  if (siteName === '__other__') return customSiteName || '新規現場'
+  return siteName || ''
+}
+
 function findWorkerTimeOverlap(): string | null {
   const segs: { name: string; start: number; end: number }[] = []
   for (const s of (report.form.value.sites ?? [])) {
@@ -1705,7 +1730,7 @@ function findWorkerTimeOverlap(): string | null {
     let start = parseMin(w.startTime)
     let end   = parseMin(w.endTime)
     if (end <= start) end += 1440                        // 日跨ぎ補正
-    const name = s.siteName === '__other__' ? (s.customSiteName || '新規現場') : (s.siteName || '現場')
+    const name = siteDisplayName(s.siteName, s.customSiteName) || '現場'
     segs.push({ name, start, end })
   }
   segs.sort((a, b) => a.start - b.start)
@@ -2141,9 +2166,7 @@ const previewData = computed<PreviewData>(() => {
   let totalHours = 0
   for (const site of form.sites) {
     if (!site.siteName) continue
-    const displayName = site.siteName === '__other__'
-      ? (site.customSiteName || '新規現場')
-      : site.siteName
+    const displayName = siteDisplayName(site.siteName, site.customSiteName)
     const contractorName = site.contractorName === '__other__'
       ? (site.customContractorName || '')
       : (site.contractorName || '')

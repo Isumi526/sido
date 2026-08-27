@@ -49,6 +49,7 @@
   "addNewSite": "＋ 新しい現場を登録する",
   "siteUnset": "現場未設定（あとで紐付け）",
   "siteUnsetNote": "現場が未作成でも記録できます。後で管理者が正しい現場へ紐付けます。",
+  "siteUnsetNamePlaceholder": "現場名（分かる範囲で。例：UA長島 補修工事）",
   "fixedTimeNote": "この現場の固定終了時刻は {end} です。これを超える勤務報告は残業申請が必要です（早退などで下回るのは可）。",
   "overtimeApplyLink": "残業を申請する →",
   "overtimeApprovedNote": "残業申請が承認済みです。固定終了を超える終了時刻を入力できます。",
