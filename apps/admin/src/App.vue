@@ -56,6 +56,7 @@
           <li class="nav-section">勤怠</li>
           <li><RouterLink to="/worker-reports" class="nav-link"><span class="material-symbols-rounded nav-icon">badge</span>出面・勤怠</RouterLink></li>
           <li><RouterLink to="/attendance" class="nav-link"><span class="material-symbols-rounded nav-icon">login</span>出退勤ログ</RouterLink></li>
+          <li><RouterLink to="/site-rules" class="nav-link"><span class="material-symbols-rounded nav-icon">rule</span>出退勤の確認ルール</RouterLink></li>
           <li><RouterLink to="/paid-leave" class="nav-link"><span class="material-symbols-rounded nav-icon">beach_access</span>有給管理<span v-if="pendingGrantCount" class="nav-badge">{{ pendingGrantCount }}</span></RouterLink></li>
         </template>
 

@@ -34,7 +34,10 @@ let workerId = ''
 let userId = ''
 
 async function purge() {
-  await restSrv(`attendance_logs?site_id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})
+  // ★全期間を消さない。global-setup が積んだ当月のFEAT_ATT打刻まで巻き込み、
+  //  admin.attendance-on-card 等が一括実行時だけ落ちる（2026-08-27 に踏んだ）。
+  await restSrv(`attendance_logs?worker_id=eq.${workerId}&checked_at=gte.${encodeURIComponent(
+    new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString())}`, { method: 'DELETE' }).catch(() => {})
   await restSrv(`daily_reports?user_id=eq.${userId}&date=eq.${TODAY}`, { method: 'DELETE' }).catch(() => {})
   await rest(`sites?name=like.E2E%E9%80%80%E5%8B%A4%E5%B0%8E%E7%B7%9A*`, { method: 'DELETE' }).catch(() => {})
 }
@@ -68,17 +71,23 @@ function siteSelectOf(page: import('@playwright/test').Page) {
 
 /** 出勤済みの状態を作ってから /checkin を開く（＝退勤ボタンが出る） */
 async function seedCheckedIn() {
-  await restSrv(`attendance_logs?site_id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})
+  // ★2026-08-27 出退勤モデル変更: 打刻は現場に紐づかない。worker の直近打刻だけ消す。
+  const since = new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString()
+  await restSrv(`attendance_logs?worker_id=eq.${workerId}&checked_at=gte.${encodeURIComponent(since)}`,
+    { method: 'DELETE' }).catch(() => {})
   await restSrv('attendance_logs', {
     method: 'POST', headers: { Prefer: 'return=minimal' },
-    body: JSON.stringify({ site_id: siteId, worker_id: workerId, type: 'checkin', agreed_rule_texts: [] }),
+    body: JSON.stringify({ worker_id: workerId, type: 'checkin', agreed_rule_texts: [] }),
   })
 }
 
-/** 出勤中の現場から退勤打刻を完了させる（出勤中専用画面 → 確認 → 記録） */
+/** 退勤打刻を完了させる（/checkin を開くと自動で退勤の確認画面 → 記録） */
 async function doCheckout(page: import('@playwright/test').Page) {
   await page.goto('/checkin', { waitUntil: 'networkidle' })
-  await page.getByTestId('focus-checkout').click()
+  // ★共通の確認ルール（account_attendance_rules）が登録されていると、全部チェックするまで
+  //  送信できない。このテストの主題ではないので、出ている分は素直に全部チェックする。
+  const rules = page.locator('.rule-row')
+  for (let i = 0, n = await rules.count(); i < n; i++) await rules.nth(i).click()
   // ★位置情報は「明示タップで取得を試みる」設計（iOS LINEで自動要求だと無言で拒否されるため）。
   //  タップしないと locationState が idle のままで送信ボタンが永久に disabled。
   await page.locator('.loc-get').first().click()
@@ -94,10 +103,11 @@ test('★退勤打刻の完了画面に日報への導線が出る', async ({ pa
 
   const link = page.getByTestId('checkout-report-link')
   await expect(link, '退勤したらそのまま日報へ行ける').toBeVisible({ timeout: 20000 })
-  // ★打刻した日と現場を引き継ぐ（日報側で選び直させない）
+  // ★打刻した日は引き継ぐ。現場は引き継がない（2026-08-27 出退勤モデル変更で
+  //  打刻が現場に紐づかなくなったため。現場は日報側で選ぶ）。
   const href = await link.getAttribute('href')
   expect(href, '打刻した日付を引き継ぐ').toContain(`date=${TODAY}`)
-  expect(decodeURIComponent(href ?? ''), '打刻した現場を引き継ぐ').toContain(SITE)
+  expect(href ?? '', '現場は引き継がない').not.toContain('site=')
 })
 
 test('★遷移先は打刻した日。古い未送信日があってもそちらへ飛ばされない', async ({ page }) => {

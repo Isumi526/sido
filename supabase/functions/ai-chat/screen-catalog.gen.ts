@@ -117,8 +117,8 @@ export const SCREEN_CATALOG: ScreenCatalogEntry[] = [
   },
   {
     "path": "/site-rules",
-    "name": "現場ルール",
-    "title": "{{ siteName }} &nbsp;—&nbsp; 確認ルール",
+    "name": "出退勤の確認ルール",
+    "title": "出退勤の確認ルール",
     "requiresManagement": false,
     "requiresEstimate": false,
     "help": []

@@ -180,6 +180,19 @@ Deno.serve(async (req) => {
     return json({ ok: true, logs: data ?? [] })
   }
 
+  // ── 打刻時に見せるアカウント共通の確認ルール（2026-08-27 出退勤モデル変更）──
+  //  現場別ルール(site_rules)の置き換え。出勤時・退勤時それぞれで出す分だけ返す。
+  if (body.action === 'rules') {
+    const timing = body.timing === 'checkin' || body.timing === 'checkout' ? body.timing : ''
+    if (!timing) return json({ ok: false, error: 'timing_required' }, 400)
+    const { data } = await svc.from('account_attendance_rules')
+      .select('id, content, timing')
+      .eq('account_id', caller.accountId)
+      .in('timing', [timing, 'both'])
+      .order('sort_order', { ascending: true })
+    return json({ ok: true, rules: data ?? [] })
+  }
+
   // ── 日報に出す実打刻（現場名つき・期間指定）──
   if (body.action === 'for-report') {
     if (!isDate(body.from) || !isDate(body.to)) return json({ ok: false, error: 'bad_date_range' }, 400)
@@ -204,10 +217,12 @@ Deno.serve(async (req) => {
 
   // ── 通常の打刻（その場で押す）──
   if (body.action === 'punch') {
+    // ★2026-08-27 出退勤モデル変更: 打刻は現場に紐づけない（1日＝最初の出勤・最後の退勤の2回）。
+    //  siteId は任意。渡された時だけ自テナントの現場か検証して記録する（旧QR経由の互換のため残す）。
     const siteId = typeof body.siteId === 'string' ? body.siteId : ''
     const type = body.type === 'checkin' || body.type === 'checkout' ? body.type : ''
-    if (!siteId || !type) return json({ ok: false, error: 'site_and_type_required' }, 400)
-    if (!(await siteInAccount(svc, caller.accountId, siteId))) return json({ ok: false, error: 'site_not_found' }, 404)
+    if (!type) return json({ ok: false, error: 'type_required' }, 400)
+    if (siteId && !(await siteInAccount(svc, caller.accountId, siteId))) return json({ ok: false, error: 'site_not_found' }, 404)
 
     const target = typeof body.targetWorkerId === 'string' && body.targetWorkerId ? body.targetWorkerId : caller.workerId
     if (target !== caller.workerId) {
@@ -216,7 +231,7 @@ Deno.serve(async (req) => {
     }
 
     const { data, error } = await svc.from('attendance_logs').insert({
-      site_id: siteId,
+      site_id: siteId || null,
       worker_id: target,
       type,
       // ★時刻はサーバで決める。クライアントに決めさせると過去日時を送って証跡を偽造できる
@@ -237,8 +252,8 @@ Deno.serve(async (req) => {
 
   // ── 打刻し忘れた日の後追い入力（本人のみ・4日前まで）──
   if (body.action === 'backdate') {
+    // ★site は任意（出退勤モデル変更で現場に紐づけなくなった）
     const siteId = typeof body.siteId === 'string' ? body.siteId : ''
-    if (!siteId) return json({ ok: false, error: 'site_required' }, 400)
     if (!isDate(body.date)) return json({ ok: false, error: 'bad_date' }, 400)
     // ★代理では入れない。他人の勤怠を後付けで作れる導線は開けない
     if (body.targetWorkerId && body.targetWorkerId !== caller.workerId) {
@@ -246,18 +261,19 @@ Deno.serve(async (req) => {
     }
     const allowed = Array.from({ length: BACKDATE_MAX_DAYS + 1 }, (_, i) => jstDay(i))
     if (!allowed.includes(body.date)) return json({ ok: false, error: 'out_of_range' }, 400)
-    if (!(await siteInAccount(svc, caller.accountId, siteId))) return json({ ok: false, error: 'site_not_found' }, 404)
+    if (siteId && !(await siteInAccount(svc, caller.accountId, siteId))) return json({ ok: false, error: 'site_not_found' }, 404)
 
     const checkin  = isTime(body.checkin) ? body.checkin : ''
     const checkout = isTime(body.checkout) ? body.checkout : ''
     if (!checkin && !checkout) return json({ ok: false, error: 'time_required' }, 400)
     if (checkin && checkout && checkin >= checkout) return json({ ok: false, error: 'bad_time_order' }, 400)
 
-    // 同じ日・同じ現場に既に同じ種別があれば足さない（二重計上の防止）
+    // 同じ日に既に同じ種別があれば足さない（二重計上の防止）。
+    // ★現場では絞らない。1日＝出勤1回・退勤1回になったので、現場ごとに1組ではなく日ごとに1組。
     const lo = new Date(`${body.date}T00:00:00+09:00`).toISOString()
     const hi = new Date(`${body.date}T23:59:59+09:00`).toISOString()
     const { data: exists } = await svc.from('attendance_logs')
-      .select('type').eq('worker_id', caller.workerId).eq('site_id', siteId)
+      .select('type').eq('worker_id', caller.workerId)
       .gte('checked_at', lo).lte('checked_at', hi)
     const already = new Set(((exists ?? []) as { type: string }[]).map((r) => r.type))
 
@@ -265,7 +281,7 @@ Deno.serve(async (req) => {
     for (const [type, hhmm] of [['checkin', checkin], ['checkout', checkout]] as const) {
       if (!hhmm || already.has(type)) continue
       rows.push({
-        site_id: siteId, worker_id: caller.workerId, type,
+        site_id: siteId || null, worker_id: caller.workerId, type,
         checked_at: new Date(`${body.date}T${hhmm}:00+09:00`).toISOString(),
         // ★後から入れた分は現場ルールの同意を取っていない。取ったことにしない
         agreed_rule_texts: [],

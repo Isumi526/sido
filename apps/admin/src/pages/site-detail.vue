@@ -12,7 +12,8 @@
         <div class="head-actions" v-if="site">
           <button class="btn-ghost" @click="router.push(`/chats/${site.id}`)">チャットを開く</button>
           <button class="btn-ghost" @click="toggleActive">{{ site.active ? '無効化' : '有効化' }}</button>
-          <button class="btn-ghost" @click="router.push(`/site-rules?site_id=${site.id}`)">ルール・QR設定</button>
+          <!-- ★「ルール・QR設定」は廃止（2026-08-27 出退勤モデル変更）。確認ルールは
+               アカウント共通（/site-rules）に集約し、現場QRの発行はやめた。 -->
         </div>
       </div>
       <!-- タブ -->

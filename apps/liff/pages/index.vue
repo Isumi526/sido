@@ -201,7 +201,9 @@ async function refreshDeadlineBanner() {
 
 /** 今日の自分の勤務予定で、開始時刻を過ぎたのに出勤打刻が無い（or 終了時刻を過ぎたのに退勤が無い）なら
  *  ホームで打刻を促す。LINE/メールは当てにできないので「ホームを開いた時に見える」ことを狙う（cron・外部送信なし）。
- *  開始の30分前から出す。判定は現場(site_id)単位。 */
+ *  開始の30分前から出す。
+ *  ★2026-08-27 出退勤モデル変更: 打刻が現場に紐づかなくなった（1日＝出勤/退勤の2回）ので、
+ *   判定も現場単位ではなく「その日に出勤打刻があるか／退勤打刻があるか」で行う。 */
 async function refreshPunchPrompt(workerId: string) {
   punchPrompt.value = null
   try {
@@ -216,21 +218,26 @@ async function refreshPunchPrompt(workerId: string) {
     // DBの time 値は "HH:MM:SS" のことがあるので HH:MM に丸めてから分に変換する
     const hhmm = (t: string | null | undefined) => toMinutes((t ?? '').slice(0, 5))
     // 打刻の取得は失敗しても促しは止めない（取れなければ「未打刻」とみなして安全側に促す）
-    let punches: { site_id: string; type: string }[] = []
+    let punches: { type: string; checked_at: string }[] = []
     try { punches = await attendanceApi.recent(24, workerId) } catch { punches = [] }
-    const hasCheckin  = (siteId: string) => punches.some(p => p.site_id === siteId && p.type === 'checkin')
-    const hasCheckout = (siteId: string) => punches.some(p => p.site_id === siteId && p.type === 'checkout')
-    // 出勤の促し（開始30分前〜）を優先。無ければ退勤の促し（終了時刻〜）。
-    for (const s of mine) {
-      const startMin = hhmm(s.start_time)
-      if (startMin != null && nowMin >= startMin - 30 && !hasCheckin(s.site_id as string)) {
-        punchPrompt.value = { kind: 'checkin', title: s.title || '現場' }; return
+    // その日（JST）の打刻だけを見る。現場では絞らない。
+    const todayPunches = punches.filter(p => jstDateOf(p.checked_at) === today)
+    const hasCheckin  = todayPunches.some(p => p.type === 'checkin')
+    const hasCheckout = todayPunches.some(p => p.type === 'checkout')
+    // 出勤の促し（最も早い開始の30分前〜）を優先。無ければ退勤の促し（最も遅い終了〜）。
+    if (!hasCheckin) {
+      for (const s of mine) {
+        const startMin = hhmm(s.start_time)
+        if (startMin != null && nowMin >= startMin - 30) {
+          punchPrompt.value = { kind: 'checkin', title: s.title || '現場' }; return
+        }
       }
-    }
-    for (const s of mine) {
-      const endMin = hhmm(s.end_time)
-      if (endMin != null && nowMin >= endMin && hasCheckin(s.site_id as string) && !hasCheckout(s.site_id as string)) {
-        punchPrompt.value = { kind: 'checkout', title: s.title || '現場' }; return
+    } else if (!hasCheckout) {
+      for (const s of mine) {
+        const endMin = hhmm(s.end_time)
+        if (endMin != null && nowMin >= endMin) {
+          punchPrompt.value = { kind: 'checkout', title: s.title || '現場' }; return
+        }
       }
     }
   } catch { /* 促しは best-effort。失敗してもホームは出す */ }

@@ -43,21 +43,25 @@ export function jstRangeToUtc(fromDate: string, toDate: string): { lo: string; h
 export type PunchLog = { worker_id: string; type: string; checked_at: string; siteName: string | null }
 export type Punch = { checkin?: string; checkout?: string }
 
-/** 突き合わせキー。現場名で照合する（daily_reports.sites は siteName しか持たないため） */
-export function punchKey(workerId: string, date: string, siteName: string): string {
-  return `${workerId}|${date}|${siteName}`
+/**
+ * 突き合わせキー。作業員×日付。
+ * ★2026-08-27 の出退勤モデル変更で現場名を外した。打刻が現場に紐づかなくなり
+ *  （1日＝最初の出勤・最後の退勤の2回）、現場ごとの実打刻は存在しなくなったため。
+ *  日報が1日に複数現場を持つ場合、その日の実打刻（外枠）を各現場行に同じものとして出す。
+ */
+export function punchKey(workerId: string, date: string): string {
+  return `${workerId}|${date}`
 }
 
 /**
- * 打刻ログを「作業員×日付×現場」ごとに畳む。
+ * 打刻ログを「作業員×日付」ごとに畳む。
  * ★出勤は最早・退勤は最遅を採る（昼に一度出て戻った日でも、その日の在場時間の外枠になる）。
  *  呼び出し側は checked_at の昇順で渡すこと。
  */
 export function foldPunches(logs: PunchLog[]): Record<string, Punch> {
   const map: Record<string, Punch> = {}
   for (const log of logs) {
-    if (!log.siteName) continue
-    const key = punchKey(log.worker_id, jstDateOf(log.checked_at), log.siteName)
+    const key = punchKey(log.worker_id, jstDateOf(log.checked_at))
     const entry = map[key] ?? (map[key] = {})
     const t = jstTimeOf(log.checked_at)
     if (log.type === 'checkin') { if (!entry.checkin) entry.checkin = t }
