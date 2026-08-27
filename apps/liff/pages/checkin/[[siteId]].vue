@@ -182,6 +182,9 @@
     <div v-else class="checklist-wrap">
       <div class="checklist-header" :class="attendanceType">
         <div class="site-label">{{ siteName }}</div>
+        <div class="punch-date" data-testid="punch-date">
+          <span class="material-symbols-rounded">event</span>{{ $t('checkin.punchDateNote', { date: punchDateLabel }) }}
+        </div>
         <div class="checkin-title">
           {{ attendanceType === 'checkin' ? $t('checkin.checkinConfirmTitle') : $t('checkin.checkoutConfirmTitle') }}
         </div>
@@ -349,6 +352,15 @@ const consentDocs    = ref<ConsentDoc[]>([])   // 送り出し資料（出退勤
 const consentedIds   = ref(new Set<string>())
 const submitting     = ref(false)
 const checkedAtLabel = ref('')
+
+// ★打刻は常に「今」を記録する（対象日を選ぶ手段は無い）が、数日分まとめて打刻する人がいて
+//  「今押したらどの日の記録になるか」が画面から分からなかった（大塚さん指摘・2026-08-27）。
+//  確認画面の見出しに常時表示する。
+const punchDateLabel = computed(() => {
+  const d = new Date()
+  const weekdays = ['日', '月', '火', '水', '木', '金', '土']
+  return `${d.getMonth() + 1}月${d.getDate()}日（${weekdays[d.getDay()]}）`
+})
 // 退勤打刻の完了画面に出す「日報を書く」リンク。空なら出さない（resolveReportLink 参照）
 const reportLink     = ref('')
 const checkinTime    = ref('')
@@ -891,6 +903,12 @@ async function resolveReportLink(target: Target | null) {
 
 .site-label    { font-size: 12px; opacity: .85; margin-bottom: 4px; }
 .checkin-title { font-size: 20px; font-weight: 700; }
+.punch-date {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 13px; font-weight: 700; margin-bottom: 6px;
+  background: rgba(255,255,255,.22); border-radius: 999px; padding: 4px 12px;
+}
+.punch-date .material-symbols-rounded { font-size: 16px; }
 
 .proxy-badge {
   display: inline-flex; align-items: center; gap: 4px;
