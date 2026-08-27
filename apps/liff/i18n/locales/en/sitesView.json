@@ -16,5 +16,12 @@
   "membersTitle": "Members ({count})",
   "editInfo": "Edit site info",
   "saveFailed": "Failed to save",
-  "attachFailed": "Failed to add the file"
+  "attachFailed": "Failed to add the file",
+  "consentTitle": "Documents needing your confirmation",
+  "consentHint": "Open the document, read it, then tap to confirm.",
+  "consentApprove": "I have read this",
+  "consentDone": "Confirmed",
+  "consentFailed": "Could not record your confirmation. Please try again later.",
+  "consentNotParticipant": "You are not a member of this site, so you cannot confirm.",
+  "documentFallback": "Document"
 }

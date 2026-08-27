@@ -155,10 +155,33 @@
               <span v-else class="att-ico"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span></span>
             </a>
             <div class="att-name">{{ a.name || a.kind }}</div>
+            <label v-if="a.kind !== 'photo'" class="att-consent">
+              <input type="checkbox" :checked="!!a.require_consent" @change="toggleConsent(a, ($event.target as HTMLInputElement).checked)" />
+              承認を求める
+            </label>
             <button class="att-del" @click="removeAttachment(a)">削除</button>
           </div>
         </div>
         <p v-else class="muted">写真・資料はありません（上のボタンから追加）</p>
+
+        <!-- 送り出し資料の承認状況（2026-08-27 出退勤モデル変更でこの現場の作業員に承認させる） -->
+        <div v-if="consentStatus.length" class="consent-status" data-testid="consent-status">
+          <h3 class="consent-status-title">送り出し資料の承認状況</h3>
+          <p class="muted sm">対象は、この現場に参加している作業員（共有メンバー＋現場責任者）です。</p>
+          <div v-for="d in consentStatus" :key="d.id" class="consent-doc-block">
+            <div class="consent-doc-name">{{ d.name || '資料' }}</div>
+            <div class="consent-line">
+              <span class="consent-tag done">承認済み {{ d.consented.length }}</span>
+              <span v-for="c in d.consented" :key="c.workerId" class="consent-who">{{ c.name }}</span>
+              <span v-if="!d.consented.length" class="muted sm">まだ誰も承認していません</span>
+            </div>
+            <div class="consent-line">
+              <span class="consent-tag pending">未承認 {{ d.pending.length }}</span>
+              <span v-for="p in d.pending" :key="p.workerId" class="consent-who">{{ p.name }}</span>
+              <span v-if="!d.pending.length" class="muted sm">全員が承認しました</span>
+            </div>
+          </div>
+        </div>
       </section>
     </template>
   </div>
@@ -308,6 +331,40 @@ async function loadAttachments() {
   const atts = (data ?? []) as Att[]
   await Promise.all(atts.map(async (a) => { a.url = await signedUrl(a.id) }))
   attachments.value = atts
+  await loadConsentStatus()
+}
+
+// ── 送り出し資料の承認状況（2026-08-27 出退勤モデル変更）──
+// ★誰が承認対象かは「現場の共有メンバー＋現場責任者」。この判定は EF 側に持たせ、
+//  LIFF(useMySiteIds) と定義が食い違わないようにする（片方だけ変わると
+//  「現場は見えるのに承認を求められない」等が起きる）。
+type ConsentStatusDoc = {
+  id: string; name: string | null
+  consented: { workerId: string; name: string; consentedAt: string }[]
+  pending: { workerId: string; name: string }[]
+}
+const consentStatus = ref<ConsentStatusDoc[]>([])
+
+async function loadConsentStatus() {
+  // 承認対象の資料が1件も無ければ問い合わせない
+  if (!attachments.value.some(a => a.require_consent)) { consentStatus.value = []; return }
+  try {
+    const { data, error } = await supabase.functions.invoke('site-document-consent', {
+      body: { action: 'status', siteId },
+    })
+    if (error || !data?.ok) { consentStatus.value = []; return }
+    consentStatus.value = (data.documents ?? []) as ConsentStatusDoc[]
+  } catch (e) {
+    console.error('[site-consent] 承認状況の取得に失敗:', e)
+    consentStatus.value = []
+  }
+}
+
+/** 資料に「承認を求める」を付け外しする */
+async function toggleConsent(a: Att, on: boolean) {
+  a.require_consent = on
+  await supabase.from('site_attachments').update({ require_consent: on }).eq('id', a.id)
+  await loadConsentStatus()
 }
 
 async function load() {
@@ -444,5 +501,18 @@ onMounted(load)
 .att-ico { font-size: 32px; }
 .att-name { font-size: 11px; color: #555; margin: 6px 0 4px; word-break: break-all; }
 .att-del { background: none; border: none; color: #E53935; font-size: 11px; cursor: pointer; }
+.att-consent { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #555; margin-bottom: 4px; cursor: pointer; }
+
+/* ── 送り出し資料の承認状況 ── */
+.consent-status { margin-top: 24px; padding-top: 16px; border-top: 1px solid #eceff1; }
+.consent-status-title { font-size: 14px; font-weight: 700; margin: 0 0 4px; }
+.muted.sm { font-size: 12px; }
+.consent-doc-block { margin-top: 12px; padding: 10px 12px; background: #fafafa; border-radius: 8px; }
+.consent-doc-name { font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+.consent-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
+.consent-tag { font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 10px; }
+.consent-tag.done    { background: #e8f9ef; color: #047857; }
+.consent-tag.pending { background: #fdecec; color: #b91c1c; }
+.consent-who { font-size: 12px; color: #333; }
 @media (max-width: 640px) { .summary-cards { grid-template-columns: repeat(2, 1fr); } }
 </style>
