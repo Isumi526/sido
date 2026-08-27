@@ -21,6 +21,7 @@
                    同じ日に複数現場が動いている時に決められない -->
               <th>元請け</th>
               <th>出退勤</th>
+              <th>作業員が書いた現場名</th>
               <th>メモ / 内容</th>
               <th>紐付け先の現場</th>
               <th class="actions-col">操作</th>
@@ -32,6 +33,7 @@
               <td class="name">{{ r.workers || '—' }}</td>
               <td class="name" data-testid="relink-contractor">{{ r.contractor || '—' }}</td>
               <td class="hours" data-testid="relink-hours">{{ r.hours || '—' }}</td>
+              <td class="name" data-testid="relink-typed-name">{{ r.typedName || '—' }}</td>
               <td class="memo">{{ r.memo || '—' }}</td>
               <td>
                 <select v-model="r.pick" class="site-pick">
@@ -66,6 +68,8 @@ type Row = {
   workers: string
   contractor: string
   hours: string
+  /** 作業員が「現場未設定」を選んだ時に書き残した現場名（2026-08-27 追加・紐付けの最有力な手がかり） */
+  typedName: string
   memo: string
   pick: string
 }
@@ -127,6 +131,9 @@ async function load() {
       out.push({
         key: `${rep.id}#${i}`, reportId: rep.id, siteIndex: i, date: rep.date,
         workers, contractor: contractorOf(site), hours: hoursOf(site),
+        // ★作業員が書いた現場名を最優先の手がかりにする（2026-08-27 追加）。
+        //  それまでは現場備考しか無く「どの現場だったか」を推測するしかなかった。
+        typedName: (site.customSiteName ?? '').trim(),
         memo: (site.note ?? '').trim(), pick: '',
       })
     })
