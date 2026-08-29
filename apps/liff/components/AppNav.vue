@@ -22,7 +22,8 @@
            必ず目に入る場所が1つ要る（2026-08-14 ユーザー指示）。 -->
       <NuxtLink class="app-bell" to="/notifications" :aria-label="$t('nav.notifications')" data-testid="nav-bell">
         <span class="material-symbols-rounded">notifications</span>
-        <span v-if="unreadNotifCount > 0" class="app-bell-badge" data-testid="nav-bell-badge">{{ unreadNotifCount }}</span>
+        <!-- ★合計（やること＋未読のお知らせ）。気づく入口は1つでいい（2026-08-30 ユーザー指示） -->
+        <span v-if="totalBadgeCount > 0" class="app-bell-badge" data-testid="nav-bell-badge">{{ totalBadgeCount }}</span>
       </NuxtLink>
       <button class="app-hamburger" @click="open = true" :aria-label="$t('nav.openMenu')">
         <span class="app-bar" />
@@ -84,7 +85,7 @@
               <span class="drawer-item-icon material-symbols-rounded">{{ item.icon }}</span>
               <span>{{ item.label }}</span>
               <span v-if="item.path === '/calendar' && unreadScheduleCount > 0" class="drawer-item-badge" data-testid="drawer-schedule-badge">{{ unreadScheduleCount }}</span>
-              <span v-if="item.path === '/notifications' && unreadNotifCount > 0" class="drawer-item-badge" data-testid="drawer-notif-badge">{{ unreadNotifCount }}</span>
+              <span v-if="item.path === '/notifications' && totalBadgeCount > 0" class="drawer-item-badge" data-testid="drawer-notif-badge">{{ totalBadgeCount }}</span>
             </NuxtLink>
           </template>
 

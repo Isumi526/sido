@@ -5,5 +5,9 @@
   "allRead": "すべて確認済みです",
   "readAll": "すべて既読にする",
   "untitled": "お知らせ",
-  "reportRejectTitle": "日報が差し戻されました"
+  "reportRejectTitle": "日報が差し戻されました",
+  "tabTodo": "やること",
+  "tabInfo": "お知らせ",
+  "todoEmpty": "やることはありません",
+  "todoDocTitle": "資料の確認・承認"
 }

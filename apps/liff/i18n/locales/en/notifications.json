@@ -5,5 +5,9 @@
   "allRead": "All caught up",
   "readAll": "Mark all as read",
   "untitled": "Notification",
-  "reportRejectTitle": "Your daily report was sent back"
+  "reportRejectTitle": "Your daily report was sent back",
+  "tabTodo": "To do",
+  "tabInfo": "Notices",
+  "todoEmpty": "Nothing to do",
+  "todoDocTitle": "Read and confirm a document"
 }

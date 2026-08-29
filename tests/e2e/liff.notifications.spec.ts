@@ -63,45 +63,38 @@ test.describe('アプリ内通知（お知らせ）', () => {
     await expect(page.getByTestId('home-notif-card'), 'ホームでも気づける').toBeVisible()
   })
 
-  test('★一覧に未読と既読の両方が出る（既読が消えて二度と見られない旧挙動を直す）', async ({ page }) => {
+  test('★お知らせは履歴として残り、読み返せる', async ({ page }) => {
+    // ★2026-08-30 の分割以降、「お知らせ」タブは開いた時点で既読になる（読めば済むものを
+    //  いつまでも数えない）。既読/未読の別に関係なく、履歴として残って読み返せることを見る。
     await page.goto('/notifications', { waitUntil: 'networkidle' })
-    await expect(page.getByTestId('notif-unread').filter({ hasText: REJECT_TITLE }), '未読が出る')
-      .toBeVisible({ timeout: 15000 })
-    await expect(page.getByTestId('notif-read').filter({ hasText: READ_TITLE }), '★既読も残って読み返せる')
-      .toBeVisible()
-    await expect(page.getByTestId('notif-unread').filter({ hasText: REJECT_TITLE }), '理由まで読める')
-      .toContainText('領収書の写真を付けてください')
+    await page.getByTestId('notif-tab-info').click()
+    const list = page.locator('.notif-list')
+    await expect(list, '差し戻しのお知らせが出る').toContainText(REJECT_TITLE, { timeout: 15000 })
+    await expect(list, '★以前のお知らせも残って読み返せる').toContainText(READ_TITLE)
+    await expect(list, '理由まで読める').toContainText('領収書の写真を付けてください')
   })
 
-  test('★タップするとその1件だけ既読になり、関係する画面へ飛ぶ', async ({ page }) => {
+  test('★タップすると関係する画面へ飛ぶ', async ({ page }) => {
     await page.goto('/notifications', { waitUntil: 'networkidle' })
-    const card = page.getByTestId('notif-unread').filter({ hasText: REJECT_TITLE })
+    await page.getByTestId('notif-tab-info').click()
+    const card = page.locator('.notif', { hasText: REJECT_TITLE })
     await expect(card).toBeVisible({ timeout: 15000 })
     await card.click()
-
     await expect(page, '★日報の編集画面へ飛ぶ').toHaveURL(new RegExp(`/report\\?edit=${LINK_DATE}`))
+  })
 
-    // ★「未読が全部で0件」では見ない。他の spec（チャットのメンション等）が同じ作業員宛に
-    //  未読を残すことがあり、それに引きずられて落ちる（実際に踏んだ）。
-    //  押した1件が既読になり、押していない1件は未読のまま、を個別に見る。
+  test('★お知らせは開いた時点で既読になる（読めば済むものを数え続けない）', async ({ page }) => {
+    await page.goto('/notifications', { waitUntil: 'networkidle' })
+    await page.getByTestId('notif-tab-info').click()
+
+    // 開いた時点で既読になる＝DBの read_at が入る
     await expect
       .poll(async () => (await rest(
         `schedule_notifications?worker_id=eq.${workerId}&kind=eq.report_reject&select=read_at`))?.[0]?.read_at ?? null,
-        { message: '★押した1件が既読になる', timeout: 15000 })
+        { message: '★開いた時点で既読になる', timeout: 15000 })
       .not.toBeNull()
 
-    await page.goto('/notifications', { waitUntil: 'networkidle' })
-    await expect(page.getByTestId('notif-read').filter({ hasText: REJECT_TITLE }), '既読として残る')
-      .toBeVisible({ timeout: 15000 })
-    // 押していない方は未読のまま（1件だけ既読にする、が守られている）
-    await expect(page.getByTestId('notif-unread').filter({ hasText: REJECT_TITLE }),
-      '★押した分が未読に戻っていない').toHaveCount(0)
-  })
-
-  test('「すべて既読にする」で未読が無くなる', async ({ page }) => {
-    await page.goto('/notifications', { waitUntil: 'networkidle' })
-    await page.getByTestId('notif-read-all').click()
-    await expect(page.getByTestId('notif-unread')).toHaveCount(0, { timeout: 15000 })
+    // ★「すべて既読にする」ボタンは不要になったので出さない
     await expect(page.getByTestId('notif-read-all')).toHaveCount(0)
   })
 })

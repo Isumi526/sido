@@ -20,10 +20,21 @@
 //   実機テストで発覚)。useCurrentUser()はi18nに依存しないためこの制約を受けない。
 //   ★このファイルの中から useI18n() を呼ぶ関数を新たに足さないこと。
 // ============================================================
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
 export const unreadNotifCount = ref(0)
 export const unreadScheduleCount = ref(0)
+
+// ★「やること」と「お知らせ」を分ける（2026-08-30 ユーザー指示）。
+//  お知らせ = 読めば済むもの。開いた時点で消える。
+//  やること = ユーザーに行動してもらうもの。行動されるまで消えない。
+//  この2つを1つのリストに混ぜると、読み飛ばした瞬間に「やること」が消えて
+//  誰も対応しないまま残る（＝送り出し資料が確認されない）。
+//  ベルのバッジは合計を出す（気づく入口は1つでいい）。
+export const totalBadgeCount = computed(() => unreadNotifCount.value + pendingDocCount.value)
+
+/** お知らせ側の kind（読めば済むもの）。ここに無い kind は「やること」扱いにしない＝既存互換 */
+export const INFO_KINDS = ['schedule', 'report_reject', 'overtime_decision', 'expense_reject', 'chat_mention'] as const
 
 export async function refreshNotifBadge(): Promise<void> {
   const supabase = useSupabase()
@@ -45,7 +56,10 @@ export async function refreshNotifBadge(): Promise<void> {
     .eq('account_id', accountId).eq('worker_id', workerId).is('read_at', null)
 
   const rows = data ?? []
-  unreadNotifCount.value = rows.length
+  // ★site_document は「やること」側で状態から数えるので、お知らせの未読には入れない
+  //  （両方に出ると合計が二重になる）。
+  const info = rows.filter((r: any) => (r.kind ?? 'schedule') !== 'site_document')
+  unreadNotifCount.value = info.length
   unreadScheduleCount.value = rows.filter((r: any) => (r.kind ?? 'schedule') === 'schedule').length
 }
 
@@ -56,12 +70,15 @@ export async function refreshNotifBadge(): Promise<void> {
 export const pendingDocCount = ref(0)
 /** まだ承認していない資料が残っている現場の id（現場一覧に印を出す用） */
 export const pendingDocSiteIds = ref<string[]>([])
+/** 「やること」タブに出す明細 */
+export type PendingDocItem = { attachmentId: string; name: string | null; siteId: string; siteName: string; createdAt: string }
+export const pendingDocItems = ref<PendingDocItem[]>([])
 
 export async function refreshPendingDocBadge(): Promise<void> {
   const supabase = useSupabase()
   const { profile, getIdToken } = useLiff()
   const config = useRuntimeConfig()
-  const reset = () => { pendingDocCount.value = 0; pendingDocSiteIds.value = [] }
+  const reset = () => { pendingDocCount.value = 0; pendingDocSiteIds.value = []; pendingDocItems.value = [] }
   try {
     const idToken = await getIdToken().catch(() => null)
     const devLineUserId = config.public.appEnv === 'development' ? (profile.value?.userId ?? '') : ''
@@ -75,6 +92,7 @@ export async function refreshPendingDocBadge(): Promise<void> {
     if (error || !data?.ok) return reset()
     pendingDocCount.value = Number(data.pending ?? 0)
     pendingDocSiteIds.value = (data.sites ?? []) as string[]
+    pendingDocItems.value = (data.items ?? []) as PendingDocItem[]
   } catch (e) {
     console.error('[docBadge] 未承認資料の件数を取得できませんでした:', e)
     reset()
