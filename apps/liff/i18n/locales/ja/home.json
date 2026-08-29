@@ -15,6 +15,8 @@
   "periodFirstHalf": "{month}月前半",
   "periodSecondHalf": "{month}月後半",
   "notifTitle": "未読のお知らせが{count}件あります",
+  "pendingDocTitle": "未承認の資料が{count}件あります",
+  "pendingDocSub": "確認して承認してください（承認するまで消えません）",
   "notifSub": "タップして内容を確認",
   "punchCheckinTitle": "出勤の打刻がまだです",
   "punchCheckoutTitle": "退勤の打刻がまだです",

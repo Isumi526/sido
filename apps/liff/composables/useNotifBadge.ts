@@ -48,3 +48,35 @@ export async function refreshNotifBadge(): Promise<void> {
   unreadNotifCount.value = rows.length
   unreadScheduleCount.value = rows.filter((r: any) => (r.kind ?? 'schedule') === 'schedule').length
 }
+
+// ── 未承認の送り出し資料（承認するまで消えない印）──
+// ★お知らせ(schedule_notifications)は「読んだら消える」ので、読んで放置すると
+//  気づけなくなる。承認という行為が済むまで残す必要があるものは、通知の既読ではなく
+//  「まだ承認していない」という状態そのものを数える（2026-08-30 ユーザー指示）。
+export const pendingDocCount = ref(0)
+/** まだ承認していない資料が残っている現場の id（現場一覧に印を出す用） */
+export const pendingDocSiteIds = ref<string[]>([])
+
+export async function refreshPendingDocBadge(): Promise<void> {
+  const supabase = useSupabase()
+  const { profile, getIdToken } = useLiff()
+  const config = useRuntimeConfig()
+  const reset = () => { pendingDocCount.value = 0; pendingDocSiteIds.value = [] }
+  try {
+    const idToken = await getIdToken().catch(() => null)
+    const devLineUserId = config.public.appEnv === 'development' ? (profile.value?.userId ?? '') : ''
+    const { data, error } = await supabase.functions.invoke('site-document-consent', {
+      body: {
+        action: 'pending-count',
+        ...(idToken ? { line_id_token: idToken } : {}),
+        ...(devLineUserId ? { dev_line_user_id: devLineUserId } : {}),
+      },
+    })
+    if (error || !data?.ok) return reset()
+    pendingDocCount.value = Number(data.pending ?? 0)
+    pendingDocSiteIds.value = (data.sites ?? []) as string[]
+  } catch (e) {
+    console.error('[docBadge] 未承認資料の件数を取得できませんでした:', e)
+    reset()
+  }
+}

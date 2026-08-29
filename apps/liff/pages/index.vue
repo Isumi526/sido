@@ -28,6 +28,17 @@
         <span class="material-symbols-rounded alert-arrow">chevron_right</span>
       </NuxtLink>
 
+      <!-- ★未承認の送り出し資料。お知らせ(既読で消える)と違い、承認するまで消えない。
+           読み飛ばされたまま資料が確認されない状態を残さないため（2026-08-30 ユーザー指示）。 -->
+      <NuxtLink v-if="pendingDocCount > 0" class="doc-card" to="/sites" data-testid="home-pending-doc-card">
+        <span class="material-symbols-rounded doc-card-icon">assignment_late</span>
+        <div class="notif-card-body">
+          <div class="notif-card-title">{{ t('home.pendingDocTitle', { count: pendingDocCount }) }}</div>
+          <div class="doc-card-sub">{{ t('home.pendingDocSub') }}</div>
+        </div>
+        <span class="material-symbols-rounded alert-arrow">chevron_right</span>
+      </NuxtLink>
+
       <!-- 打刻を促す（今日の勤務予定の開始/終了が来ているのに未打刻の時だけ）。LINE/メール不達でも気づけるよう常駐ホームに出す。 -->
       <NuxtLink v-if="punchPrompt" class="punch-card" to="/checkin" data-testid="home-punch-card">
         <span class="material-symbols-rounded punch-card-icon">{{ punchPrompt.kind === 'checkin' ? 'login' : 'logout' }}</span>
@@ -285,7 +296,7 @@ onMounted(async () => {
 })
 
 // 予定管理ナビの未読バッジ（#予定通知バッジ・2026-07-11）
-onMounted(() => { refreshNotifBadge() })
+onMounted(() => { refreshNotifBadge(); refreshPendingDocBadge() })
 // チャット一覧ナビの未読バッジ（2026-07-14・現場情報ナビの未読メンションバッジから移設・集約）
 onMounted(() => { refreshSiteChatListBadge() })
 
@@ -334,6 +345,18 @@ onMounted(() => { refreshSiteChatListBadge() })
   border-left: 4px solid #e11d48; cursor: pointer; text-decoration: none;
 }
 .notif-card:active { background: #fff1f2; }
+
+/* 未承認の資料（承認するまで消えない）。お知らせ(赤)と区別できるよう橙にする */
+.doc-card {
+  background: #fff; border-radius: 12px;
+  padding: 14px 16px; display: flex; align-items: center; gap: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  border-left: 4px solid #d97706; cursor: pointer; text-decoration: none;
+}
+.doc-card:active { background: #fffbeb; }
+.doc-card-icon { color: #d97706; font-size: 26px; flex-shrink: 0;
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+.doc-card-sub { font-size: 12px; color: #d97706; margin-top: 2px; font-weight: 600; }
 .notif-card-icon { color: #e11d48; font-size: 26px; flex-shrink: 0;
   font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
 .notif-card-body { flex: 1; }

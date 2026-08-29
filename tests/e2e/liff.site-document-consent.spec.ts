@@ -12,7 +12,7 @@
 //    - 現場のメンバーでない人は承認できない（記録に意味が無くなる）
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { SUPABASE_URL, ANON_KEY, rest, restSrv, getAccountId } from './helpers'
+import { SUPABASE_URL, ANON_KEY, SERVICE_ROLE_KEY, rest, restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()
 const SITE = `E2E送り出し現場_${TS}`
@@ -42,10 +42,20 @@ test.beforeAll(async () => {
   siteId = (await restSrv('sites', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
     account_id: accountId, name: SITE, active: true,
   }) }))[0].id
-  // 承認が必要な資料を1件ぶら下げる
+  // 承認が必要な資料を1件ぶら下げる。
+  // ★実体もストレージに置く。DB行だけだと署名URLの発行が失敗し、
+  //  「開けるか」の検証ができない（非公開バケットは実在するオブジェクトしか署名できない）。
+  // ★保存パスはASCIIにする（日本語をURLに直接載せるとアップロードに失敗する）。
+  //  画面に出るのは name の方なので、表示名は日本語のままで良い。
+  const path = `e2e/consent-${TS}.txt`
+  await fetch(`${SUPABASE_URL}/storage/v1/object/site-attachments/${path}`, {
+    method: 'POST',
+    headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}`, 'Content-Type': 'text/plain' },
+    body: 'dummy',
+  }).catch(() => {})
   attId = (await restSrv('site_attachments', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
     account_id: accountId, site_id: siteId, kind: 'document',
-    path: `e2e/${DOC}`, name: DOC, require_consent: true,
+    path, name: DOC, require_consent: true,
   }) }))[0].id
 })
 
@@ -56,6 +66,17 @@ test.afterAll(async () => {
   await restSrv(`site_shares?site_id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})
   await restSrv(`sites?id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})
 })
+
+/**
+ * この現場のメンバーにしておく（画面を開く前提条件）。
+ * ★現場詳細は「自分が参加している現場」以外は /sites へ弾く。メンバー登録を
+ *  別テストに依存させると単体実行や順序変更で落ちるので、必要なテストが自分で確保する。
+ */
+async function ensureMember() {
+  await restSrv('site_shares', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({
+    account_id: accountId, site_id: siteId, user_id: userId,
+  }) }).catch(() => {})
+}
 
 test('★現場のメンバーでなければ承認できない（記録に意味が無くなる）', async () => {
   // まだ site_shares に入れていない＆現場責任者でもない状態
@@ -126,8 +147,68 @@ test('★資料が追加されたことをお知らせで気づける（未承�
   expect(again.json?.notified, '★承認済みの人には積まない').toBe(0)
 })
 
+test('★資料が実際に開ける（リンクに見えるのに押せない、にしない）', async ({ page }) => {
+  await ensureMember()
+  await page.goto(`/sites/${siteId}`, { waitUntil: 'networkidle' })
+  await expect(page.getByTestId('site-consent-block')).toBeVisible({ timeout: 20000 })
+
+  // 開けない時は <a> ではなく灰色の注記付き <span> になる。ここでは開ける想定なので <a>。
+  const row = page.getByTestId(`consent-row-${attId}`)
+  const link = row.locator('a.consent-doc')
+  await expect(link, '資料が押せるリンクとして出る').toHaveCount(1)
+
+  const href = await link.getAttribute('href')
+  expect(href, '署名URLが入っている').toBeTruthy()
+  // ★ホストがブラウザから到達できるものになっている（EF内部のコンテナ名のままにしない）
+  expect(href, 'コンテナ内部名(kong)のままにしない').not.toContain('kong:')
+
+  const res = await page.request.get(href!)
+  expect(res.status(), '★実際に開ける').toBe(200)
+})
+
+test('★未承認のうちはホームに印が残り、承認すると消える（お知らせを読んでも消えない）', async ({ page }) => {
+  await ensureMember()
+  await restSrv(`site_document_consents?attachment_id=eq.${attId}`, { method: 'DELETE' }).catch(() => {})
+  const pendingBefore = (await callConsentFn({ action: 'pending-count' })).json?.pending as number
+  expect(pendingBefore, '未承認が1件以上ある状態から始める').toBeGreaterThanOrEqual(1)
+
+  // 未承認 → ホームに「未承認の資料が◯件あります」が出る
+  await page.goto('/', { waitUntil: 'networkidle' })
+  const card = page.getByTestId('home-pending-doc-card')
+  await expect(card, '未承認のうちは印が出る').toBeVisible({ timeout: 20000 })
+
+  // ★お知らせを全部既読にしても消えない（既読で消える通知とは別物であること）
+  await restSrv(`schedule_notifications?worker_id=eq.${workerId}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ read_at: new Date().toISOString() }),
+  }).catch(() => {})
+  await page.reload({ waitUntil: 'networkidle' })
+  await expect(card, '★お知らせを読んでも承認していなければ残る').toBeVisible({ timeout: 20000 })
+
+  // ハンバーガーの「現場情報」にもバッジが出る
+  await page.locator('.app-hamburger').click()
+  await expect(page.getByTestId('drawer-doc-badge'), '現場のナビにも印が出る').toBeVisible({ timeout: 10000 })
+  await page.locator('.drawer-close').click()
+
+  // 承認する → 印が消える
+  await page.goto(`/sites/${siteId}`, { waitUntil: 'networkidle' })
+  await expect(page, '現場詳細に入れている（メンバーでないと /sites に弾かれる）').toHaveURL(new RegExp(`/sites/${siteId}`))
+  await expect(page.getByTestId('site-consent-block')).toBeVisible({ timeout: 20000 })
+  await page.getByTestId(`consent-btn-${attId}`).click()
+  await expect(page.getByTestId(`consent-done-${attId}`)).toBeVisible({ timeout: 20000 })
+
+  // ★他の現場に未承認資料が残っていることもあるので「0件になる」ではなく「1件減る」で見る
+  const after = (await callConsentFn({ action: 'pending-count' })).json?.pending
+  expect(after, '承認した分だけ未承認が減る').toBe(pendingBefore - 1)
+
+  // この現場の分はもう出ない
+  const mine = (await callConsentFn({ action: 'list', siteId })).json?.documents ?? []
+  expect(mine.find((d: any) => d.id === attId)?.consentedAt, 'この資料は承認済みになる').toBeTruthy()
+})
+
 test('LIFFの現場詳細に「確認が必要な資料」が出て、承認すると承認済みになる', async ({ page }) => {
   // 前のテストの承認を消して未承認の状態から始める
+  await ensureMember()
   await restSrv(`site_document_consents?attachment_id=eq.${attId}`, { method: 'DELETE' }).catch(() => {})
 
   await page.goto(`/sites/${siteId}`, { waitUntil: 'networkidle' })

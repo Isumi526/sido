@@ -109,7 +109,12 @@
             <a v-if="d.url" :href="d.url" target="_blank" rel="noopener" class="doc consent-doc">
               <span class="material-symbols-rounded doc-icon">description</span>{{ d.name || $t('sitesView.documentFallback') }}
             </a>
-            <span v-else class="doc consent-doc"><span class="material-symbols-rounded doc-icon">description</span>{{ d.name || $t('sitesView.documentFallback') }}</span>
+            <!-- ★URLが取れなかった時は「リンクに見えるのに押せない」状態にしない。
+                 灰色＋注記にして、開けないことが分かるようにする（2026-08-30 指摘）。 -->
+            <span v-else class="doc consent-doc consent-doc--unavailable">
+              <span class="material-symbols-rounded doc-icon">description</span>{{ d.name || $t('sitesView.documentFallback') }}
+              <span class="doc-unavailable">{{ $t('sitesView.documentUnavailable') }}</span>
+            </span>
             <span v-if="d.consentedAt" class="consent-done" :data-testid="`consent-done-${d.id}`">
               <span class="material-symbols-rounded">check_circle</span>{{ $t('sitesView.consentDone') }}
             </span>
@@ -129,7 +134,15 @@
               <input type="file" hidden :disabled="uploading" @change="onAttachPick($event, 'document')" />
             </label>
           </div>
-          <a v-for="a in docs" :key="a.id" v-show="a.url" :href="a.url || undefined" target="_blank" rel="noopener" class="doc"><span class="material-symbols-rounded doc-icon">description</span>{{ a.name || a.path.split('/').pop() }}</a>
+          <!-- ★URLが取れなくても行を消さない。消すと「資料があるのに無いように見える」
+               （2026-08-30 指摘。以前は v-show="a.url" で黙って消えていた）。 -->
+          <template v-for="a in docs" :key="a.id">
+            <a v-if="a.url" :href="a.url" target="_blank" rel="noopener" class="doc"><span class="material-symbols-rounded doc-icon">description</span>{{ a.name || a.path.split('/').pop() }}</a>
+            <span v-else class="doc doc--unavailable">
+              <span class="material-symbols-rounded doc-icon">description</span>{{ a.name || a.path.split('/').pop() }}
+              <span class="doc-unavailable">{{ $t('sitesView.documentUnavailable') }}</span>
+            </span>
+          </template>
         </div>
         <p v-if="!photos.length && !docs.length && !site.location && !site.construction_type && !site.construction_details && !site.memo" class="state">{{ $t('sitesView.noDetail') }}</p>
       </template>
@@ -144,6 +157,9 @@ const { t } = useI18n()
 const proxy = useProxyMode()
 const { profile, getIdToken } = useLiff()
 const route = useRoute()
+// ★setup の直下で解決しておく。async 関数の中で useRuntimeConfig() を呼ぶと
+//  Nuxt のコンテキストが失われて落ちる（署名URLの取得が丸ごと失敗した・2026-08-30）。
+const cfg = useRuntimeConfig()
 const fromChat = computed(() => route.query.from === 'chat')
 
 type Site = { id: string; name: string; active: boolean; location: string | null; construction_type: string | null; construction_details: string | null; memo: string | null; responsible_worker_id: string | null }
@@ -237,6 +253,8 @@ async function approveDoc(d: ConsentDoc) {
       return
     }
     d.consentedAt = new Date().toISOString()
+    // 承認したらホーム/ナビの「未承認の資料」の印を即座に減らす（残り続けると直したのに気づけない）
+    await refreshPendingDocBadge()
   } catch (e) {
     console.error('[site-consent] 承認に失敗:', e)
     consentError.value = t('sitesView.consentFailed')
@@ -311,11 +329,30 @@ async function onAttachPick(ev: Event, kind: 'photo' | 'document') {
 async function signedUrl(attachmentId: string): Promise<string | null> {
   try {
     const idToken = await getIdToken()
+    // 開発モードは LINE ID token が発行されないので、ローカル検証用の身元を渡す
+    // （EF 側は IS_LOCAL の時だけ受け付ける＝本番では効かない）
+    const devLineUserId = cfg.public.appEnv === 'development' ? (profile.value?.userId ?? '') : ''
     const { data, error } = await useSupabase().functions.invoke('site-attachment-url', {
-      body: { attachment_id: attachmentId, ...(idToken ? { line_id_token: idToken } : {}) },
+      body: {
+        attachment_id: attachmentId,
+        ...(idToken ? { line_id_token: idToken } : {}),
+        ...(devLineUserId ? { dev_line_user_id: devLineUserId } : {}),
+      },
     })
     if (error || !data?.ok) return null
-    return data.url as string
+    // ★署名URLのホストを、このクライアントが使う Supabase の URL に揃える。
+    //  EF は自分の SUPABASE_URL を元にURLを組み立てるため、ローカルでは
+    //  コンテナ内部名(http://kong:8000)になりブラウザから開けない。
+    //  本番は EF もクライアントも同じ公開URLなので、この正規化は何も変えない。
+    const raw = data.url as string
+    const base = (cfg.public.supabaseUrl as string) || ''
+    if (!base) return raw
+    try {
+      const u = new URL(raw)
+      const b = new URL(base)
+      if (u.origin !== b.origin) return `${b.origin}${u.pathname}${u.search}`
+      return raw
+    } catch { return raw }
   } catch { return null }
 }
 
@@ -442,6 +479,9 @@ onMounted(load)
 }
 .consent-done .material-symbols-rounded { font-size: 18px; }
 .consent-error { margin: 8px 0 0; font-size: 13px; color: #b91c1c; }
+/* 開けない資料は「リンクに見えるのに押せない」を避け、灰色＋注記にする */
+.doc--unavailable, .consent-doc--unavailable { color: #94a3b8; cursor: default; }
+.doc-unavailable { font-size: 11px; color: #94a3b8; margin-left: 4px; }
 
 .edit-form { display: flex; flex-direction: column; gap: 10px; background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
 .edit-field { display: flex; flex-direction: column; gap: 4px; }
