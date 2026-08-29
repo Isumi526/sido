@@ -20,5 +20,7 @@
   "notifSub": "Tap to see what happened",
   "punchCheckinTitle": "You haven't clocked in yet",
   "punchCheckoutTitle": "You haven't clocked out yet",
-  "punchSub": "It's time for {title}. Tap to record your attendance."
+  "punchSub": "It's time for {title}. Tap to record your attendance.",
+  "todoTitle": "{count} thing(s) to do",
+  "todoSub": "Please read and confirm"
 }

@@ -20,5 +20,7 @@
   "notifSub": "タップして内容を確認",
   "punchCheckinTitle": "出勤の打刻がまだです",
   "punchCheckoutTitle": "退勤の打刻がまだです",
-  "punchSub": "{title} の時間です。タップして打刻しましょう"
+  "punchSub": "{title} の時間です。タップして打刻しましょう",
+  "todoTitle": "やることが{count}件あります",
+  "todoSub": "確認・承認をお願いします"
 }

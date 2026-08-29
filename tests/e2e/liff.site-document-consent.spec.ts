@@ -172,10 +172,11 @@ test('★未承認のうちはホームに印が残り、承認すると消え�
   const pendingBefore = (await callConsentFn({ action: 'pending-count' })).json?.pending as number
   expect(pendingBefore, '未承認が1件以上ある状態から始める').toBeGreaterThanOrEqual(1)
 
-  // 未承認 → ホームに「未承認の資料が◯件あります」が出る
+  // 未承認 → ホームのカードが「やること」表示になる
   await page.goto('/', { waitUntil: 'networkidle' })
-  const card = page.getByTestId('home-pending-doc-card')
+  const card = page.getByTestId('home-notif-card')
   await expect(card, '未承認のうちは印が出る').toBeVisible({ timeout: 20000 })
+  await expect(card, '★行動が要ることが分かる文言になる').toContainText('やること')
 
   // ★お知らせを全部既読にしても消えない（既読で消える通知とは別物であること）
   await restSrv(`schedule_notifications?worker_id=eq.${workerId}`, {
@@ -184,15 +185,16 @@ test('★未承認のうちはホームに印が残り、承認すると消え�
   }).catch(() => {})
   await page.reload({ waitUntil: 'networkidle' })
   await expect(card, '★お知らせを読んでも承認していなければ残る').toBeVisible({ timeout: 20000 })
+  await expect(card).toContainText('やること')
 
-  // ハンバーガーの「現場情報」にもバッジが出る
-  await page.locator('.app-hamburger').click()
-  await expect(page.getByTestId('drawer-doc-badge'), '現場のナビにも印が出る').toBeVisible({ timeout: 10000 })
-  await page.locator('.drawer-close').click()
+  // お知らせ画面の「やること」タブに出て、タップでその現場へ飛べる
+  await page.goto('/notifications', { waitUntil: 'networkidle' })
+  await expect(page.getByTestId('notif-tab-todo'), 'やることタブがある').toBeVisible({ timeout: 15000 })
+  await expect(page.getByTestId('todo-item').first(), 'やることとして出る').toBeVisible({ timeout: 15000 })
+  await page.getByTestId('todo-item').first().click()
+  await expect(page, 'タップでその現場へ飛ぶ').toHaveURL(new RegExp(`/sites/${siteId}`), { timeout: 15000 })
 
-  // 承認する → 印が消える
-  await page.goto(`/sites/${siteId}`, { waitUntil: 'networkidle' })
-  await expect(page, '現場詳細に入れている（メンバーでないと /sites に弾かれる）').toHaveURL(new RegExp(`/sites/${siteId}`))
+  // 承認する → やることから消える
   await expect(page.getByTestId('site-consent-block')).toBeVisible({ timeout: 20000 })
   await page.getByTestId(`consent-btn-${attId}`).click()
   await expect(page.getByTestId(`consent-done-${attId}`)).toBeVisible({ timeout: 20000 })

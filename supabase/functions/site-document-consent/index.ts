@@ -242,19 +242,31 @@ Deno.serve(async (req) => {
     if (!siteIds.size) return json({ ok: true, pending: 0, sites: [] })
 
     const { data: docs } = await svc.from('site_attachments')
-      .select('id, site_id').eq('account_id', accountId)
+      .select('id, site_id, name, created_at').eq('account_id', accountId)
       .in('site_id', [...siteIds]).eq('kind', 'document').eq('require_consent', true)
-    if (!docs?.length) return json({ ok: true, pending: 0, sites: [] })
+      .order('created_at', { ascending: false })
+    if (!docs?.length) return json({ ok: true, pending: 0, sites: [], items: [] })
 
-    const { data: mine } = await svc.from('site_document_consents')
-      .select('attachment_id').eq('account_id', accountId).eq('worker_id', workerId)
+    const [{ data: mine }, { data: siteRows }] = await Promise.all([
+      svc.from('site_document_consents').select('attachment_id').eq('account_id', accountId).eq('worker_id', workerId),
+      svc.from('sites').select('id, name').in('id', [...siteIds]),
+    ])
     const done = new Set(((mine ?? []) as any[]).map(r => r.attachment_id))
+    const siteName = new Map(((siteRows ?? []) as any[]).map(s => [s.id, s.name]))
     const pendingDocs = (docs as any[]).filter(d => !done.has(d.id))
     return json({
       ok: true,
       pending: pendingDocs.length,
       // どの現場に残っているか（現場一覧で印を出すため）
       sites: [...new Set(pendingDocs.map(d => d.site_id))],
+      // 「やること」一覧に出す明細（何を・どの現場で・いつ追加されたか）
+      items: pendingDocs.map(d => ({
+        attachmentId: d.id,
+        name: d.name,
+        siteId: d.site_id,
+        siteName: siteName.get(d.site_id) ?? '',
+        createdAt: d.created_at,
+      })),
     })
   }
 
