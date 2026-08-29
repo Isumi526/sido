@@ -78,6 +78,7 @@ function iconOf(kind: string): string {
     case 'overtime_decision': return 'more_time'
     case 'expense_reject':    return 'receipt_long'
     case 'chat_mention':      return 'alternate_email'
+    case 'site_document':     return 'description'   // 送り出し資料の確認依頼
     default:                  return 'notifications'
   }
 }

@@ -51,6 +51,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await restSrv(`site_document_consents?attachment_id=eq.${attId}`, { method: 'DELETE' }).catch(() => {})
+  await restSrv(`schedule_notifications?worker_id=eq.${workerId}&kind=eq.site_document`, { method: 'DELETE' }).catch(() => {})
   await restSrv(`site_attachments?id=eq.${attId}`, { method: 'DELETE' }).catch(() => {})
   await restSrv(`site_shares?site_id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})
   await restSrv(`sites?id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})
@@ -103,6 +104,26 @@ test('★承認状況で「誰が済んで誰が未か」が分かる', async ()
   const doc = (r.json.documents ?? []).find((d: any) => d.id === attId)
   expect(doc, '対象資料が出る').toBeTruthy()
   expect(doc.consented.map((c: any) => c.workerId), '承認済みに自分が入る').toContain(workerId)
+})
+
+test('★資料が追加されたことをお知らせで気づける（未承認の人にだけ積む）', async () => {
+  await restSrv(`site_document_consents?attachment_id=eq.${attId}`, { method: 'DELETE' }).catch(() => {})
+  await restSrv(`schedule_notifications?worker_id=eq.${workerId}&kind=eq.site_document`, { method: 'DELETE' }).catch(() => {})
+
+  const r = await callConsentFn({ action: 'notify', attachmentId: attId })
+  expect(r.json?.ok).toBeTruthy()
+  expect(r.json?.notified, '未承認の参加者に届く').toBeGreaterThanOrEqual(1)
+
+  const notifs = await restSrv(
+    `schedule_notifications?worker_id=eq.${workerId}&kind=eq.site_document&select=title,body,link_path&order=created_at.desc&limit=1`)
+  expect(notifs.length, 'お知らせが積まれる').toBe(1)
+  expect(notifs[0].body, 'どの資料か分かる').toContain(DOC)
+  expect(notifs[0].link_path, '★タップでその現場へ飛べる').toBe(`/sites/${siteId}`)
+
+  // 承認した人には出さない（「確認してください」を承認済みの人に出さない）
+  await callConsentFn({ action: 'consent', attachmentId: attId })
+  const again = await callConsentFn({ action: 'notify', attachmentId: attId })
+  expect(again.json?.notified, '★承認済みの人には積まない').toBe(0)
 })
 
 test('LIFFの現場詳細に「確認が必要な資料」が出て、承認すると承認済みになる', async ({ page }) => {
