@@ -93,6 +93,9 @@
             <NuxtLink class="drawer-item" :to="item.path" :data-testid="item.testId" @click="open = false">
               <span class="drawer-item-icon material-symbols-rounded">{{ item.icon }}</span>
               <span>{{ item.label }}</span>
+              <!-- ★未承認の送り出し資料。お知らせと違い「読んだら消える」ではなく、
+                   承認するまで残る（2026-08-30 ユーザー指示）。 -->
+              <span v-if="item.path === '/sites' && pendingDocCount > 0" class="drawer-item-badge" data-testid="drawer-doc-badge">{{ pendingDocCount }}</span>
             </NuxtLink>
           </template>
           <button type="button" class="drawer-item" @click="openInBrowser">
@@ -233,7 +236,7 @@ const open = ref(false)
 // ※ @click ハンドラ内で直接呼ぶと useSchedules() 内の useI18n() が「setup外」判定で例外になり
 //   サイレントに失敗する(コンポーネントinstance文脈が無いDOMイベントハンドラのため)。
 //   watchはVueのeffectスコープ内で実行されinstance文脈が保持されるためここに書く。
-watch(open, (isOpen) => { if (isOpen) refreshNotifBadge() })
+watch(open, (isOpen) => { if (isOpen) { refreshNotifBadge(); refreshPendingDocBadge() } })
 
 // ホーム画面(pages/index.vue)と共通のナビ項目定義（composables/useNavItems.ts）。
 // 表記・並び・表示条件(パスワード変更等)のズレを防ぐ（2026-07-10）。
@@ -242,7 +245,7 @@ onMounted(() => { void resolveRole() })
 const { bySection } = useNavItems(() => authMode.value, () => canApplyPersonalExpense.value)
 
 // 予定管理ナビの未読バッジ（#予定通知バッジ・2026-07-11）
-onMounted(() => { refreshNotifBadge() })
+onMounted(() => { refreshNotifBadge(); refreshPendingDocBadge() })
 // チャット一覧ナビの未読バッジ（2026-07-14・現場情報ナビの未読メンションバッジから移設・集約）
 onMounted(() => { refreshSiteChatListBadge() })
 

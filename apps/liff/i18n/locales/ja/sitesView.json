@@ -23,5 +23,6 @@
   "consentDone": "承認済み",
   "consentFailed": "承認を記録できませんでした。時間をおいて試してください。",
   "consentNotParticipant": "この現場のメンバーではないため承認できません。",
+  "documentUnavailable": "（開けません）",
   "documentFallback": "資料"
 }

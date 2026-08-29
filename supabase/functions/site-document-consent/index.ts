@@ -223,5 +223,40 @@ Deno.serve(async (req) => {
     return json({ ok: true, notified: rows.length })
   }
 
+  // ── 自分がまだ承認していない資料の件数（全現場ぶん）──
+  //  ★お知らせは「読んだら消える」ので、読んで放置すると気づけなくなる。
+  //   承認するまで消えない印をナビ/ホームに出すために、状態そのものを数える
+  //   （2026-08-30 ユーザー指示「承認するまで残るものをつけてほしい」）。
+  if (body.action === 'pending-count') {
+    // 自分が参加している現場（site_shares＋自分が責任者の現場）
+    const [{ data: shares }, { data: mySites }] = await Promise.all([
+      svc.from('site_shares').select('site_id, user_id').eq('account_id', accountId),
+      svc.from('sites').select('id').eq('account_id', accountId).eq('responsible_worker_id', workerId),
+    ])
+    const myUserIds = new Set<string>()
+    const { data: us } = await svc.from('users').select('id').eq('worker_id', workerId).eq('account_id', accountId)
+    for (const u of (us ?? []) as any[]) myUserIds.add(u.id)
+    const siteIds = new Set<string>()
+    for (const s of (shares ?? []) as any[]) if (myUserIds.has(s.user_id)) siteIds.add(s.site_id)
+    for (const s of (mySites ?? []) as any[]) siteIds.add(s.id)
+    if (!siteIds.size) return json({ ok: true, pending: 0, sites: [] })
+
+    const { data: docs } = await svc.from('site_attachments')
+      .select('id, site_id').eq('account_id', accountId)
+      .in('site_id', [...siteIds]).eq('kind', 'document').eq('require_consent', true)
+    if (!docs?.length) return json({ ok: true, pending: 0, sites: [] })
+
+    const { data: mine } = await svc.from('site_document_consents')
+      .select('attachment_id').eq('account_id', accountId).eq('worker_id', workerId)
+    const done = new Set(((mine ?? []) as any[]).map(r => r.attachment_id))
+    const pendingDocs = (docs as any[]).filter(d => !done.has(d.id))
+    return json({
+      ok: true,
+      pending: pendingDocs.length,
+      // どの現場に残っているか（現場一覧で印を出すため）
+      sites: [...new Set(pendingDocs.map(d => d.site_id))],
+    })
+  }
+
   return json({ ok: false, error: 'unknown_action' }, 400)
 })

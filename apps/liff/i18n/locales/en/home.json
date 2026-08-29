@@ -15,6 +15,8 @@
   "periodFirstHalf": "First half of {month}",
   "periodSecondHalf": "Second half of {month}",
   "notifTitle": "{count} unread notification(s)",
+  "pendingDocTitle": "{count} document(s) awaiting your confirmation",
+  "pendingDocSub": "Please read and confirm (stays until confirmed)",
   "notifSub": "Tap to see what happened",
   "punchCheckinTitle": "You haven't clocked in yet",
   "punchCheckoutTitle": "You haven't clocked out yet",
