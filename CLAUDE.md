@@ -77,7 +77,7 @@ git push origin main --force
 ```
 
 ## Phase別ロードマップ
-- Phase 1 ✅ LINE日報→GAS自動転記・Gemini正規化・各種機能
+- Phase 1 ✅ LINE日報→GAS自動転記・Gemini正規化・各種機能 ※LINE送信は2026-08-30に全廃（ログインのみ現役）
 - Phase 1.5 ✅ LINE LIFFフォーム（Nuxt3）・LIFF→GAS連携・Supabase・管理画面
 - Phase 2 予定: 月次集計レポート・経費PDF自動生成
 - Phase 3 予定: 複数テナント展開
@@ -137,7 +137,10 @@ node --env-file=.env scripts/seed-staging-demo.mjs --clean   # 片付け
 ### APP_LAYOUT_NOTES（/review が参照）
 - 構成: `apps/admin`(管理画面・ブラウザ {{DEV_URL}}) ＋ `apps/liff`(Nuxt・LINEミニアプリ)。UI/ロジックは原則ブラウザ。**LINEアプリ内固有（友だち追加・トーク内 LIFF 起動・Flex体裁）は `⚠実機確認`**。
 - 画面パス例（admin）: 下請け管理／現場／日報／月次集計 ※実パスは apps ルーティングに合わせる。
-- 外部送信媒体＝**LINE（liff・GAS webhook 経由）・メール**（実送信は自分宛・隔離）。
+- 外部送信媒体＝**メール（Resend）** と **アプリ内のお知らせ**（実送信は自分宛・隔離）。
+  ★**LINEへの送信は 2026-08-30 に全廃**（日報通知・編集通知・エラー通知・未送信リマインド・
+  車検リマインド・注文書承諾通知）。関数も本番から削除済み。**LINEログイン（身元解決）は現役**なので
+  `LINE_LOGIN_CHANNEL_ID` / `liff.getIdToken` / `users.line_user_id` は残す（ここを消すと本番が即死する）。
 - 本番: DEPLOY_TRIGGER=`auto-on-merge`（Vercel）。**Supabase edge functions 使用＝ship 手順7 で本番ref へ deploy 該当**。`NOTIFY_PREFIX=[sido]`。スモークの認可ガード対象＝GAS/edge webhook・公開リンク等。
 
 ### CONSUMERS_DOCS（/run が参照・§3 影響範囲マップの手順4）

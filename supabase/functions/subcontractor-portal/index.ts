@@ -14,10 +14,7 @@
 //  ※ 平文トークンはログに出さない。
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { pushLineText } from '../_shared/line.ts'
-import { resolveGroupIds } from '../_shared/resolveGroupId.ts'
 
-const LINE_TOKEN = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 // service role があれば使う。無ければ anon（ローカル等）にフォールバック
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
@@ -576,18 +573,23 @@ Deno.serve(async (req) => {
         .from('document_access_tokens').update({ used_at: nowIso }).eq('id', tok.id)
       if (tokUpdErr) console.warn('[subcontractor-portal] token used_at update failed (non-fatal):', tokUpdErr.message)
 
-      // 管理側へ per-tenant LINE 通知（注文書が承諾された・#47）。
-      // ★fallback=[] でクロステナント配信を防ぐ＝通知グループ未設定テナントには送らない。
-      //   通知は best-effort。失敗しても承諾処理は妨げない。
+      // 管理側へ「注文書が承諾された」を知らせる（#47）。
+      // ★2026-08-30: LINEグループ送信をやめ、アプリ内のお知らせに積む形へ置き換えた
+      //  （LINEから降りる方針。過去にこの経路でクロステナント配信の事故もあった）。
+      //  通知は best-effort。失敗しても承諾処理は妨げない。
       try {
-        if (LINE_TOKEN) {
-          const { data: acct } = await supabase.from('accounts').select('slug').eq('id', order.account_id).maybeSingle()
-          const groups = await resolveGroupIds(acct?.slug ?? null, [])
-          if (groups.length) {
-            const msg = `✅ 注文書が承諾されました\n注文書番号: ${order.order_number ?? ''}\n受注者: ${order.vendor_name ?? ''}\n現場: ${order.site_name ?? '―'}\n署名: ${signerName || '―'}`
-            await Promise.all(groups.map((id: string) => pushLineText(id, msg, LINE_TOKEN)))
-          }
-        }
+        const { data: admins } = await supabase.from('workers')
+          .select('id').eq('account_id', order.account_id).eq('active', true)
+          .in('permission_role', ['admin', 'owner', 'office'])
+        const rows = (admins ?? []).map((w: any) => ({
+          account_id: order.account_id,
+          worker_id: w.id,
+          kind: 'purchase_order_accepted',
+          title: `注文書が承諾されました（${order.order_number ?? ''}）`,
+          body: `受注者: ${order.vendor_name ?? '―'}／現場: ${order.site_name ?? '―'}／署名: ${signerName || '―'}`,
+          link_path: '/purchase-orders',
+        }))
+        if (rows.length) await supabase.from('schedule_notifications').insert(rows)
       } catch (e) {
         console.warn('[subcontractor-portal] accept notify failed (non-fatal):', (e as Error)?.message)
       }

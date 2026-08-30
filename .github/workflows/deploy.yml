@@ -33,7 +33,8 @@ jobs:
       - name: Deploy Edge Functions (dev → test prefix)
         if: github.ref_name == 'dev'
         run: |
-          FUNCTIONS="submit-report notify-edit notify-error get-master"
+          # 2026-08-30: LINE送信系(submit-report / notify-edit / notify-error)は撤去済み
+          FUNCTIONS="get-master"
           for fn in $FUNCTIONS; do
             cp -r supabase/functions/$fn supabase/functions/test-$fn
             supabase functions deploy test-$fn \

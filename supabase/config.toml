@@ -389,12 +389,6 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 # ============================================================
 [functions.get-master]
 verify_jwt = false
-[functions.submit-report]
-verify_jwt = false
-[functions.notify-edit]
-verify_jwt = false
-[functions.notify-error]
-verify_jwt = false
 [functions.notify-overtime]
 verify_jwt = false
 [functions.vehicle-attachment-url]
@@ -402,8 +396,6 @@ verify_jwt = false
 [functions.vehicle-plate-ocr]
 verify_jwt = false
 [functions.vehicle-shaken-ocr]
-verify_jwt = false
-[functions.resend-notifications]
 verify_jwt = false
 [functions.daily-reminder]
 verify_jwt = false

@@ -1507,6 +1507,10 @@ async function loadEditData(date: string) {
       usage.selfWorking = (site.workers ?? []).some((w: any) => w.workerName) ? 'あり' : 'なし'
       return usage
     })
+    // ★ガソリン欄は経費（交通経費）の中へ移した（2026-08-30・#dae1a9e7）。
+    //  給油明細がある日報は最初の現場の経費セクションを開いておく。開かないと
+    //  既存の明細が画面から消えて編集できなくなる（「その他」を あり で復元するのと同じ理由）。
+    if (gasFueled.value && siteUsage.value[0]) siteUsage.value[0].expense = 'あり'
   }
 }
 
@@ -2295,21 +2299,14 @@ function fillErrorTestData() {
   forceErrorOnSubmit.value = true
 }
 
-/** LINEグループにエラーを通知する（fire-and-forget） */
-function notifyErrorToLine(actionName: string, errorMsg: string) {
-  const efUrl = config.public.edgeFunctionUrl
-  if (!efUrl) return
-  const fnPrefix = config.public.appEnv === 'development' ? 'test-' : ''
-  fetch(`${efUrl}/${fnPrefix}notify-error`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({
-      sender:     currentUser.value?.real_name || '不明',
-      date:       report.form.value.date,
-      actionName,
-      error:      errorMsg,
-    }),
-  }).catch(() => {})
+/**
+ * 送信でエラーが出たことを記録する。
+ * ★2026-08-30: 以前はLINEグループへ飛ばしていたが、LINE送信は撤去した
+ *  （日報のLINE通知は 2026-07-01 以降ゼロで、運用としては既に終わっていた）。
+ *  握り潰すと「送れていないのに誰も気づかない」ので、コンソールには必ず残す。
+ */
+function recordSubmitError(actionName: string, errorMsg: string) {
+  console.error(`[Report] ${actionName} に失敗しました:`, errorMsg)
 }
 
 /**
@@ -2430,34 +2427,15 @@ async function handleSubmit() {
         throw new Error(t('report.editApprovalSubmitFailed'))
       }
 
-      // 差分をLINEグループに通知
-      const efUrl = config.public.edgeFunctionUrl
-      if (originalReport.value && efUrl) {
-        if (diffs.length > 0) {
-          const now = new Date()
-          const editedAt = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-          const fnPrefix = config.public.appEnv === 'development' ? 'test-' : ''
-          // 身元優先のスラッグ（email/pwは自テナント・LINEはenv）
-          const acctSlug = await useAccount().effectiveSlug()
-          fetch(`${efUrl}/${fnPrefix}notify-edit`, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({
-              sender:      currentUser.value?.real_name || '',
-              date:        report.form.value.date,
-              editedAt,
-              diffs,
-              accountSlug: acctSlug,
-            }),
-          }).catch(e => console.error('[Edit] LINE通知エラー:', e))
-        }
-      }
+      // ★2026-08-30: 編集差分のLINEグループ通知は撤去した。
+      //  差分は report-edit-log EF が承認待ち(daily_report_pending_edits.diffs)へ載せ、
+      //  管理画面の承認欄で見える＝通知が無くても中身は追える。
 
       editSubmitted.value = true
     } catch (e) {
       const msg = e instanceof Error ? e.message : t('report.errorUpdateFailed')
       editError.value = msg
-      notifyErrorToLine('日報編集', msg)
+      recordSubmitError('日報編集', msg)
     } finally {
       editSubmitting.value = false
     }
@@ -2474,7 +2452,7 @@ async function handleSubmit() {
   if (forceErrorOnSubmit.value) {
     forceErrorOnSubmit.value = false
     editError.value = '[テスト] GAS送信エラー: network request failed'
-    notifyErrorToLine('日報新規送信（テスト）', 'network request failed')
+    recordSubmitError('日報新規送信（テスト）', 'network request failed')
     return
   }
 
@@ -2515,7 +2493,7 @@ async function handleSubmit() {
     } catch (e: unknown) {
       const msg = String((e as any)?.message ?? e ?? 'Supabase保存エラー')
       console.error('[Report] Supabase保存エラー:', e)
-      notifyErrorToLine('日報新規送信（DB保存）', msg)
+      recordSubmitError('日報新規送信（DB保存）', msg)
       if (!proxyT && (msg.includes('ユーザーが登録されていません') || msg.includes('foreign key'))) {
         if (uid) expense.clearUserCache(uid)
         selfUser.value = null
