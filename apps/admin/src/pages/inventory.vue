@@ -82,22 +82,22 @@ async function addItem() {
   await load()
 }
 
-// 入出庫: sign=+1(入庫)/-1(出庫)。現在庫を加減し、根拠を inventory_movements に残す。
+// 入出庫: sign=+1(入庫)/-1(出庫)。
+// ★2026-08-30: 「画面が持っている値＋差分」で上書きするのをやめ、DB側で加減する
+//  関数(inventory_move)に一本化した。以前は複数人・複数タブで同じ品目をほぼ同時に
+//  触ると後から押した方が相手の分を消していた（履歴の合計と現在庫が合わなくなる）。
+//  履歴の追加と現在庫の加減も、この関数の中で1トランザクションにまとまっている。
 async function move(it: Item, sign: 1 | -1) {
   const q = Number(moveQty[it.id])
   if (!(q > 0)) return
   busy.value = true; err.value = ''
-  const delta = sign * q
-  const next = it.current_qty + delta
-  // 記録（履歴）→ 現在庫更新。片方失敗時は err を出して load で整合を取り直す。
-  const { error: mErr } = await supabase.from('inventory_movements').insert({
-    account_id: accountId.value, item_id: it.id, delta, note: (moveNote[it.id] ?? '').trim() || null,
+  const { error } = await supabase.rpc('inventory_move', {
+    p_item_id: it.id,
+    p_delta: sign * q,
+    p_note: (moveNote[it.id] ?? '').trim() || null,
   })
-  if (mErr) { busy.value = false; err.value = mErr.message; return }
-  const { error: uErr } = await supabase.from('inventory_items')
-    .update({ current_qty: next, updated_at: new Date().toISOString() }).eq('id', it.id)
   busy.value = false
-  if (uErr) { err.value = uErr.message; await load(); return }
+  if (error) { err.value = error.message; await load(); return }
   moveQty[it.id] = null; moveNote[it.id] = ''
   await load()
 }
