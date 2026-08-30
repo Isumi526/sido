@@ -29,7 +29,7 @@ test('週間ビューの時間区画をタップすると、その時刻(30分�
   await expect(endTime).toHaveValue('11:00')
 
   // 保存すると時刻付きの予定として週タイムラインに表示される（終日行ではない）
-  await page.locator('.form-row').filter({ has: page.locator('.form-row-label', { hasText: '現場 *' }) })
+  await page.locator('.form-row').filter({ has: page.locator('.form-row-label', { hasText: '現場 ※必須' }) })
     .locator('select.site-select').selectOption('__other__')
   await page.locator('input[placeholder="現場名を入力"]').fill(TITLE)
   await page.locator('.btn-save').click()

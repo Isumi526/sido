@@ -11,7 +11,10 @@
 
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') ?? ''
 const GEMINI_MODEL = 'gemini-2.5-flash'
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`
+// ★v1 は responseMimeType('application/json') を受け付けない（v1beta のみ）。
+//  JSONモードを使わないと ```json フェンスや前置きが混ざり、抽出に失敗して
+//  「読み取れませんでした」になる。2026-08-30 に v1beta へ。
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`
 
 function corsHeaders() {
   return {
@@ -46,10 +49,19 @@ Deno.serve(async (req) => {
 必ずJSON形式のみで返してください。説明文は不要です。
 
 {
-  "storeName": "支払い先＝発行元の店名・会社名・施設名（領収書を発行した事業者名。例: 東日本旅客鉄道株式会社、東日本高速道路、タイムズ24、〇〇損保。なければnull）",
+  "storeName": "支払い先＝発行元の店名・会社名・施設名（領収書を発行した事業者名。例: 東日本旅客鉄道株式会社、東日本高速道路、タイムズ24、〇〇損保。なければnull）
+    ★探す場所: レシートは最上部の店名、領収書は下部の発行者欄・住所の上・社判/印影の文字。
+    ★店名の一部でも読めたら返す（完全な社名でなくてよい。『セブン-イレブン◯◯店』『コメリ』等）。
+    ★『領収書』『レシート』『御中』『様』『合計』などの見出し語や宛名は店名ではない。宛名（支払った側）と発行元を取り違えないこと。
+    ★どうしても読めない時だけ null",
   "label": "内容・品名・サービス名（電車・鉄道・乗車券なら乗車区間を『A〜B』の形式で／駐車なら『駐車料金』等の内容。発行元名ではなく“何の代金か”。なければnull）",
   "yen": 合計金額（数値、税込、円、不明ならnull）,
-  "invoiceNumber": "インボイス登録番号（T+13桁の数字形式、なければnull）",
+  "invoiceNumber": "インボイス登録番号。T+13桁の数字（例 T1234567890123）。
+    ★探す場所: 『登録番号』『適格請求書発行事業者登録番号』『インボイス番号』『事業者登録番号』の近く。
+    ★T が全角(Ｔ)・小文字(t) だったり、数字が空白やハイフンで区切られていることがある。
+     その場合も読み取って T+13桁に正規化して返す。
+    ★13桁の数字だけが書かれていて T が無い場合も、登録番号の欄にあるなら T を付けて返す。
+    ★見当たらない時だけ null",
   "liters": 給油量（ガソリン/軽油の領収書の場合のみ数値でリットル数。給油以外の領収書、または記載が無い/読み取れない場合はnull）,
   "account": "勘定科目。次の7つのいずれか厳密に1つだけを返す: 旅費交通費 / 車両費 / 消耗品費 / 材料費 / 接待交際費 / 会議費 / 雑費。判断できない場合は必ずnull（勝手に別の名称を作らない）。目安: 飲食店・居酒屋・料亭=接待交際費、カフェ・喫茶・貸会議室=会議費、ホームセンター・工具・建築資材=材料費、文具・日用品=消耗品費、鉄道・バス・タクシー・駐車・高速・宿泊=旅費交通費、給油・洗車・車検=車両費"
 }`
@@ -64,6 +76,7 @@ Deno.serve(async (req) => {
       generationConfig: {
         temperature: 0,
         maxOutputTokens: 2048,
+        responseMimeType: 'application/json',
       },
     }
 
@@ -111,11 +124,30 @@ Deno.serve(async (req) => {
       ? result.account.trim()
       : null
 
+    // ★インボイス番号を T+13桁 に正規化する（2026-08-30）。
+    //  全角T・小文字t・空白/ハイフン区切り・T落ちが実際に混ざってくる。
+    //  そのまま返すと画面の「T+13桁」判定に引っかかって捨てられ、
+    //  「読めているのに入っていない」ように見える。
+    const normalizeInvoice = (v: unknown): string | null => {
+      if (typeof v !== 'string') return null
+      const z2h = v.replace(/[Ｔｔ]/g, 'T').replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+      const digits = z2h.replace(/[^0-9]/g, '')
+      if (digits.length !== 13) return null
+      return `T${digits}`
+    }
+    const invoiceNumber = normalizeInvoice(result.invoiceNumber)
+
+    // ★見出し語や宛名を店名として拾ってしまうことがあるので落とす。
+    //  空欄のほうが「AIが埋めた誤った支払先」より扱いやすい（人が気づいて直せる）。
+    const NOT_STORE = /^(領収書|レシート|請求書|御中|様|合計|小計|お預り|お釣り|税込|税抜|上記正に領収)/
+    const rawStore = typeof result.storeName === 'string' ? result.storeName.trim() : ''
+    const storeName = rawStore && !NOT_STORE.test(rawStore) ? rawStore : null
+
     return json({
-      storeName:     result.storeName ?? null,
+      storeName,
       label:         result.label ?? null,
       yen:           result.yen != null ? Number(result.yen) : null,
-      invoiceNumber: result.invoiceNumber ?? null,
+      invoiceNumber,
       liters:        result.liters != null ? Number(result.liters) : null,
       account,
     })

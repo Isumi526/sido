@@ -353,7 +353,7 @@ export const useExpense = () => {
    *   丸ごと抜け落ちる。実際それで「承認したら集計の接待交際費列が空になる」バグを踏んだ。
    */
   async function buildReportPayload(
-    report: { isWorking: boolean; sites: unknown[]; note?: string; leaveType?: string | null; isBusinessTrip?: boolean; gasolineItems?: any[]; date?: string | null }
+    report: { isWorking: boolean; sites: unknown[]; note?: string; leaveType?: string | null; leaveDays?: number | null; leaveHours?: number | null; isBusinessTrip?: boolean; gasolineItems?: any[]; date?: string | null }
   ): Promise<Record<string, unknown>> {
     const accountId = await getAccountId()
     await registerNewSites(accountId, report.sites as any[])
@@ -365,6 +365,10 @@ export const useExpense = () => {
     return {
       is_working:       report.isWorking,
       leave_type:       report.leaveType ?? null,
+      // 有給の消化量（日）。1=全日 / 0.5=半日 / 時間単位は 時間÷所定時間。
+      // ★件数で数えると半日も1日消化になるので、量そのものを保存する（2026-08-30）
+      leave_days:       report.leaveType === 'paid_leave' ? (report.leaveDays ?? 1) : null,
+      leave_hours:      report.leaveType === 'paid_leave' ? (report.leaveHours ?? null) : null,
       is_business_trip: report.isBusinessTrip ?? false,
       sites:            sanitizeSitesForStorage(report.sites as any[], activeSites, report.date ?? null),
       note:             report.note ?? null,
@@ -408,7 +412,7 @@ export const useExpense = () => {
    */
   async function callSaveReportEf(
     userId: string,
-    report: { date: string; isWorking: boolean; sites: unknown[]; note?: string; leaveType?: string | null; isBusinessTrip?: boolean; gasolineItems?: any[] },
+    report: { date: string; isWorking: boolean; sites: unknown[]; note?: string; leaveType?: string | null; leaveDays?: number | null; leaveHours?: number | null; isBusinessTrip?: boolean; gasolineItems?: any[] },
   ): Promise<{ ok: boolean; error?: string }> {
     const config = useRuntimeConfig()
     const liff = useLiff()
@@ -436,7 +440,7 @@ export const useExpense = () => {
 
   async function saveReportById(
     userId: string,
-    report: { date: string; isWorking: boolean; sites: unknown[]; note?: string; leaveType?: string | null; isBusinessTrip?: boolean; gasolineItems?: any[] }
+    report: { date: string; isWorking: boolean; sites: unknown[]; note?: string; leaveType?: string | null; leaveDays?: number | null; leaveHours?: number | null; isBusinessTrip?: boolean; gasolineItems?: any[] }
   ): Promise<void> {
     // ★EF経由。daily_reports への直書きは他テナントの行まで書き換え・削除できるため塞いだ（2026-08-16）。
     //  身元の検証・クロステナントの拒否・現場マスタ登録・site_id 解決・整形は全部 EF 側で行う。
@@ -487,6 +491,8 @@ export const useExpense = () => {
       sites: rep.sites ?? [],
       note: rep.note ?? undefined,
       leaveType: rep.leave_type ?? null,
+      leaveDays: (rep as any).leave_days ?? null,
+      leaveHours: (rep as any).leave_hours ?? null,
       isBusinessTrip: rep.is_business_trip ?? false,
       gasolineItems: rep.gasoline_items ?? [],
     })
@@ -499,7 +505,7 @@ export const useExpense = () => {
    */
   async function saveReport(
     lineUserId: string,
-    report: { date: string; isWorking: boolean; sites: unknown[]; note?: string; leaveType?: string | null; isBusinessTrip?: boolean; gasolineItems?: any[] }
+    report: { date: string; isWorking: boolean; sites: unknown[]; note?: string; leaveType?: string | null; leaveDays?: number | null; leaveHours?: number | null; isBusinessTrip?: boolean; gasolineItems?: any[] }
   ): Promise<void> {
     console.log('[saveReport] 開始 lineUserId=', lineUserId)
 

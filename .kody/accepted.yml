@@ -431,3 +431,7 @@ entries:
     target: supabase/migrations/20260830010000_estimate_drop_dead_tables.sql
     reason: "見積の死んだ機能（壁面積計算機・estimate_categories・材料マスタの残骸）を撤去する意図的な破壊的DDL。ユーザー依頼で作成。★本番へは自動適用しない——ship手順の『追加のみDDLならCCが適用可』の対象外として除外し、人の明示承認＋事前バックアップの上でのみ適用する。cascade は外部キー制約だけを落とし estimate_items.material_id 等の列とデータは残す。"
     ticket: "3cc0ff81c56b81f49bd9d68ee58822a8"
+  - rule: migration-safety
+    target: supabase/migrations/20260830030000_expense_receipts_lock_anon.sql
+    reason: "DROP POLICY は既存ポリシーの置き換え（同名で作り直す）であって、データを消す破壊的変更ではない。塞ぐ対象がまさにその『anonに無条件SELECTを許すポリシー』なので、残したままでは穴が閉じない。読み出し経路は事前に署名URLへ寄せ済みで、適用後の本番実測（匿名の列挙→空配列 / 匿名DL 200→400 / admin・下請けポータルは200）まで確認済み。"
+    ticket: "3b20ff81c56b8196b38bd953a504c02d"

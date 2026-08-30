@@ -301,7 +301,7 @@ import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { canViewHourlyWage } from '../lib/auth'
 import { refreshNavBadges } from '../lib/navBadges'
-import { tenureMonths, suggestedGrantDays, pendingBaseDatesFor, fifoBalance } from '../lib/paidLeaveGrant'
+import { tenureMonths, suggestedGrantDays, pendingBaseDatesFor, fifoBalance, storedLeaveDays } from '../lib/paidLeaveGrant'
 
 // 法令付与計算は lib/paidLeaveGrant.ts（付与待ちバッジ navBadges と共用）。
 function suggestedGrant(w: WorkerStat): number {
@@ -318,7 +318,7 @@ async function fetchAllPaidLeaveReports(accountId: string): Promise<{ user_id: s
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
       .from('daily_reports')
-      .select('user_id, date, note')
+      .select('user_id, date, note, leave_type, leave_days')
       .eq('account_id', accountId)
       .eq('leave_type', 'paid_leave')
       .order('date', { ascending: false })
@@ -456,7 +456,7 @@ const printRows = computed(() => {
       latestGrantDate: latestGrant?.granted_at ?? null,
       totalGranted,
       usedDates,
-      usedCount:       usage.length,
+      usedCount:       usage.reduce((a: number, u: any) => a + storedLeaveDays(u), 0),
       remaining:       w.remaining,   // FIFO残高（workerStatsで算出済み）
       duty:            w.duty,
     }
@@ -498,7 +498,10 @@ async function load() {
   workerStats.value = (workersData ?? []).map((w: any) => {
     const wGrants     = allGrantsByWorker[w.id] ?? []
     const initialUsed  = Number(w.initial_used_leave_days ?? 0)   // 導入前に消化した分（控除）
-    const systemUsed   = (allUsageByWorker[w.id] ?? []).length    // 導入後のアプリ有給申請
+    // ★件数ではなく日数を足す（2026-08-30）。半日=0.5・時間単位=時間÷所定時間。
+    //  leave_days が null の行はこの列を足す前の既存データ＝1日として数える
+    //  （storedLeaveDays が面倒を見る）。件数で数えると半日も1日消化になる。
+    const systemUsed   = (allUsageByWorker[w.id] ?? []).reduce((a: number, u: any) => a + storedLeaveDays(u), 0)
     const totalUsed    = initialUsed + systemUsed
     // FIFO残高: 消化を古い付与から充当し、有効付与の未消化分を残とする（失効の未使用分のみ消滅）。
     const bal = fifoBalance(wGrants, totalUsed, today)
@@ -657,7 +660,7 @@ async function loadDetailData(workerId: string) {
 
   const userIds = (usersData ?? []).map((u: any) => u.id)
   if (userIds.length > 0) {
-    const { data: usage } = await supabase.from('daily_reports').select('date, note').in('user_id', userIds).eq('leave_type', 'paid_leave').order('date', { ascending: false })
+    const { data: usage } = await supabase.from('daily_reports').select('date, note, leave_type, leave_days').in('user_id', userIds).eq('leave_type', 'paid_leave').order('date', { ascending: false })
     detailUsage.value = (usage ?? []).map((r: any) => ({ date: r.date, note: r.note }))
   } else {
     detailUsage.value = []

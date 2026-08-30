@@ -266,6 +266,10 @@
                 </template>
                 <!-- 現場の新規作成は権限者(admin/office/site_manager)のみ。職人には選択肢自体を出さない -->
                 <option v-if="canCreateSite" value="__other__">{{ $t('calendar.registerNewSite') }}</option>
+                <!-- ★2026-08-30: 職人は現場を作れないので、台帳に無い現場だと予定を登録できず
+                     行き止まりになっていた。日報と同じく「名前だけ残す」逃げ道を用意する。
+                     現場マスタには登録しない（勝手に現場が増えるのを避ける）。 -->
+                <option v-if="!canCreateSite" value="__unset__" data-testid="site-opt-unset">{{ $t('calendar.siteUnset') }}</option>
               </select>
             </div>
             <!-- 作業区分（現場作業/見積/事務…）。既定で「現場作業」が入っている。
@@ -276,6 +280,18 @@
               <select v-model="formModal.work_category_id" class="site-select" data-testid="work-category-select">
                 <option v-for="c in workCategoryOptions" :key="c.id" :value="c.id">{{ c.name }}</option>
               </select>
+            </div>
+            <!-- 台帳に無い現場: 名前だけ受け取る（マスタには作らない） -->
+            <div v-if="formModal.title === '__unset__'" class="form-row" style="margin-top:8px">
+              <span class="form-row-label">{{ $t('calendar.siteName') }}</span>
+              <input
+                v-model="(formModal as any)._unsetTitle"
+                type="text"
+                class="site-select"
+                data-testid="unset-site-title"
+                :placeholder="$t('calendar.siteNamePlaceholder')"
+                @keydown.enter.prevent
+              />
             </div>
             <div v-if="formModal.title === '__other__'" class="form-row" style="margin-top:8px">
               <span class="form-row-label">{{ $t('calendar.siteName') }}</span>
@@ -1242,6 +1258,13 @@ async function saveSchedule() {
     // ★作った現場の id をその場で受け取る。マスタの取り直しを待つと、この回の保存が
     //  site_id 無しになる（saveSite 側で siteIds にも入れている）
     await master.saveSite(custom)
+  } else if (formModal.value.title === '__unset__') {
+    // ★台帳に無い現場: 名前だけ残し、現場マスタには作らない（site_id も付けない）。
+    //  あとで管理側が現場を作って紐付け直せる。日報の「現場未設定」と同じ考え方。
+    const typed = ((formModal.value as any)._unsetTitle ?? '').trim()
+    if (!typed) { formError.value = t('calendar.errors.enterSiteName'); return }
+    formModal.value.title = typed
+    formModal.value.site_id = ''
   } else if (formModal.value.title === '__none__') {
     // 現場なし: 自由タイトルを title に確定（現場マスタには保存しない＝プライベート/非現場の予定）
     const free = ((formModal.value as any)._noneTitle ?? '').trim()

@@ -8,6 +8,7 @@ import { gt } from '~/utils/i18n-global'
 interface OldReport {
   is_working: boolean
   leave_type?: string | null
+  leave_days?: number | null
   sites: any[]
   note?: string | null
   // ★出張手当(+¥3,000/日)と本日のガソリン代はどちらも金額に効くのに
@@ -20,6 +21,8 @@ interface OldReport {
 interface NewReport {
   isWorking: boolean
   leaveType?: string | null
+  leaveDays?: number | null
+  leaveHours?: number | null
   sites: any[]
   note?: string
   isBusinessTrip?: boolean
@@ -41,6 +44,16 @@ export function computeDiff(oldData: OldReport, newData: NewReport): string[] {
   const newStatus = workStatusLabel(newData.isWorking, newData.leaveType)
   if (oldStatus !== newStatus) {
     lines.push(gt('diff.work', { from: oldStatus, to: newStatus }))
+  }
+
+  // ── 有給の消化量（半日・時間単位に対応したので、量が変わったら出す）──
+  //  ★量は残日数に直結する。ここを出さないと「1日→0.5日」に直しても承認者に見えない。
+  if (oldData.leave_type === 'paid_leave' || newData.leaveType === 'paid_leave') {
+    const oDays = oldData.leave_type === 'paid_leave' ? (oldData.leave_days == null ? 1 : Number(oldData.leave_days)) : 0
+    const nDays = newData.leaveType === 'paid_leave' ? (newData.leaveDays == null ? 1 : Number(newData.leaveDays)) : 0
+    if (Math.abs(oDays - nDays) > 1e-9) {
+      lines.push(`有給の消化: ${oDays}日 → ${nDays}日`)
+    }
   }
 
   // ── 現場ごと ──
