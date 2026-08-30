@@ -64,6 +64,15 @@
         </div>
       </div>
 
+      <!-- ★選択中の現場の「現場ページ」へ戻れるようにする（2026-08-30 今井さん要望）。
+           現場ページ→集計 の逆向き。行ったきりだと現場一覧から探し直しになる。 -->
+      <div v-if="displaySiteId" class="site-master-link">
+        <router-link :to="`/sites/${displaySiteId}`" class="btn-ghost sm" data-testid="site-master-link">
+          <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">location_on</span>
+          {{ displaySite }} の現場ページを開く
+        </router-link>
+      </div>
+
       <!-- 区分別の小計。★「現場作業と見積を分けて見たい」への答え（2026-08-17）。
            1つの現場に複数の作業があり、原価の意味が違う（受注前の見積を施工の原価に混ぜたくない）。
            ★ここの合計は必ず下の表の月計と一致する。区分は行の分け方を変えるだけで金額に触らない。 -->
@@ -621,6 +630,10 @@ function toggleWageMode() {
 // 現場名 → 読み仮名。★漢字の name を localeCompare('ja') しても読みは無視されるので五十音にならない
 //  （ICU の ja 照合は漢字を部首・画数で並べる）。300件超のタブを目で追うので読み仮名で並べる（2026-08-17）。
 const kanaBySite = ref<Record<string, string>>({})
+// 現場名 → 現場マスタの id。集計から現場ページへ戻る導線に使う（2026-08-30 今井さん要望・往復できるように）
+const siteIdByName = ref<Record<string, string>>({})
+/** 表示中の現場の、現場マスタ上の id（マスタに無い名前＝表記ゆれ等なら null） */
+const displaySiteId = computed(() => siteIdByName.value[displaySite.value] ?? null)
 const siteNamesAll = computed(() => Object.keys(siteMap.value)
   .sort((a, b) => (kanaBySite.value[a] || a).localeCompare(kanaBySite.value[b] || b, 'ja')))
 
@@ -815,6 +828,9 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
   // タブを五十音で並べるための 現場名→読み仮名
   kanaBySite.value = Object.fromEntries(
     (siteRows ?? []).filter((s: any) => s.name_kana).map((s: any) => [s.name, s.name_kana]))
+  // 現場ページへ戻る導線用。★無効化済みの現場も含める（終わった現場の集計から
+  //  マスタを開けないと、行ったきりになる）。
+  siteIdByName.value = Object.fromEntries((siteRows ?? []).map((s: any) => [s.name, s.id]))
   // 絞り込み・判別表示用の 現場名→元請け名（複数）。集計には使わない（タブを減らす／判別のためだけ）。
   // ★同名の現場が別々の元請けに紐づくことがあるので、名前ごとに元請けを集合で集める（最後勝ちで潰さない）。
   const contractorSetBySite: Record<string, Set<string>> = {}
@@ -1064,6 +1080,8 @@ watch(wageMode, load)   // 日当-実質賃金の切替で社員人件費を再�
 .sf-clear { border: 1px solid #d0d0d0; background: #fff; border-radius: 6px; padding: 6px 12px; font-size: 12px; color: #555; cursor: pointer; }
 .sf-clear:hover { background: #f5f5f5; }
 
+.site-master-link { margin: 8px 0 4px; }
+.site-master-link .btn-ghost { display: inline-flex; align-items: center; gap: 4px; text-decoration: none; }
 .tabs-wrap { overflow-x: auto; margin-bottom: 16px; }
 .export-bar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin: 10px 0 0; flex-wrap: wrap; }
 .export-pop-wrap { position: relative; }
