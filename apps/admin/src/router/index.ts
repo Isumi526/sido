@@ -72,6 +72,9 @@ export const router = createRouter({
     { path: '/worker-reports', component: WorkerReports, meta: { management: true } },
     { path: '/paid-leave',    component: PaidLeave,      meta: { management: true } },
     { path: '/settings',       component: Settings,     meta: { management: true } },
+    // 会社アカウント単位の全データ一括エクスポート（契約対応③・別紙1§10）。
+    // 画面側でオーナー権限(canManageAuth)を確認する。
+    { path: '/data-export',    component: () => import('../pages/data-export.vue'), meta: { management: true } },
     { path: '/company-profile', component: CompanyProfile, meta: { management: true } },
     { path: '/users',        component: Users,          meta: { management: true } },
     { path: '/reminder-history', component: ReminderHistory, meta: { management: true } },
