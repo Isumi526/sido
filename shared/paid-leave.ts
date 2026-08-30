@@ -105,3 +105,58 @@ export function pendingBaseDatesFor(
   }
   return rows
 }
+
+// ── 半日・時間単位の有給（2026-08-30 追加） ────────────────────
+//
+//  ★法令の前提（分岐に直結するので明記する）
+//   - 半日単位年休: 法令上の定めが無く **労使協定は不要**。会社の判断で導入できる。
+//   - 時間単位年休: 労基法39条4項。**労使協定が必須**で、**年5日分が上限**。
+//     「1日分が何時間か」も協定で定める。
+//  → 半日は無条件、時間単位はアカウント設定（労使協定あり）で開き、年5日を超えさせない。
+
+/** 時間単位年休の年間上限（労基法39条4項）。日数で5日ぶんまで。 */
+export const HOURLY_LEAVE_ANNUAL_CAP_DAYS = 5
+
+/** 1日ぶんの所定労働時間の既定。労使協定で別途定めた場合はアカウント設定で上書きする。 */
+export const DEFAULT_LEAVE_DAY_HOURS = 8
+
+export type LeaveUnit = 'day' | 'half' | 'hour'
+
+/**
+ * 消化量（日数）を出す。集計はこの値を合計する。
+ * ★時間単位は「時間数 ÷ 1日の所定労働時間」。端数は丸めない（0.125日＝1時間/8h などをそのまま持つ）。
+ */
+export function leaveDaysFor(unit: LeaveUnit, hours?: number | null, dayHours?: number | null): number {
+  if (unit === 'half') return 0.5
+  if (unit === 'hour') {
+    const h = Math.max(0, Number(hours) || 0)
+    const per = Math.max(1, Number(dayHours) || DEFAULT_LEAVE_DAY_HOURS)
+    return h / per
+  }
+  return 1
+}
+
+/**
+ * 保存済みの日報1件が何日ぶんの有給かを返す。
+ * ★leave_days が null の行は、この列を足す前の既存データ＝「1日」として扱う。
+ *  ここを忘れると過去の消化が0日になり、残日数が実際より増えて見える。
+ */
+export function storedLeaveDays(row: { leave_type?: string | null; leave_days?: number | null }): number {
+  if (row?.leave_type !== 'paid_leave') return 0
+  const v = row?.leave_days
+  return v == null ? 1 : Math.max(0, Number(v) || 0)
+}
+
+/**
+ * その年に時間単位で取った日数が上限（5日）に収まるか。
+ * ★超える申請は通さない（労基法39条4項に反するため）。
+ * @returns 追加できるなら null、駄目なら理由
+ */
+export function hourlyLeaveCapError(
+  alreadyHourlyDaysThisYear: number, addingDays: number,
+): string | null {
+  const after = alreadyHourlyDaysThisYear + addingDays
+  if (after <= HOURLY_LEAVE_ANNUAL_CAP_DAYS + 1e-9) return null
+  const rest = Math.max(0, HOURLY_LEAVE_ANNUAL_CAP_DAYS - alreadyHourlyDaysThisYear)
+  return `時間単位の有給は年${HOURLY_LEAVE_ANNUAL_CAP_DAYS}日ぶんまでです（残り ${rest.toFixed(2)} 日ぶん）`
+}
