@@ -74,6 +74,16 @@ test('★無効化された現場でも、現場ページから集計へ飛べ�
   await expect(page.locator('.tabs-wrap')).toContainText(ENDED_SITE, { timeout: 20000 })
 })
 
+test('★集計から現場ページへ戻れる（往復できる）', async ({ page }) => {
+  // 行ったきりだと現場一覧から探し直しになる（2026-08-30 今井さん要望）
+  await page.goto(`/site-reports?site=${encodeURIComponent(ENDED_SITE)}&range=ym&from=2026-06&to=2026-06`,
+    { waitUntil: 'networkidle' })
+  const back = page.getByTestId('site-master-link')
+  await expect(back, '現場ページへの導線がある').toBeVisible({ timeout: 20000 })
+  await back.click()
+  await expect(page, 'その現場のページへ戻る').toHaveURL(new RegExp(`/sites/${endedSiteId}`), { timeout: 15000 })
+})
+
 test('日報が1件も無い現場では押せない（何も無い画面へ飛ばさない）', async ({ page }) => {
   await page.goto(`/sites/${emptySiteId}`, { waitUntil: 'networkidle' })
   const btn = page.getByTestId('site-aggregate-link')
