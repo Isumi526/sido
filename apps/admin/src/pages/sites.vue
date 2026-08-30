@@ -841,7 +841,10 @@ async function doMerge() {
     // 2) 名称スナップショット(site_name)も target.name に更新。集計は現場名キーのため site_id 付け替えだけでは統合されない。
     //    id-scoped（付け替え済み=site_id が target のもの）に限定＝他テナントの同名現場を巻き込まない。
     for (const tbl of ['subcontractor_invoice_items', 'purchase_orders']) {
-      await supabase.from(tbl).update({ site_name: target.name }).eq('site_id', target.id).in('site_name', sourceNames).then(() => {}, () => {})
+      // ★失敗を黙って捨てない（統合漏れに気づけなくなる）
+      const { error: e } = await supabase.from(tbl).update({ site_name: target.name })
+        .eq('site_id', target.id).in('site_name', sourceNames)
+      if (e) throw new Error(`${tbl} の現場名を更新できませんでした: ${e.message}`)
     }
     // 3) daily_reports.sites[] の現場参照を target.name へ寄せる。
     //    siteName===source.name だけでなく、__other__ の customSiteName===source.name も統合（集計は現場名/customSiteName キーのため取りこぼし防止）。
@@ -860,7 +863,12 @@ async function doMerge() {
         if (s?.siteName === '__other__' || s?.customSiteName) out.customSiteName = ''
         return out
       })
-      if (changed) await supabase.from('daily_reports').update({ sites: next }).eq('id', r.id)
+      if (changed) {
+        // ★エラーを握り潰さない。以前は権限不足で更新できていないのに画面上は成功に見え、
+        //  現場別集計が統合されないまま気づけなかった（2026-08-30 発見）。
+        const { error: e } = await supabase.from('daily_reports').update({ sites: next }).eq('id', r.id)
+        if (e) throw new Error(`日報の現場参照を更新できませんでした: ${e.message}`)
+      }
     }
     // 4) 統合元を無効化（複数）
     await supabase.from('sites').update({ active: false }).in('id', sourceIds)
