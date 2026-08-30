@@ -19,6 +19,7 @@
 // ============================================================
 import { mergeOtherExpenses, splitOtherExpenses } from './expense-flatten.gen'
 import { resolveActiveSiteId } from './site-similarity.gen'
+import { laborBreakdownForReport } from './worker-hours.gen'
 
 /** 添付ファイルの実体を持つキー。保存する JSON からは落とす（URLだけ残す） */
 const FILE_KEYS = [
@@ -60,7 +61,17 @@ export function normalizeGasolineItems(items: any[] | undefined): any[] {
 export function sanitizeSitesForStorage(
   sites: any[],
   activeSites: Array<{ id: string; name: string }> = [],
+  reportDate?: string | null,
 ): any[] {
+  // ★工数(hoursNormal 等)を実時間から計算し直してから保存する（2026-08-30）。
+  //  これまでフォームの既定値（hoursNormal: 8）がそのまま保存されており、本番の
+  //  作業員行の77%が「一律8時間」という嘘の値を持っていた。
+  //  表示・集計は全部この計算をやり直しているので実害は出ていなかったが、
+  //  保存値を素直に読んだ人が必ず間違える地雷になる。保存する値と集計する値を一致させる。
+  //  （2時間の作業が8時間に見える／短い作業が0時間に見える、という指摘の出所でもある）
+  const isSunday = reportDate ? new Date(`${reportDate}T00:00:00+09:00`).getDay() === 0 : false
+  const laborMap = laborBreakdownForReport(sites ?? [], isSunday)
+
   return (sites ?? []).map((site: any) => {
     const exp = { ...(site?.expenses ?? {}) }
     for (const k of FILE_KEYS) delete exp[k]
@@ -80,7 +91,10 @@ export function sanitizeSitesForStorage(
     if (exp.hotels) exp.hotels = stripItemFiles(exp.hotels)
     const resolved = resolveActiveSiteId(site, activeSites)
     const site_id = resolved ?? (site?.site_id ?? null)
-    return { ...site, expenses: exp, site_id }
+    const workers = Array.isArray(site?.workers)
+      ? site.workers.map((w: any) => (w?.workerName ? { ...w, ...(laborMap.get(w) ?? {}) } : w))
+      : site?.workers
+    return { ...site, workers, expenses: exp, site_id }
   })
 }
 
