@@ -4,6 +4,32 @@
 //  ※ 次の未送信日付のフォームに対して、現場を選んで送信する。
 // ============================================================
 import { test, expect } from '@playwright/test'
+import { rest, restSrv, getDevUserId } from './helpers'
+
+// ★このspecは「未送信日が2日以上ある」ことが前提（送信後に次の未送信日ボタンが出るのを見るため）。
+//  ところが未送信日は編集可能window（当日含む過去3日）しか作れず、その3日を全specが
+//  共有している。他specが送信で埋める／liff.report-late-approval が report_start_date を
+//  当日へ寄せる、のどちらでも枯れて、このspecだけ落ちる（単独なら通る）。
+//  global-setup と同じ手当て（起点を today-2 に寄せ、today-1/today-2 を空ける）を
+//  各テストの直前にやり直して、自分で前提を作る。
+//  ※古い日付に寄せてはいけない（3日より前はロック済み＝送信ボタンが恒久disabled）。
+//  ※根本解決は「specごとに専用の作業員を持つ」こと。負債として別途チケット化。
+test.beforeEach(async () => {
+  const uid = await getDevUserId()
+  if (!uid) return
+  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const dayBack = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n); return fmt(d) }
+  const w = await rest(`users?id=eq.${uid}&select=worker_id`).catch(() => null)
+  if (w?.[0]?.worker_id) {
+    await restSrv(`workers?id=eq.${w[0].worker_id}`, {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ report_start_date: dayBack(2) }),
+    }).catch(() => {})
+  }
+  for (const n of [1, 2]) {
+    await rest(`daily_reports?user_id=eq.${uid}&date=eq.${dayBack(n)}`, { method: 'DELETE' }).catch(() => {})
+  }
+})
 
 test('日報入力 → 送信 → 完了画面が出る', async ({ page }) => {
   try { await page.goto('/report', { waitUntil: 'networkidle', timeout: 8000 }) }
