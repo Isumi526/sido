@@ -17,22 +17,9 @@
         </button>
       </div>
 
-      <!-- ★未読のお知らせ。未送信日報・経費締切と同じ「気づかせたい出来事」の帯に並べる。
-           LINE連携もメールも当てにできない以上、ホームを開いた時に見えることが要（2026-08-14）。 -->
-      <!-- ★カードは1枚に統合する（2026-08-30 ユーザー指示「ホームがごちゃごちゃする」）。
-           内訳（やること／お知らせ）は遷移先のタブで分ける。
-           やることが1件でもある時は、行動が要ることが分かる文言と色に切り替える。 -->
-      <NuxtLink v-if="totalBadgeCount > 0" class="notif-card" :class="{ 'notif-card--todo': pendingDocCount > 0 }"
-                to="/notifications" data-testid="home-notif-card">
-        <span class="material-symbols-rounded notif-card-icon">{{ pendingDocCount > 0 ? 'assignment_late' : 'notifications_active' }}</span>
-        <div class="notif-card-body">
-          <div class="notif-card-title">
-            {{ pendingDocCount > 0 ? t('home.todoTitle', { count: pendingDocCount }) : t('home.notifTitle', { count: unreadNotifCount }) }}
-          </div>
-          <div class="notif-card-sub">{{ pendingDocCount > 0 ? t('home.todoSub') : t('home.notifSub') }}</div>
-        </div>
-        <span class="material-symbols-rounded alert-arrow">chevron_right</span>
-      </NuxtLink>
+      <!-- ★お知らせ/やることのカードはホームに出さない（2026-08-30 ユーザー指示）。
+           ヘッダーのベルが合計件数のバッジを出しており、カードは重複でホームが混む。
+           気づく入口はベル1つに集約し、内訳は /notifications のタブで見る。 -->
 
       <!-- 打刻を促す（今日の勤務予定の開始/終了が来ているのに未打刻の時だけ）。LINE/メール不達でも気づけるよう常駐ホームに出す。 -->
       <NuxtLink v-if="punchPrompt" class="punch-card" to="/checkin" data-testid="home-punch-card">
@@ -72,7 +59,7 @@
           <span class="menu-icon-wrap">
             <span class="material-symbols-rounded menu-icon" :style="{ color: navIconColor(item.path) }">{{ item.icon }}</span>
             <span v-if="item.path === '/calendar' && unreadScheduleCount > 0" class="menu-card-badge" data-testid="home-schedule-badge">{{ unreadScheduleCount }}</span>
-            <span v-if="item.path === '/notifications' && unreadNotifCount > 0" class="menu-card-badge" data-testid="home-notif-badge">{{ unreadNotifCount }}</span>
+            <span v-if="item.path === '/notifications' && totalBadgeCount > 0" class="menu-card-badge" data-testid="home-notif-badge">{{ totalBadgeCount }}</span>
           </span>
           <span class="menu-label">{{ item.label }}</span>
         </NuxtLink>
@@ -333,24 +320,6 @@ onMounted(() => { refreshSiteChatListBadge() })
 .deadline-title { font-size: 14px; font-weight: 700; color: #111; }
 .deadline-sub   { font-size: 12px; color: #ef4444; margin-top: 2px; font-weight: 600; }
 
-.notif-card {
-  background: #fff; border-radius: 12px;
-  padding: 14px 16px; display: flex; align-items: center; gap: 12px;
-  box-shadow: 0 1px 4px rgba(0,0,0,.06);
-  border-left: 4px solid #e11d48; cursor: pointer; text-decoration: none;
-}
-.notif-card:active { background: #fff1f2; }
-
-/* やること（行動するまで消えない）がある時は橙にする。読めば済むお知らせ(赤)と区別する */
-.notif-card--todo { border-left-color: #d97706; }
-.notif-card--todo:active { background: #fffbeb; }
-.notif-card--todo .notif-card-icon { color: #d97706; }
-.notif-card--todo .notif-card-sub { color: #d97706; }
-.notif-card-icon { color: #e11d48; font-size: 26px; flex-shrink: 0;
-  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
-.notif-card-body { flex: 1; }
-.notif-card-title { font-size: 14px; font-weight: 700; color: #111; }
-.notif-card-sub   { font-size: 12px; color: #e11d48; margin-top: 2px; font-weight: 600; }
 
 /* 打刻を促すカード（出勤/退勤）。緑=出勤系の色に合わせる */
 .punch-card {

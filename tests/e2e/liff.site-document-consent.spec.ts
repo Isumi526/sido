@@ -172,11 +172,10 @@ test('★未承認のうちはホームに印が残り、承認すると消え�
   const pendingBefore = (await callConsentFn({ action: 'pending-count' })).json?.pending as number
   expect(pendingBefore, '未承認が1件以上ある状態から始める').toBeGreaterThanOrEqual(1)
 
-  // 未承認 → ホームのカードが「やること」表示になる
+  // 未承認 → ベルのバッジ（やること＋未読お知らせの合計）で気づける
   await page.goto('/', { waitUntil: 'networkidle' })
-  const card = page.getByTestId('home-notif-card')
-  await expect(card, '未承認のうちは印が出る').toBeVisible({ timeout: 20000 })
-  await expect(card, '★行動が要ることが分かる文言になる').toContainText('やること')
+  const bell = page.getByTestId('nav-bell-badge')
+  await expect(bell, '未承認のうちは印が出る').toBeVisible({ timeout: 20000 })
 
   // ★お知らせを全部既読にしても消えない（既読で消える通知とは別物であること）
   await restSrv(`schedule_notifications?worker_id=eq.${workerId}`, {
@@ -184,8 +183,7 @@ test('★未承認のうちはホームに印が残り、承認すると消え�
     body: JSON.stringify({ read_at: new Date().toISOString() }),
   }).catch(() => {})
   await page.reload({ waitUntil: 'networkidle' })
-  await expect(card, '★お知らせを読んでも承認していなければ残る').toBeVisible({ timeout: 20000 })
-  await expect(card).toContainText('やること')
+  await expect(bell, '★お知らせを読んでも承認していなければ残る').toBeVisible({ timeout: 20000 })
 
   // お知らせ画面の「やること」タブに出て、タップでその現場へ飛べる
   await page.goto('/notifications', { waitUntil: 'networkidle' })

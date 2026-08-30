@@ -60,7 +60,9 @@ test.describe('アプリ内通知（お知らせ）', () => {
     await page.goto('/', { waitUntil: 'networkidle' })
     await expect(page.getByTestId('nav-bell-badge'), '★全画面共通のベルに未読数が出る')
       .toBeVisible({ timeout: 15000 })
-    await expect(page.getByTestId('home-notif-card'), 'ホームでも気づける').toBeVisible()
+    // ★ホームの専用カードは廃止（2026-08-30）。気づく入口はベルに集約し、
+    //  ホームでは「お知らせ」タイルのバッジで分かるようにしてある。
+    await expect(page.getByTestId('home-notif-badge'), 'ホームのお知らせタイルでも分かる').toBeVisible()
   })
 
   test('★お知らせは履歴として残り、読み返せる', async ({ page }) => {
