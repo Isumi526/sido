@@ -96,6 +96,10 @@ const ANON_LOCKED_TABLES = new Set([
   'sites', 'contractors', 'site_subcontractors',
   'daily_reports',   // 2026-08-16 RLS化。読み書きは daily-reports-read / save-daily-report EF 経由
   'work_categories', 'site_category_hours',   // 2026-08-16 新設。最初からRLS有効・EF(master-data)経由
+  // ★2026-08-30: ローカルの anon 権限を本番に合わせた（本番は workers への anon 書込を
+  //  active/name/role/unit_price の4列に限定、push_subscriptions は権限ゼロ）。
+  //  テストの下ごしらえ（permission_role を持つ承認者を作る等）は service_role で行う。
+  'workers', 'push_subscriptions',
 ])
 
 export async function rest(pathAndQuery: string, init: RequestInit = {}): Promise<any> {
