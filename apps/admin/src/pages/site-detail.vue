@@ -125,7 +125,7 @@
             <tbody><tr v-for="e in estimates" :key="e.id">
               <td>{{ e.estimate_number || '—' }}</td><td>{{ e.estimate_date || '—' }}</td>
               <td class="num">{{ e.total_amount != null ? `¥${e.total_amount.toLocaleString()}` : '—' }}</td>
-              <td><a v-if="e.pdf_path" :href="estPdfUrl(e.pdf_path)" target="_blank" rel="noopener" class="pdf-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span></a><span v-else class="muted">—</span></td>
+              <td><a v-if="e.pdf_path" href="#" @click.prevent="openEstPdf(e.pdf_path)" class="pdf-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span></a><span v-else class="muted">—</span></td>
             </tr></tbody>
           </table>
           <p v-else class="muted">見積書はありません</p>
@@ -200,6 +200,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
+import { openDoc } from '../lib/docUrl'
 import { getAccountId } from '../lib/account'
 import { canViewManagementPages } from '../lib/auth'
 import { canViewEstimates } from '../lib/features'
@@ -295,7 +296,9 @@ const saveError = ref('')
 const form = ref<{ name: string; name_kana: string; contractor_id: string | null; location: string; construction_type: string; construction_details: string; memo: string; default_start_time: string; default_end_time: string; linkedSubs: string[] }>(
   { name: '', name_kana: '', contractor_id: null, location: '', construction_type: '', construction_details: '', memo: '', default_start_time: '', default_end_time: '', linkedSubs: [] })
 
-function estPdfUrl(path: string) { return supabase.storage.from(ESTIMATE_BUCKET).getPublicUrl(path).data.publicUrl }
+// 公開URLは配らない（旧バケットが public のままで、URLだけで誰でも読めてしまうため）。
+// 押した時に短TTLの署名URLを作って開く。2026-08-30
+function openEstPdf(path: string) { return openDoc(path, ESTIMATE_BUCKET) }
 const mapUrl = computed(() => site.value?.location ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(site.value.location)}` : '#')
 
 async function signedUrl(attachmentId: string): Promise<string | null> {

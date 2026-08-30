@@ -353,7 +353,7 @@ export const useExpense = () => {
    *   丸ごと抜け落ちる。実際それで「承認したら集計の接待交際費列が空になる」バグを踏んだ。
    */
   async function buildReportPayload(
-    report: { isWorking: boolean; sites: unknown[]; note?: string; leaveType?: string | null; isBusinessTrip?: boolean; gasolineItems?: any[] }
+    report: { isWorking: boolean; sites: unknown[]; note?: string; leaveType?: string | null; isBusinessTrip?: boolean; gasolineItems?: any[]; date?: string | null }
   ): Promise<Record<string, unknown>> {
     const accountId = await getAccountId()
     await registerNewSites(accountId, report.sites as any[])
@@ -366,7 +366,7 @@ export const useExpense = () => {
       is_working:       report.isWorking,
       leave_type:       report.leaveType ?? null,
       is_business_trip: report.isBusinessTrip ?? false,
-      sites:            sanitizeSitesForStorage(report.sites as any[], activeSites),
+      sites:            sanitizeSitesForStorage(report.sites as any[], activeSites, report.date ?? null),
       note:             report.note ?? null,
       gasoline_items:   normalizeGasolineItems(report.gasolineItems),
     }

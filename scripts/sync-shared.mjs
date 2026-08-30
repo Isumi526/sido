@@ -56,6 +56,10 @@ const SHARES = [
     dests: [
       'apps/admin/src/lib/worker-hours.gen.ts',
       'apps/liff/utils/worker-hours.gen.ts',
+      // ★composables 配下にも置く。report-storage.gen.ts が同階層から import するため
+      //  （shared 間の import は生成時に './name.gen' へ書き換わる＝同階層前提）
+      'apps/liff/composables/worker-hours.gen.ts',
+      'supabase/functions/_shared/worker-hours.gen.ts',
     ],
   },
   {

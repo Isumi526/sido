@@ -128,6 +128,52 @@ async function resolveCaller(
   return null
 }
 
+/**
+ * クライアントが差分を送ってこなかった時に、サーバー側で最低限の差分を作る。
+ *
+ * ★なぜ要るか（2026-08-30 本番で発覚）:
+ *  report.vue は `originalReport.value ? computeDiff(...) : []` で、元の日報を
+ *  読めていないと**黙って空の差分**を送る。実際に 08/27 の「時間を間違えた為」が
+ *  08:00→07:00 と変わっているのに差分ゼロで承認待ちに積まれていた。
+ *  承認は金額を確定させる操作なので、中身が見えないまま押させてはいけない。
+ *  クライアントの状態に依存させず、サーバーが持っている「現在の日報」と突き合わせる。
+ *
+ *  表示用の粗い差分でよい（承認者が「何が変わったか」を掴めればいい）。
+ *  細かい文言はクライアント版(computeDiff)が出す。ここは落ちた時の網。
+ */
+function fallbackDiffs(before: any, after: any): string[] {
+  const out: string[] = []
+  const bs = Array.isArray(before?.sites) ? before.sites : []
+  const as_ = Array.isArray(after?.sites) ? after.sites : []
+  if (before?.isWorking !== after?.isWorking) {
+    out.push(`稼働: ${before?.isWorking ? 'あり' : 'なし'} → ${after?.isWorking ? 'あり' : 'なし'}`)
+  }
+  if ((before?.note ?? '') !== (after?.note ?? '')) out.push('備考を変更')
+  if (bs.length !== as_.length) out.push(`現場の数: ${bs.length} → ${as_.length}`)
+  const n = Math.min(bs.length, as_.length)
+  for (let i = 0; i < n; i++) {
+    const b = bs[i] ?? {}, a = as_[i] ?? {}
+    const label = a.siteName || b.siteName || `現場${i + 1}`
+    if ((b.siteName ?? '') !== (a.siteName ?? '')) out.push(`現場: ${b.siteName || '(なし)'} → ${a.siteName || '(なし)'}`)
+    const bw = Array.isArray(b.workers) ? b.workers : []
+    const aw = Array.isArray(a.workers) ? a.workers : []
+    // ★workers[0] だけでなく全員見る（クライアント版は先頭しか比べていない）
+    for (let w = 0; w < Math.max(bw.length, aw.length); w++) {
+      const x = bw[w], y = aw[w]
+      if (!x || !y) { out.push(`${label}: 作業員の数が変わりました`); break }
+      if (x.startTime !== y.startTime || x.endTime !== y.endTime) {
+        out.push(`${label} ${y.workerName || ''}の時間: ${x.startTime}〜${x.endTime} → ${y.startTime}〜${y.endTime}`)
+      }
+      if ((x.breakMinutes ?? 0) !== (y.breakMinutes ?? 0)) {
+        out.push(`${label} ${y.workerName || ''}の休憩: ${x.breakMinutes ?? 0}分 → ${y.breakMinutes ?? 0}分`)
+      }
+    }
+    if (JSON.stringify(b.expenses ?? {}) !== JSON.stringify(a.expenses ?? {})) out.push(`${label}: 経費を変更`)
+  }
+  if (!out.length) out.push('※内容の差分を検出できませんでした。日報の中身そのものを確認してください')
+  return out.slice(0, MAX_DIFFS)
+}
+
 /** 保留に入れる編集後の日報。daily_reports の列だけを受け取る（余計なキーは捨てる） */
 function sanitizePayload(p: any): Record<string, unknown> | null {
   if (!p || typeof p !== 'object') return null
@@ -629,6 +675,23 @@ Deno.serve(async (req) => {
     reportUserId = rep.user_id ?? null
   }
 
+  // ★クライアントが差分を送れていない時は、サーバーが現在の日報と突き合わせて作る。
+  //  空のまま積むと、承認者は中身が見えないまま金額を確定させることになる（2026-08-30 本番で実害）。
+  let effectiveDiffs = diffs
+  if (!effectiveDiffs.length && reportId) {
+    const incoming = sanitizePayload(body.payload)
+    if (incoming) {
+      const { data: before } = await svc.from('daily_reports')
+        .select('is_working, sites, note').eq('id', reportId).maybeSingle()
+      if (before) {
+        effectiveDiffs = fallbackDiffs(
+          { isWorking: before.is_working, sites: before.sites, note: before.note },
+          incoming,
+        )
+      }
+    }
+  }
+
   const clientToken = typeof body.clientToken === 'string' && body.clientToken ? body.clientToken : null
   if (clientToken) {
     // 再送で二重に記録しない（監査ログが濁るのを防ぐ）
@@ -645,7 +708,7 @@ Deno.serve(async (req) => {
     edited_by_user_id: caller.userId,
     edited_by_name:    caller.name,
     reason,
-    diffs:             diffs.length ? diffs : null,
+    diffs:             effectiveDiffs.length ? effectiveDiffs : null,
     client_token:      clientToken,
   }).select('id').maybeSingle()
 
@@ -702,7 +765,7 @@ Deno.serve(async (req) => {
 
     const row = {
       account_id: caller.accountId, report_id: reportId, report_user_id: reportUserId,
-      report_date: reportDate, payload, reason, diffs: diffs.length ? diffs : null,
+      report_date: reportDate, payload, reason, diffs: effectiveDiffs.length ? effectiveDiffs : null,
       kind, requires_dual: requiresDual, approvals: [],
       submitted_by_user_id: caller.userId, submitted_by_name: caller.name,
       submitted_at: new Date().toISOString(), status: 'pending',
