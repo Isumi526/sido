@@ -128,6 +128,9 @@ function iconOf(kind: string): string {
     case 'expense_reject':    return 'receipt_long'
     case 'chat_mention':      return 'alternate_email'
     case 'site_document':     return 'description'   // 送り出し資料の確認依頼
+    case 'announcement':      return 'campaign'      // 会社からの一斉お知らせ（料金改定等）
+    case 'report_reminder':   return 'edit_note'     // 日報の未送信リマインド
+    case 'purchase_order_accepted': return 'task_alt'
     default:                  return 'notifications'
   }
 }

@@ -30,6 +30,30 @@
     </div>
     <p v-if="saveError" class="error">{{ saveError }}</p>
 
+  <!-- 一斉お知らせ（2026-08-30・#e97ff2e0）。
+       料金改定・サービス更新の案内を作業員全員のアプリ内お知らせへ配る。
+       ★方向性A: ベル＋一覧（既読管理あり）。ログイン時のモーダル強制表示は不採用。
+       ★宛先はEF側が「自アカウントの有効な作業員」から導出する（テナントを跨がない）。 -->
+  <div class="reminder-box" data-testid="broadcast-box">
+    <div class="reminder-title">一斉お知らせ</div>
+    <div class="reminder-config">
+      <p class="hint">作業員全員のアプリ内お知らせに届きます。重要な案内はメールと併用してください。</p>
+      <div class="config-row" style="align-items:flex-start">
+        <span class="config-label">件名 ※必須</span>
+        <input v-model="noticeTitle" class="input-inline" style="flex:1" data-testid="notice-title" placeholder="例: 料金改定のお知らせ" />
+      </div>
+      <div class="config-row" style="align-items:flex-start">
+        <span class="config-label">本文</span>
+        <textarea v-model="noticeBody" class="input-inline" style="flex:1;min-height:70px" data-testid="notice-body" placeholder="内容（任意）"></textarea>
+      </div>
+      <div class="config-row">
+        <button class="btn-cancel" :disabled="noticeBusy" data-testid="notice-preview" @click="previewNotice">送信先を確認</button>
+        <button class="btn-save" :disabled="noticeBusy || !noticeTitle.trim()" data-testid="notice-send" @click="sendNotice">全員へ送る</button>
+      </div>
+      <p v-if="noticeResult" class="hint" data-testid="notice-result">{{ noticeResult }}</p>
+    </div>
+  </div>
+
   <!-- 見積もり機能の公開スイッチ（2026-08-09）。
        非見積の変更を先に本番へ出すため、見積もりの入口を既定OFFで隠している。
        8/19 の通しテストでここをONにする＝再デプロイ不要。 -->
@@ -284,6 +308,54 @@ function setReminderTime(val: string) {
 }
 
 // ── 手動実行 ──────────────────────────────────────────────
+// ── 一斉お知らせ（#e97ff2e0）──
+//  ★宛先はEF側が呼び出し元のアカウントから導出する。ここから account_id を送らない
+//   （クライアントが宛先を名乗れると、他テナントへ配信できてしまう）。
+const noticeTitle  = ref('')
+const noticeBody   = ref('')
+const noticeBusy   = ref(false)
+const noticeResult = ref('')
+
+async function callBroadcast(action: 'send' | 'preview') {
+  if (!EDGE_URL) { noticeResult.value = 'VITE_SUPABASE_EDGE_URL が未設定です'; return null }
+  const { data: { session } } = await supabase.auth.getSession()
+  const res = await fetch(`${EDGE_URL}/broadcast-notice`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+    },
+    body: JSON.stringify({ action, title: noticeTitle.value.trim(), body: noticeBody.value.trim() }),
+  })
+  return await res.json().catch(() => ({} as any))
+}
+
+async function previewNotice() {
+  noticeBusy.value = true; noticeResult.value = ''
+  try {
+    const j = await callBroadcast('preview')
+    if (!j) return
+    if (!j.ok) { noticeResult.value = `確認できませんでした（${j.error ?? ''}）`; return }
+    const names: string[] = j.recipients ?? []
+    noticeResult.value = names.length
+      ? `${names.length}名へ届きます: ${names.slice(0, 8).join('、')}${names.length > 8 ? ' ほか' : ''}`
+      : '送信先の作業員がいません'
+  } finally { noticeBusy.value = false }
+}
+
+async function sendNotice() {
+  if (!noticeTitle.value.trim()) return
+  if (!confirm(`「${noticeTitle.value.trim()}」を作業員全員に送ります。よろしいですか？`)) return
+  noticeBusy.value = true; noticeResult.value = ''
+  try {
+    const j = await callBroadcast('send')
+    if (!j) return
+    if (!j.ok) { noticeResult.value = `送信できませんでした（${j.error ?? ''}）`; return }
+    noticeResult.value = `${j.sent ?? 0}名へ送りました`
+    noticeTitle.value = ''; noticeBody.value = ''
+  } finally { noticeBusy.value = false }
+}
+
 const reminding      = ref<false | 'dry' | 'send'>(false)
 const reminderResult = ref<{ type: 'success' | 'error' | 'info'; message: string } | null>(null)
 
