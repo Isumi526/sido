@@ -94,6 +94,16 @@ Deno.serve(async (req) => {
 
   if (!recipients.length) return json({ ok: true, sent: 0, note: 'no_recipients' })
 
+  // ★連打・再送で同じお知らせを二重に配らない（2026-08-30 独立レビューの指摘）。
+  //  全員のベルに同じ通知が2つ並ぶと、既読にしても消えないように見えて混乱する。
+  //  「同じ件名を直近5分に送っていたら二度目は積まない」で十分（送り直したい時は
+  //  5分待つか件名を変える。日をまたいだ再送は通す）。
+  const since = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+  const { data: dup } = await svc.from('schedule_notifications')
+    .select('id').eq('account_id', caller.accountId).eq('kind', 'announcement')
+    .eq('title', title).gte('created_at', since).limit(1)
+  if (dup?.length) return json({ ok: true, sent: 0, deduped: true, note: 'already_sent_recently' })
+
   const rows = recipients.map(w => ({
     account_id: caller.accountId,
     worker_id: w.id,

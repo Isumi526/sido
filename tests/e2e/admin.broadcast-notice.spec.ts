@@ -74,4 +74,14 @@ test('管理者が送ると自テナントの作業員に届き、他テナン�
   expect(leaked.length, '★他テナントへ配信していない').toBe(0)
   const toOther = (mine as any[]).filter(r => r.worker_id === otherWorkerId)
   expect(toOther.length, '★別テナントの作業員には届かない').toBe(0)
+
+  // ★連打・再送で二重に配らない（同じ件名を直近5分に送っていたら二度目は積まない）。
+  //  全員のベルに同じ通知が2つ並ぶと、既読にしても消えないように見えて混乱する。
+  const before = mine.length
+  page.on('dialog', d => d.accept().catch(() => {}))
+  await page.getByTestId('notice-title').fill(TITLE)
+  await page.getByTestId('notice-send').click()
+  await page.waitForTimeout(2500)
+  const after = await restSrv(`schedule_notifications?title=eq.${encodeURIComponent(TITLE)}&select=id`)
+  expect(after.length, '★連打しても件数が増えない').toBe(before)
 })
