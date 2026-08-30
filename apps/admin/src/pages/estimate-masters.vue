@@ -14,7 +14,6 @@
       <div class="subtabs">
         <button class="subtab" :class="{ active: settingsTab === 'search' }" data-testid="subtab-search" @click="openPriceSearch">単価を横断検索</button>
         <button class="subtab" :class="{ active: settingsTab === 'price' }" data-testid="subtab-price" @click="settingsTab = 'price'">商社別単価</button>
-        <button class="subtab" :class="{ active: settingsTab === 'material' }" data-testid="subtab-material" @click="settingsTab = 'material'">材料マスタ</button>
         <button class="subtab" :class="{ active: settingsTab === 'trade' }" data-testid="subtab-trade" @click="settingsTab = 'trade'">工種</button>
       </div>
       <p v-if="masterErr" class="err">{{ masterErr }}</p>
@@ -41,30 +40,6 @@
           </tbody>
         </table>
         <p v-else class="muted">工種はまだありません。</p>
-      </div>
-
-      <!-- 材料マスタ（品番・品名を別管理） -->
-      <div class="setting-block" v-show="settingsTab === 'material'">
-        <h3>材料マスタ（廃止・閲覧のみ）</h3>
-        <!-- ★R50: R28で材料マスタは廃止したが、この画面から追加・削除できる状態が残っていた。
-             経路が開いていると単価の正本が再び二重化する（どちらを直せばいいか分からなくなる）。
-             既存データと material_id の参照は生きているので、消さずに**閲覧のみ**にする。 -->
-        <p class="notice-deprecated" data-testid="material-deprecated">
-          材料マスタは廃止しました。品番・品名・単位・単価は<b>商社単価表</b>で管理します。
-          ここに出ているのは過去に登録された分で、<b>閲覧のみ</b>です（新規追加はできません）。
-          過去の見積が参照しているため残してあります。
-        </p>
-        <table v-if="materials.length" class="table" data-testid="material-list">
-          <thead><tr><th>品番</th><th>品名</th><th>単位</th></tr></thead>
-          <tbody>
-            <tr v-for="m in materials" :key="m.id" :data-testid="`mat-row-${m.id}`">
-              <td>{{ m.code || '—' }}</td>
-              <td>{{ m.name }}</td>
-              <td>{{ m.unit || '—' }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <p v-else class="muted">過去に登録された材料はありません。</p>
       </div>
 
       <!-- ★R45: 単価の横断検索。名称/品番で引いて、業者・商社ごとの単価と時期を横並びで見る。
@@ -181,6 +156,25 @@
             </div>
           </div>
 
+          <!-- ★掛率（定価×掛率で仕入単価を出す）。商社一律＋材料区分(工種)ごと。区分別が優先される。 -->
+          <div class="rate-section" data-testid="rate-section">
+            <div class="sub-h">掛率（定価×掛率で仕入単価を計算）<span v-if="rateMsg" class="ok" data-testid="rate-msg">{{ rateMsg }}</span></div>
+            <div class="rate-row">
+              <label class="rate-label">商社一律</label>
+              <input v-model.number="supplierRateInput" type="number" step="0.01" min="0" max="1" class="input sm num" placeholder="例 0.42" data-testid="supplier-rate" />
+              <button class="btn-primary sm" data-testid="save-supplier-rate" @click="saveSupplierRate">保存</button>
+              <span class="muted">0.42 = 定価の42%で仕入れ。区分別が未設定の工種はこの値を使う。</span>
+            </div>
+            <div class="rate-grid">
+              <div v-for="t in trades" :key="t.id" class="rate-row" :data-testid="`trade-rate-row-${t.id}`">
+                <label class="rate-label">{{ t.name }}</label>
+                <input v-model.number="supplierTradeRateInputs[t.id]" type="number" step="0.01" min="0" max="1" class="input sm num" placeholder="（一律）" :data-testid="`trade-rate-${t.id}`" />
+                <button class="btn-add sm" :data-testid="`save-trade-rate-${t.id}`" @click="saveSupplierTradeRate(t.id)">保存</button>
+              </div>
+            </div>
+            <p class="muted" v-if="!trades.length">工種（材料区分）が未登録です。「工種」タブで追加すると区分別の掛率を設定できます。</p>
+          </div>
+
           <div v-if="revisionsFiltered.length" class="rev-section">
             <div class="sub-h rev-head">
               <span>取込の承認待ち（{{ revisionsFiltered.length }}件）</span>
@@ -197,11 +191,6 @@
                 <tr v-for="r in revisionsFiltered" :key="r.id" :data-testid="`rev-${r.id}`">
                   <td><input v-model="r.code" class="input sm" :data-testid="`rev-code-${r.id}`" placeholder="品番" /></td>
                   <td><input v-model="r.name" class="input" :data-testid="`rev-name-${r.id}`" placeholder="品名" /></td>
-                  <!-- ★R28: 材料マスタを作らないので「紐付け先」の選択は不要になった。
-                       単価表が品番・品名・単位を自分で持つ。既存の紐付けがある行だけ表示する。 -->
-                  <td class="linked-cell" :data-testid="`rev-linked-${r.id}`">
-                    {{ r.material_id ? (materials.find(m => m.id === r.material_id)?.name ?? '既存に紐付け') : '—' }}
-                  </td>
                   <td class="num">{{ r.old_price == null ? '—' : yen(r.old_price) }}</td>
                   <td class="num"><input v-model.number="r.new_price" type="number" class="input sm num" :data-testid="`rev-price-${r.id}`" /></td>
                   <td><input v-model="r.effective_date" type="date" class="input sm" :data-testid="`rev-date-${r.id}`" /></td>
@@ -248,7 +237,6 @@ type MatPrice = { id: string; material_id: string | null; product_code: string |
 type Revision = { id: string; material_id: string | null; supplier_id: string | null; code: string | null; name: string | null; unit: string | null; old_price: number | null; new_price: number | null; effective_date: string | null; status: string }
 
 const trades         = ref<Trade[]>([])
-const materials      = ref<Material[]>([])
 const suppliers      = ref<Supplier[]>([])
 const matPrices      = ref<MatPrice[]>([])
 const revisions      = ref<Revision[]>([])
@@ -313,8 +301,39 @@ async function saveSupplierRate() {
   if (error) { masterErr.value = error.message; return }
   rateMsg.value = '保存しました'
   setTimeout(() => { rateMsg.value = '' }, 2000)
+}
+// ★商社×工種(材料区分)の掛率。区分別に持てると床材0.42/クロス0.40 のような差を計算に効かせられる。
+//  空/0 で保存すると区分の掛率を外す＝商社一律へフォールバック。
+const supplierTradeRateInputs = ref<Record<string, number | null>>({})
+async function loadSupplierTradeRates() {
+  supplierTradeRateInputs.value = {}
+  if (!activeSupplier.value) return
+  const { data } = await supabase.from('estimate_supplier_trade_rates')
+    .select('trade_id, rate').eq('account_id', accountId).eq('supplier_id', activeSupplier.value)
+  const m: Record<string, number | null> = {}
+  for (const r of (data ?? []) as any[]) m[r.trade_id] = Number(r.rate)
+  supplierTradeRateInputs.value = m
+}
+async function saveSupplierTradeRate(tradeId: string) {
+  if (!activeSupplier.value) return
+  masterErr.value = ''
+  const v = supplierTradeRateInputs.value[tradeId]
+  if (v == null || !(Number(v) > 0)) {
+    await supabase.from('estimate_supplier_trade_rates').delete()
+      .eq('account_id', accountId).eq('supplier_id', activeSupplier.value).eq('trade_id', tradeId)
+    rateMsg.value = '区分の掛率を外しました（商社一律を使用）'
+    setTimeout(() => { rateMsg.value = '' }, 2000)
+    return
+  }
+  const { error } = await supabase.from('estimate_supplier_trade_rates').upsert({
+    account_id: accountId, supplier_id: activeSupplier.value, trade_id: tradeId,
+    rate: Number(v), updated_at: new Date().toISOString(),
+  }, { onConflict: 'account_id,supplier_id,trade_id' })
+  if (error) { masterErr.value = error.message; return }
+  rateMsg.value = '保存しました'
+  setTimeout(() => { rateMsg.value = '' }, 2000)
 }   // 一括承認の進捗（何件通ったかを見せる）
-const settingsTab    = ref<'search' | 'price' | 'material' | 'trade'>('price')
+const settingsTab    = ref<'search' | 'price' | 'trade'>('price')
 
 // ── ★R45: 単価の横断検索 ──
 //  現在価格(is_current=true)だけでなく履歴(false)も読む。履歴は書き込むだけで
@@ -437,9 +456,9 @@ const priceList = computed(() =>
     id: p.id, supplierId: p.supplier_id, unit_price: Number(p.unit_price), effective_date: p.effective_date,
     // ★R28: 単価表が品番・品名を自分で持つようになったので、まず自前の値を使う。
     //   材料マスタは既存行の互換のためのフォールバックとしてだけ見る。
-    materialName: p.item_name ?? materials.value.find(m => m.id === p.material_id)?.name ?? '(材料)',
-    materialCode: p.product_code ?? materials.value.find(m => m.id === p.material_id)?.code ?? null,
-    unit: p.unit ?? materials.value.find(m => m.id === p.material_id)?.unit ?? null,
+    materialName: p.item_name ?? '(材料)',
+    materialCode: p.product_code ?? null,
+    unit: p.unit ?? null,
     supplierName: suppliers.value.find(s => s.id === p.supplier_id)?.name ?? '(商社)',
   })).sort((a, b) => a.materialName.localeCompare(b.materialName, 'ja') || a.supplierName.localeCompare(b.supplierName, 'ja'))
 )
@@ -451,8 +470,6 @@ async function loadTrades() {
   trades.value = (data ?? []) as Trade[]
 }
 async function loadMaterials() {
-  const { data } = await supabase.from('estimate_materials').select('id, name, unit, code').eq('account_id', accountId).order('name')
-  materials.value = (data ?? []) as Material[]
 }
 async function loadSuppliers() {
   const { data } = await supabase.from('subcontractors').select('id, name').eq('account_id', accountId).eq('category', '商社').order('name')
@@ -470,13 +487,6 @@ async function loadRevisions() {
 }
 
 // 承認時の(商社×品番/品名)→自社材料 の紐付けをエイリアスとして学習（後勝ち）
-async function recordAlias(materialId: string, supplierId: string, code: string | null, name: string | null) {
-  const c = (code || '').trim(), n = (name || '').trim()
-  if (!c && !n) return
-  if (c) await supabase.from('estimate_material_aliases').delete().eq('account_id', accountId).eq('supplier_id', supplierId).ilike('supplier_code', c)
-  if (n) await supabase.from('estimate_material_aliases').delete().eq('account_id', accountId).eq('supplier_id', supplierId).ilike('supplier_name', n)
-  await supabase.from('estimate_material_aliases').insert({ account_id: accountId, material_id: materialId, supplier_id: supplierId, supplier_code: c || null, supplier_name: n || null })
-}
 /**
  * 取込差分を承認して単価表に反映する。
  * ★R28: 材料マスタを作らない。単価表が品番・品名・単位を自分で持つようになったので、
@@ -510,7 +520,6 @@ async function applyRevision(r: Revision): Promise<string | null> {
   if (error) return error.message
   await supabase.from('estimate_price_revisions')
     .update({ status: 'applied', applied_at: new Date().toISOString() }).eq('id', r.id)
-  if (r.material_id) await recordAlias(r.material_id, r.supplier_id, r.code, r.name)
   return null
 }
 
@@ -712,8 +721,8 @@ onMounted(async () => {
   await Promise.all([loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices(), loadRevisions(), loadListPrices()])
   if (!activeSupplier.value && suppliers.value[0]) activeSupplier.value = suppliers.value[0].id
 })
-// R41: 商社タブを切り替えたら、その商社の掛率を読む
-watch(activeSupplier, () => { void loadSupplierRate() }, { immediate: true })
+// R41: 商社タブを切り替えたら、その商社の掛率を読む（商社一律＋商社×工種）
+watch(activeSupplier, () => { void loadSupplierRate(); void loadSupplierTradeRates() }, { immediate: true })
 </script>
 
 <style scoped>
@@ -795,4 +804,10 @@ watch(activeSupplier, () => { void loadSupplierRate() }, { immediate: true })
 /* R50: 廃止済みマスタの説明。閲覧のみと分かるよう他の説明文と見た目を変える */
 .notice-deprecated { font-size: 12px; line-height: 1.7; color: #92400e; background: #fffbeb;
   border: 1px solid #fde68a; border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; }
+
+/* 掛率（商社一律＋材料区分ごと） */
+.rate-section { margin: 14px 0; padding: 12px; border: 1px solid #e8ebee; border-radius: 10px; background: #fafbfc; }
+.rate-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.rate-label { min-width: 8em; font-size: 13px; color: #333; }
+.rate-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 4px 16px; margin-top: 6px; }
 </style>

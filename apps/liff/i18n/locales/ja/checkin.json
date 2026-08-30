@@ -17,6 +17,7 @@
   "siteSearchEmpty": "該当する現場がありません",
   "checkedInTag": "出勤中",
   "switchSiteLink": "他の現場を選ぶ",
+  "punchDateNote": "{date}分の記録",
   "checkinConfirmTitle": "出勤前の確認",
   "checkoutConfirmTitle": "退勤前の確認",
   "registerAs": "{name} として登録",

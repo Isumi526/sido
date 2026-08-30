@@ -96,6 +96,13 @@ const ANON_LOCKED_TABLES = new Set([
   'sites', 'contractors', 'site_subcontractors',
   'daily_reports',   // 2026-08-16 RLS化。読み書きは daily-reports-read / save-daily-report EF 経由
   'work_categories', 'site_category_hours',   // 2026-08-16 新設。最初からRLS有効・EF(master-data)経由
+  // ★2026-08-30: ローカルの anon 権限を本番に合わせた（本番は workers への anon 書込を
+  //  active/name/role/unit_price の4列に限定、push_subscriptions は権限ゼロ）。
+  //  テストの下ごしらえ（permission_role を持つ承認者を作る等）は service_role で行う。
+  'workers', 'push_subscriptions',
+  // ★2026-08-30: 当初 using(true) にしていて、公開キーで全テナントのルール本文が読めていた。
+  //  LIFFの打刻画面は attendance-log EF(service_role)経由で受け取るので anon 直読みは要らない。
+  'account_attendance_rules',
 ])
 
 export async function rest(pathAndQuery: string, init: RequestInit = {}): Promise<any> {
@@ -327,4 +334,46 @@ export function makePdf(pages: number): Buffer {
   let xref = `xref\n0 ${size}\n0000000000 65535 f \n`
   for (const off of offsets) xref += `${String(off).padStart(10, '0')} 00000 n \n`
   return Buffer.from(body + xref + `trailer\n<< /Size ${size} /Root 1 0 R >>\nstartxref\n${xrefAt}\n%%EOF\n`, 'latin1')
+}
+
+// ── 日報フォーム（未送信日）の排他ロック ────────────────────
+//  ★なぜ要るか: liff の日報系specは「編集可能window（当日含む過去3日）の未送信日」という
+//   1つしかない共有資源を取り合う。さらに liff.report-late-approval は対象日を開かせるために
+//   workers.report_start_date を書き換える。並列実行だと互いの前提を壊し、
+//   「単独なら通るのに並列だと落ちる」テストが出る（何度も“既存バグ”と誤診してきた）。
+//   真の解決は spec ごとに専用の作業員を持つこと（別チケット）。それまでの間、
+//   この資源を触るspecを直列化して、E2Eの結果を信用できる状態に保つ。
+//
+//  プロセス跨ぎで効かせる必要があるので（Playwrightのworkerは別プロセス）、
+//  ファイルの排他作成(O_EXCL)をロックとして使う。古いロックは自動で回収する。
+import { mkdirSync, openSync, closeSync, rmSync, statSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+
+const LOCK_DIR = resolve(tmpdir(), 'sido-e2e-locks')
+const LOCK_PATH = resolve(LOCK_DIR, 'report-form.lock')
+const LOCK_STALE_MS = 120_000
+
+/** 日報フォーム（未送信日 / report_start_date）を占有して fn を実行する */
+export async function withReportFormLock<T>(fn: () => Promise<T>): Promise<T> {
+  mkdirSync(LOCK_DIR, { recursive: true })
+  const deadline = Date.now() + 180_000
+  let fd: number | null = null
+  while (fd === null) {
+    try {
+      fd = openSync(LOCK_PATH, 'wx')
+    } catch {
+      // 落ちたテストが握ったまま残したロックは、古くなったら回収する
+      try {
+        if (Date.now() - statSync(LOCK_PATH).mtimeMs > LOCK_STALE_MS) rmSync(LOCK_PATH, { force: true })
+      } catch { /* 他プロセスが同時に消した */ }
+      if (Date.now() > deadline) throw new Error('日報フォームのロックを取得できませんでした（180秒待機）')
+      await new Promise(r => setTimeout(r, 250))
+    }
+  }
+  try {
+    return await fn()
+  } finally {
+    closeSync(fd)
+    rmSync(LOCK_PATH, { force: true })
+  }
 }

@@ -10,9 +10,18 @@
           <span v-if="site?.name_kana" class="kana">{{ site.name_kana }}</span>
         </div>
         <div class="head-actions" v-if="site">
+          <!-- ★この現場の集計へ直行する（2026-08-29 今井さん要望）。
+               現場マスタの各ページから集計に飛べず、現場別集計の画面で月と現場を
+               選び直す必要があった。★終了した現場（無効化済み）でも見られるように、
+               その現場の日報が実際にある期間を範囲として渡す。今月固定で飛ばすと
+               終わった現場は「この月の日報がありません」になって辿り着けない。 -->
+          <button class="btn-ghost" data-testid="site-aggregate-link" :disabled="!reportRange"
+                  :title="reportRange ? '' : 'この現場の日報がまだありません'"
+                  @click="openAggregate">集計を見る</button>
           <button class="btn-ghost" @click="router.push(`/chats/${site.id}`)">チャットを開く</button>
           <button class="btn-ghost" @click="toggleActive">{{ site.active ? '無効化' : '有効化' }}</button>
-          <button class="btn-ghost" @click="router.push(`/site-rules?site_id=${site.id}`)">ルール・QR設定</button>
+          <!-- ★「ルール・QR設定」は廃止（2026-08-27 出退勤モデル変更）。確認ルールは
+               アカウント共通（/site-rules）に集約し、現場QRの発行はやめた。 -->
         </div>
       </div>
       <!-- タブ -->
@@ -154,10 +163,34 @@
               <span v-else class="att-ico"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span></span>
             </a>
             <div class="att-name">{{ a.name || a.kind }}</div>
+            <label v-if="a.kind !== 'photo'" class="att-consent">
+              <input type="checkbox" :checked="!!a.require_consent" @change="toggleConsent(a, ($event.target as HTMLInputElement).checked)" />
+              承認を求める
+            </label>
             <button class="att-del" @click="removeAttachment(a)">削除</button>
           </div>
         </div>
         <p v-else class="muted">写真・資料はありません（上のボタンから追加）</p>
+
+        <!-- 送り出し資料の承認状況（2026-08-27 出退勤モデル変更でこの現場の作業員に承認させる） -->
+        <div v-if="consentStatus.length" class="consent-status" data-testid="consent-status">
+          <h3 class="consent-status-title">送り出し資料の承認状況</h3>
+          <p class="muted sm">対象は、この現場に参加している作業員（共有メンバー＋現場責任者）です。「承認を求める」を付けると、未承認の人にお知らせが届きます。</p>
+          <p v-if="notifyResult" class="notify-result" data-testid="consent-notify-result">{{ notifyResult }}</p>
+          <div v-for="d in consentStatus" :key="d.id" class="consent-doc-block">
+            <div class="consent-doc-name">{{ d.name || '資料' }}</div>
+            <div class="consent-line">
+              <span class="consent-tag done">承認済み {{ d.consented.length }}</span>
+              <span v-for="c in d.consented" :key="c.workerId" class="consent-who">{{ c.name }}</span>
+              <span v-if="!d.consented.length" class="muted sm">まだ誰も承認していません</span>
+            </div>
+            <div class="consent-line">
+              <span class="consent-tag pending">未承認 {{ d.pending.length }}</span>
+              <span v-for="p in d.pending" :key="p.workerId" class="consent-who">{{ p.name }}</span>
+              <span v-if="!d.pending.length" class="muted sm">全員が承認しました</span>
+            </div>
+          </div>
+        </div>
       </section>
     </template>
   </div>
@@ -193,6 +226,56 @@ const orders = ref<any[]>([])
 const reports = ref<{ date: string; workers: string }[]>([])
 const attachments = ref<Att[]>([])
 const stats = ref<{ count: number; lastDate: string }>({ count: 0, lastDate: '' })
+
+// ── この現場の集計へのリンク（2026-08-29 今井さん要望）──
+// ★その現場の日報が実際にある期間（最初の月〜最後の月）を渡す。
+//  終わった現場（無効化済み）は今月に日報が無く、今月固定で飛ばすと辿り着けない。
+//  期間は JSONB containment で引く（site_id で厳密に一致・現場名の表記ゆれに影響されない）。
+const reportRange = ref<{ from: string; to: string } | null>(null)
+
+async function loadReportRange(accountId: string) {
+  reportRange.value = null
+  if (!site.value) return
+  // ★site_id と現場名の両方で引いて合成する。
+  //  本番の日報の約3割は site_id を持たない（site_id 権威化より前のデータ）。
+  //  site_id だけで引くと、そういう現場は「日報が無い」と誤判定してボタンが押せなくなる
+  //  ＝今井さんが困っている「集計に辿り着けない」がそのまま残る（2026-08-29 実測で確認）。
+  const ends = async (match: Record<string, unknown>) => {
+    // ★jsonb への containment は「JSON文字列」で渡す。配列をそのまま渡すと
+    //  supabase-js が PostgREST の配列リテラル({...})に変換してしまい、常に0件になる。
+    const needle = JSON.stringify([match])
+    const q = () => supabase.from('daily_reports')
+      .select('date').eq('account_id', accountId).contains('sites', needle)
+    const [{ data: a }, { data: b }] = await Promise.all([
+      q().order('date', { ascending: true }).limit(1),
+      q().order('date', { ascending: false }).limit(1),
+    ])
+    return { from: (a ?? [])[0]?.date as string | undefined, to: (b ?? [])[0]?.date as string | undefined }
+  }
+  const [byId, byName] = await Promise.all([
+    ends({ site_id: siteId }),
+    ends({ siteName: site.value.name }),
+  ])
+  const froms = [byId.from, byName.from].filter(Boolean) as string[]
+  const tos   = [byId.to, byName.to].filter(Boolean) as string[]
+  if (!froms.length || !tos.length) return   // 日報が1件も無い現場ではボタンを押せなくする
+  reportRange.value = {
+    from: froms.sort()[0].slice(0, 7),
+    to:   tos.sort()[tos.length - 1].slice(0, 7),
+  }
+}
+
+/** 現場別集計を、この現場・この期間で開く */
+function openAggregate() {
+  if (!reportRange.value || !site.value) return
+  const p = new URLSearchParams({
+    site: site.value.name,
+    range: 'ym',
+    from: reportRange.value.from,
+    to: reportRange.value.to,
+  })
+  router.push(`/site-reports?${p.toString()}`)
+}
 const loading = ref(true)
 const uploading = ref(false)
 
@@ -307,7 +390,60 @@ async function loadAttachments() {
   const atts = (data ?? []) as Att[]
   await Promise.all(atts.map(async (a) => { a.url = await signedUrl(a.id) }))
   attachments.value = atts
+  await loadConsentStatus()
 }
+
+// ── 送り出し資料の承認状況（2026-08-27 出退勤モデル変更）──
+// ★誰が承認対象かは「現場の共有メンバー＋現場責任者」。この判定は EF 側に持たせ、
+//  LIFF(useMySiteIds) と定義が食い違わないようにする（片方だけ変わると
+//  「現場は見えるのに承認を求められない」等が起きる）。
+type ConsentStatusDoc = {
+  id: string; name: string | null
+  consented: { workerId: string; name: string; consentedAt: string }[]
+  pending: { workerId: string; name: string }[]
+}
+const consentStatus = ref<ConsentStatusDoc[]>([])
+
+async function loadConsentStatus() {
+  // 承認対象の資料が1件も無ければ問い合わせない
+  if (!attachments.value.some(a => a.require_consent)) { consentStatus.value = []; return }
+  try {
+    const { data, error } = await supabase.functions.invoke('site-document-consent', {
+      body: { action: 'status', siteId },
+    })
+    if (error || !data?.ok) { consentStatus.value = []; return }
+    consentStatus.value = (data.documents ?? []) as ConsentStatusDoc[]
+  } catch (e) {
+    console.error('[site-consent] 承認状況の取得に失敗:', e)
+    consentStatus.value = []
+  }
+}
+
+/**
+ * 資料に「承認を求める」を付け外しする。
+ * ★ONにした時は、その現場の参加作業員（まだ承認していない人）にお知らせを積む。
+ *  資料を置いただけでは誰も気づかない（現場詳細を自分から開く人はいない）ので、
+ *  ホーム/ベル/お知らせ一覧のバッジで気づかせる（2026-08-28 ユーザー指示）。
+ */
+async function toggleConsent(a: Att, on: boolean) {
+  a.require_consent = on
+  await supabase.from('site_attachments').update({ require_consent: on }).eq('id', a.id)
+  if (on) {
+    // best-effort。通知に失敗しても「承認を求める」の設定自体は成立している
+    try {
+      const { data, error } = await supabase.functions.invoke('site-document-consent', {
+        body: { action: 'notify', attachmentId: a.id },
+      })
+      if (error || !data?.ok) console.error('[site-consent] お知らせを積めませんでした:', error ?? data)
+      else notifyResult.value = `${data.notified}人にお知らせしました`
+    } catch (e) {
+      console.error('[site-consent] お知らせを積めませんでした:', e)
+    }
+  }
+  await loadConsentStatus()
+}
+/** 「n人にお知らせしました」の一時表示 */
+const notifyResult = ref('')
 
 async function load() {
   loading.value = true
@@ -365,6 +501,7 @@ async function load() {
   }
   reports.value = rows
   stats.value = { count, lastDate }
+  await loadReportRange(accountId)
   loading.value = false
 }
 onMounted(load)
@@ -443,5 +580,19 @@ onMounted(load)
 .att-ico { font-size: 32px; }
 .att-name { font-size: 11px; color: #555; margin: 6px 0 4px; word-break: break-all; }
 .att-del { background: none; border: none; color: #E53935; font-size: 11px; cursor: pointer; }
+.att-consent { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #555; margin-bottom: 4px; cursor: pointer; }
+
+/* ── 送り出し資料の承認状況 ── */
+.consent-status { margin-top: 24px; padding-top: 16px; border-top: 1px solid #eceff1; }
+.consent-status-title { font-size: 14px; font-weight: 700; margin: 0 0 4px; }
+.muted.sm { font-size: 12px; }
+.consent-doc-block { margin-top: 12px; padding: 10px 12px; background: #fafafa; border-radius: 8px; }
+.consent-doc-name { font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+.consent-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
+.consent-tag { font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 10px; }
+.consent-tag.done    { background: #e8f9ef; color: #047857; }
+.consent-tag.pending { background: #fdecec; color: #b91c1c; }
+.consent-who { font-size: 12px; color: #333; }
+.notify-result { font-size: 12px; color: #047857; font-weight: 700; margin: 6px 0 0; }
 @media (max-width: 640px) { .summary-cards { grid-template-columns: repeat(2, 1fr); } }
 </style>

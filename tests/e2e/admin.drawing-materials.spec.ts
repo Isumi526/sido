@@ -30,11 +30,12 @@ test.describe('実施図面 材料抽出(AI)', () => {
     const rowCount = await page.locator('.table tbody tr').count()
     if (rowCount === 0) {
       await expect(page.locator('.empty')).toBeVisible()
-      await expect(page.locator('.btn-ghost')).toBeDisabled()
+      // ★.btn-ghost はこの画面に複数ある（CSV書き出し／新規解析）ので testid で指す
+      await expect(page.getByTestId('drawing-export-csv')).toBeDisabled()
       // 0件抽出時は「確認してください」メッセージを出さない(確認対象が無いため)
       await expect(page.locator('[data-testid="drawing-success"]')).toHaveCount(0)
     } else {
-      await expect(page.locator('.btn-ghost')).toBeEnabled()
+      await expect(page.getByTestId('drawing-export-csv')).toBeEnabled()
       // AIの自動抽出結果を人が確認・修正するよう促すメッセージが出ること
       await expect(page.locator('[data-testid="drawing-success"]')).toContainText('確認・修正')
     }

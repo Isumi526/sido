@@ -29,7 +29,7 @@
         <!-- ★R55: マスタ編集の共通ルール（docs/design/master-editing-rules.md）に従い、
              元請け・担当者はこの画面から直せるようにする。設定画面へ飛ばすと
              書きかけの見積から離れることになり、実際にブラウザバックで入力が消えていた。 -->
-        <button class="btn-edit" data-testid="con-add-open" @click="openContractorModal(null)">＋ 元請けを追加</button>
+        <button class="btn-edit" data-testid="con-add-open" @click="openContractorModal(null)"><span class="material-symbols-rounded">add</span>元請けを追加</button>
         <button v-if="currentContractorId" class="btn-edit" data-testid="con-edit-open" @click="openContractorModal(currentContractorId)">
           <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">edit</span> 担当者を編集
         </button>
@@ -222,7 +222,7 @@
             <div class="ifield">
               <span>&nbsp;</span>
               <span class="wiz-con-btns">
-                <button class="btn-edit" data-testid="wiz-con-add" @click="openContractorModal(null)">＋ 元請けを追加</button>
+                <button class="btn-edit" data-testid="wiz-con-add" @click="openContractorModal(null)"><span class="material-symbols-rounded">add</span>元請けを追加</button>
                 <button v-if="currentContractorId" class="btn-edit" data-testid="wiz-con-edit" @click="openContractorModal(currentContractorId)">担当者を編集</button>
               </span>
             </div>
@@ -831,7 +831,7 @@
                       <select v-model="rows[i].supplier_id" class="input sm" :data-testid="`item-supplier-${i}`" @change="onSupplierPick(rows[i])">
                         <option :value="null">—</option>
                         <!-- ★R41: 「単価表の絶対額」と「定価×掛率」を同じ土俵で並べる -->
-                        <option v-for="p in pricesForRow(rows[i].material_id, rows[i].product_code)" :key="p.supplier_id" :value="p.supplier_id">
+                        <option v-for="p in pricesForRow(rows[i].material_id, rows[i].product_code, rowTradeId(rows[i]))" :key="p.supplier_id" :value="p.supplier_id">
                           {{ p.supplierName }} ¥{{ p.unit_price.toLocaleString('ja-JP') }}（{{ p.from }}）
                         </option>
                       </select>
@@ -3024,12 +3024,13 @@ async function loadTrades() {
  *  一本化後は
  *    材料（品番あり）→ 商社単価表から
  *    作業内容（品番なし）→ 過去に打った明細から
- *  を候補にする。既存の材料マスタは移行期間として読むだけ残す（新規登録はしない）。
+ *  を候補にする。
+ *  ★2026-08-30: 移行期間として読むだけ残していた材料マスタ(estimate_materials)を撤去。
+ *   新規登録の経路はR28で塞がれており、本番でも6月末から1行も増えていない＝
+ *   候補が増えることはもう無い。方針も「マスタを先に整備させない」(2026-07-27 #17)。
  */
 async function loadMaterials() {
-  const [{ data: legacy }, { data: prices }, { data: past }] = await Promise.all([
-    supabase.from('estimate_materials')
-      .select('id, name, unit, code, spec').eq('account_id', accountId).order('name'),
+  const [{ data: prices }, { data: past }] = await Promise.all([
     supabase.from('estimate_material_prices')
       .select('material_id, product_code, item_name, unit')
       .eq('account_id', accountId).eq('is_current', true),
@@ -3053,7 +3054,6 @@ async function loadMaterials() {
       if (!cur.id && id) cur.id = id
     }
   }
-  for (const m of (legacy ?? []) as any[]) put(m.name, m.code, m.unit, m.id)          // 移行期間: 既存マスタも候補に残す
   for (const p of (prices ?? []) as any[]) put(p.item_name, p.product_code, p.unit, p.material_id)
   for (const it of (past ?? []) as any[]) put(it.item_name, it.product_code, it.unit, null)
   materials.value = [...seen.values()].sort((a, b) => a.name.localeCompare(b.name, 'ja'))
@@ -3276,15 +3276,19 @@ async function loadSends() {
 // ════════════════════════════════════════════════════════════
 type ListPrice = { product_code: string; item_name: string | null; unit: string | null; list_price: number }
 type SupplierRate = { supplier_id: string; rate: number }
+type SupplierTradeRate = { supplier_id: string; trade_id: string; rate: number }
 const listPrices    = ref<ListPrice[]>([])
 const supplierRates = ref<SupplierRate[]>([])
+const supplierTradeRates = ref<SupplierTradeRate[]>([])   // 商社×工種(材料区分)の掛率（商社一律より優先）
 async function loadListPrices() {
-  const [{ data: lp }, { data: sr }] = await Promise.all([
+  const [{ data: lp }, { data: sr }, { data: str }] = await Promise.all([
     supabase.from('estimate_list_prices').select('product_code, item_name, unit, list_price').eq('account_id', accountId),
     supabase.from('estimate_supplier_rates').select('supplier_id, rate').eq('account_id', accountId),
+    supabase.from('estimate_supplier_trade_rates').select('supplier_id, trade_id, rate').eq('account_id', accountId),
   ])
   listPrices.value = (lp ?? []).map((x: any) => ({ ...x, list_price: Number(x.list_price) }))
   supplierRates.value = (sr ?? []).map((x: any) => ({ ...x, rate: Number(x.rate) }))
+  supplierTradeRates.value = (str ?? []).map((x: any) => ({ ...x, rate: Number(x.rate) }))
 }
 const listPriceOf = (code: string | null | undefined) => {
   const c = (code ?? '').trim().toLowerCase()
@@ -3292,6 +3296,9 @@ const listPriceOf = (code: string | null | undefined) => {
   return listPrices.value.find(l => l.product_code.trim().toLowerCase() === c) ?? null
 }
 const supplierRateOf = (supplierId: string) => supplierRates.value.find(r => r.supplier_id === supplierId)?.rate ?? null
+// 商社×工種(材料区分)の掛率。無ければ null（呼び出し側が商社一律へフォールバック）。
+const supplierTradeRateOf = (supplierId: string, tradeId: string | null | undefined) =>
+  tradeId ? (supplierTradeRates.value.find(r => r.supplier_id === supplierId && r.trade_id === tradeId)?.rate ?? null) : null
 
 /**
  * 名称から定価を引く（R46の推定用）。品番ではなく名称で引くのは、
@@ -3306,25 +3313,36 @@ function listPriceByName(normName: string): number | null {
 
 /**
  * その商社から仕入れる時の単価。
- * 優先順: ①単価表の絶対額 ②定価 × 掛率（品番×商社の上書き → 商社の既定）
+ * 優先順: ①単価表の絶対額 ②定価 × 掛率（品番×商社の上書き → 商社×工種 → 商社の既定）
+ *  ★tradeId は明細の材料区分(＝工種)。商社×工種の掛率があればそれを使い、無ければ商社一律へ落ちる。
  */
 function purchaseUnitPrice(p: { supplier_id: string; unit_price: number; rate?: number | null; product_code?: string | null },
-                           code: string | null | undefined): { price: number; from: '単価表' | '定価×掛率' } | null {
+                           code: string | null | undefined,
+                           tradeId?: string | null): { price: number; from: '単価表' | '定価×掛率' } | null {
   if (Number(p.unit_price) > 0) return { price: Number(p.unit_price), from: '単価表' }
   const lp = listPriceOf(code ?? p.product_code)
-  const rate = p.rate ?? supplierRateOf(p.supplier_id)
+  const rate = p.rate ?? supplierTradeRateOf(p.supplier_id, tradeId) ?? supplierRateOf(p.supplier_id)
   if (lp && rate != null && rate > 0) return { price: Math.round(lp.list_price * rate), from: '定価×掛率' }
   return null
 }
 
-function pricesForRow(materialId: string | null, productCode?: string | null) {
+// 明細行の材料区分(工種)を trade_id に解決する。行が固定マスタの trade_id を持てばそれ、
+// 無ければ自由記述の trade_name を工種マスタ名と突き合わせて引く（掛率は工種マスタ単位で登録するため）。
+const rowTradeId = (r: { trade_id?: string | null; trade_name?: string | null }): string | null => {
+  if (r.trade_id) return r.trade_id
+  const nm = (r.trade_name ?? '').trim()
+  if (!nm) return null
+  return trades.value.find(t => t.name === nm)?.id ?? null
+}
+
+function pricesForRow(materialId: string | null, productCode?: string | null, tradeId?: string | null) {
   const code = (productCode ?? '').trim().toLowerCase()
   if (!materialId && !code) return [] as Array<{ supplier_id: string; supplierName: string; unit_price: number }>
   const hit = matPrices.value
     .filter(p => (materialId && p.material_id === materialId)
               || (!!code && (p.product_code ?? '').trim().toLowerCase() === code))
     .map(p => {
-      const calc = purchaseUnitPrice(p as any, productCode)
+      const calc = purchaseUnitPrice(p as any, productCode, tradeId)
       return {
         supplier_id: p.supplier_id,
         supplierName: suppliers.value.find(s => s.id === p.supplier_id)?.name ?? '(商社)',
@@ -3335,15 +3353,21 @@ function pricesForRow(materialId: string | null, productCode?: string | null) {
     .filter(x => x.unit_price > 0)
   // ★R41: 単価表に絶対額が無くても、定価×掛率が引ける商社は候補に出す
   //   （その商社の行が単価表に無いケース。掛率だけ登録している運用がある）
+  //   掛率は「商社×工種」を優先し、無ければ商社一律。どちらか持つ商社をすべて候補にする。
   const lp = listPriceOf(productCode)
   if (lp) {
-    for (const r of supplierRates.value) {
-      if (hit.some(x => x.supplier_id === r.supplier_id)) continue
-      if (!(r.rate > 0)) continue
+    const supIds = new Set<string>([
+      ...supplierRates.value.map(r => r.supplier_id),
+      ...supplierTradeRates.value.filter(r => !tradeId || r.trade_id === tradeId).map(r => r.supplier_id),
+    ])
+    for (const supplierId of supIds) {
+      if (hit.some(x => x.supplier_id === supplierId)) continue
+      const rate = supplierTradeRateOf(supplierId, tradeId) ?? supplierRateOf(supplierId)
+      if (!(rate != null && rate > 0)) continue
       hit.push({
-        supplier_id: r.supplier_id,
-        supplierName: suppliers.value.find(s => s.id === r.supplier_id)?.name ?? '(商社)',
-        unit_price: Math.round(lp.list_price * r.rate), from: '定価×掛率',
+        supplier_id: supplierId,
+        supplierName: suppliers.value.find(s => s.id === supplierId)?.name ?? '(商社)',
+        unit_price: Math.round(lp.list_price * rate), from: '定価×掛率',
       })
     }
   }
@@ -3351,7 +3375,7 @@ function pricesForRow(materialId: string | null, productCode?: string | null) {
 }
 /** R42: その行で一番安い商社（比較の基準は仕入単価。定価×掛率と絶対額を同じ土俵で見る） */
 function cheapestFor(r: Row) {
-  const list = pricesForRow(r.material_id, r.product_code)
+  const list = pricesForRow(r.material_id, r.product_code, rowTradeId(r))
   return list.length ? list[0] : null
 }
 /** R42: 最安の商社を採用する（勝手に確定せず、押した時だけ） */
@@ -3376,7 +3400,7 @@ function onSupplierPick(r: Row) {
   if (!r.supplier_id) return
   const code = (r.product_code ?? '').trim().toLowerCase()
   // ★R41: 絶対額が無い商社でも、定価×掛率で仕入単価が出る
-  const picked = pricesForRow(r.material_id, r.product_code).find(x => x.supplier_id === r.supplier_id)
+  const picked = pricesForRow(r.material_id, r.product_code, rowTradeId(r)).find(x => x.supplier_id === r.supplier_id)
   if (!picked) return
   void code
   r.cost_unit_price = picked.unit_price
@@ -3574,8 +3598,8 @@ async function removeCandidate(c: Material) {
     : `「${c.name}」を候補から外しますか？\n※すでに作った見積の中身は変わりません。`
   if (!window.confirm(msg)) return
   materials.value = materials.value.filter(m => m !== c)
-  // 材料マスタ由来（移行期間の既存データ）なら実体も消す
-  if (c.id) await supabase.from('estimate_materials').delete().eq('id', c.id)
+  // ★材料マスタ(estimate_materials)の実体削除は撤去（2026-08-30）。マスタ自体を廃止したため、
+  //  候補は単価表と過去明細から作られる。単価表から消さない限り再び候補に出る旨は上の確認文で案内済み。
   candMsg.value = '候補から外しました'
   setTimeout(() => { candMsg.value = '' }, 2000)
 }
@@ -3653,7 +3677,7 @@ const isMaterialRow = (r: Row) => !!(r.product_code ?? '').trim()
  * 品番が無くても、マスタで商社別単価が登録されている材料（品名で選んだケース）は
  * 材料として扱う。品番の有無だけで切ると、その動線で商社が選べなくなる。
  */
-const hasSupplierChoice = (r: Row) => isMaterialRow(r) || pricesForRow(r.material_id, r.product_code).length > 0
+const hasSupplierChoice = (r: Row) => isMaterialRow(r) || pricesForRow(r.material_id, r.product_code, rowTradeId(r)).length > 0
 
 function needsLookup(r: Row): boolean {
   if (!isMaterialRow(r)) return false   // 作業内容は調べても見つからないので出さない
@@ -3781,7 +3805,7 @@ async function doLoadItems() {
   if (!projectId.value) { markSaved(); return }
   const [{ data }, { data: pj }] = await Promise.all([
     supabase.from('estimate_items')
-      .select('id, category_id, trade_id, trade_name, material_id, supplier_id, item_name, spec, product_code, dim_w, dim_d, dim_h, row_type, unit, quantity, cost_unit_price, unit_price, note')
+      .select('id, trade_id, trade_name, material_id, supplier_id, item_name, spec, product_code, dim_w, dim_d, dim_h, row_type, unit, quantity, cost_unit_price, unit_price, note')
       .eq('project_id', projectId.value).order('sort_order'),
     supabase.from('estimate_projects')
       .select('construction_location, period_text, valid_until, memo, adjustment, margin_rate, request_date, due_date, status, lost_reason, is_draft').eq('id', projectId.value).single(),
@@ -4204,11 +4228,35 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .input.num { text-align: right; }
 .amount { font-variant-numeric: tabular-nums; }
 .actions-row { display: flex; gap: 12px; align-items: center; margin-top: 12px; }
+/* ─────────────────────────────────────────────────────────
+   ★ボタンの種類と使い分け（R? トンマナ統一・2026-08-19 亥角さん指摘）
+   見た目を1つずつ合わせるのではなく「役割」で分けてから見た目を当てる。
+   同じ役割のボタンは必ず同じ見た目にする（色を場当たりで足さない）。
+
+   1. 主操作（その画面で押してほしい1つ）… 塗りつぶし緑
+        → .btn-primary（保存・送信・確定など）
+   2. 副操作（あっても良い・任意の遷移/編集）… 白背景＋枠線
+        → .btn-edit（元請け追加・担当者編集・ページを選んで送る・明細・読み取る 等）
+        以前は .btn-edit の実体が無く“ブラウザ素のボタン”で描画されていた。ここで定義した。
+   3. 状態表示を兼ねるもの（解析中 n/N 等）… ボタンとは別の見た目（枠を消し文字だけ）
+        → .btn-edit:disabled（処理中は押せず、進捗テキストを表示する用途）
+   4. 破壊的（削除の ×）… 赤系。押し間違い/見落とし防止に当たり判定を広げる
+        → .btn-del
+   ※ 装飾は Material Symbols を使う（絵文字は使わない＝既存方針）。
+   ───────────────────────────────────────────────────────── */
 .btn-primary { background: #06C755; color: #fff; border: none; border-radius: 6px; padding: 8px 18px; font-weight: 600; cursor: pointer; }
 .btn-primary:disabled { opacity: .6; cursor: default; }
 .btn-add { background: #eef7f0; color: #06864a; border: 1px solid #bfe3cd; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
 .btn-add:disabled { opacity: .4; cursor: not-allowed; background: #f3f4f6; color: #9ca3af; border-color: #e5e7eb; }
-.btn-del { background: none; border: none; color: #c00; font-size: 16px; cursor: pointer; }
+/* 副操作：白背景＋枠線。以前は未定義で素のボタンだった */
+.btn-edit { display: inline-flex; align-items: center; gap: 4px; background: #fff; color: #374151; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 12px; font-size: 13px; line-height: 1.4; cursor: pointer; }
+.btn-edit:hover { background: #f8fafc; border-color: #94a3b8; }
+/* 処理中は「状態表示」に化ける：枠を消して進捗テキストだけ見せる */
+.btn-edit:disabled { cursor: default; background: none; border-color: transparent; color: #6b7280; }
+.btn-edit .material-symbols-rounded { font-size: 16px; }
+/* 破壊的（削除）：赤・当たり判定を広げて誤押し/見落としを減らす */
+.btn-del { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; background: none; border: none; border-radius: 6px; color: #c00; font-size: 18px; line-height: 1; cursor: pointer; }
+.btn-del:hover { background: #fdecec; }
 .trade-add { display: flex; gap: 8px; align-items: center; margin-top: 14px; padding-top: 12px; border-top: 1px dashed #ddd; }
 .grand td { font-weight: 700; border-top: 2px solid #333; }
 .empty { color: #999; text-align: center; padding: 14px; }

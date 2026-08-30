@@ -89,6 +89,27 @@ test.describe('日報編集の承認: 自己承認の禁止', () => {
     myUserId = mu[0].id
 
     // 日報の持ち主（他人）
+    // ★「ログインを持つ active な管理者」が自分以外にも居る状態にする。
+    //  居ないと「完全ワンオペのオーナーは自分の申請も承認できる」例外に当たり、
+    //  自己承認ブロックの検証にならない（承認ボタンが出てしまう）。
+    //  判定は auth_user_id が NULL でない行だけを数える
+    //  （report-edit-review.vue の resolveCanSelfApprove ／ EF の hasOtherActiveOwner と同じ規則）。
+    //  ★1ログイン=1作業員の一意制約があるので、未使用の auth ユーザーを探して使う。
+    const freeAuthId = execSync(
+      `psql "${DB_URL}" -tAc "select u.id from auth.users u where u.email <> '${ADMIN_LOGIN_EMAIL}' and not exists (select 1 from workers w where w.auth_user_id = u.id and w.account_id = '${accountId}') limit 1"`,
+      { encoding: 'utf8' },
+    ).trim()
+    if (freeAuthId) {
+      await restSrv('workers', {
+        method: 'POST', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          account_id: accountId, name: `${PREFIX}別管理者${TS}`, role: 'site', active: true,
+          permission_role: 'admin', auth_user_id: freeAuthId,
+        }),
+      })
+    }
+
+    // 日報の持ち主（他人）
     const ow = await restSrv('workers', {
       method: 'POST', headers: { Prefer: 'return=representation' },
       body: JSON.stringify({ account_id: accountId, name: OTHER, role: 'site', active: true }),

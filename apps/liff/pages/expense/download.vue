@@ -1,6 +1,6 @@
 <template>
   <div class="app">
-    <AppNav :subtitle="t('expenseDoc.navSubtitle')" :user-name="currentUser?.real_name" :user-role="currentUser?.worker_role" />
+    <AppNav class="no-print" :subtitle="t('expenseDoc.navSubtitle')" :user-name="currentUser?.real_name" :user-role="currentUser?.worker_role" />
 
     <main class="main">
       <div v-if="initializing" class="state-screen no-print">
@@ -502,6 +502,12 @@ html,body { background:var(--bg);color:var(--text);font-family:var(--font);min-h
    付かないため一切効かない（実際そう書いて効かず、印刷メディアで実測して気づいた）。 */
 @media print {
   html, body { min-height:0 !important; height:auto !important; }
+  /* ★画面用のUI（期間バー/申請ボタン/ナビ等）は no-print を付けてあるが、これまで
+     「display:none」に落とすルールが無く印刷されていた＝明細4行でも溢れて2ページ目が出ていた。
+     ここで実際に隠す（原因はmin-height残存＋クロム印刷の両方）。印刷は .print-area だけにする。 */
+  .no-print { display:none !important; }
+  /* .main の下部余白(固定申請ボタンよけの100px)は印刷では不要＝溢れの一因なので消す。 */
+  .main { padding:0 !important; }
 }
 </style>
 

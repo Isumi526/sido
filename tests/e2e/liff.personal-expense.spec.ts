@@ -63,6 +63,8 @@ test.describe('個人経費の申請（liff）', () => {
 
     await page.getByTestId('pe-account').selectOption('消耗品費')
     await page.getByTestId('pe-amount').fill('12000')
+    // 支払い元の既定は「会社支払い」＝個人枠を消費しない(#32)。枠の消費を見るテストなので個人立替を選ぶ
+    await page.getByTestId('pe-payer-personal').check()
     await page.getByTestId('pe-payee').fill('E2E店')
     await page.getByTestId('pe-note').fill(NOTE)
     await page.getByTestId('pe-submit').click()
@@ -103,6 +105,8 @@ test.describe('個人経費の申請（liff）', () => {
     await expect(page.getByTestId('pe-submit')).toBeVisible({ timeout: 15000 })
     await page.getByTestId('pe-account').selectOption('消耗品費')
     await page.getByTestId('pe-amount').fill('60000')
+    // 支払い元の既定は「会社支払い」＝個人枠を消費しない(#32)。枠の消費を見るテストなので個人立替を選ぶ
+    await page.getByTestId('pe-payer-personal').check()
     await page.getByTestId('pe-note').fill(`${NOTE}_over`)
     await page.getByTestId('pe-submit').click()
 

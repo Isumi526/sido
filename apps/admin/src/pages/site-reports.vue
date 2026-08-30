@@ -8,6 +8,9 @@
           '行を開くと、日報単位の内訳（作業員・経費）を確認できます。',
         ]" />
       </h1>
+      <button class="btn-reload" :disabled="loading" title="再読み込み" data-testid="reload-btn" @click="load">
+        <span class="material-symbols-rounded" :class="{ spinning: loading }">refresh</span>
+      </button>
       <!-- ★既定は従来の単月ナビ。複数月にまたがる工事を通しで見たい時だけ期間指定に切り替える -->
       <div class="month-nav">
         <template v-if="!isRange">
@@ -74,6 +77,12 @@
 
       <!-- 出力（※表の表示月は上の ‹ 年月 › ナビで切替。出力ボタンを押すと出力期間を選ぶ） -->
       <div v-if="displaySite" class="export-bar">
+        <!-- ★選択中の現場の現場ページへ戻る（2026-08-30 今井さん要望）。
+             現場ページ→集計 の逆向き。行ったきりだと現場一覧から探し直しになる。
+             現場名はすぐ上のタブに出ているので、ここでは繰り返さない。 -->
+        <router-link v-if="displaySiteId" :to="`/sites/${displaySiteId}`" class="btn-site-master" data-testid="site-master-link">
+          <span class="material-symbols-rounded">location_on</span>現場ページ
+        </router-link>
         <div class="export-pop-wrap">
           <button class="btn-export" data-testid="export-site" @click="exportPanelOpen = !exportPanelOpen"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">download</span> {{ canViewEstimates ? 'CSV＋見積書PDFを出力' : 'CSVを出力' }}</button>
           <div v-if="exportPanelOpen" class="export-pop" data-testid="export-panel">
@@ -618,6 +627,10 @@ function toggleWageMode() {
 // 現場名 → 読み仮名。★漢字の name を localeCompare('ja') しても読みは無視されるので五十音にならない
 //  （ICU の ja 照合は漢字を部首・画数で並べる）。300件超のタブを目で追うので読み仮名で並べる（2026-08-17）。
 const kanaBySite = ref<Record<string, string>>({})
+// 現場名 → 現場マスタの id。集計から現場ページへ戻る導線に使う（2026-08-30 今井さん要望・往復できるように）
+const siteIdByName = ref<Record<string, string>>({})
+/** 表示中の現場の、現場マスタ上の id（マスタに無い名前＝表記ゆれ等なら null） */
+const displaySiteId = computed(() => siteIdByName.value[displaySite.value] ?? null)
 const siteNamesAll = computed(() => Object.keys(siteMap.value)
   .sort((a, b) => (kanaBySite.value[a] || a).localeCompare(kanaBySite.value[b] || b, 'ja')))
 
@@ -812,6 +825,9 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
   // タブを五十音で並べるための 現場名→読み仮名
   kanaBySite.value = Object.fromEntries(
     (siteRows ?? []).filter((s: any) => s.name_kana).map((s: any) => [s.name, s.name_kana]))
+  // 現場ページへ戻る導線用。★無効化済みの現場も含める（終わった現場の集計から
+  //  マスタを開けないと、行ったきりになる）。
+  siteIdByName.value = Object.fromEntries((siteRows ?? []).map((s: any) => [s.name, s.id]))
   // 絞り込み・判別表示用の 現場名→元請け名（複数）。集計には使わない（タブを減らす／判別のためだけ）。
   // ★同名の現場が別々の元請けに紐づくことがあるので、名前ごとに元請けを集合で集める（最後勝ちで潰さない）。
   const contractorSetBySite: Record<string, Set<string>> = {}
@@ -1061,6 +1077,14 @@ watch(wageMode, load)   // 日当-実質賃金の切替で社員人件費を再�
 .sf-clear { border: 1px solid #d0d0d0; background: #fff; border-radius: 6px; padding: 6px 12px; font-size: 12px; color: #555; cursor: pointer; }
 .sf-clear:hover { background: #f5f5f5; }
 
+/* 集計→現場ページ。出力ボタンと同じ行に置き、白ベースで主張を抑える（主操作はCSV出力） */
+.btn-site-master {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: #fff; color: #333; border: 1px solid #d5d9de; border-radius: 8px;
+  padding: 8px 14px; font-size: 13px; font-weight: 700; text-decoration: none; cursor: pointer;
+}
+.btn-site-master:hover { background: #f6f7f9; border-color: #b9c0c8; }
+.btn-site-master .material-symbols-rounded { font-size: 16px; }
 .tabs-wrap { overflow-x: auto; margin-bottom: 16px; }
 .export-bar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin: 10px 0 0; flex-wrap: wrap; }
 .export-pop-wrap { position: relative; }
@@ -1142,4 +1166,9 @@ watch(wageMode, load)   // 日当-実質賃金の切替で社員人件費を再�
 .flex-rows { display: flex; flex-direction: column; gap: 4px; }
 .modal-total { display: flex; justify-content: space-between; align-items: center; border-top: 2px solid #e0e0e0; padding-top: 16px; font-size: 16px; font-weight: 700; }
 .modal-total span:last-child { font-size: 20px; color: #06C755; }
+.btn-reload { background: #fff; border: 1px solid #d0d5dd; border-radius: 8px; padding: 5px 9px; cursor: pointer; color: #475569; display: inline-flex; align-items: center; }
+.btn-reload:hover { background: #f1f5f9; }
+.btn-reload:disabled { opacity: .5; cursor: default; }
+.btn-reload .spinning { animation: reload-spin 0.8s linear infinite; }
+@keyframes reload-spin { to { transform: rotate(360deg); } }
 </style>

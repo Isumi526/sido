@@ -14,6 +14,11 @@
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { createRemoteJWKSet, jwtVerify } from 'https://esm.sh/jose@5'
+// ★ローカル検証用の身元経路（dev_line_user_id）。IS_LOCAL でガードされており、
+//  本番の SUPABASE_URL はホスト名付きなのでデプロイ後は開かない。
+//  これが無いと、開発モードの LIFF は LINE ID token を持たないため資料を開けず、
+//  「リンクを押しても何も起きない」状態でしか確認できなかった（2026-08-30）。
+import { resolveCaller } from '../_shared/caller-identity.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
@@ -80,18 +85,25 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders() })
   if (req.method !== 'POST') return json({ ok: false, error: 'method_not_allowed' }, 405)
 
-  let attachment_id = '', line_id_token = ''
+  let attachment_id = '', line_id_token = '', dev_line_user_id = ''
   try {
     const b = await req.json()
     attachment_id = (b.attachment_id ?? '').toString().trim()
     line_id_token = (b.line_id_token ?? '').toString().trim()
+    dev_line_user_id = (b.dev_line_user_id ?? '').toString().trim()
   } catch { return json({ ok: false, error: 'bad_json' }, 400) }
   if (!attachment_id) return json({ ok: false, error: 'attachment_id_required' }, 400)
 
   const svc = createClient(SUPABASE_URL, SERVICE_KEY)
 
   // 先に caller を認可（未認可に添付の存在有無を漏らさない＝列挙対策）
-  const callerAccount = await resolveCallerAccount(svc, req.headers.get('Authorization') ?? '', line_id_token)
+  let callerAccount = await resolveCallerAccount(svc, req.headers.get('Authorization') ?? '', line_id_token)
+  // ★ローカル検証用の経路。共通ヘルパー側で IS_LOCAL のときだけ dev_line_user_id を受ける
+  //  （本番URLでは無効）。開発モードのLIFFはLINE ID tokenを持たないためここが無いと開けない。
+  if (!callerAccount && dev_line_user_id) {
+    const caller = await resolveCaller(svc, '', '', dev_line_user_id)
+    callerAccount = caller?.accountId ?? null
+  }
   if (!callerAccount) return json({ ok: false, error: 'unauthorized' }, 401)
 
   // 添付を引く（account/path）

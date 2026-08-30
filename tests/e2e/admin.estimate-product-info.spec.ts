@@ -34,10 +34,6 @@ let PROJ = ''
 
 test.beforeAll(async () => {
   const accountId = await getAccountId()
-  await restSrv('estimate_materials', {
-    method: 'POST', headers: { Prefer: 'return=minimal' },
-    body: JSON.stringify({ account_id: accountId, name: MAT, unit: '枚', source: 'manual' }),
-  })
   // 商品情報のキャッシュ（AIを叩かずに表示できる状態を作る）
   await restSrv('estimate_product_info', {
     method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
@@ -47,6 +43,20 @@ test.beforeAll(async () => {
       image_url: null, source_urls: ['https://example.com/e2e-product'], not_found: false,
     }),
   })
+  // ★「もしかして」候補の供給元。材料マスタは 2026-08-30 に撤去したので、
+  //  実際に候補を作っている単価表(estimate_material_prices)へ正しい名前を置く。
+  const sup = (await restSrv('subcontractors', {
+    method: 'POST', headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ account_id: accountId, name: `E2E商社_${TS}`, category: '商社', active: true }),
+  }))[0].id
+  await restSrv('estimate_material_prices', {
+    method: 'POST', headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      account_id: accountId, supplier_id: sup, product_code: CODE, item_name: MAT,
+      unit: '枚', unit_price: 1000, is_current: true,
+    }),
+  })
+
   // 「調べたが見つからなかった」ケースのキャッシュ
   await restSrv('estimate_product_info', {
     method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
@@ -65,7 +75,8 @@ test.afterAll(async () => {
     await restSrv(`estimate_projects?id=eq.${p.id}`, { method: 'DELETE' }).catch(() => {})
   }
   await restSrv(`estimate_product_info?account_id=eq.${accountId}&name=like.${encodeURIComponent('E2E%' + TS + '%')}`, { method: 'DELETE' }).catch(() => {})
-  await restSrv(`estimate_materials?account_id=eq.${accountId}&name=like.${encodeURIComponent('E2E%' + TS + '%')}`, { method: 'DELETE' }).catch(() => {})
+  await restSrv(`estimate_material_prices?account_id=eq.${accountId}&item_name=eq.${encodeURIComponent(MAT)}`, { method: 'DELETE' }).catch(() => {})
+  await restSrv(`subcontractors?account_id=eq.${accountId}&name=eq.${encodeURIComponent('E2E商社_' + TS)}`, { method: 'DELETE' }).catch(() => {})
 })
 
 async function openNewProject(page: any) {

@@ -14,7 +14,9 @@
 const EDGE_FN = 'attendance-log'
 
 export type PunchLogRow = { worker_id: string; type: string; checked_at: string; siteName: string | null }
-export type RecentLogRow = { site_id: string; type: string; checked_at: string }
+// site_id は 2026-08-27 の出退勤モデル変更で任意になった（1日＝出勤/退勤の2回・現場に紐づけない）
+export type RecentLogRow = { site_id: string | null; type: string; checked_at: string }
+export type AttendanceRule = { id: string; content: string; timing: string }
 
 export function useAttendanceLog() {
   const config = useRuntimeConfig()
@@ -68,9 +70,21 @@ export function useAttendanceLog() {
     }
   }
 
+  /** 打刻時に見せるアカウント共通の確認ルール（現場別ルールの置き換え） */
+  async function rules(timing: 'checkin' | 'checkout'): Promise<AttendanceRule[]> {
+    try {
+      const r = await call('rules', { timing })
+      return (r.rules ?? []) as AttendanceRule[]
+    } catch (e) {
+      // ★空にフォールバックしない。ルールを見せずに打刻させると同意記録が空のまま残る
+      console.error('[attendance] 確認ルールを取得できませんでした:', e)
+      throw e
+    }
+  }
+
   /** その場で押す打刻。★時刻はEF（サーバ）が決める＝クライアントから渡さない */
   async function punch(input: {
-    siteId: string
+    siteId?: string | null
     type: 'checkin' | 'checkout'
     targetWorkerId?: string | null
     agreedRuleTexts?: string[]
@@ -88,7 +102,7 @@ export function useAttendanceLog() {
 
   /** 打刻し忘れた日の後追い入力（本人のみ・4日前まで。範囲や重複はEF側でも検証する） */
   async function backdate(input: {
-    siteId: string; date: string; checkin?: string; checkout?: string
+    siteId?: string | null; date: string; checkin?: string; checkout?: string
   }): Promise<{ ok: boolean; error?: string }> {
     try {
       await call('backdate', input as Record<string, unknown>)
@@ -98,5 +112,5 @@ export function useAttendanceLog() {
     }
   }
 
-  return { recent, forReport, punch, backdate }
+  return { recent, forReport, rules, punch, backdate }
 }

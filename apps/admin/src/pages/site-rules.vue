@@ -2,14 +2,17 @@
   <div>
     <div class="page-header">
       <div class="header-left">
-        <button class="btn-back" @click="router.push('/sites')">← 現場一覧</button>
-        <h1 class="page-title">{{ siteName }} &nbsp;—&nbsp; 確認ルール</h1>
+        <h1 class="page-title">出退勤の確認ルール</h1>
+        <p class="page-note">
+          出勤時・退勤時に全作業員へ表示する共通の確認事項です。<br>
+          現場ごとの個別ルールは廃止し、現場特有の内容は「送り出し資料」の承認で扱います。
+        </p>
       </div>
-      <button class="btn-add" @click="openAdd">＋ ルール追加</button>
+      <button class="btn-add" data-testid="rule-add-open" @click="openAdd">＋ ルール追加</button>
     </div>
 
     <div v-if="loading" class="empty">読み込み中...</div>
-    <div v-else-if="rules.length === 0" class="empty">ルールが登録されていません</div>
+    <div v-else-if="rules.length === 0" class="empty" data-testid="rule-empty">ルールが登録されていません</div>
 
     <div v-else class="table-wrap">
       <table class="table">
@@ -21,7 +24,7 @@
             <th style="width:80px"></th>
           </tr>
         </thead>
-        <tbody>
+        <tbody data-testid="rule-rows">
           <tr v-for="rule in rules" :key="rule.id">
             <td class="order-cell">
               <div class="order-btns">
@@ -41,12 +44,9 @@
       </table>
     </div>
 
-    <!-- QRコード発行（ルール未設定でもシンプル出退勤として発行可）-->
-    <div v-if="!loading" class="qr-section">
-      <h2 class="section-title">QRコード発行</h2>
-      <p v-if="rules.length === 0" class="qr-note">確認ルール未設定でもQRを発行できます（出退勤のみのシンプル運用）。ルールを追加すると出退勤時に確認事項を表示します。</p>
-      <SiteQrPanel :site-id="siteId" :site-name="siteName" />
-    </div>
+    <!-- ★現場QRの発行は廃止した（2026-08-27 出退勤モデル変更）。
+         打刻が現場に紐づかなくなり、現場ごとのQRを分ける意味が無くなったため。
+         作業員はアプリのホームから直接打刻する。 -->
 
     <!-- 追加モーダル -->
     <div v-if="modal" class="modal-overlay" @click.self="modal = false">
@@ -93,21 +93,22 @@
 </template>
 
 <script setup lang="ts">
+// ============================================================
+//  出退勤の確認ルール（アカウント共通）
+//  ★2026-08-27 出退勤モデル変更で「現場ごとのルール(site_rules)」から
+//   「アカウント共通のルール(account_attendance_rules)」に変えた。
+//   打刻が現場に紐づかなくなった（1日＝最初の出勤・最後の退勤の2回）ため、
+//   現場別ルールを出す先が無い。現場特有の内容は送り出し資料の承認フローへ。
+//  ★現場QRの発行もここから外した（現場を特定する意味が無くなったため）。
+// ============================================================
 import { ref, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import SiteQrPanel from '../components/SiteQrPanel.vue'
 
 type Timing = 'checkin' | 'checkout' | 'both'
 type Rule = { id: string; content: string; timing: string; sort_order: number }
 type RuleHistory = { content: string; timing: Timing }
 
-const route  = useRoute()
-const router = useRouter()
-
-const siteId   = route.query.site_id as string
-const siteName = ref('')
 const rules    = ref<Rule[]>([])
 const loading  = ref(true)
 
@@ -128,25 +129,12 @@ function timingLabel(t: string) {
 
 async function load() {
   loading.value = true
-
-  // マルチテナント: URL の site_id が自テナントの現場か所有権を検証してから読む（他テナント現場の閲覧/改変を防ぐ）
   const accountId = await getAccountId()
-  const { data: site } = await supabase.from('sites')
-    .select('name').eq('account_id', accountId).eq('id', siteId).maybeSingle()
-  if (!site) {
-    // 自テナントの現場でない → ルールを読まずに現場一覧へ戻す
-    loading.value = false
-    router.replace('/sites')
-    return
-  }
-
-  const { data: ruleData } = await supabase.from('site_rules')
+  const { data: ruleData } = await supabase.from('account_attendance_rules')
     .select('id, content, timing, sort_order')
-    .eq('site_id', siteId).order('sort_order')
-
-  siteName.value = site.name ?? ''
-  rules.value    = (ruleData ?? []) as Rule[]
-  loading.value  = false
+    .eq('account_id', accountId).order('sort_order')
+  rules.value   = (ruleData ?? []) as Rule[]
+  loading.value = false
 }
 
 onMounted(load)
@@ -156,6 +144,8 @@ async function fetchRuleHistory() {
   const accountId = await getAccountId()
   if (!accountId) return
 
+  // 過去に登録したルール（現場別ルールの資産も候補として拾う。現場別の運用は終了したが、
+  // 文面自体は共通ルールに引き上げる価値があるため）
   const [{ data }, { data: hiddenData }] = await Promise.all([
     supabase
       .from('site_rules')
@@ -207,18 +197,19 @@ async function saveRule() {
   const content = newContent.value.trim()
   if (!content) return
 
-  // この現場に同じ内容が既にあれば重複登録を防ぐ
+  // 同じ内容が既にあれば重複登録を防ぐ
   if (rules.value.some(r => r.content.trim() === content)) {
-    saveError.value = 'この現場には同じ内容のルールが既に登録されています'
+    saveError.value = '同じ内容のルールが既に登録されています'
     return
   }
 
   saving.value    = true
   saveError.value = ''
   try {
+    const accountId = await getAccountId()
     const maxOrder = rules.value.reduce((m, r) => Math.max(m, r.sort_order), -1)
-    await supabase.from('site_rules').insert({
-      site_id:    siteId,
+    await supabase.from('account_attendance_rules').insert({
+      account_id: accountId,
       content:    newContent.value.trim(),
       timing:     newTiming.value,
       sort_order: maxOrder + 1,
@@ -234,7 +225,7 @@ async function saveRule() {
 
 async function deleteRule(id: string) {
   if (!confirm('このルールを削除しますか？')) return
-  await supabase.from('site_rules').delete().eq('id', id)
+  await supabase.from('account_attendance_rules').delete().eq('id', id)
   await load()
 }
 
@@ -243,8 +234,8 @@ async function moveUp(rule: Rule) {
   if (idx <= 0) return
   const prev = rules.value[idx - 1]
   await Promise.all([
-    supabase.from('site_rules').update({ sort_order: prev.sort_order }).eq('id', rule.id),
-    supabase.from('site_rules').update({ sort_order: rule.sort_order }).eq('id', prev.id),
+    supabase.from('account_attendance_rules').update({ sort_order: prev.sort_order }).eq('id', rule.id),
+    supabase.from('account_attendance_rules').update({ sort_order: rule.sort_order }).eq('id', prev.id),
   ])
   await load()
 }
@@ -254,8 +245,8 @@ async function moveDown(rule: Rule) {
   if (idx < 0 || idx >= rules.value.length - 1) return
   const next = rules.value[idx + 1]
   await Promise.all([
-    supabase.from('site_rules').update({ sort_order: next.sort_order }).eq('id', rule.id),
-    supabase.from('site_rules').update({ sort_order: rule.sort_order }).eq('id', next.id),
+    supabase.from('account_attendance_rules').update({ sort_order: next.sort_order }).eq('id', rule.id),
+    supabase.from('account_attendance_rules').update({ sort_order: rule.sort_order }).eq('id', next.id),
   ])
   await load()
 }

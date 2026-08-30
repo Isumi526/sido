@@ -84,6 +84,14 @@ export const SCREEN_CATALOG: ScreenCatalogEntry[] = [
     "help": []
   },
   {
+    "path": "/inventory",
+    "name": "在庫管理",
+    "title": "",
+    "requiresManagement": true,
+    "requiresEstimate": false,
+    "help": []
+  },
+  {
     "path": "/chats",
     "name": "チャット",
     "title": "チャット",
@@ -109,8 +117,8 @@ export const SCREEN_CATALOG: ScreenCatalogEntry[] = [
   },
   {
     "path": "/site-rules",
-    "name": "現場ルール",
-    "title": "{{ siteName }} &nbsp;—&nbsp; 確認ルール",
+    "name": "出退勤の確認ルール",
+    "title": "出退勤の確認ルール",
     "requiresManagement": false,
     "requiresEstimate": false,
     "help": []

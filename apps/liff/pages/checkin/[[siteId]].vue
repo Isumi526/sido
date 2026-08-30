@@ -21,7 +21,6 @@
     <div v-else-if="phase === 'already-done'" class="center-box">
       <span class="material-symbols-rounded already-icon">task_alt</span>
       <p class="already-title">{{ $t('checkin.alreadyTitle') }}</p>
-      <p class="already-sub">{{ siteName }}</p>
       <div class="already-logs">
         <div class="already-row">
           <span class="material-symbols-rounded log-icon checkin-icon">login</span>
@@ -56,7 +55,7 @@
     <div v-else-if="phase === 'done'" class="center-box">
       <span class="material-symbols-rounded done-icon">check_circle</span>
       <p class="done-title">{{ $t('checkin.doneTitle', { type: attendanceType === 'checkin' ? $t('checkin.checkinLabel') : $t('checkin.checkoutLabel') }) }}</p>
-      <p class="done-sub">{{ siteName }} &nbsp;/&nbsp; {{ checkedAtLabel }}</p>
+      <p class="done-sub">{{ checkedAtLabel }}</p>
       <p class="done-message">
         {{ attendanceType === 'checkin' ? $t('checkin.doneMessageCheckin') : $t('checkin.doneMessageCheckout') }}
       </p>
@@ -87,77 +86,8 @@
       </div>
     </div>
 
-    <!-- 出勤中(未退勤)専用画面: 現場一覧を出さず「退勤」「残業申請」だけに絞る(退勤漏れ防止) -->
-    <div v-else-if="phase === 'checked-in-focus'" class="focus-wrap">
-      <span class="material-symbols-rounded focus-icon">location_on</span>
-      <div class="focus-site">{{ focusSiteName }}</div>
-      <div class="focus-tag">{{ $t('checkin.checkedInTag') }}</div>
-      <div class="focus-actions">
-        <button class="focus-checkout-btn" data-testid="focus-checkout" @click="selectSite(checkedInSiteId!)">
-          <span class="material-symbols-rounded">logout</span>{{ $t('checkin.submitCheckout') }}
-        </button>
-        <NuxtLink
-          :to="`/overtime?site=${encodeURIComponent(focusSiteName)}`"
-          class="focus-overtime-btn" data-testid="focus-overtime-link"
-        >
-          <span class="material-symbols-rounded">more_time</span>{{ $t('nav.overtimeRequest') }}
-        </NuxtLink>
-      </div>
-      <button class="focus-switch-link" data-testid="focus-switch-site" @click="phase = 'select-site'">
-        {{ $t('checkin.switchSiteLink') }}
-      </button>
-      <!-- 出勤中でも前日の打刻し忘れを入れられるようにする（ここに無いと現場一覧を
-           出さないこの画面から辿れない） -->
-      <LatePunchPanel :sites="siteOptions" :worker-id="myWorkerId" @recorded="loadSiteOptions()" />
-    </div>
-
-    <!-- 対象作業員の選択（代理対象がいる場合のみ） -->
-    <!-- 現場選択（QRなしのリンク導線）-->
-    <div v-else-if="phase === 'select-site'" class="select-wrap">
-      <div class="select-header">
-        <div class="select-title">{{ $t('checkin.selectSiteTitle') }}</div>
-      </div>
-      <select v-if="contractorOptions.length > 0" v-model="selectedContractor" class="site-filter">
-        <option value="">{{ $t('checkin.filterContractorAll') }}</option>
-        <option v-for="c in contractorOptions" :key="c.id" :value="c.id">{{ c.name }}</option>
-      </select>
-      <input
-        v-if="siteOptions.length > 6"
-        v-model="siteQuery"
-        class="site-search"
-        type="search"
-        :placeholder="$t('checkin.siteSearchPlaceholder')"
-      />
-      <div class="target-list">
-        <div v-for="s in filteredSiteOptions" :key="s.id" class="target-row-wrap">
-          <button
-            class="target-row"
-            :class="{ 'target-row-active': s.id === checkedInSiteId }"
-            @click="selectSite(s.id)"
-          >
-            <span class="material-symbols-rounded target-icon">location_on</span>
-            <span class="target-name">
-              {{ s.name }}<span v-if="s.id === checkedInSiteId" class="checkedin-tag">{{ $t('checkin.checkedInTag') }}</span>
-            </span>
-            <span class="material-symbols-rounded chev">chevron_right</span>
-          </button>
-          <NuxtLink
-            v-if="s.id === checkedInSiteId" :to="`/overtime?site=${encodeURIComponent(s.name)}`"
-            class="overtime-link" data-testid="checkin-overtime-link" @click.stop
-          >
-            <span class="material-symbols-rounded">more_time</span>{{ $t('nav.overtimeRequest') }}
-          </NuxtLink>
-        </div>
-        <div v-if="!filteredSiteOptions.length" class="site-empty">{{ $t('checkin.siteSearchEmpty') }}</div>
-      </div>
-      <!-- ★一覧（内部スクロール）の外に置く。中に入れると現場が多い時に埋もれる。
-           ページ全体をはみ出させないため、コンポーネント側で flex-shrink:0 にしている。 -->
-      <LatePunchPanel :sites="siteOptions" :worker-id="myWorkerId" @recorded="loadSiteOptions()" />
-    </div>
-
     <div v-else-if="phase === 'select-target'" class="select-wrap">
       <div class="select-header">
-        <div class="site-label">{{ siteName }}</div>
         <div class="select-title">{{ $t('checkin.selectTargetTitle') }}</div>
       </div>
       <div class="target-list">
@@ -181,7 +111,9 @@
     <!-- チェックリスト -->
     <div v-else class="checklist-wrap">
       <div class="checklist-header" :class="attendanceType">
-        <div class="site-label">{{ siteName }}</div>
+        <div class="punch-date" data-testid="punch-date">
+          <span class="material-symbols-rounded">event</span>{{ $t('checkin.punchDateNote', { date: punchDateLabel }) }}
+        </div>
         <div class="checkin-title">
           {{ attendanceType === 'checkin' ? $t('checkin.checkinConfirmTitle') : $t('checkin.checkoutConfirmTitle') }}
         </div>
@@ -195,7 +127,7 @@
       </div>
 
       <div class="checklist-scroll">
-      <p v-if="rules.length === 0 && !consentDocs.length" class="no-rules-note">{{ $t('checkin.noRulesNote') }}</p>
+      <p v-if="rules.length === 0" class="no-rules-note">{{ $t('checkin.noRulesNote') }}</p>
       <div class="rules-list">
         <div
           v-for="rule in rules"
@@ -214,29 +146,8 @@
         </div>
       </div>
 
-      <!-- 送り出し資料（出退勤同意） -->
-      <div v-if="consentDocs.length" class="consent-list">
-        <div class="consent-head">{{ $t('checkin.consentTitle') }}</div>
-        <div
-          v-for="d in consentDocs"
-          :key="d.id"
-          class="rule-row consent-row"
-          :class="{ checked: consentedIds.has(d.id) }"
-        >
-          <span
-            class="material-symbols-rounded check-icon"
-            :class="{ active: consentedIds.has(d.id) }"
-            @click="toggleConsent(d.id)"
-          >
-            {{ consentedIds.has(d.id) ? 'check_box' : 'check_box_outline_blank' }}
-          </span>
-          <a v-if="d.url" :href="d.url" target="_blank" rel="noopener" class="consent-link">
-            <span class="material-symbols-rounded doc-icon">picture_as_pdf</span>{{ d.name || '資料' }}
-          </a>
-          <span v-else class="consent-link disabled">{{ d.name || '資料' }} {{ $t('checkin.consentUnavailable') }}</span>
-        </div>
-        <p class="consent-hint">{{ $t('checkin.consentHint') }}</p>
-      </div>
+      <!-- ★送り出し資料の同意はここから外した（2026-08-27 出退勤モデル変更）。
+           現場に添付した資料を、その現場の参加作業員に承認させる別フローへ移す。 -->
       </div>
 
       <div class="submit-area">
@@ -286,6 +197,11 @@
         >
           {{ submitting ? $t('checkin.submitting') : (attendanceType === 'checkin' ? $t('checkin.submitCheckin') : $t('checkin.submitCheckout')) }}
         </button>
+        <!-- 打刻し忘れた日の後追い入力。現場選択の画面が無くなったので、ここが唯一の入口。
+             ★記録後に画面を再読込しない。再読込するとこの画面ごと作り直されてパネルが
+             unmount され、「記録しました」の表示が一瞬で消える（入ったのか分からない）。
+             遡り入力は過去日の話なので、今開いている出勤/退勤の判定を作り直す必要も無い。 -->
+        <LatePunchPanel :worker-id="myWorkerId" />
       </div>
     </div>
 
@@ -295,10 +211,13 @@
 </template>
 
 <script setup lang="ts">
-type Phase = 'loading' | 'error' | 'select-site' | 'checked-in-focus' | 'select-target' | 'checklist' | 'done' | 'already-done'
+// ★2026-08-27 出退勤モデル変更: 現場ごとの打刻をやめ、1日＝最初の出勤・最後の退勤の2回にした。
+//  これに伴い現場選択('select-site')と出勤中の現場フォーカス('checked-in-focus')は不要になり削除。
+//  ルートは /checkin/<siteId> のまま残す（現場に貼ってある旧QRを開いても 404 にしないため。
+//  siteId は受け取るだけで打刻には使わない）。
+type Phase = 'loading' | 'error' | 'select-target' | 'checklist' | 'done' | 'already-done'
 
-type SiteRule = { id: string; content: string; timing: string }
-type ConsentDoc = { id: string; name: string | null; path: string; url?: string | null }
+type AttendanceRule = { id: string; content: string; timing: string }
 type Target   = { id: string; name: string; isSelf: boolean }
 
 import { useI18n } from 'vue-i18n'
@@ -317,38 +236,19 @@ const bootHref   = typeof window !== 'undefined' ? window.location.href   : ''
 const phase          = ref<Phase>('loading')
 const errorMsg       = ref('')
 const debugUrl       = ref('')
-const siteId         = ref('')
-const siteName       = ref('')
-// QRなしのリンク導線（/checkin）で現場を選ぶための候補（有効現場）＋検索/元請け絞り込み
-const siteOptions    = ref<{ id: string; name: string; name_kana: string | null; contractor_id: string | null }[]>([])
-const contractorOptions = ref<{ id: string; name: string }[]>([])  // 元請けプルダウン（紐づく現場がある分のみ）
-const siteQuery      = ref('')
-const selectedContractor = ref('')  // '' = すべて
-// 現在出勤中(未退勤)の現場のid。一覧の最上位に表示し、残業申請への導線を出す(退勤漏れ防止)。
-const checkedInSiteId = ref<string | null>(null)
-const filteredSiteOptions = computed(() => {
-  const q = siteQuery.value.trim().toLowerCase()
-  const c = selectedContractor.value
-  const list = siteOptions.value.filter(s => {
-    if (c && s.contractor_id !== c) return false
-    if (!q) return true
-    return s.name.toLowerCase().includes(q) || (s.name_kana ?? '').toLowerCase().includes(q)
-  })
-  if (!checkedInSiteId.value) return list
-  const idx = list.findIndex(s => s.id === checkedInSiteId.value)
-  if (idx <= 0) return list
-  const copy = [...list]
-  const [checkedIn] = copy.splice(idx, 1)
-  copy.unshift(checkedIn)
-  return copy
-})
-const focusSiteName = computed(() => siteOptions.value.find(s => s.id === checkedInSiteId.value)?.name ?? '')
-const rules          = ref<SiteRule[]>([])
+const rules          = ref<AttendanceRule[]>([])
 const checkedIds     = ref(new Set<string>())
-const consentDocs    = ref<ConsentDoc[]>([])   // 送り出し資料（出退勤同意・チェックイン時）
-const consentedIds   = ref(new Set<string>())
 const submitting     = ref(false)
 const checkedAtLabel = ref('')
+
+// ★打刻は常に「今」を記録する（対象日を選ぶ手段は無い）が、数日分まとめて打刻する人がいて
+//  「今押したらどの日の記録になるか」が画面から分からなかった（大塚さん指摘・2026-08-27）。
+//  確認画面の見出しに常時表示する。
+const punchDateLabel = computed(() => {
+  const d = new Date()
+  const weekdays = ['日', '月', '火', '水', '木', '金', '土']
+  return `${d.getMonth() + 1}月${d.getDate()}日（${weekdays[d.getDay()]}）`
+})
 // 退勤打刻の完了画面に出す「日報を書く」リンク。空なら出さない（resolveReportLink 参照）
 const reportLink     = ref('')
 const checkinTime    = ref('')
@@ -416,18 +316,13 @@ const allChecked = computed(() =>
   rules.value.length === 0 || checkedIds.value.size === rules.value.length
 )
 
-// 送り出し資料すべてに同意したか（資料が無ければ true）
-const allConsented = computed(() =>
-  consentDocs.value.every(d => consentedIds.value.has(d.id))
-)
-
 // 位置情報の「取得を試みたか」（努力義務）。
 // idle（未タップ）・pending（取得中）以外＝結果が出た状態なら送信可（拒否/失敗でも可）。
 const locationResolved = computed(() =>
   locationState.value !== 'idle' && locationState.value !== 'pending'
 )
 const canSubmit = computed(() =>
-  allChecked.value && allConsented.value && locationResolved.value && !submitting.value
+  allChecked.value && locationResolved.value && !submitting.value
 )
 
 function toggle(id: string) {
@@ -435,13 +330,6 @@ function toggle(id: string) {
   if (next.has(id)) next.delete(id)
   else next.add(id)
   checkedIds.value = next
-}
-
-function toggleConsent(id: string) {
-  const next = new Set(consentedIds.value)
-  if (next.has(id)) next.delete(id)
-  else next.add(id)
-  consentedIds.value = next
 }
 
 function fmtTime(iso: string) {
@@ -512,86 +400,13 @@ onMounted(async () => {
     return
   }
 
-  const resolved = resolveSiteId()
-  if (!resolved) {
-    // QRなしのリンク導線（/checkin）: 現場を選んでもらう（QRを貼れない現場向け）
-    await loadSiteOptions()
-    if (!siteOptions.value.length) {
-      errorMsg.value = t('checkin.errNoSiteId')
-      debugUrl.value = bootHref || (typeof window !== 'undefined' ? window.location.href : '')
-      phase.value = 'error'
-      return
-    }
-    // 出勤中(未退勤)の現場があれば、現場一覧を出さず「退勤/残業申請」専用画面に直行する
-    // (2026-07-21要望: 一覧から探して選ぶ手間を無くし退勤漏れを防ぐ)。他現場を選びたい時だけ一覧へ逃がす。
-    phase.value = checkedInSiteId.value ? 'checked-in-focus' : 'select-site'
-    return
-  }
-  await proceedWithSite(resolved)
+  // ★現場は解決しない（出退勤モデル変更・2026-08-27）。1日＝出勤/退勤の2回で、
+  //  どの現場かは打刻に紐づけない。旧QR経由（/checkin/<id>）で来ても現場は無視して進む。
+  await proceedToPunch()
 })
 
-// ── 有効現場の一覧を取得（QRなしの現場選択用）──
-async function loadSiteOptions() {
-  const accountId = await useAccount().getAccountId()
-  if (!accountId) return
-  // ★EF経由（sites / contractors は公開キーから読めないようにしたため）
-  const [siteRows, contractors] = await Promise.all([
-    useSitesApi().listSafe(),
-    useMaster().fetchContractors(),
-  ])
-  siteOptions.value = siteRows as unknown as { id: string; name: string; name_kana: string | null; contractor_id: string | null }[]
-  // 元請けプルダウンは「紐づく現場が1件以上ある元請け」だけ出す
-  const usedContractorIds = new Set(siteOptions.value.map(s => s.contractor_id).filter(Boolean) as string[])
-  contractorOptions.value = ((contractors ?? []) as { id: string; name: string }[]).filter(c => usedContractorIds.has(c.id))
-
-  // 現在出勤中(未退勤)の現場を判定する(退勤漏れ防止・loadForTarget()の直近サイクル判定と同じ考え方)。
-  const me = await useCurrentUser().resolve()
-  // ★現場を選ぶ前でも自分の worker_id を確定させておく。
-  //  以前はここで入れておらず、現場を選ばないと myWorkerId が null のままだったため
-  //  「打刻を忘れた日の入力」が常に『作業員が特定できませんでした』で弾かれていた。
-  if (me?.worker_id) myWorkerId.value = me.worker_id
-  if (me?.worker_id) {
-    // ★EF経由（テーブル直読みをやめた・2026-08-15）。anonキーだけで全テナントの
-    //  打刻が読めていたため、attendance_logs への直アクセスは残さない。
-    const recentLogs = await attendanceLog.recent(20)
-    const lastBySite = new Map<string, { type: string; checked_at: string }>()
-    for (const l of recentLogs) lastBySite.set(l.site_id, { type: l.type, checked_at: l.checked_at })
-    // 複数現場が同時に「出勤中(未退勤)」の状態でも、最も直近に出勤した現場を選ぶ
-    // (Map挿入順ではなくchecked_atで比較。取り忘れ現場が新しい現場より先に来て誤選択されるのを防ぐ)。
-    let latestCheckin: { siteId: string; checked_at: string } | null = null
-    for (const [siteId, { type, checked_at }] of lastBySite) {
-      if (type !== 'checkin') continue
-      if (!latestCheckin || checked_at > latestCheckin.checked_at) latestCheckin = { siteId, checked_at }
-    }
-    checkedInSiteId.value = latestCheckin?.siteId ?? null
-  }
-}
-
-// ── 現場を選択（QRなし導線）→ 通常フローへ ──
-//  URLを /checkin/<id> に反映して「その現場の出退勤ページ」をブックマーク可能にする
-//  （再マウントせず続行。リロード/再訪時は param から現場を解決）。
-async function selectSite(id: string) {
-  if (typeof window !== 'undefined') {
-    try { window.history.replaceState(window.history.state, '', `/checkin/${id}`) } catch { /* URL更新失敗は無視 */ }
-  }
-  phase.value = 'loading'
-  await proceedWithSite(id)
-}
-
-// ── siteId 確定後の共通フロー（QR・リンクどちらからも）──
-async function proceedWithSite(resolved: string) {
-  siteId.value = resolved
-
-  // 現場名取得
-  // ★EF経由（sites は公開キーから読めないようにしたため）
-  const siteData = await useSitesApi().one(siteId.value)
-  if (!siteData) {
-    errorMsg.value = t('checkin.errNoSite')
-    phase.value = 'error'
-    return
-  }
-  siteName.value = siteData.name
-
+// ── 打刻フローの本体（現場に依存しない）──
+async function proceedToPunch() {
   // 自分のworker_id・氏名取得
   // email/pw は worker_id 経由・LINEは line_user_id（単一ソース解決）
   const me = await useCurrentUser().resolve()
@@ -637,12 +452,12 @@ function backToSelect() {
 async function loadForTarget(workerId: string) {
   phase.value = 'loading'
 
-  // 自動判定: この現場×この作業員の「直近サイクル」で判定する。
+  // 自動判定: この作業員の「直近サイクル」で判定する。
+  //  ★2026-08-27 出退勤モデル変更で現場では絞らない（1日＝最初の出勤・最後の退勤の2回）。
   //  ★夜勤の日跨ぎ対応: 当日(カレンダー日)固定だと、前日夜の出勤が拾えず翌朝の退勤ができなかった。
   //   直近20時間のログを見て「未退勤の出勤が残っていれば退勤」＝日を跨いでも退勤できる。
   //  ★EF経由。代理対象の分もEF側で代理許可を確認したうえで返る。
-  const all = await attendanceLog.recent(20, workerId)
-  const logs = all.filter(l => l.site_id === siteId.value) as { type: string; checked_at: string }[]
+  const logs = await attendanceLog.recent(20, workerId) as { type: string; checked_at: string }[]
   const last = logs[logs.length - 1]
 
   if (last?.type === 'checkin') {
@@ -661,47 +476,20 @@ async function loadForTarget(workerId: string) {
     attendanceType.value = 'checkin'
   }
 
-  // ルール取得（タイミングでフィルタ）
-  const timings = attendanceType.value === 'checkin'
-    ? ['checkin', 'both']
-    : ['checkout', 'both']
-
-  const { data: ruleData } = await supabase
-    .from('site_rules')
-    .select('id, content, timing')
-    .eq('site_id', siteId.value)
-    .in('timing', timings)
-    .order('sort_order')
-
-  rules.value      = (ruleData ?? []) as SiteRule[]
+  // ルール取得（アカウント共通ルール・出勤/退勤それぞれのタイミング分）。
+  // ★現場別ルール(site_rules)から置き換えた（2026-08-27）。現場特有の内容は
+  //  「送り出し資料」の承認フローへ移すことになっており、打刻には出さない。
+  try {
+    rules.value = await attendanceLog.rules(attendanceType.value)
+  } catch {
+    // ルールが引けない時に「確認事項なし」で通すと、同意記録が空のまま打刻できてしまう
+    errorMsg.value = t('checkin.errNoRules')
+    phase.value = 'error'
+    return
+  }
   checkedIds.value = new Set()   // 対象が変わったらチェックをリセット
 
   // ルール未設定でもシンプル出退勤として継続（確認事項なし＝allChecked が true 扱い）。
-
-  // 送り出し資料（出退勤同意・チェックイン時のみ提示）。非公開バケットはedge署名URLで閲覧。
-  consentedIds.value = new Set()
-  if (attendanceType.value === 'checkin') {
-    const { data: docData } = await supabase
-      .from('site_attachments')
-      .select('id, name, path')
-      .eq('site_id', siteId.value)
-      .eq('kind', 'document')
-      .eq('require_consent', true)
-      .order('created_at')
-    const docs = (docData ?? []) as ConsentDoc[]
-    const idToken = await getIdToken()
-    await Promise.all(docs.map(async (d) => {
-      try {
-        const { data } = await supabase.functions.invoke('site-attachment-url', {
-          body: { attachment_id: d.id, ...(idToken ? { line_id_token: idToken } : {}) },
-        })
-        d.url = (data as any)?.url ?? null
-      } catch { d.url = null }
-    }))
-    consentDocs.value = docs
-  } else {
-    consentDocs.value = []
-  }
 
   phase.value = 'checklist'
 
@@ -732,11 +520,10 @@ async function submit() {
   //  勤怠の証跡を偽造できる）。代理かどうかもEF側で worker_proxies を見て判定する。
   void proxyOperatorId
   const res = await attendanceLog.punch({
-    siteId: siteId.value,
+    // ★現場は送らない（出退勤モデル変更・2026-08-27）
     type: attendanceType.value as 'checkin' | 'checkout',
     targetWorkerId: workerIdToLog,
     agreedRuleTexts: rules.value.map(r => r.content),
-    agreedDocumentNames: consentDocs.value.length ? consentDocs.value.map(d => d.name ?? '') : null,
     lat: locationLat.value,
     lng: locationLng.value,
   })
@@ -783,7 +570,8 @@ async function resolveReportLink(target: Target | null) {
   } catch {
     return   // ★判定できない時は出さない（出して二重送信させるより、出さない方が安全）
   }
-  reportLink.value = `/report?date=${date}&site=${encodeURIComponent(siteName.value)}`
+  // ★現場は引き継がない（打刻が現場に紐づかなくなったため）。現場は日報側で選ぶ。
+  reportLink.value = `/report?date=${date}`
 }
 </script>
 
@@ -891,6 +679,12 @@ async function resolveReportLink(target: Target | null) {
 
 .site-label    { font-size: 12px; opacity: .85; margin-bottom: 4px; }
 .checkin-title { font-size: 20px; font-weight: 700; }
+.punch-date {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 13px; font-weight: 700; margin-bottom: 6px;
+  background: rgba(255,255,255,.22); border-radius: 999px; padding: 4px 12px;
+}
+.punch-date .material-symbols-rounded { font-size: 16px; }
 
 .proxy-badge {
   display: inline-flex; align-items: center; gap: 4px;
