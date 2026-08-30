@@ -108,6 +108,7 @@
           <li><RouterLink to="/settings" class="nav-link"><span class="material-symbols-rounded nav-icon">settings</span>設定</RouterLink></li>
           <!-- 自社データの一括ダウンロード（契約 別紙1§10）。オーナーのみ実行できる -->
           <li v-if="canManageAuth"><RouterLink to="/data-export" class="nav-link"><span class="material-symbols-rounded nav-icon">download</span>データの一括ダウンロード</RouterLink></li>
+          <li><RouterLink to="/external-consents" class="nav-link"><span class="material-symbols-rounded nav-icon">gavel</span>外部者の規約同意</RouterLink></li>
         </template>
       </ul>
       <div class="sidebar-account">

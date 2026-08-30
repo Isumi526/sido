@@ -75,6 +75,8 @@ export const router = createRouter({
     // 会社アカウント単位の全データ一括エクスポート（契約対応③・別紙1§10）。
     // 画面側でオーナー権限(canManageAuth)を確認する。
     { path: '/data-export',    component: () => import('../pages/data-export.vue'), meta: { management: true } },
+    // 外部者の規約同意の記録と文言管理（契約対応②・別紙2§9）
+    { path: '/external-consents', component: () => import('../pages/external-consents.vue'), meta: { management: true } },
     { path: '/company-profile', component: CompanyProfile, meta: { management: true } },
     { path: '/users',        component: Users,          meta: { management: true } },
     { path: '/reminder-history', component: ReminderHistory, meta: { management: true } },

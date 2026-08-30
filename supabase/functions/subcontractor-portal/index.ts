@@ -135,7 +135,9 @@ Deno.serve(async (req) => {
     if (!tok) return json({ ok: false })
     if (tok.expires_at && tok.expires_at < nowIso) return json({ ok: false })
 
-    const KNOWN_ACTIONS = ['resolve', 'accept', 'invoice_resolve', 'invoice_submit', 'change_accept', 'register_resolve', 'register_submit', 'estimate_resolve', 'estimate_sign', 'estimate_upload']
+    // ★新しい action を足したらここにも足すこと。忘れると unsupported_action で弾かれ、
+    //  「実装したのに動かない」になる（2026-08-31 の consent_* で実際に踏んだ）。
+    const KNOWN_ACTIONS = ['resolve', 'accept', 'invoice_resolve', 'invoice_submit', 'change_accept', 'register_resolve', 'register_submit', 'estimate_resolve', 'estimate_sign', 'estimate_upload', 'consent_state', 'consent_agree']
     if (!KNOWN_ACTIONS.includes(action)) return json({ ok: false, error: 'unsupported_action' }, 400)
 
     // 受注者（業者）を account/業者ID の二重スコープで取得
@@ -197,6 +199,55 @@ Deno.serve(async (req) => {
       const billed = (invs ?? []).reduce((s: number, r: any) => s + (Number(r.total_amount) || 0), 0)
       const total = Number(o.total_amount) || 0
       return { accepted, billed, total, residual: Math.max(0, total - billed) }
+    }
+
+    // ─────────────────────────────────────────────────────
+    //  consent_state / consent_agree : 外部者の規約同意（契約 別紙2§9・2026-08-31）
+    //
+    //  ★契約は「協力業者ポータル・チャット招待ゲストに同意文言を表示・記録する機能を
+    //   提供」と書いているのに未実装だった。同意しないと先へ進めないゲートを作る。
+    //  ★同意した「版」だけでなく、同意した時点の文面そのものを控える。
+    //   文言を差し替えた後で「あの人は何に同意したのか」を遡れなくなるのを防ぐ。
+    // ─────────────────────────────────────────────────────
+    if (action === 'consent_state' || action === 'consent_agree') {
+      const { data: st } = await supabase.from('settings')
+        .select('key, value').eq('account_id', tok.account_id)
+        .in('key', ['external_terms_text', 'external_terms_version'])
+      const kv = Object.fromEntries((st ?? []).map((r: any) => [r.key, r.value]))
+      const version = String(kv['external_terms_version'] ?? '0')
+      const text = String(kv['external_terms_text'] ?? '')
+
+      if (action === 'consent_state') {
+        const { data: done } = await supabase.from('external_consents')
+          .select('consented_at').eq('account_id', tok.account_id)
+          .eq('subject_kind', 'subcontractor_portal').eq('subject_id', sub.id)
+          .eq('terms_version', version).maybeSingle()
+        return json({ ok: true, version, text, agreed: !!done, agreedAt: done?.consented_at ?? null })
+      }
+
+      // 同意を記録する。★同じ相手・同じ版なら二重に積まない（再訪のたびに増やさない）。
+      //  部分ユニーク索引(subject_id is not null)は PostgREST の onConflict では指定できないため、
+      //  先に有無を見てから入れる。競合しても一意索引が最後の砦になる（重複エラーは同意済み扱い）。
+      const { data: already } = await supabase.from('external_consents')
+        .select('id').eq('account_id', tok.account_id)
+        .eq('subject_kind', 'subcontractor_portal').eq('subject_id', sub.id)
+        .eq('terms_version', version).maybeSingle()
+      if (!already?.id) {
+        const { error } = await supabase.from('external_consents').insert({
+          account_id: tok.account_id,
+          subject_kind: 'subcontractor_portal',
+          subject_id: sub.id,
+          subject_label: sub.name ?? null,
+          terms_version: version,
+          consented_text: text,
+        })
+        // 23505 = 一意制約違反＝ほぼ同時に押された。既に記録されているので成功として返す
+        if (error && (error as any).code !== '23505') {
+          console.error('[subcontractor-portal] consent insert failed:', error)
+          return json({ ok: false, error: 'consent_failed' }, 500)
+        }
+      }
+      return json({ ok: true, agreed: true, version })
     }
 
     // ─────────────────────────────────────────────────────
