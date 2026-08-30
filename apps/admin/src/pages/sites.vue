@@ -245,7 +245,7 @@
             <div v-for="e in siteEstimates" :key="e.id" class="att-item">
               <span class="att-kind"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span></span>
               <span class="att-link">{{ e.estimate_number || '（番号なし）' }}<span class="muted"> ・{{ e.estimate_date || '—' }} ・¥{{ (e.total_amount ?? 0).toLocaleString() }}</span></span>
-              <a v-if="e.pdf_path" :href="estPdfUrl(e.pdf_path)" target="_blank" rel="noopener" class="att-link pdf-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> PDF</a>
+              <a v-if="e.pdf_path" href="#" @click.prevent="openEstPdf(e.pdf_path)" class="att-link pdf-link"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">description</span> PDF</a>
             </div>
           </div>
           <p v-else class="hint">この現場に紐づく見積書はありません（見積書登録時に現場を選ぶと自動で紐付きます）。</p>
@@ -281,6 +281,7 @@
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
+import { openDoc } from '../lib/docUrl'
 import { getAccountId } from '../lib/account'
 import { useQueryParam } from '../composables/useQueryParam'
 import { currentUser, canViewManagementPages } from '../lib/auth'
@@ -397,7 +398,9 @@ async function uploadPendingAtts(siteId: string, accountId: string) {
 type SiteEstimate = { id: string; estimate_number: string | null; estimate_date: string | null; total_amount: number | null; pdf_path: string | null }
 const siteEstimates = ref<SiteEstimate[]>([])
 const ESTIMATE_BUCKET = 'expense-receipts'
-function estPdfUrl(path: string) { return supabase.storage.from(ESTIMATE_BUCKET).getPublicUrl(path).data.publicUrl }
+// 公開URLは配らない（旧バケットが public のままで、URLだけで誰でも読めてしまうため）。
+// 押した時に短TTLの署名URLを作って開く。2026-08-30
+function openEstPdf(path: string) { return openDoc(path, ESTIMATE_BUCKET) }
 async function loadSiteEstimates(siteId: string) {
   const { data } = await supabase.from('estimates')
     .select('id, estimate_number, estimate_date, total_amount, pdf_path')

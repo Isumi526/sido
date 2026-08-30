@@ -206,7 +206,7 @@
         </dl>
         <div v-if="trailModal.acc.signature_path" class="sig-view">
           <div class="sig-view-label">署名</div>
-          <img :src="pdfUrl(trailModal.acc.signature_path)" alt="署名" class="sig-img" />
+          <img :src="sigUrl" alt="署名" class="sig-img" />
         </div>
         <div class="modal-actions">
           <button class="btn-cancel" @click="trailModal = null">閉じる</button>
@@ -243,7 +243,7 @@ import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountName } from '../lib/account'
-import { openDoc } from '../lib/docUrl'
+import { openDoc, resolveDocUrl } from '../lib/docUrl'
 import { refreshNavBadges } from '../lib/navBadges'
 
 const BUCKET     = 'expense-receipts'     // 署名画像など既存公開物の表示用（後方互換）
@@ -314,7 +314,11 @@ const defaults = ref({ ...BUILTIN_DEFAULTS })
 
 const subName  = (id: string | null) => subs.value.find((s) => s.id === id)?.name ?? '—'
 const siteName = (id: string | null) => sites.value.find((s) => s.id === id)?.name ?? '—'
-function pdfUrl(path: string) { return supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl }
+// 公開URLは配らない。表示のたびに短TTLの署名URLを作る（2026-08-30）
+const sigUrl = ref('')
+async function loadSigUrl(path: string | null | undefined) {
+  sigUrl.value = path ? (await resolveDocUrl(path, BUCKET)) ?? '' : ''
+}
 
 // 注文書が未発行の見積書だけ選べる（1:1・縛り）
 const issuedEstimateIds = computed(() => new Set(rows.value.map((r: any) => r.estimate_id)))

@@ -51,9 +51,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { resolveDocUrl } from '../lib/docUrl'
 
 defineProps<{ embedded?: boolean }>()
 
@@ -77,7 +78,11 @@ const f = ref<Form>({
 const saving = ref(false); const savedMsg = ref(''); const err = ref(''); const uploadingSeal = ref(false)
 let accountId = ''
 
-const sealUrl = computed(() => f.value.company_seal_path ? supabase.storage.from(BUCKET).getPublicUrl(f.value.company_seal_path).data.publicUrl : '')
+// 印影は公開URLで配らない。短TTLの署名URLを都度作る（2026-08-30）
+const sealUrl = ref('')
+watch(() => f.value.company_seal_path, async (p) => {
+  sealUrl.value = p ? (await resolveDocUrl(p, BUCKET)) ?? '' : ''
+}, { immediate: true })
 
 async function load() {
   accountId = await getAccountId()
