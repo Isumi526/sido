@@ -26,7 +26,10 @@
 
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') ?? ''
 const GEMINI_MODEL = 'gemini-2.5-flash'
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`
+// ★v1beta を使う。JSONモード(responseMimeType)は v1 では使えず
+//  「JSON mode is not enabled for api version v1」で400になる（2026-08-30 実機で判明）。
+//  同じ組み合わせで動いている ai-chat に揃えた。
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`
 
 function corsHeaders() {
   return {
