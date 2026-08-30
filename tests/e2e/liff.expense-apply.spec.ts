@@ -32,6 +32,8 @@ test.describe('経費申請(W1)', () => {
     // ボタン→確認ダイアログ→申請する
     await applyBtn.click()
     await expect(page.locator('.confirm-modal')).toContainText('申請後は内容を修正できません')
+    // 申請コメントは必須（da5c2f6）。埋めないと「申請する」が押せない
+    await page.getByTestId('apply-comment').fill('E2E: 経費申請の確認をお願いします')
     await page.locator('.confirm-ok').click()
     // ステータスが「申請済み」に（PDF生成/メールは best-effort、DB申請は成立）
     await expect(page.locator('.status-bar')).toContainText('申請済み', { timeout: 25000 })
@@ -58,6 +60,8 @@ test.describe('経費再申請(W1: 差し戻し後)', () => {
     const reBtn = page.getByRole('button', { name: /経費を再申請する/ })
     await expect(reBtn).toBeVisible()
     await reBtn.click()
+    // 申請コメントは必須（da5c2f6）。埋めないと「申請する」が押せない
+    await page.getByTestId('apply-comment').fill('E2E: 経費申請の確認をお願いします')
     await page.locator('.confirm-ok').click()
     await expect(page.locator('.status-bar')).toContainText('申請済み', { timeout: 25000 })
   })

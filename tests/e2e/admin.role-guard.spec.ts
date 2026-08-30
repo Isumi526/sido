@@ -10,7 +10,7 @@
 //   - 職人(worker) は従来どおり弾く（アクセス拒否ゲート）。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { SUPABASE_URL, ANON_KEY } from './helpers'
+import { SUPABASE_URL, ANON_KEY, restSrv } from './helpers'
 
 const SM_EMAIL = 'worker01.login.e2e@example.com'  // site_manager の作業員（liff.worker-loginで用意）
 const SM_PASS  = 'worker-login-1234'
@@ -24,7 +24,28 @@ test.describe('管理画面 権限ガード（site_manager可・日当単価は�
       method: 'POST', headers: { apikey: ANON_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: SM_EMAIL, password: SM_PASS }),
     }).catch(() => {})
+    // ★この作業員が site_manager であることを自分で保証する。
+    //  他のspec（liff.worker-login）が用意した状態に依存していたため、
+    //  そちらが permission_role を worker のままにすると、このテストだけ
+    //  「adminに入れない」で落ちていた（2026-08-30）。
+    const w = await restSrv(
+      `workers?select=id&auth_user_id=not.is.null&order=created_at.asc`).catch(() => null)
+    void w
+    await restSrv(`workers?auth_user_id=eq.${await smAuthId()}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ permission_role: 'site_manager', active: true }),
+    }).catch(() => {})
   })
+
+  /** SM_EMAIL の auth ユーザーid（作業員へ site_manager を付けるため） */
+  async function smAuthId(): Promise<string> {
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+      method: 'POST', headers: { apikey: ANON_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: SM_EMAIL, password: SM_PASS }),
+    })
+    const j = await r.json().catch(() => null)
+    return j?.user?.id ?? ''
+  }
 
   test('site_manager は admin に入れ、現場別集計で単価/人件費は見えるが、時給の実値は見えない', async ({ page }) => {
     await page.goto('/login', { waitUntil: 'networkidle' })
