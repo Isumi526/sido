@@ -72,8 +72,10 @@ for (const d of ['2026-06-10', '2026-06-18', '2026-06-25']) {
 
 // ── 2) 見積・掛率用: 元請け／商社2社／工種2つ／見積案件＋明細4行 ──
 const conId = sql(`insert into contractors(account_id,name,active) values(${q(ACC)},${q(P + '丹青社')},true) returning id`)
-const supA  = sql(`insert into subcontractors(account_id,name,active) values(${q(ACC)},${q(P + '商社A')},true) returning id`)
-const supB  = sql(`insert into subcontractors(account_id,name,active) values(${q(ACC)},${q(P + '商社B')},true) returning id`)
+// ★category='商社' が要る。見積マスタの「商社別単価」は協力業者の区分=商社だけを商社として扱う
+//  （これを入れ忘れて「まだ商社がありません」になった・2026-08-30）
+const supA  = sql(`insert into subcontractors(account_id,name,category,active) values(${q(ACC)},${q(P + '商社A')},'商社',true) returning id`)
+const supB  = sql(`insert into subcontractors(account_id,name,category,active) values(${q(ACC)},${q(P + '商社B')},'商社',true) returning id`)
 const trFloor = sql(`insert into estimate_trades(account_id,name,sort_order) values(${q(ACC)},${q(P + '床工事')},1) returning id`)
 const trWall  = sql(`insert into estimate_trades(account_id,name,sort_order) values(${q(ACC)},${q(P + '壁・天井')},2) returning id`)
 
