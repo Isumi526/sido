@@ -3024,12 +3024,13 @@ async function loadTrades() {
  *  一本化後は
  *    材料（品番あり）→ 商社単価表から
  *    作業内容（品番なし）→ 過去に打った明細から
- *  を候補にする。既存の材料マスタは移行期間として読むだけ残す（新規登録はしない）。
+ *  を候補にする。
+ *  ★2026-08-30: 移行期間として読むだけ残していた材料マスタ(estimate_materials)を撤去。
+ *   新規登録の経路はR28で塞がれており、本番でも6月末から1行も増えていない＝
+ *   候補が増えることはもう無い。方針も「マスタを先に整備させない」(2026-07-27 #17)。
  */
 async function loadMaterials() {
-  const [{ data: legacy }, { data: prices }, { data: past }] = await Promise.all([
-    supabase.from('estimate_materials')
-      .select('id, name, unit, code, spec').eq('account_id', accountId).order('name'),
+  const [{ data: prices }, { data: past }] = await Promise.all([
     supabase.from('estimate_material_prices')
       .select('material_id, product_code, item_name, unit')
       .eq('account_id', accountId).eq('is_current', true),
@@ -3053,7 +3054,6 @@ async function loadMaterials() {
       if (!cur.id && id) cur.id = id
     }
   }
-  for (const m of (legacy ?? []) as any[]) put(m.name, m.code, m.unit, m.id)          // 移行期間: 既存マスタも候補に残す
   for (const p of (prices ?? []) as any[]) put(p.item_name, p.product_code, p.unit, p.material_id)
   for (const it of (past ?? []) as any[]) put(it.item_name, it.product_code, it.unit, null)
   materials.value = [...seen.values()].sort((a, b) => a.name.localeCompare(b.name, 'ja'))
@@ -3598,8 +3598,8 @@ async function removeCandidate(c: Material) {
     : `「${c.name}」を候補から外しますか？\n※すでに作った見積の中身は変わりません。`
   if (!window.confirm(msg)) return
   materials.value = materials.value.filter(m => m !== c)
-  // 材料マスタ由来（移行期間の既存データ）なら実体も消す
-  if (c.id) await supabase.from('estimate_materials').delete().eq('id', c.id)
+  // ★材料マスタ(estimate_materials)の実体削除は撤去（2026-08-30）。マスタ自体を廃止したため、
+  //  候補は単価表と過去明細から作られる。単価表から消さない限り再び候補に出る旨は上の確認文で案内済み。
   candMsg.value = '候補から外しました'
   setTimeout(() => { candMsg.value = '' }, 2000)
 }
@@ -3805,7 +3805,7 @@ async function doLoadItems() {
   if (!projectId.value) { markSaved(); return }
   const [{ data }, { data: pj }] = await Promise.all([
     supabase.from('estimate_items')
-      .select('id, category_id, trade_id, trade_name, material_id, supplier_id, item_name, spec, product_code, dim_w, dim_d, dim_h, row_type, unit, quantity, cost_unit_price, unit_price, note')
+      .select('id, trade_id, trade_name, material_id, supplier_id, item_name, spec, product_code, dim_w, dim_d, dim_h, row_type, unit, quantity, cost_unit_price, unit_price, note')
       .eq('project_id', projectId.value).order('sort_order'),
     supabase.from('estimate_projects')
       .select('construction_location, period_text, valid_until, memo, adjustment, margin_rate, request_date, due_date, status, lost_reason, is_draft').eq('id', projectId.value).single(),

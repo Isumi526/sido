@@ -100,43 +100,43 @@ Deno.serve(async (req) => {
     return json({ error: String((e as Error).message) }, 502)
   }
 
-  // ── 既存マスタ・エイリアス・差分計算 → pending revisions 作成（自動反映はしない）──
-  const { data: mats } = await db.from('estimate_materials').select('id, code, name').eq('account_id', accountId)
+  // ── 現在の単価と突き合わせて差分計算 → pending revisions 作成（自動反映はしない）──
+  //  ★材料マスタ(estimate_materials)＋エイリアス(estimate_material_aliases)経由の照合をやめた（2026-08-30）。
+  //   R28以降そもそも材料マスタに行が増えず、新しい単価行には material_id が入らないため、
+  //   照合が当たらず「据置はスキップ」が事実上効いていなかった
+  //   （本番実測: 差分490件のうち450件が material_id なし＝毎回「新規」として積まれていた）。
+  //   単価表そのものが持つ品番/品名で突き合わせる方が確実で、
+  //   「マスタを先に整備させない」方針（2026-07-27 仕様書 #17）とも整合する。
   const { data: prices } = await db.from('estimate_material_prices')
-    .select('material_id, unit_price').eq('account_id', accountId).eq('supplier_id', supplier_id).eq('is_current', true)
-  // 商社別エイリアス（学習済みの名寄せ）。この商社の品番/品名→自社材料 を最優先で当てる。
-  const { data: aliases } = await db.from('estimate_material_aliases')
-    .select('material_id, supplier_code, supplier_name').eq('account_id', accountId).eq('supplier_id', supplier_id)
-  const priceByMat = new Map((prices ?? []).map((p: any) => [p.material_id, Number(p.unit_price)]))
+    .select('product_code, item_name, unit_price')
+    .eq('account_id', accountId).eq('supplier_id', supplier_id).eq('is_current', true)
   // 揺れ吸収のための正規化: NFKC（全角半角統一）＋小文字＋空白/記号除去
   const norm = (s: unknown) => String(s ?? '').normalize('NFKC').toLowerCase().replace(/[\s　・,，.。()（）\-_/]/g, '')
-  const aliasByCode = new Map<string, string>()
-  const aliasByName = new Map<string, string>()
-  for (const a of (aliases ?? []) as any[]) {
-    if (a.supplier_code) aliasByCode.set(norm(a.supplier_code), a.material_id)
-    if (a.supplier_name) aliasByName.set(norm(a.supplier_name), a.material_id)
+  const priceByCode = new Map<string, number>()
+  const priceByName = new Map<string, number>()
+  for (const p of (prices ?? []) as any[]) {
+    const v = Number(p.unit_price)
+    if (!Number.isFinite(v)) continue
+    if (p.product_code) priceByCode.set(norm(p.product_code), v)
+    if (p.item_name) priceByName.set(norm(p.item_name), v)
   }
-  // マッチ順: ①エイリアス品番 → ②エイリアス品名 → ③材料マスタ品番 → ④材料マスタ品名(正規化)
-  const findMat = (r: ExtractedRow): any => {
+  /** 今の単価（無ければ null）。品番を優先し、無ければ品名で当てる */
+  const currentPrice = (r: ExtractedRow): number | null => {
     const code = r.code ? norm(r.code) : ''
     const name = r.name ? norm(r.name) : ''
-    let id: string | undefined
-    if (code && (id = aliasByCode.get(code))) return (mats ?? []).find((m: any) => m.id === id) ?? { id }
-    if (name && (id = aliasByName.get(name))) return (mats ?? []).find((m: any) => m.id === id) ?? { id }
-    return (mats ?? []).find((m: any) =>
-      (code && m.code && norm(m.code) === code) ||
-      (name && m.name && norm(m.name) === name))
+    if (code && priceByCode.has(code)) return priceByCode.get(code)!
+    if (name && priceByName.has(name)) return priceByName.get(name)!
+    return null
   }
 
   const toInsert: any[] = []
   for (const r of extracted) {
     const np = Number(r.unit_price)
     if (!Number.isFinite(np) || np <= 0) continue
-    const m = findMat(r)
-    const oldP = m ? (priceByMat.get(m.id) ?? null) : null
-    if (oldP != null && Number(oldP) === np) continue   // 据置はスキップ
+    const oldP = currentPrice(r)
+    if (oldP != null && oldP === np) continue   // 据置はスキップ
     toInsert.push({
-      account_id: accountId, supplier_id, material_id: m?.id ?? null,
+      account_id: accountId, supplier_id,
       code: r.code ?? null, name: r.name ?? null, unit: r.unit ?? null,
       old_price: oldP, new_price: np, effective_date: r.effective_date ?? null, status: 'pending',
     })

@@ -44,24 +44,19 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     }
     await restSrv(`estimate_trades?name=eq.${encodeURIComponent(TRADE_A)}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`estimate_trades?name=eq.${encodeURIComponent(TRADE_B)}`, { method: 'DELETE' }).catch(() => {})
-    await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MAT)}`, { method: 'DELETE' }).catch(() => {})
-    await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MAT6)}`, { method: 'DELETE' }).catch(() => {})
     // MAT7 削除で material_prices は cascade。その後 suppliers を削除
-    await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MAT7)}`, { method: 'DELETE' }).catch(() => {})
     for (const s of [SUP_A, SUP_B]) {
       await restSrv(`subcontractors?name=eq.${encodeURIComponent(s)}&category=eq.${encodeURIComponent('商社')}`, { method: 'DELETE' }).catch(() => {})
     }
     for (const t of [TR1, TR2]) {
       await restSrv(`estimate_trades?name=eq.${encodeURIComponent(t)}`, { method: 'DELETE' }).catch(() => {})
     }
-    await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MAT_PL)}`, { method: 'DELETE' }).catch(() => {})  // cascade prices
     await restSrv(`subcontractors?name=eq.${encodeURIComponent(SUP_PL)}&category=eq.${encodeURIComponent('商社')}`, { method: 'DELETE' }).catch(() => {})
     // インライン追加した商社（edit_logのFK→先に消す）
     for (const s of (await restSrv(`subcontractors?name=eq.${encodeURIComponent(SUP_INLINE)}&select=id`).catch(() => []) ?? [])) {
       await restSrv(`subcontractor_edit_logs?subcontractor_id=eq.${s.id}`, { method: 'DELETE' }).catch(() => {})
     }
     await restSrv(`subcontractors?name=eq.${encodeURIComponent(SUP_INLINE)}&category=eq.${encodeURIComponent('商社')}`, { method: 'DELETE' }).catch(() => {})
-    await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MNAME_M)}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`estimate_trades?name=eq.${encodeURIComponent(TRADE_M)}`, { method: 'DELETE' }).catch(() => {})
   })
 
@@ -137,9 +132,7 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
       return (r ?? []).length
     }, { timeout: 10000 }).toBeGreaterThan(0)
 
-    // ★材料マスタは作らない（管理する場所を増やさないのがR28の要）
-    const mats = await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MAT)}&select=id`)
-    expect(mats?.length ?? 0, '材料マスタには登録しない').toBe(0)
+    // ★材料マスタは作らない（R28）。2026-08-30 にテーブルごと撤去したので検証対象も消えた。
 
     // 再訪 → datalist 候補（予測変換）に出る
     await page.reload({ waitUntil: 'networkidle' })
@@ -182,9 +175,7 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
       return items.every((r: any) => r.item_name === MAT6 && r.unit === 'm2')
     }, { timeout: 10000 }).toBe(true)
 
-    // ★材料マスタは作らない（R28）
-    const mats = await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MAT6)}&select=id`)
-    expect(mats?.length ?? 0, '材料マスタには登録しない').toBe(0)
+    // ★材料マスタは作らない（R28）。2026-08-30 にテーブルごと撤去したので検証対象も消えた。
   })
 
   // E7 商社別単価: 同一材料で商社A/Bの単価差を表示し、商社切替で明細単価・金額が即時更新
@@ -332,41 +323,13 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     }, { timeout: 10000 }).toBe(1)
   })
 
-  // 工種一覧＋材料マスタ（★R50で廃止＝閲覧のみ）
-  test('工種は追加できる／材料マスタは閲覧のみで追加・削除できない（R50）', async ({ page }) => {
-    const accountId = await getAccountId()
-    // 「過去に登録された材料」を用意する。廃止後も既存見積が参照するので消えてはいけない
-    await restSrv('estimate_materials', {
-      method: 'POST', headers: { Prefer: 'return=minimal' },
-      body: JSON.stringify({ account_id: accountId, code: MCODE_M, name: MNAME_M, unit: '枚', source: 'manual' }),
-    })
-
+  // 工種一覧（★材料マスタは 2026-08-30 にテーブルごと撤去。方針＝マスタを先に整備させない）
+  test('工種は追加できる', async ({ page }) => {
     await page.goto('/estimate-masters', { waitUntil: 'networkidle' })
     await page.locator('[data-testid="subtab-trade"]').click()
-
-    // 工種は今までどおり追加できる（廃止したのは材料マスタだけ）
-    await page.locator('[data-testid="new-trade-name"]').fill(TRADE_M)
-    await page.locator('[data-testid="add-trade"]').click()
-    await expect(page.locator('[data-testid="trade-list"]')).toContainText(TRADE_M)
-
-    await page.locator('[data-testid="subtab-material"]').click()
-
-    // ★追加の導線が無い（開いていると単価の正本がまた二重化する）
-    await expect(page.locator('[data-testid="mat-add"]'), '追加ボタンが無い').toHaveCount(0)
-    await expect(page.locator('[data-testid="mat-name"]'), '入力欄が無い').toHaveCount(0)
-    await expect(page.locator('[data-testid="mat-code"]')).toHaveCount(0)
-    // ★削除の導線も無い（消すのは単価表側の判断・破壊的操作はここから行わせない）
-    await expect(page.locator('[data-testid^="mat-del-"]'), '削除ボタンが無い').toHaveCount(0)
-
-    // 廃止した旨と、どこで管理するかが画面に出ている
-    await expect(page.getByTestId('material-deprecated')).toContainText('商社単価表')
-
-    // ★既存データは消さずに読める（過去見積の名称・単位の解決に使っている）
-    const ml = page.locator('[data-testid="material-list"]')
-    await expect(ml).toContainText(MCODE_M)
-    await expect(ml).toContainText(MNAME_M)
-    const rows = await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MNAME_M)}&select=id`)
-    expect((rows ?? []).length, 'DBの行も残っている').toBe(1)
+    await expect(page.locator('[data-testid="trade-list"]')).toBeVisible({ timeout: 10000 })
+    // ★材料マスタのサブタブは無い（撤去済み）
+    await expect(page.locator('[data-testid="subtab-material"]')).toHaveCount(0)
   })
 
   // 同名の案件は作れない（重複防止）
