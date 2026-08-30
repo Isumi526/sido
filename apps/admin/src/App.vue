@@ -106,6 +106,8 @@
           <li v-if="!HIDE_LINE_SECTIONS"><RouterLink to="/users" class="nav-link"><span class="material-symbols-rounded nav-icon">manage_accounts</span>ユーザー</RouterLink></li>
           <li><RouterLink to="/company-profile" class="nav-link"><span class="material-symbols-rounded nav-icon">business</span>自社情報</RouterLink></li>
           <li><RouterLink to="/settings" class="nav-link"><span class="material-symbols-rounded nav-icon">settings</span>設定</RouterLink></li>
+          <!-- 自社データの一括ダウンロード（契約 別紙1§10）。オーナーのみ実行できる -->
+          <li v-if="canManageAuth"><RouterLink to="/data-export" class="nav-link"><span class="material-symbols-rounded nav-icon">download</span>データの一括ダウンロード</RouterLink></li>
         </template>
       </ul>
       <div class="sidebar-account">
@@ -131,7 +133,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { currentUser, currentRole, currentWorkerName, signOut, isAdminAllowed, roleResolved, roleLabel, canViewManagementPages, canViewContractors } from './lib/auth'
+import { currentUser, currentRole, currentWorkerName, signOut, isAdminAllowed, roleResolved, roleLabel, canViewManagementPages, canViewContractors, canManageAuth } from './lib/auth'
 import { canViewEstimates } from './lib/features'
 import { liffAppUrl } from './lib/links'
 import { getAccountName } from './lib/account'
