@@ -21,8 +21,11 @@ import { restSrv, getAccountId, restoreEstimateFeature } from './helpers'
 const KEY = 'estimate_feature_enabled'
 // ★#40(見積入口一本化): 素の /estimate-builder は案件未指定だと /estimate-list へリダイレクトする設計に変わった。
 //  直接入れる導線ではなくなったので「入れるルート」の検証対象からは外す（入口は estimate-list 経由）。
-const EST_ROUTES = ['/estimate-list', '/estimates', '/estimate-masters', '/purchase-orders', '/drawing-materials']
-const EST_MENU   = ['/estimate-list', '/estimates', '/purchase-orders', '/drawing-materials', '/estimate-masters']
+// ★/drawing-materials は 2026-08-30 に見積から独立させた（見積OFFでも使える）ので外す。
+//  「材料抽出としては、めちゃくちゃ別」（大塚さん・2026-08-19）。独立していることは
+//  admin.drawing-independent.spec.ts が固定している。
+const EST_ROUTES = ['/estimate-list', '/estimates', '/estimate-masters', '/purchase-orders']
+const EST_MENU   = ['/estimate-list', '/estimates', '/purchase-orders', '/estimate-masters']
 
 let accountId = ''
 
@@ -55,7 +58,7 @@ test.describe('フラグOFF（既定・未設定）', () => {
     await expect(page.locator('.nav-list'), 'セクション見出しも出ない').not.toContainText('見積・発注')
   })
 
-  test('★6ルートをURL直打ちしてもダッシュボードへ戻される', async ({ page }) => {
+  test('★見積の各ルートをURL直打ちしてもダッシュボードへ戻される', async ({ page }) => {
     for (const path of EST_ROUTES) {
       await page.goto(path, { waitUntil: 'networkidle' })
       await expect(page, `${path} は / へ戻されるべき`).toHaveURL(/\/\/[^/]+\/$/)
