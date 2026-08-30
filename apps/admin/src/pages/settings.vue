@@ -298,7 +298,9 @@ async function runReminder(dryRun: boolean) {
   reminding.value = dryRun ? 'dry' : 'send'
   reminderResult.value = null
   try {
-    const fnName = IS_DEV ? 'test-daily-reminder' : 'daily-reminder'
+    // ★2026-08-30: test-daily-reminder は本体と別実装に乖離した写しで、
+    //  LINE送信の撤去を片方だけ直す事故のもとだったので削除した。dev も本体を叩く。
+    const fnName = 'daily-reminder'
     const body: any = { dry_run: dryRun, account_slug: getAccountSlug(), manual: true }
     const { data: { session } } = await supabase.auth.getSession()
     const res = await fetch(`${EDGE_URL}/${fnName}`, {
