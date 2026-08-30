@@ -11,7 +11,7 @@
 //  証憑なしで承認待ちになっていた（2026-08-12 発見）。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { withReportFormLock } from './helpers'
+import { useDevWorker } from './helpers'
 
 type Page = import('@playwright/test').Page
 
@@ -48,8 +48,11 @@ async function submit(page: Page): Promise<string> {
   return alertMsg
 }
 
+// ★ロックの取得は hook で行う。test の中で待つと、待ち時間がそのテストの制限時間(40s)を
+//  食い潰して「ロックは取れたのに時間切れ」になる（実際にそれで落ちた）。hook は別枠。
 test.describe('経費の領収書添付を必須にする', () => {
-  test('金額を入れて領収書が無いと「領収書が無い理由」欄が出る', async ({ page }) => { await withReportFormLock(async () => {
+  test('金額を入れて領収書が無いと「領収書が無い理由」欄が出る', async ({ page }) => {
+    await useDevWorker(page, 'receipt-required')
     await openExpenseForm(page)
     const card = otherCard(page)
 
@@ -58,9 +61,10 @@ test.describe('経費の領収書添付を必須にする', () => {
     await card.locator('input[inputmode="numeric"], input[type="number"]').first().fill('5000')
     await page.waitForTimeout(300)
     await expect(reasonInput(card), '★金額があるのに領収書0枚なら出る').toBeVisible()
-  }) })
+  })
 
-  test('★領収書も理由も無いと送信できない', async ({ page }) => { await withReportFormLock(async () => {
+  test('★領収書も理由も無いと送信できない', async ({ page }) => {
+    await useDevWorker(page, 'receipt-required')
     await openExpenseForm(page)
     const card = otherCard(page)
     await card.locator('input[inputmode="numeric"], input[type="number"]').first().fill('5000')
@@ -69,9 +73,10 @@ test.describe('経費の領収書添付を必須にする', () => {
     const msg = await submit(page)
     expect(msg, '領収書が要ると分かる').toContain('領収書')
     expect(msg, '理由を書けば通ることも伝える').toContain('理由')
-  }) })
+  })
 
-  test('★理由を書けば送れる（レジ故障などの例外で業務を止めない）', async ({ page }) => { await withReportFormLock(async () => {
+  test('★理由を書けば送れる（レジ故障などの例外で業務を止めない）', async ({ page }) => {
+    await useDevWorker(page, 'receipt-required')
     await openExpenseForm(page)
     const card = otherCard(page)
     await card.locator('input[inputmode="numeric"], input[type="number"]').first().fill('5000')
@@ -82,9 +87,10 @@ test.describe('経費の領収書添付を必須にする', () => {
     const msg = await submit(page)
     expect(msg, '★領収書の理由では弾かれない').not.toContain('領収書が無い理由を書いて')
     expect(msg, '★領収書を理由に弾かれない').not.toMatch(/領収書の写真が必要です/)
-  }) })
+  })
 
-  test('★ETCの高速代は領収書を求めない（利用明細で後日精算＝その場で出ない）', async ({ page }) => { await withReportFormLock(async () => {
+  test('★ETCの高速代は領収書を求めない（利用明細で後日精算＝その場で出ない）', async ({ page }) => {
+    await useDevWorker(page, 'receipt-required')
     await openExpenseForm(page)
     // 高速代は既定で0件。追加してから触る（＝ETCカードのセレクトを持つカードが生える）
     await page.getByRole('button', { name: '＋ 高速代を追加' }).first().click()
@@ -101,5 +107,5 @@ test.describe('経費の領収書添付を必須にする', () => {
       .first().selectOption({ label: 'カード①' })
     await page.waitForTimeout(300)
     await expect(reasonInput(hw), '★ETCを選べば理由も領収書も要らない').toHaveCount(0)
-  }) })
+  })
 })

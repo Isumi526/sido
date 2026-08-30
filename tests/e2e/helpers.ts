@@ -336,44 +336,78 @@ export function makePdf(pages: number): Buffer {
   return Buffer.from(body + xref + `trailer\n<< /Size ${size} /Root 1 0 R >>\nstartxref\n${xrefAt}\n%%EOF\n`, 'latin1')
 }
 
-// ── 日報フォーム（未送信日）の排他ロック ────────────────────
-//  ★なぜ要るか: liff の日報系specは「編集可能window（当日含む過去3日）の未送信日」という
-//   1つしかない共有資源を取り合う。さらに liff.report-late-approval は対象日を開かせるために
-//   workers.report_start_date を書き換える。並列実行だと互いの前提を壊し、
-//   「単独なら通るのに並列だと落ちる」テストが出る（何度も“既存バグ”と誤診してきた）。
-//   真の解決は spec ごとに専用の作業員を持つこと（別チケット）。それまでの間、
-//   この資源を触るspecを直列化して、E2Eの結果を信用できる状態に保つ。
+// ── spec 専用の作業員（共有作業員の奪い合いを無くす） ────────────────
+//  ★背景: liff の日報系specは全部が1人の dev 作業員(dev-user-id)を共有していて、
+//   「編集可能window（当日含む過去3日）の未送信日」という有限の資源を取り合っていた。
+//   さらに一部の spec は workers.report_start_date を書き換える。結果、
+//   「単独なら通るのに並列だと落ちる」テストが常態化し、それを何度も
+//   「既存バグ」と誤記録してきた。雑音に紛れて本物の回帰が埋もれる。
 //
-//  プロセス跨ぎで効かせる必要があるので（Playwrightのworkerは別プロセス）、
-//  ファイルの排他作成(O_EXCL)をロックとして使う。古いロックは自動で回収する。
-import { mkdirSync, openSync, closeSync, rmSync, statSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+//  解決: spec ごとに専用の作業員・users 行を持たせ、資源を共有しない。
+//   liff は development モードで localStorage の dev_line_uid を身元に使う
+//   （useLiff.ts）ので、ブラウザコンテキストに一度置けば全ページで効く。
 
-const LOCK_DIR = resolve(tmpdir(), 'sido-e2e-locks')
-const LOCK_PATH = resolve(LOCK_DIR, 'report-form.lock')
-const LOCK_STALE_MS = 120_000
+/** spec 専用の作業員＋users 行を用意して line_user_id を返す（何度呼んでも同じ行） */
+export async function ensureDevWorker(key: string): Promise<{ lineUserId: string; userId: string; workerId: string }> {
+  const accountId = await getAccountId()
+  const lineUserId = `dev-user-${key}`
+  const name = `E2E専用_${key}`
 
-/** 日報フォーム（未送信日 / report_start_date）を占有して fn を実行する */
-export async function withReportFormLock<T>(fn: () => Promise<T>): Promise<T> {
-  mkdirSync(LOCK_DIR, { recursive: true })
-  const deadline = Date.now() + 180_000
-  let fd: number | null = null
-  while (fd === null) {
-    try {
-      fd = openSync(LOCK_PATH, 'wx')
-    } catch {
-      // 落ちたテストが握ったまま残したロックは、古くなったら回収する
-      try {
-        if (Date.now() - statSync(LOCK_PATH).mtimeMs > LOCK_STALE_MS) rmSync(LOCK_PATH, { force: true })
-      } catch { /* 他プロセスが同時に消した */ }
-      if (Date.now() > deadline) throw new Error('日報フォームのロックを取得できませんでした（180秒待機）')
-      await new Promise(r => setTimeout(r, 250))
-    }
+  const found = await restSrv(`workers?account_id=eq.${accountId}&name=eq.${encodeURIComponent(name)}&select=id`)
+  const workerId = found?.[0]?.id ?? (await restSrv('workers', {
+    method: 'POST', headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ account_id: accountId, name, active: true, role: 'site',   // role は factory/site のみ許容
+      // ★登録日を遡らせる。未送信日の起点は max(service_start_date, 作業員登録日, report_start_date) なので、
+      //  作りたてだと起点が当日になり未送信日が1日しか無い＝送信系テストの前提が崩れる。
+      created_at: new Date(Date.now() - 90 * 86400e3).toISOString() }),
+  }))[0].id
+
+  const foundU = await restSrv(`users?line_user_id=eq.${encodeURIComponent(lineUserId)}&select=id`)
+  const userId = foundU?.[0]?.id ?? (await restSrv('users', {
+    method: 'POST', headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ account_id: accountId, line_user_id: lineUserId, worker_id: workerId, real_name: name }),
+  }))[0].id
+
+  return { lineUserId, userId, workerId }
+}
+
+/**
+ * この spec は専用の作業員で動く、と宣言する。
+ * 未送信日（当日含む過去3日）も自分用に作り直すので、他specに壊されない。
+ * ★page.goto より前に呼ぶこと（addInitScript は以後の遷移すべてに効く）。
+ */
+export async function useDevWorker(page: any, key: string): Promise<{ userId: string; workerId: string }> {
+  const accountId = await getAccountId()
+  const { lineUserId, userId, workerId } = await ensureDevWorker(key)
+  await page.addInitScript((uid: string) => {
+    try { window.localStorage.setItem('dev_line_uid', uid) } catch { /* 使えない環境は既定のまま */ }
+  }, lineUserId)
+
+  // 未送信日を自分用に確保する（起点を today-2 に寄せ、直近2日を空ける）。
+  // ※古い日付に寄せてはいけない。3日より前はロック済みで送信ボタンが恒久disabledになる。
+  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const dayBack = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n); return fmt(d) }
+  await restSrv(`workers?id=eq.${workerId}`, {
+    method: 'PATCH', headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({ report_start_date: dayBack(2) }),
+  }).catch(() => {})
+  for (const n of [0, 1, 2]) {
+    await rest(`daily_reports?user_id=eq.${userId}&date=eq.${dayBack(n)}`, { method: 'DELETE' }).catch(() => {})
   }
-  try {
-    return await fn()
-  } finally {
-    closeSync(fd)
-    rmSync(LOCK_PATH, { force: true })
-  }
+
+  // 履歴（＝編集リンク）を必要とする spec のために、送信済みの日報を1件だけ置く。
+  // today-2 を埋めると未送信日は today-1 / today の2日残る＝送信系テストの前提も満たす。
+  await rest('daily_reports?on_conflict=user_id,date', {
+    method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({
+      account_id: accountId, user_id: userId, date: dayBack(2), is_working: true,
+      note: 'E2E:専用作業員の履歴',
+      sites: [{
+        siteName: 'テスト現場A', workers: [], subcontractors: [],
+        expenses: { vehicles: [], parkings: [], highways: [], trains: [], hotels: [], others: [], entertainments: [] },
+      }],
+    }),
+  }).catch(() => {})
+
+  return { userId, workerId }
 }
