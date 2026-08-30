@@ -100,6 +100,9 @@ const ANON_LOCKED_TABLES = new Set([
   //  active/name/role/unit_price の4列に限定、push_subscriptions は権限ゼロ）。
   //  テストの下ごしらえ（permission_role を持つ承認者を作る等）は service_role で行う。
   'workers', 'push_subscriptions',
+  // ★2026-08-30: 当初 using(true) にしていて、公開キーで全テナントのルール本文が読めていた。
+  //  LIFFの打刻画面は attendance-log EF(service_role)経由で受け取るので anon 直読みは要らない。
+  'account_attendance_rules',
 ])
 
 export async function rest(pathAndQuery: string, init: RequestInit = {}): Promise<any> {

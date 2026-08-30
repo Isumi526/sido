@@ -419,3 +419,11 @@ entries:
     target: workers
     reason: "本番既存のベースライン。RLS無効かつ authenticated に INSERT/UPDATE/DELETE があるため、ログインできる他テナントの利用者が行を書換・削除できる。2026-08-15 に overtime_requests で実証済み（別テナントのJWTでPATCHが204・status=approvedに書き換わった）。実害順に1件ずつRLS化する。"
     ticket: "3bd0ff81c56b8162a746e75d6c8b0855"
+  - rule: idempotency
+    target: apps/admin/src/pages/inventory.vue
+    reason: "連打自体は busy フラグでボタンを disabled にして塞いでいる。ただし『画面の値＋差分』を絶対値で上書きしているため、複数人・複数タブでの同時操作では lost update が起きる（履歴と現在庫がズレる）。指摘より重い問題なので別チケットで直す。在庫はMVPで本番未使用のため ship は止めない。"
+    ticket: "3cc0ff81c56b816c8bf7fdcf81e3125b"
+  - rule: idempotency
+    target: supabase/functions/attendance-log/index.ts
+    reason: "打刻の再送で attendance_logs に重複行は入りうるが、2026-08-27 の出退勤モデル変更で読み出しは『その日の最初の出勤・最後の退勤』に畳まれるため、画面表示・勤怠集計は影響を受けない。工数配賦も打刻ではなく日報の申請時間を使う。生ログが増えるだけで実害が無いため受容する。"
+    ticket: ""

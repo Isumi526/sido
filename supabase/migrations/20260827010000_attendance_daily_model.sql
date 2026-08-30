@@ -66,14 +66,16 @@ comment on table account_attendance_rules is
   '出退勤の打刻時に見せるアカウント共通の確認ルール（2026-08-27 出退勤モデル変更）。'
   ' 現場別ルール(site_rules)を置き換える。現場特有の内容は「送り出し資料」の承認フローへ移す。';
 
--- RLS: 自テナントのみ。読みは authenticated（admin）と anon（LIFF の打刻画面が直読み）に許す。
--- ★ルール本文は打刻画面で全員に見せるもので秘匿情報ではない（site_rules も同様に anon 読みだった）。
---  書き込みは authenticated のみ＝公開キーからルールを書き換えられないようにする。
+-- RLS: 自テナントのみ。読み書きとも authenticated（管理画面）に限る。
+-- ★anon には一切許さない。LIFF の打刻画面は attendance-log EF(service_role)経由で
+--  ルールを受け取るので、公開キーでの直読みは要らない（当初 using(true) にしていたが、
+--  それだと公開キーで全テナントのルール本文が読めてしまう＝テナント越境。2026-08-30 是正）。
 alter table account_attendance_rules enable row level security;
 
 drop policy if exists aar_select_all on account_attendance_rules;
-create policy aar_select_all on account_attendance_rules for select
-  using (true);
+drop policy if exists aar_select_tenant on account_attendance_rules;
+create policy aar_select_tenant on account_attendance_rules for select to authenticated
+  using (account_id = (select current_account_id()));
 
 drop policy if exists aar_write_authenticated on account_attendance_rules;
 create policy aar_write_authenticated on account_attendance_rules for all to authenticated
@@ -98,7 +100,7 @@ create policy aar_write_authenticated on account_attendance_rules for all to aut
     )
   );
 
-grant select on account_attendance_rules to anon;
+revoke all on account_attendance_rules from anon;
 grant select, insert, update, delete on account_attendance_rules to authenticated;
 
 -- ── ロールバック手順 ────────────────────────────────

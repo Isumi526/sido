@@ -36,7 +36,8 @@ test('現場を選ばずに共通ルールを登録でき、一覧に出る', as
   await expect(page.getByTestId('rule-rows')).toContainText(RULE, { timeout: 15000 })
 
   // DBにもアカウント単位で入る（現場には紐づかない）
-  const rows = await rest(`account_attendance_rules?content=eq.${encodeURIComponent(RULE)}&select=account_id,timing`)
+  // ★公開キー(anon)では読めない（全テナントのルール本文が読めていたのを 2026-08-30 に塞いだ）。検証はサービスロールで行う
+  const rows = await restSrv(`account_attendance_rules?content=eq.${encodeURIComponent(RULE)}&select=account_id,timing`)
   expect(rows.length, '共通ルールが1件入る').toBe(1)
   expect(rows[0].account_id, '自テナントに紐づく').toBe(accountId)
   expect(rows[0].timing).toBe('both')
