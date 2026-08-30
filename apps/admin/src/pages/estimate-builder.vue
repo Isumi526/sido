@@ -1304,7 +1304,7 @@ import { supabase } from '../lib/supabase'
 //  別名で入れて「推定に使う正規化はこちら」と明示する。
 import { guessPriceKind, normalizeName as normalizeGuessName, type Guess } from '../lib/priceKindGuess'
 import { getAccountId } from '../lib/account'
-import { openDoc } from '../lib/docUrl'
+import { openDoc, resolveDocUrl } from '../lib/docUrl'
 import EstimateMasters from './estimate-masters.vue'
 import WorkItemImport from '../components/WorkItemImport.vue'
 
@@ -2562,7 +2562,11 @@ const today = new Date().toISOString().slice(0, 10)
 // 見積書: 和暦の発行日（例: 令和8年6月15日）。サンプル様式に合わせる。
 const todayWareki = computed(() => { const d = new Date(); return `令和${d.getFullYear() - 2018}年${d.getMonth() + 1}月${d.getDate()}日` })
 // 自社情報・金額計算（小計→法定福利費→端数調整→合計税抜→消費税→税込）
-const sealUrl  = computed(() => company.value.company_seal_path ? supabase.storage.from(BUCKET).getPublicUrl(company.value.company_seal_path).data.publicUrl : '')
+// 印影は公開URLで配らない。短TTLの署名URLを都度作る（2026-08-30）
+const sealUrl = ref('')
+watch(() => company.value.company_seal_path, async (p) => {
+  sealUrl.value = p ? (await resolveDocUrl(p, BUCKET)) ?? '' : ''
+}, { immediate: true })
 const welfareA = computed(() => Number(company.value.welfare_rate_a) || 23)
 const welfareB = computed(() => Number(company.value.welfare_rate_b) || 15)
 const taxRate  = computed(() => Number(company.value.tax_rate) || 10)
