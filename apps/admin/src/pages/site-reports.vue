@@ -64,15 +64,6 @@
         </div>
       </div>
 
-      <!-- ★選択中の現場の「現場ページ」へ戻れるようにする（2026-08-30 今井さん要望）。
-           現場ページ→集計 の逆向き。行ったきりだと現場一覧から探し直しになる。 -->
-      <div v-if="displaySiteId" class="site-master-link">
-        <router-link :to="`/sites/${displaySiteId}`" class="btn-ghost sm" data-testid="site-master-link">
-          <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">location_on</span>
-          {{ displaySite }} の現場ページを開く
-        </router-link>
-      </div>
-
       <!-- 区分別の小計。★「現場作業と見積を分けて見たい」への答え（2026-08-17）。
            1つの現場に複数の作業があり、原価の意味が違う（受注前の見積を施工の原価に混ぜたくない）。
            ★ここの合計は必ず下の表の月計と一致する。区分は行の分け方を変えるだけで金額に触らない。 -->
@@ -86,6 +77,12 @@
 
       <!-- 出力（※表の表示月は上の ‹ 年月 › ナビで切替。出力ボタンを押すと出力期間を選ぶ） -->
       <div v-if="displaySite" class="export-bar">
+        <!-- ★選択中の現場の現場ページへ戻る（2026-08-30 今井さん要望）。
+             現場ページ→集計 の逆向き。行ったきりだと現場一覧から探し直しになる。
+             現場名はすぐ上のタブに出ているので、ここでは繰り返さない。 -->
+        <router-link v-if="displaySiteId" :to="`/sites/${displaySiteId}`" class="btn-site-master" data-testid="site-master-link">
+          <span class="material-symbols-rounded">location_on</span>現場ページ
+        </router-link>
         <div class="export-pop-wrap">
           <button class="btn-export" data-testid="export-site" @click="exportPanelOpen = !exportPanelOpen"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">download</span> {{ canViewEstimates ? 'CSV＋見積書PDFを出力' : 'CSVを出力' }}</button>
           <div v-if="exportPanelOpen" class="export-pop" data-testid="export-panel">
@@ -1080,8 +1077,14 @@ watch(wageMode, load)   // 日当-実質賃金の切替で社員人件費を再�
 .sf-clear { border: 1px solid #d0d0d0; background: #fff; border-radius: 6px; padding: 6px 12px; font-size: 12px; color: #555; cursor: pointer; }
 .sf-clear:hover { background: #f5f5f5; }
 
-.site-master-link { margin: 8px 0 4px; }
-.site-master-link .btn-ghost { display: inline-flex; align-items: center; gap: 4px; text-decoration: none; }
+/* 集計→現場ページ。出力ボタンと同じ行に置き、白ベースで主張を抑える（主操作はCSV出力） */
+.btn-site-master {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: #fff; color: #333; border: 1px solid #d5d9de; border-radius: 8px;
+  padding: 8px 14px; font-size: 13px; font-weight: 700; text-decoration: none; cursor: pointer;
+}
+.btn-site-master:hover { background: #f6f7f9; border-color: #b9c0c8; }
+.btn-site-master .material-symbols-rounded { font-size: 16px; }
 .tabs-wrap { overflow-x: auto; margin-bottom: 16px; }
 .export-bar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin: 10px 0 0; flex-wrap: wrap; }
 .export-pop-wrap { position: relative; }
