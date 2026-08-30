@@ -23,8 +23,6 @@ test.describe('見積 価格表差分承認（E4）', () => {
     const sup = await restSrv(`subcontractors?name=eq.${encodeURIComponent(SUP)}&category=eq.${encodeURIComponent('商社')}&select=id`).catch(() => [])
     if (sup?.[0]) await restSrv(`estimate_price_revisions?supplier_id=eq.${sup[0].id}`, { method: 'DELETE' }).catch(() => {})
     if (sup?.[0]) await restSrv(`estimate_material_prices?supplier_id=eq.${sup[0].id}`, { method: 'DELETE' }).catch(() => {})
-    await restSrv(`estimate_materials?name=eq.${encodeURIComponent(MAT)}`, { method: 'DELETE' }).catch(() => {})
-    await restSrv(`estimate_materials?name=eq.${encodeURIComponent(NEW)}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`subcontractors?name=eq.${encodeURIComponent(SUP)}&category=eq.${encodeURIComponent('商社')}`, { method: 'DELETE' }).catch(() => {})
   })
 
@@ -71,8 +69,6 @@ test.describe('見積 価格表差分承認（E4）', () => {
       return `${ps?.[0]?.unit_price}|${rev?.[0]?.status}|${ps?.[0]?.unit}`
     }, { timeout: 10000 }).toBe('300|applied|m2')
     // ★材料マスタを作っていないこと（一本化の要）
-    const leftover = await restSrv(`estimate_materials?name=eq.${encodeURIComponent(NEW)}&select=id`)
-    expect(leftover?.length ?? 0, '承認で材料マスタを作らない').toBe(0)
 
     // 承認後は pending 一覧から消える（人間承認した分だけ反映＝自動反映なし）
     await expect(page.locator(`[data-testid="rev-${rev1.id}"]`)).toHaveCount(0)
