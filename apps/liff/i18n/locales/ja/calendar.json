@@ -16,7 +16,7 @@
   "addSchedule": "予定を追加",
   "targetWorkers": "対象者 *（{count}人）",
   "bulkSelectFromGroup": "グループから一括選択…",
-  "site": "現場 *",
+  "site": "現場 ※必須",
   "workCategory": "作業区分",
   "contractor": "元請け業者",
   "contractorAll": "すべての元請け",
@@ -27,7 +27,7 @@
   "siteGroupUnlinked": "紐付けなし",
   "siteGroupLinked": "この元請けに紐づく現場",
   "siteGroupOther": "その他の現場",
-  "siteName": "現場名 *",
+  "siteName": "現場名 ※必須",
   "siteNamePlaceholder": "現場名を入力",
   "start": "開始",
   "end": "終了",
@@ -68,7 +68,7 @@
     "enterTitle": "タイトルを入力してください"
   },
   "noSite": "現場なし（タイトルを入力）",
-  "titleLabel": "タイトル *",
+  "titleLabel": "タイトル ※必須",
   "titlePlaceholder": "例：休暇 / 出張 / 私用",
   "similarSiteWarn": "似た現場が既にあります（重複登録に注意）",
   "siteUnset": "現場が台帳に無い（名前だけ入れる）"

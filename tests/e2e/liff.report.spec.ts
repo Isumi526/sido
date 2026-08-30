@@ -76,7 +76,7 @@ test('編集モード（送信済みの過去日報）では「過去の未送�
 })
 
 // ── バグ: 日報フォームから新規登録した下請業者が、次回フォームを開くとプルダウンに出ない ──
-// 下請の select は「業者を選択 *」の disabled option を持つ点で他の select と区別できる。
+// 下請の select は「業者を選択 ※必須」の disabled option を持つ点で他の select と区別できる。
 test('新規登録した下請業者が再訪時にプルダウンへ残る', async ({ page }) => {
   await useDevWorker(page, 'report')
   const SUB_NAME = 'E2E下請業者' // upsert(onConflict)なので再実行しても重複しない
@@ -103,7 +103,7 @@ test('新規登録した下請業者が再訪時にプルダウンへ残る', as
   }
   const subSelect = subSelectSel.first()
   await subSelect.selectOption('__other__')
-  await page.getByPlaceholder('業者名を入力 *').first().fill(SUB_NAME)
+  await page.getByPlaceholder('業者名を入力 ※必須').first().fill(SUB_NAME)
 
   // 記入忘れ確認チェック（新規送信は必須＝送信ボタンを有効化）
   await page.locator('.submit-confirm input[type="checkbox"]').check()
