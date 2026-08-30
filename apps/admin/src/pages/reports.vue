@@ -71,13 +71,6 @@
                       :title="grantedIds.has(r.id) ? '編集許可済み' : 'この日を申請なしで編集可にする'"
                       @click.stop="issueEditGrant(r)"
                     ><span class="material-symbols-rounded">{{ grantedIds.has(r.id) ? 'check' : 'edit' }}</span></button>
-                    <button
-                      v-if="!HIDE_LINE_SECTIONS && !r.line_notified_at"
-                      class="icon-btn"
-                      :disabled="notifying === r.id"
-                      title="LINE通知を送る"
-                      @click.stop="sendNotification(r)"
-                    ><span class="material-symbols-rounded">send</span></button>
                   </div>
                 </div>
               </template>
@@ -122,12 +115,6 @@
             :title="'この作業員のこの日を、申請なしで編集可にします'"
             @click.stop="issueEditGrant(r)"
           ><span v-if="grantedIds.has(r.id)"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">check</span> 編集許可済</span><span v-else-if="granting === r.id">発行中…</span><span v-else><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">edit</span> 編集許可を発行</span></button>
-          <button
-            v-if="!HIDE_LINE_SECTIONS && !r.line_notified_at"
-            class="btn-notify-sm"
-            :disabled="notifying === r.id"
-            @click.stop="sendNotification(r)"
-          >{{ notifying === r.id ? '送信中...' : 'LINE通知' }}</button>
           <!-- 削除は誤操作防止のため一覧からは行わない。詳細（詳細→）を開いてから削除する -->
         </div>
       </div>
@@ -441,7 +428,6 @@ function nextMonth() {
 }
 const loading  = ref(false)
 const deleting = ref(false)
-const notifying = ref<string | null>(null)
 // 取得した当月の全日報。作業員の絞り込みはここからクライアント側で行う（切り替えで再フェッチしない）
 const allReports = ref<any[]>([])
 const reports = computed<any[]>(() => selectedWorkers.value.length
@@ -565,31 +551,6 @@ function extractStoragePaths(r: any): string[] {
     }
   }
   return paths
-}
-
-async function sendNotification(r: any) {
-  if (!confirm(`${r.date} ${r.worker_name ?? ''} の日報をLINE通知しますか？`)) return
-  notifying.value = r.id
-  try {
-    const res = await fetch(`${EDGE_URL}/resend-notifications`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${ANON_KEY}`,
-      },
-      body: JSON.stringify({ report_id: r.id, account_slug: getAccountSlug(), dry_run: false }),
-    })
-    const data = await res.json()
-    if (data.count > 0) {
-      r.line_notified_at = new Date().toISOString()
-    } else {
-      alert('送信に失敗しました: ' + JSON.stringify(data))
-    }
-  } catch (e) {
-    alert('エラー: ' + String(e))
-  } finally {
-    notifying.value = null
-  }
 }
 
 async function deleteReport(r: any) {

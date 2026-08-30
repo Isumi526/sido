@@ -25,14 +25,12 @@
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { createRemoteJWKSet, jwtVerify } from 'https://esm.sh/jose@5'
-import { pushLineText } from '../_shared/line.ts'
 import { resolveWorkerNotifyEmail, sendResend } from '../_shared/doc-mail.ts'
 import { resolveApprover } from '../_shared/caller-identity.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
 const ANON_KEY     = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
-const LINE_TOKEN   = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? ''
 const LIFF_URL     = Deno.env.get('LIFF_APP_URL') ?? 'https://sido-liff.vercel.app'
 
 const LINE_CHANNEL_ID = Deno.env.get('LINE_LOGIN_CHANNEL_ID') ?? ''
@@ -246,10 +244,12 @@ async function pushAppNotification(
  *  「承認待ちバッジが黙って消える」だけで、承認との区別すらつかなかった＝
  *  「コメントを入れて差し戻す」という運用がそもそも成立していなかった。
  *
- * 届け先は3つ。★アプリ内通知が本命で、LINE/メールは「開く前に気づける」ための上乗せ。
+ * 届け先は2つ。★アプリ内通知が本命で、メールは「開く前に気づける」ための上乗せ。
  *  1. アプリ内のお知らせ（必ず積む）
- *  2. 個人LINE（連携済みの人だけ。連携は必須にしない方針）
- *  3. 認証用メール（LINE未連携で、ダミーでないメールを持つ人）
+ *  2. 認証用メール（ダミーでないメールを持つ人）
+ * ★以前は個人LINEにも送っていたが 2026-08-30 に撤去した（LINEから降りる方針）。
+ *  それまでは「LINE連携済みならLINEだけ・未連携ならメールだけ」の排他分岐で、
+ *  LINE作業員にはメールが届いていなかった。撤去に合わせて全員メールに寄せた。
  * ★通知は best-effort。ここで失敗しても差し戻し自体は成立しているので
  *  例外を投げない（通知の失敗で承認画面が「失敗しました」になる方が有害）。
  *  代わりにどこへ送れたかを戻り値で返し、レスポンスに載せる。
@@ -287,19 +287,11 @@ async function notifyRejected(
       )) sent.push('app')
     }
 
-    if (u.line_user_id && LINE_TOKEN) {
-      const text = [
-        subject,
-        '',
-        `対象日: ${pend.report_date}${where}`,
-        `理由: ${reason}`,
-        reviewer ? `差し戻した人: ${reviewer}` : '',
-        '',
-        '内容を直して出し直してください。',
-        `${LIFF_URL}/report?edit=${pend.report_date}`,
-      ].filter((l) => l !== '').join('\n')
-      if (await pushLineText(u.line_user_id as string, text, LINE_TOKEN)) sent.push('line')
-    } else if (u.worker_id) {
+    // ★2026-08-30: LINE送信は撤去した（LINEからは降りる方針）。
+    //  以前は line_user_id があればLINE、無ければメール、という分岐だったので、
+    //  LINE作業員にはメールが飛んでいなかった。撤去に伴い全員メールに寄せる。
+    //  アプリ内通知（上）＋メールの2経路になる。
+    if (u.worker_id) {
       const email = await resolveWorkerNotifyEmail(svc, accountId, u.worker_id as string)
       if (email) {
         const esc = (s: string) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!))

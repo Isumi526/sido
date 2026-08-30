@@ -337,41 +337,14 @@ export const useReport = () => {
 
     try {
       const efUrl = config.public.edgeFunctionUrl
-      if (!efUrl) {
-        console.log('[Report] Edge Function URL未設定 - 送信ペイロード:', JSON.stringify(payload, null, 2))
-      } else if (!config.public.reportLineNotify) {
-        // 脱LINE（既定）: submit-report(LINE通知)は呼ばない。日報保存(daily_reports)は別経路で完了済み。
-        //   submit-report EF は全社共通グループ(NOTIFY_GROUP_IDS)へ送るクロステナント漏洩バグがあるため、
-        //   per-tenant 化して修正するまで LIFF からは絶対に呼ばない。
-        console.log('[Report] 日報LINE通知はオフ（脱LINE）: submit-report をスキップ')
-        lineNotified.value = false
-      } else {
-        // dev環境またはテスターはtest-プレフィックスの関数を呼び出す
-        const fnPrefix = config.public.appEnv === 'development' ? 'test-' : ''
+      // ★2026-08-30: 日報のLINE通知(submit-report)は撤去した。
+      //  本番の line_notified_at は 2026-07-01 以降ゼロで、運用としては既に終わっていた。
+      //  加えてこのEFは全社共通グループ(NOTIFY_GROUP_IDS)へ送るクロステナント漏洩バグを
+      //  抱えたままだった。呼ばないのではなく、経路ごと無くす。
+      //  日報の保存(daily_reports)は別経路で完了済みなので、ここでは何もしない。
+      lineNotified.value = false
+      if (!efUrl) console.log('[Report] Edge Function URL未設定 - 送信ペイロード:', JSON.stringify(payload, null, 2))
 
-        // ── ② Edge Function に送信（File[] を除去・*Urls はそのまま含む）──
-        const mainPayload = {
-          ...payload,
-          accountSlug,
-          sites: payload.sites.map(site => ({
-            ...site,
-            expenses: stripFiles(site.expenses),
-          })),
-        }
-        const notifyRes = await fetch(`${efUrl}/${fnPrefix}submit-report`, {
-          method:    'POST',
-          keepalive: true,
-          headers:   {
-            'Content-Type':  'application/json',
-            'Authorization': `Bearer ${config.public.supabaseAnonKey}`,
-          },
-          body:      JSON.stringify(stripEmpty(mainPayload)),
-        })
-        // ★EF は通知しなかった時に skipped（notify_disabled / no_group_configured）を返す。
-        //  「呼んだ＝飛んだ」ではないので、返り値まで見て判断する。
-        const notifyJson = await notifyRes.json().catch(() => ({} as any))
-        lineNotified.value = notifyRes.ok && !notifyJson?.skipped
-      }
       // ── ③ 新規現場・新規下請けを Supabase に保存（送信完了表示の前に確実化）──
       //  fire-and-forget だと「送信完了」直後にLIFFを閉じた際に upsert が中断され、
       //  登録した下請が次回プルダウンに出ない事象が起きていた。await して確実に永続化する。
