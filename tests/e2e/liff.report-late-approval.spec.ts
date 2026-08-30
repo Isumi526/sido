@@ -8,7 +8,7 @@
 //    遅れて出てくる日報こそ金額を確認したいので、内容の承認を通す。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, restSrv, getDevUserId, getAccountId, todayJST, withReportFormLock } from './helpers'
+import { rest, restSrv, getAccountId, todayJST, ensureDevWorker, useDevWorker } from './helpers'
 
 const TS = Date.now()
 // LOCK_START_DATE(2026-07-01) 以降かつ 3日より前 ＝ 期限切れ扱いになる日付
@@ -18,8 +18,13 @@ test.describe('期限切れの新規日報の承認制（liff）', () => {
   let uid = ''
   let accountId = ''
 
+  // ★このspec専用の作業員を使う（共有作業員の奪い合いを無くす）。
+  //  この直後の beforeEach が report_start_date を対象日へ寄せるので、
+  //  初期化はそれより前に済ませておく必要がある（登録順に実行される）。
+  test.beforeEach(async ({ page }) => { await useDevWorker(page, 'late-approval') })
+
   test.beforeEach(async () => {
-    uid = (await getDevUserId())!
+    uid = (await ensureDevWorker('late-approval')).userId
     accountId = await getAccountId()
     await restSrv(`daily_report_pending_edits?report_user_id=eq.${uid}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`daily_report_edit_logs?report_user_id=eq.${uid}`, { method: 'DELETE' }).catch(() => {})
@@ -53,7 +58,7 @@ test.describe('期限切れの新規日報の承認制（liff）', () => {
     }
   })
 
-  test('★期限切れの日付は送信しても daily_reports に入らず、保留になる', async ({ page }) => { await withReportFormLock(async () => {
+  test('★期限切れの日付は送信しても daily_reports に入らず、保留になる', async ({ page }) => {
     page.on('dialog', (d) => d.accept().catch(() => {}))
     await page.goto('/report', { waitUntil: 'networkidle' })
     await expect(page.locator('.date-fixed'), '最も古い未送信日が開く').toContainText('2026-07-15', { timeout: 20000 })
@@ -88,9 +93,9 @@ test.describe('期限切れの新規日報の承認制（liff）', () => {
     expect(pend[0].status).toBe('pending')
     expect(pend[0].report_id, 'まだ日報が無いので report_id は空').toBeNull()
     expect(pend[0].reason).toContain('E2E遅延理由')
-  }) })
+  })
 
-  test('★申請済みの日は飛ばして次の日が開く（承認を待たずにまとめて出せる）', async ({ page }) => { await withReportFormLock(async () => {
+  test('★申請済みの日は飛ばして次の日が開く（承認を待たずにまとめて出せる）', async ({ page }) => {
     const NEXT = '2026-07-16'
     await rest(`daily_reports?user_id=eq.${uid}&date=eq.${NEXT}`, { method: 'DELETE' }).catch(() => {})
     // 2026-07-15 を申請済み（承認待ち）にしておく
@@ -105,9 +110,9 @@ test.describe('期限切れの新規日報の承認制（liff）', () => {
     await page.goto('/report', { waitUntil: 'networkidle' })
     // ★承認を待たずに翌日へ進む（承認待ちの日は「出し済み」として飛ばす）
     await expect(page.locator('.date-fixed'), '申請済みの日は飛ばす').toContainText(NEXT, { timeout: 25000 })
-  }) })
+  })
 
-  test('★申請済みの日が日報履歴に出る（何日を申請したか分かる）', async ({ page }) => { await withReportFormLock(async () => {
+  test('★申請済みの日が日報履歴に出る（何日を申請したか分かる）', async ({ page }) => {
     await restSrv('daily_report_pending_edits', {
       method: 'POST', headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({
@@ -120,11 +125,11 @@ test.describe('期限切れの新規日報の承認制（liff）', () => {
     const card = page.getByTestId('history-pending-only')
     await expect(card, 'まだ日報が無くても履歴に出る').toHaveCount(1, { timeout: 25000 })
     await expect(card).toContainText('承認待ち')
-  }) })
+  })
 
   // ★日付と一文だけでは「何を送ったのか」が分からなかった。普通の日報カードと同じ
   //   情報量（現場・作業員・時間・経費）が出ることを固定する。
-  test('★承認待ちカードに送信内容（現場・作業員・時間・経費）が出る', async ({ page }) => { await withReportFormLock(async () => {
+  test('★承認待ちカードに送信内容（現場・作業員・時間・経費）が出る', async ({ page }) => {
     const SITE = `E2E承認待ち現場_${TS}`
     await restSrv('daily_report_pending_edits', {
       method: 'POST', headers: { Prefer: 'return=minimal' },
@@ -157,9 +162,9 @@ test.describe('期限切れの新規日報の承認制（liff）', () => {
     // AC2: 承認待ちであることは引き続き分かる
     await expect(card, '承認待ちのままと分かる').toContainText('承認待ち')
     await expect(card.getByTestId('history-pending-note-new'), '承認待ちの説明が出る').toBeVisible()
-  }) })
+  })
 
-  test('期限内（当日）の送信は今までどおり即座に日報になる（回帰なし）', async ({ page }) => { await withReportFormLock(async () => {
+  test('期限内（当日）の送信は今までどおり即座に日報になる（回帰なし）', async ({ page }) => {
     const today = todayJST()
     await rest(`daily_reports?user_id=eq.${uid}&date=eq.${today}`, { method: 'DELETE' }).catch(() => {})
     page.on('dialog', (d) => d.accept().catch(() => {}))
@@ -186,5 +191,5 @@ test.describe('期限切れの新規日報の承認制（liff）', () => {
     expect(pend.length, '保留は作らない').toBe(0)
 
     await rest(`daily_reports?user_id=eq.${uid}&date=eq.${today}`, { method: 'DELETE' }).catch(() => {})
-  }) })
+  })
 })

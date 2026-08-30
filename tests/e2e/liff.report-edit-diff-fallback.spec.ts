@@ -17,24 +17,21 @@
 //   (2) は diffReport.ts 側を直した（このspecの2本目で固定）。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, restSrv, getDevUserId, getAccountId, SUPABASE_URL, ANON_KEY, acquireReportFormLock } from './helpers'
+import { rest, restSrv, getAccountId, SUPABASE_URL, ANON_KEY, ensureDevWorker } from './helpers'
 
 const EDIT_DATE = '2026-10-19'
 
 let uid = ''
 let accountId = ''
-let releaseForm: (() => void) | null = null
-
 test.beforeAll(async () => {
-  releaseForm = await acquireReportFormLock()
-  uid = (await getDevUserId())!
+  // このspecはEFを直接叩くだけでUIを使わないが、日報を作り直すのでspec専用の作業員を使う
+  uid = (await ensureDevWorker('edit-diff-fallback')).userId
   accountId = await getAccountId()
 })
 test.afterAll(async () => {
   await restSrv(`daily_report_pending_edits?report_user_id=eq.${uid}&report_date=eq.${EDIT_DATE}`, { method: 'DELETE' }).catch(() => {})
   await restSrv(`daily_report_edit_logs?report_user_id=eq.${uid}&report_date=eq.${EDIT_DATE}`, { method: 'DELETE' }).catch(() => {})
   await rest(`daily_reports?user_id=eq.${uid}&date=eq.${EDIT_DATE}`, { method: 'DELETE' }).catch(() => {})
-  releaseForm?.(); releaseForm = null
 })
 
 /** 指定の作業員構成で当日の日報を作り直し、report_id を返す */
