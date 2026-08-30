@@ -41,6 +41,26 @@ const PARSED = {
 }
 
 test.describe('日報の音声入力', () => {
+  // ★EF本体（Gemini解析）も実際に叩く。スタブだけだとエンドポイント違いのような
+  //  「実機でしか出ない失敗」を拾えない（2026-08-30: v1ではJSONモードが使えず
+  //  全ての音声入力が「うまく読み取れませんでした」になっていた）。
+  test('★EFが話した内容を項目に分解できる（Geminiまで実際に通す）', async ({ request }) => {
+    const res = await request.post(`${process.env.SUPABASE_URL || 'http://127.0.0.1:56321'}/functions/v1/report-voice-parse`, {
+      headers: { 'Content-Type': 'application/json' },
+      data: {
+        transcript: '今日はテスト現場1で8時から17時まで内装工事をしました',
+        sites: ['テスト現場1', 'テスト現場A'],
+        workCategories: [{ id: 'cat-1', name: '現場作業' }, { id: 'cat-2', name: '見積' }],
+      },
+    })
+    expect(res.status(), 'Gemini解析が通る（v1/v1beta違い等で500/502にならない）').toBe(200)
+    const j = await res.json()
+    expect(j.siteName, '現場を候補に寄せる').toBe('テスト現場1')
+    expect(j.startTime, '開始時刻').toBe('08:00')
+    expect(j.endTime, '終了時刻').toBe('17:00')
+    expect(j.note, '作業内容').toBeTruthy()
+  })
+
   test('音声→確認画面→反映で備考に入る（確認を必ず挟む）', async ({ page }) => {
     await page.addInitScript(FAKE_SPEECH)
     // 解析EFをスタブ（Geminiに行かせない）
