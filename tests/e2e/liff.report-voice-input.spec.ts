@@ -7,6 +7,7 @@
 //   - AC: 確認画面を必ず挟む／反映で備考に入る／非対応環境ではボタンを出さない(フォールバック)
 // ============================================================
 import { test, expect } from '@playwright/test'
+import { restSrv, getAccountId } from './helpers'
 
 const TODAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo' }).format(new Date())
 
@@ -44,6 +45,21 @@ const PARSED = {
 }
 
 test.describe('日報の音声入力', () => {
+  // ★機能フラグ(settings.voice_input_enabled)がONのアカウントにだけ出す。
+  //  未設定＝OFF なので、画面を触るテストは自分でONにしてから始める。
+  let accountId = ''
+  test.beforeAll(async () => {
+    accountId = await getAccountId()
+  })
+  async function setVoiceFlag(on: boolean) {
+    await restSrv('settings', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: accountId, key: 'voice_input_enabled', value: String(on), label: '音声入力' }),
+    }).catch(() => {})
+  }
+  test.afterAll(async () => { await setVoiceFlag(false) })
+
   // ★EF本体（Gemini解析）も実際に叩く。スタブだけだとエンドポイント違いのような
   //  「実機でしか出ない失敗」を拾えない（2026-08-30: v1ではJSONモードが使えず
   //  全ての音声入力が「うまく読み取れませんでした」になっていた）。
@@ -66,6 +82,7 @@ test.describe('日報の音声入力', () => {
   })
 
   test('音声→確認画面→反映で備考に入る（確認を必ず挟む）', async ({ page }) => {
+    await setVoiceFlag(true)
     await page.addInitScript(FAKE_SPEECH)
     // 解析EFをスタブ（Geminiに行かせない）
     await page.route('**/report-voice-parse', route =>
@@ -98,6 +115,7 @@ test.describe('日報の音声入力', () => {
 
   test('★複数現場を一度に話すと、現場ごとに分けて反映される（時間を合算しない）', async ({ page }) => {
     // 「午前A・午後B」を1件に畳むと1現場の8:00-17:30になり、人件費の集計が現場を跨いで狂う
+    await setVoiceFlag(true)
     await page.addInitScript(FAKE_SPEECH)
     await page.route('**/report-voice-parse', route => route.fulfill({
       status: 200, contentType: 'application/json',
@@ -131,7 +149,17 @@ test.describe('日報の音声入力', () => {
     await expect(page.getByTestId('site-note-1')).toHaveValue(/午後の作業/)
   })
 
+  test('★機能フラグOFF（既定）なら音声ボタンを出さない', async ({ page }) => {
+    await setVoiceFlag(false)
+    await page.addInitScript(FAKE_SPEECH)   // 音声は使える環境でも
+    await page.goto(`/report?date=${TODAY}`, { waitUntil: 'networkidle' })
+    await page.locator('select:has(option[value="working"])').first().selectOption('working')
+    await expect(page.getByTestId('report-note')).toBeVisible({ timeout: 10000 })
+    await expect(page.getByTestId('voice-input-btn'), 'フラグOFFなら出ない').toHaveCount(0)
+  })
+
   test('SpeechRecognition非対応の環境では音声ボタンを出さない（従来入力にフォールバック）', async ({ page }) => {
+    await setVoiceFlag(true)
     await page.addInitScript(`
       try { delete window.SpeechRecognition; } catch(e){}
       try { delete window.webkitSpeechRecognition; } catch(e){}

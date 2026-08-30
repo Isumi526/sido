@@ -88,7 +88,10 @@
 
         <!-- 音声入力（8/19会議）: 話す→AIが項目に展開→必ず確認してから反映。
              非対応環境（voice.isSupported=false）ではボタンを出さず従来入力のまま。 -->
-        <div v-if="voice.isSupported.value" class="voice-row">
+        <!-- ★機能フラグ(settings.voice_input_enabled)がONのアカウントだけに出す。
+             未設定＝OFF なので、既定では誰にも出ない（2026-08-30 優先順位を下げて一旦停止）。
+             解禁は該当アカウントの settings に1行入れるだけ＝再デプロイ不要。 -->
+        <div v-if="voiceInputEnabled && voice.isSupported.value" class="voice-row">
           <button type="button" class="voice-btn" :class="{ listening: voice.listening.value }"
                   data-testid="voice-input-btn" :disabled="voiceBusy" @click="onVoiceClick">
             <span class="material-symbols-rounded">{{ voice.listening.value ? 'graphic_eq' : 'mic' }}</span>
@@ -1760,6 +1763,8 @@ const workCategoryOptions = computed(() =>
 
 // ── 音声入力（8/19会議）: 話す→report-voice-parse EFで解釈→確認して反映 ──
 const voice = useVoiceInput()
+// 機能フラグ（未設定＝OFF）。解決前は OFF のままなので、一瞬だけ出る事故も起きない
+onMounted(() => { void loadLiffFeatures() })
 const voiceBusy = ref(false)
 const voiceError = ref<string | null>(null)
 const voiceConfirm = ref(false)
