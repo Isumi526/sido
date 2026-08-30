@@ -53,7 +53,11 @@ Deno.serve(async (req) => {
       return json({ success: true, skipped: 'request_too_old' })              // 古い申請の再送/リプレイ防止
     }
     const site_names: string[] = Array.isArray(otr.site_names) ? otr.site_names : []
-    if (!site_names.length) return json({ success: true, skipped: 'no_sites' })
+    // ★2026-08-30: 現場が選ばれていなくても通知する。
+    //  職人は現場を新規作成できない（権限が admin/office/site_manager のみ）ので、
+    //  台帳に無い現場では現場を選べない。以前はここで no_sites として黙って終わっており、
+    //  **申請は成立しているのに誰にも気づかれないまま放置される**状態だった（実害が一番大きい）。
+    //  現場が無い時は現場責任者ではなく会社の管理者へ送る。
     const requested_end_time = otr.requested_end_time || ''
     const reason = otr.reason || ''
 
@@ -63,9 +67,19 @@ Deno.serve(async (req) => {
     const sender = (reqUser as any)?.real_name ?? '作業員'
 
     // 選択現場 → 責任者worker → responsible の認証用メール（auth.users.email・ID認証の作業員はスキップ）
-    const { data: sites } = await supabase.from('sites')
-      .select('name, responsible_worker_id').eq('account_id', accountId).in('name', site_names)
-    const respWorkerIds = [...new Set(((sites ?? []) as any[]).map(s => s.responsible_worker_id).filter(Boolean))]
+    let respWorkerIds: string[] = []
+    if (site_names.length) {
+      const { data: sites } = await supabase.from('sites')
+        .select('name, responsible_worker_id').eq('account_id', accountId).in('name', site_names)
+      respWorkerIds = [...new Set(((sites ?? []) as any[]).map(s => s.responsible_worker_id).filter(Boolean))]
+    }
+    // 現場が無い／責任者が設定されていない時は会社の管理者へ回す（宛先ゼロで黙って捨てない）
+    if (!respWorkerIds.length) {
+      const { data: admins } = await supabase.from('workers')
+        .select('id').eq('account_id', accountId).eq('active', true)
+        .in('permission_role', ['admin', 'owner', 'office'])
+      respWorkerIds = ((admins ?? []) as any[]).map(w => w.id)
+    }
     if (!respWorkerIds.length) return json({ success: true, skipped: 'no_responsible' })
     const resolvedEmails = await Promise.all(
       respWorkerIds.map((wid) => resolveWorkerNotifyEmail(supabase, accountId, wid as string))
@@ -79,7 +93,7 @@ Deno.serve(async (req) => {
       <table style="border-collapse:collapse;font-size:14px">
         <tr><td style="padding:2px 8px;color:#666">申請者</td><td style="padding:2px 8px"><b>${esc(sender)}</b></td></tr>
         <tr><td style="padding:2px 8px;color:#666">日付</td><td style="padding:2px 8px">${esc(date)}</td></tr>
-        <tr><td style="padding:2px 8px;color:#666">対象現場</td><td style="padding:2px 8px">${esc(site_names.join('、'))}</td></tr>
+        <tr><td style="padding:2px 8px;color:#666">対象現場</td><td style="padding:2px 8px">${site_names.length ? esc(site_names.join('、')) : '<span style="color:#b45309">現場未選択（台帳に無い現場の可能性があります）</span>'}</td></tr>
         <tr><td style="padding:2px 8px;color:#666">終了時刻</td><td style="padding:2px 8px">${esc(requested_end_time) || '—'}</td></tr>
         <tr><td style="padding:2px 8px;color:#666">理由</td><td style="padding:2px 8px">${esc(reason) || '—'}</td></tr>
       </table>
