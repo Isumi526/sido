@@ -62,6 +62,38 @@
         </table>
       </div>
     </template>
+
+    <!-- 承認の履歴（2026-08-30）。
+         ★approved_by / decided_at はDBに元から記録されていたが、画面に出す場所が
+          どこにも無く「誰が承認したか」を後から確認できなかった。
+          運用が経理から現場責任者へ移ったかも、ここを見れば実データで分かる。 -->
+    <div class="page-header" style="margin-top:28px">
+      <h2 class="section-title">承認の履歴</h2>
+    </div>
+    <p class="hint">誰がいつ承認/却下したかの記録です。直近50件を新しい順に表示します。</p>
+    <div v-if="!decided.length" class="empty" data-testid="ot-history-empty">承認/却下した記録はまだありません。</div>
+    <div v-else class="table-wrap">
+      <table class="table" data-testid="ot-history">
+        <thead>
+          <tr>
+            <th>作業員</th><th>対象日</th><th>結果</th><th>承認/却下した人</th><th>日時</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="g in decided" :key="g.id" data-testid="ot-history-row">
+            <td class="name">{{ workerName(g.worker_id) }}</td>
+            <td>{{ g.date }}</td>
+            <td>
+              <span class="status" :class="g.status === 'approved' ? 'ok' : 'ng'">
+                {{ g.status === 'approved' ? '承認' : '却下' }}
+              </span>
+            </td>
+            <td data-testid="ot-history-approver">{{ g.approved_by || '—' }}</td>
+            <td class="muted">{{ fmtDateTime(g.decided_at) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 </template>
 
@@ -110,14 +142,21 @@ async function load() {
   loading.value = true
   const accountId = await getAccountId()
   if (!accountId) { loading.value = false; return }
-  const [{ data: reqs }, { data: ws }] = await Promise.all([
+  const [{ data: reqs }, { data: ws }, { data: done }] = await Promise.all([
     supabase.from('overtime_requests')
       .select('id, worker_id, date, requested_end_time, requested_start_time, requested_break_minutes, reason, site_names, status, is_late, requested_at')
       .eq('account_id', accountId).eq('status', 'pending')
       .order('requested_at', { ascending: true }),
     supabase.from('workers').select('id, name').eq('account_id', accountId),
+    // 承認の履歴（誰がいつ承認/却下したか）。approved_by / decided_at は元から
+    // 記録されていたが、画面に出す場所が無く後から確認できなかった（2026-08-30 追加）
+    supabase.from('overtime_requests')
+      .select('id, worker_id, date, status, approved_by, decided_at')
+      .eq('account_id', accountId).neq('status', 'pending')
+      .order('decided_at', { ascending: false, nullsFirst: false }).limit(50),
   ])
   pending.value = (reqs ?? []) as OvertimeReq[]
+  decided.value = (done ?? []) as DecidedReq[]
   const map: Record<string, string> = {}
   for (const w of ws ?? []) map[(w as any).id] = (w as any).name
   workers.value = map
@@ -128,6 +167,12 @@ async function load() {
 function isMine(g: OvertimeReq): boolean {
   return !!currentWorkerId.value && g.worker_id === currentWorkerId.value
 }
+
+type DecidedReq = {
+  id: string; worker_id: string | null; date: string
+  status: string; approved_by: string | null; decided_at: string | null
+}
+const decided = ref<DecidedReq[]>([])
 
 const DECIDE_ERRORS: Record<string, string> = {
   APPROVE_FORBIDDEN: '承認する権限がありません。',
@@ -171,6 +216,12 @@ onMounted(load)
 </script>
 
 <style scoped>
+/* 承認の履歴（2026-08-30） */
+.section-title { font-size: 16px; font-weight: 700; }
+.status { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.status.ok { background: #dcfce7; color: #166534; }
+.status.ng { background: #fee2e2; color: #b91c1c; }
+
 .hint { color: #64748b; font-size: 13px; margin: 0 0 16px; line-height: 1.7; }
 .empty { color: #94a3b8; padding: 32px 0; text-align: center; }
 .table-wrap {  max-height: 70vh; overflow: auto; }
