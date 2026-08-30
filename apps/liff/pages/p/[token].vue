@@ -14,6 +14,21 @@
         <p class="muted">{{ t('token.invalidMessage') }}</p>
       </div>
 
+      <!-- ★規約への同意（契約 別紙2§9・2026-08-31）。
+           同意していない外部者は、ここから先の操作へ進めない。
+           同意した版と、同意した時点の文面そのものをサーバー側に記録する。 -->
+      <div v-else-if="needsConsent" class="state" data-testid="consent-gate">
+        <div class="material-symbols-rounded icon-bad">gavel</div>
+        <h1>ご利用にあたっての同意</h1>
+        <p class="muted">下記に同意いただくと、内容の確認・入力へ進めます。</p>
+        <div class="consent-text" data-testid="consent-text">{{ consentText }}</div>
+        <button
+          type="button" class="btn-primary" :disabled="consentBusy"
+          data-testid="consent-agree" @click="agreeConsent"
+        >{{ consentBusy ? '送信中…' : '同意して進む' }}</button>
+        <p v-if="consentError" class="muted" data-testid="consent-error">{{ consentError }}</p>
+      </div>
+
       <!-- 承諾完了（このセッションで承諾 or 既に承諾済み） -->
       <div v-else-if="acceptedAt" class="state ok">
         <div class="icon-ok">✓</div>
@@ -319,6 +334,37 @@ async function callPortal(body: Record<string, unknown>): Promise<any> {
   return res.json()
 }
 
+// ── 規約への同意（契約 別紙2§9・2026-08-31）──
+//  ★同意していない外部者は先へ進めない。同意した版と文面はサーバー側に記録される。
+//   文言・版はアカウント設定から取るので、管理者が差し替えたら次のアクセスで再同意になる。
+const consentText  = ref('')
+const consentAgreed = ref(true)     // 取れるまでは出さない（読み込み中にゲートを一瞬見せない）
+const consentBusy  = ref(false)
+const consentError = ref('')
+const needsConsent = computed(() => !!result.value?.ok && !consentAgreed.value)
+
+async function loadConsent() {
+  try {
+    const r = await callPortal({ action: 'consent_state' })
+    if (r?.ok) {
+      consentText.value = String(r.text ?? '')
+      // 文言が空なら同意を求めようがないので通す（設定漏れで業務を止めない）
+      consentAgreed.value = !!r.agreed || !consentText.value.trim()
+    }
+  } catch { /* 取れない時は止めない */ }
+}
+
+async function agreeConsent() {
+  consentBusy.value = true; consentError.value = ''
+  try {
+    const r = await callPortal({ action: 'consent_agree' })
+    if (r?.ok) consentAgreed.value = true
+    else consentError.value = '同意を記録できませんでした。時間をおいて試してください。'
+  } catch {
+    consentError.value = '同意を記録できませんでした。時間をおいて試してください。'
+  } finally { consentBusy.value = false }
+}
+
 // ── 署名キャンバス ──
 const canvasEl = ref<HTMLCanvasElement | null>(null)
 const hasSignature = ref(false)
@@ -520,6 +566,7 @@ async function submitInvoice() {
 onMounted(async () => {
   try {
     result.value = await callPortal({ action: 'resolve' })
+    if (result.value?.ok) await loadConsent()
     // 既に承諾済みの注文書なら、承諾完了画面を出す（order_accept purpose のみ。
     // invoice_submit/change_accept/vendor_register は承諾済みPOでも各フォームを出す）
     if (result.value?.ok && isOrderAccept.value && result.value.order?.accepted_at) {
@@ -562,6 +609,18 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+/* 規約への同意（契約 別紙2§9） */
+.consent-text {
+  white-space: pre-wrap; text-align: left; font-size: 13px; line-height: 1.8;
+  background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px;
+  padding: 14px; margin: 12px 0 16px; max-height: 320px; overflow-y: auto; color: #374151;
+}
+.btn-primary {
+  background: #047857; color: #fff; border: none; border-radius: 10px;
+  padding: 13px 24px; font-size: 15px; font-weight: 700; cursor: pointer; width: 100%;
+}
+.btn-primary:disabled { opacity: .6; cursor: default; }
+
 .portal { min-height: 100dvh; background: #f2f2f7; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box; gap: 14px; }
 .portal-card { background: #fff; width: 100%; max-width: 460px; border-radius: 18px; padding: 28px 22px; box-shadow: 0 4px 20px rgba(0,0,0,.08); text-align: center; }
 .brand { font-size: 20px; font-weight: 900; letter-spacing: 6px; color: #06C755; margin-bottom: 16px; }

@@ -74,6 +74,7 @@ const TARGETS: Target[] = [
   { key: 'personal_expenses', label: '個人経費', note: '立替の申請', table: 'personal_expenses', columns: '*' },
   { key: 'paid_leave_grants', label: '有給の付与', note: '付与・失効', table: 'paid_leave_grants', columns: '*' },
   { key: 'overtime_requests', label: '残業申請', note: '申請と承認の記録', table: 'overtime_requests', columns: '*' },
+  { key: 'external_consents', label: '外部者の規約同意', note: '誰がいつ何に同意したか', table: 'external_consents', columns: '*' },
 ]
 
 const picked = ref<string[]>(TARGETS.map(t => t.key))
