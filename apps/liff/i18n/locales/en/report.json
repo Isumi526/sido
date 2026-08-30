@@ -61,10 +61,10 @@
   "breakNone": "None",
   "breakMinutesAuto": "{min} min (auto)",
   "subcontractor": "Partner",
-  "selectSubcontractor": "Select subcontractor *",
+  "selectSubcontractor": "Select a vendor * Required",
   "otherNew": "Other (add new)",
   "people": "People",
-  "subcontractorNamePlaceholder": "Enter subcontractor name *",
+  "subcontractorNamePlaceholder": "Enter vendor name * Required",
   "addSubcontractor": "＋ Add subcontractor",
   "expense": "Expense",
   "optNone": "None",
@@ -195,5 +195,12 @@
   "voiceNoChange": "No change",
   "voiceCancel": "Cancel",
   "voiceApply": "Apply this",
-  "voiceFailed": "Could not read that. Please try again."
+  "voiceFailed": "Could not read that. Please try again.",
+  "leaveUnitLabel": "Leave unit",
+  "leaveUnitDay": "Full day",
+  "leaveUnitHalf": "Half day (0.5)",
+  "leaveUnitHour": "Hourly",
+  "leaveHoursPlaceholder": "How many hours (e.g. 2)",
+  "leaveHoursRequired": "Enter the number of hours",
+  "leaveHoursTooLong": "Exceeds the standard working hours per day ({h}h)"
 }

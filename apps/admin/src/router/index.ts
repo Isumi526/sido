@@ -88,7 +88,11 @@ export const router = createRouter({
     { path: '/estimate-masters', component: EstimateMasters, meta: { management: true, estimate: true } },
     { path: '/estimate-builder', component: EstimateBuilder, meta: { management: true, estimate: true } },
     { path: '/purchase-orders',  component: PurchaseOrders,  meta: { management: true, estimate: true } },
-    { path: '/drawing-materials', component: () => import('../pages/drawing-materials.vue'), meta: { management: true, estimate: true } },
+    // ★2026-08-30: 図面の材料抽出を見積から独立させた（estimate: true を外す）。
+    //  「材料抽出としては、めちゃくちゃ別」（大塚さん・2026-08-19）。実装は元から独立していて
+    //  （estimate-builder から呼んでいる箇所はゼロ）、メニューとルートのフラグだけが
+    //  見積に巻き込まれていた。見積を使わない会社でも図面の読み取りは使える。
+    { path: '/drawing-materials', component: () => import('../pages/drawing-materials.vue'), meta: { management: true } },
   ],
 })
 

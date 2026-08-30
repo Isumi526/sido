@@ -169,7 +169,11 @@ async function onSubmit() {
   msg.value = t('overtime.submitted'); msgOk.value = true
   // 選択現場の責任者へメール通知（best-effort・失敗しても申請自体は成立）#5
   const efUrl = (config.public as any).edgeFunctionUrl
-  if (efUrl && sites.length) {
+  // ★2026-08-30: 現場が選べていなくても通知する。職人は現場を新規作成できないので
+  //  台帳に無い現場では sites が空になり、以前はここで通知自体を送っていなかった＝
+  //  申請は成立しているのに誰にも気づかれないまま放置されていた。
+  //  現場が無い時はEF側が会社の管理者へ回す。
+  if (efUrl) {
     const slug = await effectiveSlug()
     // ハードニング後: body は照合キーのみ。通知内容はEFが overtime_requests(実在行)から導出する。
     fetch(`${efUrl}/notify-overtime`, {
@@ -203,7 +207,11 @@ async function onSubmitLate() {
   msg.value = t('overtime.lateSubmitted'); msgOk.value = true
   // 選択現場の責任者へメール通知（best-effort・通常申請と同じ経路）
   const efUrl = (config.public as any).edgeFunctionUrl
-  if (efUrl && sites.length) {
+  // ★2026-08-30: 現場が選べていなくても通知する。職人は現場を新規作成できないので
+  //  台帳に無い現場では sites が空になり、以前はここで通知自体を送っていなかった＝
+  //  申請は成立しているのに誰にも気づかれないまま放置されていた。
+  //  現場が無い時はEF側が会社の管理者へ回す。
+  if (efUrl) {
     const slug = await effectiveSlug()
     fetch(`${efUrl}/notify-overtime`, {
       method: 'POST', keepalive: true,

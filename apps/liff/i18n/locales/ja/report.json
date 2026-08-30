@@ -61,10 +61,10 @@
   "breakNone": "なし",
   "breakMinutesAuto": "{min}分（自動）",
   "subcontractor": "協力業者",
-  "selectSubcontractor": "業者を選択 *",
+  "selectSubcontractor": "業者を選択 ※必須",
   "otherNew": "その他（新規追加）",
   "people": "人数",
-  "subcontractorNamePlaceholder": "業者名を入力 *",
+  "subcontractorNamePlaceholder": "業者名を入力 ※必須",
   "addSubcontractor": "＋ 業者を追加",
   "expense": "経費",
   "optNone": "なし",
@@ -195,5 +195,12 @@
   "voiceNoChange": "変更しない",
   "voiceCancel": "やめる",
   "voiceApply": "この内容で反映",
-  "voiceFailed": "うまく読み取れませんでした。もう一度お試しください。"
+  "voiceFailed": "うまく読み取れませんでした。もう一度お試しください。",
+  "leaveUnitLabel": "有給の単位",
+  "leaveUnitDay": "1日",
+  "leaveUnitHalf": "半日（0.5日）",
+  "leaveUnitHour": "時間単位",
+  "leaveHoursPlaceholder": "何時間分か（例: 2）",
+  "leaveHoursRequired": "時間数を入れてください",
+  "leaveHoursTooLong": "1日の所定労働時間（{h}時間）を超えています"
 }

@@ -254,7 +254,7 @@
           <button class="modal-close" @click="rejectTarget = null">×</button>
         </div>
         <div class="modal-body">
-          <label class="reject-label">差し戻し理由（必須）</label>
+          <label class="reject-label">差し戻し理由 ※必須</label>
           <textarea v-model="rejectReason" class="reject-textarea" rows="4" placeholder="例: 領収書の添付漏れがあります"></textarea>
           <p v-if="rejectError" class="reject-error">{{ rejectError }}</p>
           <div class="reject-actions">
@@ -271,13 +271,13 @@
     <div v-if="payTarget" class="modal-overlay confirm-overlay" @click.self="payTarget = null">
       <div class="confirm-box">
         <p class="confirm-msg">「{{ payTarget.workerName }}（{{ payTarget.shortLabel }}）」を支払い済みにします。</p>
-        <label class="pay-label">支払い区分（必須）</label>
+        <label class="pay-label">支払い区分 ※必須</label>
         <select v-model="payMethod" class="pay-input">
           <option value="" disabled>選択してください</option>
           <option value="銀行振込">銀行振込</option>
           <option value="手渡し">手渡し</option>
         </select>
-        <label class="pay-label">支払日（必須）</label>
+        <label class="pay-label">支払日 ※必須</label>
         <input v-model="payDate" type="date" class="pay-input" />
         <p v-if="payError" class="reject-error">{{ payError }}</p>
         <div class="confirm-actions">
