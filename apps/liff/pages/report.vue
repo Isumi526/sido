@@ -161,61 +161,11 @@
           <span>{{ $t('report.businessTrip') }}</span>
         </label>
 
-        <!-- 本日のガソリン代（日報レベル・現場に紐づかない実費。按分で各現場へ距離比配賦） -->
-        <FormSection v-if="!simpleMode" num="03" :title="$t('report.gasolineSection')">
-          <!-- 給油有無（大半の日は給油なし。あり の時だけ金額・領収書を表示） -->
-          <label class="hours-label">{{ $t('report.gasolineFueledLabel') }}</label>
-          <select :value="gasFueled ? 'yes' : 'no'" class="select mt4" data-testid="gas-fueled" @change="setGasFueled(($event.target as HTMLSelectElement).value === 'yes')">
-            <option value="no">{{ $t('report.gasolineFueledNo') }}</option>
-            <option value="yes">{{ $t('report.gasolineFueledYes') }}</option>
-          </select>
-
-          <template v-if="gasFueled">
-            <!-- 給油1回ぶん＝1明細。複数給油はカードを追加 -->
-            <div v-for="(g, gi) in report.form.value.gasolineItems" :key="g._id ?? gi" class="lineitem-card mt8" :data-testid="`gas-item-${gi}`">
-              <!-- ① 領収書＋AI解析（手入力より上） -->
-              <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
-              <AttachedFilesBadge :files="gasFilesById[g._id ?? -1] ?? []" :urls="g.fileUrls" @remove-file="(p) => removeGasFile(g, p)" />
-              <input type="file" accept="image/*,.pdf" class="input mt4" @change="(e) => onGasItemFile(gi, e)" />
-              <p v-if="gasUploadingId === g._id" class="section-hint">{{ $t('report.uploading') }}</p>
-              <div v-if="(gasFilesById[g._id ?? -1]?.length) || g.fileUrls?.length" class="photo-preview">
-                <button type="button" class="btn-ai" :disabled="gasAnalyzingId === g._id || !(gasFilesById[g._id ?? -1]?.length)" @click="analyzeGasItem(gi)">
-                  {{ gasAnalyzingId === g._id ? $t('report.analyzing') : $t('report.aiAnalyzeGas') }}
-                </button>
-              </div>
-              <!-- ★判定は fileUrls だけを見る（選択時に即アップロードされる）。
-                   ローカルの File を「添付あり」に数えると、アップロードに失敗した時に
-                   入力欄が出ないまま送信だけ弾かれて直せなくなる。 -->
-              <input v-if="needsReceiptReason(g, 'ガソリン代（本日）')"
-                     v-model="g.noReceiptReason" type="text"
-                     class="input mt6" :class="{ 'input-required': !g.noReceiptReason?.trim() }"
-                     :data-testid="`no-receipt-reason-gas-${gi}`"
-                     :placeholder="$t('report.noReceiptReasonPlaceholder')" @keydown.enter.prevent />
-              <!-- ② 手入力（支払い先・金額・登録番号） -->
-              <div class="lineitems-row mt6">
-                <input v-model="g.payee" type="text" class="input" :data-testid="`gas-payee-${gi}`" :placeholder="$t('report.gasPayeePlaceholder')" @keydown.enter.prevent />
-                <ExpenseField v-model="g.yen" v-model:tategae="g.tategae" with-tategae :label="$t('report.gasolineCost')" />
-                <button v-if="(report.form.value.gasolineItems?.length ?? 0) > 1" type="button" class="btn-icon-sm" @click="report.removeGasolineItem(gi)">✕</button>
-              </div>
-              <input v-model="g.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
-              <!-- 燃料種別・給油量（ℓ） -->
-              <div class="lineitems-row mt6">
-                <select v-model="g.fuelType" class="input">
-                  <option value="regular">{{ $t('report.fuelRegular') }}</option>
-                  <option value="diesel">{{ $t('report.fuelDiesel') }}</option>
-                </select>
-                <input v-model.number="g.liters" type="number" inputmode="decimal" step="0.01" min="0" class="input" :placeholder="$t('report.litersPlaceholder')" @keydown.enter.prevent />
-              </div>
-            </div>
-            <button type="button" class="btn-ghost-sm" @click="report.addGasolineItem()">{{ $t('report.addGasoline') }}</button>
-          </template>
-        </FormSection>
-
         <!-- 現場ブロック -->
         <FormSection
           v-for="(site, si) in report.form.value.sites"
           :key="si"
-          :num="String(si + (simpleMode ? 3 : 4)).padStart(2, '0')"
+          :num="String(si + 3).padStart(2, '0')"
           :title="report.form.value.sites.length > 1 ? $t('report.siteNumbered', { n: si + 1 }) : $t('report.site')"
           accent
         >
@@ -553,6 +503,60 @@
                 </div>
               </template>
             </Field>
+
+            <!-- ガソリン代（本日ぶん）。2026-08-30 に独立ブロック「本日のガソリン代」から
+                 経費の車両欄のすぐ下へ移設した（入力位置だけの変更）。
+                 ★保存先は日報直下(gasoline_items)のままで、現場ごとではない＝1日1回だけ出す。
+                  距離按分の台帳（内部原価）には入らず、経費項目としてのみ計上する。 -->
+            <div v-if="si === 0" class="veh-subexpense" data-testid="gas-section">
+              <label class="hours-label">{{ $t('report.gasolineSection') }}</label>
+              <!-- 給油有無（大半の日は給油なし。あり の時だけ金額・領収書を表示） -->
+              <label class="hours-label">{{ $t('report.gasolineFueledLabel') }}</label>
+              <select :value="gasFueled ? 'yes' : 'no'" class="select mt4" data-testid="gas-fueled" @change="setGasFueled(($event.target as HTMLSelectElement).value === 'yes')">
+                <option value="no">{{ $t('report.gasolineFueledNo') }}</option>
+                <option value="yes">{{ $t('report.gasolineFueledYes') }}</option>
+              </select>
+
+              <template v-if="gasFueled">
+                <!-- 給油1回ぶん＝1明細。複数給油はカードを追加 -->
+                <div v-for="(g, gi) in report.form.value.gasolineItems" :key="g._id ?? gi" class="lineitem-card mt8" :data-testid="`gas-item-${gi}`">
+                  <!-- ① 領収書＋AI解析（手入力より上） -->
+                  <label class="hours-label">{{ $t('report.receiptLabel') }}</label>
+                  <AttachedFilesBadge :files="gasFilesById[g._id ?? -1] ?? []" :urls="g.fileUrls" @remove-file="(p) => removeGasFile(g, p)" />
+                  <input type="file" accept="image/*,.pdf" class="input mt4" @change="(e) => onGasItemFile(gi, e)" />
+                  <p v-if="gasUploadingId === g._id" class="section-hint">{{ $t('report.uploading') }}</p>
+                  <div v-if="(gasFilesById[g._id ?? -1]?.length) || g.fileUrls?.length" class="photo-preview">
+                    <button type="button" class="btn-ai" :disabled="gasAnalyzingId === g._id || !(gasFilesById[g._id ?? -1]?.length)" @click="analyzeGasItem(gi)">
+                      {{ gasAnalyzingId === g._id ? $t('report.analyzing') : $t('report.aiAnalyzeGas') }}
+                    </button>
+                  </div>
+                  <!-- ★判定は fileUrls だけを見る（選択時に即アップロードされる）。
+                       ローカルの File を「添付あり」に数えると、アップロードに失敗した時に
+                       入力欄が出ないまま送信だけ弾かれて直せなくなる。 -->
+                  <input v-if="needsReceiptReason(g, 'ガソリン代（本日）')"
+                         v-model="g.noReceiptReason" type="text"
+                         class="input mt6" :class="{ 'input-required': !g.noReceiptReason?.trim() }"
+                         :data-testid="`no-receipt-reason-gas-${gi}`"
+                         :placeholder="$t('report.noReceiptReasonPlaceholder')" @keydown.enter.prevent />
+                  <!-- ② 手入力（支払い先・金額・登録番号） -->
+                  <div class="lineitems-row mt6">
+                    <input v-model="g.payee" type="text" class="input" :data-testid="`gas-payee-${gi}`" :placeholder="$t('report.gasPayeePlaceholder')" @keydown.enter.prevent />
+                    <ExpenseField v-model="g.yen" v-model:tategae="g.tategae" with-tategae :label="$t('report.gasolineCost')" />
+                    <button v-if="(report.form.value.gasolineItems?.length ?? 0) > 1" type="button" class="btn-icon-sm" @click="report.removeGasolineItem(gi)">✕</button>
+                  </div>
+                  <input v-model="g.registrationNumber" type="text" class="input mt6" :placeholder="$t('report.registrationNumberPlaceholder')" @keydown.enter.prevent />
+                  <!-- 燃料種別・給油量（ℓ） -->
+                  <div class="lineitems-row mt6">
+                    <select v-model="g.fuelType" class="input">
+                      <option value="regular">{{ $t('report.fuelRegular') }}</option>
+                      <option value="diesel">{{ $t('report.fuelDiesel') }}</option>
+                    </select>
+                    <input v-model.number="g.liters" type="number" inputmode="decimal" step="0.01" min="0" class="input" :placeholder="$t('report.litersPlaceholder')" @keydown.enter.prevent />
+                  </div>
+                </div>
+                <button type="button" class="btn-ghost-sm" @click="report.addGasolineItem()">{{ $t('report.addGasoline') }}</button>
+              </template>
+            </div>
 
             <!-- 電車 -->
             <Field :label="$t('report.train')">

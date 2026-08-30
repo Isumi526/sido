@@ -4,38 +4,15 @@
 //  ※ 次の未送信日付のフォームに対して、現場を選んで送信する。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, restSrv, getDevUserId, withReportFormLock } from './helpers'
+import { rest, restSrv, useDevWorker } from './helpers'
 
 // ★このspecは「未送信日が2日以上ある」ことが前提（送信後に次の未送信日ボタンが出るのを見るため）。
-//  ところが未送信日は編集可能window（当日含む過去3日）しか作れず、その3日を全specが
-//  共有している。他specが送信で埋める／liff.report-late-approval が report_start_date を
-//  当日へ寄せる、のどちらでも枯れて、このspecだけ落ちる（単独なら通る）。
-//  global-setup と同じ手当て（起点を today-2 に寄せ、today-1/today-2 を空ける）を
-//  各テストの直前にやり直して、自分で前提を作る。
-//  ※古い日付に寄せてはいけない（3日より前はロック済み＝送信ボタンが恒久disabled）。
-//  ※根本解決は「specごとに専用の作業員を持つ」こと。負債として別途チケット化。
-// 未送信日（編集可能window＝当日含む過去3日）を自分で用意する。
-// ★ロックの中から呼ぶこと。ロック外でやると、他specが同じ資源を握っている最中に
-//  report_start_date を書き換えて相手を壊す（実際にそれで相打ちになった）。
-async function ensureUnsentDays() {
-  const uid = await getDevUserId()
-  if (!uid) return
-  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  const dayBack = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n); return fmt(d) }
-  const w = await rest(`users?id=eq.${uid}&select=worker_id`).catch(() => null)
-  if (w?.[0]?.worker_id) {
-    await restSrv(`workers?id=eq.${w[0].worker_id}`, {
-      method: 'PATCH', headers: { Prefer: 'return=minimal' },
-      body: JSON.stringify({ report_start_date: dayBack(2) }),
-    }).catch(() => {})
-  }
-  for (const n of [1, 2]) {
-    await rest(`daily_reports?user_id=eq.${uid}&date=eq.${dayBack(n)}`, { method: 'DELETE' }).catch(() => {})
-  }
-}
+//  未送信日は編集可能window（当日含む過去3日）しか作れない有限の資源なので、
+//  全specで1人の作業員を共有していた頃は他specに使い切られて落ちていた。
+//  useDevWorker でこのspec専用の作業員を使い、未送信日も自分で用意する。
 
-test('日報入力 → 送信 → 完了画面が出る', async ({ page }) => { await withReportFormLock(async () => {
-  await ensureUnsentDays()
+test('日報入力 → 送信 → 完了画面が出る', async ({ page }) => {
+  await useDevWorker(page, 'report')
   try { await page.goto('/report', { waitUntil: 'networkidle', timeout: 8000 }) }
   catch { test.skip(true, 'liff dev(3000) 未起動'); return }
 
@@ -66,11 +43,11 @@ test('日報入力 → 送信 → 完了画面が出る', async ({ page }) => { 
   // リグレ: 送信後に「翌日分の日報」ボタンが出る（service_start_date設定済み＝未送信日が残る）
   // ※ 代理入力でも同ボタンが出るよう post-submit を targetUserId で統一した変更の自己経路ガード
   await expect(page.getByRole('button', { name: /の日報を入力する/ })).toBeVisible({ timeout: 20000 })
-}) })
+})
 
 // ── 回帰: 送信済みの過去日報を「編集」で開くと、誤って「過去の未送信日報です」が出ていた ──
-test('編集モード（送信済みの過去日報）では「過去の未送信日報です」を表示しない', async ({ page }) => { await withReportFormLock(async () => {
-  await ensureUnsentDays()
+test('編集モード（送信済みの過去日報）では「過去の未送信日報です」を表示しない', async ({ page }) => {
+  await useDevWorker(page, 'report')
   try { await page.goto('/history', { waitUntil: 'networkidle', timeout: 8000 }) }
   catch { test.skip(true, 'liff dev(3000) 未起動'); return }
 
@@ -96,12 +73,12 @@ test('編集モード（送信済みの過去日報）では「過去の未送�
   await page.waitForSelector('form.form', { timeout: 10000 })
   // 送信済みなので、誤った「過去の未送信日報です」バナーは出ない
   await expect(page.getByText('過去の未送信日報です')).toHaveCount(0)
-}) })
+})
 
 // ── バグ: 日報フォームから新規登録した下請業者が、次回フォームを開くとプルダウンに出ない ──
 // 下請の select は「業者を選択 *」の disabled option を持つ点で他の select と区別できる。
-test('新規登録した下請業者が再訪時にプルダウンへ残る', async ({ page }) => { await withReportFormLock(async () => {
-  await ensureUnsentDays()
+test('新規登録した下請業者が再訪時にプルダウンへ残る', async ({ page }) => {
+  await useDevWorker(page, 'report')
   const SUB_NAME = 'E2E下請業者' // upsert(onConflict)なので再実行しても重複しない
 
   try { await page.goto('/report', { waitUntil: 'networkidle', timeout: 8000 }) }
@@ -149,12 +126,12 @@ test('新規登録した下請業者が再訪時にプルダウンへ残る', as
   await expect(
     subSelect2sel.first().locator('option', { hasText: SUB_NAME })
   ).toHaveCount(1, { timeout: 10000 })
-}) })
+})
 
 // ── バグ: 編集画面(?edit=)を開いた後、アプリ内メニュー「日報登録」を押しても
 //    ページが再マウントされず編集状態が残る（クエリ変化を監視していなかった）。──
-test('編集画面を開いた後にメニュー「日報登録」で編集状態が残らない', async ({ page }) => { await withReportFormLock(async () => {
-  await ensureUnsentDays()
+test('編集画面を開いた後にメニュー「日報登録」で編集状態が残らない', async ({ page }) => {
+  await useDevWorker(page, 'report')
   try { await page.goto('/history', { waitUntil: 'networkidle', timeout: 8000 }) }
   catch { test.skip(true, 'liff dev(3000) 未起動'); return }
 
@@ -183,4 +160,4 @@ test('編集画面を開いた後にメニュー「日報登録」で編集状�
   // URL は /report（クエリなし）になり、編集状態（編集中バナー）が残らないこと
   await expect(page).toHaveURL(/\/report$/)
   await expect(page.getByText('過去の日報を編集中')).toHaveCount(0, { timeout: 10000 })
-}) })
+})

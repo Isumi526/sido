@@ -1,9 +1,13 @@
 // ============================================================
 //  lib/docUrl.ts
-//  管理者発行物（注文書PDF・見積書PDF）の表示URLを bucket に応じて解決する。
-//   - 'admin-docs'(非公開) → 短TTL署名URL(createSignedUrl)。直アクセス不可＝公開URL露出を解消。
-//   - それ以外（既存 'expense-receipts' 公開バケット）→ 従来の getPublicUrl（後方互換 dual-read）。
-//  pdf_bucket 列（既定 'expense-receipts'）を読む側が見て出し分ける。
+//  管理者発行物（注文書PDF・見積書PDF）の表示URLを解決する。
+//
+//  ★2026-08-30: バケットに関係なく **短TTLの署名URL** を発行するようにした。
+//   旧 'expense-receipts' は public=true のままで、キー無しの curl で発注書PDFが
+//   HTTP 200 で落ちることを本番で再実測した（303オブジェクト・テナント跨ぎ）。
+//   getPublicUrl を配っている限り、バケットを非公開にした瞬間に画面が全部壊れるので
+//   非公開化に踏み切れない。まず読み出しを署名URLへ寄せて、非公開化を安全にする。
+//   署名URLは非公開バケットでも公開バケットでも同じように機能する＝今すぐ切り替えて安全。
 // ============================================================
 import { supabase } from './supabase'
 
@@ -12,9 +16,6 @@ const SIGN_TTL = 300 // 5分
 export async function resolveDocUrl(path: string | null | undefined, bucket?: string | null): Promise<string | null> {
   if (!path) return null
   const b = bucket || 'expense-receipts'
-  if (b === 'expense-receipts') {
-    return supabase.storage.from('expense-receipts').getPublicUrl(path).data.publicUrl ?? null
-  }
   const { data } = await supabase.storage.from(b).createSignedUrl(path, SIGN_TTL)
   return data?.signedUrl ?? null
 }
@@ -29,7 +30,8 @@ export async function resolveConventionDocUrl(path: string | null | undefined): 
   // createSignedUrl は対象が無ければ error を返す＝存在確認を兼ねられる
   const { data } = await supabase.storage.from('admin-docs').createSignedUrl(path, SIGN_TTL)
   if (data?.signedUrl) return data.signedUrl
-  return supabase.storage.from('expense-receipts').getPublicUrl(path).data.publicUrl ?? null
+  const old = await supabase.storage.from('expense-receipts').createSignedUrl(path, SIGN_TTL)
+  return old.data?.signedUrl ?? null
 }
 
 // クリックで開く（署名URLは非同期のため、href ではなく @click で解決して別タブを開く）

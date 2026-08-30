@@ -124,7 +124,7 @@ Deno.serve(async (req) => {
       date,
       is_working: !!report.isWorking,
       // ★整形は shared/report-storage.ts（LIFFと同一関数）。ここで写経しないこと
-      sites: sanitizeSitesForStorage(sites, activeSites),
+      sites: sanitizeSitesForStorage(sites, activeSites, date),   // date=日曜判定に使う（休日料率）
       note: report.note ?? null,
       leave_type: report.leaveType ?? null,
       is_business_trip: !!report.isBusinessTrip,

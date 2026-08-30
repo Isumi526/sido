@@ -601,16 +601,16 @@ Deno.serve(async (req) => {
     // アクセス記録（best-effort）
     await supabase.from('document_access_tokens').update({ last_accessed_at: nowIso }).eq('id', tok.id).then(() => {}, () => {})
 
-    // 注文書PDFのURL（添付確認用・任意）。admin-docs(非公開)は署名URL、expense-receipts(公開)は公開URL。
+    // 注文書PDFのURL（添付確認用・任意）。
+    // ★2026-08-30: バケットを問わず署名URL(300秒)にした。旧 expense-receipts は
+    //  public=true のままで、公開URLを配ると「トークンを持っていない人でも
+    //  URLさえ知っていれば読める」状態が続く。ここは社外（下請け業者）向けなので
+    //  なおさら公開URLを配ってはいけない。service_role なので非公開でも署名できる。
     let pdfUrl: string | null = null
     if (order?.pdf_path) {
       const pob = order.pdf_bucket ?? BUCKET
-      if (pob !== 'expense-receipts') {
-        const { data: signed } = await supabase.storage.from(pob).createSignedUrl(order.pdf_path, 300)
-        pdfUrl = signed?.signedUrl ?? null
-      } else {
-        pdfUrl = supabase.storage.from('expense-receipts').getPublicUrl(order.pdf_path).data.publicUrl ?? null
-      }
+      const { data: signed } = await supabase.storage.from(pob).createSignedUrl(order.pdf_path, 300)
+      pdfUrl = signed?.signedUrl ?? null
     }
 
     // 変更注文書の表示用（業者に見せてよい範囲のみ）

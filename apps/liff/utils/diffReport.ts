@@ -72,10 +72,19 @@ export function computeDiff(oldData: OldReport, newData: NewReport): string[] {
       }
 
       // 時刻
-      const ow = o.workers?.[0]
-      const nw = n.workers?.[0]
-      if (ow && nw && (ow.startTime !== nw.startTime || ow.endTime !== nw.endTime)) {
-        siteLines.push(gt('diff.time', { from: `${ow.startTime}〜${ow.endTime}`, to: `${nw.startTime}〜${nw.endTime}` }))
+      // ★先頭の作業員だけを比べていた（2026-08-30 修正）。代理入力や複数人の現場で
+      //  2人目以降の時間を直すと差分が空になり、承認者は何が変わったか分からないまま
+      //  金額を確定させることになる。全員を突き合わせる。
+      const oWorkers = o.workers ?? []
+      const nWorkers = n.workers ?? []
+      for (let w = 0; w < Math.max(oWorkers.length, nWorkers.length); w++) {
+        const ow = oWorkers[w]
+        const nw = nWorkers[w]
+        if (!ow || !nw) continue
+        if (ow.startTime !== nw.startTime || ow.endTime !== nw.endTime) {
+          const who = nWorkers.length > 1 && nw.workerName ? `${nw.workerName} ` : ''
+          siteLines.push(who + gt('diff.time', { from: `${ow.startTime}〜${ow.endTime}`, to: `${nw.startTime}〜${nw.endTime}` }))
+        }
       }
 
       // 経費

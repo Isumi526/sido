@@ -69,11 +69,17 @@ export const useLiff = () => {
       // E2E/開発用: ?dev_line_uid=<line_user_id> で LINE userId を差し替え可能。
       // マルチテナントの実行時解決（line_user_id→account）を別テナントの作業員で検証する用途。
       // ★ development モード限定（本番の LIFF 経路 L82- には一切影響しない）。
+      // ★localStorage からも受ける（2026-08-30 追加）。E2Eは page.goto を何十箇所も
+      //  持っていて全部にクエリを足すのは現実的でない。ブラウザコンテキストに一度置けば
+      //  spec ごとに専用の作業員を使えるようになり、1人の共有作業員を奪い合って
+      //  「単独なら通るのに並列だと落ちる」テストが出る問題が消える。
       let devUserId = 'dev-user-id'
       try {
         const q = new URL(window.location.href).searchParams.get('dev_line_uid')
+        const ls = window.localStorage?.getItem('dev_line_uid')
         if (q) devUserId = q
-      } catch { /* URL 解析失敗時は既定 */ }
+        else if (ls) devUserId = ls
+      } catch { /* URL/localStorage 解析失敗時は既定 */ }
       state.value.profile = {
         userId: devUserId,
         displayName: '開発テストユーザー',
