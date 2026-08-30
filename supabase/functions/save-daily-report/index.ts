@@ -127,6 +127,9 @@ Deno.serve(async (req) => {
       sites: sanitizeSitesForStorage(sites, activeSites, date),   // date=日曜判定に使う（休日料率）
       note: report.note ?? null,
       leave_type: report.leaveType ?? null,
+      // 有給の消化量（日）。半日=0.5・時間単位=時間÷所定時間。件数で数えない（2026-08-30）
+      leave_days: report.leaveType === 'paid_leave' ? (Number(report.leaveDays) || 1) : null,
+      leave_hours: report.leaveType === 'paid_leave' && report.leaveHours != null ? Number(report.leaveHours) : null,
       is_business_trip: !!report.isBusinessTrip,
       gasoline_items: normalizeGasolineItems(report.gasolineItems),
       account_id: accountId,   // ★クライアントの申告ではなく身元から

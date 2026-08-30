@@ -77,6 +77,27 @@
             <option value="paid_leave">{{ $t('report.paidLeave') }}</option>
             <option value="off">{{ $t('report.off') }}</option>
           </select>
+          <!-- 有給の単位（2026-08-30）。
+               ★半日は法令上の定めが無く労使協定は不要＝常に出す。
+                時間単位は労基法39条4項で労使協定が必須・年5日ぶんが上限なので、
+                協定を締結しているアカウント（設定でON）だけに出す。 -->
+          <div v-if="isWorkingStr === 'paid_leave'" class="leave-unit" data-testid="leave-unit">
+            <label class="hours-label">{{ $t('report.leaveUnitLabel') }}</label>
+            <select v-model="leaveUnit" class="select mt4" data-testid="leave-unit-select">
+              <option value="day">{{ $t('report.leaveUnitDay') }}</option>
+              <option value="half">{{ $t('report.leaveUnitHalf') }}</option>
+              <option v-if="hourlyLeaveEnabled" value="hour">{{ $t('report.leaveUnitHour') }}</option>
+            </select>
+            <input
+              v-if="leaveUnit === 'hour'"
+              v-model.number="leaveHours"
+              type="number" inputmode="decimal" step="0.5" min="0.5"
+              class="input mt6" data-testid="leave-hours"
+              :placeholder="$t('report.leaveHoursPlaceholder')" @keydown.enter.prevent
+            />
+            <p v-if="leaveUnitError" class="section-hint" style="color:#b91c1c" data-testid="leave-unit-error">{{ leaveUnitError }}</p>
+          </div>
+
           <!-- 有給残が不足している時: 二重承認が要る旨を先に伝える（送信は可能・承認待ちになる） -->
           <div v-if="needsPaidLeaveApproval" class="pending-banner" data-testid="paid-leave-over-notice">
             {{ $t('report.paidLeaveOverNotice') }}
@@ -846,6 +867,7 @@ import { punchDiffLabel, isPunchDiffBig, isPunchDiffWorthShowing } from '~/compo
 import { computeWorkerHours, getRateLines, calcBreakMinutes, effectiveBreakMinutes, effectiveBreakWindows, parseMin, TIME_OPTIONS } from '~/utils/workerHours'
 import type { RateBreakdown } from '~/utils/workerHours'
 import { computeDiff } from '~/utils/diffReport'
+import { leaveDaysFor, hourlyLeaveCapError, storedLeaveDays, DEFAULT_LEAVE_DAY_HOURS, type LeaveUnit } from '~/composables/paid-leave.gen'
 import { findSimilarSiteNames } from '~/utils/site-similarity.gen'
 import { uploadExpenseFiles } from '~/utils/uploadExpenseFiles'
 import { createGasolineItem } from '~/composables/useReport'
@@ -1157,6 +1179,8 @@ async function submitEditForApproval(diffs: string[]): Promise<boolean> {
     const payload = await expense.buildReportPayload({
       isWorking:      report.form.value.isWorking,
       leaveType:      isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null,
+      leaveDays:      currentLeaveDays(),
+      leaveHours:     leaveUnit.value === 'hour' ? (Number(leaveHours.value) || null) : null,
       isBusinessTrip: working ? !!report.form.value.isBusinessTrip : false,
       sites:          report.form.value.sites,
       note:           report.form.value.note,
@@ -1300,6 +1324,31 @@ const nextDateLabel = computed(() => {
 // 稼働有無
 const isWorkingStr = ref<'working' | 'paid_leave' | 'off'>('working')
 
+// ── 有給の単位（2026-08-30）──
+//  ★半日は法令上の定めが無く労使協定が不要なので常に選べる。
+//   時間単位は労基法39条4項で労使協定が必須・年5日ぶんが上限なので、
+//   設定(hourly_leave_enabled=協定を締結している)がONのアカウントだけ選べる。
+const leaveUnit  = ref<LeaveUnit>('day')
+const leaveHours = ref<number | null>(null)
+const hourlyLeaveEnabled = ref(false)
+const leaveDayHours = ref(DEFAULT_LEAVE_DAY_HOURS)
+const hourlyUsedDaysThisYear = ref(0)
+
+const leaveUnitError = computed(() => {
+  if (isWorkingStr.value !== 'paid_leave' || leaveUnit.value !== 'hour') return ''
+  const h = Number(leaveHours.value) || 0
+  if (h <= 0) return t('report.leaveHoursRequired')
+  if (h > leaveDayHours.value) return t('report.leaveHoursTooLong', { h: leaveDayHours.value })
+  const adding = leaveDaysFor('hour', h, leaveDayHours.value)
+  return hourlyLeaveCapError(hourlyUsedDaysThisYear.value, adding) ?? ''
+})
+
+/** 保存する消化量（日）。集計はこの値を合計する */
+function currentLeaveDays(): number | null {
+  if (isWorkingStr.value !== 'paid_leave') return null
+  return leaveDaysFor(leaveUnit.value, leaveHours.value, leaveDayHours.value)
+}
+
 // ── 有給残の判定（有給を選んだ時、残が足りなければ日報を二重承認制にする）──
 //  自分の分のみ判定する（代理入力は本人の残が取れないため対象外＝従来どおり保存。将来対応）。
 const paidLeaveRemaining = ref<number | null>(null)
@@ -1315,6 +1364,22 @@ const needsPaidLeaveApproval = computed(() =>
   && paidLeaveRemaining.value !== null && paidLeaveRemaining.value < 1)
 // 有給を選んだ瞬間に残を引く（初回だけ・自分の分）
 watch(isWorkingStr, (v) => { if (v === 'paid_leave' && paidLeaveRemaining.value === null) void refreshPaidLeaveRemaining() })
+
+// 時間単位年休は労使協定が要る（労基法39条4項）。締結しているアカウントだけ選べるようにする。
+// 未設定は「協定なし」＝出さない（fail-closed。勝手に法令違反の選択肢を出さない）。
+async function loadHourlyLeaveSetting() {
+  try {
+    const aid = await useAccount().getAccountId()
+    if (!aid) return
+    const { data } = await useSupabase().from('settings')
+      .select('key, value').eq('account_id', aid)
+      .in('key', ['hourly_leave_enabled', 'leave_day_hours'])
+    const kv = Object.fromEntries((data ?? []).map((r: any) => [r.key, r.value]))
+    hourlyLeaveEnabled.value = String(kv['hourly_leave_enabled'] ?? '') === 'true'
+    const h = Number(kv['leave_day_hours'])
+    if (h > 0) leaveDayHours.value = h
+  } catch { /* 取れない時は協定なし扱い（安全側・fail-closed） */ }
+}
 
 // 送信日が日曜かどうか（料率計算に使用）
 const isSunday = computed(() =>
@@ -1772,7 +1837,7 @@ const workCategoryOptions = computed(() =>
 // ── 音声入力（8/19会議）: 話す→report-voice-parse EFで解釈→確認して反映 ──
 const voice = useVoiceInput()
 // 機能フラグ（未設定＝OFF）。解決前は OFF のままなので、一瞬だけ出る事故も起きない
-onMounted(() => { void loadLiffFeatures() })
+onMounted(() => { void loadLiffFeatures(); void loadHourlyLeaveSetting() })
 const voiceBusy = ref(false)
 const voiceError = ref<string | null>(null)
 const voiceConfirm = ref(false)
@@ -2412,6 +2477,8 @@ async function handleSubmit() {
         ? computeDiff(originalReport.value, {
             isWorking:  report.form.value.isWorking,
             leaveType:  isWorkingStr.value === 'paid_leave' ? 'paid_leave' : null,
+            leaveDays:  currentLeaveDays(),
+            leaveHours: leaveUnit.value === 'hour' ? (Number(leaveHours.value) || null) : null,
             sites:      report.form.value.sites,
             note:       report.form.value.note,
             // ★どちらも金額に効く（出張手当 +¥3,000/日・本日のガソリン代）。

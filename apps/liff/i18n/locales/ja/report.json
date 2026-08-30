@@ -195,5 +195,12 @@
   "voiceNoChange": "変更しない",
   "voiceCancel": "やめる",
   "voiceApply": "この内容で反映",
-  "voiceFailed": "うまく読み取れませんでした。もう一度お試しください。"
+  "voiceFailed": "うまく読み取れませんでした。もう一度お試しください。",
+  "leaveUnitLabel": "有給の単位",
+  "leaveUnitDay": "1日",
+  "leaveUnitHalf": "半日（0.5日）",
+  "leaveUnitHour": "時間単位",
+  "leaveHoursPlaceholder": "何時間分か（例: 2）",
+  "leaveHoursRequired": "時間数を入れてください",
+  "leaveHoursTooLong": "1日の所定労働時間（{h}時間）を超えています"
 }
