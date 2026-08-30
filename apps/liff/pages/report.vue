@@ -2734,6 +2734,54 @@ async function analyzeGasItem(gi: number) {
   showReceiptToast('success', t('report.analyzeSuccess'))
 }
 
+/**
+ * 明細ごとに領収書を複数枚つけた時、2枚目以降を「新しい明細」に展開する。
+ *
+ * ★経緯（2026-08-30・今井さんからの報告）:
+ *  「写真を2枚つけることはできるけど、2枚解析しても1枚しか経費計上されない」。
+ *  input は multiple なのに解析は files[0] しか見ておらず、2枚目以降は
+ *  黙って捨てられていた（添付としては残るので気づきにくい）。
+ *  個人経費には既に「1枚=1件の下書き」に展開する仕組みがあるので、考え方を揃える。
+ *
+ *  1枚目は今までどおりその明細に入れ、2枚目以降は同じ種別の明細を足して入れる。
+ */
+async function spreadExtraReceipts(
+  si: number,
+  field: 'other' | 'entertainment' | 'parking' | 'highway' | 'train' | 'hotel',
+  index: number,
+  files: File[],
+): Promise<number> {
+  const exp = report.form.value.sites[si].expenses
+  const listOf = () => ({
+    other: exp.others, entertainment: exp.entertainments, parking: exp.parkings,
+    highway: exp.highways, train: exp.trains, hotel: exp.hotels,
+  }[field]) as any[] | undefined
+  const add = {
+    other: () => report.addOther(si), entertainment: () => report.addEntertainment(si),
+    parking: () => report.addParking(si), highway: () => report.addHighway(si),
+    train: () => report.addTrain(si), hotel: () => report.addHotel(si),
+  }[field]
+
+  let done = 0
+  for (let n = 1; n < files.length; n++) {
+    add()
+    await nextTick()
+    const list = listOf()
+    if (!list?.length) break
+    const target = list[list.length - 1]
+    target.files = [files[n]]
+    const r = await receipt.analyze(files[n], `${si}-${field}-extra-${n}`)
+    if (!r) continue
+    if (r.yen) target.yen = r.yen
+    if (r.label) { target.label = r.label; target.payee = r.label }
+    if (r.storeName) target.payee = r.storeName
+    target.registrationNumber = r.invoiceNumber || 'なし'
+    if (r.account && !target.account) target.account = r.account
+    done++
+  }
+  return done
+}
+
 async function analyzeReceipt(
   si: number,
   field: 'hotelFiles' | 'leopalaceFiles' | 'hotel' | 'other' | 'entertainment' | 'parking' | 'highway' | 'train',
@@ -2764,24 +2812,35 @@ async function analyzeReceipt(
   const inv = result.invoiceNumber || 'なし'
   // 明細ごと（駐車=金額／高速=金額／電車=区間＋金額）
   if (field === 'parking') {
+    const all = exp.parkings?.[otherIndex!]?.files ?? []
     const item = exp.parkings?.[otherIndex!]
     if (item) {
       if (result.yen) item.yen = result.yen
       if (result.storeName) item.payee = result.storeName
       item.registrationNumber = inv   // AI解析の登録番号を反映（読めなければ「なし」）
     }
+    if (all.length > 1) {
+      const n = await spreadExtraReceipts(si, 'parking', otherIndex!, all)
+      if (n) showReceiptToast('success', `${n + 1}枚を明細に分けました`)
+    }
     return
   }
   if (field === 'highway') {
+    const all = exp.highways?.[otherIndex!]?.files ?? []
     const item = exp.highways?.[otherIndex!]
     if (item) {
       if (result.yen) item.yen = result.yen
       if (result.storeName) item.payee = result.storeName
       item.registrationNumber = inv
     }
+    if (all.length > 1) {
+      const n = await spreadExtraReceipts(si, 'highway', otherIndex!, all)
+      if (n) showReceiptToast('success', `${n + 1}枚を明細に分けました`)
+    }
     return
   }
   if (field === 'train') {
+    const all = exp.trains?.[otherIndex!]?.files ?? []
     const item = exp.trains?.[otherIndex!]
     if (item) {
       if (result.label) item.label = result.label
@@ -2789,9 +2848,14 @@ async function analyzeReceipt(
       if (result.yen)   item.yen   = result.yen
       item.registrationNumber = inv
     }
+    if (all.length > 1) {
+      const n = await spreadExtraReceipts(si, 'train', otherIndex!, all)
+      if (n) showReceiptToast('success', `${n + 1}枚を明細に分けました`)
+    }
     return
   }
   if (field === 'other') {
+    const all = exp.others?.[otherIndex!]?.files ?? []
     const item = exp.others?.[otherIndex!]
     if (item) {
       if (result.label) item.label              = result.label
@@ -2801,9 +2865,14 @@ async function analyzeReceipt(
       // 勘定科目はAIの「候補」＝人が未選択のときだけ埋める（選び直した値を上書きしない）
       if (result.account && !item.account) item.account = result.account
     }
+    if (all.length > 1) {
+      const n = await spreadExtraReceipts(si, 'other', otherIndex!, all)
+      if (n) showReceiptToast('success', `${n + 1}枚を明細に分けました`)
+    }
     return
   }
   if (field === 'entertainment') {
+    const all = exp.entertainments?.[otherIndex!]?.files ?? []
     const item = exp.entertainments?.[otherIndex!]
     if (item) {
       if (result.label) item.label              = result.label
@@ -2812,15 +2881,24 @@ async function analyzeReceipt(
       item.registrationNumber = inv
       if (result.account && !item.account) item.account = result.account
     }
+    if (all.length > 1) {
+      const n = await spreadExtraReceipts(si, 'entertainment', otherIndex!, all)
+      if (n) showReceiptToast('success', `${n + 1}枚を明細に分けました`)
+    }
     return
   }
   if (field === 'hotel') {
+    const all = exp.hotels?.[otherIndex!]?.files ?? []
     const item = exp.hotels?.[otherIndex!]
     if (item) {
       if (result.label) item.label              = result.label
       if (result.label) item.payee              = result.label
       if (result.yen)   item.yen                = result.yen
       item.registrationNumber = inv
+    }
+    if (all.length > 1) {
+      const n = await spreadExtraReceipts(si, 'hotel', otherIndex!, all)
+      if (n) showReceiptToast('success', `${n + 1}枚を明細に分けました`)
     }
     return
   }
