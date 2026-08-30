@@ -2,6 +2,31 @@
   <div>
     <h1 class="page-title">ダッシュボード</h1>
 
+    <!-- 車検の期限が近い/切れている車両（2026-08-30）。
+         これまでは shaken-reminder が毎週LINEでDMを飛ばす作りだったが、
+         LINE送信をやめたので画面で気づける形に置き換えた。
+         ★車検期日が未入力の車両は「対象なし」として黙って素通りしていたので、
+          入力漏れも同じ場所で分かるようにしている（それが実際の状態だった＝
+          本番は12台すべて期日未入力で、リマインドは1通も送られていなかった）。 -->
+    <div v-if="shakenAlerts.length || shakenMissing > 0" class="shaken-box" data-testid="shaken-alerts">
+      <div class="shaken-head">
+        <span class="material-symbols-rounded">directions_car</span>
+        車検の確認
+      </div>
+      <ul class="shaken-list">
+        <li v-for="v in shakenAlerts" :key="v.id" class="shaken-row">
+          <span class="shaken-name">{{ v.name }}</span>
+          <span class="shaken-when">{{ v.inspection_date }}</span>
+          <span class="shaken-chip" :class="v.cls">{{ v.label }}</span>
+        </li>
+        <li v-if="shakenMissing > 0" class="shaken-row">
+          <span class="shaken-name">車検期日が未入力の車両</span>
+          <span class="shaken-when">{{ shakenMissing }}台</span>
+          <RouterLink to="/vehicles" class="shaken-link">入力する →</RouterLink>
+        </li>
+      </ul>
+    </div>
+
     <!-- 開発の更新履歴 -->
     <div v-if="unconfirmed.length || confirmed.length" class="updates-box">
       <div class="updates-head">お知らせ・更新履歴</div>
@@ -145,6 +170,40 @@ import { netAmountOf, normalizeTaxMode } from '../lib/invoiceTax'
 // ── 開発の更新履歴（全社共通・未確認/確認済みタブ）──────────
 interface DevUpdate { id: string; title: string; link: string | null; created_at: string }
 const tab         = ref<'unconfirmed' | 'confirmed'>('unconfirmed')
+
+// ── 車検の期限（LINEリマインドの置き換え・2026-08-30）──
+//  期限切れ／45日以内の車両を出す。車両一覧のバッジと同じ基準に揃える。
+type ShakenRow = { id: string; name: string; inspection_date: string; cls: string; label: string }
+const shakenAlerts  = ref<ShakenRow[]>([])
+const shakenMissing = ref(0)
+
+function daysUntilDate(dateStr: string): number {
+  const t = new Date(dateStr + 'T00:00:00+09:00').getTime()
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  return Math.round((t - today) / 86400000)
+}
+
+async function loadShaken() {
+  const accountId = await getAccountId()
+  if (!accountId) return
+  const { data } = await supabase.from('vehicles')
+    .select('id, name, inspection_date, active').eq('account_id', accountId).eq('active', true)
+  const rows = data ?? []
+  shakenMissing.value = rows.filter(v => !v.inspection_date).length
+  shakenAlerts.value = rows
+    .filter(v => v.inspection_date && daysUntilDate(v.inspection_date as string) <= 45)
+    .map(v => {
+      const n = daysUntilDate(v.inspection_date as string)
+      return {
+        id: v.id as string, name: (v.name as string) ?? '',
+        inspection_date: v.inspection_date as string,
+        cls: n < 0 ? 'over' : 'soon',
+        label: n < 0 ? `期限切れ ${-n}日` : n === 0 ? '本日' : `あと${n}日`,
+      }
+    })
+    .sort((a, b) => a.inspection_date.localeCompare(b.inspection_date))
+}
 const unconfirmed = ref<DevUpdate[]>([])   // archived=false
 const confirmed   = ref<DevUpdate[]>([])   // archived=true
 const busyId      = ref<string | null>(null)
@@ -407,7 +466,7 @@ function fmtDetailDate(s: string): string {
   return `${d.getMonth() + 1}/${d.getDate()}（${W[d.getDay()]}）`
 }
 
-onMounted(() => { load(); loadUpdates() })
+onMounted(() => { load(); loadUpdates(); loadShaken() })
 watch(selectedMonth, load)
 watch(wageMode, load)   // 日当-実質賃金の切替で社員人件費を再集計
 </script>
@@ -416,6 +475,18 @@ watch(wageMode, load)   // 日当-実質賃金の切替で社員人件費を再�
 .page-title { font-size: 22px; font-weight: 700; margin-bottom: 24px; }
 
 /* 開発の更新履歴 */
+/* 車検の期限（LINEリマインドの置き換え） */
+.shaken-box { background:#fff; border-radius:12px; box-shadow:0 1px 4px rgba(0,0,0,.06); margin-bottom:16px; overflow:hidden; border-left:4px solid #f59e0b; }
+.shaken-head { display:flex; align-items:center; gap:6px; padding:10px 14px; font-weight:700; font-size:14px; background:#fffbeb; color:#92400e; }
+.shaken-head .material-symbols-rounded { font-size:18px; }
+.shaken-list { list-style:none; margin:0; padding:0; }
+.shaken-row { display:flex; align-items:center; gap:10px; padding:8px 14px; border-top:1px solid #f3f4f6; font-size:13px; }
+.shaken-name { flex:1; }
+.shaken-when { color:#6b7280; font-variant-numeric:tabular-nums; }
+.shaken-chip { padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700; }
+.shaken-chip.over { background:#fee2e2; color:#b91c1c; }
+.shaken-chip.soon { background:#fef3c7; color:#92400e; }
+.shaken-link { color:#2563eb; text-decoration:none; font-size:12px; }
 .updates-box { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 24px; overflow: hidden; }
 .updates-head { font-size: 13px; font-weight: 700; color: #555; padding: 12px 16px; background: #fafafa; }
 .updates-tabs { display: flex; gap: 4px; padding: 0 12px; border-bottom: 1px solid #f0f0f0; background: #fafafa; }

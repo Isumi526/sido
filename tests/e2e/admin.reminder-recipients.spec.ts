@@ -9,7 +9,8 @@ import { test, expect } from '@playwright/test'
 import { rest, getAccountId, SUPABASE_URL, ANON_KEY } from './helpers'
 
 const TS = Date.now()
-const FN = `${SUPABASE_URL}/functions/v1/test-daily-reminder`
+// ★2026-08-30: test-daily-reminder は本体と別実装に乖離した写しだったので削除し、本体に一本化した
+const FN = `${SUPABASE_URL}/functions/v1/daily-reminder`
 
 async function callReminderDryRun(slug: string) {
   const res = await fetch(FN, {

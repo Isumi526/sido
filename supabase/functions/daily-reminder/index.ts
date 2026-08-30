@@ -1,25 +1,21 @@
 // ============================================================
 //  daily-reminder
-//  未送信日報リマインド → LINE通知（マルチテナント対応）
+//  未送信日報リマインド → アプリ内のお知らせ（マルチテナント対応）
+//  ★2026-08-30: LINEのDM送信から schedule_notifications への挿入に変えた。
+//   LINE連携の有無に関わらず受信者に届く。
 //  pg_cron から毎時呼び出し → settings の reminder_time と一致する時刻のみ実行
 //  管理画面から手動実行も可能（manual: true で時刻チェックをスキップ）
 //
 //  各アカウントの settings テーブルから以下を参照:
 //    service_start_date : チェック開始日
-//    notify_group_id    : 送信先 LINE グループID
 //    reminder_enabled   : 自動実行 on/off（'true'/'false'、デフォルト 'true'）
 //    reminder_time      : 実行時間 JST（'HH:00' 形式、デフォルト '08:00'）
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { pushLineMessagesResult } from '../_shared/line.ts'
 import { authorizeReminderTrigger } from '../_shared/reminder-auth.ts'
 
-const LINE_TOKEN        = Deno.env.get('LINE_CHANNEL_ACCESS_TOKEN') ?? ''
 const SUPABASE_URL      = Deno.env.get('SUPABASE_URL') ?? ''
 const SUPABASE_KEY      = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-const PROD_ACCOUNT_SLUG = Deno.env.get('ACCOUNT_SLUG') ?? ''
-const PROD_GROUP_IDS    = JSON.parse(Deno.env.get('NOTIFY_GROUP_IDS')     ?? '[]') as string[]
-const DEV_GROUP_IDS     = JSON.parse(Deno.env.get('DEV_NOTIFY_GROUP_IDS') ?? '[]') as string[]
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
@@ -226,6 +222,7 @@ async function processAccount(
     .filter((u: any) => u.is_reminder_recipient)
     .map((u: any) => ({
       name: (u.workers as any)?.name ?? u.real_name ?? '不明',
+      workerId: (u.worker_id ?? null) as string | null,
       lineUserId: (u.line_user_id ?? null) as string | null,
       linked: !!u.line_user_id,
     }))
@@ -251,25 +248,32 @@ async function processAccount(
 
   if (dryRun) return { slug, result: 'dry-run', unsubmitted, recipients: recipientPreview }
 
-  // 送信先 = 指定ユーザーの個人LINE（line_user_id 連携済みのみ）。グループ自動投稿は廃止
-  const sendTargets = recipients.filter(r => r.linked)
+  // ★2026-08-30: 送信先をLINEのDMからアプリ内のお知らせに変えた。
+  //  LINEからは降りる方針で、日報のLINE通知は 2026-07-01 以降ゼロだった。
+  //  お知らせは「やること」タブに積まれ、開くまで残る＝気づけないという問題も同時に解ける。
+  //  ★LINE連携の有無で送り先が変わらなくなったので、連携していない受信者にも届くようになる。
+  const sendTargets = recipients.filter(r => r.workerId)
   if (sendTargets.length === 0) {
-    const note = recipients.length ? '受信者はLINE未連携のみ' : '受信者未設定'
+    const note = recipients.length ? '受信者に作業員が紐づいていない' : '受信者未設定'
     return { slug, result: note, unsubmitted, recipients: recipientPreview }
   }
 
-  // 実送信。LINE push の失敗を握り潰さず結果に反映する
-  const pushes = await Promise.all(
-    sendTargets.map(r => pushLineMessagesResult(r.lineUserId!, [{ type: 'text', text: fullText }], LINE_TOKEN)),
+  const { error: notifyErr } = await supabase.from('schedule_notifications').insert(
+    sendTargets.map(r => ({
+      account_id: accountId,
+      worker_id: r.workerId,
+      kind: 'report_reminder',
+      title: `日報の未送信があります（${fmtDate(yesterday)}時点）`,
+      body: fullText,
+      link_path: '/reports',
+    })),
   )
-  const failed = pushes.filter(p => !p.ok)
-  if (failed.length > 0) {
-    const detail = failed.map(f => `status=${f.status} ${f.body}`).join(' | ')
-    console.error(`[daily-reminder] LINE push failed slug=${slug}: ${detail}`)
-    return { slug, result: `送信失敗（LINE: ${detail}）`, unsubmitted, recipients: recipientPreview }
+  if (notifyErr) {
+    console.error(`[daily-reminder] app notification insert failed slug=${slug}:`, notifyErr)
+    return { slug, result: `送信失敗（お知らせ: ${notifyErr.message}）`, unsubmitted, recipients: recipientPreview }
   }
 
-  return { slug, result: `送信完了（${sendTargets.length}名へDM）`, unsubmitted, recipients: recipientPreview }
+  return { slug, result: `送信完了（${sendTargets.length}名へお知らせ）`, unsubmitted, recipients: recipientPreview }
 }
 
 Deno.serve(async (req) => {
@@ -284,17 +288,15 @@ Deno.serve(async (req) => {
       const { data: settings } = await supabase
         .from('settings').select('key, value')
         .eq('account_id', acc.id)
-        .in('key', ['service_start_date', 'notify_group_id', 'reminder_enabled', 'reminder_time'])
+        .in('key', ['service_start_date', 'reminder_enabled', 'reminder_time'])
       const s = Object.fromEntries((settings ?? []).map(r => [r.key, r.value]))
-      const fallback = acc.slug === PROD_ACCOUNT_SLUG ? PROD_GROUP_IDS : DEV_GROUP_IDS
+      // ★2026-08-30: LINEグループの設定(notify_group_id / NOTIFY_GROUP_IDS)は
+      //  送信先がアプリ内のお知らせに変わったので返さない。
       return {
         slug: acc.slug,
         service_start_date: s['service_start_date'] ?? null,
-        notify_group_id:    s['notify_group_id']    ?? null,
         reminder_enabled:   s['reminder_enabled']   ?? 'true',
         reminder_time:      s['reminder_time']       ?? '08:00',
-        fallback_group_ids:  fallback,
-        effective_group_ids: s['notify_group_id'] ? [s['notify_group_id']] : fallback,
       }
     }))
     return json(info)
