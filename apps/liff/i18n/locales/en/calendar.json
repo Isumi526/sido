@@ -16,7 +16,7 @@
   "addSchedule": "Add Schedule",
   "targetWorkers": "Workers * ({count})",
   "bulkSelectFromGroup": "Select all from group…",
-  "site": "Site *",
+  "site": "Site * Required",
   "workCategory": "Work category",
   "contractor": "Primary contractor",
   "contractorAll": "All contractors",
@@ -27,7 +27,7 @@
   "siteGroupUnlinked": "Unlinked",
   "siteGroupLinked": "Sites linked to this contractor",
   "siteGroupOther": "Other sites",
-  "siteName": "Site name *",
+  "siteName": "Site name * Required",
   "siteNamePlaceholder": "Enter site name",
   "start": "Start",
   "end": "End",
@@ -68,7 +68,7 @@
     "enterTitle": "Please enter a title"
   },
   "noSite": "No site (enter a title)",
-  "titleLabel": "Title *",
+  "titleLabel": "Title * Required",
   "titlePlaceholder": "e.g. Day off / Business trip / Personal",
   "similarSiteWarn": "A similar site already exists (avoid duplicate registration)",
   "siteUnset": "Site not in the register (type the name)"

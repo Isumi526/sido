@@ -28,7 +28,7 @@ test.describe('予定管理 個人カレンダー', () => {
     // 週間ビュー（時間軸メモリ表示）から追加（2026-07-15: 区画内+ボタン廃止→右下固定FABに変更）
     await page.locator('[data-testid="personal-week-fab"]').click()
     await expect(page.locator('.worker-chips')).toBeVisible()
-    await page.locator('.form-row').filter({ has: page.locator('.form-row-label', { hasText: '現場 *' }) })
+    await page.locator('.form-row').filter({ has: page.locator('.form-row-label', { hasText: '現場 ※必須' }) })
       .locator('select.site-select').selectOption('__other__')
     await page.locator('input[placeholder="現場名を入力"]').fill(TITLE)
     await page.locator('.btn-save').click()

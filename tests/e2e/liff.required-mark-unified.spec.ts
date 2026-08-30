@@ -58,3 +58,34 @@ test.describe('必須表示の統一', () => {
     await expect(page.getByTestId('report-submit'), '理由が空だと送れない').toBeDisabled()
   })
 })
+
+// ============================================================
+//  文言そのものを見張る（2026-08-30 追加）
+//
+//  ★画面を1つずつ開いて確かめる形だと、触っていない画面の取りこぼしに気づけない。
+//   実際 calendar/groups/overtime/report のラベルには「現場 *」「修正の理由（必須）」の
+//   ように独自表記が残っていた（2026-08-13 の統一時に i18n 側が漏れていた）。
+//   ここでは **i18n の文言ファイル全体** を舐めて、必須マークの表記ゆれを禁止する。
+// ============================================================
+import { readFileSync, readdirSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+test.describe('必須表示の文言（i18n）', () => {
+  test('★ラベルに「（必須）」や末尾の「 *」を直書きしない（common.required に寄せる）', () => {
+    const base = resolve(process.cwd(), 'apps/liff/i18n/locales/ja')
+    const files = readdirSync(base).filter(f => f.endsWith('.json'))
+    expect(files.length, '文言ファイルがある').toBeGreaterThan(0)
+
+    const bad: string[] = []
+    for (const f of files) {
+      const json = JSON.parse(readFileSync(resolve(base, f), 'utf8')) as Record<string, unknown>
+      for (const [k, v] of Object.entries(json)) {
+        if (typeof v !== 'string') continue
+        if (k === 'required') continue                 // common.required だけが正本
+        if (/（必須）|\(必須\)/.test(v)) bad.push(`${f}:${k} = ${v}`)
+        if (/\s\*$/.test(v)) bad.push(`${f}:${k} = ${v}`)
+      }
+    }
+    expect(bad, `★必須マークの直書きが残っている:\n${bad.join('\n')}`).toEqual([])
+  })
+})

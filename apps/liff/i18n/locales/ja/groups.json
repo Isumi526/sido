@@ -11,7 +11,7 @@
   "deleteGroup": "グループを削除",
   "leaveGroup": "グループから脱退",
   "createTitle": "グループを作成",
-  "groupNameLabel": "グループ名 *",
+  "groupNameLabel": "グループ名 ※必須",
   "groupNamePlaceholder": "例：現場チームA",
   "inviteLabel": "招待するメンバー",
   "noOtherWorkers": "他の作業員がいません",

@@ -11,7 +11,7 @@
   "deleteGroup": "Delete group",
   "leaveGroup": "Leave group",
   "createTitle": "Create a group",
-  "groupNameLabel": "Group name *",
+  "groupNameLabel": "Group name * Required",
   "groupNamePlaceholder": "e.g. Site Team A",
   "inviteLabel": "Members to invite",
   "noOtherWorkers": "No other workers",
