@@ -14,14 +14,19 @@
 //
 //  Response:
 //    {
-//      siteName: string|null,        // sites に近いものがあればその表記、無ければ聞き取り原文
-//      workCategoryId: string|null,  // workCategories の中で最も近いもの
-//      workCategoryName: string|null,
-//      startTime: string|null,       // "HH:MM"
-//      endTime: string|null,         // "HH:MM"
-//      note: string|null,            // 作業内容の要約（自由記述）
+//      sites: [{                     // ★1日に複数現場を回る運用があるので配列で返す
+//        siteName: string|null,        // sites に近いものがあればその表記、無ければ null
+//        workCategoryId: string|null,  // workCategories の中で最も近いもの
+//        workCategoryName: string|null,
+//        startTime: string|null,       // "HH:MM"
+//        endTime: string|null,         // "HH:MM"
+//        note: string|null,            // その現場での作業内容
+//      }],
+//      note: string|null,            // 現場に紐づかない全体の備考
 //      raw: string                   // 認識テキストそのまま（確認画面の参考用）
 //    }
+//  ★現場ごとに時刻を分けるのが肝。1つに畳むと「午前A・午後B」が
+//   1現場の 8:00-17:30 になり、人件費の集計が現場をまたいで狂う。
 // ============================================================
 
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') ?? ''
@@ -82,13 +87,25 @@ ${sites.length ? sites.map(s => `- ${s}`).join('\n') : '(候補なし)'}
 # 工種の候補（この中から最も近いものの name を1つ選ぶ。無ければ null）
 ${cats.length ? cats.map(c => `- ${c.name}`).join('\n') : '(候補なし)'}
 
+# 大事なルール
+- 1日に複数の現場を回ることがある。**現場ごとに1件ずつ** sites 配列に分けること。
+  「午前はA、午後はB」のような場合、Aの時刻とBの時刻をそれぞれの現場に割り当てる。
+  まとめて1件にしない（1現場に全時間が付くと作業時間の集計が狂う）。
+- 現場が1つしか出てこない場合は sites を1件だけにする。
+- 現場の話が全く出てこない場合は sites を空配列にする。
+
 # 出力JSON
 {
-  "siteName": "現場名（上の候補に近ければその表記。なければ聞き取り原文。無言及ならnull）",
-  "workCategoryName": "工種（上の候補の name のいずれか。該当なしはnull）",
-  "startTime": "開始時刻 HH:MM 24時間表記（例 08:00。無言及ならnull）",
-  "endTime": "終了時刻 HH:MM 24時間表記（例 17:30。無言及ならnull）",
-  "note": "作業内容の要約（自由記述。話した作業内容を簡潔に。無言及ならnull）"
+  "sites": [
+    {
+      "siteName": "現場名（上の候補に近ければ必ずその表記。候補に無ければnull）",
+      "workCategoryName": "工種（上の候補の name のいずれか。該当なしはnull）",
+      "startTime": "その現場の開始時刻 HH:MM 24時間表記（例 08:00。無言及ならnull）",
+      "endTime": "その現場の終了時刻 HH:MM 24時間表記（例 17:30。無言及ならnull）",
+      "note": "その現場での作業内容（簡潔に。無言及ならnull）"
+    }
+  ],
+  "note": "現場に紐づかない全体の連絡事項（無ければnull）"
 }
 
 # 音声認識テキスト
@@ -117,24 +134,45 @@ ${transcript}`
       return json({ error: 'parse failed' }, 502)
     }
 
-    const siteName = typeof parsed.siteName === 'string' && parsed.siteName.trim() ? parsed.siteName.trim() : null
-    const wcName = typeof parsed.workCategoryName === 'string' && parsed.workCategoryName.trim() ? parsed.workCategoryName.trim() : null
-    // 工種名 → id を解決（完全一致→部分一致）
-    let workCategoryId: string | null = null
-    let workCategoryName: string | null = null
-    if (wcName && cats.length) {
-      const exact = cats.find(c => c.name === wcName)
-      const partial = exact ?? cats.find(c => c.name.includes(wcName) || wcName.includes(c.name))
-      if (partial) { workCategoryId = partial.id; workCategoryName = partial.name }
+    const str = (v: unknown): string | null =>
+      typeof v === 'string' && v.trim() ? v.trim() : null
+
+    /** 工種名 → id を解決（完全一致→部分一致） */
+    const resolveCat = (name: string | null) => {
+      if (!name || !cats.length) return { workCategoryId: null, workCategoryName: null }
+      const exact = cats.find(c => c.name === name)
+      const hit = exact ?? cats.find(c => c.name.includes(name) || name.includes(c.name))
+      return hit ? { workCategoryId: hit.id, workCategoryName: hit.name } : { workCategoryId: null, workCategoryName: null }
     }
 
+    // ★現場名は候補にあるものだけ採用する。候補に無い名前を入れても画面のプルダウンに
+    //  無く反映できないので、null にして人に選ばせる（勝手に新規現場を作らない）。
+    //  ★ただし表記ゆれは吸収する。マスタが「UA　長島」(全角スペース)でも人は
+    //   「UA長島」と話すため、素の完全一致だと毎回外れる（打刻の現場検索で実際に
+    //   詰まった事例と同じ・2026-08-27）。空白と大小文字を無視して突き合わせる。
+    const norm = (s: string) => s.replace(/[\s　]+/g, '').toLowerCase()
+    const pickSite = (name: string | null) => {
+      if (!name) return null
+      const n = norm(name)
+      const exact = sites.find(s => norm(s) === n)
+      if (exact) return exact
+      // 略称で話すことも多い（「スシロー高槻」→「スシロー　高槻センター店」）
+      const partial = sites.find(s => norm(s).includes(n) || n.includes(norm(s)))
+      return partial ?? null
+    }
+
+    const rawSites = Array.isArray(parsed.sites) ? parsed.sites : []
+    const outSites = rawSites.map((s: any) => ({
+      siteName: pickSite(str(s?.siteName)),
+      ...resolveCat(str(s?.workCategoryName)),
+      startTime: normTime(s?.startTime),
+      endTime: normTime(s?.endTime),
+      note: str(s?.note),
+    }))
+
     return json({
-      siteName,
-      workCategoryId,
-      workCategoryName,
-      startTime: normTime(parsed.startTime),
-      endTime: normTime(parsed.endTime),
-      note: typeof parsed.note === 'string' && parsed.note.trim() ? parsed.note.trim() : null,
+      sites: outSites,
+      note: str(parsed.note),
       raw: transcript,
     })
   } catch (e) {

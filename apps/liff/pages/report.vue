@@ -102,34 +102,43 @@
           <div class="voice-modal">
             <h3>{{ $t('report.voiceConfirmTitle') }}</h3>
             <p class="voice-heard"><span class="material-symbols-rounded">hearing</span>{{ voiceDraft.raw }}</p>
-            <label class="voice-field">
-              <span>{{ $t('report.site') }}</span>
-              <select v-model="voiceDraft.siteName" class="select" data-testid="voice-site">
-                <option value="">{{ $t('report.voiceNoChange') }}</option>
-                <option v-for="n in voiceSiteChoices" :key="n" :value="n">{{ n }}</option>
-              </select>
-            </label>
-            <label class="voice-field">
-              <span>{{ $t('report.workCategory') }}</span>
-              <select v-model="voiceDraft.workCategoryId" class="select" data-testid="voice-workcat">
-                <option value="">{{ $t('report.voiceNoChange') }}</option>
-                <option v-for="c in workCategoryOptions" :key="c.id" :value="c.id">{{ c.name }}</option>
-              </select>
-            </label>
-            <div class="voice-field-row">
+            <!-- ★話した現場の数だけブロックを出す（1日に複数現場を回る運用がある）。
+                 まとめて1件にすると時間が現場を跨いで合算され、人件費の集計が狂う。 -->
+            <div v-for="(d, di) in voiceDraft.sites" :key="di" class="voice-site-block" :data-testid="`voice-site-block-${di}`">
+              <div v-if="voiceDraft.sites.length > 1" class="voice-site-no">{{ $t('report.siteNumbered', { n: di + 1 }) }}</div>
               <label class="voice-field">
-                <span>{{ $t('report.startTime') }}</span>
-                <select v-model="voiceDraft.startTime" class="select" data-testid="voice-start">
-                  <option value="">--</option>
-                  <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
+                <span>{{ $t('report.site') }}</span>
+                <select v-model="d.siteName" class="select" :data-testid="`voice-site-${di}`">
+                  <option value="">{{ $t('report.voiceNoChange') }}</option>
+                  <option v-for="n in voiceSiteChoices" :key="n" :value="n">{{ n }}</option>
                 </select>
               </label>
               <label class="voice-field">
-                <span>{{ $t('report.endTime') }}</span>
-                <select v-model="voiceDraft.endTime" class="select" data-testid="voice-end">
-                  <option value="">--</option>
-                  <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
+                <span>{{ $t('report.workCategory') }}</span>
+                <select v-model="d.workCategoryId" class="select" :data-testid="`voice-workcat-${di}`">
+                  <option value="">{{ $t('report.voiceNoChange') }}</option>
+                  <option v-for="c in workCategoryOptions" :key="c.id" :value="c.id">{{ c.name }}</option>
                 </select>
+              </label>
+              <div class="voice-field-row">
+                <label class="voice-field">
+                  <span>{{ $t('report.startTime') }}</span>
+                  <select v-model="d.startTime" class="select" :data-testid="`voice-start-${di}`">
+                    <option value="">--</option>
+                    <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
+                  </select>
+                </label>
+                <label class="voice-field">
+                  <span>{{ $t('report.endTime') }}</span>
+                  <select v-model="d.endTime" class="select" :data-testid="`voice-end-${di}`">
+                    <option value="">--</option>
+                    <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
+                  </select>
+                </label>
+              </div>
+              <label class="voice-field">
+                <span>{{ $t('report.siteNote') }}</span>
+                <textarea v-model="d.note" class="input" rows="2" :data-testid="`voice-note-${di}`" />
               </label>
             </div>
             <label class="voice-field">
@@ -688,6 +697,7 @@
             <textarea
               v-model="site.siteNote"
               class="textarea"
+              :data-testid="`site-note-${si}`"
               :placeholder="$t('report.siteNotePlaceholder')"
               rows="2"
             />
@@ -1753,12 +1763,19 @@ const voice = useVoiceInput()
 const voiceBusy = ref(false)
 const voiceError = ref<string | null>(null)
 const voiceConfirm = ref(false)
+// ★1日に複数の現場を回る運用があるので配列で持つ（2026-08-30）。
+//  1件に畳むと「午前A・午後B」が1現場の 8:00-17:30 になり、
+//  作業時間（＝人件費の根拠）が現場を跨いで狂う。
+type VoiceSiteDraft = {
+  siteName: string
+  workCategoryId: string
+  startTime: string
+  endTime: string
+  note: string
+}
 const voiceDraft = reactive({
-  siteName: '' as string,
-  workCategoryId: '' as string,
-  startTime: '' as string,
-  endTime: '' as string,
-  note: '' as string,
+  sites: [] as VoiceSiteDraft[],
+  note: '' as string,   // 現場に紐づかない全体の備考
   raw: '' as string,
 })
 // 現場の選択肢（現場名。__unset__ は除く）
@@ -1794,10 +1811,18 @@ function onVoiceClick() {
         },
       })
       if (res?.error) throw new Error(res.error)
-      voiceDraft.siteName = voiceSiteChoices.value.includes(res.siteName) ? res.siteName : ''
-      voiceDraft.workCategoryId = res.workCategoryId ?? ''
-      voiceDraft.startTime = snapTime(res.startTime)
-      voiceDraft.endTime = snapTime(res.endTime)
+      const parsed = (res.sites ?? []) as any[]
+      voiceDraft.sites = parsed.map((s) => ({
+        siteName: voiceSiteChoices.value.includes(s?.siteName) ? s.siteName : '',
+        workCategoryId: s?.workCategoryId ?? '',
+        startTime: snapTime(s?.startTime),
+        endTime: snapTime(s?.endTime),
+        note: s?.note ?? '',
+      }))
+      // 現場が1つも取れなくても確認画面は出す（人がその場で選んで反映できる）
+      if (!voiceDraft.sites.length) {
+        voiceDraft.sites = [{ siteName: '', workCategoryId: '', startTime: '', endTime: '', note: '' }]
+      }
       voiceDraft.note = res.note ?? ''
       voiceDraft.raw = res.raw ?? text
       voiceConfirm.value = true
@@ -1811,16 +1836,25 @@ function onVoiceClick() {
 }
 // 確認画面で「反映」: 先頭の現場ブロック＋備考へ入れる（空欄の項目は触らない）
 function applyVoiceDraft() {
-  const site0 = report.form.value.sites?.[0]
-  if (site0) {
-    if (voiceDraft.siteName) { site0.siteName = voiceDraft.siteName; onSiteChange(0) }
-    if (voiceDraft.workCategoryId) site0.workCategoryId = voiceDraft.workCategoryId
-    const w0 = site0.workers?.[0]
-    if (w0) {
-      if (voiceDraft.startTime) w0.startTime = voiceDraft.startTime
-      if (voiceDraft.endTime) w0.endTime = voiceDraft.endTime
+  // ★話した現場の数だけ現場ブロックを用意して、1件ずつ入れる。
+  //  足りなければ addSite() で足す（既存の入力は消さない＝上書きは空欄の項目だけ）。
+  voiceDraft.sites.forEach((d, i) => {
+    while ((report.form.value.sites?.length ?? 0) <= i) addSite()
+    const site = report.form.value.sites?.[i]
+    if (!site) return
+    if (d.siteName) { site.siteName = d.siteName; onSiteChange(i) }
+    if (d.workCategoryId) site.workCategoryId = d.workCategoryId
+    const w = site.workers?.[0]
+    if (w) {
+      if (d.startTime) w.startTime = d.startTime
+      if (d.endTime) w.endTime = d.endTime
     }
-  }
+    // その現場での作業内容は現場備考へ（全体の備考と混ぜない）
+    if (d.note) {
+      const cur = (site as any).siteNote ?? ''
+      ;(site as any).siteNote = cur ? `${cur}\n${d.note}` : d.note
+    }
+  })
   if (voiceDraft.note) {
     const cur = report.form.value.note ?? ''
     report.form.value.note = cur ? `${cur}\n${voiceDraft.note}` : voiceDraft.note
@@ -3216,6 +3250,9 @@ html, body {
 .voice-heard .material-symbols-rounded { font-size: 18px; color: #888; }
 .voice-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; font-size: 13px; font-weight: 700; color: #555; }
 .voice-field-row { display: flex; gap: 12px; }
+/* 現場ごとのブロック（複数現場を一度に話せる） */
+.voice-site-block { border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
+.voice-site-no { font-size: 12px; font-weight: 700; color: #06864a; margin-bottom: 6px; }
 .voice-field-row .voice-field { flex: 1; }
 .voice-modal-btns { display: flex; gap: 10px; margin-top: 8px; }
 .voice-modal-btns button { flex: 1; }

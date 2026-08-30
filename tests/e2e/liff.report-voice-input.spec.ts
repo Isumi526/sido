@@ -31,12 +31,15 @@ window.webkitSpeechRecognition = FakeRecognition;
 `
 
 const PARSED = {
-  siteName: null,          // 現場はマスタ依存なので触らない（備考で検証）
-  workCategoryId: null,
-  workCategoryName: null,
-  startTime: '08:00',
-  endTime: '17:00',
-  note: '内装工事（音声入力）',
+  sites: [{
+    siteName: 'テスト現場A',   // ★現場を選ばないと作業時刻・現場備考の欄が描画されない
+    workCategoryId: null,
+    workCategoryName: null,
+    startTime: '08:00',
+    endTime: '17:00',
+    note: '内装工事（音声入力）',
+  }],
+  note: null,
   raw: '今日は東京現場で8時から17時まで内装工事をしました',
 }
 
@@ -55,10 +58,11 @@ test.describe('日報の音声入力', () => {
     })
     expect(res.status(), 'Gemini解析が通る（v1/v1beta違い等で500/502にならない）').toBe(200)
     const j = await res.json()
-    expect(j.siteName, '現場を候補に寄せる').toBe('テスト現場1')
-    expect(j.startTime, '開始時刻').toBe('08:00')
-    expect(j.endTime, '終了時刻').toBe('17:00')
-    expect(j.note, '作業内容').toBeTruthy()
+    expect(j.sites?.length, '現場が1件返る').toBe(1)
+    expect(j.sites[0].siteName, '現場を候補に寄せる').toBe('テスト現場1')
+    expect(j.sites[0].startTime, '開始時刻').toBe('08:00')
+    expect(j.sites[0].endTime, '終了時刻').toBe('17:00')
+    expect(j.sites[0].note, '作業内容').toBeTruthy()
   })
 
   test('音声→確認画面→反映で備考に入る（確認を必ず挟む）', async ({ page }) => {
@@ -81,15 +85,50 @@ test.describe('日報の音声入力', () => {
     await expect(modal).toBeVisible({ timeout: 10000 })
     // 聞き取り内容と解析結果（備考）が確認画面に出ている
     await expect(modal).toContainText('内装工事')
-    await expect(page.getByTestId('voice-note')).toHaveValue('内装工事（音声入力）')
+    await expect(page.getByTestId('voice-note-0')).toHaveValue('内装工事（音声入力）')
 
-    // ★確認を挟むまで本体フォームには入っていない
-    await expect(page.getByTestId('report-note')).toHaveValue('')
+    // ★確認を挟むまで本体フォームには入っていない（現場すら選ばれていない）
+    await expect(page.getByTestId('site-select-0')).toHaveValue('')
 
-    // 「この内容で反映」→ 備考に入る
+    // 「この内容で反映」→ その現場の備考に入る
     await page.getByTestId('voice-apply').click()
     await expect(modal).toBeHidden()
-    await expect(page.getByTestId('report-note')).toHaveValue(/内装工事（音声入力）/)
+    await expect(page.getByTestId('site-note-0')).toHaveValue(/内装工事（音声入力）/)
+  })
+
+  test('★複数現場を一度に話すと、現場ごとに分けて反映される（時間を合算しない）', async ({ page }) => {
+    // 「午前A・午後B」を1件に畳むと1現場の8:00-17:30になり、人件費の集計が現場を跨いで狂う
+    await page.addInitScript(FAKE_SPEECH)
+    await page.route('**/report-voice-parse', route => route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({
+        sites: [
+          { siteName: 'テスト現場A', workCategoryId: null, startTime: '08:00', endTime: '12:00', note: '午前の作業' },
+          { siteName: 'テスト現場B', workCategoryId: null, startTime: '13:00', endTime: '17:30', note: '午後の作業' },
+        ],
+        note: null, raw: '午前はA、午後はB',
+      }),
+    }))
+
+    await page.goto(`/report?date=${TODAY}`, { waitUntil: 'networkidle' })
+    await page.locator('select:has(option[value="working"])').first().selectOption('working')
+    await page.getByTestId('voice-input-btn').click()
+    await expect(page.getByTestId('voice-confirm')).toBeVisible({ timeout: 10000 })
+
+    // 確認画面に現場ぶんのブロックが出る
+    await expect(page.getByTestId('voice-site-block-0')).toBeVisible()
+    await expect(page.getByTestId('voice-site-block-1'), '★2件目も出る').toBeVisible()
+    await expect(page.getByTestId('voice-start-1')).toHaveValue('13:00')
+
+    await page.getByTestId('voice-apply').click()
+    await expect(page.getByTestId('voice-confirm')).toBeHidden()
+
+    // 現場ブロックが2つに増え、時刻が現場ごとに分かれている
+    await expect(page.getByTestId('start-time-0')).toHaveValue('08:00')
+    await expect(page.getByTestId('end-time-0'), '★1件目は午前で閉じる').toHaveValue('12:00')
+    await expect(page.getByTestId('start-time-1')).toHaveValue('13:00')
+    await expect(page.getByTestId('end-time-1')).toHaveValue('17:30')
+    await expect(page.getByTestId('site-note-1')).toHaveValue(/午後の作業/)
   })
 
   test('SpeechRecognition非対応の環境では音声ボタンを出さない（従来入力にフォールバック）', async ({ page }) => {
