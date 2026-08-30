@@ -17,8 +17,8 @@
             <span class="date">{{ p.report_date }}</span>
             <span class="who">{{ p.submitted_by_name || '—' }}</span>
             <!-- 編集と「遅れて出てきた新規」は承認の意味が違う（前者は差分・後者は全部が新規） -->
-            <span class="kind" :class="p.kind === 'late_new' ? 'late' : 'edit'" data-testid="pending-kind">
-              {{ p.kind === 'late_new' ? '期限切れの新規提出' : '編集' }}
+            <span class="kind" :class="p.kind === 'edit' ? 'edit' : 'late'" data-testid="pending-kind">
+              {{ p.kind === 'late_new' ? '期限切れの新規提出' : p.kind === 'paid_leave_over' ? '有給残不足の申請' : '編集' }}
             </span>
             <!-- ★どこの現場の修正かが分からないと承認の判断ができない
                  （2026-08-13 大塚さん「どこの現場の修正かわからんね」）。
@@ -82,6 +82,9 @@
           </div>
           <div v-else-if="p.kind === 'late_new'" class="muted" data-testid="pending-nodiff">
             期限を過ぎて新規に提出された日報です（差分ではなく全体が新規のため、日報の内容そのものを確認してください）
+          </div>
+          <div v-else-if="p.kind === 'paid_leave_over'" class="muted" data-testid="pending-nodiff">
+            有給の残日数が不足している状態で有給が選ばれた新規日報です。承認すると有給が消化されます（残数と申請内容を確認してください）。
           </div>
           <div v-else-if="p.computedDiff" class="muted" data-testid="pending-nodiff">
             金額・出張・領収書・稼働に変更はありません（立替の区分など、金額に影響しない項目の修正です）
@@ -168,7 +171,7 @@
             <tbody>
               <tr v-for="h in history" :key="h.id" data-testid="history-row">
                 <td class="nowrap">{{ h.report_date }}</td>
-                <td class="nowrap">{{ h.kind === 'late_new' ? '期限切れの新規提出' : '編集' }}</td>
+                <td class="nowrap">{{ h.kind === 'late_new' ? '期限切れの新規提出' : h.kind === 'paid_leave_over' ? '有給残不足の申請' : '編集' }}</td>
                 <td>{{ h.submitted_by_name || '—' }}</td>
                 <td class="cell-wrap">{{ h.reason || '—' }}</td>
                 <td class="cell-wrap">

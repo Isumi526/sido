@@ -322,6 +322,7 @@ import { loadScheduleCategories, FALLBACK_CATEGORY_COLOR, type ScheduleCategory 
 import {
   shiftMonth, genMonthDates, toDateStr, isWeekend, weekdayIndex, dateCellClass, fmtDateTime,
   cellSchedules as coreCellSchedules, chipStyle as coreChipStyle, buildScheduleDiff, birthdayDatesByWorker,
+  scheduleNotifBody,
 } from '../lib/schedule-core.gen'
 
 // ──── 型定義 ────────────────────────────────────────────────
@@ -783,7 +784,15 @@ async function createForWorker(payload: Record<string, unknown>) {
       await supabase.from('schedule_notifications').insert({
         account_id: accountId, worker_id: wid, schedule_id: (created as { id?: string } | null)?.id ?? null,
         title: `新しい${label}が追加されました`,
-        body: `${payload.title}（${payload.start_date}${payload.end_date !== payload.start_date ? '〜' + payload.end_date : ''}）`,
+        body: scheduleNotifBody({
+          creatorName: currentUserName || null,
+          title: payload.title as string,
+          startDate: payload.start_date as string,
+          endDate: payload.end_date as string,
+          startTime: (payload.start_time as string | null) ?? null,
+          endTime: (payload.end_time as string | null) ?? null,
+        }),
+        link_path: '/calendar',
       })
     }
   } catch { /* 通知失敗は無視 */ }

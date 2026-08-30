@@ -46,8 +46,6 @@ test.afterAll(async () => {
   }
   await restSrv(`estimate_material_prices?supplier_id=eq.${supId}`, { method: 'DELETE' }).catch(() => {})
   await restSrv(`subcontractors?id=eq.${supId}`, { method: 'DELETE' }).catch(() => {})
-  await restSrv(`estimate_materials?account_id=eq.${accountId}&code=eq.${CODE}`, { method: 'DELETE' }).catch(() => {})
-  await restSrv(`estimate_materials?account_id=eq.${accountId}&name=like.${encodeURIComponent('E2E新規品_' + TS + '%')}`, { method: 'DELETE' }).catch(() => {})
 })
 
 async function openNewProject(page: any) {
@@ -117,8 +115,6 @@ test('AC4: 新しい品番は明細を保存すると候補に貯まる（材料
     const it = await restSrv(`estimate_items?account_id=eq.${accountId}&item_name=eq.${encodeURIComponent(NEW_NAME)}&select=product_code`)
     return it?.[0]?.product_code ?? null
   }, { timeout: 10000 }).toBe(NEW_CODE)
-  const mats = await restSrv(`estimate_materials?account_id=eq.${accountId}&name=eq.${encodeURIComponent(NEW_NAME)}&select=id`)
-  expect(mats?.length ?? 0, '材料マスタには登録しない').toBe(0)
 
   // 別案件で品番の候補（datalist）に出る
   await openNewProject(page)

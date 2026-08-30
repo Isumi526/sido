@@ -98,7 +98,7 @@ test.describe('出退勤ログ: 実打刻と管理者設定の突き合わせ', 
 
   async function openFiltered(page: Page) {
     await page.goto('/attendance', { waitUntil: 'networkidle' })
-    await page.locator('.filter-select').nth(1).selectOption({ label: W_LATE })
+    await page.getByTestId('filter-worker').selectOption({ label: W_LATE })
     await page.getByRole('button', { name: '検索' }).click()
     await expect(page.locator('tbody tr')).toHaveCount(1, { timeout: 15000 })
   }
@@ -119,7 +119,7 @@ test.describe('出退勤ログ: 実打刻と管理者設定の突き合わせ', 
     // 「その日」の範囲から外れて消える＝早朝搬入の打刻が検索に出てこない。
     // これは今回の要望以前から在った不具合で、同じ日付境界の計算を共有しているので一緒に固定する。
     await page.goto('/attendance', { waitUntil: 'networkidle' })
-    await page.locator('.filter-select').nth(1).selectOption({ label: W_LATE })
+    await page.getByTestId('filter-worker').selectOption({ label: W_LATE })
     await page.locator('.filter-input').first().fill(DATE)
     await page.locator('.filter-input').nth(1).fill(DATE)
     await page.getByRole('button', { name: '検索' }).click()

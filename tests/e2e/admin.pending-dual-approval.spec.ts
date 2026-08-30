@@ -19,9 +19,10 @@
 //   サーバが守っているかを確かめたことにならない。
 // ============================================================
 import { test, expect } from '@playwright/test'
+import { execSync } from 'node:child_process'
 import {
   SUPABASE_URL, ANON_KEY, SERVICE_ROLE_KEY, ADMIN_LOGIN_EMAIL, ADMIN_LOGIN_PASS,
-  restSrv, getAccountId,
+  restSrv, getAccountId, DB_URL,
 } from './helpers'
 
 const TS = Date.now()
@@ -117,6 +118,25 @@ test.describe('日報編集の二重承認', () => {
       }),
     }))[0].id
     mgrToken = await tokenFor(MGR_EMAIL, MGR_PASS)
+
+    // ★「ログインを持つ active な admin/owner の worker」を1人用意する。
+    //  居ないと EF の hasOtherActiveOwner が false になり、
+    //  「完全ワンオペのオーナーは owner 1つで二重承認を成立させる」例外に当たって
+    //  1人承認で approved になる（＝二重承認の検証にならない・2026-08-30）。
+    //  ※1ログイン=1作業員の一意制約があるので、未使用の auth ユーザーを探して使う。
+    const freeAuthId = execSync(
+      `psql "${DB_URL}" -tAc "select u.id from auth.users u where not exists (select 1 from workers w where w.auth_user_id = u.id and w.account_id = '${accountId}') limit 1"`,
+      { encoding: 'utf8' },
+    ).trim()
+    if (freeAuthId) {
+      await restSrv('workers', {
+        method: 'POST', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          account_id: accountId, name: `${PREFIX}別オーナー${TS}`, role: 'site',
+          permission_role: 'admin', auth_user_id: freeAuthId, active: true,
+        }),
+      })
+    }
 
     // 申請者（承認者とは別人）
     submitterUserId = (await restSrv('users', {

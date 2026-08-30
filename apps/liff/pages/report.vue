@@ -77,10 +77,83 @@
             <option value="paid_leave">{{ $t('report.paidLeave') }}</option>
             <option value="off">{{ $t('report.off') }}</option>
           </select>
+          <!-- 有給残が不足している時: 二重承認が要る旨を先に伝える（送信は可能・承認待ちになる） -->
+          <div v-if="needsPaidLeaveApproval" class="pending-banner" data-testid="paid-leave-over-notice">
+            {{ $t('report.paidLeaveOverNotice') }}
+          </div>
         </FormSection>
 
         <!-- 現場ブロック（稼働ありの場合のみ表示） -->
         <template v-if="isWorkingStr === 'working'">
+
+        <!-- 音声入力（8/19会議）: 話す→AIが項目に展開→必ず確認してから反映。
+             非対応環境（voice.isSupported=false）ではボタンを出さず従来入力のまま。 -->
+        <!-- ★機能フラグ(settings.voice_input_enabled)がONのアカウントだけに出す。
+             未設定＝OFF なので、既定では誰にも出ない（2026-08-30 優先順位を下げて一旦停止）。
+             解禁は該当アカウントの settings に1行入れるだけ＝再デプロイ不要。 -->
+        <div v-if="voiceInputEnabled && voice.isSupported.value" class="voice-row">
+          <button type="button" class="voice-btn" :class="{ listening: voice.listening.value }"
+                  data-testid="voice-input-btn" :disabled="voiceBusy" @click="onVoiceClick">
+            <span class="material-symbols-rounded">{{ voice.listening.value ? 'graphic_eq' : 'mic' }}</span>
+            {{ voice.listening.value ? $t('report.voiceListening') : (voiceBusy ? $t('report.voiceParsing') : $t('report.voiceStart')) }}
+          </button>
+          <span v-if="voiceError" class="voice-error" data-testid="voice-error">{{ voiceError }}</span>
+        </div>
+
+        <!-- 確認モーダル: 反映前に「この内容で反映していいですか」（会議合意）。修正してから確定 -->
+        <div v-if="voiceConfirm" class="voice-modal-back" data-testid="voice-confirm">
+          <div class="voice-modal">
+            <h3>{{ $t('report.voiceConfirmTitle') }}</h3>
+            <p class="voice-heard"><span class="material-symbols-rounded">hearing</span>{{ voiceDraft.raw }}</p>
+            <!-- ★話した現場の数だけブロックを出す（1日に複数現場を回る運用がある）。
+                 まとめて1件にすると時間が現場を跨いで合算され、人件費の集計が狂う。 -->
+            <div v-for="(d, di) in voiceDraft.sites" :key="di" class="voice-site-block" :data-testid="`voice-site-block-${di}`">
+              <div v-if="voiceDraft.sites.length > 1" class="voice-site-no">{{ $t('report.siteNumbered', { n: di + 1 }) }}</div>
+              <label class="voice-field">
+                <span>{{ $t('report.site') }}</span>
+                <select v-model="d.siteName" class="select" :data-testid="`voice-site-${di}`">
+                  <option value="">{{ $t('report.voiceNoChange') }}</option>
+                  <option v-for="n in voiceSiteChoices" :key="n" :value="n">{{ n }}</option>
+                </select>
+              </label>
+              <label class="voice-field">
+                <span>{{ $t('report.workCategory') }}</span>
+                <select v-model="d.workCategoryId" class="select" :data-testid="`voice-workcat-${di}`">
+                  <option value="">{{ $t('report.voiceNoChange') }}</option>
+                  <option v-for="c in workCategoryOptions" :key="c.id" :value="c.id">{{ c.name }}</option>
+                </select>
+              </label>
+              <div class="voice-field-row">
+                <label class="voice-field">
+                  <span>{{ $t('report.startTime') }}</span>
+                  <select v-model="d.startTime" class="select" :data-testid="`voice-start-${di}`">
+                    <option value="">--</option>
+                    <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
+                  </select>
+                </label>
+                <label class="voice-field">
+                  <span>{{ $t('report.endTime') }}</span>
+                  <select v-model="d.endTime" class="select" :data-testid="`voice-end-${di}`">
+                    <option value="">--</option>
+                    <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
+                  </select>
+                </label>
+              </div>
+              <label class="voice-field">
+                <span>{{ $t('report.siteNote') }}</span>
+                <textarea v-model="d.note" class="input" rows="2" :data-testid="`voice-note-${di}`" />
+              </label>
+            </div>
+            <label class="voice-field">
+              <span>{{ $t('report.noteSection') }}</span>
+              <textarea v-model="voiceDraft.note" class="input" rows="2" data-testid="voice-note" />
+            </label>
+            <div class="voice-modal-btns">
+              <button type="button" class="btn-cancel" data-testid="voice-cancel" @click="voiceConfirm = false">{{ $t('report.voiceCancel') }}</button>
+              <button type="button" class="btn-apply" data-testid="voice-apply" @click="applyVoiceDraft">{{ $t('report.voiceApply') }}</button>
+            </div>
+          </div>
+        </div>
 
         <!-- 出張区分（稼働ありの日のみ・出張手当 +¥3,000/日を集計に計上） -->
         <label class="trip-toggle" data-testid="business-trip-toggle">
@@ -191,6 +264,20 @@
             <div v-if="site.siteName === '__unset__'" class="unset-hint">
               <HintIcon :text="$t('report.siteUnsetNote')" :label="$t('report.siteUnset')" />
             </div>
+            <!-- ★現場名を文字で残せるようにする（2026-08-27）。
+                 これが無いと「現場未設定」を選んだ時点で “どの現場だったか” がシステム上
+                 どこにも残らず、後から管理者が記憶を頼りに紐付けるしかなかった。
+                 職人は現場を新規作成できない（__other__ が出ない）ので、未登録現場で働いた日は
+                 必ずここに落ちる。任意入力・マスタには登録しない（紐付けの手がかり専用）。 -->
+            <input
+              v-if="site.siteName === '__unset__'"
+              v-model="site.customSiteName"
+              type="text"
+              class="input mt6"
+              :data-testid="`unset-site-memo-${si}`"
+              :placeholder="$t('report.siteUnsetNamePlaceholder')"
+              @keydown.enter.prevent
+            />
             <input
               v-if="site.siteName === '__other__'"
               v-model="site.customSiteName"
@@ -613,6 +700,7 @@
             <textarea
               v-model="site.siteNote"
               class="textarea"
+              :data-testid="`site-note-${si}`"
               :placeholder="$t('report.siteNotePlaceholder')"
               rows="2"
             />
@@ -717,7 +805,7 @@
 
         <!-- 送信前の記入忘れ確認（新規送信時のみ・習慣化のため必須） -->
         <label v-if="!isEditMode" class="submit-confirm">
-          <input type="checkbox" v-model="omissionConfirmed" />
+          <input type="checkbox" v-model="omissionConfirmed" data-testid="omission-confirm" />
           <span>{{ $t('report.omissionConfirm') }}</span>
         </label>
 
@@ -829,10 +917,13 @@ const proxy   = useProxyMode()
 const punches = usePunches()
 const myWorkerIdForPunch = ref<string | null>(null)
 
-/** その現場のその日の打刻（無ければ null＝行を出さない） */
-function punchOf(si: number): { checkin?: string; checkout?: string } | null {
-  const s = report.form.value.sites?.[si]
-  return punches.punchFor(myWorkerIdForPunch.value, report.form.value.date, s?.siteName)
+/**
+ * その日の打刻（無ければ null＝行を出さない）。
+ * ★2026-08-27 出退勤モデル変更で現場ごとの打刻は無くなった。1日の外枠（最早の出勤・
+ *  最遅の退勤）を各現場行に同じものとして出す（si は行の識別にのみ残す）。
+ */
+function punchOf(_si: number): { checkin?: string; checkout?: string } | null {
+  return punches.punchFor(myWorkerIdForPunch.value, report.form.value.date)
 }
 
 /** 打刻と申告した作業時刻のズレ（15分未満は出さない＝全行に数分のチップが並ぶのを防ぐ） */
@@ -1020,6 +1111,39 @@ async function submitLateNewForApproval(targetUserId: string): Promise<boolean> 
   }
 }
 
+/**
+ * 有給残が不足しているのに有給を選んだ新規提出を「承認待ち（二重承認）」として申請する。
+ * ★late_new と同じ保留方式: daily_reports には書かず、承認されて初めて日報に反映＝有給が消化される。
+ *   未送信スキャンは承認待ちの日付を「出し済み」として飛ばすので、翌日以降の入力に進める。
+ */
+async function submitPaidLeaveOverForApproval(targetUserId: string): Promise<boolean> {
+  try {
+    const payload = await expense.buildReportPayload({
+      isWorking:      false,
+      leaveType:      'paid_leave',
+      isBusinessTrip: false,
+      sites:          report.form.value.sites,
+      note:           report.form.value.note,
+      gasolineItems:  [],
+    })
+    if (!editLogToken.value) editLogToken.value = crypto.randomUUID()
+    const j = await callEditEf({
+      kind: 'paid_leave_over',
+      targetUserId,
+      reportId: null,
+      reportDate: report.form.value.date,
+      reason: t('report.paidLeaveOverReason'),
+      diffs: [],
+      clientToken: editLogToken.value,
+      payload,
+    })
+    return !!j?.pendingId
+  } catch (e) {
+    console.error('[Report] 有給残不足の申請に失敗:', e)
+    return false
+  }
+}
+
 async function submitEditForApproval(diffs: string[]): Promise<boolean> {
   try {
     const working = isWorkingStr.value === 'working'
@@ -1171,6 +1295,22 @@ const nextDateLabel = computed(() => {
 
 // 稼働有無
 const isWorkingStr = ref<'working' | 'paid_leave' | 'off'>('working')
+
+// ── 有給残の判定（有給を選んだ時、残が足りなければ日報を二重承認制にする）──
+//  自分の分のみ判定する（代理入力は本人の残が取れないため対象外＝従来どおり保存。将来対応）。
+const paidLeaveRemaining = ref<number | null>(null)
+async function refreshPaidLeaveRemaining() {
+  if (proxy.isProxyMode.value) { paidLeaveRemaining.value = null; return }
+  try { paidLeaveRemaining.value = (await usePaidLeave().status()).remaining }
+  catch { paidLeaveRemaining.value = null }   // 取れない時は判定に使わない（承認制に倒さない）
+}
+// 有給を選んでいて、残が0以下（新規・自分・期限内）＝この有給が残不足 → 承認必要
+const needsPaidLeaveApproval = computed(() =>
+  !isEditMode.value && !isLateDate.value && !proxy.isProxyMode.value
+  && isWorkingStr.value === 'paid_leave'
+  && paidLeaveRemaining.value !== null && paidLeaveRemaining.value < 1)
+// 有給を選んだ瞬間に残を引く（初回だけ・自分の分）
+watch(isWorkingStr, (v) => { if (v === 'paid_leave' && paidLeaveRemaining.value === null) void refreshPaidLeaveRemaining() })
 
 // 送信日が日曜かどうか（料率計算に使用）
 const isSunday = computed(() =>
@@ -1584,6 +1724,17 @@ function findMissingReceipts(): string | null {
   return null
 }
 
+/**
+ * 画面に出す現場名。'__unset__'/'__other__' は内部値なので、そのまま見せない。
+ * ★admin 側（lib/siteKey.ts の siteStoredName）に同じ変換があるのに LIFF に無く、
+ *  確認画面や履歴に「__unset__」が生で出ていた（2026-08-27 に発覚）。
+ */
+function siteDisplayName(siteName: string | null | undefined, customSiteName?: string | null): string {
+  if (siteName === '__unset__') return t('report.siteUnset')
+  if (siteName === '__other__') return customSiteName || '新規現場'
+  return siteName || ''
+}
+
 function findWorkerTimeOverlap(): string | null {
   const segs: { name: string; start: number; end: number }[] = []
   for (const s of (report.form.value.sites ?? [])) {
@@ -1592,7 +1743,7 @@ function findWorkerTimeOverlap(): string | null {
     let start = parseMin(w.startTime)
     let end   = parseMin(w.endTime)
     if (end <= start) end += 1440                        // 日跨ぎ補正
-    const name = s.siteName === '__other__' ? (s.customSiteName || '新規現場') : (s.siteName || '現場')
+    const name = siteDisplayName(s.siteName, s.customSiteName) || '現場'
     segs.push({ name, start, end })
   }
   segs.sort((a, b) => a.start - b.start)
@@ -1609,6 +1760,112 @@ function findWorkerTimeOverlap(): string | null {
  */
 const workCategoryOptions = computed(() =>
   master.workCategories.value.filter(c => c.scope === null || c.scope === 'site'))
+
+// ── 音声入力（8/19会議）: 話す→report-voice-parse EFで解釈→確認して反映 ──
+const voice = useVoiceInput()
+// 機能フラグ（未設定＝OFF）。解決前は OFF のままなので、一瞬だけ出る事故も起きない
+onMounted(() => { void loadLiffFeatures() })
+const voiceBusy = ref(false)
+const voiceError = ref<string | null>(null)
+const voiceConfirm = ref(false)
+// ★1日に複数の現場を回る運用があるので配列で持つ（2026-08-30）。
+//  1件に畳むと「午前A・午後B」が1現場の 8:00-17:30 になり、
+//  作業時間（＝人件費の根拠）が現場を跨いで狂う。
+type VoiceSiteDraft = {
+  siteName: string
+  workCategoryId: string
+  startTime: string
+  endTime: string
+  note: string
+}
+const voiceDraft = reactive({
+  sites: [] as VoiceSiteDraft[],
+  note: '' as string,   // 現場に紐づかない全体の備考
+  raw: '' as string,
+})
+// 現場の選択肢（現場名。__unset__ は除く）
+const voiceSiteChoices = computed(() => master.siteNames.value.filter((n: string) => n !== '__unset__'))
+// EFが返した "HH:MM" を実在する TIME_OPTIONS の一番近い値に寄せる（無ければ空）
+function snapTime(t: string | null): string {
+  if (!t) return ''
+  if (TIME_OPTIONS.includes(t)) return t
+  const target = parseMin(t)
+  if (target < 0) return ''
+  let best = '', diff = Infinity
+  for (const o of TIME_OPTIONS) {
+    const d = Math.abs(parseMin(o) - target)
+    if (d < diff) { diff = d; best = o }
+  }
+  return best
+}
+function onVoiceClick() {
+  voiceError.value = null
+  if (voice.listening.value) { voice.stop(); return }
+  voice.start(async (text: string) => {
+    voiceBusy.value = true
+    try {
+      const efUrl = config.public.edgeFunctionUrl
+      const anonKey = config.public.supabaseAnonKey as string
+      const res = await $fetch<any>(`${efUrl}/report-voice-parse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: anonKey, Authorization: `Bearer ${anonKey}` },
+        body: {
+          transcript: text,
+          sites: voiceSiteChoices.value,
+          workCategories: workCategoryOptions.value.map((c: any) => ({ id: c.id, name: c.name })),
+        },
+      })
+      if (res?.error) throw new Error(res.error)
+      const parsed = (res.sites ?? []) as any[]
+      voiceDraft.sites = parsed.map((s) => ({
+        siteName: voiceSiteChoices.value.includes(s?.siteName) ? s.siteName : '',
+        workCategoryId: s?.workCategoryId ?? '',
+        startTime: snapTime(s?.startTime),
+        endTime: snapTime(s?.endTime),
+        note: s?.note ?? '',
+      }))
+      // 現場が1つも取れなくても確認画面は出す（人がその場で選んで反映できる）
+      if (!voiceDraft.sites.length) {
+        voiceDraft.sites = [{ siteName: '', workCategoryId: '', startTime: '', endTime: '', note: '' }]
+      }
+      voiceDraft.note = res.note ?? ''
+      voiceDraft.raw = res.raw ?? text
+      voiceConfirm.value = true
+    } catch (e: any) {
+      voiceError.value = t('report.voiceFailed')
+      console.error('[voice-parse]', e)
+    } finally {
+      voiceBusy.value = false
+    }
+  })
+}
+// 確認画面で「反映」: 先頭の現場ブロック＋備考へ入れる（空欄の項目は触らない）
+function applyVoiceDraft() {
+  // ★話した現場の数だけ現場ブロックを用意して、1件ずつ入れる。
+  //  足りなければ addSite() で足す（既存の入力は消さない＝上書きは空欄の項目だけ）。
+  voiceDraft.sites.forEach((d, i) => {
+    while ((report.form.value.sites?.length ?? 0) <= i) addSite()
+    const site = report.form.value.sites?.[i]
+    if (!site) return
+    if (d.siteName) { site.siteName = d.siteName; onSiteChange(i) }
+    if (d.workCategoryId) site.workCategoryId = d.workCategoryId
+    const w = site.workers?.[0]
+    if (w) {
+      if (d.startTime) w.startTime = d.startTime
+      if (d.endTime) w.endTime = d.endTime
+    }
+    // その現場での作業内容は現場備考へ（全体の備考と混ぜない）
+    if (d.note) {
+      const cur = (site as any).siteNote ?? ''
+      ;(site as any).siteNote = cur ? `${cur}\n${d.note}` : d.note
+    }
+  })
+  if (voiceDraft.note) {
+    const cur = report.form.value.note ?? ''
+    report.form.value.note = cur ? `${cur}\n${voiceDraft.note}` : voiceDraft.note
+  }
+  voiceConfirm.value = false
+}
 
 /**
  * 既定の作業区分＝「現場作業」。
@@ -1948,9 +2205,7 @@ const previewData = computed<PreviewData>(() => {
   let totalHours = 0
   for (const site of form.sites) {
     if (!site.siteName) continue
-    const displayName = site.siteName === '__other__'
-      ? (site.customSiteName || '新規現場')
-      : site.siteName
+    const displayName = siteDisplayName(site.siteName, site.customSiteName)
     const contractorName = site.contractorName === '__other__'
       ? (site.customContractorName || '')
       : (site.contractorName || '')
@@ -2239,8 +2494,10 @@ async function handleSubmit() {
   //   既存の「過去3日ロック＋許可申請」は"出す許可"の承認で、中身（金額）は見ていない。
   //   遅れて出てくる日報こそ内容を確認したいので、承認されるまで daily_reports に書かない。
   const isLateSubmission = lock.isPastLockWindow(report.form.value.date)
+  // 有給残不足で有給を選んだ新規提出も、承認されるまで daily_reports に書かない（二重承認制）。
+  const isPaidLeaveOver = needsPaidLeaveApproval.value
 
-  if (targetUserId && !isLateSubmission) {
+  if (targetUserId && !isLateSubmission && !isPaidLeaveOver) {
     try {
       await expense.saveReportById(targetUserId, {
         date:      report.form.value.date,
@@ -2277,6 +2534,16 @@ async function handleSubmit() {
       return
     }
     lateSubmitted.value = true
+    return
+  }
+
+  // ③-b 有給残不足の新規提出: 二重承認の保留に入れる（daily_reports にはまだ書かない）。
+  if (isPaidLeaveOver && targetUserId) {
+    if (!await submitPaidLeaveOverForApproval(targetUserId)) {
+      editError.value = t('report.editApprovalSubmitFailed')
+      return
+    }
+    lateSubmitted.value = true   // 「承認待ちで送信済み」の完了画面を出す（未送信トラップに落とさない）
     return
   }
 
@@ -2957,6 +3224,51 @@ html, body {
   transition: opacity 0.15s;
 }
 .btn-primary:hover { opacity: 0.85; }
+
+/* ── 音声入力 ── */
+.voice-row { display: flex; align-items: center; gap: 10px; margin: 4px 0 14px; flex-wrap: wrap; }
+.voice-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: #fff; color: var(--accent);
+  border: 1.5px solid var(--accent); border-radius: 999px;
+  padding: 9px 18px; font-size: 14px; font-weight: 700;
+  font-family: var(--font); cursor: pointer;
+}
+.voice-btn:disabled { opacity: .5; cursor: default; }
+.voice-btn.listening { background: var(--accent); color: #fff; animation: voice-pulse 1s ease-in-out infinite; }
+@keyframes voice-pulse { 0%,100% { opacity: 1; } 50% { opacity: .6; } }
+.voice-error { color: #c0392b; font-size: 13px; }
+.voice-modal-back {
+  position: fixed; inset: 0; background: rgba(0,0,0,.45);
+  display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px;
+}
+.voice-modal {
+  background: #fff; border-radius: 14px; padding: 20px;
+  width: 100%; max-width: 420px; max-height: 88vh; overflow-y: auto;
+}
+.voice-modal h3 { margin: 0 0 12px; font-size: 17px; }
+.voice-heard {
+  display: flex; align-items: flex-start; gap: 6px;
+  background: #f4f6f8; border-radius: 8px; padding: 10px 12px;
+  font-size: 13px; color: #444; margin-bottom: 14px;
+}
+.voice-heard .material-symbols-rounded { font-size: 18px; color: #888; }
+.voice-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; font-size: 13px; font-weight: 700; color: #555; }
+.voice-field-row { display: flex; gap: 12px; }
+/* 現場ごとのブロック（複数現場を一度に話せる） */
+.voice-site-block { border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
+.voice-site-no { font-size: 12px; font-weight: 700; color: #06864a; margin-bottom: 6px; }
+.voice-field-row .voice-field { flex: 1; }
+.voice-modal-btns { display: flex; gap: 10px; margin-top: 8px; }
+.voice-modal-btns button { flex: 1; }
+.btn-cancel {
+  background: #f0f0f0; color: #555; border: none; border-radius: 8px;
+  padding: 12px; font-size: 14px; font-weight: 700; font-family: var(--font); cursor: pointer;
+}
+.btn-apply {
+  background: var(--accent); color: #fff; border: none; border-radius: 8px;
+  padding: 12px; font-size: 14px; font-weight: 700; font-family: var(--font); cursor: pointer;
+}
 
 .btn-history {
   background: transparent; color: var(--text2);

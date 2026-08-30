@@ -44,10 +44,14 @@ export function usePunches() {
     }
   }
 
-  /** その現場の打刻。無ければ null（＝打刻なし。0:00 のように見せない） */
-  function punchFor(workerId: string | null | undefined, date: string, siteName: string | null | undefined): Punch | null {
-    if (!workerId || !siteName) return null
-    return punches.value[punchKey(workerId, date, siteName)] ?? null
+  /**
+   * その日の打刻。無ければ null（＝打刻なし。0:00 のように見せない）。
+   * ★2026-08-27 の出退勤モデル変更で現場では引かない（打刻が現場に紐づかなくなった）。
+   *  1日に複数現場がある日報でも、その日の実打刻（最早の出勤・最遅の退勤）を各行に出す。
+   */
+  function punchFor(workerId: string | null | undefined, date: string): Punch | null {
+    if (!workerId) return null
+    return punches.value[punchKey(workerId, date)] ?? null
   }
 
   return { punches, loaded, load, loadRange, punchFor }

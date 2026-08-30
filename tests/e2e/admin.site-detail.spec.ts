@@ -28,19 +28,18 @@ test('現場詳細を編集→保持し、写真を添付できる', async ({ pa
   const modal = page.locator('.modal')
   await expect(modal).toBeVisible()
 
+  // ★このモーダルに入力欄があるのは 住所 と 工事内容 だけ。
+  //  工事種類(construction_type)・メモ(memo) は列としては保存されるが入力欄が無い
+  //  （テストが古いUIのplaceholderを掴んだままで落ちていた・2026-08-30）。
   await modal.locator('input[placeholder="例：名古屋市〇〇区…"]').fill('名古屋市中区テスト1-2-3')
-  await modal.locator('input[placeholder="例：内装・改修"]').fill('内装改修')
   await modal.locator('textarea[placeholder="例：1F内装ボード・クロス工事 一式"]').fill('1F内装ボード・クロス工事')
-  await modal.locator('textarea[placeholder="任意"]').fill('鍵は現場事務所')
   await modal.locator('.btn-save').click()
   await expect(modal).toBeHidden()
 
   // 再編集で保持されている（DB確認）
-  const row = await rest(`sites?id=eq.${siteId}&select=location,construction_type,construction_details,memo`)
+  const row = await rest(`sites?id=eq.${siteId}&select=location,construction_details`)
   expect(row[0].location).toBe('名古屋市中区テスト1-2-3')
-  expect(row[0].construction_type).toBe('内装改修')
   expect(row[0].construction_details).toBe('1F内装ボード・クロス工事')
-  expect(row[0].memo).toBe('鍵は現場事務所')
 
   // 写真を添付 → 一覧に出る & DB に site_attachments 行
   await page.locator('tr', { hasText: SITE }).locator('.btn-edit').click()

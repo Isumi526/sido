@@ -17,6 +17,7 @@
   "siteSearchEmpty": "No matching site",
   "checkedInTag": "Checked in",
   "switchSiteLink": "Choose a different site",
+  "punchDateNote": "Recording for {date}",
   "checkinConfirmTitle": "Pre-check-in confirmation",
   "checkoutConfirmTitle": "Pre-check-out confirmation",
   "registerAs": "Registering as {name}",

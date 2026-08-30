@@ -3,10 +3,51 @@
     <AppNav :subtitle="$t('notifications.subtitle')" :user-name="selfUser?.real_name" :user-role="selfUser?.worker_role" />
 
     <main class="main">
+      <!-- ★2つに分ける（2026-08-30 ユーザー指示）。
+           やること = 行動されるまで消えない／お知らせ = 開いた時点で消える。
+           混ぜると読み飛ばした瞬間に「やること」が消え、誰も対応しないまま残る。 -->
+      <div class="tabs">
+        <button
+          type="button" class="tab" :class="{ active: tab === 'todo' }"
+          data-testid="notif-tab-todo" @click="tab = 'todo'"
+        >
+          {{ $t('notifications.tabTodo') }}
+          <span v-if="pendingDocCount > 0" class="tab-badge">{{ pendingDocCount }}</span>
+        </button>
+        <button
+          type="button" class="tab" :class="{ active: tab === 'info' }"
+          data-testid="notif-tab-info" @click="tab = 'info'"
+        >
+          {{ $t('notifications.tabInfo') }}
+          <span v-if="unreadNotifCount > 0" class="tab-badge">{{ unreadNotifCount }}</span>
+        </button>
+      </div>
+
       <div v-if="loading" class="state-screen">
         <div class="spinner" />
         <p class="state-text">{{ $t('common.loading') }}</p>
       </div>
+
+      <!-- やること：承認などの行動が済むまで残る -->
+      <template v-else-if="tab === 'todo'">
+        <div v-if="!pendingDocItems.length" class="empty-state" data-testid="todo-empty">
+          <div class="material-symbols-rounded empty-icon">task_alt</div>
+          <p class="empty-text">{{ $t('notifications.todoEmpty') }}</p>
+        </div>
+        <ul v-else class="notif-list">
+          <li v-for="d in pendingDocItems" :key="d.attachmentId">
+            <button class="notif tappable todo" data-testid="todo-item" @click="openTodo(d)">
+              <span class="material-symbols-rounded notif-icon kind-todo">assignment_late</span>
+              <span class="notif-body">
+                <span class="notif-title">{{ $t('notifications.todoDocTitle') }}</span>
+                <span class="notif-text">{{ d.siteName }}：{{ d.name || $t('notifications.untitled') }}</span>
+                <span class="notif-time">{{ fmtWhen(d.createdAt) }}</span>
+              </span>
+              <span class="material-symbols-rounded notif-chev">chevron_right</span>
+            </button>
+          </li>
+        </ul>
+      </template>
 
       <div v-else-if="!items.length" class="empty-state">
         <div class="material-symbols-rounded empty-icon">notifications_none</div>
@@ -15,12 +56,11 @@
 
       <template v-else>
         <div class="head">
+          <!-- ★このタブを開いた時点で既読になる（2026-08-30 ユーザー指示）ので、
+               「すべて既読にする」ボタンは不要になった。履歴としては下に残る。 -->
           <span class="head-count" data-testid="notif-unread-count">
             {{ unreadNotifCount > 0 ? $t('notifications.unreadCount', { n: unreadNotifCount }) : $t('notifications.allRead') }}
           </span>
-          <button v-if="unreadNotifCount > 0" class="btn-read-all" data-testid="notif-read-all" @click="readAll">
-            {{ $t('notifications.readAll') }}
-          </button>
         </div>
 
         <ul class="notif-list">
@@ -70,6 +110,15 @@ const loading = ref(true)
 const items = ref<any[]>([])
 const selfUser = ref<User | null>(null)
 
+// ★既定は「やること」。放置されると困るのはこちらなので、開いた時に最初に目に入る側にする。
+//  やることが無ければお知らせを開く（空のタブを見せない）。
+const tab = ref<'todo' | 'info'>('todo')
+
+/** やること（未承認の資料）をタップ → その現場へ。承認はそこで行う。 */
+function openTodo(d: { siteId: string }) {
+  router.push(`/sites/${d.siteId}`)
+}
+
 /** 種別ごとのアイコン。未知の種別でも無地で出す（通知が消えるより無地で出す方がまし） */
 function iconOf(kind: string): string {
   switch (kind) {
@@ -78,6 +127,7 @@ function iconOf(kind: string): string {
     case 'overtime_decision': return 'more_time'
     case 'expense_reject':    return 'receipt_long'
     case 'chat_mention':      return 'alternate_email'
+    case 'site_document':     return 'description'   // 送り出し資料の確認依頼
     default:                  return 'notifications'
   }
 }
@@ -99,9 +149,11 @@ async function load() {
     if (!accountId || !workerId) { items.value = []; return }
 
     // 既読も含めて新しい順。件数は上限を切る（無限に伸ばしても読まれない）
+    // ★site_document は「やること」側で状態から出すので、お知らせ一覧には混ぜない。
     const { data } = await supabase.from('schedule_notifications')
       .select('id, kind, title, body, link_path, created_at, read_at')
       .eq('account_id', accountId).eq('worker_id', workerId)
+      .neq('kind', 'site_document')
       .order('created_at', { ascending: false }).limit(100)
     items.value = data ?? []
   } catch (e) {
@@ -136,14 +188,45 @@ async function readAll() {
   await refreshNotifBadge()
 }
 
+// ★お知らせタブを開いた時点で既読にする（2026-08-30 ユーザー指示「一回開いた時点で消す」）。
+//  一覧には履歴として残るが、バッジは消える。読めば済むものをいつまでも数え続けない。
+//  「やること」は行動されるまで消えないので、ここでは触らない。
+watch(tab, async (t) => {
+  if (t === 'info') await readAll()
+})
+
 onMounted(async () => {
   await load()
-  await refreshNotifBadge()
+  await Promise.all([refreshNotifBadge(), refreshPendingDocBadge()])
+  // やることが無ければお知らせを開く（空のタブを見せない）＝開いた時点で既読になる
+  if (pendingDocCount.value === 0) {
+    tab.value = 'info'
+    await readAll()
+  }
 })
 </script>
 
 <style scoped>
 .main { padding: 12px 14px 24px; }
+
+/* やること / お知らせ の切り替え */
+.tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.tab {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  background: #fff; border: 1px solid #e7e7e7; border-radius: 999px;
+  padding: 9px 12px; font-size: 14px; font-weight: 700; color: var(--text2);
+  font-family: inherit; cursor: pointer;
+}
+.tab.active { background: #06C755; border-color: #06C755; color: #fff; }
+.tab-badge {
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  background: #e11d48; color: #fff; font-size: 11px; line-height: 18px; font-weight: 700;
+}
+.tab.active .tab-badge { background: #fff; color: #06C755; }
+
+/* やること（行動するまで消えない）は橙で、読めば済むお知らせと区別する */
+.notif.todo { border-color: #fcd34d; background: #fffbeb; }
+.notif-icon.kind-todo { color: #d97706; }
 
 .head { display: flex; align-items: center; margin-bottom: 10px; }
 .head-count { font-size: 13px; color: var(--text2); }

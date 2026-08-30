@@ -49,6 +49,7 @@
   "addNewSite": "＋ Register a new site",
   "siteUnset": "Site not set (link later)",
   "siteUnsetNote": "You can record even if the site isn't created yet. An admin will link it to the correct site later.",
+  "siteUnsetNamePlaceholder": "Site name (as best you know)",
   "fixedTimeNote": "This site's fixed end time is {end}. Reporting beyond it requires an overtime request (ending earlier, e.g. for early leave, is fine).",
   "overtimeApplyLink": "Request overtime →",
   "overtimeApprovedNote": "Overtime approved. You can enter an end time beyond the fixed end.",
@@ -184,5 +185,15 @@
   "punchGapStart": "in",
   "punchGapEnd": "out",
   "breakApproved": "approved",
-  "earlyStartApproved": "Early start {time} is also approved"
+  "earlyStartApproved": "Early start {time} is also approved",
+  "paidLeaveOverNotice": "Your remaining paid leave is insufficient. This report needs approval by the site manager and owner (you can submit now; it applies once approved).",
+  "paidLeaveOverReason": "Paid leave over balance — approval requested",
+  "voiceStart": "Voice input",
+  "voiceListening": "Listening… (tap again to stop)",
+  "voiceParsing": "Reading your input…",
+  "voiceConfirmTitle": "Apply this content?",
+  "voiceNoChange": "No change",
+  "voiceCancel": "Cancel",
+  "voiceApply": "Apply this",
+  "voiceFailed": "Could not read that. Please try again."
 }

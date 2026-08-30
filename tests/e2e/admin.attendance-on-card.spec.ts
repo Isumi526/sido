@@ -30,12 +30,15 @@ test('打刻あり現場(テスト現場D)に出勤=最早checkin・退勤=最�
   await expect(rowD).toContainText('退勤 17:35')
 })
 
-test('打刻なし現場(テスト現場B)は「打刻なし」で表示される', async ({ page }) => {
-  // AC2: 打刻が一切無い（checkin/checkoutどちらも無し）現場は「打刻なし」表示。
-  // fce8964(2026-07-03・レビュー指摘)で「出勤—/退勤—」から変更済み。
+test('同じ日の別現場(テスト現場B)にも、その日の打刻が同じように出る', async ({ page }) => {
+  // ★2026-08-27 出退勤モデル変更: 打刻が現場に紐づかなくなった（1日＝最初の出勤・
+  //  最後の退勤の2回）ので、「同じ日なのにこの現場だけ打刻なし」という状態は作れない。
+  //  その日の実打刻（外枠）を、その日の全現場行に同じものとして出す。
+  //  打刻が1件も無い日に 0:00 を偽らないことは admin.report-punch-diff:143 が担保する。
   const rowB = attCard(page).locator('.site-row', { hasText: 'テスト現場B' })
   await expect(rowB).toBeVisible()
-  await expect(rowB).toContainText('打刻なし')
+  await expect(rowB).toContainText('出勤 08:02')
+  await expect(rowB).toContainText('退勤 17:35')
 })
 
 test('詳細モーダルの現場ブロックにも出退勤が表示される', async ({ page }) => {

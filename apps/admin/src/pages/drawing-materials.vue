@@ -16,7 +16,7 @@
           <button class="tab-btn" :class="{ active: viewMode === 'extract' }" @click="viewMode = 'extract'">解析</button>
           <button class="tab-btn" data-testid="drawing-history-tab" :class="{ active: viewMode === 'history' }" @click="openHistory">履歴</button>
         </div>
-        <button v-if="viewMode === 'extract'" class="btn-ghost" :disabled="!rows.length" @click="exportCsv(rows, '実施図面_材料抽出.csv')">CSV書き出し</button>
+        <button v-if="viewMode === 'extract'" class="btn-ghost" :disabled="!rows.length" data-testid="drawing-export-csv" @click="exportCsv(rows, '実施図面_材料抽出.csv')">CSV書き出し</button>
         <button v-if="viewMode === 'extract'" class="btn-ghost" :disabled="(!rows.length && !quantityRows.length) || busy" data-testid="drawing-clear" @click="clearWork">新規解析（表をクリア）</button>
       </div>
     </div>

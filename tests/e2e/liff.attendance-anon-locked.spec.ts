@@ -62,6 +62,14 @@ test.describe('出退勤ログは公開キーから触れない', () => {
     expect(r.text, '打刻の中身が漏れていない').not.toContain('E2E: ヘルメット着用')
   })
 
+  // 2026-08-30: 出退勤モデル変更で新設した共通ルール表を、当初 using(true) にしてしまい
+  //  公開キーで全テナントのルール本文が読める状態だった。打刻画面は attendance-log EF 経由で
+  //  ルールを受け取るので anon 直読みは要らない。独立AIレビューが指摘して発覚。
+  test('★anonキーでは共通の確認ルールも読めない（他テナントの運用ルールが見えない）', async () => {
+    const r = await asAnon('account_attendance_rules?select=*')
+    expect(r.status, `★公開キーで読めてはいけない (返答: ${r.text.slice(0, 200)})`).toBeGreaterThanOrEqual(400)
+  })
+
   test('★anonキーでは打刻を作れない（勤怠の証跡を偽造できない）', async () => {
     const r = await asAnon('attendance_logs', {
       method: 'POST',

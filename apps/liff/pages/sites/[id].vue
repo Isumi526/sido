@@ -98,6 +98,34 @@
             </a>
           </div>
         </div>
+        <!-- 送り出し資料の承認（2026-08-27 出退勤モデル変更で打刻から切り離した）。
+             現場に参加している作業員が内容を確認して承認する。誰がいつ承認したかを残す。 -->
+        <div v-if="consentDocs.length" class="att-block" data-testid="site-consent-block">
+          <div class="att-ttl-row">
+            <div class="att-ttl">{{ $t('sitesView.consentTitle') }}</div>
+          </div>
+          <p class="consent-hint">{{ $t('sitesView.consentHint') }}</p>
+          <div v-for="d in consentDocs" :key="d.id" class="consent-row" :data-testid="`consent-row-${d.id}`">
+            <a v-if="d.url" :href="d.url" target="_blank" rel="noopener" class="doc consent-doc">
+              <span class="material-symbols-rounded doc-icon">description</span>{{ d.name || $t('sitesView.documentFallback') }}
+            </a>
+            <!-- ★URLが取れなかった時は「リンクに見えるのに押せない」状態にしない。
+                 灰色＋注記にして、開けないことが分かるようにする（2026-08-30 指摘）。 -->
+            <span v-else class="doc consent-doc consent-doc--unavailable">
+              <span class="material-symbols-rounded doc-icon">description</span>{{ d.name || $t('sitesView.documentFallback') }}
+              <span class="doc-unavailable">{{ $t('sitesView.documentUnavailable') }}</span>
+            </span>
+            <span v-if="d.consentedAt" class="consent-done" :data-testid="`consent-done-${d.id}`">
+              <span class="material-symbols-rounded">check_circle</span>{{ $t('sitesView.consentDone') }}
+            </span>
+            <button
+              v-else type="button" class="consent-btn" :disabled="consentBusy === d.id"
+              :data-testid="`consent-btn-${d.id}`" @click="approveDoc(d)"
+            >{{ consentBusy === d.id ? $t('common.saving') : $t('sitesView.consentApprove') }}</button>
+          </div>
+          <p v-if="consentError" class="consent-error" data-testid="consent-error">{{ consentError }}</p>
+        </div>
+
         <div class="att-block">
           <div class="att-ttl-row">
             <div class="att-ttl">{{ $t('sitesView.documents') }}</div>
@@ -106,7 +134,15 @@
               <input type="file" hidden :disabled="uploading" @change="onAttachPick($event, 'document')" />
             </label>
           </div>
-          <a v-for="a in docs" :key="a.id" v-show="a.url" :href="a.url || undefined" target="_blank" rel="noopener" class="doc"><span class="material-symbols-rounded doc-icon">description</span>{{ a.name || a.path.split('/').pop() }}</a>
+          <!-- ★URLが取れなくても行を消さない。消すと「資料があるのに無いように見える」
+               （2026-08-30 指摘。以前は v-show="a.url" で黙って消えていた）。 -->
+          <template v-for="a in docs" :key="a.id">
+            <a v-if="a.url" :href="a.url" target="_blank" rel="noopener" class="doc"><span class="material-symbols-rounded doc-icon">description</span>{{ a.name || a.path.split('/').pop() }}</a>
+            <span v-else class="doc doc--unavailable">
+              <span class="material-symbols-rounded doc-icon">description</span>{{ a.name || a.path.split('/').pop() }}
+              <span class="doc-unavailable">{{ $t('sitesView.documentUnavailable') }}</span>
+            </span>
+          </template>
         </div>
         <p v-if="!photos.length && !docs.length && !site.location && !site.construction_type && !site.construction_details && !site.memo" class="state">{{ $t('sitesView.noDetail') }}</p>
       </template>
@@ -121,6 +157,9 @@ const { t } = useI18n()
 const proxy = useProxyMode()
 const { profile, getIdToken } = useLiff()
 const route = useRoute()
+// ★setup の直下で解決しておく。async 関数の中で useRuntimeConfig() を呼ぶと
+//  Nuxt のコンテキストが失われて落ちる（署名URLの取得が丸ごと失敗した・2026-08-30）。
+const cfg = useRuntimeConfig()
 const fromChat = computed(() => route.query.from === 'chat')
 
 type Site = { id: string; name: string; active: boolean; location: string | null; construction_type: string | null; construction_details: string | null; memo: string | null; responsible_worker_id: string | null }
@@ -168,6 +207,61 @@ async function onToggleShare(userId: string, checked: boolean) {
 
 const photos = computed(() => atts.value.filter((a) => a.kind === 'photo'))
 const docs   = computed(() => atts.value.filter((a) => a.kind !== 'photo'))
+
+// ── 送り出し資料の承認（2026-08-27 出退勤モデル変更・打刻から切り離した）──
+// ★読み書きは EF 経由。anon には site_document_consents の権限を渡していない
+//  （身元の無い anon では「本人が同意した」ことを担保できないため）。
+type ConsentDoc = { id: string; name: string | null; consentedAt: string | null; url?: string | null }
+const consentDocs  = ref<ConsentDoc[]>([])
+const consentBusy  = ref<string | null>(null)
+const consentError = ref('')
+
+async function callConsentFn(payload: Record<string, unknown>): Promise<any> {
+  const idToken = await getIdToken().catch(() => null)
+  const config = useRuntimeConfig()
+  const devLineUserId = config.public.appEnv === 'development' ? (profile.value?.userId ?? '') : ''
+  const { data, error } = await useSupabase().functions.invoke('site-document-consent', {
+    body: { ...payload, ...(idToken ? { line_id_token: idToken } : {}), dev_line_user_id: devLineUserId },
+  })
+  if (error) throw error
+  return data
+}
+
+async function loadConsentDocs(siteId: string) {
+  try {
+    const res = await callConsentFn({ action: 'list', siteId })
+    if (!res?.ok) { consentDocs.value = []; return }
+    const list = (res.documents ?? []) as ConsentDoc[]
+    // 資料を開けるように署名URLを付ける（承認の前に中身を読ませる）
+    await Promise.all(list.map(async (d) => { d.url = await signedUrl(d.id) }))
+    consentDocs.value = list
+  } catch (e) {
+    console.error('[site-consent] 取得に失敗:', e)
+    consentDocs.value = []
+  }
+}
+
+async function approveDoc(d: ConsentDoc) {
+  consentError.value = ''
+  consentBusy.value = d.id
+  try {
+    const res = await callConsentFn({ action: 'consent', attachmentId: d.id })
+    if (!res?.ok) {
+      consentError.value = res?.error === 'not_participant'
+        ? t('sitesView.consentNotParticipant')
+        : t('sitesView.consentFailed')
+      return
+    }
+    d.consentedAt = new Date().toISOString()
+    // 承認したらホーム/ナビの「未承認の資料」の印を即座に減らす（残り続けると直したのに気づけない）
+    await refreshPendingDocBadge()
+  } catch (e) {
+    console.error('[site-consent] 承認に失敗:', e)
+    consentError.value = t('sitesView.consentFailed')
+  } finally {
+    consentBusy.value = null
+  }
+}
 
 // 現場情報の編集(admin機能のLIFF移植・現場責任者のみ)
 const editOpen = ref(false)
@@ -235,11 +329,30 @@ async function onAttachPick(ev: Event, kind: 'photo' | 'document') {
 async function signedUrl(attachmentId: string): Promise<string | null> {
   try {
     const idToken = await getIdToken()
+    // 開発モードは LINE ID token が発行されないので、ローカル検証用の身元を渡す
+    // （EF 側は IS_LOCAL の時だけ受け付ける＝本番では効かない）
+    const devLineUserId = cfg.public.appEnv === 'development' ? (profile.value?.userId ?? '') : ''
     const { data, error } = await useSupabase().functions.invoke('site-attachment-url', {
-      body: { attachment_id: attachmentId, ...(idToken ? { line_id_token: idToken } : {}) },
+      body: {
+        attachment_id: attachmentId,
+        ...(idToken ? { line_id_token: idToken } : {}),
+        ...(devLineUserId ? { dev_line_user_id: devLineUserId } : {}),
+      },
     })
     if (error || !data?.ok) return null
-    return data.url as string
+    // ★署名URLのホストを、このクライアントが使う Supabase の URL に揃える。
+    //  EF は自分の SUPABASE_URL を元にURLを組み立てるため、ローカルでは
+    //  コンテナ内部名(http://kong:8000)になりブラウザから開けない。
+    //  本番は EF もクライアントも同じ公開URLなので、この正規化は何も変えない。
+    const raw = data.url as string
+    const base = (cfg.public.supabaseUrl as string) || ''
+    if (!base) return raw
+    try {
+      const u = new URL(raw)
+      const b = new URL(base)
+      if (u.origin !== b.origin) return `${b.origin}${u.pathname}${u.search}`
+      return raw
+    } catch { return raw }
   } catch { return null }
 }
 
@@ -261,6 +374,7 @@ async function load() {
     const list = (attData ?? []) as Att[]
     await Promise.all(list.map(async (a) => { a.url = await signedUrl(a.id) }))
     atts.value = list
+    await loadConsentDocs(siteId)
 
     // 現場責任者(sites.responsible_worker_id)だけに招待UIを表示する
     if (accountId) {
@@ -345,6 +459,29 @@ onMounted(load)
 .photo { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; border: 1px solid #eee; }
 .doc { display: block; color: #1a56c4; text-decoration: none; font-size: 14px; padding: 4px 0; }
 .doc-icon { font-size: 14px; vertical-align: -2px; margin-right: 2px; }
+
+/* ── 送り出し資料の承認 ── */
+.consent-hint { margin: 0 0 8px; font-size: 12px; color: #64748b; line-height: 1.6; }
+.consent-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 0; border-bottom: 1px solid #f1f5f9;
+}
+.consent-row:last-of-type { border-bottom: none; }
+.consent-doc { flex: 1; min-width: 0; }
+.consent-btn {
+  flex: none; background: #06C755; color: #fff; border: none; border-radius: 8px;
+  padding: 8px 14px; font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.consent-btn:disabled { opacity: .5; cursor: default; }
+.consent-done {
+  flex: none; display: inline-flex; align-items: center; gap: 4px;
+  color: #047857; font-size: 13px; font-weight: 700;
+}
+.consent-done .material-symbols-rounded { font-size: 18px; }
+.consent-error { margin: 8px 0 0; font-size: 13px; color: #b91c1c; }
+/* 開けない資料は「リンクに見えるのに押せない」を避け、灰色＋注記にする */
+.doc--unavailable, .consent-doc--unavailable { color: #94a3b8; cursor: default; }
+.doc-unavailable { font-size: 11px; color: #94a3b8; margin-left: 4px; }
 
 .edit-form { display: flex; flex-direction: column; gap: 10px; background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
 .edit-field { display: flex; flex-direction: column; gap: 4px; }

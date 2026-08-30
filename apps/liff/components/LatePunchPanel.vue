@@ -16,12 +16,6 @@
         <option v-for="d in dateOptions" :key="d.value" :value="d.value">{{ d.label }}</option>
       </select>
 
-      <label class="late-label">{{ $t('checkin.lateSite') }}</label>
-      <select v-model="siteId" class="late-input" data-testid="late-site">
-        <option value="">{{ $t('checkin.lateSitePlaceholder') }}</option>
-        <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.name }}</option>
-      </select>
-
       <div class="late-times">
         <div class="late-time-field">
           <label class="late-label">{{ $t('checkin.lateCheckin') }}</label>
@@ -67,16 +61,12 @@
 //
 //  ★代理では入れない。自分の分だけ（他人の勤怠を後付けで作れる導線を開けない）。
 //
-//  ★コンポーネントにしている理由: 現場選択の画面と「出勤中」専用画面の両方に置く必要がある。
-//   出勤中は現場一覧を出さない画面に入るので、現場選択の中だけに置くと
-//   「いま出勤中の人が前日の打刻を直せない」という一番ありそうな場面で届かない。
-//   かつ、どちらの画面も高さ固定で一覧が内部スクロールする作りなので、
-//   ページ直下ではなく各画面の中（縮まないフッター）に置く必要がある。
+//  ★2026-08-27 出退勤モデル変更で現場の選択を外した。打刻は現場に紐づかなくなり
+//   （1日＝最初の出勤・最後の退勤の2回）、日付と時刻だけで入る。
 // ============================================================
 import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
-  sites: { id: string; name: string }[]
   workerId: string | null
 }>()
 const emit = defineEmits<{ (e: 'recorded'): void }>()
@@ -94,7 +84,6 @@ const LATE_TIME_OPTIONS = Array.from({ length: 24 * 12 }, (_, i) =>
 
 const open     = ref(false)
 const date     = ref('')
-const siteId   = ref('')
 const checkin  = ref('')
 const checkout = ref('')
 const busy     = ref(false)
@@ -126,10 +115,8 @@ async function submit() {
   error.value = ''
   done.value = false
 
-  // 現場を選ぶ前でも押せる画面なので、worker_id はここでも取り直す
   const workerId = props.workerId ?? (await useCurrentUser().resolve())?.worker_id ?? null
   if (!workerId) { error.value = t('checkin.lateErrNoWorker'); return }
-  if (!siteId.value) { error.value = t('checkin.lateErrNoSite'); return }
   if (!checkin.value && !checkout.value) { error.value = t('checkin.lateErrNoTime'); return }
   if (!dateOptions.value.some(o => o.value === date.value)) { error.value = t('checkin.lateErrOutOfRange'); return }
   if (checkin.value && checkout.value && checkin.value >= checkout.value) {
@@ -141,7 +128,7 @@ async function submit() {
     // 範囲・重複・本人確認は EF 側でも検証する（画面のバリデーションは通信を減らすためのもので、
     // それだけを頼りにしない）。
     const res = await attendance.backdate({
-      siteId: siteId.value, date: date.value,
+      date: date.value,
       ...(checkin.value ? { checkin: checkin.value } : {}),
       ...(checkout.value ? { checkout: checkout.value } : {}),
     })
