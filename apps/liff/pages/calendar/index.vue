@@ -2,17 +2,12 @@
   <div class="cal-page">
     <AppNav :subtitle="$t('calendar.title')" :user-name="proxy.proxyTarget.value?.name ?? profile?.displayName" />
 
-    <!-- 予定追加のお知らせ（未読・気づかないケース対策 #予定通知） -->
-    <div v-if="notifs.length" class="notif-banner">
-      <div class="notif-head">
-        <span><span class="material-symbols-rounded notif-icon">notifications</span>あなたに新しい予定が {{ notifs.length }} 件追加されました</span>
-        <button class="notif-dismiss" @click="dismissNotifs">既読にする</button>
-      </div>
-      <ul class="notif-list">
-        <li v-for="n in notifs" :key="n.id">{{ n.body || n.title }}</li>
-      </ul>
-    </div>
-
+    <!-- ★予定追加のお知らせバナーは廃止（2026-08-31）。
+         2026-08-30 に「気づく入口はベル1つに集約し、内訳は /notifications のタブで見る」と
+         決めてホームのカードを消した時、この画面が取り残されていた。同じ通知に対して
+         ベル／ホーム・ハンバーガー・下部ナビの予定管理バッジ／お知らせタブ／このバナーの
+         6面があり、しかも後から生えてタブと月ナビを105px押し下げていた（実測）。
+         既読化は /notifications 側でできる（タップで1件・そこでバッジも更新される）。 -->
     <!-- 共有／個人タブ -->
     <div class="cal-tabs">
       <button type="button" class="cal-tab" :class="{ active: activeTab === 'shared' }" @click="activeTab = 'shared'">{{ $t('calendar.tabShared') }}</button>
@@ -28,10 +23,13 @@
       </select>
     </div>
 
-    <div v-if="activeTab === 'shared' && loading" class="loading">{{ $t('common.loading') }}</div>
+    <!-- ★読み込み中の表示は本体に「重ねる」。以前は独立した行だったので、
+         消えた瞬間にカレンダーが121px跳ね上がっていた（実測・2026-08-31）。 -->
+    <div v-if="activeTab === 'shared'" class="grid-area">
+      <div v-if="loading" class="loading-overlay">{{ $t('common.loading') }}</div>
 
     <!-- マトリクスグリッド（共有タブ） -->
-    <div v-if="activeTab === 'shared'" ref="gridWrapRef" class="grid-wrap" @scroll.passive="onGridScroll">
+    <div ref="gridWrapRef" class="grid-wrap" @scroll.passive="onGridScroll">
       <table class="matrix-table">
         <thead>
           <tr>
@@ -104,6 +102,7 @@
           <tr class="sentinel-bottom"><td :colspan="sortedWorkers.length + 1" style="height:0;padding:0;border:none;"></td></tr>
         </tbody>
       </table>
+      </div>
     </div>
 
     <!-- 個人カレンダー（週間／月間） -->
@@ -609,28 +608,6 @@ async function updateCat(c: SchedCat, patch: { active?: boolean; label?: string 
 // ロジックは shared/schedule-core.ts（admin と共有）。
 function chipStyle(s: Schedule): Record<string, string> {
   return coreChipStyle(s, catColor.value)
-}
-
-// 予定追加のアプリ内通知（未読）。開いた時にバナーで気づかせ、既読で消す #予定通知
-type SchedNotif = { id: string; title: string | null; body: string | null }
-const notifs = ref<SchedNotif[]>([])
-async function loadNotifs() {
-  const wid = effectiveWorkerId.value
-  if (!wid) return
-  const { getAccountId } = useAccount()
-  const accountId = await getAccountId()
-  if (!accountId) return
-  const { data } = await supabase.from('schedule_notifications')
-    .select('id, title, body').eq('account_id', accountId).eq('worker_id', wid).is('read_at', null)
-    .order('created_at', { ascending: false }).limit(20)
-  notifs.value = ((data ?? []) as SchedNotif[])
-}
-async function dismissNotifs() {
-  const ids = notifs.value.map(n => n.id)
-  notifs.value = []
-  if (!ids.length) return
-  await supabase.from('schedule_notifications').update({ read_at: new Date().toISOString() }).in('id', ids)
-  await refreshNotifBadge()   // HOME/ハンバーガーの未読バッジも即時反映（#予定通知バッジ）
 }
 
 const effectiveWorkerId = computed(() =>
@@ -1363,7 +1340,6 @@ onMounted(async () => {
     await resolveCanManageCat()
     await loadWorkers()
     await loadSchedCats()
-    await loadNotifs()
     await loadSchedules()
     // 自分が参加するグループを取得し、前回選択を復元（存在するグループのみ）
     const myWid = schedules.myWorkerId.value
@@ -1388,20 +1364,18 @@ onMounted(async () => {
 .cal-page { display: flex; flex-direction: column; height: calc(100dvh - var(--app-bottom-nav-h, 54px) - env(safe-area-inset-bottom, 0px)); background: #fff; color: #111; overflow: hidden; }
 .similar-site-pick { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .similar-site-pick:active { opacity: .6; }
-.notif-banner { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; margin: 8px 12px; padding: 10px 12px; flex-shrink: 0; }
-.notif-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 700; color: #b45309; }
-.notif-icon { font-size: 15px; vertical-align: -2px; margin-right: 3px; }
 .warn-icon { font-size: 14px; vertical-align: -2px; margin-right: 2px; }
 .btn-icon { font-size: 14px; vertical-align: -2px; margin-right: 2px; }
 .meta-icon { font-size: 14px; vertical-align: -2px; margin-right: 3px; }
-.notif-dismiss { background: #f59e0b; color: #fff; border: none; border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
-.notif-list { margin: 8px 0 0; padding-left: 18px; font-size: 12px; color: #78350f; line-height: 1.6; }
 
 /* 月ナビ（ヘッダー：年月のみ） */
 .month-nav {
   display: flex; align-items: center; gap: 12px;
   padding: max(10px, env(safe-area-inset-top)) 12px 10px; border-bottom: 1px solid #E0E0E0; flex-shrink: 0;
   background: #fff; position: relative; z-index: 2;
+  /* ★グループ絞り込みは所属グループを読んでから生えるので、その前後で高さが変わっていた
+     （実測7px）。中身によらず外形を変えないよう行の高さを固定する（2026-08-31） */
+  min-height: 52px; box-sizing: border-box;
 }
 .nav-label { font-size: 16px; font-weight: 700; color: #111; }
 .group-select {
@@ -1423,6 +1397,14 @@ onMounted(async () => {
 .deleted-toggle { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #888; cursor: pointer; user-select: none; }
 
 .loading { flex: 1; display: flex; align-items: center; justify-content: center; color: #888; font-size: 14px; }
+/* ★カレンダー本体の枠。読み込み中でも高さを持つので、読み終わっても外形が変わらない
+   （以前は読み込み表示が独立した行で、消えた瞬間に本体が121px跳ね上がっていた） */
+.grid-area { flex: 1; position: relative; min-height: 0; display: flex; flex-direction: column; }
+.loading-overlay {
+  position: absolute; inset: 0; z-index: 2;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255, 255, 255, .8); color: #888; font-size: 14px;
+}
 
 .extend-loading-row { background: #fafbfc; }
 .extend-loading-cell { text-align: center; padding: 10px 0; color: #999; font-size: 12px; }

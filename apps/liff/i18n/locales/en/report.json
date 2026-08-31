@@ -202,5 +202,7 @@
   "leaveUnitHour": "Hourly",
   "leaveHoursPlaceholder": "How many hours (e.g. 2)",
   "leaveHoursRequired": "Enter the number of hours",
-  "leaveHoursTooLong": "Exceeds the standard working hours per day ({h}h)"
+  "leaveHoursTooLong": "Exceeds the standard working hours per day ({h}h)",
+  "checkoutToastTime": "Checked out {time}",
+  "checkoutToastText": "Recorded"
 }
