@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>出退勤と日報 変更点</title>
+<style>
+  @page { size: A4; margin: 10mm 11mm 8mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;
+         color: #1f2937; font-size: 9.5pt; line-height: 1.5; margin: 0; }
+  h1 { font-size: 16pt; margin: 0 0 1mm; }
+  .meta { font-size: 8.5pt; color: #6b7280; margin: 0 0 4mm; }
+  h2 { font-size: 11pt; margin: 5mm 0 2mm; padding: 1.2mm 3mm;
+       background: #06C755; color: #fff; border-radius: 3px; }
+
+  .flow { display: flex; align-items: stretch; margin: 0 0 4mm; }
+  .fbox { flex: 1; border: 1px solid #cbd5e1; border-radius: 3px; padding: 1.8mm 2mm;
+          font-size: 8.5pt; line-height: 1.35; text-align: center; }
+  .fbox b { display: block; font-size: 9pt; margin-bottom: 0.4mm; }
+  .fbox.on { border-color: #06C755; background: #f0fdf4; }
+  .farrow { display: flex; align-items: center; padding: 0 1.5mm; color: #94a3b8; font-size: 10pt; }
+
+  .items { display: flex; gap: 3.5mm; page-break-inside: avoid; }
+  .item { flex: 1; }
+  .item img { width: 100%; border: 1px solid #d1d5db; border-radius: 4px; display: block; }
+  .n { display: inline-flex; align-items: center; justify-content: center;
+       width: 5.5mm; height: 5.5mm; border-radius: 50%; background: #06C755; color: #fff;
+       font-size: 8.5pt; font-weight: 700; margin-right: 1.5mm; }
+  .it { font-size: 10pt; font-weight: 700; margin: 0 0 1mm; display: flex; align-items: center; }
+  .id { font-size: 8.8pt; color: #4b5563; line-height: 1.45; margin: 1.5mm 0 0; }
+  .id b { color: #111827; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 9pt; margin: 1mm 0 0; }
+  th, td { border: 1px solid #d1d5db; padding: 1.5mm 2.5mm; text-align: left; }
+  th { background: #f1f5f9; font-weight: 700; }
+  td.n2 { background: #fef2f2; color: #991b1b; }
+  td.y { background: #f0fdf4; color: #15803d; font-weight: 700; }
+
+  .ask { background: #eff6ff; border: 1.5px solid #60a5fa; border-radius: 3px;
+         padding: 2.5mm 3mm; margin-top: 4mm; font-size: 9.2pt; }
+  .ask .t { font-weight: 700; color: #1d4ed8; margin-bottom: 1.5mm; font-size: 10pt; }
+  .ask ol { margin: 0 0 0 5mm; padding: 0; }
+  .ask li { margin-bottom: 1mm; }
+  footer { margin-top: 3mm; font-size: 7.5pt; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 1.5mm; }
+</style>
+</head>
+<body>
+
+<h1>出退勤と日報 ― 変更点</h1>
+<p class="meta">9月1日（火）朝より適用 ／ 対象: 作業員アプリ ／ データの変更はありません</p>
+
+<h2>毎日の流れ</h2>
+<div class="flow">
+  <div class="fbox on"><b>朝</b>今日は稼働しますか？</div>
+  <div class="farrow">▶</div>
+  <div class="fbox"><b>出勤の打刻</b></div>
+  <div class="farrow">▶</div>
+  <div class="fbox"><b>作業</b></div>
+  <div class="farrow">▶</div>
+  <div class="fbox"><b>退勤の打刻</b></div>
+  <div class="farrow">▶</div>
+  <div class="fbox on"><b>日報</b>自動で開く</div>
+</div>
+
+<div class="items">
+  <div class="item">
+    <p class="it"><span class="n">1</span>朝に1回だけ聞く</p>
+    <img src="assets/20260901/01-gate.png" alt="稼働の選択">
+    <p class="id"><b>休み・有給はここで日報の提出が完了</b>し、打刻には進みません。
+    週7で日報を出すルールはそのままですが、休みの日は1タップで終わります。</p>
+  </div>
+  <div class="item">
+    <p class="it"><span class="n">2</span>退勤したら日報へ直行</p>
+    <img src="assets/20260901/06-checkout-toast.png" alt="退勤直後">
+    <p class="id">退勤を押すと<b>完了画面を挟まず日報が開きます</b>。
+    打刻と日報が1本の流れになり、日報を出す入口を探す必要がなくなります。</p>
+  </div>
+  <div class="item">
+    <p class="it"><span class="n">3</span>出し忘れを追いかける</p>
+    <img src="assets/20260901/05-home-reportdue.png" alt="日報未提出">
+    <p class="id">退勤したのに日報が無い人に、<b>当日はホームの赤い案内</b>、
+    翌日以降はアプリを開いたときに知らせます。画面はロックしません。</p>
+  </div>
+  <div class="item">
+    <p class="it"><span class="n">4</span>溜まった分をまとめて</p>
+    <img src="assets/20260901/09-bulk.png" alt="まとめて提出">
+    <p class="id">未提出が溜まっている人は、<b>理由を1回書くだけでまとめて提出</b>できます
+    （稼働していない日のみ）。3日より前の分は従来どおり承認待ちに入ります。</p>
+  </div>
+</div>
+
+<h2>作業員から見て変わるところ</h2>
+
+<table>
+  <tr><th style="width:26%">やりたいこと</th><th style="width:37%">これまで</th><th>9月1日から</th></tr>
+  <tr><td>今日の日報を出す</td><td class="n2">メニュー「日報登録」から入る</td><td class="y">退勤を打刻 → 自動で日報が開く</td></tr>
+  <tr><td>休み・有給の日報</td><td class="n2">日報登録から選んで送信</td><td class="y">出退勤を開いて選ぶだけ（打刻不要）</td></tr>
+  <tr><td>出し忘れた日を出す</td><td class="n2">日報登録から入る</td><td class="y">メニュー「日報履歴」から入る</td></tr>
+  <tr><td>出退勤の打刻</td><td class="n2">任意</td><td class="y"><b>毎日必須</b></td></tr>
+</table>
+
+<div class="ask">
+  <div class="t">ご確認をお願いします</div>
+  <ol>
+    <li><b>9月1日（火）の朝に反映してよろしいでしょうか。</b>
+      <span style="color:#4b5563">作業員側の操作は不要で、自動で新しい画面になります。</span></li>
+    <li><b>打刻時の「確認事項」を登録しますか。</b>
+      <span style="color:#4b5563">現在0件です。「ヘルメット・安全帯を着用していますか」等を入れると、
+      打刻のたびに確認させて記録を残せます（0件のままでも打刻はできます）。</span></li>
+  </ol>
+</div>
+
+<footer>
+GENLINKS ／ 作業員向けの案内資料を別途ご用意しています（そのままグループLINEに添付できます）。<br>
+画面キャプチャは検証環境のものです。実際の画面では会社名が表示されます。
+</footer>
+
+</body>
+</html>

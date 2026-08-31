@@ -102,8 +102,13 @@
         <!-- 判定できなかった時は空のまま。高さは today-slot が持っているのでズレない -->
       </div>
 
-      <!-- 経費申請 締切案内。★homeReady まで出さない＝ステータスと同時に1回だけ描画する
-           （別々に出ると下のメニューが二度動く） -->
+      <!-- 経費申請 締切案内。
+           ★枠は「締切が近い期間かどうか」だけで先に決める。これは日付から同期的に分かるので、
+            読み込みを待たずに高さを確保できる。中身（実際に出すか）はデータが来てから決まるが、
+            枠が先にあるので下のメニューは動かない。
+            ここを条件付きで生やしていた時、9/1（締切前）に本番でメニューが77px跳ねた（2026-09-01 実測）。
+            締切前の3〜4日だけ空枠になることはあるが、誤タップを出すよりよい。 -->
+      <div v-if="deadlineWindowOpen" class="deadline-slot">
       <NuxtLink v-if="homeReady && deadlineBanner" class="deadline-card" to="/expense/download">
         <span class="material-symbols-rounded deadline-icon">schedule</span>
         <div class="deadline-body">
@@ -112,6 +117,7 @@
         </div>
         <span class="material-symbols-rounded alert-arrow">chevron_right</span>
       </NuxtLink>
+      </div>
 
       <!-- メニュー（記録／予定・連絡／情報・設定 に整理／ハンバーガーメニューと共通定義＝useNavItems） -->
       <div class="menu-section">{{ t('nav.secDaily') }}</div>
@@ -231,6 +237,12 @@ const punchPrompt      = ref<{ kind: 'checkin' | 'checkout'; title: string } | n
 // ★これが false の間は同じ高さのスケルトンを出す。後から生やすと下のメニューが動いて
 //  押そうとしたものと別のボタンを押してしまう（運用者指摘・2026-08-31）。
 const homeReady        = ref(false)
+
+/**
+ * 締切案内が出うる期間か。★データではなく日付だけで決まるので、読み込み前に確定できる。
+ * これで枠の高さを先に確保でき、あとからカードが生えてもメニューが動かない。
+ */
+const deadlineWindowOpen = computed(() => recentPeriodKeys().some(k => isInDeadlineAlertWindow(k)))
 
 /** 'YYYY-MM-DD' → 'M/D（曜）' */
 function formatMd(date: string): string {
@@ -475,6 +487,8 @@ onMounted(() => { refreshSiteChatListBadge() })
 
 /* お知らせ/締切カード共通の矢印（未送信アラートは廃止したが .alert-arrow は notif/deadline で継続利用） */
 .alert-arrow { color: #ccc; font-size: 22px; flex-shrink: 0; }
+/* 実測でカードは90px（2行の文言＋余白）。枠をそれに合わせる */
+.deadline-slot { min-height: 90px; margin-bottom: 12px; }
 .deadline-card {
   background: #fff; border-radius: 12px;
   padding: 14px 16px; display: flex; align-items: center; gap: 12px;
