@@ -38,8 +38,11 @@ test.describe('ホーム 打刻を促す', () => {
   })
 
   test('今日の勤務予定があり未打刻なら、ホームのステータスが現場名つきで打刻を促す', async ({ page }) => {
-    // 念のため今日の当該現場の打刻を消しておく（未打刻状態を作る）
-    await restSrv(`attendance_logs?site_id=eq.${siteId}&worker_id=eq.${workerId}`, { method: 'DELETE' }).catch(() => {})
+    // ★今日の打刻と日報を消して「未出勤」にする。ここが残っていると状態が
+    //  「完了」や「出勤中」になり、現場名を出す条件（未出勤）から外れる（2026-09-01 に踏んだ）。
+    await restSrv(`attendance_logs?worker_id=eq.${workerId}&checked_at=gte.${TODAY}T00:00:00%2B09:00`, { method: 'DELETE' }).catch(() => {})
+    const us = await rest(`users?worker_id=eq.${workerId}&select=id`)
+    if (us?.[0]?.id) await restSrv(`daily_reports?user_id=eq.${us[0].id}&date=eq.${TODAY}`, { method: 'DELETE' }).catch(() => {})
     // 今日・自分の勤務予定（開始はとうに過ぎている 00:01）
     await restSrv('schedules', {
       method: 'POST', headers: { Prefer: 'return=minimal' },
