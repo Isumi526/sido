@@ -57,12 +57,14 @@
           <div class="today-head">
             <span class="material-symbols-rounded today-icon sk-icon">circle</span>
             <div class="today-texts">
-              <div class="today-title"><span class="sk-bar" style="width:56%" /></div>
-              <div class="today-sub"><span class="sk-bar" style="width:88%" /></div>
+              <!-- ★文字は実物と同じ「1行ぶんのテキスト」を置き、灰色の帯は絶対配置で重ねる。
+                   帯をインライン要素で置くと行の高さを押し上げて背が高くなる（本番で18pxズレた）。 -->
+              <div class="today-title sk-text" style="--w:56%">&nbsp;</div>
+              <div class="today-sub sk-text" style="--w:88%">&nbsp;</div>
             </div>
           </div>
           <div class="today-actions">
-            <span class="today-action"><span class="sk-bar" style="width:84px" /></span>
+            <span class="today-action sk-text" style="--w:70%;width:120px">&nbsp;</span>
           </div>
         </div>
 
@@ -573,11 +575,15 @@ onMounted(() => { refreshSiteChatListBadge() })
 .today-card.skeleton { border-left-color: #e5e7eb; }
 .today-card.skeleton .today-icon { color: #eef0f2; }
 .today-card.skeleton .today-action { border-color: #f1f3f5; background: #fafbfc; }
-.sk-bar {
-  display: inline-block; height: .85em; min-width: 24px;
-  border-radius: 4px; background: #eef0f2; vertical-align: middle;
+/* ★帯は絶対配置で重ねるだけ＝行の高さに一切影響しない。
+   これで実カードと同じ行数・同じ高さになる。 */
+.sk-text { position: relative; color: transparent; }
+.sk-text::before {
+  content: ''; position: absolute; left: 0; top: 18%; bottom: 18%;
+  width: var(--w, 60%); border-radius: 4px; background: #eef0f2;
   animation: skPulse 1.2s ease-in-out infinite;
 }
+.today-card.skeleton .today-action.sk-text { justify-content: flex-start; }
 .today-card.skeleton .today-icon { animation: skPulse 1.2s ease-in-out infinite; }
 @keyframes skPulse { 0%, 100% { opacity: 1 } 50% { opacity: .55 } }
 
