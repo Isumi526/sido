@@ -10,19 +10,27 @@
  */
 import { ref, computed } from 'vue'
 
-type Rec = { item_name: string; trade_name: string; location: string; quantity: number; unit: string }
+type Rec = { item_name: string; trade_name: string; location: string; quantity: number; unit: string
+             product_code: string; unit_price: number; cost_unit_price: number }
 const emit = defineEmits<{
   (e: 'import', payload: { records: Rec[]; mode: 'append' | 'replace' }): void
   (e: 'close'): void
 }>()
 
-// マッピング対象（AC: 項目名/工種/場所/数量/単位）。hints はヘッダー自動推定の手掛かり。
+// マッピング対象（項目名/工種/場所/数量/単位＋品番/単価）。hints はヘッダー自動推定の手掛かり。
 const FIELDS = [
   { key: 'item_name',  label: '項目名', hints: ['項目', '名称', '品名', '内容', '作業', 'item'] },
   { key: 'trade_name', label: '工種',   hints: ['工種', '種別', '分類', '工事'] },
   { key: 'location',   label: '場所',   hints: ['場所', '部位', 'エリア', '室', 'area'] },
   { key: 'quantity',   label: '数量',   hints: ['数量', '員数', 'qty', 'q'] },
   { key: 'unit',       label: '単位',   hints: ['単位', 'unit'] },
+  // ★2026-08-31 追加。「見積もりは外でやって、エクセルでやって、でも、これやったやつを
+  //  そっと覚えてくれないか」（大塚さん・2026-08-19）を成立させるには、Excelで作った
+  //  見積の**単価まで**取り込めないと「覚える」ことにならない。
+  //  これが入ると、次に同じ品名を打った時に「前回この現場でいくら」が浮かび上がる。
+  { key: 'product_code',    label: '品番',     hints: ['品番', '型番', '品目コード', 'code', '製品番号'] },
+  { key: 'unit_price',      label: '客先単価', hints: ['単価', '客先単価', '売単価', '販売単価', 'price'] },
+  { key: 'cost_unit_price', label: '原価単価', hints: ['原価', '仕入', '原価単価', '仕入単価', 'cost'] },
 ] as const
 type FieldKey = typeof FIELDS[number]['key']
 
@@ -30,7 +38,7 @@ const fileName    = ref('')
 const sheets      = ref<{ name: string; aoa: unknown[][] }[]>([])
 const activeSheet = ref(0)
 const headerRow   = ref(0)
-const mapping     = ref<Record<FieldKey, number>>({ item_name: -1, trade_name: -1, location: -1, quantity: -1, unit: -1 })
+const mapping     = ref<Record<FieldKey, number>>({ item_name: -1, trade_name: -1, location: -1, quantity: -1, unit: -1, product_code: -1, unit_price: -1, cost_unit_price: -1 })
 const mode        = ref<'append' | 'replace'>('append')
 const err         = ref('')
 const busy        = ref(false)
@@ -122,8 +130,11 @@ const records = computed<Rec[]>(() => {
     const location   = pick('location')
     const unit       = pick('unit')
     const quantity   = m.quantity >= 0 ? toNum(r[m.quantity]) : 0
+    const product_code    = pick('product_code')
+    const unit_price      = m.unit_price >= 0 ? toNum(r[m.unit_price]) : 0
+    const cost_unit_price = m.cost_unit_price >= 0 ? toNum(r[m.cost_unit_price]) : 0
     if (!item_name && !trade_name) continue   // 名称も工種も無い行は見出し/空行として捨てる
-    out.push({ item_name, trade_name, location, quantity, unit })
+    out.push({ item_name, trade_name, location, quantity, unit, product_code, unit_price, cost_unit_price })
   }
   return out
 })
@@ -133,7 +144,8 @@ const preview = computed(() => records.value.slice(0, 8))
 
 function reset() {
   sheets.value = []; fileName.value = ''; err.value = ''
-  mapping.value = { item_name: -1, trade_name: -1, location: -1, quantity: -1, unit: -1 }
+  mapping.value = { item_name: -1, trade_name: -1, location: -1, quantity: -1, unit: -1,
+                    product_code: -1, unit_price: -1, cost_unit_price: -1 }
 }
 
 function doImport() {
