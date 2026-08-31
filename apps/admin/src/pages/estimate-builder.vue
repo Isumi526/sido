@@ -1746,7 +1746,8 @@ async function applySelectionToItems() {
  * 「追記」は今の明細の後ろに足し、「置き換え」は人が明示的に選んだ時だけ既存明細を消す（黙って消さない＝AC）。
  */
 async function onWorkItemsImport(payload: {
-  records: { item_name: string; trade_name: string; location: string; quantity: number; unit: string }[]
+  records: { item_name: string; trade_name: string; location: string; quantity: number; unit: string
+             product_code?: string; unit_price?: number; cost_unit_price?: number }[]
   mode: 'append' | 'replace'
 }) {
   if (!projectId.value) return
@@ -1768,6 +1769,12 @@ async function onWorkItemsImport(payload: {
     row.location   = rec.location || ''
     row.unit       = rec.unit || ''
     row.quantity   = Number(rec.quantity) || 0
+    // ★Excelで作った見積の単価まで取り込む（2026-08-31）。
+    //  「これやったやつをそっと覚えてくれないか」を成立させるには単価が要る。
+    //  取り込んだ単価は、次に同じ品名を打った時に「前回この現場でいくら」として出る。
+    row.product_code = rec.product_code || ''
+    if (Number(rec.unit_price) > 0) { row.unit_price = Number(rec.unit_price); row._priceTouched = true }
+    if (Number(rec.cost_unit_price) > 0) row.cost_unit_price = Number(rec.cost_unit_price)
     rows.value.push(row)
     added.push(row)
   }
