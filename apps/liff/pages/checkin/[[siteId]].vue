@@ -889,12 +889,13 @@ async function resolveReportLink(target: Target | null) {
   max-width: 480px;
   width: 100%;
   margin: 0 auto;
-  padding: 0 0 32px;
+  min-height: 0;   /* ★flex の子がスクロールできるように（既定の auto だと縮まない） */
 }
 
 .checklist-header {
-  padding: 28px 20px 20px;
+  padding: 18px 20px 16px;
   color: #fff;
+  flex-shrink: 0;
 }
 .checklist-header.checkin  { background: #06C755; }
 .checklist-header.checkout { background: #f59e0b; }
@@ -1047,7 +1048,10 @@ async function resolveReportLink(target: Target | null) {
 
 .checklist-scroll { flex: 1; overflow-y: auto; }
 .no-rules-note { margin: 16px 4px; font-size: 14px; line-height: 1.7; color: #475569; }
-.rules-list { padding: 12px 0; }
+/* ★確認事項がここだけスクロールする。以前は全体が伸びて、狭い端末（iPhone SE 375×667）で
+   位置情報・送信ボタン・後追い入力が画面下に詰まり、指を置く余白が無かった（2026-08-31 指摘）。
+   ヘッダーと送信エリアを固定し、余りをこの一覧に配る。 */
+.rules-list { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 0; }
 
 .rule-row {
   display: flex; align-items: flex-start; gap: 14px;
@@ -1076,8 +1080,9 @@ async function resolveReportLink(target: Target | null) {
 .consent-hint { font-size: 12px; color: #999; padding: 4px 8px 0; }
 
 .submit-area {
-  padding: 16px 20px 20px; background: #fff; border-top: 1px solid #f0f0f0;
-  display: flex; flex-direction: column; gap: 12px;
+  padding: 12px 16px 16px; background: #fff; border-top: 1px solid #f0f0f0;
+  display: flex; flex-direction: column; gap: 10px;
+  flex-shrink: 0;   /* ★縮めない。ここが縮むと送信ボタンが画面外に出る */
 }
 
 /* ── 稼働有無ゲート（出勤打刻の前に1回だけ聞く）── */
@@ -1131,7 +1136,7 @@ async function resolveReportLink(target: Target | null) {
 /* 位置情報ステータス */
 .location-status {
   display: flex; align-items: flex-start; gap: 8px;
-  padding: 10px 12px; border-radius: 10px; font-size: 12px; font-weight: 600;
+  padding: 9px 11px; border-radius: 10px; font-size: 12px; font-weight: 600;
 }
 .location-status.idle      { background: #eff6ff; color: #1d4ed8; }
 .location-status.pending   { background: #f5f5f5; color: #888; }
@@ -1147,7 +1152,7 @@ async function resolveReportLink(target: Target | null) {
 /* ボタンと注意書きが本文にひっついて「押せる物」に見えなかったので、
    前置き / ボタン / 注意書き を縦に積んで、ボタンだけ独立させる（2026-08-31） */
 .loc-lead { display: block; }
-.loc-note { display: block; margin-top: 6px; font-size: 11px; font-weight: 400; opacity: .8; }
+.loc-note { display: block; margin-top: 5px; font-size: 10.5px; line-height: 1.4; font-weight: 400; opacity: .75; }
 
 .loc-help { margin-top: 8px; font-weight: 400; }
 .loc-help summary {
@@ -1169,9 +1174,9 @@ async function resolveReportLink(target: Target | null) {
 }
 .loc-get {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  margin-top: 8px;
+  margin-top: 7px;
   background: #2563eb; border: none; color: #fff;
-  border-radius: 8px; padding: 9px 16px; min-height: 40px;
+  border-radius: 8px; padding: 8px 16px; min-height: 38px;
   font-size: 13px; font-weight: 700; cursor: pointer;
   box-shadow: 0 1px 2px rgba(37, 99, 235, .3);
 }

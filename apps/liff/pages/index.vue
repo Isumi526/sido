@@ -84,11 +84,14 @@
             >
               <span class="material-symbols-rounded">{{ a.icon }}</span>{{ a.label }}
             </NuxtLink>
-            <!-- 溜まっている未提出。★行を足さずアクションとして横に並べる（高さを変えないため） -->
+            <!-- 溜まっている未提出。★行を足さずアクションとして横に並べる（高さを変えないため）。
+                 主アクションが2つある時は出さない——3つ並べると375px幅で文字が切れて
+                 「未提出 ⟨」のように読めなくなる（2026-08-31 iPhone SE 幅で確認）。
+                 件数はナビのバッジに出ており、起動時の割り込みもあるので落としてよい。 -->
             <NuxtLink
-              v-if="today.backlogDates.length"
+              v-if="today.backlogDates.length && todayView.actions.length <= 1"
               to="/history"
-              class="today-action"
+              class="today-action sub"
               data-testid="home-today-backlog"
             >
               <span class="material-symbols-rounded">history</span>{{ t('home.todayBacklogShort', { count: today.backlogDates.length }) }}
@@ -491,12 +494,13 @@ onMounted(() => { refreshSiteChatListBadge() })
    ★高さを固定する。読み込み後に生えると下のメニューが押し下がり、
     押そうとしたものと別のボタンをタップしてしまう（運用者指摘・2026-08-31）。
     可変の情報は行を増やさず、説明文への追記かアクションの横並びで吸収すること。 */
-.today-slot { height: 142px; margin-bottom: 12px; }
+.today-slot { min-height: 142px; margin-bottom: 12px; }
 .today-card {
-  height: 100%;
-  /* ★中身が何であれ外形を変えない。溢れるくらいなら隠す方がまし
-     （1pxでも伸びると下のメニューが動く） */
-  overflow: hidden;
+  /* ★高さは「最低142px」。固定＋overflow:hidden にしていたら、アクションが3つに
+     なった時（出勤中＋溜まっている未提出）に見出しとボタンが切れた（2026-08-31 実機で発覚）。
+     ずれを防ぐことより中身が読めることが優先。最低値を確保しておけば
+     通常の状態では下のメニューは動かない。 */
+  min-height: 142px;
   background: #fff; border: 1px solid #e5e7eb; border-left: 4px solid #9ca3af;
   border-radius: 12px; padding: 14px 16px;
   display: flex; flex-direction: column; justify-content: center;
@@ -522,13 +526,19 @@ onMounted(() => { refreshSiteChatListBadge() })
   height: 36px;
 }
 
-.today-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.today-actions { display: flex; flex-wrap: nowrap; gap: 8px; margin-top: 12px; }
 .today-action {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 9px 14px; min-height: 38px; border-radius: 8px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  padding: 9px 12px; min-height: 38px; border-radius: 8px;
   background: #fff; border: 1px solid #d1d5db; color: #374151;
   font-size: 13px; font-weight: 700; text-decoration: none;
+  /* ★横1行に収める。折り返すとカードが伸びて下のメニューが動く。
+     入り切らない時は縮めて省略する（ボタンが消えるより見えている方がよい） */
+  flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.today-action .material-symbols-rounded { flex-shrink: 0; }
+/* 未提出への導線は補助なので、主アクションより先に縮める */
+.today-action.sub { font-weight: 600; color: #b45309; border-color: #fcd34d; background: #fffbeb; flex-shrink: 3; }
 .today-action .material-symbols-rounded { font-size: 17px; }
 .today-action.primary { background: #06C755; border-color: #06C755; color: #fff; }
 .today-card.report-due .today-action.primary { background: #ef4444; border-color: #ef4444; }
