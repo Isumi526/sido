@@ -78,7 +78,6 @@
   "offDoneOpenReport": "Open the report to add expenses",
   "errStatusSaveFailed": "Could not save the daily report. {message}",
   "offDoneSwitchWorking": "Actually working — record check-in",
-  "autoAdvanceNote": "Please submit your daily report next. Taking you to the form shortly.",
   "nextOvertime": "Request overtime",
   "nextCheckout": "Record check-out"
 }

@@ -26,7 +26,7 @@
   "todayNotPunched": "You haven't checked in today",
   "todayNotPunchedSub": "Open attendance and tell us whether you're working today.",
   "todayWorking": "You're checked in",
-  "todayWorkingSub": "Checked in at {time}. Record your check-out when you finish.",
+  "todayWorkingSub": "Checked in at {time}. Record your check-out when your day's work is done.",
   "todayReportDue": "Today's daily report is missing",
   "todayReportDueSub": "You checked out at {time}. Please submit your report next.",
   "todayOff": "Not working today",

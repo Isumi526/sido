@@ -26,7 +26,7 @@
   "todayNotPunched": "今日はまだ出勤していません",
   "todayNotPunchedSub": "出退勤から今日の稼働有無を選んでください。",
   "todayWorking": "出勤中です",
-  "todayWorkingSub": "{time} に出勤しました。作業が終わったら退勤を記録してください。",
+  "todayWorkingSub": "{time} に出勤しました。今日の稼働が終わったら退勤を記録してください。",
   "todayReportDue": "今日の日報がまだです",
   "todayReportDueSub": "{time} に退勤しています。続けて日報を送信してください。",
   "todayOff": "今日は稼働なしです",

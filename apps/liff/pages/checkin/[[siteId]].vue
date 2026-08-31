@@ -64,13 +64,10 @@
            （2026-08-10 運用者要望）。出勤打刻・代理打刻・その日の日報が既にある時は出さない。
            ★2026-08-31: 完了画面で止めると、ここで日報の動線に気づかずアプリを閉じる人が出る。
             数秒だけ見せて自動で日報へ送る（リンクは自動遷移が効かない時の逃げ道として残す）。 -->
-      <template v-if="reportLink">
-        <p class="auto-advance-note" data-testid="auto-advance-note">{{ $t('checkin.autoAdvanceNote') }}</p>
-        <NuxtLink :to="reportLink" class="report-cta" data-testid="checkout-report-link">
-          <span class="material-symbols-rounded">edit_note</span>
-          {{ $t('checkin.writeReport') }}
-        </NuxtLink>
-      </template>
+      <NuxtLink v-if="reportLink" :to="reportLink" class="report-cta" data-testid="checkout-report-link">
+        <span class="material-symbols-rounded">edit_note</span>
+        {{ $t('checkin.writeReport') }}
+      </NuxtLink>
 
       <!-- 出勤直後の次アクション。ここが空だと「打刻して終わり」に見え、
            残業申請も退勤も別の入口を探すことになる（2026-08-31 運用者指摘）。 -->
@@ -356,12 +353,6 @@ const punchDateLabel = computed(() => {
 })
 // 退勤打刻の完了画面に出す「日報を書く」リンク。空なら出さない（resolveReportLink 参照）
 const reportLink     = ref('')
-// 完了画面を見せておく時間。短すぎると何が起きたか分からず、長いとその間に閉じられる。
-const AUTO_ADVANCE_MS = 2000
-let autoAdvanceTimer: number | null = null
-onBeforeUnmount(() => {
-  if (autoAdvanceTimer !== null) { clearTimeout(autoAdvanceTimer); autoAdvanceTimer = null }
-})
 const checkinTime    = ref('')
 const checkoutTime   = ref('')
 
@@ -756,19 +747,23 @@ async function submit() {
     day:   now.getDate(),
     time:  `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
   })
-  phase.value = 'done'
-  submitting.value = false
   await resolveReportLink(target)
 
-  // ★完了画面で止めない。数秒見せてから日報へ送る（2026-08-31 運用者指摘:
-  //  「この完了画面一枚挟むと、ここで日報の動線に気づかずアプリ閉じちゃう人がいる」）。
-  //  タイマーは画面を離れたら止める（離脱後に勝手に飛ばさない）。
+  // ★退勤したら完了画面を挟まず、そのまま日報画面へ送る（2026-08-31 運用者指摘:
+  //  「一旦ページ表示された時点で離脱してしまうケースがある」）。
+  //  完了の手応えは遷移先の日報画面が中央のオーバーレイで出す（punched= で時刻を渡す）。
+  //  ここで phase='done' を経由しないこと——一瞬でも完了画面が描画されると、
+  //  そこで閉じられる余地が残る（完了画面を挟むのをやめたのが今回の主旨）。
   if (reportLink.value) {
-    autoAdvanceTimer = window.setTimeout(() => {
-      autoAdvanceTimer = null
-      if (reportLink.value) navigateTo(`${reportLink.value}&from=checkout`)
-    }, AUTO_ADVANCE_MS)
+    const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+    await navigateTo(`${reportLink.value}&from=checkout&punched=${hhmm}`)
+    return
   }
+
+  // 出勤打刻・代理打刻・その日の日報が既にある時は従来どおり完了画面を出す
+  // （次にやることが日報ではないので、飛ばす先が無い）。
+  phase.value = 'done'
+  submitting.value = false
 }
 
 /**
@@ -1105,10 +1100,6 @@ async function resolveReportLink(target: Target | null) {
 .ws-label { font-size: 15px; font-weight: 700; color: #1f2937; }
 .ws-desc  { font-size: 12px; line-height: 1.5; color: #6b7280; }
 .ws-note  { margin: 16px 0 0; font-size: 12px; line-height: 1.6; color: #9ca3af; }
-
-.auto-advance-note {
-  margin: 4px 0 0; font-size: 13px; font-weight: 600; color: #06C755; line-height: 1.5;
-}
 
 /* 打刻後の次アクション（ここが空だと「打刻して終わり」に見える） */
 .next-actions { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 300px; margin-top: 20px; }
