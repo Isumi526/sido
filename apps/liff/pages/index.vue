@@ -538,7 +538,12 @@ onMounted(() => { refreshSiteChatListBadge() })
 .today-card.report-due .today-icon { color: #ef4444; }
 .today-card.working .today-icon    { color: #10b981; }
 .today-texts { flex: 1; min-width: 0; }
-.today-title { font-size: 15px; font-weight: 700; color: #1f2937; line-height: 1.4; }
+/* ★高さを固定する。フォントやアイコンの読み込み状態で行の高さが変わると、
+   カード全体が伸び縮みして下のメニューが動く（本番で26px・2026-09-01）。 */
+.today-title {
+  font-size: 15px; font-weight: 700; color: #1f2937; line-height: 1.4;
+  height: 21px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
 .today-card.report-due .today-title { color: #b91c1c; }
 .today-sub {
   margin-top: 3px; font-size: 12px; line-height: 1.5; color: #6b7280;
@@ -547,10 +552,10 @@ onMounted(() => { refreshSiteChatListBadge() })
   height: 36px;
 }
 
-.today-actions { display: flex; flex-wrap: nowrap; gap: 8px; margin-top: 12px; }
+.today-actions { display: flex; flex-wrap: nowrap; gap: 8px; margin-top: 12px; height: 40px; }
 .today-action {
   display: inline-flex; align-items: center; justify-content: center; gap: 5px;
-  padding: 9px 12px; min-height: 38px; border-radius: 8px;
+  padding: 0 12px; height: 40px; border-radius: 8px;
   background: #fff; border: 1px solid #d1d5db; color: #374151;
   font-size: 13px; font-weight: 700; text-decoration: none;
   /* ★横1行に収める。折り返すとカードが伸びて下のメニューが動く。
