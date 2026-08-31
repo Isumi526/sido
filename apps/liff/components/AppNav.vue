@@ -237,7 +237,7 @@ const open = ref(false)
 // ※ @click ハンドラ内で直接呼ぶと useSchedules() 内の useI18n() が「setup外」判定で例外になり
 //   サイレントに失敗する(コンポーネントinstance文脈が無いDOMイベントハンドラのため)。
 //   watchはVueのeffectスコープ内で実行されinstance文脈が保持されるためここに書く。
-watch(open, (isOpen) => { if (isOpen) { refreshNotifBadge(); refreshPendingDocBadge() } })
+watch(open, (isOpen) => { if (isOpen) { refreshNotifBadge(); refreshPendingDocBadge(); refreshUnsubmittedReportBadge() } })
 
 // ホーム画面(pages/index.vue)と共通のナビ項目定義（composables/useNavItems.ts）。
 // 表記・並び・表示条件(パスワード変更等)のズレを防ぐ（2026-07-10）。
@@ -246,17 +246,20 @@ onMounted(() => { void resolveRole() })
 const { bySection } = useNavItems(() => authMode.value, () => canApplyPersonalExpense.value)
 
 // 予定管理ナビの未読バッジ（#予定通知バッジ・2026-07-11）
-onMounted(() => { refreshNotifBadge(); refreshPendingDocBadge() })
+onMounted(() => { refreshNotifBadge(); refreshPendingDocBadge(); refreshUnsubmittedReportBadge() })
 // チャット一覧ナビの未読バッジ（2026-07-14・現場情報ナビの未読メンションバッジから移設・集約）
 onMounted(() => { refreshSiteChatListBadge() })
 
 // 下部固定ナビ（2026-07-20整理: 残業申請は出退勤画面からの導線に一本化し除外、
-//  ホームを中央(デフォルト選択位置)に。出退勤/チャット/ホーム/日報登録/予定管理の5項目）
+//  ホームを中央(デフォルト選択位置)に。出退勤/チャット/ホーム/日報履歴/予定管理の5項目）
+// ★2026-08-31: 「日報登録」の直接動線をやめ「日報履歴」に置き換えた。
+//  日報は 退勤打刻 → そのまま日報 を正規ルートにし、出し忘れ・修正は履歴から入る。
+//  ルート /report 自体は残す（履歴の編集・差戻し・残業承認・編集許可の通知が直リンクしている）。
 const bottomNavItems = computed(() => [
   { path: '/checkin',   icon: 'how_to_reg',      label: t('nav.checkin'),        testId: 'checkin',  badge: 0 },
   { path: '/chats',     icon: 'forum',           label: t('nav.chats'),          testId: 'chats',    badge: unreadChatCount.value },
   { path: '/',          icon: 'home',           label: t('nav.home'),           testId: 'home',     badge: 0 },
-  { path: '/report',    icon: 'edit_note',       label: t('nav.reportRegister'), testId: 'report',   badge: 0 },
+  { path: '/history',   icon: 'history',         label: t('nav.reportHistory'),  testId: 'history',  badge: unsubmittedReportCount.value },
   { path: '/calendar',  icon: 'calendar_month',  label: t('nav.schedule'),       testId: 'calendar', badge: unreadScheduleCount.value },
 ])
 // '/checkin/[[siteId]]'のような任意サブパスも「そのタブが選択中」として扱う(ホームだけは完全一致のみ)

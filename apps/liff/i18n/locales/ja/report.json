@@ -202,5 +202,7 @@
   "leaveUnitHour": "時間単位",
   "leaveHoursPlaceholder": "何時間分か（例: 2）",
   "leaveHoursRequired": "時間数を入れてください",
-  "leaveHoursTooLong": "1日の所定労働時間（{h}時間）を超えています"
+  "leaveHoursTooLong": "1日の所定労働時間（{h}時間）を超えています",
+  "checkoutToastTime": "退勤 {time}",
+  "checkoutToastText": "記録しました"
 }
