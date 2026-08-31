@@ -4,40 +4,40 @@
 <meta charset="utf-8">
 <title>9月1日から 出退勤と日報のやり方が変わります</title>
 <style>
-  @page { size: A4; margin: 10mm 11mm 9mm; }
+  @page { size: A4; margin: 10mm 11mm 8mm; }
   * { box-sizing: border-box; }
   body { font-family: "Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;
-         color: #1f2937; font-size: 9.5pt; line-height: 1.55; margin: 0; }
+         color: #1f2937; font-size: 9.5pt; line-height: 1.5; margin: 0; }
   h1 { font-size: 17pt; margin: 0 0 1mm; color: #06C755; }
-  .sub { font-size: 10pt; color: #374151; margin: 0 0 4mm; font-weight: 700; }
-  h2 { font-size: 11pt; margin: 5mm 0 2mm; padding: 1.2mm 3mm;
+  .sub { font-size: 9.5pt; color: #374151; margin: 0 0 3.5mm; font-weight: 700; }
+  h2 { font-size: 11.5pt; margin: 3mm 0 1.5mm; padding: 1.3mm 3mm;
        background: #06C755; color: #fff; border-radius: 3px; }
-  p { margin: 0 0 2mm; }
-  .big { font-size: 11pt; font-weight: 700; }
-  .cols { display: flex; gap: 4mm; }
-  .cols > * { flex: 1; }
-  .step { display: flex; gap: 3mm; margin-bottom: 2.5mm; align-items: flex-start; }
-  .num { flex-shrink: 0; width: 7mm; height: 7mm; border-radius: 50%;
-         background: #06C755; color: #fff; font-weight: 700; font-size: 10pt;
+
+  .top { background: #fef2f2; border: 1.5px solid #fca5a5; border-radius: 4px;
+         padding: 2.4mm 3.5mm; font-size: 10pt; line-height: 1.55; }
+  .top b { color: #b91c1c; }
+
+  .cols { display: flex; gap: 4mm; page-break-inside: avoid; }
+  .step { display: flex; gap: 3mm; margin-bottom: 2.2mm; align-items: flex-start; }
+  .num { flex-shrink: 0; width: 8mm; height: 8mm; border-radius: 50%;
+         background: #06C755; color: #fff; font-weight: 700; font-size: 11pt;
          display: flex; align-items: center; justify-content: center; }
-  .step-b { flex: 1; }
-  .step-t { font-weight: 700; font-size: 10pt; }
-  .step-d { font-size: 9pt; color: #4b5563; }
-  .shots { display: flex; gap: 3mm; margin: 2mm 0 0; page-break-inside: avoid; }
-  .shot { flex: 1; }
+  .st { font-weight: 700; font-size: 11pt; line-height: 1.35; }
+  .sd { font-size: 9.5pt; color: #4b5563; line-height: 1.45; }
   .shot img { width: 100%; border: 1px solid #d1d5db; border-radius: 4px; display: block; }
-  .cap { font-size: 8pt; color: #4b5563; margin-top: 1mm; line-height: 1.4; text-align: center; }
-  .box { padding: 2.5mm 3mm; border-radius: 3px; font-size: 9pt; margin: 3mm 0; }
-  .warn { background: #fef2f2; border: 1.5px solid #fca5a5; }
-  .warn b { color: #b91c1c; }
+  .cap { font-size: 8.5pt; color: #4b5563; margin-top: 1.2mm; text-align: center; line-height: 1.4; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 9.5pt; margin: 1mm 0 0; }
+  th, td { border: 1px solid #d1d5db; padding: 1.8mm 2.5mm; text-align: left; }
+  th { background: #f1f5f9; font-weight: 700; }
+  td.a { background: #fef2f2; color: #991b1b; }
+  td.b { background: #f0fdf4; color: #15803d; font-weight: 700; }
+
+  .box { padding: 2.4mm 3.5mm; border-radius: 3px; font-size: 9.7pt; margin: 2.5mm 0 0; }
   .good { background: #f0fdf4; border: 1px solid #86efac; }
-  .info { background: #eff6ff; border: 1px solid #93c5fd; }
-  table { width: 100%; border-collapse: collapse; font-size: 9pt; margin: 2mm 0; }
-  th, td { border: 1px solid #d1d5db; padding: 1.5mm 2.5mm; text-align: left; vertical-align: top; }
-  th { background: #f1f5f9; }
-  td.n { background: #fef2f2; color: #991b1b; }
-  td.y { background: #f0fdf4; color: #15803d; font-weight: 700; }
-  footer { margin-top: 4mm; font-size: 8pt; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 2mm; }
+  .ask  { background: #eff6ff; border: 1.5px solid #60a5fa; text-align: center; font-size: 11pt; }
+  .ask b { color: #1d4ed8; }
+  footer { margin-top: 3mm; font-size: 8pt; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 1.5mm; }
 </style>
 </head>
 <body>
@@ -45,122 +45,71 @@
 <h1>9月1日（火）から 出退勤と日報のやり方が変わります</h1>
 <p class="sub">株式会社シード ／ ヒロ木工 の皆さまへ</p>
 
-<div class="box warn">
-<p class="big" style="margin-bottom:1.5mm"><b>いちばん大事な2つ</b></p>
-① <b>出退勤の打刻が必須になります。</b>これまで打刻していなかった方も、毎日お願いします。<br>
-② <b>日報は「退勤を押した流れ」で出します。</b>退勤を押すと日報の入力画面が自動で開きます。<br>
-③ メニューの <b>「日報登録」は「日報履歴」に変わります。</b>日報を出し忘れた時・直したい時は日報履歴から入ってください。
+<div class="top">
+① <b>出退勤の打刻が毎日必須になります。</b>これまで打刻していなかった方もお願いします。<br>
+② <b>退勤を押すと日報の画面が自動で開きます。</b>そのまま入力して送信してください。<br>
+③ メニューの <b>「日報登録」は「日報履歴」に変わります。</b>
 </div>
 
-<h2>毎日の流れ（働く日）</h2>
+<h2>働く日</h2>
 
 <div class="cols">
-  <div>
-    <div class="step"><div class="num">1</div><div class="step-b">
-      <div class="step-t">朝：アプリの「出退勤」を開く</div>
-      <div class="step-d">「今日は稼働しますか？」と出るので <b>「稼働あり」</b> を選びます。<br>
-      半休・時間休の日も「稼働あり」です（その日は働くため）。</div></div></div>
-    <div class="step"><div class="num">2</div><div class="step-b">
-      <div class="step-t">出勤を打刻する</div>
-      <div class="step-d">確認事項にチェック →「現在地を取得」→「出勤を記録する」。</div></div></div>
-    <div class="step"><div class="num">3</div><div class="step-b">
-      <div class="step-t">作業が終わったら 退勤を打刻する</div>
-      <div class="step-d">アプリの「出退勤」から「退勤を記録する」。</div></div></div>
-    <div class="step"><div class="num">4</div><div class="step-b">
-      <div class="step-t">そのまま日報を入力して送信</div>
-      <div class="step-d"><b>退勤を押すと日報の画面が自動で開きます。</b>そのまま入力して送信してください。</div></div></div>
+  <div style="flex:1.25">
+    <div class="step"><div class="num">1</div><div>
+      <div class="st">朝、アプリの「出退勤」を開く</div>
+      <div class="sd">「今日は稼働しますか？」→ <b>「稼働あり」</b>を選ぶ<br>
+      ※ 半休・時間休の日も「稼働あり」です</div></div></div>
+    <div class="step"><div class="num">2</div><div>
+      <div class="st">出勤を打刻する</div>
+      <div class="sd">確認事項にチェック →「現在地を取得」→「出勤を記録する」</div></div></div>
+    <div class="step"><div class="num">3</div><div>
+      <div class="st">作業が終わったら 退勤を打刻する</div>
+      <div class="sd">アプリの「出退勤」から「退勤を記録する」</div></div></div>
+    <div class="step" style="margin-bottom:0"><div class="num">4</div><div>
+      <div class="st">そのまま日報を送信する</div>
+      <div class="sd"><b>退勤を押すと日報の画面が自動で開きます。</b></div></div></div>
   </div>
-  <div class="shots" style="flex:1.15">
-    <div class="shot"><img src="assets/20260901/01-gate.png" alt="稼働の選択">
-      <div class="cap">① 出退勤を開くと最初に出ます</div></div>
-    <div class="shot"><img src="assets/20260901/06-checkout-toast.png" alt="退勤直後">
-      <div class="cap">④ 退勤を押すと日報が開きます</div></div>
-  </div>
+  <div class="shot" style="flex:0.34"><img src="assets/20260901/01-gate.png" alt="稼働の選択">
+    <div class="cap">① 出退勤を開くと最初に出ます</div></div>
+  <div class="shot" style="flex:0.34"><img src="assets/20260901/06-checkout-toast.png" alt="退勤直後">
+    <div class="cap">④ 退勤を押すと日報が開きます</div></div>
 </div>
 
 <h2>休みの日・有給の日</h2>
 
 <div class="cols">
   <div style="flex:1.4">
-    <p><b>出退勤の打刻は要りません。</b>朝アプリの「出退勤」を開いて、
-    <b>「有給（終日）」</b> か <b>「稼働なし（休み・移動日等）」</b> を選んでください。
-    <b>それだけで日報の提出が完了します。</b></p>
-    <div class="box good" style="margin-bottom:0">
-      これまでどおり <b>休みの日も日報の提出は必要</b> ですが、
-      日報の画面を開く必要はなくなります。1タップで終わります。
+    <p style="font-size:10.5pt"><b>出退勤の打刻は要りません。</b></p>
+    <p>朝アプリの「出退勤」を開いて、<b>「有給（終日）」</b>か
+    <b>「稼働なし（休み・移動日等）」</b>を選んでください。</p>
+    <div class="box good" style="margin-top:2.5mm">
+      <b>選ぶだけで日報の提出が完了します。</b>
+      休みの日も日報の提出は必要ですが、日報の画面を開く必要はなくなります。
     </div>
-    <p style="margin-top:2.5mm">急に出ることになった場合は、その画面の
-    <b>「やっぱり稼働する（出勤を記録する）」</b> を押せば通常どおり打刻できます。</p>
+    <p style="margin-top:2.5mm; font-size:9pt; color:#4b5563">
+    急に出ることになった場合は、その画面の「やっぱり稼働する（出勤を記録する）」を押せば
+    通常どおり打刻できます。</p>
   </div>
-  <div class="shot" style="flex:0.6">
-    <img src="assets/20260901/03-off-done.png" alt="休みの日">
-    <div class="cap">選ぶだけで提出完了</div>
-  </div>
+  <div class="shot" style="flex:0.26"><img src="assets/20260901/03-off-done.png" alt="休みの日">
+    <div class="cap">選ぶだけで提出完了</div></div>
 </div>
 
-<h2>ここが変わります（一覧）</h2>
+<h2>変わるところ</h2>
 
 <table>
-  <tr><th style="width:26%">やりたいこと</th><th style="width:37%">これまで</th><th>9月1日から</th></tr>
-  <tr>
-    <td>今日の日報を出す</td>
-    <td class="n">メニュー「日報登録」から入る</td>
-    <td class="y">退勤を打刻 → 自動で日報が開く</td>
-  </tr>
-  <tr>
-    <td>休み・有給の日報</td>
-    <td class="n">日報登録から「有給／稼働なし」を選んで送信</td>
-    <td class="y">出退勤を開いて選ぶだけ（打刻不要）</td>
-  </tr>
-  <tr>
-    <td>出し忘れた日を出す</td>
-    <td class="n">日報登録から入る</td>
-    <td class="y">メニュー「日報履歴」から入る</td>
-  </tr>
-  <tr>
-    <td>出した日報を直す</td>
-    <td>日報履歴の「編集する」</td>
-    <td>変わりません</td>
-  </tr>
-  <tr>
-    <td>出退勤の打刻</td>
-    <td class="n">任意（していない方が多数）</td>
-    <td class="y"><b>毎日必須</b></td>
-  </tr>
+  <tr><th style="width:26%">やりたいこと</th><th style="width:36%">これまで</th><th>9月1日から</th></tr>
+  <tr><td>今日の日報を出す</td><td class="a">メニュー「日報登録」から入る</td><td class="b">退勤を打刻 → 自動で日報が開く</td></tr>
+  <tr><td>休み・有給の日報</td><td class="a">日報登録から選んで送信</td><td class="b">出退勤を開いて選ぶだけ（打刻不要）</td></tr>
+  <tr><td>出し忘れた日を出す</td><td class="a">日報登録から入る</td><td class="b">メニュー「日報履歴」から入る</td></tr>
+  <tr><td>出退勤の打刻</td><td class="a">任意</td><td class="b"><b>毎日必須</b></td></tr>
 </table>
 
-<h2>出し忘れた時は</h2>
-
-<div class="cols">
-  <div style="flex:1.5">
-    <p>アプリが3段階でお知らせします。<b>画面が使えなくなることはありません。</b></p>
-    <table style="margin-top:0">
-      <tr><th style="width:32%">いつ</th><th>出るもの</th></tr>
-      <tr><td>退勤した直後</td><td>日報の入力画面が自動で開く</td></tr>
-      <tr><td>同じ日のうち</td><td>ホームの一番上に赤い案内／メニュー「日報履歴」に赤い数字</td></tr>
-      <tr><td>次の日以降も未提出</td><td>アプリを開いたときにお知らせ（「後で」で閉じられます）</td></tr>
-    </table>
-    <div class="box info" style="margin-bottom:0">
-      <b>打刻を忘れた日もあとから入力できます。</b>出退勤の画面の下にある
-      「打刻を忘れた日を入力する」から、<b>4日前まで</b>さかのぼって入れられます。
-    </div>
-  </div>
-  <div class="shots" style="flex:1">
-    <div class="shot"><img src="assets/20260901/05-home-reportdue.png" alt="日報未提出">
-      <div class="cap">退勤したのに日報が無いとき</div></div>
-    <div class="shot"><img src="assets/20260901/07-overdue.png" alt="未提出のお知らせ">
-      <div class="cap">前の日以前が残っているとき</div></div>
-  </div>
-</div>
-
-<div class="box warn">
-<b>困ったときは</b>　メニューの「日報履歴」を開いてください。未提出の日があれば一番上に出ます。
-そこから入力できます。分からないことがあれば現場責任者までご連絡ください。
+<div class="box ask">
+<b>分からないことがあれば、このグループLINEにご連絡ください。</b>
 </div>
 
 <footer>
-株式会社シード ／ ヒロ木工　2026年9月1日（火）朝より適用。アプリの更新操作は不要です（自動で新しい画面になります）。<br>
-画面が古いままの場合は、アプリを一度完全に閉じてから開き直してください。
+2026年9月1日（火）朝より適用。アプリの更新操作は不要です。画面が古いままの場合は、アプリを一度完全に閉じてから開き直してください。
 </footer>
 
 </body>
