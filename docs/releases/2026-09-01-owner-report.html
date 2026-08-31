@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>出退勤と日報のフロー統合 実装完了報告</title>
+<style>
+  @page { size: A4; margin: 10mm 11mm 9mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;
+         color: #1f2937; font-size: 9pt; line-height: 1.5; margin: 0; }
+  h1 { font-size: 15pt; margin: 0 0 1mm; }
+  .meta { font-size: 8pt; color: #6b7280; margin: 0 0 4mm; }
+  h2 { font-size: 10.5pt; margin: 4.5mm 0 2mm; padding: 1.2mm 3mm;
+       background: #f1f5f9; border-left: 3px solid #06C755; border-radius: 2px; }
+  p { margin: 0 0 1.8mm; }
+  ul { margin: 0 0 1.8mm 4.5mm; padding: 0; }
+  li { margin: 0 0 0.8mm; }
+  .cols { display: flex; gap: 3.5mm; page-break-inside: avoid; }
+  .cols > * { flex: 1; }
+  table { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin: 1.5mm 0; }
+  th, td { border: 1px solid #d1d5db; padding: 1.2mm 2.2mm; text-align: left; vertical-align: top; }
+  th { background: #f1f5f9; font-weight: 700; }
+  td.n { background: #fef2f2; color: #991b1b; font-weight: 700; }
+  td.y { background: #f0fdf4; color: #15803d; font-weight: 700; }
+  .box { padding: 2.2mm 3mm; border-radius: 3px; font-size: 8.7pt; margin: 2.5mm 0; }
+  .warn { background: #fff7ed; border: 1px solid #fdba74; }
+  .warn b { color: #9a3412; }
+  .ask  { background: #eff6ff; border: 1.5px solid #60a5fa; }
+  .ask b { color: #1d4ed8; }
+  .good { background: #f0fdf4; border: 1px solid #86efac; }
+  .shots { display: flex; gap: 2.5mm; margin: 1.5mm 0 0; page-break-inside: avoid; }
+  .shot { flex: 1; }
+  .shot img { width: 100%; border: 1px solid #e5e7eb; border-radius: 3px; display: block; }
+  .cap { font-size: 7.5pt; color: #4b5563; margin-top: 0.8mm; line-height: 1.35; }
+  .cap b { color: #111827; }
+  .q { display: flex; gap: 2.5mm; margin-bottom: 2mm; }
+  .qn { flex-shrink: 0; width: 6mm; height: 6mm; border-radius: 50%; background: #1d4ed8;
+        color: #fff; font-size: 8.5pt; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  footer { margin-top: 4mm; font-size: 7.5pt; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 1.5mm; }
+</style>
+</head>
+<body>
+
+<h1>出退勤と日報のフロー統合 ― 実装完了のご報告</h1>
+<p class="meta">2026-08-31 ／ 対象: 作業員アプリ（シード28名・ヒロ木工6名）／ データベースの変更なし</p>
+
+<p>ご相談いただいた「出退勤の打刻を徹底させるため、日報送信を出退勤に取り込む」を実装しました。
+<b>本日の夜に一度本番へ出しましたが、下記の理由で当日中に元へ戻しています。</b>
+あらためて<b>9月1日（火）の朝に反映</b>したいので、ご確認をお願いします。</p>
+
+<h2>実装したもの</h2>
+
+<table>
+  <tr><th style="width:24%">項目</th><th>内容</th></tr>
+  <tr><td><b>朝の稼働有無</b></td>
+      <td>出退勤を開くと最初に「今日は稼働しますか？」（稼働あり／有給／稼働なし）。
+      <b>休み・有給はその場で日報が提出され、打刻フォームには進みません。</b>
+      これで「休みの日に出退勤を触らせる」「稼働の有無を打刻前と日報で二度聞く」が解消します。</td></tr>
+  <tr><td><b>退勤 → 日報</b></td>
+      <td>退勤を押すと完了画面を挟まず日報の入力画面へ直行。記録できたことは日報画面の中央に1.6秒表示。
+      完了画面を挟むとそこで離脱する人が出るため画面ごと廃止しました。</td></tr>
+  <tr><td><b>日報の入口</b></td>
+      <td>メニューの「日報登録」を「日報履歴」に置換。出し忘れ・修正は履歴から入ります。</td></tr>
+  <tr><td><b>出し忘れ対策</b></td>
+      <td>退勤したのに日報が無い人に3段階で通知（当日はホームの警告＋バッジ、翌日以降は起動時の案内）。
+      <b>画面をロックはしません</b>（「そこまで厳しくできない」というご方針に沿っています）。</td></tr>
+  <tr><td><b>まとめて提出</b></td>
+      <td>溜まった未提出を理由1回でまとめて提出可能（稼働なし・有給の日のみ）。
+      期限切れの日は<b>従来どおり承認待ち</b>に積まれます。</td></tr>
+  <tr><td>画面のガタつき</td>
+      <td>読み込み後に画面が動いて別のボタンを押してしまう問題を解消（実測366px→0）。全画面に効きます。</td></tr>
+</table>
+
+<div class="shots">
+  <div class="shot"><img src="assets/20260901/01-gate.png" alt="稼働有無">
+    <div class="cap"><b>① 朝いちばん</b>／休み・有給はここで完了</div></div>
+  <div class="shot"><img src="assets/20260901/06-checkout-toast.png" alt="退勤直後">
+    <div class="cap"><b>② 退勤の直後</b>／完了画面を挟まず日報へ</div></div>
+  <div class="shot"><img src="assets/20260901/05-home-reportdue.png" alt="未提出">
+    <div class="cap"><b>③ 出し忘れ</b>／退勤したのに日報が無いとき</div></div>
+  <div class="shot"><img src="assets/20260901/09-bulk.png" alt="まとめて提出">
+    <div class="cap"><b>④ 溜まった分</b>／理由1回でまとめて</div></div>
+</div>
+
+<h2>本日いったん戻した理由（実データ）</h2>
+
+<p>本番の利用実態を調べたところ、<b>日報は定着している一方、打刻はほとんど使われていません</b>でした。</p>
+
+<div class="cols">
+  <div>
+    <table>
+      <tr><th></th><th>シード</th><th>ヒロ木工</th></tr>
+      <tr><td>有効な作業員</td><td>28名</td><td>6名</td></tr>
+      <tr><td>日報を出した人（30日）</td><td class="y">26名 / 743件</td><td class="y">5名 / 136件</td></tr>
+      <tr><td>打刻をした人（30日）</td><td class="n">3名 / 18件</td><td class="n">0名 / 0件</td></tr>
+    </table>
+    <p style="font-size:8.5pt">
+    この状態で夜間に切り替えると、今まさに日報を出そうとしている方が
+    <b>「日報登録」を見失う</b>ため、当日中に元へ戻しました。
+    周知したうえで朝から切り替えるのが安全と判断しています。</p>
+  </div>
+  <div>
+    <div class="box warn" style="margin-top:0">
+      <b>この変更は「打刻を必須にする」ことが前提です。</b><br>
+      現在は31名中3名しか打刻していないため、切り替え当初は
+      <b>ほぼ全員にとって新しい操作</b>になります。周知と、最初の数日のフォローが要ります。
+      <br><br>
+      なお日報の入口自体は無くなりません。メニューの「日報履歴」を開けば
+      未提出の日が一番上に出て、そこから入力できます。
+    </div>
+  </div>
+</div>
+
+<h2>ご確認いただきたいこと</h2>
+
+<div class="box ask">
+  <div class="q"><div class="qn">1</div><div>
+    <b>9月1日（火）の朝イチで反映してよろしいでしょうか。</b><br>
+    <span style="font-size:8.5pt">反映後は全員のアプリが自動で新しい画面になります（作業員側の操作は不要）。
+    画面が古いままの方は、アプリを一度完全に閉じて開き直していただきます。</span>
+  </div></div>
+  <div class="q"><div class="qn">2</div><div>
+    <b>打刻時の「確認事項」を登録しますか。</b><br>
+    <span style="font-size:8.5pt">現在シード・ヒロ木工とも<b>0件</b>です。0件でも打刻はできますが、
+    「ヘルメット・安全帯を着用していますか」等を登録すると、打刻のたびにチェックさせて
+    同意した文面を証跡として保存できます。管理画面から登録できます。</span>
+  </div></div>
+  <div class="q"><div class="qn">3</div><div>
+    <b>溜まっている未提出の日報をどう扱いますか。</b><br>
+    <span style="font-size:8.5pt">窪薗さん7日・大塚（啓）さん6日・柴垣さん6日 ほか、合計で数十日分あります。
+    新機能の「まとめて提出」で片付けられますが、<b>提出期限（当日含む3日）を過ぎた分は承認待ち</b>に入るため、
+    承認の手間が発生します。放置しても業務は止まりません。</span>
+  </div></div>
+</div>
+
+<h2>安全面</h2>
+
+<ul>
+  <li><b>データベースの変更はありません。</b>既存のデータはそのままで、問題があれば元に戻すだけで復旧します（本日の巻き戻しも約10分で完了しました）</li>
+  <li><b>人件費の計算は変わりません。</b>従来どおり日報の作業時刻が基準で、打刻の実時刻は表示専用です</li>
+  <li>日報の中身・提出ルール（週7、当日含む3日の提出期限、期限切れの承認）は変えていません</li>
+  <li>管理画面の機能は変わりません。打刻が増えるぶん「出勤打刻なし」パネルが実用的になります</li>
+  <li>自動テスト300件すべて成功。第三者AIによるコードレビューも実施済み</li>
+</ul>
+
+<div class="box good">
+<b>作業員向けの案内資料を別途ご用意しました。</b>そのままグループLINEに添付してお使いいただけます。
+（「9月1日から 出退勤と日報のやり方が変わります」A4 1枚）
+</div>
+
+<footer>
+GENLINKS ／ 画面キャプチャは検証環境のものです。実際の画面では会社名が表示されます。
+</footer>
+
+</body>
+</html>
