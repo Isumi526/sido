@@ -61,24 +61,11 @@
       </p>
 
       <!-- ★退勤したらそのまま日報へ。打刻と日報の二度手間をなくし、退勤を押す癖をつけるため
-           （2026-08-10 運用者要望）。出勤打刻・代理打刻・その日の日報が既にある時は出さない。
-           ★2026-08-31: 完了画面で止めると、ここで日報の動線に気づかずアプリを閉じる人が出る。
-            数秒だけ見せて自動で日報へ送る（リンクは自動遷移が効かない時の逃げ道として残す）。 -->
+           （2026-08-10 運用者要望）。出勤打刻・代理打刻・その日の日報が既にある時は出さない。 -->
       <NuxtLink v-if="reportLink" :to="reportLink" class="report-cta" data-testid="checkout-report-link">
         <span class="material-symbols-rounded">edit_note</span>
         {{ $t('checkin.writeReport') }}
       </NuxtLink>
-
-      <!-- 出勤直後の次アクション。ここが空だと「打刻して終わり」に見え、
-           残業申請も退勤も別の入口を探すことになる（2026-08-31 運用者指摘）。 -->
-      <div v-if="attendanceType === 'checkin' && !isProxyMode" class="next-actions">
-        <NuxtLink to="/overtime" class="next-action" data-testid="done-overtime">
-          <span class="material-symbols-rounded">more_time</span>{{ $t('checkin.nextOvertime') }}
-        </NuxtLink>
-        <button class="next-action secondary" data-testid="done-checkout" @click="loadForTarget(selectedId!)">
-          <span class="material-symbols-rounded">logout</span>{{ $t('checkin.nextCheckout') }}
-        </button>
-      </div>
 
       <div v-if="otherTargets.length" class="next-targets">
         <p class="next-label">{{ $t('checkin.continueOthers') }}</p>
@@ -97,84 +84,6 @@
           <span class="material-symbols-rounded chev">chevron_right</span>
         </button>
       </div>
-    </div>
-
-    <!-- ★稼働有無ゲート（出勤打刻の前に1回だけ・2026-08-31）。
-         休みの日に出退勤フォームを触らせないための入口。ここでの回答が稼働有無の権威で、
-         日報側の稼働有無セレクタはこの答えの引き継ぎ表示になる（＝二度聞かない）。 -->
-    <div v-else-if="phase === 'work-status'" class="ws-wrap" data-testid="work-status">
-      <div class="ws-head">
-        <div class="ws-date">
-          <span class="material-symbols-rounded">event</span>{{ punchDateLabel }}
-        </div>
-        <p class="ws-title">{{ $t('checkin.wsTitle') }}</p>
-        <p class="ws-lead">{{ $t('checkin.wsLead') }}</p>
-      </div>
-
-      <div class="ws-options">
-        <button
-          class="ws-option working"
-          data-testid="ws-working"
-          :disabled="savingStatus"
-          @click="answerWorkStatus('working')"
-        >
-          <span class="material-symbols-rounded ws-icon">how_to_reg</span>
-          <span class="ws-body">
-            <span class="ws-label">{{ $t('checkin.wsWorking') }}</span>
-            <span class="ws-desc">{{ $t('checkin.wsWorkingDesc') }}</span>
-          </span>
-          <span class="material-symbols-rounded chev">chevron_right</span>
-        </button>
-
-        <button
-          class="ws-option leave"
-          data-testid="ws-paid-leave"
-          :disabled="savingStatus"
-          @click="answerWorkStatus('paid_leave')"
-        >
-          <span class="material-symbols-rounded ws-icon">beach_access</span>
-          <span class="ws-body">
-            <span class="ws-label">{{ $t('checkin.wsPaidLeave') }}</span>
-            <span class="ws-desc">{{ $t('checkin.wsPaidLeaveDesc') }}</span>
-          </span>
-          <span class="material-symbols-rounded chev">chevron_right</span>
-        </button>
-
-        <button
-          class="ws-option off"
-          data-testid="ws-off"
-          :disabled="savingStatus"
-          @click="answerWorkStatus('off')"
-        >
-          <span class="material-symbols-rounded ws-icon">bedtime</span>
-          <span class="ws-body">
-            <span class="ws-label">{{ $t('checkin.wsOff') }}</span>
-            <span class="ws-desc">{{ $t('checkin.wsOffDesc') }}</span>
-          </span>
-          <span class="material-symbols-rounded chev">chevron_right</span>
-        </button>
-      </div>
-
-      <p class="ws-note">{{ $t('checkin.wsNote') }}</p>
-    </div>
-
-    <!-- 稼働なし/有給で日報だけ出し終えた完了画面（打刻はしない） -->
-    <div v-else-if="phase === 'off-done'" class="center-box" data-testid="off-done">
-      <span class="material-symbols-rounded done-icon">check_circle</span>
-      <p class="done-title">{{ $t('checkin.offDoneTitle') }}</p>
-      <p class="done-sub">
-        {{ punchDateLabel }} ／
-        {{ offStatus === 'paid_leave' ? $t('checkin.wsPaidLeave') : $t('checkin.wsOff') }}
-      </p>
-      <p class="done-message">{{ $t('checkin.offDoneMessage') }}</p>
-      <!-- 休みでも経費（移動日のガソリン等）が出ることはあるので、開く手段は残す -->
-      <NuxtLink :to="`/report?date=${todayStr()}`" class="off-done-sub-link" data-testid="off-done-open-report">
-        {{ $t('checkin.offDoneOpenReport') }}
-      </NuxtLink>
-      <!-- 気が変わって出ることになった時の逃げ道（無いと今日は一切打刻できなくなる） -->
-      <button class="off-done-sub-link" data-testid="off-done-switch-working" @click="enterChecklist">
-        {{ $t('checkin.offDoneSwitchWorking') }}
-      </button>
     </div>
 
     <div v-else-if="phase === 'select-target'" class="select-wrap">
@@ -251,10 +160,8 @@
           </span>
           <span class="loc-text">
             <template v-if="locationState === 'idle'">
-              <span class="loc-lead">{{ $t('checkin.locIdleIntro') }}<b>{{ $t('checkin.locIdleAllow') }}</b>{{ $t('checkin.locIdleOutro') }}</span>
-              <button class="loc-get" data-testid="loc-get" @click="fetchLocation">
-                <span class="material-symbols-rounded loc-get-icon">my_location</span>{{ $t('checkin.locGetCurrent') }}
-              </button>
+              {{ $t('checkin.locIdleIntro') }}<b>{{ $t('checkin.locIdleAllow') }}</b>{{ $t('checkin.locIdleOutro') }}
+              <button class="loc-get" @click="fetchLocation">{{ $t('checkin.locGetCurrent') }}</button>
               <span class="loc-note">{{ $t('checkin.locIdleNote') }}</span>
             </template>
             <template v-else-if="locationState === 'pending'">{{ $t('checkin.locPending') }}</template>
@@ -262,7 +169,7 @@
               {{ $t('checkin.locGranted', { lat: locationLat!.toFixed(5), lng: locationLng!.toFixed(5) }) }}
             </template>
             <template v-else>
-              <span class="loc-lead">{{ $t('checkin.locUnavailable') }}</span>
+              {{ $t('checkin.locUnavailable') }}
               <button class="loc-retry" @click="fetchLocation">{{ $t('checkin.locRetry') }}</button>
               <details class="loc-help">
                 <summary>{{ $t('checkin.locHelpSummary') }}</summary>
@@ -308,16 +215,7 @@
 //  これに伴い現場選択('select-site')と出勤中の現場フォーカス('checked-in-focus')は不要になり削除。
 //  ルートは /checkin/<siteId> のまま残す（現場に貼ってある旧QRを開いても 404 にしないため。
 //  siteId は受け取るだけで打刻には使わない）。
-// 'work-status' … 出勤打刻の前に「今日は稼働ありますか」を1回だけ聞く画面（2026-08-31）。
-//   休みでも週7で日報を出させる運用なのに、休みの日まで出退勤フォームを触らせていたのを直す。
-//   稼働なし/有給を選んだらここで日報(is_working=false)を保存して終わる＝打刻フォームに進ませない。
-//   これで「稼働有無を打刻前と日報で二度聞く」重複も消える（権威はこの回答）。
-// 'off-done'    … 上で日報だけ保存し終えた完了画面。
-type Phase = 'loading' | 'error' | 'select-target' | 'work-status' | 'off-done' | 'checklist' | 'done' | 'already-done'
-
-// 打刻前に聞く稼働有無。日報の 稼働あり/有給/稼働なし と 1:1 に対応させる
-// （語彙をズラすと引き継ぎのたびに変換が要り、食い違いの温床になる）。
-type WorkStatus = 'working' | 'paid_leave' | 'off'
+type Phase = 'loading' | 'error' | 'select-target' | 'checklist' | 'done' | 'already-done'
 
 type AttendanceRule = { id: string; content: string; timing: string }
 type Target   = { id: string; name: string; isSelf: boolean }
@@ -359,15 +257,6 @@ const checkoutTime   = ref('')
 // 対象作業員（自分＋代理対象）
 const attendanceLog = useAttendanceLog()
 const myWorkerId = ref<string | null>(null)
-
-// 稼働有無ゲート（work-status フェーズ）
-// ★composable は setup の中で解決しておく。クリックハンドラの中で useExpense() を呼ぶと
-//  「Must be called at the top of a `setup` function」で保存が丸ごと失敗する（E2Eで検出・2026-08-31）。
-const expense        = useExpense()
-const dailyReportsApi = useDailyReportsApi()
-const myUserId       = ref<string | null>(null)
-const savingStatus   = ref(false)
-const offStatus      = ref<WorkStatus>('off')   // off-done 画面で何を出したか表示するため
 
 
 const targets    = ref<Target[]>([])
@@ -585,109 +474,11 @@ async function loadForTarget(workerId: string) {
   } else {
     // 未打刻 or 前回退勤が本日でない（＝新しいシフト）→ 出勤フォーム
     attendanceType.value = 'checkin'
-
-    // ★出勤打刻の前に「今日は稼働ありますか」を1回だけ聞く（2026-08-31）。
-    //  ・本人の分だけ聞く（代理で他人の稼働有無や有給は決めさせない）
-    //  ・その日の日報を既に出していれば聞かない（＝答えは出ている。二度聞かない）
-    if (workerId === myWorkerId.value) {
-      const rep = await fetchTodayReport()
-      if (rep === null) {
-        phase.value = 'work-status'
-        return
-      }
-      // ★既に「今日は休み/有給」と出している日は、打刻フォームに入れない。
-      //  ここを素通しにすると、休みと申告した日に出勤打刻が付いて
-      //  admin の「出勤打刻なし」判定（日報の稼働有無で除外している）と矛盾する。
-      //  気が変わった時のために、この画面から稼働ありへ切り替える導線は出す。
-      if (rep && rep.is_working === false) {
-        offStatus.value = rep.leave_type === 'paid_leave' ? 'paid_leave' : 'off'
-        phase.value = 'off-done'
-        return
-      }
-      // rep === undefined（判定できない）時は聞かずに従来どおり打刻へ進む。
-      // 判定不能を理由に打刻を止めると、通信が不安定なだけで勤怠が付けられなくなる。
-    }
   }
 
-  // ルール取得〜確認画面は enterChecklist に集約（稼働有無ゲートからも同じ経路で入るため）。
-  await enterChecklist()
-}
-
-/**
- * 自分の users.id を解決してキャッシュする（日報の読み書きは worker_id ではなく user_id が鍵）。
- */
-async function resolveMyUserId(): Promise<string | null> {
-  if (myUserId.value) return myUserId.value
-  if (!myWorkerId.value) return null
-  const { data: u } = await supabase.from('users')
-    .select('id').eq('worker_id', myWorkerId.value).maybeSingle()
-  myUserId.value = u?.id ?? null
-  return myUserId.value
-}
-
-/**
- * 今日の日報を引く。オブジェクト=ある / null=無い / undefined=判定できなかった。
- * ★null と undefined を混ぜないこと。混ぜると「通信が不安定なだけ」で
- *  稼働有無を聞き直したり、逆に打刻を止めたりしてしまう。
- */
-async function fetchTodayReport(): Promise<any | null | undefined> {
-  try {
-    const uid = await resolveMyUserId()
-    if (!uid) return undefined
-    // ★EF経由（daily_reports の直読みは他テナント分まで読めるため塞いである・2026-08-15）
-    const rep = await dailyReportsApi.one(todayStr(), uid)
-    return rep?.id ? rep : null
-  } catch {
-    return undefined
-  }
-}
-
-/**
- * 稼働有無ゲートの回答を確定する。
- *  ・稼働あり → そのまま出勤打刻の確認画面へ（日報は退勤後に書く）
- *  ・有給/稼働なし → ここで日報を is_working=false で保存して終了。打刻はさせない
- *    （休みの日に出退勤フォームを触らせないのが、このゲートを入れた目的）
- */
-async function answerWorkStatus(status: WorkStatus) {
-  if (savingStatus.value) return
-
-  if (status === 'working') {
-    await enterChecklist()
-    return
-  }
-
-  savingStatus.value = true
-  errorMsg.value = ''
-  try {
-    const uid = await resolveMyUserId()
-    if (!uid) throw new Error(t('checkin.errNoWorker'))
-    await expense.saveReportById(uid, {
-      date:      todayStr(),
-      isWorking: false,
-      sites:     [],
-      // 有給は日報と同じ持ち方（leave_type='paid_leave' + leave_days=1）。
-      // 半休・時間単位有給はその日働くので「稼働あり」を選ばせる（画面に注記あり）。
-      leaveType: status === 'paid_leave' ? 'paid_leave' : null,
-      leaveDays: status === 'paid_leave' ? 1 : null,
-    })
-    offStatus.value = status
-    phase.value = 'off-done'
-  } catch (e: any) {
-    // ★保存できていないのに完了に見せない
-    errorMsg.value = t('checkin.errStatusSaveFailed', { message: e?.message ?? '' })
-    phase.value = 'error'
-  } finally {
-    savingStatus.value = false
-  }
-}
-
-/**
- * 確認事項（アカウント共通ルール・出勤/退勤それぞれのタイミング分）を読んで確認画面へ入る。
- * ★現場別ルール(site_rules)から置き換え済み（2026-08-27）。現場特有の内容は
- *  「送り出し資料」の承認フローへ移したので、打刻には出さない。
- */
-async function enterChecklist() {
-  phase.value = 'loading'
+  // ルール取得（アカウント共通ルール・出勤/退勤それぞれのタイミング分）。
+  // ★現場別ルール(site_rules)から置き換えた（2026-08-27）。現場特有の内容は
+  //  「送り出し資料」の承認フローへ移すことになっており、打刻には出さない。
   try {
     rules.value = await attendanceLog.rules(attendanceType.value)
   } catch {
@@ -697,7 +488,9 @@ async function enterChecklist() {
     return
   }
   checkedIds.value = new Set()   // 対象が変わったらチェックをリセット
+
   // ルール未設定でもシンプル出退勤として継続（確認事項なし＝allChecked が true 扱い）。
+
   phase.value = 'checklist'
 
   // 位置情報は自動取得しない。
@@ -711,17 +504,7 @@ async function enterChecklist() {
 async function submit() {
   if (!canSubmit.value) return
   submitting.value = true
-  // ★どの経路で抜けても必ず戻す。以前は失敗時に立てっぱなしで、
-  //  エラー画面から戻っても送信ボタンが押せないままだった（独立レビュー指摘・2026-08-31）。
-  //  ★打刻は追記専用の記録なので、二重送信の実害が大きい。ここのガードを外さないこと。
-  try {
-    await doSubmit()
-  } finally {
-    submitting.value = false
-  }
-}
 
-async function doSubmit() {
   const target          = selectedTarget.value
   const workerIdToLog   = target?.id ?? myWorkerId.value
   // 本人なら null、代理なら操作者（自分）を記録
@@ -757,22 +540,9 @@ async function doSubmit() {
     day:   now.getDate(),
     time:  `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
   })
-  await resolveReportLink(target)
-
-  // ★退勤したら完了画面を挟まず、そのまま日報画面へ送る（2026-08-31 運用者指摘:
-  //  「一旦ページ表示された時点で離脱してしまうケースがある」）。
-  //  完了の手応えは遷移先の日報画面が中央のオーバーレイで出す（punched= で時刻を渡す）。
-  //  ここで phase='done' を経由しないこと——一瞬でも完了画面が描画されると、
-  //  そこで閉じられる余地が残る（完了画面を挟むのをやめたのが今回の主旨）。
-  if (reportLink.value) {
-    const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-    await navigateTo(`${reportLink.value}&from=checkout&punched=${hhmm}`)
-    return
-  }
-
-  // 出勤打刻・代理打刻・その日の日報が既にある時は従来どおり完了画面を出す
-  // （次にやることが日報ではないので、飛ばす先が無い）。
   phase.value = 'done'
+  submitting.value = false
+  await resolveReportLink(target)
 }
 
 /**
@@ -790,8 +560,16 @@ async function resolveReportLink(target: Target | null) {
   if (target && !target.isSelf) return
 
   const date = todayStr()
-  // ★判定できない(undefined)時も出さない。出して二重送信させるより、出さない方が安全。
-  if (await fetchTodayReport() !== null) return
+  try {
+    const { data: u } = await supabase.from('users')
+      .select('id').eq('worker_id', myWorkerId.value).maybeSingle()
+    if (!u?.id) return
+    // ★EF経由（直読みは他テナント分まで読めるため塞いだ・2026-08-15）
+    const rep = await useDailyReportsApi().one(date, u.id)
+    if (rep?.id) return   // 既にその日の日報を出している
+  } catch {
+    return   // ★判定できない時は出さない（出して二重送信させるより、出さない方が安全）
+  }
   // ★現場は引き継がない（打刻が現場に紐づかなくなったため）。現場は日報側で選ぶ。
   reportLink.value = `/report?date=${date}`
 }
@@ -1080,54 +858,6 @@ async function resolveReportLink(target: Target | null) {
   display: flex; flex-direction: column; gap: 12px;
 }
 
-/* ── 稼働有無ゲート（出勤打刻の前に1回だけ聞く）── */
-.ws-wrap { flex: 1; overflow-y: auto; padding: 20px 16px 32px; }
-.ws-head { margin-bottom: 20px; }
-.ws-date {
-  display: inline-flex; align-items: center; gap: 4px;
-  font-size: 12px; font-weight: 600; color: #6b7280; margin-bottom: 10px;
-}
-.ws-date .material-symbols-rounded { font-size: 16px; }
-.ws-title { margin: 0 0 6px; font-size: 20px; font-weight: 700; color: #1f2937; }
-.ws-lead  { margin: 0; font-size: 13px; line-height: 1.6; color: #6b7280; }
-
-.ws-options { display: flex; flex-direction: column; gap: 10px; }
-.ws-option {
-  display: flex; align-items: center; gap: 12px; width: 100%;
-  padding: 16px 14px; border-radius: 12px; text-align: left; cursor: pointer;
-  background: #fff; border: 1px solid #e5e7eb;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, .04);
-}
-.ws-option:disabled { opacity: .5; cursor: default; }
-.ws-option:active:not(:disabled) { background: #f9fafb; }
-/* 一番押してほしい「稼働あり」だけ強調する（他と同じ見た目だと毎朝迷う） */
-.ws-option.working { border-color: #10b981; box-shadow: 0 1px 3px rgba(16, 185, 129, .2); }
-.ws-icon { font-size: 26px; flex-shrink: 0; color: #6b7280; }
-.ws-option.working .ws-icon { color: #10b981; }
-.ws-option.leave   .ws-icon { color: #f59e0b; }
-.ws-body  { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.ws-label { font-size: 15px; font-weight: 700; color: #1f2937; }
-.ws-desc  { font-size: 12px; line-height: 1.5; color: #6b7280; }
-.ws-note  { margin: 16px 0 0; font-size: 12px; line-height: 1.6; color: #9ca3af; }
-
-/* 打刻後の次アクション（ここが空だと「打刻して終わり」に見える） */
-.next-actions { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 300px; margin-top: 20px; }
-.next-action {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  padding: 12px 16px; min-height: 46px; border-radius: 10px;
-  background: #06C755; color: #fff; border: none; cursor: pointer;
-  font-size: 14px; font-weight: 700; text-decoration: none;
-}
-.next-action .material-symbols-rounded { font-size: 18px; }
-.next-action.secondary { background: #fff; color: #374151; border: 1px solid #d1d5db; }
-.next-action:active { opacity: .85; }
-
-.off-done-sub-link {
-  margin-top: 16px; font-size: 13px; color: #6b7280;
-  background: none; border: none; cursor: pointer;
-  text-decoration: underline; text-underline-offset: 3px;
-}
-
 /* 位置情報ステータス */
 .location-status {
   display: flex; align-items: flex-start; gap: 8px;
@@ -1144,10 +874,7 @@ async function resolveReportLink(target: Target | null) {
   font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 20;
 }
 .loc-text { flex: 1; line-height: 1.5; }
-/* ボタンと注意書きが本文にひっついて「押せる物」に見えなかったので、
-   前置き / ボタン / 注意書き を縦に積んで、ボタンだけ独立させる（2026-08-31） */
-.loc-lead { display: block; }
-.loc-note { display: block; margin-top: 6px; font-size: 11px; font-weight: 400; opacity: .8; }
+.loc-note { font-weight: 400; opacity: .8; }
 
 .loc-help { margin-top: 8px; font-weight: 400; }
 .loc-help summary {
@@ -1162,23 +889,14 @@ async function resolveReportLink(target: Target | null) {
 }
 
 .loc-retry {
-  display: inline-flex; align-items: center; margin-top: 8px;
-  background: #fff; border: 1px solid #fca5a5; color: #ef4444;
-  border-radius: 8px; padding: 8px 14px; min-height: 36px;
-  font-size: 12px; font-weight: 700; cursor: pointer;
+  display: inline-block; margin-left: 8px;
+  background: none; border: 1px solid #fca5a5; color: #ef4444;
+  border-radius: 4px; padding: 2px 8px; font-size: 11px; cursor: pointer;
 }
 .loc-get {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  margin-top: 8px;
+  display: inline-block; margin-left: 8px;
   background: #2563eb; border: none; color: #fff;
-  border-radius: 8px; padding: 9px 16px; min-height: 40px;
-  font-size: 13px; font-weight: 700; cursor: pointer;
-  box-shadow: 0 1px 2px rgba(37, 99, 235, .3);
-}
-.loc-get:active { background: #1d4ed8; }
-.loc-get-icon {
-  font-size: 16px;
-  font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 20;
+  border-radius: 6px; padding: 4px 12px; font-size: 12px; font-weight: 700; cursor: pointer;
 }
 
 .submit-hint {

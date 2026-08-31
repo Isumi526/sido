@@ -33,9 +33,7 @@ export function useNavItems(
     const list: NavItem[] = [
       { path: '/checkin',          icon: 'how_to_reg',        label: t('nav.checkin'),          section: 'daily' },
       { path: '/chats',            icon: 'forum',             label: t('nav.chats'),            section: 'daily' },
-      // ★「日報登録」は 2026-08-31 にメニューから外した。日報は 退勤打刻 → そのまま日報 が正規ルートで、
-      //  出し忘れ・修正は履歴から入る（履歴に未送信バナーを置いた）。ルート /report 自体は残している
-      //  ＝差戻し・残業承認・編集許可の通知が /report?edit= を直リンクしているため。
+      { path: '/report',           icon: 'edit_note',         label: t('nav.reportRegister'),   section: 'daily' },
       { path: '/history',          icon: 'history',           label: t('nav.reportHistory'),    section: 'daily' },
       { path: '/overtime',         icon: 'more_time',         label: t('nav.overtimeRequest'),  section: 'daily' },
       { path: '/paid-leave',       icon: 'beach_access',      label: t('nav.paidLeave'),        section: 'daily', testId: 'menu-paid-leave' },
@@ -49,9 +47,7 @@ export function useNavItems(
       { path: '/rules',            icon: 'menu_book',         label: t('nav.rulebook'),         section: 'info' },
     ]
     if (canApplyPersonalExpense?.()) {
-      // 挿入位置は「有給の直前」。数値の決め打ちだと上のリストを足し引きするたび静かにズレるので path で引く。
-      const at = list.findIndex(i => i.path === '/paid-leave')
-      list.splice(at < 0 ? list.length : at, 0, { path: '/expense/personal', icon: 'account_balance_wallet', label: '個人経費', section: 'daily', testId: 'menu-personal-expense' })
+      list.splice(5, 0, { path: '/expense/personal', icon: 'account_balance_wallet', label: '個人経費', section: 'daily', testId: 'menu-personal-expense' })
     }
     if (authMode() === 'password') {
       list.push({ path: '/password', icon: 'lock_reset', label: t('nav.passwordChange'), section: 'info', testId: 'menu-password' })

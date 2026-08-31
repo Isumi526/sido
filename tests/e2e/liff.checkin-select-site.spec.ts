@@ -12,7 +12,7 @@
 //    - 現場に貼ってある旧QR（/checkin/<site_id>）を開いても壊れないこと
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, restSrv, getAccountId, passWorkStatusGate } from './helpers'
+import { rest, restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()
 const SITE = `E2E旧QR現場_${TS}`
@@ -44,7 +44,6 @@ async function clearRecentPunches() {
 test('未打刻なら /checkin を開いた時点で「出勤前の確認」に入る（現場を選ばされない）', async ({ page }) => {
   await clearRecentPunches()
   await page.goto('/checkin', { waitUntil: 'networkidle' })
-  await passWorkStatusGate(page)
   await expect(page.locator('.checklist-header.checkin')).toBeVisible({ timeout: 15000 })
   // 現場一覧・現場フォーカス画面はもう出ない
   await expect(page.locator('.target-list')).toHaveCount(0)
@@ -58,14 +57,12 @@ test('出勤中(未退勤)なら「退勤前の確認」に入る（現場を跨
     worker_id: workerId, type: 'checkin', agreed_rule_texts: [],
   }) })
   await page.goto('/checkin', { waitUntil: 'networkidle' })
-  await passWorkStatusGate(page)
   await expect(page.locator('.checklist-header.checkout')).toBeVisible({ timeout: 15000 })
 })
 
 test('現場に貼ってある旧QR(/checkin/<site_id>)を開いても壊れず、通常の打刻画面になる', async ({ page }) => {
   await clearRecentPunches()
   await page.goto(`/checkin/${siteId}`, { waitUntil: 'networkidle' })
-  await passWorkStatusGate(page)
   await expect(page.locator('.checklist-header.checkin')).toBeVisible({ timeout: 15000 })
   // 現場名は出さない（打刻に現場は関係しなくなった）
   await expect(page.locator('.site-label')).toHaveCount(0)

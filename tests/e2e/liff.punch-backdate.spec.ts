@@ -17,7 +17,7 @@
 //   最後の退勤の2回）。現場の選択欄は無くなり、重複判定も「日付×種別」になった。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, restSrv, getAccountId, passWorkStatusGate } from './helpers'
+import { rest, restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()
 const SITE = `E2E遡り打刻現場_${TS}`
@@ -73,7 +73,6 @@ test.describe('打刻を忘れた日の遡り入力', () => {
 
   async function openLatePanel(page: import('@playwright/test').Page) {
     await page.goto('/checkin', { waitUntil: 'networkidle' })
-  await passWorkStatusGate(page)
     await page.getByTestId('late-open').click()
     await expect(page.getByTestId('late-panel')).toBeVisible({ timeout: 15000 })
   }

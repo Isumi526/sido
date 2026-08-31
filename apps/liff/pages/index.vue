@@ -21,87 +21,18 @@
            ヘッダーのベルが合計件数のバッジを出しており、カードは重複でホームが混む。
            気づく入口はベル1つに集約し、内訳は /notifications のタブで見る。 -->
 
-      <!-- 日を跨いでも未提出が残っている時の割り込み。閉じられるが、解消するまで開くたびに出る。 -->
-      <div v-if="overdueModal" class="overdue-overlay" data-testid="home-overdue-modal">
-        <div class="overdue-modal">
-          <span class="material-symbols-rounded overdue-icon">assignment_late</span>
-          <p class="overdue-title">{{ t('home.overdueTitle', { count: today.backlogDates.length }) }}</p>
-          <p class="overdue-sub">{{ t('home.overdueSub', { date: formatMd(overdueModal) }) }}</p>
-          <div class="overdue-actions">
-            <NuxtLink :to="`/report?date=${overdueModal}`" class="overdue-btn primary" data-testid="overdue-write">
-              {{ t('home.overdueWrite') }}
-            </NuxtLink>
-            <button class="overdue-btn" data-testid="overdue-later" @click="dismissOverdue">
-              {{ t('home.overdueLater') }}
-            </button>
-          </div>
+      <!-- 打刻を促す（今日の勤務予定の開始/終了が来ているのに未打刻の時だけ）。LINE/メール不達でも気づけるよう常駐ホームに出す。 -->
+      <NuxtLink v-if="punchPrompt" class="punch-card" to="/checkin" data-testid="home-punch-card">
+        <span class="material-symbols-rounded punch-card-icon">{{ punchPrompt.kind === 'checkin' ? 'login' : 'logout' }}</span>
+        <div class="punch-card-body">
+          <div class="punch-card-title">{{ punchPrompt.kind === 'checkin' ? t('home.punchCheckinTitle') : t('home.punchCheckoutTitle') }}</div>
+          <div class="punch-card-sub">{{ t('home.punchSub', { title: punchPrompt.title }) }}</div>
         </div>
-      </div>
+        <span class="material-symbols-rounded alert-arrow">chevron_right</span>
+      </NuxtLink>
 
-      <!-- ★今日のステータスと次の1アクション（2026-08-31 運用者指摘:
-           「今出勤中なのか、今日まだ出勤が押されてないとか…次のアクションだったり動線が分かりやすいように」）。
-           判定は useTodayStatus に集約（起動時の割り込みと同じソース）。
-
-           ★高さを最初から確保する（2026-08-31 運用者指摘:
-            「時間差で表示されるので、ナビゲーションを押そうとした時に位置がずれて、
-              別の意図しないボタンをタップしてしまう」）。
-            読み込み中はスケルトンを同じ高さで出し、下のメニューを一切動かさない。
-            そのため中身の行数は固定にしてある——可変の情報（予定・溜まっている未提出）は
-            行を増やさず、説明文への追記かアクションボタンとして横に並べること。 -->
-      <div class="today-slot">
-        <div v-if="!homeReady" class="today-card skeleton" data-testid="home-today-skeleton" aria-hidden="true">
-          <div class="today-head">
-            <span class="sk-icon" />
-            <div class="today-texts">
-              <div class="sk-line sk-title" />
-              <div class="sk-line sk-sub" />
-            </div>
-          </div>
-          <div class="today-actions"><span class="sk-btn" /></div>
-        </div>
-
-        <div
-          v-else-if="today.phase !== 'unknown'"
-          class="today-card"
-          :class="today.phase"
-          data-testid="home-today-card"
-        >
-          <div class="today-head">
-            <span class="material-symbols-rounded today-icon">{{ todayView.icon }}</span>
-            <div class="today-texts">
-              <div class="today-title" data-testid="home-today-title">{{ todayView.title }}</div>
-              <div class="today-sub">{{ todayView.sub }}</div>
-            </div>
-          </div>
-          <div class="today-actions">
-            <NuxtLink
-              v-for="a in todayView.actions"
-              :key="a.to"
-              :to="a.to"
-              class="today-action"
-              :class="{ primary: a.primary }"
-              :data-testid="a.testId"
-            >
-              <span class="material-symbols-rounded">{{ a.icon }}</span>{{ a.label }}
-            </NuxtLink>
-            <!-- 溜まっている未提出。★行を足さずアクションとして横に並べる（高さを変えないため） -->
-            <NuxtLink
-              v-if="today.backlogDates.length"
-              to="/history"
-              class="today-action"
-              data-testid="home-today-backlog"
-            >
-              <span class="material-symbols-rounded">history</span>{{ t('home.todayBacklogShort', { count: today.backlogDates.length }) }}
-            </NuxtLink>
-          </div>
-        </div>
-
-        <!-- 判定できなかった時は空のまま。高さは today-slot が持っているのでズレない -->
-      </div>
-
-      <!-- 経費申請 締切案内。★homeReady まで出さない＝ステータスと同時に1回だけ描画する
-           （別々に出ると下のメニューが二度動く） -->
-      <NuxtLink v-if="homeReady && deadlineBanner" class="deadline-card" to="/expense/download">
+      <!-- 経費申請 締切案内 -->
+      <NuxtLink v-if="deadlineBanner" class="deadline-card" to="/expense/download">
         <span class="material-symbols-rounded deadline-icon">schedule</span>
         <div class="deadline-body">
           <div class="deadline-title">{{ t('home.deadlineTitle', { period: periodShort(deadlineBanner.periodKey) }) }}</div>
@@ -201,8 +132,6 @@ const expense     = useExpense()
 // ★コンポーザブルは setup 同期文脈で取得する（onMounted の await 後に呼ぶと注入が効かず例外になる）
 const schedulesApi   = useSchedules()
 const attendanceApi  = useAttendanceLog()
-// 今日どこまで済んでいるか（ホームのステータスカードと起動時の割り込みが同じ判定を使う）
-const { status: today, refresh: refreshToday } = useTodayStatus()
 
 // ハンバーガーメニュー(AppNav.vue)と共通のナビ項目定義（2026-07-10）
 const { resolveRole: resolveWorkerPerm, canApplyPersonalExpense } = useWorkerPermission()
@@ -220,76 +149,8 @@ const accountId        = ref<string | null>(null)
 const proxyModalOpen   = ref(false)
 const proxyLoading     = ref(false)
 const deadlineBanner   = ref<{ periodKey: string; label: string } | null>(null)
-// 打刻を促すプロンプト（今日の勤務予定の開始/終了時刻が来ているのに未打刻なら出す）。
-// ★カードは廃止し、今日のステータスの説明文に畳んだ（2026-08-31）。
-//  同じ「打刻して」を2枚出していた重複であり、後から生えて下のメニューを押し下げていたため。
+// 打刻を促すプロンプト（今日の勤務予定の開始/終了時刻が来ているのに未打刻なら出す）
 const punchPrompt      = ref<{ kind: 'checkin' | 'checkout'; title: string } | null>(null)
-// ホームの可変領域（ステータス・締切）の読み込みが済んだか。
-// ★これが false の間は同じ高さのスケルトンを出す。後から生やすと下のメニューが動いて
-//  押そうとしたものと別のボタンを押してしまう（運用者指摘・2026-08-31）。
-const homeReady        = ref(false)
-
-/** 'YYYY-MM-DD' → 'M/D（曜）' */
-function formatMd(date: string): string {
-  const d = new Date(date + 'T00:00:00')
-  return `${d.getMonth() + 1}/${d.getDate()}（${['日', '月', '火', '水', '木', '金', '土'][d.getDay()]}）`
-}
-
-/**
- * 今日のステータス → 見出し・説明・次アクション。
- * ★「次に押すもの」を必ず1つ以上返す。ここが空だと画面は状態を告げるだけで、
- *  結局ユーザーが入口を探すことになる（それが今回の指摘の元）。
- */
-const todayView = computed(() => {
-  const s = today.value
-  const reportTo = `/report?date=${todayStr()}`
-  switch (s.phase) {
-    case 'working':
-      return {
-        icon: 'work_history',
-        title: t('home.todayWorking'),
-        // 予定の終了が過ぎているなら、その現場名を添える（旧・打刻カードの情報をここへ畳んだ）
-        sub: punchPrompt.value?.kind === 'checkout'
-          ? t('home.todayWorkingSubSched', { time: s.checkinTime ?? '—', title: punchPrompt.value.title })
-          : t('home.todayWorkingSub', { time: s.checkinTime ?? '—' }),
-        actions: [
-          { to: '/checkin', label: t('home.actCheckout'), icon: 'logout', primary: true, testId: 'today-act-checkout' },
-          { to: '/overtime', label: t('home.actOvertime'), icon: 'more_time', primary: false, testId: 'today-act-overtime' },
-        ],
-      }
-    case 'report-due':
-      return {
-        icon: 'edit_note',
-        title: t('home.todayReportDue'),
-        sub: t('home.todayReportDueSub', { time: s.checkoutTime ?? '—' }),
-        actions: [{ to: reportTo, label: t('home.actWriteReport'), icon: 'edit_note', primary: true, testId: 'today-act-report' }],
-      }
-    case 'off':
-      return {
-        icon: s.isPaidLeave ? 'beach_access' : 'bedtime',
-        title: s.isPaidLeave ? t('home.todayPaidLeave') : t('home.todayOff'),
-        sub: t('home.todayOffSub'),
-        actions: [{ to: '/history', label: t('home.actHistory'), icon: 'history', primary: false, testId: 'today-act-history' }],
-      }
-    case 'done':
-      return {
-        icon: 'task_alt',
-        title: t('home.todayDone'),
-        sub: t('home.todayDoneSub', { checkin: s.checkinTime ?? '—', checkout: s.checkoutTime ?? '—' }),
-        actions: [{ to: '/history', label: t('home.actHistory'), icon: 'history', primary: false, testId: 'today-act-history' }],
-      }
-    default:   // not-punched
-      return {
-        icon: 'how_to_reg',
-        title: t('home.todayNotPunched'),
-        // 予定の開始が近い/過ぎているなら、その現場名を添える（旧・打刻カードの情報をここへ畳んだ）
-        sub: punchPrompt.value?.kind === 'checkin'
-          ? t('home.todayNotPunchedSubSched', { title: punchPrompt.value.title })
-          : t('home.todayNotPunchedSub'),
-        actions: [{ to: '/checkin', label: t('home.actCheckin'), icon: 'login', primary: true, testId: 'today-act-checkin' }],
-      }
-  }
-})
 
 // PWA化(ホーム画面追加)案内: Safari等ブラウザで直接開いている(standalone表示でない)
 // ユーザーにだけ表示する。一度閉じたら再表示しない(localStorageにdismiss状態を保持)。
@@ -413,34 +274,8 @@ onMounted(async () => {
     if (user.worker_id) await proxy.fetchProxyTargets(user.worker_id)
     await refreshDeadlineBanner()
     if (user.worker_id) await refreshPunchPrompt(user.worker_id)
-    // 今日のステータス。取れてから割り込み（未提出モーダル）の判定に進む
-    await refreshToday()
-    maybeInterrupt()
   }
-  // ★成否にかかわらず必ず立てる。ここを通らないとスケルトンが出たままになる
-  homeReady.value = true
 })
-
-// ── 退勤済みなのに日報が未提出の人への割り込み（2026-08-31）──
-//  段階: 当日はホームのカードとナビのバッジまで。日を跨いでも未提出なら起動時にモーダル。
-//  ★ブロックはしない（2026-08-10 逐語「そこの制限は、そこまで厳しくできない」）。
-//   「後で」で閉じられるが、未提出が解消するまで開くたびに出る。
-const overdueModal = ref<string | null>(null)   // 対象日（未提出のうち最も古い過去日）
-// ★「開くたび」＝アプリを開くたび。ホームに戻るたびではない。
-//  ルート移動のたびに出すと、閉じても閉じてもすぐ出てきて他の操作を邪魔する
-//  （実際ハンバーガーを塞いだ）。閉じたらそのセッション中は出さず、次の起動でまた出す。
-const OVERDUE_DISMISSED_KEY = 'overdue_report_dismissed'
-function maybeInterrupt() {
-  const s = today.value
-  if (s.phase === 'unknown') return          // 判定できない時は割り込まない
-  if (!s.backlogDates.length) return         // 今日の分だけならカードとバッジで足りる
-  try { if (sessionStorage.getItem(OVERDUE_DISMISSED_KEY)) return } catch { /* 使えなければ出す */ }
-  overdueModal.value = s.backlogDates[0]
-}
-function dismissOverdue() {
-  overdueModal.value = null
-  try { sessionStorage.setItem(OVERDUE_DISMISSED_KEY, '1') } catch { /* quota超過等は無視 */ }
-}
 
 // 予定管理ナビの未読バッジ（#予定通知バッジ・2026-07-11）
 onMounted(() => { refreshNotifBadge(); refreshPendingDocBadge() })
@@ -487,88 +322,18 @@ onMounted(() => { refreshSiteChatListBadge() })
 
 
 /* 打刻を促すカード（出勤/退勤）。緑=出勤系の色に合わせる */
-/* ── 今日のステータスカード ──
-   ★高さを固定する。読み込み後に生えると下のメニューが押し下がり、
-    押そうとしたものと別のボタンをタップしてしまう（運用者指摘・2026-08-31）。
-    可変の情報は行を増やさず、説明文への追記かアクションの横並びで吸収すること。 */
-.today-slot { height: 142px; margin-bottom: 12px; }
-.today-card {
-  height: 100%;
-  /* ★中身が何であれ外形を変えない。溢れるくらいなら隠す方がまし
-     （1pxでも伸びると下のメニューが動く） */
-  overflow: hidden;
-  background: #fff; border: 1px solid #e5e7eb; border-left: 4px solid #9ca3af;
-  border-radius: 12px; padding: 14px 16px;
-  display: flex; flex-direction: column; justify-content: center;
+.punch-card {
+  background: #fff; border-radius: 12px;
+  padding: 14px 16px; display: flex; align-items: center; gap: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  border-left: 4px solid #10b981; cursor: pointer; text-decoration: none;
 }
-.today-card.working    { border-left-color: #10b981; }
-.today-card.done       { border-left-color: #9ca3af; }
-.today-card.off        { border-left-color: #f59e0b; }
-/* ★未提出だけは目立たせる。他と同じ見た目だと素通りされる（それが今回の指摘） */
-.today-card.report-due { border-left-color: #ef4444; background: #fef2f2; border-color: #fecaca; }
-.today-card.not-punched{ border-left-color: #3b82f6; }
-
-.today-head { display: flex; align-items: flex-start; gap: 10px; }
-.today-icon { font-size: 24px; color: #6b7280; flex-shrink: 0; }
-.today-card.report-due .today-icon { color: #ef4444; }
-.today-card.working .today-icon    { color: #10b981; }
-.today-texts { flex: 1; min-width: 0; }
-.today-title { font-size: 15px; font-weight: 700; color: #1f2937; line-height: 1.4; }
-.today-card.report-due .today-title { color: #b91c1c; }
-.today-sub {
-  margin-top: 3px; font-size: 12px; line-height: 1.5; color: #6b7280;
-  /* ★常に2行ぶんの高さを占める。1行/2行で高さが変わると下がずれる */
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
-  height: 36px;
-}
-
-.today-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.today-action {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 9px 14px; min-height: 38px; border-radius: 8px;
-  background: #fff; border: 1px solid #d1d5db; color: #374151;
-  font-size: 13px; font-weight: 700; text-decoration: none;
-}
-.today-action .material-symbols-rounded { font-size: 17px; }
-.today-action.primary { background: #06C755; border-color: #06C755; color: #fff; }
-.today-card.report-due .today-action.primary { background: #ef4444; border-color: #ef4444; }
-.today-action:active { opacity: .85; }
-
-/* 読み込み中のスケルトン。実カードと同じ骨格・同じ高さにする */
-.today-card.skeleton { border-left-color: #e5e7eb; }
-.sk-icon { width: 24px; height: 24px; border-radius: 50%; background: #eef0f2; flex-shrink: 0; }
-.sk-line { height: 12px; border-radius: 6px; background: #eef0f2; }
-.sk-title { width: 56%; height: 15px; }
-.sk-sub   { width: 88%; margin-top: 7px; }
-.today-card.skeleton .today-texts { height: 54px; }
-.sk-btn   { display: inline-block; width: 132px; height: 38px; border-radius: 8px; background: #eef0f2; }
-.today-card.skeleton .sk-icon,
-.today-card.skeleton .sk-line,
-.today-card.skeleton .sk-btn { animation: skPulse 1.2s ease-in-out infinite; }
-@keyframes skPulse { 0%, 100% { opacity: 1 } 50% { opacity: .55 } }
-
-/* ── 未提出の割り込み（閉じられるが解消するまで開くたび出る） ── */
-.overdue-overlay {
-  position: fixed; inset: 0; z-index: 900;
-  background: rgba(0, 0, 0, .45);
-  display: flex; align-items: center; justify-content: center; padding: 24px;
-}
-.overdue-modal {
-  background: #fff; border-radius: 14px; padding: 24px 20px;
-  width: 100%; max-width: 320px; text-align: center;
-}
-.overdue-icon { font-size: 40px; color: #ef4444; }
-.overdue-title { margin: 10px 0 0; font-size: 16px; font-weight: 700; color: #1f2937; }
-.overdue-sub   { margin: 6px 0 0; font-size: 13px; color: #6b7280; }
-.overdue-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
-.overdue-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  padding: 12px 16px; min-height: 44px; border-radius: 10px;
-  background: #fff; border: 1px solid #d1d5db; color: #374151;
-  font-size: 14px; font-weight: 700; text-decoration: none; cursor: pointer;
-}
-.overdue-btn.primary { background: #ef4444; border-color: #ef4444; color: #fff; }
-
+.punch-card:active { background: #ecfdf5; }
+.punch-card-icon { color: #10b981; font-size: 26px; flex-shrink: 0;
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+.punch-card-body { flex: 1; }
+.punch-card-title { font-size: 14px; font-weight: 700; color: #111; }
+.punch-card-sub   { font-size: 12px; color: #059669; margin-top: 2px; font-weight: 600; }
 
 /* メニューグリッド */
 .menu-section {
