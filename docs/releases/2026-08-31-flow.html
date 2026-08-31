@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>出退勤と日報のフロー変更</title>
+<style>
+  @page { size: A4; margin: 13mm 13mm 11mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    color: #1f2937; font-size: 10pt; line-height: 1.6; margin: 0;
+  }
+  h1 { font-size: 16pt; margin: 0 0 1mm; }
+  .meta { font-size: 9pt; color: #6b7280; margin: 0 0 5mm; }
+  h2 {
+    font-size: 11.5pt; margin: 6mm 0 2.5mm; padding: 1.5mm 3mm;
+    background: #f1f5f9; border-left: 3px solid #06C755; border-radius: 2px;
+  }
+  h3 { font-size: 10.5pt; margin: 4mm 0 1.5mm; color: #111827; }
+  p { margin: 0 0 2mm; }
+  ul { margin: 0 0 2mm 5mm; padding: 0; }
+  li { margin: 0 0 1mm; }
+  .lead { font-size: 10.5pt; }
+  .muted { color: #6b7280; }
+  .page-break { page-break-before: always; }
+  .avoid-break { page-break-inside: avoid; }
+
+  /* 要点 */
+  .points { display: flex; gap: 3mm; margin: 3mm 0 0; }
+  .point {
+    flex: 1; border: 1px solid #d1d5db; border-radius: 3px; padding: 2.5mm 3mm;
+    background: #fff;
+  }
+  .point-n { font-size: 8.5pt; font-weight: 700; color: #06C755; }
+  .point-t { font-size: 10pt; font-weight: 700; margin: 0.5mm 0 1mm; }
+  .point-b { font-size: 8.8pt; color: #4b5563; line-height: 1.5; }
+
+  /* フロー図 */
+  .flow { display: flex; align-items: stretch; gap: 0; margin: 2mm 0 3mm; }
+  .fbox {
+    flex: 1; border: 1px solid #cbd5e1; border-radius: 3px; padding: 2mm 2.5mm;
+    font-size: 8.8pt; line-height: 1.45; background: #fff; text-align: center;
+  }
+  .fbox b { display: block; font-size: 9.2pt; margin-bottom: 0.8mm; }
+  .fbox.on  { border-color: #06C755; background: #f0fdf4; }
+  .fbox.off { border-color: #f59e0b; background: #fffbeb; }
+  .fbox.bad { border-color: #ef4444; background: #fef2f2; }
+  .farrow { display: flex; align-items: center; padding: 0 1.5mm; color: #94a3b8; font-size: 11pt; }
+  .flabel { font-size: 8pt; color: #6b7280; margin: 0 0 1mm; font-weight: 700; }
+
+  /* Before/After */
+  .ba { display: flex; gap: 4mm; margin: 2mm 0 0; }
+  .ba > div { flex: 1; border-radius: 3px; padding: 2.5mm 3mm; font-size: 9pt; }
+  .ba .before { background: #f8fafc; border: 1px solid #cbd5e1; }
+  .ba .after  { background: #f0fdf4; border: 1px solid #86efac; }
+  .ba h4 { margin: 0 0 1.5mm; font-size: 9.5pt; }
+  .ba .before h4 { color: #64748b; }
+  .ba .after h4  { color: #15803d; }
+  .ba ul { margin-left: 4mm; }
+  .ba li { margin-bottom: 0.8mm; line-height: 1.5; }
+
+  /* キャプチャ */
+  .shots { display: flex; gap: 4mm; margin: 2mm 0 0; }
+  .shot { flex: 1; }
+  .shot img {
+    width: 100%; border: 1px solid #e5e7eb; border-radius: 4px; display: block;
+  }
+  .cap { font-size: 8.3pt; color: #4b5563; margin-top: 1.2mm; line-height: 1.45; }
+  .cap b { color: #111827; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 9pt; margin: 2mm 0; }
+  th, td { border: 1px solid #d1d5db; padding: 1.5mm 2.5mm; text-align: left; vertical-align: top; }
+  th { background: #f1f5f9; font-weight: 700; }
+  td.y { background: #f0fdf4; }
+
+  .note {
+    margin: 3mm 0; padding: 2.5mm 3mm; font-size: 9pt;
+    background: #fff7ed; border: 1px solid #fdba74; border-radius: 3px;
+  }
+  .note b { color: #9a3412; }
+  .ok {
+    margin: 3mm 0; padding: 2.5mm 3mm; font-size: 9pt;
+    background: #f0fdf4; border: 1px solid #86efac; border-radius: 3px;
+  }
+  .quote {
+    margin: 2mm 0; padding: 1.5mm 3mm; font-size: 9pt; color: #475569;
+    border-left: 2px solid #cbd5e1; background: #f8fafc;
+  }
+  footer {
+    margin-top: 6mm; font-size: 8pt; color: #9ca3af;
+    border-top: 1px solid #e5e7eb; padding-top: 2mm;
+  }
+</style>
+</head>
+<body>
+
+<h1>出退勤と日報のフロー変更</h1>
+<p class="meta">2026-08-31 リリース ／ 対象: 作業員アプリ（LIFF）全員 ／ データベースの変更なし</p>
+
+<p class="lead">
+出退勤の打刻を全員に徹底させるため、<b>日報の送信を出退勤の流れに組み込みました</b>。
+あわせて「今どうなっているか」が画面に出ていなかった点と、読み込み後に画面が動いて
+誤タップする問題を直しています。
+</p>
+
+<div class="points">
+  <div class="point">
+    <div class="point-n">POINT 1</div>
+    <div class="point-t">朝に1回だけ聞く</div>
+    <div class="point-b">「今日は稼働しますか？」に答えるところから始まります。休みなら打刻フォームには進みません。</div>
+  </div>
+  <div class="point">
+    <div class="point-n">POINT 2</div>
+    <div class="point-t">退勤したら日報へ直行</div>
+    <div class="point-b">完了画面を挟まず日報の入力画面が開きます。打刻と日報が1本の流れになります。</div>
+  </div>
+  <div class="point">
+    <div class="point-n">POINT 3</div>
+    <div class="point-t">出し忘れを追いかける</div>
+    <div class="point-b">退勤したのに日報が無い人に、当日は画面で、翌日以降は起動時に知らせます。</div>
+  </div>
+</div>
+
+<h2>何が問題だったか</h2>
+
+<div class="ba">
+  <div class="before">
+    <h4>これまで</h4>
+    <ul>
+      <li>休み・有給の日でも出退勤フォームを開く必要があった</li>
+      <li>稼働の有無を<b>打刻の前と日報の中で2回</b>聞かれていた</li>
+      <li>退勤 → 完了画面 → 日報。完了画面で気づかず閉じる人がいた</li>
+      <li>日報を出したかどうかが、どこにも表示されていなかった</li>
+    </ul>
+  </div>
+  <div class="after">
+    <h4>これから</h4>
+    <ul>
+      <li>休み・有給は<b>朝の選択だけで日報が提出</b>され、打刻はしない</li>
+      <li>稼働の有無を聞くのは<b>朝の1回だけ</b></li>
+      <li>退勤 → <b>そのまま日報</b>（完了画面なし）</li>
+      <li>ホームに今日の状態と「次に押すもの」が常に出る</li>
+    </ul>
+  </div>
+</div>
+
+<h2>1日の流れ</h2>
+
+<p class="flabel">■ 稼働する日</p>
+<div class="flow">
+  <div class="fbox on"><b>朝</b>今日は稼働しますか？<br>→ 稼働あり</div>
+  <div class="farrow">▶</div>
+  <div class="fbox"><b>出勤の打刻</b>確認事項＋位置情報</div>
+  <div class="farrow">▶</div>
+  <div class="fbox"><b>作業</b>必要なら残業申請</div>
+  <div class="farrow">▶</div>
+  <div class="fbox"><b>退勤の打刻</b></div>
+  <div class="farrow">▶</div>
+  <div class="fbox on"><b>日報</b>自動で入力画面へ</div>
+</div>
+
+<p class="flabel">■ 休み・有給の日</p>
+<div class="flow">
+  <div class="fbox off"><b>朝</b>今日は稼働しますか？<br>→ 有給／稼働なし</div>
+  <div class="farrow">▶</div>
+  <div class="fbox off"><b>ここで終わり</b>日報は自動で提出済み。<b style="display:inline">打刻は不要</b></div>
+  <div style="flex:2"></div>
+</div>
+
+<div class="note">
+  <b>週7で日報を出すルールは変わりません。</b>
+  ただし休みの日は上の1タップで提出が完了するので、日報の画面を開く必要がなくなります。
+</div>
+
+<div class="page-break"></div>
+
+<h2>画面（稼働する日）</h2>
+
+<div class="shots avoid-break">
+  <div class="shot">
+    <img src="assets/20260831/01-gate.png" alt="稼働有無の選択">
+    <div class="cap"><b>① 出退勤を開くと最初に出ます。</b>半休・時間休の日は「稼働あり」を選びます（その日は働くため）。</div>
+  </div>
+  <div class="shot">
+    <img src="assets/20260831/04-home-working.png" alt="出勤中のホーム">
+    <div class="cap"><b>② 出勤中のホーム。</b>出勤時刻と、次にやること（退勤・残業申請）が出ます。</div>
+  </div>
+  <div class="shot">
+    <img src="assets/20260831/06-checkout-toast.png" alt="退勤直後">
+    <div class="cap"><b>③ 退勤を押した直後。</b>完了画面を挟まず日報の画面が開き、記録できたことを中央に表示して自動で消えます。</div>
+  </div>
+</div>
+
+<h2>画面（休み・有給の日）</h2>
+
+<div class="shots avoid-break">
+  <div class="shot">
+    <img src="assets/20260831/02-off-done.png" alt="稼働なしの完了">
+    <div class="cap"><b>「稼働なし」または「有給」を選ぶとここで終わりです。</b>日報は提出済みで、打刻は求められません。移動日のガソリン代などがある場合は下のリンクから日報を開けます。</div>
+  </div>
+  <div class="shot" style="flex:2">
+    <div class="ok" style="margin-top:0">
+      <p style="margin-bottom:2mm"><b>気が変わった場合</b></p>
+      <p class="muted" style="margin-bottom:0">
+        休みと答えた日にもう一度出退勤を開いても、打刻フォームには入りません
+        （休みと申告した日に出勤記録が付くのを防ぐため）。<br>
+        急に出ることになった場合は、この画面の
+        <b>「やっぱり稼働する（出勤を記録する）」</b> を押すと通常どおり打刻できます。
+      </p>
+    </div>
+    <div class="note" style="margin-bottom:0">
+      <b>有給の日数について</b><br>
+      朝の選択で登録できるのは<b>終日の有給（1日）</b>です。
+      半休・時間単位の有給はその日働くので「稼働あり」を選び、日報の中で入力してください。
+    </div>
+  </div>
+</div>
+
+<div class="page-break"></div>
+
+<h2>日報の出し忘れ対策</h2>
+
+<p>退勤したのに日報を出していない人に、<b>3段階で知らせます</b>。画面をロックすることはありません。</p>
+
+<table>
+  <tr><th style="width:26%">タイミング</th><th>知らせ方</th></tr>
+  <tr><td>退勤した直後</td><td>日報の入力画面が自動で開く</td></tr>
+  <tr><td class="y">同じ日のうち</td><td class="y">ホームの一番上に赤い案内＋下のメニュー「日報履歴」に赤いバッジ</td></tr>
+  <tr><td class="y">日をまたいでも未提出</td><td class="y">アプリを開いたときに案内が出る（「後で」で閉じられます。閉じたらそのセッション中は出ません）</td></tr>
+</table>
+
+<div class="shots avoid-break">
+  <div class="shot">
+    <img src="assets/20260831/05-home-reportdue.png" alt="日報未提出のホーム">
+    <div class="cap"><b>退勤済みで日報が無いとき。</b>他の状態（緑・青・グレー）と違う赤で出ます。朝や作業中には出ません。</div>
+  </div>
+  <div class="shot">
+    <img src="assets/20260831/07-overdue-modal.png" alt="未提出の案内">
+    <div class="cap"><b>前の日以前の分が残っているとき。</b>アプリを開いたときに出ます。「後で」で閉じられます。</div>
+  </div>
+  <div class="shot">
+    <img src="assets/20260831/03-home-notpunched.png" alt="未出勤のホーム">
+    <div class="cap"><b>まだ出勤していないとき。</b>状態と次に押すものが出ます。この時点では日報の催促は出しません。</div>
+  </div>
+</div>
+
+<h2>溜まっている未提出のまとめ提出</h2>
+
+<div class="shots avoid-break">
+  <div class="shot" style="flex:1.1">
+    <img src="assets/20260831/08-bulk.png" alt="まとめて提出">
+    <div class="cap"><b>日報履歴の上に出ます。</b>理由は1回書けば全部の日に付きます。</div>
+  </div>
+  <div class="shot" style="flex:2">
+    <p>これまでに溜まっている未提出日を、<b>理由を1回書くだけでまとめて提出</b>できるようにしました。</p>
+    <ul>
+      <li>対象は<b>稼働していない日だけ</b>です。働いた日は現場・時間・経費の入力が必要なので、1日ずつ書いてください</li>
+      <li>日ごとに「稼働なし」「有給」を選べます</li>
+      <li><b>提出期限（当日を含む3日）を過ぎた日は、これまでどおり承認待ちになります。</b>まとめて出したからといって承認が飛ぶことはありません</li>
+    </ul>
+    <div class="ok" style="margin-bottom:0">
+      <b>今後、未提出は溜まりにくくなります。</b><br>
+      <span class="muted">稼働する日は打刻の流れで、休みの日は朝の選択で、どちらも日報が作られるためです。
+      今回まとめて出せるようにしたのは、これまでに溜まっている分を片付けるためです。</span>
+    </div>
+  </div>
+</div>
+
+<div class="page-break"></div>
+
+<h2>その他の変更</h2>
+
+<table>
+  <tr><th style="width:30%">変更点</th><th>内容</th></tr>
+  <tr>
+    <td>日報の入口</td>
+    <td>メニューの「<b>日報登録</b>」を「<b>日報履歴</b>」に置き換えました。日報は「退勤 → そのまま入力」が正規の入口になり、出し忘れ・修正は履歴から入ります。履歴の上部に未提出の案内を置いています。<br>
+    <span class="muted">※ 差戻し・残業承認・編集許可の通知から日報を開くリンクは、これまでどおり動きます。</span></td>
+  </tr>
+  <tr>
+    <td>画面のガタつき</td>
+    <td>読み込みが終わった瞬間にメニューの位置が動き、押そうとしたものと別のボタンを押してしまう問題を直しました（実測で<b>366px</b>動いていました）。アイコンの表示待ちが原因で、<b>全画面</b>に効きます。</td>
+  </tr>
+  <tr>
+    <td>予定管理</td>
+    <td>最上部に出ていた予定追加のお知らせバナーを廃止しました。同じ内容が「お知らせ」画面とベルのバッジに出ており重複していたためです。バナーが後から出てタブが動く問題も同時に解消しています。</td>
+  </tr>
+  <tr>
+    <td>出退勤の文言</td>
+    <td>「この現場には確認事項がありません」など、現場ごとに打刻していた頃の文言を実態に合わせました。「現在地を取得」がボタンに見えづらかったのも直しています。</td>
+  </tr>
+</table>
+
+<h2>変わらないもの</h2>
+
+<ul>
+  <li><b>日報の中身・提出ルール</b>（週7の提出、当日含む3日の提出期限、期限切れの承認）は変えていません</li>
+  <li><b>人件費の計算</b>は従来どおり日報の作業時刻が基準です。打刻の実時刻は表示専用のままです</li>
+  <li><b>データベースの変更はありません。</b>既存のデータはそのままで、問題があれば元に戻すだけで復旧します</li>
+  <li>管理画面の機能は変わりません</li>
+</ul>
+
+<h2>作業員のみなさんへの連絡文（そのままお使いください）</h2>
+
+<div class="quote">
+アプリの出退勤まわりが変わりました。<br><br>
+① 朝いちばんに出退勤を開くと「今日は稼働しますか？」と出ます。まずここを選んでください。<br>
+② 休み・有給の日は、そこで選ぶだけで日報の提出が完了します。出退勤の打刻は不要です。<br>
+③ 稼働する日は、これまでどおり出勤・退勤を打刻してください。<b>退勤を押すとそのまま日報の入力画面が開きます。</b>そのまま入力して送信してください。<br>
+④ メニューの「日報登録」は「日報履歴」に変わりました。出し忘れた日や修正は、日報履歴から入ってください。<br><br>
+半休・時間休の日は「稼働あり」を選んでください（その日は働くため）。
+</div>
+
+<div class="note">
+  <b>切り替えのタイミングについて</b><br>
+  朝の出勤時間帯に切り替わると現場が混乱するため、<b>業務終了後または休日</b>の反映を推奨します。
+  反映後は全員のアプリが自動で新しい画面になります（作業員側の操作は不要です）。
+</div>
+
+<footer>
+GENLINKS ／ 画面キャプチャは検証環境（テナント名 TEST）のものです。実際の画面では会社名が表示されます。<br>
+自動テスト: 作業員アプリ 299件すべて成功／データベースの変更 0件
+</footer>
+
+</body>
+</html>
