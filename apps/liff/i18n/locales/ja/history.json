@@ -63,5 +63,7 @@
   "rejectedReviewedBy": "差し戻した人: {name}",
   "rejectedFix": "直して出し直す",
   "rejectedAck": "確認しました",
-  "punchLabel": "実際の打刻"
+  "punchLabel": "実際の打刻",
+  "unsubmittedTitle": "{date} の日報が未送信です",
+  "unsubmittedLead": "タップして入力する"
 }

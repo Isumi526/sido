@@ -3,6 +3,22 @@
     <AppNav :subtitle="$t('history.subtitle')" :user-name="currentUser?.real_name" :user-role="currentUser?.worker_role" />
 
     <main class="main">
+      <!-- ★未送信の日。ナビから「日報登録」を外した(2026-08-31)ので、
+           出し忘れた日に入る導線はここが正規になる。空状態でも出す。 -->
+      <NuxtLink
+        v-if="unsubmittedDate"
+        :to="`/report?date=${unsubmittedDate}`"
+        class="unsub-card"
+        data-testid="history-unsubmitted"
+      >
+        <span class="material-symbols-rounded unsub-icon">edit_note</span>
+        <span class="unsub-body">
+          <span class="unsub-title">{{ $t('history.unsubmittedTitle', { date: unsubmittedLabel }) }}</span>
+          <span class="unsub-lead">{{ $t('history.unsubmittedLead') }}</span>
+        </span>
+        <span class="material-symbols-rounded unsub-chev">chevron_right</span>
+      </NuxtLink>
+
       <!-- ★差し戻し。日報一覧より前・空状態でも出す。
            これが無かった頃は差し戻しても作業員側は「承認待ちバッジが黙って消える」だけで、
            承認との区別すらつかなかった（＝差し戻し運用が成立していなかった）。 -->
@@ -265,11 +281,31 @@ onMounted(async () => {
     selfUser.value = await expense.getUser(uid)
     if (!selfUser.value) { await navigateTo('/register'); return }
     await loadReports()
-    void loadPendingDates()   // 描画は待たせない
+    // 描画は待たせない。未送信バナーは承認待ちの日を除きたいので pending の後に回す
+    void loadPendingDates().then(loadUnsubmitted)
     void loadPunches()        // 実打刻も後追い（取れなくても履歴は読める）
   }
   loading.value = false
 })
+
+// ── 未送信の日（2026-08-31）──
+//  ナビから「日報登録」を外したので、出し忘れた日に入る導線がここに要る。
+//  代理中は出さない（他人の未送信を自分の画面に出すと誰の分を書くのか分からなくなる）。
+const unsubmittedDate = ref<string | null>(null)
+const unsubmittedLabel = computed(() => {
+  if (!unsubmittedDate.value) return ''
+  const d = new Date(unsubmittedDate.value + 'T00:00:00')
+  return `${d.getMonth() + 1}/${d.getDate()}（${['日', '月', '火', '水', '木', '金', '土'][d.getDay()]}）`
+})
+async function loadUnsubmitted() {
+  unsubmittedDate.value = null
+  if (proxy.proxyTarget.value) return
+  const uid = liff.profile.value?.userId
+  if (!uid) return
+  // 承認待ち（期限切れで後から出した分）は「未送信」ではないので除く
+  const pending = pendingDates.value ? [...pendingDates.value] : []
+  unsubmittedDate.value = await expense.getNextUnsubmittedDate(uid, pending).catch(() => null)
+}
 
 watch(() => proxy.proxyTarget.value, async () => {
   if (!selfUser.value) return
@@ -509,6 +545,19 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--font)
 .detail-punch { font-size: 12px; color: #475569; margin-top: 2px; }
 
 /* 差し戻し。承認待ち（青）とは別物なので赤系で、一覧の先頭に出す */
+/* 未送信バナー（ナビの「日報登録」を外した代わりの入口） */
+.unsub-card {
+  display: flex; align-items: center; gap: 12px;
+  background: #eff6ff; border: 1px solid #93c5fd; border-radius: var(--radius);
+  padding: 14px 16px; margin-bottom: 12px; text-decoration: none;
+}
+.unsub-card:active { background: #dbeafe; }
+.unsub-icon { font-size: 24px; color: #1d4ed8; flex-shrink: 0; }
+.unsub-body { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.unsub-title { font-size: 14px; font-weight: 700; color: #1e3a8a; }
+.unsub-lead  { font-size: 12px; color: #3b82f6; }
+.unsub-chev  { font-size: 20px; color: #93c5fd; flex-shrink: 0; }
+
 .rejected-card {
   background: #fff5f5; border: 1px solid #f0a3a3; border-radius: var(--radius);
   padding: 14px 16px; margin-bottom: 12px;
