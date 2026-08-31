@@ -49,35 +49,21 @@
             そのため中身の行数は固定にしてある——可変の情報（予定・溜まっている未提出）は
             行を増やさず、説明文への追記かアクションボタンとして横に並べること。 -->
       <div class="today-slot">
-        <!-- ★読み込み中の枠。実カードと同じクラス・同じ構造で組む。
-             別構造で「だいたい同じ高さ」に作ると、フォントや文言で簡単にズレる
-             （本番だけ30px、ローカルだけ18pxズレて2回踏んだ・2026-09-01）。
-             同じ骨格を使えば高さは構造的に一致する。 -->
-        <div v-if="!homeReady" class="today-card skeleton" data-testid="home-today-skeleton" aria-hidden="true">
-          <div class="today-head">
-            <span class="material-symbols-rounded today-icon sk-icon">circle</span>
-            <div class="today-texts">
-              <!-- ★文字は実物と同じ「1行ぶんのテキスト」を置き、灰色の帯は絶対配置で重ねる。
-                   帯をインライン要素で置くと行の高さを押し上げて背が高くなる（本番で18pxズレた）。 -->
-              <div class="today-title sk-text" style="--w:56%">&nbsp;</div>
-              <div class="today-sub sk-text" style="--w:88%">&nbsp;</div>
-            </div>
-          </div>
-          <div class="today-actions">
-            <span class="today-action sk-text" style="--w:70%;width:120px">&nbsp;</span>
-          </div>
-        </div>
-
+        <!-- ★カードは1つだけ。読み込み中も「実カードそのもの」を描画し、文字を伏せて
+             帯を重ねるだけにする。スケルトンを別DOMで作ると高さが必ずズレる
+             （同じ骨格に揃えても本番で18px→26pxとズレ続けた・2026-09-01）。
+             同じDOMなら高さは定義上一致する。 -->
         <div
-          v-else-if="today.phase !== 'unknown'"
+          v-if="today.phase !== 'unknown' || !homeReady"
           class="today-card"
-          :class="today.phase"
-          data-testid="home-today-card"
+          :class="[homeReady ? today.phase : 'skeleton']"
+          :data-testid="homeReady ? 'home-today-card' : 'home-today-skeleton'"
+          :aria-hidden="!homeReady || undefined"
         >
           <div class="today-head">
             <span class="material-symbols-rounded today-icon">{{ todayView.icon }}</span>
             <div class="today-texts">
-              <div class="today-title" data-testid="home-today-title">{{ todayView.title }}</div>
+              <div class="today-title" :data-testid="homeReady ? 'home-today-title' : undefined">{{ todayView.title }}</div>
               <div class="today-sub">{{ todayView.sub }}</div>
             </div>
           </div>
@@ -264,6 +250,15 @@ function formatMd(date: string): string {
  *  結局ユーザーが入口を探すことになる（それが今回の指摘の元）。
  */
 const todayView = computed(() => {
+  // 読み込み中は「未出勤」の見た目を借りる。実在する文言なので行数・高さが実物と同じになる
+  if (!homeReady.value) {
+    return {
+      icon: 'how_to_reg',
+      title: t('home.todayNotPunched'),
+      sub: t('home.todayNotPunchedSub'),
+      actions: [{ to: '/checkin', label: t('home.actCheckin'), icon: 'login', primary: true, testId: undefined }],
+    }
+  }
   const s = today.value
   const reportTo = `/report?date=${todayStr()}`
   switch (s.phase) {
@@ -570,20 +565,25 @@ onMounted(() => { refreshSiteChatListBadge() })
 .today-card.report-due .today-action.primary { background: #ef4444; border-color: #ef4444; }
 .today-action:active { opacity: .85; }
 
-/* 読み込み中のスケルトン。実カードと同じクラスを使うので高さは自動で揃う。
-   ここでは色だけを潰す（構造・サイズには触れない）。 */
-.today-card.skeleton { border-left-color: #e5e7eb; }
+/* 読み込み中：実カードのまま文字と色だけ伏せ、帯を絶対配置で重ねる。
+   レイアウトに影響する要素を一切足さないので、高さは実カードと必ず一致する。 */
+.today-card.skeleton { border-left-color: #e5e7eb; pointer-events: none; }
 .today-card.skeleton .today-icon { color: #eef0f2; }
-.today-card.skeleton .today-action { border-color: #f1f3f5; background: #fafbfc; }
-/* ★帯は絶対配置で重ねるだけ＝行の高さに一切影響しない。
-   これで実カードと同じ行数・同じ高さになる。 */
-.sk-text { position: relative; color: transparent; }
-.sk-text::before {
-  content: ''; position: absolute; left: 0; top: 18%; bottom: 18%;
-  width: var(--w, 60%); border-radius: 4px; background: #eef0f2;
+.today-card.skeleton .today-title,
+.today-card.skeleton .today-sub,
+.today-card.skeleton .today-action { color: transparent; position: relative; }
+.today-card.skeleton .today-action { background: #fafbfc; border-color: #f1f3f5; }
+.today-card.skeleton .today-action .material-symbols-rounded { color: transparent; }
+.today-card.skeleton .today-title::before,
+.today-card.skeleton .today-sub::before,
+.today-card.skeleton .today-action::before {
+  content: ''; position: absolute; left: 0; top: 20%; bottom: 20%;
+  border-radius: 4px; background: #eef0f2;
   animation: skPulse 1.2s ease-in-out infinite;
 }
-.today-card.skeleton .today-action.sk-text { justify-content: flex-start; }
+.today-card.skeleton .today-title::before  { width: 56%; }
+.today-card.skeleton .today-sub::before    { width: 88%; top: 8%; bottom: 46%; }
+.today-card.skeleton .today-action::before { left: 12px; right: 12px; width: auto; }
 .today-card.skeleton .today-icon { animation: skPulse 1.2s ease-in-out infinite; }
 @keyframes skPulse { 0%, 100% { opacity: 1 } 50% { opacity: .55 } }
 
