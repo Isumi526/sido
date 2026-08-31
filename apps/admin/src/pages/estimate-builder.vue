@@ -787,6 +787,19 @@
                       <button v-for="(c, ci) in didYouMean(rows[i])" :key="c" class="dym-pick"
                               :data-testid="`item-dym-${i}-${ci}`" @click="applyDidYouMean(rows[i], c)">{{ c }}</button>
                     </span>
+                    <!-- ★前回この品名をどの現場でいくらで出したか（2026-08-31）。
+                         「前回、この現場、どこの現場が出します？て浮かび上がってきたら、
+                          あ、それができたら正直十分」（大塚さん・2026-08-19）がこれ。
+                         押すとその単価を採用する（勝手に確定はしない）。 -->
+                    <span v-if="pastForRow(rows[i]).length" class="past" :data-testid="`item-past-${i}`">
+                      前回:
+                      <button v-for="(p, pi) in pastForRow(rows[i])" :key="pi" class="past-pick"
+                              :data-testid="`item-past-${i}-${pi}`"
+                              :title="`${p.project_name}${p.client_name ? '（' + p.client_name + '）' : ''} ${fmtWhen(p.when)}`"
+                              @click="applyPast(rows[i], p)">
+                        {{ p.project_name || '(案件名なし)' }} ¥{{ p.unit_price.toLocaleString('ja-JP') }}
+                      </button>
+                    </span>
                   </td>
                   <!-- ★R3: 品番は形状・詳細と別列。品番はメーカー特定・商品情報取得のキーになる -->
                   <td class="code-cell">
@@ -2363,7 +2376,7 @@ const drawerOpen = ref(false)
 function openDrawer() { drawerOpen.value = true }
 async function closeDrawer() {
   drawerOpen.value = false
-  await Promise.all([loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices(), loadContractors(), loadCompany()])
+  await Promise.all([loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices(), loadPastPrices(), loadContractors(), loadCompany()])
 }
 
 type Project  = { id: string; name: string; client_name: string | null; contractor_id: string | null; status: string; site_id: string | null }
@@ -3068,6 +3081,84 @@ async function loadSuppliers() {
     .select('id, name').eq('account_id', accountId).eq('category', '商社').order('sort_order').order('name')
   suppliers.value = (data ?? []) as Supplier[]
 }
+// ── 過去実績（前回この品名をどの現場でいくらで出したか）──
+//  ★大塚さんが「それができたら正直十分」と言ったのはここ:
+//   「前回、この現場、どこの現場が出します？て浮かび上がってきたら」（2026-08-19）
+//
+//  ★単価表(estimate_material_prices)との違いに注意:
+//   単価表は商社から仕入れる商品名（「タイガーボード 9.5 3×6」）の語彙。
+//   一方、見積明細の品名は図面記号ベース（「天井 C-01」「日塗工 壁面」）で、
+//   **語彙がまったく違うため完全一致はほぼ当たらない**（本番で実測: 76明細中1件だけ）。
+//   過去の見積明細どうしなら同じ語彙なので、こちらは実際に当たる。
+type PastPrice = {
+  item_name: string; product_code: string | null
+  unit_price: number; cost_unit_price: number | null
+  project_name: string; client_name: string | null; when: string | null
+}
+const pastPrices = ref<PastPrice[]>([])
+
+/** 過去実績の単価を採用する（押した時だけ。勝手に確定しない） */
+function applyPast(r: Row, p: PastPrice) {
+  if (p.unit_price > 0) { r.unit_price = p.unit_price; r._priceTouched = true }
+  if (p.cost_unit_price != null && p.cost_unit_price > 0) r.cost_unit_price = p.cost_unit_price
+  void autoSaveRow(r)
+}
+
+/** 「2026/8」程度の粗さで十分（何年前の値かが分かればよい） */
+function fmtWhen(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return `${d.getFullYear()}/${d.getMonth() + 1}`
+}
+
+async function loadPastPrices() {
+  const { data } = await supabase.from('estimate_items')
+    .select('item_name, product_code, unit_price, cost_unit_price, updated_at, estimate_projects!inner(id, name, client_name, account_id)')
+    .eq('account_id', accountId)
+    .order('updated_at', { ascending: false })
+    .limit(2000)
+  pastPrices.value = ((data ?? []) as any[])
+    .filter(r => r.estimate_projects?.id !== projectId)      // 今の案件は「過去」ではない
+    .map(r => ({
+      item_name: String(r.item_name ?? ''),
+      product_code: r.product_code ?? null,
+      unit_price: Number(r.unit_price) || 0,
+      cost_unit_price: r.cost_unit_price != null ? Number(r.cost_unit_price) : null,
+      project_name: String(r.estimate_projects?.name ?? ''),
+      client_name: r.estimate_projects?.client_name ?? null,
+      when: r.updated_at ?? null,
+    }))
+}
+
+/** 正規化: 全角/半角・空白・大小文字のゆれを吸収して照合する */
+function normKey(v: string | null | undefined): string {
+  return String(v ?? '')
+    .replace(/[Ａ-Ｚａ-ｚ０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/[\s　]+/g, '').toLowerCase()
+}
+
+/**
+ * その行の品名・品番で、過去にいくらで出したかを返す（新しい順・最大5件）。
+ * ★品番が一致すれば最優先。無ければ品名で照合する。
+ */
+function pastForRow(r: { item_name?: string | null; product_code?: string | null }): PastPrice[] {
+  const code = normKey(r.product_code)
+  const name = normKey(r.item_name)
+  if (!code && !name) return []
+  const hit = pastPrices.value.filter(p =>
+    (code && normKey(p.product_code) === code) || (!!name && normKey(p.item_name) === name))
+  // 同じ案件で何度も出てくる時は最新の1件に畳む（同じ現場の名前が並ぶと読みにくい）
+  const seenProj = new Set<string>()
+  const out: PastPrice[] = []
+  for (const p of hit) {
+    if (seenProj.has(p.project_name)) continue
+    seenProj.add(p.project_name)
+    out.push(p)
+    if (out.length >= 5) break
+  }
+  return out
+}
+
 async function loadMaterialPrices() {
   const { data } = await supabase.from('estimate_material_prices')
     .select('id, material_id, product_code, item_name, unit, supplier_id, unit_price, effective_date').eq('account_id', accountId).eq('is_current', true)
@@ -4164,7 +4255,7 @@ function markSaved() { /* no-op: 自動保存になったので基準の更新�
 
 onMounted(async () => {
   accountId = await getAccountId()
-  await Promise.all([loadProjects(), loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices(), loadContractors(), loadSubContacts(), loadCompany(), loadSites()])
+  await Promise.all([loadProjects(), loadTrades(), loadMaterials(), loadSuppliers(), loadMaterialPrices(), loadPastPrices(), loadContractors(), loadSubContacts(), loadCompany(), loadSites()])
   // 一覧から開いた案件（?project=<id>）を初期選択
   const qp = route.query.project
   const pid = Array.isArray(qp) ? qp[0] : qp
@@ -4483,6 +4574,12 @@ tr.drag-over td { border-top: 2px solid #06C755; }
 .hist-src { border: 1px solid #D5DEE8; border-left: 0; border-radius: 0 6px 6px 0; background: #fff; cursor: pointer; padding: 0 6px; color: #4A7BC8; }
 .hist-src:hover { background: #EEF4FF; }
 /* R6: もしかして候補・商品情報 */
+.past { display: block; margin-top: 4px; font-size: 11px; color: #6b7280; }
+.past-pick {
+  margin-left: 4px; padding: 2px 8px; border: 1px solid #bfdbfe; background: #eff6ff;
+  color: #1d4ed8; border-radius: 999px; font-size: 11px; cursor: pointer; font-family: inherit;
+}
+.past-pick:hover { background: #dbeafe; }
 .dym { display: block; margin-top: 3px; font-size: 11px; color: #7A8AA0; }
 .dym-pick { margin-left: 4px; padding: 1px 6px; border: 1px solid #C7D2DE; border-radius: 10px; background: #fff; cursor: pointer; font-size: 11px; }
 .dym-pick:hover { background: #EEF4FF; border-color: #4A7BC8; }
