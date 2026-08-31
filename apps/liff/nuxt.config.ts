@@ -27,7 +27,12 @@ export default defineNuxtConfig({
       ],
       link: [
         { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
-        { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap' },
+        // ★display=optional（swap ではない）。swap だと代替フォント→Webフォントに切り替わる瞬間に
+        //  文字の高さが変わり、ページ全体が数十px跳ねる。本番で42pxずれ、押そうとしたものと
+        //  別のボタンを踏む状態だった（2026-09-01 実測）。
+        //  optional は「間に合わなければその表示では使わない・後から差し替えない」＝ずれない。
+        //  読み込み済み（2回目以降・PWA）では通常どおり適用される。
+        { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=optional' },
         { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block' },
         { rel: 'manifest', href: '/manifest.json' },
         { rel: 'icon', href: '/favicon.ico' },
