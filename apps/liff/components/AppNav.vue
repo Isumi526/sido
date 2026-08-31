@@ -237,7 +237,7 @@ const open = ref(false)
 // ※ @click ハンドラ内で直接呼ぶと useSchedules() 内の useI18n() が「setup外」判定で例外になり
 //   サイレントに失敗する(コンポーネントinstance文脈が無いDOMイベントハンドラのため)。
 //   watchはVueのeffectスコープ内で実行されinstance文脈が保持されるためここに書く。
-watch(open, (isOpen) => { if (isOpen) { refreshNotifBadge(); refreshPendingDocBadge() } })
+watch(open, (isOpen) => { if (isOpen) { refreshNotifBadge(); refreshPendingDocBadge(); refreshUnsubmittedReportBadge() } })
 
 // ホーム画面(pages/index.vue)と共通のナビ項目定義（composables/useNavItems.ts）。
 // 表記・並び・表示条件(パスワード変更等)のズレを防ぐ（2026-07-10）。
@@ -246,7 +246,7 @@ onMounted(() => { void resolveRole() })
 const { bySection } = useNavItems(() => authMode.value, () => canApplyPersonalExpense.value)
 
 // 予定管理ナビの未読バッジ（#予定通知バッジ・2026-07-11）
-onMounted(() => { refreshNotifBadge(); refreshPendingDocBadge() })
+onMounted(() => { refreshNotifBadge(); refreshPendingDocBadge(); refreshUnsubmittedReportBadge() })
 // チャット一覧ナビの未読バッジ（2026-07-14・現場情報ナビの未読メンションバッジから移設・集約）
 onMounted(() => { refreshSiteChatListBadge() })
 
@@ -259,7 +259,7 @@ const bottomNavItems = computed(() => [
   { path: '/checkin',   icon: 'how_to_reg',      label: t('nav.checkin'),        testId: 'checkin',  badge: 0 },
   { path: '/chats',     icon: 'forum',           label: t('nav.chats'),          testId: 'chats',    badge: unreadChatCount.value },
   { path: '/',          icon: 'home',           label: t('nav.home'),           testId: 'home',     badge: 0 },
-  { path: '/history',   icon: 'history',         label: t('nav.reportHistory'),  testId: 'history',  badge: 0 },
+  { path: '/history',   icon: 'history',         label: t('nav.reportHistory'),  testId: 'history',  badge: unsubmittedReportCount.value },
   { path: '/calendar',  icon: 'calendar_month',  label: t('nav.schedule'),       testId: 'calendar', badge: unreadScheduleCount.value },
 ])
 // '/checkin/[[siteId]]'のような任意サブパスも「そのタブが選択中」として扱う(ホームだけは完全一致のみ)

@@ -65,5 +65,18 @@
   "rejectedAck": "Got it",
   "punchLabel": "Actual punch",
   "unsubmittedTitle": "Daily report for {date} is not submitted",
-  "unsubmittedLead": "Tap to fill it in"
+  "unsubmittedLead": "Tap to fill it in",
+  "bulkOpen": "Submit {count} missing day(s) together",
+  "bulkTitle": "Submit together",
+  "bulkNote": "Only non-working days can be submitted in bulk. Days you worked need site and hours, so write those individually.",
+  "bulkKindOff": "Not working",
+  "bulkKindPaidLeave": "Paid leave",
+  "bulkReasonLabel": "Reason for the delay",
+  "bulkReasonPlaceholder": "e.g. I forgot to submit",
+  "bulkReasonHint": "Days past the 3-day window are reflected only after approval.",
+  "bulkSubmit": "Submit {count} day(s)",
+  "bulkSubmitting": "Submitting…",
+  "bulkResultSaved": "Submitted {count} day(s)",
+  "bulkResultPending": "{count} day(s) awaiting approval",
+  "bulkResultFailed": "{count} day(s) failed"
 }

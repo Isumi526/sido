@@ -61,11 +61,27 @@
       </p>
 
       <!-- ★退勤したらそのまま日報へ。打刻と日報の二度手間をなくし、退勤を押す癖をつけるため
-           （2026-08-10 運用者要望）。出勤打刻・代理打刻・その日の日報が既にある時は出さない。 -->
-      <NuxtLink v-if="reportLink" :to="reportLink" class="report-cta" data-testid="checkout-report-link">
-        <span class="material-symbols-rounded">edit_note</span>
-        {{ $t('checkin.writeReport') }}
-      </NuxtLink>
+           （2026-08-10 運用者要望）。出勤打刻・代理打刻・その日の日報が既にある時は出さない。
+           ★2026-08-31: 完了画面で止めると、ここで日報の動線に気づかずアプリを閉じる人が出る。
+            数秒だけ見せて自動で日報へ送る（リンクは自動遷移が効かない時の逃げ道として残す）。 -->
+      <template v-if="reportLink">
+        <p class="auto-advance-note" data-testid="auto-advance-note">{{ $t('checkin.autoAdvanceNote') }}</p>
+        <NuxtLink :to="reportLink" class="report-cta" data-testid="checkout-report-link">
+          <span class="material-symbols-rounded">edit_note</span>
+          {{ $t('checkin.writeReport') }}
+        </NuxtLink>
+      </template>
+
+      <!-- 出勤直後の次アクション。ここが空だと「打刻して終わり」に見え、
+           残業申請も退勤も別の入口を探すことになる（2026-08-31 運用者指摘）。 -->
+      <div v-if="attendanceType === 'checkin' && !isProxyMode" class="next-actions">
+        <NuxtLink to="/overtime" class="next-action" data-testid="done-overtime">
+          <span class="material-symbols-rounded">more_time</span>{{ $t('checkin.nextOvertime') }}
+        </NuxtLink>
+        <button class="next-action secondary" data-testid="done-checkout" @click="loadForTarget(selectedId!)">
+          <span class="material-symbols-rounded">logout</span>{{ $t('checkin.nextCheckout') }}
+        </button>
+      </div>
 
       <div v-if="otherTargets.length" class="next-targets">
         <p class="next-label">{{ $t('checkin.continueOthers') }}</p>
@@ -340,6 +356,12 @@ const punchDateLabel = computed(() => {
 })
 // 退勤打刻の完了画面に出す「日報を書く」リンク。空なら出さない（resolveReportLink 参照）
 const reportLink     = ref('')
+// 完了画面を見せておく時間。短すぎると何が起きたか分からず、長いとその間に閉じられる。
+const AUTO_ADVANCE_MS = 2000
+let autoAdvanceTimer: number | null = null
+onBeforeUnmount(() => {
+  if (autoAdvanceTimer !== null) { clearTimeout(autoAdvanceTimer); autoAdvanceTimer = null }
+})
 const checkinTime    = ref('')
 const checkoutTime   = ref('')
 
@@ -737,6 +759,16 @@ async function submit() {
   phase.value = 'done'
   submitting.value = false
   await resolveReportLink(target)
+
+  // ★完了画面で止めない。数秒見せてから日報へ送る（2026-08-31 運用者指摘:
+  //  「この完了画面一枚挟むと、ここで日報の動線に気づかずアプリ閉じちゃう人がいる」）。
+  //  タイマーは画面を離れたら止める（離脱後に勝手に飛ばさない）。
+  if (reportLink.value) {
+    autoAdvanceTimer = window.setTimeout(() => {
+      autoAdvanceTimer = null
+      if (reportLink.value) navigateTo(`${reportLink.value}&from=checkout`)
+    }, AUTO_ADVANCE_MS)
+  }
 }
 
 /**
@@ -1073,6 +1105,22 @@ async function resolveReportLink(target: Target | null) {
 .ws-label { font-size: 15px; font-weight: 700; color: #1f2937; }
 .ws-desc  { font-size: 12px; line-height: 1.5; color: #6b7280; }
 .ws-note  { margin: 16px 0 0; font-size: 12px; line-height: 1.6; color: #9ca3af; }
+
+.auto-advance-note {
+  margin: 4px 0 0; font-size: 13px; font-weight: 600; color: #06C755; line-height: 1.5;
+}
+
+/* 打刻後の次アクション（ここが空だと「打刻して終わり」に見える） */
+.next-actions { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 300px; margin-top: 20px; }
+.next-action {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 12px 16px; min-height: 46px; border-radius: 10px;
+  background: #06C755; color: #fff; border: none; cursor: pointer;
+  font-size: 14px; font-weight: 700; text-decoration: none;
+}
+.next-action .material-symbols-rounded { font-size: 18px; }
+.next-action.secondary { background: #fff; color: #374151; border: 1px solid #d1d5db; }
+.next-action:active { opacity: .85; }
 
 .off-done-sub-link {
   margin-top: 16px; font-size: 13px; color: #6b7280;

@@ -98,3 +98,30 @@ export async function refreshPendingDocBadge(): Promise<void> {
     reset()
   }
 }
+
+// ── 未提出の日報（提出するまで消えない印）──
+// ★2026-08-31: 日報の直接動線をナビから外し「日報履歴」に置き換えたので、
+//  未提出があることはナビのバッジで知らせる必要がある。
+//  pendingDocCount と同じ考え方で「読んだら消える通知」ではなく状態そのものを数える。
+export const unsubmittedReportCount = ref(0)
+
+export async function refreshUnsubmittedReportBadge(): Promise<void> {
+  // ★composable は最初の await より前に解決する。await をまたぐと注入が切れて
+  //  「Must be called at the top of a `setup` function」で毎回失敗する（E2Eで検出・2026-08-31）。
+  const supabase = useSupabase()
+  const expense  = useExpense()
+  try {
+    const me = await useCurrentUser().resolve()
+    if (!me?.worker_id) { unsubmittedReportCount.value = 0; return }
+    const { data: u } = await supabase.from('users')
+      .select('id').eq('worker_id', me.worker_id).maybeSingle()
+    if (!u?.id) { unsubmittedReportCount.value = 0; return }
+    const dates = await expense.getUnsubmittedDatesById(u.id)
+    // null = 起点未設定で判定不能。0件に倒すとバッジが消えて「出さなくていい」に見えるので触らない
+    if (dates === null) return
+    unsubmittedReportCount.value = dates.length
+  } catch (e) {
+    // ★取得失敗で 0 に倒さない。「未提出が無い」と誤って見せるより、前の値のままの方が安全
+    console.error('[reportBadge] 未提出日報の件数を取得できませんでした:', e)
+  }
+}
