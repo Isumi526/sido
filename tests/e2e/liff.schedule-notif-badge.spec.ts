@@ -4,7 +4,7 @@
 //  予定管理ナビにもバッジ表示される（2026-07-11・[[project_sido]]）。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, getAccountId, suppressOverdueModal } from './helpers'
+import { rest, getAccountId } from './helpers'
 
 const TS = Date.now()
 let notifId = ''
@@ -25,27 +25,7 @@ test.describe('予定追加通知のナビバッジ', () => {
     await rest(`schedule_notifications?id=eq.${notifId}`, { method: 'DELETE' }).catch(() => {})
   })
 
-  // ★予定管理を開いた時に画面が跳ねないこと。
-  //  通知バナーが後から生えてタブと月ナビを105px押し下げ、読み込み表示が消えると
-  //  本体が121px跳ね上がっていた（実測・2026-08-31）。タブは押すものなので誤タップになる。
-  //  バナーは廃止（お知らせに集約）、読み込み表示は本体に重ねる形にして潰した。
-  test('★未読通知があっても、予定管理のタブと月ナビが読み込み前後で動かない', async ({ page }) => {
-    await suppressOverdueModal(page)
-    await page.goto('/calendar', { waitUntil: 'domcontentloaded' })
-    await expect(page.locator('.cal-tabs')).toBeVisible({ timeout: 20000 })
-    const tabsBefore = await page.locator('.cal-tabs').boundingBox()
-    const navBefore  = await page.locator('.month-nav').boundingBox()
-    // 読み込みが終わってグリッドに中身が入るまで待つ
-    await expect(page.locator('.matrix-table')).toBeVisible({ timeout: 20000 })
-    await page.waitForTimeout(1500)
-    const tabsAfter = await page.locator('.cal-tabs').boundingBox()
-    const navAfter  = await page.locator('.month-nav').boundingBox()
-    expect(Math.abs((tabsAfter?.y ?? 0) - (tabsBefore?.y ?? 0)), '★タブが動かない').toBeLessThanOrEqual(2)
-    expect(Math.abs((navAfter?.y ?? 0) - (navBefore?.y ?? 0)), '★月ナビが動かない').toBeLessThanOrEqual(2)
-  })
-
   test('HOMEとハンバーガーの予定管理ナビに未読件数バッジが出て、カレンダーで既読にすると消える', async ({ page }) => {
-    await suppressOverdueModal(page)
     await page.goto('/', { waitUntil: 'networkidle' })
     await expect(page.getByTestId('home-schedule-badge')).toBeVisible({ timeout: 10000 })
 
@@ -54,15 +34,11 @@ test.describe('予定追加通知のナビバッジ', () => {
     await expect(page.getByTestId('drawer-schedule-badge')).toBeVisible()
     await page.locator('.drawer-close').click()
 
-    // ★2026-08-31: 既読化はお知らせ画面で行う（予定管理の通知バナーは重複のため廃止）。
-    //  お知らせを開いて1件タップ＝既読 → HOMEに戻るとバッジが消える
-    await suppressOverdueModal(page)
-    await page.goto('/notifications', { waitUntil: 'networkidle' })
-    await page.getByTestId('notif-tab-info').click()
-    await page.locator('.notif-item, .notif-row, li').filter({ hasText: 'E2E' }).first()
-      .click({ timeout: 10000 })
-
-    await suppressOverdueModal(page)
+    // 予定管理を開いて既読化 → HOMEに戻るとバッジが消える
+    await page.goto('/calendar', { waitUntil: 'networkidle' })
+    await page.locator('.cal-tab', { hasText: '個人' }).click()
+    const dismissBtn = page.locator('.notif-banner button', { hasText: '既読' })
+    await dismissBtn.click({ timeout: 10000 })
 
     await page.goto('/', { waitUntil: 'networkidle' })
     await expect(page.getByTestId('home-schedule-badge')).toHaveCount(0, { timeout: 10000 })
@@ -84,7 +60,6 @@ test.describe('予定追加通知のナビバッジ', () => {
     })
     const localNotifId = rows[0].id
     try {
-      await suppressOverdueModal(page)
       await page.goto('/calendar', { waitUntil: 'networkidle' })
       await page.locator('.cal-tab', { hasText: '個人' }).click()
 
@@ -93,12 +68,8 @@ test.describe('予定追加通知のナビバッジ', () => {
       await expect(page.getByTestId('drawer-schedule-badge')).toBeVisible()
       await page.locator('.drawer-close').click()
 
-      // ★既読化はお知らせ画面（バナー廃止）。ここでは同一ページ内のバッジ更新が主題なので、
-      //  DBを直接既読にしてから refreshNotifBadge が効くことを見る
-      await rest(`schedule_notifications?id=eq.${localNotifId}`, {
-        method: 'PATCH', headers: { Prefer: 'return=minimal' },
-        body: JSON.stringify({ read_at: new Date().toISOString() }),
-      })
+      const dismissBtn = page.locator('.notif-banner button', { hasText: '既読' })
+      await dismissBtn.click({ timeout: 10000 })
 
       // 画面遷移せず、同じページのままハンバーガーを開き直す
       await page.locator('.app-hamburger').click()

@@ -8,10 +8,8 @@
 //  スプラッシュへ入り込み、そのまま戻らなくなることがあった。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { suppressOverdueModal } from './helpers'
 
 test('ログアウトするとスプラッシュで止まらずログイン画面へ遷移する', async ({ page }) => {
-  await suppressOverdueModal(page)
   await page.goto('/', { waitUntil: 'networkidle' })
   await page.locator('.app-hamburger').click()
   await expect(page.locator('.app-drawer')).toBeVisible({ timeout: 10000 })

@@ -6,7 +6,7 @@
 //   - 同意した文面が打刻に記録される（証跡のスナップショット）
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, restSrv, getAccountId, passWorkStatusGate } from './helpers'
+import { rest, restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()
 const RULE_BOTH = `E2E共通_両方_${TS}`
@@ -45,7 +45,6 @@ async function clearRecentPunches() {
 test('出勤時は「両方」と「出勤のみ」が出て、「退勤のみ」は出ない', async ({ page }) => {
   await clearRecentPunches()
   await page.goto('/checkin', { waitUntil: 'networkidle' })
-  await passWorkStatusGate(page)
   const list = page.locator('.rules-list')
   await expect(list).toContainText(RULE_BOTH, { timeout: 15000 })
   await expect(list).toContainText(RULE_IN)
@@ -58,7 +57,6 @@ test('退勤時は「両方」と「退勤のみ」が出て、「出勤のみ�
     worker_id: workerId, type: 'checkin', agreed_rule_texts: [],
   }) })
   await page.goto('/checkin', { waitUntil: 'networkidle' })
-  await passWorkStatusGate(page)
   const list = page.locator('.rules-list')
   await expect(list).toContainText(RULE_BOTH, { timeout: 15000 })
   await expect(list).toContainText(RULE_OUT)
@@ -68,7 +66,6 @@ test('退勤時は「両方」と「退勤のみ」が出て、「出勤のみ�
 test('★同意した文面が打刻に記録される（あとから証跡として読める）', async ({ page }) => {
   await clearRecentPunches()
   await page.goto('/checkin', { waitUntil: 'networkidle' })
-  await passWorkStatusGate(page)
   await expect(page.locator('.rules-list')).toContainText(RULE_BOTH, { timeout: 15000 })
 
   // 全ルールにチェック → 位置情報を試行 → 送信

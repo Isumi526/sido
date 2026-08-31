@@ -8,7 +8,7 @@
 // ============================================================
 import { test, expect } from '@playwright/test'
 import { createHash, randomBytes } from 'node:crypto'
-import { restSrv, getAccountId, SUPABASE_URL, passExternalConsent } from './helpers'
+import { restSrv, getAccountId, SUPABASE_URL } from './helpers'
 
 const sha256Hex = (s: string) => createHash('sha256').update(s).digest('hex')
 const mkToken = () => randomBytes(32).toString('base64url')
@@ -89,7 +89,6 @@ test('AC3: Edge Functionが対象業者だけ返し、他業者/期限切れ/失
 
 test('AC3: 業者ポータル /p/<token> が有効トークンで業者名を表示する', async ({ page }) => {
   await page.goto(`/p/${tokA}`, { waitUntil: 'networkidle' })
-  await passExternalConsent(page)
   await expect(page.locator('.portal-card')).toBeVisible()
   await expect(page.locator('.hello')).toContainText(NAME_A)
   await expect(page.locator('h1')).toContainText('ご承諾')   // order_accept のラベル

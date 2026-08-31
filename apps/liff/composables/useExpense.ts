@@ -664,59 +664,6 @@ export const useExpense = () => {
    * DBユーザーIDで直接未送信日を検索（代理入力用）
    * getNextUnsubmittedDate の userID版
    */
-  /**
-   * 未送信日を「全部」返す（古い順）。ホームの件数バッジ・まとめて提出で使う。
-   * 起点未設定なら null（＝判定できない。0件と区別する）。
-   * ★承認待ちの日はここで除く。除外し忘れると承認されるまで同じ日が未送信に居座る。
-   */
-  async function getUnsubmittedDatesById(userId: string, excludeDates: string[] = []): Promise<string[] | null> {
-    const accountId = await getAccountId()
-
-    const { data: settingRows } = await supabase
-      .from('settings')
-      .select('value')
-      .eq('account_id', accountId)
-      .eq('key', 'service_start_date')
-      .limit(1)
-
-    const startDate = settingRows?.[0]?.value
-    if (!startDate) return null
-
-    const { data: urow } = await supabase
-      .from('users').select('created_at, worker_id').eq('id', userId).maybeSingle()
-    let regSrc: string | null | undefined = (urow as any)?.created_at
-    let reportStartDate: string | null = null
-    if ((urow as any)?.worker_id) {
-      const { data: w } = await supabase.from('workers')
-        .select('created_at, report_start_date').eq('id', (urow as any).worker_id).maybeSingle()
-      if ((w as any)?.created_at) regSrc = (w as any).created_at
-      reportStartDate = (w as any)?.report_start_date ?? null
-    }
-    const regDate = jstDateOf(regSrc)
-    let effStart = startDate
-    if (regDate && regDate > effStart) effStart = regDate
-    if (reportStartDate && reportStartDate > effStart) effStart = reportStartDate
-
-    const now   = new Date()
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-
-    // ★EF経由。未提出日の算出なので失敗を空に倒さない（全部未提出に見えてしまう）
-    const submitted = await useDailyReportsApi().submittedDates(effStart, today, userId)
-    // ★承認待ちも「出し済み」扱い。ここで取りに行く（呼び出し側に任せると必ず漏れる・2026-08-18）
-    const pending = await useReportEditApi().pendingDates().catch(() => [] as string[])
-    const done = new Set([...submitted, ...excludeDates, ...pending])
-
-    const out: string[] = []
-    let cursor = effStart
-    while (cursor <= today) {
-      if (!done.has(cursor)) out.push(cursor)
-      const d = new Date(cursor + 'T12:00:00')
-      d.setDate(d.getDate() + 1)
-      cursor = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    }
-    return out
-  }
-
   async function getNextUnsubmittedDateById(userId: string, excludeDates: string[] = []): Promise<string | null> {
     const accountId = await getAccountId()
 
@@ -849,5 +796,5 @@ export const useExpense = () => {
     return data
   }
 
-  return { buildReportPayload, getUser, registerUser, addItem, getItems, deleteItem, saveReport, saveReportById, patchExpenseItem, findOrCreateProxyUser, getExpenseRowsFromReports, getExpenseRowsFromReportsById, getReports, getReportsById, getReport, getReportByUserId, getNextUnsubmittedDate, getNextUnsubmittedDateById, getUnsubmittedDatesById, clearUserCache, getSettlement, getSettlements, applySettlement }
+  return { buildReportPayload, getUser, registerUser, addItem, getItems, deleteItem, saveReport, saveReportById, patchExpenseItem, findOrCreateProxyUser, getExpenseRowsFromReports, getExpenseRowsFromReportsById, getReports, getReportsById, getReport, getReportByUserId, getNextUnsubmittedDate, getNextUnsubmittedDateById, clearUserCache, getSettlement, getSettlements, applySettlement }
 }

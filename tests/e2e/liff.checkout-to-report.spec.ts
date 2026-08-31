@@ -17,7 +17,7 @@
 //  接頭辞 E2E退勤導線 のデータはテスト後に必ず消す（共有DB）。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, restSrv, getAccountId, passWorkStatusGate } from './helpers'
+import { rest, restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()
 const SITE = `E2E退勤導線現場_${TS}`
@@ -84,7 +84,6 @@ async function seedCheckedIn() {
 /** 退勤打刻を完了させる（/checkin を開くと自動で退勤の確認画面 → 記録） */
 async function doCheckout(page: import('@playwright/test').Page) {
   await page.goto('/checkin', { waitUntil: 'networkidle' })
-  await passWorkStatusGate(page)
   // ★共通の確認ルール（account_attendance_rules）が登録されていると、全部チェックするまで
   //  送信できない。このテストの主題ではないので、出ている分は素直に全部チェックする。
   const rules = page.locator('.rule-row')
@@ -97,22 +96,18 @@ async function doCheckout(page: import('@playwright/test').Page) {
   await submit.click()
 }
 
-// ★2026-08-31: 完了画面そのものを廃止した。一枚挟むとそこで離脱する人がいたため
-//  （逐語:「一旦ページ表示された時点で離脱してしまうケースがある」）。
-//  退勤を押したら日報画面へ直行し、手応えは遷移先の中央オーバーレイで出す。
-test('★退勤したら完了画面を挟まず日報画面へ直行する', async ({ page }) => {
+test('★退勤打刻の完了画面に日報への導線が出る', async ({ page }) => {
   await seedCheckedIn()
 
   await doCheckout(page)
 
+  const link = page.getByTestId('checkout-report-link')
+  await expect(link, '退勤したらそのまま日報へ行ける').toBeVisible({ timeout: 20000 })
   // ★打刻した日は引き継ぐ。現場は引き継がない（2026-08-27 出退勤モデル変更で
   //  打刻が現場に紐づかなくなったため。現場は日報側で選ぶ）。
-  await page.waitForURL(/\/report\?date=/, { timeout: 20000 })
-  const url = page.url()
-  expect(url, '打刻した日付を引き継ぐ').toContain(`date=${TODAY}`)
-  expect(url, '現場は引き継がない').not.toContain('site=')
-  await expect(page.getByTestId('checkout-toast'), '打刻できたことは遷移先で伝える')
-    .toBeVisible({ timeout: 10000 })
+  const href = await link.getAttribute('href')
+  expect(href, '打刻した日付を引き継ぐ').toContain(`date=${TODAY}`)
+  expect(href ?? '', '現場は引き継がない').not.toContain('site=')
 })
 
 test('★遷移先は打刻した日。古い未送信日があってもそちらへ飛ばされない', async ({ page }) => {

@@ -4,23 +4,6 @@
     <AppNav :subtitle="$t('report.subtitle')" :user-name="currentUser?.real_name" :user-role="currentUser?.worker_role" />
     <button type="button" class="ob-replay" @click="onboardingRef?.open()"><span class="material-symbols-rounded ob-replay-icon">help</span>{{ $t('onboarding.replay') }}</button>
 
-    <!-- ★退勤打刻から直行してきた時の手応え。完了画面を挟むとそこで離脱する人がいるので
-         画面ではなく、この日報画面の中央に重ねて出して自動で引く（2026-08-31）。
-         背後にフォームが透けるので「次はこれを書く」が同時に伝わる。
-         main の外に置くのは、フォームがまだ読み込み中でも即座に出したいため。 -->
-    <div
-      v-if="showCheckoutToast"
-      class="checkout-toast-overlay"
-      data-testid="checkout-toast"
-      @click="dismissCheckoutToast"
-    >
-      <div class="checkout-toast">
-        <span class="material-symbols-rounded checkout-toast-check">check_circle</span>
-        <div class="checkout-toast-time">{{ $t('report.checkoutToastTime', { time: punchedAt }) }}</div>
-        <div class="checkout-toast-text">{{ $t('report.checkoutToastText') }}</div>
-      </div>
-    </div>
-
     <main class="main">
       <!-- ローディング -->
       <div v-if="initializing" class="state-screen">
@@ -1013,35 +996,6 @@ const prefillSite = computed(() => (route.query.site as string | undefined) ?? '
 //  「現場・稼働・主要項目だけ」の簡易UIにする。通常URLは従来どおり全項目を出す。
 //  ★表示の出し分けだけ。入力・保存経路（saveReportById 等）は一切変えない。
 const simpleMode = computed(() => route.query.mode === 'simple')
-// 退勤打刻から直行してきたか（checkin ページが ?from=checkout&punched=HH:MM を付ける）
-const fromCheckout = computed(() => route.query.from === 'checkout')
-const punchedAt    = computed(() => {
-  const v = route.query.punched
-  return typeof v === 'string' && /^\d{2}:\d{2}$/.test(v) ? v : ''
-})
-
-// ★打刻完了の手応え。完了画面を挟むとそこで離脱する人がいるので画面自体は無くし、
-//  日報画面の中央に重ねて出して自動で引く（2026-08-31 運用者指摘）。
-//  背後にフォームが透けるので「次はこれを書く」が同時に伝わる。
-const CHECKOUT_TOAST_MS = 1600
-const showCheckoutToast = ref(false)
-let checkoutToastTimer: number | null = null
-onMounted(() => {
-  if (!fromCheckout.value) return
-  showCheckoutToast.value = true
-  checkoutToastTimer = window.setTimeout(() => {
-    checkoutToastTimer = null
-    showCheckoutToast.value = false
-  }, CHECKOUT_TOAST_MS)
-})
-onBeforeUnmount(() => {
-  if (checkoutToastTimer !== null) { clearTimeout(checkoutToastTimer); checkoutToastTimer = null }
-})
-/** 押したら待たずに消す（読み終わった人を止めない） */
-function dismissCheckoutToast() {
-  if (checkoutToastTimer !== null) { clearTimeout(checkoutToastTimer); checkoutToastTimer = null }
-  showCheckoutToast.value = false
-}
 // 現場の新規作成は権限者(admin/office/site_manager)のみ。職人は既存現場から選ぶ
 const { resolveRole: resolveWorkerRole, canCreateSite } = useWorkerPermission()
 
@@ -3117,32 +3071,6 @@ function fillTestData() {
 </script>
 
 <style>
-
-/* ── 退勤直後の手応え（中央に重ねて自動で引く・2026-08-31）──
-   完了画面を一枚挟むとそこで離脱する人がいたので、画面ごと廃止して
-   遷移先のここで見せる。背後にフォームが透けるので「次はこれを書く」が同時に伝わる。 */
-.checkout-toast-overlay {
-  position: fixed; inset: 0; z-index: 950;
-  display: flex; align-items: center; justify-content: center;
-  background: rgba(255, 255, 255, .55);
-  backdrop-filter: blur(1.5px);
-  animation: checkoutToastIn .18s ease-out;
-}
-.checkout-toast {
-  background: #fff; border-radius: 16px; padding: 26px 32px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, .18);
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-}
-.checkout-toast-check {
-  font-size: 46px; color: #06C755;
-  font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 48;
-}
-.checkout-toast-time { margin-top: 6px; font-size: 18px; font-weight: 700; color: #1f2937; }
-.checkout-toast-text { font-size: 13px; color: #6b7280; }
-@keyframes checkoutToastIn {
-  from { opacity: 0; transform: scale(.96); }
-  to   { opacity: 1; transform: scale(1); }
-}
 /* ── リセット＆変数 ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
