@@ -83,28 +83,6 @@ async function routeFromLiffState() {
 }
 </script>
 
-<style>
-/* ★アイコンフォントが届く前にレイアウトが崩れるのを止める（2026-08-31）。
-   Material Symbols は「add_to_home_screen」のようなリガチャ名をそのまま書くので、
-   フォントが未ロードの間は代替フォントでその文字列がそのまま流し込まれる。
-   font-display:block で見た目は隠れても、字送りは代替フォントのままなので
-   18文字ぶんの幅を取って折り返し、カードが数百px高くなる。
-   → 実測: PWA案内カードが 452px で描画され、フォント到着後に 80px へ縮んでいた。
-     その差ぶん下のメニューが跳ね上がり、押そうとしたものと別のボタンを踏む
-     （運用者指摘: 「位置がずれて、別の意図しないボタンをタップしてしまう」）。
-   1em の箱に閉じ込めて溢れを隠す。グリフの送りは 1em なのでロード後も見た目は変わらない。 */
-.material-symbols-rounded {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1em;
-  height: 1em;
-  line-height: 1;
-  white-space: nowrap;
-  overflow: hidden;
-}
-</style>
-
 <style scoped>
 .domain-migrate-overlay { position: fixed; inset: 0; z-index: 10000; background: #0f172a; display: flex; align-items: center; justify-content: center; padding: 24px; }
 .domain-migrate-card { background: #fff; border-radius: 16px; padding: 32px 28px; max-width: 480px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,.3); }

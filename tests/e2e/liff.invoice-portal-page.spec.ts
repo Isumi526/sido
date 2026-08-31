@@ -6,7 +6,7 @@
 // ============================================================
 import { test, expect } from '@playwright/test'
 import { createHash, randomBytes } from 'node:crypto'
-import { restSrv, getAccountId, passExternalConsent } from './helpers'
+import { restSrv, getAccountId } from './helpers'
 
 const sha256Hex = (s: string) => createHash('sha256').update(s).digest('hex')
 const mkToken = () => randomBytes(32).toString('base64url')
@@ -26,7 +26,6 @@ test('承諾済みPOの請求トークンURLは「請求フォーム」を出す
 
   try {
     await page.goto(`/p/${tok}`, { waitUntil: 'networkidle' })
-    await passExternalConsent(page)
     await expect(page.locator('.portal-card')).toBeVisible()
     // 請求フォームが出る（承諾完了画面ではない）
     await expect(page.locator('h1')).toContainText('請求')
