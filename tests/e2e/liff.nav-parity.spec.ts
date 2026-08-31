@@ -5,8 +5,10 @@
 //  （ホームに無かった現場情報、ハンバーガーに無かったルールブック/パスワード変更を統一）
 // ============================================================
 import { test, expect } from '@playwright/test'
+import { suppressOverdueModal } from './helpers'
 
 test('ホーム画面とハンバーガーメニューで同じナビ項目が出る', async ({ page }) => {
+  await suppressOverdueModal(page)
   await page.goto('/', { waitUntil: 'networkidle' })
 
   const homeLabels = await page.locator('.menu-card .menu-label').allTextContents()
@@ -27,6 +29,7 @@ test('ホーム画面とハンバーガーメニューで同じナビ項目が�
 
 // ── ハンバーガーメニューのナビもHOME同様にセクション階層化される（2026-07-11） ──
 test('ハンバーガーメニューのナビがHOMEと同じセクション見出しで階層化される', async ({ page }) => {
+  await suppressOverdueModal(page)
   await page.goto('/', { waitUntil: 'networkidle' })
   const homeSections = await page.locator('.menu-section').allTextContents()
   expect(homeSections).toEqual(['記録', '予定・連絡', '情報・設定'])

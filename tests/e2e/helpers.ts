@@ -411,3 +411,47 @@ export async function useDevWorker(page: any, key: string): Promise<{ userId: st
 
   return { userId, workerId }
 }
+
+/**
+ * /checkin を開いた直後に出る「今日は稼働しますか？」ゲート（2026-08-31 追加）を通過する。
+ *
+ * ★このゲートは条件付きで出る（出勤打刻のとき・その日の日報がまだ無いときだけ）。
+ *  「出るはず」と決め打ちで待つと退勤側のテストが必ずタイムアウトするので、
+ *  ゲートか確認画面のどちらかが出るまで待って、ゲートなら押す、という形にしている。
+ */
+export async function passWorkStatusGate(page: any): Promise<void> {
+  const gate   = page.getByTestId('ws-working')
+  const header = page.locator('.checklist-header')
+  const deadline = Date.now() + 20000
+  while (Date.now() < deadline) {
+    if (await gate.isVisible().catch(() => false)) { await gate.click(); return }
+    if (await header.isVisible().catch(() => false)) return
+    await page.waitForTimeout(200)
+  }
+  throw new Error('稼働有無ゲートも打刻の確認画面も出なかった')
+}
+
+/**
+ * 外部者（下請け業者・元請け）向けポータル /p/<token> の同意ゲートを通過する。
+ * 同意は初回だけ・トークン単位で出るので「出れば押す」形にしている
+ * （必ず出ると決め打ちすると、同意済みトークンを使うテストがタイムアウトする）。
+ */
+export async function passExternalConsent(page: any): Promise<void> {
+  const agree = page.getByTestId('consent-agree')
+  await agree.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {})
+  if (await agree.isVisible().catch(() => false)) {
+    await agree.click()
+    await page.getByTestId('consent-gate').waitFor({ state: 'detached', timeout: 15000 }).catch(() => {})
+  }
+}
+
+/**
+ * 未提出日報の割り込みモーダル（ホーム起動時・2026-08-31）を出さないようにする。
+ * ★画面全体を覆うのでハンバーガー等のクリックを塞ぐ。割り込み自体が主題でないテストは
+ *  これを呼んでから goto すること（liff.report-nudge.spec.ts だけは呼ばずに検証する）。
+ */
+export async function suppressOverdueModal(page: any): Promise<void> {
+  await page.addInitScript(() => {
+    try { window.sessionStorage.setItem('overdue_report_dismissed', '1') } catch { }
+  })
+}
