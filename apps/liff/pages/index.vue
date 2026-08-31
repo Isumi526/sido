@@ -41,55 +41,67 @@
       <!-- ★今日のステータスと次の1アクション（2026-08-31 運用者指摘:
            「今出勤中なのか、今日まだ出勤が押されてないとか…次のアクションだったり動線が分かりやすいように」）。
            判定は useTodayStatus に集約（起動時の割り込みと同じソース）。
-           unknown（判定できなかった）時は何も出さない＝通信不良で急かさない。 -->
-      <div
-        v-if="today.phase !== 'unknown'"
-        class="today-card"
-        :class="today.phase"
-        data-testid="home-today-card"
-      >
-        <div class="today-head">
-          <span class="material-symbols-rounded today-icon">{{ todayView.icon }}</span>
-          <div class="today-texts">
-            <div class="today-title" data-testid="home-today-title">{{ todayView.title }}</div>
-            <div class="today-sub">{{ todayView.sub }}</div>
+
+           ★高さを最初から確保する（2026-08-31 運用者指摘:
+            「時間差で表示されるので、ナビゲーションを押そうとした時に位置がずれて、
+              別の意図しないボタンをタップしてしまう」）。
+            読み込み中はスケルトンを同じ高さで出し、下のメニューを一切動かさない。
+            そのため中身の行数は固定にしてある——可変の情報（予定・溜まっている未提出）は
+            行を増やさず、説明文への追記かアクションボタンとして横に並べること。 -->
+      <div class="today-slot">
+        <div v-if="!homeReady" class="today-card skeleton" data-testid="home-today-skeleton" aria-hidden="true">
+          <div class="today-head">
+            <span class="sk-icon" />
+            <div class="today-texts">
+              <div class="sk-line sk-title" />
+              <div class="sk-line sk-sub" />
+            </div>
+          </div>
+          <div class="today-actions"><span class="sk-btn" /></div>
+        </div>
+
+        <div
+          v-else-if="today.phase !== 'unknown'"
+          class="today-card"
+          :class="today.phase"
+          data-testid="home-today-card"
+        >
+          <div class="today-head">
+            <span class="material-symbols-rounded today-icon">{{ todayView.icon }}</span>
+            <div class="today-texts">
+              <div class="today-title" data-testid="home-today-title">{{ todayView.title }}</div>
+              <div class="today-sub">{{ todayView.sub }}</div>
+            </div>
+          </div>
+          <div class="today-actions">
+            <NuxtLink
+              v-for="a in todayView.actions"
+              :key="a.to"
+              :to="a.to"
+              class="today-action"
+              :class="{ primary: a.primary }"
+              :data-testid="a.testId"
+            >
+              <span class="material-symbols-rounded">{{ a.icon }}</span>{{ a.label }}
+            </NuxtLink>
+            <!-- 溜まっている未提出。★行を足さずアクションとして横に並べる（高さを変えないため） -->
+            <NuxtLink
+              v-if="today.backlogDates.length"
+              to="/history"
+              class="today-action"
+              data-testid="home-today-backlog"
+            >
+              <span class="material-symbols-rounded">history</span>{{ t('home.todayBacklogShort', { count: today.backlogDates.length }) }}
+            </NuxtLink>
           </div>
         </div>
-        <div class="today-actions">
-          <NuxtLink
-            v-for="a in todayView.actions"
-            :key="a.to"
-            :to="a.to"
-            class="today-action"
-            :class="{ primary: a.primary }"
-            :data-testid="a.testId"
-          >
-            <span class="material-symbols-rounded">{{ a.icon }}</span>{{ a.label }}
-          </NuxtLink>
-        </div>
-        <!-- 溜まっている未提出（今日より前）。今日の分とは別に出す＝両方あることが分かる -->
-        <NuxtLink
-          v-if="today.backlogDates.length"
-          to="/history"
-          class="today-backlog"
-          data-testid="home-today-backlog"
-        >
-          {{ t('home.todayBacklog', { count: today.backlogDates.length }) }}
-        </NuxtLink>
+
+        <!-- 判定できなかった時は空のまま。高さは today-slot が持っているのでズレない -->
       </div>
 
-      <!-- 打刻を促す（今日の勤務予定の開始/終了が来ているのに未打刻の時だけ）。LINE/メール不達でも気づけるよう常駐ホームに出す。 -->
-      <NuxtLink v-if="punchPrompt" class="punch-card" to="/checkin" data-testid="home-punch-card">
-        <span class="material-symbols-rounded punch-card-icon">{{ punchPrompt.kind === 'checkin' ? 'login' : 'logout' }}</span>
-        <div class="punch-card-body">
-          <div class="punch-card-title">{{ punchPrompt.kind === 'checkin' ? t('home.punchCheckinTitle') : t('home.punchCheckoutTitle') }}</div>
-          <div class="punch-card-sub">{{ t('home.punchSub', { title: punchPrompt.title }) }}</div>
-        </div>
-        <span class="material-symbols-rounded alert-arrow">chevron_right</span>
-      </NuxtLink>
-
-      <!-- 経費申請 締切案内 -->
-      <NuxtLink v-if="deadlineBanner" class="deadline-card" to="/expense/download">
+      <!-- 経費申請 締切案内。★homeReady まで出さない＝ステータスと同時に1回だけ描画する
+           （別々に出ると下のメニューが二度動く） -->
+      <NuxtLink v-if="homeReady && deadlineBanner" class="deadline-card" to="/expense/download">
         <span class="material-symbols-rounded deadline-icon">schedule</span>
         <div class="deadline-body">
           <div class="deadline-title">{{ t('home.deadlineTitle', { period: periodShort(deadlineBanner.periodKey) }) }}</div>
@@ -208,8 +220,14 @@ const accountId        = ref<string | null>(null)
 const proxyModalOpen   = ref(false)
 const proxyLoading     = ref(false)
 const deadlineBanner   = ref<{ periodKey: string; label: string } | null>(null)
-// 打刻を促すプロンプト（今日の勤務予定の開始/終了時刻が来ているのに未打刻なら出す）
+// 打刻を促すプロンプト（今日の勤務予定の開始/終了時刻が来ているのに未打刻なら出す）。
+// ★カードは廃止し、今日のステータスの説明文に畳んだ（2026-08-31）。
+//  同じ「打刻して」を2枚出していた重複であり、後から生えて下のメニューを押し下げていたため。
 const punchPrompt      = ref<{ kind: 'checkin' | 'checkout'; title: string } | null>(null)
+// ホームの可変領域（ステータス・締切）の読み込みが済んだか。
+// ★これが false の間は同じ高さのスケルトンを出す。後から生やすと下のメニューが動いて
+//  押そうとしたものと別のボタンを押してしまう（運用者指摘・2026-08-31）。
+const homeReady        = ref(false)
 
 /** 'YYYY-MM-DD' → 'M/D（曜）' */
 function formatMd(date: string): string {
@@ -230,7 +248,10 @@ const todayView = computed(() => {
       return {
         icon: 'work_history',
         title: t('home.todayWorking'),
-        sub: t('home.todayWorkingSub', { time: s.checkinTime ?? '—' }),
+        // 予定の終了が過ぎているなら、その現場名を添える（旧・打刻カードの情報をここへ畳んだ）
+        sub: punchPrompt.value?.kind === 'checkout'
+          ? t('home.todayWorkingSubSched', { time: s.checkinTime ?? '—', title: punchPrompt.value.title })
+          : t('home.todayWorkingSub', { time: s.checkinTime ?? '—' }),
         actions: [
           { to: '/checkin', label: t('home.actCheckout'), icon: 'logout', primary: true, testId: 'today-act-checkout' },
           { to: '/overtime', label: t('home.actOvertime'), icon: 'more_time', primary: false, testId: 'today-act-overtime' },
@@ -261,7 +282,10 @@ const todayView = computed(() => {
       return {
         icon: 'how_to_reg',
         title: t('home.todayNotPunched'),
-        sub: t('home.todayNotPunchedSub'),
+        // 予定の開始が近い/過ぎているなら、その現場名を添える（旧・打刻カードの情報をここへ畳んだ）
+        sub: punchPrompt.value?.kind === 'checkin'
+          ? t('home.todayNotPunchedSubSched', { title: punchPrompt.value.title })
+          : t('home.todayNotPunchedSub'),
         actions: [{ to: '/checkin', label: t('home.actCheckin'), icon: 'login', primary: true, testId: 'today-act-checkin' }],
       }
   }
@@ -393,6 +417,8 @@ onMounted(async () => {
     await refreshToday()
     maybeInterrupt()
   }
+  // ★成否にかかわらず必ず立てる。ここを通らないとスケルトンが出たままになる
+  homeReady.value = true
 })
 
 // ── 退勤済みなのに日報が未提出の人への割り込み（2026-08-31）──
@@ -461,10 +487,19 @@ onMounted(() => { refreshSiteChatListBadge() })
 
 
 /* 打刻を促すカード（出勤/退勤）。緑=出勤系の色に合わせる */
-/* ── 今日のステータスカード ── */
+/* ── 今日のステータスカード ──
+   ★高さを固定する。読み込み後に生えると下のメニューが押し下がり、
+    押そうとしたものと別のボタンをタップしてしまう（運用者指摘・2026-08-31）。
+    可変の情報は行を増やさず、説明文への追記かアクションの横並びで吸収すること。 */
+.today-slot { height: 142px; margin-bottom: 12px; }
 .today-card {
+  height: 100%;
+  /* ★中身が何であれ外形を変えない。溢れるくらいなら隠す方がまし
+     （1pxでも伸びると下のメニューが動く） */
+  overflow: hidden;
   background: #fff; border: 1px solid #e5e7eb; border-left: 4px solid #9ca3af;
-  border-radius: 12px; padding: 14px 16px; margin-bottom: 12px;
+  border-radius: 12px; padding: 14px 16px;
+  display: flex; flex-direction: column; justify-content: center;
 }
 .today-card.working    { border-left-color: #10b981; }
 .today-card.done       { border-left-color: #9ca3af; }
@@ -480,7 +515,12 @@ onMounted(() => { refreshSiteChatListBadge() })
 .today-texts { flex: 1; min-width: 0; }
 .today-title { font-size: 15px; font-weight: 700; color: #1f2937; line-height: 1.4; }
 .today-card.report-due .today-title { color: #b91c1c; }
-.today-sub   { margin-top: 3px; font-size: 12px; line-height: 1.5; color: #6b7280; }
+.today-sub {
+  margin-top: 3px; font-size: 12px; line-height: 1.5; color: #6b7280;
+  /* ★常に2行ぶんの高さを占める。1行/2行で高さが変わると下がずれる */
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  height: 36px;
+}
 
 .today-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .today-action {
@@ -494,10 +534,18 @@ onMounted(() => { refreshSiteChatListBadge() })
 .today-card.report-due .today-action.primary { background: #ef4444; border-color: #ef4444; }
 .today-action:active { opacity: .85; }
 
-.today-backlog {
-  display: block; margin-top: 10px; font-size: 12px; font-weight: 600;
-  color: #b45309; text-decoration: underline; text-underline-offset: 3px;
-}
+/* 読み込み中のスケルトン。実カードと同じ骨格・同じ高さにする */
+.today-card.skeleton { border-left-color: #e5e7eb; }
+.sk-icon { width: 24px; height: 24px; border-radius: 50%; background: #eef0f2; flex-shrink: 0; }
+.sk-line { height: 12px; border-radius: 6px; background: #eef0f2; }
+.sk-title { width: 56%; height: 15px; }
+.sk-sub   { width: 88%; margin-top: 7px; }
+.today-card.skeleton .today-texts { height: 54px; }
+.sk-btn   { display: inline-block; width: 132px; height: 38px; border-radius: 8px; background: #eef0f2; }
+.today-card.skeleton .sk-icon,
+.today-card.skeleton .sk-line,
+.today-card.skeleton .sk-btn { animation: skPulse 1.2s ease-in-out infinite; }
+@keyframes skPulse { 0%, 100% { opacity: 1 } 50% { opacity: .55 } }
 
 /* ── 未提出の割り込み（閉じられるが解消するまで開くたび出る） ── */
 .overdue-overlay {
@@ -521,18 +569,6 @@ onMounted(() => { refreshSiteChatListBadge() })
 }
 .overdue-btn.primary { background: #ef4444; border-color: #ef4444; color: #fff; }
 
-.punch-card {
-  background: #fff; border-radius: 12px;
-  padding: 14px 16px; display: flex; align-items: center; gap: 12px;
-  box-shadow: 0 1px 4px rgba(0,0,0,.06);
-  border-left: 4px solid #10b981; cursor: pointer; text-decoration: none;
-}
-.punch-card:active { background: #ecfdf5; }
-.punch-card-icon { color: #10b981; font-size: 26px; flex-shrink: 0;
-  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
-.punch-card-body { flex: 1; }
-.punch-card-title { font-size: 14px; font-weight: 700; color: #111; }
-.punch-card-sub   { font-size: 12px; color: #059669; margin-top: 2px; font-weight: 600; }
 
 /* メニューグリッド */
 .menu-section {
