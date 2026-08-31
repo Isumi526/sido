@@ -49,15 +49,21 @@
             そのため中身の行数は固定にしてある——可変の情報（予定・溜まっている未提出）は
             行を増やさず、説明文への追記かアクションボタンとして横に並べること。 -->
       <div class="today-slot">
+        <!-- ★読み込み中の枠。実カードと同じクラス・同じ構造で組む。
+             別構造で「だいたい同じ高さ」に作ると、フォントや文言で簡単にズレる
+             （本番だけ30px、ローカルだけ18pxズレて2回踏んだ・2026-09-01）。
+             同じ骨格を使えば高さは構造的に一致する。 -->
         <div v-if="!homeReady" class="today-card skeleton" data-testid="home-today-skeleton" aria-hidden="true">
           <div class="today-head">
-            <span class="sk-icon" />
+            <span class="material-symbols-rounded today-icon sk-icon">circle</span>
             <div class="today-texts">
-              <div class="sk-line sk-title" />
-              <div class="sk-line sk-sub" />
+              <div class="today-title"><span class="sk-bar" style="width:56%" /></div>
+              <div class="today-sub"><span class="sk-bar" style="width:88%" /></div>
             </div>
           </div>
-          <div class="today-actions"><span class="sk-btn" /></div>
+          <div class="today-actions">
+            <span class="today-action"><span class="sk-bar" style="width:84px" /></span>
+          </div>
         </div>
 
         <div
@@ -488,7 +494,7 @@ onMounted(() => { refreshSiteChatListBadge() })
 /* お知らせ/締切カード共通の矢印（未送信アラートは廃止したが .alert-arrow は notif/deadline で継続利用） */
 .alert-arrow { color: #ccc; font-size: 22px; flex-shrink: 0; }
 /* 実測でカードは90px（2行の文言＋余白）。枠をそれに合わせる */
-.deadline-slot { min-height: 90px; margin-bottom: 12px; }
+.deadline-slot { min-height: 90px; margin-bottom: 12px; box-sizing: border-box; }
 .deadline-card {
   background: #fff; border-radius: 12px;
   padding: 14px 16px; display: flex; align-items: center; gap: 12px;
@@ -508,13 +514,17 @@ onMounted(() => { refreshSiteChatListBadge() })
    ★高さを固定する。読み込み後に生えると下のメニューが押し下がり、
     押そうとしたものと別のボタンをタップしてしまう（運用者指摘・2026-08-31）。
     可変の情報は行を増やさず、説明文への追記かアクションの横並びで吸収すること。 */
-.today-slot { min-height: 142px; margin-bottom: 12px; }
+/* ★box-sizing を明示する。既定の content-box だと min-height に padding+border が
+   加算され、スケルトン（中身が小さい方）だけ30px高くなってページが跳ねた
+   （2026-09-01 本番スモークで実測）。枠と中身の両方に効かせる。 */
+.today-slot { min-height: 142px; margin-bottom: 12px; box-sizing: border-box; }
 .today-card {
   /* ★高さは「最低142px」。固定＋overflow:hidden にしていたら、アクションが3つに
      なった時（出勤中＋溜まっている未提出）に見出しとボタンが切れた（2026-08-31 実機で発覚）。
      ずれを防ぐことより中身が読めることが優先。最低値を確保しておけば
      通常の状態では下のメニューは動かない。 */
   min-height: 142px;
+  box-sizing: border-box;
   background: #fff; border: 1px solid #e5e7eb; border-left: 4px solid #9ca3af;
   border-radius: 12px; padding: 14px 16px;
   display: flex; flex-direction: column; justify-content: center;
@@ -558,17 +568,17 @@ onMounted(() => { refreshSiteChatListBadge() })
 .today-card.report-due .today-action.primary { background: #ef4444; border-color: #ef4444; }
 .today-action:active { opacity: .85; }
 
-/* 読み込み中のスケルトン。実カードと同じ骨格・同じ高さにする */
+/* 読み込み中のスケルトン。実カードと同じクラスを使うので高さは自動で揃う。
+   ここでは色だけを潰す（構造・サイズには触れない）。 */
 .today-card.skeleton { border-left-color: #e5e7eb; }
-.sk-icon { width: 24px; height: 24px; border-radius: 50%; background: #eef0f2; flex-shrink: 0; }
-.sk-line { height: 12px; border-radius: 6px; background: #eef0f2; }
-.sk-title { width: 56%; height: 15px; }
-.sk-sub   { width: 88%; margin-top: 7px; }
-.today-card.skeleton .today-texts { height: 54px; }
-.sk-btn   { display: inline-block; width: 132px; height: 38px; border-radius: 8px; background: #eef0f2; }
-.today-card.skeleton .sk-icon,
-.today-card.skeleton .sk-line,
-.today-card.skeleton .sk-btn { animation: skPulse 1.2s ease-in-out infinite; }
+.today-card.skeleton .today-icon { color: #eef0f2; }
+.today-card.skeleton .today-action { border-color: #f1f3f5; background: #fafbfc; }
+.sk-bar {
+  display: inline-block; height: .85em; min-width: 24px;
+  border-radius: 4px; background: #eef0f2; vertical-align: middle;
+  animation: skPulse 1.2s ease-in-out infinite;
+}
+.today-card.skeleton .today-icon { animation: skPulse 1.2s ease-in-out infinite; }
 @keyframes skPulse { 0%, 100% { opacity: 1 } 50% { opacity: .55 } }
 
 /* ── 未提出の割り込み（閉じられるが解消するまで開くたび出る） ── */

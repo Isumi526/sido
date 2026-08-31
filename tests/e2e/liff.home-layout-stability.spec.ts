@@ -54,3 +54,19 @@ test('★締切が遠い日（9/8）ではムダな枠を作らない', async ({
   await expect(page.locator('.deadline-slot'), '期間外は枠ごと出さない').toHaveCount(0)
   expect(shift, '★メニューが動かない').toBeLessThanOrEqual(2)
 })
+
+// ★ずれ幅だけを見るテストは、フォントがキャッシュ済みのローカルでは0になり見逃す。
+//  実際に本番だけで30px出た（box-sizing が content-box で、min-height に padding が
+//  加算され、中身の小さいスケルトンだけ背が高くなっていた・2026-09-01）。
+//  「読み込み中の枠と、読み込み後のカードの高さが同じ」を直接固定する。
+test('★読み込み中の枠と読み込み後のカードは同じ高さ', async ({ page }) => {
+  await suppressOverdueModal(page)
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByTestId('home-today-skeleton')).toBeVisible({ timeout: 20000 })
+  const sk = await page.getByTestId('home-today-skeleton').boundingBox()
+  await expect(page.getByTestId('home-today-card')).toBeVisible({ timeout: 20000 })
+  await page.waitForTimeout(1200)
+  const card = await page.getByTestId('home-today-card').boundingBox()
+  expect(Math.round(sk?.height ?? 0), '★スケルトンと実カードの高さが同じ')
+    .toBe(Math.round(card?.height ?? 0))
+})
