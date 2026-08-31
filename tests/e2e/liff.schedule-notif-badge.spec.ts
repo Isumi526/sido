@@ -4,7 +4,7 @@
 //  予定管理ナビにもバッジ表示される（2026-07-11・[[project_sido]]）。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, getAccountId } from './helpers'
+import { rest, getAccountId, suppressOverdueModal } from './helpers'
 
 const TS = Date.now()
 let notifId = ''
@@ -26,6 +26,7 @@ test.describe('予定追加通知のナビバッジ', () => {
   })
 
   test('HOMEとハンバーガーの予定管理ナビに未読件数バッジが出て、カレンダーで既読にすると消える', async ({ page }) => {
+    await suppressOverdueModal(page)
     await page.goto('/', { waitUntil: 'networkidle' })
     await expect(page.getByTestId('home-schedule-badge')).toBeVisible({ timeout: 10000 })
 
@@ -35,10 +36,13 @@ test.describe('予定追加通知のナビバッジ', () => {
     await page.locator('.drawer-close').click()
 
     // 予定管理を開いて既読化 → HOMEに戻るとバッジが消える
+    await suppressOverdueModal(page)
     await page.goto('/calendar', { waitUntil: 'networkidle' })
     await page.locator('.cal-tab', { hasText: '個人' }).click()
     const dismissBtn = page.locator('.notif-banner button', { hasText: '既読' })
     await dismissBtn.click({ timeout: 10000 })
+
+    await suppressOverdueModal(page)
 
     await page.goto('/', { waitUntil: 'networkidle' })
     await expect(page.getByTestId('home-schedule-badge')).toHaveCount(0, { timeout: 10000 })
@@ -60,6 +64,7 @@ test.describe('予定追加通知のナビバッジ', () => {
     })
     const localNotifId = rows[0].id
     try {
+      await suppressOverdueModal(page)
       await page.goto('/calendar', { waitUntil: 'networkidle' })
       await page.locator('.cal-tab', { hasText: '個人' }).click()
 

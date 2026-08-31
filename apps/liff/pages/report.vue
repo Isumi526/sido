@@ -37,6 +37,12 @@
       <!-- フォーム -->
       <form v-else @submit.prevent="handleSubmit" class="form">
 
+        <!-- ★退勤打刻から自動で送られてきた時。なぜここに居るのかを言う。
+             黙って画面が変わると「押し間違えた」と思って戻る人が出る（2026-08-31）。 -->
+        <div v-if="fromCheckout" class="pending-banner" data-testid="from-checkout-banner">
+          <span class="material-symbols-rounded banner-icon">logout</span>{{ $t('report.fromCheckoutBanner') }}
+        </div>
+
         <!-- 簡易入力モード（?mode=simple）: 経費欄を畳んで現場・稼働・主要項目だけ表示 -->
         <div v-if="simpleMode" class="pending-banner" data-testid="simple-mode-banner">
           <span class="material-symbols-rounded banner-icon">bolt</span>{{ $t('report.simpleModeBanner') }}
@@ -996,6 +1002,8 @@ const prefillSite = computed(() => (route.query.site as string | undefined) ?? '
 //  「現場・稼働・主要項目だけ」の簡易UIにする。通常URLは従来どおり全項目を出す。
 //  ★表示の出し分けだけ。入力・保存経路（saveReportById 等）は一切変えない。
 const simpleMode = computed(() => route.query.mode === 'simple')
+// 退勤打刻から自動遷移してきたか（checkin ページが ?from=checkout を付ける）
+const fromCheckout = computed(() => route.query.from === 'checkout')
 // 現場の新規作成は権限者(admin/office/site_manager)のみ。職人は既存現場から選ぶ
 const { resolveRole: resolveWorkerRole, canCreateSite } = useWorkerPermission()
 

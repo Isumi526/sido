@@ -77,5 +77,8 @@
   "offDoneMessage": "今日の打刻は不要です。お疲れさまでした。",
   "offDoneOpenReport": "経費などを追加する場合は日報を開く",
   "errStatusSaveFailed": "日報を保存できませんでした。{message}",
-  "offDoneSwitchWorking": "やっぱり稼働する（出勤を記録する）"
+  "offDoneSwitchWorking": "やっぱり稼働する（出勤を記録する）",
+  "autoAdvanceNote": "続けて日報を送信してください。まもなく入力画面へ移動します。",
+  "nextOvertime": "残業を申請する",
+  "nextCheckout": "退勤を記録する"
 }

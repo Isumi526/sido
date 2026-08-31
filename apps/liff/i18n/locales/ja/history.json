@@ -65,5 +65,18 @@
   "rejectedAck": "確認しました",
   "punchLabel": "実際の打刻",
   "unsubmittedTitle": "{date} の日報が未送信です",
-  "unsubmittedLead": "タップして入力する"
+  "unsubmittedLead": "タップして入力する",
+  "bulkOpen": "未提出の {count} 日をまとめて提出する",
+  "bulkTitle": "まとめて提出",
+  "bulkNote": "稼働していない日だけまとめて出せます。働いた日は現場や時間の入力が必要なので、個別に書いてください。",
+  "bulkKindOff": "稼働なし",
+  "bulkKindPaidLeave": "有給",
+  "bulkReasonLabel": "遅れた理由",
+  "bulkReasonPlaceholder": "例）提出を失念していたため",
+  "bulkReasonHint": "期限（当日含む3日）を過ぎた日は、承認されてから日報に反映されます。",
+  "bulkSubmit": "{count} 日を提出する",
+  "bulkSubmitting": "送信中…",
+  "bulkResultSaved": "{count} 日を提出しました",
+  "bulkResultPending": "{count} 日を承認待ちにしました",
+  "bulkResultFailed": "{count} 日は失敗しました"
 }

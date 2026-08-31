@@ -21,6 +21,63 @@
            ヘッダーのベルが合計件数のバッジを出しており、カードは重複でホームが混む。
            気づく入口はベル1つに集約し、内訳は /notifications のタブで見る。 -->
 
+      <!-- 日を跨いでも未提出が残っている時の割り込み。閉じられるが、解消するまで開くたびに出る。 -->
+      <div v-if="overdueModal" class="overdue-overlay" data-testid="home-overdue-modal">
+        <div class="overdue-modal">
+          <span class="material-symbols-rounded overdue-icon">assignment_late</span>
+          <p class="overdue-title">{{ t('home.overdueTitle', { count: today.backlogDates.length }) }}</p>
+          <p class="overdue-sub">{{ t('home.overdueSub', { date: formatMd(overdueModal) }) }}</p>
+          <div class="overdue-actions">
+            <NuxtLink :to="`/report?date=${overdueModal}`" class="overdue-btn primary" data-testid="overdue-write">
+              {{ t('home.overdueWrite') }}
+            </NuxtLink>
+            <button class="overdue-btn" data-testid="overdue-later" @click="dismissOverdue">
+              {{ t('home.overdueLater') }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ★今日のステータスと次の1アクション（2026-08-31 運用者指摘:
+           「今出勤中なのか、今日まだ出勤が押されてないとか…次のアクションだったり動線が分かりやすいように」）。
+           判定は useTodayStatus に集約（起動時の割り込みと同じソース）。
+           unknown（判定できなかった）時は何も出さない＝通信不良で急かさない。 -->
+      <div
+        v-if="today.phase !== 'unknown'"
+        class="today-card"
+        :class="today.phase"
+        data-testid="home-today-card"
+      >
+        <div class="today-head">
+          <span class="material-symbols-rounded today-icon">{{ todayView.icon }}</span>
+          <div class="today-texts">
+            <div class="today-title" data-testid="home-today-title">{{ todayView.title }}</div>
+            <div class="today-sub">{{ todayView.sub }}</div>
+          </div>
+        </div>
+        <div class="today-actions">
+          <NuxtLink
+            v-for="a in todayView.actions"
+            :key="a.to"
+            :to="a.to"
+            class="today-action"
+            :class="{ primary: a.primary }"
+            :data-testid="a.testId"
+          >
+            <span class="material-symbols-rounded">{{ a.icon }}</span>{{ a.label }}
+          </NuxtLink>
+        </div>
+        <!-- 溜まっている未提出（今日より前）。今日の分とは別に出す＝両方あることが分かる -->
+        <NuxtLink
+          v-if="today.backlogDates.length"
+          to="/history"
+          class="today-backlog"
+          data-testid="home-today-backlog"
+        >
+          {{ t('home.todayBacklog', { count: today.backlogDates.length }) }}
+        </NuxtLink>
+      </div>
+
       <!-- 打刻を促す（今日の勤務予定の開始/終了が来ているのに未打刻の時だけ）。LINE/メール不達でも気づけるよう常駐ホームに出す。 -->
       <NuxtLink v-if="punchPrompt" class="punch-card" to="/checkin" data-testid="home-punch-card">
         <span class="material-symbols-rounded punch-card-icon">{{ punchPrompt.kind === 'checkin' ? 'login' : 'logout' }}</span>
@@ -132,6 +189,8 @@ const expense     = useExpense()
 // ★コンポーザブルは setup 同期文脈で取得する（onMounted の await 後に呼ぶと注入が効かず例外になる）
 const schedulesApi   = useSchedules()
 const attendanceApi  = useAttendanceLog()
+// 今日どこまで済んでいるか（ホームのステータスカードと起動時の割り込みが同じ判定を使う）
+const { status: today, refresh: refreshToday } = useTodayStatus()
 
 // ハンバーガーメニュー(AppNav.vue)と共通のナビ項目定義（2026-07-10）
 const { resolveRole: resolveWorkerPerm, canApplyPersonalExpense } = useWorkerPermission()
@@ -151,6 +210,62 @@ const proxyLoading     = ref(false)
 const deadlineBanner   = ref<{ periodKey: string; label: string } | null>(null)
 // 打刻を促すプロンプト（今日の勤務予定の開始/終了時刻が来ているのに未打刻なら出す）
 const punchPrompt      = ref<{ kind: 'checkin' | 'checkout'; title: string } | null>(null)
+
+/** 'YYYY-MM-DD' → 'M/D（曜）' */
+function formatMd(date: string): string {
+  const d = new Date(date + 'T00:00:00')
+  return `${d.getMonth() + 1}/${d.getDate()}（${['日', '月', '火', '水', '木', '金', '土'][d.getDay()]}）`
+}
+
+/**
+ * 今日のステータス → 見出し・説明・次アクション。
+ * ★「次に押すもの」を必ず1つ以上返す。ここが空だと画面は状態を告げるだけで、
+ *  結局ユーザーが入口を探すことになる（それが今回の指摘の元）。
+ */
+const todayView = computed(() => {
+  const s = today.value
+  const reportTo = `/report?date=${todayStr()}`
+  switch (s.phase) {
+    case 'working':
+      return {
+        icon: 'work_history',
+        title: t('home.todayWorking'),
+        sub: t('home.todayWorkingSub', { time: s.checkinTime ?? '—' }),
+        actions: [
+          { to: '/checkin', label: t('home.actCheckout'), icon: 'logout', primary: true, testId: 'today-act-checkout' },
+          { to: '/overtime', label: t('home.actOvertime'), icon: 'more_time', primary: false, testId: 'today-act-overtime' },
+        ],
+      }
+    case 'report-due':
+      return {
+        icon: 'edit_note',
+        title: t('home.todayReportDue'),
+        sub: t('home.todayReportDueSub', { time: s.checkoutTime ?? '—' }),
+        actions: [{ to: reportTo, label: t('home.actWriteReport'), icon: 'edit_note', primary: true, testId: 'today-act-report' }],
+      }
+    case 'off':
+      return {
+        icon: s.isPaidLeave ? 'beach_access' : 'bedtime',
+        title: s.isPaidLeave ? t('home.todayPaidLeave') : t('home.todayOff'),
+        sub: t('home.todayOffSub'),
+        actions: [{ to: '/history', label: t('home.actHistory'), icon: 'history', primary: false, testId: 'today-act-history' }],
+      }
+    case 'done':
+      return {
+        icon: 'task_alt',
+        title: t('home.todayDone'),
+        sub: t('home.todayDoneSub', { checkin: s.checkinTime ?? '—', checkout: s.checkoutTime ?? '—' }),
+        actions: [{ to: '/history', label: t('home.actHistory'), icon: 'history', primary: false, testId: 'today-act-history' }],
+      }
+    default:   // not-punched
+      return {
+        icon: 'how_to_reg',
+        title: t('home.todayNotPunched'),
+        sub: t('home.todayNotPunchedSub'),
+        actions: [{ to: '/checkin', label: t('home.actCheckin'), icon: 'login', primary: true, testId: 'today-act-checkin' }],
+      }
+  }
+})
 
 // PWA化(ホーム画面追加)案内: Safari等ブラウザで直接開いている(standalone表示でない)
 // ユーザーにだけ表示する。一度閉じたら再表示しない(localStorageにdismiss状態を保持)。
@@ -274,8 +389,32 @@ onMounted(async () => {
     if (user.worker_id) await proxy.fetchProxyTargets(user.worker_id)
     await refreshDeadlineBanner()
     if (user.worker_id) await refreshPunchPrompt(user.worker_id)
+    // 今日のステータス。取れてから割り込み（未提出モーダル）の判定に進む
+    await refreshToday()
+    maybeInterrupt()
   }
 })
+
+// ── 退勤済みなのに日報が未提出の人への割り込み（2026-08-31）──
+//  段階: 当日はホームのカードとナビのバッジまで。日を跨いでも未提出なら起動時にモーダル。
+//  ★ブロックはしない（2026-08-10 逐語「そこの制限は、そこまで厳しくできない」）。
+//   「後で」で閉じられるが、未提出が解消するまで開くたびに出る。
+const overdueModal = ref<string | null>(null)   // 対象日（未提出のうち最も古い過去日）
+// ★「開くたび」＝アプリを開くたび。ホームに戻るたびではない。
+//  ルート移動のたびに出すと、閉じても閉じてもすぐ出てきて他の操作を邪魔する
+//  （実際ハンバーガーを塞いだ）。閉じたらそのセッション中は出さず、次の起動でまた出す。
+const OVERDUE_DISMISSED_KEY = 'overdue_report_dismissed'
+function maybeInterrupt() {
+  const s = today.value
+  if (s.phase === 'unknown') return          // 判定できない時は割り込まない
+  if (!s.backlogDates.length) return         // 今日の分だけならカードとバッジで足りる
+  try { if (sessionStorage.getItem(OVERDUE_DISMISSED_KEY)) return } catch { /* 使えなければ出す */ }
+  overdueModal.value = s.backlogDates[0]
+}
+function dismissOverdue() {
+  overdueModal.value = null
+  try { sessionStorage.setItem(OVERDUE_DISMISSED_KEY, '1') } catch { /* quota超過等は無視 */ }
+}
 
 // 予定管理ナビの未読バッジ（#予定通知バッジ・2026-07-11）
 onMounted(() => { refreshNotifBadge(); refreshPendingDocBadge() })
@@ -322,6 +461,66 @@ onMounted(() => { refreshSiteChatListBadge() })
 
 
 /* 打刻を促すカード（出勤/退勤）。緑=出勤系の色に合わせる */
+/* ── 今日のステータスカード ── */
+.today-card {
+  background: #fff; border: 1px solid #e5e7eb; border-left: 4px solid #9ca3af;
+  border-radius: 12px; padding: 14px 16px; margin-bottom: 12px;
+}
+.today-card.working    { border-left-color: #10b981; }
+.today-card.done       { border-left-color: #9ca3af; }
+.today-card.off        { border-left-color: #f59e0b; }
+/* ★未提出だけは目立たせる。他と同じ見た目だと素通りされる（それが今回の指摘） */
+.today-card.report-due { border-left-color: #ef4444; background: #fef2f2; border-color: #fecaca; }
+.today-card.not-punched{ border-left-color: #3b82f6; }
+
+.today-head { display: flex; align-items: flex-start; gap: 10px; }
+.today-icon { font-size: 24px; color: #6b7280; flex-shrink: 0; }
+.today-card.report-due .today-icon { color: #ef4444; }
+.today-card.working .today-icon    { color: #10b981; }
+.today-texts { flex: 1; min-width: 0; }
+.today-title { font-size: 15px; font-weight: 700; color: #1f2937; line-height: 1.4; }
+.today-card.report-due .today-title { color: #b91c1c; }
+.today-sub   { margin-top: 3px; font-size: 12px; line-height: 1.5; color: #6b7280; }
+
+.today-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.today-action {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 9px 14px; min-height: 38px; border-radius: 8px;
+  background: #fff; border: 1px solid #d1d5db; color: #374151;
+  font-size: 13px; font-weight: 700; text-decoration: none;
+}
+.today-action .material-symbols-rounded { font-size: 17px; }
+.today-action.primary { background: #06C755; border-color: #06C755; color: #fff; }
+.today-card.report-due .today-action.primary { background: #ef4444; border-color: #ef4444; }
+.today-action:active { opacity: .85; }
+
+.today-backlog {
+  display: block; margin-top: 10px; font-size: 12px; font-weight: 600;
+  color: #b45309; text-decoration: underline; text-underline-offset: 3px;
+}
+
+/* ── 未提出の割り込み（閉じられるが解消するまで開くたび出る） ── */
+.overdue-overlay {
+  position: fixed; inset: 0; z-index: 900;
+  background: rgba(0, 0, 0, .45);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.overdue-modal {
+  background: #fff; border-radius: 14px; padding: 24px 20px;
+  width: 100%; max-width: 320px; text-align: center;
+}
+.overdue-icon { font-size: 40px; color: #ef4444; }
+.overdue-title { margin: 10px 0 0; font-size: 16px; font-weight: 700; color: #1f2937; }
+.overdue-sub   { margin: 6px 0 0; font-size: 13px; color: #6b7280; }
+.overdue-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
+.overdue-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 12px 16px; min-height: 44px; border-radius: 10px;
+  background: #fff; border: 1px solid #d1d5db; color: #374151;
+  font-size: 14px; font-weight: 700; text-decoration: none; cursor: pointer;
+}
+.overdue-btn.primary { background: #ef4444; border-color: #ef4444; color: #fff; }
+
 .punch-card {
   background: #fff; border-radius: 12px;
   padding: 14px 16px; display: flex; align-items: center; gap: 12px;

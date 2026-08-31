@@ -19,6 +19,62 @@
         <span class="material-symbols-rounded unsub-chev">chevron_right</span>
       </NuxtLink>
 
+      <!-- ★溜まった未提出をまとめて出す（2026-08-31）。
+           稼働なし／有給の日だけが対象。働いた日は現場・時間・経費が要るのでまとめられない。
+           期限切れの日は1日ずつ出した時と同じく承認待ちに積む（まとめたから承認を飛ばす、はしない）。 -->
+      <div v-if="unsubmittedAll.length >= 2 || bulkResult" class="bulk-wrap" data-testid="history-bulk">
+        <!-- ★結果はパネルの外に出す。成功するとパネルを閉じるので、中に置くと
+             「出せたのか分からない」まま消える（E2Eで検出・2026-08-31）。 -->
+        <p v-if="bulkResult" class="bulk-result" data-testid="bulk-result">{{ bulkResult }}</p>
+
+        <button v-if="!bulkOpen" class="bulk-open" data-testid="bulk-open" @click="openBulk">
+          <span class="material-symbols-rounded">playlist_add_check</span>
+          {{ $t('history.bulkOpen', { count: unsubmittedAll.length }) }}
+        </button>
+
+        <div v-else class="bulk-panel" data-testid="bulk-panel">
+          <div class="bulk-title">{{ $t('history.bulkTitle') }}</div>
+          <p class="bulk-note">{{ $t('history.bulkNote') }}</p>
+
+          <div class="bulk-rows">
+            <div v-for="d in unsubmittedAll" :key="d" class="bulk-row">
+              <label class="bulk-check">
+                <input v-model="bulkSelected" type="checkbox" :value="d" :data-testid="`bulk-check-${d}`" />
+                <span class="bulk-date">{{ formatDate(d) }}</span>
+              </label>
+              <select v-model="bulkKind[d]" class="bulk-kind" :data-testid="`bulk-kind-${d}`">
+                <option value="off">{{ $t('history.bulkKindOff') }}</option>
+                <option value="paid_leave">{{ $t('history.bulkKindPaidLeave') }}</option>
+              </select>
+            </div>
+          </div>
+
+          <label class="bulk-label">{{ $t('history.bulkReasonLabel') }}</label>
+          <textarea
+            v-model="bulkReason"
+            class="bulk-reason"
+            rows="2"
+            data-testid="bulk-reason"
+            :placeholder="$t('history.bulkReasonPlaceholder')"
+          />
+          <p class="bulk-hint">{{ $t('history.bulkReasonHint') }}</p>
+
+          <div class="bulk-actions">
+            <button class="bulk-cancel" data-testid="bulk-cancel" @click="bulkOpen = false">
+              {{ $t('common.cancel') }}
+            </button>
+            <button
+              class="bulk-submit"
+              data-testid="bulk-submit"
+              :disabled="bulkBusy || !bulkSelected.length || (bulkNeedsReason && !bulkReason.trim())"
+              @click="runBulk"
+            >
+              {{ bulkBusy ? $t('history.bulkSubmitting') : $t('history.bulkSubmit', { count: bulkSelected.length }) }}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- ★差し戻し。日報一覧より前・空状態でも出す。
            これが無かった頃は差し戻しても作業員側は「承認待ちバッジが黙って消える」だけで、
            承認との区別すらつかなかった（＝差し戻し運用が成立していなかった）。 -->
@@ -297,14 +353,66 @@ const unsubmittedLabel = computed(() => {
   const d = new Date(unsubmittedDate.value + 'T00:00:00')
   return `${d.getMonth() + 1}/${d.getDate()}（${['日', '月', '火', '水', '木', '金', '土'][d.getDay()]}）`
 })
+/** 未提出日の全部（古い順）。まとめて提出の対象リスト */
+const unsubmittedAll = ref<string[]>([])
+
 async function loadUnsubmitted() {
   unsubmittedDate.value = null
+  unsubmittedAll.value = []
   if (proxy.proxyTarget.value) return
   const uid = liff.profile.value?.userId
   if (!uid) return
   // 承認待ち（期限切れで後から出した分）は「未送信」ではないので除く
   const pending = pendingDates.value ? [...pendingDates.value] : []
   unsubmittedDate.value = await expense.getNextUnsubmittedDate(uid, pending).catch(() => null)
+  if (selfUser.value?.id) {
+    unsubmittedAll.value = (await expense.getUnsubmittedDatesById(selfUser.value.id, pending).catch(() => null)) ?? []
+  }
+}
+
+// ── まとめて提出（2026-08-31・運用者B案「理由を1回書いて複数日を出せるように」）──
+//  ★対象は稼働なし／有給の日だけ。働いた日は現場・時間・経費が要るのでまとめられない。
+const bulk = useBulkReportSubmit()
+const bulkOpen     = ref(false)
+const bulkSelected = ref<string[]>([])
+const bulkKind     = ref<Record<string, 'off' | 'paid_leave'>>({})
+const bulkReason   = ref('')
+const bulkBusy     = ref(false)
+const bulkResult   = ref('')
+
+/** 選んだ日に期限切れ（当日含む直近3日より前）が1つでもあれば理由が要る */
+const bulkNeedsReason = computed(() =>
+  bulkSelected.value.some(d => useReportLock().isPastLockWindow(d)))
+
+function openBulk() {
+  bulkOpen.value = true
+  bulkResult.value = ''
+  // 既定は全部選択・全部「稼働なし」。溜まっている分はほぼ休みなので手数を最小にする
+  bulkSelected.value = [...unsubmittedAll.value]
+  bulkKind.value = Object.fromEntries(unsubmittedAll.value.map(d => [d, 'off' as const]))
+}
+
+async function runBulk() {
+  if (bulkBusy.value || !selfUser.value?.id) return
+  bulkBusy.value = true
+  bulkResult.value = ''
+  try {
+    const entries = bulkSelected.value.map(d => ({ date: d, kind: bulkKind.value[d] ?? 'off' }))
+    const r = await bulk.submitMany(selfUser.value.id, entries, bulkReason.value.trim())
+    // ★部分成功を隠さない。「全部出た」と見せて実際は落ちている、が一番まずい
+    const parts: string[] = []
+    if (r.saved.length)   parts.push(t('history.bulkResultSaved',   { count: r.saved.length }))
+    if (r.pending.length) parts.push(t('history.bulkResultPending', { count: r.pending.length }))
+    if (r.failed.length)  parts.push(t('history.bulkResultFailed',  { count: r.failed.length }))
+    bulkResult.value = parts.join(' / ')
+    if (!r.failed.length) bulkOpen.value = false
+    // 画面を作り直す（何が残っているかを実データで見せる）
+    await loadReports()
+    await loadPendingDates()
+    await loadUnsubmitted()
+  } finally {
+    bulkBusy.value = false
+  }
 }
 
 watch(() => proxy.proxyTarget.value, async () => {
@@ -557,6 +665,41 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--font)
 .unsub-title { font-size: 14px; font-weight: 700; color: #1e3a8a; }
 .unsub-lead  { font-size: 12px; color: #3b82f6; }
 .unsub-chev  { font-size: 20px; color: #93c5fd; flex-shrink: 0; }
+
+/* ── まとめて提出 ── */
+.bulk-wrap { margin-bottom: 12px; }
+.bulk-open {
+  display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%;
+  padding: 12px 14px; min-height: 44px; border-radius: var(--radius);
+  background: #fff; border: 1px dashed #93c5fd; color: #1d4ed8;
+  font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.bulk-panel {
+  background: #fff; border: 1px solid #93c5fd; border-radius: var(--radius); padding: 14px 16px;
+}
+.bulk-title { font-size: 15px; font-weight: 700; color: #1e3a8a; }
+.bulk-note  { margin: 6px 0 12px; font-size: 12px; line-height: 1.6; color: #6b7280; }
+.bulk-rows  { display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto; }
+.bulk-row   { display: flex; align-items: center; gap: 10px; }
+.bulk-check { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; cursor: pointer; }
+.bulk-check input { width: 18px; height: 18px; flex-shrink: 0; }
+.bulk-date  { font-size: 13px; color: #1f2937; }
+.bulk-kind  { padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; background: #fff; }
+.bulk-label { display: block; margin-top: 14px; font-size: 12px; font-weight: 700; color: #374151; }
+.bulk-reason {
+  width: 100%; margin-top: 6px; padding: 8px 10px; font-size: 13px;
+  border: 1px solid #d1d5db; border-radius: 8px; resize: vertical; font-family: inherit;
+}
+.bulk-hint   { margin: 6px 0 0; font-size: 11px; line-height: 1.5; color: #9ca3af; }
+.bulk-result { margin: 10px 0 0; font-size: 12px; font-weight: 700; color: #1d4ed8; }
+.bulk-actions { display: flex; gap: 8px; margin-top: 14px; }
+.bulk-cancel, .bulk-submit {
+  flex: 1; padding: 11px 12px; min-height: 42px; border-radius: 8px;
+  font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.bulk-cancel { background: #fff; border: 1px solid #d1d5db; color: #374151; }
+.bulk-submit { background: #1d4ed8; border: none; color: #fff; }
+.bulk-submit:disabled { opacity: .5; cursor: default; }
 
 .rejected-card {
   background: #fff5f5; border: 1px solid #f0a3a3; border-radius: var(--radius);

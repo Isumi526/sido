@@ -444,3 +444,14 @@ export async function passExternalConsent(page: any): Promise<void> {
     await page.getByTestId('consent-gate').waitFor({ state: 'detached', timeout: 15000 }).catch(() => {})
   }
 }
+
+/**
+ * 未提出日報の割り込みモーダル（ホーム起動時・2026-08-31）を出さないようにする。
+ * ★画面全体を覆うのでハンバーガー等のクリックを塞ぐ。割り込み自体が主題でないテストは
+ *  これを呼んでから goto すること（liff.report-nudge.spec.ts だけは呼ばずに検証する）。
+ */
+export async function suppressOverdueModal(page: any): Promise<void> {
+  await page.addInitScript(() => {
+    try { window.sessionStorage.setItem('overdue_report_dismissed', '1') } catch { }
+  })
+}
