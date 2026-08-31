@@ -5,7 +5,7 @@
 //   毎日違う現場のこともあるため、対象日を間違えるリスクがあった)。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, getAccountId, passWorkStatusGate } from './helpers'
+import { rest, getAccountId } from './helpers'
 
 const TS = Date.now()
 const SITE = `E2E打刻日付表示_${TS}`
@@ -27,7 +27,6 @@ test('出勤前確認の見出しに今日の日付(月日・曜日)が出る', 
   const expected = `${today.getMonth() + 1}月${today.getDate()}日（${weekdays[today.getDay()]}）`
 
   await page.goto(`/checkin/${siteId}`, { waitUntil: 'networkidle' })
-  await passWorkStatusGate(page)
   await expect(page.locator('.checklist-header.checkin')).toBeVisible({ timeout: 10000 })
   await expect(page.getByTestId('punch-date')).toContainText(expected)
 })

@@ -246,11 +246,6 @@ async function loadMissing() {
       supabase.from('attendance_logs').select('worker_id')
         .eq('type', 'checkin').gte('checked_at', from).lte('checked_at', to).in('worker_id', ids),
       // 休み/有給を出している人は「打刻忘れ」ではない。毎日全員が並ぶと誰も見なくなるので除く。
-      // ★このパネルの前提が 2026-08-31 に強くなった：出勤打刻の前に「今日は稼働しますか」を
-      //  聞くようにしたので、休み/有給の人は朝の時点で is_working=false の日報が入る。
-      //  つまりここに残るのは「稼働ありのはずなのに出勤打刻が無い人」だけになる。
-      //  ★依存の向きに注意：打刻の要否は日報(稼働有無)が決める。逆向きにしないこと
-      //   （打刻の有無から稼働有無を推定する実装を足すと、両者が互いを参照して決まらなくなる）。
       supabase.from('daily_reports').select('user_id, users(worker_id)')
         .eq('account_id', accountId).eq('date', missingDate.value).eq('is_working', false),
     ])
