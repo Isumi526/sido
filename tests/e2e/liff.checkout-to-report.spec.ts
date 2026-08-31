@@ -17,7 +17,7 @@
 //  接頭辞 E2E退勤導線 のデータはテスト後に必ず消す（共有DB）。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, restSrv, getAccountId } from './helpers'
+import { rest, restSrv, getAccountId, passWorkStatusGate } from './helpers'
 
 const TS = Date.now()
 const SITE = `E2E退勤導線現場_${TS}`
@@ -84,6 +84,7 @@ async function seedCheckedIn() {
 /** 退勤打刻を完了させる（/checkin を開くと自動で退勤の確認画面 → 記録） */
 async function doCheckout(page: import('@playwright/test').Page) {
   await page.goto('/checkin', { waitUntil: 'networkidle' })
+  await passWorkStatusGate(page)
   // ★共通の確認ルール（account_attendance_rules）が登録されていると、全部チェックするまで
   //  送信できない。このテストの主題ではないので、出ている分は素直に全部チェックする。
   const rules = page.locator('.rule-row')

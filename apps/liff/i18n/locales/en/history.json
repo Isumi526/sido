@@ -63,5 +63,7 @@
   "rejectedReviewedBy": "Sent back by: {name}",
   "rejectedFix": "Fix and resubmit",
   "rejectedAck": "Got it",
-  "punchLabel": "Actual punch"
+  "punchLabel": "Actual punch",
+  "unsubmittedTitle": "Daily report for {date} is not submitted",
+  "unsubmittedLead": "Tap to fill it in"
 }
