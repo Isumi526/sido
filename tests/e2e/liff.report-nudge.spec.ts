@@ -181,3 +181,20 @@ test('★溜まっている未提出があるとアプリを開いた時に割�
   // 閉じたあともホームは普通に使える
   await expect(page.getByTestId('home-today-card')).toBeVisible()
 })
+
+// ★バッジは「本当に遅れている分」だけ数える。今日ぶんは退勤するまで数えない。
+//  未提出日をそのまま数えると、朝まだ出勤もしていない時点で赤バッジ1が付き、
+//  一日中出したままになる＝段階的に圧を上げる設計と食い違う（2026-08-31 実機で検出）。
+test('★朝はナビにバッジを出さない（今日は退勤して初めて数える）', async ({ page }) => {
+  await fillBacklog()   // 過去は片付いている＝今日ぶんだけが未提出
+  await page.goto('/', { waitUntil: 'networkidle' })
+  await expect(page.getByTestId('home-today-card')).toBeVisible({ timeout: 20000 })
+  await expect(page.getByTestId('bottom-nav-badge-history'), '★出勤前は急かさない').toHaveCount(0)
+
+  // 退勤したら初めて出る
+  await seedPunch('checkin', '08:30')
+  await seedPunch('checkout', '18:32')
+  await page.reload({ waitUntil: 'networkidle' })
+  await expect(page.getByTestId('bottom-nav-badge-history'), '★退勤済み×未提出で出る')
+    .toHaveText('1', { timeout: 20000 })
+})

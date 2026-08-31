@@ -21,6 +21,7 @@
 //   ★このファイルの中から useI18n() を呼ぶ関数を新たに足さないこと。
 // ============================================================
 import { computed, ref } from 'vue'
+import { todayStr } from '~/composables/schedule-core.gen'
 
 export const unreadNotifCount = ref(0)
 export const unreadScheduleCount = ref(0)
@@ -103,6 +104,11 @@ export async function refreshPendingDocBadge(): Promise<void> {
 // ★2026-08-31: 日報の直接動線をナビから外し「日報履歴」に置き換えたので、
 //  未提出があることはナビのバッジで知らせる必要がある。
 //  pendingDocCount と同じ考え方で「読んだら消える通知」ではなく状態そのものを数える。
+//
+// ★今日は「退勤したのにまだ出していない」時だけ数える。
+//  未提出日をそのまま数えると、朝まだ出勤もしていない時点で「未提出1件」と出て
+//  一日中バッジが付いたままになる＝段階的に圧を上げる設計（当日は退勤後に促す）と食い違う。
+//  過去の日はいつでも数える（そちらは本当に遅れている）。
 export const unsubmittedReportCount = ref(0)
 
 export async function refreshUnsubmittedReportBadge(): Promise<void> {
@@ -110,6 +116,7 @@ export async function refreshUnsubmittedReportBadge(): Promise<void> {
   //  「Must be called at the top of a `setup` function」で毎回失敗する（E2Eで検出・2026-08-31）。
   const supabase = useSupabase()
   const expense  = useExpense()
+  const attendanceLog = useAttendanceLog()
   try {
     const me = await useCurrentUser().resolve()
     if (!me?.worker_id) { unsubmittedReportCount.value = 0; return }
@@ -119,7 +126,18 @@ export async function refreshUnsubmittedReportBadge(): Promise<void> {
     const dates = await expense.getUnsubmittedDatesById(u.id)
     // null = 起点未設定で判定不能。0件に倒すとバッジが消えて「出さなくていい」に見えるので触らない
     if (dates === null) return
-    unsubmittedReportCount.value = dates.length
+
+    const today = todayStr()
+    let count = dates.filter(d => d < today).length
+
+    // 今日ぶんは退勤済みの時だけ足す。夜勤の日跨ぎがあるので当日固定ではなく直近20時間で見る
+    if (dates.includes(today)) {
+      const logs = await attendanceLog.recent(20, me.worker_id)
+        .catch(() => null) as { type: string }[] | null
+      // 取れなかった時は足さない（急かす側に倒さない）
+      if (logs?.[logs.length - 1]?.type === 'checkout') count += 1
+    }
+    unsubmittedReportCount.value = count
   } catch (e) {
     // ★取得失敗で 0 に倒さない。「未提出が無い」と誤って見せるより、前の値のままの方が安全
     console.error('[reportBadge] 未提出日報の件数を取得できませんでした:', e)
