@@ -128,9 +128,12 @@ test('新規登録した下請業者が再訪時にプルダウンへ残る', as
   ).toHaveCount(1, { timeout: 10000 })
 })
 
-// ── バグ: 編集画面(?edit=)を開いた後、アプリ内メニュー「日報登録」を押しても
+// ── バグ: 編集画面(?edit=)を開いた後、別のクエリで /report に入り直しても
 //    ページが再マウントされず編集状態が残る（クエリ変化を監視していなかった）。──
-test('編集画面を開いた後にメニュー「日報登録」で編集状態が残らない', async ({ page }) => {
+//  ★2026-08-31: 入口をアプリ内メニュー「日報登録」から履歴の未送信バナーに差し替えた。
+//   日報の直接動線を廃止し「退勤打刻→そのまま日報／出し忘れは履歴から」に寄せたため。
+//   守りたいバグ（クエリが変わっても再マウントされない）は同じなので、経路だけ現行に合わせる。
+test('編集画面を開いた後に別の日で入り直すと編集状態が残らない', async ({ page }) => {
   await useDevWorker(page, 'report')
   try { await page.goto('/history', { waitUntil: 'networkidle', timeout: 8000 }) }
   catch { test.skip(true, 'liff dev(3000) 未起動'); return }
@@ -152,12 +155,14 @@ test('編集画面を開いた後にメニュー「日報登録」で編集状�
 
   await expect(page.getByText('過去の日報を編集中')).toBeVisible({ timeout: 10000 })
 
-  // アプリ内メニュー（ハンバーガー）→「日報登録」をクライアントサイド遷移で押す
-  // (2026-07-16: 下部固定ナビにも同名リンクが常時存在するためドロワー内に限定する)
-  await page.locator('.app-hamburger').click()
-  await page.locator('.app-drawer').getByRole('link', { name: '日報登録' }).click()
+  // 履歴へ戻り（下部ナビ＝クライアントサイド遷移）、未送信バナーから別の日で入り直す
+  await page.getByTestId('bottom-nav-history').click()
+  const banner = page.getByTestId('history-unsubmitted')
+  await banner.waitFor({ timeout: 15000 }).catch(() => {})
+  if (!(await banner.count())) { test.skip(true, '未送信の日が無い'); return }
+  await banner.click()
 
-  // URL は /report（クエリなし）になり、編集状態（編集中バナー）が残らないこと
-  await expect(page).toHaveURL(/\/report$/)
+  // URL は別の日の /report?date= になり、編集状態（編集中バナー）が残らないこと
+  await expect(page).toHaveURL(/\/report\?date=\d{4}-\d{2}-\d{2}$/)
   await expect(page.getByText('過去の日報を編集中')).toHaveCount(0, { timeout: 10000 })
 })
