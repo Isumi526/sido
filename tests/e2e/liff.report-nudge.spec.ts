@@ -80,7 +80,7 @@ test.afterAll(async () => {
   }).catch(() => {})
 })
 
-test('★退勤の完了画面で止まらず、日報へ自動で進む', async ({ page }) => {
+test('★退勤したら完了画面を挟まず日報画面へ直行する', async ({ page }) => {
   // 出勤済み・未退勤にしておく（/checkin を開くと退勤フォームになる）
   await seedPunch('checkin', '08:30')
 
@@ -94,12 +94,15 @@ test('★退勤の完了画面で止まらず、日報へ自動で進む', async
   await expect(submit).toBeEnabled({ timeout: 20000 })
   await submit.click()
 
-  // 完了は出るが、そこで終わらせない
-  await expect(page.getByTestId('auto-advance-note'), '★続けて日報を出すよう促す')
-    .toBeVisible({ timeout: 20000 })
-  // 何も押さずに待つと日報画面へ移る
-  await page.waitForURL(/\/report\?date=.*from=checkout/, { timeout: 15000 })
-  await expect(page.getByTestId('from-checkout-banner'), '★なぜここに居るのかを言う').toBeVisible()
+  // ★完了画面を挟まない。押した時点で日報画面へ行く
+  //  （一枚挟むと、その表示のところで離脱する人がいる・2026-08-31 運用者指摘）
+  await page.waitForURL(/\/report\?date=.*from=checkout&punched=\d{2}:\d{2}/, { timeout: 20000 })
+  // 手応えは日報画面の中央に重なって出る（背後にフォームが透けて次にやることが分かる）
+  const toast = page.getByTestId('checkout-toast')
+  await expect(toast, '★打刻できたことを日報画面の上で伝える').toBeVisible({ timeout: 10000 })
+  await expect(toast).toContainText('退勤')
+  // 自動で引く（押さなくても消える）
+  await expect(toast, '★自動で消えてフォームが使える').toHaveCount(0, { timeout: 10000 })
 })
 
 test('★ホームが「出勤中」と次のアクションを出す', async ({ page }) => {

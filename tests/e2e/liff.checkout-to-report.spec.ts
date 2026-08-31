@@ -97,18 +97,22 @@ async function doCheckout(page: import('@playwright/test').Page) {
   await submit.click()
 }
 
-test('★退勤打刻の完了画面に日報への導線が出る', async ({ page }) => {
+// ★2026-08-31: 完了画面そのものを廃止した。一枚挟むとそこで離脱する人がいたため
+//  （逐語:「一旦ページ表示された時点で離脱してしまうケースがある」）。
+//  退勤を押したら日報画面へ直行し、手応えは遷移先の中央オーバーレイで出す。
+test('★退勤したら完了画面を挟まず日報画面へ直行する', async ({ page }) => {
   await seedCheckedIn()
 
   await doCheckout(page)
 
-  const link = page.getByTestId('checkout-report-link')
-  await expect(link, '退勤したらそのまま日報へ行ける').toBeVisible({ timeout: 20000 })
   // ★打刻した日は引き継ぐ。現場は引き継がない（2026-08-27 出退勤モデル変更で
   //  打刻が現場に紐づかなくなったため。現場は日報側で選ぶ）。
-  const href = await link.getAttribute('href')
-  expect(href, '打刻した日付を引き継ぐ').toContain(`date=${TODAY}`)
-  expect(href ?? '', '現場は引き継がない').not.toContain('site=')
+  await page.waitForURL(/\/report\?date=/, { timeout: 20000 })
+  const url = page.url()
+  expect(url, '打刻した日付を引き継ぐ').toContain(`date=${TODAY}`)
+  expect(url, '現場は引き継がない').not.toContain('site=')
+  await expect(page.getByTestId('checkout-toast'), '打刻できたことは遷移先で伝える')
+    .toBeVisible({ timeout: 10000 })
 })
 
 test('★遷移先は打刻した日。古い未送信日があってもそちらへ飛ばされない', async ({ page }) => {
