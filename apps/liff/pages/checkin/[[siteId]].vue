@@ -711,7 +711,17 @@ async function enterChecklist() {
 async function submit() {
   if (!canSubmit.value) return
   submitting.value = true
+  // ★どの経路で抜けても必ず戻す。以前は失敗時に立てっぱなしで、
+  //  エラー画面から戻っても送信ボタンが押せないままだった（独立レビュー指摘・2026-08-31）。
+  //  ★打刻は追記専用の記録なので、二重送信の実害が大きい。ここのガードを外さないこと。
+  try {
+    await doSubmit()
+  } finally {
+    submitting.value = false
+  }
+}
 
+async function doSubmit() {
   const target          = selectedTarget.value
   const workerIdToLog   = target?.id ?? myWorkerId.value
   // 本人なら null、代理なら操作者（自分）を記録
@@ -763,7 +773,6 @@ async function submit() {
   // 出勤打刻・代理打刻・その日の日報が既にある時は従来どおり完了画面を出す
   // （次にやることが日報ではないので、飛ばす先が無い）。
   phase.value = 'done'
-  submitting.value = false
 }
 
 /**
