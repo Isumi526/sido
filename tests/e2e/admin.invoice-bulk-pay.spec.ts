@@ -187,4 +187,33 @@ test.describe('協力業者請求の一括支払い', () => {
 
     await expect(page.getByTestId('bulk-pay-select-all'), '支払い済みタブでは選べない').toHaveCount(0)
   })
+
+  // ★画面を開いたまま他の端末で先に支払い済みにされた請求は、支払日を上書きしない。
+  //  上書きすると「実際に振り込んだ日」が別の日に化けて振込台帳と突き合わせられなくなる。
+  test('★間に他の端末で支払い済みになったものは上書きせず、件数を知らせる', async ({ page }) => {
+    await page.goto('/subcontractor-invoices', { waitUntil: 'networkidle' })
+    await expect(page.getByTestId('invoice-filter-bar')).toBeVisible({ timeout: 15000 })
+    await page.getByTestId('filter-site').selectOption(siteAId)
+    await page.getByTestId('filter-vendor').selectOption(VENDOR_X)
+    await page.getByTestId('bulk-pay-select-all').check()
+    await expect(page.getByTestId('bulk-pay-bar')).toContainText('2件を選択中')
+
+    // 画面はそのまま。裏で a2 が別の支払日で支払い済みになる
+    const otherDate = `${YM}-10`
+    await restSrv(`subcontractor_invoices?id=eq.${inv.a2}`, {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ paid: true, transfer_date: otherDate }),
+    })
+
+    await page.getByTestId('bulk-pay-open').click()
+    const payDate = `${YM}-27`
+    await page.getByTestId('bulk-pay-date').fill(payDate)
+    await page.getByTestId('bulk-pay-confirm').click()
+
+    // 黙って終わらせず、何件入ったかを出す
+    await expect(page.locator('.error')).toContainText('2件のうち1件', { timeout: 15000 })
+
+    expect((await fetchInvoice(inv.a1)).transfer_date, '未払いだった方は入る').toBe(payDate)
+    expect((await fetchInvoice(inv.a2)).transfer_date, '★先に入っていた支払日は守られる').toBe(otherDate)
+  })
 })

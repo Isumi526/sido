@@ -675,15 +675,29 @@ async function confirmBulkPay() {
   bulkPaying.value = true
   bulkPayError.value = ''
   try {
-    const { error } = await supabase.from('subcontractor_invoices')
+    // ★対象は「まだ未払いのもの」だけに絞る（.eq('paid', false)）。
+    //  画面を開いたまま他の人が先に支払い済みにしていた場合、ここで絞らないと
+    //  その請求の支払日を勝手に上書きしてしまう（振込台帳と食い違う）。
+    const { data: updated, error } = await supabase.from('subcontractor_invoices')
       .update({ paid: true, transfer_date: s.date, updated_at: new Date().toISOString() })
       .in('id', s.ids)
+      .eq('paid', false)
+      .select('id')
     // ★失敗を握り潰さない。黙って閉じると「支払い済みにしたつもり」で振込台帳とズレる
     if (error) { bulkPayError.value = `更新に失敗しました: ${error.message}`; return }
+    const done = updated?.length ?? 0
+    // 実際に更新した件数でログを残す（選んだ件数ではない）
     await logOperation('請求支払登録(一括)', {
       targetType: 'subcontractor_invoice',
-      summary: `${s.ids.length}件 ${yen(s.total)} 支払日${s.date}（${s.vendors.map(v => v.name).join('・')}）`,
+      summary: `${done}件 ${yen(s.total)} 支払日${s.date}（${s.vendors.map(v => v.name).join('・')}）`,
     })
+    // 選んだのに更新されなかった＝間に他の人が触った。黙って閉じずに知らせる
+    if (done < s.ids.length) {
+      bulkPayError.value = `${s.ids.length}件のうち${done}件を更新しました。`
+        + `残りは他の端末で既に支払い済みになっていたため変更していません。`
+      await load()
+      return
+    }
     bulkPayState.value = null
     clearSelection()
     await load()
