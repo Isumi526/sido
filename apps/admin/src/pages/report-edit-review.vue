@@ -27,8 +27,11 @@
               <span class="material-symbols-rounded ico">location_on</span>{{ siteNamesOf(p) }}
             </span>
             <!-- ★二重承認（現場責任者＋オーナー）。順番は問わないので、
-                 「あと誰の承認が要るか」を出さないと押した人が止まったのか進んだのか分からない。 -->
-            <span v-if="p.requires_dual" class="dual" data-testid="pending-dual">
+                 「あと誰の承認が要るか」を出さないと押した人が止まったのか進んだのか分からない。
+                 ★ただし自分が唯一のオーナー(canSelfApprove=soloOwner)の時は、実際にはこの人の承認1つで
+                  成立する（EF側 soloOwner 判定）。なのに「二重承認・2名必要」と出すと、押しても無駄だと
+                  誤解されて承認が放置される（本番 sido で late_new が滞留）。ワンオペ時はバッジを出さない。 -->
+            <span v-if="p.requires_dual && !canSelfApprove" class="dual" data-testid="pending-dual">
               <span class="material-symbols-rounded ico">how_to_reg</span>二重承認
               <template v-if="approvedRoles(p).length">
                 （{{ approvedRoles(p).join('・') }} 済 / あと {{ remainingRole(p) }}）
@@ -428,7 +431,10 @@ async function decide(p: any, action: 'approve' | 'reject') {
       msgOk.value = false
       return
     }
-  } else if (p.requires_dual && !(p.approvals ?? []).length) {
+  } else if (p.requires_dual && !canSelfApprove.value && !(p.approvals ?? []).length) {
+    // ★自分が唯一のオーナー(canSelfApprove)の時はこの警告を出さない。EF側 soloOwner 判定で
+    //  この人の承認1つで成立するのに「2名必要・あなたの承認だけでは反映されません」と出すと、
+    //  押しても無駄だと誤解されて承認が放置される（本番 sido の late_new 滞留の原因）。
     if (!window.confirm(`${p.report_date} の編集を承認しますか？\n\nこの申請は金額が増えるか期限切れのため、現場責任者とオーナーの2名の承認が要ります。あなたの承認だけでは日報に反映されません。`)) return
   } else if (!window.confirm(`${p.report_date} の編集を承認して日報に反映しますか？`)) {
     return
