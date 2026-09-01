@@ -152,16 +152,27 @@ async function load() {
     let cursor = start
     while (cursor <= yest) { allDates.push(cursor); cursor = addDay(cursor) }
 
-    const [{ data: users }, { data: allWorkers }, reports, { data: proxyRels }] = await Promise.all([
+    const [{ data: users }, { data: allWorkers }, reports, { data: proxyRels }, { data: pendingNew }] = await Promise.all([
       supabase.from('users')
         .select('id, real_name, worker_id, reminder_exempt, created_at, workers(name)')
         .eq('account_id', accountId),
       supabase.from('workers').select('id, name, name_kana, created_at, report_start_date').eq('account_id', accountId).eq('active', true).order('name_kana', { nullsFirst: false }).order('name'),
       fetchAllReports(accountId, start, yest),
       supabase.from('worker_proxies').select('worker_id, proxy_operator_id').eq('account_id', accountId),
+      // ★承認待ちの期限切れ新規提出(late_new / paid_leave_over)は、承認されるまで daily_reports に
+      //  行が無い＝本人は出しているのに未送信に出てしまう（承認画面と二重計上）。提出済み扱いで除外する。
+      //  daily-reminder EF と同じ規則に揃える（画面と朝のリマインドで結果を一致させる）。
+      supabase.from('daily_report_pending_edits')
+        .select('report_user_id, report_date')
+        .eq('account_id', accountId).eq('status', 'pending')
+        .in('kind', ['late_new', 'paid_leave_over'])
+        .gte('report_date', start).lte('report_date', yest),
     ])
 
     const submittedSet = new Set(reports.map((r) => `${r.user_id}__${r.date}`))
+    for (const p of (pendingNew ?? []) as any[]) {
+      if (p.report_user_id && p.report_date) submittedSet.add(`${p.report_user_id}__${p.report_date}`)
+    }
     const workerNameMap = new Map<string, string>((allWorkers ?? []).map((w: any) => [w.id, w.name]))
     const workerCreatedMap = new Map<string, string>((allWorkers ?? []).map((w: any) => [w.id, w.created_at]))
     // worker_id → 日報提出開始日（明示設定があれば起点に優先）
