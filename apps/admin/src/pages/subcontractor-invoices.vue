@@ -45,6 +45,16 @@
       <span v-if="bulkMsg" class="bulk-msg" data-testid="bulk-msg">{{ bulkMsg }}</span>
     </div>
 
+    <!-- 一括で支払い済みにする（未払いタブで1件以上選んだ時だけ出る） -->
+    <div v-if="tab === 'unpaid' && selectedIds.size" class="bulk-pay-bar" data-testid="bulk-pay-bar">
+      <span class="bp-count">{{ selectedIds.size }}件を選択中</span>
+      <span class="bp-total">合計 {{ yen(selectedTotal) }}</span>
+      <button class="btn-bulk-pay" data-testid="bulk-pay-open" @click="openBulkPay">
+        まとめて支払い済みにする
+      </button>
+      <button class="btn-clear-filter" data-testid="bulk-pay-clear" @click="clearSelection">選択を解除</button>
+    </div>
+
     <!-- 一覧 -->
     <div v-if="loading" class="empty">読み込み中...</div>
     <div v-else-if="invoices.length === 0" class="empty">登録された請求はありません</div>
@@ -54,10 +64,21 @@
     <div v-else class="table-wrap">
       <table class="table">
         <thead>
-          <tr><th>請求日</th><th>業者</th><th>件名</th><th class="num">明細</th><th class="num">請求金額(税込)</th><th>PDF</th><th>状態</th><th></th></tr>
+          <tr>
+            <th v-if="tab === 'unpaid'" class="check-col">
+              <input type="checkbox" data-testid="bulk-pay-select-all"
+                     :checked="allSelected" :indeterminate.prop="someSelected && !allSelected"
+                     @change="toggleAll" />
+            </th>
+            <th>請求日</th><th>業者</th><th>件名</th><th class="num">明細</th><th class="num">請求金額(税込)</th><th>PDF</th><th>状態</th><th></th>
+          </tr>
         </thead>
         <tbody>
           <tr v-for="inv in visibleList" :key="inv.id" class="data-row" :class="{ overdue: inv._overdue }" @click="openEdit(inv)">
+            <td v-if="tab === 'unpaid'" class="check-col" @click.stop>
+              <input type="checkbox" :data-testid="`bulk-pay-check-${inv.id}`"
+                     :checked="selectedIds.has(inv.id)" @change="toggleOne(inv.id)" />
+            </td>
             <td class="date-cell">{{ inv.invoice_date ?? '—' }}</td>
             <td class="bold">{{ inv.vendor_name }}</td>
             <td>{{ inv.title ?? '—' }}</td>
@@ -299,6 +320,30 @@
         <div class="confirm-actions">
           <button class="btn-cancel" @click="payState = null">キャンセル</button>
           <button class="btn-confirm-ok" :disabled="!payState.date || paying" @click="confirmPay">支払い完了にする</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 一括支払いダイアログ。★何件・いくら・どの業者かを確定前に必ず見せる（金額を触る一括操作のため） -->
+    <div v-if="bulkPayState" class="modal-overlay confirm-overlay" @click.self="bulkPayState = null">
+      <div class="confirm-box bulk-pay-box">
+        <p class="confirm-msg">
+          <b>{{ bulkPayState.ids.length }}件</b>（合計 <b>{{ yen(bulkPayState.total) }}</b>）を支払い済みにします。<br>
+          支払日を入力してください。全件に同じ日付が入ります。
+        </p>
+        <ul class="bulk-pay-vendors" data-testid="bulk-pay-vendors">
+          <li v-for="v in bulkPayState.vendors" :key="v.name">
+            <span>{{ v.name }}</span><span class="bpv-amt">{{ v.count }}件 / {{ yen(v.total) }}</span>
+          </li>
+        </ul>
+        <input v-model="bulkPayState.date" type="date" class="inp pay-date" data-testid="bulk-pay-date" />
+        <p v-if="bulkPayError" class="error">{{ bulkPayError }}</p>
+        <div class="confirm-actions">
+          <button class="btn-cancel" @click="bulkPayState = null">キャンセル</button>
+          <button class="btn-confirm-ok" data-testid="bulk-pay-confirm"
+                  :disabled="!bulkPayState.date || bulkPaying" @click="confirmBulkPay">
+            {{ bulkPaying ? '処理中…' : `${bulkPayState.ids.length}件を支払い完了にする` }}
+          </button>
         </div>
       </div>
     </div>
@@ -563,6 +608,100 @@ const vendorSummary = computed(() => {
 function toggleVendorFilter(vendor: string) {
   filterVendor.value = filterVendor.value === vendor ? '' : vendor
   bulkMsg.value = ''
+}
+
+// ============================================================
+//  一括で支払い済みにする（2026-09-01 事務・尾崎さんの依頼）
+//  「未払いになっているものを一括で支払い済みにできないか」＝月末にまとめて振り込む運用。
+//  1件ずつの経路（openPay / confirmPay）はそのまま残す。個別に違う支払日を入れたい時に要る。
+//
+//  ★選択は「未払いタブの、いま絞り込みで見えている行」だけを対象にする。
+//   見えていない行を巻き込むと、何を支払い済みにしたのか本人にも分からなくなる。
+// ============================================================
+const selectedIds = ref<Set<string>>(new Set())
+
+function clearSelection() { selectedIds.value = new Set() }
+function toggleOne(id: string) {
+  const next = new Set(selectedIds.value)
+  next.has(id) ? next.delete(id) : next.add(id)
+  selectedIds.value = next
+}
+/** ヘッダーのチェック＝表示中の全件を選ぶ／全部外す */
+function toggleAll() {
+  selectedIds.value = allSelected.value ? new Set() : new Set(visibleList.value.map(v => v.id))
+}
+const someSelected = computed(() => selectedIds.value.size > 0)
+const allSelected  = computed(() =>
+  visibleList.value.length > 0 && visibleList.value.every(v => selectedIds.value.has(v.id)))
+/** 選択されているもののうち、いま実際に見えている行だけ（絞り込みを変えた後の取り残し対策） */
+const selectedInvoices = computed(() => visibleList.value.filter(v => selectedIds.value.has(v.id)))
+const selectedTotal    = computed(() =>
+  selectedInvoices.value.reduce((s, v) => s + (Number(v.grand_total) || 0), 0))
+
+// ★タブや絞り込みを変えたら選択は捨てる。
+//  残すと「画面に出ていない請求が選ばれたまま」になり、一括の対象が見た目と食い違う。
+watch([tab, filterSiteId, filterVendor], clearSelection)
+
+const bulkPayState = ref<{
+  ids: string[]; total: number; date: string
+  vendors: { name: string; count: number; total: number }[]
+} | null>(null)
+const bulkPaying   = ref(false)
+const bulkPayError = ref('')
+
+function openBulkPay() {
+  const list = selectedInvoices.value
+  if (!list.length) return
+  const map = new Map<string, { name: string; count: number; total: number }>()
+  for (const v of list) {
+    const name = v.vendor_name || '（業者未設定）'
+    const cur = map.get(name) ?? { name, count: 0, total: 0 }
+    cur.count += 1
+    cur.total += Number(v.grand_total) || 0
+    map.set(name, cur)
+  }
+  bulkPayError.value = ''
+  bulkPayState.value = {
+    ids: list.map(v => v.id),
+    total: list.reduce((s, v) => s + (Number(v.grand_total) || 0), 0),
+    date: todayStr,
+    vendors: [...map.values()].sort((a, b) => b.total - a.total),
+  }
+}
+
+async function confirmBulkPay() {
+  const s = bulkPayState.value
+  if (!s || !s.date || bulkPaying.value) return
+  bulkPaying.value = true
+  bulkPayError.value = ''
+  try {
+    // ★対象は「まだ未払いのもの」だけに絞る（.eq('paid', false)）。
+    //  画面を開いたまま他の人が先に支払い済みにしていた場合、ここで絞らないと
+    //  その請求の支払日を勝手に上書きしてしまう（振込台帳と食い違う）。
+    const { data: updated, error } = await supabase.from('subcontractor_invoices')
+      .update({ paid: true, transfer_date: s.date, updated_at: new Date().toISOString() })
+      .in('id', s.ids)
+      .eq('paid', false)
+      .select('id')
+    // ★失敗を握り潰さない。黙って閉じると「支払い済みにしたつもり」で振込台帳とズレる
+    if (error) { bulkPayError.value = `更新に失敗しました: ${error.message}`; return }
+    const done = updated?.length ?? 0
+    // 実際に更新した件数でログを残す（選んだ件数ではない）
+    await logOperation('請求支払登録(一括)', {
+      targetType: 'subcontractor_invoice',
+      summary: `${done}件 ${yen(s.total)} 支払日${s.date}（${s.vendors.map(v => v.name).join('・')}）`,
+    })
+    // 選んだのに更新されなかった＝間に他の人が触った。黙って閉じずに知らせる
+    if (done < s.ids.length) {
+      bulkPayError.value = `${s.ids.length}件のうち${done}件を更新しました。`
+        + `残りは他の端末で既に支払い済みになっていたため変更していません。`
+      await load()
+      return
+    }
+    bulkPayState.value = null
+    clearSelection()
+    await load()
+  } finally { bulkPaying.value = false }
 }
 
 // 日本語ボタンの確認ダイアログ（native confirm の英語Cancel回避）
@@ -1025,6 +1164,22 @@ onMounted(load)
 .btn-bulk:disabled { opacity: .5; cursor: default; }
 .btn-clear-filter { background: #fff; color: #374151; border: 1px solid #d1d5db; border-radius: 8px; padding: 7px 12px; font-size: 12px; cursor: pointer; }
 .bulk-msg { font-size: 12px; color: #555; }
+
+/* 一括支払い（選択中に出る帯） */
+.check-col { width: 34px; text-align: center; }
+.check-col input { width: 16px; height: 16px; cursor: pointer; }
+.bulk-pay-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  background: #eef4ff; border: 1px solid #c7d9f8; border-radius: 8px;
+  padding: 9px 14px; margin-bottom: 12px; }
+.bp-count { font-weight: 700; font-size: 13px; color: #1a56c4; }
+.bp-total { font-size: 13px; color: #374151; }
+.btn-bulk-pay { background: #1a56c4; color: #fff; border: none; border-radius: 8px;
+  padding: 8px 14px; font-weight: 700; font-size: 13px; cursor: pointer; }
+.bulk-pay-box { max-width: 440px; }
+.bulk-pay-vendors { list-style: none; margin: 0 0 14px; padding: 10px 12px; max-height: 190px;
+  overflow-y: auto; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 13px; }
+.bulk-pay-vendors li { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; }
+.bpv-amt { color: #4b5563; white-space: nowrap; }
 
 .badge { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
 .badge.paid { background: #e6f7ec; color: #0a8a3f; }
