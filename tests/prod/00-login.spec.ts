@@ -1,6 +1,9 @@
 // 本番のデモアカウントでログインし、以降のテストが使う認証状態を保存する
 import { test, expect } from '@playwright/test'
-const ID = 'demo2@email.com', PASS = 'Demo-2026-0831!'
+// ★認証情報はハードコードしない（公開リポに漏らさない）。.env の PROD_SMOKE_EMAIL / PROD_SMOKE_PASS から読む。
+//  未設定なら分かるように落とす。値は playwright.prod.config.ts が .env をロードして process.env に入れる。
+const ID = process.env.PROD_SMOKE_EMAIL, PASS = process.env.PROD_SMOKE_PASS
+if (!ID || !PASS) throw new Error('PROD_SMOKE_EMAIL / PROD_SMOKE_PASS が未設定です（.env に設定してください）')
 test('デモアカウントで本番にログインできる', async ({ page }) => {
   await page.goto('/login', { waitUntil: 'domcontentloaded' })
   // スプラッシュが明けてフォームが出るまで待つ
