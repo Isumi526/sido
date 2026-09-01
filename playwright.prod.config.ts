@@ -1,5 +1,9 @@
 // 本番スモーク専用（demoテナントのアカウントで本番URLを叩く）
 import { defineConfig, devices } from '@playwright/test'
+
+// 認証情報は .env（gitignore対象）から読む。ハードコードしない（公開リポに漏らさない）。
+//  PROD_SMOKE_EMAIL / PROD_SMOKE_PASS を .env に置く。Node 20.12+/22 の loadEnvFile を使う。
+try { (process as any).loadEnvFile?.('.env') } catch { /* .env が無い環境（CI等）は無視 */ }
 export default defineConfig({
   testDir: './tests/prod',
   testMatch: /.*\.spec\.ts/,
