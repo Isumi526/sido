@@ -27,7 +27,8 @@ export default defineNuxtConfig({
       ],
       // ★CSSが当たる前のブラウザ既定（body に 8px の余白）で、初回描画だけ全体が8pxずれる。
       //  リンクしたCSSの適用を待つ隙間があるので、ここにインラインで先に潰す。
-      style: [{ children: 'html,body{margin:0;padding:0}' }],
+      //  （`children` は Unhead の型に無いので innerHTML で渡す。型を通すためだけの差で出力は同じ）
+      style: [{ innerHTML: 'html,body{margin:0;padding:0}' }],
       link: [
         { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
         // ★display=optional（swap ではない）。swap だと代替フォント→Webフォントに切り替わる瞬間に
