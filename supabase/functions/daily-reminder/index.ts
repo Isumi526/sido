@@ -141,15 +141,31 @@ async function processAccount(
     .eq('account_id', accountId)
     .eq('active', true)
 
-  const [reports, { data: proxyRels }] = await Promise.all([
+  const [reports, { data: proxyRels }, { data: pendingNew }] = await Promise.all([
     fetchAllReports(supabase, accountId, startDate, yesterday),
     supabase
       .from('worker_proxies')
       .select('worker_id, proxy_operator_id')
       .eq('account_id', accountId),
+    // ★承認待ちの「期限切れ新規提出」(late_new / paid_leave_over)は、本人は提出済みだが
+    //  承認されるまで daily_reports に行が無い。これを未送信として数えると、承認画面に積んである
+    //  日付をそのまま未送信リストにも出してしまう（二重計上）。提出済み扱いにして未送信から除く。
+    //  edit は既存の日報行があるので reports 側で拾える＝ここでは対象外。
+    supabase
+      .from('daily_report_pending_edits')
+      .select('report_user_id, report_date')
+      .eq('account_id', accountId)
+      .eq('status', 'pending')
+      .in('kind', ['late_new', 'paid_leave_over'])
+      .gte('report_date', startDate)
+      .lte('report_date', yesterday),
   ])
 
   const submittedSet = new Set(reports.map((r) => `${r.user_id}__${r.date}`))
+  // 承認待ちの新規提出も提出済みとして扱う（report_user_id = daily_reports.user_id と同じ意味）
+  for (const p of (pendingNew ?? []) as any[]) {
+    if (p.report_user_id && p.report_date) submittedSet.add(`${p.report_user_id}__${p.report_date}`)
+  }
 
   const workerNameMap = new Map<string, string>(
     (allWorkers ?? []).map((w: any) => [w.id, w.name])
