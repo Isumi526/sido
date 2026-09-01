@@ -36,3 +36,6 @@ scheduled_tasks.lock
 
 # 本番データのスナップショット・巻き戻しSQL（顧客データそのものなので絶対にコミットしない）
 .backfill-*
+
+# 本番スモークの認証状態（Supabaseトークンを含む・絶対にコミットしない）
+tests/prod/.auth.json
