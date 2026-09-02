@@ -35,8 +35,11 @@ const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('
 /** 現場を新規作成できる権限。UIで選択肢を隠すだけでは REST 直叩きで通るのでサーバでも弾く。 */
 const SITE_CREATE_ROLES = ['admin', 'office', 'site_manager']
 
-/** 作業区分マスタを管理できる権限。会社全体の設定を触る操作なので現場管理者は含めない */
+/** 物品マスタ(assets)等の会社全体の経営系設定を管理できる権限。現場管理者は含めない */
 const CATEGORY_MANAGE_ROLES = ['admin', 'office']
+/** 作業区分マスタを管理できる権限。日報の区分＝現場運営系マスタなので現場管理者(site_manager)も含める
+ *  （現場マスタ/現場×区分の定時保存＝SITE_CREATE_ROLES と同じ扱い。都度オーナー依頼を解消） */
+const WORK_CATEGORY_MANAGE_ROLES = ['admin', 'office', 'site_manager']
 
 function corsHeaders() {
   return {
@@ -184,7 +187,7 @@ Deno.serve(async (req) => {
     // worker 行が無い＝純オーナー。accounts.owner_auth_user_id で確認するのが厳密だが、
     // ここは resolveCaller が既にテナントを確定しているので role 無し＝オーナー扱いで通す
     const role = (w?.permission_role as string) ?? null
-    if (role !== null && !CATEGORY_MANAGE_ROLES.includes(role)) {
+    if (role !== null && !WORK_CATEGORY_MANAGE_ROLES.includes(role)) {
       return json({ ok: false, error: 'CATEGORY_FORBIDDEN' }, 403)
     }
 
