@@ -107,6 +107,7 @@
   "companionsRequired": "{account}は同行者名の入力が必須です（誰と行ったかの記録が税務上必要）。",
   "noReceiptReasonPlaceholder": "領収書が無い理由（必須・例: レジ故障でレシートが出なかった）",
   "receiptRequired": "{name}は領収書の写真が必要です。写真を添付するか、無い場合は理由を書いてください。",
+  "receiptRequiredAt": "【{site}】の{name}「{item}」に領収書の写真がありません。\n写真を添付するか、無い場合は理由を書いてください。\n（その入力欄を開いたので、OKを押すとそこへ移動します）",
   "leopalace": "レオパレス等",
   "facilityNamePlaceholder": "施設名",
   "garbage": "ゴミ",

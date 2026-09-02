@@ -1629,6 +1629,15 @@ async function loadEditData(date: string) {
 function setUsage(si: number, key: keyof UsageState, value: string) {
   siteUsage.value[si][key] = value
   const exp = report.form.value.sites[si].expenses
+  // ★経費まるごと「なし」に戻したら、中の明細も各トグル経由で消す。
+  //  残すと入力欄が隠れたまま金額だけ生き残り、(1) 見えない経費がそのまま送信され、
+  //  (2) 領収書バリデーションが画面から直せない行を弾き続ける（2026-09-02 本番で発生）。
+  if (key === 'expense' && value === 'なし') {
+    for (const k of ['vehicle', 'train', 'hotel', 'garbage', 'other', 'entertainment'] as const) {
+      setUsage(si, k, 'なし')
+    }
+    return
+  }
   if (key === 'vehicle') {
     if (value === '乗合い') {
       exp.carpool = true
@@ -1807,16 +1816,19 @@ function findMissingCompanions(): string | null {
 //  それまでは添付のバリデーションが1件も無く、本番で9件・約59,000円が
 //  証憑なしで承認待ちになっていた（2026-08-12 発見）。
 // ────────────────────────────────────────────
-/** 経費配列のキー → 画面の呼び名。エラー文言と入力欄の出し分けに使う */
+/**
+ * 経費配列のキー → 画面の呼び名／入力欄の data-testid／その欄を出している経費トグル。
+ * 後ろ2つは「弾いた明細まで人を連れて行く」ために要る（revealReceiptRow）。
+ */
 const RECEIPT_GROUPS = [
-  ['parkings',       '駐車代',       'report.parking'],
-  ['highways',       '高速代',       'report.highway'],
-  ['trains',         '電車代',       'report.train'],
-  ['hotels',         '宿泊費',       'report.hotel'],
-  ['others',         'その他',       'report.other'],
+  ['parkings',       '駐車代',       'report.parking', 'parking', 'vehicle'],
+  ['highways',       '高速代',       'report.highway', 'highway', 'vehicle'],
+  ['trains',         '電車代',       'report.train',   'train',   'train'],
+  ['hotels',         '宿泊費',       'report.hotel',   'hotel',   'hotel'],
+  ['others',         'その他',       'report.other',   'other',   'other'],
   // entertainments は入力UIが無い（2026-07-31 に「その他」へ統合し、編集ロード時に
   // others へ畳んでいる）。理由を書く欄が出せない以上、ここで弾くと直せない詰みになる。
-] as const
+] as const satisfies readonly (readonly [string, string, string, string, keyof UsageState])[]
 
 function hasReceipt(item: any): boolean {
   return !!(item?.fileUrls?.length || item?.files?.length)
@@ -1829,23 +1841,89 @@ function needsReceiptReason(item: any, category: string): boolean {
   return !receiptExempt({ category, etcCard: item?.etcCard })
 }
 
-/** 領収書も理由も無い明細があればエラーメッセージを返す（送信を弾く） */
-function findMissingReceipts(): string | null {
-  const complain = (labelKey: string) => t('report.receiptRequired', { name: t(labelKey) })
-  for (const site of (report.form.value.sites ?? [])) {
+/** 弾いた明細の場所。文言に出す名前と、入力欄まで連れて行くための座標を持つ */
+type ReceiptMiss = {
+  si: number
+  testid: string
+  usageKeys: (keyof UsageState)[]
+  message: string
+  gas: boolean
+}
+
+/** エラー文に出す明細の呼び名。品名が空でも金額で場所が分かるようにする */
+function receiptItemLabel(it: any): string {
+  const label = String(it?.label ?? '').trim() || String(it?.payee ?? '').trim()
+  const yen   = Number(it?.yen) > 0 ? `¥${Number(it.yen).toLocaleString()}` : ''
+  return [label, yen].filter(Boolean).join(' ') || '—'
+}
+
+/**
+ * 領収書も理由も無い明細を1件返す（無ければ null）。
+ * ★以前は「その他経費は領収書が必要です」とだけ出していた。現場が複数あると
+ *  どの現場のどの行なのか分からず、しかも経費トグルを「なし」に戻した行は
+ *  入力欄ごと隠れているので、人は永久に直せなかった（2026-09-02 本番で発生）。
+ *  そこで「どこか」を文言に出し、その欄を開いてスクロールするところまでやる。
+ */
+function findMissingReceipt(): ReceiptMiss | null {
+  const sites = report.form.value.sites ?? []
+  for (let si = 0; si < sites.length; si++) {
+    const site: any = sites[si]
     const exp: any = site?.expenses ?? {}
-    for (const [key, category, labelKey] of RECEIPT_GROUPS) {
-      for (const it of (exp[key] ?? [])) {
+    for (const [key, category, labelKey, testidKind, usageKey] of RECEIPT_GROUPS) {
+      const list: any[] = exp[key] ?? []
+      for (let ii = 0; ii < list.length; ii++) {
+        const it = list[ii]
         if (!needsReceiptReason(it, category)) continue
-        if (!String(it.noReceiptReason ?? '').trim()) return complain(labelKey)
+        if (String(it?.noReceiptReason ?? '').trim()) continue
+        return {
+          si,
+          testid: `no-receipt-reason-${testidKind}-${si}-${ii}`,
+          usageKeys: ['expense', usageKey],
+          gas: false,
+          message: t('report.receiptRequiredAt', {
+            site: siteDisplayName(site?.siteName, site?.customSiteName) || t('report.siteName'),
+            name: t(labelKey),
+            item: receiptItemLabel(it),
+          }),
+        }
       }
     }
   }
-  for (const g of (report.form.value.gasolineItems ?? [])) {
+  const gasItems: any[] = report.form.value.gasolineItems ?? []
+  for (let gi = 0; gi < gasItems.length; gi++) {
+    const g = gasItems[gi]
     if (!needsReceiptReason(g, 'ガソリン代（本日）')) continue
-    if (!String(g.noReceiptReason ?? '').trim()) return complain('report.gasolineSection')
+    if (String(g?.noReceiptReason ?? '').trim()) continue
+    return {
+      si: 0,   // ガソリンは日報直下だが、入力欄は先頭現場の経費セクションの中にある
+      testid: `no-receipt-reason-gas-${gi}`,
+      usageKeys: ['expense'],
+      gas: true,
+      message: t('report.receiptRequiredAt', {
+        site: t('report.gasolineSection'),
+        name: t('report.gasolineCost'),
+        item: receiptItemLabel(g),
+      }),
+    }
   }
   return null
+}
+
+/**
+ * 弾いた明細の入力欄を開いて、そこまでスクロールする。
+ * 経費トグルを「なし」に戻しても中の明細は消えない場合があり（下書き復元・旧データ）、
+ * 開かないと「写真も理由も入れられないのに送信だけ弾かれる」状態になる。
+ */
+async function revealReceiptRow(miss: ReceiptMiss) {
+  const usage = siteUsage.value[miss.si]
+  // ★setUsage は「なし」で中身を消すので通さない。表示状態だけ直に開ける。
+  if (usage) for (const k of miss.usageKeys) if (usage[k] !== 'あり') usage[k] = 'あり'
+  if (miss.gas) gasFueled.value = true
+  await nextTick()
+  const el = document.querySelector(`[data-testid="${miss.testid}"]`) as HTMLElement | null
+  if (!el) return
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  el.focus()
 }
 
 /**
@@ -2481,10 +2559,13 @@ async function handleSubmit() {
   // ── 送信バリデート: 領収書も「無い理由」も無い経費は弾く（2026-08-14 ユーザー確定）──
   //  ★新規・編集の両方に効かせたいので、モード分岐より手前に置く。
   {
-    const receiptMsg = findMissingReceipts()
-    if (receiptMsg) {
-      if (isEditMode.value) editError.value = receiptMsg
-      alert(receiptMsg)
+    const miss = findMissingReceipt()
+    if (miss) {
+      if (isEditMode.value) editError.value = miss.message
+      // ★alert より先に欄を開く。alert はモーダルで、閉じた後にどこを直すのか
+      //  分からないまま放り出されるのが本番で起きた詰まり方だった。
+      await revealReceiptRow(miss)
+      alert(miss.message)
       return
     }
   }
