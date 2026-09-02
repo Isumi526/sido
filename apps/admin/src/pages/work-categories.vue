@@ -19,6 +19,7 @@
             <th style="width:56px">順序</th>
             <th>区分名</th>
             <th style="width:150px">使える台帳</th>
+            <th style="width:190px">定時（全現場共通）</th>
             <th style="width:90px">状態</th>
             <th style="width:170px"></th>
           </tr>
@@ -36,13 +37,20 @@
               <span v-if="c.is_default" class="tag-default">標準</span>
             </td>
             <td class="scope">{{ scopeLabel(c.scope) }}</td>
+            <td class="hours" :data-testid="`cat-hours-${c.id}`">
+              <template v-if="c.default_start_time || c.default_end_time">
+                {{ hhmm(c.default_start_time) || '—' }}〜{{ hhmm(c.default_end_time) || '—' }}
+                <span v-if="breakTotal(c) > 0" class="brk">休憩{{ breakTotal(c) }}分</span>
+              </template>
+              <span v-else class="muted">未設定（現場の定時に従う）</span>
+            </td>
             <td><span class="status" :class="c.active ? 'active' : 'off'">{{ c.active ? '有効' : '無効' }}</span></td>
             <td class="actions">
               <button class="btn-edit" :disabled="busy" @click="openEdit(c)">編集</button>
               <button class="btn-del" :disabled="busy" @click="remove(c)">削除</button>
             </td>
           </tr>
-          <tr v-if="cats.length === 0"><td colspan="5" class="empty">区分がありません</td></tr>
+          <tr v-if="cats.length === 0"><td colspan="6" class="empty">区分がありません</td></tr>
         </tbody>
       </table>
     </div>
@@ -63,6 +71,37 @@
             <option value="event">社内行事のみ</option>
           </select>
           <p class="hint">絞っておくと、関係ない台帳で選択肢に出てきません（例：慰安旅行を現場の選択肢に出さない）。</p>
+        </div>
+        <div class="field">
+          <label>定時（全現場共通）</label>
+          <div class="times">
+            <input v-model="modal.default_start_time" type="time" step="1800" class="input time" data-testid="cat-start" />
+            <span class="tilde">〜</span>
+            <input v-model="modal.default_end_time" type="time" step="1800" class="input time" data-testid="cat-end" />
+            <button v-if="modal.default_start_time || modal.default_end_time" class="btn-clear" data-testid="cat-hours-clear"
+                    @click="modal.default_start_time = ''; modal.default_end_time = ''">クリア</button>
+          </div>
+          <p class="hint">
+            ここに入れると<b>全ての現場</b>で、この区分を選んだ日報がこの時間帯で計算されます。
+            日報の時刻は30分刻みで選ぶので、ここも30分単位で入れてください（8:15 のような値は日報側で表示できません）。
+            現場ごとに変えたい場合だけ「現場」→ 編集 →「区分ごとの定時」で上書きしてください（そちらが優先）。
+          </p>
+          <p v-if="overridesSiteHours" class="warn" data-testid="cat-hours-warn">
+            この区分に共通定時を入れると、<b>現場ごとに設定した定時より優先されます</b>。
+            現場の定時をそのまま使いたい区分（通常は「現場作業」）は、ここを空のままにしてください。
+          </p>
+        </div>
+        <div class="field">
+          <label>休憩（全現場共通）</label>
+          <div v-for="(b, bi) in (modal.breaks ?? [])" :key="bi" class="times">
+            <input v-model="b.start" type="time" step="300" class="input time" :data-testid="`cat-break-start-${bi}`" />
+            <span class="tilde">から</span>
+            <input v-model.number="b.minutes" type="number" min="0" step="5" class="input mins" :data-testid="`cat-break-min-${bi}`" />
+            <span class="tilde">分</span>
+            <button class="btn-clear" @click="modal.breaks?.splice(bi, 1)">削除</button>
+          </div>
+          <button class="btn-add-break" data-testid="cat-break-add" @click="addBreak">＋ 休憩を追加</button>
+          <p class="hint">例：12:00 から 60 分。時間帯で持つので、勤務時間の計算から自動で引かれます。</p>
         </div>
         <div v-if="modal.id" class="field">
           <label>状態</label>
@@ -89,8 +128,10 @@
  *  authenticated の INSERT/UPDATE/DELETE を剥がしてあるため、テーブル直叩きは通らない。
  *  権限の確認・使用中チェック・他テナントの拒否はすべて EF 側で行う。
  */
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
+
+type BreakWindow = { start: string; minutes: number }
 
 interface WorkCategory {
   id: string
@@ -99,12 +140,24 @@ interface WorkCategory {
   sort_order: number
   active: boolean
   is_default: boolean
+  // 区分の「全現場共通の定時」。未設定(null)なら現場の定時に従う。
+  //  ★工場作業は複数の現場で発生するので現場×区分を1件ずつ登録して回るのは
+  //   運用に乗らない（2026-09-02 今井さん）。ここで一括に設定する。
+  default_start_time: string | null
+  default_end_time: string | null
+  default_breaks: BreakWindow[] | null
 }
+
+/** 'HH:MM:SS' も 'HH:MM' も 'HH:MM' に揃える（DBは time 型で秒付きで返る） */
+const hhmm = (v: string | null | undefined) => (v ?? '').slice(0, 5)
+const breakTotal = (c: WorkCategory) =>
+  (c.default_breaks ?? []).reduce((sum, b) => sum + (Number(b?.minutes) || 0), 0)
 
 const cats      = ref<WorkCategory[]>([])
 const loading   = ref(true)
 const busy      = ref(false)
-const modal     = ref<Partial<WorkCategory> | null>(null)
+type CategoryDraft = Partial<WorkCategory> & { breaks?: BreakWindow[] }
+const modal     = ref<CategoryDraft | null>(null)
 const saving    = ref(false)
 const saveError = ref('')
 
@@ -127,8 +180,26 @@ async function load() {
   loading.value = false
 }
 
-function openAdd() { saveError.value = ''; modal.value = { name: '', scope: 'site', active: true } }
-function openEdit(c: WorkCategory) { saveError.value = ''; modal.value = { ...c } }
+function openAdd() {
+  saveError.value = ''
+  modal.value = { name: '', scope: 'site', active: true, default_start_time: '', default_end_time: '', breaks: [] }
+}
+function openEdit(c: WorkCategory) {
+  saveError.value = ''
+  // time 型は 'HH:MM:SS' で返る。<input type="time"> は 'HH:MM' でないと空表示になる
+  modal.value = {
+    ...c,
+    default_start_time: hhmm(c.default_start_time),
+    default_end_time: hhmm(c.default_end_time),
+    breaks: (c.default_breaks ?? []).map(b => ({ start: hhmm(b.start), minutes: Number(b.minutes) || 0 })),
+  }
+}
+function addBreak() {
+  if (!modal.value) return
+  ;(modal.value.breaks ??= []).push({ start: '12:00', minutes: 60 })
+}
+/** 共通定時を入れようとしている＝現場の定時を上書きすることになる、の注意表示 */
+const overridesSiteHours = computed(() => !!(modal.value?.default_start_time || modal.value?.default_end_time))
 
 const SAVE_ERRORS: Record<string, string> = {
   DUPLICATE_NAME: '同じ名前の区分が既にあります。',
@@ -146,6 +217,10 @@ async function save() {
     action: 'category-save',
     ...(modal.value.id ? { id: modal.value.id } : {}),
     name, scope: modal.value.scope ?? null, active: modal.value.active !== false,
+    // 共通定時。空文字は EF 側で null（＝設定なし）になる＝クリアできる
+    start: modal.value.default_start_time || '',
+    end: modal.value.default_end_time || '',
+    breaks: (modal.value.breaks ?? []).filter(b => b?.start && (Number(b.minutes) || 0) > 0),
   })
   saving.value = false
   if (!r.ok) { saveError.value = SAVE_ERRORS[r.error ?? ''] ?? `保存に失敗しました（${r.error}）`; return }
@@ -198,6 +273,16 @@ onMounted(load)
 .table td { padding: 12px 16px; border-top: 1px solid #f0f0f0; font-size: 14px; vertical-align: middle; }
 .table tr.inactive td { opacity: .45; }
 .order-cell { text-align: center; }
+.hours { font-size: 13px; white-space: nowrap; }
+.hours .brk { margin-left: 6px; color: #64748b; font-size: 12px; }
+.hours .muted { color: #94a3b8; font-size: 12px; }
+.times { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.times .time { width: auto; }
+.times .mins { width: 76px; }
+.tilde { color: #64748b; font-size: 13px; }
+.btn-clear { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; }
+.btn-add-break { background: #fff; border: 1px dashed #cbd5e1; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; color: #475569; }
+.warn { margin: 6px 0 0; padding: 8px 10px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; font-size: 12px; color: #92400e; line-height: 1.6; }
 .order-btns { display: flex; flex-direction: column; gap: 2px; align-items: center; }
 .btn-order { background: #f5f5f5; border: none; border-radius: 4px; width: 28px; height: 22px; font-size: 11px; cursor: pointer; color: #555; }
 .btn-order:disabled { opacity: .3; cursor: default; }
@@ -212,8 +297,10 @@ onMounted(load)
 .btn-edit { background: #f0f0f0; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
 .btn-del { background: #fff1f0; color: #c0392b; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; margin-left: 8px; }
 .btn-edit:disabled, .btn-del:disabled { opacity: .4; cursor: default; }
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 12px; padding: 32px; width: 400px; display: flex; flex-direction: column; gap: 20px; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 16px; }
+/* ★中身が増えて縦に伸びた時にスクロールできるようにする。これが無いと保存ボタンが
+   画面外に出て押せなくなる（定時・休憩の欄を足した 2026-09-02 に実際に発生）。 */
+.modal { background: #fff; border-radius: 12px; padding: 32px; width: 400px; max-width: 100%; max-height: 90vh; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
 .modal h2 { font-size: 18px; font-weight: 700; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label { font-size: 12px; font-weight: 700; color: #888; }

@@ -2108,10 +2108,26 @@ watch(
   { immediate: true },
 )
 
-// ── 固定勤務時刻。★区分ごとの定時 → 現場の定時 → 無し の順に引く ──
+/**
+ * 選んだ作業区分の「全現場共通の定時」（未設定なら null）。
+ * ★工場作業は複数の現場で発生する。現場×区分を1件ずつ登録して回るのは運用に乗らない
+ *  ので、区分そのものに定時を持たせて一括で効かせる（2026-09-02 今井さん）。
+ */
+function categoryCommon(si?: number) {
+  if (si === undefined) return null
+  const catId = report.form.value.sites[si]?.workCategoryId
+  if (!catId) return null
+  return master.workCategories.value.find((c: any) => c.id === catId) ?? null
+}
+
+// ── 固定勤務時刻。★現場×区分 → 区分の共通定時 → 現場の定時 → 無し の順に引く ──
 //  定時は「現場だけ」でも「区分だけ」でも決まらない（事務は拠点で 08:30/08:00 と違う）。
-//  現場×区分に設定があればそれを最優先。無ければ従来どおり現場の定時へ落ちる
-//  ＝移行が済んでいない現場でも今までどおり動く。
+//  現場×区分の設定が最優先＝拠点差を表現できる。
+//  ★区分の共通定時を現場の定時より優先させるのは意図的（2026-09-02 承認済み）。
+//   工場作業(8:00-17:30)が夜勤現場(20:30-6:00)の時間帯に引っ張られないようにするため。
+//   逆順にすると「現場の定時が入っている現場では共通設定が効かない」＝要望を満たせない。
+//   その代わり「現場作業」区分に共通定時を入れると全現場の定時を上書きするので、
+//   管理画面側で注意書きを出している（既定は空＝従来どおり現場の定時へ落ちる）。
 function siteFixedTimes(siteName: string | undefined, si?: number): { start: string | null; end: string | null } | null {
   if (!siteName || siteName === '__other__' || siteName === '__unset__') return null
   if (si !== undefined) {
@@ -2121,6 +2137,8 @@ function siteFixedTimes(siteName: string | undefined, si?: number): { start: str
       const h = master.categoryHours.value[`${siteId}|${catId}`]
       if (h && (h.start || h.end)) return { start: h.start, end: h.end }
     }
+    const c = categoryCommon(si)
+    if (c && (c.start || c.end)) return { start: c.start ?? null, end: c.end ?? null }
   }
   return master.siteWorkTimes.value[siteName] ?? null
 }
@@ -2133,7 +2151,7 @@ function siteFixedStart(siteName: string | undefined, si?: number): string {
 // 現場の既定休憩[{start,minutes}]。設定ある現場のみ返す。
 function siteFixedBreaks(siteName: string | undefined, si?: number): { start: string; minutes: number }[] | null {
   if (!siteName || siteName === '__other__' || siteName === '__unset__') return null
-  // ★定時と同じ順序。現場×区分 → 現場 の順に引く
+  // ★定時と同じ順序。現場×区分 → 区分の共通 → 現場 の順に引く
   if (si !== undefined) {
     const siteId = master.siteIds.value[siteName]
     const catId  = report.form.value.sites[si]?.workCategoryId
@@ -2141,6 +2159,8 @@ function siteFixedBreaks(siteName: string | undefined, si?: number): { start: st
       const h = master.categoryHours.value[`${siteId}|${catId}`]
       if (h?.breaks?.length) return h.breaks
     }
+    const c = categoryCommon(si)
+    if (c?.breaks?.length) return c.breaks
   }
   const v = master.siteBreaks.value[siteName]
   return (Array.isArray(v) && v.length) ? v : null

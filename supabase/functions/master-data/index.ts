@@ -89,7 +89,11 @@ Deno.serve(async (req) => {
         .order('sort_order').order('name'),
       svc.from('site_subcontractors').select('site_id, subcontractor_id').eq('account_id', accountId),
       // 作業区分（現場作業/見積/事務…）。日報・予定で「どの作業か」を選ばせる
-      svc.from('work_categories').select('id, name, scope, sort_order')
+      // ★共通定時（default_*）も返す。日報の時刻ピッカーは「現場×区分 → 区分の共通 →
+      //  現場」の順に定時を引くので、区分の共通定時が無いと工場作業が現場の時間帯に
+      //  引っ張られる（2026-09-02 今井さん）。
+      svc.from('work_categories')
+        .select('id, name, scope, sort_order, default_start_time, default_end_time, default_breaks')
         .eq('active', true).eq('account_id', accountId).order('sort_order').order('name'),
       // 現場×区分ごとの定時。行が無い組は「定時なし」
       svc.from('site_category_hours')
@@ -174,7 +178,7 @@ Deno.serve(async (req) => {
   //   読みも書きもここを通す（テーブル直叩きは通らない）。
   if (body.action === 'categories') {
     const { data, error } = await svc.from('work_categories')
-      .select('id, name, scope, sort_order, active, is_default')
+      .select('id, name, scope, sort_order, active, is_default, default_start_time, default_end_time, default_breaks')
       .eq('account_id', accountId).order('sort_order').order('name')
     if (error) { console.error('[master-data] categories failed:', error); return json({ ok: false, error: 'fetch_failed' }, 500) }
     return json({ ok: true, categories: data ?? [] })
@@ -195,12 +199,26 @@ Deno.serve(async (req) => {
       const nm = typeof body.name === 'string' ? body.name.trim() : ''
       if (!nm) return json({ ok: false, error: 'name_required' }, 400)
       const scope = ['site', 'office', 'event'].includes(body.scope) ? body.scope : null
+      // 区分の共通定時（全現場に効く）。空文字は null＝設定なしとして保存する
+      // （「設定を消す」が出来ないと、一度入れた時間帯から戻せなくなる）。
+      const hStart = typeof body.start === 'string' && body.start ? body.start : null
+      const hEnd = typeof body.end === 'string' && body.end ? body.end : null
+      const hBreaks = Array.isArray(body.breaks)
+        ? (body.breaks as any[])
+            .filter((b) => b && typeof b.start === 'string' && b.start && (Number(b.minutes) || 0) > 0)
+            .map((b) => ({ start: String(b.start).slice(0, 5), minutes: Number(b.minutes) || 0 }))
+        : []
+      const hours = {
+        default_start_time: hStart,
+        default_end_time: hEnd,
+        default_breaks: hBreaks.length ? hBreaks : null,
+      }
       if (typeof body.id === 'string' && body.id) {
         // ★account_id でも絞る＝他テナントのIDを渡されても触れない。
         //  そのとき0件更新になるが、ok:true を返すと「成功したのに変わらない」になる。
         //  何も起きなかったことを呼び出し側が判別できるよう select して件数で見る。
         const { data: updated, error } = await svc.from('work_categories')
-          .update({ name: nm, scope, active: body.active !== false, updated_at: new Date().toISOString() })
+          .update({ name: nm, scope, active: body.active !== false, ...hours, updated_at: new Date().toISOString() })
           .eq('id', body.id).eq('account_id', accountId)
           .select('id')
         if (error) { console.error('[master-data] category-save failed:', error); return json({ ok: false, error: 'save_failed' }, 500) }
@@ -210,7 +228,7 @@ Deno.serve(async (req) => {
       const { data: maxRow } = await svc.from('work_categories')
         .select('sort_order').eq('account_id', accountId).order('sort_order', { ascending: false }).limit(1).maybeSingle()
       const { error } = await svc.from('work_categories')
-        .insert({ account_id: accountId, name: nm, scope, sort_order: ((maxRow?.sort_order as number) ?? 0) + 10 })
+        .insert({ account_id: accountId, name: nm, scope, ...hours, sort_order: ((maxRow?.sort_order as number) ?? 0) + 10 })
       if (error) {
         // 同名は一意制約で弾かれる。何が起きたか分かるメッセージを返す
         const dup = String(error.message ?? '').includes('work_categories_name_uniq')
