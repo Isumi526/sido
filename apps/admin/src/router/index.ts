@@ -48,8 +48,10 @@ export const router = createRouter({
     { path: '/workers',      component: Workers,        meta: { management: true } },
     { path: '/sites',        component: Sites },
     { path: '/sites/:id',    component: () => import('../pages/site-detail.vue') },
-    // 作業区分は会社全体の設定＝経営系。現場管理者には触らせない（EF 側でも同じ判定をしている）
-    { path: '/work-categories', component: () => import('../pages/work-categories.vue'), meta: { management: true } },
+    // 作業区分は現場運営系マスタ（日報の区分＝現場×区分の定時に使う）。現場管理者(site_manager)も
+    //  管理できるようにする（都度オーナーへ依頼する運用を解消）。現場マスタ(/sites)と同じ扱い＝
+    //  management ゲートを外す（EF 側も WORK_CATEGORY_MANAGE_ROLES に site_manager を含める）。
+    { path: '/work-categories', component: () => import('../pages/work-categories.vue') },
     // 物品マスタ（ETCカード等）。会社全体の設定＝経営系（EF 側でも同じ判定をしている）
     { path: '/assets', component: () => import('../pages/assets.vue'), meta: { management: true } },
     // 在庫管理（品目＋入出庫・会社単位MVP）

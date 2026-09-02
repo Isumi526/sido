@@ -88,7 +88,7 @@
         <li class="nav-section">マスタ</li>
         <li v-if="canViewManagementPages"><RouterLink to="/workers" class="nav-link"><span class="material-symbols-rounded nav-icon">engineering</span>作業員</RouterLink></li>
         <li><RouterLink to="/sites" class="nav-link"><span class="material-symbols-rounded nav-icon">location_on</span>現場</RouterLink></li>
-        <li v-if="canViewManagementPages"><RouterLink to="/work-categories" class="nav-link"><span class="material-symbols-rounded nav-icon">category</span>作業区分</RouterLink></li>
+        <li v-if="isAdminAllowed"><RouterLink to="/work-categories" class="nav-link"><span class="material-symbols-rounded nav-icon">category</span>作業区分</RouterLink></li>
         <li v-if="canViewContractors"><RouterLink to="/contractors" class="nav-link"><span class="material-symbols-rounded nav-icon">apartment</span>元請け業者</RouterLink></li>
         <li><RouterLink to="/subcontractors" class="nav-link"><span class="material-symbols-rounded nav-icon">handshake</span>協力業者</RouterLink></li>
         <li v-if="canViewManagementPages"><RouterLink to="/vehicles" class="nav-link"><span class="material-symbols-rounded nav-icon">directions_car</span>車両</RouterLink></li>
