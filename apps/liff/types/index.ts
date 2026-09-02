@@ -176,7 +176,14 @@ export interface MasterData {
   siteBreaks?: Record<string, { start: string; minutes: number }[]>
   // 作業区分（現場作業/見積/事務…）。会社ごとのマスタ。日報・予定で「どの作業か」を選ぶ。
   //  scope: どの台帳で使えるか（site/office/event・null=どこでも）
-  workCategories?: { id: string; name: string; scope: string | null }[]
+  //  start/end/breaks: その区分の「全現場共通の定時」（未設定は null）。
+  //   ★工場作業は複数の現場で発生するので、現場×区分を1件ずつ登録して回るのは運用に乗らない
+  //    （2026-09-02 今井さん）。共通定時があれば1回の設定でどの現場でも効く。
+  workCategories?: {
+    id: string; name: string; scope: string | null
+    start?: string | null; end?: string | null
+    breaks?: { start: string; minutes: number }[] | null
+  }[]
   // ★「現場id|区分id」→ 定時。定時は現場だけでも区分だけでも決まらないので組で持つ
   //  （事務は拠点で 08:30/08:00 と違う）。未収録＝その組に定時なし。
   categoryHours?: Record<string, { start: string | null; end: string | null; breaks: { start: string; minutes: number }[] | null }>

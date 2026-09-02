@@ -8,10 +8,17 @@
 //   定時は「現場だけ」でも「区分だけ」でも決まらない
 //   （事務は拠点で 08:30/08:00 と違う）ので (現場, 区分) の組で持つ。
 //
+//  ★2026-09-02 追加: 区分そのものにも「全現場共通の定時」を持てるようにした。
+//   工場作業(8:00-17:30)は複数の現場で発生するので、現場×区分を1件ずつ登録して
+//   回るのは運用に乗らない、という現場からの要望（今井さん）。
+//   解決順は 現場×区分 → 区分の共通 → 現場の定時 → 無し。
+//
 //  ★このspecが守るもの:
 //   - 何も触らなくても既定「現場作業」が入る（入力項目が増えて戸惑わせない）
 //   - 区分を変えると、その組の定時が作業時刻の既定に効く
 //   - 組に定時が無ければ現場の定時へ落ちる（移行前の現場が壊れない）
+//   - 区分の共通定時が、設定していない現場にも効く
+//   - 現場×区分の上書きは共通定時より優先される
 // ============================================================
 import { test, expect } from '@playwright/test'
 import { restSrv, getAccountId, todayJST } from './helpers'
@@ -23,6 +30,9 @@ let accountId = ''
 let siteId = ''
 let genbaCatId = ''
 let jimuCatId = ''
+let koujouCatId = ''
+
+const KOUJOU = `E2E工場作業_${TS}`
 
 test.describe('日報の作業区分', () => {
   test.beforeAll(async () => {
@@ -50,10 +60,21 @@ test.describe('日報の作業区分', () => {
         default_start_time: '10:00', default_end_time: '19:00',
       }),
     })
+
+    // ★共通定時を持つ区分。この現場には site_category_hours の行を作らない＝
+    //  「どの現場でも効く」ことを、現場の定時(08:00〜17:30)と違う値で確かめる
+    koujouCatId = (await restSrv('work_categories', {
+      method: 'POST', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        account_id: accountId, name: KOUJOU, scope: 'site', active: true, sort_order: 999,
+        default_start_time: '07:30', default_end_time: '16:30',
+      }),
+    }))[0].id
   })
 
   test.afterAll(async () => {
     await restSrv(`site_category_hours?site_id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`work_categories?id=eq.${koujouCatId}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`daily_reports?account_id=eq.${accountId}&date=eq.${todayJST()}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`sites?id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})
   })
@@ -93,6 +114,43 @@ test.describe('日報の作業区分', () => {
     await page.locator('[data-testid="work-category-0"]').selectOption(genbaCatId)
     await expect(startSel, '★組に定時が無ければ現場の定時へ戻る').toHaveValue('08:00', { timeout: 10000 })
     await expect(endSel,   '★同上（終了）').toHaveValue('17:30')
+  })
+
+  test('★区分の共通定時は、その現場で設定していなくても効く（一括設定）', async ({ page }) => {
+    await page.goto('/report', { waitUntil: 'networkidle' })
+    const siteSel = page.locator('[data-testid="site-select-0"]')
+    await expect(siteSel).toBeVisible({ timeout: 15000 })
+    await siteSel.selectOption(SITE)
+    const startSel = page.locator('[data-testid="start-time-0"]')
+    const endSel   = page.locator('[data-testid="end-time-0"]')
+    await expect(startSel, '現場の定時 08:00 が既定').toHaveValue('08:00', { timeout: 10000 })
+
+    // この現場には工場作業の site_category_hours を作っていない。それでも共通定時が効く
+    await page.locator('[data-testid="work-category-0"]').selectOption(koujouCatId)
+    await expect(startSel, '★共通定時 07:30 が効く（現場ごとの登録は不要）').toHaveValue('07:30', { timeout: 10000 })
+    await expect(endSel,   '★共通定時 16:30 が効く').toHaveValue('16:30')
+  })
+
+  test('★現場×区分の上書きは共通定時より優先される', async ({ page }) => {
+    // この現場 × 工場作業 だけ 21:00〜翌5:00 に上書きする
+    await restSrv('site_category_hours', {
+      method: 'POST', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        account_id: accountId, site_id: siteId, category_id: koujouCatId,
+        default_start_time: '21:00', default_end_time: '05:00',
+      }),
+    })
+    try {
+      await page.goto('/report', { waitUntil: 'networkidle' })
+      const siteSel = page.locator('[data-testid="site-select-0"]')
+      await expect(siteSel).toBeVisible({ timeout: 15000 })
+      await siteSel.selectOption(SITE)
+      await page.locator('[data-testid="work-category-0"]').selectOption(koujouCatId)
+      await expect(page.locator('[data-testid="start-time-0"]'),
+        '★共通(07:30)ではなく、この現場の上書き(21:00)が勝つ').toHaveValue('21:00', { timeout: 10000 })
+    } finally {
+      await restSrv(`site_category_hours?site_id=eq.${siteId}&category_id=eq.${koujouCatId}`, { method: 'DELETE' }).catch(() => {})
+    }
   })
 
   test('★組に定時が無ければ現場の定時へ落ちる（移行前の現場が壊れない）', async () => {

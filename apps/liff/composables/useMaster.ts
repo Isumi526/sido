@@ -127,19 +127,29 @@ export const useMaster = () => {
     // 作業区分（現場作業/見積/事務…）と、現場×区分ごとの定時。
     //  ★定時は「現場だけ」でも「区分だけ」でも決まらない（事務は拠点で 08:30/08:00 と違う）。
     //   組をキーにして持つ。行が無い＝その組に定時なし。
+    //  ★区分そのものにも「全現場共通の定時」を持たせられる（2026-09-02）。
+    //   工場作業は複数の現場で発生するので、現場×区分を1件ずつ登録して回るのは
+    //   運用として成立しない。共通定時があれば1回の設定でどの現場でも効く。
+    const normalizeBreaks = (v: unknown): { start: string; minutes: number }[] | null => {
+      if (!Array.isArray(v) || !v.length) return null
+      const wins = (v as any[])
+        .filter(b => b && b.start && (Number(b.minutes) || 0) > 0)
+        .map(b => ({ start: String(b.start).slice(0, 5), minutes: Number(b.minutes) || 0 }))
+      return wins.length ? wins : null
+    }
     const workCategories = ((r.workCategories ?? []) as any[])
-      .map((c: any) => ({ id: c.id, name: c.name, scope: c.scope ?? null }))
+      .map((c: any) => ({
+        id: c.id, name: c.name, scope: c.scope ?? null,
+        start:  (c.default_start_time ?? null)?.slice(0, 5) ?? null,
+        end:    (c.default_end_time ?? null)?.slice(0, 5) ?? null,
+        breaks: normalizeBreaks(c.default_breaks),
+      }))
     const categoryHours: Record<string, { start: string | null; end: string | null; breaks: { start: string; minutes: number }[] | null }> = {}
     for (const h of (r.siteCategoryHours ?? []) as any[]) {
-      const breaks = Array.isArray(h.default_breaks)
-        ? (h.default_breaks as any[])
-            .filter(b => b && b.start && (Number(b.minutes) || 0) > 0)
-            .map(b => ({ start: String(b.start).slice(0, 5), minutes: Number(b.minutes) || 0 }))
-        : null
       categoryHours[`${h.site_id}|${h.category_id}`] = {
         start: (h.default_start_time ?? null)?.slice(0, 5) ?? null,
         end:   (h.default_end_time ?? null)?.slice(0, 5) ?? null,
-        breaks: breaks && breaks.length ? breaks : null,
+        breaks: normalizeBreaks(h.default_breaks),
       }
     }
 

@@ -7,10 +7,17 @@
 //   区分の置き場所が無いため現場マスタに区分を作ってしのいでおり、
 //   sido の有効な現場80件のうち8件が実質「作業区分」だった。
 //
+//  ★2026-09-02 追加: 区分ごとの「全現場共通の定時」をこの画面で設定する。
+//   工場作業(8:00-17:30)は複数の現場で発生するので、現場×区分を1件ずつ登録して
+//   回るのは運用に乗らない、という現場からの要望（今井さん）。
+//   ★このページには以前から「区分ごとに定時を設定できます」と書いてあったのに
+//    入力欄が無く、実際の設定は現場モーダル側だった。それが混乱の直接の原因。
+//
 //  ★このspecが守るもの:
 //   - 使われている区分を消せない（消すと日報・予定の参照が切れる）
 //   - 他テナントの区分を触れない
 //   - 0件更新を ok:true で返さない（「成功したのに変わらない」を作らない）
+//   - 共通定時を画面から保存でき、消せる（入れっぱなしにならない）
 // ============================================================
 import { test, expect } from '@playwright/test'
 import { SUPABASE_URL, ANON_KEY, restSrv, getAccountId, ADMIN_LOGIN_EMAIL, ADMIN_LOGIN_PASS } from './helpers'
@@ -155,6 +162,44 @@ test.describe('作業区分マスタ', () => {
     const row = page.locator('tr', { hasText: UI_CAT })
     await row.locator('.btn-del').click()
     await expect(page.locator('table.table'), '削除すると一覧から消える').not.toContainText(UI_CAT)
+  })
+
+  test('★画面から区分の共通定時を設定でき、クリアもできる', async ({ page }) => {
+    const HOURS_CAT = `E2E共通定時区分_${TS}`
+    await page.goto('/work-categories', { waitUntil: 'networkidle' })
+
+    await page.locator('.btn-add').click()
+    await page.locator('[data-testid="cat-name"]').fill(HOURS_CAT)
+    await page.locator('[data-testid="cat-scope"]').selectOption('site')
+    await page.locator('[data-testid="cat-start"]').fill('08:00')
+    await page.locator('[data-testid="cat-end"]').fill('17:30')
+    // 現場の定時を上書きすることになる、という注意が出る
+    await expect(page.locator('[data-testid="cat-hours-warn"]'), '上書きになる旨の注意が出る').toBeVisible()
+    await page.locator('[data-testid="cat-break-add"]').click()
+    await page.locator('[data-testid="cat-break-start-0"]').fill('12:00')
+    await page.locator('[data-testid="cat-break-min-0"]').fill('60')
+    await page.locator('[data-testid="cat-save"]').click()
+
+    const row = page.locator('tr', { hasText: HOURS_CAT })
+    await expect(row, '★一覧に共通定時が出る').toContainText('08:00〜17:30')
+    await expect(row, '休憩も出る').toContainText('休憩60分')
+
+    // ★DBに入っているところまで確かめる（画面の表示だけでは「保存できた」と言えない）
+    const saved = (await listCategories()).find(c => c.name === HOURS_CAT) as any
+    expect(saved?.default_start_time?.slice(0, 5), '始業がDBに入る').toBe('08:00')
+    expect(saved?.default_end_time?.slice(0, 5), '終業がDBに入る').toBe('17:30')
+    expect(saved?.default_breaks?.[0]?.minutes, '休憩がDBに入る').toBe(60)
+
+    // クリアできる（一度入れたら戻せない、を作らない）
+    await row.locator('.btn-edit').click()
+    await page.locator('[data-testid="cat-hours-clear"]').click()
+    await page.locator('[data-testid="cat-save"]').click()
+    await expect(page.locator('tr', { hasText: HOURS_CAT }), '★未設定に戻せる').toContainText('未設定')
+    const cleared = (await listCategories()).find(c => c.name === HOURS_CAT) as any
+    expect(cleared?.default_start_time, 'DBもnullに戻る').toBeNull()
+
+    page.once('dialog', d => d.accept())
+    await page.locator('tr', { hasText: HOURS_CAT }).locator('.btn-del').click()
   })
 
   test('★新しく作った会社にも標準の区分が自動で入る', async () => {

@@ -129,9 +129,18 @@
         <!-- ④''' 区分ごとの定時（現場×区分）。見積・事務など「現場作業以外」だけ現場と別の定時を上書き -->
         <div v-if="siteCats.length" class="field" data-testid="cat-hours-section">
           <label>区分ごとの定時（この現場・任意）</label>
-          <p class="hint-sm" style="font-size:12px;color:#64748b;margin:2px 0 8px">見積・事務など「現場作業以外」の定時がこの現場と違う場合だけ設定します。空欄ならこの現場の固定勤務時刻に従います。日報でその区分を選ぶと反映され、実働・人件費もこの定時で計算します。</p>
+          <p class="hint-sm" style="font-size:12px;color:#64748b;margin:2px 0 8px">見積・事務など「現場作業以外」の定時がこの現場と違う場合だけ設定します。空欄なら「作業区分」で設定した全現場共通の定時、それも無ければこの現場の固定勤務時刻に従います。日報でその区分を選ぶと反映され、実働・人件費もこの定時で計算します。</p>
           <div v-for="c in siteCats" :key="c.id" class="cat-hours" :data-testid="`cat-hours-${c.id}`">
-            <div class="cat-hours-name">{{ c.name }}</div>
+            <div class="cat-hours-name">
+              {{ c.name }}
+              <span v-if="usingCommon(c)" class="cat-common" :data-testid="`cat-common-${c.id}`">
+                共通設定 {{ c.commonStart || '—' }}〜{{ c.commonEnd || '—' }} を使用中
+              </span>
+              <span v-else-if="(c.commonStart || c.commonEnd) && (catHoursDraft[c.id]?.start || catHoursDraft[c.id]?.end)"
+                    class="cat-override" :data-testid="`cat-override-${c.id}`">
+                この現場で上書き中（共通は {{ c.commonStart || '—' }}〜{{ c.commonEnd || '—' }}）
+              </span>
+            </div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               <input v-model="catHoursDraft[c.id].start" type="time" step="300" class="input" style="width:auto" :data-testid="`cat-start-${c.id}`" />
               <span>〜</span>
@@ -313,7 +322,12 @@ const responsibleCandidates = ref<{ id: string; name: string }[]>([])
 // ── 区分ごとの定時（現場×区分）。見積・事務など「現場作業以外」だけ現場と別の定時を上書きできる。
 //  書き込みは EF(master-data) 経由（site_category_hours は authenticated 書込不可）。読みは直SELECT可。
 type CatHour = { start: string; end: string; breaks: { start: string; minutes: number }[] }
-const siteCats = ref<{ id: string; name: string }[]>([])
+const siteCats = ref<{ id: string; name: string; commonStart: string; commonEnd: string }[]>([])
+/** その区分に共通定時があり、この現場で上書きしていない＝共通が効いている状態か */
+function usingCommon(c: { id: string; commonStart: string; commonEnd: string }): boolean {
+  const d = catHoursDraft.value[c.id]
+  return !!(c.commonStart || c.commonEnd) && !(d?.start || d?.end)
+}
 const catHoursDraft = ref<Record<string, CatHour>>({})
 async function callMasterEf(body: Record<string, unknown>): Promise<any> {
   const { data, error } = await supabase.functions.invoke('master-data', { body })
@@ -322,10 +336,20 @@ async function callMasterEf(body: Record<string, unknown>): Promise<any> {
 }
 async function loadSiteCats() {
   const r = await callMasterEf({ action: 'categories' })
-  const list = (r?.categories ?? []) as { id: string; name: string; scope: string | null; active: boolean; is_default: boolean }[]
+  const list = (r?.categories ?? []) as {
+    id: string; name: string; scope: string | null; active: boolean; is_default: boolean
+    default_start_time: string | null; default_end_time: string | null
+  }[]
   // 「現場作業」は現場そのものの固定勤務時刻を使うので除外（標準区分は全て is_default=true のため
   //  名前で特定する＝report.vue の既定区分判定 name==='現場作業' と揃える）。現場で使える区分だけ上書き対象。
-  siteCats.value = list.filter(c => c.active && c.name !== '現場作業' && (c.scope === null || c.scope === 'site')).map(c => ({ id: c.id, name: c.name }))
+  //  ★共通定時（default_*）も持ち回る。上書きが空の欄に「共通設定が使われる」ことを
+  //   その場で見せるため（2026-09-02 今井さん「各現場で設定のチェックもしたい」）。
+  siteCats.value = list.filter(c => c.active && c.name !== '現場作業' && (c.scope === null || c.scope === 'site'))
+    .map(c => ({
+      id: c.id, name: c.name,
+      commonStart: (c.default_start_time ?? '').slice(0, 5),
+      commonEnd: (c.default_end_time ?? '').slice(0, 5),
+    }))
 }
 function buildCatHoursDraft(rows: { category_id: string; default_start_time: string | null; default_end_time: string | null; default_breaks: { start: string; minutes: number }[] | null }[]) {
   const draft: Record<string, CatHour> = {}
@@ -974,4 +998,10 @@ textarea.input { resize: vertical; font-family: inherit; }
 .rule-hist-btn { background: #fff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 5px 10px; font-size: 12px; color: #222; cursor: pointer; }
 .rule-hist-btn:hover { background: #f0fdf4; border-color: #06C755; }
 .btn-rule-add { align-self: flex-start; background: #e0f2fe; border: none; border-radius: 6px; padding: 7px 14px; font-size: 13px; color: #0369a1; font-weight: 600; cursor: pointer; }
+
+/* 区分ごとの定時：共通設定が効いているのか、この現場で上書きしているのかを一目で分かるようにする */
+.cat-common, .cat-override { margin-left: 8px; font-size: 11px; padding: 1px 7px; border-radius: 999px; font-weight: 600; }
+.cat-common { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; }
+.cat-override { background: #fefce8; border: 1px solid #fde68a; color: #92400e; }
+
 </style>
