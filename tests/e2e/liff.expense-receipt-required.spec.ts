@@ -89,6 +89,44 @@ test.describe('経費の領収書添付を必須にする', () => {
     expect(msg, '★領収書を理由に弾かれない').not.toMatch(/領収書の写真が必要です/)
   })
 
+  // ────────────────────────────────────────────
+  //  2026-09-02 本番: 「写真も理由も入れているのに送信できない」の報告。
+  //  真因は「弾いた行がどれか分からない」＋「経費を『なし』に戻した行は
+  //  入力欄ごと隠れるのに中身は残る＝画面から直せない」の2つ。
+  // ────────────────────────────────────────────
+  test('★弾いた時に、どの現場のどの明細かが分かる', async ({ page }) => {
+    await useDevWorker(page, 'receipt-required')
+    await openExpenseForm(page)
+    const card = otherCard(page)
+    await card.locator('input[type="text"]').first().fill('軽油')
+    await card.locator('input[inputmode="numeric"], input[type="number"]').first().fill('7494')
+    await page.waitForTimeout(300)
+
+    const msg = await submit(page)
+    expect(msg, '現場名が出る').toMatch(/【.+】/)
+    expect(msg, '品名が出る').toContain('軽油')
+    expect(msg, '金額が出る＝同じ品名が複数あっても特定できる').toContain('7,494')
+    // 弾いた行の入力欄まで連れて行く（開いてスクロール＋フォーカス）
+    await expect(reasonInput(card), '理由欄が開いている').toBeVisible()
+  })
+
+  test('★経費を「なし」に戻したら、隠れた明細が残って送信を弾き続けない', async ({ page }) => {
+    await useDevWorker(page, 'receipt-required')
+    await openExpenseForm(page)
+    const card = otherCard(page)
+    await card.locator('input[inputmode="numeric"], input[type="number"]').first().fill('5000')
+    await page.waitForTimeout(300)
+    await expect(reasonInput(card), '理由欄が出た状態から始める').toBeVisible()
+
+    // 「経費」トグル＝現場ブロック直下の最初の あり/なし。なし に戻すと入力欄ごと畳まれる
+    await page.locator('select.select--usage').first().selectOption('なし')
+    await page.waitForTimeout(500)
+    await expect(page.locator('.lineitem-card'), '入力欄は畳まれる').toHaveCount(0)
+
+    const msg = await submit(page)
+    expect(msg, '★見えない5000円で弾かれない（＝中身も消えている）').not.toMatch(/領収書/)
+  })
+
   test('★ETCの高速代は領収書を求めない（利用明細で後日精算＝その場で出ない）', async ({ page }) => {
     await useDevWorker(page, 'receipt-required')
     await openExpenseForm(page)
