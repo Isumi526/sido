@@ -336,6 +336,11 @@ onMounted(async () => {
   if (uid) {
     selfUser.value = await expense.getUser(uid)
     if (!selfUser.value) { await navigateTo('/register'); return }
+    // ★代理で入れた日報は「代理先の人」のデータになるため、自分の履歴には出ない。
+    //  履歴からも代理モード（相手を選んでその人の履歴を見る）に切り替えられるよう、
+    //  代理先一覧をここでも取得する（従来はホーム index.vue でしか取得しておらず、
+    //  履歴に直行すると canProxy=false で切替が出ず「代理分が見られない」状態だった）。
+    if ((selfUser.value as any)?.worker_id) await proxy.fetchProxyTargets((selfUser.value as any).worker_id)
     await loadReports()
     // 描画は待たせない。未送信バナーは承認待ちの日を除きたいので pending の後に回す
     void loadPendingDates().then(loadUnsubmitted)
