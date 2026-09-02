@@ -1758,6 +1758,7 @@ function startTimeOptionsForSite(si: number): string[] {
   // ※ 前現場終了以降の制限は撤廃（前現場終了より前でも設定可＝80c2）。重複は送信時にバリデートする。
   // 現場の固定開始以降のみ維持（固定開始より前=早出は不可・遅刻=後ろ倒しは可）
   const fStart = siteFixedStart(s?.siteName, si)
+  const fEnd = siteFixedEnd(s?.siteName, si)
   // ★早朝入りが承認されていれば、その時刻まで下限を下げる。
   //  承認が無ければ従来どおり固定開始が下限（勝手に早出をつけられないため）。
   const approvedStart = approvedAdjust.value?.startTime ?? null
@@ -1766,8 +1767,12 @@ function startTimeOptionsForSite(si: number): string[] {
     floorMin = Math.max(floorMin, floor)
   }
   if (floorMin < 0) return TIME_OPTIONS
+  // ★日跨ぎ現場（固定開始>固定終了・例:平和不動産 20:30-6:00）は勤務帯が24時をまたぐ。
+  //  線形の下限だけだと 0:00〜固定終了 の「翌日側」の始業（遅い入り）が全部消えてしまう（本番の不具合）。
+  //  この場合は「固定開始以降 ∪ 固定終了以前」の和集合を許可する。早出/残業ガードは範囲外なので維持される。
+  const wrapCap = (fStart && fEnd && parseMin(fStart) > parseMin(fEnd)) ? parseMin(fEnd) : -1
   // 編集で開いた古い下限割れ値は snap させないため、現在値は必ず含める。
-  return TIME_OPTIONS.filter(t => parseMin(t) >= floorMin || t === cur)
+  return TIME_OPTIONS.filter(t => parseMin(t) >= floorMin || (wrapCap >= 0 && parseMin(t) <= wrapCap) || t === cur)
 }
 
 // 送信バリデート: 同一作業員の複数現場の作業時間帯が重複していないか（重複していたらエラー文言を返す・無ければ null）
@@ -2100,7 +2105,12 @@ function endTimeOptionsForSite(si: number): string[] {
   if (overtimeApprovedForDate.value) return TIME_OPTIONS
   const capMin = parseMin(endCap)
   const cur = s?.workers?.[0]?.endTime
-  return TIME_OPTIONS.filter(t => parseMin(t) <= capMin || t === cur)
+  // ★日跨ぎ現場（固定開始>固定終了）は勤務帯が24時をまたぐので、終業も「固定終了以前 ∪ 固定開始以降」を許可。
+  //  線形の上限だけだと 固定開始〜24:00 の「当日側の退勤」（例:平和不動産で20:30〜0:00）が全部消える不具合。
+  //  残業（固定終了超過）は範囲外なのでガードは維持される。
+  const fStart = siteFixedStart(s?.siteName, si)
+  const wrapFloor = (fStart && parseMin(fStart) > capMin) ? parseMin(fStart) : -1
+  return TIME_OPTIONS.filter(t => parseMin(t) <= capMin || (wrapFloor >= 0 && parseMin(t) >= wrapFloor) || t === cur)
 }
 function removeSite(i: number) {
   report.removeSite(i)
