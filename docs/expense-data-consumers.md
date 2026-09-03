@@ -36,7 +36,7 @@
 - [ ] `apps/liff/utils/diffReport.ts` — 日報編集の差分通知（notify-edit）
 
 ### レガシー（現役なら確認）
-- [ ] `apps/gas/コード.js` — 旧GAS経路（現在はEF主経路だが残存）
+- ~~`apps/gas/コード.js` — 旧GAS経路~~（2026-09-03 に撤去済み。消費箇所ではなくなった）
 
 ## スカラー⇔配列を変える時の追加注意（金額の二重/過少計上）
 `entertainment`（単一）→`entertainments`（配列）のような変更では：
