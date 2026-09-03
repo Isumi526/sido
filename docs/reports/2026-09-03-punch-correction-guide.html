@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<title>打刻を間違えた時の直し方</title>
+<style>
+  @page { size: A4; margin: 12mm 12mm 10mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;
+         color: #1f2937; font-size: 10.5pt; line-height: 1.65; margin: 0; }
+  h1 { font-size: 18pt; margin: 0 0 2mm; color: #06C755; }
+  .sub { font-size: 10pt; color: #4b5563; margin: 0 0 4mm; }
+  h2 { font-size: 12.5pt; margin: 5mm 0 2.5mm; padding: 1.5mm 3mm;
+       background: #06C755; color: #fff; border-radius: 3px; }
+  .lead { background: #f0fdf4; border: 1px solid #86efac; border-radius: 4px; padding: 3mm 4mm; font-size: 10.5pt; }
+  .shots { display: flex; gap: 4mm; margin-top: 2mm; page-break-inside: avoid; }
+  .shot { flex: 1; }
+  .shot img { width: 100%; border: 1px solid #d1d5db; border-radius: 4px; display: block; }
+  .step { font-weight: 700; font-size: 10.5pt; margin: 1.5mm 0 .5mm; color: #b91c1c; }
+  .cap { font-size: 9.5pt; color: #374151; line-height: 1.5; }
+  .box { padding: 3mm 4mm; border-radius: 3px; font-size: 10pt; margin: 3mm 0 0; }
+  .info { background: #eff6ff; border: 1.5px solid #93c5fd; }
+  .warn { background: #fffbeb; border: 1px solid #fde68a; }
+  ul { margin: 1mm 0 0 5mm; padding: 0; }
+  li { margin: 0 0 1.2mm; }
+  footer { margin-top: 5mm; font-size: 8.5pt; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 1.5mm; }
+</style></head>
+<body>
+
+<h1>打刻を間違えた時の直し方</h1>
+<p class="sub">2026年9月3日 ／ 出退勤アプリ</p>
+
+<div class="lead">
+  「出勤と退勤を押し間違えた」「時刻が違う」という時に、<b>アプリから修正を申請できるようになりました</b>。
+  申請すると管理者が確認して、承認されると打刻が直ります。
+  <b>ご自身で打刻を書き換えることはできません</b>ので、間違えても遠慮なく申請してください。
+</div>
+
+<h2>手順（アプリの「出退勤」画面から）</h2>
+
+<div class="shots">
+  <div class="shot">
+    <img src="shots/punch-correction/01-entry.png" alt="入口">
+    <div class="step">① 「打刻を忘れた・間違えた時は」を開く</div>
+    <div class="cap">出退勤の画面をいちばん下まで見ると出てきます。</div>
+  </div>
+  <div class="shot">
+    <img src="shots/punch-correction/02-open-fix.png" alt="修正申請を開く">
+    <div class="step">② 「打刻を間違えた時の修正申請」を押す</div>
+    <div class="cap">その上にある「打刻を忘れた日を入力する」は、<b>打刻自体をしていない日</b>を入れる時に使います。</div>
+  </div>
+  <div class="shot">
+    <img src="shots/punch-correction/03-pick.png" alt="打刻を選ぶ">
+    <div class="step">③ 直したい打刻を選ぶ</div>
+    <div class="cap">直近7日ぶんのご自身の打刻が出ます。日時と「出勤／退勤」を見て選んでください。</div>
+  </div>
+</div>
+
+<div class="shots" style="margin-top:4mm">
+  <div class="shot">
+    <img src="shots/punch-correction/04-submit.png" alt="内容と理由">
+    <div class="step">④⑤⑥ 内容と理由を入れて申請</div>
+    <div class="cap">
+      「何を直しますか」から選びます：<br>
+      ・<b>出勤・退勤を押し間違えた</b><br>
+      ・<b>時刻が違う</b>（同じ日の中で直せます）<br>
+      ・<b>この打刻自体が要らない</b><br>
+      理由を書いて「この内容で申請する」を押します。
+    </div>
+  </div>
+  <div class="shot">
+    <img src="shots/punch-correction/05-requested.png" alt="申請中">
+    <div class="step">⑦ 申請できました</div>
+    <div class="cap">
+      その打刻に「申請中」と付きます。<b>この時点ではまだ打刻は変わりません。</b>
+      管理者が承認すると直ります。
+    </div>
+  </div>
+  <div class="shot" style="display:flex;align-items:center">
+    <div class="box info" style="margin:0">
+      <b>承認されると、この画面にそのまま出ます</b><br><br>
+      画面を開いたまま待っていただければ、
+      承認された時点で<b>「承認されました。打刻が直っています。」</b>と表示されます。
+      アプリを開き直す必要はありません。
+      <br><br>
+      却下された場合も同じ場所に出ます。
+    </div>
+  </div>
+</div>
+
+<div class="box warn">
+  <b>こんな時は</b>
+  <ul>
+    <li><b>そもそも打刻をしていない日がある</b> → 「打刻を忘れた日を入力する」から、日付と時刻を入れてください（4日前まで）。</li>
+    <li><b>1回押し間違えると、その後の打刻もずれます。</b>アプリは「直前の打刻」を見て次が出勤か退勤かを決めているためです。おかしいと思ったら、その時点で早めに申請してください。</li>
+    <li><b>同じ打刻に2回申請はできません。</b>「申請中」と出ている間は承認をお待ちください。</li>
+  </ul>
+</div>
+
+<footer>GENLINKS 出退勤 ／ 画面は説明用のテストデータです</footer>
+</body></html>

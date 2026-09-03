@@ -8,6 +8,7 @@ const SCREEN_NAMES: Record<string, string> = {
   '/report-edit-approvals': '日報編集の承認',
   '/report-site-relink': '現場未設定の紐付け',
   '/overtime-approvals': '残業申請の承認',
+  '/punch-corrections': '打刻修正の承認',
   '/chats': 'チャット',
   '/chats/account': '社内チャット',
   '/site-reports': '現場別集計',

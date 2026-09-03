@@ -15,10 +15,11 @@ export const overtimePendingCount = ref(0)  // 残業申請(pending)
 export const pendingGrantCount    = ref(0)  // 有給の付与待ち(未付与の基準日がある作業員数)
 export const editReviewCount      = ref(0)  // 日報編集の承認待ち(保留中の編集)
 export const poAcceptedPendingCount = ref(0) // 業者が承諾済みだが、まだ請求依頼していない注文書(=管理者の要対応・#47)
+export const punchCorrectionCount   = ref(0)  // 打刻修正の承認待ち(pending)。承認するまで打刻は直らないので溜めない
 
 export async function refreshNavBadges() {
   const accountId = await getAccountId()
-  if (!accountId) { editApprovalCount.value = 0; siteUnsetCount.value = 0; overtimePendingCount.value = 0; pendingGrantCount.value = 0; editReviewCount.value = 0; poAcceptedPendingCount.value = 0; return }
+  if (!accountId) { editApprovalCount.value = 0; siteUnsetCount.value = 0; overtimePendingCount.value = 0; pendingGrantCount.value = 0; editReviewCount.value = 0; poAcceptedPendingCount.value = 0; punchCorrectionCount.value = 0; return }
   // 注文書の承諾バッジ(#47): 承諾済み(status='accepted' or 承諾証跡あり)で、まだ請求依頼していない注文書の数。
   // 「確認して次アクション(請求依頼)を打つ」とバッジが減る＝要対応の可視化。承諾はEF側でLINE通知も出る。
   {
@@ -44,6 +45,11 @@ export async function refreshNavBadges() {
     .select('id', { count: 'exact', head: true })
     .eq('account_id', accountId).eq('status', 'pending')
   overtimePendingCount.value = otCount ?? 0
+  // 打刻修正: pending件数。承認するまで打刻は実際に押された記録のままなので、溜めると勤怠が狂ったままになる
+  const { count: pcCount } = await supabase.from('attendance_correction_requests')
+    .select('id', { count: 'exact', head: true })
+    .eq('account_id', accountId).eq('status', 'pending')
+  punchCorrectionCount.value = pcCount ?? 0
   // 日報編集の承認待ち: pending件数（承認するまで日報に反映されないので、溜めない運用のために出す）
   const { count: revCount } = await supabase.from('daily_report_pending_edits')
     .select('id', { count: 'exact', head: true })

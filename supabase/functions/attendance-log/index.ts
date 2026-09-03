@@ -152,6 +152,83 @@ Deno.serve(async (req) => {
     return json({ ok: true, changed: (updated ?? []).length })
   }
 
+  // ── 打刻の修正: 承認（管理者）──────────────────────────
+  //  ★overtime-decide と同じガードを踏む。ここを緩めると勤怠の証跡が
+  //   「誰でも後から書き換えられる記録」になり、意味を失う。
+  //  ★caller 解決より前に置く。承認者は作業員として登録されていないことがあり
+  //   （純粋な管理者アカウント）、下の worker_not_registered で弾かれてしまう。
+  if (body.action === 'correction-decide') {
+    const approver = await resolveApprover(svc, req.headers.get('Authorization') ?? '')
+    if (!approver) return json({ ok: false, error: 'unauthorized' }, 401)
+    if (!APPROVER_ROLES.includes(approver.role)) {
+      return json({ ok: false, error: 'APPROVE_FORBIDDEN' }, 403)
+    }
+    const id = typeof body.id === 'string' ? body.id : ''
+    const status = body.status === 'approved' || body.status === 'rejected' ? body.status : ''
+    if (!id) return json({ ok: false, error: 'id_required' }, 400)
+    if (!status) return json({ ok: false, error: 'bad_status' }, 400)
+
+    // ★account_id で必ず絞る。他テナントのIDを渡されても触れない
+    const { data: reqRow } = await svc.from('attendance_correction_requests')
+      .select('id, worker_id, log_id, kind, requested_type, requested_checked_at, status')
+      .eq('id', id).eq('account_id', approver.accountId).maybeSingle()
+    if (!reqRow) return json({ ok: false, error: 'not_found' }, 404)
+    // ★自己承認の禁止。画面で隠すだけでは EF 直叩きで迂回できる
+    if (approver.workerId && reqRow.worker_id === approver.workerId) {
+      return json({ ok: false, error: 'SELF_APPROVAL_FORBIDDEN' }, 403)
+    }
+
+    // ★承認者名はクライアントから受け取らない。検証済みの身元から引き直す
+    let approvedBy: string | null = null
+    if (approver.workerId) {
+      const { data: w } = await svc.from('workers').select('name').eq('id', approver.workerId).maybeSingle()
+      approvedBy = (w?.name as string) ?? null
+    }
+    if (!approvedBy) {
+      const { data: au } = await svc.auth.admin.getUserById(approver.authUserId)
+      approvedBy = au?.user?.email ?? null
+    }
+
+    // ★先に申請を pending から動かす。.eq('status','pending') で二重決裁（連打・再送）を弾く。
+    //  0件更新なら打刻には触らない＝承認を2回押しても打刻が2回書き換わらない。
+    const { data: decided, error: decErr } = await svc.from('attendance_correction_requests')
+      .update({ status, approved_by: approvedBy, decided_at: new Date().toISOString() })
+      .eq('id', id).eq('account_id', approver.accountId).eq('status', 'pending')
+      .select('id')
+    if (decErr) {
+      console.error('[attendance-log] correction-decide failed:', decErr)
+      return json({ ok: false, error: 'update_failed' }, 500)
+    }
+    if (!decided || decided.length === 0) return json({ ok: true, changed: 0 })
+    if (status === 'rejected') return json({ ok: true, changed: 1, applied: false })
+
+    // ── 承認: 打刻に反映する ──
+    //  ★元の値を original_* に残してから書き換える。消さない・上書きだけで終わらせない。
+    const { data: log } = await svc.from('attendance_logs')
+      .select('id, type, checked_at, original_type, original_checked_at')
+      .eq('id', reqRow.log_id).maybeSingle()
+    if (!log) return json({ ok: false, error: 'log_not_found' }, 404)
+
+    const patch: Record<string, unknown> = {
+      corrected_at: new Date().toISOString(),
+      corrected_by: approvedBy,
+      // 2回目以降の修正で元の値を上書きしない（最初の実打刻を残す）
+      original_type: log.original_type ?? log.type,
+      original_checked_at: log.original_checked_at ?? log.checked_at,
+    }
+    if (reqRow.kind === 'type')   patch.type = reqRow.requested_type
+    if (reqRow.kind === 'time')   patch.checked_at = reqRow.requested_checked_at
+    // ★誤打刻も「あった事実」なので物理削除しない。無効化して集計から外すだけ
+    if (reqRow.kind === 'delete') patch.deleted_at = new Date().toISOString()
+
+    const { error: applyErr } = await svc.from('attendance_logs').update(patch).eq('id', reqRow.log_id)
+    if (applyErr) {
+      console.error('[attendance-log] correction apply failed:', applyErr)
+      return json({ ok: false, error: 'apply_failed' }, 500)
+    }
+    return json({ ok: true, changed: 1, applied: true })
+  }
+
   const caller = await resolveCaller(
     svc,
     req.headers.get('Authorization') ?? '',
@@ -162,6 +239,76 @@ Deno.serve(async (req) => {
   if (!caller.workerId) {
     // 作業員として登録されていない人（純粋な管理者アカウント等）は打刻の対象外
     return json({ ok: false, error: 'worker_not_registered' }, 409)
+  }
+
+  // ── 打刻の修正: 申請（本人のみ）───────────────────────
+  //  ★代理では出させない。他人の勤怠を後から書き換える導線は開けない（backdate と同じ方針）。
+  //  ★ここでは打刻を一切変えない。承認されるまで記録は実打刻のまま。
+  if (body.action === 'correction-request') {
+    const logId = typeof body.logId === 'string' ? body.logId : ''
+    const kind = ['type', 'time', 'delete'].includes(body.kind) ? body.kind as string : ''
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : ''
+    if (!logId) return json({ ok: false, error: 'log_required' }, 400)
+    if (!kind) return json({ ok: false, error: 'bad_kind' }, 400)
+    // ★理由は必須。理由の無い書き換え申請は承認する側が判断できない
+    if (!reason) return json({ ok: false, error: 'reason_required' }, 400)
+
+    // ★自分の打刻か確認する。他人の log_id を渡されても申請を作らせない
+    const { data: log } = await svc.from('attendance_logs')
+      .select('id, worker_id, type, checked_at, deleted_at')
+      .eq('id', logId).eq('worker_id', caller.workerId).maybeSingle()
+    if (!log) return json({ ok: false, error: 'log_not_found' }, 404)
+    if (log.deleted_at) return json({ ok: false, error: 'already_deleted' }, 409)
+
+    let requestedType: string | null = null
+    let requestedAt: string | null = null
+    if (kind === 'type') {
+      requestedType = body.requestedType === 'checkin' || body.requestedType === 'checkout' ? body.requestedType : ''
+      if (!requestedType) return json({ ok: false, error: 'bad_requested_type' }, 400)
+      if (requestedType === log.type) return json({ ok: false, error: 'no_change' }, 400)
+    }
+    if (kind === 'time') {
+      // 'HH:MM' を打刻日(JST)に当てる。日付ごと動かすと別日の勤怠を作れてしまうので日付は変えない
+      if (!isTime(body.requestedTime)) return json({ ok: false, error: 'bad_time' }, 400)
+      const day = new Date(log.checked_at as string).toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' })
+      requestedAt = new Date(`${day}T${body.requestedTime}:00+09:00`).toISOString()
+      if (requestedAt === log.checked_at) return json({ ok: false, error: 'no_change' }, 400)
+    }
+
+    const { error } = await svc.from('attendance_correction_requests').insert({
+      account_id: caller.accountId,
+      worker_id: caller.workerId,
+      log_id: logId,
+      kind,
+      requested_type: requestedType,
+      requested_checked_at: requestedAt,
+      reason,
+    })
+    if (error) {
+      // 同じ打刻に pending が2件作れないよう一意indexを張ってある
+      const dup = String(error.message ?? '').includes('attendance_correction_one_pending_per_log')
+      if (dup) return json({ ok: false, error: 'ALREADY_REQUESTED' }, 409)
+      console.error('[attendance-log] correction-request failed:', error)
+      return json({ ok: false, error: 'insert_failed' }, 500)
+    }
+    return json({ ok: true })
+  }
+
+  // ── 自分の打刻＋修正申請の状態（修正申請の画面で出す）──
+  if (body.action === 'correction-mine') {
+    const days = Number(body.days) > 0 ? Math.min(Number(body.days), 31) : 7
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+    const { data: logs } = await svc.from('attendance_logs')
+      .select('id, type, checked_at, backdated, deleted_at, corrected_at')
+      .eq('worker_id', caller.workerId).gte('checked_at', since)
+      .order('checked_at', { ascending: false })
+    const ids = (logs ?? []).map((l: any) => l.id)
+    const { data: reqs } = ids.length
+      ? await svc.from('attendance_correction_requests')
+          .select('id, log_id, kind, requested_type, requested_checked_at, reason, status, decided_at')
+          .in('log_id', ids)
+      : { data: [] as any[] }
+    return json({ ok: true, logs: logs ?? [], requests: reqs ?? [] })
   }
 
   // ── 自分の直近ログ（出勤中かどうかの判定に使う）──
@@ -176,6 +323,7 @@ Deno.serve(async (req) => {
     const { data } = await svc.from('attendance_logs')
       .select('site_id, type, checked_at')
       .eq('worker_id', target).gte('checked_at', since)
+      .is('deleted_at', null)          // ★取り消された誤打刻は「出勤中か」の判定に混ぜない
       .order('checked_at', { ascending: true })
     return json({ ok: true, logs: data ?? [] })
   }
@@ -205,6 +353,7 @@ Deno.serve(async (req) => {
     const { data } = await svc.from('attendance_logs')
       .select('worker_id, type, checked_at, sites(name)')
       .eq('worker_id', target).gte('checked_at', lo).lte('checked_at', hi)
+      .is('deleted_at', null)          // ★取り消された誤打刻は日報に出さない
       .order('checked_at', { ascending: true })
       .limit(5000)
     return json({
@@ -275,6 +424,7 @@ Deno.serve(async (req) => {
     const { data: exists } = await svc.from('attendance_logs')
       .select('type').eq('worker_id', caller.workerId)
       .gte('checked_at', lo).lte('checked_at', hi)
+      .is('deleted_at', null)          // ★取り消した誤打刻は「もうある」に数えない（後追いで入れ直せる）
     const already = new Set(((exists ?? []) as { type: string }[]).map((r) => r.type))
 
     const rows: Record<string, unknown>[] = []

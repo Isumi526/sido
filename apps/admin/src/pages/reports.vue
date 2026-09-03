@@ -707,6 +707,7 @@ async function load() {
       .in('worker_id', workerIds)
       .gte('checked_at', loUtc)
       .lte('checked_at', hiUtc)
+      .is('deleted_at', null)   // ★承認で取り消した誤打刻は集計に出さない（2026-09-03）
       .order('checked_at', { ascending: true })
       .limit(5000) // 1ヶ月×全作業員(出退勤で1日2件以上)で上限(既定1000)超による欠落防止（daily_reportsクエリと同じ余裕）
     // ★2026-08-27 出退勤モデル変更: 打刻が現場に紐づかなくなったのでキーから現場名を外す

@@ -112,5 +112,39 @@ export function useAttendanceLog() {
     }
   }
 
-  return { recent, forReport, rules, punch, backdate }
+  /**
+   * 打刻の修正申請（本人のみ）。
+   * ★ここでは打刻を一切変えない。管理者が承認して初めて直る（2026-09-03）。
+   *  打刻は勤怠の証跡なので本人が直接書き換えられるようにはしない。
+   */
+  async function correctionRequest(input: {
+    logId: string
+    kind: 'type' | 'time' | 'delete'
+    requestedType?: 'checkin' | 'checkout'
+    requestedTime?: string
+    reason: string
+  }): Promise<{ ok: boolean; error?: string }> {
+    try {
+      await call('correction-request', input as Record<string, unknown>)
+      return { ok: true }
+    } catch (e: any) {
+      return { ok: false, error: e?.message ?? 'failed' }
+    }
+  }
+
+  /** 自分の直近の打刻＋その修正申請の状態（修正申請の画面で出す） */
+  async function correctionMine(days = 7): Promise<{
+    logs: { id: string; type: 'checkin' | 'checkout'; checked_at: string; backdated: boolean | null; deleted_at: string | null; corrected_at: string | null }[]
+    requests: { id: string; log_id: string; kind: string; status: string }[]
+  }> {
+    try {
+      const r = await call('correction-mine', { days })
+      return { logs: (r as any)?.logs ?? [], requests: (r as any)?.requests ?? [] }
+    } catch (e) {
+      console.error('[attendance] 打刻の修正申請の状態を取得できませんでした:', e)
+      return { logs: [], requests: [] }
+    }
+  }
+
+  return { recent, forReport, rules, punch, backdate, correctionRequest, correctionMine }
 }

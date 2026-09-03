@@ -73,9 +73,27 @@ test.describe('打刻を忘れた日の遡り入力', () => {
 
   async function openLatePanel(page: import('@playwright/test').Page) {
     await page.goto('/checkin', { waitUntil: 'networkidle' })
-  await passWorkStatusGate(page)
+    await passWorkStatusGate(page)
+    // ★2026-09-03: 打刻画面をステップ式にした際、後追い入力と修正申請は
+    //  「打刻を忘れた・間違えた時は」に畳んだ（打刻の本筋ではないので既定では見せない）。
+    //  最終ステップまで進めてから開く。
+    await advanceToLastStep(page)
+    await page.getByTestId('more-actions').locator('summary').click()
     await page.getByTestId('late-open').click()
     await expect(page.getByTestId('late-panel')).toBeVisible({ timeout: 15000 })
+  }
+
+  /** 確認事項→現在地 を通して「記録」ステップまで進める（畳んだ導線はそこにある） */
+  async function advanceToLastStep(page: import('@playwright/test').Page) {
+    // ★描画を待ってから数える。先に count() すると 0件になり、1つもチェックされないまま
+    //  最終ステップに進まない（実際にこれで落ちた）
+    await page.waitForSelector('.rule-row, [data-testid="loc-get"], [data-testid="more-actions"]', { timeout: 20000 })
+    const rows = page.locator('.rule-row')
+    for (let i = 0, n = await rows.count(); i < n; i++) await rows.nth(i).click()
+    const loc = page.getByTestId('loc-get')
+    if (await loc.count()) await loc.click().catch(() => {})
+    // 打刻済みの日は完了画面に出る（そこにも同じ畳んだ導線がある）
+    await expect(page.getByTestId('more-actions')).toBeVisible({ timeout: 20000 })
   }
 
   test('★忘れた日の出勤・退勤を入れると、あとから入力した記録として残る', async ({ page }) => {

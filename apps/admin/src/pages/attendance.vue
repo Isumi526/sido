@@ -65,8 +65,14 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="log in logs" :key="log.id">
-            <td class="date">{{ fmtDateTime(log.checked_at) }}</td>
+          <tr v-for="log in logs" :key="log.id" :class="{ voided: !!log.deleted_at }">
+            <td class="date">
+              {{ fmtDateTime(log.checked_at) }}
+              <!-- ★直した打刻は元の時刻も見せる。書き換えた記録だけ残ると証跡として使えない -->
+              <div v-if="log.original_checked_at && log.original_checked_at !== log.checked_at" class="orig">
+                元: {{ fmtDateTime(log.original_checked_at) }}
+              </div>
+            </td>
             <td>
               <span class="type-badge" :class="log.type">
                 {{ log.type === 'checkin' ? '出勤' : '退勤' }}
@@ -74,6 +80,14 @@
               <!-- ★その場で押した打刻か、あとから思い出して入れた分かを区別する。
                    混ぜると勤怠の証跡として使えない（後付けは現場ルールの同意も取っていない）。 -->
               <span v-if="log.backdated" class="backdated-badge" data-testid="log-backdated">後から入力</span>
+              <!-- ★誤打刻は物理削除しない。取り消した事実ごと残して見せる（2026-09-03） -->
+              <span v-if="log.deleted_at" class="voided-badge" data-testid="log-voided">取消済み</span>
+              <span v-else-if="log.corrected_at" class="corrected-badge" data-testid="log-corrected">
+                修正済み{{ log.corrected_by ? `（${log.corrected_by}）` : '' }}
+              </span>
+              <span v-if="log.original_type && log.original_type !== log.type" class="orig">
+                元: {{ log.original_type === 'checkin' ? '出勤' : '退勤' }}
+              </span>
             </td>
             <td>{{ log.workers?.name ?? '—' }}</td>
             <td class="proxy">{{ log.proxy?.name ?? '—' }}</td>
@@ -141,6 +155,12 @@ type Log = {
   location_lng: number | null
   agreed_rule_texts: string[] | null
   backdated: boolean | null
+  // 打刻の修正（2026-09-03）。deleted_at=取り消した誤打刻・original_*=直す前の値
+  deleted_at: string | null
+  corrected_at: string | null
+  corrected_by: string | null
+  original_type: 'checkin' | 'checkout' | null
+  original_checked_at: string | null
   workers: { name: string } | null
   proxy:   { name: string } | null
 }
@@ -199,6 +219,11 @@ async function load() {
       location_lng,
       agreed_rule_texts,
       backdated,
+      deleted_at,
+      corrected_at,
+      corrected_by,
+      original_type,
+      original_checked_at,
       workers!attendance_logs_worker_id_fkey(name),
       proxy:workers!attendance_logs_proxy_worker_id_fkey(name)
     `)
@@ -244,7 +269,9 @@ async function loadMissing() {
 
     const [{ data: punched }, { data: offUsers }] = await Promise.all([
       supabase.from('attendance_logs').select('worker_id')
-        .eq('type', 'checkin').gte('checked_at', from).lte('checked_at', to).in('worker_id', ids),
+        .eq('type', 'checkin').gte('checked_at', from).lte('checked_at', to).in('worker_id', ids)
+        // ★取り消した誤打刻を「出勤済み」に数えない。数えると打刻忘れの検知が漏れる（2026-09-03）
+        .is('deleted_at', null),
       // 休み/有給を出している人は「打刻忘れ」ではない。毎日全員が並ぶと誰も見なくなるので除く。
       // ★このパネルの前提が 2026-08-31 に強くなった：出勤打刻の前に「今日は稼働しますか」を
       //  聞くようにしたので、休み/有給の人は朝の時点で is_working=false の日報が入る。
@@ -286,6 +313,18 @@ onMounted(async () => {
   display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px;
   font-size: 11px; font-weight: 700; color: #92400e; background: #fef3c7;
 }
+.voided-badge {
+  display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; color: #991b1b; background: #fee2e2;
+}
+.corrected-badge {
+  display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; color: #1d4ed8; background: #dbeafe;
+}
+/* 取り消した打刻は残すが、生きている打刻と同じ強さでは見せない */
+tr.voided td { opacity: .55; }
+tr.voided .date { text-decoration: line-through; }
+.orig { font-size: 11px; color: #6b7280; margin-top: 2px; }
 
 /* 出勤打刻なしパネル */
 .missing-panel { border: 1px solid #e5e7eb; border-left: 3px solid #f59e0b; border-radius: 6px; background: #fffbeb; padding: 10px 14px; margin-bottom: 16px; }
