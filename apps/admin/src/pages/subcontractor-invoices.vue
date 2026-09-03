@@ -235,7 +235,17 @@
             <table class="table items-table">
               <thead>
                 <tr>
-                  <th>日付</th><th>現場</th><th>工事内容/品名</th><th class="num">数量</th><th>単位</th>
+                  <!-- ★1行目の値を全行へコピー（2026-09-04 尾崎さん要望）。
+                       日付・現場が全明細で同じ請求書が多く、1行ずつ選ぶ手間が大きかった。 -->
+                  <th>日付
+                    <button v-if="form.items.length > 1" type="button" class="btn-fill-down" data-testid="fill-down-date"
+                            title="1行目の日付を下の行すべてにコピー" @click="fillDownDate">↓全行</button>
+                  </th>
+                  <th>現場
+                    <button v-if="form.items.length > 1" type="button" class="btn-fill-down" data-testid="fill-down-site"
+                            title="1行目の現場を下の行すべてにコピー" @click="fillDownSite">↓全行</button>
+                  </th>
+                  <th>工事内容/品名</th><th class="num">数量</th><th>単位</th>
                   <!-- ★金額欄の意味は tax_mode で変わる（内税なら税込額が入っている）ので見出しも追従させる -->
                   <th class="num">単価</th><th class="num">{{ formTaxMode === 'inclusive' ? '金額(税込)' : '金額(税抜)' }}</th><th class="num">税率%</th><th>備考</th><th></th>
                 </tr>
@@ -920,6 +930,76 @@ function normSite(s: string): string {
     .replace(/[\s　・,，.。\-ー－]/g, '')
     .toLowerCase()
 }
+/**
+ * 明細の1行目の値を、以降の全行へコピーする（2026-09-04 尾崎さん要望）。
+ * 「日付や現場が全明細で同じ請求書のとき、1行ずつプルダウンで選ぶのが手間」への対応。
+ * ★1行目が空/未確定のときは何もしない（空で全行を潰さない）。
+ * ★入力途中の「＋新規現場…」の行は上書きしない（打ちかけの現場名を消さないため）。
+ */
+function fillDownDate() {
+  const f = form.value
+  if (!f || f.items.length < 2) return
+  const v = f.items[0].item_date
+  if (!v) return
+  for (let i = 1; i < f.items.length; i++) f.items[i].item_date = v
+}
+function fillDownSite() {
+  const f = form.value
+  if (!f || f.items.length < 2) return
+  const src = f.items[0].site_id
+  if (!src || src === '__new__') return
+  for (let i = 1; i < f.items.length; i++) {
+    if (f.items[i].site_id === '__new__') continue
+    f.items[i].site_id = src
+  }
+}
+
+/**
+ * 業者名の表記ゆれを吸収するための正規化（2026-09-04 尾崎さん報告）。
+ *
+ * ★なぜ要るか（本番実測）: 協力業者マスタ175社のうち74社が `(株)◯◯` `(有)◯◯` の
+ *  略記で登録されている一方、請求書のPDFには `株式会社◯◯` と正式表記で書かれている。
+ *  これを完全一致で照合していたため「登録済みなのに自動で入らない」状態だった。
+ *  さらに一致しないと「＋新規業者を登録」へ流れるため、`(株)アサヒ` と `株式会社アサヒ`
+ *  のような重複マスタが16組32件できていた（原因を直さないと重複が増え続ける）。
+ *
+ * NFKC で ㈱→(株)・全角英数→半角 を揃えてから、法人格・記号・空白を落として比較する。
+ */
+function normVendor(s: string): string {
+  return (s || '')
+    .normalize('NFKC')                                   // ㈱→(株) / Ａ→A / ｱ→ア
+    .replace(/[（(](株|有|合|同|名|資)[）)]/g, '')        // (株)(有) 等の略記
+    .replace(/(株式会社|有限会社|合同会社|合資会社|合名会社|一般社団法人|特定非営利活動法人)/g, '')
+    .replace(/(御中|様)\s*$/g, '')                        // 請求書の宛名表記が混ざった場合
+    .replace(/[\s　・,，.。\-ー－]/g, '')
+    .toLowerCase()
+}
+
+/** AIが読んだ業者名を協力業者マスタへ名寄せする。現場名（matchSiteId）と同じ段階的な照合。 */
+function matchVendorId(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  const rawTrim = String(raw).trim()
+  const exact = subs.value.find(s => s.name === rawTrim)
+  if (exact) return exact.id
+  const t = normVendor(rawTrim)
+  if (!t) return null
+  const normExact = subs.value.find(s => normVendor(s.name) === t)
+  if (normExact) return normExact.id
+  // ── 部分一致は「安全な時だけ」に限る ──────────────────────────────
+  // ★現場名（matchSiteId）と違い、業者を取り違えると支払先の記録が別会社に付く。
+  //  本番の業者名で実測したところ、素朴な部分一致は26組で取り違えが起きる:
+  //   ・`(株)IK` が `(株)Hiko` の中に含まれる（短い名前が別会社に埋まる）
+  //   ・`株式会社 M` は正規化すると "m" になり、ほぼ全社に部分一致してしまう
+  //  そこで (a) 3文字以上 (b) 候補がちょうど1社 の時だけ採用する。
+  //  外れる分は従来どおり人が選ぶ＝「間違って自動選択される」より安全側。
+  const MIN_PARTIAL_LEN = 3
+  if (t.length < MIN_PARTIAL_LEN) return null
+  const cands = subs.value
+    .map(s => ({ s, n: normVendor(s.name) }))
+    .filter(({ n }) => n.length >= MIN_PARTIAL_LEN && (t.includes(n) || n.includes(t)))
+  return cands.length === 1 ? cands[0].s.id : null
+}
+
 function matchSiteId(raw: string | null | undefined): string | null {
   if (!raw) return null
   const exact = sites.value.find(s => s.name === raw)
@@ -977,9 +1057,11 @@ async function analyze() {
       if (r.vendor_name && !headerSet.has('vendor')) {
         headerSet.add('vendor')
         f.vendor_name = r.vendor_name
-        // マスタに一致すれば選択、無ければ新規登録欄に名前を入れて区分選択を促す
-        const m = subs.value.find(s => s.name === String(r.vendor_name).trim())
-        if (m) { f.subcontractor_id = m.id }
+        // マスタに一致すれば選択、無ければ新規登録欄に名前を入れて区分選択を促す。
+        // ★照合は表記ゆれを吸収する matchVendorId で行う（完全一致だけだと (株)◯◯ 表記の
+        //  登録済み業者にまず当たらず、重複マスタを量産していた）。
+        const mid = matchVendorId(r.vendor_name)
+        if (mid) { f.subcontractor_id = mid }
         else { f.subcontractor_id = '__new__'; newVendor.value = { name: r.vendor_name, category: '' } }
       }
       if (r.registration_number && !headerSet.has('reg')) { headerSet.add('reg'); f.registration_number = r.registration_number }
@@ -1252,6 +1334,9 @@ onMounted(load)
 
 .items-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 13px; font-weight: 700; color: #555; }
 .btn-row-add { background: #f0f0f0; border: none; border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; }
+/* 明細ヘッダの「↓全行」（1行目の値を下の行へコピー） */
+.btn-fill-down { margin-left: 6px; background: #eef2ff; color: #4338ca; border: 1px solid #c7d2fe; border-radius: 5px; padding: 1px 6px; font-size: 11px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.btn-fill-down:hover { background: #e0e7ff; }
 .items-wrap { overflow-x: auto; }
 .items-table th, .items-table td { padding: 5px 6px; font-size: 12px; }
 .inp-sm { border: 1px solid #ddd; border-radius: 6px; padding: 5px 6px; font-size: 12px; width: 90px; }
