@@ -44,7 +44,10 @@
             <td class="q-cell">{{ f.question }}</td>
             <td class="a-cell">{{ f.answer }}</td>
             <td class="var-cell">{{ f.variations.length ? f.variations.length + '個' : '—' }}</td>
-            <td><span class="status" :class="f.is_active ? 'active' : 'off'">{{ f.is_active ? '有効' : '無効' }}</span></td>
+            <td>
+              <span class="status" :class="f.is_active ? 'active' : 'off'">{{ f.is_active ? '有効' : '無効' }}</span>
+              <a v-if="f.source === 'ai-fable' && !f.is_active" class="ai-review-badge" :href="f.notion_ticket_url || undefined" target="_blank" rel="noopener" data-testid="faq-ai-review-badge">AI生成・レビュー待ち</a>
+            </td>
             <td class="actions">
               <button class="btn-edit" @click="openEdit(f)">編集</button>
             </td>
@@ -108,6 +111,8 @@ interface FaqEntry {
   variations: string[]
   sort_order: number
   is_active: boolean
+  source: string
+  notion_ticket_url: string | null
 }
 
 const faqs      = ref<FaqEntry[]>([])
@@ -144,7 +149,7 @@ async function load() {
   const accountId = await getAccountId()
   const { data } = await supabase
     .from('faq_entries')
-    .select('id, question, answer, category, variations, sort_order, is_active')
+    .select('id, question, answer, category, variations, sort_order, is_active, source, notion_ticket_url')
     .eq('account_id', accountId)
     .order('sort_order')
     .order('created_at')
@@ -248,6 +253,7 @@ async function move(f: FaqEntry, dir: -1 | 1) {
 .status { font-size: 11px; padding: 3px 8px; border-radius: 4px; }
 .status.active { background: #e8fff0; color: #0a8a3a; }
 .status.off { background: #f5f5f5; color: #aaa; }
+.ai-review-badge { display: inline-block; margin-top: 4px; font-size: 11px; font-weight: 700; color: #a85a1b; background: #fff8ef; border: 1px solid #f0d3b0; border-radius: 999px; padding: 2px 8px; text-decoration: none; white-space: nowrap; }
 .empty { color: #aaa; text-align: center; padding: 32px; }
 .actions { text-align: right; }
 .btn-edit { background: #f0f0f0; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
