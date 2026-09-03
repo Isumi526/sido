@@ -84,6 +84,15 @@ const SHARES = [
       'supabase/functions/_shared/paid-leave.gen.ts',
     ],
   },
+  {
+    // 無償満了日の計算。admin(告知UI・アカウント発行)と EF(サーバ側判定)で同じ結果にならないと
+    // 「画面は満了と出たのにサーバは無償のまま」のような食い違いが起きる（法的な通知起点）
+    src: 'shared/billing-trial.ts',
+    dests: [
+      'apps/admin/src/lib/billing-trial.gen.ts',
+      'supabase/functions/_shared/billing-trial.gen.ts',
+    ],
+  },
 ]
 
 const HEADER = (srcRel) =>
