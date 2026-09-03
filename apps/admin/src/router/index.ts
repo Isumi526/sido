@@ -62,7 +62,10 @@ export const router = createRouter({
     { path: '/chats/:id',    component: () => import('../pages/chat-detail.vue') },
     // 元請け業者は site_manager も可（2026-08-06）。management から外す＝isAdminAllowed(worker弾き)だけが効く。
     { path: '/contractors',  component: Contractors },
-    { path: '/site-rules',   component: SiteRules },
+    // ★2026-09-03: メニューは canViewManagementPages で隠れていたが、ルート自体に
+    //  management ガードが無く、site_manager が /site-rules を直打ちすると入れてしまっていた
+    //  （出退勤の確認ルール＝会社全体の設定。他の経営系ルートと同じ扱いにする）。
+    { path: '/site-rules',   component: SiteRules,      meta: { management: true } },
     { path: '/attendance',   component: Attendance,     meta: { management: true } },
     { path: '/subcontractors', component: Subcontractors },
     { path: '/vehicles',     component: Vehicles,       meta: { management: true } },

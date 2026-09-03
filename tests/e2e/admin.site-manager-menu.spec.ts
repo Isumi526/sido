@@ -33,6 +33,9 @@ const MANAGEMENT_LINKS = [
   '/worker-reports', '/attendance', '/paid-leave', '/workers', '/vehicles',
   // 2026-08-16 追加。作業区分は会社全体の設定なので現場管理者には触らせない
   '/work-categories',
+  // 2026-09-03 追加。/site-rules（出退勤の確認ルール＝会社全体の設定）はメニューでは
+  // 隠れていたが、ルートに management ガードが無くURL直打ちで入れてしまっていた
+  '/site-rules',
 ]
 // ★/report-edit-approvals（解錠の許可申請）はメニューから撤去した（2026-08-03・承認の一本化）。
 //   代わりに /report-edit-review（内容の承認）が現場運営系に入る。
@@ -64,7 +67,7 @@ test.describe('site_manager は経営系メニュー非表示＋URL直打ち不�
     }
 
     // URL直打ちはダッシュボードへリダイレクト（勤怠・作業員・車両も含む）
-    for (const path of ['/expenses', '/estimate-list', '/settings', '/workers', '/worker-reports', '/attendance', '/paid-leave', '/vehicles', '/work-categories']) {
+    for (const path of ['/expenses', '/estimate-list', '/settings', '/workers', '/worker-reports', '/attendance', '/paid-leave', '/vehicles', '/work-categories', '/site-rules']) {
       await page.goto(path, { waitUntil: 'networkidle' })
       await expect(page, `${path} は / へ戻されるべき`).toHaveURL(/\/\/[^/]+\/$/)
     }
