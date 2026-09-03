@@ -2204,6 +2204,11 @@ function onSiteChange(si: number) {
   } else if (w.breakSnapshot) {
     w.breakSnapshot = false; w.breaks = undefined  // 休憩なし現場へ選び直したらスナップショット解除
   }
+  // 現場に会社からの往復距離(km)の設定があれば、1台目車両のガソリン/軽油の往復kmへ既定値として入れる
+  //  （未入力の時のみ。手動で編集済みの値は上書きしない・2026-09-03）
+  const dist = s.siteName ? (master.siteDistances.value[s.siteName] ?? null) : null
+  const veh = s.expenses?.vehicles?.[0]
+  if (dist != null && veh && veh.distanceKm == null) veh.distanceKm = dist
 }
 // 終了時刻の選択肢: 固定終了がある現場は それ以下に制限（残業申請が無い限り超過不可・早退は可）。
 //  編集で開いた古い超過値は snap させないため、現在値は必ず含める。

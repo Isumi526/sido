@@ -174,6 +174,9 @@ export interface MasterData {
   siteWorkTimes?: Record<string, { start: string | null; end: string | null }>
   // 現場名 → 既定休憩[{start,minutes}]（未設定は未収録）。新規日報で現場選択時に休憩をこの値でスナップショット。
   siteBreaks?: Record<string, { start: string; minutes: number }[]>
+  // 現場名 → 会社からこの現場までの往復距離km（未設定は未収録）。日報でこの現場を選んだ時、
+  //  ガソリン/軽油の往復kmの既定値になる（手動編集可・2026-09-03）。
+  siteDistances?: Record<string, number>
   // 作業区分（現場作業/見積/事務…）。会社ごとのマスタ。日報・予定で「どの作業か」を選ぶ。
   //  scope: どの台帳で使えるか（site/office/event・null=どこでも）
   //  start/end/breaks: その区分の「全現場共通の定時」（未設定は null）。
