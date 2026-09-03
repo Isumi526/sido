@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<title>打刻を間違えた時の直し方</title>
+<style>
+  @page { size: A4; margin: 12mm 12mm 10mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;
+         color: #1f2937; font-size: 10pt; line-height: 1.6; margin: 0; }
+  h1 { font-size: 17pt; margin: 0 0 2mm; color: #06C755; }
+  .sub { font-size: 10pt; color: #4b5563; margin: 0 0 5mm; }
+  h2 { font-size: 12pt; margin: 6mm 0 2.5mm; padding: 1.4mm 3mm;
+       background: #06C755; color: #fff; border-radius: 3px; }
+  h3 { font-size: 10.5pt; margin: 4mm 0 1.5mm; color: #111827; }
+  .why { background: #fef2f2; border: 1px solid #fca5a5; border-radius: 4px; padding: 3mm 4mm; }
+  .why b { color: #b91c1c; }
+  table.chain { width: 100%; border-collapse: collapse; font-size: 9.5pt; margin: 2mm 0 0; }
+  table.chain th, table.chain td { border: 1px solid #d1d5db; padding: 1.5mm 2.5mm; text-align: left; }
+  table.chain th { background: #f1f5f9; }
+  td.bad { background: #fef2f2; color: #b91c1c; font-weight: 700; }
+  .shots { display: flex; gap: 4mm; margin-top: 2mm; page-break-inside: avoid; }
+  .shot { flex: 1; }
+  .shot img { width: 100%; border: 1px solid #d1d5db; border-radius: 4px; display: block; }
+  .cap { font-size: 8.5pt; color: #4b5563; margin-top: 1.2mm; line-height: 1.45; }
+  .wide img { width: 100%; border: 1px solid #d1d5db; border-radius: 4px; display: block; }
+  ul { margin: 1mm 0 0 5mm; padding: 0; }
+  li { margin: 0 0 1.2mm; }
+  .box { padding: 3mm 4mm; border-radius: 3px; font-size: 9.5pt; margin: 3mm 0 0; }
+  .good { background: #f0fdf4; border: 1px solid #86efac; }
+  .info { background: #eff6ff; border: 1px solid #93c5fd; }
+  footer { margin-top: 5mm; font-size: 8pt; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 1.5mm; }
+  .pb { page-break-before: always; }
+</style></head>
+<body>
+
+<h1>打刻を間違えた時に、直せるようにしました</h1>
+<p class="sub">2026年9月3日 ／ 出退勤（LINEミニアプリ）＋ 管理画面</p>
+
+<div class="why">
+  <b>きっかけ：</b>「出退勤の打刻間違え打った為修正できますか」というご連絡をいただきました。
+  調べたところ<b>これまでは誰も直せませんでした</b>（打刻は追加しかできず、管理画面の勤怠も閲覧専用でした）。
+  さらに、実際のデータを見ると<b>間違いが1回で終わらず連鎖していました</b>。
+</div>
+
+<h3>実際に起きていたこと</h3>
+<table class="chain">
+  <tr><th style="width:26%">日時</th><th style="width:22%">記録された内容</th><th>実際</th></tr>
+  <tr><td>9/1 17:45</td><td>退勤（後から入力）</td><td>正しい</td></tr>
+  <tr><td>9/1 17:58</td><td class="bad">出勤</td><td>退勤のつもりで押した（朝の出勤を打ち忘れていたため、画面が「出勤」を出していた）</td></tr>
+  <tr><td>9/2 08:05</td><td class="bad">退勤</td><td>出勤のつもりで押した（前日の誤りでアプリが「出勤中」と判断していたため）</td></tr>
+</table>
+<p style="font-size:9.5pt;margin-top:2mm">
+  打刻の種類は「直前の打刻」から決まるため、<b>1回ずれると翌日以降もずれ続けます</b>。
+  直す手段が無いままだと、ずれた勤怠がそのまま積み上がっていきます。
+</p>
+
+<h2>① 作業員がスマホから「修正を申請」します</h2>
+<div class="shots">
+  <div class="shot">
+    <img src="shots/punch-correction/01-entry.png" alt="入口">
+    <div class="cap">出退勤の画面の下にある「打刻を忘れた・間違えた時は」を開きます。</div>
+  </div>
+  <div class="shot">
+    <img src="shots/punch-correction/02-open-fix.png" alt="修正申請を開く">
+    <div class="cap">「打刻を間違えた時の修正申請」を押します。</div>
+  </div>
+  <div class="shot">
+    <img src="shots/punch-correction/03-pick.png" alt="打刻を選ぶ">
+    <div class="cap">直近7日ぶんの自分の打刻が出るので、直したいものを選びます。</div>
+  </div>
+</div>
+
+<div class="shots">
+  <div class="shot">
+    <img src="shots/punch-correction/04-submit.png" alt="内容と理由">
+    <div class="cap">「何を直すか」（押し間違い／時刻違い／この打刻自体が不要）と理由を入れて申請します。</div>
+  </div>
+  <div class="shot">
+    <img src="shots/punch-correction/05-requested.png" alt="申請中">
+    <div class="cap">申請中の表示になります。<b>この時点では打刻はまだ変わりません。</b></div>
+  </div>
+  <div class="shot" style="display:flex;align-items:center">
+    <div class="box info" style="margin:0">
+      <b>ポイント</b><br>
+      申請しただけでは打刻は変わりません。<br>
+      承認されると、作業員の画面にも<b>その場で「承認されました」と出ます</b>（開いたまま待てます）。
+    </div>
+  </div>
+</div>
+
+<div class="pb"></div>
+<h2>② 管理画面で承認します</h2>
+<div class="wide">
+  <img src="shots/punch-correction/06-approve.png" alt="承認画面">
+</div>
+<div class="cap">
+  左メニューの「打刻修正の承認」に件数バッジが出ます。誰の・どの打刻を・どう直すのか・理由が1行で分かるので、
+  内容を見て「承認」または「却下」を押します。
+</div>
+
+<h2>③ 直った記録は、元の値ごと残ります</h2>
+<div class="wide">
+  <img src="shots/punch-correction/07-after.png" alt="承認後の勤怠ログ">
+</div>
+<div class="cap">
+  承認すると打刻が直り、「修正済み（承認した人の名前）」と<b>修正前の値</b>が残ります。
+  「この打刻自体が不要」で承認した場合は、記録を消さずに「取消済み」として残します。
+</div>
+
+<div class="box good">
+  <b>勤怠の記録として守っていること</b>
+  <ul>
+    <li>作業員は<b>自分では直せません</b>。申請だけで、承認されて初めて反映されます。</li>
+    <li>誤打刻も<b>消しません</b>。「取消済み」として残し、集計からだけ外します。</li>
+    <li>直した記録には<b>修正前の値と、誰がいつ直したか</b>が必ず残ります。</li>
+    <li>自分が出した申請を自分で承認することはできません。</li>
+  </ul>
+</div>
+
+<div class="box info">
+  <b>承認できる人</b>：オーナー／管理者／事務／現場管理者 の4つの権限です。作業員は承認できません。
+  （残業申請・日報編集の承認と同じ範囲に揃えています。絞りたい場合はご相談ください）
+</div>
+
+<footer>株式会社シード 御中 ／ GENLINKS ／ 本資料の画面は説明用のテストデータです</footer>
+</body></html>

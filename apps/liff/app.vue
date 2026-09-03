@@ -101,7 +101,15 @@ async function routeFromLiffState() {
   height: 1em;
   line-height: 1;
   white-space: nowrap;
+  /* ★1em ちょうどで切ると、グリフの上端が1〜2px削れる（2026-09-03 実機で発覚。
+     more_time など縦に詰まった字形で目立つ）。字形自体は 1em に収まっているが、
+     ベースライン位置の端数で箱からわずかに出るため。
+     clip-margin で「少しだけはみ出しは許す」にする。未ロード時のリガチャ名は
+     1em の何倍も長いので、この余白では隠れたままで上の目的は損なわない。
+     ★overflow:hidden を先に置くのは clip 非対応ブラウザ向けのフォールバック。 */
   overflow: hidden;
+  overflow: clip;
+  overflow-clip-margin: 0.2em;
 }
 </style>
 
