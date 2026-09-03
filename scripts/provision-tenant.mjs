@@ -69,14 +69,17 @@ function parseArgs(argv) {
 }
 
 const args = parseArgs(process.argv.slice(2))
-const { name, rep, email, slug } = args
+const { name, rep, email, slug, fee } = args
 if (!name || !rep || !email || !slug) {
-  console.error('使い方: node scripts/provision-tenant.mjs --name "会社名" --rep "代表者名" --email "rep@example.com" --slug "会社スラグ" [--prod]')
+  console.error('使い方: node scripts/provision-tenant.mjs --name "会社名" --rep "代表者名" --email "rep@example.com" --slug "会社スラグ" [--fee 月額円] [--prod]')
   console.error('  slug は英数字とハイフンのみ・ログインURLのテナント識別子になる')
+  console.error('  --fee: 有償移行後の月額(円)。無償満了20日前告知ポップアップに使う。未指定でも作成できるが、')
+  console.error('         設定するまでそのテナントには告知ポップアップが出ない（誤った金額を出さないフェイルセーフ）')
   process.exit(1)
 }
 if (!/^[a-z0-9-]+$/.test(slug)) { console.error(`✗ slug は英数字とハイフンのみ: "${slug}"`); process.exit(1) }
 if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { console.error(`✗ メールアドレスの形式が不正: "${email}"`); process.exit(1) }
+if (fee !== undefined && (!/^\d+$/.test(fee) || Number(fee) <= 0)) { console.error(`✗ --fee は正の整数(円)で指定: "${fee}"`); process.exit(1) }
 
 const rootEnv = loadEnv(resolve(ROOT, '.env'))
 const adminEnv = loadEnv(resolve(ROOT, 'apps/admin/.env'))
@@ -108,6 +111,7 @@ const { data: acct, error: acctErr } = await svc.from('accounts').insert({
   billing_status: 'trial',
   contract_started_at: today,
   trial_ends_at: trialEndsAt,
+  ...(fee !== undefined ? { monthly_fee_yen: Number(fee) } : {}),
 }).select('id').single()
 if (acctErr) { console.error('✗ アカウント作成に失敗:', acctErr.message); process.exit(1) }
 console.log(`✓ アカウント作成: ${name} (slug=${slug}, id=${acct.id})`)
@@ -115,6 +119,12 @@ console.log(`✓ アカウント作成: ${name} (slug=${slug}, id=${acct.id})`)
 //  間違えて作った場合に削除するなら、先にこの2表を account_id で消してから accounts を消すこと
 //  （FK制約で accounts 側から先には消せない）。
 console.log(`  無償期間: ${today} 〜 ${trialEndsAt}（契約成立月の翌月末日）`)
+if (fee !== undefined) {
+  console.log(`  月額(有償移行後): ${Number(fee).toLocaleString()}円 ※満了20日前の告知ポップアップに使用`)
+} else {
+  console.log('  ⚠ 月額(--fee)未指定＝満了20日前の告知ポップアップは出ません。契約確定後に以下で設定してください:')
+  console.log(`     update accounts set monthly_fee_yen = <円> where slug = '${slug}';`)
+}
 
 // 2) 代表者の認証ユーザーを作成（worker行を持たない「純オーナー」として登録）
 //    パスワードは今回だけ生成して画面に出す。保存しない＝運用者が伝えて即変更してもらう想定。
