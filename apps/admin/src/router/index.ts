@@ -88,6 +88,7 @@ export const router = createRouter({
     { path: '/users',        component: Users,          meta: { management: true } },
     { path: '/reminder-history', component: ReminderHistory, meta: { management: true } },
     { path: '/operation-logs',   component: OperationLogs,   meta: { management: true } },
+    { path: '/usage-report',     component: () => import('../pages/usage-report.vue'), meta: { management: true } },
     { path: '/non-submitters',   component: NonSubmitters,   meta: { management: true } },
     { path: '/report-edit-approvals', component: ReportEditApprovals },
     { path: '/report-edit-review', component: ReportEditReview },
