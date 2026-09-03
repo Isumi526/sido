@@ -143,6 +143,7 @@ export const useMaster = () => {
         start:  (c.default_start_time ?? null)?.slice(0, 5) ?? null,
         end:    (c.default_end_time ?? null)?.slice(0, 5) ?? null,
         breaks: normalizeBreaks(c.default_breaks),
+        unrestricted: c.hours_unrestricted === true,
       }))
     const categoryHours: Record<string, { start: string | null; end: string | null; breaks: { start: string; minutes: number }[] | null }> = {}
     for (const h of (r.siteCategoryHours ?? []) as any[]) {
