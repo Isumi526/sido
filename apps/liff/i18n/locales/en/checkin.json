@@ -104,5 +104,9 @@
   "fixErrNoTime": "Pick the correct time.",
   "fixErrNoChange": "That is the same as the current record. Pick a different change.",
   "fixErrAlready": "A request for this punch is already pending.",
-  "fixErrFailed": "Could not send the request. Check your connection and try again."
+  "fixErrFailed": "Could not send the request. Check your connection and try again.",
+  "fixRejected": "Rejected",
+  "fixApprovedNotice": "Approved. Your punch has been corrected.",
+  "fixRejectedNotice": "Rejected. Please ask your manager for details.",
+  "fixReload": "Refresh punch status"
 }

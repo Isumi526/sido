@@ -52,7 +52,7 @@
 
       <!-- ★押し間違いに気づくのはこの画面。ここから辿れないと直せない（2026-09-03）。
            「今日はもう退勤済み」＝間違って退勤を押してしまった人が最初に見る画面でもある。 -->
-      <PunchCorrectionPanel :worker-id="myWorkerId" class="fix-slot" />
+      <PunchCorrectionPanel :worker-id="myWorkerId" class="fix-slot" @applied="reloadPunchState()" />
     </div>
 
     <!-- 送信完了 -->
@@ -103,7 +103,7 @@
       </div>
 
       <!-- ★押した直後に「今のは間違いだった」と気づく人が一番多い。ここに置く（2026-09-03） -->
-      <PunchCorrectionPanel :worker-id="myWorkerId" class="fix-slot" />
+      <PunchCorrectionPanel :worker-id="myWorkerId" class="fix-slot" @applied="reloadPunchState()" />
     </div>
 
     <!-- ★稼働有無ゲート（出勤打刻の前に1回だけ・2026-08-31）。
@@ -305,7 +305,7 @@
         <!-- 押し間違えた打刻の修正申請（2026-09-03 大須賀さん）。後追い入力の隣に置く＝
              「打刻が思ったとおりになっていない」時に人が探す場所は同じなので分けない。
              ★ここでも画面を再読込しない（上と同じ理由。申請できた表示が消える）。 -->
-        <PunchCorrectionPanel :worker-id="myWorkerId" />
+        <PunchCorrectionPanel :worker-id="myWorkerId" @applied="reloadPunchState()" />
       </div>
     </div>
 
@@ -570,6 +570,16 @@ function backToSelect() {
   phase.value = 'select-target'
 }
 
+/**
+ * 打刻の修正が承認された後に、出勤/退勤の判定を引き直す（2026-09-03）。
+ * ★自動では呼ばない。人がパネルの「打刻の状態を更新」を押した時だけ。
+ *  自動で作り直すとパネルごと unmount され、「承認されました」の表示が一瞬で消える。
+ */
+function reloadPunchState() {
+  const id = selectedId.value ?? myWorkerId.value
+  if (id) void loadForTarget(id)
+}
+
 // ── 対象作業員に対して出退勤判定・ルール取得 ──────────────────
 async function loadForTarget(workerId: string) {
   phase.value = 'loading'
@@ -820,19 +830,28 @@ async function resolveReportLink(target: Target | null) {
   background: #f2f2f7;
   display: flex;
   flex-direction: column;
+  /* ★高さ固定なので、中身が伸びた分はここでスクロールさせる。これが無いと
+     はみ出した分が下部ナビの裏に潜り込んで操作できない
+     （2026-09-03 修正申請パネルを足して実機で発覚）。 */
+  overflow-y: auto;
 }
 
 /* ── センター表示 ── */
 .center-box {
   flex: 1;
+  min-height: 0;          /* ★flexの子がスクロールできるように（既定のautoだと縮まない） */
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   gap: 16px;
-  padding: 32px 24px;
+  padding: 32px 24px calc(32px + env(safe-area-inset-bottom, 0px));
   text-align: center;
+  overflow-y: auto;
 }
+/* ★justify-content:center のままスクロールさせると、はみ出た時に上側が切れて
+   戻せなくなる（flexの既知の挙動）。auto マージンで「収まる時だけ中央」にする。 */
+.center-box > :first-child { margin-top: auto; }
+.center-box > :last-child  { margin-bottom: auto; }
 
 .spinner {
   width: 40px; height: 40px;
@@ -1094,7 +1113,10 @@ async function resolveReportLink(target: Target | null) {
 .consent-hint { font-size: 12px; color: #999; padding: 4px 8px 0; }
 
 .submit-area {
-  padding: 12px 16px 16px; background: #fff; border-top: 1px solid #f0f0f0;
+  /* ★下端は safe-area ぶん余分に取る。iPhone のホームバー領域に最後の要素が
+     かかると押せない（2026-09-03） */
+  padding: 12px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  background: #fff; border-top: 1px solid #f0f0f0;
   display: flex; flex-direction: column; gap: 10px;
   flex-shrink: 0;   /* ★縮めない。ここが縮むと送信ボタンが画面外に出る */
 }

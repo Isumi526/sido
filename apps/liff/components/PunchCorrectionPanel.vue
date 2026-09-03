@@ -8,6 +8,16 @@
       <div class="fix-title">{{ $t('checkin.fixTitle') }}</div>
       <p class="fix-note">{{ $t('checkin.fixNote') }}</p>
 
+      <!-- ★管理者が決裁した瞬間にここへ出る。申請したあと画面を開いたまま待つ人が居るので、
+           「承認されたのか却下されたのか」を人が更新操作をしなくても分かるようにする。 -->
+      <div v-if="decidedNotice" class="fix-banner" :class="decidedNotice" data-testid="fix-decided">
+        <span class="material-symbols-rounded">{{ decidedNotice === 'approved' ? 'check_circle' : 'cancel' }}</span>
+        <span>{{ decidedNotice === 'approved' ? $t('checkin.fixApprovedNotice') : $t('checkin.fixRejectedNotice') }}</span>
+        <button v-if="decidedNotice === 'approved'" class="fix-reload" data-testid="fix-reload" @click="emit('applied')">
+          {{ $t('checkin.fixReload') }}
+        </button>
+      </div>
+
       <div v-if="loading" class="fix-empty">{{ $t('common.loading') }}</div>
       <div v-else-if="!logs.length" class="fix-empty" data-testid="fix-empty">{{ $t('checkin.fixEmpty') }}</div>
 
@@ -27,7 +37,8 @@
             <span class="fix-type" :class="l.type">{{ l.type === 'checkin' ? $t('checkin.checkinLabel') : $t('checkin.checkoutLabel') }}</span>
             <span v-if="l.deleted_at" class="fix-tag dead">{{ $t('checkin.fixVoided') }}</span>
             <span v-else-if="pendingFor(l.id)" class="fix-tag pending" :data-testid="`fix-pending-${l.id}`">{{ $t('checkin.fixPending') }}</span>
-            <span v-else-if="l.corrected_at" class="fix-tag done">{{ $t('checkin.fixCorrected') }}</span>
+            <span v-else-if="l.corrected_at" class="fix-tag done" :data-testid="`fix-corrected-${l.id}`">{{ $t('checkin.fixCorrected') }}</span>
+            <span v-else-if="rejectedFor(l.id)" class="fix-tag ng" :data-testid="`fix-rejected-${l.id}`">{{ $t('checkin.fixRejected') }}</span>
           </label>
         </li>
       </ul>
@@ -104,6 +115,10 @@
 import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{ workerId: string | null }>()
+// 承認が反映されたら、呼び出し側が打刻の状態（出勤中か等）を引き直せるように知らせる。
+// ★ここで勝手に画面を作り直さない。作り直すとこのパネルごと unmount されて
+//  「承認されました」の表示が一瞬で消える（後追い入力パネルと同じ理由）。
+const emit = defineEmits<{ (e: 'applied'): void }>()
 const { t } = useI18n()
 const attendance = useAttendanceLog()
 
@@ -119,6 +134,8 @@ const open    = ref(false)
 const loading = ref(false)
 const logs    = ref<Log[]>([])
 const pendingLogIds = ref<Set<string>>(new Set())
+const rejectedLogIds = ref<Set<string>>(new Set())
+const decidedNotice = ref<'approved' | 'rejected' | ''>('')
 const selected = ref('')
 const kind     = ref<'type' | 'time' | 'delete'>('type')
 const requestedType = ref<'checkin' | 'checkout'>('checkin')
@@ -128,7 +145,8 @@ const busy     = ref(false)
 const error    = ref('')
 const done     = ref(false)
 
-const pendingFor = (logId: string) => pendingLogIds.value.has(logId)
+const pendingFor  = (logId: string) => pendingLogIds.value.has(logId)
+const rejectedFor = (logId: string) => rejectedLogIds.value.has(logId)
 
 function fmt(s: string): string {
   const d = new Date(s)
@@ -136,17 +154,39 @@ function fmt(s: string): string {
   return `${d.getMonth() + 1}/${d.getDate()}（${w}） ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
+/**
+ * 一覧を引き直す。★決裁の検知もここでやる。
+ *  申請中だった打刻が申請中で無くなったら、承認（打刻が直っている）か却下かを見分けて知らせる。
+ */
+async function refresh(detectDecision = false) {
+  const before = new Set(pendingLogIds.value)
+  const r = await attendance.correctionMine(7)
+  logs.value = r.logs as Log[]
+  // 申請中の打刻は選ばせない（同じ打刻に申請を積んでも承認する側が困るだけ）
+  pendingLogIds.value  = new Set(r.requests.filter(q => q.status === 'pending').map(q => q.log_id))
+  rejectedLogIds.value = new Set(r.requests.filter(q => q.status === 'rejected').map(q => q.log_id))
+  if (!detectDecision) return
+  for (const logId of before) {
+    if (pendingLogIds.value.has(logId)) continue          // まだ承認待ち
+    const log = logs.value.find(l => l.id === logId)
+    // 打刻が直っている/取り消されている＝承認された。そうでなければ却下
+    decidedNotice.value = (log?.corrected_at || log?.deleted_at) ? 'approved' : 'rejected'
+    // ★「申請しました。承認をお待ちください」を消す。決裁が出た後も残ると矛盾した表示になる
+    done.value = false
+    break
+  }
+}
+
 async function openPanel() {
   open.value = true
   error.value = ''
   done.value = false
   selected.value = ''
+  decidedNotice.value = ''
   loading.value = true
-  const r = await attendance.correctionMine(7)
-  logs.value = r.logs as Log[]
-  // 申請中の打刻は選ばせない（同じ打刻に申請を積んでも承認する側が困るだけ）
-  pendingLogIds.value = new Set(r.requests.filter(q => q.status === 'pending').map(q => q.log_id))
+  await refresh()
   loading.value = false
+  startWatch()
 }
 
 function pick(logId: string) {
@@ -190,6 +230,7 @@ async function submit() {
     reason.value = ''
     pendingLogIds.value = new Set([...pendingLogIds.value, selected.value])
     selected.value = ''
+    startWatch()   // 申請したらそのまま決裁を待てるようにする
   } catch (e: any) {
     console.error('[PunchCorrectionPanel] 修正申請に失敗:', e)
     error.value = t('checkin.fixErrFailed')
@@ -197,6 +238,44 @@ async function submit() {
     busy.value = false
   }
 }
+
+// ── 決裁の反映（2026-09-03）────────────────────────────
+//  ★Realtime だけに頼らない。LIFF の作業員は LINE の身元で動いていて Supabase の
+//   セッションを持たないことがあり、その場合 postgres_changes は行を受け取れない。
+//   日報の残業ゲートと同じく「Realtime購読 ＋ ポーリング」の二段構えにする。
+let poll: ReturnType<typeof setInterval> | null = null
+let channel: any = null
+
+function startWatch() {
+  stopWatch()
+  poll = setInterval(() => { if (open.value) void refresh(true) }, 10000)
+  const wid = props.workerId
+  if (!wid) return
+  try {
+    channel = useSupabase()
+      .channel(`punch-correction-${wid}`)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'attendance_correction_requests', filter: `worker_id=eq.${wid}` },
+        () => { void refresh(true) })
+      .subscribe()
+  } catch (e) {
+    // 購読できなくてもポーリングで追いつく。ここで落として画面を壊さない
+    console.warn('[PunchCorrectionPanel] Realtime購読に失敗（ポーリングで継続）:', e)
+  }
+}
+function stopWatch() {
+  if (poll) { clearInterval(poll); poll = null }
+  if (channel) { try { useSupabase().removeChannel(channel) } catch { /* 破棄済み */ } channel = null }
+}
+
+// 画面を閉じている間は動かさない。戻ってきた時に取り直す（放置したタブが叩き続けない）
+function onVisible() { if (!document.hidden && open.value) void refresh(true) }
+onMounted(() => { if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible) })
+onUnmounted(() => {
+  if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisible)
+  stopWatch()
+})
+watch(open, (v) => { if (!v) stopWatch() })
 </script>
 
 <style scoped>
@@ -225,6 +304,18 @@ async function submit() {
 .fix-label { display: block; font-size: 12px; font-weight: 700; color: #374151; margin: 10px 0 4px; }
 .fix-input { width: 100%; border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; font-size: 14px; background: #fff; }
 .fix-hint { font-size: 11px; color: #6b7280; margin: 4px 0 0; line-height: 1.5; }
+.fix-banner {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  border-radius: 8px; padding: 10px 12px; margin: 0 0 10px; font-size: 13px; font-weight: 600;
+}
+.fix-banner.approved { background: #f0fdf4; border: 1px solid #86efac; color: #15803d; }
+.fix-banner.rejected { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; }
+.fix-banner .material-symbols-rounded { font-size: 18px; }
+.fix-reload {
+  margin-left: auto; background: #fff; border: 1px solid #86efac; color: #15803d;
+  border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.fix-tag.ng { color: #991b1b; background: #fee2e2; }
 .fix-error { font-size: 13px; color: #b91c1c; margin: 8px 0 0; }
 .fix-ok { font-size: 13px; color: #15803d; margin: 8px 0 0; }
 .fix-actions { display: flex; gap: 8px; margin-top: 12px; }
