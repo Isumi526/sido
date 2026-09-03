@@ -13,6 +13,7 @@
 // ============================================================
 import { supabase } from './supabase'
 import { getAccountId } from './account'
+import { currentWorkerId } from './auth'
 
 export const FEATURE_KEYS = {
   estimate_created: '見積作成',
@@ -23,7 +24,7 @@ export type FeatureKey = keyof typeof FEATURE_KEYS
 export async function logFeatureUsage(key: FeatureKey): Promise<void> {
   try {
     const accountId = await getAccountId()
-    await supabase.from('feature_usage_events').insert({ account_id: accountId, feature_key: key })
+    await supabase.from('feature_usage_events').insert({ account_id: accountId, worker_id: currentWorkerId.value, feature_key: key })
   } catch {
     // 計測失敗は機能に影響させない（ベストエフォート）
   }

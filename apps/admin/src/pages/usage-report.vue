@@ -58,6 +58,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { currentWorkerId } from '../lib/auth'
 import { FEATURE_KEYS } from '../lib/usageLog'
 
 const FEATURE_LABEL: Record<string, string> = FEATURE_KEYS
@@ -106,7 +107,10 @@ async function submitReport() {
   saving.value = true
   const accountId = await getAccountId()
   const { error } = await supabase.from('trial_time_saved_reports')
-    .upsert({ account_id: accountId, year_month: form.value.year_month, hours_saved: form.value.hours_saved, note: form.value.note || null }, { onConflict: 'account_id,year_month' })
+    .upsert({
+      account_id: accountId, year_month: form.value.year_month, hours_saved: form.value.hours_saved,
+      note: form.value.note || null, submitted_by_worker_id: currentWorkerId.value,
+    }, { onConflict: 'account_id,year_month' })
   saving.value = false
   if (error) { saveError.value = '保存に失敗しました: ' + error.message; return }
   form.value.note = ''
