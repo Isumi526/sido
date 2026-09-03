@@ -75,6 +75,7 @@ export const router = createRouter({
     { path: '/expenses-daily', component: ExpensesDaily, meta: { management: true } },
     { path: '/gasoline-allocation', component: () => import('../pages/gasoline-allocation.vue'), meta: { management: true } },
     { path: '/subcontractor-invoices', component: SubInvoices, meta: { management: true } },
+    { path: '/unpaid-invoices', component: () => import('../pages/unpaid-invoices.vue'), meta: { management: true, estimate: true } },
     { path: '/worker-reports', component: WorkerReports, meta: { management: true } },
     { path: '/paid-leave',    component: PaidLeave,      meta: { management: true } },
     { path: '/settings',       component: Settings,     meta: { management: true } },
