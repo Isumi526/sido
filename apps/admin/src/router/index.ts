@@ -28,6 +28,7 @@ import ReportEditApprovals from '../pages/report-edit-approvals.vue'
 import ReportEditReview from '../pages/report-edit-review.vue'
 import ReportSiteRelink   from '../pages/report-site-relink.vue'
 import OvertimeApprovals from '../pages/overtime-approvals.vue'
+import PunchCorrections from '../pages/punch-corrections.vue'
 import Estimates       from '../pages/estimates.vue'
 import EstimatesList   from '../pages/estimate-list.vue'
 import EstimateMasters from '../pages/estimate-masters.vue'
@@ -88,6 +89,7 @@ export const router = createRouter({
     { path: '/report-edit-review', component: ReportEditReview },
     { path: '/report-site-relink',    component: ReportSiteRelink },
     { path: '/overtime-approvals',    component: OvertimeApprovals },
+    { path: '/punch-corrections',     component: PunchCorrections },
     { path: '/ai-help',          component: AiHelp,     meta: { management: true } },
     { path: '/faq',              component: Faq,        meta: { management: true } },
     { path: '/estimates',        component: Estimates,  meta: { management: true, estimate: true } },

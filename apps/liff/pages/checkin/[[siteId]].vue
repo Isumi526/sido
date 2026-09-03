@@ -49,6 +49,10 @@
           <span class="material-symbols-rounded chev">chevron_right</span>
         </button>
       </div>
+
+      <!-- ★押し間違いに気づくのはこの画面。ここから辿れないと直せない（2026-09-03）。
+           「今日はもう退勤済み」＝間違って退勤を押してしまった人が最初に見る画面でもある。 -->
+      <PunchCorrectionPanel :worker-id="myWorkerId" class="fix-slot" />
     </div>
 
     <!-- 送信完了 -->
@@ -97,6 +101,9 @@
           <span class="material-symbols-rounded chev">chevron_right</span>
         </button>
       </div>
+
+      <!-- ★押した直後に「今のは間違いだった」と気づく人が一番多い。ここに置く（2026-09-03） -->
+      <PunchCorrectionPanel :worker-id="myWorkerId" class="fix-slot" />
     </div>
 
     <!-- ★稼働有無ゲート（出勤打刻の前に1回だけ・2026-08-31）。
@@ -295,6 +302,10 @@
              unmount され、「記録しました」の表示が一瞬で消える（入ったのか分からない）。
              遡り入力は過去日の話なので、今開いている出勤/退勤の判定を作り直す必要も無い。 -->
         <LatePunchPanel :worker-id="myWorkerId" />
+        <!-- 押し間違えた打刻の修正申請（2026-09-03 大須賀さん）。後追い入力の隣に置く＝
+             「打刻が思ったとおりになっていない」時に人が探す場所は同じなので分けない。
+             ★ここでも画面を再読込しない（上と同じ理由。申請できた表示が消える）。 -->
+        <PunchCorrectionPanel :worker-id="myWorkerId" />
       </div>
     </div>
 
@@ -798,6 +809,9 @@ async function resolveReportLink(target: Target | null) {
 </script>
 
 <style scoped>
+/* 完了画面の中に置く修正申請パネル。center-box は中央寄せなので幅を持たせる */
+.fix-slot { width: 100%; margin-top: 18px; }
+
 
 .checkin-page {
   /* AppNav追加(2026-07-16)に伴い、下部固定ナビの高さ分を差し引く(calendar/index.vueと同型)。

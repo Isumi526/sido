@@ -47,6 +47,7 @@
         <li><RouterLink to="/report-edit-review" class="nav-link"><span class="material-symbols-rounded nav-icon">fact_check</span>日報編集の承認<span v-if="editReviewCount" class="nav-badge">{{ editReviewCount }}</span></RouterLink></li>
         <li><RouterLink to="/report-site-relink" class="nav-link"><span class="material-symbols-rounded nav-icon">link</span>現場未設定の紐付け<span v-if="siteUnsetCount" class="nav-badge">{{ siteUnsetCount }}</span></RouterLink></li>
         <li><RouterLink to="/overtime-approvals" class="nav-link"><span class="material-symbols-rounded nav-icon">more_time</span>残業申請の承認<span v-if="overtimePendingCount" class="nav-badge">{{ overtimePendingCount }}</span></RouterLink></li>
+        <li><RouterLink to="/punch-corrections" class="nav-link"><span class="material-symbols-rounded nav-icon">edit_calendar</span>打刻修正の承認<span v-if="punchCorrectionCount" class="nav-badge">{{ punchCorrectionCount }}</span></RouterLink></li>
         <li><RouterLink to="/chats" class="nav-link"><span class="material-symbols-rounded nav-icon">forum</span>チャット<span v-if="unreadChatCount" class="nav-badge">{{ unreadChatCount }}</span></RouterLink></li>
         <li><RouterLink to="/site-reports" class="nav-link"><span class="material-symbols-rounded nav-icon">bar_chart</span>現場別集計</RouterLink></li>
         <li><RouterLink to="/calendar" class="nav-link"><span class="material-symbols-rounded nav-icon">calendar_month</span>予定管理</RouterLink></li>
@@ -138,7 +139,7 @@ import { currentUser, currentRole, currentWorkerName, signOut, isAdminAllowed, r
 import { canViewEstimates } from './lib/features'
 import { liffAppUrl } from './lib/links'
 import { getAccountName } from './lib/account'
-import { editReviewCount, siteUnsetCount, overtimePendingCount, pendingGrantCount, poAcceptedPendingCount, refreshNavBadges } from './lib/navBadges'
+import { editReviewCount, siteUnsetCount, overtimePendingCount, pendingGrantCount, poAcceptedPendingCount, punchCorrectionCount, refreshNavBadges } from './lib/navBadges'
 import { unreadChatCount, refreshChatBadge } from './lib/chatBadge'
 import { extractDoneCount, refreshExtractBadge } from './lib/extractJobs'
 import { HIDE_LINE_SECTIONS, HIDE_AI_HELP_SECTIONS } from './lib/featureFlags'
