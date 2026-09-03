@@ -12,7 +12,12 @@
     <div class="splash-logo">SIDO</div>
     <div class="splash-spinner"></div>
   </div>
-  <NuxtPage v-else />
+  <template v-else>
+    <NuxtPage />
+    <!-- 個人データ取扱いの同意ゲート（2026-09-01 弁護士打合せ）。未同意の作業員にのみ
+         全画面で覆いかぶさる。exemptなルート(login/portal/chat-invite/register)には出さない。 -->
+    <ConsentGate v-if="!isExempt && !isRegister" />
+  </template>
 </template>
 
 <script setup lang="ts">
@@ -35,6 +40,9 @@ const isPortal      = computed(() => route.path.startsWith('/p/'))
 const isLogin       = computed(() => route.path.startsWith('/login'))
 const isChatInvite  = computed(() => route.path.startsWith('/chat-invite/'))
 const isExempt = computed(() => isPortal.value || isLogin.value || isChatInvite.value)
+// register は「まだworkerでない人」の画面。EF側もworker_id無しは409を返すだけなので
+// 実害は無いが、無駄なEF呼び出しと一瞬のちらつきを避けるため明示的に外す。
+const isRegister = computed(() => route.path.startsWith('/register'))
 
 // サイト名（ブラウザタブ／共有タイトル）= プロダクト名 GENLINKS 固定＋会社名（データ）を併記。
 // accounts.name 取得前は 'GENLINKS' をフォールバック表示。

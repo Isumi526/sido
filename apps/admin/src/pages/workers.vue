@@ -29,6 +29,7 @@
             <th>状態</th>
             <th>ユーザー</th>
             <th>代理人</th>
+            <th>データ同意</th>
             <th></th>
           </tr>
         </thead>
@@ -45,6 +46,10 @@
             <td class="hire-date">{{ w.hire_date ?? '—' }}</td>
             <td><span class="status" :class="wStatus(w)" data-testid="worker-status">{{ STATUS_LABELS[wStatus(w)] }}</span></td>
             <td><span class="user-link" :class="linkedWorkerIds.has(w.id) ? 'linked' : 'unlinked'">{{ linkedWorkerIds.has(w.id) ? '紐付け済み' : '未紐付け' }}</span></td>
+            <td data-testid="worker-consent">
+              <span v-if="consentedAt.get(w.id)" class="consent-badge ok">同意済 {{ fmtConsent(w.id) }}</span>
+              <span v-else class="consent-badge pending">未同意</span>
+            </td>
             <td>
               <template v-if="proxyMap.get(w.id)?.length">
                 <span v-for="pid in proxyMap.get(w.id)" :key="pid" class="proxy-badge">
@@ -361,6 +366,13 @@ const filteredWorkers = computed(() => workers.value.filter(w => wStatus(w) === 
 const linkedWorkerIds = ref<Set<string>>(new Set())
 // worker_id → 代理人の worker_id 配列
 const proxyMap        = ref<Map<string, string[]>>(new Map())
+const consentedAt     = ref<Map<string, string>>(new Map())   // worker_id → 最新の同意日時（未同意ならキー無し）
+function fmtConsent(workerId: string): string {
+  const iso = consentedAt.value.get(workerId)
+  if (!iso) return ''
+  const d = new Date(iso)
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`
+}
 const modal           = ref<Partial<Worker> | null>(null)
 // モーダルで選択中の代理人 ID リスト
 const modalProxyIds   = ref<string[]>([])
@@ -551,13 +563,21 @@ function toggleProxyId(id: string) {
 
 async function load() {
   const accountId = await getAccountId()
-  const [{ data: workersData }, { data: usersData }, { data: proxyData }] = await Promise.all([
+  const [{ data: workersData }, { data: usersData }, { data: proxyData }, { data: consentData }] = await Promise.all([
     supabase.from('workers').select('id, name, name_kana, role, permission_role, daily_wage, hourly_wage, active, status, hire_date, birth_date, address, mobile_phone, notify_email, emergency_contact, employment_type, weekly_scheduled_days, company_info, invoice_number, insurance_info, labor_insurance_number, report_start_date, auth_user_id, can_apply_personal_expense, default_monthly_expense_limit').eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
     supabase.from('users').select('worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
     supabase.from('worker_proxies').select('worker_id, proxy_operator_id').eq('account_id', accountId),
+    // 個人データ取扱いの同意状況（2026-09-01 契約対応・AC4）。誰がいつ同意したかを一覧で分かるようにする。
+    // ★何のversionに同意したかは問わず「一度でも同意していれば済み」の最新日だけ見せる（v1簡易実装）。
+    supabase.from('worker_consents').select('worker_id, consented_at').eq('account_id', accountId).order('consented_at', { ascending: false }),
   ])
   workers.value = (workersData ?? []) as Worker[]
   linkedWorkerIds.value = new Set((usersData ?? []).map((u: any) => u.worker_id as string))
+  const consentMap = new Map<string, string>()
+  for (const row of (consentData ?? []) as any[]) {
+    if (!consentMap.has(row.worker_id)) consentMap.set(row.worker_id, row.consented_at)  // 降順なので最初が最新
+  }
+  consentedAt.value = consentMap
 
   const map = new Map<string, string[]>()
   for (const row of (proxyData ?? []) as any[]) {
@@ -845,6 +865,9 @@ async function setStatus(w: Worker, status: WStatus) {
 .user-link { font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 700; }
 .user-link.linked { background: #e8f4ff; color: #1a6fc4; }
 .user-link.unlinked { background: #f5f5f5; color: #bbb; }
+.consent-badge { font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 700; white-space: nowrap; }
+.consent-badge.ok { background: #e8f8ee; color: #1a8a4a; }
+.consent-badge.pending { background: #fff3e0; color: #b45309; }
 .emp-badge { font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 700; }
 .emp-badge.fulltime { background: #f0f4ff; color: #4f46e5; }
 .emp-badge.parttime { background: #fff7ed; color: #c2710c; }
