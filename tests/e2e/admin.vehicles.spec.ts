@@ -16,11 +16,11 @@ test.describe.configure({ mode: 'serial' })
 
 test.describe('車両マスタ CRUD', () => {
   test.afterAll(async () => {
-    const rows = await rest(`vehicles?name=eq.${encodeURIComponent(VNAME)}&select=id`)
+    const rows = await restSrv(`vehicles?name=eq.${encodeURIComponent(VNAME)}&select=id`)
     for (const r of rows ?? []) {
       await restSrv(`vehicle_repair_logs?vehicle_id=eq.${r.id}`, { method: 'DELETE' }).catch(() => {})
     }
-    await rest(`vehicles?name=eq.${encodeURIComponent(VNAME)}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`vehicles?name=eq.${encodeURIComponent(VNAME)}`, { method: 'DELETE' }).catch(() => {})
   })
 
   test('AC1: 車両を追加すると DB に保存される', async ({ page }) => {
@@ -39,7 +39,7 @@ test.describe('車両マスタ CRUD', () => {
     await page.locator('[data-testid="vehicle-save"]').click()
 
     await expect.poll(async () => {
-      const r = await rest(`vehicles?name=eq.${encodeURIComponent(VNAME)}&select=name,plate_number,inspection_date,has_studless,has_insurance,insurance_note`)
+      const r = await restSrv(`vehicles?name=eq.${encodeURIComponent(VNAME)}&select=name,plate_number,inspection_date,has_studless,has_insurance,insurance_note`)
       const v = r?.[0]
       return v ? `${v.plate_number}|${v.inspection_date}|${v.has_studless}|${v.has_insurance}|${v.insurance_note}` : null
     }, { timeout: 10000 }).toBe(`${PLATE}|2026-07-10|true|true|◯◯損保 対人対物無制限`)
@@ -60,7 +60,7 @@ test.describe('車両マスタ CRUD', () => {
     await page.locator('.btn-repair-add').click()
 
     await expect.poll(async () => {
-      const vr = await rest(`vehicles?name=eq.${encodeURIComponent(VNAME)}&select=id`)
+      const vr = await restSrv(`vehicles?name=eq.${encodeURIComponent(VNAME)}&select=id`)
       const vid = vr?.[0]?.id
       if (!vid) return null
       const logs = await restSrv(`vehicle_repair_logs?vehicle_id=eq.${vid}&select=repair_date,description,cost`)
@@ -128,7 +128,7 @@ test.describe('車検リマインド：dry-run', () => {
     const acc = await rest(`accounts?slug=eq.${SC_SLUG}&select=id`)
     scAccountId = acc?.[0]?.id
     if (!scAccountId) { fnAvailable = false; return }
-    await rest('vehicles', {
+    await restSrv('vehicles', {
       method: 'POST', headers: { Prefer: 'return=minimal' },
       body: JSON.stringify([
         { account_id: scAccountId, name: soon, active: true, inspection_date: ymd(20) },   // 20日後＝対象
@@ -140,7 +140,7 @@ test.describe('車検リマインド：dry-run', () => {
   test.afterAll(async () => {
     if (!scAccountId) return
     for (const n of [soon, far]) {
-      await rest(`vehicles?account_id=eq.${scAccountId}&name=eq.${encodeURIComponent(n)}`, { method: 'DELETE' }).catch(() => {})
+      await restSrv(`vehicles?account_id=eq.${scAccountId}&name=eq.${encodeURIComponent(n)}`, { method: 'DELETE' }).catch(() => {})
     }
   })
 

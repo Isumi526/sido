@@ -14,6 +14,11 @@ const API_KEY = Deno.env.get('GEMINI_REVIEW_API_KEY') ?? ''
 const MODEL   = Deno.env.get('GEMINI_REVIEW_MODEL') ?? 'gemini-3.5-flash'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+// ★内部のデータ読み取り(faq_entries/accounts/settings)は service_role で行う。
+//  以前は anon クライアントで読んでいたため、faq_entries に RLS を張って anon を
+//  剥奪すると空配列になり「AIヘルプのFAQ注入がエラーにならず黙って効かなくなる」
+//  （2026-08-01 のRLS第1段で見つかり、先送りにしていた前提条件・2026-09-03解消）。
+const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ANON_KEY
 
 // in-code認可：有効なユーザーJWT（ログイン済み管理者セッション）必須。
 // CIが --no-verify-jwt でデプロイするため、anon鍵単体の匿名呼び出しをここで弾く（コスト悪用防止）。
@@ -35,7 +40,7 @@ async function getUser(req: Request): Promise<{ ok: boolean; accountSlug: string
 async function buildFaqBlock(accountSlug: string): Promise<string> {
   if (!accountSlug) return ''
   try {
-    const sb = createClient(SUPABASE_URL, ANON_KEY)
+    const sb = createClient(SUPABASE_URL, SERVICE_KEY)
     const { data: account } = await sb.from('accounts').select('id').eq('slug', accountSlug).maybeSingle()
     if (!account?.id) return ''
     const { data: rows } = await sb
@@ -63,7 +68,7 @@ async function buildFaqBlock(accountSlug: string): Promise<string> {
 async function buildTenantStateBlock(accountSlug: string): Promise<string> {
   if (!accountSlug) return ''
   try {
-    const sb = createClient(SUPABASE_URL, ANON_KEY)
+    const sb = createClient(SUPABASE_URL, SERVICE_KEY)
     const { data: account } = await sb.from('accounts').select('id').eq('slug', accountSlug).maybeSingle()
     if (!account?.id) return ''
     const { data: rows } = await sb
