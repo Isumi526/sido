@@ -108,5 +108,16 @@
   "fixRejected": "却下",
   "fixApprovedNotice": "承認されました。打刻が直っています。",
   "fixRejectedNotice": "却下されました。理由は管理者に確認してください。",
-  "fixReload": "打刻の状態を更新"
+  "fixReload": "打刻の状態を更新",
+  "stepRules": "確認事項",
+  "stepLocation": "現在地",
+  "stepSubmit": "記録",
+  "stepRulesDone": "確認事項 {n}件を確認しました",
+  "stepLocationDone": "現在地を取得しました",
+  "stepReopen": "開く",
+  "stepNext": "次へ",
+  "stepReadyCheckin": "準備ができました。下のボタンで出勤を記録してください。",
+  "stepReadyCheckout": "準備ができました。下のボタンで退勤を記録してください。",
+  "moreActions": "打刻を忘れた・間違えた時は",
+  "stepNoLocationNote": "位置情報は取得できませんでしたが、このまま記録できます。"
 }

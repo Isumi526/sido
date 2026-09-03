@@ -52,7 +52,16 @@
 
       <!-- ★押し間違いに気づくのはこの画面。ここから辿れないと直せない（2026-09-03）。
            「今日はもう退勤済み」＝間違って退勤を押してしまった人が最初に見る画面でもある。 -->
-      <PunchCorrectionPanel :worker-id="myWorkerId" class="fix-slot" @applied="reloadPunchState()" />
+      <!-- ★打刻の本筋ではないので畳んで置く（入力フォーム側と同じ扱いに揃える）。
+           後追い入力もここから辿れるようにする＝「打刻が思ったとおりでない」時に
+           人が探す場所を1つにまとめる（2026-09-03）。 -->
+      <details class="more-actions fix-slot" data-testid="more-actions">
+        <summary>{{ $t('checkin.moreActions') }}</summary>
+        <div class="more-actions-body">
+          <LatePunchPanel :worker-id="myWorkerId" />
+          <PunchCorrectionPanel :worker-id="myWorkerId" @applied="reloadPunchState()" />
+        </div>
+      </details>
     </div>
 
     <!-- 送信完了 -->
@@ -103,7 +112,16 @@
       </div>
 
       <!-- ★押した直後に「今のは間違いだった」と気づく人が一番多い。ここに置く（2026-09-03） -->
-      <PunchCorrectionPanel :worker-id="myWorkerId" class="fix-slot" @applied="reloadPunchState()" />
+      <!-- ★打刻の本筋ではないので畳んで置く（入力フォーム側と同じ扱いに揃える）。
+           後追い入力もここから辿れるようにする＝「打刻が思ったとおりでない」時に
+           人が探す場所を1つにまとめる（2026-09-03）。 -->
+      <details class="more-actions fix-slot" data-testid="more-actions">
+        <summary>{{ $t('checkin.moreActions') }}</summary>
+        <div class="more-actions-body">
+          <LatePunchPanel :worker-id="myWorkerId" />
+          <PunchCorrectionPanel :worker-id="myWorkerId" @applied="reloadPunchState()" />
+        </div>
+      </details>
     </div>
 
     <!-- ★稼働有無ゲート（出勤打刻の前に1回だけ・2026-08-31）。
@@ -224,33 +242,67 @@
         </button>
       </div>
 
-      <div class="checklist-scroll">
-      <p v-if="rules.length === 0" class="no-rules-note">{{ $t('checkin.noRulesNote') }}</p>
-      <div class="rules-list">
+      <!-- ★1画面に全部出さず、1ステップ1仕事にする（2026-09-03 運用者指摘
+           「コンテンツ量が多すぎて画面を圧迫している」）。
+           ルール確認 → 現在地の取得 → 記録 の順。前の条件が満たされると自動で次へ進む。 -->
+      <div v-if="stepList.length > 1" class="step-bar" data-testid="step-bar">
         <div
-          v-for="rule in rules"
-          :key="rule.id"
-          class="rule-row"
-          :class="{ checked: checkedIds.has(rule.id) }"
-          @click="toggle(rule.id)"
+          v-for="(st, i) in stepList"
+          :key="st"
+          class="step-dot"
+          :class="{ done: stepIndex > i, current: stepIndex === i }"
         >
-          <span
-            class="material-symbols-rounded check-icon"
-            :class="{ active: checkedIds.has(rule.id) }"
-          >
-            {{ checkedIds.has(rule.id) ? 'check_box' : 'check_box_outline_blank' }}
+          <span class="step-num">
+            <span v-if="stepIndex > i" class="material-symbols-rounded">check</span>
+            <template v-else>{{ i + 1 }}</template>
           </span>
-          <span class="rule-text">{{ rule.content }}</span>
+          <span class="step-name">{{ stepLabel(st) }}</span>
         </div>
       </div>
 
-      <!-- ★送り出し資料の同意はここから外した（2026-08-27 出退勤モデル変更）。
-           現場に添付した資料を、その現場の参加作業員に承認させる別フローへ移す。 -->
-      </div>
+      <div class="checklist-scroll">
+        <!-- 済んだステップは1行に畳む。タップで開き直せる＝チェックし間違えても戻れる -->
+        <button
+          v-if="punchStep !== 'rules' && rules.length"
+          class="step-done-row" data-testid="step-done-rules" @click="stepOverride = 'rules'"
+        >
+          <span class="material-symbols-rounded">check_circle</span>
+          <span>{{ $t('checkin.stepRulesDone', { n: rules.length }) }}</span>
+          <span class="step-reopen">{{ $t('checkin.stepReopen') }}</span>
+        </button>
+        <button
+          v-if="punchStep === 'submit' && locationState === 'granted'"
+          class="step-done-row" data-testid="step-done-location" @click="stepOverride = 'location'"
+        >
+          <span class="material-symbols-rounded">check_circle</span>
+          <span>{{ $t('checkin.stepLocationDone') }}</span>
+          <span class="step-reopen">{{ $t('checkin.stepReopen') }}</span>
+        </button>
 
-      <div class="submit-area">
-        <!-- 位置情報ステータス -->
-        <div class="location-status" :class="locationState">
+        <!-- ① 確認事項 -->
+        <template v-if="punchStep === 'rules'">
+          <p v-if="rules.length === 0" class="no-rules-note">{{ $t('checkin.noRulesNote') }}</p>
+          <div class="rules-list">
+            <div
+              v-for="rule in rules"
+              :key="rule.id"
+              class="rule-row"
+              :class="{ checked: checkedIds.has(rule.id) }"
+              @click="toggle(rule.id)"
+            >
+              <span
+                class="material-symbols-rounded check-icon"
+                :class="{ active: checkedIds.has(rule.id) }"
+              >
+                {{ checkedIds.has(rule.id) ? 'check_box' : 'check_box_outline_blank' }}
+              </span>
+              <span class="rule-text">{{ rule.content }}</span>
+            </div>
+          </div>
+        </template>
+
+        <!-- ② 現在地の取得。取れた／断られた時点で自動で次へ進む -->
+        <div v-else-if="punchStep === 'location'" class="location-status" :class="locationState" data-testid="location-step">
           <span class="material-symbols-rounded loc-icon">
             {{ locationState === 'granted' ? 'location_on'
                : locationState === 'pending' ? 'location_searching'
@@ -283,13 +335,39 @@
           </span>
         </div>
 
-        <p class="submit-hint">
-          <template v-if="rules.length">{{ $t('checkin.checkedCount', { checked: checkedIds.size, total: rules.length }) }}</template>
-          <template v-if="allChecked && !locationResolved">
-            <template v-if="rules.length"><br></template><span class="submit-warn">{{ $t('checkin.submitWarn') }}</span>
-          </template>
+        <!-- ③ 記録するだけの画面。ここに他のものを足さないこと（足すと元の木阿弥） -->
+        <p v-else class="step-ready" data-testid="step-ready">
+          {{ attendanceType === 'checkin' ? $t('checkin.stepReadyCheckin') : $t('checkin.stepReadyCheckout') }}
+          <!-- ★位置情報が取れなくても記録はできる（努力義務）。ここで「取得を押してから」と
+               出すと、押せないのに押せと言う矛盾した表示になる（2026-09-03 実機で発覚）。 -->
+          <span v-if="locationState !== 'granted'" class="step-ready-note">{{ $t('checkin.stepNoLocationNote') }}</span>
         </p>
+
+        <!-- ★後追い入力と修正申請は打刻の本筋ではない。最後のステップでだけ、
+             しかも畳んだ1行として出す（2026-09-03 運用者指摘）。 -->
+        <details v-if="punchStep === 'submit'" class="more-actions" data-testid="more-actions">
+          <summary>{{ $t('checkin.moreActions') }}</summary>
+          <div class="more-actions-body">
+            <!-- ★記録後に画面を再読込しない。再読込するとこの画面ごと作り直されてパネルが
+                 unmount され、「記録しました」の表示が一瞬で消える。 -->
+            <LatePunchPanel :worker-id="myWorkerId" />
+            <PunchCorrectionPanel :worker-id="myWorkerId" @applied="reloadPunchState()" />
+          </div>
+        </details>
+      </div>
+
+      <div class="submit-area">
+        <p v-if="punchStep === 'rules' && rules.length" class="submit-hint">
+          {{ $t('checkin.checkedCount', { checked: checkedIds.size, total: rules.length }) }}
+        </p>
+        <!-- ★戻って開き直した時だけ「次へ」を出す。通常は条件が揃った時点で自動で進む -->
         <button
+          v-if="stepOverride && stepDoneForOverride"
+          class="btn-submit" :class="attendanceType" data-testid="step-next"
+          @click="stepOverride = null"
+        >{{ $t('checkin.stepNext') }}</button>
+        <button
+          v-else-if="punchStep === 'submit'"
           class="btn-submit"
           :class="attendanceType"
           :disabled="!canSubmit"
@@ -297,15 +375,6 @@
         >
           {{ submitting ? $t('checkin.submitting') : (attendanceType === 'checkin' ? $t('checkin.submitCheckin') : $t('checkin.submitCheckout')) }}
         </button>
-        <!-- 打刻し忘れた日の後追い入力。現場選択の画面が無くなったので、ここが唯一の入口。
-             ★記録後に画面を再読込しない。再読込するとこの画面ごと作り直されてパネルが
-             unmount され、「記録しました」の表示が一瞬で消える（入ったのか分からない）。
-             遡り入力は過去日の話なので、今開いている出勤/退勤の判定を作り直す必要も無い。 -->
-        <LatePunchPanel :worker-id="myWorkerId" />
-        <!-- 押し間違えた打刻の修正申請（2026-09-03 大須賀さん）。後追い入力の隣に置く＝
-             「打刻が思ったとおりになっていない」時に人が探す場所は同じなので分けない。
-             ★ここでも画面を再読込しない（上と同じ理由。申請できた表示が消える）。 -->
-        <PunchCorrectionPanel :worker-id="myWorkerId" @applied="reloadPunchState()" />
       </div>
     </div>
 
@@ -446,6 +515,33 @@ const locationResolved = computed(() =>
 const canSubmit = computed(() =>
   allChecked.value && locationResolved.value && !submitting.value
 )
+
+// ── 打刻をステップ式に出す（2026-09-03 運用者指摘「コンテンツ量が多すぎて画面を圧迫」）──
+//  ルール確認 → 現在地の取得 → 記録。★状態から導出する（手で進める番号を持たない）。
+//  番号を状態として持つと、途中で位置情報が失効した時などに画面と実態がずれる。
+type PunchStep = 'rules' | 'location' | 'submit'
+/** 済んだステップを開き直している時だけ入る。次へで解除して導出値に戻る */
+const stepOverride = ref<PunchStep | null>(null)
+const punchStep = computed<PunchStep>(() => {
+  if (stepOverride.value) return stepOverride.value
+  if (rules.value.length && !allChecked.value) return 'rules'
+  if (!locationResolved.value) return 'location'
+  return 'submit'
+})
+/** 出すステップの並び。確認事項が無い会社では2段階になる */
+const stepList = computed<PunchStep[]>(() =>
+  rules.value.length ? ['rules', 'location', 'submit'] : ['location', 'submit'])
+const stepIndex = computed(() => Math.max(0, stepList.value.indexOf(punchStep.value)))
+function stepLabel(st: PunchStep): string {
+  return st === 'rules' ? t('checkin.stepRules')
+    : st === 'location' ? t('checkin.stepLocation')
+    : t('checkin.stepSubmit')
+}
+/** 開き直したステップの条件が満たされているか（「次へ」を出してよいか） */
+const stepDoneForOverride = computed(() =>
+  stepOverride.value === 'rules' ? allChecked.value
+    : stepOverride.value === 'location' ? locationResolved.value
+    : true)
 
 function toggle(id: string) {
   const next = new Set(checkedIds.value)
@@ -820,7 +916,7 @@ async function resolveReportLink(target: Target | null) {
 
 <style scoped>
 /* 完了画面の中に置く修正申請パネル。center-box は中央寄せなので幅を持たせる */
-.fix-slot { width: 100%; margin-top: 18px; }
+.fix-slot { width: 100%; margin-top: 18px; text-align: left; }
 
 
 .checkin-page {
@@ -835,6 +931,43 @@ async function resolveReportLink(target: Target | null) {
      （2026-09-03 修正申請パネルを足して実機で発覚）。 */
   overflow-y: auto;
 }
+
+/* ── 打刻のステップ表示（2026-09-03）── */
+.step-bar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 12px 16px; background: #fff; border-bottom: 1px solid #f0f0f0; flex-shrink: 0;
+}
+.step-dot { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; opacity: .45; }
+.step-dot.done, .step-dot.current { opacity: 1; }
+.step-num {
+  width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; background: #e5e7eb; color: #6b7280;
+}
+.step-num .material-symbols-rounded { font-size: 15px; }
+.step-dot.current .step-num { background: #06C755; color: #fff; }
+.step-dot.done .step-num { background: #dcfce7; color: #15803d; }
+.step-name { font-size: 12px; font-weight: 600; color: #374151; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* 済んだステップの1行サマリ。タップで開き直せる */
+.step-done-row {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px;
+  padding: 10px 12px; margin-bottom: 10px; font-size: 13px; color: #15803d;
+  font-weight: 600; cursor: pointer; text-align: left;
+}
+.step-done-row .material-symbols-rounded { font-size: 18px; }
+.step-reopen { margin-left: auto; font-size: 12px; color: #15803d; text-decoration: underline; }
+
+.step-ready { font-size: 15px; font-weight: 600; color: #374151; line-height: 1.7; padding: 8px 2px; }
+.step-ready-note { display: block; margin-top: 6px; font-size: 12px; font-weight: 600; color: #b45309; }
+
+/* 後追い入力・修正申請は畳んで置く。打刻の本筋ではないので既定では見せない */
+.more-actions { margin-top: 18px; }
+.more-actions > summary {
+  font-size: 13px; color: #6b7280; cursor: pointer; padding: 10px 2px; list-style: revert;
+}
+.more-actions-body { display: flex; flex-direction: column; gap: 10px; padding-top: 6px; }
 
 /* ── センター表示 ── */
 .center-box {

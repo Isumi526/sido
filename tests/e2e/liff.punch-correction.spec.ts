@@ -17,6 +17,26 @@ import { restSrv, useDevWorker } from './helpers'
 let workerId = ''
 let logId = ''
 
+/**
+ * 修正申請のパネルを開く。
+ * ★2026-09-03 に打刻画面をステップ式にしたので、後追い入力と修正申請は
+ *  「打刻を忘れた・間違えた時は」に畳まれている（打刻の本筋ではないため）。
+ *  確認事項→現在地 を通してから開く。打刻済みの日は完了画面に同じ導線が出る。
+ */
+async function openFixPanel(page: import('@playwright/test').Page) {
+  await page.goto('/checkin', { waitUntil: 'networkidle' })
+  await page.waitForSelector('.rule-row, [data-testid="loc-get"], [data-testid="more-actions"]', { timeout: 20000 })
+  const rows = page.locator('.rule-row')
+  for (let i = 0, n = await rows.count(); i < n; i++) await rows.nth(i).click()
+  const loc = page.getByTestId('loc-get')
+  if (await loc.count()) await loc.click().catch(() => {})
+  const more = page.getByTestId('more-actions')
+  await expect(more).toBeVisible({ timeout: 20000 })
+  await more.locator('summary').click()
+  await page.locator('[data-testid="fix-open"]').click()
+  await expect(page.locator('[data-testid="fix-panel"]'), '修正申請のパネルが開く').toBeVisible({ timeout: 10000 })
+}
+
 test.describe('打刻の修正申請（作業員）', () => {
   test.afterAll(async () => {
     if (logId) await restSrv(`attendance_correction_requests?log_id=eq.${logId}`, { method: 'DELETE' }).catch(() => {})
@@ -39,10 +59,7 @@ test.describe('打刻の修正申請（作業員）', () => {
       }),
     }))[0].id
 
-    await page.goto('/checkin', { waitUntil: 'networkidle' })
-    await page.locator('[data-testid="fix-open"]').scrollIntoViewIfNeeded()
-    await page.locator('[data-testid="fix-open"]').click()
-    await expect(page.locator('[data-testid="fix-panel"]'), '修正申請のパネルが開く').toBeVisible({ timeout: 10000 })
+    await openFixPanel(page)
 
     // 自分の打刻が並ぶ
     const pick = page.locator(`[data-testid="fix-pick-${logId}"]`)
@@ -69,9 +86,7 @@ test.describe('打刻の修正申請（作業員）', () => {
 
   test('★同じ打刻に二重申請できない', async ({ page }) => {
     await useDevWorker(page, 'punch-fix')
-    await page.goto('/checkin', { waitUntil: 'networkidle' })
-    await page.locator('[data-testid="fix-open"]').scrollIntoViewIfNeeded()
-    await page.locator('[data-testid="fix-open"]').click()
+    await openFixPanel(page)
     await expect(page.locator(`[data-testid="fix-pending-${logId}"]`), '★申請中と表示される').toBeVisible({ timeout: 15000 })
     await expect(page.locator(`[data-testid="fix-pick-${logId}"]`), '★選べない（承認する側が困る二重申請を作らせない）').toBeDisabled()
   })

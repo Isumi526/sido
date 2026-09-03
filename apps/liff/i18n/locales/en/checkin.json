@@ -108,5 +108,16 @@
   "fixRejected": "Rejected",
   "fixApprovedNotice": "Approved. Your punch has been corrected.",
   "fixRejectedNotice": "Rejected. Please ask your manager for details.",
-  "fixReload": "Refresh punch status"
+  "fixReload": "Refresh punch status",
+  "stepRules": "Checklist",
+  "stepLocation": "Location",
+  "stepSubmit": "Record",
+  "stepRulesDone": "Confirmed {n} item(s)",
+  "stepLocationDone": "Location acquired",
+  "stepReopen": "Open",
+  "stepNext": "Next",
+  "stepReadyCheckin": "All set. Use the button below to record your check-in.",
+  "stepReadyCheckout": "All set. Use the button below to record your check-out.",
+  "moreActions": "Forgot or mis-pressed a punch?",
+  "stepNoLocationNote": "Location could not be obtained, but you can still record."
 }
