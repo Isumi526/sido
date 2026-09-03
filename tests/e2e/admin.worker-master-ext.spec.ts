@@ -44,6 +44,22 @@ test.describe('作業員マスタ拡張', () => {
     await expect(page.locator('[data-testid="checkup-row"]').first().locator('input[type="date"]')).toHaveValue('2026-04-01')
   })
 
+  // ★利用契約 第9条8項・別紙2「健診は受診日・受診の有無のみ、結果・所見は取り扱わない」。
+  //  自由記述の列(result/note)は 2026-09-03 に削除した。列を戻す変更が入ったら
+  //  ここで落ちる＝要配慮個人情報を置ける場所が復活したことに気づける。
+  test('★健診に自由記述の列が無い（要配慮個人情報を持たない）', async () => {
+    const r = await restSrv('worker_health_checkups?select=*&limit=1')
+    const cols = Object.keys((r?.[0] ?? {}) as Record<string, unknown>)
+    if (!cols.length) {
+      // 0件でも列は確かめられる。存在しない列を指定すると PostgREST が 400 を返す
+      const bad = await restSrv('worker_health_checkups?select=result&limit=1').catch(() => 'rejected')
+      expect(bad, '★result 列は存在してはいけない').toBe('rejected')
+      return
+    }
+    expect(cols, '★result 列は存在してはいけない').not.toContain('result')
+    expect(cols, '★note 列は存在してはいけない').not.toContain('note')
+  })
+
   test('区分=正社員（デフォルト）のとき労災保険番号欄は出ない', async ({ page }) => {
     await page.goto('/workers', { waitUntil: 'networkidle' })
     await page.locator('.btn-add').click()

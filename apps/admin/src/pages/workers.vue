@@ -500,8 +500,10 @@ async function syncCheckups(workerId: string, accountId: string, want: HealthChe
   const keepIds = valid.map(r => r.id).filter(Boolean) as string[]
   const toDel = haveIds.filter(id => !keepIds.includes(id))
   for (const [i, r] of valid.entries()) {
-    // 受診日のみ保存。result/note(要配慮個人情報)は書かず、既存値も保存のたびにnullで掃除する。
-    const row = { worker_id: workerId, account_id: accountId, checkup_date: r.checkup_date || null, result: null, note: null, sort_order: i, updated_at: new Date().toISOString() }
+    // 受診日のみ保存。★result/note の自由記述列は 2026-09-03 に削除した
+    //  （利用契約 第9条8項・別紙2「結果・所見は取り扱わない」）。列が無いので
+    //  ここに書くと保存が落ちる。要配慮個人情報を置ける欄を足さないこと。
+    const row = { worker_id: workerId, account_id: accountId, checkup_date: r.checkup_date || null, sort_order: i, updated_at: new Date().toISOString() }
     if (r.id) await supabase.from('worker_health_checkups').update(row).eq('id', r.id)
     else      await supabase.from('worker_health_checkups').insert(row)
   }
