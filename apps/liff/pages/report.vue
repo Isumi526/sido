@@ -1762,6 +1762,7 @@ function addSite() {
 /** 開始時刻のオプション: si>0 の場合は前現場の終了時刻より前を除外（日跨ぎ除く） */
 function startTimeOptionsForSite(si: number): string[] {
   const s = report.form.value.sites[si]
+  if (categoryUnrestricted(si)) return TIME_OPTIONS   // 制限なしの区分は全部選べる
   const cur = s?.workers?.[0]?.startTime
   let floorMin = -1   // この値「以上」のみ選択可（複数の下限の最大を採る）
   // ※ 前現場終了以降の制限は撤廃（前現場終了より前でも設定可＝80c2）。重複は送信時にバリデートする。
@@ -2120,6 +2121,17 @@ function categoryCommon(si?: number) {
   return master.workCategories.value.find((c: any) => c.id === catId) ?? null
 }
 
+/**
+ * その区分は時刻の制限をかけない設定か（2026-09-03 運用者判断・案D）。
+ * ★見積・事務のように定時の概念が合わない区分がある。以前は 05:00〜22:00 のような
+ *  広い定時を入れて事実上ガードを外していたが、画面から意図が読めなかった。
+ *  定時は初期値としては引き続き使い、「選べる範囲の制限」だけを外す。
+ * ★残業代には影響しない。残業は実働8時間超で決まる（worker-hours の OT=480）。
+ */
+function categoryUnrestricted(si: number): boolean {
+  return categoryCommon(si)?.unrestricted === true
+}
+
 // ── 固定勤務時刻。★現場×区分 → 区分の共通定時 → 現場の定時 → 無し の順に引く ──
 //  定時は「現場だけ」でも「区分だけ」でも決まらない（事務は拠点で 08:30/08:00 と違う）。
 //  現場×区分の設定が最優先＝拠点差を表現できる。
@@ -2197,6 +2209,7 @@ function onSiteChange(si: number) {
 //  編集で開いた古い超過値は snap させないため、現在値は必ず含める。
 function endTimeOptionsForSite(si: number): string[] {
   const s = report.form.value.sites[si]
+  if (categoryUnrestricted(si)) return TIME_OPTIONS   // 制限なしの区分は全部選べる
   const endCap = siteFixedEnd(s?.siteName, si)
   if (!endCap) return TIME_OPTIONS
   // 残業申請が承認済みの日付は固定終了の上限を解放（架空残業対策の例外）。

@@ -38,7 +38,8 @@
             </td>
             <td class="scope">{{ scopeLabel(c.scope) }}</td>
             <td class="hours" :data-testid="`cat-hours-${c.id}`">
-              <template v-if="c.default_start_time || c.default_end_time">
+              <span v-if="c.hours_unrestricted" class="free" :data-testid="`cat-free-${c.id}`">時刻の制限なし</span>
+              <template v-else-if="c.default_start_time || c.default_end_time">
                 {{ hhmm(c.default_start_time) || '—' }}〜{{ hhmm(c.default_end_time) || '—' }}
                 <span v-if="breakTotal(c) > 0" class="brk">休憩{{ breakTotal(c) }}分</span>
               </template>
@@ -103,6 +104,17 @@
           <button class="btn-add-break" data-testid="cat-break-add" @click="addBreak">＋ 休憩を追加</button>
           <p class="hint">例：12:00 から 60 分。時間帯で持つので、勤務時間の計算から自動で引かれます。</p>
         </div>
+        <div class="field">
+          <label class="check-line">
+            <input v-model="modal.hours_unrestricted" type="checkbox" data-testid="cat-unrestricted" />
+            <span>日報で時刻を自由に選べるようにする（時間帯で縛らない）</span>
+          </label>
+          <p class="hint">
+            見積・事務のように「定時」の概念が合わない区分に使います。通常は<b>オフのまま</b>にしてください
+            （オフ＝定時の範囲でしか選べず、早出・残業は承認制のままです）。
+            <br>※残業代は<b>実働8時間を超えた分</b>で自動計算されるので、この設定では変わりません。
+          </p>
+        </div>
         <div v-if="modal.id" class="field">
           <label>状態</label>
           <div class="toggle">
@@ -146,6 +158,8 @@ interface WorkCategory {
   default_start_time: string | null
   default_end_time: string | null
   default_breaks: BreakWindow[] | null
+  // 日報の時刻ピッカーで定時の外も選べるようにするか（見積・事務など・2026-09-03）
+  hours_unrestricted: boolean
 }
 
 /** 'HH:MM:SS' も 'HH:MM' も 'HH:MM' に揃える（DBは time 型で秒付きで返る） */
@@ -182,7 +196,7 @@ async function load() {
 
 function openAdd() {
   saveError.value = ''
-  modal.value = { name: '', scope: 'site', active: true, default_start_time: '', default_end_time: '', breaks: [] }
+  modal.value = { name: '', scope: 'site', active: true, default_start_time: '', default_end_time: '', breaks: [], hours_unrestricted: false }
 }
 function openEdit(c: WorkCategory) {
   saveError.value = ''
@@ -221,6 +235,7 @@ async function save() {
     start: modal.value.default_start_time || '',
     end: modal.value.default_end_time || '',
     breaks: (modal.value.breaks ?? []).filter(b => b?.start && (Number(b.minutes) || 0) > 0),
+    hoursUnrestricted: modal.value.hours_unrestricted === true,
   })
   saving.value = false
   if (!r.ok) { saveError.value = SAVE_ERRORS[r.error ?? ''] ?? `保存に失敗しました（${r.error}）`; return }
@@ -276,6 +291,9 @@ onMounted(load)
 .hours { font-size: 13px; white-space: nowrap; }
 .hours .brk { margin-left: 6px; color: #64748b; font-size: 12px; }
 .hours .muted { color: #94a3b8; font-size: 12px; }
+.hours .free { color: #1d4ed8; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 700; }
+.check-line { display: flex; align-items: center; gap: 8px; font-weight: 500; cursor: pointer; }
+.check-line input { width: 16px; height: 16px; }
 .times { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
 .times .time { width: auto; }
 .times .mins { width: 76px; }

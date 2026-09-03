@@ -31,8 +31,10 @@ let siteId = ''
 let genbaCatId = ''
 let jimuCatId = ''
 let koujouCatId = ''
+let freeCatId = ''
 
 const KOUJOU = `E2E工場作業_${TS}`
+const FREE   = `E2E見積_制限なし_${TS}`
 
 test.describe('日報の作業区分', () => {
   test.beforeAll(async () => {
@@ -70,11 +72,22 @@ test.describe('日報の作業区分', () => {
         default_start_time: '07:30', default_end_time: '16:30',
       }),
     }))[0].id
+
+    // ★時刻の制限をかけない区分（見積・事務など）。定時は初期値としては使うが、
+    //  選べる範囲は絞らない（2026-09-03 運用者判断・案D）
+    freeCatId = (await restSrv('work_categories', {
+      method: 'POST', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        account_id: accountId, name: FREE, scope: 'site', active: true, sort_order: 998,
+        default_start_time: '09:00', default_end_time: '17:00', hours_unrestricted: true,
+      }),
+    }))[0].id
   })
 
   test.afterAll(async () => {
     await restSrv(`site_category_hours?site_id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`work_categories?id=eq.${koujouCatId}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`work_categories?id=eq.${freeCatId}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`daily_reports?account_id=eq.${accountId}&date=eq.${todayJST()}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`sites?id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})
   })
@@ -151,6 +164,27 @@ test.describe('日報の作業区分', () => {
     } finally {
       await restSrv(`site_category_hours?site_id=eq.${siteId}&category_id=eq.${koujouCatId}`, { method: 'DELETE' }).catch(() => {})
     }
+  })
+
+  test('★「時刻の制限なし」の区分は定時の外も選べる（見積・事務向け）', async ({ page }) => {
+    await page.goto('/report', { waitUntil: 'networkidle' })
+    const siteSel = page.locator('[data-testid="site-select-0"]')
+    await expect(siteSel).toBeVisible({ timeout: 15000 })
+    await siteSel.selectOption(SITE)
+    const startSel = page.locator('[data-testid="start-time-0"]')
+    const endSel   = page.locator('[data-testid="end-time-0"]')
+
+    // まず制限ありの区分（工場作業 07:30〜16:30）では、定時の外は選択肢に出ない
+    await page.locator('[data-testid="work-category-0"]').selectOption(koujouCatId)
+    await expect(startSel).toHaveValue('07:30', { timeout: 10000 })
+    await expect(startSel.locator('option[value="05:00"]'), '★制限ありなら早出は出ない').toHaveCount(0)
+    await expect(endSel.locator('option[value="21:00"]'), '★制限ありなら残業は出ない').toHaveCount(0)
+
+    // 制限なしの区分に切り替えると、定時の外も選べる
+    await page.locator('[data-testid="work-category-0"]').selectOption(freeCatId)
+    await expect(startSel, '定時は初期値としては効く').toHaveValue('09:00', { timeout: 10000 })
+    await expect(startSel.locator('option[value="05:00"]'), '★制限なしなら早い時刻も選べる').toHaveCount(1)
+    await expect(endSel.locator('option[value="21:00"]'), '★制限なしなら遅い時刻も選べる').toHaveCount(1)
   })
 
   test('★組に定時が無ければ現場の定時へ落ちる（移行前の現場が壊れない）', async () => {

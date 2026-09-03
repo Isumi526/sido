@@ -202,6 +202,34 @@ test.describe('作業区分マスタ', () => {
     await page.locator('tr', { hasText: HOURS_CAT }).locator('.btn-del').click()
   })
 
+  test('★画面から「時刻の制限なし」を設定できる（見積・事務向け）', async ({ page }) => {
+    const FREE_CAT = `E2E制限なし区分_${TS}`
+    await page.goto('/work-categories', { waitUntil: 'networkidle' })
+
+    await page.locator('.btn-add').click()
+    await page.locator('[data-testid="cat-name"]').fill(FREE_CAT)
+    await page.locator('[data-testid="cat-scope"]').selectOption('site')
+    await page.locator('[data-testid="cat-unrestricted"]').check()
+    await page.locator('[data-testid="cat-save"]').click()
+
+    const row = page.locator('tr', { hasText: FREE_CAT })
+    await expect(row, '★一覧で「時刻の制限なし」と分かる').toContainText('時刻の制限なし')
+
+    // ★画面の表示だけでは保存できたと言えない。DBまで確かめる
+    const saved = (await listCategories()).find(c => c.name === FREE_CAT) as any
+    expect(saved?.hours_unrestricted, '★DBに入る').toBe(true)
+
+    // オフに戻せる（一度入れたら戻せない、を作らない）
+    await row.locator('.btn-edit').click()
+    await page.locator('[data-testid="cat-unrestricted"]').uncheck()
+    await page.locator('[data-testid="cat-save"]').click()
+    const off = (await listCategories()).find(c => c.name === FREE_CAT) as any
+    expect(off?.hours_unrestricted, '★オフに戻せる').toBe(false)
+
+    page.once('dialog', d => d.accept())
+    await page.locator('tr', { hasText: FREE_CAT }).locator('.btn-del').click()
+  })
+
   test('★新しく作った会社にも標準の区分が自動で入る', async () => {
     // 20260816020000 は「実行時点の既存アカウント」に入れただけで、
     // その後に作られた会社は区分ゼロになる漏れがあった（2026-08-16）。
