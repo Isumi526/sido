@@ -114,6 +114,12 @@
           </div>
           <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">設定すると日報でこの現場を選んだ時に作業時刻の既定値になり、終了は固定終了を超えて報告できません（早退で下回るのは可）。</p>
         </div>
+        <!-- ④'''' 会社からこの現場までの往復距離（日報の交通経費の既定値・2026-09-03） -->
+        <div class="field">
+          <label>会社からの往復距離（km・任意）</label>
+          <input v-model.number="modal.default_distance_km" type="number" min="0" step="0.1" class="input" style="width:120px" placeholder="例：24.5" data-testid="site-default-distance" />
+          <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">設定すると日報でこの現場を選んだ時にガソリン/軽油の往復kmの既定値になります（手動で編集も可能）。</p>
+        </div>
         <!-- ④' 既定休憩（開始時刻＋分の複数登録。日報でこの現場を選ぶと反映・人件費計算に反映） -->
         <div class="field">
           <label>既定休憩（開始時刻＋休憩時間・任意・複数可）</label>
@@ -308,6 +314,7 @@ type Site = {
   default_start_time: string | null; default_end_time: string | null   // 固定勤務時刻（日報の既定＆終了上限）
   default_breaks?: { start: string; minutes: number }[] | null   // 既定休憩[{start,minutes}]。新規日報で現場選択時にスナップショット
   responsible_worker_id: string | null   // 現場責任者（現場管理者以上のworker・必須はUIで担保）
+  default_distance_km: number | null   // 会社からこの現場までの往復距離(km)。日報の既定値（2026-09-03）
 }
 type Att = { id: string; site_id: string; kind: string; path: string; name: string | null; require_consent?: boolean; url?: string | null }
 
@@ -466,7 +473,7 @@ async function load() {
   const accountId = await getAccountId()
   const [{ data }, { data: cons }] = await Promise.all([
     supabase.from('sites')
-      .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id, default_start_time, default_end_time, default_breaks, responsible_worker_id')
+      .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id, default_start_time, default_end_time, default_breaks, responsible_worker_id, default_distance_km')
       .eq('account_id', accountId)
       .order('name_kana', { nullsFirst: false })
       .order('name'),
@@ -559,7 +566,7 @@ const filtered = computed(() => {
   return list
 })
 
-function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', default_breaks: [], responsible_worker_id: myWorkerId.value ?? null, linkedSubs: [], shareUsers: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = ''; modalRules.value = []; clearPendingAtts(); buildCatHoursDraft([]); markFormOpened(); fetchRuleHistory() }
+function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', default_breaks: [], responsible_worker_id: myWorkerId.value ?? null, default_distance_km: null, linkedSubs: [], shareUsers: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = ''; modalRules.value = []; clearPendingAtts(); buildCatHoursDraft([]); markFormOpened(); fetchRuleHistory() }
 function addBreak()    { if (!modal.value) return; (modal.value.default_breaks ??= []).push({ start: '12:00', minutes: 60 }) }
 function removeBreak(i: number) { modal.value?.default_breaks?.splice(i, 1) }
 
@@ -713,6 +720,7 @@ async function save() {
         return arr.length ? arr : null
       })(),
       responsible_worker_id: m.responsible_worker_id || null,
+      default_distance_km: m.default_distance_km === '' || m.default_distance_km == null ? null : Number(m.default_distance_km),
     }
     const accountId = await getAccountId()
     let siteId = m.id
