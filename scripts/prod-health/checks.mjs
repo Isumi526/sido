@@ -198,6 +198,27 @@ export const CHECKS = [
         and r.created_at < now() - interval '1 day'
         and r.created_at > now() - interval '14 days'`,
   },
+  {
+    id: 'trial-notice-unconfirmed',
+    layer: 2, kind: 'sql', severity: 'warn',
+    title: '無償試用期間の満了20日前告知が、まだ管理者に確認されていない（or 月額未設定）',
+    impact: '契約書第22条の3第2項の通知義務（満了20日前までの告知）を果たせていない可能性。'
+      + '月額(accounts.monthly_fee_yen)が未設定だと告知ポップアップ自体が出ない（誤った金額を出さないフェイルセーフのため）',
+    origin: '2026-09-03 弁護士打合せ対応。AC5「未確認のアカウントを運用側から一覧で把握できる」の実体',
+    sql: `
+      select a.id::text as key,
+             a.name || '（満了' || to_char(a.trial_ends_at,'MM/DD') || '・'
+               || case when a.monthly_fee_yen is null then '★月額未設定'
+                       else '確認待ち' end || '）' as detail
+      from accounts a
+      where a.billing_status = 'trial'
+        and a.trial_ends_at is not null
+        and a.trial_ends_at - current_date <= 20
+        and not exists (
+          select 1 from trial_notice_acks t
+          where t.account_id = a.id and t.trial_ends_at = a.trial_ends_at
+        )`,
+  },
 
   // ────────────────────────────────────────────────
   //  層3: セキュリティプローブ（kind:'probe' / async run() を書く）

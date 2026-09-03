@@ -126,6 +126,10 @@
 
     <!-- どのページでも右下に常駐するAIヘルプ（ログイン中のみ・遷移で消えない）。AIヘルプ/FAQと同じ扱いで経営系＝site_manager非表示 -->
     <AiHelpWidget v-if="!HIDE_AI_HELP_SECTIONS && canViewManagementPages" />
+
+    <!-- 無償試用期間の満了告知（契約書第22条の3第2項）。オーナー・管理者のみ対象＝
+         「先方の管理者」に見せる。EF側が表示要否を判定するので、対象外なら何も出ない。 -->
+    <TrialNoticeGate v-if="canManageAuth" />
   </div>
 
   <!-- 未ログイン時はログイン画面のみ表示 -->
@@ -145,6 +149,7 @@ import { extractDoneCount, refreshExtractBadge } from './lib/extractJobs'
 import { HIDE_LINE_SECTIONS, HIDE_AI_HELP_SECTIONS } from './lib/featureFlags'
 import { migrationTargetUrl, REDIRECT_SECONDS } from './lib/domainMigration'
 import AiHelpWidget from './components/AiHelpWidget.vue'
+import TrialNoticeGate from './components/TrialNoticeGate.vue'
 
 // 独自ドメイン移行: 旧ドメインアクセス時のみ案内＋5秒後リダイレクト（既定オフ＝NEW_ADMIN_ORIGIN空）。
 const migrationUrl = ref<string | null>(migrationTargetUrl())
