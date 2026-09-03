@@ -77,15 +77,21 @@ export const useMaster = () => {
   async function fetch(force = false) {
     // キャッシュが有効で強制更新でなければスキップ
     if (!force && loadCache()) {
-      _fetchFromSupabase().catch(() => _fetchFromGas().catch(() => {}))
+      // ★取得に失敗しても握りつぶす。手元のキャッシュで画面は動く
+      _fetchFromSupabase().catch(() => {})
       return
     }
 
     loading.value = true
     try {
       await _fetchFromSupabase()
-    } catch {
-      await _fetchFromGas().catch(() => {})
+    } catch (e) {
+      // ★2026-09-03: GASへのフォールバックを撤去した。
+      //  本番のGASは応答こそするが 現場0件・作業員0件 を返す状態で、
+      //  発火条件 (sites.length || workers.length) を満たさず master を上書きしない
+      //  ＝保険として働いていなかった。URLが配信物に載っているぶん、
+      //  下請け業者名だけが誰でも取れる状態になっていたので消した。
+      console.error('[Master] マスタの取得に失敗:', e)
     }
     loading.value = false
   }
@@ -172,19 +178,6 @@ export const useMaster = () => {
     master.value = data
     saveCache(data)
     console.log('[Master] EF経由で取得:', data.sites.length, '現場', data.workers.length, '作業員')
-  }
-
-  async function _fetchFromGas() {
-    if (!config.public.gasUrl) return
-    const res = await $fetch<MasterData>(
-      config.public.gasUrl + '?action=getMaster',
-      { method: 'GET' }
-    )
-    if (res.sites?.length || res.workers?.length) {
-      master.value = res
-      saveCache(res)
-      console.log('[Master] GASから取得:', res.sites?.length, '現場')
-    }
   }
 
   // 新規マスタ保存は呼び出し側（useReport）で完了を await し失敗を検知するため、

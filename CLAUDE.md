@@ -17,14 +17,9 @@
 ## 技術スタック
 - フロントエンド: Nuxt3 + Vue3 + TypeScript / Vercel
 - 認証: LINE LIFF SDK
-- バックエンド: Google Apps Script (GAS) / clasp管理
+- バックエンド: Supabase Edge Functions（Deno）
+  ※ Google Apps Script (apps/gas) は 2026-09-03 に撤去。LIFFのマスタ取得はEF一本
 - DB: Supabase
-
-## GAS開発フロー
-```bash
-cd apps/gas && clasp push
-# デプロイはGASエディタで新バージョン作成
-```
 
 ## ローカル開発フロー
 
@@ -86,7 +81,7 @@ git push origin main --force
 `.claude/commands/run.md`・`review.md`・`ship.md`（cc-pipeline 正本のコピー）の `{{...}}` はここと `.env` から解決する。
 | キー | 実値 | 備考 |
 |---|---|---|
-| **APP_LAYOUT** | npm workspaces モノレポ | `apps/admin`(Vite/Vue・`vite --port 3001`) / `apps/liff`(Nuxt) / `apps/gas`(Google Apps Script・clasp) |
+| **APP_LAYOUT** | npm workspaces モノレポ | `apps/admin`(Vite/Vue・`vite --port 3001`) / `apps/liff`(Nuxt) ※`apps/gas` は 2026-09-03 に撤去 |
 | **TYPECHECK** | `npm run typecheck`（=`--workspaces --if-present`） | |
 | **BUILD** | `npm run build --workspaces --if-present` | admin=`vite build` / liff=`nuxt build` |
 | **TEST** | `npm run test:e2e`（Playwright） | |
@@ -94,8 +89,8 @@ git push origin main --force
 | **LOCAL_STACK** | supabase（**56321番台に固定**＝API 56321 / DB 56322 / Studio 56323。他プロジェクトと同一マシンで共存のため標準54321番台ではない） | `supabase start`。**`.env` に `LOCAL_DB_URL=postgresql://postgres:postgres@127.0.0.1:56322/postgres` が必須**（未設定だと `scripts/rls-audit.mjs` 等が既定54322＝別プロジェクトのDBを誤って監査してしまう。2026-07-11発見・`.env`はgitignore対象のため新規cloneや別マシンでは都度設定要） |
 | **MIGRATIONS_DIR** | `supabase/migrations` | RLS は `account_id` 論理分離。anon公開キー前提の pre-RLS ベースラインあり（`.kody/accepted.yml` で追跡） |
 | **MINUTES_DS_ID** | `b5a34ae0-d5cd-4448-87a4-6a5035358e91`（`.env`） | 議事録テーブル（会議/電話で複数タスク発生源＝②パターン）。**3リポ共有**・案件relationで絞る。`/intake` が `処理状態=未処理`×自案件を分解し**未整理**を生成→議事録に出所リンク（実装はしない＝/runへ）。単発依頼（①）は従来どおり未整理へ直接。 |
-| **DEPLOY_PLATFORM** | Vercel（admin/liff）＋ Supabase edge functions ＋ GAS(clasp) | |
-| **DEPLOY_TRIGGER** | `auto-on-merge` | `main` Merge ＝ Vercel 自動デプロイ。edge functions / GAS は別途反映（ship 手順7 の edge deploy 該当） |
+| **DEPLOY_PLATFORM** | Vercel（admin/liff）＋ Supabase edge functions | |
+| **DEPLOY_TRIGGER** | `auto-on-merge` | `main` Merge ＝ Vercel 自動デプロイ。edge functions は別途反映（ship 手順7 の edge deploy 該当） |
 | **DEV_URL** | `http://localhost:3001`（admin） | liff は Nuxt dev |
 | **PROD_BRANCH** | `main`／AUTO_MERGE_TARGET=`dev`／AUTO_TIER=`低`／MAX_WALL=`180` | |
 | **本番 Supabase ref** | `nrzzesbtvswoiouhldvi` | 誤接続ガード／`--prod-readonly` 監査用 |
@@ -130,7 +125,7 @@ node --env-file=.env scripts/seed-staging-demo.mjs --clean   # 片付け
 
 ハマりどころ（実際に踏んだ）:
 - **`vercel env pull` は暗号化された値を復号しない**。空文字のenvファイルが落ちてくるので、それをそのまま `env add` すると全部空になる。値は `apps/liff/.env` / `apps/admin/.env`（本番値を持っている）から取る。
-- **`.vercelignore` が無いのでローカルの `.env` がアップロードされ、ビルドに使われる**。だから `NUXT_PUBLIC_GAS_URL` 等は staging プロジェクトに設定していなくても効いている。GAS は `?action=getMaster` の GET だけ（書き込み無し）なので実害は無いが、外向き送信を足す時はここを思い出すこと。`NUXT_PUBLIC_REPORT_LINE_NOTIFY` は false のままなので LINE 通知は飛ばない。
+- **`.vercelignore` が無いのでローカルの `.env` がアップロードされ、ビルドに使われる**。staging プロジェクトに設定していない環境変数がローカルの `.env` 経由で効くので、外向き送信を足す時はここを思い出すこと。`NUXT_PUBLIC_REPORT_LINE_NOTIFY` は false のままなので LINE 通知は飛ばない。
 - **`NUXT_PUBLIC_APP_ENV` に `development` を入れてはいけない**。LIFF認証をスキップして全員 `dev-user-id` になり、本番DBに対して身元不明で書き込む状態になる。
 - 手で `auth.users` を INSERT する時は `confirmation_token` 等のtoken列を **NULL でなく `''`** にする。NULL だとログインが `Database error querying schema`(500) で落ちる。
 
@@ -141,7 +136,7 @@ node --env-file=.env scripts/seed-staging-demo.mjs --clean   # 片付け
   ★**LINEへの送信は 2026-08-30 に全廃**（日報通知・編集通知・エラー通知・未送信リマインド・
   車検リマインド・注文書承諾通知）。関数も本番から削除済み。**LINEログイン（身元解決）は現役**なので
   `LINE_LOGIN_CHANNEL_ID` / `liff.getIdToken` / `users.line_user_id` は残す（ここを消すと本番が即死する）。
-- 本番: DEPLOY_TRIGGER=`auto-on-merge`（Vercel）。**Supabase edge functions 使用＝ship 手順7 で本番ref へ deploy 該当**。`NOTIFY_PREFIX=[sido]`。スモークの認可ガード対象＝GAS/edge webhook・公開リンク等。
+- 本番: DEPLOY_TRIGGER=`auto-on-merge`（Vercel）。**Supabase edge functions 使用＝ship 手順7 で本番ref へ deploy 該当**。`NOTIFY_PREFIX=[sido]`。スモークの認可ガード対象＝edge webhook・公開リンク等。
 
 ### CONSUMERS_DOCS（/run が参照・§3 影響範囲マップの手順4）
 `run.md` が言う「`docs/*-consumers.md` があれば使う／無ければ作る」の**この案件での実体は以下3本**。

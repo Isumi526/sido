@@ -20,10 +20,7 @@
     "test:e2e:admin": "playwright test --project=admin",
     "test:e2e:liff": "playwright test --project=liff",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:report": "playwright show-report tests/e2e/.report",
-    "gas:pull": "cd apps/gas && clasp pull",
-    "gas:push": "cd apps/gas && clasp push",
-    "gas:deploy": "cd apps/gas && clasp push && clasp deploy"
+    "test:e2e:report": "playwright show-report tests/e2e/.report"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

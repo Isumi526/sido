@@ -48,7 +48,6 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       liffId: '',
-      gasUrl: '',
       appEnv: process.env.NUXT_PUBLIC_APP_ENV || '',
       devNotifyGroupId: '',
       testerLineIds: '',        // カンマ区切りのLINE User ID（例: Uabc123,Udef456）
