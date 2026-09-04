@@ -1,0 +1,20 @@
+{
+  "sectionTitle": "Personal expenses",
+  "lead": "Claim expenses not tied to a site (fuel, supplies, etc.). They are submitted together with your daily report.",
+  "budgetUsed": "Used this month {used} / limit {limit}",
+  "budgetRemain": "{remain} left",
+  "budgetOver": "{over} over the limit",
+  "rowLabel": "Expense {n}",
+  "date": "Date",
+  "account": "Account",
+  "amount": "Amount (JPY)",
+  "payee": "Payee",
+  "payeePlaceholder": "Store or vendor name",
+  "companions": "Companions",
+  "companionsPlaceholder": "e.g. Mr. Tanaka (ABC Corp)",
+  "note": "Details",
+  "notePlaceholder": "Purpose / item",
+  "addRow": "+ Add personal expense",
+  "companionsRequired": "{account} requires companion names (needed for tax records).",
+  "submitFailed": "Your daily report was submitted, but {count} personal expense(s) failed to register. Please re-enter them from the Personal expenses page."
+}

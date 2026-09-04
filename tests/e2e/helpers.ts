@@ -368,6 +368,20 @@ export async function ensureDevWorker(key: string): Promise<{ lineUserId: string
     body: JSON.stringify({ account_id: accountId, line_user_id: lineUserId, worker_id: workerId, real_name: name }),
   }))[0].id
 
+  // ★同意済みにしておく（2026-09-04）。個人データの同意ゲート(ConsentGate)は
+  //  未同意だと全画面オーバーレイでポインタを奪うため、同意を主題にしない spec が
+  //  「visible/enabled なのにクリックできない」で落ちる。しかもゲートは status EF の
+  //  応答後に出るので、待ち時間の長い spec だけが踏む＝再現しにくいフレークになる。
+  //  本番の既存作業員は同意済みで使っている状態が普通なので、その状態を既定に置く。
+  //  ★ゲート自体の検証は liff.worker-consent.spec.ts が自分でこの行を消して行う。
+  await restSrv('worker_consents', {
+    method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' },
+    body: JSON.stringify({
+      account_id: accountId, worker_id: workerId,
+      consent_version: 1, consent_text: 'E2E: 同意済みの既定状態',
+    }),
+  }).catch(() => { /* 同意テーブルが無い環境（旧スキーマ）でも他specを止めない */ })
+
   return { lineUserId, userId, workerId }
 }
 
