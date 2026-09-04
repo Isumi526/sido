@@ -216,13 +216,40 @@
             >{{ $t('report.removeBtn') }}</button>
           </template>
 
-          <!-- ★元請け業者は入力させない（2026-08-17）。
-               現場名のプルダウンが元請けごとに区切られているので、現場を選べば元請けは決まる。
-               二度同じことを聞いていた＝入力が1つ無駄で、しかも食い違う余地があった。
-               現場マスタから逆算して site.contractorName に入れる（onSiteChange）。
-               ★保存し続ける理由: 「あの人は今どこの元請けの仕事をしているか」を
-                把握したいという要望があるため。ただし日報の入力画面は本人しか見ないので
-                ここには出さない。見せるのは管理画面側。 -->
+          <!-- 元請け業者（任意・現場プルダウンの絞り込みに使う）
+               ★2026-08-17 に「現場を選べば元請けは決まる」として一度廃止したが、
+                現場が多い会社では元請けで先に絞れないと目的の現場を探すのが大変で、
+                運用が回らなかったため復活（2026-09-04 運用者指示）。
+               ★選ぶと下の現場プルダウンが「この元請けに紐づく現場」を先頭に出す。
+                選ばなくても現場は全件選べる（必須ではない）。 -->
+          <Field :label="$t('report.contractor')">
+            <select v-model="site.contractorName" class="select" :data-testid="`contractor-select-${si}`">
+              <option value="">{{ $t('report.selectOptional') }}</option>
+              <!-- ★無効化済みの元請け。理由は下の現場selectのコメントと同じ -->
+              <option v-if="isRetiredOption(site.contractorName, master.contractorNames.value)"
+                      :value="site.contractorName" :data-testid="`retired-contractor-${si}`">
+                {{ $t('report.retiredOption', { name: site.contractorName }) }}
+              </option>
+              <!-- ★選択肢に紐づく現場の件数を出す（2026-09-04）。
+                   本番実測で元請け62社のうち37社（6割）は紐づく現場がゼロで、
+                   選んでも絞り込みが起きない＝「選んだのに何も変わらない」に見えていた。
+                   選ぶ前に「現場なし」と分かれば、そもそも空振りしない。 -->
+              <option v-for="name in master.contractorNames.value" :key="name" :value="name">
+                {{ siteCountOf(name)
+                    ? $t('report.contractorSiteCount', { name, count: siteCountOf(name) })
+                    : $t('report.contractorNoSite', { name }) }}
+              </option>
+              <option value="__other__">{{ $t('report.addNewContractor') }}</option>
+            </select>
+            <input
+              v-if="site.contractorName === '__other__'"
+              v-model="site.customContractorName"
+              type="text"
+              class="input mt6"
+              :placeholder="$t('report.contractorPlaceholder')"
+              @keydown.enter.prevent
+            />
+          </Field>
 
           <!-- 現場名 -->
           <Field :label="$t('report.siteName')" required>
@@ -240,8 +267,18 @@
                       :value="site.siteName" :data-testid="`retired-site-${si}`">
                 {{ $t('report.retiredOption', { name: site.siteName }) }}
               </option>
-              <!-- ★常に元請けごとに区切る。元請けを別に選ばせるのをやめたので分岐も要らない -->
-              <template v-for="grp in master.siteGroupsByContractor.value" :key="grp.contractorName ?? '__unlinked__'">
+              <!-- ★元請けを選んでいる時は「この元請けに紐づく現場」を先頭に出して探しやすくする。
+                   選んでいない時は従来どおり元請けごとのoptgroupで全件出す。
+                   どちらの場合も全現場を選べる（絞り込みで候補が消えて選べなくならないように）。 -->
+              <template v-if="groupedSiteNames(site.contractorName).linked.length">
+                <optgroup :label="$t('report.siteGroupLinked')">
+                  <option v-for="name in groupedSiteNames(site.contractorName).linked" :key="name" :value="name">{{ name }}</option>
+                </optgroup>
+                <optgroup :label="$t('report.siteGroupOther')">
+                  <option v-for="name in groupedSiteNames(site.contractorName).others" :key="name" :value="name">{{ name }}</option>
+                </optgroup>
+              </template>
+              <template v-else v-for="grp in master.siteGroupsByContractor.value" :key="grp.contractorName ?? '__unlinked__'">
                 <optgroup :label="grp.contractorName ?? $t('report.siteGroupUnlinked')">
                   <option v-for="name in grp.sites" :key="name" :value="name">{{ name }}</option>
                 </optgroup>
@@ -252,6 +289,12 @@
             <div v-if="site.siteName === '__unset__'" class="unset-hint">
               <HintIcon :text="$t('report.siteUnsetNote')" :label="$t('report.siteUnset')" />
             </div>
+            <!-- ★元請けを選んだのに紐づく現場が無い時は、黙って全件リストに落とさず理由を出す
+                 （2026-09-04）。本番では6割の元請けが該当するため、無言だと
+                 「選んだのに何も変わらない＝壊れている」と見える。 -->
+            <p v-if="hasContractorWithoutSites(site)" class="no-linked-note" :data-testid="`no-linked-site-note-${si}`">
+              {{ $t('report.noLinkedSiteNote', { name: site.contractorName }) }}
+            </p>
             <!-- ★現場名を文字で残せるようにする（2026-08-27）。
                  これが無いと「現場未設定」を選んだ時点で “どの現場だったか” がシステム上
                  どこにも残らず、後から管理者が記憶を頼りに紐付けるしかなかった。
@@ -283,16 +326,9 @@
                 @keydown.enter.prevent="pickSimilarSite(si, name)"
               >{{ name }}</span>{{ i < siteSimilar(site.customSiteName).length - 1 ? '、' : '' }}</template>
             </div>
-            <!-- 新規現場は逆算できないので、その時だけ元請けを選ばせる -->
-            <select
-              v-if="site.siteName === '__other__'"
-              v-model="site.contractorName"
-              class="select mt6"
-              :data-testid="`new-site-contractor-${si}`"
-            >
-              <option value="">{{ $t('report.contractor') }}{{ $t('report.selectOptional') }}</option>
-              <option v-for="name in master.contractorNames.value" :key="name" :value="name">{{ name }}</option>
-            </select>
+            <!-- ★新規現場のときの元請け選択はここには置かない（2026-09-04）。
+                 上の「元請け業者」プルダウンを復活させたので、新規現場でもそちらで選べる。
+                 二重に置くと同じ項目が画面に2つ並ぶ。 -->
           </Field>
 
           <!-- 作業区分（現場作業/見積/事務…）。既定で「現場作業」が入っている。
@@ -939,6 +975,23 @@ function isRetiredOption(current: string | undefined, options: string[]): boolea
   const v = (current ?? '').trim()
   if (!v || v === '__unset__' || v === '__other__') return false
   return !options.includes(v)
+}
+
+/**
+ * その元請けに紐づく有効な現場の件数（2026-09-04）。
+ * 元請けプルダウンに「（現場3件）／（現場なし）」を出して、選ぶ前に空振りが分かるようにする。
+ * ★件数はマスタの現場→元請けの対応から数える（別途の問い合わせは増やさない）。
+ */
+function siteCountOf(contractorName: string): number {
+  if (!contractorName || contractorName === '__other__') return 0
+  return groupedSiteNames(contractorName).linked.length
+}
+
+/** 元請けは選ばれているのに、その元請けに紐づく現場が1件も無い状態か（案内文の表示条件） */
+function hasContractorWithoutSites(site: { contractorName?: string }): boolean {
+  const c = (site.contractorName ?? '').trim()
+  if (!c || c === '__other__') return false
+  return siteCountOf(c) === 0
 }
 
 function groupedSiteNames(contractorName?: string): { linked: string[]; others: string[] } {
@@ -2272,9 +2325,12 @@ function onSiteChange(si: number) {
   // 現場を選んだ時点で区分の既定（現場作業）を入れる。★区分の欄は現場選択後に現れるので、
   //  ここで入れておかないと「現れた瞬間は空欄」になる
   if (isSiteChosen(s) && !s.workCategoryId) s.workCategoryId = defaultWorkCategoryId()
-  // 元請けは現場マスタから逆算して持つ（入力させない）
+  // 現場を選んだら、その現場の元請けを反映する（保存される元請けを実態と合わせる）。
+  // ★紐付けが無い現場では上書きしない（2026-09-04）。空で潰すと、絞り込みのために
+  //  選んだ元請けがプルダウンから消えて現場一覧の絞り込みも解けてしまう。
   if (s.siteName && s.siteName !== '__other__' && s.siteName !== '__unset__') {
-    s.contractorName = master.siteContractors.value[s.siteName] ?? ''
+    const derived = master.siteContractors.value[s.siteName]
+    if (derived) s.contractorName = derived
   }
   const w = s?.workers?.[0]
   if (!w) return
@@ -3592,6 +3648,12 @@ html, body {
 .expense-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .mt6  { margin-top: 6px; }
 .unset-hint { margin-top: 6px; }
+/* 元請けに紐づく現場が無い時の案内（2026-09-04）。警告色にはしない＝入力を止める話ではないため */
+.no-linked-note {
+  margin: 6px 0 0; padding: 8px 10px; border-radius: 8px;
+  background: #f8fafc; border: 1px solid #e2e8f0;
+  font-size: 12px; line-height: 1.6; color: #475569;
+}
 .fixed-time-note { margin-top: 4px; font-size: 12px; color: #1d4ed8; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 6px 10px; line-height: 1.5; }
 .overtime-link { display: inline-block; margin-top: 2px; color: #b45309; font-weight: 700; text-decoration: underline; }
 .approved-extra { display: block; margin-top: 2px; font-weight: 700; }
