@@ -23,6 +23,7 @@ const TS = Date.now()
 const CON   = `E2E元請_${TS}`
 const LINKED = `E2E紐付現場_${TS}`
 const FREE   = `E2E無紐付現場_${TS}`
+const CON_EMPTY = `E2E現場なし元請_${TS}`   // 紐づく現場が1件も無い元請け（本番では6割がこれ）
 
 test.beforeAll(async () => {
   const accountId = await getAccountId()
@@ -39,6 +40,11 @@ test.beforeAll(async () => {
     method: 'POST', headers: { Prefer: 'return=representation' },
     body: JSON.stringify({ account_id: accountId, name: FREE, active: true, contractor_id: null }),
   })
+  // 現場を1件も紐付けない元請け（案内文と「現場なし」表記の検証用）
+  await rest('contractors', {
+    method: 'POST', headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ account_id: accountId, name: CON_EMPTY, active: true, sort_order: 0 }),
+  })
 })
 
 test.afterAll(async () => {
@@ -47,6 +53,7 @@ test.afterAll(async () => {
   if (uid) await rest(`daily_reports?user_id=eq.${uid}&date=eq.${todayJST()}`, { method: 'DELETE' }).catch(() => {})
   await rest(`sites?name=like.E2E*${TS}`, { method: 'DELETE' }).catch(() => {})
   await rest(`contractors?name=eq.${encodeURIComponent(CON)}`, { method: 'DELETE' }).catch(() => {})
+  await rest(`contractors?name=eq.${encodeURIComponent(CON_EMPTY)}`, { method: 'DELETE' }).catch(() => {})
 })
 
 test('日報: 元請けのプルダウンがあり、選ぶと紐づく現場が先頭に出る', async ({ page }) => {
@@ -121,4 +128,40 @@ test('日報: 現場を選ぶと、その現場の元請けが保存される', 
     .find((e: any) => e?.siteName === LINKED)
   expect(hit, 'この現場の行が保存されている').toBeTruthy()
   expect(hit.contractorName, '★選んだ現場の元請けが保存される').toBe(CON)
+})
+
+// ★2026-09-04: 本番実測で元請け62社中37社（6割）が「紐づく現場ゼロ」で、選んでも絞り込みが
+//  起きず「選んだのに何も変わらない＝壊れている」と見えていた。選ぶ前／選んだ後の両方で分かるようにする。
+test('日報: 紐づく現場が無い元請けは、選ぶ前に「現場なし」と分かり、選ぶと理由が出る', async ({ page }) => {
+  try { await page.goto(`/report?edit=${FEAT_C_DATE}`, { waitUntil: 'networkidle', timeout: 8000 }) }
+  catch { test.skip(true, 'liff dev(3000) 未起動'); return }
+  await page.evaluate(() => localStorage.removeItem('app_master_cache'))
+  await page.reload({ waitUntil: 'networkidle' })
+  await page.waitForSelector('form.form', { timeout: 10000 })
+
+  const contractorSelect = page.locator('[data-testid="contractor-select-0"]')
+  await expect(contractorSelect).toBeVisible()
+
+  // ★選ぶ前に分かる: 現場ありは件数、現場ゼロは「現場なし」と出る
+  await expect(contractorSelect.locator('option', { hasText: `${CON}（現場1件）` }),
+    '★紐づく現場がある元請けは件数が出る').toHaveCount(1)
+  await expect(contractorSelect.locator('option', { hasText: `${CON_EMPTY}（現場なし）` }),
+    '★紐づく現場が無い元請けは「現場なし」と出る').toHaveCount(1)
+
+  // ★選んだ後: 黙って全件リストに落とさず、理由を出す
+  const note = page.locator('[data-testid="no-linked-site-note-0"]')
+  await expect(note, '現場ゼロの元請けを選ぶ前は案内を出さない').toHaveCount(0)
+  await contractorSelect.selectOption(CON_EMPTY)
+  await page.waitForTimeout(300)
+  await expect(note, '★現場ゼロの元請けを選ぶと理由が出る').toBeVisible()
+  await expect(note).toContainText(CON_EMPTY)
+
+  // ★案内が出ていても現場は選べる（入力を止めない）
+  await expect(page.locator('[data-testid="site-select-0"]').locator('option', { hasText: FREE }),
+    '★案内が出ていても現場は全件選べる').toHaveCount(1)
+
+  // 紐づく現場がある元請けに切り替えたら案内は消える
+  await contractorSelect.selectOption(CON)
+  await page.waitForTimeout(300)
+  await expect(note, '★現場がある元請けでは案内を出さない').toHaveCount(0)
 })
