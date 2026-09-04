@@ -230,7 +230,15 @@
                       :value="site.contractorName" :data-testid="`retired-contractor-${si}`">
                 {{ $t('report.retiredOption', { name: site.contractorName }) }}
               </option>
-              <option v-for="name in master.contractorNames.value" :key="name" :value="name">{{ name }}</option>
+              <!-- ★選択肢に紐づく現場の件数を出す（2026-09-04）。
+                   本番実測で元請け62社のうち37社（6割）は紐づく現場がゼロで、
+                   選んでも絞り込みが起きない＝「選んだのに何も変わらない」に見えていた。
+                   選ぶ前に「現場なし」と分かれば、そもそも空振りしない。 -->
+              <option v-for="name in master.contractorNames.value" :key="name" :value="name">
+                {{ siteCountOf(name)
+                    ? $t('report.contractorSiteCount', { name, count: siteCountOf(name) })
+                    : $t('report.contractorNoSite', { name }) }}
+              </option>
               <option value="__other__">{{ $t('report.addNewContractor') }}</option>
             </select>
             <input
@@ -281,6 +289,12 @@
             <div v-if="site.siteName === '__unset__'" class="unset-hint">
               <HintIcon :text="$t('report.siteUnsetNote')" :label="$t('report.siteUnset')" />
             </div>
+            <!-- ★元請けを選んだのに紐づく現場が無い時は、黙って全件リストに落とさず理由を出す
+                 （2026-09-04）。本番では6割の元請けが該当するため、無言だと
+                 「選んだのに何も変わらない＝壊れている」と見える。 -->
+            <p v-if="hasContractorWithoutSites(site)" class="no-linked-note" :data-testid="`no-linked-site-note-${si}`">
+              {{ $t('report.noLinkedSiteNote', { name: site.contractorName }) }}
+            </p>
             <!-- ★現場名を文字で残せるようにする（2026-08-27）。
                  これが無いと「現場未設定」を選んだ時点で “どの現場だったか” がシステム上
                  どこにも残らず、後から管理者が記憶を頼りに紐付けるしかなかった。
@@ -945,6 +959,23 @@ function isRetiredOption(current: string | undefined, options: string[]): boolea
   const v = (current ?? '').trim()
   if (!v || v === '__unset__' || v === '__other__') return false
   return !options.includes(v)
+}
+
+/**
+ * その元請けに紐づく有効な現場の件数（2026-09-04）。
+ * 元請けプルダウンに「（現場3件）／（現場なし）」を出して、選ぶ前に空振りが分かるようにする。
+ * ★件数はマスタの現場→元請けの対応から数える（別途の問い合わせは増やさない）。
+ */
+function siteCountOf(contractorName: string): number {
+  if (!contractorName || contractorName === '__other__') return 0
+  return groupedSiteNames(contractorName).linked.length
+}
+
+/** 元請けは選ばれているのに、その元請けに紐づく現場が1件も無い状態か（案内文の表示条件） */
+function hasContractorWithoutSites(site: { contractorName?: string }): boolean {
+  const c = (site.contractorName ?? '').trim()
+  if (!c || c === '__other__') return false
+  return siteCountOf(c) === 0
 }
 
 function groupedSiteNames(contractorName?: string): { linked: string[]; others: string[] } {
@@ -3491,6 +3522,12 @@ html, body {
 .expense-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .mt6  { margin-top: 6px; }
 .unset-hint { margin-top: 6px; }
+/* 元請けに紐づく現場が無い時の案内（2026-09-04）。警告色にはしない＝入力を止める話ではないため */
+.no-linked-note {
+  margin: 6px 0 0; padding: 8px 10px; border-radius: 8px;
+  background: #f8fafc; border: 1px solid #e2e8f0;
+  font-size: 12px; line-height: 1.6; color: #475569;
+}
 .fixed-time-note { margin-top: 4px; font-size: 12px; color: #1d4ed8; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 6px 10px; line-height: 1.5; }
 .overtime-link { display: inline-block; margin-top: 2px; color: #b45309; font-weight: 700; text-decoration: underline; }
 .approved-extra { display: block; margin-top: 2px; font-weight: 700; }
