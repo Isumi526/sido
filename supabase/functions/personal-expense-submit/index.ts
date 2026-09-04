@@ -211,10 +211,22 @@ Deno.serve(async (req) => {
 
   if (action === 'state') {
     const { limit, canApply } = await resolveLimit(svc, accountId, workerId, month)
-    const { data: items } = await svc.from('personal_expenses').select('*')
+    // ★月末は「翌月1日の手前」で表す（2026-09-04 修正）。
+    //  以前は `${month}-31` で上限を指定していたが、4月/6月/9月/11月/2月では
+    //  存在しない日付になり Postgres が date/time field value out of range を返す
+    //  → クエリ自体が失敗して items が null → 「0件」として表示されていた。
+    //  実害: それらの月は (1) 明細が画面から消える (2) 月額枠の使用額が常に¥0になり
+    //  上限を超えても気づけない。※同じ罠は管理画面(index.vue)で既に修正済みだったが、
+    //  このEFに同じ直しが入っていなかった。
+    const [yy, mm] = month.split('-').map(Number)
+    const nextMonthFirst = mm === 12 ? `${yy + 1}-01-01` : `${yy}-${String(mm + 1).padStart(2, '0')}-01`
+    const { data: items, error: itemsErr } = await svc.from('personal_expenses').select('*')
       .eq('worker_id', workerId).eq('account_id', accountId)
-      .gte('date', `${month}-01`).lte('date', `${month}-31`)
+      .gte('date', `${month}-01`).lt('date', nextMonthFirst)
       .order('date', { ascending: false })
+    // ★取得に失敗したら黙って0件にしない。0件と失敗を同じ顔で返すと、
+    //  枠の使用額が¥0に見えて上限チェックが素通りする（今回の不具合そのもの）。
+    if (itemsErr) return json({ ok: false, error: 'state_failed', message: itemsErr.message }, 500)
     return json({ ok: true, canSubmit: canApply && limit !== null && limit > 0, limit, items: items ?? [] })
   }
 
