@@ -2,18 +2,18 @@
 //  liff.site-contractor-filter.spec.ts （dev モード）
 //  日報の現場プルダウンは「元請けごとに区切られている」。
 //
-//  ★2026-08-17 に仕様が変わった。
-//   旧: 元請けのプルダウンで先に元請けを選ぶ → 現場が絞り込まれる（2段階入力）
-//   新: 元請けのプルダウンは無い。現場プルダウン自体が元請けごとの optgroup に
-//       分かれているので、元請けを別に選ばせるのは同じことを二度聞いているだけだった。
-//       元請けは現場マスタから逆算して日報に保存する（入力させない）。
-//       ※「あの人は今どこの元請けの仕事か」を把握したい要望があるので保存は続ける。
-//         見せるのは管理画面（日報一覧）と予定の詳細。
+//  ★2026-09-04 に元請けのプルダウンを復活させた（運用者指示）。
+//   2026-08-17: 「現場を選べば元請けは決まる」として元請けの入力欄を廃止した。
+//   2026-09-04: 現場が多い会社では元請けで先に絞れないと目的の現場を探せず、
+//               運用が回らなかったため復活。現場プルダウンの絞り込みに使う。
+//               ※現場を選んだ時の逆算（保存される元請けを実態に合わせる）は残す。
+//                 ただし紐付けの無い現場では上書きしない＝絞り込みが解けないように。
 //
 //  ★このspecが守るもの
-//   - 元請けの入力欄が日報に無いこと（復活させない）
-//   - 現場が元請けごとの optgroup に分かれ、未紐付けの現場も消えないこと
-//   - 現場を選ぶと元請けが逆算されて保存対象に入ること
+//   - 元請けのプルダウンが日報にあること（また消さない）
+//   - 元請けを選ぶと「この元請けに紐づく現場」が先頭に出ること
+//   - 絞り込んでも未紐付け/他元請けの現場が選べなくならないこと
+//   - 現場を選ぶと元請けが実態に合わせて保存されること
 // ============================================================
 import { test, expect } from '@playwright/test'
 import { rest, getAccountId, getDevUserId, todayJST } from './helpers'
@@ -49,7 +49,7 @@ test.afterAll(async () => {
   await rest(`contractors?name=eq.${encodeURIComponent(CON)}`, { method: 'DELETE' }).catch(() => {})
 })
 
-test('日報: 現場プルダウンが元請けごとに区切られ、元請けの入力欄は無い', async ({ page }) => {
+test('日報: 元請けのプルダウンがあり、選ぶと紐づく現場が先頭に出る', async ({ page }) => {
   // 新規(/report)は「次の未送信日」に依存し、1回のフルランで複数specが新規送信するため
   // 枯渇すると「送信済みです」になりフォームが出ない。この spec は送信しないので、
   // global-setupが必ず用意する既存日報を編集モードで開き、枯渇の影響を受けないようにする。
@@ -62,21 +62,30 @@ test('日報: 現場プルダウンが元請けごとに区切られ、元請け
   const siteSelect = page.locator('[data-testid="site-select-0"]')
   await expect(siteSelect).toBeVisible()
 
-  // ★元請けを選ばせる入力欄は無い（元請け名だけを並べた select が存在しない）
-  const contractorSelect = page.locator('select.select')
-    .filter({ has: page.locator(`option:text-is("${CON}")`) })
-    .filter({ hasNot: page.locator('option[value="__other__"]') })
-  await expect(contractorSelect, '★元請けの入力欄は復活させない').toHaveCount(0)
+  // ★元請けのプルダウンがある（2026-09-04 復活。また消さない）
+  const contractorSelect = page.locator('[data-testid="contractor-select-0"]')
+  await expect(contractorSelect, '★元請けのプルダウンが日報にある').toBeVisible()
+  await expect(contractorSelect.locator('option', { hasText: CON }),
+    '登録済みの元請けが候補に出る').toHaveCount(1)
 
-  // 現場は元請けごとの optgroup に分かれる
+  // 元請け未選択のうちは、現場は元請けごとの optgroup で全件出る
   await expect(siteSelect.locator(`optgroup[label="${CON}"] option`, { hasText: LINKED }),
     '紐づく現場は元請け名の optgroup に入る').toHaveCount(1)
-  // 未紐付けの現場も消えない（受け皿の optgroup に残る）
   await expect(siteSelect.locator('option', { hasText: FREE }),
-    '★未紐付けの現場が選べなくなっていない').toHaveCount(1)
+    '未紐付けの現場も選べる').toHaveCount(1)
+
+  // ★元請けを選ぶと「この元請けに紐づく現場」が先頭のグループに出る（＝絞り込み）
+  await contractorSelect.selectOption(CON)
+  await page.waitForTimeout(300)
+  await expect(siteSelect.locator('optgroup').first().locator('option', { hasText: LINKED }),
+    '★元請けを選ぶと紐づく現場が先頭グループに出る').toHaveCount(1)
+
+  // ★絞り込んでも他の現場が選べなくならない（候補から消すと選べず入力が詰まる）
+  await expect(siteSelect.locator('option', { hasText: FREE }),
+    '★絞り込んでも未紐付けの現場は選べる').toHaveCount(1)
 })
 
-test('日報: 現場を選ぶと元請けが逆算されて保存される（入力させない）', async ({ page }) => {
+test('日報: 現場を選ぶと、その現場の元請けが保存される', async ({ page }) => {
   // ★送信枠を自分で確保する。/report は「次の未送信日」を出すので、先行 spec が
   //  枠を使い切ると「送信済みです」になりこのテストだけフルランで落ちる（実際に落ちた）。
   //  今日の分を消してから開けば、他 spec の実行順に左右されない。
@@ -111,5 +120,5 @@ test('日報: 現場を選ぶと元請けが逆算されて保存される（入
   const hit = rows.flatMap((r: any) => Array.isArray(r.sites) ? r.sites : [])
     .find((e: any) => e?.siteName === LINKED)
   expect(hit, 'この現場の行が保存されている').toBeTruthy()
-  expect(hit.contractorName, '★元請けは入力させずに現場マスタから逆算して入る').toBe(CON)
+  expect(hit.contractorName, '★選んだ現場の元請けが保存される').toBe(CON)
 })
