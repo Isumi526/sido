@@ -136,3 +136,56 @@ test('★2️⃣ 業者名の名寄せ: 請求書の「株式会社◯◯」が�
   // 新規業者の登録欄が開いていない＝重複マスタを作りに行っていない
   await expect(page.locator('.new-vendor'), '★新規登録欄は開かない（重複マスタを作らない）').toHaveCount(0)
 })
+
+// ============================================================
+//  追加要望（2026-09-05 尾崎さん）:
+//  「『全行』ではなく、上段をコピーできるカタチへは難しいでしょうか？
+//    例: 複数現場がある場合に対応できると嬉しいです」
+//  → 1請求に複数の現場が混ざると「↓全行」では他の現場を潰してしまう。
+//    行ごとの「↑」で上の行の値をコピーし、下に続く空欄もまとめて埋める。
+//    ★値が入っている行では止まる＝別の現場/日付を勝手に上書きしない。
+// ============================================================
+test('★行ごとの「↑」で上の行の現場・日付をコピーし、下に続く空欄もまとめて埋める', async ({ page }) => {
+  await page.goto('/subcontractor-invoices', { waitUntil: 'networkidle' })
+  await page.getByRole('button', { name: /＋ 新規請求/ }).first().click()
+  await page.waitForTimeout(1000)
+  for (let i = 0; i < 4; i++) {
+    await page.getByRole('button', { name: /行を追加/ }).first().click()
+    await page.waitForTimeout(200)
+  }
+  const dates = page.locator('input.inp-date')
+  const siteSelects = page.locator('select.inp-site')
+  await expect(dates).toHaveCount(4)
+
+  // 1行目=現場A、4行目=現場B（別現場）、間の2件は未入力 ＝ 添付画像と同じ状況
+  await dates.nth(0).fill('2026-07-16')
+  await siteSelects.nth(0).selectOption(siteAId)
+  for (const i of [1, 2]) {
+    await dates.nth(i).fill('')
+    await siteSelects.nth(i).selectOption({ label: '—' })
+  }
+  await dates.nth(3).fill('2026-07-13')
+  await siteSelects.nth(3).selectOption(siteBId)
+
+  await page.getByTestId('copy-up-site-1').click()
+  await page.getByTestId('copy-up-date-1').click()
+  await page.waitForTimeout(200)
+
+  for (const i of [1, 2]) {
+    await expect(siteSelects.nth(i), `★${i + 1}行目に上の行の現場が入る`).toHaveValue(siteAId)
+    await expect(dates.nth(i), `★${i + 1}行目に上の行の日付が入る`).toHaveValue('2026-07-16')
+  }
+  // ★別現場の行は触らない（ここが「↓全行」との違い）
+  await expect(siteSelects.nth(3), '★既に入っている現場は上書きしない').toHaveValue(siteBId)
+  await expect(dates.nth(3), '★既に入っている日付は上書きしない').toHaveValue('2026-07-13')
+})
+
+test('★1行目には「↑」を出さない（コピー元が無いため）', async ({ page }) => {
+  await page.goto('/subcontractor-invoices', { waitUntil: 'networkidle' })
+  await page.getByRole('button', { name: /＋ 新規請求/ }).first().click()
+  await page.waitForTimeout(1000)
+  await page.getByRole('button', { name: /行を追加/ }).first().click()
+  await page.waitForTimeout(300)
+  await expect(page.getByTestId('copy-up-site-0')).toHaveCount(0)
+  await expect(page.getByTestId('copy-up-date-0')).toHaveCount(0)
+})

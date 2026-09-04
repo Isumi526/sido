@@ -252,8 +252,18 @@
               </thead>
               <tbody>
                 <tr v-for="(it, i) in form.items" :key="i">
-                  <td><input v-model="it.item_date" type="date" class="inp-sm inp-date" /></td>
                   <td>
+                    <div class="cell-copy">
+                      <input v-model="it.item_date" type="date" class="inp-sm inp-date" />
+                      <!-- ★上の行からコピー（2026-09-05 尾崎さん追加要望）。
+                           1請求に複数現場が混ざる時、ヘッダの「↓全行」では潰れてしまうため、
+                           「上段をコピー」を行ごとに置く。下に続く空欄も一緒に埋める（埋まっている行は触らない）。 -->
+                      <button v-if="i > 0" type="button" class="btn-copy-up" :data-testid="`copy-up-date-${i}`"
+                              title="上の行の日付をコピー（下に続く空欄もまとめて埋めます）" @click="copyUpDate(i)">↑</button>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="cell-copy">
                     <div v-if="it.site_id === '__new__'" class="new-site">
                       <!-- Enterでの即時確定はしない。日本語入力では変換確定にもEnterを使うため、
                            「西尾張デポ」と打っている途中の変換確定Enterで「西尾張」が現場として
@@ -276,6 +286,9 @@
                       </template>
                       <option value="__new__">＋ 新規現場…</option>
                     </select>
+                    <button v-if="i > 0" type="button" class="btn-copy-up" :data-testid="`copy-up-site-${i}`"
+                            title="上の行の現場をコピー（下に続く空欄もまとめて埋めます）" @click="copyUpSite(i)">↑</button>
+                    </div>
                   </td>
                   <td><input v-model="it.description" class="inp-sm wide" /></td>
                   <td><input v-model.number="it.quantity" type="number" step="any" class="inp-sm num" data-testid="inv-qty" @input="recalc(it)" /></td>
@@ -943,6 +956,36 @@ function fillDownDate() {
   if (!v) return
   for (let i = 1; i < f.items.length; i++) f.items[i].item_date = v
 }
+/**
+ * 上の行の値をこの行へコピーする（2026-09-05 尾崎さん追加要望）。
+ * 「1請求に複数現場が混ざる場合、『全行』ではなく上段をコピーしたい」。
+ * ★下に続く空欄も同じ値で埋める（30行の請求で1行ずつ押させないため）。
+ *   ただし既に値が入っている行では止まる＝別の現場/日付を勝手に潰さない。
+ */
+function copyUpDate(i: number) {
+  const f = form.value
+  if (!f || i < 1) return
+  const v = f.items[i - 1].item_date
+  if (!v) return
+  f.items[i].item_date = v
+  for (let j = i + 1; j < f.items.length; j++) {
+    if (f.items[j].item_date) break
+    f.items[j].item_date = v
+  }
+}
+function copyUpSite(i: number) {
+  const f = form.value
+  if (!f || i < 1) return
+  const v = f.items[i - 1].site_id
+  if (!v || v === '__new__') return
+  f.items[i].site_id = v
+  for (let j = i + 1; j < f.items.length; j++) {
+    // 入力途中の「＋新規現場…」は打ちかけの現場名を消さないよう触らない（そこで止める）
+    if (f.items[j].site_id) break
+    f.items[j].site_id = v
+  }
+}
+
 function fillDownSite() {
   const f = form.value
   if (!f || f.items.length < 2) return
@@ -1337,6 +1380,10 @@ onMounted(load)
 /* 明細ヘッダの「↓全行」（1行目の値を下の行へコピー） */
 .btn-fill-down { margin-left: 6px; background: #eef2ff; color: #4338ca; border: 1px solid #c7d2fe; border-radius: 5px; padding: 1px 6px; font-size: 11px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .btn-fill-down:hover { background: #e0e7ff; }
+/* 明細の各行「↑」（上の行の値をコピー・2026-09-05 尾崎さん要望） */
+.cell-copy { display: flex; align-items: center; gap: 3px; }
+.btn-copy-up { background: #eef2ff; color: #4338ca; border: 1px solid #c7d2fe; border-radius: 5px; padding: 2px 5px; font-size: 12px; line-height: 1; font-weight: 700; cursor: pointer; }
+.btn-copy-up:hover { background: #e0e7ff; }
 .items-wrap { overflow-x: auto; }
 .items-table th, .items-table td { padding: 5px 6px; font-size: 12px; }
 .inp-sm { border: 1px solid #ddd; border-radius: 6px; padding: 5px 6px; font-size: 12px; width: 90px; }
