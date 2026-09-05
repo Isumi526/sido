@@ -31,7 +31,7 @@ test('★未入金一覧: 受注済み案件が見積合計を既定額として
   await page.goto('/unpaid-invoices', { waitUntil: 'networkidle' })
   const row = page.getByTestId(`unpaid-row-${projectId}`)
   await expect(row).toBeVisible({ timeout: 10000 })
-  await expect(row.getByTestId(`unpaid-amount-${projectId}`)).toHaveAttribute('placeholder', '500000')
+  await expect(row.getByTestId(`unpaid-amount-${projectId}`)).toHaveAttribute('placeholder', '500,000')
 
   // ★このページに送信ボタンが一切無いことを明示的に確認する（外部一斉送信はスコープ外）
   await expect(page.getByRole('button', { name: /送信|催促/ })).toHaveCount(0)
