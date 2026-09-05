@@ -1,0 +1,20 @@
+{
+  "sectionTitle": "個人経費",
+  "lead": "現場に紐づかない経費（ガソリン代・消耗品など）をここから申請できます。日報を送ると一緒に登録されます。",
+  "budgetUsed": "今月の使用 {used} / 枠 {limit}",
+  "budgetRemain": "残り {remain}",
+  "budgetOver": "枠を {over} 超えます",
+  "rowLabel": "経費 {n}",
+  "date": "日付",
+  "account": "科目",
+  "amount": "金額（円）",
+  "payee": "支払先",
+  "payeePlaceholder": "店名・業者名",
+  "companions": "同行者名",
+  "companionsPlaceholder": "例: ○○商事 田中様",
+  "note": "内容",
+  "notePlaceholder": "用途・品名",
+  "addRow": "＋ 個人経費を追加",
+  "companionsRequired": "{account}は同行者名の入力が必須です（誰と行ったかの記録が税務上必要）。",
+  "submitFailed": "日報は送信できましたが、個人経費の登録に失敗しました（{count}件）。お手数ですが「個人経費」ページから登録し直してください。"
+}

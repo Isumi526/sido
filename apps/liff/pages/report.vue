@@ -797,6 +797,20 @@
 
         </template><!-- /isWorkingStr === 'working' -->
 
+        <!-- 個人経費（現場に紐づかない経費）。★枠を持つ人にだけ出す（2026-09-04）。
+             出所: 「ゆくゆくはこの日報送信の中に組み込みたい」「個人経費枠が与えられている
+             ユーザーに関しては…個人経費の申請も一括できるかな」。
+             ★保存先は日報とは別（personal_expenses）。日報の保存が成功してから登録する。
+             ★編集モードでは出さない。過去の日報を直す操作で新しい経費が生まれると、
+              いつの申請なのかが追えなくなるため（登録は新規送信の時だけ）。 -->
+        <PersonalExpenseRows
+          v-if="showPersonalExpense"
+          :rows="pe.rows.value"
+          :usage="pe.usage.value"
+          @add="pe.add(report.form.value.date)"
+          @remove="pe.remove"
+        />
+
         <!-- 備考 -->
         <FormSection num="✎" :title="$t('report.noteSection')">
           <textarea
@@ -924,6 +938,8 @@ import { leaveDaysFor, hourlyLeaveCapError, storedLeaveDays, DEFAULT_LEAVE_DAY_H
 import { findSimilarSiteNames } from '~/utils/site-similarity.gen'
 import { uploadExpenseFiles } from '~/utils/uploadExpenseFiles'
 import { createGasolineItem } from '~/composables/useReport'
+import { usePersonalExpenseRows } from '~/composables/usePersonalExpenseRows'
+import { expenseMonthKey } from '~/composables/expense-flatten.gen'
 import { useI18n } from 'vue-i18n'
 import type { User, SiteReport } from '~/types'
 
@@ -1097,6 +1113,14 @@ function dismissCheckoutToast() {
 }
 // 現場の新規作成は権限者(admin/office/site_manager)のみ。職人は既存現場から選ぶ
 const { resolveRole: resolveWorkerRole, canCreateSite } = useWorkerPermission()
+
+// ── 個人経費（現場に紐づかない経費）を日報から出す（2026-09-04）──────────────
+//  ★枠を持つ人にだけ出す。判定は EF(personal-expense-submit) の state が返す canSubmit
+//   （「許可あり かつ 月額枠>0」をサーバ側で判定済み）。画面側で条件を作り直さない。
+//  ★編集モードでは出さない（過去日報の修正で新しい経費が生まれると申請時期が追えない）。
+const pe = usePersonalExpenseRows()
+const personalExpense = usePersonalExpense()
+const showPersonalExpense = computed(() => !isEditMode.value && pe.canSubmit.value)
 
 const selfUser = ref<User | null>(null)
 
@@ -1815,6 +1839,7 @@ function addSite() {
 /** 開始時刻のオプション: si>0 の場合は前現場の終了時刻より前を除外（日跨ぎ除く） */
 function startTimeOptionsForSite(si: number): string[] {
   const s = report.form.value.sites[si]
+  if (categoryUnrestricted(si)) return TIME_OPTIONS   // 制限なしの区分は全部選べる
   const cur = s?.workers?.[0]?.startTime
   let floorMin = -1   // この値「以上」のみ選択可（複数の下限の最大を採る）
   // ※ 前現場終了以降の制限は撤廃（前現場終了より前でも設定可＝80c2）。重複は送信時にバリデートする。
@@ -2019,7 +2044,70 @@ const workCategoryOptions = computed(() =>
 // ── 音声入力（8/19会議）: 話す→report-voice-parse EFで解釈→確認して反映 ──
 const voice = useVoiceInput()
 // 機能フラグ（未設定＝OFF）。解決前は OFF のままなので、一瞬だけ出る事故も起きない
-onMounted(() => { void loadLiffFeatures(); void loadHourlyLeaveSetting() })
+onMounted(() => { void loadLiffFeatures(); void loadHourlyLeaveSetting(); void loadPersonalExpenseState() })
+
+/**
+ * 個人経費の枠と使用状況を読む（2026-09-04）。
+ * ★失敗したらセクションを出さない（フェイルセーフ）。枠の判定ができないまま
+ *  入口だけ開けると、枠を持たない人が入力して送信時に弾かれる二度手間になる。
+ */
+/**
+ * 入力された個人経費を登録する。戻り値＝失敗した件数（0なら全件成功）。
+ * ★1行ずつ独立して登録する。1件落ちても残りは登録する（まとめて失敗にしない）。
+ * ★client_token は行が持つ固定値。再送しても EF 側で同一 token は1行にまとまる＝二重計上しない。
+ */
+async function submitPersonalExpenses(): Promise<number> {
+  let failed = 0
+  const slug = await useAccount().effectiveSlug()
+  const lineIdToken = (await liff.getIdToken().catch(() => null)) ?? ''
+  for (const row of pe.filled.value) {
+    try {
+      let fileUrls: string[] = []
+      if (row.files.length) {
+        fileUrls = await uploadExpenseFiles(
+          useSupabase(), row.files, row.date,
+          currentUser.value?.real_name || 'worker', 'personal', 'personal_expense',
+          slug, 'first', lineIdToken,
+          {
+            edgeFunctionUrl: config.public.edgeFunctionUrl as string,
+            supabaseUrl: config.public.supabaseUrl as string,
+            supabaseAnonKey: config.public.supabaseAnonKey as string,
+          },
+        )
+      }
+      await personalExpense.create({
+        date: row.date,
+        account_category: row.account_category,
+        amount: Math.round(Number(row.amount)),
+        payee: row.payee || null,
+        companions: row.companions || null,
+        note: row.note || null,
+        file_urls: fileUrls,
+        tategae: row.tategae,
+        client_token: row.token,
+      })
+    } catch (e) {
+      failed++
+      console.error('[PersonalExpense] 登録失敗:', e instanceof Error ? e.message : String(e))
+    }
+  }
+  if (failed === 0) pe.reset()
+  return failed
+}
+
+async function loadPersonalExpenseState() {
+  if (isEditMode.value) return
+  try {
+    const s = await personalExpense.loadState(expenseMonthKey(report.form.value.date || todayJst.value))
+    pe.canSubmit.value = s.canSubmit
+    // 枠(limit)が取れない時は残額の表示だけ省く（申請自体は canSubmit に従う）
+    pe.usage.value = s.canSubmit && s.usage.limit != null
+      ? { used: s.usage.used, limit: s.usage.limit }
+      : null
+  } catch {
+    pe.canSubmit.value = false
+  }
+}
 const voiceBusy = ref(false)
 const voiceError = ref<string | null>(null)
 const voiceConfirm = ref(false)
@@ -2173,6 +2261,17 @@ function categoryCommon(si?: number) {
   return master.workCategories.value.find((c: any) => c.id === catId) ?? null
 }
 
+/**
+ * その区分は時刻の制限をかけない設定か（2026-09-03 運用者判断・案D）。
+ * ★見積・事務のように定時の概念が合わない区分がある。以前は 05:00〜22:00 のような
+ *  広い定時を入れて事実上ガードを外していたが、画面から意図が読めなかった。
+ *  定時は初期値としては引き続き使い、「選べる範囲の制限」だけを外す。
+ * ★残業代には影響しない。残業は実働8時間超で決まる（worker-hours の OT=480）。
+ */
+function categoryUnrestricted(si: number): boolean {
+  return categoryCommon(si)?.unrestricted === true
+}
+
 // ── 固定勤務時刻。★現場×区分 → 区分の共通定時 → 現場の定時 → 無し の順に引く ──
 //  定時は「現場だけ」でも「区分だけ」でも決まらない（事務は拠点で 08:30/08:00 と違う）。
 //  現場×区分の設定が最優先＝拠点差を表現できる。
@@ -2248,11 +2347,17 @@ function onSiteChange(si: number) {
   } else if (w.breakSnapshot) {
     w.breakSnapshot = false; w.breaks = undefined  // 休憩なし現場へ選び直したらスナップショット解除
   }
+  // 現場に会社からの往復距離(km)の設定があれば、1台目車両のガソリン/軽油の往復kmへ既定値として入れる
+  //  （未入力の時のみ。手動で編集済みの値は上書きしない・2026-09-03）
+  const dist = s.siteName ? (master.siteDistances.value[s.siteName] ?? null) : null
+  const veh = s.expenses?.vehicles?.[0]
+  if (dist != null && veh && veh.distanceKm == null) veh.distanceKm = dist
 }
 // 終了時刻の選択肢: 固定終了がある現場は それ以下に制限（残業申請が無い限り超過不可・早退は可）。
 //  編集で開いた古い超過値は snap させないため、現在値は必ず含める。
 function endTimeOptionsForSite(si: number): string[] {
   const s = report.form.value.sites[si]
+  if (categoryUnrestricted(si)) return TIME_OPTIONS   // 制限なしの区分は全部選べる
   const endCap = siteFixedEnd(s?.siteName, si)
   if (!endCap) return TIME_OPTIONS
   // 残業申請が承認済みの日付は固定終了の上限を解放（架空残業対策の例外）。
@@ -2632,6 +2737,17 @@ async function handleSubmit() {
     }
   }
 
+  // ── 送信バリデート: 個人経費の接待交際費/会議費も同行者名が要る（現場経費と同じ税務要件）──
+  if (showPersonalExpense.value) {
+    const missPe = pe.findMissingCompanions()
+    if (missPe) {
+      const msg = t('personalExpense.companionsRequired', { account: missPe.account_category })
+      if (isEditMode.value) editError.value = msg
+      alert(msg)
+      return
+    }
+  }
+
   // ── 送信バリデート: 領収書も「無い理由」も無い経費は弾く（2026-08-14 ユーザー確定）──
   //  ★新規・編集の両方に効かせたいので、モード分岐より手前に置く。
   {
@@ -2820,6 +2936,16 @@ async function handleSubmit() {
       note:      report.form.value.note,
       gasolineItems:   isWorkingStr.value === 'working' ? (report.form.value.gasolineItems ?? []) : [],
     }).catch(e => console.error('[Report] URL再保存エラー:', e))
+  }
+
+  // ③-c 個人経費（現場に紐づかない経費）を登録する（2026-09-04）。
+  //   ★日報の保存が終わってから登録する。先に登録すると、日報が落ちた時に
+  //    経費だけが残って「出していない日の経費」になる。
+  //   ★失敗しても日報は成立している（もう保存済み）ので送信自体は成功扱いにするが、
+  //    黙って捨てない。何件落ちたかを画面に出して入れ直してもらう。
+  if (!report.error.value && showPersonalExpense.value && pe.filled.value.length) {
+    const failed = await submitPersonalExpenses()
+    if (failed > 0) alert(t('personalExpense.submitFailed', { count: failed }))
   }
 
   // ④ 次の未送信日を取得してサクセス画面に表示（自己・代理とも）

@@ -22,7 +22,6 @@ A SaaS-style construction site management system for automating daily field repo
 │   └── utils/         # Shared utility functions
 ├── supabase/
 │   └── migrations/    # DB migrations
-└── apps/gas/          # Google Apps Script backend
 ```
 
 ## Tech Stack
@@ -65,7 +64,6 @@ npm run dev
 | Variable | Description |
 |----------|-------------|
 | `NUXT_PUBLIC_LIFF_ID` | LINE Developers LIFF ID |
-| `NUXT_PUBLIC_GAS_URL` | GAS Web App deploy URL |
 | `NUXT_PUBLIC_APP_ENV` | `development` or `production` |
 | `NUXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
 | `NUXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
@@ -111,7 +109,6 @@ cd apps/liff && npx vercel --prod
 cd apps/admin && npx vercel --prod
 
 # Push GAS
-cd apps/gas && clasp push
 # Then create a new version in the GAS editor
 ```
 

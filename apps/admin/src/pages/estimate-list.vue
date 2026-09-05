@@ -61,6 +61,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { logFeatureUsage } from '../lib/usageLog'
 
 type Row = {
   id: string; name: string; contractorName: string; status: string
@@ -142,6 +143,7 @@ async function goNew() {
       .insert({ account_id: accountId, name, is_draft: true }).select('id').single()
     if (!error) {
       creating.value = false
+      logFeatureUsage('estimate_created')
       // step=1 = 図面アップロードから始めるステップ式フロー（R51）
       router.push({ path: '/estimate-builder', query: { project: (data as any).id, step: '1' } })
       return

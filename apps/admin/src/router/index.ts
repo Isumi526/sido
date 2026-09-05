@@ -52,7 +52,7 @@ export const router = createRouter({
     // 作業区分は現場運営系マスタ（日報の区分＝現場×区分の定時に使う）。現場管理者(site_manager)も
     //  管理できるようにする（都度オーナーへ依頼する運用を解消）。現場マスタ(/sites)と同じ扱い＝
     //  management ゲートを外す（EF 側も WORK_CATEGORY_MANAGE_ROLES に site_manager を含める）。
-    { path: '/work-categories', component: () => import('../pages/work-categories.vue') },
+    { path: '/work-categories', component: () => import('../pages/work-categories.vue'), meta: { management: true } },
     // 物品マスタ（ETCカード等）。会社全体の設定＝経営系（EF 側でも同じ判定をしている）
     { path: '/assets', component: () => import('../pages/assets.vue'), meta: { management: true } },
     // 在庫管理（品目＋入出庫・会社単位MVP）
@@ -62,7 +62,10 @@ export const router = createRouter({
     { path: '/chats/:id',    component: () => import('../pages/chat-detail.vue') },
     // 元請け業者は site_manager も可（2026-08-06）。management から外す＝isAdminAllowed(worker弾き)だけが効く。
     { path: '/contractors',  component: Contractors },
-    { path: '/site-rules',   component: SiteRules },
+    // ★2026-09-03: メニューは canViewManagementPages で隠れていたが、ルート自体に
+    //  management ガードが無く、site_manager が /site-rules を直打ちすると入れてしまっていた
+    //  （出退勤の確認ルール＝会社全体の設定。他の経営系ルートと同じ扱いにする）。
+    { path: '/site-rules',   component: SiteRules,      meta: { management: true } },
     { path: '/attendance',   component: Attendance,     meta: { management: true } },
     { path: '/subcontractors', component: Subcontractors },
     { path: '/vehicles',     component: Vehicles,       meta: { management: true } },
@@ -72,6 +75,7 @@ export const router = createRouter({
     { path: '/expenses-daily', component: ExpensesDaily, meta: { management: true } },
     { path: '/gasoline-allocation', component: () => import('../pages/gasoline-allocation.vue'), meta: { management: true } },
     { path: '/subcontractor-invoices', component: SubInvoices, meta: { management: true } },
+    { path: '/unpaid-invoices', component: () => import('../pages/unpaid-invoices.vue'), meta: { management: true, estimate: true } },
     { path: '/worker-reports', component: WorkerReports, meta: { management: true } },
     { path: '/paid-leave',    component: PaidLeave,      meta: { management: true } },
     { path: '/settings',       component: Settings,     meta: { management: true } },
@@ -84,6 +88,7 @@ export const router = createRouter({
     { path: '/users',        component: Users,          meta: { management: true } },
     { path: '/reminder-history', component: ReminderHistory, meta: { management: true } },
     { path: '/operation-logs',   component: OperationLogs,   meta: { management: true } },
+    { path: '/usage-report',     component: () => import('../pages/usage-report.vue'), meta: { management: true } },
     { path: '/non-submitters',   component: NonSubmitters,   meta: { management: true } },
     { path: '/report-edit-approvals', component: ReportEditApprovals },
     { path: '/report-edit-review', component: ReportEditReview },

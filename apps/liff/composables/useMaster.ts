@@ -77,15 +77,21 @@ export const useMaster = () => {
   async function fetch(force = false) {
     // キャッシュが有効で強制更新でなければスキップ
     if (!force && loadCache()) {
-      _fetchFromSupabase().catch(() => _fetchFromGas().catch(() => {}))
+      // ★取得に失敗しても握りつぶす。手元のキャッシュで画面は動く
+      _fetchFromSupabase().catch(() => {})
       return
     }
 
     loading.value = true
     try {
       await _fetchFromSupabase()
-    } catch {
-      await _fetchFromGas().catch(() => {})
+    } catch (e) {
+      // ★2026-09-03: GASへのフォールバックを撤去した。
+      //  本番のGASは応答こそするが 現場0件・作業員0件 を返す状態で、
+      //  発火条件 (sites.length || workers.length) を満たさず master を上書きしない
+      //  ＝保険として働いていなかった。URLが配信物に載っているぶん、
+      //  下請け業者名だけが誰でも取れる状態になっていたので消した。
+      console.error('[Master] マスタの取得に失敗:', e)
     }
     loading.value = false
   }
@@ -100,6 +106,7 @@ export const useMaster = () => {
     const siteNameById: Record<string, string> = {}
     const siteWorkTimes: Record<string, { start: string | null; end: string | null }> = {}
     const siteBreaks: Record<string, { start: string; minutes: number }[]> = {}   // 現場名 → 既定休憩[{start,minutes}]。設定ある現場のみ収録。
+    const siteDistances: Record<string, number> = {}   // 現場名 → 会社からの往復km（設定ある現場のみ収録・日報の交通経費の既定値・2026-09-03）
     for (const site of (r.sites ?? []) as any[]) {
       if (site.contractor_id && contractorById[site.contractor_id]) siteContractors[site.name] = contractorById[site.contractor_id]
       siteIds[site.name] = site.id
@@ -113,6 +120,9 @@ export const useMaster = () => {
           .filter(b => b && b.start && (Number(b.minutes) || 0) > 0)
           .map(b => ({ start: String(b.start).slice(0, 5), minutes: Number(b.minutes) || 0 }))
         if (wins.length) siteBreaks[site.name] = wins
+      }
+      if (site.default_distance_km != null && Number(site.default_distance_km) > 0) {
+        siteDistances[site.name] = Number(site.default_distance_km)
       }
     }
     // 現場名 → 紐づく下請け業者名[]。未紐付け現場は未収録＝全件にフォールバック。
@@ -143,6 +153,7 @@ export const useMaster = () => {
         start:  (c.default_start_time ?? null)?.slice(0, 5) ?? null,
         end:    (c.default_end_time ?? null)?.slice(0, 5) ?? null,
         breaks: normalizeBreaks(c.default_breaks),
+        unrestricted: c.hours_unrestricted === true,
       }))
     const categoryHours: Record<string, { start: string | null; end: string | null; breaks: { start: string; minutes: number }[] | null }> = {}
     for (const h of (r.siteCategoryHours ?? []) as any[]) {
@@ -164,6 +175,7 @@ export const useMaster = () => {
       siteIds,
       siteWorkTimes,
       siteBreaks,
+      siteDistances,
       workCategories,
       categoryHours,
       etcCards:       (r.etcCards ?? []) as string[],
@@ -172,19 +184,6 @@ export const useMaster = () => {
     master.value = data
     saveCache(data)
     console.log('[Master] EF経由で取得:', data.sites.length, '現場', data.workers.length, '作業員')
-  }
-
-  async function _fetchFromGas() {
-    if (!config.public.gasUrl) return
-    const res = await $fetch<MasterData>(
-      config.public.gasUrl + '?action=getMaster',
-      { method: 'GET' }
-    )
-    if (res.sites?.length || res.workers?.length) {
-      master.value = res
-      saveCache(res)
-      console.log('[Master] GASから取得:', res.sites?.length, '現場')
-    }
   }
 
   // 新規マスタ保存は呼び出し側（useReport）で完了を await し失敗を検知するため、
@@ -292,6 +291,7 @@ export const useMaster = () => {
     siteContractors:     computed(() => master.value.siteContractors ?? {}),
     siteWorkTimes:       computed(() => master.value.siteWorkTimes ?? {}),
     siteBreaks:          computed(() => master.value.siteBreaks ?? {}),
+    siteDistances:       computed(() => master.value.siteDistances ?? {}),
     // ★元請け・協力業者には読み仮名の列が無い。EF が sort_order→name で返すのでその順を使う。
     //  localeCompare(name,'ja') で再ソートすると漢字が読み無視で並び、かつ
     //  運用側で決めた sort_order を無視することになる（2026-08-17 修正）。

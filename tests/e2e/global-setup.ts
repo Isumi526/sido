@@ -296,14 +296,16 @@ async function seedScheduleGroup() {
 export const DEV_UPDATE_TITLE = 'E2E更新テスト項目'
 
 async function seedDevUpdate() {
-  const rows = await rest(`dev_updates?title=eq.${encodeURIComponent(DEV_UPDATE_TITLE)}&select=id`)
+  // ★dev_updates は 2026-09-03 に RLS化。insert は service_role のみ許可なので
+  //  シードは restSrv（anonの rest ではなく）で行う。
+  const rows = await restSrv(`dev_updates?title=eq.${encodeURIComponent(DEV_UPDATE_TITLE)}&select=id`)
   if (rows?.length) {
-    await rest(`dev_updates?id=eq.${rows[0].id}`, {
+    await restSrv(`dev_updates?id=eq.${rows[0].id}`, {
       method: 'PATCH', headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({ archived: false }),
     })
   } else {
-    await rest('dev_updates', {
+    await restSrv('dev_updates', {
       method: 'POST', headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({ title: DEV_UPDATE_TITLE, link: '/settings', archived: false }),
     })

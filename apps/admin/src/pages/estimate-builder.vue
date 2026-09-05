@@ -1317,6 +1317,7 @@ import { supabase } from '../lib/supabase'
 //  別名で入れて「推定に使う正規化はこちら」と明示する。
 import { guessPriceKind, normalizeName as normalizeGuessName, type Guess } from '../lib/priceKindGuess'
 import { getAccountId } from '../lib/account'
+import { logFeatureUsage } from '../lib/usageLog'
 import { openDoc, resolveDocUrl } from '../lib/docUrl'
 import EstimateMasters from './estimate-masters.vue'
 import WorkItemImport from '../components/WorkItemImport.vue'
@@ -2937,6 +2938,7 @@ async function sendPdf() {
     sendDialogOpen.value = false
     await markIssuedAfterSend()
     await loadSends()
+    logFeatureUsage('estimate_sent')
   } catch (e: any) {
     sendErr.value = e?.message ?? '送信に失敗しました'
   } finally {

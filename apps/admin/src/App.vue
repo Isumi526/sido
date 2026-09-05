@@ -84,12 +84,13 @@
           <li><RouterLink to="/expenses-daily" class="nav-link"><span class="material-symbols-rounded nav-icon">calendar_view_day</span>経費 日毎集計</RouterLink></li>
           <li><RouterLink to="/gasoline-allocation" class="nav-link"><span class="material-symbols-rounded nav-icon">local_gas_station</span>ガソリン按分</RouterLink></li>
           <li><RouterLink to="/subcontractor-invoices" class="nav-link"><span class="material-symbols-rounded nav-icon">request_quote</span>協力業者請求</RouterLink></li>
+          <li><RouterLink to="/unpaid-invoices" class="nav-link"><span class="material-symbols-rounded nav-icon">payments</span>未入金一覧</RouterLink></li>
         </template>
 
         <li class="nav-section">マスタ</li>
         <li v-if="canViewManagementPages"><RouterLink to="/workers" class="nav-link"><span class="material-symbols-rounded nav-icon">engineering</span>作業員</RouterLink></li>
         <li><RouterLink to="/sites" class="nav-link"><span class="material-symbols-rounded nav-icon">location_on</span>現場</RouterLink></li>
-        <li v-if="isAdminAllowed"><RouterLink to="/work-categories" class="nav-link"><span class="material-symbols-rounded nav-icon">category</span>作業区分</RouterLink></li>
+        <li v-if="canViewManagementPages"><RouterLink to="/work-categories" class="nav-link"><span class="material-symbols-rounded nav-icon">category</span>作業区分</RouterLink></li>
         <li v-if="canViewContractors"><RouterLink to="/contractors" class="nav-link"><span class="material-symbols-rounded nav-icon">apartment</span>元請け業者</RouterLink></li>
         <li><RouterLink to="/subcontractors" class="nav-link"><span class="material-symbols-rounded nav-icon">handshake</span>協力業者</RouterLink></li>
         <li v-if="canViewManagementPages"><RouterLink to="/vehicles" class="nav-link"><span class="material-symbols-rounded nav-icon">directions_car</span>車両</RouterLink></li>
@@ -104,6 +105,7 @@
           <li><RouterLink to="/non-submitters" class="nav-link"><span class="material-symbols-rounded nav-icon">person_off</span>未送信者リスト</RouterLink></li>
           <li v-if="!HIDE_LINE_SECTIONS"><RouterLink to="/reminder-history" class="nav-link"><span class="material-symbols-rounded nav-icon">history</span>リマインド履歴</RouterLink></li>
           <li><RouterLink to="/operation-logs" class="nav-link"><span class="material-symbols-rounded nav-icon">receipt_long</span>操作ログ</RouterLink></li>
+          <li><RouterLink to="/usage-report" class="nav-link"><span class="material-symbols-rounded nav-icon">insights</span>効果測定</RouterLink></li>
           <li v-if="!HIDE_LINE_SECTIONS"><RouterLink to="/users" class="nav-link"><span class="material-symbols-rounded nav-icon">manage_accounts</span>ユーザー</RouterLink></li>
           <li><RouterLink to="/company-profile" class="nav-link"><span class="material-symbols-rounded nav-icon">business</span>自社情報</RouterLink></li>
           <li><RouterLink to="/settings" class="nav-link"><span class="material-symbols-rounded nav-icon">settings</span>設定</RouterLink></li>
@@ -126,6 +128,10 @@
 
     <!-- どのページでも右下に常駐するAIヘルプ（ログイン中のみ・遷移で消えない）。AIヘルプ/FAQと同じ扱いで経営系＝site_manager非表示 -->
     <AiHelpWidget v-if="!HIDE_AI_HELP_SECTIONS && canViewManagementPages" />
+
+    <!-- 無償試用期間の満了告知（契約書第22条の3第2項）。オーナー・管理者のみ対象＝
+         「先方の管理者」に見せる。EF側が表示要否を判定するので、対象外なら何も出ない。 -->
+    <TrialNoticeGate v-if="canManageAuth" />
   </div>
 
   <!-- 未ログイン時はログイン画面のみ表示 -->
@@ -145,6 +151,7 @@ import { extractDoneCount, refreshExtractBadge } from './lib/extractJobs'
 import { HIDE_LINE_SECTIONS, HIDE_AI_HELP_SECTIONS } from './lib/featureFlags'
 import { migrationTargetUrl, REDIRECT_SECONDS } from './lib/domainMigration'
 import AiHelpWidget from './components/AiHelpWidget.vue'
+import TrialNoticeGate from './components/TrialNoticeGate.vue'
 
 // 独自ドメイン移行: 旧ドメインアクセス時のみ案内＋5秒後リダイレクト（既定オフ＝NEW_ADMIN_ORIGIN空）。
 const migrationUrl = ref<string | null>(migrationTargetUrl())

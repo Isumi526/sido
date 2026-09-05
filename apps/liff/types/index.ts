@@ -174,15 +174,21 @@ export interface MasterData {
   siteWorkTimes?: Record<string, { start: string | null; end: string | null }>
   // 現場名 → 既定休憩[{start,minutes}]（未設定は未収録）。新規日報で現場選択時に休憩をこの値でスナップショット。
   siteBreaks?: Record<string, { start: string; minutes: number }[]>
+  // 現場名 → 会社からこの現場までの往復距離km（未設定は未収録）。日報でこの現場を選んだ時、
+  //  ガソリン/軽油の往復kmの既定値になる（手動編集可・2026-09-03）。
+  siteDistances?: Record<string, number>
   // 作業区分（現場作業/見積/事務…）。会社ごとのマスタ。日報・予定で「どの作業か」を選ぶ。
   //  scope: どの台帳で使えるか（site/office/event・null=どこでも）
   //  start/end/breaks: その区分の「全現場共通の定時」（未設定は null）。
   //   ★工場作業は複数の現場で発生するので、現場×区分を1件ずつ登録して回るのは運用に乗らない
   //    （2026-09-02 今井さん）。共通定時があれば1回の設定でどの現場でも効く。
+  //  unrestricted: 時刻ピッカーの制限をかけない区分か（見積・事務など定時の概念が
+  //   合わないもの。2026-09-03）。定時は初期値としては引き続き使う。
   workCategories?: {
     id: string; name: string; scope: string | null
     start?: string | null; end?: string | null
     breaks?: { start: string; minutes: number }[] | null
+    unrestricted?: boolean
   }[]
   // ★「現場id|区分id」→ 定時。定時は現場だけでも区分だけでも決まらないので組で持つ
   //  （事務は拠点で 08:30/08:00 と違う）。未収録＝その組に定時なし。

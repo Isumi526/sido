@@ -6,7 +6,7 @@
 //    worker_vehicle_inspections テーブル自体は orphan のまま残置（物理削除は別途migration）。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { restSrv } from './helpers'
+import { restSrv, getAccountId } from './helpers'
 
 test.describe('作業員マスタ拡張', () => {
   const name = `E2E拡張_${Date.now()}`
@@ -42,6 +42,47 @@ test.describe('作業員マスタ拡張', () => {
     await expect(page.locator('[data-testid="insurance-info"]')).toHaveValue('労働保険')
     await expect(page.locator('[data-testid="labor-insurance-number"]')).toHaveValue('12-3-45-678901-0')
     await expect(page.locator('[data-testid="checkup-row"]').first().locator('input[type="date"]')).toHaveValue('2026-04-01')
+  })
+
+  // ★利用契約 第9条8項・別紙2「健診は受診日・受診の有無のみ、結果・所見は取り扱わない」。
+  //  自由記述の列(result/note)は 2026-09-03 に削除した。列を戻す変更が入ったら
+  //  ここで落ちる＝要配慮個人情報を置ける場所が復活したことに気づける。
+  test('★健診に自由記述の列が無い（要配慮個人情報を持たない）', async () => {
+    const r = await restSrv('worker_health_checkups?select=*&limit=1')
+    const cols = Object.keys((r?.[0] ?? {}) as Record<string, unknown>)
+    if (!cols.length) {
+      // 0件でも列は確かめられる。存在しない列を指定すると PostgREST が 400 を返す
+      const bad = await restSrv('worker_health_checkups?select=result&limit=1').catch(() => 'rejected')
+      expect(bad, '★result 列は存在してはいけない').toBe('rejected')
+      return
+    }
+    expect(cols, '★result 列は存在してはいけない').not.toContain('result')
+    expect(cols, '★note 列は存在してはいけない').not.toContain('note')
+  })
+
+  // 個人データ取扱いの同意状況（2026-09-01 契約対応・AC4）
+  test('★管理画面の一覧で作業員ごとの同意状況（未同意/同意済・同意日）が分かる', async ({ page }) => {
+    const consentName = `E2E同意確認_${Date.now()}`
+    await page.goto('/workers', { waitUntil: 'networkidle' })
+    await page.locator('.btn-add').click()
+    await page.locator('input[placeholder="例：山田 太郎"]').fill(consentName)
+    await page.locator('.btn-save').click()
+    const row = page.locator('tr', { hasText: consentName })
+    await expect(row).toBeVisible({ timeout: 10000 })
+    // ★新規作成直後は未同意のはず
+    await expect(row.locator('[data-testid="worker-consent"]'), '★未同意と出る').toContainText('未同意')
+
+    const accountId = await getAccountId()
+    const wid = (await restSrv(`workers?account_id=eq.${accountId}&name=eq.${encodeURIComponent(consentName)}&select=id`))[0].id
+    await restSrv('worker_consents', {
+      method: 'POST', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ account_id: accountId, worker_id: wid, consent_version: 1, consent_text: 'E2E' }),
+    })
+    await page.reload({ waitUntil: 'networkidle' })
+    await expect(page.locator('tr', { hasText: consentName }).locator('[data-testid="worker-consent"]'), '★同意すると同意日が出る').toContainText('同意済')
+
+    await restSrv(`worker_consents?worker_id=eq.${wid}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`workers?id=eq.${wid}`, { method: 'DELETE' }).catch(() => {})
   })
 
   test('区分=正社員（デフォルト）のとき労災保険番号欄は出ない', async ({ page }) => {

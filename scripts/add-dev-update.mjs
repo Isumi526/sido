@@ -7,8 +7,10 @@
 //    node scripts/add-dev-update.mjs "<1行要約>" ["<該当ページ link>"]
 //    例: node scripts/add-dev-update.mjs "経費管理を新設" "/expenses"
 //
-//  接続先は本番（apps/admin/.env の VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY）。
-//  dev_updates は RLS 無効のため anon キーで INSERT 可能。
+//  接続先は本番（apps/admin/.env の VITE_SUPABASE_URL）。
+//  dev_updates は 2026-09-03 に RLS 化し、insert/delete は authenticated にも
+//  許していない（select/update(archived切替)のみ）。このスクリプトは
+//  service_role キー（.env の SUPABASE_PROD_SERVICE_ROLE_KEY）で書く。
 // ============================================================
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -33,11 +35,13 @@ if (!title) {
   process.exit(1)
 }
 
-// 本番接続情報（apps/admin/.env が本番向き。env で上書き可）
+// 本番接続情報（URLは apps/admin/.env が本番向き。書き込み鍵はリポルート .env の
+// SUPABASE_PROD_SERVICE_ROLE_KEY。★anonキーはRLS化以降このテーブルに書けない）
 const env = loadEnv(resolve(ROOT, 'apps/admin/.env'))
+const rootEnv = loadEnv(resolve(ROOT, '.env'))
 const URL = process.env.SUPABASE_URL || env.VITE_SUPABASE_URL
-const KEY = process.env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY
-if (!URL || !KEY) { console.error('✗ VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY が取得できません (apps/admin/.env)'); process.exit(1) }
+const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PROD_SERVICE_ROLE_KEY || rootEnv.SUPABASE_PROD_SERVICE_ROLE_KEY
+if (!URL || !KEY) { console.error('✗ VITE_SUPABASE_URL (apps/admin/.env) / SUPABASE_PROD_SERVICE_ROLE_KEY (.env) が取得できません'); process.exit(1) }
 if (!URL.includes('nrzzesbtvswoiouhldvi')) {
   console.error(`⚠ 接続先が本番ではない可能性: ${URL}`)
 }
