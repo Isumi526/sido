@@ -97,12 +97,13 @@
         <div class="field" v-if="canManageUsers">
           <label>権限ロール</label>
           <div class="toggle role-toggle">
-            <button :class="{ active: (modal.permission_role ?? 'worker') === 'admin' }" @click="modal.permission_role = 'admin'">オーナー</button>
-            <button :class="{ active: (modal.permission_role ?? 'worker') === 'office' }" @click="modal.permission_role = 'office'">役員・経理</button>
-            <button :class="{ active: (modal.permission_role ?? 'worker') === 'site_manager' }" @click="modal.permission_role = 'site_manager'">現場管理者</button>
-            <button :class="{ active: (modal.permission_role ?? 'worker') === 'worker' }" @click="modal.permission_role = 'worker'">作業員</button>
+            <button :class="{ active: (modal.permission_role ?? 'worker') === 'admin' }" :disabled="!canAssignRole('admin')" :title="canAssignRole('admin') ? '' : 'オーナーの付与はオーナーのみ行えます'" data-testid="role-admin" @click="modal.permission_role = 'admin'">オーナー</button>
+            <button :class="{ active: (modal.permission_role ?? 'worker') === 'office' }" :disabled="!canAssignRole('office')" :title="canAssignRole('office') ? '' : '役員・経理の付与はオーナーのみ行えます'" data-testid="role-office" @click="modal.permission_role = 'office'">役員・経理</button>
+            <button :class="{ active: (modal.permission_role ?? 'worker') === 'site_manager' }" data-testid="role-site-manager" @click="modal.permission_role = 'site_manager'">現場管理者</button>
+            <button :class="{ active: (modal.permission_role ?? 'worker') === 'worker' }" data-testid="role-worker" @click="modal.permission_role = 'worker'">作業員</button>
           </div>
           <p class="role-hint">権限階層: オーナー &gt; 役員・経理 &gt; 現場管理者 &gt; 作業員。画面/操作の制御は今後のフェーズで適用されます。</p>
+          <p v-if="!canAssignRole('admin')" class="role-hint">※オーナー・役員・経理の付与はオーナーのみ行えます。</p>
         </div>
         <div class="field" v-if="canManageUsers">
           <label>個人経費（現場に紐付かない経費）の申請</label>
@@ -284,8 +285,10 @@
         </div><!-- /detail-section -->
         </template>
 
-        <!-- ログイン認証（オーナーのみ＝他者のパスワードを設定できる操作のため／保存ボタンで作業員情報と一体反映） -->
-        <div v-if="canManageAuth" class="field auth-field">
+        <!-- ログイン認証（オーナー＝宛先不問／役員・経理＝現場管理者・作業員宛のみ。保存ボタンで作業員情報と一体反映）
+             ★他者のパスワードを設定できる操作なので、宛先ロールまで見て出し分ける（canManageAuthForRole）。
+               サーバ側 worker-auth-setup にも同じ判定があり、EF直叩きでも同様に弾かれる。 -->
+        <div v-if="canManageAuthForRole(modal.permission_role)" class="field auth-field">
           <label>
             ログイン認証
             <span v-if="modal.auth_user_id" class="auth-status set" data-testid="auth-status-set">認証設定済み</span>
@@ -320,7 +323,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import PasswordInput from '../components/PasswordInput.vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { canViewWages, canViewHourlyWage, canManageUsers, canManageAuth, canViewWorkerDetails } from '../lib/auth'
+import { canViewWages, canViewHourlyWage, canManageUsers, canManageAuthForRole, canAssignRole, canViewWorkerDetails } from '../lib/auth'
 
 type Worker = {
   id: string

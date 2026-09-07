@@ -55,6 +55,14 @@ export const canViewWorkerDetails = computed(() =>
 export const canViewManagementPages = computed(() =>
   !currentRole.value || currentRole.value === 'admin' || currentRole.value === 'office')
 
+// ★所有軸モデル（2026-07-31 ユーザー方針・現場管理者の所有権モデル）:
+//  「自分が責任者の現場」か否かを判定する。sites.responsible_worker_id と自分の worker.id の一致で見る。
+//  RLS側（20260903100000_site_owner_rls.sql の can_edit_site）と同じ判定規則をUI側にも置く
+//  （UIは見た目の出し分け、実効的な保護はRLSが担う＝二重）。
+export function isOwnSite(responsibleWorkerId: string | null | undefined): boolean {
+  return !!currentWorkerId.value && responsibleWorkerId === currentWorkerId.value
+}
+
 // 元請け業者マスタ（/contractors）の閲覧・追加・編集の可否: admin を使える全ロール＝site_manager も可。
 //  現場管理者が担当現場の元請け・担当者を自分で登録できないと現場が止まるため、経営系一括の
 //  canViewManagementPages から元請けだけを切り出す（2026-08-06 ユーザー確定回答）。
@@ -82,11 +90,47 @@ export function waitForRoleResolved(): Promise<void> {
 export const canManageUsers = computed(() =>
   !currentRole.value || currentRole.value === 'admin' || currentRole.value === 'office')
 
-// 作業員のログイン認証（ID/メール・パスワード発行/変更）の可否: 純admin(オーナー)のみ。
-//  他者のパスワードを任意に設定できる操作のため、office/site_managerも含め弾く
-//  （office止まりのcanManageUsersより厳格＝アカウント乗っ取りに直結するため）（2026-07-10）。
+// 純admin(オーナー)のみ。名前は「ログイン認証」由来だが、実際には
+//  **オーナー限定の操作全般**のゲートとして流用されている（データの一括ダウンロード=全社データ持ち出し・
+//  App.vue のメニュー・TrialNoticeGate）。
+//  ★ここを広げると 全社データの一括ダウンロード まで一緒に開く（2026-09-07 に実際に踏みかけた）。
+//   ログイン認証の可否を変えたい時は、この computed ではなく下の canManageAuthForRole を触ること。
 export const canManageAuth = computed(() =>
   !currentRole.value || currentRole.value === 'admin')
+
+// 「この作業員に」ログイン認証を発行/変更してよいか（宛先ロール込みの本判定）。
+//  ・オーナー(admin/純admin) … 宛先不問で可
+//  ・役員(office) … 宛先が worker / site_manager の時だけ可
+//
+//  ★なぜ office は配下ロール宛だけなのか（2026-09-07・運用者判断A）:
+//   新入社員のログイン発行がオーナーにしかできず、経理(office)が受け入れを完結できなかった
+//   （sido で新入社員1名がログイン手段ゼロのまま滞留した）。一方 office に無制限で開くと
+//   「office が admin のパスワードを再設定してオーナーを乗っ取る」経路ができる。
+//   自分より下位ロール宛にだけ許せば、受け入れは回りつつ昇格経路は塞がる。
+//  ★サーバ側 supabase/functions/worker-auth-setup/index.ts に同じ判定がある（EF直叩き対策）。
+//   片方だけ変えないこと。
+// 「そのロールを付与してよいか」（権限ロールの割り当て可否）。
+//  ・オーナー(admin/純admin) … どのロールでも付与可
+//  ・役員(office) … worker / site_manager までしか付与できない
+//
+//  ★これが無いと canManageAuthForRole の意味が消える（2026-09-07・実装中に発見）:
+//   office は canManageUsers で権限ロールを変更できるため、
+//     ①作業員Xのログインを発行（配下ロール宛なので許可される）
+//     ②その X を「オーナー」へ昇格
+//   の2手で、office が自分の知っているパスワードを持つ admin を作れてしまう＝乗っ取り成立。
+//   ログイン発行を配下ロール宛に絞るなら、ロール付与も同じ天井で絞らないと穴が残る。
+export function canAssignRole(targetRole: string): boolean {
+  if (!currentRole.value || currentRole.value === 'admin') return true
+  if (currentRole.value !== 'office') return false
+  return targetRole === 'worker' || targetRole === 'site_manager'
+}
+
+export function canManageAuthForRole(targetRole: string | null | undefined): boolean {
+  if (!currentRole.value || currentRole.value === 'admin') return true
+  if (currentRole.value !== 'office') return false
+  const t = targetRole ?? 'worker'   // 未設定は一般作業員扱い（workers.permission_role の既定と同じ）
+  return t === 'worker' || t === 'site_manager'
+}
 
 // auth_user_id（=ログインユーザー）に紐づく worker の permission_role を解決。
 //  auth_user_id は Supabase auth ユーザー単位で一意のため account 絞り込み不要。
