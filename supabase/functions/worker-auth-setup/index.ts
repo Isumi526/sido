@@ -80,7 +80,7 @@ Deno.serve(async (req) => {
 
   // --- 対象 worker と account ---
   const { data: worker, error: wErr } = await svc
-    .from('workers').select('id, account_id, name, auth_user_id, login_id').eq('id', worker_id).single()
+    .from('workers').select('id, account_id, name, auth_user_id, login_id, permission_role').eq('id', worker_id).single()
   if (wErr || !worker) return json({ ok: false, error: 'worker_not_found' }, 404)
   if (!worker.account_id) return json({ ok: false, error: 'worker_has_no_account' }, 400)
 
@@ -95,15 +95,28 @@ Deno.serve(async (req) => {
   //  これが無いと「同一アカウントの認証済みユーザーなら誰でも他人のパスワードを再設定できる」
   //  ＝アカウント乗っ取りが成立する（LIFFのパスワード認証workerのJWTにも account_slug がある）。
   //  UI 側は canManageAuth（オーナーのみ・workers.vue）で塞いでいたが EF 直叩きで迂回できた。
-  //  判定は apps/admin/src/lib/auth.ts の canManageAuth と同じ:
-  //   permission_role='admin' か、worker行を持たない「明示オーナー」(accounts.owner_auth_user_id 一致)のみ。
+  //  判定は apps/admin/src/lib/auth.ts の canManageAuthForRole と同じ:
+  //   ・permission_role='admin' / 明示オーナー(accounts.owner_auth_user_id 一致) … 宛先不問で可
+  //   ・permission_role='office' … 宛先が worker / site_manager の時だけ可（2026-09-07 追加）
+  //
+  //  ★office を足した理由と、宛先を絞る理由（2026-09-07・運用者判断A）:
+  //   新入社員のログイン発行がオーナーにしかできず、経理(office)が受け入れを完結できなかった
+  //   （実際に sido で新入社員1名がログイン手段ゼロのまま滞留）。一方で office に無制限に開くと
+  //   「office が admin のパスワードを再設定してオーナーを乗っ取る」経路が生まれる。
+  //   そこで **自分より下位ロール宛にだけ** 許可する＝受け入れは回るが昇格経路は塞がる。
+  //   宛先が admin / office の時は従来どおりオーナーのみ。
   {
     const { data: callerWorker } = await svc
       .from('workers').select('permission_role').eq('auth_user_id', caller.id)
       .eq('account_id', worker.account_id).limit(1)
     const role = callerWorker?.[0]?.permission_role ?? null
 
+    // 宛先ロール。未設定(null)は一般作業員扱い（workers.permission_role の既定と同じ）。
+    const targetRole = worker.permission_role ?? 'worker'
+    const targetIsSubordinate = targetRole === 'worker' || targetRole === 'site_manager'
+
     let allowed = role === 'admin'
+    if (!allowed && role === 'office') allowed = targetIsSubordinate
     if (!allowed && !callerWorker?.length) {
       // worker行が0件＝純粋オーナーの可能性。owner_auth_user_id 一致のときだけ許可。
       //  0件を一律オーナー扱いにするとフェイルオープンになる（auth.ts resolveRole と同じ考え方）
@@ -113,8 +126,11 @@ Deno.serve(async (req) => {
       allowed = !!owned?.length
     }
     if (!allowed) {
-      console.warn('[worker-auth-setup] forbidden_role', { caller: caller.id, role, target: worker_id })
-      return json({ ok: false, error: 'forbidden_role', message: 'ログイン認証の設定はオーナーのみ行えます。' }, 403)
+      console.warn('[worker-auth-setup] forbidden_role', { caller: caller.id, role, targetRole, target: worker_id })
+      const msg = role === 'office'
+        ? 'オーナー・役員のログイン認証はオーナーのみ設定できます。'
+        : 'ログイン認証の設定はオーナー・役員のみ行えます。'
+      return json({ ok: false, error: 'forbidden_role', message: msg }, 403)
     }
   }
 
