@@ -467,7 +467,6 @@ async function load() {
       .from('daily_reports')
       .select('date, sites, gasoline_items, user_id, users(real_name, worker_id, workers(name))')
       .eq('account_id', accountId)
-      .eq('is_working', true)
       .gte('date', dateFrom.value)
       .lte('date', dateTo.value)
       .order('date', { ascending: true })
@@ -769,8 +768,7 @@ async function loadCrossTab() {
       supabase.from('daily_reports')
         .select('date, sites, gasoline_items')
         .eq('account_id', accountId)
-        .eq('is_working', true)
-        .gte('date', from).lte('date', to)
+          .gte('date', from).lte('date', to)
         .order('date', { ascending: true })
         .limit(20000),
       supabase.from('personal_expenses')

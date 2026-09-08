@@ -107,7 +107,7 @@ async function load() {
     supabase.from('settings').select('key, value').eq('account_id', accountId),
     supabase.from('daily_reports')
       .select('date, sites, gasoline_items, user_id, users(real_name, workers(name))')
-      .eq('account_id', accountId).eq('is_working', true)
+      .eq('account_id', accountId)
       .gte('date', dateFrom.value).lte('date', dateTo.value)
       .order('date', { ascending: true }).limit(5000),
     // 現場に紐付かない個人経費（日報を出さない役員等の分。日報とは独立に引く）
