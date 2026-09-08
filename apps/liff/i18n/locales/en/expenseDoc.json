@@ -54,6 +54,7 @@
   "openInBrowser": "Open in browser →",
   "saveAsPdf": "Save as PDF (Print)",
   "printSavePdf": "Print / Save as PDF",
+  "pastPeriod": "Earlier periods",
   "monthFirstHalf": "{month} 1st half",
   "monthSecondHalf": "{month} 2nd half",
   "dateMd": "{month}/{day}",

@@ -102,6 +102,26 @@ export function effectiveStatus(
  * 直近3か月分の期間キーを新しい順で返す（各月 後半→前半）。
  * 例: 2026-06-second, 2026-06-first, 2026-05-second, 2026-05-first, ...
  */
+/**
+ * 過去に遡って選べる期間キー（新しい順・各月 後半→前半）。
+ *  ★2026-09-08: 経費の申請書類が「直近4期（約2ヶ月）」しか選べず、
+ *   7月分を開けないという報告（佐谷さん）を受けて追加。閲覧は遡れてよい、が運用者判断。
+ *  ★重くならない理由: 画面は選択中の1期だけを取りに行く（loadRows）。
+ *   選択肢を増やしても取得量は変わらない。
+ *  ★編集は増やさない: 締切を過ぎた期間は effectiveStatus が「期限超過」を返し、
+ *   canApply が false になるので申請ボタンもインライン編集トグルも出ない（既存ロジック）。
+ */
+export function selectablePeriodKeys(monthsBack = 36): string[] {
+  const keys: string[] = []
+  const today = new Date()
+  for (let i = 0; i < monthsBack; i++) {
+    const d  = new Date(today.getFullYear(), today.getMonth() - i, 1)
+    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    keys.push(`${ym}-second`, `${ym}-first`)
+  }
+  return keys
+}
+
 export function recentPeriodKeys(): string[] {
   const keys: string[] = []
   const today = new Date()
