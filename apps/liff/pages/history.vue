@@ -14,6 +14,10 @@
         <span class="material-symbols-rounded unsub-icon">edit_note</span>
         <span class="unsub-body">
           <span class="unsub-title">{{ $t('history.unsubmittedTitle', { date: unsubmittedLabel }) }}</span>
+          <!-- ★代理中は誰の分かを明示する（これが無いと自分の未送信と混ざる） -->
+          <span v-if="proxy.proxyTarget.value" class="unsub-proxy" data-testid="unsub-proxy-name">
+            {{ $t('history.unsubmittedProxy', { name: proxy.proxyTarget.value.name }) }}
+          </span>
           <span class="unsub-lead">{{ $t('history.unsubmittedLead') }}</span>
         </span>
         <span class="material-symbols-rounded unsub-chev">chevron_right</span>
@@ -364,11 +368,28 @@ const unsubmittedAll = ref<string[]>([])
 async function loadUnsubmitted() {
   unsubmittedDate.value = null
   unsubmittedAll.value = []
-  if (proxy.proxyTarget.value) return
-  const uid = liff.profile.value?.userId
-  if (!uid) return
   // 承認待ち（期限切れで後から出した分）は「未送信」ではないので除く
   const pending = pendingDates.value ? [...pendingDates.value] : []
+
+  // ★代理中も出す（2026-09-08）。
+  //  元は「他人の未送信を自分の画面に出すと誰の分を書くのか分からなくなる」として
+  //  代理中は出していなかったが、LINEもログインも持たない作業員は
+  //  **代理でしか日報を出せない**ため、未送信が見えないと出し忘れに気づけない。
+  //  実害: 今井さん（平床さんの代理）「未報告の日報が出てくる認識ですが出てこない。
+  //        代理でなく自分のは出てくる」（2026-09-08）。
+  //  懸念だった「誰の分か分からない」は、カードに相手の名前を出して解消する。
+  const proxyT = proxy.proxyTarget.value
+  if (proxyT) {
+    const { data: pu } = await useSupabase()
+      .from('users').select('id').eq('worker_id', proxyT.id).maybeSingle()
+    if (!pu?.id) return
+    unsubmittedAll.value = (await expense.getUnsubmittedDatesById(pu.id, pending).catch(() => null)) ?? []
+    unsubmittedDate.value = unsubmittedAll.value[0] ?? null
+    return
+  }
+
+  const uid = liff.profile.value?.userId
+  if (!uid) return
   unsubmittedDate.value = await expense.getNextUnsubmittedDate(uid, pending).catch(() => null)
   if (selfUser.value?.id) {
     unsubmittedAll.value = (await expense.getUnsubmittedDatesById(selfUser.value.id, pending).catch(() => null)) ?? []
@@ -426,6 +447,10 @@ watch(() => proxy.proxyTarget.value, async () => {
   await loadReports()
   loading.value = false
   void loadPunches()
+  // ★未送信も引き直す（2026-09-08）。これが無いと代理に切り替えても
+  //  自分の未送信が出たままになり、相手の分に気づけない。
+  //  （代理中は未送信を出さない仕様だった名残で、切替時の再計算が無かった）
+  void loadUnsubmitted()
 })
 
 // ── 実打刻（2026-08-10 大塚さん「日報の中に実際打った打刻時間も出てくればいい」）──
@@ -607,6 +632,7 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--font)
 </style>
 
 <style scoped>
+.unsub-proxy { display:block;margin-top:2px;font-size:11px;font-weight:700;color:#b45309; }
 .main { max-width: 640px; margin: 0 auto; padding: 16px 16px 80px; }
 
 .state-screen {
