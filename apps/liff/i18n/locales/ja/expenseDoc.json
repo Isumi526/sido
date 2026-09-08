@@ -54,6 +54,7 @@
   "openInBrowser": "ブラウザで開く →",
   "saveAsPdf": "PDFとして保存（印刷）",
   "printSavePdf": "印刷 / PDFとして保存",
+  "pastPeriod": "過去の期間を選ぶ",
   "monthFirstHalf": "{month}月前半",
   "monthSecondHalf": "{month}月後半",
   "dateMd": "{month}月{day}日",
