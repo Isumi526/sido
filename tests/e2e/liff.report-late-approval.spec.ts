@@ -72,8 +72,13 @@ test.describe('期限切れの新規日報の承認制（liff）', () => {
     await expect(page.getByText('編集の許可を依頼'), '許可依頼の導線は無い').toHaveCount(0)
 
     // ★遅れた理由は必須。空のままでは送信できない
-    await page.locator('select').first().selectOption({ index: 1 }).catch(() => {})
-    await page.locator('input[type="checkbox"]').last().check().catch(() => {})
+    // ★位置依存(select first / checkbox last)をやめ、稼働有無を明示で選ぶ（2026-09-08）。
+    //  有給・稼働なしの日でも現場ブロックを出すようにしたため、「最初のselect」
+    //  「最後のcheckbox」が別の要素を指すようになった。このテストの主題は
+    //  期限切れの保留化であって、フォームの並び順ではない。
+    await page.getByTestId('work-status').selectOption('paid_leave')
+    // 送信前の記入忘れ確認（これを入れないと送信ボタンが有効にならない）
+    await page.getByTestId('omission-confirm').check()
     await expect(page.locator('button[type="submit"].btn-submit'), '理由が空なら押せない').toBeDisabled()
     await page.getByTestId('late-reason').fill('   ')
     await expect(page.locator('button[type="submit"].btn-submit'), '空白だけでも押せない').toBeDisabled()
@@ -180,8 +185,13 @@ test.describe('期限切れの新規日報の承認制（liff）', () => {
     await expect(page.getByTestId('late-notice'), '期限内では出さない').toHaveCount(0)
     await expect(page.getByTestId('late-reason')).toHaveCount(0)
 
-    await page.locator('select').first().selectOption({ index: 1 }).catch(() => {})
-    await page.locator('input[type="checkbox"]').last().check().catch(() => {})
+    // ★位置依存(select first / checkbox last)をやめ、稼働有無を明示で選ぶ（2026-09-08）。
+    //  有給・稼働なしの日でも現場ブロックを出すようにしたため、「最初のselect」
+    //  「最後のcheckbox」が別の要素を指すようになった。このテストの主題は
+    //  期限切れの保留化であって、フォームの並び順ではない。
+    await page.getByTestId('work-status').selectOption('paid_leave')
+    // 送信前の記入忘れ確認（これを入れないと送信ボタンが有効にならない）
+    await page.getByTestId('omission-confirm').check()
     await page.locator('button[type="submit"].btn-submit').click()
     await page.waitForTimeout(6000)
 
