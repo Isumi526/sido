@@ -89,7 +89,7 @@
 
         <!-- 稼働有無 -->
         <FormSection num="02" :title="$t('report.workStatusSection')" required>
-          <select v-model="isWorkingStr" class="select" required>
+          <select v-model="isWorkingStr" class="select" required data-testid="work-status">
             <option value="working">{{ $t('report.working') }}</option>
             <option value="paid_leave">{{ $t('report.paidLeave') }}</option>
             <option value="off">{{ $t('report.off') }}</option>
@@ -199,6 +199,17 @@
           <span>{{ $t('report.businessTrip') }}</span>
         </label>
 
+        </template><!-- /isWorkingStr === 'working'（音声入力・出張区分まで） -->
+
+        <!-- ★有給・稼働なしの日でも現場ブロックは出す（2026-09-08）。
+             出所: 有給中にホテル等の「現場に紐づく経費」が出るケース（今井さん・佐谷さん）。
+             これを個人経費へ逃がすと現場原価から実コストが消えるので、現場に紐づけたまま残す。
+             ★稼働の入力（作業員・時間）は出さない＝全ブロックが暗黙で「下請けのみ」と同じ状態
+              （workers: [] ／ 既存の selfWorking='なし' と同一の持ち方に一元化）。 -->
+        <p v-if="isWorkingStr !== 'working'" class="expense-only-note" data-testid="expense-only-note">
+          {{ $t('report.expenseOnlyNote') }}
+        </p>
+
         <!-- 現場ブロック -->
         <FormSection
           v-for="(site, si) in report.form.value.sites"
@@ -252,8 +263,11 @@
           </Field>
 
           <!-- 現場名 -->
-          <Field :label="$t('report.siteName')" required>
-            <select v-model="site.siteName" class="select" required :data-testid="`site-select-${si}`" @change="onSiteChange(si)">
+          <!-- ★有給・稼働なしの日は現場を必須にしない（2026-09-08）。
+               経費が無ければ現場を選ばずにそのまま送れる＝従来どおりの有給提出。
+               経費がある時だけ現場を選んでもらう（必須にすると有給の日報が出せなくなる）。 -->
+          <Field :label="$t('report.siteName')" :required="isWorkingStr === 'working'">
+            <select v-model="site.siteName" class="select" :required="isWorkingStr === 'working'" :data-testid="`site-select-${si}`" @change="onSiteChange(si)">
               <option value="">{{ $t('common.select') }}</option>
               <option value="__unset__">{{ $t('report.siteUnset') }}</option>
               <!-- ★終わって無効化された現場の日報を編集で開いた時の受け皿。
@@ -346,7 +360,8 @@
 
           <!-- ── 稼働（現場選択後に表示） ── -->
           <template v-if="site.siteName && site.siteName !== '__other__' || site.siteName === '__other__' && site.customSiteName">
-          <div class="sub-section">
+          <!-- 稼働の入力は稼働ありの日だけ。有給/稼働なしの日は経費だけ入れる。 -->
+          <div v-if="isWorkingStr === 'working'" class="sub-section">
 
             <!-- 作業員（ログインユーザー固定） -->
             <Field>
@@ -795,7 +810,6 @@
           </span>
         </button>
 
-        </template><!-- /isWorkingStr === 'working' -->
 
         <!-- 個人経費（現場に紐づかない経費）。★枠を持つ人にだけ出す（2026-09-04）。
              出所: 「ゆくゆくはこの日報送信の中に組み込みたい」「個人経費枠が与えられている
@@ -1240,7 +1254,8 @@ async function submitLateNewForApproval(targetUserId: string): Promise<boolean> 
       isBusinessTrip: working ? !!report.form.value.isBusinessTrip : false,
       sites:          report.form.value.sites,
       note:           report.form.value.note,
-      gasolineItems:  working ? (report.form.value.gasolineItems ?? []) : [],
+      // ★稼働なしでも保存する。休み/有給でも移動日のガソリンは出る（2026-09-08）。
+      gasolineItems:  report.form.value.gasolineItems ?? [],
     })
     if (!editLogToken.value) editLogToken.value = crypto.randomUUID()
     const j = await callEditEf({
@@ -1273,7 +1288,8 @@ async function submitPaidLeaveOverForApproval(targetUserId: string): Promise<boo
       isBusinessTrip: false,
       sites:          report.form.value.sites,
       note:           report.form.value.note,
-      gasolineItems:  [],
+      // ★有給でも移動日のガソリンは出る。ここだけ落とすと承認後に消える（2026-09-08）
+      gasolineItems:  report.form.value.gasolineItems ?? [],
     })
     if (!editLogToken.value) editLogToken.value = crypto.randomUUID()
     const j = await callEditEf({
@@ -1307,7 +1323,8 @@ async function submitEditForApproval(diffs: string[]): Promise<boolean> {
       isBusinessTrip: working ? !!report.form.value.isBusinessTrip : false,
       sites:          report.form.value.sites,
       note:           report.form.value.note,
-      gasolineItems:  working ? (report.form.value.gasolineItems ?? []) : [],
+      // ★稼働なしでも保存する。休み/有給でも移動日のガソリンは出る（2026-09-08）。
+      gasolineItems:  report.form.value.gasolineItems ?? [],
     })
     const j = await callEditEf({
       reportId:   originalReport.value?.id ?? null,
@@ -1446,6 +1463,18 @@ const nextDateLabel = computed(() => {
 
 // 稼働有無
 const isWorkingStr = ref<'working' | 'paid_leave' | 'off'>('working')
+
+// ★有給/稼働なしの日は、全ての現場ブロックを「本人は稼働なし」に倒す（2026-09-08）。
+//  既存の「下請けのみ（自分は稼働なし）」チェックと**同じ状態**（workers: []）にするだけで、
+//  新しいデータの持ち方は増やさない＝集計・保存・承認の経路は一切変わらない。
+//  ＝「稼働なしで経費だけ登録する」手段を、日単位（有給/稼働なし）と
+//    現場ブロック単位（下請けのみ）の2つの入口から同じ形に一元化する。
+watch([isWorkingStr, () => report.form.value.sites.length], () => {
+  if (isWorkingStr.value === 'working') return
+  report.form.value.sites.forEach((_, si) => {
+    if (siteUsage.value[si] && siteUsage.value[si].selfWorking !== 'なし') setSelfWorking(si, 'なし')
+  })
+})
 
 // ── 有給の単位（2026-08-30）──
 //  ★半日は法令上の定めが無く労使協定が不要なので常に選べる。
@@ -2917,7 +2946,7 @@ async function handleSubmit() {
         isBusinessTrip: isWorkingStr.value === 'working' ? !!report.form.value.isBusinessTrip : false,
         sites:     report.form.value.sites,
         note:      report.form.value.note,
-        gasolineItems:   isWorkingStr.value === 'working' ? (report.form.value.gasolineItems ?? []) : [],
+        gasolineItems:   report.form.value.gasolineItems ?? [],
       })
     } catch (e: unknown) {
       const msg = String((e as any)?.message ?? e ?? 'Supabase保存エラー')
@@ -2967,7 +2996,7 @@ async function handleSubmit() {
       isBusinessTrip: isWorkingStr.value === 'working' ? !!report.form.value.isBusinessTrip : false,
       sites:     report.form.value.sites,
       note:      report.form.value.note,
-      gasolineItems:   isWorkingStr.value === 'working' ? (report.form.value.gasolineItems ?? []) : [],
+      gasolineItems:   report.form.value.gasolineItems ?? [],
     }).catch(e => console.error('[Report] URL再保存エラー:', e))
   }
 
@@ -3443,6 +3472,12 @@ function fillTestData() {
 </script>
 
 <style>
+/* 有給・稼働なしの日に出す案内（経費だけ入れられることを明示する・2026-09-08） */
+.expense-only-note {
+  margin: 4px 0 12px; padding: 10px 12px; border-radius: 8px;
+  background: #f0f9ff; border: 1px solid #bae6fd; color: #075985;
+  font-size: 12px; line-height: 1.6;
+}
 
 /* ── 退勤直後の手応え（中央に重ねて自動で引く・2026-08-31）──
    完了画面を一枚挟むとそこで離脱する人がいたので、画面ごと廃止して

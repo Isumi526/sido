@@ -325,7 +325,9 @@ async function load() {
       //  これを見ないと明細が「（現場名なし）」としか出せない（2026-08-15 大塚さん指摘）。
       .select('date, sites, is_business_trip, gasoline_items, leave_type, user_id, users(real_name, workers(name))')
       .eq('account_id', accountId)
-      .eq('is_working', true)
+      // ★is_working で絞らない（2026-09-08）。有給・稼働なしの日でも現場に紐づく経費が入るため。
+      //  上のコメント（有給の日は現場を選ばず送信できる）とも整合する。
+      //  経費の無い非稼働日報は sites が空なので、外しても金額は変わらない（本番で0件を実測）。
       .gte('date', `${ym}-01`)
       .lt('date', nextMonthFirst)
       .limit(5000), // 1ヶ月×全作業員で上限(既定1000)超による原価集計漏れ防止（reports.vue等と同じ余裕）

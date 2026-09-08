@@ -208,5 +208,6 @@
   "leaveHoursRequired": "Enter the number of hours",
   "leaveHoursTooLong": "Exceeds the standard working hours per day ({h}h)",
   "checkoutToastTime": "Checked out {time}",
-  "checkoutToastText": "Recorded"
+  "checkoutToastText": "Recorded",
+  "expenseOnlyNote": "No work hours on this day. If you have site-related expenses (hotel, fuel, etc.), pick the site and enter them below."
 }

@@ -916,7 +916,6 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
     .from('daily_reports')
     .select('id, date, is_working, is_business_trip, sites')
     .eq('account_id', accountId)
-    .eq('is_working', true)
     .gte('date', fromDate)
     .lte('date', toDate)
     .order('date', { ascending: true })
