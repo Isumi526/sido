@@ -253,8 +253,9 @@
           <p v-if="!modal.id" class="hint">新規はここで選ぶと「保存時にアップロード」されます。出退勤同意の設定は作成後に「ルール・QR設定」で行えます。</p>
         </div>
 
-        <!-- 見積書（金額入り）は経営系＝現場管理者には出さない（2026-07-31 レビュー指摘） -->
-        <div v-if="modal.id && canViewEstimates" class="field">
+        <!-- 見積書（金額入り）は経営系のみ。ただし自分が責任者の現場は所有軸モデルで見せる
+             （2026-07-31方針・2026-09-05 Step2: canViewEstimatesForSite） -->
+        <div v-if="modal.id && canViewEstimatesForSite(modal.responsible_worker_id)" class="field" data-testid="site-estimates-field">
           <label>この現場の見積書</label>
           <div v-if="siteEstimates.length" class="att-list" data-testid="site-estimates">
             <div v-for="e in siteEstimates" :key="e.id" class="att-item">
@@ -300,7 +301,7 @@ import { openDoc } from '../lib/docUrl'
 import { getAccountId } from '../lib/account'
 import { useQueryParam } from '../composables/useQueryParam'
 import { currentUser, canViewManagementPages } from '../lib/auth'
-import { canViewEstimates } from '../lib/features'
+import { canViewEstimates, canViewEstimatesForSite } from '../lib/features'
 import { findSimilarSiteNames } from '../lib/site-similarity.gen'
 import { computeWorkerHours, parseMin } from '../lib/workerHours'
 import { logOperation } from '../lib/operationLog'
@@ -644,8 +645,9 @@ async function openEdit(s: Site) {
   if (modal.value) modal.value.shareUsers = ((shares ?? []) as any[]).map(l => l.user_id)
   siteEstimates.value = []
   clearPendingAtts()
-  // 見積書は表示しないロールでは取得もしない（非表示なのに読むと無駄＋漏洩面が広がる）
-  await Promise.all([loadAttachments(s.id), canViewEstimates.value ? loadSiteEstimates(s.id) : Promise.resolve()])
+  // 見積書は表示しないロールでは取得もしない（非表示なのに読むと無駄＋漏洩面が広がる）。
+  //  自分が責任者の現場は所有軸モデルで見せるため、その分岐も含めて判定する。
+  await Promise.all([loadAttachments(s.id), canViewEstimatesForSite(s.responsible_worker_id) ? loadSiteEstimates(s.id) : Promise.resolve()])
   // 区分ごとの定時（現場×区分）を読み込んで下書きに展開（SELECTはauthenticatedに許可されている）
   const { data: chRows } = await supabase.from('site_category_hours')
     .select('category_id, default_start_time, default_end_time, default_breaks').eq('site_id', s.id)

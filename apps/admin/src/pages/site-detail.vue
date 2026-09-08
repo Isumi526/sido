@@ -26,7 +26,7 @@
       </div>
       <!-- タブ -->
       <nav v-if="site" class="tabs">
-        <button v-for="t in TABS" :key="t.key" class="tab" :class="{ active: tab === t.key }" @click="tab = t.key">
+        <button v-for="t in TABS" :key="t.key" class="tab" :class="{ active: tab === t.key }" :data-testid="`tab-${t.key}`" @click="tab = t.key">
           {{ t.label }}<span v-if="t.count != null" class="tab-count">{{ t.count }}</span>
         </button>
       </nav>
@@ -41,7 +41,7 @@
           <div class="sum-card"><div class="sum-label">日報（90日）</div><div class="sum-val">{{ stats.count }}</div></div>
           <div class="sum-card"><div class="sum-label">直近日報</div><div class="sum-val sm">{{ stats.lastDate || '—' }}</div></div>
           <div class="sum-card"><div class="sum-label">紐づく下請け</div><div class="sum-val">{{ linkedSubs.length }}</div></div>
-          <div v-if="canViewEstimates" class="sum-card"><div class="sum-label">見積/注文書</div><div class="sum-val sm">{{ estimates.length }} / {{ orders.length }}</div></div>
+          <div v-if="canViewEstimatesForSite(site?.responsible_worker_id)" class="sum-card"><div class="sum-label">見積/注文書</div><div class="sum-val sm">{{ estimates.length }} / {{ orders.length }}</div></div>
         </div>
 
         <section class="card">
@@ -255,7 +255,7 @@ import { supabase } from '../lib/supabase'
 import { openDoc } from '../lib/docUrl'
 import { getAccountId } from '../lib/account'
 import { canViewManagementPages } from '../lib/auth'
-import { canViewEstimates } from '../lib/features'
+import { canViewEstimatesForSite } from '../lib/features'
 import { normalizeSiteName } from '../lib/site-similarity.gen'
 import { siteStoredName } from '../lib/siteKey'
 
@@ -263,7 +263,7 @@ const route = useRoute()
 const router = useRouter()
 const siteId = String(route.params.id ?? '')
 
-type Site = { id: string; name: string; name_kana: string | null; active: boolean; location: string | null; construction_type: string | null; construction_details: string | null; memo: string | null; contractor_id: string | null; default_start_time: string | null; default_end_time: string | null }
+type Site = { id: string; name: string; name_kana: string | null; active: boolean; location: string | null; construction_type: string | null; construction_details: string | null; memo: string | null; contractor_id: string | null; default_start_time: string | null; default_end_time: string | null; responsible_worker_id: string | null }
 type Att = { id: string; kind: string; path: string; name: string | null; require_consent?: boolean; url?: string | null }
 type WorkCategory = { id: string; name: string; scope: string | null }
 type SiteCategoryHours = { category_id: string; default_start_time: string | null; default_end_time: string | null; default_breaks: { start: string; minutes: number }[] | null }
@@ -411,8 +411,9 @@ const tab = ref<'overview' | 'reports' | 'docs' | 'files'>('overview')
 const TABS = computed(() => [
   { key: 'overview', label: '概要', count: null as number | null },
   { key: 'reports',  label: '日報', count: stats.value.count },
-  // 見積・注文タブは経営系（見積/注文書の金額）のため site_manager には出さない
-  ...(canViewEstimates.value ? [{ key: 'docs', label: '見積・注文', count: estimates.value.length + orders.value.length }] : []),
+  // 見積・注文タブは経営系のみ。ただし自分が責任者の現場は所有軸モデルで見せる
+  //  （2026-07-31方針・2026-09-05 Step2: canViewEstimatesForSite）。
+  ...(canViewEstimatesForSite(site.value?.responsible_worker_id) ? [{ key: 'docs', label: '見積・注文', count: estimates.value.length + orders.value.length }] : []),
   { key: 'files',    label: '写真・資料', count: attachments.value.length },
 ])
 
@@ -579,7 +580,7 @@ async function load() {
   loading.value = true
   const accountId = await getAccountId()
   const { data: s } = await supabase.from('sites')
-    .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id, default_start_time, default_end_time')
+    .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id, default_start_time, default_end_time, responsible_worker_id')
     .eq('account_id', accountId).eq('id', siteId).maybeSingle()
   site.value = (s as Site) ?? null
   if (!site.value) { loading.value = false; return }
@@ -598,8 +599,9 @@ async function load() {
     linkedSubs.value = (subs ?? []) as any[]
   }
 
-  // 見積/注文書は経営系＝現場管理者には出さない（タブ・件数カードとも非表示）ので取得もしない
-  const [{ data: est }, { data: po }] = canViewEstimates.value
+  // 見積/注文書は経営系のみ。自分が責任者の現場は所有軸モデルで見せる
+  //  （2026-07-31方針・2026-09-05 Step2）。取得もその条件でだけ行う（非表示なら読まない）。
+  const [{ data: est }, { data: po }] = canViewEstimatesForSite(site.value.responsible_worker_id)
     ? await Promise.all([
       supabase.from('estimates').select('id, estimate_number, estimate_date, total_amount, pdf_path').eq('site_id', siteId).eq('is_deleted', false).order('estimate_date', { ascending: false, nullsFirst: false }),
       supabase.from('purchase_orders').select('id, order_number, vendor_name, total_amount, status').eq('site_id', siteId).eq('is_deleted', false).order('order_number', { ascending: false }),
