@@ -17,6 +17,11 @@
             :class="{ active: selectedPeriod === key }"
             @click="selectPeriod(key)"
           >{{ shortLabel(key) }}</button>
+          <!-- 過去分（閲覧のみ）。チップを増やすと横に溢れるのでセレクトにまとめる。 -->
+          <select v-model="olderPick" class="period-past" data-testid="period-past">
+            <option value="">{{ t('expenseDoc.pastPeriod') }}</option>
+            <option v-for="key in olderPeriodKeys" :key="key" :value="key">{{ periodLabel(key) }}</option>
+          </select>
         </div>
 
         <!-- 表示切替（全経費 / 個人建て替え分のみ）-->
@@ -200,7 +205,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import type { User, ExpenseRow } from '~/types'
-import { getCurrentPeriodKey, recentPeriodKeys, deadlineLabel, effectiveStatus, periodLabel } from '~/composables/useExpense'
+import { getCurrentPeriodKey, recentPeriodKeys, selectablePeriodKeys, deadlineLabel, effectiveStatus, periodLabel } from '~/composables/useExpense'
 import { expenseDisplayCategory, expenseAccountCategory, isPersonalExpenseRow } from '~/composables/expense-flatten.gen'
 
 /** 品名欄の表示。個人経費は category＝勘定科目なので出さず、note（実際の品名）だけを出す。 */
@@ -302,7 +307,18 @@ const currentUser = computed(() => {
   return selfUser.value
 })
 
+// 直近はチップで即座に。それ以前はプルダウンに逃がす（チップを増やすと画面を圧迫するため）。
 const periodKeys = computed(() => recentPeriodKeys().slice(0, 4))
+/** チップに出ていない過去の期間。閲覧のみ（締切超過なので申請・編集は出ない）。 */
+const olderPeriodKeys = computed(() => {
+  const shown = new Set(periodKeys.value)
+  return selectablePeriodKeys().filter(k => !shown.has(k))
+})
+/** プルダウンの選択値。チップ側を選んでいる間は空（プレースホルダ表示）に戻す。 */
+const olderPick = computed({
+  get: () => (olderPeriodKeys.value.includes(selectedPeriod.value) ? selectedPeriod.value : ''),
+  set: (v: string) => { if (v) selectPeriod(v) },
+})
 const total      = computed(() => displayRows.value.reduce((s, r) => s + r.amount, 0))
 const periodFullLabel = computed(() => periodLabel(selectedPeriod.value))
 const issueDate  = computed(() => { const d = new Date(); return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}` })
@@ -529,6 +545,7 @@ html,body { background:var(--bg);color:var(--text);font-family:var(--font);min-h
 .period-btn { flex-shrink:0;padding:7px 14px;border-radius:20px;border:1px solid var(--border);background:#fff;font-size:12px;font-family:var(--font);color:var(--text2);cursor:pointer; }
 .period-btn.active { background:var(--accent);color:#fff;border-color:var(--accent);font-weight:700; }
 .status-bar { display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px;border-radius:10px;font-size:13px;font-weight:700; }
+.period-past { margin-left:auto;max-width:46%;font-size:12px;padding:6px 8px;border:1px solid #d1d5db;border-radius:8px;background:#fff;color:#374151; }
 .status-bar .status-deadline { font-size:11px;font-weight:600;opacity:.8; }
 .st-todo { background:#fff7e6;color:#b26a00;border:1px solid #ffe0a3; }
 .st-applied { background:#e6f7ed;color:#1a8a4d;border:1px solid #b5e7c8; }
