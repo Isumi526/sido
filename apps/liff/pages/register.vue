@@ -108,7 +108,12 @@ import { useI18n } from 'vue-i18n'
 
 const { t }   = useI18n()
 const liff    = useLiff()
-const master  = useMaster()
+// ★一覧は master-data ではなく専用EFから取る（2026-09-08）。
+//  master-data の resolveCaller() は users を line_user_id で引くため、
+//  「まだ登録していない人」は解決できず 401 → 一覧が空になっていた。
+//  ＝登録画面なのに登録済みでないと使えない鶏と卵の構造だった。
+const selfRegister = useSelfRegisterApi()
+const regWorkers = ref<RegisterOption[]>([])
 const expense = useExpense()
 const router  = useRouter()
 
@@ -136,7 +141,7 @@ const workerRole    = ref<'factory' | 'site'>('site')
 //  部首・画数で並べる＝読みを無視するので五十音でなくなる（2026-08-17 修正）。
 //  全社員が最初に通る画面で、自分の名前を読みで探せないと詰まる。
 const sortedWorkers = computed(() =>
-  master.master.value.workers
+  regWorkers.value
     .filter(w => !liff.isTester.value || w.name !== 'テストユーザー')
     .slice()
 )
@@ -157,7 +162,9 @@ const canSubmit = computed(() => {
 })
 
 onMounted(async () => {
-  await Promise.all([liff.init(), master.fetch()])
+  await liff.init()
+  // 一覧が取れなくても手入力での登録は続けられるので、失敗しても止めない
+  try { regWorkers.value = await selfRegister.options() } catch (e) { console.error('[register] 一覧の取得に失敗:', e) }
   const userId = liff.profile.value?.userId
   if (userId) {
     expense.clearUserCache(userId)
