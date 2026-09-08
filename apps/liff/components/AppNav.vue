@@ -25,7 +25,7 @@
         <!-- ★合計（やること＋未読のお知らせ）。気づく入口は1つでいい（2026-08-30 ユーザー指示） -->
         <span v-if="totalBadgeCount > 0" class="app-bell-badge" data-testid="nav-bell-badge">{{ totalBadgeCount }}</span>
       </NuxtLink>
-      <button class="app-hamburger" @click="open = true" :aria-label="$t('nav.openMenu')">
+      <button class="app-hamburger" data-testid="nav-hamburger" @click="open = true" :aria-label="$t('nav.openMenu')">
         <span class="app-bar" />
         <span class="app-bar" />
         <span class="app-bar" />
@@ -136,6 +136,7 @@
               v-for="w in proxy.proxyTargets.value"
               :key="w.id"
               class="drawer-proxy-row"
+              :data-testid="`proxy-row-${w.id}`"
               :class="{ selected: proxy.proxyTarget.value?.id === w.id }"
               @click="selectProxy(w)"
             >
