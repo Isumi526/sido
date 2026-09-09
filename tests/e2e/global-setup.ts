@@ -5,7 +5,7 @@
 //    A: 元請け付き日報 / C: 立替(tategae)経費付き日報
 //  ※ マスタ(Worker 01 等)・dev-user-id・通常日報は seed.sql が投入済み
 // ============================================================
-import { execSync } from 'node:child_process'
+import { execSync, execFileSync } from 'node:child_process'
 import { SUPABASE_URL, ANON_KEY, ACCOUNT_SLUG, ADMIN_LOGIN_EMAIL, ADMIN_LOGIN_PASS, DB_URL, getAccountId, rest, restSrv, upsert, enableEstimateFeature } from './helpers'
 
 export const DEV_LINE_ID = 'dev-user-id'
@@ -312,8 +312,29 @@ async function seedDevUpdate() {
   }
 }
 
+/**
+ * anon 付与が seed.sql の宣言（＝本番と同じ状態）からずれていないかを見る。
+ *
+ * ★落とさず「警告」にする理由: ずれていても大半のspecは通るので、ここで全部止めると
+ *  作業が進まない。問題は落ちること自体ではなく **誤診** だった。
+ *  「anonキーでは読めない/書けない」系が 200＋空配列 や 期待>=400・実際200 で落ちた時に
+ *  自分の変更を疑って何十分も溶かすのを止めるのが目的なので、実行の頭で必ず目に入れる。
+ *  （2026-08〜09 に計6回、同じ誤診をしている）
+ */
+function warnIfAnonGrantDrift() {
+  try {
+    execFileSync('node', ['scripts/anon-grant-check.mjs'], { stdio: 'pipe' })
+  } catch (e: any) {
+    const msg = String(e?.stderr ?? e?.stdout ?? e)
+    console.warn('\n' + '='.repeat(72))
+    console.warn(msg.trim())
+    console.warn('='.repeat(72) + '\n')
+  }
+}
+
 export default async function globalSetup() {
   assertLocalStack()             // ★何かを書く前に。本番へ向いていたら即・明示エラーで落とす
+  warnIfAnonGrantDrift()         // ★anon付与のドリフトは「自分の変更が壊した」ように見える。先に言う
   await checkFunctionsServed()   // 未配信なら即・明示エラーで落とす（catchしない＝個別spec大量timeoutを防ぐ）
   await ensureAdminUser().catch(e => console.warn('[e2e] admin user 作成失敗:', String(e)))
   await ensureRecentReportStartDate(await getAccountId()).catch(e => console.warn('[e2e] report_start_date 更新失敗:', String(e)))
