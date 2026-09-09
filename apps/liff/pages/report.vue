@@ -1221,17 +1221,22 @@ async function callEditEf(payload: Record<string, unknown>): Promise<any | null>
 async function skipPendingDatesAfterInit(): Promise<void> {
   try {
     if (isEditMode.value) return
-    const j = await callEditEf({ action: 'pending-dates' })
+    // ★代理中は「代理先の」承認待ちを見る（2026-09-09）。
+    //  自分の承認待ちで判定していたため、代理中は相手の承認待ちを飛ばせず
+    //  同じ日付が出続けて次の日に進めなかった（今井さん/平床さんの実害）。
+    const proxyT = proxy.proxyTarget.value
+    const proxyUserId = proxyT
+      ? ((await useSupabase().from('users').select('id').eq('worker_id', proxyT.id).maybeSingle()).data as any)?.id ?? null
+      : null
+    const j = await callEditEf({ action: 'pending-dates', ...(proxyUserId ? { userId: proxyUserId } : {}) })
     const dates: string[] = (j?.dates ?? []).map((d: any) => d.date as string)
     if (!dates.length || !dates.includes(report.form.value.date)) return
     // 承認待ちの日は「出し済み」として飛ばす（承認を待たずに次の日を出せるように）
     const uid = liff.profile.value?.userId
-    const proxyT = proxy.proxyTarget.value
     let next: string | null = null
     if (proxyT) {
-      const { data: pu } = await useSupabase().from('users').select('id').eq('worker_id', proxyT.id).maybeSingle()
       next = await expense.getNextUnsubmittedDateById(
-        (pu as any)?.id ?? '00000000-0000-0000-0000-000000000000', dates)
+        proxyUserId ?? '00000000-0000-0000-0000-000000000000', dates)
     } else if (selfUser.value?.id) {
       // ★LINEのユーザーIDではなくDBのユーザーIDで引く。
       //  以前は liff.profile の userId が要る形だったため、**メール/パスワードで
