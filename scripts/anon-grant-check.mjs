@@ -61,7 +61,15 @@ function actualFromDb() {
     select g.table_name || '\t' || g.privilege_type || '\t' ||
            case when g.granted = c.total then '*' else g.cols end
     from g join cols c on c.table_name = g.table_name
-    order by g.table_name, g.privilege_type;`
+    union all
+    -- ★DELETE は列単位の権限ではないので role_column_grants に出ない。
+    --  ここを忘れると DELETE のドリフトを一切検出できないし、
+    --  seed の生成側でも DELETE が丸ごと落ちる（2026-09-09 に実際に踏んだ。
+    --  admin.expense-rescue が「anonで expense_settlements を消せない」で落ちて気づいた）。
+    select table_name || '\t' || 'DELETE' || '\t' || '*'
+    from information_schema.role_table_grants
+    where grantee='anon' and table_schema='public' and privilege_type='DELETE'
+    order by 1;`
   const raw = execFileSync('psql', [DB_URL, '-t', '-A', '-c', q], { encoding: 'utf8' })
   const out = new Map()
   for (const line of raw.split('\n')) {

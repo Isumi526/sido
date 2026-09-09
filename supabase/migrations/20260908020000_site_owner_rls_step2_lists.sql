@@ -42,6 +42,57 @@
 --   ロールバックは末尾のコメントのSQLで元のUSING句に戻すだけ（データ変更ゼロ）。
 -- ============================================================
 
+-- ════════════════════════════════════════════════════════════════
+--  ★current_role() / current_worker_id() を重複作業員に耐えるようにする
+--
+--  Step1(20260903100000)で作った current_role() の1つ目のサブクエリに limit が無く、
+--  1つの auth_user_id に workers が複数ぶら下がっていると
+--  「more than one row returned by a subquery used as an expression」で **エラーになる**。
+--  Step1 では sites の UPDATE でしか評価されなかったため表面化しなかったが、
+--  本migrationで daily_report_pending_edits 等の SELECT ごとに評価されるようになり、
+--  重複が残っている状態で **一覧が丸ごと引けなくなる**。
+--
+--  実際に admin.duplicate-worker-auth の
+--  「★重複が生き残っていても自己承認ブロックは外れない（fail-closed）」が落ちて発覚（2026-09-09）。
+--  このテストは一意制約をわざと外して本番の壊れた状態を再現するので、まさにこの経路を踏む。
+--
+--  ★どれを採るか: created_at の古い順＝最初に登録された行。
+--   2026-08-10 の障害は「後から影の worker 行が増える」形だったので、
+--   後から生えたものではなく元の行を正とする。
+--  ★本番は workers_account_auth_user_unique があるので通常は1行。これは壊れた時の保険。
+-- ════════════════════════════════════════════════════════════════
+create or replace function public.current_worker_id()
+returns uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select id from workers
+  where auth_user_id = auth.uid()
+    and account_id = public.current_account_id()
+  order by created_at
+  limit 1
+$$;
+
+create or replace function public.current_role()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(
+    (select w.permission_role from workers w
+     where w.auth_user_id = auth.uid() and w.account_id = public.current_account_id()
+     order by w.created_at limit 1),
+    (select 'owner' from accounts a
+     where a.id = public.current_account_id() and a.owner_auth_user_id = auth.uid()
+     limit 1),
+    'worker'
+  )
+$$;
+
 -- 呼び出し元の users.id（daily_reports.user_id / submitted_by_user_id と突き合わせる）。
 --  users には auth_user_id が無く worker_id 経由で辿る（EF側 handleReview と同じ規則）。
 create or replace function public.current_users_id()

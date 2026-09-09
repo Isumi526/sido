@@ -155,6 +155,41 @@ alter default privileges in schema public grant select, insert, update, delete o
 --    psql "$SUPABASE_PROD_DB_URL" で role_column_grants を引いて grant 文を組み立てる
 --    （手で書き足すとまたドリフトする）
 -- ════════════════════════════════════════════════════════════════
+-- ★DELETE は列単位の権限ではないため information_schema.role_column_grants に現れない。
+--  ここを role_column_grants だけで生成すると **DELETE が丸ごと落ちる**（2026-09-09 に実際にやった。
+--  admin.expense-rescue のE2Eが「anonで expense_settlements を消せない」で落ちて気づいた）。
+--  更新する時は role_table_grants の DELETE も必ず併せて取ること。
+grant delete on public.accounts to anon;
+grant delete on public.contractor_contacts to anon;
+grant delete on public.estimate_items to anon;
+grant delete on public.estimate_material_prices to anon;
+grant delete on public.estimate_price_history to anon;
+grant delete on public.estimate_price_revisions to anon;
+grant delete on public.estimate_projects to anon;
+grant delete on public.estimate_sends to anon;
+grant delete on public.estimate_trades to anon;
+grant delete on public.expense_items to anon;
+grant delete on public.expense_settlements to anon;
+grant delete on public.schedule_categories to anon;
+grant delete on public.schedule_edits to anon;
+grant delete on public.schedule_group_members to anon;
+grant delete on public.schedule_groups to anon;
+grant delete on public.schedule_notifications to anon;
+grant delete on public.schedules to anon;
+grant delete on public.settings to anon;
+grant delete on public.site_attachments to anon;
+grant delete on public.site_chat_last_read to anon;
+grant delete on public.site_chat_mentions to anon;
+grant delete on public.site_chat_messages to anon;
+grant delete on public.site_rules to anon;
+grant delete on public.subcontractor_comments to anon;
+grant delete on public.subcontractor_edit_logs to anon;
+grant delete on public.subcontractor_trade_types to anon;
+grant delete on public.subcontractors to anon;
+grant delete on public.trade_type_presets to anon;
+grant delete on public.users to anon;
+grant delete on public.worker_proxies to anon;
+
 grant insert on public.accounts to anon;
 grant select on public.accounts to anon;
 grant update on public.accounts to anon;
