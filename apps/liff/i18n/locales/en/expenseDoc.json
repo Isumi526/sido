@@ -65,5 +65,6 @@
   "editDone": "Done editing",
   "editHint": "You can edit payee and invoice number here (before applying). Press Save on each row after editing.",
   "saveOk": "Saved",
-  "saveFail": "Failed to save. Please try again later."
+  "saveFail": "Failed to save. Please try again later.",
+  "pdfSaveFailed": "Your application was submitted, but saving the application PDF failed. Please contact the office (the amounts and details are still visible on this screen)."
 }

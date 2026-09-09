@@ -77,22 +77,16 @@ export async function elementToPdfBlob(el: HTMLElement): Promise<Blob> {
 }
 
 /**
- * 申請PDFを Storage に保存し、保存パスを返す。
- * kind: 'meisai'(明細=全経費) | 'seikyu'(請求書=個人建替分のみ)
- * パス: expense-applications/{accountSlug}/{user_id}/{period_key}_{kind}.pdf
+ * 申請PDFの保存パス（規約）。管理画面(expenses.vue)・申請メールEFがこの形で読む。
+ *
+ * ★保存そのものはここでは行わない（2026-09-09）。
+ *  admin-docs のRLSは authenticated 限定で、LINEから開いた作業員は anon になり
+ *  クライアントからの upload が必ず拒否される。保存は Edge Function
+ *  (expense-receipt-upload の kind:'application-pdf') に寄せた。
+ *  ここに supabase.storage.upload を戻さないこと。
  */
-export async function uploadApplicationPdf(
-  supabase: any,
-  blob: Blob,
-  accountSlug: string,
-  userId: string,
-  periodKey: string,
-  kind: 'meisai' | 'seikyu',
-): Promise<string> {
-  const path = `expense-applications/${accountSlug}/${userId}/${periodKey}_${kind}.pdf`
-  const { error } = await supabase.storage
-    .from(BUCKET)
-    .upload(path, blob, { upsert: true, contentType: 'application/pdf' })
-  if (error) throw new Error(`${path}: ${error.message}`)
-  return path
+export function applicationPdfPath(
+  accountSlug: string, userId: string, periodKey: string, kind: 'meisai' | 'seikyu',
+): string {
+  return `expense-applications/${accountSlug}/${userId}/${periodKey}_${kind}.pdf`
 }

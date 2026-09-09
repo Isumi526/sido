@@ -37,6 +37,8 @@
             {{ t('expenseDoc.deadline', { date: deadlineText }) }}
           </span>
         </div>
+        <!-- PDF保存に失敗した時の警告。申請自体は通っているので「申請できていない」とは書かない。 -->
+        <p v-if="pdfWarning" class="pdf-warning no-print" data-testid="pdf-warning">{{ pdfWarning }}</p>
         <div v-if="effStatus === '差し戻し' && settlement?.reject_reason" class="reject-box no-print">
           <span class="reject-title">{{ t('expenseDoc.rejectTitle') }}</span>
           <p class="reject-reason">{{ settlement.reject_reason }}</p>
@@ -219,7 +221,7 @@ function itemName(row: ExpenseRow): string {
 function acctCategory(row: ExpenseRow): string {
   return expenseAccountCategory(row)
 }
-import { elementToPdfBlob, uploadApplicationPdf } from '~/utils/generateExpensePdf'
+import { elementToPdfBlob } from '~/utils/generateExpensePdf'
 
 const { t } = useI18n()
 const liff    = useLiff()
@@ -242,6 +244,8 @@ const printAreaEl = ref<HTMLElement | null>(null)
 const settlement  = ref<any | null>(null)
 const applying    = ref(false)
 const applyError  = ref('')
+// PDF保存だけ失敗した時の警告（申請は成立している＝applyErrorとは別物）
+const pdfWarning  = ref('')
 const showApplyConfirm = ref(false)
 // 申請（承認依頼）時の一言コメント（お詫び・依頼文）。ボタンだけでなく一言添えてもらう（必須）
 const applyComment = ref('')
@@ -394,6 +398,7 @@ async function handleApply() {
   if (!applyUserId.value) { applyError.value = t('expenseDoc.errorNoUser'); return }
   applying.value = true
   applyError.value = ''
+  pdfWarning.value = ''
   // 身元優先のスラッグ（email/pwは自テナント・LINEはenv）。env固定だと別テナントのstorageパスに保存される。
   const slug = await effectiveSlug()
   const origMode = viewMode.value
@@ -407,7 +412,7 @@ async function handleApply() {
       await nextTick(); await new Promise(r => setTimeout(r, 60))
       if (printAreaEl.value) {
         const meisai = await elementToPdfBlob(printAreaEl.value)
-        paths.push(await uploadApplicationPdf(supabase, meisai, slug, applyUserId.value, selectedPeriod.value, 'meisai'))
+        paths.push(await uploadApplicationPdfViaEf(meisai, selectedPeriod.value, 'meisai', applyUserId.value))
       }
       // 請求書（個人建替分のみ）— 建替がある時のみ
       if (hasTategae) {
@@ -415,11 +420,15 @@ async function handleApply() {
         await nextTick(); await new Promise(r => setTimeout(r, 60))
         if (printAreaEl.value) {
           const seikyu = await elementToPdfBlob(printAreaEl.value)
-          paths.push(await uploadApplicationPdf(supabase, seikyu, slug, applyUserId.value, selectedPeriod.value, 'seikyu'))
+          paths.push(await uploadApplicationPdfViaEf(seikyu, selectedPeriod.value, 'seikyu', applyUserId.value))
         }
       }
     } catch (e) {
+      // ★申請そのものは通す（PDFが無いことより、経費を出せないことの方が実害が大きい）。
+      //  ただし **黙って落とさない**。ここを console だけにしていたせいで、
+      //  保存できていないことに3ヶ月誰も気づけなかった。
       console.error('[expense apply] PDF生成/保存に失敗（申請は継続）:', e)
+      pdfWarning.value = t('expenseDoc.pdfSaveFailed')
     } finally {
       viewMode.value = origMode
       await nextTick()
@@ -436,6 +445,52 @@ async function handleApply() {
   } finally {
     applying.value = false
   }
+}
+
+/**
+ * 申請書PDFを Edge Function 経由で保存する。
+ *
+ * ★なぜ supabase.storage を直接叩かないか（2026-09-09・戻さないこと）
+ *  保存先 admin-docs のRLSは4つとも authenticated 限定。LINEから開いた作業員は
+ *  Supabase セッションを持たない＝anon になり、アップロードが **必ず** 拒否される。
+ *  しかも呼び出し側が catch で握りつぶしていたので、申請だけ成功して
+ *  pdf_path が NULL になる状態が3ヶ月続いた（2026-08 は10件中0件しか残っていない）。
+ *  バケットを anon に開けると全テナントの帳票が公開キーで触れるため、
+ *  権限は広げずに経路だけ service_role(EF) へ寄せる。
+ */
+async function uploadApplicationPdfViaEf(blob: Blob, periodKey: string, docKind: 'meisai' | 'seikyu', targetUserId: string): Promise<string> {
+  const efUrl = config.public.edgeFunctionUrl
+  if (!efUrl) throw new Error('edgeFunctionUrl 未設定')
+  const anonKey = config.public.supabaseAnonKey as string
+  const { data: { session } } = await supabase.auth.getSession()
+  const lineIdToken = (await liff.getIdToken().catch(() => null)) ?? ''
+  const devLineUserId = config.public.appEnv === 'development'
+    ? (liff.profile.value?.userId ?? '')
+    : ''
+  // Blob → base64（EF は JSON しか受けない。領収書アップロードと同じ規則）
+  const buf = new Uint8Array(await blob.arrayBuffer())
+  let bin = ''
+  for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000))
+  const res = await fetch(`${efUrl}/expense-receipt-upload`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: anonKey,
+      Authorization: session ? `Bearer ${session.access_token}` : `Bearer ${anonKey}`,
+    },
+    body: JSON.stringify({
+      kind: 'application-pdf',
+      file_base64: btoa(bin),
+      period_key: periodKey,
+      doc_kind: docKind,
+      target_user_id: targetUserId,
+      line_id_token: lineIdToken,
+      dev_line_user_id: devLineUserId,
+    }),
+  })
+  const j = await res.json().catch(() => null)
+  if (!res.ok || !j?.ok) throw new Error(j?.detail ?? j?.error ?? `HTTP ${res.status}`)
+  return j.path as string
 }
 
 /**
@@ -558,6 +613,7 @@ html,body { background:var(--bg);color:var(--text);font-family:var(--font);min-h
 .apply-actions { display:flex;flex-direction:column;gap:8px; }
 .btn-apply { width:100%;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);padding:16px;font-size:16px;font-weight:900;letter-spacing:1px;font-family:var(--font);cursor:pointer; }
 .btn-apply:disabled { opacity:.6;cursor:default; }
+.pdf-warning { background:#FFF8E1; border:1px solid #FFE082; color:#8D6E00; border-radius:8px; padding:10px 12px; font-size:12px; line-height:1.7; margin:8px 0 0; }
 .apply-error { color:#c0392b;font-size:13px;text-align:center; }
 .confirm-overlay { position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:200;padding:24px; }
 .confirm-modal { background:#fff;border-radius:14px;padding:24px 20px;max-width:340px;width:100%;text-align:center; }
