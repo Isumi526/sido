@@ -37,6 +37,40 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders(), 'Content-Type': 'application/json' } })
 }
 
+/**
+ * アカウント内の作業員について「ログイン発行済みか」「一度でもログインしたか」を返す。
+ * 返すのは真偽と日時だけ（メール・パスワードは返さない）。
+ * 権限は認証設定と同じ＝オーナー / admin / office のみ。
+ */
+async function handleSigninStatus(callerSlug: string, callerAuthId: string): Promise<Response> {
+  const svc = createClient(SUPABASE_URL, SERVICE_KEY)
+  const { data: acct } = await svc.from('accounts').select('id, slug, owner_auth_user_id').eq('slug', callerSlug).maybeSingle()
+  if (!acct?.id) return json({ ok: false, error: 'account_not_found' }, 400)
+
+  // 認証情報の状況は給与並みに扱いを絞る（誰がまだ入れていないか＝攻撃の的になり得る）
+  const { data: me } = await svc.from('workers').select('permission_role')
+    .eq('auth_user_id', callerAuthId).eq('account_id', acct.id).limit(1)
+  const role = me?.[0]?.permission_role ?? null
+  const isOwner = (acct as { owner_auth_user_id?: string | null }).owner_auth_user_id === callerAuthId
+  if (!(role === 'admin' || role === 'office' || isOwner)) {
+    return json({ ok: false, error: 'forbidden_role' }, 403)
+  }
+
+  const { data: ws } = await svc.from('workers')
+    .select('id, auth_user_id').eq('account_id', acct.id).eq('active', true)
+  const out: Record<string, { hasAuth: boolean; signedIn: boolean }> = {}
+  for (const w of (ws ?? []) as { id: string; auth_user_id: string | null }[]) {
+    if (!w.auth_user_id) { out[w.id] = { hasAuth: false, signedIn: false }; continue }
+    let signedIn = false
+    try {
+      const { data: u } = await svc.auth.admin.getUserById(w.auth_user_id)
+      signedIn = !!u?.user?.last_sign_in_at
+    } catch { /* admin API 不可(ローカル等)は false のまま */ }
+    out[w.id] = { hasAuth: true, signedIn }
+  }
+  return json({ ok: true, workers: out })
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders() })
   if (req.method !== 'POST') return json({ ok: false, error: 'method_not_allowed' }, 405)
@@ -65,6 +99,13 @@ Deno.serve(async (req) => {
     password  = (b.password ?? '').toString()
     login_id  = normalizeLoginId(b.login_id ?? '')
   } catch { return json({ ok: false, error: 'bad_json' }, 400) }
+  // --- signin-status モード：アカウント全体の「まだ一度もログインしていない人」を返す ---
+  //  ★LINE認証撤去(Phase 3)の前提を運用者が追えるようにするためのもの。
+  //   ログインを発行しただけでは足りず、本人が一度ログインするまでは
+  //   実際には LINE ID token で通っている＝Phase 3 を出すと締め出される。
+  //   auth.users.last_sign_in_at は service_role でしか読めないのでここで返す。
+  if (mode === 'signin-status') return await handleSigninStatus(callerSlug, caller.id)
+
   if (!worker_id) return json({ ok: false, error: 'worker_id_required' }, 400)
   if (mode !== 'get') {
     if (login_id) {

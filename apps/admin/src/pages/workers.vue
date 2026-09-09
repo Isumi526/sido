@@ -35,7 +35,12 @@
         </thead>
         <tbody>
           <tr v-for="w in filteredWorkers" :key="w.id">
-            <td class="name">{{ w.name }}<span v-if="w.name_kana" class="kana-sub">{{ w.name_kana }}</span></td>
+            <td class="name">{{ w.name }}<span v-if="w.name_kana" class="kana-sub">{{ w.name_kana }}</span>
+              <!-- ★ログインを発行しただけでは移行できていない。本人が一度ログインするまでは
+                   実際には LINE 認証で通っており、LINE撤去でその人だけ締め出される。 -->
+              <span v-if="signinStatus[w.id]?.hasAuth === false" class="signin-badge none" data-testid="signin-none">ログイン未発行</span>
+              <span v-else-if="signinStatus[w.id]?.signedIn === false" class="signin-badge never" data-testid="signin-never">未ログイン</span>
+            </td>
             <td><span class="badge" :class="w.role">{{ w.role === 'factory' ? '工場/事務所' : '現場' }}</span></td>
             <td><span class="perm-badge" :class="w.permission_role ?? 'worker'">{{ permLabel(w.permission_role) }}</span></td>
             <td v-if="canViewWages" class="price">
@@ -591,7 +596,7 @@ async function load() {
   proxyMap.value = map
 }
 
-onMounted(load)
+onMounted(() => { load(); loadSigninStatus() })
 
 function openAdd() {
   modal.value = { name: '', name_kana: '', role: 'site', permission_role: 'worker', daily_wage: 20000, hourly_wage: 2000, hire_date: null, birth_date: null, address: null, mobile_phone: null, notify_email: null, emergency_contact: null, employment_type: 'fulltime', weekly_scheduled_days: null, company_info: null, invoice_number: null, insurance_info: null, labor_insurance_number: null, report_start_date: null, can_apply_personal_expense: false, default_monthly_expense_limit: null }
@@ -646,6 +651,27 @@ async function loadWageHistory(workerId: string) {
     .select('id, old_unit_price, new_unit_price, reason, changed_at, effective_date, wage_type, old_wage_type, old_daily_wage, new_daily_wage, old_hourly_wage, new_hourly_wage')
     .eq('worker_id', workerId).order('effective_date', { ascending: false, nullsFirst: false }).order('changed_at', { ascending: false })
   wageHistory.value = (data ?? []) as WageHist[]
+}
+
+/**
+ * 「発行済みか」「一度でもログインしたか」を作業員ごとに持つ。
+ *
+ * ★なぜ要るか（2026-09-09）
+ *  LINE認証を外す前提は「全員がメール/パスワードで入れること」だが、
+ *  ログインを発行しただけでは足りない。本番実測で、毎日日報も打刻も出している
+ *  6名が **一度もログインしておらず** LINE ID token で通っていた。
+ *  この状態で LINE を外すと、その6名は翌朝いきなり何もできなくなる。
+ *  移行が終わったかを運用者が画面で追えるようにする。
+ */
+const signinStatus = ref<Record<string, { hasAuth: boolean; signedIn: boolean }>>({})
+
+async function loadSigninStatus() {
+  // 権限が無ければ EF が403を返す。その時はバッジを出さない（画面は壊さない）。
+  try {
+    const { data, error } = await supabase.functions.invoke('worker-auth-setup', { body: { mode: 'signin-status' } })
+    if (error || !data?.ok) return
+    signinStatus.value = data.workers ?? {}
+  } catch { /* 取得できなければバッジ無しで通常表示 */ }
 }
 
 // 認証済み作業員の現在のログインメールを取得して email 欄に表示（mode='get'）
@@ -813,6 +839,9 @@ async function setStatus(w: Worker, status: WStatus) {
 .table td { padding: 14px 16px; border-top: 1px solid #f0f0f0; font-size: 14px; }
 /* タブで状態を分けるため行のグレーアウトは廃止（状態カラムのバッジで表現） */
 .name { font-weight: 600; }
+.signin-badge { display:inline-block; margin-left:8px; padding:1px 6px; border-radius:4px; font-size:11px; font-weight:700; vertical-align:middle; }
+.signin-badge.never { background:#FFF3E0; color:#E65100; border:1px solid #FFCC80; }
+.signin-badge.none  { background:#FFEBEE; color:#B71C1C; border:1px solid #FFCDD2; }
 .kana-sub { color: #aaa; font-size: 11px; margin-left: 8px; font-weight: 400; }
 .price { font-variant-numeric: tabular-nums; }
 .price-unit { font-size: 11px; color: #888; }
