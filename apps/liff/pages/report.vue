@@ -206,13 +206,29 @@
              これを個人経費へ逃がすと現場原価から実コストが消えるので、現場に紐づけたまま残す。
              ★稼働の入力（作業員・時間）は出さない＝全ブロックが暗黙で「下請けのみ」と同じ状態
               （workers: [] ／ 既存の selfWorking='なし' と同一の持ち方に一元化）。 -->
-        <p v-if="isWorkingStr !== 'working'" class="expense-only-note" data-testid="expense-only-note">
-          {{ $t('report.expenseOnlyNote') }}
-        </p>
+        <template v-if="isWorkingStr !== 'working'">
+          <p class="expense-only-note" data-testid="expense-only-note">
+            {{ $t('report.expenseOnlyNote') }}
+          </p>
+          <!-- ★既定は畳む（2026-09-08）。有給・稼働なしの日は「何も無い」のが大半なので、
+               現場のUIを最初から出すと情報過多になる。押した人にだけ経費入力を出す。
+               ここを開かなくてもそのまま送信できる（現場は稼働なしの日は必須ではない）。 -->
+          <button
+            v-if="!showSitesWhenOff"
+            type="button"
+            class="expense-open-btn"
+            data-testid="expense-open"
+            @click="expenseOpenOnOff = true"
+          >
+            <span class="material-symbols-rounded">receipt_long</span>
+            {{ $t('report.expenseOpen') }}
+          </button>
+        </template>
 
         <!-- 現場ブロック -->
         <FormSection
           v-for="(site, si) in report.form.value.sites"
+          v-show="isWorkingStr === 'working' || showSitesWhenOff"
           :key="si"
           :num="String(si + 3).padStart(2, '0')"
           :title="report.form.value.sites.length > 1 ? $t('report.siteNumbered', { n: si + 1 }) : $t('report.site')"
@@ -803,7 +819,10 @@
         </FormSection>
 
         <!-- 現場追加 -->
-        <button type="button" class="btn-add-site" @click="addSite()">
+        <button
+          v-if="isWorkingStr === 'working' || showSitesWhenOff"
+          type="button" class="btn-add-site" @click="addSite()"
+        >
           <span class="btn-add-site__icon">＋</span>
           <span class="btn-add-site__text">
             {{ $t('report.addSite', { n: report.form.value.sites.length + 1 }) }}
@@ -1463,6 +1482,14 @@ const nextDateLabel = computed(() => {
 
 // 稼働有無
 const isWorkingStr = ref<'working' | 'paid_leave' | 'off'>('working')
+
+/** 有給・稼働なしの日に、現場ブロック（＝経費入力）を出すか。
+ *  既定は畳む。「何も無い日」が大半なので、出しっぱなしだと情報過多になる。
+ *  ★既に現場が入っている時は畳まない（編集や、稼働ありから切り替えた時に
+ *   入力済みのものが消えて見えると事故になる）。 */
+const expenseOpenOnOff = ref(false)
+const showSitesWhenOff = computed(() =>
+  expenseOpenOnOff.value || report.form.value.sites.some(s => !!s.siteName))
 
 // ★有給/稼働なしの日は、全ての現場ブロックを「本人は稼働なし」に倒す（2026-09-08）。
 //  既存の「下請けのみ（自分は稼働なし）」チェックと**同じ状態**（workers: []）にするだけで、
@@ -3440,6 +3467,12 @@ function fillTestData() {
 
 <style>
 /* 有給・稼働なしの日に出す案内（経費だけ入れられることを明示する・2026-09-08） */
+.expense-open-btn {
+  display:flex;align-items:center;justify-content:center;gap:6px;width:100%;
+  margin:0 0 12px;padding:12px;border:1px dashed #94a3b8;border-radius:10px;
+  background:#fff;color:#334155;font-size:13px;font-weight:700;cursor:pointer;
+}
+.expense-open-btn .material-symbols-rounded { font-size:18px; }
 .expense-only-note {
   margin: 4px 0 12px; padding: 10px 12px; border-radius: 8px;
   background: #f0f9ff; border: 1px solid #bae6fd; color: #075985;
