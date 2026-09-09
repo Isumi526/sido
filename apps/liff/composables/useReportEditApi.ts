@@ -48,8 +48,11 @@ export function useReportEditApi() {
    * ★空に倒すのは安全側。ここで落ちても「承認待ちを飛ばせない」だけで、
    *  未送信日が消えるより害が小さい。
    */
-  async function pendingDates(): Promise<string[]> {
-    const j = await call({ action: 'pending-dates' })
+  //  ★userId を渡すと「その人の」承認待ちを返す（代理入力用・2026-09-09）。
+  //   EF 側が worker_proxies で代理許可を検証するので、他人の分は取れない。
+  //   これが無いと代理中に相手の承認待ちを飛ばせず、同じ日付が出続けて次に進めない。
+  async function pendingDates(userId?: string | null): Promise<string[]> {
+    const j = await call({ action: 'pending-dates', ...(userId ? { userId } : {}) })
     return ((j?.dates ?? []) as any[]).map(d => String(d?.date ?? d)).filter(Boolean)
   }
 

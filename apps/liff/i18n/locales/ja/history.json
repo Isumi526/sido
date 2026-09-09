@@ -79,5 +79,6 @@
   "bulkResultSaved": "{count} 日を提出しました",
   "bulkResultPending": "{count} 日を承認待ちにしました",
   "bulkResultFailed": "{count} 日は失敗しました",
-  "unsubmittedProxy": "{name}さんの代理として入力します"
+  "unsubmittedProxy": "{name}さんの代理として入力します",
+  "proxyOwner": "{name}さんの分"
 }
