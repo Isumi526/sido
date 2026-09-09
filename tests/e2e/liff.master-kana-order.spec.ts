@@ -16,7 +16,19 @@
 //   - 読み仮名が無い作業員は末尾（並びから消えない）
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { restSrv, getAccountId } from './helpers'
+import { restSrv, getAccountId, SUPABASE_URL, ANON_KEY } from './helpers'
+
+/** マスタEF(master-data)の workers 一覧を取る。dev の身元で呼ぶ（ローカルのみ dev_line_user_id が通る）。 */
+async function fetchMasterWorkers(): Promise<{ name: string }[]> {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/master-data`, {
+    method: 'POST',
+    headers: { apikey: ANON_KEY, Authorization: `Bearer ${ANON_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'fetch', dev_line_user_id: 'dev-user-id' }),
+  })
+  const j = await res.json()
+  if (!j?.ok) throw new Error(`master-data failed: ${JSON.stringify(j).slice(0, 200)}`)
+  return j.workers ?? []
+}
 
 const TS = Date.now()
 // ★漢字の見た目の順と、読みの順が逆になるように作る。
@@ -45,23 +57,22 @@ test.describe('マスタの並び順', () => {
     await restSrv(`workers?name=like.E2E%E9%A0%86*${TS}`, { method: 'DELETE' }).catch(() => {})
   })
 
-  test('★作業員は読み仮名の五十音順で並ぶ（漢字順でも登録順でもない）', async ({ page }) => {
-    await page.goto('/register', { waitUntil: 'networkidle' })
-    const sel = page.locator('select').filter({ has: page.locator(`option:text-is("${W_A.name}")`) }).first()
-    await expect(sel).toBeVisible({ timeout: 15000 })
-
-    const opts = (await sel.locator('option').allInnerTexts()).map(t => t.trim())
+  test('★作業員は読み仮名の五十音順で並ぶ（漢字順でも登録順でもない）', async () => {
+    // ★2026-09-09: 以前は /register（作業員の自己登録画面）のプルダウンで見ていたが、
+    //  自己登録の廃止でその画面ごと消えた。並びの権威は master-data EF の
+    //  `.order('name_kana', { nullsFirst: false }).order('name')` なので、そこを直接見る。
+    const opts = (await fetchMasterWorkers()).map(w => w.name)
     const iA = opts.indexOf(W_A.name)
     const iB = opts.indexOf(W_B.name)
     const iN = opts.indexOf(W_NOKANA.name)
-    expect(iA, '阿部が選択肢に居る').toBeGreaterThan(-1)
-    expect(iB, '渡辺が選択肢に居る').toBeGreaterThan(-1)
+    expect(iA, '阿部が一覧に居る').toBeGreaterThan(-1)
+    expect(iB, '渡辺が一覧に居る').toBeGreaterThan(-1)
 
     // 読み: あべ < わたなべ。登録は渡辺が先だったが、並びは阿部が先になる
     expect(iA, '★読み仮名順（あべ → わたなべ）').toBeLessThan(iB)
 
-    // 読み仮名が無い人も選択肢から消えない（末尾へ回る）
-    expect(iN, '★読み仮名が無くても選択肢に残る').toBeGreaterThan(-1)
+    // 読み仮名が無い人も一覧から消えない（末尾へ回る）
+    expect(iN, '★読み仮名が無くても一覧に残る').toBeGreaterThan(-1)
     expect(iN, '読み仮名の無い人は後ろ').toBeGreaterThan(iA)
   })
 })

@@ -332,7 +332,7 @@ onMounted(async () => {
   if (!userId) { initializing.value = false; return }
 
   selfUser.value = await expense.getUser(userId)
-  if (!selfUser.value) { router.push('/register'); return }
+  if (!selfUser.value) { router.push('/no-account'); return }
 
   await getAccountId()   // accountName（宛名）を populate
   await resolveProxyUserId()

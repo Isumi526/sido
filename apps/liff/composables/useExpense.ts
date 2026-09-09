@@ -226,35 +226,6 @@ export const useExpense = () => {
     return data
   }
 
-  /**
-   * ユーザー登録
-   * - workerId が渡された場合 → 既存作業員に紐づけ
-   * - null の場合 → workerName/workerRole で workers に新規作成してから紐づけ
-   */
-  async function registerUser(
-    lineUserId: string,
-    workerIdOrNull: string | null,
-    workerName: string,
-    workerRole: 'factory' | 'site',
-  ): Promise<User> {
-
-    // ★2026-09-08: anon での直書きをやめ、EF(service_role)へ寄せた。
-    //  2026-08-01 の anon ロックダウンで workers が列単位付与になり、
-    //  PostgREST の upsert が要求するテーブル単位 SELECT/UPDATE を満たせず
-    //  **登録が全件 401** になっていた（実測: LINE登録は 2026-06-25 以降 0 件）。
-    //  anon の権限を戻すと「作業員が自力でオーナーに昇格できる」P0 が再び開くため、
-    //  権限は広げずに経路だけEF化する。ここに supabase.from('workers') を戻さないこと。
-    const data = await useSelfRegisterApi().register({
-      workerId: workerIdOrNull,
-      name: workerName,
-      role: workerRole,
-    })
-    // マスタキャッシュをクリアして次回取得時に新作業員が反映されるようにする
-    if (import.meta.client) localStorage.removeItem('app_master_cache')
-    saveUserCache(data)
-    return data
-  }
-
   /** 経費明細を追加 */
   async function addItem(lineUserId: string, item: ExpenseItemInput): Promise<ExpenseItem> {
     const user = await getUser(lineUserId)
@@ -845,5 +816,5 @@ export const useExpense = () => {
     return data
   }
 
-  return { buildReportPayload, getUser, registerUser, addItem, getItems, deleteItem, saveReport, saveReportById, patchExpenseItem, findOrCreateProxyUser, getExpenseRowsFromReports, getExpenseRowsFromReportsById, getReports, getReportsById, getReport, getReportByUserId, getNextUnsubmittedDate, getNextUnsubmittedDateById, getUnsubmittedDatesById, clearUserCache, getSettlement, getSettlements, applySettlement }
+  return { buildReportPayload, getUser, addItem, getItems, deleteItem, saveReport, saveReportById, patchExpenseItem, findOrCreateProxyUser, getExpenseRowsFromReports, getExpenseRowsFromReportsById, getReports, getReportsById, getReport, getReportByUserId, getNextUnsubmittedDate, getNextUnsubmittedDateById, getUnsubmittedDatesById, clearUserCache, getSettlement, getSettlements, applySettlement }
 }
