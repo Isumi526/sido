@@ -159,11 +159,13 @@ alter default privileges in schema public grant select, insert, update, delete o
 --  ここを role_column_grants だけで生成すると **DELETE が丸ごと落ちる**（2026-09-09 に実際にやった。
 --  admin.expense-rescue のE2Eが「anonで expense_settlements を消せない」で落ちて気づいた）。
 --  更新する時は role_table_grants の DELETE も必ず併せて取ること。
+-- ★estimate_price_history（ビュー）への anon 付与は 2026-09-09 に削除。
+--  公開キーだけで全テナントの下請け単価が読める状態だった（本番で実測・修正済み）。
+--  ビューは security_invoker 未設定だと土台のRLSも迂回する。戻さないこと。
 grant delete on public.accounts to anon;
 grant delete on public.contractor_contacts to anon;
 grant delete on public.estimate_items to anon;
 grant delete on public.estimate_material_prices to anon;
-grant delete on public.estimate_price_history to anon;
 grant delete on public.estimate_price_revisions to anon;
 grant delete on public.estimate_projects to anon;
 grant delete on public.estimate_sends to anon;
@@ -202,9 +204,6 @@ grant update on public.estimate_items to anon;
 grant insert on public.estimate_material_prices to anon;
 grant select on public.estimate_material_prices to anon;
 grant update on public.estimate_material_prices to anon;
-grant insert on public.estimate_price_history to anon;
-grant select on public.estimate_price_history to anon;
-grant update on public.estimate_price_history to anon;
 grant insert on public.estimate_price_revisions to anon;
 grant select on public.estimate_price_revisions to anon;
 grant update on public.estimate_price_revisions to anon;
