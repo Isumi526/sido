@@ -373,7 +373,7 @@ import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug } from '../lib/account'
 import { useQueryParam } from '../composables/useQueryParam'
 import { HIDE_LINE_SECTIONS } from '../lib/featureFlags'
-import { effectiveBreakMinutes, laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE, type RateBreakdown } from '../lib/workerHours'
+import { effectiveBreakMinutes, laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE, readOtDeductionSettings, otDeductionForDate, type RateBreakdown } from '../lib/workerHours'
 import { canViewWages, currentUser } from '../lib/auth'
 import { punchDiffLabel, isPunchDiffBig, isPunchDiffWorthShowing } from '../lib/attendance-punch.gen'
 
@@ -597,9 +597,17 @@ function siteTripYen(site: any): number {
   for (const w of (site.workers ?? [])) if (mains.has(w)) n++
   return n * BUSINESS_TRIP_ALLOWANCE
 }
+// 8時間超に適用する日当からの控除（アカウント単位・未設定は0＝従来どおり）。
+// 月次(index.vue)・現場別(site-reports.vue)と同じ設定を見ないと、
+// 同じ日の人件費が画面によって違う金額に見えてしまう。
+const otDeduction = ref<{ deduction: number; fromDate: string | null }>({ deduction: 0, fromDate: null })
+
 // 日報詳細は既定の日当ベース（日当/8h × 稼働時間）で人件費を表示（現場管理者も閲覧OK）
 function calcLaborCost(w: any, dailyWage: number): number {
-  return laborCostForBreakdown(selectedBreakdown.value.get(w) ?? ZERO_BREAKDOWN, dailyWage, 0, 'daily')
+  return laborCostForBreakdown(
+    selectedBreakdown.value.get(w) ?? ZERO_BREAKDOWN, dailyWage, 0, 'daily',
+    otDeductionForDate(selected.value?.date ?? '', otDeduction.value.deduction, otDeduction.value.fromDate),
+  )
 }
 
 /**
@@ -668,6 +676,12 @@ function hasExpenses(exp: any): boolean {
 async function load() {
   loading.value = true
   const accountId = await getAccountId()
+
+  // 8時間超の控除設定
+  {
+    const { data: cfg } = await supabase.from('settings').select('key, value').eq('account_id', accountId)
+    otDeduction.value = readOtDeductionSettings(cfg as any[])
+  }
 
   // 下請けマスタ取得
   const { data: subs } = await supabase
