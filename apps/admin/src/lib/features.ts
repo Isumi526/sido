@@ -18,7 +18,7 @@
 import { ref, computed, watch } from 'vue'
 import { supabase } from './supabase'
 import { getAccountId } from './account'
-import { currentUser, canViewManagementPages } from './auth'
+import { currentUser, canViewManagementPages, isOwnSite } from './auth'
 
 /** 見積もり機能（見積・発注/見積マスタ/材料抽出）を出すか */
 export const estimateEnabled = ref(false)
@@ -34,6 +34,19 @@ export const FEATURE_KEY_ESTIMATE = 'estimate_feature_enabled'
  *   これで塞ぐ。canViewManagementPages のままだとフラグOFFでも見積データに届いてしまう。
  */
 export const canViewEstimates = computed(() => canViewManagementPages.value && estimateEnabled.value)
+
+/**
+ * 現場に紐づく見積書を「この現場について」見せてよいか。
+ *  ★現場管理者の所有権モデル（2026-07-31方針・2026-09-05 Step2）:
+ *   経営系ロール(canViewEstimates)に加え、自分が責任者の現場なら見積書を見せる
+ *   （Q3=金額・見積書は「見せない」が既定だったが、"自分の"現場に限っては
+ *    オーナー同等にフル閲覧可＝所有軸モデルの中核）。
+ *   フラグOFF(estimateEnabled=false)なら誰にも見せない＝機能フラグが最優先で効く。
+ */
+export function canViewEstimatesForSite(responsibleWorkerId: string | null | undefined): boolean {
+  if (!estimateEnabled.value) return false
+  return canViewManagementPages.value || isOwnSite(responsibleWorkerId)
+}
 
 /** settings から機能フラグを読む。ログイン前・取得失敗時は OFF のまま。 */
 export async function loadFeatures(): Promise<void> {

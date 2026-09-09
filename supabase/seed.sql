@@ -126,8 +126,161 @@ on conflict (account_id, key) do update
 --   ここで明示GRANTしてローカルのテスト基盤を毎回再現可能にする。
 -- ────────────────────────────────────────────────────────────────
 grant usage on schema public to anon, authenticated, service_role;
-grant select, insert, update, delete on all tables in schema public to anon, authenticated, service_role;
 grant usage, select on all sequences in schema public to anon, authenticated, service_role;
--- 以降に作られる表にも自動付与（将来のmigration追加表もシード後に取りこぼさない）
-alter default privileges in schema public grant select, insert, update, delete on tables to anon, authenticated, service_role;
 alter default privileges in schema public grant usage, select on sequences to anon, authenticated, service_role;
+
+-- authenticated / service_role は従来どおり全表に付ける（ログイン後の画面とEFが使う）
+grant select, insert, update, delete on all tables in schema public to authenticated, service_role;
+alter default privileges in schema public grant select, insert, update, delete on tables to authenticated, service_role;
+
+-- ════════════════════════════════════════════════════════════════
+--  ★anon だけは「全表に付ける」のをやめた（2026-09-09）
+--
+--  以前はここで anon にも全表 DML を付け、default privileges でも付けていた。
+--  db reset は **migration の後に seed を流す** ので、
+--  anon ロックダウンの migration（attendance_anon_lockdown / workers の列単位絞り込み /
+--  overtime / subcontractors 等）が **毎回この seed に上書きされて無効化** されていた。
+--  結果、ローカルだけ anon が開きっぱなしになり、本番と恒常的に乖離していた。
+--
+--  実害（2026-09-08〜09 の1日で4回）:
+--   「anonキーでは読めない/書けない」系のE2Eがローカルでだけ落ちる。
+--   200＋空配列 や 期待>=400/実際200 という形で出るので、
+--   **自分の変更が壊したように見える**。都度 revoke して回っていた。
+--
+--  ここから下は **本番(nrzzesbtvswoiouhldvi)の anon 付与をそのまま写したもの**。
+--  ローカルを本番と同じ状態で立ち上げるのが目的で、増やすためのものではない。
+--  ★新しい表を足した時にここへ追記するかどうかは「本番で anon に開くか」で決める。
+--   開かないなら追記しない（既定で閉じる＝fail-closed）。
+--  ★更新するときは本番から生成し直す:
+--    psql "$SUPABASE_PROD_DB_URL" で role_column_grants を引いて grant 文を組み立てる
+--    （手で書き足すとまたドリフトする）
+-- ════════════════════════════════════════════════════════════════
+-- ★DELETE は列単位の権限ではないため information_schema.role_column_grants に現れない。
+--  ここを role_column_grants だけで生成すると **DELETE が丸ごと落ちる**（2026-09-09 に実際にやった。
+--  admin.expense-rescue のE2Eが「anonで expense_settlements を消せない」で落ちて気づいた）。
+--  更新する時は role_table_grants の DELETE も必ず併せて取ること。
+grant delete on public.accounts to anon;
+grant delete on public.contractor_contacts to anon;
+grant delete on public.estimate_items to anon;
+grant delete on public.estimate_material_prices to anon;
+grant delete on public.estimate_price_history to anon;
+grant delete on public.estimate_price_revisions to anon;
+grant delete on public.estimate_projects to anon;
+grant delete on public.estimate_sends to anon;
+grant delete on public.estimate_trades to anon;
+grant delete on public.expense_items to anon;
+grant delete on public.expense_settlements to anon;
+grant delete on public.schedule_categories to anon;
+grant delete on public.schedule_edits to anon;
+grant delete on public.schedule_group_members to anon;
+grant delete on public.schedule_groups to anon;
+grant delete on public.schedule_notifications to anon;
+grant delete on public.schedules to anon;
+grant delete on public.settings to anon;
+grant delete on public.site_attachments to anon;
+grant delete on public.site_chat_last_read to anon;
+grant delete on public.site_chat_mentions to anon;
+grant delete on public.site_chat_messages to anon;
+grant delete on public.site_rules to anon;
+grant delete on public.subcontractor_comments to anon;
+grant delete on public.subcontractor_edit_logs to anon;
+grant delete on public.subcontractor_trade_types to anon;
+grant delete on public.subcontractors to anon;
+grant delete on public.trade_type_presets to anon;
+grant delete on public.users to anon;
+grant delete on public.worker_proxies to anon;
+
+grant insert on public.accounts to anon;
+grant select on public.accounts to anon;
+grant update on public.accounts to anon;
+grant insert on public.contractor_contacts to anon;
+grant select on public.contractor_contacts to anon;
+grant update on public.contractor_contacts to anon;
+grant insert on public.estimate_items to anon;
+grant select on public.estimate_items to anon;
+grant update on public.estimate_items to anon;
+grant insert on public.estimate_material_prices to anon;
+grant select on public.estimate_material_prices to anon;
+grant update on public.estimate_material_prices to anon;
+grant insert on public.estimate_price_history to anon;
+grant select on public.estimate_price_history to anon;
+grant update on public.estimate_price_history to anon;
+grant insert on public.estimate_price_revisions to anon;
+grant select on public.estimate_price_revisions to anon;
+grant update on public.estimate_price_revisions to anon;
+grant insert on public.estimate_projects to anon;
+grant select on public.estimate_projects to anon;
+grant update on public.estimate_projects to anon;
+grant insert on public.estimate_sends to anon;
+grant select on public.estimate_sends to anon;
+grant update on public.estimate_sends to anon;
+grant insert on public.estimate_trades to anon;
+grant select on public.estimate_trades to anon;
+grant update on public.estimate_trades to anon;
+grant insert on public.expense_items to anon;
+grant select on public.expense_items to anon;
+grant update on public.expense_items to anon;
+grant insert on public.expense_settlements to anon;
+grant select on public.expense_settlements to anon;
+grant update on public.expense_settlements to anon;
+grant insert on public.schedule_categories to anon;
+grant select on public.schedule_categories to anon;
+grant update on public.schedule_categories to anon;
+grant insert on public.schedule_edits to anon;
+grant select on public.schedule_edits to anon;
+grant update on public.schedule_edits to anon;
+grant insert on public.schedule_group_members to anon;
+grant select on public.schedule_group_members to anon;
+grant update on public.schedule_group_members to anon;
+grant insert on public.schedule_groups to anon;
+grant select on public.schedule_groups to anon;
+grant update on public.schedule_groups to anon;
+grant insert on public.schedule_notifications to anon;
+grant select on public.schedule_notifications to anon;
+grant update on public.schedule_notifications to anon;
+grant insert on public.schedules to anon;
+grant select on public.schedules to anon;
+grant update on public.schedules to anon;
+grant insert on public.settings to anon;
+grant select on public.settings to anon;
+grant update on public.settings to anon;
+grant insert on public.site_attachments to anon;
+grant select on public.site_attachments to anon;
+grant update on public.site_attachments to anon;
+grant insert on public.site_chat_last_read to anon;
+grant select on public.site_chat_last_read to anon;
+grant update on public.site_chat_last_read to anon;
+grant insert on public.site_chat_mentions to anon;
+grant select on public.site_chat_mentions to anon;
+grant update on public.site_chat_mentions to anon;
+grant insert on public.site_chat_messages to anon;
+grant select on public.site_chat_messages to anon;
+grant update on public.site_chat_messages to anon;
+grant insert on public.site_rules to anon;
+grant select on public.site_rules to anon;
+grant update on public.site_rules to anon;
+grant select on public.site_shares to anon;
+grant insert on public.subcontractor_comments to anon;
+grant select on public.subcontractor_comments to anon;
+grant update on public.subcontractor_comments to anon;
+grant insert on public.subcontractor_edit_logs to anon;
+grant select on public.subcontractor_edit_logs to anon;
+grant update on public.subcontractor_edit_logs to anon;
+grant insert on public.subcontractor_trade_types to anon;
+grant select on public.subcontractor_trade_types to anon;
+grant update on public.subcontractor_trade_types to anon;
+grant insert on public.subcontractors to anon;
+grant select (account_id, active, category, email, id, is_deleted, mobile_phone, name, office_phone, representative_name, service_areas, sort_order) on public.subcontractors to anon;
+grant update on public.subcontractors to anon;
+grant insert on public.trade_type_presets to anon;
+grant select on public.trade_type_presets to anon;
+grant update on public.trade_type_presets to anon;
+grant insert on public.users to anon;
+grant select on public.users to anon;
+grant update on public.users to anon;
+grant insert on public.worker_proxies to anon;
+grant select on public.worker_proxies to anon;
+grant update on public.worker_proxies to anon;
+grant insert (account_id, active, name, role, unit_price) on public.workers to anon;
+grant select (account_id, active, birth_date, can_apply_personal_expense, created_at, id, name, name_kana, permission_role, report_start_date, role, sort_order) on public.workers to anon;
+grant update (active, name, role, unit_price) on public.workers to anon;

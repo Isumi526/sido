@@ -84,7 +84,7 @@
           <span class="material-symbols-rounded">location_on</span>現場ページ
         </router-link>
         <div class="export-pop-wrap">
-          <button class="btn-export" data-testid="export-site" @click="exportPanelOpen = !exportPanelOpen"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">download</span> {{ canViewEstimates ? 'CSV＋見積書PDFを出力' : 'CSVを出力' }}</button>
+          <button class="btn-export" data-testid="export-site" @click="exportPanelOpen = !exportPanelOpen"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">download</span> {{ canShowEstimatesHere ? 'CSV＋見積書PDFを出力' : 'CSVを出力' }}</button>
           <div v-if="exportPanelOpen" class="export-pop" data-testid="export-panel">
             <div class="export-pop-title">出力する期間を選んでください</div>
             <label class="export-range-lbl">出力範囲
@@ -487,7 +487,7 @@ import HelpButton from '../components/HelpButton.vue'
 import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, wageForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
 import type { WageMode } from '../lib/workerHours'
 import { canViewWages, canViewHourlyWage, canViewManagementPages } from '../lib/auth'
-import { canViewEstimates } from '../lib/features'
+import { canViewEstimatesForSite } from '../lib/features'
 import { resolveSiteRef, type SiteResolveCtx } from '../lib/siteKey'
 import { normalizeSiteName } from '../lib/site-similarity.gen'
 import { netAmountOf, normalizeTaxMode } from '../lib/invoiceTax'
@@ -538,11 +538,13 @@ async function exportSite() {
     const zip = new JSZip()
     zip.file(`現場別集計_${site}_${label}.csv`, '﻿' + csv) // BOM付き=Excelで文字化けしない
     // 紐づく見積書PDF（estimates.site_id）を「見積書」フォルダに内包（期間に依らず当該現場の全見積）
-    //  ★現場管理者には同梱しない（2026-07-31 レビュー指摘）: 見積系の画面を非表示にしたのに
-    //   この出力から見積金額入りPDFを取得できてしまう抜け道になっていた。CSV（現場の原価集計）は
-    //   現場管理者にも見せる方針なのでそのまま出す。
+    //  ★同梱の可否は所有軸モデルで決める（2026-07-31方針・2026-09-05 Step2）:
+    //   経営系ロール、または「自分が責任者の現場」なら同梱する。他人の現場では同梱しない。
+    //   （元は現場管理者に一律非同梱。見積系の画面を非表示にしたのに、この出力から
+    //    見積金額入りPDFを取得できてしまう抜け道だったため塞いだ経緯。今回は自分の現場だけ緩める。）
+    //   CSV（現場の原価集計）は現場管理者にも見せる方針なのでそのまま出す。
     const accountId = await getAccountId()
-    const { data: siteRow } = canViewEstimates.value
+    const { data: siteRow } = canShowEstimatesHere.value
       ? await supabase.from('sites').select('id').eq('account_id', accountId).eq('name', site).maybeSingle()
       : { data: null }
     if (siteRow?.id) {
@@ -629,6 +631,10 @@ function toggleWageMode() {
 const kanaBySite = ref<Record<string, string>>({})
 // 現場名 → 現場マスタの id。集計から現場ページへ戻る導線に使う（2026-08-30 今井さん要望・往復できるように）
 const siteIdByName = ref<Record<string, string>>({})
+/** 現場名→その現場の責任者worker_id（同名で責任者が割れる場合は null＝見せない側に倒す） */
+const responsibleBySite = ref<Record<string, string | null>>({})
+/** 表示中の現場の見積書を出してよいか（経営系 or 自分が責任者の現場）。 */
+const canShowEstimatesHere = computed(() => canViewEstimatesForSite(responsibleBySite.value[displaySite.value] ?? null))
 /** 表示中の現場の、現場マスタ上の id（マスタに無い名前＝表記ゆれ等なら null） */
 const displaySiteId = computed(() => siteIdByName.value[displaySite.value] ?? null)
 const siteNamesAll = computed(() => Object.keys(siteMap.value)
@@ -815,7 +821,7 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
     supabase.from('subcontractors').select('name, category, unit_price').eq('account_id', accountId),
     supabase.from('settings').select('key, value').eq('account_id', accountId),
     supabase.from('worker_wage_history').select('worker_id, effective_date, changed_at, old_unit_price, new_unit_price, wage_type, old_wage_type, old_daily_wage, new_daily_wage, old_hourly_wage, new_hourly_wage').eq('account_id', accountId),
-    supabase.from('sites').select('id, name, name_kana, active, created_at, contractors(name)').eq('account_id', accountId).order('created_at', { ascending: true }),
+    supabase.from('sites').select('id, name, name_kana, active, created_at, responsible_worker_id, contractors(name)').eq('account_id', accountId).order('created_at', { ascending: true }),
     supabase.from('work_categories').select('id, name, sort_order').eq('account_id', accountId).order('sort_order', { ascending: true }),
   ])
   // 作業区分（現場作業/見積/その他事務…）。日報の各現場ブロックが持つ workCategoryId を名前に直す。
@@ -828,6 +834,16 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
   // 現場ページへ戻る導線用。★無効化済みの現場も含める（終わった現場の集計から
   //  マスタを開けないと、行ったきりになる）。
   siteIdByName.value = Object.fromEntries((siteRows ?? []).map((s: any) => [s.name, s.id]))
+  // 現場名→現場責任者。所有軸モデル（自分が責任者の現場なら見積書を見せる）の判定に使う。
+  //  ★同名の現場が複数ある場合は「1つでも自分が責任者なら自分の現場」とはせず、最後勝ちで潰さない。
+  //   名前で引く画面なので、同名かつ責任者が異なるケースでは責任者を確定できない＝見せない側に倒す
+  //   （fail-closed）。id で引ける site-detail.vue 側は正確に判定できる。
+  const respSet: Record<string, Set<string | null>> = {}
+  for (const s of (siteRows ?? []) as any[]) {
+    (respSet[s.name] ??= new Set()).add(s.responsible_worker_id ?? null)
+  }
+  responsibleBySite.value = Object.fromEntries(
+    Object.entries(respSet).map(([name, set]) => [name, set.size === 1 ? [...set][0] : null]))
   // 絞り込み・判別表示用の 現場名→元請け名（複数）。集計には使わない（タブを減らす／判別のためだけ）。
   // ★同名の現場が別々の元請けに紐づくことがあるので、名前ごとに元請けを集合で集める（最後勝ちで潰さない）。
   const contractorSetBySite: Record<string, Set<string>> = {}

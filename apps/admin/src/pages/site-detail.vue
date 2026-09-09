@@ -26,7 +26,7 @@
       </div>
       <!-- タブ -->
       <nav v-if="site" class="tabs">
-        <button v-for="t in TABS" :key="t.key" class="tab" :class="{ active: tab === t.key }" @click="tab = t.key">
+        <button v-for="t in TABS" :key="t.key" class="tab" :class="{ active: tab === t.key }" :data-testid="`tab-${t.key}`" @click="tab = t.key">
           {{ t.label }}<span v-if="t.count != null" class="tab-count">{{ t.count }}</span>
         </button>
       </nav>
@@ -41,7 +41,7 @@
           <div class="sum-card"><div class="sum-label">日報（90日）</div><div class="sum-val">{{ stats.count }}</div></div>
           <div class="sum-card"><div class="sum-label">直近日報</div><div class="sum-val sm">{{ stats.lastDate || '—' }}</div></div>
           <div class="sum-card"><div class="sum-label">紐づく下請け</div><div class="sum-val">{{ linkedSubs.length }}</div></div>
-          <div v-if="canViewEstimates" class="sum-card"><div class="sum-label">見積/注文書</div><div class="sum-val sm">{{ estimates.length }} / {{ orders.length }}</div></div>
+          <div v-if="canViewEstimatesForSite(site?.responsible_worker_id)" class="sum-card"><div class="sum-label">見積/注文書</div><div class="sum-val sm">{{ estimates.length }} / {{ orders.length }}</div></div>
         </div>
 
         <section class="card">
@@ -101,6 +101,28 @@
             <span v-for="s in linkedSubs" :key="s.id" class="chip">{{ s.name }}<span v-if="s.category" class="chip-cat">{{ s.category }}</span></span>
           </div>
           <p v-else class="muted">紐づく協力業者はありません（編集から追加）</p>
+        </section>
+
+        <section v-if="!editing" class="card">
+          <div class="card-head">
+            <h2 class="card-title">区分ごとの定時・休憩</h2>
+            <RouterLink to="/work-categories" class="btn-ghost sm">区分の追加・削除</RouterLink>
+          </div>
+          <p class="hint" style="font-size:12px;color:#94a3b8;margin:-4px 0 12px">
+            現場作業・見積など区分ごとに定時を設定できます。未設定の区分は上の「固定勤務時刻」を使います。
+          </p>
+          <table class="mini-table">
+            <thead><tr><th>区分</th><th>定時</th><th>休憩</th><th></th></tr></thead>
+            <tbody>
+              <tr v-for="c in siteCategories" :key="c.id" :data-testid="`cat-hours-row-${c.id}`">
+                <td>{{ c.name }}</td>
+                <td>{{ catHoursLabel(c.id) }}</td>
+                <td>{{ catBreaksLabel(c.id) }}</td>
+                <td class="num"><button class="btn-ghost sm" :data-testid="`cat-hours-edit-${c.id}`" @click="openCatHours(c)">編集</button></td>
+              </tr>
+              <tr v-if="siteCategories.length === 0"><td colspan="4" class="muted">作業区分がありません（区分の追加・削除から作成）</td></tr>
+            </tbody>
+          </table>
         </section>
       </template>
 
@@ -193,6 +215,36 @@
         </div>
       </section>
     </template>
+
+    <!-- ───────── 区分ごとの定時・休憩 編集モーダル ───────── -->
+    <div v-if="catHoursModal" class="modal-overlay" @click.self="catHoursModal = null">
+      <div class="modal">
+        <h2>{{ catHoursModal.categoryName }}の定時・休憩</h2>
+        <div class="field">
+          <label>定時</label>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input v-model="catHoursModal.start" type="time" class="input" style="width:auto" data-testid="cat-hours-start" />
+            <span>〜</span>
+            <input v-model="catHoursModal.end" type="time" class="input" style="width:auto" data-testid="cat-hours-end" />
+          </div>
+        </div>
+        <div class="field">
+          <label>休憩</label>
+          <div v-for="(brk, bi) in catHoursModal.breaks" :key="bi" style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <input v-model="brk.start" type="time" class="input" style="width:auto" data-testid="cat-hours-break-start" />
+            <input v-model.number="brk.minutes" type="number" min="0" step="15" class="input" style="width:90px" placeholder="60" data-testid="cat-hours-break-minutes" />
+            <button type="button" class="btn-ghost sm" @click="catHoursModal.breaks.splice(bi, 1)">×</button>
+          </div>
+          <button type="button" class="btn-ghost sm" data-testid="cat-hours-add-break" @click="catHoursModal.breaks.push({ start: '12:00', minutes: 60 })">＋ 休憩を追加</button>
+        </div>
+        <p class="hint" style="font-size:12px;color:#94a3b8;margin:0">未設定のまま保存すると「定時なし」になり、上の固定勤務時刻を使います。</p>
+        <p v-if="catHoursError" class="err">{{ catHoursError }}</p>
+        <div class="modal-actions">
+          <button class="btn-cancel" data-testid="cat-hours-clear" :disabled="catHoursSaving" @click="clearCatHours">クリア</button>
+          <button class="btn-save" data-testid="cat-hours-save" :disabled="catHoursSaving" @click="saveCatHours">{{ catHoursSaving ? '保存中...' : '保存' }}</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -203,7 +255,7 @@ import { supabase } from '../lib/supabase'
 import { openDoc } from '../lib/docUrl'
 import { getAccountId } from '../lib/account'
 import { canViewManagementPages } from '../lib/auth'
-import { canViewEstimates } from '../lib/features'
+import { canViewEstimatesForSite } from '../lib/features'
 import { normalizeSiteName } from '../lib/site-similarity.gen'
 import { siteStoredName } from '../lib/siteKey'
 
@@ -211,8 +263,11 @@ const route = useRoute()
 const router = useRouter()
 const siteId = String(route.params.id ?? '')
 
-type Site = { id: string; name: string; name_kana: string | null; active: boolean; location: string | null; construction_type: string | null; construction_details: string | null; memo: string | null; contractor_id: string | null; default_start_time: string | null; default_end_time: string | null }
+type Site = { id: string; name: string; name_kana: string | null; active: boolean; location: string | null; construction_type: string | null; construction_details: string | null; memo: string | null; contractor_id: string | null; default_start_time: string | null; default_end_time: string | null; responsible_worker_id: string | null }
 type Att = { id: string; kind: string; path: string; name: string | null; require_consent?: boolean; url?: string | null }
+type WorkCategory = { id: string; name: string; scope: string | null }
+type SiteCategoryHours = { category_id: string; default_start_time: string | null; default_end_time: string | null; default_breaks: { start: string; minutes: number }[] | null }
+type CatHoursModal = { categoryId: string; categoryName: string; start: string; end: string; breaks: { start: string; minutes: number }[] }
 
 const BUCKET = 'site-attachments'
 const ESTIMATE_BUCKET = 'expense-receipts'
@@ -280,12 +335,85 @@ function openAggregate() {
 const loading = ref(true)
 const uploading = ref(false)
 
+// 区分ごとの定時・休憩（現場×区分）
+//  ★現場の選択肢と同じ絞り方（report.vue の workCategoryOptions と揃える）:
+//   scope が site か null（どこでも）の区分だけ、この現場で設定できる。
+const workCategories = ref<WorkCategory[]>([])
+const siteCategoryHours = ref<SiteCategoryHours[]>([])
+const siteCategories = computed(() => workCategories.value.filter(c => c.scope === null || c.scope === 'site'))
+const catHoursModal = ref<CatHoursModal | null>(null)
+const catHoursSaving = ref(false)
+const catHoursError = ref('')
+
+function hoursFor(categoryId: string): SiteCategoryHours | undefined {
+  return siteCategoryHours.value.find(h => h.category_id === categoryId)
+}
+function catHoursLabel(categoryId: string): string {
+  const h = hoursFor(categoryId)
+  if (!h?.default_start_time || !h?.default_end_time) return '（現場の固定勤務時刻を使用）'
+  return `${h.default_start_time.slice(0, 5)}〜${h.default_end_time.slice(0, 5)}`
+}
+function catBreaksLabel(categoryId: string): string {
+  const brks = hoursFor(categoryId)?.default_breaks ?? []
+  if (!brks.length) return 'なし'
+  return brks.map(b => `${b.start.slice(0, 5)}/${b.minutes}分`).join('・')
+}
+function openCatHours(c: WorkCategory) {
+  const h = hoursFor(c.id)
+  catHoursError.value = ''
+  catHoursModal.value = {
+    categoryId: c.id, categoryName: c.name,
+    start: (h?.default_start_time ?? '').slice(0, 5), end: (h?.default_end_time ?? '').slice(0, 5),
+    breaks: (h?.default_breaks ?? []).map(b => ({ start: b.start, minutes: b.minutes })),
+  }
+}
+/** EF を呼ぶ。失敗はエラーコードで返す（画面側で日本語にする） */
+async function callEf(payload: Record<string, unknown>): Promise<{ ok: boolean; error?: string; data?: any }> {
+  const { data, error } = await supabase.functions.invoke('master-data', { body: payload })
+  if (error) return { ok: false, error: 'network' }
+  return data?.ok ? { ok: true, data } : { ok: false, error: data?.error ?? 'failed', data }
+}
+async function saveCatHours() {
+  if (!catHoursModal.value || !site.value) return
+  const m = catHoursModal.value
+  catHoursSaving.value = true; catHoursError.value = ''
+  const r = await callEf({
+    action: 'category-hours-save', site_id: site.value.id, category_id: m.categoryId,
+    default_start_time: m.start || null, default_end_time: m.end || null,
+    default_breaks: m.breaks.length ? m.breaks : null,
+  })
+  catHoursSaving.value = false
+  if (!r.ok) { catHoursError.value = `保存に失敗しました（${r.error}）`; return }
+  catHoursModal.value = null
+  await loadCategoryHours()
+}
+async function clearCatHours() {
+  if (!catHoursModal.value || !site.value) return
+  catHoursSaving.value = true; catHoursError.value = ''
+  const r = await callEf({ action: 'category-hours-delete', site_id: site.value.id, category_id: catHoursModal.value.categoryId })
+  catHoursSaving.value = false
+  if (!r.ok) { catHoursError.value = `クリアに失敗しました（${r.error}）`; return }
+  catHoursModal.value = null
+  await loadCategoryHours()
+}
+async function loadCategoryHours() {
+  if (!site.value) return
+  const accountId = await getAccountId()
+  const [{ data: cats }, { data: hours }] = await Promise.all([
+    supabase.from('work_categories').select('id, name, scope').eq('account_id', accountId).eq('active', true).order('sort_order').order('name'),
+    supabase.from('site_category_hours').select('category_id, default_start_time, default_end_time, default_breaks').eq('account_id', accountId).eq('site_id', site.value.id),
+  ])
+  workCategories.value = (cats ?? []) as WorkCategory[]
+  siteCategoryHours.value = (hours ?? []) as SiteCategoryHours[]
+}
+
 const tab = ref<'overview' | 'reports' | 'docs' | 'files'>('overview')
 const TABS = computed(() => [
   { key: 'overview', label: '概要', count: null as number | null },
   { key: 'reports',  label: '日報', count: stats.value.count },
-  // 見積・注文タブは経営系（見積/注文書の金額）のため site_manager には出さない
-  ...(canViewEstimates.value ? [{ key: 'docs', label: '見積・注文', count: estimates.value.length + orders.value.length }] : []),
+  // 見積・注文タブは経営系のみ。ただし自分が責任者の現場は所有軸モデルで見せる
+  //  （2026-07-31方針・2026-09-05 Step2: canViewEstimatesForSite）。
+  ...(canViewEstimatesForSite(site.value?.responsible_worker_id) ? [{ key: 'docs', label: '見積・注文', count: estimates.value.length + orders.value.length }] : []),
   { key: 'files',    label: '写真・資料', count: attachments.value.length },
 ])
 
@@ -452,7 +580,7 @@ async function load() {
   loading.value = true
   const accountId = await getAccountId()
   const { data: s } = await supabase.from('sites')
-    .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id, default_start_time, default_end_time')
+    .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id, default_start_time, default_end_time, responsible_worker_id')
     .eq('account_id', accountId).eq('id', siteId).maybeSingle()
   site.value = (s as Site) ?? null
   if (!site.value) { loading.value = false; return }
@@ -471,8 +599,9 @@ async function load() {
     linkedSubs.value = (subs ?? []) as any[]
   }
 
-  // 見積/注文書は経営系＝現場管理者には出さない（タブ・件数カードとも非表示）ので取得もしない
-  const [{ data: est }, { data: po }] = canViewEstimates.value
+  // 見積/注文書は経営系のみ。自分が責任者の現場は所有軸モデルで見せる
+  //  （2026-07-31方針・2026-09-05 Step2）。取得もその条件でだけ行う（非表示なら読まない）。
+  const [{ data: est }, { data: po }] = canViewEstimatesForSite(site.value.responsible_worker_id)
     ? await Promise.all([
       supabase.from('estimates').select('id, estimate_number, estimate_date, total_amount, pdf_path').eq('site_id', siteId).eq('is_deleted', false).order('estimate_date', { ascending: false, nullsFirst: false }),
       supabase.from('purchase_orders').select('id, order_number, vendor_name, total_amount, status').eq('site_id', siteId).eq('is_deleted', false).order('order_number', { ascending: false }),
@@ -481,6 +610,7 @@ async function load() {
   estimates.value = (est ?? []) as any[]
   orders.value = (po ?? []) as any[]
   await loadAttachments()
+  await loadCategoryHours()
 
   const since = new Date(); since.setDate(since.getDate() - 180)
   const { data: reps } = await supabase.from('daily_reports')
@@ -598,4 +728,16 @@ onMounted(load)
 .consent-who { font-size: 12px; color: #333; }
 .notify-result { font-size: 12px; color: #047857; font-weight: 700; margin: 6px 0 0; }
 @media (max-width: 640px) { .summary-cards { grid-template-columns: repeat(2, 1fr); } }
+
+/* 区分ごとの定時・休憩 モーダル */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.modal { background: #fff; border-radius: 12px; padding: 32px; width: 420px; display: flex; flex-direction: column; gap: 20px; }
+.modal h2 { font-size: 18px; font-weight: 700; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label { font-size: 12px; font-weight: 700; color: #888; }
+.modal-actions { display: flex; gap: 12px; }
+.btn-save { flex: 1; background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 12px; font-weight: 700; cursor: pointer; }
+.btn-save:disabled { opacity: .5; }
+.btn-cancel { flex: 1; background: #f5f5f5; color: #888; border: none; border-radius: 8px; padding: 12px; cursor: pointer; }
+.btn-cancel:disabled { opacity: .5; }
 </style>
