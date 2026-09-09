@@ -79,5 +79,6 @@
   "bulkResultSaved": "Submitted {count} day(s)",
   "bulkResultPending": "{count} day(s) awaiting approval",
   "bulkResultFailed": "{count} day(s) failed",
-  "unsubmittedProxy": "Entering on behalf of {name}"
+  "unsubmittedProxy": "Entering on behalf of {name}",
+  "proxyOwner": "{name}’s report"
 }

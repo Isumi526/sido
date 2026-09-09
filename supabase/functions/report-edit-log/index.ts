@@ -376,6 +376,30 @@ async function hasOtherActiveOwner(
   return (ws ?? []).some((w: any) => w.id !== myWorkerId)
 }
 
+/**
+ * クライアントが名乗った users.id を「見てよい相手か」で検証して返す。
+ * 自分自身、または worker_proxies に登録された代理対象だけ許す。
+ * ★account_id でも必ず絞る（他テナントの users.id を渡されても通さない）。
+ * ★daily-reports-read の readableUserId と同じ規則。片方だけ緩めないこと。
+ */
+async function resolveTargetUserId(svc: any, caller: any, requested: unknown): Promise<string | null> {
+  const req = typeof requested === 'string' && requested ? requested : ''
+  if (!req || req === caller.userId) return caller.userId
+
+  const { data: tu } = await svc.from('users')
+    .select('id, account_id, worker_id').eq('id', req).maybeSingle()
+  if (!tu || tu.account_id !== caller.accountId) return null
+  if (!tu.worker_id) return null
+
+  const { data: me } = await svc.from('users').select('worker_id').eq('id', caller.userId).maybeSingle()
+  if (!me?.worker_id) return null
+
+  const { data: px } = await svc.from('worker_proxies').select('id')
+    .eq('account_id', caller.accountId)
+    .eq('worker_id', tu.worker_id).eq('proxy_operator_id', me.worker_id).maybeSingle()
+  return px?.id ? tu.id : null
+}
+
 async function handleReview(svc: any, body: any, authHeader: string): Promise<Response> {
   if (!authHeader || authHeader.endsWith(ANON_KEY)) return json({ ok: false, error: 'unauthorized' }, 401)
   const cli = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: authHeader } } })
@@ -594,10 +618,20 @@ Deno.serve(async (req) => {
     //  出すために要る。返すのは caller 本人（EFで身元検証済み）の申請だけで、
     //  report_user_id = caller.userId で絞っている＝他人の申請内容は返らない。
     //  この絞り込み条件は緩めないこと。
+    // ★代理入力の相手の分も返せるようにする（2026-09-09）。
+    //  返す相手は resolveTargetUserId で検証する＝自分自身か worker_proxies に
+    //  登録された代理対象だけ。**絞り込み自体は緩めていない**（誰の分かを検証して差し替えるだけ）。
+    //  これが無いと、代理中に相手の承認待ちを飛ばせず **同じ日付が出続けて次の日に進めない**。
+    //  実害: 今井さん（平床さんの代理）「平床さんの7日に進めない」（2026-09-09）。
+    //   平床さんの 9/5・9/6 が承認待ちなのに、今井さん自身の承認待ちで判定していたため
+    //   除外されず、最も古い未送信日が 9/5 のまま動かなかった。
+    const pendingFor = await resolveTargetUserId(svc, caller, body.userId)
+    if (!pendingFor) return json({ ok: false, error: 'proxy_not_allowed' }, 403)
+
     const { data } = await svc.from('daily_report_pending_edits')
       .select('report_date, kind, payload')
       .eq('account_id', caller.accountId).eq('status', 'pending')
-      .eq('report_user_id', caller.userId)
+      .eq('report_user_id', pendingFor)
 
     // ★未確認の差し戻しも一緒に返す。これが無いと作業員は差し戻されたことに
     //  気づけない（バッジが黙って消えるだけで承認と区別がつかなかった）。
@@ -605,7 +639,7 @@ Deno.serve(async (req) => {
     const { data: rej } = await svc.from('daily_report_pending_edits')
       .select('id, report_date, kind, reject_reason, reviewed_by_name, reviewed_at')
       .eq('account_id', caller.accountId).eq('status', 'rejected')
-      .eq('report_user_id', caller.userId).is('acknowledged_at', null)
+      .eq('report_user_id', pendingFor).is('acknowledged_at', null)
       .order('reviewed_at', { ascending: false }).limit(20)
 
     return json({

@@ -140,6 +140,13 @@
               <span v-if="rep._pendingOnly || pendingDates.has(rep.date)" class="status-badge badge-pending" data-testid="history-pending">
                 {{ $t('history.pendingApproval') }}
               </span>
+              <!-- ★代理中は誰の分かを明示する（2026-09-09）。
+                   実害: 今井さん「平床さんの6日を送ったつもりが承認待ちが今井のになってる気がします」
+                   「承認が代理の場合明記されてない？」。データは正しく平床さん名義だったが、
+                   画面に誰の分か出ていないため自分の分に見えていた。 -->
+              <span v-if="proxy.proxyTarget.value" class="status-badge badge-proxy" data-testid="history-proxy-owner">
+                {{ $t('history.proxyOwner', { name: proxy.proxyTarget.value.name }) }}
+              </span>
             </div>
 
             <!-- 承認待ちの説明。編集の承認待ち（日報が既にある）と、まだ日報が無い新規提出とで
@@ -252,9 +259,23 @@ async function callEditLog(payload: Record<string, unknown>): Promise<any | null
   return await res.json().catch(() => null)
 }
 
+/** 表示対象の users.id。代理中は代理先、通常は自分。
+ *  ★同じ問い合わせが散らばると片方だけ直して取り違えるので1箇所にまとめる。 */
+async function viewingUserId(): Promise<string | null> {
+  const t = proxy.proxyTarget.value
+  if (!t) return selfUser.value?.id ?? null
+  const { data } = await useSupabase().from('users').select('id').eq('worker_id', t.id).maybeSingle()
+  return (data as any)?.id ?? null
+}
+
 async function loadPendingDates() {
   try {
-    const j = await callEditLog({ action: 'pending-dates' })
+    // ★代理中は「代理先の」承認待ちを読む（2026-09-09）。
+    //  本人固定だったため、代理に切り替えても **自分の承認待ちが表示され続けていた**。
+    //  実害: 今井さん「平床さんの6日送ったつもりが承認待ちが今井のになってる気がします」。
+    //  データ自体は平床さん名義で正しく、表示だけが自分のものだった。
+    const uid = await viewingUserId()
+    const j = await callEditLog({ action: 'pending-dates', ...(proxy.proxyTarget.value && uid ? { userId: uid } : {}) })
     if (!j?.ok) return
     pendingDates.value = new Set((j.dates ?? []).map((d: any) => d.date))
     pendingOnly.value = (j.dates ?? [])
@@ -450,7 +471,9 @@ watch(() => proxy.proxyTarget.value, async () => {
   // ★未送信も引き直す（2026-09-08）。これが無いと代理に切り替えても
   //  自分の未送信が出たままになり、相手の分に気づけない。
   //  （代理中は未送信を出さない仕様だった名残で、切替時の再計算が無かった）
-  void loadUnsubmitted()
+  //  ★承認待ちも同じ理由で引き直す（2026-09-09）。順に走らせる
+  //   （未送信の判定が承認待ちを使うので、先に承認待ちを確定させる）。
+  void loadPendingDates().then(loadUnsubmitted)
 })
 
 // ── 実打刻（2026-08-10 大塚さん「日報の中に実際打った打刻時間も出てくればいい」）──
@@ -632,6 +655,7 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--font)
 </style>
 
 <style scoped>
+.badge-proxy { background:#fef3c7;color:#92400e;font-weight:700; }
 .unsub-proxy { display:block;margin-top:2px;font-size:11px;font-weight:700;color:#b45309; }
 .main { max-width: 640px; margin: 0 auto; padding: 16px 16px 80px; }
 

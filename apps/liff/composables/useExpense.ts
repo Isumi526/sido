@@ -633,7 +633,7 @@ export const useExpense = () => {
     //  承認待ちが素通りしていた。結果、提出しても同じ日が出続けた
     //  （2026-08-18 大塚さん「なんか、15日が一生でてくる」）。
     //  呼び出し側に頼ると必ずまた漏れるので、判定する側で完結させる。
-    const pending = await useReportEditApi().pendingDates().catch(() => [] as string[])
+    const pending = await useReportEditApi().pendingDates(user.id).catch(() => [] as string[])
     const submittedDates = new Set([
       ...(reports ?? []).map((r: any) => r.date as string),
       ...excludeDates,
@@ -699,7 +699,7 @@ export const useExpense = () => {
     // ★EF経由。未提出日の算出なので失敗を空に倒さない（全部未提出に見えてしまう）
     const submitted = await useDailyReportsApi().submittedDates(effStart, today, userId)
     // ★承認待ちも「出し済み」扱い。ここで取りに行く（呼び出し側に任せると必ず漏れる・2026-08-18）
-    const pending = await useReportEditApi().pendingDates().catch(() => [] as string[])
+    const pending = await useReportEditApi().pendingDates(userId).catch(() => [] as string[])
     const done = new Set([...submitted, ...excludeDates, ...pending])
 
     const out: string[] = []
