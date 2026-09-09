@@ -119,5 +119,7 @@
   "stepReadyCheckin": "準備ができました。下のボタンで出勤を記録してください。",
   "stepReadyCheckout": "準備ができました。下のボタンで退勤を記録してください。",
   "moreActions": "打刻を忘れた・間違えた時は",
-  "stepNoLocationNote": "位置情報は取得できませんでしたが、このまま記録できます。"
+  "stepNoLocationNote": "位置情報は取得できませんでしたが、このまま記録できます。",
+  "againTitle": "もう一度 出勤する",
+  "againNote": "夜勤明けにそのまま日中も働く場合など、同じ日に2回目の出退勤ができます。"
 }
