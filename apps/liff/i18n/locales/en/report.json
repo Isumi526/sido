@@ -209,5 +209,6 @@
   "leaveHoursTooLong": "Exceeds the standard working hours per day ({h}h)",
   "checkoutToastTime": "Checked out {time}",
   "checkoutToastText": "Recorded",
-  "expenseOnlyNote": "No work hours on this day. If you have site-related expenses (hotel, fuel, etc.), pick the site and enter them below."
+  "expenseOnlyNote": "No work hours on this day. You can submit as is.",
+  "expenseOpen": "Add expenses (hotel, fuel, etc.)"
 }

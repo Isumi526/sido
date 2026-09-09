@@ -26,13 +26,29 @@ async function openReport(page: any) {
 }
 
 test.describe('有給・稼働なしの日の経費入力', () => {
-  test('★有給を選んでも現場ブロックが出て、経費だけ入力できる案内が出る', async ({ page }) => {
+  test('★有給の既定は「何も無い日」。現場UIは畳まれ、そのまま送信できる', async ({ page }) => {
     await openReport(page)
     await page.getByTestId('work-status').selectOption('paid_leave')
-    await page.waitForTimeout(500)
+    await page.waitForTimeout(600)
 
-    await expect(page.getByTestId('expense-only-note'), '経費だけ入れられる旨の案内').toBeVisible()
-    await expect(page.getByTestId('site-select-0'), '有給でも現場を選べる').toBeVisible()
+    await expect(page.getByTestId('expense-only-note'), 'そのまま送信できる旨の案内').toBeVisible()
+    await expect(page.getByTestId('site-select-0'), '既定では現場UIを出さない（情報過多にしない）').toBeHidden()
+    await expect(page.getByTestId('expense-open'), '経費がある人だけ開ける').toBeVisible()
+
+    // ★何も入れずに送信できる（現場は稼働なしの日は必須ではない）
+    await page.getByTestId('omission-confirm').check()
+    await expect(page.locator('button[type="submit"].btn-submit'), '何も無くても送信できる').toBeEnabled()
+  })
+
+  test('★「経費を登録する」を押すと現場UIが出て、経費を紐づけられる', async ({ page }) => {
+    await openReport(page)
+    await page.getByTestId('work-status').selectOption('paid_leave')
+    await page.waitForTimeout(600)
+    await page.getByTestId('expense-open').click()
+    await page.waitForTimeout(400)
+
+    await expect(page.getByTestId('site-select-0'), '開けば現場を選べる').toBeVisible()
+    await expect(page.getByTestId('expense-open'), '開いたらボタンは消える').toHaveCount(0)
   })
 
   test('★有給の日は作業時間（作業員）の入力が出ない＝人件費は発生しない', async ({ page }) => {
@@ -44,12 +60,12 @@ test.describe('有給・稼働なしの日の経費入力', () => {
     await page.waitForTimeout(600)
     await expect(page.locator('.self-off-check'), '稼働ありなら「下請けのみ」チェックが出る').toBeVisible()
 
-    // 有給に切り替えると稼働の入力が消える
+    // 有給に切り替えると稼働の入力が消える（現場が入っているので現場UIは畳まれない）
     await page.getByTestId('work-status').selectOption('paid_leave')
     await page.waitForTimeout(600)
     await expect(page.locator('.self-off-check'), '有給では稼働の入力自体を出さない').toHaveCount(0)
-    // 現場と経費は引き続き入力できる
-    await expect(page.getByTestId('site-select-0')).toBeVisible()
+    // ★入力済みの現場は消さない（消えて見えると入れ直しになる）
+    await expect(page.getByTestId('site-select-0'), '入力済みの現場は畳まない').toBeVisible()
   })
 
   test('稼働ありに戻すと作業時間の入力が戻る', async ({ page }) => {
@@ -66,11 +82,14 @@ test.describe('有給・稼働なしの日の経費入力', () => {
     await expect(page.locator('.self-off-check'), '稼働ありに戻れば稼働の入力も戻る').toBeVisible()
   })
 
-  test('稼働なし（休み）でも案内と現場ブロックが出る', async ({ page }) => {
+  test('稼働なし（休み）も同じ（既定は畳む・開けば出る）', async ({ page }) => {
     await openReport(page)
     await page.getByTestId('work-status').selectOption('off')
-    await page.waitForTimeout(500)
+    await page.waitForTimeout(600)
     await expect(page.getByTestId('expense-only-note')).toBeVisible()
+    await expect(page.getByTestId('site-select-0')).toBeHidden()
+    await page.getByTestId('expense-open').click()
+    await page.waitForTimeout(400)
     await expect(page.getByTestId('site-select-0')).toBeVisible()
   })
 })
