@@ -189,9 +189,15 @@ async function onPickTemplate(ev: Event) {
 
 <template>
   <div class="page">
-    <h1 class="page-title">見積Excel連携</h1>
+    <h1 class="page-title">見積Excel連携<span class="beta" data-testid="ee-beta">ベータ</span></h1>
     <p class="lead">
       入力は今までどおりExcelで行い、<b>単価を探す作業</b>と<b>工種別への転記</b>だけをアプリが肩代わりします。
+    </p>
+    <!-- ★試用中であることを明示する。誤りが混ざる前提で使ってもらうため、
+         「何が不確かか」まで書く（ベータの一言だけだと油断させる）。 -->
+    <p class="beta-note">
+      試用中の機能です。<b>出てきた金額はそのまま使わず、必ず元の見積書と照らし合わせてください。</b>
+      読み取りは完全ではなく、実データでも単位を1件読み違えた例があります（㎡ を m）。
     </p>
 
     <p v-if="err" class="msg err" data-testid="ee-error">{{ err }}</p>
@@ -302,6 +308,12 @@ async function onPickTemplate(ev: Event) {
 <style scoped>
 .page { padding: 24px; max-width: 980px; }
 .page-title { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+.beta { display: inline-block; margin-left: 10px; padding: 2px 9px; border-radius: 3px;
+        background: #FFF3E0; color: #E65100; border: 1px solid #FFCC80;
+        font-size: 12px; font-weight: 700; vertical-align: middle; }
+.beta-note { background: #FFF8E1; border: 1px solid #FFE082; color: #8D6E00;
+             border-radius: 8px; padding: 10px 14px; font-size: 13px; line-height: 1.8;
+             margin: 0 0 18px; }
 .lead { color: #555; font-size: 14px; margin-bottom: 20px; }
 .msg { padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 14px; }
 .msg.err { background: #FFEBEE; color: #B71C1C; border: 1px solid #FFCDD2; }

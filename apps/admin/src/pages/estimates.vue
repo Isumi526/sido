@@ -10,7 +10,7 @@
       </h1>
       <button class="btn-add" @click="openAdd">＋ 見積書を登録</button>
     </div>
-    <p v-if="extractMsg" class="extract-msg" data-testid="extract-msg">{{ extractMsg }}</p>
+    <p v-if="extractMsg" class="extract-msg" data-testid="extract-msg"><b>ベータ</b>　{{ extractMsg }}</p>
     <p class="hint">業者から受け取った見積書PDFをアップロードし、業者・現場に紐付けて保存します。合計金額・工事内容は目視で入力してください（AIによる自動抽出は今後対応）。</p>
 
     <div v-if="loading" class="empty">読み込み中…</div>

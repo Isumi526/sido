@@ -97,7 +97,7 @@
         <li v-if="canViewManagementPages"><RouterLink to="/assets" class="nav-link"><span class="material-symbols-rounded nav-icon">inventory_2</span>物品マスタ</RouterLink></li>
         <li v-if="canViewManagementPages"><RouterLink to="/inventory" class="nav-link"><span class="material-symbols-rounded nav-icon">warehouse</span>在庫管理</RouterLink></li>
         <li v-if="canViewEstimates"><RouterLink to="/estimate-masters" class="nav-link"><span class="material-symbols-rounded nav-icon">price_change</span>見積マスタ・単価表</RouterLink></li>
-        <li v-if="canViewEstimates"><RouterLink to="/estimate-excel" class="nav-link"><span class="material-symbols-rounded nav-icon">table_view</span>見積Excel連携</RouterLink></li>
+        <li v-if="canViewEstimates"><RouterLink to="/estimate-excel" class="nav-link"><span class="material-symbols-rounded nav-icon">table_view</span>見積Excel連携<span class="nav-beta">β</span></RouterLink></li>
 
         <template v-if="canViewManagementPages">
           <li class="nav-section">管理・設定</li>
@@ -336,4 +336,6 @@ async function handleLogout() {
   .topbar, .sidebar, .drawer-overlay { display: none !important; }
   .content { margin-left: 0 !important; padding: 0 !important; }
 }
+.nav-beta { margin-left: 6px; font-size: 10px; font-weight: 700; color: #E65100;
+            background: #FFF3E0; border-radius: 3px; padding: 0 4px; }
 </style>
