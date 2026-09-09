@@ -209,5 +209,6 @@
   "leaveHoursTooLong": "1日の所定労働時間（{h}時間）を超えています",
   "checkoutToastTime": "退勤 {time}",
   "checkoutToastText": "記録しました",
-  "expenseOnlyNote": "この日は稼働なしのため、作業時間の入力はありません。現場に紐づく経費（ホテル代・ガソリン等）があれば、現場を選んで入力してください。"
+  "expenseOnlyNote": "この日は稼働なしのため、作業時間の入力はありません。このまま送信できます。",
+  "expenseOpen": "経費を登録する（ホテル代・ガソリン等）"
 }
