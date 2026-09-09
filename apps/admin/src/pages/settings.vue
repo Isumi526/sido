@@ -434,6 +434,14 @@ type Setting = { key: string; value: string; label: string; inputType?: string }
 const DEFAULTS: Setting[] = [
   { key: 'service_start_date', label: 'サービス開始日',    value: '', inputType: 'date' },
   { key: 'notify_group_id',    label: 'LINE通知グループID', value: '', inputType: 'text' },
+  // ★8時間超（残業系）の時間単価は「(日当 − 控除額) ÷ 8」で計算する。
+  //  日当には移動・拘束など8時間ぶんの労働以外の要素が含まれるため、
+  //  9時間目以降にも日当÷8を掛けると払い過ぎになる、という賃金規程に対応する。
+  //  0（未設定）なら控除なし＝従来どおり 日当÷8。会社ごとに違うのでここで持つ。
+  { key: 'overtime_wage_deduction',      label: '8時間超の日当控除額（円・0で控除なし）', value: '0', inputType: 'text' },
+  //  控除の発効日。人件費は保存せず都度計算しているので、
+  //  ここを空にすると過去の月次集計まで一斉に金額が変わる。
+  { key: 'overtime_wage_deduction_from', label: '8時間超の日当控除の発効日（空＝全期間）', value: '', inputType: 'date' },
 ]
 
 const settings  = ref<Setting[]>([])

@@ -328,7 +328,7 @@ function itemName(row: ExpenseRow): string {
   return expenseDisplayCategory(row.category)
 }
 
-/** 申請PDF(明細/請求書)を開く。パスは generateExpensePdf.uploadApplicationPdf と一致。
+/** 申請PDF(明細/請求書)を開く。パスは generateExpensePdf.applicationPdfPath と一致。
  *  ★公開URLを直接 href に入れるのをやめた。新規分は非公開バケットに入るので
  *   署名URLの取得（非同期）が要る。既存分は dual-read で公開URLに落ちる。 */
 async function openApplicationPdf(row: { userId: string; periodKey: string }, kind: 'meisai' | 'seikyu'): Promise<void> {

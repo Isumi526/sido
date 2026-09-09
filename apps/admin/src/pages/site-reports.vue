@@ -484,7 +484,7 @@ import { getAccountId } from '../lib/account'
 import { useQueryParam, useYearMonthParam } from '../composables/useQueryParam'
 import { resolveDocUrl } from '../lib/docUrl'
 import HelpButton from '../components/HelpButton.vue'
-import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, wageForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
+import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, wageForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE, readOtDeductionSettings, otDeductionForDate } from '../lib/workerHours'
 import type { WageMode } from '../lib/workerHours'
 import { canViewWages, canViewHourlyWage, canViewManagementPages } from '../lib/auth'
 import { canViewEstimatesForSite } from '../lib/features'
@@ -861,6 +861,8 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
     siteNameById: Object.fromEntries((siteRows ?? []).map((s: any) => [s.id, s.name])),
   }
   const wageTimelines = buildWageTimelines((wh ?? []) as any[])  // 作業員ごとの昇給timeline（日付別単価解決用）
+  // 8時間超に適用する日当からの控除（アカウント単位・未設定は0＝従来どおり）
+  const otDed = readOtDeductionSettings(cfg as any[])
   // 設定値を上書き
   for (const row of (cfg ?? [])) {
     if (row.key === 'gasoline_rate_per_km')        G_YEN  = Number(row.value)
@@ -969,7 +971,8 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
         const breakdown = laborMap.get(w) ?? ZERO_BREAKDOWN
         // 単価セルは選択中モードの単価を表示（既定=日当／実質賃金ONは時給）
         const unitPrice = wageMode.value === 'real' ? hourly : daily
-        g.workers.push({ ...w, ...breakdown, role: w.workerRole ?? 'site', unitPrice, _wageMode: wageMode.value, laborCost: laborCostForBreakdown(breakdown, daily, hourly, wageMode.value) })
+        g.workers.push({ ...w, ...breakdown, role: w.workerRole ?? 'site', unitPrice, _wageMode: wageMode.value, laborCost: laborCostForBreakdown(breakdown, daily, hourly, wageMode.value,
+          otDeductionForDate(date, otDed.deduction, otDed.fromDate)) })
         // 出張費は人件費(社員)に混ぜず、主たる現場の別費目として計上（原価視点・複数現場でも主現場に1回）
         if (tripSet?.has(w)) g.tripCost += BUSINESS_TRIP_ALLOWANCE
       }

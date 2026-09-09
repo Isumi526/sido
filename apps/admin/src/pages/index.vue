@@ -161,7 +161,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
-import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, wageForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE } from '../lib/workerHours'
+import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, wageForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE, readOtDeductionSettings, otDeductionForDate } from '../lib/workerHours'
 import type { WageMode } from '../lib/workerHours'
 import { canViewWages, canViewHourlyWage, canViewManagementPages } from '../lib/auth'
 import { resolveSiteRef, type SiteResolveCtx } from '../lib/siteKey'
@@ -301,6 +301,8 @@ async function load() {
     siteNameById: Object.fromEntries((siteRows ?? []).map((s: any) => [s.id, s.name])),
   }
   const wageTimelines = buildWageTimelines((wh ?? []) as any[])
+  // 8時間超に適用する日当からの控除（アカウント単位・未設定は0＝従来どおり）
+  const otDed = readOtDeductionSettings(cfg as any[])
   for (const row of (cfg ?? [])) {
     if (row.key === 'gasoline_rate_per_km')        G_YEN  = Number(row.value)
     if (row.key === 'diesel_rate_per_km')           D_YEN  = Number(row.value)
@@ -380,7 +382,8 @@ async function load() {
         // 日報の日付に有効だった賃金で計算（昇給で過去の人件費が動かないように）
         const { daily, hourly } = wageForDate(date, wid ? wageTimelines.get(wid) : undefined, curDaily, curHourly)
         // 既定は日当/8×稼働。office以上が実質賃金トグルONなら時給×稼働。
-        const cost = laborCostForBreakdown(laborMap.get(w) ?? ZERO_BREAKDOWN, daily, hourly, wageMode.value)
+        const cost = laborCostForBreakdown(laborMap.get(w) ?? ZERO_BREAKDOWN, daily, hourly, wageMode.value,
+          otDeductionForDate(date, otDed.deduction, otDed.fromDate))
         labor += cost
         addDetail(details, '社員', date, `${w.workerName}／${siteName}`, cost)
       }

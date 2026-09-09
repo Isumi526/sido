@@ -303,25 +303,90 @@ export function perHourForMode(dailyWage: number, hourlyWage: number, mode: Wage
   return mode === 'real' ? (hourlyWage || 0) : (dailyWage || 0) / 8
 }
 
-/** 料率別時間 × perHour で人件費を算出（割増率は労基準拠で日当/実質賃金いずれも共通）。 */
-export function laborCostFromPerHour(b: RateBreakdown, perHour: number): number {
-  if (!perHour) return 0
+/**
+ * 8時間超（残業系）に使う時間単価。
+ *
+ * ★なぜ通常時間と別の単価が要るか（2026-09-09・佐谷さんの確認済み仕様）
+ *  日当には「8時間ぶんの労働」以外の要素（現場までの移動・拘束など）が
+ *  含まれているため、9時間目以降にまで日当÷8をそのまま掛けると払い過ぎになる。
+ *  そこで 8時間を超えた分だけ「日当 − 控除額」を8で割った単価を基礎にする。
+ *    例: 日当20000・控除8000 → 8時間までは 2500円/h、9時間目からは 1500円/h
+ *
+ * ★控除額はアカウント単位の設定（settings.overtime_wage_deduction）。
+ *  コードに直書きしない。控除は会社ごとの賃金規程であって、
+ *  他テナントに同じ額が効いてしまうと即座に金額が狂う。既定0＝従来どおり。
+ *
+ * ★mode='real'（時給登録の人）は控除しない。
+ *  日当が無いので「日当から引く」が定義できないため（佐谷さん確認済み）。
+ */
+export function otPerHourForMode(
+  dailyWage: number, hourlyWage: number, mode: WageMode = 'daily', deduction = 0,
+): number {
+  if (mode === 'real') return hourlyWage || 0
+  return Math.max(0, (dailyWage || 0) - (deduction || 0)) / 8
+}
+
+/** 料率別時間 × perHour で人件費を算出（割増率は労基準拠で日当/実質賃金いずれも共通）。
+ *  otPerHour は「8時間を超えた区分」に使う単価。省略時は perHour と同じ＝従来の挙動。 */
+export function laborCostFromPerHour(b: RateBreakdown, perHour: number, otPerHour = perHour): number {
+  if (!perHour && !otPerHour) return 0
   return Math.round(
-    (b.hoursNormal        || 0) * perHour * 1.00 +
-    (b.hoursOT            || 0) * perHour * 1.25 +
-    (b.hoursNight         || 0) * perHour * 1.25 +
-    (b.hoursOTNight       || 0) * perHour * 1.50 +
-    (b.hoursSunday        || 0) * perHour * 1.35 +
-    (b.hoursSundayOT      || 0) * perHour * 1.60 +
-    (b.hoursSundayNight   || 0) * perHour * 1.60 +
-    (b.hoursSundayOTNight || 0) * perHour * 1.85,
+    // ── 8時間以内 ──（深夜・休日も 8h 以内なら通常単価が基礎）
+    (b.hoursNormal        || 0) * perHour   * 1.00 +
+    (b.hoursNight         || 0) * perHour   * 1.25 +
+    (b.hoursSunday        || 0) * perHour   * 1.35 +
+    (b.hoursSundayNight   || 0) * perHour   * 1.60 +
+    // ── 8時間超（残業系）──ここだけ otPerHour が基礎になる
+    (b.hoursOT            || 0) * otPerHour * 1.25 +
+    (b.hoursOTNight       || 0) * otPerHour * 1.50 +
+    (b.hoursSundayOT      || 0) * otPerHour * 1.60 +
+    (b.hoursSundayOTNight || 0) * otPerHour * 1.85,
   )
 }
 
+/**
+ * settings から読んだ「8時間超の控除」を、その日報日付に適用してよいか判定して返す。
+ *
+ * ★発効日より前は 0（従来の計算）を返す。
+ *  人件費は保存せず表示のたびに計算し直しているので、発効日を見ないと
+ *  過去の月次集計まで一斉に金額が変わる。「◯月以降だけ」を守るための関門。
+ *
+ * @param date     日報の日付 YYYY-MM-DD
+ * @param deduction settings.overtime_wage_deduction（円）
+ * @param fromDate  settings.overtime_wage_deduction_from（YYYY-MM-DD・空なら全期間）
+ */
+export function otDeductionForDate(date: string, deduction: number, fromDate?: string | null): number {
+  if (!deduction || deduction <= 0) return 0
+  if (fromDate && date < fromDate) return 0
+  return deduction
+}
+
+/** settings 行（key/value）から 8時間超の控除設定を読む。未設定は控除なし。 */
+export const OT_DEDUCTION_KEY = 'overtime_wage_deduction'
+export const OT_DEDUCTION_FROM_KEY = 'overtime_wage_deduction_from'
+export function readOtDeductionSettings(
+  rows: { key: string; value: string | null }[] | null | undefined,
+): { deduction: number; fromDate: string | null } {
+  const m = new Map((rows ?? []).map(r => [r.key, r.value]))
+  const raw = Number(m.get(OT_DEDUCTION_KEY) ?? 0)
+  const from = (m.get(OT_DEDUCTION_FROM_KEY) ?? '').trim()
+  return {
+    deduction: Number.isFinite(raw) && raw > 0 ? raw : 0,
+    fromDate: /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : null,
+  }
+}
+
 /** 料率別時間 × 賃金(日当/時給 + mode) で人件費を算出。
- *  mode='daily'(既定): 日当/8h × 稼働。 mode='real': 時給 × 稼働。 */
-export function laborCostForBreakdown(b: RateBreakdown, dailyWage: number, hourlyWage: number, mode: WageMode = 'daily'): number {
-  return laborCostFromPerHour(b, perHourForMode(dailyWage, hourlyWage, mode))
+ *  mode='daily'(既定): 日当/8h × 稼働。 mode='real': 時給 × 稼働。
+ *  deduction: 8時間超に適用する日当からの控除額（既定0＝従来どおり）。 */
+export function laborCostForBreakdown(
+  b: RateBreakdown, dailyWage: number, hourlyWage: number, mode: WageMode = 'daily', deduction = 0,
+): number {
+  return laborCostFromPerHour(
+    b,
+    perHourForMode(dailyWage, hourlyWage, mode),
+    otPerHourForMode(dailyWage, hourlyWage, mode, deduction),
+  )
 }
 
 export const ZERO_BREAKDOWN: RateBreakdown = {
