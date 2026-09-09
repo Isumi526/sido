@@ -176,6 +176,35 @@ export class XlsxTemplate {
   }
 
   /**
+   * 入力規則（ドロップダウン）の参照先を差し替える。
+   *
+   * ★なぜ必要か（2026-09-10 実測）
+   *  Excel の「打ち込むと候補が絞り込まれる」入力補完は、
+   *  **参照先が直接の範囲参照のときしか効かない**。
+   *    ='候補表'!$A$2:$A$30                      → 効く
+   *    =OFFSET('候補表'!$A$2,0,0,COUNTA(...),1)  → 効かない
+   *  かといって $A$2:$A$500 のように空白を含めても具合が悪い。
+   *  そこで「書き込んだ実件数ぶんの直接参照」へ毎回書き換える。
+   *
+   * @param sheet   対象シート
+   * @param match   置き換えたい既存の formula1 を見分ける文字列（部分一致）
+   * @param formula 新しい参照（先頭の = は不要）
+   */
+  async replaceValidationSource(sheet: string, match: string, formula: string): Promise<number> {
+    const path = this.pathOf(sheet)
+    let xml = await this.zip.file(path)!.async('string')
+    let n = 0
+    xml = xml.replace(/<dataValidation\b[\s\S]*?<\/dataValidation>/g, (block) => {
+      if (!block.includes(match)) return block
+      n++
+      return block.replace(/<formula1>[\s\S]*?<\/formula1>/,
+        `<formula1>${formula.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</formula1>`)
+    })
+    if (n) this.zip.file(path, xml)
+    return n
+  }
+
+  /**
    * 開いた時に全再計算させる（workbook.xml の calcPr に fullCalcOnLoad を立てる）。
    *
    * ★なぜ要るか: このモジュールは値だけを差し替えるので、数式セルに入っている

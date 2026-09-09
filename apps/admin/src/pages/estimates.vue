@@ -10,6 +10,7 @@
       </h1>
       <button class="btn-add" @click="openAdd">＋ 見積書を登録</button>
     </div>
+    <p v-if="extractMsg" class="extract-msg" data-testid="extract-msg">{{ extractMsg }}</p>
     <p class="hint">業者から受け取った見積書PDFをアップロードし、業者・現場に紐付けて保存します。合計金額・工事内容は目視で入力してください（AIによる自動抽出は今後対応）。</p>
 
     <div v-if="loading" class="empty">読み込み中…</div>
@@ -280,12 +281,43 @@ async function save() {
       const { error: upErr } = await supabase.storage.from(PDF_BUCKET).upload(path, file.value, { upsert: true, contentType: file.value.type || 'application/pdf' })
       if (upErr) throw upErr
       await supabase.from('estimates').update({ pdf_path: path, pdf_bucket: PDF_BUCKET }).eq('id', estId)
+      // ★PDFを付けたら明細を自動で読み取る（2026-09-10）。
+      //  ボタンを別に置くと押し忘れる＝履歴が溜まらない。実際、手入力しか経路が
+      //  無かった estimate_quote_lines は本番で0行のままだった。
+      //  失敗しても登録自体は成立させる（見積書の保存を人質にしない）。
+      void extractLines(estId)
     }
     modal.value = null; await load()
   } catch (e: any) {
     saveError.value = e.message ?? '保存に失敗しました'
   } finally {
     saving.value = false
+  }
+}
+
+/**
+ * 見積書PDFから明細を読み取って単価履歴に溜める。
+ * ★商社の書類（資材の価格表）はEF側で弾く。混ぜると作業の候補に材料単価が出る。
+ */
+const extractMsg = ref('')
+async function extractLines(estimateId: string) {
+  extractMsg.value = '見積書から明細を読み取っています…'
+  try {
+    const { data, error } = await supabase.functions.invoke('estimate-quote-extract', {
+      body: { estimate_id: estimateId },
+    })
+    if (error || !data?.ok) {
+      extractMsg.value = `明細の自動読み取りに失敗しました（見積書は登録済みです）: ${data?.error ?? error?.message ?? ''}`
+      return
+    }
+    if (data.skipped) { extractMsg.value = data.message ?? '取り込み対象外でした'; return }
+    extractMsg.value = data.inserted > 0
+      ? `明細を ${data.inserted} 行読み取り、単価履歴に追加しました。`
+      : (data.message ?? '明細を読み取れませんでした。')
+  } catch (e: unknown) {
+    extractMsg.value = `明細の自動読み取りに失敗しました（見積書は登録済みです）: ${e instanceof Error ? e.message : String(e)}`
+  } finally {
+    setTimeout(() => { extractMsg.value = '' }, 12000)
   }
 }
 
@@ -297,6 +329,7 @@ async function remove(e: Estimate) {
 </script>
 
 <style scoped>
+.extract-msg { background:#EAF0F5; border:1px solid #B9CFE0; color:#1F3D57; border-radius:8px; padding:9px 13px; font-size:13px; margin:0 0 10px; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .page-title { font-size: 22px; font-weight: 700; }
 .hint { font-size: 12px; color: #999; margin: 0 0 20px; }

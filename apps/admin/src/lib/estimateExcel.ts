@@ -97,6 +97,9 @@ export const SEED_FORMAT: EstimateFormat = {
   tradeCol: { name: 'B', spec: 'C', w: 'D', d: 'E', h: 'F', quantity: 'N', unit: 'O', costUnitPrice: 'P' },
 }
 
+/** 入力規則を書き換える対象シート（明細が並ぶシート）。 */
+const MAIN_SHEET_FOR_DV = SEED_FORMAT.mainSheet
+
 const num = (v: CellValue): number | null =>
   typeof v === 'number' ? v : (typeof v === 'string' && v.trim() !== '' && !isNaN(Number(v)) ? Number(v) : null)
 const str = (v: CellValue): string => (v == null ? '' : String(v)).trim()
@@ -285,6 +288,12 @@ export async function writePriceSheets(
   const cand: Record<string, CellValue> = {}
   for (let i = 0; i < MAX; i++) cand[`A${2 + i}`] = all[i] ?? null
   await t.writeCells('候補表', cand)
+
+  // ★名称のドロップダウンを「実件数ぴったりの直接参照」へ書き換える。
+  //  Excel の入力補完（打ち込むと絞り込まれる機能）は直接の範囲参照でしか効かない。
+  //  OFFSET 等の数式で作った動的範囲では効かないことを実測で確認している。
+  const lastRow = Math.max(2, all.length + 1)
+  await t.replaceValidationSource(MAIN_SHEET_FOR_DV, '候補表', `'候補表'!$A$2:$A$${lastRow}`)
 
   return { priceRows: rows.length, candidates: all.length }
 }

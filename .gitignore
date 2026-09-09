@@ -14,6 +14,8 @@ package-lock 2.json
 replacements.txt
 docs/contracts/
 docs/proposals/
+# 弁護士打合せの書き起こし・契約書の論点整理（★このリポジトリは public。載せると外に出る）
+docs/internal/
 *_提案資料.md
 *_提案資料.pdf
 *_契約書.md
@@ -39,3 +41,4 @@ scheduled_tasks.lock
 
 # 本番スモークの認証状態（Supabaseトークンを含む・絶対にコミットしない）
 tests/prod/.auth.json
+supabase/functions/.env

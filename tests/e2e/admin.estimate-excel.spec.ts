@@ -162,4 +162,25 @@ test.describe('見積Excel連携', () => {
     await expect(page.locator('h1')).toContainText('見積Excel連携')
     await expect(page.getByTestId('ee-price-count')).toBeVisible({ timeout: 15000 })
   })
+
+  test('★名称のドロップダウンは「実件数ぴったりの直接参照」になる', async ({ page }) => {
+    const r = await runInPage<any>(page, b64(), `
+      const t = await cells.XlsxTemplate.load(buf)
+      // テンプレの体裁だけ借りて、候補を書き込む
+      if (!t.has('候補表')) return { skipped: true }
+      const prices = [
+        { workName: '天井 下地組', unitPrice: 1200, vendorName: 'ジング', quotedOn: '2025-09-20' },
+        { workName: '壁面 PB貼',   unitPrice: 1400, vendorName: 'ジング', quotedOn: '2025-09-20' },
+      ]
+      const res = await est.writePriceSheets(t, prices, { locations: ['（壁面工事）'], trades: ['■軽鉄工事'] })
+      // 書き換え後の参照を、同じ条件でもう一度当てて件数を数える
+      const hit = await t.replaceValidationSource('全体見積', '候補表', "'候補表'!$A$2:$A$" + (res.candidates + 1))
+      return { candidates: res.candidates, hit }
+    `)
+    if (r.skipped) return
+    // ★Excelの入力補完は直接の範囲参照でしか効かない（OFFSET等の数式では効かない）。
+    //  書き換えが当たっていること＝参照が実件数ぴったりに保たれていること。
+    expect(r.hit, '名称の入力規則を書き換えている').toBe(1)
+    expect(r.candidates, '場所1＋工種1＋作業内容2').toBe(4)
+  })
 })
