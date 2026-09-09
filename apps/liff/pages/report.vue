@@ -2475,12 +2475,13 @@ onMounted(async () => {
   if (!liff.initialized.value) await liff.init()
   await resolveWorkerRole()   // 現場作成の権限（canCreateSite）を解決
 
-  // ユーザー登録チェック（キャッシュあれば即座。未登録でもフォームは使えるが経費PDFに名前が出ない）
+  // 身元チェック（キャッシュあれば即座）。users行が無い＝作業員が紐づいていないので
+  // 日報は書けない。案内画面(/no-account)へ送る（旧: 自己登録画面 /register）。
   const userId = liff.profile.value?.userId
   if (userId) {
     selfUser.value = await expense.getUser(userId)
     if (!selfUser.value) {
-      await navigateTo('/register')
+      await navigateTo('/no-account')
       return
     }
     initWorkers()
@@ -2987,7 +2988,7 @@ async function handleSubmit() {
       if (!proxyT && (msg.includes('ユーザーが登録されていません') || msg.includes('foreign key'))) {
         if (uid) expense.clearUserCache(uid)
         selfUser.value = null
-        await navigateTo('/register')
+        await navigateTo('/no-account')
         return
       }
       // DB保存失敗でもGAS送信は続行

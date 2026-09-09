@@ -234,7 +234,7 @@ async function onCancel() {
 onMounted(async () => {
   await liff.init()
   selfUser.value = await useCurrentUser().resolve()
-  if (!selfUser.value) { await navigateTo('/register'); return }
+  if (!selfUser.value) { await navigateTo('/no-account'); return }
   await refresh()
   // 出退勤画面(出勤中の現場行)からの導線で ?site=<現場名> が付いていれば自動選択する
   // (ユーザーが現場を選び直す手間をなくす・2026-07-20)。

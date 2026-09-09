@@ -360,7 +360,7 @@ onMounted(async () => {
   const uid = liff.profile.value?.userId
   if (uid) {
     selfUser.value = await expense.getUser(uid)
-    if (!selfUser.value) { await navigateTo('/register'); return }
+    if (!selfUser.value) { await navigateTo('/no-account'); return }
     // ★代理で入れた日報は「代理先の人」のデータになるため、自分の履歴には出ない。
     //  履歴からも代理モード（相手を選んでその人の履歴を見る）に切り替えられるよう、
     //  代理先一覧をここでも取得する（従来はホーム index.vue でしか取得しておらず、

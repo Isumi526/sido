@@ -642,7 +642,7 @@ async function proceedToPunch() {
   // email/pw は worker_id 経由・LINEは line_user_id（単一ソース解決）
   const me = await useCurrentUser().resolve()
   if (!me?.worker_id) {
-    await navigateTo('/register')
+    await navigateTo('/no-account')
     return
   }
   myWorkerId.value = me.worker_id
