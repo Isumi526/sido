@@ -50,6 +50,19 @@
         </button>
       </div>
 
+      <!-- ★夜勤明けにそのまま日中も働く等、同じ日に2回目の出勤をする逃げ道（2026-09-09）。
+           出所: 辻さん「夜勤明けの日中勤務の出退勤ができない」。
+           打刻は1日1サイクル想定で、直近ログが「退勤」かつ本日ならここ(already-done)で
+           止まり2サイクル目に入れなかった。attendance_logs 側に1日1件の制約は無く、
+           UIだけの制限だったので導線を足す。
+           ★稼働有無は聞き直さない。1サイクル完了済み＝その日は稼働している人なので、
+            「休みの日に打刻フォームを触らせない」というゲートの目的には当たらない。 -->
+      <button class="already-again" data-testid="already-again" @click="startAnotherShift">
+        <span class="material-symbols-rounded">restart_alt</span>
+        {{ $t('checkin.againTitle') }}
+      </button>
+      <p class="already-again-note">{{ $t('checkin.againNote') }}</p>
+
       <!-- ★押し間違いに気づくのはこの画面。ここから辿れないと直せない（2026-09-03）。
            「今日はもう退勤済み」＝間違って退勤を押してしまった人が最初に見る画面でもある。 -->
       <!-- ★打刻の本筋ではないので畳んで置く（入力フォーム側と同じ扱いに揃える）。
@@ -803,6 +816,13 @@ async function answerWorkStatus(status: WorkStatus) {
  * ★現場別ルール(site_rules)から置き換え済み（2026-08-27）。現場特有の内容は
  *  「送り出し資料」の承認フローへ移したので、打刻には出さない。
  */
+/** 同じ日に2回目の出勤へ進む（夜勤明けの日中勤務など）。
+ *  稼働有無のゲートは通さない（既に1サイクル完了＝稼働している日なので聞く意味がない）。 */
+async function startAnotherShift() {
+  attendanceType.value = 'checkin'
+  await enterChecklist()
+}
+
 async function enterChecklist() {
   phase.value = 'loading'
   try {
@@ -915,6 +935,13 @@ async function resolveReportLink(target: Target | null) {
 </script>
 
 <style scoped>
+.already-again {
+  display:flex;align-items:center;justify-content:center;gap:6px;width:100%;
+  margin-top:16px;padding:12px;border:1px solid #16a34a;border-radius:10px;
+  background:#fff;color:#15803d;font-size:14px;font-weight:700;cursor:pointer;
+}
+.already-again .material-symbols-rounded { font-size:18px; }
+.already-again-note { margin-top:6px;font-size:11px;color:#64748b;text-align:center;line-height:1.5; }
 /* 完了画面の中に置く修正申請パネル。center-box は中央寄せなので幅を持たせる */
 .fix-slot { width: 100%; margin-top: 18px; text-align: left; }
 
