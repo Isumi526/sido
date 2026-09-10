@@ -57,6 +57,7 @@ import { ref, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { refreshNavBadges } from '../lib/navBadges'
+import { isRelinkTarget } from '../lib/relinkTarget'
 
 const DAYS = 90
 
@@ -95,6 +96,7 @@ function hoursOf(site: any): string {
   return [...new Set(spans)].join(' / ')
 }
 
+
 const loading = ref(true)
 const busy    = ref<string | null>(null)
 const rows    = ref<Row[]>([])
@@ -114,7 +116,7 @@ async function load() {
   const since = new Date(Date.now() - DAYS * 86400000).toISOString().split('T')[0]
   const [{ data: reps }, { data: sites }] = await Promise.all([
     supabase.from('daily_reports')
-      .select('id, date, sites')
+      .select('id, date, is_working, sites')
       .eq('account_id', accountId).gte('date', since)
       .order('date', { ascending: false })
       .limit(15000), // 90日×全作業員で上限(既定1000)超による未紐付け検出漏れ防止（reports.vue等の1ヶ月5000の3倍相当）
@@ -126,7 +128,8 @@ async function load() {
   for (const rep of (reps ?? []) as any[]) {
     const arr = Array.isArray(rep.sites) ? rep.sites : []
     arr.forEach((site: any, i: number) => {
-      if (site?.siteName !== '__unset__') return
+      // 判定は relinkTarget.ts に集約（ナビのバッジと同じ規則を使う）
+      if (!isRelinkTarget(site, rep.is_working)) return
       const workers = (site.workers ?? []).map((w: any) => w.workerName).filter(Boolean).join('、')
       out.push({
         key: `${rep.id}#${i}`, reportId: rep.id, siteIndex: i, date: rep.date,
