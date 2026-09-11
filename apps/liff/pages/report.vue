@@ -1069,12 +1069,14 @@ const punches = usePunches()
 const myWorkerIdForPunch = ref<string | null>(null)
 
 /**
- * その日の打刻（無ければ null＝行を出さない）。
- * ★2026-08-27 出退勤モデル変更で現場ごとの打刻は無くなった。1日の外枠（最早の出勤・
- *  最遅の退勤）を各現場行に同じものとして出す（si は行の識別にのみ残す）。
+ * その行に出す打刻（無ければ null＝行を出さない）。
+ * ★2026-08-27 出退勤モデル変更で現場ごとの打刻は無くなった。ただし1日に2回出退勤した日
+ *  （昼勤＋夜勤）は、その行の作業時刻に近い回を出す。外枠を全行に出すと夜勤行に昼勤の打刻が
+ *  付き「出勤 −10時間30分 / 退勤 +9時間43分」と出る（2026-09-11 辻さん・9/9）。
  */
-function punchOf(_si: number): { checkin?: string; checkout?: string } | null {
-  return punches.punchFor(myWorkerIdForPunch.value, report.form.value.date)
+function punchOf(si: number): { checkin?: string; checkout?: string } | null {
+  const w = report.form.value.sites?.[si]?.workers?.[0]
+  return punches.punchFor(myWorkerIdForPunch.value, report.form.value.date, w?.startTime, w?.endTime)
 }
 
 /** 打刻と申告した作業時刻のズレ（15分未満は出さない＝全行に数分のチップが並ぶのを防ぐ） */
