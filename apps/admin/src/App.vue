@@ -45,7 +45,7 @@
         <li><RouterLink to="/" class="nav-link"><span class="material-symbols-rounded nav-icon">dashboard</span>ダッシュボード</RouterLink></li>
         <li><RouterLink to="/reports" class="nav-link"><span class="material-symbols-rounded nav-icon">list_alt</span>日報一覧</RouterLink></li>
         <li><RouterLink to="/report-edit-review" class="nav-link"><span class="material-symbols-rounded nav-icon">fact_check</span>日報編集の承認<span v-if="editReviewCount" class="nav-badge">{{ editReviewCount }}</span></RouterLink></li>
-        <li><RouterLink to="/report-site-relink" class="nav-link"><span class="material-symbols-rounded nav-icon">link</span>現場未設定の紐付け<span v-if="siteUnsetCount" class="nav-badge">{{ siteUnsetCount }}</span></RouterLink></li>
+        <li><RouterLink to="/report-site-relink" class="nav-link"><span class="material-symbols-rounded nav-icon">link</span>現場未設定の紐付け<span v-if="siteUnsetCount" class="nav-badge" data-testid="nav-badge-site-unset">{{ siteUnsetCount }}</span></RouterLink></li>
         <li><RouterLink to="/overtime-approvals" class="nav-link"><span class="material-symbols-rounded nav-icon">more_time</span>残業申請の承認<span v-if="overtimePendingCount" class="nav-badge">{{ overtimePendingCount }}</span></RouterLink></li>
         <li><RouterLink to="/punch-corrections" class="nav-link"><span class="material-symbols-rounded nav-icon">edit_calendar</span>打刻修正の承認<span v-if="punchCorrectionCount" class="nav-badge">{{ punchCorrectionCount }}</span></RouterLink></li>
         <li><RouterLink to="/chats" class="nav-link"><span class="material-symbols-rounded nav-icon">forum</span>チャット<span v-if="unreadChatCount" class="nav-badge">{{ unreadChatCount }}</span></RouterLink></li>

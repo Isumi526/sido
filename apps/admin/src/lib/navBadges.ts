@@ -4,6 +4,7 @@
 //  これで同一ルート上で処理してもリロードせずバッジが即更新される。
 // ============================================================
 import { ref } from 'vue'
+import { isRelinkTarget } from './relinkTarget'
 import { supabase } from './supabase'
 import { getAccountId } from './account'
 import { pendingBaseDatesFor } from './paidLeaveGrant'
@@ -58,12 +59,13 @@ export async function refreshNavBadges() {
   // 現場未設定: 直近90日の日報の sites JSON に siteName='__unset__' が含まれる数（relink画面と同窓）
   const since = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0]
   const { data: reps } = await supabase.from('daily_reports')
-    .select('sites').eq('account_id', accountId).gte('date', since)
+    .select('is_working, sites').eq('account_id', accountId).gte('date', since)
     .limit(15000) // 90日×全作業員で上限(既定1000)超によるバッジ件数漏れ防止（reports.vue等の1ヶ月5000の3倍相当）
   let unset = 0
   for (const rep of (reps ?? []) as any[]) {
     const arr = Array.isArray(rep.sites) ? rep.sites : []
-    for (const site of arr) if (site?.siteName === '__unset__') unset++
+    // ★relink画面と同じ判定を使う（片方だけ直すと「バッジは1件・開くと空」になる）
+    for (const site of arr) if (isRelinkTarget(site, rep.is_working)) unset++
   }
   siteUnsetCount.value = unset
   // 有給の付与待ち: 入社日ありの作業員で、未付与の基準日がある人数。
