@@ -47,6 +47,10 @@ test.describe('現場マスタ：読み仮名と50音順', () => {
     await modal.locator('.input').nth(1).fill(kana)
     // 責任者は必須(a472f7e)。専用に用意した候補を選択。
     await modal.locator('[data-testid="site-responsible-select"]').selectOption(respWorkerId)
+    // 住所・工期も必須（2026-09-13・新規現場）
+    await modal.getByTestId('site-location').fill('愛知県名古屋市中区栄1-1')
+    await modal.getByTestId('site-period-start').fill('2026-10-01')
+    await modal.getByTestId('site-period-undecided').check()
     await modal.locator('.btn-save').click()
 
     // 一覧に行が出て読み仮名セルに反映
