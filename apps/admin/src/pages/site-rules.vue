@@ -4,15 +4,22 @@
       <div class="header-left">
         <h1 class="page-title">出退勤の確認ルール</h1>
         <p class="page-note">
-          出勤時・退勤時に全作業員へ表示する共通の確認事項です。<br>
-          現場ごとの個別ルールは廃止し、現場特有の内容は「送り出し資料」の承認で扱います。
+          出勤時・退勤時に作業員へ表示する確認事項です。<br>
+          「共通」は全員に出ます。作業区分（現場／工場／オフィスなど）ごとに分けたい確認事項は区分のタブに登録すると、
+          打刻時に作業員が区分を選び、共通＋その区分の確認事項に同意します。
         </p>
       </div>
       <button class="btn-add" data-testid="rule-add-open" @click="openAdd">＋ ルール追加</button>
     </div>
 
+    <!-- ★作業区分ごとのタブ（2026-09-13）。区分のマスタは「作業区分」画面で編集 -->
+    <div class="cat-tabs" role="tablist" data-testid="rule-category-tabs">
+      <button type="button" class="cat-tab" :class="{ on: tab === '' }" data-testid="rule-tab-common" @click="tab = ''">共通<span class="cat-count">{{ countFor('') }}</span></button>
+      <button v-for="c in categories" :key="c.id" type="button" class="cat-tab" :class="{ on: tab === c.id }" :data-testid="`rule-tab-${c.id}`" @click="tab = c.id">{{ c.name }}<span class="cat-count">{{ countFor(c.id) }}</span></button>
+    </div>
+
     <div v-if="loading" class="empty">読み込み中...</div>
-    <div v-else-if="rules.length === 0" class="empty" data-testid="rule-empty">ルールが登録されていません</div>
+    <div v-else-if="visibleRules.length === 0" class="empty" data-testid="rule-empty">{{ tab ? 'この区分のルールは登録されていません（共通ルールだけが出ます）' : 'ルールが登録されていません' }}</div>
 
     <div v-else class="table-wrap">
       <table class="table">
@@ -25,7 +32,7 @@
           </tr>
         </thead>
         <tbody data-testid="rule-rows">
-          <tr v-for="rule in rules" :key="rule.id">
+          <tr v-for="rule in visibleRules" :key="rule.id">
             <td class="order-cell">
               <div class="order-btns">
                 <button class="btn-order" :disabled="rule.sort_order === 0" @click="moveUp(rule)">▲</button>
@@ -73,6 +80,13 @@
           <textarea v-model="newContent" class="textarea" rows="3" placeholder="例：ヘルメットを必ず着用すること" />
         </div>
         <div class="field">
+          <label>対象の区分</label>
+          <select v-model="newCategoryId" class="select" data-testid="rule-category-select">
+            <option value="">共通（全員に表示）</option>
+            <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
+          </select>
+        </div>
+        <div class="field">
           <label>表示タイミング</label>
           <select v-model="newTiming" class="select">
             <option value="checkin">出勤時のみ</option>
@@ -101,16 +115,22 @@
 //   現場別ルールを出す先が無い。現場特有の内容は送り出し資料の承認フローへ。
 //  ★現場QRの発行もここから外した（現場を特定する意味が無くなったため）。
 // ============================================================
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 
 type Timing = 'checkin' | 'checkout' | 'both'
-type Rule = { id: string; content: string; timing: string; sort_order: number }
+type Rule = { id: string; content: string; timing: string; sort_order: number; work_category_id: string | null }
+type Category = { id: string; name: string }
 type RuleHistory = { content: string; timing: Timing }
 
 const rules    = ref<Rule[]>([])
 const loading  = ref(true)
+const categories = ref<Category[]>([])     // 有効な作業区分（タブ）
+const tab = ref('')                         // '' = 共通
+const newCategoryId = ref('')
+const visibleRules = computed(() => rules.value.filter(r => (r.work_category_id ?? '') === tab.value))
+const countFor = (id: string) => rules.value.filter(r => (r.work_category_id ?? '') === id).length
 
 const modal      = ref(false)
 const newContent = ref('')
@@ -130,10 +150,14 @@ function timingLabel(t: string) {
 async function load() {
   loading.value = true
   const accountId = await getAccountId()
-  const { data: ruleData } = await supabase.from('account_attendance_rules')
-    .select('id, content, timing, sort_order')
-    .eq('account_id', accountId).order('sort_order')
+  const [{ data: ruleData }, { data: cats }] = await Promise.all([
+    supabase.from('account_attendance_rules')
+      .select('id, content, timing, sort_order, work_category_id')
+      .eq('account_id', accountId).order('sort_order'),
+    supabase.from('work_categories').select('id, name').eq('account_id', accountId).eq('active', true).order('sort_order'),
+  ])
   rules.value   = (ruleData ?? []) as Rule[]
+  categories.value = (cats ?? []) as Category[]
   loading.value = false
 }
 
@@ -188,6 +212,7 @@ async function hideHistory(h: RuleHistory) {
 function openAdd() {
   newContent.value = ''
   newTiming.value  = 'both'
+  newCategoryId.value = tab.value   // 開いているタブの区分を既定に
   saveError.value  = ''
   modal.value      = true
   fetchRuleHistory()
@@ -197,8 +222,8 @@ async function saveRule() {
   const content = newContent.value.trim()
   if (!content) return
 
-  // 同じ内容が既にあれば重複登録を防ぐ
-  if (rules.value.some(r => r.content.trim() === content)) {
+  // 同じ区分に同じ内容が既にあれば重複登録を防ぐ
+  if (rules.value.some(r => r.content.trim() === content && (r.work_category_id ?? '') === newCategoryId.value)) {
     saveError.value = '同じ内容のルールが既に登録されています'
     return
   }
@@ -213,7 +238,9 @@ async function saveRule() {
       content:    newContent.value.trim(),
       timing:     newTiming.value,
       sort_order: maxOrder + 1,
+      work_category_id: newCategoryId.value || null,
     })
+    tab.value = newCategoryId.value
     modal.value = false
     await load()
   } catch (e: any) {
@@ -230,9 +257,10 @@ async function deleteRule(id: string) {
 }
 
 async function moveUp(rule: Rule) {
-  const idx = rules.value.findIndex(r => r.id === rule.id)
+  const list = visibleRules.value
+  const idx = list.findIndex(r => r.id === rule.id)
   if (idx <= 0) return
-  const prev = rules.value[idx - 1]
+  const prev = list[idx - 1]
   await Promise.all([
     supabase.from('account_attendance_rules').update({ sort_order: prev.sort_order }).eq('id', rule.id),
     supabase.from('account_attendance_rules').update({ sort_order: rule.sort_order }).eq('id', prev.id),
@@ -241,9 +269,10 @@ async function moveUp(rule: Rule) {
 }
 
 async function moveDown(rule: Rule) {
-  const idx = rules.value.findIndex(r => r.id === rule.id)
-  if (idx < 0 || idx >= rules.value.length - 1) return
-  const next = rules.value[idx + 1]
+  const list = visibleRules.value
+  const idx = list.findIndex(r => r.id === rule.id)
+  if (idx < 0 || idx >= list.length - 1) return
+  const next = list[idx + 1]
   await Promise.all([
     supabase.from('account_attendance_rules').update({ sort_order: next.sort_order }).eq('id', rule.id),
     supabase.from('account_attendance_rules').update({ sort_order: rule.sort_order }).eq('id', next.id),
@@ -258,6 +287,10 @@ async function moveDown(rule: Rule) {
 .btn-back { background: none; border: none; color: #06C755; font-size: 13px; cursor: pointer; padding: 0; text-align: left; }
 .btn-back:hover { text-decoration: underline; }
 .page-title { font-size: 20px; font-weight: 700; }
+.cat-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.cat-tab { background: #fff; border: 1px solid #cbd5e1; border-radius: 999px; padding: 6px 14px; font-size: 13px; color: #334155; cursor: pointer; }
+.cat-tab.on { background: #06C755; border-color: #06C755; color: #fff; font-weight: 700; }
+.cat-count { margin-left: 6px; font-size: 11px; opacity: .8; }
 
 .btn-add { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 700; cursor: pointer; flex-shrink: 0; }
 

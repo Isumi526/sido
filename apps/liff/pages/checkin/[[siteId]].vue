@@ -294,6 +294,17 @@
 
         <!-- ① 確認事項 -->
         <template v-if="punchStep === 'rules'">
+          <!-- ★作業区分の選択（ルールを持つ区分がある時だけ・2026-09-13）。選ぶとその区分のルールに切り替わる -->
+          <div v-if="ruleCategories.length" class="cat-picker" data-testid="rule-category-picker">
+            <p class="cat-label">{{ $t('checkin.categoryLabel') }}</p>
+            <div class="cat-btns">
+              <button
+                v-for="c in ruleCategories" :key="c.id" type="button" class="cat-btn"
+                :class="{ on: c.id === selectedCategoryId }" :disabled="rulesLoading"
+                :data-testid="`rule-category-${c.id}`" @click="pickCategory(c.id)"
+              >{{ c.name }}</button>
+            </div>
+          </div>
           <p v-if="rules.length === 0" class="no-rules-note">{{ $t('checkin.noRulesNote') }}</p>
           <div class="rules-list">
             <div
@@ -413,6 +424,7 @@ type Phase = 'loading' | 'error' | 'select-target' | 'work-status' | 'off-done' 
 type WorkStatus = 'working' | 'paid_leave' | 'off'
 
 type AttendanceRule = { id: string; content: string; timing: string }
+type RuleCategory = { id: string; name: string }
 type Target   = { id: string; name: string; isSelf: boolean }
 
 import { useI18n } from 'vue-i18n'
@@ -433,6 +445,12 @@ const errorMsg       = ref('')
 const debugUrl       = ref('')
 const rules          = ref<AttendanceRule[]>([])
 const checkedIds     = ref(new Set<string>())
+// ★作業区分ごとの確認ルール（2026-09-13）。ルールを持つ区分が1つでもあれば打刻前に区分を選ぶ。
+//  既定＝直近の打刻で選んだ区分（退勤は出勤時の区分を引き継ぐ）。無ければ先頭。
+const ruleCategories = ref<RuleCategory[]>([])
+const selectedCategoryId = ref<string | null>(null)
+const lastCategoryId = ref<string | null>(null)
+const rulesLoading = ref(false)
 const submitting     = ref(false)
 const checkedAtLabel = ref('')
 
@@ -556,6 +574,22 @@ const stepDoneForOverride = computed(() =>
     : stepOverride.value === 'location' ? locationResolved.value
     : true)
 
+// 区分を切り替えたら、その区分のルールを引き直してチェックをやり直す（同意は区分ごと）
+async function pickCategory(id: string) {
+  if (id === selectedCategoryId.value) return
+  selectedCategoryId.value = id
+  rulesLoading.value = true
+  try {
+    rules.value = (await attendanceLog.rulesWithCategories(attendanceType.value, id)).rules
+    checkedIds.value = new Set()
+    stepOverride.value = null
+  } catch {
+    errorMsg.value = t('checkin.errNoRules')
+    phase.value = 'error'
+  } finally {
+    rulesLoading.value = false
+  }
+}
 function toggle(id: string) {
   const next = new Set(checkedIds.value)
   if (next.has(id)) next.delete(id)
@@ -698,8 +732,10 @@ async function loadForTarget(workerId: string) {
   //  ★夜勤の日跨ぎ対応: 当日(カレンダー日)固定だと、前日夜の出勤が拾えず翌朝の退勤ができなかった。
   //   直近20時間のログを見て「未退勤の出勤が残っていれば退勤」＝日を跨いでも退勤できる。
   //  ★EF経由。代理対象の分もEF側で代理許可を確認したうえで返る。
-  const logs = await attendanceLog.recent(20, workerId) as { type: string; checked_at: string }[]
+  const logs = await attendanceLog.recent(20, workerId) as { type: string; checked_at: string; work_category_id?: string | null }[]
   const last = logs[logs.length - 1]
+  // 直近の打刻で選んだ区分（退勤時は出勤時の区分を引き継ぐ）
+  lastCategoryId.value = [...logs].reverse().find(l => l.work_category_id)?.work_category_id ?? null
 
   if (last?.type === 'checkin') {
     // 出勤中・退勤未（前日夜の出勤でもここに来る）→ 退勤フォーム
@@ -826,7 +862,17 @@ async function startAnotherShift() {
 async function enterChecklist() {
   phase.value = 'loading'
   try {
-    rules.value = await attendanceLog.rules(attendanceType.value)
+    const first = await attendanceLog.rulesWithCategories(attendanceType.value, selectedCategoryId.value)
+    ruleCategories.value = first.categories
+    if (first.categories.length) {
+      // 区分を選ばせる。既定＝直近の打刻の区分（無ければ先頭）。選んだ区分でルールを引き直す
+      const preset = selectedCategoryId.value ?? lastCategoryId.value
+      selectedCategoryId.value = first.categories.some(c => c.id === preset) ? preset : first.categories[0].id
+      rules.value = (await attendanceLog.rulesWithCategories(attendanceType.value, selectedCategoryId.value)).rules
+    } else {
+      selectedCategoryId.value = null
+      rules.value = first.rules
+    }
   } catch {
     // ルールが引けない時に「確認事項なし」で通すと、同意記録が空のまま打刻できてしまう
     errorMsg.value = t('checkin.errNoRules')
@@ -877,6 +923,7 @@ async function doSubmit() {
     // ★現場は送らない（出退勤モデル変更・2026-08-27）
     type: attendanceType.value as 'checkin' | 'checkout',
     targetWorkerId: workerIdToLog,
+    workCategoryId: selectedCategoryId.value,
     agreedRuleTexts: rules.value.map(r => r.content),
     lat: locationLat.value,
     lng: locationLng.value,
@@ -1240,6 +1287,11 @@ async function resolveReportLink(target: Target | null) {
 }
 
 .checklist-scroll { flex: 1; overflow-y: auto; }
+.cat-picker { padding: 10px 4px 4px; }
+.cat-label { margin: 0 0 6px; font-size: 12px; color: #64748b; font-weight: 700; }
+.cat-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.cat-btn { background: #fff; border: 1.5px solid #cbd5e1; border-radius: 999px; padding: 8px 14px; font-size: 14px; color: #334155; }
+.cat-btn.on { background: #06C755; border-color: #06C755; color: #fff; font-weight: 700; }
 .no-rules-note { margin: 16px 4px; font-size: 14px; line-height: 1.7; color: #475569; }
 /* ★確認事項がここだけスクロールする。以前は全体が伸びて、狭い端末（iPhone SE 375×667）で
    位置情報・送信ボタン・後追い入力が画面下に詰まり、指を置く余白が無かった（2026-08-31 指摘）。
