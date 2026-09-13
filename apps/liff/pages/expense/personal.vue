@@ -1,6 +1,6 @@
 <template>
   <div class="app">
-    <AppNav subtitle="個人経費" :user-name="selfUser?.real_name" :user-role="selfUser?.worker_role" />
+    <AppNav subtitle="経費申請" :user-name="selfUser?.real_name" :user-role="selfUser?.worker_role" />
 
     <main class="main">
       <div v-if="loading" class="state-screen">
@@ -12,8 +12,8 @@
       <section v-else-if="!canSubmit" class="pe-card">
         <div class="pe-denied">
           <span class="material-symbols-rounded pe-icon">lock</span>
-          <p>個人経費の申請が許可されていません。</p>
-          <p class="pe-hint">現場に紐付かない経費を申請するには、管理者が作業員マスタで「個人経費の申請」を許可し、月額の上限金額を設定する必要があります。</p>
+          <p>経費申請が許可されていません。</p>
+          <p class="pe-hint">現場に紐づかない経費（オフィス・移動など）を申請するには、管理者が作業員マスタで「経費申請」を許可し、月額の上限金額を設定する必要があります。</p>
         </div>
       </section>
 
@@ -88,6 +88,9 @@
                     :value="siteChoiceValue(d)"
                     @change="applySiteChoice(d, ($event.target as HTMLSelectElement).value, d.date)">
               <option value="">現場を選ぶ（任意）</option>
+              <optgroup v-if="siteOptions(d.date).offices.length" label="オフィス・工場">
+                <option v-for="o in siteOptions(d.date).offices" :key="`do-${d.id}-${o.value}`" :value="o.value">{{ o.name }}</option>
+              </optgroup>
               <optgroup v-if="siteOptions(d.date).worked.length" label="この日に出勤した現場">
                 <option v-for="o in siteOptions(d.date).worked" :key="`dw-${d.id}-${o.value}`" :value="o.value">{{ o.name }}</option>
               </optgroup>
@@ -127,11 +130,14 @@
           <label class="pe-label">日付</label>
           <input v-model="form.date" type="date" class="pe-input" data-testid="pe-date" @change="ensureWorkedSites(form.date)" />
 
-          <label class="pe-label">現場（任意）</label>
+          <label class="pe-label">紐付け先（オフィス・現場／任意）</label>
           <select class="pe-input" data-testid="pe-site"
                   :value="siteChoiceValue(form)"
                   @change="applySiteChoice(form, ($event.target as HTMLSelectElement).value, form.date)">
-            <option value="">現場を選ばない</option>
+            <option value="">拠点・現場を選ばない</option>
+            <optgroup v-if="siteOptions(form.date).offices.length" label="オフィス・工場" data-testid="pe-site-offices">
+              <option v-for="o in siteOptions(form.date).offices" :key="`fo-${o.value}`" :value="o.value">{{ o.name }}</option>
+            </optgroup>
             <optgroup v-if="siteOptions(form.date).worked.length" label="この日に出勤した現場">
               <option v-for="o in siteOptions(form.date).worked" :key="`fw-${o.value}`" :value="o.value">{{ o.name }}</option>
             </optgroup>
@@ -262,8 +268,22 @@ const savedCount = ref(0)
 // ── 領収書を「その日出勤していた現場」から選んで紐付ける（任意）──
 //  現場の候補は日報(daily_reports.sites[])から引く＝その日その作業員が出勤していた現場。
 //  打刻(attendance_logs)は運用に乗っていないので使わない。候補が無ければ全現場から選べる。
-type SiteOption = { id: string; name: string }
+type SiteOption = { id: string; name: string; kind?: string }
 const allSites = ref<SiteOption[]>([])                            // 全現場（フォールバック）
+// ★オフィス・工場（現場マスタの区分≠現場・2026-09-13）は先頭のグループに出す。
+//   経費は現場に紐づかないものが大半なので、所属拠点があれば既定で入れる（変更可）。
+const offices = computed(() => allSites.value.filter((s) => s.kind && s.kind !== 'site'))
+const baseSiteId = ref<string | null>(null)
+const defaultOffice = computed<SiteOption | null>(() => {
+  const base = offices.value.find((o) => o.id === baseSiteId.value)
+  if (base) return base
+  return offices.value.length === 1 ? offices.value[0] : null
+})
+function applyDefaultOffice(t: { site_id: string; site_name: string }): void {
+  if (t.site_id || t.site_name) return
+  const o = defaultOffice.value
+  if (o) { t.site_id = o.id; t.site_name = o.name }
+}
 const workedSitesByDate = ref<Record<string, SiteOption[]>>({})  // 日付→その日出勤した現場（キャッシュ）
 
 /** 保存済み日報の現場オブジェクトから表示名を作る（__unset__/空は除外・__other__はcustom名） */
@@ -296,14 +316,16 @@ async function ensureWorkedSites(date: string): Promise<void> {
 }
 
 /** select 用の選択肢。site_id が無い（新規現場で未解決）候補は名前で紐付ける（value=name:...） */
-function siteOptions(date: string): { worked: { value: string; name: string }[]; all: { value: string; name: string }[] } {
+function siteOptions(date: string): { offices: { value: string; name: string }[]; worked: { value: string; name: string }[]; all: { value: string; name: string }[] } {
   const worked = workedSitesByDate.value[date] ?? []
   const workedIds = new Set(worked.map((s) => s.id).filter(Boolean))
   const workedNames = new Set(worked.map((s) => s.name))
+  const officeIds = new Set(offices.value.map((s) => s.id))
   return {
-    worked: worked.map((s) => ({ value: s.id || `name:${s.name}`, name: s.name })),
+    offices: offices.value.map((s) => ({ value: s.id, name: s.name })),
+    worked: worked.filter((s) => !officeIds.has(s.id)).map((s) => ({ value: s.id || `name:${s.name}`, name: s.name })),
     all: allSites.value
-      .filter((s) => !workedIds.has(s.id) && !workedNames.has(s.name))
+      .filter((s) => !officeIds.has(s.id) && !workedIds.has(s.id) && !workedNames.has(s.name))
       .map((s) => ({ value: s.id, name: s.name })),
   }
 }
@@ -417,6 +439,7 @@ async function refresh() {
   canSubmit.value = s.canSubmit
   usage.value = s.usage
   items.value = s.items
+  baseSiteId.value = s.baseSiteId
 }
 
 /**
@@ -436,7 +459,7 @@ async function onAnalyzeBatch() {
         id: crypto.randomUUID(), file: f, status: 'ready', error: '',
         date: todayStr(), account_category: '旅費交通費', amount: 0,
         payee: '', companions: '', registration_number: '', note: '', tategae: false,
-        site_id: '', site_name: '',
+        site_id: defaultOffice.value?.id ?? '', site_name: defaultOffice.value?.name ?? '',
         token: crypto.randomUUID(),
       }
       try {
@@ -602,6 +625,7 @@ async function onSubmit() {
       client_token: submitToken.value,
     })
     form.value = { date: todayStr(), account_category: '旅費交通費', amount: 0, payee: '', companions: '', registration_number: '', note: '', tategae: false, site_id: '', site_name: '' }
+    applyDefaultOffice(form.value)
     files.value = []
     submitToken.value = ''   // 次の登録は別の経費＝新しい token を発行する
     aiMsg.value = ''
@@ -625,7 +649,8 @@ onMounted(async () => {
   try {
     selfUser.value = await resolve()
     await refresh()
-    allSites.value = (await sitesApi.listSafe()).map((s) => ({ id: s.id, name: s.name }))
+    allSites.value = (await sitesApi.listSafe()).map((s) => ({ id: s.id, name: s.name, kind: s.kind ?? 'site' }))
+    applyDefaultOffice(form.value)
     await ensureWorkedSites(form.value.date)
   } finally {
     loading.value = false

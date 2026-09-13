@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
   //  工期は「直近60日以内に終了した／半年以内に開始する」に絞らず全有効現場を返す（工期未定の現場も出す）。
   const [{ data: siteRows }, { data: atts }, { data: cat }] = await Promise.all([
     svc.from('sites').select('id, name, location, period_start, period_end, default_start_time, default_end_time')
-      .eq('account_id', account.id).eq('active', true).neq('name', '__unset__').order('name_kana', { nullsFirst: false }).order('name'),
+      .eq('account_id', account.id).eq('active', true).eq('kind', 'site').neq('name', '__unset__').order('name_kana', { nullsFirst: false }).order('name'),
     svc.from('site_attachments').select('id, site_id, name').eq('account_id', account.id).eq('kind', 'schedule').order('created_at'),
     svc.from('site_category_hours').select('site_id, default_start_time, default_end_time').eq('account_id', account.id),
   ])

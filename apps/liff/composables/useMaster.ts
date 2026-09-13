@@ -107,7 +107,9 @@ export const useMaster = () => {
     const siteWorkTimes: Record<string, { start: string | null; end: string | null }> = {}
     const siteBreaks: Record<string, { start: string; minutes: number }[]> = {}   // 現場名 → 既定休憩[{start,minutes}]。設定ある現場のみ収録。
     const siteDistances: Record<string, number> = {}   // 現場名 → 会社からの往復km（設定ある現場のみ収録・日報の交通経費の既定値・2026-09-03）
+    const siteKinds: Record<string, string> = {}       // 現場名 → 区分（site/office/factory・2026-09-13）。オフィス・工場は日報の現場プルダウンで末尾グループ
     for (const site of (r.sites ?? []) as any[]) {
+      if (site.kind && site.kind !== 'site') siteKinds[site.name] = site.kind
       if (site.contractor_id && contractorById[site.contractor_id]) siteContractors[site.name] = contractorById[site.contractor_id]
       siteIds[site.name] = site.id
       siteNameById[site.id] = site.name
@@ -176,6 +178,7 @@ export const useMaster = () => {
       siteWorkTimes,
       siteBreaks,
       siteDistances,
+      siteKinds,
       workCategories,
       categoryHours,
       etcCards:       (r.etcCards ?? []) as string[],
@@ -302,8 +305,12 @@ export const useMaster = () => {
     // name_kana昇順(nullは最後)→name昇順で取得済みのため、filter()はその順序を保持する。
     // ここで localeCompare(name) 等により再ソートすると、name_kanaを持たないため
     // 漢字の読み仮名を無視した並びになり、かえって五十音順が崩れる(再ソートしないことが正)。
+    siteKinds:           computed<Record<string, string>>(() => master.value.siteKinds ?? {}),
+    // オフィス・工場（kind≠site）。日報の現場プルダウンでは元請けグループの後ろに「オフィス・工場」として出す
+    facilitySiteNames:   computed<string[]>(() => master.value.sites.filter((n) => n !== '__unset__' && !!(master.value.siteKinds ?? {})[n])),
     siteGroupsByContractor: computed<{ contractorName: string | null; sites: string[] }[]>(() => {
-      const sites = master.value.sites.filter((n) => n !== '__unset__')
+      const kinds = master.value.siteKinds ?? {}
+      const sites = master.value.sites.filter((n) => n !== '__unset__' && !kinds[n])
       const map = master.value.siteContractors ?? {}
       const orderedContractors = (master.value.contractors ?? []).slice().sort((a, b) => a.localeCompare(b, 'ja'))
       const groups: { contractorName: string | null; sites: string[] }[] = []

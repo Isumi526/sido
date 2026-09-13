@@ -513,7 +513,7 @@ async function loadSites() {
   const [{ data }, { data: atts }, { data: cat }] = await Promise.all([
     supabase.from('sites')
       .select('id, name, location, period_start, period_end, default_start_time, default_end_time, contractors(name), responsible:workers!sites_responsible_worker_id_fkey(name)')
-      .eq('account_id', accountId).eq('active', true).neq('name', '__unset__').order('name_kana', { nullsFirst: false }).order('name'),   // __unset__＝「現場未設定」の番兵行は出さない
+      .eq('account_id', accountId).eq('active', true).eq('kind', 'site').neq('name', '__unset__').order('name_kana', { nullsFirst: false }).order('name'),   // __unset__＝「現場未設定」の番兵行・オフィス/工場（kind≠site）は出さない
     supabase.from('site_attachments').select('id, site_id, name').eq('account_id', accountId).eq('kind', 'schedule').order('created_at'),
     supabase.from('site_category_hours').select('site_id, default_start_time, default_end_time').eq('account_id', accountId),
   ])

@@ -38,7 +38,7 @@
         <tbody>
           <tr v-for="s in filtered" :key="s.id" :class="{ inactive: !s.active }">
             <td v-if="mergeMode"><input type="checkbox" :value="s.id" v-model="mergePick" :disabled="!s.active" /></td>
-            <td class="name"><a class="name-link" @click="router.push(`/sites/${s.id}`)">{{ s.name }}</a><span v-if="s.name_kana" class="kana-sub">{{ s.name_kana }}</span></td>
+            <td class="name"><a class="name-link" @click="router.push(`/sites/${s.id}`)">{{ s.name }}</a><span v-if="s.kind && s.kind !== 'site'" class="kind-badge" :data-testid="`site-kind-${s.id}`">{{ s.kind === 'office' ? 'オフィス' : '工場' }}</span><span v-if="s.name_kana" class="kana-sub">{{ s.name_kana }}</span></td>
             <td class="resp">
               <template v-if="s.responsible_worker_id">{{ responsibleName(s.responsible_worker_id) }}</template>
               <span v-else-if="s.active" class="resp-warn" title="責任者が未登録です。編集から登録してください">未登録</span>
@@ -82,6 +82,16 @@
         <div class="field">
           <label>読み仮名（50音順の並びに使用）</label>
           <input v-model="modal.name_kana" class="input" placeholder="例：まるまるびる ないそうこうじ" />
+        </div>
+        <!-- 区分（2026-09-13）: オフィス・工場は現場ではないので工程管理/予定の候補から外し、経費申請の紐付け先にする -->
+        <div class="field">
+          <label>区分</label>
+          <select v-model="modal.kind" class="input" data-testid="site-kind" style="width:auto">
+            <option value="site">現場</option>
+            <option value="office">オフィス（事務所）</option>
+            <option value="factory">工場</option>
+          </select>
+          <p v-if="modal.kind && modal.kind !== 'site'" class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">オフィス・工場は工程管理（会社予定）とスケジュールの候補には出ません。「経費申請（現場に紐づかない経費）」の紐付け先と、作業員の所属拠点になります。</p>
         </div>
         <p v-if="existingMissingWarn" class="req-warn" data-testid="site-missing-warn">{{ existingMissingWarn }}</p>
         <div class="field">
@@ -336,6 +346,7 @@ type Site = {
   responsible_worker_id: string | null   // 現場責任者（現場管理者以上のworker・必須はUIで担保）
   default_distance_km: number | null   // 会社からこの現場までの往復距離(km)。日報の既定値（2026-09-03）
   period_start?: string | null; period_end?: string | null   // 工期（会社予定の帯・2026-09-13）。period_end NULL=未定
+  kind?: 'site' | 'office' | 'factory'   // 区分（2026-09-13）。office/factory は工程管理・予定の候補から外れ、経費申請の紐付け先
   period_end_undecided?: boolean   // モーダル専用: 「終了日は未定」チェック
 }
 type Att = { id: string; site_id: string; kind: string; path: string; name: string | null; require_consent?: boolean; url?: string | null }
@@ -495,7 +506,7 @@ async function load() {
   const accountId = await getAccountId()
   const [{ data }, { data: cons }] = await Promise.all([
     supabase.from('sites')
-      .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id, default_start_time, default_end_time, default_breaks, responsible_worker_id, default_distance_km, period_start, period_end')
+      .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id, default_start_time, default_end_time, default_breaks, responsible_worker_id, default_distance_km, period_start, period_end, kind')
       .eq('account_id', accountId)
       .order('name_kana', { nullsFirst: false })
       .order('name'),
@@ -588,7 +599,7 @@ const filtered = computed(() => {
   return list
 })
 
-function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', default_breaks: [], responsible_worker_id: myWorkerId.value ?? null, default_distance_km: null, period_start: '', period_end: '', period_end_undecided: false, linkedSubs: [], shareUsers: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = ''; modalRules.value = []; clearPendingAtts(); buildCatHoursDraft([]); markFormOpened(); fetchRuleHistory() }
+function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', default_breaks: [], responsible_worker_id: myWorkerId.value ?? null, default_distance_km: null, period_start: '', period_end: '', period_end_undecided: false, kind: 'site', linkedSubs: [], shareUsers: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = ''; modalRules.value = []; clearPendingAtts(); buildCatHoursDraft([]); markFormOpened(); fetchRuleHistory() }
 function addBreak()    { if (!modal.value) return; (modal.value.default_breaks ??= []).push({ start: '12:00', minutes: 60 }) }
 function removeBreak(i: number) { modal.value?.default_breaks?.splice(i, 1) }
 
@@ -659,7 +670,7 @@ async function openEdit(s: Site) {
   // time入力は HH:MM を期待するため DB の HH:MM:SS を切り詰める
   modal.value = { ...s, default_start_time: (s.default_start_time ?? '').slice(0, 5), default_end_time: (s.default_end_time ?? '').slice(0, 5),
     default_breaks: Array.isArray(s.default_breaks) ? s.default_breaks.map(b => ({ start: String(b.start ?? '').slice(0, 5), minutes: Number(b.minutes) || 0 })) : [],
-    period_start: s.period_start ?? '', period_end: s.period_end ?? '',
+    period_start: s.period_start ?? '', period_end: s.period_end ?? '', kind: s.kind ?? 'site',
     // 既存現場で開始日はあるが終了日が無い＝「未定」として保存されたもの
     period_end_undecided: !!s.period_start && !s.period_end,
     linkedSubs: [], shareUsers: [] }; saveError.value = ''
@@ -724,8 +735,9 @@ const missingFields = computed<string[]>(() => {
   const m = modal.value; if (!m) return []
   const out: string[] = []
   if (!m.name?.trim()) out.push('現場名')
-  if (!m.location?.trim()) out.push('住所')
-  if (!m.period_start) out.push('工期（開始日）')
+  const isSite = (m.kind ?? 'site') === 'site'
+  if (isSite && !m.location?.trim()) out.push('住所')       // オフィス・工場は住所/工期を求めない
+  if (isSite && !m.period_start) out.push('工期（開始日）')
   if (!m.responsible_worker_id) out.push('責任者')
   return out
 })
@@ -781,6 +793,7 @@ async function save() {
       // 工期: 開始日は必須（新規）。終了日は「未定」なら NULL
       period_start: m.period_start || null,
       period_end: (m.period_end_undecided || !m.period_end) ? null : m.period_end,
+      kind: m.kind ?? 'site',
     }
     const accountId = await getAccountId()
     let siteId = m.id
@@ -1061,6 +1074,7 @@ async function doMerge() {
 .input-missing { border-color: #E53935 !important; background: #fff5f5; }
 .chk-inline { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: #334155; }
 .period { font-size: 12px; white-space: nowrap; }
+.kind-badge { display: inline-block; margin-left: 6px; font-size: 11px; font-weight: 700; color: #1e3a8a; background: #dbeafe; border-radius: 4px; padding: 1px 6px; vertical-align: 1px; }
 .period-unset { color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 4px; padding: 1px 6px; font-size: 11px; }
 .att-up { font-size: 12px; color: #888; }
 textarea.input { resize: vertical; font-family: inherit; }
