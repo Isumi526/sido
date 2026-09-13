@@ -15,8 +15,9 @@ const EDGE_FN = 'attendance-log'
 
 export type PunchLogRow = { worker_id: string; type: string; checked_at: string; siteName: string | null }
 // site_id は 2026-08-27 の出退勤モデル変更で任意になった（1日＝出勤/退勤の2回・現場に紐づけない）
-export type RecentLogRow = { site_id: string | null; type: string; checked_at: string }
+export type RecentLogRow = { site_id: string | null; type: string; checked_at: string; work_category_id?: string | null }
 export type AttendanceRule = { id: string; content: string; timing: string }
+export type RuleCategory = { id: string; name: string }
 
 export function useAttendanceLog() {
   const config = useRuntimeConfig()
@@ -71,10 +72,14 @@ export function useAttendanceLog() {
   }
 
   /** 打刻時に見せるアカウント共通の確認ルール（現場別ルールの置き換え） */
-  async function rules(timing: 'checkin' | 'checkout'): Promise<AttendanceRule[]> {
+  async function rules(timing: 'checkin' | 'checkout', workCategoryId?: string | null): Promise<AttendanceRule[]> {
+    return (await rulesWithCategories(timing, workCategoryId)).rules
+  }
+  /** ルール＋「ルールを持つ作業区分」（区分ごとのルール・2026-09-13）。区分が1つでもあれば打刻前に選ばせる */
+  async function rulesWithCategories(timing: 'checkin' | 'checkout', workCategoryId?: string | null): Promise<{ rules: AttendanceRule[]; categories: RuleCategory[] }> {
     try {
-      const r = await call('rules', { timing })
-      return (r.rules ?? []) as AttendanceRule[]
+      const r = await call('rules', { timing, ...(workCategoryId ? { workCategoryId } : {}) })
+      return { rules: (r.rules ?? []) as AttendanceRule[], categories: (r.categories ?? []) as RuleCategory[] }
     } catch (e) {
       // ★空にフォールバックしない。ルールを見せずに打刻させると同意記録が空のまま残る
       console.error('[attendance] 確認ルールを取得できませんでした:', e)
@@ -87,6 +92,7 @@ export function useAttendanceLog() {
     siteId?: string | null
     type: 'checkin' | 'checkout'
     targetWorkerId?: string | null
+    workCategoryId?: string | null
     agreedRuleTexts?: string[]
     agreedDocumentNames?: string[] | null
     lat?: number | null
@@ -146,5 +152,5 @@ export function useAttendanceLog() {
     }
   }
 
-  return { recent, forReport, rules, punch, backdate, correctionRequest, correctionMine }
+  return { recent, forReport, rules, rulesWithCategories, punch, backdate, correctionRequest, correctionMine }
 }

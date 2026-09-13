@@ -33,18 +33,22 @@
     <div class="table-wrap">
       <table class="table">
         <thead>
-          <tr><th v-if="mergeMode"></th><th>現場名</th><th>責任者</th><th>元請け</th><th>固定時刻</th><th></th></tr>
+          <tr><th v-if="mergeMode"></th><th>現場名</th><th>責任者</th><th>元請け</th><th>工期</th><th>固定時刻</th><th></th></tr>
         </thead>
         <tbody>
           <tr v-for="s in filtered" :key="s.id" :class="{ inactive: !s.active }">
             <td v-if="mergeMode"><input type="checkbox" :value="s.id" v-model="mergePick" :disabled="!s.active" /></td>
-            <td class="name"><a class="name-link" @click="router.push(`/sites/${s.id}`)">{{ s.name }}</a><span v-if="s.name_kana" class="kana-sub">{{ s.name_kana }}</span></td>
+            <td class="name"><a class="name-link" @click="router.push(`/sites/${s.id}`)">{{ s.name }}</a><span v-if="s.kind && s.kind !== 'site'" class="kind-badge" :data-testid="`site-kind-${s.id}`">{{ s.kind === 'office' ? 'オフィス' : '工場' }}</span><span v-if="s.name_kana" class="kana-sub">{{ s.name_kana }}</span></td>
             <td class="resp">
               <template v-if="s.responsible_worker_id">{{ responsibleName(s.responsible_worker_id) }}</template>
               <span v-else-if="s.active" class="resp-warn" title="責任者が未登録です。編集から登録してください">未登録</span>
               <span v-else>—</span>
             </td>
             <td>{{ s.contractor_id ? contractorName(s.contractor_id) : '—' }}</td>
+            <td class="period" :data-testid="`site-period-${s.id}`">
+              <template v-if="s.period_start">{{ fmtYmd(s.period_start) }}〜{{ s.period_end ? fmtYmd(s.period_end) : '未定' }}</template>
+              <span v-else class="period-unset">工期未設定</span>
+            </td>
             <td class="fixed-time">{{ fixedTimeLabel(s) }}</td>
             <td class="actions">
               <button class="btn-edit" @click="openEdit(s)">編集</button>
@@ -54,7 +58,7 @@
                    打刻が現場に紐づかなくなったため発行自体をやめた。 -->
             </td>
           </tr>
-          <tr v-if="!filtered.length"><td :colspan="mergeMode ? 6 : 5" class="empty">該当する現場がありません</td></tr>
+          <tr v-if="!filtered.length"><td :colspan="mergeMode ? 7 : 6" class="empty">該当する現場がありません</td></tr>
         </tbody>
       </table>
     </div>
@@ -79,9 +83,32 @@
           <label>読み仮名（50音順の並びに使用）</label>
           <input v-model="modal.name_kana" class="input" placeholder="例：まるまるびる ないそうこうじ" />
         </div>
+        <!-- 区分（2026-09-13）: オフィス・工場は現場ではないので工程管理/予定の候補から外し、経費申請の紐付け先にする -->
         <div class="field">
-          <label>場所 / 住所</label>
-          <input v-model="modal.location" class="input" placeholder="例：名古屋市〇〇区…" />
+          <label>区分</label>
+          <select v-model="modal.kind" class="input" data-testid="site-kind" style="width:auto">
+            <option value="site">現場</option>
+            <option value="office">オフィス（事務所）</option>
+            <option value="factory">工場</option>
+          </select>
+          <p v-if="modal.kind && modal.kind !== 'site'" class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">オフィス・工場は工程管理（会社予定）とスケジュールの候補には出ません。「経費申請（現場に紐づかない経費）」の紐付け先と、作業員の所属拠点になります。</p>
+        </div>
+        <p v-if="existingMissingWarn" class="req-warn" data-testid="site-missing-warn">{{ existingMissingWarn }}</p>
+        <div class="field">
+          <label>場所 / 住所 <em class="req">*</em></label>
+          <input v-model="modal.location" class="input" :class="{ 'input-missing': missingFields.includes('住所') }" placeholder="例：名古屋市〇〇区…" data-testid="site-location" />
+          <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">都道府県から書くと会社予定の地方分け（東海／関東／関西…）に使われます。</p>
+        </div>
+        <!-- 工期（2026-09-10 SEED 大塚さん: 会社予定は現場マスタの工期を手入力で反映。終了日は未定を許容） -->
+        <div class="field">
+          <label>工期 <em class="req">*</em>（会社予定に反映）</label>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <input v-model="modal.period_start" type="date" class="input" :class="{ 'input-missing': missingFields.includes('工期（開始日）') }" style="width:auto" data-testid="site-period-start" />
+            <span>〜</span>
+            <input v-model="modal.period_end" type="date" class="input" style="width:auto" :disabled="modal.period_end_undecided" data-testid="site-period-end" />
+            <label class="chk-inline"><input type="checkbox" v-model="modal.period_end_undecided" data-testid="site-period-undecided" @change="modal.period_end_undecided && (modal.period_end = '')" />終了日は未定</label>
+          </div>
+          <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">開始日は必須です。終了日が決まっていない現場は「未定」にしてください（会社予定では帯が右端まで薄く伸びます）。</p>
         </div>
         <!-- ② 関係（元請け） -->
         <div class="field">
@@ -92,7 +119,7 @@
           </select>
         </div>
         <div class="field">
-          <label>責任者（必須・現場管理者以上）</label>
+          <label>責任者 <em class="req">*</em>（現場管理者以上）</label>
           <select v-model="modal.responsible_worker_id" class="input" data-testid="site-responsible-select">
             <option :value="null">選択してください</option>
             <option v-for="w in responsibleCandidates" :key="w.id" :value="w.id">{{ w.name }}</option>
@@ -228,7 +255,8 @@
           <label>写真・書類（複数可）</label>
           <div v-if="attachments.length || pendingAtts.length" class="att-list">
             <div v-for="a in attachments" :key="a.id" class="att-item">
-              <span class="att-kind"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">{{ a.kind === 'photo' ? 'photo_camera' : 'description' }}</span></span>
+              <span class="att-kind" :title="a.kind === 'schedule' ? '工程表' : ''"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">{{ a.kind === 'photo' ? 'photo_camera' : a.kind === 'schedule' ? 'calendar_month' : 'description' }}</span></span>
+              <span v-if="a.kind === 'schedule'" class="att-badge-schedule" data-testid="att-schedule-badge">工程表</span>
               <a v-if="a.url" :href="a.url" target="_blank" rel="noopener" class="att-link">{{ a.name || a.path.split('/').pop() }}</a>
               <span v-else class="att-link att-disabled">{{ a.name || a.path.split('/').pop() }}</span>
               <label v-if="a.kind === 'document'" class="att-consent" :class="{ on: a.require_consent }" :title="'出退勤（チェックイン）時に作業員へ提示し同意を取る'">
@@ -247,6 +275,7 @@
                @drop.prevent="onDropAtt" @dragover.prevent="attDragOver = true" @dragleave.prevent="attDragOver = false">
             <label class="att-btn">＋ 写真<input type="file" accept="image/*" multiple hidden :disabled="uploading" @change="onAttach($event, 'photo')" /></label>
             <label class="att-btn">＋ 書類<input type="file" accept="application/pdf,image/*" multiple hidden :disabled="uploading" @change="onAttach($event, 'document')" /></label>
+            <label class="att-btn att-btn-schedule" title="工程表PDF（会社予定の現場行からクリップで開けます）">＋ 工程表<input type="file" accept="application/pdf,image/*" multiple hidden :disabled="uploading" data-testid="att-schedule-input" @change="onAttach($event, 'schedule')" /></label>
             <span class="att-drop-hint">{{ attDragOver ? 'ここにドロップ' : 'またはここに画像/PDFを複数まとめてドラッグ&ドロップ' }}</span>
             <span v-if="uploading" class="att-up">アップロード中…</span>
           </div>
@@ -316,6 +345,9 @@ type Site = {
   default_breaks?: { start: string; minutes: number }[] | null   // 既定休憩[{start,minutes}]。新規日報で現場選択時にスナップショット
   responsible_worker_id: string | null   // 現場責任者（現場管理者以上のworker・必須はUIで担保）
   default_distance_km: number | null   // 会社からこの現場までの往復距離(km)。日報の既定値（2026-09-03）
+  period_start?: string | null; period_end?: string | null   // 工期（会社予定の帯・2026-09-13）。period_end NULL=未定
+  kind?: 'site' | 'office' | 'factory'   // 区分（2026-09-13）。office/factory は工程管理・予定の候補から外れ、経費申請の紐付け先
+  period_end_undecided?: boolean   // モーダル専用: 「終了日は未定」チェック
 }
 type Att = { id: string; site_id: string; kind: string; path: string; name: string | null; require_consent?: boolean; url?: string | null }
 
@@ -407,7 +439,7 @@ function tryCloseModal() {
 const attachments = ref<Att[]>([])
 const uploading   = ref(false)
 // 新規現場作成時（site_id 未確定）は添付を保留し、保存時にまとめてアップロードする
-const pendingAtts = ref<{ file: File; kind: 'photo' | 'document'; name: string; preview?: string }[]>([])
+const pendingAtts = ref<{ file: File; kind: 'photo' | 'document' | 'schedule'; name: string; preview?: string }[]>([])
 function removePendingAtt(i: number) {
   const p = pendingAtts.value[i]
   if (p?.preview) URL.revokeObjectURL(p.preview)
@@ -474,7 +506,7 @@ async function load() {
   const accountId = await getAccountId()
   const [{ data }, { data: cons }] = await Promise.all([
     supabase.from('sites')
-      .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id, default_start_time, default_end_time, default_breaks, responsible_worker_id, default_distance_km')
+      .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id, default_start_time, default_end_time, default_breaks, responsible_worker_id, default_distance_km, period_start, period_end, kind')
       .eq('account_id', accountId)
       .order('name_kana', { nullsFirst: false })
       .order('name'),
@@ -567,7 +599,7 @@ const filtered = computed(() => {
   return list
 })
 
-function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', default_breaks: [], responsible_worker_id: myWorkerId.value ?? null, default_distance_km: null, linkedSubs: [], shareUsers: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = ''; modalRules.value = []; clearPendingAtts(); buildCatHoursDraft([]); markFormOpened(); fetchRuleHistory() }
+function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', default_breaks: [], responsible_worker_id: myWorkerId.value ?? null, default_distance_km: null, period_start: '', period_end: '', period_end_undecided: false, kind: 'site', linkedSubs: [], shareUsers: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = ''; modalRules.value = []; clearPendingAtts(); buildCatHoursDraft([]); markFormOpened(); fetchRuleHistory() }
 function addBreak()    { if (!modal.value) return; (modal.value.default_breaks ??= []).push({ start: '12:00', minutes: 60 }) }
 function removeBreak(i: number) { modal.value?.default_breaks?.splice(i, 1) }
 
@@ -638,6 +670,9 @@ async function openEdit(s: Site) {
   // time入力は HH:MM を期待するため DB の HH:MM:SS を切り詰める
   modal.value = { ...s, default_start_time: (s.default_start_time ?? '').slice(0, 5), default_end_time: (s.default_end_time ?? '').slice(0, 5),
     default_breaks: Array.isArray(s.default_breaks) ? s.default_breaks.map(b => ({ start: String(b.start ?? '').slice(0, 5), minutes: Number(b.minutes) || 0 })) : [],
+    period_start: s.period_start ?? '', period_end: s.period_end ?? '', kind: s.kind ?? 'site',
+    // 既存現場で開始日はあるが終了日が無い＝「未定」として保存されたもの
+    period_end_undecided: !!s.period_start && !s.period_end,
     linkedSubs: [], shareUsers: [] }; saveError.value = ''
   const { data: links } = await supabase.from('site_subcontractors').select('subcontractor_id').eq('site_id', s.id)
   if (modal.value) modal.value.linkedSubs = ((links ?? []) as any[]).map(l => l.subcontractor_id)
@@ -693,9 +728,41 @@ function normalizeBreaks(breaks: { start: string; minutes: number }[] | null | u
   return { ok: true, breaks: arr }
 }
 
+// 必須項目（2026-09-10 SEED 大塚さん「現場を作る時には住所を入れてほしい」「全部必須」・2026-09-12 決定＝admin は住所・工期・責任者を必須、
+//  LIFF の現場作成は現場名のみ）。未入力をまとめて赤字で出す。既存現場（住所/工期が空のまま残っているもの）は
+//  警告だけ出して保存は止めない＝他の項目の編集を妨げない。
+const missingFields = computed<string[]>(() => {
+  const m = modal.value; if (!m) return []
+  const out: string[] = []
+  if (!m.name?.trim()) out.push('現場名')
+  const isSite = (m.kind ?? 'site') === 'site'
+  if (isSite && !m.location?.trim()) out.push('住所')       // オフィス・工場は住所/工期を求めない
+  if (isSite && !m.period_start) out.push('工期（開始日）')
+  if (!m.responsible_worker_id) out.push('責任者')
+  return out
+})
+const periodInvalid = computed(() => {
+  const m = modal.value; if (!m) return ''
+  if (m.period_start && m.period_end && !m.period_end_undecided && m.period_end < m.period_start) return '工期の終了日が開始日より前です'
+  return ''
+})
+// 既存現場で住所/工期が空のときの警告文（保存は止めない）
+const existingMissingWarn = computed(() => {
+  const m = modal.value; if (!m?.id) return ''
+  const soft = missingFields.value.filter(f => f === '住所' || f === '工期（開始日）')
+  return soft.length ? `${soft.join('・')}が未入力です。会社予定では「工期未定」「住所未設定」に出ます。` : ''
+})
+function fmtYmd(d: string) { const [y, mo, da] = d.split('-'); return `${y}/${Number(mo)}/${Number(da)}` }
+
 async function save() {
-  if (!modal.value?.name?.trim()) { saveError.value = '現場名を入力してください'; return }
-  if (!modal.value?.responsible_worker_id) { saveError.value = '責任者を選択してください（現場管理者以上）'; return }
+  if (!modal.value) return
+  if (periodInvalid.value) { saveError.value = periodInvalid.value; return }
+  if (missingFields.value.length) {
+    // 現場名・責任者はどの現場でも必須（従来どおり）。住所・工期は新規は必須、既存は
+    // モーダル内の警告表示（existingMissingWarn）だけで保存は止めない＝他の項目の編集を妨げない。
+    const hard = missingFields.value.filter(f => f === '現場名' || f === '責任者')
+    if (!modal.value.id || hard.length) { saveError.value = `未入力の必須項目があります: ${missingFields.value.join('、')}`; return }
+  }
   // 既定休憩をソート＋重なり検証（重なりがあれば保存を止める）
   const nb = normalizeBreaks(modal.value.default_breaks)
   if (!nb.ok) { saveError.value = nb.error; return }
@@ -723,6 +790,10 @@ async function save() {
       })(),
       responsible_worker_id: m.responsible_worker_id || null,
       default_distance_km: m.default_distance_km === '' || m.default_distance_km == null ? null : Number(m.default_distance_km),
+      // 工期: 開始日は必須（新規）。終了日は「未定」なら NULL
+      period_start: m.period_start || null,
+      period_end: (m.period_end_undecided || !m.period_end) ? null : m.period_end,
+      kind: m.kind ?? 'site',
     }
     const accountId = await getAccountId()
     let siteId = m.id
@@ -768,7 +839,7 @@ async function loadAttachments(siteId: string) {
   attachments.value = atts
 }
 // ボタン選択（複数可）→ 各ファイルを処理
-async function onAttach(ev: Event, kind: 'photo' | 'document') {
+async function onAttach(ev: Event, kind: 'photo' | 'document' | 'schedule') {
   const input = ev.target as HTMLInputElement
   for (const f of Array.from(input.files ?? [])) await processAttFile(f, kind)
   input.value = ''
@@ -783,7 +854,7 @@ async function onDropAtt(ev: DragEvent) {
     await processAttFile(f, kind)
   }
 }
-async function processAttFile(file: File | undefined | null, kind: 'photo' | 'document') {
+async function processAttFile(file: File | undefined | null, kind: 'photo' | 'document' | 'schedule') {
   if (!file || !modal.value) return
   // 新規現場: 保留（保存時にアップロード）。写真はサムネ用プレビュー生成。
   if (!modal.value.id) {
@@ -996,6 +1067,15 @@ async function doMerge() {
 .att-dropzone.busy { opacity: .7; }
 .att-drop-hint { font-size: 12px; color: #6b7280; pointer-events: none; }
 .att-btn { background: #f0f0f0; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+.att-btn-schedule { background: #ecfdf5; color: #065f46; }
+.att-badge-schedule { font-size: 11px; background: #d1fae5; color: #065f46; border-radius: 4px; padding: 1px 6px; margin-right: 4px; }
+.req { color: #E53935; font-style: normal; font-weight: 700; }
+.req-warn { font-size: 12px; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 6px 10px; margin: 0 0 8px; }
+.input-missing { border-color: #E53935 !important; background: #fff5f5; }
+.chk-inline { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: #334155; }
+.period { font-size: 12px; white-space: nowrap; }
+.kind-badge { display: inline-block; margin-left: 6px; font-size: 11px; font-weight: 700; color: #1e3a8a; background: #dbeafe; border-radius: 4px; padding: 1px 6px; vertical-align: 1px; }
+.period-unset { color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 4px; padding: 1px 6px; font-size: 11px; }
 .att-up { font-size: 12px; color: #888; }
 textarea.input { resize: vertical; font-family: inherit; }
 .rule-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }

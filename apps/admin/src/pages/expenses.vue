@@ -71,7 +71,7 @@
       </button>
       <div v-if="showCrossTab" class="crosstab-body">
         <p class="note">
-          現場経費（日報の経費）と個人経費を、科目ごと・月ごとに合計しています。車両の距離按分（内部原価の配賦分）は含みません。金額は税込です。
+          現場経費（日報の経費）と経費申請（現場外）を、科目ごと・月ごとに合計しています。車両の距離按分（内部原価の配賦分）は含みません。金額は税込です。
         </p>
         <div v-if="crossLoading" class="empty">読み込み中...</div>
         <div v-else-if="crossRows.length === 0" class="empty">この期間の経費がありません</div>

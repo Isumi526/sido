@@ -27,6 +27,9 @@ export interface PersonalExpenseInput {
   client_token?: string   // 1登録につき1つ。再送を1行にまとめる（二重計上の防止）
 }
 
+/** 経費の紐付け先になるオフィス・工場（現場マスタの区分≠現場・2026-09-13）。既定は作業員マスタの所属拠点 */
+export interface OfficeOption { id: string; name: string; kind: string }
+
 const EDGE_FN = 'personal-expense-submit'
 
 export const usePersonalExpense = () => {
@@ -74,7 +77,7 @@ export const usePersonalExpense = () => {
   }
 
   /** その月の申請可否・枠・明細をまとめて取得 */
-  async function loadState(month: string): Promise<{ canSubmit: boolean; usage: BudgetUsage; items: any[] }> {
+  async function loadState(month: string): Promise<{ canSubmit: boolean; usage: BudgetUsage; items: any[]; offices: OfficeOption[]; baseSiteId: string | null }> {
     try {
       const r = await call('state', { month })
       const items = (r.items ?? []) as any[]
@@ -82,10 +85,12 @@ export const usePersonalExpense = () => {
         canSubmit: !!r.canSubmit,
         usage: computeBudgetUsage(items, month, r.limit ?? null),
         items,
+        offices: (r.offices ?? []) as OfficeOption[],
+        baseSiteId: r.baseSiteId ?? null,
       }
     } catch {
       // 解決できない＝申請させない（フェイルセーフ。入口を開けたままにしない）
-      return { canSubmit: false, usage: computeBudgetUsage([], month, null), items: [] }
+      return { canSubmit: false, usage: computeBudgetUsage([], month, null), items: [], offices: [], baseSiteId: null }
     }
   }
 

@@ -25,7 +25,7 @@
 
       <!-- 個人経費の月額枠と超過検知（#32e93d75）。枠を持つ作業員だけ出す。 -->
       <div v-if="budgets.length" class="budget-panel" data-testid="pe-budget-panel">
-        <div class="budget-head">個人経費の月額枠（{{ yearMonth }}）</div>
+        <div class="budget-head">経費申請（現場外）の月額枠（{{ yearMonth }}）</div>
         <div class="budget-list">
           <div v-for="b in budgets" :key="b.workerId" class="budget-row" :class="{ over: b.usage.isOver }" :data-testid="`pe-budget-${b.workerId}`">
             <span class="budget-name">{{ b.workerName }}</span>
@@ -52,7 +52,7 @@
             <tbody>
               <tr v-for="(r, i) in grp.rows" :key="i">
                 <td>{{ r.workerName || '—' }}</td>
-                <td class="muted">{{ r.siteName || '現場外（個人経費）' }}</td>
+                <td class="muted">{{ r.siteName || (r.officeName ? `${r.officeName}（現場外）` : '拠点未設定（現場外）') }}</td>
                 <td>{{ expenseAccountCategory(r) }}</td>
                 <td class="muted">{{ r.note || '—' }}</td>
                 <td class="muted">{{ r.payee || '—' }}</td>
@@ -76,7 +76,7 @@ import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { flattenReportExpenses, flattenGasolineItems, flattenPersonalExpenses, ratesFromSettings, expenseDisplayCategory, expenseAccountCategory, resolveMonthlyLimit, personalExpenseLimitFromSettings, computeBudgetUsage, type ExpenseRow, type BudgetUsage } from '../lib/expenses'
 
-type DailyRow = ExpenseRow & { workerName: string }
+type DailyRow = ExpenseRow & { workerName: string; officeName?: string }
 type WorkerBudget = { workerId: string; workerName: string; usage: BudgetUsage }
 const budgets = ref<WorkerBudget[]>([])
 
@@ -112,7 +112,7 @@ async function load() {
       .order('date', { ascending: true }).limit(5000),
     // 現場に紐付かない個人経費（日報を出さない役員等の分。日報とは独立に引く）
     supabase.from('personal_expenses')
-      .select('id, worker_id, date, account_category, amount, payee, registration_number, companions, note, file_urls, tategae, workers(name)')
+      .select('id, worker_id, date, account_category, amount, payee, registration_number, companions, note, file_urls, tategae, site_id, site_name, workers(name)')
       .eq('account_id', accountId)
       .gte('date', dateFrom.value).lte('date', dateTo.value)
       .order('date', { ascending: true }).limit(5000),
@@ -137,10 +137,11 @@ async function load() {
       out.push({ ...row, workerName } as DailyRow)
     }
   }
-  // 現場外の個人経費を同じ台帳に合流（siteName は空＝現場に紛れ込ませない）
+  // 現場外の経費申請を同じ台帳に合流（siteName は空＝現場に紛れ込ませない）。
+  //  紐付け先のオフィス・工場（personal_expenses.site_name・2026-09-13）は表示専用の officeName に持つ
   for (const row of flattenPersonalExpenses(personal as any)) {
     const rec = (personal as any[]).find((p) => p.id === row.personalExpenseId)
-    out.push({ ...row, workerName: rec?.workers?.name ?? '—' } as DailyRow)
+    out.push({ ...row, workerName: rec?.workers?.name ?? '—', officeName: rec?.site_name || '' } as DailyRow)
   }
   allRows.value = out
 
@@ -170,7 +171,7 @@ const filteredRows = computed(() => {
   if (!kw) return allRows.value
   return allRows.value.filter(r =>
     (r.workerName || '').toLowerCase().includes(kw) ||
-    (r.siteName || '').toLowerCase().includes(kw) ||
+    (r.siteName || '').toLowerCase().includes(kw) || (r.officeName || '').toLowerCase().includes(kw) ||
     expenseDisplayCategory(r.category).toLowerCase().includes(kw) ||
     expenseAccountCategory(r).toLowerCase().includes(kw) ||
     (r.payee || '').toLowerCase().includes(kw) ||

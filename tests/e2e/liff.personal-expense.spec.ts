@@ -43,14 +43,14 @@ test.describe('個人経費の申請（liff）', () => {
     await setPermission(false, null)
     await page.goto('/expense/personal', { waitUntil: 'networkidle' })
     await expect(page.getByTestId('pe-submit'), '登録フォームを出さない').toHaveCount(0)
-    await expect(page.locator('body')).toContainText('個人経費の申請が許可されていません')
+    await expect(page.locator('body')).toContainText('経費申請が許可されていません')
   })
 
   test('権限があっても枠の金額が未設定なら提出させない', async ({ page }) => {
     await setPermission(true, null)
     await page.goto('/expense/personal', { waitUntil: 'networkidle' })
     await expect(page.getByTestId('pe-submit'), '金額未設定では提出させない').toHaveCount(0)
-    await expect(page.locator('body')).toContainText('個人経費の申請が許可されていません')
+    await expect(page.locator('body')).toContainText('経費申請が許可されていません')
   })
 
   test('権限＋枠があれば登録でき、枠の消費に反映される', async ({ page }) => {

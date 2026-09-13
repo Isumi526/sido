@@ -5,13 +5,19 @@
 //  （2026-07-11・[[project_sido]]）。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, restSrv, getAccountId } from './helpers'
+import { rest, restSrv, getAccountId, makePdf, SUPABASE_URL, SERVICE_ROLE_KEY } from './helpers'
 
 const TS = Date.now()
 const SITE = `E2E会社予定現場_${TS}`
 const TASK = `E2E内装工事_${TS}`
 let siteId = ''
 let taskId = ''
+let scheduleAttId = ''
+
+/** 工程（詳細）は既定で畳まれている（2026-09-13 月ビュー導入）ので開く */
+async function openTasks(page: import('@playwright/test').Page) {
+  await page.getByTestId('tasks-toggle').click()
+}
 
 function isoPlus(days: number): string {
   const d = new Date(); d.setDate(d.getDate() + days)
@@ -22,6 +28,17 @@ test.beforeAll(async () => {
   const accountId = await getAccountId()
   siteId = (await rest('sites', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
     account_id: accountId, name: SITE, active: true,
+    // 月ビュー（2026-09-13）: 住所→地方（東海）・工期。終了日は未定にして「右端まで伸びる帯」も見る
+    location: '愛知県名古屋市中区栄1-1', period_start: isoPlus(-3), period_end: null,
+  }) }))[0].id
+  // 工程表PDF（kind='schedule'）を非公開バケットへ置く → 月ビューのクリップから開ける
+  const pdfPath = `${accountId}/${siteId}/schedule-e2e-${TS}.pdf`
+  await fetch(`${SUPABASE_URL}/storage/v1/object/site-attachments/${pdfPath}`, {
+    method: 'POST', headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}`, 'Content-Type': 'application/pdf' },
+    body: makePdf(1),
+  })
+  scheduleAttId = (await restSrv('site_attachments', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
+    account_id: accountId, site_id: siteId, kind: 'schedule', path: pdfPath, name: `工程表_${TS}.pdf`,
   }) }))[0].id
   // process_tasks はRLS(authenticated限定)のため service role で作成
   taskId = (await restSrv('process_tasks', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
@@ -31,11 +48,34 @@ test.beforeAll(async () => {
 })
 test.afterAll(async () => {
   await restSrv(`process_tasks?id=eq.${taskId}`, { method: 'DELETE' }).catch(() => {})
+  await restSrv(`site_attachments?id=eq.${scheduleAttId}`, { method: 'DELETE' }).catch(() => {})
   await rest(`sites?id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})
+})
+
+// ★2026-09-10 SEED 大塚さん「詳細はいいから工期だけ分かればいい」「地域ごとにまとめて見たい」「PDFをクリックで見たい」
+test('★月ビュー: 現場マスタの工期が現場行の帯として出て、住所の地方でまとまり、工程表PDFをクリップから開ける', async ({ page }) => {
+  await page.goto('/company-schedule', { waitUntil: 'networkidle' })
+  const view = page.getByTestId('month-view')
+  await expect(view).toBeVisible({ timeout: 15000 })
+  const region = view.getByTestId('region-tokai')
+  await expect(region, '愛知県の住所 → 東海グループ').toBeVisible()
+  const row = view.getByTestId(`month-site-${siteId}`)
+  await expect(row).toContainText(SITE)
+  await expect(row, '終了日未定は「〜未定」').toContainText('未定')
+  await expect(row.locator('.mv-bar'), '工期の帯が出る').toBeVisible()
+  await expect(row.locator('.mv-bar')).toHaveClass(/open/)
+  // 工程表PDFのクリップ → 署名URLで別タブに開く（noopener の popup は Playwright で URL が取れないため window.open を捕まえる）
+  await page.evaluate(() => { (window as any).__opened = []; window.open = ((u: any) => { (window as any).__opened.push(String(u)); return null }) as any })
+  await row.getByTestId(`clip-${scheduleAttId}`).click()
+  await expect.poll(async () => (await page.evaluate(() => (window as any).__opened))[0] ?? '', { timeout: 15000 })
+    .toMatch(/site-attachments\/.*schedule-e2e-.*\.pdf.*token=/)
+  // 工期未定グループは既定で畳まれている（件数だけ見える）
+  await expect(view.getByTestId('region-toggle-noperiod')).toBeVisible()
 })
 
 test('作業員が会社予定ページで現場名・工程名・期間をガント形式で閲覧できる', async ({ page }) => {
   await page.goto('/company-schedule', { waitUntil: 'networkidle' })
+  await openTasks(page)
   // ガント形式: 現場ごとのグループに現場名・工程名・期間バー(ラベルに期間)が出る
   const group = page.locator('.gantt-group', { hasText: SITE })
   await expect(group).toBeVisible({ timeout: 15000 })
@@ -59,6 +99,7 @@ test('横スクロール方式: 長期タスクが混ざっていても短期タ
   }) }))[0].id
   try {
     await page.goto('/company-schedule', { waitUntil: 'networkidle' })
+    await openTasks(page)
     // 打ち切り表示(クランプ方式)の要素はもう存在しない
     await expect(page.locator('.gantt-truncate-note')).toHaveCount(0)
     await expect(page.locator('.gantt-bar-truncated-start, .gantt-bar-truncated-end')).toHaveCount(0)
@@ -98,6 +139,7 @@ test('開いた時、横スクロール位置は当日日付を含む位置に�
   }) }))[0].id
   try {
     await page.goto('/company-schedule', { waitUntil: 'networkidle' })
+    await openTasks(page)
     const gantt = page.locator('.gantt').first()
     await expect(gantt).toBeVisible({ timeout: 15000 })
     // scrollToTodayはデータ読み込み後のnextTickで実行されるため反映を少し待つ
@@ -110,6 +152,7 @@ test('開いた時、横スクロール位置は当日日付を含む位置に�
 
 test('日付軸の先頭ティックがsticky corner配下に隠れず、translateXオフセットが掛からない(2026-07-20回帰防止)', async ({ page }) => {
   await page.goto('/company-schedule', { waitUntil: 'networkidle' })
+  await openTasks(page)
   const firstTick = page.locator('.gantt-tick-first').first()
   await expect(firstTick).toBeVisible({ timeout: 15000 })
   await expect(firstTick).toHaveCSS('transform', 'none')

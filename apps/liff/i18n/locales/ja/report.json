@@ -49,6 +49,7 @@
   "siteGroupLinked": "この元請けに紐づく現場",
   "siteGroupOther": "その他の現場",
   "siteGroupUnlinked": "紐付けなし",
+  "siteGroupFacility": "オフィス・工場",
   "addNewSite": "＋ 新しい現場を登録する",
   "siteUnset": "現場未設定（あとで紐付け）",
   "siteUnsetNote": "現場が未作成でも記録できます。後で管理者が正しい現場へ紐付けます。",

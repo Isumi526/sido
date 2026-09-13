@@ -429,7 +429,7 @@ const siteNameById = computed(() => {
 async function loadSites() {
   const [{ data: siteRows }, { data: contractorRows }] = await Promise.all([
     supabase.from('sites').select('id, name, name_kana, contractor_id')
-      .eq('account_id', accountId).eq('active', true)
+      .eq('account_id', accountId).eq('active', true).eq('kind', 'site')   // オフィス・工場（kind≠site）は予定の候補に出さない（2026-09-13）
       .order('name_kana', { nullsFirst: false }).order('name'),
     supabase.from('contractors').select('id, name').eq('account_id', accountId),
   ])

@@ -3,5 +3,13 @@
   "loading": "読み込み中…",
   "empty": "直近の工程予定はありません",
   "period": "期間",
-  "noDate": "日付未設定"
+  "noDate": "日付未設定",
+  "noSites": "有効な現場がありません",
+  "siteCol": "現場",
+  "night": "夜",
+  "undecided": "未定",
+  "noPeriod": "工期未設定",
+  "noPeriodGroup": "工期未定",
+  "tasksToggle": "工程の詳細（Excel取込の工程）",
+  "openFailed": "工程表を開けませんでした"
 }

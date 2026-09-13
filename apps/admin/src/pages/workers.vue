@@ -110,8 +110,17 @@
           <p class="role-hint">権限階層: オーナー &gt; 役員・経理 &gt; 現場管理者 &gt; 作業員。画面/操作の制御は今後のフェーズで適用されます。</p>
           <p v-if="!canAssignRole('admin')" class="role-hint">※オーナー・役員・経理の付与はオーナーのみ行えます。</p>
         </div>
+        <!-- 所属拠点（2026-09-13）: 経費申請（現場に紐づかない経費）の紐付け先の既定値。横断する人は空でよい -->
+        <div class="field" v-if="offices.length">
+          <label>所属拠点（任意）</label>
+          <select v-model="modal.base_site_id" class="input" data-testid="worker-base-site">
+            <option :value="null">未設定（申請時に選ぶ）</option>
+            <option v-for="o in offices" :key="o.id" :value="o.id">{{ o.name }}</option>
+          </select>
+          <p class="hint-sm">経費申請（現場に紐づかない経費）の紐付け先の既定値になります。申請時に変更もできます。拠点は現場マスタで区分「オフィス」「工場」にした現場です。</p>
+        </div>
         <div class="field" v-if="canManageUsers">
-          <label>個人経費（現場に紐付かない経費）の申請</label>
+          <label>経費申請（現場に紐づかない経費）</label>
           <div class="toggle">
             <button type="button" :class="{ active: !modal.can_apply_personal_expense }" data-testid="pe-off" @click="modal.can_apply_personal_expense = false">許可しない</button>
             <button type="button" :class="{ active: !!modal.can_apply_personal_expense }" data-testid="pe-on" @click="modal.can_apply_personal_expense = true">許可する</button>
@@ -354,9 +363,11 @@ type Worker = {
   labor_insurance_number: string | null
   report_start_date: string | null
   auth_user_id: string | null
-  can_apply_personal_expense?: boolean | null      // 個人経費（現場に紐付かない経費）の申請を許すか
-  default_monthly_expense_limit?: number | null    // 個人経費の既定月額枠。指定の無い月は毎月これが効く
+  can_apply_personal_expense?: boolean | null      // 経費申請（現場に紐付かない経費）を許すか
+  default_monthly_expense_limit?: number | null    // 経費申請の既定月額枠。指定の無い月は毎月これが効く
+  base_site_id?: string | null                     // 所属拠点（kind=office/factory の現場・任意・2026-09-13）
 }
+const offices = ref<{ id: string; name: string }[]>([])   // 拠点候補（sites.kind in office/factory）
 
 const workers         = ref<Worker[]>([])
 // 状態タブ（有効/退職済み/無効）。status 未設定の既存行は active から導出。
@@ -572,7 +583,7 @@ function toggleProxyId(id: string) {
 async function load() {
   const accountId = await getAccountId()
   const [{ data: workersData }, { data: usersData }, { data: proxyData }, { data: consentData }] = await Promise.all([
-    supabase.from('workers').select('id, name, name_kana, role, permission_role, daily_wage, hourly_wage, active, status, hire_date, birth_date, address, mobile_phone, notify_email, emergency_contact, employment_type, weekly_scheduled_days, company_info, invoice_number, insurance_info, labor_insurance_number, report_start_date, auth_user_id, can_apply_personal_expense, default_monthly_expense_limit').eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
+    supabase.from('workers').select('id, name, name_kana, role, permission_role, daily_wage, hourly_wage, active, status, hire_date, birth_date, address, mobile_phone, notify_email, emergency_contact, employment_type, weekly_scheduled_days, company_info, invoice_number, insurance_info, labor_insurance_number, report_start_date, auth_user_id, can_apply_personal_expense, default_monthly_expense_limit, base_site_id').eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
     supabase.from('users').select('worker_id').eq('account_id', accountId).not('worker_id', 'is', null),
     supabase.from('worker_proxies').select('worker_id, proxy_operator_id').eq('account_id', accountId),
     // 個人データ取扱いの同意状況（2026-09-01 契約対応・AC4）。誰がいつ同意したかを一覧で分かるようにする。
@@ -581,6 +592,9 @@ async function load() {
   ])
   workers.value = (workersData ?? []) as Worker[]
   linkedWorkerIds.value = new Set((usersData ?? []).map((u: any) => u.worker_id as string))
+  // 拠点候補（オフィス・工場）。無いテナントは所属拠点の欄自体を出さない
+  const { data: officeRows } = await supabase.from('sites').select('id, name').eq('account_id', accountId).eq('active', true).in('kind', ['office', 'factory']).order('name_kana', { nullsFirst: false }).order('name')
+  offices.value = (officeRows ?? []) as { id: string; name: string }[]
   const consentMap = new Map<string, string>()
   for (const row of (consentData ?? []) as any[]) {
     if (!consentMap.has(row.worker_id)) consentMap.set(row.worker_id, row.consented_at)  // 降順なので最初が最新
@@ -599,7 +613,7 @@ async function load() {
 onMounted(() => { load(); loadSigninStatus() })
 
 function openAdd() {
-  modal.value = { name: '', name_kana: '', role: 'site', permission_role: 'worker', daily_wage: 20000, hourly_wage: 2000, hire_date: null, birth_date: null, address: null, mobile_phone: null, notify_email: null, emergency_contact: null, employment_type: 'fulltime', weekly_scheduled_days: null, company_info: null, invoice_number: null, insurance_info: null, labor_insurance_number: null, report_start_date: null, can_apply_personal_expense: false, default_monthly_expense_limit: null }
+  modal.value = { name: '', name_kana: '', role: 'site', permission_role: 'worker', daily_wage: 20000, hourly_wage: 2000, hire_date: null, birth_date: null, address: null, mobile_phone: null, notify_email: null, emergency_contact: null, employment_type: 'fulltime', weekly_scheduled_days: null, company_info: null, invoice_number: null, insurance_info: null, labor_insurance_number: null, report_start_date: null, can_apply_personal_expense: false, default_monthly_expense_limit: null, base_site_id: null }
   modalProxyIds.value = []
   familyMembers.value = []
   healthCheckups.value = []
@@ -709,6 +723,7 @@ async function save() {
       mobile_phone:          modal.value.mobile_phone?.trim() || null,
       notify_email:          modal.value.notify_email?.trim() || null,
       emergency_contact:     modal.value.emergency_contact?.trim() || null,
+      base_site_id:          modal.value.base_site_id || null,
       employment_type:       modal.value.employment_type ?? 'fulltime',
       weekly_scheduled_days: modal.value.employment_type === 'parttime' ? (modal.value.weekly_scheduled_days ?? null) : null,
       company_info:           modal.value.company_info?.trim() || null,

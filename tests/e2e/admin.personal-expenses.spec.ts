@@ -39,15 +39,29 @@ test.describe('現場外の個人経費', () => {
     await page.goto('/expenses-daily?ym=2026-09', { waitUntil: 'networkidle' })
     const row = page.locator('table tbody tr', { hasText: PAYEE }).first()
     await expect(row, '日報なしでも集計に出る').toBeVisible({ timeout: 15000 })
-    await expect(row, '現場に紛れ込ませない').toContainText('現場外（個人経費）')
+    // 紐付け先（オフィス）を持たない分は「拠点未設定（現場外）」（2026-09-13 文言変更）
+    await expect(row, '現場に紛れ込ませない').toContainText('拠点未設定（現場外）')
     await expect(row, '科目がそのまま出る').toContainText('接待交際費')
     await expect(row, '金額').toContainText('8,800')
     await expect(row, '立替').toContainText('立替')
   })
 
-  test('現場別集計には混入しない（現場の原価を歪めない）', async ({ page }) => {
+  test('現場別集計では現場タブに混入せず「拠点未設定」タブに出る（現場の原価を歪めない）', async ({ page }) => {
     await page.goto('/site-reports?ym=2026-09', { waitUntil: 'networkidle' })
     await page.waitForTimeout(1500)
-    await expect(page.locator('body'), '現場別集計に個人経費は出ない').not.toContainText(PAYEE)
+    // 現場タブ（＝オフィス以外）の表には出ない
+    const siteTabs = page.locator('.tabs .tab:not(.tab-office)')
+    if (await siteTabs.count()) {
+      await siteTabs.first().click()
+      await expect(page.locator('table.table tbody'), '現場の原価に混ぜない').not.toContainText(PAYEE)
+    }
+    // 拠点未設定タブには出る（2026-09-13 経費申請をオフィスごとに現場別集計へ並べる）
+    const unset = page.locator('.tabs .tab', { hasText: '拠点未設定' })
+    await expect(unset).toBeVisible()
+    await unset.click()
+    await expect(page.getByTestId('office-note')).toBeVisible()
+    const row = page.locator('table.table tbody tr', { hasText: PAYEE }).first()
+    await expect(row).toBeVisible()
+    await expect(row, '接待交際費の列').toContainText('8,800')
   })
 })

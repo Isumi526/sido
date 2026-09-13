@@ -30,7 +30,7 @@ test('現場を選ばずに共通ルールを登録でき、一覧に出る', as
 
   await page.getByTestId('rule-add-open').click()
   await page.locator('.modal textarea').fill(RULE)
-  await page.locator('.modal select').selectOption('both')
+  await page.locator('.modal select').last().selectOption('both')   // 末尾＝表示タイミング（先頭は対象区分・2026-09-13）
   await page.locator('.btn-save').click()
 
   await expect(page.getByTestId('rule-rows')).toContainText(RULE, { timeout: 15000 })

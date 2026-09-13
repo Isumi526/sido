@@ -20,6 +20,8 @@ export type SiteRow = {
   id: string
   name: string
   name_kana: string | null
+  /** 区分: site=現場 / office=オフィス / factory=工場（2026-09-13）。経費の紐付け先の区別に使う */
+  kind?: 'site' | 'office' | 'factory' | string
   active: boolean
   location: string | null
   construction_type: string | null
