@@ -22,15 +22,25 @@
           </div>
           <div v-else-if="todayStatus === 'rejected'" class="ot-status rejected"><span class="material-symbols-rounded ot-icon">block</span>{{ $t('overtime.statusRejected') }}</div>
 
+          <!-- ★締切前なら申請済みでも内容を変更・追加できる（2026-09-13 辻さん）。
+               申請は1日1件（現場は複数選べる）なので、先に1現場で出した後に2現場目の残業や
+               休憩の申告が出てきた時はここから足す。上書きすると再承認になる。 -->
+          <div v-if="todayStatus !== 'none' && canRequestToday && !editMode" class="ot-edit-row">
+            <p class="ot-edit-hint">{{ $t('overtime.editHint') }}</p>
+            <button type="button" class="ot-edit" :disabled="busy" data-testid="ot-edit" @click="startEdit">{{ $t('overtime.editStart') }}</button>
+          </div>
+
           <!-- 申請フォーム。
                ・締切前かつ未申請 → 通常の残業申請。
+               ・締切前かつ申請済み＋変更モード → 申請内容の変更・追加（上書き→再承認）。
                ・締切後（16:00以降）→ 16:00締切ルールは残したまま「実績修正の申請(late)」を出す導線。
                  実際に働いた残業実績を後から申告し、承認を得て反映する（既存申請があればEFが上書き）。 -->
-          <template v-if="(todayStatus === 'none' && canRequestToday) || !canRequestToday">
+          <template v-if="(todayStatus === 'none' && canRequestToday) || !canRequestToday || editMode">
             <template v-if="isLateMode">
               <div class="ot-status closed"><span class="material-symbols-rounded ot-icon">lock</span>{{ $t('overtime.deadlinePassed') }}</div>
               <p class="ot-late-note">{{ $t('overtime.lateNote') }}</p>
             </template>
+            <p v-else-if="editMode" class="ot-late-note" data-testid="ot-edit-note">{{ $t('overtime.editNote') }}</p>
 
             <label class="ot-label">{{ $t('overtime.endTimeLabel') }}</label>
             <select v-model="endTime" class="ot-input">
@@ -60,6 +70,10 @@
             <label class="ot-label">{{ isLateMode ? $t('overtime.lateReasonLabel') : $t('overtime.reasonLabel') }}</label>
             <textarea v-model="reason" class="ot-input" rows="2" :placeholder="isLateMode ? $t('overtime.lateReasonPlaceholder') : $t('overtime.reasonPlaceholder')" />
             <button v-if="isLateMode" class="ot-submit" :disabled="busy" data-testid="ot-late-submit" @click="onSubmitLate">{{ busy ? $t('overtime.submitting') : $t('overtime.lateSubmit') }}</button>
+            <template v-else-if="editMode">
+              <button class="ot-submit" :disabled="busy" data-testid="ot-edit-submit" @click="onSubmitUpdate">{{ busy ? $t('overtime.submitting') : $t('overtime.editSubmit') }}</button>
+              <button type="button" class="ot-edit-cancel" :disabled="busy" data-testid="ot-edit-cancel" @click="editMode = false">{{ $t('overtime.editCancel') }}</button>
+            </template>
             <button v-else class="ot-submit" :disabled="busy" @click="onSubmit">{{ busy ? $t('overtime.submitting') : $t('overtime.submit') }}</button>
           </template>
 
@@ -121,6 +135,7 @@ const msgOk   = ref(false)
 const siteOptions   = ref<string[]>([])   // 対象現場の候補（有効現場）
 const selectedSites = ref<string[]>([])   // 選択された対象現場（責任者へ通知 #5）
 const siteQuery     = ref('')             // 対象現場の絞り込み
+const editMode      = ref(false)          // 締切前の申請内容の変更・追加モード（2026-09-13 辻さん）
 // 絞り込み結果（選択済みは常に表示＝チェックが検索で消えないように）
 const filteredSiteOptions = computed(() => {
   const q = siteQuery.value.trim().toLowerCase()
@@ -222,6 +237,56 @@ async function onSubmitLate() {
   await refresh()
 }
 
+// 申請済みの中身をフォームに入れ直して変更モードに入る（現場の追加・終了時刻の変更・休憩の追加申告）
+async function startEdit() {
+  if (!workerId.value) return
+  busy.value = true; msg.value = ''
+  const cur = await overtime.activeRequest(workerId.value, today)
+  busy.value = false
+  if (cur) {
+    if (cur.endTime) endTime.value = cur.endTime
+    startTime.value = cur.startTime ?? ''
+    breakMinutes.value = (cur.breakMinutes === null || cur.breakMinutes === undefined) ? '' : String(cur.breakMinutes)
+    reason.value = cur.reason ?? ''
+    // 台帳に無い現場名は候補に出ないので、候補にあるものだけ復元（消えた現場は選び直し）
+    selectedSites.value = (cur.siteNames ?? []).filter(n => siteOptions.value.includes(n))
+  }
+  editMode.value = true
+}
+
+// 締切前の変更・追加。EFが有効申請を上書きして pending に戻す（再承認）。
+async function onSubmitUpdate() {
+  if (!workerId.value) { msg.value = t('overtime.errorNoLogin'); msgOk.value = false; return }
+  busy.value = true; msg.value = ''
+  const sites = [...selectedSites.value]
+  const res = await overtime.updateRequest(
+    workerId.value, today, endTime.value, reason.value, sites,
+    startTime.value || null,
+    // ★空文字は「申請なし」、'0' は「休憩なしで通した」。潰さないこと
+    breakMinutes.value === '' ? null : Number(breakMinutes.value),
+  )
+  busy.value = false
+  if (!res.ok) {
+    msg.value = res.error === 'deadline-passed' ? t('overtime.errorDeadline') : t('overtime.errorGeneric')
+    msgOk.value = false
+    await refresh()
+    return
+  }
+  editMode.value = false
+  msg.value = t('overtime.editSubmitted'); msgOk.value = true
+  // 責任者/管理者へ再通知（best-effort・通常申請と同じ経路。内容はEFが実在行から導出）
+  const efUrl = (config.public as any).edgeFunctionUrl
+  if (efUrl) {
+    const slug = await effectiveSlug()
+    fetch(`${efUrl}/notify-overtime`, {
+      method: 'POST', keepalive: true,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${(config.public as any).supabaseAnonKey}` },
+      body: JSON.stringify({ accountSlug: slug, worker_id: workerId.value, date: today }),
+    }).catch(() => {})
+  }
+  await refresh()
+}
+
 async function onCancel() {
   if (!workerId.value) return
   busy.value = true; msg.value = ''
@@ -255,6 +320,10 @@ onMounted(async () => {
 @keyframes spin { to { transform: rotate(360deg); } }
 .state-text { color: #888; }
 .ot-note { font-size: 13px; line-height: 1.7; color: #475569; background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 12px 14px; }
+.ot-edit-row { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 4px; }
+.ot-edit-hint { font-size: 12px; color: #64748b; margin: 0; line-height: 1.6; }
+.ot-edit { align-self: flex-start; background: #fff; color: #0f766e; border: 1px solid #99f6e4; border-radius: 8px; padding: 8px 12px; font-size: 13px; font-weight: 700; }
+.ot-edit-cancel { width: 100%; margin-top: 8px; background: #fff; color: #64748b; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; font-size: 13px; }
 .ot-late-note { font-size: 13px; line-height: 1.7; color: #9a3412; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 10px 12px; margin: 10px 0 0; }
 .ot-card { background: #fff; border-radius: 14px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
 .ot-card-title { font-size: 14px; font-weight: 700; color: #1e293b; margin-bottom: 12px; }

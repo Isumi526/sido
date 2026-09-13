@@ -91,6 +91,22 @@ export function useOvertimeRequest() {
     }
   }
 
+  /**
+   * 申請中/承認済みの中身（フォームに入れ直す用）。無ければ null。
+   * 2026-09-13 辻さん: 2現場ある日に先に1現場で出すと2現場目が出せなかった → 締切前の変更・追加のため。
+   */
+  async function activeRequest(
+    _workerId: string | null | undefined, date: string,
+  ): Promise<{ startTime: string | null; endTime: string | null; breakMinutes: number | null; reason: string; siteNames: string[] } | null> {
+    if (!date) return null
+    try {
+      return (await call('overtime-status', { date })).request ?? null
+    } catch (e) {
+      console.error('[overtime] 申請内容を取得できませんでした:', e)
+      return null
+    }
+  }
+
   // 直近の自分の申請一覧（履歴表示用・新しい順）。
   async function myRecent(_workerId: string | null | undefined, limit = 20): Promise<any[]> {
     try {
@@ -152,6 +168,32 @@ export function useOvertimeRequest() {
     }
   }
 
+  /**
+   * 締切前の申請内容の変更・追加。有効申請(pending/approved)があればEFが上書きして
+   * 再承認のため pending に戻す。無ければ新規。締切は EF でも検証する。
+   * ★worker_id は渡さない。EF が検証済みの身元から決める。
+   */
+  async function updateRequest(
+    _workerId: string | null | undefined, date: string, requestedEndTime: string | null, reason: string,
+    siteNames: string[] = [],
+    requestedStartTime: string | null = null,
+    requestedBreakMinutes: number | null = null,
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (!date) return { ok: false, error: 'no-worker-or-date' }
+    if (!canRequest(date)) return { ok: false, error: 'deadline-passed' }
+    try {
+      await call('overtime-update', {
+        date, requestedEndTime, requestedStartTime,
+        ...(requestedBreakMinutes === null ? {} : { requestedBreakMinutes }),
+        reason, siteNames,
+      })
+      return { ok: true }
+    } catch (e: any) {
+      const m = String(e?.message ?? 'failed')
+      return { ok: false, error: m.includes('deadline_passed') ? 'deadline-passed' : m }
+    }
+  }
+
   // 誤った申請の取り消し（pending のみ削除＝承認済みは消さない）。
   async function cancelRequest(_workerId: string | null | undefined, date: string): Promise<{ ok: boolean; error?: string }> {
     if (!date) return { ok: false, error: 'no-worker-or-date' }
@@ -163,5 +205,5 @@ export function useOvertimeRequest() {
     }
   }
 
-  return { canRequest, status, isApproved, approvedAdjustment, myRecent, requestOvertime, requestLateCorrection, cancelRequest }
+  return { canRequest, status, isApproved, approvedAdjustment, activeRequest, myRecent, requestOvertime, requestLateCorrection, updateRequest, cancelRequest }
 }

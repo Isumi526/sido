@@ -455,7 +455,7 @@ Deno.serve(async (req) => {
     const date = isDate(body.date) ? body.date : ''
     if (!date) return json({ ok: false, error: 'bad_date' }, 400)
     const { data } = await svc.from('overtime_requests')
-      .select('status, requested_start_time, requested_end_time, requested_break_minutes, requested_at')
+      .select('status, requested_start_time, requested_end_time, requested_break_minutes, reason, site_names, requested_at')
       .eq('account_id', caller.accountId).eq('worker_id', caller.workerId).eq('date', date)
       .order('requested_at', { ascending: false }).limit(1)
     const r = (data ?? [])[0] as any
@@ -468,6 +468,17 @@ Deno.serve(async (req) => {
             startTime: hhmm(r.requested_start_time ?? null),
             endTime: hhmm(r.requested_end_time ?? null),
             breakMinutes: r.requested_break_minutes ?? null,
+          }
+        : null,
+      // ★申請中/承認済みの中身。締切前の「申請内容の変更・追加」でフォームに入れ直すために返す
+      //  （2026-09-13 辻さん: 2現場ある日に1現場分しか出せなかった）。
+      request: r && (r.status === 'pending' || r.status === 'approved')
+        ? {
+            startTime: hhmm(r.requested_start_time ?? null),
+            endTime: hhmm(r.requested_end_time ?? null),
+            breakMinutes: r.requested_break_minutes ?? null,
+            reason: r.reason ?? '',
+            siteNames: Array.isArray(r.site_names) ? r.site_names : [],
           }
         : null,
     })
@@ -570,6 +581,62 @@ Deno.serve(async (req) => {
         }
       }
       console.error('[attendance-log] overtime-late insert failed:', error)
+      return json({ ok: false, error: 'insert_failed' }, 500)
+    }
+    return json({ ok: true, updated: false })
+  }
+
+  // ── 締切前の申請内容の変更・追加（2026-09-13 辻さん）──
+  //  申請は worker×date で1件（overtime_requests_active_uidx）。先に1現場で出した後に
+  //  2現場目の残業や休憩の申告が出てくると、フォームが消えて詰んでいた。
+  //  締切(当日16:00 JST)前なら有効申請(pending/approved)をそのまま上書きし、再承認のため
+  //  pending に戻す（late と同じ形・is_late は付けない）。無ければ通常の新規申請と同じ。
+  //  ★worker_id は caller 本人で固定。
+  if (body.action === 'overtime-update') {
+    const date = isDate(body.date) ? body.date : ''
+    if (!date) return json({ ok: false, error: 'bad_date' }, 400)
+    if (date !== jstDay(0)) return json({ ok: false, error: 'not_today' }, 400)
+    const jstHour = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Tokyo', hour: 'numeric', hour12: false }).format(new Date()))
+    if (jstHour >= 16) return json({ ok: false, error: 'deadline_passed' }, 400)
+
+    const bm = body.requestedBreakMinutes
+    const fields = {
+      requested_end_time: isTime(body.requestedEndTime) ? body.requestedEndTime : null,
+      requested_start_time: isTime(body.requestedStartTime) ? body.requestedStartTime : null,
+      // ★0（休憩なし）と null（申請なし）を潰さない
+      requested_break_minutes: (typeof bm === 'number' && bm >= 0 && bm <= 480) ? bm : null,
+      reason: typeof body.reason === 'string' && body.reason.trim() ? body.reason.trim() : null,
+      site_names: Array.isArray(body.siteNames) && body.siteNames.length ? body.siteNames.map(String) : null,
+    }
+    const overwrite = {
+      ...fields, is_late: false, status: 'pending',
+      approved_by: null, decided_at: null, requested_at: new Date().toISOString(),
+    }
+    const { data: active } = await svc.from('overtime_requests').select('id')
+      .eq('account_id', caller.accountId).eq('worker_id', caller.workerId).eq('date', date)
+      .in('status', ['pending', 'approved']).limit(1)
+    if (active && active.length) {
+      const { error } = await svc.from('overtime_requests').update(overwrite).eq('id', active[0].id)
+      if (error) {
+        console.error('[attendance-log] overtime-update failed:', error)
+        return json({ ok: false, error: 'update_failed' }, 500)
+      }
+      return json({ ok: true, updated: true })
+    }
+    const { error } = await svc.from('overtime_requests').insert({
+      account_id: caller.accountId, worker_id: caller.workerId, date, ...fields, status: 'pending',
+    })
+    if (error) {
+      if ((error as any).code === '23505') {
+        const { data: a2 } = await svc.from('overtime_requests').select('id')
+          .eq('account_id', caller.accountId).eq('worker_id', caller.workerId).eq('date', date)
+          .in('status', ['pending', 'approved']).limit(1)
+        if (a2 && a2.length) {
+          await svc.from('overtime_requests').update(overwrite).eq('id', a2[0].id)
+          return json({ ok: true, updated: true })
+        }
+      }
+      console.error('[attendance-log] overtime-update insert failed:', error)
       return json({ ok: false, error: 'insert_failed' }, 500)
     }
     return json({ ok: true, updated: false })

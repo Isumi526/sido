@@ -18,10 +18,12 @@ import { rest, restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()
 const SITE = `E2E早朝現場_${TS}`
+const SITE2 = `E2E夜勤現場_${TS}`   // 2現場目（申請内容の変更・追加テスト用）
 const DATE = '2026-12-24'
 
 let accountId = ''
 let siteId = ''
+let site2Id = ''
 let workerId = ''
 let userId = ''
 
@@ -70,12 +72,17 @@ test.describe('早朝入り・休憩なしの申請', () => {
         default_breaks: [{ start: '12:00', minutes: 60 }],
       }),
     }))[0].id
+    site2Id = (await restSrv('sites', {
+      method: 'POST', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ account_id: accountId, name: SITE2, active: true }),
+    }))[0].id
   })
 
   test.afterAll(async () => {
     await restSrv(`overtime_requests?worker_id=eq.${workerId}&date=eq.${DATE}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`daily_reports?user_id=eq.${userId}&date=eq.${DATE}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`sites?id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`sites?id=eq.${site2Id}`, { method: 'DELETE' }).catch(() => {})
   })
 
   test('★承認されていなければ、固定開始より前は選べない（架空の早出を作れない）', async ({ page }) => {
@@ -119,6 +126,29 @@ test.describe('早朝入り・休憩なしの申請', () => {
     await expect(page.getByTestId('approved-break')).toContainText('30分', { timeout: 20000 })
   })
 
+  // ★2026-09-13 辻さん「休憩時間の申請をしたい」で発覚: 承認された休憩は「承認済み」と
+  //  表示されるだけで、労働時間の計算（プレビュー＝保存値と同じ計算）には効いていなかった。
+  //  08:30〜18:00（現場の既定休憩60分）: 既定なら 8h＋残業0.5h。休憩なしが承認されれば 8h＋残業1.5h。
+  test('★承認された「休憩なし」は労働時間の計算に反映される（表示だけで終わらない）', async ({ page }) => {
+    await seedRequest('approved', { requested_break_minutes: 0 })
+    await seedReport()
+    await page.goto(`/report?edit=${DATE}`, { waitUntil: 'networkidle' })
+    await expect(page.getByTestId('approved-break')).toContainText('なし', { timeout: 20000 })
+    const row = page.locator('.preview-table tbody tr').first()
+    await expect(row, '★休憩0分で計算される＝残業が1.5hになる').toContainText('残業1.5h', { timeout: 20000 })
+    await expect(row.locator('.preview-break'), '休憩欄は「—」（0分）').toHaveText('—')
+  })
+
+  test('承認された休憩の短縮（30分）はその分数で計算される', async ({ page }) => {
+    await seedRequest('approved', { requested_break_minutes: 30 })
+    await seedReport()
+    await page.goto(`/report?edit=${DATE}`, { waitUntil: 'networkidle' })
+    await expect(page.getByTestId('approved-break')).toContainText('30分', { timeout: 20000 })
+    const row = page.locator('.preview-table tbody tr').first()
+    await expect(row, '30分休憩＝8h＋残業1h').toContainText('残業1h', { timeout: 20000 })
+    await expect(row.locator('.preview-break')).toHaveText('30分')
+  })
+
   test('何も申請していない日は今までどおり（固定開始が下限・現場の既定休憩）', async ({ page }) => {
     await restSrv(`overtime_requests?worker_id=eq.${workerId}&date=eq.${DATE}`, { method: 'DELETE' }).catch(() => {})
     await seedReport()
@@ -154,5 +184,52 @@ test.describe('早朝入り・休憩なしの申請', () => {
       `overtime_requests?worker_id=eq.${workerId}&select=requested_start_time,requested_break_minutes&order=requested_at.desc&limit=1`))[0]
     expect((row.requested_start_time || '').slice(0, 5), '早朝入りが記録される').toBe('06:00')
     expect(row.requested_break_minutes, '★0（休憩なし）が null に潰れない').toBe(0)
+  })
+
+  // ★2026-09-13 辻さん「1日に2つの現場がある場合、残業申請が1つの現場しかできません」
+  //  申請は1日1件（現場は複数選べる）だが、先に出すとフォームが消えて2現場目を足せなかった。
+  //  締切前なら申請済み（承認済みでも）の内容を変更・追加でき、更新すると再承認（pending）に戻る。
+  test('★申請済みでも締切前なら現場を追加・休憩を申告できる（更新で再承認に戻る）', async ({ page }) => {
+    const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
+    await restSrv(`overtime_requests?worker_id=eq.${workerId}&date=eq.${today}`, { method: 'DELETE' }).catch(() => {})
+    // 先に1現場（SITE）で承認済みになっている状態を作る
+    await restSrv('overtime_requests', {
+      method: 'POST', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        account_id: accountId, worker_id: workerId, date: today, status: 'approved',
+        requested_end_time: '18:30', site_names: [SITE], reason: 'E2E 1現場目',
+      }),
+    })
+    await page.goto('/overtime', { waitUntil: 'networkidle' })
+    const editBtn = page.getByTestId('ot-edit')
+    if (await editBtn.count() === 0) {
+      test.skip(true, '当日の締切(16:00)を過ぎているため変更ボタンが出ない')
+      return
+    }
+    await editBtn.click()
+    await expect(page.getByTestId('ot-edit-note')).toBeVisible()
+    // 1現場目のチェックは復元されている
+    await expect(page.locator('label.ot-site', { hasText: SITE }).locator('input')).toBeChecked()
+    // 2現場目を追加し、終了時刻と休憩を申告する
+    await page.locator('label.ot-site', { hasText: SITE2 }).locator('input').check()
+    await page.locator('select.ot-input').first().selectOption('20:00')
+    await page.getByTestId('ot-break').selectOption('0')
+    await page.getByTestId('ot-edit-submit').click()
+
+    await expect.poll(async () => {
+      const rows = await restSrv(
+        `overtime_requests?worker_id=eq.${workerId}&date=eq.${today}&select=status,requested_end_time,requested_break_minutes,site_names,is_late,approved_by`)
+      return rows?.[0]?.status ?? null
+    }, { timeout: 20000 }).toBe('pending')
+    const rows = await restSrv(
+      `overtime_requests?worker_id=eq.${workerId}&date=eq.${today}&select=status,requested_end_time,requested_break_minutes,site_names,is_late,approved_by`)
+    expect(rows.length, '★1日1件のまま（2件目を作らない）').toBe(1)
+    const r = rows[0]
+    expect(r.site_names, '★2現場目が足されている').toEqual(expect.arrayContaining([SITE, SITE2]))
+    expect((r.requested_end_time || '').slice(0, 5)).toBe('20:00')
+    expect(r.requested_break_minutes, '休憩なしの申告が乗る').toBe(0)
+    expect(r.is_late, '締切前の変更は実績修正ではない').toBe(false)
+    expect(r.approved_by, '承認は取り消され再承認待ちになる').toBeNull()
+    await restSrv(`overtime_requests?worker_id=eq.${workerId}&date=eq.${today}`, { method: 'DELETE' }).catch(() => {})
   })
 })

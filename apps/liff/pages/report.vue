@@ -1428,8 +1428,44 @@ async function refreshOvertime() {
   if (seq !== overtimeSeq) return   // 追い越された＝この結果はもう古い
   overtimeApprovedForDate.value = approved
   approvedAdjust.value = adjust
+  applyApprovedBreak()
 }
 watch([() => report.form.value.date, () => currentUser.value?.worker_id], refreshOvertime, { immediate: true })
+
+/**
+ * ★承認された休憩（休憩なし／短縮）を日報の休憩スナップショットに書き込む。
+ *  2026-08-15 の実装は「承認済み」と表示するだけで、人件費計算（effectiveBreakMinutes /
+ *  effectiveBreakWindows → computeWorkerHours、admin 集計も同じ関数）には効いていなかった。
+ *  休憩なしで通した日が既定休憩ぶん少なく計算されていた（2026-09-13 辻さん「休憩時間の申請」で発覚）。
+ *  - breaks=[{start, minutes}] + breakSnapshot=true にして保存値を正にする（過去日報は触らない）。
+ *    minutes=0 でも要素を残す＝ effectiveBreakMinutes が 0 を返し、既定計算に落ちない。
+ *  - 複数現場の日は「一番早い現場の行」に承認分を置き、他の行は 0（1日の休憩は1つの申請で決まる）。
+ *  - 現場を選び直す/編集で読み込む/下書き復元 のたびに再適用する（watch）。
+ */
+function applyApprovedBreak() {
+  const bm = approvedAdjust.value?.breakMinutes
+  if (bm === null || bm === undefined) return
+  const sites = report.form.value.sites
+  if (!sites?.length) return
+  const order = sites
+    .map((s, si) => ({ si, start: parseMin(s?.workers?.[0]?.startTime || '08:00') }))
+    .sort((a, b) => a.start - b.start)
+  order.forEach(({ si }, idx) => {
+    const s = sites[si]
+    const w = s?.workers?.[0]
+    if (!w) return
+    const minutes = idx === 0 ? bm : 0
+    const def = siteFixedBreaks(s.siteName, si)
+    const start = def?.[0]?.start ?? (Array.isArray(w.breaks) ? w.breaks[0]?.start : undefined) ?? '12:00'
+    w.breaks = [{ start, minutes }]
+    w.breakMinutes = minutes
+    w.breakSnapshot = true
+  })
+}
+watch(
+  () => report.form.value.sites.map(s => `${s?.siteName ?? ''}|${s?.workCategoryId ?? ''}|${s?.workers?.[0]?.startTime ?? ''}`).join(','),
+  () => applyApprovedBreak(),
+)
 
 const initializing = ref(true)
 
