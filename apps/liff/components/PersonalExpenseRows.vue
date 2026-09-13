@@ -62,9 +62,10 @@
 
       <label class="pe-field">
         <span>{{ $t('report.receiptLabel') }}</span>
+        <!-- ★添付した写真は1枚ずつ ✕ で外せる（2026-09-13 辻さん）。日報の領収書と同じ部品 -->
+        <AttachedFilesBadge :files="row.files" @remove-file="(p) => removeFile(i, p.index)" />
         <input type="file" accept="image/*,.pdf" multiple class="input" :data-testid="`pe-file-${i}`"
                @change="(e) => onFile(i, e)" />
-        <span v-if="row.files.length" class="pe-files">{{ $t('report.filesSelected', { count: row.files.length }) }}</span>
       </label>
 
       <!-- 支払元。既存の個人経費ページ・現場経費と同じ二択の意味論（tategae=個人立替） -->
@@ -129,6 +130,10 @@ function removeRow(i: number) { emit('remove', i) }
 function onFile(i: number, e: Event) {
   const input = e.target as HTMLInputElement
   props.rows[i].files = Array.from(input.files ?? [])
+}
+// 間違えて添付した1枚を外す（他は残す）
+function removeFile(i: number, index: number) {
+  props.rows[i].files = props.rows[i].files.filter((_, fi) => fi !== index)
 }
 </script>
 

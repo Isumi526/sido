@@ -31,5 +31,11 @@
   "lateSubmit": "Submit actual correction",
   "lateSubmitted": "Correction submitted. Awaiting admin approval.",
   "lateReasonRequired": "Please enter a reason for the correction.",
-  "lateBadge": "Late correction"
+  "lateBadge": "Late correction",
+  "editHint": "Until the 16:00 deadline you can change or add to today's request (e.g. a second site or a break). Changes need approval again.",
+  "editStart": "Change / add to request",
+  "editNote": "Editing the submitted request. You can add sites or fix the end time / break. Updating requires admin approval again.",
+  "editSubmit": "Update request",
+  "editCancel": "Discard changes",
+  "editSubmitted": "Request updated. Awaiting admin approval again."
 }

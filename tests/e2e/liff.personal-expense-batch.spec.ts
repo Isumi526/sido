@@ -79,6 +79,20 @@ test.describe('個人経費の複数領収書まとめ登録（liff）', () => {
     }).catch(() => {})
   })
 
+  // 2026-09-13 辻さん「間違えて写真を添付してしまった時の削除もできるようにしてほしい」
+  //  日報の領収書には ✕ があったが、このページには無かった。
+  test('★間違えて添付した領収書を1枚だけ外せる', async ({ page }) => {
+    await stubUpload(page)
+    await page.goto('/expense/personal', { waitUntil: 'networkidle' })
+    await page.getByTestId('pe-files').setInputFiles([img('a'), img('b')])
+    const badge = page.getByTestId('attached-badge').first()
+    await expect(badge).toContainText('2件')
+    await badge.locator('.thumb__del').first().click()
+    await expect(badge, '★1枚だけ外れて、もう1枚は残る').toContainText('1件')
+    await expect(page.getByText('1件を添付します')).toBeVisible()
+    await expect(page.getByTestId('pe-analyze'), '1枚なら単体解析ボタンに戻る').toBeVisible()
+  })
+
   test('★複数枚は1枚=1件の下書きになり、押すまで登録されない', async ({ page }) => {
     await stubAnalyze(page, {
       a: { yen: 1200, storeName: `E2E店A_${TS}`, invoiceNumber: 'T1234567890123', label: '駐車場', account: '旅費交通費' },

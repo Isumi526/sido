@@ -44,6 +44,9 @@
              下の手入力フォームでそのまま登録できる（領収書は必須ではない）。 -->
         <section class="pe-card" data-testid="pe-receipt-card">
           <div class="pe-card-title">領収書から登録</div>
+          <!-- ★添付した写真は1枚ずつ ✕ で外せる（間違えて付けた時の削除・2026-09-13 辻さん）。
+               日報の領収書と同じ AttachedFilesBadge を使う。 -->
+          <AttachedFilesBadge :files="files" @remove-file="(p) => removePickedFile(p.index)" />
           <input type="file" accept="image/*,application/pdf" multiple class="pe-file" data-testid="pe-files" @change="onPickFiles" />
           <p v-if="files.length" class="pe-hint">{{ files.length }}件を添付します</p>
           <p v-else class="pe-hint">複数枚まとめて選べます。1枚ずつ登録し直す必要はありません。</p>
@@ -374,6 +377,11 @@ function shiftMonth(n: number) {
 
 function onPickFiles(e: Event) {
   files.value = Array.from((e.target as HTMLInputElement).files ?? [])
+}
+// 間違えて添付した1枚を外す（他の添付は残す）。全部外れたら未添付に戻る＝下の手入力フォームで登録できる。
+function removePickedFile(index: number) {
+  files.value = files.value.filter((_, i) => i !== index)
+  aiMsg.value = ''
 }
 
 /**
