@@ -121,5 +121,6 @@
   "moreActions": "Forgot or mis-pressed a punch?",
   "stepNoLocationNote": "Location could not be obtained, but you can still record.",
   "againTitle": "Check in again",
-  "againNote": "For a second shift on the same day (e.g. working through after a night shift)."
+  "againNote": "For a second shift on the same day (e.g. working through after a night shift).",
+  "categoryLabel": "Select your work category (rules differ by category)"
 }

@@ -321,7 +321,7 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: 'proxy_not_allowed' }, 403)
     }
     const { data } = await svc.from('attendance_logs')
-      .select('site_id, type, checked_at')
+      .select('site_id, type, checked_at, work_category_id')
       .eq('worker_id', target).gte('checked_at', since)
       .is('deleted_at', null)          // ★取り消された誤打刻は「出勤中か」の判定に混ぜない
       .order('checked_at', { ascending: true })
@@ -330,15 +330,30 @@ Deno.serve(async (req) => {
 
   // ── 打刻時に見せるアカウント共通の確認ルール（2026-08-27 出退勤モデル変更）──
   //  現場別ルール(site_rules)の置き換え。出勤時・退勤時それぞれで出す分だけ返す。
+  //  ★2026-09-13: 作業区分ごとのルール。work_category_id=NULL は全区分共通。
+  //   ルールを持つ区分（categories）を返し、クライアントは1つでもあれば区分を選ばせる。
+  //   workCategoryId を渡すと「共通＋その区分」だけを返す（渡さなければ共通のみ）。
   if (body.action === 'rules') {
     const timing = body.timing === 'checkin' || body.timing === 'checkout' ? body.timing : ''
     if (!timing) return json({ ok: false, error: 'timing_required' }, 400)
-    const { data } = await svc.from('account_attendance_rules')
-      .select('id, content, timing')
-      .eq('account_id', caller.accountId)
-      .in('timing', [timing, 'both'])
-      .order('sort_order', { ascending: true })
-    return json({ ok: true, rules: data ?? [] })
+    const catId = typeof body.workCategoryId === 'string' && /^[0-9a-f-]{36}$/i.test(body.workCategoryId) ? body.workCategoryId : ''
+    const [{ data: all }, { data: cats }] = await Promise.all([
+      svc.from('account_attendance_rules')
+        .select('id, content, timing, work_category_id')
+        .eq('account_id', caller.accountId)
+        .in('timing', [timing, 'both'])
+        .order('sort_order', { ascending: true }),
+      svc.from('work_categories').select('id, name, sort_order').eq('account_id', caller.accountId).eq('active', true).order('sort_order'),
+    ])
+    const rows = (all ?? []) as any[]
+    // ルールを持つ区分（timing 不問で「その区分にルールがある」か）＝ 選択肢
+    const { data: anyTiming } = await svc.from('account_attendance_rules')
+      .select('work_category_id').eq('account_id', caller.accountId).not('work_category_id', 'is', null)
+    const withRules = new Set(((anyTiming ?? []) as any[]).map((r) => r.work_category_id))
+    const categories = ((cats ?? []) as any[]).filter((c) => withRules.has(c.id)).map((c) => ({ id: c.id, name: c.name }))
+    const rules = rows.filter((r) => r.work_category_id === null || (catId && r.work_category_id === catId))
+      .map((r) => ({ id: r.id, content: r.content, timing: r.timing }))
+    return json({ ok: true, rules, categories })
   }
 
   // ── 日報に出す実打刻（現場名つき・期間指定）──
@@ -379,8 +394,16 @@ Deno.serve(async (req) => {
       if (!(await proxyAllowed(svc, caller, target))) return json({ ok: false, error: 'proxy_not_allowed' }, 403)
     }
 
+    // 打刻時に選んだ作業区分（自アカウントの有効な区分だけ受け付ける・無ければ NULL）
+    let workCategoryId: string | null = null
+    if (typeof body.workCategoryId === 'string' && /^[0-9a-f-]{36}$/i.test(body.workCategoryId)) {
+      const { data: cat } = await svc.from('work_categories').select('id')
+        .eq('id', body.workCategoryId).eq('account_id', caller.accountId).maybeSingle()
+      workCategoryId = cat?.id ?? null
+    }
     const { data, error } = await svc.from('attendance_logs').insert({
       site_id: siteId || null,
+      work_category_id: workCategoryId,
       worker_id: target,
       type,
       // ★時刻はサーバで決める。クライアントに決めさせると過去日時を送って証跡を偽造できる
