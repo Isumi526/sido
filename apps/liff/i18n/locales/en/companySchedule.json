@@ -3,5 +3,13 @@
   "loading": "Loading…",
   "empty": "No upcoming schedule",
   "period": "Period",
-  "noDate": "No date"
+  "noDate": "No date",
+  "noSites": "No active sites",
+  "siteCol": "Site",
+  "night": "Night",
+  "undecided": "TBD",
+  "noPeriod": "Period not set",
+  "noPeriodGroup": "Period TBD",
+  "tasksToggle": "Task details (imported schedule)",
+  "openFailed": "Could not open the schedule"
 }

@@ -85,6 +85,15 @@ const SHARES = [
     ],
   },
   {
+    // 住所→地方（会社予定の地方グルーピング）。admin/LIFF/EF で同じ判定にする
+    src: 'shared/jp-region.ts',
+    dests: [
+      'supabase/functions/_shared/jp-region.gen.ts',
+      'apps/admin/src/lib/jp-region.gen.ts',
+      'apps/liff/utils/jp-region.gen.ts',
+    ],
+  },
+  {
     // 無償満了日の計算。admin(告知UI・アカウント発行)と EF(サーバ側判定)で同じ結果にならないと
     // 「画面は満了と出たのにサーバは無償のまま」のような食い違いが起きる（法的な通知起点）
     src: 'shared/billing-trial.ts',

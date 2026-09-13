@@ -11,6 +11,7 @@
 //   - 直近60日以内に終了した/半年以内に開始する工程のみ返す（古い履歴は出さない）。
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { regionOf } from '../_shared/jp-region.gen.ts'
 
 const SUPABASE_URL        = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_ROLE_KEY    = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -63,5 +64,32 @@ Deno.serve(async (req) => {
     end_date: t.end_date as string | null,
   }))
 
-  return json({ items })
+  // ── 月ビュー（2026-09-10 SEED 大塚さん）: 有効現場の工期（sites.period_*）＋地方＋工程表PDF＋夜間帯。
+  //  金額・顧客名・担当者名は返さない（既存のスコープと同じ）。住所は地方判定にだけ使い、地方名のみ返す。
+  //  工期は「直近60日以内に終了した／半年以内に開始する」に絞らず全有効現場を返す（工期未定の現場も出す）。
+  const [{ data: siteRows }, { data: atts }, { data: cat }] = await Promise.all([
+    svc.from('sites').select('id, name, location, period_start, period_end, default_start_time, default_end_time')
+      .eq('account_id', account.id).eq('active', true).neq('name', '__unset__').order('name_kana', { nullsFirst: false }).order('name'),
+    svc.from('site_attachments').select('id, site_id, name').eq('account_id', account.id).eq('kind', 'schedule').order('created_at'),
+    svc.from('site_category_hours').select('site_id, default_start_time, default_end_time').eq('account_id', account.id),
+  ])
+  const isNight = (st: string | null, en: string | null) => !!st && !!en && String(st).slice(0, 5) > String(en).slice(0, 5)
+  const nightIds = new Set<string>()
+  for (const c of (cat ?? []) as any[]) if (isNight(c.default_start_time, c.default_end_time)) nightIds.add(c.site_id)
+  const sites = ((siteRows ?? []) as any[]).map((s) => {
+    const region = regionOf(s.location)
+    return {
+      id: s.id as string,
+      name: s.name as string,
+      period_start: (s.period_start ?? null) as string | null,
+      period_end: (s.period_end ?? null) as string | null,
+      region_key: region.key,
+      region_label: region.label,
+      region_order: region.order,
+      night: isNight(s.default_start_time, s.default_end_time) || nightIds.has(s.id),
+      schedule_attachments: ((atts ?? []) as any[]).filter((a) => a.site_id === s.id).map((a) => ({ id: a.id as string, name: (a.name ?? null) as string | null })),
+    }
+  })
+
+  return json({ items, sites })
 })
