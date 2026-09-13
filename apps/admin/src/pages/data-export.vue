@@ -71,7 +71,7 @@ const TARGETS: Target[] = [
   { key: 'contractors', label: '元請け業者', note: '取引先（元請け）', table: 'contractors', columns: '*' },
   { key: 'subcontractors', label: '協力業者', note: '取引先（下請け）', table: 'subcontractors', columns: '*' },
   { key: 'subcontractor_invoices', label: '協力業者の請求', note: '請求書の記録', table: 'subcontractor_invoices', columns: '*' },
-  { key: 'personal_expenses', label: '個人経費', note: '立替の申請', table: 'personal_expenses', columns: '*' },
+  { key: 'personal_expenses', label: '経費申請（現場外）', note: '現場に紐づかない経費の申請', table: 'personal_expenses', columns: '*' },
   { key: 'paid_leave_grants', label: '有給の付与', note: '付与・失効', table: 'paid_leave_grants', columns: '*' },
   { key: 'overtime_requests', label: '残業申請', note: '申請と承認の記録', table: 'overtime_requests', columns: '*' },
   { key: 'external_consents', label: '外部者の規約同意', note: '誰がいつ何に同意したか', table: 'external_consents', columns: '*' },

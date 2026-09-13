@@ -227,7 +227,17 @@ Deno.serve(async (req) => {
     // ★取得に失敗したら黙って0件にしない。0件と失敗を同じ顔で返すと、
     //  枠の使用額が¥0に見えて上限チェックが素通りする（今回の不具合そのもの）。
     if (itemsErr) return json({ ok: false, error: 'state_failed', message: itemsErr.message }, 500)
-    return json({ ok: true, canSubmit: canApply && limit !== null && limit > 0, limit, items: items ?? [] })
+    // ★経費申請の紐付け先（オフィス・工場＝sites.kind≠site）と、作業員の所属拠点（既定値）。2026-09-13
+    const [{ data: offices }, { data: me }] = await Promise.all([
+      svc.from('sites').select('id, name, kind').eq('account_id', accountId).eq('active', true).in('kind', ['office', 'factory'])
+        .order('name_kana', { nullsFirst: false }).order('name'),
+      svc.from('workers').select('base_site_id').eq('id', workerId).maybeSingle(),
+    ])
+    return json({
+      ok: true, canSubmit: canApply && limit !== null && limit > 0, limit, items: items ?? [],
+      offices: (offices ?? []).map((o: any) => ({ id: o.id, name: o.name, kind: o.kind })),
+      baseSiteId: (me as any)?.base_site_id ?? null,
+    })
   }
 
   if (action === 'create') {
@@ -238,9 +248,9 @@ Deno.serve(async (req) => {
     // ★ 経費の date が属する月の枠で判定する（申請月ではない）
     const m = monthKey(date)
     const resolved = await resolveLimit(svc, accountId, workerId, m)
-    if (!resolved.canApply) return json({ ok: false, error: 'forbidden', message: '個人経費の申請が許可されていません。' }, 403)
+    if (!resolved.canApply) return json({ ok: false, error: 'forbidden', message: '経費申請が許可されていません。' }, 403)
     if (!(resolved.limit !== null && resolved.limit > 0)) {
-      return json({ ok: false, error: 'no_budget', message: '個人経費の月額上限が設定されていません。' }, 403)
+      return json({ ok: false, error: 'no_budget', message: '経費申請の月額上限が設定されていません。' }, 403)
     }
 
     const category = String(input.account_category ?? '')

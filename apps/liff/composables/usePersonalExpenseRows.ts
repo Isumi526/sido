@@ -21,12 +21,17 @@ export interface PersonalExpenseRow {
   note: string
   tategae: boolean
   files: File[]
+  /** 紐付け先のオフィス・工場（任意・2026-09-13）。既定は作業員マスタの所属拠点。null=拠点未設定 */
+  site_id: string | null
+  site_name: string | null
   /** 1行につき1つ。再送で二重計上しないための冪等キー */
   token: string
 }
 
-export function newPersonalExpenseRow(date: string): PersonalExpenseRow {
+export function newPersonalExpenseRow(date: string, office?: { id: string; name: string } | null): PersonalExpenseRow {
   return {
+    site_id: office?.id ?? null,
+    site_name: office?.name ?? null,
     date,
     account_category: '旅費交通費',
     amount: null,
@@ -44,11 +49,20 @@ export const usePersonalExpenseRows = () => {
   const usage = ref<{ used: number; limit: number } | null>(null)
   /** 枠を持っていて申請できるか（EF が権限と枠から判定した結果） */
   const canSubmit = ref(false)
+  /** 紐付け先の候補（オフィス・工場）と所属拠点の既定。EF `state` が返す */
+  const offices = ref<{ id: string; name: string; kind: string }[]>([])
+  const baseSiteId = ref<string | null>(null)
+  /** 新しい行に入れる既定の拠点。所属拠点があればそれ、無くて候補が1つならそれ、他は未設定 */
+  const defaultOffice = computed(() => {
+    const base = offices.value.find(o => o.id === baseSiteId.value)
+    if (base) return base
+    return offices.value.length === 1 ? offices.value[0] : null
+  })
 
   /** 金額が入っている行だけが登録対象（空行は無視して送信を止めない） */
   const filled = computed(() => rows.value.filter(r => Number(r.amount) > 0))
 
-  function add(date: string) { rows.value.push(newPersonalExpenseRow(date)) }
+  function add(date: string) { rows.value.push(newPersonalExpenseRow(date, defaultOffice.value)) }
   function remove(i: number) { rows.value.splice(i, 1) }
   function reset() { rows.value = [] }
 
@@ -67,5 +81,5 @@ export const usePersonalExpenseRows = () => {
     ) ?? null
   }
 
-  return { rows, usage, canSubmit, filled, add, remove, reset, syncDate, findMissingCompanions }
+  return { rows, usage, canSubmit, offices, baseSiteId, defaultOffice, filled, add, remove, reset, syncDate, findMissingCompanions }
 }

@@ -33,6 +33,15 @@
         </label>
       </div>
 
+      <!-- 紐付け先のオフィス・工場（現場マスタの区分≠現場・2026-09-13）。既定は所属拠点、変更可 -->
+      <label v-if="offices && offices.length" class="pe-field">
+        <span>{{ $t('personalExpense.office') }}</span>
+        <select class="select" :value="row.site_id ?? ''" :data-testid="`pe-office-${i}`" @change="onOffice(i, $event)">
+          <option value="">{{ $t('personalExpense.officeNone') }}</option>
+          <option v-for="o in offices" :key="o.id" :value="o.id">{{ o.name }}</option>
+        </select>
+      </label>
+
       <div class="pe-grid">
         <label class="pe-field">
           <span>{{ $t('personalExpense.amount') }}</span>
@@ -108,6 +117,7 @@ import type { PersonalExpenseRow } from '~/composables/usePersonalExpenseRows'
 const props = defineProps<{
   rows: PersonalExpenseRow[]
   usage?: { used: number; limit: number } | null
+  offices?: { id: string; name: string; kind: string }[]
 }>()
 const emit = defineEmits<{ add: []; remove: [index: number] }>()
 
@@ -126,6 +136,13 @@ function needsCompanions(row: PersonalExpenseRow): boolean {
 
 function addRow() { emit('add') }
 function removeRow(i: number) { emit('remove', i) }
+
+function onOffice(i: number, e: Event) {
+  const id = (e.target as HTMLSelectElement).value
+  const o = (props.offices ?? []).find(x => x.id === id)
+  props.rows[i].site_id = o?.id ?? null
+  props.rows[i].site_name = o?.name ?? null
+}
 
 function onFile(i: number, e: Event) {
   const input = e.target as HTMLInputElement

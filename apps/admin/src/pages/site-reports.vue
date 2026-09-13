@@ -58,7 +58,8 @@
       <div v-if="siteNames.length" class="tabs-wrap">
         <div class="tabs">
           <button v-for="name in siteNames" :key="name" class="tab"
-            :class="{ active: displaySite === name }" @click="activeSite = name" :title="siteLabel(name)">
+            :class="{ active: displaySite === name, 'tab-office': officeTabs.has(name) }" @click="activeSite = name" :title="siteLabel(name)"
+            :data-testid="officeTabs.has(name) ? 'site-tab-office' : undefined">
             {{ siteLabel(name) }}
           </button>
         </div>
@@ -73,6 +74,10 @@
           <span class="cat-count">{{ c.count }}件</span>
           <span class="cat-total">{{ yen(c.total) }}</span>
         </span>
+      </div>
+
+      <div v-if="displaySite && officeTabs.has(displaySite)" class="office-note" data-testid="office-note">
+        経費申請（現場外）。現場に紐づかない経費（オフィス・移動など）を紐付け先ごとに並べています。現場の原価には含まれません。
       </div>
 
       <!-- 出力（※表の表示月は上の ‹ 年月 › ナビで切替。出力ボタンを押すと出力期間を選ぶ） -->
@@ -142,7 +147,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in siteMap[displaySite]" :key="row._key" class="data-row" :class="{ 'invoice-row': row._isInvoice }" @click="!row._isInvoice && (selected = row)">
+            <tr v-for="row in siteMap[displaySite]" :key="row._key" class="data-row" :class="{ 'invoice-row': row._isInvoice || row._isOffice }" @click="!row._isInvoice && !row._isOffice && (selected = row)">
               <td class="date-cell">
                 {{ row.date.slice(5).replace('-', '/') }}
                 <span v-if="row._isSunday" class="sun">日</span>
@@ -169,7 +174,7 @@
               <td class="num">{{ row.homeCost      ? yen(row.homeCost)      : '—' }}</td>
               <td class="num">{{ row.tripCost      ? yen(row.tripCost)      : '—' }}</td>
               <td class="num total-col">{{ yen(row.total) }}</td>
-              <td class="hint">{{ row._isInvoice ? '請求' : '詳細 →' }}</td>
+              <td class="hint">{{ row._isInvoice ? '請求' : row._isOffice ? '経費申請' : '詳細 →' }}</td>
             </tr>
           </tbody>
           <tfoot>
@@ -629,6 +634,9 @@ function toggleWageMode() {
 // 現場名 → 読み仮名。★漢字の name を localeCompare('ja') しても読みは無視されるので五十音にならない
 //  （ICU の ja 照合は漢字を部首・画数で並べる）。300件超のタブを目で追うので読み仮名で並べる（2026-08-17）。
 const kanaBySite = ref<Record<string, string>>({})
+// 経費申請（現場外）のタブ名。オフィス・工場＋「拠点未設定」。現場タブの後ろに並べる（2026-09-13）
+const OFFICE_UNSET_LABEL = '拠点未設定'
+const officeTabs = ref<Set<string>>(new Set())
 // 現場名 → 現場マスタの id。集計から現場ページへ戻る導線に使う（2026-08-30 今井さん要望・往復できるように）
 const siteIdByName = ref<Record<string, string>>({})
 /** 現場名→その現場の責任者worker_id（同名で責任者が割れる場合は null＝見せない側に倒す） */
@@ -638,7 +646,11 @@ const canShowEstimatesHere = computed(() => canViewEstimatesForSite(responsibleB
 /** 表示中の現場の、現場マスタ上の id（マスタに無い名前＝表記ゆれ等なら null） */
 const displaySiteId = computed(() => siteIdByName.value[displaySite.value] ?? null)
 const siteNamesAll = computed(() => Object.keys(siteMap.value)
-  .sort((a, b) => (kanaBySite.value[a] || a).localeCompare(kanaBySite.value[b] || b, 'ja')))
+  .sort((a, b) =>
+    // 現場（五十音）→ オフィス・工場 → 拠点未設定 の順
+    Number(officeTabs.value.has(a)) - Number(officeTabs.value.has(b))
+    || Number(a === OFFICE_UNSET_LABEL) - Number(b === OFFICE_UNSET_LABEL)
+    || (kanaBySite.value[a] || a).localeCompare(kanaBySite.value[b] || b, 'ja')))
 
 /**
  * 表示中の現場を「区分ごと」に足した小計。
@@ -873,6 +885,7 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
   // 下請け請求（当月）を日表の請求行として構築（商社/業者列に金額を載せ、月計に反映）
   const invoiceSites = new Set<string>()
   const invoiceRowsBySite: Record<string, any[]> = {}
+  officeTabs.value = new Set()
   {
     const { data: sii } = await supabase
       .from('subcontractor_invoice_items')
@@ -1037,6 +1050,36 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
     ;(map[name] ??= []).push(...rows)
   }
 
+  // ★経費申請（現場に紐づかない経費・personal_expenses）を、紐付け先のオフィス・工場ごとに
+  //   現場と同じ列で並べる（2026-09-13 SEED要望「名古屋/東京オフィスごとの台帳を現場別集計に並べたい」）。
+  //   紐付け先が無い分は「拠点未設定」の1タブにまとめ、現場の原価には一切混ぜない（現場名バケットに入れない）。
+  //   科目→列: 旅費交通費→交通費 / 車両費→燃料 / 接待交際費→接待交際費 / それ以外（消耗品・材料・会議・雑費）→ホーム
+  const { data: pes } = await supabase.from('personal_expenses')
+    .select('id, worker_id, date, account_category, amount, payee, note, tategae, site_id, site_name, workers(name)')
+    .eq('account_id', accountId)
+    .gte('date', fromDate).lte('date', toDate)
+    .order('date', { ascending: true }).limit(5000)
+  for (const r of (pes ?? []) as any[]) {
+    const amt = Math.round(Number(r.amount) || 0)
+    if (amt <= 0) continue
+    const office = (r.site_id && siteCtx.siteNameById[r.site_id]) || r.site_name || OFFICE_UNSET_LABEL
+    officeTabs.value.add(office)
+    const cat = String(r.account_category ?? '')
+    const col = cat === '旅費交通費' ? 'trainCost' : cat === '車両費' ? 'fuelCost' : cat === '接待交際費' ? 'entertainCost' : 'homeCost'
+    const rows = (map[office] ??= [])
+    const worker = r.workers?.name ?? '—'
+    rows.push({
+      _key: `pe-${r.id}`, _isOffice: true, siteName: office,
+      date: r.date, _isSunday: new Date(r.date + 'T00:00:00').getDay() === 0,
+      categoryName: cat,
+      workerSummary: `${worker}${r.note ? '・' + r.note : ''}${r.payee ? '（' + r.payee + '）' : ''}`,
+      workers: [], subs: [],
+      shoshaCost: 0, gyoshaCost: 0, laborCost: 0, parkingYen: 0, fuelCost: 0, highwayCost: 0, hotelCost: 0,
+      entertainCost: 0, garbageCost: 0, trainCost: 0, homeCost: 0, tripCost: 0, total: amt,
+      [col]: amt,
+    })
+  }
+
   // 日付順ソート
   for (const rows of Object.values(map)) rows.sort((a, b) => a.date.localeCompare(b.date))
 
@@ -1057,6 +1100,8 @@ watch(wageMode, load)   // 日当-実質賃金の切替で社員人件費を再�
 </script>
 
 <style scoped>
+.tab-office { border-style: dashed; }
+.office-note { margin: 0 0 10px; padding: 8px 12px; border-radius: 8px; background: #FFF7ED; color: #9A3412; font-size: 12px; }
 /* 区分別の小計。現場を開いたまま「現場作業/見積/事務がそれぞれいくらか」を1行で見せる */
 .cat-strip { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
 .cat-chip {

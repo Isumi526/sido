@@ -313,6 +313,10 @@
                   <option v-for="name in grp.sites" :key="name" :value="name">{{ name }}</option>
                 </optgroup>
               </template>
+              <!-- オフィス・工場（現場マスタの区分≠現場）は末尾にまとめる（2026-09-13） -->
+              <optgroup v-if="master.facilitySiteNames.value.length" :label="$t('report.siteGroupFacility')" data-testid="site-group-facility">
+                <option v-for="name in master.facilitySiteNames.value" :key="name" :value="name">{{ name }}</option>
+              </optgroup>
               <!-- 現場の新規作成は権限者(admin/office/site_manager)のみ。職人には選択肢自体を出さない -->
               <option v-if="canCreateSite" value="__other__">{{ $t('report.addNewSite') }}</option>
             </select>
@@ -840,6 +844,7 @@
           v-if="showPersonalExpense"
           :rows="pe.rows.value"
           :usage="pe.usage.value"
+          :offices="pe.offices.value"
           @add="pe.add(report.form.value.date)"
           @remove="pe.remove"
         />
@@ -1029,7 +1034,8 @@ function hasContractorWithoutSites(site: { contractorName?: string }): boolean {
 
 function groupedSiteNames(contractorName?: string): { linked: string[]; others: string[] } {
   // '__unset__' という名前の現場行は「現場未設定」用の特殊値で、専用optionを別途出すため除外
-  const all = master.siteNames.value.filter((n) => n !== '__unset__')
+  const kinds = master.siteKinds.value
+  const all = master.siteNames.value.filter((n) => n !== '__unset__' && !kinds[n])   // オフィス・工場は末尾の専用optgroupへ
   const cn = (contractorName ?? '').trim()
   if (!cn || cn === '__other__') return { linked: [], others: all }
   const map = master.siteContractors.value
@@ -2181,6 +2187,8 @@ async function submitPersonalExpenses(): Promise<number> {
         note: row.note || null,
         file_urls: fileUrls,
         tategae: row.tategae,
+        site_id: row.site_id,
+        site_name: row.site_name,
         client_token: row.token,
       })
     } catch (e) {
@@ -2197,6 +2205,8 @@ async function loadPersonalExpenseState() {
   try {
     const s = await personalExpense.loadState(expenseMonthKey(report.form.value.date || todayJst.value))
     pe.canSubmit.value = s.canSubmit
+    pe.offices.value = s.offices
+    pe.baseSiteId.value = s.baseSiteId
     // 枠(limit)が取れない時は残額の表示だけ省く（申請自体は canSubmit に従う）
     pe.usage.value = s.canSubmit && s.usage.limit != null
       ? { used: s.usage.used, limit: s.usage.limit }

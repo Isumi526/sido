@@ -51,7 +51,7 @@ export function useNavItems(
     if (canApplyPersonalExpense?.()) {
       // 挿入位置は「有給の直前」。数値の決め打ちだと上のリストを足し引きするたび静かにズレるので path で引く。
       const at = list.findIndex(i => i.path === '/paid-leave')
-      list.splice(at < 0 ? list.length : at, 0, { path: '/expense/personal', icon: 'account_balance_wallet', label: '個人経費', section: 'daily', testId: 'menu-personal-expense' })
+      list.splice(at < 0 ? list.length : at, 0, { path: '/expense/personal', icon: 'account_balance_wallet', label: '経費申請', section: 'daily', testId: 'menu-personal-expense' })
     }
     if (authMode() === 'password') {
       list.push({ path: '/password', icon: 'lock_reset', label: t('nav.passwordChange'), section: 'info', testId: 'menu-password' })

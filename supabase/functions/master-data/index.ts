@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
   // ── マスタ一式 ──────────────────────────────────
   if (!body.action || body.action === 'fetch') {
     const [sites, contractors, workers, subs, vehicles, siteSubs, categories, catHours, assets] = await Promise.all([
-      svc.from('sites').select('id, name, contractor_id, default_start_time, default_end_time, default_breaks, default_distance_km')
+      svc.from('sites').select('id, name, kind, contractor_id, default_start_time, default_end_time, default_breaks, default_distance_km')
         .eq('active', true).eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
       // ★sort_order だけだと同値が並んだ時に順序が不定になり、開くたびに並びが変わる。
       //  名前でタイブレークして必ず同じ順にする（2026-08-17）。
@@ -125,7 +125,7 @@ Deno.serve(async (req) => {
   //   （現場情報ページ・チャットの責任者判定）。それ以外は返さない。
   if (body.action === 'sites') {
     let q = svc.from('sites')
-      .select('id, name, name_kana, active, location, construction_type, construction_details, memo, responsible_worker_id, contractor_id, created_at')
+      .select('id, name, name_kana, kind, active, location, construction_type, construction_details, memo, responsible_worker_id, contractor_id, created_at')
       .eq('account_id', accountId)
     // includeInactive: 現場情報ページは無効な現場も「無効」バッジ付きで出す仕様
     if (!body.includeInactive) q = q.eq('active', true)
