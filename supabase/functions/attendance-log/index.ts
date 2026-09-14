@@ -27,6 +27,7 @@
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveCaller, resolveApprover, APPROVER_ROLES, type Caller } from '../_shared/caller-identity.ts'
+import { sanitizeSitesForStorage, applyApprovedOvertimeToSites } from '../_shared/report-storage.gen.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
@@ -57,6 +58,44 @@ function jstDay(offsetDays: number): string {
 }
 
 /** その worker が caller と同じアカウントに属しているか（他テナントの worker_id を弾く） */
+/**
+ * 承認された残業申請（休憩・実績修正の時刻）を、その日の既存日報の作業員行へ反映して工数を計算し直す。
+ * 規則は shared/report-storage.ts applyApprovedOvertimeToSites（report.vue と同じ）。
+ * @returns 日報を書き換えたか
+ */
+async function applyApprovedToReport(svc: any, accountId: string, r: {
+  worker_id: string; date: string; requested_start_time: string | null; requested_end_time: string | null
+  requested_break_minutes: number | null; is_late: boolean | null
+}): Promise<boolean> {
+  try {
+    const bm = (typeof r.requested_break_minutes === 'number') ? r.requested_break_minutes : null
+    const isLate = r.is_late === true
+    // 書く内容が無ければ触らない（締切前の通常申請＝希望終了時刻のみ、は日報側の入力制限を緩めるだけ）
+    if (bm === null && !(isLate && (r.requested_start_time || r.requested_end_time))) return false
+    const { data: reports, error } = await svc.from('daily_reports')
+      .select('id, sites').eq('account_id', accountId).eq('date', r.date)
+    if (error || !reports?.length) return false
+    const toHm = (v: string | null) => (typeof v === 'string' && /^\d{2}:\d{2}/.test(v)) ? v.slice(0, 5) : null
+    for (const rep of reports) {
+      const sites = Array.isArray(rep.sites) ? JSON.parse(JSON.stringify(rep.sites)) : []
+      const n = applyApprovedOvertimeToSites(sites, r.worker_id, {
+        breakMinutes: bm, startTime: toHm(r.requested_start_time), endTime: toHm(r.requested_end_time), isLate,
+      })
+      if (!n) continue
+      // ★工数(hoursNormal 等)を実時間から計算し直す。activeSites は空＝既存の site_id を保つ
+      const { error: upErr } = await svc.from('daily_reports')
+        .update({ sites: sanitizeSitesForStorage(sites, [], r.date), updated_at: new Date().toISOString() })
+        .eq('id', rep.id).eq('account_id', accountId)
+      if (upErr) { console.error('[attendance-log] apply approved to report failed:', upErr); return false }
+      return true
+    }
+    return false
+  } catch (e) {
+    console.error('[attendance-log] apply approved to report threw:', e)
+    return false
+  }
+}
+
 async function workerInAccount(svc: any, accountId: string, workerId: string): Promise<boolean> {
   const { data } = await svc.from('workers').select('id')
     .eq('id', workerId).eq('account_id', accountId).maybeSingle()
@@ -120,7 +159,8 @@ Deno.serve(async (req) => {
 
     // ★account_id で必ず絞る。他テナントのIDを渡されても触れない
     const { data: reqRow } = await svc.from('overtime_requests')
-      .select('id, worker_id, status').eq('id', id).eq('account_id', approver.accountId).maybeSingle()
+      .select('id, worker_id, status, date, requested_start_time, requested_end_time, requested_break_minutes, is_late')
+      .eq('id', id).eq('account_id', approver.accountId).maybeSingle()
     if (!reqRow) return json({ ok: false, error: 'not_found' }, 404)
 
     // ★自己承認の禁止。画面側だけの判定は REST/EF 直叩きで迂回できるのでサーバで塞ぐ
@@ -149,7 +189,15 @@ Deno.serve(async (req) => {
       console.error('[attendance-log] overtime-decide failed:', error)
       return json({ ok: false, error: 'update_failed' }, 500)
     }
-    return json({ ok: true, changed: (updated ?? []).length })
+    // ★承認した内容を、既に保存されているその日の日報へ書き込む（2026-09-14 辻さん）。
+    //  承認された休憩は LIFF の日報画面が開いた時にしか作業員行へ乗らないので、送信済みの
+    //  過去日（前日以前の休憩・終了時刻の実績修正）は承認しても労働時間が変わらなかった。
+    //  日報が無い日は従来どおり（日報を作る時に report.vue が乗せる）。失敗しても承認自体は成立。
+    let reportUpdated = false
+    if (status === 'approved' && (updated ?? []).length) {
+      reportUpdated = await applyApprovedToReport(svc, approver.accountId, reqRow)
+    }
+    return json({ ok: true, changed: (updated ?? []).length, reportUpdated })
   }
 
   // ── 打刻の修正: 承認（管理者）──────────────────────────
