@@ -211,5 +211,8 @@
   "checkoutToastTime": "Checked out {time}",
   "checkoutToastText": "Recorded",
   "expenseOnlyNote": "No work hours on this day. You can submit as is.",
-  "expenseOpen": "Add expenses (hotel, fuel, etc.)"
+  "expenseOpen": "Add expenses (hotel, fuel, etc.)",
+  "appliedTitle": "Updated!",
+  "appliedText": "Applied to the report immediately (no approval needed within the edit window)",
+  "editReasonHintApproval": "This edit is past the deadline and needs approval. Leave a reason so reviewers know what changed"
 }

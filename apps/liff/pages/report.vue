@@ -40,11 +40,11 @@
       <!-- 送信完了 / 更新完了 -->
       <div v-else-if="report.submitted.value || editSubmitted || lateSubmitted" class="state-screen">
         <div class="success-mark">✓</div>
-        <h2 class="state-title">{{ editSubmitted ? $t('report.updatedTitle') : lateSubmitted ? $t('report.lateSubmittedTitle') : $t('report.submittedTitle') }}</h2>
+        <h2 class="state-title">{{ editSubmitted ? (editApplied ? $t('report.appliedTitle') : $t('report.updatedTitle')) : lateSubmitted ? $t('report.lateSubmittedTitle') : $t('report.submittedTitle') }}</h2>
         <!-- ★「LINEグループに通知しました」は実際に飛んだ時だけ出す。
              通知はクロステナント漏洩の対策で全テナントOFFにしてあり、無条件に出していたので
              画面が嘘をついていた（2026-08-18 大塚さん「LINEグループに通知してんの？」）。 -->
-        <p class="state-text">{{ editSubmitted ? $t('report.updatedText') : lateSubmitted ? $t('report.lateSubmittedText') : (report.lineNotified.value ? $t('report.submittedText') : $t('report.submittedTextPlain')) }}</p>
+        <p class="state-text">{{ editSubmitted ? (editApplied ? $t('report.appliedText') : $t('report.updatedText')) : lateSubmitted ? $t('report.lateSubmittedText') : (report.lineNotified.value ? $t('report.submittedText') : $t('report.submittedTextPlain')) }}</p>
         <button v-if="!editSubmitted && !lateSubmitted && nextUnsubmittedDate" class="btn-primary" @click="goToNextReport">
           {{ $t('report.enterNextReport', { date: nextDateLabel }) }}
         </button>
@@ -921,7 +921,7 @@
         <!-- 編集理由（編集時のみ必須）。1編集=1行で daily_report_edit_logs に残す。
              ★経費申請書(PDF画面)のインライン修正はこの経路を通らないので対象外（回答=B）。 -->
         <div v-if="isEditMode" class="edit-reason">
-          <label class="edit-reason-label" for="edit-reason">{{ $t('report.editReasonLabel') }}<span class="required">{{ $t('common.required') }}</span></label>
+          <label class="edit-reason-label" for="edit-reason">{{ $t('report.editReasonLabel') }}<span v-if="editNeedsApproval" class="required">{{ $t('common.required') }}</span><span v-else class="optional">{{ $t('common.optional') }}</span></label>
           <textarea
             id="edit-reason"
             v-model="editReason"
@@ -930,7 +930,7 @@
             data-testid="edit-reason"
             :placeholder="$t('report.editReasonPlaceholder')"
           />
-          <p class="edit-reason-hint">{{ $t('report.editReasonHint') }}</p>
+          <p class="edit-reason-hint">{{ editNeedsApproval ? $t('report.editReasonHintApproval') : $t('report.editReasonHint') }}</p>
         </div>
 
         <!-- 送信前の記入忘れ確認（新規送信時のみ・習慣化のため必須） -->
@@ -944,7 +944,7 @@
         <button v-if="isDev" type="button" class="btn-dev" :class="{ 'btn-dev--error': forceErrorOnSubmit }" @click="fillErrorTestData">
           {{ forceErrorOnSubmit ? $t('report.cancelErrorTest') : $t('report.fillErrorTestData') }}
         </button>
-        <button type="submit" class="btn-submit" data-testid="report-submit" :disabled="(isEditMode ? (editSubmitting || !editReason.trim()) : (report.submitting.value || !omissionConfirmed || (isLateDate && !lateReason.trim())))">
+        <button type="submit" class="btn-submit" data-testid="report-submit" :disabled="(isEditMode ? (editSubmitting || (editNeedsApproval && !editReason.trim())) : (report.submitting.value || !omissionConfirmed || (isLateDate && !lateReason.trim())))">
           <span v-if="isEditMode ? editSubmitting : report.submitting.value" class="submitting">
             <span class="dot-spin" />{{ isEditMode ? $t('report.updating') : $t('report.submitting') }}
           </span>
@@ -1341,7 +1341,8 @@ async function submitPaidLeaveOverForApproval(targetUserId: string): Promise<boo
   }
 }
 
-async function submitEditForApproval(diffs: string[]): Promise<boolean> {
+/** @returns 'pending'=承認待ちに入った / 'applied'=期限内で即反映された / false=失敗 */
+async function submitEditForApproval(diffs: string[]): Promise<'pending' | 'applied' | false> {
   try {
     const working = isWorkingStr.value === 'working'
     // ★保存経路と同じ正規化を通す（現場のsite_id解決・その他/接待交際費の振り分け・
@@ -1366,7 +1367,8 @@ async function submitEditForApproval(diffs: string[]): Promise<boolean> {
       clientToken: editLogToken.value,   // 再送しても監査ログを二重にしない
       payload,   // 承認されたらそのまま daily_reports に入る中身
     })
-    return !!j?.pendingId
+    if (j?.applied) return 'applied'
+    return j?.pendingId ? 'pending' : false
   } catch (e) {
     console.error('[Edit] 申請に失敗:', e)
     return false
@@ -1493,6 +1495,9 @@ const isEditMode      = ref(false)
 const originalReport  = ref<any>(null)  // 編集前のSupabaseデータ（差分計算用）
 const editSubmitting  = ref(false)
 const editSubmitted   = ref(false)
+const editApplied     = ref(false)   // 期限内の編集＝承認なしで即反映された（判定表 2026-09-12）
+// 編集が承認に回るか＝対象日が期限外（3日以上前）。期限内は承認なし・即反映で理由は任意
+const editNeedsApproval = computed(() => isEditMode.value && lock.isPastLockWindow(report.form.value.date))
 const editError       = ref<string | null>(null)
 // 編集理由（必須）。daily_reports は upsert で上書きされるので、理由は 1編集=1行の
 // 履歴テーブル daily_report_edit_logs に残す（1列だと2回目の編集で前回の理由が消える）
@@ -2915,8 +2920,8 @@ async function handleSubmit() {
   // ── 編集モード: Supabase のみ更新（GAS には再送しない）──
   if (isEditMode.value) {
     if (editSubmitting.value) return
-    // ★編集理由は必須。ボタンも disabled にしているが、Enter送信等で素通りしうるのでここでも止める
-    if (!editReason.value.trim()) {
+    // ★承認に回る編集は理由必須（期限内の即反映は任意）。ボタンも disabled にしているが、Enter送信等で素通りしうるのでここでも止める
+    if (editNeedsApproval.value && !editReason.value.trim()) {
       editError.value = t('report.editReasonRequired')
       return
     }
@@ -2969,9 +2974,11 @@ async function handleSubmit() {
 
       // ★申請が通らなければ編集は成立していない。ここは黙って続けず失敗として扱う
       //   （日報も変わらず保留も無い＝何も起きていない状態なので、そう伝えるのが正しい）。
-      if (!await submitEditForApproval(diffs)) {
+      const editResult = await submitEditForApproval(diffs)
+      if (!editResult) {
         throw new Error(t('report.editApprovalSubmitFailed'))
       }
+      editApplied.value = editResult === 'applied'
 
       // ★2026-08-30: 編集差分のLINEグループ通知は撤去した。
       //  差分は report-edit-log EF が承認待ち(daily_report_pending_edits.diffs)へ載せ、
@@ -4109,6 +4116,7 @@ html, body {
 }
 /* 必須表示は全画面で「※付き赤文字」に統一（Field.vue / FormSection.vue と同じ） */
 .edit-reason-label .required { color: var(--danger); font-size: 11px; font-weight: 700; margin-left: 6px; }
+.edit-reason-label .optional { color: #64748b; font-size: 11px; font-weight: 700; margin-left: 6px; }
 .edit-reason-label { font-size: 13px; font-weight: 700; color: #7a6000; }
 .edit-reason-input {
   width: 100%;

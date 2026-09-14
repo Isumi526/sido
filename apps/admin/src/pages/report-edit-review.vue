@@ -4,9 +4,19 @@
       <h1 class="page-title">日報編集の承認</h1>
     </div>
     <p class="hint">
-      作業員が日報を編集した時と、提出期限（過去3日）を過ぎて新規に提出された時、内容はここに保留されます。
+      提出期限（当日含む直近3日）を過ぎた日報の編集・新規提出・有給の残不足の申請は、内容がここに保留されます。
       <b>承認して初めて日報・現場別集計・経費PDF に反映されます</b>（承認するまでは編集前の内容のままです）。
+      期限内の編集は承認なしで即反映されます（ここには来ません）。
     </p>
+    <!-- 判定表（2026-09-12）: 責任者＋オーナー／申請者が責任者 or 責任者未設定ならオーナー1名。
+         旧ルールで「責任者本人の申請がオーナー承認済みなのに責任者枠が埋まらない」まま滞留したものを
+         新ルールで再判定して反映する（AC5）。オーナー枠の人だけ実行できる。 -->
+    <div v-if="canSelfApprove || isOwnerSlot" class="reeval-row">
+      <button class="btn-ghost" :disabled="reevaluating" data-testid="reevaluate" @click="reevaluate">
+        {{ reevaluating ? '再判定中…' : '滞留分を判定表で再判定する' }}
+      </button>
+      <span v-if="reevalMsg" class="muted" data-testid="reevaluate-msg">{{ reevalMsg }}</span>
+    </div>
 
     <div v-if="loading" class="empty">読み込み中…</div>
     <div v-else-if="!pending.length" class="empty">承認待ちの編集はありません。</div>
@@ -32,10 +42,13 @@
                   成立する（EF側 soloOwner 判定）。なのに「二重承認・2名必要」と出すと、押しても無駄だと
                   誤解されて承認が放置される（本番 sido で late_new が滞留）。ワンオペ時はバッジを出さない。 -->
             <span v-if="p.requires_dual && !canSelfApprove" class="dual" data-testid="pending-dual">
-              <span class="material-symbols-rounded ico">how_to_reg</span>二重承認
+              <span class="material-symbols-rounded ico">how_to_reg</span>
+              <template v-if="p.approval_mode === 'owner_only'">オーナー承認</template>
+              <template v-else>二重承認</template>
               <template v-if="approvedRoles(p).length">
-                （{{ approvedRoles(p).join('・') }} 済 / あと {{ remainingRole(p) }}）
+                （{{ approvedRoles(p).join('・') }} 済 / あと {{ remainingRoles(p).join('と') || '—' }}）
               </template>
+              <template v-else-if="p.approval_mode === 'owner_only'">（申請者が現場責任者、または責任者未設定のため<b>オーナー1名</b>で完了）</template>
               <template v-else>（現場責任者とオーナーの2名）</template>
             </span>
           </div>
@@ -210,14 +223,14 @@
 //    この画面から直接 daily_reports を書き換えると、承認を通さない書き込み経路が
 //    増えて「daily_reports に入っている＝承認済み」の不変条件が崩れる。
 // ============================================================
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { summarizePendingEdit, receiptCount, noReceiptReasons } from '../lib/pendingEditDiff'
 import { refreshNavBadges } from '../lib/navBadges'
 import { diffReceipts } from '../lib/reportReceipts'
-import { currentUser } from '../lib/auth'
+import { currentUser, currentRole } from '../lib/auth'
 
 const route = useRoute()
 const router = useRouter()
@@ -325,9 +338,37 @@ function approvedRoles(p: any): string[] {
   const a = Array.isArray(p?.approvals) ? p.approvals : []
   return a.map((x: any) => x?.role === 'owner' ? 'オーナー' : '現場責任者')
 }
-/** 二重承認: あと誰の承認が要るか */
-function remainingRole(p: any): string {
-  return approvedRoles(p).includes('オーナー') ? '現場責任者' : 'オーナー'
+/** あと誰の承認が要るか（判定表: owner_only はオーナーだけ） */
+function remainingRoles(p: any): string[] {
+  const have = approvedRoles(p)
+  const out: string[] = []
+  if (!have.includes('オーナー')) out.push('オーナー')
+  if (p?.approval_mode !== 'owner_only' && !have.includes('現場責任者')) out.push('現場責任者')
+  return out
+}
+
+// 滞留分の再判定（EF reevaluate・オーナー枠のみ）
+const reevaluating = ref(false)
+const reevalMsg = ref('')
+const isOwnerSlot = computed(() => !currentRole.value || currentRole.value === 'admin')
+async function reevaluate() {
+  reevaluating.value = true; reevalMsg.value = ''
+  try {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) throw new Error('ログインが必要です')
+    const res = await fetch(`${import.meta.env.VITE_SUPABASE_EDGE_URL}/report-edit-log`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY, Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify({ action: 'reevaluate' }),
+    })
+    const j = await res.json().catch(() => null)
+    if (!res.ok || !j?.ok) throw new Error(j?.error ?? `失敗しました(${res.status})`)
+    reevalMsg.value = `${j.checked}件を確認し、${j.applied}件を反映しました（${j.still}件は引き続き承認待ち）`
+    await load()
+    await refreshNavBadges()
+  } catch (e: any) {
+    reevalMsg.value = e?.message ?? '再判定に失敗しました'
+  } finally { reevaluating.value = false }
 }
 
 /** その保留編集を出したのが自分か（＝自己承認になるか） */
@@ -366,7 +407,7 @@ async function load() {
     const accountId = await getAccountId()
     const { data, error } = await supabase
       .from('daily_report_pending_edits')
-      .select('id, report_id, report_date, reason, diffs, kind, payload, submitted_by_user_id, submitted_by_name, submitted_at, requires_dual, approvals')
+      .select('id, report_id, report_date, reason, diffs, kind, payload, submitted_by_user_id, submitted_by_name, submitted_at, requires_dual, approvals, approval_mode')
       .eq('account_id', accountId)
       .eq('status', 'pending')
       .order('submitted_at', { ascending: true })
@@ -435,7 +476,8 @@ async function decide(p: any, action: 'approve' | 'reject') {
     // ★自分が唯一のオーナー(canSelfApprove)の時はこの警告を出さない。EF側 soloOwner 判定で
     //  この人の承認1つで成立するのに「2名必要・あなたの承認だけでは反映されません」と出すと、
     //  押しても無駄だと誤解されて承認が放置される（本番 sido の late_new 滞留の原因）。
-    if (!window.confirm(`${p.report_date} の編集を承認しますか？\n\nこの申請は金額が増えるか期限切れのため、現場責任者とオーナーの2名の承認が要ります。あなたの承認だけでは日報に反映されません。`)) return
+    const two = p.approval_mode !== 'owner_only'
+    if (!window.confirm(`${p.report_date} の編集を承認しますか？\n\n${two ? 'この申請は期限を過ぎているため、現場責任者とオーナーの2名の承認が要ります。あなたの承認だけでは日報に反映されません。' : 'この申請はオーナー1名の承認で日報に反映されます。'}`)) return
   } else if (!window.confirm(`${p.report_date} の編集を承認して日報に反映しますか？`)) {
     return
   }
@@ -521,6 +563,9 @@ watch(historyOpen, (open) => { if (open && !history.value.length) void loadHisto
 .nrr-title { font-size: 12px; font-weight: 700; color: #64748b; margin-bottom: 2px; }
 .nrr-item { white-space: pre-wrap; }
 .muted { font-size: 12px; color: #999; }
+.reeval-row { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; }
+.btn-ghost { background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+.btn-ghost:disabled { opacity: .6; cursor: default; }
 .section { margin-bottom: 12px; }
 .section-label { font-size: 12px; font-weight: 700; color: #666; margin-bottom: 4px; }
 .reason { font-size: 14px; white-space: pre-wrap; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 8px 10px; }

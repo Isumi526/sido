@@ -218,19 +218,116 @@ test.describe('日報編集の二重承認', () => {
     expect(r2.body.status, '★順不同で成立する').toBe('approved')
   })
 
-  test('金額が変わらない編集は今までどおり1人で通る', async () => {
+  // ★判定表（2026-09-10 SEED 会議・2026-09-12 決定）:
+  //   期限外の編集・期限後提出・有給不足＝責任者＋オーナー（金額不変/減額の1名分岐は撤去）
+  //   申請者がその現場の責任者、または責任者未設定＝オーナー1名で完了
+  test('★申請者がその現場の責任者なら、オーナー1名の承認で反映される（責任者枠が永久に埋まらない実害の解消）', async () => {
     await restSrv(`daily_reports?user_id=eq.${submitterUserId}&date=eq.${DATE}`, { method: 'DELETE' }).catch(() => {})
+    // 申請者＝この現場の責任者（site_manager）本人の users 行
+    const mgrUser = (await restSrv('users', {
+      method: 'POST', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ account_id: accountId, real_name: `${PREFIX}責任者本人${TS}`, worker_id: mgrWorkerId }),
+    }))[0].id
     const rep = await restSrv('daily_reports', {
       method: 'POST', headers: { Prefer: 'return=representation' },
       body: JSON.stringify({
-        account_id: accountId, user_id: submitterUserId, date: DATE, is_working: true,
+        account_id: accountId, user_id: mgrUser, date: DATE, is_working: true,
         sites: [{ siteName: SITE, site_id: siteId, workers: [], subcontractors: [],
                   expenses: { others: [{ label: 'E2E資材', yen: 1000 }] } }],
       }),
     })
-    const pid = await seedPending(false, rep[0].id, 1000)
+    const rows = await restSrv('daily_report_pending_edits', {
+      method: 'POST', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        account_id: accountId, report_id: rep[0].id, report_user_id: mgrUser, report_date: DATE,
+        kind: 'edit', status: 'pending', reason: 'E2E 責任者本人', submitted_by_user_id: mgrUser,
+        submitted_by_name: `${PREFIX}責任者本人`, submitted_at: new Date().toISOString(),
+        requires_dual: true, approval_mode: 'owner_only', approvals: [],
+        payload: { is_working: true, leave_type: null, is_business_trip: false, note: 'E2E',
+          sites: [{ siteName: SITE, site_id: siteId, workers: [], subcontractors: [],
+                    expenses: { others: [{ label: 'E2E資材', yen: 5000, tategae: false, fileUrls: [] }] } }], gasoline_items: [] },
+      }),
+    })
+    const pid = rows[0].id
+    // 本人（責任者）は自己承認できない
+    const self = await review(mgrToken, pid, 'approve')
+    expect(self.status, '自己承認は禁止のまま').toBe(403)
+    // オーナー1名で成立
     const r = await review(ownerToken, pid, 'approve')
-    expect(r.body.status, '★承認を増やしすぎない（金額が動かない訂正は1人）').toBe('approved')
+    expect(r.body.status, '★責任者本人の申請はオーナー1名で完了').toBe('approved')
+    const saved = (await restSrv(`daily_reports?id=eq.${rep[0].id}&select=sites`))[0]
+    expect(JSON.stringify(saved.sites)).toContain('5000')
+  })
+
+  test('責任者未設定の現場は、オーナー1名で完了する', async () => {
+    const noRespSite = (await restSrv('sites', {
+      method: 'POST', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ account_id: accountId, name: `${PREFIX}責任者なし${TS}`, active: true }),
+    }))[0].id
+    await restSrv(`daily_reports?user_id=eq.${submitterUserId}&date=eq.${DATE}`, { method: 'DELETE' }).catch(() => {})
+    const rep = await restSrv('daily_reports', {
+      method: 'POST', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ account_id: accountId, user_id: submitterUserId, date: DATE, is_working: true,
+        sites: [{ siteName: `${PREFIX}責任者なし${TS}`, site_id: noRespSite, workers: [], subcontractors: [], expenses: {} }] }),
+    })
+    const rows = await restSrv('daily_report_pending_edits', {
+      method: 'POST', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        account_id: accountId, report_id: rep[0].id, report_user_id: submitterUserId, report_date: DATE,
+        kind: 'edit', status: 'pending', reason: 'E2E 責任者なし', submitted_by_user_id: submitterUserId,
+        submitted_by_name: `${PREFIX}申請者`, submitted_at: new Date().toISOString(),
+        requires_dual: true, approval_mode: 'owner_only', approvals: [],
+        payload: { is_working: true, leave_type: null, is_business_trip: false, note: 'E2E',
+          sites: [{ siteName: `${PREFIX}責任者なし${TS}`, site_id: noRespSite, workers: [], subcontractors: [],
+                    expenses: { others: [{ label: 'E2E資材', yen: 3000, tategae: false, fileUrls: [] }] } }], gasoline_items: [] },
+      }),
+    })
+    const r = await review(ownerToken, rows[0].id, 'approve')
+    expect(r.body.status, '責任者が居なければオーナー1名').toBe('approved')
+  })
+
+  test('★滞留分の再判定: 責任者本人の申請にオーナー承認だけが付いて止まっていたものが反映される', async () => {
+    await restSrv(`daily_reports?user_id=eq.${submitterUserId}&date=eq.${DATE}`, { method: 'DELETE' }).catch(() => {})
+    const mgrUser = (await restSrv(`users?worker_id=eq.${mgrWorkerId}&account_id=eq.${accountId}&select=id`))[0]?.id
+      ?? (await restSrv('users', { method: 'POST', headers: { Prefer: 'return=representation' },
+            body: JSON.stringify({ account_id: accountId, real_name: `${PREFIX}責任者本人${TS}`, worker_id: mgrWorkerId }) }))[0].id
+    await restSrv(`daily_reports?user_id=eq.${mgrUser}&date=eq.${DATE}`, { method: 'DELETE' }).catch(() => {})
+    const rep = await restSrv('daily_reports', {
+      method: 'POST', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ account_id: accountId, user_id: mgrUser, date: DATE, is_working: true,
+        sites: [{ siteName: SITE, site_id: siteId, workers: [], subcontractors: [], expenses: { others: [{ label: 'E2E資材', yen: 1000 }] } }] }),
+    })
+    // 旧ルールで滞留した形: approval_mode 無し・オーナー承認だけ付いて pending のまま
+    const rows = await restSrv('daily_report_pending_edits', {
+      method: 'POST', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        account_id: accountId, report_id: rep[0].id, report_user_id: mgrUser, report_date: DATE,
+        kind: 'edit', status: 'pending', reason: 'E2E 滞留', submitted_by_user_id: mgrUser,
+        submitted_by_name: `${PREFIX}責任者本人`, submitted_at: new Date().toISOString(),
+        requires_dual: true, approvals: [{ auth_user_id: 'x', worker_id: null, name: 'E2Eオーナー', role: 'owner', at: new Date().toISOString() }],
+        payload: { is_working: true, leave_type: null, is_business_trip: false, note: 'E2E',
+          sites: [{ siteName: SITE, site_id: siteId, workers: [], subcontractors: [],
+                    expenses: { others: [{ label: 'E2E資材', yen: 8000, tategae: false, fileUrls: [] }] } }], gasoline_items: [] },
+      }),
+    })
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/report-edit-log`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', apikey: ANON_KEY, Authorization: `Bearer ${ownerToken}` },
+      body: JSON.stringify({ action: 'reevaluate' }),
+    })
+    const j = await res.json()
+    expect(res.status, JSON.stringify(j)).toBe(200)
+    expect(j.applied, '★滞留していた1件が反映される').toBeGreaterThanOrEqual(1)
+    const row = (await restSrv(`daily_report_pending_edits?id=eq.${rows[0].id}&select=status,approval_mode`))[0]
+    expect(row.status).toBe('approved')
+    expect(row.approval_mode, '再判定で判定結果が保存される').toBe('owner_only')
+    const saved = (await restSrv(`daily_reports?id=eq.${rep[0].id}&select=sites`))[0]
+    expect(JSON.stringify(saved.sites)).toContain('8000')
+    // 現場責任者は再判定を実行できない
+    const forbidden = await fetch(`${SUPABASE_URL}/functions/v1/report-edit-log`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', apikey: ANON_KEY, Authorization: `Bearer ${mgrToken}` },
+      body: JSON.stringify({ action: 'reevaluate' }),
+    })
+    expect(forbidden.status).toBe(403)
   })
 
   test('★作業員はEFを直接叩いても承認できない', async () => {

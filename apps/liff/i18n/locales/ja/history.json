@@ -80,5 +80,9 @@
   "bulkResultPending": "{count} 日を承認待ちにしました",
   "bulkResultFailed": "{count} 日は失敗しました",
   "unsubmittedProxy": "{name}さんの代理として入力します",
-  "proxyOwner": "{name}さんの分"
+  "proxyOwner": "{name}さんの分",
+  "pendingNeed": "（{who}の承認待ち）",
+  "needOwner": "オーナー",
+  "needManager": "現場責任者",
+  "needJoin": "と"
 }
