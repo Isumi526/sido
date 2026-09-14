@@ -106,3 +106,58 @@ export function siteNamesToRegister(sites: any[]): string[] {
   }
   return [...names]
 }
+
+/**
+ * 承認された残業申請（実績修正）を、既に保存されている日報の作業員行へ書き込む。
+ *
+ * ★なぜここに置くか（2026-09-14 辻さん「前日より以前の休憩を修正したい」）:
+ *  承認された休憩は LIFF の日報画面（report.vue applyApprovedBreak）が「開いて保存した時」に
+ *  作業員行へ乗せている。送信済みの過去日はもう開かれないので、承認しても労働時間が変わらない。
+ *  承認時に EF がこの関数で同じ形に書き込み、sanitizeSitesForStorage で工数を計算し直す。
+ *  report.vue と規則をそろえる：
+ *   - 休憩は「一番早い現場の行」に承認分・他の行は 0（1日の休憩は1つの申請で決まる）
+ *   - breaks=[{start, minutes}] + breakSnapshot=true（0分でも要素を残して既定計算に落ちない）
+ *   - start は既存の breaks[0].start を保ち、無ければ 12:00
+ *  時刻は実績修正(late)の時だけ：早出は一番早い行の startTime、終了は一番遅い行の endTime を置き換える。
+ *  （締切前の通常申請の終了時刻は「希望」であって実績ではないので書かない）
+ *
+ * @returns 書き換えた行数（0 なら本人の行が無い＝呼び出し側は何もしない）
+ */
+export function applyApprovedOvertimeToSites(
+  sites: any[],
+  workerId: string,
+  adj: { breakMinutes: number | null; startTime: string | null; endTime: string | null; isLate: boolean },
+): number {
+  const rows: Array<{ w: any; start: number; end: number }> = []
+  for (const s of (sites ?? [])) {
+    for (const w of (Array.isArray(s?.workers) ? s.workers : [])) {
+      if (!w || w.workerId !== workerId) continue
+      rows.push({ w, start: parseMinLoose(w.startTime, 8 * 60), end: parseMinLoose(w.endTime, 17 * 60 + 30) })
+    }
+  }
+  if (!rows.length) return 0
+  const byStart = [...rows].sort((a, b) => a.start - b.start)
+  if (adj.breakMinutes !== null && adj.breakMinutes !== undefined) {
+    byStart.forEach(({ w }, idx) => {
+      const minutes = idx === 0 ? adj.breakMinutes as number : 0
+      const start = (Array.isArray(w.breaks) && w.breaks[0]?.start) ? w.breaks[0].start : '12:00'
+      w.breaks = [{ start, minutes }]
+      w.breakMinutes = minutes
+      w.breakSnapshot = true
+    })
+  }
+  if (adj.isLate) {
+    if (adj.startTime) byStart[0].w.startTime = adj.startTime
+    if (adj.endTime) {
+      const last = [...rows].sort((a, b) => b.end - a.end)[0]
+      last.w.endTime = adj.endTime
+    }
+  }
+  return rows.length
+}
+
+function parseMinLoose(hhmm: unknown, fallback: number): number {
+  if (typeof hhmm !== 'string' || !/^\d{1,2}:\d{2}$/.test(hhmm)) return fallback
+  const [h, m] = hhmm.split(':').map(Number)
+  return h * 60 + m
+}
