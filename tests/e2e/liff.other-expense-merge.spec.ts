@@ -61,7 +61,7 @@ test.describe('その他/その他雑経費の入力統合（liff）', () => {
       .toBe(true)
 
     page.on('dialog', (d) => d.accept().catch(() => {}))
-    await page.locator('input[type="checkbox"]').last().check().catch(() => {})
+    if (await page.getByTestId('tail-no').count()) await page.getByTestId('tail-no').check()
     // 編集モードは編集理由が必須になった（daily_report_edit_logs）。入れないと更新できない
     await page.getByTestId('edit-reason').fill('E2E: 再保存の回帰確認')
     await fillNoReceiptReasons(page)

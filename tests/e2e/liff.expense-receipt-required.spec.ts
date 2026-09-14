@@ -42,7 +42,7 @@ const reasonInput = (card: ReturnType<Page['locator']>) =>
 async function submit(page: Page): Promise<string> {
   let alertMsg = ''
   page.on('dialog', async (d) => { alertMsg = d.message(); await d.dismiss() })
-  await page.locator('input[type="checkbox"]').last().check().catch(() => {})
+  if (await page.getByTestId('tail-no').count()) await page.getByTestId('tail-no').check()
   await page.locator('button[type="submit"].btn-submit').click()
   await page.waitForTimeout(1500)
   return alertMsg

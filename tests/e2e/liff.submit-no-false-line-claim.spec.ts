@@ -32,7 +32,7 @@ test('★LINE通知が飛んでいない時に「通知しました」と出さ�
 
   await page.locator('[data-testid="site-select-0"]').selectOption('テスト現場A')
   await page.waitForTimeout(400)
-  await page.locator('.submit-confirm input[type="checkbox"]').check()
+  await page.getByTestId('tail-no').check()
 
   const submit = page.locator('button[type="submit"].btn-submit')
   if (await submit.isDisabled()) {

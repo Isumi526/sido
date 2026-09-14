@@ -78,7 +78,7 @@ test.describe('期限切れの新規日報の承認制（liff）', () => {
     //  期限切れの保留化であって、フォームの並び順ではない。
     await page.getByTestId('work-status').selectOption('paid_leave')
     // 送信前の記入忘れ確認（これを入れないと送信ボタンが有効にならない）
-    await page.getByTestId('omission-confirm').check()
+    await page.getByTestId('tail-no').check()
     await expect(page.locator('button[type="submit"].btn-submit'), '理由が空なら押せない').toBeDisabled()
     await page.getByTestId('late-reason').fill('   ')
     await expect(page.locator('button[type="submit"].btn-submit'), '空白だけでも押せない').toBeDisabled()
@@ -191,7 +191,7 @@ test.describe('期限切れの新規日報の承認制（liff）', () => {
     //  期限切れの保留化であって、フォームの並び順ではない。
     await page.getByTestId('work-status').selectOption('paid_leave')
     // 送信前の記入忘れ確認（これを入れないと送信ボタンが有効にならない）
-    await page.getByTestId('omission-confirm').check()
+    await page.getByTestId('tail-no').check()
     await page.locator('button[type="submit"].btn-submit').click()
     await page.waitForTimeout(6000)
 

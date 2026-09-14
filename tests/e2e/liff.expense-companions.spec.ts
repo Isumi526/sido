@@ -66,7 +66,7 @@ test.describe('経費 同行者名の必須化（接待交際費のみ）', () =
     // 送信 → alert で弾かれる
     let alertMsg = ''
     page.on('dialog', async (d) => { alertMsg = d.message(); await d.dismiss() })
-    await page.locator('input[type="checkbox"]').last().check().catch(() => {})
+    if (await page.getByTestId('tail-no').count()) await page.getByTestId('tail-no').check()
     await page.locator('button[type="submit"].btn-submit').click()
     await page.waitForTimeout(1500)
     expect(alertMsg, '同行者名の未記入で弾かれる').toContain('同行者名')

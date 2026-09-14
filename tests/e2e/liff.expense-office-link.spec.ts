@@ -74,7 +74,7 @@ test('★日報の現場プルダウンでオフィスは末尾グループに�
   const workSel = page.locator('select').filter({ has: page.locator('option', { hasText: '稼働なし' }) }).first()
   await workSel.selectOption('off')
   await page.waitForTimeout(400)
-  await page.locator('[data-testid="omission-confirm"]').check().catch(() => {})
+  if (await page.getByTestId('tail-no').count()) await page.getByTestId('tail-no').check()
   await page.locator('[data-testid="report-submit"]').click()
   await expect(page.locator('.state-title'), '日報が送信できる').toBeVisible({ timeout: 20000 })
 

@@ -109,7 +109,7 @@ test('日報: 現場を選ぶと、その現場の元請けが保存される', 
   await siteSelect.selectOption(LINKED)
   await page.waitForTimeout(400)
 
-  await page.locator('.submit-confirm input[type="checkbox"]').check()
+  await page.getByTestId('tail-no').check()
   // ★既知の恒常バグ: フルラン後半だと送信ボタンが有効化されないことがある
   //  （liff.report.spec.ts が同じ理由で常時失敗している。チケット化済み）。
   //  ここで無言で落ちると「元請けの逆算が壊れた」ように見えるので、理由を出して飛ばす。

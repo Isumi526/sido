@@ -933,11 +933,94 @@
           <p class="edit-reason-hint">{{ $t('report.editReasonHint') }}</p>
         </div>
 
-        <!-- 送信前の記入忘れ確認（新規送信時のみ・習慣化のため必須） -->
-        <label v-if="!isEditMode" class="submit-confirm">
-          <input type="checkbox" v-model="omissionConfirmed" data-testid="omission-confirm" />
-          <span>{{ $t('report.omissionConfirm') }}</span>
-        </label>
+        <!-- ★日報末尾の1問「経費・ゴミ・引き上げ材料はありますか？」（新規送信時のみ・必須回答）。
+             2026-09-10 SEED 会議・大塚さん「日報は必ず書く…最後に忘れないですか？って聞けば」
+             「ゴミ・経費・引き上げ材料ないですか？のチェックボックス」。ゴミの申請漏れが多かった
+             （経費あり→ゴミありの2段ネストで導線が遠い）。旧「記入漏れ確認」チェックはこの1問に統合。
+             「あり」で入力口を出す: 経費＝領収書をまとめて添付→AI解析→1枚ずつ現場A/B/紐づかないへ、
+             ゴミ＝現場ごとの種類・数量、引き上げ材料＝在庫①と同時に追加（今は枠だけ）。
+             sites[].expenses の構造は変えない（振り分けた領収書は各現場の「その他」明細として入る）。 -->
+        <div v-if="!isEditMode" class="tail-q" data-testid="tail-question">
+          <div class="tail-q-title">{{ $t('report.tailQuestion') }}<span class="required">{{ $t('common.required') }}</span></div>
+          <div class="tail-q-options" role="radiogroup">
+            <label class="tail-q-opt" :class="{ on: tailAnswer === 'no' }">
+              <input type="radio" name="tail-answer" value="no" v-model="tailAnswer" data-testid="tail-no" />{{ $t('report.tailNo') }}
+            </label>
+            <label class="tail-q-opt" :class="{ on: tailAnswer === 'yes' }">
+              <input type="radio" name="tail-answer" value="yes" v-model="tailAnswer" data-testid="tail-yes" />{{ $t('report.tailYes') }}
+            </label>
+          </div>
+
+          <template v-if="tailAnswer === 'yes'">
+            <!-- 経費: 領収書をまとめて添付 → AI解析 → 振り分け -->
+            <div class="tail-sec" data-testid="tail-expense">
+              <div class="tail-sec-title">{{ $t('report.tailExpenseTitle') }}</div>
+              <p class="tail-hint">{{ $t('report.tailExpenseHint') }}</p>
+              <AttachedFilesBadge :files="tailFiles" @remove-file="(p) => tailFiles.splice(p.index, 1)" />
+              <input type="file" accept="image/*,application/pdf" multiple class="input mt6" data-testid="tail-files" @change="onTailPickFiles" />
+              <button v-if="tailFiles.length" type="button" class="btn-ai mt6" :disabled="tailAnalyzing" data-testid="tail-analyze" @click="onTailAnalyze">
+                {{ tailAnalyzing ? `${$t('report.analyzing')} (${tailAnalyzed}/${tailFiles.length})` : $t('report.tailAnalyze', { n: tailFiles.length }) }}
+              </button>
+              <p v-if="tailMsg" class="tail-hint" data-testid="tail-msg">{{ tailMsg }}</p>
+
+              <div v-for="(d, di) in tailDrafts" :key="d.id" class="lineitem-card tail-draft" :class="{ failed: d.status === 'failed' }" data-testid="tail-draft">
+                <div class="tail-draft-head">
+                  <span class="tail-draft-file">{{ d.file.name }}</span>
+                  <button type="button" class="btn-icon-sm" :title="$t('report.tailDraftRemove')" data-testid="tail-draft-remove" @click="tailDrafts.splice(di, 1)">✕</button>
+                </div>
+                <p v-if="d.error" class="tail-draft-err" data-testid="tail-draft-err">{{ d.error }}</p>
+                <div class="lineitems-row">
+                  <input v-model="d.payee" type="text" class="input" :placeholder="$t('report.tailPayee')" data-testid="tail-draft-payee" @keydown.enter.prevent />
+                  <input v-model.number="d.yen" type="number" inputmode="numeric" class="input" :placeholder="$t('report.amountYen')" data-testid="tail-draft-yen" />
+                </div>
+                <div class="lineitems-row mt6">
+                  <select v-model="d.account" class="select" data-testid="tail-draft-account">
+                    <option v-for="a in EXPENSE_ACCOUNT_OPTIONS" :key="a" :value="a">{{ a }}</option>
+                  </select>
+                  <input v-model="d.label" type="text" class="input" :placeholder="$t('report.tailLabel')" data-testid="tail-draft-label" @keydown.enter.prevent />
+                </div>
+                <!-- ★振り分け: 当日稼働した現場A/B、または現場に紐づかない（個人経費）。既定＝当日現場（1現場なら自動） -->
+                <label class="hours-label mt6">{{ $t('report.tailTarget') }}</label>
+                <select v-model="d.target" class="select" data-testid="tail-draft-target">
+                  <option v-for="o in tailTargets" :key="o.value" :value="o.value">{{ o.label }}</option>
+                </select>
+                <input v-if="needsCompanions({ account: d.account }, 'その他')" v-model="d.companions" type="text" class="input mt6"
+                       :placeholder="$t('report.tailCompanions')" data-testid="tail-draft-companions" @keydown.enter.prevent />
+                <label class="tail-check mt6"><input type="checkbox" v-model="d.tategae" />{{ $t('report.tailTategae') }}</label>
+              </div>
+              <button v-if="tailDrafts.length" type="button" class="btn-ghost-sm mt6" data-testid="tail-apply" @click="applyTailDrafts">
+                {{ $t('report.tailApply', { n: tailDrafts.length }) }}
+              </button>
+              <p v-if="tailApplied" class="tail-hint ok" data-testid="tail-applied">{{ $t('report.tailAppliedMsg', { n: tailApplied }) }}</p>
+            </div>
+
+            <!-- ゴミ: 現場ごとに種類・数量（現行の項目。sites[].expenses.garbage* にそのまま入る） -->
+            <div class="tail-sec" data-testid="tail-garbage">
+              <div class="tail-sec-title">{{ $t('report.tailGarbageTitle') }}</div>
+              <p v-if="!tailSiteRows.length" class="tail-hint">{{ $t('report.tailGarbageNoSite') }}</p>
+              <div v-for="r in tailSiteRows" :key="r.si" class="lineitem-card" :data-testid="`tail-garbage-site-${r.si}`">
+                <div class="tail-draft-file">{{ r.name }}</div>
+                <div class="expense-grid mt6">
+                  <ExpenseField :model-value="report.form.value.sites[r.si].expenses.garbageFactoryM3" :label="$t('report.garbageWood')" decimal
+                                @update:model-value="(v: any) => setTailGarbage(r.si, 'garbageFactoryM3', v)" />
+                  <ExpenseField :model-value="report.form.value.sites[r.si].expenses.garbageSiteM3" :label="$t('report.garbageMixed')" decimal
+                                @update:model-value="(v: any) => setTailGarbage(r.si, 'garbageSiteM3', v)" />
+                </div>
+                <div v-if="report.form.value.sites[r.si].expenses.garbageFactoryM3 || report.form.value.sites[r.si].expenses.garbageSiteM3" class="mt8">
+                  <label class="hours-label">{{ $t('report.garbagePhotoLabel') }}</label>
+                  <AttachedFilesBadge :files="report.form.value.sites[r.si].expenses.garbagePhotos" @remove-file="(p) => report.form.value.sites[r.si].expenses.garbagePhotos?.splice(p.index, 1)" />
+                  <input type="file" accept="image/*" multiple class="input mt6" @change="(e) => handleGarbagePhoto(r.si, e)" />
+                </div>
+              </div>
+            </div>
+
+            <!-- 引き上げ材料: 在庫①と同時に入力口を足す。今は枠だけ -->
+            <div class="tail-sec" data-testid="tail-materials">
+              <div class="tail-sec-title">{{ $t('report.tailMaterialsTitle') }}</div>
+              <p class="tail-hint">{{ $t('report.tailMaterialsSoon') }}</p>
+            </div>
+          </template>
+        </div>
 
         <!-- 送信ボタン -->
         <button v-if="isDev && !isEditMode" type="button" class="btn-dev" @click="fillTestData">{{ $t('report.fillTestData') }}</button>
@@ -1488,7 +1571,132 @@ const draftEligible = () =>
 
 // 編集モード
 const forceErrorOnSubmit = ref(false)
-const omissionConfirmed  = ref(false)  // 送信前の記入忘れ確認（新規送信時のみ。チェックで送信を有効化）
+const omissionConfirmed  = ref(false)  // 送信前の記入忘れ確認（新規送信時のみ）。末尾の1問に答えると true になる
+// ── 日報末尾の1問「経費・ゴミ・引き上げ材料はありますか？」（2026-09-10 会議・第1弾＝経費＋ゴミ）──
+const tailAnswer = ref<'' | 'no' | 'yes'>('')
+watch(tailAnswer, v => { omissionConfirmed.value = v !== '' })
+type TailDraft = {
+  id: string; file: File; status: 'ready' | 'failed'; error: string
+  payee: string; yen: number | null; label: string; account: string; companions: string; tategae: boolean
+  /** 'site:<si>' ＝ その現場の「その他」明細へ／ 'personal' ＝ 現場に紐づかない（個人経費） */
+  target: string
+}
+const tailFiles = ref<File[]>([])
+const tailDrafts = ref<TailDraft[]>([])
+const tailAnalyzing = ref(false)
+const tailAnalyzed = ref(0)
+const tailMsg = ref('')
+const tailApplied = ref(0)
+/** 当日稼働した現場（名前のあるブロックだけ）。ゴミ入力・振り分け先の候補 */
+const tailSiteRows = computed(() => report.form.value.sites
+  .map((site, si) => ({ si, name: siteDisplayName(site.siteName, site.customSiteName) }))
+  .filter(r => r.name && r.name !== '__unset__'))
+const tailTargets = computed(() => {
+  const out = tailSiteRows.value.map(r => ({ value: `site:${r.si}`, label: r.name }))
+  // 現場に紐づかない経費は個人経費枠を持つ人だけ（無い人はどれかの現場に付ける）
+  if (showPersonalExpense.value) out.push({ value: 'personal', label: t('report.tailTargetPersonal') })
+  return out
+})
+function defaultTailTarget(): string {
+  const sites = tailSiteRows.value
+  if (sites.length >= 1) return `site:${sites[0].si}`   // 1現場なら自動、複数なら先頭を既定（変更可）
+  return showPersonalExpense.value ? 'personal' : ''
+}
+function onTailPickFiles(e: Event) {
+  const input = e.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  if (files.length) tailFiles.value = [...tailFiles.value, ...files]
+  input.value = ''
+}
+async function runTailWithLimit<T, R>(items: T[], limit: number, fn: (item: T, i: number) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length)
+  let next = 0
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) { const i = next++; out[i] = await fn(items[i], i) }
+  }))
+  return out
+}
+/** まとめて解析 → 1枚=1件の下書き。勝手には日報に入れず、人が振り分けを確認してから入れる */
+async function onTailAnalyze() {
+  if (!tailFiles.value.length || tailAnalyzing.value) return
+  tailAnalyzing.value = true; tailMsg.value = ''; tailAnalyzed.value = 0
+  const targets = tailFiles.value.slice()
+  try {
+    const made = await runTailWithLimit(targets, 4, async (f, i): Promise<TailDraft> => {
+      const d: TailDraft = {
+        id: crypto.randomUUID(), file: f, status: 'ready', error: '',
+        payee: '', yen: null, label: '', account: '消耗品費', companions: '', tategae: false,
+        target: defaultTailTarget(),
+      }
+      try {
+        const r = await receipt.analyze(f, `tail_${i}`)
+        if (!r) { d.status = 'failed'; d.error = t('report.tailAnalyzeFailed') }
+        else {
+          if (r.yen != null) d.yen = r.yen
+          if (r.storeName) d.payee = r.storeName
+          if (r.label) d.label = r.label
+          if (r.account && (EXPENSE_ACCOUNT_OPTIONS as readonly string[]).includes(r.account)) d.account = r.account
+          if (!(Number(d.yen) > 0)) { d.status = 'failed'; d.error = t('report.tailAmountMissing') }
+        }
+      } catch (e: any) { d.status = 'failed'; d.error = e?.message ?? t('report.tailAnalyzeFailed') }
+      finally { tailAnalyzed.value++ }
+      return d
+    })
+    tailDrafts.value = [...tailDrafts.value, ...made]
+    tailFiles.value = []
+    const failed = made.filter(d => d.status === 'failed').length
+    tailMsg.value = failed ? t('report.tailAnalyzedSome', { n: made.length, failed }) : t('report.tailAnalyzedAll', { n: made.length })
+  } finally { tailAnalyzing.value = false }
+}
+/**
+ * 下書きを日報へ入れる。現場宛は sites[si].expenses.others の1明細（領収書つき）、
+ * 「紐づかない」は個人経費の行（personal_expenses・日報保存後に登録）。
+ * ★sites[].expenses の構造は変えない。既存の集計・PDF・承認がそのまま読める形で足すだけ。
+ */
+function applyTailDrafts() {
+  let n = 0
+  for (const d of tailDrafts.value) {
+    if (!(Number(d.yen) > 0)) continue
+    if (d.target === 'personal') {
+      if (!showPersonalExpense.value) continue
+      pe.add(report.form.value.date)
+      const row = pe.rows.value[pe.rows.value.length - 1]
+      row.amount = Number(d.yen); row.payee = d.payee; row.note = d.label; row.account_category = d.account
+      row.companions = d.companions; row.tategae = d.tategae; row.files = [d.file]
+      n++
+      continue
+    }
+    const m = /^site:(\d+)$/.exec(d.target)
+    if (!m) continue
+    const si = Number(m[1])
+    const site = report.form.value.sites[si]
+    if (!site) continue
+    // 現場の経費「あり」→「その他」あり に立てる（入力欄が出て、送信のバリデーションも通る）
+    if (siteUsage.value[si]?.expense !== 'あり') setUsage(si, 'expense', 'あり')
+    if (siteUsage.value[si]?.other !== 'あり') setUsage(si, 'other', 'あり')
+    const others = (site.expenses.others ??= [])
+    // setUsage が空行を1つ足していれば、その空行を使う（空の明細を残さない）
+    const empty = others.find(o => !o.yen && !o.label && !o.payee && !(o.files?.length))
+    const item: any = empty ?? {}
+    item.label = d.label || d.payee; item.yen = Number(d.yen); item.payee = d.payee
+    item.account = d.account; item.companions = d.companions; item.tategae = d.tategae
+    item.files = [d.file]
+    if (!empty) others.push(item)
+    n++
+  }
+  tailDrafts.value = tailDrafts.value.filter(d => !(Number(d.yen) > 0) || (d.target === 'personal' && !showPersonalExpense.value))
+  tailApplied.value += n
+}
+/** ゴミの数量を末尾の1問から入れる（現場ブロック側の表示とも連動） */
+function setTailGarbage(si: number, key: 'garbageFactoryM3' | 'garbageSiteM3', v: any) {
+  const exp = report.form.value.sites[si]?.expenses
+  if (!exp) return
+  ;(exp as any)[key] = v
+  if ((exp.garbageFactoryM3 || exp.garbageSiteM3)) {
+    if (siteUsage.value[si]?.expense !== 'あり') setUsage(si, 'expense', 'あり')
+    if (siteUsage.value[si]?.garbage !== 'あり') siteUsage.value[si].garbage = 'あり'
+  }
+}
 const isEditMode      = ref(false)
 const originalReport  = ref<any>(null)  // 編集前のSupabaseデータ（差分計算用）
 const editSubmitting  = ref(false)
@@ -3150,6 +3358,7 @@ function goToNextReport() {
   nextUnsubmittedDate.value = null
   report.reset()
   omissionConfirmed.value = false
+  tailAnswer.value = ''
   report.form.value.date = date
   siteUsage.value = [createUsage()]
   isWorkingStr.value = 'working'
@@ -3159,6 +3368,7 @@ function goToNextReport() {
 async function handleReset() {
   report.reset()
   omissionConfirmed.value = false
+  tailAnswer.value = ''
   siteUsage.value = [createUsage()]
   isWorkingStr.value = 'working'
   initWorkers()
@@ -4018,6 +4228,22 @@ html, body {
 }
 .btn-submit:active:not(:disabled) { transform: scale(0.98); }
 .btn-submit:disabled { opacity: 0.45; cursor: not-allowed; }
+.tail-q { margin: 16px 0 8px; padding: 14px; border: 2px solid #fde68a; border-radius: 12px; background: #fffbeb; }
+.tail-q-title { font-size: 15px; font-weight: 700; color: #7a6000; margin-bottom: 8px; }
+.tail-q-title .required { color: var(--danger); font-size: 11px; margin-left: 6px; }
+.tail-q-options { display: flex; gap: 8px; }
+.tail-q-opt { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 12px; border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; font-weight: 700; font-size: 15px; }
+.tail-q-opt.on { border-color: #06C755; background: #ecfdf5; color: #047857; }
+.tail-sec { margin-top: 14px; padding-top: 12px; border-top: 1px dashed #fcd34d; }
+.tail-sec-title { font-size: 14px; font-weight: 700; color: #1e293b; margin-bottom: 6px; }
+.tail-hint { font-size: 12px; color: #64748b; line-height: 1.6; margin: 4px 0 0; }
+.tail-hint.ok { color: #047857; font-weight: 700; }
+.tail-draft { margin-top: 8px; }
+.tail-draft.failed { border-color: #fca5a5; }
+.tail-draft-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.tail-draft-file { font-size: 12px; font-weight: 700; color: #334155; word-break: break-all; }
+.tail-draft-err { font-size: 12px; color: #b91c1c; margin: 0 0 6px; }
+.tail-check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #334155; }
 .submit-confirm {
   display: flex; align-items: center; gap: 10px;
   margin: 4px 0 8px; padding: 12px 14px;

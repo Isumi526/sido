@@ -71,7 +71,7 @@ test('★枠を持つ作業員は、日報から個人経費を出せて既存�
   await page.waitForTimeout(400)
   await expect(section, '★稼働なしの日でも個人経費は出せる').toBeVisible()
 
-  await page.locator('[data-testid="omission-confirm"]').check().catch(() => {})
+  if (await page.getByTestId('tail-no').count()) await page.getByTestId('tail-no').check()
   await page.locator('[data-testid="report-submit"]').click()
   await expect(page.locator('.state-title'), '日報が送信できる').toBeVisible({ timeout: 20000 })
 

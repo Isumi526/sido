@@ -62,7 +62,7 @@ test('★書いた現場名が日報に残り、その名前で現場マスタ�
   await page.getByTestId('site-select-0').selectOption('__unset__')
   await page.getByTestId('unset-site-memo-0').fill(TYPED)
 
-  await page.getByTestId('omission-confirm').check()
+  await page.getByTestId('tail-no').check()
   await page.getByTestId('report-submit').click()
 
   // 日報に現場名が残る
