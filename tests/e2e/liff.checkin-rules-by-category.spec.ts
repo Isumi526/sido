@@ -15,11 +15,13 @@ const RULE_SITE   = `E2E現場だけ_ヘルメット_${TS}`
 const RULE_OFFICE = `E2Eオフィスだけ_${TS}`
 const CAT_SITE = `E2E区分_現場_${TS}`
 const CAT_OFFICE = `E2E区分_オフィス_${TS}`
+const CAT_FACTORY = `E2E区分_工場_${TS}`   // ★ルールを持たない区分（2026-09-14 伊藤さん「工場作業が選択できません」）
 
 let accountId = ''
 let workerId = ''
 let catSiteId = ''
 let catOfficeId = ''
+let catFactoryId = ''
 
 test.beforeAll(async () => {
   accountId = await getAccountId()
@@ -27,9 +29,11 @@ test.beforeAll(async () => {
   const cats = await restSrv('work_categories', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify([
     { account_id: accountId, name: CAT_SITE, sort_order: 900, active: true },
     { account_id: accountId, name: CAT_OFFICE, sort_order: 901, active: true },
+    { account_id: accountId, name: CAT_FACTORY, sort_order: 902, active: true },
   ]) })
   catSiteId = cats.find((c: any) => c.name === CAT_SITE).id
   catOfficeId = cats.find((c: any) => c.name === CAT_OFFICE).id
+  catFactoryId = cats.find((c: any) => c.name === CAT_FACTORY).id
   await restSrv('account_attendance_rules', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify([
     { account_id: accountId, content: RULE_COMMON, timing: 'both', sort_order: 800, work_category_id: null },
     { account_id: accountId, content: RULE_SITE,   timing: 'both', sort_order: 801, work_category_id: catSiteId },
@@ -43,7 +47,7 @@ test.afterAll(async () => {
   }
   await restSrv(`attendance_logs?worker_id=eq.${workerId}&checked_at=gte.${encodeURIComponent(
     new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString())}`, { method: 'DELETE' }).catch(() => {})
-  for (const id of [catSiteId, catOfficeId]) await restSrv(`work_categories?id=eq.${id}`, { method: 'DELETE' }).catch(() => {})
+  for (const id of [catSiteId, catOfficeId, catFactoryId]) await restSrv(`work_categories?id=eq.${id}`, { method: 'DELETE' }).catch(() => {})
 })
 
 async function clearRecentPunches() {
@@ -71,6 +75,23 @@ test('★区分を選ぶと「共通＋その区分」のルールだけが出�
   await expect(list).toContainText(RULE_OFFICE, { timeout: 15000 })
   await expect(list).not.toContainText(RULE_SITE)
   await expect(list, '共通は常に出る').toContainText(RULE_COMMON)
+})
+
+// ★2026-09-14 伊藤さん「出退勤の項目で、工場作業が選択できません」。
+//  ルールを持つ区分だけを選択肢にしていたため、現場作業にだけルールを入れた会社では工場作業が出なかった。
+//  区分は打刻の work_category_id（日報の定時の既定にも効く）なので、ルールの有無で選べなくしない。
+test('★ルールを持たない区分（工場作業）も選べ、その時は共通ルールだけが出る', async ({ page }) => {
+  await clearRecentPunches()
+  await page.goto('/checkin', { waitUntil: 'networkidle' })
+  await passWorkStatusGate(page)
+  const picker = page.getByTestId('rule-category-picker')
+  await expect(picker).toBeVisible({ timeout: 15000 })
+  await expect(picker, '★ルールが無い区分も選択肢に出る').toContainText(CAT_FACTORY)
+  await page.getByTestId(`rule-category-${catFactoryId}`).click()
+  const list = page.locator('.rules-list')
+  await expect(list, '共通ルールは出る').toContainText(RULE_COMMON, { timeout: 15000 })
+  await expect(list, '他区分のルールは出ない').not.toContainText(RULE_SITE)
+  await expect(list).not.toContainText(RULE_OFFICE)
 })
 
 test('★選んだ区分が打刻に残り、退勤時はその区分が既定で選ばれる', async ({ page }) => {
