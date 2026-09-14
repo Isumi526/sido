@@ -11,6 +11,9 @@
     <div v-if="loading" class="empty">読み込み中…</div>
     <div v-else-if="!pending.length" class="empty">承認待ちの残業申請はありません。</div>
     <template v-else>
+      <!-- スマホでは表が横に切れて対象現場・理由まで見えない（2026-09-14 大塚さん）。
+           行を押すと詳細（申請内容＋その日の打刻・日報）を1枚で出す。 -->
+      <p class="hint tap-hint">行を押すと、申請の内容とその日の打刻・日報をまとめて確認できます。</p>
       <div class="table-wrap">
         <table class="table">
           <thead>
@@ -25,10 +28,10 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="g in pending" :key="g.id">
+            <tr v-for="g in pending" :key="g.id" class="data-row" data-testid="ot-pending-row" @click="openDetail(g)">
               <td class="name">{{ workerName(g.worker_id) }}</td>
               <td>
-                {{ fmtDate(g.date) }}
+                {{ fmtDate(g.date) }}<span class="dow" :class="{ sat: dowOf(g.date) === 6, sun: dowOf(g.date) === 0 }">{{ dowLabel(g.date) }}</span>
                 <span v-if="g.is_late" class="late-badge" data-testid="ot-approval-late">実績修正（締切後）</span>
               </td>
               <td class="sites">{{ (g.site_names && g.site_names.length) ? g.site_names.join('、') : '—' }}</td>
@@ -46,7 +49,7 @@
               </td>
               <td class="reason">{{ g.reason || '—' }}</td>
               <td class="muted">{{ fmtDateTime(g.requested_at) }}</td>
-              <td class="actions-col">
+              <td class="actions-col" @click.stop>
                 <!-- ★自分が出した申請は自分で決裁させない。EF 側でも同じ判定で塞いでいる
                      （画面だけだと REST/EF 直叩きで迂回できるため）。日報編集の承認画面と同じ扱い。 -->
                 <span v-if="isMine(g)" class="self-approve-blocked" data-testid="ot-self-blocked">
@@ -62,6 +65,62 @@
         </table>
       </div>
     </template>
+
+    <!-- 申請の詳細（2026-09-14）。スマホで表が切れる対策＋「本当にその日働いたか」を
+         打刻・日報で裏取りしてから決裁できるようにする（大塚さん: 土曜にやってない気がする）。 -->
+    <div v-if="selected" class="modal-overlay" data-testid="ot-detail" @click.self="selected = null">
+      <div class="modal">
+        <h2>残業申請の詳細</h2>
+        <dl class="detail">
+          <dt>作業員</dt><dd class="name">{{ workerName(selected.worker_id) }}</dd>
+          <dt>対象日</dt>
+          <dd>
+            {{ fmtDate(selected.date) }}<span class="dow" :class="{ sat: dowOf(selected.date) === 6, sun: dowOf(selected.date) === 0 }">{{ dowLabel(selected.date) }}</span>
+            <span v-if="selected.is_late" class="late-badge">実績修正（締切後）</span>
+          </dd>
+          <dt>対象現場</dt><dd>{{ (selected.site_names && selected.site_names.length) ? selected.site_names.join('、') : '—' }}</dd>
+          <dt>希望終了</dt><dd>{{ (selected.requested_end_time || '').slice(0, 5) || '—' }}</dd>
+          <template v-if="selected.requested_start_time">
+            <dt>早朝入り</dt><dd>{{ (selected.requested_start_time || '').slice(0, 5) }}〜</dd>
+          </template>
+          <template v-if="selected.requested_break_minutes !== null && selected.requested_break_minutes !== undefined">
+            <dt>休憩</dt><dd>{{ selected.requested_break_minutes === 0 ? '休憩なしで通し' : `${selected.requested_break_minutes}分` }}</dd>
+          </template>
+          <dt>理由</dt><dd class="reason">{{ selected.reason || '—' }}</dd>
+          <dt>申請日時</dt><dd class="muted">{{ fmtDateTime(selected.requested_at) }}</dd>
+        </dl>
+
+        <div class="evidence" data-testid="ot-detail-evidence">
+          <div class="evidence-title">この日の打刻・日報（裏取り）</div>
+          <div v-if="evidenceLoading" class="muted">読み込み中…</div>
+          <template v-else>
+            <div class="evidence-row">
+              <span class="evidence-label">打刻</span>
+              <span v-if="!evidence.punches.length" class="evidence-none" data-testid="ot-detail-no-punch">この日の打刻はありません</span>
+              <span v-else data-testid="ot-detail-punches">
+                <span v-for="p in evidence.punches" :key="p.id" class="punch">{{ p.type === 'checkin' ? '出勤' : '退勤' }} {{ p.time }}</span>
+              </span>
+            </div>
+            <div class="evidence-row">
+              <span class="evidence-label">日報</span>
+              <span v-if="!evidence.report" class="evidence-none" data-testid="ot-detail-no-report">この日の日報はまだ出ていません</span>
+              <span v-else-if="evidence.report.is_working === false" class="evidence-none" data-testid="ot-detail-report-off">「稼働なし」で提出されています</span>
+              <span v-else data-testid="ot-detail-report">提出あり{{ evidence.report.siteNames.length ? '：' + evidence.report.siteNames.join('、') : '' }}</span>
+            </div>
+            <p class="evidence-note">打刻も日報も無い日の残業は、本人に確認してから決裁してください（承認するとその日の入力制限が緩みます）。</p>
+          </template>
+        </div>
+
+        <div class="modal-actions">
+          <span v-if="isMine(selected)" class="self-approve-blocked">自分の申請は承認できません</span>
+          <template v-else>
+            <button class="btn-approve" :disabled="busy === selected.id" data-testid="ot-detail-approve" @click="decideSelected('approved')">承認</button>
+            <button class="btn-reject" :disabled="busy === selected.id" data-testid="ot-detail-reject" @click="decideSelected('rejected')">却下</button>
+          </template>
+          <button class="btn-close" data-testid="ot-detail-close" @click="selected = null">閉じる</button>
+        </div>
+      </div>
+    </div>
 
     <!-- 承認の履歴（2026-08-30）。
          ★approved_by / decided_at はDBに元から記録されていたが、画面に出す場所が
@@ -132,6 +191,72 @@ function fmtDate(d: string): string {
   const [y, m, day] = d.split('-')
   return `${Number(m)}/${Number(day)}（${y}）`
 }
+const DOW = ['日', '月', '火', '水', '木', '金', '土']
+function dowOf(d: string): number {
+  if (!d) return -1
+  return new Date(d + 'T00:00:00').getDay()
+}
+/** 曜日。土日は色を変える（「土曜にやってない気がする」を一目で気づけるように・2026-09-14） */
+function dowLabel(d: string): string {
+  const i = dowOf(d)
+  return i < 0 ? '' : `（${DOW[i]}）`
+}
+
+// ── 申請の詳細＋その日の打刻・日報（2026-09-14）──
+const selected = ref<OvertimeReq | null>(null)
+const evidenceLoading = ref(false)
+const evidence = ref<{
+  punches: { id: string; type: string; time: string }[]
+  report: { is_working: boolean | null; siteNames: string[] } | null
+}>({ punches: [], report: null })
+
+async function openDetail(g: OvertimeReq) {
+  selected.value = g
+  evidence.value = { punches: [], report: null }
+  if (!g.worker_id) return
+  evidenceLoading.value = true
+  try {
+    const accountId = await getAccountId()
+    // その日（JST）の打刻。取り消し済みは除く
+    const from = new Date(`${g.date}T00:00:00+09:00`).toISOString()
+    const to   = new Date(`${g.date}T23:59:59.999+09:00`).toISOString()
+    const [{ data: logs }, { data: us }] = await Promise.all([
+      supabase.from('attendance_logs').select('id, type, checked_at')
+        .eq('worker_id', g.worker_id).is('deleted_at', null)
+        .gte('checked_at', from).lte('checked_at', to).order('checked_at', { ascending: true }),
+      supabase.from('users').select('id').eq('worker_id', g.worker_id),
+    ])
+    evidence.value.punches = ((logs ?? []) as any[]).map((l) => {
+      const dt = new Date(l.checked_at)
+      const hh = String(dt.getHours()).padStart(2, '0'), mm = String(dt.getMinutes()).padStart(2, '0')
+      return { id: l.id, type: l.type, time: `${hh}:${mm}` }
+    })
+    const userIds = ((us ?? []) as any[]).map((u) => u.id)
+    if (userIds.length && accountId) {
+      const { data: reps } = await supabase.from('daily_reports').select('is_working, sites')
+        .eq('account_id', accountId).eq('date', g.date).in('user_id', userIds).limit(1)
+      const rep = (reps ?? [])[0] as any
+      if (rep) {
+        const siteNames = ((rep.sites ?? []) as any[])
+          .map((s) => (s?.siteName === '__other__' ? s?.customSiteName : s?.siteName) || '')
+          .filter((n) => n && n !== '__unset__')
+        evidence.value.report = { is_working: rep.is_working ?? null, siteNames }
+      }
+    }
+  } catch (e) {
+    console.error('[overtime-approvals] 裏取りの取得に失敗:', e)
+  } finally {
+    evidenceLoading.value = false
+  }
+}
+
+async function decideSelected(status: 'approved' | 'rejected') {
+  const g = selected.value
+  if (!g) return
+  await decide(g, status)
+  if (!pending.value.some((x) => x.id === g.id)) selected.value = null
+}
+
 function fmtDateTime(s: string): string {
   if (!s) return '—'
   const dt = new Date(s)
@@ -216,6 +341,28 @@ onMounted(load)
 </script>
 
 <style scoped>
+/* 申請の詳細（2026-09-14） */
+.tap-hint { margin-top: -8px; }
+.data-row { cursor: pointer; }
+.data-row:hover td { background: #f8fafc; }
+.dow { margin-left: 2px; font-size: 12px; color: #64748b; }
+.dow.sat { color: #1d4ed8; font-weight: 700; }
+.dow.sun { color: #b91c1c; font-weight: 700; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.modal { background: #fff; border-radius: 12px; padding: 24px; width: min(560px, 94vw); display: flex; flex-direction: column; gap: 16px; max-height: 90vh; overflow-y: auto; }
+.modal h2 { font-size: 17px; font-weight: 700; margin: 0; }
+.detail { display: grid; grid-template-columns: 6em 1fr; gap: 6px 10px; margin: 0; font-size: 14px; }
+.detail dt { color: #64748b; font-weight: 700; }
+.detail dd { margin: 0; }
+.evidence { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; font-size: 13px; }
+.evidence-title { font-weight: 700; color: #334155; margin-bottom: 6px; }
+.evidence-row { display: flex; gap: 8px; margin: 4px 0; align-items: baseline; flex-wrap: wrap; }
+.evidence-label { flex: 0 0 3em; color: #64748b; font-weight: 700; }
+.evidence-none { color: #b45309; font-weight: 700; }
+.punch { display: inline-block; margin-right: 8px; font-variant-numeric: tabular-nums; }
+.evidence-note { margin: 8px 0 0; color: #64748b; font-size: 12px; line-height: 1.6; }
+.modal-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.btn-close { margin-left: auto; font-size: 13px; border: 1px solid #cbd5e1; background: #fff; border-radius: 6px; padding: 6px 14px; cursor: pointer; }
 /* 承認の履歴（2026-08-30） */
 .section-title { font-size: 16px; font-weight: 700; }
 .status { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
