@@ -178,6 +178,8 @@
               <input v-model="catHoursDraft[c.id].start" type="time" step="300" class="input" style="width:auto" :data-testid="`cat-start-${c.id}`" />
               <span>〜</span>
               <input v-model="catHoursDraft[c.id].end" type="time" step="300" class="input" style="width:auto" :data-testid="`cat-end-${c.id}`" />
+              <!-- 終了が開始以前＝翌日（夜のみ現場 20:30〜翌6:00）。日跨ぎとして扱うことを明示する -->
+              <span v-if="catHoursDraft[c.id].start && catHoursDraft[c.id].end && catHoursDraft[c.id].end <= catHoursDraft[c.id].start" class="hp-tag" :data-testid="`cat-overnight-${c.id}`">翌日まで（日をまたぐ勤務）</span>
               <button type="button" class="btn-ghost" style="padding:2px 10px;font-size:12px" @click="catHoursDraft[c.id].breaks.push({ start: '12:00', minutes: 60 })">＋ 休憩</button>
             </div>
             <div v-for="(brk, bi) in catHoursDraft[c.id].breaks" :key="bi" style="display:flex;align-items:center;gap:8px;margin-top:6px">
