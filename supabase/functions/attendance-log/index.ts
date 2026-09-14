@@ -398,7 +398,14 @@ Deno.serve(async (req) => {
     const { data: anyTiming } = await svc.from('account_attendance_rules')
       .select('work_category_id').eq('account_id', caller.accountId).not('work_category_id', 'is', null)
     const withRules = new Set(((anyTiming ?? []) as any[]).map((r) => r.work_category_id))
-    const categories = ((cats ?? []) as any[]).filter((c) => withRules.has(c.id)).map((c) => ({ id: c.id, name: c.name }))
+    // ★区分ごとのルールが1つでもある会社では、有効な区分を**全部**選べるようにする（2026-09-14 伊藤さん
+    //  「出退勤の項目で、工場作業が選択できません」）。以前は「ルールを持つ区分だけ」を選択肢にしていたため、
+    //  現場作業にだけルールを入れた会社では工場作業が出ず、工場の人が自分の区分で打刻できなかった。
+    //  区分は打刻の work_category_id（日報の定時の既定にも効く）なので、ルールの有無で選べなくしてはいけない。
+    //  ルールの無い区分を選んだ時は共通ルールだけを出す。
+    const categories = withRules.size
+      ? ((cats ?? []) as any[]).map((c) => ({ id: c.id, name: c.name }))
+      : []
     const rules = rows.filter((r) => r.work_category_id === null || (catId && r.work_category_id === catId))
       .map((r) => ({ id: r.id, content: r.content, timing: r.timing }))
     return json({ ok: true, rules, categories })
