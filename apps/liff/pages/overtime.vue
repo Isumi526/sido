@@ -145,6 +145,9 @@
               <span class="ot-badge" :class="r.status">{{ statusLabel(r.status) }}</span>
               <span v-if="r.is_late" class="ot-badge late" data-testid="ot-recent-late">{{ $t('overtime.lateBadge') }}</span>
               <span v-if="r.reason" class="ot-reason">{{ r.reason }}</span>
+              <!-- ★承認待ちなら日付を問わず取り消せる（2026-09-14 辻さん「休憩申請を間違えた場合の取り消しは？」）。
+                   取り消しは本日の枠にしか無く、過去日の実績修正を間違えても消せなかった。EF は元から日付を問わない。 -->
+              <button v-if="r.status === 'pending'" type="button" class="ot-cancel ot-cancel-row" :disabled="busy" :data-testid="`ot-recent-cancel-${r.date}`" @click="onCancelDate(r.date)">{{ $t('overtime.cancel') }}</button>
             </li>
           </ul>
         </section>
@@ -404,6 +407,17 @@ async function onSubmitPast() {
   await refresh()
 }
 
+// 最近の申請から、承認待ちの申請を日付を問わず取り消す（承認済みは取り消せない＝直したい時は同じ日で出し直す）
+async function onCancelDate(date: string) {
+  if (!workerId.value || !date) return
+  if (!confirm(t('overtime.cancelConfirm', { date }))) return
+  busy.value = true; msg.value = ''
+  const res = await overtime.cancelRequest(workerId.value, date)
+  busy.value = false
+  if (res.ok) { pastMsg.value = t('overtime.canceled'); pastMsgOk.value = true }
+  await refresh()
+}
+
 async function onCancel() {
   if (!workerId.value) return
   busy.value = true; msg.value = ''
@@ -442,6 +456,7 @@ onMounted(async () => {
 .ot-edit-hint { font-size: 12px; color: #64748b; margin: 0; line-height: 1.6; }
 .ot-edit { align-self: flex-start; background: #fff; color: #0f766e; border: 1px solid #99f6e4; border-radius: 8px; padding: 8px 12px; font-size: 13px; font-weight: 700; }
 .ot-edit-cancel { width: 100%; margin-top: 8px; background: #fff; color: #64748b; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; font-size: 13px; }
+.ot-cancel-row { margin-left: auto; }
 .ot-past-toggle { display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: none; padding: 0; font-size: 14px; font-weight: 700; color: #1e293b; text-align: left; }
 .ot-late-note { font-size: 13px; line-height: 1.7; color: #9a3412; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 10px 12px; margin: 10px 0 0; }
 .ot-card { background: #fff; border-radius: 14px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }

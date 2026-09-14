@@ -39,11 +39,12 @@
   "editCancel": "Discard changes",
   "editSubmitted": "Request updated. Awaiting admin approval again.",
   "pastTitle": "Correct a past day (break / end time)",
-  "pastNote": "For a day before today (up to 7 days back), you can report the break you actually took or the actual end time afterwards. Once an admin approves it, that day's report hours are updated.",
+  "pastNote": "For a day before today (up to 7 days back), you can report the break you actually took or the actual end time afterwards. Once an admin approves it, that day's report hours are updated. To undo a mistake, cancel it from \"Recent requests\" below while it is pending; after approval, submit again for the same day (it overwrites and needs approval again).",
   "pastDateLabel": "Date",
   "pastDateRequired": "Select the date.",
   "pastEndTimeLabel": "Actual end time",
   "pastEndTimeNone": "Keep as is (fix break only)",
   "pastReasonPlaceholder": "e.g. No break on the 12th / Worked until 19:00 on the 13th",
-  "pastNothingToFix": "Enter at least one of end time, early start or break."
+  "pastNothingToFix": "Enter at least one of end time, early start or break.",
+  "cancelConfirm": "Cancel the request for {date}?"
 }

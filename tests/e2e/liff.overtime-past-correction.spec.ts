@@ -69,6 +69,21 @@ test.describe('過去の日の実績修正の申請', () => {
     await expect(page.locator('.ot-item', { hasText: yesterday }).getByTestId('ot-recent-late')).toBeVisible({ timeout: 20000 })
   })
 
+  test('★間違えた過去日の申請は「最近の申請」から取り消せる（承認待ちのあいだ）', async ({ page }) => {
+    // 前のテストで昨日の pending がある前提だが、単独実行でも成立するよう直接作る
+    await restSrv(`overtime_requests?worker_id=eq.${workerId}&date=eq.${yesterday}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv('overtime_requests', {
+      method: 'POST', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ account_id: accountId, worker_id: workerId, date: yesterday, status: 'pending', is_late: true, requested_break_minutes: 0, reason: 'E2E: 取り消しテスト' }),
+    })
+    await page.goto('/overtime', { waitUntil: 'networkidle' })
+    page.once('dialog', d => d.accept())
+    await page.getByTestId(`ot-recent-cancel-${yesterday}`).click()
+    await expect(page.getByTestId(`ot-recent-cancel-${yesterday}`)).toHaveCount(0, { timeout: 20000 })
+    const rows = await restSrv(`overtime_requests?worker_id=eq.${workerId}&date=eq.${yesterday}&select=id`)
+    expect(rows, '申請が消える').toHaveLength(0)
+  })
+
   test('直す内容が何も無い申請は弾く', async ({ page }) => {
     await page.goto('/overtime', { waitUntil: 'networkidle' })
     await page.getByTestId('ot-past-toggle').click()
