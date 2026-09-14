@@ -170,10 +170,10 @@
                   <div v-if="s.contractor" class="detail-contractor"><span class="material-symbols-rounded detail-icon">apartment</span>{{ s.contractor }}</div>
                   <!-- ★その日その現場の実打刻。表示専用（人件費は日報の作業時刻がマスタ）。
                        打刻が無ければ行ごと出さない＝0:00 のように見せない。 -->
-                  <div v-if="punchOf(rep.date)" class="detail-punch" data-testid="history-punch">
+                  <div v-if="punchOf(rep.date, s)" class="detail-punch" data-testid="history-punch">
                     <span class="material-symbols-rounded detail-icon">how_to_reg</span>
                     {{ $t('history.punchLabel') }}
-                    {{ punchOf(rep.date)?.checkin ?? '—' }} 〜 {{ punchOf(rep.date)?.checkout ?? '—' }}
+                    {{ punchOf(rep.date, s)?.checkin ?? '—' }} 〜 {{ punchOf(rep.date, s)?.checkout ?? '—' }}
                   </div>
 
                   <ul v-if="s.workers.length" class="detail-list">
@@ -489,9 +489,10 @@ async function loadPunches() {
   punchWorkerId.value = workerId
 }
 const punchWorkerId = ref<string | null>(null)
-// ★現場は取らない（2026-08-27 出退勤モデル変更で打刻が現場に紐づかなくなった）
-function punchOf(date: string) {
-  return punches.punchFor(punchWorkerId.value, date)
+// ★現場は取らない（2026-08-27 出退勤モデル変更で打刻が現場に紐づかなくなった）。
+//  ただし行の作業時刻は渡す＝昼勤＋夜勤の日に、夜勤の行へ昼勤の打刻が付くのを防ぐ（2026-09-11 辻さん）。
+function punchOf(date: string, s?: SiteDetail) {
+  return punches.punchFor(punchWorkerId.value, date, s?.start, s?.end)
 }
 
 // 月ごとにグループ化
@@ -533,7 +534,11 @@ function formatUpdatedAt(ts: string): string {
 
 // ── 詳細表示（LINE通知と同粒度）────────────────────────────
 interface WorkerLine { name: string; time: string; hours: string }
-interface SiteDetail { name: string; contractor: string; workers: WorkerLine[]; expenses: string[]; subs: string[]; note: string }
+interface SiteDetail {
+  name: string; contractor: string; workers: WorkerLine[]; expenses: string[]; subs: string[]; note: string
+  /** 先頭作業員の作業時刻。実打刻の「回」を選ぶのに使う（昼勤＋夜勤の日に行ごとに正しい打刻を出す） */
+  start: string | null; end: string | null
+}
 
 function yen(n: number): string { return Number(n).toLocaleString() }
 
@@ -558,7 +563,7 @@ function computeHoursForReport(rep: any): Record<string, any> {
     const wins = effectiveBreakWindows(w)
     const { workedMin, ...bd } = computeWorkerHours(
       w.startTime, w.endTime, wins ? 0 : effectiveBreakMinutes(w), isSunday, accum[key] ?? 0, wins)
-    accum[key] = workedMin
+    accum[key] = (accum[key] ?? 0) + workedMin   // ★その行ぶんを足し込む（上書きすると3行目以降が甘くなる）
     map[`${si}-${wi}`] = bd
   }
   return map
@@ -623,6 +628,8 @@ function buildDetail(rep: any): SiteDetail[] {
   const hoursMap = computeHoursForReport(rep)
   return (rep.sites || []).map((site: any, si: number): SiteDetail => ({
     name: siteDisplayName(site),
+    start: site.workers?.[0]?.startTime ?? null,
+    end: site.workers?.[0]?.endTime ?? null,
     contractor: site.contractorName === '__other__' ? (site.customContractorName || '') : (site.contractorName || ''),
     workers: (site.workers || [])
       .map((w: any, wi: number) => ({ w, wi }))

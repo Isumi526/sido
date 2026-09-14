@@ -25,6 +25,8 @@ const SITE = `${PREFIX}現場${TS}`
 const W_GAP = `${PREFIX}ズレ${TS}`      // 作業時刻 08:30-18:00 に対し 06:02 / 19:53 打刻
 const W_SAME = `${PREFIX}一致${TS}`     // 打刻と作業時刻がほぼ同じ
 const W_NOPUNCH = `${PREFIX}打刻なし${TS}`
+const W_TWO = `${PREFIX}二交代${TS}`     // 昼勤 09:30-14:00 ＋ 夜勤 20:00-04:30（2026-09-11 辻さんの形）
+const SITE_NIGHT = `${PREFIX}夜勤現場${TS}`
 // ★日報一覧の月ナビは URL 同期されておらず常に「当月」を出す。
 //  固定日付にすると画面に出ず、テストが「表示されない」ではなく「月が違う」で落ちる。
 const _t = new Date()
@@ -37,13 +39,16 @@ const wid: Record<string, string> = {}
 const uid: Record<string, string> = {}
 
 async function purge() {
-  for (const n of [W_GAP, W_SAME, W_NOPUNCH]) {
+  for (const n of [W_GAP, W_SAME, W_NOPUNCH, W_TWO]) {
     for (const u of (await restSrv(`users?real_name=eq.${encodeURIComponent(n)}&select=id`)) ?? []) {
       await restSrv(`daily_reports?user_id=eq.${u.id}`, { method: 'DELETE' }).catch(() => {})
       await restSrv(`users?id=eq.${u.id}`, { method: 'DELETE' }).catch(() => {})
     }
   }
   if (siteId) await restSrv(`attendance_logs?site_id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})
+  for (const w of (await restSrv(`workers?name=like.${PREFIX}*&select=id`)) ?? []) {
+    await restSrv(`attendance_logs?worker_id=eq.${w.id}`, { method: 'DELETE' }).catch(() => {})
+  }
   await restSrv(`workers?name=like.${PREFIX}*`, { method: 'DELETE' }).catch(() => {})
   await restSrv(`sites?name=like.${PREFIX}*`, { method: 'DELETE' }).catch(() => {})
   const left = (await restSrv(`workers?name=like.${PREFIX}*&select=id`))?.length ?? 0
@@ -64,15 +69,17 @@ async function seedReport(name: string) {
   })
 }
 
-async function punch(name: string, type: string, hm: string) {
+async function punch(name: string, type: string, hm: string, date = DATE) {
   await restSrv('attendance_logs', {
     method: 'POST', headers: { Prefer: 'return=minimal' },
     body: JSON.stringify({
       site_id: siteId, worker_id: wid[name], type,
-      checked_at: `${DATE}T${hm}:00+09:00`, agreed_rule_texts: [],
+      checked_at: `${date}T${hm}:00+09:00`, agreed_rule_texts: [],
     }),
   })
 }
+/** DATE の翌日（夜勤の退勤用） */
+const NEXT_DATE = (() => { const d = new Date(`${DATE}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10) })()
 
 test.describe('日報一覧: 実打刻と作業時刻のズレ', () => {
   test.beforeAll(async () => {
@@ -86,7 +93,7 @@ test.describe('日報一覧: 実打刻と作業時刻のズレ', () => {
       }),
     }))[0].id
 
-    for (const n of [W_GAP, W_SAME, W_NOPUNCH]) {
+    for (const n of [W_GAP, W_SAME, W_NOPUNCH, W_TWO]) {
       const w = await restSrv('workers', {
         method: 'POST', headers: { Prefer: 'return=representation' },
         body: JSON.stringify({ account_id: accountId, name: n, role: 'site', active: true }),
@@ -97,8 +104,25 @@ test.describe('日報一覧: 実打刻と作業時刻のズレ', () => {
         body: JSON.stringify({ account_id: accountId, real_name: n, worker_id: w[0].id }),
       })
       uid[n] = u[0].id
-      await seedReport(n)
+      if (n !== W_TWO) await seedReport(n)
     }
+    // 二交代: 昼勤行と夜勤行の2行
+    await restSrv('daily_reports', {
+      method: 'POST', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        account_id: accountId, user_id: uid[W_TWO], date: DATE, is_working: true,
+        sites: [
+          { siteName: SITE, subcontractors: [], expenses: {},
+            workers: [{ workerName: W_TWO, workerId: wid[W_TWO], startTime: '09:30', endTime: '14:00', breakMinutes: 0 }] },
+          { siteName: SITE_NIGHT, subcontractors: [], expenses: {},
+            workers: [{ workerName: W_TWO, workerId: wid[W_TWO], startTime: '20:00', endTime: '04:30', breakMinutes: 60 }] },
+        ],
+      }),
+    })
+    await punch(W_TWO, 'checkin', '09:30')
+    await punch(W_TWO, 'checkout', '14:13')
+    await punch(W_TWO, 'checkin', '19:31')
+    await punch(W_TWO, 'checkout', '04:31', NEXT_DATE)   // ★日跨ぎの退勤
 
     await punch(W_GAP, 'checkin', '06:02')     // 作業 08:30 に対し 2時間28分 早い
     await punch(W_GAP, 'checkout', '19:53')    // 作業 18:00 に対し 1時間53分 遅い
@@ -146,6 +170,18 @@ test.describe('日報一覧: 実打刻と作業時刻のズレ', () => {
     await expect(card, '打刻なしと出る').toContainText('打刻なし')
     await expect(card.getByTestId('punch-diff-in'), '★無いものを在るように見せない').toHaveCount(0)
     await expect(card.getByTestId('punch-diff-out')).toHaveCount(0)
+  })
+
+  test('★1日2回の出退勤（昼勤＋夜勤）は行ごとに自分の回の打刻が出る（2026-09-11 辻さん）', async ({ page }) => {
+    await open(page)
+    const card = cardOf(page, W_TWO)
+    const day = card.locator('.site-row').filter({ hasText: '09:30〜14:00' })
+    const night = card.locator('.site-row').filter({ hasText: '20:00〜04:30' })
+    await expect(day, '昼勤行＝昼勤の回').toContainText('出勤 09:30 / 退勤 14:13')
+    await expect(night, '★夜勤行＝夜勤の回（翌朝の退勤まで）。昼勤の 09:30〜14:13 を出さない').toContainText('出勤 19:31 / 退勤 04:31')
+    // ★本丸: 夜勤行に「出勤 −10時間30分 / 退勤 +9時間43分」が付かない
+    await expect(night.getByTestId('punch-diff-in'), '本物のズレ＝29分の早出だけ').toHaveText('出勤 −29分')
+    await expect(night.getByTestId('punch-diff-out'), '04:31 vs 04:30 は出さない').toHaveCount(0)
   })
 
   test('★ズレていても稼働時間・人件費は動かない（表示専用であること）', async ({ page }) => {

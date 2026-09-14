@@ -299,7 +299,9 @@ export const useReport = () => {
       const { workedMin, ...breakdown } = computeWorkerHours(
         w.startTime, w.endTime, wins ? 0 : effectiveBreakMinutes(w), isSunday, accum, wins
       )
-      workerAccum[key] = workedMin
+      // ★workedMin は「その行ぶんだけ」（shared/worker-hours.ts の契約）。上書きすると
+      //  3行目以降の残業判定が2行目からしか累積せず甘くなる（2026-09-12 発見）。足し込む。
+      workerAccum[key] = accum + workedMin
       breakdownMap.set(`${siteIdx}-${workerIdx}`, breakdown)
     }
 

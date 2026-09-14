@@ -375,7 +375,7 @@ import { useQueryParam } from '../composables/useQueryParam'
 import { HIDE_LINE_SECTIONS } from '../lib/featureFlags'
 import { effectiveBreakMinutes, laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE, readOtDeductionSettings, otDeductionForDate, type RateBreakdown } from '../lib/workerHours'
 import { canViewWages, currentUser } from '../lib/auth'
-import { punchDiffLabel, isPunchDiffBig, isPunchDiffWorthShowing } from '../lib/attendance-punch.gen'
+import { punchDiffLabel, isPunchDiffBig, isPunchDiffWorthShowing, foldPunches, punchForRow, jstRangeToUtc, type Punch } from '../lib/attendance-punch.gen'
 
 const EDGE_URL  = import.meta.env.VITE_SUPABASE_EDGE_URL as string
 const ANON_KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY as string
@@ -525,7 +525,7 @@ async function issueEditGrant(r: any) {
 }
 
 // 出退勤マップ: `${worker_id}|${date}|${現場名}` → { checkin, checkout }（HH:MM, JST）
-const attendanceMap = ref<Record<string, { checkin?: string; checkout?: string }>>({})
+const attendanceMap = ref<Record<string, Punch>>({})
 
 // 削除は詳細モーダル内の2段階のみ（一覧からは不可・誤操作防止）
 const deleteArmed = ref(false)
@@ -638,20 +638,20 @@ function resolveSiteName(site: any): string {
 }
 
 // ── 出退勤（実打刻）表示ヘルパー ──────────────────────────
-const TZ = 'Asia/Tokyo'
-function jstDate(iso: string): string {
-  // YYYY-MM-DD（JST）。daily_reports.date と突き合わせる。
-  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(iso))
-}
-function jstTime(iso: string): string {
-  return new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }).format(new Date(iso))
+/** YYYY-MM-DD を days 日ずらす（日付だけの計算なのでUTCで足し引きしてよい） */
+function shiftDate(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
 }
 // ★現場は使わない（2026-08-27 出退勤モデル変更で打刻が現場に紐づかなくなった）。
-//  引数の site は呼び出し側の行単位の都合で残してある。
-function attendanceFor(r: any, _site: any): { checkin?: string; checkout?: string } | null {
+//  ただし行の作業時刻で「回」を選ぶ。昼勤＋夜勤のように1日2回出退勤した日に、外枠を
+//  全行へ出すと夜勤行に昼勤の打刻が付いて嘘のズレチップが出る（2026-09-11 辻さん・LIFFと同じ直し）。
+function attendanceFor(r: any, site: any): { checkin?: string; checkout?: string } | null {
   const wid = r.users?.worker_id
   if (!wid) return null
-  return attendanceMap.value[`${wid}|${r.date}`] ?? null
+  const w = site?.workers?.[0]
+  return punchForRow(attendanceMap.value[`${wid}|${r.date}`] ?? null, w?.startTime, w?.endTime)
 }
 
 function resolveContractorName(site: any): string {
@@ -709,12 +709,12 @@ async function load() {
   // 出退勤（実打刻）を取得して現場ごとにマップ化
   // attendance_logs には account_id が無いため worker_id 集合で隔離する。
   const workerIds = [...new Set(mapped.map((r: any) => r.users?.worker_id).filter(Boolean))]
-  const map: Record<string, { checkin?: string; checkout?: string }> = {}
+  let map: Record<string, Punch> = {}
   if (workerIds.length > 0) {
-    // JST の月初〜月末を UTC(Z) に変換して渡す（フィルタ値に '+' を含めると
-    // URL 上でスペース解釈され timestamp パースエラーになるため toISOString を使う）
-    const loUtc = new Date(`${dateFrom.value}T00:00:00+09:00`).toISOString()
-    const hiUtc = new Date(`${dateTo.value}T23:59:59+09:00`).toISOString()
+    // ★JST の月初の前日〜月末の翌日を取る。夜勤の退勤（翌4:31）は翌日のログなので、
+    //  月末の夜勤が「出勤のみ」にならないよう翌日まで、月初早朝の退勤が対の無い退勤として
+    //  混ざらないよう前日から取る。畳み込み（回の組み方）は LIFF と同じ共有ロジック。
+    const { lo: loUtc, hi: hiUtc } = jstRangeToUtc(shiftDate(dateFrom.value, -1), shiftDate(dateTo.value, +1))
     const { data: logs } = await supabase
       .from('attendance_logs')
       .select('worker_id, type, checked_at')
@@ -724,15 +724,7 @@ async function load() {
       .is('deleted_at', null)   // ★承認で取り消した誤打刻は集計に出さない（2026-09-03）
       .order('checked_at', { ascending: true })
       .limit(5000) // 1ヶ月×全作業員(出退勤で1日2件以上)で上限(既定1000)超による欠落防止（daily_reportsクエリと同じ余裕）
-    // ★2026-08-27 出退勤モデル変更: 打刻が現場に紐づかなくなったのでキーから現場名を外す
-    //  （作業員×日付）。1日に複数現場ある日報でも、その日の外枠を各行に同じものとして出す。
-    for (const log of (logs ?? []) as any[]) {
-      const key = `${log.worker_id}|${jstDate(log.checked_at)}`
-      const entry = map[key] ?? (map[key] = {})
-      // order asc のため checkin は最早を保持（上書きしない）、checkout は最遅を保持（上書き）
-      if (log.type === 'checkin') { if (!entry.checkin) entry.checkin = jstTime(log.checked_at) }
-      else if (log.type === 'checkout') { entry.checkout = jstTime(log.checked_at) }
-    }
+    map = foldPunches(((logs ?? []) as any[]).map((l) => ({ ...l, siteName: null })))
   }
   attendanceMap.value = map
 
