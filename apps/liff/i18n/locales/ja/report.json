@@ -211,5 +211,8 @@
   "checkoutToastTime": "退勤 {time}",
   "checkoutToastText": "記録しました",
   "expenseOnlyNote": "この日は稼働なしのため、作業時間の入力はありません。このまま送信できます。",
-  "expenseOpen": "経費を登録する（ホテル代・ガソリン等）"
+  "expenseOpen": "経費を登録する（ホテル代・ガソリン等）",
+  "appliedTitle": "更新しました！",
+  "appliedText": "期限内の編集なので承認なしで日報に反映されました",
+  "editReasonHintApproval": "この編集は期限を過ぎているため承認が必要です。何を直したかが分かるように理由を残してください"
 }

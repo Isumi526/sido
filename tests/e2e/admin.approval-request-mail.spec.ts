@@ -16,7 +16,7 @@ import { SUPABASE_URL, ANON_KEY, ACCOUNT_SLUG, restSrv, getAccountId } from './h
 
 const TS = Date.now()
 const SITE = `E2E承認依頼現場_${TS}`
-const EDIT_DATE = '2026-12-18'
+const EDIT_DATE = '2026-08-26'   // ★期限外の日（期限内の編集は承認なしで即反映＝保留に入らない・判定表 2026-09-12）
 
 let accountId = ''
 let siteId = ''

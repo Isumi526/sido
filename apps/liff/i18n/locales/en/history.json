@@ -80,5 +80,9 @@
   "bulkResultPending": "{count} day(s) awaiting approval",
   "bulkResultFailed": "{count} day(s) failed",
   "unsubmittedProxy": "Entering on behalf of {name}",
-  "proxyOwner": "{name}’s report"
+  "proxyOwner": "{name}’s report",
+  "pendingNeed": "(waiting for {who})",
+  "needOwner": "the owner",
+  "needManager": "the site manager",
+  "needJoin": " and "
 }

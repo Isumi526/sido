@@ -9,7 +9,7 @@
 import { test, expect } from '@playwright/test'
 import { rest, restSrv, getDevUserId, getAccountId } from './helpers'
 
-const EDIT_DATE = '2026-10-16'
+const EDIT_DATE = '2026-08-16'   // ★期限外の日＝承認に回る＝理由必須。期限内は任意（下のテスト）
 const TS = Date.now()
 
 test.describe('日報の編集理由（liff）', () => {
@@ -90,5 +90,44 @@ test.describe('日報の編集理由（liff）', () => {
     logs = await restSrv(`daily_report_edit_logs?report_user_id=eq.${uid}&report_date=eq.${EDIT_DATE}&select=reason&order=created_at.asc`)
     expect(logs.length, '★2回目でも上書きされず2行になる').toBe(2)
     expect(logs.map((l: any) => l.reason)).toEqual([reason1, reason2])
+  })
+
+  // ★判定表（2026-09-10 SEED 会議・2026-09-12 決定）:
+  //  期限内（当日含む直近3日）の編集は承認なし・即反映で、理由は任意。監査ログは残す。
+  //  「二、三日前は承認なしでも打てるのに、編集の時だけ承認が要るのは変」（大塚）
+  test('★期限内の編集は理由なしで送れて、承認を挟まず日報に即反映される（監査ログは残る）', async ({ page }) => {
+    page.on('dialog', (d) => d.accept().catch(() => {}))
+    const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
+    await restSrv(`daily_report_pending_edits?report_user_id=eq.${uid}&report_date=eq.${today}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`daily_report_edit_logs?report_user_id=eq.${uid}&report_date=eq.${today}`, { method: 'DELETE' }).catch(() => {})
+    const rep = await rest('daily_reports?on_conflict=user_id,date', {
+      method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+      body: JSON.stringify({
+        account_id: accountId, user_id: uid, date: today, is_working: true, note: 'E2E:期限内の編集',
+        sites: [{ siteName: 'テスト現場B', workers: [], subcontractors: [],
+          expenses: { vehicles: [], parkings: [], highways: [], trains: [], hotels: [], others: [], entertainments: [] } }],
+      }),
+    })
+    const reportId = rep[0].id
+    try {
+      await page.goto(`/report?edit=${today}`, { waitUntil: 'networkidle' })
+      await expect(page.getByTestId('edit-reason')).toBeVisible({ timeout: 15000 })
+      await expect(page.getByTestId('report-submit'), '★期限内は理由が空でも押せる').toBeEnabled()
+      // 備考を変えて差分を作る
+      const note = page.locator('textarea').filter({ hasText: 'E2E:期限内の編集' }).first()
+      if (await note.count()) await note.fill(`E2E:期限内の編集 変更_${TS}`)
+      await page.getByTestId('report-submit').click()
+      await expect(page.locator('.state-title'), '★「更新しました」＝承認待ちではない').toContainText('更新しました', { timeout: 20000 })
+
+      const pend = await restSrv(`daily_report_pending_edits?report_id=eq.${reportId}&status=eq.pending&select=id`)
+      expect(pend.length, '★保留は作られない').toBe(0)
+      const logs = await restSrv(`daily_report_edit_logs?report_id=eq.${reportId}&select=id`)
+      expect(logs.length, '監査ログは残る').toBe(1)
+      const saved = await rest(`daily_reports?id=eq.${reportId}&select=note,updated_at`)
+      expect(saved[0].updated_at, '日報が更新されている').toBeTruthy()
+    } finally {
+      await restSrv(`daily_report_edit_logs?report_user_id=eq.${uid}&report_date=eq.${today}`, { method: 'DELETE' }).catch(() => {})
+      await rest(`daily_reports?id=eq.${reportId}`, { method: 'DELETE' }).catch(() => {})
+    }
   })
 })

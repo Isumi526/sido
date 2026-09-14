@@ -338,23 +338,58 @@ function totalYenOf(sites: unknown): number {
 }
 
 /**
- * この申請に二重承認（現場責任者＋オーナー）が要るか。
- * ★2026-08-17 の運用判断（B）:
- *   - 期限を過ぎてからの新規提出（late_new）… 要る
- *   - 経費の合計が増える編集             … 要る
- *   - それ以外の編集（金額が変わらない訂正）… 今までどおり1人でよい
- *  全部に掛けると承認が回らない（sido の admin は1名）。抑止が要るのは
- *  「ルールを守らなかった」か「お金が増える」時だけ、という整理。
+ * 判定表（2026-09-10 SEED 会議・2026-09-12 決定）— 承認が要るか／誰の承認で成立するか。
+ *
+ *   対象日が期限内（当日含む直近3日）の編集     … 承認なし・即反映（監査ログは残す）
+ *   期限外の編集／期限後の新規提出／有給不足      … 責任者＋オーナー（順不同・両方）
+ *   申請者がその現場の責任者、または責任者未設定  … オーナー1名で完了
+ *   複数現場で一部だけ責任者本人                  … オーナー1名に倒す
+ *   残業申請・打刻修正                            … 対象外（現行のまま）
+ *
+ * ★2026-08-17 の「金額不変/減額の編集は1名」分岐は撤去した（大塚「全部二重承認でもいい」）。
+ *  期限内の編集はそもそも保留に入らないので、保留に入るものは全部 requires_dual=true になる。
+ * ★approval_mode は「申請した時点」で決めて保存する。承認する時に計算し直すと、その間に責任者が
+ *  変わって判定がひっくり返る（同じ申請が見るたび別の顔になる）。
  */
-async function needsDualApproval(
-  svc: any, kind: string, reportId: string | null, payload: Record<string, unknown>,
-): Promise<boolean> {
-  if (kind === 'late_new') return true
-  if (kind === 'paid_leave_over') return true   // 有給残不足の申請は現場責任者＋オーナーの二重承認
-  if (!reportId) return false
-  const { data: cur } = await svc.from('daily_reports').select('sites').eq('id', reportId).maybeSingle()
-  if (!cur) return false
-  return totalYenOf(payload?.sites) > totalYenOf(cur.sites)
+const LOCK_AFTER_DAYS = 3
+const LOCK_START_DATE = '2026-07-01'   // これより前の日報は遡及ロックしない（apps/liff/composables/useReportLock.ts と同じ）
+function jstTodayStr(): string { return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10) }
+/** 対象日が期限外（3日以上前）か。LIFF の useReportLock.isPastLockWindow と同じ規則 */
+function isPastLockWindow(date: string): boolean {
+  if (!date || date < LOCK_START_DATE) return false
+  const d = new Date(`${date}T00:00:00Z`).getTime()
+  const t = new Date(`${jstTodayStr()}T00:00:00Z`).getTime()
+  return Math.floor((t - d) / 86400000) >= LOCK_AFTER_DAYS
+}
+function needsApproval(kind: string, reportDate: string): boolean {
+  if (kind === 'late_new' || kind === 'paid_leave_over') return true
+  return isPastLockWindow(reportDate)
+}
+type ApprovalMode = 'owner_only' | 'owner_and_manager'
+/**
+ * 誰の承認で成立するか。payload の現場の責任者を引き、申請者（日報の本人）がその責任者なら
+ * オーナー1名、責任者が1人も居なければオーナー1名、それ以外は責任者＋オーナー。
+ */
+async function resolveApprovalMode(
+  svc: any, accountId: string, payload: Record<string, unknown> | null, reportUserId: string | null,
+): Promise<{ mode: ApprovalMode; responsibleWorkerIds: string[] }> {
+  const siteIds = Array.isArray((payload as any)?.sites)
+    ? ((payload as any).sites as any[]).map((x) => x?.site_id).filter((v) => typeof v === 'string')
+    : []
+  let responsible: string[] = []
+  if (siteIds.length) {
+    const { data: sites } = await svc.from('sites')
+      .select('responsible_worker_id').in('id', siteIds).eq('account_id', accountId)
+    responsible = [...new Set((sites ?? []).map((x: any) => x.responsible_worker_id).filter(Boolean))] as string[]
+  }
+  let applicantWorkerId: string | null = null
+  if (reportUserId) {
+    const { data: u } = await svc.from('users').select('worker_id').eq('id', reportUserId).eq('account_id', accountId).maybeSingle()
+    applicantWorkerId = u?.worker_id ?? null
+  }
+  const applicantIsResponsible = !!applicantWorkerId && responsible.includes(applicantWorkerId)
+  const mode: ApprovalMode = (!responsible.length || applicantIsResponsible) ? 'owner_only' : 'owner_and_manager'
+  return { mode, responsibleWorkerIds: responsible }
 }
 
 /**
@@ -416,7 +451,7 @@ async function handleReview(svc: any, body: any, authHeader: string): Promise<Re
 
   // 自テナントの pending だけが対象（他テナントのIDを渡しても引けない）
   const { data: pend } = await svc.from('daily_report_pending_edits')
-    .select('id, report_id, report_user_id, report_date, payload, status, kind, submitted_by_user_id, requires_dual, approvals')
+    .select('id, report_id, report_user_id, report_date, payload, status, kind, submitted_by_user_id, requires_dual, approvals, approval_mode')
     .eq('id', id).eq('account_id', accountId).maybeSingle()
   if (!pend) return json({ ok: false, error: 'pending_not_found' }, 404)
   if (pend.status !== 'pending') return json({ ok: false, error: 'already_reviewed' }, 409)
@@ -482,18 +517,14 @@ async function handleReview(svc: any, body: any, authHeader: string): Promise<Re
   //   責任者を埋めるほどオーナーの手間が増える構造になるため（2026-08-15 の判断）。
   // ────────────────────────────────────────────────
   if (pend.requires_dual) {
-    // この申請の現場に責任者が設定されているか。未設定ならオーナー1人で成立させる
-    //  （本番 sido は責任者が半分しか埋まっておらず、止めると翌日から現場が動かない）。
-    const siteIds = Array.isArray((pend.payload as any)?.sites)
-      ? ((pend.payload as any).sites as any[]).map((x) => x?.site_id).filter((v) => typeof v === 'string')
-      : []
-    let responsibleWorkerIds: string[] = []
-    if (siteIds.length) {
-      const { data: sites } = await svc.from('sites')
-        .select('responsible_worker_id').in('id', siteIds).eq('account_id', accountId)
-      responsibleWorkerIds = (sites ?? []).map((x: any) => x.responsible_worker_id).filter(Boolean)
-    }
-    const hasResponsible = responsibleWorkerIds.length > 0
+    // 誰の承認で成立するか（判定表）。申請時に保存した approval_mode を使う。無い旧行は今計算する。
+    //  owner_only        … 申請者＝現場責任者 or 責任者未設定 → オーナー1名で完了
+    //  owner_and_manager … 責任者＋オーナー（順不同）
+    const resolved = await resolveApprovalMode(svc, accountId, pend.payload as any, pend.report_user_id)
+    const mode: ApprovalMode = (pend.approval_mode === 'owner_only' || pend.approval_mode === 'owner_and_manager')
+      ? pend.approval_mode : resolved.mode
+    const responsibleWorkerIds = resolved.responsibleWorkerIds
+    const hasResponsible = mode === 'owner_and_manager'
 
     // 承認者の枠を決める。オーナー枠＝admin/owner、責任者枠＝その現場の責任者本人
     const isOwnerSlot = approver.role === 'admin' || approver.role === 'owner'
@@ -531,7 +562,16 @@ async function handleReview(svc: any, body: any, authHeader: string): Promise<Re
     await svc.from('daily_report_pending_edits').update({ approvals }).eq('id', id)
   }
 
-  // 承認: ここで初めて daily_reports に反映する＝集計に出る
+  const applied = await applyPending(svc, accountId, pend, reviewer, now)
+  if (!applied) return json({ ok: false, error: 'apply_failed' }, 500)
+  return json({ ok: true, status: 'approved' })
+}
+
+/**
+ * 承認が揃った保留を日報へ反映して approved にする。handleReview と reevaluate の両方から使う。
+ * ★日報への反映が成功してから承認済みにする（逆順だと「承認済みなのに未反映」が残る）。
+ */
+async function applyPending(svc: any, accountId: string, pend: any, reviewer: string | null, now: string): Promise<boolean> {
   const p = pend.payload as Record<string, unknown>
   const cols = {
     is_working:       p.is_working,
@@ -545,35 +585,56 @@ async function handleReview(svc: any, body: any, authHeader: string): Promise<Re
   // 編集は既存行を更新／期限切れの新規提出はまだ行が無いので upsert する。
   // late_new でも upsert にするのは、承認までの間に同じ日付が別経路で作られていた場合に
   // 重複行を作らないため（daily_reports は unique(user_id,date)）。
-  // ★late_new は承認時に日報が生まれるので、作られた行の id を受け取って
-  //  pending.report_id に書き戻す。これをしないと report_id が NULL のままになり、
-  //  日報詳細の「この日報の承認履歴を見る」（report_id で数えている）が永久に0件になる。
-  //  ＝後出しで出てきた日報こそ誰が承認したか追いたいのに、そこだけ履歴から切れていた（2026-08-10 レビューで発見）。
+  // ★late_new は承認時に日報が生まれるので、作られた行の id を pending.report_id に書き戻す
+  //  （report_id が NULL のままだと日報詳細の承認履歴が永久に0件になる。2026-08-10 レビューで発見）。
   let appliedReportId: string | null = pend.report_id ?? null
-  if (pend.kind === 'late_new' || pend.kind === 'paid_leave_over') {   // 新規提出は承認時に日報を生成(upsert)
+  if (pend.kind === 'late_new' || pend.kind === 'paid_leave_over') {
     const { data: up, error: upErr } = await svc.from('daily_reports').upsert(
       { ...cols, account_id: accountId, user_id: pend.report_user_id, date: pend.report_date },
       { onConflict: 'user_id,date' })
       .select('id').maybeSingle()
-    if (upErr) {
-      console.error('[report-edit-log] apply failed:', upErr)
-      return json({ ok: false, error: 'apply_failed' }, 500)
-    }
+    if (upErr) { console.error('[report-edit-log] apply failed:', upErr); return false }
     appliedReportId = up?.id ?? null
   } else {
     const { error: upErr } = await svc.from('daily_reports').update(cols)
       .eq('id', pend.report_id).eq('account_id', accountId)
-    if (upErr) {
-      console.error('[report-edit-log] apply failed:', upErr)
-      return json({ ok: false, error: 'apply_failed' }, 500)
-    }
+    if (upErr) { console.error('[report-edit-log] apply failed:', upErr); return false }
   }
-  // ★日報への反映が成功してから承認済みにする。逆順だと「承認済みなのに未反映」が残る
   await svc.from('daily_report_pending_edits').update({
     status: 'approved', reviewed_by_name: reviewer, reviewed_at: now, updated_at: now,
     ...(appliedReportId ? { report_id: appliedReportId } : {}),
-  }).eq('id', id)
-  return json({ ok: true, status: 'approved' })
+  }).eq('id', pend.id)
+  return true
+}
+
+/**
+ * 滞留中の承認待ちを判定表で再判定し、揃っているものを反映する（AC5・2026-09-14）。
+ *  責任者本人の申請でオーナー承認済みなら、旧ルールでは責任者枠が永久に埋まらず止まっていた。
+ *  オーナー枠（admin/owner）の人だけ実行できる。反映した件数と、まだ待ちの件数を返す。
+ */
+async function handleReevaluate(svc: any, authHeader: string): Promise<Response> {
+  if (!authHeader || authHeader.endsWith(ANON_KEY)) return json({ ok: false, error: 'unauthorized' }, 401)
+  const approver = await resolveApprover(svc, authHeader)
+  if (!approver) return json({ ok: false, error: 'unauthorized' }, 401)
+  if (!(approver.role === 'admin' || approver.role === 'owner')) return json({ ok: false, error: 'not_an_owner' }, 403)
+  const accountId = approver.accountId
+  const { data: rows } = await svc.from('daily_report_pending_edits')
+    .select('id, report_id, report_user_id, report_date, payload, kind, requires_dual, approvals, approval_mode')
+    .eq('account_id', accountId).eq('status', 'pending').eq('requires_dual', true)
+  const now = new Date().toISOString()
+  let applied = 0, still = 0, modeSet = 0
+  for (const pend of (rows ?? []) as any[]) {
+    const resolved = await resolveApprovalMode(svc, accountId, pend.payload, pend.report_user_id)
+    const mode: ApprovalMode = (pend.approval_mode === 'owner_only' || pend.approval_mode === 'owner_and_manager') ? pend.approval_mode : resolved.mode
+    if (!pend.approval_mode) { await svc.from('daily_report_pending_edits').update({ approval_mode: mode }).eq('id', pend.id); modeSet++ }
+    const slots = new Set(((pend.approvals ?? []) as any[]).map((a) => a?.role))
+    const satisfied = slots.has('owner') && (mode === 'owner_only' || slots.has('site_manager'))
+    if (!satisfied) { still++; continue }
+    const ownerApproval = ((pend.approvals ?? []) as any[]).find((a) => a?.role === 'owner')
+    if (await applyPending(svc, accountId, pend, ownerApproval?.name ?? '再判定', now)) applied++
+    else still++
+  }
+  return json({ ok: true, applied, still, modeSet, checked: (rows ?? []).length })
 }
 
 Deno.serve(async (req) => {
@@ -588,6 +649,9 @@ Deno.serve(async (req) => {
   // 承認・差戻しは管理画面（Supabase JWT）専用の別経路
   if (body.action === 'approve' || body.action === 'reject') {
     return await handleReview(svc, body, req.headers.get('Authorization') ?? '')
+  }
+  if (body.action === 'reevaluate') {
+    return await handleReevaluate(svc, req.headers.get('Authorization') ?? '')
   }
 
   const caller = await resolveCaller(
@@ -630,7 +694,7 @@ Deno.serve(async (req) => {
     if (!pendingFor) return json({ ok: false, error: 'proxy_not_allowed' }, 403)
 
     const { data } = await svc.from('daily_report_pending_edits')
-      .select('report_date, kind, payload')
+      .select('report_date, kind, payload, approval_mode, approvals')
       .eq('account_id', caller.accountId).eq('status', 'pending')
       .eq('report_user_id', pendingFor)
 
@@ -645,7 +709,14 @@ Deno.serve(async (req) => {
 
     return json({
       ok: true,
-      dates: (data ?? []).map((r: any) => ({ date: r.report_date, kind: r.kind, payload: r.payload ?? null })),
+      // need: あと誰の承認が要るか（'owner' / 'site_manager'）。履歴の「誰の承認待ちか」に使う
+      dates: (data ?? []).map((r: any) => {
+        const slots = new Set(((r.approvals ?? []) as any[]).map((a) => a?.role))
+        const need: string[] = []
+        if (!slots.has('owner')) need.push('owner')
+        if (r.approval_mode === 'owner_and_manager' && !slots.has('site_manager')) need.push('site_manager')
+        return { date: r.report_date, kind: r.kind, payload: r.payload ?? null, need }
+      }),
       rejected: (rej ?? []).map((r: any) => ({
         id: r.id, date: r.report_date, kind: r.kind,
         reason: r.reject_reason ?? null,
@@ -681,9 +752,13 @@ Deno.serve(async (req) => {
 
   const reason = typeof body.reason === 'string' ? body.reason.trim() : ''
   const reportDate = typeof body.reportDate === 'string' ? body.reportDate : ''
-  if (!reason) return json({ ok: false, error: 'reason_required' }, 400)
-  if (reason.length > MAX_REASON_LEN) return json({ ok: false, error: 'reason_too_long' }, 400)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(reportDate)) return json({ ok: false, error: 'bad_report_date' }, 400)
+  // ★判定表: 期限内の編集は承認なし・即反映で、理由は任意（監査ログは無条件に残す）。
+  //  承認に回るもの（期限外の編集・期限後の提出・有給不足）は理由必須のまま。
+  const reqKind = body.kind === 'late_new' ? 'late_new' : body.kind === 'paid_leave_over' ? 'paid_leave_over' : 'edit'
+  const directApply = reqKind === 'edit' && !needsApproval('edit', reportDate)
+  if (!reason && !directApply) return json({ ok: false, error: 'reason_required' }, 400)
+  if (reason.length > MAX_REASON_LEN) return json({ ok: false, error: 'reason_too_long' }, 400)
 
   // 差分は表示用の文字列配列だけ受ける（任意の構造を監査ログに入れさせない）
   const diffs = Array.isArray(body.diffs)
@@ -734,7 +809,8 @@ Deno.serve(async (req) => {
     report_date:       reportDate,
     edited_by_user_id: caller.userId,
     edited_by_name:    caller.name,
-    reason,
+    // 期限内の編集は理由が任意。監査ログの reason は空を許さない（check 制約）ので、無い時は定型文で残す
+    reason:            reason || '（理由なし・期限内の編集）',
     diffs:             effectiveDiffs.length ? effectiveDiffs : null,
     client_token:      clientToken,
   }).select('id').maybeSingle()
@@ -752,10 +828,29 @@ Deno.serve(async (req) => {
   let pendingId: string | null = null
   const payload = sanitizePayload(body.payload)
   if (payload) {
-    const kind = body.kind === 'late_new' ? 'late_new' : body.kind === 'paid_leave_over' ? 'paid_leave_over' : 'edit'
+    const kind = reqKind
 
     if (kind === 'edit') {
       if (!reportId) return json({ ok: false, error: 'report_id_required_for_pending' }, 400)
+      // ★期限内の編集は保留に入れず、ここで日報に反映して終わる（判定表：承認なし・即反映）。
+      //  監査ログ（daily_report_edit_logs）は上で書いてある。承認待ちが1件も生まれないので
+      //  二重承認の待ち行列を詰まらせない（2026-09-10 大塚「二、三日前は承認なしでも打てる。編集の時は要るの？」）。
+      if (directApply) {
+        const p = payload as Record<string, unknown>
+        const { error: upErr } = await svc.from('daily_reports').update({
+          is_working: p.is_working, leave_type: p.leave_type, is_business_trip: p.is_business_trip,
+          sites: p.sites, note: p.note, gasoline_items: p.gasoline_items, updated_at: new Date().toISOString(),
+        }).eq('id', reportId).eq('account_id', caller.accountId)
+        if (upErr) {
+          console.error('[report-edit-log] direct apply failed:', upErr)
+          return json({ ok: false, error: 'apply_failed' }, 500)
+        }
+        // 同じ日報に古い承認待ちが残っていれば取り下げる（期限内に直し直したので中身が古い）
+        await svc.from('daily_report_pending_edits')
+          .update({ status: 'rejected', reject_reason: '期限内の編集で上書きされたため取り下げ', reviewed_by_name: 'system', reviewed_at: new Date().toISOString(), acknowledged_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+          .eq('account_id', caller.accountId).eq('report_id', reportId).eq('status', 'pending')
+        return json({ ok: true, id: data?.id ?? null, pendingId: null, applied: true })
+      }
     } else {
       // 新規は「誰の日報か」をクライアントが名乗るので、必ず検証する。
       // 自分自身か、代理入力が許可された相手（worker_proxies）だけを認める。
@@ -786,14 +881,14 @@ Deno.serve(async (req) => {
       ? await q.eq('report_id', reportId).maybeSingle()
       : await q.eq('report_user_id', reportUserId).eq('report_date', reportDate).maybeSingle()
 
-    // ★二重承認が要るかは「申請した時点」で決める。承認する時に計算し直すと、
-    //  その間に元の日報が変わって判定がひっくり返る（同じ申請が見るたび別の顔になる）。
-    const requiresDual = await needsDualApproval(svc, kind, reportId, payload as Record<string, unknown>)
+    // ★保留に入るものは全部承認が要る（判定表）。誰の承認で成立するかは「申請した時点」で決めて保存する。
+    const requiresDual = needsApproval(kind, reportDate)
+    const { mode: approvalMode } = await resolveApprovalMode(svc, caller.accountId, payload as any, reportUserId)
 
     const row = {
       account_id: caller.accountId, report_id: reportId, report_user_id: reportUserId,
       report_date: reportDate, payload, reason, diffs: effectiveDiffs.length ? effectiveDiffs : null,
-      kind, requires_dual: requiresDual, approvals: [],
+      kind, requires_dual: requiresDual, approval_mode: approvalMode, approvals: [],
       submitted_by_user_id: caller.userId, submitted_by_name: caller.name,
       submitted_at: new Date().toISOString(), status: 'pending',
       updated_at: new Date().toISOString(),
