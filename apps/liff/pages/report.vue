@@ -1014,10 +1014,34 @@
               </div>
             </div>
 
-            <!-- 引き上げ材料: 在庫①と同時に入力口を足す。今は枠だけ -->
+            <!-- 引き上げ材料（在庫①）: 現場から戻した材料を写真＋品目＋数量で登録。種別=引上げ・現場=この日報の現場。
+                 ★日報の保存が成功してから登録する（在庫だけ動いて日報が無い状態を作らない）。 -->
             <div class="tail-sec" data-testid="tail-materials">
               <div class="tail-sec-title">{{ $t('report.tailMaterialsTitle') }}</div>
-              <p class="tail-hint">{{ $t('report.tailMaterialsSoon') }}</p>
+              <p v-if="!invItems.length" class="tail-hint">{{ $t('report.tailMaterialsNoItems') }}</p>
+              <template v-else>
+                <p class="tail-hint">{{ $t('report.tailMaterialsHint') }}</p>
+                <div v-for="(r, ri) in tailReturns" :key="r.id" class="lineitem-card tail-draft" data-testid="tail-return">
+                  <div class="tail-draft-head">
+                    <span class="tail-draft-file">{{ $t('report.tailReturnNo', { n: ri + 1 }) }}</span>
+                    <button type="button" class="btn-icon-sm" data-testid="tail-return-remove" @click="tailReturns.splice(ri, 1)">✕</button>
+                  </div>
+                  <select v-model="r.itemId" class="select" data-testid="tail-return-item">
+                    <option value="">{{ $t('common.select') }}</option>
+                    <option v-for="it in invItems" :key="it.id" :value="it.id">{{ it.name }}{{ it.unit ? `（${it.unit}）` : '' }}</option>
+                  </select>
+                  <div class="lineitems-row mt6">
+                    <input v-model.number="r.qty" type="number" inputmode="numeric" min="1" step="1" class="input" :placeholder="$t('report.tailReturnQty')" data-testid="tail-return-qty" />
+                    <select v-if="tailSiteRows.length > 1" v-model="r.si" class="select" data-testid="tail-return-site">
+                      <option v-for="row in tailSiteRows" :key="row.si" :value="row.si">{{ row.name }}</option>
+                    </select>
+                  </div>
+                  <label class="hours-label mt6">{{ $t('report.tailReturnPhotos') }}<span class="required">{{ $t('common.required') }}</span></label>
+                  <AttachedFilesBadge :files="r.files" @remove-file="(p) => r.files.splice(p.index, 1)" />
+                  <input type="file" accept="image/*" capture="environment" multiple class="input mt4" data-testid="tail-return-photos" @change="(e) => onTailReturnFiles(r, e)" />
+                </div>
+                <button type="button" class="btn-ghost-sm mt6" data-testid="tail-return-add" @click="addTailReturn">{{ $t('report.tailReturnAdd') }}</button>
+              </template>
             </div>
           </template>
         </div>
@@ -1687,6 +1711,56 @@ function applyTailDrafts() {
   tailDrafts.value = tailDrafts.value.filter(d => !(Number(d.yen) > 0) || (d.target === 'personal' && !showPersonalExpense.value))
   tailApplied.value += n
 }
+// ── 引き上げ材料（在庫①）: 日報の1問から、写真＋品目＋数量で「引上げ」を登録 ──
+type TailReturn = { id: string; itemId: string; qty: number | null; si: number; files: File[] }
+const invItems = ref<{ id: string; name: string; unit: string | null }[]>([])
+const tailReturns = ref<TailReturn[]>([])
+function addTailReturn() {
+  tailReturns.value.push({ id: crypto.randomUUID(), itemId: '', qty: null, si: tailSiteRows.value[0]?.si ?? 0, files: [] })
+}
+function onTailReturnFiles(r: TailReturn, e: Event) {
+  const input = e.target as HTMLInputElement
+  r.files = [...r.files, ...Array.from(input.files ?? [])]
+  input.value = ''
+}
+/** 入力のある引き上げ行（品目・数量・写真がそろったもの） */
+const tailReturnsFilled = computed(() => tailReturns.value.filter(r => r.itemId && Number(r.qty) > 0 && r.files.length))
+/** 品目・数量はあるのに写真が無い行（写真は必須。黙って落とさない） */
+function tailReturnValidationError(): string | null {
+  const half = tailReturns.value.find(r => (r.itemId || Number(r.qty) > 0) && !(r.itemId && Number(r.qty) > 0 && r.files.length))
+  return half ? t('report.tailReturnIncomplete') : null
+}
+/**
+ * 日報の保存が成功してから呼ぶ。現場は選んだ現場ブロックの site_id（マスタの名前→id）。
+ * @returns 失敗した件数
+ */
+async function submitTailReturns(): Promise<number> {
+  const rows = tailReturnsFilled.value
+  if (!rows.length) return 0
+  const api = useInventoryApi()
+  const slug = await useAccount().effectiveSlug()
+  const date = report.form.value.date
+  const lineIdToken = (await liff.getIdToken().catch(() => null)) ?? ''
+  let failed = 0
+  for (const r of rows) {
+    try {
+      const site = report.form.value.sites[r.si]
+      const siteId = (site as any)?.site_id || master.siteIds.value[site?.siteName ?? ''] || null
+      const photoUrls = await uploadExpenseFiles(useSupabase(), r.files, date, currentUser.value?.real_name || 'worker', 'inventory', `return_${r.id.slice(0, 8)}`, slug, Number(date.slice(8, 10)) <= 15 ? 'first' : 'second', lineIdToken, {
+        edgeFunctionUrl: config.public.edgeFunctionUrl as string,
+        supabaseUrl: config.public.supabaseUrl as string,
+        supabaseAnonKey: config.public.supabaseAnonKey as string,
+        devLineUserId: config.public.appEnv === 'development' ? (liff.profile.value?.userId ?? '') : '',
+      })
+      await api.move({ itemId: r.itemId, qty: Number(r.qty), kind: 'return', siteId, photoUrls, note: t('report.tailReturnNote', { date }), reportDate: date })
+    } catch (e) {
+      console.error('[report] 引き上げ材料の登録に失敗:', e)
+      failed++
+    }
+  }
+  return failed
+}
+
 /** ゴミの数量を末尾の1問から入れる（現場ブロック側の表示とも連動） */
 function setTailGarbage(si: number, key: 'garbageFactoryM3' | 'garbageSiteM3', v: any) {
   const exp = report.form.value.sites[si]?.expenses
@@ -2749,6 +2823,8 @@ onMounted(async () => {
   }
 
   await masterPromise
+  // 在庫の品目（末尾の1問の引き上げ材料用）。取れなくても枠が出ないだけ
+  useInventoryApi().items().then(list => { invItems.value = list }).catch(() => {})
 
   // 編集モード: ?edit=YYYY-MM-DD
   const editDate = route.query.edit as string | undefined
@@ -3197,6 +3273,9 @@ async function handleSubmit() {
   }
 
   // ── 新規送信 ──
+  // 引き上げ材料は写真必須。品目だけ入れて写真が無い行は止める（黙って捨てない）
+  const trErr = tailReturnValidationError()
+  if (trErr) { editError.value = trErr; return }
   if (currentUser.value) {
     report.form.value.sender   = currentUser.value.real_name
     // 代理入力中は代理先の line_user_id を使用（自分のLINE IDではなく対象者として記録）
@@ -3304,6 +3383,11 @@ async function handleSubmit() {
   if (!report.error.value && showPersonalExpense.value && pe.filled.value.length) {
     const failed = await submitPersonalExpenses()
     if (failed > 0) alert(t('personalExpense.submitFailed', { count: failed }))
+  }
+  // ③-d 引き上げ材料（在庫①）。日報の保存が終わってから登録する（在庫だけ動いた状態を作らない）
+  if (!report.error.value && tailReturnsFilled.value.length) {
+    const failed = await submitTailReturns()
+    if (failed > 0) alert(t('report.tailReturnFailed', { count: failed }))
   }
 
   // ④ 次の未送信日を取得してサクセス画面に表示（自己・代理とも）

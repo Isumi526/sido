@@ -234,5 +234,13 @@
   "tailGarbageTitle": "ゴミ（現場ごと）",
   "tailGarbageNoSite": "現場を選ぶとここにゴミの入力が出ます",
   "tailMaterialsTitle": "引き上げ材料",
-  "tailMaterialsSoon": "在庫管理と同時に入力できるようになります（準備中）"
+  "tailMaterialsNoItems": "在庫の品目が登録されていないため、ここからの引き上げ登録はできません（管理画面の在庫管理で品目を登録します）",
+  "tailMaterialsHint": "現場から持ち帰った材料を写真つきで登録します（在庫に戻ります）。会計在庫ではありません",
+  "tailReturnNo": "引き上げ {n}",
+  "tailReturnQty": "数量",
+  "tailReturnPhotos": "写真",
+  "tailReturnAdd": "＋ 引き上げ材料を追加",
+  "tailReturnIncomplete": "引き上げ材料は品目・数量・写真をそろえてください（写真は必須です）",
+  "tailReturnFailed": "引き上げ材料 {count}件の登録に失敗しました。在庫画面から登録し直してください",
+  "tailReturnNote": "{date} の日報から引き上げ登録"
 }

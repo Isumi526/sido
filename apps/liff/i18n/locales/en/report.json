@@ -234,5 +234,13 @@
   "tailGarbageTitle": "Waste (per site)",
   "tailGarbageNoSite": "Select a site to enter waste here",
   "tailMaterialsTitle": "Returned materials",
-  "tailMaterialsSoon": "Coming with inventory management"
+  "tailMaterialsNoItems": "No inventory items are registered, so returns cannot be recorded here (register items in the admin inventory page)",
+  "tailMaterialsHint": "Record materials brought back from the site with photos (they return to stock). Not accounting inventory",
+  "tailReturnNo": "Return {n}",
+  "tailReturnQty": "Quantity",
+  "tailReturnPhotos": "Photos",
+  "tailReturnAdd": "+ Add returned material",
+  "tailReturnIncomplete": "Fill in item, quantity and photo for returned materials (photo is required)",
+  "tailReturnFailed": "{count} returned material(s) failed to register. Please record them from the inventory page",
+  "tailReturnNote": "Return recorded from the report of {date}"
 }
