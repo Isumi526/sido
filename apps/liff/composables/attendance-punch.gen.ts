@@ -44,7 +44,14 @@ export function jstRangeToUtc(fromDate: string, toDate: string): { lo: string; h
 }
 
 export type PunchLog = { worker_id: string; type: string; checked_at: string; siteName: string | null }
-export type Punch = { checkin?: string; checkout?: string }
+/**
+ * その日の実打刻。checkin/checkout は「その日の外枠」（最初の出勤・最後の退勤）。
+ * shifts はその日の出退勤の「回」を出勤順に並べたもの（昼勤＋夜勤なら2つ）。
+ * ★行に出す時は punchForRow() で「その行の作業時刻に近い回」を選ぶ。外枠をそのまま出すと、
+ *  昼勤行にも夜勤行にも 09:30〜14:13 が並び「出勤 −10時間30分」のような嘘のズレが出る
+ *  （2026-09-11 辻さん・9/9 昼勤09:30-14:00＋夜勤20:00-翌4:30 の実障害）。
+ */
+export type Punch = { checkin?: string; checkout?: string; shifts?: Punch[] }
 
 /**
  * 突き合わせキー。作業員×日付。
@@ -57,20 +64,83 @@ export function punchKey(workerId: string, date: string): string {
 }
 
 /**
- * 打刻ログを「作業員×日付」ごとに畳む。
- * ★出勤は最早・退勤は最遅を採る（昼に一度出て戻った日でも、その日の在場時間の外枠になる）。
+ * 打刻ログを出退勤の「回」に組み、「作業員×日付」ごとに畳む。
+ *  - 出勤が来たら新しい回を開く。退勤は、その作業員の開いている直前の回を閉じる。
+ *  - 回が属する日＝出勤した日（JST）。★日跨ぎの退勤（翌4:31）は出勤した日の回に入る。
+ *    退勤の日付で畳むと、夜勤の退勤が翌日に付き、その日の外枠が昼勤の退勤(14:13)で止まる。
+ *  - 開いている回が無いのに退勤が来たら（前日の出勤が取得範囲の外など）退勤だけの回にする。
+ *  - checkin/checkout（外枠）は 最初の回の出勤・最後の退勤。1回だけの日は従来と同じ値になる。
  *  呼び出し側は checked_at の昇順で渡すこと。
+ *  ★日跨ぎの退勤を拾うため、取得範囲は表示したい期間より前後1日ずつ広げて渡すこと
+ *   （usePunches.loadRange / admin reports.vue 参照）。
  */
 export function foldPunches(logs: PunchLog[]): Record<string, Punch> {
   const map: Record<string, Punch> = {}
+  // 作業員ごとの「開いている回」
+  const open = new Map<string, Punch>()
   for (const log of logs) {
-    const key = punchKey(log.worker_id, jstDateOf(log.checked_at))
-    const entry = map[key] ?? (map[key] = {})
     const t = jstTimeOf(log.checked_at)
-    if (log.type === 'checkin') { if (!entry.checkin) entry.checkin = t }
-    else if (log.type === 'checkout') { entry.checkout = t }
+    if (log.type === 'checkin') {
+      const key = punchKey(log.worker_id, jstDateOf(log.checked_at))
+      const day = map[key] ?? (map[key] = { shifts: [] })
+      const shift: Punch = { checkin: t }
+      day.shifts!.push(shift)
+      open.set(log.worker_id, shift)
+    } else if (log.type === 'checkout') {
+      const cur = open.get(log.worker_id)
+      if (cur && !cur.checkout) {
+        cur.checkout = t
+      } else {
+        // 対になる出勤が無い退勤。その日の回として残す（無いものを隠さない）
+        const key = punchKey(log.worker_id, jstDateOf(log.checked_at))
+        const day = map[key] ?? (map[key] = { shifts: [] })
+        day.shifts!.push({ checkout: t })
+      }
+      open.delete(log.worker_id)
+    }
   }
+  for (const day of Object.values(map)) Object.assign(day, frameOf(day.shifts ?? []))
   return map
+}
+
+/** 複数の回の外枠（最初の出勤・最後の退勤）。片方も無ければその側は undefined */
+function frameOf(shifts: Punch[]): Punch {
+  const out: Punch = {}
+  for (const sh of shifts) {
+    if (sh.checkin && !out.checkin) out.checkin = sh.checkin
+    if (sh.checkout) out.checkout = sh.checkout
+  }
+  return out
+}
+
+/**
+ * 日報の1行（作業時刻 plannedStart〜plannedEnd）に出す実打刻を選ぶ。
+ *  - その日の回が1つ以下、または作業時刻が無い … 外枠をそのまま（従来どおり）
+ *  - 2回以上 … 作業時刻の前後2時間の窓に「出勤」が入る回だけを集めて、その外枠を出す
+ *    （昼に一度出て戻った日＝両方の回が窓に入るので外枠のまま。昼勤＋夜勤＝それぞれ自分の回だけ）
+ *  - 窓に1つも入らなければ外枠（無いものを隠さない）
+ */
+export function punchForRow(
+  day: Punch | null | undefined,
+  plannedStart: string | null | undefined,
+  plannedEnd: string | null | undefined,
+): Punch | null {
+  if (!day) return null
+  const shifts = day.shifts ?? []
+  if (shifts.length < 2) return { checkin: day.checkin, checkout: day.checkout }
+  const ps = toMinutes(plannedStart)
+  if (ps === null) return { checkin: day.checkin, checkout: day.checkout }
+  const pe = toMinutes(plannedEnd)
+  // 作業時間の長さ（分）。終了が無い/読めない時は8時間とみなす。日跨ぎは +24h で正に直す
+  let dur = pe === null ? 8 * 60 : pe - ps
+  if (dur <= 0) dur += 24 * 60
+  const MARGIN = 2 * 60
+  const picked = shifts.filter((sh) => {
+    const d = punchDiffMinutes(sh.checkin ?? sh.checkout, plannedStart)
+    return d !== null && d >= -MARGIN && d <= dur + MARGIN
+  })
+  if (!picked.length) return { checkin: day.checkin, checkout: day.checkout }
+  return frameOf(picked)
 }
 
 /** "HH:MM" → 分。読めなければ null */

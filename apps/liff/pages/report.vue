@@ -1069,12 +1069,14 @@ const punches = usePunches()
 const myWorkerIdForPunch = ref<string | null>(null)
 
 /**
- * その日の打刻（無ければ null＝行を出さない）。
- * ★2026-08-27 出退勤モデル変更で現場ごとの打刻は無くなった。1日の外枠（最早の出勤・
- *  最遅の退勤）を各現場行に同じものとして出す（si は行の識別にのみ残す）。
+ * その行に出す打刻（無ければ null＝行を出さない）。
+ * ★2026-08-27 出退勤モデル変更で現場ごとの打刻は無くなった。ただし1日に2回出退勤した日
+ *  （昼勤＋夜勤）は、その行の作業時刻に近い回を出す。外枠を全行に出すと夜勤行に昼勤の打刻が
+ *  付き「出勤 −10時間30分 / 退勤 +9時間43分」と出る（2026-09-11 辻さん・9/9）。
  */
-function punchOf(_si: number): { checkin?: string; checkout?: string } | null {
-  return punches.punchFor(myWorkerIdForPunch.value, report.form.value.date)
+function punchOf(si: number): { checkin?: string; checkout?: string } | null {
+  const w = report.form.value.sites?.[si]?.workers?.[0]
+  return punches.punchFor(myWorkerIdForPunch.value, report.form.value.date, w?.startTime, w?.endTime)
 }
 
 /** 打刻と申告した作業時刻のズレ（15分未満は出さない＝全行に数分のチップが並ぶのを防ぐ） */
@@ -1621,30 +1623,35 @@ const dateWithWeekday = computed(() => {
   return `${ds}（${weekdays[d.getDay()]}）`
 })
 
-// 現場跨ぎ残業対応: 各現場の workers[0] のプレビュー用 breakdown（startTime 順で累積）
-const sitePreviewBreakdowns = computed((): Record<number, RateBreakdown> => {
+// 現場跨ぎ残業対応: 全行（現場×作業員）のプレビュー用 breakdown。作業員ごとに startTime 順で累積する。
+// ★保存側（useReport.submit）・履歴（history.vue computeHoursForReport）と同じ規則。ここがズレると
+//  「プレビューでは通常なのに保存したら残業」が起きる。キーは `${si}-${wi}`。
+const previewBreakdowns = computed((): Record<string, RateBreakdown> => {
   const sites  = report.form.value.sites
   const sun    = isSunday.value
   const accum: Record<string, number> = {}
-  const result: Record<number, RateBreakdown> = {}
+  const result: Record<string, RateBreakdown> = {}
 
-  const entries = sites
-    .map((site, si) => ({ si, w: site.workers[0] }))
-    .filter(e => !!e.w)
+  const entries: { si: number; wi: number; w: any }[] = []
+  sites.forEach((site, si) => (site.workers || []).forEach((w: any, wi: number) => { if (w) entries.push({ si, wi, w }) }))
+  entries.sort((a, b) => parseMin(a.w?.startTime || '08:00') - parseMin(b.w?.startTime || '08:00'))
 
-  entries.sort((a, b) =>
-    parseMin(a.w?.startTime || '08:00') - parseMin(b.w?.startTime || '08:00')
-  )
-
-  for (const { si, w } of entries) {
+  for (const { si, wi, w } of entries) {
     const key = w.workerId || w.workerName || `site-${si}`
     const wins = effectiveBreakWindows(w)
     const brk = wins ? 0 : effectiveBreakMinutes(w)
     const { workedMin, ...breakdown } = computeWorkerHours(w.startTime, w.endTime, brk, sun, accum[key] ?? 0, wins)
-    accum[key] = workedMin
-    result[si] = breakdown
+    // ★workedMin はその行ぶんだけ（shared/worker-hours.ts の契約）。上書きすると3行目以降の
+    //  残業判定が2行目ぶんからしか累積されず甘くなる（2026-09-12 発見・金額に効く）。足し込む。
+    accum[key] = (accum[key] ?? 0) + workedMin
+    result[`${si}-${wi}`] = breakdown
   }
-
+  return result
+})
+// 各現場の workers[0]（＝本人行）の料率プレビュー用
+const sitePreviewBreakdowns = computed((): Record<number, RateBreakdown> => {
+  const result: Record<number, RateBreakdown> = {}
+  report.form.value.sites.forEach((_s, si) => { const b = previewBreakdowns.value[`${si}-0`]; if (b) result[si] = b })
   return result
 })
 
@@ -2732,18 +2739,20 @@ const previewData = computed<PreviewData>(() => {
 
   const sites: PreviewSite[] = []
   let totalHours = 0
-  for (const site of form.sites) {
-    if (!site.siteName) continue
+  form.sites.forEach((site, si) => {
+    if (!site.siteName) return
     const displayName = siteDisplayName(site.siteName, site.customSiteName)
     const contractorName = site.contractorName === '__other__'
       ? (site.customContractorName || '')
       : (site.contractorName || '')
 
     const workers: PreviewWorkerRow[] = []
-    for (const w of (site.workers || []).filter((w: any) => w.workerName)) {
-      const wins = effectiveBreakWindows(w)
-      const brk = wins ? 0 : effectiveBreakMinutes(w)
-      const h   = computeWorkerHours(w.startTime || '08:00', w.endTime || '17:30', brk, sunday, 0, wins)
+    ;(site.workers || []).forEach((w: any, wi: number) => {
+      if (!w.workerName) return
+      // ★現場跨ぎの累積を含む値（previewBreakdowns）。ここで prev=0 で計算し直すと
+      //  2現場目以降の残業が消え、送信内容と違うプレビューになる（2026-09-14 発見）。
+      const h = previewBreakdowns.value[`${si}-${wi}`]
+        ?? computeWorkerHours(w.startTime || '08:00', w.endTime || '17:30', effectiveBreakWindows(w) ? 0 : effectiveBreakMinutes(w), sunday, 0, effectiveBreakWindows(w))
       const parts: string[] = []
       if (h.hoursNormal)        parts.push(`${h.hoursNormal}h`)
       if (h.hoursSunday)        parts.push(`休日${h.hoursSunday}h`)
@@ -2757,7 +2766,7 @@ const previewData = computed<PreviewData>(() => {
       totalHours += h.hoursNormal + h.hoursSunday + h.hoursOT + h.hoursNight
         + h.hoursOTNight + h.hoursSundayOT + h.hoursSundayNight + h.hoursSundayOTNight
       workers.push({ name: w.workerName, hours: parts.join(' + ') || '—', timeRange, breakMinutes: effectiveBreakMinutes(w) })
-    }
+    })
 
     const exp = site.expenses || {}
     const expenses: string[] = []
@@ -2804,7 +2813,7 @@ const previewData = computed<PreviewData>(() => {
       })
 
     sites.push({ name: displayName, contractor: contractorName, workers, expenses, subs, note: site.siteNote || '' })
-  }
+  })
 
   return { dateLabel, senderName, mode: 'working', note: form.note || '', sites, totalHours: Math.round(totalHours * 100) / 100 }
 })
