@@ -25,6 +25,7 @@
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { createRemoteJWKSet, jwtVerify } from 'https://esm.sh/jose@5'
+import { sendApprovalRequestMail } from '../_shared/approval-mail.ts'
 import { resolveWorkerNotifyEmail, sendResend } from '../_shared/doc-mail.ts'
 import { resolveApprover } from '../_shared/caller-identity.ts'
 
@@ -805,6 +806,34 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: 'pending_failed' }, 500)
     }
     pendingId = res.data?.id ?? null
+
+    // ★承認依頼メール（2026-09-10 SEED 会議「大塚さんの承認が必要なものは無条件に飛ばす」）。
+    //  それまで修正申請・期限後提出・有給不足は誰にもメールが行かず、承認待ちが30件滞留した。
+    //  会社の管理者＋対象現場の責任者へ即時に1通。best-effort（失敗しても申請は成立）。
+    //  出し直し（上書き）は内容が変わったので再度知らせる＝notified_at は送れた時に更新。
+    if (pendingId) {
+      try {
+        const sites = siteNamesOf(payload as any)
+        const kindLabel = kind === 'late_new' ? '期限後の日報提出' : kind === 'paid_leave_over' ? '有給の残不足の日報' : '日報の修正'
+        const { data: appl } = reportUserId
+          ? await svc.from('users').select('real_name, worker_id').eq('id', reportUserId).maybeSingle()
+          : { data: null }
+        const r = await sendApprovalRequestMail(svc, {
+          accountId: caller.accountId, kindLabel,
+          applicantWorkerId: (appl?.worker_id as string) ?? null,
+          applicantName: (appl?.real_name as string) || caller.name || '作業員',
+          date: reportDate, siteNames: sites,
+          rows: [
+            ['対象現場', sites.join('、')],
+            ['理由', reason],
+            ...(caller.userId !== reportUserId ? [['代理入力', caller.name ?? ''] as [string, string]] : []),
+          ],
+          linkPath: '/report-edit-review', ownerRequired: requiresDual,
+        })
+        if (r.sent) await svc.from('daily_report_pending_edits').update({ notified_at: new Date().toISOString() }).eq('id', pendingId)
+        else if (r.reason && r.reason !== 'disabled' && r.reason !== 'no_recipient') console.warn('[report-edit-log] approval mail not sent:', r.reason)
+      } catch (e) { console.warn('[report-edit-log] approval mail failed:', e) }
+    }
 
     // 出し直した＝差し戻しに対応した、とみなして未確認の差し戻しを畳む。
     // これが無いと「直して出し直したのに『差し戻されました』が出たまま」になる。

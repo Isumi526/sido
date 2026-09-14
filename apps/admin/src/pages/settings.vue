@@ -103,6 +103,30 @@
     </div>
   </div>
 
+  <!-- 承認依頼メール（申請時に管理者＋現場責任者へ）ON/OFF -->
+  <div class="reminder-box" data-testid="approval-notify-box">
+    <div class="reminder-title">承認依頼のメール</div>
+    <div class="reminder-config">
+      <div class="config-row">
+        <span class="config-label">申請があったら管理者・現場責任者へメール</span>
+        <button
+          class="toggle"
+          :class="{ on: approvalNotifyEnabled }"
+          :disabled="approvalNotifySaving"
+          data-testid="approval-notify-toggle"
+          @click="setApprovalNotifyEnabled(!approvalNotifyEnabled)"
+        >
+          <span class="toggle-knob" />
+          <span class="toggle-text">{{ approvalNotifyEnabled ? 'ON' : 'OFF' }}</span>
+        </button>
+      </div>
+      <div class="reminder-desc">
+        ONの時、承認が必要な申請（日報の修正・期限後の提出・有給の残不足・残業申請）が出された時に、
+        会社の管理者（オーナー・admin）と対象現場の責任者へ即時にメールを送ります。申請者本人には送りません。
+      </div>
+    </div>
+  </div>
+
   <!-- 打刻リマインド（予定の開始・終了時刻）ON/OFF -->
   <div class="reminder-box" data-testid="punch-reminder-box">
     <div class="reminder-title">打刻のリマインド（予定の時刻）</div>
@@ -213,6 +237,16 @@ const LINE_SETTING_KEYS = new Set(['notify_group_id'])
 const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
 const IS_DEV   = import.meta.env.DEV
 
+// ── 承認依頼メール ON/OFF（既定 ON）。EF の _shared/approval-mail.ts が settings を見る ──
+const approvalNotifyEnabled = ref(true)
+const approvalNotifySaving  = ref(false)
+function setApprovalNotifyEnabled(val: boolean) {
+  approvalNotifyEnabled.value = val
+  approvalNotifySaving.value = true
+  upsertSetting('notify_approval_request_enabled', String(val), '承認依頼のメール')
+    .finally(() => { approvalNotifySaving.value = false })
+}
+
 // ── 打刻リマインド（予定の開始・終了時刻）ON/OFF。EF punch-reminder が settings を見る ──
 const punchReminderEnabled = ref(false)
 const punchReminderSaving  = ref(false)
@@ -313,12 +347,13 @@ async function loadReminderConfig() {
   const accountId = await getAccountId()
   const { data } = await supabase.from('settings').select('key, value')
     .eq('account_id', accountId)
-    .in('key', ['reminder_enabled', 'reminder_time', 'notify_report_enabled', 'notify_punch_reminder_enabled', FEATURE_KEY_ESTIMATE])
+    .in('key', ['reminder_enabled', 'reminder_time', 'notify_report_enabled', 'notify_punch_reminder_enabled', 'notify_approval_request_enabled', FEATURE_KEY_ESTIMATE])
   const m = Object.fromEntries((data ?? []).map(s => [s.key, s.value]))
   reminderEnabled.value     = (m['reminder_enabled'] ?? 'true') === 'true'
   reminderTime.value        = m['reminder_time'] ?? '08:00'
   reportNotifyEnabled.value = (m['notify_report_enabled'] ?? 'true') === 'true'
   punchReminderEnabled.value = m['notify_punch_reminder_enabled'] === 'true'   // 未設定＝OFF（EF と同じ既定）
+  approvalNotifyEnabled.value = (m['notify_approval_request_enabled'] ?? 'true') === 'true'   // 未設定＝ON
   // 見積もり機能は未設定＝OFF（fail-closed。lib/features.ts の既定と揃える）
   estimateFeatureEnabled.value = m[FEATURE_KEY_ESTIMATE] === 'true'
 }
@@ -491,7 +526,7 @@ async function load() {
   const accountId = await getAccountId()
   const { data } = await supabase.from('settings').select('key, value, label')
     .eq('account_id', accountId)
-    .not('key', 'in', '(reminder_enabled,reminder_time,notify_report_enabled,notify_punch_reminder_enabled,expense_notify_emails)')
+    .not('key', 'in', '(reminder_enabled,reminder_time,notify_report_enabled,notify_punch_reminder_enabled,notify_approval_request_enabled,expense_notify_emails)')
     .order('key')
   const fromDb = (data ?? []) as Setting[]
 
