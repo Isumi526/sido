@@ -43,7 +43,7 @@ async function seedPunches(rows: { type: 'checkin' | 'checkout'; at: string }[])
     body: JSON.stringify(rows.map((r) => ({ worker_id: workerId, type: r.type, checked_at: r.at, agreed_rule_texts: [] }))),
   })
 }
-async function seedReport(sites: { id: string; name: string; start: string; end: string }[]) {
+async function seedReport(sites: { id: string; name: string; start: string; end: string; noBreak?: boolean }[]) {
   await restSrv(`daily_reports?user_id=eq.${userId}&date=eq.${DATE}`, { method: 'DELETE' }).catch(() => {})
   await restSrv('daily_reports', {
     method: 'POST', headers: { Prefer: 'return=minimal' },
@@ -51,7 +51,11 @@ async function seedReport(sites: { id: string; name: string; start: string; end:
       account_id: accountId, user_id: userId, date: DATE, is_working: true, note: 'E2E二交代',
       sites: sites.map((s) => ({
         siteName: s.name, site_id: s.id, contractorName: '', subcontractors: [],
-        workers: [{ workerName: 'Worker 01', workerId, startTime: s.start, endTime: s.end }],
+        workers: [{
+          workerName: 'Worker 01', workerId, startTime: s.start, endTime: s.end,
+          // noBreak: 休憩0分のスナップショット（既定の休憩窓に落ちない＝時間の検算を単純にする）
+          ...(s.noBreak ? { breaks: [{ start: '12:00', minutes: 0 }], breakMinutes: 0, breakSnapshot: true } : {}),
+        }],
         expenses: { vehicles: [], parkings: [], highways: [], trains: [], hotels: [], others: [], entertainments: [] },
       })),
     }),
@@ -128,6 +132,49 @@ test.describe('1日2回の出退勤（昼勤＋夜勤）', () => {
     await expect(nightPunch, '★履歴の夜勤行に夜勤の打刻').toBeVisible({ timeout: 20000 })
     await expect(nightPunch).toContainText('04:31')
     await expect(page.getByTestId('history-punch').filter({ hasText: '09:30' }), '昼勤行は昼勤の打刻').toHaveCount(1)
+  })
+
+  test('★昼勤も夜勤も同じ現場（同一現場2行）でも、行ごとに自分の回が出る', async ({ page }) => {
+    await seedPunches([
+      { type: 'checkin',  at: `${DATE}T09:30:00+09:00` },
+      { type: 'checkout', at: `${DATE}T14:13:00+09:00` },
+      { type: 'checkin',  at: `${DATE}T19:31:00+09:00` },
+      { type: 'checkout', at: `${NEXT}T04:31:00+09:00` },
+    ])
+    await seedReport([
+      { id: siteDayId, name: SITE_DAY, start: '09:30', end: '14:00' },
+      { id: siteDayId, name: SITE_DAY, start: '20:00', end: '04:30' },   // ★同じ現場
+    ])
+    await page.goto(`/report?edit=${DATE}`, { waitUntil: 'networkidle' })
+    const day = page.getByTestId('punch-row-0')
+    await expect(day).toBeVisible({ timeout: 20000 })
+    await expect(day).toContainText('09:30')
+    await expect(day).toContainText('14:13')
+    const night = page.getByTestId('punch-row-1')
+    await expect(night, '同じ現場でも夜勤行は夜勤の回').toContainText('19:31')
+    await expect(night).toContainText('04:31')
+    await expect(night).not.toContainText('09:30')
+    await expect(page.getByTestId('punch-gap-1')).not.toContainText('時間')
+  })
+
+  // ★2026-09-12 発見: LIFF の残業累積（useReport / report.vue / history.vue）が
+  //  「前の行までの累積」を上書きしていた（workedMin はその行ぶんだけ）。2行なら合うが
+  //  3行目は2行目ぶんからしか累積されず、残業判定が甘くなる（金額に効く）。
+  //  4h＋4h＋3h（休憩なし）＝11h → 通常8h＋残業3h。バグだと3行目が 4h+3h=7h 扱いで残業0。
+  test('★3行以上でも残業が正しく累積する（3行目が丸ごと残業になる）', async ({ page }) => {
+    await clearPunches()
+    await seedReport([
+      { id: siteDayId, name: SITE_DAY, start: '08:00', end: '12:00', noBreak: true },
+      { id: siteNightId, name: SITE_NIGHT, start: '13:00', end: '17:00', noBreak: true },
+      { id: siteDayId, name: SITE_DAY, start: '17:30', end: '20:30', noBreak: true },
+    ])
+    await page.goto(`/report?edit=${DATE}`, { waitUntil: 'networkidle' })
+    await expect(page.getByTestId('edit-reason')).toBeVisible({ timeout: 20000 })
+    const rows = page.locator('.preview-table tbody tr')
+    await expect(rows).toHaveCount(3, { timeout: 20000 })
+    await expect(rows.nth(0), '1行目 4h は通常').not.toContainText('残業')
+    await expect(rows.nth(1), '2行目 4h で累積8h・まだ通常').not.toContainText('残業')
+    await expect(rows.nth(2), '★3行目は累積8hを超えているので3h全部が残業').toContainText('残業3h')
   })
 
   test('昼に一度出て戻った日（日報は1行）は、従来どおりその日の外枠を出す', async ({ page }) => {

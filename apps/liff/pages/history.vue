@@ -563,7 +563,7 @@ function computeHoursForReport(rep: any): Record<string, any> {
     const wins = effectiveBreakWindows(w)
     const { workedMin, ...bd } = computeWorkerHours(
       w.startTime, w.endTime, wins ? 0 : effectiveBreakMinutes(w), isSunday, accum[key] ?? 0, wins)
-    accum[key] = workedMin
+    accum[key] = (accum[key] ?? 0) + workedMin   // ★その行ぶんを足し込む（上書きすると3行目以降が甘くなる）
     map[`${si}-${wi}`] = bd
   }
   return map
