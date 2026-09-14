@@ -2,8 +2,10 @@
   <div class="inv-page">
     <div class="page-header">
       <h1>在庫管理</h1>
-      <span class="muted">品目を登録し、入出庫で数量を増減します（会社単位・最小構成）。</span>
+      <span class="muted">品目を登録し、入出庫で数量を増減します。作業員アプリの「在庫」（入荷・持出）と日報の引き上げ登録もここに積まれます。</span>
     </div>
+    <!-- ★会計在庫ではない（残数把握用）。載せる範囲は運用に委ねる（2026-09-12 決定・閾値は作らない） -->
+    <p class="notice" data-testid="inv-notice">会計在庫ではありません（残数把握用）。「何がどれくらい残っているか」を見るための記録です。</p>
 
     <p v-if="err" class="err" data-testid="inv-err">{{ err }}</p>
 
@@ -40,6 +42,32 @@
         <tr v-if="!items.length"><td colspan="5" class="muted">品目がまだありません。上の欄から追加してください。</td></tr>
       </tbody>
     </table>
+
+    <!-- 移動履歴（在庫①）: 種別・現場・写真・登録者。作業員が現場で撮った写真をここで見る -->
+    <h2 class="sec-title">移動履歴</h2>
+    <table class="table" data-testid="inv-history">
+      <thead>
+        <tr><th>日時</th><th>種別</th><th>品目</th><th class="num">増減</th><th>現場</th><th>写真</th><th>登録者</th><th>メモ</th></tr>
+      </thead>
+      <tbody>
+        <tr v-for="m in movements" :key="m.id" :data-testid="`inv-mv-${m.id}`">
+          <td class="nowrap">{{ fmtDateTime(m.created_at) }}</td>
+          <td><span class="kind" :class="m.kind" :data-testid="`inv-mv-kind-${m.id}`">{{ kindLabel(m.kind) }}</span></td>
+          <td>{{ m.inventory_items?.name ?? '—' }}</td>
+          <td class="num" :class="m.delta < 0 ? 'neg' : 'pos'">{{ m.delta > 0 ? '+' : '' }}{{ fmt(m.delta) }}{{ m.inventory_items?.unit ?? '' }}</td>
+          <td>{{ m.sites?.name ?? '—' }}</td>
+          <td>
+            <a v-for="(u, i) in (m.photo_urls ?? [])" :key="i" :href="u" target="_blank" rel="noopener" class="photo" :data-testid="`inv-mv-photo-${m.id}`">
+              <img :src="u" alt="" loading="lazy" />
+            </a>
+            <span v-if="!(m.photo_urls ?? []).length" class="muted">—</span>
+          </td>
+          <td>{{ m.created_by_name ?? '—' }}</td>
+          <td class="muted">{{ m.note ?? '' }}{{ m.report_date ? `（日報 ${m.report_date}）` : '' }}</td>
+        </tr>
+        <tr v-if="!movements.length"><td colspan="8" class="muted">まだ移動の記録はありません。</td></tr>
+      </tbody>
+    </table>
   </div>
 </template>
 
@@ -49,6 +77,15 @@ import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 
 type Item = { id: string; name: string; unit: string | null; code: string | null; current_qty: number }
+type Movement = {
+  id: string; delta: number; kind: string; note: string | null; created_by_name: string | null; created_at: string
+  photo_urls: string[] | null; report_date: string | null
+  inventory_items: { name: string; unit: string | null } | null
+  sites: { name: string } | null
+}
+const movements = ref<Movement[]>([])
+const kindLabel = (k: string) => k === 'in' ? '入荷' : k === 'out' ? '持出' : k === 'return' ? '引上げ' : '調整'
+const fmtDateTime = (iso: string) => { const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }
 
 const accountId = ref('')
 const items     = ref<Item[]>([])
@@ -66,6 +103,10 @@ async function load() {
     .select('id, name, unit, code, current_qty').eq('account_id', accountId.value).eq('active', true).order('name')
   if (error) { err.value = error.message; return }
   items.value = (data ?? []).map((x: any) => ({ ...x, current_qty: Number(x.current_qty) }))
+  const { data: mv } = await supabase.from('inventory_movements')
+    .select('id, delta, kind, note, created_by_name, created_at, photo_urls, report_date, inventory_items(name, unit), sites(name)')
+    .eq('account_id', accountId.value).order('created_at', { ascending: false }).limit(100)
+  movements.value = ((mv ?? []) as any[]).map((m) => ({ ...m, delta: Number(m.delta) }))
 }
 
 async function addItem() {
@@ -91,10 +132,17 @@ async function move(it: Item, sign: 1 | -1) {
   const q = Number(moveQty[it.id])
   if (!(q > 0)) return
   busy.value = true; err.value = ''
+  // ★種別つきの版を呼ぶ（在庫①）。管理画面の入庫＝入荷 / 出庫＝持出（現場なし）。写真・登録者は無し
   const { error } = await supabase.rpc('inventory_move', {
     p_item_id: it.id,
     p_delta: sign * q,
     p_note: (moveNote[it.id] ?? '').trim() || null,
+    p_kind: sign > 0 ? 'in' : 'out',
+    p_site_id: null,
+    p_photo_urls: [],
+    p_created_by_worker_id: null,
+    p_created_by_name: null,
+    p_report_date: null,
   })
   busy.value = false
   if (error) { err.value = error.message; await load(); return }
@@ -127,4 +175,11 @@ onMounted(load)
 .btn-out { color: #b45309; border-color: #fcd9a8; } .btn-out:hover { background: #fff7ed; }
 .btn-in:disabled, .btn-out:disabled { opacity: .5; cursor: default; }
 .btn-in .material-symbols-rounded, .btn-out .material-symbols-rounded { font-size: 16px; }
+.notice { font-size: 12px; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 6px 10px; margin: 0 0 12px; }
+.sec-title { font-size: 15px; margin: 22px 0 8px; }
+.nowrap { white-space: nowrap; }
+.kind { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #f1f5f9; color: #334155; }
+.kind.in { background: #ecfdf5; color: #047857; } .kind.out { background: #fff7ed; color: #c2410c; } .kind.return { background: #eff6ff; color: #1d4ed8; }
+.pos { color: #047857; } .neg { color: #c2410c; }
+.photo img { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; margin-right: 4px; border: 1px solid #e2e8f0; }
 </style>
