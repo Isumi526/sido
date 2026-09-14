@@ -80,6 +80,56 @@
           <p v-if="msg" class="ot-msg" :class="{ ok: msgOk }">{{ msg }}</p>
         </section>
 
+        <!-- ★過去の日の実績修正（2026-09-14 辻さん「前日より以前の休憩を修正したい場合は？」）。
+             本日の枠は 16:00 締切／当日の実績修正だけで、前日以前の休憩・終了時刻を直す入口が無かった。
+             直近7日（当日を除く）から日を選び、実績修正(late)として申請する。承認すると EF がその日の
+             日報の作業員行へ休憩・時刻を書き込んで工数を計算し直す（日報を開き直さなくても反映される）。 -->
+        <section class="ot-card" data-testid="ot-past">
+          <button type="button" class="ot-past-toggle" data-testid="ot-past-toggle" @click="showPast = !showPast">
+            <span class="material-symbols-rounded ot-icon">{{ showPast ? 'expand_less' : 'expand_more' }}</span>
+            {{ $t('overtime.pastTitle') }}
+          </button>
+          <template v-if="showPast">
+            <p class="ot-late-note" data-testid="ot-past-note">{{ $t('overtime.pastNote') }}</p>
+
+            <label class="ot-label">{{ $t('overtime.pastDateLabel') }}</label>
+            <select v-model="pastDate" class="ot-input" data-testid="ot-past-date">
+              <option v-for="d in pastDateOptions" :key="d.value" :value="d.value">{{ d.label }}</option>
+            </select>
+
+            <label class="ot-label">{{ $t('overtime.pastEndTimeLabel') }}</label>
+            <select v-model="pastEndTime" class="ot-input" data-testid="ot-past-end">
+              <option value="">{{ $t('overtime.pastEndTimeNone') }}</option>
+              <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
+            </select>
+
+            <label class="ot-label">対象現場（複数選択可・責任者へ通知）<span v-if="pastSites.length" class="ot-sel-count">選択 {{ pastSites.length }}件</span></label>
+            <input v-if="siteOptions.length > 6" v-model="pastSiteQuery" type="text" class="ot-input ot-site-search" placeholder="現場名で絞り込み" data-testid="ot-past-site-search" />
+            <div class="ot-sites">
+              <label v-for="s in filteredPastSiteOptions" :key="s" class="ot-site"><input type="checkbox" :value="s" v-model="pastSites" /> {{ s }}</label>
+              <p v-if="!siteOptions.length" class="ot-sites-empty">現場がありません</p>
+              <p v-else-if="!filteredPastSiteOptions.length" class="ot-sites-empty">「{{ pastSiteQuery }}」に一致する現場がありません</p>
+            </div>
+
+            <label class="ot-label">{{ $t('overtime.startTimeLabel') }}</label>
+            <select v-model="pastStartTime" class="ot-input" data-testid="ot-past-start">
+              <option value="">{{ $t('overtime.startTimeNone') }}</option>
+              <option v-for="t in TIME_OPTIONS" :key="t" :value="t">{{ t }}</option>
+            </select>
+            <label class="ot-label">{{ $t('overtime.breakLabel') }}</label>
+            <select v-model="pastBreakMinutes" class="ot-input" data-testid="ot-past-break">
+              <option value="">{{ $t('overtime.breakNone') }}</option>
+              <option value="0">{{ $t('overtime.breakZero') }}</option>
+              <option v-for="m in [15, 30, 45, 60, 90]" :key="m" :value="String(m)">{{ m }}分</option>
+            </select>
+
+            <label class="ot-label">{{ $t('overtime.lateReasonLabel') }}</label>
+            <textarea v-model="pastReason" class="ot-input" rows="2" :placeholder="$t('overtime.pastReasonPlaceholder')" data-testid="ot-past-reason" />
+            <button class="ot-submit" :disabled="busy" data-testid="ot-past-submit" @click="onSubmitPast">{{ busy ? $t('overtime.submitting') : $t('overtime.lateSubmit') }}</button>
+            <p v-if="pastMsg" class="ot-msg" :class="{ ok: pastMsgOk }" data-testid="ot-past-msg">{{ pastMsg }}</p>
+          </template>
+        </section>
+
         <!-- 最近の申請 -->
         <section class="ot-card">
           <div class="ot-card-title">{{ $t('overtime.recentTitle') }}</div>
@@ -141,6 +191,34 @@ const filteredSiteOptions = computed(() => {
   const q = siteQuery.value.trim().toLowerCase()
   if (!q) return siteOptions.value
   return siteOptions.value.filter(s => selectedSites.value.includes(s) || s.toLowerCase().includes(q))
+})
+// ── 過去の日の実績修正（直近7日・当日を除く）──
+const showPast         = ref(false)
+const pastDate         = ref('')
+const pastEndTime      = ref('')   // 空=終了時刻は変えない（休憩だけ直す時）
+const pastStartTime    = ref('')
+const pastBreakMinutes = ref('')
+const pastReason       = ref('')
+const pastSites        = ref<string[]>([])
+const pastSiteQuery    = ref('')
+const pastMsg          = ref('')
+const pastMsgOk        = ref(false)
+const WEEKDAYS_JA = ['日', '月', '火', '水', '木', '金', '土']
+// 昨日から7日ぶん。打刻修正申請（checkin の fixNote「直近7日」）と同じ範囲にそろえる
+const pastDateOptions = computed(() => {
+  const out: { value: string; label: string }[] = []
+  const base = new Date(`${today}T00:00:00+09:00`)
+  for (let i = 1; i <= 7; i++) {
+    const d = new Date(base.getTime() - i * 86400000)
+    const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), dd = String(d.getDate()).padStart(2, '0')
+    out.push({ value: `${y}-${m}-${dd}`, label: `${y}-${m}-${dd}（${WEEKDAYS_JA[d.getDay()]}）` })
+  }
+  return out
+})
+const filteredPastSiteOptions = computed(() => {
+  const q = pastSiteQuery.value.trim().toLowerCase()
+  if (!q) return siteOptions.value
+  return siteOptions.value.filter(s => pastSites.value.includes(s) || s.toLowerCase().includes(q))
 })
 const supabase = useSupabase()
 const { getAccountId, effectiveSlug } = useAccount()
@@ -287,6 +365,45 @@ async function onSubmitUpdate() {
   await refresh()
 }
 
+// 過去の日の実績修正。EF の overtime-late-request は未来日以外を受けるので、日付を差し替えるだけで
+// 当日の late 申請と同じ経路に乗る（既存の有効申請があれば上書き→再承認）。
+async function onSubmitPast() {
+  if (!workerId.value) { pastMsg.value = t('overtime.errorNoLogin'); pastMsgOk.value = false; return }
+  if (!pastDate.value) { pastMsg.value = t('overtime.pastDateRequired'); pastMsgOk.value = false; return }
+  if (!pastReason.value.trim()) { pastMsg.value = t('overtime.lateReasonRequired'); pastMsgOk.value = false; return }
+  // 何も直す内容が無い申請は弾く（承認者が困る）
+  if (!pastEndTime.value && !pastStartTime.value && pastBreakMinutes.value === '') {
+    pastMsg.value = t('overtime.pastNothingToFix'); pastMsgOk.value = false; return
+  }
+  busy.value = true; pastMsg.value = ''
+  const date = pastDate.value
+  const res = await overtime.requestLateCorrection(
+    workerId.value, date, pastEndTime.value || null, pastReason.value, [...pastSites.value],
+    pastStartTime.value || null,
+    // ★空文字は「申請なし」、'0' は「休憩なしで通した」。潰さないこと
+    pastBreakMinutes.value === '' ? null : Number(pastBreakMinutes.value),
+  )
+  busy.value = false
+  if (!res.ok) {
+    pastMsg.value = res.error === 'reason-required' ? t('overtime.lateReasonRequired') : t('overtime.errorGeneric')
+    pastMsgOk.value = false
+    return
+  }
+  pastMsg.value = t('overtime.lateSubmitted'); pastMsgOk.value = true
+  pastReason.value = ''; pastEndTime.value = ''; pastStartTime.value = ''; pastBreakMinutes.value = ''; pastSites.value = []
+  // 責任者/管理者へ通知（best-effort・当日の申請と同じ経路。内容はEFが実在行から導出）
+  const efUrl = (config.public as any).edgeFunctionUrl
+  if (efUrl) {
+    const slug = await effectiveSlug()
+    fetch(`${efUrl}/notify-overtime`, {
+      method: 'POST', keepalive: true,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${(config.public as any).supabaseAnonKey}` },
+      body: JSON.stringify({ accountSlug: slug, worker_id: workerId.value, date }),
+    }).catch(() => {})
+  }
+  await refresh()
+}
+
 async function onCancel() {
   if (!workerId.value) return
   busy.value = true; msg.value = ''
@@ -301,6 +418,7 @@ onMounted(async () => {
   selfUser.value = await useCurrentUser().resolve()
   if (!selfUser.value) { await navigateTo('/no-account'); return }
   await refresh()
+  pastDate.value = pastDateOptions.value[0]?.value ?? ''
   // 出退勤画面(出勤中の現場行)からの導線で ?site=<現場名> が付いていれば自動選択する
   // (ユーザーが現場を選び直す手間をなくす・2026-07-20)。
   const presetSite = route.query.site
@@ -324,6 +442,7 @@ onMounted(async () => {
 .ot-edit-hint { font-size: 12px; color: #64748b; margin: 0; line-height: 1.6; }
 .ot-edit { align-self: flex-start; background: #fff; color: #0f766e; border: 1px solid #99f6e4; border-radius: 8px; padding: 8px 12px; font-size: 13px; font-weight: 700; }
 .ot-edit-cancel { width: 100%; margin-top: 8px; background: #fff; color: #64748b; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; font-size: 13px; }
+.ot-past-toggle { display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: none; padding: 0; font-size: 14px; font-weight: 700; color: #1e293b; text-align: left; }
 .ot-late-note { font-size: 13px; line-height: 1.7; color: #9a3412; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 10px 12px; margin: 10px 0 0; }
 .ot-card { background: #fff; border-radius: 14px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
 .ot-card-title { font-size: 14px; font-weight: 700; color: #1e293b; margin-bottom: 12px; }
