@@ -211,5 +211,6 @@
   "checkoutToastTime": "Checked out {time}",
   "checkoutToastText": "Recorded",
   "expenseOnlyNote": "No work hours on this day. You can submit as is.",
-  "expenseOpen": "Add expenses (hotel, fuel, etc.)"
+  "expenseOpen": "Add expenses (hotel, fuel, etc.)",
+  "siteGroupRecent": "Recent sites (last 7 days)"
 }
