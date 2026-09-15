@@ -85,6 +85,19 @@ test.describe('アプリ内通知（お知らせ）', () => {
     await expect(page, '★日報の編集画面へ飛ぶ').toHaveURL(new RegExp(`/report\\?edit=${LINK_DATE}`))
   })
 
+  // 打刻リマインド（punch-reminder EF が予定の開始・終了時刻に積む）。タップで出退勤へ飛ぶ
+  test('打刻リマインドのお知らせが出て、タップすると出退勤画面へ飛ぶ', async ({ page }) => {
+    const title = `出勤の打刻をお願いします_${TS}`
+    await seed({ kind: 'punch_checkin', title, body: 'E2E現場 の予定開始（09:00）です。出勤の打刻をしてください。', link_path: '/checkin' })
+    await page.goto('/notifications', { waitUntil: 'networkidle' })
+    await page.getByTestId('notif-tab-info').click()
+    const card = page.locator('.notif', { hasText: title })
+    await expect(card).toBeVisible({ timeout: 15000 })
+    await expect(card).toContainText('予定開始（09:00）')
+    await card.click()
+    await expect(page, '出退勤へ飛ぶ').toHaveURL(/\/checkin/)
+  })
+
   test('★お知らせは開いた時点で既読になる（読めば済むものを数え続けない）', async ({ page }) => {
     await page.goto('/notifications', { waitUntil: 'networkidle' })
     await page.getByTestId('notif-tab-info').click()
