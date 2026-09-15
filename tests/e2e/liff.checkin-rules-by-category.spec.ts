@@ -123,3 +123,44 @@ test('★選んだ区分が打刻に残り、退勤時はその区分が既定�
   await expect(page.getByTestId(`rule-category-${catOfficeId}`), '出勤時の区分を引き継ぐ').toHaveClass(/on/, { timeout: 15000 })
   await expect(page.locator('.rules-list')).toContainText(RULE_OFFICE)
 })
+
+// ★2026-09-15 運用者指摘「間違ってルールがない区分を選択すると画面が戻れなくなって使いづらい」。
+//  確認事項ゼロの区分を選ぶと即座に次のステップへ進み、区分を選び直す入口が消えていた。
+//  → 選んだ直後はその画面に留めて「次へ」で進む／進んだ後も「区分：○○」の行から開き直せる。
+test('★確認事項ゼロの区分を選んでも、留まって「次へ」で進み、進んだ後も区分を選び直せる', async ({ page }) => {
+  await clearRecentPunches()
+  // 共通ルールが1件でもあると「確認事項ゼロ」にならないので、この間だけ退避する
+  const commons = await restSrv(`account_attendance_rules?account_id=eq.${accountId}&work_category_id=is.null&select=id`)
+  const commonIds: string[] = commons.map((r: any) => r.id)
+  if (commonIds.length) await restSrv(`account_attendance_rules?id=in.(${commonIds.join(',')})`, {
+    method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ work_category_id: catSiteId }) })
+  try {
+    await page.goto('/checkin', { waitUntil: 'networkidle' })
+    await passWorkStatusGate(page)
+    const picker = page.getByTestId('rule-category-picker')
+    // 既定の区分（前回の区分 or 先頭）に確認事項が無いと自動で次へ進んでいるので、その時は行から開く
+    await expect(picker.or(page.getByTestId('step-done-rules'))).toBeVisible({ timeout: 15000 })
+    if (!(await picker.isVisible())) await page.getByTestId('step-done-rules').click()
+    await expect(picker).toBeVisible()
+    await page.getByTestId(`rule-category-${catFactoryId}`).click()
+
+    // 自動で次へ進まず、確認事項なしの案内と「次へ」が出る
+    await expect(page.locator('.no-rules-note'), '★確認事項ゼロでも画面が切り替わらない').toBeVisible({ timeout: 15000 })
+    await expect(picker, '★区分をそのまま選び直せる').toBeVisible()
+    await expect(page.locator('.rule-row')).toHaveCount(0)
+    await page.getByTestId('step-next').click()
+    await expect(page.getByTestId('location-step')).toBeVisible()
+
+    // 進んだ後も「区分：○○」の行から戻れる
+    const done = page.getByTestId('step-done-rules')
+    await expect(done, '★確認事項ゼロでも戻る入口が残る').toBeVisible()
+    await expect(done).toContainText(CAT_FACTORY)
+    await done.click()
+    await expect(picker).toBeVisible()
+    await page.getByTestId(`rule-category-${catOfficeId}`).click()
+    await expect(page.locator('.rules-list'), '選び直した区分のルールに切り替わる').toContainText(RULE_OFFICE, { timeout: 15000 })
+  } finally {
+    if (commonIds.length) await restSrv(`account_attendance_rules?id=in.(${commonIds.join(',')})`, {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ work_category_id: null }) }).catch(() => {})
+  }
+})

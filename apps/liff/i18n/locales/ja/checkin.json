@@ -114,6 +114,8 @@
   "stepSubmit": "記録",
   "stepRulesDone": "確認事項 {n}件を確認しました",
   "stepLocationDone": "現在地を取得しました",
+  "stepCategoryDone": "区分：{name}",
+  "stepNoRulesDone": "確認事項はありません",
   "stepReopen": "開く",
   "stepNext": "次へ",
   "stepReadyCheckin": "準備ができました。下のボタンで出勤を記録してください。",
