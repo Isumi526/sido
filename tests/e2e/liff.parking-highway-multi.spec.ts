@@ -86,7 +86,7 @@ test('駐車場代・高速代を入力して送信すると daily_reports に�
   await highwaySection.locator('.lineitem-card').nth(0).locator('select.select').selectOption('カード①')
 
   // 記入忘れ確認チェック（新規送信は必須＝送信ボタンを有効化）
-  await page.locator('.submit-confirm input[type="checkbox"]').check()
+  await page.getByTestId('tail-no').check()
   // 送信 → 完了
   await fillNoReceiptReasons(page)
   await page.locator('button[type="submit"].btn-submit').click()

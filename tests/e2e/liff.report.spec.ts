@@ -30,7 +30,7 @@ test('日報入力 → 送信 → 完了画面が出る', async ({ page }) => {
   await page.waitForTimeout(500)
 
   // 記入忘れ確認チェック（新規送信は必須＝送信ボタンを有効化）
-  await page.locator('.submit-confirm input[type="checkbox"]').check()
+  await page.getByTestId('tail-no').check()
   // 既定の対象日が提出期限を過ぎている場合は理由が必須になる（seedのservice_start_dateに依存するため日付を決め打ちしない）
   const lateReason = page.locator('.edit-reason-input')
   if (await lateReason.isVisible().catch(() => false)) await lateReason.fill('E2E: 提出が遅れたため')
@@ -106,7 +106,7 @@ test('新規登録した下請業者が再訪時にプルダウンへ残る', as
   await page.getByPlaceholder('業者名を入力 ※必須').first().fill(SUB_NAME)
 
   // 記入忘れ確認チェック（新規送信は必須＝送信ボタンを有効化）
-  await page.locator('.submit-confirm input[type="checkbox"]').check()
+  await page.getByTestId('tail-no').check()
   // 既定の対象日が提出期限を過ぎている場合は理由が必須になる（seedのservice_start_dateに依存するため日付を決め打ちしない）
   const lateReason = page.locator('.edit-reason-input')
   if (await lateReason.isVisible().catch(() => false)) await lateReason.fill('E2E: 提出が遅れたため')

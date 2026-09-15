@@ -36,7 +36,7 @@ test.describe('有給・稼働なしの日の経費入力', () => {
     await expect(page.getByTestId('expense-open'), '経費がある人だけ開ける').toBeVisible()
 
     // ★何も入れずに送信できる（現場は稼働なしの日は必須ではない）
-    await page.getByTestId('omission-confirm').check()
+    await page.getByTestId('tail-no').check()
     await expect(page.locator('button[type="submit"].btn-submit'), '何も無くても送信できる').toBeEnabled()
   })
 

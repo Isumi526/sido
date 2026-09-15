@@ -72,7 +72,7 @@ test('下書き復元で workerId が空でも、送信時に補完されて保�
   expect(restoredBlank, '復元元の下書きは workerId が空であること').toBe(true)
 
   // 送信（記入忘れ確認チェックが必須）
-  await page.locator('.submit-confirm input[type="checkbox"]').check()
+  await page.getByTestId('tail-no').check()
   await page.locator('button[type="submit"].btn-submit').click()
   await expect(page.getByText(/送信完了|更新しました/)).toBeVisible({ timeout: 20000 })
 

@@ -114,7 +114,7 @@ test('電車(明細ごと)を入力して送信すると daily_reports.trains �
   await trCard.locator('input.expense-input').fill('480')
 
   // 記入忘れ確認チェック（新規送信は必須＝送信ボタンを有効化）
-  await page.locator('.submit-confirm input[type="checkbox"]').check()
+  await page.getByTestId('tail-no').check()
   // 領収書必須化（2026-08-14）。この spec の主題は trains の保存形式なので理由を書いて進む
   await fillNoReceiptReasons(page)
   await page.locator('button[type="submit"].btn-submit').click()

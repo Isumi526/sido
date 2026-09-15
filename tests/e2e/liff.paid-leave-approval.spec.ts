@@ -40,7 +40,7 @@ test.describe('有給残不足の日報は二重承認制', () => {
     // 残不足の告知が出る
     await expect(page.getByTestId('paid-leave-over-notice')).toBeVisible({ timeout: 15000 })
     // 記入忘れ確認にチェック → 送信
-    await page.getByTestId('omission-confirm').check()
+    await page.getByTestId('tail-no').check()
     await page.getByTestId('report-submit').click()
 
     // A: 保留(pending)が二重承認で作られる
