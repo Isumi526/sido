@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { currentUser, canViewManagementPages, waitForRoleResolved } from '../lib/auth'
+import { currentUser, canViewManagementPages, canApprove, waitForRoleResolved } from '../lib/auth'
 import { estimateEnabled, waitForFeaturesResolved } from '../lib/features'
 import Dashboard      from '../pages/index.vue'
 import Workers        from '../pages/workers.vue'
@@ -91,11 +91,11 @@ export const router = createRouter({
     { path: '/operation-logs',   component: OperationLogs,   meta: { management: true } },
     { path: '/usage-report',     component: () => import('../pages/usage-report.vue'), meta: { management: true } },
     { path: '/non-submitters',   component: NonSubmitters,   meta: { management: true } },
-    { path: '/report-edit-approvals', component: ReportEditApprovals },
-    { path: '/report-edit-review', component: ReportEditReview },
-    { path: '/report-site-relink',    component: ReportSiteRelink },
-    { path: '/overtime-approvals',    component: OvertimeApprovals },
-    { path: '/punch-corrections',     component: PunchCorrections },
+    { path: '/report-edit-approvals', component: ReportEditApprovals, meta: { approver: true } },
+    { path: '/report-edit-review', component: ReportEditReview, meta: { approver: true } },
+    { path: '/report-site-relink', component: ReportSiteRelink, meta: { approver: true } },
+    { path: '/overtime-approvals', component: OvertimeApprovals, meta: { approver: true } },
+    { path: '/punch-corrections', component: PunchCorrections, meta: { approver: true } },
     { path: '/ai-help',          component: AiHelp,     meta: { management: true } },
     { path: '/faq',              component: Faq,        meta: { management: true } },
     { path: '/estimates',        component: Estimates,  meta: { management: true, estimate: true } },
@@ -123,6 +123,12 @@ router.beforeEach(async (to) => {
   if (to.meta.management === true && currentUser.value) {
     await waitForRoleResolved()
     if (!canViewManagementPages.value) return '/'
+  }
+  // 承認系ページは承認者ロール（owner/admin/office/site_manager）のみ。management とは別の門
+  //  （site_manager は一次承認者なので management で塞げない）。EF の APPROVER_ROLES と同じ集合。
+  if (to.meta.approver === true && currentUser.value) {
+    await waitForRoleResolved()
+    if (!canApprove.value) return '/'
   }
   // 見積もり機能はフラグOFFの間そもそも入れない（メニュー非表示に加えURL直打ちも塞ぐ）。
   //  8/19 の通しテストまで本番に露出させないための開閉（settings.estimate_feature_enabled）。
