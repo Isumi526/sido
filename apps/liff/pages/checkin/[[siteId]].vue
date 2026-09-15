@@ -275,12 +275,17 @@
 
       <div class="checklist-scroll">
         <!-- 済んだステップは1行に畳む。タップで開き直せる＝チェックし間違えても戻れる -->
+        <!-- ★区分を選ぶ会社では、確認事項ゼロの区分（例: 工場作業）を選んでも必ずこの行を出す。
+             出さないと自動で次へ進んだ後に区分を選び直す入口が無くなる（2026-09-15 運用者指摘）。 -->
         <button
-          v-if="punchStep !== 'rules' && rules.length"
+          v-if="punchStep !== 'rules' && hasRulesStep"
           class="step-done-row" data-testid="step-done-rules" @click="stepOverride = 'rules'"
         >
           <span class="material-symbols-rounded">check_circle</span>
-          <span>{{ $t('checkin.stepRulesDone', { n: rules.length }) }}</span>
+          <span>
+            <template v-if="selectedCategoryName">{{ $t('checkin.stepCategoryDone', { name: selectedCategoryName }) }}<br></template>
+            {{ rules.length ? $t('checkin.stepRulesDone', { n: rules.length }) : $t('checkin.stepNoRulesDone') }}
+          </span>
           <span class="step-reopen">{{ $t('checkin.stepReopen') }}</span>
         </button>
         <button
@@ -559,9 +564,14 @@ const punchStep = computed<PunchStep>(() => {
   if (!locationResolved.value) return 'location'
   return 'submit'
 })
-/** 出すステップの並び。確認事項が無い会社では2段階になる */
+/** 確認事項ステップを出すか。区分の選択がある会社では、選んだ区分に確認事項が無くても
+ *  ステップ自体は残す（区分を選び直せるように） */
+const hasRulesStep = computed(() => rules.value.length > 0 || ruleCategories.value.length > 0)
+const selectedCategoryName = computed(() =>
+  ruleCategories.value.find(c => c.id === selectedCategoryId.value)?.name ?? '')
+/** 出すステップの並び。確認事項も区分も無い会社では2段階になる */
 const stepList = computed<PunchStep[]>(() =>
-  rules.value.length ? ['rules', 'location', 'submit'] : ['location', 'submit'])
+  hasRulesStep.value ? ['rules', 'location', 'submit'] : ['location', 'submit'])
 const stepIndex = computed(() => Math.max(0, stepList.value.indexOf(punchStep.value)))
 function stepLabel(st: PunchStep): string {
   return st === 'rules' ? t('checkin.stepRules')
@@ -582,7 +592,9 @@ async function pickCategory(id: string) {
   try {
     rules.value = (await attendanceLog.rulesWithCategories(attendanceType.value, id)).rules
     checkedIds.value = new Set()
-    stepOverride.value = null
+    // ★確認事項ゼロの区分を選んだ時は自動で次へ進めず、この画面に留めて「次へ」で進ませる。
+    //  選んだ直後に画面が切り替わると、間違えて選んでも戻り方が分からない（2026-09-15）。
+    stepOverride.value = rules.value.length ? null : 'rules'
   } catch {
     errorMsg.value = t('checkin.errNoRules')
     phase.value = 'error'

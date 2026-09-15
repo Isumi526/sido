@@ -114,6 +114,8 @@
   "stepSubmit": "Record",
   "stepRulesDone": "Confirmed {n} item(s)",
   "stepLocationDone": "Location acquired",
+  "stepCategoryDone": "Category: {name}",
+  "stepNoRulesDone": "No checklist items",
   "stepReopen": "Open",
   "stepNext": "Next",
   "stepReadyCheckin": "All set. Use the button below to record your check-in.",
