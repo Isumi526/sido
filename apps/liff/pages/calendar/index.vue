@@ -88,7 +88,7 @@
                   @click.stop="openDetail(s)"
                 >
                   <span class="chip-title">{{ s.title }}</span>
-                  <span v-if="s.start_time" class="chip-time">{{ s.start_time.slice(0, 5) }}–{{ s.end_time?.slice(0, 5) }}</span>
+                  <span v-if="s.start_time" class="chip-time">{{ chipTimeLabel(s) }}</span>
                 </div>
                 <button class="cell-add-btn" @click.stop="onCellTap(date, w.id)">＋</button>
               </div>
@@ -165,7 +165,19 @@
                 @click.stop="openDetail(s)"
               >
                 <span class="chip-title">{{ s.title }}</span>
-                <span class="chip-time">{{ s.start_time?.slice(0, 5) }}{{ s.end_time ? '–' + s.end_time.slice(0, 5) : '' }}</span>
+                <span class="chip-time">{{ chipTimeLabel(s) }}</span>
+              </div>
+              <!-- 前日から日跨ぎで続く予定の翌日側（0:00〜終了） -->
+              <div
+                v-for="s in overnightFromPrevDay(date)"
+                :key="s.id + '-cont'"
+                class="sched-chip week-timed-chip week-timed-cont" data-testid="week-overnight-cont"
+                :class="{ 'night-shift': s.is_night_shift, 'deleted-chip': !!s.deleted_at }"
+                :style="[chipStyle(s), timedChipStyle(s, true)]"
+                @click.stop="openDetail(s)"
+              >
+                <span class="chip-title">{{ s.title }}</span>
+                <span class="chip-time">{{ chipTimeLabel(s) }}</span>
               </div>
             </div>
           </div>
@@ -435,7 +447,7 @@
           <template v-if="detailModal.schedule.end_date !== detailModal.schedule.start_date">〜 {{ detailModal.schedule.end_date }}</template>
         </p>
         <p v-if="detailModal.schedule.start_time" class="detail-meta">
-          <span class="material-symbols-rounded meta-icon">schedule</span>{{ detailModal.schedule.start_time.slice(0, 5) }}〜{{ detailModal.schedule.end_time?.slice(0, 5) }}
+          <span class="material-symbols-rounded meta-icon">schedule</span>{{ detailModal.schedule.start_time.slice(0, 5) }}〜{{ isOvernight(detailModal.schedule) ? '翌' : '' }}{{ detailModal.schedule.end_time?.slice(0, 5) }}
         </p>
         <p v-if="detailModal.schedule.description" class="detail-desc">{{ detailModal.schedule.description }}</p>
         <p v-if="detailModal.schedule.created_by_name" class="detail-created">{{ $t('calendar.createdBy') }}: {{ detailModal.schedule.created_by_name }}</p>
@@ -970,13 +982,32 @@ function timeToMinutes(t: string): number {
   const [h, m] = t.split(':').map(Number)
   return (h || 0) * 60 + (m || 0)
 }
-function timedChipStyle(s: Schedule): Record<string, string> {
-  const startMin = s.start_time ? timeToMinutes(s.start_time) : 0
+/** 終了が開始以前＝日跨ぎ（夜のみ現場 20:30〜翌6:00 など） */
+function isOvernight(s: Schedule): boolean {
+  return !!(s.start_time && s.end_time && timeToMinutes(s.end_time) <= timeToMinutes(s.start_time))
+}
+/** 週タイムラインの帯。日跨ぎは当日は 24:00 まで伸ばす（翌日側は continuation で 0:00〜終了を出す）。
+ *  以前は「30分ぶん」に潰していたので、夜のみ現場の帯が見えなかった（2026-09-10 会議）。 */
+function timedChipStyle(s: Schedule, continuation = false): Record<string, string> {
+  const startMin = continuation ? 0 : (s.start_time ? timeToMinutes(s.start_time) : 0)
   let endMin = s.end_time ? timeToMinutes(s.end_time) : startMin + 60
-  if (endMin <= startMin) endMin = startMin + 30   // 日跨ぎ/不正値のフォールバック（最低30分ぶんは確保して潰れないように）
+  if (!continuation && isOvernight(s)) endMin = 24 * 60
+  if (continuation && endMin <= 0) endMin = 30
+  if (endMin <= startMin) endMin = startMin + 30   // 不正値のフォールバック（最低30分ぶんは確保）
   const top = (startMin / 60) * WEEK_HOUR_HEIGHT
   const height = Math.max(18, ((endMin - startMin) / 60) * WEEK_HOUR_HEIGHT)
   return { position: 'absolute', top: `${top}px`, height: `${height}px`, left: '2px', right: '2px' }
+}
+/** 前日から日跨ぎで続いている予定（翌日側 0:00〜終了の帯を出すため） */
+function overnightFromPrevDay(date: string): Schedule[] {
+  const prev = new Date(`${date}T00:00:00`); prev.setDate(prev.getDate() - 1)
+  const prevStr = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}-${String(prev.getDate()).padStart(2, '0')}`
+  return personalCellSchedules(prevStr).filter(x => x.start_time && isOvernight(x))
+}
+function chipTimeLabel(s: Schedule): string {
+  if (!s.start_time) return ''
+  const end = s.end_time ? s.end_time.slice(0, 5) : ''
+  return `${s.start_time.slice(0, 5)}${end ? '–' + (isOvernight(s) ? '翌' : '') + end : ''}`
 }
 function scrollWeekTimelineToDefault() {
   const el = weekTimelineScrollRef.value
@@ -1471,6 +1502,7 @@ onMounted(async () => {
 .week-day-timeline.date-saturday { background: #f8fafd; }
 .week-day-timeline.date-today { background: #ecfdf5; }
 .week-hour-line { position: absolute; left: 0; right: 0; border-top: 1px solid #f0f0f0; }
+.week-timed-cont { opacity: .85; border-top: 2px dashed rgba(255,255,255,.7); }
 .week-timed-chip {
   font-size: 10px; padding: 2px 4px; border-radius: 4px; overflow: hidden; cursor: pointer;
   display: flex; flex-direction: column; line-height: 1.3; box-sizing: border-box;

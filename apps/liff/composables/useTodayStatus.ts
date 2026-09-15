@@ -13,6 +13,7 @@
 //   ここが返すのは状態と推奨アクションだけで、画面を塞ぐ判断は持たせない。
 // ============================================================
 import { todayStr } from '~/composables/schedule-core.gen'
+import { RECENT_LOG_HOURS, isOpenShiftCurrent } from '~/composables/attendance-punch.gen'
 
 export type TodayPhase =
   | 'unknown'        // 判定できなかった（通信失敗など）。何も急かさない
@@ -31,6 +32,14 @@ export type TodayStatus = {
   unsubmittedDates: string[]
   /** 今日より前の未提出日（＝溜まっている分） */
   backlogDates: string[]
+  /** 直近の回が属する日（出勤した日）。夜のみ現場の翌朝は前日になる。日報リンクはこれを使う */
+  reportDate: string
+}
+
+// JST基準の年月日（YYYY-MM-DD）
+function jstYmd(d: Date): string {
+  const jst = new Date(d.getTime() + (9 * 60 + d.getTimezoneOffset()) * 60000)
+  return `${jst.getFullYear()}-${String(jst.getMonth() + 1).padStart(2, '0')}-${String(jst.getDate()).padStart(2, '0')}`
 }
 
 function fmtTime(iso: string): string {
@@ -46,7 +55,7 @@ export function useTodayStatus() {
 
   const status = ref<TodayStatus>({
     phase: 'unknown', checkinTime: null, checkoutTime: null,
-    isPaidLeave: false, unsubmittedDates: [], backlogDates: [],
+    isPaidLeave: false, unsubmittedDates: [], backlogDates: [], reportDate: todayStr(),
   })
   const loading = ref(false)
 
@@ -68,15 +77,24 @@ export function useTodayStatus() {
 
       const today = todayStr()
 
-      // 打刻・今日の日報・未提出日を並行で取る（1つ失敗しても他は活かす）
-      const [logsR, repR, unsubR] = await Promise.allSettled([
-        // 夜勤の日跨ぎがあるので当日固定ではなく直近20時間で見る（checkin ページと同じ窓）
-        attendanceLog.recent(20, me.worker_id) as Promise<{ type: string; checked_at: string }[]>,
-        dailyReportsApi.one(today, userId),
+      // 夜勤の日跨ぎがあるので当日固定ではなく直近20時間で見る（checkin ページと同じ窓）
+      const logsR = await Promise.allSettled([
+        attendanceLog.recent(RECENT_LOG_HOURS, me.worker_id) as Promise<{ type: string; checked_at: string }[]>,
+      ]).then(r => r[0])
+      const rawLogs = logsR.status === 'fulfilled' ? (logsR.value ?? []) : null
+      // 未退勤の出勤が「もう続いていない」（日勤の閉じ忘れ等）なら無かったことにして新しい日として見る
+      const lastRaw = rawLogs?.[rawLogs.length - 1]
+      const logs = (rawLogs && lastRaw?.type === 'checkin' && !isOpenShiftCurrent(lastRaw.checked_at)) ? [] : rawLogs
+      // ★日報を見る日＝直近の回の「出勤した日」。夜のみ現場（20:30〜翌6:00）の退勤は翌朝なので、
+      //  当日固定だと翌朝に「退勤したのに日報が無い（report-due）」と誤って急かす（2026-09-10 会議）。
+      const lastCheckinLog = logs ? [...logs].reverse().find(l => l.type === 'checkin') : undefined
+      const reportDate = lastCheckinLog ? jstYmd(new Date(lastCheckinLog.checked_at)) : today
+
+      // 日報・未提出日を並行で取る（1つ失敗しても他は活かす）
+      const [repR, unsubR] = await Promise.allSettled([
+        dailyReportsApi.one(reportDate, userId),
         expense.getUnsubmittedDatesById(userId),
       ])
-
-      const logs = logsR.status === 'fulfilled' ? (logsR.value ?? []) : null
       const rep  = repR.status === 'fulfilled' ? repR.value : undefined
       const unsub = unsubR.status === 'fulfilled' ? unsubR.value : null
 
@@ -85,6 +103,7 @@ export function useTodayStatus() {
         isPaidLeave: false,
         unsubmittedDates: unsub ?? [],
         backlogDates: (unsub ?? []).filter(d => d < today),
+        reportDate,
       }
 
       if (logs) {
