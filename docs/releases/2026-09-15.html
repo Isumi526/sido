@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>本番リリース 2026-09-15</title>
+<style>
+  @page { size: A4; margin: 10mm 11mm 8mm; } * { box-sizing: border-box; }
+  body { font-family: "Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif; color: #1f2937; font-size: 9.5pt; line-height: 1.5; margin: 0; }
+  h1 { font-size: 16pt; margin: 0 0 1mm; color: #06C755; } .sub { font-size: 9pt; color: #374151; margin: 0 0 3mm; font-weight: 700; }
+  h2 { font-size: 10.5pt; margin: 3.5mm 0 1.5mm; padding: 1.2mm 3mm; background: #06C755; color: #fff; border-radius: 3px; }
+  ul { margin: 0 0 2mm; padding-left: 5mm; } li { margin-bottom: 1.1mm; }
+  .tag { display:inline-block; font-size:7.5pt; font-weight:700; padding:0.3mm 1.6mm; border-radius:2px; margin-right:1.5mm; vertical-align:1px; } .fix { background:#fee2e2; color:#991b1b; }
+  .note { background:#f3f4f6; border-left:3px solid #9ca3af; padding:2mm 3mm; margin:2mm 0; font-size:9pt; } .note b { color:#111827; }
+</style></head><body>
+<h1>本番リリース 2026-09-15</h1>
+<p class="sub">出退勤で確認事項の無い区分を選んだ後に戻れなかった件の修正（PR #192）</p>
+<div class="note"><b>今回の主役</b>：打刻時に確認事項の無い区分（工場作業など）を選んでも、その場に留まって進め、進んだ後も区分を選び直せるようにしました。</div>
+<h2><span class="tag fix">修正</span>確認事項の無い区分を選ぶと画面が戻れなかった</h2>
+<ul>
+<li>作業区分を選ぶ会社で、確認事項が登録されていない区分（工場作業・見積など）を押すと、その瞬間に「現在地」のステップへ進んでしまい、区分を選び直す入口が無くなっていました（間違って押すと戻れない）。</li>
+<li>今回から、確認事項の無い区分を選んだ直後は同じ画面に留まり、「確認事項はありません」の案内と<b>「次へ」</b>で進みます。</li>
+<li>進んだ後も、画面上部の「区分：○○／確認事項はありません <b>開く</b>」の行を押せば区分を選び直せます。</li>
+<li>確認事項も区分の選択も無い会社は従来どおり（現在地→記録の2ステップ）です。打刻の記録・時間の計算には影響ありません。</li>
+</ul>
+<div class="note"><b>作業員の方へ</b>：作業員アプリのページを再読み込みすると反映されます。</div>
+</body></html>
