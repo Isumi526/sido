@@ -57,7 +57,7 @@
                 </span>
                 <template v-else>
                   <button class="btn-approve" :disabled="busy === g.id" @click="decide(g, 'approved')">承認</button>
-                  <button class="btn-reject" :disabled="busy === g.id" @click="decide(g, 'rejected')">却下</button>
+                  <button class="btn-reject" :disabled="busy === g.id" data-testid="ot-reject" @click="openReject(g)">却下</button>
                 </template>
               </td>
             </tr>
@@ -115,9 +115,30 @@
           <span v-if="isMine(selected)" class="self-approve-blocked">自分の申請は承認できません</span>
           <template v-else>
             <button class="btn-approve" :disabled="busy === selected.id" data-testid="ot-detail-approve" @click="decideSelected('approved')">承認</button>
-            <button class="btn-reject" :disabled="busy === selected.id" data-testid="ot-detail-reject" @click="decideSelected('rejected')">却下</button>
+            <button class="btn-reject" :disabled="busy === selected.id" data-testid="ot-detail-reject" @click="openReject(selected)">却下</button>
           </template>
           <button class="btn-close" data-testid="ot-detail-close" @click="selected = null">閉じる</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 却下（2026-09-17 大塚さん「理由がわからなくて却下した。なんで残業したとか聞けるのも欲しい」）。
+         却下だけだと作業員は何を直せばいいか分からない。一言添えて、作業員の残業画面と
+         決裁通知に出す。作業員は理由を書いて申請し直せる（却下→再申請は元から可能）。 -->
+    <div v-if="rejecting" class="modal-overlay" data-testid="ot-reject-dialog" @click.self="rejecting = null">
+      <div class="modal">
+        <h2>残業申請を却下する</h2>
+        <p class="hint" style="margin:0">
+          {{ workerName(rejecting.worker_id) }} さんの {{ fmtDate(rejecting.date) }} の申請を却下します。
+          コメントを書くと作業員の残業画面とお知らせに表示され、理由を書いて申請し直してもらえます。
+        </p>
+        <label class="note-label" for="ot-reject-note">作業員へのコメント（任意）</label>
+        <textarea id="ot-reject-note" v-model="rejectNote" class="note-input" rows="3" maxlength="500"
+                  placeholder="例：何の作業で残業になったか教えてください。理由を書いて申請し直してください。"
+                  data-testid="ot-reject-note" />
+        <div class="modal-actions">
+          <button class="btn-reject" :disabled="busy === rejecting.id" data-testid="ot-reject-confirm" @click="confirmReject">却下する</button>
+          <button class="btn-close" :disabled="busy === rejecting.id" data-testid="ot-reject-cancel" @click="rejecting = null">やめる</button>
         </div>
       </div>
     </div>
@@ -135,7 +156,7 @@
       <table class="table" data-testid="ot-history">
         <thead>
           <tr>
-            <th>作業員</th><th>対象日</th><th>結果</th><th>承認/却下した人</th><th>日時</th>
+            <th>作業員</th><th>対象日</th><th>結果</th><th>コメント</th><th>承認/却下した人</th><th>日時</th>
           </tr>
         </thead>
         <tbody>
@@ -147,6 +168,7 @@
                 {{ g.status === 'approved' ? '承認' : '却下' }}
               </span>
             </td>
+            <td class="reason" data-testid="ot-history-note">{{ g.decision_note || '—' }}</td>
             <td data-testid="ot-history-approver">{{ g.approved_by || '—' }}</td>
             <td class="muted">{{ fmtDateTime(g.decided_at) }}</td>
           </tr>
@@ -267,25 +289,30 @@ async function load() {
   loading.value = true
   const accountId = await getAccountId()
   if (!accountId) { loading.value = false; return }
-  const [{ data: reqs }, { data: ws }, { data: done }] = await Promise.all([
+  const [{ data: reqs }, { data: ws }] = await Promise.all([
     supabase.from('overtime_requests')
       .select('id, worker_id, date, requested_end_time, requested_start_time, requested_break_minutes, reason, site_names, status, is_late, requested_at')
       .eq('account_id', accountId).eq('status', 'pending')
       .order('requested_at', { ascending: true }),
     supabase.from('workers').select('id, name').eq('account_id', accountId),
-    // 承認の履歴（誰がいつ承認/却下したか）。approved_by / decided_at は元から
-    // 記録されていたが、画面に出す場所が無く後から確認できなかった（2026-08-30 追加）
-    supabase.from('overtime_requests')
-      .select('id, worker_id, date, status, approved_by, decided_at')
-      .eq('account_id', accountId).neq('status', 'pending')
-      .order('decided_at', { ascending: false, nullsFirst: false }).limit(50),
+    loadHistory(accountId),
   ])
   pending.value = (reqs ?? []) as OvertimeReq[]
-  decided.value = (done ?? []) as DecidedReq[]
   const map: Record<string, string> = {}
   for (const w of ws ?? []) map[(w as any).id] = (w as any).name
   workers.value = map
   loading.value = false
+}
+
+// 承認の履歴（誰がいつ承認/却下したか）。approved_by / decided_at は元から
+// 記録されていたが、画面に出す場所が無く後から確認できなかった（2026-08-30 追加）。
+// 決裁のたびに引き直す（却下コメントがその場で履歴に載るように）
+async function loadHistory(accountId: string) {
+  const { data: done } = await supabase.from('overtime_requests')
+    .select('id, worker_id, date, status, approved_by, decided_at, decision_note')
+    .eq('account_id', accountId).neq('status', 'pending')
+    .order('decided_at', { ascending: false, nullsFirst: false }).limit(50)
+  decided.value = (done ?? []) as DecidedReq[]
 }
 
 /** その申請を出したのが自分か（＝自己承認になるか）。worker行を持たない純オーナーは常に false */
@@ -296,8 +323,26 @@ function isMine(g: OvertimeReq): boolean {
 type DecidedReq = {
   id: string; worker_id: string | null; date: string
   status: string; approved_by: string | null; decided_at: string | null
+  decision_note: string | null
 }
 const decided = ref<DecidedReq[]>([])
+
+/** 却下ダイアログ（コメント付き）。承認は従来どおり即決 */
+const rejecting  = ref<OvertimeReq | null>(null)
+const rejectNote = ref('')
+function openReject(g: OvertimeReq) {
+  rejectNote.value = ''
+  rejecting.value = g
+}
+async function confirmReject() {
+  const g = rejecting.value
+  if (!g) return
+  await decide(g, 'rejected', rejectNote.value)
+  if (!pending.value.some((x) => x.id === g.id)) {
+    rejecting.value = null
+    if (selected.value?.id === g.id) selected.value = null
+  }
+}
 
 const DECIDE_ERRORS: Record<string, string> = {
   APPROVE_FORBIDDEN: '承認する権限がありません。',
@@ -316,11 +361,11 @@ const DECIDE_ERRORS: Record<string, string> = {
  *  正規の経路は EF だけになっている。
  *  権限検査・自己承認の禁止・承認者名の確定は、すべて EF 側で行う。
  */
-async function decide(g: OvertimeReq, status: 'approved' | 'rejected') {
+async function decide(g: OvertimeReq, status: 'approved' | 'rejected', note = '') {
   if (busy.value) return
   busy.value = g.id
   const { data, error } = await supabase.functions.invoke('attendance-log', {
-    body: { action: 'overtime-decide', id: g.id, status },
+    body: { action: 'overtime-decide', id: g.id, status, note: note.trim() || undefined },
   })
   busy.value = null
   if (error || !data?.ok) {
@@ -330,6 +375,8 @@ async function decide(g: OvertimeReq, status: 'approved' | 'rejected') {
   }
   pending.value = pending.value.filter(x => x.id !== g.id)
   await refreshNavBadges()  // ナビバッジを即時更新（リロード不要）
+  const accountId = await getAccountId()
+  if (accountId) loadHistory(accountId).catch(() => {})
   // changed=0 は「既に誰かが決裁済み」＝二重通知しない
   if (data.changed) {
     supabase.functions.invoke('notify-overtime-decision', { body: { request_id: g.id } })
@@ -362,6 +409,8 @@ onMounted(load)
 .punch { display: inline-block; margin-right: 8px; font-variant-numeric: tabular-nums; }
 .evidence-note { margin: 8px 0 0; color: #64748b; font-size: 12px; line-height: 1.6; }
 .modal-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.note-label { font-size: 13px; font-weight: 700; color: #475569; }
+.note-input { width: 100%; box-sizing: border-box; font-size: 14px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; resize: vertical; font-family: inherit; }
 .btn-close { margin-left: auto; font-size: 13px; border: 1px solid #cbd5e1; background: #fff; border-radius: 6px; padding: 6px 14px; cursor: pointer; }
 /* 承認の履歴（2026-08-30） */
 .section-title { font-size: 16px; font-weight: 700; }
