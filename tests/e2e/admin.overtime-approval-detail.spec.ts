@@ -52,7 +52,7 @@ test.describe('残業申請の詳細', () => {
     await expect(detail).toHaveCount(0)
   })
 
-  test('その日の打刻があれば詳細に出て、詳細から却下できる', async ({ page }) => {
+  test('その日の打刻があれば詳細に出て、詳細からコメント付きで却下できる', async ({ page }) => {
     const rows = await restSrv('attendance_logs', {
       method: 'POST', headers: { Prefer: 'return=representation' },
       body: JSON.stringify({ worker_id: workerId, type: 'checkin', checked_at: `${DATE}T08:05:00+09:00`, agreed_rule_texts: [] }),
@@ -63,9 +63,19 @@ test.describe('残業申請の詳細', () => {
     await row.locator('td').first().click()
     await expect(page.getByTestId('ot-detail-punches')).toContainText('出勤 08:05', { timeout: 10000 })
     await page.getByTestId('ot-detail-reject').click()
+    // ★却下はコメントを添えられる（2026-09-17 大塚さん「なんで残業したか聞けるのも欲しい」）
+    const dlg = page.getByTestId('ot-reject-dialog')
+    await expect(dlg).toBeVisible()
+    await page.getByTestId('ot-reject-note').fill('何の作業で残業になったか教えてください')
+    await page.getByTestId('ot-reject-confirm').click()
+    await expect(dlg).toHaveCount(0, { timeout: 10000 })
     await expect(page.getByTestId('ot-detail')).toHaveCount(0, { timeout: 10000 })
     await expect(page.locator('tr', { hasText: MARK })).toHaveCount(0)
-    const after = await restSrv(`overtime_requests?reason=eq.${encodeURIComponent(MARK)}&select=status`)
+    const after = await restSrv(`overtime_requests?reason=eq.${encodeURIComponent(MARK)}&select=status,decision_note`)
     expect(after?.[0]?.status).toBe('rejected')
+    expect(after?.[0]?.decision_note, '★コメントがEF経由で保存される').toBe('何の作業で残業になったか教えてください')
+    // 承認の履歴にもコメントが出る
+    const hist = page.getByTestId('ot-history-row').filter({ hasText: '何の作業で残業になったか' })
+    await expect(hist, '履歴でコメントを読める').toBeVisible({ timeout: 10000 })
   })
 })

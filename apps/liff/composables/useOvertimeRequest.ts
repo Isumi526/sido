@@ -107,6 +107,17 @@ export function useOvertimeRequest() {
     }
   }
 
+  // 却下された時の管理者コメント（「理由を教えて」等）。却下以外は null。
+  async function decisionNote(_workerId: string | null | undefined, date: string): Promise<string | null> {
+    if (!date) return null
+    try {
+      return (await call('overtime-status', { date })).decisionNote ?? null
+    } catch (e) {
+      console.error('[overtime] コメントを取得できませんでした:', e)
+      return null
+    }
+  }
+
   // 直近の自分の申請一覧（履歴表示用・新しい順）。
   async function myRecent(_workerId: string | null | undefined, limit = 20): Promise<any[]> {
     try {
@@ -205,5 +216,5 @@ export function useOvertimeRequest() {
     }
   }
 
-  return { canRequest, status, isApproved, approvedAdjustment, activeRequest, myRecent, requestOvertime, requestLateCorrection, updateRequest, cancelRequest }
+  return { canRequest, status, isApproved, approvedAdjustment, activeRequest, decisionNote, myRecent, requestOvertime, requestLateCorrection, updateRequest, cancelRequest }
 }

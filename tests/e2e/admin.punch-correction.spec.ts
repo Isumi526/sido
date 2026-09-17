@@ -208,5 +208,11 @@ test.describe('打刻の修正申請と承認', () => {
     const log = (await restSrv(`attendance_logs?id=eq.${uiLogId}&select=type,original_type`))[0]
     expect(log.type, '★画面からの承認で打刻が直る').toBe('checkin')
     expect(log.original_type, '元の値が残る').toBe('checkout')
+
+    // ★承認の履歴は「元の値 → 直した後」で出る。承認後の打刻をそのまま出すと
+    //  「出勤 → 出勤」「9/11 17:45 → 9/11 17:45」になり何を直したか分からない（2026-09-17 大塚さん）
+    const hist = page.locator('[data-testid="pc-history-row"]', { hasText: '09:12' }).first()
+    await expect(hist, '履歴に出る').toBeVisible({ timeout: 15000 })
+    await expect(hist, '★元の値（実打刻）から直した後の値へ、と読める').toContainText('退勤 → 出勤')
   })
 })

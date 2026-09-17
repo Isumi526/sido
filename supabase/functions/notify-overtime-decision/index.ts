@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
 
   const svc = svcClient()
   const { data: otr } = await svc.from('overtime_requests')
-    .select('id, account_id, worker_id, date, status, site_names, requested_end_time, requested_start_time, requested_break_minutes')
+    .select('id, account_id, worker_id, date, status, site_names, requested_end_time, requested_start_time, requested_break_minutes, decision_note')
     .eq('id', requestId).maybeSingle()
   if (!otr) return json({ ok: false, error: 'request_not_found' }, 404)
 
@@ -75,6 +75,8 @@ Deno.serve(async (req) => {
 
   const dateLabel = fmtDate(otr.date as string)
   const isApproved = otr.status === 'approved'
+  // 決裁した管理者のコメント（主に却下時の「理由を教えて」。2026-09-17 大塚さん）
+  const note = typeof otr.decision_note === 'string' ? otr.decision_note.trim() : ''
   const subject = `【残業申請】${dateLabel}の残業申請が${isApproved ? '承認' : '却下'}されました`
 
   // ★アプリ内通知が本命の届け先（2026-08-14 ユーザー指示）。
@@ -90,8 +92,11 @@ Deno.serve(async (req) => {
       isApproved && otr.requested_start_time ? `早朝入り ${(otr.requested_start_time as string).slice(0, 5)} も承認されています。` : '',
       isApproved && otr.requested_break_minutes !== null && otr.requested_break_minutes !== undefined
         ? (otr.requested_break_minutes === 0 ? '休憩なしで通した扱いになります。' : `休憩は ${otr.requested_break_minutes}分 として扱います。`) : '',
+      note ? `管理者からのコメント: ${note}` : '',
+      !isApproved ? '理由を書いて残業画面から申請し直せます。' : '',
     ].filter(Boolean).join('\n'),
-    linkPath: `/report?edit=${otr.date}`,
+    // 却下なら再申請する残業画面へ。承認なら日報の入力へ
+    linkPath: isApproved ? `/report?edit=${otr.date}` : '/overtime',
   })
 
   const notifyEmail = await resolveWorkerNotifyEmail(svc, otr.account_id as string, otr.worker_id as string)
@@ -102,6 +107,8 @@ Deno.serve(async (req) => {
     <p>${dateLabel}${siteNames.length ? `（${esc(siteNames.join('、'))}）` : ''}の残業申請は
     <b>${isApproved ? '承認されました' : '却下されました'}</b>。</p>
     ${isApproved ? `<p>希望終了時刻（${esc((otr.requested_end_time as string ?? '').slice(0, 5) || '—')}）まで日報に入力できます。</p>` : ''}
+    ${note ? `<p>管理者からのコメント：<br>${esc(note).replace(/\n/g, '<br>')}</p>` : ''}
+    ${!isApproved ? '<p>理由を書いて残業画面から申請し直すことができます。</p>' : ''}
   `.trim()
 
   const result = await sendResend(svc, otr.account_id, notifyEmail, subject, html)
