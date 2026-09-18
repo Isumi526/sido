@@ -71,7 +71,9 @@ test.describe('在庫（作業員アプリ）', () => {
     await page.goto('/inventory', { waitUntil: 'networkidle' })
     await expect(page.getByTestId('inv-note'), '会計在庫ではないと明記').toContainText('会計在庫ではありません')
     await page.getByTestId('inv-kind-out').check()
-    await page.getByTestId('inv-item').selectOption(itemId)
+    // 在庫②で品目選択は予測検索になった（区分→詳細）。検索して候補をタップ
+    await page.getByTestId('inv-item-search').fill(ITEM)
+    await page.getByTestId(`inv-item-opt-${itemId}`).click()
     await page.getByTestId('inv-qty').fill('3')
     await page.getByTestId('inv-site').selectOption(siteId)
     await expect(page.getByTestId('inv-submit'), '★写真が無いと登録できない').toBeDisabled()
@@ -96,7 +98,9 @@ test.describe('在庫（作業員アプリ）', () => {
     const before = await itemQty()
     await page.goto('/inventory', { waitUntil: 'networkidle' })
     await page.getByTestId('inv-kind-in').check()
-    await page.getByTestId('inv-item').selectOption(itemId)
+    // 在庫②で品目選択は予測検索になった（区分→詳細）。検索して候補をタップ
+    await page.getByTestId('inv-item-search').fill(ITEM)
+    await page.getByTestId(`inv-item-opt-${itemId}`).click()
     await page.getByTestId('inv-qty').fill('5')
     await page.getByTestId('inv-photos').setInputFiles([{ name: 'p.png', mimeType: 'image/png', buffer: PNG }])
     await page.getByTestId('inv-submit').click()
