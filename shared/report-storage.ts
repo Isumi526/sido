@@ -21,7 +21,7 @@ import { laborBreakdownForReport } from './worker-hours.ts'
 /** 添付ファイルの実体を持つキー。保存する JSON からは落とす（URLだけ残す） */
 const FILE_KEYS = [
   'vehicleFiles', 'trainFiles', 'hotelFiles', 'leopalaceFiles',
-  'otherFiles', 'entertainmentFiles', 'garbagePhotos',
+  'otherFiles', 'entertainmentFiles', 'garbagePhotos', 'pickupPhotos',
 ]
 
 function stripItemFiles(items: any[] | undefined): any[] | undefined {

@@ -84,5 +84,7 @@
   "pendingNeed": "(waiting for {who})",
   "needOwner": "the owner",
   "needManager": "the site manager",
-  "needJoin": " and "
+  "needJoin": " and ",
+  "expPickup": "Materials taken back {detail}",
+  "expPhotos": "{n} photos"
 }

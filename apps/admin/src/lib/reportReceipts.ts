@@ -26,6 +26,7 @@ const SITE_LEVEL_KEYS: Array<[string, string]> = [
   ['otherUrls', 'その他'],
   ['entertainmentUrls', '雑経費'],
   ['garbagePhotoUrls', 'ゴミ写真'],
+  ['pickupPhotoUrls', '引き上げ材料'],
 ]
 
 /** 明細配列のキー → 表示名。★ここに無いキーも拾う（下の collectReceipts 参照）。
@@ -39,6 +40,7 @@ const ITEM_LABELS: Record<string, string> = {
   trains: '電車',
   vehicles: '車両',
   garbagePhotos: 'ゴミ写真',
+  pickupPhotos: '引き上げ材料',
 }
 
 function push(out: Receipt[], urls: unknown, label: string) {

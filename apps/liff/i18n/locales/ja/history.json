@@ -84,5 +84,7 @@
   "pendingNeed": "（{who}の承認待ち）",
   "needOwner": "オーナー",
   "needManager": "現場責任者",
-  "needJoin": "と"
+  "needJoin": "と",
+  "expPickup": "引き上げ材料 {detail}",
+  "expPhotos": "写真{n}枚"
 }

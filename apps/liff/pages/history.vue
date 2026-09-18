@@ -632,6 +632,9 @@ function expenseLines(exp: any): string[] {
     if (exp.garbageSiteM3)    g.push(t('history.expGarbageMixed', { m3: exp.garbageSiteM3 }))
     out.push(t('history.expGarbage', { detail: g.join(' ') }))
   }
+  if (exp.hasPickup || (exp.pickupPhotoUrls || []).length) {
+    out.push(t('history.expPickup', { detail: [exp.pickupNote, (exp.pickupPhotoUrls || []).length ? t('history.expPhotos', { n: (exp.pickupPhotoUrls || []).length }) : ''].filter(Boolean).join(' ') }))
+  }
   return out
 }
 

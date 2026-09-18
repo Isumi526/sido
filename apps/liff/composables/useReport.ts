@@ -68,7 +68,7 @@ export const createSite = (): SiteReport => ({
 
 // 経費オブジェクトから File[] フィールドを除去（GAS送信用 - *Urls は残す）
 function stripFiles(expenses: Record<string, unknown> | object): Record<string, unknown> {
-  const { vehicleFiles, trainFiles, hotelFiles, leopalaceFiles, otherFiles, entertainmentFiles, garbagePhotos, ...rest } = expenses as any
+  const { vehicleFiles, trainFiles, hotelFiles, leopalaceFiles, otherFiles, entertainmentFiles, garbagePhotos, pickupPhotos, ...rest } = expenses as any
   // 明細ごとに File[] を持つ配列（駐車場代・高速代）からも files を除去（fileUrls は残す）
   const stripItemFiles = (items: any[] | undefined) =>
     (items ?? []).map(({ files, ...item }: any) => item)
@@ -103,6 +103,7 @@ const FILE_CATEGORIES = [
   { filesKey: 'otherFiles',         urlsKey: 'otherUrls',         category: 'other'         },
   { filesKey: 'entertainmentFiles', urlsKey: 'entertainmentUrls', category: 'entertainment' },
   { filesKey: 'garbagePhotos',      urlsKey: 'garbagePhotoUrls',  category: 'garbage'       },
+  { filesKey: 'pickupPhotos',       urlsKey: 'pickupPhotoUrls',   category: 'pickup'        },
 ] as const
 
 export const useReport = () => {
