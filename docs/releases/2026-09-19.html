@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>本番リリース 2026-09-19</title>
+<style>
+  @page { size: A4; margin: 10mm 11mm 8mm; } * { box-sizing: border-box; }
+  body { font-family: "Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif; color: #1f2937; font-size: 9.5pt; line-height: 1.5; margin: 0; }
+  h1 { font-size: 16pt; margin: 0 0 1mm; color: #06C755; } .sub { font-size: 9pt; color: #374151; margin: 0 0 3mm; font-weight: 700; }
+  h2 { font-size: 10.5pt; margin: 3.5mm 0 1.5mm; padding: 1.2mm 3mm; background: #06C755; color: #fff; border-radius: 3px; }
+  ul { margin: 0 0 2mm; padding-left: 5mm; } li { margin-bottom: 1.1mm; }
+  .tag { display:inline-block; font-size:7.5pt; font-weight:700; padding:0.3mm 1.6mm; border-radius:2px; margin-right:1.5mm; vertical-align:1px; } .fix { background:#fee2e2; color:#991b1b; } .new { background:#dcfce7; color:#166534; }
+  .note { background:#f3f4f6; border-left:3px solid #9ca3af; padding:2mm 3mm; margin:2mm 0; font-size:9pt; } .note b { color:#111827; }
+</style></head><body>
+<h1>本番リリース 2026-09-19</h1>
+<p class="sub">道具管理（QR）／拠点の登録場所／アカウント数の表示／ログインの記録／日報の「最近の現場」（PR #198）</p>
+
+<h2><span class="tag new">新機能</span>道具管理：レーザー・脚立などにQRを貼って所在を追う（第1段）</h2>
+<ul>
+<li>管理画面のメニューに<b>「道具管理」</b>が増えました。<b>保管場所</b>（拠点＞倉庫1・コンテナ など）と<b>道具</b>（名前・種別・管理番号・定位置）を登録すると、道具1個ごと・場所1つごとにQRコードが発行されます。</li>
+<li>QRは<b>面付けしたPDF</b>で印刷できます（道具＝A4に8枚、場所＝A4に大きく2枚）。場所を1つ足したときは、その1件だけを印刷できます。</li>
+<li>スマホでQRを読むと作業員アプリの道具ページ／場所ページが開きます（今回は「どの道具か・定位置・状態」の表示まで。<b>持出・返却・又貸しの記録は次の段階</b>で入ります）。</li>
+<li>登録・編集はオーナー／管理者／役員経理／現場管理者。使わなくなった道具は削除でなく「無効」にしてください（削除すると印刷済みのQRが使えなくなります）。</li>
+</ul>
+
+<h2><span class="tag new">変更</span>オフィス・工場（拠点）は「自社情報」で登録する</h2>
+<ul>
+<li>事務所（名古屋）・事務所（東京）・工場のような<b>拠点</b>は、現場マスタではなく<b>「自社情報 › 拠点」</b>で登録・編集するようになりました。現場マスタの一覧からは消えます（データは同じものなので、日報の現場選択や現場別集計はこれまでどおりです）。</li>
+<li>拠点は「現場に紐づかない経費の紐付け先」「作業員の所属拠点」「道具の保管場所の拠点」で共通に使います。道具管理の画面からもその場で拠点を登録できます。</li>
+<li>ヒロ木工の「事務所」を拠点（オフィス）として区分付けしました。</li>
+</ul>
+
+<h2><span class="tag new">新機能</span>アカウント数の表示（契約の基本アカウント数）</h2>
+<ul>
+<li>作業員マスタの右上に<b>「アカウント数 N / 基本 M」</b>が出ます。数えるのはログインIDを持つ有効な作業員＋オーナーのID（協力業者ポータルの外部の方は含みません）。</li>
+<li>基本数を超えると黄色いお知らせが出ます（登録は止めません。超えた分は翌月から追加アカウントとして課金・日割りなし）。使わなくなったIDは作業員を「無効」にすると数から外れます。</li>
+<li>毎月末に各社の件数を自動で記録します（請求の根拠）。</li>
+</ul>
+
+<h2><span class="tag new">新機能</span>ログインの記録（契約 別紙2 §4「アクセスの記録」）</h2>
+<ul>
+<li>管理画面・作業員アプリへの<b>ログイン成功</b>を「操作ログ」に記録します（誰が・いつ・どちらのアプリから）。パスワードや失敗の内容は記録しません。13か月で自動削除されます。</li>
+</ul>
+
+<h2><span class="tag new">新機能</span>日報：現場プルダウンの先頭に「最近の現場」</h2>
+<ul>
+<li>直近1週間で自分が多く入っている現場（最大3件）が、プルダウンの<b>先頭</b>に「最近の現場」として出ます。元請けごとの並びは従来どおりその下に残ります。</li>
+</ul>
+
+<div class="note"><b>作業員の方へ</b>：作業員アプリのページを再読み込みすると反映されます。<br>
+<b>在庫（入荷・持出）</b>の画面は作り直し中のため、作業員アプリのメニューには出していません（管理画面の在庫管理はこれまでどおり）。</div>
+</body></html>
