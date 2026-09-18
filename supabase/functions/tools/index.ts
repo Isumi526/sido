@@ -177,6 +177,12 @@ Deno.serve(async (req) => {
       if (!updated?.length) return json({ ok: false, error: 'not_found' }, 404)
       return json({ ok: true, id: body.id })
     }
+    // ★べき等ガード（Gemini 指摘）: 同じ名前＋管理番号が既にあれば作らない。連打・リトライで同じ道具が2枚のQRを持つのを防ぐ。
+    //  同じ名前の道具が複数ある（脚立×3 等）なら管理番号で区別する＝QR は物理的な1個に1枚なので番号を持つべき
+    let dupQ = svc.from('tools').select('id').eq('account_id', accountId).eq('name', name).eq('active', true)
+    dupQ = patch.code ? dupQ.eq('code', patch.code as string) : dupQ.is('code', null)
+    const { data: dup } = await dupQ.limit(1)
+    if (dup?.length) return json({ ok: false, error: 'DUPLICATE_TOOL' }, 409)
     const { data: created, error } = await svc.from('tools').insert({ account_id: accountId, ...patch }).select('id').maybeSingle()
     if (error) { console.error('[tools] tool-insert failed:', error); return json({ ok: false, error: 'save_failed' }, 500) }
     return json({ ok: true, id: created?.id })

@@ -63,6 +63,13 @@ test.describe('道具管理①（admin）', () => {
     await expect(row, '定位置が残る').toContainText(`${BASE}＞${LOC}`)
     await expect(row, '初期状態は保管中').toContainText('保管中')
     const toolId = (await row.getAttribute('data-testid'))!.replace('tool-row-', '')
+    // 同じ名前＋管理番号は二重登録できない（連打・リトライ対策・Gemini 指摘）
+    await page.getByTestId('tool-add-open').click()
+    await page.getByTestId('tool-name').fill(TOOL)
+    await page.getByTestId('tool-code').fill(`L-${TS}`)
+    await page.getByTestId('tool-save').click()
+    await expect(page.locator('.modal .error'), '★同名＋同番号の道具は作れない').toContainText('既にあります')
+    await page.locator('.modal .btn-cancel').click()
 
     // ── QR：URL はアプリ自身のドメイン（dev は localhost:3000）で、liff.line.me ではない ──
     await page.getByTestId(`tool-qr-${toolId}`).click()

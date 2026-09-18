@@ -227,6 +227,7 @@ const STATUS_LABEL: Record<string, string> = { available: '保管中', out: '持
 const ERRORS: Record<string, string> = {
   TOOL_FORBIDDEN: '道具を変更する権限がありません。',
   DUPLICATE_NAME: '同じ拠点に同じ名前の保管場所が既にあります。',
+  DUPLICATE_TOOL: '同じ名前＋管理番号の道具が既にあります。別の道具なら管理番号を付けて区別してください。',
   LOCATION_IN_USE: 'この保管場所を定位置にしている道具があるため削除できません（先に道具の定位置を変えてください）。',
   location_not_found: '定位置の保管場所が見つかりません。',
   not_found: '対象が見つかりません（削除された可能性があります）。',
