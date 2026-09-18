@@ -34,7 +34,7 @@
           <tr v-for="s in filtered" :key="s.id" :class="{ inactive: (!s.active || s.is_deleted) && s.registration_status !== 'pending' }">
             <td v-if="mergeMode"><input type="checkbox" :value="s.id" v-model="mergePick" :disabled="s.is_deleted" /></td>
             <td class="name">{{ s.name }}<span v-if="s.is_deleted" class="del-badge">削除済み</span></td>
-            <td><span v-if="s.category" class="cat-badge" :class="s.category === '商社' ? 'shosha' : 'gyosha'">{{ s.category }}</span><span v-else class="muted">—</span></td>
+            <td><span v-if="s.category" class="cat-badge" :class="s.category === '商社' ? 'shosha' : s.category === 'その他' ? 'other' : 'gyosha'">{{ s.category }}</span><span v-else class="muted">—</span></td>
             <td><span v-for="t in s.trade_types" :key="t" class="chip sm">{{ t }}</span><span v-if="!s.trade_types.length" class="muted">—</span></td>
             <td><span v-for="a in s.service_areas" :key="a" class="chip sm area">{{ a }}</span><span v-if="!s.service_areas.length" class="muted">—</span></td>
             <td>
@@ -91,6 +91,7 @@
               <option value="" disabled>選択してください</option>
               <option value="商社">商社</option>
               <option value="業者">業者</option>
+              <option value="その他">その他</option>
             </select>
           </div>
           <div class="field">
@@ -390,7 +391,7 @@ async function logEdit(subId: string, accountId: string, action: string, changes
 
 async function save() {
   if (!modal.value?.name?.trim()) { saveError.value = '業者名を入力してください'; return }
-  if (!modal.value?.category) { saveError.value = '区分（商社/業者）を選択してください'; return }
+  if (!modal.value?.category) { saveError.value = '区分（商社/業者/その他）を選択してください'; return }
   saving.value = true; saveError.value = ''
   try {
     const accountId = await getAccountId()
@@ -532,6 +533,7 @@ async function doMerge() {
 .cat-badge { font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 700; }
 .cat-badge.shosha { background: #fff3e0; color: #e65100; }
 .cat-badge.gyosha { background: #e8f4ff; color: #1a6fc4; }
+.cat-badge.other { background: #f1f5f9; color: #475569; }
 .status { font-size: 11px; padding: 3px 8px; border-radius: 4px; }
 .status.active { background: #e8fff0; color: #0a8a3a; }
 .status.off { background: #f5f5f5; color: #aaa; }

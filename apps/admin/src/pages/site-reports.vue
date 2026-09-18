@@ -337,12 +337,12 @@
         </div>
 
         <!-- 業者 -->
-        <div class="modal-section" v-if="selected.subs.filter((s: any) => s.category === '業者').length">
+        <div class="modal-section" v-if="selected.subs.filter((s: any) => s.category === '業者' || s.category === 'その他').length">
           <div class="section-label">業者（{{ yen(selected.gyoshaCost) }}）</div>
           <table class="inner-table">
             <thead><tr><th>業者名</th><th class="num">人数</th><th class="num">単価</th><th class="num">金額</th></tr></thead>
             <tbody>
-              <tr v-for="(s, i) in selected.subs.filter((s: any) => s.category === '業者')" :key="i">
+              <tr v-for="(s, i) in selected.subs.filter((s: any) => s.category === '業者' || s.category === 'その他')" :key="i">
                 <td>{{ s.name }}</td>
                 <td class="num">{{ s.count }}名</td>
                 <td class="num">{{ s.unitPrice ? yen(s.unitPrice) : '—' }}</td>
@@ -776,7 +776,7 @@ const vendorBreakdown = computed<{ counted: VendorAgg[]; uncategorized: VendorAg
       //   ＝原価に乗っていない。まさに「どこかの業者が漏れていても分からない」状態なので
       //   合計には混ぜず、別枠で「原価未計上」として見せる。
       if (s.category === '商社') v.shosha += amt
-      else if (s.category === '業者') v.gyosha += amt
+      else if (s.category === '業者' || s.category === 'その他') v.gyosha += amt   // その他は業者側に計上
       else v.unpriced += amt
       v.items.push({ date: r.date, amount: amt, note: `${s.count}人 × ${yen(s.unitPrice || 0)}`, isInvoice: false })
     }
@@ -1029,7 +1029,7 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
     const laborCost  = g.workers.reduce((s: number, w: any) => s + (w.laborCost || 0), 0)
     const shoshaCost = g.subs.filter((s: any) => s.category === '商社')
       .reduce((s: number, sub: any) => s + sub.count * (sub.unitPrice || 0), 0)
-    const gyoshaCost = g.subs.filter((s: any) => s.category === '業者')
+    const gyoshaCost = g.subs.filter((s: any) => s.category === '業者' || s.category === 'その他')
       .reduce((s: number, sub: any) => s + sub.count * (sub.unitPrice || 0), 0)
     const total = shoshaCost + gyoshaCost + laborCost
       + g.parkingYen + g.fuelCost + g.highwayCost

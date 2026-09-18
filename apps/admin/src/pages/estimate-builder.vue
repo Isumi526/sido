@@ -1508,7 +1508,7 @@ function sentPagesLabel(q: QuoteRequest): string {
 
 async function loadSubcontractorOptions() {
   const { data } = await supabase.from('subcontractors')
-    .select('id, name').eq('account_id', accountId).eq('category', '業者')
+    .select('id, name').eq('account_id', accountId).in('category', ['業者', 'その他'])
     .eq('is_deleted', false).order('sort_order').order('name')
   subcontractorOptions.value = (data ?? []) as any
 }

@@ -21,6 +21,7 @@
   "labelName": "Company name",
   "namePlaceholder": "e.g. ABC Construction",
   "categoryGyosha": "Company",
+  "categoryOther": "Other",
   "categoryShosha": "Trading firm",
   "labelRepName": "Representative name",
   "repNamePlaceholder": "e.g. Taro Yamada",
