@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>本番リリース 2026-09-17</title>
+<style>
+  @page { size: A4; margin: 10mm 11mm 8mm; } * { box-sizing: border-box; }
+  body { font-family: "Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif; color: #1f2937; font-size: 9.5pt; line-height: 1.5; margin: 0; }
+  h1 { font-size: 16pt; margin: 0 0 1mm; color: #06C755; } .sub { font-size: 9pt; color: #374151; margin: 0 0 3mm; font-weight: 700; }
+  h2 { font-size: 10.5pt; margin: 3.5mm 0 1.5mm; padding: 1.2mm 3mm; background: #06C755; color: #fff; border-radius: 3px; }
+  ul { margin: 0 0 2mm; padding-left: 5mm; } li { margin-bottom: 1.1mm; }
+  .tag { display:inline-block; font-size:7.5pt; font-weight:700; padding:0.3mm 1.6mm; border-radius:2px; margin-right:1.5mm; vertical-align:1px; } .fix { background:#fee2e2; color:#991b1b; } .new { background:#dcfce7; color:#166534; }
+  .note { background:#f3f4f6; border-left:3px solid #9ca3af; padding:2mm 3mm; margin:2mm 0; font-size:9pt; } .note b { color:#111827; }
+</style></head><body>
+<h1>本番リリース 2026-09-17</h1>
+<p class="sub">大塚さんからの2点（打刻修正の履歴の表示／残業申請の却下にコメント）（PR #193）</p>
+<div class="note"><b>今回の主役</b>：残業申請を却下する時に「なぜ残業したか教えて」など一言添えられるようになりました。作業員はそれを見て理由を書き、申請し直せます。</div>
+<h2><span class="tag fix">修正</span>打刻修正の「承認の履歴」で、何を直したのか分からなかった</h2>
+<ul>
+<li>「9/11 17:45 → 9/11 17:45 に直す」のように、元の値と直した後の値が同じに見えていました。承認すると打刻そのものが直った後の値になるため、そこから「元の値」を出していたのが原因です（<b>打刻の修正自体は正しく反映されていました</b>）。</li>
+<li>今回から、履歴の左側には<b>実際に押された打刻</b>、右側には直した後の値が出ます。種別（出勤⇄退勤）の修正には、どの打刻かが分かるよう時刻も添えました。</li>
+</ul>
+<h2><span class="tag new">新機能</span>残業申請を却下する時にコメントを添えられる</h2>
+<ul>
+<li>管理画面「残業申請の承認」で<b>却下</b>を押すと、コメント欄（任意）が開きます。例：「何の作業で残業になったか教えてください」。</li>
+<li>コメントは作業員の<b>残業画面</b>（本日の状況・直近の申請）と<b>お知らせ</b>（メールにも）に「管理者からのコメント」として届きます。</li>
+<li>却下された作業員は「<b>理由を書いて申請し直す</b>」ボタンから、締切（16:00）まで申請し直せます。承認の履歴にもコメントが残ります。</li>
+<li>承認の操作はこれまでどおり（コメント欄は出ません）。</li>
+</ul>
+<div class="note"><b>作業員の方へ</b>：作業員アプリのページを再読み込みすると反映されます。</div>
+</body></html>

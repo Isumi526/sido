@@ -3,7 +3,7 @@
     <div class="page-header">
       <h1 class="page-title">操作ログ</h1>
     </div>
-    <p class="hint">下請け取引などの主要操作（請求登録・支払・注文書送信 等）の証跡です。新しい順に表示します。</p>
+    <p class="hint">ログイン（管理画面・作業員アプリ）と下請け取引などの主要操作（請求登録・支払・注文書送信 等）の証跡です。新しい順に表示します。13か月で自動削除されます（契約 別紙2 §4「アクセスの記録」12か月保存）。</p>
 
     <div v-if="loading" class="empty">読み込み中…</div>
     <div v-else-if="!logs.length" class="empty">まだ操作ログがありません。</div>
@@ -71,6 +71,6 @@ onMounted(load)
 .table th { background: #f9f9f9; padding: 12px 16px; text-align: left; font-size: 12px; color: #888; font-weight: 700; position: sticky; top: 0; z-index: 2;}
 .table td { padding: 12px 16px; border-top: 1px solid #f0f0f0; font-size: 14px; }
 .dt { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.action { font-size: 12px; padding: 3px 8px; border-radius: 4px; background: #eef2ff; color: #3a52a8; font-weight: 700; }
+.action { font-size: 12px; padding: 3px 8px; border-radius: 4px; background: #eef2ff; color: #3a52a8; font-weight: 700; white-space: nowrap; }
 .summary { color: #333; }
 </style>

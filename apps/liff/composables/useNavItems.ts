@@ -45,6 +45,11 @@ export function useNavItems(
       { path: '/groups',           icon: 'group',             label: t('nav.groups'),           section: 'plan' },
       { path: '/subcontractors',   icon: 'handyman',          label: t('nav.subcontractors'),   section: 'plan' },
       { path: '/sites',            icon: 'location_on',       label: t('nav.sites'),             section: 'info' },
+      // 在庫①②（2026-09-14〜18）: 入荷・持出の記録・写真AI候補。
+      // ★2026-09-19 レビューで「引き上げ中心に軸を直す＋テナント別フラグ（既定OFF）でベータ」と決定（在庫①のチケット参照）。
+      //  フラグ実装までの暫定でメニューから外す（画面 /inventory 自体は残す・E2E は URL 直打ちで通る）。
+      //  フラグを入れたらこの行を復活させ、フラグで出し分けること。
+      // { path: '/inventory',        icon: 'inventory_2',       label: t('nav.inventory'),         section: 'info', testId: 'menu-inventory' },
       { path: '/expense/download', icon: 'picture_as_pdf',    label: t('nav.expensePdf'),       section: 'info' },
       { path: '/rules',            icon: 'menu_book',         label: t('nav.rulebook'),         section: 'info' },
     ]

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>本番リリース 2026-09-14（2）</title>
+<style>
+  @page { size: A4; margin: 10mm 11mm 8mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;
+         color: #1f2937; font-size: 9.5pt; line-height: 1.5; margin: 0; }
+  h1 { font-size: 16pt; margin: 0 0 1mm; color: #06C755; }
+  .sub { font-size: 9pt; color: #374151; margin: 0 0 3mm; font-weight: 700; }
+  h2 { font-size: 10.5pt; margin: 3.5mm 0 1.5mm; padding: 1.2mm 3mm;
+       background: #06C755; color: #fff; border-radius: 3px; }
+  ul { margin: 0 0 2mm; padding-left: 5mm; }
+  li { margin-bottom: 1.1mm; }
+  .tag { display:inline-block; font-size:7.5pt; font-weight:700; padding:0.3mm 1.6mm;
+         border-radius:2px; margin-right:1.5mm; vertical-align:1px; }
+  .new { background:#dcfce7; color:#166534; }
+  .note { background:#f3f4f6; border-left:3px solid #9ca3af; padding:2mm 3mm; margin:2mm 0; font-size:9pt; }
+  .note b { color:#111827; }
+</style>
+</head>
+<body>
+
+<h1>本番リリース 2026-09-14（2）</h1>
+<p class="sub">大塚さんからのご要望「残業申請の承認を、触ったら見れるように」を本番へ反映しました（PR #179）</p>
+
+<h2><span class="tag new">新</span>残業申請の承認：行を押すと詳細が開く（管理画面）</h2>
+<ul>
+<li>承認待ちの<b>行を押すと詳細</b>が開きます。スマホで表が横に切れて見えなかった<b>対象現場・希望終了・早朝入り／休憩・理由・申請日時</b>が1枚で確認できます。</li>
+<li>詳細の中に<b>「この日の打刻・日報（裏取り）」</b>を出します。その日の<b>出勤／退勤の打刻時刻</b>と、<b>日報の提出有無</b>（未提出／「稼働なし」で提出／提出あり＋現場名）が分かります。打刻も日報も無い日は本人に確認してから決裁してください。</li>
+<li>詳細の画面からそのまま<b>承認／却下</b>できます（従来どおり一覧のボタンからも可）。</li>
+<li>対象日に<b>曜日</b>を付けました（土曜は青、日曜は赤）。「土曜にやってないはず」に一覧で気づけます。</li>
+</ul>
+
+<div class="note">
+<b>横井さん 9/12（土）の実績修正について</b>：一覧の行を押すと、その日に打刻や日報があるかがその場で見えます。無ければ却下、または本人に確認のうえ決裁してください。
+</div>
+
+</body>
+</html>

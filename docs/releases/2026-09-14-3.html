@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>本番リリース 2026-09-14（3）</title>
+<style>
+  @page { size: A4; margin: 10mm 11mm 8mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;
+         color: #1f2937; font-size: 9.5pt; line-height: 1.5; margin: 0; }
+  h1 { font-size: 16pt; margin: 0 0 1mm; color: #06C755; }
+  .sub { font-size: 9pt; color: #374151; margin: 0 0 3mm; font-weight: 700; }
+  h2 { font-size: 10.5pt; margin: 3.5mm 0 1.5mm; padding: 1.2mm 3mm;
+       background: #06C755; color: #fff; border-radius: 3px; }
+  ul { margin: 0 0 2mm; padding-left: 5mm; }
+  li { margin-bottom: 1.1mm; }
+  ol { margin: 0 0 2mm; padding-left: 6mm; }
+  .tag { display:inline-block; font-size:7.5pt; font-weight:700; padding:0.3mm 1.6mm;
+         border-radius:2px; margin-right:1.5mm; vertical-align:1px; }
+  .new { background:#dcfce7; color:#166534; }
+  .fix { background:#fee2e2; color:#991b1b; }
+  .note { background:#f3f4f6; border-left:3px solid #9ca3af; padding:2mm 3mm; margin:2mm 0; font-size:9pt; }
+  .note b { color:#111827; }
+</style>
+</head>
+<body>
+
+<h1>本番リリース 2026-09-14（3）</h1>
+<p class="sub">辻さんからのご質問「前日より以前の休憩を修正したい場合は？」への対応（PR #180・#181）</p>
+
+<div class="note">
+<b>今回の主役</b>：残業申請の画面から<b>前日以前の休憩・終了時刻を後から修正申請</b>できるようにしました。
+これまで「実績修正」「実際に取った休憩」は<b>当日分しか</b>出せず、送信済みの過去日を直す入口がありませんでした。
+</div>
+
+<h2><span class="tag new">新</span>過去の日の実績修正（残業申請 → 画面下の「過去の日の実績修正」）</h2>
+<ul>
+<li><b>昨日から7日前まで</b>の日を選んで、<b>実際に取った休憩</b>（休憩なし／15〜90分）・<b>実際の終了時刻</b>・早朝入りを申告できます。休憩だけ直す時は終了時刻を「変更しない」のままで出せます。</li>
+<li>理由は必須です。申請は「実績修正」として<b>管理者の承認待ち</b>になり、責任者・管理者へ通知が飛びます（当日の申請と同じ流れ）。</li>
+<li>当日分は従来どおり画面上の枠（16:00まで申請／16:00以降は実績修正）から出してください。</li>
+<li><b>間違えた時</b>は「最近の申請」の行にある「申請を取り消す」で消せます（承認待ちのあいだ・当日以外も）。承認された後に直したい時は、同じ日でもう一度申請すると上書きされて再承認になります（PR #181）。</li>
+</ul>
+
+<h2><span class="tag fix">修正</span>承認しても過去日の労働時間が変わらなかった件</h2>
+<ul>
+<li>承認された休憩・時刻は、これまで<b>作業員が日報画面を開いて保存した時にしか</b>日報に乗りませんでした。送信済みの過去日は開き直されないため、承認しても労働時間が変わらない状態でした。</li>
+<li>今回から、<b>管理者が承認した時点で</b>その日の日報の休憩・時刻を書き換え、労働時間（通常／残業）を計算し直します。日報を開き直す必要はありません。</li>
+<li>書き換えるのは実績修正の申請だけです。締切前の通常申請の「希望する終了時刻」は希望なので日報には書きません（従来どおり、承認で入力できる範囲が広がるだけ）。</li>
+<li>承認画面では申請の詳細（その日の打刻・日報）を見てから承認できます（9/14 先行リリース）。</li>
+</ul>
+
+<div class="note">
+<b>辻さんへの回答（まとめ）</b>：前日以前の休憩・終了時刻は、残業申請 → 画面下の「過去の日の実績修正」から日を選んで申請してください。承認されると、その日の日報に反映されます。
+</div>
+
+</body>
+</html>

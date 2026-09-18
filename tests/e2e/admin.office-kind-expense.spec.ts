@@ -1,7 +1,8 @@
 // ============================================================
 //  admin.office-kind-expense.spec.ts
 //  現場マスタの区分（オフィス・工場）と、経費申請の現場別集計（2026-09-13 SEED 9/10 会議）。
-//   - 現場マスタで区分を「オフィス」にして保存できる（住所・工期は要らない）
+//   - 拠点（オフィス）は「自社情報 › 拠点」から登録できる（住所・工期・責任者は要らない）。保存先は sites.kind=office
+//     ※ 2026-09-19 道具①レビューで導線を現場マスタ→自社情報へ移した。現場マスタの一覧にはオフィスを出さない
 //   - 作業員マスタで所属拠点を設定できる（任意）
 //   - 現場別集計にオフィスのタブが現場の後ろに並び、紐付いた経費申請が出る
 //   - 工程（月ビュー）にはオフィスを出さない
@@ -31,21 +32,24 @@ test.afterAll(async () => {
   await restSrv(`sites?name=eq.${encodeURIComponent(OFFICE)}`, { method: 'DELETE' }).catch(() => {})
 })
 
-test('現場マスタで区分をオフィスにして保存できる（住所・工期は不要）', async ({ page }) => {
-  await page.goto('/sites', { waitUntil: 'networkidle' })
-  await page.locator('.btn-add').click()
-  const modal = page.locator('.modal')
+test('自社情報の「拠点」からオフィスを登録できる（住所・工期・責任者は不要）／現場マスタの一覧には出ない', async ({ page }) => {
+  await page.goto('/company-profile', { waitUntil: 'networkidle' })
+  await page.getByTestId('base-site-add').click()
+  const modal = page.getByTestId('base-site-modal')
   await expect(modal).toBeVisible()
-  await modal.locator('.input').nth(0).fill(OFFICE)
-  await modal.getByTestId('site-kind').selectOption('office')
-  await modal.locator('[data-testid="site-responsible-select"]').selectOption(respWorkerId)
-  await modal.locator('.btn-save').click()
+  await page.getByTestId('base-site-name').fill(OFFICE)
+  await page.getByTestId('base-site-kind').selectOption('office')
+  await page.getByTestId('base-site-save').click()
   await expect.poll(async () => {
     const rows = await restSrv(`sites?name=eq.${encodeURIComponent(OFFICE)}&select=id,kind`)
     officeId = rows?.[0]?.id ?? ''
     return rows?.[0]?.kind ?? null
   }, { timeout: 15000 }).toBe('office')
-  await expect(page.locator('tr', { hasText: OFFICE }).first()).toContainText('オフィス')
+  await expect(page.getByTestId(`base-site-row-${officeId}`)).toContainText('オフィス')
+  // 現場マスタの一覧には出ない（拠点は自社情報で管理）
+  await page.goto('/sites', { waitUntil: 'networkidle' })
+  await expect(page.getByTestId('sites-base-note')).toBeVisible()
+  await expect(page.locator('tr', { hasText: OFFICE })).toHaveCount(0)
 })
 
 test('作業員マスタで所属拠点を設定でき、現場別集計にオフィスのタブが出る', async ({ page }) => {

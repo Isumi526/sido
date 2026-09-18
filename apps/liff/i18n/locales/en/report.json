@@ -48,6 +48,7 @@
   "workCategory": "Work category",
   "siteGroupLinked": "Sites linked to this contractor",
   "siteGroupOther": "Other sites",
+  "siteGroupRecent": "Recent sites (last week)",
   "siteGroupUnlinked": "Unlinked",
   "siteGroupFacility": "Office / Factory",
   "addNewSite": "＋ Register a new site",

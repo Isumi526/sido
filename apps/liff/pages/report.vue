@@ -297,6 +297,11 @@
                       :value="site.siteName" :data-testid="`retired-site-${si}`">
                 {{ $t('report.retiredOption', { name: site.siteName }) }}
               </option>
+              <!-- ★最近の現場（本人の直近7日の日報で稼働頻度の高い順に最大3件・2026-09-10 会議
+                   「毎日同じ現場に入ることが多い…最近多いやつは上の方に」）。近道なので下の階層にも同じ現場が出てよい。 -->
+              <optgroup v-if="recentSiteNames.length" :label="$t('report.siteGroupRecent')" data-testid="site-group-recent">
+                <option v-for="name in recentSiteNames" :key="`recent-${name}`" :value="name" :data-testid="`recent-site-${si}`">{{ name }}</option>
+              </optgroup>
               <!-- ★元請けを選んでいる時は「この元請けに紐づく現場」を先頭に出して探しやすくする。
                    選んでいない時は従来どおり元請けごとのoptgroupで全件出す。
                    どちらの場合も全現場を選べる（絞り込みで候補が消えて選べなくならないように）。 -->
@@ -1054,6 +1059,46 @@ function hasContractorWithoutSites(site: { contractorName?: string }): boolean {
   const c = (site.contractorName ?? '').trim()
   if (!c || c === '__other__') return false
   return siteCountOf(c) === 0
+}
+
+// ── 最近の現場（直近7日・稼働頻度TOP3）──
+//  本人（代理中は代理先）の直近7日の日報 sites[] を数え、頻度の高い順・同数は最終稼働日が新しい順に最大3件。
+//  有効現場（マスタにある名前）だけ。下書き（未送信）は含めない。新EFは要らない（daily-reports-read の list）。
+const recentSiteNames = ref<string[]>([])
+async function loadRecentSites(): Promise<void> {
+  try {
+    const proxyT = proxy.proxyTarget.value
+    let targetUserId: string | null = null
+    if (proxyT) {
+      const { data } = await useSupabase().from('users').select('id').eq('worker_id', proxyT.id).maybeSingle()
+      targetUserId = (data as any)?.id ?? null
+    }
+    const rows = await useDailyReportsApi().list(14, targetUserId)
+    const since = new Date(Date.now() - 7 * 86400000)
+    const sinceStr = `${since.getFullYear()}-${String(since.getMonth() + 1).padStart(2, '0')}-${String(since.getDate()).padStart(2, '0')}`
+    const stat = new Map<string, { count: number; last: string }>()
+    for (const r of rows as any[]) {
+      if (!r?.date || r.date < sinceStr || r.is_working === false) continue
+      const seen = new Set<string>()
+      for (const st of (r.sites ?? []) as any[]) {
+        const name = st?.siteName === '__other__' ? (st?.customSiteName ?? '') : (st?.siteName ?? '')
+        if (!name || name === '__unset__' || seen.has(name)) continue
+        seen.add(name)
+        const cur = stat.get(name) ?? { count: 0, last: '' }
+        cur.count += 1
+        if (r.date > cur.last) cur.last = r.date
+        stat.set(name, cur)
+      }
+    }
+    const active = new Set(master.siteNames.value)
+    recentSiteNames.value = [...stat.entries()]
+      .filter(([name]) => active.has(name))
+      .sort((a, b) => b[1].count - a[1].count || (b[1].last > a[1].last ? 1 : b[1].last < a[1].last ? -1 : 0))
+      .slice(0, 3)
+      .map(([name]) => name)
+  } catch (e) {
+    console.error('[report] 最近の現場の取得に失敗:', e)   // 出なくても従来の並びで選べる
+  }
 }
 
 function groupedSiteNames(contractorName?: string): { linked: string[]; others: string[] } {
@@ -2278,7 +2323,11 @@ const voiceDraft = reactive({
   raw: '' as string,
 })
 // 現場の選択肢（現場名。__unset__ は除く）
-const voiceSiteChoices = computed(() => master.siteNames.value.filter((n: string) => n !== '__unset__'))
+// ★最近の現場を先頭に（音声の現場解決も同じ優先順位。EF は候補の並びを優先度として使う）
+const voiceSiteChoices = computed(() => {
+  const rest = master.siteNames.value.filter((n: string) => n !== '__unset__' && !recentSiteNames.value.includes(n))
+  return [...recentSiteNames.value, ...rest]
+})
 // EFが返した "HH:MM" を実在する TIME_OPTIONS の一番近い値に寄せる（無ければ空）
 function snapTime(t: string | null): string {
   if (!t) return ''
@@ -2583,6 +2632,8 @@ onMounted(async () => {
   }
 
   await masterPromise
+  // 最近の現場（プルダウン先頭の近道）。取れなくても画面は止めない
+  loadRecentSites()
 
   // 編集モード: ?edit=YYYY-MM-DD
   const editDate = route.query.edit as string | undefined

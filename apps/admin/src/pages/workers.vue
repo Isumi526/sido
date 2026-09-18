@@ -2,7 +2,17 @@
   <div>
     <div class="page-header">
       <h1 class="page-title">作業員マスタ</h1>
-      <button class="btn-add" @click="openAdd">＋ 追加</button>
+      <div class="header-right">
+        <!-- 契約対応⑧: ログインID数（契約のアカウント数）。超えても発行は止めない＝翌月から追加課金される旨だけ知らせる -->
+        <span v-if="seats" class="seat-count" :class="{ over: seats.count > seats.base }" data-testid="seat-count">
+          アカウント数 <b>{{ seats.count }}</b> / 基本 {{ seats.base }}
+        </span>
+        <button class="btn-add" @click="openAdd">＋ 追加</button>
+      </div>
+    </div>
+    <div v-if="seats && seats.count > seats.base" class="seat-warn" data-testid="seat-warn">
+      基本アカウント数（{{ seats.base }}）を {{ seats.count - seats.base }} 件超えています。超えた分は<b>翌月から追加アカウントとして課金</b>されます（日割りなし）。
+      使わなくなったIDは作業員を「無効」にすると数から外れます（月末時点の有効なID数で数えます）。
     </div>
 
     <div class="status-tabs">
@@ -610,7 +620,20 @@ async function load() {
   proxyMap.value = map
 }
 
-onMounted(() => { load(); loadSigninStatus() })
+// 契約対応⑧: アカウント数（ログインID数）と基本数。数え方は DB 関数 count_account_seats が正本
+//  （active な作業員の auth_user_id ＋ 純オーナー。協力業者ポータルの外部者は含めない）。
+const seats = ref<{ count: number; base: number } | null>(null)
+async function loadSeats() {
+  try {
+    const accountId = await getAccountId()
+    const [{ data: n }, { data: acct }] = await Promise.all([
+      supabase.rpc('count_account_seats', { p_account_id: accountId }),
+      supabase.from('accounts').select('base_account_count').eq('id', accountId).maybeSingle(),
+    ])
+    seats.value = { count: Number(n ?? 0), base: Number((acct as any)?.base_account_count ?? 30) }
+  } catch (e) { console.error('[workers] アカウント数の取得に失敗:', e) }
+}
+onMounted(() => { load(); loadSigninStatus(); loadSeats() })
 
 function openAdd() {
   modal.value = { name: '', name_kana: '', role: 'site', permission_role: 'worker', daily_wage: 20000, hourly_wage: 2000, hire_date: null, birth_date: null, address: null, mobile_phone: null, notify_email: null, emergency_contact: null, employment_type: 'fulltime', weekly_scheduled_days: null, company_info: null, invoice_number: null, insurance_info: null, labor_insurance_number: null, report_start_date: null, can_apply_personal_expense: false, default_monthly_expense_limit: null, base_site_id: null }
@@ -847,6 +870,10 @@ async function setStatus(w: Worker, status: WStatus) {
 <style scoped>
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
 .page-title { font-size: 22px; font-weight: 700; }
+.header-right { display: flex; align-items: center; gap: 12px; }
+.seat-count { font-size: 13px; color: #475569; background: #f1f5f9; border-radius: 999px; padding: 6px 12px; }
+.seat-count.over { background: #fff7ed; color: #c2410c; }
+.seat-warn { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; border-radius: 8px; padding: 10px 14px; font-size: 13px; line-height: 1.6; margin: 0 0 14px; }
 .btn-add { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 700; cursor: pointer; }
 .table-wrap { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06);  max-height: 70vh; overflow: auto; }
 .table { width: 100%; border-collapse: collapse; }

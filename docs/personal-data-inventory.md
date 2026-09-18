@@ -30,6 +30,7 @@
 | 識別 | 氏名 / 読み仮名 | `name` / `name_kana` | 全員 |
 | 識別 | 社内の並び順・有効/退職 | `sort_order` / `active` / `status` | — |
 | 識別 | 職種区分（工場/現場） | `role` | 全員 |
+| 識別 | 所属拠点（オフィス/工場の現場ID・任意） | `base_site_id` | —（2026-09-13 追加。経費申請の紐付け先の既定値） |
 | 連絡 | ★携帯番号 | `mobile_phone` | 3名 |
 | 連絡 | ★緊急連絡先 | `emergency_contact` | 6名 |
 | 連絡 | ★通知用メール | `notify_email` | — |

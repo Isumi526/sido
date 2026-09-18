@@ -11,6 +11,7 @@
         <button class="btn-add" @click="openAdd">＋ 追加</button>
       </div>
     </div>
+    <p class="page-note" data-testid="sites-base-note">オフィス・工場などの拠点は<router-link to="/company-profile">自社情報</router-link>の「拠点」で登録します（ここには出ません）。</p>
 
     <!-- 有効 / 無効化済み タブ -->
     <div class="status-tabs">
@@ -84,16 +85,7 @@
           <label>読み仮名（50音順の並びに使用）</label>
           <input v-model="modal.name_kana" class="input" placeholder="例：まるまるびる ないそうこうじ" />
         </div>
-        <!-- 区分（2026-09-13）: オフィス・工場は現場ではないので工程管理/予定の候補から外し、経費申請の紐付け先にする -->
-        <div class="field">
-          <label>区分</label>
-          <select v-model="modal.kind" class="input" data-testid="site-kind" style="width:auto">
-            <option value="site">現場</option>
-            <option value="office">オフィス（事務所）</option>
-            <option value="factory">工場</option>
-          </select>
-          <p v-if="modal.kind && modal.kind !== 'site'" class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">オフィス・工場は工程管理（会社予定）とスケジュールの候補には出ません。「経費申請（現場に紐づかない経費）」の紐付け先と、作業員の所属拠点になります。</p>
-        </div>
+        <!-- 区分（2026-09-13）: オフィス・工場（kind=office/factory）は同じ sites 行だが、登録・編集は「自社情報 › 拠点」から（2026-09-19）。ここでは現場（kind=site）だけ扱う -->
         </div>
         <p v-if="existingMissingWarn" class="req-warn" data-testid="site-missing-warn">{{ existingMissingWarn }}</p>
         <div class="field">
@@ -590,6 +582,7 @@ async function load() {
     supabase.from('sites')
       .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id, default_start_time, default_end_time, default_breaks, responsible_worker_id, default_distance_km, period_start, period_end, kind')
       .eq('account_id', accountId)
+      .eq('kind', 'site')   // オフィス・工場（拠点）は自社情報で管理（2026-09-19）。ここには出さない
       .order('name_kana', { nullsFirst: false })
       .order('name'),
     supabase.from('contractors').select('id, name').eq('account_id', accountId).eq('active', true).order('sort_order').order('name'),
@@ -1070,6 +1063,7 @@ async function doMerge() {
 </script>
 
 <style scoped>
+.page-note { color: #64748b; font-size: 12px; margin: -4px 0 12px; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
 .page-title { font-size: 22px; font-weight: 700; }
 .btn-add { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 700; cursor: pointer; }

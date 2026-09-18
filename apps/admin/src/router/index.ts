@@ -58,6 +58,9 @@ export const router = createRouter({
     { path: '/assets', component: () => import('../pages/assets.vue'), meta: { management: true } },
     // 在庫管理（品目＋入出庫・会社単位MVP）
     { path: '/inventory', component: () => import('../pages/inventory.vue'), meta: { management: true } },
+    // 道具管理（道具①・2026-09-18）。登録権限＝オーナー/管理者/現場管理者（AC2）なので management を付けない
+    //  ＝ isAdminAllowed（worker弾き）だけが効く（/contractors と同じ扱い）。書込権限は EF(tools) 側でも確認する。
+    { path: '/tools', component: () => import('../pages/tools.vue') },
     { path: '/chats',        component: () => import('../pages/chats.vue') },
     { path: '/chats/account', component: () => import('../pages/account-chat.vue') },
     { path: '/chats/:id',    component: () => import('../pages/chat-detail.vue') },
