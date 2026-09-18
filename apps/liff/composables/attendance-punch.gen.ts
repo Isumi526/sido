@@ -190,3 +190,26 @@ export function isPunchDiffBig(actual: string | null | undefined, planned: strin
   const d = punchDiffMinutes(actual, planned)
   return d !== null && Math.abs(d) >= 30
 }
+
+/**
+ * 直近ログの取得窓（時間）。「出勤中か」を判定するために遡る長さ。
+ *  ★2026-09-14 夜のみ現場（20:30〜翌6:00）対応: 20時間固定だと、夕方に出勤した回を翌日の
+ *   夕方（20時間超）に開くと出勤が窓から落ち、退勤できない／「未打刻」に見える。
+ *   窓は 30 時間まで広げ、代わりに isOpenShiftCurrent で「まだその回の続きか」を判定する
+ *   （日勤の出勤を翌日まで引きずらないため。窓を広げるだけだと退勤忘れの翌朝に出勤ボタンが出ない）。
+ */
+export const RECENT_LOG_HOURS = 30
+
+/**
+ * 未退勤の出勤（open shift）を「まだ続いている回」とみなすか。
+ *  - 出勤から 20 時間以内 … 続いている（従来の窓）
+ *  - 夕方以降（JST 17:00〜）の出勤は 30 時間以内 … 続いている（夜のみ現場。翌日の昼過ぎまで退勤を受ける）
+ *  それ以外（例: 日勤の出勤を翌朝まで閉じ忘れ）は新しい回として扱う＝出勤フォームに戻す。
+ */
+export function isOpenShiftCurrent(checkinIso: string, now: Date = new Date()): boolean {
+  const ageH = (now.getTime() - new Date(checkinIso).getTime()) / 3600000
+  if (ageH < 0) return true
+  if (ageH <= 20) return true
+  const hour = Number(jstTimeOf(checkinIso).slice(0, 2))
+  return hour >= 17 && ageH <= RECENT_LOG_HOURS
+}

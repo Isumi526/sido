@@ -39,9 +39,9 @@ async function openModal(page: Page) {
 
 /** 固定勤務時刻と既定休憩を画面上で入れ替える */
 async function setSchedule(page: Page, start: string, end: string, breaks: [string, number][]) {
-  const times = page.locator('.modal input[type="time"]')
-  await times.nth(0).fill(start)
-  await times.nth(1).fill(end)
+  const times = page.locator('.modal select.time-select')
+  await times.nth(0).selectOption(start)
+  await times.nth(1).selectOption(end)
 
   // 既存の休憩行を全部消してから積み直す（前のケースの残りで数字が変わらないように）
   while (await page.getByTestId('break-start').count()) {
@@ -50,7 +50,7 @@ async function setSchedule(page: Page, start: string, end: string, breaks: [stri
   }
   for (const [s, m] of breaks) {
     await page.getByTestId('add-break').click()
-    await page.getByTestId('break-start').last().fill(s)
+    await page.getByTestId('break-start').last().selectOption(s)
     await page.getByTestId('break-minutes').last().fill(String(m))
   }
 }
@@ -87,7 +87,7 @@ test.describe('現場マスタ: 実働時間の自動計算', () => {
     await expect(page.getByTestId('hours-preview-worked'), '休憩なし＝9h').toHaveText('9')
 
     await page.getByTestId('add-break').click()
-    await page.getByTestId('break-start').last().fill('12:00')
+    await page.getByTestId('break-start').last().selectOption('12:00')
     await page.getByTestId('break-minutes').last().fill('60')
     await expect(page.getByTestId('hours-preview-worked'), '休憩1hで8h').toHaveText('8')
   })
@@ -111,8 +111,8 @@ test.describe('現場マスタ: 実働時間の自動計算', () => {
 
   test('固定勤務時刻が空なら何も出さない（未設定の現場に数字を出さない）', async ({ page }) => {
     await openModal(page)
-    const times = page.locator('.modal input[type="time"]')
-    await times.nth(0).fill('')
+    const times = page.locator('.modal select.time-select')
+    await times.nth(0).selectOption('')
     await expect(page.getByTestId('hours-preview')).toHaveCount(0)
   })
 })

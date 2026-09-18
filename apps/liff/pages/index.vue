@@ -260,7 +260,8 @@ const todayView = computed(() => {
     }
   }
   const s = today.value
-  const reportTo = `/report?date=${todayStr()}`
+  // ★日報リンクは「出勤した日」。夜のみ現場（20:30〜翌6:00）の翌朝は前日の日報に飛ばす
+  const reportTo = `/report?date=${s.reportDate || todayStr()}`
   switch (s.phase) {
     case 'working':
       return {

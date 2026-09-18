@@ -409,7 +409,8 @@
                     <div class="time-field">
                       <label class="hours-label">{{ $t('report.endTime') }}</label>
                       <select v-model="site.workers[0].endTime" class="select" :data-testid="`end-time-${si}`">
-                        <option v-for="t in endTimeOptionsForSite(si)" :key="t" :value="t">{{ t }}</option>
+                        <!-- 終了が開始以前＝翌日（夜のみ現場 20:30〜翌6:00）。「翌」を付けて日跨ぎだと分かるようにする -->
+                        <option v-for="t in endTimeOptionsForSite(si)" :key="t" :value="t">{{ endTimeLabel(si, t) }}</option>
                       </select>
                     </div>
                   </div>
@@ -2489,6 +2490,11 @@ function endTimeOptionsForSite(si: number): string[] {
   const fStart = siteFixedStart(s?.siteName, si)
   const wrapFloor = (fStart && parseMin(fStart) > capMin) ? parseMin(fStart) : -1
   return TIME_OPTIONS.filter(t => parseMin(t) <= capMin || (wrapFloor >= 0 && parseMin(t) >= wrapFloor) || t === cur)
+}
+/** 終了時刻の表示。開始以前の時刻は翌日側なので「翌」を付ける（値は変えない） */
+function endTimeLabel(si: number, t: string): string {
+  const start = report.form.value.sites[si]?.workers?.[0]?.startTime
+  return start && parseMin(t) <= parseMin(start) ? `翌${t}` : t
 }
 function removeSite(i: number) {
   report.removeSite(i)
