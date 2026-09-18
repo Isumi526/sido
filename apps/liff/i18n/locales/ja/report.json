@@ -48,6 +48,7 @@
   "workCategory": "作業区分",
   "siteGroupLinked": "この元請けに紐づく現場",
   "siteGroupOther": "その他の現場",
+  "siteGroupRecent": "最近の現場（直近1週間）",
   "siteGroupUnlinked": "紐付けなし",
   "siteGroupFacility": "オフィス・工場",
   "addNewSite": "＋ 新しい現場を登録する",

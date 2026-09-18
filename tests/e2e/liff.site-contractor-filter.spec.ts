@@ -84,8 +84,9 @@ test('日報: 元請けのプルダウンがあり、選ぶと紐づく現場が
   // ★元請けを選ぶと「この元請けに紐づく現場」が先頭のグループに出る（＝絞り込み）
   await contractorSelect.selectOption(CON)
   await page.waitForTimeout(300)
-  await expect(siteSelect.locator('optgroup').first().locator('option', { hasText: LINKED }),
-    '★元請けを選ぶと紐づく現場が先頭グループに出る').toHaveCount(1)
+  // ★先頭には「最近の現場」の近道グループが出ることがある（2026-09-14）。紐づくグループはラベルで引く
+  await expect(siteSelect.locator('optgroup[label="この元請けに紐づく現場"] option', { hasText: LINKED }),
+    '★元請けを選ぶと紐づく現場が「この元請けに紐づく現場」グループに出る').toHaveCount(1)
 
   // ★絞り込んでも他の現場が選べなくならない（候補から消すと選べず入力が詰まる）
   await expect(siteSelect.locator('option', { hasText: FREE }),
