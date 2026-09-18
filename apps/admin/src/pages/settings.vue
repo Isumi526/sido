@@ -103,6 +103,30 @@
     </div>
   </div>
 
+  <!-- 打刻リマインド（予定の開始・終了時刻）ON/OFF -->
+  <div class="reminder-box" data-testid="punch-reminder-box">
+    <div class="reminder-title">打刻のリマインド（予定の時刻）</div>
+    <div class="reminder-config">
+      <div class="config-row">
+        <span class="config-label">予定の開始・終了時刻に通知</span>
+        <button
+          class="toggle"
+          :class="{ on: punchReminderEnabled }"
+          :disabled="punchReminderSaving"
+          data-testid="punch-reminder-toggle"
+          @click="setPunchReminderEnabled(!punchReminderEnabled)"
+        >
+          <span class="toggle-knob" />
+          <span class="toggle-text">{{ punchReminderEnabled ? 'ON' : 'OFF' }}</span>
+        </button>
+      </div>
+      <div class="reminder-desc">
+        ONの時、スケジュール管理に登録した現場の予定（時刻あり）の開始時刻に「出勤の打刻を」、終了時刻に「退勤の打刻を」を
+        担当の作業員のお知らせ（作業員アプリ）へ出します。通知用メールがある作業員にはメールも届きます。すでに打刻している人には出しません。
+      </div>
+    </div>
+  </div>
+
   <!-- 経費申請の通知先メール -->
   <div class="reminder-box">
     <div class="reminder-title">経費申請の通知先メール</div>
@@ -188,6 +212,16 @@ const LINE_SETTING_KEYS = new Set(['notify_group_id'])
 
 const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
 const IS_DEV   = import.meta.env.DEV
+
+// ── 打刻リマインド（予定の開始・終了時刻）ON/OFF。EF punch-reminder が settings を見る ──
+const punchReminderEnabled = ref(false)
+const punchReminderSaving  = ref(false)
+function setPunchReminderEnabled(val: boolean) {
+  punchReminderEnabled.value = val
+  punchReminderSaving.value = true
+  upsertSetting('notify_punch_reminder_enabled', String(val), '打刻リマインド（予定の時刻）')
+    .finally(() => { punchReminderSaving.value = false })
+}
 
 // ── 日報通知（送信・編集）ON/OFF ──────────────────────────
 const reportNotifyEnabled = ref(true)
@@ -279,11 +313,12 @@ async function loadReminderConfig() {
   const accountId = await getAccountId()
   const { data } = await supabase.from('settings').select('key, value')
     .eq('account_id', accountId)
-    .in('key', ['reminder_enabled', 'reminder_time', 'notify_report_enabled', FEATURE_KEY_ESTIMATE])
+    .in('key', ['reminder_enabled', 'reminder_time', 'notify_report_enabled', 'notify_punch_reminder_enabled', FEATURE_KEY_ESTIMATE])
   const m = Object.fromEntries((data ?? []).map(s => [s.key, s.value]))
   reminderEnabled.value     = (m['reminder_enabled'] ?? 'true') === 'true'
   reminderTime.value        = m['reminder_time'] ?? '08:00'
   reportNotifyEnabled.value = (m['notify_report_enabled'] ?? 'true') === 'true'
+  punchReminderEnabled.value = m['notify_punch_reminder_enabled'] === 'true'   // 未設定＝OFF（EF と同じ既定）
   // 見積もり機能は未設定＝OFF（fail-closed。lib/features.ts の既定と揃える）
   estimateFeatureEnabled.value = m[FEATURE_KEY_ESTIMATE] === 'true'
 }
@@ -456,7 +491,7 @@ async function load() {
   const accountId = await getAccountId()
   const { data } = await supabase.from('settings').select('key, value, label')
     .eq('account_id', accountId)
-    .not('key', 'in', '(reminder_enabled,reminder_time,notify_report_enabled,expense_notify_emails)')
+    .not('key', 'in', '(reminder_enabled,reminder_time,notify_report_enabled,notify_punch_reminder_enabled,expense_notify_emails)')
     .order('key')
   const fromDb = (data ?? []) as Setting[]
 
