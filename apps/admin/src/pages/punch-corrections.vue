@@ -95,7 +95,11 @@ import { getAccountId } from '../lib/account'
 import { currentWorkerId } from '../lib/auth'
 import { refreshNavBadges } from '../lib/navBadges'
 
-type Log = { id: string; type: 'checkin' | 'checkout'; checked_at: string }
+type Log = {
+  id: string; type: 'checkin' | 'checkout'; checked_at: string
+  // 承認で直した後は type/checked_at が新しい値になる。実打刻は original_* に残る
+  original_type: 'checkin' | 'checkout' | null; original_checked_at: string | null
+}
 type CorrectionReq = {
   id: string
   worker_id: string
@@ -127,11 +131,24 @@ function fmtDateTime(s?: string | null): string {
   const dt = new Date(s)
   return `${dt.getMonth() + 1}/${dt.getDate()} ${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`
 }
+/**
+ * 「元の値」。承認待ちは今の打刻そのもの。
+ * ★承認済みは打刻がもう直った後なので、そのまま出すと「9/11 17:45 → 9/11 17:45」と
+ *  何を直したのか分からなくなる（2026-09-17 大塚さん）。実打刻は original_* から引く。
+ */
+function beforeOf(r: CorrectionReq): { type: string | null; checked_at: string | null } {
+  const l = r.log
+  if (!l) return { type: null, checked_at: null }
+  if (r.status === 'pending') return { type: l.type, checked_at: l.checked_at }
+  return { type: l.original_type ?? l.type, checked_at: l.original_checked_at ?? l.checked_at }
+}
 /** 何をどう直すのかを1行で。承認する人はここだけ見れば判断できるようにする */
 function changeLabel(r: CorrectionReq): string {
-  if (r.kind === 'delete') return `この打刻を取り消す（${typeLabel(r.log?.type)} ${fmtDateTime(r.log?.checked_at)}）`
-  if (r.kind === 'type')   return `${typeLabel(r.log?.type)} → ${typeLabel(r.requested_type)} に直す`
-  return `${fmtDateTime(r.log?.checked_at)} → ${fmtDateTime(r.requested_checked_at)} に直す`
+  const b = beforeOf(r)
+  if (r.kind === 'delete') return `この打刻を取り消す（${typeLabel(b.type)} ${fmtDateTime(b.checked_at)}）`
+  // 履歴には「対象の打刻」列が無いので、どの打刻の種別を直したか分かるよう時刻を添える
+  if (r.kind === 'type')   return `${typeLabel(b.type)} → ${typeLabel(r.requested_type)} に直す（${fmtDateTime(b.checked_at)}）`
+  return `${fmtDateTime(b.checked_at)} → ${fmtDateTime(r.requested_checked_at)} に直す`
 }
 
 async function load() {
@@ -152,7 +169,7 @@ async function load() {
   const logMap: Record<string, Log> = {}
   if (logIds.length) {
     const { data: logs } = await supabase.from('attendance_logs')
-      .select('id, type, checked_at').in('id', logIds)
+      .select('id, type, checked_at, original_type, original_checked_at').in('id', logIds)
     for (const l of (logs ?? []) as Log[]) logMap[l.id] = l
   }
   for (const r of all) r.log = logMap[r.log_id] ?? null

@@ -141,7 +141,7 @@
   "previewBreakMin": "{min}分",
   "previewTotalHours": "合計稼働時間: {hours}h",
   "previewEmptySites": "現場が未選択です",
-  "omissionConfirm": "経費・ゴミ等の記入忘れがないか確認しました",
+  "omissionConfirm": "経費・ゴミ・引き上げ材料等の記入忘れがないか確認しました",
   "fillTestData": "🔧 テストデータ入力",
   "cancelErrorTest": "🚨 次の送信でエラー発火（キャンセルするには再クリック）",
   "fillErrorTestData": "🚨 エラーテストデータ入力",
@@ -211,5 +211,11 @@
   "checkoutToastTime": "退勤 {time}",
   "checkoutToastText": "記録しました",
   "expenseOnlyNote": "この日は稼働なしのため、作業時間の入力はありません。このまま送信できます。",
-  "expenseOpen": "経費を登録する（ホテル代・ガソリン等）"
+  "expenseOpen": "経費を登録する（ホテル代・ガソリン等）",
+  "appliedTitle": "更新しました！",
+  "appliedText": "期限内の編集なので承認なしで日報に反映されました",
+  "editReasonHintApproval": "この編集は期限を過ぎているため承認が必要です。何を直したかが分かるように理由を残してください",
+  "pickup": "引き上げ材料",
+  "pickupNotePlaceholder": "何を引き上げたか（例：残材のボード3枚・工具）",
+  "pickupPhotoLabel": "引き上げ材料の写真（複数可）"
 }

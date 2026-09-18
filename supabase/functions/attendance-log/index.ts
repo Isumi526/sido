@@ -20,7 +20,7 @@
 //   for-report{ from, to, workerId? }             → 日報に出す実打刻（現場名つき）
 //   punch     { siteId, type, targetWorkerId?, agreedRuleTexts?, agreedDocumentNames?, lat?, lng? }
 //   backdate  { siteId, date, checkin?, checkout? } → 打刻し忘れた日の後追い入力（本人のみ）
-//   overtime-decide { id, status }                 → ★管理画面からの残業承認/却下（JWT専用）
+//   overtime-decide { id, status, note? }          → ★管理画面からの残業承認/却下（JWT専用）
 //
 //  ※ verify_jwt=false で deploy すること（LINE作業員はSupabase JWTを持たないため）。
 //    関数内で身元を厳密検証している。
@@ -156,6 +156,8 @@ Deno.serve(async (req) => {
     const status = body.status === 'approved' || body.status === 'rejected' ? body.status : ''
     if (!id) return json({ ok: false, error: 'id_required' }, 400)
     if (!status) return json({ ok: false, error: 'bad_status' }, 400)
+    // 決裁コメント（任意）。却下の時に「なぜ残業したか教えて」と聞く用（2026-09-17 大塚さん）
+    const note = typeof body.note === 'string' ? body.note.trim().slice(0, 500) : ''
 
     // ★account_id で必ず絞る。他テナントのIDを渡されても触れない
     const { data: reqRow } = await svc.from('overtime_requests')
@@ -182,7 +184,7 @@ Deno.serve(async (req) => {
 
     // .eq('status','pending') で二重決裁（連打・再送）を弾く。0件更新なら通知も送らない
     const { data: updated, error } = await svc.from('overtime_requests')
-      .update({ status, approved_by: approvedBy, decided_at: new Date().toISOString() })
+      .update({ status, approved_by: approvedBy, decided_at: new Date().toISOString(), decision_note: note || null })
       .eq('id', id).eq('account_id', approver.accountId).eq('status', 'pending')
       .select('id')
     if (error) {
@@ -533,7 +535,7 @@ Deno.serve(async (req) => {
     const date = isDate(body.date) ? body.date : ''
     if (!date) return json({ ok: false, error: 'bad_date' }, 400)
     const { data } = await svc.from('overtime_requests')
-      .select('status, requested_start_time, requested_end_time, requested_break_minutes, reason, site_names, requested_at')
+      .select('status, requested_start_time, requested_end_time, requested_break_minutes, reason, site_names, requested_at, decision_note')
       .eq('account_id', caller.accountId).eq('worker_id', caller.workerId).eq('date', date)
       .order('requested_at', { ascending: false }).limit(1)
     const r = (data ?? [])[0] as any
@@ -541,6 +543,8 @@ Deno.serve(async (req) => {
     return json({
       ok: true,
       status: r?.status ?? 'none',
+      // 却下された時の管理者コメント（「理由を教えて」等）。本人がこれを見て再申請する
+      decisionNote: r?.status === 'rejected' ? (r.decision_note ?? null) : null,
       adjustment: r?.status === 'approved'
         ? {
             startTime: hhmm(r.requested_start_time ?? null),
@@ -566,7 +570,7 @@ Deno.serve(async (req) => {
   if (body.action === 'overtime-recent') {
     const limit = Number(body.limit) > 0 ? Math.min(Number(body.limit), 100) : 20
     const { data } = await svc.from('overtime_requests')
-      .select('id, date, requested_start_time, requested_end_time, requested_break_minutes, reason, status, is_late, requested_at')
+      .select('id, date, requested_start_time, requested_end_time, requested_break_minutes, reason, status, is_late, requested_at, decision_note')
       .eq('account_id', caller.accountId).eq('worker_id', caller.workerId)
       .order('requested_at', { ascending: false }).limit(limit)
     return json({ ok: true, items: data ?? [] })

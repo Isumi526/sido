@@ -19,7 +19,7 @@
 import { test, expect } from '@playwright/test'
 import { rest, restSrv, getAccountId, SUPABASE_URL, ANON_KEY, ensureDevWorker } from './helpers'
 
-const EDIT_DATE = '2026-10-19'
+const EDIT_DATE = '2026-08-19'   // ★期限外の日（保留に入る経路で差分を見る）
 
 let uid = ''
 let accountId = ''

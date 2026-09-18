@@ -79,6 +79,7 @@
             >{{ s.name }}</button>
           </div>
         </div>
+        <div class="grid2">
         <div class="field">
           <label>読み仮名（50音順の並びに使用）</label>
           <input v-model="modal.name_kana" class="input" placeholder="例：まるまるびる ないそうこうじ" />
@@ -92,6 +93,7 @@
             <option value="factory">工場</option>
           </select>
           <p v-if="modal.kind && modal.kind !== 'site'" class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">オフィス・工場は工程管理（会社予定）とスケジュールの候補には出ません。「経費申請（現場に紐づかない経費）」の紐付け先と、作業員の所属拠点になります。</p>
+        </div>
         </div>
         <p v-if="existingMissingWarn" class="req-warn" data-testid="site-missing-warn">{{ existingMissingWarn }}</p>
         <div class="field">
@@ -110,7 +112,8 @@
           </div>
           <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">開始日は必須です。終了日が決まっていない現場は「未定」にしてください（会社予定では帯が右端まで薄く伸びます）。</p>
         </div>
-        <!-- ② 関係（元請け） -->
+        <!-- ② 関係（元請け・責任者） -->
+        <div class="grid2">
         <div class="field">
           <label>元請け（日報の現場絞り込みに使用・任意）</label>
           <select v-model="modal.contractor_id" class="input">
@@ -126,66 +129,88 @@
           </select>
           <p v-if="!modal.responsible_worker_id" class="resp-hint">責任者は必須です（残業申請の通知先等に使用）。新規現場は既定でログイン中のあなたが入ります。</p>
         </div>
+        </div>
         <!-- ③ 工事内容 -->
         <div class="field">
           <label>工事内容</label>
           <textarea v-model="modal.construction_details" class="input" rows="2" placeholder="例：1F内装ボード・クロス工事 一式"></textarea>
         </div>
-        <!-- ④ 運用（固定勤務時刻・日報の既定＆終了上限） -->
-        <div class="field">
-          <label>固定勤務時刻（日報の既定＆終了上限・任意）</label>
-          <div style="display:flex;align-items:center;gap:8px">
-            <input v-model="modal.default_start_time" type="time" step="300" class="input" style="width:auto" @focus="modal.default_start_time || (modal.default_start_time = '08:30')" />
-            <span>〜</span>
-            <input v-model="modal.default_end_time" type="time" step="300" class="input" style="width:auto" @focus="modal.default_end_time || (modal.default_end_time = '17:30')" />
+        <!-- ④ 勤務時間（定時）。現場作業＝固定勤務時刻と、区分ごとの定時は同じ性質なので1つの表にまとめる
+             （2026-09-18 レビュー: 「類似の機能は近くに」「区分は最初は出さず、追加する時に選ぶ」）。
+             行＝区分。先頭行は現場作業（＝現場の固定勤務時刻・既定休憩）。 -->
+        <div class="field hours-block" data-testid="hours-block">
+          <label>勤務時間（定時・任意）</label>
+          <p class="hint-sm">日報でこの現場を選んだ時の作業時刻の既定値になり、終了は定時を超えて報告できません（早退は可）。休憩は稼働時間・人件費に反映されます。区分ごとに定時が違う場合は下の「＋ 区分の定時を追加」から。</p>
+
+          <div class="hours-table">
+            <!-- 現場作業（固定勤務時刻） -->
+            <div class="hours-row hours-row--main" data-testid="hours-row-main">
+              <div class="hours-row-name">現場作業<span class="hours-row-sub">固定勤務時刻</span></div>
+              <div class="hours-row-body">
+                <div class="hours-inline">
+                  <TimeSelect v-model="modal.default_start_time" />
+                  <span>〜</span>
+                  <TimeSelect v-model="modal.default_end_time" />
+                  <!-- 終了が開始以前＝翌日（夜のみ現場 20:30〜翌6:00）。現場作業の定時はここなので明示する -->
+                  <span v-if="modal.default_start_time && modal.default_end_time && modal.default_end_time.slice(0,5) <= modal.default_start_time.slice(0,5)" class="hp-tag" data-testid="site-overnight">翌日まで（日をまたぐ勤務）</span>
+                  <button type="button" class="btn-ghost btn-xs" data-testid="add-break" @click="(modal.default_breaks ||= []).push({ start: '12:00', minutes: 60 })">＋ 休憩</button>
+                </div>
+                <div v-for="(brk, bi) in (modal.default_breaks || [])" :key="bi" class="hours-inline hours-break">
+                  <TimeSelect v-model="brk.start" testid="break-start" />
+                  <span>から</span>
+                  <input v-model.number="brk.minutes" type="number" min="0" step="15" class="input" style="width:80px" placeholder="60" data-testid="break-minutes" />
+                  <span class="muted">分</span>
+                  <button type="button" class="btn-ghost btn-xs" @click="modal.default_breaks.splice(bi, 1)">×</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 区分ごとの定時（この現場で設定しているものだけ） -->
+            <div v-for="c in visibleCats" :key="c.id" class="hours-row" :data-testid="`cat-hours-${c.id}`">
+              <div class="hours-row-name">
+                {{ c.name }}
+                <span v-if="usingCommon(c)" class="hours-row-sub" :data-testid="`cat-common-${c.id}`">共通 {{ c.commonStart || '—' }}〜{{ c.commonEnd || '—' }} を使用中</span>
+                <span v-else-if="c.commonStart || c.commonEnd" class="hours-row-sub" :data-testid="`cat-override-${c.id}`">共通 {{ c.commonStart || '—' }}〜{{ c.commonEnd || '—' }} を上書き</span>
+              </div>
+              <div class="hours-row-body">
+                <div class="hours-inline">
+                  <TimeSelect v-model="catHoursDraft[c.id].start" :testid="`cat-start-${c.id}`" />
+                  <span>〜</span>
+                  <TimeSelect v-model="catHoursDraft[c.id].end" :testid="`cat-end-${c.id}`" />
+                  <span v-if="catHoursDraft[c.id].start && catHoursDraft[c.id].end && catHoursDraft[c.id].end <= catHoursDraft[c.id].start" class="hp-tag" :data-testid="`cat-overnight-${c.id}`">翌日まで（日をまたぐ勤務）</span>
+                  <button type="button" class="btn-ghost btn-xs" @click="catHoursDraft[c.id].breaks.push({ start: '12:00', minutes: 60 })">＋ 休憩</button>
+                  <button type="button" class="btn-ghost btn-xs hours-remove" :data-testid="`cat-remove-${c.id}`" title="この現場の設定を外す（共通設定に戻る）" @click="removeCatRow(c.id)">外す</button>
+                </div>
+                <div v-for="(brk, bi) in catHoursDraft[c.id].breaks" :key="bi" class="hours-inline hours-break">
+                  <TimeSelect v-model="brk.start" />
+                  <span>から</span>
+                  <input v-model.number="brk.minutes" type="number" min="0" step="15" class="input" style="width:80px" placeholder="60" />
+                  <span class="muted">分</span>
+                  <button type="button" class="btn-ghost btn-xs" @click="catHoursDraft[c.id].breaks.splice(bi, 1)">×</button>
+                </div>
+              </div>
+            </div>
           </div>
-          <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">設定すると日報でこの現場を選んだ時に作業時刻の既定値になり、終了は固定終了を超えて報告できません（早退で下回るのは可）。</p>
-        </div>
-        <!-- ④'''' 会社からこの現場までの往復距離（日報の交通経費の既定値・2026-09-03） -->
-        <div class="field">
-          <label>会社からの往復距離（km・任意）</label>
-          <input v-model.number="modal.default_distance_km" type="number" min="0" step="0.1" class="input" style="width:120px" placeholder="例：24.5" data-testid="site-default-distance" />
-          <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">設定すると日報でこの現場を選んだ時にガソリン/軽油の往復kmの既定値になります（手動で編集も可能）。</p>
-        </div>
-        <!-- ④' 既定休憩（開始時刻＋分の複数登録。日報でこの現場を選ぶと反映・人件費計算に反映） -->
-        <div class="field">
-          <label>既定休憩（開始時刻＋休憩時間・任意・複数可）</label>
-          <div v-for="(brk, bi) in (modal.default_breaks || [])" :key="bi" style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-            <input v-model="brk.start" type="time" step="300" class="input" style="width:auto" data-testid="break-start" />
-            <input v-model.number="brk.minutes" type="number" min="0" step="15" class="input" style="width:90px" placeholder="60" data-testid="break-minutes" />
-            <span style="font-size:13px;color:#64748b">分</span>
-            <button type="button" class="btn-ghost" style="padding:2px 8px" @click="removeBreak(bi)">×</button>
-          </div>
-          <button type="button" class="btn-ghost" style="padding:4px 10px;font-size:13px" data-testid="add-break" @click="addBreak">＋ 休憩を追加</button>
-          <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">設定すると<b>新規</b>日報でこの現場を選んだ時に休憩がこの時間帯になり、稼働時間・人件費に反映されます（開始時刻が深夜/残業帯なら割増分が減る）。未設定＝役割×勤務時間の自動計算のまま。過去の日報は変わりません。</p>
-        </div>
-        <!-- ④''' 区分ごとの定時（現場×区分）。見積・事務など「現場作業以外」だけ現場と別の定時を上書き -->
-        <div v-if="siteCats.length" class="field" data-testid="cat-hours-section">
-          <label>区分ごとの定時（この現場・任意）</label>
-          <p class="hint-sm" style="font-size:12px;color:#64748b;margin:2px 0 8px">見積・事務など「現場作業以外」の定時がこの現場と違う場合だけ設定します。空欄なら「作業区分」で設定した全現場共通の定時、それも無ければこの現場の固定勤務時刻に従います。日報でその区分を選ぶと反映され、実働・人件費もこの定時で計算します。</p>
-          <div v-for="c in siteCats" :key="c.id" class="cat-hours" :data-testid="`cat-hours-${c.id}`">
-            <div class="cat-hours-name">
-              {{ c.name }}
-              <span v-if="usingCommon(c)" class="cat-common" :data-testid="`cat-common-${c.id}`">
-                共通設定 {{ c.commonStart || '—' }}〜{{ c.commonEnd || '—' }} を使用中
-              </span>
-              <span v-else-if="(c.commonStart || c.commonEnd) && (catHoursDraft[c.id]?.start || catHoursDraft[c.id]?.end)"
-                    class="cat-override" :data-testid="`cat-override-${c.id}`">
-                この現場で上書き中（共通は {{ c.commonStart || '—' }}〜{{ c.commonEnd || '—' }}）
-              </span>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              <input v-model="catHoursDraft[c.id].start" type="time" step="300" class="input" style="width:auto" :data-testid="`cat-start-${c.id}`" />
-              <span>〜</span>
-              <input v-model="catHoursDraft[c.id].end" type="time" step="300" class="input" style="width:auto" :data-testid="`cat-end-${c.id}`" />
-              <button type="button" class="btn-ghost" style="padding:2px 10px;font-size:12px" @click="catHoursDraft[c.id].breaks.push({ start: '12:00', minutes: 60 })">＋ 休憩</button>
-            </div>
-            <div v-for="(brk, bi) in catHoursDraft[c.id].breaks" :key="bi" style="display:flex;align-items:center;gap:8px;margin-top:6px">
-              <input v-model="brk.start" type="time" step="300" class="input" style="width:auto" />
-              <input v-model.number="brk.minutes" type="number" min="0" step="15" class="input" style="width:90px" placeholder="60" />
-              <span style="font-size:13px;color:#64748b">分</span>
-              <button type="button" class="btn-ghost" style="padding:2px 8px" @click="catHoursDraft[c.id].breaks.splice(bi, 1)">×</button>
-            </div>
+
+          <!-- 区分の定時を追加: 共通区分から選ぶ／無ければその場で新規登録 -->
+          <div class="cat-add" data-testid="cat-add">
+            <template v-if="!catPickerOpen">
+              <button type="button" class="btn-ghost" data-testid="cat-hours-toggle" @click="catPickerOpen = true">＋ 区分の定時を追加</button>
+            </template>
+            <template v-else>
+              <select v-model="catPick" class="input" style="width:auto;min-width:200px" data-testid="cat-pick">
+                <option value="">区分を選ぶ…</option>
+                <option v-for="c in addableCats" :key="c.id" :value="c.id">{{ c.name }}{{ c.commonStart || c.commonEnd ? `（共通 ${c.commonStart || '—'}〜${c.commonEnd || '—'}）` : '' }}</option>
+                <option value="__new__">＋ 新しい区分を登録…</option>
+              </select>
+              <template v-if="catPick === '__new__'">
+                <input v-model="newCatName" type="text" class="input" style="width:auto;min-width:160px" placeholder="新しい区分名（例：夜間作業）" data-testid="cat-add-name" @keydown.enter.prevent="addCategory" />
+                <button type="button" class="btn-ghost" :disabled="addingCat || !newCatName.trim()" data-testid="cat-add-btn" @click="addCategory">{{ addingCat ? '登録中…' : '登録して追加' }}</button>
+              </template>
+              <button v-else type="button" class="btn-ghost" :disabled="!catPick" data-testid="cat-pick-add" @click="addCatRow(catPick)">追加</button>
+              <button type="button" class="btn-ghost btn-xs" @click="catPickerOpen = false; catPick = ''">閉じる</button>
+              <span v-if="addCatError" class="cat-add-error" data-testid="cat-add-error">{{ addCatError }}</span>
+            </template>
           </div>
         </div>
         <!-- ④'' 実働時間の自動計算。設定しながら「結局何時間勤務になるのか」が分からないという要望（2026-08-10）。
@@ -202,6 +227,14 @@
           </div>
           <div v-if="hoursPreview.ignored" class="hp-warn" data-testid="hours-preview-ignored">
             休憩{{ hoursPreview.ignored }}件が勤務時間の外にあります。実働からは引かれません。
+          </div>
+        </div>
+        <!-- 会社からこの現場までの往復距離（日報の交通経費の既定値・2026-09-03） -->
+        <div class="field">
+          <label>会社からの往復距離（km・任意）</label>
+          <div class="hours-inline">
+            <input v-model.number="modal.default_distance_km" type="number" min="0" step="0.1" class="input" style="width:120px" placeholder="例：24.5" data-testid="site-default-distance" />
+            <span class="muted">日報でこの現場を選んだ時のガソリン/軽油の往復kmの既定値（手動で編集可）</span>
           </div>
         </div>
         <!-- ⑥ 絞り込み（協力業者・長いリストは添付の直前＝最下部へ） -->
@@ -323,6 +356,7 @@
 </template>
 
 <script setup lang="ts">
+import TimeSelect from '../components/TimeSelect.vue'
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
@@ -369,6 +403,51 @@ function usingCommon(c: { id: string; commonStart: string; commonEnd: string }):
   return !!(c.commonStart || c.commonEnd) && !(d?.start || d?.end)
 }
 const catHoursDraft = ref<Record<string, CatHour>>({})
+/** 表に出す区分＝この現場で値を持つもの＋この編集で追加したもの。それ以外は「＋ 区分の定時を追加」から選ぶ */
+const shownCatIds = ref<Set<string>>(new Set())
+function catHasValue(id: string): boolean {
+  const d = catHoursDraft.value[id]
+  return !!(d && (d.start || d.end || (d.breaks && d.breaks.length)))
+}
+const visibleCats = computed(() => siteCats.value.filter(c => catHasValue(c.id) || shownCatIds.value.has(c.id)))
+const addableCats = computed(() => siteCats.value.filter(c => !visibleCats.value.some(v => v.id === c.id)))
+const catPickerOpen = ref(false)
+const catPick = ref('')
+function addCatRow(id: string) {
+  if (!id || id === '__new__') return
+  if (!catHoursDraft.value[id]) catHoursDraft.value[id] = { start: '', end: '', breaks: [] }
+  shownCatIds.value = new Set([...shownCatIds.value, id])
+  catPick.value = ''
+  catPickerOpen.value = false
+}
+/** 行を外す＝この現場の上書きをクリア（保存で行が消え、共通設定に戻る） */
+function removeCatRow(id: string) {
+  catHoursDraft.value[id] = { start: '', end: '', breaks: [] }
+  const n = new Set(shownCatIds.value); n.delete(id); shownCatIds.value = n
+}
+/** この画面から区分を追加する（作業区分マスタの category-save と同じ EF 経路） */
+const newCatName = ref('')
+const addingCat = ref(false)
+const addCatError = ref('')
+async function addCategory() {
+  const name = newCatName.value.trim()
+  if (!name || addingCat.value) return
+  addingCat.value = true; addCatError.value = ''
+  const r = await callMasterEf({ action: 'category-save', name, scope: 'site', active: true, start: '', end: '', breaks: [], hoursUnrestricted: false })
+  addingCat.value = false
+  if (!r?.ok) {
+    addCatError.value = r?.error === 'CATEGORY_FORBIDDEN' ? '区分を追加する権限がありません。' : r?.error === 'name_required' ? '区分名を入力してください。' : `追加に失敗しました（${r?.error ?? 'network'}）`
+    return
+  }
+  newCatName.value = ''
+  const before = new Set(siteCats.value.map(c => c.id))
+  await loadSiteCats()
+  // 追加した区分の入力欄（draft）を空で用意し、表に行を出す（続けて定時を入れられるように）
+  for (const c of siteCats.value) {
+    if (!catHoursDraft.value[c.id]) catHoursDraft.value[c.id] = { start: '', end: '', breaks: [] }
+    if (!before.has(c.id)) addCatRow(c.id)
+  }
+}
 async function callMasterEf(body: Record<string, unknown>): Promise<any> {
   const { data, error } = await supabase.functions.invoke('master-data', { body })
   if (error) return { ok: false, error: 'network' }
@@ -402,6 +481,9 @@ function buildCatHoursDraft(rows: { category_id: string; default_start_time: str
     }
   }
   catHoursDraft.value = draft
+  shownCatIds.value = new Set()
+  catPickerOpen.value = false
+  catPick.value = ''
 }
 const workerNames = ref<Record<string, string>>({})   // 全作業員 id→名前（表示用）
 const myWorkerId = ref<string | null>(null)
@@ -1018,7 +1100,24 @@ async function doMerge() {
 .btn-edit { background: #f0f0f0; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
 .btn-toggle { background: none; border: 1px solid #ddd; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; color: #888; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 12px; padding: 32px; width: min(560px, 92vw); display: flex; flex-direction: column; gap: 20px; max-height: 90vh; overflow-y: auto; }
+.modal { background: #fff; border-radius: 12px; padding: 28px 32px; width: min(760px, 94vw); display: flex; flex-direction: column; gap: 18px; max-height: 92vh; overflow-y: auto; }
+/* 勤務時間の表（現場作業＋区分ごとの定時を1か所に） */
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; }
+@media (max-width: 640px) { .grid2 { grid-template-columns: 1fr; } }
+.hours-block .hint-sm { font-size: 12px; color: #64748b; margin: 0 0 4px; }
+.hours-table { display: flex; flex-direction: column; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
+.hours-row { display: grid; grid-template-columns: 160px 1fr; gap: 8px 12px; padding: 10px 12px; border-top: 1px solid #f0f0f0; align-items: start; }
+.hours-row:first-child { border-top: none; }
+.hours-row--main { background: #f8fafc; }
+.hours-row-name { font-size: 13px; font-weight: 700; color: #1f2937; display: flex; flex-direction: column; gap: 2px; padding-top: 8px; }
+.hours-row-sub { font-size: 11px; font-weight: 500; color: #64748b; }
+.hours-row-body { display: flex; flex-direction: column; gap: 6px; }
+.hours-inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.hours-break { padding-left: 4px; font-size: 13px; color: #475569; }
+.hours-remove { color: #b91c1c; }
+.btn-xs { padding: 4px 8px; font-size: 12px; }
+.muted { font-size: 12px; color: #64748b; }
+@media (max-width: 640px) { .hours-row { grid-template-columns: 1fr; } .hours-row-name { padding-top: 0; } }
 .modal h2 { font-size: 18px; font-weight: 700; }
 /* 実働時間の自動計算（固定勤務時刻＋既定休憩の結果） */
 .hours-preview { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid #d7e6dc; border-left: 3px solid #06C755; border-radius: 6px; background: #f5faf7; }
@@ -1026,6 +1125,8 @@ async function doMerge() {
 .hp-main b { font-size: 18px; }
 .hp-sub { font-size: 12px; color: #64748b; margin-left: 4px; }
 .hp-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.cat-add { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.cat-add-error { font-size: 12px; color: #b91c1c; }
 .hp-tag { font-size: 11px; font-weight: 700; color: #4338ca; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
 .hp-warn { font-size: 12px; color: #b45309; }
 

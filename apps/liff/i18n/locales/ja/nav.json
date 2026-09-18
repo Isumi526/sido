@@ -24,5 +24,6 @@
   "passwordChange": "パスワード変更",
   "logout": "ログアウト",
   "notifications": "お知らせ",
-  "paidLeave": "有給休暇"
+  "paidLeave": "有給休暇",
+  "inventory": "在庫"
 }

@@ -40,11 +40,11 @@
       <!-- 送信完了 / 更新完了 -->
       <div v-else-if="report.submitted.value || editSubmitted || lateSubmitted" class="state-screen">
         <div class="success-mark">✓</div>
-        <h2 class="state-title">{{ editSubmitted ? $t('report.updatedTitle') : lateSubmitted ? $t('report.lateSubmittedTitle') : $t('report.submittedTitle') }}</h2>
+        <h2 class="state-title">{{ editSubmitted ? (editApplied ? $t('report.appliedTitle') : $t('report.updatedTitle')) : lateSubmitted ? $t('report.lateSubmittedTitle') : $t('report.submittedTitle') }}</h2>
         <!-- ★「LINEグループに通知しました」は実際に飛んだ時だけ出す。
              通知はクロステナント漏洩の対策で全テナントOFFにしてあり、無条件に出していたので
              画面が嘘をついていた（2026-08-18 大塚さん「LINEグループに通知してんの？」）。 -->
-        <p class="state-text">{{ editSubmitted ? $t('report.updatedText') : lateSubmitted ? $t('report.lateSubmittedText') : (report.lineNotified.value ? $t('report.submittedText') : $t('report.submittedTextPlain')) }}</p>
+        <p class="state-text">{{ editSubmitted ? (editApplied ? $t('report.appliedText') : $t('report.updatedText')) : lateSubmitted ? $t('report.lateSubmittedText') : (report.lineNotified.value ? $t('report.submittedText') : $t('report.submittedTextPlain')) }}</p>
         <button v-if="!editSubmitted && !lateSubmitted && nextUnsubmittedDate" class="btn-primary" @click="goToNextReport">
           {{ $t('report.enterNextReport', { date: nextDateLabel }) }}
         </button>
@@ -409,7 +409,8 @@
                     <div class="time-field">
                       <label class="hours-label">{{ $t('report.endTime') }}</label>
                       <select v-model="site.workers[0].endTime" class="select" :data-testid="`end-time-${si}`">
-                        <option v-for="t in endTimeOptionsForSite(si)" :key="t" :value="t">{{ t }}</option>
+                        <!-- 終了が開始以前＝翌日（夜のみ現場 20:30〜翌6:00）。「翌」を付けて日跨ぎだと分かるようにする -->
+                        <option v-for="t in endTimeOptionsForSite(si)" :key="t" :value="t">{{ endTimeLabel(si, t) }}</option>
                       </select>
                     </div>
                   </div>
@@ -764,6 +765,29 @@
                 </div>
               </template>
             </Field>
+            <!-- 引き上げ材料（2026-09-18 亥角）: ゴミと同じ並びで あり/なし → 写真を複数枚。
+                 現場から持ち帰った材料の記録＝在庫の入荷の材料にもなる（在庫①で接続） -->
+            <Field :label="$t('report.pickup')">
+              <select :value="siteUsage[si].pickup" class="select select--usage" data-testid="pickup-usage" @change="(e) => setUsage(si, 'pickup', (e.target as HTMLSelectElement).value)">
+                <option value="なし">{{ $t('report.optNone') }}</option>
+                <option value="あり">{{ $t('report.optYes') }}</option>
+              </select>
+              <template v-if="siteUsage[si].pickup === 'あり'">
+                <input v-model="site.expenses.pickupNote" type="text" class="input mt6" :placeholder="$t('report.pickupNotePlaceholder')" data-testid="pickup-note" />
+                <div class="mt8">
+                  <label class="hours-label">{{ $t('report.pickupPhotoLabel') }}</label>
+                  <AttachedFilesBadge :files="site.expenses.pickupPhotos" @remove-file="(p) => site.expenses.pickupPhotos?.splice(p.index, 1)" />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    class="input mt6"
+                    data-testid="pickup-photos"
+                    @change="(e) => handlePickupPhoto(si, e)"
+                  />
+                </div>
+              </template>
+            </Field>
 
             <!-- その他（資材等・雑経費を統合。仕分けは科目に任せる） -->
             <Field :label="$t('report.other')">
@@ -921,7 +945,7 @@
         <!-- 編集理由（編集時のみ必須）。1編集=1行で daily_report_edit_logs に残す。
              ★経費申請書(PDF画面)のインライン修正はこの経路を通らないので対象外（回答=B）。 -->
         <div v-if="isEditMode" class="edit-reason">
-          <label class="edit-reason-label" for="edit-reason">{{ $t('report.editReasonLabel') }}<span class="required">{{ $t('common.required') }}</span></label>
+          <label class="edit-reason-label" for="edit-reason">{{ $t('report.editReasonLabel') }}<span v-if="editNeedsApproval" class="required">{{ $t('common.required') }}</span><span v-else class="optional">{{ $t('common.optional') }}</span></label>
           <textarea
             id="edit-reason"
             v-model="editReason"
@@ -930,7 +954,7 @@
             data-testid="edit-reason"
             :placeholder="$t('report.editReasonPlaceholder')"
           />
-          <p class="edit-reason-hint">{{ $t('report.editReasonHint') }}</p>
+          <p class="edit-reason-hint">{{ editNeedsApproval ? $t('report.editReasonHintApproval') : $t('report.editReasonHint') }}</p>
         </div>
 
         <!-- 送信前の記入忘れ確認（新規送信時のみ・習慣化のため必須） -->
@@ -944,7 +968,7 @@
         <button v-if="isDev" type="button" class="btn-dev" :class="{ 'btn-dev--error': forceErrorOnSubmit }" @click="fillErrorTestData">
           {{ forceErrorOnSubmit ? $t('report.cancelErrorTest') : $t('report.fillErrorTestData') }}
         </button>
-        <button type="submit" class="btn-submit" data-testid="report-submit" :disabled="(isEditMode ? (editSubmitting || !editReason.trim()) : (report.submitting.value || !omissionConfirmed || (isLateDate && !lateReason.trim())))">
+        <button type="submit" class="btn-submit" data-testid="report-submit" :disabled="(isEditMode ? (editSubmitting || (editNeedsApproval && !editReason.trim())) : (report.submitting.value || !omissionConfirmed || (isLateDate && !lateReason.trim())))">
           <span v-if="isEditMode ? editSubmitting : report.submitting.value" class="submitting">
             <span class="dot-spin" />{{ isEditMode ? $t('report.updating') : $t('report.submitting') }}
           </span>
@@ -1341,7 +1365,8 @@ async function submitPaidLeaveOverForApproval(targetUserId: string): Promise<boo
   }
 }
 
-async function submitEditForApproval(diffs: string[]): Promise<boolean> {
+/** @returns 'pending'=承認待ちに入った / 'applied'=期限内で即反映された / false=失敗 */
+async function submitEditForApproval(diffs: string[]): Promise<'pending' | 'applied' | false> {
   try {
     const working = isWorkingStr.value === 'working'
     // ★保存経路と同じ正規化を通す（現場のsite_id解決・その他/接待交際費の振り分け・
@@ -1366,7 +1391,8 @@ async function submitEditForApproval(diffs: string[]): Promise<boolean> {
       clientToken: editLogToken.value,   // 再送しても監査ログを二重にしない
       payload,   // 承認されたらそのまま daily_reports に入る中身
     })
-    return !!j?.pendingId
+    if (j?.applied) return 'applied'
+    return j?.pendingId ? 'pending' : false
   } catch (e) {
     console.error('[Edit] 申請に失敗:', e)
     return false
@@ -1493,6 +1519,9 @@ const isEditMode      = ref(false)
 const originalReport  = ref<any>(null)  // 編集前のSupabaseデータ（差分計算用）
 const editSubmitting  = ref(false)
 const editSubmitted   = ref(false)
+const editApplied     = ref(false)   // 期限内の編集＝承認なしで即反映された（判定表 2026-09-12）
+// 編集が承認に回るか＝対象日が期限外（3日以上前）。期限内は承認なし・即反映で理由は任意
+const editNeedsApproval = computed(() => isEditMode.value && lock.isPastLockWindow(report.form.value.date))
 const editError       = ref<string | null>(null)
 // 編集理由（必須）。daily_reports は upsert で上書きされるので、理由は 1編集=1行の
 // 履歴テーブル daily_report_edit_logs に残す（1列だと2回目の編集で前回の理由が消える）
@@ -1664,6 +1693,7 @@ type UsageState = {
   hotel:         string
   leopalace:     string
   garbage:       string
+  pickup:        string
   other:         string
   entertainment: string
 }
@@ -1676,6 +1706,7 @@ const createUsage = (): UsageState => ({
   hotel:         'なし',
   leopalace:     'なし',
   garbage:       'なし',
+  pickup:        'なし',
   other:         'なし',
   entertainment: 'なし',
 })
@@ -1701,13 +1732,14 @@ function reconstructExpenseUsage(exp: any): UsageState {
   // 宿泊費: 新形式 hotels[] か旧スカラー(hotel/leopalace)のどちらかに金額があれば あり
   if ((exp.hotels ?? []).some((h: any) => h.yen || h.label) || exp.hotelYen || exp.leopalaceYen) usage.hotel = 'あり'
   if (exp.garbageFactoryM3 || exp.garbageSiteM3)  usage.garbage = 'あり'
+  if (exp.hasPickup || (exp.pickupPhotoUrls ?? []).length || exp.pickupNote) usage.pickup = 'あり'
   // その他雑経費は「その他」に統合済み（2026-07-31）。旧データ（entertainments / 旧スカラー）が
   // あっても「その他=あり」で復元する＝セクションが消えて編集できなくなるのを防ぐ。
   if ((exp.others ?? []).some((o: any) => o.yen || o.label) ||
       exp.entertainmentYen || (exp.entertainments ?? []).some((e: any) => e.yen || e.label)) usage.other = 'あり'
   // いずれかの経費があれば expense = あり
   if (usage.vehicle !== 'なし' || usage.train !== 'なし' || usage.hotel !== 'なし' ||
-      usage.leopalace !== 'なし' || usage.garbage !== 'なし' ||
+      usage.leopalace !== 'なし' || usage.garbage !== 'なし' || usage.pickup !== 'なし' ||
       usage.other !== 'なし' || usage.entertainment !== 'なし')
     usage.expense = 'あり'
   return usage
@@ -1820,7 +1852,7 @@ function setUsage(si: number, key: keyof UsageState, value: string) {
   //  残すと入力欄が隠れたまま金額だけ生き残り、(1) 見えない経費がそのまま送信され、
   //  (2) 領収書バリデーションが画面から直せない行を弾き続ける（2026-09-02 本番で発生）。
   if (key === 'expense' && value === 'なし') {
-    for (const k of ['vehicle', 'train', 'hotel', 'garbage', 'other', 'entertainment'] as const) {
+    for (const k of ['vehicle', 'train', 'hotel', 'garbage', 'pickup', 'other', 'entertainment'] as const) {
       setUsage(si, k, 'なし')
     }
     return
@@ -1851,6 +1883,8 @@ function setUsage(si: number, key: keyof UsageState, value: string) {
     if (!(exp.hotels?.length)) exp.hotels = [createLineItem()]
     return
   }
+  // 引き上げ材料「あり」は写真が無くても記録として残す（何を引き上げたかはメモ）
+  if (key === 'pickup' && value === 'あり') { exp.hasPickup = true; return }
   if (value !== 'なし') return
   switch (key) {
     case 'train':
@@ -1867,6 +1901,9 @@ function setUsage(si: number, key: keyof UsageState, value: string) {
       break
     case 'garbage':
       exp.garbageFactoryM3 = undefined; exp.garbageSiteM3 = undefined; exp.garbagePhotos = undefined
+      break
+    case 'pickup':
+      exp.hasPickup = undefined; exp.pickupNote = undefined; exp.pickupPhotos = undefined; exp.pickupPhotoUrls = undefined
       break
     case 'other':
       exp.others = [createLineItem()]; exp.otherFiles = undefined
@@ -2485,6 +2522,11 @@ function endTimeOptionsForSite(si: number): string[] {
   const wrapFloor = (fStart && parseMin(fStart) > capMin) ? parseMin(fStart) : -1
   return TIME_OPTIONS.filter(t => parseMin(t) <= capMin || (wrapFloor >= 0 && parseMin(t) >= wrapFloor) || t === cur)
 }
+/** 終了時刻の表示。開始以前の時刻は翌日側なので「翌」を付ける（値は変えない） */
+function endTimeLabel(si: number, t: string): string {
+  const start = report.form.value.sites[si]?.workers?.[0]?.startTime
+  return start && parseMin(t) <= parseMin(start) ? `翌${t}` : t
+}
 function removeSite(i: number) {
   report.removeSite(i)
   siteUsage.value.splice(i, 1)
@@ -2652,7 +2694,7 @@ watch(() => report.submitted.value, (v) => {
 })
 
 // フォームから「パス→File[]」マップを収集（IndexedDB保存用）
-const DRAFT_FORM_FILE_KEYS = ['vehicleFiles', 'hotelFiles', 'leopalaceFiles', 'otherFiles', 'entertainmentFiles', 'garbagePhotos']
+const DRAFT_FORM_FILE_KEYS = ['vehicleFiles', 'hotelFiles', 'leopalaceFiles', 'otherFiles', 'entertainmentFiles', 'garbagePhotos', 'pickupPhotos']
 const DRAFT_PER_ITEM = ['parkings', 'highways', 'trains', 'others', 'entertainments', 'hotels']
 function collectDraftFiles(form: any): Record<string, File[]> {
   const map: Record<string, File[]> = {}
@@ -2802,6 +2844,10 @@ const previewData = computed<PreviewData>(() => {
       if (exp.garbageSiteM3)    g.push(`混載 ${exp.garbageSiteM3}m³`)
       expenses.push(`ゴミ ${g.join(' ')}`)
     }
+    if (exp.hasPickup) {
+      const n = (exp.pickupPhotos?.length ?? 0) + (exp.pickupPhotoUrls?.length ?? 0)
+      expenses.push(`引き上げ材料 ${exp.pickupNote ? exp.pickupNote + ' ' : ''}${n ? `写真${n}枚` : ''}`.trim())
+    }
     if (exp.entertainmentYen)
       expenses.push(`${exp.entertainmentLabel || '雑経費'} ¥${Number(exp.entertainmentYen).toLocaleString()}`)
 
@@ -2915,8 +2961,8 @@ async function handleSubmit() {
   // ── 編集モード: Supabase のみ更新（GAS には再送しない）──
   if (isEditMode.value) {
     if (editSubmitting.value) return
-    // ★編集理由は必須。ボタンも disabled にしているが、Enter送信等で素通りしうるのでここでも止める
-    if (!editReason.value.trim()) {
+    // ★承認に回る編集は理由必須（期限内の即反映は任意）。ボタンも disabled にしているが、Enter送信等で素通りしうるのでここでも止める
+    if (editNeedsApproval.value && !editReason.value.trim()) {
       editError.value = t('report.editReasonRequired')
       return
     }
@@ -2969,9 +3015,11 @@ async function handleSubmit() {
 
       // ★申請が通らなければ編集は成立していない。ここは黙って続けず失敗として扱う
       //   （日報も変わらず保留も無い＝何も起きていない状態なので、そう伝えるのが正しい）。
-      if (!await submitEditForApproval(diffs)) {
+      const editResult = await submitEditForApproval(diffs)
+      if (!editResult) {
         throw new Error(t('report.editApprovalSubmitFailed'))
       }
+      editApplied.value = editResult === 'applied'
 
       // ★2026-08-30: 編集差分のLINEグループ通知は撤去した。
       //  差分は report-edit-log EF が承認待ち(daily_report_pending_edits.diffs)へ載せ、
@@ -3473,6 +3521,13 @@ function handleGarbagePhoto(si: number, event: Event) {
   const input = event.target as HTMLInputElement
   if (!input.files?.length) return
   report.form.value.sites[si].expenses.garbagePhotos = Array.from(input.files)
+}
+function handlePickupPhoto(si: number, event: Event) {
+  const input = event.target as HTMLInputElement
+  if (!input.files?.length) return
+  // 追加選択で前の分を消さない（複数回に分けて撮る）
+  const cur = report.form.value.sites[si].expenses.pickupPhotos ?? []
+  report.form.value.sites[si].expenses.pickupPhotos = [...cur, ...Array.from(input.files)]
 }
 
 function fillTestData() {
@@ -4109,6 +4164,7 @@ html, body {
 }
 /* 必須表示は全画面で「※付き赤文字」に統一（Field.vue / FormSection.vue と同じ） */
 .edit-reason-label .required { color: var(--danger); font-size: 11px; font-weight: 700; margin-left: 6px; }
+.edit-reason-label .optional { color: #64748b; font-size: 11px; font-weight: 700; margin-left: 6px; }
 .edit-reason-label { font-size: 13px; font-weight: 700; color: #7a6000; }
 .edit-reason-input {
   width: 100%;

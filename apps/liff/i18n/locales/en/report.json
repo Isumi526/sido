@@ -141,7 +141,7 @@
   "previewBreakMin": "{min} min",
   "previewTotalHours": "Total hours: {hours}h",
   "previewEmptySites": "No site selected",
-  "omissionConfirm": "I have checked that no expenses, waste, etc. were left out",
+  "omissionConfirm": "I checked that no expenses, waste, or materials taken back are missing",
   "fillTestData": "🔧 Fill test data",
   "cancelErrorTest": "🚨 Trigger error on next submit (click again to cancel)",
   "fillErrorTestData": "🚨 Fill error test data",
@@ -211,5 +211,11 @@
   "checkoutToastTime": "Checked out {time}",
   "checkoutToastText": "Recorded",
   "expenseOnlyNote": "No work hours on this day. You can submit as is.",
-  "expenseOpen": "Add expenses (hotel, fuel, etc.)"
+  "expenseOpen": "Add expenses (hotel, fuel, etc.)",
+  "appliedTitle": "Updated!",
+  "appliedText": "Applied to the report immediately (no approval needed within the edit window)",
+  "editReasonHintApproval": "This edit is past the deadline and needs approval. Leave a reason so reviewers know what changed",
+  "pickup": "Materials taken back",
+  "pickupNotePlaceholder": "What was taken back (e.g. 3 leftover boards, tools)",
+  "pickupPhotoLabel": "Photos of materials taken back (multiple)"
 }

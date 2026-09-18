@@ -31,7 +31,7 @@
         <div v-for="s in filtered" :key="s.id" class="sub-card" @click="openDetail(s)">
           <div class="sub-card-head">
             <div class="sub-name">{{ s.name }}</div>
-            <span v-if="s.category" class="cat-badge" :class="s.category === '商社' ? 'shosha' : 'gyosha'">{{ s.category }}</span>
+            <span v-if="s.category" class="cat-badge" :class="s.category === '商社' ? 'shosha' : s.category === 'その他' ? 'other' : 'gyosha'">{{ s.category }}</span>
           </div>
           <div v-if="s.representative_name" class="sub-rep">{{ s.representative_name }}</div>
           <div v-if="s.trade_types.length || s.service_areas.length" class="sub-chips">
@@ -54,7 +54,7 @@
           <!-- 基本情報 -->
           <div v-if="detail.category" class="detail-row">
             <span class="detail-label">{{ $t('subcontractors.labelCategory') }}</span>
-            <span class="cat-badge" :class="detail.category === '商社' ? 'shosha' : 'gyosha'">{{ detail.category }}</span>
+            <span class="cat-badge" :class="detail.category === '商社' ? 'shosha' : detail.category === 'その他' ? 'other' : 'gyosha'">{{ detail.category }}</span>
           </div>
           <div v-if="detail.representative_name" class="detail-row">
             <span class="detail-label">{{ $t('subcontractors.labelRep') }}</span>
@@ -154,6 +154,7 @@
             <select v-model="modal.category" class="input">
               <option value="業者">{{ $t('subcontractors.categoryGyosha') }}</option>
               <option value="商社">{{ $t('subcontractors.categoryShosha') }}</option>
+              <option value="その他">{{ $t('subcontractors.categoryOther') }}</option>
             </select>
           </div>
           <div class="form-field">
@@ -529,6 +530,7 @@ async function deleteComment(c: Comment) {
 .cat-badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 700; flex-shrink: 0; }
 .cat-badge.shosha { background: #fff3e0; color: #e65100; }
 .cat-badge.gyosha { background: #e8f4ff; color: #1a6fc4; }
+.cat-badge.other { background: #f1f5f9; color: #475569; }
 
 /* シート（ボトムシート） */
 .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 300; display: flex; align-items: flex-end; justify-content: center; }

@@ -22,6 +22,7 @@
 // ============================================================
 import { computed, ref } from 'vue'
 import { todayStr } from '~/composables/schedule-core.gen'
+import { RECENT_LOG_HOURS } from '~/composables/attendance-punch.gen'
 
 export const unreadNotifCount = ref(0)
 export const unreadScheduleCount = ref(0)
@@ -132,10 +133,15 @@ export async function refreshUnsubmittedReportBadge(): Promise<void> {
 
     // 今日ぶんは退勤済みの時だけ足す。夜勤の日跨ぎがあるので当日固定ではなく直近20時間で見る
     if (dates.includes(today)) {
-      const logs = await attendanceLog.recent(20, me.worker_id)
-        .catch(() => null) as { type: string }[] | null
+      const logs = await attendanceLog.recent(RECENT_LOG_HOURS, me.worker_id)
+        .catch(() => null) as { type: string; checked_at: string }[] | null
       // 取れなかった時は足さない（急かす側に倒さない）
-      if (logs?.[logs.length - 1]?.type === 'checkout') count += 1
+      // ★退勤の回が「今日の出勤」に属する時だけ足す。夜のみ現場（20:30〜翌6:00）の翌朝の退勤は
+      //  前日の回なので、今日ぶんを「退勤済み・未提出」と数えない（前日ぶんは上の d < today で数える）
+      const last = logs?.[logs.length - 1]
+      const lastCheckin = logs ? [...logs].reverse().find(l => l.type === 'checkin') : undefined
+      const checkinDay = lastCheckin ? new Date(new Date(lastCheckin.checked_at).getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10) : null
+      if (last?.type === 'checkout' && checkinDay === today) count += 1
     }
     unsubmittedReportCount.value = count
   } catch (e) {

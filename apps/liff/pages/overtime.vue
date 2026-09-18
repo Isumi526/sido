@@ -20,14 +20,20 @@
             <span class="material-symbols-rounded ot-icon">pending</span>{{ $t('overtime.statusPending') }}
             <button class="ot-cancel" :disabled="busy" @click="onCancel">{{ $t('overtime.cancel') }}</button>
           </div>
-          <div v-else-if="todayStatus === 'rejected'" class="ot-status rejected"><span class="material-symbols-rounded ot-icon">block</span>{{ $t('overtime.statusRejected') }}</div>
+          <div v-else-if="todayStatus === 'rejected'" class="ot-status rejected">
+            <span class="material-symbols-rounded ot-icon">block</span>{{ $t('overtime.statusRejected') }}
+            <!-- 管理者が却下時に添えたコメント（2026-09-17 大塚さん「なんで残業したか聞きたい」）。
+                 これを見て理由を書いて申請し直す -->
+            <span v-if="todayNote" class="ot-note" data-testid="ot-today-note">{{ $t('overtime.decisionNote') }}：{{ todayNote }}</span>
+          </div>
 
           <!-- ★締切前なら申請済みでも内容を変更・追加できる（2026-09-13 辻さん）。
                申請は1日1件（現場は複数選べる）なので、先に1現場で出した後に2現場目の残業や
                休憩の申告が出てきた時はここから足す。上書きすると再承認になる。 -->
           <div v-if="todayStatus !== 'none' && canRequestToday && !editMode" class="ot-edit-row">
-            <p class="ot-edit-hint">{{ $t('overtime.editHint') }}</p>
-            <button type="button" class="ot-edit" :disabled="busy" data-testid="ot-edit" @click="startEdit">{{ $t('overtime.editStart') }}</button>
+            <!-- 却下後は「変更・追加」でなく「申請し直す」（中身は同じ＝新しい申請が作られる） -->
+            <p class="ot-edit-hint">{{ $t(todayStatus === 'rejected' ? 'overtime.reapplyHint' : 'overtime.editHint') }}</p>
+            <button type="button" class="ot-edit" :disabled="busy" data-testid="ot-edit" @click="startEdit">{{ $t(todayStatus === 'rejected' ? 'overtime.reapplyStart' : 'overtime.editStart') }}</button>
           </div>
 
           <!-- 申請フォーム。
@@ -145,6 +151,7 @@
               <span class="ot-badge" :class="r.status">{{ statusLabel(r.status) }}</span>
               <span v-if="r.is_late" class="ot-badge late" data-testid="ot-recent-late">{{ $t('overtime.lateBadge') }}</span>
               <span v-if="r.reason" class="ot-reason">{{ r.reason }}</span>
+              <span v-if="r.status === 'rejected' && r.decision_note" class="ot-note" data-testid="ot-recent-note">{{ $t('overtime.decisionNote') }}：{{ r.decision_note }}</span>
               <!-- ★承認待ちなら日付を問わず取り消せる（2026-09-14 辻さん「休憩申請を間違えた場合の取り消しは？」）。
                    取り消しは本日の枠にしか無く、過去日の実績修正を間違えても消せなかった。EF は元から日付を問わない。 -->
               <button v-if="r.status === 'pending'" type="button" class="ot-cancel ot-cancel-row" :disabled="busy" :data-testid="`ot-recent-cancel-${r.date}`" @click="onCancelDate(r.date)">{{ $t('overtime.cancel') }}</button>
@@ -174,6 +181,7 @@ const workerId = computed(() => selfUser.value?.worker_id ?? null)
 
 const today = todayStr()
 const todayStatus = ref<'none' | 'pending' | 'approved' | 'rejected'>('none')
+const todayNote   = ref<string | null>(null)   // 却下時の管理者コメント
 const canRequestToday = ref(false)
 // 締切後（16:00以降・当日）は「実績修正の申請(late)」モードに切り替える。締切ルール自体は残す。
 const isLateMode = computed(() => !canRequestToday.value)
@@ -236,6 +244,7 @@ function statusLabel(s: string) {
 async function refresh() {
   const wid = workerId.value
   todayStatus.value   = wid ? await overtime.status(wid, today) : 'none'
+  todayNote.value     = wid && todayStatus.value === 'rejected' ? await overtime.decisionNote(wid, today) : null
   canRequestToday.value = overtime.canRequest(today)
   recent.value        = wid ? await overtime.myRecent(wid) : []
   const accountId = await getAccountId()
@@ -490,4 +499,5 @@ onMounted(async () => {
 .ot-badge.rejected { background: #fef2f2; color: #b91c1c; }
 .ot-badge.late     { background: #ffedd5; color: #9a3412; }
 .ot-reason { color: #94a3b8; font-size: 12px; flex-basis: 100%; }
+.ot-note { color: #b91c1c; font-size: 13px; font-weight: 600; flex-basis: 100%; white-space: pre-wrap; }
 </style>
