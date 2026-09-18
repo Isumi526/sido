@@ -135,9 +135,11 @@
         <div class="field">
           <label>固定勤務時刻（日報の既定＆終了上限・任意）</label>
           <div style="display:flex;align-items:center;gap:8px">
-            <input v-model="modal.default_start_time" type="time" step="300" class="input" style="width:auto" @focus="modal.default_start_time || (modal.default_start_time = '08:30')" />
+            <input v-model="modal.default_start_time" type="time" step="900" class="input" style="width:auto" @focus="modal.default_start_time || (modal.default_start_time = '08:30')" />
             <span>〜</span>
-            <input v-model="modal.default_end_time" type="time" step="300" class="input" style="width:auto" @focus="modal.default_end_time || (modal.default_end_time = '17:30')" />
+            <input v-model="modal.default_end_time" type="time" step="900" class="input" style="width:auto" @focus="modal.default_end_time || (modal.default_end_time = '17:30')" />
+            <!-- 終了が開始以前＝翌日（夜のみ現場 20:30〜翌6:00）。現場作業の定時はここなので、区分別と同じタグを出す（2026-09-18 レビュー指摘） -->
+            <span v-if="modal.default_start_time && modal.default_end_time && modal.default_end_time.slice(0,5) <= modal.default_start_time.slice(0,5)" class="hp-tag" data-testid="site-overnight">翌日まで（日をまたぐ勤務）</span>
           </div>
           <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">設定すると日報でこの現場を選んだ時に作業時刻の既定値になり、終了は固定終了を超えて報告できません（早退で下回るのは可）。</p>
         </div>
@@ -151,7 +153,7 @@
         <div class="field">
           <label>既定休憩（開始時刻＋休憩時間・任意・複数可）</label>
           <div v-for="(brk, bi) in (modal.default_breaks || [])" :key="bi" style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-            <input v-model="brk.start" type="time" step="300" class="input" style="width:auto" data-testid="break-start" />
+            <input v-model="brk.start" type="time" step="900" class="input" style="width:auto" data-testid="break-start" />
             <input v-model.number="brk.minutes" type="number" min="0" step="15" class="input" style="width:90px" placeholder="60" data-testid="break-minutes" />
             <span style="font-size:13px;color:#64748b">分</span>
             <button type="button" class="btn-ghost" style="padding:2px 8px" @click="removeBreak(bi)">×</button>
@@ -160,7 +162,7 @@
           <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">設定すると<b>新規</b>日報でこの現場を選んだ時に休憩がこの時間帯になり、稼働時間・人件費に反映されます（開始時刻が深夜/残業帯なら割増分が減る）。未設定＝役割×勤務時間の自動計算のまま。過去の日報は変わりません。</p>
         </div>
         <!-- ④''' 区分ごとの定時（現場×区分）。見積・事務など「現場作業以外」だけ現場と別の定時を上書き -->
-        <div v-if="siteCats.length" class="field" data-testid="cat-hours-section">
+        <div class="field" data-testid="cat-hours-section">
           <label>区分ごとの定時（この現場・任意）</label>
           <p class="hint-sm" style="font-size:12px;color:#64748b;margin:2px 0 8px">見積・事務など「現場作業以外」の定時がこの現場と違う場合だけ設定します。空欄なら「作業区分」で設定した全現場共通の定時、それも無ければこの現場の固定勤務時刻に従います。日報でその区分を選ぶと反映され、実働・人件費もこの定時で計算します。</p>
           <div v-for="c in siteCats" :key="c.id" class="cat-hours" :data-testid="`cat-hours-${c.id}`">
@@ -175,19 +177,26 @@
               </span>
             </div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              <input v-model="catHoursDraft[c.id].start" type="time" step="300" class="input" style="width:auto" :data-testid="`cat-start-${c.id}`" />
+              <input v-model="catHoursDraft[c.id].start" type="time" step="900" class="input" style="width:auto" :data-testid="`cat-start-${c.id}`" />
               <span>〜</span>
-              <input v-model="catHoursDraft[c.id].end" type="time" step="300" class="input" style="width:auto" :data-testid="`cat-end-${c.id}`" />
+              <input v-model="catHoursDraft[c.id].end" type="time" step="900" class="input" style="width:auto" :data-testid="`cat-end-${c.id}`" />
               <!-- 終了が開始以前＝翌日（夜のみ現場 20:30〜翌6:00）。日跨ぎとして扱うことを明示する -->
               <span v-if="catHoursDraft[c.id].start && catHoursDraft[c.id].end && catHoursDraft[c.id].end <= catHoursDraft[c.id].start" class="hp-tag" :data-testid="`cat-overnight-${c.id}`">翌日まで（日をまたぐ勤務）</span>
               <button type="button" class="btn-ghost" style="padding:2px 10px;font-size:12px" @click="catHoursDraft[c.id].breaks.push({ start: '12:00', minutes: 60 })">＋ 休憩</button>
             </div>
             <div v-for="(brk, bi) in catHoursDraft[c.id].breaks" :key="bi" style="display:flex;align-items:center;gap:8px;margin-top:6px">
-              <input v-model="brk.start" type="time" step="300" class="input" style="width:auto" />
+              <input v-model="brk.start" type="time" step="900" class="input" style="width:auto" />
               <input v-model.number="brk.minutes" type="number" min="0" step="15" class="input" style="width:90px" placeholder="60" />
               <span style="font-size:13px;color:#64748b">分</span>
               <button type="button" class="btn-ghost" style="padding:2px 8px" @click="catHoursDraft[c.id].breaks.splice(bi, 1)">×</button>
             </div>
+          </div>
+          <!-- 区分をこの画面から追加（作業区分マスタへ行かずに済ませる・2026-09-18 レビュー指摘）。
+               追加した区分は「現場で使える区分」として作られ、すぐ上の一覧に出るので続けて定時を入れられる -->
+          <div class="cat-add" data-testid="cat-add">
+            <input v-model="newCatName" type="text" class="input" style="width:auto;min-width:160px" placeholder="新しい区分名（例：夜間作業）" data-testid="cat-add-name" @keydown.enter.prevent="addCategory" />
+            <button type="button" class="btn-ghost" :disabled="addingCat || !newCatName.trim()" data-testid="cat-add-btn" @click="addCategory">{{ addingCat ? '追加中…' : '＋ 区分を追加' }}</button>
+            <span v-if="addCatError" class="cat-add-error" data-testid="cat-add-error">{{ addCatError }}</span>
           </div>
         </div>
         <!-- ④'' 実働時間の自動計算。設定しながら「結局何時間勤務になるのか」が分からないという要望（2026-08-10）。
@@ -371,6 +380,27 @@ function usingCommon(c: { id: string; commonStart: string; commonEnd: string }):
   return !!(c.commonStart || c.commonEnd) && !(d?.start || d?.end)
 }
 const catHoursDraft = ref<Record<string, CatHour>>({})
+/** この画面から区分を追加する（作業区分マスタの category-save と同じ EF 経路） */
+const newCatName = ref('')
+const addingCat = ref(false)
+const addCatError = ref('')
+async function addCategory() {
+  const name = newCatName.value.trim()
+  if (!name || addingCat.value) return
+  addingCat.value = true; addCatError.value = ''
+  const r = await callMasterEf({ action: 'category-save', name, scope: 'site', active: true, start: '', end: '', breaks: [], hoursUnrestricted: false })
+  addingCat.value = false
+  if (!r?.ok) {
+    addCatError.value = r?.error === 'CATEGORY_FORBIDDEN' ? '区分を追加する権限がありません。' : r?.error === 'name_required' ? '区分名を入力してください。' : `追加に失敗しました（${r?.error ?? 'network'}）`
+    return
+  }
+  newCatName.value = ''
+  await loadSiteCats()
+  // 追加した区分の入力欄（draft）を空で用意する。無いと v-for の行が描画で落ちて出てこない
+  for (const c of siteCats.value) {
+    if (!catHoursDraft.value[c.id]) catHoursDraft.value[c.id] = { start: '', end: '', breaks: [] }
+  }
+}
 async function callMasterEf(body: Record<string, unknown>): Promise<any> {
   const { data, error } = await supabase.functions.invoke('master-data', { body })
   if (error) return { ok: false, error: 'network' }
@@ -1028,6 +1058,8 @@ async function doMerge() {
 .hp-main b { font-size: 18px; }
 .hp-sub { font-size: 12px; color: #64748b; margin-left: 4px; }
 .hp-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.cat-add { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.cat-add-error { font-size: 12px; color: #b91c1c; }
 .hp-tag { font-size: 11px; font-weight: 700; color: #4338ca; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
 .hp-warn { font-size: 12px; color: #b45309; }
 
