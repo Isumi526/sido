@@ -52,6 +52,12 @@ test.describe('在庫（作業員アプリ）', () => {
       method: 'POST', headers: { Prefer: 'return=representation' },
       body: JSON.stringify({ account_id: accountId, name: SITE, active: true }),
     }))[0].id
+    // ★同意済みにしておく（helpers.ts の ensureDevWorker と同じ理由）。未同意だと ConsentGate が
+    //  全画面オーバーレイでポインタを奪い、在庫画面の操作が「visible/enabled なのにクリックできない」で落ちる
+    await restSrv('worker_consents', {
+      method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' },
+      body: JSON.stringify({ account_id: accountId, worker_id: workerId, consent_version: 1, consent_text: 'E2E: 同意済みの既定状態' }),
+    }).catch(() => {})
   })
   test.afterAll(async () => {
     await restSrv(`inventory_movements?item_id=eq.${itemId}`, { method: 'DELETE' }).catch(() => {})
