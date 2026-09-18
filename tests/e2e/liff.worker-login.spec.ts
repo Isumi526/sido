@@ -37,6 +37,26 @@ test.beforeAll(async () => {
   } catch (e) { console.warn('[e2e] worker auth seed 失敗:', String(e)) }
 })
 
+// 契約対応⑤: ログイン成功が operation_logs に残る（別紙2 §4・12か月保存は purge_old_logs に乗る）
+test('AC: LIFF ログイン成功が operation_logs に「ログイン」として残る（失敗は残らない）', async ({ page }) => {
+  const accountId = await getAccountId()
+  const before = (await restSrv(`operation_logs?account_id=eq.${accountId}&action=eq.${encodeURIComponent('ログイン')}&actor=eq.${encodeURIComponent(EMAIL)}&select=id`)).length
+  // 失敗
+  await page.goto('/login', { waitUntil: 'networkidle' })
+  await page.locator('[data-testid="login-email"]').fill(EMAIL)
+  await page.locator('[data-testid="login-password"]').fill('wrong-pass')
+  await page.locator('[data-testid="login-submit"]').click()
+  await page.waitForTimeout(1500)
+  // 成功
+  await page.locator('[data-testid="login-password"]').fill(PASS)
+  await page.locator('[data-testid="login-submit"]').click()
+  await page.waitForURL(/\/$/, { timeout: 15000 }).catch(() => {})
+  await expect.poll(async () => (await restSrv(`operation_logs?account_id=eq.${accountId}&action=eq.${encodeURIComponent('ログイン')}&actor=eq.${encodeURIComponent(EMAIL)}&select=id,summary`)).length, { timeout: 10000 }).toBe(before + 1)
+  const rows = await restSrv(`operation_logs?account_id=eq.${accountId}&action=eq.${encodeURIComponent('ログイン')}&actor=eq.${encodeURIComponent(EMAIL)}&select=summary&order=created_at.desc&limit=1`)
+  expect(rows[0].summary, 'アプリ種別とUAだけ（パスワードは書かない）').toMatch(/^liff \//)
+  expect(rows[0].summary).not.toContain(PASS)
+})
+
 test('AC: email/password で LIFF ログイン → ホームが表示される（LINE誘導なし）', async ({ page }) => {
   await page.goto('/login')
   await page.getByTestId('login-email').fill(EMAIL)
