@@ -195,7 +195,10 @@
             <label class="fld"><span>請求番号</span><input v-model="form.invoice_no" class="inp" /></label>
             <label class="fld"><span>請求日</span><input v-model="form.invoice_date" type="date" class="inp" /></label>
             <label class="fld"><span>支払期限</span><input v-model="form.due_date" type="date" class="inp" /></label>
-            <label class="fld"><span>請求金額(請求書記載)</span><input v-model.number="form.total_amount" type="number" class="inp" /></label>
+            <label class="fld"><span>請求金額(請求書記載)</span><input v-model.number="form.total_amount" type="number" class="inp" data-testid="inv-total" />
+              <!-- 複数枚をまとめて解析した時の内訳。合算の根拠が見えないと、ページ分割された1通を二重に足した時に気づけない -->
+              <small v-if="totalBreakdown" class="total-breakdown" data-testid="inv-total-breakdown">{{ totalBreakdown }}</small>
+            </label>
             <div v-if="selectedPo" class="fld po-residual" :class="{ over: poOverResidual }" data-testid="po-residual">
               <span>注文書残額</span>
               <div class="po-residual-val">残額 <b>{{ yen(poResidual) }}</b>（注文書 {{ yen(selectedPo.total_amount) }} − 既請求 {{ yen(poBilledOthers) }}）／ 今回の請求額 {{ yen(effectiveBilled) }}<span v-if="poOverResidual" class="po-over-msg"> <span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">warning</span> 残額を超えています</span></div>
@@ -218,6 +221,7 @@
               <option value="" disabled>区分を選択 *</option>
               <option value="商社">商社</option>
               <option value="業者">業者</option>
+              <option value="その他">その他</option>
             </select>
             <button class="btn-new-vendor" :disabled="!newVendor.name.trim() || !newVendor.category || addingVendor" @click="addVendor">業者を登録</button>
             <span class="new-vendor-hint">区分は必須です。登録すると以後プルダウンに出ます</span>
@@ -517,6 +521,8 @@ const files    = ref<File[]>([])   // 複数枚（請求書が複数ページに
 const dragActive = ref(false)      // ファイルD&D中のハイライト
 const analyzing = ref(false)
 const aiMsg    = ref('')
+/** 複数枚解析時の請求金額の内訳（「3枚の合計：¥a＋¥b＋¥c」）。1枚なら空 */
+const totalBreakdown = ref('')
 const saving   = ref(false)
 const formError = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -792,7 +798,7 @@ function blankForm(): Form {
 const formSnapshot = ref('')
 function snapshot() { formSnapshot.value = JSON.stringify(form.value) }
 
-function openNew() { form.value = blankForm(); files.value = []; aiMsg.value = ''; formError.value = ''; snapshot() }
+function openNew() { form.value = blankForm(); files.value = []; aiMsg.value = ''; totalBreakdown.value = ''; formError.value = ''; snapshot() }
 
 // 誤って閉じてもデータが飛ばないよう、変更があった時だけ確認
 function isDirty(): boolean {
@@ -806,7 +812,7 @@ function closeForm() {
 }
 
 async function openEdit(inv: any) {
-  formError.value = ''; aiMsg.value = ''; files.value = []
+  formError.value = ''; aiMsg.value = ''; totalBreakdown.value = ''; files.value = []
   const { data: items } = await supabase.from('subcontractor_invoice_items')
     .select('*').eq('invoice_id', inv.id).order('sort_order').order('item_date')
   form.value = {
@@ -1087,6 +1093,11 @@ async function analyze() {
   // ヘッダは「最初に値を返したページ」を採用し、後続ページで上書きしない（複数枚で先頭の請求情報を保護）
   const headerSet = new Set<string>()
   let unmatched = 0, added = 0, failed = 0
+  // ★請求金額だけは「最初のページ」でなく全枚の合算にする（2026-09-18 尾崎さん）。
+  //  同じ業者の請求書が複数枚ある時、1枚目の合計しか入らず明細の和と合わなかった。
+  //  合算した根拠（内訳）を欄の下に出す＝1通がページ分割で来て二重に足した時に人が気づける。
+  const totals: (number | null)[] = []
+  totalBreakdown.value = ''
   try {
     for (let idx = 0; idx < targets.length; idx++) {
       if (targets.length > 1) aiMsg.value = `AI解析中… (${idx + 1}/${targets.length}枚目)`
@@ -1112,7 +1123,7 @@ async function analyze() {
       if (r.invoice_no && !headerSet.has('inv_no')) { headerSet.add('inv_no'); f.invoice_no = r.invoice_no }
       if (r.invoice_date && !headerSet.has('inv_date')) { headerSet.add('inv_date'); f.invoice_date = r.invoice_date }
       if (r.due_date && !headerSet.has('due')) { headerSet.add('due'); f.due_date = r.due_date }
-      if (r.total_amount != null && !headerSet.has('total')) { headerSet.add('total'); f.total_amount = r.total_amount }
+      totals.push(r.total_amount != null && Number.isFinite(Number(r.total_amount)) ? Number(r.total_amount) : null)
       // 内税/外税の判定。誤判定はUIのトグルで人が直せる（AC2）
       if (r.tax_mode && !headerSet.has('tax_mode')) {
         headerSet.add('tax_mode')
@@ -1138,8 +1149,18 @@ async function analyze() {
       aiMsg.value = 'AI解析に失敗しました。ファイルを確認して再度お試しください。'
       return
     }
+    // 請求金額＝読めた枚の合算。1枚なら従来どおりその値
+    const readTotals = totals.filter((t): t is number => t != null)
+    if (readTotals.length) {
+      f.total_amount = readTotals.reduce((a, b) => a + b, 0)
+      if (targets.length > 1) {
+        const unread = totals.length - readTotals.length + (targets.length - totals.length)
+        totalBreakdown.value = `${readTotals.length}枚の合計：${readTotals.map(t => yen(t)).join('＋')}`
+          + (unread ? `（うち${unread}枚は金額を読めませんでした。手で足してください）` : '')
+      }
+    }
     const msg: string[] = [`解析しました（明細 計${f.items.length} 件${targets.length > 1 ? ` / ${targets.length}枚` : ''}）。`]
-    if (targets.length > 1) msg.push('複数枚を1件の請求として明細を累積しました。請求金額(請求書記載)は合計をご確認ください。')
+    if (targets.length > 1) msg.push('複数枚を1件の請求として明細を累積し、請求金額(請求書記載)は各枚の合計を足しています。内訳をご確認ください。')
     if (unmatched) msg.push(`現場が未特定の明細が ${unmatched} 件あります。プルダウンで選択してください。`)
     if (failed) msg.push(`${failed}枚は解析に失敗しました。`)
     msg.push('内容を確認・修正してください。')
@@ -1346,6 +1367,7 @@ onMounted(load)
 .btn-ai { background: #1a56c4; color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-ai:disabled { opacity: .5; cursor: default; }
 .ai-msg { font-size: 12px; color: #1a56c4; margin: 0 0 12px; }
+.total-breakdown { display: block; font-size: 11px; color: #64748b; margin-top: 4px; }
 
 .kind-row { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; flex-wrap: wrap; }
 .kind-label { font-size: 12px; color: #6b7280; }
