@@ -3,7 +3,7 @@
     <div v-if="!embedded" class="page-header">
       <h1 class="page-title">自社情報</h1>
     </div>
-    <p class="hint">見積書・発注書PDFの発行元（自社）情報です。見積書の表紙・内訳書の計算に使われます。</p>
+    <p class="hint">見積書・発注書PDFの発行元（自社）情報と、拠点（オフィス・工場）です。</p>
 
     <div class="card">
       <h2>会社情報</h2>
@@ -28,6 +28,9 @@
         </div>
       </div>
     </div>
+
+    <!-- 拠点（2026-09-19 レビュー指摘）: 保存先は現場マスタ（sites.kind=office/factory）だが、導線はここ。現場マスタの一覧には出さない -->
+    <BaseSitesPanel />
 
     <div class="card">
       <h2>見積書の既定値・計算</h2>
@@ -55,6 +58,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { resolveDocUrl } from '../lib/docUrl'
+import BaseSitesPanel from '../components/BaseSitesPanel.vue'
 
 defineProps<{ embedded?: boolean }>()
 

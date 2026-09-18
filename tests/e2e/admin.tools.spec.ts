@@ -50,7 +50,7 @@ test.describe('道具管理①（admin）', () => {
     await page.getByTestId('location-base').selectOption(baseSiteId)
     await page.getByTestId('location-name').fill(LOC)
     await page.getByTestId('location-save').click()
-    await expect(page.locator('[data-testid^="location-chip-"]', { hasText: BASE })).toBeVisible({ timeout: 10000 })
+    await expect(page.getByTestId(`base-card-${baseSiteId}`), '★拠点ごとにまとまった表に出る').toContainText(LOC, { timeout: 10000 })
     // 同名は作れない
     await page.getByTestId('location-add-open').click()
     await page.getByTestId('location-base').selectOption(baseSiteId)
@@ -100,12 +100,21 @@ test.describe('道具管理①（admin）', () => {
     // ── 使っている保管場所は消せない ──
     const alerts: string[] = []
     page.on('dialog', (d) => { if (d.type() === 'alert') alerts.push(d.message()); d.accept().catch(() => {}) })   // confirm→alert の2段
-    const chip = page.locator('[data-testid^="location-chip-"]', { hasText: LOC })
-    await chip.locator('.chip-btn.del').click()
+    await page.getByTestId(`location-del-${locationId}`).click()
     await page.waitForTimeout(800)
     const still = await restSrv(`tool_locations?id=eq.${locationId}&select=id`)
     expect(still.length, '★定位置にしている道具がある場所は消えない').toBe(1)
     expect(alerts.join(' '), '理由が出る').toContain('定位置')
+
+    // ── 拠点をこの画面から登録できる（画面を跨がない・2026-09-19 レビュー指摘）。保存先は sites.kind=office ──
+    const BASE2 = `E2E拠点2_${TS}`
+    await page.getByTestId('base-site-add').click()
+    await page.getByTestId('base-site-name').fill(BASE2)
+    await page.getByTestId('base-site-save').click()
+    await expect(page.locator('[data-testid^="base-card-"]', { hasText: BASE2 }), '★登録した拠点が表に増える').toBeVisible({ timeout: 10000 })
+    const b2 = await restSrv(`sites?account_id=eq.${accountId}&name=eq.${encodeURIComponent(BASE2)}&select=id,kind`)
+    expect(b2[0]?.kind).toBe('office')
+    await restSrv(`sites?id=eq.${b2[0].id}`, { method: 'DELETE' }).catch(() => {})
 
     // ── anon の REST 直叩きでは書けない（RLS・EF 経由のみ）──
     const res = await fetch(`${process.env.SUPABASE_URL || 'http://127.0.0.1:56321'}/rest/v1/tools`, {
