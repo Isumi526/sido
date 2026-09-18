@@ -12,6 +12,8 @@
     <!-- 品目の追加 -->
     <div class="add-row">
       <input v-model="form.name" class="input" placeholder="品目名（例: 石膏ボード 12.5mm）" data-testid="inv-name" />
+      <input v-model="form.category" class="input sm" placeholder="区分（例: ボード）" list="inv-categories" data-testid="inv-category" />
+      <datalist id="inv-categories"><option v-for="c in categoryOptions" :key="c" :value="c" /></datalist>
       <input v-model="form.unit" class="input sm" placeholder="単位（枚/本/箱…）" data-testid="inv-unit" />
       <input v-model="form.code" class="input sm" placeholder="品番（任意）" data-testid="inv-code" />
       <input v-model.number="form.qty" type="number" step="any" class="input sm num" placeholder="初期在庫" data-testid="inv-init-qty" />
@@ -20,10 +22,11 @@
 
     <table class="table" data-testid="inv-table">
       <thead>
-        <tr><th>品目</th><th>品番</th><th>単位</th><th class="num">現在庫</th><th>入出庫</th></tr>
+        <tr><th>区分</th><th>品目</th><th>品番</th><th>単位</th><th class="num">現在庫</th><th>入出庫</th></tr>
       </thead>
       <tbody>
         <tr v-for="it in items" :key="it.id" :data-testid="`inv-row-${it.id}`">
+          <td class="code" :data-testid="`inv-cat-${it.id}`">{{ it.category || '—' }}</td>
           <td>{{ it.name }}</td>
           <td class="code">{{ it.code || '—' }}</td>
           <td>{{ it.unit || '—' }}</td>
@@ -39,7 +42,7 @@
             </button>
           </td>
         </tr>
-        <tr v-if="!items.length"><td colspan="5" class="muted">品目がまだありません。上の欄から追加してください。</td></tr>
+        <tr v-if="!items.length"><td colspan="6" class="muted">品目がまだありません。上の欄から追加してください。</td></tr>
       </tbody>
     </table>
 
@@ -72,11 +75,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 
-type Item = { id: string; name: string; unit: string | null; code: string | null; current_qty: number }
+type Item = { id: string; name: string; unit: string | null; code: string | null; current_qty: number; category: string | null }
 type Movement = {
   id: string; delta: number; kind: string; note: string | null; created_by_name: string | null; created_at: string
   photo_urls: string[] | null; report_date: string | null
@@ -89,7 +92,10 @@ const fmtDateTime = (iso: string) => { const d = new Date(iso); return `${d.getM
 
 const accountId = ref('')
 const items     = ref<Item[]>([])
-const form      = reactive<{ name: string; unit: string; code: string; qty: number | null }>({ name: '', unit: '', code: '', qty: null })
+// 在庫②: 区分の候補（自社で使っている区分＋既定セット。EF inventory の DEFAULT_CATEGORIES と同じ値）
+const DEFAULT_CATEGORIES = ['ボード', '下地材', '床材', '天井材', '接着剤・副資材', 'ビス・金物', '塗料・シーリング', '養生・消耗品', 'その他']
+const categoryOptions = computed(() => { const used = [...new Set(items.value.map(i => i.category).filter(Boolean) as string[])]; return [...used, ...DEFAULT_CATEGORIES.filter(c => !used.includes(c))] })
+const form      = reactive<{ name: string; unit: string; code: string; qty: number | null; category: string }>({ name: '', unit: '', code: '', qty: null, category: '' })
 const moveQty   = reactive<Record<string, number | null>>({})
 const moveNote  = reactive<Record<string, string>>({})
 const busy      = ref(false)
@@ -100,7 +106,7 @@ const fmt = (n: number) => Number(n).toLocaleString('ja-JP', { maximumFractionDi
 async function load() {
   accountId.value = await getAccountId()
   const { data, error } = await supabase.from('inventory_items')
-    .select('id, name, unit, code, current_qty').eq('account_id', accountId.value).eq('active', true).order('name')
+    .select('id, name, unit, code, current_qty, category').eq('account_id', accountId.value).eq('active', true).order('category').order('name')
   if (error) { err.value = error.message; return }
   items.value = (data ?? []).map((x: any) => ({ ...x, current_qty: Number(x.current_qty) }))
   const { data: mv } = await supabase.from('inventory_movements')
@@ -115,11 +121,12 @@ async function addItem() {
   busy.value = true; err.value = ''
   const { error } = await supabase.from('inventory_items').insert({
     account_id: accountId.value, name, unit: form.unit.trim() || null, code: form.code.trim() || null,
+    category: form.category.trim() || null,   // 在庫②: 区分→詳細の第1段（LIFF の予測検索で絞る）
     current_qty: Number(form.qty) || 0,
   })
   busy.value = false
   if (error) { err.value = /duplicate|unique/i.test(error.message) ? `品目「${name}」は既に登録済みです` : error.message; return }
-  form.name = ''; form.unit = ''; form.code = ''; form.qty = null
+  form.name = ''; form.unit = ''; form.code = ''; form.qty = null; form.category = ''
   await load()
 }
 

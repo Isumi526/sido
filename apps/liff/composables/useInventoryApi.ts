@@ -7,7 +7,8 @@
 // ============================================================
 const EDGE_FN = 'inventory'
 
-export type InventoryItem = { id: string; name: string; unit: string | null; code: string | null; current_qty: number }
+export type InventoryItem = { id: string; name: string; unit: string | null; code: string | null; current_qty: number; category?: string | null }
+export type InventorySuggestion = { guessName: string | null; guessCategory: string | null; candidates: (Pick<InventoryItem, 'id' | 'name' | 'unit' | 'category'> & { confidence: number })[] }
 export type InventoryKind = 'in' | 'out' | 'return'
 export type InventoryMovement = {
   id: string; item_id: string; delta: number; kind: string; site_id: string | null
@@ -53,5 +54,25 @@ export function useInventoryApi() {
     catch (e) { console.error('[inventory] 履歴の取得に失敗:', e); return [] }
   }
 
-  return { items, move, recent }
+  // ── 在庫②（2026-09-18）──
+  /** 区分の一覧（自社で使っている区分＋既定セット）。失敗は空 */
+  async function categories(): Promise<string[]> {
+    try { return ((await call('categories')).categories ?? []) as string[] } catch { return [] }
+  }
+  /** 現場からその場で品目を登録（承認なし）。同名があればそれが返る（existed=true） */
+  async function createItem(input: { name: string; category?: string | null; unit?: string | null }): Promise<{ item: InventoryItem; existed: boolean }> {
+    const r = await call('item-create', input)
+    return { item: r.item as InventoryItem, existed: !!r.existed }
+  }
+  /** 写真から品目候補（Gemini・自社マスタ＋自社の訂正履歴のみ）。失敗は throw（画面で「読めませんでした」） */
+  async function suggest(imageBase64: string): Promise<InventorySuggestion> {
+    const r = await call('suggest', { imageBase64 })
+    return { guessName: r.guessName ?? null, guessCategory: r.guessCategory ?? null, candidates: r.candidates ?? [] }
+  }
+  /** 人が確定した結果を訂正履歴へ（best-effort・失敗しても登録は成立している） */
+  async function correction(input: { itemId: string; aiGuess?: string | null; aiCategory?: string | null; matched?: boolean; photoUrl?: string | null }): Promise<void> {
+    try { await call('correction', input) } catch (e) { console.error('[inventory] 訂正履歴の保存に失敗:', e) }
+  }
+
+  return { items, move, recent, categories, createItem, suggest, correction }
 }
