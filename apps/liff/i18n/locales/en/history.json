@@ -80,5 +80,7 @@
   "bulkResultPending": "{count} day(s) awaiting approval",
   "bulkResultFailed": "{count} day(s) failed",
   "unsubmittedProxy": "Entering on behalf of {name}",
-  "proxyOwner": "{name}’s report"
+  "proxyOwner": "{name}’s report",
+  "expPickup": "Materials taken back {detail}",
+  "expPhotos": "{n} photos"
 }

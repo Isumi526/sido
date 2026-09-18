@@ -764,6 +764,29 @@
                 </div>
               </template>
             </Field>
+            <!-- 引き上げ材料（2026-09-18 亥角）: ゴミと同じ並びで あり/なし → 写真を複数枚。
+                 現場から持ち帰った材料の記録＝在庫の入荷の材料にもなる（在庫①で接続） -->
+            <Field :label="$t('report.pickup')">
+              <select :value="siteUsage[si].pickup" class="select select--usage" data-testid="pickup-usage" @change="(e) => setUsage(si, 'pickup', (e.target as HTMLSelectElement).value)">
+                <option value="なし">{{ $t('report.optNone') }}</option>
+                <option value="あり">{{ $t('report.optYes') }}</option>
+              </select>
+              <template v-if="siteUsage[si].pickup === 'あり'">
+                <input v-model="site.expenses.pickupNote" type="text" class="input mt6" :placeholder="$t('report.pickupNotePlaceholder')" data-testid="pickup-note" />
+                <div class="mt8">
+                  <label class="hours-label">{{ $t('report.pickupPhotoLabel') }}</label>
+                  <AttachedFilesBadge :files="site.expenses.pickupPhotos" @remove-file="(p) => site.expenses.pickupPhotos?.splice(p.index, 1)" />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    class="input mt6"
+                    data-testid="pickup-photos"
+                    @change="(e) => handlePickupPhoto(si, e)"
+                  />
+                </div>
+              </template>
+            </Field>
 
             <!-- その他（資材等・雑経費を統合。仕分けは科目に任せる） -->
             <Field :label="$t('report.other')">
@@ -1664,6 +1687,7 @@ type UsageState = {
   hotel:         string
   leopalace:     string
   garbage:       string
+  pickup:        string
   other:         string
   entertainment: string
 }
@@ -1676,6 +1700,7 @@ const createUsage = (): UsageState => ({
   hotel:         'なし',
   leopalace:     'なし',
   garbage:       'なし',
+  pickup:        'なし',
   other:         'なし',
   entertainment: 'なし',
 })
@@ -1701,13 +1726,14 @@ function reconstructExpenseUsage(exp: any): UsageState {
   // 宿泊費: 新形式 hotels[] か旧スカラー(hotel/leopalace)のどちらかに金額があれば あり
   if ((exp.hotels ?? []).some((h: any) => h.yen || h.label) || exp.hotelYen || exp.leopalaceYen) usage.hotel = 'あり'
   if (exp.garbageFactoryM3 || exp.garbageSiteM3)  usage.garbage = 'あり'
+  if (exp.hasPickup || (exp.pickupPhotoUrls ?? []).length || exp.pickupNote) usage.pickup = 'あり'
   // その他雑経費は「その他」に統合済み（2026-07-31）。旧データ（entertainments / 旧スカラー）が
   // あっても「その他=あり」で復元する＝セクションが消えて編集できなくなるのを防ぐ。
   if ((exp.others ?? []).some((o: any) => o.yen || o.label) ||
       exp.entertainmentYen || (exp.entertainments ?? []).some((e: any) => e.yen || e.label)) usage.other = 'あり'
   // いずれかの経費があれば expense = あり
   if (usage.vehicle !== 'なし' || usage.train !== 'なし' || usage.hotel !== 'なし' ||
-      usage.leopalace !== 'なし' || usage.garbage !== 'なし' ||
+      usage.leopalace !== 'なし' || usage.garbage !== 'なし' || usage.pickup !== 'なし' ||
       usage.other !== 'なし' || usage.entertainment !== 'なし')
     usage.expense = 'あり'
   return usage
@@ -1820,7 +1846,7 @@ function setUsage(si: number, key: keyof UsageState, value: string) {
   //  残すと入力欄が隠れたまま金額だけ生き残り、(1) 見えない経費がそのまま送信され、
   //  (2) 領収書バリデーションが画面から直せない行を弾き続ける（2026-09-02 本番で発生）。
   if (key === 'expense' && value === 'なし') {
-    for (const k of ['vehicle', 'train', 'hotel', 'garbage', 'other', 'entertainment'] as const) {
+    for (const k of ['vehicle', 'train', 'hotel', 'garbage', 'pickup', 'other', 'entertainment'] as const) {
       setUsage(si, k, 'なし')
     }
     return
@@ -1851,6 +1877,8 @@ function setUsage(si: number, key: keyof UsageState, value: string) {
     if (!(exp.hotels?.length)) exp.hotels = [createLineItem()]
     return
   }
+  // 引き上げ材料「あり」は写真が無くても記録として残す（何を引き上げたかはメモ）
+  if (key === 'pickup' && value === 'あり') { exp.hasPickup = true; return }
   if (value !== 'なし') return
   switch (key) {
     case 'train':
@@ -1867,6 +1895,9 @@ function setUsage(si: number, key: keyof UsageState, value: string) {
       break
     case 'garbage':
       exp.garbageFactoryM3 = undefined; exp.garbageSiteM3 = undefined; exp.garbagePhotos = undefined
+      break
+    case 'pickup':
+      exp.hasPickup = undefined; exp.pickupNote = undefined; exp.pickupPhotos = undefined; exp.pickupPhotoUrls = undefined
       break
     case 'other':
       exp.others = [createLineItem()]; exp.otherFiles = undefined
@@ -2652,7 +2683,7 @@ watch(() => report.submitted.value, (v) => {
 })
 
 // フォームから「パス→File[]」マップを収集（IndexedDB保存用）
-const DRAFT_FORM_FILE_KEYS = ['vehicleFiles', 'hotelFiles', 'leopalaceFiles', 'otherFiles', 'entertainmentFiles', 'garbagePhotos']
+const DRAFT_FORM_FILE_KEYS = ['vehicleFiles', 'hotelFiles', 'leopalaceFiles', 'otherFiles', 'entertainmentFiles', 'garbagePhotos', 'pickupPhotos']
 const DRAFT_PER_ITEM = ['parkings', 'highways', 'trains', 'others', 'entertainments', 'hotels']
 function collectDraftFiles(form: any): Record<string, File[]> {
   const map: Record<string, File[]> = {}
@@ -2801,6 +2832,10 @@ const previewData = computed<PreviewData>(() => {
       if (exp.garbageFactoryM3) g.push(`木材のみ ${exp.garbageFactoryM3}m³`)
       if (exp.garbageSiteM3)    g.push(`混載 ${exp.garbageSiteM3}m³`)
       expenses.push(`ゴミ ${g.join(' ')}`)
+    }
+    if (exp.hasPickup) {
+      const n = (exp.pickupPhotos?.length ?? 0) + (exp.pickupPhotoUrls?.length ?? 0)
+      expenses.push(`引き上げ材料 ${exp.pickupNote ? exp.pickupNote + ' ' : ''}${n ? `写真${n}枚` : ''}`.trim())
     }
     if (exp.entertainmentYen)
       expenses.push(`${exp.entertainmentLabel || '雑経費'} ¥${Number(exp.entertainmentYen).toLocaleString()}`)
@@ -3473,6 +3508,13 @@ function handleGarbagePhoto(si: number, event: Event) {
   const input = event.target as HTMLInputElement
   if (!input.files?.length) return
   report.form.value.sites[si].expenses.garbagePhotos = Array.from(input.files)
+}
+function handlePickupPhoto(si: number, event: Event) {
+  const input = event.target as HTMLInputElement
+  if (!input.files?.length) return
+  // 追加選択で前の分を消さない（複数回に分けて撮る）
+  const cur = report.form.value.sites[si].expenses.pickupPhotos ?? []
+  report.form.value.sites[si].expenses.pickupPhotos = [...cur, ...Array.from(input.files)]
 }
 
 function fillTestData() {

@@ -319,6 +319,14 @@
               <div v-if="site.expenses?.garbagePhotoUrls?.length" class="receipt-urls">
                 <a v-for="(url, ui) in site.expenses.garbagePhotoUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link"><span class="material-symbols-rounded" style="font-size:16px;vertical-align:middle;line-height:1">attach_file</span>ゴミ写真{{ site.expenses.garbagePhotoUrls.length > 1 ? ui + 1 : '' }}</a>
               </div>
+              <!-- 引き上げ材料（2026-09-18） -->
+              <div v-if="site.expenses?.hasPickup || site.expenses?.pickupPhotoUrls?.length" class="expense-row" data-testid="report-pickup">
+                <span>引き上げ材料</span>
+                <span class="muted">{{ site.expenses.pickupNote || 'あり' }}</span>
+              </div>
+              <div v-if="site.expenses?.pickupPhotoUrls?.length" class="receipt-urls">
+                <a v-for="(url, ui) in site.expenses.pickupPhotoUrls" :key="ui" :href="url" target="_blank" rel="noopener" class="receipt-link"><span class="material-symbols-rounded" style="font-size:16px;vertical-align:middle;line-height:1">attach_file</span>引き上げ写真{{ site.expenses.pickupPhotoUrls.length > 1 ? ui + 1 : '' }}</a>
+              </div>
             </div>
 
             <!-- 現場備考 -->
@@ -536,7 +544,7 @@ async function doDeleteFromModal() {
   deleteArmed.value = false
 }
 
-const URL_KEYS = ['vehicleUrls', 'trainUrls', 'hotelUrls', 'leopalaceUrls', 'otherUrls', 'entertainmentUrls', 'garbagePhotoUrls'] as const
+const URL_KEYS = ['vehicleUrls', 'trainUrls', 'hotelUrls', 'leopalaceUrls', 'otherUrls', 'entertainmentUrls', 'garbagePhotoUrls', 'pickupPhotoUrls'] as const
 
 function extractStoragePaths(r: any): string[] {
   const paths: string[] = []
@@ -669,7 +677,8 @@ function hasExpenses(exp: any): boolean {
     exp.leopalaceYen ||
     exp.others?.some((o: any) => o.yen) ||
     exp.entertainmentYen ||
-    exp.garbagePhotoUrls?.length
+    exp.garbagePhotoUrls?.length ||
+    exp.hasPickup || exp.pickupPhotoUrls?.length
   )
 }
 

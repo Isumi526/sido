@@ -11,7 +11,7 @@
 const PREFIX = 'sido:report-draft:v1'
 
 // localStorage に保存できない File[] フィールドを除去（useReport.stripFiles と同方針）
-const FILE_KEYS = ['vehicleFiles', 'trainFiles', 'hotelFiles', 'leopalaceFiles', 'otherFiles', 'entertainmentFiles', 'garbagePhotos'] as const
+const FILE_KEYS = ['vehicleFiles', 'trainFiles', 'hotelFiles', 'leopalaceFiles', 'otherFiles', 'entertainmentFiles', 'garbagePhotos', 'pickupPhotos'] as const
 const PER_ITEM_FILE_ARRAYS = ['parkings', 'highways', 'trains', 'others', 'entertainments'] as const
 
 function stripExpenseFiles(expenses: any): any {

@@ -80,5 +80,7 @@
   "bulkResultPending": "{count} 日を承認待ちにしました",
   "bulkResultFailed": "{count} 日は失敗しました",
   "unsubmittedProxy": "{name}さんの代理として入力します",
-  "proxyOwner": "{name}さんの分"
+  "proxyOwner": "{name}さんの分",
+  "expPickup": "引き上げ材料 {detail}",
+  "expPhotos": "写真{n}枚"
 }
