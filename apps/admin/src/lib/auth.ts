@@ -55,6 +55,16 @@ export const canViewWorkerDetails = computed(() =>
 export const canViewManagementPages = computed(() =>
   !currentRole.value || currentRole.value === 'admin' || currentRole.value === 'office')
 
+// 承認系ページ（日報編集の承認 / 現場未設定の紐付け / 残業申請の承認 / 打刻修正の承認 / 解錠の許可申請）の閲覧可否。
+//  ★EF 側 `_shared/caller-identity.ts` の APPROVER_ROLES（owner/admin/office/site_manager）と同じ集合にする。
+//   site_manager は一次承認者なので management ガードでは塞げない（塞ぐと自分の承認画面に入れなくなる）。
+//   worker は App.vue の isAdminAllowed で管理画面自体に入れないが、ルートにも二重に置く
+//   （2026-09-08 実測: 5画面に meta が無く、App の門が外れたら作業員が他人の申請内容を読める状態だった）。
+//   null（worker行の無い純オーナー）は許可。
+export const APPROVER_ROLES = ['admin', 'office', 'site_manager']
+export const canApprove = computed(() =>
+  !currentRole.value || APPROVER_ROLES.includes(currentRole.value))
+
 // ★所有軸モデル（2026-07-31 ユーザー方針・現場管理者の所有権モデル）:
 //  「自分が責任者の現場」か否かを判定する。sites.responsible_worker_id と自分の worker.id の一致で見る。
 //  RLS側（20260903100000_site_owner_rls.sql の can_edit_site）と同じ判定規則をUI側にも置く
