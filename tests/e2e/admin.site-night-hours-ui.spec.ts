@@ -71,6 +71,18 @@ test.describe('現場マスタ: 夜のみ現場の定時UI', () => {
     for (const v of vals) expect(['00', '15', '30', '45'], `${v} は15分刻み`).toContain(v.slice(3, 5))
   })
 
+  test('★使っていない区分は既定で隠れ、「他の区分を表示」で開ける', async ({ page }) => {
+    await openModal(page)
+    // この現場は区分別の定時を持っていない＝一覧は空で、案内と「他の区分を表示（N件）」だけ
+    await expect(page.getByTestId('cat-hours-none')).toBeVisible()
+    const toggle = page.getByTestId('cat-hours-toggle')
+    await expect(toggle).toContainText('他の区分を表示')
+    expect(await page.locator('.modal .cat-hours').count(), '空の区分の行は出ない').toBe(0)
+    await toggle.click()
+    expect(await page.locator('.modal .cat-hours').count(), '開くと全区分が出る').toBeGreaterThan(0)
+    await expect(toggle).toContainText('設定していない区分を隠す')
+  })
+
   test('★この画面から区分を追加でき、すぐ定時を入れる行が出る', async ({ page }) => {
     await openModal(page)
     await page.getByTestId('cat-add-name').fill(NEW_CAT)

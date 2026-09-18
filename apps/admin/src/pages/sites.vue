@@ -165,7 +165,9 @@
         <div class="field" data-testid="cat-hours-section">
           <label>区分ごとの定時（この現場・任意）</label>
           <p class="hint-sm" style="font-size:12px;color:#64748b;margin:2px 0 8px">見積・事務など「現場作業以外」の定時がこの現場と違う場合だけ設定します。空欄なら「作業区分」で設定した全現場共通の定時、それも無ければこの現場の固定勤務時刻に従います。日報でその区分を選ぶと反映され、実働・人件費もこの定時で計算します。</p>
-          <div v-for="c in siteCats" :key="c.id" class="cat-hours" :data-testid="`cat-hours-${c.id}`">
+          <!-- 既定では「この現場で設定している区分」だけを出す。全区分を並べると見積・事務・講習…と
+               使っていない行で埋まる（2026-09-18 レビュー指摘「うっとうしい」）。残りは1クリックで開く -->
+          <div v-for="c in visibleCats" :key="c.id" class="cat-hours" :data-testid="`cat-hours-${c.id}`">
             <div class="cat-hours-name">
               {{ c.name }}
               <span v-if="usingCommon(c)" class="cat-common" :data-testid="`cat-common-${c.id}`">
@@ -191,6 +193,10 @@
               <button type="button" class="btn-ghost" style="padding:2px 8px" @click="catHoursDraft[c.id].breaks.splice(bi, 1)">×</button>
             </div>
           </div>
+          <p v-if="!visibleCats.length && hiddenCatCount" class="hint-sm" style="font-size:12px;color:#94a3b8;margin:0 0 6px" data-testid="cat-hours-none">この現場で個別に設定している区分はありません（共通設定・固定勤務時刻のとおり）</p>
+          <button v-if="hiddenCatCount || showAllCats" type="button" class="btn-ghost cat-toggle" data-testid="cat-hours-toggle" @click="showAllCats = !showAllCats">
+            {{ showAllCats ? '設定していない区分を隠す' : `他の区分を表示（${hiddenCatCount}件）` }}
+          </button>
           <!-- 区分をこの画面から追加（作業区分マスタへ行かずに済ませる・2026-09-18 レビュー指摘）。
                追加した区分は「現場で使える区分」として作られ、すぐ上の一覧に出るので続けて定時を入れられる -->
           <div class="cat-add" data-testid="cat-add">
@@ -381,6 +387,16 @@ function usingCommon(c: { id: string; commonStart: string; commonEnd: string }):
   return !!(c.commonStart || c.commonEnd) && !(d?.start || d?.end)
 }
 const catHoursDraft = ref<Record<string, CatHour>>({})
+/** この現場で値を持つ区分だけ既定で出す。追加したばかりの区分は空でも出す（入力させるため） */
+const showAllCats = ref(false)
+const justAddedCatIds = ref<Set<string>>(new Set())
+function catHasValue(id: string): boolean {
+  const d = catHoursDraft.value[id]
+  return !!(d && (d.start || d.end || (d.breaks && d.breaks.length)))
+}
+const visibleCats = computed(() =>
+  showAllCats.value ? siteCats.value : siteCats.value.filter(c => catHasValue(c.id) || justAddedCatIds.value.has(c.id)))
+const hiddenCatCount = computed(() => siteCats.value.length - visibleCats.value.length)
 /** この画面から区分を追加する（作業区分マスタの category-save と同じ EF 経路） */
 const newCatName = ref('')
 const addingCat = ref(false)
@@ -396,10 +412,12 @@ async function addCategory() {
     return
   }
   newCatName.value = ''
+  const before = new Set(siteCats.value.map(c => c.id))
   await loadSiteCats()
   // 追加した区分の入力欄（draft）を空で用意する。無いと v-for の行が描画で落ちて出てこない
   for (const c of siteCats.value) {
     if (!catHoursDraft.value[c.id]) catHoursDraft.value[c.id] = { start: '', end: '', breaks: [] }
+    if (!before.has(c.id)) justAddedCatIds.value.add(c.id)   // 空でも一覧に出して、続けて定時を入れられるように
   }
 }
 async function callMasterEf(body: Record<string, unknown>): Promise<any> {
@@ -435,6 +453,8 @@ function buildCatHoursDraft(rows: { category_id: string; default_start_time: str
     }
   }
   catHoursDraft.value = draft
+  showAllCats.value = false
+  justAddedCatIds.value = new Set()
 }
 const workerNames = ref<Record<string, string>>({})   // 全作業員 id→名前（表示用）
 const myWorkerId = ref<string | null>(null)
@@ -1059,6 +1079,7 @@ async function doMerge() {
 .hp-main b { font-size: 18px; }
 .hp-sub { font-size: 12px; color: #64748b; margin-left: 4px; }
 .hp-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.cat-toggle { padding: 4px 10px; font-size: 12px; margin-top: 4px; }
 .cat-add { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .cat-add-error { font-size: 12px; color: #b91c1c; }
 .hp-tag { font-size: 11px; font-weight: 700; color: #4338ca; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
