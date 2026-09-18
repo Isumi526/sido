@@ -74,11 +74,15 @@
 
     <!-- 道具 -->
     <section v-else class="block">
-      <div class="block-head">
-        <div></div>
-        <div class="head-right">
+      <div class="block-head tools-head">
+        <div class="head-right nowrap">
           <label class="chk"><input v-model="showInactive" type="checkbox" @change="load" />無効も表示</label>
           <input v-model="filter" class="input filter" placeholder="名前・種別・番号で絞り込み" data-testid="tool-filter" />
+          <select v-model="locationFilter" class="input loc-filter" data-testid="tool-location-filter" title="定位置で絞り込み">
+            <option value="">定位置：すべて</option>
+            <option v-for="l in locations" :key="l.id" :value="l.id">{{ l.base }}＞{{ l.name }}</option>
+            <option value="__none__">定位置なし</option>
+          </select>
           <button class="btn-ghost sm" :disabled="!selectedIds.length || generating" data-testid="tool-qr-pdf" @click="downloadToolQr()">
             {{ generating ? '作成中...' : `選択した道具のQRを印刷（${selectedIds.length}）` }}
           </button>
@@ -145,6 +149,7 @@
             <option :value="null">—</option>
             <option v-for="l in locations.filter(x => x.active)" :key="l.id" :value="l.id">{{ l.base }}＞{{ l.name }}</option>
           </select>
+          <p class="hint"><a href="#" data-testid="tool-location-add" @click.prevent="openLocation(undefined, undefined, true)">＋ 場所をその場で登録</a>（拠点が無ければ<a href="#" @click.prevent="openBase()">拠点を登録</a>）</p>
         </div>
         <div class="row2">
           <div class="field">
@@ -283,6 +288,7 @@ const generating = ref(false)
 const saveError = ref('')
 const showInactive = ref(false)
 const filter = ref('')
+const locationFilter = ref('')   // ''=すべて / location id / '__none__'=定位置なし
 const selectedIds = ref<string[]>([])
 const toolModal = ref<Partial<Tool> | null>(null)
 const locModal = ref<Partial<Location> | null>(null)
@@ -293,8 +299,12 @@ const qrCanvas = ref<HTMLCanvasElement | null>(null)
 const kindOptions = computed(() => [...new Set(tools.value.map(t => t.kind).filter(Boolean) as string[])])
 const filtered = computed(() => {
   const q = filter.value.trim().toLowerCase()
-  if (!q) return tools.value
-  return tools.value.filter(t => [t.name, t.kind, t.code, t.tool_locations?.base, t.tool_locations?.name].some(v => (v ?? '').toLowerCase().includes(q)))
+  const lf = locationFilter.value
+  return tools.value.filter(t => {
+    if (lf === '__none__' ? !!t.location_id : (lf && t.location_id !== lf)) return false
+    if (!q) return true
+    return [t.name, t.kind, t.code, t.tool_locations?.base, t.tool_locations?.name].some(v => (v ?? '').toLowerCase().includes(q))
+  })
 })
 /** 拠点ごとにまとめた保管場所（拠点は自社情報の順・場所は EF の並び） */
 const locationGroups = computed(() => {
@@ -369,8 +379,11 @@ async function removeTool(t: Tool) {
 }
 
 // ── 保管場所 ──
-function openLocation(l?: Location, baseSiteId?: string) {
+/** fromTool=true は道具登録モーダルから「場所をその場で登録」（保存後にその道具の定位置に入れる・タブは切り替えない） */
+const locFromTool = ref(false)
+function openLocation(l?: Location, baseSiteId?: string, fromTool = false) {
   saveError.value = ''
+  locFromTool.value = fromTool
   locModal.value = l ? { ...l } : { base_site_id: baseSiteId ?? (bases.value.length === 1 ? bases.value[0].id : ''), name: '', active: true }
 }
 // ── 拠点（オフィス・工場）をその場で登録 ──
@@ -392,6 +405,12 @@ async function saveLocation() {
   saving.value = false
   if (!r.ok) { saveError.value = errMsg(r.error, '保存に失敗しました'); return }
   locModal.value = null
+  if (locFromTool.value) {
+    // 道具登録の途中で作った場所 → その道具の定位置に入れて、道具モーダルに戻る
+    await load()
+    if (toolModal.value && r.data?.id) toolModal.value.location_id = r.data.id as string
+    return
+  }
   tab.value = 'locations'
   await load()
 }
@@ -448,15 +467,19 @@ onMounted(load)
 .header-btns { display: flex; gap: 8px; }
 .btn-add { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 700; cursor: pointer; }
 .btn-ghost { background: #fff; color: #334155; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 16px; font-size: 14px; font-weight: 700; cursor: pointer; }
-.btn-ghost.sm { padding: 6px 12px; font-size: 12px; }
+.btn-ghost.sm { padding: 6px 12px; font-size: 12px; white-space: nowrap; }
 .btn-ghost:disabled { opacity: .4; cursor: default; }
 .block { margin-bottom: 24px; }
 .block-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 12px; flex-wrap: wrap; }
 .block-title { font-size: 15px; font-weight: 700; margin: 0; }
 .count { font-size: 12px; color: #888; font-weight: 400; margin-left: 6px; }
 .head-right { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.head-right.nowrap { flex-wrap: nowrap; width: 100%; }
+.tools-head { justify-content: flex-start; }
 .chk { font-size: 12px; color: #64748b; display: flex; align-items: center; gap: 4px; }
-.filter { width: 220px; padding: 6px 10px; font-size: 13px; }
+.filter { flex: 1; min-width: 160px; max-width: 360px; padding: 6px 10px; font-size: 13px; }
+.chk { white-space: nowrap; }
+.loc-filter { width: auto; max-width: 260px; padding: 6px 10px; font-size: 13px; }
 .tabs { display: flex; gap: 4px; border-bottom: 2px solid #e5e7eb; margin-bottom: 14px; }
 .tab { background: none; border: none; padding: 10px 16px; font-size: 14px; font-weight: 700; color: #64748b; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; }
 .tab.active { color: #111; border-bottom-color: #06C755; }

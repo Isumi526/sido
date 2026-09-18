@@ -110,8 +110,28 @@ test.describe('道具管理①（admin）', () => {
     expect(still.length, '★定位置にしている道具がある場所は消えない').toBe(1)
     expect(alerts.join(' '), '理由が出る').toContain('定位置')
 
+    // ── 道具登録の途中で場所をその場で登録できる → その道具の定位置に入る（2026-09-19 レビュー指摘）──
+    await page.getByTestId('tab-tools').click()
+    await page.getByTestId('tool-add-open').click()
+    await page.getByTestId('tool-name').fill(`E2E脚立_${TS}`)
+    await page.getByTestId('tool-location-add').click()
+    await page.getByTestId('location-base').selectOption(baseSiteId)
+    await page.getByTestId('location-name').fill('コンテナ')
+    await page.getByTestId('location-save').click()
+    await expect.poll(async () => (await restSrv(`tool_locations?base_site_id=eq.${baseSiteId}&name=eq.${encodeURIComponent('コンテナ')}&select=id`)).length, { timeout: 10000 }).toBe(1)
+    const containerId = (await restSrv(`tool_locations?base_site_id=eq.${baseSiteId}&name=eq.${encodeURIComponent('コンテナ')}&select=id`))[0].id
+    await expect(page.getByTestId('tool-location'), '★作った場所がその道具の定位置に入る').toHaveValue(containerId)
+    await page.getByTestId('tool-save').click()
+    await expect(page.locator('[data-testid^="tool-row-"]', { hasText: `E2E脚立_${TS}` })).toContainText(`${BASE}＞コンテナ`, { timeout: 10000 })
+    // 場所で絞り込める
+    await page.getByTestId('tool-location-filter').selectOption(containerId)
+    await expect(page.locator('[data-testid^="tool-row-"]', { hasText: `E2E脚立_${TS}` })).toBeVisible()
+    await expect(page.locator('[data-testid^="tool-row-"]', { hasText: TOOL }), '★他の場所の道具は出ない').toHaveCount(0)
+    await page.getByTestId('tool-location-filter').selectOption('')
+
     // ── 拠点をこの画面から登録できる（画面を跨がない・2026-09-19 レビュー指摘）。保存先は sites.kind=office ──
     const BASE2 = `E2E拠点2_${TS}`
+    await page.getByTestId('tab-locations').click()
     await page.getByTestId('base-site-add').click()
     await page.getByTestId('base-site-name').fill(BASE2)
     await page.getByTestId('base-site-save').click()
