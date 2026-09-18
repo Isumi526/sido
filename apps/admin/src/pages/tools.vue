@@ -27,7 +27,7 @@
     <section v-if="tab === 'locations'" class="block">
       <div class="block-head">
         <p class="block-note">拠点（オフィス・工場）＞場所（倉庫1・コンテナ …）の2段。拠点は<router-link to="/company-profile">自社情報</router-link>の「拠点」と同じものです（経費申請の紐付け先・作業員の所属拠点と共通）。場所QRは壁に貼り、返却時に読みます。</p>
-        <button class="btn-ghost sm" :disabled="!locations.length || generating" data-testid="location-qr-pdf" @click="downloadLocationQr">場所QRを印刷（PDF）</button>
+        <button class="btn-ghost sm" :disabled="!locations.length || generating" data-testid="location-qr-pdf" @click="downloadLocationQr()">場所QRを印刷（PDF）</button>
       </div>
       <div v-if="!bases.length" class="empty-box" data-testid="tool-no-bases">
         <p>拠点がまだありません。先にオフィス・工場を登録してください。</p>
@@ -40,7 +40,7 @@
               <th>場所</th>
               <th style="width:160px">定位置にしている道具</th>
               <th style="width:90px">状態</th>
-              <th style="width:200px"></th>
+              <th style="width:240px"></th>
             </tr>
           </thead>
           <tbody>
@@ -61,6 +61,7 @@
                 <td class="sub">{{ toolCountByLocation[l.id] ? `${toolCountByLocation[l.id]}件` : '—' }}</td>
                 <td><span class="status" :class="l.active ? 'available' : ''">{{ l.active ? '有効' : '無効' }}</span></td>
                 <td class="actions">
+                  <button class="btn-edit" :disabled="generating" :data-testid="`location-qr-${l.id}`" title="この場所のQRだけをPDFにする" @click="downloadLocationQr([l])">QR</button>
                   <button class="btn-edit" :disabled="busy" @click="openLocation(l)">編集</button>
                   <button class="btn-del" :disabled="busy" :data-testid="`location-del-${l.id}`" @click="removeLocation(l)">削除</button>
                 </td>
@@ -443,8 +444,9 @@ async function downloadToolQr(list?: Tool[]) {
   try { await downloadQrLabelPdf(targets.map(toolLabel), `tool_qr_${new Date().toISOString().slice(0, 10)}.pdf`) }
   finally { generating.value = false }
 }
-async function downloadLocationQr() {
-  const targets = locations.value.filter(l => l.active)
+/** 引数なし＝有効な場所すべて／配列＝その場所だけ（場所を1つ足した時に差分だけ刷る・2026-09-19 要望） */
+async function downloadLocationQr(list?: Location[]) {
+  const targets = list ?? locations.value.filter(l => l.active)
   if (!targets.length || generating.value) return
   generating.value = true
   try {

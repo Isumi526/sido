@@ -100,6 +100,9 @@ test.describe('道具管理①（admin）', () => {
     await page.getByTestId('tab-locations').click()
     const [dl2] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.getByTestId('location-qr-pdf').click()])
     expect(dl2.suggestedFilename()).toMatch(/^tool_location_qr_.*\.pdf$/)
+    // 場所1つだけのQR（差分印刷）
+    const [dl3] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.getByTestId(`location-qr-${locationId}`).click()])
+    expect(dl3.suggestedFilename()).toMatch(/^tool_location_qr_.*\.pdf$/)
 
     // ── 使っている保管場所は消せない ──
     const alerts: string[] = []
