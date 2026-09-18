@@ -7,13 +7,12 @@
 //   - RESEND_API_KEY 未設定なら送信スキップ（sendResend が skip を返す）＝gate化しない。
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { sendResend, resolveWorkerNotifyEmail } from '../_shared/doc-mail.ts'
+import { sendApprovalRequestMail } from '../_shared/approval-mail.ts'
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')              ?? '',
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
 )
-const ADMIN_URL = Deno.env.get('ADMIN_URL') ?? ''
 
 function corsHeaders() {
   return { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' }
@@ -21,7 +20,6 @@ function corsHeaders() {
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders(), 'Content-Type': 'application/json' } })
 }
-function esc(s: string): string { return String(s ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!)) }
 
 // ハードニング（2026-07-03）：body を信頼せず、実在する残業申請(overtime_requests)から
 //   通知内容を導出する。body は照合キー { accountSlug, worker_id, date } のみ。
@@ -43,7 +41,7 @@ Deno.serve(async (req) => {
 
     // ★ 実在する残業申請を検証し、通知内容を DB から導出（body は信頼しない）
     const { data: reqs } = await supabase.from('overtime_requests')
-      .select('id, worker_id, date, requested_end_time, reason, site_names, created_at, status, notified_at')
+      .select('id, worker_id, date, requested_end_time, requested_start_time, requested_break_minutes, is_late, reason, site_names, created_at, status, notified_at')
       .eq('account_id', accountId).eq('worker_id', worker_id).eq('date', date).eq('status', 'pending')
       .order('created_at', { ascending: false }).limit(1)
     const otr = (reqs ?? [])[0] as any
@@ -66,40 +64,27 @@ Deno.serve(async (req) => {
       .select('real_name').eq('account_id', accountId).eq('worker_id', worker_id).maybeSingle()
     const sender = (reqUser as any)?.real_name ?? '作業員'
 
-    // 選択現場 → 責任者worker → responsible の認証用メール（auth.users.email・ID認証の作業員はスキップ）
-    let respWorkerIds: string[] = []
-    if (site_names.length) {
-      const { data: sites } = await supabase.from('sites')
-        .select('name, responsible_worker_id').eq('account_id', accountId).in('name', site_names)
-      respWorkerIds = [...new Set(((sites ?? []) as any[]).map(s => s.responsible_worker_id).filter(Boolean))]
-    }
-    // 現場が無い／責任者が設定されていない時は会社の管理者へ回す（宛先ゼロで黙って捨てない）
-    if (!respWorkerIds.length) {
-      const { data: admins } = await supabase.from('workers')
-        .select('id').eq('account_id', accountId).eq('active', true)
-        .in('permission_role', ['admin', 'owner', 'office'])
-      respWorkerIds = ((admins ?? []) as any[]).map(w => w.id)
-    }
-    if (!respWorkerIds.length) return json({ success: true, skipped: 'no_responsible' })
-    const resolvedEmails = await Promise.all(
-      respWorkerIds.map((wid) => resolveWorkerNotifyEmail(supabase, accountId, wid as string))
-    )
-    const emails = [...new Set(resolvedEmails.filter((e): e is string => !!e))]
-    if (!emails.length) return json({ success: true, skipped: 'no_responsible_email' })
-
-    const link = ADMIN_URL ? `${ADMIN_URL.replace(/\/+$/, '')}/overtime-approvals` : ''
-    const html = `
-      <p>残業申請が届きました。承認/却下をお願いします。</p>
-      <table style="border-collapse:collapse;font-size:14px">
-        <tr><td style="padding:2px 8px;color:#666">申請者</td><td style="padding:2px 8px"><b>${esc(sender)}</b></td></tr>
-        <tr><td style="padding:2px 8px;color:#666">日付</td><td style="padding:2px 8px">${esc(date)}</td></tr>
-        <tr><td style="padding:2px 8px;color:#666">対象現場</td><td style="padding:2px 8px">${site_names.length ? esc(site_names.join('、')) : '<span style="color:#b45309">現場未選択（台帳に無い現場の可能性があります）</span>'}</td></tr>
-        <tr><td style="padding:2px 8px;color:#666">終了時刻</td><td style="padding:2px 8px">${esc(requested_end_time) || '—'}</td></tr>
-        <tr><td style="padding:2px 8px;color:#666">理由</td><td style="padding:2px 8px">${esc(reason) || '—'}</td></tr>
-      </table>
-      ${link ? `<p><a href="${link}" style="display:inline-block;padding:8px 16px;background:#047857;color:#fff;text-decoration:none;border-radius:6px">残業申請の承認画面を開く →</a></p>` : ''}
-    `
-    const r = await sendResend(supabase, accountId, emails, `【残業申請】${sender}（${date}）`, html)
+    // ★2026-09-14: 宛先と文面を承認依頼メールの共通部品（_shared/approval-mail.ts）に統合。
+    //  会社の管理者（admin/owner＋アカウントのオーナー）＋対象現場の責任者へ、他の申請種別と同じ形で送る。
+    //  現場が無い／責任者未設定でも管理者へは届く（宛先ゼロで黙って捨てない）。
+    const { data: reqWorker } = await supabase.from('workers').select('id')
+      .eq('id', worker_id).eq('account_id', accountId).maybeSingle()
+    const r0 = await sendApprovalRequestMail(supabase, {
+      accountId, kindLabel: '残業申請',
+      applicantWorkerId: (reqWorker as any)?.id ?? null, applicantName: sender, date,
+      siteNames: site_names,
+      rows: [
+        ['対象現場', site_names.length ? site_names.join('、') : '現場未選択（台帳に無い現場の可能性があります）'],
+        ['終了時刻', requested_end_time],
+        ...(otr.requested_start_time ? [['早朝入り', String(otr.requested_start_time).slice(0, 5)] as [string, string]] : []),
+        ...(typeof otr.requested_break_minutes === 'number' ? [['休憩', otr.requested_break_minutes === 0 ? '休憩なし' : `${otr.requested_break_minutes}分`] as [string, string]] : []),
+        ['理由', reason],
+        ...(otr.is_late ? [['区分', '実績修正（締切後）'] as [string, string]] : []),
+      ],
+      linkPath: '/overtime-approvals',
+    })
+    if (!r0.sent) return json({ success: true, skipped: r0.reason ?? 'not_sent' })
+    const r = { status: 200, body: { sent_to: r0.to } }
     // べき等: 送信成功したら notified_at を記録し、連打/再送で重複メールを送らない
     if (r.status === 200) {
       await supabase.from('overtime_requests').update({ notified_at: new Date().toISOString() }).eq('id', otr.id)
