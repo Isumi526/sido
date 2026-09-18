@@ -102,6 +102,12 @@ test.describe('在庫②（作業員アプリ・区分→詳細・AI候補・新
     expect(corr[0].matched, '第1候補と違う品目を確定＝訂正').toBe(false)
     expect(corr[0].worker_id, '登録者は検証済みの身元').toBe(workerId)
     expect(corr[0].photo_url, '写真URLが残る').toBeTruthy()
+    // 同じ写真×品目の再送は二重に残らない（べき等・Gemini 指摘）
+    const { ANON_KEY, SUPABASE_URL } = await import('./helpers')
+    await fetch(`${SUPABASE_URL}/functions/v1/inventory`, { method: 'POST', headers: { apikey: ANON_KEY, Authorization: `Bearer ${ANON_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'correction', dev_line_user_id: 'dev-user-id', itemId: calcId, aiGuess: 'せっこうボード 12.5', photoUrl: corr[0].photo_url }) })
+    const corr2 = await restSrv(`inventory_item_corrections?item_id=eq.${calcId}&select=id`)
+    expect(corr2.length, '★再送しても1行のまま').toBe(1)
   })
 
   test('候補に無い品目はその場で新規登録でき、同名は二重に作られない', async ({ page }) => {

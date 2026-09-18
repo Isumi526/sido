@@ -174,12 +174,19 @@ ${fewShot.length ? `\n# この会社での過去の訂正（同じ読み方を�
     if (!itemId) return json({ ok: false, error: 'item_required' }, 400)
     const { data: item } = await svc.from('inventory_items').select('id').eq('id', itemId).eq('account_id', accountId).maybeSingle()
     if (!item) return json({ ok: false, error: 'item_not_found' }, 404)
+    // ★べき等（Gemini 指摘）: 同じ写真×同じ品目の履歴が既にあれば増やさない（再送で二重に学習しない）
+    const photoUrl = typeof body.photoUrl === 'string' && body.photoUrl ? body.photoUrl.slice(0, 2000) : null
+    if (photoUrl) {
+      const { data: dup } = await svc.from('inventory_item_corrections').select('id')
+        .eq('account_id', accountId).eq('item_id', itemId).eq('photo_url', photoUrl).limit(1)
+      if (dup?.length) return json({ ok: true, deduped: true })
+    }
     const { error } = await svc.from('inventory_item_corrections').insert({
       account_id: accountId, item_id: itemId,
       ai_guess: typeof body.aiGuess === 'string' ? body.aiGuess.slice(0, 200) : null,
       ai_category: typeof body.aiCategory === 'string' ? body.aiCategory.slice(0, 100) : null,
       matched: body.matched === true,
-      photo_url: typeof body.photoUrl === 'string' ? body.photoUrl.slice(0, 2000) : null,
+      photo_url: photoUrl,
       worker_id: caller.workerId,
     })
     if (error) { console.error('[inventory] correction failed:', error); return json({ ok: false, error: 'save_failed' }, 500) }
