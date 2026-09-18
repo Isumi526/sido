@@ -10,7 +10,7 @@
 import { test, expect } from '@playwright/test'
 import { rest, restSrv, getDevUserId, getAccountId, fillNoReceiptReasons } from './helpers'
 
-const EDIT_DATE = '2026-10-20'
+const EDIT_DATE = '2026-08-20'   // ★期限外（3日より前）の日。期限内の編集は承認なしで即反映される（判定表 2026-09-12）
 const TS = Date.now()
 const ORIG_YEN = 1100
 const NEW_YEN = 7700

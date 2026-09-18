@@ -14,7 +14,7 @@
 import { test, expect } from '@playwright/test'
 import { rest, restSrv, getDevUserId, getAccountId, fillNoReceiptReasons } from './helpers'
 
-const EDIT_DATE = '2026-10-17'
+const EDIT_DATE = '2026-08-17'   // ★期限外の日（保留に入る経路で差分を見る）
 const TS = Date.now()
 
 let uid = ''
