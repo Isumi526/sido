@@ -8,7 +8,7 @@
 import { test, expect } from '@playwright/test'
 import { rest, restSrv, getDevUserId, getAccountId, fillNoReceiptReasons } from './helpers'
 
-const EDIT_DATE = '2026-10-26'
+const EDIT_DATE = '2026-08-26'   // ★期限外の日（期限内の編集は承認なしで即反映＝保留に入らない・判定表 2026-09-12）
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64')
 let uid = ''
 let accountId = ''
