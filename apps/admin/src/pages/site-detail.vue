@@ -78,9 +78,9 @@
             <label class="fld"><span>工事内容</span><textarea v-model="form.construction_details" class="input" rows="2" /></label>
             <div class="fld"><span>固定勤務時刻</span>
               <div style="display:flex;align-items:center;gap:8px">
-                <input v-model="form.default_start_time" type="time" class="input" style="width:auto" @focus="form.default_start_time || (form.default_start_time = '08:30')" />
+                <TimeSelect v-model="form.default_start_time" />
                 <span>〜</span>
-                <input v-model="form.default_end_time" type="time" class="input" style="width:auto" @focus="form.default_end_time || (form.default_end_time = '17:30')" />
+                <TimeSelect v-model="form.default_end_time" />
               </div>
             </div>
             <p class="hint" style="font-size:12px;color:#94a3b8;margin:-4px 0 0">日報入力時の作業時刻の既定。終了時刻はこの値を超えて入力できません（残業申請が無い限り）。未設定なら従来どおり。</p>
@@ -223,15 +223,15 @@
         <div class="field">
           <label>定時</label>
           <div style="display:flex;align-items:center;gap:8px">
-            <input v-model="catHoursModal.start" type="time" class="input" style="width:auto" data-testid="cat-hours-start" />
+            <TimeSelect v-model="catHoursModal.start" testid="cat-hours-start" />
             <span>〜</span>
-            <input v-model="catHoursModal.end" type="time" class="input" style="width:auto" data-testid="cat-hours-end" />
+            <TimeSelect v-model="catHoursModal.end" testid="cat-hours-end" />
           </div>
         </div>
         <div class="field">
           <label>休憩</label>
           <div v-for="(brk, bi) in catHoursModal.breaks" :key="bi" style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-            <input v-model="brk.start" type="time" class="input" style="width:auto" data-testid="cat-hours-break-start" />
+            <TimeSelect v-model="brk.start" testid="cat-hours-break-start" />
             <input v-model.number="brk.minutes" type="number" min="0" step="15" class="input" style="width:90px" placeholder="60" data-testid="cat-hours-break-minutes" />
             <button type="button" class="btn-ghost sm" @click="catHoursModal.breaks.splice(bi, 1)">×</button>
           </div>
@@ -249,6 +249,7 @@
 </template>
 
 <script setup lang="ts">
+import TimeSelect from '../components/TimeSelect.vue'
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'

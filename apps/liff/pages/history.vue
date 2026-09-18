@@ -153,9 +153,11 @@
                  「今出ている内容が何なのか」が違うので、文言を分ける（取り違え防止）。 -->
             <p v-if="rep._pendingOnly" class="pending-note" data-testid="history-pending-note-new">
               {{ $t('history.pendingOnlyNote') }}
+              <span v-if="needText(rep.date)" class="pending-need" data-testid="history-pending-need">{{ needText(rep.date) }}</span>
             </p>
             <p v-else-if="pendingDates.has(rep.date)" class="pending-note" data-testid="history-pending-note-edit">
               {{ $t('history.pendingEditNote') }}
+              <span v-if="needText(rep.date)" class="pending-need" data-testid="history-pending-need">{{ needText(rep.date) }}</span>
             </p>
 
             <p v-if="rep.note" class="report-note full">{{ rep.note }}</p>
@@ -234,6 +236,14 @@ const reports     = ref<any[]>([])
 // ★承認待ちの日。保留テーブルは anon から読めないので EF から日付だけ受け取る。
 //   出さないと「申請したのに履歴に無く、何日を出したのか分からない」状態になる。
 const pendingDates = ref<Set<string>>(new Set())
+// 日付 → あと誰の承認が要るか（'owner' / 'site_manager'）。空なら（旧行など）誰かは分からない
+const pendingNeed = ref<Map<string, string[]>>(new Map())
+function needText(date: string): string {
+  const need = pendingNeed.value.get(date) ?? []
+  if (!need.length) return ''
+  const names = need.map(n => n === 'owner' ? t('history.needOwner') : t('history.needManager'))
+  return t('history.pendingNeed', { who: names.join(t('history.needJoin')) })
+}
 // まだ日報が無い＝期限切れの新規提出。★payload（送信内容）も持つ。
 // 日付と一文だけだと「何を送ったのか」が分からず、普通の日報カードと情報量が違いすぎた。
 const pendingOnly = ref<{ date: string; payload: any }[]>([])
@@ -278,6 +288,8 @@ async function loadPendingDates() {
     const j = await callEditLog({ action: 'pending-dates', ...(proxy.proxyTarget.value && uid ? { userId: uid } : {}) })
     if (!j?.ok) return
     pendingDates.value = new Set((j.dates ?? []).map((d: any) => d.date))
+    // 誰の承認待ちか（判定表 2026-09-12: 責任者本人 or 責任者未設定はオーナー1名、それ以外は責任者＋オーナー）
+    pendingNeed.value = new Map((j.dates ?? []).map((d: any) => [d.date, Array.isArray(d.need) ? d.need : []]))
     pendingOnly.value = (j.dates ?? [])
       .filter((d: any) => d.kind === 'late_new')
       .map((d: any) => ({ date: d.date, payload: d.payload ?? null }))
@@ -715,6 +727,7 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--font)
 /* 承認待ち（まだ日報が無い新規提出）。中身は通常の日報カードと同じ描画で、枠だけ変えて区別する */
 .report-card.pending-only { border: 1px dashed #7ea8dd; background: #f5f9ff; }
 .pending-note { font-size: 12px; color: #1e4f8a; margin: 6px 0 0; line-height: 1.6; }
+.pending-need { display: block; font-weight: 700; }
 .detail-punch { font-size: 12px; color: #475569; margin-top: 2px; }
 
 /* 差し戻し。承認待ち（青）とは別物なので赤系で、一覧の先頭に出す */

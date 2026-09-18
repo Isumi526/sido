@@ -17,7 +17,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { rest, restSrv, getDevUserId, getAccountId, fillNoReceiptReasons } from './helpers'
 
-const EDIT_DATE = '2026-10-24'
+const EDIT_DATE = '2026-08-24'   // ★期限外の日（保留に入る経路で添付を見る）
 const PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
   'base64',

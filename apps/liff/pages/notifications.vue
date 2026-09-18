@@ -130,6 +130,8 @@ function iconOf(kind: string): string {
     case 'site_document':     return 'description'   // 送り出し資料の確認依頼
     case 'announcement':      return 'campaign'      // 会社からの一斉お知らせ（料金改定等）
     case 'report_reminder':   return 'edit_note'     // 日報の未送信リマインド
+    case 'punch_checkin':     return 'login'         // 予定の開始時刻の打刻リマインド
+    case 'punch_checkout':    return 'logout'        // 予定の終了時刻の打刻リマインド
     case 'purchase_order_accepted': return 'task_alt'
     default:                  return 'notifications'
   }

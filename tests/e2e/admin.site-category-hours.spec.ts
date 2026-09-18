@@ -174,10 +174,10 @@ test.describe('現場×区分ごとの定時・休憩', () => {
     await expect(row, '未設定は「現場の固定勤務時刻を使用」と出る').toContainText('固定勤務時刻を使用')
 
     await row.locator(`[data-testid="cat-hours-edit-${categoryId}"]`).click()
-    await page.locator('[data-testid="cat-hours-start"]').fill('10:00')
-    await page.locator('[data-testid="cat-hours-end"]').fill('19:00')
+    await page.locator('[data-testid="cat-hours-start"]').selectOption('10:00')
+    await page.locator('[data-testid="cat-hours-end"]').selectOption('19:00')
     await page.locator('[data-testid="cat-hours-add-break"]').click()
-    await page.locator('[data-testid="cat-hours-break-start"]').fill('12:00')
+    await page.locator('[data-testid="cat-hours-break-start"]').selectOption('12:00')
     await page.locator('[data-testid="cat-hours-break-minutes"]').fill('45')
     await page.locator('[data-testid="cat-hours-save"]').click()
 

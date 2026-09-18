@@ -81,6 +81,10 @@
   "bulkResultFailed": "{count} 日は失敗しました",
   "unsubmittedProxy": "{name}さんの代理として入力します",
   "proxyOwner": "{name}さんの分",
+  "pendingNeed": "（{who}の承認待ち）",
+  "needOwner": "オーナー",
+  "needManager": "現場責任者",
+  "needJoin": "と",
   "expPickup": "引き上げ材料 {detail}",
   "expPhotos": "写真{n}枚"
 }

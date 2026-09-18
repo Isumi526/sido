@@ -81,6 +81,10 @@
   "bulkResultFailed": "{count} day(s) failed",
   "unsubmittedProxy": "Entering on behalf of {name}",
   "proxyOwner": "{name}’s report",
+  "pendingNeed": "(waiting for {who})",
+  "needOwner": "the owner",
+  "needManager": "the site manager",
+  "needJoin": " and ",
   "expPickup": "Materials taken back {detail}",
   "expPhotos": "{n} photos"
 }

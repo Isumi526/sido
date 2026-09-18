@@ -434,6 +434,7 @@ type Target   = { id: string; name: string; isSelf: boolean }
 
 import { useI18n } from 'vue-i18n'
 import { todayStr } from '~/composables/schedule-core.gen'
+import { RECENT_LOG_HOURS, isOpenShiftCurrent } from '~/composables/attendance-punch.gen'
 
 const { t }    = useI18n()
 const route    = useRoute()
@@ -470,6 +471,9 @@ const punchDateLabel = computed(() => {
 // 退勤打刻の完了画面に出す「日報を書く」リンク。空なら出さない（resolveReportLink 参照）
 const reportLink     = ref('')
 const checkinTime    = ref('')
+// ★この退勤が属する「出勤した日」（JST）。夜のみ現場（20:30〜翌6:00）の退勤は翌朝なので
+//  todayStr() だと翌日の日報に飛んでしまう（2026-09-10 会議・平和不動産）。回の帰属日＝出勤日。
+const shiftDate      = ref('')
 const checkoutTime   = ref('')
 
 // 対象作業員（自分＋代理対象）
@@ -744,7 +748,11 @@ async function loadForTarget(workerId: string) {
   //  ★夜勤の日跨ぎ対応: 当日(カレンダー日)固定だと、前日夜の出勤が拾えず翌朝の退勤ができなかった。
   //   直近20時間のログを見て「未退勤の出勤が残っていれば退勤」＝日を跨いでも退勤できる。
   //  ★EF経由。代理対象の分もEF側で代理許可を確認したうえで返る。
-  const logs = await attendanceLog.recent(20, workerId) as { type: string; checked_at: string; work_category_id?: string | null }[]
+  //  ★夜のみ現場（20:30〜翌6:00）は 20 時間窓から落ちうるので 30 時間まで遡り、
+  //   「まだその回の続きか」は isOpenShiftCurrent で判定する（日勤の閉じ忘れは翌朝には新しい回）。
+  const rawLogs = await attendanceLog.recent(RECENT_LOG_HOURS, workerId) as { type: string; checked_at: string; work_category_id?: string | null }[]
+  const lastRaw = rawLogs[rawLogs.length - 1]
+  const logs = (lastRaw?.type === 'checkin' && !isOpenShiftCurrent(lastRaw.checked_at)) ? [] : rawLogs
   const last = logs[logs.length - 1]
   // 直近の打刻で選んだ区分（退勤時は出勤時の区分を引き継ぐ）
   lastCategoryId.value = [...logs].reverse().find(l => l.work_category_id)?.work_category_id ?? null
@@ -753,6 +761,7 @@ async function loadForTarget(workerId: string) {
     // 出勤中・退勤未（前日夜の出勤でもここに来る）→ 退勤フォーム
     attendanceType.value = 'checkout'
     checkinTime.value = fmtTime(last.checked_at)
+    shiftDate.value = jstYmd(new Date(last.checked_at))
   } else if (last?.type === 'checkout' && isJstToday(last.checked_at)) {
     // 本日すでに退勤済み（＝直近サイクル完了）→ 完了画面。直近の出勤とセットで表示。
     const lastCheckin = [...logs].reverse().find(l => l.type === 'checkin')
@@ -808,12 +817,12 @@ async function resolveMyUserId(): Promise<string | null> {
  * ★null と undefined を混ぜないこと。混ぜると「通信が不安定なだけ」で
  *  稼働有無を聞き直したり、逆に打刻を止めたりしてしまう。
  */
-async function fetchTodayReport(): Promise<any | null | undefined> {
+async function fetchTodayReport(date: string = todayStr()): Promise<any | null | undefined> {
   try {
     const uid = await resolveMyUserId()
     if (!uid) return undefined
     // ★EF経由（daily_reports の直読みは他テナント分まで読めるため塞いである・2026-08-15）
-    const rep = await dailyReportsApi.one(todayStr(), uid)
+    const rep = await dailyReportsApi.one(date, uid)
     return rep?.id ? rep : null
   } catch {
     return undefined
@@ -985,9 +994,10 @@ async function resolveReportLink(target: Target | null) {
   if (attendanceType.value !== 'checkout') return
   if (target && !target.isSelf) return
 
-  const date = todayStr()
+  // ★夜勤明け（翌朝の退勤）は出勤した日の日報に飛ばす。todayStr() だと翌日分になる。
+  const date = shiftDate.value || todayStr()
   // ★判定できない(undefined)時も出さない。出して二重送信させるより、出さない方が安全。
-  if (await fetchTodayReport() !== null) return
+  if (await fetchTodayReport(date) !== null) return
   // ★現場は引き継がない（打刻が現場に紐づかなくなったため）。現場は日報側で選ぶ。
   reportLink.value = `/report?date=${date}`
 }
