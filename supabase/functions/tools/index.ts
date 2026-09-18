@@ -10,17 +10,22 @@
 //   account_id はクライアントから受け取らない。
 //
 //  action（読み：テナントの全員）:
-//   locations                          → 保管場所（拠点＞保管場所）
+//   bases                              → 拠点の候補＝現場マスタの office/factory 行（2026-09-18 レビュー指摘で追加）
+//   locations                          → 保管場所（拠点＞保管場所）。base は拠点サイトの名前を平らにして返す
 //   tools { includeInactive? }         → 道具一覧（定位置・所持者・持出先つき）
 //   tool { id }                        → 道具1件（作業員アプリの /tools/<id>）
 //   location { id }                    → 保管場所1件（作業員アプリの /tool-locations/<id>）
 //  action（書き：オーナー/管理者/役員経理/現場管理者。純オーナー＝workers 行なしも通す）:
-//   location-save { id?, base, name, active? } / location-delete { id }
+//   location-save { id?, baseSiteId, name, active? } / location-delete { id }
 //   tool-save { id?, name, kind?, code?, locationId?, status?, note?, active?, photoUrl? }
 //   tool-delete { id }
-//   tools-import { rows: [{ name, kind?, code?, base?, location? }] }
-//        → CSV の一括投入。保管場所は「拠点＋場所」で引き、無ければ作る。名前重複はスキップして件数を返す
 //  ※ --no-verify-jwt でデプロイ。関数内で身元検証。
+//
+//  ★拠点（2026-09-18 レビュー指摘・亥角）: 自由入力テキストではなく現場マスタの拠点行
+//   （sites.kind = office / factory）を参照する。2026-09-13 の決定「オフィス・工場は sites.kind で持ち、
+//   道具の拠点も同じ行を使い回す」に合わせた。経費・所属拠点・道具で「拠点」の定義を1つにする。
+//  ★CSV 取込（tools-import）は 2026-09-18 に外した（顧客要望に無かった・亥角判断）。
+//   復活させるなら commit dfc3c4a の tools-import / ensureLocation を参照。
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveCaller } from '../_shared/caller-identity.ts'
@@ -33,8 +38,19 @@ const ANON_KEY     = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
 const TOOL_MANAGE_ROLES = ['owner', 'admin', 'office', 'site_manager']
 const STATUSES = ['available', 'out', 'lost', 'broken', 'retired'] as const
 
+/** 拠点として選べる現場マスタの区分（20260913130000_sites_kind_office.sql） */
+const BASE_KINDS = ['office', 'factory']
+const LOC_SELECT = 'id, base_site_id, name, sort_order, active, base:base_site_id(name)'
 const TOOL_SELECT = 'id, name, kind, code, location_id, photo_url, status, holder_worker_id, site_id, note, active, created_at, updated_at, '
-  + 'tool_locations(base, name), workers:holder_worker_id(name), sites:site_id(name)'
+  + 'tool_locations(name, base:base_site_id(name)), workers:holder_worker_id(name), sites:site_id(name)'
+
+/** 保管場所の join 結果を { base: '事務所（名古屋）', name: '倉庫1' } の平らな形にする（admin / 作業員アプリの表示用） */
+function flatLoc<T extends { base?: { name: string } | null }>(l: T | null | undefined) {
+  if (!l) return l ?? null
+  const { base, ...rest } = l as any
+  return { ...rest, base: base?.name ?? '' }
+}
+const flatTool = (t: any) => (t ? { ...t, tool_locations: flatLoc(t.tool_locations) } : t)
 
 function corsHeaders() {
   return { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' }
@@ -63,12 +79,19 @@ Deno.serve(async (req) => {
   const action = typeof body.action === 'string' ? body.action : ''
 
   // ── 読み（テナントの全員）────────────────────────────
+  if (action === 'bases') {
+    const { data, error } = await svc.from('sites').select('id, name, kind')
+      .eq('account_id', accountId).eq('active', true).in('kind', BASE_KINDS).order('sort_order').order('name')
+    if (error) { console.error('[tools] bases failed:', error); return json({ ok: false, error: 'fetch_failed' }, 500) }
+    return json({ ok: true, bases: data ?? [] })
+  }
+
   if (action === 'locations') {
-    const { data, error } = await svc.from('tool_locations')
-      .select('id, base, name, sort_order, active')
-      .eq('account_id', accountId).order('base').order('sort_order').order('name')
+    const { data, error } = await svc.from('tool_locations').select(LOC_SELECT)
+      .eq('account_id', accountId).order('sort_order').order('name')
     if (error) { console.error('[tools] locations failed:', error); return json({ ok: false, error: 'fetch_failed' }, 500) }
-    return json({ ok: true, locations: data ?? [] })
+    const locations = (data ?? []).map(flatLoc).sort((a: any, b: any) => a.base.localeCompare(b.base, 'ja') || a.sort_order - b.sort_order || a.name.localeCompare(b.name, 'ja'))
+    return json({ ok: true, locations })
   }
 
   if (action === 'tools') {
@@ -76,7 +99,7 @@ Deno.serve(async (req) => {
     if (body.includeInactive !== true) q = q.eq('active', true)
     const { data, error } = await q
     if (error) { console.error('[tools] tools failed:', error); return json({ ok: false, error: 'fetch_failed' }, 500) }
-    return json({ ok: true, tools: data ?? [] })
+    return json({ ok: true, tools: (data ?? []).map(flatTool) })
   }
 
   if (action === 'tool') {
@@ -85,22 +108,22 @@ Deno.serve(async (req) => {
     const { data, error } = await svc.from('tools').select(TOOL_SELECT).eq('id', id).eq('account_id', accountId).maybeSingle()
     if (error) { console.error('[tools] tool failed:', error); return json({ ok: false, error: 'fetch_failed' }, 500) }
     if (!data) return json({ ok: false, error: 'not_found' }, 404)
-    return json({ ok: true, tool: data })
+    return json({ ok: true, tool: flatTool(data) })
   }
 
   if (action === 'location') {
     const id = str(body.id, 64)
     if (!id) return json({ ok: false, error: 'id_required' }, 400)
-    const { data, error } = await svc.from('tool_locations').select('id, base, name, active').eq('id', id).eq('account_id', accountId).maybeSingle()
+    const { data, error } = await svc.from('tool_locations').select(LOC_SELECT).eq('id', id).eq('account_id', accountId).maybeSingle()
     if (error) { console.error('[tools] location failed:', error); return json({ ok: false, error: 'fetch_failed' }, 500) }
     if (!data) return json({ ok: false, error: 'not_found' }, 404)
     // その場所を定位置にしている道具（②の返却で「ここに戻す物」を見せる材料）
     const { data: tools } = await svc.from('tools').select('id, name, kind, status').eq('account_id', accountId).eq('location_id', id).eq('active', true).order('name')
-    return json({ ok: true, location: data, tools: tools ?? [] })
+    return json({ ok: true, location: flatLoc(data), tools: tools ?? [] })
   }
 
   // ── 書き（権限をサーバで確認。UI を迂回しても通らない）──────
-  const WRITE = ['location-save', 'location-delete', 'tool-save', 'tool-delete', 'tools-import']
+  const WRITE = ['location-save', 'location-delete', 'tool-save', 'tool-delete']
   if (!WRITE.includes(action)) return json({ ok: false, error: 'unknown_action' }, 400)
 
   if (caller.workerId) {
@@ -114,31 +137,23 @@ Deno.serve(async (req) => {
     if (!isJwt) return json({ ok: false, error: 'TOOL_FORBIDDEN' }, 403)
   }
 
-  /** 拠点＋場所で保管場所を引く。無ければ作る（CSV 取込・道具保存の両方で使う） */
-  async function ensureLocation(base: string, name: string): Promise<string | null> {
-    if (!base || !name) return null
-    const { data: found } = await svc.from('tool_locations').select('id').eq('account_id', accountId).eq('base', base).eq('name', name).maybeSingle()
-    if (found?.id) return found.id
-    const { data: created, error } = await svc.from('tool_locations')
-      .insert({ account_id: accountId, base, name }).select('id').maybeSingle()
-    if (error) { console.error('[tools] ensureLocation failed:', error); return null }
-    return created?.id ?? null
-  }
-
   if (action === 'location-save') {
-    const base = str(body.base, 100), name = str(body.name, 100)
-    if (!base || !name) return json({ ok: false, error: 'base_and_name_required' }, 400)
-    const patch: Record<string, unknown> = { base, name, active: body.active !== false, updated_at: new Date().toISOString() }
+    const baseSiteId = str(body.baseSiteId, 64), name = str(body.name, 100)
+    if (!baseSiteId || !name) return json({ ok: false, error: 'base_and_name_required' }, 400)
+    // 拠点は自テナントの office/factory 行だけ（他社の site や普通の現場は拠点にできない）
+    const { data: base } = await svc.from('sites').select('id').eq('id', baseSiteId).eq('account_id', accountId).in('kind', BASE_KINDS).maybeSingle()
+    if (!base) return json({ ok: false, error: 'base_not_found' }, 404)
+    const patch: Record<string, unknown> = { base_site_id: baseSiteId, name, active: body.active !== false, updated_at: new Date().toISOString() }
     if (typeof body.id === 'string' && body.id) {
       const { data: updated, error } = await svc.from('tool_locations').update(patch).eq('id', body.id).eq('account_id', accountId).select('id')
       if (error) { console.error('[tools] location-save failed:', error); return json({ ok: false, error: isDup(error, 'tool_locations_name_uniq') ? 'DUPLICATE_NAME' : 'save_failed' }, isDup(error, 'tool_locations_name_uniq') ? 409 : 500) }
       if (!updated?.length) return json({ ok: false, error: 'not_found' }, 404)
       return json({ ok: true, id: body.id })
     }
-    const { data: maxRow } = await svc.from('tool_locations').select('sort_order').eq('account_id', accountId).eq('base', base)
+    const { data: maxRow } = await svc.from('tool_locations').select('sort_order').eq('account_id', accountId).eq('base_site_id', baseSiteId)
       .order('sort_order', { ascending: false }).limit(1).maybeSingle()
     const { data: created, error } = await svc.from('tool_locations')
-      .insert({ account_id: accountId, base, name, sort_order: ((maxRow?.sort_order as number) ?? 0) + 10 }).select('id').maybeSingle()
+      .insert({ account_id: accountId, base_site_id: baseSiteId, name, sort_order: ((maxRow?.sort_order as number) ?? 0) + 10 }).select('id').maybeSingle()
     if (error) { console.error('[tools] location-insert failed:', error); return json({ ok: false, error: isDup(error, 'tool_locations_name_uniq') ? 'DUPLICATE_NAME' : 'save_failed' }, isDup(error, 'tool_locations_name_uniq') ? 409 : 500) }
     return json({ ok: true, id: created?.id })
   }
@@ -198,33 +213,5 @@ Deno.serve(async (req) => {
     return json({ ok: true })
   }
 
-  // tools-import: CSV の一括投入（AC5）。1行=1道具。名前が空の行は飛ばす。既に同名があればスキップ（重複登録を防ぐ）
-  const rows = Array.isArray(body.rows) ? body.rows.slice(0, 1000) : []
-  if (!rows.length) return json({ ok: false, error: 'rows_required' }, 400)
-  const { data: existing } = await svc.from('tools').select('name, code').eq('account_id', accountId)
-  const seen = new Set((existing ?? []).map((t: any) => `${t.name} ${t.code ?? ''}`))
-  const locCache = new Map<string, string | null>()
-  const toInsert: Record<string, unknown>[] = []
-  let skipped = 0
-  for (const r of rows) {
-    const name = str(r?.name, 200)
-    if (!name) { skipped++; continue }
-    const code = str(r?.code, 100) || null
-    const key = `${name} ${code ?? ''}`
-    if (seen.has(key)) { skipped++; continue }
-    seen.add(key)
-    const base = str(r?.base, 100), loc = str(r?.location, 100)
-    let locationId: string | null = null
-    if (base && loc) {
-      const lk = `${base} ${loc}`
-      if (!locCache.has(lk)) locCache.set(lk, await ensureLocation(base, loc))
-      locationId = locCache.get(lk) ?? null
-    }
-    toInsert.push({ account_id: accountId, name, kind: str(r?.kind, 100) || null, code, location_id: locationId, note: str(r?.note, 1000) || null })
-  }
-  if (toInsert.length) {
-    const { error } = await svc.from('tools').insert(toInsert)
-    if (error) { console.error('[tools] tools-import failed:', error); return json({ ok: false, error: 'import_failed' }, 500) }
-  }
-  return json({ ok: true, created: toInsert.length, skipped })
+  return json({ ok: false, error: 'unknown_action' }, 400)
 })

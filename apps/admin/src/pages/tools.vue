@@ -5,7 +5,6 @@
         <h1 class="page-title">道具管理</h1>
       </div>
       <div class="header-btns">
-        <button class="btn-ghost" data-testid="tool-import-open" @click="openImport">CSV取込</button>
         <button class="btn-ghost" data-testid="location-add-open" @click="openLocation()">＋ 保管場所</button>
         <button class="btn-add" data-testid="tool-add-open" @click="openTool()">＋ 道具を登録</button>
       </div>
@@ -13,6 +12,7 @@
     <p class="page-note">
       レーザー・脚立など共有する道具を登録すると、道具1個ごとにQRコードが発行されます。印刷して道具に貼ってください。
       保管場所（拠点＞倉庫）にもQRを発行し、返却時に場所QR→道具QRの順で読みます（持出・返却は作業員アプリ側で次の段階）。
+      拠点は<router-link to="/sites">現場マスタ</router-link>で区分「オフィス」「工場」にした現場です（経費申請の紐付け先・作業員の所属拠点と同じもの）。
     </p>
 
     <!-- 保管場所 -->
@@ -21,7 +21,10 @@
         <h2 class="block-title">保管場所（拠点＞場所）</h2>
         <button class="btn-ghost sm" :disabled="!locations.length || generating" data-testid="location-qr-pdf" @click="downloadLocationQr">場所QRを印刷（PDF）</button>
       </div>
-      <div v-if="!locations.length" class="empty small">保管場所がありません。「＋ 保管場所」から登録してください（例：名古屋＞倉庫1）。</div>
+      <div v-if="!bases.length" class="empty small" data-testid="tool-no-bases">
+        拠点がまだありません。先に<router-link to="/sites">現場マスタ</router-link>で区分「オフィス」または「工場」の現場を登録してください（例：事務所（名古屋））。
+      </div>
+      <div v-else-if="!locations.length" class="empty small">保管場所がありません。「＋ 保管場所」から登録してください（例：事務所（名古屋）＞倉庫1）。</div>
       <div v-else class="chips">
         <span v-for="l in locations" :key="l.id" class="chip" :class="{ off: !l.active }" :data-testid="`location-chip-${l.id}`">
           <b>{{ l.base }}</b>＞{{ l.name }}
@@ -73,7 +76,7 @@
                 <button class="btn-del" :disabled="busy" @click="removeTool(t)">削除</button>
               </td>
             </tr>
-            <tr v-if="filtered.length === 0"><td colspan="8" class="empty">道具がありません。「＋ 道具を登録」または「CSV取込」から登録してください。</td></tr>
+            <tr v-if="filtered.length === 0"><td colspan="8" class="empty">道具がありません。「＋ 道具を登録」から登録してください。</td></tr>
           </tbody>
         </table>
       </div>
@@ -139,8 +142,11 @@
         <div class="row2">
           <div class="field">
             <label>拠点 <span class="req">必須</span></label>
-            <input v-model="locModal.base" class="input" data-testid="location-base" placeholder="例：名古屋" list="loc-bases" />
-            <datalist id="loc-bases"><option v-for="b in baseOptions" :key="b" :value="b" /></datalist>
+            <select v-model="locModal.base_site_id" class="input" data-testid="location-base">
+              <option value="" disabled>選択してください</option>
+              <option v-for="b in bases" :key="b.id" :value="b.id">{{ b.name }}</option>
+            </select>
+            <p class="hint">候補は現場マスタの区分「オフィス」「工場」の現場です。</p>
           </div>
           <div class="field">
             <label>場所 <span class="req">必須</span></label>
@@ -176,45 +182,30 @@
       </div>
     </div>
 
-    <!-- CSV 取込 -->
-    <div v-if="importModal" class="modal-overlay" @click.self="importModal = false">
-      <div class="modal wide">
-        <h2>CSVで一括登録</h2>
-        <p class="hint">
-          1行目は見出し。列は <code>名前, 種別, 管理番号, 拠点, 保管場所, メモ</code>（英語の <code>name, kind, code, base, location, note</code> でも可）。
-          名前だけ必須。拠点＋保管場所が無ければ自動で作ります。同じ名前＋管理番号が既にある行は飛ばします。
-        </p>
-        <input type="file" accept=".csv,text/csv" class="input" data-testid="tool-import-file" @change="onImportFile" />
-        <textarea v-model="importText" class="input textarea" rows="8" data-testid="tool-import-text" placeholder="名前,種別,管理番号,拠点,保管場所,メモ&#10;レーザー墨出し器 A,レーザー,L-001,名古屋,倉庫1,"></textarea>
-        <p v-if="importPreview.length" class="hint">{{ importPreview.length }}行を取り込みます（先頭: {{ importPreview[0].name }}）</p>
-        <p v-if="importError" class="error">{{ importError }}</p>
-        <p v-if="importResult" class="ok" data-testid="tool-import-result">{{ importResult }}</p>
-        <div class="modal-actions">
-          <button class="btn-save" :disabled="importing || !importPreview.length" data-testid="tool-import-run" @click="runImport">{{ importing ? '取込中...' : `${importPreview.length}件を登録` }}</button>
-          <button class="btn-cancel" @click="importModal = false">閉じる</button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 /**
  * 道具管理①（2026-09-10 SEED 会議・2026-09-12 決定）
- *  道具マスタ・保管場所マスタ（拠点＞場所）・QR発行・面付け印刷・CSV取込。
+ *  道具マスタ・保管場所マスタ（拠点＞場所）・QR発行・面付け印刷。
  *  Notion: https://app.notion.com/p/3d90ff81c56b818fb7f5c118979b97e0
+ * ★拠点＝現場マスタの office/factory 行（2026-09-18 レビュー指摘）。自由入力にしない＝経費・所属拠点と同じ「拠点」。
+ * ★CSV取込は 2026-09-18 に外した（要望に無かった）。復活は commit dfc3c4a を参照。
  *
  * ★書き込みは EF(tools) 経由。tools/tool_locations は RLS 有効で authenticated の
  *  INSERT/UPDATE/DELETE を剥がしてあるため、テーブル直叩きは通らない。
  *  権限（オーナー/管理者/役員経理/現場管理者）は EF 側で確認する（assets.vue と同型）。
  * ★持出・返却・又貸しは道具②（作業員アプリ）。ここは「登録して貼る」まで。
  */
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import QRCode from 'qrcode'
 import { supabase } from '../lib/supabase'
 import { toolQrUrl, toolLocationQrUrl, downloadQrLabelPdf, type QrLabel } from '../lib/toolQr'
 
-type Location = { id: string; base: string; name: string; sort_order: number; active: boolean }
+type Base = { id: string; name: string; kind: 'office' | 'factory' }
+/** base は EF が拠点サイト名を平らにしたもの（表示用）。保存は base_site_id */
+type Location = { id: string; base: string; base_site_id: string; name: string; sort_order: number; active: boolean }
 type Tool = {
   id: string; name: string; kind: string | null; code: string | null; location_id: string | null
   status: string; note: string | null; active: boolean; photo_url: string | null
@@ -233,10 +224,12 @@ const ERRORS: Record<string, string> = {
   not_found: '対象が見つかりません（削除された可能性があります）。',
   name_required: '名前を入力してください。',
   base_and_name_required: '拠点と場所を入力してください。',
+  base_not_found: '拠点が見つかりません（現場マスタで区分がオフィス/工場の現場を選んでください）。',
 }
 
 const tools = ref<Tool[]>([])
 const locations = ref<Location[]>([])
+const bases = ref<Base[]>([])
 const loading = ref(true)
 const busy = ref(false)
 const saving = ref(false)
@@ -250,14 +243,8 @@ const locModal = ref<Partial<Location> | null>(null)
 const qrTool = ref<Tool | null>(null)
 const qrCanvas = ref<HTMLCanvasElement | null>(null)
 
-const importModal = ref(false)
-const importText = ref('')
-const importError = ref('')
-const importResult = ref('')
-const importing = ref(false)
 
 const kindOptions = computed(() => [...new Set(tools.value.map(t => t.kind).filter(Boolean) as string[])])
-const baseOptions = computed(() => [...new Set(locations.value.map(l => l.base))])
 const filtered = computed(() => {
   const q = filter.value.trim().toLowerCase()
   if (!q) return tools.value
@@ -284,9 +271,10 @@ const errMsg = (code?: string, fallback = '失敗しました') => ERRORS[code ?
 
 async function load() {
   loading.value = true
-  const [t, l] = await Promise.all([callEf({ action: 'tools', includeInactive: showInactive.value }), callEf({ action: 'locations' })])
+  const [t, l, b] = await Promise.all([callEf({ action: 'tools', includeInactive: showInactive.value }), callEf({ action: 'locations' }), callEf({ action: 'bases' })])
   tools.value = (t.data?.tools ?? []) as Tool[]
   locations.value = (l.data?.locations ?? []) as Location[]
+  bases.value = (b.data?.bases ?? []) as Base[]
   selectedIds.value = selectedIds.value.filter(id => tools.value.some(x => x.id === id))
   loading.value = false
 }
@@ -324,15 +312,15 @@ async function removeTool(t: Tool) {
 // ── 保管場所 ──
 function openLocation(l?: Location) {
   saveError.value = ''
-  locModal.value = l ? { ...l } : { base: baseOptions.value[0] ?? '', name: '', active: true }
+  locModal.value = l ? { ...l } : { base_site_id: bases.value.length === 1 ? bases.value[0].id : '', name: '', active: true }
 }
 async function saveLocation() {
   if (!locModal.value) return
   const m = locModal.value
-  const base = (m.base ?? '').trim(), name = (m.name ?? '').trim()
-  if (!base || !name) { saveError.value = '拠点と場所を入力してください。'; return }
+  const baseSiteId = m.base_site_id ?? '', name = (m.name ?? '').trim()
+  if (!baseSiteId || !name) { saveError.value = '拠点と場所を入力してください。'; return }
   saving.value = true; saveError.value = ''
-  const r = await callEf({ action: 'location-save', ...(m.id ? { id: m.id } : {}), base, name, active: m.active !== false })
+  const r = await callEf({ action: 'location-save', ...(m.id ? { id: m.id } : {}), baseSiteId, name, active: m.active !== false })
   saving.value = false
   if (!r.ok) { saveError.value = errMsg(r.error, '保存に失敗しました'); return }
   locModal.value = null
@@ -380,61 +368,6 @@ async function downloadLocationQr() {
   } finally { generating.value = false }
 }
 
-// ── CSV 取込 ──
-type ImportRow = { name: string; kind?: string; code?: string; base?: string; location?: string; note?: string }
-const HEADER_MAP: Record<string, keyof ImportRow> = {
-  '名前': 'name', '道具名': 'name', name: 'name',
-  '種別': 'kind', kind: 'kind',
-  '管理番号': 'code', '番号': 'code', code: 'code',
-  '拠点': 'base', base: 'base',
-  '保管場所': 'location', '場所': 'location', location: 'location',
-  'メモ': 'note', note: 'note',
-}
-function parseCsvLine(line: string): string[] {
-  const out: string[] = []; let cur = '', q = false
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i]
-    if (q) { if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++ } else q = false } else cur += ch }
-    else if (ch === '"') q = true
-    else if (ch === ',' || ch === '\t') { out.push(cur); cur = '' }
-    else cur += ch
-  }
-  out.push(cur)
-  return out.map(s => s.trim())
-}
-const importPreview = computed<ImportRow[]>(() => {
-  const lines = importText.value.replace(/^﻿/, '').split(/\r?\n/).filter(l => l.trim())
-  if (lines.length < 2) return []
-  const headers = parseCsvLine(lines[0]).map(h => HEADER_MAP[h] ?? HEADER_MAP[h.toLowerCase()])
-  if (!headers.includes('name')) return []
-  const rows: ImportRow[] = []
-  for (const line of lines.slice(1)) {
-    const cells = parseCsvLine(line)
-    const r: ImportRow = { name: '' }
-    headers.forEach((h, i) => { if (h && cells[i] !== undefined) (r as any)[h] = cells[i] })
-    if (r.name) rows.push(r)
-  }
-  return rows
-})
-function openImport() { importText.value = ''; importError.value = ''; importResult.value = ''; importModal.value = true }
-function onImportFile(e: Event) {
-  const f = (e.target as HTMLInputElement).files?.[0]
-  if (!f) return
-  const reader = new FileReader()
-  reader.onload = () => { importText.value = String(reader.result ?? '') }
-  reader.readAsText(f)
-}
-async function runImport() {
-  if (!importPreview.value.length || importing.value) return
-  importing.value = true; importError.value = ''; importResult.value = ''
-  const r = await callEf({ action: 'tools-import', rows: importPreview.value })
-  importing.value = false
-  if (!r.ok) { importError.value = errMsg(r.error, '取込に失敗しました'); return }
-  importResult.value = `${r.data.created}件を登録しました（${r.data.skipped}件は重複・名前なしで飛ばしました）`
-  importText.value = ''
-  await load()
-}
-watch(importText, () => { if (importText.value && importPreview.value.length === 0) importError.value = '1行目の見出しに「名前」（または name）が必要です。'; else importError.value = '' })
 
 onMounted(load)
 </script>
@@ -480,7 +413,6 @@ onMounted(load)
 .btn-edit:disabled, .btn-del:disabled { opacity: .4; cursor: default; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .modal { background: #fff; border-radius: 12px; padding: 28px; width: 440px; max-width: 95vw; display: flex; flex-direction: column; gap: 16px; max-height: 92vh; overflow: auto; }
-.modal.wide { width: 640px; }
 .modal h2 { font-size: 18px; font-weight: 700; margin: 0; }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .field { display: flex; flex-direction: column; gap: 6px; }
@@ -489,7 +421,6 @@ onMounted(load)
 .hint { font-size: 12px; color: #94a3b8; margin: 2px 0 0; line-height: 1.6; }
 .hint code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; }
 .input { background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px 14px; font-size: 14px; width: 100%; box-sizing: border-box; }
-.textarea { font-family: monospace; font-size: 12px; }
 .toggle { display: flex; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; }
 .toggle button { flex: 1; padding: 10px; background: #f5f5f5; color: #888; border: none; cursor: pointer; font-size: 13px; }
 .toggle button.active { background: #06C755; color: #fff; font-weight: 700; }
@@ -498,7 +429,6 @@ onMounted(load)
 .btn-save:disabled { opacity: .5; }
 .btn-cancel { flex: 1; background: #f5f5f5; color: #888; border: none; border-radius: 8px; padding: 12px; cursor: pointer; }
 .error { color: #E53935; font-size: 13px; margin: 0; }
-.ok { color: #0a8a3a; font-size: 13px; margin: 0; }
 .qr-modal { align-items: center; text-align: center; }
 .qr-canvas { border: 1px solid #eee; border-radius: 8px; }
 .qr-url { font-size: 12px; color: #2563eb; word-break: break-all; }

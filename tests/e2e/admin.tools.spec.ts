@@ -6,48 +6,60 @@
 //  出所（2026-09-10 SEED 会議）: 大塚「電話して誰さんが大阪に持ってったとか」＝数十万円の共有道具が行方不明。
 //
 //  ★守ること:
-//   1. 保管場所は「拠点＞場所」の2段で登録でき、同じ拠点に同名は作れない
+//   1. 保管場所は「拠点＞場所」の2段で登録でき、同じ拠点に同名は作れない。
+//      拠点は自由入力ではなく現場マスタの office/factory 行から選ぶ（2026-09-18 レビュー指摘・2026-09-13 決定に合わせた）
 //   2. 道具を登録すると一覧に出て、定位置・状態が残る。QR の URL はアプリ自身のドメイン（liff.line.me ではない）
-//   3. CSV で一括登録でき、拠点＋場所が無ければ自動で作られる。同名＋同番号の行は飛ばされる
-//   4. 使っている保管場所は消せない（LOCATION_IN_USE）
-//   5. 書き込みは EF 経由＝anon の REST 直叩きでは tools に入らない（RLS）
+//   3. 使っている保管場所は消せない（LOCATION_IN_USE）
+//   4. 書き込みは EF 経由＝anon の REST 直叩きでは tools に入らない（RLS）
+//   ※ CSV 取込は 2026-09-18 に外した（要望に無かった）
 // ============================================================
 import { test, expect } from '@playwright/test'
 import { rest, restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()
-const BASE = `E2E拠点_${TS}`
+const BASE = `E2E拠点_${TS}`          // 現場マスタに kind=office で作る（拠点＝office/factory の現場）
 const LOC = `倉庫A`
 const TOOL = `E2Eレーザー_${TS}`
-const CSV_TOOL = `E2E脚立_${TS}`
+let baseSiteId = ''
 
 test.describe('道具管理①（admin）', () => {
+  test.beforeAll(async () => {
+    const accountId = await getAccountId()
+    baseSiteId = (await restSrv('sites', {
+      method: 'POST', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ account_id: accountId, name: BASE, kind: 'office', active: true }),
+    }))[0].id
+  })
   test.afterAll(async () => {
     const accountId = await getAccountId().catch(() => '')
     if (!accountId) return
     await restSrv(`tools?account_id=eq.${accountId}&name=like.E2E*_${TS}*`, { method: 'DELETE' }).catch(() => {})
-    await restSrv(`tool_locations?account_id=eq.${accountId}&base=eq.${encodeURIComponent(BASE)}`, { method: 'DELETE' }).catch(() => {})
+    if (baseSiteId) {
+      await restSrv(`tool_locations?base_site_id=eq.${baseSiteId}`, { method: 'DELETE' }).catch(() => {})
+      await restSrv(`sites?id=eq.${baseSiteId}`, { method: 'DELETE' }).catch(() => {})
+    }
   })
 
-  test('★保管場所→道具を登録し、一覧・QR・CSV取込・削除ガードが効く', async ({ page }) => {
+  test('★保管場所→道具を登録し、一覧・QR・削除ガードが効く', async ({ page }) => {
     const accountId = await getAccountId()
     await page.goto('/tools', { waitUntil: 'networkidle' })
 
-    // ── 保管場所（拠点＞場所）──
+    // ── 保管場所（拠点＞場所）。拠点は現場マスタの office/factory から選ぶ（自由入力欄ではない）──
     await page.getByTestId('location-add-open').click()
-    await page.getByTestId('location-base').fill(BASE)
+    await expect(page.getByTestId('location-base'), '★拠点は select（現場マスタの office/factory）').toHaveJSProperty('tagName', 'SELECT')
+    await page.getByTestId('location-base').selectOption(baseSiteId)
     await page.getByTestId('location-name').fill(LOC)
     await page.getByTestId('location-save').click()
     await expect(page.locator('[data-testid^="location-chip-"]', { hasText: BASE })).toBeVisible({ timeout: 10000 })
     // 同名は作れない
     await page.getByTestId('location-add-open').click()
-    await page.getByTestId('location-base').fill(BASE)
+    await page.getByTestId('location-base').selectOption(baseSiteId)
     await page.getByTestId('location-name').fill(LOC)
     await page.getByTestId('location-save').click()
     await expect(page.locator('.modal .error'), '★同じ拠点に同名の保管場所は作れない').toContainText('既にあります')
     await page.locator('.modal .btn-cancel').click()
 
-    const locs = await restSrv(`tool_locations?account_id=eq.${accountId}&base=eq.${encodeURIComponent(BASE)}&select=id`)
+    const locs = await restSrv(`tool_locations?base_site_id=eq.${baseSiteId}&select=id`)
     expect(locs.length).toBe(1)
     const locationId = locs[0].id
 
@@ -84,22 +96,6 @@ test.describe('道具管理①（admin）', () => {
     expect(dl1.suggestedFilename()).toMatch(/^tool_qr_.*\.pdf$/)
     const [dl2] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.getByTestId('location-qr-pdf').click()])
     expect(dl2.suggestedFilename()).toMatch(/^tool_location_qr_.*\.pdf$/)
-
-    // ── CSV 取込：拠点＋場所が無ければ自動で作る。同名＋同番号は飛ばす ──
-    await page.getByTestId('tool-import-open').click()
-    await page.getByTestId('tool-import-text').fill([
-      '名前,種別,管理番号,拠点,保管場所,メモ',
-      `${CSV_TOOL},脚立,K-${TS},${BASE},コンテナ,3段`,
-      `${TOOL},レーザー,L-${TS},${BASE},${LOC},重複行`,   // 既にある名前＋番号 → skip
-      ',脚立,,,,',                                        // 名前なし → skip
-    ].join('\n'))
-    await page.getByTestId('tool-import-run').click()
-    await expect(page.getByTestId('tool-import-result')).toContainText('1件を登録', { timeout: 10000 })
-    await expect(page.getByTestId('tool-import-result')).toContainText('1件は重複')
-    await page.locator('.modal .btn-cancel').click()
-    await expect(page.locator('[data-testid^="tool-row-"]', { hasText: CSV_TOOL })).toContainText(`${BASE}＞コンテナ`)
-    const locs2 = await restSrv(`tool_locations?account_id=eq.${accountId}&base=eq.${encodeURIComponent(BASE)}&select=name&order=name`)
-    expect(locs2.map((l: any) => l.name).sort()).toEqual(['コンテナ', LOC].sort())
 
     // ── 使っている保管場所は消せない ──
     const alerts: string[] = []
