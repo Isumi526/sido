@@ -96,6 +96,7 @@
         <li v-if="canViewManagementPages"><RouterLink to="/vehicles" class="nav-link"><span class="material-symbols-rounded nav-icon">directions_car</span>車両</RouterLink></li>
         <li v-if="canViewManagementPages"><RouterLink to="/assets" class="nav-link"><span class="material-symbols-rounded nav-icon">inventory_2</span>物品マスタ</RouterLink></li>
         <li v-if="canViewManagementPages"><RouterLink to="/inventory" class="nav-link"><span class="material-symbols-rounded nav-icon">warehouse</span>在庫管理</RouterLink></li>
+        <li><RouterLink to="/tools" class="nav-link"><span class="material-symbols-rounded nav-icon">construction</span>道具管理</RouterLink></li>
         <li v-if="canViewEstimates"><RouterLink to="/estimate-masters" class="nav-link"><span class="material-symbols-rounded nav-icon">price_change</span>見積マスタ・単価表</RouterLink></li>
         <li v-if="canViewEstimates"><RouterLink to="/estimate-excel" class="nav-link"><span class="material-symbols-rounded nav-icon">table_view</span>見積Excel連携<span class="nav-beta">β</span></RouterLink></li>
 

@@ -6,7 +6,7 @@
   "kindOut": "Take out to site (−)",
   "kindReturn": "Return",
   "kindAdjust": "Adjust",
-  "returnHint": "Materials brought back from a site are registered from the last question of the daily report.",
+  "returnHint": "Recording materials brought back from a site is coming soon (it will be part of the new report form).",
   "item": "Item",
   "stock": "{n} left",
   "noItems": "No items yet (register them in the admin inventory page)",

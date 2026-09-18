@@ -1,0 +1,124 @@
+// ============================================================
+//  admin.tools.spec.ts
+//  道具管理①（Notion: 【道具①】道具マスタと保管場所マスタを作り、adminで登録→QR自動発行・面付け印刷）
+//   https://app.notion.com/p/3d90ff81c56b818f82a3c857a4f15367
+//
+//  出所（2026-09-10 SEED 会議）: 大塚「電話して誰さんが大阪に持ってったとか」＝数十万円の共有道具が行方不明。
+//
+//  ★守ること:
+//   1. 保管場所は「拠点＞場所」の2段で登録でき、同じ拠点に同名は作れない
+//   2. 道具を登録すると一覧に出て、定位置・状態が残る。QR の URL はアプリ自身のドメイン（liff.line.me ではない）
+//   3. CSV で一括登録でき、拠点＋場所が無ければ自動で作られる。同名＋同番号の行は飛ばされる
+//   4. 使っている保管場所は消せない（LOCATION_IN_USE）
+//   5. 書き込みは EF 経由＝anon の REST 直叩きでは tools に入らない（RLS）
+// ============================================================
+import { test, expect } from '@playwright/test'
+import { rest, restSrv, getAccountId } from './helpers'
+
+const TS = Date.now()
+const BASE = `E2E拠点_${TS}`
+const LOC = `倉庫A`
+const TOOL = `E2Eレーザー_${TS}`
+const CSV_TOOL = `E2E脚立_${TS}`
+
+test.describe('道具管理①（admin）', () => {
+  test.afterAll(async () => {
+    const accountId = await getAccountId().catch(() => '')
+    if (!accountId) return
+    await restSrv(`tools?account_id=eq.${accountId}&name=like.E2E*_${TS}*`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`tool_locations?account_id=eq.${accountId}&base=eq.${encodeURIComponent(BASE)}`, { method: 'DELETE' }).catch(() => {})
+  })
+
+  test('★保管場所→道具を登録し、一覧・QR・CSV取込・削除ガードが効く', async ({ page }) => {
+    const accountId = await getAccountId()
+    await page.goto('/tools', { waitUntil: 'networkidle' })
+
+    // ── 保管場所（拠点＞場所）──
+    await page.getByTestId('location-add-open').click()
+    await page.getByTestId('location-base').fill(BASE)
+    await page.getByTestId('location-name').fill(LOC)
+    await page.getByTestId('location-save').click()
+    await expect(page.locator('[data-testid^="location-chip-"]', { hasText: BASE })).toBeVisible({ timeout: 10000 })
+    // 同名は作れない
+    await page.getByTestId('location-add-open').click()
+    await page.getByTestId('location-base').fill(BASE)
+    await page.getByTestId('location-name').fill(LOC)
+    await page.getByTestId('location-save').click()
+    await expect(page.locator('.modal .error'), '★同じ拠点に同名の保管場所は作れない').toContainText('既にあります')
+    await page.locator('.modal .btn-cancel').click()
+
+    const locs = await restSrv(`tool_locations?account_id=eq.${accountId}&base=eq.${encodeURIComponent(BASE)}&select=id`)
+    expect(locs.length).toBe(1)
+    const locationId = locs[0].id
+
+    // ── 道具を登録 ──
+    await page.getByTestId('tool-add-open').click()
+    await page.getByTestId('tool-name').fill(TOOL)
+    await page.getByTestId('tool-kind').fill('レーザー')
+    await page.getByTestId('tool-code').fill(`L-${TS}`)
+    await page.getByTestId('tool-location').selectOption(locationId)
+    await page.getByTestId('tool-save').click()
+    const row = page.locator('[data-testid^="tool-row-"]', { hasText: TOOL })
+    await expect(row).toBeVisible({ timeout: 10000 })
+    await expect(row, '定位置が残る').toContainText(`${BASE}＞${LOC}`)
+    await expect(row, '初期状態は保管中').toContainText('保管中')
+    const toolId = (await row.getAttribute('data-testid'))!.replace('tool-row-', '')
+    // 同じ名前＋管理番号は二重登録できない（連打・リトライ対策・Gemini 指摘）
+    await page.getByTestId('tool-add-open').click()
+    await page.getByTestId('tool-name').fill(TOOL)
+    await page.getByTestId('tool-code').fill(`L-${TS}`)
+    await page.getByTestId('tool-save').click()
+    await expect(page.locator('.modal .error'), '★同名＋同番号の道具は作れない').toContainText('既にあります')
+    await page.locator('.modal .btn-cancel').click()
+
+    // ── QR：URL はアプリ自身のドメイン（dev は localhost:3000）で、liff.line.me ではない ──
+    await page.getByTestId(`tool-qr-${toolId}`).click()
+    const url = await page.locator('[data-testid="tool-qr-modal"] .qr-url').textContent()
+    expect(url, '★QR の URL はアプリ自身のドメイン').toBe(`http://localhost:3000/tools/${toolId}`)
+    expect(url).not.toContain('liff.line.me')
+    await page.locator('[data-testid="tool-qr-modal"] .btn-cancel').click()
+
+    // ── 面付けPDF（選択した道具・場所QR）が実際に生成される（canvas→jsPDF の経路が落ちない）──
+    await page.getByTestId(`tool-select-${toolId}`).check()
+    const [dl1] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.getByTestId('tool-qr-pdf').click()])
+    expect(dl1.suggestedFilename()).toMatch(/^tool_qr_.*\.pdf$/)
+    const [dl2] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.getByTestId('location-qr-pdf').click()])
+    expect(dl2.suggestedFilename()).toMatch(/^tool_location_qr_.*\.pdf$/)
+
+    // ── CSV 取込：拠点＋場所が無ければ自動で作る。同名＋同番号は飛ばす ──
+    await page.getByTestId('tool-import-open').click()
+    await page.getByTestId('tool-import-text').fill([
+      '名前,種別,管理番号,拠点,保管場所,メモ',
+      `${CSV_TOOL},脚立,K-${TS},${BASE},コンテナ,3段`,
+      `${TOOL},レーザー,L-${TS},${BASE},${LOC},重複行`,   // 既にある名前＋番号 → skip
+      ',脚立,,,,',                                        // 名前なし → skip
+    ].join('\n'))
+    await page.getByTestId('tool-import-run').click()
+    await expect(page.getByTestId('tool-import-result')).toContainText('1件を登録', { timeout: 10000 })
+    await expect(page.getByTestId('tool-import-result')).toContainText('1件は重複')
+    await page.locator('.modal .btn-cancel').click()
+    await expect(page.locator('[data-testid^="tool-row-"]', { hasText: CSV_TOOL })).toContainText(`${BASE}＞コンテナ`)
+    const locs2 = await restSrv(`tool_locations?account_id=eq.${accountId}&base=eq.${encodeURIComponent(BASE)}&select=name&order=name`)
+    expect(locs2.map((l: any) => l.name).sort()).toEqual(['コンテナ', LOC].sort())
+
+    // ── 使っている保管場所は消せない ──
+    const alerts: string[] = []
+    page.on('dialog', (d) => { if (d.type() === 'alert') alerts.push(d.message()); d.accept().catch(() => {}) })   // confirm→alert の2段
+    const chip = page.locator('[data-testid^="location-chip-"]', { hasText: LOC })
+    await chip.locator('.chip-btn.del').click()
+    await page.waitForTimeout(800)
+    const still = await restSrv(`tool_locations?id=eq.${locationId}&select=id`)
+    expect(still.length, '★定位置にしている道具がある場所は消えない').toBe(1)
+    expect(alerts.join(' '), '理由が出る').toContain('定位置')
+
+    // ── anon の REST 直叩きでは書けない（RLS・EF 経由のみ）──
+    const res = await fetch(`${process.env.SUPABASE_URL || 'http://127.0.0.1:56321'}/rest/v1/tools`, {
+      method: 'POST',
+      headers: { apikey: (await import('./helpers')).ANON_KEY, Authorization: `Bearer ${(await import('./helpers')).ANON_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify({ account_id: accountId, name: `E2E不正_${TS}` }),
+    })
+    expect(res.status, '★anon は tools に書けない').toBeGreaterThanOrEqual(400)
+    const leaked = await rest(`tools?name=eq.${encodeURIComponent(`E2E不正_${TS}`)}&select=id`).catch(() => [])
+    expect(Array.isArray(leaked) ? leaked.length : 0).toBe(0)
+  })
+})

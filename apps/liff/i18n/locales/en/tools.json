@@ -1,0 +1,24 @@
+{
+  "title": "Tools",
+  "tag": "Tool",
+  "locationTitle": "Storage location",
+  "locationTag": "Storage location",
+  "notFound": "Not found (deleted, or belongs to another company)",
+  "kind": "Type",
+  "code": "ID",
+  "home": "Home location",
+  "holder": "Held by",
+  "site": "Taken to",
+  "note": "Note",
+  "status": {
+    "available": "In storage",
+    "out": "Checked out",
+    "lost": "Missing",
+    "broken": "Broken / in repair",
+    "retired": "Retired"
+  },
+  "comingSoon": "Checkout and return will be recorded from this screen soon. For now it only shows the tool.",
+  "locationComingSoon": "When returning, you will scan this location QR first and then the tool QR (coming soon).",
+  "homeTools": "Tools whose home is this location ({n})",
+  "homeToolsEmpty": "No tools have this location as home yet"
+}
