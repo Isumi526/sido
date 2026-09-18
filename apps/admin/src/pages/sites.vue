@@ -135,9 +135,9 @@
         <div class="field">
           <label>固定勤務時刻（日報の既定＆終了上限・任意）</label>
           <div style="display:flex;align-items:center;gap:8px">
-            <input v-model="modal.default_start_time" type="time" step="900" class="input" style="width:auto" @focus="modal.default_start_time || (modal.default_start_time = '08:30')" />
+            <TimeSelect v-model="modal.default_start_time" />
             <span>〜</span>
-            <input v-model="modal.default_end_time" type="time" step="900" class="input" style="width:auto" @focus="modal.default_end_time || (modal.default_end_time = '17:30')" />
+            <TimeSelect v-model="modal.default_end_time" />
             <!-- 終了が開始以前＝翌日（夜のみ現場 20:30〜翌6:00）。現場作業の定時はここなので、区分別と同じタグを出す（2026-09-18 レビュー指摘） -->
             <span v-if="modal.default_start_time && modal.default_end_time && modal.default_end_time.slice(0,5) <= modal.default_start_time.slice(0,5)" class="hp-tag" data-testid="site-overnight">翌日まで（日をまたぐ勤務）</span>
           </div>
@@ -153,7 +153,7 @@
         <div class="field">
           <label>既定休憩（開始時刻＋休憩時間・任意・複数可）</label>
           <div v-for="(brk, bi) in (modal.default_breaks || [])" :key="bi" style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-            <input v-model="brk.start" type="time" step="900" class="input" style="width:auto" data-testid="break-start" />
+            <TimeSelect v-model="brk.start" testid="break-start" />
             <input v-model.number="brk.minutes" type="number" min="0" step="15" class="input" style="width:90px" placeholder="60" data-testid="break-minutes" />
             <span style="font-size:13px;color:#64748b">分</span>
             <button type="button" class="btn-ghost" style="padding:2px 8px" @click="removeBreak(bi)">×</button>
@@ -177,15 +177,15 @@
               </span>
             </div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              <input v-model="catHoursDraft[c.id].start" type="time" step="900" class="input" style="width:auto" :data-testid="`cat-start-${c.id}`" />
+              <TimeSelect v-model="catHoursDraft[c.id].start" :testid="`cat-start-${c.id}`" />
               <span>〜</span>
-              <input v-model="catHoursDraft[c.id].end" type="time" step="900" class="input" style="width:auto" :data-testid="`cat-end-${c.id}`" />
+              <TimeSelect v-model="catHoursDraft[c.id].end" :testid="`cat-end-${c.id}`" />
               <!-- 終了が開始以前＝翌日（夜のみ現場 20:30〜翌6:00）。日跨ぎとして扱うことを明示する -->
               <span v-if="catHoursDraft[c.id].start && catHoursDraft[c.id].end && catHoursDraft[c.id].end <= catHoursDraft[c.id].start" class="hp-tag" :data-testid="`cat-overnight-${c.id}`">翌日まで（日をまたぐ勤務）</span>
               <button type="button" class="btn-ghost" style="padding:2px 10px;font-size:12px" @click="catHoursDraft[c.id].breaks.push({ start: '12:00', minutes: 60 })">＋ 休憩</button>
             </div>
             <div v-for="(brk, bi) in catHoursDraft[c.id].breaks" :key="bi" style="display:flex;align-items:center;gap:8px;margin-top:6px">
-              <input v-model="brk.start" type="time" step="900" class="input" style="width:auto" />
+              <TimeSelect v-model="brk.start" />
               <input v-model.number="brk.minutes" type="number" min="0" step="15" class="input" style="width:90px" placeholder="60" />
               <span style="font-size:13px;color:#64748b">分</span>
               <button type="button" class="btn-ghost" style="padding:2px 8px" @click="catHoursDraft[c.id].breaks.splice(bi, 1)">×</button>
@@ -334,6 +334,7 @@
 </template>
 
 <script setup lang="ts">
+import TimeSelect from '../components/TimeSelect.vue'
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'

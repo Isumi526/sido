@@ -45,10 +45,10 @@ test.describe('現場マスタ: 夜のみ現場の定時UI', () => {
 
   test('★固定勤務時刻に 20:30〜06:00 を入れると「翌日まで」が出て、保存→再読込で残る', async ({ page }) => {
     await openModal(page)
-    const times = page.locator('.modal input[type="time"]')
+    const times = page.locator('.modal select.time-select')
     await expect(page.getByTestId('site-overnight')).toHaveCount(0)
-    await times.nth(0).fill('20:30')
-    await times.nth(1).fill('06:00')
+    await times.nth(0).selectOption('20:30')
+    await times.nth(1).selectOption('06:00')
     await expect(page.getByTestId('site-overnight'), '終了＜開始で日跨ぎと明示する').toBeVisible()
     await page.locator('.modal .btn-save').click()
     await expect(page.locator('.modal')).toHaveCount(0, { timeout: 10000 })
@@ -61,11 +61,14 @@ test.describe('現場マスタ: 夜のみ現場の定時UI', () => {
     await expect(page.getByTestId('site-overnight'), '再読込後もタグが出る').toBeVisible()
   })
 
-  test('時刻の刻みは15分（固定勤務時刻・区分ごとの定時）', async ({ page }) => {
+  test('★時刻の候補は15分刻みだけ（<input type=time> の step は Chrome の候補で無視されるのでセレクトにした）', async ({ page }) => {
     await openModal(page)
-    const steps = await page.locator('.modal input[type="time"]').evaluateAll(els => els.map(e => (e as HTMLInputElement).step))
-    expect(steps.length).toBeGreaterThan(0)
-    for (const s of steps) expect(s, '5分刻み(300)が残っていない').toBe('900')
+    const selects = page.locator('.modal select.time-select')
+    expect(await selects.count()).toBeGreaterThan(0)
+    await expect(page.locator('.modal input[type="time"]'), 'time input が残っていない').toHaveCount(0)
+    const vals = await selects.first().locator('option').evaluateAll(els => els.map(e => (e as HTMLOptionElement).value).filter(Boolean))
+    expect(vals.length).toBe(96)
+    for (const v of vals) expect(['00', '15', '30', '45'], `${v} は15分刻み`).toContain(v.slice(3, 5))
   })
 
   test('★この画面から区分を追加でき、すぐ定時を入れる行が出る', async ({ page }) => {

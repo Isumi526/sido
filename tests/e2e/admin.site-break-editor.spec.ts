@@ -45,12 +45,12 @@ test('既定休憩: 重なりはバリデートで保存を止める／開始時
 
   // ── 重なりバリデート: 12:00-13:00 に重なる 12:30 の休憩を足して保存 → エラーで止まる ──
   await modal.getByTestId('add-break').click()          // 12:00/60 が1件追加される
-  await modal.getByTestId('break-start').nth(2).fill('12:30')  // 12:30/60 に(12:00-13:00と重なる)
+  await modal.getByTestId('break-start').nth(2).selectOption('12:30')  // 12:30/60 に(12:00-13:00と重なる)
   await modal.getByRole('button', { name: '保存' }).click()
   await expect(modal.locator('.error')).toContainText('重なって')
 
   // ── 重なりを解消し、順不同で足して保存 → 開始時刻で自動ソートされる ──
-  await modal.getByTestId('break-start').nth(2).fill('08:00')   // 12:30→08:00(重なりなし・最も早い)
+  await modal.getByTestId('break-start').nth(2).selectOption('08:00')   // 12:30→08:00(重なりなし・最も早い)
   await modal.getByTestId('break-minutes').nth(2).fill('15')
   await modal.getByRole('button', { name: '保存' }).click()
   await expect(modal).toBeHidden({ timeout: 8000 })
