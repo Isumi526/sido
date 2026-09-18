@@ -8,7 +8,8 @@
 // ============================================================
 const EDGE_FN = 'tools'
 
-export type ToolLocation = { id: string; base: string; name: string; active: boolean }
+/** base は EF が拠点サイト（sites.kind=office/factory）の名前を平らにしたもの */
+export type ToolLocation = { id: string; base: string; base_site_id: string; name: string; active: boolean }
 export type Tool = {
   id: string; name: string; kind: string | null; code: string | null; location_id: string | null
   photo_url: string | null; status: 'available' | 'out' | 'lost' | 'broken' | 'retired'

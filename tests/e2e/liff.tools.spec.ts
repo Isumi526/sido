@@ -9,15 +9,21 @@ import { restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()
 let accountId = ''
+let baseSiteId = ''
 let locationId = ''
 let toolId = ''
 
 test.describe('道具（作業員アプリ）', () => {
   test.beforeAll(async () => {
     accountId = await getAccountId()
+    // 拠点＝現場マスタの office/factory 行（2026-09-18 レビュー指摘で text から参照に変えた）
+    baseSiteId = (await restSrv('sites', {
+      method: 'POST', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ account_id: accountId, name: `E2E拠点_${TS}`, kind: 'office', active: true }),
+    }))[0].id
     locationId = (await restSrv('tool_locations', {
       method: 'POST', headers: { Prefer: 'return=representation' },
-      body: JSON.stringify({ account_id: accountId, base: `E2E拠点_${TS}`, name: '倉庫1' }),
+      body: JSON.stringify({ account_id: accountId, base_site_id: baseSiteId, name: '倉庫1' }),
     }))[0].id
     toolId = (await restSrv('tools', {
       method: 'POST', headers: { Prefer: 'return=representation' },
@@ -27,6 +33,7 @@ test.describe('道具（作業員アプリ）', () => {
   test.afterAll(async () => {
     await restSrv(`tools?id=eq.${toolId}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`tool_locations?id=eq.${locationId}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`sites?id=eq.${baseSiteId}`, { method: 'DELETE' }).catch(() => {})
   })
 
   test('道具QRの先: 名前・定位置・状態が出る／場所QRの先: その場所の道具が並ぶ', async ({ page }) => {
