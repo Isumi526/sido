@@ -24,5 +24,6 @@
   "passwordChange": "Change Password",
   "logout": "Log out",
   "notifications": "Notifications",
-  "paidLeave": "Paid leave"
+  "paidLeave": "Paid leave",
+  "inventory": "Inventory"
 }

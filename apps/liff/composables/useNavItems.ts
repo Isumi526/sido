@@ -45,6 +45,8 @@ export function useNavItems(
       { path: '/groups',           icon: 'group',             label: t('nav.groups'),           section: 'plan' },
       { path: '/subcontractors',   icon: 'handyman',          label: t('nav.subcontractors'),   section: 'plan' },
       { path: '/sites',            icon: 'location_on',       label: t('nav.sites'),             section: 'info' },
+      // 在庫①（2026-09-14）: 入荷・持出の記録。引き上げは日報の末尾の1問から
+      { path: '/inventory',        icon: 'inventory_2',       label: t('nav.inventory'),         section: 'info', testId: 'menu-inventory' },
       { path: '/expense/download', icon: 'picture_as_pdf',    label: t('nav.expensePdf'),       section: 'info' },
       { path: '/rules',            icon: 'menu_book',         label: t('nav.rulebook'),         section: 'info' },
     ]
