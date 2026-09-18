@@ -44,13 +44,15 @@ test.describe('道具管理①（admin）', () => {
     const accountId = await getAccountId()
     await page.goto('/tools', { waitUntil: 'networkidle' })
 
-    // ── 保管場所（拠点＞場所）。拠点は現場マスタの office/factory から選ぶ（自由入力欄ではない）──
+    // ── 保管場所タブ（拠点＞場所）。拠点は現場マスタの office/factory から選ぶ（自由入力欄ではない）──
+    await page.getByTestId('tab-locations').click()
     await page.getByTestId('location-add-open').click()
     await expect(page.getByTestId('location-base'), '★拠点は select（現場マスタの office/factory）').toHaveJSProperty('tagName', 'SELECT')
     await page.getByTestId('location-base').selectOption(baseSiteId)
     await page.getByTestId('location-name').fill(LOC)
     await page.getByTestId('location-save').click()
-    await expect(page.getByTestId(`base-card-${baseSiteId}`), '★拠点ごとにまとまった表に出る').toContainText(LOC, { timeout: 10000 })
+    await expect(page.getByTestId(`base-group-${baseSiteId}`), '★拠点がグループ見出し行として出る').toBeVisible({ timeout: 10000 })
+    await expect(page.locator('[data-testid^="location-row-"]', { hasText: LOC }), '★場所は拠点の下の行に出る').toBeVisible()
     // 同名は作れない
     await page.getByTestId('location-add-open').click()
     await page.getByTestId('location-base').selectOption(baseSiteId)
@@ -63,7 +65,8 @@ test.describe('道具管理①（admin）', () => {
     expect(locs.length).toBe(1)
     const locationId = locs[0].id
 
-    // ── 道具を登録 ──
+    // ── 道具を登録（道具タブ）──
+    await page.getByTestId('tab-tools').click()
     await page.getByTestId('tool-add-open').click()
     await page.getByTestId('tool-name').fill(TOOL)
     await page.getByTestId('tool-kind').fill('レーザー')
@@ -94,6 +97,7 @@ test.describe('道具管理①（admin）', () => {
     await page.getByTestId(`tool-select-${toolId}`).check()
     const [dl1] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.getByTestId('tool-qr-pdf').click()])
     expect(dl1.suggestedFilename()).toMatch(/^tool_qr_.*\.pdf$/)
+    await page.getByTestId('tab-locations').click()
     const [dl2] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.getByTestId('location-qr-pdf').click()])
     expect(dl2.suggestedFilename()).toMatch(/^tool_location_qr_.*\.pdf$/)
 
@@ -111,7 +115,7 @@ test.describe('道具管理①（admin）', () => {
     await page.getByTestId('base-site-add').click()
     await page.getByTestId('base-site-name').fill(BASE2)
     await page.getByTestId('base-site-save').click()
-    await expect(page.locator('[data-testid^="base-card-"]', { hasText: BASE2 }), '★登録した拠点が表に増える').toBeVisible({ timeout: 10000 })
+    await expect(page.locator('[data-testid^="base-group-"]', { hasText: BASE2 }), '★登録した拠点が見出し行として増える').toBeVisible({ timeout: 10000 })
     const b2 = await restSrv(`sites?account_id=eq.${accountId}&name=eq.${encodeURIComponent(BASE2)}&select=id,kind`)
     expect(b2[0]?.kind).toBe('office')
     await restSrv(`sites?id=eq.${b2[0].id}`, { method: 'DELETE' }).catch(() => {})
