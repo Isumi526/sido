@@ -5,32 +5,50 @@
         <h1 class="page-title">道具管理</h1>
       </div>
       <div class="header-btns">
-        <button class="btn-ghost" data-testid="location-add-open" @click="openLocation()">＋ 保管場所</button>
+        <button class="btn-ghost" data-testid="location-add-open" :disabled="!bases.length" @click="openLocation()">＋ 保管場所</button>
         <button class="btn-add" data-testid="tool-add-open" @click="openTool()">＋ 道具を登録</button>
       </div>
     </div>
     <p class="page-note">
       レーザー・脚立など共有する道具を登録すると、道具1個ごとにQRコードが発行されます。印刷して道具に貼ってください。
       保管場所（拠点＞倉庫）にもQRを発行し、返却時に場所QR→道具QRの順で読みます（持出・返却は作業員アプリ側で次の段階）。
-      拠点は<router-link to="/sites">現場マスタ</router-link>で区分「オフィス」「工場」にした現場です（経費申請の紐付け先・作業員の所属拠点と同じもの）。
+      拠点（オフィス・工場）は<router-link to="/company-profile">自社情報</router-link>の「拠点」と同じものです（経費申請の紐付け先・作業員の所属拠点と共通）。
     </p>
 
-    <!-- 保管場所 -->
+    <!-- 保管場所（拠点ごとにまとめた表・2026-09-19 レビュー指摘でチップ並びから変更） -->
     <section class="block">
       <div class="block-head">
         <h2 class="block-title">保管場所（拠点＞場所）</h2>
-        <button class="btn-ghost sm" :disabled="!locations.length || generating" data-testid="location-qr-pdf" @click="downloadLocationQr">場所QRを印刷（PDF）</button>
+        <div class="head-right">
+          <button class="btn-ghost sm" data-testid="base-site-add" @click="openBase()">＋ 拠点を登録</button>
+          <button class="btn-ghost sm" :disabled="!locations.length || generating" data-testid="location-qr-pdf" @click="downloadLocationQr">場所QRを印刷（PDF）</button>
+        </div>
       </div>
       <div v-if="!bases.length" class="empty small" data-testid="tool-no-bases">
-        拠点がまだありません。先に<router-link to="/sites">現場マスタ</router-link>で区分「オフィス」または「工場」の現場を登録してください（例：事務所（名古屋））。
+        拠点がまだありません。「＋ 拠点を登録」でオフィス・工場を登録してください（<router-link to="/company-profile">自社情報</router-link>の「拠点」と同じものです）。
       </div>
-      <div v-else-if="!locations.length" class="empty small">保管場所がありません。「＋ 保管場所」から登録してください（例：事務所（名古屋）＞倉庫1）。</div>
-      <div v-else class="chips">
-        <span v-for="l in locations" :key="l.id" class="chip" :class="{ off: !l.active }" :data-testid="`location-chip-${l.id}`">
-          <b>{{ l.base }}</b>＞{{ l.name }}
-          <button class="chip-btn" title="編集" @click="openLocation(l)">編集</button>
-          <button class="chip-btn del" title="削除" @click="removeLocation(l)">×</button>
-        </span>
+      <div v-else class="base-grid">
+        <div v-for="g in locationGroups" :key="g.id" class="base-card" :data-testid="`base-card-${g.id}`">
+          <div class="base-head">
+            <span class="base-name"><span class="material-symbols-rounded base-icon">{{ g.kind === 'factory' ? 'factory' : 'apartment' }}</span>{{ g.name }}</span>
+            <span class="base-kind">{{ g.kind === 'factory' ? '工場' : 'オフィス' }}</span>
+            <button v-if="g.id !== OTHER" class="chip-btn add" :data-testid="`location-add-${g.id}`" @click="openLocation(undefined, g.id)">＋ 場所を追加</button>
+          </div>
+          <table class="loc-table">
+            <tbody>
+              <tr v-for="l in g.locations" :key="l.id" :class="{ inactive: !l.active }" :data-testid="`location-row-${l.id}`">
+                <td class="loc-name">{{ l.name }}</td>
+                <td class="sub">{{ toolCountByLocation[l.id] ? `道具 ${toolCountByLocation[l.id]}件` : '—' }}</td>
+                <td class="sub">{{ l.active ? '' : '無効' }}</td>
+                <td class="actions">
+                  <button class="chip-btn" title="編集" @click="openLocation(l)">編集</button>
+                  <button class="chip-btn del" title="削除" :data-testid="`location-del-${l.id}`" @click="removeLocation(l)">削除</button>
+                </td>
+              </tr>
+              <tr v-if="!g.locations.length"><td colspan="4" class="loc-empty">場所がありません。「＋ 場所を追加」から登録してください（例：倉庫1・コンテナ）。</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
 
@@ -146,7 +164,7 @@
               <option value="" disabled>選択してください</option>
               <option v-for="b in bases" :key="b.id" :value="b.id">{{ b.name }}</option>
             </select>
-            <p class="hint">候補は現場マスタの区分「オフィス」「工場」の現場です。</p>
+            <p class="hint">候補は自社情報の「拠点」（オフィス・工場）です。<a href="#" @click.prevent="openBase()">その場で登録</a></p>
           </div>
           <div class="field">
             <label>場所 <span class="req">必須</span></label>
@@ -182,6 +200,9 @@
       </div>
     </div>
 
+
+    <!-- 拠点（オフィス・工場）をこの画面から登録（画面を跨がない・2026-09-19 レビュー指摘） -->
+    <BaseSiteModal v-if="baseModal" :site="null" @close="baseModal = false" @saved="onBaseSaved" />
   </div>
 </template>
 
@@ -202,6 +223,7 @@ import { ref, computed, onMounted, nextTick } from 'vue'
 import QRCode from 'qrcode'
 import { supabase } from '../lib/supabase'
 import { toolQrUrl, toolLocationQrUrl, downloadQrLabelPdf, type QrLabel } from '../lib/toolQr'
+import BaseSiteModal from '../components/BaseSiteModal.vue'
 
 type Base = { id: string; name: string; kind: 'office' | 'factory' }
 /** base は EF が拠点サイト名を平らにしたもの（表示用）。保存は base_site_id */
@@ -230,6 +252,9 @@ const ERRORS: Record<string, string> = {
 const tools = ref<Tool[]>([])
 const locations = ref<Location[]>([])
 const bases = ref<Base[]>([])
+const baseModal = ref(false)
+/** 拠点が無効化された/消えた保管場所の受け皿 */
+const OTHER = '__other__'
 const loading = ref(true)
 const busy = ref(false)
 const saving = ref(false)
@@ -249,6 +274,19 @@ const filtered = computed(() => {
   const q = filter.value.trim().toLowerCase()
   if (!q) return tools.value
   return tools.value.filter(t => [t.name, t.kind, t.code, t.tool_locations?.base, t.tool_locations?.name].some(v => (v ?? '').toLowerCase().includes(q)))
+})
+/** 拠点ごとにまとめた保管場所（拠点は自社情報の順・場所は EF の並び） */
+const locationGroups = computed(() => {
+  const groups = bases.value.map(b => ({ id: b.id, name: b.name, kind: b.kind as string, locations: locations.value.filter(l => l.base_site_id === b.id) }))
+  const known = new Set(bases.value.map(b => b.id))
+  const rest = locations.value.filter(l => !known.has(l.base_site_id))
+  if (rest.length) groups.push({ id: OTHER, name: '拠点が無効・不明', kind: 'other', locations: rest })
+  return groups
+})
+const toolCountByLocation = computed<Record<string, number>>(() => {
+  const m: Record<string, number> = {}
+  for (const t of tools.value) if (t.location_id && t.active) m[t.location_id] = (m[t.location_id] ?? 0) + 1
+  return m
 })
 const allSelected = computed(() => filtered.value.length > 0 && filtered.value.every(t => selectedIds.value.includes(t.id)))
 function toggleAll() {
@@ -310,9 +348,17 @@ async function removeTool(t: Tool) {
 }
 
 // ── 保管場所 ──
-function openLocation(l?: Location) {
+function openLocation(l?: Location, baseSiteId?: string) {
   saveError.value = ''
-  locModal.value = l ? { ...l } : { base_site_id: bases.value.length === 1 ? bases.value[0].id : '', name: '', active: true }
+  locModal.value = l ? { ...l } : { base_site_id: baseSiteId ?? (bases.value.length === 1 ? bases.value[0].id : ''), name: '', active: true }
+}
+// ── 拠点（オフィス・工場）をその場で登録 ──
+function openBase() { baseModal.value = true }
+async function onBaseSaved(id: string) {
+  baseModal.value = false
+  await load()
+  // 保管場所の登録モーダルを開いていたら、その拠点を選んだ状態にする
+  if (locModal.value && !locModal.value.id) locModal.value.base_site_id = id
 }
 async function saveLocation() {
   if (!locModal.value) return
@@ -388,11 +434,21 @@ onMounted(load)
 .head-right { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .chk { font-size: 12px; color: #64748b; display: flex; align-items: center; gap: 4px; }
 .filter { width: 220px; padding: 6px 10px; font-size: 13px; }
-.chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.chip { display: inline-flex; align-items: center; gap: 6px; background: #fff; border: 1px solid #e2e8f0; border-radius: 999px; padding: 6px 8px 6px 14px; font-size: 13px; }
-.chip.off { opacity: .45; }
-.chip-btn { background: #f1f5f9; border: none; border-radius: 999px; padding: 3px 8px; font-size: 11px; cursor: pointer; color: #475569; }
-.chip-btn.del { color: #c0392b; background: #fff1f0; }
+.base-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.base-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
+.base-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+.base-name { font-weight: 700; font-size: 14px; display: inline-flex; align-items: center; gap: 4px; flex: 1; }
+.base-icon { font-size: 18px; color: #64748b; }
+.base-kind { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #eff6ff; color: #1d4ed8; }
+.loc-table { width: 100%; border-collapse: collapse; }
+.loc-table td { padding: 8px 14px; border-top: 1px solid #f1f5f9; font-size: 13px; vertical-align: middle; }
+.loc-table tr:first-child td { border-top: none; }
+.loc-table tr.inactive td { opacity: .45; }
+.loc-name { font-weight: 600; }
+.loc-empty { color: #94a3b8; font-size: 12px; }
+.chip-btn { background: #f1f5f9; border: none; border-radius: 999px; padding: 4px 10px; font-size: 11px; cursor: pointer; color: #475569; white-space: nowrap; }
+.chip-btn.del { color: #c0392b; background: #fff1f0; margin-left: 4px; }
+.chip-btn.add { background: #e8fff0; color: #0a8a3a; }
 .table-wrap { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06); max-height: 65vh; overflow: auto; }
 .table { width: 100%; border-collapse: collapse; }
 .table th { background: #f9f9f9; padding: 12px 14px; text-align: left; font-size: 12px; color: #888; font-weight: 700; position: sticky; top: 0; z-index: 2; }
