@@ -204,6 +204,11 @@ export async function initAuth(): Promise<void> {
 export async function signIn(email: string, password: string): Promise<void> {
   const { error } = await supabase.auth.signInWithPassword({ email, password })
   if (error) throw error
+  // 契約対応⑤（別紙2 §4「アクセスの記録を取得し12か月保存」）: ログイン成功を operation_logs に残す。
+  //  失敗は記録しない（ブルートフォース検知は別課題）。保存期間は purge_old_logs()（13か月）に乗る。
+  //  記録に失敗してもログインは成立させる（logOperation は握りつぶす）。
+  //  ★operationLog → account → auth と循環するので、ここだけ動的 import（モジュール初期化の順序に依存しない）
+  void import('./operationLog').then(({ logOperation }) => logOperation('ログイン', { summary: `admin / ${navigator.userAgent.slice(0, 160)}` }))
 }
 
 export async function signOut(): Promise<void> {

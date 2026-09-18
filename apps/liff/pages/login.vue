@@ -72,6 +72,15 @@ async function submit() {
       error.value = 'ログインに失敗しました（ログインID／メールまたはパスワードが違います）'
       return
     }
+    // 契約対応⑤（別紙2 §4「アクセスの記録」）: ログイン成功を operation_logs に残す（失敗は記録しない・
+    //  記録できなくてもログインは成立させる）。account_id は JWT から current_account_id() で引く。
+    try {
+      const { data: accountId } = await supabase.rpc('current_account_id')
+      await supabase.from('operation_logs').insert({
+        account_id: accountId ?? null, actor: resolveLoginEmail(email.value), action: 'ログイン',
+        summary: `liff / ${navigator.userAgent.slice(0, 160)}`,
+      })
+    } catch (e) { console.error('[login] ログイン記録に失敗:', e) }
     // 身元が変わるのでアカウントキャッシュを破棄（env由来の値が残らないように＝テナント分離）
     useAccount().resetAccount()
     // ★前のユーザーの身元状態(initialized/profile/workerId)を破棄。これをしないと init() が
