@@ -2,7 +2,7 @@
   <!-- 15分刻みの時刻セレクト。<input type="time" step> は Chrome の候補が step を無視して
        全ての分を出す（2026-09-18 レビュー指摘「15分刻みになっていない」）ので、選択肢そのものを絞る。
        既存データが刻みに乗っていない値（例 08:20）なら、その値も選択肢に残して消さない。 -->
-  <select class="input time-select" :value="modelValue || ''" :data-testid="testid" @change="onChange">
+  <select class="input time-select" style="width:auto" :value="modelValue || ''" :data-testid="testid" @change="onChange">
     <option value="">--:--</option>
     <option v-for="t in options" :key="t" :value="t">{{ t }}</option>
   </select>

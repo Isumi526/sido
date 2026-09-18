@@ -38,7 +38,7 @@ test('既定休憩: 重なりはバリデートで保存を止める／開始時
   await expect(row).toBeVisible({ timeout: 10000 })
   await row.getByRole('button', { name: '編集' }).click()
 
-  const modal = page.locator('.modal-overlay').filter({ hasText: '既定休憩' })
+  const modal = page.locator('.modal-overlay').filter({ hasText: '勤務時間' })
   await expect(modal).toBeVisible()
   // 既存2件(12:00/22:30)が出ている
   await expect(modal.getByTestId('break-start')).toHaveCount(2)

@@ -71,20 +71,28 @@ test.describe('現場マスタ: 夜のみ現場の定時UI', () => {
     for (const v of vals) expect(['00', '15', '30', '45'], `${v} は15分刻み`).toContain(v.slice(3, 5))
   })
 
-  test('★使っていない区分は既定で隠れ、「他の区分を表示」で開ける', async ({ page }) => {
+  test('★区分の定時は「設定しているものだけ」出て、追加は共通区分から選ぶ', async ({ page }) => {
     await openModal(page)
-    // この現場は区分別の定時を持っていない＝一覧は空で、案内と「他の区分を表示（N件）」だけ
-    await expect(page.getByTestId('cat-hours-none')).toBeVisible()
-    const toggle = page.getByTestId('cat-hours-toggle')
-    await expect(toggle).toContainText('他の区分を表示')
-    expect(await page.locator('.modal .cat-hours').count(), '空の区分の行は出ない').toBe(0)
-    await toggle.click()
-    expect(await page.locator('.modal .cat-hours').count(), '開くと全区分が出る').toBeGreaterThan(0)
-    await expect(toggle).toContainText('設定していない区分を隠す')
+    // この現場は区分別の定時を持っていない＝現場作業の行だけ
+    await expect(page.getByTestId('hours-row-main')).toBeVisible()
+    expect(await page.locator('.modal .hours-row').count(), '区分の行は出ない').toBe(1)
+    await page.getByTestId('cat-hours-toggle').click()
+    const pick = page.getByTestId('cat-pick')
+    await expect(pick).toBeVisible()
+    const opts = await pick.locator('option').evaluateAll(els => els.map(e => (e as HTMLOptionElement).value).filter(v => v && v !== '__new__'))
+    expect(opts.length, '共通区分が選択肢に出る').toBeGreaterThan(0)
+    await pick.selectOption(opts[0])
+    await page.getByTestId('cat-pick-add').click()
+    await expect(page.getByTestId(`cat-hours-${opts[0]}`), '選んだ区分の行が表に出る').toBeVisible()
+    // 外すと行が消える
+    await page.getByTestId(`cat-remove-${opts[0]}`).click()
+    await expect(page.getByTestId(`cat-hours-${opts[0]}`)).toHaveCount(0)
   })
 
   test('★この画面から区分を追加でき、すぐ定時を入れる行が出る', async ({ page }) => {
     await openModal(page)
+    await page.getByTestId('cat-hours-toggle').click()
+    await page.getByTestId('cat-pick').selectOption('__new__')
     await page.getByTestId('cat-add-name').fill(NEW_CAT)
     await page.getByTestId('cat-add-btn').click()
     await expect.poll(async () =>
@@ -94,6 +102,6 @@ test.describe('現場マスタ: 夜のみ現場の定時UI', () => {
     expect(created.active).toBe(true)
     expect(created.scope, '現場で使える区分として作られる').toBe('site')
     await expect(page.getByTestId(`cat-hours-${created.id}`), '追加した区分の定時欄がその場に出る').toBeVisible({ timeout: 10000 })
-    await expect(page.getByTestId('cat-add-name')).toHaveValue('')
+    await expect(page.getByTestId('cat-pick'), '追加後はピッカーが閉じる').toHaveCount(0)
   })
 })
