@@ -109,6 +109,7 @@
             <select v-model="reg.category" class="inp">
               <option value="業者">{{ t('token.register.catGyosha') }}</option>
               <option value="商社">{{ t('token.register.catShosha') }}</option>
+              <option value="その他">{{ t('token.register.catOther') }}</option>
             </select>
           </label>
           <label class="fld"><span>{{ t('token.register.representative') }}</span><input v-model="reg.representative_name" class="inp" maxlength="100" /></label>
