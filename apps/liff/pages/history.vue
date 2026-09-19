@@ -456,8 +456,14 @@ async function runBulk() {
   bulkBusy.value = true
   bulkResult.value = ''
   try {
+    // ★保存先は「表示中の人」（代理中は代理先）。2026-09-08 に未送信リストを代理先の日付に
+    //  したのに、ここだけ selfUser のままだったため、代理で平床さんの3日をまとめて出したら
+    //  **今井さん本人の日報3件が「休み」に上書きされた**（2026-09-19・元データは復元不能）。
+    //  未送信リストと保存先は必ず同じ人を指すこと。
+    const targetUserId = await viewingUserId()
+    if (!targetUserId) { bulkResult.value = t('history.bulkResultFailed', { count: bulkSelected.value.length }); return }
     const entries = bulkSelected.value.map(d => ({ date: d, kind: bulkKind.value[d] ?? 'off' }))
-    const r = await bulk.submitMany(selfUser.value.id, entries, bulkReason.value.trim())
+    const r = await bulk.submitMany(targetUserId, entries, bulkReason.value.trim())
     // ★部分成功を隠さない。「全部出た」と見せて実際は落ちている、が一番まずい
     const parts: string[] = []
     if (r.saved.length)   parts.push(t('history.bulkResultSaved',   { count: r.saved.length }))
