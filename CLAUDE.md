@@ -78,7 +78,7 @@ git push origin main --force
 - Phase 3 予定: 複数テナント展開
 
 ## Pipeline設定（/run・/review・/ship harness 用・cc-pipeline 正本の `{{...}}` 解決元）
-`.claude/commands/run.md`・`review.md`・`ship.md`（cc-pipeline 正本のコピー）の `{{...}}` はここと `.env` から解決する。
+`/run`・`/review`・`/ship`・`/intake` は **cc-pipeline プラグイン**（`~/.claude/skills/cc-pipeline` → `~/dev/cc-pipeline/plugin/skills/*/SKILL.md`・全プロジェクト自動ロード）の skill。このリポに `.claude/commands/` のコピーは置かない（2026-09-20・T44 S5 で撤去）。本文の `{{...}}` はここと `.env` から解決する。
 | キー | 実値 | 備考 |
 |---|---|---|
 | **APP_LAYOUT** | npm workspaces モノレポ | `apps/admin`(Vite/Vue・`vite --port 3001`) / `apps/liff`(Nuxt) ※`apps/gas` は 2026-09-03 に撤去 |
