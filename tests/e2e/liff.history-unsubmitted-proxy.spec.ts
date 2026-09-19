@@ -64,6 +64,7 @@ test.afterAll(async () => {
   if (!ctx) return
   await restSrv(`worker_proxies?id=eq.${ctx.proxyId}`, { method: 'DELETE' }).catch(() => {})
   await restSrv(`daily_reports?user_id=eq.${ctx.usersId}`, { method: 'DELETE' }).catch(() => {})
+  await restSrv(`daily_report_pending_edits?report_user_id=eq.${ctx.usersId}`, { method: 'DELETE' }).catch(() => {})
   await restSrv(`users?id=eq.${ctx.usersId}`, { method: 'DELETE' }).catch(() => {})
   await restSrv(`workers?id=eq.${ctx.workerId}`, { method: 'DELETE' }).catch(() => {})
 })
@@ -87,5 +88,41 @@ test.describe('代理中の未送信表示', () => {
     //  カードのリンク先が代理先の起点日になっていなければ、自分の分を出しているだけ。
     await expect(page.getByTestId('history-unsubmitted'),
       '相手の未送信日を指している').toHaveAttribute('href', new RegExp(EXPECTED_DATE))
+  })
+
+  // ★2026-09-19 実害: 今井さんが平床さんの代理で3日を「まとめて稼働なし」で出したら、
+  //  今井さん本人の日報3件が「休み」に上書きされた（元データは復元不能）。
+  //  未送信リストは代理先の日付なのに、保存先だけ selfUser のままだったため。
+  //  「誰の未送信を出しているか」と「誰に書くか」は必ず同じ人でなければならない。
+  test('★代理中に「まとめて提出」すると、代理先に書かれ、自分の日報は触られない', async ({ page }) => {
+    const devUserId = await getDevUserId()
+    // 自分の日報の状態を焼き付けておく（後で「1件も変わっていない」を見る）
+    const mineBefore = await restSrv(`daily_reports?user_id=eq.${devUserId}&select=id,date,is_working,updated_at&order=date`)
+
+    await page.goto('/history', { waitUntil: 'networkidle' })
+    await page.getByTestId('nav-hamburger').click()
+    await page.getByTestId(`proxy-row-${ctx!.workerId}`).click({ timeout: 15000 })
+    await page.waitForTimeout(3000)
+
+    await expect(page.getByTestId('history-bulk'), '代理先の未送信が2件以上あるのでまとめて提出が出る')
+      .toBeVisible({ timeout: 20000 })
+    await page.getByTestId('bulk-open').click()
+    await expect(page.getByTestId('bulk-panel')).toBeVisible()
+    await page.getByTestId('bulk-reason').fill('E2E: 代理でまとめて稼働なし')
+    await page.getByTestId('bulk-submit').click()
+    await expect(page.getByTestId('bulk-result')).toBeVisible({ timeout: 30000 })
+
+    // 代理先に書かれている（期限内の日は daily_reports、期限切れは承認待ち）
+    const target = await restSrv(`daily_reports?user_id=eq.${ctx!.usersId}&select=date,is_working`)
+    const pending = await restSrv(`daily_report_pending_edits?report_user_id=eq.${ctx!.usersId}&kind=eq.late_new&select=report_date`)
+    expect(target.length + pending.length, '代理先の分として保存される').toBeGreaterThanOrEqual(2)
+    for (const r of target) expect(r.is_working, '稼働なしで入る').toBe(false)
+
+    // ★自分の日報は1件も増えても変わってもいない
+    const mineAfter = await restSrv(`daily_reports?user_id=eq.${devUserId}&select=id,date,is_working,updated_at&order=date`)
+    expect(mineAfter, '自分の日報が上書き・追加されていない').toEqual(mineBefore)
+    // 承認待ちも自分名義で積まれていない
+    const minePending = await restSrv(`daily_report_pending_edits?report_user_id=eq.${devUserId}&kind=eq.late_new&reason=eq.${encodeURIComponent('E2E: 代理でまとめて稼働なし')}&select=id`)
+    expect(minePending.length, '自分名義の承認待ちが積まれていない').toBe(0)
   })
 })
