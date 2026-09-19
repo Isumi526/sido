@@ -14,6 +14,7 @@
 //   一覧表示は「取れなかった」を空と混同すると『現場が消えた』に見えるので、
 //   呼び出し側でエラーを扱えるようにする。
 // ============================================================
+import type { SiteStatus } from './site-status.gen'
 const EDGE_FN = 'master-data'
 
 export type SiteRow = {
@@ -23,6 +24,10 @@ export type SiteRow = {
   /** 区分: site=現場 / office=オフィス / factory=工場（2026-09-13）。経費の紐付け先の区別に使う */
   kind?: 'site' | 'office' | 'factory' | string
   active: boolean
+  /** 5段階ステータス（2026-09-19）。どの画面に出すかは shared/site-status.ts の表で決める */
+  status: SiteStatus
+  period_start?: string | null
+  period_end?: string | null
   location: string | null
   construction_type: string | null
   construction_details: string | null
@@ -56,17 +61,19 @@ export function useSitesApi() {
     return res
   }
 
-  /** 現場を引く。ids を渡せばその分だけ。includeInactive で無効な現場も含める。 */
-  async function list(opts: { ids?: string[]; includeInactive?: boolean } = {}): Promise<SiteRow[]> {
+  type ListOpts = { ids?: string[]; includeInactive?: boolean; statuses?: SiteStatus[] }
+  /** 現場を引く。ids を渡せばその分だけ。statuses で画面ごとの表示集合を指定（無指定＝進行中）。includeInactive は全ステータス。 */
+  async function list(opts: ListOpts = {}): Promise<SiteRow[]> {
     const r = await call('sites', {
       ...(opts.ids ? { ids: opts.ids } : {}),
       ...(opts.includeInactive ? { includeInactive: true } : {}),
+      ...(opts.statuses?.length ? { statuses: opts.statuses } : {}),
     })
     return (r.sites ?? []) as SiteRow[]
   }
 
   /** 取れなくても画面を止めたくない所用（バッジ等）。失敗は空配列。 */
-  async function listSafe(opts: { ids?: string[]; includeInactive?: boolean } = {}): Promise<SiteRow[]> {
+  async function listSafe(opts: ListOpts = {}): Promise<SiteRow[]> {
     try { return await list(opts) } catch (e) { console.error('[sites] 取得に失敗:', e); return [] }
   }
 

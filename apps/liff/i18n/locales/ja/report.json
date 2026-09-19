@@ -51,6 +51,8 @@
   "siteGroupRecent": "最近の現場（直近1週間）",
   "siteGroupUnlinked": "紐付けなし",
   "siteGroupFacility": "オフィス・工場",
+  "siteGroupOtherStatus": "見積中・終了した現場",
+  "showOtherSites": "見積中・終了した現場も表示",
   "addNewSite": "＋ 新しい現場を登録する",
   "siteUnset": "現場未設定（あとで紐付け）",
   "siteUnsetNote": "現場が未作成でも記録できます。後で管理者が正しい現場へ紐付けます。",

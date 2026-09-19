@@ -119,6 +119,7 @@ import HelpButton from '../components/HelpButton.vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { openDoc } from '../lib/docUrl'
+import { siteStatusesForScreen } from '../lib/site-status.gen'
 
 type Estimate = {
   id: string; subcontractor_id: string | null; site_id: string | null
@@ -153,9 +154,13 @@ const siteName = (id: string | null) => sites.value.find((s) => s.id === id)?.na
 
 // 選択中の業者に紐づく現場のみ（紐付け0件なら全件にフォールバック＝UX破綻防止）
 const linkedSiteIds = computed(() => new Set(siteLinks.value.filter(l => l.subcontractor_id === modal.value?.subcontractor_id).map(l => l.site_id)))
+const ESTIMATE_SITE_SET = new Set<string>(siteStatusesForScreen('estimate_site_picker', true))   // 見積中・受注・着工＋失注（参照用）
 const filteredSites = computed(() => {
-  if (!modal.value?.subcontractor_id || linkedSiteIds.value.size === 0) return sites.value
-  return sites.value.filter(s => linkedSiteIds.value.has(s.id))
+  // 編集中の見積が参照している現場は、ステータスに関わらず選択肢に残す（開いただけで空に見えないように）
+  const base = sites.value.filter(s => ESTIMATE_SITE_SET.has((s as any).status) || s.id === modal.value?.site_id)
+    .map(s => ((s as any).status === 'lost' ? { ...s, name: `${s.name}（失注）` } : s))
+  if (!modal.value?.subcontractor_id || linkedSiteIds.value.size === 0) return base
+  return base.filter(s => linkedSiteIds.value.has(s.id))
 })
 const siteFilterActive = computed(() => !!modal.value?.subcontractor_id && linkedSiteIds.value.size > 0)
 // 現場プルダウンを「元請け→現場」の2段階(optgroup)に(#36c0b9b4)。元請け五十音順・未設定は末尾。
@@ -183,11 +188,12 @@ async function load() {
   const [{ data: estRows }, { data: su }, { data: si }] = await Promise.all([
     supabase.from('estimates').select(EST_COLS).eq('account_id', accountId).eq('is_deleted', false).order('estimate_number', { ascending: false }),
     supabase.from('subcontractors').select('id, name, category').eq('account_id', accountId).eq('active', true).order('sort_order').order('name'),
-    supabase.from('sites').select('id, name, contractors(name)').eq('account_id', accountId).eq('active', true).order('name_kana', { nullsFirst: false }).order('name'),
+    // 全ステータスを引き、名前解決は全件・選択肢は見積中/受注/着工（＋失注は参照用に末尾）にする（2026-09-19 A-2 #8）
+    supabase.from('sites').select('id, name, status, contractors(name)').eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
   ])
   rows.value  = (estRows ?? []) as Estimate[]
   subs.value  = (su ?? []) as Opt[]
-  sites.value = (si ?? []).map((s: any) => ({ id: s.id, name: s.name, contractor_name: s.contractors?.name ?? null })) as Opt[]
+  sites.value = (si ?? []).map((s: any) => ({ id: s.id, name: s.name, status: s.status, contractor_name: s.contractors?.name ?? null })) as Opt[]
   const { data: links } = await supabase.from('site_subcontractors').select('site_id, subcontractor_id').eq('account_id', accountId)
   siteLinks.value = (links ?? []) as { site_id: string; subcontractor_id: string }[]
   loading.value = false

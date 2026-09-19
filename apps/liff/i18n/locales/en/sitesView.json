@@ -24,5 +24,11 @@
   "consentFailed": "Could not record your confirmation. Please try again later.",
   "consentNotParticipant": "You are not a member of this site, so you cannot confirm.",
   "documentUnavailable": "(cannot open)",
-  "documentFallback": "Document"
+  "documentFallback": "Document",
+  "otherStatusToggle": "Show estimating / completed sites",
+  "statusEstimating": "Estimating",
+  "statusOrdered": "Ordered",
+  "statusInProgress": "In progress",
+  "statusCompleted": "Completed",
+  "statusLost": "Lost"
 }
