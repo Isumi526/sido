@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>本番リリース 2026-09-19（2）</title>
+<style>
+  @page { size: A4; margin: 10mm 11mm 8mm; } * { box-sizing: border-box; }
+  body { font-family: "Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif; color: #1f2937; font-size: 9.5pt; line-height: 1.5; margin: 0; }
+  h1 { font-size: 16pt; margin: 0 0 1mm; color: #06C755; } .sub { font-size: 9pt; color: #374151; margin: 0 0 3mm; font-weight: 700; }
+  h2 { font-size: 10.5pt; margin: 3.5mm 0 1.5mm; padding: 1.2mm 3mm; background: #06C755; color: #fff; border-radius: 3px; }
+  ul { margin: 0 0 2mm; padding-left: 5mm; } li { margin-bottom: 1.1mm; }
+  .tag { display:inline-block; font-size:7.5pt; font-weight:700; padding:0.3mm 1.6mm; border-radius:2px; margin-right:1.5mm; vertical-align:1px; } .fix { background:#fee2e2; color:#991b1b; } .new { background:#dcfce7; color:#166534; }
+  .note { background:#f3f4f6; border-left:3px solid #9ca3af; padding:2mm 3mm; margin:2mm 0; font-size:9pt; } .note b { color:#111827; }
+</style></head><body>
+<h1>本番リリース 2026-09-19（2）</h1>
+<p class="sub">緊急修正：代理の「まとめて提出」が本人の日報を上書きする不具合（PR #199）</p>
+
+<h2><span class="tag fix">不具合修正</span>代理モードで「まとめて提出」すると、代理先ではなく自分の日報に書き込まれていた</h2>
+<ul>
+<li>作業員アプリの日報履歴で、代理先（例：平床さん）を選んだ状態で未送信の日を<b>「まとめて提出」</b>すると、<b>代理先ではなく操作している本人</b>の日報として保存されていました。本人がその日に既に日報を出していた場合、<b>「休み・現場なし」で上書き</b>されます。</li>
+<li>修正後は、まとめて提出の保存先が<b>画面に表示している人（代理中は代理先）</b>に揃います。1日ずつの提出（日報登録画面）は元から正しく代理先に入っており、影響ありません。</li>
+</ul>
+
+<h2><span class="tag fix">データ対応</span>今井さんの 9/17〜9/19 の日報</h2>
+<ul>
+<li>9/19 朝にこの不具合で今井さんの 9/17（木）・9/18（金）・9/19（土）の日報3件が「休み」に上書きされました。平床さんの分は1日ずつ打ち直されており正しく入っています。</li>
+<li><b>9/17（木）</b>：Supabase の日次バックアップ（9/19 00:03 時点）から元の内容を取り出し、本番に戻しました（出張ベトナム・事務所（名古屋））。</li>
+<li><b>9/18（金）・9/19（土）</b>：上書きの直前（9/19 08:49〜08:50）に作られた行のため、バックアップに残っておらず復元できません。今井さんに出し直しをお願いします。</li>
+</ul>
+
+<div class="note"><b>今後の予防：</b>日報は上書き保存のため、今回のように「元の内容」がシステム内に残りません。次のリリースで、日報を更新した時に変更前の内容を自動で退避する仕組み（履歴）を入れる予定です。</div>
+</body></html>
