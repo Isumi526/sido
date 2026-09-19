@@ -73,7 +73,7 @@ onMounted(load)
 .row.off { opacity: .55; }
 .row-main { flex: 1; min-width: 0; }
 .row-name { font-weight: 700; }
-.badge-st { font-size: 10px; font-weight: 700; border-radius: 4px; padding: 1px 6px; margin-left: 6px; }
+.badge-st { font-size: 10px; font-weight: 700; border-radius: 4px; padding: 1px 6px; margin-left: 6px; white-space: nowrap; }
 .badge-st.st-estimating { background: #fef3c7; color: #92400e; }
 .badge-st.st-ordered { background: #dbeafe; color: #1e40af; }
 .badge-st.st-in_progress { background: #dcfce7; color: #166534; }
