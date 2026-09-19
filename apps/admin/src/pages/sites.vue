@@ -58,7 +58,8 @@
             </td>
             <td class="resp">
               <template v-if="s.responsible_worker_id">{{ responsibleName(s.responsible_worker_id) }}</template>
-              <span v-else-if="s.active" class="resp-warn" title="責任者が未登録です。編集から登録してください">未登録</span>
+              <!-- 責任者の未登録警告は、その段階で必須の時だけ（見積中・失注は任意） -->
+              <span v-else-if="SITE_REQUIRED_FIELDS[s.status]?.includes('responsible_worker_id')" class="resp-warn" title="責任者が未登録です。編集から登録してください">未登録</span>
               <span v-else>—</span>
             </td>
             <td>{{ s.contractor_id ? contractorName(s.contractor_id) : '—' }}</td>
@@ -377,7 +378,7 @@
     </div>
 
     <!-- ステータス変更モーダル（2026-09-19 A-1）: 完了→終了日／失注→理由。単体・一括どちらもここ -->
-    <SiteStatusModal v-if="statusModal" :sites="statusModal.sites" :next="statusModal.next" @close="statusModal = null" @done="onStatusChanged" />
+    <SiteStatusModal v-if="statusModal" :sites="statusModal.sites" :next="statusModal.next" @close="onStatusCanceled" @done="onStatusChanged" />
   </div>
 </template>
 
@@ -1046,6 +1047,8 @@ function requestStatusChange(target: Site | Site[], next: SiteStatus) {
   if (list.length === 1 && list[0].status === next) return
   statusModal.value = { sites: list, next }
 }
+// キャンセル時は行のプルダウンを元の値に戻す（select は変更イベント後に画面上だけ次の値を指している）
+async function onStatusCanceled() { statusModal.value = null; sites.value = [...sites.value] ; await load() }
 async function onStatusChanged() {
   statusModal.value = null
   if (pickMode.value === 'status') cancelMerge()

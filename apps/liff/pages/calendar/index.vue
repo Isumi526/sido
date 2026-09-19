@@ -1464,9 +1464,9 @@ onMounted(async () => {
 @keyframes extend-spin { to { transform: rotate(360deg); } }
 
 /* ── 共有／個人タブ ── */
-.cal-tabs { display: flex; gap: 4px; padding: 8px 12px 0; background: #fff; flex-shrink: 0; }
-.cal-tab {
-  flex: 1; background: #f5f5f5; border: 1px solid #E0E0E0; color: #666;
+.cal-tabs { display: flex; gap: 4px; padding: 8px 12px 0; background: #fff; flex-shrink: 0; overflow-x: auto; }   /* 車両・道具・会議室・独自の種類でタブが増えても横スクロール（B-3） */
+  .cal-tab {
+  white-space: nowrap; flex: 1 0 auto; min-width: 64px; background: #f5f5f5; border: 1px solid #E0E0E0; color: #666;
   border-radius: 8px 8px 0 0; padding: 8px 4px; font-size: 13px; font-weight: 700; cursor: pointer;
 }
 .cal-tab.active { background: #fff; border-bottom-color: #fff; color: #06C755; }
