@@ -5,7 +5,7 @@
       <button class="btn-back" @click="router.push('/sites')">← 現場マスタ</button>
       <div class="head-main">
         <div class="head-title">
-          <span v-if="site" class="status" :class="site.active ? 'active' : 'off'">{{ site.active ? '進行中（有効）' : '無効' }}</span>
+          <span v-if="site" class="status st-badge" :class="`st-${site.status}`" data-testid="site-detail-status">{{ SITE_STATUS_LABEL[site.status] }}</span>
           <h1 class="page-title">{{ site?.name || '現場' }}</h1>
           <span v-if="site?.name_kana" class="kana">{{ site.name_kana }}</span>
         </div>
@@ -19,7 +19,10 @@
                   :title="reportRange ? '' : 'この現場の日報がまだありません'"
                   @click="openAggregate">集計を見る</button>
           <button class="btn-ghost" @click="router.push(`/chats/${site.id}`)">チャットを開く</button>
-          <button class="btn-ghost" @click="toggleActive">{{ site.active ? '無効化' : '有効化' }}</button>
+          <!-- ステータス変更（2026-09-19 A-1・旧「無効化／有効化」を置換） -->
+          <select class="input st-select" :value="site.status" data-testid="site-detail-status-select" @change="requestStatusChange(($event.target as HTMLSelectElement).value as SiteStatus)">
+            <option v-for="st in SITE_STATUS_ORDER" :key="st" :value="st">{{ SITE_STATUS_LABEL[st] }}</option>
+          </select>
           <!-- ★「ルール・QR設定」は廃止（2026-08-27 出退勤モデル変更）。確認ルールは
                アカウント共通（/site-rules）に集約し、現場QRの発行はやめた。 -->
         </div>
@@ -245,6 +248,7 @@
         </div>
       </div>
     </div>
+    <SiteStatusModal v-if="site && statusNext" :sites="[site]" :next="statusNext" @close="statusNext = null" @done="onStatusChanged" />
   </div>
 </template>
 
@@ -259,12 +263,15 @@ import { canViewManagementPages } from '../lib/auth'
 import { canViewEstimatesForSite } from '../lib/features'
 import { normalizeSiteName } from '../lib/site-similarity.gen'
 import { siteStoredName } from '../lib/siteKey'
+import SiteStatusModal from '../components/SiteStatusModal.vue'
+import { SITE_STATUS_ORDER, SITE_STATUS_LABEL } from '../lib/site-status.gen'
+import type { SiteStatus } from '../lib/site-status.gen'
 
 const route = useRoute()
 const router = useRouter()
 const siteId = String(route.params.id ?? '')
 
-type Site = { id: string; name: string; name_kana: string | null; active: boolean; location: string | null; construction_type: string | null; construction_details: string | null; memo: string | null; contractor_id: string | null; default_start_time: string | null; default_end_time: string | null; responsible_worker_id: string | null }
+type Site = { id: string; name: string; name_kana: string | null; active: boolean; status: SiteStatus; location: string | null; period_start?: string | null; period_end?: string | null; kind?: string | null; construction_type: string | null; construction_details: string | null; memo: string | null; contractor_id: string | null; default_start_time: string | null; default_end_time: string | null; responsible_worker_id: string | null }
 type Att = { id: string; kind: string; path: string; name: string | null; require_consent?: boolean; url?: string | null }
 type WorkCategory = { id: string; name: string; scope: string | null }
 type SiteCategoryHours = { category_id: string; default_start_time: string | null; default_end_time: string | null; default_breaks: { start: string; minutes: number }[] | null }
@@ -478,11 +485,13 @@ async function saveBasic() {
   finally { saving.value = false }
 }
 
-async function toggleActive() {
-  if (!site.value) return
-  await supabase.from('sites').update({ active: !site.value.active }).eq('id', site.value.id)
-  await load()
+// ステータス変更（2026-09-19 A-1）。モーダルは現場マスタと共通
+const statusNext = ref<SiteStatus | null>(null)
+function requestStatusChange(next: SiteStatus) {
+  if (!site.value || site.value.status === next) return
+  statusNext.value = next
 }
+async function onStatusChanged() { statusNext.value = null; await load() }
 
 async function processAttach(file: File | undefined | null, kind: 'photo' | 'document') {
   if (!file || !site.value) return
@@ -581,7 +590,7 @@ async function load() {
   loading.value = true
   const accountId = await getAccountId()
   const { data: s } = await supabase.from('sites')
-    .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id, default_start_time, default_end_time, responsible_worker_id')
+    .select('id, name, name_kana, active, status, kind, period_start, period_end, location, construction_type, construction_details, memo, contractor_id, default_start_time, default_end_time, responsible_worker_id')
     .eq('account_id', accountId).eq('id', siteId).maybeSingle()
   site.value = (s as Site) ?? null
   if (!site.value) { loading.value = false; return }
@@ -657,6 +666,13 @@ onMounted(load)
 .status { font-size: 11px; padding: 3px 8px; border-radius: 4px; }
 .status.sm { font-size: 10px; }
 .status.active { background: #e8fff0; color: #0a8a3a; }
+.st-badge { font-weight: 700; }
+.st-badge.st-estimating { background: #fef3c7; color: #92400e; }
+.st-badge.st-ordered { background: #dbeafe; color: #1e40af; }
+.st-badge.st-in_progress { background: #dcfce7; color: #166534; }
+.st-badge.st-completed { background: #e5e7eb; color: #374151; }
+.st-badge.st-lost { background: #fee2e2; color: #991b1b; }
+.st-select { width: auto; padding: 6px 10px; font-size: 13px; border: 1px solid #ddd; border-radius: 8px; background: #fff; }
 .status.off { background: #f5f5f5; color: #aaa; }
 .empty { color: #888; padding: 40px; text-align: center; }
 

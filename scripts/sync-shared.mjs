@@ -94,6 +94,15 @@ const SHARES = [
     ],
   },
   {
+    // 現場の5段階ステータス（語彙・画面別の表示集合・必須項目）。admin/LIFF/EF で同じ表を引く
+    src: 'shared/site-status.ts',
+    dests: [
+      'apps/admin/src/lib/site-status.gen.ts',
+      'apps/liff/composables/site-status.gen.ts',
+      'supabase/functions/_shared/site-status.gen.ts',
+    ],
+  },
+  {
     // 無償満了日の計算。admin(告知UI・アカウント発行)と EF(サーバ側判定)で同じ結果にならないと
     // 「画面は満了と出たのにサーバは無償のまま」のような食い違いが起きる（法的な通知起点）
     src: 'shared/billing-trial.ts',
