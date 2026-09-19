@@ -9,6 +9,10 @@
       <template v-else>
         <!-- 月ビュー（既定）: 行＝現場・列＝月・帯＝現場マスタの工期・地方でグループ化（2026-09-10 SEED 大塚さん）。
              作業員にも「どの現場がいつ頃か」が一画面で分かる。クリップから工程表（PDF/画像/Excel）を開ける。 -->
+        <!-- 既定＝受注・着工。見積中（工期あり）・完了（直近90日）は切替で（2026-09-19 A-2・表示マトリクス #15） -->
+        <label v-if="sitesAll.some(s => s.optional)" class="other-toggle" data-testid="company-schedule-other-toggle">
+          <input v-model="showOther" type="checkbox" /> {{ $t('companySchedule.showOther') }}
+        </label>
         <section class="mv" data-testid="month-view">
           <div v-if="!sitesView.length" class="state">{{ $t('companySchedule.noSites') }}</div>
           <div v-else class="mv-scroll" ref="monthScrollRef" :style="{ '--mlabel-w': MLABEL_W + 'px' }">
@@ -26,7 +30,7 @@
                 </button>
                 <div class="mv-region-fill" :style="{ width: mTrackWidth + 'px' }" />
               </div>
-              <div v-for="r in (collapsed.has(g.key) ? [] : g.rows)" :key="r.id" class="mv-row" :data-testid="`month-site-${r.id}`">
+              <div v-for="r in (collapsed.has(g.key) ? [] : g.rows)" :key="r.id" class="mv-row" :class="{ optional: r.optional }" :data-testid="`month-site-${r.id}`">
                 <div class="mv-label">
                   <span class="mv-site">{{ r.name }}</span>
                   <span v-if="r.night" class="mv-night">{{ $t('companySchedule.night') }}</span>
@@ -59,11 +63,14 @@ import { REGIONS } from '~/utils/jp-region.gen'
 type SiteItem = {
   id: string; name: string; period_start: string | null; period_end: string | null
   region_key: string; region_label: string; region_order: number; night: boolean
+  status?: string; optional?: boolean   // optional＝「他の現場を表示」でだけ出す（見積中・直近完了）
   schedule_attachments: { id: string; name: string | null }[]
 }
 
 const loading = ref(true)
-const sitesView = ref<SiteItem[]>([])
+const sitesAll = ref<SiteItem[]>([])
+const showOther = ref(false)
+const sitesView = computed(() => showOther.value ? sitesAll.value : sitesAll.value.filter((s) => !s.optional))
 const cfg = useRuntimeConfig()
 const { getIdToken, profile: liffProfile } = useLiff()
 
@@ -164,7 +171,7 @@ async function load() {
   if (!accountId) { loading.value = false; return }
   const { data, error } = await useSupabase().functions.invoke('liff-process-summary', { body: { account_id: accountId } })
   if (!error) {
-    sitesView.value = (data?.sites ?? []) as SiteItem[]
+    sitesAll.value = (data?.sites ?? []) as SiteItem[]
   }
   loading.value = false
   await nextTick()
@@ -195,6 +202,8 @@ onMounted(load)
 .mv-count { margin-left: 6px; font-size: 10px; font-weight: 600; color: #666; background: #e5e7eb; border-radius: 10px; padding: 0 6px; }
 .mv-region-fill { flex: none; }
 .mv-row { display: flex; min-height: 40px; border-bottom: 1px solid #f3f3f3; }
+.mv-row.optional { opacity: .55; }
+.other-toggle { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; font-size: 13px; color: #64748b; }
 .mv-label { width: var(--mlabel-w); min-width: var(--mlabel-w); position: sticky; left: 0; z-index: 3; background: #fff; padding: 5px 10px; border-right: 1px solid #eee; }
 .mv-site { font-size: 12px; font-weight: 700; color: #222; }
 .mv-night { display: inline-block; margin-left: 4px; font-size: 9px; font-weight: 700; color: #fff; background: #1E88E5; border-radius: 4px; padding: 1px 4px; vertical-align: 1px; }

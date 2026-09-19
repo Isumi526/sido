@@ -328,6 +328,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
+import { siteStatusesForScreen } from '../lib/site-status.gen'
 import { getAccountId } from '../lib/account'
 import { currentWorkerId } from '../lib/auth'
 import { loadScheduleCategories, FALLBACK_CATEGORY_COLOR, type ScheduleCategory } from '../lib/scheduleCategories'
@@ -429,7 +430,7 @@ const siteNameById = computed(() => {
 async function loadSites() {
   const [{ data: siteRows }, { data: contractorRows }] = await Promise.all([
     supabase.from('sites').select('id, name, name_kana, contractor_id')
-      .eq('account_id', accountId).eq('active', true).eq('kind', 'site')   // オフィス・工場（kind≠site）は予定の候補に出さない（2026-09-13）
+      .eq('account_id', accountId).in('status', siteStatusesForScreen('schedule_site_picker')).eq('kind', 'site')   // 予定の候補＝見積中・受注・着工（2026-09-19 A-2 #3）。オフィス・工場（kind≠site）は出さない（2026-09-13）
       .order('name_kana', { nullsFirst: false }).order('name'),
     supabase.from('contractors').select('id, name').eq('account_id', accountId),
   ])

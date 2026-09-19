@@ -59,8 +59,8 @@ test.describe('無効化した現場の下請け請求', () => {
     const siteSel = page.locator('select.inp-site').first()
     await expect(siteSel, '★終わった現場でも選択が保持される（空欄にならない）')
       .toHaveValue(siteId, { timeout: 15000 })
-    await expect(siteSel.locator('option', { hasText: SITE }), '終わった現場だと分かる')
-      .toContainText('（終了）')
+    await expect(siteSel.locator('option', { hasText: SITE }), '終わった現場だと分かる（2026-09-19 ステータス化で「（完了）」表記）')
+      .toContainText('（完了）')
 
     await page.locator('.btn-save').click()
 
@@ -82,14 +82,24 @@ test.describe('無効化した現場の下請け請求', () => {
       '★過去の請求が参照している現場は、終わっていても選べる').toHaveCount(1)
   })
 
-  test('新規の明細では終わった現場を選べない（無効化の目的を損なわない）', async ({ page }) => {
-    await page.goto('/subcontractor-invoices', { waitUntil: 'networkidle' })
-    const addBtn = page.getByRole('button', { name: '＋ 新規請求' }).first()
-    await addBtn.click()
-    await page.getByRole('button', { name: '＋ 行を追加' }).click()   // 新規は明細0行で開く
-    const siteSel = page.locator('select.inp-site').first()
-    await expect(siteSel).toBeVisible({ timeout: 15000 })
-    await expect(siteSel.locator('option', { hasText: SITE }),
-      '★新規では終わった現場は候補に出ない').toHaveCount(0)
+  // ★2026-09-19 現場ステータスA-2（表示マトリクス #9）: 請求は施工後に来るので、完了現場は
+  //  新規の明細でも「（完了）」付きで選べる。失注現場は出さない。
+  test('新規の明細でも完了した現場を「（完了）」付きで選べる。失注現場は出ない', async ({ page }) => {
+    const lost = await restSrv('sites', { method: 'POST', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ account_id: accountId, name: `${SITE}_失注`, status: 'lost' }) })
+    try {
+      await page.goto('/subcontractor-invoices', { waitUntil: 'networkidle' })
+      const addBtn = page.getByRole('button', { name: '＋ 新規請求' }).first()
+      await addBtn.click()
+      await page.getByRole('button', { name: '＋ 行を追加' }).click()   // 新規は明細0行で開く
+      const siteSel = page.locator('select.inp-site').first()
+      await expect(siteSel).toBeVisible({ timeout: 15000 })
+      await expect(siteSel.locator('option', { hasText: `${SITE}（完了）` }),
+        '★完了現場は（完了）付きで選べる').toHaveCount(1)
+      await expect(siteSel.locator('option', { hasText: `${SITE}_失注` }),
+        '失注現場は出ない').toHaveCount(0)
+    } finally {
+      await restSrv(`sites?id=eq.${lost[0].id}`, { method: 'DELETE' }).catch(() => {})
+    }
   })
 })

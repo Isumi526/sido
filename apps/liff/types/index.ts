@@ -183,6 +183,8 @@ export interface MasterData {
   siteDistances?: Record<string, number>
   /** 現場名 → 区分（office/factory）。site は載せない（2026-09-13・日報の現場プルダウンで末尾グループ） */
   siteKinds?: Record<string, string>
+  /** 現場名 → 5段階ステータス（2026-09-19）。sites は失注以外を全て持つので、画面ごとの表示集合（site-status.gen の表）で絞る */
+  siteStatuses?: Record<string, string>
   // 作業区分（現場作業/見積/事務…）。会社ごとのマスタ。日報・予定で「どの作業か」を選ぶ。
   //  scope: どの台帳で使えるか（site/office/event・null=どこでも）
   //  start/end/breaks: その区分の「全現場共通の定時」（未設定は null）。

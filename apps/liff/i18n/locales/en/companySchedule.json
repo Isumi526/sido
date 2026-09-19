@@ -7,5 +7,6 @@
   "undecided": "TBD",
   "noPeriod": "Period not set",
   "noPeriodGroup": "Period TBD",
-  "openFailed": "Could not open the schedule"
+  "openFailed": "Could not open the schedule",
+  "showOther": "Show estimating / finished sites"
 }

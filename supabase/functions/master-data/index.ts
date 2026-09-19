@@ -28,6 +28,7 @@
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveCaller } from '../_shared/caller-identity.ts'
+import { SITE_OPEN_STATUSES, isSiteStatus } from '../_shared/site-status.gen.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
@@ -72,8 +73,11 @@ Deno.serve(async (req) => {
   // ── マスタ一式 ──────────────────────────────────
   if (!body.action || body.action === 'fetch') {
     const [sites, contractors, workers, subs, vehicles, siteSubs, categories, catHours, assets] = await Promise.all([
-      svc.from('sites').select('id, name, kind, contractor_id, default_start_time, default_end_time, default_breaks, default_distance_km')
-        .eq('active', true).eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
+      // ★現場ステータス（2026-09-19 A-2）: 失注以外を status 付きで返す。どの画面にどれを出すかは
+      //  LIFF 側が shared/site-status.ts の表（report_site_picker 等）で絞る。完了現場は
+      //  「他の現場を表示」で選べる必要がある（過去日報の編集・現調）ので active だけで切らない。
+      svc.from('sites').select('id, name, kind, status, contractor_id, default_start_time, default_end_time, default_breaks, default_distance_km')
+        .in('status', [...SITE_OPEN_STATUSES, 'completed']).eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
       // ★sort_order だけだと同値が並んだ時に順序が不定になり、開くたびに並びが変わる。
       //  名前でタイブレークして必ず同じ順にする（2026-08-17）。
       svc.from('contractors').select('id, name').eq('active', true).eq('account_id', accountId)
@@ -125,10 +129,13 @@ Deno.serve(async (req) => {
   //   （現場情報ページ・チャットの責任者判定）。それ以外は返さない。
   if (body.action === 'sites') {
     let q = svc.from('sites')
-      .select('id, name, name_kana, kind, active, location, construction_type, construction_details, memo, responsible_worker_id, contractor_id, created_at')
+      .select('id, name, name_kana, kind, active, status, location, construction_type, construction_details, memo, responsible_worker_id, contractor_id, created_at, period_start, period_end')
       .eq('account_id', accountId)
-    // includeInactive: 現場情報ページは無効な現場も「無効」バッジ付きで出す仕様
-    if (!body.includeInactive) q = q.eq('active', true)
+    // statuses[]: 画面ごとの表示集合（shared/site-status.ts）。includeInactive（旧）は全ステータス。
+    // どちらも無ければ進行中（＝旧 active=true）
+    const statuses = Array.isArray(body.statuses) ? body.statuses.filter(isSiteStatus) : []
+    if (statuses.length) q = q.in('status', statuses)
+    else if (!body.includeInactive) q = q.in('status', SITE_OPEN_STATUSES)
     if (Array.isArray(body.ids) && body.ids.length) q = q.in('id', body.ids.map(String).slice(0, 1000))
     const { data, error } = await q.order('active', { ascending: false })
       .order('name_kana', { nullsFirst: false }).order('name')

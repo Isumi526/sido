@@ -211,6 +211,7 @@
 </template>
 
 <script setup lang="ts">
+import { siteStatusesForScreen } from '~/composables/site-status.gen'
 import type { User } from '~/types'
 import { EXPENSE_ACCOUNT_OPTIONS, requiresCompanions, computeBudgetUsage } from '~/composables/expense-flatten.gen'
 import { uploadExpenseFiles } from '~/utils/uploadExpenseFiles'
@@ -649,7 +650,8 @@ onMounted(async () => {
   try {
     selfUser.value = await resolve()
     await refresh()
-    allSites.value = (await sitesApi.listSafe()).map((s) => ({ id: s.id, name: s.name, kind: s.kind ?? 'site' }))
+    // 現場に紐づかない経費の紐付け先＝着工（＋受注）の現場。オフィス・工場は kind で別グループ（2026-09-19 A-2・表示マトリクス #18）
+    allSites.value = (await sitesApi.listSafe({ statuses: siteStatusesForScreen('personal_expense_site', true) })).map((s) => ({ id: s.id, name: s.name, kind: s.kind ?? 'site' }))
     applyDefaultOffice(form.value)
     await ensureWorkedSites(form.value.date)
   } finally {

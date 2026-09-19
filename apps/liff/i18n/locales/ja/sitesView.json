@@ -24,5 +24,11 @@
   "consentFailed": "承認を記録できませんでした。時間をおいて試してください。",
   "consentNotParticipant": "この現場のメンバーではないため承認できません。",
   "documentUnavailable": "（開けません）",
-  "documentFallback": "資料"
+  "documentFallback": "資料",
+  "otherStatusToggle": "見積中・完了した現場を表示",
+  "statusEstimating": "見積中",
+  "statusOrdered": "受注",
+  "statusInProgress": "着工",
+  "statusCompleted": "完了",
+  "statusLost": "失注"
 }

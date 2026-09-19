@@ -270,7 +270,8 @@
                 <optgroup v-if="recentSiteOptions.length" :label="$t('calendar.siteGroupRecent')" data-testid="site-group-recent">
                   <option v-for="s in recentSiteOptions" :key="`recent-${s}`" :value="s">{{ s }}</option>
                 </optgroup>
-                <template v-for="grp in master.siteGroupsByContractor.value" :key="grp.contractorName ?? '__unlinked__'">
+                <!-- 予定の現場候補＝見積中（現調）・受注・着工（2026-09-19 A-2・表示マトリクス #14） -->
+                <template v-for="grp in master.siteGroupsFor('schedule_site_picker')" :key="grp.contractorName ?? '__unlinked__'">
                   <optgroup :label="grp.contractorName ?? $t('calendar.siteGroupUnlinked')">
                     <option v-for="s in grp.sites" :key="s" :value="s">{{ s }}</option>
                   </optgroup>
@@ -543,7 +544,7 @@ function rememberRecentSite(name: string) {
 
 /** 「最近使った」に出す分。現場マスタから消えた/無効化された名前は出さない */
 const recentSiteOptions = computed(() =>
-  recentSiteNames.value.filter(n => master.siteNames.value.includes(n)))
+  recentSiteNames.value.filter(n => master.siteNamesFor('schedule_site_picker').includes(n)))
 
 /**
  * その台帳（現場 or 現場なし）で選べる作業区分。

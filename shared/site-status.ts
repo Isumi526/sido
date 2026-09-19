@@ -126,3 +126,24 @@ export function suggestNextSiteStatus(
   if (site.status === 'in_progress' && site.period_end && site.period_end < today) return 'completed'
   return null
 }
+
+// ──────────────────── 工程管理（会社予定）の帯 ────────────────────
+/**
+ * 工程管理（表示マトリクス #4/#15）: 既定＝受注・着工。「他の現場を表示」で
+ *  見積中＝工期（開始日）が入っているものだけ薄い帯／完了＝終了日が直近90日以内のものだけ。
+ *  それ以外の見積中・完了・失注は切替しても出さない（帯が引けない・古すぎる）。
+ */
+export function processGanttVisibility(
+  site: { status: SiteStatus; period_start?: string | null; period_end?: string | null },
+  today: string,
+): 'default' | 'optional' | 'hidden' {
+  if (site.status === 'ordered' || site.status === 'in_progress') return 'default'
+  if (site.status === 'estimating') return site.period_start ? 'optional' : 'hidden'
+  if (site.status === 'completed') {
+    if (!site.period_end) return 'hidden'
+    const d = new Date(today + 'T00:00:00'); d.setDate(d.getDate() - 90)
+    const cutoff = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    return site.period_end >= cutoff ? 'optional' : 'hidden'
+  }
+  return 'hidden'
+}

@@ -245,6 +245,7 @@ import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountName } from '../lib/account'
 import { openDoc, resolveDocUrl } from '../lib/docUrl'
 import { refreshNavBadges } from '../lib/navBadges'
+import { siteStatusesForScreen } from '../lib/site-status.gen'
 
 const BUCKET     = 'expense-receipts'     // 署名画像など既存公開物の表示用（後方互換）
 const PDF_BUCKET = 'admin-docs'           // 新規発行の注文書PDFは非公開バケットへ（署名URL配信）
@@ -339,7 +340,7 @@ async function load() {
     supabase.from('estimates').select('id, subcontractor_id, site_id, estimate_number, total_amount')
       .eq('account_id', accountId).eq('is_deleted', false).order('estimate_number', { ascending: false }),
     supabase.from('subcontractors').select('id, name').eq('account_id', accountId).eq('active', true).order('name'),
-    supabase.from('sites').select('id, name').eq('account_id', accountId).eq('active', true).order('name'),
+    supabase.from('sites').select('id, name').eq('account_id', accountId).in('status', siteStatusesForScreen('estimate_site_picker')).order('name'),   // 見積中・受注・着工（2026-09-19 A-2 #8）
     supabase.from('subcontractor_contacts').select('id, subcontractor_id, name, email, phone')
       .eq('account_id', accountId).eq('is_deleted', false).order('sort_order'),
   ])

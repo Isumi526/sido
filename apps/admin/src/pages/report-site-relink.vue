@@ -36,9 +36,13 @@
               <td class="name" data-testid="relink-typed-name">{{ r.typedName || '—' }}</td>
               <td class="memo">{{ r.memo || '—' }}</td>
               <td>
+                <!-- 紐付け先＝受注・着工。完了現場は「終了した現場」として末尾に（2026-09-19 A-2・表示マトリクス #10） -->
                 <select v-model="r.pick" class="site-pick">
                   <option value="">現場を選択</option>
                   <option v-for="s in siteNames" :key="s" :value="s">{{ s }}</option>
+                  <optgroup v-if="completedSiteNames.length" label="終了した現場">
+                    <option v-for="s in completedSiteNames" :key="`c-${s}`" :value="s">{{ s }}</option>
+                  </optgroup>
                 </select>
               </td>
               <td class="actions-col">
@@ -58,6 +62,7 @@ import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { refreshNavBadges } from '../lib/navBadges'
 import { isRelinkTarget } from '../lib/relinkTarget'
+import { siteStatusesForScreen } from '../lib/site-status.gen'
 
 const DAYS = 90
 
@@ -101,6 +106,7 @@ const loading = ref(true)
 const busy    = ref<string | null>(null)
 const rows    = ref<Row[]>([])
 const siteNames = ref<string[]>([])
+const completedSiteNames = ref<string[]>([])
 const siteIdByName = ref<Record<string, string>>({})  // 紐付け時に site_id も刻むため
 
 function fmtDate(d: string): string {
@@ -120,9 +126,11 @@ async function load() {
       .eq('account_id', accountId).gte('date', since)
       .order('date', { ascending: false })
       .limit(15000), // 90日×全作業員で上限(既定1000)超による未紐付け検出漏れ防止（reports.vue等の1ヶ月5000の3倍相当）
-    supabase.from('sites').select('id, name, name_kana').eq('account_id', accountId).eq('active', true).order('name_kana', { nullsFirst: false }).order('name'),
+    supabase.from('sites').select('id, name, name_kana, status').eq('account_id', accountId).in('status', siteStatusesForScreen('report_relink', true)).order('name_kana', { nullsFirst: false }).order('name'),
   ])
-  siteNames.value = (sites ?? []).map((s: any) => s.name)
+  const RELINK_DEFAULT = new Set<string>(siteStatusesForScreen('report_relink'))
+  siteNames.value = (sites ?? []).filter((s: any) => RELINK_DEFAULT.has(s.status)).map((s: any) => s.name)
+  completedSiteNames.value = (sites ?? []).filter((s: any) => !RELINK_DEFAULT.has(s.status)).map((s: any) => s.name)
   siteIdByName.value = Object.fromEntries((sites ?? []).map((s: any) => [s.name, s.id]))
   const out: Row[] = []
   for (const rep of (reps ?? []) as any[]) {

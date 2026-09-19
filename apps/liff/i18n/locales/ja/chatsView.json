@@ -2,5 +2,6 @@
   "title": "チャット",
   "empty": "現場がありません",
   "noMessages": "まだメッセージはありません",
-  "attachment": "添付ファイル"
+  "attachment": "添付ファイル",
+  "finishedToggle": "終了した現場のチャットを表示"
 }
