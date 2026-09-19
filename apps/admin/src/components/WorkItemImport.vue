@@ -88,7 +88,7 @@ async function onFile(e: Event) {
   try {
     fileName.value = f.name
     const buf = await f.arrayBuffer()
-    // xlsxは重い(~340KB)ため、取込を実際に使う時だけ動的import（process.vue と同じ流儀）。
+    // xlsxは重い(~340KB)ため、取込を実際に使う時だけ動的import。
     const XLSX = await import('xlsx')
     const wb = XLSX.read(buf, { type: 'array' })
     sheets.value = wb.SheetNames

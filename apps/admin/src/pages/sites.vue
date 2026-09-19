@@ -300,10 +300,14 @@
                @drop.prevent="onDropAtt" @dragover.prevent="attDragOver = true" @dragleave.prevent="attDragOver = false">
             <label class="att-btn">＋ 写真<input type="file" accept="image/*" multiple hidden :disabled="uploading" @change="onAttach($event, 'photo')" /></label>
             <label class="att-btn">＋ 書類<input type="file" accept="application/pdf,image/*" multiple hidden :disabled="uploading" @change="onAttach($event, 'document')" /></label>
-            <label class="att-btn att-btn-schedule" title="工程表PDF（会社予定の現場行からクリップで開けます）">＋ 工程表<input type="file" accept="application/pdf,image/*" multiple hidden :disabled="uploading" data-testid="att-schedule-input" @change="onAttach($event, 'schedule')" /></label>
+            <label class="att-btn att-btn-schedule" title="工程表（PDF・画像・Excel）。会社予定の現場行からクリップで開けます">＋ 工程表<input type="file" accept="application/pdf,image/*,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" multiple hidden :disabled="uploading" data-testid="att-schedule-input" @change="onAttach($event, 'schedule')" /></label>
             <span class="att-drop-hint">{{ attDragOver ? 'ここにドロップ' : 'またはここに画像/PDFを複数まとめてドラッグ&ドロップ' }}</span>
             <span v-if="uploading" class="att-up">アップロード中…</span>
           </div>
+          <!-- 工程表の形式ガイド。title属性はスマホで見えないので本文に出す（2026-09-19 大塚さん提案） -->
+          <p class="att-format-hint" data-testid="att-schedule-hint">
+            工程表は<b>PDFで添付するとスマホの作業員画面でそのまま開けます</b>。Excel（.xlsx/.xls）も添付できますが、スマホではダウンロードしてExcelアプリで開く形になります。
+          </p>
           <p v-if="!modal.id" class="hint">新規はここで選ぶと「保存時にアップロード」されます。出退勤同意の設定は作成後に「ルール・QR設定」で行えます。</p>
         </div>
 
@@ -378,6 +382,8 @@ type Site = {
 type Att = { id: string; site_id: string; kind: string; path: string; name: string | null; require_consent?: boolean; url?: string | null }
 
 const BUCKET = 'site-attachments'
+// file.type が空の時の拡張子→MIME 補完（工程表のExcel添付用）
+const EXT_MIME: Record<string, string> = { xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', xls: 'application/vnd.ms-excel', pdf: 'application/pdf' }
 const sites     = ref<Site[]>([])
 const contractors = ref<{ id: string; name: string }[]>([])   // 元請けマスタ（紐付け用）
 const subcontractors = ref<{ id: string; name: string }[]>([]) // 下請け業者マスタ（現場紐付け用）
@@ -527,7 +533,7 @@ async function uploadPendingAtts(siteId: string, accountId: string) {
   for (const p of pendingAtts.value) {
     const ext = (p.file.name.split('.').pop() || 'bin').toLowerCase()
     const path = `${accountId}/${siteId}/${p.kind}-${Date.now()}-${Math.round(p.file.size % 100000)}.${ext}`
-    const { error } = await supabase.storage.from(BUCKET).upload(path, p.file, { upsert: false, contentType: p.file.type || undefined })
+    const { error } = await supabase.storage.from(BUCKET).upload(path, p.file, { upsert: false, contentType: p.file.type || EXT_MIME[ext] || undefined })
     if (!error) await supabase.from('site_attachments').insert({ account_id: accountId, site_id: siteId, kind: p.kind, path, name: p.file.name })
   }
   clearPendingAtts()
@@ -942,7 +948,9 @@ async function processAttFile(file: File | undefined | null, kind: 'photo' | 'do
     const ext = (file.name.split('.').pop() || 'bin').toLowerCase()
     // path 先頭フォルダ = account_id（storage RLS の account スコープに使用）。複数同時でも衝突しないよう乱数付与
     const path = `${accountId}/${modal.value.id}/${kind}-${Date.now()}-${Math.round(file.size % 100000)}.${ext}`
-    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false, contentType: file.type || undefined })
+    // Excel は環境によって file.type が空で来るため拡張子から補う（空だと署名URLで開く時に octet-stream 扱いになる）
+    const contentType = file.type || EXT_MIME[ext] || undefined
+    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false, contentType })
     if (upErr) throw upErr
     await supabase.from('site_attachments').insert({ account_id: accountId, site_id: modal.value.id, kind, path, name: file.name })
     await loadAttachments(modal.value.id)
@@ -1161,6 +1169,8 @@ async function doMerge() {
 .att-dropzone.dragover { border-color: #2563eb; background: #eff6ff; }
 .att-dropzone.busy { opacity: .7; }
 .att-drop-hint { font-size: 12px; color: #6b7280; pointer-events: none; }
+.att-format-hint { font-size: 12px; color: #6b7280; margin: 6px 0 0; line-height: 1.5; }
+.att-format-hint b { color: #065f46; font-weight: 700; }
 .att-btn { background: #f0f0f0; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
 .att-btn-schedule { background: #ecfdf5; color: #065f46; }
 .att-badge-schedule { font-size: 11px; background: #d1fae5; color: #065f46; border-radius: 4px; padding: 1px 6px; margin-right: 4px; }

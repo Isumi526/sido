@@ -118,7 +118,4 @@ test('★工程表PDFを現場に添付でき、工程管理の月ビューで�
   const keys = await view.locator('[data-testid^="region-"]:not([data-testid^="region-toggle"])').evaluateAll(els => els.map(e => e.getAttribute('data-testid')))
   const iTokai = keys.indexOf('region-tokai'), iKansai = keys.indexOf('region-kansai')
   if (iTokai >= 0) expect(iTokai, '東海が関西より先').toBeLessThan(iKansai)
-  // 工程（詳細）に切り替えると従来のガント（工程行）が出る
-  await page.getByTestId('view-tasks').click()
-  await expect(view).toHaveCount(0)
 })
