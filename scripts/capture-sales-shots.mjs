@@ -10,7 +10,7 @@ const OUT  = 'docs/sales/screenshots'
 
 const SHOTS = [
   { route: '/',                    name: '01-dashboard',      label: 'ダッシュボード' },
-  { route: '/process',             name: '02-process',        label: '工程管理（ガント）' },
+  { route: '/process',             name: '02-process',        label: '工程管理（月ビュー）' },
   { route: '/estimate-list',       name: '03-estimate-list',  label: '見積もり一覧' },
   { route: '/estimate-builder',    name: '04-estimate-builder', label: '見積ビルダー' },
   { route: '/purchase-orders',     name: '05-purchase-orders', label: '注文書発行' },
