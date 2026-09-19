@@ -95,6 +95,8 @@ git push origin main --force
 | **PROD_BRANCH** | `main`／AUTO_MERGE_TARGET=`dev`／AUTO_TIER=`低`／MAX_WALL=`180` | |
 | **本番 Supabase ref** | `nrzzesbtvswoiouhldvi` | 誤接続ガード／`--prod-readonly` 監査用 |
 | **PROD_URL** | admin=`https://sido-admin-stism.vercel.app/` ／ liff=`https://sido-liff.vercel.app/` | ship 手順8スモークで使用 |
+| **DOC_LEVEL** | `light` | 設計書（spec-doc skill）の粒度。light=認識合わせ資料1〜4枚／standard=章立て／formal=要件定義・基本設計・詳細設計に分冊。SEED は light（2026-09-19 T44） |
+| **SPEC_DS_ID** | `1cf812c9-6a86-452f-bacc-8f823786feb5` | Notion「設計書」DB（3リポ共有・Stism 配下）。お客様共有版は案件ページ配下「お客様共有（GENLINKS／SEED）」（`3e00ff81c56b81abb8c8c22b9a26a30a`・**人が一度だけ「共有›公開」する**） |
 | **REVIEW_LOGIN** | admin: ID=`e2e`（`ADMIN_LOGIN_ID`）／PASS=`e2e-pass-1234`（`ADMIN_LOGIN_PASS`）。自動ログインURL＝`{{DEV_URL}}/login?id=e2e&pass=e2e-pass-1234` | `/review` が admin のログイン必須画面をナビする時に使う（`apps/admin/src/pages/login.vue` の `?id=&pass=` クエリ自動ログイン対応）。liff は dev モードでLIFF認証スキップのため通常不要。 |
 
 ### STAGING（スマホでレビューするための環境・2026-08-11 新設）
