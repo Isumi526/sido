@@ -3,7 +3,7 @@
     <!-- ヘッダー -->
     <div class="page-header">
       <h1 class="page-title">予定管理</h1>
-      <div class="header-actions">
+      <div v-if="tab === 'workers'" class="header-actions">
         <label class="deleted-toggle">
           <input type="checkbox" v-model="showDeleted" />
           削除済みを表示
@@ -15,6 +15,13 @@
       </div>
     </div>
 
+    <!-- タブ（2026-09-19 B-1）: 従業員／車両／道具…。「使う機能」でONの種類だけ出す -->
+    <div v-if="resourceTabs.length" class="cal-tabs" data-testid="calendar-tabs">
+      <button type="button" class="cal-tab" :class="{ active: tab === 'workers' }" data-testid="calendar-tab-workers" @click="tab = 'workers'">従業員</button>
+      <button v-for="t in resourceTabs" :key="t" type="button" class="cal-tab" :class="{ active: tab === t }" :data-testid="`calendar-tab-${t}`" @click="tab = t">{{ RESOURCE_TYPE_LABEL[t] }}</button>
+    </div>
+    <ResourceCalendar v-if="tab !== 'workers'" :type="tab" />
+    <template v-else>
     <!-- 予定追加のお知らせ（未読・気づかないケース対策 #予定通知。自分にworker紐付けが無ければ出ない） -->
     <div v-if="notifs.length" class="notif-banner">
       <div class="notif-head">
@@ -99,6 +106,8 @@
         </tbody>
       </table>
     </div>
+
+    </template>
 
     <!-- 追加・編集モーダル -->
     <div v-if="formModal" class="modal-overlay" @click.self="formModal = null">
@@ -329,6 +338,11 @@
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { siteStatusesForScreen } from '../lib/site-status.gen'
+import { useQueryParam } from '../composables/useQueryParam'
+import ResourceCalendar from '../components/ResourceCalendar.vue'
+import { isFeatureEnabled } from '../lib/features'
+import { RESOURCE_TYPE_LABEL, RESOURCE_TYPE_ORDER, RESOURCE_TYPE_FEATURE } from '../lib/resource-core.gen'
+import type { ResourceTypeKey } from '../lib/resource-core.gen'
 import { getAccountId } from '../lib/account'
 import { currentWorkerId } from '../lib/auth'
 import { loadScheduleCategories, FALLBACK_CATEGORY_COLOR, type ScheduleCategory } from '../lib/scheduleCategories'
@@ -392,6 +406,13 @@ interface ScheduleGroup {
 
 // ──── 定数 ─────────────────────────────────────────────────
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
+// ── タブ（2026-09-19 B-1）。?tab=vehicle で直接開ける（お知らせのリンク先）。room は B-3 ──
+const resourceTabs = computed<ResourceTypeKey[]>(() => RESOURCE_TYPE_ORDER.filter((t) => t !== 'room' && isFeatureEnabled(RESOURCE_TYPE_FEATURE[t])))
+const tabParam = useQueryParam<string>('tab', 'workers')
+const tab = computed<'workers' | ResourceTypeKey>({
+  get: () => (resourceTabs.value.includes(tabParam.value as ResourceTypeKey) ? (tabParam.value as ResourceTypeKey) : 'workers'),
+  set: (v) => { tabParam.value = v },
+})
 const ROW_HEIGHT = 36   // extendTop 時のスクロール位置補正の目安（実際の行高は可変）
 
 // ──── 状態 ─────────────────────────────────────────────────
@@ -1054,6 +1075,9 @@ onMounted(async () => {
 
 <style scoped>
 .cal-page { }
+.cal-tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid #e2e8f0; }
+.cal-tab { background: none; border: none; border-bottom: 3px solid transparent; padding: 8px 16px; font-size: 14px; font-weight: 700; color: #64748b; cursor: pointer; }
+.cal-tab.active { color: #06C755; border-bottom-color: #06C755; }
 .cat-swatch { display: inline-block; width: 16px; height: 16px; border-radius: 4px; border: 1px solid #e0e0e0; margin-top: 4px; }
 
 .page-header {
