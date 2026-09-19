@@ -3,9 +3,19 @@
     <div class="page-header">
       <h1 class="page-title">現場マスタ</h1>
       <div class="header-actions">
-        <button v-if="!mergeMode" class="btn-ghost" @click="startMerge">現場をマージ</button>
-        <template v-else>
+        <template v-if="!pickMode">
+          <button class="btn-ghost" @click="startMerge">現場をマージ</button>
+          <button class="btn-ghost" data-testid="site-bulk-status-start" @click="startBulkStatus">ステータス一括変更</button>
+        </template>
+        <template v-else-if="pickMode === 'merge'">
           <button class="btn-ghost" :disabled="mergePick.length < 2" @click="openMerge">マージ実行（{{ mergePick.length }}件選択）</button>
+          <button class="btn-ghost" @click="cancelMerge">キャンセル</button>
+        </template>
+        <template v-else>
+          <select v-model="bulkStatus" class="input" style="width:auto" data-testid="site-bulk-status-select">
+            <option v-for="st in SITE_STATUS_ORDER" :key="st" :value="st">{{ SITE_STATUS_LABEL[st] }}</option>
+          </select>
+          <button class="btn-ghost" :disabled="!mergePick.length" data-testid="site-bulk-status-apply" @click="applyBulkStatus">変更する（{{ mergePick.length }}件選択）</button>
           <button class="btn-ghost" @click="cancelMerge">キャンセル</button>
         </template>
         <button class="btn-add" @click="openAdd">＋ 追加</button>
@@ -13,11 +23,10 @@
     </div>
     <p class="page-note" data-testid="sites-base-note">オフィス・工場などの拠点は<router-link to="/company-profile">自社情報</router-link>の「拠点」で登録します（ここには出ません）。</p>
 
-    <!-- 有効 / 無効化済み タブ -->
-    <div class="status-tabs">
+    <!-- ステータスタブ（2026-09-19 A-1）: 進行中（見積中・受注・着工）／完了／失注／すべて。旧「有効／無効化済み」を置換 -->
+    <div class="status-tabs" data-testid="site-status-tabs">
       <!-- 件数も一覧と同じ母集団（システム用バケットを除く）で数える。ズレると不審に見える -->
-      <button class="status-tab" :class="{ active: statusFilter === 'active' }" @click="statusFilter = 'active'">有効 <span class="tab-count">{{ listableSites.filter(s => s.active).length }}</span></button>
-      <button class="status-tab" :class="{ active: statusFilter === 'inactive' }" @click="statusFilter = 'inactive'">無効化済み <span class="tab-count">{{ listableSites.filter(s => !s.active).length }}</span></button>
+      <button v-for="t in STATUS_TABS" :key="t.key" class="status-tab" :class="{ active: statusFilter === t.key }" :data-testid="`site-tab-${t.key}`" @click="statusFilter = t.key">{{ t.label }} <span class="tab-count">{{ tabCount(t.key) }}</span></button>
     </div>
 
     <!-- AC3: 検索・並び替え -->
@@ -34,12 +43,19 @@
     <div class="table-wrap">
       <table class="table">
         <thead>
-          <tr><th v-if="mergeMode"></th><th>現場名</th><th>責任者</th><th>元請け</th><th>工期</th><th>固定時刻</th><th></th></tr>
+          <tr><th v-if="pickMode"></th><th>現場名</th><th>ステータス</th><th>責任者</th><th>元請け</th><th>工期</th><th>固定時刻</th><th></th></tr>
         </thead>
         <tbody>
-          <tr v-for="s in filtered" :key="s.id" :class="{ inactive: !s.active }">
-            <td v-if="mergeMode"><input type="checkbox" :value="s.id" v-model="mergePick" :disabled="!s.active" /></td>
+          <tr v-for="s in filtered" :key="s.id" :class="{ inactive: !s.active }" :data-testid="`site-row-${s.id}`">
+            <td v-if="pickMode"><input type="checkbox" :value="s.id" v-model="mergePick" :disabled="pickMode === 'merge' && !s.active" /></td>
             <td class="name"><a class="name-link" @click="router.push(`/sites/${s.id}`)">{{ s.name }}</a><span v-if="s.kind && s.kind !== 'site'" class="kind-badge" :data-testid="`site-kind-${s.id}`">{{ s.kind === 'office' ? 'オフィス' : '工場' }}</span><span v-if="s.name_kana" class="kana-sub">{{ s.name_kana }}</span></td>
+            <td class="status-cell">
+              <span class="st-badge" :class="`st-${s.status}`" :data-testid="`site-status-${s.id}`">{{ SITE_STATUS_LABEL[s.status] }}</span>
+              <!-- 工期から次の段階を提案（自動では変えない・設計資料 確認3=A）。1クリックで変更 -->
+              <button v-if="suggestNextSiteStatus(s, todayStr())" type="button" class="st-suggest" :data-testid="`site-status-suggest-${s.id}`" @click="requestStatusChange(s, suggestNextSiteStatus(s, todayStr())!)">
+                {{ SITE_STATUS_LABEL[suggestNextSiteStatus(s, todayStr())!] }}にしますか？
+              </button>
+            </td>
             <td class="resp">
               <template v-if="s.responsible_worker_id">{{ responsibleName(s.responsible_worker_id) }}</template>
               <span v-else-if="s.active" class="resp-warn" title="責任者が未登録です。編集から登録してください">未登録</span>
@@ -53,13 +69,16 @@
             <td class="fixed-time">{{ fixedTimeLabel(s) }}</td>
             <td class="actions">
               <button class="btn-edit" @click="openEdit(s)">編集</button>
-              <button class="btn-toggle" @click="toggleActive(s)">{{ s.active ? '無効化' : '有効化' }}</button>
+              <!-- ステータス変更（旧「無効化／有効化」を置換・2026-09-19 A-1） -->
+              <select class="input st-select" :value="s.status" :data-testid="`site-status-select-${s.id}`" @change="requestStatusChange(s, ($event.target as HTMLSelectElement).value as SiteStatus)">
+                <option v-for="st in SITE_STATUS_ORDER" :key="st" :value="st">{{ SITE_STATUS_LABEL[st] }}</option>
+              </select>
               <!-- ★「ルール・QR設定」は廃止（2026-08-27 出退勤モデル変更）。確認ルールは
                    アカウント共通になり左メニューの「出退勤の確認ルール」へ集約。現場QRは
                    打刻が現場に紐づかなくなったため発行自体をやめた。 -->
             </td>
           </tr>
-          <tr v-if="!filtered.length"><td :colspan="mergeMode ? 7 : 6" class="empty">該当する現場がありません</td></tr>
+          <tr v-if="!filtered.length"><td :colspan="pickMode ? 8 : 7" class="empty">該当する現場がありません</td></tr>
         </tbody>
       </table>
     </div>
@@ -85,24 +104,32 @@
           <label>読み仮名（50音順の並びに使用）</label>
           <input v-model="modal.name_kana" class="input" placeholder="例：まるまるびる ないそうこうじ" />
         </div>
+        <!-- ステータス（2026-09-19 A-1）。必須項目はステータスで変わる（見積中は現場名だけ） -->
+        <div class="field">
+          <label>ステータス</label>
+          <select v-model="modal.status" class="input" data-testid="site-modal-status">
+            <option v-for="st in SITE_STATUS_ORDER" :key="st" :value="st">{{ SITE_STATUS_LABEL[st] }}</option>
+          </select>
+          <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">見積中は現場名だけで登録できます。受注以降は住所・工期・責任者が必須になります。</p>
+        </div>
         <!-- 区分（2026-09-13）: オフィス・工場（kind=office/factory）は同じ sites 行だが、登録・編集は「自社情報 › 拠点」から（2026-09-19）。ここでは現場（kind=site）だけ扱う -->
         </div>
         <p v-if="existingMissingWarn" class="req-warn" data-testid="site-missing-warn">{{ existingMissingWarn }}</p>
         <div class="field">
-          <label>場所 / 住所 <em class="req">*</em></label>
+          <label>場所 / 住所 <em v-if="isRequired('location')" class="req">*</em></label>
           <input v-model="modal.location" class="input" :class="{ 'input-missing': missingFields.includes('住所') }" placeholder="例：名古屋市〇〇区…" data-testid="site-location" />
           <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">都道府県から書くと会社予定の地方分け（東海／関東／関西…）に使われます。</p>
         </div>
         <!-- 工期（2026-09-10 SEED 大塚さん: 会社予定は現場マスタの工期を手入力で反映。終了日は未定を許容） -->
         <div class="field">
-          <label>工期 <em class="req">*</em>（会社予定に反映）</label>
+          <label>工期 <em v-if="isRequired('period_start')" class="req">*</em>（会社予定に反映）</label>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <input v-model="modal.period_start" type="date" class="input" :class="{ 'input-missing': missingFields.includes('工期（開始日）') }" style="width:auto" data-testid="site-period-start" />
             <span>〜</span>
-            <input v-model="modal.period_end" type="date" class="input" style="width:auto" :disabled="modal.period_end_undecided" data-testid="site-period-end" />
+            <input v-model="modal.period_end" type="date" class="input" :class="{ 'input-missing': missingFields.includes('工期（終了日）') }" style="width:auto" :disabled="modal.period_end_undecided" data-testid="site-period-end" />
             <label class="chk-inline"><input type="checkbox" v-model="modal.period_end_undecided" data-testid="site-period-undecided" @change="modal.period_end_undecided && (modal.period_end = '')" />終了日は未定</label>
           </div>
-          <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">開始日は必須です。終了日が決まっていない現場は「未定」にしてください（会社予定では帯が右端まで薄く伸びます）。</p>
+          <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">{{ isRequired('period_start') ? '開始日は必須です。' : '' }}終了日が決まっていない現場は「未定」にしてください（会社予定では帯が右端まで薄く伸びます）。{{ modal.status === 'completed' ? '完了の現場は終了日（実績）が必須です。' : '' }}</p>
         </div>
         <!-- ② 関係（元請け・責任者） -->
         <div class="grid2">
@@ -114,12 +141,12 @@
           </select>
         </div>
         <div class="field">
-          <label>責任者 <em class="req">*</em>（現場管理者以上）</label>
+          <label>責任者 <em v-if="isRequired('responsible_worker_id')" class="req">*</em>（現場管理者以上）</label>
           <select v-model="modal.responsible_worker_id" class="input" data-testid="site-responsible-select">
             <option :value="null">選択してください</option>
             <option v-for="w in responsibleCandidates" :key="w.id" :value="w.id">{{ w.name }}</option>
           </select>
-          <p v-if="!modal.responsible_worker_id" class="resp-hint">責任者は必須です（残業申請の通知先等に使用）。新規現場は既定でログイン中のあなたが入ります。</p>
+          <p v-if="!modal.responsible_worker_id" class="resp-hint">{{ isRequired('responsible_worker_id') ? '責任者は必須です' : '責任者は受注以降に必須になります' }}（残業申請の通知先等に使用）。新規現場は既定でログイン中のあなたが入ります。</p>
         </div>
         </div>
         <!-- ③ 工事内容 -->
@@ -348,11 +375,15 @@
         <p v-if="saveError" class="error">{{ saveError }}</p>
       </div>
     </div>
+
+    <!-- ステータス変更モーダル（2026-09-19 A-1）: 完了→終了日／失注→理由。単体・一括どちらもここ -->
+    <SiteStatusModal v-if="statusModal" :sites="statusModal.sites" :next="statusModal.next" @close="statusModal = null" @done="onStatusChanged" />
   </div>
 </template>
 
 <script setup lang="ts">
 import TimeSelect from '../components/TimeSelect.vue'
+import SiteStatusModal from '../components/SiteStatusModal.vue'
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
@@ -364,11 +395,18 @@ import { canViewEstimates, canViewEstimatesForSite } from '../lib/features'
 import { findSimilarSiteNames } from '../lib/site-similarity.gen'
 import { computeWorkerHours, parseMin } from '../lib/workerHours'
 import { logOperation } from '../lib/operationLog'
+import { todayStr } from '../lib/schedule-core.gen'
+import {
+  SITE_STATUS_ORDER, SITE_STATUS_LABEL, SITE_STATUS_DEFAULT_ADMIN, SITE_REQUIRED_FIELDS, SITE_REQUIRED_FIELD_LABEL,
+  missingSiteFields, suggestNextSiteStatus, siteStatusesForScreen,
+} from '../lib/site-status.gen'
+import type { SiteStatus, SiteRequiredField } from '../lib/site-status.gen'
 
 const router = useRouter()
 
 type Site = {
   id: string; name: string; name_kana: string | null; active: boolean
+  status: SiteStatus; lost_reason?: string | null   // 5段階ステータス（2026-09-19 A-1）。active はDBトリガで status から導出
   location: string | null; construction_type: string | null; construction_details: string | null; memo: string | null
   contractor_id: string | null   // 紐づく元請け（任意）
   default_start_time: string | null; default_end_time: string | null   // 固定勤務時刻（日報の既定＆終了上限）
@@ -562,8 +600,11 @@ async function signedUrl(attachmentId: string): Promise<string | null> {
 }
 
 // ── マージ（重複現場の統合）──
-const mergeMode   = ref(false)
+// 一覧の選択モード: 'merge'＝現場をマージ／'status'＝ステータス一括変更（チェック列は共用）
+const pickMode    = ref<'merge' | 'status' | null>(null)
+const mergeMode   = computed(() => pickMode.value === 'merge')
 const mergePick   = ref<string[]>([])
+const bulkStatus  = ref<SiteStatus>('completed')
 const mergeModal  = ref<{ sites: Site[] } | null>(null)
 const mergeTarget = ref<string>('')
 // site_id(FK) を持つ参照テーブル（merge時に統合先へ付け替え）
@@ -586,7 +627,7 @@ async function load() {
   const accountId = await getAccountId()
   const [{ data }, { data: cons }] = await Promise.all([
     supabase.from('sites')
-      .select('id, name, name_kana, active, location, construction_type, construction_details, memo, contractor_id, default_start_time, default_end_time, default_breaks, responsible_worker_id, default_distance_km, period_start, period_end, kind')
+      .select('id, name, name_kana, active, status, lost_reason, location, construction_type, construction_details, memo, contractor_id, default_start_time, default_end_time, default_breaks, responsible_worker_id, default_distance_km, period_start, period_end, kind')
       .eq('account_id', accountId)
       .eq('kind', 'site')   // オフィス・工場（拠点）は自社情報で管理（2026-09-19）。ここには出さない
       .order('name_kana', { nullsFirst: false })
@@ -641,7 +682,27 @@ function fixedTimeLabel(s: Site): string {
 // AC3: 検索（名称/読み仮名/住所/元請け）・状態絞り込み・並び替え
 const q          = useQueryParam('q', '')                                  // URL ?q= 検索
 // 既定は『有効のみ』表示（無効現場はデフォルト非表示・フィルタで切替可）
-const statusFilter = useQueryParam<'active' | 'inactive'>('status', 'active')   // ?status= 有効/無効化済みタブ
+// ?status= タブ。旧URL（active/inactive）は open/completed に読み替える
+const STATUS_TABS = [
+  { key: 'open', label: '進行中' }, { key: 'completed', label: '完了' }, { key: 'lost', label: '失注' }, { key: 'all', label: 'すべて' },
+] as const
+type StatusTab = typeof STATUS_TABS[number]['key']
+const statusFilterRaw = useQueryParam<string>('status', 'open')
+const statusFilter = computed<StatusTab>({
+  get: () => {
+    const v = statusFilterRaw.value
+    if (v === 'active') return 'open'
+    if (v === 'inactive') return 'completed'
+    return (STATUS_TABS.some(t => t.key === v) ? v : 'open') as StatusTab
+  },
+  set: (v) => { statusFilterRaw.value = v },
+})
+function tabStatuses(tab: StatusTab): SiteStatus[] {
+  if (tab === 'open') return siteStatusesForScreen('site_master')
+  if (tab === 'all') return [...SITE_STATUS_ORDER]
+  return [tab]
+}
+function tabCount(tab: StatusTab): number { const set = tabStatuses(tab); return listableSites.value.filter(s => set.includes(s.status)).length }
 const sortBy     = useQueryParam<'kana' | 'recent' | 'contractor'>('sort', 'kana')   // ?sort= 並び順
 // ★システム用のバケット行は現場マスタに出さない。
 //   「現場未設定」の日報を受けるための内部行で、人が編集・無効化するものではない。
@@ -652,8 +713,7 @@ const listableSites = computed(() => sites.value.filter((s) => s.name !== '__uns
 const filtered = computed(() => {
   const kw = q.value.trim().toLowerCase()
   let list = listableSites.value.filter((s) => {
-    if (statusFilter.value === 'active' && !s.active) return false
-    if (statusFilter.value === 'inactive' && s.active) return false
+    if (!tabStatuses(statusFilter.value).includes(s.status)) return false
     if (!kw) return true
     const hay = [s.name, s.name_kana, s.location, contractorName(s.contractor_id)].filter(Boolean).join(' ').toLowerCase()
     return hay.includes(kw)
@@ -680,7 +740,7 @@ const filtered = computed(() => {
   return list
 })
 
-function openAdd()        { modal.value = { name: '', name_kana: '', location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', default_breaks: [], responsible_worker_id: myWorkerId.value ?? null, default_distance_km: null, period_start: '', period_end: '', period_end_undecided: false, kind: 'site', linkedSubs: [], shareUsers: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = ''; modalRules.value = []; clearPendingAtts(); buildCatHoursDraft([]); markFormOpened(); fetchRuleHistory() }
+function openAdd()        { modalOrigStatus.value = null; modal.value = { name: '', name_kana: '', status: SITE_STATUS_DEFAULT_ADMIN, location: '', construction_type: '', construction_details: '', memo: '', contractor_id: null, default_start_time: '', default_end_time: '', default_breaks: [], responsible_worker_id: myWorkerId.value ?? null, default_distance_km: null, period_start: '', period_end: '', period_end_undecided: false, kind: 'site', linkedSubs: [], shareUsers: [] }; attachments.value = []; siteEstimates.value = []; saveError.value = ''; modalRules.value = []; clearPendingAtts(); buildCatHoursDraft([]); markFormOpened(); fetchRuleHistory() }
 function addBreak()    { if (!modal.value) return; (modal.value.default_breaks ??= []).push({ start: '12:00', minutes: 60 }) }
 function removeBreak(i: number) { modal.value?.default_breaks?.splice(i, 1) }
 
@@ -747,7 +807,9 @@ async function fetchRuleHistory() {
   }
   ruleHistory.value = list
 }
+const modalOrigStatus = ref<SiteStatus | null>(null)   // 編集前のステータス（変えた時だけ必須項目で止める）
 async function openEdit(s: Site) {
+  modalOrigStatus.value = s.status
   // time入力は HH:MM を期待するため DB の HH:MM:SS を切り詰める
   modal.value = { ...s, default_start_time: (s.default_start_time ?? '').slice(0, 5), default_end_time: (s.default_end_time ?? '').slice(0, 5),
     default_breaks: Array.isArray(s.default_breaks) ? s.default_breaks.map(b => ({ start: String(b.start ?? '').slice(0, 5), minutes: Number(b.minutes) || 0 })) : [],
@@ -812,16 +874,16 @@ function normalizeBreaks(breaks: { start: string; minutes: number }[] | null | u
 // 必須項目（2026-09-10 SEED 大塚さん「現場を作る時には住所を入れてほしい」「全部必須」・2026-09-12 決定＝admin は住所・工期・責任者を必須、
 //  LIFF の現場作成は現場名のみ）。未入力をまとめて赤字で出す。既存現場（住所/工期が空のまま残っているもの）は
 //  警告だけ出して保存は止めない＝他の項目の編集を妨げない。
+//  ★2026-09-19 A-1: 必須はステータスで変わる（shared/site-status.ts の SITE_REQUIRED_FIELDS が正本）。
+//   見積中・失注＝現場名のみ／受注・着工＝住所・工期開始・責任者／完了＝＋工期終了（実績）。
 const missingFields = computed<string[]>(() => {
   const m = modal.value; if (!m) return []
-  const out: string[] = []
-  if (!m.name?.trim()) out.push('現場名')
-  const isSite = (m.kind ?? 'site') === 'site'
-  if (isSite && !m.location?.trim()) out.push('住所')       // オフィス・工場は住所/工期を求めない
-  if (isSite && !m.period_start) out.push('工期（開始日）')
-  if (!m.responsible_worker_id) out.push('責任者')
-  return out
+  const period_end = m.period_end_undecided ? null : m.period_end
+  return missingSiteFields(m.status ?? SITE_STATUS_DEFAULT_ADMIN, { ...m, period_end }).map(f => SITE_REQUIRED_FIELD_LABEL[f])
 })
+function isRequired(f: SiteRequiredField): boolean {
+  return SITE_REQUIRED_FIELDS[modal.value?.status ?? SITE_STATUS_DEFAULT_ADMIN].includes(f)
+}
 const periodInvalid = computed(() => {
   const m = modal.value; if (!m) return ''
   if (m.period_start && m.period_end && !m.period_end_undecided && m.period_end < m.period_start) return '工期の終了日が開始日より前です'
@@ -830,7 +892,7 @@ const periodInvalid = computed(() => {
 // 既存現場で住所/工期が空のときの警告文（保存は止めない）
 const existingMissingWarn = computed(() => {
   const m = modal.value; if (!m?.id) return ''
-  const soft = missingFields.value.filter(f => f === '住所' || f === '工期（開始日）')
+  const soft = missingFields.value.filter(f => f === '住所' || f === '工期（開始日）' || f === '工期（終了日）')
   return soft.length ? `${soft.join('・')}が未入力です。会社予定では「工期未定」「住所未設定」に出ます。` : ''
 })
 function fmtYmd(d: string) { const [y, mo, da] = d.split('-'); return `${y}/${Number(mo)}/${Number(da)}` }
@@ -841,8 +903,10 @@ async function save() {
   if (missingFields.value.length) {
     // 現場名・責任者はどの現場でも必須（従来どおり）。住所・工期は新規は必須、既存は
     // モーダル内の警告表示（existingMissingWarn）だけで保存は止めない＝他の項目の編集を妨げない。
+    // ★ただしステータスを変えた時は、その段階の必須項目が揃うまで止める（2026-09-19 A-1）。
     const hard = missingFields.value.filter(f => f === '現場名' || f === '責任者')
-    if (!modal.value.id || hard.length) { saveError.value = `未入力の必須項目があります: ${missingFields.value.join('、')}`; return }
+    const statusChanged = modal.value.status !== modalOrigStatus.value
+    if (!modal.value.id || hard.length || statusChanged) { saveError.value = `未入力の必須項目があります: ${missingFields.value.join('、')}`; return }
   }
   // 既定休憩をソート＋重なり検証（重なりがあれば保存を止める）
   const nb = normalizeBreaks(modal.value.default_breaks)
@@ -875,6 +939,7 @@ async function save() {
       period_start: m.period_start || null,
       period_end: (m.period_end_undecided || !m.period_end) ? null : m.period_end,
       kind: m.kind ?? 'site',
+      status: m.status ?? SITE_STATUS_DEFAULT_ADMIN,   // active はDBトリガで導出
     }
     const accountId = await getAccountId()
     let siteId = m.id
@@ -970,32 +1035,31 @@ async function removeAttachment(a: Att) {
   if (modal.value?.id) await loadAttachments(modal.value.id)
 }
 
-// 現場の有効/無効を切り替える。
-// ★無効化だけ確認を挟む（2026-08-03 に誤って現場を1つ無効化し、どれを消したのか
-//   本人も分からなくなった事故が発生）。有効化は元に戻す方向なので確認しない。
-// ★切替は operation_logs に必ず残す。当時 sites に updated_at も操作ログも無く、
-//   特定にトランザクションID(xmin)を見るしかなかった＝後から追えない状態だった。
-async function toggleActive(s: Site) {
-  if (s.active) {
-    const ok = window.confirm(
-      `現場「${s.name}」を無効にしますか？\n\n`
-      + '・日報や予定の現場プルダウンに出なくなります\n'
-      + '・過去の日報・集計はそのまま残ります\n'
-      + '・「無効化済み」タブからいつでも有効に戻せます',
-    )
-    if (!ok) return
-  }
-  const next = !s.active
-  const { error } = await supabase.from('sites').update({ active: next }).eq('id', s.id)
-  if (error) { alert(`現場の${next ? '有効化' : '無効化'}に失敗しました: ${error.message}`); return }
-  await logOperation(next ? '現場を有効化' : '現場を無効化', {
-    targetType: 'site', targetId: s.id, summary: s.name,
-  })
+// ── ステータス変更（2026-09-19 A-1・旧 toggleActive を置換）────────────────
+//  完了→終了日（既定＝今日）／失注→理由（任意）をモーダルで聞く。戻す操作も可（可逆）。
+//  ★変更は operation_logs に必ず残す（旧・有効/無効の切替と同じ理由＝後から追えないと事故る）。
+//  active はDBトリガで status から導出されるので、ここでは status だけ書く。
+const statusModal = ref<{ sites: Site[]; next: SiteStatus } | null>(null)
+function requestStatusChange(target: Site | Site[], next: SiteStatus) {
+  const list = Array.isArray(target) ? target : [target]
+  if (!list.length) return
+  if (list.length === 1 && list[0].status === next) return
+  statusModal.value = { sites: list, next }
+}
+async function onStatusChanged() {
+  statusModal.value = null
+  if (pickMode.value === 'status') cancelMerge()
   await load()
 }
 
-function startMerge()  { mergeMode.value = true; mergePick.value = [] }
-function cancelMerge() { mergeMode.value = false; mergePick.value = [] }
+function startMerge()  { pickMode.value = 'merge'; mergePick.value = [] }
+function cancelMerge() { pickMode.value = null; mergePick.value = [] }
+function startBulkStatus() { pickMode.value = 'status'; mergePick.value = [] }
+function applyBulkStatus() {
+  const picked = sites.value.filter((s) => mergePick.value.includes(s.id) && s.status !== bulkStatus.value)
+  if (!picked.length) { cancelMerge(); return }
+  requestStatusChange(picked, bulkStatus.value)
+}
 function openMerge() {
   const picked = sites.value.filter((s) => mergePick.value.includes(s.id))
   if (picked.length < 2) return   // 2現場以上（3つ以上の同時マージ対応）
@@ -1061,8 +1125,8 @@ async function doMerge() {
         if (e) throw new Error(`日報の現場参照を更新できませんでした: ${e.message}`)
       }
     }
-    // 4) 統合元を無効化（複数）
-    await supabase.from('sites').update({ active: false }).in('id', sourceIds)
+    // 4) 統合元を「完了」に（複数）。active はトリガで false になる
+    await supabase.from('sites').update({ status: 'completed' }).in('id', sourceIds)
     mergeModal.value = null; cancelMerge(); await load()
   } catch (e: any) {
     saveError.value = e.message ?? 'マージに失敗しました'
@@ -1100,7 +1164,17 @@ async function doMerge() {
 .actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .btn-rules { background: #e0f2fe; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; color: #0369a1; font-weight: 600; }
 .btn-edit { background: #f0f0f0; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
-.btn-toggle { background: none; border: 1px solid #ddd; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; color: #888; }
+.st-select { width: auto; padding: 5px 8px; font-size: 12px; }
+/* ステータスバッジ（2026-09-19 A-1）。色は設計資料の表と同じ */
+.status-cell { white-space: nowrap; }
+.st-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 700; }
+.st-badge.st-estimating { background: #fef3c7; color: #92400e; }
+.st-badge.st-ordered { background: #dbeafe; color: #1e40af; }
+.st-badge.st-in_progress { background: #dcfce7; color: #166534; }
+.st-badge.st-completed { background: #e5e7eb; color: #374151; }
+.st-badge.st-lost { background: #fee2e2; color: #991b1b; }
+.st-suggest { display: block; margin-top: 4px; background: #fff7ed; border: 1px solid #fdba74; color: #c2410c; border-radius: 4px; padding: 2px 8px; font-size: 11px; cursor: pointer; }
+.table tr.inactive .st-badge, .table tr.inactive .st-select { opacity: 1; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .modal { background: #fff; border-radius: 12px; padding: 28px 32px; width: min(760px, 94vw); display: flex; flex-direction: column; gap: 18px; max-height: 92vh; overflow-y: auto; }
 /* 勤務時間の表（現場作業＋区分ごとの定時を1か所に） */

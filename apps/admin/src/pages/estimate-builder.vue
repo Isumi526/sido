@@ -2778,6 +2778,7 @@ async function promote() {
       if (!name) { promoteErr.value = '現場名を入力してください'; return }
       const { data, error } = await supabase.from('sites').insert({
         account_id: accountId, name, contractor_id: currentContractorId.value || null, location: doc.value.construction_location || null,
+        status: 'ordered',   // 見積からの昇華＝受注確定（2026-09-19 A-1）
       }).select('id, name').single()
       if (error) { promoteErr.value = /duplicate|unique/i.test(error.message) ? `現場「${name}」は既にあります（「既存の現場に紐付け」を選んでください）` : error.message; return }
       siteId = (data as any).id
