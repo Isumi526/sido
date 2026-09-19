@@ -8,6 +8,9 @@
 //   save   { id?, type, resourceRefs[], workerId?, companions[], siteId?, startDate, endDate, startTime?, endTime?, purpose?, force? }
 //          → 重なりがあれば { ok:false, error:'overlap', conflicts:[…] }（車両・道具は force=true で保存可。部屋は不可）
 //   cancel { id }                            → status=canceled
+//   types  {}                                → タブに出す種類（組み込み＋会社独自・機能ON/enabled のみ）（B-3）
+//   type-save { id?, name, blockOverlap?, requireTime?, enabled? } → 会社独自の種類（管理者のみ）（B-3）
+//   resource-save { type, id?, name, note?, active? }  → 会議室・独自の台帳（管理者のみ）（B-3）
 //
 //  ★権限（❓9=A）: 作業員は自分の予約を入れられる。他人の予約の変更・取消は管理者（owner/admin/office/site_manager）のみ。
 //  ★機能フラグ: 「使う機能」で OFF の種類は入口で閉じる（画面の導線を隠すだけでは REST 直叩きで通る）。
@@ -24,10 +27,17 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
 const MANAGE_ROLES = ['owner', 'admin', 'office', 'site_manager']
-/** 種類 → 対象マスタ。room / 会社独自の種類は B-3（resources）で足す */
-const TYPES: Record<string, { feature: FeatureKey; table: string; select: string; blockOverlap: boolean; requireTime: boolean }> = {
-  vehicle: { feature: 'vehicles', table: 'vehicles', select: 'id, name, plate_number, sort_order', blockOverlap: false, requireTime: false },
-  tool:    { feature: 'tools',    table: 'tools',    select: 'id, name, kind, status, holder_worker_id, site_id, updated_at, holder:holder_worker_id(name), site:site_id(name)', blockOverlap: false, requireTime: false },
+type TypeDef = { feature: FeatureKey | null; table: string; select: string; blockOverlap: boolean; requireTime: boolean; generic: boolean; name: string }
+/** 組み込みの種類 → 対象マスタ。会議室と会社独自の種類（B-3）は resources 表 */
+const BUILTIN: Record<string, TypeDef> = {
+  vehicle: { feature: 'vehicles', table: 'vehicles', select: 'id, name, plate_number, sort_order', blockOverlap: false, requireTime: false, generic: false, name: '車両' },
+  tool:    { feature: 'tools',    table: 'tools',    select: 'id, name, kind, status, holder_worker_id, site_id, updated_at, holder:holder_worker_id(name), site:site_id(name)', blockOverlap: false, requireTime: false, generic: false, name: '道具' },
+  room:    { feature: 'rooms',    table: 'resources', select: 'id, name, note, photo_url, sort_order', blockOverlap: true, requireTime: true, generic: true, name: '会議室' },
+}
+const GENERIC_SELECT = 'id, name, note, photo_url, sort_order'
+/** 会社独自の種類（resource_types）を TypeDef に */
+function customDef(row: any): TypeDef {
+  return { feature: null, table: 'resources', select: GENERIC_SELECT, blockOverlap: !!row.block_overlap, requireTime: !!row.require_time, generic: true, name: row.name }
 }
 const RES_SELECT = 'id, resource_type, resource_ref, worker_id, companions, site_id, start_date, end_date, start_time, end_time, purpose, status, created_by_worker_id, updated_at, '
   + 'workers:worker_id(name), sites:site_id(name)'
@@ -59,16 +69,16 @@ Deno.serve(async (req) => {
   const accountId = caller.accountId
   const action = typeof body.action === 'string' ? body.action : ''
   const type = str(body.type, 40)
-  const def = TYPES[type]
-  if (!def) return json({ ok: false, error: 'unknown_type' }, 400)
 
-  // 機能フラグ（使う機能）
-  const { data: flagRows } = await svc.from('settings').select('key, value').eq('account_id', accountId).in('key', FEATURE_SETTING_KEYS)
-  if (!resolveFeatureFlags((flagRows ?? []) as { key: string; value: string | null }[])[def.feature]) {
-    return json({ ok: false, error: 'feature_disabled' }, 403)
-  }
+  // 機能フラグ（使う機能）と会社独自の種類
+  const [{ data: flagRows }, { data: customRows }] = await Promise.all([
+    svc.from('settings').select('key, value').eq('account_id', accountId).in('key', FEATURE_SETTING_KEYS),
+    svc.from('resource_types').select('id, key, name, block_overlap, require_time, enabled, sort_order').eq('account_id', accountId).order('sort_order').order('created_at'),
+  ])
+  const flags = resolveFeatureFlags((flagRows ?? []) as { key: string; value: string | null }[])
+  const customs = (customRows ?? []) as any[]
 
-  // 呼び出し元の権限（他人の予約を触れるか）
+  // 呼び出し元の権限（他人の予約を触れるか・台帳や種類を管理できるか）
   let role: string | null = null
   if (caller.workerId) {
     const { data: w } = await svc.from('workers').select('permission_role').eq('id', caller.workerId).eq('account_id', accountId).maybeSingle()
@@ -79,13 +89,68 @@ Deno.serve(async (req) => {
   }
   const canManage = role !== null && MANAGE_ROLES.includes(role)
 
+  // ── タブに出す種類（B-3）: 組み込み（機能ON）＋独自（enabled）──
+  if (action === 'types') {
+    const types = [
+      ...Object.entries(BUILTIN).filter(([, d]) => d.feature && flags[d.feature]).map(([key, d]) => ({ key, name: d.name, generic: d.generic, blockOverlap: d.blockOverlap, requireTime: d.requireTime })),
+      ...customs.filter((c) => c.enabled).map((c) => ({ key: c.key, name: c.name, generic: true, blockOverlap: !!c.block_overlap, requireTime: !!c.require_time })),
+    ]
+    return json({ ok: true, types, customs: canManage ? customs : [], canManage })
+  }
+  // ── 会社独自の種類の追加・編集（管理者のみ）──
+  if (action === 'type-save') {
+    if (!canManage) return json({ ok: false, error: 'forbidden' }, 403)
+    const id = str(body.id, 64), name = str(body.name, 40)
+    if (!name) return json({ ok: false, error: 'name_required' }, 400)
+    const patch: Record<string, unknown> = { name, updated_at: new Date().toISOString() }
+    if (typeof body.blockOverlap === 'boolean') patch.block_overlap = body.blockOverlap
+    if (typeof body.requireTime === 'boolean') patch.require_time = body.requireTime
+    if (typeof body.enabled === 'boolean') patch.enabled = body.enabled
+    if (id) {
+      const { data, error } = await svc.from('resource_types').update(patch).eq('id', id).eq('account_id', accountId).select('*').maybeSingle()
+      if (error || !data) return json({ ok: false, error: error ? 'save_failed' : 'not_found' }, error ? 500 : 404)
+      return json({ ok: true, type: data })
+    }
+    const key = `custom_${crypto.randomUUID().replace(/-/g, '').slice(0, 8)}`
+    const { data, error } = await svc.from('resource_types').insert({ ...patch, account_id: accountId, key, sort_order: customs.length + 1 }).select('*').single()
+    if (error) return json({ ok: false, error: 'save_failed' }, 500)
+    return json({ ok: true, type: data })
+  }
+
+  const custom = customs.find((c) => c.key === type)
+  const def: TypeDef | undefined = BUILTIN[type] ?? (custom ? customDef(custom) : undefined)
+  if (!def) return json({ ok: false, error: 'unknown_type' }, 400)
+  if (def.feature && !flags[def.feature]) return json({ ok: false, error: 'feature_disabled' }, 403)
+  if (custom && !custom.enabled) return json({ ok: false, error: 'feature_disabled' }, 403)
+
+  // ── 会議室・独自の台帳（管理者のみ）（B-3）──
+  if (action === 'resource-save') {
+    if (!canManage) return json({ ok: false, error: 'forbidden' }, 403)
+    if (!def.generic) return json({ ok: false, error: 'not_generic' }, 400)
+    const id = str(body.id, 64), name = str(body.name, 80)
+    if (!name) return json({ ok: false, error: 'name_required' }, 400)
+    const patch: Record<string, unknown> = { name, note: str(body.note, 400) || null, updated_at: new Date().toISOString() }
+    if (typeof body.active === 'boolean') patch.active = body.active
+    if (id) {
+      const { data, error } = await svc.from('resources').update(patch).eq('id', id).eq('account_id', accountId).eq('type_key', type).select(GENERIC_SELECT + ', active').maybeSingle()
+      if (error || !data) return json({ ok: false, error: error ? 'save_failed' : 'not_found' }, error ? 500 : 404)
+      return json({ ok: true, resource: data })
+    }
+    const { count } = await svc.from('resources').select('id', { count: 'exact', head: true }).eq('account_id', accountId).eq('type_key', type)
+    const { data, error } = await svc.from('resources').insert({ ...patch, account_id: accountId, type_key: type, sort_order: (count ?? 0) + 1 }).select(GENERIC_SELECT + ', active').single()
+    if (error) return json({ ok: false, error: 'save_failed' }, 500)
+    return json({ ok: true, resource: data })
+  }
+
   // ── 一覧 ──────────────────────────────────────
   if (action === 'list') {
     const from = str(body.from, 10), to = str(body.to, 10)
     if (!isYmd(from) || !isYmd(to)) return json({ ok: false, error: 'range_required' }, 400)
+    let rq = svc.from(def.table).select(def.select + (def.generic ? ', active' : '')).eq('account_id', accountId)
+    if (def.generic) rq = rq.eq('type_key', type)          // 台帳は管理用に無効も返す（画面側で列は active だけ）
+    else rq = rq.eq('active', true)
     const [{ data: resources, error: e1 }, { data: rows, error: e2 }] = await Promise.all([
-      svc.from(def.table).select(def.select).eq('account_id', accountId).eq('active', true)
-        .order(def.table === 'vehicles' ? 'sort_order' : 'name').order('name'),
+      rq.order(def.table === 'tools' ? 'name' : 'sort_order').order('name'),
       svc.from('resource_reservations').select(RES_SELECT)
         .eq('account_id', accountId).eq('resource_type', type).is('deleted_at', null).neq('status', 'canceled')
         .lte('start_date', to).gte('end_date', from).order('start_date').order('start_time', { nullsFirst: true }),
@@ -117,7 +182,7 @@ Deno.serve(async (req) => {
         return { ...rest, holder_name: holder?.name ?? null, site_name: site?.name ?? null, now_label, now_kind }
       })
     }
-    return json({ ok: true, resources: out, reservations: (rows ?? []).map(flat), canManage, myWorkerId: caller.workerId })
+    return json({ ok: true, resources: out, reservations: (rows ?? []).map(flat), canManage, myWorkerId: caller.workerId, typeDef: { key: type, name: def.name, generic: def.generic, blockOverlap: def.blockOverlap, requireTime: def.requireTime } })
   }
 
   // ── 保存（新規／編集）──────────────────────────
@@ -148,7 +213,9 @@ Deno.serve(async (req) => {
     }
     const targetRefs = id ? [existing.resource_ref as string] : refs
     // 対象がこのテナントのものか
-    const { data: okRefs } = await svc.from(def.table).select('id, name').eq('account_id', accountId).in('id', targetRefs)
+    let refq = svc.from(def.table).select('id, name').eq('account_id', accountId).in('id', targetRefs)
+    if (def.generic) refq = refq.eq('type_key', type)
+    const { data: okRefs } = await refq
     const nameByRef = new Map((okRefs ?? []).map((r: any) => [r.id, r.name as string]))
     if ((okRefs ?? []).length !== targetRefs.length) return json({ ok: false, error: 'resource_not_found' }, 404)
 
@@ -191,7 +258,7 @@ Deno.serve(async (req) => {
     for (const c of conflicts) {
       if (c.worker_id && c.worker_id !== caller.workerId) {
         await notify(svc, accountId, c.worker_id, `${nameByRef.get(c.resource_ref) ?? ''}の予約が重なりました`,
-          `${caller.name ?? ''}が ${startDate}${endDate !== startDate ? `〜${endDate}` : ''} に同じ${type === 'vehicle' ? '車両' : '道具'}を予約しました`, type)
+          `${caller.name ?? ''}が ${startDate}${endDate !== startDate ? `〜${endDate}` : ''} に同じ${def.name}を予約しました`, type)
       }
     }
     return json({ ok: true, reservations: saved, overlapped: conflicts.length })

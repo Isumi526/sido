@@ -46,5 +46,8 @@
   "errDisabled": "This feature is turned off for your company",
   "errTime": "Invalid time",
   "errSave": "Failed to save ({code})",
-  "errCancel": "Failed to cancel ({code})"
+  "errCancel": "Failed to cancel ({code})",
+  "startTimeReq": "Start time *",
+  "endTimeReq": "End time *",
+  "errTimeRequired": "Enter start and end time"
 }

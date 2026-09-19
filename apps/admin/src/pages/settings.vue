@@ -85,6 +85,32 @@
     </div>
   </div>
 
+  <!-- 予定管理の独自の種類（B-3・2026-09-19）: 重機・プロジェクター・駐車場など、車両・道具・会議室以外の予約対象。
+       追加すると予定管理（管理画面・作業員アプリ）にタブが増え、台帳（名前・メモ）はそのタブの「○○を管理」から。 -->
+  <div class="reminder-box" data-testid="custom-types-box">
+    <div class="reminder-title">予定管理の独自の種類</div>
+    <div class="reminder-config">
+      <div class="reminder-desc">車両・道具・会議室のほかに予約したいもの（例：重機、プロジェクター、駐車場）を追加できます。追加すると予定管理にタブが増えます。対象（1台ずつ）はそのタブの「○○を管理」から登録します。</div>
+      <div v-for="t in customTypes" :key="t.id" class="config-row feature-row" :data-testid="`custom-type-row-${t.id}`">
+        <div class="feature-main">
+          <input v-model="t.name" class="input-inline" :disabled="!canManageAuth" @change="saveCustomType(t)" />
+          <div class="reminder-desc feature-desc">
+            <label class="chk"><input v-model="t.block_overlap" type="checkbox" :disabled="!canManageAuth" @change="saveCustomType(t)" /> 重なる予約は保存不可（会議室型）</label>
+            <label class="chk"><input v-model="t.require_time" type="checkbox" :disabled="!canManageAuth" @change="saveCustomType(t)" /> 時間帯を必須にする</label>
+          </div>
+        </div>
+        <button class="toggle" :class="{ on: t.enabled }" :disabled="!canManageAuth" :data-testid="`toggle-custom-type-${t.id}`" @click="t.enabled = !t.enabled; saveCustomType(t)">
+          <span class="toggle-knob" /><span class="toggle-text">{{ t.enabled ? 'ON' : 'OFF' }}</span>
+        </button>
+      </div>
+      <div v-if="canManageAuth" class="config-row" style="margin-top:8px">
+        <input v-model="newCustomTypeName" class="input-inline" placeholder="種類の名前（例：重機）" data-testid="custom-type-new-name" />
+        <button class="btn-small" :disabled="!newCustomTypeName.trim() || customTypeSaving" data-testid="custom-type-add" @click="addCustomType">追加</button>
+      </div>
+      <p v-if="customTypeError" class="error" data-testid="custom-type-error">{{ customTypeError }}</p>
+    </div>
+  </div>
+
   <!-- 日報通知 ON/OFF（脱LINE段階移行で非表示・EFは継続） -->
   <div v-if="!HIDE_LINE_SECTIONS" class="reminder-box">
     <div class="reminder-title">日報通知（LINE）</div>
@@ -275,6 +301,38 @@ function setReportNotifyEnabled(val: boolean) {
     .finally(() => { reportNotifySaving.value = false })
 }
 
+// ── 予定管理の独自の種類（B-3）。EF(resource-reservations) の types / type-save ──
+type CustomType = { id: string; key: string; name: string; block_overlap: boolean; require_time: boolean; enabled: boolean }
+const customTypes = ref<CustomType[]>([])
+const newCustomTypeName = ref('')
+const customTypeSaving = ref(false)
+const customTypeError = ref('')
+async function callResourceEf(payload: Record<string, unknown>): Promise<any> {
+  const { data, error } = await supabase.functions.invoke('resource-reservations', { body: payload })
+  if (error) { const ctx = (error as any)?.context; if (ctx?.json) { try { return await ctx.json() } catch { /* 本文なし */ } } return { ok: false, error: 'network' } }
+  return data
+}
+async function loadCustomTypes() {
+  const r = await callResourceEf({ action: 'types' })
+  customTypes.value = r?.ok ? (r.customs ?? []) : []
+}
+async function addCustomType() {
+  const name = newCustomTypeName.value.trim(); if (!name) return
+  customTypeSaving.value = true; customTypeError.value = ''
+  const r = await callResourceEf({ action: 'type-save', name })
+  customTypeSaving.value = false
+  if (!r?.ok) { customTypeError.value = `追加に失敗しました（${r?.error ?? 'network'}）`; return }
+  newCustomTypeName.value = ''
+  await logOperation(`予定管理の種類「${name}」を追加`, { targetType: 'resource_types', targetId: r.type?.id ?? null, summary: name })
+  await loadCustomTypes()
+}
+async function saveCustomType(t: CustomType) {
+  customTypeError.value = ''
+  const r = await callResourceEf({ action: 'type-save', id: t.id, name: t.name.trim() || '（名称未設定）', blockOverlap: !!t.block_overlap, requireTime: !!t.require_time, enabled: !!t.enabled })
+  if (!r?.ok) { customTypeError.value = `保存に失敗しました（${r?.error ?? 'network'}）`; return }
+  await loadCustomTypes()
+}
+
 // ── 使う機能（2026-09-19 B-0・旧「見積もり機能の公開スイッチ」を一般化）────────────
 /** ★保存が成功してから表示を変える（楽観更新にしない）。
  *  他のトグルは先に見た目を変えてから保存しているが、このスイッチは機能の解禁操作そのもので、
@@ -359,6 +417,7 @@ async function loadReminderConfig() {
   punchReminderEnabled.value = m['notify_punch_reminder_enabled'] === 'true'   // 未設定＝OFF（EF と同じ既定）
   approvalNotifyEnabled.value = (m['notify_approval_request_enabled'] ?? 'true') === 'true'   // 未設定＝ON
   await loadFeatures()   // 「使う機能」は lib/features.ts の読み直し（メニューと同じ値を見せる）
+  await loadCustomTypes()
 }
 
 async function upsertSetting(key: string, value: string, label: string) {
@@ -601,6 +660,10 @@ async function save(s: Setting) {
 .feature-main { flex: 1; min-width: 0; }
 .feature-main .config-label { width: auto; font-weight: 700; color: #333; }
 .feature-desc { margin: 2px 0 0; }
+.input-inline { border: 1px solid #ddd; border-radius: 8px; padding: 7px 10px; font-size: 13px; min-width: 200px; }
+.chk { display: inline-flex; align-items: center; gap: 4px; margin-right: 12px; font-size: 12px; }
+.btn-small { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.btn-small:disabled { opacity: .5; cursor: default; }
 
 .toggle { display: flex; align-items: center; gap: 8px; background: #ddd; border: none; border-radius: 20px; padding: 4px 12px 4px 4px; cursor: pointer; transition: background .2s; width: 80px; }
 .toggle.on { background: #06C755; }

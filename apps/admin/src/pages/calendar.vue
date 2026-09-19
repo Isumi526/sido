@@ -18,9 +18,9 @@
     <!-- タブ（2026-09-19 B-1）: 従業員／車両／道具…。「使う機能」でONの種類だけ出す -->
     <div v-if="resourceTabs.length" class="cal-tabs" data-testid="calendar-tabs">
       <button type="button" class="cal-tab" :class="{ active: tab === 'workers' }" data-testid="calendar-tab-workers" @click="tab = 'workers'">従業員</button>
-      <button v-for="t in resourceTabs" :key="t" type="button" class="cal-tab" :class="{ active: tab === t }" :data-testid="`calendar-tab-${t}`" @click="tab = t">{{ RESOURCE_TYPE_LABEL[t] }}</button>
+      <button v-for="t in resourceTabs" :key="t.key" type="button" class="cal-tab" :class="{ active: tab === t.key }" :data-testid="`calendar-tab-${t.key}`" @click="tab = t.key">{{ t.name }}</button>
     </div>
-    <ResourceCalendar v-if="tab !== 'workers'" :type="tab" />
+    <ResourceCalendar v-if="tab !== 'workers'" :key="tab" :type="tab" :def="resourceTabs.find(t => t.key === tab)" />
     <template v-else>
     <!-- 予定追加のお知らせ（未読・気づかないケース対策 #予定通知。自分にworker紐付けが無ければ出ない） -->
     <div v-if="notifs.length" class="notif-banner">
@@ -340,9 +340,7 @@ import { supabase } from '../lib/supabase'
 import { siteStatusesForScreen } from '../lib/site-status.gen'
 import { useQueryParam } from '../composables/useQueryParam'
 import ResourceCalendar from '../components/ResourceCalendar.vue'
-import { isFeatureEnabled } from '../lib/features'
-import { RESOURCE_TYPE_LABEL, RESOURCE_TYPE_ORDER, RESOURCE_TYPE_FEATURE } from '../lib/resource-core.gen'
-import type { ResourceTypeKey } from '../lib/resource-core.gen'
+import type { ResourceTypeKey, ResourceTypeDef } from '../lib/resource-core.gen'
 import { getAccountId } from '../lib/account'
 import { currentWorkerId } from '../lib/auth'
 import { loadScheduleCategories, FALLBACK_CATEGORY_COLOR, type ScheduleCategory } from '../lib/scheduleCategories'
@@ -406,11 +404,16 @@ interface ScheduleGroup {
 
 // ──── 定数 ─────────────────────────────────────────────────
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
-// ── タブ（2026-09-19 B-1）。?tab=vehicle で直接開ける（お知らせのリンク先）。room は B-3 ──
-const resourceTabs = computed<ResourceTypeKey[]>(() => RESOURCE_TYPE_ORDER.filter((t) => t !== 'room' && isFeatureEnabled(RESOURCE_TYPE_FEATURE[t])))
+// ── タブ（2026-09-19 B-1/B-3）: 車両・道具・会議室（使う機能でON）＋会社独自の種類（enabled）。
+//  種類は EF(resource-reservations: types) から。?tab=vehicle で直接開ける（お知らせのリンク先）──
+const resourceTabs = ref<ResourceTypeDef[]>([])
+async function loadResourceTabs() {
+  const { data } = await supabase.functions.invoke('resource-reservations', { body: { action: 'types' } })
+  resourceTabs.value = data?.ok ? (data.types as ResourceTypeDef[]) : []
+}
 const tabParam = useQueryParam<string>('tab', 'workers')
 const tab = computed<'workers' | ResourceTypeKey>({
-  get: () => (resourceTabs.value.includes(tabParam.value as ResourceTypeKey) ? (tabParam.value as ResourceTypeKey) : 'workers'),
+  get: () => (resourceTabs.value.some((t) => t.key === tabParam.value) ? tabParam.value : 'workers'),
   set: (v) => { tabParam.value = v },
 })
 const ROW_HEIGHT = 36   // extendTop 時のスクロール位置補正の目安（実際の行高は可変）
@@ -1048,6 +1051,7 @@ async function moveCat(c: ScheduleCategory, dir: -1 | 1) {
 
 // ──── 初期化 ─────────────────────────────────────────────
 onMounted(async () => {
+  void loadResourceTabs()   // 車両・道具・会議室・独自の種類のタブ（従業員タブの表示は待たない）
   accountId = await getAccountId()
   GROUP_KEY = `calendar_group_filter_admin_${accountId}`
   RECENT_SITES_KEY = `sido_recent_schedule_sites_admin_${accountId}`
