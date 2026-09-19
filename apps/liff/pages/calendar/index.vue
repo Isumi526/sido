@@ -12,7 +12,10 @@
     <div class="cal-tabs">
       <button type="button" class="cal-tab" :class="{ active: activeTab === 'shared' }" @click="activeTab = 'shared'">{{ $t('calendar.tabShared') }}</button>
       <button type="button" class="cal-tab" :class="{ active: activeTab === 'personal' }" @click="activeTab = 'personal'">{{ $t('calendar.tabPersonal') }}</button>
+      <!-- 車両・道具…（リソース予定B-1・2026-09-19）。「使う機能」でONの種類だけ出す -->
+      <button v-for="rt in resourceTabs" :key="rt" type="button" class="cal-tab" :class="{ active: activeTab === rt }" :data-testid="`calendar-tab-${rt}`" @click="activeTab = rt">{{ $t(`resource.tab${rt.charAt(0).toUpperCase()}${rt.slice(1)}`) }}</button>
     </div>
+    <ResourceCalendar v-if="isResourceTab(activeTab)" :key="activeTab" :type="activeTab as ResourceTypeKey" />
 
     <!-- 月ナビ（ヘッダー：年月＋グループ絞り込み） -->
     <div v-if="activeTab === 'shared'" class="month-nav">
@@ -493,6 +496,9 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSchedules, type Schedule, type ScheduleForm } from '~/composables/useSchedules'
 import { findSimilarSiteNames } from '~/utils/site-similarity.gen'
+import { RESOURCE_TYPE_ORDER, RESOURCE_TYPE_FEATURE } from '~/composables/resource-core.gen'
+import type { ResourceTypeKey } from '~/composables/resource-core.gen'
+import { loadLiffFeatures, isLiffFeatureEnabled } from '~/composables/useLiffFeatures'
 import {
   shiftMonth, genMonthDates, isWeekend, weekdayIndex, dateCellClass, fmtDateTime,
   cellSchedules as coreCellSchedules, chipStyle as coreChipStyle, buildScheduleDiff, birthdayDatesByWorker,
@@ -934,7 +940,10 @@ function isBirthday(date: string, workerId: string): boolean {
 // ──────────────────── 個人カレンダー（週間／月間・共有グリッドと別タブ） ────────────────────
 // 既存の共有ビュー用データ(schedules.schedules)をそのまま流用し、自分の予定だけに絞る
 // （is_public問わず＝本人分は既存fetchSchedulesの可視性ルールで既に取得済み）。
-const activeTab = ref<'shared' | 'personal'>('shared')
+const activeTab = ref<'shared' | 'personal' | ResourceTypeKey>('shared')
+// ── 車両・道具タブ（B-1）。?tab=vehicle で直接開ける（お知らせのリンク先）。room は B-3 ──
+const resourceTabs = computed<ResourceTypeKey[]>(() => RESOURCE_TYPE_ORDER.filter((t) => t !== 'room' && isLiffFeatureEnabled(RESOURCE_TYPE_FEATURE[t])))
+const isResourceTab = (t: string): t is ResourceTypeKey => (RESOURCE_TYPE_ORDER as string[]).includes(t)
 const personalViewMode = ref<'week' | 'month'>('week')
 const personalAnchor = ref(new Date())   // 週間=表示開始日／月間=表示月の基準日
 
@@ -1366,6 +1375,11 @@ onMounted(async () => {
   loading.value = true
   initCalendar()
   loadRecentSites()   // 端末ローカル・同期処理なので await 不要
+  void loadLiffFeatures().then(() => {
+    // ?tab=vehicle（お知らせのリンク）で来た時は機能ONを確認してから切り替える
+    const q = String(useRoute().query.tab ?? '')
+    if (isResourceTab(q) && resourceTabs.value.includes(q)) activeTab.value = q
+  })
   try {
     await master.fetch()
     await schedules.resolveMyWorkerId()

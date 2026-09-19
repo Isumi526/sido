@@ -133,6 +133,7 @@ function iconOf(kind: string): string {
     case 'punch_checkin':     return 'login'         // 予定の開始時刻の打刻リマインド
     case 'punch_checkout':    return 'logout'        // 予定の終了時刻の打刻リマインド
     case 'purchase_order_accepted': return 'task_alt'
+    case 'resource':          return 'directions_car'  // 車両・道具の予約（重なり／管理者による変更）
     default:                  return 'notifications'
   }
 }

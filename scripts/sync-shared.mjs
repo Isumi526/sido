@@ -112,6 +112,14 @@ const SHARES = [
     ],
   },
   {
+    // 車両・道具・部屋の予約（リソース予定）の純粋ロジック。admin/LIFF の予定管理タブで共有
+    src: 'shared/resource-core.ts',
+    dests: [
+      'apps/admin/src/lib/resource-core.gen.ts',
+      'apps/liff/composables/resource-core.gen.ts',
+    ],
+  },
+  {
     // 無償満了日の計算。admin(告知UI・アカウント発行)と EF(サーバ側判定)で同じ結果にならないと
     // 「画面は満了と出たのにサーバは無償のまま」のような食い違いが起きる（法的な通知起点）
     src: 'shared/billing-trial.ts',
