@@ -232,6 +232,10 @@ entries:
     reason: "liff-process-summary(2026-07-11・会社予定ページ新設)への指摘＝『account_idはアクセストークンではなくテナント識別子のため、知っていれば誰でも閲覧できる』。指摘自体は正確だが、account_idはこのアプリの他の大部分の anon露出テーブル(sites/schedules/workers等・accepted.yml内 rls-multitenant baseline群)と全く同じ既存の信頼モデルであり、LIFF側もそもそも accounts テーブルをanonキーで直接読んでaccount_idを解決している(useAccount().getAccountId())＝account_id自体はこのアプリの設計上secretとして扱われていない。本関数が新設したのは『その既存の信頼モデルの範囲内で、process_tasks(元は authenticated限定RLS)から金額/顧客名/担当者名などの機微情報を一切含まない最小投影(現場名・工程名・期間のみ)だけを追加露出する』ことであり、露出面としては既存ベースラインより狭い(他表は行全体をanon selectできるが、本関数は4フィールドの読み取り専用サマリのみ)。恒久対策(署名付きトークン/JWT必須化)は匿名LIFF全体の認証再設計が必要なため別スコープ(親エピック「本番DBのRLS有効化」)。"
     ticket: "3980ff81c56b80b4a3f9cb0a4b308a96"
   - rule: rls-multitenant
+    target: liff-process-summary
+    reason: "上記 anon-access-token/liff-process-summary と同一の指摘（『リクエストの account_id を検証せず service role で読む』）。2026-09-19 の release（process_tasks の items 撤去）で Gemini がルール名を rls-multitenant として再検出したため、ルール名ゆれでも一致するよう同内容で追記。当該 release は account_id の検証ロジックに触れていない（返す列を減らしただけ＝露出面はさらに狭い）。恒久対策は上記と同じ別スコープ。"
+    ticket: "3980ff81c56b80b4a3f9cb0a4b308a96"
+  - rule: rls-multitenant
     target: site_chat_messages
     reason: "現場ごとのチャット機能(2026-07-11・①MVP)。LIFF(anon)が現場に紐づく作業員として送受信するため、既存のLIFF露出マスタ群(overtime_requests/report_edit_grants等)と同じ anon運用(RLS無効・account_id+site_idで論理分離)。チャット本文はメッセージのやり取り自体が目的でありdaily_reports等の他anon表と同水準の機微度。本番RLS化は親エピック「本番DBのRLS有効化」で一括。"
     ticket: "3980ff81c56b8057a369e89a2d048c2d"
