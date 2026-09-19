@@ -399,6 +399,7 @@ import { openDoc } from '../lib/docUrl'
 import { normalizeTaxMode, sumAmount, taxTotalOf, netTotalOf, grossTotalOf } from '../lib/invoiceTax'
 import { resolveDocUrl } from '../lib/docUrl'
 import JSZip from 'jszip'
+import { siteStatusesForScreen } from '../lib/site-status.gen'
 
 const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
 const IS_DEV   = import.meta.env.DEV
@@ -427,7 +428,7 @@ const loading  = ref(false)
 const invoices = ref<any[]>([])
 // 選べる現場＝有効なものだけ。新規入力の候補・AI照合・重複チェックは全部これを見る
 // （終わった現場を新しい請求で選べてしまうと「無効化＝隠す」の意味が無くなる）。
-const sites    = ref<{ id: string; name: string }[]>([])
+const sites    = ref<{ id: string; name: string; status?: string }[]>([])
 // ★全現場の id→名前。無効化された現場の名前を引くためだけに持つ。
 //  これが無いと、無効現場を参照する明細を保存し直した時に site_name が null になり、
 //  現場別集計が「site_name が空の行は読み飛ばす」ため、その請求の原価が丸ごと消える
@@ -450,7 +451,7 @@ function siteLabelOf(id: string | null | undefined): string {
  * 参照中のものを混ぜないと、開いただけで選択が空に見え、選び直しを誘発する。
  */
 function siteOptionsFor(referencedIds: (string | null | undefined)[]): { id: string; label: string }[] {
-  const opts = sites.value.map(s => ({ id: s.id, label: s.name }))
+  const opts = sites.value.map(s => ({ id: s.id, label: s.status === 'completed' ? `${s.name}（完了）` : s.name }))
   const seen = new Set(opts.map(o => o.id))
   for (const id of referencedIds) {
     if (!id || seen.has(id) || !siteNameById.value[id]) continue
@@ -769,7 +770,7 @@ async function load() {
       // 現場は明細(items)側に付くので、現場での絞り込み用に site_id/site_name も一緒に読む
       .select('*, subcontractor_invoice_items(amount, tax_rate, site_id, site_name)')
       .eq('account_id', accountId).order('invoice_date', { ascending: false }).order('created_at', { ascending: false }),
-    supabase.from('sites').select('id, name, active, contractor_id, contractors(name)').eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
+    supabase.from('sites').select('id, name, active, status, contractor_id, contractors(name)').eq('account_id', accountId).order('name_kana', { nullsFirst: false }).order('name'),
     supabase.from('subcontractors').select('id, name, category').eq('account_id', accountId).eq('active', true).order('sort_order').order('name'),
     supabase.from('purchase_orders').select('id, order_number, total_amount, subcontractor_id, vendor_name')
       .eq('account_id', accountId).neq('is_deleted', true).order('order_date', { ascending: false }),
@@ -781,8 +782,10 @@ async function load() {
     const grand = grossTotalOf(items, normalizeTaxMode(v.tax_mode))
     return { ...v, item_count: items.length, grand_total: grand, _overdue: !v.paid && !!v.due_date && v.due_date < todayStr }
   })
-  // 選択肢は有効な現場だけ。名前の解決だけは無効な現場も引けるようにする（site_name を消さないため）
-  sites.value = (si ?? []).filter((x: any) => x.active).map((x: any) => ({ id: x.id, name: x.name }))
+  // 選択肢＝着工・完了の現場（請求は施工後に来る・2026-09-19 A-2 表示マトリクス #9）。
+  //  名前の解決だけは全ステータスで引けるようにする（site_name を消さないため）
+  const INVOICE_SET = new Set<string>(siteStatusesForScreen('subcontractor_invoice'))
+  sites.value = (si ?? []).filter((x: any) => INVOICE_SET.has(x.status)).map((x: any) => ({ id: x.id, name: x.name, status: x.status }))
   siteNameById.value = Object.fromEntries((si ?? []).map((x: any) => [x.id, x.name]))
   siteContractorById.value = Object.fromEntries((si ?? []).filter((x: any) => x.contractors?.name).map((x: any) => [x.id, x.contractors.name as string]))
   subs.value  = su ?? []

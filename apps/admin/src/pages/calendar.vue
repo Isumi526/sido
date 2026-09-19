@@ -3,7 +3,7 @@
     <!-- ヘッダー -->
     <div class="page-header">
       <h1 class="page-title">予定管理</h1>
-      <div class="header-actions">
+      <div v-if="tab === 'workers'" class="header-actions">
         <label class="deleted-toggle">
           <input type="checkbox" v-model="showDeleted" />
           削除済みを表示
@@ -15,6 +15,13 @@
       </div>
     </div>
 
+    <!-- タブ（2026-09-19 B-1）: 従業員／車両／道具…。「使う機能」でONの種類だけ出す -->
+    <div v-if="resourceTabs.length" class="cal-tabs" data-testid="calendar-tabs">
+      <button type="button" class="cal-tab" :class="{ active: tab === 'workers' }" data-testid="calendar-tab-workers" @click="tab = 'workers'">従業員</button>
+      <button v-for="t in resourceTabs" :key="t.key" type="button" class="cal-tab" :class="{ active: tab === t.key }" :data-testid="`calendar-tab-${t.key}`" @click="tab = t.key">{{ t.name }}</button>
+    </div>
+    <ResourceCalendar v-if="tab !== 'workers'" :key="tab" :type="tab" :def="resourceTabs.find(t => t.key === tab)" />
+    <template v-else>
     <!-- 予定追加のお知らせ（未読・気づかないケース対策 #予定通知。自分にworker紐付けが無ければ出ない） -->
     <div v-if="notifs.length" class="notif-banner">
       <div class="notif-head">
@@ -99,6 +106,8 @@
         </tbody>
       </table>
     </div>
+
+    </template>
 
     <!-- 追加・編集モーダル -->
     <div v-if="formModal" class="modal-overlay" @click.self="formModal = null">
@@ -328,6 +337,10 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
+import { siteStatusesForScreen } from '../lib/site-status.gen'
+import { useQueryParam } from '../composables/useQueryParam'
+import ResourceCalendar from '../components/ResourceCalendar.vue'
+import type { ResourceTypeKey, ResourceTypeDef } from '../lib/resource-core.gen'
 import { getAccountId } from '../lib/account'
 import { currentWorkerId } from '../lib/auth'
 import { loadScheduleCategories, FALLBACK_CATEGORY_COLOR, type ScheduleCategory } from '../lib/scheduleCategories'
@@ -391,6 +404,18 @@ interface ScheduleGroup {
 
 // ──── 定数 ─────────────────────────────────────────────────
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
+// ── タブ（2026-09-19 B-1/B-3）: 車両・道具・会議室（使う機能でON）＋会社独自の種類（enabled）。
+//  種類は EF(resource-reservations: types) から。?tab=vehicle で直接開ける（お知らせのリンク先）──
+const resourceTabs = ref<ResourceTypeDef[]>([])
+async function loadResourceTabs() {
+  const { data } = await supabase.functions.invoke('resource-reservations', { body: { action: 'types' } })
+  resourceTabs.value = data?.ok ? (data.types as ResourceTypeDef[]) : []
+}
+const tabParam = useQueryParam<string>('tab', 'workers')
+const tab = computed<'workers' | ResourceTypeKey>({
+  get: () => (resourceTabs.value.some((t) => t.key === tabParam.value) ? tabParam.value : 'workers'),
+  set: (v) => { tabParam.value = v },
+})
 const ROW_HEIGHT = 36   // extendTop 時のスクロール位置補正の目安（実際の行高は可変）
 
 // ──── 状態 ─────────────────────────────────────────────────
@@ -429,7 +454,7 @@ const siteNameById = computed(() => {
 async function loadSites() {
   const [{ data: siteRows }, { data: contractorRows }] = await Promise.all([
     supabase.from('sites').select('id, name, name_kana, contractor_id')
-      .eq('account_id', accountId).eq('active', true).eq('kind', 'site')   // オフィス・工場（kind≠site）は予定の候補に出さない（2026-09-13）
+      .eq('account_id', accountId).in('status', siteStatusesForScreen('schedule_site_picker')).eq('kind', 'site')   // 予定の候補＝見積中・受注・着工（2026-09-19 A-2 #3）。オフィス・工場（kind≠site）は出さない（2026-09-13）
       .order('name_kana', { nullsFirst: false }).order('name'),
     supabase.from('contractors').select('id, name').eq('account_id', accountId),
   ])
@@ -1026,6 +1051,7 @@ async function moveCat(c: ScheduleCategory, dir: -1 | 1) {
 
 // ──── 初期化 ─────────────────────────────────────────────
 onMounted(async () => {
+  void loadResourceTabs()   // 車両・道具・会議室・独自の種類のタブ（従業員タブの表示は待たない）
   accountId = await getAccountId()
   GROUP_KEY = `calendar_group_filter_admin_${accountId}`
   RECENT_SITES_KEY = `sido_recent_schedule_sites_admin_${accountId}`
@@ -1053,6 +1079,9 @@ onMounted(async () => {
 
 <style scoped>
 .cal-page { }
+.cal-tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid #e2e8f0; }
+.cal-tab { background: none; border: none; border-bottom: 3px solid transparent; padding: 8px 16px; font-size: 14px; font-weight: 700; color: #64748b; cursor: pointer; }
+.cal-tab.active { color: #06C755; border-bottom-color: #06C755; }
 .cat-swatch { display: inline-block; width: 16px; height: 16px; border-radius: 4px; border: 1px solid #e0e0e0; margin-top: 4px; }
 
 .page-header {

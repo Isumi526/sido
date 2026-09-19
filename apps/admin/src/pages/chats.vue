@@ -18,7 +18,8 @@
     <p v-if="loadErr" class="load-err" data-testid="chats-load-err">{{ loadErr }}</p>
     <div v-if="loading" class="empty">読み込み中…</div>
     <ul v-else-if="rows.length" class="list">
-      <li v-for="r in rows" :key="r.site.id" class="row" data-testid="chat-list-row" @click="router.push(`/chats/${r.site.id}`)">
+      <!-- 既定＝見積中・受注・着工。完了現場は折りたたみ（2026-09-19 A-2・表示マトリクス #7） -->
+      <li v-for="r in visibleRows" :key="r.site.id" class="row" :class="{ finished: !CHAT_DEFAULT_SET.has(r.site.status) }" data-testid="chat-list-row" @click="router.push(`/chats/${r.site.id}`)">
         <div class="row-avatar" :style="{ background: siteColor(r.site.name) }" data-testid="chat-avatar">{{ initial(r.site.name) }}</div>
         <div class="row-main">
           <div class="row-name">{{ r.site.name }}</div>
@@ -34,26 +35,35 @@
       </li>
     </ul>
     <div v-else class="empty">現場がありません（現場マスタから追加してください）</div>
+    <label v-if="!loading && finishedCount" class="finished-toggle" data-testid="chats-finished-toggle">
+      <input v-model="showFinished" type="checkbox" /> 終了した現場のチャットを表示（{{ finishedCount }}）
+    </label>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { currentUser } from '../lib/auth'
 import { refreshChatBadge } from '../lib/chatBadge'
+import { siteStatusesForScreen } from '../lib/site-status.gen'
+import type { SiteStatus } from '../lib/site-status.gen'
 
 const router = useRouter()
 
-type Site = { id: string; name: string; name_kana: string | null }
+type Site = { id: string; name: string; name_kana: string | null; status: SiteStatus }
 type LastMessage = { body: string; sender_name: string; created_at: string; hasAttachment: boolean }
 type Row = { site: Site; lastMessage: LastMessage | null; unreadCount: number }
 
 const loading = ref(true)
 const loadErr = ref('')
 const rows = ref<Row[]>([])
+const CHAT_DEFAULT_SET = new Set<string>(siteStatusesForScreen('chat_list'))
+const showFinished = ref(false)
+const finishedCount = computed(() => rows.value.filter((r) => !CHAT_DEFAULT_SET.has(r.site.status)).length)
+const visibleRows = computed(() => showFinished.value ? rows.value : rows.value.filter((r) => CHAT_DEFAULT_SET.has(r.site.status)))
 const accountName = ref('')
 let channel: ReturnType<typeof supabase.channel> | null = null
 let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -87,7 +97,7 @@ async function load() {
   accountName.value = (acc?.name as string) ?? ''
 
   const { data: sites } = await supabase.from('sites')
-    .select('id, name, name_kana').eq('account_id', accountId).eq('active', true)
+    .select('id, name, name_kana, status').eq('account_id', accountId).in('status', siteStatusesForScreen('chat_list', true))
   // ★__unset__（現場未設定の内部行）はチャット相手として並べない。
   //  現場マスタでは既に一覧から除外している（sites.vue の listableSites）のに
   //  チャット一覧にだけ残っていた＝同じ規則の取りこぼし（2026-08-10 レビュー指摘）。
@@ -162,6 +172,8 @@ onUnmounted(() => {
 .empty { color: #94a3b8; padding: 32px 0; text-align: center; }
 .list { list-style: none; display: flex; flex-direction: column; background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06); overflow: hidden; }
 .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid #f1f5f9; cursor: pointer; }
+.row.finished { opacity: .6; }
+.finished-toggle { display: flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 13px; color: #64748b; }
 .row:last-child { border-bottom: none; }
 .row:hover { background: #f8fafc; }
 .row-avatar {

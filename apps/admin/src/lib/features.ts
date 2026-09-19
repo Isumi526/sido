@@ -15,12 +15,24 @@
 //   featureFlags.ts = ビルド時の定数（HIDE_LINE_SECTIONS 等・切替に再デプロイが要る）
 //   features.ts     = 実行時のアカウント単位フラグ（settings 由来・再デプロイ不要）
 // ============================================================
+//  ★2026-09-19 B-0「使う機能」: 見積だけだったフラグを機能の登録簿（shared/features.ts）に一般化。
+//   車両・道具・会議室…をテナント単位で ON/OFF できる。既定値は登録簿（車両・道具は既定ON）。
+//   estimateEnabled は互換のため残す（features.estimate と同じ値）。
 import { ref, computed, watch } from 'vue'
 import { supabase } from './supabase'
 import { getAccountId } from './account'
 import { currentUser, canViewManagementPages, isOwnSite } from './auth'
+import { FEATURES, FEATURE_SETTING_KEYS, defaultFeatureFlags, resolveFeatureFlags } from './features-registry.gen'
+import type { FeatureKey, FeatureFlags } from './features-registry.gen'
 
-/** 見積もり機能（見積・発注/見積マスタ/材料抽出）を出すか */
+/** テナントの「使う機能」（登録簿の全キー） */
+export const features = ref<FeatureFlags>(defaultFeatureFlags())
+/** その機能が ON か（メニュー・ルートガード・画面内の導線で使う） */
+export function isFeatureEnabled(key: FeatureKey): boolean { return features.value[key] === true }
+export { FEATURES }
+export type { FeatureKey }
+
+/** 見積もり機能（見積・発注/見積マスタ/材料抽出）を出すか（＝features.estimate） */
 export const estimateEnabled = ref(false)
 /** フラグの解決が済んだか（解決前にルートガードが判定して素通ししないため） */
 export const featuresResolved = ref(false)
@@ -48,22 +60,29 @@ export function canViewEstimatesForSite(responsibleWorkerId: string | null | und
   return canViewManagementPages.value || isOwnSite(responsibleWorkerId)
 }
 
-/** settings から機能フラグを読む。ログイン前・取得失敗時は OFF のまま。 */
+/** settings から機能フラグを読む。ログイン前・取得失敗時は登録簿の既定値（見積OFF・車両/道具ON…）。 */
 export async function loadFeatures(): Promise<void> {
   featuresResolved.value = false
   try {
-    if (!currentUser.value) { estimateEnabled.value = false; return }
+    if (!currentUser.value) { features.value = defaultFeatureFlags(); estimateEnabled.value = false; return }
     const accountId = await getAccountId()
     const { data, error } = await supabase
-      .from('settings').select('value')
-      .eq('account_id', accountId).eq('key', FEATURE_KEY_ESTIMATE).maybeSingle()
+      .from('settings').select('key, value')
+      .eq('account_id', accountId).in('key', FEATURE_SETTING_KEYS)
     if (error) throw error
-    estimateEnabled.value = (data as { value?: string } | null)?.value === 'true'
+    features.value = resolveFeatureFlags((data ?? []) as { key: string; value: string | null }[])
   } catch {
-    estimateEnabled.value = false   // フェイルクローズ
+    features.value = defaultFeatureFlags()   // 既定値に倒す（見積は fail-closed）
   } finally {
+    estimateEnabled.value = features.value.estimate
     featuresResolved.value = true
   }
+}
+
+/** 設定画面から書いた直後に同じ画面のメニューへ即反映するため */
+export function setFeatureLocal(key: FeatureKey, on: boolean) {
+  features.value = { ...features.value, [key]: on }
+  if (key === 'estimate') estimateEnabled.value = on
 }
 
 /** featuresResolved になるまで待つ（router guard 用） */

@@ -16,7 +16,8 @@
       <div v-if="loading" class="state">{{ $t('common.loading') }}</div>
       <div v-else-if="!rows.length" class="state">{{ $t('chatsView.empty') }}</div>
       <ul v-else class="list">
-        <li v-for="r in rows" :key="r.site.id" class="row" data-testid="chat-list-row" @click="navigateTo(`/site-chat/${r.site.id}`)">
+        <!-- 既定＝見積中・受注・着工。完了現場は折りたたみ（2026-09-19 A-2・表示マトリクス #17） -->
+        <li v-for="r in visibleRows" :key="r.site.id" class="row" :class="{ finished: !DEFAULT_SET.has(r.site.status) }" data-testid="chat-list-row" @click="navigateTo(`/site-chat/${r.site.id}`)">
           <div class="row-avatar" :style="{ background: siteColor(r.site.name) }" data-testid="chat-avatar">{{ initial(r.site.name) }}</div>
           <div class="row-main">
             <div class="row-name">{{ r.site.name }}<span v-if="r.memberCount" class="row-member-count">({{ r.memberCount }})</span></div>
@@ -35,22 +36,32 @@
           </div>
         </li>
       </ul>
+      <label v-if="!loading && finishedCount" class="finished-toggle" data-testid="chats-finished-toggle">
+        <input v-model="showFinished" type="checkbox" /> {{ $t('chatsView.finishedToggle') }}（{{ finishedCount }}）
+      </label>
     </main>
   </div>
 </template>
 
 <script setup lang="ts">
+import { siteStatusesForScreen } from '~/composables/site-status.gen'
+import type { SiteStatus } from '~/composables/site-status.gen'
 const proxy = useProxyMode()
 const { profile } = useLiff()
 const { resolveMyWorkerId } = useSchedules()
 
-type Site = { id: string; name: string }
+type Site = { id: string; name: string; status: SiteStatus }
 type LastMessage = { body: string; sender_name: string; created_at: string; hasAttachment: boolean }
 type Row = { site: Site; lastMessage: LastMessage | null; unreadCount: number; memberCount: number }
 
 const loading = ref(true)
 const rows = ref<Row[]>([])
 const accountName = ref('')
+// 完了現場のチャットは折りたたみ（過去ログは残る）
+const DEFAULT_SET = new Set<string>(siteStatusesForScreen('chat_list'))
+const showFinished = ref(false)
+const finishedCount = computed(() => rows.value.filter((r) => !DEFAULT_SET.has(r.site.status)).length)
+const visibleRows = computed(() => showFinished.value ? rows.value : rows.value.filter((r) => DEFAULT_SET.has(r.site.status)))
 
 // 現場名から安定した色を作る（LINE/Chatwork的なUIに寄せるための丸アバター用・機微情報は含まない）。
 // company-schedule.vue の siteColor() と同一ロジック。
@@ -87,7 +98,7 @@ async function load() {
   const mySiteIds = await resolveMySiteIds()
   if (!mySiteIds.length) { rows.value = []; loading.value = false; return }
   // ★EF経由（sites は公開キーから読めないようにしたため）
-  const siteList = (await useSitesApi().listSafe({ ids: mySiteIds })) as unknown as (Site & { responsible_worker_id: string | null; name_kana: string | null })[]
+  const siteList = (await useSitesApi().listSafe({ ids: mySiteIds, statuses: siteStatusesForScreen('chat_list', true) })) as unknown as (Site & { responsible_worker_id: string | null; name_kana: string | null; status: SiteStatus })[]
   const siteIds = siteList.map((s) => s.id)
   if (!siteIds.length) { rows.value = []; loading.value = false; return }
 
@@ -149,6 +160,8 @@ onMounted(load)
 .state { color: #888; text-align: center; padding: 32px; }
 .list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
 .row { background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 14px 16px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.row.finished { opacity: .6; }
+.finished-toggle { display: flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 13px; color: #64748b; }
 .row-avatar {
   width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;

@@ -28,3 +28,8 @@
 - `apps/admin/src/pages/reports.vue`（日報ビューの現場名表示）
 - edge functions（`_shared/notify.ts` 等）… `siteName` を通知本文/フォルダ名に使うだけ。`site_id` はスプレッドで透過。
 - `shared/expense-flatten.ts`（経費行の平坦化。現場は表示名のみで by-site 集計しない）
+
+## 現場のステータス（2026-09-19 A-1・`sites.status`）
+- 語彙・画面別の表示集合・必須項目の正本は **`shared/site-status.ts`**（`npm run sync:shared` で admin / liff / EF に配布）。画面側に集合を直書きしない。
+- `sites.active` は **DBトリガ `sites_sync_status_active` が `status in (estimating, ordered, in_progress)` から導出**。status を書けば active が追従し、active だけを書く旧経路（現場詳細トグル・マージ吸収元・LIFF現場作成）でも status が追従する。A-2 で各画面を status 参照に差し替え、A-3 で active を落とす。
+- `resolveActiveSiteId` の「active 現場」は当面そのまま（＝進行中3ステータス）。完了現場の日報を直す時の解決は A-2 の `report_site_picker` optional で扱う。

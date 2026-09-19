@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>設計との突合 2026-09-19（現場ステータス・リソース予定）</title>
+<style>
+  @page { size: A4; margin: 10mm 11mm 9mm; } * { box-sizing: border-box; }
+  body { font-family: "Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif; color: #1f2937; font-size: 9.2pt; line-height: 1.45; margin: 0; }
+  h1 { font-size: 15pt; margin: 0 0 1mm; color: #06C755; } .sub { font-size: 8.8pt; color: #374151; margin: 0 0 3mm; }
+  h2 { font-size: 10.5pt; margin: 3.5mm 0 1.5mm; padding: 1.2mm 3mm; background: #06C755; color: #fff; border-radius: 3px; page-break-after: avoid; }
+  h2.b { background: #2563eb; }
+  table { border-collapse: collapse; width: 100%; margin: 1mm 0 2mm; font-size: 8.4pt; }
+  th, td { border: 1px solid #d1d5db; padding: 0.8mm 1.6mm; vertical-align: top; } th { background: #f3f4f6; text-align: left; }
+  tr { page-break-inside: avoid; }
+  .ok { color: #166534; font-weight: 700; } .dev { color: #b45309; font-weight: 700; } .ng { color: #991b1b; font-weight: 700; }
+  .shots { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; margin: 1.5mm 0 2mm; }
+  .shots.three { grid-template-columns: 1fr 1fr 1fr; }
+  figure { margin: 0; page-break-inside: avoid; } figure img { width: 100%; border: 1px solid #e5e7eb; border-radius: 3px; }
+  figcaption { font-size: 7.8pt; color: #4b5563; margin-top: 0.6mm; }
+  .note { background: #fff7ed; border-left: 3px solid #fdba74; padding: 1.6mm 3mm; margin: 1.5mm 0; font-size: 8.6pt; }
+  .pb { page-break-before: always; }
+  @media screen { body { max-width: 210mm; margin: 0 auto; padding: 12mm 14mm; background: #fff; } html { background: #e5e7eb; } }
+</style></head><body>
+<h1>設計との突合 — 現場ステータス／車両・道具・会議室の予定管理</h1>
+<p class="sub">2026-09-19。認識合わせ資料（承認済み・すべて推奨案）の各項目を、ローカルの実画面（テストアカウント）で操作して確認した記録。
+<b>✅＝設計どおり／△＝設計と少し違う（理由つき）／未＝未実装</b>。E2E は自動テスト名。</p>
+
+<h2>テーマ1：現場のステータス（1-2 定義・遷移／1-3 必須項目／❓1〜6）</h2>
+<table>
+<tr><th style="width:30%">設計の項目</th><th style="width:8%">判定</th><th>実装・確認したこと</th></tr>
+<tr><td>5段階（見積中／受注／着工／完了／失注）を現場ごとに設定</td><td class="ok">✅</td><td>現場マスタの一覧（ステータス列のプルダウン）と現場詳細から変更。図A1・A2。E2E <code>admin.site-status</code></td></tr>
+<tr><td>❓1 有効／無効は廃止し一本化</td><td class="ok">✅</td><td>「無効化／有効化」ボタンと「有効／無効化済み」タブを撤去。タブ＝進行中／完了／失注／すべて（図A2）。<br>内部の <code>active</code> 列は当面残しDBトリガで導出（A-3 で撤去）。旧URL <code>?status=inactive</code> は完了タブに読み替え</td></tr>
+<tr><td>既存データ：有効→着工／無効→完了</td><td class="ok">✅</td><td>migration で backfill。ローカルで 28件→着工。本番は SEED 122件→着工／64件→完了になる見込み（適用時に件数を報告）</td></tr>
+<tr><td>完了にする時は終了日（既定＝今日）</td><td class="ok">✅</td><td>図A3。既に終了日が入っていればそのまま</td></tr>
+<tr><td>失注にする時は理由（任意）</td><td class="ok">✅</td><td><code>lost_reason</code> に保存。E2E で確認</td></tr>
+<tr><td>戻す操作も可。操作ログに残る</td><td class="ok">✅</td><td>完了→着工を E2E で確認。<code>operation_logs</code> に「現場を完了に変更（現場名・遷移）」</td></tr>
+<tr><td>❓3 自動では変えず「着工／完了にしますか？」の目印</td><td class="ok">✅</td><td>受注で開始日到来／着工で終了日経過の行に目印ボタン（1クリックでモーダル）。自動変更なし</td></tr>
+<tr><td>❓4 新規の初期値：管理画面＝受注／作業員アプリ＝着工</td><td class="ok">✅</td><td>管理画面の追加モーダルは「受注」既定（変更可）。LIFF・協力業者請求からの現場作成はDB既定＝着工。見積からの昇華＝受注</td></tr>
+<tr><td>1-3 必須項目（見積中＝現場名／受注・着工＝住所・工期開始・責任者／完了＝＋終了日）</td><td class="ok">✅</td><td>編集モーダルの＊印と保存ガードがステータスで変わる（図A4）。ステータス変更でも不足があれば止めて「編集から入力」を促す（図A5）。表は <code>shared/site-status.ts</code> に1箇所</td></tr>
+<tr><td>❓2 元請けは任意のまま</td><td class="ok">✅</td><td>変更なし</td></tr>
+<tr><td>一括変更</td><td class="ok">✅</td><td>「ステータス一括変更」→複数選択→変更（図A2右上）。E2E で確認</td></tr>
+</table>
+<div class="shots three">
+<figure><img src="shots/site-status/a1-sites-tabs.png"><figcaption>図A1 現場マスタ：進行中タブ（見積中・受注・着工）・ステータス列</figcaption></figure>
+<figure><img src="shots/site-status/a1-sites-all.png"><figcaption>図A2 「すべて」タブ：完了・失注も表示。一括変更ボタン</figcaption></figure>
+<figure><img src="shots/site-status/a1-status-modal-completed.png"><figcaption>図A3 完了にする→終了日を聞く</figcaption></figure>
+<figure><img src="shots/site-status/a1-edit-modal-estimating.png"><figcaption>図A4 見積中の編集：住所・工期・責任者の＊が消える</figcaption></figure>
+<figure><img src="shots/site-status/a1-status-modal-missing.png"><figcaption>図A5 見積中→受注：必須不足で止める</figcaption></figure>
+</div>
+
+<h2>テーマ1：1-4 表示マトリクス（❓5・❓6）</h2>
+<table>
+<tr><th style="width:4%">#</th><th style="width:30%">画面</th><th style="width:8%">判定</th><th>実装・確認したこと</th></tr>
+<tr><td>1</td><td>現場マスタ一覧</td><td class="ok">✅</td><td>既定＝見積中・受注・着工／完了・失注はタブ（図A1・A2）</td></tr>
+<tr><td>2/12</td><td>日報の現場プルダウン（❓5=A）</td><td class="ok">✅</td><td>既定＝受注・着工。「見積中・終了した現場も表示」で見積中・完了（図L1）。失注は出ない。管理画面側の日報一覧には現場プルダウンが無いため対象外</td></tr>
+<tr><td>3/14</td><td>予定（従業員）の現場候補</td><td class="ok">✅</td><td>見積中・受注・着工。E2E <code>admin/liff.site-status-visibility</code></td></tr>
+<tr><td>4/15</td><td>工程管理・会社予定</td><td class="ok">✅</td><td>既定＝受注・着工。切替で見積中（工期あり）・完了（終了日が直近90日）（図A6・A7）</td></tr>
+<tr><td>5/6</td><td>現場別集計・ダッシュボード・出面・ガソリン按分</td><td class="dev">△</td><td>元から「日報がある現場」を集計しておりステータスを見ない＝「日報がある現場はステータスに関わらず含める」は成立。<b>「受注を絞り込みで出す」等のステータス絞り込みUIは付けていない</b>（集計は実績ベースで十分と判断。要るなら追加）</td></tr>
+<tr><td>7/17</td><td>チャット一覧・現場チャット</td><td class="ok">✅</td><td>進行中＋「終了した現場のチャットを表示」（図A8・L5）</td></tr>
+<tr><td>8</td><td>見積・発注の現場選択</td><td class="ok">✅</td><td>見積中・受注・着工。見積書（受領）は失注を「（失注）」付きで参照可</td></tr>
+<tr><td>9</td><td>協力業者請求・未入金</td><td class="ok">✅</td><td>着工・完了（完了は「（完了）」表記）。★以前は終わった現場を新規明細で選べなかったが、承認済みマトリクスに合わせて選べるように変更</td></tr>
+<tr><td>10</td><td>現場未設定の紐付け</td><td class="ok">✅</td><td>受注・着工＋「終了した現場」グループ</td></tr>
+<tr><td>11</td><td>道具の持出先</td><td>未</td><td>持出UI自体が道具②（別チケット・要件定義済み）。表の定義（<code>tool_destination</code>）だけ用意済み</td></tr>
+<tr><td>13</td><td>出退勤の現場選択</td><td>—</td><td>出退勤は現場に紐づかない打刻に変わっており（2026-08-27）、現場選択が存在しないため対象外</td></tr>
+<tr><td>16</td><td>現場情報一覧（作業員）</td><td class="ok">✅</td><td>受注・着工＋切替で見積中・完了。ステータスバッジ付き（図L2）</td></tr>
+<tr><td>18</td><td>現場に紐づかない経費の現場</td><td class="ok">✅</td><td>着工・受注（「この日に出勤した現場」は現行のまま）</td></tr>
+</table>
+<div class="shots three">
+<figure><img src="shots/site-status/a2-process-default.png"><figcaption>図A6 工程管理：既定＝受注・着工</figcaption></figure>
+<figure><img src="shots/site-status/a2-process-other.png"><figcaption>図A7 切替で見積中（工期あり）・直近完了が薄く</figcaption></figure>
+<figure><img src="shots/site-status/a2-chats.png"><figcaption>図A8 チャット一覧：終了した現場は折りたたみ</figcaption></figure>
+</div>
+
+<h2 class="b pb">テーマ2：予定管理のタブ・予約（2-1／2-2／❓7〜❓9）</h2>
+<table>
+<tr><th style="width:30%">設計の項目</th><th style="width:8%">判定</th><th>実装・確認したこと</th></tr>
+<tr><td>❓7 予定管理の中にタブ（従業員／車両／道具／会議室…）</td><td class="ok">✅</td><td>管理画面（図B1）・作業員アプリ（図L3）とも。「使う機能」でONの種類だけ出る</td></tr>
+<tr><td>日×対象のマトリクス。セル＝誰／現場。予約＝枠線・使用中＝塗り</td><td class="ok">✅</td><td>図B1〜B3。終了＝グレー。自分の予約は緑</td></tr>
+<tr><td>列見出しの「今の状況」（空き／予約あり／使用中、道具は持出中・誰・現場・N日目）</td><td class="ok">✅</td><td>図B1（車両）・図B2（道具：持出中・Worker 01・現場・1日目）</td></tr>
+<tr><td>2-2 対象（複数可）・使う人・同乗者（車両）・現場・期間・時間帯・用途メモ</td><td class="ok">✅</td><td>図B4。同乗者は車両のみ</td></tr>
+<tr><td>❓8 重なり：車両・道具＝警告のみで保存可／会議室＝不可</td><td class="ok">✅</td><td>図B4 の警告→「重ねて保存」。会議室は「同じ時間帯には予約できません」で保存不可（図B5）。E2E <code>admin.resource-calendar / resource-rooms</code></td></tr>
+<tr><td>❓9 作業員は自分の予約／他人の変更・取消は管理者のみ</td><td class="ok">✅</td><td>EF で判定（画面を迂回しても通らない）。E2E <code>liff.resource-calendar</code>（一般作業員に落として確認）</td></tr>
+<tr><td>お知らせ：重ねられた時／管理者に変更・取消された時</td><td class="ok">✅</td><td>作業員アプリのお知らせ（ベル）に届く。リンクで該当タブが開く</td></tr>
+<tr><td>状態遷移：道具＝QR持出で使用中・返却で終了</td><td class="ok">✅</td><td>DBトリガ（<code>tool_events</code>）。E2E <code>admin.resource-tools</code>。※持出/返却のQR画面自体は道具②</td></tr>
+<tr><td>状態遷移：車両＝日報で選ぶと使用中</td><td class="dev">△ 未</td><td>「日報の車両欄を車両マスタからの選択にする」（要件定義済み・別チケット）が前提。そのチケットで日報保存時に当日予約を使用中にする（今は予約のまま）</td></tr>
+<tr><td>状態遷移：会議室＝開始時刻で使用中・終了で終了</td><td class="dev">△</td><td>自動更新は入れていない（表示は「予約」のまま）。列見出しの「使用中／予約あり」は今日の予約から出る。要るなら時刻で表示だけ切り替える</td></tr>
+<tr><td>作業員アプリでも閲覧と自分の予約</td><td class="ok">✅</td><td>図L3・L4。予定管理のタブ</td></tr>
+</table>
+<div class="shots three">
+<figure><img src="shots/site-status/b1-calendar-vehicle.png"><figcaption>図B1 管理画面：車両タブ（使用中＝塗り・予約＝枠線）</figcaption></figure>
+<figure><img src="shots/site-status/b2-calendar-tool.png"><figcaption>図B2 道具タブ：列見出しに持出中・誰・現場・日数</figcaption></figure>
+<figure><img src="shots/site-status/b3-calendar-room.png"><figcaption>図B3 会議室タブ（時間帯付き予約）</figcaption></figure>
+<figure><img src="shots/site-status/b1-reservation-overlap.png"><figcaption>図B4 予約モーダル：重なり警告→重ねて保存</figcaption></figure>
+<figure><img src="shots/site-status/b3-room-manage.png"><figcaption>図B5 会議室の台帳（名前・メモ・有効）</figcaption></figure>
+<figure><img src="shots/site-status/l3-calendar-vehicle.png"><figcaption>図L3 作業員アプリ：車両タブ</figcaption></figure>
+</div>
+
+<h2 class="b">テーマ2：「使う機能」・独自の種類（2-3／❓10）</h2>
+<table>
+<tr><th style="width:30%">設計の項目</th><th style="width:8%">判定</th><th>実装・確認したこと</th></tr>
+<tr><td>設定「使う機能」でオーナーが機能ON/OFF（見積・発注／車両／道具／会議室）</td><td class="ok">✅</td><td>図B6。OFF＝メニュー・タブ・作業員アプリの導線・EFの入口を閉じる。データは残る。E2E <code>admin.features-toggle</code></td></tr>
+<tr><td>既定：SEED＝車両ON・道具ON・会議室OFF</td><td class="dev">△</td><td>設計メモは「既存テナントにONを書き込む」だったが、<b>車両・道具は未設定＝ONを既定</b>にした（行を書き忘れてメニューが消える事故を避ける。結果は同じ）。会議室・見積は未設定＝OFF</td></tr>
+<tr><td>❓10 会社独自の種類を最初から追加可（名前・写真・メモの台帳）</td><td class="ok">✅</td><td>設定「予定管理の独自の種類」で追加・改名・重なり不可・時間帯必須・ON/OFF（図B6下）。対象はタブの「○○を管理」（名前・メモ・有効）。<b>写真は未対応</b>（列は用意済み・要るなら追加）</td></tr>
+<tr><td>❓11 作る順番（A→B-0→B-1→B-2→B-3）</td><td class="ok">✅</td><td>この順で実装。A-3（active列の撤去）だけ A-2 が本番に出た後</td></tr>
+</table>
+<div class="shots">
+<figure><img src="shots/site-status/b0-settings-features.png"><figcaption>図B6 設定：使う機能／予定管理の独自の種類</figcaption></figure>
+<figure><img src="shots/site-status/l1-report-picker-other.png"><figcaption>図L1 作業員アプリ 日報：「見積中・終了した現場も表示」</figcaption></figure>
+</div>
+
+<div class="note"><b>設計と違う点のまとめ：</b>①集計系にステータス絞り込みUIは付けていない（実績ベース）②車両の「日報で使用中」は別チケット（日報の車両欄マスタ化）待ち③会議室の時刻による自動「使用中」は未実装④独自の種類の「写真」は未対応⑤車両・道具の既定は「未設定＝ON」。いずれも可逆で、必要なら追加します。</div>
+</body></html>

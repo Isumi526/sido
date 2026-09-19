@@ -14,8 +14,12 @@
          2026-09-10 SEED 大塚さん「いろんな現場が担当者を持って…1・2・3月…パッと見てこの現場はこの辺だな」
          「詳細はいいから工期だけ分かればいい」「関東・中部・近畿で地域ごとにまとめて見たい」
          ※ 工程（詳細）ガント／Excel取込は 2026-09-19 に撤去（「Excel取込は不要。工期の帯＋工程表ファイルが見られれば十分」） -->
+    <!-- 既定＝受注・着工。見積中（工期あり）は薄い帯・完了は直近90日分を切替で（2026-09-19 A-2・表示マトリクス #4） -->
+    <label v-if="sitesAll.some(s => s.optional)" class="other-toggle" data-testid="process-other-toggle">
+      <input v-model="showOther" type="checkbox" /> 見積中・終了した現場も表示（{{ sitesAll.filter(s => s.optional).length }}）
+    </label>
     <div class="month-wrap" data-testid="month-view">
-      <div v-if="!monthSites.length" class="empty">有効な現場がありません。</div>
+      <div v-if="!monthSites.length" class="empty">受注・着工中の現場がありません。</div>
       <div v-else class="mcal" :style="{ '--mlabel-w': MLABEL_W + 'px' }">
         <div class="mcal-head">
           <div class="mcal-corner">現場（{{ monthSites.length }}件）</div>
@@ -31,9 +35,10 @@
             </button>
             <div class="mcal-region-fill" :style="{ width: mTrackWidth + 'px' }"></div>
           </div>
-          <div v-for="r in (collapsedGroups.has(g.key) ? [] : g.rows)" :key="r.site.id" class="m-row" :data-testid="`month-site-${r.site.id}`">
+          <div v-for="r in (collapsedGroups.has(g.key) ? [] : g.rows)" :key="r.site.id" class="m-row" :class="{ optional: r.site.optional }" :data-testid="`month-site-${r.site.id}`">
             <div class="m-label">
               <span class="m-site">{{ r.site.name }}</span>
+              <span v-if="r.site.optional" class="m-status" :class="`st-${r.site.status}`">{{ SITE_STATUS_LABEL[r.site.status!] }}</span>
               <span v-if="r.night" class="m-night" title="夜間帯の定時がある現場">夜</span>
               <button v-for="a in r.atts" :key="a.id" type="button" class="m-clip" :title="`工程表: ${a.name || 'ファイル'}`" :data-testid="`clip-${a.id}`" @click="openSchedulePdf(a.id)">
                 <span class="material-symbols-rounded" style="font-size:16px;line-height:1;vertical-align:middle">attach_file</span>
@@ -60,15 +65,21 @@ import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import HelpButton from '../components/HelpButton.vue'
 import { regionOf, REGIONS } from '../lib/jp-region.gen'
+import { todayStr } from '../lib/schedule-core.gen'
+import { siteStatusesForScreen, processGanttVisibility, SITE_STATUS_LABEL } from '../lib/site-status.gen'
+import type { SiteStatus } from '../lib/site-status.gen'
 
 const DAY = 86400000
 
 type SiteRow = {
   id: string; name: string; contractor_name?: string | null
+  status?: SiteStatus; optional?: boolean   // optional＝「他の現場を表示」でだけ出す（見積中・直近完了）
   location?: string | null; period_start?: string | null; period_end?: string | null
   responsible_name?: string | null; default_start_time?: string | null; default_end_time?: string | null
 }
-const sites   = ref<SiteRow[]>([])
+const sitesAll = ref<SiteRow[]>([])
+const showOther = ref(false)
+const sites = computed(() => showOther.value ? sitesAll.value : sitesAll.value.filter((s) => !s.optional))
 // 月ビュー用: 工程表PDF（site_attachments kind='schedule'）と 現場×区分の夜間帯（現場定時が日跨ぎ）
 const scheduleAtts = ref<{ id: string; site_id: string; name: string | null }[]>([])
 const nightSiteIds = ref<Set<string>>(new Set())
@@ -81,13 +92,15 @@ async function loadSites() {
   const accountId = await getAccountId()
   const [{ data }, { data: atts }, { data: cat }] = await Promise.all([
     supabase.from('sites')
-      .select('id, name, location, period_start, period_end, default_start_time, default_end_time, contractors(name), responsible:workers!sites_responsible_worker_id_fkey(name)')
-      .eq('account_id', accountId).eq('active', true).eq('kind', 'site').neq('name', '__unset__').order('name_kana', { nullsFirst: false }).order('name'),   // __unset__＝「現場未設定」の番兵行・オフィス/工場（kind≠site）は出さない
+      .select('id, name, status, location, period_start, period_end, default_start_time, default_end_time, contractors(name), responsible:workers!sites_responsible_worker_id_fkey(name)')
+      .eq('account_id', accountId).in('status', siteStatusesForScreen('process_gantt', true)).eq('kind', 'site').neq('name', '__unset__').order('name_kana', { nullsFirst: false }).order('name'),   // __unset__＝「現場未設定」の番兵行・オフィス/工場（kind≠site）は出さない
     supabase.from('site_attachments').select('id, site_id, name').eq('account_id', accountId).eq('kind', 'schedule').order('created_at'),
     supabase.from('site_category_hours').select('site_id, default_start_time, default_end_time').eq('account_id', accountId),
   ])
-  sites.value = (data ?? []).map((s: any) => ({
+  const today = todayStr()
+  sitesAll.value = (data ?? []).filter((s: any) => processGanttVisibility(s, today) !== 'hidden').map((s: any) => ({
     id: s.id, name: s.name, contractor_name: s.contractors?.name ?? null,
+    status: s.status, optional: processGanttVisibility(s, today) === 'optional',
     location: s.location ?? null, period_start: s.period_start ?? null, period_end: s.period_end ?? null,
     responsible_name: (Array.isArray(s.responsible) ? s.responsible[0]?.name : s.responsible?.name) ?? null,
     default_start_time: s.default_start_time ?? null, default_end_time: s.default_end_time ?? null,
@@ -96,7 +109,7 @@ async function loadSites() {
   // 「夜」マーク: 現場の定時 or 現場×区分の定時が日跨ぎ（開始>終了）なら夜間帯の現場（2026-09-10「日勤夜勤が区別して見える程度」）
   const night = new Set<string>()
   const isNight = (st: string | null | undefined, en: string | null | undefined) => !!st && !!en && String(st).slice(0, 5) > String(en).slice(0, 5)
-  for (const s of sites.value) if (isNight(s.default_start_time, s.default_end_time)) night.add(s.id)
+  for (const s of sitesAll.value) if (isNight(s.default_start_time, s.default_end_time)) night.add(s.id)
   for (const c of (cat ?? []) as any[]) if (isNight(c.default_start_time, c.default_end_time)) night.add(c.site_id)
   nightSiteIds.value = night
 }
@@ -186,6 +199,11 @@ onMounted(loadSites)
 .mcal-count { margin-left: 8px; font-size: 11px; font-weight: 500; color: #64748b; background: #e2e8f0; border-radius: 10px; padding: 0 6px; }
 .mcal-region-fill { flex: 0 0 auto; }
 .m-row { display: flex; border-bottom: 1px solid #f1f5f9; min-height: 44px; }
+.m-row.optional { opacity: .6; }
+.m-status { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; margin-left: 6px; vertical-align: middle; }
+.m-status.st-estimating { background: #fef3c7; color: #92400e; }
+.m-status.st-completed { background: #e5e7eb; color: #374151; }
+.other-toggle { display: flex; align-items: center; gap: 6px; margin: 0 0 10px; font-size: 13px; color: #64748b; }
 .m-label { flex: 0 0 var(--mlabel-w); position: sticky; left: 0; z-index: 2; background: #fff; padding: 6px 12px; border-right: 1px solid #e2e8f0; }
 .m-site { font-size: 13px; font-weight: 700; color: #1e293b; }
 .m-night { display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 700; color: #fff; background: #1E88E5; border-radius: 4px; padding: 1px 5px; vertical-align: 1px; }

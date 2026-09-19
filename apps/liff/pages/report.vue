@@ -293,7 +293,7 @@
                    経費の領収書を後から付ける運用がまさにこれで詰まる。
                    ★新規入力では出ない（そこでは siteName が空なので条件が偽）。
                    「終わった現場をプルダウンから消す」という無効化の目的は損なわない。 -->
-              <option v-if="isRetiredOption(site.siteName, master.siteNames.value)"
+              <option v-if="isRetiredOption(site.siteName, showOtherSites ? [...master.siteNames.value, ...otherStatusSiteNames] : master.siteNames.value)"
                       :value="site.siteName" :data-testid="`retired-site-${si}`">
                 {{ $t('report.retiredOption', { name: site.siteName }) }}
               </option>
@@ -322,9 +322,16 @@
               <optgroup v-if="master.facilitySiteNames.value.length" :label="$t('report.siteGroupFacility')" data-testid="site-group-facility">
                 <option v-for="name in master.facilitySiteNames.value" :key="name" :value="name">{{ name }}</option>
               </optgroup>
+              <!-- 見積中（現調）・完了（過去日報の直し）の現場は「他の現場を表示」を入れた時だけ（2026-09-19 A-2・表示マトリクス #12） -->
+              <optgroup v-if="showOtherSites && otherStatusSiteNames.length" :label="$t('report.siteGroupOtherStatus')" data-testid="site-group-other-status">
+                <option v-for="name in otherStatusSiteNames" :key="`other-${name}`" :value="name">{{ name }}</option>
+              </optgroup>
               <!-- 現場の新規作成は権限者(admin/office/site_manager)のみ。職人には選択肢自体を出さない -->
               <option v-if="canCreateSite" value="__other__">{{ $t('report.addNewSite') }}</option>
             </select>
+            <label v-if="otherStatusSiteNames.length" class="other-sites-toggle" :data-testid="`show-other-sites-${si}`">
+              <input v-model="showOtherSites" type="checkbox" /> {{ $t('report.showOtherSites') }}
+            </label>
             <div v-if="site.siteName === '__unset__'" class="unset-hint">
               <HintIcon :text="$t('report.siteUnsetNote')" :label="$t('report.siteUnset')" />
             </div>
@@ -1100,6 +1107,10 @@ async function loadRecentSites(): Promise<void> {
     console.error('[report] 最近の現場の取得に失敗:', e)   // 出なくても従来の並びで選べる
   }
 }
+
+// 「見積中・終了した現場も表示」（2026-09-19 A-2）。既定の候補は受注・着工だけ（表示マトリクス #12）
+const showOtherSites = ref(false)
+const otherStatusSiteNames = computed(() => master.optionalSiteNamesFor('report_site_picker'))
 
 function groupedSiteNames(contractorName?: string): { linked: string[]; others: string[] } {
   // '__unset__' という名前の現場行は「現場未設定」用の特殊値で、専用optionを別途出すため除外
@@ -3916,6 +3927,7 @@ html, body {
 .expense-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .mt6  { margin-top: 6px; }
 .unset-hint { margin-top: 6px; }
+.other-sites-toggle { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; color: #64748b; }
 /* 元請けに紐づく現場が無い時の案内（2026-09-04）。警告色にはしない＝入力を止める話ではないため */
 .no-linked-note {
   margin: 6px 0 0; padding: 8px 10px; border-radius: 8px;

@@ -93,10 +93,11 @@
         <li v-if="canViewManagementPages"><RouterLink to="/work-categories" class="nav-link"><span class="material-symbols-rounded nav-icon">category</span>作業区分</RouterLink></li>
         <li v-if="canViewContractors"><RouterLink to="/contractors" class="nav-link"><span class="material-symbols-rounded nav-icon">apartment</span>元請け業者</RouterLink></li>
         <li><RouterLink to="/subcontractors" class="nav-link"><span class="material-symbols-rounded nav-icon">handshake</span>協力業者</RouterLink></li>
-        <li v-if="canViewManagementPages"><RouterLink to="/vehicles" class="nav-link"><span class="material-symbols-rounded nav-icon">directions_car</span>車両</RouterLink></li>
+        <!-- 車両・道具は「設定 › 使う機能」でテナント単位に開閉（2026-09-19 B-0） -->
+        <li v-if="canViewManagementPages && isFeatureEnabled('vehicles')"><RouterLink to="/vehicles" class="nav-link"><span class="material-symbols-rounded nav-icon">directions_car</span>車両</RouterLink></li>
         <li v-if="canViewManagementPages"><RouterLink to="/assets" class="nav-link"><span class="material-symbols-rounded nav-icon">inventory_2</span>物品マスタ</RouterLink></li>
         <li v-if="canViewManagementPages"><RouterLink to="/inventory" class="nav-link"><span class="material-symbols-rounded nav-icon">warehouse</span>在庫管理</RouterLink></li>
-        <li><RouterLink to="/tools" class="nav-link"><span class="material-symbols-rounded nav-icon">construction</span>道具管理</RouterLink></li>
+        <li v-if="isFeatureEnabled('tools')"><RouterLink to="/tools" class="nav-link"><span class="material-symbols-rounded nav-icon">construction</span>道具管理</RouterLink></li>
         <li v-if="canViewEstimates"><RouterLink to="/estimate-masters" class="nav-link"><span class="material-symbols-rounded nav-icon">price_change</span>見積マスタ・単価表</RouterLink></li>
         <li v-if="canViewEstimates"><RouterLink to="/estimate-excel" class="nav-link"><span class="material-symbols-rounded nav-icon">table_view</span>見積Excel連携<span class="nav-beta">β</span></RouterLink></li>
 
@@ -144,7 +145,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { currentUser, currentRole, currentWorkerName, signOut, isAdminAllowed, roleResolved, roleLabel, canViewManagementPages, canViewContractors, canManageAuth } from './lib/auth'
-import { canViewEstimates } from './lib/features'
+import { canViewEstimates, isFeatureEnabled } from './lib/features'
 import { liffAppUrl } from './lib/links'
 import { getAccountName } from './lib/account'
 import { editReviewCount, siteUnsetCount, overtimePendingCount, pendingGrantCount, poAcceptedPendingCount, punchCorrectionCount, refreshNavBadges } from './lib/navBadges'

@@ -1321,6 +1321,7 @@ import { logFeatureUsage } from '../lib/usageLog'
 import { openDoc, resolveDocUrl } from '../lib/docUrl'
 import EstimateMasters from './estimate-masters.vue'
 import WorkItemImport from '../components/WorkItemImport.vue'
+import { siteStatusesForScreen } from '../lib/site-status.gen'
 
 const BUCKET = 'expense-receipts'        // 印影など既存公開物の表示用（後方互換）
 const PDF_BUCKET = 'admin-docs'          // 新規の見積/発注PDFは非公開バケット（署名URL配信）
@@ -2778,6 +2779,7 @@ async function promote() {
       if (!name) { promoteErr.value = '現場名を入力してください'; return }
       const { data, error } = await supabase.from('sites').insert({
         account_id: accountId, name, contractor_id: currentContractorId.value || null, location: doc.value.construction_location || null,
+        status: 'ordered',   // 見積からの昇華＝受注確定（2026-09-19 A-1）
       }).select('id, name').single()
       if (error) { promoteErr.value = /duplicate|unique/i.test(error.message) ? `現場「${name}」は既にあります（「既存の現場に紐付け」を選んでください）` : error.message; return }
       siteId = (data as any).id
@@ -3184,7 +3186,7 @@ async function loadContractors() {
 }
 // 現場一覧（受注時の紐付け先・現場名表示用）
 async function loadSites() {
-  const { data } = await supabase.from('sites').select('id, name, name_kana').eq('account_id', accountId).eq('active', true).order('name_kana', { nullsFirst: false }).order('name')
+  const { data } = await supabase.from('sites').select('id, name, name_kana').eq('account_id', accountId).in('status', siteStatusesForScreen('estimate_site_picker')).order('name_kana', { nullsFirst: false }).order('name')   // 見積中・受注・着工（2026-09-19 A-2 #8）
   sites.value = (data ?? []) as Site[]
 }
 // ④ 自社情報（settings）を読む

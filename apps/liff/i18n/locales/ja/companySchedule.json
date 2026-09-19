@@ -7,5 +7,6 @@
   "undecided": "未定",
   "noPeriod": "工期未設定",
   "noPeriodGroup": "工期未定",
-  "openFailed": "工程表を開けませんでした"
+  "openFailed": "工程表を開けませんでした",
+  "showOther": "見積中・終了した現場も表示"
 }

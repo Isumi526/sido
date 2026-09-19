@@ -4,6 +4,8 @@
 //  優先順: Supabase → GAS → フォールバック（空）
 // ============================================================
 import type { MasterData } from '~/types'
+import { siteStatusesForScreen, SITE_STATUS_DEFAULT_LIFF } from './site-status.gen'
+import type { SiteScreenKey, SiteStatus } from './site-status.gen'
 
 const FALLBACK: MasterData = {
   sites:          [],
@@ -108,8 +110,10 @@ export const useMaster = () => {
     const siteBreaks: Record<string, { start: string; minutes: number }[]> = {}   // 現場名 → 既定休憩[{start,minutes}]。設定ある現場のみ収録。
     const siteDistances: Record<string, number> = {}   // 現場名 → 会社からの往復km（設定ある現場のみ収録・日報の交通経費の既定値・2026-09-03）
     const siteKinds: Record<string, string> = {}       // 現場名 → 区分（site/office/factory・2026-09-13）。オフィス・工場は日報の現場プルダウンで末尾グループ
+    const siteStatuses: Record<string, string> = {}    // 現場名 → ステータス（2026-09-19）。EF は失注以外を返すので画面側で絞る
     for (const site of (r.sites ?? []) as any[]) {
       if (site.kind && site.kind !== 'site') siteKinds[site.name] = site.kind
+      siteStatuses[site.name] = site.status ?? SITE_STATUS_DEFAULT_LIFF
       if (site.contractor_id && contractorById[site.contractor_id]) siteContractors[site.name] = contractorById[site.contractor_id]
       siteIds[site.name] = site.id
       siteNameById[site.id] = site.name
@@ -179,6 +183,7 @@ export const useMaster = () => {
       siteBreaks,
       siteDistances,
       siteKinds,
+      siteStatuses,
       workCategories,
       categoryHours,
       etcCards:       (r.etcCards ?? []) as string[],
@@ -221,8 +226,8 @@ export const useMaster = () => {
     const id = (res?.id as string | undefined) ?? undefined
     const nextIds = id ? { ...(master.value.siteIds ?? {}), [nm]: id } : master.value.siteIds
     if (!master.value.sites.includes(nm)) {
-      // 読み仮名は未知のため末尾に追加（並びは次回fetchでname_kana順に再構成される）
-      master.value = { ...master.value, sites: [...master.value.sites, nm], siteIds: nextIds }
+      // 読み仮名は未知のため末尾に追加（並びは次回fetchでname_kana順に再構成される）。LIFFで作る現場は着工
+      master.value = { ...master.value, sites: [...master.value.sites, nm], siteIds: nextIds, siteStatuses: { ...(master.value.siteStatuses ?? {}), [nm]: SITE_STATUS_DEFAULT_LIFF } }
       saveCache(master.value)
     } else if (nextIds !== master.value.siteIds) {
       master.value = { ...master.value, siteIds: nextIds }
@@ -274,6 +279,41 @@ export const useMaster = () => {
     return filtered
   }
 
+  // ── 現場ステータスで絞る（2026-09-19 A-2）──
+  //  master.sites は失注以外の全現場（見積中・受注・着工・完了）。どの画面に何を出すかは
+  //  shared/site-status.ts の表（画面キー）で引く。オフィス・工場（kind≠site）は常に出す。
+  /** 画面キーに応じた現場名（並びは master.sites のまま＝五十音） */
+  function siteNamesFor(screen: SiteScreenKey, showOptional = false): string[] {
+    const set = new Set<string>(siteStatusesForScreen(screen, showOptional))
+    const st = master.value.siteStatuses ?? {}
+    const kinds = master.value.siteKinds ?? {}
+    return master.value.sites.filter((n) => !!kinds[n] || set.has((st[n] ?? SITE_STATUS_DEFAULT_LIFF) as SiteStatus))
+  }
+  /** 「他の現場を表示」で追加で出す現場名（既定に無いものだけ） */
+  function optionalSiteNamesFor(screen: SiteScreenKey): string[] {
+    const base = new Set(siteNamesFor(screen, false))
+    return siteNamesFor(screen, true).filter((n) => !base.has(n))
+  }
+  // 現場プルダウンの2階層表示用: 元請け(五十音順)ごとに現場をグループ化。
+  // 紐付けなしの現場は最後のグループ(contractorName=null)にまとめる。空グループは含めない。
+  // 注: グループ内の現場は再ソートしない。sites が既に name_kana昇順(nullは最後)→name昇順で
+  // 取得済みのため、filter()はその順序を保持する。localeCompare(name) 等で再ソートすると
+  // 漢字の読み仮名を無視した並びになり、かえって五十音順が崩れる(再ソートしないことが正)。
+  function siteGroupsFor(screen: SiteScreenKey, showOptional = false): { contractorName: string | null; sites: string[] }[] {
+    const kinds = master.value.siteKinds ?? {}
+    const sites = siteNamesFor(screen, showOptional).filter((n) => n !== '__unset__' && !kinds[n])
+    const map = master.value.siteContractors ?? {}
+    const orderedContractors = (master.value.contractors ?? []).slice().sort((a, b) => a.localeCompare(b, 'ja'))
+    const groups: { contractorName: string | null; sites: string[] }[] = []
+    for (const c of orderedContractors) {
+      const linked = sites.filter((n) => map[n] === c)
+      if (linked.length) groups.push({ contractorName: c, sites: linked })
+    }
+    const unlinked = sites.filter((n) => !map[n])
+    if (unlinked.length) groups.push({ contractorName: null, sites: unlinked })
+    return groups
+  }
+
   return {
     fetchContractors,
     master:          readonly(master),
@@ -285,8 +325,13 @@ export const useMaster = () => {
     subNamesForSite,
     siteIds:             computed(() => master.value.siteIds ?? {}),
     siteSubcontractors:  computed(() => master.value.siteSubcontractors ?? {}),
+    siteStatuses:        computed<Record<string, string>>(() => master.value.siteStatuses ?? {}),
+    siteNamesFor,
     // sites は Supabase 側で name_kana 昇順(null最後)→name に整列済みのため、その順序を保持する（50音順）
-    siteNames:           computed(() => master.value.sites.slice()),
+    // ★siteNames＝日報の現場選択に既定で出す現場（受注・着工＋オフィス/工場）。従来の「有効な現場」に相当
+    siteNames:           computed(() => siteNamesFor('report_site_picker')),
+    /** 「他の現場を表示」で追加で出す現場名（見積中・完了）。既定に無いものだけ */
+    optionalSiteNamesFor,
     workCategories:      computed(() => master.value.workCategories ?? []),
     categoryHours:       computed(() => master.value.categoryHours ?? {}),
     // 物品マスタ（ETCカード）の名前一覧。空なら report 側は従来の固定カードにフォールバックする
@@ -299,29 +344,11 @@ export const useMaster = () => {
     //  localeCompare(name,'ja') で再ソートすると漢字が読み無視で並び、かつ
     //  運用側で決めた sort_order を無視することになる（2026-08-17 修正）。
     contractorNames:     computed(() => (master.value.contractors ?? []).slice()),
-    // 現場プルダウンの2階層表示用: 元請け(五十音順)ごとに現場をグループ化。
-    // 紐付けなしの現場は最後のグループ(contractorName=null)にまとめる。空グループは含めない。
-    // 注: グループ内の現場は再ソートしない。sites(L108/66行目のfetchクエリ)が既に
-    // name_kana昇順(nullは最後)→name昇順で取得済みのため、filter()はその順序を保持する。
-    // ここで localeCompare(name) 等により再ソートすると、name_kanaを持たないため
-    // 漢字の読み仮名を無視した並びになり、かえって五十音順が崩れる(再ソートしないことが正)。
     siteKinds:           computed<Record<string, string>>(() => master.value.siteKinds ?? {}),
     // オフィス・工場（kind≠site）。日報の現場プルダウンでは元請けグループの後ろに「オフィス・工場」として出す
     facilitySiteNames:   computed<string[]>(() => master.value.sites.filter((n) => n !== '__unset__' && !!(master.value.siteKinds ?? {})[n])),
-    siteGroupsByContractor: computed<{ contractorName: string | null; sites: string[] }[]>(() => {
-      const kinds = master.value.siteKinds ?? {}
-      const sites = master.value.sites.filter((n) => n !== '__unset__' && !kinds[n])
-      const map = master.value.siteContractors ?? {}
-      const orderedContractors = (master.value.contractors ?? []).slice().sort((a, b) => a.localeCompare(b, 'ja'))
-      const groups: { contractorName: string | null; sites: string[] }[] = []
-      for (const c of orderedContractors) {
-        const linked = sites.filter((n) => map[n] === c)
-        if (linked.length) groups.push({ contractorName: c, sites: linked })
-      }
-      const unlinked = sites.filter((n) => !map[n])
-      if (unlinked.length) groups.push({ contractorName: null, sites: unlinked })
-      return groups
-    }),
+    siteGroupsByContractor: computed<{ contractorName: string | null; sites: string[] }[]>(() => siteGroupsFor('report_site_picker')),
+    siteGroupsFor,
     // ★作業員は EF が name_kana 昇順(null最後)→name で取得済み。その順序を保持する。
     //  ここで localeCompare(name,'ja') で再ソートしてはいけない。ICU の ja 照合は漢字を
     //  部首・画数で並べるので読みを無視する＝「一之瀬」が「い」の位置に来ない。

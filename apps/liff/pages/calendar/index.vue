@@ -12,7 +12,10 @@
     <div class="cal-tabs">
       <button type="button" class="cal-tab" :class="{ active: activeTab === 'shared' }" @click="activeTab = 'shared'">{{ $t('calendar.tabShared') }}</button>
       <button type="button" class="cal-tab" :class="{ active: activeTab === 'personal' }" @click="activeTab = 'personal'">{{ $t('calendar.tabPersonal') }}</button>
+      <!-- 車両・道具…（リソース予定B-1・2026-09-19）。「使う機能」でONの種類だけ出す -->
+      <button v-for="rt in resourceTabs" :key="rt.key" type="button" class="cal-tab" :class="{ active: activeTab === rt.key }" :data-testid="`calendar-tab-${rt.key}`" @click="activeTab = rt.key">{{ isBuiltinResourceType(rt.key) ? $t(`resource.tab${rt.key.charAt(0).toUpperCase()}${rt.key.slice(1)}`) : rt.name }}</button>
     </div>
+    <ResourceCalendar v-if="isResourceTab(activeTab)" :key="activeTab" :type="activeTab" :def="resourceTabs.find(r => r.key === activeTab)" />
 
     <!-- 月ナビ（ヘッダー：年月＋グループ絞り込み） -->
     <div v-if="activeTab === 'shared'" class="month-nav">
@@ -270,7 +273,8 @@
                 <optgroup v-if="recentSiteOptions.length" :label="$t('calendar.siteGroupRecent')" data-testid="site-group-recent">
                   <option v-for="s in recentSiteOptions" :key="`recent-${s}`" :value="s">{{ s }}</option>
                 </optgroup>
-                <template v-for="grp in master.siteGroupsByContractor.value" :key="grp.contractorName ?? '__unlinked__'">
+                <!-- 予定の現場候補＝見積中（現調）・受注・着工（2026-09-19 A-2・表示マトリクス #14） -->
+                <template v-for="grp in master.siteGroupsFor('schedule_site_picker')" :key="grp.contractorName ?? '__unlinked__'">
                   <optgroup :label="grp.contractorName ?? $t('calendar.siteGroupUnlinked')">
                     <option v-for="s in grp.sites" :key="s" :value="s">{{ s }}</option>
                   </optgroup>
@@ -492,6 +496,9 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSchedules, type Schedule, type ScheduleForm } from '~/composables/useSchedules'
 import { findSimilarSiteNames } from '~/utils/site-similarity.gen'
+import { isBuiltinResourceType } from '~/composables/resource-core.gen'
+import type { ResourceTypeDef } from '~/composables/resource-core.gen'
+import { fetchResourceTypes } from '~/composables/useResourceReservations'
 import {
   shiftMonth, genMonthDates, isWeekend, weekdayIndex, dateCellClass, fmtDateTime,
   cellSchedules as coreCellSchedules, chipStyle as coreChipStyle, buildScheduleDiff, birthdayDatesByWorker,
@@ -543,7 +550,7 @@ function rememberRecentSite(name: string) {
 
 /** 「最近使った」に出す分。現場マスタから消えた/無効化された名前は出さない */
 const recentSiteOptions = computed(() =>
-  recentSiteNames.value.filter(n => master.siteNames.value.includes(n)))
+  recentSiteNames.value.filter(n => master.siteNamesFor('schedule_site_picker').includes(n)))
 
 /**
  * その台帳（現場 or 現場なし）で選べる作業区分。
@@ -933,7 +940,11 @@ function isBirthday(date: string, workerId: string): boolean {
 // ──────────────────── 個人カレンダー（週間／月間・共有グリッドと別タブ） ────────────────────
 // 既存の共有ビュー用データ(schedules.schedules)をそのまま流用し、自分の予定だけに絞る
 // （is_public問わず＝本人分は既存fetchSchedulesの可視性ルールで既に取得済み）。
-const activeTab = ref<'shared' | 'personal'>('shared')
+const activeTab = ref<string>('shared')
+// ── 車両・道具・会議室・独自の種類のタブ（B-1/B-3）。種類は EF が判定（使う機能でON／enabled）。
+//  ?tab=vehicle で直接開ける（お知らせのリンク先）──
+const resourceTabs = ref<ResourceTypeDef[]>([])
+const isResourceTab = (t: string): boolean => resourceTabs.value.some((r) => r.key === t)
 const personalViewMode = ref<'week' | 'month'>('week')
 const personalAnchor = ref(new Date())   // 週間=表示開始日／月間=表示月の基準日
 
@@ -1365,6 +1376,12 @@ onMounted(async () => {
   loading.value = true
   initCalendar()
   loadRecentSites()   // 端末ローカル・同期処理なので await 不要
+  void fetchResourceTypes().then((types) => {
+    resourceTabs.value = types
+    // ?tab=vehicle（お知らせのリンク）で来た時は種類が出せることを確認してから切り替える
+    const q = String(useRoute().query.tab ?? '')
+    if (isResourceTab(q)) activeTab.value = q
+  })
   try {
     await master.fetch()
     await schedules.resolveMyWorkerId()
@@ -1447,9 +1464,9 @@ onMounted(async () => {
 @keyframes extend-spin { to { transform: rotate(360deg); } }
 
 /* ── 共有／個人タブ ── */
-.cal-tabs { display: flex; gap: 4px; padding: 8px 12px 0; background: #fff; flex-shrink: 0; }
-.cal-tab {
-  flex: 1; background: #f5f5f5; border: 1px solid #E0E0E0; color: #666;
+.cal-tabs { display: flex; gap: 4px; padding: 8px 12px 0; background: #fff; flex-shrink: 0; overflow-x: auto; }   /* 車両・道具・会議室・独自の種類でタブが増えても横スクロール（B-3） */
+  .cal-tab {
+  white-space: nowrap; flex: 1 0 auto; min-width: 64px; background: #f5f5f5; border: 1px solid #E0E0E0; color: #666;
   border-radius: 8px 8px 0 0; padding: 8px 4px; font-size: 13px; font-weight: 700; cursor: pointer;
 }
 .cal-tab.active { background: #fff; border-bottom-color: #fff; color: #06C755; }

@@ -82,6 +82,7 @@ test('liff-process-summary のレスポンスに金額/顧客名/住所等の機
   const site = body.sites.find((s: any) => s.id === siteId)
   expect(site).toBeTruthy()
   // 住所(location)は地方判定にだけ使い返さない。金額・顧客名・責任者名も返さない
-  expect(Object.keys(site).sort()).toEqual(['id', 'name', 'night', 'period_end', 'period_start', 'region_key', 'region_label', 'region_order', 'schedule_attachments'])
+  // status / optional は現場ステータス（2026-09-19 A-2）。機微情報ではない
+  expect(Object.keys(site).sort()).toEqual(['id', 'name', 'night', 'optional', 'period_end', 'period_start', 'region_key', 'region_label', 'region_order', 'schedule_attachments', 'status'])
   expect(site.schedule_attachments.map((a: any) => a.id)).toContain(scheduleAttId)
 })

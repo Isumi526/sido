@@ -2,5 +2,6 @@
   "title": "Chats",
   "empty": "No sites",
   "noMessages": "No messages yet",
-  "attachment": "Attachment"
+  "attachment": "Attachment",
+  "finishedToggle": "Show chats of finished sites"
 }

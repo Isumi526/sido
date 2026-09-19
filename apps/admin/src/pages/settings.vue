@@ -54,30 +54,60 @@
     </div>
   </div>
 
-  <!-- 見積もり機能の公開スイッチ（2026-08-09）。
-       非見積の変更を先に本番へ出すため、見積もりの入口を既定OFFで隠している。
-       8/19 の通しテストでここをONにする＝再デプロイ不要。 -->
-  <div class="reminder-box">
-    <div class="reminder-title">見積もり機能</div>
+  <!-- 使う機能（2026-09-19 B-0）: 機能のインストール／アンインストール。テナント単位で ON/OFF。
+       OFF はメニュー・タブ・作業員アプリの導線を隠すだけでデータは消えない。オーナーだけが切り替えられる。
+       見積は 2026-08-09 の公開スイッチ（settings.estimate_feature_enabled）をそのままここに載せた。 -->
+  <div class="reminder-box" data-testid="features-box">
+    <div class="reminder-title">使う機能</div>
     <div class="reminder-config">
-      <div class="config-row">
-        <span class="config-label">見積・発注メニューを表示</span>
+      <div v-for="f in FEATURES" :key="f.key" class="config-row feature-row" :data-testid="`feature-row-${f.key}`">
+        <div class="feature-main">
+          <span class="config-label">{{ f.label }}</span>
+          <div class="reminder-desc feature-desc">{{ f.description }}</div>
+        </div>
         <button
           class="toggle"
-          :class="{ on: estimateFeatureEnabled }"
-          :disabled="estimateFeatureSaving"
-          data-testid="toggle-estimate-feature"
-          @click="setEstimateFeatureEnabled(!estimateFeatureEnabled)"
+          :class="{ on: features[f.key] }"
+          :disabled="featureSaving === f.key || !canManageAuth"
+          :title="canManageAuth ? '' : 'オーナーだけが切り替えられます'"
+          :data-testid="f.key === 'estimate' ? 'toggle-estimate-feature' : `toggle-feature-${f.key}`"
+          @click="setFeatureEnabled(f.key, !features[f.key])"
         >
           <span class="toggle-knob" />
-          <span class="toggle-text">{{ estimateFeatureEnabled ? 'ON' : 'OFF' }}</span>
+          <span class="toggle-text">{{ features[f.key] ? 'ON' : 'OFF' }}</span>
         </button>
       </div>
       <div class="reminder-desc">
-        ONにすると「見積・発注」「見積マスタ・単価表」のメニューと、現場まわりの見積書の表示が有効になります。
-        OFFの間は見積もり関連の画面に入れません（データは消えません）。切り替えたあとは画面を再読み込みしてください。
+        OFFにするとメニュー・予定管理のタブ・作業員アプリの導線が隠れます（データは消えません。ONに戻せば元どおり）。
+        切り替えたあとは各画面を再読み込みしてください。{{ canManageAuth ? '' : '切り替えはオーナーのみ行えます。' }}
       </div>
-      <p v-if="estimateFeatureError" class="error" data-testid="estimate-feature-error">{{ estimateFeatureError }}</p>
+      <p v-if="featureError" class="error" data-testid="estimate-feature-error">{{ featureError }}</p>
+    </div>
+  </div>
+
+  <!-- 予定管理の独自の種類（B-3・2026-09-19）: 重機・プロジェクター・駐車場など、車両・道具・会議室以外の予約対象。
+       追加すると予定管理（管理画面・作業員アプリ）にタブが増え、台帳（名前・メモ）はそのタブの「○○を管理」から。 -->
+  <div class="reminder-box" data-testid="custom-types-box">
+    <div class="reminder-title">予定管理の独自の種類</div>
+    <div class="reminder-config">
+      <div class="reminder-desc">車両・道具・会議室のほかに予約したいもの（例：重機、プロジェクター、駐車場）を追加できます。追加すると予定管理にタブが増えます。対象（1台ずつ）はそのタブの「○○を管理」から登録します。</div>
+      <div v-for="t in customTypes" :key="t.id" class="config-row feature-row" :data-testid="`custom-type-row-${t.id}`">
+        <div class="feature-main">
+          <input v-model="t.name" class="input-inline" :disabled="!canManageAuth" @change="saveCustomType(t)" />
+          <div class="reminder-desc feature-desc">
+            <label class="chk"><input v-model="t.block_overlap" type="checkbox" :disabled="!canManageAuth" @change="saveCustomType(t)" /> 重なる予約は保存不可（会議室型）</label>
+            <label class="chk"><input v-model="t.require_time" type="checkbox" :disabled="!canManageAuth" @change="saveCustomType(t)" /> 時間帯を必須にする</label>
+          </div>
+        </div>
+        <button class="toggle" :class="{ on: t.enabled }" :disabled="!canManageAuth" :data-testid="`toggle-custom-type-${t.id}`" @click="t.enabled = !t.enabled; saveCustomType(t)">
+          <span class="toggle-knob" /><span class="toggle-text">{{ t.enabled ? 'ON' : 'OFF' }}</span>
+        </button>
+      </div>
+      <div v-if="canManageAuth" class="config-row" style="margin-top:8px">
+        <input v-model="newCustomTypeName" class="input-inline" placeholder="種類の名前（例：重機）" data-testid="custom-type-new-name" />
+        <button class="btn-small" :disabled="!newCustomTypeName.trim() || customTypeSaving" data-testid="custom-type-add" @click="addCustomType">追加</button>
+      </div>
+      <p v-if="customTypeError" class="error" data-testid="custom-type-error">{{ customTypeError }}</p>
     </div>
   </div>
 
@@ -229,7 +259,10 @@ import { ref, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId, getAccountSlug } from '../lib/account'
 import { HIDE_LINE_SECTIONS } from '../lib/featureFlags'
-import { FEATURE_KEY_ESTIMATE, estimateEnabled } from '../lib/features'
+import { FEATURES, features, loadFeatures, setFeatureLocal } from '../lib/features'
+import type { FeatureKey } from '../lib/features'
+import { canManageAuth } from '../lib/auth'
+import { logOperation } from '../lib/operationLog'
 
 // 脱LINE段階移行で非表示にする汎用設定キー（LINE固有）。データは保持・行のみ隠す。
 const LINE_SETTING_KEYS = new Set(['notify_group_id'])
@@ -268,32 +301,61 @@ function setReportNotifyEnabled(val: boolean) {
     .finally(() => { reportNotifySaving.value = false })
 }
 
-// ── 見積もり機能の公開スイッチ ────────────────────────────
-//  8/19 の通しテストまで見積もりの入口を隠すためのフラグ（lib/features.ts が読む）。
-//  ここをONにすると再デプロイなしでメニュー・ルート・現場まわりの見積表示が開く。
-const estimateFeatureEnabled = ref(false)
-const estimateFeatureSaving  = ref(false)
-const estimateFeatureError   = ref('')
+// ── 予定管理の独自の種類（B-3）。EF(resource-reservations) の types / type-save ──
+type CustomType = { id: string; key: string; name: string; block_overlap: boolean; require_time: boolean; enabled: boolean }
+const customTypes = ref<CustomType[]>([])
+const newCustomTypeName = ref('')
+const customTypeSaving = ref(false)
+const customTypeError = ref('')
+async function callResourceEf(payload: Record<string, unknown>): Promise<any> {
+  const { data, error } = await supabase.functions.invoke('resource-reservations', { body: payload })
+  if (error) { const ctx = (error as any)?.context; if (ctx?.json) { try { return await ctx.json() } catch { /* 本文なし */ } } return { ok: false, error: 'network' } }
+  return data
+}
+async function loadCustomTypes() {
+  const r = await callResourceEf({ action: 'types' })
+  customTypes.value = r?.ok ? (r.customs ?? []) : []
+}
+async function addCustomType() {
+  const name = newCustomTypeName.value.trim(); if (!name) return
+  customTypeSaving.value = true; customTypeError.value = ''
+  const r = await callResourceEf({ action: 'type-save', name })
+  customTypeSaving.value = false
+  if (!r?.ok) { customTypeError.value = `追加に失敗しました（${r?.error ?? 'network'}）`; return }
+  newCustomTypeName.value = ''
+  await logOperation(`予定管理の種類「${name}」を追加`, { targetType: 'resource_types', targetId: r.type?.id ?? null, summary: name })
+  await loadCustomTypes()
+}
+async function saveCustomType(t: CustomType) {
+  customTypeError.value = ''
+  const r = await callResourceEf({ action: 'type-save', id: t.id, name: t.name.trim() || '（名称未設定）', blockOverlap: !!t.block_overlap, requireTime: !!t.require_time, enabled: !!t.enabled })
+  if (!r?.ok) { customTypeError.value = `保存に失敗しました（${r?.error ?? 'network'}）`; return }
+  await loadCustomTypes()
+}
 
+// ── 使う機能（2026-09-19 B-0・旧「見積もり機能の公開スイッチ」を一般化）────────────
 /** ★保存が成功してから表示を変える（楽観更新にしない）。
- *  他のトグルは先に見た目を変えてから保存しているが、このスイッチは 8/19 の解禁操作そのもので、
- *  「ONに見えるのに保存できていない」と大塚さんが見積もりに入れない。失敗は必ず画面に出す。 */
-async function setEstimateFeatureEnabled(val: boolean) {
-  estimateFeatureSaving.value = true
-  estimateFeatureError.value = ''
+ *  他のトグルは先に見た目を変えてから保存しているが、このスイッチは機能の解禁操作そのもので、
+ *  「ONに見えるのに保存できていない」と使えない。失敗は必ず画面に出す。 */
+const featureSaving = ref<FeatureKey | null>(null)
+const featureError  = ref('')
+async function setFeatureEnabled(key: FeatureKey, val: boolean) {
+  const def = FEATURES.find(f => f.key === key)!
+  featureSaving.value = key
+  featureError.value = ''
   try {
     const accountId = await getAccountId()
     const { error } = await supabase.from('settings').upsert(
-      { key: FEATURE_KEY_ESTIMATE, value: String(val), label: '見積もり機能の表示', account_id: accountId, updated_at: new Date().toISOString() },
+      { key: def.settingKey, value: String(val), label: `使う機能: ${def.label}`, account_id: accountId, updated_at: new Date().toISOString() },
       { onConflict: 'key,account_id' },
     )
     if (error) throw error
-    estimateFeatureEnabled.value = val
-    estimateEnabled.value = val   // 同じ画面のメニューにも即反映
+    setFeatureLocal(key, val)   // 同じ画面のメニューにも即反映
+    await logOperation(`機能「${def.label}」を${val ? 'ON' : 'OFF'}`, { targetType: 'settings', targetId: null, summary: def.settingKey })   // target_id は uuid 列なので key は summary に
   } catch (e: unknown) {
-    estimateFeatureError.value = `保存に失敗しました: ${(e as { message?: string })?.message ?? '不明なエラー'}`
+    featureError.value = `保存に失敗しました: ${(e as { message?: string })?.message ?? '不明なエラー'}`
   } finally {
-    estimateFeatureSaving.value = false
+    featureSaving.value = null
   }
 }
 
@@ -347,15 +409,15 @@ async function loadReminderConfig() {
   const accountId = await getAccountId()
   const { data } = await supabase.from('settings').select('key, value')
     .eq('account_id', accountId)
-    .in('key', ['reminder_enabled', 'reminder_time', 'notify_report_enabled', 'notify_punch_reminder_enabled', 'notify_approval_request_enabled', FEATURE_KEY_ESTIMATE])
+    .in('key', ['reminder_enabled', 'reminder_time', 'notify_report_enabled', 'notify_punch_reminder_enabled', 'notify_approval_request_enabled'])
   const m = Object.fromEntries((data ?? []).map(s => [s.key, s.value]))
   reminderEnabled.value     = (m['reminder_enabled'] ?? 'true') === 'true'
   reminderTime.value        = m['reminder_time'] ?? '08:00'
   reportNotifyEnabled.value = (m['notify_report_enabled'] ?? 'true') === 'true'
   punchReminderEnabled.value = m['notify_punch_reminder_enabled'] === 'true'   // 未設定＝OFF（EF と同じ既定）
   approvalNotifyEnabled.value = (m['notify_approval_request_enabled'] ?? 'true') === 'true'   // 未設定＝ON
-  // 見積もり機能は未設定＝OFF（fail-closed。lib/features.ts の既定と揃える）
-  estimateFeatureEnabled.value = m[FEATURE_KEY_ESTIMATE] === 'true'
+  await loadFeatures()   // 「使う機能」は lib/features.ts の読み直し（メニューと同じ値を見せる）
+  await loadCustomTypes()
 }
 
 async function upsertSetting(key: string, value: string, label: string) {
@@ -593,6 +655,15 @@ async function save(s: Setting) {
 .reminder-config { display: flex; flex-direction: column; gap: 12px; padding: 16px; background: #f9f9f9; border-radius: 8px; margin-bottom: 20px; }
 .config-row { display: flex; align-items: center; gap: 12px; }
 .config-label { font-size: 13px; color: #555; width: 120px; flex-shrink: 0; }
+.feature-row { align-items: flex-start; padding: 6px 0; border-bottom: 1px solid #f1f5f9; }
+.feature-row:last-of-type { border-bottom: none; }
+.feature-main { flex: 1; min-width: 0; }
+.feature-main .config-label { width: auto; font-weight: 700; color: #333; }
+.feature-desc { margin: 2px 0 0; }
+.input-inline { border: 1px solid #ddd; border-radius: 8px; padding: 7px 10px; font-size: 13px; min-width: 200px; }
+.chk { display: inline-flex; align-items: center; gap: 4px; margin-right: 12px; font-size: 12px; }
+.btn-small { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.btn-small:disabled { opacity: .5; cursor: default; }
 
 .toggle { display: flex; align-items: center; gap: 8px; background: #ddd; border: none; border-radius: 20px; padding: 4px 12px 4px 4px; cursor: pointer; transition: background .2s; width: 80px; }
 .toggle.on { background: #06C755; }
