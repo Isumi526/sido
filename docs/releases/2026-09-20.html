@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>本番リリース 2026-09-20</title>
+<style>
+  @page { size: A4; margin: 10mm 11mm 8mm; } * { box-sizing: border-box; }
+  body { font-family: "Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif; color: #1f2937; font-size: 9.3pt; line-height: 1.45; margin: 0; }
+  h1 { font-size: 16pt; margin: 0 0 1mm; color: #06C755; } .sub { font-size: 9pt; color: #374151; margin: 0 0 3mm; font-weight: 700; }
+  h2 { font-size: 10.5pt; margin: 3mm 0 1.5mm; padding: 1.2mm 3mm; background: #06C755; color: #fff; border-radius: 3px; }
+  ul { margin: 0 0 1.5mm; padding-left: 5mm; } li { margin-bottom: 0.8mm; }
+  .tag { display:inline-block; font-size:7.5pt; font-weight:700; padding:0.3mm 1.6mm; border-radius:2px; margin-right:1.5mm; vertical-align:1px; } .new { background:#dcfce7; color:#166534; } .chg { background:#dbeafe; color:#1e40af; }
+  .note { background:#f3f4f6; border-left:3px solid #9ca3af; padding:2mm 3mm; margin:2mm 0 0; font-size:8.8pt; } .note b { color:#111827; }
+  .st { display:inline-block; padding:0.1mm 1.4mm; border-radius:2px; font-weight:700; font-size:8pt; }
+  .est { background:#fef3c7; color:#92400e; } .ord { background:#dbeafe; color:#1e40af; } .prog { background:#dcfce7; color:#166534; } .done { background:#e5e7eb; color:#374151; } .lost { background:#fee2e2; color:#991b1b; }
+</style></head><body>
+<h1>本番リリース 2026-09-20</h1>
+<p class="sub">現場のステータスを5段階に／予定管理に「車両・道具・会議室」タブ／使う機能の設定（9/19 認識合わせ資料の内容を実装）</p>
+
+<h2><span class="tag chg">変更</span>現場のステータスが「有効／無効」から5段階になりました</h2>
+<ul>
+<li>現場ごとに <span class="st est">見積中</span> <span class="st ord">受注</span> <span class="st prog">着工</span> <span class="st done">完了</span> <span class="st lost">失注</span> を設定できます。管理画面「現場」の一覧（ステータス列のプルダウン）と現場詳細から変更。<b>複数選んで一括変更</b>もできます。</li>
+<li>今ある現場は <b>有効→着工、無効→完了</b> に移しました。見積中・受注・失注の現場は「現場」画面で直してください。</li>
+<li><b>完了にする時は終了日</b>（既定＝今日）、<b>失注にする時は理由</b>（任意）を聞きます。戻す操作もできます。工期の開始日／終了日を過ぎた現場には「着工にしますか？」「完了にしますか？」の目印が出ます（自動では変えません）。</li>
+<li><b>必須項目はステータスで変わります</b>：見積中は現場名だけで登録可。受注以降は住所・工期（開始）・責任者、完了は工期の終了日が必要です。</li>
+<li>一覧のタブは「進行中（見積中・受注・着工）／完了／失注／すべて」になりました。</li>
+</ul>
+
+<h2><span class="tag chg">変更</span>各画面に出る現場が、ステータスに応じて絞られます</h2>
+<ul>
+<li><b>日報の現場選択</b>（作業員アプリ）：受注・着工の現場だけ。見積中・完了の現場は「見積中・終了した現場も表示」で出せます（過去日報の直し・現地調査）。</li>
+<li><b>予定管理の現場候補</b>：見積中・受注・着工（現調の予定も入れられる）。<b>工程管理・会社予定</b>：受注・着工。切替で見積中（工期あり）・直近3か月に完了した現場。</li>
+<li><b>チャット一覧・現場情報一覧</b>：進行中の現場。完了は「終了した現場を表示」で。<b>協力業者請求</b>：着工・完了（完了は「（完了）」表記）。<b>現場未設定の紐付け</b>：受注・着工＋終了した現場。</li>
+<li>現場別集計・ダッシュボードなどの集計は、日報がある現場をステータスに関わらず含みます（数字は消えません）。</li>
+</ul>
+
+<h2><span class="tag new">機能追加</span>予定管理に「車両」「道具」「会議室」タブ（管理画面・作業員アプリ）</h2>
+<ul>
+<li>人の予定と同じ「日×対象」の表で、<b>誰が・どの現場で・いつ</b>使う／予約しているかを全員が見られます。セルをタップして予約（使う人・同乗者・現場・期間・時間帯・用途メモ）。列見出しに「空き／予約あり／使用中」。</li>
+<li>同じ対象・期間に別の予約があると<b>警告</b>。車両・道具は「重ねて保存」できます（同乗・引き継ぎ）。会議室は時間帯が必須で、重なる時間帯は保存できません。</li>
+<li>他の人の予約の変更・取消は管理者のみ。自分の予約に他の人が重ねた時・管理者が変更した時は<b>お知らせ</b>が届きます。</li>
+<li>道具は、QRの持出／返却（道具管理・第2段で提供予定）と連動して予約が自動で「使用中→終了」になり、列見出しに「持出中・誰・現場・N日目」が出ます。</li>
+</ul>
+
+<h2><span class="tag new">機能追加</span>設定 › 「使う機能」で、会社ごとに機能をON/OFF</h2>
+<ul>
+<li><b>見積・発注／車両管理／道具管理／会議室・部屋の予約</b> をオーナーが切り替えられます。OFFにするとメニュー・タブ・作業員アプリの導線が隠れるだけで、<b>データは消えません</b>。SEEDさんの初期値：車両ON・道具ON・会議室OFF。</li>
+<li>「予定管理の独自の種類」で、重機・プロジェクターなど<b>会社独自の予約対象</b>を追加できます（追加するとタブが増え、そのタブの「○○を管理」で対象を登録）。</li>
+</ul>
+
+<div class="note"><b>お願い：</b>現場マスタで「見積中」「受注」「失注」に当たる現場のステータスを直してください（一覧で複数選択→「ステータス一括変更」）。工程管理・日報の現場候補がその分すっきりします。</div>
+</body></html>
