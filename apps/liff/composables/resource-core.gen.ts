@@ -9,13 +9,33 @@
 //  ※ import を持たない自己完結ファイル。
 // ============================================================
 
-export type ResourceTypeKey = 'vehicle' | 'tool' | 'room'
+/** 組み込みの種類。会社独自の種類（B-3）は 'custom_…' のキーで resource_types 表から来る */
+export type BuiltinResourceTypeKey = 'vehicle' | 'tool' | 'room'
+export type ResourceTypeKey = BuiltinResourceTypeKey | string
 
-export const RESOURCE_TYPE_LABEL: Record<ResourceTypeKey, string> = { vehicle: '車両', tool: '道具', room: '会議室' }
+export const RESOURCE_TYPE_LABEL: Record<BuiltinResourceTypeKey, string> = { vehicle: '車両', tool: '道具', room: '会議室' }
 /** 種類 → 「使う機能」のキー */
-export const RESOURCE_TYPE_FEATURE: Record<ResourceTypeKey, 'vehicles' | 'tools' | 'rooms'> = { vehicle: 'vehicles', tool: 'tools', room: 'rooms' }
-/** 予定管理のタブに出す順（機能ONのものだけ出す） */
-export const RESOURCE_TYPE_ORDER: ResourceTypeKey[] = ['vehicle', 'tool', 'room']
+export const RESOURCE_TYPE_FEATURE: Record<BuiltinResourceTypeKey, 'vehicles' | 'tools' | 'rooms'> = { vehicle: 'vehicles', tool: 'tools', room: 'rooms' }
+/** 予定管理のタブに出す順（機能ONのものだけ出す）。独自の種類はこの後ろに sort_order 順 */
+export const RESOURCE_TYPE_ORDER: BuiltinResourceTypeKey[] = ['vehicle', 'tool', 'room']
+export const isBuiltinResourceType = (k: string): k is BuiltinResourceTypeKey => (RESOURCE_TYPE_ORDER as string[]).includes(k)
+
+/** 予定管理のタブ1つ分（組み込み＋独自を同じ形で扱う） */
+export type ResourceTypeDef = {
+  key: ResourceTypeKey
+  name: string
+  /** 台帳が resources 表（会議室・独自）か、既存マスタ（車両・道具）か */
+  generic: boolean
+  blockOverlap: boolean
+  requireTime: boolean
+}
+export const BUILTIN_TYPE_DEFS: Record<BuiltinResourceTypeKey, ResourceTypeDef> = {
+  vehicle: { key: 'vehicle', name: '車両', generic: false, blockOverlap: false, requireTime: false },
+  tool:    { key: 'tool',    name: '道具', generic: false, blockOverlap: false, requireTime: false },
+  room:    { key: 'room',    name: '会議室', generic: true, blockOverlap: true, requireTime: true },
+}
+/** 独自の種類のキー（会社内で一意）。名前から作るのではなく乱数＝改名しても予約が付いてくる */
+export function newCustomTypeKey(): string { return `custom_${Math.random().toString(36).slice(2, 10)}` }
 
 export type ReservationStatus = 'reserved' | 'in_use' | 'done' | 'canceled'
 

@@ -46,5 +46,8 @@
   "errDisabled": "この機能は会社の設定でOFFになっています",
   "errTime": "時刻が正しくありません",
   "errSave": "保存に失敗しました（{code}）",
-  "errCancel": "取消に失敗しました（{code}）"
+  "errCancel": "取消に失敗しました（{code}）",
+  "startTimeReq": "開始時刻 ※必須",
+  "endTimeReq": "終了時刻 ※必須",
+  "errTimeRequired": "時間帯（開始・終了時刻）を入れてください"
 }

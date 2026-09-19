@@ -3,7 +3,7 @@
 //  読み書きとも EF(resource-reservations) 経由（resource_reservations は anon から読めない・書きは service_role のみ）。
 //  useSitesApi と同じ身元の渡し方（Supabase セッション or LINE id token or dev-user-id）。
 // ============================================================
-import type { Reservation, ResourceItem, ResourceTypeKey } from './resource-core.gen'
+import type { Reservation, ResourceItem, ResourceTypeKey, ResourceTypeDef } from './resource-core.gen'
 
 const EDGE_FN = 'resource-reservations'
 
@@ -14,6 +14,12 @@ export type ReservationSaveInput = {
 export type ReservationSaveResult =
   | { ok: true; reservations: Reservation[]; overlapped: number }
   | { ok: false; error: string; blocked?: boolean; conflicts?: (Reservation & { resource_name?: string })[] }
+
+/** タブに出す種類（組み込み＝使う機能でON・独自＝enabled）。EF が判定する */
+export async function fetchResourceTypes(): Promise<ResourceTypeDef[]> {
+  try { const r = await useResourceReservations('vehicle').call('types', {}); return r?.ok ? (r.types as ResourceTypeDef[]) : [] }
+  catch { return [] }
+}
 
 export function useResourceReservations(type: ResourceTypeKey) {
   const config = useRuntimeConfig()
@@ -39,10 +45,10 @@ export function useResourceReservations(type: ResourceTypeKey) {
     }
   }
 
-  async function list(from: string, to: string): Promise<{ resources: ResourceItem[]; reservations: Reservation[]; canManage: boolean; myWorkerId: string | null }> {
+  async function list(from: string, to: string): Promise<{ resources: ResourceItem[]; reservations: Reservation[]; canManage: boolean; myWorkerId: string | null; typeDef: ResourceTypeDef | null }> {
     const r = await call('list', { from, to })
-    if (!r?.ok) { console.error('[resource] list failed:', r?.error); return { resources: [], reservations: [], canManage: false, myWorkerId: null } }
-    return { resources: r.resources ?? [], reservations: r.reservations ?? [], canManage: !!r.canManage, myWorkerId: r.myWorkerId ?? null }
+    if (!r?.ok) { console.error('[resource] list failed:', r?.error); return { resources: [], reservations: [], canManage: false, myWorkerId: null, typeDef: null } }
+    return { resources: r.resources ?? [], reservations: r.reservations ?? [], canManage: !!r.canManage, myWorkerId: r.myWorkerId ?? null, typeDef: r.typeDef ?? null }
   }
   async function save(input: ReservationSaveInput): Promise<ReservationSaveResult> {
     const r = await call('save', input as Record<string, unknown>)
@@ -52,5 +58,5 @@ export function useResourceReservations(type: ResourceTypeKey) {
     const r = await call('cancel', { id })
     return r?.ok ? { ok: true } : { ok: false, error: r?.error ?? 'network' }
   }
-  return { list, save, cancel }
+  return { call, list, save, cancel }
 }

@@ -7,12 +7,13 @@
       <button class="nav-btn" @click="navigate(1)">›</button>
       <button class="today-btn" @click="goToday">今日</button>
       <span class="legend"><span class="lg reserved" /> 予約　<span class="lg in-use" /> 使用中　<span class="lg done" /> 終了</span>
+      <button v-if="typeDef.generic && canManage" class="btn-ghost-sm" data-testid="resource-manage" @click="openManage">{{ typeLabel }}を管理</button>
       <button class="btn-add" data-testid="resource-add" @click="openAdd()">＋ 予約を追加</button>
     </div>
 
     <div v-if="loading && !resources.length" class="loading">読み込み中...</div>
     <div v-else-if="!resources.length" class="empty" data-testid="resource-empty">
-      {{ typeLabel }}が登録されていません。マスタから登録してください。
+      {{ typeLabel }}が登録されていません。{{ typeDef.generic ? (canManage ? '「' + typeLabel + 'を管理」から登録してください。' : '管理者に登録を依頼してください。') : 'マスタから登録してください。' }}
     </div>
     <div v-else ref="gridWrapRef" class="grid-wrap">
       <table class="matrix-table">
@@ -80,8 +81,8 @@
           <div class="field"><label>終了日 *</label><input v-model="form.endDate" type="date" class="input" data-testid="reservation-end" /></div>
         </div>
         <div class="field-row">
-          <div class="field"><label>開始時刻（任意）</label><input v-model="form.startTime" type="time" class="input" /></div>
-          <div class="field"><label>終了時刻（任意）</label><input v-model="form.endTime" type="time" class="input" /></div>
+          <div class="field"><label>開始時刻{{ typeDef.requireTime ? ' *' : '（任意）' }}</label><input v-model="form.startTime" type="time" class="input" data-testid="reservation-start-time" /></div>
+          <div class="field"><label>終了時刻{{ typeDef.requireTime ? ' *' : '（任意）' }}</label><input v-model="form.endTime" type="time" class="input" data-testid="reservation-end-time" /></div>
         </div>
         <div class="field">
           <label>用途メモ（任意）</label>
@@ -93,6 +94,30 @@
           <button class="btn-cancel" @click="form = null">キャンセル</button>
           <button v-if="overlapWarn && !overlapBlocked" class="btn-save warn-save" :disabled="saving" data-testid="reservation-save-force" @click="save(true)">重ねて保存</button>
           <button v-else class="btn-save" :disabled="saving" data-testid="reservation-save" @click="save(false)">{{ saving ? '保存中...' : '保存' }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 台帳の管理（会議室・会社独自の種類・B-3）: 名前・メモ・有効。管理者のみ -->
+    <div v-if="manage" class="modal-overlay" @click.self="manage = null">
+      <div class="modal" data-testid="resource-manage-modal">
+        <h2>{{ typeLabel }}の登録</h2>
+        <p class="muted">予定管理の列になります。使わなくなったものは「無効」にすると列から消えます（予約の履歴は残ります）。</p>
+        <table class="mg-table">
+          <tr v-for="r in allResources" :key="r.id" :data-testid="`manage-row-${r.id}`">
+            <td><input v-model="r.name" class="input" @change="saveResource(r)" /></td>
+            <td><input v-model="r.note" class="input" placeholder="メモ" @change="saveResource(r)" /></td>
+            <td><button type="button" class="chip small" :class="{ on: r.active }" :data-testid="`manage-active-${r.id}`" @click="r.active = !r.active; saveResource(r)">{{ r.active ? '有効' : '無効' }}</button></td>
+          </tr>
+        </table>
+        <div class="field-row" style="margin-top:10px">
+          <div class="field"><input v-model="manage.name" class="input" :placeholder="`${typeLabel}の名前（例：会議室A）`" data-testid="manage-new-name" /></div>
+          <div class="field"><input v-model="manage.note" class="input" placeholder="メモ（任意）" /></div>
+        </div>
+        <p v-if="manage.error" class="error-msg">{{ manage.error }}</p>
+        <div class="modal-actions">
+          <button class="btn-cancel" @click="manage = null">閉じる</button>
+          <button class="btn-save" :disabled="!manage.name.trim() || manage.saving" data-testid="manage-add" @click="addResource">追加</button>
         </div>
       </div>
     </div>
@@ -134,19 +159,23 @@ import { getAccountId } from '../lib/account'
 import { todayStr, shiftMonth, genMonthDates, isWeekend, dateCellClass, toDateStr } from '../lib/schedule-core.gen'
 import { siteStatusesForScreen } from '../lib/site-status.gen'
 import {
-  RESOURCE_TYPE_LABEL, RESOURCE_STATUS_LABEL, reservationsForCell, reservationChipLabel, reservationTimeLabel,
+  RESOURCE_STATUS_LABEL, BUILTIN_TYPE_DEFS, isBuiltinResourceType, reservationsForCell, reservationChipLabel, reservationTimeLabel,
   resourceStatusToday, isOwnReservation, overlapMessage,
 } from '../lib/resource-core.gen'
-import type { ResourceTypeKey, Reservation, ResourceItem } from '../lib/resource-core.gen'
+import type { ResourceTypeKey, ResourceTypeDef, Reservation, ResourceItem } from '../lib/resource-core.gen'
 
-const props = defineProps<{ type: ResourceTypeKey }>()
+const props = defineProps<{ type: ResourceTypeKey; def?: ResourceTypeDef }>()
 
 const STATUS_LABEL: Record<string, string> = { reserved: '予約', in_use: '使用中', done: '終了', canceled: '取消' }
-const typeLabel = computed(() => RESOURCE_TYPE_LABEL[props.type])
+// 種類の定義: 親から渡された def → EF の typeDef → 組み込みの既定
+const typeDefFromEf = ref<ResourceTypeDef | null>(null)
+const typeDef = computed<ResourceTypeDef>(() => props.def ?? typeDefFromEf.value ?? (isBuiltinResourceType(props.type) ? BUILTIN_TYPE_DEFS[props.type] : { key: props.type, name: props.type, generic: true, blockOverlap: false, requireTime: false }))
+const typeLabel = computed(() => typeDef.value.name)
 const today = todayStr()
 
 const loading = ref(false)
-const resources = ref<ResourceItem[]>([])
+const allResources = ref<(ResourceItem & { active?: boolean; note?: string | null })[]>([])   // 台帳（無効も含む・管理用）
+const resources = computed(() => allResources.value.filter((r) => r.active !== false))
 const reservations = ref<Reservation[]>([])
 const canManage = ref(false)
 const myWorkerId = ref<string | null>(null)
@@ -198,10 +227,11 @@ async function load() {
   try {
     const r = await callEf({ action: 'list', from: dates.value[0], to: dates.value[dates.value.length - 1] })
     if (!r?.ok) { console.error('[resource-calendar] list failed:', r?.error); return }
-    resources.value = r.resources ?? []
+    allResources.value = r.resources ?? []
     reservations.value = r.reservations ?? []
     canManage.value = !!r.canManage
     myWorkerId.value = r.myWorkerId ?? null
+    if (r.typeDef) typeDefFromEf.value = r.typeDef
   } finally { loading.value = false }
 }
 async function loadMasters() {
@@ -236,10 +266,29 @@ function toggleCompanion(id: string) { const s = new Set(form.value!.companions)
 // 入力を変えたら重なり警告はリセット（保存時にサーバで判定し直す）
 watch(() => form.value && [form.value.startDate, form.value.endDate, form.value.startTime, form.value.endTime, [...form.value.refs].join()], () => { overlapWarn.value = ''; overlapBlocked.value = false })
 
+// ── 台帳の管理（B-3・会議室・独自の種類）──
+const manage = ref<{ name: string; note: string; saving: boolean; error: string } | null>(null)
+function openManage() { manage.value = { name: '', note: '', saving: false, error: '' } }
+async function addResource() {
+  const m = manage.value; if (!m || !m.name.trim()) return
+  m.saving = true; m.error = ''
+  const r = await callEf({ action: 'resource-save', name: m.name.trim(), note: m.note.trim() || undefined })
+  m.saving = false
+  if (!r?.ok) { m.error = `追加に失敗しました（${r?.error ?? 'network'}）`; return }
+  m.name = ''; m.note = ''
+  await load()
+}
+async function saveResource(r: ResourceItem & { active?: boolean; note?: string | null }) {
+  const res = await callEf({ action: 'resource-save', id: r.id, name: String(r.name).trim() || '（名称未設定）', note: r.note ?? undefined, active: r.active !== false })
+  if (!res?.ok) { alert(`保存に失敗しました（${res?.error ?? 'network'}）`); return }
+  await load()
+}
+
 async function save(force: boolean) {
   const f = form.value; if (!f) return
   if (!f.id && !f.refs.size) { formError.value = `${typeLabel.value}を選んでください`; return }
   if (!f.workerId) { formError.value = '使う人を選んでください'; return }
+  if (typeDef.value.requireTime && (!f.startTime || !f.endTime)) { formError.value = '時間帯（開始・終了時刻）を入れてください'; return }
   if (!f.startDate || !f.endDate || f.endDate < f.startDate) { formError.value = '期間が正しくありません'; return }
   saving.value = true; formError.value = ''
   try {
@@ -273,6 +322,11 @@ defineExpose({ reload: load })
 .lg { display: inline-block; width: 12px; height: 10px; border-radius: 2px; vertical-align: middle; border: 1.5px solid #3b82f6; background: #fff; }
 .lg.in-use { background: #3b82f6; }
 .lg.done { background: #e5e7eb; border-color: #cbd5e1; }
+.btn-ghost-sm { margin-left: auto; background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 7px 12px; font-size: 13px; cursor: pointer; color: #333; }
+.btn-ghost-sm + .btn-add { margin-left: 0; }
+.mg-table { width: 100%; border-collapse: collapse; }
+.mg-table td { padding: 4px 4px; }
+.mg-table .input { padding: 7px 10px; font-size: 13px; }
 .btn-add { margin-left: auto; background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .loading, .empty { color: #888; text-align: center; padding: 40px; }
 .grid-wrap { overflow: auto; border: 1px solid #e2e8f0; border-radius: 10px; max-height: calc(100vh - 240px); }

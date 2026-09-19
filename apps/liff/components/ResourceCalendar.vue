@@ -80,8 +80,8 @@
           </div>
           <div class="form-row"><span class="form-row-label">{{ $t('resource.startDate') }}</span><input v-model="form.startDate" type="date" class="input" data-testid="reservation-start" /></div>
           <div class="form-row"><span class="form-row-label">{{ $t('resource.endDate') }}</span><input v-model="form.endDate" type="date" class="input" data-testid="reservation-end" /></div>
-          <div class="form-row"><span class="form-row-label">{{ $t('resource.startTime') }}</span><input v-model="form.startTime" type="time" class="input" /></div>
-          <div class="form-row"><span class="form-row-label">{{ $t('resource.endTime') }}</span><input v-model="form.endTime" type="time" class="input" /></div>
+          <div class="form-row"><span class="form-row-label">{{ typeDef.requireTime ? $t('resource.startTimeReq') : $t('resource.startTime') }}</span><input v-model="form.startTime" type="time" class="input" data-testid="reservation-start-time" /></div>
+          <div class="form-row"><span class="form-row-label">{{ typeDef.requireTime ? $t('resource.endTimeReq') : $t('resource.endTime') }}</span><input v-model="form.endTime" type="time" class="input" data-testid="reservation-end-time" /></div>
           <div class="form-row"><span class="form-row-label">{{ $t('resource.purpose') }}</span><input v-model="form.purpose" class="input" :placeholder="$t('resource.purposePh')" data-testid="reservation-purpose" /></div>
         </div>
         <p v-if="overlapWarn" class="warn" data-testid="reservation-overlap">{{ overlapWarn }}</p>
@@ -128,16 +128,19 @@ import { useI18n } from 'vue-i18n'
 import { todayStr, shiftMonth, genMonthDates, isWeekend, dateCellClass, toDateStr } from '~/composables/schedule-core.gen'
 import { siteStatusesForScreen } from '~/composables/site-status.gen'
 import {
-  RESOURCE_TYPE_LABEL, reservationsForCell, reservationChipLabel, reservationTimeLabel, resourceStatusToday, isOwnReservation, overlapMessage,
+  BUILTIN_TYPE_DEFS, isBuiltinResourceType, reservationsForCell, reservationChipLabel, reservationTimeLabel, resourceStatusToday, isOwnReservation, overlapMessage,
 } from '~/composables/resource-core.gen'
-import type { ResourceTypeKey, Reservation, ResourceItem } from '~/composables/resource-core.gen'
+import type { ResourceTypeKey, ResourceTypeDef, Reservation, ResourceItem } from '~/composables/resource-core.gen'
 
-const props = defineProps<{ type: ResourceTypeKey }>()
+const props = defineProps<{ type: ResourceTypeKey; def?: ResourceTypeDef }>()
 const { t } = useI18n()
 const api = useResourceReservations(props.type)
 const master = useMaster()
 
-const typeLabel = computed(() => t(`resource.tab${props.type.charAt(0).toUpperCase()}${props.type.slice(1)}`) || RESOURCE_TYPE_LABEL[props.type])
+const typeDefFromEf = ref<ResourceTypeDef | null>(null)
+const typeDef = computed<ResourceTypeDef>(() => props.def ?? typeDefFromEf.value ?? (isBuiltinResourceType(props.type) ? BUILTIN_TYPE_DEFS[props.type] : { key: props.type, name: props.type, generic: true, blockOverlap: false, requireTime: false }))
+// 組み込みの種類は翻訳、独自の種類は登録名
+const typeLabel = computed(() => isBuiltinResourceType(props.type) ? t(`resource.tab${props.type.charAt(0).toUpperCase()}${props.type.slice(1)}`) : typeDef.value.name)
 const today = todayStr()
 const loading = ref(false)
 const resources = ref<ResourceItem[]>([])
@@ -178,7 +181,8 @@ async function load() {
   loading.value = true
   try {
     const r = await api.list(dates.value[0], dates.value[dates.value.length - 1])
-    resources.value = r.resources; reservations.value = r.reservations; canManage.value = r.canManage; myWorkerId.value = r.myWorkerId
+    resources.value = r.resources.filter((x: any) => x.active !== false); reservations.value = r.reservations; canManage.value = r.canManage; myWorkerId.value = r.myWorkerId
+    if (r.typeDef) typeDefFromEf.value = r.typeDef
   } finally { loading.value = false }
 }
 async function loadSites() {
@@ -210,6 +214,7 @@ async function save(force: boolean) {
   const f = form.value; if (!f) return
   if (!f.id && !f.refs.size) { formError.value = t('resource.errResource', { type: typeLabel.value }); return }
   if (!f.startDate || !f.endDate || f.endDate < f.startDate) { formError.value = t('resource.errPeriod'); return }
+  if (typeDef.value.requireTime && (!f.startTime || !f.endTime)) { formError.value = t('resource.errTimeRequired'); return }
   saving.value = true; formError.value = ''
   try {
     const r = await api.save({ id: f.id ?? undefined, resourceRefs: [...f.refs], workerId: f.workerId, companions: [...f.companions], siteId: f.siteId, startDate: f.startDate, endDate: f.endDate, startTime: f.startTime || undefined, endTime: f.endTime || undefined, purpose: f.purpose, force })
