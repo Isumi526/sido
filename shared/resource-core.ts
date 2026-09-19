@@ -16,7 +16,13 @@ export const RESOURCE_TYPE_ORDER: ResourceTypeKey[] = ['vehicle', 'tool', 'room'
 
 export type ReservationStatus = 'reserved' | 'in_use' | 'done' | 'canceled'
 
-export type ResourceItem = { id: string; name: string; [k: string]: unknown }
+export type ResourceItem = {
+  id: string; name: string
+  /** 道具（B-2）: 実績から作る「今の状況」。あれば予約より優先して列見出しに出す */
+  now_label?: string | null
+  now_kind?: 'in_use' | 'broken' | null
+  [k: string]: unknown
+}
 
 export type Reservation = {
   id: string

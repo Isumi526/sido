@@ -21,7 +21,8 @@
             <th class="sticky-col date-col-header"></th>
             <th v-for="r in resources" :key="r.id" class="worker-header" :data-testid="`resource-col-${r.id}`">
               <div>{{ r.name }}</div>
-              <span class="now-status" :class="statusToday(r.id)" :data-testid="`resource-status-${r.id}`">{{ RESOURCE_STATUS_LABEL[statusToday(r.id)] }}</span>
+              <!-- 道具は実績（持出中・所持者・現場・経過日数）を優先（B-2）。車両は予約から -->
+              <span class="now-status" :class="r.now_kind ?? statusToday(r.id)" :data-testid="`resource-status-${r.id}`">{{ r.now_label ?? RESOURCE_STATUS_LABEL[statusToday(r.id)] }}</span>
             </th>
           </tr>
         </thead>
@@ -285,6 +286,7 @@ thead th.sticky-col { z-index: 4; }
 .now-status.in_use { background: #dbeafe; color: #1e40af; }
 .now-status.reserved { background: #fef3c7; color: #92400e; }
 .now-status.free { background: #dcfce7; color: #166534; }
+.now-status.broken { background: #fee2e2; color: #991b1b; }
 .date-cell { font-size: 12px; font-weight: 600; padding: 6px 8px; white-space: nowrap; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #f0f0f0; color: #555; min-width: 72px; width: 72px; }
 .date-cell.date-sunday { color: #ef4444; }
 .date-cell.date-saturday { color: #3b82f6; }

@@ -27,7 +27,7 @@ const MANAGE_ROLES = ['owner', 'admin', 'office', 'site_manager']
 /** 種類 → 対象マスタ。room / 会社独自の種類は B-3（resources）で足す */
 const TYPES: Record<string, { feature: FeatureKey; table: string; select: string; blockOverlap: boolean; requireTime: boolean }> = {
   vehicle: { feature: 'vehicles', table: 'vehicles', select: 'id, name, plate_number, sort_order', blockOverlap: false, requireTime: false },
-  tool:    { feature: 'tools',    table: 'tools',    select: 'id, name, kind, status, holder_worker_id, site_id', blockOverlap: false, requireTime: false },
+  tool:    { feature: 'tools',    table: 'tools',    select: 'id, name, kind, status, holder_worker_id, site_id, updated_at, holder:holder_worker_id(name), site:site_id(name)', blockOverlap: false, requireTime: false },
 }
 const RES_SELECT = 'id, resource_type, resource_ref, worker_id, companions, site_id, start_date, end_date, start_time, end_time, purpose, status, created_by_worker_id, updated_at, '
   + 'workers:worker_id(name), sites:site_id(name)'
@@ -91,7 +91,33 @@ Deno.serve(async (req) => {
         .lte('start_date', to).gte('end_date', from).order('start_date').order('start_time', { nullsFirst: true }),
     ])
     if (e1 || e2) { console.error('[resource-reservations] list failed:', e1 ?? e2); return json({ ok: false, error: 'fetch_failed' }, 500) }
-    return json({ ok: true, resources: resources ?? [], reservations: (rows ?? []).map(flat), canManage, myWorkerId: caller.workerId })
+    // 道具（B-2）: 列見出しの「今の状況」は実績（tools.status / 所持者 / 持出先 / 最後の持出からの日数）から。
+    //  予約が無くても持ち出していれば「持出中」と出す（道具②③の所在情報をそのまま使う）
+    let out: any[] = resources ?? []
+    if (type === 'tool' && out.length) {
+      const outIds = out.filter((t: any) => t.status === 'out').map((t: any) => t.id)
+      const since = new Map<string, string>()
+      if (outIds.length) {
+        const { data: ev } = await svc.from('tool_events').select('tool_id, created_at').eq('account_id', accountId).in('tool_id', outIds).in('kind', ['checkout', 'transfer']).order('created_at', { ascending: false })
+        for (const e of (ev ?? []) as any[]) if (!since.has(e.tool_id)) since.set(e.tool_id, e.created_at)
+      }
+      const today = new Date(Date.now() + 9 * 3600 * 1000)
+      out = out.map((t: any) => {
+        const { holder, site, ...rest } = t
+        let now_label: string | null = null, now_kind: 'in_use' | 'broken' | null = null
+        if (t.status === 'out') {
+          const s = since.get(t.id) ?? t.updated_at
+          const days = s ? Math.max(1, Math.floor((today.getTime() - new Date(s).getTime()) / 86400000) + 1) : null
+          now_label = ['持出中', holder?.name, site?.name, days ? `${days}日目` : null].filter(Boolean).join('・')
+          now_kind = 'in_use'
+        } else if (t.status === 'lost' || t.status === 'broken' || t.status === 'retired') {
+          now_label = ({ lost: '行方不明', broken: '故障・修理中', retired: '廃棄' } as Record<string, string>)[t.status]
+          now_kind = 'broken'
+        }
+        return { ...rest, holder_name: holder?.name ?? null, site_name: site?.name ?? null, now_label, now_kind }
+      })
+    }
+    return json({ ok: true, resources: out, reservations: (rows ?? []).map(flat), canManage, myWorkerId: caller.workerId })
   }
 
   // ── 保存（新規／編集）──────────────────────────

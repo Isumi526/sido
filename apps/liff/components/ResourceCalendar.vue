@@ -15,7 +15,7 @@
               <th class="sticky-col date-col-header"></th>
               <th v-for="r in resources" :key="r.id" class="worker-header" :data-testid="`resource-col-${r.id}`">
                 <div class="rname">{{ r.name }}</div>
-                <span class="now-status" :class="statusToday(r.id)" :data-testid="`resource-status-${r.id}`">{{ statusLabel(statusToday(r.id)) }}</span>
+                <span class="now-status" :class="r.now_kind ?? statusToday(r.id)" :data-testid="`resource-status-${r.id}`">{{ r.now_label ?? statusLabel(statusToday(r.id)) }}</span>
               </th>
             </tr>
           </thead>
@@ -255,6 +255,7 @@ thead th.sticky-col { z-index: 11; }
 .now-status.in_use { background: #dbeafe; color: #1e40af; }
 .now-status.reserved { background: #fef3c7; color: #92400e; }
 .now-status.free { background: #dcfce7; color: #166534; }
+.now-status.broken { background: #fee2e2; color: #991b1b; }
 .date-cell { font-size: 11px; font-weight: 600; padding: 4px 6px; white-space: nowrap; border-right: 1px solid #E0E0E0; border-bottom: 1px solid #f0f0f0; color: #555; min-width: 60px; width: 60px; }
 .date-cell.date-sunday { color: #ef4444; }
 .date-cell.date-saturday { color: #3b82f6; }
