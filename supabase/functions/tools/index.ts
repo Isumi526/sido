@@ -29,6 +29,7 @@
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveCaller } from '../_shared/caller-identity.ts'
+import { FEATURE_SETTING_KEYS, resolveFeatureFlags } from '../_shared/features-registry.gen.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -77,6 +78,15 @@ Deno.serve(async (req) => {
   if (!caller || typeof caller !== 'object') return json({ ok: false, error: 'unauthorized' }, 401)
   const accountId = caller.accountId
   const action = typeof body.action === 'string' ? body.action : ''
+
+  // ── 「使う機能」で道具管理をOFFにしたテナントは入口で閉じる（2026-09-19 B-0）。
+  //  画面の導線を隠すだけだとQRの直リンク・古いバンドルから通るため、EF でも同じ判定をする。
+  {
+    const { data: rows } = await svc.from('settings').select('key, value').eq('account_id', accountId).in('key', FEATURE_SETTING_KEYS)
+    if (!resolveFeatureFlags((rows ?? []) as { key: string; value: string | null }[]).tools) {
+      return json({ ok: false, error: 'feature_disabled' }, 403)
+    }
+  }
 
   // ── 読み（テナントの全員）────────────────────────────
   if (action === 'bases') {

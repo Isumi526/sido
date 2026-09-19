@@ -103,6 +103,15 @@ const SHARES = [
     ],
   },
   {
+    // テナント単位の「使う機能」（機能ON/OFF）の登録簿と既定値。admin/LIFF/EF で同じ判定にする
+    src: 'shared/features.ts',
+    dests: [
+      'apps/admin/src/lib/features-registry.gen.ts',
+      'apps/liff/composables/features-registry.gen.ts',
+      'supabase/functions/_shared/features-registry.gen.ts',
+    ],
+  },
+  {
     // 無償満了日の計算。admin(告知UI・アカウント発行)と EF(サーバ側判定)で同じ結果にならないと
     // 「画面は満了と出たのにサーバは無償のまま」のような食い違いが起きる（法的な通知起点）
     src: 'shared/billing-trial.ts',

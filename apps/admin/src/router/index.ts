@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { currentUser, canViewManagementPages, canApprove, waitForRoleResolved } from '../lib/auth'
-import { estimateEnabled, waitForFeaturesResolved } from '../lib/features'
+import { estimateEnabled, waitForFeaturesResolved, isFeatureEnabled } from '../lib/features'
+import type { FeatureKey } from '../lib/features'
 import Dashboard      from '../pages/index.vue'
 import Workers        from '../pages/workers.vue'
 import Sites          from '../pages/sites.vue'
@@ -60,7 +61,7 @@ export const router = createRouter({
     { path: '/inventory', component: () => import('../pages/inventory.vue'), meta: { management: true } },
     // 道具管理（道具①・2026-09-18）。登録権限＝オーナー/管理者/現場管理者（AC2）なので management を付けない
     //  ＝ isAdminAllowed（worker弾き）だけが効く（/contractors と同じ扱い）。書込権限は EF(tools) 側でも確認する。
-    { path: '/tools', component: () => import('../pages/tools.vue') },
+    { path: '/tools', component: () => import('../pages/tools.vue'), meta: { feature: 'tools' } },
     { path: '/chats',        component: () => import('../pages/chats.vue') },
     { path: '/chats/account', component: () => import('../pages/account-chat.vue') },
     { path: '/chats/:id',    component: () => import('../pages/chat-detail.vue') },
@@ -72,7 +73,7 @@ export const router = createRouter({
     { path: '/site-rules',   component: SiteRules,      meta: { management: true } },
     { path: '/attendance',   component: Attendance,     meta: { management: true } },
     { path: '/subcontractors', component: Subcontractors },
-    { path: '/vehicles',     component: Vehicles,       meta: { management: true } },
+    { path: '/vehicles',     component: Vehicles,       meta: { management: true, feature: 'vehicles' } },
     { path: '/reports',      component: Reports },
     { path: '/site-reports', component: SiteReports },
     { path: '/expenses',     component: Expenses,       meta: { management: true } },
@@ -138,5 +139,10 @@ router.beforeEach(async (to) => {
   if (to.meta.estimate === true && currentUser.value) {
     await waitForFeaturesResolved()
     if (!estimateEnabled.value) return '/'
+  }
+  // 「使う機能」でOFFにした機能（車両・道具…）はURL直打ちでも入れない（2026-09-19 B-0）
+  if (typeof to.meta.feature === 'string' && currentUser.value) {
+    await waitForFeaturesResolved()
+    if (!isFeatureEnabled(to.meta.feature as FeatureKey)) return '/'
   }
 })
