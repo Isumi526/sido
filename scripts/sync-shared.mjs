@@ -111,6 +111,14 @@ const SHARES = [
     ],
   },
   {
+    // 主系区分（現場の固定勤務時刻を使う作業区分）の特定。名前でなく uses_site_hours で判定（A-4）
+    src: 'shared/work-category-primary.ts',
+    dests: [
+      'apps/admin/src/lib/work-category-primary.gen.ts',
+      'apps/liff/composables/work-category-primary.gen.ts',
+    ],
+  },
+  {
     // 日報1件を「人が読む行」に畳む（承認画面の変更前／変更後の全体表示）。admin で使う（将来 LIFF の履歴でも）
     src: 'shared/report-snapshot.ts',
     dests: [

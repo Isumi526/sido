@@ -165,7 +165,7 @@
           <div class="hours-table">
             <!-- 現場作業（固定勤務時刻） -->
             <div class="hours-row hours-row--main" data-testid="hours-row-main">
-              <div class="hours-row-name">現場作業<span class="hours-row-sub">固定勤務時刻</span></div>
+              <div class="hours-row-name" data-testid="site-hours-primary-name">{{ primaryCatName }}<span class="hours-row-sub">固定勤務時刻</span></div>
               <div class="hours-row-body">
                 <div class="hours-inline">
                   <TimeSelect v-model="modal.default_start_time" />
@@ -385,6 +385,7 @@
 <script setup lang="ts">
 import TimeSelect from '../components/TimeSelect.vue'
 import { logFeatureUsage } from '../lib/usageLog'
+import { primaryWorkCategory } from '../lib/work-category-primary.gen'
 import SiteStatusModal from '../components/SiteStatusModal.vue'
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
@@ -447,6 +448,8 @@ function catHasValue(id: string): boolean {
   const d = catHoursDraft.value[id]
   return !!(d && (d.start || d.end || (d.breaks && d.breaks.length)))
 }
+/** 主系区分の名前（勤務時間の表の先頭行）。フラグで特定するので改名に追随する */
+const primaryCatName = ref('現場作業')
 const visibleCats = computed(() => siteCats.value.filter(c => catHasValue(c.id) || shownCatIds.value.has(c.id)))
 const addableCats = computed(() => siteCats.value.filter(c => !visibleCats.value.some(v => v.id === c.id)))
 const catPickerOpen = ref(false)
@@ -495,13 +498,15 @@ async function loadSiteCats() {
   const r = await callMasterEf({ action: 'categories' })
   const list = (r?.categories ?? []) as {
     id: string; name: string; scope: string | null; active: boolean; is_default: boolean
-    default_start_time: string | null; default_end_time: string | null
+    default_start_time: string | null; default_end_time: string | null; uses_site_hours?: boolean | null
   }[]
-  // 「現場作業」は現場そのものの固定勤務時刻を使うので除外（標準区分は全て is_default=true のため
-  //  名前で特定する＝report.vue の既定区分判定 name==='現場作業' と揃える）。現場で使える区分だけ上書き対象。
+  // 主系区分（uses_site_hours・現場そのものの固定勤務時刻を使う）は除外。名前では判定しない（A-4・2026-09-20）
+  //  ＝report.vue の既定区分判定と同じ primaryWorkCategory。現場で使える区分だけ上書き対象。
   //  ★共通定時（default_*）も持ち回る。上書きが空の欄に「共通設定が使われる」ことを
   //   その場で見せるため（2026-09-02 今井さん「各現場で設定のチェックもしたい」）。
-  siteCats.value = list.filter(c => c.active && c.name !== '現場作業' && (c.scope === null || c.scope === 'site'))
+  const primary = primaryWorkCategory(list)
+  primaryCatName.value = primary?.name ?? '現場作業'
+  siteCats.value = list.filter(c => c.active && c.id !== primary?.id && (c.scope === null || c.scope === 'site'))
     .map(c => ({
       id: c.id, name: c.name,
       commonStart: (c.default_start_time ?? '').slice(0, 5),

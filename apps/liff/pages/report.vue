@@ -1021,6 +1021,7 @@
 
 <script setup lang="ts">
 import { todayStr } from '~/composables/schedule-core.gen'
+import { primaryWorkCategory } from '~/composables/work-category-primary.gen'
 import { isOverDefault, normalizeVehicleOverages, denormalizeVehicleOverages, DISTANCE_FIELDS } from '~/composables/distance-overage.gen'
 import { punchDiffLabel, isPunchDiffBig, isPunchDiffWorthShowing } from '~/composables/attendance-punch.gen'
 import { computeWorkerHours, getRateLines, calcBreakMinutes, effectiveBreakMinutes, effectiveBreakWindows, parseMin, TIME_OPTIONS } from '~/utils/workerHours'
@@ -2507,7 +2508,8 @@ function applyVoiceDraft() {
  */
 function defaultWorkCategoryId(): string | null {
   const all = master.workCategories.value
-  return all.find(c => c.name === '現場作業')?.id ?? all[0]?.id ?? null
+  // 主系区分（uses_site_hours）。名前では判定しない＝改名しても壊れない（A-4）
+  return primaryWorkCategory(all)?.id ?? all[0]?.id ?? null
 }
 
 /** 現場が選ばれているか。区分の欄はこれが真になるまで出さない。 */
