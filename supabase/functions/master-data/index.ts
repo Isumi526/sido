@@ -89,7 +89,7 @@ Deno.serve(async (req) => {
         .order('name_kana', { nullsFirst: false }).order('name'),
       svc.from('subcontractors').select('id, name').eq('active', true).eq('account_id', accountId)
         .order('sort_order').order('name'),
-      svc.from('vehicles').select('name').eq('active', true).eq('account_id', accountId)
+      svc.from('vehicles').select('id, name').eq('active', true).eq('account_id', accountId).order('name')
         .order('sort_order').order('name'),
       svc.from('site_subcontractors').select('site_id, subcontractor_id').eq('account_id', accountId),
       // 作業区分（現場作業/見積/事務…）。日報・予定で「どの作業か」を選ばせる
@@ -116,6 +116,8 @@ Deno.serve(async (req) => {
       workers: workers.data ?? [],
       subcontractors: subs.data ?? [],
       vehicles: (vehicles.data ?? []).map((v: any) => v.name),
+      // 日報の車両欄をマスタからの選択にするため id も返す（vehicleId を日報 JSON に持つ・2026-09-20）
+      vehicleList: (vehicles.data ?? []).map((v: any) => ({ id: v.id, name: v.name })),
       siteSubcontractors: siteSubs.data ?? [],
       workCategories: categories.data ?? [],
       siteCategoryHours: catHours.data ?? [],

@@ -176,6 +176,7 @@ export const useMaster = () => {
       workers:        (r.workers ?? []).map((x: any) => ({ id: x.id, name: x.name, name_kana: x.name_kana ?? null, role: x.role as 'factory' | 'site' })),
       subcontractors: (r.subcontractors ?? []).map((x: any) => x.name),
       vehicles:       r.vehicles ?? [],
+      vehicleList:    Array.isArray(r.vehicleList) ? r.vehicleList : [],
       siteContractors,
       siteSubcontractors,
       siteIds,
@@ -360,5 +361,7 @@ export const useMaster = () => {
     workerList:          computed(() => master.value.workers.slice()),
     subcontractorNames:  computed(() => master.value.subcontractors.slice()),
     vehicleNames:        computed(() => master.value.vehicles),
+    // 日報の車両欄（マスタからの選択）。id 付き
+    vehicleList:         computed(() => master.value.vehicleList ?? []),
   }
 }
