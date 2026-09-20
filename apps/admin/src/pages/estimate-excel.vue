@@ -62,6 +62,7 @@ const byTrade = computed(() => [...groupByTrade(rows.value).entries()]
     trade,
     count: items.length,
     locations: [...new Set(items.map((i) => i.location))].join('・'),
+    parts: [...new Set(items.map((i) => i.part).filter(Boolean))].join('・'),
     cost: items.reduce((s, i) => s + (i.quantity ?? 0) * (i.costUnitPrice ?? 0), 0),
     sheet: SEED_FORMAT.tradeSheets[trade] ?? null,
   }))
@@ -88,7 +89,7 @@ async function checkTemplate() {
 async function loadPrices() {
   const { data, error } = await supabase
     .from('estimate_price_history')
-    .select('item_name, unit_price, subcontractor_name, quoted_on, quantity, unit')
+    .select('item_name, unit_price, subcontractor_name, quoted_on, quantity, unit, trade_name, part')
     .eq('account_id', accountId.value)
     .not('unit_price', 'is', null)
     .order('quoted_on', { ascending: false })
@@ -101,6 +102,9 @@ async function loadPrices() {
     quotedOn: String(d.quoted_on ?? '').slice(0, 10),
     quantity: d.quantity == null ? null : Number(d.quantity),
     unit: (d.unit as string) ?? null,
+    // E-2: 候補を区分（＋部位）で絞る鍵。部位は履歴に無ければ名前から推定（lib 側）
+    tradeName: (d.trade_name as string) ?? null,
+    part: (d.part as string) ?? null,
   })).filter((p) => p.workName && p.unitPrice > 0)
 }
 
@@ -126,7 +130,8 @@ async function exportWorkbook() {
     const res = await writePriceSheets(t, prices.value, { locations: LOCATIONS, trades: TRADES })
     await t.forceRecalcOnLoad()
     download(await t.toBlob(), `見積_${new Date().toISOString().slice(0, 10)}.xlsx`)
-    info.value = `単価表 ${res.priceRows}行・名称の候補 ${res.candidates}件 を入れて書き出しました。`
+    info.value = `単価表 ${res.priceRows}行・名称の候補 ${res.candidates}件（区分・部位別の候補列 ${res.tradeColumns}本）を入れて書き出しました。`
+      + (res.filteredValidation ? ' 名称の候補は行の「工事区分」「部位」で絞られます。' : ' テンプレに「工事区分」列が無いため、名称の候補は全件です（テンプレ v2 で絞り込みが効きます）。')
   } catch (e) { err.value = e instanceof Error ? e.message : String(e) }
   finally { busy.value = '' }
 }
@@ -148,19 +153,23 @@ async function onPickFile(ev: Event) {
   finally { busy.value = ''; (ev.target as HTMLInputElement).value = '' }
 }
 
-/** ④工種別シートを生成して書き出す。 */
-async function generateTradeSheets() {
+/** ④工種別シートを生成して書き出す。trade を渡すと E-2 の「1工種だけ抜き出す」（大塚「軽鉄工事だけに絞った項目が欲しい」） */
+async function generateTradeSheets(trade?: string) {
   if (!loaded) return
-  err.value = ''; info.value = ''; busy.value = '工種別シートを作っています…'
+  err.value = ''; info.value = ''; busy.value = trade ? `「${trade}」だけを書き出しています…` : '工種別シートを作っています…'
   try {
-    const res = await writeTradeSheets(loaded, rows.value)
+    const res = await writeTradeSheets(loaded, rows.value, SEED_FORMAT, trade ? { trades: [trade] } : {})
     genResult.value = res
     await loaded.forceRecalcOnLoad()
-    download(await loaded.toBlob(), loadedName.value.replace(/\.xlsx$/i, '') + '_工種別.xlsx')
-    info.value = `${res.written.length}シートに書き込みました。`
+    const suffix = trade ? `_${trade}` : '_工種別'
+    download(await loaded.toBlob(), loadedName.value.replace(/\.xlsx$/i, '') + suffix + '.xlsx')
+    info.value = trade ? `「${trade}」のシートだけに書き込みました（他の工種別シートは触っていません）。` : `${res.written.length}シートに書き込みました。`
   } catch (e) { err.value = e instanceof Error ? e.message : String(e) }
   finally { busy.value = '' }
 }
+
+/** E-2: 取り込んだ明細のうち「工事区分」列から読めた行数（見出しからの推定でない） */
+const tradeFromColumn = computed(() => rows.value.filter((r) => r.tradeSource === 'column').length)
 
 /** ⑤その工種の発注書を作る（既存の発注書画面へ引き渡す）。 */
 function toPurchaseOrder(trade: string, amount: number) {
@@ -210,6 +219,8 @@ async function onPickTemplate(ev: Event) {
       <p class="hint">
         会社ごとに1回だけの作業です。空の見積Excelに <code>単価表</code> と <code>候補表</code> のシートを
         仕込んだものを登録します。以降アプリはこのファイルの<b>セルに値を書くだけ</b>になります。
+        <br>テンプレ v2（任意・<code>scripts/make-estimate-template.py</code> で作れます）: 全体見積の <code>AA列＝工事区分</code>・<code>AB列＝部位</code>（見出し行に「工事区分」「部位」）を持たせると、
+        名称の候補が行の区分・部位で絞られ、取り込み時の工種も列が正になります。
       </p>
       <label class="btn">
         テンプレートを選ぶ
@@ -258,34 +269,39 @@ async function onPickTemplate(ev: Event) {
       <p class="hint">
         全体見積は<b>場所</b>で並んでいますが、発注は<b>工種</b>ごとに業者が分かれます。
         同じ工種が複数の場所に散っていても集め直します。
+        <span v-if="tradeFromColumn" data-testid="ee-trade-from-column">「工事区分」列から {{ tradeFromColumn }}行の工種を読みました。</span>
+        <span v-else data-testid="ee-trade-from-heading">「工事区分」列が空のため、■見出しから工種を推定しています（テンプレ v2 では列が正になります）。</span>
       </p>
       <div class="table-wrap">
         <table class="table" data-testid="ee-trades">
           <thead>
-            <tr><th>工種</th><th>明細</th><th>拾った場所</th><th class="num">原価計</th><th>書き込み先</th><th></th></tr>
+            <tr><th>工種</th><th>明細</th><th>拾った場所</th><th>部位</th><th class="num">原価計</th><th>書き込み先</th><th></th></tr>
           </thead>
           <tbody>
             <tr v-for="t in byTrade" :key="t.trade">
               <td class="tname">{{ t.trade }}</td>
               <td class="num">{{ t.count }}</td>
               <td class="locs">{{ t.locations }}</td>
+              <td class="locs" :data-testid="`ee-parts-${t.trade}`">{{ t.parts || '—' }}</td>
               <td class="num money">{{ yen(t.cost) }}</td>
               <td>
                 <span v-if="t.sheet" class="sheet">{{ t.sheet }}</span>
                 <span v-else class="sheet none" data-testid="ee-no-sheet">対応シート無し</span>
               </td>
-              <td>
+              <td class="actions">
+                <!-- E-2: この工種だけ抜き出す（全体見積→1工種の工種別シートだけ書き込んで Excel 返却） -->
+                <button class="btn-sm" :disabled="!t.sheet || !!busy" :data-testid="`ee-generate-one-${t.trade}`" @click="generateTradeSheets(t.trade)">この工種だけ書き出す</button>
                 <button class="btn-sm" :disabled="!t.cost" @click="toPurchaseOrder(t.trade, t.cost)">発注書へ</button>
               </td>
             </tr>
           </tbody>
           <tfoot>
-            <tr><td>合計</td><td class="num">{{ rows.length }}</td><td></td><td class="num money" data-testid="ee-total">{{ yen(totalCost) }}</td><td colspan="2"></td></tr>
+            <tr><td>合計</td><td class="num">{{ rows.length }}</td><td colspan="2"></td><td class="num money" data-testid="ee-total">{{ yen(totalCost) }}</td><td colspan="2"></td></tr>
           </tfoot>
         </table>
       </div>
-      <button class="btn" :disabled="!!busy" data-testid="ee-generate" @click="generateTradeSheets">
-        工種別シートを作って書き出す
+      <button class="btn" :disabled="!!busy" data-testid="ee-generate" @click="generateTradeSheets()">
+        工種別シートを作って書き出す（全工種）
       </button>
 
       <div v-if="genResult" class="result">
@@ -339,6 +355,7 @@ async function onPickTemplate(ev: Event) {
 .table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .table th { text-align: left; font-size: 11px; color: #888; font-weight: 600; padding: 0 12px 6px 0; border-bottom: 1px solid #e5e7eb; }
 .table td { padding: 7px 12px 7px 0; border-bottom: 1px solid #f1f3f5; }
+.actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .table tfoot td { font-weight: 700; border-top: 2px solid #111; border-bottom: none; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .money { font-weight: 600; }
