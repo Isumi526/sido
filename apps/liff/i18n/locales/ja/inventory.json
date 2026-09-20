@@ -60,5 +60,14 @@
   "pendingNoItem": "品目未定",
   "pendingStatusPending": "確認待ち",
   "pendingStatusConfirmed": "確定済み",
-  "pendingStatusRejected": "差し戻し"
+  "pendingStatusRejected": "差し戻し",
+  "baseTo": "どの拠点の倉庫へ",
+  "baseFrom": "どの拠点の倉庫から",
+  "baseOptional": "（任意）",
+  "baseNone": "拠点を指定しない",
+  "balancesTitle": "残数一覧（倉庫・現場）",
+  "balancesNote": "倉庫＝拠点にある余り。現場＝持ち出したまま戻っていない数（使った分は差し引かれません）。会計在庫ではありません。",
+  "balancesEmpty": "まだ残数はありません",
+  "locBase": "倉庫",
+  "locSite": "現場"
 }
