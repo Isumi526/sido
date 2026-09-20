@@ -224,6 +224,7 @@
 //    増えて「daily_reports に入っている＝承認済み」の不変条件が崩れる。
 // ============================================================
 import { ref, computed, onMounted, watch } from 'vue'
+import { logFeatureUsage } from '../lib/usageLog'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
@@ -497,6 +498,7 @@ async function decide(p: any, action: 'approve' | 'reject') {
     })
     const json = await res.json().catch(() => null)
     if (!res.ok || !json?.ok) throw new Error(json?.error ?? `失敗しました(${res.status})`)
+    logFeatureUsage('report_edit_decided')   // 効果測定（ベストエフォート）
     // ★二重承認の1つ目では日報に反映されていない。ここで「反映されました」と出すと、
     //  押した人は終わったつもりで帰る＝もう1人が来ないまま止まる。
     msg.value = action === 'reject'

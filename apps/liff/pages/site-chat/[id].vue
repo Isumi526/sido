@@ -411,6 +411,7 @@ async function send() {
     reply_to_sender_name: replyTarget.value?.sender_name ?? null,
     reply_to_body: replyTarget.value?.body ?? null,
   }).select('id').maybeSingle()
+  if (!error && inserted?.id) useUsageLog().logFeatureUsage('site_chat_posted')   // 効果測定（ベストエフォート）
   if (!error && inserted?.id && mentionIds.length) {
     const { error: mentionError } = await supabase.from('site_chat_mentions').insert(
       mentionIds.map(workerId => ({ account_id: accountId, worker_id: workerId, message_id: inserted.id, site_id: siteId })),

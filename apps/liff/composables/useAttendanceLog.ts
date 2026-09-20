@@ -100,6 +100,7 @@ export function useAttendanceLog() {
   }): Promise<{ ok: boolean; error?: string }> {
     try {
       await call('punch', input as Record<string, unknown>)
+      useUsageLog().logFeatureUsage('punch_recorded')   // 効果測定（ベストエフォート）
       return { ok: true }
     } catch (e: any) {
       return { ok: false, error: e?.message ?? 'failed' }
@@ -132,6 +133,7 @@ export function useAttendanceLog() {
   }): Promise<{ ok: boolean; error?: string }> {
     try {
       await call('correction-request', input as Record<string, unknown>)
+      useUsageLog().logFeatureUsage('punch_correction_requested')   // 効果測定（ベストエフォート）
       return { ok: true }
     } catch (e: any) {
       return { ok: false, error: e?.message ?? 'failed' }

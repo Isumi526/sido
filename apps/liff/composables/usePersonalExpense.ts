@@ -99,7 +99,9 @@ export const usePersonalExpense = () => {
   }
 
   async function create(input: PersonalExpenseInput) {
-    return await call('create', { input })
+    const r = await call('create', { input })
+    useUsageLog().logFeatureUsage('personal_expense_submitted')   // 効果測定（ベストエフォート）
+    return r
   }
 
   async function remove(id: string) {

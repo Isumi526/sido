@@ -89,6 +89,7 @@
  * ★書き込みは EF(report-distance) 経由。権限検査・自己承認の禁止・承認者名の確定・距離の差し替えは EF 側。
  */
 import { ref, onMounted } from 'vue'
+import { logFeatureUsage } from '../lib/usageLog'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { currentWorkerId } from '../lib/auth'
@@ -193,6 +194,7 @@ async function decide(r: Row, status: 'approved' | 'rejected') {
     await load()
     return
   }
+  logFeatureUsage('distance_overage_decided')   // 効果測定（ベストエフォート）
   await refreshNavBadges()
   await load()
 }

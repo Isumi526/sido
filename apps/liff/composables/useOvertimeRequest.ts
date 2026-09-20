@@ -158,6 +158,7 @@ export function useOvertimeRequest() {
         ...(requestedBreakMinutes === null ? {} : { requestedBreakMinutes }),
         reason, siteNames,
       })
+      useUsageLog().logFeatureUsage('overtime_requested')   // 効果測定（ベストエフォート）
       return { ok: true }
     } catch (e: any) {
       const m = String(e?.message ?? 'failed')

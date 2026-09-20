@@ -384,6 +384,7 @@
 
 <script setup lang="ts">
 import TimeSelect from '../components/TimeSelect.vue'
+import { logFeatureUsage } from '../lib/usageLog'
 import SiteStatusModal from '../components/SiteStatusModal.vue'
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
@@ -949,6 +950,7 @@ async function save() {
     } else {
       const { data } = await supabase.from('sites').insert({ ...payload, account_id: accountId }).select('id').single()
       siteId = (data as any)?.id
+      logFeatureUsage('site_created')   // 効果測定（ベストエフォート）
       // 新規現場: その場で入力された現場ルールを site_rules へ一括登録（#12・空行は除外・重複contentは1つに）
       if (siteId) {
         const seen = new Set<string>()

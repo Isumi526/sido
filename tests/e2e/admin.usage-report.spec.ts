@@ -2,7 +2,7 @@
 //  admin.usage-report.spec.ts
 //  GENLINKS の効果測定（機能別の利用状況と時間削減効果）— 2026-08-27運用者選択:
 //   自前の軽量利用ログ＋トライアル先への自己申告（外部アナリティクスは導入しない）。
-//   ★MVPの計測対象は見積作成・見積書発行の2つのみ（本文に明記）。
+//   2026-09-20: 計測を主要機能全体へ広げた（登録簿 shared/usage-features.ts・行＝機能/列＝月）。
 // ============================================================
 import { test, expect } from '@playwright/test'
 import { restSrv, getAccountId } from './helpers'
@@ -33,6 +33,13 @@ test('★効果測定画面: 機能別の利用回数が月別に集計されて
   await expect(page.locator('h1')).toContainText('効果測定')
   await expect(page.locator('table').first()).toContainText('見積作成')
   await expect(page.locator('table').first()).toContainText('見積書発行')
+  // 2026-09-20: 主要機能全体へ広げた＝登録簿のグループ見出しと各機能の行が出る（0件でも行がある）
+  const table = page.getByTestId('usage-table')
+  await expect(table).toContainText('日報')
+  await expect(table).toContainText('出退勤')
+  await expect(page.getByTestId('usage-row-report_submitted')).toBeVisible()
+  await expect(page.getByTestId('usage-row-ai_help_asked')).toBeVisible()
+  expect(Number(await page.getByTestId('usage-total-estimate_created').textContent()), '合計列').toBeGreaterThanOrEqual(2)
 })
 
 test('★削減時間を自己申告できる。同じ月にもう一度出すと上書きされる', async ({ page }) => {

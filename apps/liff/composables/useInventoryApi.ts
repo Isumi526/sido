@@ -65,6 +65,7 @@ export function useInventoryApi() {
    */
   async function move(input: { itemId?: string | null; qty: number; kind: InventoryKind; siteId?: string | null; baseSiteId?: string | null; photoUrls: string[]; note?: string; reportDate?: string | null; clientRequestId?: string | null; aiGuess?: string | null; aiCategory?: string | null; aiCandidates?: InventorySuggestion['candidates'] }): Promise<InventoryMoveResult> {
     const r = await call('move', input)
+    useUsageLog().logFeatureUsage('inventory_moved')   // 効果測定（ベストエフォート）
     if (r.pending) return { pending: true, pendingId: r.pendingId ?? null }
     return { pending: false, item: r.item as InventoryItem }
   }

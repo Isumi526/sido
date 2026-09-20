@@ -370,6 +370,7 @@ async function loadReports() {
 onMounted(async () => {
   await liff.init()
   const uid = liff.profile.value?.userId
+  if (uid) useUsageLog().logFeatureUsage('report_history_viewed')   // 効果測定（ベストエフォート）
   if (uid) {
     selfUser.value = await expense.getUser(uid)
     if (!selfUser.value) { await navigateTo('/no-account'); return }

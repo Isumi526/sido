@@ -63,11 +63,13 @@ export function useToolsApi() {
   /** 持出（持出先必須）。他の人が持出中なら EF が又貸し（transfer）にして前の人へ通知する。失敗は throw */
   async function checkout(input: { toolId: string; siteId: string; geo?: ToolGeo | null; note?: string; clientRequestId?: string }): Promise<ToolMoveResult> {
     const r = await call('checkout', { toolId: input.toolId, siteId: input.siteId, note: input.note ?? '', clientRequestId: input.clientRequestId, ...(input.geo ?? {}) })
+    useUsageLog().logFeatureUsage('tool_checked_out')   // 効果測定（ベストエフォート）
     return { kind: r.kind, prevHolderId: r.prevHolderId ?? null, located: !!r.located, deduped: !!r.deduped }
   }
   /** 返却（場所QR→道具QR）。本人以外でも可。失敗は throw */
   async function returnTool(input: { toolId: string; locationId: string; geo?: ToolGeo | null; note?: string; clientRequestId?: string }): Promise<ToolMoveResult> {
     const r = await call('return', { toolId: input.toolId, locationId: input.locationId, note: input.note ?? '', clientRequestId: input.clientRequestId, ...(input.geo ?? {}) })
+    useUsageLog().logFeatureUsage('tool_returned')   // 効果測定（ベストエフォート）
     return { kind: 'return', located: !!r.located, deduped: !!r.deduped }
   }
 

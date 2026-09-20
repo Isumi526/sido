@@ -1039,6 +1039,7 @@ function updatePersonalDayCount() {
   personalDayCount.value = w >= 900 ? 7 : w >= 700 ? 5 : w >= 480 ? 4 : 3
 }
 onMounted(() => {
+  useUsageLog().logFeatureUsage('schedule_viewed')   // 効果測定（ベストエフォート）
   updatePersonalDayCount()
   window.addEventListener('resize', updatePersonalDayCount)
   nextTick(() => scrollWeekTimelineToDefault())

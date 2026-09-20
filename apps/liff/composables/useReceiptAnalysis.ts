@@ -57,7 +57,9 @@ export const useReceiptAnalysis = () => {
         throw new Error(`通信エラーが発生しました（${status}）`)
       }
 
-      return await res.json() as ReceiptResult
+      const result = await res.json() as ReceiptResult
+      useUsageLog().logFeatureUsage('receipt_ai_analyzed')   // 効果測定（ベストエフォート）
+      return result
     } catch (e) {
       error.value = e instanceof Error ? e.message : '解析に失敗しました'
       return null

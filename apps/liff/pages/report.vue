@@ -3160,6 +3160,7 @@ async function handleSubmit() {
       //  管理画面の承認欄で見える＝通知が無くても中身は追える。
 
       editSubmitted.value = true
+      useUsageLog().logFeatureUsage('report_edited')   // 効果測定（ベストエフォート）
     } catch (e) {
       const msg = e instanceof Error ? e.message : t('report.errorUpdateFailed')
       editError.value = msg
@@ -3234,6 +3235,7 @@ async function handleSubmit() {
 
   // ② GASに送信（LINE通知・keepalive: true でページ閉じても通信継続）
   await report.submit()
+  if (!report.error.value) useUsageLog().logFeatureUsage('report_submitted')   // 効果測定（ベストエフォート）
 
   // ③-a 期限切れの新規提出: ここで初めて保留に入れる。
   //     ★report.submit() の後に置くのは、その中で領収書がアップロードされて *Urls が
