@@ -56,6 +56,8 @@ export function useToolsApi() {
   // ── 道具②（2026-09-20）──
   /** 自分が持ち出し中の道具（返却の「どれを返しますか」）。失敗は空 */
   async function myTools(): Promise<Tool[]> { try { return ((await call('my-tools')).tools ?? []) as Tool[] } catch { return [] } }
+  /** 道具③: この現場に持ち出されている道具。失敗は空 */
+  async function siteTools(siteId: string): Promise<Tool[]> { try { return ((await call('site-tools', { siteId })).tools ?? []) as Tool[] } catch { return [] } }
   /** 持出中の道具すべて（本人以外が返す時の候補）。失敗は空 */
   async function outTools(): Promise<Tool[]> { try { return ((await call('out-tools')).tools ?? []) as Tool[] } catch { return [] } }
   /** 持出（持出先必須）。他の人が持出中なら EF が又貸し（transfer）にして前の人へ通知する。失敗は throw */
@@ -69,5 +71,5 @@ export function useToolsApi() {
     return { kind: 'return', located: !!r.located, deduped: !!r.deduped }
   }
 
-  return { tool, location, bases, myTools, outTools, checkout, returnTool }
+  return { tool, location, bases, myTools, outTools, siteTools, checkout, returnTool }
 }

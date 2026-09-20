@@ -53,5 +53,11 @@
   "geoGranted": "Location acquired",
   "geoRetryable": "Could not get location (you can still record)",
   "geoRetry": "Retry",
-  "geoBlocked": "Location is blocked. Allow it in device settings to record it (you can still record)"
+  "geoBlocked": "Location is blocked. Allow it in device settings to record it (you can still record)",
+  "atSite": "Tools at this site ({n})",
+  "sinceToday": "since today",
+  "sinceDays": "for {n} days",
+  "indexHint": "Scan a tool or storage QR to take out / return. Here you can see where tools are now.",
+  "allOutTools": "Tools others have out ({n})",
+  "allOutToolsEmpty": "No tools are out"
 }
