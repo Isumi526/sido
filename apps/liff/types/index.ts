@@ -46,6 +46,9 @@ export interface VehicleExpense {
   dieselTategae?: boolean   // 軽油代
   parkingTategae?: boolean  // 駐車代
   highwayTategae?: boolean  // 高速代
+  // 距離Step2（2026-09-20）: 既定距離超過の申請（保存形）と入力中の理由。形は shared/distance-overage.ts が正本
+  overages?: Partial<Record<'distanceKm' | 'dieselKm', import('~/composables/distance-overage.gen').DistanceOverage>>
+  overageReason?: string
 }
 
 export interface LineItem {

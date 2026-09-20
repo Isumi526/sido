@@ -546,6 +546,14 @@
                     <ExpenseField v-model="veh.distanceKm" :label="$t('report.gasoline')" />
                     <ExpenseField v-model="veh.dieselKm"   :label="$t('report.diesel')" />
                   </div>
+                  <!-- 距離Step2（2026-09-20）: 現場の既定距離より大きい距離は理由必須＋現場管理者の承認。
+                       承認までは既定値で計上される（保存時に distance-overage.normalizeVehicleOverages が保存形へ直す） -->
+                  <div v-if="vehicleOverDefault(si, veh)" class="overage-box" :data-testid="`dist-over-${si}-${vi}`">
+                    <div class="overage-title">{{ $t('report.distOverTitle', { km: siteDefaultKm(si) }) }}</div>
+                    <p class="overage-hint">{{ $t('report.distOverHint') }}</p>
+                    <textarea v-model="veh.overageReason" class="input" rows="2" :placeholder="$t('report.distOverReasonPlaceholder')" :data-testid="`dist-over-reason-${si}-${vi}`" />
+                    <p v-if="overageStatusLabel(veh)" class="overage-status" :data-testid="`dist-over-status-${si}-${vi}`">{{ overageStatusLabel(veh) }}</p>
+                  </div>
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addVehicle(si)">{{ $t('report.addVehicle') }}</button>
                 <!-- 車両レベルの領収書は廃止（ガソリン/軽油=距離ベースで領収書不要・駐車/高速は各明細に領収書あり） -->
@@ -1006,6 +1014,7 @@
 
 <script setup lang="ts">
 import { todayStr } from '~/composables/schedule-core.gen'
+import { isOverDefault, normalizeVehicleOverages, denormalizeVehicleOverages, DISTANCE_FIELDS } from '~/composables/distance-overage.gen'
 import { punchDiffLabel, isPunchDiffBig, isPunchDiffWorthShowing } from '~/composables/attendance-punch.gen'
 import { computeWorkerHours, getRateLines, calcBreakMinutes, effectiveBreakMinutes, effectiveBreakWindows, parseMin, TIME_OPTIONS } from '~/utils/workerHours'
 import type { RateBreakdown } from '~/utils/workerHours'
@@ -1893,6 +1902,8 @@ async function loadEditData(date: string) {
       // 保存時の振り分けで元の配列に戻る＝現場別集計の列は変わらない。
       e.others = mergeOtherExpenses(e.others, e.entertainments)
       e.entertainments = []
+      // 距離Step2: 承認待ちの超過申請は「作業員が入れた値」を欄に戻して見せる（理由も復元。もう一度書かせない）
+      for (const veh of (e.vehicles ?? [])) denormalizeVehicleOverages(veh)
     })
     siteUsage.value = report.form.value.sites.map((site: any) => {
       const usage = reconstructExpenseUsage(site.expenses)
@@ -2152,6 +2163,43 @@ function receiptItemLabel(it: any): string {
  *  入力欄ごと隠れているので、人は永久に直せなかった（2026-09-02 本番で発生）。
  *  そこで「どこか」を文言に出し、その欄を開いてスクロールするところまでやる。
  */
+// ── 距離Step2: 既定距離超過の理由必須・保存形への正規化 ──
+/** その現場の既定距離(km)。現場マスタに設定が無ければ null（＝超過判定しない・申告どおり） */
+function siteDefaultKm(si: number): number | null {
+  const name = report.form.value.sites[si]?.siteName
+  return name ? (master.siteDistances.value[name] ?? null) : null
+}
+function vehicleOverDefault(si: number, veh: any): boolean {
+  const d = siteDefaultKm(si)
+  return isOverDefault(veh?.distanceKm, d) || isOverDefault(veh?.dieselKm, d)
+}
+function overageStatusLabel(veh: any): string {
+  const ov = veh?.overages ?? {}
+  const st = DISTANCE_FIELDS.map((f) => ov[f]?.status).filter(Boolean)
+  if (st.includes('pending'))  return t('report.distOverPending')
+  if (st.includes('rejected')) return t('report.distOverRejected')
+  return ''
+}
+/** 超過しているのに理由が空の車両があればメッセージ（送信を止める） */
+function findMissingOverageReason(): string | null {
+  const sites = report.form.value.sites
+  for (let si = 0; si < sites.length; si++) {
+    for (const veh of (sites[si]?.expenses?.vehicles ?? [])) {
+      if (vehicleOverDefault(si, veh) && !String(veh.overageReason ?? '').trim()) {
+        return t('report.distOverReasonRequired', { site: sites[si].siteName, km: siteDefaultKm(si) })
+      }
+    }
+  }
+  return null
+}
+/** フォームの全車両を保存形へ（距離欄←既定値・超過分は overages[].pending）。既定値以下の欄は申請を消す */
+function normalizeAllOverages(): void {
+  const sites = report.form.value.sites
+  for (let si = 0; si < sites.length; si++) {
+    for (const veh of (sites[si]?.expenses?.vehicles ?? [])) normalizeVehicleOverages(veh, siteDefaultKm(si))
+  }
+}
+
 function findMissingReceipt(): ReceiptMiss | null {
   const sites = report.form.value.sites ?? []
   for (let si = 0; si < sites.length; si++) {
@@ -3028,6 +3076,20 @@ async function handleSubmit() {
       alert(miss.message)
       return
     }
+  }
+
+  // ── 送信バリデート＋保存形への正規化: 既定距離を超える距離は理由必須（距離Step2・2026-09-20）──
+  //  ★新規・編集の両方に効かせたいので、モード分岐より手前に置く。
+  //   正規化＝距離欄を既定値に戻し、超過分を overages[] の申請(pending)にする。集計は距離欄しか読まないので
+  //   承認されるまで金額が動かない。提出自体は止めない（夕方に現場から出す運用）。
+  {
+    const miss = findMissingOverageReason()
+    if (miss) {
+      if (isEditMode.value) editError.value = miss
+      alert(miss)
+      return
+    }
+    normalizeAllOverages()
   }
 
   // ── 編集モード: Supabase のみ更新（GAS には再送しない）──
@@ -4366,4 +4428,9 @@ html, body {
 }
 .toast-enter-active, .toast-leave-active { transition: all .25s ease; }
 .toast-enter-from, .toast-leave-to { opacity: 0; transform: translateX(-50%) translateY(12px); }
+/* 距離Step2: 既定距離超過の理由入力 */
+.overage-box { margin-top: 8px; padding: 10px 12px; border: 1px solid #fdba74; background: #fff7ed; border-radius: 10px; }
+.overage-title { font-size: 13px; font-weight: 700; color: #9a3412; }
+.overage-hint { margin: 4px 0 8px; font-size: 12px; color: #7c2d12; line-height: 1.5; }
+.overage-status { margin: 6px 0 0; font-size: 12px; font-weight: 700; color: #b45309; }
 </style>
