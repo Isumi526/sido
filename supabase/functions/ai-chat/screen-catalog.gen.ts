@@ -94,8 +94,8 @@ export const SCREEN_CATALOG: ScreenCatalogEntry[] = [
   },
   {
     "path": "/assets",
-    "name": "物品マスタ",
-    "title": "物品マスタ（ETCカード）",
+    "name": "備品・カード",
+    "title": "備品・カード（ETC など）",
     "requiresManagement": true,
     "requiresEstimate": false,
     "requiresApprover": false,
@@ -104,7 +104,7 @@ export const SCREEN_CATALOG: ScreenCatalogEntry[] = [
   },
   {
     "path": "/inventory",
-    "name": "在庫管理",
+    "name": "資材の在庫",
     "title": "",
     "requiresManagement": true,
     "requiresEstimate": false,
@@ -114,8 +114,8 @@ export const SCREEN_CATALOG: ScreenCatalogEntry[] = [
   },
   {
     "path": "/tools",
-    "name": "道具管理",
-    "title": "道具管理",
+    "name": "道具",
+    "title": "道具",
     "requiresManagement": false,
     "requiresEstimate": false,
     "requiresApprover": false,
@@ -380,7 +380,11 @@ export const SCREEN_CATALOG: ScreenCatalogEntry[] = [
     "requiresEstimate": false,
     "requiresApprover": false,
     "feature": null,
-    "help": []
+    "help": [
+      "管理画面と作業員アプリの主要機能が、月にどれくらい使われたかを機能別に数えています（外部の分析ツールには送っていません）。",
+      "「削減時間の自己申告」は、導入前と比べて1か月でどれくらい時間が減った実感かを月1回記録するものです。同じ月にもう一度出すと上書きされます。",
+      "トライアル先への報告や、使われていない機能の見直しに使います。"
+    ]
   },
   {
     "path": "/non-submitters",

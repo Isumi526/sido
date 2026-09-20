@@ -40,7 +40,7 @@ export const FEATURES: FeatureDef[] = [
     description: '車両マスタ（車検・保険・修理ログ）と、予定管理の車両タブ。',
   },
   {
-    key: 'tools', settingKey: 'feature.tools', label: '道具管理', defaultOn: true,
+    key: 'tools', settingKey: 'feature.tools', label: '道具', defaultOn: true,
     description: '道具・保管場所のマスタとQR、持出／返却、予定管理の道具タブ。',
   },
   {
@@ -56,7 +56,7 @@ export const FEATURES: FeatureDef[] = [
   {
     // 在庫①〜④（2026-09-19 レビュー決定）: ③④が揃うまでベータ＝既定OFF。SEED で ON にして大塚さんに見せる。
     // OFF のあいだは admin「在庫管理」メニュー／ルートと、作業員アプリの「在庫」メニュー／画面を隠す（データは消さない）。
-    key: 'inventory', settingKey: 'feature.inventory', label: '在庫管理（ベータ）', defaultOn: false,
+    key: 'inventory', settingKey: 'feature.inventory', label: '資材の在庫（ベータ）', defaultOn: false,
     description: '品目マスタと、作業員アプリの「在庫」（引き上げ・持出・入荷を写真つきで記録）。残数把握用で会計在庫ではありません。',
   },
 ]

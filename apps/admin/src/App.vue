@@ -96,10 +96,10 @@
         <li><RouterLink to="/subcontractors" class="nav-link"><span class="material-symbols-rounded nav-icon">handshake</span>協力業者</RouterLink></li>
         <!-- 車両・道具は「設定 › 使う機能」でテナント単位に開閉（2026-09-19 B-0） -->
         <li v-if="canViewManagementPages && isFeatureEnabled('vehicles')"><RouterLink to="/vehicles" class="nav-link"><span class="material-symbols-rounded nav-icon">directions_car</span>車両</RouterLink></li>
-        <li v-if="canViewManagementPages"><RouterLink to="/assets" class="nav-link"><span class="material-symbols-rounded nav-icon">inventory_2</span>物品マスタ</RouterLink></li>
+        <li v-if="canViewManagementPages"><RouterLink to="/assets" class="nav-link"><span class="material-symbols-rounded nav-icon">inventory_2</span>備品・カード</RouterLink></li>
         <!-- 在庫①〜④はベータ（設定「使う機能」の feature.inventory・既定OFF）。③④が揃ってから SEED で ON（2026-09-19 レビュー決定） -->
-        <li v-if="canViewManagementPages && isFeatureEnabled('inventory')"><RouterLink to="/inventory" class="nav-link"><span class="material-symbols-rounded nav-icon">warehouse</span>在庫管理</RouterLink></li>
-        <li v-if="isFeatureEnabled('tools')"><RouterLink to="/tools" class="nav-link"><span class="material-symbols-rounded nav-icon">construction</span>道具管理</RouterLink></li>
+        <li v-if="canViewManagementPages && isFeatureEnabled('inventory')"><RouterLink to="/inventory" class="nav-link"><span class="material-symbols-rounded nav-icon">warehouse</span>資材の在庫</RouterLink></li>
+        <li v-if="isFeatureEnabled('tools')"><RouterLink to="/tools" class="nav-link"><span class="material-symbols-rounded nav-icon">construction</span>道具</RouterLink></li>
         <li v-if="canViewEstimates"><RouterLink to="/estimate-masters" class="nav-link"><span class="material-symbols-rounded nav-icon">price_change</span>見積マスタ・単価表</RouterLink></li>
         <!-- 見積Excel連携は会社ごとの個別対応（設計書 E-1・既定OFF・SEED=ON）。見積 ON かつ estimate_excel ON の会社にだけ出す -->
         <li v-if="canViewEstimates && isFeatureEnabled('estimate_excel')"><RouterLink to="/estimate-excel" class="nav-link"><span class="material-symbols-rounded nav-icon">table_view</span>見積Excel連携<span class="nav-beta">β</span></RouterLink></li>

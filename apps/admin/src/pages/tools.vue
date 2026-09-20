@@ -2,7 +2,7 @@
   <div>
     <div class="page-header">
       <div>
-        <h1 class="page-title">道具管理</h1>
+        <h1 class="page-title">道具</h1>
       </div>
       <div class="header-btns">
         <template v-if="tab === 'locations'">
