@@ -111,6 +111,13 @@ const SHARES = [
     ],
   },
   {
+    // 日報1件を「人が読む行」に畳む（承認画面の変更前／変更後の全体表示）。admin で使う（将来 LIFF の履歴でも）
+    src: 'shared/report-snapshot.ts',
+    dests: [
+      'apps/admin/src/lib/report-snapshot.gen.ts',
+    ],
+  },
+  {
     // 効果測定の計測キー登録簿。admin（直接INSERT）/ LIFF（EF経由）/ EF（キー検証）で同じ登録簿を使う
     src: 'shared/usage-features.ts',
     dests: [

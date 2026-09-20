@@ -110,6 +110,15 @@
           </div>
         </div>
 
+        <!-- ★日報全体の変更前／変更後（R-2・2026-09-20）。差分チップは要約、こちらは全体を見て判断するため
+             （9/10 現場管理者「承認画面で詳細が見れない」）。期限後の新規提出は変更後（提出内容）だけを出す。 -->
+        <div class="section">
+          <button type="button" class="btn-toggle" :data-testid="`pending-full-toggle-${p.id}`" @click="toggleFull(p.id)">
+            {{ fullOpen.has(p.id) ? '日報全体を閉じる' : (p.kind === 'edit' ? '日報全体を見る（変更前／変更後）' : '日報全体を見る') }}
+          </button>
+          <ReportBeforeAfter v-if="fullOpen.has(p.id)" :before="p.kind === 'edit' ? (p.before ?? null) : null" :after="p.payload" />
+        </div>
+
         <!-- ★領収書。金額だけでは妥当か判断できないので、承認画面で現物を開けるようにする。
              データは元から保留 payload に入っており（fileUrls）、出していなかっただけ。 -->
         <div v-if="p.receipts && (p.receipts.added.length || p.receipts.removed.length || p.receipts.kept.length)"
@@ -231,6 +240,7 @@ import { getAccountId } from '../lib/account'
 import { summarizePendingEdit, receiptCount, noReceiptReasons } from '../lib/pendingEditDiff'
 import { refreshNavBadges } from '../lib/navBadges'
 import { diffReceipts } from '../lib/reportReceipts'
+import ReportBeforeAfter from '../components/ReportBeforeAfter.vue'
 import { currentUser, currentRole } from '../lib/auth'
 
 const route = useRoute()
@@ -265,12 +275,13 @@ async function withReceipts(rows: any[], accountId: string): Promise<any[]> {
   if (ids.length) {
     const { data } = await supabase
       .from('daily_reports')
-      .select('id, sites, gasoline_items')
+      .select('id, is_working, leave_type, is_business_trip, note, sites, gasoline_items')
       .eq('account_id', accountId)
       .in('id', ids)
     for (const r of (data ?? [])) before.set(r.id, r)
   }
-  return rows.map(r => ({ ...r, receipts: diffReceipts(before.get(r.report_id) ?? {}, r.payload ?? {}) }))
+  // before は「日報全体の変更前／変更後」（ReportBeforeAfter）でも使う
+  return rows.map(r => ({ ...r, before: before.get(r.report_id) ?? null, receipts: diffReceipts(before.get(r.report_id) ?? {}, r.payload ?? {}) }))
 }
 
 /** 申請対象の現場名。payload の sites から拾って重複を畳む。
@@ -289,6 +300,14 @@ function receiptGap(p: any): boolean {
   if (!p?.reason) return false
   if (!/領収|レシート|添付|写真/.test(p.reason)) return false
   return receiptCount(p.payload ?? {}) === 0
+}
+
+/** 「日報全体を見る」を開いている保留の id */
+const fullOpen = ref(new Set<string>())
+function toggleFull(id: string) {
+  const s = new Set(fullOpen.value)
+  if (s.has(id)) s.delete(id); else s.add(id)
+  fullOpen.value = s
 }
 
 /** ログイン中の管理者に対応する users.id。自己承認の判定に使う（submitted_by_user_id は users.id）。 */
