@@ -1820,7 +1820,11 @@ async function loadEditData(date: string) {
   }
   if (!saved) return
 
-  originalReport.value = saved  // 差分計算のために保存
+  // ★差分計算のために「編集前」を保存する。深いコピーにすること（R-1・2026-09-18 発見）:
+  //   下でフォームへ入れる sites[].workers[] などは同じオブジェクト参照になるため、そのまま持つと
+  //   フォームで時刻を変えた瞬間に「編集前」も書き換わり、computeDiff が常に空 → サーバの代替差分に落ちて
+  //   「稼働: あり→なし」「経費を変更」と嘘の差分が承認画面に出ていた。
+  originalReport.value = JSON.parse(JSON.stringify(saved))
   void refreshPendingState()   // 既に承認待ちなら、今見えているのは編集前の内容だと伝える
 
   report.form.value.date = saved.date

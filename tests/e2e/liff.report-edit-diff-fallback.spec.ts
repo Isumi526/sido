@@ -64,7 +64,7 @@ async function submitWithoutDiffs(reportId: string, workers: any[]) {
       diffs: [],                       // ★ここが空で来るのが再現の肝
       kind: 'edit',
       payload: {
-        isWorking: true, note: 'E2E:差分フォールバック',
+        is_working: true, note: 'E2E:差分フォールバック',   // ★実際のクライアント（buildReportPayload）と同じ snake_case
         sites: [{
           siteName: 'テスト現場B', workers, subcontractors: [],
           expenses: { vehicles: [], parkings: [], highways: [], trains: [], hotels: [], others: [], entertainments: [] },
@@ -104,4 +104,35 @@ test('★2人目以降の作業員の時刻変更も差分に出る（先頭し�
   const diffs: string[] = rows[0].diffs ?? []
   expect(diffs.join('\n'), '★2人目の変更が拾われる').toContain('06:00')
   expect(diffs.join('\n'), '誰の時間かが分かる').toContain('E2E二人目')
+})
+
+// ── R-1（2026-09-18 発見・2026-09-20 修正）: 代替差分が嘘をつかない ──
+//  is_working（snake）を isWorking（camel）で読んで常に「稼働: あり→なし」／経費を JSON.stringify の一致で比べて
+//  jsonb のキー順が違うだけで「経費を変更」。終了時刻だけ変えた申請の差分は時間の1行だけになること。
+test('★R-1: 終了時刻だけ変えた申請の代替差分は「時間」の1行だけ（稼働・経費の行が出ない）', async () => {
+  const reportId = await seedReport([W('E2E作業員', '08:30', '17:30')])
+  // DB 側の経費はキー順が違う（jsonb は保存時に並び替える）。同じ内容なら差分に出ない
+  await restSrv(`daily_reports?id=eq.${reportId}`, { method: 'PATCH', body: JSON.stringify({ sites: [{
+    siteName: 'テスト現場B', workers: [W('E2E作業員', '08:30', '17:30')], subcontractors: [],
+    expenses: { others: [{ amount: 1200, memo: '駐車' }], vehicles: [], parkings: [], highways: [], trains: [], hotels: [], entertainments: [] },
+  }] }) })
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/report-edit-log`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', apikey: ANON_KEY },
+    body: JSON.stringify({
+      action: 'create', dev_line_user_id: 'dev-user-id', reportId, reportDate: EDIT_DATE, reason: 'E2E: R-1', diffs: [], kind: 'edit',
+      payload: { is_working: true, note: 'E2E:差分フォールバック', sites: [{
+        siteName: 'テスト現場B', workers: [W('E2E作業員', '08:30', '18:00')], subcontractors: [],
+        // ★キーの並びを変え、金額は文字列で（フォームの経路で起きうる表記ゆれ）
+        expenses: { vehicles: [], parkings: [], entertainments: [], highways: [], trains: [], hotels: [], others: [{ memo: '駐車', amount: '1200' }] },
+      }] },
+    }),
+  })
+  expect(res.status).toBe(200)
+  const rows = await restSrv(`daily_report_pending_edits?report_id=eq.${reportId}&select=diffs`)
+  const diffs: string[] = rows[0].diffs ?? []
+  expect(diffs, '時間の1行だけ').toHaveLength(1)
+  expect(diffs[0]).toContain('17:30')
+  expect(diffs[0]).toContain('18:00')
+  expect(diffs.join('\n'), '★稼働の行が出ない').not.toContain('稼働')
+  expect(diffs.join('\n'), '★経費の行が出ない').not.toContain('経費')
 })

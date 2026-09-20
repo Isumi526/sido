@@ -140,12 +140,35 @@ async function resolveCaller(
  *  表示用の粗い差分でよい（承認者が「何が変わったか」を掴めればいい）。
  *  細かい文言はクライアント版(computeDiff)が出す。ここは落ちた時の網。
  */
+/** 稼働フラグ。DB 行（is_working）と sanitizePayload の出力（is_working）、旧呼び出し（isWorking）のどれでも読む */
+const workingOf = (r: any): boolean => !!(r?.is_working ?? r?.isWorking)
+/**
+ * キー順・undefined・数値/文字列の表記に依存しない正規化（jsonb はキー順を保たないので JSON.stringify の一致では
+ * 同じ経費でも「変更」になっていた・2026-09-18 実測）。配列は順序を保つ（明細の並びは意味がある）。
+ */
+function canon(v: any): any {
+  if (Array.isArray(v)) return v.map(canon)
+  if (v && typeof v === 'object') {
+    const out: Record<string, any> = {}
+    for (const k of Object.keys(v).sort()) {
+      const c = canon(v[k])
+      if (c === undefined || c === null || c === '') continue   // 空は無いのと同じ扱い（"" と null と欠落を区別しない）
+      out[k] = c
+    }
+    return out
+  }
+  if (typeof v === 'number') return String(v)   // 1200 と "1200" を同じに
+  return v
+}
+const sameJson = (a: any, b: any) => JSON.stringify(canon(a ?? {})) === JSON.stringify(canon(b ?? {}))
+
 function fallbackDiffs(before: any, after: any): string[] {
   const out: string[] = []
   const bs = Array.isArray(before?.sites) ? before.sites : []
   const as_ = Array.isArray(after?.sites) ? after.sites : []
-  if (before?.isWorking !== after?.isWorking) {
-    out.push(`稼働: ${before?.isWorking ? 'あり' : 'なし'} → ${after?.isWorking ? 'あり' : 'なし'}`)
+  // ★is_working（snake・DB/sanitizePayload）と isWorking（camel）のキー違いで常に「あり→なし」になっていた（2026-09-18 実測）
+  if (workingOf(before) !== workingOf(after)) {
+    out.push(`稼働: ${workingOf(before) ? 'あり' : 'なし'} → ${workingOf(after) ? 'あり' : 'なし'}`)
   }
   if ((before?.note ?? '') !== (after?.note ?? '')) out.push('備考を変更')
   if (bs.length !== as_.length) out.push(`現場の数: ${bs.length} → ${as_.length}`)
@@ -167,7 +190,8 @@ function fallbackDiffs(before: any, after: any): string[] {
         out.push(`${label} ${y.workerName || ''}の休憩: ${x.breakMinutes ?? 0}分 → ${y.breakMinutes ?? 0}分`)
       }
     }
-    if (JSON.stringify(b.expenses ?? {}) !== JSON.stringify(a.expenses ?? {})) out.push(`${label}: 経費を変更`)
+    // ★jsonb のキー順に依存しない比較（同じ経費で「経費を変更」と出ていた）
+    if (!sameJson(b.expenses, a.expenses)) out.push(`${label}: 経費を変更`)
   }
   if (!out.length) out.push('※内容の差分を検出できませんでした。日報の中身そのものを確認してください')
   return out.slice(0, MAX_DIFFS)
@@ -787,7 +811,7 @@ Deno.serve(async (req) => {
         .select('is_working, sites, note').eq('id', reportId).maybeSingle()
       if (before) {
         effectiveDiffs = fallbackDiffs(
-          { isWorking: before.is_working, sites: before.sites, note: before.note },
+          { is_working: before.is_working, sites: before.sites, note: before.note },
           incoming,
         )
       }
