@@ -193,7 +193,8 @@ Deno.serve(async (req) => {
       const { error } = await svc.from('workers').update({ schedule_mail_enabled: body.enabled }).eq('id', caller.workerId).eq('account_id', caller.accountId)
       if (error) return json({ ok: false, error: 'update_failed' }, 500)
     }
-    const { data: w } = await svc.from('workers').select('schedule_mail_enabled').eq('id', caller.workerId).maybeSingle()
+    // ★service_role なので account_id でも絞る（テナント分離の原則・Gemini 指摘 2026-09-20）
+    const { data: w } = await svc.from('workers').select('schedule_mail_enabled').eq('id', caller.workerId).eq('account_id', caller.accountId).maybeSingle()
     const st = await tenantSettings(svc, caller.accountId)
     const email = await resolveWorkerNotifyEmail(svc, caller.accountId, caller.workerId)
     return json({ ok: true, enabled: w?.schedule_mail_enabled !== false, tenantEnabled: st.enabled, hasEmail: !!email })
