@@ -66,7 +66,8 @@
 - **精算に載せる理由（巻き戻し禁止）**: 個人経費は `tategae`（個人立替）を持つ。申請書・精算に出さないと会社が本人へ振り込む対象から漏れる。日報を出さない役員等は `daily_reports` が無いので、`personal_expenses` を読まない限り1円も出ない。
 - **読めない時に黙らせない**: `personal_expenses` は RLS(authenticated)＋anon revoke。LIFF は email/password ログイン＝authenticated 前提。読み取りに失敗したら金額が申請書から消えるため `console.error` を出す（silent-drop 禁止）。
 - **現場に紛れ込ませない**: `siteName` は空文字にする（`'現場未設定'` にしない）。日毎集計では「現場外（個人経費）」と表示。
-- **現場別集計・ガソリン按分は読まない**＝現場の原価を歪めない（`site-reports.vue` / `gasoline-allocation.vue` / `expenses.vue` / `index.vue` は `personal_expenses` を参照しない）。この不参照は意図的なので、追加する時は現場外行の除外を必ず入れる。
+- **現場別集計・ガソリン按分は読まない**＝現場の原価を歪めない（`site-reports.vue` / `gasoline-allocation.vue` は `personal_expenses` を参照しない。※オフィス/工場に紐付けた分だけ `site-reports.vue` のオフィスタブに出る・2026-09-13）。この不参照は意図的なので、追加する時は現場外行の除外を必ず入れる。
+- **ダッシュボード（`index.vue`）は 2026-09-20 から読む**: 月次集計に「現場に紐づかない経費」の**現場外の1行**として計上（`flattenPersonalExpenses` 経由・明細に 誰の／科目／紐付け先／支払先）。会議で「ダッシュボードで表示する」と説明した分。現場の原価（商社/業者/現場経費）には混ぜない。同月の合計は 経費一覧（`expenses.vue`）・日毎集計（`expenses-daily.vue`）と一致すること（E2E `admin.dashboard-personal-expense`）。
 - 権限: `workers.can_apply_personal_expense`（既定false）＝付与された人だけが申請できる（#2cbe3caa）
 - 月額上限（枠）＝ **案B確定（#32e93d75・2026-07-31）**: `worker_expense_budgets(worker_id, month, limit_amount)` で月別・履歴あり
   - 解決順: 月別上書き → `workers.default_monthly_expense_limit` → `settings['personal_expense_monthly_limit']` → 枠なし（＝申請不可）
