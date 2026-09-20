@@ -2,7 +2,7 @@
   <div class="cal-page">
     <!-- ヘッダー -->
     <div class="page-header">
-      <h1 class="page-title">予定管理</h1>
+      <h1 class="page-title">スケジュール管理</h1>
       <div v-if="tab === 'workers'" class="header-actions">
         <label class="deleted-toggle">
           <input type="checkbox" v-model="showDeleted" />

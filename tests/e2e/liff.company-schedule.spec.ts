@@ -62,10 +62,10 @@ test('★月ビュー: 現場マスタの工期が現場行の帯として出て
 
 // ※ 工程（詳細・Excel取込の工程行）の折りたたみガントは 2026-09-19 に撤去（大塚さん「Excel取込は不要。工期の帯＋工程表ファイルが見られれば十分」）。
 
-test('ナビ(HOME/ハンバーガー)に会社予定への導線がある', async ({ page }) => {
+test('ナビ(HOME/ハンバーガー)に工程管理（旧・会社予定）への導線がある', async ({ page }) => {
   await page.goto('/', { waitUntil: 'networkidle' })
   const homeLabels = await page.locator('.menu-card .menu-label').allTextContents()
-  expect(homeLabels).toContain('会社予定')
+  expect(homeLabels).toContain('工程管理')
 })
 
 test('liff-process-summary のレスポンスに金額/顧客名/住所等の機微情報キーを含まない', async () => {

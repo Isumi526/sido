@@ -102,7 +102,7 @@
     <div v-if="manage" class="modal-overlay" @click.self="manage = null">
       <div class="modal" data-testid="resource-manage-modal">
         <h2>{{ typeLabel }}の登録</h2>
-        <p class="muted">予定管理の列になります。使わなくなったものは「無効」にすると列から消えます（予約の履歴は残ります）。</p>
+        <p class="muted">スケジュール管理の列になります。使わなくなったものは「無効」にすると列から消えます（予約の履歴は残ります）。</p>
         <table class="mg-table">
           <tr v-for="r in allResources" :key="r.id" :data-testid="`manage-row-${r.id}`">
             <td><input v-model="r.name" class="input" @change="saveResource(r)" /></td>
