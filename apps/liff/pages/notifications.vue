@@ -28,6 +28,15 @@
         <p class="state-text">{{ $t('common.loading') }}</p>
       </div>
 
+      <!-- スケジュール通知メールの本人ON/OFF（テナント設定がONの時だけ意味を持つ・2026-09-20） -->
+      <div v-if="!loading && mailPref && mailPref.tenantEnabled" class="mail-pref" data-testid="sched-mail-pref">
+        <label class="mail-pref-row">
+          <input type="checkbox" :checked="mailPref.enabled" :disabled="mailPrefSaving" data-testid="sched-mail-toggle" @change="setMailPref(($event.target as HTMLInputElement).checked)" />
+          <span>{{ $t('notifications.schedMailToggle') }}</span>
+        </label>
+        <p class="mail-pref-hint">{{ mailPref.hasEmail ? $t('notifications.schedMailHint') : $t('notifications.schedMailNoEmail') }}</p>
+      </div>
+
       <!-- やること：承認などの行動が済むまで残る -->
       <template v-else-if="tab === 'todo'">
         <div v-if="!pendingDocItems.length" class="empty-state" data-testid="todo-empty">
@@ -202,8 +211,32 @@ watch(tab, async (t) => {
   if (t === 'info') await readAll()
 })
 
+// ── スケジュール通知メールの本人設定（EF schedule-notify・pref）──
+const mailPref = ref<{ enabled: boolean; tenantEnabled: boolean; hasEmail: boolean } | null>(null)
+const mailPrefSaving = ref(false)
+async function callSchedulePref(enabled?: boolean) {
+  const config = useRuntimeConfig()
+  const liff = useLiff()
+  const anonKey = config.public.supabaseAnonKey as string
+  const { data: { session } } = await supabase.auth.getSession()
+  const lineIdToken = (await liff.getIdToken().catch(() => null)) ?? ''
+  const devLineUserId = config.public.appEnv === 'development' ? (liff.profile.value?.userId ?? '') : ''
+  const res = await $fetch<any>(`${config.public.edgeFunctionUrl}/schedule-notify`, {
+    method: 'POST',
+    headers: { apikey: anonKey, Authorization: session ? `Bearer ${session.access_token}` : `Bearer ${anonKey}` },
+    body: { action: 'pref', ...(enabled === undefined ? {} : { enabled }), line_id_token: lineIdToken, dev_line_user_id: devLineUserId },
+  })
+  if (res?.ok) mailPref.value = { enabled: !!res.enabled, tenantEnabled: !!res.tenantEnabled, hasEmail: !!res.hasEmail }
+}
+async function setMailPref(enabled: boolean) {
+  mailPrefSaving.value = true
+  try { await callSchedulePref(enabled) } catch (e) { console.warn('[notifications] mail pref', e) }
+  finally { mailPrefSaving.value = false }
+}
+
 onMounted(async () => {
   await load()
+  callSchedulePref().catch(() => { /* 取れなければ出さない */ })
   await Promise.all([refreshNotifBadge(), refreshPendingDocBadge()])
   // やることが無ければお知らせを開く（空のタブを見せない）＝開いた時点で既読になる
   if (pendingDocCount.value === 0) {
@@ -264,4 +297,7 @@ onMounted(async () => {
 
 .notif-dot { width: 8px; height: 8px; border-radius: 50%; background: #06C755; flex: none; margin-top: 6px; }
 .notif-chev { font-size: 20px; color: #c7c7c7; flex: none; align-self: center; }
+.mail-pref { margin: 0 0 12px; padding: 10px 12px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; }
+.mail-pref-row { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #1e293b; }
+.mail-pref-hint { margin: 4px 0 0 24px; font-size: 11px; color: #64748b; }
 </style>

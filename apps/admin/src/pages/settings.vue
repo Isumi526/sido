@@ -178,6 +178,36 @@
     </div>
   </div>
 
+  <!-- スケジュール管理の通知メール（予定の作成・変更・削除＋前日リマインド）ON/OFF・2026-09-20 -->
+  <div class="reminder-box" data-testid="schedule-mail-box">
+    <div class="reminder-title">スケジュール管理の通知メール</div>
+    <div class="reminder-config">
+      <div class="config-row">
+        <span class="config-label">予定の作成・変更・削除と前日リマインドをメールで送る</span>
+        <button
+          class="toggle"
+          :class="{ on: scheduleMailEnabled }"
+          :disabled="scheduleMailSaving"
+          data-testid="schedule-mail-toggle"
+          @click="setScheduleMailEnabled(!scheduleMailEnabled)"
+        >
+          <span class="toggle-knob" />
+          <span class="toggle-text">{{ scheduleMailEnabled ? 'ON' : 'OFF' }}</span>
+        </button>
+      </div>
+      <div class="config-row">
+        <span class="config-label">前日リマインドの時刻</span>
+        <select class="input-inline" :value="scheduleReminderTime" data-testid="schedule-reminder-time" :disabled="scheduleMailSaving" @change="setScheduleReminderTime(($event.target as HTMLSelectElement).value)">
+          <option v-for="h in 24" :key="h" :value="`${String(h - 1).padStart(2, '0')}:00`">{{ String(h - 1).padStart(2, '0') }}:00</option>
+        </select>
+      </div>
+      <div class="reminder-desc">
+        ONの時、予定の担当作業員に「予定が追加/変更/削除された」メールと、翌日の予定のリマインド（上の時刻）を送ります。
+        通知用メールを持つ作業員だけが対象で、作業員ごとに「お知らせ」画面で受け取りをOFFにできます。アプリ内のお知らせは設定に関係なく出ます。
+      </div>
+    </div>
+  </div>
+
   <!-- 打刻リマインド（予定の開始・終了時刻）ON/OFF -->
   <div class="reminder-box" data-testid="punch-reminder-box">
     <div class="reminder-title">打刻のリマインド（予定の時刻）</div>
@@ -311,6 +341,23 @@ function setInventoryConfirmRole(val: 'self' | 'office') {
     .finally(() => { inventoryConfirmSaving.value = false })
 }
 
+// ── スケジュール管理の通知メール ON/OFF・前日リマインド時刻。EF schedule-notify が settings を見る（未設定＝OFF）──
+const scheduleMailEnabled  = ref(false)
+const scheduleReminderTime = ref('18:00')
+const scheduleMailSaving   = ref(false)
+function setScheduleMailEnabled(val: boolean) {
+  scheduleMailEnabled.value = val
+  scheduleMailSaving.value = true
+  upsertSetting('notify_schedule_mail_enabled', String(val), 'スケジュール管理の通知メール')
+    .finally(() => { scheduleMailSaving.value = false })
+}
+function setScheduleReminderTime(val: string) {
+  scheduleReminderTime.value = val
+  scheduleMailSaving.value = true
+  upsertSetting('schedule_reminder_time', val, 'スケジュール前日リマインドの時刻')
+    .finally(() => { scheduleMailSaving.value = false })
+}
+
 // ── 打刻リマインド（予定の開始・終了時刻）ON/OFF。EF punch-reminder が settings を見る ──
 const punchReminderEnabled = ref(false)
 const punchReminderSaving  = ref(false)
@@ -440,12 +487,14 @@ async function loadReminderConfig() {
   const accountId = await getAccountId()
   const { data } = await supabase.from('settings').select('key, value')
     .eq('account_id', accountId)
-    .in('key', ['reminder_enabled', 'reminder_time', 'notify_report_enabled', 'notify_punch_reminder_enabled', 'notify_approval_request_enabled', 'inventory_confirm_role'])
+    .in('key', ['reminder_enabled', 'reminder_time', 'notify_report_enabled', 'notify_punch_reminder_enabled', 'notify_approval_request_enabled', 'inventory_confirm_role', 'notify_schedule_mail_enabled', 'schedule_reminder_time'])
   const m = Object.fromEntries((data ?? []).map(s => [s.key, s.value]))
   reminderEnabled.value     = (m['reminder_enabled'] ?? 'true') === 'true'
   reminderTime.value        = m['reminder_time'] ?? '08:00'
   reportNotifyEnabled.value = (m['notify_report_enabled'] ?? 'true') === 'true'
   punchReminderEnabled.value = m['notify_punch_reminder_enabled'] === 'true'   // 未設定＝OFF（EF と同じ既定）
+  scheduleMailEnabled.value  = m['notify_schedule_mail_enabled'] === 'true'    // 未設定＝OFF（EF と同じ既定）
+  scheduleReminderTime.value = m['schedule_reminder_time'] ?? '18:00'
   approvalNotifyEnabled.value = (m['notify_approval_request_enabled'] ?? 'true') === 'true'   // 未設定＝ON
   inventoryConfirmRole.value = m['inventory_confirm_role'] === 'office' ? 'office' : 'self'   // 未設定＝本人（要回答9=C）
   await loadFeatures()   // 「使う機能」は lib/features.ts の読み直し（メニューと同じ値を見せる）
@@ -620,7 +669,7 @@ async function load() {
   const accountId = await getAccountId()
   const { data } = await supabase.from('settings').select('key, value, label')
     .eq('account_id', accountId)
-    .not('key', 'in', '(reminder_enabled,reminder_time,notify_report_enabled,notify_punch_reminder_enabled,notify_approval_request_enabled,expense_notify_emails)')
+    .not('key', 'in', '(reminder_enabled,reminder_time,notify_report_enabled,notify_punch_reminder_enabled,notify_approval_request_enabled,expense_notify_emails,notify_schedule_mail_enabled,schedule_reminder_time)')
     .order('key')
   const fromDb = (data ?? []) as Setting[]
 
