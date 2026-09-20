@@ -18,5 +18,9 @@
   "companionsRequired": "{account}は同行者名の入力が必須です（誰と行ったかの記録が税務上必要）。",
   "submitFailed": "日報は送信できましたが、経費申請の登録に失敗しました（{count}件）。お手数ですが「経費申請」ページから登録し直してください。",
   "office": "紐付け先（オフィス・工場）",
-  "officeNone": "拠点未設定"
+  "officeNone": "拠点未設定",
+  "kindBudget": "個人枠",
+  "kindBusiness": "業務経費",
+  "kindBudgetHint": "月額の上限（個人枠）から使う分。残りの枠に照らして管理されます。",
+  "kindBusinessHint": "仕事で使ったが特定の現場に紐づかない経費（消耗品の買い置きなど）。枠は消費しません。"
 }

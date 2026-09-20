@@ -881,6 +881,8 @@
           :rows="pe.rows.value"
           :usage="pe.usage.value"
           :offices="pe.offices.value"
+          :can-submit="pe.canSubmit.value"
+          :can-submit-business="pe.canSubmitBusiness.value"
           @add="pe.add(report.form.value.date)"
           @remove="pe.remove"
         />
@@ -1241,7 +1243,8 @@ const { resolveRole: resolveWorkerRole, canCreateSite } = useWorkerPermission()
 //  ★編集モードでは出さない（過去日報の修正で新しい経費が生まれると申請時期が追えない）。
 const pe = usePersonalExpenseRows()
 const personalExpense = usePersonalExpense()
-const showPersonalExpense = computed(() => !isEditMode.value && pe.canSubmit.value)
+// ★2026-09-20: 業務経費（枠を消費しない）は全作業員が出せるので、個人枠 or 業務経費のどちらかが出せれば出す
+const showPersonalExpense = computed(() => !isEditMode.value && (pe.canSubmit.value || pe.canSubmitBusiness.value))
 
 const selfUser = ref<User | null>(null)
 
@@ -2294,6 +2297,7 @@ async function submitPersonalExpenses(): Promise<number> {
         site_id: row.site_id,
         site_name: row.site_name,
         client_token: row.token,
+        expense_kind: row.kind,
       })
     } catch (e) {
       failed++
@@ -2309,6 +2313,7 @@ async function loadPersonalExpenseState() {
   try {
     const s = await personalExpense.loadState(expenseMonthKey(report.form.value.date || todayJst.value))
     pe.canSubmit.value = s.canSubmit
+    pe.canSubmitBusiness.value = s.canSubmitBusiness
     pe.offices.value = s.offices
     pe.baseSiteId.value = s.baseSiteId
     // 枠(limit)が取れない時は残額の表示だけ省く（申請自体は canSubmit に従う）
@@ -2317,6 +2322,7 @@ async function loadPersonalExpenseState() {
       : null
   } catch {
     pe.canSubmit.value = false
+    pe.canSubmitBusiness.value = false
   }
 }
 const voiceBusy = ref(false)

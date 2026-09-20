@@ -2,8 +2,8 @@
   <FormSection num="¥" :title="$t('personalExpense.sectionTitle')" data-testid="pe-section">
     <p class="pe-lead">{{ $t('personalExpense.lead') }}</p>
 
-    <!-- 月額枠の使用状況。既存の個人経費ページと同じ数字を出す（別集計を作らない） -->
-    <div v-if="usage" class="pe-budget" data-testid="pe-budget">
+    <!-- 月額枠の使用状況（個人枠の行だけ）。既存の個人経費ページと同じ数字を出す（別集計を作らない） -->
+    <div v-if="usage && canSubmit" class="pe-budget" data-testid="pe-budget">
       <span>{{ $t('personalExpense.budgetUsed', { used: yen(usage.used), limit: yen(usage.limit) }) }}</span>
       <span :class="['pe-remain', { over: remainAfter < 0 }]" data-testid="pe-remain">
         {{ remainAfter < 0
@@ -18,6 +18,19 @@
         <button type="button" class="pe-del" :data-testid="`pe-row-del-${i}`" @click="removeRow(i)">
           {{ $t('report.removeBtn') }}
         </button>
+      </div>
+      <!-- 区分（2026-09-20）: 個人枠＝月額上限を消費／業務経費＝現場に紐づかない会社の経費（枠を消費しない・全員が出せる）。
+           入口は1つのまま、行の属性で分ける。枠を持たない人は個人枠を選べない -->
+      <div class="pe-kind" role="radiogroup" :data-testid="`pe-kind-${i}`">
+        <label class="pe-kind-opt" :class="{ on: row.kind === 'budget', disabled: !canSubmit }">
+          <input type="radio" :name="`pe-kind-${i}`" value="budget" :disabled="!canSubmit" :checked="row.kind === 'budget'" :data-testid="`pe-kind-budget-${i}`" @change="row.kind = 'budget'" />
+          <span>{{ $t('personalExpense.kindBudget') }}</span>
+        </label>
+        <label class="pe-kind-opt" :class="{ on: row.kind === 'business', disabled: !canSubmitBusiness }">
+          <input type="radio" :name="`pe-kind-${i}`" value="business" :disabled="!canSubmitBusiness" :checked="row.kind === 'business'" :data-testid="`pe-kind-business-${i}`" @change="row.kind = 'business'" />
+          <span>{{ $t('personalExpense.kindBusiness') }}</span>
+        </label>
+        <span class="pe-kind-hint">{{ row.kind === 'budget' ? $t('personalExpense.kindBudgetHint') : $t('personalExpense.kindBusinessHint') }}</span>
       </div>
 
       <div class="pe-grid">
@@ -108,7 +121,8 @@
 //  ★保存は日報とは別（personal_expenses / EF personal-expense-submit）。
 //   このコンポーネントは入力だけを持ち、実際の登録は report.vue の送信処理が行う
 //   （日報の保存が成功してから登録する＝日報が落ちた時に経費だけ残さない）。
-//  ★枠を持たない人には親側で出さない（v-if）。ここでは権限判定をしない。
+//  ★2026-09-20: 区分（個人枠／業務経費）を行ごとに持つ。業務経費は枠を持たない人も出せるので、
+//   親側は「個人枠 or 業務経費のどちらかが出せる」時にセクションを出す。ここでは EF の判定結果（props）を見るだけ。
 // ============================================================
 import { computed } from 'vue'
 import { EXPENSE_ACCOUNT_OPTIONS } from '~/composables/expense-flatten.gen'
@@ -118,6 +132,10 @@ const props = defineProps<{
   rows: PersonalExpenseRow[]
   usage?: { used: number; limit: number } | null
   offices?: { id: string; name: string; kind: string }[]
+  /** 個人枠を出せるか（許可＋枠）。false なら行の区分は業務経費に固定 */
+  canSubmit?: boolean
+  /** 業務経費を出せるか（全作業員・EF が返す） */
+  canSubmitBusiness?: boolean
 }>()
 const emit = defineEmits<{ add: []; remove: [index: number] }>()
 
@@ -126,7 +144,8 @@ const yen = (n: number) => '¥' + Math.round(n || 0).toLocaleString('ja-JP')
 /** 入力中の合計を引いた残額。マイナスなら超過（送信は止めない＝既存ページと同じ扱い） */
 const remainAfter = computed(() => {
   if (!props.usage) return 0
-  const adding = props.rows.reduce((s, r) => s + (Number(r.amount) || 0), 0)
+  // ★枠を消費するのは個人枠（budget）の行だけ（AC5）。業務経費は残額に影響しない
+  const adding = props.rows.filter(r => r.kind !== 'business').reduce((s, r) => s + (Number(r.amount) || 0), 0)
   return props.usage.limit - props.usage.used - adding
 })
 
@@ -179,4 +198,10 @@ function removeFile(i: number, index: number) {
   width: 100%; background: #f1f5f9; border: 1px dashed #cbd5e1; border-radius: 8px;
   padding: 10px; font-size: 13px; color: #475569; cursor: pointer;
 }
+.pe-kind { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0 8px; }
+.pe-kind-opt { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; padding: 5px 10px; border: 1px solid #cbd5e1; border-radius: 999px; background: #fff; color: #334155; }
+.pe-kind-opt.on { border-color: #06C755; background: #ecfdf5; color: #047857; }
+.pe-kind-opt.disabled { opacity: .45; }
+.pe-kind-opt input { margin: 0; }
+.pe-kind-hint { flex-basis: 100%; font-size: 11px; color: #64748b; line-height: 1.5; }
 </style>

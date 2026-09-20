@@ -8,8 +8,8 @@
         <p class="state-text">読み込み中…</p>
       </div>
 
-      <!-- 権限なし / 枠なし。入口は出さず理由だけ出す（黙って空画面にしない） -->
-      <section v-else-if="!canSubmit" class="pe-card">
+      <!-- 権限なし / 枠なし（かつ業務経費も出せない）。入口は出さず理由だけ出す（黙って空画面にしない） -->
+      <section v-else-if="!canSubmit && !canSubmitBusiness" class="pe-card">
         <div class="pe-denied">
           <span class="material-symbols-rounded pe-icon">lock</span>
           <p>経費申請が許可されていません。</p>
@@ -25,7 +25,18 @@
             <span class="pe-month-label" data-testid="pe-month">{{ month }}</span>
             <button type="button" class="pe-nav" data-testid="pe-next" @click="shiftMonth(1)"><span class="material-symbols-rounded">chevron_right</span></button>
           </div>
-          <div class="pe-budget" :class="{ over: usage.isOver }" data-testid="pe-budget">
+          <!-- 区分（2026-09-20）: 個人枠＝月額上限を消費／業務経費＝現場に紐づかない会社の経費（枠を消費しない・全員）。
+               入口は1つのまま。ここで選んだ区分が下の登録フォームと一括登録の下書きに効く -->
+          <div class="pe-kind" role="radiogroup" data-testid="pe-kind">
+            <label class="pe-kind-opt" :class="{ on: kind === 'budget', disabled: !canSubmit }">
+              <input type="radio" name="pe-kind" value="budget" :disabled="!canSubmit" :checked="kind === 'budget'" data-testid="pe-kind-budget" @change="kind = 'budget'" />個人枠
+            </label>
+            <label class="pe-kind-opt" :class="{ on: kind === 'business', disabled: !canSubmitBusiness }">
+              <input type="radio" name="pe-kind" value="business" :disabled="!canSubmitBusiness" :checked="kind === 'business'" data-testid="pe-kind-business" @change="kind = 'business'" />業務経費
+            </label>
+            <span class="pe-kind-hint" data-testid="pe-kind-hint">{{ kind === 'budget' ? '月額の上限（個人枠）から使う分。残りの枠に照らして管理されます。' : '仕事で使ったが特定の現場に紐づかない経費（消耗品の買い置きなど）。枠は消費しません。' }}</span>
+          </div>
+          <div v-if="kind === 'budget' && canSubmit" class="pe-budget" :class="{ over: usage.isOver }" data-testid="pe-budget">
             <div class="pe-budget-row">
               <span>今月の利用</span>
               <strong>¥{{ usage.used.toLocaleString() }} / ¥{{ (usage.limit ?? 0).toLocaleString() }}</strong>
@@ -196,6 +207,7 @@
             <li v-for="r in items" :key="r.id" class="pe-item">
               <span class="pe-date">{{ r.date }}</span>
               <span class="pe-acct">{{ r.account_category }}</span>
+              <span v-if="r.expense_kind === 'business'" class="pe-kind-badge" data-testid="pe-item-business">業務</span>
               <!-- ★科目（会計仕訳用）と品名（何に使ったか）は別物。運用者から
                    「科目と品名を両方表示する」（2026-08-10 電話）。note が実際の品名。 -->
               <span v-if="r.note" class="pe-item-name">{{ r.note }}</span>
@@ -231,6 +243,10 @@ const msg = ref('')
 const msgOk = ref(false)
 const selfUser = ref<User | null>(null)
 const canSubmit = ref(false)
+/** 業務経費（枠を消費しない）を出せるか＝全作業員（EF が返す） */
+const canSubmitBusiness = ref(false)
+/** 登録する区分。枠を持つ人の既定は個人枠、持たない人は業務経費 */
+const kind = ref<'budget' | 'business'>('budget')
 const usage = ref(computeBudgetUsage([], '', null))
 const items = ref<any[]>([])
 const files = ref<File[]>([])
@@ -438,6 +454,9 @@ async function onAnalyze() {
 async function refresh() {
   const s = await pe.loadState(month.value)
   canSubmit.value = s.canSubmit
+  canSubmitBusiness.value = s.canSubmitBusiness
+  if (!canSubmit.value && canSubmitBusiness.value) kind.value = 'business'
+  if (canSubmit.value && !canSubmitBusiness.value) kind.value = 'budget'
   usage.value = s.usage
   items.value = s.items
   baseSiteId.value = s.baseSiteId
@@ -557,6 +576,7 @@ async function onSubmitBatch() {
           note: d.note,
           site_id: d.site_id || null,
           site_name: d.site_name || null,
+          expense_kind: kind.value,
           file_urls: fileUrls,
           tategae: d.tategae,
           client_token: d.token,   // 連打・再実行しても二重計上しない（AC7）
@@ -578,7 +598,7 @@ async function onSubmitBatch() {
     await refresh()
     batchMsgOk.value = ng === 0
     batchMsg.value = ng === 0
-      ? (usage.value.isOver ? `${ok}件を登録しました（上限を超えています）` : `${ok}件を登録しました`)
+      ? (usage.value.isOver && kind.value === 'budget' ? `${ok}件を登録しました（上限を超えています）` : `${ok}件を登録しました`)
       : `${ok}件を登録し、${ng}件は失敗しました。残った行の理由を確認してください`
   } finally {
     batchSaving.value = false
@@ -624,6 +644,7 @@ async function onSubmit() {
       file_urls: fileUrls,
       tategae: form.value.tategae,
       client_token: submitToken.value,
+      expense_kind: kind.value,
     })
     form.value = { date: todayStr(), account_category: '旅費交通費', amount: 0, payee: '', companions: '', registration_number: '', note: '', tategae: false, site_id: '', site_name: '' }
     applyDefaultOffice(form.value)
@@ -631,7 +652,7 @@ async function onSubmit() {
     submitToken.value = ''   // 次の登録は別の経費＝新しい token を発行する
     aiMsg.value = ''
     await refresh()
-    msg.value = usage.value.isOver ? '登録しました（上限を超えています）' : '登録しました'
+    msg.value = usage.value.isOver && kind.value === 'budget' ? '登録しました（上限を超えています）' : '登録しました'
     msgOk.value = true
   } catch (e: any) {
     msg.value = e?.message ?? '登録に失敗しました'
@@ -727,4 +748,11 @@ onMounted(async () => {
 .pe-amount { font-weight: 700; margin-left: auto; }
 .pe-payee { color: #6b7280; font-size: 12px; }
 .pe-del { background: none; border: none; color: #9ca3af; cursor: pointer; display: grid; place-items: center; }
+.pe-kind { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+.pe-kind-opt { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 700; padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 999px; background: #fff; color: #334155; }
+.pe-kind-opt.on { border-color: #06C755; background: #ecfdf5; color: #047857; }
+.pe-kind-opt.disabled { opacity: .45; }
+.pe-kind-opt input { margin: 0; }
+.pe-kind-hint { flex-basis: 100%; font-size: 11px; color: #64748b; line-height: 1.5; }
+.pe-kind-badge { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: #eff6ff; color: #1d4ed8; }
 </style>

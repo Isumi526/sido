@@ -15,7 +15,8 @@
 //    （#2cbe3caa が積み残していた『UIガードだけで済ませない』の実装）。
 //
 //  actions:
-//    state  { month }                → { canSubmit, limit, items }
+//    state  { month }                → { canSubmit, limit, items, canSubmitBusiness }  ※2026-09-20: 業務経費（business）は全員可
+//    create { input: { ..., expense_kind?: 'budget'|'business' } }  budget は許可＋枠が要る／business は枠を消費しない
 //    create { input }                → { id }
 //    delete { id }                   → { ok }
 //
@@ -235,6 +236,8 @@ Deno.serve(async (req) => {
     ])
     return json({
       ok: true, canSubmit: canApply && limit !== null && limit > 0, limit, items: items ?? [],
+      // 業務経費（business・枠を消費しない）は全作業員が出せる（2026-09-20・新しい許可フラグは作らない）
+      canSubmitBusiness: true,
       offices: (offices ?? []).map((o: any) => ({ id: o.id, name: o.name, kind: o.kind })),
       baseSiteId: (me as any)?.base_site_id ?? null,
     })
@@ -245,12 +248,16 @@ Deno.serve(async (req) => {
     const date = String(input.date ?? '')
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return json({ ok: false, error: 'invalid_date' }, 400)
 
+    // 区分（2026-09-20）: budget=個人枠（許可フラグ＋枠が要る・枠を消費）/ business=業務経費（全作業員・枠を消費しない）
+    const kind: 'budget' | 'business' = input.expense_kind === 'business' ? 'business' : 'budget'
     // ★ 経費の date が属する月の枠で判定する（申請月ではない）
     const m = monthKey(date)
     const resolved = await resolveLimit(svc, accountId, workerId, m)
-    if (!resolved.canApply) return json({ ok: false, error: 'forbidden', message: '経費申請が許可されていません。' }, 403)
-    if (!(resolved.limit !== null && resolved.limit > 0)) {
-      return json({ ok: false, error: 'no_budget', message: '経費申請の月額上限が設定されていません。' }, 403)
+    if (kind === 'budget') {
+      if (!resolved.canApply) return json({ ok: false, error: 'forbidden', message: '経費申請が許可されていません。' }, 403)
+      if (!(resolved.limit !== null && resolved.limit > 0)) {
+        return json({ ok: false, error: 'no_budget', message: '経費申請の月額上限が設定されていません。' }, 403)
+      }
     }
 
     const category = String(input.account_category ?? '')
@@ -275,8 +282,9 @@ Deno.serve(async (req) => {
 
     // ★案Bの肝: その月の枠をまだ持っていなければ、いま解決した枠で凍結する。
     //   既定値を後から変えても過去月の超過判定が遡って変わらない。行があれば触らない。
-    const { data: existing } = await svc.from('worker_expense_budgets').select('id')
-      .eq('worker_id', workerId).eq('month', m).maybeSingle()
+    const { data: existing } = kind === 'budget'
+      ? await svc.from('worker_expense_budgets').select('id').eq('worker_id', workerId).eq('month', m).maybeSingle()
+      : { data: { id: 'skip' } }   // 業務経費は枠を凍結しない（枠と無関係）
     if (!existing) {
       await svc.from('worker_expense_budgets')
         .upsert({ account_id: accountId, worker_id: workerId, month: m, limit_amount: resolved.limit },
@@ -305,6 +313,7 @@ Deno.serve(async (req) => {
       tategae: !!input.tategae,
       site_id: siteId,
       site_name: siteName,
+      expense_kind: kind,
       client_token: clientToken,
     }).select('id').single()
     if (error) {
