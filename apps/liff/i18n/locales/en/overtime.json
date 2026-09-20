@@ -49,5 +49,8 @@
   "pastEndTimeNone": "Keep as is (fix break only)",
   "pastReasonPlaceholder": "e.g. No break on the 12th / Worked until 19:00 on the 13th",
   "pastNothingToFix": "Enter at least one of end time, early start or break.",
-  "cancelConfirm": "Cancel the request for {date}?"
+  "cancelConfirm": "Cancel the request for {date}?",
+  "errorAlreadyRequested": "You have already requested overtime for today. To change it, use \"Edit / add\" (until 16:00).",
+  "cancelLocked": "The 16:00 deadline has passed, so this request can no longer be cancelled. Please wait for approval.",
+  "cancelLockedShort": "Locked after deadline"
 }
