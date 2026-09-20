@@ -133,12 +133,15 @@ node --env-file=.env scripts/seed-staging-demo.mjs --clean   # 片付け
 - 手で `auth.users` を INSERT する時は `confirmation_token` 等のtoken列を **NULL でなく `''`** にする。NULL だとログインが `Database error querying schema`(500) で落ちる。
 
 ### APP_LAYOUT_NOTES（/review が参照）
-- 構成: `apps/admin`(管理画面・ブラウザ {{DEV_URL}}) ＋ `apps/liff`(Nuxt・LINEミニアプリ)。UI/ロジックは原則ブラウザ。**LINEアプリ内固有（友だち追加・トーク内 LIFF 起動・Flex体裁）は `⚠実機確認`**。
+- 構成: `apps/admin`(管理画面・ブラウザ {{DEV_URL}}) ＋ `apps/liff`(Nuxt・**作業員アプリ＝Webアプリ**。メール/パスワードでログイン。「LINEアプリ」「LIFF」と書かない)。UI/ロジックは原則ブラウザ。
 - 画面パス例（admin）: 下請け管理／現場／日報／月次集計 ※実パスは apps ルーティングに合わせる。
 - 外部送信媒体＝**メール（Resend）** と **アプリ内のお知らせ**（実送信は自分宛・隔離）。
   ★**LINEへの送信は 2026-08-30 に全廃**（日報通知・編集通知・エラー通知・未送信リマインド・
-  車検リマインド・注文書承諾通知）。関数も本番から削除済み。**LINEログイン（身元解決）は現役**なので
-  `LINE_LOGIN_CHANNEL_ID` / `liff.getIdToken` / `users.line_user_id` は残す（ここを消すと本番が即死する）。
+  車検リマインド・注文書承諾通知）。関数も本番から削除済み。
+  ★**LINEログインは実運用で使われていない**（2026-09-16 本番実測: 7月以降 LINE ID の新規0・auth.users 全員 provider=email・
+  現役作業員はパスワードログイン）。コードの LINE 経路（`useLiff.ts` init・`liff.getIdToken`・`users.line_user_id`・
+  `LINE_LOGIN_CHANNEL_ID`）は **撤去中の残骸**（チケット「【土台】LINE認証を完全撤去し、メール/パスワード一本にする」）。
+  撤去はそのチケットで段階的に行う（勝手に消さない）が、**契約・手順書・リリースノート・お客様向け文面で「LINEでログイン」「LINEアプリで」と書かない**。
 - 本番: DEPLOY_TRIGGER=`auto-on-merge`（Vercel）。**Supabase edge functions 使用＝ship 手順7 で本番ref へ deploy 該当**。`NOTIFY_PREFIX=[sido]`。スモークの認可ガード対象＝edge webhook・公開リンク等。
 
 ### CONSUMERS_DOCS（/run が参照・§3 影響範囲マップの手順4）
