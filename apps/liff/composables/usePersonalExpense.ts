@@ -25,6 +25,8 @@ export interface PersonalExpenseInput {
   site_id?: string | null      // 紐付けた現場（任意）。未選択は null
   site_name?: string | null    // 表示用スナップショット
   client_token?: string   // 1登録につき1つ。再送を1行にまとめる（二重計上の防止）
+  /** budget=個人枠（月額上限を消費）/ business=業務経費（枠を消費しない・全作業員）。既定 budget（2026-09-20） */
+  expense_kind?: 'budget' | 'business'
 }
 
 /** 経費の紐付け先になるオフィス・工場（現場マスタの区分≠現場・2026-09-13）。既定は作業員マスタの所属拠点 */
@@ -77,12 +79,14 @@ export const usePersonalExpense = () => {
   }
 
   /** その月の申請可否・枠・明細をまとめて取得 */
-  async function loadState(month: string): Promise<{ canSubmit: boolean; usage: BudgetUsage; items: any[]; offices: OfficeOption[]; baseSiteId: string | null }> {
+  async function loadState(month: string): Promise<{ canSubmit: boolean; canSubmitBusiness: boolean; usage: BudgetUsage; items: any[]; offices: OfficeOption[]; baseSiteId: string | null }> {
     try {
       const r = await call('state', { month })
       const items = (r.items ?? []) as any[]
       return {
         canSubmit: !!r.canSubmit,
+        // 業務経費（枠を消費しない）は全作業員が出せる。EF が返さない旧版でも開かない側に倒す（fail-closed）
+        canSubmitBusiness: r.canSubmitBusiness === true,
         usage: computeBudgetUsage(items, month, r.limit ?? null),
         items,
         offices: (r.offices ?? []) as OfficeOption[],
@@ -90,7 +94,7 @@ export const usePersonalExpense = () => {
       }
     } catch {
       // 解決できない＝申請させない（フェイルセーフ。入口を開けたままにしない）
-      return { canSubmit: false, usage: computeBudgetUsage([], month, null), items: [], offices: [], baseSiteId: null }
+      return { canSubmit: false, canSubmitBusiness: false, usage: computeBudgetUsage([], month, null), items: [], offices: [], baseSiteId: null }
     }
   }
 

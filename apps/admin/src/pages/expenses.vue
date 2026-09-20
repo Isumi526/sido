@@ -474,7 +474,7 @@ async function load() {
     supabase.from('expense_settlements').select('*').eq('account_id', accountId).in('period_key', periodKeys),
     // 現場に紐付かない個人経費（日報を出さない役員等の分）。個人立替を精算するのでここにも合流させる。
     supabase.from('personal_expenses')
-      .select('id, worker_id, date, account_category, amount, payee, registration_number, companions, note, file_urls, tategae, workers(name)')
+      .select('id, worker_id, date, account_category, amount, payee, registration_number, companions, note, file_urls, tategae, expense_kind, workers(name)')
       .eq('account_id', accountId)
       .gte('date', dateFrom.value).lte('date', dateTo.value)
       .order('date', { ascending: true }).limit(5000),
@@ -772,7 +772,7 @@ async function loadCrossTab() {
         .order('date', { ascending: true })
         .limit(20000),
       supabase.from('personal_expenses')
-        .select('id, worker_id, date, account_category, amount, payee, registration_number, companions, note, file_urls, tategae')
+        .select('id, worker_id, date, account_category, amount, payee, registration_number, companions, note, file_urls, tategae, expense_kind')
         .eq('account_id', accountId)
         .gte('date', from).lte('date', to)
         .limit(20000),

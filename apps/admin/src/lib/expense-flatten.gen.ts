@@ -48,6 +48,8 @@ export interface ExpenseRow {
                          //  ＋ 'gasolineItems'（日報直下）／'personalExpenses'（日報に依存しない独立テーブル）
   srcIndex?: number      // その配列内のindex
   personalExpenseId?: string  // personal_expenses.id（現場に紐付かない個人経費のみ・編集/削除の戻り先）
+  /** 現場に紐づかない経費の区分（personal_expenses のみ）。budget=個人枠 / business=業務経費 */
+  personalExpenseKind?: PersonalExpenseKind
   workerName?: string    // 個人経費の申請者名（日報由来の行は日報側で作業員が決まるので使わない）
 }
 
@@ -267,6 +269,8 @@ export interface PersonalExpenseRecord {
   note?: string | null
   file_urls?: string[] | null
   tategae?: boolean | null
+  /** budget=個人枠 / business=業務経費（2026-09-20）。未指定は budget */
+  expense_kind?: string | null
 }
 
 /**
@@ -298,6 +302,7 @@ export function flattenPersonalExpenses(
       tategae: !!r.tategae,
       srcKey: 'personalExpenses',
       personalExpenseId: r.id,
+      personalExpenseKind: personalExpenseKindOf(r),
       workerName: workerNameById?.[r.worker_id],
     })
   }
@@ -419,6 +424,11 @@ export function canSubmitPersonalExpense(
 ): boolean {
   return !!worker?.can_apply_personal_expense && limit !== null && limit > 0
 }
+/**
+ * 業務経費（business）を出せるか＝全作業員（2026-09-05 ユーザー合意: 新しい許可フラグは作らない。統制は精算書のレビューで）。
+ * 将来、許可フラグや金額閾値（#f737ef61）を足す時はここに集約する。
+ */
+export function canSubmitBusinessExpense(): boolean { return true }
 
 /**
  * その月の消費額。
@@ -426,13 +436,20 @@ export function canSubmitPersonalExpense(
  *  承認済みだけを消費とみなすと、前半未承認のうちに後半で満額使えてしまう。
  * ★母数は月合計（half-month の first/second をまたいで累計・同 2-1）。
  */
+/** 現場に紐づかない経費の区分（2026-09-20）。budget=個人枠（月額上限を消費）/ business=業務経費（枠を消費しない） */
+export type PersonalExpenseKind = 'budget' | 'business'
+export function personalExpenseKindOf(r: { expense_kind?: string | null } | null | undefined): PersonalExpenseKind {
+  return r?.expense_kind === 'business' ? 'business' : 'budget'   // 未指定（既存データ）は budget
+}
 export function sumMonthlyPersonalExpenses(
-  records: Array<{ date: string; amount: number | string; tategae?: boolean }> | null | undefined,
+  records: Array<{ date: string; amount: number | string; tategae?: boolean; expense_kind?: string | null }> | null | undefined,
   month: string,
 ): number {
   let total = 0
   for (const r of (records ?? [])) {
     if (expenseMonthKey(r.date) !== month) continue
+    // ★業務経費（business）は枠を消費しない（2026-09-20・AC2）。使用額にも超過判定にも入れない
+    if (personalExpenseKindOf(r) === 'business') continue
     // 会社支払い（個人立替ではない＝tategae===false）は「個人の使用額」に入れない（#32）。
     // 個人使用額＝個人が立て替えた分。tategae 未指定(null/undefined)は従来どおり計上（明示的な会社支払いのみ除外）。
     if (r.tategae === false) continue
@@ -456,7 +473,7 @@ export interface BudgetUsage {
  *  目的は「なんで超えてんの？」を検知することで、立替の実費登録を止めることではない。
  */
 export function computeBudgetUsage(
-  records: Array<{ date: string; amount: number | string; tategae?: boolean }> | null | undefined,
+  records: Array<{ date: string; amount: number | string; tategae?: boolean; expense_kind?: string | null }> | null | undefined,
   month: string,
   limit: number | null,
 ): BudgetUsage {

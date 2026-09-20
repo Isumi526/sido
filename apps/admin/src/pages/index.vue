@@ -377,7 +377,7 @@ async function load() {
     //  ★現場の原価には混ぜない＝現場外の行として別に計上する（docs/expense-data-consumers.md）
     supabase
       .from('personal_expenses')
-      .select('id, worker_id, date, account_category, amount, payee, site_name, workers(name)')
+      .select('id, worker_id, date, account_category, amount, payee, site_name, expense_kind, workers(name)')
       .eq('account_id', accountId)
       .gte('date', `${ym}-01`)
       .lt('date', nextMonthFirst)

@@ -26,10 +26,13 @@ export interface PersonalExpenseRow {
   site_name: string | null
   /** 1行につき1つ。再送で二重計上しないための冪等キー */
   token: string
+  /** budget=個人枠（月額上限を消費）/ business=業務経費（現場に紐づかない・枠を消費しない）。2026-09-20 */
+  kind: 'budget' | 'business'
 }
 
-export function newPersonalExpenseRow(date: string, office?: { id: string; name: string } | null): PersonalExpenseRow {
+export function newPersonalExpenseRow(date: string, office?: { id: string; name: string } | null, kind: 'budget' | 'business' = 'budget'): PersonalExpenseRow {
   return {
+    kind,
     site_id: office?.id ?? null,
     site_name: office?.name ?? null,
     date,
@@ -47,8 +50,12 @@ export function newPersonalExpenseRow(date: string, office?: { id: string; name:
 export const usePersonalExpenseRows = () => {
   const rows = ref<PersonalExpenseRow[]>([])
   const usage = ref<{ used: number; limit: number } | null>(null)
-  /** 枠を持っていて申請できるか（EF が権限と枠から判定した結果） */
+  /** 個人枠（budget）を出せるか＝許可フラグ＋枠（EF が判定した結果） */
   const canSubmit = ref(false)
+  /** 業務経費（business）を出せるか＝全作業員（EF が返す。旧版 EF なら false） */
+  const canSubmitBusiness = ref(false)
+  /** 新しい行の既定の区分: 枠を持つ人は個人枠、持たない人は業務経費 */
+  const defaultKind = computed<'budget' | 'business'>(() => canSubmit.value ? 'budget' : 'business')
   /** 紐付け先の候補（オフィス・工場）と所属拠点の既定。EF `state` が返す */
   const offices = ref<{ id: string; name: string; kind: string }[]>([])
   const baseSiteId = ref<string | null>(null)
@@ -62,7 +69,7 @@ export const usePersonalExpenseRows = () => {
   /** 金額が入っている行だけが登録対象（空行は無視して送信を止めない） */
   const filled = computed(() => rows.value.filter(r => Number(r.amount) > 0))
 
-  function add(date: string) { rows.value.push(newPersonalExpenseRow(date, defaultOffice.value)) }
+  function add(date: string, kind?: 'budget' | 'business') { rows.value.push(newPersonalExpenseRow(date, defaultOffice.value, kind ?? defaultKind.value)) }
   function remove(i: number) { rows.value.splice(i, 1) }
   function reset() { rows.value = [] }
 
@@ -81,5 +88,5 @@ export const usePersonalExpenseRows = () => {
     ) ?? null
   }
 
-  return { rows, usage, canSubmit, offices, baseSiteId, defaultOffice, filled, add, remove, reset, syncDate, findMissingCompanions }
+  return { rows, usage, canSubmit, canSubmitBusiness, defaultKind, offices, baseSiteId, defaultOffice, filled, add, remove, reset, syncDate, findMissingCompanions }
 }
