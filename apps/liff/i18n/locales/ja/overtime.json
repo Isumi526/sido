@@ -49,5 +49,8 @@
   "pastEndTimeNone": "変更しない（休憩だけ直す）",
   "pastReasonPlaceholder": "例：12日の休憩は取れなかったため／13日は実際は19:00まで作業",
   "pastNothingToFix": "終了時刻・早朝入り・休憩のいずれかを入れてください。",
-  "cancelConfirm": "{date} の申請を取り消します。よろしいですか？"
+  "cancelConfirm": "{date} の申請を取り消します。よろしいですか？",
+  "errorAlreadyRequested": "本日分はすでに申請済みです。内容を直したい時は「変更・追加」から出し直してください（締切16:00まで）。",
+  "cancelLocked": "締切（16:00）を過ぎたため取り消せません。承認をお待ちください。",
+  "cancelLockedShort": "締切後は取消不可"
 }

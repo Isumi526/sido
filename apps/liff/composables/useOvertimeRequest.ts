@@ -54,6 +54,18 @@ export function useOvertimeRequest() {
     return new Date().getHours() < OVERTIME_DEADLINE_HOUR
   }
 
+  /**
+   * 取消できるか（2026-09-20 設計 A-1・確認事項1=A）: 当日の通常申請は締切（16:00）まで。
+   * 締切後に取り消すと再申請できず詰むので、取消も締切で閉じる（EF でも同じ判定）。
+   * 締切後の実績修正(late)は出し直せるので可。当日以外（過去日の late・前日から残った pending）も可。
+   */
+  function canCancel(date: string | null | undefined, isLate = false): boolean {
+    if (!date) return false
+    if (isLate) return true
+    if (date !== todayStr()) return true
+    return new Date().getHours() < OVERTIME_DEADLINE_HOUR
+  }
+
   // worker×date の残業申請ステータス（none/pending/approved/rejected・最新1件）。
   async function status(_workerId: string | null | undefined, date: string): Promise<'none' | 'pending' | 'approved' | 'rejected'> {
     if (!date) return 'none'
@@ -148,7 +160,10 @@ export function useOvertimeRequest() {
       })
       return { ok: true }
     } catch (e: any) {
-      return { ok: false, error: e?.message ?? 'failed' }
+      const m = String(e?.message ?? 'failed')
+      // ★既に申請済み＝成功を装わない（以前は EF が deduped:true で ok を返し、画面が「申請しました」と出していた）
+      if (m.includes('already_requested')) return { ok: false, error: 'already-requested' }
+      return { ok: false, error: m }
     }
   }
 
@@ -205,16 +220,24 @@ export function useOvertimeRequest() {
     }
   }
 
-  // 誤った申請の取り消し（pending のみ削除＝承認済みは消さない）。
-  async function cancelRequest(_workerId: string | null | undefined, date: string): Promise<{ ok: boolean; error?: string }> {
+  // 誤った申請の取り消し（pending のみ削除＝承認済みは消さない）。締切後の当日通常申請は EF が deadline_passed で弾く。
+  async function cancelRequest(_workerId: string | null | undefined, date: string, isLate = false): Promise<{ ok: boolean; error?: string }> {
     if (!date) return { ok: false, error: 'no-worker-or-date' }
+    if (!canCancel(date, isLate)) return { ok: false, error: 'deadline-passed' }
     try {
       await call('overtime-cancel', { date })
       return { ok: true }
     } catch (e: any) {
-      return { ok: false, error: e?.message ?? 'failed' }
+      const m = String(e?.message ?? 'failed')
+      return { ok: false, error: m.includes('deadline_passed') ? 'deadline-passed' : m.includes('not_found') ? 'not-found' : m }
     }
   }
 
-  return { canRequest, status, isApproved, approvedAdjustment, activeRequest, decisionNote, myRecent, requestOvertime, requestLateCorrection, updateRequest, cancelRequest }
+  /** 当日の申請の取消可否（EF の判定。status が pending でなければ false） */
+  async function canCancelToday(_workerId: string | null | undefined, date: string): Promise<boolean> {
+    if (!date) return false
+    try { return (await call('overtime-status', { date })).canCancel === true } catch { return false }
+  }
+
+  return { canRequest, canCancel, canCancelToday, status, isApproved, approvedAdjustment, activeRequest, decisionNote, myRecent, requestOvertime, requestLateCorrection, updateRequest, cancelRequest }
 }
