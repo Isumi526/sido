@@ -106,14 +106,18 @@ begin
     raise exception '品目が見つかりません';
   end if;
 
+  -- ★べき等キーに「確認待ちの id」を使う（Gemini 指摘: created_at desc limit 1 は他経路の挿入と競合しうる）。
+  --   移動記録は (account_id, client_request_id) で一意なので、いま作った行を確実に引ける。
   v_item := inventory_move(
     p_item_id, case when v_p.kind = 'out' then -v_p.qty else v_p.qty end, v_p.note, v_p.kind, v_p.site_id,
-    v_p.photo_urls, v_p.created_by_worker_id, v_p.created_by_name, v_p.report_date, null
+    v_p.photo_urls, v_p.created_by_worker_id, v_p.created_by_name, v_p.report_date, v_p.id
   );
-  -- いま作られた移動記録（同じ品目×登録者の最新行）を紐づけ、事務側が確定した印を付ける
   select id into v_mv_id from inventory_movements
-   where item_id = p_item_id and account_id = v_p.account_id
-   order by created_at desc limit 1;
+   where account_id = v_p.account_id and client_request_id = v_p.id;
+  if v_mv_id is null then
+    raise exception '移動記録を作れませんでした';
+  end if;
+  -- 事務側が確定した印（confirm_status は 20260914150000 で追加済み）
   update inventory_movements set confirm_status = 'confirmed' where id = v_mv_id;
 
   update inventory_pending_moves
