@@ -186,7 +186,7 @@ jobs:
           aws s3 cp "s3://$R2_BUCKET/daily/$KEY" "$KEY" --endpoint-url "$R2_ENDPOINT" --only-show-errors
           createdb -h localhost -U postgres restored
           # Supabase 固有の拡張/ロールは素の Postgres に無いので、エラーを数えて閾値で判定する
-          pg_restore -h localhost -U postgres -d restored --no-owner --no-privileges --exit-on-error=false "$KEY" 2> restore.err || true
+          pg_restore -h localhost -U postgres -d restored --no-owner --no-privileges "$KEY" 2> restore.err || true
           errs=$(grep -c '^pg_restore: error' restore.err || true)
           echo "restore errors: $errs"
           tables=$(psql -h localhost -U postgres -d restored -At -c "select count(*) from information_schema.tables where table_schema='public'")
