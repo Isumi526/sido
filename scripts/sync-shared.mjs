@@ -103,6 +103,14 @@ const SHARES = [
     ],
   },
   {
+    // 協力業者の社名の名寄せ（表記ゆれの比較キー・㈱表記）。admin の集計/請求照合と EF で同じ判定にする
+    src: 'shared/vendor-name.ts',
+    dests: [
+      'apps/admin/src/lib/vendor-name.gen.ts',
+      'supabase/functions/_shared/vendor-name.gen.ts',
+    ],
+  },
+  {
     // テナント単位の「使う機能」（機能ON/OFF）の登録簿と既定値。admin/LIFF/EF で同じ判定にする
     src: 'shared/features.ts',
     dests: [

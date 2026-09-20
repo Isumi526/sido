@@ -496,6 +496,7 @@ import { canViewEstimatesForSite } from '../lib/features'
 import { resolveSiteRef, type SiteResolveCtx } from '../lib/siteKey'
 import { normalizeSiteName } from '../lib/site-similarity.gen'
 import { netAmountOf, normalizeTaxMode } from '../lib/invoiceTax'
+import { buildVendorIndex } from '../lib/vendor-name.gen'
 import JSZip from 'jszip'
 
 const exporting = ref(false)
@@ -885,6 +886,12 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
   // 下請け請求（当月）を日表の請求行として構築（商社/業者列に金額を載せ、月計に反映）
   const invoiceSites = new Set<string>()
   const invoiceRowsBySite: Record<string, any[]> = {}
+  // ★協力業者は「名前」でマスタと結ばれている（日報の subcontractorId は空・2026-09-05 実測）。
+  //  完全一致だと `(株)◯◯`／`株式会社◯◯`／`㈱◯◯` の表記ゆれで区分・単価が引けず原価から落ちるので、
+  //  名寄せ索引（shared/vendor-name.ts）で引く。マスタの社名を ㈱ に統一する前提条件（統合チケット・手順1）。
+  const findSub = buildVendorIndex(((sm ?? []) as any[]).map((s: any) => ({ name: s.name as string, category: s.category, unitPrice: s.unit_price ?? 0 })))
+  const subMasterOf = (name: string) => findSub(name) ?? { name, category: null, unitPrice: 0 }
+
   officeTabs.value = new Set()
   {
     const { data: sii } = await supabase
@@ -902,7 +909,9 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
       //   （揃えないと内税の請求だけ約10%多く原価に乗る）
       const amt = Math.round(netAmountOf(r, normalizeTaxMode(r.subcontractor_invoices?.tax_mode)))
       const cat = r.subcontractor_invoices?.subcontractors?.category ?? null
-      const vendor = r.subcontractor_invoices?.vendor_name ?? ''
+      // 請求の業者名もマスタの社名に寄せる（日報側の行と同じバケットに合流させる）
+      const rawVendor = r.subcontractor_invoices?.vendor_name ?? ''
+      const vendor = (rawVendor && findSub(rawVendor)?.name) || rawVendor
       const rows = (invoiceRowsBySite[name] ??= [])
       rows.push({
         _key: `inv-${name}-${r.item_date}-${rows.length}`, _isInvoice: true, siteName: name,
@@ -925,7 +934,6 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
   const hourlyById   = Object.fromEntries((wm ?? []).map((w: any) => [w.id,   w.hourly_wage ?? 0]))
   const hourlyByName = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.hourly_wage ?? 0]))
   const idByName    = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.id]))  // 日報がworkerId空でも昇給timelineを引けるように
-  const subMaster   = Object.fromEntries((sm ?? []).map((s: any) => [s.name, { category: s.category, unitPrice: s.unit_price ?? 0 }]))
 
   const { data } = await supabase
     .from('daily_reports')
@@ -992,8 +1000,9 @@ async function computeSiteMap(fromDate: string, toDate: string): Promise<Record<
 
       // 下請け（商社/業者区分・単価を master から付与）
       for (const s of (site.subcontractors ?? []).filter((s: any) => s.subcontractorName)) {
-        const m = subMaster[s.subcontractorName] ?? { category: null, unitPrice: 0 }
-        g.subs.push({ name: s.subcontractorName, count: s.count, category: m.category, unitPrice: m.unitPrice })
+        const m = subMasterOf(s.subcontractorName)
+        // 業者別内訳の行名はマスタの社名に寄せる（`(株)◯◯` と `株式会社◯◯` を同じ行にまとめる）
+        g.subs.push({ name: m.name || s.subcontractorName, count: s.count, category: m.category, unitPrice: m.unitPrice })
       }
 
       // 経費列の抽出（複数日報を加算）
