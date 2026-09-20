@@ -7,15 +7,22 @@
       <p class="note" data-testid="inv-note">{{ $t('inventory.note') }}</p>
 
       <div v-if="loading" class="state">{{ $t('common.loading') }}</div>
+      <!-- ★テナント別フラグ（feature.inventory・既定OFF＝ベータ）。OFF はメニューから消えるが、URL 直打ち・古いブックマークで来ても閉じる（fail-closed） -->
+      <div v-else-if="!inventoryEnabled" class="state" data-testid="inv-disabled">{{ $t('inventory.disabled') }}</div>
       <template v-else>
         <section class="card" data-testid="inv-form">
           <div class="card-title">{{ $t('inventory.register') }}</div>
-          <!-- 種別: 入荷（＋）／持出（−・現場へ）。引き上げは日報の末尾の1問から -->
+          <!-- 種別の並びは会議の主役どおり（2026-09-19 レビュー決定）:
+               1. 引き上げ（余りを倉庫へ戻す＝「何が残っているか」の入口・+qty）
+               2. 持出（余りを次の現場へ・−qty）
+               3. 入荷（倉庫に直接入れる時だけ・+qty）
+               大塚「15本残りましたよって帰ってきてその辺に置いとく…現場で使えばよかった」／今井「入ってもその出すだけ」 -->
           <div class="kinds" role="radiogroup">
-            <label class="kind" :class="{ on: kind === 'in' }"><input type="radio" name="inv-kind" value="in" v-model="kind" data-testid="inv-kind-in" />{{ $t('inventory.kindIn') }}</label>
+            <label class="kind" :class="{ on: kind === 'return' }"><input type="radio" name="inv-kind" value="return" v-model="kind" data-testid="inv-kind-return" />{{ $t('inventory.kindReturn') }}</label>
             <label class="kind" :class="{ on: kind === 'out' }"><input type="radio" name="inv-kind" value="out" v-model="kind" data-testid="inv-kind-out" />{{ $t('inventory.kindOut') }}</label>
+            <label class="kind" :class="{ on: kind === 'in' }"><input type="radio" name="inv-kind" value="in" v-model="kind" data-testid="inv-kind-in" />{{ $t('inventory.kindIn') }}</label>
           </div>
-          <p class="hint">{{ $t('inventory.returnHint') }}</p>
+          <p class="hint" data-testid="inv-kind-hint">{{ kind === 'return' ? $t('inventory.returnHint') : kind === 'out' ? $t('inventory.outHint') : $t('inventory.inHint') }}</p>
 
           <!-- ★写真は必須（亥角「持ち出した時と引き上げの最低限、写真を残すのはマスト」）。
                在庫②: 写真を先に撮る→AIが品目候補を出す→違えば検索/手入力（大塚「電卓ってやったら出る方がいい」） -->
@@ -79,8 +86,9 @@
           <label class="lbl">{{ $t('inventory.qty') }}</label>
           <input v-model.number="qty" type="number" inputmode="numeric" min="1" step="1" class="input" data-testid="inv-qty" />
 
-          <template v-if="kind === 'out'">
-            <label class="lbl">{{ $t('inventory.site') }}</label>
+          <!-- 引き上げ＝どの現場から戻したか／持出＝どの現場へ持って行くか（既定＝当日の日報の現場） -->
+          <template v-if="kind === 'out' || kind === 'return'">
+            <label class="lbl">{{ kind === 'return' ? $t('inventory.siteFrom') : $t('inventory.site') }}</label>
             <select v-model="siteId" class="select" data-testid="inv-site">
               <option value="">{{ $t('common.select') }}</option>
               <optgroup v-if="todaySites.length" :label="$t('inventory.siteToday')">
@@ -96,7 +104,7 @@
           <input v-model="note" type="text" class="input" :placeholder="$t('inventory.notePlaceholder')" data-testid="inv-memo" @keydown.enter.prevent />
 
           <button type="button" class="btn-submit" :disabled="!canSubmit || busy" data-testid="inv-submit" @click="submit">
-            {{ busy ? $t('inventory.saving') : (kind === 'in' ? $t('inventory.submitIn') : $t('inventory.submitOut')) }}
+            {{ busy ? $t('inventory.saving') : (kind === 'return' ? $t('inventory.submitReturn') : kind === 'in' ? $t('inventory.submitIn') : $t('inventory.submitOut')) }}
           </button>
           <p v-if="msg" class="msg" :class="{ ok: msgOk }" data-testid="inv-msg">{{ msg }}</p>
         </section>
@@ -137,8 +145,19 @@ const sites = ref<{ id: string; name: string }[]>([])
 const todaySites = ref<{ id: string; name: string }[]>([])
 const recent = ref<InventoryMovement[]>([])
 
-const kind = ref<InventoryKind>('out')
+/** 既定＝引き上げ（会議の主役。2026-09-19 レビュー決定） */
+const kind = ref<InventoryKind>('return')
 const itemId = ref('')
+/** テナント別フラグ（feature.inventory）。未解決のうちは閉じておく（fail-closed） */
+const inventoryEnabled = computed(() => liffFeaturesResolved.value && isLiffFeatureEnabled('inventory'))
+/**
+ * ★べき等キー（/ship の独立レビュー指摘・2026-09-19）: 連打・通信断からの再送で同じ登録が二重に増減しないよう、
+ *  1回の入力に1つの UUID を付けて EF→inventory_move に渡す。登録が成立したら次の入力用に新しい値へ。
+ */
+const clientRequestId = ref(newRequestId())
+function newRequestId(): string {
+  return (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`)
+}
 
 // ── 在庫②: 区分→詳細の予測検索・写真→AI候補・その場で新規登録 ──
 const categories = ref<string[]>([])
@@ -208,7 +227,7 @@ const msgOk = ref(false)
 let senderName = 'worker'
 
 const canSubmit = computed(() =>
-  !!itemId.value && Number(qty.value) > 0 && files.value.length > 0 && (kind.value !== 'out' || !!siteId.value))
+  !!itemId.value && Number(qty.value) > 0 && files.value.length > 0 && (kind.value === 'in' || !!siteId.value))
 
 function fmt(n: number | string): string { const v = Number(n); return Number.isInteger(v) ? String(v) : v.toFixed(2) }
 function fmtDate(iso: string): string {
@@ -259,7 +278,7 @@ async function submit() {
       devLineUserId: config.public.appEnv === 'development' ? (liff.profile.value?.userId ?? '') : '',
     })
     if (!photoUrls.length) throw new Error(t('inventory.photoUploadFailed'))
-    const item = await api.move({ itemId: itemId.value, qty: Number(qty.value), kind: kind.value, siteId: kind.value === 'out' ? siteId.value : null, photoUrls, note: note.value })
+    const item = await api.move({ itemId: itemId.value, qty: Number(qty.value), kind: kind.value, siteId: kind.value === 'in' ? null : siteId.value, photoUrls, note: note.value, clientRequestId: clientRequestId.value })
     const idx = items.value.findIndex(i => i.id === item.id)
     if (idx >= 0) items.value[idx] = { ...items.value[idx], ...item }
     // 在庫②: AI 候補を出していたら「AI の読み→人が確定した品目」を訂正履歴に残す（次回の候補に効く・自社内のみ）
@@ -271,6 +290,7 @@ async function submit() {
     itemId.value = ''
     msg.value = t('inventory.saved', { name: item.name, n: fmt(item.current_qty) }); msgOk.value = true
     qty.value = null; files.value = []; note.value = ''
+    clientRequestId.value = newRequestId()   // 次の入力は別の登録
     recent.value = await api.recent(20)
   } catch (e: any) {
     msg.value = e?.message?.includes('photo_required') ? t('inventory.photoRequired') : t('inventory.saveFailed'); msgOk.value = false
@@ -279,7 +299,7 @@ async function submit() {
 
 onMounted(async () => {
   await liff.init()
-  await load()
+  await Promise.all([ensureLiffFeaturesLoaded(), load()])
 })
 </script>
 

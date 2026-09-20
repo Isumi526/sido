@@ -21,11 +21,13 @@ export interface NavItem {
 /**
  * authMode==='password' の時だけ「パスワード変更」を出す（メール/ID認証作業員向け）。
  * canApplyPersonalExpense が true の作業員にだけ「個人経費」を出す（#2cbe3caa）。
+ * inventoryEnabled が true のテナントにだけ「在庫」を出す（feature.inventory・ベータ）。
  * 未解決＝false 扱い＝出さない（フェイルセーフ。入口を開けたままにしない）。
  */
 export function useNavItems(
   authMode: () => string | null | undefined,
   canApplyPersonalExpense?: () => boolean,
+  inventoryEnabled?: () => boolean,
 ) {
   const { t } = useI18n()
 
@@ -45,11 +47,6 @@ export function useNavItems(
       { path: '/groups',           icon: 'group',             label: t('nav.groups'),           section: 'plan' },
       { path: '/subcontractors',   icon: 'handyman',          label: t('nav.subcontractors'),   section: 'plan' },
       { path: '/sites',            icon: 'location_on',       label: t('nav.sites'),             section: 'info' },
-      // 在庫①②（2026-09-14〜18）: 入荷・持出の記録・写真AI候補。
-      // ★2026-09-19 レビューで「引き上げ中心に軸を直す＋テナント別フラグ（既定OFF）でベータ」と決定（在庫①のチケット参照）。
-      //  フラグ実装までの暫定でメニューから外す（画面 /inventory 自体は残す・E2E は URL 直打ちで通る）。
-      //  フラグを入れたらこの行を復活させ、フラグで出し分けること。
-      // { path: '/inventory',        icon: 'inventory_2',       label: t('nav.inventory'),         section: 'info', testId: 'menu-inventory' },
       { path: '/expense/download', icon: 'picture_as_pdf',    label: t('nav.expensePdf'),       section: 'info' },
       { path: '/rules',            icon: 'menu_book',         label: t('nav.rulebook'),         section: 'info' },
     ]
@@ -57,6 +54,13 @@ export function useNavItems(
       // 挿入位置は「有給の直前」。数値の決め打ちだと上のリストを足し引きするたび静かにズレるので path で引く。
       const at = list.findIndex(i => i.path === '/paid-leave')
       list.splice(at < 0 ? list.length : at, 0, { path: '/expense/personal', icon: 'account_balance_wallet', label: '経費申請', section: 'daily', testId: 'menu-personal-expense' })
+    }
+    // 在庫①〜④（2026-09-14〜）: 引き上げ・持出・入荷の記録＋写真AI候補。
+    // ★テナント別フラグ（settings feature.inventory・既定OFF＝ベータ）で出し分ける（2026-09-19 レビュー決定）。
+    //  未解決・OFF は出さない（fail-closed）。画面 /inventory 側も同じフラグで閉じる。
+    if (inventoryEnabled?.()) {
+      const at = list.findIndex(i => i.path === '/expense/download')
+      list.splice(at < 0 ? list.length : at, 0, { path: '/inventory', icon: 'inventory_2', label: t('nav.inventory'), section: 'info', testId: 'menu-inventory' })
     }
     if (authMode() === 'password') {
       list.push({ path: '/password', icon: 'lock_reset', label: t('nav.passwordChange'), section: 'info', testId: 'menu-password' })

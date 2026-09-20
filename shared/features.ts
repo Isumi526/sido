@@ -19,7 +19,7 @@
 //  ※ import を持たない自己完結ファイル。
 // ============================================================
 
-export type FeatureKey = 'estimate' | 'vehicles' | 'tools' | 'rooms'
+export type FeatureKey = 'estimate' | 'vehicles' | 'tools' | 'rooms' | 'inventory'
 
 export type FeatureDef = {
   key: FeatureKey
@@ -46,6 +46,12 @@ export const FEATURES: FeatureDef[] = [
   {
     key: 'rooms', settingKey: 'feature.rooms', label: '会議室・部屋の予約', defaultOn: false,
     description: '会議室などの部屋を登録し、予定管理のタブで時間帯予約する。',
+  },
+  {
+    // 在庫①〜④（2026-09-19 レビュー決定）: ③④が揃うまでベータ＝既定OFF。SEED で ON にして大塚さんに見せる。
+    // OFF のあいだは admin「在庫管理」メニュー／ルートと、作業員アプリの「在庫」メニュー／画面を隠す（データは消さない）。
+    key: 'inventory', settingKey: 'feature.inventory', label: '在庫管理（ベータ）', defaultOn: false,
+    description: '品目マスタと、作業員アプリの「在庫」（引き上げ・持出・入荷を写真つきで記録）。残数把握用で会計在庫ではありません。',
   },
 ]
 

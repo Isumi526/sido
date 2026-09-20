@@ -65,6 +65,22 @@ test.describe('使う機能（テナント単位の ON/OFF）', () => {
     await expect.poll(async () => (await restSrv(`operation_logs?target_type=eq.settings&summary=eq.feature.vehicles&select=action`))?.length ?? 0, { timeout: 15000 }).toBeGreaterThan(0)
   })
 
+  test('★在庫管理はベータ（既定OFF）: 行を消すとメニューに出ず URL直打ちも / へ、ONで戻る', async ({ page }) => {
+    // 在庫①〜④（2026-09-19 レビュー決定）: ③④が揃うまで SEED 以外に見せない。global-setup は E2E のためにONにしている
+    await setFeature('feature.inventory', null)
+    try {
+      await page.goto('/', { waitUntil: 'networkidle' })
+      await expect(page.locator('.nav-list')).toBeVisible({ timeout: 15000 })
+      await expect(page.locator('.nav-list a[href="/inventory"]')).toHaveCount(0)
+      await page.goto('/inventory', { waitUntil: 'networkidle' })
+      await expect(page).toHaveURL(/\/$/)
+    } finally {
+      await setFeature('feature.inventory', true)   // ★必ず戻す（admin.inventory / liff.inventory* が落ちる）
+    }
+    await page.goto('/', { waitUntil: 'networkidle' })
+    await expect(page.locator('.nav-list a[href="/inventory"]')).toBeVisible({ timeout: 15000 })
+  })
+
   test('道具管理 OFF のテナントは EF(tools) が 403 を返す', async () => {
     await setFeature('feature.tools', false)
     const res = await fetch(`${SUPABASE_URL}/functions/v1/tools`, {

@@ -42,8 +42,8 @@ export function useInventoryApi() {
     catch (e) { console.error('[inventory] 品目の取得に失敗:', e); return [] }
   }
 
-  /** 入荷/持出/引上げの登録。写真は必須（EF でも弾く）。失敗は throw */
-  async function move(input: { itemId: string; qty: number; kind: InventoryKind; siteId?: string | null; photoUrls: string[]; note?: string; reportDate?: string | null }): Promise<InventoryItem> {
+  /** 引上げ/持出/入荷の登録。写真は必須（EF でも弾く）。clientRequestId は再送のべき等キー（同じ値の再送は増減しない）。失敗は throw */
+  async function move(input: { itemId: string; qty: number; kind: InventoryKind; siteId?: string | null; photoUrls: string[]; note?: string; reportDate?: string | null; clientRequestId?: string | null }): Promise<InventoryItem> {
     const r = await call('move', input)
     return r.item as InventoryItem
   }

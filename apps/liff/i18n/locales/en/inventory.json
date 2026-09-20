@@ -1,12 +1,12 @@
 {
   "title": "Inventory",
   "note": "Not accounting inventory — a record to see how much is left.",
-  "register": "Record arrival / take-out",
-  "kindIn": "Arrival (+)",
-  "kindOut": "Take out to site (−)",
-  "kindReturn": "Return",
+  "register": "Record leftovers returned / take-out / arrival",
+  "kindIn": "Arrival (to warehouse)",
+  "kindOut": "Take out (to next site)",
+  "kindReturn": "Return leftovers (to warehouse)",
   "kindAdjust": "Adjust",
-  "returnHint": "Recording materials brought back from a site is coming soon (it will be part of the new report form).",
+  "returnHint": "When leftover materials come back from a site. Take a photo, pick the item and quantity — stock goes up.",
   "item": "Item",
   "stock": "{n} left",
   "noItems": "No items yet (register them in the admin inventory page)",
@@ -45,5 +45,10 @@
   "newSave": "Register and use it",
   "newCreated": "Registered \"{name}\"",
   "newExisted": "\"{name}\" already existed, so it was selected",
-  "newFailed": "Failed to register the item"
+  "newFailed": "Failed to register the item",
+  "outHint": "When taking leftovers from the warehouse to the next site. Stock goes down.",
+  "inHint": "Only when a delivery goes straight to the warehouse. Stock goes up.",
+  "siteFrom": "Returned from which site",
+  "submitReturn": "Record return",
+  "disabled": "This feature is not enabled for this account (an admin can turn it on in Settings › Features)."
 }
