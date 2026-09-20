@@ -24,8 +24,8 @@ export const SCREEN_CATALOG: ScreenCatalogEntry[] = [
   },
   {
     "path": "/calendar",
-    "name": "予定管理",
-    "title": "予定管理",
+    "name": "スケジュール管理",
+    "title": "スケジュール管理",
     "requiresManagement": false,
     "requiresEstimate": false,
     "help": []

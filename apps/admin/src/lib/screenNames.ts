@@ -12,7 +12,7 @@ const SCREEN_NAMES: Record<string, string> = {
   '/chats': 'チャット',
   '/chats/account': '社内チャット',
   '/site-reports': '現場別集計',
-  '/calendar': '予定管理',
+  '/calendar': 'スケジュール管理',
   '/schedule-categories': '予定カテゴリ',
   '/process': '工程管理',
   '/worker-reports': '出面・勤怠',

@@ -78,7 +78,7 @@
         </button>
       </div>
       <div class="reminder-desc">
-        OFFにするとメニュー・予定管理のタブ・作業員アプリの導線が隠れます（データは消えません。ONに戻せば元どおり）。
+        OFFにするとメニュー・スケジュール管理のタブ・作業員アプリの導線が隠れます（データは消えません。ONに戻せば元どおり）。
         切り替えたあとは各画面を再読み込みしてください。{{ canManageAuth ? '' : '切り替えはオーナーのみ行えます。' }}
       </div>
       <p v-if="featureError" class="error" data-testid="estimate-feature-error">{{ featureError }}</p>
@@ -109,9 +109,9 @@
   <!-- 予定管理の独自の種類（B-3・2026-09-19）: 重機・プロジェクター・駐車場など、車両・道具・会議室以外の予約対象。
        追加すると予定管理（管理画面・作業員アプリ）にタブが増え、台帳（名前・メモ）はそのタブの「○○を管理」から。 -->
   <div class="reminder-box" data-testid="custom-types-box">
-    <div class="reminder-title">予定管理の独自の種類</div>
+    <div class="reminder-title">スケジュール管理の独自の種類</div>
     <div class="reminder-config">
-      <div class="reminder-desc">車両・道具・会議室のほかに予約したいもの（例：重機、プロジェクター、駐車場）を追加できます。追加すると予定管理にタブが増えます。対象（1台ずつ）はそのタブの「○○を管理」から登録します。</div>
+      <div class="reminder-desc">車両・道具・会議室のほかに予約したいもの（例：重機、プロジェクター、駐車場）を追加できます。追加するとスケジュール管理にタブが増えます。対象（1台ずつ）はそのタブの「○○を管理」から登録します。</div>
       <div v-for="t in customTypes" :key="t.id" class="config-row feature-row" :data-testid="`custom-type-row-${t.id}`">
         <div class="feature-main">
           <input v-model="t.name" class="input-inline" :disabled="!canManageAuth" @change="saveCustomType(t)" />
@@ -354,7 +354,7 @@ async function addCustomType() {
   customTypeSaving.value = false
   if (!r?.ok) { customTypeError.value = `追加に失敗しました（${r?.error ?? 'network'}）`; return }
   newCustomTypeName.value = ''
-  await logOperation(`予定管理の種類「${name}」を追加`, { targetType: 'resource_types', targetId: r.type?.id ?? null, summary: name })
+  await logOperation(`スケジュール管理の種類「${name}」を追加`, { targetType: 'resource_types', targetId: r.type?.id ?? null, summary: name })
   await loadCustomTypes()
 }
 async function saveCustomType(t: CustomType) {

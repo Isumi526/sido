@@ -119,18 +119,18 @@
         <div class="field">
           <label>場所 / 住所 <em v-if="isRequired('location')" class="req">*</em></label>
           <input v-model="modal.location" class="input" :class="{ 'input-missing': missingFields.includes('住所') }" placeholder="例：名古屋市〇〇区…" data-testid="site-location" />
-          <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">都道府県から書くと会社予定の地方分け（東海／関東／関西…）に使われます。</p>
+          <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">都道府県から書くと工程管理の地方分け（東海／関東／関西…）に使われます。</p>
         </div>
         <!-- 工期（2026-09-10 SEED 大塚さん: 会社予定は現場マスタの工期を手入力で反映。終了日は未定を許容） -->
         <div class="field">
-          <label>工期 <em v-if="isRequired('period_start')" class="req">*</em>（会社予定に反映）</label>
+          <label>工期 <em v-if="isRequired('period_start')" class="req">*</em>（工程管理に反映）</label>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <input v-model="modal.period_start" type="date" class="input" :class="{ 'input-missing': missingFields.includes('工期（開始日）') }" style="width:auto" data-testid="site-period-start" />
             <span>〜</span>
             <input v-model="modal.period_end" type="date" class="input" :class="{ 'input-missing': missingFields.includes('工期（終了日）') }" style="width:auto" :disabled="modal.period_end_undecided" data-testid="site-period-end" />
             <label class="chk-inline"><input type="checkbox" v-model="modal.period_end_undecided" data-testid="site-period-undecided" @change="modal.period_end_undecided && (modal.period_end = '')" />終了日は未定</label>
           </div>
-          <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">{{ isRequired('period_start') ? '開始日は必須です。' : '' }}終了日が決まっていない現場は「未定」にしてください（会社予定では帯が右端まで薄く伸びます）。{{ modal.status === 'completed' ? '完了の現場は終了日（実績）が必須です。' : '' }}</p>
+          <p class="hint-sm" style="font-size:12px;color:#64748b;margin-top:4px">{{ isRequired('period_start') ? '開始日は必須です。' : '' }}終了日が決まっていない現場は「未定」にしてください（工程管理では帯が右端まで薄く伸びます）。{{ modal.status === 'completed' ? '完了の現場は終了日（実績）が必須です。' : '' }}</p>
         </div>
         <!-- ② 関係（元請け・責任者） -->
         <div class="grid2">
@@ -328,7 +328,7 @@
                @drop.prevent="onDropAtt" @dragover.prevent="attDragOver = true" @dragleave.prevent="attDragOver = false">
             <label class="att-btn">＋ 写真<input type="file" accept="image/*" multiple hidden :disabled="uploading" @change="onAttach($event, 'photo')" /></label>
             <label class="att-btn">＋ 書類<input type="file" accept="application/pdf,image/*" multiple hidden :disabled="uploading" @change="onAttach($event, 'document')" /></label>
-            <label class="att-btn att-btn-schedule" title="工程表（PDF・画像・Excel）。会社予定の現場行からクリップで開けます">＋ 工程表<input type="file" accept="application/pdf,image/*,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" multiple hidden :disabled="uploading" data-testid="att-schedule-input" @change="onAttach($event, 'schedule')" /></label>
+            <label class="att-btn att-btn-schedule" title="工程表（PDF・画像・Excel）。工程管理の現場行からクリップで開けます">＋ 工程表<input type="file" accept="application/pdf,image/*,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" multiple hidden :disabled="uploading" data-testid="att-schedule-input" @change="onAttach($event, 'schedule')" /></label>
             <span class="att-drop-hint">{{ attDragOver ? 'ここにドロップ' : 'またはここに画像/PDFを複数まとめてドラッグ&ドロップ' }}</span>
             <span v-if="uploading" class="att-up">アップロード中…</span>
           </div>
@@ -894,7 +894,7 @@ const periodInvalid = computed(() => {
 const existingMissingWarn = computed(() => {
   const m = modal.value; if (!m?.id) return ''
   const soft = missingFields.value.filter(f => f === '住所' || f === '工期（開始日）' || f === '工期（終了日）')
-  return soft.length ? `${soft.join('・')}が未入力です。会社予定では「工期未定」「住所未設定」に出ます。` : ''
+  return soft.length ? `${soft.join('・')}が未入力です。工程管理では「工期未定」「住所未設定」に出ます。` : ''
 })
 function fmtYmd(d: string) { const [y, mo, da] = d.split('-'); return `${y}/${Number(mo)}/${Number(da)}` }
 

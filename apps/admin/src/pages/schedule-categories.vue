@@ -2,12 +2,12 @@
   <div>
     <div class="page-header">
       <div>
-        <RouterLink to="/calendar" class="back-link">‹ 予定管理へ戻る</RouterLink>
+        <RouterLink to="/calendar" class="back-link">‹ スケジュール管理へ戻る</RouterLink>
         <h1 class="page-title">予定カテゴリ設定</h1>
       </div>
       <button class="btn-add" @click="openAdd">＋ カテゴリ追加</button>
     </div>
-    <p class="page-note">予定管理カレンダーのカテゴリと色を管理します。色はカレンダー上の予定チップに反映されます。</p>
+    <p class="page-note">スケジュール管理のカテゴリと色を管理します。色はカレンダー上の予定チップに反映されます。</p>
 
     <div v-if="loading" class="empty">読み込み中...</div>
     <div v-else class="table-wrap">

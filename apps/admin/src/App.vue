@@ -50,7 +50,7 @@
         <li><RouterLink to="/punch-corrections" class="nav-link"><span class="material-symbols-rounded nav-icon">edit_calendar</span>打刻修正の承認<span v-if="punchCorrectionCount" class="nav-badge">{{ punchCorrectionCount }}</span></RouterLink></li>
         <li><RouterLink to="/chats" class="nav-link"><span class="material-symbols-rounded nav-icon">forum</span>チャット<span v-if="unreadChatCount" class="nav-badge">{{ unreadChatCount }}</span></RouterLink></li>
         <li><RouterLink to="/site-reports" class="nav-link"><span class="material-symbols-rounded nav-icon">bar_chart</span>現場別集計</RouterLink></li>
-        <li><RouterLink to="/calendar" class="nav-link"><span class="material-symbols-rounded nav-icon">calendar_month</span>予定管理</RouterLink></li>
+        <li><RouterLink to="/calendar" class="nav-link"><span class="material-symbols-rounded nav-icon">calendar_month</span>スケジュール管理</RouterLink></li>
         <li><RouterLink to="/process" class="nav-link"><span class="material-symbols-rounded nav-icon">view_timeline</span>工程管理</RouterLink></li>
 
         <template v-if="canViewManagementPages">
