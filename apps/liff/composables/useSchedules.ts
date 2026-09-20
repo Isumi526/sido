@@ -177,6 +177,25 @@ export const useSchedules = () => {
     }
   }
 
+  /** 予定の作成・変更・削除を担当作業員へ通知（EF schedule-notify・身元はサーバ側で解決）。失敗しても操作は成立させる */
+  function notifyScheduleChange(scheduleId: string, kind: 'created' | 'updated' | 'deleted') {
+    void (async () => {
+      try {
+        const config = useRuntimeConfig()
+        const liff = useLiff()
+        const anonKey = config.public.supabaseAnonKey as string
+        const { data: { session } } = await supabase.auth.getSession()
+        const lineIdToken = (await liff.getIdToken().catch(() => null)) ?? ''
+        const devLineUserId = config.public.appEnv === 'development' ? (liff.profile.value?.userId ?? '') : ''
+        await fetch(`${config.public.edgeFunctionUrl}/schedule-notify`, {
+          method: 'POST', keepalive: true,
+          headers: { 'Content-Type': 'application/json', apikey: anonKey, Authorization: session ? `Bearer ${session.access_token}` : `Bearer ${anonKey}` },
+          body: JSON.stringify({ action: 'changed', scheduleId, kind, line_id_token: lineIdToken, dev_line_user_id: devLineUserId }),
+        })
+      } catch { /* 通知失敗は無視 */ }
+    })()
+  }
+
   // ──────────────────────────────────────────────────────
   // 予定作成
   // ──────────────────────────────────────────────────────
@@ -194,6 +213,7 @@ export const useSchedules = () => {
 
     const schedule = data as Schedule
     schedules.value.push(schedule)
+    notifyScheduleChange(schedule.id, 'created')   // メール通知（テナント設定 ON の時だけ EF が送る）。best-effort
     // 対象作業員へアプリ内通知（自分で自分の予定を作った時は不要）。best-effort・失敗しても作成は成立 #予定通知
     try {
       const me = _myWorkerIdCache.value
@@ -249,6 +269,7 @@ export const useSchedules = () => {
 
     const idx = schedules.value.findIndex(s => s.id === id)
     if (idx !== -1) schedules.value[idx] = data as Schedule
+    notifyScheduleChange(id, 'updated')   // 変更をアプリ内通知＋メール。best-effort
     return data as Schedule
   }
 
@@ -260,6 +281,7 @@ export const useSchedules = () => {
       deleted_at:      new Date().toISOString(),
       deleted_by_name: deletedByName ?? null,
     }).eq('id', id)
+    if (!err) notifyScheduleChange(id, 'deleted')   // 削除をアプリ内通知＋メール。best-effort
     if (err) throw err
     schedules.value = schedules.value.filter(s => s.id !== id)
   }
