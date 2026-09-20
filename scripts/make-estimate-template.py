@@ -14,6 +14,8 @@
 #      ★B列には場所・工種・作業内容が雑多に入る運用なので、
 #       特定の案件でたまたま付いた色が残ると誤解を招く
 #   4) 単価表シート・候補表シートを足し、ドロップダウンを仕込む
+#   5) （v2・2026-09-20 E-2）全体見積の AA=工事区分・AB=部位 の列とドロップダウンを足す。
+#      名称の候補は書き出し時にアプリが「その行の区分・部位」で絞る式に差し替える
 #
 #  ★ドロップダウンの範囲は「実データぴったり」でなければならない。
 #   Excel の入力補完（打ち込むと候補が絞り込まれる機能）は、
@@ -47,6 +49,11 @@ FIRST_ROW, LAST_ROW = 3, 107
 CLEAR_COLS = [2, 3, 4, 5, 6, 11, 14, 15, 16]      # B名称 C形状 D/E/F寸法 K備考 N数量 O単位 P原価
 UNIT_PRICE_COL = 9                                 # I列＝見積単価（=Y{行}）
 VENDOR_COL, VENDOR_COL_LETTER = 12, 'L'            # 発注先（印刷範囲の外）
+# ★E-2（2026-09-20・テンプレ v2）: 行ごとの「工事区分」「部位」。Q〜Y は数式列で埋まっているので AA/AB（印刷範囲の外）。
+#  SEED_FORMAT.col.trade / col.part と対にすること。アプリは AA2 に「工事区分」があるかでテンプレ v2 と判定する。
+TRADE_COL, TRADE_COL_LETTER = 27, 'AA'
+PART_COL, PART_COL_LETTER = 28, 'AB'
+PARTS = ['天井', '壁', '床']
 TRADE_SHEETS = [
     '仮設工事', '解体工事 (2)', '軽鉄工事 (3)', '壁面表装工事 (4)', '床表装工事 (5)',
     '塗装工事 (6)', '造作工事 (7)', '什器工事 (8)', '建具工事 (9)', '金物工事',
@@ -105,12 +112,18 @@ def add_sheets(wb):
         m.column_dimensions[col].width = wd
 
     k = wb.create_sheet('候補表')
-    k.append(['名称の候補'])
-    k['C1'] = '※場所（（）付き）・工種（■付き）・作業内容を1本にまとめた候補。1セルに入力規則は1つしか付けられないため'
-    k['C1'].font = Font(size=8, color='888888')
+    # A=名称の候補（全件）／B=区分一覧／C=部位一覧（AA/AB 列のドロップダウン用）／D〜=区分|部位 別の候補（アプリが書く）
+    k.append(['名称の候補', '区分一覧', '部位一覧'])
+    k['E1'] = '※A=全候補（場所（）・工種■・作業内容）。B/C=工事区分・部位の選択肢。D列以降=「区分|部位」別の候補（アプリが毎回書きます。手で編集しないでください）'
+    k['E1'].font = Font(size=8, color='888888')
     k.column_dimensions['A'].width = 30
+    k.column_dimensions['B'].width = 16
     for v in LOCATIONS + TRADES:
         k.append([v])
+    for i, t in enumerate(TRADES):
+        k.cell(2 + i, 2).value = t.lstrip('■')
+    for i, pt in enumerate(PARTS):
+        k.cell(2 + i, 3).value = pt
     return len(LOCATIONS) + len(TRADES)
 
 
@@ -136,8 +149,35 @@ def add_validations(wb):
     ws.cell(1, VENDOR_COL).font = Font(name='MS Mincho', size=7, color='888888')
     ws.column_dimensions[VENDOR_COL_LETTER].width = 34
 
+    # ── E-2: 工事区分（AA）・部位（AB）。promptTitle を「区分一覧」「部位一覧」にしておくと、
+    #  アプリ（estimateExcel.ts）が入力規則の参照元を実件数ぴったりに差し替える（見出し文字列で探す）。
+    ws.cell(1, TRADE_COL).value = '↓この列は印刷されません（アプリが読みます）'
+    ws.cell(1, TRADE_COL).font = Font(name='MS Mincho', size=7, color='888888')
+    for col, title in ((TRADE_COL, '工事区分'), (PART_COL, '部位')):
+        c = ws.cell(2, col)
+        c.value = title
+        c.font = Font(name='MS Mincho', size=9, bold=True, color='2C4C6B')
+        c.fill = PatternFill('solid', fgColor='EAF0F5')
+        c.alignment = Alignment(horizontal='center')
+    ws.column_dimensions[TRADE_COL_LETTER].width = 14
+    ws.column_dimensions[PART_COL_LETTER].width = 8
+    d_trade = DataValidation(type='list', formula1=f'=OFFSET({K}!$B$2,0,0,MAX(1,COUNTA({K}!$B$2:$B${MAX})),1)', allow_blank=True)
+    d_trade.showErrorMessage = False
+    d_trade.showInputMessage = True
+    d_trade.promptTitle = '区分一覧'
+    d_trade.prompt = 'この行の工事区分。名称の候補がこの区分で絞られ、工種別の抜き出しもこの列を見ます'
+    ws.add_data_validation(d_trade)
+    d_part = DataValidation(type='list', formula1=f'={K}!$C$2:$C${1 + len(PARTS)}', allow_blank=True)
+    d_part.showErrorMessage = False
+    d_part.showInputMessage = True
+    d_part.promptTitle = '部位一覧'
+    d_part.prompt = '天井／壁／床（空＝部位で絞らない）'
+    ws.add_data_validation(d_part)
+
     for r in range(FIRST_ROW, LAST_ROW + 1):
         d_name.add(ws.cell(r, 2))
+        d_trade.add(ws.cell(r, TRADE_COL))
+        d_part.add(ws.cell(r, PART_COL))
         # ★名称が選ばれていない行では候補を空にする（単価表!$G$3 は常に空のセル）。
         #  Excelの入力規則はセルごとに静的なので矢印自体は消せないが、
         #  無関係な業者名が並ぶのは防げる。
