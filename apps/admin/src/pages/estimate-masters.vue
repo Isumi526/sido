@@ -16,7 +16,7 @@
         <button class="subtab" :class="{ active: settingsTab === 'price' }" data-testid="subtab-price" @click="settingsTab = 'price'">商社別単価</button>
         <button class="subtab" :class="{ active: settingsTab === 'trade' }" data-testid="subtab-trade" @click="settingsTab = 'trade'">工種</button>
       </div>
-      <p v-if="masterErr" class="err">{{ masterErr }}</p>
+      <p v-if="masterErr" class="err" data-testid="master-err">{{ masterErr }}</p>
 
       <!-- 工種マスタ -->
       <div class="setting-block" v-show="settingsTab === 'trade'">
@@ -82,18 +82,20 @@
                   <td class="ps-supplier">{{ s.supplierName }}</td>
                   <td>{{ s.category || '—' }}</td>
                   <td class="num ps-price">{{ s.current ? yen(s.current.unit_price) : '—' }}</td>
-                  <td>{{ s.current?.effective_date || '—' }}</td>
+                  <td :data-testid="`ps-date-${s.supplierId}`">{{ s.current?.effective_date || '適用日不明' }}</td>
                   <td>
                     <!-- ★is_current=false の履歴行をここで初めて読む（溜めるだけだった） -->
                     <details v-if="s.history.length" class="ps-hist" :data-testid="`ps-hist-${s.supplierId}`">
                       <summary>{{ s.history.length }}件の改定</summary>
                       <ul class="ps-hist-list">
                         <li v-for="(h, hi) in s.history" :key="hi">
-                          {{ h.effective_date || '日付なし' }}: {{ yen(h.from) }} → <b>{{ yen(h.to) }}</b>
+                          {{ h.effective_date }}: {{ yen(h.from) }} → <b>{{ yen(h.to) }}</b>
                         </li>
                       </ul>
                     </details>
                     <span v-else class="muted">—</span>
+                    <!-- E-4: 適用日の無い行は差分に入れず件数だけ（実態と違う改定日を作らない） -->
+                    <span v-if="s.undatedCount" class="muted ps-undated" :data-testid="`ps-undated-${s.supplierId}`">適用日不明 {{ s.undatedCount }}件（履歴の並びから除外）</span>
                   </td>
                   <td>
                     <button v-if="s.current" class="btn-del" :data-testid="`ps-del-${s.supplierId}`" @click="deletePriceEntry(s.current.id)">削除</button>
@@ -130,7 +132,9 @@
                 <input v-model="priceForm.item_name" class="input sm" placeholder="品名" data-testid="price-name" />
                 <input v-model="priceForm.unit" class="input sm unit-in" placeholder="単位" data-testid="price-unit" />
                 <input v-model.number="priceForm.unit_price" type="number" class="input sm num" placeholder="単価" data-testid="price-value" />
-                <button class="btn-add" :disabled="!(priceForm.product_code || priceForm.item_name) || !(priceForm.unit_price > 0)" data-testid="add-price" @click="addPrice">登録</button>
+                <!-- E-4: 適用日は必須（既定＝今日）。空のまま入ると改定履歴の並びが狂う（2026-09-05 本番実測 35% が NULL） -->
+                <input v-model="priceForm.effective_date" type="date" class="input sm" title="適用日（必須）" data-testid="price-effective" />
+                <button class="btn-add" :disabled="!(priceForm.product_code || priceForm.item_name) || !(priceForm.unit_price > 0) || !priceForm.effective_date" data-testid="add-price" @click="addPrice">登録</button>
               </div>
             </div>
             <div class="method ocr-dropzone" :class="{ 'drag-over': ocrDragOver }"
@@ -240,7 +244,8 @@ const trades         = ref<Trade[]>([])
 const suppliers      = ref<Supplier[]>([])
 const matPrices      = ref<MatPrice[]>([])
 const revisions      = ref<Revision[]>([])
-const priceForm      = ref<{ product_code: string; item_name: string; unit: string; unit_price: number | null }>({ product_code: '', item_name: '', unit: '', unit_price: null })
+const todayYmd = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+const priceForm      = ref<{ product_code: string; item_name: string; unit: string; unit_price: number | null; effective_date: string }>({ product_code: '', item_name: '', unit: '', unit_price: null, effective_date: todayYmd() })
 const newTradeName   = ref('')
 const addingSupplier = ref(false)
 const newSupplierName = ref('')
@@ -396,16 +401,19 @@ const psGroups = computed(() => {
   return [...byItem.values()].map((g) => ({
     key: g.key, productCode: g.productCode, itemName: g.itemName, unit: g.unit,
     suppliers: [...g.bySupplier.entries()].map(([supplierId, list]) => {
-      // effective_date 昇順で来ているので、末尾が新しい。現在価格は is_current を優先。
-      const sorted = [...list].sort((a, b) => String(a.effective_date ?? '').localeCompare(String(b.effective_date ?? '')))
-      const current = sorted.find(p => p.is_current) ?? sorted[sorted.length - 1] ?? null
-      // 改定履歴＝「幾らから幾らへ」。連続する2点の差分として組み立てる
+      // ★E-4（2026-09-20・確認事項8=A）: 適用日が無い行は「いつ」が分からないので差分の並びに入れない
+      //  （created_at で埋めると実態と違う改定日を作るため埋めない）。件数だけ「適用日不明」として見せる。
+      const dated = list.filter(p => !!p.effective_date)
+      const undated = list.filter(p => !p.effective_date)
+      const sorted = [...dated].sort((a, b) => String(a.effective_date).localeCompare(String(b.effective_date)))
+      const current = list.find(p => p.is_current) ?? sorted[sorted.length - 1] ?? undated[undated.length - 1] ?? null
+      // 改定履歴＝「幾らから幾らへ」。適用日つきの連続する2点の差分として組み立てる
       const history: { effective_date: string | null; from: number; to: number }[] = []
       for (let i = 1; i < sorted.length; i++) {
         if (sorted[i].unit_price === sorted[i - 1].unit_price) continue
         history.push({ effective_date: sorted[i].effective_date, from: sorted[i - 1].unit_price, to: sorted[i].unit_price })
       }
-      return { supplierId, supplierName: nameOf(supplierId), category: catOf(supplierId), current, history: history.reverse() }
+      return { supplierId, supplierName: nameOf(supplierId), category: catOf(supplierId), current, history: history.reverse(), undatedCount: undated.length }
     }).sort((a, b) => (a.current?.unit_price ?? Infinity) - (b.current?.unit_price ?? Infinity)),
   })).sort((a, b) => (a.itemName || a.productCode).localeCompare(b.itemName || b.productCode, 'ja'))
 })
@@ -524,6 +532,8 @@ async function applyRevision(r: Revision): Promise<string | null> {
 }
 
 async function approveRevision(r: Revision) {
+  // E-4: 適用日なしでは承認できない（取込の AI が読めなかった行は人が入れる）
+  if (!r.effective_date) { masterErr.value = '適用日を入れてから承認してください（改定履歴の並びに使います）'; return }
   revBusy.value = true; masterErr.value = ''
   try {
     const err = await applyRevision(r)
@@ -539,6 +549,8 @@ async function approveRevision(r: Revision) {
 async function approveAllRevisions() {
   const targets = revisions.value.filter(r => r.status === 'pending')
   if (!targets.length) return
+  const noDate = targets.filter(r => !r.effective_date).length
+  if (noDate) { masterErr.value = `適用日が空の行が ${noDate} 件あります。入れてから承認してください（改定履歴の並びに使います）`; return }
   if (!window.confirm(`${targets.length}件の単価をまとめて承認します。よろしいですか？`)) return
   revBusy.value = true; masterErr.value = ''; bulkMsg.value = ''
   let done = 0
@@ -666,6 +678,7 @@ async function addPrice() {
   const code = (f.product_code ?? '').trim() || null
   const name = (f.item_name ?? '').trim() || null
   if ((!code && !name) || !supplierId || !(Number(f.unit_price) > 0)) return
+  if (!f.effective_date) { masterErr.value = '適用日を入れてください（改定履歴の並びに使います）'; return }
   // 同じ商社の同じ品番（無ければ品名）の現行単価を履歴に落としてから入れる
   let q = supabase.from('estimate_material_prices').update({ is_current: false })
     .eq('account_id', accountId).eq('supplier_id', supplierId).eq('is_current', true)
@@ -674,10 +687,10 @@ async function addPrice() {
   const { error } = await supabase.from('estimate_material_prices').insert({
     account_id: accountId, supplier_id: supplierId,
     product_code: code, item_name: name, unit: (f.unit ?? '').trim() || null,
-    unit_price: Number(f.unit_price), is_current: true,
+    unit_price: Number(f.unit_price), is_current: true, effective_date: f.effective_date,
   })
   if (error) { masterErr.value = error.message; return }
-  priceForm.value = { product_code: '', item_name: '', unit: '', unit_price: null }
+  priceForm.value = { product_code: '', item_name: '', unit: '', unit_price: null, effective_date: todayYmd() }
   await loadMaterialPrices()
 }
 async function addTrade() {

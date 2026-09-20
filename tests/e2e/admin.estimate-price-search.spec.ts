@@ -96,6 +96,27 @@ test.describe('単価の横断検索（R45）', () => {
     await expect(page.getByTestId(`ps-hist-${supBId}`)).toHaveCount(0)
   })
 
+  // ── E-4（2026-09-20・確認事項8=A）: 適用日が無い行は履歴の並びに入れず「適用日不明」として別扱い ──
+  test('★E-4: 適用日が NULL の行は改定履歴の差分に入らず「適用日不明」と件数が出る／現在価格の適用日も「適用日不明」', async ({ page }) => {
+    // 商社甲に適用日なしの古い行を混ぜる（本番実測 35% が NULL）。並びに入れると 9,999→2,000 の偽の改定ができる
+    const nullId = (await restSrv('estimate_material_prices', {
+      method: 'POST', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ account_id: accountId, supplier_id: supAId, product_code: CODE, item_name: ITEM, unit: '㎡', unit_price: 9999, effective_date: null, is_current: false }),
+    }))[0].id
+    try {
+      await openSearch(page)
+      await page.getByTestId('ps-kw').fill(ITEM)
+      const hist = page.getByTestId(`ps-hist-${supAId}`)
+      await expect(hist).toContainText('1件の改定', { timeout: 15000 })   // 9,999 の行は数えない
+      await hist.locator('summary').click()
+      await expect(hist).not.toContainText('9,999')
+      await expect(page.getByTestId(`ps-undated-${supAId}`)).toContainText('適用日不明 1件')
+      await expect(page.getByTestId(`ps-undated-${supBId}`)).toHaveCount(0)
+    } finally {
+      await restSrv(`estimate_material_prices?id=eq.${nullId}`, { method: 'DELETE' }).catch(() => {})
+    }
+  })
+
   test('業者で絞り込める', async ({ page }) => {
     await openSearch(page)
     await page.getByTestId('ps-kw').fill(ITEM)
