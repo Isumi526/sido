@@ -33,7 +33,29 @@ export const unreadScheduleCount = ref(0)
 //  この2つを1つのリストに混ぜると、読み飛ばした瞬間に「やること」が消えて
 //  誰も対応しないまま残る（＝送り出し資料が確認されない）。
 //  ベルのバッジは合計を出す（気づく入口は1つでいい）。
-export const totalBadgeCount = computed(() => unreadNotifCount.value + pendingDocCount.value)
+export const totalBadgeCount = computed(() => unreadNotifCount.value + pendingDocCount.value + punchTodoItems.value.length)
+
+// ── 打刻催促の「やること」（A-3・2026-09-20）──
+// ★お知らせ（既読で消える）ではなく、状態から出す: 予定が今もある／対応する打刻がまだ無い／当日のうち。
+//  EF punch-reminder の todo-mine が判定する（cron の通知と同じ判定を共通化）。
+export type PunchTodoItem = { scheduleId: string; kind: 'checkin' | 'checkout'; title: string; body: string; at: string; siteName: string }
+export const punchTodoItems = ref<PunchTodoItem[]>([])
+export async function refreshPunchTodoBadge(): Promise<void> {
+  const supabase = useSupabase()
+  const { profile, getIdToken } = useLiff()
+  const config = useRuntimeConfig()
+  try {
+    const idToken = await getIdToken().catch(() => null)
+    const devLineUserId = config.public.appEnv === 'development' ? (profile.value?.userId ?? '') : ''
+    const { data, error } = await supabase.functions.invoke('punch-reminder', {
+      body: { action: 'todo-mine', ...(idToken ? { line_id_token: idToken } : {}), ...(devLineUserId ? { dev_line_user_id: devLineUserId } : {}) },
+    })
+    punchTodoItems.value = (!error && data?.ok && Array.isArray(data.items)) ? (data.items as PunchTodoItem[]) : []
+  } catch (e) {
+    console.error('[punchTodo] 打刻催促を取得できませんでした:', e)
+    punchTodoItems.value = []
+  }
+}
 
 /** お知らせ側の kind（読めば済むもの）。ここに無い kind は「やること」扱いにしない＝既存互換 */
 export const INFO_KINDS = ['schedule', 'report_reject', 'overtime_decision', 'expense_reject', 'chat_mention'] as const

@@ -23,11 +23,6 @@
         </button>
       </div>
 
-      <div v-if="loading" class="state-screen">
-        <div class="spinner" />
-        <p class="state-text">{{ $t('common.loading') }}</p>
-      </div>
-
       <!-- スケジュール通知メールの本人ON/OFF（テナント設定がONの時だけ意味を持つ・2026-09-20） -->
       <div v-if="!loading && mailPref && mailPref.tenantEnabled" class="mail-pref" data-testid="sched-mail-pref">
         <label class="mail-pref-row">
@@ -37,13 +32,28 @@
         <p class="mail-pref-hint">{{ mailPref.hasEmail ? $t('notifications.schedMailHint') : $t('notifications.schedMailNoEmail') }}</p>
       </div>
 
+      <div v-if="loading" class="state-screen">
+        <div class="spinner" />
+        <p class="state-text">{{ $t('common.loading') }}</p>
+      </div>
+
       <!-- やること：承認などの行動が済むまで残る -->
       <template v-else-if="tab === 'todo'">
-        <div v-if="!pendingDocItems.length" class="empty-state" data-testid="todo-empty">
+        <div v-if="!pendingDocItems.length && !punchTodoItems.length" class="empty-state" data-testid="todo-empty">
           <div class="material-symbols-rounded empty-icon">task_alt</div>
           <p class="empty-text">{{ $t('notifications.todoEmpty') }}</p>
         </div>
         <ul v-else class="notif-list">
+          <!-- 打刻催促（A-3）: 打刻する／予定を直す／当日が終わる まで残る。既読では消えない -->
+          <li v-for="t in punchTodoItems" :key="`${t.scheduleId}-${t.kind}`">
+            <button class="notif tappable todo" :data-testid="`punch-todo-${t.kind}`" @click="router.push('/checkin')">
+              <span class="material-symbols-rounded notif-icon kind-todo">{{ t.kind === 'checkin' ? 'login' : 'logout' }}</span>
+              <span class="notif-body">
+                <span class="notif-title">{{ t.title }}</span>
+                <span class="notif-text">{{ t.body }}</span>
+              </span>
+            </button>
+          </li>
           <li v-for="d in pendingDocItems" :key="d.attachmentId">
             <button class="notif tappable todo" data-testid="todo-item" @click="openTodo(d)">
               <span class="material-symbols-rounded notif-icon kind-todo">assignment_late</span>
@@ -237,9 +247,9 @@ async function setMailPref(enabled: boolean) {
 onMounted(async () => {
   await load()
   callSchedulePref().catch(() => { /* 取れなければ出さない */ })
-  await Promise.all([refreshNotifBadge(), refreshPendingDocBadge()])
+  await Promise.all([refreshNotifBadge(), refreshPendingDocBadge(), refreshPunchTodoBadge()])
   // やることが無ければお知らせを開く（空のタブを見せない）＝開いた時点で既読になる
-  if (pendingDocCount.value === 0) {
+  if (pendingDocCount.value === 0 && punchTodoItems.value.length === 0) {
     tab.value = 'info'
     await readAll()
   }
