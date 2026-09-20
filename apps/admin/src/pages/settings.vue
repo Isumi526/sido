@@ -85,6 +85,27 @@
     </div>
   </div>
 
+  <!-- 在庫③（2026-09-20）: AI候補の確認役。既定＝申請者本人がその場で確定（要回答9=C）。
+       「事務側」にすると作業員は写真＋数量だけで送り、在庫管理の未確認一覧で事務側が品目を確定してから残数に反映される。
+       在庫管理（ベータ）が ON の会社にだけ出す。 -->
+  <div v-if="features.inventory" class="reminder-box" data-testid="inventory-confirm-box">
+    <div class="reminder-title">資材の在庫：品目の確認役</div>
+    <div class="reminder-config">
+      <div class="config-row">
+        <span class="config-label">作業員アプリで送られた在庫の品目を確定する人</span>
+        <select v-model="inventoryConfirmRole" class="input-inline" :disabled="inventoryConfirmSaving" data-testid="inventory-confirm-role" @change="setInventoryConfirmRole(inventoryConfirmRole)">
+          <option value="self">申請者本人（その場で確定）</option>
+          <option value="office">事務側（後で確定）</option>
+        </select>
+      </div>
+      <div class="reminder-desc">
+        「申請者本人」は作業員が品目を選んだ時点で残数に反映されます。「事務側」にすると作業員は写真と数量だけで送れ、
+        在庫管理の「未確認一覧」で事務側が品目を確定してから残数に反映されます（差し戻しもできます）。
+        未確認のまま7日を超えたものはダッシュボードに件数が出ます。
+      </div>
+    </div>
+  </div>
+
   <!-- 予定管理の独自の種類（B-3・2026-09-19）: 重機・プロジェクター・駐車場など、車両・道具・会議室以外の予約対象。
        追加すると予定管理（管理画面・作業員アプリ）にタブが増え、台帳（名前・メモ）はそのタブの「○○を管理」から。 -->
   <div class="reminder-box" data-testid="custom-types-box">
@@ -280,6 +301,16 @@ function setApprovalNotifyEnabled(val: boolean) {
     .finally(() => { approvalNotifySaving.value = false })
 }
 
+// ── 在庫③: 品目の確認役（self / office）。EF inventory と inventory.vue の未確認一覧が settings を見る ──
+const inventoryConfirmRole   = ref<'self' | 'office'>('self')
+const inventoryConfirmSaving = ref(false)
+function setInventoryConfirmRole(val: 'self' | 'office') {
+  inventoryConfirmRole.value = val
+  inventoryConfirmSaving.value = true
+  upsertSetting('inventory_confirm_role', val, '在庫：品目の確認役')
+    .finally(() => { inventoryConfirmSaving.value = false })
+}
+
 // ── 打刻リマインド（予定の開始・終了時刻）ON/OFF。EF punch-reminder が settings を見る ──
 const punchReminderEnabled = ref(false)
 const punchReminderSaving  = ref(false)
@@ -409,13 +440,14 @@ async function loadReminderConfig() {
   const accountId = await getAccountId()
   const { data } = await supabase.from('settings').select('key, value')
     .eq('account_id', accountId)
-    .in('key', ['reminder_enabled', 'reminder_time', 'notify_report_enabled', 'notify_punch_reminder_enabled', 'notify_approval_request_enabled'])
+    .in('key', ['reminder_enabled', 'reminder_time', 'notify_report_enabled', 'notify_punch_reminder_enabled', 'notify_approval_request_enabled', 'inventory_confirm_role'])
   const m = Object.fromEntries((data ?? []).map(s => [s.key, s.value]))
   reminderEnabled.value     = (m['reminder_enabled'] ?? 'true') === 'true'
   reminderTime.value        = m['reminder_time'] ?? '08:00'
   reportNotifyEnabled.value = (m['notify_report_enabled'] ?? 'true') === 'true'
   punchReminderEnabled.value = m['notify_punch_reminder_enabled'] === 'true'   // 未設定＝OFF（EF と同じ既定）
   approvalNotifyEnabled.value = (m['notify_approval_request_enabled'] ?? 'true') === 'true'   // 未設定＝ON
+  inventoryConfirmRole.value = m['inventory_confirm_role'] === 'office' ? 'office' : 'self'   // 未設定＝本人（要回答9=C）
   await loadFeatures()   // 「使う機能」は lib/features.ts の読み直し（メニューと同じ値を見せる）
   await loadCustomTypes()
 }
