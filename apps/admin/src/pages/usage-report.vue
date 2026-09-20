@@ -2,6 +2,11 @@
   <div>
     <div class="page-header">
       <h1 class="page-title">効果測定</h1>
+      <HelpButton title="効果測定" :items="[
+        '管理画面と作業員アプリの主要機能が、月にどれくらい使われたかを機能別に数えています（外部の分析ツールには送っていません）。',
+        '「削減時間の自己申告」は、導入前と比べて1か月でどれくらい時間が減った実感かを月1回記録するものです。同じ月にもう一度出すと上書きされます。',
+        'トライアル先への報告や、使われていない機能の見直しに使います。',
+      ]" />
     </div>
     <p class="hint">
       GENLINKSの機能別の利用状況と、月ごとの削減時間の自己申告を確認できます。
@@ -64,6 +69,7 @@ import { ref, computed, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { currentWorkerId } from '../lib/auth'
+import HelpButton from '../components/HelpButton.vue'
 import { USAGE_FEATURES, USAGE_FEATURE_KEYS, type UsageFeatureKey } from '../lib/usage-features.gen'
 
 type Event = { feature_key: string; occurred_at: string }

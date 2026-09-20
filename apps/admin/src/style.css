@@ -17,3 +17,29 @@ a { text-decoration: none; color: inherit; }
   .page-title  { font-size: 18px !important; }
   .page-header { flex-wrap: wrap; gap: 8px; }
 }
+
+/* ══════════════════════════════════════════════════════════════
+   一覧画面の共通キット（2026-09-20・「新規画面が共通の作りに乗る」）
+   新しいページはこのクラスをそのまま使う＝各ページで .hint/.table を再発明しない。
+   ページ固有の調整は scoped の同名クラスで上書きできる（scoped の方が詳細度が高い）。
+   雛形: docs/templates/admin-list-page.vue ／ 検査: node scripts/check-admin-pages.mjs
+   ══════════════════════════════════════════════════════════════ */
+.page-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; }
+.page-title { font-size: 22px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.section-title { font-size: 17px; font-weight: 700; }
+.hint { color: #64748b; font-size: 13px; margin: 0 0 16px; line-height: 1.7; }
+.hint strong, .hint b { color: #334155; }
+.empty { color: #94a3b8; font-size: 14px; padding: 20px; background: #fff; border-radius: 12px; }
+.filters, .filter-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.filter-input { max-width: 280px; }
+.result-count { font-size: 12px; color: #94a3b8; margin-left: auto; white-space: nowrap; }
+.input, .select { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 9px 12px; font-size: 14px; color: #111; }
+.input:focus, .select:focus { outline: none; border-color: #06A050; }
+.table-wrap { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06); overflow: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.table th { background: #f9f9f9; padding: 12px 16px; text-align: left; font-size: 12px; color: #888; font-weight: 700; white-space: nowrap; }
+.table td { padding: 12px 16px; border-top: 1px solid #f0f0f0; vertical-align: middle; }
+.table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.btn-primary, .btn-add { background: #06C755; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.btn-primary:disabled, .btn-add:disabled { opacity: .6; cursor: default; }
+.btn-ghost { background: #fff; color: #334155; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 14px; font-size: 13px; cursor: pointer; }
