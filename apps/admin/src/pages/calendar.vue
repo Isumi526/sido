@@ -336,6 +336,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { logFeatureUsage } from '../lib/usageLog'
 import { supabase } from '../lib/supabase'
 import { siteStatusesForScreen } from '../lib/site-status.gen'
 import { useQueryParam } from '../composables/useQueryParam'
@@ -966,6 +967,7 @@ async function saveSchedule() {
       }
     }
 
+    if (!formModal.value.id) logFeatureUsage('schedule_created')   // 効果測定（新規のみ・ベストエフォート）
     formModal.value = null
     await loadSchedules()
   } catch (e) {

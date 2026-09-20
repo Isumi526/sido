@@ -180,6 +180,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { logFeatureUsage } from '../lib/usageLog'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { currentWorkerId } from '../lib/auth'
@@ -374,6 +375,7 @@ async function decide(g: OvertimeReq, status: 'approved' | 'rejected', note = ''
     return
   }
   pending.value = pending.value.filter(x => x.id !== g.id)
+  logFeatureUsage('overtime_decided')   // 効果測定（ベストエフォート）
   await refreshNavBadges()  // ナビバッジを即時更新（リロード不要）
   const accountId = await getAccountId()
   if (accountId) loadHistory(accountId).catch(() => {})

@@ -10,22 +10,27 @@
 
     <section class="card">
       <h2>機能別 利用回数（月別）</h2>
-      <p class="hint-sm" v-if="!Object.keys(byFeature).length">まだ利用ログがありません。</p>
+      <p class="hint-sm" v-if="!events.length">まだ利用ログがありません。</p>
       <div class="table-wrap" v-else>
-        <table class="table">
+        <!-- 行＝機能（グループ見出し付き）・列＝直近の月。機能が増えたので横持ちをやめた（2026-09-20） -->
+        <table class="table" data-testid="usage-table">
           <thead>
-            <tr><th>月</th><th v-for="k in featureKeys" :key="k">{{ FEATURE_LABEL[k] ?? k }}</th></tr>
+            <tr><th>機能</th><th v-for="m in months" :key="m" class="num">{{ m }}</th><th class="num">合計</th></tr>
           </thead>
           <tbody>
-            <tr v-for="m in months" :key="m">
-              <td>{{ m }}</td>
-              <td v-for="k in featureKeys" :key="k" class="num">{{ byFeature[k]?.[m] ?? 0 }}</td>
-            </tr>
+            <template v-for="g in groups" :key="g.name">
+              <tr class="group-row"><td :colspan="months.length + 2">{{ g.name }}</td></tr>
+              <tr v-for="k in g.keys" :key="k" :data-testid="`usage-row-${k}`">
+                <td>{{ USAGE_FEATURES[k].label }}</td>
+                <td v-for="m in months" :key="m" class="num">{{ byFeature[k]?.[m] ?? 0 }}</td>
+                <td class="num total" :data-testid="`usage-total-${k}`">{{ totalOf(k) }}</td>
+              </tr>
+            </template>
           </tbody>
         </table>
       </div>
       <p class="hint-sm">
-        計測しているのはまず代表的な機能（見積作成・見積書発行）のみです。他の機能の計測は順次追加します。
+        管理画面と作業員アプリの主要機能（日報・出退勤・経費・AIヘルプ・現場/スケジュール・見積/発注・在庫/道具）を計測しています。直近6か月を表示します。
       </p>
     </section>
 
@@ -59,9 +64,7 @@ import { ref, computed, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { currentWorkerId } from '../lib/auth'
-import { FEATURE_KEYS } from '../lib/usageLog'
-
-const FEATURE_LABEL: Record<string, string> = FEATURE_KEYS
+import { USAGE_FEATURES, USAGE_FEATURE_KEYS, type UsageFeatureKey } from '../lib/usage-features.gen'
 
 type Event = { feature_key: string; occurred_at: string }
 type Report = { id: string; year_month: string; hours_saved: number; note: string | null }
@@ -74,7 +77,17 @@ const form = ref<{ year_month: string; hours_saved: number | null; note: string 
   year_month: new Date().toISOString().slice(0, 7), hours_saved: null, note: '',
 })
 
-const featureKeys = computed(() => Object.keys(FEATURE_KEYS))
+/** 登録簿のグループ順に機能を並べる（登録簿に無い古いキーは「その他」） */
+const groups = computed(() => {
+  const order: string[] = []
+  const map: Record<string, string[]> = {}
+  for (const k of USAGE_FEATURE_KEYS) {
+    const g = USAGE_FEATURES[k].group
+    if (!map[g]) { map[g] = []; order.push(g) }
+    map[g].push(k)
+  }
+  return order.map((name) => ({ name, keys: map[name] as UsageFeatureKey[] }))
+})
 
 const byFeature = computed(() => {
   const out: Record<string, Record<string, number>> = {}
@@ -84,11 +97,13 @@ const byFeature = computed(() => {
   }
   return out
 })
+const totalOf = (k: string) => Object.values(byFeature.value[k] ?? {}).reduce((a, b) => a + b, 0)
 
+// 直近6か月（ログのある月だけ）。列が増えすぎて読めなくなるのを防ぐ
 const months = computed(() => {
   const set = new Set<string>()
   for (const e of events.value) set.add(e.occurred_at.slice(0, 7))
-  return [...set].sort().reverse()
+  return [...set].sort().reverse().slice(0, 6)
 })
 
 async function load() {
@@ -128,4 +143,6 @@ onMounted(load)
 .report-form { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
 .note-input { flex: 1; min-width: 160px; }
 .error { color: #ef4444; font-size: 13px; }
+.group-row td { background: #f8fafc; font-weight: 700; color: #475569; font-size: 12px; }
+.total { font-weight: 700; }
 </style>

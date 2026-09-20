@@ -111,6 +111,15 @@ const SHARES = [
     ],
   },
   {
+    // 効果測定の計測キー登録簿。admin（直接INSERT）/ LIFF（EF経由）/ EF（キー検証）で同じ登録簿を使う
+    src: 'shared/usage-features.ts',
+    dests: [
+      'apps/admin/src/lib/usage-features.gen.ts',
+      'apps/liff/composables/usage-features.gen.ts',
+      'supabase/functions/_shared/usage-features.gen.ts',
+    ],
+  },
+  {
     // 日報の車両距離「既定値超過」の申請・承認（距離Step2）。LIFF が保存形に直し、admin が一覧/バッジで拾い、EF が承認で差し替える
     src: 'shared/distance-overage.ts',
     dests: [

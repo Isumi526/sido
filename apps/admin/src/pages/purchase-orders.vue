@@ -239,6 +239,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { logFeatureUsage } from '../lib/usageLog'
 import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
 import { supabase } from '../lib/supabase'
@@ -532,6 +533,7 @@ async function issue() {
     catch (e: any) { console.error('[purchase-orders] PDF生成失敗:', e) }
 
     const sent = await callSendFn(orderId, mailSubject.value, mailMessage.value)
+    logFeatureUsage('purchase_order_issued')   // 効果測定（ベストエフォート）
     issueOk.value = sent.ok
     issueMsg.value = sent.ok ? `注文書 ${order_number} を発行しました。${sent.msg}` : `注文書 ${order_number} を発行しました（メール: ${sent.msg}）`
     await load()
