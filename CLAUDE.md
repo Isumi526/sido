@@ -132,6 +132,9 @@ node --env-file=.env scripts/seed-staging-demo.mjs --clean   # 片付け
 - **`NUXT_PUBLIC_APP_ENV` に `development` を入れてはいけない**。LIFF認証をスキップして全員 `dev-user-id` になり、本番DBに対して身元不明で書き込む状態になる。
 - 手で `auth.users` を INSERT する時は `confirmation_token` 等のtoken列を **NULL でなく `''`** にする。NULL だとログインが `Database error querying schema`(500) で落ちる。
 
+### 📋ダイジェストの鮮度チェック（/run 昇格直前・/review ナビ前）
+`node --env-file=.env scripts/check-digest-refs.mjs --page <NotionページID>` — 本文を再帰取得し、ファイル名/spec名の実在（❌で exit 1）、受け皿URLの無い「別チケット/Step2」先送り（⚠️）、「検証不可」の型（⚠️）を拾う。ルール本体は cc-pipeline `run/SKILL.md` §📋 1' と `review/SKILL.md` §1（2026-09-20）。
+
 ### APP_LAYOUT_NOTES（/review が参照）
 - 構成: `apps/admin`(管理画面・ブラウザ {{DEV_URL}}) ＋ `apps/liff`(Nuxt・**作業員アプリ＝Webアプリ**。メール/パスワードでログイン。「LINEアプリ」「LIFF」と書かない)。UI/ロジックは原則ブラウザ。
 - 画面パス例（admin）: 下請け管理／現場／日報／月次集計 ※実パスは apps ルーティングに合わせる。
