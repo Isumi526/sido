@@ -183,6 +183,7 @@ import { isFeatureEnabled, waitForFeaturesResolved } from '../lib/features'
 import { resolveSiteRef, type SiteResolveCtx } from '../lib/siteKey'
 import { netAmountOf, normalizeTaxMode } from '../lib/invoiceTax'
 import { buildVendorIndex } from '../lib/vendor-name.gen'
+import { flattenPersonalExpenses } from '../lib/expenses'
 
 // ── 開発の更新履歴（全社共通・未確認/確認済みタブ）──────────
 interface DevUpdate { id: string; title: string; link: string | null; created_at: string }
@@ -304,6 +305,8 @@ function addExp(map: Map<string, number>, key: string, val: number) {
   if (!val) return
   map.set(key, (map.get(key) ?? 0) + val)
 }
+/** ダッシュボードの現場外の行（personal_expenses）。経費一覧・日毎集計の「現場外（個人経費）」と同じ集合 */
+const PERSONAL_EXPENSE_LABEL = '現場に紐づかない経費'
 function addDetail(map: Map<string, Detail[]>, label: string, date: string, who: string, amount: number) {
   if (!amount) return
   const arr = map.get(label) ?? []
@@ -350,7 +353,7 @@ async function load() {
   //（'${ym}-31' は6月/2月等で不正日付になり PostgREST が400を返すため）
   const [yy, mm] = ym.split('-').map(Number)
   const nextMonthFirst = mm === 12 ? `${yy + 1}-01-01` : `${yy}-${String(mm + 1).padStart(2, '0')}-01`
-  const [{ data: reports }, { data: invItems }] = await Promise.all([
+  const [{ data: reports }, { data: invItems }, { data: personal, error: personalErr }] = await Promise.all([
     supabase
       .from('daily_reports')
       // ★leave_type を取る: 有給の日は現場を選ばずに送信できる＝sites の siteName が空になる。
@@ -370,7 +373,18 @@ async function load() {
       .eq('account_id', accountId)
       .gte('item_date', `${ym}-01`)
       .lt('item_date', nextMonthFirst),
+    // 現場に紐づかない経費（personal_expenses・2026-09-20）。会議で「ダッシュボードで表示する」と説明した分。
+    //  ★現場の原価には混ぜない＝現場外の行として別に計上する（docs/expense-data-consumers.md）
+    supabase
+      .from('personal_expenses')
+      .select('id, worker_id, date, account_category, amount, payee, site_name, workers(name)')
+      .eq('account_id', accountId)
+      .gte('date', `${ym}-01`)
+      .lt('date', nextMonthFirst)
+      .limit(5000),
   ])
+  // 読めない時に黙らせない（金額が消えるので）
+  if (personalErr) console.error('[dashboard] personal_expenses を読めませんでした:', personalErr)
 
   let labor = 0, shosha = 0, gyosha = 0
   const expMap = new Map<string, number>()
@@ -456,6 +470,14 @@ async function load() {
       addExp(expMap, '出張費', BUSINESS_TRIP_ALLOWANCE)
       addDetail(details, '出張費', date, (w as any).workerName ?? '', BUSINESS_TRIP_ALLOWANCE)
     }
+  }
+
+  // 現場に紐づかない経費（個人枠・事務所経費）: 現場外の1行にまとめ、明細に誰の・何の・紐付け先（オフィス/工場）を出す
+  for (const row of flattenPersonalExpenses((personal ?? []) as any)) {
+    const rec = ((personal ?? []) as any[]).find((p) => p.id === row.personalExpenseId)
+    const who = `${rec?.workers?.name ?? '—'}／${row.category}${rec?.site_name ? '・' + rec.site_name : ''}${rec?.payee ? '（' + rec.payee + '）' : ''}`
+    addExp(expMap, PERSONAL_EXPENSE_LABEL, row.amount)
+    addDetail(details, PERSONAL_EXPENSE_LABEL, row.date, who, row.amount)
   }
 
   // 各カテゴリの明細を日付降順に整える
