@@ -8,7 +8,11 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 // 画面カタログ（apps/admin のルート/画面名/HelpButton から自動生成＝手書きの二重管理を作らない）。
 // scripts/build-screen-catalog.mjs が生成。画面を足したら再生成する（CIは --check でズレを検知）。
-import { SCREEN_CATALOG } from './screen-catalog.gen.ts'
+import { SCREEN_CATALOG, type ScreenCatalogEntry } from './screen-catalog.gen.ts'
+// 呼び出し元の権限（permission_role）を JWT からサーバ側で解決する（承認EFと同じ規則・クライアント申告は受けない）
+import { resolveApprover } from '../_shared/caller-identity.ts'
+// 「使う機能」の登録簿（shared/features.ts 正本・sync:shared で配布）。機能フラグの既定値もここが唯一の出所。
+import { FEATURES, FEATURE_SETTING_KEYS, resolveFeatureFlags, defaultFeatureFlags, type FeatureFlags, type FeatureKey } from '../_shared/features-registry.gen.ts'
 
 const API_KEY = Deno.env.get('GEMINI_REVIEW_API_KEY') ?? ''
 const MODEL   = Deno.env.get('GEMINI_REVIEW_MODEL') ?? 'gemini-3.5-flash'
@@ -61,30 +65,88 @@ async function buildFaqBlock(accountSlug: string): Promise<string> {
   } catch { return '' }
 }
 
-// テナントの現在の利用状態（機能フラグ）を取得し systemInstruction に注入する。
-// これが無いと「注文書どこ？」に対し、御社で見積もり機能が未開放でも画面を案内してしまう
-// （このEFが生まれた元の不具合）。★account.id で厳格にスコープ＝他テナントの状態は混ぜない。
-// 読み取り専用（settings を読むだけ・書き込みは一切しない）。取得失敗/未設定なら空文字で後方互換。
-async function buildTenantStateBlock(accountSlug: string): Promise<string> {
-  if (!accountSlug) return ''
+// ── get_tenant_state 相当（AIチャット②の残り・2026-09-20）──
+// 「その人が今、実際に開ける画面」を判定するための材料。全部サーバ側で解決し、クライアント申告は受けない。
+//  - accountId / role : JWT → resolveApprover（承認EFと同じ規則。取得失敗は最小権限 worker へ倒す）
+//  - flags            : settings の feature.* を登録簿(FEATURES)の既定値で埋めたもの（テナントの「使う機能」）
+//  - pending          : 承認待ち件数（承認者ロールのときだけ数える＝作業員には出さない）
+// ★読み取り専用。ここでは settings/承認待ちテーブルを count/select するだけで書き込みは一切しない。
+type Viewer = {
+  accountId: string | null
+  /** 'owner' | 'admin' | 'office' | 'site_manager' | 'worker' | null（テナント未解決） */
+  role: string | null
+  flags: FeatureFlags
+  pending: { reportEdits: number; overtime: number; punchCorrections: number } | null
+}
+
+// apps/admin/src/lib/auth.ts と同じ集合（管理画面のメニュー/ルートガードの規則を EF 側に写す）。
+//  management … canViewManagementPages（owner/admin/office）
+//  approver   … APPROVER_ROLES（owner/admin/office/site_manager）
+const MANAGEMENT_ROLES = ['owner', 'admin', 'office']
+const APPROVER_ROLES = ['owner', 'admin', 'office', 'site_manager']
+const ROLE_LABELS: Record<string, string> = { owner: 'オーナー（全権限）', admin: 'オーナー（全権限）', office: '役員・経理', site_manager: '現場管理者', worker: '作業員' }
+
+/** その画面をこの人が開けない理由（開けるなら null）。router のガードと同じ順で見る。 */
+function blockedReason(s: ScreenCatalogEntry, v: Viewer): string | null {
+  // テナント/権限が解決できなかった時は権限では塞がない（従来どおりの案内＝後方互換）。機能フラグは既定値で判定する。
+  if (v.role !== null) {
+    if (s.requiresManagement && !MANAGEMENT_ROLES.includes(v.role)) return 'オーナー・役員/経理のみ（この人の権限では開けない）'
+    if (s.requiresApprover && !APPROVER_ROLES.includes(v.role)) return '承認者（オーナー・役員/経理・現場管理者）のみ（この人の権限では開けない）'
+  }
+  if (s.requiresEstimate && !v.flags.estimate) return '見積・発注の機能が未開放（御社では今は開けない）'
+  if (s.feature && !v.flags[s.feature as FeatureKey]) {
+    const def = FEATURES.find((f) => f.key === s.feature)
+    return `「${def?.label ?? s.feature}」の機能が未開放（御社では今は開けない）`
+  }
+  return null
+}
+
+async function resolveViewer(svc: any, authHeader: string, accountSlug: string): Promise<Viewer> {
+  const v: Viewer = { accountId: null, role: null, flags: defaultFeatureFlags(), pending: null }
   try {
-    const sb = createClient(SUPABASE_URL, SERVICE_KEY)
-    const { data: account } = await sb.from('accounts').select('id').eq('slug', accountSlug).maybeSingle()
-    if (!account?.id) return ''
-    const { data: rows } = await sb
-      .from('settings').select('key, value')
-      .eq('account_id', account.id)
-      .in('key', ['estimate_feature_enabled'])
-    const map: Record<string, string> = Object.fromEntries((rows ?? []).map((r: any) => [r.key, String(r.value)]))
-    // 既定は未開放（フラグ行が無い＝OFF・estimate-feature-flag の既定と一致）
-    const estimateOn = map['estimate_feature_enabled'] === 'true'
-    const lines = [
-      `- 見積・注文書・請求（見積もり機能）: ${estimateOn
-        ? '開放済み（該当画面を案内してよい）'
-        : '未開放（見積/注文書/請求などの画面リンクは出さず、「御社ではまだこの機能が開放されていません」と理由を伝える）'}`,
-    ]
-    return `\n\n【御社（このテナント）の現在の利用状態（最優先で考慮する。未開放の機能は画面リンクを出さず理由を伝える）】\n${lines.join('\n')}`
-  } catch { return '' }
+    const ap = await resolveApprover(svc, authHeader)
+    if (ap) { v.accountId = ap.accountId; v.role = ap.role }
+    else if (accountSlug) {
+      const { data: account } = await svc.from('accounts').select('id').eq('slug', accountSlug).maybeSingle()
+      v.accountId = account?.id ?? null
+    }
+    if (!v.accountId) return v
+    // ★account.id で厳格にスコープ＝他テナントの状態は混ぜない
+    const { data: rows } = await svc.from('settings').select('key, value')
+      .eq('account_id', v.accountId).in('key', FEATURE_SETTING_KEYS)
+    v.flags = resolveFeatureFlags(rows ?? [])
+    if (v.role && APPROVER_ROLES.includes(v.role)) {
+      const count = async (table: string) => {
+        const { count: n } = await svc.from(table).select('id', { count: 'exact', head: true })
+          .eq('account_id', v.accountId).eq('status', 'pending')
+        return n ?? 0
+      }
+      const [reportEdits, overtime, punchCorrections] = await Promise.all([
+        count('daily_report_pending_edits'), count('overtime_requests'), count('attendance_correction_requests'),
+      ])
+      v.pending = { reportEdits, overtime, punchCorrections }
+    }
+  } catch (e) { console.error('[ai-chat] viewer', e instanceof Error ? e.message : String(e)) }
+  return v
+}
+
+// テナントの現在の利用状態（機能フラグ＋この人の権限＋承認待ち件数）を systemInstruction に注入する。
+// これが無いと「注文書どこ？」に対し、御社で見積もり機能が未開放でも画面を案内してしまう
+// （このEFが生まれた元の不具合）。権限を見ないと、管理者専用画面を現場管理者に案内してしまう（②の残り）。
+function buildTenantStateBlock(v: Viewer): string {
+  if (!v.accountId) return ''
+  const lines: string[] = []
+  for (const f of FEATURES) {
+    const on = v.flags[f.key]
+    lines.push(`- ${f.label}: ${on ? '開放済み（該当画面を案内してよい）' : '未開放（該当画面のリンクは出さず、「御社ではまだこの機能が開放されていません」と理由を伝える）'}`)
+  }
+  if (v.role) {
+    lines.push(`- 質問しているユーザーの権限: ${ROLE_LABELS[v.role] ?? v.role}（permission_role=${v.role}）。この権限で開けない画面（画面カタログで「★この人は開けない」が付いたもの）は案内せず、「この操作は◯◯の権限が必要なので、オーナー/管理者に依頼してください」と伝える。`)
+  }
+  if (v.pending) {
+    lines.push(`- 承認待ちの件数（今この瞬間）: 日報の修正申請 ${v.pending.reportEdits} 件／残業申請 ${v.pending.overtime} 件／打刻修正 ${v.pending.punchCorrections} 件。「承認待ちある？」等に聞かれたらこの数で答え、該当画面（日報編集の承認・残業申請の承認・打刻修正の承認）へ案内する。`)
+  }
+  return `\n\n【御社（このテナント）の現在の利用状態（最優先で考慮する。未開放の機能・権限の無い画面は案内しない）】\n${lines.join('\n')}`
 }
 
 const SYSTEM = `あなたは内装施工会社向け業務システム「sido」の操作ヘルプAIです。日本語で簡潔に、手順は箇条書きで答えてください。
@@ -102,18 +164,24 @@ const SYSTEM = `あなたは内装施工会社向け業務システム「sido」
 // 画面カタログ(自動生成)を systemInstruction 用テキストにする。
 // 表示条件(権限/機能フラグ)を必ず併記する＝「注文書はどこ？」に対し、見積もり機能フラグが
 // OFFなら開けないことまで含めて正しく案内できるようにする（このEFが生まれた元の不具合）。
-const SCREEN_CATALOG_BLOCK = (() => {
+// さらに「この人（権限）×このテナント（フラグ）」で開けない画面にはサーバ側で ★印を付ける
+// ＝AIに条件の突合を任せず、判定済みの事実だけ渡す（AIチャット②の残り・2026-09-20）。
+function buildScreenCatalogBlock(v: Viewer): string {
   if (!SCREEN_CATALOG.length) return ''
   const lines = SCREEN_CATALOG.map((s) => {
     const cond: string[] = []
-    if (s.requiresEstimate) cond.push('見積もり機能ONのときのみ')
-    if (s.requiresManagement) cond.push('管理者のみ')
+    if (s.requiresEstimate) cond.push('見積・発注の機能ONのときのみ')
+    if (s.feature) cond.push(`「${FEATURES.find((f) => f.key === s.feature)?.label ?? s.feature}」の機能ONのときのみ`)
+    if (s.requiresManagement) cond.push('オーナー・役員/経理のみ')
+    if (s.requiresApprover) cond.push('承認者（オーナー・役員/経理・現場管理者）のみ')
     const condText = cond.length ? `〔${cond.join('・')}〕` : ''
+    const blocked = blockedReason(s, v)
+    const mark = blocked ? ` ★この人は開けない: ${blocked}` : ''
     const desc = (s.help && s.help.length ? s.help[0] : s.title) || ''
-    return `- ${s.name}（${s.path}）${condText}${desc ? ` … ${desc}` : ''}`
+    return `- ${s.name}（${s.path}）${condText}${mark}${desc ? ` … ${desc}` : ''}`
   }).join('\n')
-  return `\n\n【管理画面(admin) 画面カタログ（自動生成・これだけを根拠にする。ここに無い画面名/パスは案内しない）】\n各画面の表示条件（権限・機能フラグ）を満たさないユーザーには表示されず、URL直打ちもホームへ戻される。案内時は条件を必ず添えること。\n${lines}`
-})()
+  return `\n\n【管理画面(admin) 画面カタログ（自動生成・これだけを根拠にする。ここに無い画面名/パスは案内しない）】\n各画面の表示条件（権限・機能フラグ）を満たさないユーザーには表示されず、URL直打ちもホームへ戻される。案内時は条件を必ず添えること。「★この人は開けない」が付いた画面は、質問者本人には表示されないので、その画面へのリンクや操作手順は出さず、理由（権限が足りない／機能が未開放）と誰に頼めばよいかを伝える。\n${lines}`
+}
 
 // 聞き返し（曖昧な質問の絞り込み）。質問者に頑張らせず、AIが1回だけ選択肢を出して絞る。
 // allowClarify=false（直前が聞き返し＝2回目以降）のときはこのルールを付けない＝必ず即答させる（ループ防止）。
@@ -161,9 +229,11 @@ Deno.serve(async(req)=>{
   // 画像だけ送られた場合も通す（「これ何？」と画像だけ投げる使い方があるため）
   if(!message.trim()&&images.length===0)return json({ok:false,error:'empty'},400)
   const faqBlock=await buildFaqBlock(auth.accountSlug)
-  const stateBlock=await buildTenantStateBlock(auth.accountSlug)   // 御社の現在の利用状態（機能フラグ）
+  // get_tenant_state 相当: この人の権限・御社の機能フラグ・承認待ち件数（全部サーバ側で解決・読み取り専用）
+  const viewer=await resolveViewer(createClient(SUPABASE_URL,SERVICE_KEY),req.headers.get('Authorization')??'',auth.accountSlug)
+  const stateBlock=buildTenantStateBlock(viewer)
   const screenBlock=screenContext&&screenContext.name?`\n\n【ユーザーが今いる画面】「${screenContext.name}」（パス: ${screenContext.path}）。ユーザーの質問はこの画面に関する可能性が高い。文脈が曖昧な時はこの画面の機能・操作として答える。`:''
-  const system=SYSTEM+SCREEN_CATALOG_BLOCK+stateBlock+screenBlock+faqBlock+(allowClarify?CLARIFY_RULE:'')
+  const system=SYSTEM+buildScreenCatalogBlock(viewer)+stateBlock+screenBlock+faqBlock+(allowClarify?CLARIFY_RULE:'')
   // 最新の user turn にだけ画像を載せる（履歴に画像を積むとトークンが膨らむ）
   const userParts:any[]=[...images.map(im=>({inlineData:{mimeType:im.mimeType,data:im.data}}))]
   userParts.push({text:message.trim()||'この画像について教えてください。'})
