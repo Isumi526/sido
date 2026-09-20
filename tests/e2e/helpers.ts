@@ -218,6 +218,9 @@ export async function setFeatureFlag(settingKey: string, value: boolean | null):
 }
 export const FEATURE_KEY_INVENTORY = 'feature.inventory'
 export async function enableInventoryFeature(): Promise<void> { await setFeatureFlag(FEATURE_KEY_INVENTORY, true) }
+/** 見積Excel連携（個別対応・既定OFF・E-1）。admin.estimate-excel* spec のために global-setup が ON にする */
+export const FEATURE_KEY_ESTIMATE_EXCEL = 'estimate_excel_enabled'
+export async function enableEstimateExcelFeature(): Promise<void> { await setFeatureFlag(FEATURE_KEY_ESTIMATE_EXCEL, true) }
 
 // 現場マスタの責任者候補（現場管理者以上=admin/office/site_manager）のキャッシュ。
 // 複数specがそれぞれ専用ワーカーを作ると無駄に増えるため、プロセス内で使い回す。

@@ -22,7 +22,7 @@
 //  ※ import を持たない自己完結ファイル。
 // ============================================================
 
-export type FeatureKey = 'estimate' | 'vehicles' | 'tools' | 'rooms' | 'inventory'
+export type FeatureKey = 'estimate' | 'vehicles' | 'tools' | 'rooms' | 'inventory' | 'estimate_excel'
 
 export type FeatureDef = {
   key: FeatureKey
@@ -49,6 +49,12 @@ export const FEATURES: FeatureDef[] = [
   {
     key: 'rooms', settingKey: 'feature.rooms', label: '会議室・部屋の予約', defaultOn: false,
     description: '会議室などの部屋を登録し、予定管理のタブで時間帯予約する。',
+  },
+  {
+    // 見積Excel連携（2026-09-10 決定・設計書 E-1）: 会社ごとの個別対応＝標準ではない。既定OFF。SEED は無償パイロットで ON。
+    // 標準の見積機能（受領見積書のAI読込→単価履歴→横断検索・Web の見積作成・発注書）は estimate のまま。
+    key: 'estimate_excel', settingKey: 'estimate_excel_enabled', label: '見積Excel連携（個別対応）', defaultOn: false,
+    description: '「見積Excel連携」のメニュー（作業用Excelの書き出し／取込／工種別の生成）。見積・発注が ON の会社にだけ効く個別対応。',
   },
   {
     // 在庫①〜④（2026-09-19 レビュー決定）: ③④が揃うまでベータ＝既定OFF。SEED で ON にして大塚さんに見せる。
