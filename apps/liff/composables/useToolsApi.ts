@@ -11,13 +11,17 @@ const EDGE_FN = 'tools'
 /** base は EF が拠点サイト（sites.kind=office/factory）の名前を平らにしたもの */
 export type ToolLocation = { id: string; base: string; base_site_id: string; name: string; active: boolean }
 export type Tool = {
-  id: string; name: string; kind: string | null; code: string | null; location_id: string | null
+  id: string; name: string; kind: string | null; code: string | null; location_id: string | null; current_location_id?: string | null
   photo_url: string | null; status: 'available' | 'out' | 'lost' | 'broken' | 'retired'
   holder_worker_id: string | null; site_id: string | null; note: string | null; active: boolean; updated_at: string
   tool_locations?: { base: string; name: string } | null
+  current_location?: { base: string; name: string } | null
   workers?: { name: string } | null
   sites?: { name: string } | null
 }
+/** 道具②: 持出／返却に添える位置情報（取れなければ省略＝「位置なし」で記録・確認事項2=A） */
+export type ToolGeo = { lat: number; lng: number; accuracy: number | null; locatedAt: string }
+export type ToolMoveResult = { kind: 'checkout' | 'transfer' | 'return'; prevHolderId?: string | null; located: boolean; deduped?: boolean }
 
 export function useToolsApi() {
   const config = useRuntimeConfig()
@@ -46,5 +50,24 @@ export function useToolsApi() {
     return { location: r.location, tools: r.tools ?? [] }
   }
 
-  return { tool, location }
+  /** 拠点＝現場マスタの office/factory 行（持出先の候補にも出す）。失敗は空 */
+  async function bases(): Promise<{ id: string; name: string }[]> { try { return ((await call('bases')).bases ?? []) as { id: string; name: string }[] } catch { return [] } }
+
+  // ── 道具②（2026-09-20）──
+  /** 自分が持ち出し中の道具（返却の「どれを返しますか」）。失敗は空 */
+  async function myTools(): Promise<Tool[]> { try { return ((await call('my-tools')).tools ?? []) as Tool[] } catch { return [] } }
+  /** 持出中の道具すべて（本人以外が返す時の候補）。失敗は空 */
+  async function outTools(): Promise<Tool[]> { try { return ((await call('out-tools')).tools ?? []) as Tool[] } catch { return [] } }
+  /** 持出（持出先必須）。他の人が持出中なら EF が又貸し（transfer）にして前の人へ通知する。失敗は throw */
+  async function checkout(input: { toolId: string; siteId: string; geo?: ToolGeo | null; note?: string; clientRequestId?: string }): Promise<ToolMoveResult> {
+    const r = await call('checkout', { toolId: input.toolId, siteId: input.siteId, note: input.note ?? '', clientRequestId: input.clientRequestId, ...(input.geo ?? {}) })
+    return { kind: r.kind, prevHolderId: r.prevHolderId ?? null, located: !!r.located, deduped: !!r.deduped }
+  }
+  /** 返却（場所QR→道具QR）。本人以外でも可。失敗は throw */
+  async function returnTool(input: { toolId: string; locationId: string; geo?: ToolGeo | null; note?: string; clientRequestId?: string }): Promise<ToolMoveResult> {
+    const r = await call('return', { toolId: input.toolId, locationId: input.locationId, note: input.note ?? '', clientRequestId: input.clientRequestId, ...(input.geo ?? {}) })
+    return { kind: 'return', located: !!r.located, deduped: !!r.deduped }
+  }
+
+  return { tool, location, bases, myTools, outTools, checkout, returnTool }
 }

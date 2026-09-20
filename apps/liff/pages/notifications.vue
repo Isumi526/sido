@@ -134,6 +134,7 @@ function iconOf(kind: string): string {
     case 'punch_checkout':    return 'logout'        // 予定の終了時刻の打刻リマインド
     case 'purchase_order_accepted': return 'task_alt'
     case 'resource':          return 'directions_car'  // 車両・道具の予約（重なり／管理者による変更）
+    case 'tool':              return 'construction'    // 道具の又貸し（自分が持っていた道具が別の人に移った・道具②）
     default:                  return 'notifications'
   }
 }
