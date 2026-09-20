@@ -75,6 +75,8 @@ test.describe('作業区分マスタ', () => {
     await restSrv(`work_categories?account_id=eq.${otherAccountId}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`accounts?id=eq.${otherAccountId}`, { method: 'DELETE' }).catch(() => {})
     await restSrv(`work_categories?name=like.E2E区分*`, { method: 'DELETE' }).catch(() => {})
+    // ★途中で落ちても残さない（残ると現場モーダルの区分一覧に出てくる）
+    await restSrv(`work_categories?name=like.${encodeURIComponent('E2E制限なし区分_')}*`, { method: 'DELETE' }).catch(() => {})
   })
 
   test('標準の3区分が最初から入っている', async () => {
@@ -216,18 +218,21 @@ test.describe('作業区分マスタ', () => {
     await expect(row, '★一覧で「時刻の制限なし」と分かる').toContainText('時刻の制限なし')
 
     // ★画面の表示だけでは保存できたと言えない。DBまで確かめる
-    const saved = (await listCategories()).find(c => c.name === FREE_CAT) as any
-    expect(saved?.hours_unrestricted, '★DBに入る').toBe(true)
+    //  ★保存直後の読みはレースする（2026-09-18 に複数回落ちた）ので expect.poll で待つ
+    const flagOf = async () => ((await listCategories()).find(c => c.name === FREE_CAT) as any)?.hours_unrestricted ?? null
+    await expect.poll(flagOf, { timeout: 10000 }).toBe(true)
 
     // オフに戻せる（一度入れたら戻せない、を作らない）
     await row.locator('.btn-edit').click()
+    await expect(page.locator('[data-testid="cat-unrestricted"]')).toBeChecked()
     await page.locator('[data-testid="cat-unrestricted"]').uncheck()
     await page.locator('[data-testid="cat-save"]').click()
-    const off = (await listCategories()).find(c => c.name === FREE_CAT) as any
-    expect(off?.hours_unrestricted, '★オフに戻せる').toBe(false)
+    await expect(page.locator('[data-testid="cat-save"]')).toHaveCount(0)   // モーダルが閉じる＝保存が返った
+    await expect.poll(flagOf, { message: '★オフに戻せる', timeout: 10000 }).toBe(false)
 
     page.once('dialog', d => d.accept())
     await page.locator('tr', { hasText: FREE_CAT }).locator('.btn-del').click()
+    await expect(page.locator('tr', { hasText: FREE_CAT })).toHaveCount(0, { timeout: 10000 })
   })
 
   test('★新しく作った会社にも標準の区分が自動で入る', async () => {
