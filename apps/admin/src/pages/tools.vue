@@ -378,9 +378,10 @@ async function loadWhereabouts(accountId: string) {
 
 async function openHistory(t: Tool) {
   historyTool.value = t; history.value = []; historyLoading.value = true
+  const accountId = await getAccountId()   // RLS に任せず account_id も明示（Gemini 指摘・loadWhereabouts と同じ）
   const { data } = await supabase.from('tool_events')
     .select('id, kind, created_at, lat, lng, note, worker:workers!tool_events_worker_id_fkey(name), from_worker:workers!tool_events_from_worker_id_fkey(name), sites(name), tool_locations(name, base:base_site_id(name))')
-    .eq('tool_id', t.id).order('created_at', { ascending: false }).limit(200)
+    .eq('account_id', accountId).eq('tool_id', t.id).order('created_at', { ascending: false }).limit(200)
   history.value = (data ?? []) as unknown as ToolEvent[]
   historyLoading.value = false
 }
