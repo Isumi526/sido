@@ -111,6 +111,15 @@ const SHARES = [
     ],
   },
   {
+    // 日報の車両距離「既定値超過」の申請・承認（距離Step2）。LIFF が保存形に直し、admin が一覧/バッジで拾い、EF が承認で差し替える
+    src: 'shared/distance-overage.ts',
+    dests: [
+      'apps/admin/src/lib/distance-overage.gen.ts',
+      'apps/liff/composables/distance-overage.gen.ts',
+      'supabase/functions/_shared/distance-overage.gen.ts',
+    ],
+  },
+  {
     // テナント単位の「使う機能」（機能ON/OFF）の登録簿と既定値。admin/LIFF/EF で同じ判定にする
     src: 'shared/features.ts',
     dests: [

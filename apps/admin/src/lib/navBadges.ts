@@ -9,6 +9,7 @@ import { supabase } from './supabase'
 import { getAccountId } from './account'
 import { pendingBaseDatesFor } from './paidLeaveGrant'
 import { canViewHourlyWage } from './auth'
+import { pendingOveragesOf } from './distance-overage.gen'
 
 export const editApprovalCount    = ref(0)  // 日報編集の許可申請(pending)
 export const siteUnsetCount       = ref(0)  // 現場未設定の日報(直近90日)
@@ -17,10 +18,11 @@ export const pendingGrantCount    = ref(0)  // 有給の付与待ち(未付与�
 export const editReviewCount      = ref(0)  // 日報編集の承認待ち(保留中の編集)
 export const poAcceptedPendingCount = ref(0) // 業者が承諾済みだが、まだ請求依頼していない注文書(=管理者の要対応・#47)
 export const punchCorrectionCount   = ref(0)  // 打刻修正の承認待ち(pending)。承認するまで打刻は直らないので溜めない
+export const distanceOverageCount   = ref(0)  // 距離の超過申請の承認待ち(日報JSON内・距離Step2)。月次を締める前に残さない
 
 export async function refreshNavBadges() {
   const accountId = await getAccountId()
-  if (!accountId) { editApprovalCount.value = 0; siteUnsetCount.value = 0; overtimePendingCount.value = 0; pendingGrantCount.value = 0; editReviewCount.value = 0; poAcceptedPendingCount.value = 0; punchCorrectionCount.value = 0; return }
+  if (!accountId) { editApprovalCount.value = 0; siteUnsetCount.value = 0; overtimePendingCount.value = 0; pendingGrantCount.value = 0; editReviewCount.value = 0; poAcceptedPendingCount.value = 0; punchCorrectionCount.value = 0; distanceOverageCount.value = 0; return }
   // 注文書の承諾バッジ(#47): 承諾済み(status='accepted' or 承諾証跡あり)で、まだ請求依頼していない注文書の数。
   // 「確認して次アクション(請求依頼)を打つ」とバッジが減る＝要対応の可視化。承諾はEF側でLINE通知も出る。
   {
@@ -62,12 +64,16 @@ export async function refreshNavBadges() {
     .select('is_working, sites').eq('account_id', accountId).gte('date', since)
     .limit(15000) // 90日×全作業員で上限(既定1000)超によるバッジ件数漏れ防止（reports.vue等の1ヶ月5000の3倍相当）
   let unset = 0
+  let overages = 0
   for (const rep of (reps ?? []) as any[]) {
     const arr = Array.isArray(rep.sites) ? rep.sites : []
     // ★relink画面と同じ判定を使う（片方だけ直すと「バッジは1件・開くと空」になる）
     for (const site of arr) if (isRelinkTarget(site, rep.is_working)) unset++
+    // 距離Step2: 承認待ちの超過申請（distance-approvals 画面と同じ判定＝同じ走査を相乗り）
+    overages += pendingOveragesOf(rep.sites).length
   }
   siteUnsetCount.value = unset
+  distanceOverageCount.value = overages
   // 有給の付与待ち: 入社日ありの作業員で、未付与の基準日がある人数。
   // 付与できる権限者（役員経理以上）だけが対象＝行動できない人にアラートを出さない。
   if (!canViewHourlyWage.value) { pendingGrantCount.value = 0; return }

@@ -100,6 +100,7 @@ export const router = createRouter({
     { path: '/report-site-relink', component: ReportSiteRelink, meta: { approver: true } },
     { path: '/overtime-approvals', component: OvertimeApprovals, meta: { approver: true } },
     { path: '/punch-corrections', component: PunchCorrections, meta: { approver: true } },
+    { path: '/distance-approvals', component: () => import('../pages/distance-approvals.vue'), meta: { approver: true } },
     { path: '/ai-help',          component: AiHelp,     meta: { management: true } },
     { path: '/faq',              component: Faq,        meta: { management: true } },
     { path: '/estimates',        component: Estimates,  meta: { management: true, estimate: true } },

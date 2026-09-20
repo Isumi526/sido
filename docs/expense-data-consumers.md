@@ -56,6 +56,13 @@
 - `npm run typecheck`（apps/liff）／admin は `any` 型のため型では落ちないので**目視必須**
 - 本番反映前に、admin月次集計・ダッシュボード・現場別の**金額合計**が新旧データで合うか確認
 
+## vehicles[].overages（車両距離の既定値超過の申請・距離Step2・2026-09-20）
+`sites[].expenses.vehicles[].overages[distanceKm|dieselKm]` に `{ requestedKm, defaultKm, reason, status(pending|approved|rejected), requestedAt, decidedBy, decidedAt }`。
+**距離欄（distanceKm/dieselKm）は承認されるまで既定値のまま**＝flatten も按分も PDF も従来どおり距離欄だけを読めばよく、**消費箇所に変更は要らない**（未承認の超過分で金額が動かないための設計）。
+- 正本: `shared/distance-overage.ts`（LIFF 保存時 `normalizeVehicleOverages` ／ 編集で開く時 `denormalizeVehicleOverages` ／ 一覧・バッジ `pendingOveragesOf`）
+- 承認: EF `report-distance`（decide）が距離欄を申請値に差し替える。admin `/distance-approvals`・ナビバッジ `distanceOverageCount`
+- ★JSON を組み直して保存する箇所（admin 側の日報編集など）で `overages` を落とすと申請が消える（距離欄は既定値のままなので金額は安全側）。車両オブジェクトはスプレッドで温存すること
+
 ## personal_expenses（現場に紐付かない個人経費）※日報に依存しない独立テーブル
 - **なぜ独立テーブルか（巻き戻し禁止）**: 現行の経費集計はすべて `is_working=true` の日報行に依存しており、**日報を出さない人（役員・経営者）や出勤しない日の経費は1円も集計されない**。日報JSONに相乗りさせる案ではこの穴が原理的に埋まらない。→ Notion #f4cc3db1（2026-07-30 確定）
 - 書き込み: `apps/liff/pages/expense/personal.vue`（→ `composables/usePersonalExpense.ts` → edge function `personal-expense-submit`。領収書AI解析は `useReceiptAnalysis`）／admin から直接
