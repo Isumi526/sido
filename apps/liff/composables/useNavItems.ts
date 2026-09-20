@@ -28,6 +28,7 @@ export function useNavItems(
   authMode: () => string | null | undefined,
   canApplyPersonalExpense?: () => boolean,
   inventoryEnabled?: () => boolean,
+  toolsEnabled?: () => boolean,
 ) {
   const { t } = useI18n()
 
@@ -58,6 +59,11 @@ export function useNavItems(
     // 在庫①〜④（2026-09-14〜）: 引き上げ・持出・入荷の記録＋写真AI候補。
     // ★テナント別フラグ（settings feature.inventory・既定OFF＝ベータ）で出し分ける（2026-09-19 レビュー決定）。
     //  未解決・OFF は出さない（fail-closed）。画面 /inventory 側も同じフラグで閉じる。
+    // 道具③（2026-09-20）: 自分が持っている道具・持出中の一覧。「使う機能」の道具管理（既定ON）で出し分け
+    if (toolsEnabled?.()) {
+      const at = list.findIndex(i => i.path === '/expense/download')
+      list.splice(at < 0 ? list.length : at, 0, { path: '/tools', icon: 'construction', label: t('nav.tools'), section: 'info', testId: 'menu-tools' })
+    }
     if (inventoryEnabled?.()) {
       const at = list.findIndex(i => i.path === '/expense/download')
       list.splice(at < 0 ? list.length : at, 0, { path: '/inventory', icon: 'inventory_2', label: t('nav.inventory'), section: 'info', testId: 'menu-inventory' })

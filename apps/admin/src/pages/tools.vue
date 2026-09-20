@@ -100,8 +100,9 @@
               <th style="width:110px">管理番号</th>
               <th style="width:170px">定位置</th>
               <th style="width:110px">状態</th>
-              <th style="width:150px">所持者／持出先</th>
-              <th style="width:180px"></th>
+              <th style="width:200px">所持者／持出先（いつから）</th>
+              <th style="width:110px">最終位置</th>
+              <th style="width:230px"></th>
             </tr>
           </thead>
           <tbody>
@@ -112,18 +113,55 @@
               <td>{{ t.code || '—' }}</td>
               <td>{{ t.tool_locations ? `${t.tool_locations.base}＞${t.tool_locations.name}` : '—' }}</td>
               <td><span class="status" :class="t.status">{{ STATUS_LABEL[t.status] ?? t.status }}</span></td>
-              <td class="sub">{{ t.workers?.name || t.sites?.name ? `${t.workers?.name ?? ''}${t.sites?.name ? ' / ' + t.sites.name : ''}` : '—' }}</td>
+              <!-- 道具③: 誰が・どこに・いつから（経過日数）。保管中なら「今ある場所」（最後に返却した場所QR） -->
+              <td class="sub" :data-testid="`tool-where-${t.id}`">
+                <template v-if="t.status === 'out'">
+                  {{ t.workers?.name ?? '—' }} / {{ t.sites?.name ?? '—' }}
+                  <span v-if="whereabouts[t.id]?.since" class="since" :class="{ long: (whereabouts[t.id]?.days ?? 0) >= 7 }" :data-testid="`tool-days-${t.id}`">{{ fmtSince(whereabouts[t.id]!) }}</span>
+                </template>
+                <template v-else-if="t.current_location">{{ t.current_location.base }}＞{{ t.current_location.name }}</template>
+                <template v-else>—</template>
+              </td>
+              <td class="sub">
+                <a v-if="whereabouts[t.id]?.lat != null" :href="mapUrl(whereabouts[t.id]!)" target="_blank" rel="noopener" class="map-link" :data-testid="`tool-map-${t.id}`">
+                  <span class="material-symbols-rounded">location_on</span>{{ fmtWhen(whereabouts[t.id]!.at) }}
+                </a>
+                <span v-else-if="whereabouts[t.id]" class="muted" :data-testid="`tool-map-none-${t.id}`">位置なし</span>
+                <span v-else class="muted">—</span>
+              </td>
               <td class="actions">
+                <button class="btn-edit" :data-testid="`tool-history-${t.id}`" @click="openHistory(t)">履歴</button>
                 <button class="btn-edit" :data-testid="`tool-qr-${t.id}`" @click="openQr(t)">QR</button>
                 <button class="btn-edit" :disabled="busy" @click="openTool(t)">編集</button>
                 <button class="btn-del" :disabled="busy" @click="removeTool(t)">削除</button>
               </td>
             </tr>
-            <tr v-if="filtered.length === 0"><td colspan="8" class="empty">道具がありません。「＋ 道具を登録」から登録してください。</td></tr>
+            <tr v-if="filtered.length === 0"><td colspan="9" class="empty">道具がありません。「＋ 道具を登録」から登録してください。</td></tr>
           </tbody>
         </table>
       </div>
     </section>
+
+    <!-- 道具③: 履歴（持出／返却／又貸し／調整）を時系列で -->
+    <div v-if="historyTool" class="modal-overlay" @click.self="historyTool = null">
+      <div class="modal history-modal" data-testid="tool-history-modal">
+        <h2 class="modal-title">{{ historyTool.name }} の履歴</h2>
+        <p v-if="historyLoading" class="muted">読み込み中…</p>
+        <p v-else-if="!history.length" class="muted" data-testid="tool-history-empty">まだ持出・返却の記録はありません。</p>
+        <ul v-else class="history">
+          <li v-for="e in history" :key="e.id" class="h-row" :data-testid="`tool-history-row-${e.id}`">
+            <span class="h-when">{{ fmtWhen(e.created_at) }}</span>
+            <span class="h-kind" :class="e.kind">{{ EVENT_LABEL[e.kind] ?? e.kind }}</span>
+            <span class="h-who">{{ e.worker?.name ?? '—' }}<span v-if="e.kind === 'transfer' && e.from_worker?.name" class="muted">（← {{ e.from_worker.name }}）</span></span>
+            <span class="h-where">{{ e.kind === 'return' ? (e.tool_locations ? `${e.tool_locations.base?.name ?? ''}＞${e.tool_locations.name}` : '—') : (e.sites?.name ?? '—') }}</span>
+            <a v-if="e.lat != null && e.lng != null" :href="mapUrl({ lat: e.lat, lng: e.lng })" target="_blank" rel="noopener" class="map-link"><span class="material-symbols-rounded">location_on</span>地図</a>
+            <span v-else class="muted">位置なし</span>
+            <span v-if="e.note" class="muted h-note">{{ e.note }}</span>
+          </li>
+        </ul>
+        <div class="modal-actions"><button class="btn-cancel" @click="historyTool = null">閉じる</button></div>
+      </div>
+    </div>
 
     <!-- 道具 登録/編集 -->
     <div v-if="toolModal" class="modal-overlay" @click.self="toolModal = null">
@@ -248,6 +286,7 @@
 import { ref, computed, onMounted, nextTick } from 'vue'
 import QRCode from 'qrcode'
 import { supabase } from '../lib/supabase'
+import { getAccountId } from '../lib/account'
 import { toolQrUrl, toolLocationQrUrl, downloadQrLabelPdf, type QrLabel } from '../lib/toolQr'
 import BaseSiteModal from '../components/BaseSiteModal.vue'
 
@@ -255,9 +294,10 @@ type Base = { id: string; name: string; kind: 'office' | 'factory' }
 /** base は EF が拠点サイト名を平らにしたもの（表示用）。保存は base_site_id */
 type Location = { id: string; base: string; base_site_id: string; name: string; sort_order: number; active: boolean }
 type Tool = {
-  id: string; name: string; kind: string | null; code: string | null; location_id: string | null
-  status: string; note: string | null; active: boolean; photo_url: string | null
+  id: string; name: string; kind: string | null; code: string | null; location_id: string | null; current_location_id?: string | null
+  status: string; note: string | null; active: boolean; photo_url: string | null; updated_at?: string
   tool_locations?: { base: string; name: string } | null
+  current_location?: { base: string; name: string } | null
   workers?: { name: string } | null
   sites?: { name: string } | null
 }
@@ -296,6 +336,54 @@ const locModal = ref<Partial<Location> | null>(null)
 const qrTool = ref<Tool | null>(null)
 const qrCanvas = ref<HTMLCanvasElement | null>(null)
 
+
+// ── 道具③: 所在（いつから・経過日数・最終位置）と履歴 ──
+type Whereabouts = { since: string | null; days: number | null; at: string; lat: number | null; lng: number | null }
+type ToolEvent = {
+  id: string; kind: string; created_at: string; lat: number | null; lng: number | null; note: string | null
+  worker?: { name: string } | null; from_worker?: { name: string } | null; sites?: { name: string } | null
+  tool_locations?: { name: string; base?: { name: string } | null } | null
+}
+const EVENT_LABEL: Record<string, string> = { checkout: '持出', return: '返却', transfer: '又貸し（所持者移転）', adjust: '調整' }
+const whereabouts = ref<Record<string, Whereabouts>>({})
+const historyTool = ref<Tool | null>(null)
+const history = ref<ToolEvent[]>([])
+const historyLoading = ref(false)
+const mapUrl = (w: { lat: number | null; lng: number | null }) => `https://www.google.com/maps?q=${w.lat},${w.lng}`
+const fmtWhen = (iso: string) => { const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }
+const fmtSince = (w: Whereabouts) => w.days == null ? '' : w.days <= 0 ? '（今日から）' : `（${w.days}日前から）`
+
+/** 各道具の最新イベント（最終位置）と、持出中なら最後の持出/又貸し（いつから）。tool_events は authenticated が自社分を読める */
+async function loadWhereabouts(accountId: string) {
+  const { data } = await supabase.from('tool_events')
+    .select('tool_id, kind, created_at, lat, lng')
+    .eq('account_id', accountId).order('created_at', { ascending: false }).limit(2000)
+  const m: Record<string, Whereabouts> = {}
+  for (const e of (data ?? []) as any[]) {
+    const cur = m[e.tool_id]
+    if (!cur) m[e.tool_id] = { since: null, days: null, at: e.created_at, lat: e.lat ?? null, lng: e.lng ?? null }
+    const w = m[e.tool_id]
+    if (w.since === null && (e.kind === 'checkout' || e.kind === 'transfer')) {
+      w.since = e.created_at
+      w.days = Math.floor((Date.now() - new Date(e.created_at).getTime()) / 86400000)
+    }
+  }
+  // 最終位置は「位置が入っている最新のイベント」を優先（返却で位置なしでも、直前の持出の位置が見える方が役に立つ）
+  for (const e of (data ?? []) as any[]) {
+    const w = m[e.tool_id]
+    if (w && w.lat == null && e.lat != null && e.lng != null) { w.lat = e.lat; w.lng = e.lng; w.at = e.created_at }
+  }
+  whereabouts.value = m
+}
+
+async function openHistory(t: Tool) {
+  historyTool.value = t; history.value = []; historyLoading.value = true
+  const { data } = await supabase.from('tool_events')
+    .select('id, kind, created_at, lat, lng, note, worker:workers!tool_events_worker_id_fkey(name), from_worker:workers!tool_events_from_worker_id_fkey(name), sites(name), tool_locations(name, base:base_site_id(name))')
+    .eq('tool_id', t.id).order('created_at', { ascending: false }).limit(200)
+  history.value = (data ?? []) as unknown as ToolEvent[]
+  historyLoading.value = false
+}
 
 const kindOptions = computed(() => [...new Set(tools.value.map(t => t.kind).filter(Boolean) as string[])])
 const filtered = computed(() => {
@@ -347,6 +435,9 @@ async function load() {
   bases.value = (b.data?.bases ?? []) as Base[]
   selectedIds.value = selectedIds.value.filter(id => tools.value.some(x => x.id === id))
   loading.value = false
+  const { data: acct } = await supabase.auth.getUser()
+  const accountId = await getAccountId()
+  if (acct?.user && accountId) await loadWhereabouts(accountId)
 }
 
 // ── 道具 ──
@@ -538,4 +629,16 @@ onMounted(load)
 .qr-modal { align-items: center; text-align: center; }
 .qr-canvas { border: 1px solid #eee; border-radius: 8px; }
 .qr-url { font-size: 12px; color: #2563eb; word-break: break-all; }
+.since { display: inline-block; margin-left: 4px; font-size: 11px; color: #64748b; }
+.since.long { color: #b91c1c; font-weight: 700; }
+.map-link { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; color: #1d4ed8; text-decoration: none; }
+.map-link .material-symbols-rounded { font-size: 16px; }
+.muted { color: #94a3b8; font-size: 12px; }
+.history-modal { max-width: 720px; }
+.history { list-style: none; margin: 0; padding: 0; max-height: 60vh; overflow: auto; }
+.h-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
+.h-when { color: #64748b; font-variant-numeric: tabular-nums; width: 80px; }
+.h-kind { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #f1f5f9; color: #334155; }
+.h-kind.checkout { background: #fff7ed; color: #c2410c; } .h-kind.return { background: #ecfdf5; color: #047857; } .h-kind.transfer { background: #eff6ff; color: #1d4ed8; }
+.h-who { font-weight: 600; } .h-where { color: #475569; } .h-note { width: 100%; }
 </style>

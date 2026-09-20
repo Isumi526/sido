@@ -22,6 +22,7 @@
 //  action（道具②・2026-09-20・テナントの作業員なら誰でも。設計書 T-1・確認事項2=A）:
 //   my-tools                           → 自分が持ち出し中の道具（返却の「どれを返しますか」）
 //   out-tools                          → 持出中の道具すべて（本人以外が返す時の候補・大塚「返却は誰でも」）
+//   site-tools { siteId }              → その現場（拠点）に持ち出されている道具（道具③・現場詳細の「この現場にある道具」）
 //   checkout { toolId, siteId, lat?, lng?, accuracy?, locatedAt?, clientRequestId? }
 //        → 持出。持出先（現場 or 拠点＝sites 行）必須。位置は取れなければ null（「位置なし」で記録・確認事項2=A）。
 //          他の人が持出中なら「又貸し」＝所持者移転（kind=transfer）。前の所持者にアプリ内お知らせ＋メール
@@ -142,11 +143,17 @@ Deno.serve(async (req) => {
   }
 
   // ── 道具②: 持出／返却／又貸し（テナントの作業員なら誰でも。身元＝caller.workerId）────
-  if (action === 'my-tools' || action === 'out-tools') {
+  if (action === 'my-tools' || action === 'out-tools' || action === 'site-tools') {
     let q = svc.from('tools').select(TOOL_SELECT).eq('account_id', accountId).eq('active', true).eq('status', 'out').order('updated_at', { ascending: false })
     if (action === 'my-tools') {
       if (!caller.workerId) return json({ ok: true, tools: [] })
       q = q.eq('holder_worker_id', caller.workerId)
+    }
+    // 道具③: この現場（or 拠点）に持ち出されている道具（現場詳細の「この現場にある道具」）
+    if (action === 'site-tools') {
+      const siteId = str(body.siteId, 64)
+      if (!siteId) return json({ ok: false, error: 'site_required' }, 400)
+      q = q.eq('site_id', siteId)
     }
     const { data, error } = await q
     if (error) { console.error('[tools] out-tools failed:', error); return json({ ok: false, error: 'fetch_failed' }, 500) }

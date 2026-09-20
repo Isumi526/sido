@@ -44,6 +44,17 @@
           </div>
         </form>
 
+        <!-- 道具③（2026-09-20）: この現場に持ち出されている道具（誰が・いつから）。返す時は道具ページ→場所QR -->
+        <div v-if="siteTools.length" class="tools-block" data-testid="site-tools-block">
+          <div class="tools-title"><span class="material-symbols-rounded">construction</span>{{ $t('tools.atSite', { n: siteTools.length }) }}</div>
+          <ul class="tools-list">
+            <li v-for="t in siteTools" :key="t.id" class="tools-row" :data-testid="`site-tool-${t.id}`">
+              <NuxtLink :to="`/tools/${t.id}`" class="tools-link">{{ t.name }}<span v-if="t.kind" class="tools-sub">（{{ t.kind }}）</span></NuxtLink>
+              <span class="tools-sub">{{ t.workers?.name ?? '—' }}・{{ daysSince(t.updated_at) }}</span>
+            </li>
+          </ul>
+        </div>
+
         <!-- 現場責任者だけに表示: この現場へユーザーを招待(site_shares追加)する -->
         <div v-if="isResponsible" class="invite-block" data-testid="site-invite-block">
           <button type="button" class="invite-toggle-btn" @click="inviteOpen = !inviteOpen">
@@ -168,6 +179,12 @@ type Att = { id: string; site_id: string; kind: string; path: string; name: stri
 const loading = ref(true)
 const site  = ref<Site | null>(null)
 const atts  = ref<Att[]>([])
+// 道具③: この現場に持ち出されている道具
+const siteTools = ref<import('~/composables/useToolsApi').Tool[]>([])
+function daysSince(iso: string): string {
+  const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
+  return d <= 0 ? t('tools.sinceToday') : t('tools.sinceDays', { n: d })
+}
 
 // 現場責任者による招待(site_shares追加)。responsible_worker_id===自分のworker_idの時だけ表示。
 const isResponsible   = ref(false)
@@ -375,6 +392,7 @@ async function load() {
     await Promise.all(list.map(async (a) => { a.url = await signedUrl(a.id) }))
     atts.value = list
     await loadConsentDocs(siteId)
+    siteTools.value = await useToolsApi().siteTools(siteId)
 
     // 現場責任者(sites.responsible_worker_id)だけに招待UIを表示する
     if (accountId) {
@@ -492,4 +510,11 @@ onMounted(load)
 .btn-ghost { border: 1px solid #ddd; background: #fff; border-radius: 8px; padding: 8px 16px; font-size: 13px; cursor: pointer; }
 .btn-primary { border: none; background: #06A050; color: #fff; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer; }
 .btn-primary:disabled { background: #ccc; cursor: default; }
+.tools-block { margin: 12px 0; background: #fff; border-radius: 12px; padding: 12px 14px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.tools-title { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: #1e293b; margin-bottom: 6px; }
+.tools-title .material-symbols-rounded { font-size: 18px; color: #0891b2; }
+.tools-list { list-style: none; margin: 0; padding: 0; }
+.tools-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid #f1f5f9; font-size: 13px; }
+.tools-link { color: #0f172a; text-decoration: none; font-weight: 600; }
+.tools-sub { color: #64748b; font-size: 12px; font-weight: 400; }
 </style>
