@@ -22,6 +22,8 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { currentWorkerId } from '../lib/auth'
+import { loadAliases, aliasMapOf, canonicalName, addAlias, removeAlias, type NameAlias } from '../lib/estimateAliases'
 import { XlsxTemplate } from '../lib/xlsxCells'
 import {
   parseEstimate, writeTradeSheets, writePriceSheets, groupByTrade,
@@ -86,7 +88,38 @@ async function checkTemplate() {
 }
 
 /** 単価履歴を読む。既存の estimate_price_history ビュー（見積依頼の受領で溜まる）が出所。 */
+/** E-3 名寄せ辞書（表記→代表名）。loadPrices で当て、latestPerVendor が統合された履歴を返す */
+const aliases = ref<NameAlias[]>([])
+const aliasFrom = ref('')
+const aliasTo = ref('')
+const aliasMsg = ref('')
+const aliasBusy = ref(false)
+/** 名寄せ前の表記（辞書の「表記」の選択肢に出す） */
+const rawWorkNames = ref<string[]>([])
+async function loadAliasDict() {
+  try { aliases.value = await loadAliases(accountId.value) } catch (e) { err.value = `名寄せ辞書の取得に失敗しました: ${(e as Error).message}` }
+}
+async function submitAlias() {
+  aliasMsg.value = ''
+  aliasBusy.value = true
+  try {
+    await addAlias(accountId.value, aliasFrom.value, aliasTo.value, currentWorkerId.value)
+    aliasMsg.value = `「${aliasFrom.value.trim()}」＝「${aliasTo.value.trim()}」を登録しました。次回の作業用Excelから反映されます。`
+    aliasFrom.value = ''; aliasTo.value = ''
+    await loadPrices()
+  } catch (e) { aliasMsg.value = (e as Error).message }
+  finally { aliasBusy.value = false }
+}
+async function deleteAlias(a: NameAlias) {
+  if (!confirm(`「${a.alias}」＝「${a.work_name}」の名寄せを取り消しますか？`)) return
+  aliasBusy.value = true
+  try { await removeAlias(accountId.value, a.id); await loadPrices() } catch (e) { aliasMsg.value = (e as Error).message }
+  finally { aliasBusy.value = false }
+}
+
 async function loadPrices() {
+  await loadAliasDict()
+  const map = aliasMapOf(aliases.value)
   const { data, error } = await supabase
     .from('estimate_price_history')
     .select('item_name, unit_price, subcontractor_name, quoted_on, quantity, unit, trade_name, part')
@@ -95,8 +128,10 @@ async function loadPrices() {
     .order('quoted_on', { ascending: false })
     .limit(2000)
   if (error) { err.value = `単価履歴の取得に失敗しました: ${error.message}`; return }
+  rawWorkNames.value = [...new Set((data ?? []).map((d: Record<string, unknown>) => String(d.item_name ?? '').trim()).filter(Boolean))].sort()
   prices.value = (data ?? []).map((d: Record<string, unknown>) => ({
-    workName: String(d.item_name ?? '').trim(),
+    // E-3: 名寄せ辞書を当てて代表名に寄せる＝同じ作業が業者の表記違いで二重に並ばない
+    workName: canonicalName(String(d.item_name ?? ''), map),
     unitPrice: Number(d.unit_price ?? 0),
     vendorName: String(d.subcontractor_name ?? '').trim() || '（業者名なし）',
     quotedOn: String(d.quoted_on ?? '').slice(0, 10),
@@ -249,6 +284,37 @@ async function onPickTemplate(ev: Event) {
       </button>
     </section>
 
+    <!-- E-3 名寄せ（これ＝これ）: 業者の表記を自社の代表名に寄せる辞書。単価履歴の重複を防ぐ -->
+    <section class="card" data-testid="alias-card">
+      <h2 class="card-title">名寄せ（これ＝これ）</h2>
+      <p class="hint">
+        業者ごとに書き方が違う作業内容（例: 「天井LGS下地組」）を自社の代表名（例: 「天井 下地組」）に寄せます。
+        登録すると単価履歴が代表名でまとまり、<b>次回の作業用Excelから</b>候補と単価表に反映されます。取り消しもできます。
+      </p>
+      <div class="alias-form">
+        <input v-model="aliasFrom" class="input" list="alias-raw-names" placeholder="表記（業者の書き方）" data-testid="alias-from" />
+        <datalist id="alias-raw-names"><option v-for="n in rawWorkNames" :key="n" :value="n" /></datalist>
+        <span class="alias-eq">＝</span>
+        <input v-model="aliasTo" class="input" list="alias-work-names" placeholder="代表名（自社の正式名称）" data-testid="alias-to" />
+        <datalist id="alias-work-names"><option v-for="n in new Set(prices.map(p => p.workName))" :key="n" :value="n" /></datalist>
+        <button class="btn" :disabled="aliasBusy || !aliasFrom.trim() || !aliasTo.trim()" data-testid="alias-add" @click="submitAlias">登録</button>
+      </div>
+      <p v-if="aliasMsg" class="hint" data-testid="alias-msg">{{ aliasMsg }}</p>
+      <p v-if="!aliases.length" class="hint" data-testid="alias-empty">まだ名寄せは登録されていません。</p>
+      <div v-else class="table-wrap">
+        <table class="table" data-testid="alias-list">
+          <thead><tr><th>表記</th><th></th><th>代表名</th><th>登録日</th><th></th></tr></thead>
+          <tbody>
+            <tr v-for="a in aliases" :key="a.id" :data-testid="`alias-row-${a.id}`">
+              <td>{{ a.alias }}</td><td class="alias-eq">＝</td><td><b>{{ a.work_name }}</b></td>
+              <td class="muted">{{ a.confirmed_at.slice(0, 10) }}</td>
+              <td><button class="btn-ghost" :disabled="aliasBusy" :data-testid="`alias-del-${a.id}`" @click="deleteAlias(a)">取り消す</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- ③ 取り込み -->
     <section class="card">
       <div class="step"><span class="step-no">2</span><h2 class="card-title">積算し終えたExcelを取り込む</h2></div>
@@ -367,4 +433,8 @@ async function onPickTemplate(ev: Event) {
 .r-ok { font-size: 12.5px; color: #1B5E20; margin: 0 0 4px; }
 .r-ng { font-size: 12.5px; color: #B71C1C; margin: 0 0 6px; line-height: 1.7; }
 code { background: #f1f3f5; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+.alias-form { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.alias-form .input { max-width: 280px; }
+.alias-eq { color: #64748b; font-weight: 700; }
+.muted { color: #94a3b8; font-size: 12px; white-space: nowrap; }
 </style>
