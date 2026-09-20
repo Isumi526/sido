@@ -407,6 +407,7 @@ import HelpButton from '../components/HelpButton.vue'
 import { logOperation } from '../lib/operationLog'
 import { openDoc } from '../lib/docUrl'
 import { normalizeTaxMode, sumAmount, taxTotalOf, netTotalOf, grossTotalOf, hasTaxOverride } from '../lib/invoiceTax'
+import { normalizeVendorName } from '../lib/vendor-name.gen'
 import { resolveDocUrl } from '../lib/docUrl'
 import JSZip from 'jszip'
 import { siteStatusesForScreen } from '../lib/site-status.gen'
@@ -1038,15 +1039,7 @@ function fillDownSite() {
  *
  * NFKC で ㈱→(株)・全角英数→半角 を揃えてから、法人格・記号・空白を落として比較する。
  */
-function normVendor(s: string): string {
-  return (s || '')
-    .normalize('NFKC')                                   // ㈱→(株) / Ａ→A / ｱ→ア
-    .replace(/[（(](株|有|合|同|名|資)[）)]/g, '')        // (株)(有) 等の略記
-    .replace(/(株式会社|有限会社|合同会社|合資会社|合名会社|一般社団法人|特定非営利活動法人)/g, '')
-    .replace(/(御中|様)\s*$/g, '')                        // 請求書の宛名表記が混ざった場合
-    .replace(/[\s　・,，.。\-ー－]/g, '')
-    .toLowerCase()
-}
+const normVendor = normalizeVendorName   // 正本は shared/vendor-name.ts（集計側と同じ規則・2026-09-20）
 
 /** AIが読んだ業者名を協力業者マスタへ名寄せする。現場名（matchSiteId）と同じ段階的な照合。 */
 function matchVendorId(raw: string | null | undefined): string | null {
