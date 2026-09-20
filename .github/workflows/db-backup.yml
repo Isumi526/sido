@@ -57,7 +57,9 @@ jobs:
           sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
           echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-${PGVER}
-          pg_dump --version
+          # ランナーには 16 が同居していて pg_wrapper が 16 を選ぶ（初回実行で version mismatch を踏んだ）。17 の bin を PATH 先頭に。
+          echo "/usr/lib/postgresql/${PGVER}/bin" >> "$GITHUB_PATH"
+          /usr/lib/postgresql/${PGVER}/bin/pg_dump --version
 
       - name: pg_dump（custom形式・圧縮・所有者/権限なし）
         id: dump
@@ -167,6 +169,7 @@ jobs:
           sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
           echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
       - name: R2 から今日の分を取って復元
         if: steps.when.outputs.run == 'true'
         env:
