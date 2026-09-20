@@ -16,7 +16,7 @@
     <div class="gate-card">
       <span class="material-symbols-rounded gate-icon">block</span>
       <h1 class="gate-title">この画面を利用する権限がありません</h1>
-      <p class="gate-text">管理画面はオーナー・役員・経理のみ利用できます。<br>作業員の方は下のボタンから作業員アプリをご利用ください。</p>
+      <p class="gate-text">管理画面はオーナー・役員・経理・現場管理者が利用できます。<br>作業員の方は下のボタンから作業員アプリをご利用ください。</p>
       <a class="gate-liff" :href="liffUrl">作業員アプリを開く →</a>
       <button class="gate-logout-link" @click="handleLogout">ログアウト</button>
     </div>
