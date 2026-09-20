@@ -28,6 +28,11 @@
 //   move（confirmRole=office の時）         → 品目が未確定のまま inventory_pending_moves に「確認待ち」で保存（残数には触れない）。
 //                                            事務側が admin の未確認一覧で確定すると inventory_confirm_pending → inventory_move
 //   pending-mine                           → 自分の確認待ち（pending/confirmed/rejected の直近）
+//  在庫④（2026-09-20）:
+//   config                                 → 上記に加えて bases（拠点＝office/factory の現場）・myBaseSiteId（所属拠点）
+//   balances                               → 残数一覧（品目×拠点の倉庫／品目×現場・最終更新・最後の写真）
+//   move { baseSiteId? }                   → 拠点（無ければ所属拠点）を移動記録に残す
+//   item-create                            → 名寄せ済みの名前なら寄せ先を返す
 //  ※ --no-verify-jwt でデプロイ。関数内で身元検証。
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -87,13 +92,32 @@ Deno.serve(async (req) => {
     return (data as any)?.value === 'office' ? 'office' : 'self'
   }
 
+  // 在庫④: 拠点（倉庫）＝現場マスタの office/factory 行。作業員の所属拠点（workers.base_site_id）を既定にする
+  async function bases(): Promise<{ id: string; name: string }[]> {
+    const { data } = await svc.from('sites').select('id, name').eq('account_id', accountId).in('kind', ['office', 'factory']).order('name')
+    return (data ?? []) as { id: string; name: string }[]
+  }
+  async function myBaseSiteId(): Promise<string | null> {
+    if (!caller.workerId) return null
+    const { data } = await svc.from('workers').select('base_site_id').eq('id', caller.workerId).maybeSingle()
+    return (data as any)?.base_site_id ?? null
+  }
+
   if (body.action === 'config') {
-    return json({ ok: true, confirmRole: await confirmRole() })
+    const [role, bs, mine] = await Promise.all([confirmRole(), bases(), myBaseSiteId()])
+    return json({ ok: true, confirmRole: role, bases: bs, myBaseSiteId: bs.some(b => b.id === mine) ? mine : null })
+  }
+
+  // 在庫④: 残数一覧（拠点別・現場別）。会計在庫ではない（残数把握用）
+  if (body.action === 'balances') {
+    const { data, error } = await svc.rpc('inventory_balances', { p_account_id: accountId })
+    if (error) { console.error('[inventory] balances failed:', error); return json({ ok: false, error: 'fetch_failed' }, 500) }
+    return json({ ok: true, balances: data ?? [] })
   }
 
   if (body.action === 'pending-mine') {
     let q = svc.from('inventory_pending_moves')
-      .select('id, kind, qty, site_id, photo_urls, note, status, ai_guess_name, suggested_item_id, item_id, reject_reason, decided_at, created_at, report_date, sites(name), inventory_items!inventory_pending_moves_item_id_fkey(name, unit)')
+      .select('id, kind, qty, site_id, photo_urls, note, status, ai_guess_name, suggested_item_id, item_id, reject_reason, decided_at, created_at, report_date, sites!inventory_pending_moves_site_id_fkey(name), inventory_items!inventory_pending_moves_item_id_fkey(name, unit)')
       .eq('account_id', accountId).order('created_at', { ascending: false }).limit(20)
     if (caller.workerId) q = q.eq('created_by_worker_id', caller.workerId)
     const { data, error } = await q
@@ -124,6 +148,13 @@ Deno.serve(async (req) => {
     const { data: all } = await svc.from('inventory_items').select('id, name, unit, code, current_qty, category').eq('account_id', accountId).eq('active', true)
     const same = (all ?? []).find((it: any) => norm(it.name) === norm(name))
     if (same) return json({ ok: true, item: same, existed: true })
+    // 在庫④ 名寄せ: 過去に「この品目＝この品目」で寄せた名前なら、寄せ先を返す（同じ名前で再び別品目を作らせない）
+    const { data: aliases } = await svc.from('inventory_item_aliases').select('alias_name, item_id').eq('account_id', accountId)
+    const al = (aliases ?? []).find((a: any) => norm(a.alias_name) === norm(name))
+    if (al) {
+      const canon = (all ?? []).find((it: any) => it.id === (al as any).item_id)
+      if (canon) return json({ ok: true, item: canon, existed: true })
+    }
     const { data: created, error } = await svc.from('inventory_items')
       .insert({ account_id: accountId, name, category, unit, current_qty: 0 })
       .select('id, name, unit, code, current_qty, category').maybeSingle()
@@ -232,7 +263,7 @@ ${fewShot.length ? `\n# この会社での過去の訂正（同じ読み方を�
   if (body.action === 'recent') {
     const limit = Math.min(Math.max(Number(body.limit) || 20, 1), 100)
     let q = svc.from('inventory_movements')
-      .select('id, item_id, delta, kind, site_id, photo_urls, note, created_by_name, created_at, report_date, inventory_items(name, unit), sites(name)')
+      .select('id, item_id, delta, kind, site_id, photo_urls, note, created_by_name, created_at, report_date, inventory_items(name, unit), sites!inventory_movements_site_id_fkey(name)')   // ★在庫④で base_site_id も sites を参照＝埋め込みは FK 名で指定
       .eq('account_id', accountId).order('created_at', { ascending: false }).limit(limit)
     if (caller.workerId) q = q.eq('created_by_worker_id', caller.workerId)
     const { data, error } = await q
@@ -258,6 +289,10 @@ ${fewShot.length ? `\n# この会社での過去の訂正（同じ読み方を�
     const reportDate = typeof body.reportDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.reportDate) ? body.reportDate : null
     // ★べき等キー（2026-09-19 Gemini 指摘）: 画面が1回の入力ごとに付ける UUID。同じキーの再送は inventory_move が登録せず現在庫を返す
     const clientRequestId = typeof body.clientRequestId === 'string' && /^[0-9a-f-]{36}$/i.test(body.clientRequestId) ? body.clientRequestId : null
+    // 在庫④ 拠点（倉庫）: 画面で選んだ拠点 → 無ければ作業員の所属拠点。自テナントの office/factory 行だけ
+    const bs = await bases()
+    const wantBase = typeof body.baseSiteId === 'string' && body.baseSiteId ? body.baseSiteId : (await myBaseSiteId())
+    const baseSiteId = wantBase && bs.some(b => b.id === wantBase) ? wantBase : null
 
     // 品目・現場は自テナントのものだけ（関数内でも確認するが、分かりやすいエラーを返すためここでも）
     if (itemId) {
@@ -283,7 +318,7 @@ ${fewShot.length ? `\n# この会社での過去の訂正（同じ読み方を�
         account_id: accountId, kind, qty, site_id: siteId, photo_urls: photoUrls, note: note || null, report_date: reportDate,
         ai_guess_name: typeof body.aiGuess === 'string' ? body.aiGuess.slice(0, 200) : null,
         ai_guess_category: typeof body.aiCategory === 'string' ? body.aiCategory.slice(0, 100) : null,
-        ai_candidates: cands, suggested_item_id: itemId || null,
+        ai_candidates: cands, suggested_item_id: itemId || null, base_site_id: baseSiteId,
         created_by_worker_id: caller.workerId, created_by_name: caller.name, client_request_id: clientRequestId,
       }).select('id').maybeSingle()
       if (error) { console.error('[inventory] pending insert failed:', error); return json({ ok: false, error: 'save_failed', detail: error.message }, 500) }
@@ -294,7 +329,7 @@ ${fewShot.length ? `\n# この会社での過去の訂正（同じ読み方を�
     const { data, error } = await svc.rpc('inventory_move', {
       p_item_id: itemId, p_delta: delta, p_note: note || null, p_kind: kind, p_site_id: siteId,
       p_photo_urls: photoUrls, p_created_by_worker_id: caller.workerId, p_created_by_name: caller.name,
-      p_report_date: reportDate, p_client_request_id: clientRequestId,
+      p_report_date: reportDate, p_client_request_id: clientRequestId, p_base_site_id: baseSiteId,
     })
     if (error) { console.error('[inventory] move failed:', error); return json({ ok: false, error: 'move_failed', detail: error.message }, 500) }
     return json({ ok: true, item: data })

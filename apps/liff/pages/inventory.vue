@@ -102,6 +102,15 @@
             </select>
           </template>
 
+          <!-- 在庫④: 拠点（倉庫）。引き上げ・入荷＝どの拠点の倉庫へ／持出＝どの拠点から。既定＝所属拠点（1拠点なら自動） -->
+          <template v-if="bases.length">
+            <label class="lbl">{{ kind === 'out' ? $t('inventory.baseFrom') : $t('inventory.baseTo') }}<span class="opt">{{ $t('inventory.baseOptional') }}</span></label>
+            <select v-model="baseSiteId" class="select" data-testid="inv-base">
+              <option value="">{{ $t('inventory.baseNone') }}</option>
+              <option v-for="b in bases" :key="b.id" :value="b.id">{{ b.name }}</option>
+            </select>
+          </template>
+
           <label class="lbl">{{ $t('inventory.noteLabel') }}</label>
           <input v-model="note" type="text" class="input" :placeholder="$t('inventory.notePlaceholder')" data-testid="inv-memo" @keydown.enter.prevent />
 
@@ -127,6 +136,24 @@
           </ul>
         </section>
 
+        <!-- 在庫④: 残数一覧（拠点の倉庫／現場）。「引き上げで戻ってきた余りがどこに何個あるか」を見る -->
+        <section class="card" data-testid="inv-balances">
+          <div class="card-title">{{ $t('inventory.balancesTitle') }}</div>
+          <p class="hint">{{ $t('inventory.balancesNote') }}</p>
+          <div v-if="!balanceGroups.length" class="hint">{{ $t('inventory.balancesEmpty') }}</div>
+          <ul v-else class="list">
+            <li v-for="g in balanceGroups" :key="g.item_id" class="bal-item" :data-testid="`inv-bal-${g.item_id}`">
+              <div class="bal-name">{{ g.item_name }}<span v-if="g.category" class="row-sub"> · {{ g.category }}</span></div>
+              <div v-for="b in g.rows" :key="`${b.location_kind}-${b.location_id}`" class="bal-row" :data-testid="`inv-bal-row-${g.item_id}-${b.location_kind}-${b.location_id ?? 'none'}`">
+                <span class="badge" :class="b.location_kind === 'base' ? 'in' : 'out'">{{ b.location_kind === 'base' ? $t('inventory.locBase') : $t('inventory.locSite') }}</span>
+                <span class="row-main">{{ b.location_name }} <b>{{ fmt(b.qty) }}</b>{{ g.unit ?? '' }}</span>
+                <span v-if="b.last_at" class="row-sub">{{ fmtDate(b.last_at) }}</span>
+                <a v-if="b.last_photo_url" :href="b.last_photo_url" target="_blank" rel="noopener" class="bal-photo" :aria-label="$t('inventory.photos')"><span class="material-symbols-rounded">photo</span></a>
+              </div>
+            </li>
+          </ul>
+        </section>
+
         <section class="card">
           <div class="card-title">{{ $t('inventory.recent') }}</div>
           <div v-if="!recent.length" class="hint">{{ $t('inventory.recentEmpty') }}</div>
@@ -148,7 +175,7 @@
 import { useI18n } from 'vue-i18n'
 import { uploadExpenseFiles } from '~/utils/uploadExpenseFiles'
 import { todayStr } from '~/composables/schedule-core.gen'
-import type { InventoryItem, InventoryKind, InventoryMovement, InventorySuggestion, InventoryConfirmRole, InventoryPending } from '~/composables/useInventoryApi'
+import type { InventoryItem, InventoryKind, InventoryMovement, InventorySuggestion, InventoryConfirmRole, InventoryPending, InventoryBalance } from '~/composables/useInventoryApi'
 
 const { t } = useI18n()
 const liff = useLiff()
@@ -166,6 +193,20 @@ const recent = ref<InventoryMovement[]>([])
 const confirmRole = ref<InventoryConfirmRole>('self')
 const officeMode = computed(() => confirmRole.value === 'office')
 const pendingMine = ref<InventoryPending[]>([])
+// 在庫④: 拠点（倉庫）と残数一覧
+const bases = ref<{ id: string; name: string }[]>([])
+const baseSiteId = ref('')
+const balances = ref<InventoryBalance[]>([])
+/** 品目ごとにまとめる（拠点の倉庫 → 現場の順）。無効化（名寄せ済み）の品目は出さない */
+const balanceGroups = computed(() => {
+  const m = new Map<string, { item_id: string; item_name: string; unit: string | null; category: string | null; rows: InventoryBalance[] }>()
+  for (const b of balances.value) {
+    if (!b.item_active) continue
+    if (!m.has(b.item_id)) m.set(b.item_id, { item_id: b.item_id, item_name: b.item_name, unit: b.unit, category: b.category, rows: [] })
+    m.get(b.item_id)!.rows.push(b)
+  }
+  return [...m.values()]
+})
 
 /** 既定＝引き上げ（会議の主役。2026-09-19 レビュー決定） */
 const kind = ref<InventoryKind>('return')
@@ -270,10 +311,14 @@ async function load() {
   try {
     const me = await useCurrentUser().resolve()
     senderName = me?.real_name || 'worker'
-    const [its, ss, rec, cats, cfg] = await Promise.all([api.items(), useSitesApi().listSafe(), api.recent(20), api.categories(), api.settings()])
+    const [its, ss, rec, cats, cfg, bal] = await Promise.all([api.items(), useSitesApi().listSafe(), api.recent(20), api.categories(), api.settings(), api.balances()])
     items.value = its
     categories.value = cats
     confirmRole.value = cfg.confirmRole
+    bases.value = cfg.bases
+    // 既定の拠点＝所属拠点 → 1拠点しか無ければそれ
+    baseSiteId.value = cfg.myBaseSiteId ?? (cfg.bases.length === 1 ? cfg.bases[0].id : '')
+    balances.value = bal
     if (officeMode.value) pendingMine.value = await api.pendingMine()
     sites.value = ss.filter(s => !s.kind || s.kind === 'site').map(s => ({ id: s.id, name: s.name }))
     recent.value = rec
@@ -304,7 +349,7 @@ async function submit() {
     if (!photoUrls.length) throw new Error(t('inventory.photoUploadFailed'))
     const sg = suggestion.value
     const res = await api.move({
-      itemId: itemId.value || null, qty: Number(qty.value), kind: kind.value, siteId: kind.value === 'in' ? null : siteId.value, photoUrls, note: note.value, clientRequestId: clientRequestId.value,
+      itemId: itemId.value || null, qty: Number(qty.value), kind: kind.value, siteId: kind.value === 'in' ? null : siteId.value, baseSiteId: baseSiteId.value || null, photoUrls, note: note.value, clientRequestId: clientRequestId.value,
       // 在庫③ 事務モード: AI の読み・候補を確認待ちに添える（事務側が確定する時の手がかり）
       aiGuess: sg?.guessName ?? null, aiCategory: sg?.guessCategory ?? null, aiCandidates: sg?.candidates ?? [],
     })
@@ -330,7 +375,7 @@ async function submit() {
     msg.value = t('inventory.saved', { name: item.name, n: fmt(item.current_qty) }); msgOk.value = true
     qty.value = null; files.value = []; note.value = ''
     clientRequestId.value = newRequestId()   // 次の入力は別の登録
-    recent.value = await api.recent(20)
+    ;[recent.value, balances.value] = await Promise.all([api.recent(20), api.balances()])
   } catch (e: any) {
     msg.value = e?.message?.includes('photo_required') ? t('inventory.photoRequired') : t('inventory.saveFailed'); msgOk.value = false
   } finally { busy.value = false }
@@ -362,6 +407,11 @@ onMounted(async () => {
 .pstatus.confirmed { background: #ecfdf5; color: #047857; }
 .pstatus.rejected { background: #fee2e2; color: #b91c1c; }
 .row-sub.reason { width: 100%; color: #b91c1c; }
+.bal-item { padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
+.bal-name { font-weight: 700; font-size: 13px; margin-bottom: 4px; }
+.bal-row { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 3px 0; }
+.bal-photo { color: #64748b; display: inline-flex; }
+.bal-photo .material-symbols-rounded { font-size: 18px; }
 .select, .input { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 15px; background: #fff; }
 .btn-submit { width: 100%; margin-top: 16px; padding: 14px; background: #06C755; color: #fff; border: none; border-radius: 12px; font-size: 16px; font-weight: 700; }
 .btn-submit:disabled { opacity: .5; }

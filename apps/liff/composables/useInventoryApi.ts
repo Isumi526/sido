@@ -19,6 +19,12 @@ export type InventoryPending = {
   sites?: { name: string } | null
   inventory_items?: { name: string; unit: string | null } | null
 }
+/** 在庫④: 残数一覧の1行（品目×拠点の倉庫 or 品目×現場） */
+export type InventoryBalance = {
+  item_id: string; item_name: string; unit: string | null; category: string | null; item_active: boolean
+  location_kind: 'base' | 'site'; location_id: string | null; location_name: string
+  qty: number; last_at: string | null; last_photo_url: string | null
+}
 /** move の結果: 本人モードは品目（残数更新後）／事務モードは確認待ちの id */
 export type InventoryMoveResult = { item: InventoryItem; pending: false } | { pending: true; pendingId: string | null }
 export type InventoryMovement = {
@@ -57,7 +63,7 @@ export function useInventoryApi() {
    * 引上げ/持出/入荷の登録。写真は必須（EF でも弾く）。clientRequestId は再送のべき等キー（同じ値の再送は増減しない）。
    * 在庫③: 確認役が事務側（office）の会社では itemId 無しで送れ、残数には触れず「確認待ち」になる（pending:true）。失敗は throw
    */
-  async function move(input: { itemId?: string | null; qty: number; kind: InventoryKind; siteId?: string | null; photoUrls: string[]; note?: string; reportDate?: string | null; clientRequestId?: string | null; aiGuess?: string | null; aiCategory?: string | null; aiCandidates?: InventorySuggestion['candidates'] }): Promise<InventoryMoveResult> {
+  async function move(input: { itemId?: string | null; qty: number; kind: InventoryKind; siteId?: string | null; baseSiteId?: string | null; photoUrls: string[]; note?: string; reportDate?: string | null; clientRequestId?: string | null; aiGuess?: string | null; aiCategory?: string | null; aiCandidates?: InventorySuggestion['candidates'] }): Promise<InventoryMoveResult> {
     const r = await call('move', input)
     if (r.pending) return { pending: true, pendingId: r.pendingId ?? null }
     return { pending: false, item: r.item as InventoryItem }
@@ -65,8 +71,15 @@ export function useInventoryApi() {
 
   // ── 在庫③（2026-09-20）──
   /** 確認役（settings.inventory_confirm_role）。失敗は self（従来どおり本人がその場で確定） */
-  async function settings(): Promise<{ confirmRole: InventoryConfirmRole }> {
-    try { const r = await call('config'); return { confirmRole: r.confirmRole === 'office' ? 'office' : 'self' } } catch { return { confirmRole: 'self' } }
+  async function settings(): Promise<{ confirmRole: InventoryConfirmRole; bases: { id: string; name: string }[]; myBaseSiteId: string | null }> {
+    try {
+      const r = await call('config')
+      return { confirmRole: r.confirmRole === 'office' ? 'office' : 'self', bases: r.bases ?? [], myBaseSiteId: r.myBaseSiteId ?? null }
+    } catch { return { confirmRole: 'self', bases: [], myBaseSiteId: null } }
+  }
+  /** 在庫④: 残数一覧（拠点別・現場別）。失敗は空配列 */
+  async function balances(): Promise<InventoryBalance[]> {
+    try { return (((await call('balances')).balances ?? []) as any[]).map(b => ({ ...b, qty: Number(b.qty) })) as InventoryBalance[] } catch { return [] }
   }
   /** 自分の確認待ち（事務モード）。失敗は空配列 */
   async function pendingMine(): Promise<InventoryPending[]> {
@@ -99,5 +112,5 @@ export function useInventoryApi() {
     try { await call('correction', input) } catch (e) { console.error('[inventory] 訂正履歴の保存に失敗:', e) }
   }
 
-  return { items, move, recent, categories, createItem, suggest, correction, settings, pendingMine }
+  return { items, move, recent, categories, createItem, suggest, correction, settings, pendingMine, balances }
 }

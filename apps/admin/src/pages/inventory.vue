@@ -2,7 +2,7 @@
   <div class="inv-page">
     <div class="page-header">
       <h1>在庫管理</h1>
-      <span class="muted">品目を登録し、入出庫で数量を増減します。作業員アプリの「在庫」（入荷・持出）と日報の引き上げ登録もここに積まれます。</span>
+      <span class="muted">品目を登録し、残数を見ます。作業員アプリの「在庫」（引き上げ・持出・入荷）がここに積まれます。手入力の増減は「調整」として残ります。</span>
     </div>
     <!-- ★会計在庫ではない（残数把握用）。載せる範囲は運用に委ねる（2026-09-12 決定・閾値は作らない） -->
     <p class="notice" data-testid="inv-notice">会計在庫ではありません（残数把握用）。「何がどれくらい残っているか」を見るための記録です。</p>
@@ -20,9 +20,17 @@
       <button class="btn-primary" :disabled="!form.name.trim() || busy" data-testid="inv-add" @click="addItem">追加</button>
     </div>
 
+    <!-- 在庫④ AC3: 管理画面の手入力は「調整」（拠点を選べる。未指定も可） -->
+    <div v-if="bases.length" class="add-row" data-testid="inv-adjust-base-row">
+      <span class="muted">調整する拠点（倉庫）:</span>
+      <select v-model="adjustBase" class="input sm" data-testid="inv-adjust-base">
+        <option value="">拠点を指定しない</option>
+        <option v-for="b in bases" :key="b.id" :value="b.id">{{ b.name }}</option>
+      </select>
+    </div>
     <table class="table" data-testid="inv-table">
       <thead>
-        <tr><th>区分</th><th>品目</th><th>品番</th><th>単位</th><th class="num">現在庫</th><th>入出庫</th></tr>
+        <tr><th>区分</th><th>品目</th><th>品番</th><th>単位</th><th class="num">現在庫</th><th>調整（＋／−）</th></tr>
       </thead>
       <tbody>
         <tr v-for="it in items" :key="it.id" :data-testid="`inv-row-${it.id}`">
@@ -35,16 +43,62 @@
             <input v-model.number="moveQty[it.id]" type="number" step="any" min="0" class="input xs num" placeholder="数量" :data-testid="`inv-move-qty-${it.id}`" />
             <input v-model="moveNote[it.id]" class="input xs" placeholder="メモ(任意)" :data-testid="`inv-move-note-${it.id}`" />
             <button class="btn-in" :disabled="busy || !(Number(moveQty[it.id]) > 0)" :data-testid="`inv-in-${it.id}`" @click="move(it, 1)">
-              <span class="material-symbols-rounded">add</span>入庫
+              <span class="material-symbols-rounded">add</span>増やす
             </button>
             <button class="btn-out" :disabled="busy || !(Number(moveQty[it.id]) > 0)" :data-testid="`inv-out-${it.id}`" @click="move(it, -1)">
-              <span class="material-symbols-rounded">remove</span>出庫
+              <span class="material-symbols-rounded">remove</span>減らす
             </button>
           </td>
         </tr>
         <tr v-if="!items.length"><td colspan="6" class="muted">品目がまだありません。上の欄から追加してください。</td></tr>
       </tbody>
     </table>
+
+    <!-- 残数一覧（在庫④）: 品目×拠点の倉庫／品目×現場。「引き上げで戻ってきた余りがどこに何個あるか」 -->
+    <h2 class="sec-title">残数一覧（倉庫・現場）</h2>
+    <p class="muted" data-testid="inv-balances-note">倉庫＝拠点にある余り（拠点未指定は旧データ・調整）。現場＝持ち出したまま戻っていない数（使った分は差し引かれません）。会計在庫ではありません。</p>
+    <div class="tabs" data-testid="inv-bal-tabs">
+      <button class="tab" :class="{ on: balTab === 'base' }" data-testid="inv-bal-tab-base" @click="balTab = 'base'">拠点（倉庫）別</button>
+      <button class="tab" :class="{ on: balTab === 'site' }" data-testid="inv-bal-tab-site" @click="balTab = 'site'">現場別</button>
+    </div>
+    <table class="table" data-testid="inv-balances">
+      <thead>
+        <tr><th>区分</th><th>品目</th><th>{{ balTab === 'base' ? '拠点（倉庫）' : '現場' }}</th><th class="num">残数</th><th>最終更新</th><th>写真</th></tr>
+      </thead>
+      <tbody>
+        <tr v-for="b in balanceRows" :key="`${b.item_id}-${b.location_id}`" :data-testid="`inv-bal-${b.item_id}-${b.location_id ?? 'none'}`">
+          <td class="code">{{ b.category || '—' }}</td>
+          <td>{{ b.item_name }}</td>
+          <td>{{ b.location_name }}</td>
+          <td class="num qty">{{ fmt(b.qty) }}{{ b.unit ?? '' }}</td>
+          <td class="nowrap muted">{{ b.last_at ? fmtDateTime(b.last_at) : '—' }}</td>
+          <td><a v-if="b.last_photo_url" :href="b.last_photo_url" target="_blank" rel="noopener" class="photo"><img :src="b.last_photo_url" alt="" loading="lazy" /></a><span v-else class="muted">—</span></td>
+        </tr>
+        <tr v-if="!balanceRows.length"><td colspan="6" class="muted">{{ balTab === 'base' ? 'まだ残数はありません。' : '持ち出したまま戻っていない材料はありません。' }}</td></tr>
+      </tbody>
+    </table>
+
+    <!-- 名寄せ（在庫④ AC2）: 「この品目＝この品目」。寄せる側の履歴・残数を寄せ先へ統合し、寄せる側は無効化。見積の estimate_name_aliases と同じ発想 -->
+    <h2 class="sec-title">品目の名寄せ（これ＝これ）</h2>
+    <p class="muted">同じ物が別名で登録されてしまった時に。「寄せる品目」の履歴と残数を「寄せ先」へまとめ、寄せる品目は一覧から消えます（履歴は残ります）。以後、作業員アプリでその名前を登録しようとすると寄せ先が選ばれます。</p>
+    <div class="add-row" data-testid="inv-alias-row">
+      <select v-model="aliasFrom" class="input" data-testid="inv-alias-from">
+        <option value="">寄せる品目（消える側）</option>
+        <option v-for="it in items" :key="it.id" :value="it.id" :disabled="it.id === aliasInto">{{ it.category ? `${it.category} / ` : '' }}{{ it.name }}（残 {{ fmt(it.current_qty) }}）</option>
+      </select>
+      <span class="muted">＝</span>
+      <select v-model="aliasInto" class="input" data-testid="inv-alias-into">
+        <option value="">寄せ先（残す側）</option>
+        <option v-for="it in items" :key="it.id" :value="it.id" :disabled="it.id === aliasFrom">{{ it.category ? `${it.category} / ` : '' }}{{ it.name }}（残 {{ fmt(it.current_qty) }}）</option>
+      </select>
+      <button class="btn-primary" :disabled="busy || !aliasFrom || !aliasInto || aliasFrom === aliasInto" data-testid="inv-alias-merge" @click="mergeItems">統合する</button>
+    </div>
+    <ul v-if="aliases.length" class="alias-list" data-testid="inv-alias-list">
+      <li v-for="a in aliases" :key="a.id" :data-testid="`inv-alias-${a.id}`">
+        <span class="code">{{ a.alias_name }}</span> → <b>{{ a.inventory_items?.name ?? '—' }}</b>
+        <span class="muted">（{{ fmtDateTime(a.created_at) }}・{{ a.created_by_name ?? '' }}・履歴 {{ a.merged_movements }}件・残数 +{{ fmt(a.merged_qty) }}）</span>
+      </li>
+    </ul>
 
     <!-- 未確認一覧（在庫③）: 確認役＝事務側の会社で、作業員が写真＋数量で送った「品目未確定」の登録。
          ここで品目を確定すると移動記録＋残数に反映される（inventory_confirm_pending → inventory_move）。差し戻しは残数に触れない。
@@ -138,6 +192,17 @@ type Pending = {
   ai_candidates: { id: string; name: string }[] | null; suggested_item_id: string | null
   sites: { name: string } | null
 }
+// ── 在庫④: 残数一覧・拠点・名寄せ ──
+type Balance = { item_id: string; item_name: string; unit: string | null; category: string | null; item_active: boolean; location_kind: 'base' | 'site'; location_id: string | null; location_name: string; qty: number; last_at: string | null; last_photo_url: string | null }
+const balances = ref<Balance[]>([])
+const balTab = ref<'base' | 'site'>('base')
+const balanceRows = computed(() => balances.value.filter(b => b.item_active && b.location_kind === balTab.value))
+const bases = ref<{ id: string; name: string }[]>([])
+const adjustBase = ref('')
+type Alias = { id: string; alias_name: string; merged_qty: number; merged_movements: number; created_by_name: string | null; created_at: string; inventory_items: { name: string } | null }
+const aliases = ref<Alias[]>([])
+const aliasFrom = ref('')
+const aliasInto = ref('')
 const pendings = ref<Pending[]>([])
 const pendingItem = reactive<Record<string, string>>({})
 const confirmRole = ref<'self' | 'office'>('self')
@@ -167,17 +232,44 @@ async function load() {
   if (error) { err.value = error.message; return }
   items.value = (data ?? []).map((x: any) => ({ ...x, current_qty: Number(x.current_qty) }))
   const { data: mv } = await supabase.from('inventory_movements')
-    .select('id, delta, kind, note, created_by_name, created_at, photo_urls, report_date, inventory_items(name, unit), sites(name)')
+    .select('id, delta, kind, note, created_by_name, created_at, photo_urls, report_date, inventory_items(name, unit), sites!inventory_movements_site_id_fkey(name)')   // ★在庫④で base_site_id も sites 参照＝FK 名で指定
     .eq('account_id', accountId.value).order('created_at', { ascending: false }).limit(100)
   movements.value = ((mv ?? []) as any[]).map((m) => ({ ...m, delta: Number(m.delta) }))
-  await loadPendings()
+  await Promise.all([loadPendings(), loadBalances()])
+}
+
+async function loadBalances() {
+  const [{ data: bal }, { data: bs }, { data: al }] = await Promise.all([
+    supabase.rpc('inventory_balances', { p_account_id: accountId.value }),
+    supabase.from('sites').select('id, name').eq('account_id', accountId.value).in('kind', ['office', 'factory']).order('name'),
+    supabase.from('inventory_item_aliases').select('id, alias_name, merged_qty, merged_movements, created_by_name, created_at, inventory_items!inventory_item_aliases_item_id_fkey(name)')
+      .eq('account_id', accountId.value).order('created_at', { ascending: false }).limit(50),
+  ])
+  balances.value = ((bal ?? []) as any[]).map(b => ({ ...b, qty: Number(b.qty) }))
+  bases.value = (bs ?? []) as { id: string; name: string }[]
+  aliases.value = ((al ?? []) as any[]).map(a => ({ ...a, merged_qty: Number(a.merged_qty) }))
+}
+
+/** 名寄せ（統合）: 寄せる側の履歴・残数を寄せ先へ。1トランザクション（inventory_merge_items） */
+async function mergeItems() {
+  const from = items.value.find(i => i.id === aliasFrom.value)
+  const into = items.value.find(i => i.id === aliasInto.value)
+  if (!from || !into || from.id === into.id) return
+  if (!window.confirm(`「${from.name}」の履歴と残数（${fmt(from.current_qty)}）を「${into.name}」へまとめます。「${from.name}」は一覧から消えます（履歴は残ります）。よろしいですか？`)) return
+  busy.value = true; err.value = ''
+  const { error } = await supabase.rpc('inventory_merge_items', { p_from: from.id, p_into: into.id, p_by: await deciderName() })
+  busy.value = false
+  if (error) { err.value = error.message; return }
+  void logOperation('在庫の品目を名寄せ', { targetType: 'inventory_items', targetId: into.id, summary: `${from.name} → ${into.name}（残数 +${fmt(from.current_qty)}）` })
+  aliasFrom.value = ''; aliasInto.value = ''
+  await load()
 }
 
 async function loadPendings() {
   const [{ data: role }, { data: pd }] = await Promise.all([
     supabase.from('settings').select('value').eq('account_id', accountId.value).eq('key', 'inventory_confirm_role').maybeSingle(),
     supabase.from('inventory_pending_moves')
-      .select('id, kind, qty, note, created_by_name, created_at, photo_urls, ai_guess_name, ai_guess_category, ai_candidates, suggested_item_id, sites(name)')
+      .select('id, kind, qty, note, created_by_name, created_at, photo_urls, ai_guess_name, ai_guess_category, ai_candidates, suggested_item_id, sites!inventory_pending_moves_site_id_fkey(name)')
       .eq('account_id', accountId.value).eq('status', 'pending').order('created_at', { ascending: true }).limit(200),
   ])
   confirmRole.value = (role as any)?.value === 'office' ? 'office' : 'self'
@@ -239,17 +331,19 @@ async function move(it: Item, sign: 1 | -1) {
   const q = Number(moveQty[it.id])
   if (!(q > 0)) return
   busy.value = true; err.value = ''
-  // ★種別つきの版を呼ぶ（在庫①）。管理画面の入庫＝入荷 / 出庫＝持出（現場なし）。写真・登録者は無し
+  // ★種別つきの版を呼ぶ。管理画面の手入力は「調整」（在庫④ AC3・現場なし・拠点は任意）。写真・登録者は無し
   const { error } = await supabase.rpc('inventory_move', {
     p_item_id: it.id,
     p_delta: sign * q,
     p_note: (moveNote[it.id] ?? '').trim() || null,
-    p_kind: sign > 0 ? 'in' : 'out',
+    p_kind: 'adjust',
     p_site_id: null,
     p_photo_urls: [],
     p_created_by_worker_id: null,
     p_created_by_name: null,
     p_report_date: null,
+    p_client_request_id: null,
+    p_base_site_id: adjustBase.value || null,
   })
   busy.value = false
   if (error) { err.value = error.message; await load(); return }
@@ -289,6 +383,11 @@ onMounted(load)
 .kind.in { background: #ecfdf5; color: #047857; } .kind.out { background: #fff7ed; color: #c2410c; } .kind.return { background: #eff6ff; color: #1d4ed8; }
 .pos { color: #047857; } .neg { color: #c2410c; }
 .photo img { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; margin-right: 4px; border: 1px solid #e2e8f0; }
+.tabs { display: flex; gap: 6px; margin: 6px 0 8px; }
+.tab { border: 1px solid #cbd5e1; background: #fff; border-radius: 999px; padding: 4px 12px; font-size: 12px; cursor: pointer; color: #334155; }
+.tab.on { border-color: #06843c; background: #eafbf1; color: #06843c; font-weight: 700; }
+.alias-list { list-style: none; padding: 0; margin: 8px 0 0; font-size: 13px; }
+.alias-list li { padding: 4px 0; border-bottom: 1px solid #f1f5f9; }
 .count { display: inline-block; margin-left: 8px; font-size: 12px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: #fef3c7; color: #92400e; }
 .stale-chip { margin-left: 6px; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: #fee2e2; color: #b91c1c; }
 tr.stale td { background: #fffaf5; }

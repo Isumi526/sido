@@ -60,5 +60,14 @@
   "pendingNoItem": "Item not set",
   "pendingStatusPending": "Pending",
   "pendingStatusConfirmed": "Confirmed",
-  "pendingStatusRejected": "Returned"
+  "pendingStatusRejected": "Returned",
+  "baseTo": "Which base warehouse",
+  "baseFrom": "From which base warehouse",
+  "baseOptional": "(optional)",
+  "baseNone": "No base",
+  "balancesTitle": "Stock on hand (warehouse / site)",
+  "balancesNote": "Warehouse = leftovers at the base. Site = taken out and not yet returned (used amounts are not deducted). Not accounting inventory.",
+  "balancesEmpty": "No stock yet",
+  "locBase": "Warehouse",
+  "locSite": "Site"
 }
