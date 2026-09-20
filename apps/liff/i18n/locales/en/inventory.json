@@ -50,5 +50,15 @@
   "inHint": "Only when a delivery goes straight to the warehouse. Stock goes up.",
   "siteFrom": "Returned from which site",
   "submitReturn": "Record return",
-  "disabled": "This feature is not enabled for this account (an admin can turn it on in Settings › Features)."
+  "disabled": "This feature is not enabled for this account (an admin can turn it on in Settings › Features).",
+  "officeModeNote": "At this company the office confirms the item: send the photo and quantity (pick the item if you know it). Stock updates after confirmation.",
+  "itemOptional": "(if known)",
+  "submitPending": "Send for confirmation",
+  "savedPending": "Sent. Stock will update once the office confirms the item",
+  "pendingTitle": "Awaiting confirmation (office)",
+  "pendingEmpty": "Nothing awaiting confirmation",
+  "pendingNoItem": "Item not set",
+  "pendingStatusPending": "Pending",
+  "pendingStatusConfirmed": "Confirmed",
+  "pendingStatusRejected": "Returned"
 }

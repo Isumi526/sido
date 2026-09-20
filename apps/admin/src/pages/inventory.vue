@@ -46,6 +46,49 @@
       </tbody>
     </table>
 
+    <!-- 未確認一覧（在庫③）: 確認役＝事務側の会社で、作業員が写真＋数量で送った「品目未確定」の登録。
+         ここで品目を確定すると移動記録＋残数に反映される（inventory_confirm_pending → inventory_move）。差し戻しは残数に触れない。
+         確認役が本人（既定）でも、過去に事務モードで溜まった分があれば出す。 -->
+    <h2 v-if="confirmRole === 'office' || pendings.length" class="sec-title">
+      未確認一覧（事務側の確定待ち）<span v-if="pendings.length" class="count" data-testid="inv-pending-count">{{ pendings.length }}</span>
+    </h2>
+    <p v-if="confirmRole === 'office' && !pendings.length" class="muted" data-testid="inv-pending-empty">確定待ちはありません。</p>
+    <table v-if="pendings.length" class="table" data-testid="inv-pending">
+      <thead>
+        <tr><th>日時</th><th>種別</th><th class="num">数量</th><th>現場</th><th>写真</th><th>登録者</th><th>AIの読み・候補</th><th>品目を確定</th></tr>
+      </thead>
+      <tbody>
+        <tr v-for="p in pendings" :key="p.id" :data-testid="`inv-pd-${p.id}`" :class="{ stale: isStale(p.created_at) }">
+          <td class="nowrap">{{ fmtDateTime(p.created_at) }}<span v-if="isStale(p.created_at)" class="stale-chip" :data-testid="`inv-pd-stale-${p.id}`">7日超</span></td>
+          <td><span class="kind" :class="p.kind">{{ kindLabel(p.kind) }}</span></td>
+          <td class="num">{{ fmt(p.qty) }}</td>
+          <td>{{ p.sites?.name ?? '—' }}</td>
+          <td>
+            <a v-for="(u, i) in (p.photo_urls ?? [])" :key="i" :href="u" target="_blank" rel="noopener" class="photo"><img :src="u" alt="" loading="lazy" /></a>
+            <span v-if="!(p.photo_urls ?? []).length" class="muted">—</span>
+          </td>
+          <td>{{ p.created_by_name ?? '—' }}<div v-if="p.note" class="muted">{{ p.note }}</div></td>
+          <td class="muted">
+            <div v-if="p.ai_guess_name">読み: {{ p.ai_guess_name }}<span v-if="p.ai_guess_category">（{{ p.ai_guess_category }}）</span></div>
+            <div v-for="c in (p.ai_candidates ?? [])" :key="c.id">候補: {{ c.name }}</div>
+            <div v-if="!p.ai_guess_name && !(p.ai_candidates ?? []).length">—</div>
+          </td>
+          <td class="move-cell">
+            <select v-model="pendingItem[p.id]" class="input xs" :data-testid="`inv-pd-item-${p.id}`">
+              <option value="">品目を選ぶ</option>
+              <option v-for="it in items" :key="it.id" :value="it.id">{{ it.category ? `${it.category} / ` : '' }}{{ it.name }}</option>
+            </select>
+            <button class="btn-in" :disabled="busy || !pendingItem[p.id]" :data-testid="`inv-pd-confirm-${p.id}`" @click="confirmPending(p)">
+              <span class="material-symbols-rounded">check</span>確定
+            </button>
+            <button class="btn-out" :disabled="busy" :data-testid="`inv-pd-reject-${p.id}`" @click="rejectPending(p)">
+              <span class="material-symbols-rounded">undo</span>差し戻し
+            </button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
     <!-- 移動履歴（在庫①）: 種別・現場・写真・登録者。作業員が現場で撮った写真をここで見る -->
     <h2 class="sec-title">移動履歴</h2>
     <table class="table" data-testid="inv-history">
@@ -78,6 +121,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
+import { logOperation } from '../lib/operationLog'
 
 type Item = { id: string; name: string; unit: string | null; code: string | null; current_qty: number; category: string | null }
 type Movement = {
@@ -87,6 +131,19 @@ type Movement = {
   sites: { name: string } | null
 }
 const movements = ref<Movement[]>([])
+// ── 在庫③: 未確認一覧（確認役＝事務側）──
+type Pending = {
+  id: string; kind: string; qty: number; note: string | null; created_by_name: string | null; created_at: string
+  photo_urls: string[] | null; ai_guess_name: string | null; ai_guess_category: string | null
+  ai_candidates: { id: string; name: string }[] | null; suggested_item_id: string | null
+  sites: { name: string } | null
+}
+const pendings = ref<Pending[]>([])
+const pendingItem = reactive<Record<string, string>>({})
+const confirmRole = ref<'self' | 'office'>('self')
+/** 未確認のまま7日を超えた（AC4・ダッシュボードの件数と同じ基準） */
+const isStale = (iso: string) => Date.now() - new Date(iso).getTime() > 7 * 86400000
+async function deciderName(): Promise<string> { const { data } = await supabase.auth.getUser(); return data?.user?.email ?? 'admin' }
 const kindLabel = (k: string) => k === 'in' ? '入荷' : k === 'out' ? '持出' : k === 'return' ? '引上げ' : '調整'
 const fmtDateTime = (iso: string) => { const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }
 
@@ -113,6 +170,49 @@ async function load() {
     .select('id, delta, kind, note, created_by_name, created_at, photo_urls, report_date, inventory_items(name, unit), sites(name)')
     .eq('account_id', accountId.value).order('created_at', { ascending: false }).limit(100)
   movements.value = ((mv ?? []) as any[]).map((m) => ({ ...m, delta: Number(m.delta) }))
+  await loadPendings()
+}
+
+async function loadPendings() {
+  const [{ data: role }, { data: pd }] = await Promise.all([
+    supabase.from('settings').select('value').eq('account_id', accountId.value).eq('key', 'inventory_confirm_role').maybeSingle(),
+    supabase.from('inventory_pending_moves')
+      .select('id, kind, qty, note, created_by_name, created_at, photo_urls, ai_guess_name, ai_guess_category, ai_candidates, suggested_item_id, sites(name)')
+      .eq('account_id', accountId.value).eq('status', 'pending').order('created_at', { ascending: true }).limit(200),
+  ])
+  confirmRole.value = (role as any)?.value === 'office' ? 'office' : 'self'
+  pendings.value = ((pd ?? []) as any[]).map((p) => ({ ...p, qty: Number(p.qty) }))
+  // 既定の品目＝作業員が選んだもの → AI の第1候補（残数には触れていないので、ここで人が確定する）
+  for (const p of pendings.value) {
+    if (pendingItem[p.id] !== undefined) continue
+    const first = p.suggested_item_id ?? p.ai_candidates?.[0]?.id ?? ''
+    pendingItem[p.id] = items.value.some(i => i.id === first) ? first : ''
+  }
+}
+
+/** 品目を確定 → inventory_confirm_pending（移動記録＋残数が1トランザクション） */
+async function confirmPending(p: Pending) {
+  const itemId = pendingItem[p.id]
+  if (!itemId) return
+  busy.value = true; err.value = ''
+  const { error } = await supabase.rpc('inventory_confirm_pending', { p_pending_id: p.id, p_item_id: itemId, p_decided_by_name: await deciderName(), p_reject_reason: null })
+  busy.value = false
+  if (error) { err.value = error.message; await load(); return }
+  const it = items.value.find(i => i.id === itemId)
+  void logOperation('在庫の確認待ちを確定', { targetType: 'inventory_pending_moves', targetId: p.id, summary: `${kindLabel(p.kind)} ${it?.name ?? itemId} ${p.qty}` })
+  await load()
+}
+
+/** 差し戻し（残数には触れない）。理由は任意 */
+async function rejectPending(p: Pending) {
+  const reason = window.prompt('差し戻しの理由（任意）。作業員アプリの「確認待ち」に表示されます', '') ?? null
+  if (reason === null) return
+  busy.value = true; err.value = ''
+  const { error } = await supabase.rpc('inventory_confirm_pending', { p_pending_id: p.id, p_item_id: null, p_decided_by_name: await deciderName(), p_reject_reason: reason || null })
+  busy.value = false
+  if (error) { err.value = error.message; await load(); return }
+  void logOperation('在庫の確認待ちを差し戻し', { targetType: 'inventory_pending_moves', targetId: p.id, summary: `${kindLabel(p.kind)} ${p.qty}${reason ? `（${reason}）` : ''}` })
+  await load()
 }
 
 async function addItem() {
@@ -189,4 +289,7 @@ onMounted(load)
 .kind.in { background: #ecfdf5; color: #047857; } .kind.out { background: #fff7ed; color: #c2410c; } .kind.return { background: #eff6ff; color: #1d4ed8; }
 .pos { color: #047857; } .neg { color: #c2410c; }
 .photo img { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; margin-right: 4px; border: 1px solid #e2e8f0; }
+.count { display: inline-block; margin-left: 8px; font-size: 12px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: #fef3c7; color: #92400e; }
+.stale-chip { margin-left: 6px; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: #fee2e2; color: #b91c1c; }
+tr.stale td { background: #fffaf5; }
 </style>

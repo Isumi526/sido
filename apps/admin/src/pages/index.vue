@@ -27,6 +27,21 @@
       </ul>
     </div>
 
+    <!-- 在庫③（AC4）: 確認役＝事務側の会社で、未確認のまま7日を超えた在庫の登録。放置されると残数が実態とズレる -->
+    <div v-if="inventoryStale > 0" class="shaken-box inv-stale" data-testid="inventory-stale-alert">
+      <div class="shaken-head">
+        <span class="material-symbols-rounded">warehouse</span>
+        資材の在庫：未確認のまま7日を超えた登録
+      </div>
+      <ul class="shaken-list">
+        <li class="shaken-row">
+          <span class="shaken-name">作業員が送った写真・数量に品目が確定されていません</span>
+          <span class="shaken-when" data-testid="inventory-stale-count">{{ inventoryStale }}件</span>
+          <RouterLink to="/inventory" class="shaken-link">未確認一覧を見る →</RouterLink>
+        </li>
+      </ul>
+    </div>
+
     <!-- 開発の更新履歴 -->
     <div v-if="unconfirmed.length || confirmed.length" class="updates-box">
       <div class="updates-head">お知らせ・更新履歴</div>
@@ -164,6 +179,7 @@ import { getAccountId } from '../lib/account'
 import { laborBreakdownForReport, laborCostForBreakdown, ZERO_BREAKDOWN, buildWageTimelines, wageForDate, businessTripMainEntries, BUSINESS_TRIP_ALLOWANCE, readOtDeductionSettings, otDeductionForDate } from '../lib/workerHours'
 import type { WageMode } from '../lib/workerHours'
 import { canViewWages, canViewHourlyWage, canViewManagementPages } from '../lib/auth'
+import { isFeatureEnabled, waitForFeaturesResolved } from '../lib/features'
 import { resolveSiteRef, type SiteResolveCtx } from '../lib/siteKey'
 import { netAmountOf, normalizeTaxMode } from '../lib/invoiceTax'
 
@@ -203,6 +219,18 @@ async function loadShaken() {
       }
     })
     .sort((a, b) => a.inspection_date.localeCompare(b.inspection_date))
+}
+// 在庫③（AC4）: 未確認のまま7日超の件数（inventory_pending_moves.status=pending・created_at < now-7d）。在庫（ベータ）OFF なら見ない
+const inventoryStale = ref(0)
+async function loadInventoryStale() {
+  if (!isFeatureEnabled('inventory')) { inventoryStale.value = 0; return }
+  const accountId = await getAccountId()
+  if (!accountId) return
+  const since = new Date(Date.now() - 7 * 86400000).toISOString()
+  const { count } = await supabase.from('inventory_pending_moves')
+    .select('id', { count: 'exact', head: true })
+    .eq('account_id', accountId).eq('status', 'pending').lt('created_at', since)
+  inventoryStale.value = count ?? 0
 }
 const unconfirmed = ref<DevUpdate[]>([])   // archived=false
 const confirmed   = ref<DevUpdate[]>([])   // archived=true
@@ -471,7 +499,7 @@ function fmtDetailDate(s: string): string {
   return `${d.getMonth() + 1}/${d.getDate()}（${W[d.getDay()]}）`
 }
 
-onMounted(() => { load(); loadUpdates(); loadShaken() })
+onMounted(() => { load(); loadUpdates(); loadShaken(); waitForFeaturesResolved().then(loadInventoryStale) })
 watch(selectedMonth, load)
 watch(wageMode, load)   // 日当-実質賃金の切替で社員人件費を再集計
 </script>

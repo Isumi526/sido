@@ -50,5 +50,15 @@
   "inHint": "納品を現場ではなく倉庫に直接入れた時だけ。残数が増えます。",
   "siteFrom": "どの現場から引き上げたか",
   "submitReturn": "引き上げを登録する",
-  "disabled": "この機能は現在このアカウントでは利用できません（管理画面の設定「使う機能」で有効にできます）。"
+  "disabled": "この機能は現在このアカウントでは利用できません（管理画面の設定「使う機能」で有効にできます）。",
+  "officeModeNote": "この会社では、写真と数量を送ると事務側が品目を確定します（品目は分かれば選んでください）。残数は確定後に反映されます。",
+  "itemOptional": "（分かれば）",
+  "submitPending": "確認待ちとして送る",
+  "savedPending": "送りました。事務側が品目を確定すると残数に反映されます",
+  "pendingTitle": "確認待ち（事務側が確定）",
+  "pendingEmpty": "確認待ちはありません",
+  "pendingNoItem": "品目未定",
+  "pendingStatusPending": "確認待ち",
+  "pendingStatusConfirmed": "確定済み",
+  "pendingStatusRejected": "差し戻し"
 }

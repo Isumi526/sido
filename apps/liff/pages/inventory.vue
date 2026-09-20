@@ -23,6 +23,8 @@
             <label class="kind" :class="{ on: kind === 'in' }"><input type="radio" name="inv-kind" value="in" v-model="kind" data-testid="inv-kind-in" />{{ $t('inventory.kindIn') }}</label>
           </div>
           <p class="hint" data-testid="inv-kind-hint">{{ kind === 'return' ? $t('inventory.returnHint') : kind === 'out' ? $t('inventory.outHint') : $t('inventory.inHint') }}</p>
+          <!-- 在庫③: 確認役＝事務側の会社では、品目は決めなくてよい（写真＋数量で送り、事務側が管理画面で確定する） -->
+          <p v-if="officeMode" class="office-note" data-testid="inv-office-note">{{ $t('inventory.officeModeNote') }}</p>
 
           <!-- ★写真は必須（亥角「持ち出した時と引き上げの最低限、写真を残すのはマスト」）。
                在庫②: 写真を先に撮る→AIが品目候補を出す→違えば検索/手入力（大塚「電卓ってやったら出る方がいい」） -->
@@ -42,7 +44,7 @@
             </button>
           </div>
 
-          <label class="lbl">{{ $t('inventory.item') }}</label>
+          <label class="lbl">{{ $t('inventory.item') }}<span v-if="officeMode" class="opt">{{ $t('inventory.itemOptional') }}</span></label>
           <div v-if="itemId" class="picked" data-testid="inv-item-picked">
             <span class="picked-name">{{ pickedItem?.name }}<span v-if="pickedItem?.unit" class="picked-unit">（{{ pickedItem?.unit }}）</span></span>
             <span class="picked-stock">{{ $t('inventory.stock', { n: fmt(pickedItem?.current_qty ?? 0) }) }}</span>
@@ -104,9 +106,25 @@
           <input v-model="note" type="text" class="input" :placeholder="$t('inventory.notePlaceholder')" data-testid="inv-memo" @keydown.enter.prevent />
 
           <button type="button" class="btn-submit" :disabled="!canSubmit || busy" data-testid="inv-submit" @click="submit">
-            {{ busy ? $t('inventory.saving') : (kind === 'return' ? $t('inventory.submitReturn') : kind === 'in' ? $t('inventory.submitIn') : $t('inventory.submitOut')) }}
+            {{ busy ? $t('inventory.saving') : officeMode && !itemId ? $t('inventory.submitPending') : (kind === 'return' ? $t('inventory.submitReturn') : kind === 'in' ? $t('inventory.submitIn') : $t('inventory.submitOut')) }}
           </button>
           <p v-if="msg" class="msg" :class="{ ok: msgOk }" data-testid="inv-msg">{{ msg }}</p>
+        </section>
+
+        <!-- 在庫③: 事務モードの自分の確認待ち（確定/差し戻しの結果もここで分かる） -->
+        <section v-if="officeMode || pendingMine.length" class="card" data-testid="inv-pending-card">
+          <div class="card-title">{{ $t('inventory.pendingTitle') }}</div>
+          <div v-if="!pendingMine.length" class="hint">{{ $t('inventory.pendingEmpty') }}</div>
+          <ul v-else class="list">
+            <li v-for="p in pendingMine" :key="p.id" class="row" data-testid="inv-pending-row">
+              <span class="badge" :class="p.kind">{{ kindLabel(p.kind) }}</span>
+              <span class="row-main">{{ p.inventory_items?.name ?? p.ai_guess_name ?? $t('inventory.pendingNoItem') }} <b>{{ fmt(p.qty) }}</b>{{ p.inventory_items?.unit ?? '' }}</span>
+              <span v-if="p.sites?.name" class="row-sub">{{ p.sites.name }}</span>
+              <span class="pstatus" :class="p.status" :data-testid="`inv-pending-status-${p.id}`">{{ p.status === 'pending' ? $t('inventory.pendingStatusPending') : p.status === 'confirmed' ? $t('inventory.pendingStatusConfirmed') : $t('inventory.pendingStatusRejected') }}</span>
+              <span v-if="p.status === 'rejected' && p.reject_reason" class="row-sub reason">{{ p.reject_reason }}</span>
+              <span class="row-sub">{{ fmtDate(p.created_at) }}</span>
+            </li>
+          </ul>
         </section>
 
         <section class="card">
@@ -130,7 +148,7 @@
 import { useI18n } from 'vue-i18n'
 import { uploadExpenseFiles } from '~/utils/uploadExpenseFiles'
 import { todayStr } from '~/composables/schedule-core.gen'
-import type { InventoryItem, InventoryKind, InventoryMovement, InventorySuggestion } from '~/composables/useInventoryApi'
+import type { InventoryItem, InventoryKind, InventoryMovement, InventorySuggestion, InventoryConfirmRole, InventoryPending } from '~/composables/useInventoryApi'
 
 const { t } = useI18n()
 const liff = useLiff()
@@ -144,6 +162,10 @@ const items = ref<InventoryItem[]>([])
 const sites = ref<{ id: string; name: string }[]>([])
 const todaySites = ref<{ id: string; name: string }[]>([])
 const recent = ref<InventoryMovement[]>([])
+// 在庫③: 確認役（settings.inventory_confirm_role）。office＝写真＋数量で送り、事務側が管理画面で品目を確定する
+const confirmRole = ref<InventoryConfirmRole>('self')
+const officeMode = computed(() => confirmRole.value === 'office')
+const pendingMine = ref<InventoryPending[]>([])
 
 /** 既定＝引き上げ（会議の主役。2026-09-19 レビュー決定） */
 const kind = ref<InventoryKind>('return')
@@ -227,7 +249,7 @@ const msgOk = ref(false)
 let senderName = 'worker'
 
 const canSubmit = computed(() =>
-  !!itemId.value && Number(qty.value) > 0 && files.value.length > 0 && (kind.value === 'in' || !!siteId.value))
+  (!!itemId.value || officeMode.value) && Number(qty.value) > 0 && files.value.length > 0 && (kind.value === 'in' || !!siteId.value))
 
 function fmt(n: number | string): string { const v = Number(n); return Number.isInteger(v) ? String(v) : v.toFixed(2) }
 function fmtDate(iso: string): string {
@@ -248,9 +270,11 @@ async function load() {
   try {
     const me = await useCurrentUser().resolve()
     senderName = me?.real_name || 'worker'
-    const [its, ss, rec, cats] = await Promise.all([api.items(), useSitesApi().listSafe(), api.recent(20), api.categories()])
+    const [its, ss, rec, cats, cfg] = await Promise.all([api.items(), useSitesApi().listSafe(), api.recent(20), api.categories(), api.settings()])
     items.value = its
     categories.value = cats
+    confirmRole.value = cfg.confirmRole
+    if (officeMode.value) pendingMine.value = await api.pendingMine()
     sites.value = ss.filter(s => !s.kind || s.kind === 'site').map(s => ({ id: s.id, name: s.name }))
     recent.value = rec
     // 持出の既定＝当日稼働した現場（今日の日報の現場 → 無ければ出勤中の現場）
@@ -278,12 +302,27 @@ async function submit() {
       devLineUserId: config.public.appEnv === 'development' ? (liff.profile.value?.userId ?? '') : '',
     })
     if (!photoUrls.length) throw new Error(t('inventory.photoUploadFailed'))
-    const item = await api.move({ itemId: itemId.value, qty: Number(qty.value), kind: kind.value, siteId: kind.value === 'in' ? null : siteId.value, photoUrls, note: note.value, clientRequestId: clientRequestId.value })
+    const sg = suggestion.value
+    const res = await api.move({
+      itemId: itemId.value || null, qty: Number(qty.value), kind: kind.value, siteId: kind.value === 'in' ? null : siteId.value, photoUrls, note: note.value, clientRequestId: clientRequestId.value,
+      // 在庫③ 事務モード: AI の読み・候補を確認待ちに添える（事務側が確定する時の手がかり）
+      aiGuess: sg?.guessName ?? null, aiCategory: sg?.guessCategory ?? null, aiCandidates: sg?.candidates ?? [],
+    })
+    if (res.pending) {
+      // 事務モード: 残数はまだ動かない。事務側が確定した時に反映される
+      suggestion.value = null; suggestMsg.value = ''
+      itemId.value = ''
+      msg.value = t('inventory.savedPending'); msgOk.value = true
+      qty.value = null; files.value = []; note.value = ''
+      clientRequestId.value = newRequestId()
+      pendingMine.value = await api.pendingMine()
+      return
+    }
+    const item = res.item
     const idx = items.value.findIndex(i => i.id === item.id)
     if (idx >= 0) items.value[idx] = { ...items.value[idx], ...item }
     // 在庫②: AI 候補を出していたら「AI の読み→人が確定した品目」を訂正履歴に残す（次回の候補に効く・自社内のみ）
-    if (suggestion.value) {
-      const sg = suggestion.value
+    if (sg) {
       await api.correction({ itemId: item.id, aiGuess: sg.guessName, aiCategory: sg.guessCategory, matched: sg.candidates[0]?.id === item.id, photoUrl: photoUrls[0] ?? null })
       suggestion.value = null; suggestMsg.value = ''
     }
@@ -316,6 +355,13 @@ onMounted(async () => {
 .hint { font-size: 12px; color: #64748b; margin: 6px 0 0; line-height: 1.6; }
 .lbl { display: block; font-size: 12px; font-weight: 700; color: #475569; margin: 12px 0 4px; }
 .lbl .req { color: #dc2626; font-size: 11px; margin-left: 6px; }
+.lbl .opt { color: #64748b; font-size: 11px; margin-left: 6px; font-weight: 400; }
+.office-note { font-size: 12px; color: #1d4ed8; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 8px 10px; margin: 8px 0 0; line-height: 1.6; }
+.pstatus { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #f1f5f9; color: #334155; }
+.pstatus.pending { background: #fef3c7; color: #92400e; }
+.pstatus.confirmed { background: #ecfdf5; color: #047857; }
+.pstatus.rejected { background: #fee2e2; color: #b91c1c; }
+.row-sub.reason { width: 100%; color: #b91c1c; }
 .select, .input { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 15px; background: #fff; }
 .btn-submit { width: 100%; margin-top: 16px; padding: 14px; background: #06C755; color: #fff; border: none; border-radius: 12px; font-size: 16px; font-weight: 700; }
 .btn-submit:disabled { opacity: .5; }

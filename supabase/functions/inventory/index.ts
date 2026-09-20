@@ -23,6 +23,11 @@
 //   suggest { imageBase64 }                → 写真から Gemini で品目候補（自社マスタ＋自社の訂正履歴だけを渡す・AC3/AC5）
 //   correction { itemId, aiGuess?, aiCategory?, matched?, photoUrl? }
 //                                          → 人が確定した結果を訂正履歴に残す（次回の候補提示に使う）
+//  在庫③（2026-09-20）:
+//   config                                 → { confirmRole: 'self' | 'office' }（settings.inventory_confirm_role・未設定＝self）
+//   move（confirmRole=office の時）         → 品目が未確定のまま inventory_pending_moves に「確認待ち」で保存（残数には触れない）。
+//                                            事務側が admin の未確認一覧で確定すると inventory_confirm_pending → inventory_move
+//   pending-mine                           → 自分の確認待ち（pending/confirmed/rejected の直近）
 //  ※ --no-verify-jwt でデプロイ。関数内で身元検証。
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -74,6 +79,26 @@ Deno.serve(async (req) => {
     if (!resolveFeatureFlags((rows ?? []) as { key: string; value: string | null }[]).inventory) {
       return json({ ok: false, error: 'feature_disabled' }, 403)
     }
+  }
+
+  // ── 在庫③: 確認役（self=申請者本人がその場で確定 / office=事務側が後で確定）。未設定・不正値は self ──
+  async function confirmRole(): Promise<'self' | 'office'> {
+    const { data } = await svc.from('settings').select('value').eq('account_id', accountId).eq('key', 'inventory_confirm_role').maybeSingle()
+    return (data as any)?.value === 'office' ? 'office' : 'self'
+  }
+
+  if (body.action === 'config') {
+    return json({ ok: true, confirmRole: await confirmRole() })
+  }
+
+  if (body.action === 'pending-mine') {
+    let q = svc.from('inventory_pending_moves')
+      .select('id, kind, qty, site_id, photo_urls, note, status, ai_guess_name, suggested_item_id, item_id, reject_reason, decided_at, created_at, report_date, sites(name), inventory_items!inventory_pending_moves_item_id_fkey(name, unit)')
+      .eq('account_id', accountId).order('created_at', { ascending: false }).limit(20)
+    if (caller.workerId) q = q.eq('created_by_worker_id', caller.workerId)
+    const { data, error } = await q
+    if (error) { console.error('[inventory] pending-mine failed:', error); return json({ ok: false, error: 'fetch_failed' }, 500) }
+    return json({ ok: true, pending: data ?? [] })
   }
 
   if (body.action === 'items') {
@@ -219,7 +244,9 @@ ${fewShot.length ? `\n# この会社での過去の訂正（同じ読み方を�
     const itemId = typeof body.itemId === 'string' ? body.itemId : ''
     const kind = KINDS.includes(body.kind) ? body.kind as typeof KINDS[number] : ''
     const qty = Number(body.qty)
-    if (!itemId || !kind) return json({ ok: false, error: 'item_and_kind_required' }, 400)
+    const role = await confirmRole()
+    // 事務モード（在庫③）: 品目は無くてよい＝写真＋数量で「確認待ち」。本人モードは従来どおり品目必須
+    if (!kind || (role === 'self' && !itemId)) return json({ ok: false, error: 'item_and_kind_required' }, 400)
     if (!Number.isFinite(qty) || qty <= 0 || qty > 100000 || Math.round(qty) !== qty) return json({ ok: false, error: 'bad_qty' }, 400)
     const siteId = typeof body.siteId === 'string' && body.siteId ? body.siteId : null
     // 持出・引上げは現場が要る（どこに持って行った／どこから戻したか）
@@ -233,11 +260,34 @@ ${fewShot.length ? `\n# この会社での過去の訂正（同じ読み方を�
     const clientRequestId = typeof body.clientRequestId === 'string' && /^[0-9a-f-]{36}$/i.test(body.clientRequestId) ? body.clientRequestId : null
 
     // 品目・現場は自テナントのものだけ（関数内でも確認するが、分かりやすいエラーを返すためここでも）
-    const { data: item } = await svc.from('inventory_items').select('id').eq('id', itemId).eq('account_id', accountId).eq('active', true).maybeSingle()
-    if (!item) return json({ ok: false, error: 'item_not_found' }, 404)
+    if (itemId) {
+      const { data: item } = await svc.from('inventory_items').select('id').eq('id', itemId).eq('account_id', accountId).eq('active', true).maybeSingle()
+      if (!item) return json({ ok: false, error: 'item_not_found' }, 404)
+    }
     if (siteId) {
       const { data: site } = await svc.from('sites').select('id').eq('id', siteId).eq('account_id', accountId).maybeSingle()
       if (!site) return json({ ok: false, error: 'site_not_found' }, 404)
+    }
+
+    // ── 在庫③ 事務モード: 残数には触れず「確認待ち」に置く。事務側が admin で品目を確定した時に inventory_move が走る ──
+    if (role === 'office') {
+      if (clientRequestId) {
+        const { data: dup } = await svc.from('inventory_pending_moves').select('id, status').eq('account_id', accountId).eq('client_request_id', clientRequestId).maybeSingle()
+        if (dup) return json({ ok: true, pending: true, pendingId: (dup as any).id, deduped: true })
+      }
+      const cands = Array.isArray(body.aiCandidates) ? body.aiCandidates.slice(0, 3).map((c: any) => ({
+        id: String(c?.id ?? ''), name: String(c?.name ?? '').slice(0, 200), unit: c?.unit ?? null, category: c?.category ?? null,
+        confidence: Math.max(0, Math.min(1, Number(c?.confidence) || 0)),
+      })).filter((c: any) => c.id) : []
+      const { data: pend, error } = await svc.from('inventory_pending_moves').insert({
+        account_id: accountId, kind, qty, site_id: siteId, photo_urls: photoUrls, note: note || null, report_date: reportDate,
+        ai_guess_name: typeof body.aiGuess === 'string' ? body.aiGuess.slice(0, 200) : null,
+        ai_guess_category: typeof body.aiCategory === 'string' ? body.aiCategory.slice(0, 100) : null,
+        ai_candidates: cands, suggested_item_id: itemId || null,
+        created_by_worker_id: caller.workerId, created_by_name: caller.name, client_request_id: clientRequestId,
+      }).select('id').maybeSingle()
+      if (error) { console.error('[inventory] pending insert failed:', error); return json({ ok: false, error: 'save_failed', detail: error.message }, 500) }
+      return json({ ok: true, pending: true, pendingId: (pend as any)?.id ?? null })
     }
 
     const delta = kind === 'out' ? -qty : qty
