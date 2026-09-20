@@ -160,6 +160,7 @@ export const useMaster = () => {
         end:    (c.default_end_time ?? null)?.slice(0, 5) ?? null,
         breaks: normalizeBreaks(c.default_breaks),
         unrestricted: c.hours_unrestricted === true,
+        usesSiteHours: c.uses_site_hours === true,   // 主系区分（A-4）。日報の既定区分＝これ
       }))
     const categoryHours: Record<string, { start: string | null; end: string | null; breaks: { start: string; minutes: number }[] | null }> = {}
     for (const h of (r.siteCategoryHours ?? []) as any[]) {

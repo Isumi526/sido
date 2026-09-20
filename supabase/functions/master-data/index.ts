@@ -97,7 +97,7 @@ Deno.serve(async (req) => {
       //  現場」の順に定時を引くので、区分の共通定時が無いと工場作業が現場の時間帯に
       //  引っ張られる（2026-09-02 今井さん）。
       svc.from('work_categories')
-        .select('id, name, scope, sort_order, default_start_time, default_end_time, default_breaks, hours_unrestricted')
+        .select('id, name, scope, sort_order, default_start_time, default_end_time, default_breaks, hours_unrestricted, uses_site_hours')
         .eq('active', true).eq('account_id', accountId).order('sort_order').order('name'),
       // 現場×区分ごとの定時。行が無い組は「定時なし」
       svc.from('site_category_hours')
@@ -187,7 +187,7 @@ Deno.serve(async (req) => {
   //   読みも書きもここを通す（テーブル直叩きは通らない）。
   if (body.action === 'categories') {
     const { data, error } = await svc.from('work_categories')
-      .select('id, name, scope, sort_order, active, is_default, default_start_time, default_end_time, default_breaks, hours_unrestricted')
+      .select('id, name, scope, sort_order, active, is_default, default_start_time, default_end_time, default_breaks, hours_unrestricted, uses_site_hours')
       .eq('account_id', accountId).order('sort_order').order('name')
     if (error) { console.error('[master-data] categories failed:', error); return json({ ok: false, error: 'fetch_failed' }, 500) }
     return json({ ok: true, categories: data ?? [] })

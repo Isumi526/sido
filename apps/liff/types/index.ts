@@ -204,6 +204,7 @@ export interface MasterData {
     start?: string | null; end?: string | null
     breaks?: { start: string; minutes: number }[] | null
     unrestricted?: boolean
+    usesSiteHours?: boolean
   }[]
   // ★「現場id|区分id」→ 定時。定時は現場だけでも区分だけでも決まらないので組で持つ
   //  （事務は拠点で 08:30/08:00 と違う）。未収録＝その組に定時なし。
