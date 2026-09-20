@@ -18,7 +18,7 @@
       <section class="card">
         <h2 class="sec"><span class="num">2</span>残業の申請</h2>
         <ul class="rules">
-          <li>残業が発生する日は、<strong>当日の15:00までに残業申請</strong>を行ってください。</li>
+          <li>残業が発生する日は、<strong>当日の16:00までに残業申請</strong>を行ってください。</li>
           <li>メニューの<strong>「残業申請」</strong>から、希望の終了時刻と理由を入力して申請します。管理者が承認すると、その日だけ定時を超える終了時刻を入力できます。</li>
           <li>未申請の日は、<strong>定時（終了時刻）以降の入力ができません</strong>。</li>
         </ul>
