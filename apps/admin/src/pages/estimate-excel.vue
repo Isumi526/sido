@@ -113,7 +113,7 @@ async function submitAlias() {
 async function deleteAlias(a: NameAlias) {
   if (!confirm(`「${a.alias}」＝「${a.work_name}」の名寄せを取り消しますか？`)) return
   aliasBusy.value = true
-  try { await removeAlias(a.id); await loadPrices() } catch (e) { aliasMsg.value = (e as Error).message }
+  try { await removeAlias(accountId.value, a.id); await loadPrices() } catch (e) { aliasMsg.value = (e as Error).message }
   finally { aliasBusy.value = false }
 }
 

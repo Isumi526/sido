@@ -40,7 +40,8 @@ export async function addAlias(accountId: string, alias: string, workName: strin
   if (error) throw error
 }
 
-export async function removeAlias(id: string): Promise<void> {
-  const { error } = await supabase.from('estimate_name_aliases').delete().eq('id', id)
+export async function removeAlias(accountId: string, id: string): Promise<void> {
+  // ★RLS があっても account_id で絞る（他テナントの行に触れない・Gemini 指摘 2026-09-20）
+  const { error } = await supabase.from('estimate_name_aliases').delete().eq('id', id).eq('account_id', accountId)
   if (error) throw error
 }
