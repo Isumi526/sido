@@ -1,0 +1,196 @@
+# ============================================================
+#  本番DBの日次バックアップ（契約 別紙2 §10「日次で自動取得し30日保存」の実体）
+#
+#  なぜ自前か（2026-09-20 決定）: Supabase Pro の標準バックアップは 7日。PITR は
+#  月$100〜$400＋compute 昇格が前提で上限28日＝契約の30日に届かない。
+#  DB は 49MB（2026-09-20 実測）なので pg_dump 日次×30日でも Cloudflare R2 の無料枠（10GB）に収まる。
+#
+#  やること: pg_dump（custom形式・圧縮）→ 整合性検査（pg_restore --list）→ R2 へ保存
+#            → ライフサイクル（31日で自動削除）を毎回セット（冪等）→ 月1回は空のPostgresへ復元テスト。
+#  秘密: SUPABASE_PROD_DB_URL（pooler 経由・prod-health と同じ）／R2_ACCOUNT_ID／R2_BUCKET／
+#        R2_ACCESS_KEY_ID／R2_SECRET_ACCESS_KEY（バケット限定・オブジェクト読み書き）
+#  復元手順: docs/data-backup.md
+# ============================================================
+name: db-backup
+
+on:
+  schedule:
+    - cron: '0 18 * * *'        # 毎日 03:00 JST（深夜・書き込みが最も少ない時間帯）
+  workflow_dispatch:
+    inputs:
+      restore_test:
+        description: '復元テストも実行する（true/false）'
+        default: 'false'
+
+env:
+  PGVER: '17'                    # 本番は PostgreSQL 17.6。pg_dump はサーバ以上のメジャーが必要
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      key: ${{ steps.dump.outputs.key }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: secrets の有無を確認（無ければ測っていないことを明示して終了）
+        id: guard
+        env:
+          DB_URL: ${{ secrets.SUPABASE_PROD_DB_URL }}
+          AK: ${{ secrets.R2_ACCESS_KEY_ID }}
+          SK: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          ACC: ${{ secrets.R2_ACCOUNT_ID }}
+          BK: ${{ secrets.R2_BUCKET }}
+        run: |
+          missing=""
+          [ -z "$DB_URL" ] && missing="$missing SUPABASE_PROD_DB_URL"
+          [ -z "$AK" ] && missing="$missing R2_ACCESS_KEY_ID"
+          [ -z "$SK" ] && missing="$missing R2_SECRET_ACCESS_KEY"
+          [ -z "$ACC" ] && missing="$missing R2_ACCOUNT_ID"
+          [ -z "$BK" ] && missing="$missing R2_BUCKET"
+          if [ -n "$missing" ]; then echo "::error::未設定: $missing（バックアップは取れていない）"; exit 1; fi
+
+      - name: PostgreSQL ${{ env.PGVER }} クライアントを入れる（PGDG）
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-${PGVER}
+          pg_dump --version
+
+      - name: pg_dump（custom形式・圧縮・所有者/権限なし）
+        id: dump
+        env:
+          SUPABASE_PROD_DB_URL: ${{ secrets.SUPABASE_PROD_DB_URL }}
+        run: |
+          set -euo pipefail
+          ts=$(TZ=Asia/Tokyo date +%Y%m%d-%H%M)
+          key="sido-${ts}.dump"
+          # URL は argv に載せない（ps に出る）。PG の環境変数経由で渡す。
+          export PGCONNECT_TIMEOUT=20
+          pg_dump "$SUPABASE_PROD_DB_URL" -Fc -Z 6 --no-owner --no-privileges \
+            --schema=public --schema=auth --schema=storage \
+            -f "$key"
+          size=$(stat -c %s "$key")
+          echo "size=$size bytes"
+          # 空ダンプ・壊れたダンプを「成功」にしない
+          [ "$size" -gt 1000000 ] || { echo "::error::ダンプが小さすぎる（$size bytes）"; exit 1; }
+          pg_restore --list "$key" > toc.txt
+          tables=$(grep -c ' TABLE DATA ' toc.txt || true)
+          echo "table data entries=$tables"
+          [ "$tables" -gt 50 ] || { echo "::error::TABLE DATA が少なすぎる（$tables）"; exit 1; }
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+
+      - name: R2 へ保存（S3 互換 API）
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: 'true'
+          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          KEY: ${{ steps.dump.outputs.key }}
+        run: |
+          set -euo pipefail
+          aws s3 cp "$KEY" "s3://$R2_BUCKET/daily/$KEY" --endpoint-url "$R2_ENDPOINT" --only-show-errors
+          # 置けたことを別経路で確認（サイズ一致）
+          remote=$(aws s3api head-object --bucket "$R2_BUCKET" --key "daily/$KEY" --endpoint-url "$R2_ENDPOINT" --query ContentLength --output text)
+          local_size=$(stat -c %s "$KEY")
+          [ "$remote" = "$local_size" ] || { echo "::error::R2 上のサイズが一致しない（$remote != $local_size）"; exit 1; }
+          echo "saved: daily/$KEY ($remote bytes)"
+
+      - name: 保持期間（31日で自動削除）を毎回セット（冪等）
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: 'true'
+          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          set -euo pipefail
+          cat > lifecycle.json <<'JSON'
+          {"Rules":[{"ID":"expire-daily-31d","Status":"Enabled","Filter":{"Prefix":"daily/"},"Expiration":{"Days":31}}]}
+          JSON
+          if aws s3api put-bucket-lifecycle-configuration --bucket "$R2_BUCKET" --lifecycle-configuration file://lifecycle.json --endpoint-url "$R2_ENDPOINT"; then
+            echo "lifecycle set"
+          else
+            # トークンにライフサイクル権限が無い場合は自前で掃除する（31日超の daily/ を削除）
+            echo "::warning::lifecycle をセットできない（トークン権限）。自前で 31 日超を削除する"
+            cutoff=$(date -u -d '31 days ago' +%Y-%m-%dT%H:%M:%SZ)
+            aws s3api list-objects-v2 --bucket "$R2_BUCKET" --prefix daily/ --endpoint-url "$R2_ENDPOINT" \
+              --query "Contents[?LastModified<'$cutoff'].Key" --output text | tr '\t' '\n' | grep -v '^None$' | while read -r k; do
+                [ -n "$k" ] && aws s3 rm "s3://$R2_BUCKET/$k" --endpoint-url "$R2_ENDPOINT" --only-show-errors && echo "deleted $k"
+              done || true
+          fi
+          # 保持状況を出す（何日分あるか）
+          aws s3api list-objects-v2 --bucket "$R2_BUCKET" --prefix daily/ --endpoint-url "$R2_ENDPOINT" --query 'length(Contents)' --output text | sed 's/^/daily objects: /'
+
+      - name: 失敗を人に知らせる（LINE・best-effort）
+        if: failure()
+        env:
+          HUMANBALL_WEBHOOK_URL: ${{ secrets.HUMANBALL_WEBHOOK_URL }}
+          HUMANBALL_WEBHOOK_SECRET: ${{ secrets.HUMANBALL_WEBHOOK_SECRET }}
+          NOTIFY_PREFIX: '[sido]'
+        run: node scripts/notify-humanball.mjs --kind 要対応 --task "本番DBバックアップ失敗" --detail "db-backup が失敗。Actions のログを見て原因を潰す（契約の30日保存が途切れる）／推奨A=即対応" || true
+
+  # 月1回（1日）または手動で、空の Postgres に復元して読めることを確かめる。
+  # 「取れているが復元できない」バックアップを毎月見つける（第22条）。
+  restore-test:
+    needs: backup
+    if: always() && needs.backup.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      pg:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: restore
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - name: 今日が復元テストの日か（毎月1日 JST・または手動で restore_test=true）
+        id: when
+        env:
+          MANUAL: ${{ github.event.inputs.restore_test }}
+        run: |
+          d=$(TZ=Asia/Tokyo date +%d)
+          if [ "$MANUAL" = "true" ] || [ "$d" = "01" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; else echo "run=false" >> "$GITHUB_OUTPUT"; echo "復元テストは毎月1日（今日は $d 日）"; fi
+      - uses: actions/checkout@v4
+        if: steps.when.outputs.run == 'true'
+      - name: PostgreSQL 17 クライアント
+        if: steps.when.outputs.run == 'true'
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-17
+      - name: R2 から今日の分を取って復元
+        if: steps.when.outputs.run == 'true'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: 'true'
+          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          KEY: ${{ needs.backup.outputs.key }}
+          PGPASSWORD: restore
+        run: |
+          set -euo pipefail
+          aws s3 cp "s3://$R2_BUCKET/daily/$KEY" "$KEY" --endpoint-url "$R2_ENDPOINT" --only-show-errors
+          createdb -h localhost -U postgres restored
+          # Supabase 固有の拡張/ロールは素の Postgres に無いので、エラーを数えて閾値で判定する
+          pg_restore -h localhost -U postgres -d restored --no-owner --no-privileges --exit-on-error=false "$KEY" 2> restore.err || true
+          errs=$(grep -c '^pg_restore: error' restore.err || true)
+          echo "restore errors: $errs"
+          tables=$(psql -h localhost -U postgres -d restored -At -c "select count(*) from information_schema.tables where table_schema='public'")
+          rows=$(psql -h localhost -U postgres -d restored -At -c "select coalesce(sum(n_live_tup),0) from pg_stat_user_tables where schemaname='public'")
+          echo "public tables=$tables rows(estimate)=$rows"
+          [ "$tables" -gt 50 ] || { echo "::error::復元後の public テーブルが少なすぎる（$tables）"; head -50 restore.err; exit 1; }
+          # 主要テーブルが読めること
+          for t in accounts workers daily_reports sites settings; do
+            psql -h localhost -U postgres -d restored -At -c "select count(*) from public.$t" | sed "s/^/$t: /"
+          done
