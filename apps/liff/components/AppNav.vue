@@ -243,8 +243,8 @@ watch(open, (isOpen) => { if (isOpen) { refreshNotifBadge(); refreshPendingDocBa
 // ホーム画面(pages/index.vue)と共通のナビ項目定義（composables/useNavItems.ts）。
 // 表記・並び・表示条件(パスワード変更等)のズレを防ぐ（2026-07-10）。
 const { resolveRole, canApplyPersonalExpense } = useWorkerPermission()
-onMounted(() => { void resolveRole() })
-const { bySection } = useNavItems(() => authMode.value, () => canApplyPersonalExpense.value)
+onMounted(() => { void resolveRole(); void ensureLiffFeaturesLoaded() })
+const { bySection } = useNavItems(() => authMode.value, () => canApplyPersonalExpense.value, () => isLiffFeatureEnabled('inventory'))
 
 // 予定管理ナビの未読バッジ（#予定通知バッジ・2026-07-11）
 onMounted(() => { refreshNotifBadge(); refreshPendingDocBadge(); refreshUnsubmittedReportBadge() })

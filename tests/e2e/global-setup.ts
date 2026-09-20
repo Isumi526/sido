@@ -6,7 +6,7 @@
 //  ※ マスタ(Worker 01 等)・dev-user-id・通常日報は seed.sql が投入済み
 // ============================================================
 import { execSync, execFileSync } from 'node:child_process'
-import { SUPABASE_URL, ANON_KEY, ACCOUNT_SLUG, ADMIN_LOGIN_EMAIL, ADMIN_LOGIN_PASS, DB_URL, getAccountId, rest, restSrv, upsert, enableEstimateFeature } from './helpers'
+import { SUPABASE_URL, ANON_KEY, ACCOUNT_SLUG, ADMIN_LOGIN_EMAIL, ADMIN_LOGIN_PASS, DB_URL, getAccountId, rest, restSrv, upsert, enableEstimateFeature, enableInventoryFeature } from './helpers'
 
 export const DEV_LINE_ID = 'dev-user-id'
 // seed.sql と一致
@@ -345,4 +345,6 @@ export default async function globalSetup() {
   //  OFFを主題にするのは admin.estimate-feature-flag.spec.ts の1本だけ。
   //  前回の実行が途中で落ちてOFFのまま残っていても、ここで必ずONへ戻る。
   await enableEstimateFeature().catch(e => console.warn('[e2e] 見積フラグ seed 失敗:', String(e)))
+  // ★在庫（feature.inventory）は既定OFF（ベータ・2026-09-19）。在庫画面に到達する spec のために毎回ONにする。
+  await enableInventoryFeature().catch(e => console.warn('[e2e] 在庫フラグ seed 失敗:', String(e)))
 }

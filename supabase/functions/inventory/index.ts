@@ -12,8 +12,9 @@
 //
 //  action:
 //   items                                  → 有効な品目（id, name, unit, current_qty）
-//   move { itemId, qty, kind, siteId?, photoUrls?, note?, reportDate? }
-//        kind: 'in'(入荷 +qty) / 'out'(持出 −qty) / 'return'(引上げ +qty)
+//   move { itemId, qty, kind, siteId?, photoUrls?, note?, reportDate?, clientRequestId? }
+//        kind: 'return'(引上げ +qty・1番目) / 'out'(持出 −qty) / 'in'(入荷 +qty)
+//        clientRequestId = 再送のべき等キー（同じ値は二重に登録しない・2026-09-20）
 //        → inventory_move(...)（履歴＋現在庫を1トランザクションで）
 //   recent { limit? }                      → 自分の直近の登録（画面の履歴表示用）
 //  在庫②（2026-09-18）:
@@ -26,6 +27,7 @@
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveCaller } from '../_shared/caller-identity.ts'
+import { FEATURE_SETTING_KEYS, resolveFeatureFlags } from '../_shared/features-registry.gen.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -64,6 +66,15 @@ Deno.serve(async (req) => {
   )
   if (!caller || typeof caller !== 'object') return json({ ok: false, error: 'unauthorized' }, 401)
   const accountId = caller.accountId
+
+  // ── 在庫はベータ（「使う機能」feature.inventory・既定OFF・2026-09-19 レビュー決定）。
+  //  画面の導線を隠すだけだと URL 直打ち・古いバンドルから通るため、tools と同じく EF でも閉じる（fail-closed）。
+  {
+    const { data: rows } = await svc.from('settings').select('key, value').eq('account_id', accountId).in('key', FEATURE_SETTING_KEYS)
+    if (!resolveFeatureFlags((rows ?? []) as { key: string; value: string | null }[]).inventory) {
+      return json({ ok: false, error: 'feature_disabled' }, 403)
+    }
+  }
 
   if (body.action === 'items') {
     const { data, error } = await svc.from('inventory_items')
@@ -218,6 +229,8 @@ ${fewShot.length ? `\n# この会社での過去の訂正（同じ読み方を�
     if (!photoUrls.length) return json({ ok: false, error: 'photo_required' }, 400)
     const note = typeof body.note === 'string' ? body.note.trim().slice(0, 500) : ''
     const reportDate = typeof body.reportDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.reportDate) ? body.reportDate : null
+    // ★べき等キー（2026-09-19 Gemini 指摘）: 画面が1回の入力ごとに付ける UUID。同じキーの再送は inventory_move が登録せず現在庫を返す
+    const clientRequestId = typeof body.clientRequestId === 'string' && /^[0-9a-f-]{36}$/i.test(body.clientRequestId) ? body.clientRequestId : null
 
     // 品目・現場は自テナントのものだけ（関数内でも確認するが、分かりやすいエラーを返すためここでも）
     const { data: item } = await svc.from('inventory_items').select('id').eq('id', itemId).eq('account_id', accountId).eq('active', true).maybeSingle()
@@ -231,7 +244,7 @@ ${fewShot.length ? `\n# この会社での過去の訂正（同じ読み方を�
     const { data, error } = await svc.rpc('inventory_move', {
       p_item_id: itemId, p_delta: delta, p_note: note || null, p_kind: kind, p_site_id: siteId,
       p_photo_urls: photoUrls, p_created_by_worker_id: caller.workerId, p_created_by_name: caller.name,
-      p_report_date: reportDate,
+      p_report_date: reportDate, p_client_request_id: clientRequestId,
     })
     if (error) { console.error('[inventory] move failed:', error); return json({ ok: false, error: 'move_failed', detail: error.message }, 500) }
     return json({ ok: true, item: data })
