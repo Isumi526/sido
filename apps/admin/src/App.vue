@@ -100,7 +100,8 @@
         <li v-if="canViewManagementPages && isFeatureEnabled('inventory')"><RouterLink to="/inventory" class="nav-link"><span class="material-symbols-rounded nav-icon">warehouse</span>在庫管理</RouterLink></li>
         <li v-if="isFeatureEnabled('tools')"><RouterLink to="/tools" class="nav-link"><span class="material-symbols-rounded nav-icon">construction</span>道具管理</RouterLink></li>
         <li v-if="canViewEstimates"><RouterLink to="/estimate-masters" class="nav-link"><span class="material-symbols-rounded nav-icon">price_change</span>見積マスタ・単価表</RouterLink></li>
-        <li v-if="canViewEstimates"><RouterLink to="/estimate-excel" class="nav-link"><span class="material-symbols-rounded nav-icon">table_view</span>見積Excel連携<span class="nav-beta">β</span></RouterLink></li>
+        <!-- 見積Excel連携は会社ごとの個別対応（設計書 E-1・既定OFF・SEED=ON）。見積 ON かつ estimate_excel ON の会社にだけ出す -->
+        <li v-if="canViewEstimates && isFeatureEnabled('estimate_excel')"><RouterLink to="/estimate-excel" class="nav-link"><span class="material-symbols-rounded nav-icon">table_view</span>見積Excel連携<span class="nav-beta">β</span></RouterLink></li>
 
         <template v-if="canViewManagementPages">
           <li class="nav-section">管理・設定</li>

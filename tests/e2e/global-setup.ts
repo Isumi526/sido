@@ -6,7 +6,7 @@
 //  ※ マスタ(Worker 01 等)・dev-user-id・通常日報は seed.sql が投入済み
 // ============================================================
 import { execSync, execFileSync } from 'node:child_process'
-import { SUPABASE_URL, ANON_KEY, ACCOUNT_SLUG, ADMIN_LOGIN_EMAIL, ADMIN_LOGIN_PASS, DB_URL, getAccountId, rest, restSrv, upsert, enableEstimateFeature, enableInventoryFeature } from './helpers'
+import { SUPABASE_URL, ANON_KEY, ACCOUNT_SLUG, ADMIN_LOGIN_EMAIL, ADMIN_LOGIN_PASS, DB_URL, getAccountId, rest, restSrv, upsert, enableEstimateFeature, enableInventoryFeature, enableEstimateExcelFeature } from './helpers'
 
 export const DEV_LINE_ID = 'dev-user-id'
 // seed.sql と一致
@@ -347,4 +347,6 @@ export default async function globalSetup() {
   await enableEstimateFeature().catch(e => console.warn('[e2e] 見積フラグ seed 失敗:', String(e)))
   // ★在庫（feature.inventory）は既定OFF（ベータ・2026-09-19）。在庫画面に到達する spec のために毎回ONにする。
   await enableInventoryFeature().catch(e => console.warn('[e2e] 在庫フラグ seed 失敗:', String(e)))
+  // ★見積Excel連携（estimate_excel_enabled）は個別対応＝既定OFF（E-1）。admin.estimate-excel* spec のために毎回ONにする
+  await enableEstimateExcelFeature().catch(e => console.warn('[e2e] 見積Excelフラグ seed 失敗:', String(e)))
 }
