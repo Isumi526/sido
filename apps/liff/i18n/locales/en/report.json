@@ -226,5 +226,7 @@
   "distOverReasonPlaceholder": "e.g. stopped by the warehouse to pick up materials",
   "distOverReasonRequired": "Distance for \"{site}\" exceeds the default ({km} km). Please enter a reason.",
   "distOverPending": "Awaiting site manager approval (default distance is used until approved)",
-  "distOverRejected": "The previous request was rejected. Fix the distance or re-submit with a reason."
+  "distOverRejected": "The previous request was rejected. Fix the distance or re-submit with a reason.",
+  "vehicleSelectPlaceholder": "Select a vehicle",
+  "vehicleOther": "Other (type in)"
 }

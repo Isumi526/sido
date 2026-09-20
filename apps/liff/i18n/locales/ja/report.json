@@ -226,5 +226,7 @@
   "distOverReasonPlaceholder": "例: 資材の引き取りで倉庫に寄った",
   "distOverReasonRequired": "「{site}」の距離が既定（往復{km}km）を超えています。理由を入力してください。",
   "distOverPending": "現場管理者の承認待ちです（承認までは既定の距離で計上）",
-  "distOverRejected": "前回の申請は却下されました。距離を直すか、理由を書いて再申請してください。"
+  "distOverRejected": "前回の申請は却下されました。距離を直すか、理由を書いて再申請してください。",
+  "vehicleSelectPlaceholder": "車両を選択",
+  "vehicleOther": "その他（手入力）"
 }

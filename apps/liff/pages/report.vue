@@ -541,7 +541,14 @@
                       @click="report.removeVehicle(si, vi)"
                     >{{ $t('report.removeBtn') }}</button>
                   </div>
-                  <input v-model="veh.vehicleName" type="text" class="input" :placeholder="$t('report.vehicleNamePlaceholder')" @keydown.enter.prevent />
+                  <!-- 車両はマスタ（有効のみ）から選ぶ。vehicleId を持ち、vehicleName は表示スナップショット（2026-09-20）。
+                       マスタに無い車は「その他」で手入力（vehicleId=null） -->
+                  <select class="select" :value="vehicleSelectValue(veh)" :data-testid="`veh-select-${si}-${vi}`" @change="onVehicleSelect(veh, ($event.target as HTMLSelectElement).value)">
+                    <option value="">{{ $t('report.vehicleSelectPlaceholder') }}</option>
+                    <option v-for="v in master.vehicleList.value" :key="v.id" :value="v.id">{{ v.name }}</option>
+                    <option value="__other__">{{ $t('report.vehicleOther') }}</option>
+                  </select>
+                  <input v-if="vehicleSelectValue(veh) === '__other__'" v-model="veh.vehicleName" type="text" class="input mt4" :placeholder="$t('report.vehicleNamePlaceholder')" :data-testid="`veh-other-${si}-${vi}`" @keydown.enter.prevent />
                   <div class="expense-grid mt8">
                     <ExpenseField v-model="veh.distanceKm" :label="$t('report.gasoline')" />
                     <ExpenseField v-model="veh.dieselKm"   :label="$t('report.diesel')" />
@@ -2163,6 +2170,21 @@ function receiptItemLabel(it: any): string {
  *  入力欄ごと隠れているので、人は永久に直せなかった（2026-09-02 本番で発生）。
  *  そこで「どこか」を文言に出し、その欄を開いてスクロールするところまでやる。
  */
+// ── 車両欄: マスタからの選択（vehicleId）＋その他（手入力）──
+/** select に出す値。マスタの id があればそれ、名前だけ（旧データ/その他）なら '__other__'、空なら '' */
+function vehicleSelectValue(veh: any): string {
+  if (veh?.vehicleId && master.vehicleList.value.some(v => v.id === veh.vehicleId)) return veh.vehicleId
+  if (veh?.vehicleId === null && veh?.vehicleName !== undefined) return '__other__'
+  return veh?.vehicleName ? '__other__' : ''
+}
+function onVehicleSelect(veh: any, value: string) {
+  if (!value) { veh.vehicleId = undefined; veh.vehicleName = ''; return }
+  if (value === '__other__') { veh.vehicleId = null; if (master.vehicleList.value.some(v => v.name === veh.vehicleName)) veh.vehicleName = ''; return }
+  const v = master.vehicleList.value.find(x => x.id === value)
+  veh.vehicleId = value
+  veh.vehicleName = v?.name ?? veh.vehicleName   // 表示スナップショット
+}
+
 // ── 距離Step2: 既定距離超過の理由必須・保存形への正規化 ──
 /** その現場の既定距離(km)。現場マスタに設定が無ければ null（＝超過判定しない・申告どおり） */
 function siteDefaultKm(si: number): number | null {

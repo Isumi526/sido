@@ -56,6 +56,9 @@
 - `npm run typecheck`（apps/liff）／admin は `any` 型のため型では落ちないので**目視必須**
 - 本番反映前に、admin月次集計・ダッシュボード・現場別の**金額合計**が新旧データで合うか確認
 
+## vehicles[].vehicleId（車両マスタとの紐付け・2026-09-20）
+`sites[].expenses.vehicles[].vehicleId`（uuid・マスタに無い「その他」は null／旧データは欠落）。**`vehicleName` は表示スナップショットとして必ず残る**（現場の `site_id`＋`siteName` と同じ考え方）ので、flatten・PDF・通知・集計は従来どおり `vehicleName` を読めばよく変更不要。車両別集計を作る時は `vehicleId` を優先し、無いものは名前でフォールバックする。既存日報の後付けは `scripts/backfill-vehicle-id.mjs`（名称一致で解決できた分だけ・追加のみ）。
+
 ## vehicles[].overages（車両距離の既定値超過の申請・距離Step2・2026-09-20）
 `sites[].expenses.vehicles[].overages[distanceKm|dieselKm]` に `{ requestedKm, defaultKm, reason, status(pending|approved|rejected), requestedAt, decidedBy, decidedAt }`。
 **距離欄（distanceKm/dieselKm）は承認されるまで既定値のまま**＝flatten も按分も PDF も従来どおり距離欄だけを読めばよく、**消費箇所に変更は要らない**（未承認の超過分で金額が動かないための設計）。

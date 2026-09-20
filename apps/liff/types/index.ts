@@ -35,6 +35,8 @@ export interface SubcontractorEntry {
 
 export interface VehicleExpense {
   vehicleName?: string
+  // 車両マスタの id（2026-09-20）。vehicleName は表示スナップショット（現場の site_id と同じ考え方）。マスタに無い車（その他）は null
+  vehicleId?: string | null
   distanceKm?: number
   dieselKm?: number
   parkingYen?: number
@@ -171,6 +173,8 @@ export interface MasterData {
   workers: { id?: string; name: string; name_kana?: string | null; role: WorkerRole }[]  // 時給(unit_price)は liff に持たせない（作業員に他人の時給を渡さない・#4）
   subcontractors: string[]
   vehicles: string[]
+  // 車両マスタ（有効のみ・id 付き）。日報の車両欄の選択肢。無ければ vehicles（名前のみ）にフォールバック
+  vehicleList?: { id: string; name: string }[]
   // 現場名 → 紐づく元請け名（未紐付けは未収録）。日報の現場絞り込みに使う（任意・後方互換）。
   siteContractors?: Record<string, string>
   // 現場名 → 紐づく下請け業者名[]（未紐付けは未収録＝全件表示にフォールバック）。日報の業者プルダウン絞り込み用。
