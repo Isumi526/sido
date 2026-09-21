@@ -50,7 +50,7 @@
           <ul class="tools-list">
             <li v-for="t in siteTools" :key="t.id" class="tools-row" :data-testid="`site-tool-${t.id}`">
               <NuxtLink :to="`/tools/${t.id}`" class="tools-link">{{ t.name }}<span v-if="t.kind" class="tools-sub">（{{ t.kind }}）</span></NuxtLink>
-              <span class="tools-sub">{{ t.workers?.name ?? '—' }}・{{ daysSince(t.updated_at) }}</span>
+              <span class="tools-sub">{{ t.workers?.name ?? '—' }}・{{ daysSince(t.held_since ?? t.updated_at) }}</span>
             </li>
           </ul>
         </div>

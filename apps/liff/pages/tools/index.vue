@@ -13,7 +13,7 @@
           <ul v-else class="list">
             <li v-for="t in mine" :key="t.id" class="row" :data-testid="`my-tool-${t.id}`">
               <NuxtLink :to="`/tools/${t.id}`" class="row-link">{{ t.name }}<span v-if="t.kind" class="row-sub">（{{ t.kind }}）</span></NuxtLink>
-              <span class="row-sub">{{ t.sites?.name ?? '—' }}・{{ daysSince(t.updated_at) }}</span>
+              <span class="row-sub">{{ t.sites?.name ?? '—' }}・{{ daysSince(t.held_since ?? t.updated_at) }}</span>
             </li>
           </ul>
         </section>
@@ -23,7 +23,7 @@
           <ul v-else class="list">
             <li v-for="t in others" :key="t.id" class="row" :data-testid="`out-tool-${t.id}`">
               <NuxtLink :to="`/tools/${t.id}`" class="row-link">{{ t.name }}<span v-if="t.kind" class="row-sub">（{{ t.kind }}）</span></NuxtLink>
-              <span class="row-sub">{{ t.workers?.name ?? '—' }}・{{ t.sites?.name ?? '—' }}・{{ daysSince(t.updated_at) }}</span>
+              <span class="row-sub">{{ t.workers?.name ?? '—' }}・{{ t.sites?.name ?? '—' }}・{{ daysSince(t.held_since ?? t.updated_at) }}</span>
             </li>
           </ul>
         </section>

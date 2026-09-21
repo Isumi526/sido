@@ -157,7 +157,16 @@ Deno.serve(async (req) => {
     }
     const { data, error } = await q
     if (error) { console.error('[tools] out-tools failed:', error); return json({ ok: false, error: 'fetch_failed' }, 500) }
-    return json({ ok: true, tools: (data ?? []).map(flatTool) })
+    // ★held_since（2026-09-21 /review 道具③）: 「いつから」は tools.updated_at ではなく最後の持出/又貸しイベントの日時
+    //  （updated_at は admin が名前を直しただけでも動き、経過日数がリセットされて admin 一覧とズレる）。admin と同じ定義に揃える。
+    const ids = (data ?? []).map((t: any) => t.id)
+    const heldSince: Record<string, string> = {}
+    if (ids.length) {
+      const { data: ev } = await svc.from('tool_events').select('tool_id, created_at').eq('account_id', accountId)
+        .in('tool_id', ids).in('kind', ['checkout', 'transfer']).order('created_at', { ascending: false })
+      for (const e of (ev ?? []) as any[]) if (!heldSince[e.tool_id]) heldSince[e.tool_id] = e.created_at
+    }
+    return json({ ok: true, tools: (data ?? []).map((t: any) => ({ ...flatTool(t), held_since: heldSince[t.id] ?? t.updated_at })) })
   }
 
   if (action === 'checkout' || action === 'return') {

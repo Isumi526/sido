@@ -14,6 +14,8 @@ export type Tool = {
   id: string; name: string; kind: string | null; code: string | null; location_id: string | null; current_location_id?: string | null
   photo_url: string | null; status: 'available' | 'out' | 'lost' | 'broken' | 'retired'
   holder_worker_id: string | null; site_id: string | null; note: string | null; active: boolean; updated_at: string
+  /** 道具③: 持出中の「いつから」＝最後の持出/又貸しイベント（EF が付ける・admin と同じ定義）。無ければ updated_at */
+  held_since?: string
   tool_locations?: { base: string; name: string } | null
   current_location?: { base: string; name: string } | null
   workers?: { name: string } | null
