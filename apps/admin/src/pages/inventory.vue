@@ -311,13 +311,24 @@ async function addItem() {
   const name = form.name.trim()
   if (!name) return
   busy.value = true; err.value = ''
-  const { error } = await supabase.from('inventory_items').insert({
+  // ★2026-09-21 /review（在庫④）: 初期在庫を current_qty に直接書くと移動記録が無く残数一覧に出なかった。
+  //  品目は 0 で作り、初期在庫は「調整」の移動記録（inventory_move・拠点は「調整する拠点」）として残す。
+  const initQty = Number(form.qty) || 0
+  const { data: created, error } = await supabase.from('inventory_items').insert({
     account_id: accountId.value, name, unit: form.unit.trim() || null, code: form.code.trim() || null,
     category: form.category.trim() || null,   // 在庫②: 区分→詳細の第1段（LIFF の予測検索で絞る）
-    current_qty: Number(form.qty) || 0,
-  })
+    current_qty: 0,
+  }).select('id').single()
+  if (error) { busy.value = false; err.value = /duplicate|unique/i.test(error.message) ? `品目「${name}」は既に登録済みです` : error.message; return }
+  if (initQty !== 0 && created?.id) {
+    const { error: mvErr } = await supabase.rpc('inventory_move', {
+      p_item_id: created.id, p_delta: initQty, p_note: '初期在庫', p_kind: 'adjust',
+      p_site_id: null, p_photo_urls: [], p_created_by_worker_id: null, p_created_by_name: null,
+      p_report_date: null, p_client_request_id: null, p_base_site_id: adjustBase.value || null,
+    })
+    if (mvErr) { busy.value = false; err.value = `品目は作成しましたが初期在庫の記録に失敗: ${mvErr.message}`; await load(); return }
+  }
   busy.value = false
-  if (error) { err.value = /duplicate|unique/i.test(error.message) ? `品目「${name}」は既に登録済みです` : error.message; return }
   form.name = ''; form.unit = ''; form.code = ''; form.qty = null; form.category = ''
   await load()
 }
