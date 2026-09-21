@@ -202,7 +202,8 @@ ${fewShot.length ? `\n# この会社での過去の訂正（同じ読み方を�
 }`
     const gBody = {
       contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Data } }] }],
-      generationConfig: { temperature: 0, maxOutputTokens: 1024, responseMimeType: 'application/json' },
+      // ★thinkingBudget: 0 が無いと 2.5-flash の思考トークンが maxOutputTokens を食い潰し MAX_TOKENS で JSON が切れる（2026-09-21 /review で実測・他EFと同じ）
+      generationConfig: { temperature: 0, maxOutputTokens: 2048, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } },
     }
     let res: Response | null = null
     for (let attempt = 1; attempt <= 3; attempt++) {
