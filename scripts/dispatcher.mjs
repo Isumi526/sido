@@ -77,6 +77,7 @@ const P = (p) => ({
   risk: p.properties?.['リスク']?.select?.name ?? null,
   dodai: !!p.properties?.['土台']?.checkbox,
   epic: p.properties?.['エピック']?.select?.name ?? '(未分類)',
+  specIds: (p.properties?.['設計書']?.relation ?? []).map((r) => r.id),   // レビューは設計書単位に束ねる（2026-09-21）
   url: p.url,
   lastEdited: p.last_edited_time ?? null,   // v1: 「現statusに入った時刻」の近似
 })
@@ -148,7 +149,20 @@ async function main() {
     const leaf = review.filter((r) => !r.dodai); const newLeaf = newOf(leaf); const c = riskCounts(leaf)
     if ((leaf.length >= REVIEW_BATCH_THRESH || c.red >= 3 || maxAgeFlush) && newLeaf.length) {
       const why = (maxAgeFlush && leaf.length < REVIEW_BATCH_THRESH && c.red < 3) ? `（max-age flush: 最古${oldestH.toFixed(1)}h>${MAX_AGE_H}h）` : ''
-      notify('レビュー可', 'レビューバッチ', `レビュー可: 🔴${c.red}/🟡${c.yel}/🟢${c.grn}（土台以外${leaf.length}件・新規${newLeaf.length}）${why}。要対応ビューへ（各本文に🧪人力チェック手順）。`)
+      // ★設計書単位の内訳（/review は設計書×段階で見る）。設計書のタイトルは1回だけ引く
+      const specTitle = new Map()
+      for (const it of leaf) for (const id of it.specIds) if (!specTitle.has(id)) {
+        try {
+          const r = await fetch(`https://api.notion.com/v1/pages/${id}`, { headers: H })
+          const j = r.ok ? await r.json() : null
+          specTitle.set(id, (j?.properties?.['タイトル']?.title ?? []).map((t) => t.plain_text).join('') || '(無題)')
+        } catch { specTitle.set(id, '(読めない)') }
+      }
+      const bySpec = new Map(); let singles = 0
+      for (const it of leaf) { if (!it.specIds.length) { singles++; continue } for (const id of it.specIds) bySpec.set(id, (bySpec.get(id) ?? 0) + 1) }
+      const specText = [...bySpec.entries()].map(([id, n]) => `${specTitle.get(id)?.replace(/ 認識合わせ$/, '') ?? id}×${n}`).join('・')
+      const breakdown = (bySpec.size || singles) ? `｜設計書${bySpec.size}枚（${specText}）＋単発${singles}` : ''
+      notify('レビュー可', 'レビューバッチ', `レビュー可: 🔴${c.red}/🟡${c.yel}/🟢${c.grn}（土台以外${leaf.length}件・新規${newLeaf.length}）${breakdown}${why}。/review は設計書単位で（各本文に🧪人力チェック手順）。`)
       for (const it of newLeaf) { state.add(keyOf(it)); fired.push(keyOf(it)) }
     }
     // 3) エピックship（エピック単位・リスク内訳付き・新規分のみ）

@@ -76,7 +76,8 @@ const TARGET_STATUS = '要件定義済み'
 // 既定（/next 用・引数なし）: ステータス＝要件定義済み のみ（従来どおり・後方互換）。
 // 【仕様】案件名が未設定（空）のタスクは relation 一致しないため、どのプロジェクトでも拾わない（＝自然に除外）。
 const BOARD = process.argv.slice(2).includes('--board')
-const filter = BOARD
+const REVIEW = process.argv.slice(2).includes('--review')   // レビュー待ちを設計書単位に束ねて出す（/review §0）
+const filter = (BOARD || REVIEW)
   ? { property: PROJECT_PROP, relation: { contains: PROJECT_ID } }
   : {
       and: [
@@ -150,6 +151,76 @@ function printBoard(results) {
   }
 }
 
+// --review: レビュー待ちを「設計書×段階」に束ねる（/review の入口・2026-09-21）。
+//  ★なぜ設計書単位か: 同じ機能がチケットに分割されていると、同じ画面・同じ導線を何度もなぞることになる。
+//   設計書には §0 確認事項（仮置き）・§3 マトリクス・§4 動き があり、人が見るべきは
+//   「仮置きが正しかったか」「マトリクス通りに動くか」＝設計書1枚を通しで触る方が早い。
+//  段階の並びは spec-to-tickets が依存順に作る＝作成日順。設計書を持たない単発はエピック別に後ろへ。
+async function printReviewGroups(results) {
+  const H = { Authorization: `Bearer ${TOKEN}`, 'Notion-Version': '2022-06-28' }
+  const review = results.filter((p) => statusOf(p) === 'レビュー待ち')
+  const byCreated = (a, b) => (a.created_time || '').localeCompare(b.created_time || '')
+  const specs = new Map()   // specId → { title, status, review, url }
+  for (const p of review) for (const r of (p.properties?.['設計書']?.relation || [])) if (!specs.has(r.id)) {
+    try {
+      const res = await fetch(`https://api.notion.com/v1/pages/${r.id}`, { headers: H })
+      const j = res.ok ? await res.json() : null
+      specs.set(r.id, {
+        title: (j?.properties?.['タイトル']?.title || []).map((t) => t.plain_text).join('') || '(無題)',
+        status: j?.properties?.['ステータス']?.select?.name ?? '(読めない)',
+        review: j?.properties?.['レビュー']?.select?.name ?? '未',
+        url: j?.url ?? '',
+      })
+    } catch { specs.set(r.id, { title: '(読めない)', status: '(読めない)', review: '未', url: '' }) }
+  }
+  // 段階順: タイトルの「【在庫①】」「E-3」「R-2」等から段階番号を拾い、無ければ作成日順（spec-to-tickets は依存順に作る）
+  //  同じ設計書に系列が複数ある（在庫①〜④ と 道具①〜③）ので、系列（【在庫】/【道具】/E/R…）→番号 の順
+  const stageOf = (p) => {
+    const t = title(p)
+    const circ = t.match(/【?([^【】\s]*?)([①②③④⑤⑥⑦⑧⑨⑩])/)
+    if (circ) return { family: circ[1] || '', n: '①②③④⑤⑥⑦⑧⑨⑩'.indexOf(circ[2]) + 1 }
+    const m = t.match(/\b([A-Z])-(\d+)\b/)
+    if (m) return { family: m[1], n: Number(m[2]) }
+    return null
+  }
+  const byStage = (a, b) => {
+    const sa = stageOf(a), sb = stageOf(b)
+    if (sa && sb) return sa.family.localeCompare(sb.family, 'ja') || (sa.n - sb.n) || byCreated(a, b)
+    if (!!sa !== !!sb) return sa ? -1 : 1
+    return byCreated(a, b)
+  }
+  const grouped = new Map(); const single = []
+  for (const p of review.sort(byStage)) {
+    const rel = p.properties?.['設計書']?.relation || []
+    if (!rel.length) { single.push(p); continue }
+    for (const r of rel) { if (!grouped.has(r.id)) grouped.set(r.id, []); grouped.get(r.id).push(p) }
+  }
+  const line = (p) => {
+    const dodai = dodaiOf(p) ? '🧱' : ''
+    const tg = tagsOf(p)
+    return `  - [${priority(p) ?? '-'}/${riskOf(p) ?? '-'}${dodai}] ${title(p)}${tg.length ? ' 〔' + tg.join(',') + '〕' : ''}\n    ${p.url}`
+  }
+  console.log(`▶ 対象プロジェクト: ${PROJECT_NAME} — レビュー待ち ${review.length}件 を設計書単位に束ねた`)
+  console.log(`■ 設計書 ${grouped.size}枚 / 単発 ${single.length}件`)
+  let n = 0
+  for (const [id, arr] of grouped) {
+    const sp = specs.get(id)
+    n++
+    console.log(`\n## ${n}. 設計書「${sp.title}」（設計書ステータス: ${sp.status} / レビュー: ${sp.review}）— ${arr.length}件（段階順）`)
+    console.log(`   ${sp.url}`)
+    for (const p of arr) console.log(line(p))
+  }
+  if (single.length) {
+    const byEpic = new Map()
+    for (const p of single) { const e = p.properties?.['エピック']?.select?.name ?? '(未分類)'; if (!byEpic.has(e)) byEpic.set(e, []); byEpic.get(e).push(p) }
+    for (const [epic, arr] of byEpic) {
+      n++
+      console.log(`\n## ${n}. 単発（設計書なし）エピック「${epic}」— ${arr.length}件`)
+      for (const p of arr) console.log(line(p))
+    }
+  }
+}
+
 async function main() {
   // 旧 databases/query を試し、ダメなら data_sources/query にフォールバック
   let out = await paginate(queryDatabase)
@@ -164,6 +235,7 @@ async function main() {
 
   // --board: 全ステータスの盤面を出して終了（/run ステートマシン用）
   if (BOARD) { printBoard(out.results); return }
+  if (REVIEW) { await printReviewGroups(out.results); return }
 
   // ★T44 設計OK ゲート（2026-09-20）: 設計書 relation を持つ要件定義済みは、設計書のステータスが
   //   設計OK／チケット化済 になるまで Ready から外す（先方の回答待ちのものを /run が拾って推測実装しない）。

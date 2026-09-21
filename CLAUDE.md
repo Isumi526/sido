@@ -135,6 +135,9 @@ node --env-file=.env scripts/seed-staging-demo.mjs --clean   # 片付け
 ### 管理画面の新規ページは「共通の作り」に乗せる（/run の着地ゲート・2026-09-20）
 新しい `apps/admin/src/pages/*.vue` は **`docs/templates/admin-list-page.vue` をコピーして始める**：見出し横に `<HelpButton>`（使い方ナビ）、クラスは `apps/admin/src/style.css` の共通キット（page-header/hint/empty/filters/table…）かページの scoped に定義（定義の無いクラスを書かない）。**`npm run check:admin-pages`**（`scripts/check-admin-pages.mjs`）が機械で検査し、allowlist（`scripts/admin-pages.allowlist.json`＝既存の未対応・ratchet）に無いページの違反で落ちる。既存ページを直したら allowlist の行を消す。絵文字禁止（`npm run check:no-emoji`）と同型。
 
+### レビューは設計書×段階で（T45・2026-09-21）
+`node --env-file=.env scripts/next-target.mjs --review` — レビュー待ちを設計書 relation で束ね、段階順（【在庫①】/E-3 等 → 作成順）に出す。単発はエピック別に後ろ。/review はこれを入口にし、設計書の §0 仮置き・§3 マトリクスを見てから段階ごとに進め、終わったら設計書 §0 の「回答」「反映」と設計書DBの `レビュー`（未/一部/済）に書き戻す。人の手数は **ノールック（🟢）／👀読むだけ（証跡あり・仮置き無し・現物無し）／🖐手を動かす（仮置き／E2Eで固定できない現物／顧客向け文面）** の3段階。/run は📋に `レビュー区分:` と `段階:` を書く。
+
 ### 📋ダイジェストの鮮度チェック（/run 昇格直前・/review ナビ前）
 `node --env-file=.env scripts/check-digest-refs.mjs --page <NotionページID>` — 本文を再帰取得し、ファイル名/spec名の実在（❌で exit 1）、受け皿URLの無い「別チケット/Step2」先送り（⚠️）、「検証不可」の型（⚠️）を拾う。ルール本体は cc-pipeline `run/SKILL.md` §📋 1' と `review/SKILL.md` §1（2026-09-20）。
 
