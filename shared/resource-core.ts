@@ -102,3 +102,16 @@ export function overlapMessage(conflicts: { worker_name?: string | null; start_d
   const head = `既に${names}が予約しています（${conflicts.map((c) => c.start_date === c.end_date ? c.start_date : `${c.start_date}〜${c.end_date}`).slice(0, 3).join('、')}）。`
   return blocked ? `${head}同じ時間帯には予約できません。` : `${head}このまま保存すると重なった予約になります（同乗・引き継ぎの場合はそのまま保存できます）。`
 }
+
+/**
+ * 道具の「持出中 N日目」＝ JST暦日で持出当日を1日目とした通し日数（最小1）。
+ *  ★ now(nowMs) と 持出時刻(sinceIso) を **両方とも同じ JST 暦日** に落としてから日数差を取る。
+ *   片側だけ +9h すると経過時間が常に9h水増しされ、同じ暦日でも「2日目」と誤表示される
+ *   （2026-09-22 /explore で発覚。旧実装は now だけ +9h していた）。
+ */
+export function toolDaysOut(sinceIso: string, nowMs: number): number {
+  const jstMidnight = (ms: number) => { const d = new Date(ms + 9 * 3600 * 1000); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) }
+  const since = new Date(sinceIso).getTime()
+  if (Number.isNaN(since)) return 1
+  return Math.max(1, Math.floor((jstMidnight(nowMs) - jstMidnight(since)) / 86400000) + 1)
+}
