@@ -80,6 +80,34 @@ test('AC1/AC2/AC3★: 表記＝代表名を登録すると単価履歴が代表�
   await expect.poll(async () => (await workKinds(page)).has(RAW), { timeout: 10000 }).toBe(true)
 })
 
+// ★AC2 の後段（2026-09-22 /review E-3 で人が通した手順5を機械に移す）:
+//  見積作成（builder）の過去単価候補も同じ辞書を通る＝代表名で引くと「業者の表記」で入った単価も候補に出る。
+//  ここが抜けると「Excel は統合されたのに builder では業者Bの単価が出ない」という食い違いが起きる。
+test('AC2★: 見積作成の過去単価候補も名寄せを通る（代表名で引くと業者Bの表記の単価も出る）', async ({ page }) => {
+  await restSrv('estimate_name_aliases', {
+    method: 'POST', headers: { Prefer: 'return=minimal,resolution=merge-duplicates' },
+    body: JSON.stringify({ account_id: accountId, alias: RAW, work_name: CANON }),
+  })
+  await page.goto('/estimate-builder', { waitUntil: 'networkidle' })
+  const r = await page.evaluate(async ([canon]: string[]) => {
+    const [al, sb, ac] = await Promise.all([
+      import('/src/lib/estimateAliases.ts'), import('/src/lib/supabase.ts'), import('/src/lib/account.ts'),
+    ])
+    const accountId = await (ac as any).getAccountId()
+    const map = (al as any).aliasMapOf(await (al as any).loadAliases(accountId))
+    const { data } = await (sb as any).supabase.from('estimate_price_history')
+      .select('item_name, unit_price, subcontractor_name').eq('account_id', accountId).limit(200)
+    return (data ?? [])
+      .map((h: any) => ({ canon: (al as any).canonicalName(h.item_name, map), price: Number(h.unit_price), vendor: h.subcontractor_name }))
+      .filter((x: any) => x.canon === canon)
+      .map((x: any) => `${x.vendor}:${x.price}`)
+      .sort()
+  }, [CANON])
+  expect(r, '代表名で引くと A(3000) と B(3200) の両方が候補になる').toEqual(
+    [`E2E名寄A_${TS}:3000`, `E2E名寄B_${TS}:3200`].sort(),
+  )
+})
+
 /** 画面が持っている単価履歴の作業内容（名寄せ後）。テスト用に window へ露出せず、datalist の候補から読む */
 async function workKinds(page: import('@playwright/test').Page): Promise<Set<string>> {
   const values = await page.locator('#alias-work-names option').evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).value))
