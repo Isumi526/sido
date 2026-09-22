@@ -113,10 +113,12 @@ const SHARES = [
   },
   {
     // 車両・道具・部屋の予約（リソース予定）の純粋ロジック。admin/LIFF の予定管理タブで共有
+    //  ★EF(resource-reservations) も toolDaysOut（持出中 N日目）で使うため _shared にも置く
     src: 'shared/resource-core.ts',
     dests: [
       'apps/admin/src/lib/resource-core.gen.ts',
       'apps/liff/composables/resource-core.gen.ts',
+      'supabase/functions/_shared/resource-core.gen.ts',
     ],
   },
   {

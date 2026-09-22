@@ -22,6 +22,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveCaller } from '../_shared/caller-identity.ts'
 import { FEATURE_SETTING_KEYS, resolveFeatureFlags } from '../_shared/features-registry.gen.ts'
 import type { FeatureKey } from '../_shared/features-registry.gen.ts'
+import { toolDaysOut } from '../_shared/resource-core.gen.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -166,13 +167,13 @@ Deno.serve(async (req) => {
         const { data: ev } = await svc.from('tool_events').select('tool_id, created_at').eq('account_id', accountId).in('tool_id', outIds).in('kind', ['checkout', 'transfer']).order('created_at', { ascending: false })
         for (const e of (ev ?? []) as any[]) if (!since.has(e.tool_id)) since.set(e.tool_id, e.created_at)
       }
-      const today = new Date(Date.now() + 9 * 3600 * 1000)
+      const nowMs = Date.now()
       out = out.map((t: any) => {
         const { holder, site, ...rest } = t
         let now_label: string | null = null, now_kind: 'in_use' | 'broken' | null = null
         if (t.status === 'out') {
           const s = since.get(t.id) ?? t.updated_at
-          const days = s ? Math.max(1, Math.floor((today.getTime() - new Date(s).getTime()) / 86400000) + 1) : null
+          const days = s ? toolDaysOut(s, nowMs) : null
           now_label = ['持出中', holder?.name, site?.name, days ? `${days}日目` : null].filter(Boolean).join('・')
           now_kind = 'in_use'
         } else if (t.status === 'lost' || t.status === 'broken' || t.status === 'retired') {
