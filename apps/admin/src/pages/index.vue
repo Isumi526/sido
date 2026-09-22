@@ -166,6 +166,7 @@ import type { WageMode } from '../lib/workerHours'
 import { canViewWages, canViewHourlyWage, canViewManagementPages } from '../lib/auth'
 import { resolveSiteRef, type SiteResolveCtx } from '../lib/siteKey'
 import { netAmountOf, normalizeTaxMode } from '../lib/invoiceTax'
+import { buildVendorIndex } from '../lib/vendor-name.gen'
 
 // ── 開発の更新履歴（全社共通・未確認/確認済みタブ）──────────
 interface DevUpdate { id: string; title: string; link: string | null; created_at: string }
@@ -314,7 +315,8 @@ async function load() {
   const hourlyById   = Object.fromEntries((wm ?? []).map((w: any) => [w.id,   w.hourly_wage ?? 0]))
   const hourlyByName = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.hourly_wage ?? 0]))
   const idByName    = Object.fromEntries((wm ?? []).map((w: any) => [w.name, w.id]))
-  const subMaster   = Object.fromEntries((sm ?? []).map((s: any) => [s.name, { category: s.category, unitPrice: s.unit_price ?? 0 }]))
+  // 名寄せ索引で引く（site-reports.vue と同じ規則。表記ゆれで区分・単価が落ちないように）
+  const findSub = buildVendorIndex(((sm ?? []) as any[]).map((s: any) => ({ name: s.name as string, category: s.category, unitPrice: s.unit_price ?? 0 })))
 
   // 対象月の日報取得。月末は翌月1日の手前(.lt)で表す
   //（'${ym}-31' は6月/2月等で不正日付になり PostgREST が400を返すため）
@@ -390,7 +392,7 @@ async function load() {
 
       // 商社・業者費
       for (const s of (site.subcontractors ?? []).filter((s: any) => s.subcontractorName)) {
-        const m = subMaster[s.subcontractorName] ?? { category: null, unitPrice: 0 }
+        const m = findSub(s.subcontractorName) ?? { category: null, unitPrice: 0 }
         const cost = (s.count || 0) * (m.unitPrice || 0)
         if (m.category === '商社') shosha += cost
         else gyosha += cost
