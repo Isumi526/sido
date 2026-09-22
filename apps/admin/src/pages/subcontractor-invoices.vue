@@ -324,8 +324,18 @@
           <!-- 合計 -->
           <div class="totals">
             <span>税抜計 <span data-testid="net-total">{{ yen(netTotal) }}</span></span>
-            <span>消費税 <span data-testid="tax-total">{{ yen(taxTotal) }}</span></span>
+            <span class="tax-cell">消費税
+              <!-- ★請求書の記載どおりに手で直せる（尾崎さん要望 2026-09-22）。空＝計算値 -->
+              <input v-model.number="form.tax_override" type="number" class="inp tax-inp" :class="{ overridden: taxOverridden }"
+                     :placeholder="String(taxComputed)" data-testid="tax-override" title="請求書の消費税と違う時はここに請求書の金額を入れてください（空なら計算値）" />
+              <span data-testid="tax-total" class="tax-shown">{{ yen(taxTotal) }}</span>
+              <button v-if="taxOverridden" type="button" class="tax-reset" data-testid="tax-override-reset" @click="resetTaxOverride">計算値（{{ yen(taxComputed) }}）に戻す</button>
+              <span v-if="taxOverridden" class="tax-note" data-testid="tax-override-note">請求書どおりに修正</span>
+            </span>
             <span class="grand">税込 <span data-testid="gross-total">{{ yen(grossTotal) }}</span></span>
+          </div>
+          <div v-if="statedDiff !== null && statedDiff !== 0" class="tax-diff" data-testid="stated-diff">
+            請求書記載の金額（{{ yen(form.total_amount) }}）と税込（{{ yen(grossTotal) }}）が {{ yen(Math.abs(statedDiff)) }} 違います。端数処理の違いなら消費税を請求書どおりに直してください
           </div>
 
           <p v-if="formError" class="error">{{ formError }}</p>
@@ -396,7 +406,7 @@ import { getAccountId } from '../lib/account'
 import HelpButton from '../components/HelpButton.vue'
 import { logOperation } from '../lib/operationLog'
 import { openDoc } from '../lib/docUrl'
-import { normalizeTaxMode, sumAmount, taxTotalOf, netTotalOf, grossTotalOf } from '../lib/invoiceTax'
+import { normalizeTaxMode, sumAmount, taxTotalOf, netTotalOf, grossTotalOf, hasTaxOverride } from '../lib/invoiceTax'
 import { resolveDocUrl } from '../lib/docUrl'
 import JSZip from 'jszip'
 import { siteStatusesForScreen } from '../lib/site-status.gen'
@@ -419,7 +429,7 @@ interface Form {
   id?: string; vendor_kind: 'subcontractor' | 'other'; vendor_name: string; subcontractor_id: string | null; registration_number: string | null
   purchase_order_id: string | null
   title: string | null; invoice_no: string | null; invoice_date: string | null; due_date: string | null
-  transfer_date: string | null; paid: boolean; total_amount: number | null; pdf_path: string | null; note: string | null; tax_mode: 'exclusive' | 'inclusive'; items: Item[]
+  transfer_date: string | null; paid: boolean; total_amount: number | null; pdf_path: string | null; note: string | null; tax_mode: 'exclusive' | 'inclusive'; tax_override: number | null; items: Item[]
 }
 
 const todayStr = new Date().toISOString().slice(0, 10)
@@ -537,9 +547,19 @@ function recalc(it: Item) { it.amount = Math.round((Number(it.quantity) || 0) * 
 //  規則は lib/invoiceTax.ts に集約する（一覧側と別々に書いて食い違った経緯があるため）。
 const formTaxMode = computed(() => normalizeTaxMode(form.value?.tax_mode))
 const subtotal  = computed(() => sumAmount(form.value?.items))
-const taxTotal  = computed(() => taxTotalOf(form.value?.items, formTaxMode.value))
-const netTotal  = computed(() => netTotalOf(form.value?.items, formTaxMode.value))
-const grossTotal = computed(() => grossTotalOf(form.value?.items, formTaxMode.value))
+// ★消費税の手入力上書き（尾崎さん要望 2026-09-22）。null なら計算値。税込は税抜計＋消費税で自動。
+const taxOverridden = computed(() => hasTaxOverride(form.value?.tax_override))
+const taxComputed = computed(() => taxTotalOf(form.value?.items, formTaxMode.value))
+const taxTotal  = computed(() => taxTotalOf(form.value?.items, formTaxMode.value, form.value?.tax_override))
+const netTotal  = computed(() => netTotalOf(form.value?.items, formTaxMode.value, form.value?.tax_override))
+const grossTotal = computed(() => grossTotalOf(form.value?.items, formTaxMode.value, form.value?.tax_override))
+/** 「請求金額(請求書記載)」と画面の税込が食い違う時の差額（0 なら一致・記載が無ければ null） */
+const statedDiff = computed(() => {
+  const t = Number(form.value?.total_amount)
+  if (!(t > 0)) return null
+  return t - grossTotal.value
+})
+function resetTaxOverride() { if (form.value) form.value.tax_override = null }
 const taxModeFromAi = ref(false)
 
 // ── 現場×業者の絞り込み＋まとめてダウンロード ──
@@ -779,7 +799,7 @@ async function load() {
     const items = v.subcontractor_invoice_items ?? []
     // ★一覧の「請求金額(税込)」もモーダルと同じ規則を通す。内税の請求書に税を足すと
     //  同じ画面でモーダル110,000／一覧121,000と食い違う（2026-08-01 レビューNGの再発防止）。
-    const grand = grossTotalOf(items, normalizeTaxMode(v.tax_mode))
+    const grand = grossTotalOf(items, normalizeTaxMode(v.tax_mode), v.tax_override)
     return { ...v, item_count: items.length, grand_total: grand, _overdue: !v.paid && !!v.due_date && v.due_date < todayStr }
   })
   // 選択肢＝着工・完了の現場（請求は施工後に来る・2026-09-19 A-2 表示マトリクス #9）。
@@ -795,7 +815,7 @@ async function load() {
 
 function blankForm(): Form {
   const today = new Date().toISOString().slice(0, 10)
-  return { vendor_kind: 'subcontractor', vendor_name: '', subcontractor_id: null, purchase_order_id: null, registration_number: null, title: null, invoice_no: null, invoice_date: today, due_date: null, transfer_date: null, paid: false, total_amount: null, pdf_path: null, pdf_bucket: null, note: null, tax_mode: 'exclusive', items: [] }
+  return { vendor_kind: 'subcontractor', vendor_name: '', subcontractor_id: null, purchase_order_id: null, registration_number: null, title: null, invoice_no: null, invoice_date: today, due_date: null, transfer_date: null, paid: false, total_amount: null, pdf_path: null, pdf_bucket: null, note: null, tax_mode: 'exclusive', tax_override: null, items: [] }
 }
 // 開いた時点の内容スナップショット（変更有無の判定用）
 const formSnapshot = ref('')
@@ -825,6 +845,7 @@ async function openEdit(inv: any) {
     invoice_date: inv.invoice_date, due_date: inv.due_date, transfer_date: inv.transfer_date, paid: !!inv.paid,
     total_amount: inv.total_amount, pdf_path: inv.pdf_path, pdf_bucket: inv.pdf_bucket ?? null, note: inv.note,
     tax_mode: (inv as any).tax_mode === 'inclusive' ? 'inclusive' : 'exclusive',
+    tax_override: hasTaxOverride((inv as any).tax_override) ? Number((inv as any).tax_override) : null,
     items: (items ?? []).map((it: any) => ({ ...it })),
   }
   snapshot()
@@ -1207,6 +1228,7 @@ async function save() {
       due_date: f.due_date || null, transfer_date: f.transfer_date || null, paid: !!f.paid,
       total_amount: f.total_amount ?? null, pdf_path: f.pdf_path ?? null, note: f.note || null,
       tax_mode: f.tax_mode ?? 'exclusive',
+      tax_override: hasTaxOverride(f.tax_override) ? Math.round(Number(f.tax_override)) : null,
       updated_at: new Date().toISOString(),
     }
     let invoiceId = f.id
@@ -1425,6 +1447,14 @@ onMounted(load)
 .tax-mode-ai { font-size: 12px; color: #b45309; }
 .totals { display: flex; gap: 18px; justify-content: flex-end; margin: 14px 0; font-size: 14px; color: #555; }
 .totals .grand { font-weight: 800; color: #111; }
+/* 消費税の手入力上書き（2026-09-22）: 入力欄は計算値をプレースホルダに、上書き中は橙の枠と印 */
+.totals .tax-cell { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.totals .tax-inp { width: 110px; text-align: right; }
+.totals .tax-inp.overridden { border-color: #d97706; background: #fffbeb; }
+.totals .tax-shown { min-width: 0; }
+.totals .tax-note { color: #b45309; font-size: 12px; }
+.tax-reset { padding: 2px 8px; font-size: 12px; border: 1px solid #ccc; border-radius: 6px; background: #fff; cursor: pointer; }
+.tax-diff { text-align: right; color: #b45309; font-size: 13px; margin: -8px 0 12px; }
 .error { color: #c0392b; font-size: 13px; }
 .modal-actions { display: flex; align-items: center; gap: 10px; margin-top: 16px; }
 .btn-del { background: #fff; border: 1px solid #f5c0bb; color: #c0392b; border-radius: 8px; padding: 8px 16px; cursor: pointer; }

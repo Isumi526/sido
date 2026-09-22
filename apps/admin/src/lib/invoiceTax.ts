@@ -26,8 +26,20 @@ export function sumAmount(items: readonly TaxableItem[] | null | undefined): num
   return (items ?? []).reduce((s, it) => s + (Number(it.amount) || 0), 0)
 }
 
-/** 消費税額。inclusive は amount − amount/(1+rate) の合計（割り戻し）。 */
-export function taxTotalOf(items: readonly TaxableItem[] | null | undefined, mode: TaxMode): number {
+/** 手入力の上書き（tax_override）が有効な数値か。null/空/NaN は「上書きなし」。 */
+export function hasTaxOverride(override: unknown): override is number | string {
+  if (override === null || override === undefined || override === '') return false
+  return Number.isFinite(Number(override))
+}
+
+/**
+ * 消費税額。inclusive は amount − amount/(1+rate) の合計（割り戻し）。
+ * override（subcontractor_invoices.tax_override）があればそれを優先する。
+ * ★2026-09-22 尾崎さん要望: 明細を合算して1回四捨五入する規則だと、切り捨て等で計算された
+ *   請求書と ¥1〜数円ズレる。請求書の記載を正として消費税だけ手で直せるようにした。
+ */
+export function taxTotalOf(items: readonly TaxableItem[] | null | undefined, mode: TaxMode, override?: unknown): number {
+  if (hasTaxOverride(override)) return Math.round(Number(override))
   const list = items ?? []
   if (mode === 'inclusive') {
     return Math.round(list.reduce((s, it) => {
@@ -40,9 +52,9 @@ export function taxTotalOf(items: readonly TaxableItem[] | null | undefined, mod
 }
 
 /** 税抜計。inclusive は割り戻した額、exclusive は amount の合計そのもの。 */
-export function netTotalOf(items: readonly TaxableItem[] | null | undefined, mode: TaxMode): number {
+export function netTotalOf(items: readonly TaxableItem[] | null | undefined, mode: TaxMode, override?: unknown): number {
   const sub = sumAmount(items)
-  return mode === 'inclusive' ? sub - taxTotalOf(items, mode) : sub
+  return mode === 'inclusive' ? sub - taxTotalOf(items, mode, override) : sub
 }
 
 /**
@@ -59,8 +71,8 @@ export function netAmountOf(item: TaxableItem, mode: TaxMode): number {
   return rate > 0 ? amt / (1 + rate) : amt
 }
 
-/** 税込計。inclusive は amount の合計がそのまま税込。一覧の「請求金額(税込)」もこれ。 */
-export function grossTotalOf(items: readonly TaxableItem[] | null | undefined, mode: TaxMode): number {
+/** 税込計。inclusive は amount の合計がそのまま税込（上書きは税抜/消費税の内訳だけ動かす）。一覧の「請求金額(税込)」もこれ。 */
+export function grossTotalOf(items: readonly TaxableItem[] | null | undefined, mode: TaxMode, override?: unknown): number {
   const sub = sumAmount(items)
-  return mode === 'inclusive' ? sub : sub + taxTotalOf(items, mode)
+  return mode === 'inclusive' ? sub : sub + taxTotalOf(items, mode, override)
 }

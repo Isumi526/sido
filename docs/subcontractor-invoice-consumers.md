@@ -26,6 +26,7 @@
 | `apps/admin/src/pages/subcontractor-invoices.vue`（モーダル） | 税抜計／消費税／税込 | `netTotalOf` / `taxTotalOf` / `grossTotalOf` |
 | `apps/admin/src/pages/subcontractor-invoices.vue`（注文書の残額） | 注文書の税込額と突き合わせ | 税込（`grossTotal`）で比較 |
 | `supabase/functions/subcontractor-portal` | 請求を作る側。**常に `tax_mode='inclusive'`＋`tax_rate=10`**（業者には税込で提示しているため） | 書き込み側 |
+| `subcontractor_invoices.tax_override`（2026-09-22） | 消費税の手入力上書き（請求書の記載どおりに）。NULL=計算値 | `taxTotalOf/netTotalOf/grossTotalOf(items, mode, override)` の第3引数。**税込を出す所は必ず渡す**（一覧・モーダル・注文書残額）。税抜の原価（`netAmountOf`）は行単位なので影響なし |
 | `supabase/functions/analyze-invoice` | PDFから `tax_mode` を推定して返す（DBには書かない） | 判定側 |
 
 ## 区分（商社/業者）の分岐
