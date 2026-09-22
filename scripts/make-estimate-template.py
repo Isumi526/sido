@@ -127,9 +127,24 @@ def add_sheets(wb):
     return len(LOCATIONS) + len(TRADES)
 
 
+def drop_existing_validations(ws, cols):
+    """★冪等化（2026-09-22 /review E-2）: 準備済みテンプレに再実行すると同じ入力規則が二重に付き、
+    Excel が「修復しました（データの入力規則）」を出す生成物になっていた（v1 を入力にして実測）。
+    これから足す列の既存規則を先に落としてから足す。cols は列文字の集合（例 {'B','AA','AB'}）。"""
+    import re as _re
+    keep = []
+    for dv in list(ws.data_validations.dataValidation):
+        hits = {m.group(1) for m in _re.finditer(r'([A-Z]+)\d+', str(dv.sqref) or '')}
+        if hits and hits <= cols:
+            continue          # これから同じ列に足すので捨てる
+        keep.append(dv)
+    ws.data_validations.dataValidation = keep
+
+
 def add_validations(wb):
     ws = wb[MAIN_SHEET]
     S, K = quote_sheetname('単価表'), quote_sheetname('候補表')
+    drop_existing_validations(ws, {'B', 'AA', 'AB', VENDOR_COL_LETTER})
 
     # ★名称：埋まっている行数ぶんだけを指す。空白を含むと入力補完が効かない。
     name_src = f'=OFFSET({K}!$A$2,0,0,MAX(1,COUNTA({K}!$A$2:$A${MAX})),1)'
