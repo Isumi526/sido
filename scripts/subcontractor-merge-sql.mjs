@@ -11,7 +11,8 @@
 //      ★破壊的（請求実績の帰属先が変わる）＝人がバックアップを取って SQL エディタで実行する。CC は実行しない。
 //
 //  使い方:
-//    node scripts/subcontractor-merge-sql.mjs --slug sido [--db "$SUPABASE_PROD_DB_URL"] [--out <dir>]
+//    node scripts/subcontractor-merge-sql.mjs --slug sido [--db "$SUPABASE_PROD_DB_URL"] [--out <dir>] [--exclude "社名A,社名B"]
+//    --exclude … そのグループを 02-merge から外す（同一社か確定できない組。改名 01 には残る）
 //  既定: --db は .env の SUPABASE_PROD_DB_URL（読み取りだけ）、--out は $TMPDIR/subcontractor-merge-<slug>/
 //  ★出力には顧客の取引先名が含まれる。リポジトリ（public）にコミットしないこと。
 // ============================================================
@@ -28,6 +29,8 @@ const envOf = (k) => (envText.match(new RegExp(`^${k}=(.*)$`, 'm'))?.[1] ?? '').
 const DB = typeof args.db === 'string' ? args.db : envOf('SUPABASE_PROD_DB_URL')
 const SLUG = typeof args.slug === 'string' ? args.slug : 'sido'
 const OUT = typeof args.out === 'string' ? args.out : resolve(tmpdir(), `subcontractor-merge-${SLUG}`)
+// ★統合から外すグループ（同一社と確定できない組・カンマ区切りで「そのグループに含まれる社名のどれか」を指定）
+const EXCLUDE = (typeof args.exclude === 'string' ? args.exclude : '').split(',').map(x => x.trim()).filter(Boolean)
 if (!DB) { console.error('✗ DB 接続先がありません（--db か .env の SUPABASE_PROD_DB_URL）'); process.exit(1) }
 
 // ── shared/vendor-name.ts と同じ規則（scripts から .ts を import しない前例に合わせて複製・変えたら両方直す）──
@@ -77,6 +80,15 @@ const plans = dupGroups.map(g => {
   return { key: normalizeVendorName(canon.name), target, canon, dups: withRefs.filter(s => s.id !== canon.id), review: cores.size > 1 ? [...cores].join(' / ') : null }
 })
 
+// ★--exclude で指定された社名を含むグループは統合しない（改名だけ残す）。理由は 00-summary に書く
+const excluded = []
+const mergePlans = plans.filter(p => {
+  const names = [p.canon.name, ...p.dups.map(d => d.name)]
+  const hit = EXCLUDE.find(e => names.some(n => n.includes(e) || e.includes(n)))
+  if (hit) { excluded.push({ target: p.target, names, by: hit }); return false }
+  return true
+})
+
 // ── 01 rename（重複グループの寄せ先も含め、全社 ㈱ 表記へ）──
 const dupIds = new Set(plans.flatMap(p => p.dups.map(d => d.id)))
 const renames = []
@@ -97,10 +109,10 @@ writeFileSync(resolve(OUT, '01-rename.sql'), [
 writeFileSync(resolve(OUT, '91-reverse-rename.sql'), ['begin;', ...renames.map(r => `update subcontractors set name=${lit(r.from)} where id=${lit(r.id)} and name=${lit(r.to)};`), 'commit;', ''].join('\n'))
 
 // ── 02 merge（FK 付け替え＋寄せた側を無効化）。戻し用に「動かす行の id」を今の値で控える ──
-const merge = [`-- 協力業者の重複を統合（account=${SLUG}・${plans.length}組・生成 ${new Date().toISOString()}）`,
+const merge = [`-- 協力業者の重複を統合（account=${SLUG}・${mergePlans.length}組・生成 ${new Date().toISOString()}）`,
   `-- ★破壊的（請求実績の帰属先が変わる）。事前バックアップ → SQL エディタで実行 → 検算。戻しは 92-reverse-merge.sql`, 'begin;']
 const reverse = ['begin;']
-for (const p of plans) {
+for (const p of mergePlans) {
   merge.push(`\n-- ${p.target} ← ${p.dups.map(d => `${d.name}(参照${d.refs})`).join(', ')}  ／ 寄せ先 ${p.canon.name}(参照${p.canon.refs}) id=${p.canon.id}`)
   for (const d of p.dups) {
     for (const f of FKS) {
@@ -130,15 +142,17 @@ writeFileSync(resolve(OUT, '92-reverse-merge.sql'), reverse.join('\n'))
 writeFileSync(resolve(OUT, '03-verify.sql'), [
   `-- 適用後の検算: 重複キーが残っていない／参照が寄せ先に集まっている`,
   `select count(*) as active_total from subcontractors where account_id=${lit(acct.id)} and active;`,
-  ...plans.map(p => `select ${lit(p.target)} as target, (select count(*) from subcontractor_invoices where subcontractor_id=${lit(p.canon.id)}) as invoices, (select active from subcontractors where id=${lit(p.canon.id)}) as active;`), ''].join('\n'))
+  ...mergePlans.map(p => `select ${lit(p.target)} as target, (select count(*) from subcontractor_invoices where subcontractor_id=${lit(p.canon.id)}) as invoices, (select active from subcontractors where id=${lit(p.canon.id)}) as active;`), ''].join('\n'))
 
 // ── 要約（人が読む）──
 const summary = [
   `# 協力業者 統合プラン（account=${SLUG}・${new Date().toISOString().slice(0, 10)}）`,
-  `- 全社数 ${subs.length}（active ${subs.filter(s => s.active).length}）／ ㈱㈲ への改名 ${renames.length}件 ／ 重複グループ ${plans.length}組（寄せる側 ${dupIds.size}件）`,
+  `- 全社数 ${subs.length}（active ${subs.filter(s => s.active).length}）／ ㈱㈲ への改名 ${renames.length}件 ／ 重複グループ ${plans.length}組（うち統合する ${mergePlans.length}組・外した ${excluded.length}組）`,
   clash.length ? `- ⚠ 改名先が既存の別社名と衝突: ${clash.map(c => `${c.from}→${c.to}`).join(', ')}（要確認）` : '- 改名の衝突なし',
   '', '## 重複グループ（寄せ先 ← 寄せる側・参照数）',
-  ...plans.map(p => `- **${p.target}** ← 寄せ先 ${p.canon.name}(${p.canon.refs}) / ${p.dups.map(d => `${d.name}(${d.refs})`).join(' / ')}${p.review ? `  ⚠要確認（表記が法人格以外でも違う: ${p.review}）` : ''}`),
+  ...mergePlans.map(p => `- **${p.target}** ← 寄せ先 ${p.canon.name}(${p.canon.refs}) / ${p.dups.map(d => `${d.name}(${d.refs})`).join(' / ')}${p.review ? `  ⚠要確認（表記が法人格以外でも違う: ${p.review}）` : ''}`),
+  ...(excluded.length ? ['', '## 統合から外した組（同一社と確定できないもの・改名だけ行う）',
+    ...excluded.map(e => `- ${e.names.join(' / ')}  ← --exclude "${e.by}" で除外`)] : []),
   '', '## 参照する表（FK）', ...FKS.map(f => `- ${f.tbl}.${f.col}`), '',
   `出力: ${OUT}`, '']
 writeFileSync(resolve(OUT, '00-summary.md'), summary.join('\n'))
