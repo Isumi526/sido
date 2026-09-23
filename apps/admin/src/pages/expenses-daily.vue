@@ -52,7 +52,7 @@
             <tbody>
               <tr v-for="(r, i) in grp.rows" :key="i">
                 <td>{{ r.workerName || '—' }}</td>
-                <td class="muted">{{ r.siteName || (r.officeName ? `${r.officeName}（現場外）` : '拠点未設定（現場外）') }}</td>
+                <td class="muted">{{ r.siteName || (r.officeName ? `${r.officeName}（現場外）` : '拠点未設定（現場外）') }}<span v-if="r.personalExpenseKind === 'business'" class="kind-badge" title="業務経費（枠を消費しない）" data-testid="daily-kind-business">業務</span></td>
                 <td>{{ expenseAccountCategory(r) }}</td>
                 <td class="muted">{{ r.note || '—' }}</td>
                 <td class="muted">{{ r.payee || '—' }}</td>
@@ -112,7 +112,7 @@ async function load() {
       .order('date', { ascending: true }).limit(5000),
     // 現場に紐付かない個人経費（日報を出さない役員等の分。日報とは独立に引く）
     supabase.from('personal_expenses')
-      .select('id, worker_id, date, account_category, amount, payee, registration_number, companions, note, file_urls, tategae, site_id, site_name, workers(name)')
+      .select('id, worker_id, date, account_category, amount, payee, registration_number, companions, note, file_urls, tategae, expense_kind, site_id, site_name, workers(name)')
       .eq('account_id', accountId)
       .gte('date', dateFrom.value).lte('date', dateTo.value)
       .order('date', { ascending: true }).limit(5000),
@@ -226,4 +226,5 @@ const byDate = computed(() => {
 .muted { color: #777; }
 .tategae-tag { background: #fff3e0; color: #b8741a; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 4px; }
 .empty { color: #aaa; text-align: center; padding: 32px; }
+.kind-badge { margin-left: 4px; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: #eff6ff; color: #1d4ed8; }
 </style>

@@ -24,6 +24,7 @@ MODE=ro
 case "${1:-}" in
   --ro) MODE=ro; shift;;
   --rw) MODE=rw; shift;;
+  --dump) MODE=dump; shift;;
 esac
 [ $# -eq 0 ] && { echo "usage: prod-psql.sh [--ro|--rw] <psql args…>  (既定 --ro)" >&2; exit 2; }
 
@@ -32,9 +33,15 @@ URL="$(grep -E '^SUPABASE_PROD_DB_URL=' "$ROOT/.env" 2>/dev/null | head -1 | cut
 [ -z "$URL" ] && { echo "SUPABASE_PROD_DB_URL が .env に無い" >&2; exit 1; }
 case "$URL" in postgres*://*) : ;; *) echo "SUPABASE_PROD_DB_URL の形式が不正" >&2; exit 1;; esac
 
-# URL は環境変数（PGSERVICEFILE 等と違い psql が直接読む形）で渡し、argv には出さない
+# URL は環境変数のまま渡し、argv には出さない
 export PGURL="$URL"
-if [ "$MODE" = ro ]; then
+if [ "$MODE" = dump ]; then
+  # ★適用前バックアップ（2026-09-22）: R2 への日次バックアップが落ちている時でも手元で1本取れるように。
+  #  読み取りのみ。出力先は引数で受ける（例: --dump /path/sido.dump）
+  OUTF="${1:?--dump の後に出力先パスを渡してください}"
+  pg_dump "$PGURL" -Fc -Z6 -f "$OUTF" && pg_restore --list "$OUTF" > "$OUTF.toc" \
+    && echo "dump ok: $OUTF ($(wc -c < "$OUTF") bytes / TOC $(wc -l < "$OUTF.toc") 行)"
+elif [ "$MODE" = ro ]; then
   PGOPTIONS='-c default_transaction_read_only=on' psql "$PGURL" -v ON_ERROR_STOP=1 "$@"
 else
   echo "[prod-psql] 書き込みモード（--rw）で実行します" >&2

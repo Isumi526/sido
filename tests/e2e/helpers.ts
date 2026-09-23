@@ -199,6 +199,29 @@ export async function disableEstimateFeature(): Promise<void> {
   await restSrv(`settings?account_id=eq.${accountId}&key=eq.${FEATURE_KEY_ESTIMATE}`, { method: 'DELETE' })
 }
 
+/**
+ * 「使う機能」（settings.feature.* ・2026-09-19 B-0）の汎用セッター。
+ *  value=null は行を消す（＝登録簿の既定値に戻る）。
+ *  ★在庫（feature.inventory）は既定OFF（ベータ）。在庫画面に到達する spec（admin.inventory / liff.inventory*）が
+ *   通るよう global-setup が毎回ONにする。OFFを主題にする spec は必ず true へ戻すこと（見積フラグと同じ落とし穴）。
+ */
+export async function setFeatureFlag(settingKey: string, value: boolean | null): Promise<void> {
+  const accountId = await getAccountId()
+  if (value === null) {
+    await restSrv(`settings?account_id=eq.${accountId}&key=eq.${encodeURIComponent(settingKey)}`, { method: 'DELETE' }).catch(() => {})
+    return
+  }
+  await restSrv('settings', {
+    method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({ account_id: accountId, key: settingKey, value: String(value), label: 'E2E' }),
+  })
+}
+export const FEATURE_KEY_INVENTORY = 'feature.inventory'
+export async function enableInventoryFeature(): Promise<void> { await setFeatureFlag(FEATURE_KEY_INVENTORY, true) }
+/** 見積Excel連携（個別対応・既定OFF・E-1）。admin.estimate-excel* spec のために global-setup が ON にする */
+export const FEATURE_KEY_ESTIMATE_EXCEL = 'estimate_excel_enabled'
+export async function enableEstimateExcelFeature(): Promise<void> { await setFeatureFlag(FEATURE_KEY_ESTIMATE_EXCEL, true) }
+
 // 現場マスタの責任者候補（現場管理者以上=admin/office/site_manager）のキャッシュ。
 // 複数specがそれぞれ専用ワーカーを作ると無駄に増えるため、プロセス内で使い回す。
 let _respWorkerId: string | null | undefined

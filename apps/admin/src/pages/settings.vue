@@ -78,19 +78,40 @@
         </button>
       </div>
       <div class="reminder-desc">
-        OFFにするとメニュー・予定管理のタブ・作業員アプリの導線が隠れます（データは消えません。ONに戻せば元どおり）。
+        OFFにするとメニュー・スケジュール管理のタブ・作業員アプリの導線が隠れます（データは消えません。ONに戻せば元どおり）。
         切り替えたあとは各画面を再読み込みしてください。{{ canManageAuth ? '' : '切り替えはオーナーのみ行えます。' }}
       </div>
       <p v-if="featureError" class="error" data-testid="estimate-feature-error">{{ featureError }}</p>
     </div>
   </div>
 
+  <!-- 在庫③（2026-09-20）: AI候補の確認役。既定＝申請者本人がその場で確定（要回答9=C）。
+       「事務側」にすると作業員は写真＋数量だけで送り、在庫管理の未確認一覧で事務側が品目を確定してから残数に反映される。
+       在庫管理（ベータ）が ON の会社にだけ出す。 -->
+  <div v-if="features.inventory" class="reminder-box" data-testid="inventory-confirm-box">
+    <div class="reminder-title">資材の在庫：品目の確認役</div>
+    <div class="reminder-config">
+      <div class="config-row">
+        <span class="config-label">作業員アプリで送られた在庫の品目を確定する人</span>
+        <select v-model="inventoryConfirmRole" class="input-inline" :disabled="inventoryConfirmSaving" data-testid="inventory-confirm-role" @change="setInventoryConfirmRole(inventoryConfirmRole)">
+          <option value="self">申請者本人（その場で確定）</option>
+          <option value="office">事務側（後で確定）</option>
+        </select>
+      </div>
+      <div class="reminder-desc">
+        「申請者本人」は作業員が品目を選んだ時点で残数に反映されます。「事務側」にすると作業員は写真と数量だけで送れ、
+        在庫管理の「未確認一覧」で事務側が品目を確定してから残数に反映されます（差し戻しもできます）。
+        未確認のまま7日を超えたものはダッシュボードに件数が出ます。
+      </div>
+    </div>
+  </div>
+
   <!-- 予定管理の独自の種類（B-3・2026-09-19）: 重機・プロジェクター・駐車場など、車両・道具・会議室以外の予約対象。
        追加すると予定管理（管理画面・作業員アプリ）にタブが増え、台帳（名前・メモ）はそのタブの「○○を管理」から。 -->
   <div class="reminder-box" data-testid="custom-types-box">
-    <div class="reminder-title">予定管理の独自の種類</div>
+    <div class="reminder-title">スケジュール管理の独自の種類</div>
     <div class="reminder-config">
-      <div class="reminder-desc">車両・道具・会議室のほかに予約したいもの（例：重機、プロジェクター、駐車場）を追加できます。追加すると予定管理にタブが増えます。対象（1台ずつ）はそのタブの「○○を管理」から登録します。</div>
+      <div class="reminder-desc">車両・道具・会議室のほかに予約したいもの（例：重機、プロジェクター、駐車場）を追加できます。追加するとスケジュール管理にタブが増えます。対象（1台ずつ）はそのタブの「○○を管理」から登録します。</div>
       <div v-for="t in customTypes" :key="t.id" class="config-row feature-row" :data-testid="`custom-type-row-${t.id}`">
         <div class="feature-main">
           <input v-model="t.name" class="input-inline" :disabled="!canManageAuth" @change="saveCustomType(t)" />
@@ -153,6 +174,36 @@
       <div class="reminder-desc">
         ONの時、承認が必要な申請（日報の修正・期限後の提出・有給の残不足・残業申請）が出された時に、
         会社の管理者（オーナー・admin）と対象現場の責任者へ即時にメールを送ります。申請者本人には送りません。
+      </div>
+    </div>
+  </div>
+
+  <!-- スケジュール管理の通知メール（予定の作成・変更・削除＋前日リマインド）ON/OFF・2026-09-20 -->
+  <div class="reminder-box" data-testid="schedule-mail-box">
+    <div class="reminder-title">スケジュール管理の通知メール</div>
+    <div class="reminder-config">
+      <div class="config-row">
+        <span class="config-label">予定の作成・変更・削除と前日リマインドをメールで送る</span>
+        <button
+          class="toggle"
+          :class="{ on: scheduleMailEnabled }"
+          :disabled="scheduleMailSaving"
+          data-testid="schedule-mail-toggle"
+          @click="setScheduleMailEnabled(!scheduleMailEnabled)"
+        >
+          <span class="toggle-knob" />
+          <span class="toggle-text">{{ scheduleMailEnabled ? 'ON' : 'OFF' }}</span>
+        </button>
+      </div>
+      <div class="config-row">
+        <span class="config-label">前日リマインドの時刻</span>
+        <select class="input-inline" :value="scheduleReminderTime" data-testid="schedule-reminder-time" :disabled="scheduleMailSaving" @change="setScheduleReminderTime(($event.target as HTMLSelectElement).value)">
+          <option v-for="h in 24" :key="h" :value="`${String(h - 1).padStart(2, '0')}:00`">{{ String(h - 1).padStart(2, '0') }}:00</option>
+        </select>
+      </div>
+      <div class="reminder-desc">
+        ONの時、予定の担当作業員に「予定が追加/変更/削除された」メールと、翌日の予定のリマインド（上の時刻）を送ります。
+        通知用メールを持つ作業員だけが対象で、作業員ごとに「お知らせ」画面で受け取りをOFFにできます。アプリ内のお知らせは設定に関係なく出ます。
       </div>
     </div>
   </div>
@@ -280,6 +331,33 @@ function setApprovalNotifyEnabled(val: boolean) {
     .finally(() => { approvalNotifySaving.value = false })
 }
 
+// ── 在庫③: 品目の確認役（self / office）。EF inventory と inventory.vue の未確認一覧が settings を見る ──
+const inventoryConfirmRole   = ref<'self' | 'office'>('self')
+const inventoryConfirmSaving = ref(false)
+function setInventoryConfirmRole(val: 'self' | 'office') {
+  inventoryConfirmRole.value = val
+  inventoryConfirmSaving.value = true
+  upsertSetting('inventory_confirm_role', val, '在庫：品目の確認役')
+    .finally(() => { inventoryConfirmSaving.value = false })
+}
+
+// ── スケジュール管理の通知メール ON/OFF・前日リマインド時刻。EF schedule-notify が settings を見る（未設定＝OFF）──
+const scheduleMailEnabled  = ref(false)
+const scheduleReminderTime = ref('18:00')
+const scheduleMailSaving   = ref(false)
+function setScheduleMailEnabled(val: boolean) {
+  scheduleMailEnabled.value = val
+  scheduleMailSaving.value = true
+  upsertSetting('notify_schedule_mail_enabled', String(val), 'スケジュール管理の通知メール')
+    .finally(() => { scheduleMailSaving.value = false })
+}
+function setScheduleReminderTime(val: string) {
+  scheduleReminderTime.value = val
+  scheduleMailSaving.value = true
+  upsertSetting('schedule_reminder_time', val, 'スケジュール前日リマインドの時刻')
+    .finally(() => { scheduleMailSaving.value = false })
+}
+
 // ── 打刻リマインド（予定の開始・終了時刻）ON/OFF。EF punch-reminder が settings を見る ──
 const punchReminderEnabled = ref(false)
 const punchReminderSaving  = ref(false)
@@ -323,7 +401,7 @@ async function addCustomType() {
   customTypeSaving.value = false
   if (!r?.ok) { customTypeError.value = `追加に失敗しました（${r?.error ?? 'network'}）`; return }
   newCustomTypeName.value = ''
-  await logOperation(`予定管理の種類「${name}」を追加`, { targetType: 'resource_types', targetId: r.type?.id ?? null, summary: name })
+  await logOperation(`スケジュール管理の種類「${name}」を追加`, { targetType: 'resource_types', targetId: r.type?.id ?? null, summary: name })
   await loadCustomTypes()
 }
 async function saveCustomType(t: CustomType) {
@@ -409,13 +487,16 @@ async function loadReminderConfig() {
   const accountId = await getAccountId()
   const { data } = await supabase.from('settings').select('key, value')
     .eq('account_id', accountId)
-    .in('key', ['reminder_enabled', 'reminder_time', 'notify_report_enabled', 'notify_punch_reminder_enabled', 'notify_approval_request_enabled'])
+    .in('key', ['reminder_enabled', 'reminder_time', 'notify_report_enabled', 'notify_punch_reminder_enabled', 'notify_approval_request_enabled', 'inventory_confirm_role', 'notify_schedule_mail_enabled', 'schedule_reminder_time'])
   const m = Object.fromEntries((data ?? []).map(s => [s.key, s.value]))
   reminderEnabled.value     = (m['reminder_enabled'] ?? 'true') === 'true'
   reminderTime.value        = m['reminder_time'] ?? '08:00'
   reportNotifyEnabled.value = (m['notify_report_enabled'] ?? 'true') === 'true'
   punchReminderEnabled.value = m['notify_punch_reminder_enabled'] === 'true'   // 未設定＝OFF（EF と同じ既定）
+  scheduleMailEnabled.value  = m['notify_schedule_mail_enabled'] === 'true'    // 未設定＝OFF（EF と同じ既定）
+  scheduleReminderTime.value = m['schedule_reminder_time'] ?? '18:00'
   approvalNotifyEnabled.value = (m['notify_approval_request_enabled'] ?? 'true') === 'true'   // 未設定＝ON
+  inventoryConfirmRole.value = m['inventory_confirm_role'] === 'office' ? 'office' : 'self'   // 未設定＝本人（要回答9=C）
   await loadFeatures()   // 「使う機能」は lib/features.ts の読み直し（メニューと同じ値を見せる）
   await loadCustomTypes()
 }
@@ -588,7 +669,7 @@ async function load() {
   const accountId = await getAccountId()
   const { data } = await supabase.from('settings').select('key, value, label')
     .eq('account_id', accountId)
-    .not('key', 'in', '(reminder_enabled,reminder_time,notify_report_enabled,notify_punch_reminder_enabled,notify_approval_request_enabled,expense_notify_emails)')
+    .not('key', 'in', '(reminder_enabled,reminder_time,notify_report_enabled,notify_punch_reminder_enabled,notify_approval_request_enabled,expense_notify_emails,notify_schedule_mail_enabled,schedule_reminder_time)')
     .order('key')
   const fromDb = (data ?? []) as Setting[]
 

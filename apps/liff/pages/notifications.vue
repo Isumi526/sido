@@ -23,6 +23,15 @@
         </button>
       </div>
 
+      <!-- スケジュール通知メールの本人ON/OFF（テナント設定がONの時だけ意味を持つ・2026-09-20） -->
+      <div v-if="!loading && mailPref && mailPref.tenantEnabled" class="mail-pref" data-testid="sched-mail-pref">
+        <label class="mail-pref-row">
+          <input type="checkbox" :checked="mailPref.enabled" :disabled="mailPrefSaving" data-testid="sched-mail-toggle" @change="setMailPref(($event.target as HTMLInputElement).checked)" />
+          <span>{{ $t('notifications.schedMailToggle') }}</span>
+        </label>
+        <p class="mail-pref-hint">{{ mailPref.hasEmail ? $t('notifications.schedMailHint') : $t('notifications.schedMailNoEmail') }}</p>
+      </div>
+
       <div v-if="loading" class="state-screen">
         <div class="spinner" />
         <p class="state-text">{{ $t('common.loading') }}</p>
@@ -30,11 +39,21 @@
 
       <!-- やること：承認などの行動が済むまで残る -->
       <template v-else-if="tab === 'todo'">
-        <div v-if="!pendingDocItems.length" class="empty-state" data-testid="todo-empty">
+        <div v-if="!pendingDocItems.length && !punchTodoItems.length" class="empty-state" data-testid="todo-empty">
           <div class="material-symbols-rounded empty-icon">task_alt</div>
           <p class="empty-text">{{ $t('notifications.todoEmpty') }}</p>
         </div>
         <ul v-else class="notif-list">
+          <!-- 打刻催促（A-3）: 打刻する／予定を直す／当日が終わる まで残る。既読では消えない -->
+          <li v-for="t in punchTodoItems" :key="`${t.scheduleId}-${t.kind}`">
+            <button class="notif tappable todo" :data-testid="`punch-todo-${t.kind}`" @click="router.push('/checkin')">
+              <span class="material-symbols-rounded notif-icon kind-todo">{{ t.kind === 'checkin' ? 'login' : 'logout' }}</span>
+              <span class="notif-body">
+                <span class="notif-title">{{ t.title }}</span>
+                <span class="notif-text">{{ t.body }}</span>
+              </span>
+            </button>
+          </li>
           <li v-for="d in pendingDocItems" :key="d.attachmentId">
             <button class="notif tappable todo" data-testid="todo-item" @click="openTodo(d)">
               <span class="material-symbols-rounded notif-icon kind-todo">assignment_late</span>
@@ -134,6 +153,7 @@ function iconOf(kind: string): string {
     case 'punch_checkout':    return 'logout'        // 予定の終了時刻の打刻リマインド
     case 'purchase_order_accepted': return 'task_alt'
     case 'resource':          return 'directions_car'  // 車両・道具の予約（重なり／管理者による変更）
+    case 'tool':              return 'construction'    // 道具の又貸し（自分が持っていた道具が別の人に移った・道具②）
     default:                  return 'notifications'
   }
 }
@@ -201,11 +221,35 @@ watch(tab, async (t) => {
   if (t === 'info') await readAll()
 })
 
+// ── スケジュール通知メールの本人設定（EF schedule-notify・pref）──
+const mailPref = ref<{ enabled: boolean; tenantEnabled: boolean; hasEmail: boolean } | null>(null)
+const mailPrefSaving = ref(false)
+async function callSchedulePref(enabled?: boolean) {
+  const config = useRuntimeConfig()
+  const liff = useLiff()
+  const anonKey = config.public.supabaseAnonKey as string
+  const { data: { session } } = await supabase.auth.getSession()
+  const lineIdToken = (await liff.getIdToken().catch(() => null)) ?? ''
+  const devLineUserId = config.public.appEnv === 'development' ? (liff.profile.value?.userId ?? '') : ''
+  const res = await $fetch<any>(`${config.public.edgeFunctionUrl}/schedule-notify`, {
+    method: 'POST',
+    headers: { apikey: anonKey, Authorization: session ? `Bearer ${session.access_token}` : `Bearer ${anonKey}` },
+    body: { action: 'pref', ...(enabled === undefined ? {} : { enabled }), line_id_token: lineIdToken, dev_line_user_id: devLineUserId },
+  })
+  if (res?.ok) mailPref.value = { enabled: !!res.enabled, tenantEnabled: !!res.tenantEnabled, hasEmail: !!res.hasEmail }
+}
+async function setMailPref(enabled: boolean) {
+  mailPrefSaving.value = true
+  try { await callSchedulePref(enabled) } catch (e) { console.warn('[notifications] mail pref', e) }
+  finally { mailPrefSaving.value = false }
+}
+
 onMounted(async () => {
   await load()
-  await Promise.all([refreshNotifBadge(), refreshPendingDocBadge()])
+  callSchedulePref().catch(() => { /* 取れなければ出さない */ })
+  await Promise.all([refreshNotifBadge(), refreshPendingDocBadge(), refreshPunchTodoBadge()])
   // やることが無ければお知らせを開く（空のタブを見せない）＝開いた時点で既読になる
-  if (pendingDocCount.value === 0) {
+  if (pendingDocCount.value === 0 && punchTodoItems.value.length === 0) {
     tab.value = 'info'
     await readAll()
   }
@@ -263,4 +307,7 @@ onMounted(async () => {
 
 .notif-dot { width: 8px; height: 8px; border-radius: 50%; background: #06C755; flex: none; margin-top: 6px; }
 .notif-chev { font-size: 20px; color: #c7c7c7; flex: none; align-self: center; }
+.mail-pref { margin: 0 0 12px; padding: 10px 12px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; }
+.mail-pref-row { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #1e293b; }
+.mail-pref-hint { margin: 4px 0 0 24px; font-size: 11px; color: #64748b; }
 </style>

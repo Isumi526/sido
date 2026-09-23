@@ -1318,6 +1318,7 @@ import { supabase } from '../lib/supabase'
 import { guessPriceKind, normalizeName as normalizeGuessName, type Guess } from '../lib/priceKindGuess'
 import { getAccountId } from '../lib/account'
 import { logFeatureUsage } from '../lib/usageLog'
+import { loadAliases, aliasMapOf, canonicalName } from '../lib/estimateAliases'
 import { openDoc, resolveDocUrl } from '../lib/docUrl'
 import EstimateMasters from './estimate-masters.vue'
 import WorkItemImport from '../components/WorkItemImport.vue'
@@ -3199,7 +3200,9 @@ async function loadPriceHistory() {
   const { data } = await supabase.from('estimate_price_history')
     .select('item_name, unit_price, unit, price_kind, subcontractor_name, quoted_on, project_name, request_id')
     .eq('account_id', accountId).order('quoted_on', { ascending: false }).limit(500)
-  priceHistory.value = (data ?? []) as PriceHist[]
+  // E-3: 名寄せ辞書（これ＝これ）を当てて代表名に寄せる。曖昧一致（R15）より前に、人が確定した対応を優先する
+  const aliasMap = aliasMapOf(await loadAliases(accountId).catch(() => []))
+  priceHistory.value = ((data ?? []) as PriceHist[]).map(h => ({ ...h, item_name: canonicalName(h.item_name, aliasMap) }))
   // 履歴に出てくる受領見積の根拠ファイルをまとめて引く（案件横断）
   const ids = [...new Set(priceHistory.value.map(h => h.request_id).filter(Boolean))] as string[]
   if (!ids.length) { historyFiles.value = []; return }

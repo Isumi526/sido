@@ -18,7 +18,9 @@
           <div v-if="todayStatus === 'approved'" class="ot-status approved"><span class="material-symbols-rounded ot-icon">check_circle</span>{{ $t('overtime.statusApproved') }}</div>
           <div v-else-if="todayStatus === 'pending'" class="ot-status pending">
             <span class="material-symbols-rounded ot-icon">pending</span>{{ $t('overtime.statusPending') }}
-            <button class="ot-cancel" :disabled="busy" @click="onCancel">{{ $t('overtime.cancel') }}</button>
+            <!-- ★締切（16:00）後は当日の通常申請を取り消せない（2026-09-20 A-1）。押せてから失敗ではなく、押せない状態にして理由を出す -->
+            <button v-if="canCancelToday" class="ot-cancel" :disabled="busy" data-testid="ot-cancel" @click="onCancel">{{ $t('overtime.cancel') }}</button>
+            <span v-else class="ot-cancel-locked" data-testid="ot-cancel-locked"><span class="material-symbols-rounded ot-icon">lock</span>{{ $t('overtime.cancelLocked') }}</span>
           </div>
           <div v-else-if="todayStatus === 'rejected'" class="ot-status rejected">
             <span class="material-symbols-rounded ot-icon">block</span>{{ $t('overtime.statusRejected') }}
@@ -154,7 +156,8 @@
               <span v-if="r.status === 'rejected' && r.decision_note" class="ot-note" data-testid="ot-recent-note">{{ $t('overtime.decisionNote') }}：{{ r.decision_note }}</span>
               <!-- ★承認待ちなら日付を問わず取り消せる（2026-09-14 辻さん「休憩申請を間違えた場合の取り消しは？」）。
                    取り消しは本日の枠にしか無く、過去日の実績修正を間違えても消せなかった。EF は元から日付を問わない。 -->
-              <button v-if="r.status === 'pending'" type="button" class="ot-cancel ot-cancel-row" :disabled="busy" :data-testid="`ot-recent-cancel-${r.date}`" @click="onCancelDate(r.date)">{{ $t('overtime.cancel') }}</button>
+              <button v-if="r.status === 'pending' && overtime.canCancel(r.date, !!r.is_late)" type="button" class="ot-cancel ot-cancel-row" :disabled="busy" :data-testid="`ot-recent-cancel-${r.date}`" @click="onCancelDate(r.date, !!r.is_late)">{{ $t('overtime.cancel') }}</button>
+              <span v-else-if="r.status === 'pending'" class="ot-cancel-locked ot-cancel-row" :data-testid="`ot-recent-cancel-locked-${r.date}`">{{ $t('overtime.cancelLockedShort') }}</span>
             </li>
           </ul>
         </section>
@@ -183,6 +186,8 @@ const today = todayStr()
 const todayStatus = ref<'none' | 'pending' | 'approved' | 'rejected'>('none')
 const todayNote   = ref<string | null>(null)   // 却下時の管理者コメント
 const canRequestToday = ref(false)
+// 当日の申請を取り消せるか（EF の判定＝締切後の通常申請は false）
+const canCancelToday = ref(false)
 // 締切後（16:00以降・当日）は「実績修正の申請(late)」モードに切り替える。締切ルール自体は残す。
 const isLateMode = computed(() => !canRequestToday.value)
 const recent = ref<any[]>([])
@@ -246,6 +251,7 @@ async function refresh() {
   todayStatus.value   = wid ? await overtime.status(wid, today) : 'none'
   todayNote.value     = wid && todayStatus.value === 'rejected' ? await overtime.decisionNote(wid, today) : null
   canRequestToday.value = overtime.canRequest(today)
+  canCancelToday.value  = wid && todayStatus.value === 'pending' ? await overtime.canCancelToday(wid, today) : false
   recent.value        = wid ? await overtime.myRecent(wid) : []
   const accountId = await getAccountId()
   if (accountId && !siteOptions.value.length) {
@@ -266,7 +272,10 @@ async function onSubmit() {
   )
   busy.value = false
   if (!res.ok) {
-    msg.value = res.error === 'deadline-passed' ? t('overtime.errorDeadline') : t('overtime.errorGeneric')
+    // ★既に申請済み＝成功を装わず、締切前の「変更・追加」へ案内（2026-09-20 A-1）
+    msg.value = res.error === 'deadline-passed' ? t('overtime.errorDeadline')
+      : res.error === 'already-requested' ? t('overtime.errorAlreadyRequested')
+      : t('overtime.errorGeneric')
     msgOk.value = false
     await refresh()
     return
@@ -417,13 +426,15 @@ async function onSubmitPast() {
 }
 
 // 最近の申請から、承認待ちの申請を日付を問わず取り消す（承認済みは取り消せない＝直したい時は同じ日で出し直す）
-async function onCancelDate(date: string) {
+async function onCancelDate(date: string, isLate = false) {
   if (!workerId.value || !date) return
   if (!confirm(t('overtime.cancelConfirm', { date }))) return
   busy.value = true; msg.value = ''
-  const res = await overtime.cancelRequest(workerId.value, date)
+  const res = await overtime.cancelRequest(workerId.value, date, isLate)
   busy.value = false
-  if (res.ok) { pastMsg.value = t('overtime.canceled'); pastMsgOk.value = true }
+  // 失敗を無言にしない（締切後・既に処理済み）
+  pastMsg.value = res.ok ? t('overtime.canceled') : res.error === 'deadline-passed' ? t('overtime.cancelLocked') : t('overtime.errorGeneric')
+  pastMsgOk.value = res.ok
   await refresh()
 }
 
@@ -432,7 +443,8 @@ async function onCancel() {
   busy.value = true; msg.value = ''
   const res = await overtime.cancelRequest(workerId.value, today)
   busy.value = false
-  if (res.ok) { msg.value = t('overtime.canceled'); msgOk.value = true }
+  msg.value = res.ok ? t('overtime.canceled') : res.error === 'deadline-passed' ? t('overtime.cancelLocked') : t('overtime.errorGeneric')
+  msgOk.value = res.ok
   await refresh()
 }
 
@@ -466,6 +478,7 @@ onMounted(async () => {
 .ot-edit { align-self: flex-start; background: #fff; color: #0f766e; border: 1px solid #99f6e4; border-radius: 8px; padding: 8px 12px; font-size: 13px; font-weight: 700; }
 .ot-edit-cancel { width: 100%; margin-top: 8px; background: #fff; color: #64748b; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; font-size: 13px; }
 .ot-cancel-row { margin-left: auto; }
+.ot-cancel-locked { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #64748b; }
 .ot-past-toggle { display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: none; padding: 0; font-size: 14px; font-weight: 700; color: #1e293b; text-align: left; }
 .ot-late-note { font-size: 13px; line-height: 1.7; color: #9a3412; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 10px 12px; margin: 10px 0 0; }
 .ot-card { background: #fff; border-radius: 14px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }

@@ -12,8 +12,8 @@
   "overtimeRequest": "残業申請",
   "checkin": "出退勤",
   "chats": "チャット",
-  "schedule": "予定管理",
-  "companySchedule": "会社予定",
+  "schedule": "スケジュール管理",
+  "companySchedule": "工程管理",
   "groups": "グループ管理",
   "subcontractors": "協力業者",
   "expensePdf": "経費PDF",
@@ -25,5 +25,6 @@
   "logout": "ログアウト",
   "notifications": "お知らせ",
   "paidLeave": "有給休暇",
-  "inventory": "在庫"
+  "inventory": "在庫",
+  "tools": "道具"
 }

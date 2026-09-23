@@ -541,10 +541,25 @@
                       @click="report.removeVehicle(si, vi)"
                     >{{ $t('report.removeBtn') }}</button>
                   </div>
-                  <input v-model="veh.vehicleName" type="text" class="input" :placeholder="$t('report.vehicleNamePlaceholder')" @keydown.enter.prevent />
+                  <!-- 車両はマスタ（有効のみ）から選ぶ。vehicleId を持ち、vehicleName は表示スナップショット（2026-09-20）。
+                       マスタに無い車は「その他」で手入力（vehicleId=null） -->
+                  <select class="select" :value="vehicleSelectValue(veh)" :data-testid="`veh-select-${si}-${vi}`" @change="onVehicleSelect(veh, ($event.target as HTMLSelectElement).value)">
+                    <option value="">{{ $t('report.vehicleSelectPlaceholder') }}</option>
+                    <option v-for="v in master.vehicleList.value" :key="v.id" :value="v.id">{{ v.name }}</option>
+                    <option value="__other__">{{ $t('report.vehicleOther') }}</option>
+                  </select>
+                  <input v-if="vehicleSelectValue(veh) === '__other__'" v-model="veh.vehicleName" type="text" class="input mt4" :placeholder="$t('report.vehicleNamePlaceholder')" :data-testid="`veh-other-${si}-${vi}`" @keydown.enter.prevent />
                   <div class="expense-grid mt8">
                     <ExpenseField v-model="veh.distanceKm" :label="$t('report.gasoline')" />
                     <ExpenseField v-model="veh.dieselKm"   :label="$t('report.diesel')" />
+                  </div>
+                  <!-- 距離Step2（2026-09-20）: 現場の既定距離より大きい距離は理由必須＋現場管理者の承認。
+                       承認までは既定値で計上される（保存時に distance-overage.normalizeVehicleOverages が保存形へ直す） -->
+                  <div v-if="vehicleOverDefault(si, veh)" class="overage-box" :data-testid="`dist-over-${si}-${vi}`">
+                    <div class="overage-title">{{ $t('report.distOverTitle', { km: siteDefaultKm(si) }) }}</div>
+                    <p class="overage-hint">{{ $t('report.distOverHint') }}</p>
+                    <textarea v-model="veh.overageReason" class="input" rows="2" :placeholder="$t('report.distOverReasonPlaceholder')" :data-testid="`dist-over-reason-${si}-${vi}`" />
+                    <p v-if="overageStatusLabel(veh)" class="overage-status" :data-testid="`dist-over-status-${si}-${vi}`">{{ overageStatusLabel(veh) }}</p>
                   </div>
                 </div>
                 <button type="button" class="btn-ghost-sm" @click="report.addVehicle(si)">{{ $t('report.addVehicle') }}</button>
@@ -881,6 +896,8 @@
           :rows="pe.rows.value"
           :usage="pe.usage.value"
           :offices="pe.offices.value"
+          :can-submit="pe.canSubmit.value"
+          :can-submit-business="pe.canSubmitBusiness.value"
           @add="pe.add(report.form.value.date)"
           @remove="pe.remove"
         />
@@ -1004,6 +1021,8 @@
 
 <script setup lang="ts">
 import { todayStr } from '~/composables/schedule-core.gen'
+import { primaryWorkCategory } from '~/composables/work-category-primary.gen'
+import { isOverDefault, normalizeVehicleOverages, denormalizeVehicleOverages, DISTANCE_FIELDS } from '~/composables/distance-overage.gen'
 import { punchDiffLabel, isPunchDiffBig, isPunchDiffWorthShowing } from '~/composables/attendance-punch.gen'
 import { computeWorkerHours, getRateLines, calcBreakMinutes, effectiveBreakMinutes, effectiveBreakWindows, parseMin, TIME_OPTIONS } from '~/utils/workerHours'
 import type { RateBreakdown } from '~/utils/workerHours'
@@ -1241,7 +1260,8 @@ const { resolveRole: resolveWorkerRole, canCreateSite } = useWorkerPermission()
 //  ★編集モードでは出さない（過去日報の修正で新しい経費が生まれると申請時期が追えない）。
 const pe = usePersonalExpenseRows()
 const personalExpense = usePersonalExpense()
-const showPersonalExpense = computed(() => !isEditMode.value && pe.canSubmit.value)
+// ★2026-09-20: 業務経費（枠を消費しない）は全作業員が出せるので、個人枠 or 業務経費のどちらかが出せれば出す
+const showPersonalExpense = computed(() => !isEditMode.value && (pe.canSubmit.value || pe.canSubmitBusiness.value))
 
 const selfUser = ref<User | null>(null)
 
@@ -1820,7 +1840,11 @@ async function loadEditData(date: string) {
   }
   if (!saved) return
 
-  originalReport.value = saved  // 差分計算のために保存
+  // ★差分計算のために「編集前」を保存する。深いコピーにすること（R-1・2026-09-18 発見）:
+  //   下でフォームへ入れる sites[].workers[] などは同じオブジェクト参照になるため、そのまま持つと
+  //   フォームで時刻を変えた瞬間に「編集前」も書き換わり、computeDiff が常に空 → サーバの代替差分に落ちて
+  //   「稼働: あり→なし」「経費を変更」と嘘の差分が承認画面に出ていた。
+  originalReport.value = JSON.parse(JSON.stringify(saved))
   void refreshPendingState()   // 既に承認待ちなら、今見えているのは編集前の内容だと伝える
 
   report.form.value.date = saved.date
@@ -1886,6 +1910,8 @@ async function loadEditData(date: string) {
       // 保存時の振り分けで元の配列に戻る＝現場別集計の列は変わらない。
       e.others = mergeOtherExpenses(e.others, e.entertainments)
       e.entertainments = []
+      // 距離Step2: 承認待ちの超過申請は「作業員が入れた値」を欄に戻して見せる（理由も復元。もう一度書かせない）
+      for (const veh of (e.vehicles ?? [])) denormalizeVehicleOverages(veh)
     })
     siteUsage.value = report.form.value.sites.map((site: any) => {
       const usage = reconstructExpenseUsage(site.expenses)
@@ -2145,6 +2171,58 @@ function receiptItemLabel(it: any): string {
  *  入力欄ごと隠れているので、人は永久に直せなかった（2026-09-02 本番で発生）。
  *  そこで「どこか」を文言に出し、その欄を開いてスクロールするところまでやる。
  */
+// ── 車両欄: マスタからの選択（vehicleId）＋その他（手入力）──
+/** select に出す値。マスタの id があればそれ、名前だけ（旧データ/その他）なら '__other__'、空なら '' */
+function vehicleSelectValue(veh: any): string {
+  if (veh?.vehicleId && master.vehicleList.value.some(v => v.id === veh.vehicleId)) return veh.vehicleId
+  if (veh?.vehicleId === null && veh?.vehicleName !== undefined) return '__other__'
+  return veh?.vehicleName ? '__other__' : ''
+}
+function onVehicleSelect(veh: any, value: string) {
+  if (!value) { veh.vehicleId = undefined; veh.vehicleName = ''; return }
+  if (value === '__other__') { veh.vehicleId = null; if (master.vehicleList.value.some(v => v.name === veh.vehicleName)) veh.vehicleName = ''; return }
+  const v = master.vehicleList.value.find(x => x.id === value)
+  veh.vehicleId = value
+  veh.vehicleName = v?.name ?? veh.vehicleName   // 表示スナップショット
+}
+
+// ── 距離Step2: 既定距離超過の理由必須・保存形への正規化 ──
+/** その現場の既定距離(km)。現場マスタに設定が無ければ null（＝超過判定しない・申告どおり） */
+function siteDefaultKm(si: number): number | null {
+  const name = report.form.value.sites[si]?.siteName
+  return name ? (master.siteDistances.value[name] ?? null) : null
+}
+function vehicleOverDefault(si: number, veh: any): boolean {
+  const d = siteDefaultKm(si)
+  return isOverDefault(veh?.distanceKm, d) || isOverDefault(veh?.dieselKm, d)
+}
+function overageStatusLabel(veh: any): string {
+  const ov = veh?.overages ?? {}
+  const st = DISTANCE_FIELDS.map((f) => ov[f]?.status).filter(Boolean)
+  if (st.includes('pending'))  return t('report.distOverPending')
+  if (st.includes('rejected')) return t('report.distOverRejected')
+  return ''
+}
+/** 超過しているのに理由が空の車両があればメッセージ（送信を止める） */
+function findMissingOverageReason(): string | null {
+  const sites = report.form.value.sites
+  for (let si = 0; si < sites.length; si++) {
+    for (const veh of (sites[si]?.expenses?.vehicles ?? [])) {
+      if (vehicleOverDefault(si, veh) && !String(veh.overageReason ?? '').trim()) {
+        return t('report.distOverReasonRequired', { site: sites[si].siteName, km: siteDefaultKm(si) })
+      }
+    }
+  }
+  return null
+}
+/** フォームの全車両を保存形へ（距離欄←既定値・超過分は overages[].pending）。既定値以下の欄は申請を消す */
+function normalizeAllOverages(): void {
+  const sites = report.form.value.sites
+  for (let si = 0; si < sites.length; si++) {
+    for (const veh of (sites[si]?.expenses?.vehicles ?? [])) normalizeVehicleOverages(veh, siteDefaultKm(si))
+  }
+}
+
 function findMissingReceipt(): ReceiptMiss | null {
   const sites = report.form.value.sites ?? []
   for (let si = 0; si < sites.length; si++) {
@@ -2290,6 +2368,7 @@ async function submitPersonalExpenses(): Promise<number> {
         site_id: row.site_id,
         site_name: row.site_name,
         client_token: row.token,
+        expense_kind: row.kind,
       })
     } catch (e) {
       failed++
@@ -2305,6 +2384,7 @@ async function loadPersonalExpenseState() {
   try {
     const s = await personalExpense.loadState(expenseMonthKey(report.form.value.date || todayJst.value))
     pe.canSubmit.value = s.canSubmit
+    pe.canSubmitBusiness.value = s.canSubmitBusiness
     pe.offices.value = s.offices
     pe.baseSiteId.value = s.baseSiteId
     // 枠(limit)が取れない時は残額の表示だけ省く（申請自体は canSubmit に従う）
@@ -2313,6 +2393,7 @@ async function loadPersonalExpenseState() {
       : null
   } catch {
     pe.canSubmit.value = false
+    pe.canSubmitBusiness.value = false
   }
 }
 const voiceBusy = ref(false)
@@ -2427,7 +2508,8 @@ function applyVoiceDraft() {
  */
 function defaultWorkCategoryId(): string | null {
   const all = master.workCategories.value
-  return all.find(c => c.name === '現場作業')?.id ?? all[0]?.id ?? null
+  // 主系区分（uses_site_hours）。名前では判定しない＝改名しても壊れない（A-4）
+  return primaryWorkCategory(all)?.id ?? all[0]?.id ?? null
 }
 
 /** 現場が選ばれているか。区分の欄はこれが真になるまで出さない。 */
@@ -3020,6 +3102,20 @@ async function handleSubmit() {
     }
   }
 
+  // ── 送信バリデート＋保存形への正規化: 既定距離を超える距離は理由必須（距離Step2・2026-09-20）──
+  //  ★新規・編集の両方に効かせたいので、モード分岐より手前に置く。
+  //   正規化＝距離欄を既定値に戻し、超過分を overages[] の申請(pending)にする。集計は距離欄しか読まないので
+  //   承認されるまで金額が動かない。提出自体は止めない（夕方に現場から出す運用）。
+  {
+    const miss = findMissingOverageReason()
+    if (miss) {
+      if (isEditMode.value) editError.value = miss
+      alert(miss)
+      return
+    }
+    normalizeAllOverages()
+  }
+
   // ── 編集モード: Supabase のみ更新（GAS には再送しない）──
   if (isEditMode.value) {
     if (editSubmitting.value) return
@@ -3088,6 +3184,7 @@ async function handleSubmit() {
       //  管理画面の承認欄で見える＝通知が無くても中身は追える。
 
       editSubmitted.value = true
+      useUsageLog().logFeatureUsage('report_edited')   // 効果測定（ベストエフォート）
     } catch (e) {
       const msg = e instanceof Error ? e.message : t('report.errorUpdateFailed')
       editError.value = msg
@@ -3162,6 +3259,7 @@ async function handleSubmit() {
 
   // ② GASに送信（LINE通知・keepalive: true でページ閉じても通信継続）
   await report.submit()
+  if (!report.error.value) useUsageLog().logFeatureUsage('report_submitted')   // 効果測定（ベストエフォート）
 
   // ③-a 期限切れの新規提出: ここで初めて保留に入れる。
   //     ★report.submit() の後に置くのは、その中で領収書がアップロードされて *Urls が
@@ -4356,4 +4454,9 @@ html, body {
 }
 .toast-enter-active, .toast-leave-active { transition: all .25s ease; }
 .toast-enter-from, .toast-leave-to { opacity: 0; transform: translateX(-50%) translateY(12px); }
+/* 距離Step2: 既定距離超過の理由入力 */
+.overage-box { margin-top: 8px; padding: 10px 12px; border: 1px solid #fdba74; background: #fff7ed; border-radius: 10px; }
+.overage-title { font-size: 13px; font-weight: 700; color: #9a3412; }
+.overage-hint { margin: 4px 0 8px; font-size: 12px; color: #7c2d12; line-height: 1.5; }
+.overage-status { margin: 6px 0 0; font-size: 12px; font-weight: 700; color: #b45309; }
 </style>

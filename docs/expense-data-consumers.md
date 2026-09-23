@@ -56,6 +56,16 @@
 - `npm run typecheck`（apps/liff）／admin は `any` 型のため型では落ちないので**目視必須**
 - 本番反映前に、admin月次集計・ダッシュボード・現場別の**金額合計**が新旧データで合うか確認
 
+## vehicles[].vehicleId（車両マスタとの紐付け・2026-09-20）
+`sites[].expenses.vehicles[].vehicleId`（uuid・マスタに無い「その他」は null／旧データは欠落）。**`vehicleName` は表示スナップショットとして必ず残る**（現場の `site_id`＋`siteName` と同じ考え方）ので、flatten・PDF・通知・集計は従来どおり `vehicleName` を読めばよく変更不要。車両別集計を作る時は `vehicleId` を優先し、無いものは名前でフォールバックする。既存日報の後付けは `scripts/backfill-vehicle-id.mjs`（名称一致で解決できた分だけ・追加のみ）。
+
+## vehicles[].overages（車両距離の既定値超過の申請・距離Step2・2026-09-20）
+`sites[].expenses.vehicles[].overages[distanceKm|dieselKm]` に `{ requestedKm, defaultKm, reason, status(pending|approved|rejected), requestedAt, decidedBy, decidedAt }`。
+**距離欄（distanceKm/dieselKm）は承認されるまで既定値のまま**＝flatten も按分も PDF も従来どおり距離欄だけを読めばよく、**消費箇所に変更は要らない**（未承認の超過分で金額が動かないための設計）。
+- 正本: `shared/distance-overage.ts`（LIFF 保存時 `normalizeVehicleOverages` ／ 編集で開く時 `denormalizeVehicleOverages` ／ 一覧・バッジ `pendingOveragesOf`）
+- 承認: EF `report-distance`（decide）が距離欄を申請値に差し替える。admin `/distance-approvals`・ナビバッジ `distanceOverageCount`
+- ★JSON を組み直して保存する箇所（admin 側の日報編集など）で `overages` を落とすと申請が消える（距離欄は既定値のままなので金額は安全側）。車両オブジェクトはスプレッドで温存すること
+
 ## personal_expenses（現場に紐付かない個人経費）※日報に依存しない独立テーブル
 - **なぜ独立テーブルか（巻き戻し禁止）**: 現行の経費集計はすべて `is_working=true` の日報行に依存しており、**日報を出さない人（役員・経営者）や出勤しない日の経費は1円も集計されない**。日報JSONに相乗りさせる案ではこの穴が原理的に埋まらない。→ Notion #f4cc3db1（2026-07-30 確定）
 - 書き込み: `apps/liff/pages/expense/personal.vue`（→ `composables/usePersonalExpense.ts` → edge function `personal-expense-submit`。領収書AI解析は `useReceiptAnalysis`）／admin から直接
@@ -66,7 +76,8 @@
 - **精算に載せる理由（巻き戻し禁止）**: 個人経費は `tategae`（個人立替）を持つ。申請書・精算に出さないと会社が本人へ振り込む対象から漏れる。日報を出さない役員等は `daily_reports` が無いので、`personal_expenses` を読まない限り1円も出ない。
 - **読めない時に黙らせない**: `personal_expenses` は RLS(authenticated)＋anon revoke。LIFF は email/password ログイン＝authenticated 前提。読み取りに失敗したら金額が申請書から消えるため `console.error` を出す（silent-drop 禁止）。
 - **現場に紛れ込ませない**: `siteName` は空文字にする（`'現場未設定'` にしない）。日毎集計では「現場外（個人経費）」と表示。
-- **現場別集計・ガソリン按分は読まない**＝現場の原価を歪めない（`site-reports.vue` / `gasoline-allocation.vue` / `expenses.vue` / `index.vue` は `personal_expenses` を参照しない）。この不参照は意図的なので、追加する時は現場外行の除外を必ず入れる。
+- **現場別集計・ガソリン按分は読まない**＝現場の原価を歪めない（`site-reports.vue` / `gasoline-allocation.vue` は `personal_expenses` を参照しない。※オフィス/工場に紐付けた分だけ `site-reports.vue` のオフィスタブに出る・2026-09-13）。この不参照は意図的なので、追加する時は現場外行の除外を必ず入れる。
+- **ダッシュボード（`index.vue`）は 2026-09-20 から読む**: 月次集計に「現場に紐づかない経費」の**現場外の1行**として計上（`flattenPersonalExpenses` 経由・明細に 誰の／科目／紐付け先／支払先）。会議で「ダッシュボードで表示する」と説明した分。現場の原価（商社/業者/現場経費）には混ぜない。同月の合計は 経費一覧（`expenses.vue`）・日毎集計（`expenses-daily.vue`）と一致すること（E2E `admin.dashboard-personal-expense`）。
 - 権限: `workers.can_apply_personal_expense`（既定false）＝付与された人だけが申請できる（#2cbe3caa）
 - 月額上限（枠）＝ **案B確定（#32e93d75・2026-07-31）**: `worker_expense_budgets(worker_id, month, limit_amount)` で月別・履歴あり
   - 解決順: 月別上書き → `workers.default_monthly_expense_limit` → `settings['personal_expense_monthly_limit']` → 枠なし（＝申請不可）

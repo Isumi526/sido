@@ -220,5 +220,13 @@
   "editReasonHintApproval": "This edit is past the deadline and needs approval. Leave a reason so reviewers know what changed",
   "pickup": "Materials taken back",
   "pickupNotePlaceholder": "What was taken back (e.g. 3 leftover boards, tools)",
-  "pickupPhotoLabel": "Photos of materials taken back (multiple)"
+  "pickupPhotoLabel": "Photos of materials taken back (multiple)",
+  "distOverTitle": "Exceeds the site default distance ({km} km round trip)",
+  "distOverHint": "Enter a reason and submit. The default distance is used until a site manager approves, then it is replaced by the distance you entered.",
+  "distOverReasonPlaceholder": "e.g. stopped by the warehouse to pick up materials",
+  "distOverReasonRequired": "Distance for \"{site}\" exceeds the default ({km} km). Please enter a reason.",
+  "distOverPending": "Awaiting site manager approval (default distance is used until approved)",
+  "distOverRejected": "The previous request was rejected. Fix the distance or re-submit with a reason.",
+  "vehicleSelectPlaceholder": "Select a vehicle",
+  "vehicleOther": "Other (type in)"
 }

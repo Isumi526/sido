@@ -4,22 +4,19 @@
 //  外部アナリティクス(PostHog/Amplitude等)は導入しない方針のため、自前の
 //  feature_usage_events テーブルへ直接INSERTする（RLSで自テナントのみ）。
 //
-//  ★このMVPで計測しているのは代表的な2機能のみ（見積作成・見積書PDF発行）。
-//   他の機能へ計測を広げる時は、呼び出し箇所で logFeatureUsage(key) を1行
-//   足すだけでよい。key は下記 FEATURE_KEYS に追加してから使うこと
-//   （集計画面のラベル表示と対応させるため）。
+//  ★2026-09-20: 主要機能全体へ計測を広げた。キーは shared/usage-features.ts に追加してから使う
+//   （集計画面のラベル/見出しと対応させるため）。LIFF 側は EF `usage-log` 経由（useUsageLog.ts）。
 //
 //  ★失敗しても機能側の処理は止めない（計測はベストエフォート）。
 // ============================================================
 import { supabase } from './supabase'
 import { getAccountId } from './account'
 import { currentWorkerId } from './auth'
+import { USAGE_FEATURE_LABELS, type UsageFeatureKey } from './usage-features.gen'
 
-export const FEATURE_KEYS = {
-  estimate_created: '見積作成',
-  estimate_sent: '見積書発行',
-} as const
-export type FeatureKey = keyof typeof FEATURE_KEYS
+// ★キーの登録簿は shared/usage-features.ts が正本（admin/LIFF/EF 共通・2026-09-20）
+export const FEATURE_KEYS: Record<string, string> = USAGE_FEATURE_LABELS
+export type FeatureKey = UsageFeatureKey
 
 export async function logFeatureUsage(key: FeatureKey): Promise<void> {
   try {

@@ -12,8 +12,9 @@
 //
 //  action:
 //   items                                  → 有効な品目（id, name, unit, current_qty）
-//   move { itemId, qty, kind, siteId?, photoUrls?, note?, reportDate? }
-//        kind: 'in'(入荷 +qty) / 'out'(持出 −qty) / 'return'(引上げ +qty)
+//   move { itemId, qty, kind, siteId?, photoUrls?, note?, reportDate?, clientRequestId? }
+//        kind: 'return'(引上げ +qty・1番目) / 'out'(持出 −qty) / 'in'(入荷 +qty)
+//        clientRequestId = 再送のべき等キー（同じ値は二重に登録しない・2026-09-20）
 //        → inventory_move(...)（履歴＋現在庫を1トランザクションで）
 //   recent { limit? }                      → 自分の直近の登録（画面の履歴表示用）
 //  在庫②（2026-09-18）:
@@ -22,10 +23,21 @@
 //   suggest { imageBase64 }                → 写真から Gemini で品目候補（自社マスタ＋自社の訂正履歴だけを渡す・AC3/AC5）
 //   correction { itemId, aiGuess?, aiCategory?, matched?, photoUrl? }
 //                                          → 人が確定した結果を訂正履歴に残す（次回の候補提示に使う）
+//  在庫③（2026-09-20）:
+//   config                                 → { confirmRole: 'self' | 'office' }（settings.inventory_confirm_role・未設定＝self）
+//   move（confirmRole=office の時）         → 品目が未確定のまま inventory_pending_moves に「確認待ち」で保存（残数には触れない）。
+//                                            事務側が admin の未確認一覧で確定すると inventory_confirm_pending → inventory_move
+//   pending-mine                           → 自分の確認待ち（pending/confirmed/rejected の直近）
+//  在庫④（2026-09-20）:
+//   config                                 → 上記に加えて bases（拠点＝office/factory の現場）・myBaseSiteId（所属拠点）
+//   balances                               → 残数一覧（品目×拠点の倉庫／品目×現場・最終更新・最後の写真）
+//   move { baseSiteId? }                   → 拠点（無ければ所属拠点）を移動記録に残す
+//   item-create                            → 名寄せ済みの名前なら寄せ先を返す
 //  ※ --no-verify-jwt でデプロイ。関数内で身元検証。
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveCaller } from '../_shared/caller-identity.ts'
+import { FEATURE_SETTING_KEYS, resolveFeatureFlags } from '../_shared/features-registry.gen.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -65,6 +77,54 @@ Deno.serve(async (req) => {
   if (!caller || typeof caller !== 'object') return json({ ok: false, error: 'unauthorized' }, 401)
   const accountId = caller.accountId
 
+  // ── 在庫はベータ（「使う機能」feature.inventory・既定OFF・2026-09-19 レビュー決定）。
+  //  画面の導線を隠すだけだと URL 直打ち・古いバンドルから通るため、tools と同じく EF でも閉じる（fail-closed）。
+  {
+    const { data: rows } = await svc.from('settings').select('key, value').eq('account_id', accountId).in('key', FEATURE_SETTING_KEYS)
+    if (!resolveFeatureFlags((rows ?? []) as { key: string; value: string | null }[]).inventory) {
+      return json({ ok: false, error: 'feature_disabled' }, 403)
+    }
+  }
+
+  // ── 在庫③: 確認役（self=申請者本人がその場で確定 / office=事務側が後で確定）。未設定・不正値は self ──
+  async function confirmRole(): Promise<'self' | 'office'> {
+    const { data } = await svc.from('settings').select('value').eq('account_id', accountId).eq('key', 'inventory_confirm_role').maybeSingle()
+    return (data as any)?.value === 'office' ? 'office' : 'self'
+  }
+
+  // 在庫④: 拠点（倉庫）＝現場マスタの office/factory 行。作業員の所属拠点（workers.base_site_id）を既定にする
+  async function bases(): Promise<{ id: string; name: string }[]> {
+    const { data } = await svc.from('sites').select('id, name').eq('account_id', accountId).in('kind', ['office', 'factory']).order('name')
+    return (data ?? []) as { id: string; name: string }[]
+  }
+  async function myBaseSiteId(): Promise<string | null> {
+    if (!caller.workerId) return null
+    const { data } = await svc.from('workers').select('base_site_id').eq('id', caller.workerId).maybeSingle()
+    return (data as any)?.base_site_id ?? null
+  }
+
+  if (body.action === 'config') {
+    const [role, bs, mine] = await Promise.all([confirmRole(), bases(), myBaseSiteId()])
+    return json({ ok: true, confirmRole: role, bases: bs, myBaseSiteId: bs.some(b => b.id === mine) ? mine : null })
+  }
+
+  // 在庫④: 残数一覧（拠点別・現場別）。会計在庫ではない（残数把握用）
+  if (body.action === 'balances') {
+    const { data, error } = await svc.rpc('inventory_balances', { p_account_id: accountId })
+    if (error) { console.error('[inventory] balances failed:', error); return json({ ok: false, error: 'fetch_failed' }, 500) }
+    return json({ ok: true, balances: data ?? [] })
+  }
+
+  if (body.action === 'pending-mine') {
+    let q = svc.from('inventory_pending_moves')
+      .select('id, kind, qty, site_id, photo_urls, note, status, ai_guess_name, suggested_item_id, item_id, reject_reason, decided_at, created_at, report_date, sites!inventory_pending_moves_site_id_fkey(name), inventory_items!inventory_pending_moves_item_id_fkey(name, unit)')
+      .eq('account_id', accountId).order('created_at', { ascending: false }).limit(20)
+    if (caller.workerId) q = q.eq('created_by_worker_id', caller.workerId)
+    const { data, error } = await q
+    if (error) { console.error('[inventory] pending-mine failed:', error); return json({ ok: false, error: 'fetch_failed' }, 500) }
+    return json({ ok: true, pending: data ?? [] })
+  }
+
   if (body.action === 'items') {
     const { data, error } = await svc.from('inventory_items')
       .select('id, name, unit, code, current_qty, category')
@@ -88,6 +148,13 @@ Deno.serve(async (req) => {
     const { data: all } = await svc.from('inventory_items').select('id, name, unit, code, current_qty, category').eq('account_id', accountId).eq('active', true)
     const same = (all ?? []).find((it: any) => norm(it.name) === norm(name))
     if (same) return json({ ok: true, item: same, existed: true })
+    // 在庫④ 名寄せ: 過去に「この品目＝この品目」で寄せた名前なら、寄せ先を返す（同じ名前で再び別品目を作らせない）
+    const { data: aliases } = await svc.from('inventory_item_aliases').select('alias_name, item_id').eq('account_id', accountId)
+    const al = (aliases ?? []).find((a: any) => norm(a.alias_name) === norm(name))
+    if (al) {
+      const canon = (all ?? []).find((it: any) => it.id === (al as any).item_id)
+      if (canon) return json({ ok: true, item: canon, existed: true })
+    }
     const { data: created, error } = await svc.from('inventory_items')
       .insert({ account_id: accountId, name, category, unit, current_qty: 0 })
       .select('id, name, unit, code, current_qty, category').maybeSingle()
@@ -135,7 +202,8 @@ ${fewShot.length ? `\n# この会社での過去の訂正（同じ読み方を�
 }`
     const gBody = {
       contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Data } }] }],
-      generationConfig: { temperature: 0, maxOutputTokens: 1024, responseMimeType: 'application/json' },
+      // ★thinkingBudget: 0 が無いと 2.5-flash の思考トークンが maxOutputTokens を食い潰し MAX_TOKENS で JSON が切れる（2026-09-21 /review で実測・他EFと同じ）
+      generationConfig: { temperature: 0, maxOutputTokens: 2048, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } },
     }
     let res: Response | null = null
     for (let attempt = 1; attempt <= 3; attempt++) {
@@ -196,7 +264,7 @@ ${fewShot.length ? `\n# この会社での過去の訂正（同じ読み方を�
   if (body.action === 'recent') {
     const limit = Math.min(Math.max(Number(body.limit) || 20, 1), 100)
     let q = svc.from('inventory_movements')
-      .select('id, item_id, delta, kind, site_id, photo_urls, note, created_by_name, created_at, report_date, inventory_items(name, unit), sites(name)')
+      .select('id, item_id, delta, kind, site_id, photo_urls, note, created_by_name, created_at, report_date, inventory_items(name, unit), sites!inventory_movements_site_id_fkey(name)')   // ★在庫④で base_site_id も sites を参照＝埋め込みは FK 名で指定
       .eq('account_id', accountId).order('created_at', { ascending: false }).limit(limit)
     if (caller.workerId) q = q.eq('created_by_worker_id', caller.workerId)
     const { data, error } = await q
@@ -208,7 +276,9 @@ ${fewShot.length ? `\n# この会社での過去の訂正（同じ読み方を�
     const itemId = typeof body.itemId === 'string' ? body.itemId : ''
     const kind = KINDS.includes(body.kind) ? body.kind as typeof KINDS[number] : ''
     const qty = Number(body.qty)
-    if (!itemId || !kind) return json({ ok: false, error: 'item_and_kind_required' }, 400)
+    const role = await confirmRole()
+    // 事務モード（在庫③）: 品目は無くてよい＝写真＋数量で「確認待ち」。本人モードは従来どおり品目必須
+    if (!kind || (role === 'self' && !itemId)) return json({ ok: false, error: 'item_and_kind_required' }, 400)
     if (!Number.isFinite(qty) || qty <= 0 || qty > 100000 || Math.round(qty) !== qty) return json({ ok: false, error: 'bad_qty' }, 400)
     const siteId = typeof body.siteId === 'string' && body.siteId ? body.siteId : null
     // 持出・引上げは現場が要る（どこに持って行った／どこから戻したか）
@@ -218,20 +288,49 @@ ${fewShot.length ? `\n# この会社での過去の訂正（同じ読み方を�
     if (!photoUrls.length) return json({ ok: false, error: 'photo_required' }, 400)
     const note = typeof body.note === 'string' ? body.note.trim().slice(0, 500) : ''
     const reportDate = typeof body.reportDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.reportDate) ? body.reportDate : null
+    // ★べき等キー（2026-09-19 Gemini 指摘）: 画面が1回の入力ごとに付ける UUID。同じキーの再送は inventory_move が登録せず現在庫を返す
+    const clientRequestId = typeof body.clientRequestId === 'string' && /^[0-9a-f-]{36}$/i.test(body.clientRequestId) ? body.clientRequestId : null
+    // 在庫④ 拠点（倉庫）: 画面で選んだ拠点 → 無ければ作業員の所属拠点。自テナントの office/factory 行だけ
+    const bs = await bases()
+    const wantBase = typeof body.baseSiteId === 'string' && body.baseSiteId ? body.baseSiteId : (await myBaseSiteId())
+    const baseSiteId = wantBase && bs.some(b => b.id === wantBase) ? wantBase : null
 
     // 品目・現場は自テナントのものだけ（関数内でも確認するが、分かりやすいエラーを返すためここでも）
-    const { data: item } = await svc.from('inventory_items').select('id').eq('id', itemId).eq('account_id', accountId).eq('active', true).maybeSingle()
-    if (!item) return json({ ok: false, error: 'item_not_found' }, 404)
+    if (itemId) {
+      const { data: item } = await svc.from('inventory_items').select('id').eq('id', itemId).eq('account_id', accountId).eq('active', true).maybeSingle()
+      if (!item) return json({ ok: false, error: 'item_not_found' }, 404)
+    }
     if (siteId) {
       const { data: site } = await svc.from('sites').select('id').eq('id', siteId).eq('account_id', accountId).maybeSingle()
       if (!site) return json({ ok: false, error: 'site_not_found' }, 404)
+    }
+
+    // ── 在庫③ 事務モード: 残数には触れず「確認待ち」に置く。事務側が admin で品目を確定した時に inventory_move が走る ──
+    if (role === 'office') {
+      if (clientRequestId) {
+        const { data: dup } = await svc.from('inventory_pending_moves').select('id, status').eq('account_id', accountId).eq('client_request_id', clientRequestId).maybeSingle()
+        if (dup) return json({ ok: true, pending: true, pendingId: (dup as any).id, deduped: true })
+      }
+      const cands = Array.isArray(body.aiCandidates) ? body.aiCandidates.slice(0, 3).map((c: any) => ({
+        id: String(c?.id ?? ''), name: String(c?.name ?? '').slice(0, 200), unit: c?.unit ?? null, category: c?.category ?? null,
+        confidence: Math.max(0, Math.min(1, Number(c?.confidence) || 0)),
+      })).filter((c: any) => c.id) : []
+      const { data: pend, error } = await svc.from('inventory_pending_moves').insert({
+        account_id: accountId, kind, qty, site_id: siteId, photo_urls: photoUrls, note: note || null, report_date: reportDate,
+        ai_guess_name: typeof body.aiGuess === 'string' ? body.aiGuess.slice(0, 200) : null,
+        ai_guess_category: typeof body.aiCategory === 'string' ? body.aiCategory.slice(0, 100) : null,
+        ai_candidates: cands, suggested_item_id: itemId || null, base_site_id: baseSiteId,
+        created_by_worker_id: caller.workerId, created_by_name: caller.name, client_request_id: clientRequestId,
+      }).select('id').maybeSingle()
+      if (error) { console.error('[inventory] pending insert failed:', error); return json({ ok: false, error: 'save_failed', detail: error.message }, 500) }
+      return json({ ok: true, pending: true, pendingId: (pend as any)?.id ?? null })
     }
 
     const delta = kind === 'out' ? -qty : qty
     const { data, error } = await svc.rpc('inventory_move', {
       p_item_id: itemId, p_delta: delta, p_note: note || null, p_kind: kind, p_site_id: siteId,
       p_photo_urls: photoUrls, p_created_by_worker_id: caller.workerId, p_created_by_name: caller.name,
-      p_report_date: reportDate,
+      p_report_date: reportDate, p_client_request_id: clientRequestId, p_base_site_id: baseSiteId,
     })
     if (error) { console.error('[inventory] move failed:', error); return json({ ok: false, error: 'move_failed', detail: error.message }, 500) }
     return json({ ok: true, item: data })

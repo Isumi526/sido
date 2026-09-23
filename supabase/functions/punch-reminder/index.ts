@@ -26,6 +26,7 @@
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { authorizeReminderTrigger } from '../_shared/reminder-auth.ts'
+import { resolveCaller } from '../_shared/caller-identity.ts'
 import { sendResend, resolveWorkerNotifyEmail } from '../_shared/doc-mail.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
@@ -76,11 +77,57 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ ok: false, error: 'method_not_allowed' }, 405)
 
   const svc = createClient(SUPABASE_URL, SERVICE_KEY)
+  let body: any = {}
+  try { body = await req.json() } catch { /* 空でよい */ }
+
+  // ── 作業員本人の「やること」（打刻催促）を今の状態から計算する（A-3・2026-09-20）──
+  //  ★通知行（punch_*）は履歴＝お知らせ側。やることは「予定が今もある／対応する打刻がまだ無い／当日のうち」を
+  //   その場で判定するので、予定を直せば消え、打刻すれば消え、終了＋6h で消える。既読では消えない。
+  if (body.action === 'todo-mine') {
+    const caller = await resolveCaller(svc, req.headers.get('Authorization') ?? '',
+      typeof body.line_id_token === 'string' ? body.line_id_token : '',
+      typeof body.dev_line_user_id === 'string' ? body.dev_line_user_id : '')
+    if (!caller?.workerId) return json({ ok: true, items: [] })
+    const { data: st } = await svc.from('settings').select('value').eq('account_id', caller.accountId).eq('key', SETTING_KEY).maybeSingle()
+    if (st?.value !== 'true') return json({ ok: true, items: [] })
+    const base = typeof body?.now === 'string' && !Number.isNaN(Date.parse(body.now)) ? new Date(body.now) : new Date()
+    const now = jstNow(base)
+    const dates = [shiftDate(now.date, -1), now.date]
+    const { data: rows } = await svc.from('schedules')
+      .select('id, account_id, worker_id, site_id, title, start_date, end_date, start_time, end_time')
+      .eq('account_id', caller.accountId).eq('worker_id', caller.workerId).is('deleted_at', null).eq('all_day', false)
+      .not('site_id', 'is', null).or(dates.map(d => `start_date.eq.${d},end_date.eq.${d}`).join(','))
+    const list = (rows ?? []) as Sched[]
+    const siteIds = [...new Set(list.map(s => s.site_id))]
+    const { data: sites } = siteIds.length ? await svc.from('sites').select('id, name').in('id', siteIds) : { data: [] }
+    const siteName = new Map((sites ?? []).map((x: any) => [x.id, x.name as string]))
+    const GRACE_MIN = 6 * 60   // 終了時刻＋6h を過ぎたら消す（翌日に昨日の催促が残っても意味がない）
+    const nowAbs = now.minutes + (now.date === dates[1] ? 1440 : 0)   // 前日を 0 起点にした絶対分
+    const absMin = (date: string, hhmm: string | null) => { const m = toMin(hhmm); return m === null ? null : m + (date === now.date ? 1440 : 0) }
+    const items: { scheduleId: string; kind: 'checkin' | 'checkout'; title: string; body: string; at: string; siteName: string }[] = []
+    for (const s of list) {
+      const startAbs = absMin(s.start_date, s.start_time)
+      const endAbs = absMin(s.end_date ?? s.start_date, s.end_time)
+      const site = siteName.get(s.site_id) ?? s.title ?? '現場'
+      // 出勤: 開始を過ぎていて、当日（JST）に出勤打刻が無い。終了＋6h（終了が無ければ開始＋12h）まで
+      if (startAbs !== null && nowAbs >= startAbs && nowAbs <= (endAbs ?? startAbs + 720) + GRACE_MIN) {
+        const { data: punched } = await svc.from('attendance_logs').select('id').eq('worker_id', caller.workerId).is('deleted_at', null)
+          .eq('type', 'checkin').gte('checked_at', jstTs(s.start_date, '00:00')).lt('checked_at', jstTs(shiftDate(s.start_date, 1), '00:00')).limit(1)
+        if (!punched?.length) items.push({ scheduleId: s.id, kind: 'checkin', title: '出勤の打刻をお願いします', body: `${site} の予定開始（${s.start_time!.slice(0, 5)}）です。`, at: s.start_time!.slice(0, 5), siteName: site })
+      }
+      // 退勤: 終了を過ぎていて、予定開始以降に退勤打刻が無い。終了＋6h まで
+      if (endAbs !== null && nowAbs >= endAbs && nowAbs <= endAbs + GRACE_MIN) {
+        const { data: punched } = await svc.from('attendance_logs').select('id').eq('worker_id', caller.workerId).is('deleted_at', null)
+          .eq('type', 'checkout').gte('checked_at', jstTs(s.start_date, s.start_time ?? '00:00')).limit(1)
+        if (!punched?.length) items.push({ scheduleId: s.id, kind: 'checkout', title: '退勤の打刻をお願いします', body: `${site} の予定終了（${s.end_time!.slice(0, 5)}）です。`, at: s.end_time!.slice(0, 5), siteName: site })
+      }
+    }
+    return json({ ok: true, items })
+  }
+
   if (!(await authorizeReminderTrigger(req, svc as any))) return json({ ok: false, error: 'unauthorized' }, 401)
 
   // テスト用: body.now（ISO）で「今」を差し替えられる（cron からは空 body）
-  let body: any = {}
-  try { body = await req.json() } catch { /* 空でよい */ }
   const base = typeof body?.now === 'string' && !Number.isNaN(Date.parse(body.now)) ? new Date(body.now) : new Date()
   const now = jstNow(base)
   const lookback = Math.max(1, Math.min(60, Number(body?.lookbackMinutes) || LOOKBACK_MIN))
@@ -150,9 +197,10 @@ Deno.serve(async (req) => {
     const bodyText = isIn
       ? `${site} の予定開始（${at}）です。出勤の打刻をしてください。`
       : `${site} の予定終了（${at}）です。退勤の打刻をしてください。`
+    // ★お知らせ側は履歴として残すだけ（最初から既読）。催促そのものは「やること」（todo-mine）が状態から出す（A-3）
     const { error: insErr } = await svc.from('schedule_notifications').insert({
       account_id: s.account_id, worker_id: s.worker_id, schedule_id: s.id,
-      kind, title, body: bodyText, link_path: '/checkin',
+      kind, title, body: bodyText, link_path: '/checkin', read_at: new Date().toISOString(),
     })
     if (insErr) { console.error('[punch-reminder] insert failed:', insErr); continue }
     created++

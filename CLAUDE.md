@@ -96,7 +96,7 @@ git push origin main --force
 | **本番 Supabase ref** | `nrzzesbtvswoiouhldvi` | 誤接続ガード／`--prod-readonly` 監査用 |
 | **PROD_URL** | admin=`https://sido-admin-stism.vercel.app/` ／ liff=`https://sido-liff.vercel.app/` | ship 手順8スモークで使用 |
 | **DOC_LEVEL** | `light` | 設計書（spec-doc skill）の粒度。light=認識合わせ資料1〜4枚／standard=章立て／formal=要件定義・基本設計・詳細設計に分冊。SEED は light（2026-09-19 T44） |
-| **SPEC_DS_ID** | `1cf812c9-6a86-452f-bacc-8f823786feb5` | Notion「設計書」DB（3リポ共有・Stism 配下）。お客様共有版は案件ページ配下「お客様共有（GENLINKS／SEED）」（`3e00ff81c56b81abb8c8c22b9a26a30a`・**人が一度だけ「共有›公開」する**） |
+| **SPEC_DS_ID** | `1cf812c9-6a86-452f-bacc-8f823786feb5` | Notion「設計書」DB（3リポ共有・Stism 配下）。お客様共有版は案件ページ配下「お客様共有（GENLINKS／SEED）」（`3e00ff81c56b81abb8c8c22b9a26a30a`・公開済み 2026-09-20: https://majestic-radius-b7a.notion.site/GENLINKS-SEED-3e00ff81c56b81abb8c8c22b9a26a30a ＝配下の設計書・リリースノートは自動で公開URL付き） |
 | **STAKEHOLDERS_DS_ID** | `f2afffbc-b6fd-400c-9625-9c6e65a38a00` | Notion「関係者」DB（案件管理配下・3リポ共有・案件 relation）。spec-doc A-0 の calendar-match と宛先解決に使う。案件プロファイルは案件管理マスタの GENLINKS 行本文（`3540ff81-c56b-802e-871d-ca995e01718f`） |
 | **REVIEW_LOGIN** | admin: ID=`e2e`（`ADMIN_LOGIN_ID`）／PASS=`e2e-pass-1234`（`ADMIN_LOGIN_PASS`）。自動ログインURL＝`{{DEV_URL}}/login?id=e2e&pass=e2e-pass-1234` | `/review` が admin のログイン必須画面をナビする時に使う（`apps/admin/src/pages/login.vue` の `?id=&pass=` クエリ自動ログイン対応）。liff は dev モードでLIFF認証スキップのため通常不要。 |
 
@@ -132,13 +132,23 @@ node --env-file=.env scripts/seed-staging-demo.mjs --clean   # 片付け
 - **`NUXT_PUBLIC_APP_ENV` に `development` を入れてはいけない**。LIFF認証をスキップして全員 `dev-user-id` になり、本番DBに対して身元不明で書き込む状態になる。
 - 手で `auth.users` を INSERT する時は `confirmation_token` 等のtoken列を **NULL でなく `''`** にする。NULL だとログインが `Database error querying schema`(500) で落ちる。
 
+### 管理画面の新規ページは「共通の作り」に乗せる（/run の着地ゲート・2026-09-20）
+新しい `apps/admin/src/pages/*.vue` は **`docs/templates/admin-list-page.vue` をコピーして始める**：見出し横に `<HelpButton>`（使い方ナビ）、クラスは `apps/admin/src/style.css` の共通キット（page-header/hint/empty/filters/table…）かページの scoped に定義（定義の無いクラスを書かない）。**`npm run check:admin-pages`**（`scripts/check-admin-pages.mjs`）が機械で検査し、allowlist（`scripts/admin-pages.allowlist.json`＝既存の未対応・ratchet）に無いページの違反で落ちる。既存ページを直したら allowlist の行を消す。絵文字禁止（`npm run check:no-emoji`）と同型。
+
+### 共通運用は cc-pipeline `plugin/PIPELINE-COMMON.md`（T46・2026-09-21）
+着地ゲートの共通分（verify-dist・check-digest-refs・independent-review）、レビューの単位（設計書×段階）と3段階（ノールック／👀読むだけ／🖐手を動かす）、📋ダイジェストの鮮度ルールは **そこが正本**。ここには書かない。共通スクリプトは plugin/bin（`next-target` `dispatcher` `independent-review` `check-digest-refs` `verify-dist`・`.env` は cwd から）。リポ内に残る配布物は `scripts/notify-humanball.mjs`・`scripts/rls-audit.mjs` だけ（GitHub Actions が直接実行するため）。
+**この案件固有のチェッカ**: `npm run check:admin-pages`（共通の作り・ratchet）／`npm run check:no-emoji`／`npm run check:screen-catalog`／E2E は `admin`・`liff` の2 project。
+
 ### APP_LAYOUT_NOTES（/review が参照）
-- 構成: `apps/admin`(管理画面・ブラウザ {{DEV_URL}}) ＋ `apps/liff`(Nuxt・LINEミニアプリ)。UI/ロジックは原則ブラウザ。**LINEアプリ内固有（友だち追加・トーク内 LIFF 起動・Flex体裁）は `⚠実機確認`**。
+- 構成: `apps/admin`(管理画面・ブラウザ {{DEV_URL}}) ＋ `apps/liff`(Nuxt・**作業員アプリ＝Webアプリ**。メール/パスワードでログイン。「LINEアプリ」「LIFF」と書かない)。UI/ロジックは原則ブラウザ。
 - 画面パス例（admin）: 下請け管理／現場／日報／月次集計 ※実パスは apps ルーティングに合わせる。
 - 外部送信媒体＝**メール（Resend）** と **アプリ内のお知らせ**（実送信は自分宛・隔離）。
   ★**LINEへの送信は 2026-08-30 に全廃**（日報通知・編集通知・エラー通知・未送信リマインド・
-  車検リマインド・注文書承諾通知）。関数も本番から削除済み。**LINEログイン（身元解決）は現役**なので
-  `LINE_LOGIN_CHANNEL_ID` / `liff.getIdToken` / `users.line_user_id` は残す（ここを消すと本番が即死する）。
+  車検リマインド・注文書承諾通知）。関数も本番から削除済み。
+  ★**LINEログインは実運用で使われていない**（2026-09-16 本番実測: 7月以降 LINE ID の新規0・auth.users 全員 provider=email・
+  現役作業員はパスワードログイン）。コードの LINE 経路（`useLiff.ts` init・`liff.getIdToken`・`users.line_user_id`・
+  `LINE_LOGIN_CHANNEL_ID`）は **撤去中の残骸**（チケット「【土台】LINE認証を完全撤去し、メール/パスワード一本にする」）。
+  撤去はそのチケットで段階的に行う（勝手に消さない）が、**契約・手順書・リリースノート・お客様向け文面で「LINEでログイン」「LINEアプリで」と書かない**。
 - 本番: DEPLOY_TRIGGER=`auto-on-merge`（Vercel）。**Supabase edge functions 使用＝ship 手順7 で本番ref へ deploy 該当**。`NOTIFY_PREFIX=[sido]`。スモークの認可ガード対象＝edge webhook・公開リンク等。
 
 ### CONSUMERS_DOCS（/run が参照・§3 影響範囲マップの手順4）

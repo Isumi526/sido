@@ -2,7 +2,7 @@
   <div class="cal-page">
     <!-- ヘッダー -->
     <div class="page-header">
-      <h1 class="page-title">予定管理</h1>
+      <h1 class="page-title">スケジュール管理</h1>
       <div v-if="tab === 'workers'" class="header-actions">
         <label class="deleted-toggle">
           <input type="checkbox" v-model="showDeleted" />
@@ -336,6 +336,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { logFeatureUsage } from '../lib/usageLog'
 import { supabase } from '../lib/supabase'
 import { siteStatusesForScreen } from '../lib/site-status.gen'
 import { useQueryParam } from '../composables/useQueryParam'
@@ -880,6 +881,8 @@ async function createForWorker(payload: Record<string, unknown>) {
     created_by_name: currentUserName,
   }).select('id').single()
   if (error) throw error
+  // メール通知（テナント設定 ON の時だけ EF が送る）。best-effort
+  notifyScheduleChange((created as { id?: string } | null)?.id, 'created')
   // 対象作業員へアプリ内通知（自分自身への通知は不要）。best-effort・失敗しても作成は成立 #予定通知
   try {
     const wid = payload.worker_id as string
@@ -947,6 +950,8 @@ async function saveSchedule() {
 
       const { error } = await supabase.from('schedules').update(payload).eq('id', formModal.value.id)
       if (error) throw error
+      // 変更をアプリ内通知＋メール（テナント設定 ON の時だけメール）。best-effort
+      if (Object.keys(changes).length) notifyScheduleChange(formModal.value.id, 'updated', changes)
 
       if (Object.keys(changes).length) {
         await supabase.from('schedule_edits').insert({
@@ -966,6 +971,7 @@ async function saveSchedule() {
       }
     }
 
+    if (!formModal.value.id) logFeatureUsage('schedule_created')   // 効果測定（新規のみ・ベストエフォート）
     formModal.value = null
     await loadSchedules()
   } catch (e) {
@@ -984,7 +990,15 @@ async function softDelete(schedule: Schedule) {
     deleted_by_name: currentUserName,
   }).eq('id', schedule.id)
   if (error) { alert(error.message); return }
+  notifyScheduleChange(schedule.id, 'deleted')   // 削除をアプリ内通知＋メール。best-effort
   await loadSchedules()
+}
+
+/** 予定の作成・変更・削除を担当作業員へ通知する（EF schedule-notify）。失敗しても操作は成立させる */
+function notifyScheduleChange(scheduleId: string | undefined, kind: 'created' | 'updated' | 'deleted', changes?: Record<string, unknown>) {
+  if (!scheduleId) return
+  supabase.functions.invoke('schedule-notify', { body: { action: 'changed', scheduleId, kind, changes: changes ?? null } })
+    .catch((e) => console.warn('[schedule-notify]', e))
 }
 
 async function restore(schedule: Schedule) {

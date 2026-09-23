@@ -209,12 +209,12 @@ const { status: today, refresh: refreshToday } = useTodayStatus()
 
 // ハンバーガーメニュー(AppNav.vue)と共通のナビ項目定義（2026-07-10）
 const { resolveRole: resolveWorkerPerm, canApplyPersonalExpense } = useWorkerPermission()
-onMounted(() => { void resolveWorkerPerm() })
-const { bySection: navBySection } = useNavItems(() => authMode.value, () => canApplyPersonalExpense.value)
+onMounted(() => { void resolveWorkerPerm(); void ensureLiffFeaturesLoaded() })
+const { bySection: navBySection } = useNavItems(() => authMode.value, () => canApplyPersonalExpense.value, () => isLiffFeatureEnabled('inventory'), () => isLiffFeatureEnabled('tools'))
 const NAV_ICON_COLORS: Record<string, string> = {
   '/checkin': '#10b981', '/report': '#06C755', '/history': '#3b82f6', '/overtime': '#f59e0b',
   '/notifications': '#e11d48', '/calendar': '#f59e0b', '/groups': '#8b5cf6', '/subcontractors': '#0ea5e9',
-  '/sites': '#22c55e', '/expense/download': '#ef4444', '/expense/personal': '#d946ef', '/rules': '#0d9488', '/password': '#64748b',
+  '/sites': '#22c55e', '/tools': '#0e7490', '/inventory': '#0891b2', '/expense/download': '#ef4444', '/expense/personal': '#d946ef', '/rules': '#0d9488', '/password': '#64748b',
 }
 function navIconColor(path: string): string { return NAV_ICON_COLORS[path] ?? '#64748b' }
 

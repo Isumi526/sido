@@ -493,6 +493,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { primaryWorkCategory } from '~/composables/work-category-primary.gen'
 import { useI18n } from 'vue-i18n'
 import { useSchedules, type Schedule, type ScheduleForm } from '~/composables/useSchedules'
 import { findSimilarSiteNames } from '~/utils/site-similarity.gen'
@@ -571,7 +572,8 @@ const workCategoryOptions = computed(() => {
  */
 function defaultWorkCategoryId(): string {
   const all = master.workCategories.value
-  return all.find(c => c.name === '現場作業')?.id ?? all[0]?.id ?? ''
+  // 主系区分（uses_site_hours）。名前では判定しない＝改名しても壊れない（A-4）
+  return primaryWorkCategory(all)?.id ?? all[0]?.id ?? ''
 }
 
 // 「現場と紐付けない」トグル。内部状態は title==='__none__'（保存ロジックは従来どおり）。
@@ -1039,6 +1041,7 @@ function updatePersonalDayCount() {
   personalDayCount.value = w >= 900 ? 7 : w >= 700 ? 5 : w >= 480 ? 4 : 3
 }
 onMounted(() => {
+  useUsageLog().logFeatureUsage('schedule_viewed')   // 効果測定（ベストエフォート）
   updatePersonalDayCount()
   window.addEventListener('resize', updatePersonalDayCount)
   nextTick(() => scrollWeekTimelineToDefault())

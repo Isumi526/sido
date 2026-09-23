@@ -39,18 +39,60 @@ test.describe('個人経費の申請（liff）', () => {
     await setPermission(false, null).catch(() => {})
   })
 
-  test('権限が無ければ入口を出さず理由を出す', async ({ page }) => {
+  // ── 2026-09-20 2区分化: 業務経費（枠を消費しない）は全作業員が出せる。個人枠は従来どおり 許可＋枠 ──
+  test('★権限が無くても「業務経費」は出せる（個人枠は選べない・枠の表示は出ない）', async ({ page }) => {
     await setPermission(false, null)
+    await restSrv(`personal_expenses?worker_id=eq.${workerId}`, { method: 'DELETE' }).catch(() => {})
     await page.goto('/expense/personal', { waitUntil: 'networkidle' })
-    await expect(page.getByTestId('pe-submit'), '登録フォームを出さない').toHaveCount(0)
-    await expect(page.locator('body')).toContainText('経費申請が許可されていません')
+    await expect(page.getByTestId('pe-submit')).toBeVisible({ timeout: 15000 })
+    await expect(page.getByTestId('pe-kind-business')).toBeChecked()
+    await expect(page.getByTestId('pe-kind-budget'), '枠が無い人は個人枠を選べない').toBeDisabled()
+    await expect(page.getByTestId('pe-budget'), '枠の表示は出ない').toHaveCount(0)
+    await page.getByTestId('pe-account').selectOption('消耗品費')
+    await page.getByTestId('pe-amount').fill('800')
+    await page.getByTestId('pe-payer-company').check()
+    await page.getByTestId('pe-note').fill('E2E業務_' + Date.now())
+    await page.getByTestId('pe-submit').click()
+    await expect(page.getByTestId('pe-msg')).toContainText('登録しました', { timeout: 15000 })
+    const rows = await restSrv(`personal_expenses?worker_id=eq.${workerId}&select=expense_kind,amount`)
+    expect(rows.length).toBe(1)
+    expect(rows[0].expense_kind, '★業務経費として保存').toBe('business')
+    await expect(page.getByTestId('pe-item-business')).toBeVisible()
   })
 
-  test('権限があっても枠の金額が未設定なら提出させない', async ({ page }) => {
+  test('権限があっても枠の金額が未設定なら「個人枠」は選べない（業務経費だけ）', async ({ page }) => {
     await setPermission(true, null)
     await page.goto('/expense/personal', { waitUntil: 'networkidle' })
-    await expect(page.getByTestId('pe-submit'), '金額未設定では提出させない').toHaveCount(0)
-    await expect(page.locator('body')).toContainText('経費申請が許可されていません')
+    await expect(page.getByTestId('pe-submit')).toBeVisible({ timeout: 15000 })
+    await expect(page.getByTestId('pe-kind-budget')).toBeDisabled()
+    await expect(page.getByTestId('pe-kind-business')).toBeChecked()
+  })
+
+  test('★個人枠を持つ人が業務経費で登録しても枠は減らない／個人枠で登録すると減る', async ({ page }) => {
+    await setPermission(true, 50000)
+    await restSrv(`personal_expenses?worker_id=eq.${workerId}`, { method: 'DELETE' }).catch(() => {})
+    await page.goto('/expense/personal', { waitUntil: 'networkidle' })
+    await expect(page.getByTestId('pe-kind-budget'), '枠を持つ人の既定は個人枠').toBeChecked()
+    await expect(page.getByTestId('pe-budget')).toContainText('¥0 / ¥50,000')
+    // 業務経費で 3,000
+    await page.getByTestId('pe-kind-business').check()
+    await expect(page.getByTestId('pe-budget'), '業務経費を選ぶと枠の表示は出ない').toHaveCount(0)
+    await page.getByTestId('pe-account').selectOption('消耗品費')
+    await page.getByTestId('pe-amount').fill('3000')
+    await page.getByTestId('pe-payer-company').check()
+    await page.getByTestId('pe-submit').click()
+    await expect(page.getByTestId('pe-msg')).toContainText('登録しました', { timeout: 15000 })
+    await page.getByTestId('pe-kind-budget').check()
+    await expect(page.getByTestId('pe-budget'), '★業務経費は枠を消費しない').toContainText('¥0 / ¥50,000')
+    // 個人枠で 12,000（立替）
+    await page.getByTestId('pe-account').selectOption('消耗品費')
+    await page.getByTestId('pe-amount').fill('12000')
+    await page.getByTestId('pe-payer-personal').check()
+    await page.getByTestId('pe-submit').click()
+    await expect(page.getByTestId('pe-msg')).toContainText('登録しました', { timeout: 15000 })
+    await expect(page.getByTestId('pe-budget'), '個人枠は消費に反映').toContainText('¥12,000 / ¥50,000')
+    const kinds = (await restSrv(`personal_expenses?worker_id=eq.${workerId}&select=expense_kind,amount&order=amount`)).map((r: any) => `${r.expense_kind}:${r.amount}`)
+    expect(kinds).toEqual(['business:3000', 'budget:12000'])
   })
 
   test('権限＋枠があれば登録でき、枠の消費に反映される', async ({ page }) => {

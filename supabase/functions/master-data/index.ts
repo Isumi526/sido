@@ -89,7 +89,7 @@ Deno.serve(async (req) => {
         .order('name_kana', { nullsFirst: false }).order('name'),
       svc.from('subcontractors').select('id, name').eq('active', true).eq('account_id', accountId)
         .order('sort_order').order('name'),
-      svc.from('vehicles').select('name').eq('active', true).eq('account_id', accountId)
+      svc.from('vehicles').select('id, name').eq('active', true).eq('account_id', accountId).order('name')
         .order('sort_order').order('name'),
       svc.from('site_subcontractors').select('site_id, subcontractor_id').eq('account_id', accountId),
       // 作業区分（現場作業/見積/事務…）。日報・予定で「どの作業か」を選ばせる
@@ -97,7 +97,7 @@ Deno.serve(async (req) => {
       //  現場」の順に定時を引くので、区分の共通定時が無いと工場作業が現場の時間帯に
       //  引っ張られる（2026-09-02 今井さん）。
       svc.from('work_categories')
-        .select('id, name, scope, sort_order, default_start_time, default_end_time, default_breaks, hours_unrestricted')
+        .select('id, name, scope, sort_order, default_start_time, default_end_time, default_breaks, hours_unrestricted, uses_site_hours')
         .eq('active', true).eq('account_id', accountId).order('sort_order').order('name'),
       // 現場×区分ごとの定時。行が無い組は「定時なし」
       svc.from('site_category_hours')
@@ -116,6 +116,8 @@ Deno.serve(async (req) => {
       workers: workers.data ?? [],
       subcontractors: subs.data ?? [],
       vehicles: (vehicles.data ?? []).map((v: any) => v.name),
+      // 日報の車両欄をマスタからの選択にするため id も返す（vehicleId を日報 JSON に持つ・2026-09-20）
+      vehicleList: (vehicles.data ?? []).map((v: any) => ({ id: v.id, name: v.name })),
       siteSubcontractors: siteSubs.data ?? [],
       workCategories: categories.data ?? [],
       siteCategoryHours: catHours.data ?? [],
@@ -185,7 +187,7 @@ Deno.serve(async (req) => {
   //   読みも書きもここを通す（テーブル直叩きは通らない）。
   if (body.action === 'categories') {
     const { data, error } = await svc.from('work_categories')
-      .select('id, name, scope, sort_order, active, is_default, default_start_time, default_end_time, default_breaks, hours_unrestricted')
+      .select('id, name, scope, sort_order, active, is_default, default_start_time, default_end_time, default_breaks, hours_unrestricted, uses_site_hours')
       .eq('account_id', accountId).order('sort_order').order('name')
     if (error) { console.error('[master-data] categories failed:', error); return json({ ok: false, error: 'fetch_failed' }, 500) }
     return json({ ok: true, categories: data ?? [] })

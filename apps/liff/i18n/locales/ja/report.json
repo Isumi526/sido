@@ -220,5 +220,13 @@
   "editReasonHintApproval": "この編集は期限を過ぎているため承認が必要です。何を直したかが分かるように理由を残してください",
   "pickup": "引き上げ材料",
   "pickupNotePlaceholder": "何を引き上げたか（例：残材のボード3枚・工具）",
-  "pickupPhotoLabel": "引き上げ材料の写真（複数可）"
+  "pickupPhotoLabel": "引き上げ材料の写真（複数可）",
+  "distOverTitle": "既定の距離（往復{km}km）を超えています",
+  "distOverHint": "理由を入れて送信してください。承認されるまでは既定の距離で計上され、現場管理者が承認すると入力した距離に置き換わります。",
+  "distOverReasonPlaceholder": "例: 資材の引き取りで倉庫に寄った",
+  "distOverReasonRequired": "「{site}」の距離が既定（往復{km}km）を超えています。理由を入力してください。",
+  "distOverPending": "現場管理者の承認待ちです（承認までは既定の距離で計上）",
+  "distOverRejected": "前回の申請は却下されました。距離を直すか、理由を書いて再申請してください。",
+  "vehicleSelectPlaceholder": "車両を選択",
+  "vehicleOther": "その他（手入力）"
 }

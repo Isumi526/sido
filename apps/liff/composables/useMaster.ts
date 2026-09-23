@@ -160,6 +160,7 @@ export const useMaster = () => {
         end:    (c.default_end_time ?? null)?.slice(0, 5) ?? null,
         breaks: normalizeBreaks(c.default_breaks),
         unrestricted: c.hours_unrestricted === true,
+        usesSiteHours: c.uses_site_hours === true,   // 主系区分（A-4）。日報の既定区分＝これ
       }))
     const categoryHours: Record<string, { start: string | null; end: string | null; breaks: { start: string; minutes: number }[] | null }> = {}
     for (const h of (r.siteCategoryHours ?? []) as any[]) {
@@ -176,6 +177,7 @@ export const useMaster = () => {
       workers:        (r.workers ?? []).map((x: any) => ({ id: x.id, name: x.name, name_kana: x.name_kana ?? null, role: x.role as 'factory' | 'site' })),
       subcontractors: (r.subcontractors ?? []).map((x: any) => x.name),
       vehicles:       r.vehicles ?? [],
+      vehicleList:    Array.isArray(r.vehicleList) ? r.vehicleList : [],
       siteContractors,
       siteSubcontractors,
       siteIds,
@@ -360,5 +362,7 @@ export const useMaster = () => {
     workerList:          computed(() => master.value.workers.slice()),
     subcontractorNames:  computed(() => master.value.subcontractors.slice()),
     vehicleNames:        computed(() => master.value.vehicles),
+    // 日報の車両欄（マスタからの選択）。id 付き
+    vehicleList:         computed(() => master.value.vehicleList ?? []),
   }
 }

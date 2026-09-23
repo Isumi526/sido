@@ -58,7 +58,7 @@ export const router = createRouter({
     // 物品マスタ（ETCカード等）。会社全体の設定＝経営系（EF 側でも同じ判定をしている）
     { path: '/assets', component: () => import('../pages/assets.vue'), meta: { management: true } },
     // 在庫管理（品目＋入出庫・会社単位MVP）
-    { path: '/inventory', component: () => import('../pages/inventory.vue'), meta: { management: true } },
+    { path: '/inventory', component: () => import('../pages/inventory.vue'), meta: { management: true, feature: 'inventory' } },
     // 道具管理（道具①・2026-09-18）。登録権限＝オーナー/管理者/現場管理者（AC2）なので management を付けない
     //  ＝ isAdminAllowed（worker弾き）だけが効く（/contractors と同じ扱い）。書込権限は EF(tools) 側でも確認する。
     { path: '/tools', component: () => import('../pages/tools.vue'), meta: { feature: 'tools' } },
@@ -100,13 +100,14 @@ export const router = createRouter({
     { path: '/report-site-relink', component: ReportSiteRelink, meta: { approver: true } },
     { path: '/overtime-approvals', component: OvertimeApprovals, meta: { approver: true } },
     { path: '/punch-corrections', component: PunchCorrections, meta: { approver: true } },
+    { path: '/distance-approvals', component: () => import('../pages/distance-approvals.vue'), meta: { approver: true } },
     { path: '/ai-help',          component: AiHelp,     meta: { management: true } },
     { path: '/faq',              component: Faq,        meta: { management: true } },
     { path: '/estimates',        component: Estimates,  meta: { management: true, estimate: true } },
     { path: '/estimate-list',   component: EstimatesList, meta: { management: true, estimate: true } },
     { path: '/estimate-masters', component: EstimateMasters, meta: { management: true, estimate: true } },
     { path: '/estimate-builder', component: EstimateBuilder, meta: { management: true, estimate: true } },
-    { path: '/estimate-excel',   component: EstimateExcel,   meta: { management: true, estimate: true } },
+    { path: '/estimate-excel',   component: EstimateExcel,   meta: { management: true, estimate: true, feature: 'estimate_excel' } },   // 個別対応（E-1）: 見積ON かつ Excel連携ON
     { path: '/purchase-orders',  component: PurchaseOrders,  meta: { management: true, estimate: true } },
     // ★2026-08-30: 図面の材料抽出を見積から独立させた（estimate: true を外す）。
     //  「材料抽出としては、めちゃくちゃ別」（大塚さん・2026-08-19）。実装は元から独立していて

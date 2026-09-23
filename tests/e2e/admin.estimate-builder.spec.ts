@@ -287,6 +287,11 @@ test.describe('見積もり 全体見積→工種別自動集計', () => {
     await page.locator('[data-testid="price-name"]').fill(MAT_PL)
     await page.locator('[data-testid="price-unit"]').fill('m')
     await page.locator('[data-testid="price-value"]').fill('1500')
+    // E-4: 適用日は必須（既定＝今日が入っている）。空にすると登録できない
+    await expect(page.locator('[data-testid="price-effective"]')).not.toHaveValue('')
+    await page.locator('[data-testid="price-effective"]').fill('')
+    await expect(page.locator('[data-testid="add-price"]'), '★適用日が空だと登録できない').toBeDisabled()
+    await page.locator('[data-testid="price-effective"]').fill('2026-09-20')
     await page.locator('[data-testid="add-price"]').click()
 
     // 現行一覧に出る（商社列は無い＝タブで自明）

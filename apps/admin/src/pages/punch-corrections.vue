@@ -90,6 +90,7 @@
  *  権限検査・自己承認の禁止・承認者名の確定・打刻への反映はすべて EF 側で行う。
  */
 import { ref, onMounted } from 'vue'
+import { logFeatureUsage } from '../lib/usageLog'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
 import { currentWorkerId } from '../lib/auth'
@@ -207,6 +208,7 @@ async function decide(r: CorrectionReq, status: 'approved' | 'rejected') {
     alert(DECIDE_ERRORS[code] ?? `更新に失敗しました${code ? `: ${code}` : ''}`)
     return
   }
+  logFeatureUsage('punch_correction_decided')   // 効果測定（ベストエフォート）
   await refreshNavBadges()
   await load()   // 打刻の値も変わるので引き直す
 }

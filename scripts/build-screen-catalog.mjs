@@ -66,6 +66,10 @@ function parseRoutes(src, importMap) {
       file,
       requiresManagement: /\bmanagement:\s*true/.test(line),
       requiresEstimate: /\bestimate:\s*true/.test(line),
+      // 承認系（approver: true）と「使う機能」ゲート（feature: 'xxx'）も拾う（AIチャット②の残り・2026-09-20）。
+      //  ai-chat がその人の権限とテナントの機能フラグで「開けない画面」を判定するのに使う。
+      requiresApprover: /\bapprover:\s*true/.test(line),
+      feature: (line.match(/\bfeature:\s*'([\w-]+)'/) || [])[1] || null,
     })
   }
   return routes
@@ -118,6 +122,8 @@ function build() {
       title,
       requiresManagement: r.requiresManagement,
       requiresEstimate: r.requiresEstimate,
+      requiresApprover: r.requiresApprover,
+      feature: r.feature,
       help,
     }
   })
@@ -140,6 +146,10 @@ export interface ScreenCatalogEntry {
   title: string
   requiresManagement: boolean
   requiresEstimate: boolean
+  /** 承認系（meta.approver）＝ owner/admin/office/site_manager のみ */
+  requiresApprover: boolean
+  /** 「使う機能」ゲート（meta.feature）。shared/features.ts の FeatureKey。無ければ null */
+  feature: string | null
   help: string[]
 }
 

@@ -400,6 +400,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { logFeatureUsage } from '../lib/usageLog'
 import { onBeforeRouteLeave } from 'vue-router'
 import { supabase } from '../lib/supabase'
 import { getAccountId } from '../lib/account'
@@ -1233,6 +1234,7 @@ async function save() {
       const { data, error } = await supabase.from('subcontractor_invoices').insert(header).select('id').single()
       if (error) throw error
       invoiceId = data.id
+      logFeatureUsage('subcontractor_invoice_registered')   // 効果測定（ベストエフォート）
     }
     // PDF/画像アップロード（任意・複数枚対応）
     // 先頭ファイルは従来どおり {invoiceId}.pdf として pdf_path に保存（既存ビューア互換）。

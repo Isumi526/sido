@@ -1,0 +1,158 @@
+{
+  "_note": "既存の未対応ページ（ratchet）。直したら行を消す。新規ページをここに足さない。",
+  "pages": {
+    "account-chat.vue": [
+      "HelpButton無し"
+    ],
+    "assets.vue": [
+      "HelpButton無し"
+    ],
+    "attendance.vue": [
+      "HelpButton無し",
+      "定義の無いクラス: location, rules"
+    ],
+    "calendar.vue": [
+      "HelpButton無し",
+      "定義の無いクラス: sentinel-bottom, sentinel-top"
+    ],
+    "chat-detail.vue": [
+      "HelpButton無し",
+      "定義の無いクラス: chat-detail"
+    ],
+    "chats.vue": [
+      "HelpButton無し"
+    ],
+    "company-profile.vue": [
+      "HelpButton無し"
+    ],
+    "contractors.vue": [
+      "HelpButton無し"
+    ],
+    "data-export.vue": [
+      "HelpButton無し"
+    ],
+    "drawing-materials.vue": [
+      "定義の無いクラス: sup-price"
+    ],
+    "estimate-builder.vue": [
+      "HelpButton無し",
+      "定義の無いクラス: autosave, badge, banner-icon, bd-date, bp-summary, btn, btn-excel, company-inline, company-note, est-cover, ifields, lbl, ok-msg, pre, undo-bar, unit-in, work-import-panel"
+    ],
+    "estimate-excel.vue": [
+      "HelpButton無し"
+    ],
+    "estimate-list.vue": [
+      "HelpButton無し"
+    ],
+    "estimate-masters.vue": [
+      "HelpButton無し",
+      "定義の無いクラス: ok, price-list, ps-undated"
+    ],
+    "expenses-daily.vue": [
+      "HelpButton無し"
+    ],
+    "expenses.vue": [
+      "HelpButton無し",
+      "定義の無いクラス: print-seikyu"
+    ],
+    "external-consents.vue": [
+      "HelpButton無し"
+    ],
+    "faq.vue": [
+      "HelpButton無し"
+    ],
+    "index.vue": [
+      "定義の無いクラス: inv-stale"
+    ],
+    "inventory.vue": [
+      "HelpButton無し"
+    ],
+    "non-submitters.vue": [
+      "HelpButton無し"
+    ],
+    "operation-logs.vue": [
+      "HelpButton無し"
+    ],
+    "overtime-approvals.vue": [
+      "HelpButton無し",
+      "定義の無いクラス: self-approve-blocked"
+    ],
+    "paid-leave.vue": [
+      "HelpButton無し"
+    ],
+    "process.vue": [
+      "定義の無いクラス: m-bar-label, mcal-group"
+    ],
+    "punch-corrections.vue": [
+      "HelpButton無し"
+    ],
+    "purchase-orders.vue": [
+      "HelpButton無し",
+      "定義の無いクラス: po-vendor"
+    ],
+    "reminder-history.vue": [
+      "HelpButton無し"
+    ],
+    "report-edit-approvals.vue": [
+      "HelpButton無し"
+    ],
+    "report-edit-review.vue": [
+      "HelpButton無し"
+    ],
+    "report-site-relink.vue": [
+      "HelpButton無し"
+    ],
+    "reports.vue": [
+      "HelpButton無し",
+      "定義の無いクラス: edit-log-when"
+    ],
+    "schedule-categories.vue": [
+      "HelpButton無し"
+    ],
+    "settings.vue": [
+      "HelpButton無し"
+    ],
+    "site-detail.vue": [
+      "HelpButton無し",
+      "定義の無いクラス: site-detail"
+    ],
+    "site-reports.vue": [
+      "定義の無いクラス: total-row"
+    ],
+    "site-rules.vue": [
+      "HelpButton無し",
+      "定義の無いクラス: page-note"
+    ],
+    "sites.vue": [
+      "HelpButton無し",
+      "定義の無いクラス: att-disabled, att-kind, fixed-time, pdf-link, resp"
+    ],
+    "subcontractor-invoices.vue": [
+      "定義の無いクラス: existing-pdf-link, pdf-link, selected-files"
+    ],
+    "subcontractors.vue": [
+      "HelpButton無し",
+      "定義の無いクラス: fld"
+    ],
+    "tools.vue": [
+      "HelpButton無し",
+      "定義の無いクラス: modal-title"
+    ],
+    "users.vue": [
+      "HelpButton無し"
+    ],
+    "vehicles.vue": [
+      "HelpButton無し",
+      "定義の無いクラス: shaken"
+    ],
+    "work-categories.vue": [
+      "HelpButton無し"
+    ],
+    "worker-reports.vue": [
+      "HelpButton無し"
+    ],
+    "workers.vue": [
+      "HelpButton無し"
+    ]
+  }
+}

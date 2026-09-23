@@ -35,6 +35,8 @@ export interface SubcontractorEntry {
 
 export interface VehicleExpense {
   vehicleName?: string
+  // 車両マスタの id（2026-09-20）。vehicleName は表示スナップショット（現場の site_id と同じ考え方）。マスタに無い車（その他）は null
+  vehicleId?: string | null
   distanceKm?: number
   dieselKm?: number
   parkingYen?: number
@@ -46,6 +48,9 @@ export interface VehicleExpense {
   dieselTategae?: boolean   // 軽油代
   parkingTategae?: boolean  // 駐車代
   highwayTategae?: boolean  // 高速代
+  // 距離Step2（2026-09-20）: 既定距離超過の申請（保存形）と入力中の理由。形は shared/distance-overage.ts が正本
+  overages?: Partial<Record<'distanceKm' | 'dieselKm', import('~/composables/distance-overage.gen').DistanceOverage>>
+  overageReason?: string
 }
 
 export interface LineItem {
@@ -168,6 +173,8 @@ export interface MasterData {
   workers: { id?: string; name: string; name_kana?: string | null; role: WorkerRole }[]  // 時給(unit_price)は liff に持たせない（作業員に他人の時給を渡さない・#4）
   subcontractors: string[]
   vehicles: string[]
+  // 車両マスタ（有効のみ・id 付き）。日報の車両欄の選択肢。無ければ vehicles（名前のみ）にフォールバック
+  vehicleList?: { id: string; name: string }[]
   // 現場名 → 紐づく元請け名（未紐付けは未収録）。日報の現場絞り込みに使う（任意・後方互換）。
   siteContractors?: Record<string, string>
   // 現場名 → 紐づく下請け業者名[]（未紐付けは未収録＝全件表示にフォールバック）。日報の業者プルダウン絞り込み用。
@@ -197,6 +204,7 @@ export interface MasterData {
     start?: string | null; end?: string | null
     breaks?: { start: string; minutes: number }[] | null
     unrestricted?: boolean
+    usesSiteHours?: boolean
   }[]
   // ★「現場id|区分id」→ 定時。定時は現場だけでも区分だけでも決まらないので組で持つ
   //  （事務は拠点で 08:30/08:00 と違う）。未収録＝その組に定時なし。

@@ -18,5 +18,9 @@
   "companionsRequired": "{account} requires companion names (needed for tax records).",
   "submitFailed": "Your daily report was submitted, but {count} expense claim(s) failed to register. Please re-enter them from the Expense claim page.",
   "office": "Charge to (office / factory)",
-  "officeNone": "No base set"
+  "officeNone": "No base set",
+  "kindBudget": "Personal allowance",
+  "kindBusiness": "Business expense",
+  "kindBudgetHint": "Spent from your monthly allowance; tracked against the remaining budget.",
+  "kindBusinessHint": "Work expense not tied to a specific site (e.g. restocking supplies). Does not use your allowance."
 }

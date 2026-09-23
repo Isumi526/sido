@@ -34,6 +34,7 @@
 | 連絡 | ★携帯番号 | `mobile_phone` | 3名 |
 | 連絡 | ★緊急連絡先 | `emergency_contact` | 6名 |
 | 連絡 | ★通知用メール | `notify_email` | — |
+| 通知 | スケジュール通知メールを受け取るか | `schedule_mail_enabled` | —（2026-09-20 追加。既定ON。テナント設定 `notify_schedule_mail_enabled` がONの時だけ効く） |
 | 属性 | ★生年月日 | `birth_date` | 27名 |
 | 属性 | ★住所 | `address` | 20名 |
 | 雇用 | 入社日 / 雇用形態 / 週所定日数 | `hire_date` / `employment_type` / `weekly_scheduled_days` | — |

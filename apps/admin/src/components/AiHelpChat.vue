@@ -77,6 +77,7 @@
 
 <script setup lang="ts">
 import { ref, nextTick } from 'vue'
+import { logFeatureUsage } from '../lib/usageLog'
 import { supabase } from '../lib/supabase'
 import { compressImageIfNeeded, formatMB } from '../lib/chatAttachmentLimits'
 
@@ -189,6 +190,7 @@ async function send(optionText?: string) {
   })
   thinking.value = false
   if (r?.ok) {
+    logFeatureUsage('ai_help_asked')   // 効果測定（ベストエフォート）
     const opts = r.needClarify && Array.isArray(r.options) && r.options.length ? r.options as string[] : undefined
     messages.value.push({ role: 'ai', text: r.answer, options: opts })
     // バグ検知はユーザーでなくAIが判定。isBugなら起票を促す（実起票は人の確認後）。聞き返し中は促さない。

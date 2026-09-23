@@ -190,18 +190,46 @@ export class XlsxTemplate {
    * @param match   置き換えたい既存の formula1 を見分ける文字列（部分一致）
    * @param formula 新しい参照（先頭の = は不要）
    */
-  async replaceValidationSource(sheet: string, match: string, formula: string): Promise<number> {
+  async replaceValidationSource(sheet: string, match: string | RegExp, formula: string): Promise<number> {
     const path = this.pathOf(sheet)
     let xml = await this.zip.file(path)!.async('string')
     let n = 0
+    const hit = (block: string) => typeof match === 'string' ? block.includes(match) : match.test(block)
     xml = xml.replace(/<dataValidation\b[\s\S]*?<\/dataValidation>/g, (block) => {
-      if (!block.includes(match)) return block
+      if (!hit(block)) return block
       n++
       return block.replace(/<formula1>[\s\S]*?<\/formula1>/,
         `<formula1>${formula.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</formula1>`)
     })
     if (n) this.zip.file(path, xml)
     return n
+  }
+
+  /**
+   * 入力規則の参照元を「その規則の先頭セルの行」に応じた式へ差し替える（E-2・行ごとの区分で候補を絞る）。
+   * 相対参照の式は sqref の先頭セル基準で書くのが Excel の規則なので、先頭行を渡す。
+   */
+  async replaceValidationSourceBySqref(sheet: string, match: string | RegExp, formulaFor: (firstRow: number, sqref: string) => string): Promise<number> {
+    const path = this.pathOf(sheet)
+    let xml = await this.zip.file(path)!.async('string')
+    let n = 0
+    const hit = (block: string) => typeof match === 'string' ? block.includes(match) : match.test(block)
+    xml = xml.replace(/<dataValidation\b[\s\S]*?<\/dataValidation>/g, (block) => {
+      if (!hit(block)) return block
+      const sq = /sqref="([^"]+)"/.exec(block)?.[1] ?? 'A1'
+      const first = parseRef(sq.split(/[\s:]/)[0].replace(/\$/g, ''))
+      n++
+      const formula = formulaFor(first.row, sq)
+      return block.replace(/<formula1>[\s\S]*?<\/formula1>/,
+        `<formula1>${formula.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</formula1>`)
+    })
+    if (n) this.zip.file(path, xml)
+    return n
+  }
+
+  /** シートの生XML（テスト・診断用。入力規則の中身を確かめる） */
+  async debugSheetXml(sheet: string): Promise<string> {
+    return this.zip.file(this.pathOf(sheet))!.async('string')
   }
 
   /**

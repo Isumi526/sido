@@ -111,6 +111,39 @@ const SHARES = [
     ],
   },
   {
+    // 主系区分（現場の固定勤務時刻を使う作業区分）の特定。名前でなく uses_site_hours で判定（A-4）
+    src: 'shared/work-category-primary.ts',
+    dests: [
+      'apps/admin/src/lib/work-category-primary.gen.ts',
+      'apps/liff/composables/work-category-primary.gen.ts',
+    ],
+  },
+  {
+    // 日報1件を「人が読む行」に畳む（承認画面の変更前／変更後の全体表示）。admin で使う（将来 LIFF の履歴でも）
+    src: 'shared/report-snapshot.ts',
+    dests: [
+      'apps/admin/src/lib/report-snapshot.gen.ts',
+    ],
+  },
+  {
+    // 効果測定の計測キー登録簿。admin（直接INSERT）/ LIFF（EF経由）/ EF（キー検証）で同じ登録簿を使う
+    src: 'shared/usage-features.ts',
+    dests: [
+      'apps/admin/src/lib/usage-features.gen.ts',
+      'apps/liff/composables/usage-features.gen.ts',
+      'supabase/functions/_shared/usage-features.gen.ts',
+    ],
+  },
+  {
+    // 日報の車両距離「既定値超過」の申請・承認（距離Step2）。LIFF が保存形に直し、admin が一覧/バッジで拾い、EF が承認で差し替える
+    src: 'shared/distance-overage.ts',
+    dests: [
+      'apps/admin/src/lib/distance-overage.gen.ts',
+      'apps/liff/composables/distance-overage.gen.ts',
+      'supabase/functions/_shared/distance-overage.gen.ts',
+    ],
+  },
+  {
     // テナント単位の「使う機能」（機能ON/OFF）の登録簿と既定値。admin/LIFF/EF で同じ判定にする
     src: 'shared/features.ts',
     dests: [
@@ -121,10 +154,12 @@ const SHARES = [
   },
   {
     // 車両・道具・部屋の予約（リソース予定）の純粋ロジック。admin/LIFF の予定管理タブで共有
+    //  ★EF(resource-reservations) も toolDaysOut（持出中 N日目）で使うため _shared にも置く
     src: 'shared/resource-core.ts',
     dests: [
       'apps/admin/src/lib/resource-core.gen.ts',
       'apps/liff/composables/resource-core.gen.ts',
+      'supabase/functions/_shared/resource-core.gen.ts',
     ],
   },
   {

@@ -52,6 +52,14 @@ const isDate = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{
 const isTime = (v: unknown): v is string => typeof v === 'string' && /^\d{2}:\d{2}$/.test(v)
 
 /** JSTの YYYY-MM-DD（n日前） */
+/** 残業申請の取消ができるか: 当日の通常申請は締切（16:00 JST）まで。締切後の実績修正(late)と当日以外は可 */
+function overtimeCancelAllowed(date: string, isLate: boolean): boolean {
+  if (isLate) return true
+  if (date !== jstDay(0)) return true
+  const jstHour = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Tokyo', hour: 'numeric', hour12: false }).format(new Date()))
+  return jstHour < 16
+}
+
 function jstDay(offsetDays: number): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo' })
     .format(new Date(Date.now() - offsetDays * 24 * 60 * 60 * 1000))
@@ -543,6 +551,9 @@ Deno.serve(async (req) => {
     return json({
       ok: true,
       status: r?.status ?? 'none',
+      isLate: !!r?.is_late,
+      // ★取消できるか（締切後の当日通常申請は不可・2026-09-20 A-1）。画面はこれでボタンを出し分ける
+      canCancel: r?.status === 'pending' ? overtimeCancelAllowed(date, !!r.is_late) : false,
       // 却下された時の管理者コメント（「理由を教えて」等）。本人がこれを見て再申請する
       decisionNote: r?.status === 'rejected' ? (r.decision_note ?? null) : null,
       adjustment: r?.status === 'approved'
@@ -583,7 +594,10 @@ Deno.serve(async (req) => {
     const { data: existing } = await svc.from('overtime_requests').select('id')
       .eq('account_id', caller.accountId).eq('worker_id', caller.workerId).eq('date', date)
       .in('status', ['pending', 'approved']).limit(1)
-    if (existing && existing.length) return json({ ok: true, deduped: true })
+    // ★既に有効申請があるのに ok:true を返して成功を装わない（2026-09-20 設計 A-1「無言の失敗をなくす」）。
+    //  以前は deduped:true で握りつぶし、出し直しても中身が変わらないのに「申請しました」と出ていた。
+    //  締切前の内容変更は overtime-update が正規の導線。
+    if (existing && existing.length) return json({ ok: false, error: 'already_requested' }, 409)
 
     const bm = body.requestedBreakMinutes
     const { error } = await svc.from('overtime_requests').insert({
@@ -596,9 +610,9 @@ Deno.serve(async (req) => {
       site_names: Array.isArray(body.siteNames) && body.siteNames.length ? body.siteNames.map(String) : null,
       status: 'pending',
     })
-    // 競合で同時insertされた場合、部分一意indexが弾く＝既に有効申請あり＝成功扱い
+    // 競合で同時insertされた場合、部分一意indexが弾く＝既に有効申請あり＝同じく明示して失敗
     if (error) {
-      if ((error as any).code === '23505') return json({ ok: true, deduped: true })
+      if ((error as any).code === '23505') return json({ ok: false, error: 'already_requested' }, 409)
       console.error('[attendance-log] overtime insert failed:', error)
       return json({ ok: false, error: 'insert_failed' }, 500)
     }
@@ -725,12 +739,19 @@ Deno.serve(async (req) => {
   }
 
   // 誤った申請の取り消し（pending のみ・本人の分だけ）
+  //  ★締切（当日16:00 JST）後は当日の通常申請を取り消せない（2026-09-20 設計 A-1・確認事項1=A）。
+  //   以前は取消だけ締切ガードが無く、16:00 以降に取り消すと二度と出せない罠になっていた。
+  //   締切の趣旨＝その日のうちに承認判断をする。取消後の再申請ができないので取消も閉じる。
+  //   締切後の「実績修正の申請」(is_late) は late で出し直せるので取り消してよい。
   if (body.action === 'overtime-cancel') {
     const date = isDate(body.date) ? body.date : ''
     if (!date) return json({ ok: false, error: 'bad_date' }, 400)
-    const { error } = await svc.from('overtime_requests').delete()
+    const { data: pend } = await svc.from('overtime_requests').select('id, is_late')
       .eq('account_id', caller.accountId).eq('worker_id', caller.workerId)
-      .eq('date', date).eq('status', 'pending')
+      .eq('date', date).eq('status', 'pending').limit(1)
+    if (!pend || !pend.length) return json({ ok: false, error: 'not_found' }, 404)
+    if (!overtimeCancelAllowed(date, !!(pend[0] as any).is_late)) return json({ ok: false, error: 'deadline_passed' }, 400)
+    const { error } = await svc.from('overtime_requests').delete().eq('id', (pend[0] as any).id)
     if (error) {
       console.error('[attendance-log] overtime cancel failed:', error)
       return json({ ok: false, error: 'delete_failed' }, 500)

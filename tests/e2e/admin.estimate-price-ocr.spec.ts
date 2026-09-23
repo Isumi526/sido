@@ -51,6 +51,10 @@ test.describe('見積 価格表差分承認（E4）', () => {
     await expect(page.locator(`[data-testid="rev-price-${rev1.id}"]`)).toHaveValue('140')
     await expect(page.locator(`[data-testid="rev-name-${rev2.id}"]`)).toHaveValue(NEW)
 
+    // E-4（2026-09-20）: 適用日が空のままでは承認できない（改定履歴の並びに使う）。入れてから承認
+    await page.locator(`[data-testid="approve-${rev1.id}"]`).click()
+    await expect(page.getByTestId('master-err'), '★適用日なしは止まる').toContainText('適用日', { timeout: 10000 })
+    await page.locator(`[data-testid="rev-date-${rev1.id}"]`).fill('2026-09-01')
     // ① 既存材料の改定を承認 → 現行100は履歴化・新単価140がcurrent・revision applied
     await page.locator(`[data-testid="approve-${rev1.id}"]`).click()
     await expect.poll(async () => {
@@ -61,7 +65,8 @@ test.describe('見積 価格表差分承認（E4）', () => {
       return `${cur?.unit_price}|${old?.unit_price}|${rev?.[0]?.status}`
     }, { timeout: 10000 }).toBe('140|100|applied')
 
-    // ② 未登録品の改定を承認 → ★材料マスタは作らず、単価表に直接入る
+    // ② 未登録品の改定を承認 → ★材料マスタは作らず、単価表に直接入る（承認後に一覧が読み直されるので日付はここで入れる）
+    await page.locator(`[data-testid="rev-date-${rev2.id}"]`).fill('2026-09-01')
     await page.locator(`[data-testid="approve-${rev2.id}"]`).click()
     await expect.poll(async () => {
       const ps = await restSrv(`estimate_material_prices?item_name=eq.${encodeURIComponent(NEW)}&supplier_id=eq.${sup.id}&is_current=eq.true&select=unit_price,unit`)

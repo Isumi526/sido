@@ -23,6 +23,16 @@ export function isLiffFeatureEnabled(key: FeatureKey): boolean { return liffFeat
 /** 解決済みか（解決前に出してしまわないため。未解決のうちは OFF 扱い） */
 export const liffFeaturesResolved = ref(false)
 
+/**
+ * 1セッション1回だけ読む（メニュー用）。AppNav／ホームが毎ページ mount するたびに settings を叩かない。
+ * 明示的に読み直したい画面（設定変更直後など）は loadLiffFeatures() を直接呼ぶ。
+ */
+let _loadOnce: Promise<void> | null = null
+export function ensureLiffFeaturesLoaded(): Promise<void> {
+  if (!_loadOnce) _loadOnce = loadLiffFeatures().catch(() => {})
+  return _loadOnce
+}
+
 export async function loadLiffFeatures(): Promise<void> {
   liffFeaturesResolved.value = false
   try {

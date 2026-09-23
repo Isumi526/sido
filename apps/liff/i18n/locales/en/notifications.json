@@ -9,5 +9,8 @@
   "tabTodo": "To do",
   "tabInfo": "Notices",
   "todoEmpty": "Nothing to do",
-  "todoDocTitle": "Read and confirm a document"
+  "todoDocTitle": "Read and confirm a document",
+  "schedMailToggle": "Also receive schedule notifications by email",
+  "schedMailHint": "Emails for schedule additions/changes/deletions and a reminder the day before.",
+  "schedMailNoEmail": "No notification email is registered, so emails will not be sent (in-app notifications still appear)."
 }

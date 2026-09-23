@@ -35,6 +35,7 @@
             <td class="name">
               {{ c.name }}
               <span v-if="c.is_default" class="tag-default">標準</span>
+              <span v-if="c.uses_site_hours" class="tag-primary" :data-testid="`cat-primary-${c.id}`" title="この区分は各現場の固定勤務時刻・既定休憩をそのまま使います。日報の既定区分にもなります">現場の固定勤務時刻を使う</span>
             </td>
             <td class="scope">{{ scopeLabel(c.scope) }}</td>
             <td class="hours" :data-testid="`cat-hours-${c.id}`">
@@ -160,6 +161,7 @@ interface WorkCategory {
   default_breaks: BreakWindow[] | null
   // 日報の時刻ピッカーで定時の外も選べるようにするか（見積・事務など・2026-09-03）
   hours_unrestricted: boolean
+  uses_site_hours?: boolean | null
 }
 
 /** 'HH:MM:SS' も 'HH:MM' も 'HH:MM' に揃える（DBは time 型で秒付きで返る） */
@@ -332,4 +334,5 @@ onMounted(load)
 .btn-save:disabled { opacity: .5; }
 .btn-cancel { flex: 1; background: #f5f5f5; color: #888; border: none; border-radius: 8px; padding: 12px; cursor: pointer; }
 .error { color: #E53935; font-size: 13px; }
+.tag-primary { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; color: #1d4ed8; background: #dbeafe; white-space: nowrap; }
 </style>

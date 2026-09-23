@@ -40,13 +40,19 @@ test.afterAll(async () => {
   await setBudget(false, null).catch(() => {})   // 専用作業員なので既定（枠なし）へ戻す
 })
 
-test('★枠を持たない作業員には、日報に個人経費セクションを出さない', async ({ page }) => {
+// ★2026-09-20 2区分化: 業務経費（枠を消費しない）は全作業員が出せるので、枠を持たない人にもセクションは出る。
+//  ただし行の区分は「業務経費」に固定（個人枠は選べない）・枠の表示は出ない
+test('★枠を持たない作業員にも日報のセクションは出るが、区分は業務経費だけ・枠の表示は無い', async ({ page }) => {
   await setBudget(false, null)
   await useDevWorker(page, 'pe-in-report')
   await page.goto('/report', { waitUntil: 'networkidle' })
   await page.waitForSelector('form.form', { timeout: 15000 })
-  await page.waitForTimeout(1200)   // 枠の取得（EF）を待つ
-  await expect(page.getByTestId('pe-section'), '★枠が無い人には入口を開けない').toHaveCount(0)
+  const section = page.getByTestId('pe-section')
+  await expect(section).toBeVisible({ timeout: 15000 })
+  await expect(page.getByTestId('pe-budget'), '枠が無い人に枠の表示は出ない').toHaveCount(0)
+  await page.getByTestId('pe-add-row').click()
+  await expect(page.getByTestId('pe-kind-business-0')).toBeChecked()
+  await expect(page.getByTestId('pe-kind-budget-0'), '個人枠は選べない').toBeDisabled()
 })
 
 test('★枠を持つ作業員は、日報から個人経費を出せて既存の枠に反映される', async ({ page }) => {
@@ -81,9 +87,10 @@ test('★枠を持つ作業員は、日報から個人経費を出せて既存�
     return rows?.length ?? 0
   }, { timeout: 15000 }).toBe(1)
 
-  const [saved] = await restSrv(`personal_expenses?payee=eq.${encodeURIComponent(PAYEE)}&select=amount,account_category`)
+  const [saved] = await restSrv(`personal_expenses?payee=eq.${encodeURIComponent(PAYEE)}&select=amount,account_category,expense_kind`)
   expect(Number(saved.amount)).toBe(3200)
   expect(saved.account_category).toBe('車両費')
+  expect(saved.expense_kind, '枠を持つ人の既定は個人枠').toBe('budget')
 })
 
 test('★30日の月でも個人経費の明細と枠が消えない（月末の日付範囲バグの再発防止）', async () => {

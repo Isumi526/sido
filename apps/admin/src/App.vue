@@ -16,7 +16,7 @@
     <div class="gate-card">
       <span class="material-symbols-rounded gate-icon">block</span>
       <h1 class="gate-title">この画面を利用する権限がありません</h1>
-      <p class="gate-text">管理画面はオーナー・役員・経理のみ利用できます。<br>作業員の方は下のボタンから作業員アプリをご利用ください。</p>
+      <p class="gate-text">管理画面はオーナー・役員・経理・現場管理者が利用できます。<br>作業員の方は下のボタンから作業員アプリをご利用ください。</p>
       <a class="gate-liff" :href="liffUrl">作業員アプリを開く →</a>
       <button class="gate-logout-link" @click="handleLogout">ログアウト</button>
     </div>
@@ -48,9 +48,10 @@
         <li><RouterLink to="/report-site-relink" class="nav-link"><span class="material-symbols-rounded nav-icon">link</span>現場未設定の紐付け<span v-if="siteUnsetCount" class="nav-badge" data-testid="nav-badge-site-unset">{{ siteUnsetCount }}</span></RouterLink></li>
         <li><RouterLink to="/overtime-approvals" class="nav-link"><span class="material-symbols-rounded nav-icon">more_time</span>残業申請の承認<span v-if="overtimePendingCount" class="nav-badge">{{ overtimePendingCount }}</span></RouterLink></li>
         <li><RouterLink to="/punch-corrections" class="nav-link"><span class="material-symbols-rounded nav-icon">edit_calendar</span>打刻修正の承認<span v-if="punchCorrectionCount" class="nav-badge">{{ punchCorrectionCount }}</span></RouterLink></li>
+        <li><RouterLink to="/distance-approvals" class="nav-link"><span class="material-symbols-rounded nav-icon">route</span>距離の超過申請<span v-if="distanceOverageCount" class="nav-badge" data-testid="nav-badge-distance">{{ distanceOverageCount }}</span></RouterLink></li>
         <li><RouterLink to="/chats" class="nav-link"><span class="material-symbols-rounded nav-icon">forum</span>チャット<span v-if="unreadChatCount" class="nav-badge">{{ unreadChatCount }}</span></RouterLink></li>
         <li><RouterLink to="/site-reports" class="nav-link"><span class="material-symbols-rounded nav-icon">bar_chart</span>現場別集計</RouterLink></li>
-        <li><RouterLink to="/calendar" class="nav-link"><span class="material-symbols-rounded nav-icon">calendar_month</span>予定管理</RouterLink></li>
+        <li><RouterLink to="/calendar" class="nav-link"><span class="material-symbols-rounded nav-icon">calendar_month</span>スケジュール管理</RouterLink></li>
         <li><RouterLink to="/process" class="nav-link"><span class="material-symbols-rounded nav-icon">view_timeline</span>工程管理</RouterLink></li>
 
         <template v-if="canViewManagementPages">
@@ -95,11 +96,13 @@
         <li><RouterLink to="/subcontractors" class="nav-link"><span class="material-symbols-rounded nav-icon">handshake</span>協力業者</RouterLink></li>
         <!-- 車両・道具は「設定 › 使う機能」でテナント単位に開閉（2026-09-19 B-0） -->
         <li v-if="canViewManagementPages && isFeatureEnabled('vehicles')"><RouterLink to="/vehicles" class="nav-link"><span class="material-symbols-rounded nav-icon">directions_car</span>車両</RouterLink></li>
-        <li v-if="canViewManagementPages"><RouterLink to="/assets" class="nav-link"><span class="material-symbols-rounded nav-icon">inventory_2</span>物品マスタ</RouterLink></li>
-        <li v-if="canViewManagementPages"><RouterLink to="/inventory" class="nav-link"><span class="material-symbols-rounded nav-icon">warehouse</span>在庫管理</RouterLink></li>
-        <li v-if="isFeatureEnabled('tools')"><RouterLink to="/tools" class="nav-link"><span class="material-symbols-rounded nav-icon">construction</span>道具管理</RouterLink></li>
+        <li v-if="canViewManagementPages"><RouterLink to="/assets" class="nav-link"><span class="material-symbols-rounded nav-icon">inventory_2</span>備品・カード</RouterLink></li>
+        <!-- 在庫①〜④はベータ（設定「使う機能」の feature.inventory・既定OFF）。③④が揃ってから SEED で ON（2026-09-19 レビュー決定） -->
+        <li v-if="canViewManagementPages && isFeatureEnabled('inventory')"><RouterLink to="/inventory" class="nav-link"><span class="material-symbols-rounded nav-icon">warehouse</span>資材の在庫</RouterLink></li>
+        <li v-if="isFeatureEnabled('tools')"><RouterLink to="/tools" class="nav-link"><span class="material-symbols-rounded nav-icon">construction</span>道具</RouterLink></li>
         <li v-if="canViewEstimates"><RouterLink to="/estimate-masters" class="nav-link"><span class="material-symbols-rounded nav-icon">price_change</span>見積マスタ・単価表</RouterLink></li>
-        <li v-if="canViewEstimates"><RouterLink to="/estimate-excel" class="nav-link"><span class="material-symbols-rounded nav-icon">table_view</span>見積Excel連携<span class="nav-beta">β</span></RouterLink></li>
+        <!-- 見積Excel連携は会社ごとの個別対応（設計書 E-1・既定OFF・SEED=ON）。見積 ON かつ estimate_excel ON の会社にだけ出す -->
+        <li v-if="canViewEstimates && isFeatureEnabled('estimate_excel')"><RouterLink to="/estimate-excel" class="nav-link"><span class="material-symbols-rounded nav-icon">table_view</span>見積Excel連携<span class="nav-beta">β</span></RouterLink></li>
 
         <template v-if="canViewManagementPages">
           <li class="nav-section">管理・設定</li>
@@ -148,7 +151,7 @@ import { currentUser, currentRole, currentWorkerName, signOut, isAdminAllowed, r
 import { canViewEstimates, isFeatureEnabled } from './lib/features'
 import { liffAppUrl } from './lib/links'
 import { getAccountName } from './lib/account'
-import { editReviewCount, siteUnsetCount, overtimePendingCount, pendingGrantCount, poAcceptedPendingCount, punchCorrectionCount, refreshNavBadges } from './lib/navBadges'
+import { editReviewCount, siteUnsetCount, overtimePendingCount, pendingGrantCount, poAcceptedPendingCount, punchCorrectionCount, distanceOverageCount, refreshNavBadges } from './lib/navBadges'
 import { unreadChatCount, refreshChatBadge } from './lib/chatBadge'
 import { extractDoneCount, refreshExtractBadge } from './lib/extractJobs'
 import { HIDE_LINE_SECTIONS, HIDE_AI_HELP_SECTIONS } from './lib/featureFlags'

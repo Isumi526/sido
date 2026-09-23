@@ -7,15 +7,24 @@
       <p class="note" data-testid="inv-note">{{ $t('inventory.note') }}</p>
 
       <div v-if="loading" class="state">{{ $t('common.loading') }}</div>
+      <!-- ★テナント別フラグ（feature.inventory・既定OFF＝ベータ）。OFF はメニューから消えるが、URL 直打ち・古いブックマークで来ても閉じる（fail-closed） -->
+      <div v-else-if="!inventoryEnabled" class="state" data-testid="inv-disabled">{{ $t('inventory.disabled') }}</div>
       <template v-else>
         <section class="card" data-testid="inv-form">
           <div class="card-title">{{ $t('inventory.register') }}</div>
-          <!-- 種別: 入荷（＋）／持出（−・現場へ）。引き上げは日報の末尾の1問から -->
+          <!-- 種別の並びは会議の主役どおり（2026-09-19 レビュー決定）:
+               1. 引き上げ（余りを倉庫へ戻す＝「何が残っているか」の入口・+qty）
+               2. 持出（余りを次の現場へ・−qty）
+               3. 入荷（倉庫に直接入れる時だけ・+qty）
+               大塚「15本残りましたよって帰ってきてその辺に置いとく…現場で使えばよかった」／今井「入ってもその出すだけ」 -->
           <div class="kinds" role="radiogroup">
-            <label class="kind" :class="{ on: kind === 'in' }"><input type="radio" name="inv-kind" value="in" v-model="kind" data-testid="inv-kind-in" />{{ $t('inventory.kindIn') }}</label>
+            <label class="kind" :class="{ on: kind === 'return' }"><input type="radio" name="inv-kind" value="return" v-model="kind" data-testid="inv-kind-return" />{{ $t('inventory.kindReturn') }}</label>
             <label class="kind" :class="{ on: kind === 'out' }"><input type="radio" name="inv-kind" value="out" v-model="kind" data-testid="inv-kind-out" />{{ $t('inventory.kindOut') }}</label>
+            <label class="kind" :class="{ on: kind === 'in' }"><input type="radio" name="inv-kind" value="in" v-model="kind" data-testid="inv-kind-in" />{{ $t('inventory.kindIn') }}</label>
           </div>
-          <p class="hint">{{ $t('inventory.returnHint') }}</p>
+          <p class="hint" data-testid="inv-kind-hint">{{ kind === 'return' ? $t('inventory.returnHint') : kind === 'out' ? $t('inventory.outHint') : $t('inventory.inHint') }}</p>
+          <!-- 在庫③: 確認役＝事務側の会社では、品目は決めなくてよい（写真＋数量で送り、事務側が管理画面で確定する） -->
+          <p v-if="officeMode" class="office-note" data-testid="inv-office-note">{{ $t('inventory.officeModeNote') }}</p>
 
           <!-- ★写真は必須（亥角「持ち出した時と引き上げの最低限、写真を残すのはマスト」）。
                在庫②: 写真を先に撮る→AIが品目候補を出す→違えば検索/手入力（大塚「電卓ってやったら出る方がいい」） -->
@@ -35,7 +44,7 @@
             </button>
           </div>
 
-          <label class="lbl">{{ $t('inventory.item') }}</label>
+          <label class="lbl">{{ $t('inventory.item') }}<span v-if="officeMode" class="opt">{{ $t('inventory.itemOptional') }}</span></label>
           <div v-if="itemId" class="picked" data-testid="inv-item-picked">
             <span class="picked-name">{{ pickedItem?.name }}<span v-if="pickedItem?.unit" class="picked-unit">（{{ pickedItem?.unit }}）</span></span>
             <span class="picked-stock">{{ $t('inventory.stock', { n: fmt(pickedItem?.current_qty ?? 0) }) }}</span>
@@ -79,8 +88,9 @@
           <label class="lbl">{{ $t('inventory.qty') }}</label>
           <input v-model.number="qty" type="number" inputmode="numeric" min="1" step="1" class="input" data-testid="inv-qty" />
 
-          <template v-if="kind === 'out'">
-            <label class="lbl">{{ $t('inventory.site') }}</label>
+          <!-- 引き上げ＝どの現場から戻したか／持出＝どの現場へ持って行くか（既定＝当日の日報の現場） -->
+          <template v-if="kind === 'out' || kind === 'return'">
+            <label class="lbl">{{ kind === 'return' ? $t('inventory.siteFrom') : $t('inventory.site') }}</label>
             <select v-model="siteId" class="select" data-testid="inv-site">
               <option value="">{{ $t('common.select') }}</option>
               <optgroup v-if="todaySites.length" :label="$t('inventory.siteToday')">
@@ -92,13 +102,56 @@
             </select>
           </template>
 
+          <!-- 在庫④: 拠点（倉庫）。引き上げ・入荷＝どの拠点の倉庫へ／持出＝どの拠点から。既定＝所属拠点（1拠点なら自動） -->
+          <template v-if="bases.length">
+            <label class="lbl">{{ kind === 'out' ? $t('inventory.baseFrom') : $t('inventory.baseTo') }}<span class="opt">{{ $t('inventory.baseOptional') }}</span></label>
+            <select v-model="baseSiteId" class="select" data-testid="inv-base">
+              <option value="">{{ $t('inventory.baseNone') }}</option>
+              <option v-for="b in bases" :key="b.id" :value="b.id">{{ b.name }}</option>
+            </select>
+          </template>
+
           <label class="lbl">{{ $t('inventory.noteLabel') }}</label>
           <input v-model="note" type="text" class="input" :placeholder="$t('inventory.notePlaceholder')" data-testid="inv-memo" @keydown.enter.prevent />
 
           <button type="button" class="btn-submit" :disabled="!canSubmit || busy" data-testid="inv-submit" @click="submit">
-            {{ busy ? $t('inventory.saving') : (kind === 'in' ? $t('inventory.submitIn') : $t('inventory.submitOut')) }}
+            {{ busy ? $t('inventory.saving') : officeMode && !itemId ? $t('inventory.submitPending') : (kind === 'return' ? $t('inventory.submitReturn') : kind === 'in' ? $t('inventory.submitIn') : $t('inventory.submitOut')) }}
           </button>
           <p v-if="msg" class="msg" :class="{ ok: msgOk }" data-testid="inv-msg">{{ msg }}</p>
+        </section>
+
+        <!-- 在庫③: 事務モードの自分の確認待ち（確定/差し戻しの結果もここで分かる） -->
+        <section v-if="officeMode || pendingMine.length" class="card" data-testid="inv-pending-card">
+          <div class="card-title">{{ $t('inventory.pendingTitle') }}</div>
+          <div v-if="!pendingMine.length" class="hint">{{ $t('inventory.pendingEmpty') }}</div>
+          <ul v-else class="list">
+            <li v-for="p in pendingMine" :key="p.id" class="row" data-testid="inv-pending-row">
+              <span class="badge" :class="p.kind">{{ kindLabel(p.kind) }}</span>
+              <span class="row-main">{{ p.inventory_items?.name ?? p.ai_guess_name ?? $t('inventory.pendingNoItem') }} <b>{{ fmt(p.qty) }}</b>{{ p.inventory_items?.unit ?? '' }}</span>
+              <span v-if="p.sites?.name" class="row-sub">{{ p.sites.name }}</span>
+              <span class="pstatus" :class="p.status" :data-testid="`inv-pending-status-${p.id}`">{{ p.status === 'pending' ? $t('inventory.pendingStatusPending') : p.status === 'confirmed' ? $t('inventory.pendingStatusConfirmed') : $t('inventory.pendingStatusRejected') }}</span>
+              <span v-if="p.status === 'rejected' && p.reject_reason" class="row-sub reason">{{ p.reject_reason }}</span>
+              <span class="row-sub">{{ fmtDate(p.created_at) }}</span>
+            </li>
+          </ul>
+        </section>
+
+        <!-- 在庫④: 残数一覧（拠点の倉庫／現場）。「引き上げで戻ってきた余りがどこに何個あるか」を見る -->
+        <section class="card" data-testid="inv-balances">
+          <div class="card-title">{{ $t('inventory.balancesTitle') }}</div>
+          <p class="hint">{{ $t('inventory.balancesNote') }}</p>
+          <div v-if="!balanceGroups.length" class="hint">{{ $t('inventory.balancesEmpty') }}</div>
+          <ul v-else class="list">
+            <li v-for="g in balanceGroups" :key="g.item_id" class="bal-item" :data-testid="`inv-bal-${g.item_id}`">
+              <div class="bal-name">{{ g.item_name }}<span v-if="g.category" class="row-sub"> · {{ g.category }}</span></div>
+              <div v-for="b in g.rows" :key="`${b.location_kind}-${b.location_id}`" class="bal-row" :data-testid="`inv-bal-row-${g.item_id}-${b.location_kind}-${b.location_id ?? 'none'}`">
+                <span class="badge" :class="b.location_kind === 'base' ? 'in' : 'out'">{{ b.location_kind === 'base' ? $t('inventory.locBase') : $t('inventory.locSite') }}</span>
+                <span class="row-main">{{ b.location_name }} <b>{{ fmt(b.qty) }}</b>{{ g.unit ?? '' }}</span>
+                <span v-if="b.last_at" class="row-sub">{{ fmtDate(b.last_at) }}</span>
+                <a v-if="b.last_photo_url" :href="b.last_photo_url" target="_blank" rel="noopener" class="bal-photo" :aria-label="$t('inventory.photos')"><span class="material-symbols-rounded">photo</span></a>
+              </div>
+            </li>
+          </ul>
         </section>
 
         <section class="card">
@@ -122,7 +175,7 @@
 import { useI18n } from 'vue-i18n'
 import { uploadExpenseFiles } from '~/utils/uploadExpenseFiles'
 import { todayStr } from '~/composables/schedule-core.gen'
-import type { InventoryItem, InventoryKind, InventoryMovement, InventorySuggestion } from '~/composables/useInventoryApi'
+import type { InventoryItem, InventoryKind, InventoryMovement, InventorySuggestion, InventoryConfirmRole, InventoryPending, InventoryBalance } from '~/composables/useInventoryApi'
 
 const { t } = useI18n()
 const liff = useLiff()
@@ -136,9 +189,38 @@ const items = ref<InventoryItem[]>([])
 const sites = ref<{ id: string; name: string }[]>([])
 const todaySites = ref<{ id: string; name: string }[]>([])
 const recent = ref<InventoryMovement[]>([])
+// 在庫③: 確認役（settings.inventory_confirm_role）。office＝写真＋数量で送り、事務側が管理画面で品目を確定する
+const confirmRole = ref<InventoryConfirmRole>('self')
+const officeMode = computed(() => confirmRole.value === 'office')
+const pendingMine = ref<InventoryPending[]>([])
+// 在庫④: 拠点（倉庫）と残数一覧
+const bases = ref<{ id: string; name: string }[]>([])
+const baseSiteId = ref('')
+const balances = ref<InventoryBalance[]>([])
+/** 品目ごとにまとめる（拠点の倉庫 → 現場の順）。無効化（名寄せ済み）の品目は出さない */
+const balanceGroups = computed(() => {
+  const m = new Map<string, { item_id: string; item_name: string; unit: string | null; category: string | null; rows: InventoryBalance[] }>()
+  for (const b of balances.value) {
+    if (!b.item_active) continue
+    if (!m.has(b.item_id)) m.set(b.item_id, { item_id: b.item_id, item_name: b.item_name, unit: b.unit, category: b.category, rows: [] })
+    m.get(b.item_id)!.rows.push(b)
+  }
+  return [...m.values()]
+})
 
-const kind = ref<InventoryKind>('out')
+/** 既定＝引き上げ（会議の主役。2026-09-19 レビュー決定） */
+const kind = ref<InventoryKind>('return')
 const itemId = ref('')
+/** テナント別フラグ（feature.inventory）。未解決のうちは閉じておく（fail-closed） */
+const inventoryEnabled = computed(() => liffFeaturesResolved.value && isLiffFeatureEnabled('inventory'))
+/**
+ * ★べき等キー（/ship の独立レビュー指摘・2026-09-19）: 連打・通信断からの再送で同じ登録が二重に増減しないよう、
+ *  1回の入力に1つの UUID を付けて EF→inventory_move に渡す。登録が成立したら次の入力用に新しい値へ。
+ */
+const clientRequestId = ref(newRequestId())
+function newRequestId(): string {
+  return (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`)
+}
 
 // ── 在庫②: 区分→詳細の予測検索・写真→AI候補・その場で新規登録 ──
 const categories = ref<string[]>([])
@@ -208,7 +290,7 @@ const msgOk = ref(false)
 let senderName = 'worker'
 
 const canSubmit = computed(() =>
-  !!itemId.value && Number(qty.value) > 0 && files.value.length > 0 && (kind.value !== 'out' || !!siteId.value))
+  (!!itemId.value || officeMode.value) && Number(qty.value) > 0 && files.value.length > 0 && (kind.value === 'in' || !!siteId.value))
 
 function fmt(n: number | string): string { const v = Number(n); return Number.isInteger(v) ? String(v) : v.toFixed(2) }
 function fmtDate(iso: string): string {
@@ -229,9 +311,15 @@ async function load() {
   try {
     const me = await useCurrentUser().resolve()
     senderName = me?.real_name || 'worker'
-    const [its, ss, rec, cats] = await Promise.all([api.items(), useSitesApi().listSafe(), api.recent(20), api.categories()])
+    const [its, ss, rec, cats, cfg, bal] = await Promise.all([api.items(), useSitesApi().listSafe(), api.recent(20), api.categories(), api.settings(), api.balances()])
     items.value = its
     categories.value = cats
+    confirmRole.value = cfg.confirmRole
+    bases.value = cfg.bases
+    // 既定の拠点＝所属拠点 → 1拠点しか無ければそれ
+    baseSiteId.value = cfg.myBaseSiteId ?? (cfg.bases.length === 1 ? cfg.bases[0].id : '')
+    balances.value = bal
+    if (officeMode.value) pendingMine.value = await api.pendingMine()
     sites.value = ss.filter(s => !s.kind || s.kind === 'site').map(s => ({ id: s.id, name: s.name }))
     recent.value = rec
     // 持出の既定＝当日稼働した現場（今日の日報の現場 → 無ければ出勤中の現場）
@@ -259,19 +347,35 @@ async function submit() {
       devLineUserId: config.public.appEnv === 'development' ? (liff.profile.value?.userId ?? '') : '',
     })
     if (!photoUrls.length) throw new Error(t('inventory.photoUploadFailed'))
-    const item = await api.move({ itemId: itemId.value, qty: Number(qty.value), kind: kind.value, siteId: kind.value === 'out' ? siteId.value : null, photoUrls, note: note.value })
+    const sg = suggestion.value
+    const res = await api.move({
+      itemId: itemId.value || null, qty: Number(qty.value), kind: kind.value, siteId: kind.value === 'in' ? null : siteId.value, baseSiteId: baseSiteId.value || null, photoUrls, note: note.value, clientRequestId: clientRequestId.value,
+      // 在庫③ 事務モード: AI の読み・候補を確認待ちに添える（事務側が確定する時の手がかり）
+      aiGuess: sg?.guessName ?? null, aiCategory: sg?.guessCategory ?? null, aiCandidates: sg?.candidates ?? [],
+    })
+    if (res.pending) {
+      // 事務モード: 残数はまだ動かない。事務側が確定した時に反映される
+      suggestion.value = null; suggestMsg.value = ''
+      itemId.value = ''
+      msg.value = t('inventory.savedPending'); msgOk.value = true
+      qty.value = null; files.value = []; note.value = ''
+      clientRequestId.value = newRequestId()
+      pendingMine.value = await api.pendingMine()
+      return
+    }
+    const item = res.item
     const idx = items.value.findIndex(i => i.id === item.id)
     if (idx >= 0) items.value[idx] = { ...items.value[idx], ...item }
     // 在庫②: AI 候補を出していたら「AI の読み→人が確定した品目」を訂正履歴に残す（次回の候補に効く・自社内のみ）
-    if (suggestion.value) {
-      const sg = suggestion.value
+    if (sg) {
       await api.correction({ itemId: item.id, aiGuess: sg.guessName, aiCategory: sg.guessCategory, matched: sg.candidates[0]?.id === item.id, photoUrl: photoUrls[0] ?? null })
       suggestion.value = null; suggestMsg.value = ''
     }
     itemId.value = ''
     msg.value = t('inventory.saved', { name: item.name, n: fmt(item.current_qty) }); msgOk.value = true
     qty.value = null; files.value = []; note.value = ''
-    recent.value = await api.recent(20)
+    clientRequestId.value = newRequestId()   // 次の入力は別の登録
+    ;[recent.value, balances.value] = await Promise.all([api.recent(20), api.balances()])
   } catch (e: any) {
     msg.value = e?.message?.includes('photo_required') ? t('inventory.photoRequired') : t('inventory.saveFailed'); msgOk.value = false
   } finally { busy.value = false }
@@ -279,7 +383,7 @@ async function submit() {
 
 onMounted(async () => {
   await liff.init()
-  await load()
+  await Promise.all([ensureLiffFeaturesLoaded(), load()])
 })
 </script>
 
@@ -296,6 +400,18 @@ onMounted(async () => {
 .hint { font-size: 12px; color: #64748b; margin: 6px 0 0; line-height: 1.6; }
 .lbl { display: block; font-size: 12px; font-weight: 700; color: #475569; margin: 12px 0 4px; }
 .lbl .req { color: #dc2626; font-size: 11px; margin-left: 6px; }
+.lbl .opt { color: #64748b; font-size: 11px; margin-left: 6px; font-weight: 400; }
+.office-note { font-size: 12px; color: #1d4ed8; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 8px 10px; margin: 8px 0 0; line-height: 1.6; }
+.pstatus { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #f1f5f9; color: #334155; }
+.pstatus.pending { background: #fef3c7; color: #92400e; }
+.pstatus.confirmed { background: #ecfdf5; color: #047857; }
+.pstatus.rejected { background: #fee2e2; color: #b91c1c; }
+.row-sub.reason { width: 100%; color: #b91c1c; }
+.bal-item { padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
+.bal-name { font-weight: 700; font-size: 13px; margin-bottom: 4px; }
+.bal-row { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 3px 0; }
+.bal-photo { color: #64748b; display: inline-flex; }
+.bal-photo .material-symbols-rounded { font-size: 18px; }
 .select, .input { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 15px; background: #fff; }
 .btn-submit { width: 100%; margin-top: 16px; padding: 14px; background: #06C755; color: #fff; border: none; border-radius: 12px; font-size: 16px; font-weight: 700; }
 .btn-submit:disabled { opacity: .5; }

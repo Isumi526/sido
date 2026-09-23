@@ -496,43 +496,12 @@ const selectedId = ref<string | null>(null)
 // 'checkin' | 'checkout' — 自動判定後にセット
 const attendanceType = ref<'checkin' | 'checkout'>('checkin')
 
-// 位置情報
-//  pending   : 取得中
-//  granted   : 取得済み
-//  retryable : タイムアウト/取得不可など → 「再取得」で再度ダイアログが出せる
-//  blocked   : ハッキリ拒否（ブロック）済み → JSからは再表示不可。設定からの許可が必要
-// idle      : 未取得（ユーザーのタップ待ち。iOS LINEは自動要求だとダイアログ無しで拒否されるため）
-type LocState = 'idle' | 'pending' | 'granted' | 'retryable' | 'blocked'
-const locationState = ref<LocState>('idle')
-const locationLat   = ref<number | null>(null)
-const locationLng   = ref<number | null>(null)
-
-async function fetchLocation() {
-  locationState.value = 'pending'
-
-  // geolocation API 自体が無い（＝WebViewが非対応）ケースを切り分け
-  if (!('geolocation' in navigator)) {
-    locationState.value = 'retryable'
-    return
-  }
-
-  // ※ Permissions API は使わない（iOS/LINE内ブラウザで前回の拒否を引きずるため）。
-  //   常に実際の取得を試み、その結果だけで判定する。
-  try {
-    const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: true, timeout: 10000, maximumAge: 0,
-      })
-    })
-    locationLat.value   = pos.coords.latitude
-    locationLng.value   = pos.coords.longitude
-    locationState.value = 'granted'
-  } catch (e: any) {
-    // code 1=PERMISSION_DENIED(拒否), 2=POSITION_UNAVAILABLE, 3=TIMEOUT
-    if (import.meta.dev) console.warn('[geolocation]', e?.code, e?.message)
-    locationState.value = (e?.code === 1) ? 'blocked' : 'retryable'
-  }
-}
+// 位置情報（2026-09-20 道具②で composable に切り出した。状態の意味・iOS LINE の注意は useGeolocation.ts）
+const geo = useGeolocation()
+const locationState = geo.state
+const locationLat   = geo.lat
+const locationLng   = geo.lng
+async function fetchLocation() { await geo.fetch() }
 
 // ── 代理モード ───────────────────────────────────────────────
 const selectedTarget  = computed(() => targets.value.find(t => t.id === selectedId.value) ?? null)
