@@ -118,8 +118,12 @@ export function siteNamesToRegister(sites: any[]): string[] {
  *   - 休憩は「一番早い現場の行」に承認分・他の行は 0（1日の休憩は1つの申請で決まる）
  *   - breaks=[{start, minutes}] + breakSnapshot=true（0分でも要素を残して既定計算に落ちない）
  *   - start は既存の breaks[0].start を保ち、無ければ 12:00
- *  時刻は実績修正(late)の時だけ：早出は一番早い行の startTime、終了は一番遅い行の endTime を置き換える。
- *  （締切前の通常申請の終了時刻は「希望」であって実績ではないので書かない）
+ *  時刻：早出は一番早い行の startTime、終了は一番遅い行の endTime を置き換える。
+ *  ★何を書くかは呼び出し側（attendance-log applyApprovedToReport）が決め、ここは渡された時刻を書くだけ。
+ *   締切前の通常申請の requested_end_time は「希望」であって実績ではないので、呼び出し側は渡さない。
+ *   渡すのは「承認待ちの間に日報で入力された実績（reported_end_time）」か、実績修正(late)の申請時刻。
+ *   （2026-09-24 A-1 で isLate の条件をここから呼び出し側へ移した。以前は late の時しか時刻を書けず、
+ *    承認待ちの日に日報を出した人の残業を承認後に反映する手段が無かった）
  *
  * @returns 書き換えた行数（0 なら本人の行が無い＝呼び出し側は何もしない）
  */
@@ -146,12 +150,10 @@ export function applyApprovedOvertimeToSites(
       w.breakSnapshot = true
     })
   }
-  if (adj.isLate) {
-    if (adj.startTime) byStart[0].w.startTime = adj.startTime
-    if (adj.endTime) {
-      const last = [...rows].sort((a, b) => b.end - a.end)[0]
-      last.w.endTime = adj.endTime
-    }
+  if (adj.startTime) byStart[0].w.startTime = adj.startTime
+  if (adj.endTime) {
+    const last = [...rows].sort((a, b) => b.end - a.end)[0]
+    last.w.endTime = adj.endTime
   }
   return rows.length
 }

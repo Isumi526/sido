@@ -119,6 +119,49 @@ export function useOvertimeRequest() {
     }
   }
 
+  /**
+   * 日報画面が要る残業の状態を1回で取る（A-1・2026-09-24）。
+   *  isApproved / approvedAdjustment / activeRequest を別々に呼ぶと同じ EF を毎回叩くので、
+   *  日報画面はこれを使う。★読めない時は none（=上限を外さない）に倒す＝fail-closed。
+   */
+  async function snapshot(date: string): Promise<{
+    status: 'none' | 'pending' | 'approved' | 'rejected'
+    isLate: boolean
+    adjustment: { startTime: string | null; endTime: string | null; breakMinutes: number | null } | null
+    reportedEndTime: string | null
+  }> {
+    const empty = { status: 'none' as const, isLate: false, adjustment: null, reportedEndTime: null }
+    if (!date) return empty
+    try {
+      const j = await call('overtime-status', { date })
+      return {
+        status: j.status ?? 'none',
+        isLate: !!j.isLate,
+        adjustment: j.adjustment ?? null,
+        reportedEndTime: j.request?.reportedEndTime ?? null,
+      }
+    } catch (e) {
+      console.error('[overtime] 状況を取得できませんでした:', e)
+      return empty
+    }
+  }
+
+  /**
+   * 承認待ちの間に日報で入力された終了時刻を申請へ記録する（A-1・2026-09-24）。
+   *  日報には定時までしか保存しないので、定時を超えた入力はここに置き、承認時にこの時刻で日報が書き換わる。
+   *  endTime=null は「定時内に戻した」＝記録を消す。
+   * ★失敗を握りつぶさない。呼び出し側はこれが失敗したら**日報の提出を止める**
+   *  （記録できないまま定時で保存すると、入力した残業がどこにも残らない＝今回直したい取りこぼしそのもの）。
+   */
+  async function reportEndTime(date: string, endTime: string | null): Promise<{ ok: true } | { ok: false; error: string }> {
+    try {
+      await call('overtime-report-end', { date, endTime })
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  }
+
   // 却下された時の管理者コメント（「理由を教えて」等）。却下以外は null。
   async function decisionNote(_workerId: string | null | undefined, date: string): Promise<string | null> {
     if (!date) return null
@@ -240,5 +283,5 @@ export function useOvertimeRequest() {
     try { return (await call('overtime-status', { date })).canCancel === true } catch { return false }
   }
 
-  return { canRequest, canCancel, canCancelToday, status, isApproved, approvedAdjustment, activeRequest, decisionNote, myRecent, requestOvertime, requestLateCorrection, updateRequest, cancelRequest }
+  return { canRequest, canCancel, canCancelToday, status, isApproved, approvedAdjustment, activeRequest, decisionNote, snapshot, reportEndTime, myRecent, requestOvertime, requestLateCorrection, updateRequest, cancelRequest }
 }
