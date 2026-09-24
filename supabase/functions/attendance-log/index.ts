@@ -697,6 +697,50 @@ Deno.serve(async (req) => {
   //  締切(当日16:00 JST)前なら有効申請(pending/approved)をそのまま上書きし、再承認のため
   //  pending に戻す（late と同じ形・is_late は付けない）。無ければ通常の新規申請と同じ。
   //  ★worker_id は caller 本人で固定。
+  // ── 承認者の端末のプッシュ購読（A-3・2026-09-24）──
+  //  承認待ち（残業申請など）を承認者の端末へ通知するための購読。作業員アプリ(LIFF)で登録する。
+  //  ★worker_id / account_id はクライアントから受け取らず、検証済みの身元（caller）で固定する。
+  //  ★登録できるのは今この瞬間に承認者(APPROVER_ROLES)である人だけ。送る側(approver-push)でも送信時に引き直す。
+  if (body.action === 'approver-push-status' || body.action === 'approver-push-subscribe' || body.action === 'approver-push-unsubscribe') {
+    const { data: me } = await svc.from('workers').select('permission_role, active')
+      .eq('id', caller.workerId).eq('account_id', caller.accountId).maybeSingle()
+    const eligible = !!me?.active && APPROVER_ROLES.includes((me?.permission_role ?? '') as string)
+    const endpoint = typeof body.endpoint === 'string' ? body.endpoint.trim() : ''
+
+    if (body.action === 'approver-push-status') {
+      let subscribed = false
+      if (endpoint) {
+        const { data: s } = await svc.from('approver_push_subscriptions').select('id')
+          .eq('endpoint', endpoint).eq('worker_id', caller.workerId).maybeSingle()
+        subscribed = !!s?.id
+      }
+      return json({ ok: true, eligible, subscribed })
+    }
+
+    if (body.action === 'approver-push-unsubscribe') {
+      if (!endpoint) return json({ ok: false, error: 'endpoint_required' }, 400)
+      // ★自分の購読だけ消せる（他人の端末の endpoint を渡されても触れない）
+      await svc.from('approver_push_subscriptions').delete().eq('endpoint', endpoint).eq('worker_id', caller.workerId)
+      return json({ ok: true })
+    }
+
+    // subscribe
+    if (!eligible) return json({ ok: false, error: 'not_approver' }, 403)
+    const p256dh = typeof body.p256dh === 'string' ? body.p256dh : ''
+    const auth   = typeof body.auth === 'string' ? body.auth : ''
+    if (!/^https:\/\//.test(endpoint) || !p256dh || !auth) return json({ ok: false, error: 'bad_subscription' }, 400)
+    // 同じ端末は1行。別の人がその端末でログインし直したら持ち主を付け替える（前の人には届かなくなる）
+    const { error } = await svc.from('approver_push_subscriptions').upsert({
+      account_id: caller.accountId, worker_id: caller.workerId, endpoint, p256dh, auth,
+      last_seen_at: new Date().toISOString(),
+    }, { onConflict: 'endpoint' })
+    if (error) {
+      console.error('[attendance-log] approver-push-subscribe failed:', error)
+      return json({ ok: false, error: 'subscribe_failed' }, 500)
+    }
+    return json({ ok: true })
+  }
+
   // ── 承認待ちの間に日報で入力された終了時刻を記録（A-1・2026-09-24）──
   //  日報は定時までしか保存しない（承認まで金額を動かさない）ので、定時を超えて入力された
   //  時刻はここに持つ。承認時に overtime-decide がこの時刻で日報を書き換える。

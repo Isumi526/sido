@@ -3,6 +3,8 @@
     <AppNav :subtitle="$t('notifications.subtitle')" :user-name="selfUser?.real_name" :user-role="selfUser?.worker_role" />
 
     <main class="main">
+      <!-- 承認者だけ: 承認待ちの端末通知をいつでもオン/オフできる常設の欄（A-3・2026-09-24） -->
+      <ApproverPushCard variant="settings" />
       <!-- ★2つに分ける（2026-08-30 ユーザー指示）。
            やること = 行動されるまで消えない／お知らせ = 開いた時点で消える。
            混ぜると読み飛ばした瞬間に「やること」が消え、誰も対応しないまま残る。 -->
