@@ -79,5 +79,37 @@ Deno.serve(async (req) => {
     return json({ ok: true, account_id: invite.account_id, site_id: invite.site_id, site_name: site.name })
   }
 
+  // ★post: ゲスト（非ユーザー）の投稿。2026-09-23 に anon 直INSERT から移設。
+  //  移設前は chat-invite/[token].vue が site_chat_messages へ直接 insert していた。
+  //  anon は INSERT 権限を持ち RLS も無いため、クライアントが account_id / site_id /
+  //  sender_is_admin を自由に指定でき、招待トークンを1本持っていれば
+  //  **他テナントの現場へ管理者を騙って投稿できる**状態だった（grant を剥がす以前の穴）。
+  //  ここでは body を信頼せず、投稿先はトークンから導出し、名乗りは guest 固定にする。
+  if (action === 'post') {
+    const token = (b.token ?? '').toString().trim()
+    const body  = (b.body ?? '').toString().trim()
+    const name  = (b.sender_name ?? '').toString().trim()
+    if (!token) return json({ ok: false, error: 'token_required' }, 400)
+    if (!body)  return json({ ok: false, error: 'body_required' }, 400)
+    if (body.length > 2000) return json({ ok: false, error: 'body_too_long' }, 400)
+
+    const tokenHash = await sha256Hex(token)
+    const { data: invite } = await svc.from('site_chat_invites')
+      .select('account_id, site_id, revoked_at').eq('token_hash', tokenHash).maybeSingle()
+    if (!invite || invite.revoked_at) return json({ ok: false, error: 'invalid_token' }, 404)
+
+    // ★宛先は必ずトークン由来。呼び出し元が渡した account_id / site_id は見ない。
+    const { error } = await svc.from('site_chat_messages').insert({
+      account_id: invite.account_id,
+      site_id: invite.site_id,
+      sender_worker_id: null,
+      sender_is_admin: false,          // ★ゲストは管理者を名乗れない（クライアント指定を受け付けない）
+      sender_name: (name || 'ゲスト').slice(0, 50),
+      body,
+    })
+    if (error) return json({ ok: false, error: 'insert_failed', detail: error.message }, 500)
+    return json({ ok: true })
+  }
+
   return json({ ok: false, error: 'unknown_action' }, 400)
 })

@@ -109,13 +109,15 @@ async function send() {
   const body = draft.value.trim()
   if (!body || sending.value) return
   sending.value = true
-  const supabase = useSupabase()
-  const { error } = await supabase.from('site_chat_messages').insert({
-    account_id: accountId, site_id: siteId,
-    sender_worker_id: null, sender_is_admin: false, sender_name: guestName.value, body,
+  // ★2026-09-23: anon 直INSERT をやめ、site-chat-invite EF 経由にした。
+  //  投稿先(account_id/site_id)と「管理者でないこと」は EF がトークンから決める＝
+  //  クライアントが宛先や名乗りを詐称できない。anon の書き込み権限剥奪の前提でもある。
+  const { data, error } = await useSupabase().functions.invoke('site-chat-invite', {
+    body: { action: 'post', token, body, sender_name: guestName.value },
   })
+  const failed = error || !(data as any)?.ok
   sending.value = false
-  if (!error) {
+  if (!failed) {
     draft.value = ''; nextTick(autoResizeDraft); await loadMessages()
     // 開いていない購読者へ新着を知らせる（best-effort・失敗しても投稿は成立済み）
     push.notifyNewMessage({ siteId, senderName: guestName.value, body, inviteToken: token })
