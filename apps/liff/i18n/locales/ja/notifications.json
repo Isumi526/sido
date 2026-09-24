@@ -12,5 +12,15 @@
   "todoDocTitle": "資料の確認・承認",
   "schedMailToggle": "予定の通知をメールでも受け取る",
   "schedMailHint": "予定の追加・変更・削除と、前日のリマインドをメールでお知らせします。",
-  "schedMailNoEmail": "通知用のメールアドレスが登録されていないため、メールは届きません（アプリ内のお知らせには出ます）。"
+  "schedMailNoEmail": "通知用のメールアドレスが登録されていないため、メールは届きません（アプリ内のお知らせには出ます）。",
+  "approverPushTitle": "承認待ちをこの端末に通知する",
+  "approverPushSub": "残業申請などが届いた時と、承認待ちが残っている夕方に、この端末へ通知します。タップすると承認画面が開きます。",
+  "approverPushOn": "この端末に通知が届きます。",
+  "approverPushUnsupported": "この端末では通知を受け取れません。ホーム画面に追加したアプリから開くと使えます。",
+  "approverPushDenied": "通知が許可されていません。端末の設定で、このアプリの通知を許可してください。",
+  "approverPushEnable": "通知をオンにする",
+  "approverPushDisable": "通知をオフにする",
+  "approverPushEnabled": "通知をオンにしました。",
+  "approverPushDisabled": "この端末への通知をオフにしました。",
+  "approverPushFailed": "設定できませんでした。時間をおいてもう一度お試しください。"
 }
