@@ -22,7 +22,7 @@
 //   テナントごとに settings.notify_punch_reminder_enabled（既定 OFF）で ON にした所だけ動く。
 //
 //  ★送信先は schedules.worker_id（DB の実在行）から引く。クライアントからは何も受け取らない。
-//  ※ --no-verify-jwt でデプロイ。トリガー認可は reminder-auth（共有シークレット or 管理者JWT）。
+//  ※ --no-verify-jwt でデプロイ。トリガー認可は reminder-auth（共有シークレット＝全社 / 承認者JWT＝その人の会社だけ）。
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { authorizeReminderTrigger } from '../_shared/reminder-auth.ts'
@@ -125,7 +125,8 @@ Deno.serve(async (req) => {
     return json({ ok: true, items })
   }
 
-  if (!(await authorizeReminderTrigger(req, svc as any))) return json({ ok: false, error: 'unauthorized' }, 401)
+  const authz = await authorizeReminderTrigger(req, svc)
+  if (!authz.ok) return json({ ok: false, error: 'unauthorized' }, 401)
 
   // テスト用: body.now（ISO）で「今」を差し替えられる（cron からは空 body）
   const base = typeof body?.now === 'string' && !Number.isNaN(Date.parse(body.now)) ? new Date(body.now) : new Date()
@@ -134,8 +135,9 @@ Deno.serve(async (req) => {
   const winFrom = now.minutes - lookback   // 負になれば前日にまたぐ
 
   // ── ON のテナントだけ ──
-  const { data: on } = await svc.from('settings').select('account_id')
-    .eq('key', SETTING_KEY).eq('value', 'true')
+  let onQ = svc.from('settings').select('account_id').eq('key', SETTING_KEY).eq('value', 'true')
+  if (authz.scopeAccountId) onQ = onQ.eq('account_id', authz.scopeAccountId)   // ★手動実行は自分の会社だけ
+  const { data: on } = await onQ
   const accountIds = [...new Set((on ?? []).map((r: any) => r.account_id).filter(Boolean))] as string[]
   if (!accountIds.length) return json({ ok: true, enabledAccounts: 0, created: 0 })
 

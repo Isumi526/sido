@@ -11,9 +11,9 @@
 //    アプリ内通知なら LINE 連携の有無に関わらず届く。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { SUPABASE_URL, ANON_KEY, restSrv } from './helpers'
+import { FUNCTIONS_URL, ANON_KEY, REMINDER_SECRET, restSrv } from './helpers'
 
-const FN = `${SUPABASE_URL}/functions/v1/daily-reminder`
+const FN = `${FUNCTIONS_URL}/daily-reminder`
 
 // ★daily-reminder は slug='test' を意図的に除外する（E2E用アカウントを巻き込まないため）。
 //  そこで専用のアカウントを1つ作って、その中で完結させる。
@@ -48,12 +48,15 @@ test.beforeAll(async () => {
 
 test('★リマインドはLINEではなくアプリ内のお知らせに積まれる', async () => {
   test.skip(!userId, 'このアカウントに users 行を持つ作業員がいない')
+  // ★専用アカウントは誰の会社でもないので cron（共有シークレット）として回す。
+  //  2026-09-25 から JWT の手動実行は「その人の会社だけ」になった（reminder-auth）。
+  test.skip(!REMINDER_SECRET, 'supabase/functions/.env に REMINDER_TRIGGER_SECRET が無い')
 
   await restSrv(`schedule_notifications?worker_id=eq.${workerId}&kind=eq.report_reminder`, { method: 'DELETE' }).catch(() => {})
 
   const res = await fetch(FN, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: ANON_KEY, Authorization: `Bearer ${ANON_KEY}` },
+    headers: { 'Content-Type': 'application/json', apikey: ANON_KEY, 'x-reminder-secret': REMINDER_SECRET },
     body: JSON.stringify({ dry_run: false, manual: true, account_slug: SLUG }),
   })
   const body = await res.json().catch(() => ({} as any))

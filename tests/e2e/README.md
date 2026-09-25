@@ -18,6 +18,10 @@
      未配信なら個々のspecがtimeoutする前に明示エラーで即失敗する。
    ※ ブラウザのコンソールに `[Supabase] 127.0.0.1:56321 🟢 LOCAL` と出ていればローカル接続。
      `☁️ CLOUD` ならクラウドに繋がっているので注意（dev は必ず上記スクリプトで起動）。
+   ※ `supabase/functions/.env` に `REMINDER_TRIGGER_SECRET=<任意の値>` を入れておく（2026-09-25〜）。
+     リマインド系 EF（reminder-auth）は未設定だと cron として起動できない（fail-closed）ので、
+     他テナントを cron として回す spec（reminder-in-app / reminder-recipients / reminder-trigger-auth の一部）が skip になる。
+     テスト側も同じファイルから読む（`helpers.ts` の `REMINDER_SECRET`）。値を変えたら functions serve を起動し直す。
 3. admin ログイン: ID=`e2e` / pass=`e2e-pass-1234`（global-setup が作成。`e2e@email.com`）。
 4. liff は dev モード（`dev-user-id`・認証不要）。
 
