@@ -54,7 +54,7 @@ const hm = (v: string | null | undefined) => (v ? String(v).slice(0, 5) : '')
 
 type Pending = {
   id: string; worker_id: string; date: string; requested_end_time: string | null
-  reported_end_time: string | null; is_late: boolean | null; site_names: string[] | null
+  reported_end_time: string | null; reported_start_time: string | null; is_late: boolean | null; site_names: string[] | null
 }
 
 Deno.serve(async (req) => {
@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
   const results: any[] = []
   for (const acc of (accounts ?? []) as any[]) {
     const { data: pend } = await svc.from('overtime_requests')
-      .select('id, worker_id, date, requested_end_time, reported_end_time, is_late, site_names')
+      .select('id, worker_id, date, requested_end_time, reported_end_time, reported_start_time, is_late, site_names')
       .eq('account_id', acc.id).eq('status', 'pending').lte('date', now.date)
       .order('date', { ascending: true })
     const list = (pend ?? []) as Pending[]
@@ -111,7 +111,9 @@ Deno.serve(async (req) => {
     const link = adminUrl('/overtime-approvals')
     const rows = list.map(p => {
       // ★承認待ちの間に日報が出ていれば「日報の終了」が承認すると払う時刻（A-1）
-      const end = p.reported_end_time ? `${hm(p.reported_end_time)}（日報）` : (hm(p.requested_end_time) || '—')
+      const endPart = p.reported_end_time ? `${hm(p.reported_end_time)}（日報）` : (hm(p.requested_end_time) || '—')
+      // ★早出（2026-09-25）: 日報で固定開始より前に入力された開始があれば先頭に出す
+      const end = p.reported_start_time ? `開始 ${hm(p.reported_start_time)}（日報）／終了 ${endPart}` : endPart
       return `<tr>
         <td style="padding:2px 8px">${esc(nameOf.get(p.worker_id) ?? '作業員')}</td>
         <td style="padding:2px 8px">${esc(p.date)}</td>

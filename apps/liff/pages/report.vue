@@ -413,7 +413,7 @@
                   <div class="worker-time-row">
                     <div class="time-field">
                       <label class="hours-label">{{ $t('report.startTime') }}</label>
-                      <select v-model="site.workers[0].startTime" class="select" :data-testid="`start-time-${si}`">
+                      <select v-model="site.workers[0].startTime" class="select" :data-testid="`start-time-${si}`" @change="onStartTimeTouched(si)">
                         <option v-for="t in startTimeOptionsForSite(si)" :key="t" :value="t">{{ t }}</option>
                       </select>
                     </div>
@@ -446,18 +446,18 @@
                     </template>
                     <!-- ★A-1（2026-09-24）: 承認待ちで定時を超えて入力した時。「入力＝確定ではない」「承認まで定時まで」を並べて出す。
                          申請さえ出せば稼げる、と見えないことが要件（運用者 2026-09-23）。 -->
-                    <template v-else-if="pendingOvertimeEntered(si)">
+                    <template v-else-if="pendingOvertimeEntered(si) || pendingEarlyStartEntered(si)">
                       <div class="ot-pending" :data-testid="`ot-pending-${si}`">
                         <div class="ot-pending-title"><span class="material-symbols-rounded banner-icon">hourglass_top</span>{{ $t('report.overtimePendingTitle') }}</div>
-                        <p class="ot-pending-body">{{ $t('report.overtimePendingBody', { entered: pendingOvertimeEntered(si) }) }}</p>
+                        <p class="ot-pending-body">{{ pendingBannerLines(si).body }}</p>
                         <ul class="ot-pending-list">
-                          <li>{{ $t('report.overtimePendingIfApproved', { entered: pendingOvertimeEntered(si) }) }}</li>
-                          <li>{{ $t('report.overtimePendingIfNot', { end: siteFixedEnd(site.siteName, si) }) }}</li>
+                          <li>{{ pendingBannerLines(si).ifApproved }}</li>
+                          <li>{{ pendingBannerLines(si).ifNot }}</li>
                         </ul>
                       </div>
                     </template>
                     <template v-else-if="overtimeStatusForDate === 'pending'">
-                      <span class="material-symbols-rounded banner-icon">hourglass_top</span><span :data-testid="`ot-pending-note-${si}`">{{ $t('report.overtimePendingNote', { end: siteFixedEnd(site.siteName, si) }) }}</span>
+                      <span class="material-symbols-rounded banner-icon">hourglass_top</span><span :data-testid="`ot-pending-note-${si}`">{{ siteFixedStart(site.siteName, si) ? $t('report.overtimePendingNoteBoth', { start: siteFixedStart(site.siteName, si), end: siteFixedEnd(site.siteName, si) }) : $t('report.overtimePendingNote', { end: siteFixedEnd(site.siteName, si) }) }}</span>
                     </template>
                     <template v-else>
                       <span class="material-symbols-rounded banner-icon">timer</span>{{ $t('report.fixedTimeNote', { end: siteFixedEnd(site.siteName, si) }) }}
@@ -1532,6 +1532,8 @@ const overtimeApprovedForDate = ref(false)
 const overtimeStatusForDate = ref<'none' | 'pending' | 'approved' | 'rejected'>('none')
 /** 承認待ちの間に日報で入力された終了時刻（申請側に記録済みのもの）。編集で開いた時に欄へ戻して見せる */
 const overtimeReportedEnd = ref<string | null>(null)
+/** 承認待ちの間に日報で入力された開始時刻（早出・2026-09-25 範囲追加）。編集で開いた時に欄へ戻して見せる */
+const overtimeReportedStart = ref<string | null>(null)
 /** 終了時刻の上限を外すか＝承認済み or 承認待ち。申請なし・却下は従来どおり定時まで */
 const overtimeCapReleased = computed(() => overtimeStatusForDate.value === 'approved' || overtimeStatusForDate.value === 'pending')
 /**
@@ -1543,6 +1545,9 @@ const overtimeCapReleased = computed(() => overtimeStatusForDate.value === 'appr
 const systemCappedRows = reactive(new WeakSet<object>())
 /** 承認待ちの入力時刻を欄に戻した行（二重に戻さない・本人が変えた後に上書きしない） */
 const restoredOvertimeRows = new WeakSet<object>()
+/** 早出版: 送信直前にシステムが固定開始へ丸めた行／入力時刻を欄に戻した行（終了時刻と同じ理由で分けて持つ） */
+const systemFlooredRows = reactive(new WeakSet<object>())
+const restoredEarlyStartRows = new WeakSet<object>()
 // ★承認された申請の中身（早朝入り／実際に取った休憩）。2026-08-10 大塚さん
 //  「6時からやってますとかあった時は、あらかじめ残業申請の方でやる…早朝出勤というのもいる」
 //  「10時休憩せずにぶっ通しでやりました…申請を出せば、じゃあいいよ、って修正させてあげたい」
@@ -1569,9 +1574,11 @@ async function refreshOvertime() {
   overtimeApprovedForDate.value = snap.status === 'approved'
   overtimeStatusForDate.value = snap.status
   overtimeReportedEnd.value = snap.status === 'pending' ? snap.reportedEndTime : null
+  overtimeReportedStart.value = snap.status === 'pending' ? snap.reportedStartTime : null
   approvedAdjust.value = snap.adjustment
   applyApprovedBreak()
   restorePendingOvertimeEnd()
+  restorePendingEarlyStart()
 }
 watch([() => report.form.value.date, () => currentUser.value?.worker_id], refreshOvertime, { immediate: true })
 
@@ -1949,6 +1956,7 @@ async function loadEditData(date: string) {
     // 残業A-1: 承認待ちの日は、申請側に記録された入力時刻を定時の欄へ戻して見せる
     //  （承認状態の取得が先に終わっていれば今、後なら refreshOvertime の中で戻る）
     restorePendingOvertimeEnd()
+    restorePendingEarlyStart()
     siteUsage.value = report.form.value.sites.map((site: any) => {
       const usage = reconstructExpenseUsage(site.expenses)
       // 本人の作業員レコードが無ければ「自分の稼働なし」として復元
@@ -2105,6 +2113,9 @@ function addSite() {
 function startTimeOptionsForSite(si: number): string[] {
   const s = report.form.value.sites[si]
   if (categoryUnrestricted(si)) return TIME_OPTIONS   // 制限なしの区分は全部選べる
+  // ★承認待ちの日は早出も入力できる（2026-09-25・終了時刻 A-1 と同じ扱い）。保存は固定開始から
+  //  （preparePendingOvertime）で、承認まで金額は動かない。承認済みは従来どおり承認された早出時刻まで。
+  if (overtimeStatusForDate.value === 'pending') return TIME_OPTIONS
   const cur = s?.workers?.[0]?.startTime
   let floorMin = -1   // この値「以上」のみ選択可（複数の下限の最大を採る）
   // ※ 前現場終了以降の制限は撤廃（前現場終了より前でも設定可＝80c2）。重複は送信時にバリデートする。
@@ -2717,6 +2728,77 @@ function isBeyondCap(si: number, t: string | null | undefined): boolean {
   const m = parseMin(t)
   return !(m <= capMin || (wrapFloor >= 0 && m >= wrapFloor))
 }
+/**
+ * その開始時刻が現場の固定開始より前（＝早出）か。startTimeOptionsForSite の「承認なしで選べる範囲」と同じ規則
+ * （日跨ぎ現場は「固定開始以降 ∪ 固定終了以前」が範囲内）。固定開始の無い現場・制限なしの区分は常に false。
+ */
+function isBeforeFloor(si: number, t: string | null | undefined): boolean {
+  if (!t) return false
+  if (categoryUnrestricted(si)) return false
+  const s = report.form.value.sites[si]
+  const fStart = siteFixedStart(s?.siteName, si)
+  if (!fStart) return false
+  const floorMin = parseMin(fStart)
+  const fEnd = siteFixedEnd(s?.siteName, si)
+  const wrapCap = (fEnd && floorMin > parseMin(fEnd)) ? parseMin(fEnd) : -1
+  const m = parseMin(t)
+  return !(m >= floorMin || (wrapCap >= 0 && m <= wrapCap))
+}
+/** 本人が開始時刻のセレクトを触った＝システムが固定開始へ丸めた印を外す */
+function onStartTimeTouched(si: number) {
+  const w = report.form.value.sites[si]?.workers?.[0]
+  if (w) systemFlooredRows.delete(w)
+}
+/** 承認待ちで固定開始より前（早出）が入力されている時、その時刻。該当しなければ空文字（終了時刻版と同じ規則） */
+function pendingEarlyStartEntered(si: number): string {
+  if (overtimeStatusForDate.value !== 'pending') return ''
+  const w = report.form.value.sites[si]?.workers?.[0]
+  if (!w?.startTime) return ''
+  if (isBeforeFloor(si, w.startTime)) return w.startTime
+  if (systemFlooredRows.has(w) && overtimeReportedStart.value) return overtimeReportedStart.value
+  return ''
+}
+/** 承認待ちの表示の3行（終了だけ／開始だけ／両方で文面を分ける。終了だけは運用者確認済みの文面そのまま） */
+function pendingBannerLines(si: number): { body: string; ifApproved: string; ifNot: string } {
+  const s = report.form.value.sites[si]
+  const end = pendingOvertimeEntered(si)
+  const start = pendingEarlyStartEntered(si)
+  const fEnd = siteFixedEnd(s?.siteName, si)
+  const fStart = siteFixedStart(s?.siteName, si)
+  if (end && start) return {
+    body: t('report.overtimePendingBodyBoth', { start, end }),
+    ifApproved: t('report.overtimePendingIfApprovedBoth', { start, end }),
+    ifNot: t('report.overtimePendingIfNotBoth', { start: fStart, end: fEnd }),
+  }
+  if (start) return {
+    body: t('report.overtimePendingBodyStart', { entered: start }),
+    ifApproved: t('report.overtimePendingIfApprovedStart', { entered: start }),
+    ifNot: t('report.overtimePendingIfNotStart', { start: fStart }),
+  }
+  return {
+    body: t('report.overtimePendingBody', { entered: end }),
+    ifApproved: t('report.overtimePendingIfApproved', { entered: end }),
+    ifNot: t('report.overtimePendingIfNot', { end: fEnd }),
+  }
+}
+/** 編集で開いた承認待ちの日: 固定開始で保存されている「一番早い行」へ、記録された早出の時刻を戻す（EF の書き戻しと同じ行） */
+function restorePendingEarlyStart() {
+  const rep = overtimeReportedStart.value
+  if (overtimeStatusForDate.value !== 'pending' || !rep) return
+  let target: any = null
+  let targetStart = Infinity
+  ;(report.form.value.sites ?? []).forEach((s: any, si: number) => {
+    const w = s?.workers?.[0]
+    if (!w?.startTime || categoryUnrestricted(si)) return
+    const floor = siteFixedStart(s?.siteName, si)
+    if (!floor || w.startTime !== floor) return
+    const m = parseMin(w.startTime)
+    if (m < targetStart) { targetStart = m; target = w }
+  })
+  if (!target || restoredEarlyStartRows.has(target)) return
+  target.startTime = rep
+  restoredEarlyStartRows.add(target)
+}
 /** 本人が終了時刻のセレクトを触った＝システムが丸めた印を外す（以後は本人の入力どおりに扱う） */
 function onEndTimeTouched(si: number) {
   const w = report.form.value.sites[si]?.workers?.[0]
@@ -2758,7 +2840,7 @@ function restorePendingOvertimeEnd() {
   restoredOvertimeRows.add(target)
 }
 /**
- * 送信直前: 承認待ちの日に定時を超えて入力された終了時刻を申請へ記録し、日報の欄は定時へ丸める。
+ * 送信直前: 承認待ちの日に定時を外れて入力された時刻（終了＝残業／開始＝早出）を申請へ記録し、日報の欄は定時へ丸める。
  * ★記録を日報の保存より先にやり、失敗したら送信を止める（false）。後にすると、記録に失敗した時
  *  「日報は定時・入力した時刻はどこにも無い」＝今回直したい取りこぼしが無言で起きる。
  * ★丸めは距離Step2(normalizeAllOverages)と同じく欄そのものを書き換える。保存経路が6本あり、
@@ -2767,26 +2849,47 @@ function restorePendingOvertimeEnd() {
 async function preparePendingOvertime(): Promise<boolean> {
   if (overtimeStatusForDate.value !== 'pending') return true
   const d = report.form.value.date
-  let reported: string | null = null
-  let reportedMin = -1
-  let keepPrevious = false
+  // 終了（残業）: 固定終了を超えた一番遅い時刻
+  let repEnd: string | null = null
+  let repEndMin = -1
+  let keepEnd = false
   const toCap: Array<{ w: any; cap: string }> = []
+  // 開始（早出）: 固定開始より前の一番早い時刻（2026-09-25 範囲追加）
+  let repStart: string | null = null
+  let repStartMin = Infinity
+  let keepStart = false
+  const toFloor: Array<{ w: any; floor: string }> = []
   ;(report.form.value.sites ?? []).forEach((s: any, si: number) => {
     const w = s?.workers?.[0]
-    if (!w?.endTime) return
+    if (!w || categoryUnrestricted(si)) return
     const cap = siteFixedEnd(s?.siteName, si)
-    if (!cap || categoryUnrestricted(si)) return
-    if (isBeyondCap(si, w.endTime)) {
-      const m = parseMin(w.endTime)
-      if (m > reportedMin) { reportedMin = m; reported = w.endTime }
-      toCap.push({ w, cap })
-    } else if (systemCappedRows.has(w) && w.endTime === cap && overtimeReportedEnd.value) {
-      keepPrevious = true   // 前回ここで丸めた行が定時のまま＝押し直し。記録済みの時刻を保つ
+    if (cap && w.endTime) {
+      if (isBeyondCap(si, w.endTime)) {
+        const m = parseMin(w.endTime)
+        if (m > repEndMin) { repEndMin = m; repEnd = w.endTime }
+        toCap.push({ w, cap })
+      } else if (systemCappedRows.has(w) && w.endTime === cap && overtimeReportedEnd.value) {
+        keepEnd = true   // 前回ここで丸めた行が定時のまま＝押し直し。記録済みの時刻を保つ
+      }
+    }
+    const floor = siteFixedStart(s?.siteName, si)
+    if (floor && w.startTime) {
+      if (isBeforeFloor(si, w.startTime)) {
+        const m = parseMin(w.startTime)
+        if (m < repStartMin) { repStartMin = m; repStart = w.startTime }
+        toFloor.push({ w, floor })
+      } else if (systemFlooredRows.has(w) && w.startTime === floor && overtimeReportedStart.value) {
+        keepStart = true
+      }
     }
   })
-  if (!reported && keepPrevious) return true
-  if (reported !== overtimeReportedEnd.value) {
-    const r = await overtime.reportEndTime(d, reported)
+  const nextEnd = repEnd ?? (keepEnd ? overtimeReportedEnd.value : null)
+  const nextStart = repStart ?? (keepStart ? overtimeReportedStart.value : null)
+  const times: { startTime?: string | null; endTime?: string | null } = {}
+  if (nextEnd !== overtimeReportedEnd.value) times.endTime = nextEnd
+  if (nextStart !== overtimeReportedStart.value) times.startTime = nextStart
+  if (Object.keys(times).length) {
+    const r = await overtime.reportTimes(d, times)
     if (!r.ok) {
       if (r.error === 'not_pending') {
         await refreshOvertime()
@@ -2796,9 +2899,11 @@ async function preparePendingOvertime(): Promise<boolean> {
       }
       return false
     }
-    overtimeReportedEnd.value = reported
+    if ('endTime' in times) overtimeReportedEnd.value = nextEnd
+    if ('startTime' in times) overtimeReportedStart.value = nextStart
   }
   for (const { w, cap } of toCap) { w.endTime = cap; systemCappedRows.add(w) }
+  for (const { w, floor } of toFloor) { w.startTime = floor; systemFlooredRows.add(w) }
   return true
 }
 /** 終了時刻の表示。開始以前の時刻は翌日側なので「翌」を付ける（値は変えない） */
