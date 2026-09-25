@@ -11,7 +11,7 @@
 //  EF は body.now（ISO）で「今」を差し替えられるので、日付固定で検証する。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { SUPABASE_URL, ADMIN_LOGIN_EMAIL, ADMIN_LOGIN_PASS, ANON_KEY, restSrv, getAccountId } from './helpers'
+import { SUPABASE_URL, FUNCTIONS_URL, ADMIN_LOGIN_EMAIL, ADMIN_LOGIN_PASS, ANON_KEY, restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()
 const SITE = `E2E打刻リマインド現場_${TS}`
@@ -24,7 +24,7 @@ let adminToken = ''
 const scheduleIds: string[] = []
 
 async function callEf(nowJst: string, lookbackMinutes = 12): Promise<any> {
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/punch-reminder`, {
+  const res = await fetch(`${FUNCTIONS_URL}/punch-reminder`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: ANON_KEY, Authorization: `Bearer ${adminToken}` },
     body: JSON.stringify({ now: `${nowJst}+09:00`, lookbackMinutes }),
