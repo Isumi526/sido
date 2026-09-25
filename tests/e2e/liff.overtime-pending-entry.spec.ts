@@ -61,6 +61,18 @@ async function savedEnd(): Promise<string | null> {
   const rows = await restSrv(`daily_reports?user_id=eq.${userId}&date=eq.${DATE}&select=sites`)
   return rows?.[0]?.sites?.[0]?.workers?.[0]?.endTime ?? null
 }
+async function savedStart(): Promise<string | null> {
+  const rows = await restSrv(`daily_reports?user_id=eq.${userId}&date=eq.${DATE}&select=sites`)
+  return rows?.[0]?.sites?.[0]?.workers?.[0]?.startTime ?? null
+}
+async function reportedStart(): Promise<string | null> {
+  const rows = await restSrv(`overtime_requests?worker_id=eq.${workerId}&date=eq.${DATE}&select=reported_start_time`)
+  const v = rows?.[0]?.reported_start_time
+  return v ? String(v).slice(0, 5) : null
+}
+async function startOptions(page: import('@playwright/test').Page): Promise<string[]> {
+  return page.getByTestId('start-time-0').locator('option').evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).value))
+}
 async function reportedEnd(): Promise<string | null> {
   const rows = await restSrv(`overtime_requests?worker_id=eq.${workerId}&date=eq.${DATE}&select=reported_end_time`)
   const v = rows?.[0]?.reported_end_time
@@ -206,8 +218,84 @@ test('承認待ちでない申請には、入力時刻を記録できない（EF
   const res = await fetch(`${SUPABASE_URL}/functions/v1/attendance-log`, {
     method: 'POST',
     headers: { apikey: ANON_KEY, Authorization: `Bearer ${ANON_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'overtime-report-end', date: DATE, endTime: '21:00', dev_line_user_id: 'dev-user-id' }),
+    body: JSON.stringify({ action: 'overtime-report-times', date: DATE, endTime: '21:00', dev_line_user_id: 'dev-user-id' }),
   })
   expect(res.status, '承認済みには記録しない').toBe(409)
   expect(await reportedEnd()).toBeNull()
+})
+
+// ============================================================
+//  早出（開始時刻）版 — 2026-09-25 範囲追加
+//  今井さん「予定作業時間より早く出て仕事する場合残業申請でできますか？」の調査で、早出にも同じ
+//  取りこぼしがあると判明（承認済みの日しか早出を選べず、締切前の申請は承認されても提出済み日報を書き戻さない）。
+// ============================================================
+const FIXED_START = '08:30'
+
+test('早出AC2★申請が無い日は、今までどおり固定開始より前を選べない', async ({ page }) => {
+  await restSrv(`overtime_requests?worker_id=eq.${workerId}&date=eq.${DATE}`, { method: 'DELETE' }).catch(() => {})
+  await seedReport()
+  await openEdit(page)
+  const opts = await startOptions(page)
+  expect(opts).toContain(FIXED_START)
+  expect(opts, '★申請なしでは早出を入れられない').not.toContain('06:30')
+})
+
+test('早出AC1/AC4★承認待ちなら早出を入力でき、「承認まで固定開始から」が出る', async ({ page }) => {
+  await seedRequest('pending', { requested_start_time: '06:00' })
+  await seedReport()
+  await openEdit(page)
+  await expect.poll(async () => (await startOptions(page)).includes('06:30'), { timeout: 20000 }).toBe(true)
+  await page.getByTestId('start-time-0').selectOption('06:30')
+  const banner = page.getByTestId('ot-pending-0')
+  await expect(banner).toBeVisible()
+  await expect(banner, '入力した開始').toContainText('06:30')
+  await expect(banner, '★承認までは固定開始からの計上').toContainText(FIXED_START)
+})
+
+test('早出AC3★承認待ちで送ると、日報は固定開始で保存され、早出の時刻は申請側に記録される', async ({ page }) => {
+  await seedRequest('pending', { requested_start_time: '06:00' })
+  await seedReport()
+  await openEdit(page)
+  await expect.poll(async () => (await startOptions(page)).includes('06:30'), { timeout: 20000 }).toBe(true)
+  await page.getByTestId('start-time-0').selectOption('06:30')
+  await submitEdit(page)
+  await expect.poll(savedStart, { message: '★給与計算が読む開始は固定開始のまま', timeout: 20000 }).toBe(FIXED_START)
+  expect(await reportedStart(), '★早出の時刻は申請側に残る').toBe('06:30')
+  const req = await restSrv(`overtime_requests?worker_id=eq.${workerId}&date=eq.${DATE}&select=requested_start_time`)
+  expect(String(req[0].requested_start_time).slice(0, 5), '事前申告(証跡)は書き換えない').toBe('06:00')
+})
+
+test('早出★開き直すと欄に戻り、承認されると早出の時刻で日報が書き換わる', async ({ page }) => {
+  await openEdit(page)
+  await expect(page.getByTestId('start-time-0'), '★欄に入力した早出が戻る').toHaveValue('06:30', { timeout: 20000 })
+  const req = await restSrv(`overtime_requests?worker_id=eq.${workerId}&date=eq.${DATE}&select=id`)
+  const j = await decide(req[0].id, 'approved')
+  expect(j.reportUpdated).toBe(true)
+  await expect.poll(savedStart, { message: '★承認で 06:30 に置き換わる', timeout: 15000 }).toBe('06:30')
+})
+
+test('早出★日報で早出を入れていない人は、承認されても申請時の早朝入り時刻で過払いしない', async () => {
+  const id = await seedRequest('pending', { requested_start_time: '06:00' })
+  await seedReport()
+  await decide(id, 'approved')
+  expect(await savedStart(), '★希望の 06:00 を書き込まない').toBe(FIXED_START)
+})
+
+test('早出と残業の両方を入れて送ると、両方が記録され、承認で両方反映される', async ({ page }) => {
+  const id = await seedRequest('pending', { requested_start_time: '06:00', requested_end_time: '19:00' })
+  await seedReport()
+  await openEdit(page)
+  await expect.poll(async () => (await startOptions(page)).includes('06:30'), { timeout: 20000 }).toBe(true)
+  await page.getByTestId('start-time-0').selectOption('06:30')
+  await page.getByTestId('end-time-0').selectOption('19:30')
+  await expect(page.getByTestId('ot-pending-0'), '両方の時刻が出る').toContainText('06:30')
+  await expect(page.getByTestId('ot-pending-0')).toContainText('19:30')
+  await submitEdit(page)
+  await expect.poll(savedStart, { timeout: 20000 }).toBe(FIXED_START)
+  expect(await savedEnd()).toBe(FIXED_END)
+  expect(await reportedStart()).toBe('06:30')
+  expect(await reportedEnd()).toBe('19:30')
+  await decide(id, 'approved')
+  await expect.poll(savedStart, { timeout: 15000 }).toBe('06:30')
+  expect(await savedEnd()).toBe('19:30')
 })

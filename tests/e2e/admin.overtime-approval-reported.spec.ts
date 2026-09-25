@@ -20,7 +20,7 @@ test.describe('承認画面: 日報に入力された終了時刻', () => {
       method: 'POST', headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({
         account_id: accountId, worker_id: ws[0].id, date: DATE, reason: MARK, status: 'pending',
-        requested_end_time: '19:00', reported_end_time: '23:00',
+        requested_end_time: '19:00', reported_end_time: '23:00', reported_start_time: '05:30',
       }),
     })
   })
@@ -34,11 +34,14 @@ test.describe('承認画面: 日報に入力された終了時刻', () => {
     await expect(row).toBeVisible({ timeout: 10000 })
     await expect(row.getByTestId('ot-approval-reported'), '★払う時刻が一覧で見える').toContainText('23:00')
     await expect(row, '事前申告も並ぶ').toContainText('希望 19:00')
+    await expect(row.getByTestId('ot-approval-reported-start')).toContainText('05:30')
 
     await row.locator('td').first().click()
     const detail = page.getByTestId('ot-detail')
     await expect(detail).toBeVisible()
     await expect(detail.getByTestId('ot-detail-reported')).toHaveText('23:00')
     await expect(detail, '承認すると日報が書き換わることが書いてある').toContainText('承認するとこの時刻で日報が書き換わり')
+    // 早出（2026-09-25）
+    await expect(detail.getByTestId('ot-detail-reported-start'), '★日報の開始（払う開始）').toContainText('05:30')
   })
 })

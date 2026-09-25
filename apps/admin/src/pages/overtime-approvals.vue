@@ -44,6 +44,8 @@
                   <div class="ot-extra">希望 {{ (g.requested_end_time || '').slice(0, 5) || '—' }}</div>
                 </template>
                 <template v-else>{{ (g.requested_end_time || '').slice(0, 5) || '—' }}</template>
+                <!-- ★早出（2026-09-25）: 日報で固定開始より前に入力された開始時刻＝承認すると払う開始 -->
+                <div v-if="g.reported_start_time" class="ot-reported" data-testid="ot-approval-reported-start">日報の開始 {{ (g.reported_start_time || '').slice(0, 5) }}〜</div>
                 <!-- ★早朝入り・休憩なしも同じ申請に乗る（2026-08-10）。
                      承認するとその日だけ日報の入力制限が緩むので、何を承認するのか出す。 -->
                 <div v-if="g.requested_start_time" class="ot-extra" data-testid="ot-approval-start">
@@ -94,6 +96,13 @@
             </dd>
           </template>
           <dt>希望終了</dt><dd>{{ (selected.requested_end_time || '').slice(0, 5) || '—' }}<span v-if="selected.reported_end_time" class="muted">（締切前の事前申告）</span></dd>
+          <template v-if="selected.reported_start_time">
+            <dt>日報の開始</dt>
+            <dd>
+              <strong class="ot-reported" data-testid="ot-detail-reported-start">{{ (selected.reported_start_time || '').slice(0, 5) }}〜</strong>
+              <div class="muted">承認するとこの時刻で日報の開始が書き換わり、給与計算に入ります（今は固定開始からで計上中）</div>
+            </dd>
+          </template>
           <template v-if="selected.requested_start_time">
             <dt>早朝入り</dt><dd>{{ (selected.requested_start_time || '').slice(0, 5) }}〜</dd>
           </template>
@@ -207,6 +216,8 @@ type OvertimeReq = {
   requested_end_time: string | null
   /** 承認待ちの間に日報で入力された終了時刻（A-1）。承認するとこの時刻で日報が書き換わる */
   reported_end_time?: string | null
+  /** 承認待ちの間に日報で入力された開始時刻（早出・2026-09-25） */
+  reported_start_time?: string | null
   requested_start_time: string | null
   requested_break_minutes: number | null
   reason: string | null
@@ -308,7 +319,7 @@ async function load() {
   if (!accountId) { loading.value = false; return }
   const [{ data: reqs }, { data: ws }] = await Promise.all([
     supabase.from('overtime_requests')
-      .select('id, worker_id, date, requested_end_time, requested_start_time, requested_break_minutes, reason, site_names, status, is_late, requested_at, reported_end_time')
+      .select('id, worker_id, date, requested_end_time, requested_start_time, requested_break_minutes, reason, site_names, status, is_late, requested_at, reported_end_time, reported_start_time')
       .eq('account_id', accountId).eq('status', 'pending')
       .order('requested_at', { ascending: true }),
     supabase.from('workers').select('id, name').eq('account_id', accountId),
