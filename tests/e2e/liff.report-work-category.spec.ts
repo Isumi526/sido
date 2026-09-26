@@ -20,7 +20,7 @@
 //   - 区分の共通定時が、設定していない現場にも効く
 //   - 現場×区分の上書きは共通定時より優先される
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { restSrv, getAccountId, todayJST } from './helpers'
 
 const TS = Date.now()

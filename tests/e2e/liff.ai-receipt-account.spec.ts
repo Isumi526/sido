@@ -7,7 +7,7 @@
 //   （EF側の「7科目以外は null に落とす」バリデーションは EF のユニット的な責務なので
 //    ここではスタブが7科目を返す前提で、クライアントの反映だけを見る）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 
 async function openOtherExpense(page: import('@playwright/test').Page) {
   await page.goto('/report', { waitUntil: 'networkidle' })

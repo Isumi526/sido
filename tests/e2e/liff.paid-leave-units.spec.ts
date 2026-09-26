@@ -10,7 +10,7 @@
 //  ★これまでは日報の leave_type='paid_leave' を **1件＝1日** として数えていたので、
 //   「午後だけ休んだ」も1日消化になっていた。量そのもの(leave_days)を保存して合計する。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { SUPABASE_URL, ANON_KEY, rest, restSrv, getAccountId, ensureDevWorker, useDevWorker } from './helpers'
 
 const DATE = '2026-10-27'

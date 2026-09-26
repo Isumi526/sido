@@ -10,7 +10,7 @@
 //  それまで「実績修正」「実際に取った休憩」は当日分（16:00以降の当日のみ）しか出せず、
 //  送信済みの過去日を直す入口が無かった。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId, todayJST } from './helpers'
 
 let accountId = ''

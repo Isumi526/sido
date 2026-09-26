@@ -3,7 +3,7 @@
 //  チュートリアル A: 日報フォームの初回オンボーディング。
 //  初回表示→スキップで消えlocalStorageに記録→再訪では出ない。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 
 test('日報フォームの初回オンボーディングが出て、スキップ後は再表示されない', async ({ page, context }) => {
   // 念のため当オリジンの onboarding フラグをクリア（初回状態）

@@ -5,7 +5,7 @@
 //  ★以前は no-print クラスは付いていたが @media print に display:none ルールが無く、
 //   ナビ/期間バー/申請ボタン等が印刷され溢れて2ページ目が出ていた。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 
 test('印刷時は画面用UI(no-print)が消え、印刷エリアだけが残る', async ({ page }) => {
   await page.goto('/expense/download', { waitUntil: 'networkidle' })

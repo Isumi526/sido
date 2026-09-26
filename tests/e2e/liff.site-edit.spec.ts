@@ -4,7 +4,7 @@
 //  写真/書類の添付ができる(admin機能のLIFF移植・2026-07-20)。
 //  責任者でないユーザーには編集/添付の導線が出ないことも合わせて検証する。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import path from 'path'
 import { rest, restSrv, getAccountId, grantSiteShare } from './helpers'
 
@@ -60,12 +60,9 @@ test('現場責任者は現場情報を編集でき、保存すると再読込�
   expect(row.construction_type).toBe('内装工事')
 })
 
-// アップロード自体(edge site-attachment-upload・LINE ID token検証)はLIFF dev-modeでは
-// 実LINEセッションが無く再現できない(getIdToken()がdevモードでは常にnullを返す＝既存の
-// 同種upload系EF(site-chat-attachment-upload等)と同じ既知制約)ため、
-// ①クライアントが正しいpayloadでedgeを呼び出すこと ②失敗時にエラー通知すること、
-// を検証し、③実際に保存された添付の表示(読み取りパス)はDB直挿入で再現して検証する。
-test('写真/書類の追加ボタンから正しいpayloadでedge(site-attachment-upload)が呼ばれる', async ({ page }) => {
+// ★2026-09-26 から E2E の作業員アプリはログイン済み（liff-test.ts）＝本番と同じく JWT で身元が取れるので、
+//  アップロードは実際に成功する。以前は開発モード（ログイン無し）で身元が取れず、失敗のアラートを確かめていた。
+test('写真/書類の追加ボタンから正しいpayloadでedge(site-attachment-upload)が呼ばれ、添付が保存される', async ({ page }) => {
   await page.goto(`/sites/${managedSiteId}`, { waitUntil: 'networkidle' })
 
   let requestBody: any = null
@@ -82,8 +79,11 @@ test('写真/書類の追加ボタンから正しいpayloadでedge(site-attachme
   expect(requestBody.name).toBe('sample.pdf')
   expect(requestBody.ext).toBe('pdf')
 
-  // dev-modeはgetIdToken()が常にnull＝edge側でunauthorizedになりアラートが出ることを確認
-  await expect.poll(() => dialogMessage, { timeout: 10000 }).toContain('失敗')
+  // ログイン済みなので保存まで通る（失敗のアラートは出ない）
+  await expect.poll(async () => (await restSrv(`site_attachments?site_id=eq.${managedSiteId}&name=eq.sample.pdf&select=kind`)).length,
+    { timeout: 15000, message: '添付が保存される' }).toBeGreaterThan(0)
+  expect(dialogMessage, '失敗のアラートは出ない').not.toContain('失敗')
+  await restSrv(`site_attachments?site_id=eq.${managedSiteId}&name=eq.sample.pdf`, { method: 'DELETE' }).catch(() => {})
 })
 
 test('現場責任者でない現場では編集ボタン・添付追加ボタンが表示されない', async ({ page }) => {

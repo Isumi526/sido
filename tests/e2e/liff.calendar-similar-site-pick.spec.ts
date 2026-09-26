@@ -4,7 +4,7 @@
 //  現場名入力欄にそのまま入る（従来は文字列表示のみで手入力が必要だった）
 //  （2026-07-11・[[project_sido]]）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, getAccountId } from './helpers'
 
 const TS = Date.now()

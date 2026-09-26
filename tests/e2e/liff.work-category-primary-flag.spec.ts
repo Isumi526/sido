@@ -3,7 +3,7 @@
 //  A-4: 主系区分（uses_site_hours）を改名しても日報の既定区分が壊れない（名前で判定しない）。
 //  ★主系の名前を一時的に変えて確かめ、必ず元に戻す。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { restSrv, getAccountId, useDevWorker } from './helpers'
 
 const TS = Date.now()

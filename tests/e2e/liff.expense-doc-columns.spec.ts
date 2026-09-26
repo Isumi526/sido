@@ -17,7 +17,7 @@
 //
 //  ★シードは接頭辞 E2E帳票_ を持たせ、テスト後に必ず消す（共有DB）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { restSrv, getAccountId } from './helpers'
 import { FEAT_EXP_PERIOD, SEED_WORKER } from './global-setup'
 

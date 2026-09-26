@@ -5,7 +5,7 @@
 //   本specは電車代について AC を実機で担保する回帰テスト。
 //  Notion: 3900ff81c56b8002882ce6150d826fdc（統合先: 3900ff81c56b80bcba14c8986031d3b3）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, getDevUserId, getAccountId } from './helpers'
 
 test('AC: 電車経費の登録番号が保存され、再読込後も復元される', async ({ page }) => {

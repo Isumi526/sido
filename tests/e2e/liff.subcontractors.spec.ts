@@ -9,7 +9,7 @@
 //   AC6: 削除（論理削除）→ 一覧から消える
 //  design: docs/design/subcontractor-detail-search.md
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest } from './helpers'
 
 const NAME  = `E2E下請LIFF_${Date.now()}`

@@ -6,7 +6,7 @@
 //   - 他業者トークンで他業者データが取れない（分離）／期限切れ・失効・不正は拒否
 //  ※ 真の分離には別途RLS有効化が必要（本テストはトークン基盤の意図インタフェースを検証）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { createHash, randomBytes } from 'node:crypto'
 import { restSrv, getAccountId, SUPABASE_URL, passExternalConsent } from './helpers'
 

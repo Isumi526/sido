@@ -14,7 +14,7 @@
 //
 //  ★このspecは「復活させない」ための番人。再追加するなら必ず権限ガードを付けること。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 
 test('LIFFの /admin に管理画面の中身が出ない（作業員が全社集計・設定に到達できない）', async ({ page }) => {
   await page.goto('/admin', { waitUntil: 'networkidle' })

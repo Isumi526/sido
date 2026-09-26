@@ -16,7 +16,7 @@
 //  ★2026-08-27 出退勤モデル変更: 打刻が現場に紐づかなくなった（1日＝最初の出勤・
 //   最後の退勤の2回）。現場の選択欄は無くなり、重複判定も「日付×種別」になった。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId, passWorkStatusGate } from './helpers'
 
 const TS = Date.now()

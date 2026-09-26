@@ -7,7 +7,7 @@
 //   - 承認待ちであることが作業員に分かる
 //  ★この spec の主眼は「承認前に集計へ漏れない」こと。金額が動かないことを数値で固定する。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getDevUserId, getAccountId, fillNoReceiptReasons } from './helpers'
 
 const EDIT_DATE = '2026-08-20'   // ★期限外（3日より前）の日。期限内の編集は承認なしで即反映される（判定表 2026-09-12）

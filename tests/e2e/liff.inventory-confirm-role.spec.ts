@@ -14,7 +14,7 @@
 //   4. 画面の「確認待ち」に自分の分が出る。差し戻されたら理由が見える
 //   5. 同じ clientRequestId の再送は確認待ちを二重に作らない
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId, SUPABASE_URL, ANON_KEY } from './helpers'
 
 const TS = Date.now()

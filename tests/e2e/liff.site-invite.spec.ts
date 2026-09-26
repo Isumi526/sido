@@ -3,7 +3,7 @@
 //  現場管理者(責任者)は現場設定画面から現場へユーザーを招待(site_shares追加)できる。
 //  責任者でないユーザーには招待UIが出ないことも合わせて検証する(2026-07-20)。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { execSync } from 'node:child_process'
 import { rest, restSrv, getAccountId, grantSiteShare, SUPABASE_URL, ANON_KEY, ACCOUNT_SLUG, DB_URL } from './helpers'
 

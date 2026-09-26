@@ -4,7 +4,7 @@
 //  現場詳細→チャットで、送信したメッセージが一覧に表示され、他現場のメッセージは
 //  混ざらないことを検証する（2026-07-11・[[project_sido]]）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import path from 'path'
 import fs from 'fs'
 import { rest, restSrv, getAccountId, grantSiteShare, yesterdayNoonJST } from './helpers'

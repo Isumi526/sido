@@ -10,7 +10,7 @@
 //  それまで添付のバリデーションは1件も無く、本番で9件・約59,000円が
 //  証憑なしで承認待ちになっていた（2026-08-12 発見）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { useDevWorker } from './helpers'
 
 type Page = import('@playwright/test').Page

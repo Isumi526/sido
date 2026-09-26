@@ -3,7 +3,7 @@
 //  LIFF 日報フォームの現場選択リストが読み仮名の50音順で並ぶ
 //   - AC3: 現場optionが name_kana 昇順で並ぶ（名前順ではなく仮名順）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, getAccountId } from './helpers'
 import { FEAT_C_DATE } from './global-setup'
 

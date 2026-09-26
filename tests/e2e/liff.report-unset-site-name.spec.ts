@@ -14,7 +14,7 @@
 //   - ★その名前で現場マスタを作らない（__unset__ は紐付け待ちの印であって現場ではない）
 //   - 画面に内部値 '__unset__' を出さない
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId } from './helpers'
 
 const TODAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo' }).format(new Date())

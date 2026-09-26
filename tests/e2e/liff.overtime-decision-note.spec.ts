@@ -7,7 +7,7 @@
 //     聞けるのもつくってほしい」
 //  却下だけでは作業員は何を直せばいいか分からない。コメントを見て理由を書いて再申請する。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()

@@ -9,7 +9,7 @@
 //   ＋ 編集で開き直すと「作業員が入れた値」と理由が復元される（もう一度書かせない）
 //  ※ 承認後の差し替え（AC5/6/7）は admin.distance-approvals.spec.ts。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getDevUserId, getAccountId, fillNoReceiptReasons } from './helpers'
 
 const TS = Date.now()

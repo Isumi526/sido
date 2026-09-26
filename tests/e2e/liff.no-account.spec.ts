@@ -17,7 +17,7 @@
 //   dev モードだと LIFF 初期化自体がスキップされるので再現できない。
 //   外しても通ってしまうことを確認済み＝この spec は exempt の番人ではない。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 
 test.describe('身元が解決できない時の案内', () => {
   test('★/register は廃止されている（自己登録が復活していない）', async ({ page }) => {

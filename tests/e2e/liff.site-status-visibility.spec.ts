@@ -7,7 +7,7 @@
 //   #16 現場情報一覧     … 既定＝受注・着工。切替で見積中・完了
 //   #17 チャット一覧     … 既定＝進行中。切替で完了
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { restSrv, getAccountId, grantSiteShare } from './helpers'
 
 const TS = Date.now()

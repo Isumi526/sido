@@ -12,7 +12,7 @@
 //  （JST 深夜2時 = UTC 前日17時）、画面が返す今日がJST日付になっていることを見る。
 //  Notion: 3a30ff81c56b81939fe7d53af43dd9c1
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 
 // JST 02:30 に固定する。UTCでは前日 17:30 なので、UTC基準の実装だと1日前になる。
 function jstEarlyMorningFixture(): { iso: string; jstDate: string; utcDate: string } {

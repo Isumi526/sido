@@ -3,7 +3,7 @@
 //  予定管理カレンダーをグループで絞り込む
 //  seed: Worker 01 のみのグループ（global-setup: SCHED_GROUP_NAME）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { SCHED_GROUP_NAME, SEED_WORKER } from './global-setup'
 
 test.describe('予定管理 グループ絞り込み', () => {

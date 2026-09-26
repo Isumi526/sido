@@ -14,7 +14,7 @@
 //   前提が多く、UI操作にすると壊れやすいうえ、固定したいのは差分計算そのものだから。
 //   ★Nuxt dev はソースを /_nuxt/<path> で配信する（/utils/... は HTML が返るので注意）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 
 /** ブラウザ内で computeDiff を呼び、差分行を返す */
 async function diffOf(page: import('@playwright/test').Page, oldExpenses: any, newExpenses: any): Promise<string[]> {

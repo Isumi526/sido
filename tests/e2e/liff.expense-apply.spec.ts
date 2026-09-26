@@ -3,7 +3,7 @@
 //  W1: 作業員が LIFF から期限内に経費を申請できる
 //  seed: FEAT_EXP_PERIOD(後半) は締切=翌月3日で常に未来 → 未申請から申請できる
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, upsert, getDevUserId, getAccountId } from './helpers'
 import { FEAT_EXP_PERIOD } from './global-setup'
 

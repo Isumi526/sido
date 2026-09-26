@@ -14,7 +14,7 @@
 //    「読み取れた値をこちらが捨てないこと」＝正規化と取り違え除去の部分。
 //    実APIでの読み取りは手動確認で担保する（このspecはEFの後処理を見る）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { SUPABASE_URL, ANON_KEY } from './helpers'
 
 const FN = `${SUPABASE_URL}/functions/v1/analyze-receipt`

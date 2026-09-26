@@ -11,7 +11,7 @@
 //    - 出勤中なら退勤の確認画面になること（出勤/退勤の自動判定が現場を跨いで効く）
 //    - 現場に貼ってある旧QR（/checkin/<site_id>）を開いても壊れないこと
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId, passWorkStatusGate } from './helpers'
 
 const TS = Date.now()

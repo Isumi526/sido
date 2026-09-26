@@ -16,7 +16,7 @@
 //   通知が飛んでいない時に「LINEグループに通知しました」と出さないこと。
 //   （飛んだ時に出すことは、通知を実際にONにできる環境が無いのでここでは見ない）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, getDevUserId, todayJST } from './helpers'
 
 test('★LINE通知が飛んでいない時に「通知しました」と出さない', async ({ page }) => {

@@ -17,7 +17,7 @@
 //   どちらも「申請ステータスが申請済みになった」だけでは分からない。
 //   ステータスだけ見る既存specは、この3ヶ月ずっと green のままだった。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, getDevUserId, ACCOUNT_SLUG, downloadStorage, SUPABASE_URL, SERVICE_ROLE_KEY } from './helpers'
 import { FEAT_EXP_PERIOD } from './global-setup'
 

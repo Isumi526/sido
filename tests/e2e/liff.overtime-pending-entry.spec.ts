@@ -18,7 +18,7 @@
 //   2. 承認で入力した時刻に置き換わる／却下では変わらない
 //   3. 日報で定時を超えて入力していない人に、申請時の希望時刻で**過払いしない**
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId, SUPABASE_URL, ANON_KEY, ADMIN_LOGIN_EMAIL, ADMIN_LOGIN_PASS } from './helpers'
 
 const TS = Date.now()

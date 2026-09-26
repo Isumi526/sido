@@ -116,7 +116,12 @@ const ANON_LOCKED_TABLES = new Set([
 
 export async function rest(pathAndQuery: string, init: RequestInit = {}): Promise<any> {
   const table = pathAndQuery.split('?')[0].split('/')[0]
-  const base = ANON_LOCKED_TABLES.has(table) ? srvHeaders : headers
+  // ★書き込み（POST/PATCH/PUT/DELETE）は表を問わず service_role で行う（2026-09-26・RLS第2段A）。
+  //  本番は anon の書き込み権限を全表から剥がした。テストの下ごしらえ・後始末はハーネスの都合であって
+  //  「anon で書けること」を確かめているのではないので、anon に書かせる理由が無い。
+  //  読み（GET）は従来どおり anon のまま＝anon で読めなくなった表は ANON_LOCKED_TABLES に足す。
+  const isWrite = (init.method ?? 'GET').toUpperCase() !== 'GET'
+  const base = isWrite || ANON_LOCKED_TABLES.has(table) ? srvHeaders : headers
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${pathAndQuery}`, {
     ...init,
     headers: { ...base, ...(init.headers || {}) },
@@ -422,12 +427,14 @@ export async function ensureDevWorker(key: string): Promise<{ lineUserId: string
  * 未送信日（当日含む過去3日）も自分用に作り直すので、他specに壊されない。
  * ★page.goto より前に呼ぶこと（addInitScript は以後の遷移すべてに効く）。
  */
-export async function useDevWorker(page: any, key: string): Promise<{ userId: string; workerId: string }> {
+export async function useDevWorker(page: any, key: string, opts: { login?: boolean } = {}): Promise<{ userId: string; workerId: string }> {
   const accountId = await getAccountId()
   const { lineUserId, userId, workerId } = await ensureDevWorker(key)
   await page.addInitScript((uid: string) => {
     try { window.localStorage.setItem('dev_line_uid', uid) } catch { /* 使えない環境は既定のまま */ }
   }, lineUserId)
+  // ★その作業員として実際にログインした状態で開く（liff-test.ts の既定ログインを上書きする）
+  if (opts.login !== false) await loginLiffAs(page, workerId)
 
   // 未送信日を自分用に確保する（起点を today-2 に寄せ、直近2日を空ける）。
   // ※古い日付に寄せてはいけない。3日より前はロック済みで送信ボタンが恒久disabledになる。
@@ -456,6 +463,94 @@ export async function useDevWorker(page: any, key: string): Promise<{ userId: st
   }).catch(() => {})
 
   return { userId, workerId }
+}
+
+// ── 作業員アプリ（LIFF）をログインした状態で開く（2026-09-26・RLS第2段A）─────────────
+//  本番の作業員は全員メール/パスワードでログインしている（2026-09-16 実測）＝書き込みは authenticated で走る。
+//  ところが E2E の作業員アプリは開発モード（ログイン無し＝anon）で動いていたので、anon の書き込み権限を
+//  剥がすと「本番では起きない失敗」で大量に落ちる。本番と同じ形（ログイン済み）に揃える。
+//  ・作業員ごとにログインを用意する（既に workers.auth_user_id があればそれを使う）
+//  ・パスワードは全員共通（liff.worker-login が使う Worker 01 と同じ値＝上書きしても変わらない）
+//  ・トークンは30分使い回す（1時間で切れる。ページ側で更新させるとリフレッシュトークンの再利用検知に当たる）
+export const LIFF_LOGIN_PASS = 'worker-login-1234'
+const liffSessions = new Map<string, { session: any; at: number }>()
+
+/** 作業員に紐づくログイン（auth ユーザー）を用意して、ログインしたセッションを返す */
+export async function workerSession(workerId: string): Promise<any> {
+  const hit = liffSessions.get(workerId)
+  if (hit && Date.now() - hit.at < 30 * 60_000) return hit.session
+
+  const w = (await restSrv(`workers?id=eq.${workerId}&select=id,account_id,auth_user_id`))?.[0]
+  if (!w) throw new Error(`worker not found: ${workerId}`)
+  const slug = (await restSrv(`accounts?id=eq.${w.account_id}&select=slug`))?.[0]?.slug
+  const adminHeaders = { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' }
+  const appMeta = { account_slug: slug, worker_id: workerId }
+
+  let email = ''
+  if (w.auth_user_id) {
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${w.auth_user_id}`, {
+      method: 'PUT', headers: adminHeaders,
+      body: JSON.stringify({ password: LIFF_LOGIN_PASS, email_confirm: true, app_metadata: appMeta }),
+    })
+    email = (await r.json())?.email ?? ''
+  }
+  if (!email) {
+    email = `liff-${workerId}@example.com`
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
+      method: 'POST', headers: adminHeaders,
+      body: JSON.stringify({ email, password: LIFF_LOGIN_PASS, email_confirm: true, app_metadata: appMeta }),
+    })
+    let authId = (await r.json().catch(() => null))?.id
+    if (!authId) {
+      // 前回の実行で作ったまま worker 側の紐付けだけ消えている（worker を作り直した等）
+      const list = await fetch(`${SUPABASE_URL}/auth/v1/admin/users?per_page=1000`, { headers: adminHeaders }).then(x => x.json())
+      authId = (list?.users ?? []).find((u: any) => u.email === email)?.id
+      if (!authId) throw new Error(`auth user create failed: ${email}`)
+      await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${authId}`, {
+        method: 'PUT', headers: adminHeaders,
+        body: JSON.stringify({ password: LIFF_LOGIN_PASS, email_confirm: true, app_metadata: appMeta }),
+      })
+    }
+    await restSrv(`workers?id=eq.${workerId}`, {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ auth_user_id: authId }),
+    })
+  }
+
+  const session = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+    method: 'POST', headers: { apikey: ANON_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: LIFF_LOGIN_PASS }),
+  }).then(x => x.json())
+  if (!session?.access_token) throw new Error(`worker login failed: ${email} ${JSON.stringify(session).slice(0, 200)}`)
+  liffSessions.set(workerId, { session, at: Date.now() })
+  return session
+}
+
+/** 既定の開発ユーザー（line_user_id='dev-user-id'・seed の Worker 01）の worker_id */
+let defaultDevWorkerId = ''
+export async function devUserWorkerId(): Promise<string> {
+  if (defaultDevWorkerId) return defaultDevWorkerId
+  const u = await restSrv(`users?line_user_id=eq.dev-user-id&select=worker_id`)
+  defaultDevWorkerId = u?.[0]?.worker_id ?? ''
+  if (!defaultDevWorkerId) throw new Error('dev-user-id の users 行に worker_id が無い（seed.sql 未適用?）')
+  return defaultDevWorkerId
+}
+
+/** 作業員アプリの supabase-js が読むセッションの保存キー（sb-<host先頭>-auth-token） */
+const LIFF_SESSION_KEY = `sb-${new URL(SUPABASE_URL).hostname.split('.')[0]}-auth-token`
+
+/**
+ * この page を、指定の作業員としてログインした状態にする。★page.goto より前に呼ぶこと。
+ * 後から呼んだ方が勝つ（addInitScript は登録順に走る）＝ useDevWorker で既定ログインを上書きできる。
+ */
+export async function loginLiffAs(page: any, workerId: string): Promise<void> {
+  const session = await workerSession(workerId)
+  const value = JSON.stringify({
+    access_token: session.access_token, refresh_token: session.refresh_token, token_type: session.token_type,
+    expires_in: session.expires_in, expires_at: session.expires_at, user: session.user,
+  })
+  await page.addInitScript(({ k, v }: { k: string; v: string }) => {
+    try { window.localStorage.setItem(k, v) } catch { /* 使えない環境は anon のまま */ }
+  }, { k: LIFF_SESSION_KEY, v: value })
 }
 
 /**

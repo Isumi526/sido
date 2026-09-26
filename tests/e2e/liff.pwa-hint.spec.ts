@@ -4,7 +4,7 @@
 //  案内を表示する。既にホーム画面追加済み(standalone表示)なら出さない。
 //  一度閉じたら再表示しない(localStorage永続)ことを検証する(2026-07-20)。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 
 // addInitScriptはreload時にも再実行されるため、localStorageの初期化は
 // 最初のgoto直後にevaluateで1回だけ行う(beforeEachでaddInitScriptすると

@@ -16,7 +16,7 @@
 //   現在の日報と突き合わせて差分を作る網を張った。ここではその網を固定する。
 //   (2) は diffReport.ts 側を直した（このspecの2本目で固定）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId, SUPABASE_URL, ANON_KEY, ensureDevWorker } from './helpers'
 
 const EDIT_DATE = '2026-08-19'   // ★期限外の日（保留に入る経路で差分を見る）

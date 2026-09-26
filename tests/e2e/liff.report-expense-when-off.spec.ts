@@ -18,7 +18,7 @@
 //   2. その日は作業時間（作業員）の入力が出ない＝人件費は発生しない
 //   3. 稼働ありに戻すと作業時間の入力が戻る
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 
 async function openReport(page: any) {
   await page.goto('/report', { waitUntil: 'networkidle' })

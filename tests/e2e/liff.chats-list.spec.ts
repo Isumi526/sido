@@ -4,7 +4,7 @@
 //  最終メッセージプレビュー・未読バッジ付きで一覧表示し、タップで該当現場の
 //  チャット(/site-chat/:id)へ遷移する（2026-07-14・[[project_sido]]）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId, grantSiteShare } from './helpers'
 
 const TS = Date.now()

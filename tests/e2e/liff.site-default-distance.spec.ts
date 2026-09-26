@@ -7,7 +7,7 @@
 //  ★Step1（登録＋自動入力）のみの範囲。既定値を超える手動入力への理由入力/現場管理者
 //   承認の必須化はStep2として別途対応（経費データの消費箇所が多く一度に広げない）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, getAccountId, useDevWorker } from './helpers'
 
 const TS = Date.now()

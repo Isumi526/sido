@@ -3,7 +3,7 @@
 //  AC1/AC3: サイト名が {accounts.name}｜GENLINKS になる（プロダクト名固定）
 //  ローカル DB: slug=test / name=テストアカウント
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 
 const EXPECTED = 'テストアカウント｜GENLINKS'
 

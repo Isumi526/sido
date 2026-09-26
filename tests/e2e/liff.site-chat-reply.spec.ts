@@ -5,7 +5,8 @@
 //  返信すると引用(送信者名+本文抜粋)付きでメッセージが投稿されることを検証する
 //  (2026-07-20・LINE参照の別チケットとして分離実装)。
 // ============================================================
-import { test, expect, type Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId, grantSiteShare } from './helpers'
 
 const TS = Date.now()

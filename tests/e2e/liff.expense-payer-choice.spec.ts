@@ -10,7 +10,7 @@
 //   ここではその「保存形式が変わっていないこと」も併せて固定する
 //   （列を増やす/意味を変えると16ファイルの消費箇所と過去データに波及するため）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getDevUserId, getAccountId, fillNoReceiptReasons } from './helpers'
 
 const TS = Date.now()

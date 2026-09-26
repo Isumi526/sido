@@ -9,7 +9,7 @@
 //   - 領収書が無いケースも従来どおり手入力で登録できる（領収書は必須ではない）
 //  ※ analyze-receipt は page.route でスタブする（実AIを叩かない）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId } from './helpers'
 import { SEED_WORKER } from './global-setup'
 

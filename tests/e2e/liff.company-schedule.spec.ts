@@ -4,7 +4,7 @@
 //  作業員が閲覧できる。金額等の機微情報を含まないことを検証する
 //  （2026-07-11・[[project_sido]]）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId, makePdf, SUPABASE_URL, SERVICE_ROLE_KEY } from './helpers'
 
 const TS = Date.now()

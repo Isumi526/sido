@@ -4,7 +4,7 @@
 //  invoice_submit トークンURLを開いたとき、「承諾完了画面」ではなく「請求フォーム」を出す。
 //  ※ 承諾済みPOの accepted_at が invoice/change/register purpose の表示を奪うバグの回帰防止。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { createHash, randomBytes } from 'node:crypto'
 import { restSrv, getAccountId, passExternalConsent } from './helpers'
 

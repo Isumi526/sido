@@ -13,7 +13,7 @@
 //  ※ page.evaluate に「文字列のアロー関数」を渡すと関数は呼ばれず undefined が返る
 //    （Playwrightは式として評価するだけ）。必ず実関数を渡すこと。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, getAccountId } from './helpers'
 import { SEED_WORKER } from './global-setup'
 

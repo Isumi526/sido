@@ -14,7 +14,7 @@
 //   ・期限内の日はその場で日報になる（従来と同じ）。
 //   ・稼働なし／有給しか選べない（働いた日は現場・時間が要るのでまとめられない）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId } from './helpers'
 
 const ymd = (n: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo' })

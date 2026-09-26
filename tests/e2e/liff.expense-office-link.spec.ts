@@ -6,7 +6,7 @@
 //   - 日報の現場プルダウンではオフィス・工場は末尾の「オフィス・工場」グループに出る
 //   - 日報から出した経費申請に site_id / site_name が入る
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { restSrv, getAccountId, useDevWorker, ensureDevWorker } from './helpers'
 
 const TS = Date.now()

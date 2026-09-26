@@ -5,7 +5,7 @@
 //   - 誰でも空き状況を見られ、自分の予約を入れられる。重なりは警告→重ねて保存
 //   - 他人の予約は取消ボタンが出ない（管理者ではない dev-user）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { restSrv, getAccountId } from './helpers'
 import { todayStr } from '../../shared/schedule-core'
 

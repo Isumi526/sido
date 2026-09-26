@@ -4,7 +4,7 @@
 //   ①は「どの道具か・定位置・状態」を見せるだけ。持出/返却は道具②。
 //  ★守ること: 他社の道具IDを開いても中身が出ない（EF が account_id で絞る）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()

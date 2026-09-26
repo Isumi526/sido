@@ -12,7 +12,7 @@
 //    だから「テーブルが閉じているか」ではなく「EFが余計な物を返さないか」を見る。
 //    ここが緩いと、EF化しても同じ穴がEFの中に移動するだけになる。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { SUPABASE_URL, ANON_KEY, restSrv, getAccountId, getDevUserId, todayJST } from './helpers'
 
 const TS = Date.now()

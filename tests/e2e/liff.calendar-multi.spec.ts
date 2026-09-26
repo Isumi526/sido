@@ -2,7 +2,7 @@
 //  liff.calendar-multi.spec.ts （dev モード）
 //  予定追加を複数作業員に同時作成（個人複数選択）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest } from './helpers'
 
 test.describe('予定 複数作業員に一括追加', () => {

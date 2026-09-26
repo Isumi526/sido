@@ -5,7 +5,7 @@
 //  - 電車が明細ごと領収書(per-item file + AI解析)になっていること
 //  - 電車(明細ごと)を送信 → daily_reports.trains に正しく保存（型変更の保存検証）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, getDevUserId, fillNoReceiptReasons } from './helpers'
 
 // 1x1 PNG（ダミー領収書）

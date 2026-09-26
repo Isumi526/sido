@@ -10,7 +10,7 @@
 //   ①はアイコンを1emの箱に閉じ込め、②は日付だけで決まる枠を先に確保して潰した。
 //   ②は「その日でないと再現しない」ので、時計を固定して両方の期間を固定する。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { suppressOverdueModal } from './helpers'
 
 test.use({ viewport: { width: 375, height: 667 } })

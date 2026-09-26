@@ -5,7 +5,7 @@
 //  送信前の確認チェックの文言に「引き上げ材料」を含める。
 //  ★編集モード（期限外＝承認待ち）で送り、保留の payload に入ったかで判定（新規送信の枯渇に依存しない）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getDevUserId, getAccountId, fillNoReceiptReasons } from './helpers'
 
 const EDIT_DATE = '2026-08-26'   // ★期限外の日（期限内の編集は承認なしで即反映＝保留に入らない・判定表 2026-09-12）

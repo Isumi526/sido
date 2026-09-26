@@ -3,7 +3,7 @@
 //  日報の送信前プレビューに、各現場の作業員ごとの開始〜終了時刻が表示される
 //  （2026-07-11・[[project_sido]]）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 
 test('送信前プレビューに現場の開始〜終了時刻が表示される', async ({ page }) => {
   try { await page.goto('/report', { waitUntil: 'networkidle', timeout: 8000 }) }
