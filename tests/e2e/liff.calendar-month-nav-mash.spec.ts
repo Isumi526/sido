@@ -5,7 +5,7 @@
 //  ボタン操作は即座にnavMonthへ反映されるため、連打しても都度1ヶ月ずつ進む。
 //  （2026-07-11・[[project_sido]]）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 
 function expectedLabel(monthsAhead: number): string {
   const now = new Date()

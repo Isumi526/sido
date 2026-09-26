@@ -4,7 +4,7 @@
 //   - 残数一覧: 品目ごとに「倉庫（拠点名）N」「現場（現場名）N」が出る（会計在庫ではない注記つき）
 //   - 拠点の既定: 作業員の所属拠点（workers.base_site_id）。引き上げを登録すると移動記録に base_site_id が残り、倉庫の残数が増える
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()

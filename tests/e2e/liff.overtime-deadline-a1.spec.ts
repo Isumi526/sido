@@ -8,7 +8,7 @@
 //   3. 取消対象が無い時も無言にしない（not_found）
 //  ★実行時刻で期待値が変わる（締切前/後）ので、時刻から期待値を算出して両方で意味のある assert にする。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId, todayJST, SUPABASE_URL, ANON_KEY } from './helpers'
 
 let accountId = ''

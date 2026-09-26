@@ -15,7 +15,7 @@
 //   - 絞り込んでも未紐付け/他元請けの現場が選べなくならないこと
 //   - 現場を選ぶと元請けが実態に合わせて保存されること
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, getAccountId, getDevUserId, todayJST } from './helpers'
 import { FEAT_C_DATE } from './global-setup'
 

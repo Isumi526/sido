@@ -2,7 +2,7 @@
 //  liff.tools-whereabouts.spec.ts
 //  道具③（設計書 T-2）作業員アプリ側: 「自分が持っている道具」（/tools）と「この現場にある道具」（現場詳細）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId, grantSiteShare } from './helpers'
 
 const TS = Date.now()

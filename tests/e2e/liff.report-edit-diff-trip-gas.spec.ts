@@ -11,7 +11,7 @@
 //  ここでは差分の“中身”を daily_report_edit_logs.diffs で数値ごと固定する
 //  （画面の見た目ではなく、監査に残る実データを見る）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getDevUserId, getAccountId, fillNoReceiptReasons } from './helpers'
 
 const EDIT_DATE = '2026-08-17'   // ★期限外の日（保留に入る経路で差分を見る）

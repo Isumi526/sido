@@ -6,7 +6,7 @@
 //   AC4 追記専用（anon は触れない・登録簿に無いキーは 400・身元不明は 401）
 //   ＋ 画面から実際に1件ログが飛ぶ（日報履歴の閲覧）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { SUPABASE_URL, ANON_KEY, restSrv, getAccountId, ensureDevWorker, useDevWorker } from './helpers'
 
 const KEY_UID = 'usage-log'

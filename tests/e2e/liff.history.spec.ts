@@ -2,7 +2,7 @@
 //  liff.history.spec.ts （dev モード・認証不要）
 //  Feature B 履歴明細の常時表示 ＋ Feature A 元請け表示
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { SEED_SITE, SEED_SUB, SEED_WORKER, FEAT_A_SITE, FEAT_A_CONTRACTOR } from './global-setup'
 import { getAccountId, getDevUserId, upsert } from './helpers'
 

@@ -6,7 +6,7 @@
 //   daily_reports が無いので、personal_expenses を読まない限り申請書に1円も出ない。
 //  ★AI解析（領収書から金額・支払い先・インボイス番号・科目を自動入力）も併せて検証（指摘1）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { execSync } from 'node:child_process'
 import { rest, restSrv, getAccountId, SUPABASE_URL, ANON_KEY, ACCOUNT_SLUG, DB_URL } from './helpers'
 import { FEAT_EXP_DATE, FEAT_EXP_PERIOD, SEED_WORKER } from './global-setup'

@@ -6,7 +6,7 @@
 //  「LIFFからは切り替え不可」を検証するよう更新した（admin側(SiteDetail等)には
 //  引き続き無効化ボタンがあり、そちらで運用する）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, getAccountId, grantSiteShare } from './helpers'
 const TS = Date.now(); const SITE = `E2E切替現場_${TS}`; let siteId = ''
 test.beforeAll(async () => {

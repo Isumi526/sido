@@ -3,7 +3,7 @@
 //  ホーム画面追加時のアイコン/名称がGENLINKS固定になっている
 //  （2026-07-11・account名の頭文字が出てしまう不具合の対応・[[project_sido]]）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 
 test('manifest.jsonとアイコン/apple-mobile-web-app-titleがGENLINKS固定で提供される', async ({ page, request, baseURL }) => {
   await page.goto('/', { waitUntil: 'networkidle' })

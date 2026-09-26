@@ -4,7 +4,7 @@
 //  フォームが開く（区画内+ボタン(レイアウト圧迫)は廃止し、右下固定FABへ統合）
 //  （2026-07-15・[[project_sido]]）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, todayJST } from './helpers'
 
 const TITLE = `E2E区画タップ_${Date.now()}`

@@ -4,7 +4,7 @@
 //  該当日セルに誕生日バッジが自動表示される（要件化回答A・DB保存なしの表示専用）
 //  （2026-07-11・[[project_sido]]）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, getAccountId, restSrv } from './helpers'
 
 const TS = Date.now()

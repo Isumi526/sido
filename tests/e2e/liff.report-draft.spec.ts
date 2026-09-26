@@ -4,7 +4,7 @@
 //   入力途中 → リロード（中断相当）→ 復元バナー＋入力値が戻る → 破棄で新規。
 //  ※ 送信はしない（自動保存→復元のみ検証）。localStorage は前後でクリア。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 
 const clearDrafts = `() => Object.keys(localStorage).filter(k => k.startsWith('sido:report-draft')).forEach(k => localStorage.removeItem(k))`
 

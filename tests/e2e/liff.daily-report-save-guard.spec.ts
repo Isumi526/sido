@@ -16,7 +16,7 @@
 //   （2026-06〜07 に「account_id=テナントA / user_id=テナントBのuser」という
 //     ねじれた行が本番で2件できている）。サーバ側で塞いだことをここで固定する。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { SUPABASE_URL, ANON_KEY, restSrv, getAccountId, getDevUserId, todayJST } from './helpers'
 
 const TS = Date.now()

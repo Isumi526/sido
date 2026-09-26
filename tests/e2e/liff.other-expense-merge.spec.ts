@@ -6,7 +6,7 @@
 //   - ★再保存しても配列は元に戻る（接待交際費は entertainments のまま）
 //     ＝現場別集計の「接待交際費」列と「ホーム」列の金額が入れ替わらない
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getDevUserId, getAccountId, fillNoReceiptReasons } from './helpers'
 
 const EDIT_DATE = '2026-10-14'

@@ -3,7 +3,7 @@
 //  個人カレンダー週間ビュー: 時間軸メモリが表示され、予定が開始時刻に応じた
 //  縦位置に配置される（2026-07-11・[[project_sido]]）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, getAccountId, todayJST } from './helpers'
 
 const TS = Date.now()

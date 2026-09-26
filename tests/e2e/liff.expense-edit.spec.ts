@@ -6,7 +6,7 @@
 //          支払い先を修正→保存→DBの sites[0].expenses.trains[0].payee が更新される。
 //  ※ 未申請(FEAT_EXP_PERIOD=後半・締切未来)のみ編集可(canApply)。申請済みは読み取り専用。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, getDevUserId, getAccountId } from './helpers'
 import { FEAT_EXP_PERIOD, FEAT_EXP_DATE } from './global-setup'
 

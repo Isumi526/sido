@@ -12,7 +12,7 @@
 //    site_names が空なら no_sites で終了していた。つまり
 //    **申請は成立しているのに誰にも気づかれないまま放置される**。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { SUPABASE_URL, ANON_KEY, restSrv, getAccountId, ensureDevWorker } from './helpers'
 
 let accountId = ''

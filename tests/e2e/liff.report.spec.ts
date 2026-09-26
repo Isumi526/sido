@@ -3,7 +3,7 @@
 //  日報入力 → 送信 → 完了画面 → 履歴に反映、をUIで通す。
 //  ※ 次の未送信日付のフォームに対して、現場を選んで送信する。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, useDevWorker } from './helpers'
 
 // ★このspecは「未送信日が2日以上ある」ことが前提（送信後に次の未送信日ボタンが出るのを見るため）。

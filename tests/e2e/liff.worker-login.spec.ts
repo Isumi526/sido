@@ -3,7 +3,7 @@
 // ※ 認証ユーザは GoTrue signup（ローカルで動作）で用意し、app_metadata(account_slug/worker_id/role)
 //   と workers.auth_user_id を psql で付与（本番では edge worker-auth-setup が同じ状態を作る）。
 import { execSync } from 'node:child_process'
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { SUPABASE_URL, ANON_KEY, ACCOUNT_SLUG, DB_URL, getAccountId, restSrv } from './helpers'
 import { SEED_WORKER } from './global-setup'
 

@@ -3,7 +3,7 @@
 //  予定追加時のLIFF側通知が、予定管理ページだけでなくHOME/ハンバーガーの
 //  予定管理ナビにもバッジ表示される（2026-07-11・[[project_sido]]）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, getAccountId, suppressOverdueModal } from './helpers'
 
 const TS = Date.now()

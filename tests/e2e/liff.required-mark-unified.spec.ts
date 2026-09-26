@@ -15,7 +15,7 @@
 //
 //  ★必須バリデーション自体は変えていない（見た目だけ）。それも併せて確認する。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 
 const EDIT_DATE = '2026-10-16'
 

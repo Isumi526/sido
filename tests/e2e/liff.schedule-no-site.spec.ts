@@ -4,7 +4,7 @@
 //   - 「現場なし（タイトルを入力）」を選び、自由タイトルで保存できる
 //   - site_id は紐付かない（現場別集計に混入しない）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest } from './helpers'
 
 test.describe('予定 現場なし（自由タイトル）', () => {

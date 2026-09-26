@@ -7,6 +7,7 @@
 //     PATCH /rest/v1/workers?id=eq.<自分> {"permission_role":"admin"}
 //   が通り、任意の作業員が自力でオーナーになれた。
 //   列単位の権限に落として塞いだので、その状態をここで固定する。
+//   2026-09-26（RLS第2段A）で anon の書き込みを全表から剥がした（列単位の付与も）。読み（SELECT）は残る。
 //   ★このspecが赤くなったら「権限制御が全部無効になっている」と読むこと。
 // ============================================================
 import { test, expect } from '@playwright/test'
@@ -76,20 +77,36 @@ test.describe('anon の権限昇格ロック', () => {
     expect(res.ok, '賃金は anon から書けない').toBe(false)
   })
 
-  test('★LINE作業員の自己登録は壊れていない（許可した列だけで作成できる）', async () => {
-    // 本番にはLINEでしか入れない作業員が残っている（2026-08-01 実測）。ここを塞ぐと
-    // register.vue の新規登録が不能になり新規オンボーディングが止まる。
+  // ★2026-09-26 意図を反転（RLS第2段A・回答A 2026-09-23）: 以前はここで「LINE作業員の自己登録(register.vue)は
+  //  anon で workers を作れる」ことを守っていたが、本番の作業員は全員メール/パスワードで入っていて
+  //  （2026-09-23 実測: auth.users 50人全員 provider=email・直近60日の作業員作成2件とも auth_user_id あり・
+  //  90日内の LINE 紐付けは1件で日報0）その経路は稼働していない。anon の書き込みは全表から剥がした。
+  test('★anon ではどの表にも書き込めない（作業員の自己登録も含む）', async () => {
     const name = `E2E権限ロック_自己登録_${Date.now()}`
     const res = await anonFetch('workers', {
       method: 'POST', headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({ name, role: 'site', unit_price: 0, active: true, account_id: accountId }),
     })
-    expect(res.ok, 'register.vue の自己登録経路は通る').toBe(true)
+    expect(res.ok, '公開キーで作業員を作れない').toBe(false)
     await restSrv(`workers?name=eq.${encodeURIComponent(name)}`, { method: 'DELETE' }).catch(() => {})
+
+    // 2026-09-23 に公開キーで読めて・書けた表（users / subcontractors）と、会社設定（settings）
+    for (const [table, body] of [
+      ['users', { real_name: 'E2E乗っ取り' }],
+      ['subcontractors', { name: 'E2E乗っ取り' }],
+      ['settings', { value: 'E2E乗っ取り' }],
+    ] as const) {
+      const upd = await anonFetch(`${table}?account_id=eq.${accountId}`, {
+        method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(body),
+      })
+      expect(upd.ok, `${table} を公開キーで書き換えられない`).toBe(false)
+      const del = await anonFetch(`${table}?account_id=eq.${accountId}&id=eq.00000000-0000-0000-0000-000000000000`, { method: 'DELETE' })
+      expect(del.ok, `${table} を公開キーで消せない`).toBe(false)
+    }
   })
 
-  test('許可していない列は anon から書けない（列単位の fail-closed）', async () => {
-    // 許可列以外を混ぜた INSERT は拒否される＝将来カラムが増えても自動的に閉じている
+  test('許可していない列を混ぜても anon から書けない', async () => {
+    // （2026-09-26 以前は「許可列以外を混ぜた INSERT は拒否」の確認。今は anon の書き込み自体が無い）
     const res = await anonFetch('workers', {
       method: 'POST', headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({

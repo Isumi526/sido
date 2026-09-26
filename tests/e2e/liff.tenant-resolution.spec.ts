@@ -4,8 +4,12 @@
 //  env(test) ではなく所属テナント(sample-construction)が採用されることを検証する（AC2 の核）。
 //  既存の test テナントは env と一致するため resolvedSlug==env＝回帰しない（下の回帰テストで担保）。
 //  ※ dev モードの ?dev_line_uid= は development 限定の検証シーム（本番 LIFF 経路には影響しない）。
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { restSrv, ACCOUNT_SLUG } from './helpers'
+
+// ★LINE 経路（ログイン無し＋line_user_id）でのテナント解決を確かめる spec なので、既定のログイン（liff-test.ts）は外す。
+//  ログインがあると JWT の account_slug が優先され、この経路を通らない。
+test.use({ liffLogin: false })
 
 const OTHER_SLUG = ACCOUNT_SLUG === 'test' ? 'sample-construction' : 'test'
 const LINE_UID = 'e2e-tenant-b-line-uid'

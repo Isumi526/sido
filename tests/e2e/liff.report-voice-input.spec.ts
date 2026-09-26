@@ -6,7 +6,7 @@
 //       * report-voice-parse EF   … page.route で解析結果JSONを返す
 //   - AC: 確認画面を必ず挟む／反映で備考に入る／非対応環境ではボタンを出さない(フォールバック)
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { restSrv, getAccountId } from './helpers'
 
 const TODAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo' }).format(new Date())

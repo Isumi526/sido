@@ -23,7 +23,7 @@
 //   5. 同じ clientRequestId の再送は二重に増減しない
 //   6. フラグOFF＝メニューに出ない・画面は閉じる・EF は 403
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId, setFeatureFlag, FEATURE_KEY_INVENTORY, SUPABASE_URL, ANON_KEY } from './helpers'
 
 const TS = Date.now()

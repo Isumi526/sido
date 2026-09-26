@@ -7,7 +7,7 @@
 //   - タップするとその1件だけ既読になり、関係する画面へ飛ぶ
 //   - 日報の差し戻しがここに積まれる（kind='report_reject'）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, getAccountId } from './helpers'
 
 const TS = Date.now()

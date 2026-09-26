@@ -3,7 +3,7 @@
 //  日報フォームで駐車場代・高速代を複数行 追加/削除できる（入力UI）
 //  ＋ 送信 → daily_reports へ正しいJSONで保存 → 編集で往復復元（コアデータ保存）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, getDevUserId, fillNoReceiptReasons } from './helpers'
 
 test('駐車場代を2行・高速代を1行 追加でき、削除もできる', async ({ page }) => {

@@ -6,7 +6,7 @@
 //   - ★2回編集しても前回の理由が消えず2行になる
 //     ＝日報の1列(upsertで上書き)ではなく履歴テーブルにした理由そのものを固定する
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getDevUserId, getAccountId } from './helpers'
 
 const EDIT_DATE = '2026-08-16'   // ★期限外の日＝承認に回る＝理由必須。期限内は任意（下のテスト）

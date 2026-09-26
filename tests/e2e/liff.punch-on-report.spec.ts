@@ -12,7 +12,7 @@
 //   同じ電話で「人件費は管理者が決めた時間ベースで今までと変わらず／作業員は時間を触れない」
 //   と明言されている。実打刻が作業時刻に流れ込むと給与の根拠が静かに入れ替わる。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()

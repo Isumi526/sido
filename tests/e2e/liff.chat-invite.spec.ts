@@ -4,7 +4,7 @@
 //  非ユーザー(LINE未登録)が招待リンクを開き、名前入力→チャットに参加・送信でき、
 //  無効なトークンでは弾かれることを検証する（2026-07-11・[[project_sido]]）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()

@@ -11,7 +11,7 @@
 //   - 既存の個人経費ページ／月額枠と同じデータに入る（別テーブルを作らない）
 //   - 月末の日付範囲バグの再発防止（9月など30日の月で明細が消えない）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { restSrv, getAccountId, todayJST, useDevWorker, ensureDevWorker, SUPABASE_URL, ANON_KEY } from './helpers'
 
 const TS = Date.now()

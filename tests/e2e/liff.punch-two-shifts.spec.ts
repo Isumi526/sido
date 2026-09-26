@@ -18,7 +18,7 @@
 //   2. 夜勤行に嘘のズレ（10時間級）が付かない
 //   3. 昼に一度出て戻った日（1行）は従来どおり外枠＝退行させない
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()

@@ -7,7 +7,7 @@
 //   - 同じ clientRequestId の再送は二重に記録しない
 //  出所: 大塚「大塚社長が持っていって登録すれば（責任が移る）」「俺らがどこで返してるかわからんよね」
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId, SUPABASE_URL, ANON_KEY } from './helpers'
 
 const TS = Date.now()

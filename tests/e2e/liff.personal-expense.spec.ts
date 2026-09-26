@@ -7,7 +7,7 @@
 //   - 超過してもブロックせず登録できる（警告のみ）
 //   - 接待交際費は同行者名が必須（現場経費と同じ税務要件）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId } from './helpers'
 import { SEED_WORKER } from './global-setup'
 

@@ -18,7 +18,7 @@
 //   ・溜まっている未提出があるとアプリを開いた時に割り込む。ただし閉じられる
 //     （ブロックはしない方針＝2026-08-10「そこの制限は、そこまで厳しくできない」）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId } from './helpers'
 
 const today = new Date()
