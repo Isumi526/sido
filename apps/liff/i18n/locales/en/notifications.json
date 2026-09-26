@@ -12,5 +12,15 @@
   "todoDocTitle": "Read and confirm a document",
   "schedMailToggle": "Also receive schedule notifications by email",
   "schedMailHint": "Emails for schedule additions/changes/deletions and a reminder the day before.",
-  "schedMailNoEmail": "No notification email is registered, so emails will not be sent (in-app notifications still appear)."
+  "schedMailNoEmail": "No notification email is registered, so emails will not be sent (in-app notifications still appear).",
+  "approverPushTitle": "Get approval notifications on this device",
+  "approverPushSub": "We'll notify this device when an overtime request arrives and in the evening if approvals are still waiting. Tap to open the approval screen.",
+  "approverPushOn": "Notifications are on for this device.",
+  "approverPushUnsupported": "This device can't receive notifications. Open the app from your home screen to use them.",
+  "approverPushDenied": "Notifications are blocked. Allow notifications for this app in your device settings.",
+  "approverPushEnable": "Turn on notifications",
+  "approverPushDisable": "Turn off notifications",
+  "approverPushEnabled": "Notifications turned on.",
+  "approverPushDisabled": "Notifications turned off for this device.",
+  "approverPushFailed": "Couldn't update the setting. Please try again later."
 }

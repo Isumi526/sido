@@ -25,9 +25,12 @@
 //   faq_entries.notion_ticket_url に記録し、既にそのURLを持つ下書きが残っている間は
 //   再起票しない。
 //
-//  トリガー: 週1（pg_cron・月曜9:00 JST）。認可は _shared/reminder-auth.ts と同じ
-//   共有シークレット方式を流用（x-reminder-secret ヘッダ）。管理画面からの手動実行は
-//   認証済みユーザーJWTでも可。
+//  トリガー: 週1（pg_cron・月曜9:00 JST）。認可は _shared/reminder-auth.ts の
+//   共有シークレット（x-reminder-secret ヘッダ）**だけ**。JWT では起動できない。
+//   ★2026-09-25: 以前はログインできる人なら誰でも起動できた。これは全テナント共通の生成で、
+//    Gemini を回し運用者の Notion に起票する＝テナントの承認者に押させるものでもないので、
+//    リマインド系の「承認者なら自社だけ」も当てはめず cron 専用にした（管理画面に起動ボタンも無い）。
+//    手で回したい時は運用者がシークレット付きで叩く。
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { authorizeReminderTrigger } from '../_shared/reminder-auth.ts'
@@ -256,8 +259,7 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ ok: false, error: 'method_not_allowed' }, 405)
 
   const svc = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
-  const authClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { persistSession: false } })
-  if (!(await authorizeReminderTrigger(req, authClient))) return json({ ok: false, error: 'unauthorized' }, 401)
+  if (!(await authorizeReminderTrigger(req, svc, { allowApprover: false })).ok) return json({ ok: false, error: 'unauthorized' }, 401)
   if (!NOTION_TOKEN) return json({ ok: false, error: 'notion_unconfigured' }, 503)
   if (!GEMINI_API_KEY) return json({ ok: false, error: 'gemini_unconfigured' }, 503)
 

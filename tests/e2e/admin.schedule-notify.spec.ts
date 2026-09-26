@@ -8,7 +8,7 @@
 //   ★メールの実送信（Resend）はローカルで検証しない。EF の応答 mailed/tenantEnabled と in-app 行で固定する。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { SUPABASE_URL, ANON_KEY, restSrv, getAccountId, setFeatureFlag, ADMIN_LOGIN_EMAIL, ADMIN_LOGIN_PASS, ensureDevWorker } from './helpers'
+import { SUPABASE_URL, FUNCTIONS_URL, ANON_KEY, restSrv, getAccountId, setFeatureFlag, ADMIN_LOGIN_EMAIL, ADMIN_LOGIN_PASS, ensureDevWorker } from './helpers'
 
 const TS = Date.now()
 let accountId = ''
@@ -25,7 +25,7 @@ async function signIn(email: string, password: string): Promise<string> {
   return (await res.json()).access_token ?? ''
 }
 async function ef(body: Record<string, unknown>, token = adminToken) {
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/schedule-notify`, {
+  const res = await fetch(`${FUNCTIONS_URL}/schedule-notify`, {
     method: 'POST', headers: { apikey: ANON_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
@@ -129,10 +129,10 @@ test.describe('スケジュール通知（EF schedule-notify）', () => {
     expect(anon.status).toBe(401)
     const other = await ef({ action: 'changed', scheduleId: '00000000-0000-0000-0000-000000000000', kind: 'updated' })
     expect(other.status).toBe(404)
-    const cronNoSecret = await fetch(`${SUPABASE_URL}/functions/v1/schedule-notify`, {
+    const cronNoSecret = await fetch(`${FUNCTIONS_URL}/schedule-notify`, {
       method: 'POST', headers: { apikey: ANON_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'remind' }),
     })
-    // REMINDER_TRIGGER_SECRET 未設定のローカルは後方互換で通る（本番は 401）。落ちないことだけ見る
-    expect([200, 401]).toContain(cronNoSecret.status)
+    // ★2026-09-25 から fail-closed（シークレット未設定でも通さない）。認可の詳細は admin.reminder-trigger-auth.spec.ts
+    expect(cronNoSecret.status).toBe(401)
   })
 })

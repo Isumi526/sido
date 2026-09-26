@@ -29,6 +29,15 @@ const env = {
 export const SUPABASE_URL  = process.env.SUPABASE_URL      || env.VITE_SUPABASE_URL
 export const ANON_KEY      = process.env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY
 export const ACCOUNT_SLUG  = process.env.ACCOUNT_SLUG      || env.VITE_ACCOUNT_SLUG || 'test'
+/** EF の置き場所。既定はローカルスタック経由。別プロセスで立てた EF を叩く時だけ FUNCTIONS_URL で差し替える */
+export const FUNCTIONS_URL = process.env.FUNCTIONS_URL || `${SUPABASE_URL}/functions/v1`
+/**
+ * リマインド系 EF（reminder-auth）を cron として起動する共有シークレット。EF と同じ supabase/functions/.env から読む
+ * （gitignore 対象＝ローカルで REMINDER_TRIGGER_SECRET=<任意の値> を足して functions serve を起動し直す）。
+ * ★2026-09-25 から未設定では通さない（fail-closed）ので、他テナントを cron として回すテストはこれが要る。
+ */
+export const REMINDER_SECRET = process.env.REMINDER_TRIGGER_SECRET
+  || loadEnv(resolve(process.cwd(), 'supabase/functions/.env')).REMINDER_TRIGGER_SECRET || ''
 
 // psql 直接接続用（auth.users 等 REST 非公開のテーブルを操作するテスト向け）。
 // ハードコード54322を避け、SUPABASE_URL のポートから逆算する（supabase CLI の既定割当＝ API port + 1 = DB port）。

@@ -6,16 +6,19 @@
 //     ※test アカウントは関数が除外するため、非testの sample-construction で検証
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { rest, getAccountId, SUPABASE_URL, ANON_KEY } from './helpers'
+import { rest, getAccountId, FUNCTIONS_URL, ANON_KEY, REMINDER_SECRET } from './helpers'
 
 const TS = Date.now()
 // ★2026-08-30: test-daily-reminder は本体と別実装に乖離した写しだったので削除し、本体に一本化した
-const FN = `${SUPABASE_URL}/functions/v1/daily-reminder`
+const FN = `${FUNCTIONS_URL}/daily-reminder`
+// ★他社（sample-construction）を回すので cron（共有シークレット）として叩く。
+//  2026-09-25 から JWT の手動実行は「その人の会社だけ」＝他社は回せない（reminder-auth）。
+const CRON_HEADERS = { 'Content-Type': 'application/json', apikey: ANON_KEY, 'x-reminder-secret': REMINDER_SECRET }
 
 async function callReminderDryRun(slug: string) {
   const res = await fetch(FN, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: ANON_KEY, Authorization: `Bearer ${ANON_KEY}` },
+    headers: CRON_HEADERS,
     body: JSON.stringify({ dry_run: true, manual: true, account_slug: slug }),
   })
   return { status: res.status, json: await res.json().catch(() => null) }
@@ -77,9 +80,10 @@ test.describe('未送信者リマインド：受信者/除外フラグ', () => {
   let fnAvailable = true
 
   test.beforeAll(async () => {
-    // 関数が到達可能か（functions serve 起動）確認。不可ならこのブロックはskip
+    // 関数が到達可能か（functions serve 起動・シークレット設定済み）確認。不可ならこのブロックはskip
+    if (!REMINDER_SECRET) { fnAvailable = false; return }
     try {
-      const r = await fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dry_run: true, manual: true, account_slug: '__none__' }) })
+      const r = await fetch(FN, { method: 'POST', headers: CRON_HEADERS, body: JSON.stringify({ dry_run: true, manual: true, account_slug: '__none__' }) })
       if (!r.ok && r.status !== 404) fnAvailable = false
     } catch { fnAvailable = false }
     if (!fnAvailable) return

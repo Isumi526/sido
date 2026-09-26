@@ -8,6 +8,7 @@
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { sendApprovalRequestMail } from '../_shared/approval-mail.ts'
+import { pushToApprovers, adminUrl } from '../_shared/approver-push.ts'
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')              ?? '',
@@ -82,6 +83,15 @@ Deno.serve(async (req) => {
         ...(otr.is_late ? [['区分', '実績修正（締切後）'] as [string, string]] : []),
       ],
       linkPath: '/overtime-approvals',
+    })
+    // ★A-3（2026-09-24）: 承認者の端末へもプッシュ（作業員アプリをホーム画面に追加している人に届く）。
+    //  メールの成否とは独立の best-effort。申請者本人が承認者でも本人の端末には送らない。
+    await pushToApprovers(supabase, accountId, {
+      title: '残業申請が届きました',
+      body: `${sender} ${String(date).slice(5).replace('-', '/')}${requested_end_time ? ` ${String(requested_end_time).slice(0, 5)}まで` : ''}${otr.is_late ? '（実績修正）' : ''}`,
+      url: adminUrl('/overtime-approvals'),
+      tag: 'overtime-approval',
+      excludeWorkerId: (reqWorker as any)?.id ?? null,
     })
     if (!r0.sent) return json({ success: true, skipped: r0.reason ?? 'not_sent' })
     const r = { status: 200, body: { sent_to: r0.to } }

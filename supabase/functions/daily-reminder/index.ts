@@ -5,6 +5,8 @@
 //   LINE連携の有無に関わらず受信者に届く。
 //  pg_cron から毎時呼び出し → settings の reminder_time と一致する時刻のみ実行
 //  管理画面から手動実行も可能（manual: true で時刻チェックをスキップ）
+//  ★認可は reminder-auth: cron（共有シークレット）は全社、承認者JWTの手動実行は**その人の会社だけ**
+//   （body の account_slug は無視する。2026-09-25 まではログインできる人なら誰でも全社を発火できた）
 //
 //  各アカウントの settings テーブルから以下を参照:
 //    service_start_date : チェック開始日
@@ -295,11 +297,15 @@ async function processAccount(
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders() })
 
-  // トリガー認可（cron=共有シークレット / admin手動=認証JWT）。第三者のURL直叩きを弾く。
-  if (!(await authorizeReminderTrigger(req, supabase))) return json({ error: 'unauthorized' }, 401)
+  // トリガー認可（cron=共有シークレット＝全社 / 管理画面の手動=承認者JWT＝自分の会社だけ）
+  const authz = await authorizeReminderTrigger(req, supabase)
+  if (!authz.ok) return json({ error: 'unauthorized' }, 401)
+  const scopeAccountId = authz.scopeAccountId
 
   if (req.method === 'GET') {
-    const { data: accounts } = await supabase.from('accounts').select('id, slug')
+    let gq = supabase.from('accounts').select('id, slug')
+    if (scopeAccountId) gq = gq.eq('id', scopeAccountId) as typeof gq
+    const { data: accounts } = await gq
     const info = await Promise.all((accounts ?? []).map(async acc => {
       const { data: settings } = await supabase
         .from('settings').select('key, value')
@@ -339,7 +345,8 @@ Deno.serve(async (req) => {
 
   try {
     let q = supabase.from('accounts').select('id, slug').neq('slug', 'test')
-    if (targetSlug) q = q.eq('slug', targetSlug) as typeof q
+    if (scopeAccountId) q = q.eq('id', scopeAccountId) as typeof q   // ★手動実行は自分の会社だけ（account_slug は無視）
+    else if (targetSlug) q = q.eq('slug', targetSlug) as typeof q
     const { data: accounts, error: accErr } = await q
     if (accErr) throw accErr
     if (!accounts?.length) return json({ error: 'アカウントが見つかりません' }, 404)

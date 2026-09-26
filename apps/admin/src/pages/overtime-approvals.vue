@@ -6,6 +6,7 @@
     <p class="hint">
       作業員から届いた「残業申請」を承認/却下します。
       承認すると、その作業員のその日付だけ 現場の固定終了時刻を超える終了時刻を日報に入力できるようになります。
+      承認前に日報が出ている場合（「日報」の時刻がある申請）は、承認するとその時刻で日報が書き換わり、給与計算に反映されます。
     </p>
 
     <div v-if="loading" class="empty">読み込み中…</div>
@@ -36,7 +37,15 @@
               </td>
               <td class="sites">{{ (g.site_names && g.site_names.length) ? g.site_names.join('、') : '—' }}</td>
               <td>
-                {{ (g.requested_end_time || '').slice(0, 5) || '—' }}
+                <!-- ★A-1（2026-09-24）: 承認待ちの間に日報が出ていれば、日報に入力された終了時刻が「承認すると払う時刻」。
+                     事前申告（希望終了）と並べて出し、夜に黙って伸ばした時刻を気づかず承認しないようにする。 -->
+                <template v-if="g.reported_end_time">
+                  <div class="ot-reported" data-testid="ot-approval-reported">日報 {{ (g.reported_end_time || '').slice(0, 5) }}</div>
+                  <div class="ot-extra">希望 {{ (g.requested_end_time || '').slice(0, 5) || '—' }}</div>
+                </template>
+                <template v-else>{{ (g.requested_end_time || '').slice(0, 5) || '—' }}</template>
+                <!-- ★早出（2026-09-25）: 日報で固定開始より前に入力された開始時刻＝承認すると払う開始 -->
+                <div v-if="g.reported_start_time" class="ot-reported" data-testid="ot-approval-reported-start">日報の開始 {{ (g.reported_start_time || '').slice(0, 5) }}〜</div>
                 <!-- ★早朝入り・休憩なしも同じ申請に乗る（2026-08-10）。
                      承認するとその日だけ日報の入力制限が緩むので、何を承認するのか出す。 -->
                 <div v-if="g.requested_start_time" class="ot-extra" data-testid="ot-approval-start">
@@ -79,7 +88,21 @@
             <span v-if="selected.is_late" class="late-badge">実績修正（締切後）</span>
           </dd>
           <dt>対象現場</dt><dd>{{ (selected.site_names && selected.site_names.length) ? selected.site_names.join('、') : '—' }}</dd>
-          <dt>希望終了</dt><dd>{{ (selected.requested_end_time || '').slice(0, 5) || '—' }}</dd>
+          <template v-if="selected.reported_end_time">
+            <dt>日報の終了</dt>
+            <dd>
+              <strong class="ot-reported" data-testid="ot-detail-reported">{{ (selected.reported_end_time || '').slice(0, 5) }}</strong>
+              <div class="muted">承認するとこの時刻で日報が書き換わり、給与計算に入ります（今は定時までで計上中）</div>
+            </dd>
+          </template>
+          <dt>希望終了</dt><dd>{{ (selected.requested_end_time || '').slice(0, 5) || '—' }}<span v-if="selected.reported_end_time" class="muted">（締切前の事前申告）</span></dd>
+          <template v-if="selected.reported_start_time">
+            <dt>日報の開始</dt>
+            <dd>
+              <strong class="ot-reported" data-testid="ot-detail-reported-start">{{ (selected.reported_start_time || '').slice(0, 5) }}〜</strong>
+              <div class="muted">承認するとこの時刻で日報の開始が書き換わり、給与計算に入ります（今は固定開始からで計上中）</div>
+            </dd>
+          </template>
           <template v-if="selected.requested_start_time">
             <dt>早朝入り</dt><dd>{{ (selected.requested_start_time || '').slice(0, 5) }}〜</dd>
           </template>
@@ -191,6 +214,10 @@ type OvertimeReq = {
   worker_id: string | null
   date: string
   requested_end_time: string | null
+  /** 承認待ちの間に日報で入力された終了時刻（A-1）。承認するとこの時刻で日報が書き換わる */
+  reported_end_time?: string | null
+  /** 承認待ちの間に日報で入力された開始時刻（早出・2026-09-25） */
+  reported_start_time?: string | null
   requested_start_time: string | null
   requested_break_minutes: number | null
   reason: string | null
@@ -292,7 +319,7 @@ async function load() {
   if (!accountId) { loading.value = false; return }
   const [{ data: reqs }, { data: ws }] = await Promise.all([
     supabase.from('overtime_requests')
-      .select('id, worker_id, date, requested_end_time, requested_start_time, requested_break_minutes, reason, site_names, status, is_late, requested_at')
+      .select('id, worker_id, date, requested_end_time, requested_start_time, requested_break_minutes, reason, site_names, status, is_late, requested_at, reported_end_time, reported_start_time')
       .eq('account_id', accountId).eq('status', 'pending')
       .order('requested_at', { ascending: true }),
     supabase.from('workers').select('id, name').eq('account_id', accountId),
@@ -390,6 +417,8 @@ onMounted(load)
 </script>
 
 <style scoped>
+/* A-1: 承認すると払う時刻（日報に入力された終了）。希望終了より目立たせる */
+.ot-reported { font-weight: 700; color: #b45309; }
 /* 申請の詳細（2026-09-14） */
 .tap-hint { margin-top: -8px; }
 .data-row { cursor: pointer; }
