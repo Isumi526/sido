@@ -17,14 +17,13 @@
 //  ★テナントの settings.notify_approval_request_enabled='false' の所には送らない（承認依頼メールと同じ設定）。
 //  ★対象は「その日以前の日付で pending のまま」の申請。古い取り残しも一緒に催促する。
 //  ※ --no-verify-jwt でデプロイ。
-//  ★認可は reminder-auth(authorizeReminderTrigger) を使わない。あれは JWT 経路で「ログインしている人なら誰でも」
-//   通すため、全員がメール認証になった今は作業員の誰でも全テナントのリマインドを発火できる。ここでは
+//  ★認可は reminder-auth(authorizeReminderTrigger)。2026-09-25 に締めた版で、
 //    - 共有シークレット(x-reminder-secret) … cron。全社が対象
 //    - JWT … 承認者(APPROVER_ROLES)であること。対象は**その人の会社だけ**（account_slug 指定は無視）
-//    - シークレット未設定でも通さない（fail-closed。移行期の後方互換は持ち込まない）
+//    - シークレット未設定でも通さない（fail-closed）
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { resolveApprover, APPROVER_ROLES } from '../_shared/caller-identity.ts'
+import { authorizeReminderTrigger } from '../_shared/reminder-auth.ts'
 import { resolveApprovalRecipients, isApprovalNotifyEnabled } from '../_shared/approval-mail.ts'
 import { sendResend } from '../_shared/doc-mail.ts'
 import { pushToApprovers, adminUrl } from '../_shared/approver-push.ts'
@@ -61,14 +60,9 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders() })
   if (req.method !== 'POST') return json({ ok: false, error: 'method_not_allowed' }, 405)
   const svc = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
-  const secret = Deno.env.get('REMINDER_TRIGGER_SECRET') ?? ''
-  const provided = req.headers.get('x-reminder-secret') ?? ''
-  let scopeAccountId: string | null = null   // null = cron（全社）
-  if (!(secret && provided && provided === secret)) {
-    const approver = await resolveApprover(svc, req.headers.get('Authorization') ?? '')
-    if (!approver || !APPROVER_ROLES.includes(approver.role)) return json({ ok: false, error: 'unauthorized' }, 401)
-    scopeAccountId = approver.accountId
-  }
+  const authz = await authorizeReminderTrigger(req, svc)
+  if (!authz.ok) return json({ ok: false, error: 'unauthorized' }, 401)
+  const scopeAccountId = authz.scopeAccountId   // null = cron（全社）
 
   let body: any = {}
   try { body = await req.json() } catch { body = {} }

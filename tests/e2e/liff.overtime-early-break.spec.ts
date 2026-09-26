@@ -171,8 +171,10 @@ test.describe('早朝入り・休憩なしの申請', () => {
       { method: 'DELETE' }).catch(() => {})
     await page.goto('/overtime', { waitUntil: 'networkidle' })
     const start = page.getByTestId('ot-start-time')
-    if (await start.count() === 0) {
-      test.skip(true, '当日の締切(16:00)を過ぎているため申請フォームが出ない')
+    // ★締切（16:00）後は同じフォームが「実績修正の申請(late)」モードになる（2026-08-22〜）。
+    //  フォーム自体は出るので count だけで判定すると、16時以降に流すと理由未入力で弾かれて落ちていた。
+    if (await start.count() === 0 || await page.getByTestId('ot-late-submit').count() > 0) {
+      test.skip(true, '当日の締切(16:00)を過ぎているため通常の申請フォームではない')
       return
     }
     await start.selectOption('06:00')
