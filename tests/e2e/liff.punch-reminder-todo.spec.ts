@@ -7,7 +7,7 @@
 //   - 「お知らせ」タブを開いてもやること側の催促は消えない（既読で消えない）
 //  ※ 終了＋6h 経過で消えるのは EF が「今」を見て判定する（now を渡す経路は cron 用・画面からは渡さない）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { restSrv, getAccountId, useDevWorker, ensureDevWorker, setFeatureFlag } from './helpers'
 
 const KEY = 'punch-todo'

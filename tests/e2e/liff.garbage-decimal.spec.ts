@@ -1,7 +1,7 @@
 // 日報→経費→ゴミ の m³ 量に小数点が入力できること（ExpenseField decimal対応）。
 // controlled な type=number で「1.」の途中入力が "1" に戻らない（ローカルバッファ）ことを
 // 1文字ずつのキー入力(pressSequentially)で検証する。
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { FEAT_C_DATE } from './global-setup'
 
 test('日報→経費→ゴミの m³ に小数点(1.5)が入力できる', async ({ page }) => {

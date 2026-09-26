@@ -10,7 +10,7 @@
 //   2. 8日以上前・無効現場は入らない。履歴が無ければグループ自体が出ない
 //   3. 元請け階層は従来どおり下に残る（同じ現場が二重に出てよい）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()

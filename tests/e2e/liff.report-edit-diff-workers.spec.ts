@@ -4,7 +4,7 @@
 //  「稼働: あり→なし」「経費を変更」が出ていた。原因は (1) クライアントが差分を空で送る (2) サーバの代替差分の誤判定。
 //  ここは (1) の再現＝workers ありの日報で、クライアント形式（「▸ 時間: …」）の差分が daily_report_edit_logs に残ること。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getDevUserId, getAccountId, fillNoReceiptReasons } from './helpers'
 
 const EDIT_DATE = '2026-08-18'

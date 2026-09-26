@@ -4,7 +4,7 @@
 //  (大塚さん指摘・2026-08-27: 数日分まとめて打刻する人がいて、
 //   毎日違う現場のこともあるため、対象日を間違えるリスクがあった)。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, getAccountId, passWorkStatusGate } from './helpers'
 
 const TS = Date.now()

@@ -13,7 +13,7 @@
 //   ＝「どの現場も消えない」という元の保証は、絞り込みが無くなったことで
 //   より強く満たされる。テストはその新しい形に合わせて書き直した。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, getAccountId } from './helpers'
 
 const TS = Date.now()

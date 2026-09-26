@@ -8,7 +8,7 @@
 //   ②後から生えて下のメニューを押し下げ、押そうとしたものと別のボタンを押させていた
 //   （運用者指摘）。ステータスカードは高さを固定してあるので、現場名が入っても下はずれない。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()

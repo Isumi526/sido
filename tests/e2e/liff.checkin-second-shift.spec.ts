@@ -13,7 +13,7 @@
 //   attendance_logs 側に「1日1件」の制約は無い（pkey と worker/checked_at の索引のみ）。
 //   ＝ UI だけの制限だったので、already-done から出勤へ戻る導線を足した。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { restSrv, getDevUserId } from './helpers'
 
 let workerId: string | null = null

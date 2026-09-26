@@ -20,7 +20,7 @@
 //  ★もう一つ: 稼働なしを選んだ日に **打刻が作られない**こと。
 //   ここが漏れると「休みなのに出勤している人」が勤怠に出てしまう。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv } from './helpers'
 
 const today = new Date()

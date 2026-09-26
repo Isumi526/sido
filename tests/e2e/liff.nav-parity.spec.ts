@@ -4,7 +4,7 @@
 //  ユーザー指摘: 「ハンバーガーメニュー内とホーム画面のナビの項目を共通化し整理して」
 //  （ホームに無かった現場情報、ハンバーガーに無かったルールブック/パスワード変更を統一）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { suppressOverdueModal } from './helpers'
 
 test('ホーム画面とハンバーガーメニューで同じナビ項目が出る', async ({ page }) => {

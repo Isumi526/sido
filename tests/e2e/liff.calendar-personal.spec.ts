@@ -3,7 +3,7 @@
 //  個人カレンダー（共有タブと別に、自分の予定だけを週間/月間で見るビュー）
 //  （2026-07-10・[[project_sido]]）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest } from './helpers'
 
 test.describe('予定管理 個人カレンダー', () => {

@@ -10,7 +10,7 @@
 //   個人経費には既に「1枚=1件の下書き」に展開する仕組みがあり、そちらと考え方を揃えた。
 //   ★AI解析は外部API依存なので page.route でスタブして決定的に検証する。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { useDevWorker } from './helpers'
 
 const PNG_1x1 = Buffer.from(

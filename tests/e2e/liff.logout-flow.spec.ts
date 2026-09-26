@@ -7,7 +7,7 @@
 //  falseにしていたため、遷移が完了するまでの一瞬(まだ非exemptルート)に
 //  スプラッシュへ入り込み、そのまま戻らなくなることがあった。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { suppressOverdueModal } from './helpers'
 
 test('ログアウトするとスプラッシュで止まらずログイン画面へ遷移する', async ({ page }) => {

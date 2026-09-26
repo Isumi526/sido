@@ -11,7 +11,7 @@
 //    - 記録に attachment_id が入る（資料名だけの旧方式では特定できなかった）
 //    - 現場のメンバーでない人は承認できない（記録に意味が無くなる）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { SUPABASE_URL, ANON_KEY, SERVICE_ROLE_KEY, rest, restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()

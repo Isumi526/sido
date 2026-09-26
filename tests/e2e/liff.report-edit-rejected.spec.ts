@@ -7,7 +7,7 @@
 //  ＝「コメントを入れて差し戻す」という運用がそもそも成立していなかった。
 //  ここで「理由が本人に見える」「確認したら消える」を固定する。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { restSrv, getDevUserId, getAccountId } from './helpers'
 
 const TS = Date.now()

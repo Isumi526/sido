@@ -13,7 +13,7 @@
 //   「管理者が一番目に決めた時間がマスタ」（同じ電話）という原則が崩れ、
 //   架空の労働時間を自分で作れてしまう。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()

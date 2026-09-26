@@ -7,7 +7,7 @@
 //  ★背景: 既存の「過去3日ロック＋許可申請」は"出す許可"の承認で中身を見ていない。
 //    遅れて出てくる日報こそ金額を確認したいので、内容の承認を通す。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId, todayJST, ensureDevWorker, useDevWorker } from './helpers'
 
 const TS = Date.now()

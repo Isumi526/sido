@@ -3,7 +3,7 @@
 // env=test のローカルデプロイで sample-construction 作業員がログイン → Sample Construction が適用され、
 // テストアカウントのデータに混ざらない（liff露出表はRLS無効=2b前ゆえアプリ側の account 解決が防御線）。
 import { execSync } from 'node:child_process'
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { SUPABASE_URL, ANON_KEY, DB_URL, restSrv } from './helpers'
 
 const EMAIL = 'hiro.tenant.e2e@example.com'

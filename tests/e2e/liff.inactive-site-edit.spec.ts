@@ -8,7 +8,7 @@
 //   まさにこれで詰まる。「プルダウンから消す」目的は保ったまま、選択中の値だけ
 //   残すのが正しい落としどころ。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { restSrv, getDevUserId, getAccountId, fillNoReceiptReasons } from './helpers'
 
 const TS = Date.now()

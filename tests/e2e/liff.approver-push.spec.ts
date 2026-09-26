@@ -10,7 +10,7 @@
 //   3. 他人の購読は消せない
 //   4. カードは承認者にだけ出る（作業員のホーム・通知ページには出ない）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId, SUPABASE_URL, ANON_KEY } from './helpers'
 
 const TS = Date.now()

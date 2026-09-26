@@ -11,7 +11,7 @@
 //   - 同意すると記録され、以後は出ない（リロードしても再同意を求めない）
 //   - 二重送信してもエラーにならない（冪等）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { restSrv, useDevWorker, getAccountId } from './helpers'
 
 let workerId = ''

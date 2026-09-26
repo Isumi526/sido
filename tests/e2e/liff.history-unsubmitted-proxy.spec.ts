@@ -16,7 +16,7 @@
 //  ★「誰の分か分からない」への対処
 //   カードに相手の名前を出す（unsub-proxy-name）。消すのではなく名乗らせる。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { getAccountId, restSrv, getDevUserId } from './helpers'
 
 const TS = Date.now()

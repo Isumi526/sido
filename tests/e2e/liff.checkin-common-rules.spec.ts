@@ -5,7 +5,7 @@
 //   - 出勤時・退勤時それぞれの timing 分だけ出る
 //   - 同意した文面が打刻に記録される（証跡のスナップショット）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId, passWorkStatusGate } from './helpers'
 
 const TS = Date.now()

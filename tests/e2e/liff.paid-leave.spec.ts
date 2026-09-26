@@ -3,7 +3,7 @@
 //  作業員が自分の有給状況(残日数・付与履歴・使用履歴)をスマホで確認できる（読み取り専用）。
 //  Notion: 有給の残/付与/使用を作業員がクライアント側で確認できるページ（追加・調整は不可）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()

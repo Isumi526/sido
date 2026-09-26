@@ -12,7 +12,7 @@
 //   2. ★過去の期間では申請も編集もできない（締切超過なので canApply=false）
 //   2 が崩れると、締切を過ぎた経費を後から書き換えられることになる。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 
 /** 数ヶ月前の期間キーとその表示ラベル（プルダウンに出る形式）。 */
 function pastPeriod(monthsAgo: number): { key: string; label: string } {

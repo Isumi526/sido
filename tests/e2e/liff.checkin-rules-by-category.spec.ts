@@ -6,7 +6,7 @@
 //   - 選んだ区分が attendance_logs.work_category_id に残る
 //   - 区分ルールが無いテナントは従来どおり（区分の選択は出ない）＝ liff.checkin-common-rules が担保
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId, passWorkStatusGate } from './helpers'
 
 const TS = Date.now()

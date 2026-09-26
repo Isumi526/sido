@@ -2,7 +2,7 @@
 //  liff.site-view.spec.ts （dev モード）
 //  作業員が現場情報（詳細）を閲覧できる（緊急・AC3）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, getAccountId, grantSiteShare } from './helpers'
 
 const TS = Date.now()

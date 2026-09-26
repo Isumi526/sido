@@ -17,7 +17,7 @@
 //   代理先の承認待ちが「出し済み」として飛ばされ、次の日へ進めること。
 //   これが崩れると、代理入力が特定の日から先へ一切進めなくなる。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { getAccountId, restSrv, getDevUserId } from './helpers'
 
 const TS = Date.now()

@@ -13,7 +13,7 @@
 //
 //   ★このテストが無かったから見逃した。画面は正常に見えるので、DBを見ないと分からない。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()

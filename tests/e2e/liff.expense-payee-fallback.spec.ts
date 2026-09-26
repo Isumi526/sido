@@ -8,7 +8,7 @@
 //   - 駐車代(現場に車両CX8) → 品名=「P代」・使用車=CX8。
 //   - 高速代(payee空・ETCカードのみ) → 支払先には昇格しない(誤昇格防止)。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, getDevUserId, getAccountId } from './helpers'
 import { FEAT_EXP_PERIOD, FEAT_EXP_DATE } from './global-setup'
 

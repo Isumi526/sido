@@ -15,7 +15,7 @@
 //   - 作業員のプルダウンが読み仮名順（漢字の並びとは違うことを、わざと逆順の漢字で確かめる）
 //   - 読み仮名が無い作業員は末尾（並びから消えない）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { restSrv, getAccountId, SUPABASE_URL, ANON_KEY } from './helpers'
 
 /** マスタEF(master-data)の workers 一覧を取る。dev の身元で呼ぶ（ローカルのみ dev_line_user_id が通る）。 */

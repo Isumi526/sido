@@ -16,7 +16,7 @@
 //
 //  接頭辞 E2E退勤導線 のデータはテスト後に必ず消す（共有DB）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId, passWorkStatusGate } from './helpers'
 
 const TS = Date.now()

@@ -5,7 +5,7 @@
 //   AC2 「その他（手入力）」は残る（マスタに無い車＝vehicleId は null）
 //   ＋ 旧データ（vehicleName だけ）を開くと「その他」に名前が入った状態で復元される
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getDevUserId, getAccountId, fillNoReceiptReasons } from './helpers'
 
 const TS = Date.now()

@@ -6,7 +6,7 @@
 //   - 他の科目（会議費・消耗品費 等）では入力欄が出ない＝余計な入力を増やさない
 //   ★会議費は対象外（2026-07-31 ユーザー確定）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 
 // 経費セクションを開いた状態にする（現場選択 → 使用有無セレクトを2段階で「あり」に）
 async function openExpenseForm(page: import('@playwright/test').Page) {

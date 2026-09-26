@@ -4,7 +4,7 @@
 //  送信したメッセージが表示され、現場ごとのチャットのメッセージとは
 //  互いに混ざらないことを検証する(2026-07-20)。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import path from 'path'
 import { rest, restSrv, getAccountId, grantSiteShare } from './helpers'
 

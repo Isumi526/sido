@@ -11,7 +11,7 @@
 //   3. 未提出バッジが翌朝の退勤で「今日」を数えない
 //   4. 週カレンダーで日跨ぎ予定の帯が潰れない（当日は24:00まで・翌日側に続き）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId, suppressOverdueModal } from './helpers'
 
 const TS = Date.now()

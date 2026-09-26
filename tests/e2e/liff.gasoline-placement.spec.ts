@@ -11,7 +11,7 @@
 //    現場ごとではないので、複数現場の日でも入力欄は最初の現場に1つだけ出す。
 //    距離按分の台帳（内部原価）には入らず、経費項目としてのみ計上する ＝ 従来どおり。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, useDevWorker } from './helpers'
 
 test('★ガソリン代は独立ブロックではなく、経費の中（車両の下）に出る', async ({ page }) => {

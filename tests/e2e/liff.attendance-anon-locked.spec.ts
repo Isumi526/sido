@@ -14,7 +14,7 @@
 //   「DBが守っていない」ことが画面から分からない構造だった。
 //   だからこそ画面ではなく、キーで直接叩いて確かめる。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { SUPABASE_URL, ANON_KEY, rest, restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()

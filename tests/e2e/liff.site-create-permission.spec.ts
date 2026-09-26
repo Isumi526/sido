@@ -8,7 +8,7 @@
 //  Notion: 38e0ff81c56b81c79001eb926c900cdd
 // ============================================================
 import { execSync } from 'node:child_process'
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { SUPABASE_URL, ANON_KEY, ACCOUNT_SLUG, DB_URL, getAccountId, restSrv } from './helpers'
 
 const ADD_NEW_SITE = '新しい現場を登録'
@@ -48,6 +48,11 @@ test.beforeAll(async () => {
   )
 })
 
+test.describe('職人でログイン', () => {
+  // ★この test は画面から職人としてログインする。既定のログイン（Worker 01＝現場責任者）を入れると
+  //  ページを開くたびにそちらで上書きされるので外す（liff-test.ts）。
+  test.use({ liffLogin: false })
+
 test('AC: 職人(worker)には「新しい現場を登録する」の選択肢が出ない', async ({ page }) => {
   await page.goto('/login')
   await page.getByTestId('login-email').fill(EMAIL)
@@ -68,8 +73,10 @@ test('AC: 職人(worker)には「新しい現場を登録する」の選択肢�
   expect(opts.some(o => o.includes(ADD_NEW_SITE)), `職人に新規作成の選択肢が出てはいけない: ${JSON.stringify(opts)}`).toBe(false)
 })
 
+})
+
 test('AC: 権限者(site_manager)には「新しい現場を登録する」の選択肢が出る', async ({ page }) => {
-  // 既定の storageState は LINE devモード（dev-user-id = Worker 01 = site_manager）
+  // 既定のログインは Worker 01（= dev-user-id = site_manager）
   await page.goto('/report', { waitUntil: 'networkidle' })
   if (await page.getByText('送信済みです').count()) { test.skip(true, '全日送信済みのためフォーム無し'); return }
   await page.waitForSelector('form.form', { timeout: 15000 })

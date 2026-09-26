@@ -13,7 +13,7 @@
 //   画面が動いていることは他の spec が見ているので、ここは「DBが守っているか」だけを、
 //   画面を通さずキーで直接叩いて確かめる。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { SUPABASE_URL, ANON_KEY, restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()

@@ -4,7 +4,7 @@
 //  アラート表示期間: first=15日〜18日10:00 / second=翌月1日〜3日10:00（JST）
 //  → 実行日に依存しないよう、時計を前半ウィンドウ内(16日)に固定して検証する
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, getDevUserId } from './helpers'
 
 // 前半アラート期間(15〜18日)の内側に固定

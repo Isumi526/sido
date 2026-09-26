@@ -13,7 +13,7 @@
 //
 //   ここでは「保存された値」と「集計が使う値」が一致することを見る。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId, SUPABASE_URL, ANON_KEY, ensureDevWorker } from './helpers'
 
 const DATE = '2026-10-21'   // 木曜（日曜料率にならない日）

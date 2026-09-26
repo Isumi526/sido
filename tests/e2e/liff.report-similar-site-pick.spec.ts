@@ -4,7 +4,7 @@
 //  手入力(その他の現場)をやめて現場セレクトへ直接反映される
 //  （2026-07-16・現場名類似候補 複数箇所対応チケット・[[project_sido]]）
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 
 test('似た現場候補をタップすると現場選択欄にそのまま反映される', async ({ page }) => {
   try { await page.goto('/report', { waitUntil: 'networkidle', timeout: 8000 }) }

@@ -11,7 +11,7 @@
 //   - 申請しただけでは打刻は変わらない（承認して初めて直る）
 //   - 同じ打刻に二重申請できない
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { restSrv, useDevWorker } from './helpers'
 
 let workerId = ''

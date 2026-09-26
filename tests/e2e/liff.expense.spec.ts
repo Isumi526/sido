@@ -4,7 +4,7 @@
 //  分割出力されることを、印刷ページの行内容で検証。
 //  seed: 駐車代=立替 / 高速代=非立替 → all 2行, tategae 1行
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { FEAT_C_PERIOD, DEV_LINE_ID } from './global-setup'
 
 const ROW = 'table.expense-table tbody tr'

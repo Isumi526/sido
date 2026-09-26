@@ -12,7 +12,7 @@
 //   4. 候補が無い品目は現場からその場で新規登録でき（承認なし）、同名は二重に作られない
 //   5. AI は補助である旨が画面に出る
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId } from './helpers'
 
 const TS = Date.now()

@@ -5,7 +5,7 @@
 //   - B: 送信済み扱い＝pending の日付は未送信スキャンで飛ばされる（同じ日付に戻され続けない）。
 //  ★残が足りている時は従来どおり承認不要で daily_reports に保存される。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest, restSrv, getAccountId } from './helpers'
 
 const TODAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo' }).format(new Date())

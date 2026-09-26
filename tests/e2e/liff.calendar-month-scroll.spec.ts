@@ -3,7 +3,7 @@
 //  個人カレンダー月間ビュー: 無限スクロール・自動月切替・長タイトルでレイアウトが
 //  崩れないこと（2026-07-11・[[project_sido]]）。
 // ============================================================
-import { test, expect } from '@playwright/test'
+import { test, expect } from './liff-test'
 import { rest } from './helpers'
 
 test.describe('個人カレンダー 月間ビューの無限スクロール', () => {
