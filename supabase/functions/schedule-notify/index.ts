@@ -13,7 +13,7 @@
 //  認可:
 //   - changed: 呼び出し元の身元を resolveCaller で検証（admin JWT / LINE ID token / ローカル用）。account はサーバ側で解決し、
 //              予定は account_id で絞って読む＝他テナントの予定IDを渡されても触れない。自分の予定を自分で変えた時は送らない
-//   - remind:  cron の共有シークレット or 認証済み JWT（authorizeReminderTrigger）
+//   - remind:  cron の共有シークレット＝全社 / 承認者 JWT＝その人の会社だけ（authorizeReminderTrigger）
 //
 //  action: changed { scheduleId, kind: 'created'|'updated'|'deleted', changes?: Record<string,{from,to}> } → { ok, mailed, notified }
 //          remind  {}                                                                                   → { ok, ... }
@@ -146,11 +146,14 @@ Deno.serve(async (req) => {
 
   // ── 前日リマインド（毎時 cron）────────────────────────────
   if (body.action === 'remind') {
-    if (!(await authorizeReminderTrigger(req, svc as any))) return json({ ok: false, error: 'unauthorized' }, 401)
+    const authz = await authorizeReminderTrigger(req, svc)
+    if (!authz.ok) return json({ ok: false, error: 'unauthorized' }, 401)
     const now = nowJst()
     const targetDate = typeof body.target_date === 'string' ? body.target_date : shiftDate(now.date, 1)
     const force = body.force === true   // 手動実行（admin）用: 時刻を無視して今すぐ
-    const { data: accounts } = await svc.from('accounts').select('id')
+    let accQ = svc.from('accounts').select('id')
+    if (authz.scopeAccountId) accQ = accQ.eq('id', authz.scopeAccountId)   // ★手動実行は自分の会社だけ
+    const { data: accounts } = await accQ
     let created = 0, mailed = 0, skippedDup = 0, ranAccounts = 0
     for (const acc of (accounts ?? []) as { id: string }[]) {
       const st = await tenantSettings(svc, acc.id)

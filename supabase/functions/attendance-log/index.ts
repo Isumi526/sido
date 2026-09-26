@@ -73,13 +73,23 @@ function jstDay(offsetDays: number): string {
  */
 async function applyApprovedToReport(svc: any, accountId: string, r: {
   worker_id: string; date: string; requested_start_time: string | null; requested_end_time: string | null
-  requested_break_minutes: number | null; is_late: boolean | null
+  requested_break_minutes: number | null; is_late: boolean | null; reported_end_time?: string | null; reported_start_time?: string | null
 }): Promise<boolean> {
   try {
     const bm = (typeof r.requested_break_minutes === 'number') ? r.requested_break_minutes : null
     const isLate = r.is_late === true
-    // 書く内容が無ければ触らない（締切前の通常申請＝希望終了時刻のみ、は日報側の入力制限を緩めるだけ）
-    if (bm === null && !(isLate && (r.requested_start_time || r.requested_end_time))) return false
+    // ★書き戻す終了時刻（A-1・2026-09-24）:
+    //   日報で定時を超えて入力された時刻 reported_end_time があればそれ（管理者が承認画面で見て承認した数字）。
+    //   無ければ、実績修正(late)は申請時刻＝実績、締切前の通常申請は**触らない**。
+    //   通常申請で requested_end_time を代用すると「19:30で申請→実際は18:00で上がり日報も18:00」の人に
+    //   19:30 が書き込まれて過払いになる。
+    const toHm0 = (v: string | null | undefined) => (typeof v === 'string' && /^\d{2}:\d{2}/.test(v)) ? v.slice(0, 5) : null
+    const endToApply = toHm0(r.reported_end_time) ?? (isLate ? toHm0(r.requested_end_time) : null)
+    // ★早出（開始時刻）も同じ規則（2026-09-25 範囲追加）。日報で固定開始より前に入力された時刻があればそれ、
+    //   無ければ実績修正は申請時刻、締切前の通常申請は触らない（希望の早朝入り時刻で過払いしない）
+    const startToApply = toHm0(r.reported_start_time) ?? (isLate ? toHm0(r.requested_start_time) : null)
+    // 書く内容が無ければ触らない
+    if (bm === null && !endToApply && !startToApply) return false
     const { data: reports, error } = await svc.from('daily_reports')
       .select('id, sites').eq('account_id', accountId).eq('date', r.date)
     if (error || !reports?.length) return false
@@ -87,7 +97,7 @@ async function applyApprovedToReport(svc: any, accountId: string, r: {
     for (const rep of reports) {
       const sites = Array.isArray(rep.sites) ? JSON.parse(JSON.stringify(rep.sites)) : []
       const n = applyApprovedOvertimeToSites(sites, r.worker_id, {
-        breakMinutes: bm, startTime: toHm(r.requested_start_time), endTime: toHm(r.requested_end_time), isLate,
+        breakMinutes: bm, startTime: startToApply, endTime: endToApply, isLate,
       })
       if (!n) continue
       // ★工数(hoursNormal 等)を実時間から計算し直す。activeSites は空＝既存の site_id を保つ
@@ -169,7 +179,7 @@ Deno.serve(async (req) => {
 
     // ★account_id で必ず絞る。他テナントのIDを渡されても触れない
     const { data: reqRow } = await svc.from('overtime_requests')
-      .select('id, worker_id, status, date, requested_start_time, requested_end_time, requested_break_minutes, is_late')
+      .select('id, worker_id, status, date, requested_start_time, requested_end_time, requested_break_minutes, is_late, reported_end_time, reported_start_time')
       .eq('id', id).eq('account_id', approver.accountId).maybeSingle()
     if (!reqRow) return json({ ok: false, error: 'not_found' }, 404)
 
@@ -543,7 +553,7 @@ Deno.serve(async (req) => {
     const date = isDate(body.date) ? body.date : ''
     if (!date) return json({ ok: false, error: 'bad_date' }, 400)
     const { data } = await svc.from('overtime_requests')
-      .select('status, requested_start_time, requested_end_time, requested_break_minutes, reason, site_names, requested_at, decision_note')
+      .select('status, is_late, requested_start_time, requested_end_time, requested_break_minutes, reason, site_names, requested_at, decision_note, reported_end_time, reported_start_time')
       .eq('account_id', caller.accountId).eq('worker_id', caller.workerId).eq('date', date)
       .order('requested_at', { ascending: false }).limit(1)
     const r = (data ?? [])[0] as any
@@ -572,6 +582,9 @@ Deno.serve(async (req) => {
             breakMinutes: r.requested_break_minutes ?? null,
             reason: r.reason ?? '',
             siteNames: Array.isArray(r.site_names) ? r.site_names : [],
+            // ★承認待ちの間に日報で入力された終了時刻（A-1・2026-09-24）。日報画面はこれを欄に戻して見せる
+            reportedEndTime: hhmm(r.reported_end_time ?? null),
+            reportedStartTime: hhmm(r.reported_start_time ?? null),
           }
         : null,
     })
@@ -688,6 +701,89 @@ Deno.serve(async (req) => {
   //  締切(当日16:00 JST)前なら有効申請(pending/approved)をそのまま上書きし、再承認のため
   //  pending に戻す（late と同じ形・is_late は付けない）。無ければ通常の新規申請と同じ。
   //  ★worker_id は caller 本人で固定。
+  // ── 承認者の端末のプッシュ購読（A-3・2026-09-24）──
+  //  承認待ち（残業申請など）を承認者の端末へ通知するための購読。作業員アプリ(LIFF)で登録する。
+  //  ★worker_id / account_id はクライアントから受け取らず、検証済みの身元（caller）で固定する。
+  //  ★登録できるのは今この瞬間に承認者(APPROVER_ROLES)である人だけ。送る側(approver-push)でも送信時に引き直す。
+  if (body.action === 'approver-push-status' || body.action === 'approver-push-subscribe' || body.action === 'approver-push-unsubscribe') {
+    const { data: me } = await svc.from('workers').select('permission_role, active')
+      .eq('id', caller.workerId).eq('account_id', caller.accountId).maybeSingle()
+    const eligible = !!me?.active && APPROVER_ROLES.includes((me?.permission_role ?? '') as string)
+    const endpoint = typeof body.endpoint === 'string' ? body.endpoint.trim() : ''
+
+    if (body.action === 'approver-push-status') {
+      let subscribed = false
+      if (endpoint) {
+        const { data: s } = await svc.from('approver_push_subscriptions').select('id')
+          .eq('endpoint', endpoint).eq('worker_id', caller.workerId).maybeSingle()
+        subscribed = !!s?.id
+      }
+      return json({ ok: true, eligible, subscribed })
+    }
+
+    if (body.action === 'approver-push-unsubscribe') {
+      if (!endpoint) return json({ ok: false, error: 'endpoint_required' }, 400)
+      // ★自分の購読だけ消せる（他人の端末の endpoint を渡されても触れない）
+      await svc.from('approver_push_subscriptions').delete().eq('endpoint', endpoint).eq('worker_id', caller.workerId)
+      return json({ ok: true })
+    }
+
+    // subscribe
+    if (!eligible) return json({ ok: false, error: 'not_approver' }, 403)
+    const p256dh = typeof body.p256dh === 'string' ? body.p256dh : ''
+    const auth   = typeof body.auth === 'string' ? body.auth : ''
+    if (!/^https:\/\//.test(endpoint) || !p256dh || !auth) return json({ ok: false, error: 'bad_subscription' }, 400)
+    // 同じ端末は1行。別の人がその端末でログインし直したら持ち主を付け替える（前の人には届かなくなる）
+    const { error } = await svc.from('approver_push_subscriptions').upsert({
+      account_id: caller.accountId, worker_id: caller.workerId, endpoint, p256dh, auth,
+      last_seen_at: new Date().toISOString(),
+    }, { onConflict: 'endpoint' })
+    if (error) {
+      console.error('[attendance-log] approver-push-subscribe failed:', error)
+      return json({ ok: false, error: 'subscribe_failed' }, 500)
+    }
+    return json({ ok: true })
+  }
+
+  // ── 承認待ちの間に日報で入力された時刻（終了＝残業／開始＝早出）を記録（A-1・2026-09-24／早出 2026-09-25）──
+  //  日報は固定開始〜固定終了までしか保存しない（承認まで金額を動かさない）ので、それを外れて入力された
+  //  時刻はここに持つ。承認時に overtime-decide がこの時刻で日報を書き換える。
+  //  ★overtime-update と違い 16:00 締切の対象外。事前申告（requested_*）を書き換えるのではなく、
+  //   実績を横に置くだけなので、架空残業対策の証跡は崩れない（承認画面で両方並ぶ）。
+  //  ★body に含まれたキーだけ更新する。値 null は「定時内に戻した」＝記録を消す。
+  //  ★pending でない（承認/却下済み・取消済み）なら記録しない。承認済みなら日報に直接入れられるので不要。
+  if (body.action === 'overtime-report-times') {
+    const date = isDate(body.date) ? body.date : ''
+    if (!date) return json({ ok: false, error: 'bad_date' }, 400)
+    const patch: Record<string, string | null> = {}
+    for (const [key, col] of [['endTime', 'reported_end_time'], ['startTime', 'reported_start_time']] as const) {
+      if (!(key in body)) continue
+      const v = body[key]
+      if (v === null) { patch[col] = null; continue }
+      if (!isTime(v)) return json({ ok: false, error: 'bad_time' }, 400)
+      patch[col] = String(v).slice(0, 5)
+    }
+    if (!Object.keys(patch).length) return json({ ok: false, error: 'nothing_to_update' }, 400)
+    const clearingOnly = Object.values(patch).every(v => v === null)
+    const { data: rows } = await svc.from('overtime_requests').select('id, status')
+      .eq('account_id', caller.accountId).eq('worker_id', caller.workerId).eq('date', date)
+      .order('requested_at', { ascending: false }).limit(1)
+    const r = (rows ?? [])[0] as any
+    if (!r || r.status !== 'pending') {
+      if (clearingOnly) return json({ ok: true, changed: 0 })   // 消すものが無い＝成功扱い
+      return json({ ok: false, error: 'not_pending', status: r?.status ?? 'none' }, 409)
+    }
+    // .eq('status','pending') で「読んだ直後に承認された」競合を弾く
+    const { data: upd, error } = await svc.from('overtime_requests')
+      .update(patch).eq('id', r.id).eq('status', 'pending').select('id')
+    if (error) {
+      console.error('[attendance-log] overtime-report-times failed:', error)
+      return json({ ok: false, error: 'update_failed' }, 500)
+    }
+    if (!(upd ?? []).length) return json({ ok: false, error: 'not_pending', status: 'changed' }, 409)
+    return json({ ok: true, changed: 1 })
+  }
+
   if (body.action === 'overtime-update') {
     const date = isDate(body.date) ? body.date : ''
     if (!date) return json({ ok: false, error: 'bad_date' }, 400)

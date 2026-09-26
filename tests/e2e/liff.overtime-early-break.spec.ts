@@ -85,15 +85,20 @@ test.describe('早朝入り・休憩なしの申請', () => {
     await restSrv(`sites?id=eq.${site2Id}`, { method: 'DELETE' }).catch(() => {})
   })
 
-  test('★承認されていなければ、固定開始より前は選べない（架空の早出を作れない）', async ({ page }) => {
+  // ★2026-09-25 前提を変更（運用者決定・今井さん「早く出て仕事する場合」の調査で判明した取りこぼしの修正）:
+  //  以前は「承認待ちでは早出を選べない」ことで架空の早出を防いでいたが、承認が翌日以降になると
+  //  その日に日報を出す人の早出がどこにも残らなかった（終了時刻の A-1 と同じ構造）。
+  //  今は「承認待ちでも入力できる／保存は固定開始から／承認で書き換わる」。架空の早出で給与が動かないことは
+  //  保存値で確かめる（liff.overtime-pending-entry.spec.ts の早出のテスト）。
+  test('承認待ちの日は早出を入力できる（保存は固定開始から＝pending-entry spec で確認）', async ({ page }) => {
     await seedRequest('pending', { requested_start_time: '06:00' })
     await seedReport()
     await page.goto(`/report?edit=${DATE}`, { waitUntil: 'networkidle' })
     await expect(page.getByTestId('edit-reason')).toBeVisible({ timeout: 20000 })
 
-    const opts = await startOptions(page)
-    expect(opts, '★申請しただけでは早出は入力できない').not.toContain('06:00')
-    expect(opts, '固定開始は選べる').toContain('08:30')
+    await expect.poll(async () => (await startOptions(page)).includes('06:00'),
+      { message: '承認待ちなら固定開始より前も選べる', timeout: 20000 }).toBe(true)
+    expect(await startOptions(page), '固定開始は選べる').toContain('08:30')
   })
 
   test('★承認されると、その日だけ申請した時刻まで早出を入力できる', async ({ page }) => {
@@ -166,8 +171,10 @@ test.describe('早朝入り・休憩なしの申請', () => {
       { method: 'DELETE' }).catch(() => {})
     await page.goto('/overtime', { waitUntil: 'networkidle' })
     const start = page.getByTestId('ot-start-time')
-    if (await start.count() === 0) {
-      test.skip(true, '当日の締切(16:00)を過ぎているため申請フォームが出ない')
+    // ★締切（16:00）後は同じフォームが「実績修正の申請(late)」モードになる（2026-08-22〜）。
+    //  フォーム自体は出るので count だけで判定すると、16時以降に流すと理由未入力で弾かれて落ちていた。
+    if (await start.count() === 0 || await page.getByTestId('ot-late-submit').count() > 0) {
+      test.skip(true, '当日の締切(16:00)を過ぎているため通常の申請フォームではない')
       return
     }
     await start.selectOption('06:00')
