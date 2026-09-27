@@ -49,4 +49,7 @@ export default defineNuxtPlugin(() => {
   const check = () => { takeLeftUrl().then((u) => { if (u) go(u) }) }
   check()
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check() })
+  // 画面が前に出たままでも、通知を押すとフォーカスは戻る（visibilitychange が起きない時の保険）
+  window.addEventListener('focus', check)
+  window.addEventListener('pageshow', check)
 })

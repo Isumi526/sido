@@ -69,15 +69,16 @@ self.addEventListener('notificationclick', (event) => {
     //  「このページを開いて」と伝える（plugins/sw-open-url.client.ts が受けて移動する）。
     const same = list.find((c) => { try { return new URL(c.url).origin === self.location.origin } catch { return false } })
     if (same) {
+      // ★先に伝言する（2026-09-27 実機: アプリを開いた状態で押すと移動しなかった）。
+      //  iPhone では navigate が返っても実際には移動していないことがあり、以前は navigate の後に return して
+      //  伝言を送っていなかった。アプリ（plugins/sw-open-url.client.ts）は伝言を受けたら置き手紙を片付けて移動する。
+      try { same.postMessage({ type: 'open-url', url: target }) } catch { /* 伝えられなくても続ける */ }
       try {
         if ('navigate' in same) {
           const moved = await same.navigate(target)
-          // ★置き手紙は消さない: iPhone では navigate が返っても実際には移動していないことがあり得る。
-          //  残してもアプリ側が1回読んだら消し、2分で無効になる
           if (moved) return moved.focus()
         }
-      } catch { /* このページを管理していない等で navigate できない → 下の伝言へ */ }
-      try { same.postMessage({ type: 'open-url', url: target }) } catch { /* 伝えられなくても前には出す */ }
+      } catch { /* このページを管理していない等で navigate できない */ }
       return 'focus' in same ? same.focus() : undefined
     }
     return self.clients.openWindow ? self.clients.openWindow(target) : undefined
