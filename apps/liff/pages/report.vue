@@ -2828,7 +2828,9 @@ function restorePendingEarlyStart() {
     const m = parseMin(w.startTime)
     if (m < targetStart) { targetStart = m; target = w }
   })
-  if (!target || restoredEarlyStartRows.has(target)) return
+  // ★送信直前にシステムが固定開始へ丸めた行は戻さない。保存は欄を後から読む経路があり、丸めた後に
+  //  状態の読み直し（watch）が走ってここで戻すと、早出の時刻がそのまま保存される（2026-09-27 E2E で発覚）
+  if (!target || restoredEarlyStartRows.has(target) || systemFlooredRows.has(target)) return
   target.startTime = rep
   restoredEarlyStartRows.add(target)
 }
@@ -2868,7 +2870,8 @@ function restorePendingOvertimeEnd() {
     const m = parseMin(w.endTime)
     if (m > targetEnd) { targetEnd = m; target = w }
   })
-  if (!target || restoredOvertimeRows.has(target)) return
+  // ★送信直前にシステムが定時へ丸めた行は戻さない（早出と同じ理由。戻すと残業時刻がそのまま保存される）
+  if (!target || restoredOvertimeRows.has(target) || systemCappedRows.has(target)) return
   target.endTime = rep
   restoredOvertimeRows.add(target)
 }
