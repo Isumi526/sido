@@ -42,14 +42,16 @@ self.addEventListener('push', (event) => {
 
   // ★アイコンの数字（A-1・2026-09-27）: サーバーが宛先ごとに数えた数（未読のお知らせ＋承認待ち）を出す。
   //  アプリを開けば plugins/app-badge.client.ts が正確な数に直す。対応していない端末では何もしない。
+  //  ★通知の表示と一緒に waitUntil で待つ（2026-09-27 実機: アプリを開くまで数字が付かなかった）。
+  //   待たないと、iPhone は通知を出した時点で Service Worker を止め、数字を出す前に切られることがある。
+  let badgeTask = Promise.resolve()
   if (typeof payload.badge === 'number' && self.navigator && typeof self.navigator.setAppBadge === 'function') {
-    try {
-      if (payload.badge > 0) self.navigator.setAppBadge(payload.badge).catch(() => {})
-      else self.navigator.clearAppBadge().catch(() => {})
-    } catch { /* 無視 */ }
+    badgeTask = (payload.badge > 0 ? self.navigator.setAppBadge(payload.badge) : self.navigator.clearAppBadge())
+      .catch(() => { /* 非対応・権限なしは無視 */ })
   }
 
-  event.waitUntil(
+  event.waitUntil(Promise.all([
+    badgeTask,
     self.registration.showNotification(title, {
       body,
       icon: '/icon-192.png',
@@ -59,7 +61,7 @@ self.addEventListener('push', (event) => {
       renotify: true,
       data: { url },
     }),
-  )
+  ]))
 })
 
 self.addEventListener('notificationclick', (event) => {
