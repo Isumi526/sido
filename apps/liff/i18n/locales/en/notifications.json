@@ -23,5 +23,5 @@
   "pushFailed": "Could not set it up. Please try again later.",
   "pushSettingsRow": "Notification settings",
   "todoApprovalTitle": "Overtime requests awaiting approval",
-  "todoApprovalText": "{n} pending. Tap to open the approval page."
+  "todoApprovalText": "{n} pending. Tap to approve or reject in this app."
 }

@@ -31,15 +31,13 @@ export function adminUrl(path: string): string {
 }
 
 /**
- * プッシュ通知の押し先: 作業員アプリと**同じドメイン**の管理画面（<作業員アプリ>/admin/...）。
+ * プッシュ通知の押し先: 作業員アプリの中のページ（<作業員アプリ>/approvals/...）。
  *
- * ★2026-09-27（設計「承認をやることで完結＋通知の統一」A-0・暫定）: 通知は作業員アプリ（ホーム画面に追加した PWA）に届く。
- *  押し先を別ドメインの管理画面（ADMIN_URL）にすると、作業員アプリの中にログインしていない管理画面が開き、
- *  ログアウトしたように見えた（2026-09-27 実機）。作業員アプリのドメインの /admin/* は管理画面へ中継済み
- *  （apps/liff/vercel.json の rewrites）で、同じドメインなら Supabase のログインを共有する＝ログインしたまま開く。
- *  メールのリンクは PC で開く前提なので adminUrl() のまま。A-2 で作業員アプリ内の承認画面に切り替えたら不要になる。
+ * ★2026-09-27（設計「承認をやることで完結＋通知の統一」A-2）: 承認は作業員アプリの「やること」で完結させる。
+ *  A-0 の暫定（同じドメインの /admin/... ＝管理画面を開く）はやめた。管理画面は PC 向けに残す（確認事項#1=A）ので、
+ *  メールのリンクは adminUrl() のまま。
  */
-export function appAdminUrl(path: string): string {
+export function appUrl(path: string): string {
   const app = (Deno.env.get('PUBLIC_APP_URL') ?? Deno.env.get('LIFF_URL') ?? '').replace(/\/+$/, '')
-  return app ? `${app}/admin${path}` : adminUrl(path)
+  return app ? `${app}${path}` : ''
 }

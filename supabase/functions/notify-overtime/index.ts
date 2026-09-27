@@ -8,7 +8,7 @@
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { sendApprovalRequestMail } from '../_shared/approval-mail.ts'
-import { pushToApprovers, appAdminUrl } from '../_shared/approver-push.ts'
+import { pushToApprovers, appUrl } from '../_shared/approver-push.ts'
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')              ?? '',
@@ -89,7 +89,7 @@ Deno.serve(async (req) => {
     await pushToApprovers(supabase, accountId, {
       title: '残業申請が届きました',
       body: `${sender} ${String(date).slice(5).replace('-', '/')}${requested_end_time ? ` ${String(requested_end_time).slice(0, 5)}まで` : ''}${otr.is_late ? '（実績修正）' : ''}`,
-      url: appAdminUrl('/overtime-approvals'),   // ★作業員アプリと同じドメイン（ログインしたまま開く・A-0）
+      url: appUrl(`/approvals/overtime/${otr.id}`),   // ★作業員アプリの承認画面（A-2）。管理画面へは飛ばさない
       tag: 'overtime-approval',
       excludeWorkerId: (reqWorker as any)?.id ?? null,
     })

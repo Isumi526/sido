@@ -50,16 +50,16 @@
           <p class="empty-text">{{ $t('notifications.todoEmpty') }}</p>
         </div>
         <ul v-else class="notif-list">
-          <!-- 承認待ちの残業申請（承認者だけ・A-1）: 承認されるまで残る。押すと同じドメインの管理画面の残業承認（A-2 でアプリ内の承認に置き換え） -->
+          <!-- 承認待ちの残業申請（承認者だけ）: 承認されるまで残る。押すとこのアプリの承認画面で承認・却下できる（A-2・2026-09-27） -->
           <li v-if="approvalPendingCount > 0">
-            <a class="notif tappable todo" href="/admin/overtime-approvals" data-testid="todo-approval-overtime">
+            <NuxtLink class="notif tappable todo" to="/approvals/overtime" data-testid="todo-approval-overtime">
               <span class="material-symbols-rounded notif-icon kind-todo">more_time</span>
               <span class="notif-body">
                 <span class="notif-title">{{ $t('notifications.todoApprovalTitle') }}</span>
                 <span class="notif-text">{{ $t('notifications.todoApprovalText', { n: approvalPendingCount }) }}</span>
               </span>
               <span class="material-symbols-rounded notif-chev">chevron_right</span>
-            </a>
+            </NuxtLink>
           </li>
           <!-- 打刻催促（A-3）: 打刻する／予定を直す／当日が終わる まで残る。既読では消えない -->
           <li v-for="t in punchTodoItems" :key="`${t.scheduleId}-${t.kind}`">
