@@ -120,7 +120,7 @@
       <!-- メニュー（記録／予定・連絡／情報・設定 に整理／ハンバーガーメニューと共通定義＝useNavItems） -->
       <div class="menu-section">{{ t('nav.secDaily') }}</div>
       <div class="menu-grid">
-        <NuxtLink v-for="item in navBySection.daily" :key="item.path" class="menu-card" :to="item.path">
+        <NuxtLink v-for="item in navBySection.daily" :key="item.path" class="menu-card" :to="item.path" :external="item.external">
           <span class="menu-icon-wrap">
             <span class="material-symbols-rounded menu-icon" :style="{ color: navIconColor(item.path) }">{{ item.icon }}</span>
             <span v-if="item.path === '/chats' && unreadChatCount > 0" class="menu-card-badge" data-testid="home-chat-badge">{{ unreadChatCount }}</span>
@@ -131,7 +131,7 @@
 
       <div class="menu-section">{{ t('nav.secPlan') }}</div>
       <div class="menu-grid">
-        <NuxtLink v-for="item in navBySection.plan" :key="item.path" class="menu-card" :to="item.path">
+        <NuxtLink v-for="item in navBySection.plan" :key="item.path" class="menu-card" :to="item.path" :external="item.external">
           <span class="menu-icon-wrap">
             <span class="material-symbols-rounded menu-icon" :style="{ color: navIconColor(item.path) }">{{ item.icon }}</span>
             <span v-if="item.path === '/calendar' && unreadScheduleCount > 0" class="menu-card-badge" data-testid="home-schedule-badge">{{ unreadScheduleCount }}</span>
@@ -143,7 +143,7 @@
 
       <div class="menu-section">{{ t('nav.secInfo') }}</div>
       <div class="menu-grid">
-        <NuxtLink v-for="item in navBySection.info" :key="item.path" class="menu-card" :to="item.path" :data-testid="item.testId">
+        <NuxtLink v-for="item in navBySection.info" :key="item.path" class="menu-card" :to="item.path" :external="item.external" :data-testid="item.testId">
           <span class="material-symbols-rounded menu-icon" :style="{ color: navIconColor(item.path) }">{{ item.icon }}</span>
           <span class="menu-label">{{ item.label }}</span>
         </NuxtLink>
@@ -212,9 +212,9 @@ const attendanceApi  = useAttendanceLog()
 const { status: today, refresh: refreshToday } = useTodayStatus()
 
 // ハンバーガーメニュー(AppNav.vue)と共通のナビ項目定義（2026-07-10）
-const { resolveRole: resolveWorkerPerm, canApplyPersonalExpense } = useWorkerPermission()
+const { resolveRole: resolveWorkerPerm, canApplyPersonalExpense, canEditMaster } = useWorkerPermission()
 onMounted(() => { void resolveWorkerPerm(); void ensureLiffFeaturesLoaded() })
-const { bySection: navBySection } = useNavItems(() => authMode.value, () => canApplyPersonalExpense.value, () => isLiffFeatureEnabled('inventory'), () => isLiffFeatureEnabled('tools'))
+const { bySection: navBySection } = useNavItems(() => authMode.value, () => canApplyPersonalExpense.value, () => isLiffFeatureEnabled('inventory'), () => isLiffFeatureEnabled('tools'), () => canEditMaster.value)
 const NAV_ICON_COLORS: Record<string, string> = {
   '/checkin': '#10b981', '/report': '#06C755', '/history': '#3b82f6', '/overtime': '#f59e0b',
   '/notifications': '#e11d48', '/calendar': '#f59e0b', '/groups': '#8b5cf6', '/subcontractors': '#0ea5e9',

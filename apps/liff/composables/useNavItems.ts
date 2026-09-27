@@ -16,6 +16,8 @@ export interface NavItem {
   label:     string
   section:   NavSection
   testId?:   string
+  /** Nuxt の外のページ（管理画面 /admin/ 等）。画面ごと読み込み直す（NuxtLink の external） */
+  external?: boolean
 }
 
 /**
@@ -29,6 +31,7 @@ export function useNavItems(
   canApplyPersonalExpense?: () => boolean,
   inventoryEnabled?: () => boolean,
   toolsEnabled?: () => boolean,
+  canOpenAdmin?: () => boolean,
 ) {
   const { t } = useI18n()
 
@@ -71,6 +74,11 @@ export function useNavItems(
     // ★2026-09-27（A-1）: 「パスワード変更」は設定ページの中へ移した（設定＝通知のオン/オフ・受け取る種類・パスワード変更）。
     //  設定は全員に出す（通知は LINE ログインの人も受け取れる）。パスワード変更の入口は設定ページでメール/パスワードの人だけに出す。
     list.push({ path: '/settings', icon: 'settings', label: t('nav.settings'), section: 'info', testId: 'menu-settings' })
+    // ★管理画面（事務の画面）への入口（2026-09-27）: 管理画面に入れる人（管理者・役員/経理・現場責任者＝admin の
+    //  ADMIN_ALLOWED_ROLES と同じ）にだけ出す。同じドメインの /admin/ で開くのでログインしたまま（apps/liff/vercel.json の中継）。
+    if (canOpenAdmin?.()) {
+      list.push({ path: '/admin/', icon: 'admin_panel_settings', label: t('nav.adminApp'), section: 'info', testId: 'menu-admin', external: true })
+    }
     return list
   })
 

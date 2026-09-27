@@ -72,7 +72,7 @@
 
           <div class="drawer-section">{{ $t('nav.secDaily') }}</div>
           <template v-for="item in bySection.daily" :key="item.path">
-            <NuxtLink class="drawer-item" :to="item.path" :data-testid="item.testId" @click="open = false">
+            <NuxtLink class="drawer-item" :to="item.path" :external="item.external" :data-testid="item.testId" @click="open = false">
               <span class="drawer-item-icon material-symbols-rounded">{{ item.icon }}</span>
               <span>{{ item.label }}</span>
               <span v-if="item.path === '/chats' && unreadChatCount > 0" class="drawer-item-badge" data-testid="drawer-chat-badge">{{ unreadChatCount }}</span>
@@ -81,7 +81,7 @@
 
           <div class="drawer-section">{{ $t('nav.secPlan') }}</div>
           <template v-for="item in bySection.plan" :key="item.path">
-            <NuxtLink class="drawer-item" :to="item.path" :data-testid="item.testId" @click="open = false">
+            <NuxtLink class="drawer-item" :to="item.path" :external="item.external" :data-testid="item.testId" @click="open = false">
               <span class="drawer-item-icon material-symbols-rounded">{{ item.icon }}</span>
               <span>{{ item.label }}</span>
               <span v-if="item.path === '/calendar' && unreadScheduleCount > 0" class="drawer-item-badge" data-testid="drawer-schedule-badge">{{ unreadScheduleCount }}</span>
@@ -91,7 +91,7 @@
 
           <div class="drawer-section">{{ $t('nav.secInfo') }}</div>
           <template v-for="item in bySection.info" :key="item.path">
-            <NuxtLink class="drawer-item" :to="item.path" :data-testid="item.testId" @click="open = false">
+            <NuxtLink class="drawer-item" :to="item.path" :external="item.external" :data-testid="item.testId" @click="open = false">
               <span class="drawer-item-icon material-symbols-rounded">{{ item.icon }}</span>
               <span>{{ item.label }}</span>
               <!-- ★未承認の送り出し資料。お知らせと違い「読んだら消える」ではなく、
@@ -242,9 +242,9 @@ watch(open, (isOpen) => { if (isOpen) { refreshNotifBadge(); refreshPendingDocBa
 
 // ホーム画面(pages/index.vue)と共通のナビ項目定義（composables/useNavItems.ts）。
 // 表記・並び・表示条件(パスワード変更等)のズレを防ぐ（2026-07-10）。
-const { resolveRole, canApplyPersonalExpense } = useWorkerPermission()
+const { resolveRole, canApplyPersonalExpense, canEditMaster } = useWorkerPermission()
 onMounted(() => { void resolveRole(); void ensureLiffFeaturesLoaded() })
-const { bySection } = useNavItems(() => authMode.value, () => canApplyPersonalExpense.value, () => isLiffFeatureEnabled('inventory'), () => isLiffFeatureEnabled('tools'))
+const { bySection } = useNavItems(() => authMode.value, () => canApplyPersonalExpense.value, () => isLiffFeatureEnabled('inventory'), () => isLiffFeatureEnabled('tools'), () => canEditMaster.value)
 
 // 予定管理ナビの未読バッジ（#予定通知バッジ・2026-07-11）
 onMounted(() => { refreshNotifBadge(); refreshPendingDocBadge(); refreshUnsubmittedReportBadge(); refreshPunchTodoBadge(); refreshApprovalBadge() })
