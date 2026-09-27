@@ -19,7 +19,7 @@ export interface NavItem {
 }
 
 /**
- * authMode==='password' の時だけ「パスワード変更」を出す（メール/ID認証作業員向け）。
+ * 「設定」は全員に出す（パスワード変更は設定ページの中・メール/ID認証作業員だけ）。
  * canApplyPersonalExpense が true の作業員にだけ「個人経費」を出す（#2cbe3caa）。
  * inventoryEnabled が true のテナントにだけ「在庫」を出す（feature.inventory・ベータ）。
  * 未解決＝false 扱い＝出さない（フェイルセーフ。入口を開けたままにしない）。
@@ -68,9 +68,9 @@ export function useNavItems(
       const at = list.findIndex(i => i.path === '/expense/download')
       list.splice(at < 0 ? list.length : at, 0, { path: '/inventory', icon: 'inventory_2', label: t('nav.inventory'), section: 'info', testId: 'menu-inventory' })
     }
-    if (authMode() === 'password') {
-      list.push({ path: '/password', icon: 'lock_reset', label: t('nav.passwordChange'), section: 'info', testId: 'menu-password' })
-    }
+    // ★2026-09-27（A-1）: 「パスワード変更」は設定ページの中へ移した（設定＝通知のオン/オフ・受け取る種類・パスワード変更）。
+    //  設定は全員に出す（通知は LINE ログインの人も受け取れる）。パスワード変更の入口は設定ページでメール/パスワードの人だけに出す。
+    list.push({ path: '/settings', icon: 'settings', label: t('nav.settings'), section: 'info', testId: 'menu-settings' })
     return list
   })
 

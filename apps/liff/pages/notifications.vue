@@ -3,8 +3,12 @@
     <AppNav :subtitle="$t('notifications.subtitle')" :user-name="selfUser?.real_name" :user-role="selfUser?.worker_role" />
 
     <main class="main">
-      <!-- 承認者だけ: 承認待ちの端末通知をいつでもオン/オフできる常設の欄（A-3・2026-09-24） -->
-      <ApproverPushCard variant="settings" />
+      <!-- 通知の設定（この端末のオン/オフ・受け取る種類）は設定ページへ（A-1・2026-09-27） -->
+      <NuxtLink to="/settings" class="push-settings-row" data-testid="notif-push-settings">
+        <span class="material-symbols-rounded">tune</span>
+        <span class="push-settings-text">{{ $t('notifications.pushSettingsRow') }}</span>
+        <span class="material-symbols-rounded">chevron_right</span>
+      </NuxtLink>
       <!-- ★2つに分ける（2026-08-30 ユーザー指示）。
            やること = 行動されるまで消えない／お知らせ = 開いた時点で消える。
            混ぜると読み飛ばした瞬間に「やること」が消え、誰も対応しないまま残る。 -->
@@ -14,7 +18,7 @@
           data-testid="notif-tab-todo" @click="tab = 'todo'"
         >
           {{ $t('notifications.tabTodo') }}
-          <span v-if="pendingDocCount > 0" class="tab-badge">{{ pendingDocCount }}</span>
+          <span v-if="todoCount > 0" class="tab-badge">{{ todoCount }}</span>
         </button>
         <button
           type="button" class="tab" :class="{ active: tab === 'info' }"
@@ -41,11 +45,22 @@
 
       <!-- やること：承認などの行動が済むまで残る -->
       <template v-else-if="tab === 'todo'">
-        <div v-if="!pendingDocItems.length && !punchTodoItems.length" class="empty-state" data-testid="todo-empty">
+        <div v-if="!pendingDocItems.length && !punchTodoItems.length && !approvalPendingCount" class="empty-state" data-testid="todo-empty">
           <div class="material-symbols-rounded empty-icon">task_alt</div>
           <p class="empty-text">{{ $t('notifications.todoEmpty') }}</p>
         </div>
         <ul v-else class="notif-list">
+          <!-- 承認待ちの残業申請（承認者だけ・A-1）: 承認されるまで残る。押すと同じドメインの管理画面の残業承認（A-2 でアプリ内の承認に置き換え） -->
+          <li v-if="approvalPendingCount > 0">
+            <a class="notif tappable todo" href="/admin/overtime-approvals" data-testid="todo-approval-overtime">
+              <span class="material-symbols-rounded notif-icon kind-todo">more_time</span>
+              <span class="notif-body">
+                <span class="notif-title">{{ $t('notifications.todoApprovalTitle') }}</span>
+                <span class="notif-text">{{ $t('notifications.todoApprovalText', { n: approvalPendingCount }) }}</span>
+              </span>
+              <span class="material-symbols-rounded notif-chev">chevron_right</span>
+            </a>
+          </li>
           <!-- 打刻催促（A-3）: 打刻する／予定を直す／当日が終わる まで残る。既読では消えない -->
           <li v-for="t in punchTodoItems" :key="`${t.scheduleId}-${t.kind}`">
             <button class="notif tappable todo" :data-testid="`punch-todo-${t.kind}`" @click="router.push('/checkin')">
@@ -249,7 +264,7 @@ async function setMailPref(enabled: boolean) {
 onMounted(async () => {
   await load()
   callSchedulePref().catch(() => { /* 取れなければ出さない */ })
-  await Promise.all([refreshNotifBadge(), refreshPendingDocBadge(), refreshPunchTodoBadge()])
+  await Promise.all([refreshNotifBadge(), refreshPendingDocBadge(), refreshPunchTodoBadge(), refreshApprovalBadge()])
   // やることが無ければお知らせを開く（空のタブを見せない）＝開いた時点で既読になる
   if (pendingDocCount.value === 0 && punchTodoItems.value.length === 0) {
     tab.value = 'info'
@@ -259,6 +274,9 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.push-settings-row { display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; color: #111; text-decoration: none; font-size: 13px; }
+.push-settings-row .material-symbols-rounded { color: #047857; font-size: 20px; }
+.push-settings-text { flex: 1; }
 .main { padding: 12px 14px 24px; }
 
 /* やること / お知らせ の切り替え */
@@ -296,6 +314,7 @@ onMounted(async () => {
   padding: 12px 14px;
 }
 .notif.tappable { cursor: pointer; }
+a.notif { text-decoration: none; box-sizing: border-box; }
 .notif.unread { border-color: #06C755; background: #f6fffa; }
 
 .notif-icon { font-size: 22px; color: var(--text2); flex: none; }

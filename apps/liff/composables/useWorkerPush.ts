@@ -1,21 +1,36 @@
 // ============================================================
-//  composables/useApproverPush.ts
-//  承認者（管理者・現場責任者）が「承認待ち」をこの端末へプッシュで受け取るための購読（A-3・2026-09-24）。
+//  composables/useWorkerPush.ts
+//  「アプリからの通知を受け取る」の購読と、通知の種類ごとのオン/オフ
+//  （設計「承認や申請の処理をやることで完結＋通知の統一」A-1・2026-09-27）。
 //
-//  ★なぜ要るか（2026-09-23 お客様報告）: 残業申請の通知はメール1通きりで、締切前申請の36%が
-//   翌日以降の承認だった。承認者も作業員として毎日このアプリ（ホーム画面に追加した PWA）を開くので、
-//   ここで購読してもらい端末通知で気づけるようにする。通知タップで管理画面の承認ページが開く。
-//
-//  ★承認者かどうかはサーバー（attendance-log approver-push-status の eligible）が決める。
-//   画面側で権限を持たない＝偽っても購読できない（EF が 403 を返す）。
-//  ★Service Worker と端末の購読は現場チャット(useSiteChatPush)と共用（/sw-push.js・1オリジン1購読）。
-//   宛先の表は別（approver_push_subscriptions）なので、承認通知が現場チャットの購読者へ混ざることはない。
-//   解除は「承認通知の宛先から外す」だけで、端末の購読自体は消さない（現場チャットが使っていることがある）。
+//  ★2026-09-24 の useApproverPush（承認者だけ）を全員向けに一般化した。裏側は EF push-settings。
+//  ★誰の購読か・承認者かはサーバーが検証済みの身元で決める（画面は偽れない）。
+//  ★Service Worker と端末の購読は現場チャットと共用（/sw-push.js・1オリジン1購読）。
+//   「オフにする」は自分の通知の宛先から外すだけで、端末の購読自体は消さない。
 //  ★許可ダイアログはボタンを押した時にだけ出す（iOS はユーザー操作の中でしか出せない）。
 //  ★鍵(NUXT_PUBLIC_VAPID_PUBLIC_KEY)が無い環境・非対応の端末では何もしない（例外を投げない）。
 // ============================================================
 
-const EDGE_FN = 'attendance-log'
+const EDGE_FN = 'push-settings'
+
+/** 通知の種類。supabase/functions/_shared/worker-push.ts の PUSH_KINDS と揃える */
+export const PUSH_KINDS = ['approval', 'my_result', 'schedule', 'reminder', 'chat', 'announcement'] as const
+export type PushKind = typeof PUSH_KINDS[number]
+
+export type WorkerPushState = {
+  /** この端末で web push が使えるか（鍵あり・SW/PushManager/Notification あり） */
+  supported: boolean
+  /** この端末が自分の通知の宛先になっているか */
+  subscribed: boolean
+  /** 通知の許可状態（denied なら端末の設定から許可してもらう案内を出す） */
+  permission: NotificationPermission | 'unsupported'
+  /** 承認者か（「承認のお願い」の設定を出すかどうか） */
+  isApprover: boolean
+  /** 種類ごとのオン/オフ（既定は全部オン） */
+  prefs: Record<PushKind, boolean>
+  /** サーバーから状態を読めたか（読めない時は設定を触らせない） */
+  loaded: boolean
+}
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
@@ -26,18 +41,9 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   return out
 }
 
-export type ApproverPushState = {
-  /** 承認者か（サーバー判定）。false ならカード自体を出さない */
-  eligible: boolean
-  /** この端末で web push が使えるか（鍵あり・SW/PushManager/Notification あり） */
-  supported: boolean
-  /** この端末がすでに承認通知の宛先になっているか */
-  subscribed: boolean
-  /** 通知の許可状態（denied なら設定アプリから許可してもらう案内を出す） */
-  permission: NotificationPermission | 'unsupported'
-}
+const allOn = (): Record<PushKind, boolean> => Object.fromEntries(PUSH_KINDS.map(k => [k, true])) as Record<PushKind, boolean>
 
-export function useApproverPush() {
+export function useWorkerPush() {
   const supabase = useSupabase()
   const config = useRuntimeConfig()
   const liff = useLiff()
@@ -78,21 +84,19 @@ export function useApproverPush() {
     } catch { return '' }
   }
 
-  async function state(): Promise<ApproverPushState> {
+  async function state(): Promise<WorkerPushState> {
     const supported = isSupported()
-    const permission: ApproverPushState['permission'] = supported ? Notification.permission : 'unsupported'
+    const permission: WorkerPushState['permission'] = supported ? Notification.permission : 'unsupported'
     try {
-      const endpoint = await currentEndpoint()
-      const j = await call('approver-push-status', { endpoint })
-      return { eligible: !!j.eligible, supported, subscribed: !!j.subscribed, permission }
+      const j = await call('status', { endpoint: await currentEndpoint() })
+      return { supported, subscribed: !!j.subscribed, permission, isApprover: !!j.isApprover, prefs: { ...allOn(), ...(j.prefs ?? {}) }, loaded: true }
     } catch {
-      // 状態が読めない時はカードを出さない（fail-closed・画面を壊さない）
-      return { eligible: false, supported, subscribed: false, permission }
+      return { supported, subscribed: false, permission, isApprover: false, prefs: allOn(), loaded: false }
     }
   }
 
   /** 通知をオンにする。ボタン押下の中で呼ぶこと（許可ダイアログのため） */
-  async function enable(): Promise<{ ok: true } | { ok: false; reason: 'unsupported' | 'denied' | 'failed' | 'not_approver' }> {
+  async function enable(): Promise<{ ok: true } | { ok: false; reason: 'unsupported' | 'denied' | 'failed' }> {
     const vapidKey = config.public.vapidPublicKey as string | undefined
     if (!vapidKey || !isSupported()) return { ok: false, reason: 'unsupported' }
     try {
@@ -108,24 +112,36 @@ export function useApproverPush() {
         ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(vapidKey) }))
       const j = sub.toJSON() as { endpoint?: string; keys?: { p256dh?: string; auth?: string } }
       if (!j.endpoint || !j.keys?.p256dh || !j.keys?.auth) return { ok: false, reason: 'failed' }
-      await call('approver-push-subscribe', { endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth })
+      await call('subscribe', { endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth })
       return { ok: true }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      console.warn('[approver-push] 購読できませんでした:', msg)
-      return { ok: false, reason: msg === 'not_approver' ? 'not_approver' : 'failed' }
+      console.warn('[worker-push] 購読できませんでした:', e instanceof Error ? e.message : String(e))
+      return { ok: false, reason: 'failed' }
     }
   }
 
-  /** 承認通知の宛先から外す（端末の購読自体は残す＝現場チャットの通知は止めない） */
+  /** この端末を自分の通知の宛先から外す（端末の購読自体は残す＝現場チャットの通知は止めない） */
   async function disable(): Promise<boolean> {
     try {
       const endpoint = await currentEndpoint()
       if (!endpoint) return true
-      await call('approver-push-unsubscribe', { endpoint })
+      await call('unsubscribe', { endpoint })
       return true
     } catch { return false }
   }
 
-  return { state, enable, disable, isSupported }
+  /** 種類ごとのオン/オフを保存し、保存後の設定を返す（失敗は null） */
+  async function setPref(kind: PushKind, enabled: boolean): Promise<Record<PushKind, boolean> | null> {
+    try {
+      const j = await call('prefs-set', { kind, enabled })
+      return { ...allOn(), ...(j.prefs ?? {}) }
+    } catch { return null }
+  }
+
+  /** 承認者の「承認待ちの残業申請」の数（承認者でなければ 0） */
+  async function approvalPending(): Promise<number> {
+    try { return Number((await call('badge')).approvalPending ?? 0) } catch { return 0 }
+  }
+
+  return { state, enable, disable, setPref, approvalPending, isSupported }
 }

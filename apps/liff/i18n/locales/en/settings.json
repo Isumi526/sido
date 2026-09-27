@@ -1,0 +1,28 @@
+{
+  "title": "Settings",
+  "deviceTitle": "Notifications on this device",
+  "deviceOn": "Notifications are delivered to this device.",
+  "deviceOff": "This device does not receive notifications. Turn them on to get approval requests, results of your requests, schedule changes and more.",
+  "deviceDisable": "Turn off notifications on this device",
+  "deviceDisabled": "Notifications on this device are turned off.",
+  "kindsTitle": "Types of notifications",
+  "kindsHint": "Types you turn off are not pushed to your phone (they still appear under Notifications in the app).",
+  "saveFailed": "Could not save. Please try again later.",
+  "accountTitle": "Account",
+  "kind": {
+    "approval": "Approval requests",
+    "my_result": "Results of my requests",
+    "schedule": "Schedule",
+    "reminder": "Punch and report reminders",
+    "chat": "Chat",
+    "announcement": "Company announcements"
+  },
+  "kindDesc": {
+    "approval": "When an overtime request arrives, and while approvals are pending",
+    "my_result": "Overtime approved or rejected, reports or expenses sent back",
+    "schedule": "Schedule added, changed or deleted, day-before reminders, tool and room bookings",
+    "reminder": "Punch reminders, unsubmitted reports",
+    "chat": "Mentions of you, new site chat messages",
+    "announcement": "Company-wide announcements, site documents to confirm"
+  }
+}
