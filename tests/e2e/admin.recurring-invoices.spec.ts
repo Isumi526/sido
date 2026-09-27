@@ -204,7 +204,7 @@ test('★画面: 請求から「毎月の定額として登録」でき、この
       site_id: siteId, site_name: SITE, item_date: '2026-09-25' }) })
 
   await page.goto('/subcontractor-invoices', { waitUntil: 'networkidle' })
-  await page.locator('tr', { hasText: TITLE }).first().click()
+  await page.locator('tr.data-row', { hasText: TITLE }).first().click()
   await page.getByTestId('recurring-open').click()
   await expect(page.getByTestId('recurring-day'), '既定は元の請求の日').toHaveValue('25')
   await expect(page.getByTestId('recurring-start'), '★既定は翌月から（この月は登録済み）').toHaveValue('2026-10')
@@ -220,6 +220,20 @@ test('★画面: 請求から「毎月の定額として登録」でき、この
   expect(t.items[0].site_id).toBe(siteId)
   expect(t.items[0].amount).toBe(100000)
   await expect(page.getByTestId('recurring-card'), '一覧の上に「毎月の定額」').toBeVisible()
+
+  // ★同じ請求から2つ目のひな形は作れない（再送・連打で二重計上にならない）
+  const dup = await fetch(`${SUPABASE_URL}/rest/v1/subcontractor_invoice_templates`, {
+    method: 'POST',
+    headers: { apikey: ANON_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ account_id: accountId, vendor_name: VENDOR, title: TITLE, day_of_month: 25,
+      start_period: '2026-10', source_invoice_id: inv[0].id }),
+  })
+  expect(dup.status, '★2つ目は一意制約で弾かれる').toBe(409)
+  expect((await restSrv(`subcontractor_invoice_templates?source_invoice_id=eq.${inv[0].id}&select=id`)).length).toBe(1)
+  // 開き直すと登録ボタンではなく「登録済み」
+  await page.locator('tr.data-row', { hasText: TITLE }).first().click()
+  await expect(page.getByTestId('recurring-registered')).toContainText('毎月の定額として登録済み')
+  await expect(page.getByTestId('recurring-open')).toHaveCount(0)
   await cleanup()
 })
 
@@ -231,7 +245,7 @@ test('★画面: 保存していない変更があると登録させない（画
     body: JSON.stringify({ invoice_id: inv[0].id, account_id: accountId, description: '月額リース', amount: 100000, tax_rate: 10,
       site_id: siteId, site_name: SITE, item_date: '2026-09-25' }) })
   await page.goto('/subcontractor-invoices', { waitUntil: 'networkidle' })
-  await page.locator('tr', { hasText: TITLE }).first().click()
+  await page.locator('tr.data-row', { hasText: TITLE }).first().click()
   // メモ欄を書き換えて、保存せずに登録しようとする
   await page.locator('.modal textarea.note-area').fill(`保存していない変更_${TS}`)
   await page.getByTestId('recurring-open').click()

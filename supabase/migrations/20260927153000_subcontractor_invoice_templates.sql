@@ -40,6 +40,11 @@ create table if not exists public.subcontractor_invoice_templates (
 );
 create index if not exists subcontractor_invoice_templates_account_idx
   on public.subcontractor_invoice_templates (account_id);
+-- ★1つの請求から作れるひな形は1つまで。登録の再送・連打で同じひな形が二重にでき、
+--  毎月同じ請求が2件自動で作られる（二重計上）のを防ぐ（2026-09-27 独立レビュー指摘）
+create unique index if not exists subcontractor_invoice_templates_source_uidx
+  on public.subcontractor_invoice_templates (source_invoice_id)
+  where source_invoice_id is not null;
 
 alter table public.subcontractor_invoices
   add column if not exists recurring_template_id uuid null references public.subcontractor_invoice_templates(id) on delete set null,
