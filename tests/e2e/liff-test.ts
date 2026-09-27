@@ -16,6 +16,11 @@ import { devUserWorkerId, loginLiffAs } from './helpers'
 export const test = base.extend<{ liffLogin: boolean; _liffLogin: void }>({
   liffLogin: [true, { option: true }],
   _liffLogin: [async ({ page, liffLogin }, use) => {
+    // 開発モードの自動ログイン（useLiff.ts・2026-09-27）は E2E では使わない。ログインするかどうかは
+    // この fixture（liffLogin）が決める＝「ログインしていない状態」を確かめる spec が勝手にログインされないように。
+    await page.addInitScript(() => {
+      try { window.localStorage.setItem('dev_autologin', 'off') } catch { /* 使えない環境は既定のまま */ }
+    })
     if (liffLogin) await loginLiffAs(page, await devUserWorkerId())
     await use()
   }, { auto: true }],
