@@ -17,7 +17,8 @@ test('ホーム画面とハンバーガーメニューで同じナビ項目が�
 
   await page.locator('.app-hamburger').click()
   await expect(page.locator('.app-drawer')).toBeVisible({ timeout: 10000 })
-  const drawerLabels = (await page.locator('.drawer-item span:not(.drawer-item-icon)').allTextContents())
+  // ★件数のバッジ（drawer-item-badge）は項目名ではない（2026-09-27: 承認待ちがあるとお知らせの件数が混ざって落ちていた）
+  const drawerLabels = (await page.locator('.drawer-item span:not(.drawer-item-icon):not(.drawer-item-badge)').allTextContents())
     .filter(t => t !== 'ブラウザで開く' && t !== 'ホーム' && t !== 'ログアウト')
 
   // ホームの全項目がハンバーガーにも存在する（順序・表記一致）
