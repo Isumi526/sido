@@ -62,7 +62,9 @@ test.describe('予定管理: 会議室タブ・独自の種類', () => {
     expect(first[0].start_time).toBe('10:00:00')
 
     // 同じ時間帯に重ねる → ブロック（「重ねて保存」は出ない）。別の時間帯なら保存できる
-    await cal.getByTestId(`resource-cell-${room!.id}-${today}`).click()
+    // ★セルには1件目の予約の帯が乗っている。普通にクリックすると帯（＝予約の詳細）を押すことがあるので、
+    //  セル自体にクリックを送る（2026-09-27: 帯がセルを覆うかどうかで全体実行の時だけ落ちていた）
+    await cal.getByTestId(`resource-cell-${room!.id}-${today}`).dispatchEvent('click')
     await modal.getByTestId('reservation-start-time').fill('10:30')
     await modal.getByTestId('reservation-end-time').fill('11:30')
     await modal.getByTestId('reservation-save').click()
