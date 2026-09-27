@@ -310,13 +310,19 @@ async function saveSupplierRate() {
 // ★商社×工種(材料区分)の掛率。区分別に持てると床材0.42/クロス0.40 のような差を計算に効かせられる。
 //  空/0 で保存すると区分の掛率を外す＝商社一律へフォールバック。
 const supplierTradeRateInputs = ref<Record<string, number | null>>({})
+let tradeRateSeq = 0
 async function loadSupplierTradeRates() {
+  const seq = ++tradeRateSeq
   supplierTradeRateInputs.value = {}
   if (!activeSupplier.value) return
   const { data } = await supabase.from('estimate_supplier_trade_rates')
     .select('trade_id, rate').eq('account_id', accountId).eq('supplier_id', activeSupplier.value)
+  if (seq !== tradeRateSeq) return   // 別の商社のタブに切り替わった＝古い結果は捨てる
   const m: Record<string, number | null> = {}
   for (const r of (data ?? []) as any[]) m[r.trade_id] = Number(r.rate)
+  // ★読み込み中に入力された欄は上書きしない（2026-09-27）。タブを押してすぐ入力→保存すると、
+  //  読み終わった時に空へ戻され、保存が「区分の掛率を外す」になっていた（E2E で発覚）
+  for (const [k, v] of Object.entries(supplierTradeRateInputs.value)) if (v !== undefined) m[k] = v
   supplierTradeRateInputs.value = m
 }
 async function saveSupplierTradeRate(tradeId: string) {
