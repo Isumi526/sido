@@ -313,7 +313,8 @@ const supabase = useSupabase()
 async function logout() {
   open.value = false
   proxy.clearProxy()
-  try { await supabase.auth.signOut() } catch { /* セッション無し等は無視 */ }
+  // ★この端末だけ（2026-09-27）。既定の global は同じアカウントの他の端末（PC の管理画面など）まで切っていた
+  try { await supabase.auth.signOut({ scope: 'local' }) } catch { /* セッション無し等は無視 */ }
   await navigateTo('/login')
   resetAccount()
   useLiff().reset()   // 身元状態を破棄（次のユーザーが前のユーザーとして解決されるのを防ぐ）
