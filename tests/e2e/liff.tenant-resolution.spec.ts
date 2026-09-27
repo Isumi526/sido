@@ -1,18 +1,17 @@
 // マルチテナント「1デプロイで全テナント」実行時解決の回帰テスト。
-//  env(NUXT_PUBLIC_ACCOUNT_SLUG)は 'test' 固定だが、別テナント(sample-construction)の LINE 作業員で
-//  アクセスすると line_user_id → users.account_id で実行時にテナントが解決され、
-//  env(test) ではなく所属テナント(sample-construction)が採用されることを検証する（AC2 の核）。
+//  env(NUXT_PUBLIC_ACCOUNT_SLUG)は 'test' 固定だが、別テナント(sample-construction)の作業員でログインすると
+//  ログインの会社（JWT の account_slug）でテナントが解決され、env(test) ではなく所属テナントが採用されることを検証する（AC2 の核）。
 //  既存の test テナントは env と一致するため resolvedSlug==env＝回帰しない（下の回帰テストで担保）。
-//  ※ dev モードの ?dev_line_uid= は development 限定の検証シーム（本番 LIFF 経路には影響しない）。
 import { test, expect } from './liff-test'
-import { restSrv, ACCOUNT_SLUG } from './helpers'
+import { restSrv, ACCOUNT_SLUG, loginLiffAs } from './helpers'
 
-// ★LINE 経路（ログイン無し＋line_user_id）でのテナント解決を確かめる spec なので、既定のログイン（liff-test.ts）は外す。
-//  ログインがあると JWT の account_slug が優先され、この経路を通らない。
-test.use({ liffLogin: false })
-
+// ★2026-09-27（RLS第2段B）: 以前は LINE 経路（ログイン無し＋?dev_line_uid）で line_user_id → users から
+//  テナントが決まることを見ていた。第2段Bで公開キーの読みを閉じたので LINE 経路は身元を引けない
+//  （本番の作業員は全員メールログイン・LINE 経路の利用は直近30日で0）。今はログインの JWT（account_slug）で
+//  テナントが決まることを見る。env は 'test' 固定のまま、別テナントの作業員でログインすると自テナントになること。
 const OTHER_SLUG = ACCOUNT_SLUG === 'test' ? 'sample-construction' : 'test'
 const LINE_UID = 'e2e-tenant-b-line-uid'
+let otherWorkerId = ''
 
 test.beforeAll(async () => {
   // 別テナント(sample-construction)の account を取得
@@ -33,7 +32,8 @@ test.beforeAll(async () => {
     wid = w?.[0]?.id
   }
 
-  // line_user_id 紐付きの users 行を upsert（line_user_id は全アカウント一意＝テナントキー）
+  otherWorkerId = wid
+  // users 行（作業員アプリの身元解決が worker_id から引く）
   await restSrv('users?on_conflict=line_user_id', {
     method: 'POST',
     headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
@@ -44,14 +44,15 @@ test.beforeAll(async () => {
   })
 })
 
-test('AC2: 別テナントのLINE作業員は env ではなく line_user_id で自テナントに実行時解決される', async ({ page }) => {
-  await page.goto(`/?dev_line_uid=${LINE_UID}`)
+test('AC2: 別テナントの作業員でログインすると、env ではなくログインの会社（JWT）に解決される', async ({ page }) => {
+  await loginLiffAs(page, otherWorkerId)
+  await page.goto('/')
   await expect(page.locator('.home-page')).toBeVisible({ timeout: 20000 })
   // ブランド表示(.app-brand-name = resolvedSlug 由来) が env(test) ではなく自テナント(sample-construction)
   await expect(page.locator('.app-brand-name')).toHaveText(OTHER_SLUG.toUpperCase(), { timeout: 20000 })
 })
 
-test('回帰: 既定devユーザー(testテナント)は従来どおり env(test) に解決される', async ({ page }) => {
+test('回帰: 既定のログイン（Worker 01・testテナント）は test に解決される', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('.home-page')).toBeVisible({ timeout: 20000 })
   await expect(page.locator('.app-brand-name')).toHaveText(ACCOUNT_SLUG.toUpperCase(), { timeout: 20000 })

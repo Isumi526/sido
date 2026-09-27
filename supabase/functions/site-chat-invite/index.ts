@@ -7,6 +7,8 @@
 //                新規発行する(常に1本だけ有効＝リンク使い回しのだぶつきを防ぐ)。
 //    - resolve : 平文トークンを検証し、site_id/account_id/site_nameを返す（非ユーザーが
 //                招待リンクを開いた時に叩く・認証不要）。無効/失効/不存在は区別せず ok:false。
+//    - list    : 平文トークンを検証し、その現場のメッセージとメンション表示用の作業員名を返す（2026-09-27）
+//    - post    : ゲストの投稿（2026-09-23）
 //  ※ verify_jwt=false（非ユーザーはJWTを持たない）。createはAuthorizationヘッダで管理者を検証。
 // ============================================================
 import { svcClient, sha256Hex, randomTokenHex, resolveCallerAccount } from '../_shared/doc-mail.ts'
@@ -77,6 +79,28 @@ Deno.serve(async (req) => {
     if (!site) return json({ ok: false, error: 'invalid_token' }, 404)
 
     return json({ ok: true, account_id: invite.account_id, site_id: invite.site_id, site_name: site.name })
+  }
+
+  // ★list: ゲストの画面の読み取り。2026-09-27（RLS第2段B）に anon 直SELECT から移設。
+  //  移設前は chat-invite/[token].vue が site_chat_messages と workers を公開キーで直接読んでいた。
+  //  第2段Bで anon の SELECT を剥がすので、トークンで現場を確かめてから service_role で返す。
+  //  返すのはこの現場のメッセージと、メンションの強調に使う作業員の**名前だけ**（id 等は返さない）。
+  if (action === 'list') {
+    const token = (b.token ?? '').toString().trim()
+    if (!token) return json({ ok: false, error: 'token_required' }, 400)
+    const tokenHash = await sha256Hex(token)
+    const { data: invite } = await svc.from('site_chat_invites')
+      .select('account_id, site_id, revoked_at').eq('token_hash', tokenHash).maybeSingle()
+    if (!invite || invite.revoked_at) return json({ ok: false, error: 'invalid_token' }, 404)
+
+    const { data: messages, error } = await svc.from('site_chat_messages')
+      .select('id, sender_worker_id, sender_is_admin, sender_name, body, created_at, deleted_at')
+      .eq('account_id', invite.account_id).eq('site_id', invite.site_id).is('deleted_at', null)
+      .order('created_at', { ascending: true }).limit(500)
+    if (error) return json({ ok: false, error: 'list_failed' }, 500)
+    const { data: workers } = await svc.from('workers').select('name')
+      .eq('account_id', invite.account_id).eq('active', true)
+    return json({ ok: true, messages: messages ?? [], mention_names: (workers ?? []).map((w: any) => w.name).filter(Boolean) })
   }
 
   // ★post: ゲスト（非ユーザー）の投稿。2026-09-23 に anon 直INSERT から移設。

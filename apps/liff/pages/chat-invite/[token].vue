@@ -21,7 +21,7 @@
           <div class="msg-col">
             <div class="msg-sender">{{ m.sender_name }}</div>
             <div class="msg-bubble">
-              <div v-if="m.body" class="msg-body"><template v-for="(seg, i) in splitMentionSegments(m.body, allWorkers.map(w => w.name))" :key="i"><span v-if="seg.mention" class="msg-mention">{{ seg.text }}</span><template v-else>{{ seg.text }}</template></template></div>
+              <div v-if="m.body" class="msg-body"><template v-for="(seg, i) in splitMentionSegments(m.body, mentionNames)" :key="i"><span v-if="seg.mention" class="msg-mention">{{ seg.text }}</span><template v-else>{{ seg.text }}</template></template></div>
               <div class="msg-time">{{ fmtTime(m.created_at) }}</div>
             </div>
           </div>
@@ -69,9 +69,8 @@ function autoResizeDraft() {
 
 let accountId = ''
 let siteId = ''
-let allWorkers: { id: string; name: string }[] = []
+const mentionNames = ref<string[]>([])
 let pollTimer: ReturnType<typeof setInterval> | null = null
-let channel: ReturnType<ReturnType<typeof useSupabase>['channel']> | null = null
 
 const STORAGE_KEY = `site-chat-guest-name:${token}`
 
@@ -94,14 +93,14 @@ function setGuestName() {
   startChat()
 }
 
+// ★2026-09-27（RLS第2段B）: 公開キーでの直 SELECT をやめ、site-chat-invite EF の list で読む。
+//  ゲストはログインしていない＝RLS 下では site_chat_messages / workers を読めない。現場はトークンから EF が決める。
 async function loadMessages() {
-  const supabase = useSupabase()
-  const { data } = await supabase.from('site_chat_messages')
-    .select('id, sender_worker_id, sender_is_admin, sender_name, body, created_at, deleted_at')
-    .eq('account_id', accountId).eq('site_id', siteId).is('deleted_at', null)
-    .order('created_at', { ascending: true }).limit(500)
+  const { data, error } = await useSupabase().functions.invoke('site-chat-invite', { body: { action: 'list', token } })
+  if (error || !(data as any)?.ok) return
   const wasAtBottom = !listRef.value || (listRef.value.scrollHeight - listRef.value.scrollTop - listRef.value.clientHeight < 40)
-  messages.value = (data ?? []) as GuestMessage[]
+  messages.value = ((data as any).messages ?? []) as GuestMessage[]
+  mentionNames.value = ((data as any).mention_names ?? []) as string[]
   if (wasAtBottom) scrollToBottom()
 }
 
@@ -124,18 +123,10 @@ async function send() {
   }
 }
 
-async function loadWorkers() {
-  const { data } = await useSupabase().from('workers').select('id, name').eq('account_id', accountId).eq('active', true)
-  allWorkers = (data ?? []) as { id: string; name: string }[]
-}
-
+// 新着は8秒ごとの取得で拾う（ログインしていないゲストには RLS 下でリアルタイム通知が届かないため購読しない）
 function startChat() {
-  loadWorkers()
   loadMessages()
   pollTimer = setInterval(loadMessages, 8000)
-  channel = useSupabase().channel(`site-chat-${siteId}`)
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'site_chat_messages', filter: `site_id=eq.${siteId}` }, () => loadMessages())
-    .subscribe()
 }
 
 onMounted(async () => {
@@ -152,7 +143,6 @@ onMounted(async () => {
 })
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
-  if (channel) useSupabase().removeChannel(channel)
 })
 </script>
 

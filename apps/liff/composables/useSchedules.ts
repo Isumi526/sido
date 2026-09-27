@@ -86,8 +86,6 @@ export const CATEGORY_COLORS: Record<ScheduleCategory, string> = {
 export const useSchedules = () => {
   const supabase    = useSupabase()
   const { t }       = useI18n()
-  const { profile } = useLiff()
-  const config      = useRuntimeConfig()
 
   const schedules = ref<Schedule[]>([])
   const loading   = ref(false)
@@ -114,24 +112,12 @@ export const useSchedules = () => {
       _myWorkerIdCache.value = workerId.value
       return _myWorkerIdCache.value
     }
-    const lineUserId = profile.value?.userId
-    if (!lineUserId) return null
+    // それ以外（JWT に worker_id が無い email/pw・LINE）は「自分」の解決を useCurrentUser に一本化する。
+    //  ★2026-09-27（RLS第2段B）: 以前はデプロイの env の slug で accounts を引いていた＝他社の作業員では
+    //   自社が引けず、RLS 下では accounts が自社しか見えないので予定が空になっていた。
     try {
-      const accountId = config.public.accountSlug
-      const { data: accountData } = await supabase
-        .from('accounts')
-        .select('id')
-        .eq('slug', accountId)
-        .maybeSingle()
-      if (!accountData) return null
-
-      const { data } = await supabase
-        .from('users')
-        .select('worker_id')
-        .eq('line_user_id', lineUserId)
-        .eq('account_id', accountData.id)
-        .maybeSingle()
-      _myWorkerIdCache.value = data?.worker_id ?? null
+      const me = await useCurrentUser().resolve()
+      _myWorkerIdCache.value = me?.worker_id ?? null
       return _myWorkerIdCache.value
     } catch { return null }
   }
