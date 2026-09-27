@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="description" content="職人はスマホで日報だけ。給料も原価も、あとは自動。内装屋がつくった、現場のためのアプリ。">
+<meta name="description" content="書き写しも、なあなあも、なくなる。職人はスマホで日報だけ。事務・ルール・現場の数字が、ひとつにつながる。内装屋がつくった、現場のためのアプリ。">
 <meta property="og:type" content="website">
-<meta property="og:title" content="GENLINKS｜職人はスマホで日報だけ。給料も原価も、あとは自動。">
-<meta property="og:description" content="内装屋がつくった、現場のためのアプリ。">
+<meta property="og:title" content="GENLINKS｜書き写しも、なあなあも、なくなる。">
+<meta property="og:description" content="内装屋がつくった、現場のためのアプリ。職人はスマホで日報だけ。">
 <meta property="og:image" content="https://genlinks-lp.vercel.app/img/og.png">
 <meta property="og:url" content="https://genlinks-lp.vercel.app/">
 <meta name="twitter:card" content="summary_large_image">
@@ -19,18 +19,19 @@
 <style>
   :root {
     --paper: #faf6ef;      /* 生成り */
-    --paper-2: #f3ead9;    /* 生成りの濃いめ */
+    --paper-2: #f3ead9;
     --line: #e8dccb;
     --wood: #8a5a3b;       /* 木の茶色 */
     --ink: #3a2e25;
     --ink-2: #6b5a4c;
     --green: #2f5d50;      /* 深緑 */
-    --green-2: #3d7062;
     --orange: #d98b3a;
     --white: #ffffff;
     color-scheme: light;
   }
   * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
   body {
     margin: 0;
     background: var(--paper-2);
@@ -44,16 +45,19 @@
   @media (min-width: 560px) { .page { box-shadow: 0 0 0 1px var(--line), 0 20px 60px rgba(58, 46, 37, .12); } }
   section { padding: 44px 20px; display: flex; flex-direction: column; gap: 16px; }
   .tint { background: var(--paper-2); }
-  h1, h2 { margin: 0; font-weight: 900; text-wrap: balance; letter-spacing: .01em; }
-  h1 { font-size: 31px; line-height: 1.45; }
+  h1, h2, h3 { margin: 0; font-weight: 900; text-wrap: balance; letter-spacing: .01em; }
+  h1 { font-size: 33px; line-height: 1.4; }
   h2 { font-size: 24px; line-height: 1.5; }
+  h3 { font-size: 17px; line-height: 1.5; }
+  p { margin: 0; }
   .eyebrow { font-size: 13px; font-weight: 700; color: var(--wood); }
+  .lead { font-size: 15px; font-weight: 700; color: var(--ink-2); line-height: 1.85; }
   .muted { color: var(--ink-2); }
-  .small { font-size: 12px; }
+  .note { font-size: 11px; color: var(--ink-2); }
   .card { background: var(--white); border-radius: 20px; padding: 16px; }
-  .card.bordered { border: 2px solid var(--line); }
   .hl { color: var(--green); }
   img { max-width: 100%; display: block; }
+  .checking { display: inline-block; font-size: 10px; font-weight: 700; color: var(--wood); border: 1px dashed var(--wood); border-radius: 6px; padding: 0 6px; margin-left: 6px; vertical-align: middle; line-height: 1.8; }
 
   /* 最初の画面 */
   .hero { padding-top: 22px; padding-bottom: 36px; }
@@ -62,10 +66,10 @@
   .badge { font-size: 11px; font-weight: 700; color: var(--wood); background: var(--paper-2); border-radius: 999px; padding: 4px 10px; }
   .tags { display: flex; flex-wrap: wrap; gap: 8px; }
   .tag { font-size: 12px; font-weight: 700; color: var(--white); background: var(--green); border-radius: 999px; padding: 6px 12px; }
-  .devices { position: relative; height: 330px; margin-top: 6px; }
-  .pc { position: absolute; right: 0; top: 18px; width: 72%; aspect-ratio: 1400 / 1037; max-width: 100%; border: 7px solid var(--ink); border-radius: 12px; overflow: hidden; background: var(--white); box-shadow: 0 10px 24px rgba(58, 46, 37, .16); }
+  .devices { position: relative; height: 320px; margin-top: 4px; }
+  .pc { position: absolute; right: 0; top: 14px; width: 72%; aspect-ratio: 1400 / 1037; border: 7px solid var(--ink); border-radius: 12px; overflow: hidden; background: var(--white); box-shadow: 0 10px 24px rgba(58, 46, 37, .16); }
   .pc img, .phone img { width: 100%; height: 100%; object-fit: cover; object-position: left top; }
-  .phone { position: absolute; left: 4px; top: 70px; width: 34%; aspect-ratio: 128 / 258; border: 6px solid var(--ink); border-radius: 22px; overflow: hidden; background: var(--white); box-shadow: 0 12px 28px rgba(58, 46, 37, .22); }
+  .phone { position: absolute; left: 4px; top: 64px; width: 34%; aspect-ratio: 128 / 258; border: 6px solid var(--ink); border-radius: 22px; overflow: hidden; background: var(--white); box-shadow: 0 12px 28px rgba(58, 46, 37, .22); }
   .phone img { object-position: center top; }
   .devices .arrow { position: absolute; left: 36%; bottom: 18px; }
   .devices .cap { position: absolute; right: 0; bottom: 0; font-size: 11px; font-weight: 700; color: var(--wood); }
@@ -73,36 +77,51 @@
   /* 困りごと */
   .pain { display: flex; gap: 14px; align-items: center; }
   .pain svg { flex-shrink: 0; }
-  .pain p { margin: 0; font-size: 16px; font-weight: 700; line-height: 1.6; }
+  .pain p { font-size: 16px; font-weight: 700; line-height: 1.6; }
+
+  /* 3つの価値 */
+  .values { display: flex; flex-direction: column; gap: 10px; }
+  .value { display: flex; gap: 14px; align-items: center; background: var(--white); border: 2px solid var(--line); border-radius: 20px; padding: 14px 16px; text-decoration: none; color: inherit; }
+  .value:focus-visible { outline: 3px solid var(--orange); outline-offset: 3px; }
+  .value .mark { width: 44px; height: 44px; flex-shrink: 0; border-radius: 999px; background: var(--green); color: var(--white); font-size: 18px; font-weight: 900; display: grid; place-items: center; }
+  .value b { display: block; font-size: 17px; font-weight: 900; line-height: 1.4; }
+  .value span { font-size: 12px; color: var(--ink-2); line-height: 1.5; }
+  .value .go { margin-left: auto; color: var(--wood); font-weight: 900; }
+
+  /* 価値の章 */
+  .chapter-head { display: flex; align-items: center; gap: 10px; }
+  .chapter-head .mark { width: 34px; height: 34px; border-radius: 999px; background: var(--orange); color: var(--white); font-size: 16px; font-weight: 900; display: grid; place-items: center; flex-shrink: 0; }
+  .points { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  .point { display: flex; gap: 12px; align-items: flex-start; background: var(--white); border-radius: 18px; padding: 14px 16px; }
+  .point svg { flex-shrink: 0; margin-top: 2px; }
+  .point b { display: block; font-size: 15px; font-weight: 900; line-height: 1.5; }
+  .point span { display: block; font-size: 13px; color: var(--ink-2); line-height: 1.7; margin-top: 2px; }
+  .tint .point { border: 0; }
+  section:not(.tint) .point { border: 2px solid var(--line); }
+  .result { display: flex; flex-direction: column; gap: 2px; background: var(--green); color: var(--white); border-radius: 20px; padding: 16px 18px; }
+  .result .label { font-size: 12px; opacity: .85; }
+  .result .fig { font-size: 22px; font-weight: 900; line-height: 1.4; font-variant-numeric: tabular-nums; }
+  .result .src { font-size: 11px; opacity: .8; }
+  .result .checking { color: var(--white); border-color: rgba(255,255,255,.7); }
+  .shot { border: 2px solid var(--line); border-radius: 16px; overflow: hidden; background: var(--white); }
+  .shot img { width: 100%; height: 100%; object-fit: cover; object-position: left top; }
+  .shot.wide { aspect-ratio: 1400 / 1037; }
+  .shot.phone-shot { width: 78%; margin: 0 auto; border: 6px solid var(--ink); border-radius: 26px; }
 
   /* 流れ */
   .flow { display: flex; flex-direction: column; gap: 10px; }
-  .who { display: flex; gap: 12px; align-items: center; }
-  .who .ico { width: 48px; height: 48px; flex-shrink: 0; border-radius: 16px; background: var(--paper-2); display: grid; place-items: center; }
+  .who { display: flex; gap: 12px; align-items: center; background: var(--white); border: 2px solid var(--line); border-radius: 20px; padding: 14px 16px; }
+  .who .ico { width: 44px; height: 44px; flex-shrink: 0; border-radius: 14px; background: var(--paper-2); display: grid; place-items: center; }
   .who .role { font-size: 12px; color: var(--ink-2); line-height: 1.4; }
-  .who .what { font-size: 17px; font-weight: 900; line-height: 1.4; }
-  .auto { text-align: center; font-size: 14px; font-weight: 900; color: var(--green); }
-  .outs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .out { background: var(--green); color: var(--white); border-radius: 20px; padding: 16px 12px; line-height: 1.4; }
-  .out b { display: block; font-size: 15px; font-weight: 900; }
-  .out span { font-size: 11px; opacity: .85; }
-
-  /* できること */
-  .feature { display: flex; flex-direction: column; gap: 10px; padding: 18px; border-radius: 24px; background: var(--white); }
-  .feature .head { display: flex; align-items: center; gap: 10px; }
-  .num { font-size: 13px; font-weight: 900; color: var(--white); background: var(--orange); border-radius: 999px; padding: 2px 10px; font-variant-numeric: tabular-nums; }
-  .feature .name { font-size: 19px; font-weight: 900; }
-  .feature p { margin: 0; font-size: 14px; color: var(--ink-2); }
-  .shot { border: 2px solid var(--line); border-radius: 16px; overflow: hidden; background: var(--white); }
-  .shot img { width: 100%; height: 100%; object-fit: cover; object-position: left top; }
-  .shot.tall { height: 300px; }
-  .shot.tall img { object-position: center 40%; }
-  .shot.wide { aspect-ratio: 1400 / 1037; }
+  .who .what { font-size: 16px; font-weight: 900; line-height: 1.4; }
+  .auto { text-align: center; font-size: 13px; font-weight: 900; color: var(--green); }
+  .outs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .out { background: var(--green); color: var(--white); border-radius: 16px; padding: 12px 8px; font-size: 13px; font-weight: 900; line-height: 1.4; text-align: center; }
 
   /* つくった人 */
   .maker { display: flex; gap: 14px; align-items: flex-start; background: var(--paper-2); border-radius: 20px; padding: 18px; }
   .face { width: 56px; height: 56px; flex-shrink: 0; border-radius: 999px; background: var(--wood); color: var(--white); font-size: 17px; font-weight: 900; display: grid; place-items: center; }
-  .maker p { margin: 0; font-size: 15px; font-weight: 700; line-height: 1.85; }
+  .maker p { font-size: 15px; font-weight: 700; line-height: 1.9; }
   .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
   .stat { background: var(--white); border: 2px solid var(--line); border-radius: 20px; padding: 16px 6px; text-align: center; line-height: 1.4; }
   .stat b { display: block; font-size: 30px; font-weight: 900; color: var(--green); font-variant-numeric: tabular-nums; }
@@ -110,11 +129,11 @@
   .stat span { font-size: 11px; color: var(--ink-2); }
 
   /* 始め方 */
+  ol.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
   .step { display: flex; gap: 14px; align-items: center; background: var(--white); border-radius: 20px; padding: 14px; }
   .step .n { width: 44px; height: 44px; flex-shrink: 0; border-radius: 999px; background: var(--green); color: var(--white); font-size: 18px; font-weight: 900; display: grid; place-items: center; }
   .step b { font-size: 16px; }
   .step .sub { display: block; font-size: 12px; color: var(--ink-2); line-height: 1.5; }
-  ol.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
 
   /* よくある質問 */
   details { background: var(--white); border: 2px solid var(--line); border-radius: 20px; padding: 16px 18px; }
@@ -123,7 +142,7 @@
   summary::after { content: "＋"; color: var(--wood); }
   details[open] summary::after { content: "−"; }
   summary:focus-visible { outline: 3px solid var(--orange); outline-offset: 4px; border-radius: 6px; }
-  details p { margin: 10px 0 0; font-size: 14px; color: var(--ink-2); }
+  details p { margin-top: 10px; font-size: 14px; color: var(--ink-2); }
 
   /* 締め */
   .end { background: var(--green); color: var(--white); align-items: center; text-align: center; padding-bottom: 56px; }
@@ -132,8 +151,6 @@
 </style>
 </head>
 <body>
-
-
 <main class="page">
 
   <section class="hero">
@@ -142,11 +159,12 @@
       <div class="badge">内装業のためのアプリ</div>
     </div>
     <div class="eyebrow">内装屋がつくった、現場のためのアプリ</div>
-    <h1>職人はスマホで<br>日報だけ。<br><span class="hl">給料も原価も、<br>あとは自動。</span></h1>
+    <h1>書き写しも、<br>なあなあも、<br><span class="hl">なくなる。</span></h1>
+    <p class="lead">職人はスマホで日報だけ。<br>事務・ルール・現場の数字が、ひとつにつながる。</p>
     <div class="tags">
-      <span class="tag">職人はスマホだけ</span>
-      <span class="tag">給料と原価まで自動</span>
-      <span class="tag">導入はお手伝いします</span>
+      <span class="tag">事務が減る</span>
+      <span class="tag">規律ができる</span>
+      <span class="tag">数字が見える</span>
     </div>
     <div class="devices" aria-label="職人のスマホの日報が、社長のパソコンの集計に集まる様子">
       <div class="pc"><img src="img/lp-pc-attendance.png" alt="管理画面の出面・勤怠"></div>
@@ -160,11 +178,11 @@
     <h2>こんなこと、<br>ありませんか？</h2>
     <div class="card pain">
       <svg width="64" height="64" viewBox="0 0 64 64" fill="none" aria-hidden="true"><rect x="10" y="12" width="34" height="42" rx="4" fill="#efe5d6" stroke="#8a5a3b" stroke-width="2.5"/><rect x="16" y="8" width="34" height="42" rx="4" fill="#ffffff" stroke="#8a5a3b" stroke-width="2.5"/><path d="M23 19h20M23 26h20M23 33h14" stroke="#cdb89c" stroke-width="2.5" stroke-linecap="round"/><path d="M40 52 L56 36 L60 40 L44 56 L38 58 Z" fill="#d98b3a" stroke="#8a5a3b" stroke-width="2" stroke-linejoin="round"/></svg>
-      <p>日報が紙やLINEで届いて、月末に書き写している</p>
+      <p>紙・LINE・Excel で届いた日報や経費を、毎日書き写している</p>
     </div>
     <div class="card pain">
       <svg width="64" height="64" viewBox="0 0 64 64" fill="none" aria-hidden="true"><circle cx="28" cy="34" r="20" fill="#ffffff" stroke="#2f5d50" stroke-width="3"/><path d="M28 22v12l8 6" stroke="#2f5d50" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="50" cy="16" r="11" fill="#d98b3a"/><path d="M46.5 13.5c0-2 1.6-3.5 3.5-3.5s3.5 1.4 3.5 3.3c0 2.6-3.5 2.8-3.5 5" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round"/><circle cx="50" cy="22" r="1.4" fill="#ffffff"/></svg>
-      <p>残業や休憩を合わせると、結局何時間働いたのか分からない</p>
+      <p>その残業や経費が本当かどうか、確かめようがない</p>
     </div>
     <div class="card pain">
       <svg width="64" height="64" viewBox="0 0 64 64" fill="none" aria-hidden="true"><rect x="8" y="20" width="30" height="36" rx="3" fill="#efe5d6" stroke="#8a5a3b" stroke-width="2.5"/><path d="M15 29h5M25 29h5M15 38h5M25 38h5M15 47h5M25 47h5" stroke="#8a5a3b" stroke-width="2.5" stroke-linecap="round"/><path d="M4 56h56" stroke="#8a5a3b" stroke-width="2.5" stroke-linecap="round"/><circle cx="47" cy="26" r="13" fill="#ffffff" stroke="#2f5d50" stroke-width="3"/><path d="M42 20l5 6 5-6M47 26v8M43 29h8" stroke="#2f5d50" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -173,43 +191,67 @@
   </section>
 
   <section>
-    <div class="eyebrow">GENLINKS なら</div>
+    <div class="eyebrow">GENLINKS で変わること</div>
+    <h2>変わるのは、<br>この 3 つです。</h2>
+    <nav class="values" aria-label="3つの変わること">
+      <a class="value" href="#jimu"><span class="mark">1</span><span><b>事務が減る</b><span>書き写しがなくなり、人件費も、事務の人のストレスやミスも減る</span></span><span class="go" aria-hidden="true">↓</span></a>
+      <a class="value" href="#kiritsu"><span class="mark">2</span><span><b>規律ができる</b><span>残業も経費も、決まったとおりに。社長が安心できる</span></span><span class="go" aria-hidden="true">↓</span></a>
+      <a class="value" href="#suji"><span class="mark">3</span><span><b>数字が見える</b><span>どの現場で、いくら使ったかが分かる</span></span><span class="go" aria-hidden="true">↓</span></a>
+    </nav>
+  </section>
+
+  <section class="tint" id="jimu">
+    <div class="chapter-head"><span class="mark">1</span><span class="eyebrow">事務が減る</span></div>
     <h2>一度入れたら、<br>もう書き写さない。</h2>
     <div class="flow">
-      <div class="card bordered who">
-        <div class="ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#8a5a3b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 18h4"/></svg></div>
-        <div><div class="role">職人</div><div class="what">スマホで日報を出す</div><div class="role">現場・時間・経費・写真</div></div>
+      <div class="who">
+        <div class="ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#8a5a3b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 18h4"/></svg></div>
+        <div><div class="role">職人</div><div class="what">スマホで日報を出す</div><div class="role">現場・時間・経費・領収書の写真</div></div>
       </div>
-      <div class="auto">自動で</div>
+      <div class="auto">自動でそろう</div>
       <div class="outs">
-        <div class="out"><b>給料の元に<br>なる数字</b><span>労働時間・残業</span></div>
-        <div class="out"><b>現場ごとの<br>原価</b><span>人件費・経費</span></div>
+        <div class="out">出面・<br>勤怠</div>
+        <div class="out">給料の<br>元の数字</div>
+        <div class="out">経費<br>精算</div>
       </div>
-      <div class="card bordered who">
-        <div class="ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#8a5a3b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
-        <div><div class="role">社長</div><div class="what">パソコンで見るだけ</div></div>
-      </div>
+    </div>
+    <ul class="points">
+      <li class="point"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2f5d50" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg><span><b>事務の人の負担が軽くなる</b><span>月末に追われる書き写しや、合わない数字の確かめ直しがなくなり、ストレスもミスも減ります。</span></span></li>
+      <li class="point"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2f5d50" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg><span><b>領収書は写真を撮るだけ</b><span>金額や登録番号（インボイス）を読み取って入ります。</span></span></li>
+      <li class="point"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2f5d50" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg><span><b>有給も自動で管理</b><span>付与されると増えて、使えば減ります。本人もスマホで残りを見られます。</span></span></li>
+    </ul>
+    <div class="shot wide"><img src="img/lp-pc-attendance.png" alt="出面・勤怠の集計画面"></div>
+    <div class="result">
+      <span class="label">株式会社シードでは、毎日の書き写しが<span class="checking">確認中</span></span>
+      <span class="fig">約2時間 → ほぼゼロ</span>
+    </div>
+    <p class="lead">事務の人に残業代を払うより、書き写しを無くして残業を減らす。<br>それだけで、利用料の元が取れます。</p>
+  </section>
+
+  <section id="kiritsu">
+    <div class="chapter-head"><span class="mark">2</span><span class="eyebrow">規律ができる</span></div>
+    <h2>職人を信じたい。<br>だから、仕組みで守る。</h2>
+    <p class="lead">優しいだけだと、なあなあになる。<br>ルールが決まっていれば、正直な人が損をしません。</p>
+    <ul class="points">
+      <li class="point"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#d98b3a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/></svg><span><b>残業は、社長が承認してから</b><span>事前に申請して、承認されるまでは定時までで計上。会社が責任を持てる時間だけ働いてもらえます。</span></span></li>
+      <li class="point"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#d98b3a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="8" height="16" rx="2"/><rect x="13" y="4" width="8" height="16" rx="2"/><path d="M6 9h2M16 9h2"/></svg><span><b>打刻と日報を並べて確かめる</b><span>出勤・退勤の打刻と日報の時刻を、承認の画面で並べて見られます。</span></span></li>
+      <li class="point"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#d98b3a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg><span><b>経費は現場にひもづけて</b><span>どの現場の経費か、領収書の写真、接待なら同行者まで。</span></span></li>
+      <li class="point"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#d98b3a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg><span><b>締切後の修正は、理由と承認</b><span>誰が・いつ・何を直したかも残ります。</span></span></li>
+    </ul>
+    <div class="shot phone-shot"><img src="img/lp-phone-approve.png" alt="残業申請の承認画面（日報の終了時刻・その日の打刻と日報が並ぶ）"></div>
+    <div class="result">
+      <span class="label">株式会社シードでは、毎月の経費が<span class="checking">確認中</span></span>
+      <span class="fig">15〜20万円 → 約10万円</span>
+      <span class="src">経費を現場にひもづけてから（2026年6〜7月）</span>
     </div>
   </section>
 
-  <section class="tint">
-    <h2>できること</h2>
-    <div class="feature">
-      <div class="head"><span class="num">01</span><span class="name">日報と出退勤</span></div>
-      <p>現場からスマホで、その場で出せます。選ぶところがほとんどで、文字の入力は少しです。</p>
-      <div class="shot tall"><img src="img/lp-phone-report.png" alt="日報の入力画面（現場・時刻・休憩・労働時間）"></div>
-    </div>
-    <div class="feature">
-      <div class="head"><span class="num">02</span><span class="name">給料の元になる数字</span></div>
-      <p>労働時間・残業・有給を自動で集計。残業は社長が承認してから反映されます。</p>
-      <div class="shot wide"><img src="img/lp-pc-attendance.png" alt="出面・勤怠の集計画面"></div>
-    </div>
-    <div class="feature">
-      <div class="head"><span class="num">03</span><span class="name">現場ごとの原価</span></div>
-      <p>人件費・経費・協力業者の請求を、現場ごとにまとめます。</p>
-      <div class="shot wide"><img src="img/lp-pc-site-cost.png" alt="現場別集計の画面"></div>
-    </div>
-    <p class="muted small" style="margin:0;padding:0 4px;">ほかにも：領収書は写真を撮るだけで読み取り／見積・発注／工程表／現場チャット など</p>
+  <section class="tint" id="suji">
+    <div class="chapter-head"><span class="mark">3</span><span class="eyebrow">数字が見える</span></div>
+    <h2>どの現場で、<br>いくら使ったか。</h2>
+    <p class="lead">人件費・経費・協力業者の請求を、現場ごとに。「1万6千円のはずの処分費に40万円の請求」のような違いに、すぐ気づけます。</p>
+    <div class="shot wide"><img src="img/lp-pc-site-cost.png" alt="現場別集計の画面"></div>
+    <p class="muted" style="font-size:13px;">ほかにも：見積・発注／工程表／現場チャット など</p>
   </section>
 
   <section>
@@ -218,8 +260,8 @@
     <div class="maker">
       <div class="face" aria-hidden="true">大塚</div>
       <div>
-        <p>職人の日報を紙やLINEで集めて、月末に書き写すのが大変でした。それを無くしたくて、自分の会社のためにつくりました。今はうちの職人28人が、毎日これで日報を出しています。</p>
-        <div class="muted small" style="margin-top:8px;">つくった人：大塚（内装業）</div>
+        <p>職人の日報や経費を紙やLINEで集めて、月末に書き写すのが大変でした。本当かどうか確かめようのない残業や経費もありました。職人を疑いたいわけじゃない。だから、仕組みで決めることにしました。今はうちの職人28人が、毎日これで日報を出しています。</p>
+        <div class="note" style="margin-top:8px;">つくった人：大塚（内装業）</div>
       </div>
     </div>
     <div class="eyebrow" style="color:var(--ink-2);padding-top:4px;">うちで実際に動いている数字</div>
@@ -228,7 +270,7 @@
       <div class="stat"><b>800<small>件+</small></b><span>毎月の<br>日報</span></div>
       <div class="stat"><b>124<small>件</small></b><span>管理している<br>現場</span></div>
     </div>
-    <div class="muted" style="font-size:11px;">2026年5月から運用・数字は2026年9月時点</div>
+    <div class="note">2026年5月から運用・数字は2026年9月時点</div>
   </section>
 
   <section class="tint">
@@ -243,12 +285,12 @@
   <section>
     <h2>よくある質問</h2>
     <details open>
-      <summary>スマホが苦手な職人でも使えますか？</summary>
-      <p>ほとんどは選ぶだけで、文字の入力は少しです。最初の使い方はお手伝いします。</p>
+      <summary>職人に嫌がられませんか？（監視になりませんか？）</summary>
+      <p>目的は監視ではなく、ルールをはっきりさせることです。決まったとおりに出していれば、正直な人が損をしません。</p>
     </details>
     <details>
-      <summary>パソコンが無くても大丈夫？</summary>
-      <p>社長もスマホで日報や集計を見られます。パソコンがあると表が見やすくなります。</p>
+      <summary>スマホが苦手な職人でも使えますか？</summary>
+      <p>ほとんどは選ぶだけで、文字の入力は少しです。最初の使い方はお手伝いします。</p>
     </details>
     <details>
       <summary>今のやり方から移すのは大変？</summary>
@@ -263,6 +305,5 @@
   </section>
 
 </main>
-
 </body>
 </html>
