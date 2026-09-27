@@ -113,15 +113,13 @@ test.describe('現場・元請け・紐付けは公開キーから触れない',
     expect(l.status).toBeGreaterThanOrEqual(400)
   })
 
-  test('★協力業者は列が絞られている（振込先口座・単価は公開キーで読めない）', async () => {
-    // subcontractors は LIFF の協力業者ページが今も直接読むためテーブルごとは閉じていない。
-    // 閉じていない代わりに「口座・単価は列ごと剥がしてある」ことをここで固定する。
-    for (const col of ['bank_account_number', 'bank_account_holder', 'bank_name', 'unit_price', 'address']) {
+  test('★協力業者は公開キーで読めない（振込先口座・単価はもちろん、名前も）', async () => {
+    // ★2026-09-27（RLS第2段B）: 以前は LIFF の協力業者ページが公開キーで直接読んでいたため、表は閉じず
+    //  「口座・単価の列だけ剥がす」形だった（名前は読めた）。作業員アプリはログイン済みで読むようになったので、
+    //  表ごと RLS で閉じ、公開キーの SELECT も剥がした。
+    for (const col of ['bank_account_number', 'bank_account_holder', 'bank_name', 'unit_price', 'address', 'name']) {
       const r = await asAnon(`subcontractors?select=${col}`)
       expect(r.status, `★${col} は公開キーで読めてはいけない (返答: ${r.text.slice(0, 200)})`).toBeGreaterThanOrEqual(400)
     }
-    // 業務上必要な列は引き続き読める（絞りすぎて協力業者ページが壊れていないこと）
-    const ok = await asAnon('subcontractors?select=id,name,active')
-    expect(ok.status, '名前は読める').toBe(200)
   })
 })
