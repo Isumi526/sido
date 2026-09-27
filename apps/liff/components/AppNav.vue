@@ -7,7 +7,7 @@
       <button class="proxy-banner-exit" @click="proxy.clearProxy()">{{ $t('nav.exit') }}</button>
     </div>
     <div ref="navInnerRef" class="app-nav-inner">
-      <button v-if="showBack" class="app-back" :aria-label="$t('nav.back')" @click="router.back()">
+      <button v-if="showBack" class="app-back" :aria-label="$t('nav.back')" data-testid="app-back" @click="goBack">
         <span class="material-symbols-rounded">arrow_back</span>
         <span v-if="unreadBadge" class="app-back-badge" data-testid="app-back-unread-badge">{{ unreadBadge }}</span>
       </button>
@@ -196,6 +196,25 @@ const { authMode } = useLiff()
 const router = useRouter()
 const route = useRoute()
 const showBack = computed(() => route.path !== '/')
+/**
+ * 戻る（2026-09-27）。前の画面が無い時（スマホ通知・リンクから直接開いた時）は router.back() が何もしないので、
+ * 親の画面へ移る（無ければホーム）。深い画面から戻れなくなるのを防ぐ。
+ */
+const BACK_PARENT: Record<string, string> = { '/approvals': '/notifications', '/approvals/overtime': '/notifications' }   // 承認の画面は「やること」から来る
+function parentPath(path: string): string {
+  let p = path.replace(/\/+$/, '')
+  while (p.includes('/')) {
+    p = p.slice(0, p.lastIndexOf('/'))
+    if (!p) return '/'
+    if (router.resolve(p).matched.length) return p
+    if (BACK_PARENT[p]) return BACK_PARENT[p]
+  }
+  return '/'
+}
+function goBack() {
+  if (window.history.state?.back) router.back()
+  else router.push(BACK_PARENT[route.path] ?? parentPath(route.path))
+}
 // 現場チャットの個別スレッド(/site-chat/:id)・アカウント全体チャット(/account-chat)は
 // 全画面表示のメッセージ入力欄と競合するため、タブ遷移先である一覧画面(/chats)とは別に
 // 下部固定ナビを非表示にする(drill-in詳細画面の慣例)。
