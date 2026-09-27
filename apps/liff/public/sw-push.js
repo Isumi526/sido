@@ -34,14 +34,28 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  const url = (event.notification.data && event.notification.data.url) || '/'
-  event.waitUntil(
-    // 既に同じチャットを開いているタブがあればそれを前面に出す（新しいタブを増やさない）
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
-      for (const c of list) {
-        if (c.url.includes(url) && 'focus' in c) return c.focus()
-      }
-      return self.clients.openWindow ? self.clients.openWindow(url) : undefined
-    }),
-  )
+  const target = new URL((event.notification.data && event.notification.data.url) || '/', self.location.origin).href
+  event.waitUntil((async () => {
+    const list = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    // 既に目的のページを開いている画面があれば、それを前に出すだけ（画面を増やさない）
+    for (const c of list) {
+      if (c.url === target && 'focus' in c) return c.focus()
+    }
+    // ★2026-09-27: 既にアプリが開いている時は、その画面を目的のページへ移動させる。
+    //  iPhone のホーム画面アプリは、開いている最中に openWindow を呼ぶと**アプリが前に出るだけでページが移動しない**
+    //  ことがある（実機で「通知を押してもアプリが開くだけ」だった）。navigate が使えない時は、アプリへ
+    //  「このページを開いて」と伝える（plugins/sw-open-url.client.ts が受けて移動する）。
+    const same = list.find((c) => { try { return new URL(c.url).origin === self.location.origin } catch { return false } })
+    if (same) {
+      try {
+        if ('navigate' in same) {
+          const moved = await same.navigate(target)
+          if (moved) return moved.focus()
+        }
+      } catch { /* このページを管理していない等で navigate できない → 下の伝言へ */ }
+      try { same.postMessage({ type: 'open-url', url: target }) } catch { /* 伝えられなくても前には出す */ }
+      return 'focus' in same ? same.focus() : undefined
+    }
+    return self.clients.openWindow ? self.clients.openWindow(target) : undefined
+  })())
 })
