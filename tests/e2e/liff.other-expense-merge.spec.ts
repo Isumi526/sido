@@ -9,7 +9,9 @@
 import { test, expect } from './liff-test'
 import { rest, restSrv, getDevUserId, getAccountId, fillNoReceiptReasons } from './helpers'
 
-const EDIT_DATE = '2026-10-14'
+// ★締切（3日）を過ぎた日＝編集は承認待ちに入る（保存時の振り分けを保留の payload で見るため）。
+//  以前の 2026-10-14＝未来日は「期限内の即反映」で保留に入らず、このテストが古くなっていた（2026-09-27）
+const EDIT_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo' }).format(new Date(Date.now() - 11 * 86400000))
 
 test.describe('その他/その他雑経費の入力統合（liff）', () => {
   let uid = ''

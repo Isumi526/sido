@@ -390,9 +390,12 @@
           {{ $t('checkin.checkedCount', { checked: checkedIds.size, total: rules.length }) }}
         </p>
         <!-- ★戻って開き直した時だけ「次へ」を出す。通常は条件が揃った時点で自動で進む -->
+        <!-- ★区分の確認事項を読み込み中は押せない（2026-09-27）。読み終わる前に押すと、読み終わった時点で
+             確認事項ゼロの区分なら区分選びの画面へ戻され、進んだはずの画面が勝手に戻ったように見えた -->
         <button
           v-if="stepOverride && stepDoneForOverride"
           class="btn-submit" :class="attendanceType" data-testid="step-next"
+          :disabled="rulesLoading"
           @click="stepOverride = null"
         >{{ $t('checkin.stepNext') }}</button>
         <button
