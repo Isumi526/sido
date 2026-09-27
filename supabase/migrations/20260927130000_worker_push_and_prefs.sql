@@ -48,5 +48,5 @@ select account_id, worker_id, endpoint, p256dh, auth, created_at, last_seen_at
 from public.approver_push_subscriptions
 on conflict (endpoint) do nothing;
 
--- ↩ ロールバック: drop table public.worker_notification_prefs; drop table public.worker_push_subscriptions;
---   （approver_push_subscriptions は変えていないので、コードを戻せば元どおり）
+-- ↩ ロールバック: 新しく作った2つの表（worker_notification_prefs / worker_push_subscriptions）を消す。
+--   approver_push_subscriptions は変えていないので、コードを戻せば元どおり（戻しの SQL は人が書く）
