@@ -11,7 +11,12 @@ import { test, expect } from './liff-test'
 // reload後の再実行でdismiss状態を毎回消してしまい検証できない)。
 async function gotoHomeFresh(page: import('@playwright/test').Page) {
   await page.goto('/', { waitUntil: 'networkidle' })
-  await page.evaluate(() => localStorage.removeItem('pwa_hint_dismissed'))
+  // ★未送信の日報がある日は「未送信の日報があります」が画面全体に重なり、閉じるボタンが押せない（2026-09-27）。
+  //  この spec の主題は PWA 案内なので、未送信の案内は「あとで」を押した状態（同じタブの間は出ない）にしておく
+  await page.evaluate(() => {
+    localStorage.removeItem('pwa_hint_dismissed')
+    sessionStorage.setItem('overdue_report_dismissed', '1')
+  })
   await page.reload({ waitUntil: 'networkidle' })
 }
 
