@@ -23,7 +23,8 @@ const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const VAPID_PUBLIC  = Deno.env.get('VAPID_PUBLIC_KEY') ?? ''
 const VAPID_PRIVATE = Deno.env.get('VAPID_PRIVATE_KEY') ?? ''
 const VAPID_SUBJECT = Deno.env.get('VAPID_SUBJECT') ?? 'mailto:noreply@example.com'
-const PUBLIC_APP_URL = Deno.env.get('PUBLIC_APP_URL') ?? ''
+// ★本番の secret は LIFF_URL（作業員アプリ）で、PUBLIC_APP_URL は未設定（2026-09-27 確認）。どちらでも組めるようにする
+const PUBLIC_APP_URL = (Deno.env.get('PUBLIC_APP_URL') ?? Deno.env.get('LIFF_URL') ?? '').replace(/\/+$/, '')
 
 const svc = createClient(SUPABASE_URL, SERVICE_KEY)
 
@@ -130,8 +131,10 @@ Deno.serve(async (req) => {
     const payload = JSON.stringify({
       title: `${site?.name ?? '現場'} の新着`,
       body: `${senderName ? senderName + '：' : ''}${preview.slice(0, 80)}`,
-      // ゲストは token 付きURLしか開けない。無ければサイトのトップに倒す。
-      url: inviteToken && PUBLIC_APP_URL ? `${PUBLIC_APP_URL}/chat-invite/${inviteToken}` : '/',
+      // ゲストは token 付きURLしか開けない。無ければその現場のチャットを開く
+      // （2026-09-27 A-6: 以前は '/' で、押してもアプリのトップが開くだけだった）
+      url: inviteToken && PUBLIC_APP_URL ? `${PUBLIC_APP_URL}/chat-invite/${inviteToken}`
+        : PUBLIC_APP_URL ? `${PUBLIC_APP_URL}/site-chat/${siteId}` : `/site-chat/${siteId}`,
       tag: `site-chat-${siteId}`,
     })
 
