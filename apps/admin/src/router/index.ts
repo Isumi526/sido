@@ -40,8 +40,14 @@ import Process         from '../pages/process.vue'
 import AiHelp          from '../pages/ai-help.vue'
 import Faq             from '../pages/faq.vue'
 
+// ★管理画面は2か所で配信している: 独自ドメイン（sido-admin-stism.vercel.app・画面は / 直下）と、
+//  作業員アプリのドメインの /admin/*（apps/liff/vercel.json の rewrites・スマホ通知の押し先）。
+//  同じビルドなので、開いた場所で振り分けの基準を決める。引数なしの createWebHistory() は '/' 基準で、
+//  /admin/* で開くと画面が見つからず、ナビだけ出て中身が空になっていた（2026-09-27 実機）。
+const ROUTER_BASE = typeof window !== 'undefined' && /^\/admin(\/|$)/.test(window.location.pathname) ? '/admin/' : '/'
+
 export const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(ROUTER_BASE),
   routes: [
     { path: '/login',        component: Login,          meta: { public: true } },
     { path: '/',             component: Dashboard },
