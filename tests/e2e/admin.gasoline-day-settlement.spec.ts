@@ -2,7 +2,7 @@
 //  admin.gasoline-day-settlement.spec.ts
 //  ③ 日報レベルの「本日のガソリン代」(daily_reports.gasoline_yen) が立替(gasoline_tategae=true)の時、
 //     経費精算(expenses)に日報日の期(前半/後半)の「立替」として計上されることを検証。
-//   - 日報の少ないクリーンな月(2026-09)に gasoline_yen=12,345/tategae の日報を投入
+//   - 日報の無い過去の月(2026-03・今月とぶつからない)に gasoline_yen=12,345/tategae の日報を投入
 //     → /expenses の当該作業員×前半 行の立替・合計に ¥12,345 が乗り、明細に「ガソリン代」が出る（表示はflatten正規化ラベル）
 // ============================================================
 import { test, expect } from '@playwright/test'
@@ -13,6 +13,11 @@ const NOTE = 'E2Eガソ日報精算' + TS
 
 test.describe.configure({ mode: 'serial' })
 
+// ★今月とぶつからない過去の月で見る（2026-09-27）。global-setup が「今月5日」に立替 ¥500 の日報を作るので、
+//  固定の 2026-09 を使っていると 9月だけ前半の立替が ¥12,845 になって落ちていた。
+const GAS_YM = '2026-03'
+const GAS_DATE = `${GAS_YM}-10`   // 前半
+
 test.describe('日報ガソリン代→経費精算', () => {
   let devUserId = ''
   let workerName = ''
@@ -22,10 +27,10 @@ test.describe('日報ガソリン代→経費精算', () => {
     const u = await restSrv(`users?account_id=eq.${accountId}&line_user_id=eq.dev-user-id&select=id,real_name,workers(name)`)
     devUserId = u[0].id
     workerName = u[0].workers?.name ?? u[0].real_name ?? '—'
-    // 2026-09-10（前半）: 本日のガソリン代 ¥12,345・立替
+    // GAS_DATE（前半）: 本日のガソリン代 ¥12,345・立替
     // ★liters と fuelType も入れる（ℓ列・内訳が落ちるバグの回帰防止）
     await restSrv('daily_reports?on_conflict=user_id,date', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify({ account_id: accountId, user_id: devUserId, date: '2026-09-10', is_working: true, note: NOTE,
+      body: JSON.stringify({ account_id: accountId, user_id: devUserId, date: GAS_DATE, is_working: true, note: NOTE,
         gasoline_items: [{ yen: 12345, tategae: true, liters: 40.5, fuelType: 'regular', payee: 'E2Eガソリンスタンド' }], sites: [] }) })
   })
 
@@ -34,10 +39,8 @@ test.describe('日報ガソリン代→経費精算', () => {
   })
 
   test('立替の本日ガソリン代が前半の立替・合計に計上され、明細に出る', async ({ page }) => {
-    await page.goto('/expenses', { waitUntil: 'networkidle' })
-    while (!(await page.locator('.month-label').innerText()).includes('2026年9月')) {
-      await page.locator('.month-nav .btn-nav').nth(1).click()
-    }
+    await page.goto(`/expenses?ym=${GAS_YM}`, { waitUntil: 'networkidle' })
+    await expect(page.locator('.month-label')).toContainText('2026年3月')
     const row = page.locator('tr.data-row', { hasText: workerName }).filter({ hasText: '前半' })
     await expect(row).toBeVisible()
     // 立替列（td.num の3番目＝うち立替）に ¥12,345
@@ -56,10 +59,8 @@ test.describe('日報ガソリン代→経費精算', () => {
   //  3画面で手組みされていた。admin経費管理だけ liters と note を入れておらず、
   //  ℓ列と内訳が常に空になっていた（共有関数 flattenGasolineItems に一本化して解消）。
   test('本日ガソリン行に ℓ と内訳（燃料種別）が出る（経費管理）', async ({ page }) => {
-    await page.goto('/expenses', { waitUntil: 'networkidle' })
-    while (!(await page.locator('.month-label').innerText()).includes('2026年9月')) {
-      await page.locator('.month-nav .btn-nav').nth(1).click()
-    }
+    await page.goto(`/expenses?ym=${GAS_YM}`, { waitUntil: 'networkidle' })
+    await expect(page.locator('.month-label')).toContainText('2026年3月')
     await page.locator('tr.data-row', { hasText: workerName }).filter({ hasText: '前半' }).click()
     const gasRow = page.locator('.detail-table tbody tr', { hasText: 'E2Eガソリンスタンド' }).first()
     await expect(gasRow).toBeVisible()
@@ -79,7 +80,7 @@ test.describe('日報ガソリン代→経費精算', () => {
   test('日毎集計でも同じ行に ℓ と内訳が出る（3画面で内容が食い違わない）', async ({ page }) => {
     // ?ym= で直接遷移（月送りクリックのループは月末31日に既知バグで月を飛ばすため使わない。
     //  バグは expenses-daily.vue の shiftMonth 由来・別チケットで記録済み・本specの検証対象外）
-    await page.goto('/expenses-daily?ym=2026-09', { waitUntil: 'networkidle' })
+    await page.goto(`/expenses-daily?ym=${GAS_YM}`, { waitUntil: 'networkidle' })
     // 科目列は勘定科目（ガソリン系→車両費）で出る（2026-07-30 列統一）
     const row = page.locator('table tbody tr', { hasText: 'E2Eガソリンスタンド' }).first()
     await expect(row).toBeVisible({ timeout: 15000 })

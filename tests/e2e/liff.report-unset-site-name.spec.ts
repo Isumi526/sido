@@ -36,7 +36,6 @@ test.beforeEach(async () => {
 test.afterAll(async () => {
   await restSrv(`daily_reports?user_id=eq.${userId}&date=eq.${TODAY}`, { method: 'DELETE' }).catch(() => {})
   await restSrv(`sites?name=eq.${encodeURIComponent(TYPED)}`, { method: 'DELETE' }).catch(() => {})
-  await restSrv(`sites?name=eq.__unset__&account_id=eq.${accountId}`, { method: 'DELETE' }).catch(() => {})
 })
 
 test('「現場未設定」を選ぶと現場名を書ける欄が出て、内部値は画面に出ない', async ({ page }) => {
@@ -57,6 +56,9 @@ test('「現場未設定」を選ぶと現場名を書ける欄が出て、内�
 })
 
 test('★書いた現場名が日報に残り、その名前で現場マスタを作らない', async ({ page }) => {
+  // ★「__unset__」の行はシステム用として元から在り得る（admin.site-status が作る・本番にも在る）。
+  //  「送信で作らない」を見るので、送信前後で増えないことを確かめる（2026-09-27: 在る回だけ落ちていた）
+  const unsetBefore = ((await restSrv(`sites?name=eq.__unset__&account_id=eq.${accountId}&select=id`)) ?? []).length
   await page.goto(`/report?date=${TODAY}`, { waitUntil: 'networkidle' })
   await page.locator('select:has(option[value="working"])').first().selectOption('working')
   await page.getByTestId('site-select-0').selectOption('__unset__')
@@ -79,5 +81,5 @@ test('★書いた現場名が日報に残り、その名前で現場マスタ�
   const typedSite = await restSrv(`sites?name=eq.${encodeURIComponent(TYPED)}&select=id`)
   expect((typedSite ?? []).length, '書いた名前で現場マスタを作らない').toBe(0)
   const unsetSite = await restSrv(`sites?name=eq.__unset__&account_id=eq.${accountId}&select=id`)
-  expect((unsetSite ?? []).length, '★「__unset__」という名前の現場も作らない').toBe(0)
+  expect((unsetSite ?? []).length, '★「__unset__」という名前の現場も作らない').toBe(unsetBefore)
 })
