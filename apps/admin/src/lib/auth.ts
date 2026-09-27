@@ -211,6 +211,10 @@ export async function signIn(email: string, password: string): Promise<void> {
   void import('./operationLog').then(({ logOperation }) => logOperation('ログイン', { summary: `admin / ${navigator.userAgent.slice(0, 160)}` }))
 }
 
+// ★この端末だけログアウトする（2026-09-27 運用者判断「今の端末だけでOK」）。
+//  signOut() の既定は scope='global'＝そのアカウントの全端末のセッションを失効させるので、
+//  PC の管理画面でログアウトするとスマホの作業員アプリまでログアウトされていた。
+//  （同じドメインの /admin で開いている時は、同じ端末の作業員アプリとログインを共有しているので一緒に抜ける）
 export async function signOut(): Promise<void> {
-  await supabase.auth.signOut()
+  await supabase.auth.signOut({ scope: 'local' })
 }
