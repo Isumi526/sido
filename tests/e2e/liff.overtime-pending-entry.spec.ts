@@ -299,3 +299,35 @@ test('早出と残業の両方を入れて送ると、両方が記録され、�
   await expect.poll(savedStart, { timeout: 15000 }).toBe('06:30')
   expect(await savedEnd()).toBe('19:30')
 })
+
+test('★送る直前に残業申請の状態を読み直す。読めない時は送らない（承認待ちの残業時刻がそのまま保存されない）', async ({ page }) => {
+  // 2026-09-27: 状態は画面を開いた時に非同期で読む。読み終わる前・読み直しに失敗して none に倒れた状態で送ると、
+  // 承認待ちでも定時へ丸める処理が飛んで 19:30 が保存されていた（このファイルの AC3 が数回に1回落ちて発覚）。
+  await seedRequest('pending', { requested_end_time: '19:00' })
+  await seedReport()
+  let failStatus = false
+  await page.route('**/functions/v1/attendance-log', async (route) => {
+    if (failStatus && (route.request().postData() ?? '').includes('"action":"overtime-status"')) {
+      await route.fulfill({ status: 500, contentType: 'application/json', body: '{"ok":false,"error":"boom"}' })
+      return
+    }
+    await route.continue()
+  })
+  const dialogs: string[] = []
+  page.on('dialog', (d) => { dialogs.push(d.message()) })
+  await openEdit(page)
+  await expect.poll(async () => (await endOptions(page)).includes('19:30'), { timeout: 20000 }).toBe(true)
+  await page.getByTestId('end-time-0').selectOption('19:30')
+
+  failStatus = true
+  await page.getByTestId('report-submit').click()
+  await expect.poll(() => dialogs.join('\n'), { timeout: 10000 }).toContain('残業申請の状態を確認できませんでした')
+  expect(await savedEnd(), '★送っていない＝日報は定時のまま').toBe(FIXED_END)
+  expect(await reportedEnd(), '申請側にも何も書いていない').toBeNull()
+
+  // 読めるようになれば、いつもどおり定時で保存され、入力時刻は申請側へ
+  failStatus = false
+  await submitEdit(page)
+  await expect.poll(savedEnd, { timeout: 20000 }).toBe(FIXED_END)
+  expect(await reportedEnd()).toBe('19:30')
+})
