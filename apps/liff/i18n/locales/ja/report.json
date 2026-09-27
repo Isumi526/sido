@@ -73,6 +73,7 @@
   "overtimePendingIfApprovedBoth": "承認された場合 → {start}〜{end} の稼働として計上されます",
   "overtimePendingIfNotBoth": "承認されるまで／承認されなかった場合 → 定時の {start}〜{end} の計上のままです",
   "overtimeReportFailed": "残業の入力時刻を保存できませんでした。通信状況を確認して、もう一度送信してください。（日報はまだ送信されていません）",
+  "overtimeStatusFailed": "残業申請の状態を確認できませんでした。通信状況を確認して、もう一度送信してください。（日報はまだ送信されていません）",
   "overtimePendingChanged": "残業申請の状態が変わりました（承認・却下など）。内容を確認して、もう一度送信してください。（日報はまだ送信されていません）",
   "siteNamePlaceholder": "現場名を入力（例: 渋谷プロジェクト）",
   "subcontractorOnly": "協力業者 / 経費 / 雑費のみ（自分は稼働なし）",

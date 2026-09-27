@@ -123,8 +123,10 @@ export function useOvertimeRequest() {
    * 日報画面が要る残業の状態を1回で取る（A-1・2026-09-24）。
    *  isApproved / approvedAdjustment / activeRequest を別々に呼ぶと同じ EF を毎回叩くので、
    *  日報画面はこれを使う。★読めない時は none（=上限を外さない）に倒す＝fail-closed。
+   *  ★strict: 送信直前の読み直し用。読めない時は none に倒さず例外を投げる。送信時に none として扱うと
+   *   「承認待ちの日に定時を超えて入れた時刻を定時へ丸める」処理が飛んで、そのまま保存される＝逆に fail-open になる。
    */
-  async function snapshot(date: string): Promise<{
+  async function snapshot(date: string, opts: { strict?: boolean } = {}): Promise<{
     status: 'none' | 'pending' | 'approved' | 'rejected'
     isLate: boolean
     adjustment: { startTime: string | null; endTime: string | null; breakMinutes: number | null } | null
@@ -144,6 +146,7 @@ export function useOvertimeRequest() {
       }
     } catch (e) {
       console.error('[overtime] 状況を取得できませんでした:', e)
+      if (opts.strict) throw e
       return empty
     }
   }
