@@ -27,5 +27,6 @@
   "paidLeave": "Paid leave",
   "inventory": "Inventory",
   "tools": "Tools",
-  "settings": "Settings"
+  "settings": "Settings",
+  "adminApp": "Admin console"
 }
