@@ -26,7 +26,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { authorizeReminderTrigger } from '../_shared/reminder-auth.ts'
 import { resolveApprovalRecipients, isApprovalNotifyEnabled } from '../_shared/approval-mail.ts'
 import { sendResend } from '../_shared/doc-mail.ts'
-import { pushToApprovers, adminUrl, appAdminUrl } from '../_shared/approver-push.ts'
+import { pushToApprovers, adminUrl, appUrl } from '../_shared/approver-push.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -143,7 +143,7 @@ Deno.serve(async (req) => {
       title: `承認待ちの残業申請 ${list.length}件`,
       body: list.slice(0, 3).map(p => `${nameOf.get(p.worker_id) ?? '作業員'} ${p.date.slice(5).replace('-', '/')}`).join('、')
         + (list.length > 3 ? ` ほか${list.length - 3}件` : ''),
-      url: appAdminUrl('/overtime-approvals'),   // ★メールは PC 向けに link のまま、プッシュは作業員アプリと同じドメイン（A-0）
+      url: appUrl('/approvals/overtime'),   // ★メールは PC 向けに管理画面のまま、プッシュは作業員アプリの承認一覧（A-2）
       tag: 'overtime-approval',
     })
 

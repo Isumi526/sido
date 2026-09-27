@@ -40,7 +40,7 @@ export const todoCount = computed(() => pendingDocCount.value + punchTodoItems.v
 // ── 承認待ちの残業申請（承認者だけ・A-1・2026-09-27）──
 // ★設計「承認や申請の処理をやることで完結＋通知の統一」: アイコンの数字＝ベルの数（確認事項#5=A）。承認者に届く
 //  「残業申請が届きました」の通知と数を揃えるため、承認待ちを「やること」に1行で数える。
-//  押すと同じドメインの管理画面の残業承認が開く（アプリ内で承認できるようにするのは A-2）。
+//  押すと作業員アプリの承認画面（/approvals/overtime・A-2）で承認・却下できる。
 //  数は EF push-settings の badge（承認者でなければ 0・自分の申請は数えない）。
 export const approvalPendingCount = ref(0)
 export async function refreshApprovalBadge(): Promise<void> {

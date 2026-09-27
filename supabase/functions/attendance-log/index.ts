@@ -20,7 +20,8 @@
 //   for-report{ from, to, workerId? }             → 日報に出す実打刻（現場名つき）
 //   punch     { siteId, type, targetWorkerId?, agreedRuleTexts?, agreedDocumentNames?, lat?, lng? }
 //   backdate  { siteId, date, checkin?, checkout? } → 打刻し忘れた日の後追い入力（本人のみ）
-//   overtime-decide { id, status, note? }          → ★管理画面からの残業承認/却下（JWT専用）
+//   overtime-decide { id, status, note? }          → ★残業承認/却下（管理画面・作業員アプリ共通・JWT専用）
+//   overtime-approval-list {} / overtime-approval-detail { id } → 作業員アプリの「やること」の承認（承認者・JWT専用・読むだけ）
 //
 //  ※ verify_jwt=false で deploy すること（LINE作業員はSupabase JWTを持たないため）。
 //    関数内で身元を厳密検証している。
@@ -218,6 +219,78 @@ Deno.serve(async (req) => {
       reportUpdated = await applyApprovedToReport(svc, approver.accountId, reqRow)
     }
     return json({ ok: true, changed: (updated ?? []).length, reportUpdated })
+  }
+
+  // ── 作業員アプリの「やること」から残業を承認する（設計「承認をやることで完結」A-2・2026-09-27）──
+  //  overtime-approval-list {}      → 承認待ちの一覧（自分の申請は出さない＝やることの数と揃える）
+  //  overtime-approval-detail { id } → 申請の中身＋その日の打刻・日報（裏取り）＋決裁済みなら誰が・いつ
+  //  ★決裁そのものは上の overtime-decide（管理画面と同じ経路）。ここは読むだけ。
+  //  ★作業員アプリは attendance_logs / 他人の日報を直接読めない（RLS）ので、承認者であることを
+  //   確かめてから service_role で読む。account_id で必ず絞る。
+  if (body.action === 'overtime-approval-list' || body.action === 'overtime-approval-detail') {
+    const approver = await resolveApprover(svc, req.headers.get('Authorization') ?? '')
+    if (!approver) return json({ ok: false, error: 'unauthorized' }, 401)
+    if (!APPROVER_ROLES.includes(approver.role)) return json({ ok: false, error: 'APPROVE_FORBIDDEN' }, 403)
+    const cols = 'id, worker_id, date, requested_end_time, requested_start_time, requested_break_minutes, reason, site_names, status, is_late, requested_at, reported_end_time, reported_start_time, approved_by, decided_at, decision_note'
+    const namesOf = async (ids: string[]) => {
+      if (!ids.length) return new Map<string, string>()
+      const { data } = await svc.from('workers').select('id, name').eq('account_id', approver.accountId).in('id', ids)
+      return new Map(((data ?? []) as any[]).map(w => [w.id as string, w.name as string]))
+    }
+
+    if (body.action === 'overtime-approval-list') {
+      let q = svc.from('overtime_requests').select(cols)
+        .eq('account_id', approver.accountId).eq('status', 'pending')
+        .order('requested_at', { ascending: true })
+      if (approver.workerId) q = q.neq('worker_id', approver.workerId)
+      const { data, error } = await q
+      if (error) { console.error('[attendance-log] overtime-approval-list failed:', error); return json({ ok: false, error: 'load_failed' }, 500) }
+      const rows = (data ?? []) as any[]
+      const names = await namesOf([...new Set(rows.map(r => r.worker_id).filter(Boolean))])
+      return json({ ok: true, items: rows.map(r => ({ ...r, worker_name: names.get(r.worker_id) ?? null })) })
+    }
+
+    const id = typeof body.id === 'string' ? body.id : ''
+    if (!id) return json({ ok: false, error: 'id_required' }, 400)
+    const { data: r } = await svc.from('overtime_requests').select(cols)
+      .eq('id', id).eq('account_id', approver.accountId).maybeSingle()
+    if (!r) return json({ ok: false, error: 'not_found' }, 404)
+    const names = await namesOf(r.worker_id ? [r.worker_id as string] : [])
+
+    // その日（JST）の打刻（取り消し済みは除く）と日報。管理画面の「裏取り」と同じ
+    const punches: { type: string; time: string }[] = []
+    let report: { is_working: boolean | null; siteNames: string[] } | null = null
+    if (r.worker_id) {
+      const from = new Date(`${r.date}T00:00:00+09:00`).toISOString()
+      const to   = new Date(`${r.date}T23:59:59.999+09:00`).toISOString()
+      const [{ data: logs }, { data: us }] = await Promise.all([
+        // attendance_logs に account_id は無い。worker_id は上で account_id 付きで引いた申請のもの＝同じ会社
+        svc.from('attendance_logs').select('type, checked_at')
+          .eq('worker_id', r.worker_id).is('deleted_at', null)
+          .gte('checked_at', from).lte('checked_at', to).order('checked_at', { ascending: true }),
+        svc.from('users').select('id').eq('account_id', approver.accountId).eq('worker_id', r.worker_id),
+      ])
+      const hm = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', hour12: false })
+      for (const l of (logs ?? []) as any[]) punches.push({ type: l.type, time: hm.format(new Date(l.checked_at)) })
+      const userIds = ((us ?? []) as any[]).map(u => u.id)
+      if (userIds.length) {
+        const { data: reps } = await svc.from('daily_reports').select('is_working, sites')
+          .eq('account_id', approver.accountId).eq('date', r.date).in('user_id', userIds).limit(1)
+        const rep = (reps ?? [])[0] as any
+        if (rep) {
+          const siteNames = ((rep.sites ?? []) as any[])
+            .map(s => (s?.siteName === '__other__' ? s?.customSiteName : s?.siteName) || '')
+            .filter(n => n && n !== '__unset__')
+          report = { is_working: rep.is_working ?? null, siteNames }
+        }
+      }
+    }
+    return json({
+      ok: true,
+      item: { ...r, worker_name: names.get(r.worker_id as string) ?? null },
+      mine: !!approver.workerId && r.worker_id === approver.workerId,
+      punches, report,
+    })
   }
 
   // ── 打刻の修正: 承認（管理者）──────────────────────────
