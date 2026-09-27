@@ -1571,6 +1571,9 @@ async function refreshOvertime() {
   // ★1回で取る（以前は isApproved と approvedAdjustment で同じ EF を2回叩いていた）
   const snap = await overtime.snapshot(d)
   if (seq !== overtimeSeq) return   // 追い越された＝この結果はもう古い
+  applyOvertimeSnapshot(snap)
+}
+function applyOvertimeSnapshot(snap: Awaited<ReturnType<typeof overtime.snapshot>>) {
   overtimeApprovedForDate.value = snap.status === 'approved'
   overtimeStatusForDate.value = snap.status
   overtimeReportedEnd.value = snap.status === 'pending' ? snap.reportedEndTime : null
@@ -1581,6 +1584,36 @@ async function refreshOvertime() {
   restorePendingEarlyStart()
 }
 watch([() => report.form.value.date, () => currentUser.value?.worker_id], refreshOvertime, { immediate: true })
+
+/**
+ * 送信直前に残業申請の状態を読み直す（2026-09-27）。
+ * ★なぜ要るか: 状態は画面を開いた時に非同期で読む。読み終わる前（＝まだ none）に定時を超えた時刻を選んで送ると、
+ *  承認待ちの日でも「定時へ丸めて入力時刻を申請側へ置く」処理（preparePendingOvertime）が飛び、
+ *  入力した残業時刻がそのまま日報に保存される＝承認前に給与へ入る（E2E が数回に1回落ちて発覚）。
+ * ★読めない時は送信を止める（none とみなして進めると同じ穴になる）。
+ * ★表示していた状態が「承認待ち／承認済み」から変わっていたら止めて見直してもらう（上限が狭まる向き）。
+ *  none→承認待ち等は丸めが効く安全な向きなのでそのまま進める。
+ */
+async function ensureOvertimeStatusFresh(): Promise<boolean> {
+  const d = report.form.value.date
+  const wid = currentUser.value?.worker_id ?? null
+  if (!wid || !d) return true
+  const before = overtimeStatusForDate.value
+  let snap: Awaited<ReturnType<typeof overtime.snapshot>>
+  try {
+    snap = await overtime.snapshot(d, { strict: true })
+  } catch {
+    alert(t('report.overtimeStatusFailed'))
+    return false
+  }
+  ++overtimeSeq   // 画面を開いた時の読み込みがまだ走っていても、こちらを正にする
+  applyOvertimeSnapshot(snap)
+  if (before !== 'none' && snap.status !== before) {
+    alert(t('report.overtimePendingChanged'))
+    return false
+  }
+  return true
+}
 
 /**
  * ★承認された休憩（休憩なし／短縮）を日報の休憩スナップショットに書き込む。
@@ -2795,7 +2828,9 @@ function restorePendingEarlyStart() {
     const m = parseMin(w.startTime)
     if (m < targetStart) { targetStart = m; target = w }
   })
-  if (!target || restoredEarlyStartRows.has(target)) return
+  // ★送信直前にシステムが固定開始へ丸めた行は戻さない。保存は欄を後から読む経路があり、丸めた後に
+  //  状態の読み直し（watch）が走ってここで戻すと、早出の時刻がそのまま保存される（2026-09-27 E2E で発覚）
+  if (!target || restoredEarlyStartRows.has(target) || systemFlooredRows.has(target)) return
   target.startTime = rep
   restoredEarlyStartRows.add(target)
 }
@@ -2835,7 +2870,8 @@ function restorePendingOvertimeEnd() {
     const m = parseMin(w.endTime)
     if (m > targetEnd) { targetEnd = m; target = w }
   })
-  if (!target || restoredOvertimeRows.has(target)) return
+  // ★送信直前にシステムが定時へ丸めた行は戻さない（早出と同じ理由。戻すと残業時刻がそのまま保存される）
+  if (!target || restoredOvertimeRows.has(target) || systemCappedRows.has(target)) return
   target.endTime = rep
   restoredOvertimeRows.add(target)
 }
@@ -3361,7 +3397,15 @@ async function handleSubmit() {
   // ── 承認待ちの残業（A-1・2026-09-24）: 定時を超えた入力を申請へ記録し、欄は定時へ丸める ──
   //  ★距離と同じくモード分岐より手前（新規・編集・期限後・有給不足の全経路に効かせる）。
   //  記録に失敗したらここで止める＝日報は送らない（入力した残業を無言で落とさない）。
+  if (!(await ensureOvertimeStatusFresh())) return
   if (!(await preparePendingOvertime())) return
+
+  // ── 有給の残不足（2026-09-27）: 残は「有給を選んだ瞬間」に非同期で読む。読み終わる前に送ると
+  //  needsPaidLeaveApproval が false のまま＝残0でも承認を挟まず有給で保存されていた（E2E で発覚）。
+  //  まだ読めていなければ、ここで読み終わってから分岐する（読めない時の扱いは refreshPaidLeaveRemaining のまま）。
+  if (!isEditMode.value && isWorkingStr.value === 'paid_leave' && paidLeaveRemaining.value === null) {
+    await refreshPaidLeaveRemaining()
+  }
 
   // ── 編集モード: Supabase のみ更新（GAS には再送しない）──
   if (isEditMode.value) {

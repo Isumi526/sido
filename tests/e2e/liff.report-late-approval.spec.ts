@@ -76,7 +76,9 @@ test.describe('期限切れの新規日報の承認制（liff）', () => {
     //  有給・稼働なしの日でも現場ブロックを出すようにしたため、「最初のselect」
     //  「最後のcheckbox」が別の要素を指すようになった。このテストの主題は
     //  期限切れの保留化であって、フォームの並び順ではない。
-    await page.getByTestId('work-status').selectOption('paid_leave')
+    // ★稼働なしで送る（2026-09-27）。以前は有給を選んでいたが、この作業員は有給の残が0＝本来は「残不足の承認」に
+    //  回る日報で、残を読み終わる前に送れていたから即反映になっていただけだった（送信前に残を待つよう直した）。
+    await page.getByTestId('work-status').selectOption('off')
     // 送信前の記入忘れ確認（これを入れないと送信ボタンが有効にならない）
     await page.getByTestId('omission-confirm').check()
     await expect(page.locator('button[type="submit"].btn-submit'), '理由が空なら押せない').toBeDisabled()
@@ -189,7 +191,9 @@ test.describe('期限切れの新規日報の承認制（liff）', () => {
     //  有給・稼働なしの日でも現場ブロックを出すようにしたため、「最初のselect」
     //  「最後のcheckbox」が別の要素を指すようになった。このテストの主題は
     //  期限切れの保留化であって、フォームの並び順ではない。
-    await page.getByTestId('work-status').selectOption('paid_leave')
+    // ★稼働なしで送る（2026-09-27）。以前は有給を選んでいたが、この作業員は有給の残が0＝本来は「残不足の承認」に
+    //  回る日報で、残を読み終わる前に送れていたから即反映になっていただけだった（送信前に残を待つよう直した）。
+    await page.getByTestId('work-status').selectOption('off')
     // 送信前の記入忘れ確認（これを入れないと送信ボタンが有効にならない）
     await page.getByTestId('omission-confirm').check()
     await page.locator('button[type="submit"].btn-submit').click()

@@ -73,6 +73,7 @@
   "overtimePendingIfApprovedBoth": "If approved → counted as work from {start} to {end}",
   "overtimePendingIfNotBoth": "Until approved / if not approved → counted only for the fixed hours, {start}–{end}",
   "overtimeReportFailed": "Could not save your overtime end time. Check your connection and submit again. (Your report has not been sent yet.)",
+  "overtimeStatusFailed": "Could not check your overtime request status. Check your connection and submit again. (Your report has not been sent yet.)",
   "overtimePendingChanged": "Your overtime request status has changed (approved, rejected, etc.). Please review and submit again. (Your report has not been sent yet.)",
   "siteNamePlaceholder": "Enter site name (e.g. Shibuya Project)",
   "subcontractorOnly": "Partner / expenses / misc only (I did not work)",

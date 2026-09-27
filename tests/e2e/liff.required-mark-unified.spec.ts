@@ -16,10 +16,28 @@
 //  ★必須バリデーション自体は変えていない（見た目だけ）。それも併せて確認する。
 // ============================================================
 import { test, expect } from './liff-test'
+import { rest, restSrv, getAccountId } from './helpers'
 
-const EDIT_DATE = '2026-10-16'
+// ★締切（3日）を過ぎた日の編集＝承認に回る編集。編集理由が必須になるのはこの時だけ
+//  （2026-09 に「期限内の即反映は理由任意」に変わった。以前の 2026-10-16＝未来日だと理由は任意で、このテストが古くなっていた）
+const EDIT_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo' }).format(new Date(Date.now() - 10 * 86400000))
 
 test.describe('必須表示の統一', () => {
+  // 編集で開く日の日報を用意する（無いと編集画面がその日を読み込めず、締切の判定が今日のままになる）
+  let userId = ''
+  test.beforeAll(async () => {
+    const accountId = await getAccountId()
+    userId = (await rest('users?line_user_id=eq.dev-user-id&select=id'))[0].id
+    await restSrv(`daily_reports?user_id=eq.${userId}&date=eq.${EDIT_DATE}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv('daily_reports', {
+      method: 'POST', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ account_id: accountId, user_id: userId, date: EDIT_DATE, is_working: false, note: 'E2E必須表示', sites: [] }),
+    })
+  })
+  test.afterAll(async () => {
+    await restSrv(`daily_reports?user_id=eq.${userId}&date=eq.${EDIT_DATE}&note=eq.${encodeURIComponent('E2E必須表示')}`, { method: 'DELETE' }).catch(() => {})
+  })
+
   test('★必須マークは全部「※」を含む赤文字（バッジ/カッコ書きが混ざらない）', async ({ page }) => {
     await page.goto('/report', { waitUntil: 'networkidle' })
     await expect(page.locator('.date-fixed')).toBeVisible({ timeout: 20000 })

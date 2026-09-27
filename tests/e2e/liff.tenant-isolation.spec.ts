@@ -4,7 +4,7 @@
 // テストアカウントのデータに混ざらない（liff露出表はRLS無効=2b前ゆえアプリ側の account 解決が防御線）。
 import { execSync } from 'node:child_process'
 import { test, expect } from './liff-test'
-import { SUPABASE_URL, ANON_KEY, DB_URL, restSrv } from './helpers'
+import { SUPABASE_URL, ANON_KEY, DB_URL, restSrv, authAdmin } from './helpers'
 
 const EMAIL = 'hiro.tenant.e2e@example.com'
 const PASS = 'tenant-iso-1234'
@@ -23,6 +23,11 @@ test.beforeAll(async () => {
     `psql "${DB_URL}" -c "update auth.users set raw_app_meta_data = coalesce(raw_app_meta_data,'{}'::jsonb) || jsonb_build_object('account_slug','sample-construction','worker_id','${worker}','role','worker'), email_confirmed_at = coalesce(email_confirmed_at, now()) where email='${EMAIL}'"`,
     { stdio: 'ignore' },
   )
+  // ★パスワードも毎回入れ直す（2026-09-27）。signup は既存ユーザーのパスワードを変えない一方、
+  //  この作業員で作業員アプリにログインする他の spec（helpers.workerSession）が同じ認証ユーザーの
+  //  パスワードを書き換えるので、順番次第で invalid_credentials になっていた
+  const uid = (await (await authAdmin(`admin/users?per_page=1000`)).json())?.users?.find((u: any) => u.email === EMAIL)?.id
+  if (uid) await authAdmin(`admin/users/${uid}`, { method: 'PUT', body: JSON.stringify({ password: PASS }) })
   // ★先に「前回このspecが束ねた作業員」を外す。上の workers?limit=1 は order 無しで
   //  実行のたびに違う作業員を返すので、外さずに付けるとログイン1つに作業員が積み上がる。
   //  それは 2026-08-10 の本番障害と同じ壊れた状態で、workers_account_auth_user_unique にも触れる。

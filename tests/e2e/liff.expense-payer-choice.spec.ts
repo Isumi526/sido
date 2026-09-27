@@ -14,7 +14,9 @@ import { test, expect } from './liff-test'
 import { rest, restSrv, getDevUserId, getAccountId, fillNoReceiptReasons } from './helpers'
 
 const TS = Date.now()
-const DATE = '2026-10-24'
+// ★締切（3日）を過ぎた日＝編集は承認待ちに入る（保存内容を保留の payload で見るため）。
+//  以前の未来日は「期限内の即反映」で保留に入らず、このテストが古くなっていた（2026-09-27）
+const DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo' }).format(new Date(Date.now() - 13 * 86400000))
 
 let uid = ''
 let accountId = ''

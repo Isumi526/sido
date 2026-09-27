@@ -11,6 +11,11 @@
 import { test, expect } from '@playwright/test'
 import { SUPABASE_URL, ANON_KEY, restSrv, authAdmin } from './helpers'
 
+// ★未ログイン状態から始める（2026-09-27）。e2e 管理者でログインしたまま /login?id= で別テナントに入り直すと、
+//  ログイン画面が先に signOut()（既定＝全端末）を呼び、e2e 管理者の全セッションが失効する。
+//  以後のテスト（作業区分マスタ等）が EF で 401 になり一覧が空＝全体実行でだけ落ちていた。
+test.use({ storageState: { cookies: [], origins: [] } })
+
 const TS = Date.now()
 
 async function makeTrialTenant(opts: { feeYen: number | null; daysLeft: number }) {
