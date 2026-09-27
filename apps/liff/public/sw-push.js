@@ -1,5 +1,5 @@
 // ============================================================
-//  sw-push.js — 現場チャットの新着を通知する Service Worker
+//  sw-push.js — スマホ通知（現場チャット・承認のお願い・A-1 以降は全員向けの通知）の Service Worker
 //
 //  ★これは public/ に置く素の JS（バンドルされない）。SW は自分自身のURLを
 //   スコープの基準にするので、ルート直下に置いてサイト全体をスコープにする。
@@ -39,6 +39,15 @@ self.addEventListener('push', (event) => {
   // クリックで開く先。招待リンク経由のゲストは token 付きURLしか開けないので
   // 配信側が組み立てたURLをそのまま使う。
   const url   = payload.url || '/'
+
+  // ★アイコンの数字（A-1・2026-09-27）: サーバーが宛先ごとに数えた数（未読のお知らせ＋承認待ち）を出す。
+  //  アプリを開けば plugins/app-badge.client.ts が正確な数に直す。対応していない端末では何もしない。
+  if (typeof payload.badge === 'number' && self.navigator && typeof self.navigator.setAppBadge === 'function') {
+    try {
+      if (payload.badge > 0) self.navigator.setAppBadge(payload.badge).catch(() => {})
+      else self.navigator.clearAppBadge().catch(() => {})
+    } catch { /* 無視 */ }
+  }
 
   event.waitUntil(
     self.registration.showNotification(title, {

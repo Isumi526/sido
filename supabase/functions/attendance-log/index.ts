@@ -702,6 +702,8 @@ Deno.serve(async (req) => {
   //  pending に戻す（late と同じ形・is_late は付けない）。無ければ通常の新規申請と同じ。
   //  ★worker_id は caller 本人で固定。
   // ── 承認者の端末のプッシュ購読（A-3・2026-09-24）──
+  //  ★2026-09-27（A-1）: 購読は全員向けの worker_push_subscriptions に一本化した（新しい画面は push-settings EF を使う）。
+  //   ここは古い版のアプリが端末に残っている間の互換の窓口。
   //  承認待ち（残業申請など）を承認者の端末へ通知するための購読。作業員アプリ(LIFF)で登録する。
   //  ★worker_id / account_id はクライアントから受け取らず、検証済みの身元（caller）で固定する。
   //  ★登録できるのは今この瞬間に承認者(APPROVER_ROLES)である人だけ。送る側(approver-push)でも送信時に引き直す。
@@ -714,7 +716,7 @@ Deno.serve(async (req) => {
     if (body.action === 'approver-push-status') {
       let subscribed = false
       if (endpoint) {
-        const { data: s } = await svc.from('approver_push_subscriptions').select('id')
+        const { data: s } = await svc.from('worker_push_subscriptions').select('id')
           .eq('endpoint', endpoint).eq('worker_id', caller.workerId).maybeSingle()
         subscribed = !!s?.id
       }
@@ -724,7 +726,7 @@ Deno.serve(async (req) => {
     if (body.action === 'approver-push-unsubscribe') {
       if (!endpoint) return json({ ok: false, error: 'endpoint_required' }, 400)
       // ★自分の購読だけ消せる（他人の端末の endpoint を渡されても触れない）
-      await svc.from('approver_push_subscriptions').delete().eq('endpoint', endpoint).eq('worker_id', caller.workerId)
+      await svc.from('worker_push_subscriptions').delete().eq('endpoint', endpoint).eq('worker_id', caller.workerId)
       return json({ ok: true })
     }
 
@@ -734,7 +736,7 @@ Deno.serve(async (req) => {
     const auth   = typeof body.auth === 'string' ? body.auth : ''
     if (!/^https:\/\//.test(endpoint) || !p256dh || !auth) return json({ ok: false, error: 'bad_subscription' }, 400)
     // 同じ端末は1行。別の人がその端末でログインし直したら持ち主を付け替える（前の人には届かなくなる）
-    const { error } = await svc.from('approver_push_subscriptions').upsert({
+    const { error } = await svc.from('worker_push_subscriptions').upsert({
       account_id: caller.accountId, worker_id: caller.workerId, endpoint, p256dh, auth,
       last_seen_at: new Date().toISOString(),
     }, { onConflict: 'endpoint' })

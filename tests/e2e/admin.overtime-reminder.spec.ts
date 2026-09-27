@@ -114,7 +114,7 @@ test('★プッシュは送る時点で承認者の端末だけ（権限が外�
   const u = await restSrv('users?line_user_id=eq.dev-user-id&select=worker_id')
   const wid = u[0].worker_id
   const ep = `https://push.example.test/reminder-${Date.now()}`
-  await restSrv('approver_push_subscriptions', {
+  await restSrv('worker_push_subscriptions', {
     method: 'POST', headers: { Prefer: 'return=minimal' },
     body: JSON.stringify({ account_id: accountId, worker_id: wid, endpoint: ep, p256dh: 'p', auth: 'a' }),
   })
@@ -123,12 +123,23 @@ test('★プッシュは送る時点で承認者の端末だけ（権限が外�
     const r1 = (await remind({ slot: 'evening' })).body.results[0]
     expect(r1.push.targets, '現場責任者（承認者）の端末は宛先').toBe(1)
 
+    // ★A-1（2026-09-27）: 設定で「承認のお願い」をオフにした人には送らない
+    await restSrv('worker_notification_prefs', {
+      method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ account_id: accountId, worker_id: wid, kind: 'approval', enabled: false }),
+    })
+    await clearLogs()
+    const rOff = (await remind({ slot: 'evening' })).body.results[0]
+    expect(rOff.push.targets, '★承認のお願いをオフにした人には送らない').toBe(0)
+    await restSrv(`worker_notification_prefs?worker_id=eq.${wid}`, { method: 'DELETE' })
+
     await restSrv(`workers?id=eq.${wid}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ permission_role: 'worker' }) })
     await clearLogs()
     const r2 = (await remind({ slot: 'evening' })).body.results[0]
     expect(r2.push.targets, '★権限が外れたら古い購読には送らない').toBe(0)
   } finally {
     await restSrv(`workers?id=eq.${wid}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ permission_role: 'site_manager' }) })
-    await restSrv(`approver_push_subscriptions?endpoint=eq.${encodeURIComponent(ep)}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`worker_push_subscriptions?endpoint=eq.${encodeURIComponent(ep)}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`worker_notification_prefs?worker_id=eq.${wid}`, { method: 'DELETE' }).catch(() => {})
   }
 })

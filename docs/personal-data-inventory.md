@@ -68,6 +68,7 @@
 | 有給 | `paid_leave_grants` / 日報の `leave_type` | 付与・消化 |
 | チャット | `site_chat_messages` | 本文と添付 |
 | LINE連携 | `users.line_user_id` | LINEの利用者ID（本人特定に使う。氏名や電話は取得しない） |
+| スマホ通知 | `worker_push_subscriptions` / `worker_notification_prefs` | 通知を受け取る端末の送り先（ブラウザが発行する URL と暗号鍵。端末の電話番号や端末名は取得しない）と、受け取る通知の種類のオン/オフ（2026-09-27 追加） |
 
 ---
 
