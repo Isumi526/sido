@@ -76,6 +76,9 @@ test('★現場が大量にあってもプレビューが出る（クエリURL�
     const rows = await restSrv('sites', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(chunk) })
     for (const r of (rows ?? [])) made.push(r.id)
   }
+  // ★未読の状態から始める（2026-09-27）。直前のテストが詳細を開いて既読にしているので、
+  //  このままだとナビの未読バッジが出ないのが正しい状態＝ここで落ちていた（順番に依存していた）
+  await restSrv(`site_chat_last_read?site_id=eq.${siteWithMsgId}`, { method: 'DELETE' }).catch(() => {})
   try {
     await page.goto('/chats', { waitUntil: 'networkidle' })
     // 取得エラーを黙らせない（出ていたら失敗させる）
