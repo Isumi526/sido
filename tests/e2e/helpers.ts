@@ -65,12 +65,6 @@ export const ADMIN_LOGIN_EMAIL = `${ADMIN_LOGIN_ID}@email.com`
 export const ADMIN_URL = process.env.ADMIN_URL || 'http://localhost:3002'
 export const LIFF_URL  = process.env.LIFF_URL  || 'http://localhost:3000'
 
-const headers = {
-  apikey: ANON_KEY,
-  Authorization: `Bearer ${ANON_KEY}`,
-  'Content-Type': 'application/json',
-}
-
 // フロント(ブラウザ=JSTローカル時刻)基準の「今日」(YYYY-MM-DD)。
 // new Date().toISOString().slice(0,10) はUTC日付を返すため、深夜0-9時JSTは
 // フロントの「今日」と1日ズレる(2026-07-21未明のE2E実行で判明)。日付シードは必ずこちらを使う。
@@ -92,36 +86,16 @@ export function yesterdayNoonJST(): string {
 }
 
 /**
- * 公開キー(anon)から権限を全部剥がした表。シードは service_role で行う。
+ * テストの下ごしらえ・後始末・検証用の REST。**読み書きとも service_role**（RLS を跨ぐ）。
  *
- * ★ここに足すのは「本番で anon を締め出した」時だけ。テストが 401 で落ちたから
- *  逃がす場所ではない。アプリ側は Edge Function 経由に移した前提で、
- *  テストハーネスだけが直接 REST を使う。
+ * ★2026-09-26 まで: 読みは anon、anon を締め出した表だけ service_role（ANON_LOCKED_TABLES）に切り替えていた。
+ *  RLS第2段（A: anon の書き込み剥奪 2026-09-26 本番適用／B: anon の読みも閉じる）で、public の表は
+ *  anon から読めも書けもしなくなる。ハーネスが anon で読む理由は無いので、表ごとの例外をやめて一本化した。
  * ★「anon で読めない/書けない」こと自体を検証する spec は、この rest() ではなく
- *  各 spec 内の anonFetch を使うこと（ここを通すと service_role に化けて素通りする）。
+ *  各 spec 内の anonFetch（Authorization: Bearer ANON_KEY）を使うこと（ここを通すと service_role で素通りする）。
  */
-const ANON_LOCKED_TABLES = new Set([
-  'attendance_logs', 'overtime_requests', 'report_edit_grants',
-  'sites', 'contractors', 'site_subcontractors',
-  'daily_reports',   // 2026-08-16 RLS化。読み書きは daily-reports-read / save-daily-report EF 経由
-  'work_categories', 'site_category_hours',   // 2026-08-16 新設。最初からRLS有効・EF(master-data)経由
-  // ★2026-08-30: ローカルの anon 権限を本番に合わせた（本番は workers への anon 書込を
-  //  active/name/role/unit_price の4列に限定、push_subscriptions は権限ゼロ）。
-  //  テストの下ごしらえ（permission_role を持つ承認者を作る等）は service_role で行う。
-  'workers', 'push_subscriptions',
-  // ★2026-08-30: 当初 using(true) にしていて、公開キーで全テナントのルール本文が読めていた。
-  //  LIFFの打刻画面は attendance-log EF(service_role)経由で受け取るので anon 直読みは要らない。
-  'account_attendance_rules',
-])
-
 export async function rest(pathAndQuery: string, init: RequestInit = {}): Promise<any> {
-  const table = pathAndQuery.split('?')[0].split('/')[0]
-  // ★書き込み（POST/PATCH/PUT/DELETE）は表を問わず service_role で行う（2026-09-26・RLS第2段A）。
-  //  本番は anon の書き込み権限を全表から剥がした。テストの下ごしらえ・後始末はハーネスの都合であって
-  //  「anon で書けること」を確かめているのではないので、anon に書かせる理由が無い。
-  //  読み（GET）は従来どおり anon のまま＝anon で読めなくなった表は ANON_LOCKED_TABLES に足す。
-  const isWrite = (init.method ?? 'GET').toUpperCase() !== 'GET'
-  const base = isWrite || ANON_LOCKED_TABLES.has(table) ? srvHeaders : headers
+  const base = srvHeaders
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${pathAndQuery}`, {
     ...init,
     headers: { ...base, ...(init.headers || {}) },

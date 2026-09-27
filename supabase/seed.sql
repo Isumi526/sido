@@ -165,8 +165,10 @@ alter default privileges in schema public grant select, insert, update, delete o
 -- ★2026-09-26（RLS第2段A・migration 20260923120000_revoke_anon_write）: anon の書き込み
 --  （INSERT/UPDATE/DELETE/TRUNCATE・列単位の INSERT/UPDATE も）を全表から剥がした。ここに残るのは読み（SELECT）だけ。
 --  書き込みの grant を足し戻さないこと（db reset のたびに剥奪が打ち消される）。
+-- ★2026-09-27（RLS第2段B・migration 20260927100000_rls_stage2b_read_lock）: 26 表（accounts / users / workers /
+--  subcontractors / settings / schedules / site_chat_* ほか）は RLS 有効化＋anon の SELECT も剥奪した。ここに残るのは
+--  それ以外の表の読みだけ。26 表の select を足し戻さないこと。
 
-grant select on public.accounts to anon;
 grant select on public.contractor_contacts to anon;
 grant select on public.estimate_items to anon;
 grant select on public.estimate_material_prices to anon;
@@ -174,26 +176,4 @@ grant select on public.estimate_price_revisions to anon;
 grant select on public.estimate_projects to anon;
 grant select on public.estimate_sends to anon;
 grant select on public.estimate_trades to anon;
-grant select on public.expense_items to anon;
-grant select on public.expense_settlements to anon;
-grant select on public.schedule_categories to anon;
-grant select on public.schedule_edits to anon;
-grant select on public.schedule_group_members to anon;
-grant select on public.schedule_groups to anon;
-grant select on public.schedule_notifications to anon;
-grant select on public.schedules to anon;
-grant select on public.settings to anon;
-grant select on public.site_attachments to anon;
-grant select on public.site_chat_last_read to anon;
-grant select on public.site_chat_mentions to anon;
-grant select on public.site_chat_messages to anon;
-grant select on public.site_rules to anon;
-grant select on public.site_shares to anon;
-grant select on public.subcontractor_comments to anon;
 grant select on public.subcontractor_edit_logs to anon;
-grant select on public.subcontractor_trade_types to anon;
-grant select (account_id, active, category, email, id, is_deleted, mobile_phone, name, office_phone, representative_name, service_areas, sort_order) on public.subcontractors to anon;
-grant select on public.trade_type_presets to anon;
-grant select on public.users to anon;
-grant select on public.worker_proxies to anon;
-grant select (account_id, active, birth_date, can_apply_personal_expense, created_at, id, name, name_kana, permission_role, report_start_date, role, sort_order) on public.workers to anon;

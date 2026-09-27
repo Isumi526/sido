@@ -9,7 +9,7 @@
 //  [[project_sido]]）。
 // ============================================================
 import { test, expect } from '@playwright/test'
-import { SUPABASE_URL, ANON_KEY, SERVICE_ROLE_KEY, getAccountId } from './helpers'
+import { SUPABASE_URL, ANON_KEY, SERVICE_ROLE_KEY, ACCOUNT_SLUG, getAccountId } from './helpers'
 
 const SM_EMAIL = 'worker01.login.e2e@example.com'
 const SM_PASS  = 'worker-login-1234'
@@ -58,6 +58,13 @@ test.describe('作業員マスタ 詳細情報編集ガード', () => {
       }).then(r => r.json())
       officeWorkerId = created[0].id
     }
+
+    // ★2026-09-27（RLS第2段B）: RLS 下では JWT の account_slug で自社が決まる。signup だけだと app_metadata が空で、
+    //  管理画面が自分の作業員の行を読めず作業員扱い（画面に入れない）になる。本番は作業員の発行時に必ず付く。
+    await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${authUserId}`, {
+      method: 'PUT', headers: srvHeaders,
+      body: JSON.stringify({ app_metadata: { account_slug: ACCOUNT_SLUG, worker_id: officeWorkerId } }),
+    })
   })
 
   test.afterAll(async () => {
