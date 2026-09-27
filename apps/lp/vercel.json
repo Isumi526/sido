@@ -1,4 +1,27 @@
 {
   "cleanUrls": true,
-  "trailingSlash": false
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        }
+      ]
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "www.genlinks.app"
+        }
+      ],
+      "destination": "https://genlinks.app/:path*",
+      "permanent": true
+    }
+  ]
 }

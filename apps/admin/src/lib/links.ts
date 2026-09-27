@@ -5,14 +5,17 @@
 
 // 作業員アプリ(LIFF)のURLを返す。
 //  優先: VITE_LIFF_URL（owner が明示設定）→ host から推定。
-//  本番ルーティング: genlinks.app/admin（管理）から見た作業員アプリは genlinks.app/（同一オリジンのルート）。
+//  独自ドメイン（2026-09-28 配置）: genlinks.app＝紹介ページ（LP）／app.genlinks.app＝作業員アプリ（/admin で管理画面も同じオリジン）／
+//  admin.genlinks.app＝管理画面（PC 向け・別オリジン）。
 export function liffAppUrl(): string {
   const envUrl = (import.meta.env.VITE_LIFF_URL as string | undefined)?.trim()
   if (envUrl) return envUrl
   if (typeof window === 'undefined') return '/'
   const host = window.location.host
-  // 独自ドメイン構成（genlinks.app/ = 作業員・/admin = 管理）→ 作業員アプリは同一オリジンのルート
-  if (host === 'genlinks.app' || host.endsWith('.genlinks.app')) return window.location.origin + '/'
+  // 管理画面の独自ドメイン → 作業員アプリの独自ドメインへ
+  if (host === 'admin.genlinks.app') return 'https://app.genlinks.app/'
+  // 作業員アプリのドメインの /admin で開いている時 → 作業員アプリは同一オリジンのルート（ログインも共有）
+  if (host === 'app.genlinks.app') return window.location.origin + '/'
   // 現状の別ドメイン本番（admin → liff）
   if (host.includes('sido-admin')) return 'https://sido-liff.vercel.app/'
   // ローカル開発（admin 3001 → liff 3000）
