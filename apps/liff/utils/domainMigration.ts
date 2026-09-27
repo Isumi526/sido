@@ -2,11 +2,11 @@
 //  utils/domainMigration.ts — 独自ドメイン(genlinks.app)移行の旧ドメイン案内＋リダイレクト（liff側）
 //  旧 liff ドメインでアクセスされたら「移行しました・5秒後に新URLへ」を出して遷移する。
 //  ※ NEW_LIFF_ORIGIN が空の間は完全に無効（本番影響ゼロ）。owner が新ドメイン稼働後に値を入れて有効化する。
-//  ※ 配信方式 A=Vercel rewrites（genlinks.app/ = liff）。DNS / Vercel / LIFF許可ドメインは owner 作業。
+//  ※ 配置（2026-09-28）: genlinks.app＝LP／app.genlinks.app＝作業員アプリ（/admin＝管理画面）。ルートは LP になったので作業員アプリは app.
 //  ※ LIFF経由(liff.line.me)のアクセスは host が異なるため対象外（旧vercel直アクセスのみ案内）。
 // ============================================================
 
-// 新ドメインの liff ベースURL。空 = 移行案内オフ（既定）。例: 'https://genlinks.app'
+// 新ドメインの liff ベースURL。空 = 移行案内オフ（既定）。例: 'https://app.genlinks.app'
 export const NEW_LIFF_ORIGIN: string = ''
 
 // 旧 liff ドメイン（ここで直アクセスされた時だけ案内を出す）。
