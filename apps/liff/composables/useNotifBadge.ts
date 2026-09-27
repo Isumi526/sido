@@ -33,7 +33,20 @@ export const unreadScheduleCount = ref(0)
 //  この2つを1つのリストに混ぜると、読み飛ばした瞬間に「やること」が消えて
 //  誰も対応しないまま残る（＝送り出し資料が確認されない）。
 //  ベルのバッジは合計を出す（気づく入口は1つでいい）。
-export const totalBadgeCount = computed(() => unreadNotifCount.value + pendingDocCount.value + punchTodoItems.value.length)
+export const totalBadgeCount = computed(() => unreadNotifCount.value + pendingDocCount.value + punchTodoItems.value.length + approvalPendingCount.value)
+/** 「やること」の件数（タブのバッジ）。打刻のお願い・未承認の現場書類・承認待ち */
+export const todoCount = computed(() => pendingDocCount.value + punchTodoItems.value.length + approvalPendingCount.value)
+
+// ── 承認待ちの残業申請（承認者だけ・A-1・2026-09-27）──
+// ★設計「承認や申請の処理をやることで完結＋通知の統一」: アイコンの数字＝ベルの数（確認事項#5=A）。承認者に届く
+//  「残業申請が届きました」の通知と数を揃えるため、承認待ちを「やること」に1行で数える。
+//  押すと同じドメインの管理画面の残業承認が開く（アプリ内で承認できるようにするのは A-2）。
+//  数は EF push-settings の badge（承認者でなければ 0・自分の申請は数えない）。
+export const approvalPendingCount = ref(0)
+export async function refreshApprovalBadge(): Promise<void> {
+  const push = useWorkerPush()   // ★await より前に解決する（注入が切れないように）
+  try { approvalPendingCount.value = await push.approvalPending() } catch { approvalPendingCount.value = 0 }
+}
 
 // ── 打刻催促の「やること」（A-3・2026-09-20）──
 // ★お知らせ（既読で消える）ではなく、状態から出す: 予定が今もある／対応する打刻がまだ無い／当日のうち。
