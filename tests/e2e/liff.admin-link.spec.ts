@@ -16,11 +16,12 @@ test.beforeAll(async () => {
 })
 test.afterAll(async () => { await setRole('site_manager') })
 
-test('★現場責任者のホームとメニューに「管理画面」が出て、/admin/ を指す', async ({ page }) => {
+test('★現場責任者のホームとメニューに「管理画面」が出て、/admin を指す', async ({ page }) => {
   await page.goto('/', { waitUntil: 'networkidle' })
   const card = page.getByTestId('menu-admin').first()
   await expect(card, 'ホームの項目').toBeVisible({ timeout: 20000 })
-  await expect(card).toHaveAttribute('href', '/admin/')
+  // NuxtLink は末尾の / を落とす（/admin）。本番の中継（/admin/:path*）も管理画面の判定も /admin で効く
+  await expect(card).toHaveAttribute('href', /^\/admin\/?$/)
 })
 
 test('★作業員には「管理画面」を出さない', async ({ page }) => {
