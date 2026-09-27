@@ -125,6 +125,10 @@
           <div class="sidebar-user-name">{{ currentWorkerName || currentUser?.email || '—' }}</div>
           <div class="sidebar-user-role">{{ roleLabel(currentRole) }}</div>
         </div>
+        <!-- 作業員アプリ（作業員画面）への入口（2026-09-27）。同じドメイン（/admin/ の上）で開いていればログインしたまま -->
+        <a class="sidebar-liff-link" :href="liffUrl" data-testid="sidebar-liff-link">
+          <span class="material-symbols-rounded">smartphone</span>作業員アプリを開く
+        </a>
         <button class="btn-logout" @click="handleLogout">ログアウト</button>
       </div>
     </nav>
@@ -252,6 +256,9 @@ async function handleLogout() {
 .drawer-close { display: none; background: none; border: none; color: #888; cursor: pointer; padding: 4px; }
 .sidebar-account { border-top: 1px solid #2a2a2a; padding: 12px 16px; margin: 0 4px; display: flex; flex-direction: column; gap: 10px; }
 .sidebar-user { min-width: 0; }
+.sidebar-liff-link { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px; border: 1px solid #3a3a3a; border-radius: 8px; color: #6ee7b7; font-size: 12px; font-weight: 700; text-decoration: none; }
+.sidebar-liff-link:hover { background: #1f2937; }
+.sidebar-liff-link .material-symbols-rounded { font-size: 18px; }
 .sidebar-user-name { font-size: 13px; font-weight: 700; color: #eee; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sidebar-user-role { font-size: 11px; color: #888; }
 .nav-list { list-style: none; display: flex; flex-direction: column; flex: 1; padding: 0; margin: 0; overflow-y: auto; }
