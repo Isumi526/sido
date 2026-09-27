@@ -3400,6 +3400,13 @@ async function handleSubmit() {
   if (!(await ensureOvertimeStatusFresh())) return
   if (!(await preparePendingOvertime())) return
 
+  // ── 有給の残不足（2026-09-27）: 残は「有給を選んだ瞬間」に非同期で読む。読み終わる前に送ると
+  //  needsPaidLeaveApproval が false のまま＝残0でも承認を挟まず有給で保存されていた（E2E で発覚）。
+  //  まだ読めていなければ、ここで読み終わってから分岐する（読めない時の扱いは refreshPaidLeaveRemaining のまま）。
+  if (!isEditMode.value && isWorkingStr.value === 'paid_leave' && paidLeaveRemaining.value === null) {
+    await refreshPaidLeaveRemaining()
+  }
+
   // ── 編集モード: Supabase のみ更新（GAS には再送しない）──
   if (isEditMode.value) {
     if (editSubmitting.value) return
