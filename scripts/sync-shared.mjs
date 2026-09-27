@@ -163,6 +163,14 @@ const SHARES = [
     ],
   },
   {
+    // 協力会社請求の「毎月定額」の日付の規則（登録日・月末寄せ・今月分を作るか）。画面の「次回登録日」と EF の作成判定を揃える
+    src: 'shared/recurring-invoice.ts',
+    dests: [
+      'apps/admin/src/lib/recurring-invoice.gen.ts',
+      'supabase/functions/_shared/recurring-invoice.gen.ts',
+    ],
+  },
+  {
     // 無償満了日の計算。admin(告知UI・アカウント発行)と EF(サーバ側判定)で同じ結果にならないと
     // 「画面は満了と出たのにサーバは無償のまま」のような食い違いが起きる（法的な通知起点）
     src: 'shared/billing-trial.ts',

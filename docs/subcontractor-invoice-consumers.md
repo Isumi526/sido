@@ -28,6 +28,7 @@
 | `supabase/functions/subcontractor-portal` | 請求を作る側。**常に `tax_mode='inclusive'`＋`tax_rate=10`**（業者には税込で提示しているため） | 書き込み側 |
 | `subcontractor_invoices.tax_override`（2026-09-22） | 消費税の手入力上書き（請求書の記載どおりに）。NULL=計算値 | `taxTotalOf/netTotalOf/grossTotalOf(items, mode, override)` の第3引数。**税込を出す所は必ず渡す**（一覧・モーダル・注文書残額）。税抜の原価（`netAmountOf`）は行単位なので影響なし |
 | `supabase/functions/analyze-invoice` | PDFから `tax_mode` を推定して返す（DBには書かない） | 判定側 |
+| `supabase/functions/recurring-invoices`（2026-09-27） | 毎月定額のひな形（`subcontractor_invoice_templates`）から今月分の請求を作る。**通常の請求と同じ表・同じ `tax_mode`/`tax_override`/明細の形**で入る（`source='recurring'`・`recurring_template_id`・`recurring_period`）＝集計側の変更は不要 | 書き込み側。ひな形の明細は `amount` の意味もそのまま引き継ぐ（`tax_mode` と対で持つ） |
 
 ## 区分（商社/業者）の分岐
 原価の列分けは `subcontractors.category === '商社'` のみ商社、**それ以外（業者・未区分）は業者**。

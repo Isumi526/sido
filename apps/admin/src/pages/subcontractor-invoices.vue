@@ -23,6 +23,37 @@
       <span v-if="overdueCount" class="overdue-note"><span class="material-symbols-rounded" style="font-size:1em;vertical-align:middle;line-height:1">warning</span> 支払期限超過 {{ overdueCount }} 件</span>
     </div>
 
+    <!-- ★毎月の定額（2026-09-27 尾崎さん）: 今月に自動登録した請求を知らせる。請求が来なかった月は開いて削除してもらう
+         （自動登録にした分、「来ていない請求が集計に入る」を人の目で止める入口） -->
+    <div v-if="recurringThisMonth.length" class="recurring-banner" data-testid="recurring-banner">
+      <span class="material-symbols-rounded" style="font-size:1.1em;vertical-align:middle">event_repeat</span>
+      毎月の定額から、今月の請求を {{ recurringThisMonth.length }} 件 自動で登録しました。請求が来ていない場合は、開いて削除してください。
+    </div>
+    <details v-if="templates.length" class="recurring-card" data-testid="recurring-card">
+      <summary>毎月の定額（{{ templates.length }}件）</summary>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>業者</th><th>件名</th><th class="num">金額(税込)</th><th>毎月</th><th>期間</th><th>次回の登録</th><th>状態</th><th></th></tr></thead>
+          <tbody>
+            <tr v-for="t in templates" :key="t.id" :data-testid="`recurring-row-${t.id}`">
+              <td class="bold">{{ t.vendor_name }}</td>
+              <td>{{ t.title ?? '—' }}</td>
+              <td class="num">{{ yen(templateGross(t)) }}</td>
+              <td>{{ t.day_of_month }}日付</td>
+              <td>{{ t.start_period }}〜{{ t.end_period ?? '' }}</td>
+              <td :data-testid="`recurring-next-${t.id}`">{{ templateNext(t) ?? '—' }}</td>
+              <td><span class="badge" :class="t.active ? 'paid' : 'none'">{{ t.active ? '自動登録中' : '停止中' }}</span></td>
+              <td class="actions-cell">
+                <button class="btn-mini" :data-testid="`recurring-toggle-${t.id}`" @click="toggleTemplate(t)">{{ t.active ? '一時停止' : '再開' }}</button>
+                <button class="btn-mini danger" :data-testid="`recurring-delete-${t.id}`" @click="deleteTemplate(t)">削除</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="hint-sm">金額や内容を変えたい時は、自動で登録された請求を開いて直し、「この内容を来月以降のひな形に反映」を押してください。登録済みの請求は変わりません。</p>
+    </details>
+
     <!-- 現場×業者で絞り込み → まとめてダウンロード -->
     <div v-if="!loading && invoices.length" class="filter-bar" data-testid="invoice-filter-bar">
       <select v-model="filterSiteId" class="inp filter-sel" data-testid="filter-site">
@@ -80,7 +111,7 @@
                      :checked="selectedIds.has(inv.id)" @change="toggleOne(inv.id)" />
             </td>
             <td class="date-cell">{{ inv.invoice_date ?? '—' }}</td>
-            <td class="bold">{{ inv.vendor_name }}</td>
+            <td class="bold">{{ inv.vendor_name }}<span v-if="inv.source === 'recurring'" class="badge recurring" :data-testid="`recurring-badge-${inv.id}`">自動登録</span></td>
             <td>{{ inv.title ?? '—' }}</td>
             <td class="num">{{ inv.item_count }}</td>
             <td class="num">{{ yen(inv.grand_total) }}</td>
@@ -338,6 +369,31 @@
             請求書記載の金額（{{ yen(form.total_amount) }}）と税込（{{ yen(grossTotal) }}）が {{ yen(Math.abs(statedDiff)) }} 違います。端数処理の違いなら消費税を請求書どおりに直してください
           </div>
 
+          <!-- ★毎月の定額（2026-09-27）: 保存済みの請求からだけ操作できる（画面と違う内容で毎月作られないように） -->
+          <div v-if="form.id && form.recurring_template_id" class="recurring-info" data-testid="recurring-info">
+            <span class="material-symbols-rounded" style="font-size:1.1em;vertical-align:middle">event_repeat</span>
+            毎月の定額から自動で登録された請求です（{{ form.recurring_period }}分）。金額や内容が違う月は、ここで直して保存してください。
+            <button class="btn-mini" :disabled="saving" data-testid="recurring-apply" @click="applyToTemplate">この内容を来月以降のひな形に反映</button>
+          </div>
+          <div v-else-if="form.id && registeredTemplateOf(form.id)" class="recurring-info" data-testid="recurring-registered">
+            <span class="material-symbols-rounded" style="font-size:1.1em;vertical-align:middle">event_repeat</span>
+            この請求は毎月の定額として登録済みです（毎月{{ registeredTemplateOf(form.id)!.day_of_month }}日付）。止める・削除する時は一覧の上の「毎月の定額」から。
+          </div>
+          <div v-else-if="form.id" class="recurring-info">
+            <template v-if="!recurringForm">
+              <button class="btn-mini" :disabled="saving" data-testid="recurring-open" @click="openRecurringForm">毎月の定額として登録</button>
+              <span class="hint-sm">この請求と同じ内容を、毎月決まった日に自動で登録します</span>
+            </template>
+            <div v-else class="recurring-form" data-testid="recurring-form">
+              <label>毎月 <input v-model.number="recurringForm.day" type="number" min="1" max="31" class="inp inp-day" data-testid="recurring-day" /> 日付</label>
+              <label>開始 <input v-model="recurringForm.start" type="month" class="inp" data-testid="recurring-start" /></label>
+              <label>終了（任意） <input v-model="recurringForm.end" type="month" class="inp" data-testid="recurring-end" /></label>
+              <button class="btn-mini" :disabled="saving" data-testid="recurring-save" @click="registerRecurring">登録する</button>
+              <button class="btn-mini ghost" @click="recurringForm = null">やめる</button>
+              <div class="hint-sm">29〜31日でその月に無い日は月末に登録します。</div>
+            </div>
+          </div>
+
           <p v-if="formError" class="error">{{ formError }}</p>
           <div class="modal-actions">
             <button v-if="form.id" class="btn-del" :disabled="saving" @click="removeInvoice">削除</button>
@@ -412,6 +468,7 @@ import { normalizeVendorName } from '../lib/vendor-name.gen'
 import { resolveDocUrl } from '../lib/docUrl'
 import JSZip from 'jszip'
 import { siteStatusesForScreen } from '../lib/site-status.gen'
+import { nextInvoiceDate, periodOf, shiftPeriod } from '../lib/recurring-invoice.gen'
 
 const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL as string | undefined
 const IS_DEV   = import.meta.env.DEV
@@ -432,12 +489,20 @@ interface Form {
   purchase_order_id: string | null
   title: string | null; invoice_no: string | null; invoice_date: string | null; due_date: string | null
   transfer_date: string | null; paid: boolean; total_amount: number | null; pdf_path: string | null; note: string | null; tax_mode: 'exclusive' | 'inclusive'; tax_override: number | null; items: Item[]
+  /** 毎月の定額から自動登録された請求なら、そのひな形と対象月（2026-09-27） */
+  recurring_template_id?: string | null; recurring_period?: string | null
 }
 
 const todayStr = new Date().toISOString().slice(0, 10)
 const tab      = ref<'unpaid' | 'paid'>('unpaid')
 const loading  = ref(false)
 const invoices = ref<any[]>([])
+/** 毎月の定額のひな形（2026-09-27 尾崎さん） */
+const templates = ref<any[]>([])
+/** 「毎月の定額として登録」の入力（開いている時だけ） */
+const recurringForm = ref<{ day: number; start: string; end: string } | null>(null)
+/** JST の今日（毎月の定額の判定は EF と同じく JST で数える） */
+const jstToday = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
 // 選べる現場＝有効なものだけ。新規入力の候補・AI照合・重複チェックは全部これを見る
 // （終わった現場を新しい請求で選べてしまうと「無効化＝隠す」の意味が無くなる）。
 const sites    = ref<{ id: string; name: string; status?: string }[]>([])
@@ -797,6 +862,9 @@ async function load() {
     supabase.from('purchase_orders').select('id, order_number, total_amount, subcontractor_id, vendor_name')
       .eq('account_id', accountId).neq('is_deleted', true).order('order_date', { ascending: false }),
   ])
+  const { data: tp } = await supabase.from('subcontractor_invoice_templates').select('*')
+    .eq('account_id', accountId).order('created_at')
+  templates.value = tp ?? []
   invoices.value = (inv ?? []).map((v: any) => {
     const items = v.subcontractor_invoice_items ?? []
     // ★一覧の「請求金額(税込)」もモーダルと同じ規則を通す。内税の請求書に税を足すと
@@ -849,7 +917,10 @@ async function openEdit(inv: any) {
     tax_mode: (inv as any).tax_mode === 'inclusive' ? 'inclusive' : 'exclusive',
     tax_override: hasTaxOverride((inv as any).tax_override) ? Number((inv as any).tax_override) : null,
     items: (items ?? []).map((it: any) => ({ ...it })),
+    recurring_template_id: (inv as any).recurring_template_id ?? null,
+    recurring_period: (inv as any).recurring_period ?? null,
   }
+  recurringForm.value = null
   snapshot()
 }
 
@@ -1293,6 +1364,129 @@ async function save() {
   }
 }
 
+// ── 毎月の定額（2026-09-27 尾崎さん「毎月自動で登録してほしい。変わった月だけその場で直したい」）──
+/** 今月に自動登録された請求（一覧の上で「請求が来ていなければ削除」を促す） */
+const recurringThisMonth = computed(() => {
+  const period = periodOf(jstToday())
+  return invoices.value.filter(v => v.source === 'recurring' && v.recurring_period === period)
+})
+function templateGross(t: any): number {
+  return grossTotalOf(Array.isArray(t.items) ? t.items : [], normalizeTaxMode(t.tax_mode), t.tax_override)
+}
+/** この請求を元にしたひな形（1つの請求から作れるのは1つまで） */
+function registeredTemplateOf(invoiceId: string | undefined): any | null {
+  return invoiceId ? (templates.value.find(t => t.source_invoice_id === invoiceId) ?? null) : null
+}
+function templateNext(t: any): string | null {
+  return nextInvoiceDate(t, jstToday())
+}
+/** 明細をひな形の形へ（現場名は全現場マップから引き直す＝無効化された現場でも名前を落とさない） */
+function toTemplateItems(items: Item[]) {
+  return items.map(it => ({
+    site_id: it.site_id || null,
+    site_name: (it.site_id ? siteNameById.value[it.site_id] : null) ?? it.site_name ?? null,
+    description: it.description || null, quantity: it.quantity ?? null, unit: it.unit || null,
+    unit_price: it.unit_price ?? null,
+    amount: it.amount ?? Math.round((Number(it.quantity) || 0) * (Number(it.unit_price) || 0)),
+    tax_rate: it.tax_rate ?? 10, note: it.note || null,
+  }))
+}
+function openRecurringForm() {
+  const f = form.value!
+  const base = f.invoice_date || jstToday()
+  recurringForm.value = {
+    day: Number(base.slice(8, 10)) || 1,
+    // ★既定は「この請求の翌月から」。この請求の月は登録済みなので、同じ月を二重に作らない
+    start: shiftPeriod(periodOf(base), 1),
+    end: '',
+  }
+}
+async function registerRecurring() {
+  const f = form.value!
+  const rf = recurringForm.value!
+  // ★保存していない変更があると、画面と違う内容で毎月作られる。先に保存してもらう
+  if (isDirty()) { formError.value = '変更が保存されていません。先に「保存」してから登録してください'; return }
+  if (!(rf.day >= 1 && rf.day <= 31)) { formError.value = '登録日は1〜31で入力してください'; return }
+  if (!/^\d{4}-\d{2}$/.test(rf.start)) { formError.value = '開始月を入力してください'; return }
+  if (rf.end && rf.end < rf.start) { formError.value = '終了月は開始月以降にしてください'; return }
+  saving.value = true; formError.value = ''
+  try {
+    const accountId = await getAccountId()
+    const isOther = f.vendor_kind === 'other'
+    const sub = subs.value.find(s => s.id === f.subcontractor_id)
+    const dueOffset = (f.invoice_date && f.due_date)
+      ? Math.round((new Date(f.due_date).getTime() - new Date(f.invoice_date).getTime()) / 86400000) : null
+    const { error } = await supabase.from('subcontractor_invoice_templates').insert({
+      account_id: accountId,
+      vendor_kind: isOther ? 'other' : 'subcontractor',
+      subcontractor_id: isOther ? null : (f.subcontractor_id || null),
+      vendor_name: isOther ? f.vendor_name.trim() : (sub?.name ?? f.vendor_name),
+      registration_number: f.registration_number || null, title: f.title || null,
+      total_amount: f.total_amount ?? null, note: f.note || null,
+      tax_mode: f.tax_mode ?? 'exclusive',
+      tax_override: hasTaxOverride(f.tax_override) ? Math.round(Number(f.tax_override)) : null,
+      items: toTemplateItems(f.items),
+      day_of_month: Math.floor(rf.day),
+      due_offset_days: dueOffset !== null && dueOffset >= 0 && dueOffset <= 120 ? dueOffset : null,
+      start_period: rf.start, end_period: rf.end || null,
+      // ★この請求の月は作成済み扱い（開始月を手前にしても、この月を二重に作らない）
+      last_generated_period: f.invoice_date ? periodOf(f.invoice_date) : null,
+      source_invoice_id: f.id,
+    })
+    // ★再送・連打で2回目が来たら一意制約で弾かれる＝もう登録されている。成功として扱う（二重に作らない）
+    if (error && (error as any).code !== '23505') throw error
+    await logOperation('毎月の定額を登録', { targetType: 'subcontractor_invoice', targetId: f.id!, summary: `${f.vendor_name} 毎月${rf.day}日付 ${rf.start}〜${rf.end || ''}` })
+    recurringForm.value = null
+    form.value = null
+    await load()
+  } catch (e: any) {
+    formError.value = '毎月の定額の登録に失敗しました: ' + (e?.message ?? '')
+  } finally {
+    saving.value = false
+  }
+}
+/** 自動登録の請求の今の内容を、来月以降のひな形に反映（登録済みの請求は変わらない） */
+function applyToTemplate() {
+  if (isDirty()) { formError.value = '変更が保存されていません。先に「保存」してから反映してください'; return }
+  askConfirm('この請求の内容（明細・金額）を、来月以降に自動で登録される請求に反映しますか？登録済みの請求は変わりません。', '反映する', doApplyToTemplate)
+}
+async function doApplyToTemplate() {
+  const f = form.value!
+  saving.value = true; formError.value = ''
+  try {
+    const { error } = await supabase.from('subcontractor_invoice_templates').update({
+      title: f.title || null, total_amount: f.total_amount ?? null, note: f.note || null,
+      registration_number: f.registration_number || null,
+      tax_mode: f.tax_mode ?? 'exclusive',
+      tax_override: hasTaxOverride(f.tax_override) ? Math.round(Number(f.tax_override)) : null,
+      items: toTemplateItems(f.items), updated_at: new Date().toISOString(),
+    }).eq('id', f.recurring_template_id!)
+    if (error) throw error
+    await logOperation('毎月の定額を更新', { targetType: 'subcontractor_invoice', targetId: f.id!, summary: `${f.vendor_name} ${yen(grossTotal.value)}` })
+    form.value = null
+    await load()
+  } catch (e: any) {
+    formError.value = 'ひな形への反映に失敗しました: ' + (e?.message ?? '')
+  } finally {
+    saving.value = false
+  }
+}
+async function toggleTemplate(t: any) {
+  const { error } = await supabase.from('subcontractor_invoice_templates')
+    .update({ active: !t.active, updated_at: new Date().toISOString() }).eq('id', t.id)
+  if (error) { alert('更新に失敗しました: ' + error.message); return }
+  await logOperation(t.active ? '毎月の定額を一時停止' : '毎月の定額を再開', { targetType: 'subcontractor_invoice', targetId: t.source_invoice_id ?? t.id, summary: t.vendor_name })
+  await load()
+}
+function deleteTemplate(t: any) {
+  askConfirm(`毎月の定額「${t.vendor_name}」を削除しますか？これまでに登録された請求は残ります。`, '削除する', async () => {
+    const { error } = await supabase.from('subcontractor_invoice_templates').delete().eq('id', t.id)
+    if (error) { alert('削除に失敗しました: ' + error.message); return }
+    await logOperation('毎月の定額を削除', { targetType: 'subcontractor_invoice', targetId: t.source_invoice_id ?? t.id, summary: t.vendor_name })
+    await load()
+  }, true)
+}
+
 function removeInvoice() {
   if (!form.value?.id) return
   askConfirm('この請求を削除しますか？', '削除する', doRemoveInvoice, true)
@@ -1352,6 +1546,21 @@ onMounted(load)
 .badge.due { background: #f3f4f6; color: #555; }
 .badge.none { background: #f3f4f6; color: #888; }
 .badge.overdue-badge { background: #fdecea; color: #c0392b; }
+/* 毎月の定額（2026-09-27） */
+.badge.recurring { background: #eef2ff; color: #4338ca; margin-left: 6px; }
+.recurring-banner { margin: 0 0 12px; padding: 10px 12px; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 8px; color: #3730a3; font-size: 13px; }
+.recurring-card { margin: 0 0 16px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 12px; }
+.recurring-card summary { cursor: pointer; font-weight: 700; font-size: 13px; padding: 4px 0; }
+.recurring-info { margin: 12px 0 0; padding: 10px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 13px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.recurring-form { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.recurring-form label { display: flex; align-items: center; gap: 4px; font-size: 13px; }
+.inp-day { width: 64px; }
+.hint-sm { font-size: 12px; color: #64748b; margin: 6px 0 0; }
+.btn-mini { border: 1px solid #cbd5e1; background: #fff; color: #334155; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.btn-mini:disabled { opacity: .6; cursor: default; }
+.btn-mini.danger { color: #b91c1c; border-color: #fecaca; }
+.btn-mini.ghost { border-color: transparent; color: #64748b; }
+.actions-cell { white-space: nowrap; display: flex; gap: 6px; }
 .data-row.overdue { background: #fff6f5; }
 .data-row.overdue:hover { background: #ffeceb; }
 .status-cell { white-space: nowrap; cursor: default; }
