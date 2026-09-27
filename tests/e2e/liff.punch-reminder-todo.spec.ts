@@ -20,6 +20,9 @@ let logId = ''
 const jstDate = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' })
 const jstHHMM = (offsetMin: number) => {
   const d = new Date(Date.now() + offsetMin * 60000)
+  // ★日付をまたぐ時は当日の 23:59 で止める（2026-09-27）。21時以降に流すと「3時間後」が翌日 0時台になり、
+  //  終了が開始より前＝当日の予定として判定されず、夜に流した時だけ落ちていた
+  if (d.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' }) !== jstDate()) return offsetMin > 0 ? '23:59' : '00:00'
   return d.toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
