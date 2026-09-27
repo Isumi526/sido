@@ -57,4 +57,28 @@ test.describe('有給残不足の日報は二重承認制', () => {
     // B: この日付は保留として拾われる（pending-dates）＝未送信トラップに落ちない
     // （pending が status=pending で存在すること自体が「送信済み扱い」の根拠。上のpollで確認済み）
   })
+
+  test('★有給の残を読み終わる前に送っても、残不足なら承認に回る（回線が遅くても素通りしない）', async ({ page }) => {
+    // 2026-09-27: 残は「有給を選んだ瞬間」に非同期で読む。読み終わる前に送ると残不足の判定が false のまま＝
+    // 残0でも承認なしで有給が保存されていた。送信直前に残を待つよう直した。ここでは残の応答を遅らせて再現する。
+    await restSrv(`daily_report_pending_edits?report_user_id=eq.${userId}&report_date=eq.${TODAY}`, { method: 'DELETE' }).catch(() => {})
+    await restSrv(`daily_reports?user_id=eq.${userId}&date=eq.${TODAY}`, { method: 'DELETE' }).catch(() => {})
+    await page.route('**/functions/v1/paid-leave-status', async (route) => {
+      await new Promise((r) => setTimeout(r, 2500))
+      await route.continue().catch(() => {})
+    })
+    page.on('dialog', (d) => d.accept().catch(() => {}))
+    await page.goto(`/report?date=${TODAY}`, { waitUntil: 'domcontentloaded' })
+    await page.locator('select:has(option[value="paid_leave"])').selectOption('paid_leave', { timeout: 20000 })
+    await page.getByTestId('omission-confirm').check()
+    await page.getByTestId('report-submit').click()   // 残の応答（2.5秒後）より先に押す
+
+    await expect.poll(async () => {
+      const rows = await restSrv(`daily_report_pending_edits?report_user_id=eq.${userId}&report_date=eq.${TODAY}&select=kind,status`)
+      const r = (rows ?? [])[0]
+      return r ? `${r.kind}|${r.status}` : null
+    }, { timeout: 20000 }).toBe('paid_leave_over|pending')
+    const reports = await restSrv(`daily_reports?user_id=eq.${userId}&date=eq.${TODAY}&select=id`)
+    expect((reports ?? []).length, '★承認前は日報に書かれない').toBe(0)
+  })
 })
