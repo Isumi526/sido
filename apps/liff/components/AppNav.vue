@@ -36,7 +36,7 @@
 
   <!-- 下部固定ナビ（本文末尾の余白はbody.paddingBottomをJS側で付与＝ページ側のDOM構造に依存しない） -->
   <nav v-if="showBottomNav" ref="bottomNavRef" class="app-bottom-nav no-print">
-    <NuxtLink v-for="item in bottomNavItems" :key="item.path" class="bottom-nav-item" :class="{ active: isNavActive(item.path) }" :to="item.path" :external="item.external" :data-testid="`bottom-nav-${item.testId}`">
+    <NuxtLink v-for="item in bottomNavItems" :key="item.path" class="bottom-nav-item" :class="{ active: isNavActive(item.path) }" :to="item.path" :data-testid="`bottom-nav-${item.testId}`">
       <span class="bottom-nav-icon-wrap">
         <span class="material-symbols-rounded bottom-nav-icon">{{ item.icon }}</span>
         <span v-if="item.badge > 0" class="bottom-nav-badge" :data-testid="`bottom-nav-badge-${item.testId}`">{{ item.badge }}</span>
