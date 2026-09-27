@@ -375,6 +375,10 @@
             毎月の定額から自動で登録された請求です（{{ form.recurring_period }}分）。金額や内容が違う月は、ここで直して保存してください。
             <button class="btn-mini" :disabled="saving" data-testid="recurring-apply" @click="applyToTemplate">この内容を来月以降のひな形に反映</button>
           </div>
+          <div v-else-if="form.id && registeredTemplateOf(form.id)" class="recurring-info" data-testid="recurring-registered">
+            <span class="material-symbols-rounded" style="font-size:1.1em;vertical-align:middle">event_repeat</span>
+            この請求は毎月の定額として登録済みです（毎月{{ registeredTemplateOf(form.id)!.day_of_month }}日付）。止める・削除する時は一覧の上の「毎月の定額」から。
+          </div>
           <div v-else-if="form.id" class="recurring-info">
             <template v-if="!recurringForm">
               <button class="btn-mini" :disabled="saving" data-testid="recurring-open" @click="openRecurringForm">毎月の定額として登録</button>
@@ -1369,6 +1373,10 @@ const recurringThisMonth = computed(() => {
 function templateGross(t: any): number {
   return grossTotalOf(Array.isArray(t.items) ? t.items : [], normalizeTaxMode(t.tax_mode), t.tax_override)
 }
+/** この請求を元にしたひな形（1つの請求から作れるのは1つまで） */
+function registeredTemplateOf(invoiceId: string | undefined): any | null {
+  return invoiceId ? (templates.value.find(t => t.source_invoice_id === invoiceId) ?? null) : null
+}
 function templateNext(t: any): string | null {
   return nextInvoiceDate(t, jstToday())
 }
@@ -1425,7 +1433,8 @@ async function registerRecurring() {
       last_generated_period: f.invoice_date ? periodOf(f.invoice_date) : null,
       source_invoice_id: f.id,
     })
-    if (error) throw error
+    // ★再送・連打で2回目が来たら一意制約で弾かれる＝もう登録されている。成功として扱う（二重に作らない）
+    if (error && (error as any).code !== '23505') throw error
     await logOperation('毎月の定額を登録', { targetType: 'subcontractor_invoice', targetId: f.id!, summary: `${f.vendor_name} 毎月${rf.day}日付 ${rf.start}〜${rf.end || ''}` })
     recurringForm.value = null
     form.value = null
