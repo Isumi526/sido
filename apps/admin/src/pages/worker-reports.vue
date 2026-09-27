@@ -363,9 +363,14 @@ async function load() {
     .limit(5000) // 1ヶ月×全作業員で500件超→一部の日が溢れて欠落するため余裕を持たせる
 
   // Step1: 作業員ごとに (date, siteName, startTime, endTime, workerRole) を収集
+  // ★休憩（breaks / breakSnapshot / breakMinutes）も持ち回る（2026-09-27）。
+  //  以前は時刻と区分だけを取り出していたため、effectiveBreakMinutes が現場で決めた休憩（スナップショット）を見られず、
+  //  常に昔の既定（現場作業＝10時30分・12時60分・15時30分＝120分）で計算していた。休憩90分の現場では1日30分少なく出ていた。
+  //  日報画面・日報一覧・履歴は作業員行をそのまま渡しているので、ここだけずれていた。
   type RawEntry = {
     date: string; siteName: string; isSunday: boolean
     startTime: string; endTime: string; workerRole: 'factory' | 'site'
+    breaks?: { start: string; minutes: number }[] | null; breakSnapshot?: boolean; breakMinutes?: number | null
   }
   const rawByWorker: Record<string, RawEntry[]> = {}
 
@@ -428,6 +433,9 @@ async function load() {
           startTime:  w.startTime  || '08:00',
           endTime:    w.endTime    || '17:30',
           workerRole: w.workerRole || 'site',
+          breaks:        Array.isArray(w.breaks) ? w.breaks : null,
+          breakSnapshot: w.breakSnapshot === true,
+          breakMinutes:  typeof w.breakMinutes === 'number' ? w.breakMinutes : null,
         })
       }
     }
@@ -482,7 +490,8 @@ async function load() {
 
         a.rows.push({
           date, siteName: e.siteName, isSunday: e.isSunday,
-          startTime: e.startTime, endTime: e.endTime, breakMinutes: brk,
+          // 表示は実際に差し引いた休憩の分数（時間帯で差し引く時は brk=0 なので、別に数える）
+          startTime: e.startTime, endTime: e.endTime, breakMinutes: wins ? effectiveBreakMinutes(e) : brk,
           hoursNormal: bd.hoursNormal, hoursOT: bd.hoursOT,
           hoursNight: bd.hoursNight, hoursOTNight: bd.hoursOTNight,
           hoursSunday: bd.hoursSunday, hoursSundayOT: bd.hoursSundayOT,
