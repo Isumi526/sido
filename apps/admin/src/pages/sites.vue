@@ -215,7 +215,9 @@
           <!-- 区分の定時を追加: 共通区分から選ぶ／無ければその場で新規登録 -->
           <div class="cat-add" data-testid="cat-add">
             <template v-if="!catPickerOpen">
-              <button type="button" class="btn-ghost" data-testid="cat-hours-toggle" @click="catPickerOpen = true">＋ 区分の定時を追加</button>
+              <!-- ★区分の定時を読み込み中は押せない（2026-09-27）。読み終わった時に下書きを作り直すので、
+                   先に押すと選択欄が勝手に閉じ、選んだ行も消えていた -->
+              <button type="button" class="btn-ghost" data-testid="cat-hours-toggle" :disabled="!catHoursReady" @click="catPickerOpen = true">＋ 区分の定時を追加</button>
             </template>
             <template v-else>
               <select v-model="catPick" class="input" style="width:auto;min-width:200px" data-testid="cat-pick">
@@ -453,6 +455,8 @@ const primaryCatName = ref('現場作業')
 const visibleCats = computed(() => siteCats.value.filter(c => catHasValue(c.id) || shownCatIds.value.has(c.id)))
 const addableCats = computed(() => siteCats.value.filter(c => !visibleCats.value.some(v => v.id === c.id)))
 const catPickerOpen = ref(false)
+/** 区分の定時（現場×区分）を読み終えたか。読み終わる前は「区分の定時を追加」を押せない */
+const catHoursReady = ref(false)
 const catPick = ref('')
 function addCatRow(id: string) {
   if (!id || id === '__new__') return
@@ -527,6 +531,7 @@ function buildCatHoursDraft(rows: { category_id: string; default_start_time: str
   shownCatIds.value = new Set()
   catPickerOpen.value = false
   catPick.value = ''
+  catHoursReady.value = true
 }
 const workerNames = ref<Record<string, string>>({})   // 全作業員 id→名前（表示用）
 const myWorkerId = ref<string | null>(null)
@@ -817,6 +822,7 @@ async function fetchRuleHistory() {
 const modalOrigStatus = ref<SiteStatus | null>(null)   // 編集前のステータス（変えた時だけ必須項目で止める）
 async function openEdit(s: Site) {
   modalOrigStatus.value = s.status
+  catHoursReady.value = false
   // time入力は HH:MM を期待するため DB の HH:MM:SS を切り詰める
   modal.value = { ...s, default_start_time: (s.default_start_time ?? '').slice(0, 5), default_end_time: (s.default_end_time ?? '').slice(0, 5),
     default_breaks: Array.isArray(s.default_breaks) ? s.default_breaks.map(b => ({ start: String(b.start ?? '').slice(0, 5), minutes: Number(b.minutes) || 0 })) : [],
