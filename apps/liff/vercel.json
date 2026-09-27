@@ -1,12 +1,30 @@
 {
-  "git": { "deploymentEnabled": { "dev": false } },
+  "git": {
+    "deploymentEnabled": {
+      "dev": false
+    }
+  },
   "buildCommand": "nuxt generate",
   "outputDirectory": ".output/public",
   "devCommand": "nuxt dev",
   "installCommand": "npm install --no-package-lock",
   "framework": "nuxtjs",
   "rewrites": [
-    { "source": "/admin/:path*", "destination": "https://sido-admin-stism.vercel.app/:path*" },
-    { "source": "/(.*)", "destination": "/" }
+    {
+      "source": "/admin",
+      "destination": "https://sido-admin-stism.vercel.app/"
+    },
+    {
+      "source": "/admin/",
+      "destination": "https://sido-admin-stism.vercel.app/"
+    },
+    {
+      "source": "/admin/:path*",
+      "destination": "https://sido-admin-stism.vercel.app/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/"
+    }
   ]
 }
