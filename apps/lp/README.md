@@ -1,7 +1,9 @@
-# GENLINKS LP（静的1ページ）
+# GENLINKS 紹介用 LP（最小限・2026-09-27）
 
-- 実体は `index.html` 1枚（CSS/JS 同梱・外部依存は Google Fonts の Material Symbols だけ）。
-- 画像は `img/`（docs/sales/screenshots の demo テナントのもの。本番データは載せない）。
-- 料金・機能名は `docs/sales/genlinks-price-list.html` / `feature-inventory.md` と同じ言葉を使う。変えたら両方直す。
-- 公開: Vercel に別プロジェクトとして `apps/lp` をルートに（`genlinks.app`）。git 連携するかは ship 時に決める。
-- 問い合わせ: `support@genlinks.app`（受信できるようになってから公開する）。
+大塚さんが同業のオーナーに話す時の補足資料。設計書: Notion「設計：GENLINKS 紹介用 LP（最小限）」。
+
+- 静的な 1 ページ（ビルド不要）。`index.html` と `img/`。
+- 公開先（仮）: https://genlinks-lp.vercel.app/ — Vercel プロジェクト `stism/genlinks-lp`。**git 連携していない**（main に入れても自動デプロイされない）。
+  出す時はこのフォルダを作業用の場所へコピーし、そこで `vercel link --project genlinks-lp --scope stism` → `vercel deploy --prod --scope stism`（リポジトリの中に `.vercel` を作らない）。
+- 検索に載せない（`noindex`）。LINE で送った時の画像は `img/og.png`。
+- アプリの画面は撮影用の架空の会社（株式会社サンプル内装・ローカル環境だけ）で撮ったもの。実際のお客様のデータは使わない。

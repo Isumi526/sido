@@ -2,264 +2,267 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GENLINKS｜内装施工会社のための施工台帳まるごと自動化</title>
-<meta name="description" content="職人はスマホで日報を出すだけ。現場・経費・領収書・勤怠・工程・見積〜発注〜請求が本社の管理画面に集まる、内装施工会社向けクラウドサービス。">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0&display=swap">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="description" content="職人はスマホで日報だけ。給料も原価も、あとは自動。内装屋がつくった、現場のためのアプリ。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="GENLINKS｜職人はスマホで日報だけ。給料も原価も、あとは自動。">
+<meta property="og:description" content="内装屋がつくった、現場のためのアプリ。">
+<meta property="og:image" content="https://genlinks-lp.vercel.app/img/og.png">
+<meta property="og:url" content="https://genlinks-lp.vercel.app/">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#2f5d50">
+<title>GENLINKS｜内装屋がつくった、現場のためのアプリ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap">
 <style>
-  :root { --g: #06843c; --g-light: #eafbf1; --ink: #0f172a; --sub: #475569; --line: #e5e7eb; --bg: #f8fafc; }
-  * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif; color: var(--ink); background: #fff; line-height: 1.75; }
-  .material-symbols-rounded { font-family: 'Material Symbols Rounded', sans-serif; font-size: 24px; line-height: 1; vertical-align: middle; display: inline-block; width: 1em; height: 1em; overflow: hidden; }
-  header { position: sticky; top: 0; background: rgba(255,255,255,.92); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); z-index: 10; }
-  .bar { max-width: 1040px; margin: 0 auto; padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-  .logo { font-weight: 900; font-size: 20px; letter-spacing: .04em; color: var(--g); text-decoration: none; }
-  .logo small { font-size: 11px; color: var(--sub); font-weight: 600; margin-left: 8px; letter-spacing: 0; }
-  .cta { display: inline-flex; align-items: center; gap: 6px; background: var(--g); color: #fff; text-decoration: none; font-weight: 700; padding: 10px 16px; border-radius: 999px; font-size: 14px; white-space: nowrap; }
-  .cta.ghost { background: #fff; color: var(--g); border: 2px solid var(--g); }
-  section { padding: 56px 20px; }
-  .wrap { max-width: 1040px; margin: 0 auto; }
-  h2 { font-size: 26px; margin: 0 0 8px; }
-  .lead { color: var(--sub); margin: 0 0 28px; font-size: 15px; }
-  /* hero */
-  .hero { background: linear-gradient(180deg, var(--g-light), #fff 70%); padding: 64px 20px 48px; }
-  .hero .wrap { display: grid; grid-template-columns: 1.1fr 1fr; gap: 32px; align-items: center; }
-  .hero h1 { font-size: 34px; line-height: 1.35; margin: 0 0 14px; }
-  .hero h1 b { color: var(--g); }
-  .hero p { font-size: 16px; color: var(--sub); margin: 0 0 22px; }
-  .hero .actions { display: flex; gap: 10px; flex-wrap: wrap; }
-  .hero img { width: 100%; border-radius: 14px; box-shadow: 0 12px 40px rgba(15,23,42,.14); border: 1px solid var(--line); }
-  .tags { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
-  .tag { font-size: 12px; font-weight: 700; color: var(--g); background: #fff; border: 1px solid #b7e4c7; border-radius: 999px; padding: 4px 10px; }
-  /* pain */
-  .pain { background: var(--bg); }
-  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-  .card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
-  .card .material-symbols-rounded { color: var(--g); font-size: 30px; margin-bottom: 8px; }
-  .card h3 { font-size: 16px; margin: 0 0 6px; }
-  .card p { margin: 0; font-size: 14px; color: var(--sub); }
-  .arrow { text-align: center; color: var(--g); font-weight: 800; margin: 18px 0 6px; font-size: 15px; }
-  /* features */
-  .feat { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: center; margin-bottom: 40px; }
-  .feat:nth-child(even) .shot { order: -1; }
-  .feat img { width: 100%; border-radius: 12px; border: 1px solid var(--line); box-shadow: 0 8px 24px rgba(15,23,42,.10); }
-  .feat h3 { font-size: 20px; margin: 0 0 8px; display: flex; align-items: center; gap: 8px; }
-  .feat h3 .material-symbols-rounded { color: var(--g); font-size: 26px; }
-  .feat ul { margin: 0; padding-left: 18px; color: var(--sub); font-size: 14px; }
-  .feat li { margin: 4px 0; }
-  .more { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-  .more .card { padding: 14px; }
-  .more .card h3 { font-size: 14px; }
-  .more .card p { font-size: 12px; }
-  /* price */
-  .price { background: var(--bg); }
-  .plans { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 18px; }
-  .plan { background: #fff; border: 2px solid var(--line); border-radius: 16px; padding: 22px; }
-  .plan.hi { border-color: var(--g); }
-  .plan .name { font-weight: 800; font-size: 18px; }
-  .plan .amt { font-size: 32px; font-weight: 900; margin: 6px 0 2px; }
-  .plan .amt small { font-size: 13px; font-weight: 600; color: var(--sub); }
-  .plan p { font-size: 13px; color: var(--sub); margin: 8px 0 0; }
-  table { width: 100%; border-collapse: collapse; background: #fff; font-size: 13.5px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-  th, td { padding: 9px 12px; border-bottom: 1px solid var(--line); text-align: left; }
-  th { background: #f1f5f9; font-size: 12px; color: var(--sub); }
-  td.c { text-align: center; width: 84px; font-weight: 800; color: var(--g); }
-  td.c.no { color: #cbd5e1; }
-  .trial { margin-top: 18px; background: #fff; border: 1px dashed var(--g); border-radius: 14px; padding: 16px 18px; font-size: 14px; }
-  .trial b { color: var(--g); }
-  .fine { font-size: 12px; color: var(--sub); margin-top: 10px; }
-  /* flow */
-  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; counter-reset: s; }
-  .step { position: relative; background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 18px 16px 16px; }
-  .step::before { counter-increment: s; content: counter(s); position: absolute; top: -12px; left: 14px; width: 26px; height: 26px; border-radius: 50%; background: var(--g); color: #fff; font-weight: 800; font-size: 13px; display: flex; align-items: center; justify-content: center; }
-  .step h3 { font-size: 15px; margin: 4px 0 6px; }
-  .step p { margin: 0; font-size: 13px; color: var(--sub); }
-  /* contact */
-  .contact { background: var(--g); color: #fff; text-align: center; }
-  .contact h2 { color: #fff; }
-  .contact p { color: #d1fae5; margin: 0 0 18px; }
-  .contact .cta { background: #fff; color: var(--g); font-size: 16px; padding: 14px 24px; }
-  footer { text-align: center; font-size: 12px; color: var(--sub); padding: 24px 20px 40px; }
-  footer a { color: var(--sub); }
-  @media (max-width: 760px) {
-    section { padding: 40px 16px; }
-    .hero { padding: 36px 16px 32px; }
-    .hero .wrap, .feat, .plans { grid-template-columns: 1fr; }
-    .feat:nth-child(even) .shot { order: 0; }
-    .hero h1 { font-size: 26px; }
-    h2 { font-size: 22px; }
-    .grid3, .more, .steps { grid-template-columns: 1fr; }
-    .steps { gap: 20px; }
-    .bar .cta { padding: 8px 12px; font-size: 13px; }
-    .logo small { display: none; }
+  :root {
+    --paper: #faf6ef;      /* 生成り */
+    --paper-2: #f3ead9;    /* 生成りの濃いめ */
+    --line: #e8dccb;
+    --wood: #8a5a3b;       /* 木の茶色 */
+    --ink: #3a2e25;
+    --ink-2: #6b5a4c;
+    --green: #2f5d50;      /* 深緑 */
+    --green-2: #3d7062;
+    --orange: #d98b3a;
+    --white: #ffffff;
+    color-scheme: light;
   }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper-2);
+    color: var(--ink);
+    font-family: "Zen Maru Gothic", "Hiragino Maru Gothic ProN", "Hiragino Sans", "Yu Gothic", sans-serif;
+    font-size: 15px;
+    line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 480px; margin: 0 auto; background: var(--paper); min-height: 100vh; }
+  @media (min-width: 560px) { .page { box-shadow: 0 0 0 1px var(--line), 0 20px 60px rgba(58, 46, 37, .12); } }
+  section { padding: 44px 20px; display: flex; flex-direction: column; gap: 16px; }
+  .tint { background: var(--paper-2); }
+  h1, h2 { margin: 0; font-weight: 900; text-wrap: balance; letter-spacing: .01em; }
+  h1 { font-size: 31px; line-height: 1.45; }
+  h2 { font-size: 24px; line-height: 1.5; }
+  .eyebrow { font-size: 13px; font-weight: 700; color: var(--wood); }
+  .muted { color: var(--ink-2); }
+  .small { font-size: 12px; }
+  .card { background: var(--white); border-radius: 20px; padding: 16px; }
+  .card.bordered { border: 2px solid var(--line); }
+  .hl { color: var(--green); }
+  img { max-width: 100%; display: block; }
+
+  /* 最初の画面 */
+  .hero { padding-top: 22px; padding-bottom: 36px; }
+  .top { display: flex; align-items: center; justify-content: space-between; }
+  .logo { font-size: 18px; font-weight: 900; letter-spacing: .14em; color: var(--green); }
+  .badge { font-size: 11px; font-weight: 700; color: var(--wood); background: var(--paper-2); border-radius: 999px; padding: 4px 10px; }
+  .tags { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tag { font-size: 12px; font-weight: 700; color: var(--white); background: var(--green); border-radius: 999px; padding: 6px 12px; }
+  .devices { position: relative; height: 330px; margin-top: 6px; }
+  .pc { position: absolute; right: 0; top: 18px; width: 72%; aspect-ratio: 1400 / 1037; max-width: 100%; border: 7px solid var(--ink); border-radius: 12px; overflow: hidden; background: var(--white); box-shadow: 0 10px 24px rgba(58, 46, 37, .16); }
+  .pc img, .phone img { width: 100%; height: 100%; object-fit: cover; object-position: left top; }
+  .phone { position: absolute; left: 4px; top: 70px; width: 34%; aspect-ratio: 128 / 258; border: 6px solid var(--ink); border-radius: 22px; overflow: hidden; background: var(--white); box-shadow: 0 12px 28px rgba(58, 46, 37, .22); }
+  .phone img { object-position: center top; }
+  .devices .arrow { position: absolute; left: 36%; bottom: 18px; }
+  .devices .cap { position: absolute; right: 0; bottom: 0; font-size: 11px; font-weight: 700; color: var(--wood); }
+
+  /* 困りごと */
+  .pain { display: flex; gap: 14px; align-items: center; }
+  .pain svg { flex-shrink: 0; }
+  .pain p { margin: 0; font-size: 16px; font-weight: 700; line-height: 1.6; }
+
+  /* 流れ */
+  .flow { display: flex; flex-direction: column; gap: 10px; }
+  .who { display: flex; gap: 12px; align-items: center; }
+  .who .ico { width: 48px; height: 48px; flex-shrink: 0; border-radius: 16px; background: var(--paper-2); display: grid; place-items: center; }
+  .who .role { font-size: 12px; color: var(--ink-2); line-height: 1.4; }
+  .who .what { font-size: 17px; font-weight: 900; line-height: 1.4; }
+  .auto { text-align: center; font-size: 14px; font-weight: 900; color: var(--green); }
+  .outs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .out { background: var(--green); color: var(--white); border-radius: 20px; padding: 16px 12px; line-height: 1.4; }
+  .out b { display: block; font-size: 15px; font-weight: 900; }
+  .out span { font-size: 11px; opacity: .85; }
+
+  /* できること */
+  .feature { display: flex; flex-direction: column; gap: 10px; padding: 18px; border-radius: 24px; background: var(--white); }
+  .feature .head { display: flex; align-items: center; gap: 10px; }
+  .num { font-size: 13px; font-weight: 900; color: var(--white); background: var(--orange); border-radius: 999px; padding: 2px 10px; font-variant-numeric: tabular-nums; }
+  .feature .name { font-size: 19px; font-weight: 900; }
+  .feature p { margin: 0; font-size: 14px; color: var(--ink-2); }
+  .shot { border: 2px solid var(--line); border-radius: 16px; overflow: hidden; background: var(--white); }
+  .shot img { width: 100%; height: 100%; object-fit: cover; object-position: left top; }
+  .shot.tall { height: 300px; }
+  .shot.tall img { object-position: center 40%; }
+  .shot.wide { aspect-ratio: 1400 / 1037; }
+
+  /* つくった人 */
+  .maker { display: flex; gap: 14px; align-items: flex-start; background: var(--paper-2); border-radius: 20px; padding: 18px; }
+  .face { width: 56px; height: 56px; flex-shrink: 0; border-radius: 999px; background: var(--wood); color: var(--white); font-size: 17px; font-weight: 900; display: grid; place-items: center; }
+  .maker p { margin: 0; font-size: 15px; font-weight: 700; line-height: 1.85; }
+  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .stat { background: var(--white); border: 2px solid var(--line); border-radius: 20px; padding: 16px 6px; text-align: center; line-height: 1.4; }
+  .stat b { display: block; font-size: 30px; font-weight: 900; color: var(--green); font-variant-numeric: tabular-nums; }
+  .stat b small { font-size: 13px; }
+  .stat span { font-size: 11px; color: var(--ink-2); }
+
+  /* 始め方 */
+  .step { display: flex; gap: 14px; align-items: center; background: var(--white); border-radius: 20px; padding: 14px; }
+  .step .n { width: 44px; height: 44px; flex-shrink: 0; border-radius: 999px; background: var(--green); color: var(--white); font-size: 18px; font-weight: 900; display: grid; place-items: center; }
+  .step b { font-size: 16px; }
+  .step .sub { display: block; font-size: 12px; color: var(--ink-2); line-height: 1.5; }
+  ol.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+
+  /* よくある質問 */
+  details { background: var(--white); border: 2px solid var(--line); border-radius: 20px; padding: 16px 18px; }
+  summary { cursor: pointer; font-size: 15px; font-weight: 900; color: var(--green); list-style: none; display: flex; justify-content: space-between; gap: 12px; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "＋"; color: var(--wood); }
+  details[open] summary::after { content: "−"; }
+  summary:focus-visible { outline: 3px solid var(--orange); outline-offset: 4px; border-radius: 6px; }
+  details p { margin: 10px 0 0; font-size: 14px; color: var(--ink-2); }
+
+  /* 締め */
+  .end { background: var(--green); color: var(--white); align-items: center; text-align: center; padding-bottom: 56px; }
+  .end h2 { font-size: 24px; line-height: 1.55; }
+  .end .logo { color: var(--white); opacity: .9; font-size: 16px; padding-top: 12px; }
 </style>
 </head>
 <body>
-<header>
-  <div class="bar">
-    <a class="logo" href="#top">GENLINKS<small>内装施工会社向け 施工台帳自動化</small></a>
-    <a class="cta" href="#contact"><span class="material-symbols-rounded">mail</span>問い合わせ・無料で試す</a>
-  </div>
-</header>
 
-<section class="hero" id="top">
-  <div class="wrap">
-    <div>
-      <h1>職人は<b>スマホで日報を出すだけ</b>。<br>現場・経費・勤怠・請求が、本社にそのまま集まる。</h1>
-      <p>GENLINKS（ジェンリンクス）は内装施工会社のための「施工台帳まるごと自動化」サービスです。紙とLINEで散らばっていた日報・領収書・出退勤・工程・見積〜発注〜請求を、ひとつの管理画面に。領収書や請求書はAIが読み取って自動入力します。</p>
-      <div class="actions">
-        <a class="cta" href="#contact"><span class="material-symbols-rounded">mail</span>問い合わせる</a>
-        <a class="cta ghost" href="#price"><span class="material-symbols-rounded">payments</span>料金を見る</a>
+
+<main class="page">
+
+  <section class="hero">
+    <div class="top">
+      <div class="logo">GENLINKS</div>
+      <div class="badge">内装業のためのアプリ</div>
+    </div>
+    <div class="eyebrow">内装屋がつくった、現場のためのアプリ</div>
+    <h1>職人はスマホで<br>日報だけ。<br><span class="hl">給料も原価も、<br>あとは自動。</span></h1>
+    <div class="tags">
+      <span class="tag">職人はスマホだけ</span>
+      <span class="tag">給料と原価まで自動</span>
+      <span class="tag">導入はお手伝いします</span>
+    </div>
+    <div class="devices" aria-label="職人のスマホの日報が、社長のパソコンの集計に集まる様子">
+      <div class="pc"><img src="img/lp-pc-attendance.png" alt="管理画面の出面・勤怠"></div>
+      <div class="phone"><img src="img/lp-phone-home.png" alt="作業員アプリのホーム画面"></div>
+      <svg class="arrow" width="80" height="48" viewBox="0 0 80 48" fill="none" aria-hidden="true"><path d="M4 40 C 28 44, 52 30, 70 10" stroke="#d98b3a" stroke-width="4" stroke-linecap="round"/><path d="M58 8 L72 8 L70 22" stroke="#d98b3a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div class="cap">日報を出すと、社長の画面に集まる</div>
+    </div>
+  </section>
+
+  <section class="tint">
+    <h2>こんなこと、<br>ありませんか？</h2>
+    <div class="card pain">
+      <svg width="64" height="64" viewBox="0 0 64 64" fill="none" aria-hidden="true"><rect x="10" y="12" width="34" height="42" rx="4" fill="#efe5d6" stroke="#8a5a3b" stroke-width="2.5"/><rect x="16" y="8" width="34" height="42" rx="4" fill="#ffffff" stroke="#8a5a3b" stroke-width="2.5"/><path d="M23 19h20M23 26h20M23 33h14" stroke="#cdb89c" stroke-width="2.5" stroke-linecap="round"/><path d="M40 52 L56 36 L60 40 L44 56 L38 58 Z" fill="#d98b3a" stroke="#8a5a3b" stroke-width="2" stroke-linejoin="round"/></svg>
+      <p>日報が紙やLINEで届いて、月末に書き写している</p>
+    </div>
+    <div class="card pain">
+      <svg width="64" height="64" viewBox="0 0 64 64" fill="none" aria-hidden="true"><circle cx="28" cy="34" r="20" fill="#ffffff" stroke="#2f5d50" stroke-width="3"/><path d="M28 22v12l8 6" stroke="#2f5d50" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="50" cy="16" r="11" fill="#d98b3a"/><path d="M46.5 13.5c0-2 1.6-3.5 3.5-3.5s3.5 1.4 3.5 3.3c0 2.6-3.5 2.8-3.5 5" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round"/><circle cx="50" cy="22" r="1.4" fill="#ffffff"/></svg>
+      <p>残業や休憩を合わせると、結局何時間働いたのか分からない</p>
+    </div>
+    <div class="card pain">
+      <svg width="64" height="64" viewBox="0 0 64 64" fill="none" aria-hidden="true"><rect x="8" y="20" width="30" height="36" rx="3" fill="#efe5d6" stroke="#8a5a3b" stroke-width="2.5"/><path d="M15 29h5M25 29h5M15 38h5M25 38h5M15 47h5M25 47h5" stroke="#8a5a3b" stroke-width="2.5" stroke-linecap="round"/><path d="M4 56h56" stroke="#8a5a3b" stroke-width="2.5" stroke-linecap="round"/><circle cx="47" cy="26" r="13" fill="#ffffff" stroke="#2f5d50" stroke-width="3"/><path d="M42 20l5 6 5-6M47 26v8M43 29h8" stroke="#2f5d50" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <p>現場が終わるまで、儲かったのかどうか分からない</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">GENLINKS なら</div>
+    <h2>一度入れたら、<br>もう書き写さない。</h2>
+    <div class="flow">
+      <div class="card bordered who">
+        <div class="ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#8a5a3b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 18h4"/></svg></div>
+        <div><div class="role">職人</div><div class="what">スマホで日報を出す</div><div class="role">現場・時間・経費・写真</div></div>
       </div>
-      <div class="tags">
-        <span class="tag">お申込み月の翌月末日まで無償</span><span class="tag">スマホ・PC どちらでも</span><span class="tag">領収書・請求書のAI読み取り</span>
+      <div class="auto">自動で</div>
+      <div class="outs">
+        <div class="out"><b>給料の元に<br>なる数字</b><span>労働時間・残業</span></div>
+        <div class="out"><b>現場ごとの<br>原価</b><span>人件費・経費</span></div>
+      </div>
+      <div class="card bordered who">
+        <div class="ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#8a5a3b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
+        <div><div class="role">社長</div><div class="what">パソコンで見るだけ</div></div>
       </div>
     </div>
-    <div><img src="img/01-dashboard.png" alt="管理画面のダッシュボード（デモ）"></div>
-  </div>
-</section>
+  </section>
 
-<section class="pain">
-  <div class="wrap">
-    <h2>こんな手間、ありませんか</h2>
-    <p class="lead">内装施工の現場でよく聞く「本社に集まらない」「集めるのに時間がかかる」を、入口から変えます。</p>
-    <div class="grid3">
-      <div class="card"><span class="material-symbols-rounded">description</span><h3>日報が紙やLINEでバラバラ</h3><p>誰が・どの現場に・何時間いたかを、あとから手で集計している。</p></div>
-      <div class="card"><span class="material-symbols-rounded">receipt_long</span><h3>領収書と立替経費の精算が月末に山積み</h3><p>領収書をもらい忘れ、金額を打ち直し、現場ごとの経費が分からない。</p></div>
-      <div class="card"><span class="material-symbols-rounded">schedule</span><h3>勤怠・残業・有給が別の帳簿</h3><p>出退勤と日報が合わず、残業の申請や承認が電話と口頭になっている。</p></div>
+  <section class="tint">
+    <h2>できること</h2>
+    <div class="feature">
+      <div class="head"><span class="num">01</span><span class="name">日報と出退勤</span></div>
+      <p>現場からスマホで、その場で出せます。選ぶところがほとんどで、文字の入力は少しです。</p>
+      <div class="shot tall"><img src="img/lp-phone-report.png" alt="日報の入力画面（現場・時刻・休憩・労働時間）"></div>
     </div>
-    <div class="arrow">GENLINKS なら、職人の入力は「スマホで1回」。あとは本社の管理画面に集まります。</div>
-  </div>
-</section>
+    <div class="feature">
+      <div class="head"><span class="num">02</span><span class="name">給料の元になる数字</span></div>
+      <p>労働時間・残業・有給を自動で集計。残業は社長が承認してから反映されます。</p>
+      <div class="shot wide"><img src="img/lp-pc-attendance.png" alt="出面・勤怠の集計画面"></div>
+    </div>
+    <div class="feature">
+      <div class="head"><span class="num">03</span><span class="name">現場ごとの原価</span></div>
+      <p>人件費・経費・協力業者の請求を、現場ごとにまとめます。</p>
+      <div class="shot wide"><img src="img/lp-pc-site-cost.png" alt="現場別集計の画面"></div>
+    </div>
+    <p class="muted small" style="margin:0;padding:0 4px;">ほかにも：領収書は写真を撮るだけで読み取り／見積・発注／工程表／現場チャット など</p>
+  </section>
 
-<section id="features">
-  <div class="wrap">
-    <h2>主な機能</h2>
-    <p class="lead">現場の入力から、経営の数字までを一気通貫で。</p>
-
-    <div class="feat">
+  <section>
+    <div class="eyebrow">つくった人の話</div>
+    <h2>自分の会社で<br>困っていたから、<br>つくりました。</h2>
+    <div class="maker">
+      <div class="face" aria-hidden="true">大塚</div>
       <div>
-        <h3><span class="material-symbols-rounded">edit_note</span>日報・出退勤（作業員アプリ）</h3>
-        <ul>
-          <li>出勤・退勤の打刻（位置情報つき）から、そのまま日報へ。現場・時間・経費を1画面で。</li>
-          <li>領収書は撮るだけ。AIが金額・日付・店名を読み取って自動入力。</li>
-          <li>残業申請・有給・経費申請もアプリから。承認は管理画面で。</li>
-        </ul>
-      </div>
-      <div class="shot"><img src="img/10-worker-reports.png" alt="日報の一覧（デモ）"></div>
-    </div>
-
-    <div class="feat">
-      <div>
-        <h3><span class="material-symbols-rounded">bar_chart</span>集計・現場別の原価（管理画面）</h3>
-        <ul>
-          <li>届いた日報から人件費を自動計算。現場ごとの人工・経費・請求をまとめて確認。</li>
-          <li>月次の経営数字をダッシュボードに。CSV・PDFで出力。</li>
-          <li>作業員台帳・現場台帳・取引先台帳を1か所で管理。</li>
-        </ul>
-      </div>
-      <div class="shot"><img src="img/08-reports.png" alt="日報一覧と集計（デモ）"></div>
-    </div>
-
-    <div class="feat">
-      <div>
-        <h3><span class="material-symbols-rounded">request_quote</span>見積 → 発注 → 請求（施工台帳）</h3>
-        <ul>
-          <li>見積書の作成・PDF発行。受注で現場化し、協力業者ごとに発注書を発行・メール送信。</li>
-          <li>協力業者はリンクを開いて承諾・請求書の提出（ログイン不要のポータル）。</li>
-          <li>受け取った請求書はAIが読み取り、支払期限・支払状況を追跡。</li>
-        </ul>
-      </div>
-      <div class="shot"><img src="img/05-purchase-orders.png" alt="注文書の発行（デモ）"></div>
-    </div>
-
-    <div class="feat">
-      <div>
-        <h3><span class="material-symbols-rounded">view_timeline</span>工程管理・スケジュール管理</h3>
-        <ul>
-          <li>複数現場の工程を1つの工程表で。色分けして全体を見渡せます。</li>
-          <li>車両・道具・会議室の予定を、スケジュール管理のタブで予約・共有。</li>
-          <li>予定の追加や変更は、メールとアプリ内のお知らせで作業員に届きます。</li>
-        </ul>
-      </div>
-      <div class="shot"><img src="img/02-process.png" alt="工程管理（デモ）"></div>
-    </div>
-
-    <div class="more">
-      <div class="card"><h3>現場チャット</h3><p>現場ごとにメッセージ・画像・ファイルを共有。</p></div>
-      <div class="card"><h3>車両管理</h3><p>車検証・修理履歴・車検切れの確認をまとめて。</p></div>
-      <div class="card"><h3>協力業者ポータル</h3><p>発注の承諾・請求書の提出を、業者側はログインなしで。</p></div>
-      <div class="card"><h3>AI補助機能</h3><p>領収書・車検証・請求書などの画像・書類を自動で読み取り。</p></div>
-    </div>
-  </div>
-</section>
-
-<section class="price" id="price">
-  <div class="wrap">
-    <h2>料金プラン</h2>
-    <p class="lead">2026年9月1日現在・表示価格は税抜。基本アカウント数・追加アカウントの月額は料金プランをご確認ください。</p>
-    <div class="plans">
-      <div class="plan">
-        <div class="name">ベーシック</div>
-        <div class="amt">50,000<small> 円 / 月（税抜）</small></div>
-        <p>日々の勤怠・日報・経費と、協力業者への発注・請求までを一本化するプラン。</p>
-      </div>
-      <div class="plan hi">
-        <div class="name">プレミアム（全機能）</div>
-        <div class="amt">100,000<small> 円 / 月（税抜）</small></div>
-        <p>見積・工程表・車両管理・現場チャットまで含む、全機能プラン。</p>
+        <p>職人の日報を紙やLINEで集めて、月末に書き写すのが大変でした。それを無くしたくて、自分の会社のためにつくりました。今はうちの職人28人が、毎日これで日報を出しています。</p>
+        <div class="muted small" style="margin-top:8px;">つくった人：大塚（内装業）</div>
       </div>
     </div>
-    <table>
-      <thead><tr><th>機能</th><th>内容</th><th>ベーシック</th><th>プレミアム</th></tr></thead>
-      <tbody>
-        <tr><td>勤怠管理</td><td>出退勤の打刻（位置情報を記録）、勤怠の集計</td><td class="c">○</td><td class="c">○</td></tr>
-        <tr><td>日報</td><td>作業員による日報の提出、就労時間の記録</td><td class="c">○</td><td class="c">○</td></tr>
-        <tr><td>経費管理</td><td>経費の申請・集計・精算、領収書画像の取込み</td><td class="c">○</td><td class="c">○</td></tr>
-        <tr><td>作業員台帳</td><td>氏名・連絡先・資格・健康診断の受診状況等の管理</td><td class="c">○</td><td class="c">○</td></tr>
-        <tr><td>現場管理</td><td>現場情報、確認ルール、添付書類の管理</td><td class="c">○</td><td class="c">○</td></tr>
-        <tr><td>施工台帳</td><td>発注書の発行、協力業者への請求管理</td><td class="c">○</td><td class="c">○</td></tr>
-        <tr><td>協力業者ポータル</td><td>取引先による発注内容の確認・承諾、請求書の提出</td><td class="c">○</td><td class="c">○</td></tr>
-        <tr><td>取引先管理</td><td>元請・協力業者の会社情報、担当者連絡先、口座情報の管理</td><td class="c">○</td><td class="c">○</td></tr>
-        <tr><td>AI補助機能</td><td>画像・書類からの自動読み取り（領収書、車検証、請求書等）</td><td class="c">○</td><td class="c">○</td></tr>
-        <tr><td>見積り</td><td>自社見積の作成、受領見積書の保管</td><td class="c no">—</td><td class="c">○</td></tr>
-        <tr><td>工程表</td><td>工程表の作成</td><td class="c no">—</td><td class="c">○</td></tr>
-        <tr><td>車両管理</td><td>車両情報、車検証、修理履歴の管理、車検切れのリマインド</td><td class="c no">—</td><td class="c">○</td></tr>
-        <tr><td>現場チャット</td><td>現場単位のメッセージ・画像・ファイルの送受信</td><td class="c no">—</td><td class="c">○</td></tr>
-        <tr><td>予定・通知</td><td>予定表の管理、電子メール及びアプリ内のお知らせによる各種通知</td><td class="c no">—</td><td class="c">○</td></tr>
-      </tbody>
-    </table>
-    <div class="trial"><b>無料でお試しいただけます。</b>お申込みの月の翌月末日まで無償で、試用期間中は全機能をお使いいただけます。継続されない場合は満了日の10日前までにお申し出ください。料金・違約金は一切かかりません。</div>
-    <p class="fine">契約期間は2年（以後、同条件で自動更新）。解約・更新拒絶のお申し出は1か月前まで。アカウントの増減は翌月分から反映（日割りなし）。お支払いは口座振替（初回は銀行振込・振込手数料はご負担ください）。在庫管理・業者間コミュニティは本サービスに含まれません。</p>
-  </div>
-</section>
-
-<section id="flow">
-  <div class="wrap">
-    <h2>導入の流れ</h2>
-    <p class="lead">最短で、お申込みの翌営業日から使い始められます。</p>
-    <div class="steps">
-      <div class="step"><h3>お問い合わせ</h3><p>会社名・代表者名・メールアドレスをお知らせください。</p></div>
-      <div class="step"><h3>アカウント発行</h3><p>管理画面のログイン情報をお送りします（無償期間はここから）。</p></div>
-      <div class="step"><h3>初期設定（約20分）</h3><p>会社情報・作業員・現場を登録。作業員にはログイン用のメールとパスワードを配ります。</p></div>
-      <div class="step"><h3>運用開始</h3><p>作業員はスマホで出退勤と日報。本社は管理画面で確認・承認・集計。</p></div>
+    <div class="eyebrow" style="color:var(--ink-2);padding-top:4px;">うちで実際に動いている数字</div>
+    <div class="stats">
+      <div class="stat"><b>28<small>人</small></b><span>職人全員が<br>スマホで</span></div>
+      <div class="stat"><b>800<small>件+</small></b><span>毎月の<br>日報</span></div>
+      <div class="stat"><b>124<small>件</small></b><span>管理している<br>現場</span></div>
     </div>
-  </div>
-</section>
+    <div class="muted" style="font-size:11px;">2026年5月から運用・数字は2026年9月時点</div>
+  </section>
 
-<section class="contact" id="contact">
-  <div class="wrap">
-    <h2>お問い合わせ・無料トライアル</h2>
-    <p>ご紹介者がいる場合は、その方経由でも承ります。メールでは「会社名・お名前・ご連絡先」をお書きください。</p>
-    <a class="cta" href="mailto:support@genlinks.app?subject=GENLINKS%20%E3%81%8A%E5%95%8F%E3%81%84%E5%90%88%E3%82%8F%E3%81%9B"><span class="material-symbols-rounded">mail</span>support@genlinks.app</a>
-  </div>
-</section>
+  <section class="tint">
+    <h2>始め方は、かんたん</h2>
+    <ol class="steps">
+      <li class="step"><span class="n">1</span><b>お話を聞かせてください</b></li>
+      <li class="step"><span class="n">2</span><span><b>職人さんにURLを送るだけ</b><span class="sub">アプリストアからのインストールは要りません</span></span></li>
+      <li class="step"><span class="n">3</span><b>次の日から日報が集まります</b></li>
+    </ol>
+  </section>
 
-<footer>
-  GENLINKS｜クラウド型 人事労務管理支援サービス／建設業向け・株式会社ケイシ<br>
-  画面はデモデータです。実際の画面・機能は契約プランと時期により異なる場合があります。
-</footer>
+  <section>
+    <h2>よくある質問</h2>
+    <details open>
+      <summary>スマホが苦手な職人でも使えますか？</summary>
+      <p>ほとんどは選ぶだけで、文字の入力は少しです。最初の使い方はお手伝いします。</p>
+    </details>
+    <details>
+      <summary>パソコンが無くても大丈夫？</summary>
+      <p>社長もスマホで日報や集計を見られます。パソコンがあると表が見やすくなります。</p>
+    </details>
+    <details>
+      <summary>今のやり方から移すのは大変？</summary>
+      <p>職人さんにURLを送るだけで始められます。現場や職人さんの登録はお手伝いします。</p>
+    </details>
+  </section>
+
+  <section class="end">
+    <svg width="120" height="120" viewBox="0 0 120 120" fill="none" aria-hidden="true"><circle cx="60" cy="60" r="58" fill="#3d7062"/><path d="M34 118 C 34 88, 44 76, 60 76 C 76 76, 86 88, 86 118 Z" fill="#8a5a3b"/><path d="M52 76 L60 92 L68 76" fill="#efe5d6"/><circle cx="60" cy="54" r="18" fill="#f2d3b3"/><path d="M40 50 C 40 34, 50 26, 60 26 C 70 26, 80 34, 80 50 Z" fill="#d98b3a"/><rect x="36" y="48" width="48" height="6" rx="3" fill="#b8702b"/><circle cx="53" cy="58" r="2" fill="#3a2e25"/><circle cx="67" cy="58" r="2" fill="#3a2e25"/><path d="M54 65 C 57 68, 63 68, 66 65" stroke="#3a2e25" stroke-width="2" stroke-linecap="round"/><rect x="70" y="82" width="16" height="26" rx="3" fill="#3a2e25"/><rect x="72.5" y="85" width="11" height="18" rx="1.5" fill="#bfe3d6"/></svg>
+    <h2>まずはお試しから。<br>導入はお手伝いします。</h2>
+    <div class="logo">GENLINKS</div>
+  </section>
+
+</main>
+
 </body>
 </html>
