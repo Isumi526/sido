@@ -62,7 +62,8 @@ Deno.serve(async (req) => {
 
   const kindKey = (n.kind ?? 'schedule') as string
   const kind: PushKind = KIND_MAP[kindKey] ?? 'announcement'
-  const path = typeof n.link_path === 'string' && n.link_path.startsWith('/') ? n.link_path : '/notifications'
+  // リンクの無いお知らせは、お知らせのタブで開く（お知らせ画面の既定は「やること」・2026-09-27）
+  const path = typeof n.link_path === 'string' && n.link_path.startsWith('/') ? n.link_path : '/notifications?tab=info'
   const url = APP_URL ? `${APP_URL}${ADMIN_LINK_KINDS.has(kindKey) ? `/admin${path}` : path}` : path
 
   const result = await pushToWorkers(svc, n.account_id, [n.worker_id], {

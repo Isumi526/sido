@@ -148,7 +148,10 @@ const selfUser = ref<User | null>(null)
 
 // ★既定は「やること」。放置されると困るのはこちらなので、開いた時に最初に目に入る側にする。
 //  やることが無ければお知らせを開く（空のタブを見せない）。
-const tab = ref<'todo' | 'info'>('todo')
+// ★既定は「やること」（2026-09-27 運用者「ベルを押すとやることが選ばれた後にお知らせへ切り替わって不自然」）。
+//  以前は開いた後に「やることが無ければお知らせへ」切り替えていた（承認待ちの残業を数に入れておらず、承認待ちがあっても切り替わっていた）。
+//  お知らせのスマホ通知から開いた時だけ ?tab=info でお知らせを開く（notify-push の既定の押し先）。
+const tab = ref<'todo' | 'info'>(useRoute().query.tab === 'info' ? 'info' : 'todo')
 
 /** やること（未承認の資料）をタップ → その現場へ。承認はそこで行う。 */
 function openTodo(d: { siteId: string }) {
@@ -265,11 +268,8 @@ onMounted(async () => {
   await load()
   callSchedulePref().catch(() => { /* 取れなければ出さない */ })
   await Promise.all([refreshNotifBadge(), refreshPendingDocBadge(), refreshPunchTodoBadge(), refreshApprovalBadge()])
-  // やることが無ければお知らせを開く（空のタブを見せない）＝開いた時点で既読になる
-  if (pendingDocCount.value === 0 && punchTodoItems.value.length === 0) {
-    tab.value = 'info'
-    await readAll()
-  }
+  // お知らせのタブで開いた時は、開いた時点で既読にする（タブを押して切り替えた時は watch(tab) が既読にする）
+  if (tab.value === 'info') await readAll()
 })
 </script>
 
