@@ -24,13 +24,21 @@
 ## ローカル開発フロー
 
 ```bash
-# LIFF
-cd apps/liff && npm run dev
-# → http://localhost:3000 で確認（LIFF認証スキップ・テスターユーザーで動作）
+# 作業員アプリ（apps/liff）※ supabase start 済みであること
+npm run dev:liff
+# → http://localhost:3000 を開くと、テスト用作業員（seed の Worker 01 = worker01.login.e2e@example.com）で自動ログインして動く
+#   「自動ログインに失敗」とコンソールに出たら（db reset 直後など）一度だけ:
+#     node --env-file=.env scripts/setup-liff-dev-login.mjs
+#   別の作業員で見たい時は http://localhost:3000/login から手でログイン（自動ログインはセッションが無い時だけ）
 
 # 管理画面
 cd apps/admin && npm run dev
 ```
+
+※ 作業員アプリの「ログイン無しの開発モード（dev-user-id・公開キーで叩く）」は RLS第2段B（2026-09-27）以降 users / workers / settings 等が読めず成り立たない。
+代わりに `apps/liff/composables/useLiff.ts` の自動ログインが動く。**nuxt dev ＋ `NUXT_PUBLIC_APP_ENV=development` ＋ Supabase URL が 127.0.0.1/localhost の三つ揃った時だけ**で、本番ビルドには含まれない
+（`apps/liff/.env` には development と本番URLが同居しているので、appEnv だけの判定にしないこと）。
+止めたい時は `localStorage.dev_autologin = 'off'`（E2E は `tests/e2e/liff-test.ts` がこれを入れ、ログインは fixture が決める）。
 
 ### ブランチ運用（A+運用：main一本デプロイ + dev はPC間同期用）
 
