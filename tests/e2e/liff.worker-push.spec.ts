@@ -142,7 +142,7 @@ test('設定ページ: 種類ごとに切り替えられ、「承認のお願い
   await expect(page.getByTestId('notify-push-home'), '使えない端末ではホームに案内を出さない').toHaveCount(0)
 })
 
-test('★承認者の「やること」に承認待ちの残業申請が1行出て、押し先は同じドメインの残業承認（作業員には出ない）', async ({ page }) => {
+test('★承認者の「やること」に承認待ちの残業申請が1行出て、押し先は作業員アプリの承認画面（作業員には出ない）', async ({ page }) => {
   await restSrv('overtime_requests', {
     method: 'POST', headers: { Prefer: 'return=minimal' },
     body: JSON.stringify({ account_id: accountId, worker_id: otherWorkerId, date: '2026-09-10', status: 'pending', reason: MARK, requested_end_time: '19:00' }),
@@ -153,7 +153,7 @@ test('★承認者の「やること」に承認待ちの残業申請が1行出�
   await page.getByTestId('notif-tab-todo').click()
   const item = page.getByTestId('todo-approval-overtime')
   await expect(item).toBeVisible({ timeout: 20000 })
-  await expect(item).toHaveAttribute('href', '/admin/overtime-approvals')
+  await expect(item).toHaveAttribute('href', '/approvals/overtime')   // A-2: 作業員アプリの中で承認する
 
   await setRole('worker')
   try {
