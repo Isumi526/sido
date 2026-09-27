@@ -46,6 +46,14 @@ test('前に出た時（visibilitychange）にも置き手紙を読んで移動�
   await expect(page).toHaveURL(/\/calendar/, { timeout: 15000 })
 })
 
+test('★画面が前に出たまま（visibilitychange が起きない）でも、フォーカスが戻った時に置き手紙を読んで移動する', async ({ page }) => {
+  // 2026-09-27 実機: アプリを開いた状態で通知を押すと移動しなかった。前に出たままだと visibilitychange は起きない
+  await page.goto('/', { waitUntil: 'networkidle' })
+  await leave(page, '/notifications')
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+  await expect(page).toHaveURL(/\/notifications$/, { timeout: 15000 })
+})
+
 test('2分より古い置き手紙では移動しない（あとで普通に開いた時に飛ばない）', async ({ page }) => {
   await page.goto('/', { waitUntil: 'networkidle' })
   await leave(page, '/notifications', 3 * 60 * 1000)
