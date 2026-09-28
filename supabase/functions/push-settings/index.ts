@@ -7,7 +7,7 @@
 //   subscribe   { endpoint, p256dh, auth }           → { ok }   この端末を自分の通知の宛先にする（全員できる）
 //   unsubscribe { endpoint }                         → { ok }   この端末を宛先から外す（自分の購読だけ）
 //   prefs-set   { kind, enabled }                    → { ok, prefs }  種類ごとのオン/オフ（行が無い＝オン）
-//   badge       {}                                   → { ok, approvalPending }  承認者の「承認待ちの残業申請」の数
+//   badge       {}                                   → { ok, approvalPending, overtimePending, reportPending }  承認者の承認待ちの数（合計と内訳）
 //
 //  ★worker_id / account_id はクライアントから受け取らず、検証済みの身元（resolveCaller）で固定する。
 //  ★「承認のお願い」は承認者にしか意味が無いので、承認者でない人の prefs には出さない（isApprover で画面が出し分け）。
@@ -15,7 +15,7 @@
 // ============================================================
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveCaller, APPROVER_ROLES } from '../_shared/caller-identity.ts'
-import { PUSH_KINDS, approvalPendingCount, type PushKind } from '../_shared/worker-push.ts'
+import { PUSH_KINDS, approvalPendingBreakdown, type PushKind } from '../_shared/worker-push.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -104,7 +104,8 @@ Deno.serve(async (req) => {
   }
 
   if (body.action === 'badge') {
-    return json({ ok: true, approvalPending: await approvalPendingCount(svc, accountId, workerId) })
+    const b = await approvalPendingBreakdown(svc, accountId, workerId)
+    return json({ ok: true, approvalPending: b.overtime + b.report, overtimePending: b.overtime, reportPending: b.report })
   }
 
   return json({ ok: false, error: 'unknown_action' }, 400)

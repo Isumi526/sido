@@ -23,5 +23,7 @@
   "pushFailed": "設定できませんでした。時間をおいてもう一度お試しください。",
   "pushSettingsRow": "通知の設定",
   "todoApprovalTitle": "承認待ちの残業申請",
-  "todoApprovalText": "{n}件あります。押すと、このアプリで承認・却下できます。"
+  "todoApprovalText": "{n}件あります。押すと、このアプリで承認・却下できます。",
+  "todoReportApprovalTitle": "承認待ちの日報",
+  "todoReportApprovalText": "{n}件あります。押すと、このアプリで中身を確認して承認・差し戻しできます。"
 }

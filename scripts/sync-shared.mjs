@@ -119,10 +119,11 @@ const SHARES = [
     ],
   },
   {
-    // 日報1件を「人が読む行」に畳む（承認画面の変更前／変更後の全体表示）。admin で使う（将来 LIFF の履歴でも）
+    // 日報1件を「人が読む行」に畳む（承認画面の変更前／変更後の全体表示）。admin と、作業員アプリの日報の承認（A-3）
     src: 'shared/report-snapshot.ts',
     dests: [
       'apps/admin/src/lib/report-snapshot.gen.ts',
+      'apps/liff/composables/report-snapshot.gen.ts',
     ],
   },
   {
