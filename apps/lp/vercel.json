@@ -10,18 +10,5 @@
         }
       ]
     }
-  ],
-  "redirects": [
-    {
-      "source": "/:path*",
-      "has": [
-        {
-          "type": "host",
-          "value": "www.genlinks.app"
-        }
-      ],
-      "destination": "https://genlinks.app/:path*",
-      "permanent": true
-    }
   ]
 }
