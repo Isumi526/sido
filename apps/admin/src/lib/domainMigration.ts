@@ -2,11 +2,11 @@
 //  domainMigration.ts — 独自ドメイン(genlinks.app)移行の旧ドメイン案内＋リダイレクト
 //  旧 admin ドメインでアクセスされたら「移行しました・5秒後に新URLへ」を出して遷移する。
 //  ※ NEW_ORIGIN が空の間は完全に無効（本番影響ゼロ）。owner が新ドメイン稼働後に値を入れて有効化する。
-//  ※ 配置（2026-09-28）: genlinks.app＝LP／app.genlinks.app＝作業員アプリ（/admin＝管理画面）／admin.genlinks.app＝管理画面。
+//  ※ 配置（2026-09-28 B）: genlinks.app＝作業員アプリ（/admin＝管理画面）／about.genlinks.app＝LP。app.・www.・admin. は転送。
 //     DNS / Vercel ドメイン割当て / 認証許可ドメインは owner 作業（人間ゲート）。
 // ============================================================
 
-// 新ドメインの admin ベースURL。空 = 移行案内オフ（既定）。例: 'https://admin.genlinks.app'
+// 新ドメインの admin ベースURL。空 = 移行案内オフ（既定）。例: 'https://genlinks.app/admin'
 export const NEW_ADMIN_ORIGIN: string = ''
 
 // 旧 admin ドメイン（ここでアクセスされた時だけ案内を出す）。

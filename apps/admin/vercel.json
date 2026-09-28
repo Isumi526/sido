@@ -1,10 +1,42 @@
 {
-  "git": { "deploymentEnabled": { "dev": false } },
+  "git": {
+    "deploymentEnabled": {
+      "dev": false
+    }
+  },
   "rewrites": [
-    { "source": "/admin/assets/(.*)", "destination": "/assets/$1" },
-    { "source": "/admin/manifest.json", "destination": "/manifest.json" },
-    { "source": "/admin/favicon.ico", "destination": "/favicon.ico" },
-    { "source": "/admin/apple-touch-icon.png", "destination": "/apple-touch-icon.png" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/admin/assets/(.*)",
+      "destination": "/assets/$1"
+    },
+    {
+      "source": "/admin/manifest.json",
+      "destination": "/manifest.json"
+    },
+    {
+      "source": "/admin/favicon.ico",
+      "destination": "/favicon.ico"
+    },
+    {
+      "source": "/admin/apple-touch-icon.png",
+      "destination": "/apple-touch-icon.png"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "admin.genlinks.app"
+        }
+      ],
+      "destination": "https://genlinks.app/admin/:path*",
+      "permanent": true
+    }
   ]
 }
