@@ -12,6 +12,7 @@
 // ============================================================
 import webpush from 'https://esm.sh/web-push@3.6.7'
 import { APPROVER_ROLES } from './caller-identity.ts'
+import { reportApprovalsFor } from './report-approval.ts'
 
 const VAPID_PUBLIC  = Deno.env.get('VAPID_PUBLIC_KEY')  ?? ''
 const VAPID_PRIVATE = Deno.env.get('VAPID_PRIVATE_KEY') ?? ''
@@ -34,13 +35,28 @@ export type WorkerPush = {
 export type PushResult = { sent: number; pruned: number; targets: number; skipped?: string }
 
 /** 承認待ちの残業申請の数（承認者に出す分・自分の申請は数えない） */
-export async function approvalPendingCount(svc: any, accountId: string, workerId: string): Promise<number> {
+export async function overtimePendingCount(svc: any, accountId: string, workerId: string): Promise<number> {
   const { data: me } = await svc.from('workers').select('permission_role, active')
     .eq('id', workerId).eq('account_id', accountId).maybeSingle()
   if (!me?.active || !APPROVER_ROLES.includes((me.permission_role ?? '') as string)) return 0
   const { count } = await svc.from('overtime_requests').select('id', { count: 'exact', head: true })
     .eq('account_id', accountId).eq('status', 'pending').neq('worker_id', workerId)
   return count ?? 0
+}
+
+/** 承認待ちの内訳（やることの行ごと）。日報は「今この人が承認/却下できるもの」（_shared/report-approval.ts・A-3） */
+export async function approvalPendingBreakdown(svc: any, accountId: string, workerId: string): Promise<{ overtime: number; report: number }> {
+  const [overtime, reports] = await Promise.all([
+    overtimePendingCount(svc, accountId, workerId),
+    reportApprovalsFor(svc, accountId, workerId).then(r => r.length).catch(() => 0),
+  ])
+  return { overtime, report: reports }
+}
+
+/** 承認待ちの数（残業申請＋日報）。やることの数・アイコンの数字に入る */
+export async function approvalPendingCount(svc: any, accountId: string, workerId: string): Promise<number> {
+  const b = await approvalPendingBreakdown(svc, accountId, workerId)
+  return b.overtime + b.report
 }
 
 /** アイコンの数字: 未読のお知らせ（site_document は「やること」側で数えるので除く）＋承認待ち */

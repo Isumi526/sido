@@ -37,15 +37,19 @@ export const totalBadgeCount = computed(() => unreadNotifCount.value + pendingDo
 /** 「やること」の件数（タブのバッジ）。打刻のお願い・未承認の現場書類・承認待ち */
 export const todoCount = computed(() => pendingDocCount.value + punchTodoItems.value.length + approvalPendingCount.value)
 
-// ── 承認待ちの残業申請（承認者だけ・A-1・2026-09-27）──
+// ── 承認待ち（承認者だけ・A-1・2026-09-27／日報は A-3・2026-09-28）──
 // ★設計「承認や申請の処理をやることで完結＋通知の統一」: アイコンの数字＝ベルの数（確認事項#5=A）。承認者に届く
-//  「残業申請が届きました」の通知と数を揃えるため、承認待ちを「やること」に1行で数える。
-//  押すと作業員アプリの承認画面（/approvals/overtime・A-2）で承認・却下できる。
-//  数は EF push-settings の badge（承認者でなければ 0・自分の申請は数えない）。
-export const approvalPendingCount = ref(0)
+//  「承認のお願い」の通知と数を揃えるため、承認待ちを「やること」に種類ごとに1行で数える。
+//  押すと作業員アプリの承認画面（残業＝/approvals/overtime・A-2／日報＝/approvals/reports・A-3）で処理できる。
+//  数は EF push-settings の badge（承認者でなければ 0・自分の申請は数えない・日報は自分が今押せるものだけ）。
+export const overtimeApprovalCount = ref(0)
+export const reportApprovalCount = ref(0)
+export const approvalPendingCount = computed(() => overtimeApprovalCount.value + reportApprovalCount.value)
 export async function refreshApprovalBadge(): Promise<void> {
   const push = useWorkerPush()   // ★await より前に解決する（注入が切れないように）
-  try { approvalPendingCount.value = await push.approvalPending() } catch { approvalPendingCount.value = 0 }
+  const b = await push.approvalBreakdown()
+  overtimeApprovalCount.value = b.overtime
+  reportApprovalCount.value = b.report
 }
 
 // ── 打刻催促の「やること」（A-3・2026-09-20）──

@@ -51,12 +51,23 @@
         </div>
         <ul v-else class="notif-list">
           <!-- 承認待ちの残業申請（承認者だけ）: 承認されるまで残る。押すとこのアプリの承認画面で承認・却下できる（A-2・2026-09-27） -->
-          <li v-if="approvalPendingCount > 0">
+          <li v-if="overtimeApprovalCount > 0">
             <NuxtLink class="notif tappable todo" to="/approvals/overtime" data-testid="todo-approval-overtime">
               <span class="material-symbols-rounded notif-icon kind-todo">more_time</span>
               <span class="notif-body">
                 <span class="notif-title">{{ $t('notifications.todoApprovalTitle') }}</span>
-                <span class="notif-text">{{ $t('notifications.todoApprovalText', { n: approvalPendingCount }) }}</span>
+                <span class="notif-text">{{ $t('notifications.todoApprovalText', { n: overtimeApprovalCount }) }}</span>
+              </span>
+              <span class="material-symbols-rounded notif-chev">chevron_right</span>
+            </NuxtLink>
+          </li>
+          <!-- 承認待ちの日報（その現場の責任者＋管理者・自分が今押せるものだけ）: 処理されるまで残る（A-3・2026-09-28） -->
+          <li v-if="reportApprovalCount > 0">
+            <NuxtLink class="notif tappable todo" to="/approvals/reports" data-testid="todo-approval-report">
+              <span class="material-symbols-rounded notif-icon kind-todo">fact_check</span>
+              <span class="notif-body">
+                <span class="notif-title">{{ $t('notifications.todoReportApprovalTitle') }}</span>
+                <span class="notif-text">{{ $t('notifications.todoReportApprovalText', { n: reportApprovalCount }) }}</span>
               </span>
               <span class="material-symbols-rounded notif-chev">chevron_right</span>
             </NuxtLink>

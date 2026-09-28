@@ -28,6 +28,12 @@ import { createRemoteJWKSet, jwtVerify } from 'https://esm.sh/jose@5'
 import { sendApprovalRequestMail } from '../_shared/approval-mail.ts'
 import { resolveWorkerNotifyEmail, sendResend } from '../_shared/doc-mail.ts'
 import { resolveApprover } from '../_shared/caller-identity.ts'
+import { pushToWorkers } from '../_shared/worker-push.ts'
+import { appUrl } from '../_shared/approver-push.ts'
+import {
+  PENDING_EDIT_COLS, hasOtherActiveOwner, reportApprovalsFor, reportApproverSelf, reportApproverWorkerIds,
+  responsibleMap, siteIdsOf, siteNamesOfPayload, slotFor, type PendingEditRow,
+} from '../_shared/report-approval.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
@@ -416,25 +422,7 @@ async function resolveApprovalMode(
   return { mode, responsibleWorkerIds: responsible }
 }
 
-/**
- * 自分のほかに「オーナー枠（admin/owner・active・ログイン可）」を埋められる人が居るか。
- * late_new は常に二重承認、かつオーナー枠は admin/owner のみが埋められる。オーナーが1名の会社で
- * そのオーナー自身が申請すると、自己承認禁止により誰もオーナー枠を埋められず永久ロックする
- * （2026-08-21 株式会社シードの実障害）。完全ワンオペ（他に居ない）時だけ自己承認を許すための判定。
- */
-async function hasOtherActiveOwner(
-  svc: any, accountId: string, myWorkerId: string | null,
-): Promise<boolean> {
-  // 実効的にオーナー枠を埋められる承認者＝active な admin/owner の worker（ログイン可）だけで判定する。
-  // ★worker行の無い休眠オーナー（accounts.owner_auth_user_id 例:sido@email.com）は数えない。
-  //  数えると、唯一の active admin worker（＝申請者本人）がワンオペと認められず永久ロックする
-  //  （2026-08-22 シード実障害。前回 owner_auth を数えていて修正が効かなかった）。
-  const { data: ws } = await svc.from('workers').select('id')
-    .eq('account_id', accountId).eq('active', true)
-    .in('permission_role', ['admin', 'owner'])
-    .not('auth_user_id', 'is', null)
-  return (ws ?? []).some((w: any) => w.id !== myWorkerId)
-}
+// hasOtherActiveOwner は _shared/report-approval.ts（作業員アプリの「やること」の出し分けと同じ関数を使う）
 
 /**
  * クライアントが名乗った users.id を「見てよい相手か」で検証して返す。
@@ -661,6 +649,115 @@ async function handleReevaluate(svc: any, authHeader: string): Promise<Response>
   return json({ ok: true, applied, still, modeSet, checked: (rows ?? []).length })
 }
 
+// ────────────────────────────────────────────────
+//  作業員アプリの「やること」から日報を承認する（設計 A-3・2026-09-28）
+//  ★一覧・中身だけをここで返す。承認/却下の書き込みは管理画面と同じ handleReview（approve / reject）＝
+//   二重承認・自己承認の禁止・日報への反映・差し戻しの通知はすべて同じ経路で、結果は完全に同じ。
+//  ★承認者かどうかは検証済みのログイン（Supabase JWT）で決める。LINE の身元・dev の抜け道では使えない。
+// ────────────────────────────────────────────────
+function neededRoles(p: { approval_mode: string | null; approvals: any[] | null; requires_dual: boolean | null }): string[] {
+  const have = new Set((Array.isArray(p.approvals) ? p.approvals : []).map((a: any) => a?.role))
+  const out: string[] = []
+  if (!have.has('owner')) out.push('owner')
+  if (p.requires_dual && p.approval_mode !== 'owner_only' && !have.has('site_manager')) out.push('site_manager')
+  return out
+}
+
+async function applicantNames(svc: any, accountId: string, userIds: string[]): Promise<Map<string, string>> {
+  const ids = [...new Set(userIds.filter(Boolean))]
+  const out = new Map<string, string>()
+  if (!ids.length) return out
+  const { data } = await svc.from('users').select('id, real_name').eq('account_id', accountId).in('id', ids)
+  for (const u of (data ?? []) as any[]) if (u.real_name) out.set(u.id, u.real_name)
+  return out
+}
+
+function listItemOf(p: PendingEditRow, names: Map<string, string>, slot: string | null) {
+  return {
+    id: p.id, report_date: p.report_date, kind: p.kind, reason: p.reason,
+    applicant_name: (p.report_user_id && names.get(p.report_user_id)) || p.submitted_by_name || null,
+    submitted_by_name: p.submitted_by_name, submitted_at: p.submitted_at,
+    requires_dual: !!p.requires_dual, approval_mode: p.approval_mode,
+    approvals: (Array.isArray(p.approvals) ? p.approvals : []).map((a: any) => ({ name: a?.name ?? null, role: a?.role ?? null, at: a?.at ?? null })),
+    need: neededRoles(p),
+    site_names: siteNamesOfPayload(p.payload),
+    slot,
+  }
+}
+
+async function handleApprovalList(svc: any, authHeader: string): Promise<Response> {
+  if (!authHeader || authHeader.endsWith(ANON_KEY)) return json({ ok: false, error: 'unauthorized' }, 401)
+  const approver = await resolveApprover(svc, authHeader)
+  if (!approver) return json({ ok: false, error: 'unauthorized' }, 401)
+  if (approver.role === 'worker') return json({ ok: false, error: 'not_an_approver' }, 403)
+  // worker 行を持たない純オーナーは作業員アプリを使わない（管理画面の承認のまま）
+  if (!approver.workerId) return json({ ok: true, items: [] })
+  const rows = await reportApprovalsFor(svc, approver.accountId, approver.workerId)
+  const names = await applicantNames(svc, approver.accountId, rows.map(r => r.pend.report_user_id ?? ''))
+  return json({ ok: true, items: rows.map(r => listItemOf(r.pend, names, r.slot)) })
+}
+
+async function handleApprovalDetail(svc: any, body: any, authHeader: string): Promise<Response> {
+  if (!authHeader || authHeader.endsWith(ANON_KEY)) return json({ ok: false, error: 'unauthorized' }, 401)
+  const approver = await resolveApprover(svc, authHeader)
+  if (!approver) return json({ ok: false, error: 'unauthorized' }, 401)
+  if (approver.role === 'worker') return json({ ok: false, error: 'not_an_approver' }, 403)
+  const accountId = approver.accountId
+  const id = typeof body.pendingId === 'string' ? body.pendingId : ''
+  if (!id) return json({ ok: false, error: 'pending_id_required' }, 400)
+  // 自テナントの申請だけ（他テナントのIDを渡しても引けない）
+  const { data: pend } = await svc.from('daily_report_pending_edits')
+    .select(`${PENDING_EDIT_COLS}, diffs, status, reviewed_by_name, reviewed_at, reject_reason`)
+    .eq('id', id).eq('account_id', accountId).maybeSingle()
+  if (!pend) return json({ ok: false, error: 'pending_not_found' }, 404)
+
+  const { data: before } = pend.report_id
+    ? await svc.from('daily_reports').select('id, is_working, leave_type, is_business_trip, note, sites, gasoline_items')
+        .eq('id', pend.report_id).eq('account_id', accountId).maybeSingle()
+    : { data: null }
+  const self = approver.workerId ? await reportApproverSelf(svc, accountId, approver.workerId) : null
+  const siteIds = siteIdsOf(pend.payload)
+  const resp = await responsibleMap(svc, accountId, siteIds)
+  const responsible = siteIds.map(x => resp.get(x)).filter(Boolean) as string[]
+  const slot = self && pend.status === 'pending' ? slotFor(pend as PendingEditRow, self, responsible) : null
+  const mine = !!self && !!pend.submitted_by_user_id && self.myUserIds.includes(pend.submitted_by_user_id)
+  const approvedByMe = (Array.isArray(pend.approvals) ? pend.approvals : []).some((a: any) => a?.auth_user_id === approver.authUserId)
+  const names = await applicantNames(svc, accountId, [pend.report_user_id ?? ''])
+  return json({
+    ok: true,
+    item: {
+      ...listItemOf(pend as PendingEditRow, names, slot),
+      status: pend.status, reviewed_by_name: pend.reviewed_by_name, reviewed_at: pend.reviewed_at, reject_reason: pend.reject_reason,
+      diffs: Array.isArray(pend.diffs) ? pend.diffs : [],
+    },
+    before: before ?? null,
+    after: pend.payload ?? null,
+    mine, approvedByMe,
+  })
+}
+
+/**
+ * 申請が届いたことを、承認できる人の端末へ知らせる（種類＝承認のお願い）。押すと作業員アプリの承認画面。
+ * ★宛先は「やること」に出る人と同じ規則（_shared/report-approval.ts）＝通知が来たのにやることに無い、を作らない。
+ *  best-effort（失敗しても申請は成立）。
+ */
+async function pushReportApprovalRequest(svc: any, accountId: string, pendingId: string, applicantName: string, date: string, kindLabel: string): Promise<void> {
+  try {
+    const { data: pend } = await svc.from('daily_report_pending_edits').select(PENDING_EDIT_COLS)
+      .eq('id', pendingId).eq('account_id', accountId).maybeSingle()
+    if (!pend) return
+    const ids = await reportApproverWorkerIds(svc, accountId, pend as PendingEditRow)
+    const r = await pushToWorkers(svc, accountId, ids, {
+      title: `${kindLabel}の承認のお願い`,
+      body: `${applicantName}さん（${date}）`,
+      url: appUrl(`/approvals/reports/${pendingId}`),
+      tag: `report-approval-${pendingId}`,
+      kind: 'approval',
+    })
+    if (r.skipped && r.skipped !== 'no_target' && r.skipped !== 'no_subscription') console.warn('[report-edit-log] approval push skipped:', r.skipped)
+  } catch (e) { console.warn('[report-edit-log] approval push failed:', e) }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders() })
   if (req.method !== 'POST') return json({ ok: false, error: 'method_not_allowed' }, 405)
@@ -676,6 +773,13 @@ Deno.serve(async (req) => {
   }
   if (body.action === 'reevaluate') {
     return await handleReevaluate(svc, req.headers.get('Authorization') ?? '')
+  }
+  // 作業員アプリの「やること」（承認者だけ・Supabase JWT）
+  if (body.action === 'approval-list') {
+    return await handleApprovalList(svc, req.headers.get('Authorization') ?? '')
+  }
+  if (body.action === 'approval-detail') {
+    return await handleApprovalDetail(svc, body, req.headers.get('Authorization') ?? '')
   }
 
   const caller = await resolveCaller(
@@ -937,6 +1041,9 @@ Deno.serve(async (req) => {
         const { data: appl } = reportUserId
           ? await svc.from('users').select('real_name, worker_id').eq('id', reportUserId).maybeSingle()
           : { data: null }
+        // ★スマホ通知（A-3・2026-09-28）。メールは管理画面へ、プッシュは作業員アプリの承認画面へ（自前で例外を握る＝メールを止めない）
+        await pushReportApprovalRequest(svc, caller.accountId, pendingId,
+          (appl?.real_name as string) || caller.name || '作業員', reportDate, kindLabel)
         const r = await sendApprovalRequestMail(svc, {
           accountId: caller.accountId, kindLabel,
           applicantWorkerId: (appl?.worker_id as string) ?? null,
