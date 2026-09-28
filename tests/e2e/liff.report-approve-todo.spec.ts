@@ -171,7 +171,7 @@ test('★二重承認: 現場責任者が押すと反映はまだ・自分の一
   await page.goto(`/approvals/reports/${id}`, { waitUntil: 'networkidle' })
   await expect(page.getByTestId('rpa-dual')).toContainText('現場責任者とオーナーの2名', { timeout: 20000 })
   await expect(page.getByTestId('rpa-partial-note'), '★押しても反映されないことを先に言う').toContainText('オーナー')
-  await expect(page.getByTestId('rba-changed-count'), '期限後の提出は提出内容（全体）だけ').toHaveText('提出内容（全体）')
+  await expect(page.getByTestId('rba-submitted-whole'), '期限後の提出は提出内容（全体）だけ').toHaveText('提出内容（全体）')
   await page.getByTestId('rpa-approve').click()
   await expect(page.getByTestId('rpa-msg')).toHaveText('承認しました。反映には、あと オーナー の承認が必要です。')
   await expect(page.getByTestId('rpa-approved-by-me')).toBeVisible()
