@@ -1,7 +1,7 @@
 // ============================================================
 //  admin.site-status.spec.ts
 //  現場の5段階ステータス（2026-09-19 A-1・旧 admin.site-deactivate-confirm.spec.ts を置換）
-//   - 一覧のタブ＝進行中／完了／失注／すべて（旧URL ?status=inactive は完了タブに読み替え）
+//   - 一覧のタブ＝見積中／受注／着工／完了／失注／すべて（2026-09-28 状態ごとに分けた・最初は着工。旧URL ?status=inactive は完了、?status=open は着工に読み替え）
 //   - ステータス変更はモーダルを挟む（完了→終了日、失注→理由）。キャンセルすると変わらない
 //   - 変更すると active がDBトリガで追従し、operation_logs に残る
 //   - 戻す操作（完了→着工）もできる（可逆）
@@ -79,6 +79,17 @@ test.describe('現場の5段階ステータス', () => {
     expect((await siteRow(siteId)).status, 'キャンセルしたので着工のまま').toBe('in_progress')
   })
 
+  test('★一覧のタブは状態ごと（見積中／受注／着工／完了／失注／すべて）。最初は着工（2026-09-28 今井さん）', async ({ page }) => {
+    await page.goto('/sites', { waitUntil: 'networkidle' })
+    const tabs = await page.locator('[data-testid^="site-tab-"]').allTextContents()
+    for (const label of ['見積中', '受注', '着工', '完了', '失注', 'すべて']) expect(tabs.some(t => t.startsWith(label)), label).toBe(true)
+    await expect(page.locator('[data-testid="site-tab-in_progress"]')).toHaveClass(/active/)
+    await expect(page.locator(`[data-testid="site-row-${siteId}"]`), '着工の現場は最初のタブに出る').toBeVisible({ timeout: 15000 })
+    await expect(page.locator(`[data-testid="site-row-${bareId}"]`), '見積中は着工タブに出ない').toHaveCount(0)
+    await page.locator('[data-testid="site-tab-estimating"]').click()
+    await expect(page.locator(`[data-testid="site-row-${bareId}"]`), '見積中タブに出る').toBeVisible()
+  })
+
   test('★完了にすると終了日が入り active=false になり、操作ログに残る', async ({ page }) => {
     await restSrv(`sites?id=eq.${siteId}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ status: 'in_progress', period_end: null }) })
     await restSrv(`operation_logs?target_id=eq.${siteId}`, { method: 'DELETE' }).catch(() => {})
@@ -93,7 +104,7 @@ test.describe('現場の5段階ステータス', () => {
 
     await expect.poll(async () => (await siteRow(siteId)).status, { timeout: 15000 }).toBe('completed')
     expect(await siteRow(siteId)).toMatchObject({ active: false, period_end: '2026-09-18' })
-    // 進行中タブから消え、完了タブに出る
+    // 着工タブから消え、完了タブに出る
     await expect(row).toHaveCount(0)
     await page.locator('[data-testid="site-tab-completed"]').click()
     await expect(page.locator(`[data-testid="site-status-${siteId}"]`)).toHaveText('完了')
@@ -116,7 +127,7 @@ test.describe('現場の5段階ステータス', () => {
   })
 
   test('失注にする時は理由を聞き lost_reason に残る', async ({ page }) => {
-    await page.goto('/sites', { waitUntil: 'networkidle' })
+    await page.goto('/sites?status=estimating', { waitUntil: 'networkidle' })
     const row = page.locator(`[data-testid="site-row-${bareId}"]`)
     await expect(row).toBeVisible({ timeout: 15000 })
     await expect(row.locator(`[data-testid="site-status-${bareId}"]`)).toHaveText('見積中')
@@ -131,7 +142,7 @@ test.describe('現場の5段階ステータス', () => {
 
   test('★住所・工期・責任者の無い現場は受注に上げられない（編集を促す）', async ({ page }) => {
     await restSrv(`sites?id=eq.${bareId}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ status: 'estimating', lost_reason: null }) })
-    await page.goto('/sites', { waitUntil: 'networkidle' })
+    await page.goto('/sites?status=estimating', { waitUntil: 'networkidle' })
     const row = page.locator(`[data-testid="site-row-${bareId}"]`)
     await expect(row).toBeVisible({ timeout: 15000 })
     await row.locator(`[data-testid="site-status-select-${bareId}"]`).selectOption('ordered')
@@ -156,7 +167,7 @@ test.describe('現場の5段階ステータス', () => {
   })
 
   test('編集モーダル: 見積中は現場名だけで保存でき、受注に変えると必須項目で止まる', async ({ page }) => {
-    await page.goto('/sites', { waitUntil: 'networkidle' })
+    await page.goto('/sites?status=estimating', { waitUntil: 'networkidle' })
     await page.getByRole('button', { name: '＋ 追加' }).click()
     const name = `E2Eステータス新規_${TS}`
     await page.locator('.modal input.input').first().fill(name)

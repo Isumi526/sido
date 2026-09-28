@@ -1,7 +1,7 @@
 // ============================================================
 //  liff.site-status-visibility.spec.ts
 //  現場ステータスA-2: 作業員アプリの各画面が「表示マトリクス」（shared/site-status.ts）どおりに現場を出す
-//   #12 日報の現場選択   … 既定＝受注・着工。「見積中・終了した現場も表示」で見積中・完了が出る。失注は出ない
+//   #12 日報の現場選択   … 既定＝見積中・受注・着工（2026-09-28 見積も労務）。「終了した現場も表示」で完了が出る。失注は出ない
 //   #14 予定の現場       … 見積中・受注・着工
 //   #15 会社予定         … 既定＝受注・着工。切替で見積中（工期あり）・直近完了
 //   #16 現場情報一覧     … 既定＝受注・着工。切替で見積中・完了
@@ -46,7 +46,7 @@ async function clearMasterCache(page: import('@playwright/test').Page) {
   await page.evaluate(() => { try { localStorage.removeItem('app_master_cache') } catch {} })
 }
 
-test('#12 日報の現場選択: 既定＝受注・着工。切替で見積中・完了。失注は出ない', async ({ page }) => {
+test('#12 日報の現場選択: 既定＝見積中・受注・着工。切替で完了。失注は出ない', async ({ page }) => {
   await clearMasterCache(page)
   await page.goto('/report', { waitUntil: 'networkidle' })
   const sel = page.getByTestId('site-select-0')
@@ -54,12 +54,11 @@ test('#12 日報の現場選択: 既定＝受注・着工。切替で見積中�
   await expect.poll(async () => (await sel.locator('option').allTextContents()).includes(N.prog), { timeout: 20000 }).toBe(true)
   let texts = await sel.locator('option').allTextContents()
   expect(texts).toContain(N.ord)
-  expect(texts).not.toContain(N.est)
+  expect(texts, '★見積中も既定で出る（見積も労務として動いている）').toContain(N.est)
   expect(texts).not.toContain(N.done)
   expect(texts).not.toContain(N.lost)
   await page.getByTestId('show-other-sites-0').locator('input').check()
   texts = await sel.locator('option').allTextContents()
-  expect(texts).toContain(N.est)
   expect(texts).toContain(N.done)
   expect(texts).not.toContain(N.lost)
   await expect(page.getByTestId('site-group-other-status').first()).toBeAttached()
