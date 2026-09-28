@@ -59,7 +59,8 @@ export type SiteScreenKey =
 
 export const SITE_SCREEN_STATUSES: Record<SiteScreenKey, { default: SiteStatus[]; optional: SiteStatus[] }> = {
   site_master:           { default: ['estimating', 'ordered', 'in_progress'], optional: ['completed', 'lost'] },
-  report_site_picker:    { default: ['ordered', 'in_progress'],               optional: ['estimating', 'completed'] },
+  // ★見積中も既定で出す（2026-09-28 今井さん「見積もりは労務として動いている」）。切替は完了だけ
+  report_site_picker:    { default: ['estimating', 'ordered', 'in_progress'], optional: ['completed'] },
   schedule_site_picker:  { default: ['estimating', 'ordered', 'in_progress'], optional: [] },
   process_gantt:         { default: ['ordered', 'in_progress'],               optional: ['estimating', 'completed'] },
   site_aggregation:      { default: ['in_progress', 'completed'],             optional: ['ordered'] },
