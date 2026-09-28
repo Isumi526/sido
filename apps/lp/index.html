@@ -124,7 +124,7 @@
   .maker p { font-size: 15px; font-weight: 700; line-height: 1.9; }
   .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
   .stat { background: var(--white); border: 2px solid var(--line); border-radius: 20px; padding: 16px 6px; text-align: center; line-height: 1.4; }
-  .stat b { display: block; font-size: 30px; font-weight: 900; color: var(--green); font-variant-numeric: tabular-nums; }
+  .stat b { display: block; white-space: nowrap; font-size: 28px; font-weight: 900; color: var(--green); font-variant-numeric: tabular-nums; }
   .stat b small { font-size: 13px; }
   .stat span { font-size: 11px; color: var(--ink-2); }
 
@@ -156,7 +156,6 @@
   <section class="hero">
     <div class="top">
       <div class="logo">GENLINKS</div>
-      <div class="badge">内装・工務店のためのアプリ</div>
     </div>
     <div class="eyebrow">工務店がつくった、現場のためのアプリ</div>
     <h1>現場の原価が、<br><span class="hl">その場で分かる。</span></h1>
@@ -195,27 +194,26 @@
     <h2>変わるのは、<br>この 3 つです。</h2>
     <nav class="values" aria-label="3つの変わること">
       <a class="value" href="#suji"><span class="mark">1</span><span><b>数字が見える</b><span>どの現場で、いくら使ったかが、その場で分かる</span></span><span class="go" aria-hidden="true">↓</span></a>
-      <a class="value" href="#jimu"><span class="mark">2</span><span><b>事務が減る</b><span>書き写しがなくなり、人件費も、事務の人のストレスやミスも減る</span></span><span class="go" aria-hidden="true">↓</span></a>
-      <a class="value" href="#kiritsu"><span class="mark">3</span><span><b>規律ができる</b><span>残業も経費も、決まったとおりに。無駄な残業が減る</span></span><span class="go" aria-hidden="true">↓</span></a>
+      <a class="value" href="#jimu"><span class="mark">2</span><span><b>事務が減る</b><span>書き写しがなくなり、事務員さんの手間とミスが減る</span></span><span class="go" aria-hidden="true">↓</span></a>
+      <a class="value" href="#kiritsu"><span class="mark">3</span><span><b>規律ができる</b><span>残業も経費も、決まったルールどおりに回る</span></span><span class="go" aria-hidden="true">↓</span></a>
     </nav>
   </section>
 
   <section class="tint" id="suji">
     <div class="chapter-head"><span class="mark">1</span><span class="eyebrow">数字が見える</span></div>
     <h2>どの現場で、<br>いくら使ったか。</h2>
-    <p class="lead">何か月もかかる現場でも、今いくらかかっているかが、その場で分かります。人件費・経費・協力業者の請求を、現場ごとに。「1万6千円のはずの処分費に40万円の請求」のような違いにも、すぐ気づけます。</p>
+    <p class="lead">工期の長い現場でも、今いくら使っているかがその場で分かります。人件費・経費・協力業者の請求を現場ごとにまとめるので、見積と実際の請求の食い違いにも、すぐ気づけます。</p>
     <div class="result">
-      <span class="label">人件費の出し方は、会社ごとに選べます</span>
+      <span class="label">人件費の計算は、会社ごとに選べます</span>
       <span class="fig">日当か、実際の時給か</span>
     </div>
     <div class="shot wide"><img src="img/lp-pc-site-cost.png" alt="現場別集計の画面"></div>
-    <p class="muted" style="font-size:13px;">ほかにも：見積・発注／工程表／現場チャット など</p>
   </section>
 
   <section id="jimu">
     <div class="chapter-head"><span class="mark">2</span><span class="eyebrow">事務が減る</span></div>
     <h2>書き写しの伝言ゲームが、<br>なくなる。</h2>
-    <p class="lead">職人さん → 管理者 → 事務 → Excel と、同じことを何度も書き写さない。<br>直す時は、本人がスマホで直せます。</p>
+    <p class="lead">日報・勤怠・経費を、紙やLINEから Excel へ何度も書き写す必要がなくなります。<br>直す時は、本人がスマホで直せます。</p>
     <div class="flow">
       <div class="who">
         <div class="ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#8a5a3b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 18h4"/></svg></div>
@@ -224,21 +222,17 @@
       <div class="auto">自動でそろう</div>
       <div class="outs">
         <div class="out">出面・<br>勤怠</div>
-        <div class="out">給料の<br>元の数字</div>
+        <div class="out">給与の<br>集計</div>
         <div class="out">経費<br>精算</div>
       </div>
     </div>
     <ul class="points">
-      <li class="point"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2f5d50" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg><span><b>事務の人の負担が軽くなる</b><span>月末に追われる書き写しや、合わない数字の確かめ直しがなくなり、ストレスもミスも減ります。</span></span></li>
+      <li class="point"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2f5d50" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg><span><b>事務員さんの手間が減る</b><span>月末の書き写しや、合わない数字の確かめ直しがなくなり、ミスも減ります。</span></span></li>
       <li class="point"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2f5d50" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg><span><b>領収書は写真を撮るだけ</b><span>金額や登録番号（インボイス）を読み取って入ります。</span></span></li>
       <li class="point"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2f5d50" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg><span><b>有給も自動で管理</b><span>付与されると増えて、使えば減ります。本人もスマホで残りを見られます。</span></span></li>
     </ul>
     <div class="shot wide"><img src="img/lp-pc-attendance.png" alt="出面・勤怠の集計画面"></div>
-    <div class="result">
-      <span class="label">ある工務店（S社）では、毎日の書き写しが</span>
-      <span class="fig">約2時間 → ほぼゼロ</span>
-    </div>
-    <p class="lead">事務の人に残業代を払うより、書き写しを無くして残業を減らす。<br>それだけで、利用料の元が取れます。</p>
+    <p class="lead">事務員さんの残業代を払うより、書き写しをなくして残業を減らす。<br>それだけで、利用料の元が取れます。</p>
   </section>
 
   <section class="tint" id="kiritsu">
@@ -246,34 +240,35 @@
     <h2>職人さんを信じたい。<br>だから、仕組みで守る。</h2>
     <p class="lead">優しいだけだと、なあなあになる。<br>ルールが決まっていれば、正直な人が損をしません。</p>
     <ul class="points">
-      <li class="point"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#d98b3a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/></svg><span><b>残業申請は、すぐ管理者のスマホへ</b><span>「何のための残業？」「3日後なら人を足そう」とすぐ話せて、無駄な残業が減ります。知らないところでの残業もなくなります。</span></span></li>
+      <li class="point"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#d98b3a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/></svg><span><b>残業申請は、すぐ管理者のスマホへ</b><span>何のための残業か、その場で確かめて相談できるので、無駄な残業が減ります。知らないところでの残業もなくなります。</span></span></li>
       <li class="point"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#d98b3a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="8" height="16" rx="2"/><rect x="13" y="4" width="8" height="16" rx="2"/><path d="M6 9h2M16 9h2"/></svg><span><b>打刻と日報を並べて確かめる</b><span>出勤・退勤の打刻と日報の時刻を、承認の画面で並べて見られます。</span></span></li>
-      <li class="point"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#d98b3a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg><span><b>経費は現場にひもづけて、その日のうちに</b><span>どの現場の経費か、領収書の写真、接待なら同行者まで。毎日その場で出すので、領収書の出し忘れもなくなります。</span></span></li>
+      <li class="point"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#d98b3a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg><span><b>経費は現場ごとに、その日のうちに</b><span>どの現場の経費か、領収書の写真まで。毎日その場で出すので、領収書の出し忘れもなくなります。</span></span></li>
       <li class="point"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#d98b3a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg><span><b>締切後の修正は、理由と承認</b><span>誰が・いつ・何を直したかも残ります。</span></span></li>
     </ul>
     <div class="shot phone-shot"><img src="img/lp-phone-approve.png" alt="残業申請の承認画面（日報の終了時刻・その日の打刻と日報が並ぶ）"></div>
-    <div class="result">
-      <span class="label">ある工務店（S社）では、毎月の経費が</span>
-      <span class="fig">15〜20万円 → 約10万円</span>
-      <span class="src">経費を現場にひもづけてから（2026年6〜7月）</span>
-    </div>
+    <p class="muted" style="font-size:13px;">ほかにも：見積・発注／工程表／現場チャット など</p>
   </section>
 
   <section>
-    <div class="eyebrow">つくった人の話</div>
-    <h2>自分の会社で<br>困っていたから、<br>つくりました。</h2>
+    <div class="eyebrow">生まれた理由</div>
+    <h2>現場の困りごとから、<br>生まれました。</h2>
     <div class="maker">
-      <div class="face" aria-hidden="true">社長</div>
-      <div>
-        <p>職人さんの日報や経費をLINEで集めて、月末に書き写すのが大変でした。本当かどうか確かめられない残業や経費もありました。職人さんを疑いたいわけじゃない。信じたい。だからこそ、仕組みで決めることにしました。今はうちの職人さん28人が、毎日これで日報を出しています。</p>
-        <div class="note" style="margin-top:8px;">つくった人：名古屋の内装会社の社長</div>
-      </div>
+      <p>GENLINKS は、職人さんを抱えるある工務店が、自社のためにつくったアプリです。日報や経費を LINE で集めて月末に書き写す手間、本当かどうか確かめられない残業や経費。職人さんを疑いたいのではなく、信じるために、仕組みで決めることにしました。</p>
     </div>
-    <div class="eyebrow" style="color:var(--ink-2);padding-top:4px;">うちで実際に動いている数字</div>
+    <div class="eyebrow" style="color:var(--ink-2);padding-top:4px;">その工務店での、実際の数字</div>
     <div class="stats">
       <div class="stat"><b>28<small>人</small></b><span>職人さん全員が<br>スマホで</span></div>
       <div class="stat"><b>800<small>件+</small></b><span>毎月の<br>日報</span></div>
       <div class="stat"><b>124<small>件</small></b><span>管理している<br>現場</span></div>
+    </div>
+    <div class="result">
+      <span class="label">毎日の書き写し</span>
+      <span class="fig">約2時間 → ほぼゼロ</span>
+    </div>
+    <div class="result">
+      <span class="label">毎月の経費</span>
+      <span class="fig">15〜20万円 → 約10万円</span>
+      <span class="src">経費を現場ごとに出すようにしてから（2026年6〜7月）</span>
     </div>
     <div class="note">2026年5月から運用・数字は2026年9月時点</div>
   </section>
@@ -292,15 +287,15 @@
     <h2>よくある質問</h2>
     <details open>
       <summary>職人さんに嫌がられませんか？（監視になりませんか？）</summary>
-      <p>目的は監視ではなく、ルールをはっきりさせることです。決まったとおりに出していれば、正直な人が損をしません。</p>
+      <p>目的は見張ることではなく、ルールをはっきりさせることです。申請や修正の手順が決まっているので、職人さんも迷いません。</p>
     </details>
     <details>
       <summary>スマホが苦手な職人さんでも使えますか？</summary>
       <p>ほとんどは選ぶだけで、文字の入力は少しです。最初の使い方はお手伝いします。</p>
     </details>
     <details>
-      <summary>今のやり方から移すのは大変？</summary>
-      <p>職人さんにURLを送るだけで始められます。現場や職人さんの登録はお手伝いします。</p>
+      <summary>パソコンが無くても使えますか？</summary>
+      <p>社長や管理者も、スマホで日報や集計を見られます。表を広く見たい時は、パソコンが便利です。</p>
     </details>
   </section>
 
