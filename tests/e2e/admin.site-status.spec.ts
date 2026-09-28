@@ -167,7 +167,7 @@ test.describe('現場の5段階ステータス', () => {
   })
 
   test('編集モーダル: 見積中は現場名だけで保存でき、受注に変えると必須項目で止まる', async ({ page }) => {
-    await page.goto('/sites', { waitUntil: 'networkidle' })
+    await page.goto('/sites?status=estimating', { waitUntil: 'networkidle' })
     await page.getByRole('button', { name: '＋ 追加' }).click()
     const name = `E2Eステータス新規_${TS}`
     await page.locator('.modal input.input').first().fill(name)
