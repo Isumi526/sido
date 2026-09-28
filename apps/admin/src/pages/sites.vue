@@ -403,7 +403,7 @@ import { logOperation } from '../lib/operationLog'
 import { todayStr } from '../lib/schedule-core.gen'
 import {
   SITE_STATUS_ORDER, SITE_STATUS_LABEL, SITE_STATUS_DEFAULT_ADMIN, SITE_REQUIRED_FIELDS, SITE_REQUIRED_FIELD_LABEL,
-  missingSiteFields, suggestNextSiteStatus, siteStatusesForScreen,
+  missingSiteFields, suggestNextSiteStatus,
 } from '../lib/site-status.gen'
 import type { SiteStatus, SiteRequiredField } from '../lib/site-status.gen'
 
@@ -695,22 +695,24 @@ function fixedTimeLabel(s: Site): string {
 const q          = useQueryParam('q', '')                                  // URL ?q= 検索
 // 既定は『有効のみ』表示（無効現場はデフォルト非表示・フィルタで切替可）
 // ?status= タブ。旧URL（active/inactive）は open/completed に読み替える
+// ★状態ごとにタブを分ける（2026-09-28 今井さん「見積もり、受注、進行中で分けたい」）。最初に開くのは着工。
+//  以前の「進行中（見積中〜着工）」タブの URL（?status=open）は着工に読み替える
 const STATUS_TABS = [
-  { key: 'open', label: '進行中' }, { key: 'completed', label: '完了' }, { key: 'lost', label: '失注' }, { key: 'all', label: 'すべて' },
+  { key: 'estimating', label: '見積中' }, { key: 'ordered', label: '受注' }, { key: 'in_progress', label: '着工' },
+  { key: 'completed', label: '完了' }, { key: 'lost', label: '失注' }, { key: 'all', label: 'すべて' },
 ] as const
 type StatusTab = typeof STATUS_TABS[number]['key']
-const statusFilterRaw = useQueryParam<string>('status', 'open')
+const statusFilterRaw = useQueryParam<string>('status', 'in_progress')
 const statusFilter = computed<StatusTab>({
   get: () => {
     const v = statusFilterRaw.value
-    if (v === 'active') return 'open'
+    if (v === 'active' || v === 'open') return 'in_progress'
     if (v === 'inactive') return 'completed'
-    return (STATUS_TABS.some(t => t.key === v) ? v : 'open') as StatusTab
+    return (STATUS_TABS.some(t => t.key === v) ? v : 'in_progress') as StatusTab
   },
   set: (v) => { statusFilterRaw.value = v },
 })
 function tabStatuses(tab: StatusTab): SiteStatus[] {
-  if (tab === 'open') return siteStatusesForScreen('site_master')
   if (tab === 'all') return [...SITE_STATUS_ORDER]
   return [tab]
 }
