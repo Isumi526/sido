@@ -6,7 +6,7 @@
       <span v-if="before" class="rba-count" data-testid="rba-changed-count">
         {{ changed ? $t('reportApproval.changedCount', { n: changed }) : $t('reportApproval.noVisibleChange') }}
       </span>
-      <span v-else class="rba-count plain">{{ $t('reportApproval.submittedWhole') }}</span>
+      <span v-else class="rba-count plain" data-testid="rba-submitted-whole">{{ $t('reportApproval.submittedWhole') }}</span>
       <label v-if="before && changed" class="rba-toggle">
         <input v-model="onlyChanged" type="checkbox" data-testid="rba-only-changed">{{ $t('reportApproval.onlyChanged') }}
       </label>
