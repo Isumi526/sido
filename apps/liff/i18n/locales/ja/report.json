@@ -243,5 +243,7 @@
   "distOverPending": "現場管理者の承認待ちです（承認までは既定の距離で計上）",
   "distOverRejected": "前回の申請は却下されました。距離を直すか、理由を書いて再申請してください。",
   "vehicleSelectPlaceholder": "車両を選択",
-  "vehicleOther": "その他（手入力）"
+  "vehicleOther": "その他（手入力）",
+  "subSearchPlaceholder": "業者名で絞り込む（ひらがなでも探せます）",
+  "subSearchNoHit": "該当する業者がありません"
 }
