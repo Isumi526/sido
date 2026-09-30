@@ -38,6 +38,11 @@ function saveCache(data: MasterData) {
 
 const EDGE_FN = 'master-data'
 
+/** 検索用に正規化: NFKC（全角英数→半角・半角カナ→全角）→ カタカナをひらがなに → 小文字 → 空白除去 */
+function normalizeForSearch(v: string): string {
+  return (v ?? '').normalize('NFKC').replace(/[\u30a1-\u30f6]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0x60)).toLowerCase().replace(/\s+/g, '')
+}
+
 export const useMaster = () => {
   const config = useRuntimeConfig()
   const cached = loadCache()
@@ -176,6 +181,7 @@ export const useMaster = () => {
       contractors:    (r.contractors ?? []).map((x: any) => x.name),
       workers:        (r.workers ?? []).map((x: any) => ({ id: x.id, name: x.name, name_kana: x.name_kana ?? null, role: x.role as 'factory' | 'site' })),
       subcontractors: (r.subcontractors ?? []).map((x: any) => x.name),
+      subcontractorKana: Object.fromEntries(((r.subcontractors ?? []) as any[]).filter((x: any) => x.name_kana).map((x: any) => [x.name, x.name_kana])) as Record<string, string>,
       vehicles:       r.vehicles ?? [],
       vehicleList:    Array.isArray(r.vehicleList) ? r.vehicleList : [],
       siteContractors,
@@ -270,6 +276,20 @@ export const useMaster = () => {
 
   /** 指定現場に紐づく下請け業者名[]。紐付けゼロの現場は全件にフォールバック（後方互換）。
    *  include に現在選択中の業者名を渡すと、紐付け外でも選択肢に残す（編集モードで消えない）。 */
+  /**
+   * 日報の協力業者の絞り込み（2026-09-30 シード要望11「使わない業者が多すぎて探すのが大変」）。
+   * 名前と読み仮名の部分一致。全角/半角・カタカナ/ひらがな・大文字/小文字の違いは無視する。
+   * include（選択中の業者）は絞り込みに合わなくても残す（選んだ値が消えて見えないように）。
+   */
+  function filterSubNames(names: string[], query: string, include?: string | null): string[] {
+    const q = normalizeForSearch(query)
+    if (!q) return names
+    const kana = master.value.subcontractorKana ?? {}
+    const hit = names.filter(n => normalizeForSearch(n).includes(q) || normalizeForSearch(kana[n] ?? '').includes(q))
+    if (include && include !== '__other__' && names.includes(include) && !hit.includes(include)) hit.unshift(include)
+    return hit
+  }
+
   function subNamesForSite(siteName: string | null | undefined, include?: string | null): string[] {
     // ★再ソートしない。EF が sort_order→name で返した順を保持する（上の subcontractorNames と同じ理由）
     const all = master.value.subcontractors.slice()
@@ -325,6 +345,7 @@ export const useMaster = () => {
     saveContractor,
     saveSub,
     subNamesForSite,
+    filterSubNames,
     siteIds:             computed(() => master.value.siteIds ?? {}),
     siteSubcontractors:  computed(() => master.value.siteSubcontractors ?? {}),
     siteStatuses:        computed<Record<string, string>>(() => master.value.siteStatuses ?? {}),

@@ -501,10 +501,21 @@
             <!-- 下請け業者 -->
             <Field :label="$t('report.subcontractor')">
               <div v-for="(sub, si2) in site.subcontractors" :key="si2">
+                <!-- 業者が多い時だけ絞り込みの欄を出す（2026-09-30 シード要望11）。名前と読み仮名で探せる -->
+                <input
+                  v-if="showSubSearch(site.siteName, sub.subcontractorName)"
+                  v-model="subQuery[`${si}-${si2}`]"
+                  type="search"
+                  class="input sub-search"
+                  :placeholder="$t('report.subSearchPlaceholder')"
+                  :data-testid="`sub-search-${si}-${si2}`"
+                  @keydown.enter.prevent
+                />
                 <div class="row-worker">
-                  <select v-model="sub.subcontractorName" class="select" :class="{ 'select--error': sub.subcontractorName === '' }">
+                  <select v-model="sub.subcontractorName" class="select" :class="{ 'select--error': sub.subcontractorName === '' }" :data-testid="`sub-select-${si}-${si2}`">
                     <option value="" disabled>{{ $t('report.selectSubcontractor') }}</option>
-                    <option v-for="name in master.subNamesForSite(site.siteName, sub.subcontractorName)" :key="name" :value="name">{{ name }}</option>
+                    <option v-for="name in subOptions(si, si2, site.siteName, sub.subcontractorName)" :key="name" :value="name">{{ name }}</option>
+                    <option v-if="subQuery[`${si}-${si2}`] && !subOptions(si, si2, site.siteName, sub.subcontractorName).length" value="" disabled>{{ $t('report.subSearchNoHit') }}</option>
                     <option value="__other__">{{ $t('report.otherNew') }}</option>
                   </select>
                   <input v-model.number="sub.count" type="number" min="1" max="20" class="input select--h" :placeholder="$t('report.people')" @keydown.enter.prevent />
@@ -1168,6 +1179,17 @@ const config  = useRuntimeConfig()
 const route   = useRoute()
 const liff    = useLiff()
 const master  = useMaster()
+
+// ── 協力業者の絞り込み（2026-09-30 シード要望11）──
+// 業者が SUB_SEARCH_MIN 件を超える時だけ、選択欄の上に絞り込みの欄を出す（少ない時は今までどおり）
+const SUB_SEARCH_MIN = 8
+const subQuery = reactive<Record<string, string>>({})
+function showSubSearch(siteName: string, current: string): boolean {
+  return master.subNamesForSite(siteName, current).length > SUB_SEARCH_MIN
+}
+function subOptions(si: number, si2: number, siteName: string, current: string): string[] {
+  return master.filterSubNames(master.subNamesForSite(siteName, current), subQuery[`${si}-${si2}`] ?? '', current)
+}
 const report  = useReport()
 const expense  = useExpense()
 const receipt  = useReceiptAnalysis()
@@ -4756,4 +4778,5 @@ html, body {
 .overage-title { font-size: 13px; font-weight: 700; color: #9a3412; }
 .overage-hint { margin: 4px 0 8px; font-size: 12px; color: #7c2d12; line-height: 1.5; }
 .overage-status { margin: 6px 0 0; font-size: 12px; font-weight: 700; color: #b45309; }
+.sub-search { margin-bottom: 6px; }
 </style>

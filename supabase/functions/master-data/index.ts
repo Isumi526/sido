@@ -87,7 +87,8 @@ Deno.serve(async (req) => {
       //  五十音にならない（「一之瀬」が「いちのせ」の位置に来ない）。読み仮名で並べる。
       svc.from('workers').select('id, name, name_kana, role').eq('active', true).eq('account_id', accountId)
         .order('name_kana', { nullsFirst: false }).order('name'),
-      svc.from('subcontractors').select('id, name').eq('active', true).eq('account_id', accountId)
+      // ★name_kana は日報の協力業者の絞り込み検索（ひらがなで探す）に使う（2026-09-30 シード要望11）
+      svc.from('subcontractors').select('id, name, name_kana').eq('active', true).eq('account_id', accountId)
         .order('sort_order').order('name'),
       svc.from('vehicles').select('id, name').eq('active', true).eq('account_id', accountId).order('name')
         .order('sort_order').order('name'),
