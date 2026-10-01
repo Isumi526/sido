@@ -116,7 +116,10 @@ test.describe('現場プルダウンの「最近の現場」', () => {
   test('★代理入力に切り替えると代理先の現場に入れ替わり、戻すと自分の現場に戻る', async ({ page }) => {
     const recent = async () => page.locator('[data-testid="site-group-recent"]').first()
       .locator('option').evaluateAll(els => els.map(e => (e as HTMLOptionElement).value)).catch(() => [] as string[])
-    await page.goto('/report', { waitUntil: 'networkidle' })
+    // 代理先の一覧はホーム・履歴・出退勤で読み込まれる（日報画面単体では読まない）。
+    // 実際の使い方どおり履歴を開いてから、画面を読み込み直さずに日報へ移る
+    await page.goto('/history', { waitUntil: 'networkidle' })
+    await page.evaluate(() => (document.querySelector('#__nuxt') as any).__vue_app__.config.globalProperties.$router.push('/report'))
     await page.waitForSelector('form.form', { timeout: 15000 })
     await expect.poll(recent, { timeout: 15000 }).toContain(NAMES.a)
     expect(await recent(), '自分の時は代理先の現場は出ない').not.toContain(NAMES.p)
