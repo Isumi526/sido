@@ -143,5 +143,13 @@ export function useWorkerPush() {
     try { return Number((await call('badge')).approvalPending ?? 0) } catch { return 0 }
   }
 
-  return { state, enable, disable, setPref, approvalPending, isSupported }
+  /** 承認待ちの内訳（やることの行ごと・A-3）。取れなければ 0 */
+  async function approvalBreakdown(): Promise<{ overtime: number; report: number }> {
+    try {
+      const r = await call('badge')
+      return { overtime: Number(r.overtimePending ?? r.approvalPending ?? 0), report: Number(r.reportPending ?? 0) }
+    } catch { return { overtime: 0, report: 0 } }
+  }
+
+  return { state, enable, disable, setPref, approvalPending, approvalBreakdown, isSupported }
 }

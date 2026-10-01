@@ -200,7 +200,7 @@ const showBack = computed(() => route.path !== '/')
  * 戻る（2026-09-27）。前の画面が無い時（スマホ通知・リンクから直接開いた時）は router.back() が何もしないので、
  * 親の画面へ移る（無ければホーム）。深い画面から戻れなくなるのを防ぐ。
  */
-const BACK_PARENT: Record<string, string> = { '/approvals': '/notifications', '/approvals/overtime': '/notifications' }   // 承認の画面は「やること」から来る
+const BACK_PARENT: Record<string, string> = { '/approvals': '/notifications', '/approvals/overtime': '/notifications', '/approvals/reports': '/notifications' }   // 承認の画面は「やること」から来る
 function parentPath(path: string): string {
   let p = path.replace(/\/+$/, '')
   while (p.includes('/')) {
