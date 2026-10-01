@@ -97,8 +97,9 @@ test('★2回に分けて選んだファイルも、後から付け足したフ�
   await row.first().click()
   await expect(page.getByTestId('invoice-files')).toContainText('アップロード済み（3枚）')
   for (const i of [0, 1, 2]) await expect(page.getByTestId(`invoice-file-${i}`)).toBeVisible()
-  const popup = page.waitForEvent('popup')
+  // 開く先（署名URL）を記録する。noopener の別タブは Playwright から URL が読めないため window.open を差し替える
+  await page.evaluate(() => { (window as any).__opened = []; window.open = ((u: string) => { (window as any).__opened.push(String(u)); return null }) as any })
   await page.getByTestId('invoice-file-2').click()
-  const tab = await popup
-  await tab.waitForURL(new RegExp(`${invoiceId}-`), { timeout: 10000 })   // 3枚目も署名URLで開ける
+  await expect.poll(() => page.evaluate(() => (window as any).__opened.join(' ')), { message: '3枚目も署名URLで開ける' })
+    .toMatch(new RegExp(`${invoiceId}-.*token=`))
 })
