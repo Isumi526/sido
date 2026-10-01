@@ -31,7 +31,8 @@ async function reportsWithPending(svc: any, accountId: string): Promise<any[]> {
   const results = await Promise.all(DISTANCE_FIELDS.map(field =>
     svc.from('daily_reports').select('id, user_id, date, sites, updated_at')
       .eq('account_id', accountId).gte('date', since)
-      .contains('sites', [{ expenses: { vehicles: [{ overages: { [field]: { status: 'pending' } } }] } }])
+      // ★jsonb の包含は JSON 文字列で渡す（.contains に配列を渡すと Postgres の配列形式 {…} になり jsonb に合わない）
+      .filter('sites', 'cs', JSON.stringify([{ expenses: { vehicles: [{ overages: { [field]: { status: 'pending' } } }] } }]))
       .order('date', { ascending: true }).limit(2000)))
   const byId = new Map<string, any>()
   for (const r of results) {
