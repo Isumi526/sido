@@ -1113,11 +1113,17 @@ function hasContractorWithoutSites(site: { contractorName?: string }): boolean {
   return siteCountOf(c) === 0
 }
 
-// ── 最近の現場（直近7日・稼働頻度TOP3）──
-//  本人（代理中は代理先）の直近7日の日報 sites[] を数え、頻度の高い順・同数は最終稼働日が新しい順に最大3件。
+// ── 最近の現場（直近7日）──
+//  本人（代理中は代理先）の直近7日の日報 sites[] を数え、頻度の高い順・同数は最終稼働日が新しい順に全部出す。
+//  ★件数で切らない（2026-10-01 今井さん「最近1週間はすべて残してほしい」。以前は上位3件だけだった）。
+//  ★代理先を切り替えたら読み直す（同日「代理入力は代理入力、自分は自分で分けて」。画面を開いた時の1回だけで、
+//    切替後も前の人の現場が残っていた）。切替が続いた時に古い応答で上書きしないよう、最後の呼び出しだけ反映する。
 //  有効現場（マスタにある名前）だけ。下書き（未送信）は含めない。新EFは要らない（daily-reports-read の list）。
 const recentSiteNames = ref<string[]>([])
+let recentSitesSeq = 0
 async function loadRecentSites(): Promise<void> {
+  const seq = ++recentSitesSeq
+  recentSiteNames.value = []   // 読み直しの間に前の人の現場を出さない
   try {
     const proxyT = proxy.proxyTarget.value
     let targetUserId: string | null = null
@@ -1142,11 +1148,11 @@ async function loadRecentSites(): Promise<void> {
         stat.set(name, cur)
       }
     }
+    if (seq !== recentSitesSeq) return
     const active = new Set(master.siteNames.value)
     recentSiteNames.value = [...stat.entries()]
       .filter(([name]) => active.has(name))
       .sort((a, b) => b[1].count - a[1].count || (b[1].last > a[1].last ? 1 : b[1].last < a[1].last ? -1 : 0))
-      .slice(0, 3)
       .map(([name]) => name)
   } catch (e) {
     console.error('[report] 最近の現場の取得に失敗:', e)   // 出なくても従来の並びで選べる
@@ -3663,6 +3669,7 @@ watch(() => proxy.proxyTarget.value, async (newTarget, oldTarget) => {
 
   initWorkers()
   initializing.value = false
+  loadRecentSites()   // 最近の現場も切替先の人の分に読み直す
 })
 
 function goToNextReport() {
