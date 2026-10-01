@@ -243,5 +243,7 @@
   "distOverPending": "Awaiting site manager approval (default distance is used until approved)",
   "distOverRejected": "The previous request was rejected. Fix the distance or re-submit with a reason.",
   "vehicleSelectPlaceholder": "Select a vehicle",
-  "vehicleOther": "Other (type in)"
+  "vehicleOther": "Other (type in)",
+  "subSearchPlaceholder": "Filter vendors by name",
+  "subSearchNoHit": "No matching vendor"
 }

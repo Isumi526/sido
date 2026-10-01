@@ -212,6 +212,8 @@ export interface MasterData {
   // 物品マスタ（ETCカード等の固定カテゴリ）の名前一覧。日報の高速代でETCカードを選ぶのに使う。
   //  空なら report 側は従来の固定カード（カード①〜⑦）にフォールバックする。
   etcCards?: string[]
+  /** 協力業者の読み仮名（名前→よみ）。日報の業者の絞り込み検索に使う */
+  subcontractorKana?: Record<string, string>
 }
 
 export interface ApiResponse<T = void> {
