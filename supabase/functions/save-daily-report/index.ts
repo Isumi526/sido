@@ -29,6 +29,7 @@ import { resolveCaller, type Caller } from '../_shared/caller-identity.ts'
 //  手元で検証する手段（--dry-run）も無い。本番で boot エラーになると日報の保存が止まるので、
 //  既存の作法どおり _shared 配下に置いたものを使う（2026-08-16）。
 import { sanitizeSitesForStorage, normalizeGasolineItems, siteNamesToRegister } from '../_shared/report-storage.gen.ts'
+import { pushNewDistanceOverages } from '../_shared/distance-push.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
@@ -118,13 +119,18 @@ Deno.serve(async (req) => {
     .order('created_at', { ascending: true })
   const activeSites = (siteRows ?? []).map((s: any) => ({ id: s.id, name: s.name }))
 
-  const { error } = await svc.from('daily_reports').upsert(
+  // 保存前の現場（距離超過の申請が「新しく」出たかを比べる・A-4）
+  const { data: prev } = await svc.from('daily_reports').select('sites')
+    .eq('user_id', userId).eq('date', date).eq('account_id', accountId).maybeSingle()
+  // ★整形は shared/report-storage.ts（LIFFと同一関数）。ここで写経しないこと
+  const storedSites = sanitizeSitesForStorage(sites, activeSites, date)   // date=日曜判定に使う（休日料率）
+
+  const { data: saved, error } = await svc.from('daily_reports').upsert(
     {
       user_id: userId,
       date,
       is_working: !!report.isWorking,
-      // ★整形は shared/report-storage.ts（LIFFと同一関数）。ここで写経しないこと
-      sites: sanitizeSitesForStorage(sites, activeSites, date),   // date=日曜判定に使う（休日料率）
+      sites: storedSites,
       note: report.note ?? null,
       leave_type: report.leaveType ?? null,
       // 有給の消化量（日）。半日=0.5・時間単位=時間÷所定時間。件数で数えない（2026-08-30）
@@ -136,10 +142,12 @@ Deno.serve(async (req) => {
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'user_id,date' },
-  )
+  ).select('id').maybeSingle()
   if (error) {
     console.error('[save-daily-report] upsert failed:', error)
     return json({ ok: false, error: 'save_failed' }, 500)
   }
+  // 距離超過の申請が新しく出ていれば、承認者の端末へ「承認のお願い」（A-4・best-effort）
+  await pushNewDistanceOverages(svc, accountId, { reportId: saved?.id ?? null, userId, date, prevSites: prev?.sites ?? [], nextSites: storedSites })
   return json({ ok: true })
 })

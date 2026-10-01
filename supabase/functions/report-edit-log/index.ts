@@ -30,6 +30,7 @@ import { resolveWorkerNotifyEmail, sendResend } from '../_shared/doc-mail.ts'
 import { resolveApprover } from '../_shared/caller-identity.ts'
 import { pushToWorkers } from '../_shared/worker-push.ts'
 import { appUrl } from '../_shared/approver-push.ts'
+import { pushNewDistanceOverages } from '../_shared/distance-push.ts'
 import {
   PENDING_EDIT_COLS, hasOtherActiveOwner, reportApprovalsFor, reportApproverSelf, reportApproverWorkerIds,
   responsibleMap, siteIdsOf, siteNamesOfPayload, slotFor, type PendingEditRow,
@@ -600,6 +601,9 @@ async function applyPending(svc: any, accountId: string, pend: any, reviewer: st
   // ★late_new は承認時に日報が生まれるので、作られた行の id を pending.report_id に書き戻す
   //  （report_id が NULL のままだと日報詳細の承認履歴が永久に0件になる。2026-08-10 レビューで発見）。
   let appliedReportId: string | null = pend.report_id ?? null
+  // 反映前の現場（距離超過の申請が「新しく」日報に入ったかを比べる・A-4）
+  const { data: prevRep } = await svc.from('daily_reports').select('sites')
+    .eq('account_id', accountId).eq('user_id', pend.report_user_id).eq('date', pend.report_date).maybeSingle()
   if (pend.kind === 'late_new' || pend.kind === 'paid_leave_over') {
     const { data: up, error: upErr } = await svc.from('daily_reports').upsert(
       { ...cols, account_id: accountId, user_id: pend.report_user_id, date: pend.report_date },
@@ -616,6 +620,11 @@ async function applyPending(svc: any, accountId: string, pend: any, reviewer: st
     status: 'approved', reviewed_by_name: reviewer, reviewed_at: now, updated_at: now,
     ...(appliedReportId ? { report_id: appliedReportId } : {}),
   }).eq('id', pend.id)
+  // 承認で日報に入った距離超過の申請を、承認者の端末へ（A-4・best-effort）
+  await pushNewDistanceOverages(svc, accountId, {
+    reportId: appliedReportId, userId: pend.report_user_id ?? null, date: pend.report_date,
+    prevSites: prevRep?.sites ?? [], nextSites: p.sites,
+  })
   return true
 }
 
@@ -965,6 +974,8 @@ Deno.serve(async (req) => {
       //  二重承認の待ち行列を詰まらせない（2026-09-10 大塚「二、三日前は承認なしでも打てる。編集の時は要るの？」）。
       if (directApply) {
         const p = payload as Record<string, unknown>
+        const { data: prevRep } = await svc.from('daily_reports').select('sites, date')
+          .eq('id', reportId).eq('account_id', caller.accountId).maybeSingle()
         const { error: upErr } = await svc.from('daily_reports').update({
           is_working: p.is_working, leave_type: p.leave_type, is_business_trip: p.is_business_trip,
           sites: p.sites, note: p.note, gasoline_items: p.gasoline_items, updated_at: new Date().toISOString(),
@@ -973,6 +984,11 @@ Deno.serve(async (req) => {
           console.error('[report-edit-log] direct apply failed:', upErr)
           return json({ ok: false, error: 'apply_failed' }, 500)
         }
+        // 期限内の編集で距離超過の申請が新しく出ていれば、承認者の端末へ（A-4・best-effort）
+        await pushNewDistanceOverages(svc, caller.accountId, {
+          reportId, userId: reportUserId, date: (prevRep?.date as string) ?? reportDate,
+          prevSites: prevRep?.sites ?? [], nextSites: p.sites,
+        })
         // 同じ日報に古い承認待ちが残っていれば取り下げる（期限内に直し直したので中身が古い）
         await svc.from('daily_report_pending_edits')
           .update({ status: 'rejected', reject_reason: '期限内の編集で上書きされたため取り下げ', reviewed_by_name: 'system', reviewed_at: new Date().toISOString(), acknowledged_at: new Date().toISOString(), updated_at: new Date().toISOString() })

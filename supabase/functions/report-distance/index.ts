@@ -10,6 +10,8 @@
 //   権限検査・自己承認の禁止・承認者名の確定・距離の差し替えを1箇所で行う。
 //   画面のガードは EF 直叩きで迂回できるので、ここで必ず検査する（残業/打刻修正の承認と同じ）。
 //
+//  action: approval-list {}            → 承認待ちの一覧（自分の日報の分は出さない・作業員アプリの「やること」A-4）
+//  action: approval-detail { reportId } → その日報の距離超過（承認待ち＋決裁済み）と、作業員名・日付
 //  action: decide { reportId, siteIndex, vehicleIndex, field: 'distanceKm'|'dieselKm', status: 'approved'|'rejected' }
 //    → { ok, changed: 0|1, applied?: boolean }
 //    changed=0 … もう承認待ちではない（二重決裁・連打）。何も書き換えない
@@ -19,6 +21,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveApprover, APPROVER_ROLES } from '../_shared/caller-identity.ts'
 import { DISTANCE_FIELDS, type DistanceField } from '../_shared/distance-overage.gen.ts'
+import { distancePendingItems } from '../_shared/distance-approval.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -41,11 +44,61 @@ Deno.serve(async (req) => {
   try { body = await req.json() } catch { return json({ ok: false, error: 'bad_json' }, 400) }
   const svc = createClient(SUPABASE_URL, SERVICE_KEY)
 
-  if (body.action !== 'decide') return json({ ok: false, error: 'unknown_action' }, 400)
+  if (!['decide', 'approval-list', 'approval-detail'].includes(body.action)) return json({ ok: false, error: 'unknown_action' }, 400)
 
   const approver = await resolveApprover(svc, req.headers.get('Authorization') ?? '')
   if (!approver) return json({ ok: false, error: 'unauthorized' }, 401)
   if (!APPROVER_ROLES.includes(approver.role)) return json({ ok: false, error: 'APPROVE_FORBIDDEN' }, 403)
+
+  // ── 作業員アプリの「やること」（A-4・2026-10-02）。読むだけ。決裁は下の decide（管理画面と同じ経路）──
+  //  ★一覧・件数・申請時の通知の宛先は _shared/distance-approval.ts の同じ規則で数える
+  if (body.action === 'approval-list') {
+    const items = await distancePendingItems(svc, approver.accountId, approver.workerId)
+    return json({ ok: true, items })
+  }
+  if (body.action === 'approval-detail') {
+    const reportId = typeof body.reportId === 'string' ? body.reportId : ''
+    if (!reportId) return json({ ok: false, error: 'bad_request' }, 400)
+    const { data: rep } = await svc.from('daily_reports')
+      .select('id, user_id, date, sites').eq('id', reportId).eq('account_id', approver.accountId).maybeSingle()
+    if (!rep) return json({ ok: false, error: 'not_found' }, 404)
+    let workerId: string | null = null
+    let workerName: string | null = null
+    if (rep.user_id) {
+      const { data: u } = await svc.from('users').select('worker_id, real_name').eq('id', rep.user_id).maybeSingle()
+      workerId = (u?.worker_id as string) ?? null
+      workerName = (u?.real_name as string) ?? null
+      if (workerId) {
+        const { data: w } = await svc.from('workers').select('name').eq('id', workerId).maybeSingle()
+        workerName = (w?.name as string) || workerName
+      }
+    }
+    // 承認待ちだけでなく決裁済みも返す（他の人が先に処理した時に「処理済み（誰が・いつ）」と出すため）
+    const items: any[] = []
+    const sites = Array.isArray(rep.sites) ? rep.sites : []
+    sites.forEach((site: any, si: number) => {
+      const vehicles = Array.isArray(site?.expenses?.vehicles) ? site.expenses.vehicles : []
+      vehicles.forEach((veh: any, vi: number) => {
+        for (const field of DISTANCE_FIELDS) {
+          const ov = veh?.overages?.[field]
+          if (!ov || !ov.status) continue
+          items.push({
+            siteIndex: si, vehicleIndex: vi, field,
+            siteName: String((site?.siteName === '__other__' ? site?.customSiteName : site?.siteName) ?? ''),
+            vehicleName: String(veh?.vehicleName ?? ''),
+            currentKm: veh?.[field] ?? null,
+            overage: ov,
+          })
+        }
+      })
+    })
+    return json({
+      ok: true,
+      report: { id: rep.id, date: rep.date, workerName },
+      mine: !!approver.workerId && workerId === approver.workerId,
+      items,
+    })
+  }
 
   const reportId = typeof body.reportId === 'string' ? body.reportId : ''
   const si = Number.isInteger(body.siteIndex) ? Number(body.siteIndex) : -1

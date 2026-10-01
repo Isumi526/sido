@@ -29,6 +29,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveCaller, resolveApprover, APPROVER_ROLES, type Caller } from '../_shared/caller-identity.ts'
 import { sanitizeSitesForStorage, applyApprovedOvertimeToSites } from '../_shared/report-storage.gen.ts'
+import { pushToApprovers, appUrl } from '../_shared/approver-push.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
@@ -293,6 +294,77 @@ Deno.serve(async (req) => {
     })
   }
 
+  // ── 作業員アプリの「やること」から打刻修正を承認する（設計「承認をやることで完結」A-4・2026-10-02）──
+  //  correction-approval-list {}       → 承認待ちの一覧（自分の申請は出さない＝やることの数・通知の宛先と揃える）
+  //  correction-approval-detail { id } → 申請の中身＋対象の打刻（今の値・元の値）＋その日の打刻＋決裁済みなら誰が・いつ
+  //  ★決裁そのものは下の correction-decide（管理画面と同じ経路）。ここは読むだけ。
+  //  ★作業員アプリは attendance_logs を直接読めない（RLS）ので、承認者であることを確かめてから service_role で読む。
+  if (body.action === 'correction-approval-list' || body.action === 'correction-approval-detail') {
+    const approver = await resolveApprover(svc, req.headers.get('Authorization') ?? '')
+    if (!approver) return json({ ok: false, error: 'unauthorized' }, 401)
+    if (!APPROVER_ROLES.includes(approver.role)) return json({ ok: false, error: 'APPROVE_FORBIDDEN' }, 403)
+    const cols = 'id, worker_id, log_id, kind, requested_type, requested_checked_at, reason, status, requested_at, approved_by, decided_at'
+    const namesOf = async (ids: string[]) => {
+      if (!ids.length) return new Map<string, string>()
+      const { data } = await svc.from('workers').select('id, name').eq('account_id', approver.accountId).in('id', ids)
+      return new Map(((data ?? []) as any[]).map(w => [w.id as string, w.name as string]))
+    }
+    const logsOf = async (ids: string[]) => {
+      if (!ids.length) return new Map<string, any>()
+      const { data } = await svc.from('attendance_logs')
+        .select('id, worker_id, type, checked_at, original_type, original_checked_at, deleted_at').in('id', ids)
+      return new Map(((data ?? []) as any[]).map(l => [l.id as string, l]))
+    }
+
+    if (body.action === 'correction-approval-list') {
+      let q = svc.from('attendance_correction_requests').select(cols)
+        .eq('account_id', approver.accountId).eq('status', 'pending')
+        .order('requested_at', { ascending: true })
+      if (approver.workerId) q = q.neq('worker_id', approver.workerId)
+      const { data, error } = await q
+      if (error) { console.error('[attendance-log] correction-approval-list failed:', error); return json({ ok: false, error: 'load_failed' }, 500) }
+      const rows = (data ?? []) as any[]
+      const [names, logs] = await Promise.all([
+        namesOf([...new Set(rows.map(r => r.worker_id).filter(Boolean))]),
+        logsOf(rows.map(r => r.log_id).filter(Boolean)),
+      ])
+      return json({ ok: true, items: rows.map(r => ({ ...r, worker_name: names.get(r.worker_id) ?? null, log: logs.get(r.log_id) ?? null })) })
+    }
+
+    const id = typeof body.id === 'string' ? body.id : ''
+    if (!id) return json({ ok: false, error: 'id_required' }, 400)
+    const { data: r } = await svc.from('attendance_correction_requests').select(cols)
+      .eq('id', id).eq('account_id', approver.accountId).maybeSingle()
+    if (!r) return json({ ok: false, error: 'not_found' }, 404)
+    const [names, logs] = await Promise.all([
+      namesOf(r.worker_id ? [r.worker_id as string] : []),
+      logsOf(r.log_id ? [r.log_id as string] : []),
+    ])
+    const log = logs.get(r.log_id as string) ?? null
+    // ★申請した作業員の打刻か確かめる（attendance_logs に account_id は無い。申請の worker_id と一致させる）
+    const ownLog = log && log.worker_id === r.worker_id ? log : null
+
+    // その日（JST・対象の打刻の日）の打刻（取り消し済みは除く）。前後の打刻を見て判断できるように
+    const punches: { id: string; type: string; time: string }[] = []
+    const base = (ownLog?.original_checked_at ?? ownLog?.checked_at ?? r.requested_checked_at) as string | null
+    if (r.worker_id && base) {
+      const day = new Date(base).toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' })
+      const { data: dayLogs } = await svc.from('attendance_logs').select('id, type, checked_at')
+        .eq('worker_id', r.worker_id).is('deleted_at', null)
+        .gte('checked_at', new Date(`${day}T00:00:00+09:00`).toISOString())
+        .lte('checked_at', new Date(`${day}T23:59:59.999+09:00`).toISOString())
+        .order('checked_at', { ascending: true })
+      const hm = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', hour12: false })
+      for (const l of (dayLogs ?? []) as any[]) punches.push({ id: l.id, type: l.type, time: hm.format(new Date(l.checked_at)) })
+    }
+    return json({
+      ok: true,
+      item: { ...r, worker_name: names.get(r.worker_id as string) ?? null, log: ownLog },
+      mine: !!approver.workerId && r.worker_id === approver.workerId,
+      punches,
+    })
+  }
+
   // ── 打刻の修正: 承認（管理者）──────────────────────────
   //  ★overtime-decide と同じガードを踏む。ここを緩めると勤怠の証跡が
   //   「誰でも後から書き換えられる記録」になり、意味を失う。
@@ -416,7 +488,7 @@ Deno.serve(async (req) => {
       if (requestedAt === log.checked_at) return json({ ok: false, error: 'no_change' }, 400)
     }
 
-    const { error } = await svc.from('attendance_correction_requests').insert({
+    const { data: created, error } = await svc.from('attendance_correction_requests').insert({
       account_id: caller.accountId,
       worker_id: caller.workerId,
       log_id: logId,
@@ -424,7 +496,7 @@ Deno.serve(async (req) => {
       requested_type: requestedType,
       requested_checked_at: requestedAt,
       reason,
-    })
+    }).select('id').maybeSingle()
     if (error) {
       // 同じ打刻に pending が2件作れないよう一意indexを張ってある
       const dup = String(error.message ?? '').includes('attendance_correction_one_pending_per_log')
@@ -432,7 +504,27 @@ Deno.serve(async (req) => {
       console.error('[attendance-log] correction-request failed:', error)
       return json({ ok: false, error: 'insert_failed' }, 500)
     }
-    return json({ ok: true })
+    // ★承認者の端末へ「承認のお願い」（A-4・2026-10-02。それまで打刻修正は誰にも通知していなかった）。
+    //  押すと作業員アプリの承認画面が開く。宛先は承認者全員から申請者本人を除く（やることの一覧と同じ規則）。
+    //  best-effort: 送れなくても申請は成立させる。
+    if (created?.id) {
+      try {
+        const { data: me } = await svc.from('workers').select('name').eq('id', caller.workerId).maybeSingle()
+        const day = new Date(log.checked_at as string).toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' })
+        const what = kind === 'delete' ? '取り消し' : kind === 'type' ? '出勤/退勤の入れ替え' : '時刻の修正'
+        const r = await pushToApprovers(svc, caller.accountId, {
+          title: '打刻修正の承認のお願い',
+          body: `${(me?.name as string) || '作業員'}さん（${day}・${what}）`,
+          url: appUrl(`/approvals/punch/${created.id}`),
+          tag: `punch-correction-${created.id}`,
+          excludeWorkerId: caller.workerId,
+        })
+        if (r.skipped && r.skipped !== 'no_target' && r.skipped !== 'no_subscription') console.warn('[attendance-log] correction push skipped:', r.skipped)
+      } catch (e) {
+        console.error('[attendance-log] correction push failed (申請は成功):', e)
+      }
+    }
+    return json({ ok: true, id: created?.id ?? null })
   }
 
   // ── 自分の打刻＋修正申請の状態（修正申請の画面で出す）──

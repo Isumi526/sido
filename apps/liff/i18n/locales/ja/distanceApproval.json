@@ -1,0 +1,39 @@
+{
+  "title": "距離超過の承認",
+  "detailTitle": "距離超過",
+  "hint": "日報で、車両の距離が現場の既定値を超えた申請です。押すと中身を確認して、承認・却下できます。",
+  "empty": "承認待ちの距離超過はありません。",
+  "back": "一覧へ戻る",
+  "site": "現場",
+  "vehicle": "車両",
+  "fieldLabel": "種類",
+  "km": "距離",
+  "reason": "理由",
+  "requestedAt": "申請日時",
+  "field": {
+    "distanceKm": "ガソリン",
+    "dieselKm": "軽油"
+  },
+  "kmChange": "既定 {from}km → 申請 {to}km",
+  "kmNote": "承認するとこの日報の距離が申請の値になり、ガソリン代の計算に入ります（今は既定値で計上中）。",
+  "none": "この日報に距離超過の申請はありません。",
+  "approve": "承認する",
+  "reject": "却下する",
+  "mine": "自分の日報の申請は承認できません。別の承認者に依頼してください。",
+  "rejectHint": "却下すると距離は既定の {km}km のままです。",
+  "rejectConfirm": "却下する",
+  "cancel": "やめる",
+  "approvedDone": "承認しました。",
+  "rejectedDone": "却下しました。",
+  "decidedApproved": "処理済み：{who} さんが {when} に承認しました",
+  "decidedRejected": "処理済み：{who} さんが {when} に却下しました",
+  "someone": "ほかの承認者",
+  "err": {
+    "unauthorized": "ログインし直してください。",
+    "APPROVE_FORBIDDEN": "承認する権限がありません。",
+    "SELF_APPROVAL_FORBIDDEN": "自分の日報の申請は自分では承認できません。別の承認者に依頼してください。",
+    "not_found": "この日報は見つかりません。",
+    "conflict": "その間に日報が直されました。最新の内容を読み直したので、もう一度確認してください。",
+    "other": "うまくいきませんでした。時間をおいてもう一度お試しください。"
+  }
+}
