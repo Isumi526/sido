@@ -126,9 +126,8 @@ test.describe('現場プルダウンの「最近の現場」', () => {
     await page.getByTestId(`proxy-row-${px!.workerId}`).click()
     await expect.poll(recent, { timeout: 20000, message: '代理先の現場に入れ替わる' }).toEqual([NAMES.p])
 
-    // 代理をやめると自分の現場に戻る（同じ行をもう一度押すと解除）
-    await page.getByTestId('nav-hamburger').click()
-    await page.getByTestId(`proxy-row-${px!.workerId}`).click()
+    // 代理をやめると自分の現場に戻る（上の帯の「解除」。代理中のメニューには代理先の一覧が出ない）
+    await page.locator('.proxy-banner-exit').click()
     await expect.poll(recent, { timeout: 20000, message: '自分の現場に戻る' }).toContain(NAMES.a)
     expect(await recent()).not.toContain(NAMES.p)
   })
