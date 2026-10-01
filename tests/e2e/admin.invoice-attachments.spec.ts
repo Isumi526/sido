@@ -14,6 +14,7 @@
 // ============================================================
 import { test, expect } from '@playwright/test'
 import { restSrv, getAccountId, SUPABASE_URL, SERVICE_ROLE_KEY } from './helpers'
+import { SEED_SITE } from './global-setup'
 
 const TS = Date.now()
 const VENDOR = `E2E添付業者_${TS}`
@@ -44,10 +45,11 @@ test.beforeAll(async () => {
     method: 'POST', headers: { Prefer: 'return=representation' },
     body: JSON.stringify({ account_id: accountId, subcontractor_id: subId, vendor_name: VENDOR, title: 'E2E添付', invoice_date: new Date().toISOString().slice(0, 10), total_amount: 1100 }),
   }))[0].id
-  // 保存には明細が1行以上要る
+  // 保存には現場つきの明細が1行以上要る
+  const [site] = await restSrv(`sites?account_id=eq.${accountId}&name=eq.${encodeURIComponent(SEED_SITE)}&select=id`)
   await restSrv('subcontractor_invoice_items', {
     method: 'POST', headers: { Prefer: 'return=minimal' },
-    body: JSON.stringify({ invoice_id: invoiceId, account_id: accountId, description: 'E2E添付', quantity: 1, unit: '式', unit_price: 1000, amount: 1000, tax_rate: 10 }),
+    body: JSON.stringify({ invoice_id: invoiceId, account_id: accountId, site_id: site.id, site_name: SEED_SITE, description: 'E2E添付', quantity: 1, unit: '式', unit_price: 1000, amount: 1000, tax_rate: 10 }),
   })
 })
 test.afterAll(async () => {
