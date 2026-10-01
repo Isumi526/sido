@@ -99,5 +99,6 @@ test('★2回に分けて選んだファイルも、後から付け足したフ�
   for (const i of [0, 1, 2]) await expect(page.getByTestId(`invoice-file-${i}`)).toBeVisible()
   const popup = page.waitForEvent('popup')
   await page.getByTestId('invoice-file-2').click()
-  expect((await popup).url(), '3枚目も署名URLで開ける').toContain(`${invoiceId}-`)
+  const tab = await popup
+  await tab.waitForURL(new RegExp(`${invoiceId}-`), { timeout: 10000 })   // 3枚目も署名URLで開ける
 })
